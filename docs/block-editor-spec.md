@@ -4,7 +4,7 @@
 > 日期：2026-04-16
 > 状态：已确认
 
----
+***
 
 ## 1. 项目定位
 
@@ -13,11 +13,11 @@
 - Block 级编辑（不是 Markdown 文档编辑）
 - Outliner 层级结构
 - Journal（日记流）
-- Page + [[引用]]
+- Page + \[\[引用]]
 - 高性能（1000+ blocks 流畅）
 - 单编辑器架构（TipTap）
 
----
+***
 
 ## 2. 总体设计原则
 
@@ -28,7 +28,7 @@
 - ❗只能存在 1 个 TipTap 编辑器实例
 - ❗禁止多个 block 同时进入编辑状态
 
----
+***
 
 ### 2.2 Block 是唯一数据单元
 
@@ -41,7 +41,7 @@
 
 禁止"文档级编辑模型"。
 
----
+***
 
 ### 2.3 编辑 / 展示分离
 
@@ -50,7 +50,7 @@
 - Display（展示态）：纯 HTML 渲染
 - Edit（编辑态）：TipTap 实例
 
----
+***
 
 ### 2.4 状态驱动，而非 DOM 驱动
 
@@ -62,7 +62,7 @@
 
 禁止直接 DOM 操作控制业务逻辑。
 
----
+***
 
 ## 3. 核心约束（必须严格遵守）
 
@@ -72,7 +72,7 @@
 - ❗编辑器必须随 block 切换而销毁或复用
 - ❗禁止多个 TipTap 同时存在
 
----
+***
 
 ### 3.2 数据约束
 
@@ -81,7 +81,7 @@
 - Pinia 为运行态状态中心
 - IndexedDB 为持久化层
 
----
+***
 
 ### 3.3 性能约束
 
@@ -89,7 +89,7 @@
 - Block 组件必须 memo 化
 - 编辑器仅在 active block 上挂载
 
----
+***
 
 ## 4. 核心数据模型
 
@@ -132,7 +132,7 @@ type EditorState = {
 }
 ```
 
----
+***
 
 ## 5. 编辑行为规范（核心逻辑）
 
@@ -150,7 +150,7 @@ type EditorState = {
 3. 设置内容为 block.content
 4. 设置光标位置
 
----
+***
 
 ### 5.2 退出编辑（Deactivate）
 
@@ -166,7 +166,7 @@ type EditorState = {
 2. 销毁 editor 实例
 3. activeBlockId = null
 
----
+***
 
 ### 5.3 单编辑器规则
 
@@ -176,7 +176,7 @@ type EditorState = {
 - 再销毁 editor
 - 最后进入新 block
 
----
+***
 
 ## 6. Block 操作规则（Outliner）
 
@@ -189,7 +189,7 @@ type EditorState = {
 - 新 block 作为兄弟节点
 - 光标移动到新 block
 
----
+***
 
 ### 6.2 Backspace（合并 Block）
 
@@ -203,7 +203,7 @@ type EditorState = {
 - 删除当前 block
 - 光标移动到上一个 block 末尾
 
----
+***
 
 ### 6.3 Tab（缩进）
 
@@ -212,7 +212,7 @@ type EditorState = {
 - 当前 block 变为前一个 block 的子节点
 - 更新 parentId 和 children
 
----
+***
 
 ### 6.4 Shift + Tab（反缩进）
 
@@ -221,7 +221,7 @@ type EditorState = {
 - 当前 block 提升层级
 - 移出父节点，成为同级
 
----
+***
 
 ## 7. 渲染规则
 
@@ -247,7 +247,7 @@ type EditorState = {
 - 只渲染可见 block
 - 限制 DOM 数量
 
----
+***
 
 ## 8. 数据流规范
 
@@ -263,7 +263,7 @@ type EditorState = {
 IndexedDB → Pinia → Vue 渲染 → 虚拟列表展示
 ```
 
----
+***
 
 ## 9. 性能规则
 
@@ -274,7 +274,7 @@ IndexedDB → Pinia → Vue 渲染 → 虚拟列表展示
 - 输入延迟 < 16ms
 - 无重复 editor 实例
 
----
+***
 
 ## 10. 禁止事项（非常重要）
 
@@ -287,7 +287,7 @@ IndexedDB → Pinia → Vue 渲染 → 虚拟列表展示
 - 全文搜索引擎
 - UI 驱动数据结构变化
 
----
+***
 
 ## 11. MVP 执行范围
 
@@ -298,7 +298,7 @@ IndexedDB → Pinia → Vue 渲染 → 虚拟列表展示
 - Tab / Shift+Tab
 - Journal（日记页）
 - Page 基础系统
-- [[引用]]（简单解析）
+- \[\[引用]]（简单解析）
 
 ### 暂不实现：
 
@@ -308,7 +308,7 @@ IndexedDB → Pinia → Vue 渲染 → 虚拟列表展示
 - 富文本复杂扩展
 - editor pool 优化
 
----
+***
 
 ## 12. 开发优先级
 
@@ -321,7 +321,7 @@ IndexedDB → Pinia → Vue 渲染 → 虚拟列表展示
 5. 数据持久化
 6. 虚拟列表优化
 
----
+***
 
 ## 13. 成功标准
 
@@ -333,7 +333,7 @@ IndexedDB → Pinia → Vue 渲染 → 虚拟列表展示
 - 数据不丢失
 - 单 editor 稳定运行
 
----
+***
 
 ## 14. 核心原则总结
 
@@ -341,4 +341,5 @@ IndexedDB → Pinia → Vue 渲染 → 虚拟列表展示
 >
 > **单编辑器 + 状态机 + Block 结构 + 性能约束**
 
----
+***
+
