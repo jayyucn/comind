@@ -290,16 +290,36 @@ IndexedDB → Pinia → Vue 响应式渲染 → Block 组件展示
 
 ### 8.2 链接解析时机
 
-**Phase 1 方案：保存时解析**
+**Phase 1 方案：保存时解析 + 编辑时临时高亮**
 
 ```
-用户输入 → tiptap → 内容写入 block.content → [保存时] → 解析 [[...]] → 写入 Link 表 → IndexedDB 持久化
-
-渲染时 → 从 IndexedDB 读取 Link 表 → 高亮渲染
+用户输入 [[页面名]]
+    │
+    ▼
+tiptap Mark 层（纯 UI）
+  → 输入时检测 [[...]] 语法，添加临时高亮样式
+  → 无数据库操作，不写 Link 表
+    │
+    │ 保存时（blur / Ctrl+S / 自动保存）
+    ▼
+Parser.parseBlockContent(content)
+  → 提取所有 [[...]] 匹配
+  → 分类：内部链接 / 外部链接
+  → 查表：匹配 targetPageId（未找到 → 悬空链接）
+    │
+    ▼
+Link 表操作（事务）
+  → 删除 sourceBlockId 的旧 Link
+  → 插入新 Link 记录
+    │
+    ▼
+渲染时 → 从 IndexedDB 读取 Link 表 → 渲染可点击链接
 ```
 
-优点：实现简单，无实时解析复杂度
-缺点：用户输入时看不到链接高亮（展示态 → 编辑态切换时才可见）
+**说明（来源 `link-spec.md` §3.1）：**
+- 编辑态：tiptap Mark 层实时检测语法并临时高亮，用户可感知但无持久化
+- 保存时：完整解析，持久化到 Link 表
+- 渲染时（展示态）：读取 Link 表，渲染可点击链接
 
 ***
 
@@ -320,14 +340,15 @@ IndexedDB → Pinia → Vue 响应式渲染 → Block 组件展示
 
 本文档是 comind 的总规范，各专项文档：
 
-| 文档                     | 描述                                          |
-| ---------------------- | ------------------------------------------- |
-| `SPEC.md`              | 本文档，项目总规范                                   |
-| `data-model.md`        | 核心数据模型（Block、Link、Tag、Property）             |
-| `block-editor-spec.md` | Block 编辑器行为规范（单编辑器、状态机、快捷键）                 |
-| `link-spec.md`         | 双向链接系统详细规范                                  |
-| `storage-spec.md`      | 存储层规范（Phase 1 IndexedDB → Phase 2/3 SQLite） |
-| `tech-selection.md`    | Phase 1 技术选型与项目结构                           |
+| 文档       | 描述                                           |
+| -------- | -------------------------------------------- |
+| `SPEC.md` | 本文档，项目总规范                                    |
+| `data-model.md` | 核心数据模型（Block、Link、Tag、Property）          |
+| `dev-guide.md` | 开发指南（核心架构约束 + 实现参考，已整合原 block-editor-spec.md） |
+| `link-spec.md` | 双向链接系统详细规范                                 |
+| `storage-spec.md` | 存储层规范（Phase 1 IndexedDB → Phase 2/3 SQLite） |
+| `tech-selection.md` | Phase 1 技术选型与项目结构                        |
+| `ui-ux-spec.md` | UI/UX 视觉系统规范                              |
 
 ***
 

@@ -1,10 +1,36 @@
 # 开发指南（Development Guide）
 
-> 版本：v0.2
+> 版本：v0.3
 > 日期：2026-04-16
 > 适用阶段：Phase 1 MVP
 > 技术栈：Vue 3 + TypeScript + Pinia + Vite + tiptap + IndexedDB
-> 状态：已修正（v0.1 审核问题已修复）
+> 状态：已整合 block-editor-spec.md 约束，本文档为唯一开发参考
+
+***
+
+> **📌 核心架构约束（来自 block-editor-spec.md，已整合入本文档）**
+>
+> 以下约束是 comind 的硬性架构规则，违反任一条均视为系统性错误：
+>
+> **约束 1：单编辑器原则（最重要）**
+> - ❗任何时刻，系统只能存在 **1 个活跃的 tiptap 编辑器实例**
+> - ❗任何时刻，只有 **1 个 Block 处于编辑状态**
+> - ❗编辑器必须随 Block 切换而销毁或复用
+>
+> **约束 2：Block 是唯一数据单元**
+> - 系统所有数据围绕 Block 构建：编辑、层级结构、存储、Page 组成
+> - ❌禁止引入"文档级编辑模型"
+>
+> **约束 3：状态驱动，而非 DOM 驱动**
+> - 所有行为通过状态机控制（`activeBlockId`、Block 树结构）
+> - ❌禁止直接 DOM 操作控制业务逻辑
+>
+> **约束 4：Phase 1 不引入虚拟列表**
+> - 100 个 Block ≈ 100 个 DOM 节点，浏览器性能完全可承受
+> - 待数据量增长至 500+ 出现瓶颈时再按需引入（见 §6.2）
+>
+> **约束 5：Pinia 为状态中心，tiptap 为编辑内核，IndexedDB 为持久化层**
+> - 三者职责严格分层，UI 状态不得反向污染数据结构
 
 ***
 
@@ -134,7 +160,8 @@ interface Link {
 ```typescript
 interface EditorState {
   activeBlockId: string | null  // 当前编辑中的 Block ID
-  // cursorOffset: 光标位置由 tiptap 内部管理，无需在状态中维护
+  // 光标位置由 tiptap 内部 state.selection 管理，无需在 EditorState 中维护
+  //（旧版本错误保留了 cursorOffset 字段，已移除）
 }
 ```
 
@@ -148,7 +175,7 @@ interface EditorState {
 
 ### 3.3 编辑行为规范
 
-详细规范见 `docs/block-editor-spec.md`。
+本文档上方"核心架构约束"章节已整合 Block 编辑行为规范，以下为快捷索引：
 
 **Enter（拆分 Block）：**
 
@@ -226,29 +253,28 @@ interface EditorState {
 ```typescript
 export const useEditorStore = defineStore('editor', {
   state: () => ({
-    activeBlockId: null as string | null,
-    cursorOffset: null as number | null
+    activeBlockId: null as string | null
+    // cursorOffset 不在 EditorState 中维护，由 tiptap 内部 state.selection 管理
   }),
   
   actions: {
     async activateBlock(blockId: string) {
-      // 1. 如果已有活跃 Block，先保存
+      // 1. 如果已有活跃 Block，先保存并失活
       if (this.activeBlockId && this.activeBlockId !== blockId) {
         await this.deactivateBlock()
       }
       
       // 2. 设置新的活跃 Block
       this.activeBlockId = blockId
-      // tiptap 实例由 Editor 组件管理
+      // tiptap 实例由 Editor 组件管理（mount 时创建，unmount 时销毁）
     },
     
     async deactivateBlock() {
       if (!this.activeBlockId) return
       
-      // 1. 触发保存（通过事件或直接调用）
+      // 1. 触发内容保存（通过事件或直接调用 blockStore.saveBlock）
       // 2. 清除状态
       this.activeBlockId = null
-      this.cursorOffset = null
     }
   }
 })
@@ -424,7 +450,7 @@ export interface BlockRecord {
 export interface LinkRecord {
   id?: number
   sourceBlockId: string
-  targetPageId: string   // 目标 Page 的 UUID（解析后填充）
+  targetPageId: string | null  // 目标 Page UUID；外部链接时为 null
   displayText: string
   position?: number
   linkType: 'internal' | 'external'
@@ -449,6 +475,7 @@ class ComindDB extends Dexie {
 export const db = new ComindDB()
 
 // IndexedDB 适配器
+// 依赖 utils/parser.ts 中导出的 LinkParse 类型和 parseBlockLinks 函数
 export class IndexedDBAdapter implements StorageAdapter {
   
   async saveBlock(block: Block): Promise<void> {
@@ -466,45 +493,59 @@ export class IndexedDBAdapter implements StorageAdapter {
       folded: block.folded
     })
     
-    // 解析内容并保存 Link
-    const { links } = parseContent(block.content)
-    await this.saveLinks(block.id, links)
+    // 解析内容中的 [[...]] 并保存 Link
+    // parseBlockLinks 是 parseContent 的链接子集，专门返回 LinkParse[]
+    const linkParses = parseBlockLinks(block.content)
+    await this.saveLinks(block.id, linkParses)
   }
   
   /**
-   * 保存链接：解析 targetTitle → 查找/创建 Page → 写入 Link
+   * 保存链接：targetTitle → 查找/创建 Page → 写入 Link 表
    */
   private async saveLinks(sourceBlockId: string, linkParses: LinkParse[]): Promise<void> {
-    // 1. 删除旧链接
-    await db.links.where('sourceBlockId').equals(sourceBlockId).delete()
-    
-    // 2. 解析并写入新链接
-    for (const link of linkParses) {
-      // 查找或创建目标 Page
-      let targetPage = await db.pages.where('title').equals(link.targetTitle).first()
+    await db.transaction('rw', db.links, db.pages, async () => {
+      // 1. 删除旧链接
+      await db.links.where('sourceBlockId').equals(sourceBlockId).delete()
       
-      if (!targetPage) {
-        // 页面不存在，创建新 Page（UUID 由系统生成）
-        const pageId = generateUUID()
-        targetPage = {
-          id: pageId,
-          title: link.targetTitle,
-          createdAt: Date.now(),
-          updatedAt: Date.now()
+      // 2. 写入新链接
+      for (const link of linkParses) {
+        if (link.isExternal) {
+          // 外部链接：不查找 Page，targetPageId 留 null
+          await db.links.add({
+            sourceBlockId,
+            targetPageId: null,
+            displayText: link.displayText,
+            position: link.position,
+            linkType: 'external',
+            createdAt: Date.now()
+          })
+          continue
         }
-        await db.pages.put(targetPage)
+        
+        // 内部链接：查找或创建目标 Page
+        let targetPage = await db.pages.where('title').equals(link.targetTitle).first()
+        
+        if (!targetPage) {
+          const pageId = generateUUID()
+          targetPage = {
+            id: pageId,
+            title: link.targetTitle,
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+          }
+          await db.pages.put(targetPage)
+        }
+        
+        await db.links.add({
+          sourceBlockId,
+          targetPageId: targetPage.id,
+          displayText: link.displayText,
+          position: link.position,
+          linkType: 'internal',
+          createdAt: Date.now()
+        })
       }
-      
-      // 写入 Link
-      await db.links.add({
-        sourceBlockId,
-        targetPageId: targetPage.id,
-        displayText: link.displayText,
-        position: link.position,
-        linkType: 'internal',
-        createdAt: Date.now()
-      })
-    }
+    })
   }
   
   async getBlockTree(pageId: string): Promise<Block[]> {
@@ -547,13 +588,18 @@ export class IndexedDBAdapter implements StorageAdapter {
 
 ### 6.1 必须遵守
 
-- ✅ 使用虚拟列表（只渲染可见 Block）
 - ✅ Block 组件 memo 化（避免不必要重渲染）
-- ✅ 编辑器仅在 active Block 上挂载
+- ✅ 编辑器仅在 active Block 上挂载（单编辑器原则）
 - ✅ 输入防抖（save 操作 debounce 300ms）
 - ✅ 避免深层嵌套响应式对象
+- ✅ 按需渲染（非编辑态 Block 使用静态 HTML，不走 Vue 响应式）
 
-### 6.2 性能指标
+### 6.2 Phase 1 后按需引入
+
+- **虚拟列表**：当 Block 数量达到 500+ 出现性能瓶颈时引入（vue-virtual-scroller / tanstack-virtual）
+- Phase 1 阶段 100 个 Block ≈ 100 个 DOM 节点，浏览器性能完全可承受
+
+### 6.3 性能指标
 
 | 指标              | 目标值         |
 | --------------- | ----------- |
@@ -613,21 +659,21 @@ export class IndexedDBAdapter implements StorageAdapter {
 ### Q4: 如何处理大量 Block？
 
 **答：**
-
-- 虚拟列表（vue-virtual-scroller / tanstack-virtual）
-- 按需加载（分页查询子节点）
-- 渲染优化（静态内容不用响应式）
+- Phase 1：按需渲染（非编辑态 Block 用静态 HTML）+ memo 化 + 防抖，100 Block 内无性能问题
+- 500+ Block 时：引入虚拟列表（vue-virtual-scroller / tanstack-virtual）
+- 避免在 Pinia 状态中存储渲染无关的临时数据
 
 ***
 
 ## 9. 相关文档索引
 
-| 文档          | 路径                          | 内容                                      |
-| ----------- | --------------------------- | --------------------------------------- |
-| 数据模型        | `docs/data-model.md`        | Block、Link、Tag、Property 详细定义            |
-| 技术选型        | `docs/tech-selection.md`    | Vue 3 / Pinia / tiptap / IndexedDB 选型依据 |
-| Block 编辑器规范 | `docs/block-editor-spec.md` | 单编辑器架构、键盘行为、性能约束                        |
-| 存储规范        | `docs/storage-spec.md`      | Markdown + SQLite 混合存储（Phase 2/3）       |
+| 文档     | 路径                    | 内容                            |
+| ------ | --------------------- | ----------------------------- |
+| 数据模型   | `docs/data-model.md`  | Block、Link、Tag、Property 详细定义 |
+| 技术选型   | `docs/tech-selection.md` | Vue 3 / Pinia / tiptap / IndexedDB 选型依据 |
+| 存储规范   | `docs/storage-spec.md` | Markdown + SQLite 混合存储（Phase 2/3） |
+| 链接规范   | `docs/link-spec.md`   | 双链语法、解析时机、页面匹配、UI 交互           |
+| UI/UX 规范 | `docs/ui-ux-spec.md`  | 视觉系统、布局、组件、交互状态               |
 
 ***
 

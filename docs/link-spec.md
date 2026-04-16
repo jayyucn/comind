@@ -1,8 +1,8 @@
 # Link 解析规范
 
-> 版本：v0.1
+> 版本：v0.2
 > 日期：2026-04-16
-> 状态：草案，待评审
+> 状态：✅ 已确认（与 data-model.md、SPEC.md 保持一致）
 
 ---
 
@@ -184,14 +184,16 @@ async function saveBlockLinks(blockId: string, links: ParsedLink[]): Promise<voi
     await db.links.where('sourceBlockId').equals(blockId).delete()
 
     // 2. 插入新记录
-    const now = new Date().toISOString()
+    // IndexedDB schema: createdAt 存 number 时间戳；转换由 adapter 层处理
+    const createdAt = Date.now()
     for (const link of links) {
       await db.links.add({
         sourceBlockId: blockId,
         targetPageId: link.targetPageId,
         displayText: link.displayText,
+        position: link.position?.start,
         linkType: link.isExternal ? 'external' : 'internal',
-        createdAt: now
+        createdAt
       })
     }
   })
@@ -201,11 +203,11 @@ async function saveBlockLinks(blockId: string, links: ParsedLink[]): Promise<voi
 ### 5.3 索引设计
 
 ```typescript
-// 参见 storage-spec.md
+// 与 storage-spec.md §0 和 data-model.md SQLite DDL 保持一致
 db.version(1).stores({
-  blocks: 'id, parentId, pageId, order, createdAt, updatedAt',
-  pages: 'id, title, createdAt, updatedAt',  // alias 暂不建索引
-  links: '++id, sourceBlockId, targetPageId'
+  blocks: 'id, parentId, pageId, left, createdAt, updatedAt',
+  pages: 'id, title, createdAt, updatedAt',
+  links: '++id, sourceBlockId, targetPageId, linkType'
 })
 ```
 

@@ -20,6 +20,10 @@
 
 ```typescript
 // IndexedDB + Dexie.js 设计
+// 字段名与 data-model.md 保持一致
+// - createdAt/updatedAt 存 ISO 8601 string（内存格式）
+// - properties 存 JSON string（与 SQLite 层一致）
+// - IndexedDB 内部时间戳用于排序，转换逻辑在 adapter 层处理
 import Dexie, { Table } from 'dexie'
 
 export interface BlockRecord {
@@ -27,17 +31,20 @@ export interface BlockRecord {
   content: string
   parentId: string | null
   pageId: string
-  order: number
-  createdAt: number
-  updatedAt: number
+  left: number            // 同级排序位置（与 data-model.md 一致）
+  createdAt: number       // IndexedDB 内部存 number 时间戳，adapter 负责与 ISO string 互转
+  updatedAt: number       // 同上
+  isPage: boolean
+  title?: string
+  properties?: string    // JSON 字符串（与 data-model.md 一致）
   folded?: boolean
 }
 
 export interface PageRecord {
   id: string
   title: string
-  createdAt: number
-  updatedAt: number
+  createdAt: number       // number 时间戳
+  updatedAt: number       // number 时间戳
 }
 
 export interface LinkRecord {
@@ -45,7 +52,8 @@ export interface LinkRecord {
   sourceBlockId: string
   targetPageId: string | null
   displayText?: string
-  linkType: 'internal' | 'external'
+  position?: number       // 链接在 sourceBlock.content 中的字符偏移（与 data-model.md 一致）
+  linkType: 'internal' | 'external'  // 内部双链 vs 外部 URL（与 data-model.md 一致）
   createdAt: number
 }
 
@@ -57,7 +65,7 @@ export class ComindDB extends Dexie {
   constructor() {
     super('comind')
     this.version(1).stores({
-      blocks: 'id, parentId, pageId, order, createdAt, updatedAt',
+      blocks: 'id, parentId, pageId, left, createdAt, updatedAt',
       pages: 'id, title, createdAt, updatedAt',
       links: '++id, sourceBlockId, targetPageId, linkType'
     })
@@ -67,9 +75,12 @@ export class ComindDB extends Dexie {
 
 **Phase 1 → Phase 2 迁移路径：**
 
-1. Phase 1 实现 `IndexedDBAdapter`（基于 Dexie，见 `tech-selection.md`）
-2. Phase 2 抽象 `StorageAdapter` 接口
-3. Phase 2 实现 `MarkdownSQLiteAdapter`（本规范）
+1. Phase 1 实现 `IndexedDBAdapter`（基于 Dexie）
+   - 字段名与 `data-model.md` 对齐：`left`（排序）、ISO 8601 string（时间）、JSON string（properties）
+   - IndexedDB 内部用 number 时间戳，adapter 负责转换
+   - 详见本节上方 Phase 1 摘要代码
+2. Phase 2 抽象 `StorageAdapter` 接口（定义统一的 CRUD 契约）
+3. Phase 2 实现 `SQLiteAdapter`（本规范 §4 SQLite 表结构）
 4. 提供迁移工具：IndexedDB → Markdown + SQLite
 
 ***

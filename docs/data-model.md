@@ -204,17 +204,11 @@ code#123                       ← 排除：代码片段
 解析后：
 - 标签：`数据模型`、`笔记工具`、`设计`
 
-**性能优化路径（遇问题时升级）：**
+**Phase 2 升级路径（性能优化）：**
 
-当按标签查询的性能无法满足需求时，迁移到 Tag 表：
+当按标签查询的性能无法满足需求时，迁移到 Tag 表。详见 `tag-spec.md`（含 Phase 2 SQLite DDL、解析器实现、UI 交互规范）。
 
-```
-Tag
-├── id          UUID
-├── blockId     UUID
-├── name        TEXT
-└── createdAt   TIMESTAMP
-```
+**迁移时机：** Phase 1 暂不使用 Tag 表，Tag 仅从 `Block.content` 解析不持久化；当出现 500+ Tag 或高频 Tag 查询需求时再引入 Tag 表。
 
 ---
 
