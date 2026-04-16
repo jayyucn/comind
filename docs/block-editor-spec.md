@@ -99,17 +99,29 @@
 
 ```ts
 type Block = {
-  // todo - 引用 data-model.md
+  id: string              // UUID v4
+  content: string         // Block 原始文本内容
+  parentId: string | null // 父 Block ID，null = 顶级
+  pageId: string          // 所属 Page ID
+  left: number            // 同级排序位置（初始间隔 100）
+  createdAt: string       // ISO 8601 时间戳
+  updatedAt: string       // ISO 8601 时间戳
+  isPage: boolean         // 是否为 Page Block
+  title?: string          // 页面标题（仅 isPage=true 时）
+  properties?: Record<string, any>  // 属性对象
 }
 ```
 
 ### Page
 
 ```ts
-type Page = {
-  // todo - 引用 data-model.md
+type Page = Block & {
+  isPage: true
+  title: string
 }
 ```
+
+**说明：** Page 本质上是 `isPage=true` 的 Block，详细字段定义见 `data-model.md` §3.1。
 
 ### 编辑器状态
 

@@ -125,6 +125,7 @@ Link
 ├── targetPageId    UUID        链接目标 Page（Block.id）
 ├── displayText     TEXT | NULL 链接显示文本（默认 = targetPage.title，即 [[标题]] 形式）
 ├── position        INTEGER | NULL  链接在 sourceBlock.content 中的字符位置
+├── linkType        TEXT        链接类型：'internal' | 'external'
 └── createdAt       TIMESTAMP   创建时间
 ```
 
@@ -136,6 +137,7 @@ Link
 | `targetPageId` | 链接指向的目标 Page。聚合查询在此字段 |
 | `displayText` | 链接的显示文本。`[[页面名]]` 时为"页面名"；`[[目标|别名]]` 时为"别名"；未指定时为 targetPage.title |
 | `position` | 链接文字在 Block.content 中的起始字符位置（可选，支持锚点定位） |
+| `linkType` | 链接类型。`internal` = 内部双链 `[[...]]`；`external` = 外部 URL |
 
 **来源：**
 
@@ -455,6 +457,7 @@ CREATE INDEX idx_block_isPage    ON Block(isPage);
 CREATE INDEX idx_block_filePath  ON Block(filePath);
 CREATE INDEX idx_link_target     ON Link(targetPageId);
 CREATE INDEX idx_link_source     ON Link(sourceBlockId);
+CREATE INDEX idx_link_type       ON Link(linkType);
 ```
 
 ---

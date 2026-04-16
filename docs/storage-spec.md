@@ -1,6 +1,6 @@
 # 存储格式规范
 
-> 版本：v0.4
+> 版本：v0.5
 > 日期：2026-04-16
 > 状态：评审完成，已确认
 
@@ -12,28 +12,65 @@
 
 | Phase       | 存储方案                        | 适用文档                          |
 | ----------- | --------------------------- | ----------------------------- |
-| **Phase 1** | LocalStorage（纯 Web）         | 见 `tech-selection.md` 第 4.5 节 |
+| **Phase 1** | IndexedDB（Dexie.js）          | 见 `tech-selection.md` 第 4.5 节 |
 | **Phase 2** | Markdown + SQLite（Core 层抽离） | 本文档                           |
 | **Phase 3** | Markdown + SQLite（Tauri 原生） | 本文档                           |
 
 **Phase 1 存储方案摘要：**
 
 ```typescript
-// LocalStorage key 设计
-const STORAGE_KEYS = {
-  BLOCKS: 'comind:blocks',      // 所有 Block 数据（JSON 序列化）
-  PAGES: 'comind:pages',        // Page 列表（Block ID 集合）
-  LINKS: 'comind:links',        // 链接关系（可选，Phase 1 可从 Block 中解析）
-  SETTINGS: 'comind:settings',  // 用户设置
+// IndexedDB + Dexie.js 设计
+import Dexie, { Table } from 'dexie'
+
+export interface BlockRecord {
+  id: string
+  content: string
+  parentId: string | null
+  pageId: string
+  order: number
+  createdAt: number
+  updatedAt: number
+  folded?: boolean
+}
+
+export interface PageRecord {
+  id: string
+  title: string
+  createdAt: number
+  updatedAt: number
+}
+
+export interface LinkRecord {
+  id?: number
+  sourceBlockId: string
+  targetPageId: string | null
+  displayText?: string
+  linkType: 'internal' | 'external'
+  createdAt: number
+}
+
+export class ComindDB extends Dexie {
+  blocks!: Table<BlockRecord, string>
+  pages!: Table<PageRecord, string>
+  links!: Table<LinkRecord, number>
+
+  constructor() {
+    super('comind')
+    this.version(1).stores({
+      blocks: 'id, parentId, pageId, order, createdAt, updatedAt',
+      pages: 'id, title, createdAt, updatedAt',
+      links: '++id, sourceBlockId, targetPageId, linkType'
+    })
+  }
 }
 ```
 
 **Phase 1 → Phase 2 迁移路径：**
 
-1. Phase 1 实现 `LocalStorageAdapter`（见 `tech-selection.md`）
+1. Phase 1 实现 `IndexedDBAdapter`（基于 Dexie，见 `tech-selection.md`）
 2. Phase 2 抽象 `StorageAdapter` 接口
 3. Phase 2 实现 `MarkdownSQLiteAdapter`（本规范）
-4. 提供迁移工具：LocalStorage → Markdown + SQLite
+4. 提供迁移工具：IndexedDB → Markdown + SQLite
 
 ***
 
@@ -257,6 +294,7 @@ CREATE INDEX idx_block_isPage   ON Block(isPage);
 CREATE INDEX idx_block_filePath ON Block(filePath);
 CREATE INDEX idx_link_target    ON Link(targetPageId);
 CREATE INDEX idx_link_source    ON Link(sourceBlockId);
+CREATE INDEX idx_link_type      ON Link(linkType);
 ```
 
 **新增字段说明：**
