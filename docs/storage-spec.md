@@ -1,8 +1,8 @@
 # 存储格式规范
 
-> 版本：v0.2
+> 版本：v0.3
 > 日期：2026-04-16
-> 状态：已确认
+> 状态：评审完成，已确认
 
 ---
 
@@ -125,6 +125,31 @@ Page Block（isPage=true）         # 页面标题                    ← H1 = �
 
 **Block 内不存缩进信息**，层级完全由标题级别决定。
 
+**Block.content 的边界规则：**
+
+- Block = 标题行 + 后续正文，直到下一个同级或更高级标题出现
+- 标题行本身（去除 `#` 后的文字）不计入 Block.content
+- 无子节点的 Block：标题行 + 正文段落到下一个同级标题为止
+
+**示例：**
+
+```markdown
+# 数据模型设计                    ← Page Block（H1）：content = ""
+## Block A 内容                  ← Block A（H2）：content = "Block A 内容"
+这是 Block A 的后续正文
+### Block B 内容                 ← Block B（H3）：content = "Block B 内容"
+Block B 的正文段落
+### Block C 内容                 ← Block C（H3）：content = "Block C 内容"
+## Block D                       ← Block D（H2）：content = "Block D"
+```
+
+解析后各 Block.content：
+- Page：`""`
+- Block A：`"这是 Block A 的后续正文"`
+- Block B：`"Block B 的正文段落"`
+- Block C：`""`
+- Block D：`""`
+
 ### 3.3 多行 Block
 
 Block 内容跨越多行时，使用 Markdown 引用块（`>`）或缩进段落：
@@ -183,13 +208,12 @@ CREATE TABLE Block (
 CREATE TABLE Link (
     id              TEXT PRIMARY KEY,
     sourceBlockId   TEXT NOT NULL,
-    targetPageId    TEXT NOT NULL,
+    targetPageId    TEXT,              -- 内部链接指向 Page.id；外部链接时 NULL
     displayText     TEXT,              -- 链接显示文本；NULL 时用 targetPage.title
     position        INTEGER,           -- 链接在 sourceBlock.content 中的字符偏移
     linkType        TEXT NOT NULL DEFAULT 'internal',  -- 'internal' | 'external'
-    createdAt       TEXT NOT NULL,
-    FOREIGN KEY (sourceBlockId) REFERENCES Block(id),
-    FOREIGN KEY (targetPageId)  REFERENCES Block(id)
+    createdAt       TEXT NOT NULL,     -- ISO 8601
+    FOREIGN KEY (sourceBlockId) REFERENCES Block(id)
 );
 
 -- 常用索引
@@ -218,60 +242,52 @@ CREATE INDEX idx_link_source    ON Link(sourceBlockId);
 
 ---
 
-## 5. 多 Page 文件规范
+## 5. 日志（Journal）规范
 
-### 5.1 概念
+### 5.1 设计原则
 
-多个 Page Block 写入同一个 Markdown 文件。主要场景：
-
-- **日志页面（Journal）**：每天一页，所有日志条目都在同一个文件中
-- **分类汇总页**：同一主题下的多个 Page 聚合在一个文件
+日志遵循"**一个条目 = 一个 Page = 一个文件**"的原则，与普通 Page 完全一致。
 
 ### 5.2 文件命名
 
-多 Page 文件使用固定前缀区分：
+日志文件以 `日志_` 前缀区分：
 
 ```
-journal__2026-04.md          ← 日志文件（所有 2026 年 4 月日志）
-journal__2026-04-16.md       ← 精确到天的日志文件
+日志_20260416T000000.md      ← 2026年4月16日的日志页
+日志_20260417T000000.md      ← 2026年4月17日的日志页
 ```
 
-`__`（双下划线）前缀标识该文件为多 Page 文件。
+日志文件同样存于 `pages/` 目录，与普通 Page 共用同一命名空间和文件命名规则（标题 + 时间戳）。
 
-### 5.3 多 Page 文件的结构
+### 5.3 日志文件的 Page 属性
+
+日志 Page 使用 `journal-date` 属性标识日期：
 
 ```markdown
 ---
-page:: 日志
-date:: 2026-04-16
+journal-date:: 2026-04-16
+type:: journal
 ---
 
-# 2026-04-16
 ## 上午
 状态:: 进行中
 开始数据模型设计
 
 ## 下午
 完成文档初稿
-
----
-
-# 2026-04-17
-## 上午
-评审文档
-
-## 下午
-存储格式规范
 ```
 
-**文件结构说明：**
-- `---` 分隔的 Page Properties：适用于整个文件的元数据
-- `---` 分隔的 Page 边界：同一个 H1（`#`）表示一个 Page Block
-- 相邻 `---` 之间为一个 Page 的完整 Block 树
+| 属性 | 值 | 说明 |
+|------|-----|------|
+| `journal-date` | `YYYY-MM-DD` | 日志条目日期，用于日历视图 |
+| `type` | `journal` | 标识为日志类型（可选，辅助分类） |
+| `title` | 可选 | 日志标题，默认为日期 |
 
-**注意：**
-- 多 Page 文件中，顶级 H1（`#`）是 Page Block，`##` 及以下是 Bullet Block
-- 普通文件（单 Page）中，H1 是 Page Block；多 Page 文件中，H1 是日志条目（也是 Page Block）
+### 5.4 日志索引页（待实现）
+
+日志列表（如"4月所有日志"）是一个普通的 Page，通过属性筛选或链接聚合展示。
+
+多 Page 文件（`---` 分隔符支持多 Page 在同一文件内）暂不支持，留待后续迭代。
 
 ---
 
@@ -346,6 +362,7 @@ assets/
 | 文件监听 | 外部编辑器修改文件时的实时监听方案（inotify / FSEvents） |
 | 加密存储 | 特定 Page 或文件级别的加密方案 |
 | 全文搜索 | SQLite FTS vs 外部搜索引擎的选型 |
+| 多 Page 文件 | `---` 分隔符支持多 Page 在同一 Markdown 文件内，暂不支持 |
 
 ---
 

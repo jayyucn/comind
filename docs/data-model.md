@@ -1,6 +1,6 @@
 # 数据模型设计文档
 
-> 版本：v0.2
+> 版本：v0.3
 > 日期：2026-04-16
 > 状态：评审完成，已修正
 
@@ -201,13 +201,6 @@ code#123                       ← 排除：代码片段
 
 解析后：
 - 标签：`数据模型`、`笔记工具`、`设计`
-
-**示例：**
-
-```markdown
-#数据模型 #笔记工具
-这是 Block 正文，包含 #设计 相关的讨论
-```
 
 **性能优化路径（遇问题时升级）：**
 
@@ -439,27 +432,29 @@ CREATE TABLE Block (
     updatedAt   TEXT NOT NULL,        -- ISO 8601
     isPage      INTEGER NOT NULL DEFAULT 0,  -- 1 = Page Block，0 = Bullet
     title       TEXT,                  -- 页面显示名称，isPage = 1 时有效
-    properties  TEXT                  -- JSON 字符串，建议不超过 4KB
+    properties  TEXT,                  -- JSON 字符串，建议不超过 4KB
+    filePath    TEXT                   -- 对应 Markdown 文件的相对路径
 );
 
 CREATE TABLE Link (
     id              TEXT PRIMARY KEY,
     sourceBlockId   TEXT NOT NULL,
-    targetPageId    TEXT NOT NULL,
+    targetPageId    TEXT,              -- 内部链接指向 Page.id；外部链接时 NULL
     displayText     TEXT,              -- 链接显示文本；NULL 时用 targetPage.title
     position        INTEGER,           -- 链接在 sourceBlock.content 中的字符偏移
+    linkType        TEXT NOT NULL DEFAULT 'internal',  -- 'internal' | 'external'
     createdAt       TEXT NOT NULL,     -- ISO 8601
-    FOREIGN KEY (sourceBlockId) REFERENCES Block(id),
-    FOREIGN KEY (targetPageId)  REFERENCES Block(id)
+    FOREIGN KEY (sourceBlockId) REFERENCES Block(id)
 );
 
 -- 常用索引
 CREATE INDEX idx_block_pageId    ON Block(pageId);
-CREATE INDEX idx_block_parentId   ON Block(parentId);
-CREATE INDEX idx_block_left       ON Block(parentId, "left");
-CREATE INDEX idx_block_isPage     ON Block(isPage);
-CREATE INDEX idx_link_target      ON Link(targetPageId);
-CREATE INDEX idx_link_source      ON Link(sourceBlockId);
+CREATE INDEX idx_block_parentId  ON Block(parentId);
+CREATE INDEX idx_block_left      ON Block(parentId, "left");
+CREATE INDEX idx_block_isPage    ON Block(isPage);
+CREATE INDEX idx_block_filePath  ON Block(filePath);
+CREATE INDEX idx_link_target     ON Link(targetPageId);
+CREATE INDEX idx_link_source     ON Link(sourceBlockId);
 ```
 
 ---
@@ -474,7 +469,6 @@ CREATE INDEX idx_link_source      ON Link(sourceBlockId);
 | 版本历史 | 是否支持 Block 级别的历史版本回溯 |
 | 全文搜索 | 使用 SQLite FTS 还是独立的搜索引擎 |
 | 插件/扩展 | 自定义属性系统是否需要 Schema 约束 |
-| File / Page / Block 映射 | 一个 Page 对应一个文件还是多个？一个文件内可以有多个 Page 吗？ |
 | 归档 / 加密 | Page 或 Block 是否支持加密、归档、打标签等文件级元数据 |
 
 ---
