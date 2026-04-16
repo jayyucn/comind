@@ -1,421 +1,534 @@
 # comind UI/UX 规范
 
-> 版本：v0.3
+> 版本：v0.5
 > 日期：2026-04-16
 > 状态：✅ 评审完成，已确认
 
 ---
 
-## 1. 设计原则
+## 设计哲学
 
-### 1.1 Phase 1 设计哲学
+### 概念方向：墨水与纸张
 
-> **功能优先，极简美学。** Phase 1 不追求视觉丰富，只追求：
-> - 结构清晰：层级关系一眼可辨
-> - 状态明确：编辑态/展示态/折叠态界限分明
-> - 极低干扰：UI 不抢夺注意力，让内容成为焦点
+> comind 的核心隐喻是**墨水落在纸上**——内容是主角，结构是纸张的折痕，工具隐入背景。
+>
+> 不追求"App 感"，追求"书写感"。
 
-### 1.2 核心原则
+具体来说：
 
-- **结构 > 样式**：层级关系通过缩进和视觉层次表达，不依赖颜色
-- **所见即所得**：Block 内容即核心，装饰性 UI 最小化
-- **一致性**：所有状态有唯一视觉表达，不存在歧义
-
----
-
-## 2. 整体布局
-
-### 2.1 页面结构
-
-```
-┌─────────────────────────────────────────────────────────┐
-│  Header（Phase 1 省略，Phase 1.1 考虑）                  │
-├──────────────┬──────────────────────────────────────────┤
-│              │                                          │
-│   Sidebar    │            Main Content                  │
-│   (Page 列表) │         (Block 树 + 编辑器)             │
-│              │                                          │
-│   240px      │            flex: 1                       │
-│   可折叠      │                                          │
-│              │                                          │
-└──────────────┴──────────────────────────────────────────┘
-
-Page 内容 + Backlinks Section（内嵌在 Page 底部，随页面滚动）
-```
-
-### 2.2 响应式策略
-
-- **Phase 1 桌面优先**（最小宽度 1024px）
-- 移动端 Phase 2/3 考虑，不在 Phase 1 范围
-- Sidebar 在窄屏时可折叠（toggle 按钮）
-
-### 2.3 布局约束
-
-| 区域 | 约束 |
-|------|------|
-| Sidebar 宽度 | 固定 240px（可折叠至 0px） |
-| Block 内容区 | flex: 1，最大宽度 800px（居中显示） |
-| Header | Phase 1 省略，Phase 1.1 考虑 |
+- **质地优先于装饰**：用纸张纹理和墨水深浅表达层级，而非颜色区块
+- **静谧**：整体低对比度，让链接、标签、折叠状态从内容中自然浮现
+- **精准**：每个交互有明确的视觉反馈，不模糊
 
 ---
 
-## 3. 组件清单
+## 视觉系统
 
-### 3.1 Sidebar（侧边栏）
+### 调色板
 
-**定位：** Page 导航区域。
-
-**内容：**
-- 当前工作区标题（"comind"）
-- 新建页面按钮（"+" 或 "新建页面"）
-- Page 列表（按字母/修改时间排序）
-- Journal 入口（Phase 1.1 考虑）
-
-> **Phase 1 不实现 Sidebar 搜索功能。**
-
-**Page 列表项：**
+> 不依赖 Tailwind 默认色，每组颜色有冷暖一致性。
 
 ```
-┌─────────────────────────┐
-│ 📄 页面标题             │
-│    最后修改时间         │
-└─────────────────────────┘
+背景层级：
+  --bg-base:        #FAFAF8   /* 主内容区背景，温润的米白，非刺眼纯白 */
+  --bg-sidebar:      #F3F2EE   /* Sidebar 背景，稍暖的灰 */
+  --bg-hover:        #EEEDE9   /* Hover 态背景 */
+  --bg-active:       #E8E7E3   /* Active / 已选中背景 */
+
+文字层级：
+  --text-primary:    #1C1917   /* 主文字，暖近黑（不是 #000000） */
+  --text-secondary:   #78716C   /* 次要文字，时间戳、占位符 */
+  --text-tertiary:   #A8A29E   /* 最低层级，如层级线、禁用态 */
+
+边框层级：
+  --border:          #E5E4DF   /* 分割线、容器边框 */
+  --border-strong:   #C9C8C3   /* 强分割，折叠图标区域 */
+
+交互色：
+  --accent:          #B45309   /* 主强调色，琥珀深橙，非典型蓝，有书卷气 */
+  --accent-hover:    #92400E   /* 强调色 hover */
+  --accent-subtle:   #FEF3C7   /* 强调色浅底，用于当前 Block 高亮 */
+
+链接：
+  --link:            #1D4ED8   /* 链接蓝，相对沉稳 */
+  --link-hover:      #1E40AF   /* 链接 hover */
+
+标签：
+  --tag-text:        #047857   /* 标签文字，墨绿 */
+  --tag-bg:          #ECFDF5   /* 标签背景薄荷绿 */
+
+功能色（Phase 1 暂不需要，可预留）：
+  --success:         #059669
+  --warning:         #D97706
+  --error:           #DC2626
 ```
 
-**状态：**
-- Default：背景透明，文字 #333
-- Hover：背景 #f5f5f5
-- Active（当前页面）：背景 #e8f0fe，左边框 accent 颜色
-
-**交互：**
-- 点击 → 打开对应 Page
-- 右键 → Phase 2/3 考虑（重命名、删除），Phase 1 暂不实现
-
-### 3.2 BlockList（Block 列表）
-
-**定位：** 主内容区主体，显示当前 Page 的 Block 树。
-
-**结构：**
+### 字体系统
 
 ```
-Block 1（顶级 Page Block = 页面标题）
-  Block 1.1（子 Block）
-    Block 1.1.1（孙 Block）
-  Block 1.2（子 Block）
-Block 2（顶级 Bullet）
-  ...
+正文 / 内容（所有 Block 内文字）：
+  字体：Noto Sans SC（中文）+ Geist（西文）
+  大小：15px
+  字重：400
+  行高：1.75（宽松行高，outliner 内容可读性优先）
+
+页面标题（Page Block 内容，isPage=true 的 Block）：
+  字体：Noto Sans SC + Geist
+  大小：20px
+  字重：600
+  行高：1.4
+
+Sidebar 标题：
+  字体：同正文
+  大小：13px
+  字重：500
+  字间距：0.05em（微微拉开，更有标题感）
+
+Sidebar 副文字（时间戳等）：
+  大小：12px
+  字重：400
+  颜色：--text-secondary
+
+Placeholder / 占位符：
+  字体：同正文
+  颜色：--text-tertiary
+  斜体
+
+标签文字：
+  大小：13px
+  字重：500
+
+快捷键标注（Phase 1.1 考虑）：
+  字体：JetBrains Mono
+  大小：11px
+  背景：--bg-hover
+  padding: 2px 5px
+  border-radius: 3px
 ```
 
-**Block 树渲染规则：**
+> **为什么不只用 system-ui？**
+> system-ui 在不同系统表现不一致（macOS 苹方 / Windows Segoe UI / Ubuntu 系统字体），无法控制字间距和渲染风格。Phase 1 通过 npm 引入字体，Google Fonts CDN 加载，保证所有用户看到一致的排版。
+>
+> Noto Sans SC：Google 开源，汉字覆盖最全，视觉中性不抢戏。
+> Geist：Vercel 开源，比 Inter 更有个性，数字和英文渲染优秀。
+
+### 间距系统
 
 ```
-每个 Block 的缩进 = level * 24px
+单位：4px 基准网格
 
-展开态：显示所有子 Block
-折叠态：只显示当前 Block，子 Block 隐藏
+Block 垂直间距：      2px  （紧密大纲感）
+Block 左缩进（每级）：  24px
+Sidebar 内边距：        12px（3 单位）
+Sidebar 项目间距：      2px  （紧凑列表）
+Sidebar 折叠图标宽：    16px
+Block 操作区宽度：      40px（折叠图标 + 拖拽手柄）
+Backlinks 内边距：     16px
+主内容区左右边距：      自适应（Sidebar 240px 固定，剩余居中）
+主内容最大宽度：        无上限（内容撑满，Sidebar 外区域全部利用）
 ```
 
-### 3.3 Block（单个 Block）
+> **关键变更：去掉了 800px max-width。** 内容密集型工具不应人为压窄，Sidebar 固定 240px 后主内容区自然达到 900-1200px（取决于屏幕宽度）。
 
-**结构：**
+### 动效哲学
 
-```
-┌────────────────────────────────────────────────────────┐
-│ [折叠图标] [拖拽手柄] Block 内容 / 编辑器                │
-│           [缩进层级线]                                  │
-└────────────────────────────────────────────────────────┘
-```
+> **克制、真实、有目的。**
 
-**组成部分：**
-
-| 元素 | 说明 |
-|------|------|
-| 折叠图标 | 有子 Block 时显示（▶ 折叠 / ▼ 展开）；无子 Block 时隐藏 |
-| 拖拽手柄 | 始终显示，hover 时高亮，拖拽时显示放置指示线 |
-| 缩进层级线 | 每个缩进层级一条竖线，颜色随层级递减 |
-| Block 内容 | 展示态：静态 HTML；编辑态：tiptap 输入框 |
-
-**Block 展示态（Display）：**
+动画服务于确认，不服务于好看。
 
 ```
-┌────────────────────────────────────────────────────────┐
-│ ▶ ⋮⋮ Block 内容文字，包含 #标签（高亮）                │
-│ ▶    和 [[链接]]（蓝色可点击）                          │
-└────────────────────────────────────────────────────────┘
-```
+折叠/展开（Block 子节点隐藏/显示）：
+  property: max-height
+  duration: 180ms
+  easing: cubic-bezier(0.4, 0, 0.2, 1)
+  （比 ease 更自然的减速）
 
-**Block 编辑态（Edit）：**
+Sidebar 折叠/展开：
+  property: width
+  duration: 200ms
+  easing: cubic-bezier(0.4, 0, 0.2, 1)
 
-```
-┌────────────────────────────────────────────────────────┐
-│    ⋮⋮ [tiptap 输入框，内容="Block 内容文字"]            │
-└────────────────────────────────────────────────────────┘
-```
+Backlinks 折叠/展开：
+  property: max-height
+  duration: 180ms
+  easing: cubic-bezier(0.4, 0, 0.2, 1)
 
-**Block 状态定义：**
+编辑器挂载（Block 进入编辑态）：
+  property: border-color, background-color
+  duration: 80ms
+  easing: ease
+  （极快，感觉像是"就在这里编辑"）
 
-| 状态 | 视觉表达 |
-|------|---------|
-| Default（展示态） | 背景透明，文字 #1a1a1a |
-| Hover（展示态） | 背景 #fafafa |
-| Active（编辑态） | 背景 #fff，左边框 2px accent 蓝色边框 |
-| Dragging（拖拽中） | 背景 #f0f4ff，opacity: 0.8，放置位置显示蓝色横线 |
-| Drop Target（放置目标） | 放置位置显示 2px accent 蓝色横线 |
+拖拽放置指示线：
+  无动画，instant 出现/消失（符合直觉：放置即确定）
 
-**层级线规则：**
+Hover 态：
+  无过渡，instant（outliner 操作频繁，延迟感会累积）
 
-```
-level 1 Block：无层级线
-level 2 Block：1 条竖线
-level 3 Block：2 条竖线
-...以此类推
-```
-
-竖线颜色随层级递减：#d0d0d0 → #e8e8e8 → #f0f0f0（最深层级线几乎不可见）
-
-### 3.4 Editor（tiptap 编辑器封装）
-
-**定位：** 当 Block 处于编辑态时，替换内容区为 tiptap 实例。
-
-**规则：**
-
-- 只在 active Block 上挂载
-- 仅在 activeBlockId 对应的 Block 内渲染
-- 其余 Block 保持展示态
-
-**Placeholder（空 Block 提示）：**
-
-```
-输入文字，或使用 [[链接]] 或 #标签 ...
-```
-
-**输入框样式：**
-
-```css
-{
-  outline: none;
-  border: none;
-  background: transparent;
-  font-size: 15px;
-  line-height: 1.6;
-  color: #1a1a1a;
-  min-height: 24px;
-  padding: 0;
-  font-family: inherit;
-}
-```
-
-### 3.5 Backlinks Section（反向链接区）
-
-**定位：** 内嵌在 Page 内容底部，**随页面自然滚动**，非固定高度独立面板。
-
-> 参考 Logseq 的内嵌反向链接区实现：位于 Page 最后一个 Block 之后，作为一个可折叠的 Block 区块存在。
-
-**结构：**
-
-```
-┌────────────────────────────────────────────────────────┐
-│                                                        │
-│   [Page 内所有 Block 内容...]                          │
-│                                                        │
-│   ┌──────────────────────────────────────────────────┐ │
-│   │ 🔗 反向链接 (3)                            [折叠] │ │
-│   ├──────────────────────────────────────────────────┤ │
-│   │ 📄 页面 A                                          │ │
-│   │   "参考了 [[存储规范]]，详细内容见..."             │ │
-│   │                                           [跳转]  │ │
-│   ├──────────────────────────────────────────────────┤ │
-│   │ 📄 页面 B                                          │ │
-│   │   "[[存储规范]] 的实现方案..."                     │ │
-│   └──────────────────────────────────────────────────┘ │
-└────────────────────────────────────────────────────────┘
-```
-
-**行为：**
-
-- 展示当前 Page 的所有反向链接（来自 Link 表，targetPageId = 当前 Page.id）
-- 每条显示：来源 Page 标题 + Block 内容预览（截断至约 80 字）+ 跳转按钮
-- 无反向链接时显示："暂无反向链接"
-- 可折叠（收起后只显示标题行）
-- 随 Page 内容自然滚动，**非固定高度**
-
-**与 Logseq 的差异（Phase 1 简化）：**
-- 不显示引用块引用层级（Phase 2/3 考虑）
-- 不支持反向链接内直接编辑（Phase 2/3 考虑）
-
-### 3.6 Drag Handle（拖拽手柄）
-
-**定位：** 每个 Block 左侧，折叠图标旁边。
-
-**样式：**
-- 宽度：16px
-- 内容：6 个点（⋮⋮）或拖拽横线
-- Default：透明度 0（不可见）
-- Hover Block：透明度 0.3
-- Hover 手柄本身：透明度 0.6，cursor: grab
-
-**放置指示线：**
-
-```
-- 放置在 Block 之前：蓝色横线出现在 Block 上方
-- 放置在 Block 之下：蓝色横线出现在 Block 下方
-- 放置为子 Block：缩进 + 蓝色横线
+Focus Ring（键盘导航焦点）：
+  无动画
+  样式：2px solid --accent，offset 2px，border-radius 3px
 ```
 
 ---
 
-## 4. 视觉规范
+## 布局
 
-### 4.1 颜色系统
-
-| 用途 | 色值 |
-|------|------|
-| 正文文字 | #1a1a1a |
-| 次要文字（时间戳等） | #888888 |
-| 页面标题 | #1a1a1a，字重 600 |
-| 链接文字 | #2563eb（蓝色） |
-| 链接 hover | #1d4ed8 |
-| 标签文字 | #059669（绿色） |
-| 标签背景 | #ecfdf5 |
-| 边框 / 分割线 | #e5e5e5 |
-| 背景（主内容） | #ffffff |
-| 背景（Sidebar） | #fafafa |
-| 背景（Block hover） | #fafafa |
-| 背景（编辑态 Block） | #ffffff + 左侧 accent 边框 |
-| 背景（拖拽中） | #eff6ff |
-| Accent 主色 | #2563eb（蓝色） |
-| 层级线 | #e0e0e0（最深层递减至 #f0f0f0） |
-
-### 4.2 字体系统
-
-| 用途 | 字体 | 大小 | 字重 | 行高 |
-|------|------|------|------|------|
-| Page 标题 | system-ui, sans-serif | 18px | 600 | 1.4 |
-| Block 内容 | system-ui, sans-serif | 15px | 400 | 1.6 |
-| Sidebar Page 标题 | system-ui, sans-serif | 14px | 400 | 1.4 |
-| Sidebar 副文字 | system-ui, sans-serif | 12px | 400 | 1.4 |
-| 链接 | system-ui, sans-serif | 15px | 400 | 1.6，蓝色 |
-| 标签 | system-ui, sans-serif | 13px | 500 | 1.6，绿色 |
-| Placeholder | system-ui, sans-serif | 15px | 400 | 1.6，#aaaaaa |
-
-### 4.3 间距系统
-
-| 用途 | 间距 |
-|------|------|
-| Block 垂直间距 | 2px |
-| Block 水平缩进（每级） | 24px |
-| Sidebar 内边距 | 12px |
-| Sidebar 项目间距 | 4px |
-| Backlinks Section 内边距 | 12px |
-| 主内容区左右边距 | 80px |
-| 主内容区最大宽度 | 800px（居中） |
-
-### 4.4 过渡与动画
-
-| 场景 | 过渡 |
-|------|------|
-| Block 折叠/展开 | CSS max-height transition，200ms ease |
-| Backlinks Section 折叠/展开 | CSS max-height transition，200ms ease |
-| Sidebar 折叠/展开 | CSS width transition，200ms ease |
-| Hover 状态 | 无动画（instant） |
-| 编辑器挂载/销毁 | 无动画（instant） |
-| 拖拽放置线 | 无动画（instant） |
-
----
-
-## 5. 空状态
-
-### 5.1 无 Page（Sidebar 空）
+### 页面结构
 
 ```
-┌──────────────────────────┐
-│  comind                  │
-├──────────────────────────┤
-│                          │
-│    暂无页面               │
-│    [创建第一个页面]        │
-│                          │
-└──────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                                                              │
+│   ┌──────────┐ ┌────────────────────────────────────────┐  │
+│   │ Sidebar  │ │                                        │  │
+│   │  240px   │ │           Main Content                  │  │
+│   │  固定     │ │           自适应宽度                    │  │
+│   │          │ │                                        │  │
+│   │  ──────  │ │                                        │  │
+│   │          │ │                                        │  │
+│   └──────────┘ └────────────────────────────────────────┘  │
+│                ← Backlinks Section（内嵌，随页面滚动）→     │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-### 5.2 Page 内无 Block（BlockList 空）
-
-```
-Page 内无任何 Block 时：
-- 自动创建 1 个空 Block，插入当前 Page
-- 空 Block 处于编辑态，光标自动落入
-- Placeholder: "输入文字开始..."
-```
-
----
-
-## 6. 快捷键映射
-
-| 快捷键 | 行为 | 触发条件 |
-|--------|------|---------|
-| `Enter` | 拆分 Block | 编辑态，光标在 Block 中间或末尾 |
-| `Backspace` | 合并 Block | 编辑态，光标在 Block 开头 |
-| `Tab` | 缩进 | 编辑态 或 展示态（通过快捷键） |
-| `Shift + Tab` | 反缩进 | 编辑态 或 展示态（通过快捷键） |
-| `↑ / ↓` | Block 导航 | 展示态，上下移动焦点 |
-| `Enter`（导航后） | 进入编辑 | 展示态，聚焦 Block 后按 Enter |
-| `ESC` | 退出编辑 | 编辑态，回到展示态 |
-
-> **说明：** 展示态 Tab/Shift+Tab 行为见 `block-editor-spec.md`。
-
----
-
-## 7. 组件层级树
+**Layout Spec：**
 
 ```
 App
-├── Sidebar
-│   ├── SidebarHeader（"comind" 标题）
-│   ├── NewPageButton
-│   └── PageList
-│       └── PageItem × N
-│
-└── MainContent
-    ├── BlockList
-    │   └── Block × N（递归，支持无限嵌套）
-    │       ├── CollapseIcon
-    │       ├── DragHandle
-    │       ├── BlockContent（展示态 / 编辑态）
-    │       │   ├── DisplayContent
-    │       │   └── Editor（tiptap 实例，仅 activeBlock 渲染）
-    │       └── ChildrenBlockList（递归）
-    │
-    └── BacklinksSection
-        ├── SectionHeader（"🔗 反向链接 (N)"）
-        └── BacklinkItem × N
-            ├── SourcePageTitle
-            ├── BlockPreview
-            └── JumpButton
+  display: flex
+  height: 100vh
+  overflow: hidden
+
+Sidebar
+  width: 240px
+  flex-shrink: 0
+  border-right: 1px solid --border
+  overflow-y: auto
+  /* WebKit 滚动条 */
+  &::-webkit-scrollbar { width: 4px }
+  &::-webkit-scrollbar-thumb { background: --border; border-radius: 2px }
+
+MainContent
+  flex: 1
+  overflow-y: auto
+  padding: 32px 48px 48px 48px
+  /* 深色滚动条（主内容滚动更频繁）*/
+  &::-webkit-scrollbar { width: 6px }
+  &::-webkit-scrollbar-thumb { background: --border-strong; border-radius: 3px }
+  &::-webkit-scrollbar-thumb:hover { background: --text-tertiary }
 ```
 
 ---
 
-## 8. 已确认事项
+## 组件规范
 
-| 事项 | 结论 |
-|------|------|
-| 颜色方案 | 确认使用色板 |
-| Sidebar 搜索 | Phase 1 不实现搜索功能 |
-| Backlinks 样式 | Logseq 风格，内嵌在 Page 底部，随页面滚动 |
-| 层级线 | 确认，层级线辅助视觉缩进 |
-| 空 Block | Page 无 Block 时自动创建空 Block，光标自动落入 |
+### Sidebar
+
+```
+┌────────────────────────────────────┐
+│ COMIND                      [icon] │  ← 顶部标题，字母间距拉开
+├────────────────────────────────────┤
+│ + 新建页面                          │  ← 新建按钮，紧凑
+├────────────────────────────────────┤
+│ 📄 页面 A                          │  ← PageItem
+│    3 分钟前                         │
+│ 📄 页面 B                          │
+│    昨天                            │
+│ 📄 数据模型设计                     │
+│    4月14日                         │
+│                                    │
+│  ───────────────────────────────── │
+│  📅 日记（Phase 1.1）               │  ← 分隔线 + Journal 占位
+└────────────────────────────────────┘
+
+Sidebar 内部结构：
+  SidebarHeader: "COMIND" 标题，13px 500，--text-secondary，左内边距 12px，高 40px
+  NewPageButton:  + 新建页面，13px，--text-secondary，hover --text-primary，左内边距 12px，高 32px
+  Divider: 1px --border
+  PageList: PageItem × N，垂直排列，间距 2px
+  SidebarFooter: 分隔线 + Journal 占位文字（--text-tertiary）
+
+PageItem:
+  结构：[type-icon] [title] [timestamp]
+  type-icon: 📄 或 📅（emoji，14px）
+  title: 13px 400，--text-primary，max-width 剩余空间，overflow hidden，text-overflow ellipsis
+  timestamp: 12px 400，--text-secondary，右对齐
+  hover: 背景 --bg-hover
+  active: 背景 --bg-active，左边框 2px --accent
+  内边距: 8px 12px
+
+无页面时：
+  居中提示："暂无页面"
+  副文字："点击上方按钮创建"
+  均为 --text-secondary，居中
+```
+
+### Block
+
+```
+每个 Block 结构：
+
+[40px 操作区] [内容区]
+  操作区      内容区
+  ─────────  ─────────────────────────────────────────────────
+  [折叠]      Block 内容文字 / tiptap 编辑器
+  [拖拽]      [[链接]] #标签 从内容中解析渲染
+  (可选)      └── 子 Block（缩进 24px/级，层级线）
+
+操作区宽度：40px（固定）
+操作区内容：折叠图标（16px）+ 拖拽手柄（16px）+ 4px gap
+
+折叠图标（CollapseIcon）：
+  有子 Block 时显示，无子 Block 时隐藏
+  ▶（折叠态）→ 展开子节点
+  ▼（展开态）→ 折叠子节点
+  颜色：--text-tertiary
+  hover：--text-secondary
+  cursor: pointer
+
+拖拽手柄（DragHandle）：
+  默认：隐藏（opacity: 0）
+  Block hover：opacity: 0.4
+  手柄 hover / 拖拽中：opacity: 0.7，cursor: grab
+  内容：6点阵 ⋮⋮（SVG 或 CSS 生成）
+
+层级线（IndentLines）：
+  位于操作区右侧边缘，每个层级一条竖线
+  level 2 → 1 条线，level 3 → 2 条线，依次类推
+  线宽：1px，颜色从 --border 递减至 --bg-base
+  最高可见层级：6（6 级以后线不可见，避免视觉噪音）
+
+Block 内容区（Display 态）：
+  font: 15px / 1.75，--text-primary
+  无左边框，无背景色（融入页面）
+  min-height: 27px（行高 1.75 × 15px ≈ 26px）
+
+Block 内容区（Edit 态）：
+  边框：左侧 2px solid --accent
+  背景：--bg-base（轻微提亮，表示"这里在编辑"）
+  padding-left: 4px（给 accent 边框留呼吸空间）
+  min-height: 27px
+
+Block Hover（Display 态）：
+  背景：--bg-hover（极轻微，整个 Block 行变色）
+  操作区：折叠图标 + 拖拽手柄 opacity 变化
+
+Block 层级嵌套示例：
+  level 1:  ┌[▷][⋮⋮] 内容...                               ─┐
+  level 2:   ┌[▷][⋮⋮] | 内容...                             │
+  level 3:   ┌[▷][⋮⋮] | | 内容...                           │
+```
+
+### 编辑器挂载行为
+
+```
+进入编辑态（点击 Block 或按 Enter）：
+  1. 当前 Block 内容区替换为 tiptap 实例
+  2. 左侧立即出现 2px --accent 边框（80ms）
+  3. 背景变为 --bg-base（80ms）
+  4. tiptap 自动聚焦，光标位置保持（或移到末尾）
+
+退出编辑态（按 ESC）：
+  1. 保存内容到 Pinia
+  2. 销毁 tiptap 实例
+  3. 左侧边框消失（instant）
+  4. 背景恢复透明（instant）
+  5. 回到 Display 态
+
+仅 activeBlock 挂载 tiptap，其余 Block 均为静态 HTML。
+```
+
+### Backlinks Section
+
+```
+定位：Page 最后一个 Block 之后，内嵌在页面内容流中（非固定面板）
+
+┌──────────────────────────────────────────────────────────────┐
+│                                                              │
+│  Block 1                                                     │
+│    Block 1.1                                                 │
+│                                                              │
+│  ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─  │
+│  ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─  │ ← 分割线
+│                                                              │
+│  ↩ 反向链接 (3)                                   [折叠]   │ ← SectionHeader
+│                                                              │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │ 📄 存储规范                                              │ │
+│  │ "参考了 [[数据模型设计]] 的实现..."                     │ │
+│  │                                           [跳转 →]     │ │
+│  └────────────────────────────────────────────────────────┘ │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │ 📄 项目笔记                                              │ │
+│  │ "[[数据模型设计]] 中提到..."                            │ │
+│  └────────────────────────────────────────────────────────┘ │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+
+SectionHeader:
+  文字："↩ 反向链接 (N)"，13px 500 --text-secondary
+  分隔线上方：4px 间距
+  折叠按钮右侧对齐
+
+BacklinkItem:
+  内边距：12px 16px
+  背景：无
+  hover：背景 --bg-hover
+  cursor: pointer（点击跳转）
+  结构：
+    [type-icon] [source-title]          ← 13px 500 --text-primary
+    [preview-text]                        ← 13px 400 --text-secondary，max 2 行，ellipsis
+    [jump-button]                         ← "跳转 →" 13px --link
+
+Section 折叠时：
+  只显示 SectionHeader，"↩ 反向链接 (N)"，点击展开
+
+Section 空状态：
+  "暂无反向链接"，--text-tertiistic，13px，居中，16px 上下 padding
+```
+
+### 空状态
+
+```
+无页面（Sidebar 空）：
+  ┌──────────────────────────────────────┐
+  │                                      │
+  │          暂无页面                     │ ← 16px 500 --text-secondary
+  │          点击上方「+」创建             │ ← 13px 400 --text-tertiary
+  │                                      │
+  └──────────────────────────────────────┘
+
+Page 无 Block（BlockList 空）：
+  自动创建 1 个空 Block → 进入编辑态 → 光标落入
+  Placeholder: "输入文字，或使用 [[链接]] 或 #标签..."
+  （斜体，--text-tertiary）
+  Block 左上角出现 2px --accent 边框（编辑态标识）
+```
 
 ---
 
-## 9. 待定事项
+## 交互状态
 
-| 事项 | 说明 |
-|------|------|
-| 移动端布局 | Phase 1 桌面优先，窄屏是否支持 Sidebar 折叠 |
-| 深色模式 | Phase 2/3 考虑 |
-| 图标方案 | 使用 emoji 还是 SVG 图标库（Phase 1 可用 emoji） |
-| Backlinks 引用层级 | Phase 2/3 考虑显示引用块的嵌套层级 |
+### Focus Ring（键盘导航专用）
+
+```
+:focus-visible
+  outline: 2px solid --accent
+  outline-offset: 2px
+  border-radius: 3px
+
+以下元素必须可见 Focus Ring：
+  - Sidebar NewPageButton
+  - Sidebar PageItem
+  - Backlinks SectionHeader
+  - BacklinksItem 中的 JumpButton
+  - 未来工具栏按钮
+
+Block 本身不需要 Focus Ring（通过左侧 accent 边框和背景色区分 active 编辑态）
+```
+
+### 拖拽交互
+
+```
+被拖动 Block：
+  视觉：opacity: 0.5，背景 --accent-subtle
+  cursor: grabbing
+  实际 DOM 不移动，由 Pinia 状态驱动目标位置预览
+
+放置指示线：
+  颜色：2px --accent
+  instant 出现/消失（无动画）
+
+放置层级指示：
+  放置在 Block 之前/之后：水平线在目标 Block 上方/下方
+  放置为子 Block：水平线缩进 24px（与目标 Block 操作区对齐）
+
+取消拖拽：
+  按 ESC → 拖拽状态清除，Block 回到原位
+  鼠标移出主内容区 → 拖拽状态清除
+```
+
+### 文本选中 & 滚动条
+
+```
+::selection
+  background: #FDE68A（琥珀色选中，呼应 accent）
+  color: --text-primary
+
+::-webkit-scrollbar（主内容）
+  width: 6px
+  &-thumb: background --border-strong，border-radius 3px
+  &-thumb:hover: background --text-tertiary
+  &-track: background transparent
+
+::-webkit-scrollbar（Sidebar）
+  width: 4px
+  &-thumb: background --border，border-radius 2px
+```
 
 ---
 
-*文档 v0.3，评审完成，已确认。*
+## 图标方案
+
+> Phase 1 使用 emoji（零依赖），Phase 2/3 迁移至 SVG sprite。
+
+| 位置 | emoji | 说明 |
+|------|-------|------|
+| PageItem 图标 | 📄 | Page 类型 |
+| JournalItem 图标（Phase 1.1） | 📅 | 日记类型 |
+| BacklinksSectionHeader | ↩ | 反向链接 |
+| Block 折叠（折叠态） | ▶ | 右三角 |
+| Block 折叠（展开态） | ▼ | 下三角 |
+| 新建按钮 | + | 加号 |
+| 跳转按钮 | → | 右箭头 |
+
+---
+
+## 响应式
+
+```
+最小支持宽度：1024px
+
+1024px - 1200px（窄屏笔记本）：
+  Sidebar 保持 240px
+  主内容区 padding 缩小至 24px 32px
+
+> 1200px：
+  Sidebar 240px
+  主内容区 padding 保持 48px（已足够宽）
+
+< 1024px：
+  Sidebar 折叠至 0px，显示 hamburger toggle 按钮
+  toggle 按钮位于主内容区左上角
+```
+
+---
+
+## 附录：字体引入方式
+
+```html
+<!-- Google Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<!-- 或通过 npm 安装后 import -->
+<!-- npm install @fontsource/noto-sans-sc @fontsource/jetbrains-mono -->
+```
+
+CSS 字体声明：
+
+```css
+:root {
+  --font-body: 'Noto Sans SC', 'JetBrains Mono', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+body {
+  font-family: var(--font-body);
+}
+```
+
+---
+
+*文档 v0.5，评审完成，已确认。*
