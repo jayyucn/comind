@@ -1,8 +1,10 @@
 # Property 规范
 
-> 版本：v0.1
+> 版本：v0.2
 > 日期：2026-04-16
-> 状态：草案
+> 状态：草案（Phase 2 特性，详细规范见本文档）
+
+**Phase 1 定位：** Property 作为 Block.content 的内嵌元数据（`key:: value` 嵌入正文），解析后序列化存入 `Block.properties` JSON 字段。独立 Property 表和 UI 属性面板属于 Phase 2 特性，Phase 1 暂不实现。
 
 ***
 
@@ -207,33 +209,47 @@ type:: journal
 
 ## 4. 存储策略
 
-### 4.1 Phase 1（IndexedDB）
+### 4.1 Phase 1（Block.properties 缓存字段）
+
+Phase 1 不引入独立 Property 表。Property 作为 Block.content 内嵌文本解析后，序列化存入 `Block.properties` JSON 字段。
 
 ```typescript
-// Property 表结构
-interface PropertyRecord {
-  id?: number           // 自增主键
-  blockId: string       // 所属 Block ID
-  key: string           // 属性名
-  value: any            // 属性值（JSON 序列化）
-  type: PropertyType    // 数据类型
-  createdAt: number
-  updatedAt: number
+// Phase 1 存储：BlockRecord.properties
+interface BlockRecord {
+  id: string
+  content: string
+  // ...
+  properties?: string  // JSON string，如 '{"状态": "进行中", "优先级": "高"}'
 }
-
-// Dexie Schema
-this.version(1).stores({
-  properties: '++id, blockId, key, [blockId+key]'
-})
 ```
 
-**索引说明：**
+**写入流程：**
+```
+Block.content 输入
+    ↓
+Parser.parseBlockProperties(content)  // 提取所有 key:: value
+    ↓
+序列化为 JSON 对象
+    ↓
+写入 Block.properties（覆盖式）
+    ↓
+BlockRecord 整体写入 IndexedDB
+```
 
-- `blockId`：查询某 Block 的所有属性
-- `key`：查询某属性的所有 Block
-- `[blockId+key]`：唯一约束，一个 Block 同一 key 只能有一个值
+**读取流程：**
+```
+从 IndexedDB 读取 BlockRecord
+    ↓
+JSON.parse(properties) → 内存对象
+    ↓
+UI 直接消费内存对象
+```
 
-### 4.2 Phase 2/3（SQLite）
+**说明：**
+- Phase 1 按 key 查询 = 全表扫描 BlockRecord + 逐条解析 JSON，性能较差但 MVP 可接受
+- Phase 2 引入 Property 表后，按 key 查询走索引，性能提升
+
+### 4.2 Phase 2/3（独立 Property 表）
 
 ```sql
 CREATE TABLE Property (
@@ -254,9 +270,9 @@ CREATE INDEX idx_property_key ON Property(key);
 CREATE INDEX idx_property_type ON Property(type);
 ```
 
-### 4.3 Block 表的 properties 字段
+### 4.3 Phase 2/3 缓存策略：Property 表与 Block.properties 双写
 
-为减少查询次数，Block 表保留 `properties` JSON 字段作为缓存：
+Phase 2/3 引入独立 Property 表后，`Block.properties` JSON 字段降级为只读缓存，Property 表为数据源：
 
 ```typescript
 interface BlockRecord {
@@ -301,7 +317,9 @@ sys-sync-id:: xxx-xxx
 
 ## 6. UI 交互
 
-### 6.1 属性编辑器
+> **Phase 1 范围：** 仅支持在 Block 编辑态中直接编辑内嵌 `key:: value` 文本，不提供独立属性面板。Phase 2 新增属性面板和高级 UI。
+
+### 6.1 Phase 1：Block 内嵌编辑
 
 **行内编辑：**
 

@@ -1,8 +1,10 @@
 # Tag 解析规范
 
-> 版本：v0.1
+> 版本：v0.2
 > 日期：2026-04-16
-> 状态：草案
+> 状态：草案（Phase 2 特性，详细规范见本文档）
+
+**Phase 1 定位：** Tag 从 `Block.content` 解析但不持久化到 Tag 表（见 `data-model.md` §3.3）。独立 Tag 表、Tag 管理视图、Tag 查询 API 属于 Phase 2 特性，Phase 1 暂不实现。
 
 ***
 
@@ -120,7 +122,8 @@ Block.content
     ↓
 去重（同一 Block 内相同标签只存一次）
     ↓
-写入 Tag 表（增量更新）
+Phase 1：存入 Pinia 内存状态（供实时搜索/过滤）
+Phase 2/3：写入 Tag 表（持久化）
     ↓
 更新内存索引
 ```
@@ -149,30 +152,30 @@ function updateBlockTags(blockId: string, newContent: string) {
 
 ## 4. 存储策略
 
-### 4.1 Phase 1（IndexedDB）
+### 4.1 Phase 1（内存解析，不持久化）
+
+Phase 1 Tag 仅从 `Block.content` 解析，供实时搜索/过滤使用，**不写入 Tag 表**。
 
 ```typescript
-// Tag 表结构
-interface TagRecord {
-  id?: number           // 自增主键
-  blockId: string       // 所属 Block ID
-  name: string          // 标签名（不含 #）
-  createdAt: number     // 时间戳
+// Phase 1 Tag 解析（内存层）
+// 解析结果供内存状态使用，不持久化
+function parseTags(content: string): string[] {
+  const tagRegex = /#([\p{L}_][\p{L}\p{N}_]*)/gu
+  const tags: string[] = []
+  let match
+  while ((match = tagRegex.exec(content)) !== null) {
+    const tag = match[1]
+    if (!tag.includes('/') && !tag.includes('.')) {
+      tags.push(tag)
+    }
+  }
+  return [...new Set(tags)]  // 去重
 }
-
-// Dexie Schema
-this.version(1).stores({
-  tags: '++id, blockId, name, [blockId+name]'
-})
 ```
 
-**索引说明：**
+**性能说明：** 按 Tag 查询 = 遍历所有 Block.content 逐条解析。500+ Tag 或高频查询时升级到 Tag 表。
 
-- `blockId`：查询某 Block 的所有标签
-- `name`：查询某标签的所有 Block
-- `[blockId+name]`：唯一约束，防止同一 Block 重复标签
-
-### 4.2 Phase 2/3（SQLite）
+### 4.2 Phase 2/3（Tag 表）
 
 ```sql
 CREATE TABLE Tag (
@@ -189,7 +192,78 @@ CREATE INDEX idx_tag_blockId ON Tag(blockId);
 CREATE INDEX idx_tag_name ON Tag(name);
 ```
 
-### 4.3 与 Block 的关系
+### 4.2 Phase 2/3（Tag 表）
+
+当出现 500+ Tag 或高频按 Tag 查询需求时，迁移到 Tag 表：
+
+```typescript
+// Tag 表结构（Phase 2/3）
+interface TagRecord {
+  id?: number           // 自增主键
+  blockId: string       // 所属 Block ID
+  name: string          // 标签名（不含 #）
+  createdAt: number     // 时间戳
+}
+
+// Dexie Schema
+this.version(2).stores({
+  tags: '++id, blockId, name, [blockId+name]'
+})
+```
+
+```sql
+-- SQLite DDL（来源 data-model.md §3.3）
+CREATE TABLE Tag (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    blockId     TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    createdAt   TEXT NOT NULL,
+    UNIQUE(blockId, name),
+    FOREIGN KEY (blockId) REFERENCES Block(id)
+);
+CREATE INDEX idx_tag_blockId ON Tag(blockId);
+CREATE INDEX idx_tag_name ON Tag(name);
+```
+
+**索引说明：**
+
+- `blockId`：查询某 Block 的所有标签
+- `name`：查询某标签的所有 Block
+- `[blockId+name]`：唯一约束，防止同一 Block 重复标签
+
+### 4.3 增量更新策略（Phase 2/3）
+
+```typescript
+// 增量更新（Phase 2/3）
+async function updateBlockTags(blockId: string, newContent: string): Promise<void> {
+  const oldTags = await db.tags.where('blockId').equals(blockId).toArray()
+  const newTagNames = parseTags(newContent)
+
+  const toDelete = oldTags.filter(t => !newTagNames.includes(t.name))
+  const toAdd = newTagNames
+    .filter(name => !oldTags.some(ot => ot.name === name))
+    .map(name => ({ blockId, name, createdAt: Date.now() }))
+
+  await db.transaction('rw', db.tags, async () => {
+    if (toDelete.length) await db.tags.bulkDelete(toDelete.map(t => t.id))
+    if (toAdd.length) await db.tags.bulkAdd(toAdd)
+  })
+}
+```
+
+### 4.4 与 Block 的关系
+
+```
+Block A
+├── content: "这是 #设计 文档"
+└── Tags: ["设计"]（Phase 2/3 持久化到 Tag 表；Phase 1 仅内存解析）
+
+Block B
+├── content: "#设计 #数据模型 讨论"
+└── Tags: ["设计", "数据模型"]
+```
+
+**注意：** Tag 只与 Block 关联，不与 Page 直接关联。查询某 Page 的所有标签需通过其 Block 聚合。
 
 ```
 Block A

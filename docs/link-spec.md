@@ -445,27 +445,84 @@ export async function parseBlockContent(
 
 ### 7.2 与 Property 解析的配合
 
-Property 中的 `[[...]]` 由 Property 解析器单独处理：
+当 Block 的 `properties` 字段（JSON 对象）中某属性值为 `[[...]]` 格式时，需将其解析为 Page 引用并写入 Link 表。
+
+**实现：复用 parseBlockContent，包裹 Property value 为占位文本**
 
 ```typescript
-// propertyParser 返回的 links 数组会合并到 block.links
-function parsePropertyLinks(props: Record<string, any>): ParsedLink[] {
+import { parseBlockContent } from './linkParser'
+
+/**
+ * 解析 Block properties 中的 [[...]] 引用。
+ * 策略：将 Property value 包裹为占位文本，调用已有的 parseBlockContent 逻辑。
+ * 注意：properties 中可能有多个属性含 [[...]]，需逐属性处理。
+ */
+export interface PropertyLinkResult {
+  blockId: string
+  links: ParsedLink[]  // 与 Block content 的 Link 共用一套结构
+}
+
+export async function parsePropertyLinks(
+  blockId: string,
+  properties: Record<string, any>,
+  onPageResolve: (title: string) => Promise<string | null>
+): Promise<ParsedLink[]> {
   const links: ParsedLink[] = []
 
-  for (const [key, value] of Object.entries(props)) {
-    if (typeof value === 'string' && value.startsWith('[[')) {
-      // Property 值为 [[...]] 格式 → 解析为 Page 引用
-      // 复用 linkParser（但需传入 onPageResolve）
-      const parsed = linkParser.parseInline(value, onPageResolve)
-      links.push(...parsed)
-    }
+  for (const [_key, rawValue] of Object.entries(properties)) {
+    // 跳过非字符串值
+    if (typeof rawValue !== 'string') continue
+
+    // 跳过不含 [[ 的值
+    if (!rawValue.includes('[[')) continue
+
+    // 跳过多行文本（""" 包裹）
+    if (rawValue.trim().startsWith('"""')) continue
+
+    // 包裹为虚拟文本以复用解析器
+    // 注意：同一 Property value 中可能有多个 [[...]]，parseBlockContent 会全部提取
+    const virtualContent = rawValue
+    const parsed = await parseBlockContent(virtualContent, { onPageResolve })
+    links.push(...parsed)
   }
 
   return links
 }
 ```
 
-**注意：** Property 解析与 Block content 解析共用一套 `ParsedLink` 结构，最终统一写入 Link 表。
+**写入 Link 表的统一流程：**
+
+```typescript
+async function saveBlockAllLinks(
+  blockId: string,
+  blockContent: string,
+  properties: Record<string, any>
+): Promise<void> {
+  // 1. 解析 Block content 中的 [[...]]
+  const contentLinks = await parseBlockContent(blockContent, { onPageResolve })
+
+  // 2. 解析 Properties 中的 [[...]]
+  const propertyLinks = await parsePropertyLinks(blockId, properties, onPageResolve)
+
+  // 3. 合并（注意去重：同一个 targetPageId 只保留一条 Link）
+  const allLinks = deduplicateLinks([...contentLinks, ...propertyLinks])
+
+  // 4. 事务写入 Link 表（覆盖式）
+  await saveBlockLinks(blockId, allLinks)
+}
+
+function deduplicateLinks(links: ParsedLink[]): ParsedLink[] {
+  const seen = new Set<string>()
+  return links.filter(link => {
+    const key = `${link.targetPageId ?? link.target}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+```
+
+**注意：** Property 解析与 Block content 解析共用同一套 `ParsedLink` 结构，最终统一写入 Link 表。
 
 ---
 
