@@ -56,6 +56,21 @@ async function handleMerge() {
   }
 }
 
+async function handleDelete() {
+  // 获取前一个 Block（合并目标）
+  const siblings = blockStore.blocks
+    .filter(b => b.parentId === props.block.parentId && b.pageId === props.block.pageId && b.left < props.block.left)
+    .sort((a, b) => b.left - a.left)
+  const prevId = siblings[0]?.id
+
+  await blockStore.deleteBlock(props.blockId)
+  
+  // 激活前一个 Block
+  if (prevId) {
+    editorStore.activateBlock(prevId)
+  }
+}
+
 async function handleIndent() {
   await blockStore.indent(props.blockId)
 }
@@ -105,6 +120,7 @@ function renderContent(text: string): string {
           @save="handleSave"
           @split="handleSplit"
           @merge="handleMerge"
+          @delete="handleDelete"
           @indent="handleIndent"
           @outdent="handleOutdent"
         />

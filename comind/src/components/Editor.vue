@@ -14,6 +14,7 @@ const emit = defineEmits<{
   (e: 'save', content: string): void
   (e: 'split', cursorPos: number): void
   (e: 'merge'): void
+  (e: 'delete'): void
   (e: 'indent'): void
   (e: 'outdent'): void
 }>()
@@ -57,16 +58,24 @@ function handleKeyDown(e: KeyboardEvent) {
   if (!editor.value) return
 
   const { from } = editor.value.state.selection
+  const content = editor.value.getText()
 
   switch (e.key) {
     case 'Enter':
+      // Enter: 创建同级 Block
+      // Shift+Enter: 允许 tiptap 换行（不 preventDefault）
       if (!e.shiftKey) {
         e.preventDefault()
         emit('split', from)
       }
       break
     case 'Backspace':
-      if (from === 0) {
+      if (from === 0 && content.length === 0) {
+        // 空 Block: 删除整个 Block
+        e.preventDefault()
+        emit('delete')
+      } else if (from === 0) {
+        // 有内容且光标在开头: 合并到上一个 Block
         e.preventDefault()
         emit('merge')
       }

@@ -189,3 +189,51 @@ describe('mergeWithPrevious - Backspace 合并', () => {
     expect(updatedChild1?.parentId).toBe(parent.id) // 层级不变
   })
 })
+
+describe('deleteBlock - Backspace 删除空 Block', () => {
+  test('删除空 Block', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const block = await store.createBlock({
+      pageId,
+      content: '',
+      left: 100
+    })
+
+    await store.deleteBlock(block.id)
+
+    const deleted = store.blocks.find(b => b.id === block.id)
+    expect(deleted).toBeUndefined()
+    expect(store.blocks).toHaveLength(0)
+  })
+
+  test('删除有子节点的 Block 时递归删除子节点', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const parent = await store.createBlock({
+      pageId,
+      content: 'Parent',
+      left: 100
+    })
+
+    await store.createBlock({
+      pageId,
+      content: 'Child1',
+      parentId: parent.id,
+      left: 200
+    })
+
+    await store.createBlock({
+      pageId,
+      content: 'Child2',
+      parentId: parent.id,
+      left: 300
+    })
+
+    await store.deleteBlock(parent.id)
+
+    expect(store.blocks).toHaveLength(0) // 父节点和所有子节点都被删除
+  })
+})
