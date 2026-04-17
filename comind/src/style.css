@@ -1,0 +1,102 @@
+/* ===================================================
+   comind 全局样式 — 墨水与纸张设计系统
+   灵感：温暖的纸张质感 + 墨水笔记
+   =================================================== */
+
+:root {
+  /* 核心色板 */
+  --color-paper:     #fffbf5;
+  --color-ink:        #1c1917;
+  --color-ink-muted:  #78716c;
+  --color-ink-faint:  #a8a29e;
+  --color-accent:     #b45309;
+  --color-accent-bg:  #fef3c7;
+  --color-border:     #e8e0d4;
+  --color-hover:      #f0ebe4;
+
+  /* 字体 */
+  --font-sans:  'Noto Sans SC', 'Geist', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono:  'Geist Mono', 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* 圆角 */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+
+  /* 间距 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--color-ink);
+  background: var(--color-paper);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#app {
+  height: 100%;
+  width: 100%;
+}
+
+/* ===================================================
+   tiptap editor 基础样式
+   =================================================== */
+.tiptap {
+  outline: none;
+  min-height: 1.5em;
+}
+
+.tiptap p {
+  margin: 0;
+  padding: 0;
+}
+
+/* ===================================================
+   滚动条样式
+   =================================================== */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d6cfc3;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a8a29e;
+}
+
+/* ===================================================
+   选中文本样式
+   =================================================== */
+::selection {
+  background: var(--color-accent-bg);
+  color: var(--color-ink);
+}

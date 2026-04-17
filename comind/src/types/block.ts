@@ -1,0 +1,27 @@
+export interface Block {
+  id: string
+  content: string
+  parentId: string | null
+  pageId: string
+  left: number
+  createdAt: string
+  updatedAt: string
+  isPage: boolean
+  title?: string
+  properties?: Record<string, any>
+  folded?: boolean
+}
+
+export interface BlockRecord {
+  id: string
+  content: string
+  parentId: string | null
+  pageId: string
+  left: number
+  createdAt: number
+  updatedAt: number
+  isPage: boolean
+  title?: string
+  properties?: string
+  folded?: boolean
+}
