@@ -23,11 +23,10 @@ const currentPageTitle = computed(() => {
 
 /** 点击空白处新增 Block */
 async function handleAddBlock() {
-  const newBlock = await blockStore.createBlock({
+  await blockStore.createBlock({
     pageId: blockStore.currentPageId,
     content: ''
   })
-  editorStore.activateBlock(newBlock.id)
 }
 handleAddBlock()
 </script>
