@@ -46,7 +46,10 @@ async function handleSave(content: string) {
 }
 
 async function handleSplit(cursorPos: number) {
-  await blockStore.splitBlock(props.blockId, cursorPos)
+  const newBlock = await blockStore.splitBlock(props.blockId, cursorPos)
+  if (newBlock) {
+    editorStore.activateBlock(newBlock.id)
+  }
 }
 
 async function handleMerge() {

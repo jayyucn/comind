@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, watch } from 'vue'
+import { onBeforeUnmount, onMounted, watch, shallowRef } from 'vue'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
-import Placeholder from '@tiptap/extension-placeholder'
+import { Extension } from '@tiptap/core'
 import { useEditorStore } from '../stores/editor'
 
 const props = defineProps<{
@@ -21,10 +21,55 @@ const emit = defineEmits<{
 
 const editorStore = useEditorStore()
 
-const editor = useEditor({
+// 自定义扩展：在 tiptap 的 keyboard shortcut 层拦截 Enter
+// 这样可以在 tiptap 内部修改状态之前先处理
+const EnterAsBlockExtension = Extension.create({
+  name: 'enterAsBlock',
+  addKeyboardShortcuts() {
+    return {
+      // 拦截 Enter：返回 true 表示已处理，不再执行 tiptap 默认的段落换行
+      Enter: ({ editor }) => {
+        const { from } = editor.state.selection
+        const content = editor.getText()
+        const before = content.slice(0, from)
+        // 立即将编辑器内容设为 before，防止 tiptap 插入换行
+        editor.commands.setContent(before)
+        // 触发 split 事件，父组件处理后的 after 内容会通过 watch 更新进来
+        emit('split', from)
+        return true
+      },
+      // Shift+Enter：返回 false，放行给 tiptap 处理（软换行）
+      'Shift-Enter': () => false,
+      // Backspace：空 Block 时删除整个 Block（由父组件处理）
+      Backspace: ({ editor }) => {
+        const { from } = editor.state.selection
+        const content = editor.getText()
+        if (from === 0 && content.length === 0) {
+          emit('delete')
+          return true
+        } else if (from === 0) {
+          emit('merge')
+          return true
+        }
+        return false
+      },
+      // Tab：缩进 / 取消缩进（由父组件处理）
+      Tab: () => {
+        emit('indent')
+        return true
+      },
+      'Shift-Tab': () => {
+        emit('outdent')
+        return true
+      },
+    }
+  }
+})
+
+const editor = shallowRef(useEditor({
   extensions: [
     StarterKit.configure({ heading: false, codeBlock: false, blockquote: false, horizontalRule: false }),
-    Placeholder.configure({ placeholder: 'Type something...' })
+    EnterAsBlockExtension
   ],
   content: props.content,
   autofocus: true,
@@ -34,9 +79,9 @@ const editor = useEditor({
     }
     editorStore.deactivateBlock()
   }
-})
+}))
 
-// 同步外部 content 变化（仅在非活跃时）
+// 同步外部 content 变化
 watch(
   () => props.content,
   (newContent) => {
@@ -53,47 +98,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   editor.value?.destroy()
 })
-
-function handleKeyDown(e: KeyboardEvent) {
-  if (!editor.value) return
-
-  const { from } = editor.value.state.selection
-  const content = editor.value.getText()
-
-  switch (e.key) {
-    case 'Enter':
-      // Enter: 创建同级 Block
-      // Shift+Enter: 允许 tiptap 换行（不 preventDefault）
-      if (!e.shiftKey) {
-        e.preventDefault()
-        emit('split', from)
-      }
-      break
-    case 'Backspace':
-      if (from === 0 && content.length === 0) {
-        // 空 Block: 删除整个 Block
-        e.preventDefault()
-        emit('delete')
-      } else if (from === 0) {
-        // 有内容且光标在开头: 合并到上一个 Block
-        e.preventDefault()
-        emit('merge')
-      }
-      break
-    case 'Tab':
-      e.preventDefault()
-      if (e.shiftKey) {
-        emit('outdent')
-      } else {
-        emit('indent')
-      }
-      break
-  }
-}
 </script>
 
 <template>
-  <div class="editor-wrapper" @keydown="handleKeyDown">
+  <div class="editor-wrapper">
     <EditorContent :editor="editor" />
   </div>
 </template>
@@ -107,13 +115,6 @@ function handleKeyDown(e: KeyboardEvent) {
 .editor-wrapper :deep(.tiptap) {
   outline: none;
   min-height: 1.5em;
-}
-
-.editor-wrapper :deep(.tiptap p.is-editor-empty:first-child::before) {
-  color: #adb5bd;
-  content: attr(data-placeholder);
-  float: left;
-  height: 0;
-  pointer-events: none;
+  padding: 0 4px;
 }
 </style>
