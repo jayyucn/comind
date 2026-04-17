@@ -64,15 +64,23 @@ export const useBlockStore = defineStore('blocks', () => {
     opts: Partial<Block> & { pageId: string; content: string }
   ): Promise<Block> {
     const parentId = opts.parentId ?? null
-    const siblings = blocks.value.filter(b => b.parentId === parentId && b.pageId === opts.pageId)
-    const maxLeft = siblings.length > 0 ? Math.max(...siblings.map(b => b.left)) : 0
+    
+    // 如果传入了 left 值，直接使用；否则计算新的 left 值
+    let left: number
+    if (opts.left !== undefined) {
+      left = opts.left
+    } else {
+      const siblings = blocks.value.filter(b => b.parentId === parentId && b.pageId === opts.pageId)
+      const maxLeft = siblings.length > 0 ? Math.max(...siblings.map(b => b.left)) : 0
+      left = maxLeft + LEFT_STEP
+    }
 
     const block: Block = {
       id: generateUUID(),
       content: opts.content,
       parentId,
       pageId: opts.pageId,
-      left: maxLeft + LEFT_STEP,
+      left,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       isPage: opts.isPage ?? false,
