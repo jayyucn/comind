@@ -46,6 +46,7 @@ async function handleSave(content: string) {
 }
 
 async function handleSplit(cursorPos: number) {
+  editorStore.deactivateBlock()
   const newBlock = await blockStore.splitBlock(props.blockId, cursorPos)
   if (newBlock) {
     editorStore.activateBlock(newBlock.id)
@@ -53,6 +54,7 @@ async function handleSplit(cursorPos: number) {
 }
 
 async function handleMerge() {
+  editorStore.deactivateBlock()
   const newId = await blockStore.mergeWithPrevious(props.blockId)
   if (newId) {
     editorStore.activateBlock(newId)
@@ -60,6 +62,7 @@ async function handleMerge() {
 }
 
 async function handleDelete() {
+  editorStore.deactivateBlock()
   // 获取前一个 Block（合并目标）
   const siblings = blockStore.blocks
     .filter(b => b.parentId === props.block.parentId && b.pageId === props.block.pageId && b.left < props.block.left)
@@ -75,11 +78,15 @@ async function handleDelete() {
 }
 
 async function handleIndent() {
+  editorStore.deactivateBlock()
   await blockStore.indent(props.blockId)
+  editorStore.activateBlock(props.blockId)
 }
 
 async function handleOutdent() {
+  editorStore.deactivateBlock()
   await blockStore.outdent(props.blockId)
+  editorStore.activateBlock(props.blockId)
 }
 
 /** 渲染内容（[[链接]] 高亮、#标签 样式） */

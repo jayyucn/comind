@@ -33,7 +33,6 @@ const EnterAsBlockExtension = Extension.create({
     return {
       Enter: ({ editor }) => {
         const { from } = editor.state.selection
-        editorStore.deactivateBlock()
         emit('split', from)
         return true
       },
