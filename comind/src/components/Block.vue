@@ -130,7 +130,7 @@ function renderContent(text: string): string {
         <div
           v-else
           class="block-text"
-          v-html="renderContent(block.content) || '<span class=&quot;placeholder&quot;>Click to edit...</span>'"
+          v-html="renderContent(block.content) "
         ></div>
       </div>
     </div>
