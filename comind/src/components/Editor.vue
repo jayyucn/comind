@@ -21,20 +21,19 @@ const emit = defineEmits<{
 
 const editorStore = useEditorStore()
 
-// 自定义扩展：在 tiptap 的 keyboard shortcut 层拦截 Enter
-// 这样可以在 tiptap 内部修改状态之前先处理
+// 跟踪用户是否正在输入（用于 watch 过滤）
+let isUserEditing = false
+let editingTimer: ReturnType<typeof setTimeout> | null = null
+
+// 自定义扩展：在 ProseMirror keyboard shortcut 层拦截 Enter
+// 返回 true 阻止 tiptap 默认段落行为，触发 split
 const EnterAsBlockExtension = Extension.create({
   name: 'enterAsBlock',
   addKeyboardShortcuts() {
     return {
-      // 拦截 Enter：返回 true 表示已处理，不再执行 tiptap 默认的段落换行
       Enter: ({ editor }) => {
         const { from } = editor.state.selection
-        const content = editor.getText()
-        const before = content.slice(0, from)
-        // 立即将编辑器内容设为 before，防止 tiptap 插入换行
-        editor.commands.setContent(before)
-        // 触发 split 事件，父组件处理后的 after 内容会通过 watch 更新进来
+        editorStore.deactivateBlock()
         emit('split', from)
         return true
       },
@@ -78,14 +77,27 @@ const editor = shallowRef(useEditor({
       emit('save', editor.value.getText())
     }
     editorStore.deactivateBlock()
+  },
+  onUpdate: () => {
+    // 用户正在输入时，标记为编辑状态，阻止 watch 更新
+    isUserEditing = true
+    if (editingTimer) clearTimeout(editingTimer)
+    editingTimer = setTimeout(() => {
+      isUserEditing = false
+    }, 100)
   }
 }))
 
 // 同步外部 content 变化
+// isUserEditing 标志确保用户输入时不会被覆盖
 watch(
   () => props.content,
   (newContent) => {
-    if (editor.value && editor.value.getText() !== newContent) {
+    if (!editor.value) return
+    // 如果用户正在输入（100ms 内），跳过同步
+    if (isUserEditing) return
+    // 内容真的有差异时才更新
+    if (editor.value.getText() !== newContent) {
       editor.value.commands.setContent(newContent)
     }
   }
@@ -96,8 +108,18 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  if (editingTimer) clearTimeout(editingTimer)
   editor.value?.destroy()
 })
+
+// 暴露给父组件的同步方法（split 后强制同步内容）
+function syncContent(content: string) {
+  if (editor.value) {
+    editor.value.commands.setContent(content)
+  }
+}
+
+defineExpose({ syncContent })
 </script>
 
 <template>
