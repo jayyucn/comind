@@ -23,11 +23,13 @@ const currentPageTitle = computed(() => {
 
 /** 点击空白处新增 Block */
 async function handleAddBlock() {
-  await blockStore.createBlock({
+  const newBlock = await blockStore.createBlock({
     pageId: blockStore.currentPageId,
     content: ''
   })
+  editorStore.activateBlock(newBlock.id)
 }
+handleAddBlock()
 </script>
 
 <template>
@@ -46,11 +48,6 @@ async function handleAddBlock() {
           :block-id="block.id"
           :block="block"
         />
-
-        <div v-if="topLevelBlocks.length === 0" class="empty-hint">
-          <p>No blocks yet.</p>
-          <button class="add-block-btn" @click="handleAddBlock">+ Add block</button>
-        </div>
       </div>
     </main>
   </div>
@@ -89,17 +86,6 @@ async function handleAddBlock() {
 
 .block-list {
   padding-left: 0;
-}
-
-.empty-hint {
-  text-align: center;
-  padding: 48px 0;
-  color: #a8a29e;
-}
-
-.empty-hint p {
-  margin-bottom: 12px;
-  font-size: 14px;
 }
 
 .add-block-btn {
