@@ -40,12 +40,12 @@ const EnterAsBlockExtension = Extension.create({
       'Shift-Enter': () => false,
       // Backspace：空 Block 时删除整个 Block（由父组件处理）
       Backspace: ({ editor }) => {
-        const { from } = editor.state.selection
+        const { $from } = editor.state.selection
         const content = editor.getText()
-        if (from === 0 && content.length === 0) {
+        if (content.length === 0) {
           emit('delete')
           return true
-        } else if (from === 0) {
+        } else if ($from.parentOffset === 0) {
           emit('merge')
           return true
         }
@@ -103,7 +103,7 @@ watch(
 )
 
 onMounted(() => {
-  editor.value?.commands.focus('end')
+    editor.value?.commands.focus('end')
 })
 
 onBeforeUnmount(() => {
