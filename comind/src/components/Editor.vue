@@ -105,10 +105,6 @@ watch(
   }
 )
 
-onMounted(() => {
-    editor.value?.commands.focus('end')
-})
-
 onBeforeUnmount(() => {
   savedFromOutside.value = false  // 清理状态，防止泄漏
   editor.value?.destroy()

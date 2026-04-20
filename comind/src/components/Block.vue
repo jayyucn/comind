@@ -24,13 +24,13 @@ watch(
     if (active) {
       await nextTick()
       if (editorRef.value) {
-        // 优先使用 editorStore.pendingCursorPos（来自 merge 等操作）
-        // 否则默认到末尾
         const pendingPos = editorStore.consumeCursorPos()
         if (pendingPos !== null) {
           editorRef.value.focus(pendingPos)
         } else {
-          editorRef.value.focus('start')
+          // 无显式位置（普通点击触发）：默认光标到末尾
+          // click 事件已传播完毕，tiptap 的默认行为已就绪
+          editorRef.value.focus('end')
         }
       }
     }
@@ -59,8 +59,23 @@ function handleBulletClick() {
   collapsed.value = !collapsed.value
 }
 
-function handleContentClick() {
+/** mousedown：捕获点击坐标，在 tiptap 挂载前通知 editor store */
+function handleContentMouseDown(e: MouseEvent) {
+  const cursorPos = getCaretPositionFromPoint(e.clientX, e.clientY) ?? 0
+  editorStore.setCursorPos(cursorPos + 1)
   editorStore.activateBlock(props.blockId)
+}
+
+/**
+ * 通过 document.caretPositionFromPoint 获取点击处的字符偏移（ProseMirror position）。
+ * 返回 null 表示无法获取（如点击 padding 等空白区域），此时回退到末尾。
+ */
+function getCaretPositionFromPoint(x: number, y: number): number | null {
+  if (document.caretPositionFromPoint) {
+    const pos = document.caretPositionFromPoint(x, y)
+    return pos?.offset ?? null
+  }
+  return null
 }
 
 async function handleSave(content: string) {
@@ -161,7 +176,7 @@ function renderContent(text: string): string {
       </span>
 
       <!-- 内容区 -->
-      <div class="block-content" @click="handleContentClick">
+      <div class="block-content" @mousedown="handleContentMouseDown">
         <Editor v-if="isActive" ref="editorRef" :block-id="blockId" :content="block.content" @save="handleSave"
           @split="handleSplit" @merge="handleMerge" @delete="handleDelete" @indent="handleIndent"
           @outdent="handleOutdent" @cursor-change="handleCursorChange" />

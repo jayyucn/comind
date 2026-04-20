@@ -28,5 +28,10 @@ export const useEditorStore = defineStore('editor', () => {
     return pos
   }
 
-  return { activeBlockId, pendingCursorPos, activateBlock, deactivateBlock, consumeCursorPos }
+  /** 设置待恢复的光标位置（由 Block.vue mousedown 触发） */
+  function setCursorPos(pos: number | null) {
+    pendingCursorPos.value = pos
+  }
+
+  return { activeBlockId, pendingCursorPos, activateBlock, deactivateBlock, consumeCursorPos, setCursorPos }
 })
