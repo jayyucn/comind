@@ -20,8 +20,6 @@ const emit = defineEmits<{
   (e: 'cursor-change', pos: number): void
 }>()
 
-const editorStore = useEditorStore()
-
 // 同步内容期间禁用 onBlur 保存（防止 setContent 触发 onBlur 写回旧内容）
 let syncing = false
 // 标记已由外部（split/merge）保存，阻止 onBlur 重复保存
