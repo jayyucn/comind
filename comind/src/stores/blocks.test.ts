@@ -122,10 +122,12 @@ describe('mergeWithPrevious - Backspace 合并', () => {
     })
 
     // 合并 second 到 first
-    const resultId = await store.mergeWithPrevious(second.id)
+    const result = await store.mergeWithPrevious(second.id)
 
-    // 验证返回的是前一个 Block ID
-    expect(resultId).toBe(first.id)
+    // 验证返回的是前一个 Block ID + 合并点位置
+    expect(result).toBeDefined()
+    expect(result!.id).toBe(first.id)
+    expect(result!.cursorPos).toBe(5) // "Hello" 长度为 5
 
     // 验证前一个 Block 内容已合并
     const updatedFirst = store.blocks.find(b => b.id === first.id)
@@ -147,10 +149,10 @@ describe('mergeWithPrevious - Backspace 合并', () => {
     })
 
     // 尝试合并第一个 Block
-    const resultId = await store.mergeWithPrevious(first.id)
+    const result = await store.mergeWithPrevious(first.id)
 
     // 应该返回 undefined（无操作）
-    expect(resultId).toBeUndefined()
+    expect(result).toBeUndefined()
 
     // Block 仍然存在
     expect(store.blocks).toHaveLength(1)
@@ -182,7 +184,9 @@ describe('mergeWithPrevious - Backspace 合并', () => {
     })
 
     // 合并 child2 到 child1
-    await store.mergeWithPrevious(child2.id)
+    const mergeResult = await store.mergeWithPrevious(child2.id)
+    expect(mergeResult).toBeDefined()
+    expect(mergeResult!.id).toBe(child1.id)
 
     const updatedChild1 = store.blocks.find(b => b.id === child1.id)
     expect(updatedChild1?.content).toBe('Child1Child2')
@@ -235,5 +239,103 @@ describe('deleteBlock - Backspace 删除空 Block', () => {
     await store.deleteBlock(parent.id)
 
     expect(store.blocks).toHaveLength(0) // 父节点和所有子节点都被删除
+  })
+})
+
+describe('Left Field Redesign - New Implementation', () => {
+  test('Outdent operation maintains unique left values', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    // Create parent and child
+    const parent = await store.createBlock({ pageId, content: 'Parent' })
+    const child = await store.createBlock({ pageId, content: 'Child', parentId: parent.id })
+
+    // Create another sibling for parent
+    await store.createBlock({ pageId, content: 'Sibling' })
+
+    // Outdent child to parent level
+    await store.outdent(child.id)
+
+    // Check for duplicate left values
+    const leftValues = store.blocks.map(b => b.left)
+    const uniqueLeftValues = new Set(leftValues)
+    expect(leftValues.length).toBe(uniqueLeftValues.size)
+  })
+
+  test('Indent operation properly orders new child', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    // Create parent with multiple children
+    const parent = await store.createBlock({ pageId, content: 'Parent' })
+    await store.createBlock({ pageId, content: 'Child1', parentId: parent.id })
+    await store.createBlock({ pageId, content: 'Child2', parentId: parent.id })
+
+    // Create new block to indent
+    const newBlock = await store.createBlock({ pageId, content: 'New Block' })
+
+    // Indent new block
+    await store.indent(newBlock.id)
+
+    // Check that new block is properly ordered among children
+    const children = store.getChildren(parent.id)
+    expect(children.length).toBe(3)
+  })
+
+  test('Large number of nodes handled efficiently', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    // Create 1000 nodes
+    const startTime = performance.now()
+    for (let i = 0; i < 1000; i++) {
+      await store.createBlock({ pageId, content: `Node ${i}` })
+    }
+    const endTime = performance.now()
+
+    // Should complete in reasonable time
+    expect(endTime - startTime).toBeLessThan(2000)
+
+    // Validate no duplicate left values
+    expect(store.validateBlocks()).toBe(true)
+  })
+
+  test('Reindexing fixes inconsistencies', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    // Create blocks with potentially inconsistent left values
+    await store.createBlock({ pageId, content: 'Block 1', left: 100 })
+    await store.createBlock({ pageId, content: 'Block 2', left: 150 }) // Non-standard increment
+    await store.createBlock({ pageId, content: 'Block 3', left: 250 }) // Large gap
+
+    // Reindex
+    await store.reindexBlocks()
+
+    // Check that left values are consistent
+    const sortedBlocks = store.sortedBlocks
+    expect(sortedBlocks[0].left).toBe(100)
+    expect(sortedBlocks[1].left).toBe(200)
+    expect(sortedBlocks[2].left).toBe(300)
+  })
+
+  test('Cross-level moves maintain proper ordering', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    // Create deep hierarchy
+    const level1 = await store.createBlock({ pageId, content: 'Level 1' })
+    const level2 = await store.createBlock({ pageId, content: 'Level 2', parentId: level1.id })
+    const level3 = await store.createBlock({ pageId, content: 'Level 3', parentId: level2.id })
+
+    // Move level3 directly to level1
+    await store.outdent(level3.id)
+    await store.outdent(level3.id)
+
+    // Check that it's properly positioned
+    const siblings = store.blocks.filter(b => b.parentId === null)
+    expect(siblings.length).toBe(2)
+    expect(store.validateBlocks()).toBe(true)
   })
 })

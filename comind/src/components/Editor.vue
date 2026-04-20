@@ -17,6 +17,7 @@ const emit = defineEmits<{
   (e: 'delete'): void
   (e: 'indent'): void
   (e: 'outdent'): void
+  (e: 'cursor-change', pos: number): void
 }>()
 
 const editorStore = useEditorStore()
@@ -24,6 +25,9 @@ const editorStore = useEditorStore()
 // 跟踪用户是否正在输入（用于 watch 过滤）
 let isUserEditing = false
 let editingTimer: ReturnType<typeof setTimeout> | null = null
+
+// 同步内容期间禁用 onBlur 失活（防止 setContent 触发 onBlur）
+let syncing = false
 
 // 自定义扩展：在 ProseMirror keyboard shortcut 层拦截 Enter
 // 返回 true 阻止 tiptap 默认段落行为，触发 split
@@ -70,8 +74,9 @@ const editor = shallowRef(useEditor({
     EnterAsBlockExtension
   ],
   content: props.content,
-  autofocus: true,
+  autofocus: false,
   onBlur: () => {
+    if (syncing) return  // 同步期间不触发失活
     if (editor.value) {
       emit('save', editor.value.getText())
     }
@@ -84,6 +89,11 @@ const editor = shallowRef(useEditor({
     editingTimer = setTimeout(() => {
       isUserEditing = false
     }, 100)
+    // 触发光标位置变化事件
+    if (editor.value) {
+      const { from } = editor.value.state.selection
+      emit('cursor-change', from)
+    }
   }
 }))
 
@@ -93,11 +103,11 @@ watch(
   () => props.content,
   (newContent) => {
     if (!editor.value) return
-    // 如果用户正在输入（100ms 内），跳过同步
     if (isUserEditing) return
-    // 内容真的有差异时才更新
     if (editor.value.getText() !== newContent) {
+      syncing = true
       editor.value.commands.setContent(newContent)
+      syncing = false
     }
   }
 )
@@ -111,14 +121,35 @@ onBeforeUnmount(() => {
   editor.value?.destroy()
 })
 
-// 暴露给父组件的同步方法（split 后强制同步内容）
-function syncContent(content: string) {
+// 暴露给父组件的同步方法（split/merge 后强制同步内容 + 恢复光标）
+function syncContent(content: string, cursorPos?: number) {
   if (editor.value) {
+    const state = editor.value.state
+    // 保存当前 selection，在 setContent 后恢复
+    const prevSel = state.selection
+    syncing = true
     editor.value.commands.setContent(content)
+    syncing = false
+    // 恢复光标位置（如果指定了 cursorPos）或保持原位
+    const targetPos = (cursorPos !== undefined)
+      ? Math.min(cursorPos, content.length + 1)
+      : prevSel.from
+    editor.value.commands.setTextSelection(targetPos)
   }
 }
 
-defineExpose({ syncContent })
+function focus(pos?: number | 'start' | 'end') {
+  if (editor.value) {
+    if (typeof pos === 'number') {
+      editor.value.commands.focus()
+      editor.value.commands.setTextSelection(pos)
+    } else {
+      editor.value.commands.focus(pos)
+    }
+  }
+}
+
+defineExpose({ syncContent, focus, getText: () => editor.value?.getText() ?? '' })
 </script>
 
 <template>

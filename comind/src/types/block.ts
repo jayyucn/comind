@@ -25,3 +25,8 @@ export interface BlockRecord {
   properties?: string
   folded?: boolean
 }
+
+// 定义BlockWithPos接口的pos字段
+export interface BlockWithPos extends Block {
+  pos?: number
+}

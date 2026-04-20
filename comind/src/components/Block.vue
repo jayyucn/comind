@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch, nextTick } from 'vue'
 import { useEditorStore } from '../stores/editor'
 import { useBlockStore } from '../stores/blocks'
 import Editor from './Editor.vue'
 
 const props = defineProps<{
   blockId: string
-  block: import('../types/block').Block
+  block: import('../types/block').BlockWithPos
 }>()
 
 const editorStore = useEditorStore()
@@ -15,7 +15,29 @@ const blockStore = useBlockStore()
 const isActive = computed(() => editorStore.activeBlockId === props.blockId)
 const children = computed(() => blockStore.getChildren(props.blockId))
 
-/** 层级缩进深度 */
+const editorRef = ref<InstanceType<typeof Editor> | null>(null)
+const cursorPos = ref(0)
+
+watch(
+  isActive,
+  async (active) => {
+    if (active) {
+      await nextTick()
+      if (editorRef.value) {
+        // 优先使用 editorStore.pendingCursorPos（来自 merge 等操作）
+        // 否则默认到末尾
+        const pendingPos = editorStore.consumeCursorPos()
+        if (pendingPos !== null) {
+          editorRef.value.focus(pendingPos)
+        } else {
+          editorRef.value.focus('end')
+        }
+      }
+    }
+  },
+  { immediate: false }
+)
+
 const indentDepth = computed(() => {
   let depth = 0
   let pid = props.block.parentId
@@ -46,6 +68,10 @@ async function handleSave(content: string) {
 }
 
 async function handleSplit(cursorPos: number) {
+  // 先保存当前编辑器内容（onBlur 不会在 Enter/Split 时触发）
+  if (editorRef.value) {
+    await handleSave(editorRef.value.getText())
+  }
   editorStore.deactivateBlock()
   const newBlock = await blockStore.splitBlock(props.blockId, cursorPos)
   if (newBlock) {
@@ -54,10 +80,15 @@ async function handleSplit(cursorPos: number) {
 }
 
 async function handleMerge() {
+  // 在 deactivate 之前手动保存当前编辑器内容
+  // （onBlur 不会在 Enter/Split 后触发，deactivateBlock 也不会）
+  if (editorRef.value) {
+    await handleSave(editorRef.value.getText())
+  }
   editorStore.deactivateBlock()
-  const newId = await blockStore.mergeWithPrevious(props.blockId)
-  if (newId) {
-    editorStore.activateBlock(newId)
+  const result = await blockStore.mergeWithPrevious(props.blockId)
+  if (result) {
+    editorStore.activateBlock(result.id, result.cursorPos)
   }
 }
 
@@ -70,7 +101,7 @@ async function handleDelete() {
   const prevId = siblings[0]?.id
 
   await blockStore.deleteBlock(props.blockId)
-  
+
   // 激活前一个 Block
   if (prevId) {
     editorStore.activateBlock(prevId)
@@ -89,6 +120,10 @@ async function handleOutdent() {
   editorStore.activateBlock(props.blockId)
 }
 
+function handleCursorChange(pos: number) {
+  cursorPos.value = pos
+}
+
 /** 渲染内容（[[链接]] 高亮、#标签 样式） */
 function renderContent(text: string): string {
   // 内部链接 [[xxx]] 和 [[xxx|yyy]]
@@ -97,11 +132,11 @@ function renderContent(text: string): string {
       const display = alias || target
       return `<span class="block-link">${display}</span>`
     })
-  // 外部链接 [[http://...]]
+    // 外部链接 [[http://...]]
     .replace(/\[\[(https?:\/\/[^\]]+)\]\]/g, (_, url) => {
       return `<span class="block-link external">${url}</span>`
     })
-  // 标签 #tag
+    // 标签 #tag
     .replace(/#([\p{L}_][\p{L}\p{N}_]*)/gu, (_, tag) => {
       return `<span class="block-tag">#${tag}</span>`
     })
@@ -123,33 +158,16 @@ function renderContent(text: string): string {
 
       <!-- 内容区 -->
       <div class="block-content" @click="handleContentClick">
-        <Editor
-          v-if="isActive"
-          :block-id="blockId"
-          :content="block.content"
-          @save="handleSave"
-          @split="handleSplit"
-          @merge="handleMerge"
-          @delete="handleDelete"
-          @indent="handleIndent"
-          @outdent="handleOutdent"
-        />
-        <div
-          v-else
-          class="block-text"
-          v-html="renderContent(block.content) "
-        ></div>
+        <Editor v-if="isActive" ref="editorRef" :block-id="blockId" :content="block.content" @save="handleSave"
+          @split="handleSplit" @merge="handleMerge" @delete="handleDelete" @indent="handleIndent"
+          @outdent="handleOutdent" @cursor-change="handleCursorChange" />
+        <div v-else class="block-text" v-html="renderContent(block.content)"></div>
       </div>
     </div>
 
     <!-- 子节点 -->
     <div v-if="children.length > 0 && !collapsed" class="block-children">
-      <Block
-        v-for="child in children"
-        :key="child.id"
-        :block-id="child.id"
-        :block="child"
-      />
+      <Block v-for="child in children" :key="child.id" :block-id="child.id" :block="child" />
     </div>
   </div>
 </template>
@@ -210,6 +228,29 @@ function renderContent(text: string): string {
 
 .block.active .block-text {
   background: rgba(180, 83, 9, 0.06);
+}
+
+.block-log {
+  margin-left: 12px;
+  padding: 4px 8px;
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 1.2;
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.log-item {
+  color: #495057;
+  margin-bottom: 2px;
+}
+
+.log-item:last-child {
+  margin-bottom: 0;
 }
 
 .block-children {
