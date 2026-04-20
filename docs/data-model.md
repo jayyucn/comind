@@ -53,7 +53,8 @@ Block
 ├── updatedAt       TIMESTAMP   更新时间
 ├── isPage          BOOLEAN     是否为页面（顶级 Block = true）
 ├── title           TEXT | NULL 页面标题（仅 isPage = true 时有效）
-└── properties      TEXT | NULL 属性 JSON（JSON 格式字符串）
+├── properties      TEXT | NULL 属性 JSON（JSON 格式字符串）
+└── collapsed       BOOLEAN     是否折叠子节点（默认 false）
 ```
 
 **字段说明：**
@@ -68,6 +69,7 @@ Block
 | `isPage` | true = 页面 Block（Page）；false = 普通条目（Bullet）。与 parentId 共同决定 Block 类型 |
 | `title` | 页面显示名称（仅 isPage = true 时有效）。逻辑：properties.title 存在时取之，否则取 content 第一行非 property 行 |
 | `properties` | JSON 字符串，存储属性键值对 |
+| `collapsed` | 运行时状态，控制 Block 是否折叠子节点。不持久化到 Markdown，仅在内存和 IndexedDB 中存储 |
 
 **left 字段操作规则：**
 
@@ -93,7 +95,8 @@ gap 用完（差值 < 2）时，对该父级的所有子节点做局部重排：
   "updatedAt": "2026-04-16T09:30:00Z",
   "isPage": true,
   "title": "数据模型设计",
-  "properties": "{\"项目名\": \"数据模型设计\"}"
+  "properties": "{\"项目名\": \"数据模型设计\"}",
+  "collapsed": false
 }
 ```
 
@@ -429,6 +432,7 @@ CREATE TABLE Block (
     isPage      INTEGER NOT NULL DEFAULT 0,  -- 1 = Page Block，0 = Bullet
     title       TEXT,                  -- 页面显示名称，isPage = 1 时有效
     properties  TEXT,                  -- JSON 字符串，建议不超过 4KB
+    collapsed   INTEGER NOT NULL DEFAULT 0,  -- 1 = 折叠子节点，0 = 展开
     filePath    TEXT                   -- 对应 Markdown 文件的相对路径
 );
 

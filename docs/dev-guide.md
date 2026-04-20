@@ -444,7 +444,7 @@ export interface BlockRecord {
   isPage: boolean
   title?: string
   properties?: string    // JSON 字符串（与 data-model.md 一致）
-  folded?: boolean       // 折叠状态
+  collapsed?: boolean       // 折叠状态
 }
 
 export interface LinkRecord {
@@ -570,7 +570,7 @@ export class IndexedDBAdapter implements StorageAdapter {
       isPage: record.isPage,
       title: record.title,
       properties: record.properties ? JSON.parse(record.properties) : undefined,
-      folded: record.folded
+      collapsed: record.collapsed
     }
   }
 }

@@ -37,7 +37,7 @@ export interface BlockRecord {
   isPage: boolean
   title?: string
   properties?: string    // JSON 字符串（与 data-model.md 一致）
-  folded?: boolean
+  collapsed?: boolean
 }
 
 export interface PageRecord {

@@ -1,9 +1,9 @@
 # Page（Block 树）交互规范
 
-> 版本：v0.1\
+> 版本：v0.2\
 > 日期：2026-04-20\
-> 状态：初稿，待评审\
-> 依据：`SPEC.md` `block-editor-spec.md` `ui-ux-spec.md`
+> 状态：已评审，修复中\
+> 依据：`SPEC.md` `block-editor-spec.md` `ui-ux-spec.md` `data-model.md`
 
 ***
 
@@ -44,6 +44,14 @@ display ──[键盘↑↓]──→ focused ──[Enter]──→ edit
                     ↑         │
                     └──[ESC]──┘
 ```
+
+**临时状态说明：**
+- `pendingCursorPos`：仅在编辑态切换瞬间使用的临时状态，用于记录点击位置。tiptap 挂载后立即消费，不持久化。
+
+**Block.collapsed 字段说明：**
+- `collapsed` 是运行时状态，控制 Block 是否折叠子节点
+- 存储于 IndexedDB，不持久化到 Markdown
+- 默认值为 `false`（展开态）
 
 ***
 
@@ -121,12 +129,16 @@ display ──[键盘↑↓]──→ focused ──[Enter]──→ edit
 | ------------------ | --------------------------------- |
 | 目标 Block 上方 50% 区域 | 作为目标 Block 的**前一个兄弟**             |
 | 目标 Block 下方 50% 区域 | 作为目标 Block 的**后一个兄弟**             |
-| 目标 Block 操作区上/下半部  | 作为目标 Block 的**子 Block**（缩进 +24px） |
+| 目标 Block 操作区（左侧 24px） | 作为目标 Block 的**子 Block**（缩进 +100 left 值） |
+
+**操作区定义：**
+- 操作区宽度：24px，包含折叠图标和拖拽手柄
+- 放置为子 Block 时，水平线缩进 24px（与操作区左边缘对齐）
 
 **放置层级指示：**
 
 - 放置在 Block 之前/之后：水平线与目标 Block 左边缘对齐
-- 放置为子 Block：水平线缩进 24px（与目标 Block 操作区对齐）
+- 放置为子 Block：水平线缩进 24px（与操作区对齐）
 
 **边界情况：**
 
@@ -220,6 +232,10 @@ display ──[键盘↑↓]──→ focused ──[Enter]──→ edit
 **拆分后的 left 值计算：**
 
 - 新 Block 的 `left` = 当前 Block 的 `left` + gap（如当前 left=100，新 Block left=150）
+
+**left 值与视觉层级映射：**
+- 每缩进一级，`left` 值增加 100
+- 示例：level 1 (left=100) → level 2 (left=200) → level 3 (left=300)
 
 **边界情况：**
 
@@ -465,7 +481,7 @@ display ──[键盘↑↓]──→ focused ──[Enter]──→ edit
 | ------------------- | ----------------------------------- |
 | 点击悬空链接（目标 Page 不存在） | 显示链接文本，但点击无反应（Phase 1），或显示"页面不存在"提示 |
 | 编辑态输入 `[[` 后立即按 ESC | 临时高亮清除，`[[` 字符保留在内容中（待下次保存时解析）      |
-| 删除带链接的 Block        | Link 表中对应记录同步删除（保存时触发）              |
+| 删除带链接的 Block        | Link 表中对应记录**级联删除**（该 Block 及其所有子 Block 的 Links 同步删除）              |
 | Block 内容中的标签 `#tag` | 仅高亮显示，点击无操作（Phase 1）                |
 
 ### 4.5 Property 行
@@ -526,4 +542,4 @@ ESC               （退出编辑 / 取消）
 
 ***
 
-*文档 v0.1，初稿待评审。*
+*文档 v0.2，已评审并修复。*

@@ -190,7 +190,7 @@ export interface BlockRecord {
   order: number        // 同级排序
   createdAt: number    // 创建时间戳
   updatedAt: number    // 更新时间戳
-  folded?: boolean     // 折叠状态
+  collapsed?: boolean       // 折叠状态
 }
 
 export interface PageRecord {
