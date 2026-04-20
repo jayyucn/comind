@@ -30,7 +30,7 @@ watch(
         if (pendingPos !== null) {
           editorRef.value.focus(pendingPos)
         } else {
-          editorRef.value.focus('end')
+          editorRef.value.focus('start')
         }
       }
     }
