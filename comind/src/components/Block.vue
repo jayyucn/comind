@@ -68,9 +68,8 @@ async function handleSave(content: string) {
 }
 
 async function handleSplit(cursorPos: number) {
-  // 先保存当前编辑器内容（onBlur 不会在 Enter/Split 时触发）
   if (editorRef.value) {
-    await handleSave(editorRef.value.getText())
+    editorRef.value.syncContent(editorRef.value.getText().substring(0, cursorPos-1))
   }
   editorStore.deactivateBlock()
   const newBlock = await blockStore.splitBlock(props.blockId, cursorPos)

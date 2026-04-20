@@ -28,6 +28,8 @@ let editingTimer: ReturnType<typeof setTimeout> | null = null
 
 // 同步内容期间禁用 onBlur 失活（防止 setContent 触发 onBlur）
 let syncing = false
+// 强制同步标志（用于 split/merge 等外部内容变更场景）
+let forceSync = false
 
 // 自定义扩展：在 ProseMirror keyboard shortcut 层拦截 Enter
 // 返回 true 阻止 tiptap 默认段落行为，触发 split
@@ -99,11 +101,12 @@ const editor = shallowRef(useEditor({
 
 // 同步外部 content 变化
 // isUserEditing 标志确保用户输入时不会被覆盖
+// forceSync 标志用于强制同步（如 split/merge 操作）
 watch(
   () => props.content,
   (newContent) => {
     if (!editor.value) return
-    if (isUserEditing) return
+    if (isUserEditing && !forceSync) return
     if (editor.value.getText() !== newContent) {
       syncing = true
       editor.value.commands.setContent(newContent)
@@ -124,17 +127,17 @@ onBeforeUnmount(() => {
 // 暴露给父组件的同步方法（split/merge 后强制同步内容 + 恢复光标）
 function syncContent(content: string, cursorPos?: number) {
   if (editor.value) {
+    forceSync = true // 强制同步，忽略 isUserEditing
     const state = editor.value.state
-    // 保存当前 selection，在 setContent 后恢复
     const prevSel = state.selection
     syncing = true
     editor.value.commands.setContent(content)
     syncing = false
-    // 恢复光标位置（如果指定了 cursorPos）或保持原位
     const targetPos = (cursorPos !== undefined)
       ? Math.min(cursorPos, content.length + 1)
       : prevSel.from
     editor.value.commands.setTextSelection(targetPos)
+    forceSync = false
   }
 }
 
