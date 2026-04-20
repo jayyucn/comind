@@ -16,6 +16,7 @@ const isActive = computed(() => editorStore.activeBlockId === props.blockId)
 const children = computed(() => blockStore.getChildren(props.blockId))
 
 const editorRef = ref<InstanceType<typeof Editor> | null>(null)
+const transitionRef = ref<HTMLElement | null>(null)
 const cursorPos = ref(0)
 
 watch(
@@ -55,8 +56,54 @@ const indentWidth = computed(() => `${indentDepth.value * 24}px`)
 /** 是否折叠 */
 const collapsed = ref(false)
 
-function handleBulletClick() {
-  collapsed.value = !collapsed.value
+/** 折叠动画目标 max-height（展开时 auto-collapsed 时设为 0） */
+const maxHeight = ref<string>('auto')
+
+/** 动画进行中，防止重复触发 */
+const isAnimating = ref(false)
+
+function handleCollapseToggle() {
+  // 规范 §2.2：只有有子节点时才响应
+  if (children.value.length === 0) return
+
+  if (isAnimating.value) {
+    // 规范 §2.2：动画进行中直接切换到目标状态
+    isAnimating.value = false
+  }
+
+  if (!collapsed.value) {
+    // 展开 → 折叠：先记录当前高度，再设为 0 触发动画
+    const el = transitionRef.value as HTMLElement | undefined
+    if (el) {
+      maxHeight.value = el.scrollHeight + 'px'
+      // 强制让浏览器应用当前高度
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          maxHeight.value = '0px'
+          isAnimating.value = true
+        })
+      })
+    }
+    collapsed.value = true
+  } else {
+    // 折叠 → 展开：先设为 0，再在 nextFrame 设为 auto（实际由 scrollHeight 撑开）
+    collapsed.value = false
+    isAnimating.value = true
+    maxHeight.value = '0px'
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const el = transitionRef.value as HTMLElement | undefined
+        maxHeight.value = el ? el.scrollHeight + 'px' : '2000px'
+      })
+    })
+  }
+}
+
+function onTransitionEnd() {
+  isAnimating.value = false
+  if (collapsed.value) {
+    maxHeight.value = 'auto'
+  }
 }
 
 /** mousedown：捕获点击坐标，在 tiptap 挂载前通知 editor store */
@@ -91,7 +138,8 @@ async function handleSplit(cursorPos: number) {
   editorStore.deactivateBlock()
   const newBlock = await blockStore.splitBlock(props.blockId, cursorPos)
   if (newBlock) {
-    editorStore.activateBlock(newBlock.id)
+    // 新 Block 是刚创建的空白 Block，光标应落在最前面
+    editorStore.activateBlock(newBlock.id, 1)
   }
 }
 
@@ -169,8 +217,8 @@ function renderContent(text: string): string {
       <!-- 缩进占位 -->
       <div class="block-indent" :style="{ width: indentWidth }"></div>
 
-      <!-- Bullet -->
-      <span class="block-bullet" @click="handleBulletClick">
+<!-- Bullet（stop 防止误触编辑态） -->
+      <span class="block-bullet" :class="{ collapsed }" @click.stop="handleCollapseToggle">
         <span v-if="children.length > 0" class="bullet-icon">{{ collapsed ? '▶' : '▼' }}</span>
         <span v-else class="bullet-dot">•</span>
       </span>
@@ -184,10 +232,17 @@ function renderContent(text: string): string {
       </div>
     </div>
 
-    <!-- 子节点 -->
-    <div v-if="children.length > 0 && !collapsed" class="block-children">
-      <Block v-for="child in children" :key="child.id" :block-id="child.id" :block="child" />
-    </div>
+    <!-- 子节点（折叠动画） -->
+    <Transition name="collapse" @after-leave="onTransitionEnd">
+      <div
+        v-if="children.length > 0 && !collapsed"
+        ref="transitionRef"
+        class="block-children"
+        :style="{ maxHeight }"
+      >
+        <Block v-for="child in children" :key="child.id" :block-id="child.id" :block="child" />
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -249,8 +304,30 @@ function renderContent(text: string): string {
   background: rgba(180, 83, 9, 0.06);
 }
 
-.block-children {
-  margin-left: 0;
+/* 折叠动画（max-height 过渡） */
+.collapse-enter-active,
+.collapse-leave-active {
+  transition: max-height 180ms ease, opacity 180ms ease, overflow hidden;
+}
+
+.collapse-enter-from,
+.collapse-leave-to {
+  max-height: 0 !important;
+  opacity: 0;
+}
+
+.collapse-enter-to,
+.collapse-leave-from {
+  opacity: 1;
+}
+
+/* collapsed 态 bullet 视觉反馈 */
+.block-bullet.collapsed .bullet-icon {
+  opacity: 0.7;
+}
+
+.block-bullet.collapsed {
+  opacity: 0.8;
 }
 
 /* Link & Tag styles */
