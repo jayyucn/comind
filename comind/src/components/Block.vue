@@ -68,8 +68,10 @@ async function handleSave(content: string) {
 }
 
 async function handleSplit(cursorPos: number) {
+  // 先保存当前编辑器内容，并标记已保存（阻止 onBlur 重复写入旧内容）
   if (editorRef.value) {
-    editorRef.value.syncContent(editorRef.value.getText().substring(0, cursorPos-1))
+    editorRef.value.markSaved()
+    await handleSave(editorRef.value.getText())
   }
   editorStore.deactivateBlock()
   const newBlock = await blockStore.splitBlock(props.blockId, cursorPos)
@@ -79,9 +81,9 @@ async function handleSplit(cursorPos: number) {
 }
 
 async function handleMerge() {
-  // 在 deactivate 之前手动保存当前编辑器内容
-  // （onBlur 不会在 Enter/Split 后触发，deactivateBlock 也不会）
+  // 先保存当前编辑器内容，并标记已保存（阻止 onBlur 重复写入旧内容）
   if (editorRef.value) {
+    editorRef.value.markSaved()
     await handleSave(editorRef.value.getText())
   }
   editorStore.deactivateBlock()
@@ -92,6 +94,7 @@ async function handleMerge() {
 }
 
 async function handleDelete() {
+  if (editorRef.value) editorRef.value.markSaved()
   editorStore.deactivateBlock()
   // 获取前一个 Block（合并目标）
   const siblings = blockStore.blocks
@@ -108,12 +111,14 @@ async function handleDelete() {
 }
 
 async function handleIndent() {
+  if (editorRef.value) editorRef.value.markSaved()
   editorStore.deactivateBlock()
   await blockStore.indent(props.blockId)
   editorStore.activateBlock(props.blockId)
 }
 
 async function handleOutdent() {
+  if (editorRef.value) editorRef.value.markSaved()
   editorStore.deactivateBlock()
   await blockStore.outdent(props.blockId)
   editorStore.activateBlock(props.blockId)
@@ -227,29 +232,6 @@ function renderContent(text: string): string {
 
 .block.active .block-text {
   background: rgba(180, 83, 9, 0.06);
-}
-
-.block-log {
-  margin-left: 12px;
-  padding: 4px 8px;
-  background: #f8f9fa;
-  border: 1px solid #e9ecef;
-  border-radius: 4px;
-  font-size: 10px;
-  line-height: 1.2;
-  max-width: 200px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.log-item {
-  color: #495057;
-  margin-bottom: 2px;
-}
-
-.log-item:last-child {
-  margin-bottom: 0;
 }
 
 .block-children {

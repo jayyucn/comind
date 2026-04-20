@@ -22,14 +22,10 @@ const emit = defineEmits<{
 
 const editorStore = useEditorStore()
 
-// 跟踪用户是否正在输入（用于 watch 过滤）
-let isUserEditing = false
-let editingTimer: ReturnType<typeof setTimeout> | null = null
-
-// 同步内容期间禁用 onBlur 失活（防止 setContent 触发 onBlur）
+// 同步内容期间禁用 onBlur 保存（防止 setContent 触发 onBlur 写回旧内容）
 let syncing = false
-// 强制同步标志（用于 split/merge 等外部内容变更场景）
-let forceSync = false
+// 标记已由外部（split/merge）保存，阻止 onBlur 重复保存
+let savedFromOutside = false
 
 // 自定义扩展：在 ProseMirror keyboard shortcut 层拦截 Enter
 // 返回 true 阻止 tiptap 默认段落行为，触发 split
@@ -78,19 +74,18 @@ const editor = shallowRef(useEditor({
   content: props.content,
   autofocus: false,
   onBlur: () => {
-    if (syncing) return  // 同步期间不触发失活
+    if (syncing) return  // 同步期间不触发保存
+    if (savedFromOutside) {
+      savedFromOutside = false
+      return  // 外部已保存，跳过
+    }
     if (editor.value) {
       emit('save', editor.value.getText())
     }
-    editorStore.deactivateBlock()
+    // 注意：不在这里调用 deactivateBlock()
+    // 失活由 Block.vue 显式控制（handleSplit/handleMerge/handleDelete 等）
   },
   onUpdate: () => {
-    // 用户正在输入时，标记为编辑状态，阻止 watch 更新
-    isUserEditing = true
-    if (editingTimer) clearTimeout(editingTimer)
-    editingTimer = setTimeout(() => {
-      isUserEditing = false
-    }, 100)
     // 触发光标位置变化事件
     if (editor.value) {
       const { from } = editor.value.state.selection
@@ -99,14 +94,11 @@ const editor = shallowRef(useEditor({
   }
 }))
 
-// 同步外部 content 变化
-// isUserEditing 标志确保用户输入时不会被覆盖
-// forceSync 标志用于强制同步（如 split/merge 操作）
+// 同步外部 content 变化（仅当编辑器文本与 prop 不一致时才更新）
 watch(
   () => props.content,
   (newContent) => {
     if (!editor.value) return
-    if (isUserEditing && !forceSync) return
     if (editor.value.getText() !== newContent) {
       syncing = true
       editor.value.commands.setContent(newContent)
@@ -120,14 +112,12 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  if (editingTimer) clearTimeout(editingTimer)
   editor.value?.destroy()
 })
 
 // 暴露给父组件的同步方法（split/merge 后强制同步内容 + 恢复光标）
 function syncContent(content: string, cursorPos?: number) {
   if (editor.value) {
-    forceSync = true // 强制同步，忽略 isUserEditing
     const state = editor.value.state
     const prevSel = state.selection
     syncing = true
@@ -137,7 +127,6 @@ function syncContent(content: string, cursorPos?: number) {
       ? Math.min(cursorPos, content.length + 1)
       : prevSel.from
     editor.value.commands.setTextSelection(targetPos)
-    forceSync = false
   }
 }
 
@@ -152,7 +141,12 @@ function focus(pos?: number | 'start' | 'end') {
   }
 }
 
-defineExpose({ syncContent, focus, getText: () => editor.value?.getText() ?? '' })
+// 暴露给父组件：标记内容已由外部保存，阻止 onBlur 重复保存
+function markSaved() {
+  savedFromOutside = true
+}
+
+defineExpose({ syncContent, focus, getText: () => editor.value?.getText() ?? '', markSaved })
 </script>
 
 <template>

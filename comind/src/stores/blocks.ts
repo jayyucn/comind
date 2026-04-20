@@ -57,12 +57,12 @@ export const useBlockStore = defineStore('blocks', () => {
     }
   }
 
-  /** 持久化保存（防抖 300ms） */
+  /** 持久化保存（防抖 300ms，不返回 Promise——调用方不应依赖 IDB 写入完成） */
   const _saveBlock = debounce(async (block: Block) => {
     await storage.saveBlock(block)
   }, 300)
 
-  async function saveBlock(block: Block) {
+  function saveBlock(block: Block) {
     _saveBlock(block)
   }
 
@@ -109,10 +109,8 @@ export const useBlockStore = defineStore('blocks', () => {
     // cursorPos 是 ProseMirror document position（从段落开始节点计 +1）
     // 转为 text offset 再做 slice
     const textOffset = Math.max(0, cursorPos - 1)
-    console.log('[splitBlock] cursorPos:', cursorPos, 'textOffset:', textOffset, 'content:', block.content)
     const before = block.content.slice(0, textOffset)
     const after = block.content.slice(textOffset)
-    console.log('[splitBlock] before:', before, 'after:', after)
 
     // 更新当前 Block
     block.content = before
