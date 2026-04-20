@@ -3,7 +3,6 @@ import { onBeforeUnmount, onMounted, watch, shallowRef } from 'vue'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import { Extension } from '@tiptap/core'
-import { useEditorStore } from '../stores/editor'
 
 const props = defineProps<{
   blockId: string

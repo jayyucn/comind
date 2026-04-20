@@ -13,6 +13,10 @@ export const usePageStore = defineStore('pages', () => {
     loading.value = true
     try {
       pages.value = await storage.getAllPages()
+      // 空 IDB -> 创建第一个默认 page
+      if (pages.value.length === 0) {
+        await createPage('comind')
+      }
     } finally {
       loading.value = false
     }

@@ -20,15 +20,6 @@ const currentPageTitle = computed(() => {
   const page = pageStore.getPage(blockStore.currentPageId)
   return page?.title ?? 'comind'
 })
-
-/** 点击空白处新增 Block */
-async function handleAddBlock() {
-  await blockStore.createBlock({
-    pageId: blockStore.currentPageId,
-    content: ''
-  })
-}
-handleAddBlock()
 </script>
 
 <template>

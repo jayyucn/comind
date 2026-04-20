@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { usePageStore } from '../stores/pages'
+import { useBlockStore } from '../stores/blocks'
 
 const pageStore = usePageStore()
+const blockStore = useBlockStore()
 const newPageTitle = ref('')
 const creating = ref(false)
 
@@ -10,8 +12,17 @@ onMounted(async () => {
   await pageStore.loadAllPages()
   if (pageStore.pages.length > 0) {
     await pageStore.openPage(pageStore.pages[0].id)
+    ensureFirstBlock()
   }
 })
+
+/** 确保当前 page 至少有一个空 block */
+function ensureFirstBlock() {
+  const hasBlock = blockStore.blocks.some(b => b.pageId === pageStore.currentPageId && b.parentId === null)
+  if (!hasBlock) {
+    blockStore.createBlock({ pageId: pageStore.currentPageId, content: '' })
+  }
+}
 
 async function handleCreatePage() {
   const title = newPageTitle.value.trim()
@@ -20,6 +31,7 @@ async function handleCreatePage() {
   try {
     const page = await pageStore.createPage(title)
     await pageStore.openPage(page.id)
+    ensureFirstBlock()
     newPageTitle.value = ''
   } finally {
     creating.value = false
@@ -28,6 +40,7 @@ async function handleCreatePage() {
 
 async function handleOpenPage(pageId: string) {
   await pageStore.openPage(pageId)
+  ensureFirstBlock()
 }
 </script>
 

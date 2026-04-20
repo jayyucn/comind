@@ -57,13 +57,22 @@ export const useBlockStore = defineStore('blocks', () => {
     }
   }
 
-  /** 持久化保存（防抖 300ms，不返回 Promise——调用方不应依赖 IDB 写入完成） */
-  const _saveBlock = debounce(async (block: Block) => {
-    await storage.saveBlock(block)
-  }, 300)
+  /** 每个 Block 独立的防抖保存（Map 确保删除时能取消 pending save） */
+  const pendingSaves = new Map<string, ReturnType<typeof debounce<typeof _doSave>>>()
 
-  function saveBlock(block: Block) {
-    _saveBlock(block)
+  async function _doSave(block: Block) {
+    // 检查 block 是否仍在内存中（可能被删了）
+    if (!findBlockById(block.id, blocks.value)) return
+    await storage.saveBlock(block)
+    pendingSaves.delete(block.id)
+  }
+
+  function _scheduleSave(block: Block) {
+    // 取消该 block 之前的 pending save
+    pendingSaves.get(block.id)?.cancel()
+    const d = debounce(_doSave, 300)
+    pendingSaves.set(block.id, d)
+    d(block)
   }
 
   /** 创建新 Block */
@@ -210,7 +219,7 @@ export const useBlockStore = defineStore('blocks', () => {
     block.left = calculateIndentLeft(parent, children)
     block.updatedAt = new Date().toISOString()
 
-    await _saveBlock(block)
+    _scheduleSave(block)
   }
 
   /** 反缩进（提升到父节点的层级） */
@@ -228,11 +237,15 @@ export const useBlockStore = defineStore('blocks', () => {
     block.left = calculateOutdentLeft(parent, siblings)
     block.updatedAt = new Date().toISOString()
 
-    await _saveBlock(block)
+    _scheduleSave(block)
   }
 
-  /** 删除 Block */
+  /** 删除 Block（删除前取消该 block 的 pending save，防止死块复活） */
   async function deleteBlock(blockId: string) {
+    // 取消该 block 及所有子 block 的 pending saves
+    pendingSaves.get(blockId)?.cancel()
+    pendingSaves.delete(blockId)
+
     // 递归删除子节点
     const children = blocks.value.filter(b => b.parentId === blockId)
     for (const child of children) {
@@ -249,7 +262,7 @@ export const useBlockStore = defineStore('blocks', () => {
     if (!block) return
     block.content = content
     block.updatedAt = new Date().toISOString()
-    await _saveBlock(block)
+    _scheduleSave(block)
   }
 
   /** 重新索引 left 值以修复间隙和确保一致性 */
@@ -261,7 +274,7 @@ export const useBlockStore = defineStore('blocks', () => {
       if (block && block.left !== update.left) {
         block.left = update.left
         block.updatedAt = new Date().toISOString()
-        _saveBlock(block)
+        _scheduleSave(block)
       }
     }
   }
@@ -279,7 +292,6 @@ export const useBlockStore = defineStore('blocks', () => {
     loading,
     getChildren,
     loadPage,
-    saveBlock,
     createBlock,
     splitBlock,
     mergeWithPrevious,
