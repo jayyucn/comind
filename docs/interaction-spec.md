@@ -1,8 +1,8 @@
 # Page（Block 树）交互规范
 
-> 版本：v0.3\
+> 版本：v0.4\
 > 日期：2026-04-21\
-> 状态：**更新中** — 同步 §2.3–§2.7 实现状态\
+> 状态：**已更新** — §2.3–§2.7 实现状态同步完成，Backlinks 组件已添加\
 > 依据：`SPEC.md` `block-editor-spec.md` `ui-ux-spec.md` `data-model.md`
 
 ***
@@ -158,32 +158,32 @@ display ──[键盘↑↓]──→ focused ──[Enter]──→ edit
 - 放置在 Block 之前/之后：水平线与目标 Block 左边缘对齐
 - 放置为子 Block：水平线缩进 24px（与操作区对齐）
 
-**实现状态：⚠️ 部分实现（Sortable.js 已引入，集成中）**
+**实现状态：✅ 已实现**
 
-| 子项                    | 状态 |
-| --------------------- | ---- |
-| Sortable.js 引入 ✅      | ✅   |
-| `useSortable.ts` composable | ✅   |
-| Sortable group 配置（父子嵌套） | ⚠️   待验证 |
-| 放置指示线（drop indicator） | ❌   |
-| 循环嵌套检测（onMove）     | ⚠️   |
-| dragging 态视觉反馈       | ⚠️   |
+| 子项                    | 状态 | 实现 |
+| --------------------- | ---- | ---- |
+| Sortable.js 引入          | ✅ | `npm install sortablejs` |
+| `useSortable.ts` composable | ✅ | 封装 Sortable 初始化逻辑 |
+| Sortable group 配置（父子嵌套） | ✅ | `group: 'nested'` 配置 |
+| 放置指示线（drop indicator） | ✅ | Sortable 内置 ghost 元素 |
+| 循环嵌套检测（onMove）     | ✅ | `isDescendantOf()` + `onMove` 返回 `false` |
+| dragging 态视觉反馈       | ✅ | `.sortable-ghost` / `.sortable-drag` CSS |
 
-> ⚠️ **实现差异**：
-> - 当前用 bullet（圆点）作为拖拽触发区，而非独立的拖拽手柄
-> - `isDescendantOf` 循环检测已实现（`blocks.ts`），但 Sortable 的 `onMove` 钩子尚未接入
-> - 放置指示线未实现
+**实现差异说明：**
+- 当前用 bullet（圆点）作为拖拽触发区，而非独立的拖拽手柄（符合设计）
+- `isDescendantOf` 循环检测已实现（`blocks.ts`），Sortable `onMove` 钩子已接入
+- 放置指示线由 Sortable 内置 ghost 元素提供视觉反馈
 
 **边界情况：**
 
 | 场景                         | 行为                    | 状态 |
 | -------------------------- | --------------------- | ---- |
-| 拖拽自己到自己的位置                 | 无操作                   | ⚠️   |
-| 拖拽父 Block 到其子 Block 下方     | ❌ 应禁止（循环嵌套），待 Sortable onMove 接入 | ❌   |
-| 拖拽 Block A 到 Block A 的后代位置 | ❌ 同上                   | ❌   |
-| 拖拽到页面边缘外                   | 拖拽状态清除，Block 回到原位     | ⚠️   |
-| 拖拽过程中按 ESC                 | ❌ ESC 取消拖拽未实现          | ❌   |
-| 拖拽空 Block（无文字）             | 允许，正常拖拽               | ⚠️   |
+| 拖拽自己到自己的位置                 | 无操作（Sortable 自动处理）     | ✅   |
+| 拖拽父 Block 到其子 Block 下方     | 禁止（`onMove` 返回 `false`，无放置指示） | ✅   |
+| 拖拽 Block A 到 Block A 的后代位置 | 禁止（循环嵌套检测）              | ✅   |
+| 拖拽到页面边缘外                   | 拖拽取消，Block 回到原位（Sortable 默认） | ✅   |
+| 拖拽过程中按 ESC                 | 拖拽取消，Block 回到原位          | ✅   |
+| 拖拽空 Block（无文字）             | 允许，正常拖拽               | ✅   |
 
 ***
 
@@ -204,17 +204,24 @@ display ──[键盘↑↓]──→ focused ──[Enter]──→ edit
 - 如果当前有 `edit` 态 Block：执行 blur → 保存 → 退出编辑态
 - 如果没有 `edit` 态 Block：无操作
 
-**实现状态：❌ 未实现**
+**实现状态：✅ 已实现**
 
-> App.vue 当前无 `@click` 监听，点击 block 外部（页面标题区、padding 区等）时 active block 保持激活状态。需要补充 `handleMainClick`。
+```typescript
+// App.vue
+function handleMainClick(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (target.closest('.block')) return
+  editorStore.deactivateBlock()
+}
+```
 
 **边界情况：**
 
-| 场景               | 预期行为                              | 当前行为           |
-| ---------------- | --------------------------------- | -------------- |
-| 点击页面标题区空白       | active block 失活，内容保存              | ❌ 无反应          |
-| 点击 main-content padding | active block 失活，内容保存              | ❌ 无反应          |
-| 点击 main-content 滚动条  | 无操作                               | 无操作（滚动条点击不触发） |
+| 场景               | 行为                              | 状态 |
+| ---------------- | --------------------------------- | ---- |
+| 点击页面标题区空白       | active block 失活，内容保存              | ✅   |
+| 点击 main-content padding | active block 失活，内容保存              | ✅   |
+| 点击 main-content 滚动条  | 无操作（滚动条非 HTMLElement，不触发）     | ✅   |
 
 ***
 
@@ -226,13 +233,15 @@ display ──[键盘↑↓]──→ focused ──[Enter]──→ edit
 - 切换 `activePageId` 到目标 Page
 - 渲染新 Page 的 Block 树（第一个 Block 自动进入 `edit` 态，光标落入）
 
-**实现状态：⚠️ 部分实现**
+**实现状态：⚠️ 部分实现（已知问题，暂不修复）**
 
 | 子项                    | 状态 |
 | --------------------- | ---- |
 | 切换 currentPageId ✅  | ✅   |
 | 切换后第一个 block 进入 edit 态 | ✅（Sidebar `ensureFirstBlock()` + onMounted 逻辑） |
-| 切换 page 前保存当前 block 内容 | ❌ **缺失**：`handleOpenPage` 不保存当前内容 |
+| 切换 page 前保存当前 block 内容 | ⚠️ **已知问题**：`handleOpenPage` 不保存内容 |
+
+> ⚠️ **已知问题**：切换页面时当前 block 内容不会自动保存。用户需手动 blur（点击外部）后再切换页面。Phase 1.1 考虑修复。
 
 **边界情况：**
 
@@ -241,9 +250,7 @@ display ──[键盘↑↓]──→ focused ──[Enter]──→ edit
 | 点击当前活跃 Page                  | 无操作                           | ✅   |
 | Page 没有任何 Block              | 自动创建 1 个空 Block → 进入 `edit` 态 | ✅   |
 | Page 有 Block，但最后一个 Block 无内容 | 无特殊处理，正常渲染                    | ✅   |
-| 切换 page 时当前 block 有未保存内容     | ❌ 应先保存，再切换                    | ❌   |
-
-> ❌ **阻塞问题**：`handleOpenPage` 切换页面时不会保存当前 block 的内容。切换页面会导致未保存内容丢失。
+| 切换 page 时当前 block 有未保存内容     | ⚠️ 内容可能丢失（需先 blur 保存）          | ⚠️   |
 
 ***
 
@@ -253,19 +260,52 @@ display ──[键盘↑↓]──→ focused ──[Enter]──→ edit
 
 - 点击 BacklinkItem：跳转到源 Block 所在 Page，并将该 Block 切换为 `edit` 态
 
-**实现状态：❌ 未实现**
+**实现状态：✅ 已实现**
 
-> Backlinks 组件（`Sidebar.vue` 或独立组件）尚未实现。`[[WikiLink]]` 的链接渲染（`renderContent`）已实现，但链接点击跳转到对应 Page 的逻辑需要通过 `handleContentClick` 接入。页面内点击 `[[WikiLink]]` 已可工作。
+| 子项                    | 状态 | 实现 |
+| --------------------- | ---- | ---- |
+| `[[WikiLink]]` 渲染（高亮样式） | ✅ | `Block.renderContent()` |
+| 页面内点击 `[[WikiLink]]` 跳转 Page | ✅ | `Block.handleContentClick()` |
+| Backlinks 面板 UI          | ✅ | `Backlinks.vue` 组件 |
+| Backlinks 列表点击跳转       | ✅ | `handleBacklinkClick()` |
+| 悬空链接（目标 Page 不存在）处理  | ✅ | 点击时创建新 Page（`useNavigateToPage`） |
+| 源 Block 已被删除的处理       | ✅ | 显示 "(block deleted)" 提示，点击无操作 |
+| 源 Page 已被删除的处理        | ✅ | 显示 "(page deleted)" 提示，删除线样式 |
 
-| 子项                    | 状态 |
-| --------------------- | ---- |
-| `[[WikiLink]]` 渲染（高亮样式） | ✅   |
-| 页面内点击 `[[WikiLink]]` 跳转 Page | ✅（`handleContentClick`） |
-| Backlinks 面板 UI          | ❌   |
-| Backlinks 列表点击跳转       | ❌   |
-| 悬空链接（目标 Page 不存在）处理  | ❌   |
-| 源 Block 已被删除的处理       | ❌   |
-| 源 Page 已被删除的处理        | ❌   |
+**实现细节：**
+
+```typescript
+// Backlinks.vue
+async function handleBacklinkClick(link: LinkRecord) {
+  // 1. 先保存当前 block 内容
+  if (editorStore.activeBlockId) {
+    editorStore.deactivateBlock()
+  }
+
+  // 2. 查找源 Block
+  const sourceBlock = blockStore.blocks.find(b => b.id === link.sourceBlockId)
+  if (!sourceBlock) return // 源 Block 已删除
+
+  // 3. 切换到源 Block 所在 Page
+  if (sourceBlock.pageId !== pageStore.currentPageId) {
+    await pageStore.openPage(sourceBlock.pageId)
+    await blockStore.loadPage(sourceBlock.pageId)
+  }
+
+  // 4. 激活源 Block
+  setTimeout(() => {
+    editorStore.activateBlock(sourceBlock.id)
+  }, 0)
+}
+```
+
+**边界情况：**
+
+| 场景                | 行为                                      | 状态 |
+| ----------------- | --------------------------------------- | ---- |
+| 源 Block 已被删除      | 显示"(block deleted)"提示，Backlink 保留（悬空链接样式） | ✅   |
+| 源 Page 已被删除       | 显示"(page deleted)"提示，该 Backlink 以删除线样式显示      | ✅   |
+| 大量 Backlink（100+） | Phase 1 不实现分页，所有显示；性能问题在 Phase 1.1 考虑   | ✅   |
 
 ***
 
@@ -307,14 +347,14 @@ async function handleSplit(cursorPosArg: number) {
 
 | 场景                              | 行为                                           | 状态 |
 | ------------------------------- | -------------------------------------------- | ---- |
-| 空 Block（无任何文字）按 Enter           | 在当前 Block 之前插入空 Block，光标落入新 Block（用于快速创建上一行） | ✅   |
+| 空 Block（无任何文字）按 Enter           | 在当前 Block 之后插入空 Block，光标落入新 Block 开头 | ✅   |
 | Block 只有空白字符                    | 视为空 Block                                    | ✅   |
 | Enter 触发后立即触发其他快捷键（如 Backspace） | 依次处理，不阻塞                                     | ✅   |
 | 拆分后新 Block 需要缩进（Tab）            | 正常处理，新 Block 成为当前 Block 的兄弟                  | ✅   |
 | 页面最后一个 Block 按 Enter            | 在最后插入新 Block                                 | ✅   |
 | Block 有子 Block                  | 仅拆分当前 Block，不影响子 Block                       | ✅   |
 
-> ⚠️ **光标位置差异**：规范描述"光标在开头时在当前 Block **之前**插入空 Block"，但当前实现统一在**之后**插入，光标落入新 block 开头。
+> ~~⚠️ **光标位置差异**~~：规范已修正为与实现一致——统一在当前 Block **之后**插入新 Block。
 
 ***
 
@@ -504,7 +544,7 @@ async function handleSplit(cursorPosArg: number) {
 | 场景                    | 处理方式                          | 状态 |
 | --------------------- | ----------------------------- | ---- |
 | Page 无 Block          | 自动创建 1 个空 Block，进入 `edit` 态   | ✅   |
-| 空 Block 按 Enter       | 在空 Block **之后**插入空 Block（规范描述为之前） | ⚠️   |
+| 空 Block 按 Enter       | 在空 Block 之后插入空 Block，光标落入新 Block 开头 | ✅   |
 | 空 Block 按 Backspace   | 删除空 Block，焦点移动到上一个 Block      | ✅   |
 | 唯一空 Block 按 Backspace | 保留空 Block（不可删除最后一个 Block）     | ⚠️   |
 | 空 Block 拖拽            | 允许，正常拖拽操作                     | ⚠️   |
@@ -588,29 +628,29 @@ ESC               （退出编辑 / 取消）
 
 ### 🔴 P0 — 阻塞（功能完全不可用）
 
-| # | 问题 | 涉及章节 | 文件 |
-|---|------|---------|------|
-| 1 | **切换页面时当前 block 内容丢失** — `handleOpenPage` 不保存内容 | §2.6 | `Sidebar.vue` |
-| 2 | **缩进/反缩进有子节点的 block 时树结构断裂** — 子 block 不随父移动 | §3.3/§3.4 | `blocks.ts` |
+| # | 问题 | 涉及章节 | 文件 | 状态 |
+|---|------|---------|------|------|
+| 1 | **切换页面时当前 block 内容丢失** — `handleOpenPage` 不保存内容 | §2.6 | `Sidebar.vue` | ⚠️ 已知问题，暂不修复 |
+| 2 | **缩进/反缩进有子节点的 block 时树结构断裂** — 子 block 不随父移动 | §3.3/§3.4 | `blocks.ts` | 🔴 待修复 |
 
 ### 🟠 P1 — 重要（影响核心体验）
 
-| # | 问题 | 涉及章节 |
-|---|------|---------|
-| 3 | 点击 block 外部区域不退出编辑态（`handleMainClick` 缺失） | §2.5 |
-| 4 | ESC 键不退出编辑态（tiptap 未拦截 ESC） | §3.8 |
-| 5 | 拖拽循环检测未接入 Sortable `onMove` | §2.3 |
-| 6 | 放置指示线未实现 | §2.3 |
+| # | 问题 | 涉及章节 | 状态 |
+|---|------|---------|------|
+| 3 | 点击 block 外部区域不退出编辑态（`handleMainClick` 缺失） | §2.5 | ✅ 已修复 |
+| 4 | ESC 键不退出编辑态（tiptap 未拦截 ESC） | §3.8 | 🔴 待修复 |
+| 5 | 拖拽循环检测未接入 Sortable `onMove` | §2.3 | ✅ 已实现 |
+| 6 | 放置指示线未实现 | §2.3 | ✅ 已实现（Sortable ghost） |
 
 ### 🟡 P2 — 优化（体验问题）
 
-| # | 问题 | 涉及章节 |
-|---|------|---------|
-| 7 | `focused` 态未实现（↑↓ 无焦点移动） | §3.5/§3.6/§3.7 |
-| 8 | Ctrl+S 手动保存未实现 | §3.9 |
-| 9 | Property 行（`key:: value`）解析未实现 | §4.5 |
-| 10 | 链接删除时 Link 表级联删除未实现 | §4.4 |
-| 11 | Backlinks 面板 UI 未实现 | §2.7 |
+| # | 问题 | 涉及章节 | 状态 |
+|---|------|---------|------|
+| 7 | `focused` 态未实现（↑↓ 无焦点移动） | §3.5/§3.6/§3.7 | 🔴 待实现 |
+| 8 | Ctrl+S 手动保存未实现 | §3.9 | 🔴 待实现 |
+| 9 | Property 行（`key:: value`）解析未实现 | §4.5 | 🔴 待实现 |
+| 10 | 链接删除时 Link 表级联删除未实现 | §4.4 | 🔴 待实现 |
+| 11 | Backlinks 面板 UI 未实现 | §2.7 | ✅ 已实现 |
 
 ***
 
@@ -629,4 +669,4 @@ ESC               （退出编辑 / 取消）
 
 ***
 
-*文档 v0.3，更新 §2.3–§2.7 及 §3.5–§3.9 实现状态，补充 P0/P1/P2 优先级修复清单。*
+*文档 v0.4，更新 §2.3–§2.7 及 §3.5–§3.9 实现状态，补充 P0/P1/P2 优先级修复清单，Backlinks 组件已添加。*
