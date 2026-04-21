@@ -92,10 +92,13 @@ watch(
 
 onBeforeUnmount(() => {
   savedFromOutside = false
-  if (editor.value?.view?.dom) {
-    editor.value.view.dom.removeEventListener('wiki-link-click', handleWikiLinkClick as EventListener)
-    editor.value.view.dom.removeEventListener('enter-as-block', handleEnterAsBlock as EventListener)
-  }
+  try {
+    const dom = editor.value?.view?.dom
+    if (dom) {
+      dom.removeEventListener('wiki-link-click', handleWikiLinkClick as EventListener)
+      dom.removeEventListener('enter-as-block', handleEnterAsBlock as EventListener)
+    }
+  } catch {}
   editor.value?.destroy()
 })
 
