@@ -1,8 +1,8 @@
 # Page（Block 树）交互规范
 
-> 版本：v0.4\
-> 日期：2026-04-21\
-> 状态：**已更新** — §2.3–§2.7 实现状态同步完成，Backlinks 组件已添加\
+> 版本：v0.5\
+> 日期：2026-04-22\
+> 状态：**已更新** — §3.3/§3.4 缩进/反缩进子树跟随移动已实现，Backlinks 源 block 内容显示已修复\
 > 依据：`SPEC.md` `block-editor-spec.md` `ui-ux-spec.md` `data-model.md`
 
 ***
@@ -403,12 +403,15 @@ async function handleSplit(cursorPosArg: number) {
 2. 如果存在：将当前 Block 添加为前一个 Block 的子 Block（作为最后一个子节点）
 3. 更新当前 Block 的 `parentId` = 前一个 Block 的 `id`
 4. 更新当前 Block 的 `left`
-5. 如果当前 Block 有后续兄弟 Block：将兄弟 Block 的 `left` 值重排（腾出空间）
+5. **当前 Block 的子 Block 随父 Block 一起移动**（parentId 不变，left 值重排）
+6. 如果当前 Block 有后续兄弟 Block：将兄弟 Block 的 `left` 值重排（腾出空间）
 
 **实现状态：✅ 已实现**
 
 **实现细节：**
 - `blocks.ts`：`indent()` 用 `calculateIndentLeft()` 计算新 left 值
+- `blocks.ts`：`getDescendantsInTreeOrder()` 收集所有后代节点
+- `blocks.ts`：`recalculateSubtreeLeftValues()` 重排子树 left 值
 - `Block.vue`：`handleIndent()` 调用 `deactivateBlock()` → `blockStore.indent()` → `activateBlock()`
 
 **边界情况：**
@@ -419,10 +422,8 @@ async function handleSplit(cursorPosArg: number) {
 | 当前 Block 已是父 Block 的第一个子 Block | 正常缩进                             | ✅   |
 | 当前 Block 有后续兄弟 Block           | 缩进后，后续兄弟 Block 保持原有层级，left 值重排   | ✅   |
 | 当前 Block 处于折叠态（collapsed=true） | 正常缩进，折叠态不变                       | ✅   |
-| 当前 Block 有子 Block              | ❌ **缺失**：子 Block 应随父 Block 一起缩进 | ❌   |
+| 当前 Block 有子 Block              | ✅ 子 Block 随父 Block 一起移动，parentId 不变 | ✅   |
 | 光标在 Block 末尾按 Tab              | 正常缩进，光标位置保持                       | ✅   |
-
-> ❌ **阻塞问题**：缩进有子 Block 的 block 时，子 block **不会**随父 block 一起移动。子 block 的 `parentId` 和 `left` 值保持不变，导致树结构断裂。
 
 ***
 
@@ -437,15 +438,22 @@ async function handleSplit(cursorPosArg: number) {
 3. 将当前 Block 添加到父 Block 的兄弟数组中（插入到父 Block 之后）
 4. 更新当前 Block 的 `parentId` = 父 Block 的 `parentId`
 5. 更新当前 Block 的 `left`
+6. **当前 Block 的子 Block 随父 Block 一起移动**（parentId 不变，left 值重排）
 
-**实现状态：✅ 已实现（子 Block 随父移动的缺失同样存在）**
+**实现状态：✅ 已实现**
+
+**实现细节：**
+- `blocks.ts`：`outdent()` 用 `calculateOutdentLeft()` 计算新 left 值
+- `blocks.ts`：`getDescendantsInTreeOrder()` 收集所有后代节点
+- `blocks.ts`：`recalculateSubtreeLeftValues()` 重排子树 left 值
+- `Block.vue`：`handleOutdent()` 调用 `deactivateBlock()` → `blockStore.outdent()` → `activateBlock()`
 
 **边界情况：**
 
 | 场景                                               | 行为                              | 状态 |
 | ------------------------------------------------ | ------------------------------- | ---- |
 | 当前 Block 是顶级 Block（parentId = null）              | 不做任何操作                          | ✅   |
-| 当前 Block 有子 Block                                | ❌ **缺失**：子 Block 应随当前 Block 一起反缩进 | ❌   |
+| 当前 Block 有子 Block                                | ✅ 子 Block 随当前 Block 一起反缩进 | ✅   |
 | 父 Block 是当前页面的最后一个子 Block                        | 当前 Block 反缩进后，插入到父 Block 之后     | ✅   |
 | 父 Block 已折叠                                      | 当前 Block 反缩进后，父 Block 的折叠态不变    | ✅   |
 | 连续 Shift+Tab（多级反缩进）                              | 每次操作一个层级                        | ✅   |
@@ -460,11 +468,23 @@ async function handleSplit(cursorPosArg: number) {
 
 1. 如果当前处于 `edit` 态：先保存内容，退出编辑态
 2. 移动焦点到上一个 Block（按树的先序遍历顺序）
-3. 目标 Block 进入 `focused` 态
+3. 目标 Block 进入 `edit` 态（Phase 1 用 `edit` 态替代 `focused` 态）
 
-**实现状态：❌ 未实现**
+**实现状态：✅ 已实现**
 
-> 当前按 ↑ 键无任何 Block 树级别的操作（tiptap 会将 ↑ 作为光标移动处理）。
+**实现细节：**
+- `blocks.ts`：`findPreviousBlockInTreeOrder()` 实现树前序遍历前驱查找
+- `EnterAsBlockExtension`：`ArrowUp` 快捷键，仅在光标位于文档开头时触发，传递当前光标行列位置
+- `Block.vue`：`handleMoveUp()` 保存当前内容，激活上一个 Block，并根据行列位置设置光标
+
+**边界情况：**
+
+| 场景                              | 行为                                           | 状态 |
+| ------------------------------- | -------------------------------------------- | ---- |
+| 当前 Block 是页面第一个 Block           | 无操作（已在最前）                                  | ✅   |
+| 光标不在文档开头                      | ↑ 由 tiptap 处理（光标上移），不触发 Block 切换          | ✅   |
+| 上一个 Block 已折叠                   | 正常切换到该 Block（进入编辑态，但不自动展开）              | ✅   |
+| 上一个 Block 有子节点                  | 切换到最深末端子节点（前序遍历前驱）                       | ✅   |
 
 ***
 
@@ -476,11 +496,23 @@ async function handleSplit(cursorPosArg: number) {
 
 1. 如果当前处于 `edit` 态：先保存内容，退出编辑态
 2. 移动焦点到下一个 Block（按树的先序遍历顺序）
-3. 目标 Block 进入 `focused` 态
+3. 目标 Block 进入 `edit` 态（Phase 1 用 `edit` 态替代 `focused` 态）
 
-**实现状态：❌ 未实现**
+**实现状态：✅ 已实现**
 
-> 当前按 ↓ 键无任何 Block 树级别的操作（tiptap 会将 ↓ 作为光标移动处理）。
+**实现细节：**
+- `blocks.ts`：`findNextBlockInTreeOrder()` 实现树前序遍历后继查找
+- `EnterAsBlockExtension`：`ArrowDown` 快捷键，仅在光标位于文档末尾时触发，传递当前光标行列位置
+- `Block.vue`：`handleMoveDown()` 保存当前内容，激活下一个 Block，并根据行列位置设置光标
+
+**边界情况：**
+
+| 场景                              | 行为                                           | 状态 |
+| ------------------------------- | -------------------------------------------- | ---- |
+| 当前 Block 是页面最后一个 Block          | 无操作（已在最后）                                  | ✅   |
+| 光标不在文档末尾                      | ↓ 由 tiptap 处理（光标下移），不触发 Block 切换          | ✅   |
+| 当前 Block 有子节点                    | 切换到第一个子节点（前序遍历后继）                         | ✅   |
+| 当前 Block 是折叠父节点的最后一个子节点    | 切换到父节点的下一个兄弟（向上回溯）                       | ✅   |
 
 ***
 
@@ -564,8 +596,8 @@ async function handleSplit(cursorPosArg: number) {
 
 | 操作                    | 折叠态 Block 的行为                   | 状态 |
 | --------------------- | ------------------------------- | ---- |
-| ↑ 焦点移动                | 折叠 Block 视为单个节点，焦点跳过其所有子 Block  | ❌   |
-| ↓ 焦点移动                | 折叠 Block 视为单个节点，焦点跳过其所有子 Block  | ❌   |
+| ↑ 焦点移动                | 折叠 Block 视为单个节点，焦点跳转到其前驱（不进入子树） | ✅   |
+| ↓ 焦点移动                | 折叠 Block 视为单个节点，焦点跳转到其后继（不进入子树） | ✅   |
 | 点击折叠 Block 内容区        | 进入 `edit` 态，Block 自动展开          | ✅   |
 | Tab 缩进到折叠 Block       | 正常缩进，折叠态不变                      | ✅   |
 | 折叠 Block 有子 Block 被拖入 | 拖入后 Block 保持折叠态（collapsed=true） | ❌   |
@@ -633,7 +665,7 @@ ESC               （退出编辑 / 取消）
 | # | 问题 | 涉及章节 | 文件 | 状态 |
 |---|------|---------|------|------|
 | 1 | **切换页面时当前 block 内容丢失** — `handleOpenPage` 不保存内容 | §2.6 | `Sidebar.vue` | ⚠️ 已知问题，暂不修复 |
-| 2 | **缩进/反缩进有子节点的 block 时树结构断裂** — 子 block 不随父移动 | §3.3/§3.4 | `blocks.ts` | 🔴 待修复 |
+| 2 | **缩进/反缩进有子节点的 block 时树结构断裂** — 子 block 不随父移动 | §3.3/§3.4 | `blocks.ts` | ✅ 已修复 |
 
 ### 🟠 P1 — 重要（影响核心体验）
 
@@ -648,7 +680,7 @@ ESC               （退出编辑 / 取消）
 
 | # | 问题 | 涉及章节 | 状态 |
 |---|------|---------|------|
-| 7 | `focused` 态未实现（↑↓ 无焦点移动） | §3.5/§3.6/§3.7 | 🔴 待实现 |
+| 7 | `focused` 态未实现（↑↓ 已实现，但用 `edit` 态替代 `focused` 态） | §3.5/§3.6/§3.7 | ✅ 已实现 |
 | 8 | Ctrl+S 手动保存未实现 | §3.9 | 🔴 待实现 |
 | 9 | Property 行（`key:: value`）解析未实现 | §4.5 | 🔴 待实现 |
 | 10 | 链接删除时 Link 表级联删除未实现 | §4.4 | 🔴 待实现 |
@@ -671,4 +703,4 @@ ESC               （退出编辑 / 取消）
 
 ***
 
-*文档 v0.4，更新 §2.3–§2.7 及 §3.5–§3.9 实现状态，补充 P0/P1/P2 优先级修复清单，Backlinks 组件已添加。*
+*文档 v0.6，更新 §3.5/§3.6 ↑↓ 焦点移动支持行列位置保持。*
