@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, watch, shallowRef, ref } from 'vue'
+import { onBeforeUnmount, watch, shallowRef } from 'vue'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import { Extension } from '@tiptap/core'

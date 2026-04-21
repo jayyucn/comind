@@ -108,7 +108,7 @@ export function reindexLeftValues(blocks: Array<{ id: string; parentId: string |
   // Reindex each group
   const updates: Array<{ id: string; left: number }> = []
   
-  for (const [parentId, children] of parentMap) {
+  for (const [_parentId, children] of parentMap) {
     // Sort by current left value
     const sortedChildren = [...children].sort((a, b) => a.left - b.left)
     

@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import Sidebar from './components/Sidebar.vue'
 import Block from './components/Block.vue'
 import { usePageStore } from './stores/pages'
 import { useBlockStore } from './stores/blocks'
+import { useSortable } from './composables/useSortable'
 
 const pageStore = usePageStore()
 const blockStore = useBlockStore()
@@ -20,6 +21,14 @@ const currentPageTitle = computed(() => {
   const page = pageStore.getPage(blockStore.currentPageId)
   return page?.title ?? 'comind'
 })
+
+// ── 根容器的 Sortable（.block-list = 顶级 Block 容器） ──────────────────
+const blockListRef = ref<HTMLElement | null>(null)
+onMounted(() => {
+  if (blockListRef.value) {
+    useSortable(blockListRef.value)
+  }
+})
 </script>
 
 <template>
@@ -31,7 +40,7 @@ const currentPageTitle = computed(() => {
         <h1 class="page-title">{{ currentPageTitle }}</h1>
       </div>
 
-      <div class="block-list">
+      <div class="block-list" ref="blockListRef" data-parent-id="">
         <Block
           v-for="block in topLevelBlocks"
           :key="block.id"

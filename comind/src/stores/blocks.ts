@@ -14,6 +14,7 @@ import {
 
 const LEFT_STEP = 100 // 同级节点初始间隔
 
+/** 在 Block 数组中查找（工具函数，模块级别，不依赖 store） */
 function findBlockById(id: string, blocks: BlockWithPos[]): BlockWithPos | undefined {
   return blocks.find(b => b.id === id)
 }
@@ -73,6 +74,36 @@ export const useBlockStore = defineStore('blocks', () => {
     const d = debounce(_doSave, 300)
     pendingSaves.set(block.id, d)
     d(block)
+  }
+
+  /**
+   * 对 siblings 数组重排 left 值（完全重排策略）
+   * @param siblings 按 left 排序的 Block 数组
+   * @param step 间隔，默认 100
+   */
+  function recalculateLeftValues(siblings: BlockWithPos[], step = LEFT_STEP) {
+    siblings.forEach((block, index) => {
+      block.left = step * (index + 1)
+    })
+  }
+
+  /**
+   * 检查 targetId 是否是 blockId 的后代
+   * @param targetId 要检查的节点（移动目标）
+   * @param blockId 潜在祖先（被拖拽的 block）
+   */
+  function isDescendantOf(targetId: string | null, blockId: string): boolean {
+    if (!targetId) return false
+    if (targetId === blockId) return true
+    const visited = new Set<string>()
+    let current: string | null = targetId
+    while (current && !visited.has(current)) {
+      visited.add(current)
+      if (current === blockId) return true
+      const ancestor = findBlockById(current, blocks.value)
+      current = ancestor?.parentId ?? null
+    }
+    return false
   }
 
   /** 创建新 Block */
@@ -240,6 +271,77 @@ export const useBlockStore = defineStore('blocks', () => {
     _scheduleSave(block)
   }
 
+  /**
+   * 移动 Block 到新位置
+   *
+   * @param opts.blockId       被移动的 Block ID
+   * @param opts.fromParentId  原始 parentId（移动前）
+   * @param opts.toParentId    目标 parentId（移动后）
+   * @param opts.newIndex      在目标 parent 下的新位置（0-based）
+   */
+  async function moveBlock(opts: {
+    blockId: string
+    fromParentId: string | null
+    toParentId: string | null
+    newIndex: number
+  }) {
+    const { blockId, fromParentId, toParentId, newIndex } = opts
+    const block = findBlockById(blockId, blocks.value)
+    if (!block) return
+
+    // 1. 循环检测：阻止将 block 移动到自己的子树中
+    if (isDescendantOf(toParentId, blockId)) {
+      console.warn('[moveBlock] 禁止：将 block 移动到自己的子树中', { blockId, toParentId })
+      return
+    }
+
+    const pageId = block.pageId
+
+    // 2. 同一 parent 内移动
+    if (fromParentId === toParentId) {
+      const siblings = blocks.value
+        .filter(b => b.parentId === toParentId && b.pageId === pageId)
+        .sort((a, b) => a.left - b.left)
+
+      const fromIndex = siblings.findIndex(b => b.id === blockId)
+      if (fromIndex === -1) return
+
+      const [moved] = siblings.splice(fromIndex, 1)
+      const targetIndex = Math.min(newIndex, siblings.length)
+      siblings.splice(targetIndex, 0, moved)
+      recalculateLeftValues(siblings)
+
+    } else {
+      // 3. 跨 parent 移动
+
+      // 3a. 先更新 block 的 parentId（必须在获取 source siblings 之后）
+      block.parentId = toParentId
+
+      // 3b. 从 source parent 移除后重排
+      const sourceSiblings = blocks.value
+        .filter(b => b.parentId === fromParentId && b.pageId === pageId && b.id !== blockId)
+        .sort((a, b) => a.left - b.left)
+      recalculateLeftValues(sourceSiblings)
+
+      // 3c. 插入到 target parent 后重排
+      const targetSiblings = blocks.value
+        .filter(b => b.parentId === toParentId && b.pageId === pageId && b.id !== blockId)
+        .sort((a, b) => a.left - b.left)
+      const targetIndex = Math.min(newIndex, targetSiblings.length)
+      targetSiblings.splice(targetIndex, 0, block)
+      recalculateLeftValues(targetSiblings)
+    }
+
+    // 4. 更新 updatedAt 并批量保存（防抖）
+    const updatedBlocks = blocks.value.filter(
+      b => b.pageId === pageId && (b.parentId === fromParentId || b.parentId === toParentId)
+    )
+    for (const b of updatedBlocks) {
+      b.updatedAt = new Date().toISOString()
+      _scheduleSave(b)
+    }
+  }
+
   /** 删除 Block（删除前取消该 block 的 pending save，防止死块复活） */
   async function deleteBlock(blockId: string) {
     // 取消该 block 及所有子 block 的 pending saves
@@ -298,9 +400,11 @@ export const useBlockStore = defineStore('blocks', () => {
     findPreviousBlockInTreeOrder,
     indent,
     outdent,
+    moveBlock,
     deleteBlock,
     updateBlockContent,
     reindexBlocks,
-    validateBlocks
+    validateBlocks,
+    isDescendantOf
   }
 })
