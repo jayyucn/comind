@@ -4,6 +4,7 @@ import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import { WikiLinkExtension } from '../extensions/WikiLinkExtension'
 import EnterAsBlockExtension from '../extensions/EnterAsBlockExtension'
+import BracketPairExtension from '../extensions/BracketPairExtension'
 import { useNavigateToPage } from '../composables/useNavigateToPage'
 
 const props = defineProps<{
@@ -56,7 +57,8 @@ const editor = shallowRef(useEditor({
   extensions: [
     StarterKit.configure({ heading: false, codeBlock: false, blockquote: false, horizontalRule: false }),
     EnterAsBlockExtension,
-    WikiLinkExtension
+    WikiLinkExtension,
+    BracketPairExtension
   ],
   content: props.content,
   autofocus: false,
