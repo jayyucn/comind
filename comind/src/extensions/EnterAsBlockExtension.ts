@@ -46,8 +46,7 @@ const EnterAsBlockExtension = Extension.create({
       },
       ArrowUp: ({ editor }) => {
         const { $from } = editor.state.selection
-        const isAtFirstLine = $from.pos === 1
-        if (isAtFirstLine) {
+        if ($from.parentOffset === 0) {
           editor.view.dom.dispatchEvent(new CustomEvent('enter-as-block', {
             bubbles: true,
             detail: { type: 'moveUp' }
@@ -58,9 +57,7 @@ const EnterAsBlockExtension = Extension.create({
       },
       ArrowDown: ({ editor }) => {
         const { $from } = editor.state.selection
-        const content = editor.getText()
-        const isAtLastLine = $from.pos === content.length + 1
-        if (isAtLastLine) {
+        if ($from.parentOffset === $from.parent.content.size) {
           editor.view.dom.dispatchEvent(new CustomEvent('enter-as-block', {
             bubbles: true,
             detail: { type: 'moveDown' }
