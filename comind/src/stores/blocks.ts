@@ -80,7 +80,7 @@ export const useBlockStore = defineStore('blocks', () => {
     opts: Partial<BlockWithPos> & { pageId: string; content: string }
   ): Promise<BlockWithPos> {
     const parentId = opts.parentId ?? null
-    
+
     // 如果传入了 left 值，直接使用；否则计算新的 left 值
     let left: number
     if (opts.left !== undefined) {
@@ -101,7 +101,7 @@ export const useBlockStore = defineStore('blocks', () => {
       isPage: opts.isPage ?? false,
       title: opts.title,
       properties: opts.properties,
-      folded: opts.folded ?? false,
+      collapsed: opts.collapsed ?? false,
       pos: 0
     }
 
@@ -268,7 +268,7 @@ export const useBlockStore = defineStore('blocks', () => {
   /** 重新索引 left 值以修复间隙和确保一致性 */
   async function reindexBlocks() {
     const updates = reindexLeftValues(blocks.value)
-    
+
     for (const update of updates) {
       const block = findBlockById(update.id, blocks.value)
       if (block && block.left !== update.left) {

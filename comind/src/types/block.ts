@@ -9,7 +9,7 @@ export interface Block {
   isPage: boolean
   title?: string
   properties?: Record<string, any>
-  folded?: boolean
+  collapsed?: boolean
 }
 
 export interface BlockRecord {
@@ -23,7 +23,7 @@ export interface BlockRecord {
   isPage: boolean
   title?: string
   properties?: string
-  folded?: boolean
+  collapsed?: boolean
 }
 
 // 定义BlockWithPos接口的pos字段

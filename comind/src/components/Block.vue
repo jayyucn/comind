@@ -191,10 +191,21 @@ function handleCursorChange(pos: number) {
   cursorPos.value = pos
 }
 
+/** HTML 转义（防 XSS） */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
 /** 渲染内容（[[链接]] 高亮、#标签 样式） */
 function renderContent(text: string): string {
-  // 内部链接 [[xxx]] 和 [[xxx|yyy]]
-  let html = text
+  // 先转义 HTML 特殊字符，再用正则替换生成安全的 span 标签
+  const html = escapeHtml(text)
+  return html
+    // 内部链接 [[xxx]] 和 [[xxx|yyy]]
     .replace(/\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g, (_, target, alias) => {
       const display = alias || target
       return `<span class="block-link">${display}</span>`
@@ -203,11 +214,13 @@ function renderContent(text: string): string {
     .replace(/\[\[(https?:\/\/[^\]]+)\]\]/g, (_, url) => {
       return `<span class="block-link external">${url}</span>`
     })
-    // 标签 #tag
-    .replace(/#([\p{L}_][\p{L}\p{N}_]*)/gu, (_, tag) => {
+    // 标签 #tag（排除 URL 锚点，如 https://x.com#section）
+    .replace(/#([\p{L}_][\p{L}\p{N}_]*)/gu, (_, tag, offset) => {
+      // 检查 # 前面是否紧跟 URL 字符（排除锚点）
+      const before = html.slice(Math.max(0, offset - 20), offset)
+      if (/\w\/$/.test(before)) return `#${tag}` // URL 尾部
       return `<span class="block-tag">#${tag}</span>`
     })
-  return html
 }
 </script>
 
@@ -219,8 +232,8 @@ function renderContent(text: string): string {
 
 <!-- Bullet（stop 防止误触编辑态） -->
       <span class="block-bullet" :class="{ collapsed }" @click.stop="handleCollapseToggle">
-        <span v-if="children.length > 0" class="bullet-icon">{{ collapsed ? '▶' : '▼' }}</span>
-        <span v-else class="bullet-dot">•</span>
+        <span v-if="children.length > 0" class="bullet-chevron" :class="{ 'is-collapsed': collapsed }"></span>
+        <span v-else class="bullet-dot"></span>
       </span>
 
       <!-- 内容区 -->
@@ -264,22 +277,105 @@ function renderContent(text: string): string {
   height: 100%;
 }
 
+
+/* Bullet 区域 — 高度与行高一致，圆点/箭头垂直居中 */
 .block-bullet {
   flex-shrink: 0;
   width: 20px;
+  height: 1.8em;
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
-  color: #b45309;
-  font-size: 10px;
-  margin-top: 0.1em;
+  border-radius: 4px;
+  transition: background 120ms ease;
 }
 
+/* 默认：可点击指针 + 透明 */
+.block-bullet {
+  cursor: pointer;
+}
+
+/* Hover：显示 grab 光标（类似 Logseq，表示可拖拽） */
+.block-bullet.bullet-drag-ready {
+  cursor: pointer;
+}
+
+/* 拖拽进行中（被拽的 Block 的 bullet） */
+.block-bullet.bullet-dragging {
+  cursor: grabbing;
+}
+
+/* ── Bullet 圆点（叶节点） ── */
 .bullet-dot {
-  font-size: 14px;
-  color: #b45309;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-accent, #b45309);
+  opacity: 0.35;
+  /* 初始位置：稍微偏下，与文本视觉中心对齐 */
+  transform: translateY(1px);
+  transition: opacity 150ms ease-out, transform 150ms ease-out, box-shadow 150ms ease-out;
+  flex-shrink: 0;
+}
+
+/* ── Chevron 箭头（父节点） ── */
+.bullet-chevron {
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid var(--color-accent, #b45309);
+  border-bottom: 1.5px solid var(--color-accent, #b45309);
+  transform: rotate(45deg) translateY(1px); /* ▼ 展开态 */
+  opacity: 0.45;
+  transition: transform 180ms ease-out, opacity 150ms ease-out, box-shadow 150ms ease-out;
+  flex-shrink: 0;
+}
+
+.bullet-chevron.is-collapsed {
+  transform: rotate(-45deg) translateY(1px); /* ▶ 折叠态 */
+}
+
+/* ── Hover：墨水晕开感 — transform-origin 远离光标，展开方向不影响指针 ── */
+.block-bullet.bullet-drag-ready .bullet-dot {
   opacity: 0.7;
+  transform: scale(1.4) translateY(1px);
+  transform-origin: center bottom;  /* 向上扩，远离指针 */
+  box-shadow: 0 0 0 3px rgba(180, 83, 9, 0.08);
+}
+
+.block-bullet.bullet-drag-ready .bullet-chevron {
+  opacity: 0.75;
+  transform: rotate(45deg) scale(1.2) translateY(1px);
+  transform-origin: center top;      /* 向下扩，远离指针 */
+  box-shadow: 0 0 0 3px rgba(180, 83, 9, 0.06);
+}
+
+.block-bullet.bullet-drag-ready.bullet-dragging .bullet-chevron,
+.block-bullet.bullet-dragging .bullet-chevron {
+  transform: rotate(-45deg) scale(1.2) translateY(1px);
+  transform-origin: center top;
+}
+
+/* ── Active Block：bullet 更醒目 ── */
+.block.active .bullet-dot {
+  opacity: 0.55;
+  transform: translateY(1px);
+}
+
+.block.active .bullet-chevron {
+  opacity: 0.6;
+  transform: rotate(45deg) translateY(1px);
+}
+
+.block.active .bullet-chevron.is-collapsed {
+  transform: rotate(-45deg) translateY(1px);
+}
+
+/* ── Dragging：焦点感 ── */
+.block-bullet.bullet-dragging .bullet-dot {
+  opacity: 0.9;
+  transform: scale(1.6) translateY(1px);
+  transform-origin: center bottom;
+  box-shadow: 0 0 0 4px rgba(180, 83, 9, 0.12);
 }
 
 .block-content {
@@ -322,12 +418,9 @@ function renderContent(text: string): string {
 }
 
 /* collapsed 态 bullet 视觉反馈 */
+.block-bullet.collapsed .bullet-chevron,
 .block-bullet.collapsed .bullet-icon {
   opacity: 0.7;
-}
-
-.block-bullet.collapsed {
-  opacity: 0.8;
 }
 
 /* Link & Tag styles */

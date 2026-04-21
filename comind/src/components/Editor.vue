@@ -21,9 +21,8 @@ const emit = defineEmits<{
 
 // 同步内容期间禁用 onBlur 保存（防止 setContent 触发 onBlur 写回旧内容）
 let syncing = false
-// 标记已由外部（split/merge）保存，阻止 onBlur 重复保存（ref 确保组件实例隔离）
-// 使用 ref 确保每个 Editor 组件实例有独立的状态，避免多个实例共享同一变量导致状态冲突
-const savedFromOutside = ref(false)
+// 标记已由外部（split/merge）保存，阻止 onBlur 重复保存（纯逻辑 flag，无需响应式）
+let savedFromOutside = false
 
 // 自定义扩展：在 ProseMirror keyboard shortcut 层拦截 Enter
 // 返回 true 阻止 tiptap 默认段落行为，触发 split
@@ -73,8 +72,8 @@ const editor = shallowRef(useEditor({
   autofocus: false,
   onBlur: () => {
     if (syncing) return  // 同步期间不触发保存
-    if (savedFromOutside.value) {
-      savedFromOutside.value = false
+    if (savedFromOutside) {
+      savedFromOutside = false
       return  // 外部已保存，跳过
     }
     if (editor.value) {
@@ -106,7 +105,7 @@ watch(
 )
 
 onBeforeUnmount(() => {
-  savedFromOutside.value = false  // 清理状态，防止泄漏
+  savedFromOutside = false  // 清理状态，防止泄漏
   editor.value?.destroy()
 })
 
@@ -138,7 +137,7 @@ function focus(pos?: number | 'start' | 'end') {
 
 // 暴露给父组件：标记内容已由外部保存，阻止 onBlur 重复保存
 function markSaved() {
-  savedFromOutside.value = true
+  savedFromOutside = true
 }
 
 defineExpose({ syncContent, focus, getText: () => editor.value?.getText() ?? '', markSaved })

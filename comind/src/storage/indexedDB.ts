@@ -16,7 +16,7 @@ function recordToBlock(record: BlockRecord): Block {
     isPage: record.isPage,
     title: record.title,
     properties: record.properties ? JSON.parse(record.properties) : undefined,
-    folded: record.folded
+    collapsed: record.collapsed
   }
 }
 
@@ -35,7 +35,7 @@ export class IndexedDBAdapter {
         isPage: block.isPage,
         title: block.title,
         properties: block.properties ? JSON.stringify(block.properties) : undefined,
-        folded: block.folded
+        collapsed: block.collapsed
       })
 
       // 解析并保存链接
@@ -79,12 +79,36 @@ export class IndexedDBAdapter {
   }
 
   async getBlockTree(pageId: string): Promise<Block[]> {
-    const records = await db.blocks
-      .where('pageId')
-      .equals(pageId)
-      .sortBy('left')
+    // 按 parentId 分组，每组内按 left 排序，最后 DFS 展平
+    const allRecords = await db.blocks.where('pageId').equals(pageId).toArray()
+    const blocks = allRecords.map(recordToBlock)
 
-    return records.map(recordToBlock)
+    // 按 parentId 分组
+    const byParent = new Map<string | null, Block[]>()
+    for (const block of blocks) {
+      const parentId: string | null = block.parentId
+      if (!byParent.has(parentId)) byParent.set(parentId, [])
+      byParent.get(parentId)!.push(block)
+    }
+
+    // 每组按 left 排序
+    for (const children of byParent.values()) {
+      children.sort((a, b) => a.left - b.left)
+    }
+
+    // DFS 展平: parentId=null 在前，然后递归 children
+    const result: Block[] = []
+    const dfs = (parentId: string | null) => {
+      const children = byParent.get(parentId) ?? []
+      for (const child of children) {
+        result.push(child)
+        // 递归 children（只处理 parentId 指向真实存在的 block，避免孤儿节点）
+        dfs(child.id)
+      }
+    }
+
+    dfs(null)
+    return result
   }
 
   async getAllBlocks(): Promise<Block[]> {
@@ -96,6 +120,16 @@ export class IndexedDBAdapter {
     await db.transaction('rw', db.blocks, db.links, async () => {
       await db.blocks.delete(blockId)
       await db.links.where('sourceBlockId').equals(blockId).delete()
+    })
+  }
+
+  /** 级联删除多个 Block 及其所有 Links */
+  async deleteBlockCascade(blockIds: string[]): Promise<void> {
+    await db.transaction('rw', db.blocks, db.links, async () => {
+      // 批量删除 Blocks
+      await db.blocks.bulkDelete(blockIds)
+      // 批量删除所有相关 Links（sourceBlockId 在列表中的记录）
+      await db.links.where('sourceBlockId').anyOf(blockIds).delete()
     })
   }
 
