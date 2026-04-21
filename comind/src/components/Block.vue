@@ -2,9 +2,8 @@
 import { computed, ref, watch, nextTick, onMounted } from 'vue'
 import { useEditorStore } from '../stores/editor'
 import { useBlockStore } from '../stores/blocks'
-import { usePageStore } from '../stores/pages'
-import { storage } from '../storage/indexedDB'
 import { useSortable } from '../composables/useSortable'
+import { useNavigateToPage } from '../composables/useNavigateToPage'
 import Editor from './Editor.vue'
 
 const props = defineProps<{
@@ -14,7 +13,7 @@ const props = defineProps<{
 
 const editorStore = useEditorStore()
 const blockStore = useBlockStore()
-const pageStore = usePageStore()
+const { navigateToPage } = useNavigateToPage()
 
 const isActive = computed(() => editorStore.activeBlockId === props.blockId)
 const children = computed(() => blockStore.getChildren(props.blockId))
@@ -200,19 +199,6 @@ function handleCursorChange(pos: number) {
   cursorPos.value = pos
 }
 
-async function navigateToPage(pageName: string) {
-  let page = pageStore.getPageByTitle(pageName)
-  if (!page) {
-    page = await storage.getPage(pageName)
-  }
-  if (page) {
-    await pageStore.openPage(page.id)
-  } else {
-    const newPage = await pageStore.createPage(pageName)
-    await pageStore.openPage(newPage.id)
-  }
-}
-
 function handleContentClick(e: MouseEvent) {
   const target = e.target as HTMLElement
   const link = target.closest('.block-link') as HTMLElement | null
@@ -225,7 +211,9 @@ function handleContentClick(e: MouseEvent) {
 
   const pageName = link.dataset.page
   if (pageName) {
-    navigateToPage(pageName)
+    navigateToPage(pageName).catch(err => {
+      console.error('导航失败:', err)
+    })
   }
 }
 

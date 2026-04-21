@@ -2,10 +2,9 @@
 import { onBeforeUnmount, onMounted, watch, shallowRef } from 'vue'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
-import { Extension } from '@tiptap/core'
-import { WikiLinkExtension } from '../extensions/WikiLinkExtension';
-import { usePageStore } from '../stores/pages'
-import { storage } from '../storage/indexedDB'
+import { WikiLinkExtension } from '../extensions/WikiLinkExtension'
+import EnterAsBlockExtension from '../extensions/EnterAsBlockExtension'
+import { useNavigateToPage } from '../composables/useNavigateToPage'
 
 const props = defineProps<{
   blockId: string
@@ -22,70 +21,36 @@ const emit = defineEmits<{
   (e: 'cursor-change', pos: number): void
 }>()
 
-// 同步内容期间禁用 onBlur 保存（防止 setContent 触发 onBlur 写回旧内容）
 let syncing = false
-// 标记已由外部（split/merge）保存，阻止 onBlur 重复保存（纯逻辑 flag，无需响应式）
 let savedFromOutside = false
 
-const pageStore = usePageStore()
-
-async function navigateToPage(pageName: string) {
-  let page = pageStore.getPageByTitle(pageName)
-  if (!page) {
-    page = await storage.getPage(pageName)
-  }
-  if (page) {
-    await pageStore.openPage(page.id)
-  } else {
-    const newPage = await pageStore.createPage(pageName)
-    await pageStore.openPage(newPage.id)
-  }
-}
+const { navigateToPage } = useNavigateToPage()
 
 function handleWikiLinkClick(event: Event) {
   const customEvent = event as CustomEvent<{ pageName: string }>
-  const pageName = customEvent.detail.pageName
-  navigateToPage(pageName)
+  navigateToPage(customEvent.detail.pageName)
 }
 
-// 自定义扩展：在 ProseMirror keyboard shortcut 层拦截 Enter
-// 返回 true 阻止 tiptap 默认段落行为，触发 split
-const EnterAsBlockExtension = Extension.create({
-  name: 'enterAsBlock',
-  addKeyboardShortcuts() {
-    return {
-      Enter: ({ editor }) => {
-        const { from } = editor.state.selection
-        emit('split', from)
-        return true
-      },
-      // Shift+Enter：返回 false，放行给 tiptap 处理（软换行）
-      'Shift-Enter': () => false,
-      // Backspace：空 Block 时删除整个 Block（由父组件处理）
-      Backspace: ({ editor }) => {
-        const { $from } = editor.state.selection
-        const content = editor.getText()
-        if (content.length === 0) {
-          emit('delete')
-          return true
-        } else if ($from.parentOffset === 0) {
-          emit('merge')
-          return true
-        }
-        return false
-      },
-      // Tab：缩进 / 取消缩进（由父组件处理）
-      Tab: () => {
-        emit('indent')
-        return true
-      },
-      'Shift-Tab': () => {
-        emit('outdent')
-        return true
-      },
-    }
+function handleEnterAsBlock(event: Event) {
+  const customEvent = event as CustomEvent<{ type: string; pos?: number }>
+  switch (customEvent.detail.type) {
+    case 'split':
+      emit('split', customEvent.detail.pos ?? 0)
+      break
+    case 'delete':
+      emit('delete')
+      break
+    case 'merge':
+      emit('merge')
+      break
+    case 'indent':
+      emit('indent')
+      break
+    case 'outdent':
+      emit('outdent')
+      break
   }
-})
+}
 
 const editor = shallowRef(useEditor({
   extensions: [
@@ -96,19 +61,16 @@ const editor = shallowRef(useEditor({
   content: props.content,
   autofocus: false,
   onBlur: () => {
-    if (syncing) return  // 同步期间不触发保存
+    if (syncing) return
     if (savedFromOutside) {
       savedFromOutside = false
-      return  // 外部已保存，跳过
+      return
     }
     if (editor.value) {
       emit('save', editor.value.getText())
     }
-    // 注意：不在这里调用 deactivateBlock()
-    // 失活由 Block.vue 显式控制（handleSplit/handleMerge/handleDelete 等）
   },
   onUpdate: () => {
-    // 触发光标位置变化事件
     if (editor.value) {
       const { from } = editor.value.state.selection
       emit('cursor-change', from)
@@ -116,7 +78,6 @@ const editor = shallowRef(useEditor({
   }
 }))
 
-// 同步外部 content 变化（仅当编辑器文本与 prop 不一致时才更新）
 watch(
   () => props.content,
   (newContent) => {
@@ -133,6 +94,7 @@ onBeforeUnmount(() => {
   savedFromOutside = false
   try {
     editor.value?.view?.dom?.removeEventListener('wiki-link-click', handleWikiLinkClick as EventListener)
+    editor.value?.view?.dom?.removeEventListener('enter-as-block', handleEnterAsBlock as EventListener)
   } catch {}
   editor.value?.destroy()
 })
@@ -140,10 +102,10 @@ onBeforeUnmount(() => {
 onMounted(() => {
   if (editor.value) {
     editor.value.view.dom.addEventListener('wiki-link-click', handleWikiLinkClick as EventListener)
+    editor.value.view.dom.addEventListener('enter-as-block', handleEnterAsBlock as EventListener)
   }
 })
 
-// 暴露给父组件的同步方法（split/merge 后强制同步内容 + 恢复光标）
 function syncContent(content: string, cursorPos?: number) {
   if (editor.value) {
     const state = editor.value.state
@@ -169,7 +131,6 @@ function focus(pos?: number | 'start' | 'end') {
   }
 }
 
-// 暴露给父组件：标记内容已由外部保存，阻止 onBlur 重复保存
 function markSaved() {
   savedFromOutside = true
 }
