@@ -48,5 +48,9 @@ export const usePageStore = defineStore('pages', () => {
     return pages.value.find(p => p.id === pageId)
   }
 
-  return { pages, currentPageId, loading, loadAllPages, openPage, createPage, getPage }
+  function getPageByTitle(title: string): PageRecord | undefined {
+    return pages.value.find(p => p.title === title)
+  }
+
+  return { pages, currentPageId, loading, loadAllPages, openPage, createPage, getPage, getPageByTitle }
 })

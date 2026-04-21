@@ -2,6 +2,8 @@
 import { computed, ref, watch, nextTick, onMounted } from 'vue'
 import { useEditorStore } from '../stores/editor'
 import { useBlockStore } from '../stores/blocks'
+import { usePageStore } from '../stores/pages'
+import { storage } from '../storage/indexedDB'
 import { useSortable } from '../composables/useSortable'
 import Editor from './Editor.vue'
 
@@ -12,6 +14,7 @@ const props = defineProps<{
 
 const editorStore = useEditorStore()
 const blockStore = useBlockStore()
+const pageStore = usePageStore()
 
 const isActive = computed(() => editorStore.activeBlockId === props.blockId)
 const children = computed(() => blockStore.getChildren(props.blockId))
@@ -122,6 +125,9 @@ watch(collapsed, async (isCollapsed) => {
 
 /** mousedown：捕获点击坐标，在 tiptap 挂载前通知 editor store */
 function handleContentMouseDown(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (target.closest('.block-link')) return
+
   const cursorPosVal = getCaretPositionFromPoint(e.clientX, e.clientY) ?? 0
   editorStore.setCursorPos(cursorPosVal + 1)
   editorStore.activateBlock(props.blockId)
@@ -194,6 +200,35 @@ function handleCursorChange(pos: number) {
   cursorPos.value = pos
 }
 
+async function navigateToPage(pageName: string) {
+  let page = pageStore.getPageByTitle(pageName)
+  if (!page) {
+    page = await storage.getPage(pageName)
+  }
+  if (page) {
+    await pageStore.openPage(page.id)
+  } else {
+    const newPage = await pageStore.createPage(pageName)
+    await pageStore.openPage(newPage.id)
+  }
+}
+
+function handleContentClick(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  const link = target.closest('.block-link') as HTMLElement | null
+  if (!link) return
+
+  if (link.dataset.external) {
+    window.open(link.dataset.external, '_blank')
+    return
+  }
+
+  const pageName = link.dataset.page
+  if (pageName) {
+    navigateToPage(pageName)
+  }
+}
+
 /** HTML 转义（防 XSS） */
 function escapeHtml(text: string): string {
   return text
@@ -209,10 +244,10 @@ function renderContent(text: string): string {
   return html
     .replace(/\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g, (_, target, alias) => {
       const display = alias || target
-      return `<span class="block-link">${display}</span>`
+      return `<span class="block-link" data-page="${escapeHtml(target)}">${display}</span>`
     })
     .replace(/\[\[(https?:\/\/[^\]]+)\]\]/g, (_, url) => {
-      return `<span class="block-link external">${url}</span>`
+      return `<span class="block-link external" data-external href="${escapeHtml(url)}">${url}</span>`
     })
     .replace(/#([\p{L}_][\p{L}\p{N}_]*)/gu, (_, tag, offset) => {
       const before = html.slice(Math.max(0, offset - 20), offset)
@@ -243,7 +278,7 @@ function renderContent(text: string): string {
         <Editor v-if="isActive" ref="editorRef" :block-id="blockId" :content="block.content" @save="handleSave"
           @split="handleSplit" @merge="handleMerge" @delete="handleDelete" @indent="handleIndent"
           @outdent="handleOutdent" @cursor-change="handleCursorChange" />
-        <div v-else class="block-text" v-html="renderContent(block.content)"></div>
+        <div v-else class="block-text" v-html="renderContent(block.content)" @click="handleContentClick"></div>
       </div>
     </div>
 

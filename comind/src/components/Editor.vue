@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { onBeforeUnmount, watch, shallowRef } from 'vue'
+import { onBeforeUnmount, onMounted, watch, shallowRef } from 'vue'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import { Extension } from '@tiptap/core'
+import { WikiLinkExtension } from '../extensions/WikiLinkExtension';
+import { usePageStore } from '../stores/pages'
+import { storage } from '../storage/indexedDB'
 
 const props = defineProps<{
   blockId: string
@@ -23,6 +26,27 @@ const emit = defineEmits<{
 let syncing = false
 // 标记已由外部（split/merge）保存，阻止 onBlur 重复保存（纯逻辑 flag，无需响应式）
 let savedFromOutside = false
+
+const pageStore = usePageStore()
+
+async function navigateToPage(pageName: string) {
+  let page = pageStore.getPageByTitle(pageName)
+  if (!page) {
+    page = await storage.getPage(pageName)
+  }
+  if (page) {
+    await pageStore.openPage(page.id)
+  } else {
+    const newPage = await pageStore.createPage(pageName)
+    await pageStore.openPage(newPage.id)
+  }
+}
+
+function handleWikiLinkClick(event: Event) {
+  const customEvent = event as CustomEvent<{ pageName: string }>
+  const pageName = customEvent.detail.pageName
+  navigateToPage(pageName)
+}
 
 // 自定义扩展：在 ProseMirror keyboard shortcut 层拦截 Enter
 // 返回 true 阻止 tiptap 默认段落行为，触发 split
@@ -66,7 +90,8 @@ const EnterAsBlockExtension = Extension.create({
 const editor = shallowRef(useEditor({
   extensions: [
     StarterKit.configure({ heading: false, codeBlock: false, blockquote: false, horizontalRule: false }),
-    EnterAsBlockExtension
+    EnterAsBlockExtension,
+    WikiLinkExtension
   ],
   content: props.content,
   autofocus: false,
@@ -105,8 +130,17 @@ watch(
 )
 
 onBeforeUnmount(() => {
-  savedFromOutside = false  // 清理状态，防止泄漏
+  savedFromOutside = false
+  try {
+    editor.value?.view?.dom?.removeEventListener('wiki-link-click', handleWikiLinkClick as EventListener)
+  } catch {}
   editor.value?.destroy()
+})
+
+onMounted(() => {
+  if (editor.value) {
+    editor.value.view.dom.addEventListener('wiki-link-click', handleWikiLinkClick as EventListener)
+  }
 })
 
 // 暴露给父组件的同步方法（split/merge 后强制同步内容 + 恢复光标）
