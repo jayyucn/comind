@@ -141,32 +141,36 @@ export const useBlockStore = defineStore('blocks', () => {
     return block
   }
 
-  /** 在光标位置拆分 Block */
-  async function splitBlock(blockId: string, cursorPos: number) {
+  /** 在光标位置拆分 Block
+   * @param blockId 要拆分的 Block ID
+   * @param cursorPos 光标位置
+   * @param isCollapsed 当前 Block 是否处于折叠状态
+   *   - false: 创建为当前 Block 的子节点
+   *   - true: 创建为当前 Block 的兄弟节点
+   */
+  async function splitBlock(blockId: string, cursorPos: number, isCollapsed?: boolean) {
     const block = findBlockById(blockId, blocks.value)
     if (!block) return
 
-    // cursorPos 是 ProseMirror document position（从段落开始节点计 +1）
-    // 转为 text offset 再做 slice
     const textOffset = Math.max(0, cursorPos - 1)
     const before = block.content.slice(0, textOffset)
     const after = block.content.slice(textOffset)
 
-    // 更新当前 Block
     block.content = before
     block.updatedAt = new Date().toISOString()
     await storage.saveBlock(block)
 
-    // 在当前 Block 之后插入新 Block
+    const newParentId = isCollapsed ? block.parentId : block.id
+
     const siblings = blocks.value.filter(
-      b => b.parentId === block.parentId && b.pageId === block.pageId
+      b => b.parentId === newParentId && b.pageId === block.pageId
     )
 
     const newBlock = await createBlock({
       pageId: block.pageId,
       content: after,
-      parentId: block.parentId,
-      left: calculateNewLeft(siblings, block.id),
+      parentId: newParentId,
+      left: calculateNewLeft(siblings,  isCollapsed ? block.id : undefined),
       pos: 0
     })
 

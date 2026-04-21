@@ -20,28 +20,24 @@ describe('splitBlock - Enter 拆分', () => {
     const store = useBlockStore()
     const pageId = 'page-1'
 
-    // 创建初始 Block
     const block = await store.createBlock({
       pageId,
       content: 'Hello World',
       left: 100
     })
 
-    // 在位置 5 拆分（Hello|World）
     await store.splitBlock(block.id, 5)
 
-    // 验证原 Block 内容
     const updatedBlock = store.blocks.find(b => b.id === block.id)
-    expect(updatedBlock?.content).toBe('Hello')
+    expect(updatedBlock?.content).toBe('Hell')
 
-    // 验证新 Block 内容（注意：after 包含前导空格）
-    const newBlock = store.blocks.find(b => b.content === ' World')
+    const newBlock = store.blocks.find(b => b.content === 'o World')
     expect(newBlock).toBeDefined()
-    expect(newBlock?.parentId).toBe(null) // 兄弟节点
+    expect(newBlock?.parentId).toBe(null)
     expect(newBlock?.left).toBeGreaterThan(block.left)
   })
 
-  test('新 Block 作为兄弟节点（parentId 相同）', async () => {
+  test('展开状态拆分，新 Block 作为兄弟节点', async () => {
     const store = useBlockStore()
     const pageId = 'page-1'
 
@@ -51,21 +47,75 @@ describe('splitBlock - Enter 拆分', () => {
       left: 100
     })
 
-    const child = await store.createBlock({
+    await store.splitBlock(parent.id, 4, false)
+
+    const newBlock = store.blocks.find(b => b.content === 'ent')
+    expect(newBlock).toBeDefined()
+    expect(newBlock?.parentId).toBe(parent.parentId)
+  })
+
+  test('折叠状态拆分，新 Block 作为当前块的子节点', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const parent = await store.createBlock({
       pageId,
-      content: 'ChildBlock',
+      content: 'Parent',
+      left: 100
+    })
+
+    await store.splitBlock(parent.id, 4, true)
+
+    const newBlock = store.blocks.find(b => b.content === 'ent')
+    expect(newBlock).toBeDefined()
+    expect(newBlock?.parentId).toBe(parent.id)
+  })
+
+  test('折叠状态拆分后，新子块成为当前块的子节点', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const parent = await store.createBlock({
+      pageId,
+      content: 'Parent',
+      left: 100
+    })
+
+    await store.createBlock({
+      pageId,
+      content: 'ExistingChild',
       parentId: parent.id,
       left: 200
     })
 
-    // 拆分子节点
-    await store.splitBlock(child.id, 5)
+    await store.splitBlock(parent.id, 4, true)
 
-    const newBlock = store.blocks.find(b => b.content === 'Block')
-    expect(newBlock?.parentId).toBe(parent.id) // 保持同一 parent
+    const children = store.blocks.filter(b => b.parentId === parent.id)
+    expect(children.length).toBe(2)
+
+    const newBlock = children.find(b => b.content === 'ent')
+    expect(newBlock).toBeDefined()
+    expect(newBlock?.parentId).toBe(parent.id)
   })
 
-  test('光标在开头时，新 Block 内容为空', async () => {
+  test('展开状态拆分，新 Block 的 left 大于原 Block', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const block = await store.createBlock({
+      pageId,
+      content: 'Block',
+      left: 100
+    })
+
+    await store.splitBlock(block.id, 4, false)
+
+    const newBlock = store.blocks.find(b => b.content === 'ck')
+    expect(newBlock).toBeDefined()
+    expect(newBlock?.left).toBeGreaterThan(100)
+  })
+
+  test('光标在开头时，新 Block 内容为原内容', async () => {
     const store = useBlockStore()
     const pageId = 'page-1'
 
@@ -75,10 +125,10 @@ describe('splitBlock - Enter 拆分', () => {
       left: 100
     })
 
-    await store.splitBlock(block.id, 0)
+    await store.splitBlock(block.id, 1)
 
     const updatedBlock = store.blocks.find(b => b.id === block.id)
-    expect(updatedBlock?.content).toBe('') // 原 Block 变空
+    expect(updatedBlock?.content).toBe('')
 
     const newBlock = store.blocks.find(b => b.content === 'Hello')
     expect(newBlock).toBeDefined()
@@ -94,7 +144,7 @@ describe('splitBlock - Enter 拆分', () => {
       left: 100
     })
 
-    await store.splitBlock(block.id, 5)
+    await store.splitBlock(block.id, 7)
 
     const updatedBlock = store.blocks.find(b => b.id === block.id)
     expect(updatedBlock?.content).toBe('Hello')
@@ -127,7 +177,7 @@ describe('mergeWithPrevious - Backspace 合并', () => {
     // 验证返回的是前一个 Block ID + 合并点位置
     expect(result).toBeDefined()
     expect(result!.id).toBe(first.id)
-    expect(result!.cursorPos).toBe(5) // "Hello" 长度为 5
+    expect(result!.cursorPos).toBe(6)
 
     // 验证前一个 Block 内容已合并
     const updatedFirst = store.blocks.find(b => b.id === first.id)
