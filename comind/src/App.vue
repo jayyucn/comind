@@ -71,7 +71,9 @@ function handleMainClick(e: MouseEvent) {
 
 .main-content {
   flex: 1;
-  overflow-y: auto;
+  overflow-y: auto ;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   padding: 32px 48px;
   max-width: 860px;
 }
