@@ -160,17 +160,25 @@ export const useBlockStore = defineStore('blocks', () => {
     block.updatedAt = new Date().toISOString()
     await storage.saveBlock(block)
 
-    const newParentId = isCollapsed ? block.parentId : block.id
+    const childBlocks = getChildren(block.id)
+
+    //是否创建子节点
+    const isCreateChild = !isCollapsed && childBlocks.length > 0
+
+    const newParentId = isCreateChild ? block.id : block.parentId
 
     const siblings = blocks.value.filter(
       b => b.parentId === newParentId && b.pageId === block.pageId
     )
+    if(isCreateChild) {
+      blockId = ''
+    }
 
     const newBlock = await createBlock({
       pageId: block.pageId,
       content: after,
       parentId: newParentId,
-      left: calculateNewLeft(siblings,  isCollapsed ? block.id : undefined),
+      left: calculateNewLeft(siblings,  blockId),
       pos: 0
     })
 
