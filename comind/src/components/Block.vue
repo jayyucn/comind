@@ -169,12 +169,19 @@ async function handleMerge() {
 }
 
 async function handleDelete() {
-  if (editorRef.value) editorRef.value.markSaved()
-  editorStore.deactivateBlock()
   const siblings = blockStore.blocks
     .filter(b => b.parentId === props.block.parentId && b.pageId === props.block.pageId && b.left < props.block.left)
     .sort((a, b) => b.left - a.left)
   const prevId = siblings[0]?.id
+
+  if (!prevId) {
+    if (editorRef.value) editorRef.value.markSaved()
+    await blockStore.updateBlockContent(props.blockId, '')
+    return
+  }
+
+  if (editorRef.value) editorRef.value.markSaved()
+  editorStore.deactivateBlock()
   await blockStore.deleteBlock(props.blockId)
   if (prevId) {
     editorStore.activateBlock(prevId)
