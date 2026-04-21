@@ -98,7 +98,9 @@ onBeforeUnmount(() => {
       dom.removeEventListener('wiki-link-click', handleWikiLinkClick as EventListener)
       dom.removeEventListener('enter-as-block', handleEnterAsBlock as EventListener)
     }
-  } catch {}
+  } catch (err) {
+    console.warn('移除事件监听器失败:', err)
+  }
   editor.value?.destroy()
 })
 
