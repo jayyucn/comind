@@ -27,22 +27,24 @@ async function handleBacklinkClick(link: LinkRecord) {
   const status = getLinkStatus(link)
   if (!status.blockExists || !status.pageExists) return
 
-  // 1. 先保存当前 block 内容（如果有）
   if (editorStore.activeBlockId) {
     editorStore.deactivateBlock()
   }
 
-  // 2. 从 storage 查源 Block（当前 page 的 blocks 可能不包含它）
-  const blockRecord = await db.blocks.get(link.sourceBlockId)
+  let blockRecord
+  try {
+    blockRecord = await db.blocks.get(link.sourceBlockId)
+  } catch (err) {
+    console.error('获取源块失败:', err)
+    return
+  }
   if (!blockRecord) return
 
-  // 3. 切换到源 Block 所在 Page
   if (blockRecord.pageId !== pageStore.currentPageId) {
     await pageStore.openPage(blockRecord.pageId)
     await blockStore.loadPage(blockRecord.pageId)
   }
 
-  // 4. 将源 Block 切换为 edit 态
   setTimeout(() => {
     editorStore.activateBlock(link.sourceBlockId)
   }, 0)
@@ -64,20 +66,31 @@ async function loadBacklinks() {
     const results = await Promise.all(
       links.map(async (link) => {
         const key = `${link.sourceBlockId}_${link.targetPageId}`
-        const blockRecord = await db.blocks.get(link.sourceBlockId)
-        const blockExists = !!blockRecord
+        let blockExists = false
+        let blockRecord = null
+
+        try {
+          blockRecord = await db.blocks.get(link.sourceBlockId)
+          blockExists = !!blockRecord
+        } catch (err) {
+          console.error('获取源块失败:', err)
+        }
 
         let pageExists = false
         let pageTitle = ''
-        if (blockExists) {
-          const pageRecord = await db.pages.get(blockRecord!.pageId)
-          pageExists = !!pageRecord
-          pageTitle = pageRecord?.title ?? '未命名页面'
+        if (blockExists && blockRecord) {
+          try {
+            const pageRecord = await db.pages.get(blockRecord.pageId)
+            pageExists = !!pageRecord
+            pageTitle = pageRecord?.title ?? '未命名页面'
+          } catch (err) {
+            console.error('获取页面失败:', err)
+          }
         }
 
         return {
           link,
-          sourceContent: blockExists ? blockRecord!.content : '',
+          sourceContent: blockExists && blockRecord ? blockRecord.content : '',
           sourcePageTitle: pageTitle,
           status: { blockExists, pageExists },
           key
