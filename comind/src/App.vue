@@ -4,10 +4,12 @@ import Sidebar from './components/Sidebar.vue'
 import Block from './components/Block.vue'
 import { usePageStore } from './stores/pages'
 import { useBlockStore } from './stores/blocks'
+import { useEditorStore } from './stores/editor'
 import { useSortable } from './composables/useSortable'
 
 const pageStore = usePageStore()
 const blockStore = useBlockStore()
+const editorStore = useEditorStore()
 
 /** 顶级 Block（parentId = null，且属于当前 Page） */
 const topLevelBlocks = computed(() => {
@@ -29,10 +31,16 @@ onMounted(() => {
     useSortable(blockListRef.value)
   }
 })
+
+function handleMainClick(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (target.closest('.block')) return
+  editorStore.deactivateBlock()
+}
 </script>
 
 <template>
-  <div class="app-layout">
+  <div class="app-layout" @click="handleMainClick">
     <Sidebar />
 
     <main class="main-content">

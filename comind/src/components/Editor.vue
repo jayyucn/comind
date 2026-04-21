@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, watch, shallowRef } from 'vue'
+import { onBeforeUnmount, onMounted, watch, shallowRef, nextTick } from 'vue'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import { WikiLinkExtension } from '../extensions/WikiLinkExtension'
@@ -92,18 +92,20 @@ watch(
 
 onBeforeUnmount(() => {
   savedFromOutside = false
-  try {
-    editor.value?.view?.dom?.removeEventListener('wiki-link-click', handleWikiLinkClick as EventListener)
-    editor.value?.view?.dom?.removeEventListener('enter-as-block', handleEnterAsBlock as EventListener)
-  } catch {}
+  if (editor.value?.view?.dom) {
+    editor.value.view.dom.removeEventListener('wiki-link-click', handleWikiLinkClick as EventListener)
+    editor.value.view.dom.removeEventListener('enter-as-block', handleEnterAsBlock as EventListener)
+  }
   editor.value?.destroy()
 })
 
 onMounted(() => {
-  if (editor.value) {
-    editor.value.view.dom.addEventListener('wiki-link-click', handleWikiLinkClick as EventListener)
-    editor.value.view.dom.addEventListener('enter-as-block', handleEnterAsBlock as EventListener)
-  }
+  nextTick(() => {
+    if (editor.value?.view) {
+      editor.value.view.dom.addEventListener('wiki-link-click', handleWikiLinkClick as EventListener)
+      editor.value.view.dom.addEventListener('enter-as-block', handleEnterAsBlock as EventListener)
+    }
+  })
 })
 
 function syncContent(content: string, cursorPos?: number) {
