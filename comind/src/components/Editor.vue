@@ -95,15 +95,22 @@ watch(
 onBeforeUnmount(() => {
   savedFromOutside = false
   try {
-    const dom = editor.value?.view?.dom
-    if (dom) {
-      dom.removeEventListener('wiki-link-click', handleWikiLinkClick as EventListener)
-      dom.removeEventListener('enter-as-block', handleEnterAsBlock as EventListener)
+    const view = editor.value?.view
+    if (view) {
+      view.dom.removeEventListener('wiki-link-click', handleWikiLinkClick as EventListener)
+      view.dom.removeEventListener('enter-as-block', handleEnterAsBlock as EventListener)
     }
   } catch (err) {
+    if (err instanceof Error && err.message.includes('editor view is not available')) {
+      return
+    }
     console.warn('移除事件监听器失败:', err)
   }
-  editor.value?.destroy()
+  try {
+    editor.value?.destroy()
+  } catch (err) {
+    console.warn('销毁编辑器失败:', err)
+  }
 })
 
 onMounted(() => {
