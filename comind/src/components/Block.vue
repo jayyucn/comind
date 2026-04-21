@@ -232,6 +232,14 @@ async function handleMoveDown() {
   }
 }
 
+async function handleExitEdit() {
+  if (editorRef.value) {
+    editorRef.value.markSaved()
+    await handleSave(editorRef.value.getText())
+  }
+  editorStore.deactivateBlock()
+}
+
 function handleCursorChange(pos: number) {
   cursorPos.value = pos
 }
@@ -302,7 +310,8 @@ function renderContent(text: string): string {
       <div class="block-content" @mousedown="handleContentMouseDown">
         <Editor v-if="isActive" ref="editorRef" :block-id="blockId" :content="block.content" @save="handleSave"
           @split="handleSplit" @merge="handleMerge" @delete="handleDelete" @indent="handleIndent"
-          @outdent="handleOutdent" @move-up="handleMoveUp" @move-down="handleMoveDown" @cursor-change="handleCursorChange" />
+          @outdent="handleOutdent" @move-up="handleMoveUp" @move-down="handleMoveDown" @exit-edit="handleExitEdit"
+          @cursor-change="handleCursorChange" />
         <div v-else class="block-text" v-html="renderContent(block.content)" @click="handleContentClick"></div>
       </div>
     </div>

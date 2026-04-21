@@ -66,6 +66,20 @@ const EnterAsBlockExtension = Extension.create({
         }
         return false
       },
+      Escape: ({ editor }) => {
+        editor.view.dom.dispatchEvent(new CustomEvent('enter-as-block', {
+          bubbles: true,
+          detail: { type: 'exitEdit' }
+        }))
+        return true
+      },
+      'Mod-s': ({ editor }) => {
+        editor.view.dom.dispatchEvent(new CustomEvent('enter-as-block', {
+          bubbles: true,
+          detail: { type: 'save' }
+        }))
+        return true
+      },
     }
   }
 })

@@ -1,8 +1,8 @@
 # Page（Block 树）交互规范
 
-> 版本：v0.5\
+> 版本：v0.6\
 > 日期：2026-04-22\
-> 状态：**已更新** — §3.3/§3.4 缩进/反缩进子树跟随移动已实现，Backlinks 源 block 内容显示已修复\
+> 状态：**已更新** — §3.8 ESC 退出编辑、§3.9 Ctrl+S 手动保存实现完成\
 > 依据：`SPEC.md` `block-editor-spec.md` `ui-ux-spec.md` `data-model.md`
 
 ***
@@ -550,14 +550,16 @@ async function handleSplit(cursorPosArg: number) {
 | 拖拽中         | 取消拖拽，Block 回到原位         |
 | 无特殊状态       | 不做任何操作                  |
 
-**实现状态：⚠️ 部分实现**
+**实现状态：✅ 已实现**
 
-> 当前 `edit` 态按 ESC：tiptap 的默认行为是将光标移动到文档开头（而非退出编辑态）。需要通过 tiptap keyboard shortcut 拦截 ESC 并触发保存 + 失活。
+**实现细节：**
+- `EnterAsBlockExtension`：`Escape` 快捷键拦截
+- `Block.vue`：`handleExitEdit()` 保存内容并调用 `deactivateBlock()`
 
 | 子项             | 状态 |
 | -------------- | -- |
-| ESC 退出编辑态      | ❌  |
-| ESC 保存内容       | ❌  |
+| ESC 退出编辑态      | ✅  |
+| ESC 保存内容       | ✅  |
 | ESC 取消拖拽       | ❌  |
 | focused 态按 ESC | ❌  |
 
@@ -570,12 +572,17 @@ async function handleSplit(cursorPosArg: number) {
 - 触发当前 `edit` 态 Block 的保存逻辑
 - 写入 IndexedDB
 
-**实现状态：❌ 未实现**
+**实现状态：✅ 已实现**
+
+**实现细节：**
+- `EnterAsBlockExtension`：`Mod-s`（Ctrl+S / Cmd+S）快捷键拦截
+- `Editor.vue`：触发 `save` 事件
+- `Block.vue`：`handleSave()` 调用 `blockStore.updateBlockContent()`
 
 | 场景                 | 行为              | 状态 |
 | ------------------ | --------------- | -- |
-| 无 `edit` 态 Block   | 不做任何操作          | ❌  |
-| 保存失败（IndexedDB 错误） | Phase 1 不实现错误处理 | ❌  |
+| 无 `edit` 态 Block   | 不做任何操作          | ✅  |
+| 保存失败（IndexedDB 错误） | Phase 1 不实现错误处理 | ⚠️  |
 
 ***
 
@@ -680,7 +687,7 @@ ESC               （退出编辑 / 取消）
 | # | 问题                                        | 涉及章节 | 状态                    |
 | - | ----------------------------------------- | ---- | --------------------- |
 | 3 | 点击 block 外部区域不退出编辑态（`handleMainClick` 缺失） | §2.5 | ✅ 已修复                 |
-| 4 | ESC 键不退出编辑态（tiptap 未拦截 ESC）               | §3.8 | 🔴 待修复                |
+| 4 | ESC 键退出编辑态                                | §3.8 | ✅ 已修复                |
 | 5 | 拖拽循环检测未接入 Sortable `onMove`               | §2.3 | ✅ 已实现                 |
 | 6 | 放置指示线未实现                                  | §2.3 | ✅ 已实现（Sortable ghost） |
 
@@ -689,7 +696,7 @@ ESC               （退出编辑 / 取消）
 | #  | 问题                                               | 涉及章节           | 状态     |
 | -- | ------------------------------------------------ | -------------- | ------ |
 | 7  | `focused` 态未实现（↑↓ 已实现，但用 `edit` 态替代 `focused` 态） | §3.5/§3.6/§3.7 | ✅ 已实现  |
-| 8  | Ctrl+S 手动保存未实现                                   | §3.9           | 🔴 待实现 |
+| 8  | Ctrl+S 手动保存                                       | §3.9           | ✅ 已实现 |
 | 9  | Property 行（`key:: value`）解析未实现                   | §4.5           | 🔴 待实现 |
 | 10 | 链接删除时 Link 表级联删除未实现                              | §4.4           | 🔴 待实现 |
 | 11 | Backlinks 面板 UI 未实现                              | §2.7           | ✅ 已实现  |
@@ -711,4 +718,4 @@ ESC               （退出编辑 / 取消）
 
 ***
 
-*文档 v0.5，更新 §3.5/§3.6 ↑↓ 焦点移动支持行列位置保持。*
+*文档 v0.6，更新 §3.8 ESC 退出编辑、§3.9 Ctrl+S 手动保存实现完成。*

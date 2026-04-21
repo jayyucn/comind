@@ -21,6 +21,7 @@ const emit = defineEmits<{
   (e: 'outdent'): void
   (e: 'moveUp'): void
   (e: 'moveDown'): void
+  (e: 'exitEdit'): void
   (e: 'cursor-change', pos: number): void
 }>()
 
@@ -57,6 +58,14 @@ function handleEnterAsBlock(event: Event) {
       break
     case 'moveDown':
       emit('moveDown')
+      break
+    case 'exitEdit':
+      emit('exitEdit')
+      break
+    case 'save':
+      if (editor.value) {
+        emit('save', editor.value.getText())
+      }
       break
   }
 }
