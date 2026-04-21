@@ -208,6 +208,30 @@ async function handleOutdent() {
   editorStore.activateBlock(props.blockId)
 }
 
+async function handleMoveUp() {
+  if (editorRef.value) {
+    editorRef.value.markSaved()
+    await handleSave(editorRef.value.getText())
+  }
+  const prevBlock = blockStore.findPreviousBlockInTreeOrder(props.blockId)
+  if (prevBlock) {
+    editorStore.deactivateBlock()
+    editorStore.activateBlock(prevBlock.id)
+  }
+}
+
+async function handleMoveDown() {
+  if (editorRef.value) {
+    editorRef.value.markSaved()
+    await handleSave(editorRef.value.getText())
+  }
+  const nextBlock = blockStore.findNextBlockInTreeOrder(props.blockId)
+  if (nextBlock) {
+    editorStore.deactivateBlock()
+    editorStore.activateBlock(nextBlock.id)
+  }
+}
+
 function handleCursorChange(pos: number) {
   cursorPos.value = pos
 }
@@ -278,7 +302,7 @@ function renderContent(text: string): string {
       <div class="block-content" @mousedown="handleContentMouseDown">
         <Editor v-if="isActive" ref="editorRef" :block-id="blockId" :content="block.content" @save="handleSave"
           @split="handleSplit" @merge="handleMerge" @delete="handleDelete" @indent="handleIndent"
-          @outdent="handleOutdent" @cursor-change="handleCursorChange" />
+          @outdent="handleOutdent" @move-up="handleMoveUp" @move-down="handleMoveDown" @cursor-change="handleCursorChange" />
         <div v-else class="block-text" v-html="renderContent(block.content)" @click="handleContentClick"></div>
       </div>
     </div>

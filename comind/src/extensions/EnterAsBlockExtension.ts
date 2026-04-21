@@ -44,6 +44,31 @@ const EnterAsBlockExtension = Extension.create({
         }))
         return true
       },
+      ArrowUp: ({ editor }) => {
+        const { $from } = editor.state.selection
+        const isAtFirstLine = $from.pos === 1
+        if (isAtFirstLine) {
+          editor.view.dom.dispatchEvent(new CustomEvent('enter-as-block', {
+            bubbles: true,
+            detail: { type: 'moveUp' }
+          }))
+          return true
+        }
+        return false
+      },
+      ArrowDown: ({ editor }) => {
+        const { $from } = editor.state.selection
+        const content = editor.getText()
+        const isAtLastLine = $from.pos === content.length + 1
+        if (isAtLastLine) {
+          editor.view.dom.dispatchEvent(new CustomEvent('enter-as-block', {
+            bubbles: true,
+            detail: { type: 'moveDown' }
+          }))
+          return true
+        }
+        return false
+      },
     }
   }
 })

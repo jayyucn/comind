@@ -18,12 +18,12 @@
 
 **实现状态标注约定：**
 
-| 标注 | 含义 |
-|------|------|
-| ✅ 已实现 | 行为已正确实现，与规范一致 |
+| 标注      | 含义                        |
+| ------- | ------------------------- |
+| ✅ 已实现   | 行为已正确实现，与规范一致             |
 | ⚠️ 部分实现 | 核心逻辑已有，但与规范描述存在差异或边界情况未覆盖 |
-| ❌ 未实现 | 规范有定义，但代码中不存在对应实现 |
-| 🔴 阻塞 | 存在会导致功能不可用的 bug |
+| ❌ 未实现   | 规范有定义，但代码中不存在对应实现         |
+| 🔴 阻塞   | 存在会导致功能不可用的 bug           |
 
 ***
 
@@ -59,9 +59,11 @@ display ──[键盘↑↓]──→ focused ──[Enter]──→ edit
 > ⚠️ `focused` 态当前未实现，↑↓ 键无操作。
 
 **临时状态说明：**
+
 - `pendingCursorPos`（`editorStore.cursorPos`）：仅在编辑态切换瞬间使用的临时状态，用于记录点击位置。tiptap 挂载后立即消费，不持久化。
 
 **Block.collapsed 字段说明：**
+
 - `collapsed` 是运行时状态，控制 Block 是否折叠子节点
 - 存储于 IndexedDB，不持久化到 Markdown
 - 默认值为 `false`（展开态）
@@ -90,12 +92,12 @@ display ──[键盘↑↓]──→ focused ──[Enter]──→ edit
 **边界情况：**
 
 | 场景                                | 行为                                           | 状态 |
-| --------------------------------- | -------------------------------------------- | ---- |
-| 点击已有 `edit` 态 Block 的内容区          | 不做任何操作（已是编辑态），光标移动到点击位置                      | ✅   |
-| 点击折叠态（collapsed=true）的父 Block 内容区 | 进入 `edit` 态，父 Block 不展开，子 Block 不自动进入编辑      | ✅   |
-| 点击子 Block 内容区（父 Block 折叠）         | 父 Block 自动展开，显示子 Block，再进入子 Block 的 `edit` 态 | ✅   |
-| 点击已选中的文字                          | 不触发状态切换，光标移动到点击位置，文字保持选中                     | ✅   |
-| 点击页面空白区域                          | 无任何操作（Phase 1 不实现多选）                         | ❌   |
+| --------------------------------- | -------------------------------------------- | -- |
+| 点击已有 `edit` 态 Block 的内容区          | 不做任何操作（已是编辑态），光标移动到点击位置                      | ✅  |
+| 点击折叠态（collapsed=true）的父 Block 内容区 | 进入 `edit` 态，父 Block 不展开，子 Block 不自动进入编辑      | ✅  |
+| 点击子 Block 内容区（父 Block 折叠）         | 父 Block 自动展开，显示子 Block，再进入子 Block 的 `edit` 态 | ✅  |
+| 点击已选中的文字                          | 不触发状态切换，光标移动到点击位置，文字保持选中                     | ✅  |
+| 点击页面空白区域                          | 无任何操作（Phase 1 不实现多选）                         | ❌  |
 
 > ❌ **点击页面空白区域**：App.vue 当前无 `@click` 监听，点击 block 外部区域时 active block **不会失活**。需要补充 `handleMainClick` 或其他机制。
 
@@ -123,11 +125,11 @@ display ──[键盘↑↓]──→ focused ──[Enter]──→ edit
 
 **边界情况：**
 
-| 场景               | 行为                      | 状态 |
-| ---------------- | ----------------------- | ---- |
-| 无子 Block 时点击折叠图标 | ✅ 不做任何操作（children.length === 0 时 return） | ✅   |
-| 折叠/展开动画进行中再次点击   | ✅ 立即切换到目标状态（isAnimating 直接跳目标） | ✅   |
-| 折叠态 Block 被拖拽    | ❌ 拖拽未实现（Phase 1 拖拽）     | ❌   |
+| 场景               | 行为                                       | 状态 |
+| ---------------- | ---------------------------------------- | -- |
+| 无子 Block 时点击折叠图标 | ✅ 不做任何操作（children.length === 0 时 return） | ✅  |
+| 折叠/展开动画进行中再次点击   | ✅ 立即切换到目标状态（isAnimating 直接跳目标）           | ✅  |
+| 折叠态 Block 被拖拽    | ❌ 拖拽未实现（Phase 1 拖拽）                      | ❌  |
 
 ***
 
@@ -143,13 +145,14 @@ display ──[键盘↑↓]──→ focused ──[Enter]──→ edit
 
 **放置类型（由松开位置决定）：**
 
-| 放置位置               | 放置结果                              |
-| ------------------ | --------------------------------- |
-| 目标 Block 上方 50% 区域 | 作为目标 Block 的**前一个兄弟**             |
-| 目标 Block 下方 50% 区域 | 作为目标 Block 的**后一个兄弟**             |
+| 放置位置                  | 放置结果                                    |
+| --------------------- | --------------------------------------- |
+| 目标 Block 上方 50% 区域    | 作为目标 Block 的**前一个兄弟**                   |
+| 目标 Block 下方 50% 区域    | 作为目标 Block 的**后一个兄弟**                   |
 | 目标 Block 操作区（左侧 24px） | 作为目标 Block 的**子 Block**（缩进 +100 left 值） |
 
 **操作区定义：**
+
 - 操作区宽度：24px，包含折叠图标和拖拽手柄
 - 放置为子 Block 时，水平线缩进 24px（与操作区左边缘对齐）
 
@@ -160,30 +163,31 @@ display ──[键盘↑↓]──→ focused ──[Enter]──→ edit
 
 **实现状态：✅ 已实现**
 
-| 子项                    | 状态 | 实现 |
-| --------------------- | ---- | ---- |
-| Sortable.js 引入          | ✅ | `npm install sortablejs` |
-| `useSortable.ts` composable | ✅ | 封装 Sortable 初始化逻辑 |
-| Sortable group 配置（父子嵌套） | ✅ | `group: 'nested'` 配置 |
-| 放置指示线（drop indicator） | ✅ | Sortable 内置 ghost 元素 |
-| 循环嵌套检测（onMove）     | ✅ | `isDescendantOf()` + `onMove` 返回 `false` |
-| dragging 态视觉反馈       | ✅ | `.sortable-ghost` / `.sortable-drag` CSS |
+| 子项                          | 状态 | 实现                                       |
+| --------------------------- | -- | ---------------------------------------- |
+| Sortable.js 引入              | ✅  | `npm install sortablejs`                 |
+| `useSortable.ts` composable | ✅  | 封装 Sortable 初始化逻辑                        |
+| Sortable group 配置（父子嵌套）     | ✅  | `group: 'nested'` 配置                     |
+| 放置指示线（drop indicator）       | ✅  | Sortable 内置 ghost 元素                     |
+| 循环嵌套检测（onMove）              | ✅  | `isDescendantOf()` + `onMove` 返回 `false` |
+| dragging 态视觉反馈              | ✅  | `.sortable-ghost` / `.sortable-drag` CSS |
 
 **实现差异说明：**
+
 - 当前用 bullet（圆点）作为拖拽触发区，而非独立的拖拽手柄（符合设计）
 - `isDescendantOf` 循环检测已实现（`blocks.ts`），Sortable `onMove` 钩子已接入
 - 放置指示线由 Sortable 内置 ghost 元素提供视觉反馈
 
 **边界情况：**
 
-| 场景                         | 行为                    | 状态 |
-| -------------------------- | --------------------- | ---- |
-| 拖拽自己到自己的位置                 | 无操作（Sortable 自动处理）     | ✅   |
-| 拖拽父 Block 到其子 Block 下方     | 禁止（`onMove` 返回 `false`，无放置指示） | ✅   |
-| 拖拽 Block A 到 Block A 的后代位置 | 禁止（循环嵌套检测）              | ✅   |
-| 拖拽到页面边缘外                   | 拖拽取消，Block 回到原位（Sortable 默认） | ✅   |
-| 拖拽过程中按 ESC                 | 拖拽取消，Block 回到原位          | ✅   |
-| 拖拽空 Block（无文字）             | 允许，正常拖拽               | ✅   |
+| 场景                         | 行为                            | 状态 |
+| -------------------------- | ----------------------------- | -- |
+| 拖拽自己到自己的位置                 | 无操作（Sortable 自动处理）            | ✅  |
+| 拖拽父 Block 到其子 Block 下方     | 禁止（`onMove` 返回 `false`，无放置指示） | ✅  |
+| 拖拽 Block A 到 Block A 的后代位置 | 禁止（循环嵌套检测）                    | ✅  |
+| 拖拽到页面边缘外                   | 拖拽取消，Block 回到原位（Sortable 默认）  | ✅  |
+| 拖拽过程中按 ESC                 | 拖拽取消，Block 回到原位               | ✅  |
+| 拖拽空 Block（无文字）             | 允许，正常拖拽                       | ✅  |
 
 ***
 
@@ -217,11 +221,11 @@ function handleMainClick(e: MouseEvent) {
 
 **边界情况：**
 
-| 场景               | 行为                              | 状态 |
-| ---------------- | --------------------------------- | ---- |
-| 点击页面标题区空白       | active block 失活，内容保存              | ✅   |
-| 点击 main-content padding | active block 失活，内容保存              | ✅   |
-| 点击 main-content 滚动条  | 无操作（滚动条非 HTMLElement，不触发）     | ✅   |
+| 场景                      | 行为                        | 状态 |
+| ----------------------- | ------------------------- | -- |
+| 点击页面标题区空白               | active block 失活，内容保存      | ✅  |
+| 点击 main-content padding | active block 失活，内容保存      | ✅  |
+| 点击 main-content 滚动条     | 无操作（滚动条非 HTMLElement，不触发） | ✅  |
 
 ***
 
@@ -235,22 +239,22 @@ function handleMainClick(e: MouseEvent) {
 
 **实现状态：⚠️ 部分实现（已知问题，暂不修复）**
 
-| 子项                    | 状态 |
-| --------------------- | ---- |
-| 切换 currentPageId ✅  | ✅   |
+| 子项                     | 状态                                             |
+| ---------------------- | ---------------------------------------------- |
+| 切换 currentPageId ✅     | ✅                                              |
 | 切换后第一个 block 进入 edit 态 | ✅（Sidebar `ensureFirstBlock()` + onMounted 逻辑） |
-| 切换 page 前保存当前 block 内容 | ⚠️ **已知问题**：`handleOpenPage` 不保存内容 |
+| 切换 page 前保存当前 block 内容 | ⚠️ **已知问题**：`handleOpenPage` 不保存内容             |
 
 > ⚠️ **已知问题**：切换页面时当前 block 内容不会自动保存。用户需手动 blur（点击外部）后再切换页面。Phase 1.1 考虑修复。
 
 **边界情况：**
 
 | 场景                           | 行为                            | 状态 |
-| ---------------------------- | ----------------------------- | ---- |
-| 点击当前活跃 Page                  | 无操作                           | ✅   |
-| Page 没有任何 Block              | 自动创建 1 个空 Block → 进入 `edit` 态 | ✅   |
-| Page 有 Block，但最后一个 Block 无内容 | 无特殊处理，正常渲染                    | ✅   |
-| 切换 page 时当前 block 有未保存内容     | ⚠️ 内容可能丢失（需先 blur 保存）          | ⚠️   |
+| ---------------------------- | ----------------------------- | -- |
+| 点击当前活跃 Page                  | 无操作                           | ✅  |
+| Page 没有任何 Block              | 自动创建 1 个空 Block → 进入 `edit` 态 | ✅  |
+| Page 有 Block，但最后一个 Block 无内容 | 无特殊处理，正常渲染                    | ✅  |
+| 切换 page 时当前 block 有未保存内容     | ⚠️ 内容可能丢失（需先 blur 保存）         | ⚠️ |
 
 ***
 
@@ -262,16 +266,16 @@ function handleMainClick(e: MouseEvent) {
 
 **实现状态：✅ 已实现（位于 Page 底部，符合 ui-ux-spec.md）**
 
-| 子项                    | 状态 | 实现 |
-| --------------------- | ---- | ---- |
-| `[[WikiLink]]` 渲染（高亮样式） | ✅ | `Block.renderContent()` |
-| 页面内点击 `[[WikiLink]]` 跳转 Page | ✅ | `Block.handleContentClick()` |
-| Backlinks 面板 UI          | ✅ | `Backlinks.vue` 组件，位于 `App.vue` 页面底部 |
-| Backlinks 列表点击跳转       | ✅ | `handleBacklinkClick()` |
-| 悬空链接（目标 Page 不存在）处理  | ✅ | 点击时创建新 Page（`useNavigateToPage`） |
-| 源 Block 已被删除的处理       | ✅ | 显示 "(来源块已删除)" 提示，点击无操作 |
-| 源 Page 已被删除的处理        | ✅ | 显示 "(来源页面已删除)" 提示，删除线样式 |
-| Backlinks 可折叠           | ✅ | `collapsed` ref + 点击 header 切换 |
+| 子项                           | 状态 | 实现                                   |
+| ---------------------------- | -- | ------------------------------------ |
+| `[[WikiLink]]` 渲染（高亮样式）      | ✅  | `Block.renderContent()`              |
+| 页面内点击 `[[WikiLink]]` 跳转 Page | ✅  | `Block.handleContentClick()`         |
+| Backlinks 面板 UI              | ✅  | `Backlinks.vue` 组件，位于 `App.vue` 页面底部 |
+| Backlinks 列表点击跳转             | ✅  | `handleBacklinkClick()`              |
+| 悬空链接（目标 Page 不存在）处理          | ✅  | 点击时创建新 Page（`useNavigateToPage`）     |
+| 源 Block 已被删除的处理              | ✅  | 显示 "(来源块已删除)" 提示，点击无操作               |
+| 源 Page 已被删除的处理               | ✅  | 显示 "(来源页面已删除)" 提示，删除线样式              |
+| Backlinks 可折叠                | ✅  | `collapsed` ref + 点击 header 切换       |
 
 **实现细节：**
 
@@ -302,12 +306,12 @@ async function handleBacklinkClick(link: LinkRecord) {
 
 **边界情况：**
 
-| 场景                | 行为                                      | 状态 |
-| ----------------- | --------------------------------------- | ---- |
-| 源 Block 已被删除      | 显示"(来源块已删除)"提示，Backlink 保留（悬空链接样式） | ✅   |
-| 源 Page 已被删除       | 显示"(来源页面已删除)"提示，该 Backlink 以删除线样式显示      | ✅   |
-| 大量 Backlink（100+） | Phase 1 不实现分页，所有显示；性能问题在 Phase 1.1 考虑   | ✅   |
-| Backlinks 折叠/展开   | 点击 header 切换 collapsed 状态，保存展开偏好（Phase 1.1） | ✅   |
+| 场景                | 行为                                          | 状态 |
+| ----------------- | ------------------------------------------- | -- |
+| 源 Block 已被删除      | 显示"(来源块已删除)"提示，Backlink 保留（悬空链接样式）          | ✅  |
+| 源 Page 已被删除       | 显示"(来源页面已删除)"提示，该 Backlink 以删除线样式显示         | ✅  |
+| 大量 Backlink（100+） | Phase 1 不实现分页，所有显示；性能问题在 Phase 1.1 考虑       | ✅  |
+| Backlinks 折叠/展开   | 点击 header 切换 collapsed 状态，保存展开偏好（Phase 1.1） | ✅  |
 
 ***
 
@@ -347,16 +351,16 @@ async function handleSplit(cursorPosArg: number) {
 
 **边界情况：**
 
-| 场景                              | 行为                                           | 状态 |
-| ------------------------------- | -------------------------------------------- | ---- |
-| 空 Block（无任何文字）按 Enter           | 在当前 Block 之后插入空 Block，光标落入新 Block 开头 | ✅   |
-| Block 只有空白字符                    | 视为空 Block                                    | ✅   |
-| Enter 触发后立即触发其他快捷键（如 Backspace） | 依次处理，不阻塞                                     | ✅   |
-| 拆分后新 Block 需要缩进（Tab）            | 正常处理，新 Block 成为当前 Block 的兄弟                  | ✅   |
-| 页面最后一个 Block 按 Enter            | 在最后插入新 Block                                 | ✅   |
-| Block 有子 Block                  | 仅拆分当前 Block，不影响子 Block                       | ✅   |
+| 场景                              | 行为                                   | 状态 |
+| ------------------------------- | ------------------------------------ | -- |
+| 空 Block（无任何文字）按 Enter           | 在当前 Block 之后插入空 Block，光标落入新 Block 开头 | ✅  |
+| Block 只有空白字符                    | 视为空 Block                            | ✅  |
+| Enter 触发后立即触发其他快捷键（如 Backspace） | 依次处理，不阻塞                             | ✅  |
+| 拆分后新 Block 需要缩进（Tab）            | 正常处理，新 Block 成为当前 Block 的兄弟          | ✅  |
+| 页面最后一个 Block 按 Enter            | 在最后插入新 Block                         | ✅  |
+| Block 有子 Block                  | 仅拆分当前 Block，不影响子 Block               | ✅  |
 
-> ~~⚠️ **光标位置差异**~~：规范已修正为与实现一致——统一在当前 Block **之后**插入新 Block。
+> ~~⚠️~~ **~~光标位置差异~~**：规范已修正为与实现一致——统一在当前 Block **之后**插入新 Block。
 
 ***
 
@@ -378,16 +382,16 @@ async function handleSplit(cursorPosArg: number) {
 
 **边界情况：**
 
-| 场景                                      | 行为                                    | 状态 |
-| --------------------------------------- | ------------------------------------- | ---- |
-| 光标不在 Block 开头                           | Backspace 由 tiptap 处理（删除光标前字符），不触发合并  | ✅   |
-| 当前 Block 是页面第一个 Block                   | 不触发合并，Backspace 由 tiptap 处理（无字符可删时忽略） | ✅   |
-| 当前 Block 是第一个可见 Block（父 Block 折叠导致）     | 不触发合并                                 | ✅   |
-| 上一个 Block 有子 Block                      | 合并后，上一个 Block 的子 Block 保持不变           | ✅   |
-| 上一个 Block 已折叠                           | 合并后保持折叠态，光标落入后不展开                     | ✅   |
-| 当前 Block 是 Page 且是其唯一 Block             | 不允许删除 Page 本身，改为清空内容                    | ⚠️   |
-| 空 Block（无文字）按 Backspace                 | 视为"光标在 Block 开头"，触发合并（删除空 Block）      | ✅   |
-| 合并后上一个 Block 有未保存内容                     | 先保存上一个 Block，再合并                      | ✅   |
+| 场景                                  | 行为                                    | 状态 |
+| ----------------------------------- | ------------------------------------- | -- |
+| 光标不在 Block 开头                       | Backspace 由 tiptap 处理（删除光标前字符），不触发合并  | ✅  |
+| 当前 Block 是页面第一个 Block               | 不触发合并，Backspace 由 tiptap 处理（无字符可删时忽略） | ✅  |
+| 当前 Block 是第一个可见 Block（父 Block 折叠导致） | 不触发合并                                 | ✅  |
+| 上一个 Block 有子 Block                  | 合并后，上一个 Block 的子 Block 保持不变           | ✅  |
+| 上一个 Block 已折叠                       | 合并后保持折叠态，光标落入后不展开                     | ✅  |
+| 当前 Block 是 Page 且是其唯一 Block         | 不允许删除 Page 本身，改为清空内容                  | ⚠️ |
+| 空 Block（无文字）按 Backspace             | 视为"光标在 Block 开头"，触发合并（删除空 Block）      | ✅  |
+| 合并后上一个 Block 有未保存内容                 | 先保存上一个 Block，再合并                      | ✅  |
 
 > ⚠️ "唯一空 Block 按 Backspace 保留" 未做特殊处理，当前会合并。
 
@@ -409,6 +413,7 @@ async function handleSplit(cursorPosArg: number) {
 **实现状态：✅ 已实现**
 
 **实现细节：**
+
 - `blocks.ts`：`indent()` 用 `calculateIndentLeft()` 计算新 left 值
 - `blocks.ts`：`getDescendantsInTreeOrder()` 收集所有后代节点
 - `blocks.ts`：`recalculateSubtreeLeftValues()` 重排子树 left 值
@@ -416,14 +421,14 @@ async function handleSplit(cursorPosArg: number) {
 
 **边界情况：**
 
-| 场景                             | 行为                               | 状态 |
-| ------------------------------ | -------------------------------- | ---- |
-| 当前 Block 是页面第一个 Block（无前一个兄弟）  | 不做任何操作                           | ✅   |
-| 当前 Block 已是父 Block 的第一个子 Block | 正常缩进                             | ✅   |
-| 当前 Block 有后续兄弟 Block           | 缩进后，后续兄弟 Block 保持原有层级，left 值重排   | ✅   |
-| 当前 Block 处于折叠态（collapsed=true） | 正常缩进，折叠态不变                       | ✅   |
-| 当前 Block 有子 Block              | ✅ 子 Block 随父 Block 一起移动，parentId 不变 | ✅   |
-| 光标在 Block 末尾按 Tab              | 正常缩进，光标位置保持                       | ✅   |
+| 场景                             | 行为                                  | 状态 |
+| ------------------------------ | ----------------------------------- | -- |
+| 当前 Block 是页面第一个 Block（无前一个兄弟）  | 不做任何操作                              | ✅  |
+| 当前 Block 已是父 Block 的第一个子 Block | 正常缩进                                | ✅  |
+| 当前 Block 有后续兄弟 Block           | 缩进后，后续兄弟 Block 保持原有层级，left 值重排      | ✅  |
+| 当前 Block 处于折叠态（collapsed=true） | 正常缩进，折叠态不变                          | ✅  |
+| 当前 Block 有子 Block              | ✅ 子 Block 随父 Block 一起移动，parentId 不变 | ✅  |
+| 光标在 Block 末尾按 Tab              | 正常缩进，光标位置保持                         | ✅  |
 
 ***
 
@@ -443,6 +448,7 @@ async function handleSplit(cursorPosArg: number) {
 **实现状态：✅ 已实现**
 
 **实现细节：**
+
 - `blocks.ts`：`outdent()` 用 `calculateOutdentLeft()` 计算新 left 值
 - `blocks.ts`：`getDescendantsInTreeOrder()` 收集所有后代节点
 - `blocks.ts`：`recalculateSubtreeLeftValues()` 重排子树 left 值
@@ -450,13 +456,13 @@ async function handleSplit(cursorPosArg: number) {
 
 **边界情况：**
 
-| 场景                                               | 行为                              | 状态 |
-| ------------------------------------------------ | ------------------------------- | ---- |
-| 当前 Block 是顶级 Block（parentId = null）              | 不做任何操作                          | ✅   |
-| 当前 Block 有子 Block                                | ✅ 子 Block 随当前 Block 一起反缩进 | ✅   |
-| 父 Block 是当前页面的最后一个子 Block                        | 当前 Block 反缩进后，插入到父 Block 之后     | ✅   |
-| 父 Block 已折叠                                      | 当前 Block 反缩进后，父 Block 的折叠态不变    | ✅   |
-| 连续 Shift+Tab（多级反缩进）                              | 每次操作一个层级                        | ✅   |
+| 场景                                  | 行为                           | 状态 |
+| ----------------------------------- | ---------------------------- | -- |
+| 当前 Block 是顶级 Block（parentId = null） | 不做任何操作                       | ✅  |
+| 当前 Block 有子 Block                   | ✅ 子 Block 随当前 Block 一起反缩进    | ✅  |
+| 父 Block 是当前页面的最后一个子 Block           | 当前 Block 反缩进后，插入到父 Block 之后  | ✅  |
+| 父 Block 已折叠                         | 当前 Block 反缩进后，父 Block 的折叠态不变 | ✅  |
+| 连续 Shift+Tab（多级反缩进）                 | 每次操作一个层级                     | ✅  |
 
 ***
 
@@ -473,18 +479,19 @@ async function handleSplit(cursorPosArg: number) {
 **实现状态：✅ 已实现**
 
 **实现细节：**
+
 - `blocks.ts`：`findPreviousBlockInTreeOrder()` 实现树前序遍历前驱查找
 - `EnterAsBlockExtension`：`ArrowUp` 快捷键，仅在光标位于文档开头时触发，传递当前光标行列位置
 - `Block.vue`：`handleMoveUp()` 保存当前内容，激活上一个 Block，并根据行列位置设置光标
 
 **边界情况：**
 
-| 场景                              | 行为                                           | 状态 |
-| ------------------------------- | -------------------------------------------- | ---- |
-| 当前 Block 是页面第一个 Block           | 无操作（已在最前）                                  | ✅   |
-| 光标不在文档开头                      | ↑ 由 tiptap 处理（光标上移），不触发 Block 切换          | ✅   |
-| 上一个 Block 已折叠                   | 正常切换到该 Block（进入编辑态，但不自动展开）              | ✅   |
-| 上一个 Block 有子节点                  | 切换到最深末端子节点（前序遍历前驱）                       | ✅   |
+| 场景                    | 行为                               | 状态 |
+| --------------------- | -------------------------------- | -- |
+| 当前 Block 是页面第一个 Block | 无操作（已在最前）                        | ✅  |
+| 光标不在文档开头              | ↑ 由 tiptap 处理（光标上移），不触发 Block 切换 | ✅  |
+| 上一个 Block 已折叠         | 正常切换到该 Block（进入编辑态，但不自动展开）       | ✅  |
+| 上一个 Block 有子节点        | 切换到最深末端子节点（前序遍历前驱）               | ✅  |
 
 ***
 
@@ -501,18 +508,19 @@ async function handleSplit(cursorPosArg: number) {
 **实现状态：✅ 已实现**
 
 **实现细节：**
+
 - `blocks.ts`：`findNextBlockInTreeOrder()` 实现树前序遍历后继查找
 - `EnterAsBlockExtension`：`ArrowDown` 快捷键，仅在光标位于文档末尾时触发，传递当前光标行列位置
 - `Block.vue`：`handleMoveDown()` 保存当前内容，激活下一个 Block，并根据行列位置设置光标
 
 **边界情况：**
 
-| 场景                              | 行为                                           | 状态 |
-| ------------------------------- | -------------------------------------------- | ---- |
-| 当前 Block 是页面最后一个 Block          | 无操作（已在最后）                                  | ✅   |
-| 光标不在文档末尾                      | ↓ 由 tiptap 处理（光标下移），不触发 Block 切换          | ✅   |
-| 当前 Block 有子节点                    | 切换到第一个子节点（前序遍历后继）                         | ✅   |
-| 当前 Block 是折叠父节点的最后一个子节点    | 切换到父节点的下一个兄弟（向上回溯）                       | ✅   |
+| 场景                      | 行为                               | 状态 |
+| ----------------------- | -------------------------------- | -- |
+| 当前 Block 是页面最后一个 Block  | 无操作（已在最后）                        | ✅  |
+| 光标不在文档末尾                | ↓ 由 tiptap 处理（光标下移），不触发 Block 切换 | ✅  |
+| 当前 Block 有子节点           | 切换到第一个子节点（前序遍历后继）                | ✅  |
+| 当前 Block 是折叠父节点的最后一个子节点 | 切换到父节点的下一个兄弟（向上回溯）               | ✅  |
 
 ***
 
@@ -525,7 +533,7 @@ async function handleSplit(cursorPosArg: number) {
 - 将当前 Block 切换为 `edit` 态（挂载 tiptap）
 - 光标落在 Block 末尾
 
-**实现状态：❌ 未实现（`focused` 态未实现）**
+**实现状态：❌ 未实现（`focused`** **态未实现）**
 
 > `focused` 态未实现，因此本节无效。
 
@@ -546,12 +554,12 @@ async function handleSplit(cursorPosArg: number) {
 
 > 当前 `edit` 态按 ESC：tiptap 的默认行为是将光标移动到文档开头（而非退出编辑态）。需要通过 tiptap keyboard shortcut 拦截 ESC 并触发保存 + 失活。
 
-| 子项                   | 状态 |
-| -------------------- | ---- |
-| ESC 退出编辑态           | ❌   |
-| ESC 保存内容             | ❌   |
-| ESC 取消拖拽             | ❌   |
-| focused 态按 ESC        | ❌   |
+| 子项             | 状态 |
+| -------------- | -- |
+| ESC 退出编辑态      | ❌  |
+| ESC 保存内容       | ❌  |
+| ESC 取消拖拽       | ❌  |
+| focused 态按 ESC | ❌  |
 
 ***
 
@@ -564,10 +572,10 @@ async function handleSplit(cursorPosArg: number) {
 
 **实现状态：❌ 未实现**
 
-| 场景                 | 行为                                  | 状态 |
-| ------------------ | ----------------------------------- | ---- |
-| 无 `edit` 态 Block   | 不做任何操作                              | ❌   |
-| 保存失败（IndexedDB 错误） | Phase 1 不实现错误处理                   | ❌   |
+| 场景                 | 行为              | 状态 |
+| ------------------ | --------------- | -- |
+| 无 `edit` 态 Block   | 不做任何操作          | ❌  |
+| 保存失败（IndexedDB 错误） | Phase 1 不实现错误处理 | ❌  |
 
 ***
 
@@ -575,58 +583,58 @@ async function handleSplit(cursorPosArg: number) {
 
 ### 4.1 空 Block 处理
 
-| 场景                    | 处理方式                          | 状态 |
-| --------------------- | ----------------------------- | ---- |
-| Page 无 Block          | 自动创建 1 个空 Block，进入 `edit` 态   | ✅   |
-| 空 Block 按 Enter       | 在空 Block 之后插入空 Block，光标落入新 Block 开头 | ✅   |
-| 空 Block 按 Backspace   | 删除空 Block，焦点移动到上一个 Block      | ✅   |
-| 唯一空 Block 按 Backspace | 保留空 Block（不可删除最后一个 Block）     | ⚠️   |
-| 空 Block 拖拽            | 允许，正常拖拽操作                     | ⚠️   |
-| 空 Block 有子 Block      | 不可能（空 Block 不会有子 Block）       | ✅   |
+| 场景                    | 处理方式                                | 状态 |
+| --------------------- | ----------------------------------- | -- |
+| Page 无 Block          | 自动创建 1 个空 Block，进入 `edit` 态         | ✅  |
+| 空 Block 按 Enter       | 在空 Block 之后插入空 Block，光标落入新 Block 开头 | ✅  |
+| 空 Block 按 Backspace   | 删除空 Block，焦点移动到上一个 Block            | ✅  |
+| 唯一空 Block 按 Backspace | 保留空 Block（不可删除最后一个 Block）           | ⚠️ |
+| 空 Block 拖拽            | 允许，正常拖拽操作                           | ⚠️ |
+| 空 Block 有子 Block      | 不可能（空 Block 不会有子 Block）             | ✅  |
 
 ### 4.2 层级边界
 
 | 场景                    | 处理方式                           | 状态 |
-| --------------------- | ------------------------------ | ---- |
-| Tab 到极深层级（level > 10） | 允许，代码无硬性限制，但层级线最多显示 6 条        | ⚠️   |
-| Shift+Tab 到顶级         | 允许，如果已是顶级（parentId = null）则不操作 | ✅   |
-| Tab 后立即 Shift+Tab     | 回到原始位置                         | ⚠️   |
+| --------------------- | ------------------------------ | -- |
+| Tab 到极深层级（level > 10） | 允许，代码无硬性限制，但层级线最多显示 6 条        | ⚠️ |
+| Shift+Tab 到顶级         | 允许，如果已是顶级（parentId = null）则不操作 | ✅  |
+| Tab 后立即 Shift+Tab     | 回到原始位置                         | ⚠️ |
 
 ### 4.3 折叠状态下的操作
 
 | 操作                    | 折叠态 Block 的行为                   | 状态 |
-| --------------------- | ------------------------------- | ---- |
-| ↑ 焦点移动                | 折叠 Block 视为单个节点，焦点跳转到其前驱（不进入子树） | ✅   |
-| ↓ 焦点移动                | 折叠 Block 视为单个节点，焦点跳转到其后继（不进入子树） | ✅   |
-| 点击折叠 Block 内容区        | 进入 `edit` 态，Block 自动展开          | ✅   |
-| Tab 缩进到折叠 Block       | 正常缩进，折叠态不变                      | ✅   |
-| 折叠 Block 有子 Block 被拖入 | 拖入后 Block 保持折叠态（collapsed=true） | ❌   |
+| --------------------- | ------------------------------- | -- |
+| ↑ 焦点移动                | 折叠 Block 视为单个节点，焦点跳转到其前驱（不进入子树） | ✅  |
+| ↓ 焦点移动                | 折叠 Block 视为单个节点，焦点跳转到其后继（不进入子树） | ✅  |
+| 点击折叠 Block 内容区        | 进入 `edit` 态，Block 自动展开          | ✅  |
+| Tab 缩进到折叠 Block       | 正常缩进，折叠态不变                      | ✅  |
+| 折叠 Block 有子 Block 被拖入 | 拖入后 Block 保持折叠态（collapsed=true） | ❌  |
 
 ### 4.4 链接和标签交互
 
-| 场景                  | 处理方式                                | 状态 |
-| ------------------- | ----------------------------------- | ---- |
-| 页面内点击 `[[WikiLink]]` | ✅ 跳转对应 Page（`handleContentClick`） | ✅   |
-| 点击悬空链接（目标 Page 不存在） | 当前无反馈（应创建新 Page 或显示提示）         | ⚠️   |
-| 删除带链接的 Block        | ❌ Link 表级联删除未实现                   | ❌   |
-| Block 内容中的标签 `#tag` | 仅高亮显示，点击无操作                         | ✅   |
+| 场景                   | 处理方式                              | 状态 |
+| -------------------- | --------------------------------- | -- |
+| 页面内点击 `[[WikiLink]]` | ✅ 跳转对应 Page（`handleContentClick`） | ✅  |
+| 点击悬空链接（目标 Page 不存在）  | 当前无反馈（应创建新 Page 或显示提示）            | ⚠️ |
+| 删除带链接的 Block         | ❌ Link 表级联删除未实现                   | ❌  |
+| Block 内容中的标签 `#tag`  | 仅高亮显示，点击无操作                       | ✅  |
 
 ### 4.5 Property 行
 
 | 场景                        | 处理方式                                  | 状态 |
-| ------------------------- | ------------------------------------- | ---- |
-| 输入 `key:: value` 后按 Enter | 内容保存，Property 持久化到 `Block.properties` | ❌   |
-| Enter 在 Property 行中间      | 拆分 Block，Property 仅存在于前半 Block        | ❌   |
-| Backspace 在 Property 行开头  | 合并到上一个 Block，Property 保留              | ❌   |
+| ------------------------- | ------------------------------------- | -- |
+| 输入 `key:: value` 后按 Enter | 内容保存，Property 持久化到 `Block.properties` | ❌  |
+| Enter 在 Property 行中间      | 拆分 Block，Property 仅存在于前半 Block        | ❌  |
+| Backspace 在 Property 行开头  | 合并到上一个 Block，Property 保留              | ❌  |
 
 ### 4.6 多操作连续触发
 
 | 场景                   | 处理方式                                            | 状态 |
-| -------------------- | ----------------------------------------------- | ---- |
-| Enter 后立即按 Tab       | 先完成 Enter（创建新 Block + 进入编辑），再处理 Tab（新 Block 缩进） | ⚠️   |
-| Tab 后立即 Backspace   | 先完成 Tab，再处理 Backspace（撤消 Tab 效果）                | ⚠️   |
-| 拖拽过程中按 Enter         | 拖拽被取消，Enter 正常触发（当前 Block 进入编辑）                 | ❌   |
-| blur 触发保存的同时按 Ctrl+S | 两者合并为一次保存（防抖处理）                                 | ❌   |
+| -------------------- | ----------------------------------------------- | -- |
+| Enter 后立即按 Tab       | 先完成 Enter（创建新 Block + 进入编辑），再处理 Tab（新 Block 缩进） | ⚠️ |
+| Tab 后立即 Backspace    | 先完成 Tab，再处理 Backspace（撤消 Tab 效果）                | ⚠️ |
+| 拖拽过程中按 Enter         | 拖拽被取消，Enter 正常触发（当前 Block 进入编辑）                 | ❌  |
+| blur 触发保存的同时按 Ctrl+S | 两者合并为一次保存（防抖处理）                                 | ❌  |
 
 ***
 
@@ -662,29 +670,29 @@ ESC               （退出编辑 / 取消）
 
 ### 🔴 P0 — 阻塞（功能完全不可用）
 
-| # | 问题 | 涉及章节 | 文件 | 状态 |
-|---|------|---------|------|------|
-| 1 | **切换页面时当前 block 内容丢失** — `handleOpenPage` 不保存内容 | §2.6 | `Sidebar.vue` | ⚠️ 已知问题，暂不修复 |
-| 2 | **缩进/反缩进有子节点的 block 时树结构断裂** — 子 block 不随父移动 | §3.3/§3.4 | `blocks.ts` | ✅ 已修复 |
+| # | 问题                                              | 涉及章节      | 文件            | 状态           |
+| - | ----------------------------------------------- | --------- | ------------- | ------------ |
+| 1 | **切换页面时当前 block 内容丢失** — `handleOpenPage` 不保存内容 | §2.6      | `Sidebar.vue` | ⚠️ 已知问题，暂不修复 |
+| 2 | **缩进/反缩进有子节点的 block 时树结构断裂** — 子 block 不随父移动    | §3.3/§3.4 | `blocks.ts`   | ✅ 已修复        |
 
 ### 🟠 P1 — 重要（影响核心体验）
 
-| # | 问题 | 涉及章节 | 状态 |
-|---|------|---------|------|
-| 3 | 点击 block 外部区域不退出编辑态（`handleMainClick` 缺失） | §2.5 | ✅ 已修复 |
-| 4 | ESC 键不退出编辑态（tiptap 未拦截 ESC） | §3.8 | 🔴 待修复 |
-| 5 | 拖拽循环检测未接入 Sortable `onMove` | §2.3 | ✅ 已实现 |
-| 6 | 放置指示线未实现 | §2.3 | ✅ 已实现（Sortable ghost） |
+| # | 问题                                        | 涉及章节 | 状态                    |
+| - | ----------------------------------------- | ---- | --------------------- |
+| 3 | 点击 block 外部区域不退出编辑态（`handleMainClick` 缺失） | §2.5 | ✅ 已修复                 |
+| 4 | ESC 键不退出编辑态（tiptap 未拦截 ESC）               | §3.8 | 🔴 待修复                |
+| 5 | 拖拽循环检测未接入 Sortable `onMove`               | §2.3 | ✅ 已实现                 |
+| 6 | 放置指示线未实现                                  | §2.3 | ✅ 已实现（Sortable ghost） |
 
 ### 🟡 P2 — 优化（体验问题）
 
-| # | 问题 | 涉及章节 | 状态 |
-|---|------|---------|------|
-| 7 | `focused` 态未实现（↑↓ 已实现，但用 `edit` 态替代 `focused` 态） | §3.5/§3.6/§3.7 | ✅ 已实现 |
-| 8 | Ctrl+S 手动保存未实现 | §3.9 | 🔴 待实现 |
-| 9 | Property 行（`key:: value`）解析未实现 | §4.5 | 🔴 待实现 |
-| 10 | 链接删除时 Link 表级联删除未实现 | §4.4 | 🔴 待实现 |
-| 11 | Backlinks 面板 UI 未实现 | §2.7 | ✅ 已实现 |
+| #  | 问题                                               | 涉及章节           | 状态     |
+| -- | ------------------------------------------------ | -------------- | ------ |
+| 7  | `focused` 态未实现（↑↓ 已实现，但用 `edit` 态替代 `focused` 态） | §3.5/§3.6/§3.7 | ✅ 已实现  |
+| 8  | Ctrl+S 手动保存未实现                                   | §3.9           | 🔴 待实现 |
+| 9  | Property 行（`key:: value`）解析未实现                   | §4.5           | 🔴 待实现 |
+| 10 | 链接删除时 Link 表级联删除未实现                              | §4.4           | 🔴 待实现 |
+| 11 | Backlinks 面板 UI 未实现                              | §2.7           | ✅ 已实现  |
 
 ***
 
@@ -703,4 +711,4 @@ ESC               （退出编辑 / 取消）
 
 ***
 
-*文档 v0.6，更新 §3.5/§3.6 ↑↓ 焦点移动支持行列位置保持。*
+*文档 v0.5，更新 §3.5/§3.6 ↑↓ 焦点移动支持行列位置保持。*

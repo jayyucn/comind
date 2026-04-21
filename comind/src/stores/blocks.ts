@@ -224,6 +224,52 @@ export const useBlockStore = defineStore('blocks', () => {
       : undefined
   }
 
+  /**
+   * 找到指定 Block 在文档序中的下一个 Block（树前序遍历后继）。
+   * 算法：
+   *   1. 有子节点 → 返回第一个子节点
+   *   2. 无子节点 → 找同级后兄弟
+   *   3. 无后兄弟 → 向上回溯找祖先的后兄弟
+   */
+  function findNextBlockInTreeOrder(blockId: string): BlockWithPos | undefined {
+    const block = findBlockById(blockId, blocks.value)
+    if (!block) return undefined
+
+    // 1. 有子节点 → 返回第一个子节点
+    const children = blocks.value
+      .filter(b => b.parentId === block.id && b.pageId === block.pageId)
+      .sort((a, b) => a.left - b.left)
+    if (children.length > 0) {
+      return children[0]
+    }
+
+    // 2. 找同级后兄弟
+    const siblings = blocks.value
+      .filter(b => b.parentId === block.parentId && b.pageId === block.pageId && b.left > block.left)
+      .sort((a, b) => a.left - b.left)
+    if (siblings.length > 0) {
+      return siblings[0]
+    }
+
+    // 3. 向上回溯找祖先的后兄弟
+    let currentParentId = block.parentId
+    while (currentParentId) {
+      const parent = findBlockById(currentParentId, blocks.value)
+      if (!parent) break
+
+      const parentSiblings = blocks.value
+        .filter(b => b.parentId === parent.parentId && b.pageId === block.pageId && b.left > parent.left)
+        .sort((a, b) => a.left - b.left)
+      if (parentSiblings.length > 0) {
+        return parentSiblings[0]
+      }
+
+      currentParentId = parent.parentId
+    }
+
+    return undefined
+  }
+
   /** 与上一个 Block 合并（跨层级，文档序前驱） */
   async function mergeWithPrevious(blockId: string) {
     const block = findBlockById(blockId, blocks.value)
@@ -410,6 +456,7 @@ export const useBlockStore = defineStore('blocks', () => {
     splitBlock,
     mergeWithPrevious,
     findPreviousBlockInTreeOrder,
+    findNextBlockInTreeOrder,
     indent,
     outdent,
     moveBlock,

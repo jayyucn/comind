@@ -19,6 +19,8 @@ const emit = defineEmits<{
   (e: 'delete'): void
   (e: 'indent'): void
   (e: 'outdent'): void
+  (e: 'moveUp'): void
+  (e: 'moveDown'): void
   (e: 'cursor-change', pos: number): void
 }>()
 
@@ -49,6 +51,12 @@ function handleEnterAsBlock(event: Event) {
       break
     case 'outdent':
       emit('outdent')
+      break
+    case 'moveUp':
+      emit('moveUp')
+      break
+    case 'moveDown':
+      emit('moveDown')
       break
   }
 }
