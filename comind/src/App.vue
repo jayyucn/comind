@@ -2,6 +2,7 @@
 import { computed, ref, onMounted } from 'vue'
 import Sidebar from './components/Sidebar.vue'
 import Block from './components/Block.vue'
+import Backlinks from './components/Backlinks.vue'
 import { usePageStore } from './stores/pages'
 import { useBlockStore } from './stores/blocks'
 import { useEditorStore } from './stores/editor'
@@ -56,6 +57,8 @@ function handleMainClick(e: MouseEvent) {
           :block="block"
         />
       </div>
+
+      <Backlinks />
     </main>
   </div>
 </template>

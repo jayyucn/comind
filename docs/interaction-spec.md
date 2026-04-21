@@ -260,17 +260,18 @@ function handleMainClick(e: MouseEvent) {
 
 - 点击 BacklinkItem：跳转到源 Block 所在 Page，并将该 Block 切换为 `edit` 态
 
-**实现状态：✅ 已实现**
+**实现状态：✅ 已实现（位于 Page 底部，符合 ui-ux-spec.md）**
 
 | 子项                    | 状态 | 实现 |
 | --------------------- | ---- | ---- |
 | `[[WikiLink]]` 渲染（高亮样式） | ✅ | `Block.renderContent()` |
 | 页面内点击 `[[WikiLink]]` 跳转 Page | ✅ | `Block.handleContentClick()` |
-| Backlinks 面板 UI          | ✅ | `Backlinks.vue` 组件 |
+| Backlinks 面板 UI          | ✅ | `Backlinks.vue` 组件，位于 `App.vue` 页面底部 |
 | Backlinks 列表点击跳转       | ✅ | `handleBacklinkClick()` |
 | 悬空链接（目标 Page 不存在）处理  | ✅ | 点击时创建新 Page（`useNavigateToPage`） |
-| 源 Block 已被删除的处理       | ✅ | 显示 "(block deleted)" 提示，点击无操作 |
-| 源 Page 已被删除的处理        | ✅ | 显示 "(page deleted)" 提示，删除线样式 |
+| 源 Block 已被删除的处理       | ✅ | 显示 "(来源块已删除)" 提示，点击无操作 |
+| 源 Page 已被删除的处理        | ✅ | 显示 "(来源页面已删除)" 提示，删除线样式 |
+| Backlinks 可折叠           | ✅ | `collapsed` ref + 点击 header 切换 |
 
 **实现细节：**
 
@@ -303,9 +304,10 @@ async function handleBacklinkClick(link: LinkRecord) {
 
 | 场景                | 行为                                      | 状态 |
 | ----------------- | --------------------------------------- | ---- |
-| 源 Block 已被删除      | 显示"(block deleted)"提示，Backlink 保留（悬空链接样式） | ✅   |
-| 源 Page 已被删除       | 显示"(page deleted)"提示，该 Backlink 以删除线样式显示      | ✅   |
+| 源 Block 已被删除      | 显示"(来源块已删除)"提示，Backlink 保留（悬空链接样式） | ✅   |
+| 源 Page 已被删除       | 显示"(来源页面已删除)"提示，该 Backlink 以删除线样式显示      | ✅   |
 | 大量 Backlink（100+） | Phase 1 不实现分页，所有显示；性能问题在 Phase 1.1 考虑   | ✅   |
+| Backlinks 折叠/展开   | 点击 header 切换 collapsed 状态，保存展开偏好（Phase 1.1） | ✅   |
 
 ***
 

@@ -89,6 +89,7 @@ async function handleOpenPage(pageId: string) {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  overflow: hidden;
 }
 
 .sidebar-header {
@@ -108,6 +109,7 @@ async function handleOpenPage(pageId: string) {
   flex: 1;
   overflow-y: auto;
   padding: 8px 0;
+  min-height: 0;
 }
 
 .page-list {
