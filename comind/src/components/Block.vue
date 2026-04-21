@@ -182,14 +182,20 @@ async function handleDelete() {
 }
 
 async function handleIndent() {
-  if (editorRef.value) editorRef.value.markSaved()
+  if (editorRef.value) {
+    editorRef.value.markSaved()
+    await handleSave(editorRef.value.getText())
+  }
   editorStore.deactivateBlock()
   await blockStore.indent(props.blockId)
   editorStore.activateBlock(props.blockId)
 }
 
 async function handleOutdent() {
-  if (editorRef.value) editorRef.value.markSaved()
+  if (editorRef.value) {
+    editorRef.value.markSaved()
+    await handleSave(editorRef.value.getText())
+  }
   editorStore.deactivateBlock()
   await blockStore.outdent(props.blockId)
   editorStore.activateBlock(props.blockId)
