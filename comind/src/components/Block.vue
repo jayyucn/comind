@@ -5,6 +5,7 @@ import { useBlockStore } from '../stores/blocks'
 import { useSortable } from '../composables/useSortable'
 import { useNavigateToPage } from '../composables/useNavigateToPage'
 import { useTagFilter } from '../composables/useTagFilter'
+import { TAG_REGEX } from '../utils/parser'
 import Editor from './Editor.vue'
 
 const props = defineProps<{
@@ -15,6 +16,7 @@ const props = defineProps<{
 const editorStore = useEditorStore()
 const blockStore = useBlockStore()
 const { navigateToPage } = useNavigateToPage()
+const { openFilter } = useTagFilter()
 
 const isActive = computed(() => editorStore.activeBlockId === props.blockId)
 const children = computed(() => blockStore.getChildren(props.blockId))
@@ -307,7 +309,6 @@ function handleContentClick(e: MouseEvent) {
   if (tagEl) {
     const tagText = tagEl.textContent?.replace(/^#/, '').trim() ?? ''
     if (tagText) {
-      const { openFilter } = useTagFilter()
       openFilter(tagText)
     }
     return
@@ -360,9 +361,9 @@ function renderContent(text: string): string {
     .replace(/\[\[(https?:\/\/[^\]]+)\]\]/g, (_, url) => {
       return `<span class="block-link external" data-external href="${escapeHtml(url)}">${url}</span>`
     })
-    // 标签：排除 URL 锚点（https://...#anchor）、邮箱锚点（user@domain#tag）
-    // 负向后顾断言：# 前不能是 :（协议/mailto）、//（URL）、>（HTML）、|（别名）、@（邮箱）
-    .replace(/(?<![:\/>|>|])#([\p{L}_][\p{L}\p{N}_]*(?:\/[\p{L}_][\p{L}\p{N}_]*)*)/gu, (_, tag) => {
+    // 标签：使用 parser.ts 导出的 TAG_REGEX（单一来源，DRY）
+    // 负向后顾断言逻辑已内聚到 TAG_REGEX 常量中
+    .replace(TAG_REGEX, (_, tag) => {
       // 排除含 . 的（如域名中的 .）
       if (tag.includes('.')) return `#${tag}`
       // 层级标签：斜杠分隔，每级独立着色

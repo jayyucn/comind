@@ -11,6 +11,7 @@ import {
   reindexLeftValues,
   validateLeftValues
 } from '../utils/leftCalculator'
+import { invalidateTagCache } from '../composables/useTagFilter'
 
 const LEFT_STEP = 100 // 同级节点初始间隔
 
@@ -138,6 +139,7 @@ export const useBlockStore = defineStore('blocks', () => {
 
     blocks.value.push(block)
     await storage.saveBlock(block)
+    invalidateTagCache()
     return block
   }
 
@@ -414,6 +416,7 @@ export const useBlockStore = defineStore('blocks', () => {
 
     blocks.value = blocks.value.filter(b => b.id !== blockId)
     await storage.deleteBlock(blockId)
+    invalidateTagCache()
   }
 
   /** 更新 Block 内容 */
@@ -423,6 +426,7 @@ export const useBlockStore = defineStore('blocks', () => {
     block.content = content
     block.updatedAt = new Date().toISOString()
     _scheduleSave(block)
+    invalidateTagCache()
   }
 
   /** 重新索引 left 值以修复间隙和确保一致性 */

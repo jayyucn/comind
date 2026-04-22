@@ -64,16 +64,22 @@ export function parseBlockLinks(content: string): LinkParse[] {
   return sorted
 }
 
+/** 标签正则（单一来源，供 parser.ts 和 Block.vue 共用）
+ *  规则：# 后紧跟 Unicode 字母或 _，不能以数字开头
+ *  支持层级标签 #工作/项目A（斜杠分隔多级）
+ *  排除：URL 锚点（://#）、邮箱锚点（>#、|#、@#）、含 . 的（域名）
+ */
+export const TAG_REGEX = /(?<![:\/>|@])#([\p{L}_][\p{L}\p{N}_]*(?:\/[\p{L}_][\p{L}\p{N}_]*)*)/gu
+
+/** 属性 key 正则：支持 Unicode 字母开头（中文 key 如「作者::」「状态::」） */
+const PROP_KEY_REGEX = /^([\p{L}_][\p{L}\p{N}_]*)::\s*(.+)$/gm
+
 export function parseContent(content: string): ParseResult {
   const links: LinkParse[] = parseBlockLinks(content)
 
   const tags: string[] = []
-  // 解析 #标签：# 后紧跟 Unicode 字母或汉字，不能以数字开头
-  // 支持层级标签 #工作/项目A（斜杠分隔多级）
-  // 排除：URL 锚点（https://...#section）、邮箱（me@example.com#tag）、含 . 的（如域名）
-  const tagRegex = /(?<![:\/>|>|])#([\p{L}_][\p{L}\p{N}_]*(?:\/[\p{L}_][\p{L}\p{N}_]*)*)/gu
   let match
-  while ((match = tagRegex.exec(content)) !== null) {
+  while ((match = TAG_REGEX.exec(content)) !== null) {
     const tag = match[1]
     if (!tag.includes('.')) {
       tags.push(tag)
@@ -82,8 +88,7 @@ export function parseContent(content: string): ParseResult {
 
   // 解析属性（key:: value）
   const properties: Record<string, any> = {}
-  const propRegex = /^(\w+)::\s*(.+)$/gm
-  while ((match = propRegex.exec(content)) !== null) {
+  while ((match = PROP_KEY_REGEX.exec(content)) !== null) {
     properties[match[1]] = parsePropertyValue(match[2])
   }
 
