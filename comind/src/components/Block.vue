@@ -20,7 +20,10 @@ const children = computed(() => blockStore.getChildren(props.blockId))
 
 const editorRef = ref<InstanceType<typeof Editor> | null>(null)
 const childrenRef = ref<HTMLElement | null>(null)
+const levelLineRef = ref<HTMLElement | null>(null)
 const cursorPos = ref(0)
+const levelLineHeight = ref('0px')
+const levelLineTop = ref('0px')
 
 // ── 子节点容器的 Sortable ──────────────────────────────────────────────
 onMounted(() => {
@@ -62,6 +65,12 @@ const indentDepth = computed(() => {
 /** 缩进宽度（每层 24px） */
 const indentWidth = computed(() => `${indentDepth.value * 24}px`)
 
+/** 层级线左偏移（缩进宽度 - 2px） */
+const levelLineLeft = computed(() => {
+  const indentPx = indentDepth.value * 24 + 9
+  return `${indentPx}px`
+})
+
 /** 是否折叠 */
 const collapsed = ref(false)
 
@@ -75,10 +84,12 @@ const isAnimating = ref(false)
 const childrenHeight = ref(0)
 
 /** 更新 childrenHeight：计算当前 .block-children 的 scrollHeight */
-function updateChildrenHeight() {
+async function updateChildrenHeight() {
   if (childrenRef.value) {
     childrenHeight.value = childrenRef.value.scrollHeight
   }
+  /** 更新层级线高度 */
+  calculateLevelLineHeight()
 }
 
 /** 监听直接子块数量变化时更新 childrenHeight
@@ -121,6 +132,33 @@ watch(collapsed, async (isCollapsed) => {
     isAnimating.value = true
   }
 })
+
+/**
+ * 计算层级线高度：从当前 block 下方开始，到最后一个子孙节点底部
+ */
+function calculateLevelLineHeight() {
+  if (!levelLineRef.value) return
+
+  const blockEl = levelLineRef.value.parentElement
+  if (!blockEl) return
+
+  const blockRect = blockEl.getBoundingClientRect()
+  const blockBottom = blockRect.bottom
+
+  if (childrenRef.value) {
+    const lastChild = childrenRef.value.lastElementChild as HTMLElement | null
+    if (lastChild) {
+      const lastChildRect = lastChild.getBoundingClientRect()
+      const height = lastChildRect.bottom - blockBottom
+      levelLineHeight.value = Math.max(0, height) + 'px'
+    } else {
+      levelLineHeight.value = '0px'
+    }
+  } else {
+    levelLineHeight.value = '0px'
+  }
+  levelLineTop.value = `${blockRect.height}px`
+}
 
 /** mousedown：捕获点击坐标，在 tiptap 挂载前通知 editor store */
 function handleContentMouseDown(e: MouseEvent) {
@@ -293,15 +331,16 @@ function renderContent(text: string): string {
 <template>
   <div class="block" :class="{ active: isActive }" :data-block-id="blockId">
     <div class="block-row">
+      <!-- 层级线 -->
+      <div v-if="children.length > 0 && !collapsed" ref="levelLineRef" class="block-level-line"
+        :style="{ top: levelLineTop, height: levelLineHeight, left: levelLineLeft }"></div>
+
       <!-- 缩进占位 -->
       <div class="block-indent" :style="{ width: indentWidth }"></div>
 
       <!-- Bullet -->
-      <span
-        class="block-bullet"
-        :class="{ collapsed }"
-        @click.stop="children.length > 0 && !isAnimating && (collapsed = !collapsed)"
-      >
+      <span class="block-bullet" :class="{ collapsed }"
+        @click.stop="children.length > 0 && !isAnimating && (collapsed = !collapsed)">
         <span v-if="children.length > 0" class="bullet-chevron" :class="{ 'is-collapsed': collapsed }"></span>
         <span v-else class="bullet-dot"></span>
       </span>
@@ -323,12 +362,7 @@ function renderContent(text: string): string {
       - JS watch collapsed 状态直接控制 max-height，实现折叠动画
       - 注意：v-if 移除时 Sortable.destroy() 由 onBeforeUnmount 清理
     -->
-    <div
-      v-if="children.length > 0"
-      ref="childrenRef"
-      class="block-children"
-      :data-parent-id="blockId"
-    >
+    <div v-if="children.length > 0" ref="childrenRef" class="block-children" :data-parent-id="blockId">
       <Block v-for="child in children" :key="child.id" :block-id="child.id" :block="child" />
     </div>
   </div>
@@ -350,6 +384,17 @@ function renderContent(text: string): string {
 .block-indent {
   flex-shrink: 0;
   height: 100%;
+}
+
+/* 层级线 */
+.block-level-line {
+  position: absolute;
+  width: 1px;
+  background: var(--color-accent, #b45309);
+  opacity: 0.15;
+  pointer-events: none;
+  z-index: 0;
+  transition: height 200ms ease-out, opacity 200ms ease-out;
 }
 
 /* Bullet 区域 */

@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, watch, shallowRef, nextTick } from 'vue'
+import { onBeforeUnmount, onMounted, watch, nextTick, shallowRef } from 'vue'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import { WikiLinkExtension } from '../extensions/WikiLinkExtension'
 import EnterAsBlockExtension from '../extensions/EnterAsBlockExtension'
 import BracketPairExtension from '../extensions/BracketPairExtension'
 import { useNavigateToPage } from '../composables/useNavigateToPage'
+import { debounce } from '../utils/debounce'
 
 const props = defineProps<{
   blockId: string
@@ -29,6 +30,11 @@ let syncing = false
 let savedFromOutside = false
 
 const { navigateToPage } = useNavigateToPage()
+
+// 防抖保存（300ms）
+const debouncedEmitSave = debounce((content: string) => {
+  emit('save', content)
+}, 300)
 
 function handleWikiLinkClick(event: Event) {
   const customEvent = event as CustomEvent<{ pageName: string }>
@@ -93,6 +99,8 @@ const editor = shallowRef(useEditor({
     if (editor.value) {
       const { from } = editor.value.state.selection
       emit('cursor-change', from)
+      // 防抖保存：用户输入 300ms 后自动触发保存
+      debouncedEmitSave(editor.value.getText())
     }
   }
 }))
