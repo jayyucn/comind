@@ -169,56 +169,56 @@ watch(
 <style scoped>
 .backlinks-section {
   margin-top: 48px;
-  padding: 24px 0;
-  border-top: 2px dashed #e8e0d4;
+  padding: var(--space-6) 0;
+  border-top: 2px dashed var(--color-border);
 }
 
 .backlinks-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
-  padding: 8px 4px;
+  margin-bottom: var(--space-4);
+  padding: var(--space-2) var(--space-1);
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   transition: background 80ms ease;
 }
 
 .backlinks-header:hover {
-  background: #eeede9;
+  background: var(--color-surface);
 }
 
 .backlinks-title {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--text-xs);
   font-weight: 500;
-  color: #78716c;
+  color: var(--color-ink-muted);
   letter-spacing: 0.05em;
 }
 
 .backlinks-icon {
-  font-size: 14px;
+  font-size: var(--text-sm);
 }
 
 .backlinks-count {
-  font-size: 12px;
-  color: #a8a29e;
+  font-size: var(--text-xs);
+  color: var(--color-ink-faint);
   font-weight: 400;
 }
 
 .backlinks-toggle {
   font-size: 10px;
-  color: #a8a29e;
-  padding: 2px 4px;
+  color: var(--color-ink-faint);
+  padding: 2px var(--space-1);
 }
 
 .backlinks-loading,
 .backlinks-empty {
-  font-size: 13px;
-  color: #a8a29e;
-  padding: 16px 4px;
+  font-size: var(--text-xs);
+  color: var(--color-ink-faint);
+  padding: var(--space-4) var(--space-1);
   text-align: center;
 }
 
@@ -229,25 +229,25 @@ watch(
 }
 
 .backlink-item {
-  padding: 12px 16px;
-  font-size: 13px;
-  color: #57534e;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-xs);
+  color: var(--color-ink-secondary);
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   flex-wrap: wrap;
   transition: background 80ms ease;
 }
 
 .backlink-item:hover:not(.orphan-block):not(.orphan-page) {
-  background: #eeede9;
-  color: #1c1917;
+  background: var(--color-surface);
+  color: var(--color-ink);
 }
 
 .backlink-icon {
-  font-size: 14px;
+  font-size: var(--text-sm);
   flex-shrink: 0;
 }
 
@@ -258,19 +258,19 @@ watch(
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 400;
-  color: #1c1917;
+  color: var(--color-ink);
 }
 
 .backlink-page {
-  font-size: 12px;
-  color: #a8a29e;
+  font-size: var(--text-xs);
+  color: var(--color-ink-faint);
   flex-shrink: 0;
   white-space: nowrap;
 }
 
 .backlink-hint {
-  font-size: 12px;
-  color: #a8a29e;
+  font-size: var(--text-xs);
+  color: var(--color-ink-faint);
   font-style: italic;
 }
 

@@ -172,7 +172,7 @@ function handleCancelMerge() {
   height: 100vh;
   width: 100vw;
   overflow: hidden;
-  background: #fffbf5;
+  background: var(--color-paper);
 }
 
 .main-content {
@@ -180,45 +180,45 @@ function handleCancelMerge() {
   overflow-y: auto ;
   scrollbar-width: none;
   -ms-overflow-style: none;
-  padding: 32px 48px;
+  padding: var(--space-8) 48px;
   max-width: 860px;
 }
 
 .page-header {
-  margin-bottom: 24px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid #e8e0d4;
+  margin-bottom: var(--space-6);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .page-title {
-  font-family: 'Noto Sans SC', 'Geist', sans-serif;
-  font-size: 24px;
+  font-family: var(--font-sans);
+  font-size: var(--text-xl);
   font-weight: 600;
-  color: #1c1917;
+  color: var(--color-ink);
   margin: 0;
   letter-spacing: -0.5px;
 }
 
 .page-title--display {
   cursor: text;
-  padding: 2px 4px;
-  border-radius: 4px;
+  padding: 2px var(--space-1);
+  border-radius: var(--radius-sm);
   border: 1px solid transparent;
   transition: border-color 150ms ease, background 150ms ease;
 }
 
 .page-title--display:hover {
-  border-color: #e8e0d4;
-  background: rgba(180, 83, 9, 0.03);
+  border-color: var(--color-border);
+  background: var(--accent-03);
 }
 
 .page-title--input {
   background: transparent;
-  border: 1px solid #b45309;
+  border: 1px solid var(--color-accent);
   outline: none;
-  padding: 2px 4px;
-  border-radius: 4px;
-  box-shadow: 0 0 0 3px rgba(180, 83, 9, 0.1);
+  padding: 2px var(--space-1);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-focus);
   width: 100%;
   max-width: 600px;
 }
@@ -228,17 +228,17 @@ function handleCancelMerge() {
 }
 
 .add-block-btn {
-  padding: 6px 16px;
-  background: #b45309;
-  color: #fff;
+  padding: 6px var(--space-4);
+  background: var(--color-accent);
+  color: var(--color-white);
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--text-xs);
   font-family: inherit;
 }
 
 .add-block-btn:hover {
-  background: #92400e;
+  background: var(--color-accent-deep);
 }
 </style>

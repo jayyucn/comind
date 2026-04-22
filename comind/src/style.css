@@ -4,29 +4,63 @@
    =================================================== */
 
 :root {
-  /* 核心色板 */
-  --color-paper:     #fffbf5;
-  --color-ink:        #1c1917;
-  --color-ink-muted:  #78716c;
-  --color-ink-faint:  #a8a29e;
-  --color-accent:     #b45309;
-  --color-accent-bg:  #fef3c7;
-  --color-border:     #e8e0d4;
-  --color-hover:      #f0ebe4;
+  /* ── 核心色板 ── */
+  --color-paper:         #fffbf5;
+  --color-ink:           #1c1917;
+  --color-ink-secondary: #57534e;
+  --color-ink-muted:     #78716c;
+  --color-ink-faint:     #a8a29e;
+  --color-accent:        #b45309;
+  --color-accent-deep:   #92400e;
+  --color-accent-bg:     #fef3c7;
+  --color-border:        #e8e0d4;
+  --color-border-light:  #d6d3d1;
+  --color-hover:         #f0ebe4;
+  --color-surface:       #eeede9;
+  --color-sidebar-bg:    #faf8f5;
+  --color-highlight:     #fde68a;
+  --color-white:         #ffffff;
+  --color-tag:           #6366f1;
+  --color-external:      #64748b;
+  --color-scrollbar:     #d6cfc3;
 
-  /* 字体 */
+  /* ── 透明度变体 ── */
+  --accent-03: rgba(180, 83, 9, 0.03);
+  --accent-06: rgba(180, 83, 9, 0.06);
+  --accent-08: rgba(180, 83, 9, 0.08);
+  --accent-10: rgba(180, 83, 9, 0.1);
+  --accent-40: rgba(180, 83, 9, 0.4);
+  --tag-10:    rgba(99, 102, 241, 0.1);
+  --tag-40:    rgba(99, 102, 241, 0.4);
+  --ext-40:    rgba(100, 116, 139, 0.4);
+  --overlay:   rgba(28, 25, 23, 0.3);
+
+  /* ── 字体 ── */
   --font-sans:  'Noto Sans SC', 'Geist', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --font-mono:  'Geist Mono', 'JetBrains Mono', 'Fira Code', monospace;
 
-  /* 圆角 */
+  /* ── 字号 ── */
+  --text-xs:   0.75rem;    /* 12px */
+  --text-sm:   0.875rem;   /* 14px */
+  --text-base: 0.9375rem;  /* 15px */
+  --text-xl:   1.5rem;     /* 24px */
+
+  /* ── 圆角 ── */
   --radius-sm: 4px;
   --radius-md: 6px;
+  --radius-lg: 8px;
 
-  /* 间距 */
+  /* ── 间距 ── */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* ── 阴影 ── */
+  --shadow-focus: 0 0 0 3px var(--accent-10);
+  --shadow-modal: 0 8px 32px rgba(28, 25, 23, 0.12);
 }
 
 *,
@@ -46,7 +80,7 @@ body {
 
 body {
   font-family: var(--font-sans);
-  font-size: 15px;
+  font-size: var(--text-base);
   line-height: 1.7;
   color: var(--color-ink);
   background: var(--color-paper);
@@ -85,12 +119,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d6cfc3;
+  background: var(--color-scrollbar);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #a8a29e;
+  background: var(--color-ink-faint);
 }
 
 /* ===================================================

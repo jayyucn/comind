@@ -84,8 +84,8 @@ async function handleOpenPage(pageId: string) {
 .sidebar {
   width: 220px;
   height: 100%;
-  background: #faf8f5;
-  border-right: 1px solid #e8e0d4;
+  background: var(--color-sidebar-bg);
+  border-right: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -93,22 +93,22 @@ async function handleOpenPage(pageId: string) {
 }
 
 .sidebar-header {
-  padding: 16px 16px 12px;
-  border-bottom: 1px solid #e8e0d4;
+  padding: var(--space-4) var(--space-4) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .sidebar-logo {
   font-family: 'Geist', sans-serif;
-  font-size: 16px;
+  font-size: var(--text-sm);
   font-weight: 700;
-  color: #1c1917;
+  color: var(--color-ink);
   letter-spacing: -0.3px;
 }
 
 .sidebar-pages {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 0;
+  padding: var(--space-2) 0;
   min-height: 0;
 }
 
@@ -119,9 +119,9 @@ async function handleOpenPage(pageId: string) {
 }
 
 .page-item {
-  padding: 6px 16px;
-  font-size: 13px;
-  color: #57534e;
+  padding: 6px var(--space-4);
+  font-size: var(--text-xs);
+  color: var(--color-ink-secondary);
   cursor: pointer;
   border-radius: 0;
   white-space: nowrap;
@@ -130,19 +130,19 @@ async function handleOpenPage(pageId: string) {
 }
 
 .page-item:hover {
-  background: #f0ebe4;
-  color: #1c1917;
+  background: var(--color-hover);
+  color: var(--color-ink);
 }
 
 .page-item.active {
-  background: #fde68a;
-  color: #92400e;
+  background: var(--color-highlight);
+  color: var(--color-accent-deep);
   font-weight: 500;
 }
 
 .sidebar-footer {
-  padding: 12px;
-  border-top: 1px solid #e8e0d4;
+  padding: var(--space-3);
+  border-top: 1px solid var(--color-border);
 }
 
 .new-page-form {
@@ -153,29 +153,29 @@ async function handleOpenPage(pageId: string) {
 
 .new-page-input {
   flex: 1;
-  padding: 5px 8px;
-  font-size: 12px;
-  border: 1px solid #d6cfc3;
-  border-radius: 4px;
-  background: #fff;
+  padding: 5px var(--space-2);
+  font-size: var(--text-xs);
+  border: 1px solid var(--color-scrollbar);
+  border-radius: var(--radius-sm);
+  background: var(--color-white);
   outline: none;
   font-family: inherit;
-  color: #1c1917;
+  color: var(--color-ink);
 }
 
 .new-page-input:focus {
-  border-color: #b45309;
+  border-color: var(--color-accent);
 }
 
 .new-page-btn {
   width: 26px;
   height: 26px;
   border: none;
-  background: #b45309;
-  color: #fff;
-  border-radius: 4px;
+  background: var(--color-accent);
+  color: var(--color-white);
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: 16px;
+  font-size: var(--text-sm);
   line-height: 1;
   display: flex;
   align-items: center;

@@ -426,7 +426,7 @@ function renderContent(text: string): string {
 .block-level-line {
   position: absolute;
   width: 1px;
-  background: var(--color-accent, #b45309);
+  background: var(--color-accent);
   opacity: 0.15;
   pointer-events: none;
   z-index: 0;
@@ -450,7 +450,7 @@ function renderContent(text: string): string {
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: var(--color-accent, #b45309);
+  background: var(--color-accent);
   opacity: 0.35;
   transform: translateY(1px);
   transition: opacity 150ms ease-out, transform 150ms ease-out, box-shadow 150ms ease-out;
@@ -461,8 +461,8 @@ function renderContent(text: string): string {
 .bullet-chevron {
   width: 7px;
   height: 7px;
-  border-right: 1.5px solid var(--color-accent, #b45309);
-  border-bottom: 1.5px solid var(--color-accent, #b45309);
+  border-right: 1.5px solid var(--color-accent);
+  border-bottom: 1.5px solid var(--color-accent);
   transform: rotate(45deg) translateY(1px);
   opacity: 0.45;
   transition: transform 180ms ease-out, opacity 150ms ease-out;
@@ -477,13 +477,13 @@ function renderContent(text: string): string {
 .block-bullet:hover .bullet-dot {
   opacity: 0.7;
   transform: scale(1.4) translateY(1px);
-  box-shadow: 0 0 0 3px rgba(180, 83, 9, 0.08);
+  box-shadow: 0 0 0 3px var(--accent-08);
 }
 
 .block-bullet:hover .bullet-chevron {
   opacity: 0.75;
   transform: rotate(45deg) scale(1.2) translateY(1px);
-  box-shadow: 0 0 0 3px rgba(180, 83, 9, 0.06);
+  box-shadow: 0 0 0 3px var(--accent-06);
 }
 
 .block-bullet:hover .bullet-chevron.is-collapsed {
@@ -514,13 +514,13 @@ function renderContent(text: string): string {
 }
 
 .block-placeholder {
-  color: #a8a29e;
+  color: var(--color-ink-faint);
   font-style: italic;
   pointer-events: none;
 }
 
 .block.active .block-text {
-  background: rgba(180, 83, 9, 0.06);
+  background: var(--accent-06);
 }
 
 /* 子节点容器 */
@@ -541,26 +541,26 @@ function renderContent(text: string): string {
 
 /* Link & Tag styles */
 :deep(.block-link) {
-  color: #b45309;
+  color: var(--color-accent);
   cursor: pointer;
-  border-bottom: 1px solid rgba(180, 83, 9, 0.4);
+  border-bottom: 1px solid var(--accent-40);
 }
 
 :deep(.block-link.external) {
-  color: #64748b;
-  border-bottom-color: rgba(100, 116, 139, 0.4);
+  color: var(--color-external);
+  border-bottom-color: var(--ext-40);
 }
 
 :deep(.block-tag) {
-  color: #6366f1;
-  background: rgba(99, 102, 241, 0.1);
+  color: var(--color-tag);
+  background: var(--tag-10);
   padding: 0 2px;
   border-radius: 3px;
   font-size: 0.9em;
 }
 
 :deep(.block-tag .tag-sep) {
-  color: rgba(99, 102, 241, 0.4);
+  color: var(--tag-40);
   margin: 0 1px;
 }
 
