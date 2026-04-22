@@ -4,53 +4,88 @@
    =================================================== */
 
 :root {
-  /* ── 核心色板 ── */
-  --color-paper:         #fffbf5;
-  --color-ink:           #1c1917;
-  --color-ink-secondary: #57534e;
-  --color-ink-muted:     #78716c;
-  --color-ink-faint:     #a8a29e;
-  --color-accent:        #b45309;
-  --color-accent-deep:   #92400e;
-  --color-accent-bg:     #fef3c7;
-  --color-border:        #e8e0d4;
-  --color-border-light:  #d6d3d1;
-  --color-hover:         #f0ebe4;
-  --color-surface:       #eeede9;
-  --color-sidebar-bg:    #faf8f5;
-  --color-highlight:     #fde68a;
-  --color-white:         #ffffff;
-  --color-tag:           #6366f1;
-  --color-external:      #64748b;
-  --color-scrollbar:     #d6cfc3;
+  /* ── 背景层级 ── */
+  --bg-base:        #FAFAF8;  /* 主内容区背景，温润的米白 */
+  --bg-sidebar:     #F3F2EE;  /* Sidebar 背景，稍暖的灰 */
+  --bg-hover:       #EEEDE9;  /* Hover 态背景 */
+  --bg-active:      #E8E7E3;  /* Active / 已选中背景 */
+
+  /* ── 文字层级 ── */
+  --text-primary:   #1C1917;  /* 主文字，暖近黑 */
+  --text-secondary: #78716C;  /* 次要文字，时间戳、占位符 */
+  --text-tertiary:  #A8A29E;  /* 最低层级，层级线、禁用态 */
+
+  /* ── 边框层级 ── */
+  --border:         #E5E4DF;  /* 分割线、容器边框 */
+  --border-strong:  #C9C8C3;  /* 强分割，折叠图标区域 */
+
+  /* ── 交互色 ── */
+  --accent:         #B45309;  /* 主强调色，琥珀深橙 */
+  --accent-hover:   #92400E;  /* 强调色 hover */
+  --accent-subtle:  #FEF3C7;  /* 强调色浅底，用于当前 Block 高亮 */
+
+  /* ── 链接 ── */
+  --link:           #1D4ED8;  /* 链接蓝 */
+  --link-hover:     #1E40AF;  /* 链接 hover */
+
+  /* ── 标签 ── */
+  --tag-text:       #047857;  /* 标签文字，墨绿 */
+  --tag-bg:         #ECFDF5;  /* 标签背景薄荷绿 */
+
+  /* ── 功能色（预留）── */
+  --success:        #059669;
+  --warning:        #D97706;
+  --error:          #DC2626;
+
+  /* ── 兼容别名 ── */
+  /* Backlinks / Block / Sidebar 等组件使用以下别名 */
+  --color-paper:         #FFFBF5;
+  --color-ink:           #1C1917;
+  --color-ink-secondary: #78716C;
+  --color-ink-muted:     #78716C;
+  --color-ink-faint:     #A8A29E;
+  --color-accent:        #B45309;
+  --color-accent-deep:   #92400E;
+  --color-accent-bg:     #FEF3C7;
+  --color-border:        #E5E4DF;
+  --color-border-light:  #D6D3D1;
+  --color-border-strong: #C9C8C3;
+  --color-hover:         #EEEDE9;
+  --color-surface:       #EEEDE9;
+  --color-sidebar-bg:    #F3F2EE;
+  --color-highlight:     #FDE68A;
+  --color-white:         #FFFFFF;
+  --color-tag:           #6366F1;
+  --color-external:      #64748B;
+  --color-scrollbar:     #C9C8C3;
 
   /* ── 透明度变体 ── */
   --accent-03: rgba(180, 83, 9, 0.03);
   --accent-06: rgba(180, 83, 9, 0.06);
   --accent-08: rgba(180, 83, 9, 0.08);
-  --accent-10: rgba(180, 83, 9, 0.1);
-  --accent-40: rgba(180, 83, 9, 0.4);
-  --tag-10:    rgba(99, 102, 241, 0.1);
-  --tag-40:    rgba(99, 102, 241, 0.4);
-  --ext-40:    rgba(100, 116, 139, 0.4);
-  --overlay:   rgba(28, 25, 23, 0.3);
+  --accent-10: rgba(180, 83, 9, 0.10);
+  --accent-40: rgba(180, 83, 9, 0.40);
+  --tag-10:    rgba(99, 102, 241, 0.10);
+  --tag-40:    rgba(99, 102, 241, 0.40);
+  --ext-40:    rgba(100, 116, 139, 0.40);
+  --overlay:   rgba(28, 25, 23, 0.30);
 
   /* ── 字体 ── */
-  --font-sans:  'Noto Sans SC', 'Geist', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  --font-mono:  'Geist Mono', 'JetBrains Mono', 'Fira Code', monospace;
+  --font-sans:  'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono:  'JetBrains Mono', 'Fira Code', monospace;
 
   /* ── 字号 ── */
   --text-xs:   0.75rem;    /* 12px */
   --text-sm:   0.875rem;   /* 14px */
   --text-base: 0.9375rem;  /* 15px */
-  --text-xl:   1.5rem;     /* 24px */
+  --text-xl:   1.25rem;     /* 20px */
 
   /* ── 圆角 ── */
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;
 
-  /* ── 间距 ── */
+  /* ── 间距（4px 基准网格）── */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -81,7 +116,7 @@ body {
 body {
   font-family: var(--font-sans);
   font-size: var(--text-base);
-  line-height: 1.7;
+  line-height: 1.75;
   color: var(--color-ink);
   background: var(--color-paper);
   -webkit-font-smoothing: antialiased;
@@ -99,6 +134,7 @@ body {
 .tiptap {
   outline: none;
   min-height: 1.5em;
+  line-height: 1.75;
 }
 
 .tiptap p {
@@ -133,4 +169,13 @@ body {
 ::selection {
   background: var(--color-accent-bg);
   color: var(--color-ink);
+}
+
+/* ===================================================
+   Focus Ring（键盘导航专用）
+   =================================================== */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
 }
