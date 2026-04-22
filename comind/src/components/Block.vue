@@ -71,8 +71,15 @@ const levelLineLeft = computed(() => {
   return `${indentPx}px`
 })
 
-/** 是否折叠 */
-const collapsed = ref(false)
+/** 是否折叠 - 从 props 读取初始值，确保组件重建时状态正确 */
+const collapsed = ref(props.block.collapsed ?? false)
+
+/** 监听外部 collapsed 变化（跨组件/页面恢复时同步） */
+watch(() => props.block.collapsed, (newVal) => {
+  if (collapsed.value !== newVal) {
+    collapsed.value = newVal ?? false
+  }
+}, { immediate: true })
 
 /** 动画进行中（防止快速切换导致动画错乱） */
 const isAnimating = ref(false)
@@ -300,6 +307,17 @@ function handleContentClick(e: MouseEvent) {
   }
 }
 
+/** 切换折叠状态，并同步到 store */
+async function handleToggleCollapse() {
+  if (children.value.length === 0 || isAnimating.value) return
+
+  const newCollapsed = !collapsed.value
+  collapsed.value = newCollapsed
+
+  // 同步到 store 持久化
+  await blockStore.updateBlockCollapsed(props.blockId, newCollapsed)
+}
+
 /** HTML 转义（防 XSS） */
 function escapeHtml(text: string): string {
   return text
@@ -340,7 +358,7 @@ function renderContent(text: string): string {
 
       <!-- Bullet -->
       <span class="block-bullet" :class="{ collapsed }"
-        @click.stop="children.length > 0 && !isAnimating && (collapsed = !collapsed)">
+        @click.stop="handleToggleCollapse">
         <span v-if="children.length > 0" class="bullet-chevron" :class="{ 'is-collapsed': collapsed }"></span>
         <span v-else class="bullet-dot"></span>
       </span>

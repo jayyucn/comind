@@ -444,6 +444,15 @@ export const useBlockStore = defineStore('blocks', () => {
     return validateLeftValues(blocks.value)
   }
 
+  /** 更新 Block 的折叠状态并持久化 */
+  async function updateBlockCollapsed(blockId: string, collapsed: boolean) {
+    const block = findBlockById(blockId, blocks.value)
+    if (!block) return
+    block.collapsed = collapsed
+    block.updatedAt = new Date().toISOString()
+    _scheduleSave(block)
+  }
+
   return {
     blocks,
     sortedBlocks,
@@ -464,6 +473,7 @@ export const useBlockStore = defineStore('blocks', () => {
     updateBlockContent,
     reindexBlocks,
     validateBlocks,
-    isDescendantOf
+    isDescendantOf,
+    updateBlockCollapsed
   }
 })
