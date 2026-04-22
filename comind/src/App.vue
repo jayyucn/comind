@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar.vue'
 import Block from './components/Block.vue'
 import Backlinks from './components/Backlinks.vue'
 import MergeDialog from './components/MergeDialog.vue'
+import TagFilterPanel from './components/TagFilterPanel.vue'
 import { usePageStore } from './stores/pages'
 import { useBlockStore } from './stores/blocks'
 import { useEditorStore } from './stores/editor'
@@ -169,6 +170,8 @@ function handleCancelMerge() {
       @merge="handleMerge"
       @cancel="handleCancelMerge"
     />
+
+    <TagFilterPanel />
   </div>
 </template>
 

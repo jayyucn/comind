@@ -4,6 +4,7 @@ import { useEditorStore } from '../stores/editor'
 import { useBlockStore } from '../stores/blocks'
 import { useSortable } from '../composables/useSortable'
 import { useNavigateToPage } from '../composables/useNavigateToPage'
+import { useTagFilter } from '../composables/useTagFilter'
 import Editor from './Editor.vue'
 
 const props = defineProps<{
@@ -178,7 +179,8 @@ function calculateLevelLineHeight() {
 /** mousedown：捕获点击坐标，在 tiptap 挂载前通知 editor store */
 function handleContentMouseDown(e: MouseEvent) {
   const target = e.target as HTMLElement
-  if (target.closest('.block-link')) return
+  // 链接和标签点击由 handleContentClick 单独处理，不触发编辑态
+  if (target.closest('.block-link, .block-tag')) return
 
   const cursorPosVal = getCaretPositionFromPoint(e.clientX, e.clientY) ?? 0
   editorStore.setCursorPos(cursorPosVal + 1)
@@ -299,6 +301,18 @@ function handleCursorChange(pos: number) {
 
 function handleContentClick(e: MouseEvent) {
   const target = e.target as HTMLElement
+
+  // 标签点击 → 打开筛选面板
+  const tagEl = target.closest('.block-tag') as HTMLElement | null
+  if (tagEl) {
+    const tagText = tagEl.textContent?.replace(/^#/, '').trim() ?? ''
+    if (tagText) {
+      const { openFilter } = useTagFilter()
+      openFilter(tagText)
+    }
+    return
+  }
+
   const link = target.closest('.block-link') as HTMLElement | null
   if (!link) return
 
@@ -346,10 +360,11 @@ function renderContent(text: string): string {
     .replace(/\[\[(https?:\/\/[^\]]+)\]\]/g, (_, url) => {
       return `<span class="block-link external" data-external href="${escapeHtml(url)}">${url}</span>`
     })
-    .replace(/#([\p{L}_][\p{L}\p{N}_]*(?:\/[\p{L}_][\p{L}\p{N}_]*)*)/gu, (_, tag, offset) => {
+    // 标签：排除 URL 锚点（https://...#anchor）、邮箱锚点（user@domain#tag）
+    // 负向后顾断言：# 前不能是 :（协议/mailto）、//（URL）、>（HTML）、|（别名）、@（邮箱）
+    .replace(/(?<![:\/>|>|])#([\p{L}_][\p{L}\p{N}_]*(?:\/[\p{L}_][\p{L}\p{N}_]*)*)/gu, (_, tag) => {
+      // 排除含 . 的（如域名中的 .）
       if (tag.includes('.')) return `#${tag}`
-      const before = html.slice(Math.max(0, offset - 20), offset)
-      if (/\w\/$/.test(before)) return `#${tag}`
       // 层级标签：斜杠分隔，每级独立着色
       const parts = tag.split('/')
       const rendered = parts.map((p: string, i: number) => {
