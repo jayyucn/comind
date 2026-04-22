@@ -1,5 +1,4 @@
 import { computed, ref } from 'vue'
-import { useBlockStore } from '../stores/blocks'
 import { usePageStore } from '../stores/pages'
 import { storage } from '../storage/indexedDB'
 import type { Block } from '../types/block'
@@ -10,6 +9,7 @@ const isOpen = computed(() => activeTag.value !== null)
 
 // 预加载的跨页全量结果（缓存在模块变量中）
 let cachedAllBlocks: Array<{ block: Block; pageTitle: string }> | null = null
+let _pageStoreRef: ReturnType<typeof usePageStore> | null = null
 
 /** 预加载全量 Block 数据（一次性从 IndexedDB 获取） */
 async function preloadAllBlocks(pageStore: ReturnType<typeof usePageStore>): Promise<Array<{ block: Block; pageTitle: string }>> {
@@ -28,31 +28,33 @@ async function preloadAllBlocks(pageStore: ReturnType<typeof usePageStore>): Pro
   return results
 }
 
+/** 清除缓存（blocks.ts 在 create/update/delete 后调用以保证数据新鲜） */
+export function invalidateTagCache() {
+  cachedAllBlocks = null
+}
+
 /** 根据标签过滤预加载的结果 */
 function filterByTag(tag: string, all: Array<{ block: Block; pageTitle: string }>): Array<{ block: Block; pageTitle: string }> {
   const tagLower = tag.toLowerCase()
   const escaped = tagLower.replace('/', '\\/')
-  const regex = new RegExp(`#${escaped}(?:/|$)`, 'g')
+  const regex = new RegExp(`#${escaped}(?:/|$)`, 'gi')
 
   return all.filter(item => {
-    const content = item.block.content.toLowerCase()
+    const content = item.block.content
     return regex.test(content)
   })
 }
 
 export function useTagFilter() {
-  const blockStore = useBlockStore()
   const pageStore = usePageStore()
+  _pageStoreRef = pageStore
 
-  /** 打开筛选：预加载全量 Blocks 再搜索 */
+  /** 打开筛选：先预加载全量 Blocks，再设置 activeTag（避免竞态） */
   async function openFilter(tag: string) {
+    // 必须先 await 预加载完成，再设置 activeTag
+    // 否则 groupedResults computed 会在 cachedAllBlocks 为 null 时触发，返回空 []
+    await preloadAllBlocks(pageStore)
     activeTag.value = tag
-
-    // 首次打开时预加载；后续直接用缓存
-    if (!cachedAllBlocks) {
-      const all = await preloadAllBlocks(pageStore)
-      void all // 已在 preloadAllBlocks 中写入 cachedAllBlocks
-    }
   }
 
   /** 关闭筛选 */
@@ -60,7 +62,7 @@ export function useTagFilter() {
     activeTag.value = null
   }
 
-  /** 所有含有 activeTag 的 Block，按 Page 分组 */
+  /** 所有含有 activeTag 的 Block */
   const groupedResults = computed(() => {
     if (!activeTag.value || !cachedAllBlocks) return []
     return filterByTag(activeTag.value, cachedAllBlocks)
@@ -76,19 +78,21 @@ export function useTagFilter() {
     return map
   })
 
-  /** 跳转到某个 Block */
+  /** 跳转到某个 Block（跨页导航） */
   async function navigateToBlock(blockId: string) {
-    const targetBlock = groupedResults.value.find(r => r.block.id === blockId)?.block
-      ?? blockStore.blocks.find(b => b.id === blockId)
+    // 从 groupedResults 查找（已包含所有页的 block）
+    const item = groupedResults.value.find(r => r.block.id === blockId)
+    const targetBlock = item?.block
     if (!targetBlock) return
 
+    closeFilter()
+
     await pageStore.openPage(targetBlock.pageId)
-    // 等页面加载完成后激活
+    // 等页面加载完成后激活 Block
     setTimeout(async () => {
       const { useEditorStore } = await import('../stores/editor')
       useEditorStore().activateBlock(blockId)
     }, 100)
-    closeFilter()
   }
 
   return {
