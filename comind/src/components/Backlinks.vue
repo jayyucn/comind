@@ -22,7 +22,7 @@ const loading = ref(false)
 const collapsed = ref(false)
 const linkStatusMap = ref<Map<string, { blockExists: boolean; pageExists: boolean }>>(new Map())
 
-// 点击 Backlink：跳转到源 Block 所在 Page，并激活该 Block
+// 点击 Backlink：跳转到�?Block 所�?Page，并激活该 Block
 async function handleBacklinkClick(link: LinkRecord) {
   const status = getLinkStatus(link)
   if (!status.blockExists || !status.pageExists) return
@@ -50,7 +50,7 @@ async function handleBacklinkClick(link: LinkRecord) {
   }, 0)
 }
 
-// 预计算每个 link 的存在状态 + 获取源 block 内容和所属 page 标题
+// 预计算每�?link 的存在状�?+ 获取�?block 内容和所�?page 标题
 async function loadBacklinks() {
   if (!pageStore.currentPageId) {
     backlinkItems.value = []
@@ -62,7 +62,6 @@ async function loadBacklinks() {
   try {
     const links = await storage.getBacklinks(pageStore.currentPageId)
 
-    // 并行获取所有 link 的源 block 信息
     const results = await Promise.all(
       links.map(async (link) => {
         const key = `${link.sourceBlockId}_${link.targetPageId}`
@@ -119,7 +118,7 @@ function getLinkStatus(link: LinkRecord) {
   return linkStatusMap.value.get(key) ?? { blockExists: true, pageExists: true }
 }
 
-// 监听当前 Page 变化，重新加载 Backlinks
+// 监听当前 Page 变化，重新加�?Backlinks
 watch(
   () => pageStore.currentPageId,
   () => loadBacklinks(),
@@ -128,18 +127,20 @@ watch(
 </script>
 
 <template>
-  <div class="backlinks-section">
+  <div class="backlinks-panel" :class="{ 'is-collapsed': collapsed }">
+    <!-- 面板 Header：始终可见，点击切换折叠 -->
     <div class="backlinks-header" @click="collapsed = !collapsed">
       <span class="backlinks-title">
-        <span class="backlinks-icon">↩</span>
+        <span class="backlinks-icon">🔗</span>
         反向链接
         <span v-if="backlinkItems.length > 0" class="backlinks-count">({{ backlinkItems.length }})</span>
       </span>
       <span class="backlinks-toggle">{{ collapsed ? '▶' : '▼' }}</span>
     </div>
 
-    <div v-if="!collapsed">
-      <div v-if="loading" class="backlinks-loading">加载中...</div>
+    <!-- 折叠内容区：max-height 动画控制 -->
+    <div class="backlinks-body">
+      <div v-if="loading" class="backlinks-loading">加载�?..</div>
 
       <div v-else-if="backlinkItems.length === 0" class="backlinks-empty">
         暂无反向链接
@@ -159,7 +160,7 @@ watch(
           <span class="backlink-text">{{ item.sourceContent || '空块' }}</span>
           <span class="backlink-page">{{ item.sourcePageTitle }}</span>
           <span v-if="!getLinkStatus(item.link).blockExists" class="backlink-hint">(来源块已删除)</span>
-          <span v-else-if="!getLinkStatus(item.link).pageExists" class="backlink-hint">(来源页面已删除)</span>
+          <span v-else-if="!getLinkStatus(item.link).pageExists" class="backlink-hint">(来源页面已删�?</span>
         </div>
       </div>
     </div>
@@ -167,25 +168,41 @@ watch(
 </template>
 
 <style scoped>
-.backlinks-section {
-  margin-top: 48px;
-  padding: var(--space-6) 0;
-  border-top: 2px dashed var(--color-border);
+/*
+ * Backlinks 面板布局方案�? * - 面板固定在页面底部，不随页面滚动
+ * - 高度随链接数量增高，上限 400px（超出内部滚动）
+ * - 页面主体区域可独立滚�? *
+ * 父级布局要求（App.vue）：
+ *   .app { display: flex; flex-direction: column; height: 100vh; }
+ *   .main-scroll { flex: 1; overflow-y: auto; }
+ *   .backlinks-panel { flex-shrink: 0; }
+ */
+
+.backlinks-panel {
+  flex-shrink: 0;
+  border-top: 2px dashed var(--border);
+  background: var(--bg-base);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  max-width: 800px;
+  width: 100%;
+  margin: auto auto 200px;
+  box-sizing: border-box;
 }
 
 .backlinks-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: var(--space-4);
-  padding: var(--space-2) var(--space-1);
+  padding: var(--space-3) 0;
   cursor: pointer;
   border-radius: var(--radius-md);
   transition: background 80ms ease;
 }
 
 .backlinks-header:hover {
-  background: var(--color-surface);
+  background: var(--bg-hover);
 }
 
 .backlinks-title {
@@ -194,7 +211,7 @@ watch(
   gap: 6px;
   font-size: var(--text-xs);
   font-weight: 500;
-  color: var(--color-ink-muted);
+  color: var(--text-secondary);
   letter-spacing: 0.05em;
 }
 
@@ -204,20 +221,51 @@ watch(
 
 .backlinks-count {
   font-size: var(--text-xs);
-  color: var(--color-ink-faint);
+  color: var(--text-tertiary);
   font-weight: 400;
 }
 
 .backlinks-toggle {
   font-size: 10px;
-  color: var(--color-ink-faint);
+  color: var(--text-tertiary);
   padding: 2px var(--space-1);
+}
+
+/* 内容区：无 max-height 限制，自然高度 */
+.backlinks-body {
+  /* 移除 max-height 限制，跟随内容自然延展 */
+  overflow-y: visible;
+  padding: 0 0 var(--space-4);
+  transition: none;
+  /* WebKit 滚动�?*/
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.backlinks-body::-webkit-scrollbar {
+  width: 4px;
+}
+
+.backlinks-body::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+
+.backlinks-body::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}
+
+/* 折叠时内容区高度归零 */
+.backlinks-panel.is-collapsed .backlinks-body {
+  max-height: 0;
+  overflow: hidden;
+  padding-bottom: 0;
 }
 
 .backlinks-loading,
 .backlinks-empty {
   font-size: var(--text-xs);
-  color: var(--color-ink-faint);
+  color: var(--text-tertiary);
   padding: var(--space-4) var(--space-1);
   text-align: center;
 }
@@ -231,7 +279,7 @@ watch(
 .backlink-item {
   padding: var(--space-3) var(--space-4);
   font-size: var(--text-xs);
-  color: var(--color-ink-secondary);
+  color: var(--text-secondary);
   cursor: pointer;
   border-radius: var(--radius-md);
   display: flex;
@@ -242,13 +290,8 @@ watch(
 }
 
 .backlink-item:hover:not(.orphan-block):not(.orphan-page) {
-  background: var(--color-surface);
-  color: var(--color-ink);
-}
-
-.backlink-icon {
-  font-size: var(--text-sm);
-  flex-shrink: 0;
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .backlink-text {
@@ -258,23 +301,23 @@ watch(
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 400;
-  color: var(--color-ink);
+  color: var(--text-primary);
 }
 
 .backlink-page {
   font-size: var(--text-xs);
-  color: var(--color-ink-faint);
+  color: var(--text-tertiary);
   flex-shrink: 0;
   white-space: nowrap;
 }
 
 .backlink-hint {
   font-size: var(--text-xs);
-  color: var(--color-ink-faint);
+  color: var(--text-tertiary);
   font-style: italic;
 }
 
-/* 悬空链接样式 - 源 Block 已删除 */
+/* 悬空链接样式 - �?Block 已删�?*/
 .backlink-item.orphan-block {
   opacity: 0.6;
   cursor: not-allowed;
@@ -282,10 +325,9 @@ watch(
 
 .backlink-item.orphan-block .backlink-text {
   text-decoration: line-through;
-  font-weight: 400;
 }
 
-/* 悬空链接样式 - 源 Page 已删除 */
+/* 悬空链接样式 - �?Page 已删�?*/
 .backlink-item.orphan-page {
   opacity: 0.6;
   cursor: not-allowed;
@@ -293,6 +335,5 @@ watch(
 
 .backlink-item.orphan-page .backlink-text {
   text-decoration: line-through;
-  font-weight: 400;
 }
 </style>

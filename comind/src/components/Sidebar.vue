@@ -16,7 +16,6 @@ onMounted(async () => {
   }
 })
 
-/** 确保当前 page 至少有一个空 block */
 function ensureFirstBlock() {
   const hasBlock = blockStore.blocks.some(b => b.pageId === pageStore.currentPageId && b.parentId === null)
   if (!hasBlock) {
@@ -46,103 +45,196 @@ async function handleOpenPage(pageId: string) {
 
 <template>
   <aside class="sidebar">
+    <!-- Logo 标题 -->
     <div class="sidebar-header">
-      <span class="sidebar-logo">comind</span>
+      <span class="sidebar-logo">COMIND</span>
     </div>
 
+    <!-- 页面列表 -->
     <div class="sidebar-pages">
-      <div class="page-list">
-        <div
-          v-for="page in pageStore.pages"
-          :key="page.id"
-          class="page-item"
-          :class="{ active: pageStore.currentPageId === page.id }"
-          @click="handleOpenPage(page.id)"
-        >
-          {{ page.title }}
-        </div>
+      <div
+        v-for="page in pageStore.pages"
+        :key="page.id"
+        class="page-item"
+        :class="{ active: pageStore.currentPageId === page.id }"
+        tabindex="0"
+        @click="handleOpenPage(page.id)"
+        @keydown.enter="handleOpenPage(page.id)"
+      >
+        <span class="page-icon">📄</span>
+        <span class="page-title">{{ page.title }}</span>
+        <span class="page-time">{{ formatTime(page.updatedAt) }}</span>
+      </div>
+
+      <!-- 无页面时 -->
+      <div v-if="pageStore.pages.length === 0" class="sidebar-empty">
+        <div class="sidebar-empty-title">暂无页面</div>
+        <div class="sidebar-empty-sub">点击下方按钮创建</div>
       </div>
     </div>
 
+    <!-- 新建页面 -->
     <div class="sidebar-footer">
       <div class="new-page-form">
         <input
           v-model="newPageTitle"
           class="new-page-input"
-          placeholder="New page..."
+          placeholder="页面标题..."
           @keydown.enter="handleCreatePage"
         />
-        <button class="new-page-btn" :disabled="creating || !newPageTitle.trim()" @click="handleCreatePage">
-          +
-        </button>
+        <button
+          class="new-page-btn"
+          :disabled="creating || !newPageTitle.trim()"
+          @click="handleCreatePage"
+        >+</button>
       </div>
     </div>
   </aside>
 </template>
 
+<script lang="ts">
+// 时间格式化工具
+function formatTime(timestamp: number): string {
+  const now = Date.now()
+  const diff = now - timestamp
+  const minute = 60 * 1000
+  const hour = 60 * minute
+  const day = 24 * hour
+
+  if (diff < minute) return '刚刚'
+  if (diff < hour) return `${Math.floor(diff / minute)} 分钟前`
+  if (diff < 2 * hour) return '1 小时前'
+  if (diff < day) return `${Math.floor(diff / hour)} 小时前`
+  if (diff < 2 * day) return '昨天'
+
+  const d = new Date(timestamp)
+  return `${d.getMonth() + 1}月${d.getDate()}日`
+}
+</script>
+
 <style scoped>
 .sidebar {
-  width: 220px;
+  width: 240px;
   height: 100%;
-  background: var(--color-sidebar-bg);
-  border-right: 1px solid var(--color-border);
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
   overflow: hidden;
 }
 
+/* ── 顶部标题 ── */
 .sidebar-header {
-  padding: var(--space-4) var(--space-4) var(--space-3);
-  border-bottom: 1px solid var(--color-border);
+  padding: 14px var(--space-4) 12px;
+  border-bottom: 1px solid var(--border);
+  height: 40px;
+  display: flex;
+  align-items: center;
 }
 
 .sidebar-logo {
-  font-family: 'Geist', sans-serif;
-  font-size: var(--text-sm);
+  font-size: 13px;
   font-weight: 700;
-  color: var(--color-ink);
-  letter-spacing: -0.3px;
+  color: var(--text-secondary);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
+/* ── 页面列表 ── */
 .sidebar-pages {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-2) 0;
+  padding: var(--space-1) 0;
   min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
 }
 
-.page-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.sidebar-pages::-webkit-scrollbar {
+  width: 4px;
+}
+
+.sidebar-pages::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
 }
 
 .page-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 6px var(--space-4);
-  font-size: var(--text-xs);
-  color: var(--color-ink-secondary);
+  font-size: 13px;
+  color: var(--text-primary);
   cursor: pointer;
   border-radius: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  transition: none;
+  position: relative;
 }
 
 .page-item:hover {
-  background: var(--color-hover);
-  color: var(--color-ink);
+  background: var(--bg-hover);
 }
 
 .page-item.active {
-  background: var(--color-highlight);
-  color: var(--color-accent-deep);
-  font-weight: 500;
+  background: var(--bg-active);
 }
 
+.page-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent);
+}
+
+.page-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.page-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+}
+
+.page-time {
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  font-weight: 400;
+}
+
+/* ── 空状态 ── */
+.sidebar-empty {
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+}
+
+.sidebar-empty-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.sidebar-empty-sub {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* ── 底部新建 ── */
 .sidebar-footer {
   padding: var(--space-3);
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--border);
 }
 
 .new-page-form {
@@ -154,37 +246,49 @@ async function handleOpenPage(pageId: string) {
 .new-page-input {
   flex: 1;
   padding: 5px var(--space-2);
-  font-size: var(--text-xs);
-  border: 1px solid var(--color-scrollbar);
+  font-size: 13px;
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--color-white);
   outline: none;
   font-family: inherit;
-  color: var(--color-ink);
+  color: var(--text-primary);
+  transition: border-color 80ms ease;
+}
+
+.new-page-input::placeholder {
+  color: var(--text-tertiary);
+  font-style: italic;
 }
 
 .new-page-input:focus {
-  border-color: var(--color-accent);
+  border-color: var(--accent);
+  box-shadow: var(--shadow-focus);
 }
 
 .new-page-btn {
   width: 26px;
   height: 26px;
   border: none;
-  background: var(--color-accent);
+  background: var(--accent);
   color: var(--color-white);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: var(--text-sm);
+  font-size: 15px;
   line-height: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  transition: background 80ms ease;
+}
+
+.new-page-btn:hover:not(:disabled) {
+  background: var(--accent-hover);
 }
 
 .new-page-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 </style>

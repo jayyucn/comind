@@ -27,28 +27,27 @@ const currentPageTitle = computed(() => {
   return page?.title ?? 'comind'
 })
 
-// ── 根容器的 Sortable（.block-list = 顶级 Block 容器） ──────────────────
+// ── 根容器的 Sortable ──────────────────────────────────────────
 const blockListRef = ref<HTMLElement | null>(null)
 
-// ── 标题编辑状态 ──
+// ── 标题编辑状态 ────────────────────────────────────────────────
 const isEditingTitle = ref(false)
 const editingTitle = ref('')
 const titleInputRef = ref<HTMLInputElement | null>(null)
 
-// ── 合并对话框状态 ──
+// ── 合并对话框状态 ───────────────────────────────────────────────
 const showMergeDialog = ref(false)
 const mergeTarget = ref<PageRecord | null>(null)
+
 onMounted(() => {
   if (blockListRef.value) {
     useSortable(blockListRef.value)
   }
 })
 
-// ── 页面加载完成后自动聚焦第一个空 Block ──
+// ── 页面加载完成后自动聚焦第一个空 Block ────────────────────────
 watch(() => blockStore.loading, async (isLoading, wasLoading) => {
-  // 仅在 loading 从 true → false 时触发（页面加载完成）
   if (isLoading || !wasLoading) return
-  // 如果已有激活 Block（用户可能在加载期间点击了），不覆盖
   if (editorStore.activeBlockId) return
 
   await nextTick()
@@ -59,7 +58,6 @@ async function autoFocusFirstEmptyBlock() {
   const pageId = blockStore.currentPageId
   if (!pageId) return
 
-  // 仅当页面有且只有一个空 Block 时自动聚焦
   const contentBlocks = blockStore.blocks
     .filter(b => b.pageId === pageId && !b.isPage)
 
@@ -74,7 +72,7 @@ function handleMainClick(e: MouseEvent) {
   editorStore.deactivateBlock()
 }
 
-// ── 标题编辑 ──
+// ── 标题编辑 ────────────────────────────────────────────────────
 function startEditTitle() {
   editorStore.deactivateBlock()
   editingTitle.value = currentPageTitle.value
@@ -92,7 +90,6 @@ async function saveTitle() {
 
   const result = await pageStore.renamePage(blockStore.currentPageId, newTitle)
   if (result.duplicated) {
-    // 保留新标题用于对话框显示，弹出合并确认
     editingTitle.value = newTitle
     showMergeDialog.value = true
     mergeTarget.value = result.duplicated
@@ -104,7 +101,7 @@ function cancelEditTitle() {
   editingTitle.value = ''
 }
 
-// ── 合并操作 ──
+// ── 合并操作 ─────────────────────────────────────────────────────
 async function handleMerge() {
   if (!mergeTarget.value) return
   const sourceId = blockStore.currentPageId
@@ -126,35 +123,44 @@ function handleCancelMerge() {
   <div class="app-layout" @click="handleMainClick">
     <Sidebar />
 
-    <main class="main-content">
-      <div class="page-header">
-        <h1
-          v-if="!isEditingTitle"
-          class="page-title page-title--display"
-          @click="startEditTitle"
-        >{{ currentPageTitle }}</h1>
-        <input
-          v-else
-          ref="titleInputRef"
-          v-model="editingTitle"
-          class="page-title page-title--input"
-          @blur="saveTitle"
-          @keydown.enter.prevent="saveTitle"
-          @keydown.escape="cancelEditTitle"
-        />
-      </div>
+    <!-- 页面滚动区：Backlinks 在内，随内容滚动 -->
+    <div class="page-scroll-wrapper">
+      <!-- 页面主体：占满滚动区，Backlinks 用 margin-top:auto 推底 -->
+      <div class="page-body">
+        <main class="main-content">
+          <!-- 页面标题 -->
+          <div class="page-header">
+            <h1
+              v-if="!isEditingTitle"
+              class="page-title page-title--display"
+              @click="startEditTitle"
+            >{{ currentPageTitle }}</h1>
+            <input
+              v-else
+              ref="titleInputRef"
+              v-model="editingTitle"
+              class="page-title page-title--input"
+              @blur="saveTitle"
+              @keydown.enter.prevent="saveTitle"
+              @keydown.escape="cancelEditTitle"
+            />
+          </div>
 
-      <div class="block-list" ref="blockListRef" data-parent-id="">
-        <Block
-          v-for="block in topLevelBlocks"
-          :key="block.id"
-          :block-id="block.id"
-          :block="block"
-        />
-      </div>
+          <!-- Block 列表 -->
+          <div class="block-list" ref="blockListRef" data-parent-id="">
+            <Block
+              v-for="block in topLevelBlocks"
+              :key="block.id"
+              :block-id="block.id"
+              :block="block"
+            />
+          </div>
+        </main>
 
-      <Backlinks />
-    </main>
+        <!-- Backlinks：margin-top:auto，内容少时贴底，内容多时随页面滚动 -->
+        <Backlinks />
+      </div>
+    </div>
 
     <MergeDialog
       :visible="showMergeDialog"
@@ -167,36 +173,73 @@ function handleCancelMerge() {
 </template>
 
 <style scoped>
+/* ── 主布局：Sidebar + 滚动区 ─────────────────────────────────── */
 .app-layout {
   display: flex;
+  flex-direction: row;
   height: 100vh;
   width: 100vw;
   overflow: hidden;
-  background: var(--color-paper);
+  background: var(--bg-base);
 }
 
-.main-content {
+/* ── 页面滚动区 ─────────────────────────────────────────────── */
+.page-scroll-wrapper {
   flex: 1;
-  overflow-y: auto ;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  padding: var(--space-8) 48px;
-  max-width: 860px;
+  overflow-y: auto;
+  min-width: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
 }
 
+.page-scroll-wrapper::-webkit-scrollbar {
+  width: 6px;
+}
+
+.page-scroll-wrapper::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
+}
+
+.page-scroll-wrapper::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}
+
+/* ── 页面主体：flex 垂直排列，gap 确保 Backlinks 与内容间距 ── */
+.page-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  gap: 48px;
+  padding-bottom: var(--space-6);
+}
+
+/* ── 主内容区：居中，max-width 约束 ──────────────────────────── */
+.main-content {
+  max-width: 800px;
+  width: 100%;
+  margin: 0 auto;
+  padding: var(--space-8) 48px var(--space-8);
+  box-sizing: border-box;
+  /* flex:1 让主内容优先占满页面高度 */
+  flex: 1;
+}
+
+/* ── 页面标题区 ─────────────────────────────────────────────── */
 .page-header {
   margin-bottom: var(--space-6);
   padding-bottom: var(--space-4);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--border);
 }
 
 .page-title {
   font-family: var(--font-sans);
   font-size: var(--text-xl);
   font-weight: 600;
-  color: var(--color-ink);
+  color: var(--text-primary);
   margin: 0;
   letter-spacing: -0.5px;
+  line-height: 1.4;
 }
 
 .page-title--display {
@@ -208,13 +251,13 @@ function handleCancelMerge() {
 }
 
 .page-title--display:hover {
-  border-color: var(--color-border);
+  border-color: var(--border);
   background: var(--accent-03);
 }
 
 .page-title--input {
   background: transparent;
-  border: 1px solid var(--color-accent);
+  border: 1px solid var(--accent);
   outline: none;
   padding: 2px var(--space-1);
   border-radius: var(--radius-sm);
@@ -223,22 +266,8 @@ function handleCancelMerge() {
   max-width: 600px;
 }
 
+/* ── Block 列表 ─────────────────────────────────────────────── */
 .block-list {
   padding-left: 0;
-}
-
-.add-block-btn {
-  padding: 6px var(--space-4);
-  background: var(--color-accent);
-  color: var(--color-white);
-  border: none;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  font-size: var(--text-xs);
-  font-family: inherit;
-}
-
-.add-block-btn:hover {
-  background: var(--color-accent-deep);
 }
 </style>

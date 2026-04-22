@@ -342,6 +342,7 @@ Block 层级嵌套示例：
 
 ```
 定位：Page 最后一个 Block 之后，内嵌在页面内容流中（非固定面板）
+与页面内容的最小间距：48px（确保 Backlinks 不出现在页面"中段"）
 
 ┌──────────────────────────────────────────────────────────────┐
 │                                                              │
@@ -365,10 +366,12 @@ Block 层级嵌套示例：
 │                                                              │
 └──────────────────────────────────────────────────────────────┘
 
-SectionHeader:
-  文字："↩ 反向链接 (N)"，13px 500 --text-secondary
-  分隔线上方：4px 间距
-  折叠按钮右侧对齐
+BacklinksContainer（外层容器）:
+  margin-top: 48px                                ← 与上方内容的最小间距
+  max-height: 400px
+  overflow-y: auto
+  /* 折叠状态下 max-height 归零，通过动画过渡 */
+  transition: max-height 180ms cubic-bezier(0.4, 0, 0.2, 1)
 
 BacklinkItem:
   内边距：12px 16px
@@ -381,10 +384,11 @@ BacklinkItem:
     [jump-button]                         ← "跳转 →" 13px --link
 
 Section 折叠时：
-  只显示 SectionHeader，"↩ 反向链接 (N)"，点击展开
+  max-height 归零（180ms 动画），只显示 SectionHeader
 
 Section 空状态：
-  "暂无反向链接"，--text-tertiistic，13px，居中，16px 上下 padding
+  "暂无反向链接"，--text-tertiary，13px，居中，16px 上下 padding
+  （不计入 max-height 约束，展开态高度由内容撑起）
 ```
 
 ### 空状态
