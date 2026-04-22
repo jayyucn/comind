@@ -18,6 +18,14 @@ const { navigateToPage } = useNavigateToPage()
 const isActive = computed(() => editorStore.activeBlockId === props.blockId)
 const children = computed(() => blockStore.getChildren(props.blockId))
 
+/** 页面是否仅有一个空 Block（唯一场景显示 placeholder） */
+const isSingleEmptyBlock = computed(() => {
+  const contentBlocks = blockStore.blocks.filter(
+    b => b.pageId === blockStore.currentPageId && !b.isPage
+  )
+  return contentBlocks.length === 1 && contentBlocks[0].content === '' && contentBlocks[0].id === props.blockId
+})
+
 const editorRef = ref<InstanceType<typeof Editor> | null>(null)
 const childrenRef = ref<HTMLElement | null>(null)
 const levelLineRef = ref<HTMLElement | null>(null)
@@ -369,7 +377,10 @@ function renderContent(text: string): string {
           @split="handleSplit" @merge="handleMerge" @delete="handleDelete" @indent="handleIndent"
           @outdent="handleOutdent" @move-up="handleMoveUp" @move-down="handleMoveDown" @exit-edit="handleExitEdit"
           @cursor-change="handleCursorChange" />
-        <div v-else class="block-text" v-html="renderContent(block.content)" @click="handleContentClick"></div>
+        <div v-else class="block-text" @click="handleContentClick">
+          <span v-if="isSingleEmptyBlock" class="block-placeholder">Type something...</span>
+          <span v-else v-html="renderContent(block.content)"></span>
+        </div>
       </div>
     </div>
 
@@ -493,6 +504,12 @@ function renderContent(text: string): string {
   border-radius: 4px;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.block-placeholder {
+  color: #a8a29e;
+  font-style: italic;
+  pointer-events: none;
 }
 
 .block.active .block-text {

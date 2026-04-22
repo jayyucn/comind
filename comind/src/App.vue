@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, nextTick } from 'vue'
+import { computed, ref, onMounted, watch, nextTick } from 'vue'
 import Sidebar from './components/Sidebar.vue'
 import Block from './components/Block.vue'
 import Backlinks from './components/Backlinks.vue'
@@ -43,6 +43,30 @@ onMounted(() => {
     useSortable(blockListRef.value)
   }
 })
+
+// ── 页面加载完成后自动聚焦第一个空 Block ──
+watch(() => blockStore.loading, async (isLoading, wasLoading) => {
+  // 仅在 loading 从 true → false 时触发（页面加载完成）
+  if (isLoading || !wasLoading) return
+  // 如果已有激活 Block（用户可能在加载期间点击了），不覆盖
+  if (editorStore.activeBlockId) return
+
+  await nextTick()
+  await autoFocusFirstEmptyBlock()
+})
+
+async function autoFocusFirstEmptyBlock() {
+  const pageId = blockStore.currentPageId
+  if (!pageId) return
+
+  // 仅当页面有且只有一个空 Block 时自动聚焦
+  const contentBlocks = blockStore.blocks
+    .filter(b => b.pageId === pageId && !b.isPage)
+
+  if (contentBlocks.length === 1 && contentBlocks[0].content === '') {
+    editorStore.activateBlock(contentBlocks[0].id, 1)
+  }
+}
 
 function handleMainClick(e: MouseEvent) {
   const target = e.target as HTMLElement
