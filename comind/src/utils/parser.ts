@@ -69,12 +69,14 @@ export function parseContent(content: string): ParseResult {
 
   const tags: string[] = []
   // 解析 #标签：# 后紧跟 Unicode 字母或汉字，不能以数字开头
+  // 支持层级标签 #工作/项目A（斜杠分隔多级）
   // 排除：URL 锚点（https://...#section）、邮箱（me@example.com）
-  const tagRegex = /#([\p{L}_][\p{L}\p{N}_]*)/gu
+  const tagRegex = /#([\p{L}_][\p{L}\p{N}_]*(?:\/[\p{L}_][\p{L}\p{N}_]*)*)/gu
   let match
   while ((match = tagRegex.exec(content)) !== null) {
     const tag = match[1]
-    if (!tag.includes('/') && !tag.includes('.')) {
+    // 排除含 . 的（如 #foo.bar 不视为标签）
+    if (!tag.includes('.')) {
       tags.push(tag)
     }
   }

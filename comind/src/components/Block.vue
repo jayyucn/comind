@@ -346,10 +346,17 @@ function renderContent(text: string): string {
     .replace(/\[\[(https?:\/\/[^\]]+)\]\]/g, (_, url) => {
       return `<span class="block-link external" data-external href="${escapeHtml(url)}">${url}</span>`
     })
-    .replace(/#([\p{L}_][\p{L}\p{N}_]*)/gu, (_, tag, offset) => {
+    .replace(/#([\p{L}_][\p{L}\p{N}_]*(?:\/[\p{L}_][\p{L}\p{N}_]*)*)/gu, (_, tag, offset) => {
+      if (tag.includes('.')) return `#${tag}`
       const before = html.slice(Math.max(0, offset - 20), offset)
       if (/\w\/$/.test(before)) return `#${tag}`
-      return `<span class="block-tag">#${tag}</span>`
+      // 层级标签：斜杠分隔，每级独立着色
+      const parts = tag.split('/')
+      const rendered = parts.map((p: string, i: number) => {
+        const span = `<span class="tag-segment">${escapeHtml(p)}</span>`
+        return i < parts.length - 1 ? span + '<span class="tag-sep">/</span>' : span
+      }).join('')
+      return `<span class="block-tag">#${rendered}</span>`
     })
 }
 </script>
@@ -550,5 +557,14 @@ function renderContent(text: string): string {
   padding: 0 2px;
   border-radius: 3px;
   font-size: 0.9em;
+}
+
+:deep(.block-tag .tag-sep) {
+  color: rgba(99, 102, 241, 0.4);
+  margin: 0 1px;
+}
+
+:deep(.block-tag .tag-segment) {
+  /* 每级标签继承父级颜色，可按需分级着色 */
 }
 </style>
