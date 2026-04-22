@@ -155,6 +155,107 @@ export class IndexedDBAdapter {
   async getBacklinks(pageId: string): Promise<LinkRecord[]> {
     return db.links.where('targetPageId').equals(pageId).toArray()
   }
+
+  /** 重命名页面（事务：更新 pages 表 + blocks 表的 title） */
+  async renamePage(pageId: string, newTitle: string): Promise<void> {
+    await db.transaction('rw', [db.pages, db.blocks], async () => {
+      const page = await db.pages.get(pageId)
+      if (page) {
+        page.title = newTitle
+        page.updatedAt = Date.now()
+        await db.pages.put(page)
+      }
+      const block = await db.blocks.get(pageId)
+      if (block) {
+        block.title = newTitle
+        block.updatedAt = Date.now()
+        await db.blocks.put(block)
+      }
+    })
+  }
+
+  /**
+   * 合并两个页面（事务操作）
+   * 将源页面的所有 Block 迁移到目标页面，重定向链接，删除源页面
+   */
+  async mergePage(sourceId: string, targetId: string): Promise<void> {
+    await db.transaction('rw', [db.blocks, db.links, db.pages], async () => {
+      // 获取源页面标题（用于文本替换）
+      const sourcePage = await db.pages.get(sourceId)
+      const targetPage = await db.pages.get(targetId)
+      if (!sourcePage || !targetPage) return
+      const sourceTitle = sourcePage.title
+      const targetTitle = targetPage.title
+
+      // 1. 获取源页面所有 Block（排除 Page Block 本身）
+      const sourceBlocks = await db.blocks.where('pageId').equals(sourceId).toArray()
+      const blocksToMove = sourceBlocks.filter(b => b.id !== sourceId)
+
+      // 2. 获取目标页面顶级 Block 的最大 left 值
+      const targetTopBlocks = await db.blocks
+        .where('pageId').equals(targetId)
+        .filter(b => b.parentId === null && b.id !== targetId)
+        .toArray()
+      const maxLeft = targetTopBlocks.reduce((max, b) => Math.max(max, b.left), 0)
+
+      // 3. 源页面顶级 Block 的 left 值重算（追加到目标页面末尾）
+      const sourceTopBlocks = blocksToMove.filter(b => b.parentId === null)
+      const leftMap = new Map<string, number>()
+      sourceTopBlocks.forEach((b, i) => {
+        leftMap.set(b.id, maxLeft + (i + 1) * 100)
+      })
+
+      // 4. 迁移所有 Block：更新 pageId + 替换文本中指向源页面的链接
+      for (const block of blocksToMove) {
+        block.pageId = targetId
+        block.content = replacePageLink(block.content, sourceTitle, targetTitle)
+        block.updatedAt = Date.now()
+        if (leftMap.has(block.id)) {
+          block.left = leftMap.get(block.id)!
+        }
+        await db.blocks.put(block)
+        // 重新解析并保存链接（内容已变）
+        await this.saveLinks(block.id, targetId, parseBlockLinks(block.content))
+      }
+
+      // 5. 替换目标页面 Block 文本中指向源页面的链接
+      //    （例如 B 引用了 A → [[A]] 要变成 [[B]]）
+      const targetBlocks = await db.blocks.where('pageId').equals(targetId).toArray()
+      for (const block of targetBlocks) {
+        const newContent = replacePageLink(block.content, sourceTitle, targetTitle)
+        if (newContent !== block.content) {
+          block.content = newContent
+          block.updatedAt = Date.now()
+          await db.blocks.put(block)
+          await this.saveLinks(block.id, targetId, parseBlockLinks(block.content))
+        }
+      }
+
+      // 6. 删除所有指向源页面的链接记录（已通过 saveLinks 重新生成）
+      await db.links.where('targetPageId').equals(sourceId).delete()
+
+      // 7. 删除源 Page 记录
+      await db.pages.delete(sourceId)
+
+      // 8. 删除源 Page Block
+      await db.blocks.delete(sourceId)
+    })
+  }
+}
+
+/**
+ * 替换文本中指向源页面的 Wiki 链接
+ * [[源标题]] → [[目标标题]]
+ * [[源标题|别名]] → [[目标标题|别名]]
+ */
+function replacePageLink(content: string, sourceTitle: string, targetTitle: string): string {
+  // 转义正则特殊字符
+  const escaped = sourceTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  // 匹配 [[源标题]] 或 [[源标题|别名]]
+  const regex = new RegExp(`\\[\\[${escaped}(\\|[^\\]]+?)?\\]\\]`, 'g')
+  return content.replace(regex, (_, aliasPart: string | undefined) => {
+    return aliasPart ? `[[${targetTitle}${aliasPart}]]` : `[[${targetTitle}]]`
+  })
 }
 
 export const storage = new IndexedDBAdapter()

@@ -52,5 +52,32 @@ export const usePageStore = defineStore('pages', () => {
     return pages.value.find(p => p.title === title)
   }
 
-  return { pages, currentPageId, loading, loadAllPages, openPage, createPage, getPage, getPageByTitle }
+  /** 重命名页面，返回重复信息（如有） */
+  async function renamePage(pageId: string, newTitle: string): Promise<{ duplicated?: PageRecord }> {
+    if (!newTitle.trim()) return {}
+    const page = getPage(pageId)
+    if (!page) return {}
+    const trimmedTitle = newTitle.trim()
+    if (page.title === trimmedTitle) return {}
+
+    const duplicate = getPageByTitle(trimmedTitle)
+    if (duplicate && duplicate.id !== pageId) {
+      return { duplicated: duplicate }
+    }
+
+    await storage.renamePage(pageId, trimmedTitle)
+    page.title = trimmedTitle
+    return {}
+  }
+
+  /** 合并源页面到目标页面（事务操作） */
+  async function mergePage(sourceId: string, targetId: string): Promise<void> {
+    await storage.mergePage(sourceId, targetId)
+    pages.value = pages.value.filter(p => p.id !== sourceId)
+    if (currentPageId.value === sourceId) {
+      currentPageId.value = targetId
+    }
+  }
+
+  return { pages, currentPageId, loading, loadAllPages, openPage, createPage, getPage, getPageByTitle, renamePage, mergePage }
 })

@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, nextTick } from 'vue'
 import Sidebar from './components/Sidebar.vue'
 import Block from './components/Block.vue'
 import Backlinks from './components/Backlinks.vue'
+import MergeDialog from './components/MergeDialog.vue'
 import { usePageStore } from './stores/pages'
 import { useBlockStore } from './stores/blocks'
 import { useEditorStore } from './stores/editor'
 import { useSortable } from './composables/useSortable'
+import type { PageRecord } from './types/link'
 
 const pageStore = usePageStore()
 const blockStore = useBlockStore()
@@ -27,6 +29,15 @@ const currentPageTitle = computed(() => {
 
 // ── 根容器的 Sortable（.block-list = 顶级 Block 容器） ──────────────────
 const blockListRef = ref<HTMLElement | null>(null)
+
+// ── 标题编辑状态 ──
+const isEditingTitle = ref(false)
+const editingTitle = ref('')
+const titleInputRef = ref<HTMLInputElement | null>(null)
+
+// ── 合并对话框状态 ──
+const showMergeDialog = ref(false)
+const mergeTarget = ref<PageRecord | null>(null)
 onMounted(() => {
   if (blockListRef.value) {
     useSortable(blockListRef.value)
@@ -38,6 +49,53 @@ function handleMainClick(e: MouseEvent) {
   if (target.closest('.block')) return
   editorStore.deactivateBlock()
 }
+
+// ── 标题编辑 ──
+function startEditTitle() {
+  editorStore.deactivateBlock()
+  editingTitle.value = currentPageTitle.value
+  isEditingTitle.value = true
+  nextTick(() => {
+    titleInputRef.value?.focus()
+    titleInputRef.value?.select()
+  })
+}
+
+async function saveTitle() {
+  isEditingTitle.value = false
+  const newTitle = editingTitle.value.trim()
+  if (!newTitle || newTitle === currentPageTitle.value) return
+
+  const result = await pageStore.renamePage(blockStore.currentPageId, newTitle)
+  if (result.duplicated) {
+    // 保留新标题用于对话框显示，弹出合并确认
+    editingTitle.value = newTitle
+    showMergeDialog.value = true
+    mergeTarget.value = result.duplicated
+  }
+}
+
+function cancelEditTitle() {
+  isEditingTitle.value = false
+  editingTitle.value = ''
+}
+
+// ── 合并操作 ──
+async function handleMerge() {
+  if (!mergeTarget.value) return
+  const sourceId = blockStore.currentPageId
+  const targetId = mergeTarget.value.id
+  showMergeDialog.value = false
+  mergeTarget.value = null
+  await pageStore.mergePage(sourceId, targetId)
+  await pageStore.openPage(targetId)
+}
+
+function handleCancelMerge() {
+  showMergeDialog.value = false
+  mergeTarget.value = null
+  editingTitle.value = ''
+}
 </script>
 
 <template>
@@ -46,7 +104,20 @@ function handleMainClick(e: MouseEvent) {
 
     <main class="main-content">
       <div class="page-header">
-        <h1 class="page-title">{{ currentPageTitle }}</h1>
+        <h1
+          v-if="!isEditingTitle"
+          class="page-title page-title--display"
+          @click="startEditTitle"
+        >{{ currentPageTitle }}</h1>
+        <input
+          v-else
+          ref="titleInputRef"
+          v-model="editingTitle"
+          class="page-title page-title--input"
+          @blur="saveTitle"
+          @keydown.enter.prevent="saveTitle"
+          @keydown.escape="cancelEditTitle"
+        />
       </div>
 
       <div class="block-list" ref="blockListRef" data-parent-id="">
@@ -60,6 +131,14 @@ function handleMainClick(e: MouseEvent) {
 
       <Backlinks />
     </main>
+
+    <MergeDialog
+      :visible="showMergeDialog"
+      :source-title="editingTitle"
+      :target-title="mergeTarget?.title ?? ''"
+      @merge="handleMerge"
+      @cancel="handleCancelMerge"
+    />
   </div>
 </template>
 
@@ -94,6 +173,30 @@ function handleMainClick(e: MouseEvent) {
   color: #1c1917;
   margin: 0;
   letter-spacing: -0.5px;
+}
+
+.page-title--display {
+  cursor: text;
+  padding: 2px 4px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.page-title--display:hover {
+  border-color: #e8e0d4;
+  background: rgba(180, 83, 9, 0.03);
+}
+
+.page-title--input {
+  background: transparent;
+  border: 1px solid #b45309;
+  outline: none;
+  padding: 2px 4px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 3px rgba(180, 83, 9, 0.1);
+  width: 100%;
+  max-width: 600px;
 }
 
 .block-list {
