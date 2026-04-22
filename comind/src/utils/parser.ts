@@ -64,31 +64,59 @@ export function parseBlockLinks(content: string): LinkParse[] {
   return sorted
 }
 
-/** 标签正则（单一来源，供 parser.ts 和 Block.vue 共用）
- *  规则：# 后紧跟 Unicode 字母或 _，不能以数字开头
- *  支持层级标签 #工作/项目A（斜杠分隔多级）
- *  排除：URL 锚点（://#）、邮箱锚点（>#、|#、@#）、含 . 的（域名）
+/** 标签正则核心模式：# 后紧跟 Unicode 字母或 _，支持层级标签（斜杠分隔） */
+const TAG_PATTERN = '([\\p{L}_][\\p{L}\\p{N}_]*(?:\\/[\\p{L}_][\\p{L}\\p{N}_]*)*)'
+
+/**
+ * 标签正则（单一来源，供 parser.ts 和 Block.vue 共用）
+ *
+ * 排除策略（双层）：
+ * 1. 正则层：单字符 lookbehind 排除 |/>|@ 紧邻 # 的情况
+ * 2. 代码层：isTagInUrlContext() 检查 # 前方是否有 :// 或 @ 模式
+ *
+ * 正则无法用 lookbehind 排除 ://（3 字符变长），
+ * 因此 URL 锚点由代码层 isTagInUrlContext() 过滤。
  */
-export const TAG_REGEX = /(?<![:\/>|@])#([\p{L}_][\p{L}\p{N}_]*(?:\/[\p{L}_][\p{L}\p{N}_]*)*)/gu
+export const TAG_REGEX = new RegExp(`(?<![\\/|>|@])#${TAG_PATTERN}`, 'gu')
+
+/**
+ * 检查标签匹配是否在 URL / 邮箱上下文中（应排除）
+ *
+ * 识别：
+ * - ://xxx#xxx → URL 锚点（如 https://x.com#section）
+ * - @xxx#xxx → 邮箱锚点（如 user@domain#tag）
+ * - x:#xxx → 协议后锚点（如 mailto:#tag）
+ */
+function isTagInUrlContext(content: string, hashIndex: number): boolean {
+  const lookback = content.slice(Math.max(0, hashIndex - 50), hashIndex)
+  if (/:\/\/[^#\s]*$/.test(lookback)) return true
+  if (/@[^#\s]*$/.test(lookback)) return true
+  if (hashIndex > 0 && content[hashIndex - 1] === ':') return true
+  return false
+}
 
 /** 属性 key 正则：支持 Unicode 字母开头（中文 key 如「作者::」「状态::」） */
-const PROP_KEY_REGEX = /^([\p{L}_][\p{L}\p{N}_]*)::\s*(.+)$/gm
+const PROP_KEY_REGEX = /^([\p{L}_][\p{L}\p{N}_]*)::\s*(.+)$/gmu
 
 export function parseContent(content: string): ParseResult {
   const links: LinkParse[] = parseBlockLinks(content)
 
   const tags: string[] = []
+  // 克隆正则避免 lastIndex 污染
+  const tagRegex = new RegExp(TAG_REGEX.source, 'gu')
   let match
-  while ((match = TAG_REGEX.exec(content)) !== null) {
+  while ((match = tagRegex.exec(content)) !== null) {
     const tag = match[1]
-    if (!tag.includes('.')) {
-      tags.push(tag)
-    }
+    // 排除含 . 的标签（如版本号 #v2.0）和 URL/邮箱上下文
+    if (tag.includes('.')) continue
+    if (isTagInUrlContext(content, match.index)) continue
+    tags.push(tag)
   }
 
   // 解析属性（key:: value）
   const properties: Record<string, any> = {}
-  while ((match = PROP_KEY_REGEX.exec(content)) !== null) {
+  const propRegex = new RegExp(PROP_KEY_REGEX.source, 'gmu')
+  while ((match = propRegex.exec(content)) !== null) {
     properties[match[1]] = parsePropertyValue(match[2])
   }
 
@@ -97,6 +125,14 @@ export function parseContent(content: string): ParseResult {
 
 /**
  * 属性值类型推断
+ *
+ * 推断优先级：
+ * 1. boolean（true / false）
+ * 2. date（YYYY-MM-DD）
+ * 3. page reference（[[页面名]]）— 必须在 list 之前检查
+ * 4. number（整数或小数）
+ * 5. list（[a, b, c]）
+ * 6. string（默认）
  */
 export function parsePropertyValue(value: string): any {
   const trimmed = value.trim()
@@ -106,14 +142,15 @@ export function parsePropertyValue(value: string): any {
 
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed
 
+  // page reference 必须在 list 之前检查（因为 [[张三]] 同时满足 startsWith('[')）
+  const pageMatch = trimmed.match(/^\[\[([^\]]+)\]\]$/)
+  if (pageMatch) return pageMatch[1]
+
   if (/^\d+\.?\d*$/.test(trimmed)) return Number(trimmed)
 
   if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
     return trimmed.slice(1, -1).split(',').map(s => s.trim())
   }
-
-  const pageMatch = trimmed.match(/^\[\[([^\]]+)\]\]$/)
-  if (pageMatch) return pageMatch[1]
 
   return trimmed
 }
