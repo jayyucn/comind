@@ -12,6 +12,7 @@ import {
   validateLeftValues
 } from '../utils/leftCalculator'
 import { invalidateTagCache } from '../composables/useTagFilter'
+import { usePageStore } from './pages'
 
 const LEFT_STEP = 100 // 同级节点初始间隔
 
@@ -427,6 +428,14 @@ export const useBlockStore = defineStore('blocks', () => {
     block.updatedAt = new Date().toISOString()
     _scheduleSave(block)
     invalidateTagCache()
+
+    // 同步更新 Page 的 updatedAt
+    const pageStore = usePageStore()
+    const page = pageStore.getPage(block.pageId)
+    if (page) {
+      page.updatedAt = Date.now()
+      await storage.updatePage(page)
+    }
   }
 
   /** 重新索引 left 值以修复间隙和确保一致性 */

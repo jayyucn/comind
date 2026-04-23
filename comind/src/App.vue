@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, watch, nextTick } from 'vue'
-import Sidebar from './components/Sidebar.vue'
+import Sidebar from './components/Sidebar/index.vue'
 import Block from './components/Block.vue'
 import Backlinks from './components/Backlinks.vue'
 import MergeDialog from './components/MergeDialog.vue'
@@ -9,12 +9,14 @@ import SlashCommandMenu from './components/SlashCommandMenu.vue'
 import { usePageStore } from './stores/pages'
 import { useBlockStore } from './stores/blocks'
 import { useEditorStore } from './stores/editor'
+import { useJournal } from './composables/useJournal'
 import { useSortable } from './composables/useSortable'
 import type { PageRecord } from './types/link'
 
 const pageStore = usePageStore()
 const blockStore = useBlockStore()
 const editorStore = useEditorStore()
+const journal = useJournal()
 
 /** 顶级 Block（parentId = null，且属于当前 Page） */
 const topLevelBlocks = computed(() => {
@@ -41,10 +43,12 @@ const titleInputRef = ref<HTMLInputElement | null>(null)
 const showMergeDialog = ref(false)
 const mergeTarget = ref<PageRecord | null>(null)
 
-onMounted(() => {
+onMounted(async () => {
   if (blockListRef.value) {
     useSortable(blockListRef.value)
   }
+  // 检查并创建今日日记（Session 级，只触发一次）
+  journal.checkAndCreateTodayJournal()
 })
 
 // ── 页面加载完成后自动聚焦第一个空 Block ────────────────────────

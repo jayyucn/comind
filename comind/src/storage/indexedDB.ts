@@ -174,6 +174,11 @@ export class IndexedDBAdapter {
     })
   }
 
+  /** 更新 Page（主要用于 updatedAt 同步） */
+  async updatePage(page: PageRecord): Promise<void> {
+    await db.pages.put(page)
+  }
+
   /**
    * 合并两个页面（事务操作）
    * 将源页面的所有 Block 迁移到目标页面，重定向链接，删除源页面
