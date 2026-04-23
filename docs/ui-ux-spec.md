@@ -1,8 +1,8 @@
 # comind UI/UX 规范
 
-> 版本：v0.5
-> 日期：2026-04-16
-> 状态：✅ 评审完成，已确认
+> 版本：v0.6
+> 日期：2026-04-23
+> 状态：**待评审**（Sidebar 重新设计，配合 Phase 1.1 Journal）
 
 ---
 
@@ -200,19 +200,49 @@ App
   overflow: hidden
 
 Sidebar
-  width: 240px
+  width: 260px（固定，非 240px，内容更从容）
   flex-shrink: 0
   border-right: 1px solid --border
-  overflow-y: auto
-  /* WebKit 滚动条 */
-  &::-webkit-scrollbar { width: 4px }
-  &::-webkit-scrollbar-thumb { background: --border; border-radius: 2px }
+  display: flex
+  flex-direction: column
+  overflow: hidden
+  position: relative
+  /* 纸张纹理叠加（subtle）*/
+  &::before: SVG noise filter, opacity 0.03，pointer-events: none
+
+  /* 折叠动画 */
+  transition: width 200ms cubic-bezier(0.4, 0, 0.2, 1)
+  &.collapsed: width: 0, overflow: hidden
+
+SidebarHeader
+  height: 48px
+  display: flex
+  align-items: center
+  justify-content: space-between
+  padding: 0 16px 0 14px
+  border-bottom: 1px solid --border
+  flex-shrink: 0
+
+SectionJournal
+  padding: 10px 8px 8px
+  flex-shrink: 0
+
+SectionPages
+  flex: 1
+  overflow: hidden
+  display: flex
+  flex-direction: column
+  padding: 4px 8px
+
+SidebarFooter
+  flex-shrink: 0
+  padding: 6px 8px 8px
+  border-top: 1px solid --border
 
 MainContent
   flex: 1
   overflow-y: auto
   padding: 32px 48px 48px 48px
-  /* 深色滚动条（主内容滚动更频繁）*/
   &::-webkit-scrollbar { width: 6px }
   &::-webkit-scrollbar-thumb { background: --border-strong; border-radius: 3px }
   &::-webkit-scrollbar-thumb:hover { background: --text-tertiary }
@@ -224,43 +254,70 @@ MainContent
 
 ### Sidebar
 
+Sidebar 由四个区域构成：Header、Journal Section、Pages Section、Footer。
+Journal Section（琥珀底色按钮）是 Phase 1.1 引入的独立功能区，与 Pages 视觉平等但功能上有主次。
+
 ```
-┌────────────────────────────────────┐
-│ COMIND                      [icon] │  ← 顶部标题，字母间距拉开
-├────────────────────────────────────┤
-│ + 新建页面                          │  ← 新建按钮，紧凑
-├────────────────────────────────────┤
-│ 📄 页面 A                          │  ← PageItem
-│    3 分钟前                         │
-│ 📄 页面 B                          │
-│    昨天                            │
-│ 📄 数据模型设计                     │
-│    4月14日                         │
-│                                    │
-│  ───────────────────────────────── │
-│  📅 日记（Phase 1.1）               │  ← 分隔线 + Journal 占位
-└────────────────────────────────────┘
+┌──────────────────────────────────────────────┐
+│ COMIND                                [◀]    │  ← SidebarHeader（48px）
+├──────────────────────────────────────────────┤
+│ 日记                                        │  ← Section Label（10px 全大写）
+│ ┌────────────────────────────────────────┐  │
+│ │ 🌤️ 2026-04-23                         │  │  ← JournalButton（琥珀底）
+│ │    今天                              → │  │
+│ └────────────────────────────────────────┘  │
+├──────────────────────────────────────────────┤
+│ 页面                                  [+]   │  ← Section Label + NewBtn
+│ 📄 数据模型设计                    3分钟前  │  ← PageItem
+│ 📄 Phase 1 技术选型                  昨天    │
+│ 📄 UI/UX 规范 v0.5                  4月14日  │
+│ 📄 Sortable 实现方案                4月12日  │
+│  ...                                        │
+├──────────────────────────────────────────────┤
+│  / 斜杠命令 · Ctrl+K 搜索                    │  ← SidebarFooter Hint
+└──────────────────────────────────────────────┘
+```
 
-Sidebar 内部结构：
-  SidebarHeader: "COMIND" 标题，13px 500，--text-secondary，左内边距 12px，高 40px
-  NewPageButton:  + 新建页面，13px，--text-secondary，hover --text-primary，左内边距 12px，高 32px
-  Divider: 1px --border
-  PageList: PageItem × N，垂直排列，间距 2px
-  SidebarFooter: 分隔线 + Journal 占位文字（--text-tertiary）
+**SidebarHeader:**
+- Logo "COMIND"：13px 600，letter-spacing 0.18em，--text-secondary，全大写
+- Toggle 按钮：24×24px，radius 4px，折叠动画 200ms
+- 高度：48px，底部分割线 1px --border
 
-PageItem:
-  结构：[type-icon] [title] [timestamp]
-  type-icon: 📄 或 📅（emoji，14px）
-  title: 13px 400，--text-primary，max-width 剩余空间，overflow hidden，text-overflow ellipsis
-  timestamp: 12px 400，--text-secondary，右对齐
-  hover: 背景 --bg-hover
-  active: 背景 --bg-active，左边框 2px --accent
-  内边距: 8px 12px
+**SectionJournal:**
+- Section Label "日记"：10px 500，letter-spacing 0.12em，--text-tertiary，padding 0 6px 5px
+- JournalButton：宽度 100%，padding 8px 10px，radius 6px，背景 --accent-subtle
+- 左侧竖条：2.5px --accent，始终可见
+- hover：背景 #FEF0C0，箭头右移 2px
+- sub 行："今天"（今天日记，accent 色）/ 具体日期（历史日记，--text-tertiary）
 
-无页面时：
-  居中提示："暂无页面"
-  副文字："点击上方按钮创建"
-  均为 --text-secondary，居中
+**SectionPages:**
+- Section Label "页面"：10px 500，letter-spacing 0.12em，--text-tertiary
+- New Page 按钮：20×20px，radius 4px，位于 header 右侧
+- PagesList：flex: 1，overflow-y: auto，滚动条 4px
+
+**SidebarFooter:**
+- 快捷键提示：10px，--text-tertiary，居中
+- kbd 样式：JetBrains Mono 9px，背景 --bg-hover，边框 1px --border，radius 3px
+
+**PageItem:**
+- 结构：[emoji 13px] [title + time 文本区 flex] [time]
+- title：13px 400，--text-primary，ellipsis
+- time：11px，--text-tertiary，JetBrains Mono
+- active：背景 --bg-active，左竖条 2px --accent，title 字重 500
+- hover：背景 --bg-hover
+
+**Sidebar 空状态（Pages 区无内容时）：**
+```
+┌────────────────────────────────────────┐
+│          📝                           │
+│        暂无页面                       │
+│    点击上方 + 创建第一个页面          │
+│    或使用 Ctrl+K 搜索                 │
+└────────────────────────────────────────┘
+```
+- icon：32px，opacity 0.4
+- title：14px 500，--text-secondary
+- sub：12px，--text-tertiary，Ctrl+K 加粗
 ```
 
 ### Block

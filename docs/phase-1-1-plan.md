@@ -60,13 +60,7 @@ Phase 1.1 定位为 **MVP 完善 + 效率增强**，核心目标：
 **测试覆盖：**
 - `parser.test.ts`：26 个测试用例，100% 通过
 
-### 2.3 外部链接
-
-| 功能 | 状态 | 说明 |
-|------|------|------|
-| `[[https://...]]` 编辑态高亮 | 🔴 未实现 | Display 态已实现，编辑态需接入 tiptap 插件 |
-
-### 2.4 UI 细节
+### 2.3 UI 细节
 
 | 功能 | 状态 | 说明 |
 |------|------|------|
@@ -104,7 +98,7 @@ Phase 1.1 定位为 **MVP 完善 + 效率增强**，核心目标：
 
 ## 3. Phase 1.1 新增功能
 
-### 3.1 斜杠命令面板（Slash Commands）
+### 3.1 斜杠命令面板（Slash Commands）✅ 已完成
 
 **优先级：⭐⭐⭐⭐⭐（最高）**
 
@@ -151,34 +145,39 @@ Phase 1.1 定位为 **MVP 完善 + 效率增强**，核心目标：
 ```
 src/
 ├── components/
-│   └── SlashCommandMenu.vue    # 命令菜单组件
+│   └── SlashCommandMenu.vue    # 命令菜单组件 ✅
 ├── composables/
-│   └── useSlashCommand.ts      # 触发检测 + 命令执行
-├── stores/
-│   └── commands.ts             # 命令定义 + 注册
-└── extensions/
-    └── slashCommandExtension.ts # tiptap extension（可选）
+│   └── useSlashCommand.ts      # 触发检测 + 命令执行 ✅
+└── stores/
+    └── commands.ts             # 命令定义 + 注册 ✅
 ```
+
+**实现文件：**
+- `src/components/SlashCommandMenu.vue`：命令菜单 UI 组件
+- `src/composables/useSlashCommand.ts`：触发检测、命令匹配、执行逻辑
+- `src/stores/commands.ts`：命令定义与注册
+- `src/components/Block.vue`：集成 slash command 触发
+
+**已实现命令：**
+| 命令 | 类型 | 状态 |
+|------|------|------|
+| `/date` | 插入 | ✅ |
+| `/time` | 插入 | ✅ |
+| `/page` | 导航 | ✅ |
+| `/new` | 操作 | ✅ |
+| `/collapse` | 操作 | ✅ |
+| `/expand` | 操作 | ✅ |
+| `/delete` | 操作 | ✅ |
+| `/todo` | 插入 | ✅ |
+| `/link` | 插入 | ✅ |
 
 **技术要点：**
 
-1. **触发检测**：监听 Block 编辑器的 `input` 事件，检测 `/` 字符
-   - 方案 A：Vue 层监听 `@input`
-   - 方案 B：tiptap Extension（更精确的光标位置）
-
-2. **命令匹配**：
-   - 命令列表预定义在 `commands.ts`
-   - 输入 `/da` → 模糊匹配 `/date`
-   - 使用简单 `includes()` 或 Fuse.js
-
-3. **执行逻辑**：
-   - 插入型：替换 `/命令名` 为目标内容
-   - 操作型：调用 blockStore/pageStore 方法
-   - 导航型：调用 `pageStore.openPage()`
-
-4. **光标处理**：
-   - 执行后光标留在插入内容后
-   - 或关闭面板后恢复编辑
+1. **触发检测**：Vue 层监听 Block 编辑器的 `@input` 事件，检测 `/` 字符 ✅
+2. **命令匹配**：使用 `includes()` 进行模糊匹配 ✅
+3. **执行逻辑**：插入型/操作型/导航型命令均已实现 ✅
+4. **光标处理**：执行后光标正确留在插入内容后 ✅
+5. **键盘导航**：↑↓ 选择、Enter 执行、ESC 关闭 ✅
 
 **与原 Command Palette 对比：**
 
@@ -204,16 +203,24 @@ src/
 | 快速入口 | Sidebar 新增 "今日日记" 快捷按钮 |
 | 模板注入 | 新建日记 Page 时自动插入当日日期 Block |
 
-#### 3.2.2 UI 规范
+#### 3.2.2 UI 规范（引用 sidebar-redesign.md v0.6）
 
-- **Sidebar 入口**：`journal` 图标 + "今天" 文字
-- **日期格式**：ISO 8601（`YYYY-MM-DD`）
-- **模板内容**：
-  ```
-  [[2026-04-22]]
-  
-  ```
-  第一行自动插入日期链接作为标题
+Journal 入口完全重新设计了 Sidebar 结构，详见 `sidebar-redesign.md`。
+
+**核心变更：**
+- Sidebar 新增 Journal Section（琥珀底色按钮），位于 Pages 上方
+- "今天"按钮：左侧 2.5px accent 竖条，背景 --accent-subtle (#FEF3C7)
+- Journal Section Label "日记"：10px 全大写 --text-tertiary
+- sub 行显示相对时间（"今天" / "昨天" / 具体日期）
+- 活跃态 PageItem 左侧 accent 竖条从 2px 升级为独立视觉锚点
+
+**日期格式化规则：**
+| 条件 | 显示 |
+|------|------|
+| 当天 | "今天"（accent 色）|
+| 昨天 | "昨天" |
+| 本周内 | "周一" / "周二" ... |
+| 更早 | "4月14日"（JetBrains Mono）|
 
 #### 3.2.3 实现方案
 
@@ -295,8 +302,10 @@ export function useJournal() {
 | 序号 | 任务 | 预估 | 优先级 |
 |------|------|------|--------|
 | P3.1 | useJournal composable | 1h | P0 |
-| P3.2 | Sidebar 日记入口 | 1h | P0 |
+| P3.2 | SidebarJournal + JournalButton 组件（sidebar-redesign.md v0.6）| 2h | P0 |
 | P3.3 | 自动模板注入 | 1h | P1 |
+| P3.4 | SidebarContainer 拆分重构（5 子组件）| 2h | P1 |
+| P3.5 | 窄屏 Sidebar 折叠响应式 | 2h | P2 |
 
 ### Sprint 4：标签筛选 ✅ 已完成
 
