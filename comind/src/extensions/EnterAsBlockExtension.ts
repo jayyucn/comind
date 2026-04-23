@@ -20,15 +20,16 @@ const EnterAsBlockExtension = Extension.create({
 
       Backspace: ({ editor }) => {
         // Backspace 不受模态层影响（模态层通常自己处理）
-        const { $from } = editor.state.selection
+        const { $from, from, to} = editor.state.selection
         const content = editor.getText()
+       
         if (content.length === 0) {
           editor.view.dom.dispatchEvent(new CustomEvent('enter-as-block', {
             bubbles: true,
             detail: { type: 'delete' }
           }))
           return true
-        } else if ($from.parentOffset === 0) {
+        } else if ($from.parentOffset === 0 && from === to) {
           editor.view.dom.dispatchEvent(new CustomEvent('enter-as-block', {
             bubbles: true,
             detail: { type: 'merge' }
