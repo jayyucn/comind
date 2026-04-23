@@ -340,27 +340,36 @@ export const commands: Command[] = [
 ]
 
 /**
- * 过滤命令（模糊匹配）
+ * 过滤命令（模糊匹配 + 排序）
+ * 排序优先级：name前缀匹配 > alias前缀匹配 > name包含匹配 > alias包含匹配
  */
 export function filterCommands(query: string, commandList: Command[] = commands): Command[] {
   if (!query) return commandList
 
   const lowerQuery = query.toLowerCase()
 
-  return commandList.filter(cmd => {
+  const scored = commandList.map(cmd => {
     const name = cmd.name.toLowerCase()
     const alias = cmd.alias?.map(a => a.toLowerCase()) || []
 
-    // 前缀匹配优先
-    if (name.startsWith(lowerQuery)) return true
-    if (alias.some(a => a.startsWith(lowerQuery))) return true
+    let score = Infinity
 
-    // 包含匹配次之
-    if (name.includes(lowerQuery)) return true
-    if (alias.some(a => a.includes(lowerQuery))) return true
+    // name 前缀匹配（最高优先级）
+    if (name.startsWith(lowerQuery)) score = 0
+    // alias 前缀匹配
+    else if (alias.some(a => a.startsWith(lowerQuery))) score = 1
+    // name 包含匹配
+    else if (name.includes(lowerQuery)) score = 2
+    // alias 包含匹配
+    else if (alias.some(a => a.includes(lowerQuery))) score = 3
 
-    return false
+    return { cmd, score }
   })
+
+  return scored
+    .filter(item => item.score !== Infinity)
+    .sort((a, b) => a.score - b.score)
+    .map(item => item.cmd)
 }
 
 /**

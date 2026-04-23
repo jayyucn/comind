@@ -90,8 +90,8 @@ function handleKeyDown(event: KeyboardEvent) {
   }
 }
 
-// 监听输入更新查询
-function handleInput() {
+// 更新查询文本
+function updateQuery() {
   if (!visible.value || !range.value) return
 
   const editor = editorStore.activeEditor
@@ -144,6 +144,28 @@ function handleClickOutside(event: MouseEvent) {
   }
 }
 
+// 监听编辑器更新（用于实时更新查询）
+let editorUpdateListener: (() => void) | null = null
+
+function bindEditorUpdate() {
+  const editor = editorStore.activeEditor
+  if (!editor) return
+
+  editorUpdateListener = () => {
+    updateQuery()
+  }
+
+  editor.on('update', editorUpdateListener)
+}
+
+function unbindEditorUpdate() {
+  const editor = editorStore.activeEditor
+  if (editor && editorUpdateListener) {
+    editor.off('update', editorUpdateListener)
+    editorUpdateListener = null
+  }
+}
+
 onMounted(() => {
   // 监听 slash-command-trigger 事件
   document.addEventListener('slash-command-trigger', handleSlashCommandTrigger as EventListener)
@@ -153,16 +175,23 @@ onMounted(() => {
 
   // 监听点击外部
   document.addEventListener('click', handleClickOutside)
-
-  // 监听编辑器输入
-  document.addEventListener('input', handleInput)
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('slash-command-trigger', handleSlashCommandTrigger as EventListener)
   document.removeEventListener('keydown', handleKeyDown)
   document.removeEventListener('click', handleClickOutside)
-  document.removeEventListener('input', handleInput)
+
+  unbindEditorUpdate()
+})
+
+// 监听 visible 变化，绑定/解绑编辑器更新
+watch(visible, (isVisible) => {
+  if (isVisible) {
+    bindEditorUpdate()
+  } else {
+    unbindEditorUpdate()
+  }
 })
 
 // 监听 visible 变化，更新 store
