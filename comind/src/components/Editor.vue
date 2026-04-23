@@ -5,6 +5,7 @@ import StarterKit from '@tiptap/starter-kit'
 import { WikiLinkExtension } from '../extensions/WikiLinkExtension'
 import EnterAsBlockExtension from '../extensions/EnterAsBlockExtension'
 import BracketPairExtension from '../extensions/BracketPairExtension'
+import { SlashCommandExtension } from '../extensions/SlashCommandExtension'
 import { useNavigateToPage } from '../composables/useNavigateToPage'
 import { debounce } from '../utils/debounce'
 
@@ -79,9 +80,10 @@ function handleEnterAsBlock(event: Event) {
 const editor = shallowRef(useEditor({
   extensions: [
     StarterKit.configure({ heading: false, codeBlock: false, blockquote: false, horizontalRule: false }),
+    SlashCommandExtension,
     EnterAsBlockExtension,
     WikiLinkExtension,
-    BracketPairExtension
+    BracketPairExtension,
   ],
   content: props.content,
   autofocus: false,
@@ -176,7 +178,11 @@ function markSaved() {
   savedFromOutside = true
 }
 
-defineExpose({ syncContent, focus, getText: () => editor.value?.getText() ?? '', markSaved })
+function getEditor() {
+  return editor.value
+}
+
+defineExpose({ syncContent, focus, getText: () => editor.value?.getText() ?? '', markSaved, getEditor })
 </script>
 
 <template>

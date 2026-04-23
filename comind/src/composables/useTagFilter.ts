@@ -9,7 +9,6 @@ const isOpen = computed(() => activeTag.value !== null)
 
 // 预加载的跨页全量结果（缓存在模块变量中）
 let cachedAllBlocks: Array<{ block: Block; pageTitle: string }> | null = null
-let _pageStoreRef: ReturnType<typeof usePageStore> | null = null
 
 /** 预加载全量 Block 数据（一次性从 IndexedDB 获取） */
 async function preloadAllBlocks(pageStore: ReturnType<typeof usePageStore>): Promise<Array<{ block: Block; pageTitle: string }>> {
@@ -47,7 +46,6 @@ function filterByTag(tag: string, all: Array<{ block: Block; pageTitle: string }
 
 export function useTagFilter() {
   const pageStore = usePageStore()
-  _pageStoreRef = pageStore
 
   /** 打开筛选：先预加载全量 Blocks，再设置 activeTag（避免竞态） */
   async function openFilter(tag: string) {

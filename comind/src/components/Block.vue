@@ -50,6 +50,12 @@ watch(
     if (active) {
       await nextTick()
       if (editorRef.value) {
+        // 设置当前编辑器实例
+        const editor = editorRef.value.getEditor()
+        if (editor) {
+          editorStore.setActiveEditor(editor)
+        }
+        
         const pendingPos = editorStore.consumeCursorPos()
         if (pendingPos !== null) {
           editorRef.value.focus(pendingPos)
@@ -57,6 +63,9 @@ watch(
           editorRef.value.focus('end')
         }
       }
+    } else {
+      // 失活时清除编辑器实例
+      editorStore.setActiveEditor(null)
     }
   },
   { immediate: false }
