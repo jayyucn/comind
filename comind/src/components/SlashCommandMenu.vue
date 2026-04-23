@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useEditorStore } from '../stores/editor'
 import { useSlashCommands, filterCommands, groupCommands } from '../composables/useSlashCommands'
+import { useModalKeyboardRef } from '../composables/useModalKeyboard'
 import type { Command } from '../types/command'
 
 const editorStore = useEditorStore()
@@ -13,6 +14,10 @@ const query = ref('')
 const selectedIndex = ref(0)
 const position = ref({ x: 0, y: 0 })
 const range = ref<{ from: number; to: number } | null>(null)
+
+// 注册模态键盘拦截层（基于 visible 状态）
+// visible = true 时 push 到 modalStack，visible = false 时 pop
+useModalKeyboardRef('slash-command', visible)
 
 // 过滤后的命令
 const filteredCommands = computed(() => {
