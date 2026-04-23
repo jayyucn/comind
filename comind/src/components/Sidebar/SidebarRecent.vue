@@ -12,7 +12,6 @@ const { recentPages, isExpanded, toggleExpand } = useRecent()
 
 function handleNavigate(pageId: string) {
   emit('navigate', pageId)
-  pageStore.openPage(pageId)
 }
 </script>
 

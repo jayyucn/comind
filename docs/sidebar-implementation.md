@@ -379,9 +379,12 @@ interface Props {
 }
 
 interface Emits {
-  // 无 emits，内部处理跳转
+  (e: 'navigate', pageId: string): void   // 导航到今日日记
+  (e: 'create-today'): void              // 创建今日日记
 }
 ```
+
+**行为说明：** 内部调用 `useJournal()` 获取状态，点击事件通过 emit 向上冒泡给 `SidebarContainer` 统一处理导航和创建逻辑。
 
 **样式：**
 - height: 80px

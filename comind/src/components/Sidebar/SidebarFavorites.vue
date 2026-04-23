@@ -13,7 +13,6 @@ const { favoritePages, removeFavorite } = useFavorites()
 
 function handleNavigate(pageId: string) {
   emit('navigate', pageId)
-  pageStore.openPage(pageId)
 }
 
 function handleRemoveFavorite(pageId: string, event: Event) {
