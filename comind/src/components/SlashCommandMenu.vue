@@ -185,20 +185,15 @@ onBeforeUnmount(() => {
   unbindEditorUpdate()
 })
 
-// 监听 visible 变化，绑定/解绑编辑器更新
+// 监听 visible 变化，统一处理编辑器更新和 store 状态
 watch(visible, (isVisible) => {
   if (isVisible) {
     bindEditorUpdate()
+    if (range.value) {
+      editorStore.showSlashCommand(position.value, range.value)
+    }
   } else {
     unbindEditorUpdate()
-  }
-})
-
-// 监听 visible 变化，更新 store
-watch(visible, (newVal) => {
-  if (newVal && range.value) {
-    editorStore.showSlashCommand(position.value, range.value)
-  } else {
     editorStore.hideSlashCommand()
   }
 })
