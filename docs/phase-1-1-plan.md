@@ -202,6 +202,8 @@ src/
 | 自动日记页面 | 每天自动创建以日期命名的 Page（如 `2026-04-22`） |
 | 快速入口 | Sidebar 新增 "今日日记" 快捷按钮 |
 | 模板注入 | 新建日记 Page 时自动插入当日日期 Block |
+| Journal 列表视图 | 主内容区独立视图，显示多天内联可编辑日记 |
+| 月份筛选 | 左右箭头切换月份，筛选显示当月日记 |
 
 #### 3.2.2 UI 规范（引用 sidebar-redesign.md v0.6）
 
@@ -222,13 +224,29 @@ Journal 入口完全重新设计了 Sidebar 结构，详见 `sidebar-redesign.md
 | 本周内 | "周一" / "周二" ... |
 | 更早 | "4月14日"（JetBrains Mono）|
 
+**Journal 列表视图：**
+- 作为右侧内容区独立视图，与 Page 编辑视图平级
+- 每个日记条目显示完整内容，支持内联编辑
+- 点击日记标题导航到该日记独立页面
+- 月份选择器支持左右切换，列表实时更新
+
 #### 3.2.3 实现方案
+
+详见 [phase-1-1-dev.md](./phase-1-1-dev.md) §Journal 列表视图。
 
 ```typescript
 // composables/useJournal.ts
 export function useJournal() {
+  // 视图状态
+  const isOpen = ref(false)
+  
   // 获取今天的日期字符串
   const today = computed(() => new Date().toISOString().slice(0, 10))
+  
+  // 打开 Journal 列表视图
+  function openJournalList() {
+    isOpen.value = true
+  }
   
   // 打开或创建今日日记
   async function openTodayJournal() {
