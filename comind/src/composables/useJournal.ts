@@ -2,10 +2,12 @@
 import { ref, computed } from 'vue'
 import { usePageStore } from '../stores/pages'
 import { useBlockStore } from '../stores/blocks'
+import type { Page } from '../types/page'
 
 // 判断 Page 是否为日记（标题符合日期格式 YYYY-MM-DD）
-function isJournalPage(page: any): boolean {
-  return /^\d{4}-\d{2}-\d{2}$/.test(page.title)
+function isJournalPage(page: Page): boolean {
+  // return /^\d{4}-\d{2}-\d{2}$/.test(page.title)
+  return page.type === 'journal'
 }
 
 export function useJournal() {

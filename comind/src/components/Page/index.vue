@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, nextTick } from 'vue'
-import Block from '../Block.vue'
+import Block from '../Block/index.vue'
 import Backlinks from '../Backlinks.vue'
 import MergeDialog from '../MergeDialog.vue'
 import TagFilterPanel from '../TagFilterPanel.vue'
@@ -9,7 +9,7 @@ import { usePageStore } from '../../stores/pages'
 import { useBlockStore } from '../../stores/blocks'
 import { useEditorStore } from '../../stores/editor'
 import { useSortable } from '../../composables/useSortable'
-import type { PageRecord } from '../../types/link'
+import type { Page } from '../../types/page'
 
 const props = withDefaults(defineProps<{
   pageId: string
@@ -25,7 +25,11 @@ const editorStore = useEditorStore()
 const topLevelBlocks = computed(() => {
   return blockStore.blocks
     .filter(b => b.parentId === null && b.pageId === props.pageId)
-    .sort((a, b) => a.left - b.left)
+    .sort((a, b) => {
+      if (!a.leftId) return -1
+      if (!b.leftId) return 1
+      return a.leftId.localeCompare(b.leftId)
+    })
 })
 
 const currentPageTitle = computed(() => {
@@ -40,7 +44,7 @@ const editingTitle = ref('')
 const titleInputRef = ref<HTMLInputElement | null>(null)
 
 const showMergeDialog = ref(false)
-const mergeTarget = ref<PageRecord | null>(null)
+const mergeTarget = ref<Page | null>(null)
 
 onMounted(() => {
   if (blockListRef.value) {

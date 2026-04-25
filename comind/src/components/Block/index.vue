@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { computed, ref, watch, nextTick, onMounted } from 'vue'
-import { useEditorStore } from '../stores/editor'
-import { useBlockStore } from '../stores/blocks'
-import { useSortable } from '../composables/useSortable'
-import { useNavigateToPage } from '../composables/useNavigateToPage'
-import { useTagFilter } from '../composables/useTagFilter'
-import { TAG_REGEX } from '../utils/parser'
-import Editor from './Editor.vue'
+import { useEditorStore } from '../../stores/editor'
+import { useBlockStore } from '../../stores/blocks'
+import { useSortable } from '../../composables/useSortable'
+import { useNavigateToPage } from '../../composables/useNavigateToPage'
+import { useTagFilter } from '../../composables/useTagFilter'
+import { TAG_REGEX } from '../../utils/parser'
+import Editor from '../Editor.vue'
 
 const props = defineProps<{
   blockId: string
-  block: import('../types/block').BlockWithPos
+  block: import('../../types/block').BlockWithPos
 }>()
 
 const editorStore = useEditorStore()
@@ -24,7 +24,7 @@ const children = computed(() => blockStore.getChildren(props.blockId))
 /** 页面是否仅有一个空 Block（唯一场景显示 placeholder） */
 const isSingleEmptyBlock = computed(() => {
   const contentBlocks = blockStore.blocks.filter(
-    b => b.pageId === blockStore.currentPageId && !b.isPage
+    b => b.pageId === blockStore.currentPageId
   )
   return contentBlocks.length === 1 && contentBlocks[0].content === '' && contentBlocks[0].id === props.blockId
 })
@@ -91,15 +91,8 @@ const levelLineLeft = computed(() => {
   return `${indentPx}px`
 })
 
-/** 是否折叠 - 从 props 读取初始值，确保组件重建时状态正确 */
-const collapsed = ref(props.block.collapsed ?? false)
-
-/** 监听外部 collapsed 变化（跨组件/页面恢复时同步） */
-watch(() => props.block.collapsed, (newVal) => {
-  if (collapsed.value !== newVal) {
-    collapsed.value = newVal ?? false
-  }
-}, { immediate: true })
+/** 是否折叠 - 本地状态，不持久化 */
+const collapsed = ref(false)
 
 /** 动画进行中（防止快速切换导致动画错乱） */
 const isAnimating = ref(false)
@@ -235,10 +228,9 @@ async function handleMerge() {
 }
 
 async function handleDelete() {
-  const siblings = blockStore.blocks
-    .filter(b => b.parentId === props.block.parentId && b.pageId === props.block.pageId && b.left < props.block.left)
-    .sort((a, b) => b.left - a.left)
-  const prevId = siblings[0]?.id
+  // 找到前一个兄弟节点
+  const prevBlock = blockStore.findPreviousBlockInTreeOrder(props.blockId)
+  const prevId = prevBlock?.id
 
   if (!prevId) {
     if (editorRef.value) editorRef.value.markSaved()
@@ -339,15 +331,12 @@ function handleContentClick(e: MouseEvent) {
   }
 }
 
-/** 切换折叠状态，并同步到 store */
+/** 切换折叠状态 */
 async function handleToggleCollapse() {
   if (children.value.length === 0 || isAnimating.value) return
 
   const newCollapsed = !collapsed.value
   collapsed.value = newCollapsed
-
-  // 同步到 store 持久化
-  await blockStore.updateBlockCollapsed(props.blockId, newCollapsed)
 }
 
 /** HTML 转义（防 XSS） */
@@ -430,166 +419,5 @@ function renderContent(text: string): string {
 </template>
 
 <style scoped>
-.block {
-  position: relative;
-  user-select: none;
-}
-
-.block-row {
-  display: flex;
-  align-items: flex-start;
-  min-height: 1.8em;
-  line-height: 1.8;
-}
-
-.block-indent {
-  flex-shrink: 0;
-  height: 100%;
-}
-
-/* 层级线 */
-.block-level-line {
-  position: absolute;
-  width: 1px;
-  background: var(--color-accent);
-  opacity: 0.15;
-  pointer-events: none;
-  z-index: 0;
-  transition: height 200ms ease-out, opacity 200ms ease-out;
-}
-
-/* Bullet 区域 */
-.block-bullet {
-  flex-shrink: 0;
-  width: 20px;
-  height: 1.8em;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-/* ── Bullet 圆点（叶节点） ── */
-.bullet-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--color-accent);
-  opacity: 0.35;
-  transform: translateY(1px);
-  transition: opacity 150ms ease-out, transform 150ms ease-out, box-shadow 150ms ease-out;
-  flex-shrink: 0;
-}
-
-/* ── Chevron 箭头（父节点） ── */
-.bullet-chevron {
-  width: 7px;
-  height: 7px;
-  border-right: 1.5px solid var(--color-accent);
-  border-bottom: 1.5px solid var(--color-accent);
-  transform: rotate(45deg) translateY(1px);
-  opacity: 0.45;
-  transition: transform 180ms ease-out, opacity 150ms ease-out;
-  flex-shrink: 0;
-}
-
-.bullet-chevron.is-collapsed {
-  transform: rotate(-45deg) translateY(1px);
-}
-
-/* ── Hover：墨水晕开感 ── */
-.block-bullet:hover .bullet-dot {
-  opacity: 0.7;
-  transform: scale(1.4) translateY(1px);
-  box-shadow: 0 0 0 3px var(--accent-08);
-}
-
-.block-bullet:hover .bullet-chevron {
-  opacity: 0.75;
-  transform: rotate(45deg) scale(1.2) translateY(1px);
-  box-shadow: 0 0 0 3px var(--accent-06);
-}
-
-.block-bullet:hover .bullet-chevron.is-collapsed {
-  transform: rotate(-45deg) scale(1.2) translateY(1px);
-}
-
-/* ── Active Block ── */
-.block.active .bullet-dot {
-  opacity: 0.55;
-}
-
-.block.active .bullet-chevron {
-  opacity: 0.6;
-}
-
-.block-content {
-  flex: 1;
-  cursor: text;
-  min-width: 0;
-}
-
-.block-text {
-  min-height: 1.8em;
-  padding: 0 4px;
-  border-radius: 4px;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.block-placeholder {
-  color: var(--color-ink-faint);
-  font-style: italic;
-  pointer-events: none;
-}
-
-.block.active .block-text {
-  background: var(--accent-06);
-}
-
-/* 子节点容器 */
-.block-children {
-  overflow: hidden;
-  padding-left: 20px;
-  /* 初始 maxHeight 由 JS 控制（见 Transition 钩子） */
-}
-
-/* ── 折叠过渡动画 ──
-   注意：不设置 max-height 值，JS 钩子通过 el.style.maxHeight 动态控制
-   （避免 CSS 优先级（!important）阻止 JS 设置的内联值） */
-.collapse-enter-active,
-.collapse-leave-active {
-  transition: max-height 200ms ease-out;
-  overflow: hidden;
-}
-
-/* Link & Tag styles */
-:deep(.block-link) {
-  color: var(--color-accent);
-  cursor: pointer;
-  border-bottom: 1px solid var(--accent-40);
-}
-
-:deep(.block-link.external) {
-  color: var(--color-external);
-  border-bottom-color: var(--ext-40);
-}
-
-:deep(.block-tag) {
-  color: var(--color-tag);
-  background: var(--tag-10);
-  padding: 0 2px;
-  border-radius: 3px;
-  font-size: 0.9em;
-}
-
-:deep(.block-tag .tag-sep) {
-  color: var(--tag-40);
-  margin: 0 1px;
-}
-
-:deep(.block-tag .tag-segment) {
-  /* 每级标签继承父级颜色，可按需分级着色 */
-}
+@import './styles.css';
 </style>

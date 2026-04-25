@@ -3,7 +3,6 @@ import { useJournal } from '../../composables/useJournal'
 
 const emit = defineEmits<{
   'navigate': [pageId: string]
-  'create-today': []
 }>()
 
 const { today, journalPages, todayJournalExists, createTodayJournal } = useJournal()
@@ -15,7 +14,6 @@ async function handleClick() {
       emit('navigate', todayPage.id)
     }
   } else {
-    emit('create-today')
     await createTodayJournal()
   }
 }
