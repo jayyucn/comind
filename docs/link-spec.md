@@ -205,9 +205,9 @@ async function saveBlockLinks(blockId: string, links: ParsedLink[]): Promise<voi
 ```typescript
 // 与 storage-spec.md §0 和 data-model.md SQLite DDL 保持一致
 db.version(1).stores({
-  blocks: 'id, parentId, pageId, left, createdAt, updatedAt',
-  pages: 'id, title, createdAt, updatedAt',
-  links: '++id, sourceBlockId, targetPageId, linkType'
+  blocks: 'id, pageId, parentId, leftId, createdAt, updatedAt',
+  pages: 'id, blockId, title, type, createdAt, updatedAt',
+  links: 'id, sourceBlockId, targetPageId'
 })
 ```
 

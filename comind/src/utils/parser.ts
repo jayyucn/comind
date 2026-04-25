@@ -55,7 +55,7 @@ export function parseBlockLinks(content: string): LinkParse[] {
         targetTitle: target,
         displayText: display,
         position: match.index,
-        isExternal
+        isExternal,
       } satisfies LinkParse
     })
     .filter((item, index, arr) => arr.findIndex(i => i.position === item.position) === index)

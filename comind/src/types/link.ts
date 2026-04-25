@@ -1,26 +1,15 @@
 export interface Link {
   id: string
   sourceBlockId: string
-  targetPageId: string | null
+  targetPageId: string
   displayText: string
-  position?: number
-  linkType: 'internal' | 'external'
-  createdAt: string
+  createdAt: number
 }
 
 export interface LinkRecord {
-  id?: number
-  sourceBlockId: string
-  targetPageId: string | null
-  displayText: string
-  position?: number
-  linkType: 'internal' | 'external'
-  createdAt: number
-}
-
-export interface PageRecord {
   id: string
-  title: string
+  sourceBlockId: string
+  targetPageId: string
+  displayText: string
   createdAt: number
-  updatedAt: number
 }

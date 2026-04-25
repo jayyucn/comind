@@ -1,29 +1,27 @@
 export interface Block {
   id: string
-  content: string
-  parentId: string | null
   pageId: string
-  left: number
-  createdAt: string
-  updatedAt: string
-  isPage: boolean
-  title?: string
-  properties?: Record<string, any>
-  collapsed?: boolean
+  parentId: string | null
+  leftId: string | null
+  content: string
+  format: Record<string, any>
+  type: 'bullet' | 'property' | 'query' | 'embed'
+  properties: Record<string, any>
+  createdAt: number
+  updatedAt: number
 }
 
 export interface BlockRecord {
   id: string
-  content: string
-  parentId: string | null
   pageId: string
-  left: number
+  parentId: string | null
+  leftId: string | null
+  content: string
+  format: string
+  type: string
+  properties: string
   createdAt: number
   updatedAt: number
-  isPage: boolean
-  title?: string
-  properties?: string
-  collapsed?: boolean
 }
 
 // 定义BlockWithPos接口的pos字段

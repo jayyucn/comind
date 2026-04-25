@@ -41,9 +41,26 @@ export function useJournal() {
     return journalPages.value.some(p => p.title === today.value)
   })
 
-  // 打开日记列表 Panel
-  function openJournalList() {
+  // 打开日记列表 Panel（同时确保今天日记存在）
+  async function openJournalList() {
+    // 确保今天日记存在（不存在则自动创建）
+    if (!todayJournalExists.value) {
+      await ensureTodayJournalExists()
+    }
     isOpen.value = true
+  }
+
+  // 确保今天的日记页面存在（若不存在则创建）
+  async function ensureTodayJournalExists(): Promise<void> {
+    const existing = journalPages.value.find(p => p.title === today.value)
+    if (existing) return
+
+    const newPage = await pageStore.createPage(today.value)
+    await blockStore.createBlock({
+      pageId: newPage.id,
+      content: today.value,
+      parentId: null,
+    })
   }
 
   // 关闭日记列表 Panel
@@ -67,40 +84,32 @@ export function useJournal() {
     closeJournalList()
   }
 
-  // 创建今天日记（仅当天可创建）
-  async function createTodayJournal() {
-    // 检查是否已存在
-    const existing = journalPages.value.find(p => p.title === today.value)
-    if (existing) {
-      await pageStore.openPage(existing.id)
-      closeJournalList()
-      return
+  // 打开今天的日记（若不存在则先创建）
+  async function openOrCreateTodayJournal() {
+    try {
+      await ensureTodayJournalExists()
+      const todayPage = journalPages.value.find(p => p.title === today.value)
+      if (todayPage) {
+        await pageStore.openPage(todayPage.id)
+        closeJournalList()
+      }
+    } catch (error) {
+      console.error('打开今日日记失败:', error)
     }
-
-    // 创建新日记 Page
-    const newPage = await pageStore.createPage(today.value)
-    
-    // 注入模板：第一个 Block 为日期
-    await blockStore.createBlock({
-      pageId: newPage.id,
-      content: today.value,
-      parentId: null,
-    })
-    
-    await pageStore.openPage(newPage.id)
-    closeJournalList()
   }
 
-  // 检查并创建今天日记（Session 级，只触发一次）
-  async function checkAndCreateTodayJournal() {
+  // 检查并确保今天日记存在（Session 级，只触发一次）
+  async function checkAndEnsureTodayJournal() {
     if (createdTodayThisSession.value) return  // 已处理过
     createdTodayThisSession.value = true
 
-    // 今天日记不存在 → 创建
     if (!todayJournalExists.value) {
-      await createTodayJournal()
+      await ensureTodayJournalExists()
     }
   }
+
+  // 兼容旧名称
+  const checkAndOpenOrCreateTodayJournal = checkAndEnsureTodayJournal
 
   return {
     isOpen: computed(() => isOpen.value),
@@ -111,7 +120,8 @@ export function useJournal() {
     openJournalList,
     closeJournalList,
     openJournal,
-    createTodayJournal,
-    checkAndCreateTodayJournal,
+    openOrCreateTodayJournal,
+    checkAndEnsureTodayJournal,
+    checkAndOpenOrCreateTodayJournal,
   }
 }

@@ -1,18 +1,19 @@
 import Dexie, { type Table } from 'dexie'
 import type { BlockRecord } from '../types/block'
-import type { LinkRecord, PageRecord } from '../types/link'
+import type { LinkRecord } from '../types/link'
+import type { PageRecord } from '../types/page'
 
 export class ComindDB extends Dexie {
   blocks!: Table<BlockRecord, string>
-  links!: Table<LinkRecord, number>
+  links!: Table<LinkRecord, string>
   pages!: Table<PageRecord, string>
 
   constructor() {
     super('comind')
-    this.version(1).stores({
-      blocks: 'id, parentId, pageId, left, createdAt, updatedAt',
-      links: '++id, sourceBlockId, targetPageId, linkType',
-      pages: 'id, title, createdAt, updatedAt'
+    this.version(2).stores({
+      blocks: 'id, pageId, parentId, leftId, createdAt, updatedAt',
+      links: 'id, sourceBlockId, targetPageId, displayText, createdAt',
+      pages: 'id, blockId, title, type, createdAt, updatedAt'
     })
   }
 }

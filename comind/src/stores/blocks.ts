@@ -4,21 +4,21 @@ import type { Block, BlockWithPos } from '../types/block'
 import { storage } from '../storage/indexedDB'
 import { generateUUID } from '../utils/id'
 import { debounce } from '../utils/debounce'
-import {
-  calculateNewLeft,
-  calculateOutdentLeft,
-  calculateIndentLeft,
-  reindexLeftValues,
-  validateLeftValues
-} from '../utils/leftCalculator'
 import { invalidateTagCache } from '../composables/useTagFilter'
 import { usePageStore } from './pages'
-
-const LEFT_STEP = 100 // 同级节点初始间隔
 
 /** 在 Block 数组中查找（工具函数，模块级别，不依赖 store） */
 function findBlockById(id: string, blocks: BlockWithPos[]): BlockWithPos | undefined {
   return blocks.find(b => b.id === id)
+}
+
+/** 按 leftId 排序的辅助函数 */
+function sortByLeftId(blocks: BlockWithPos[]): BlockWithPos[] {
+  return blocks.sort((a, b) => {
+    if (!a.leftId) return -1
+    if (!b.leftId) return 1
+    return a.leftId.localeCompare(b.leftId)
+  })
 }
 
 export const useBlockStore = defineStore('blocks', () => {
@@ -26,8 +26,8 @@ export const useBlockStore = defineStore('blocks', () => {
   const currentPageId = ref<string>('')
   const loading = ref(false)
 
-  /** 按 left 排序的扁平 Block 列表 */
-  const sortedBlocks = computed(() => [...blocks.value].sort((a, b) => a.left - b.left))
+  /** 按 leftId 排序的扁平 Block 列表 */
+  const sortedBlocks = computed(() => sortByLeftId([...blocks.value]))
 
   /** 构建 Block 树（parentId → children[]） */
   const blockTree = computed(() => {
@@ -37,9 +37,9 @@ export const useBlockStore = defineStore('blocks', () => {
       list.push(block)
       map.set(block.parentId, list)
     }
-    // 每组内按 left 排序
+    // 每组内按 leftId 排序
     for (const [key, list] of map) {
-      map.set(key, list.sort((a, b) => a.left - b.left))
+      map.set(key, sortByLeftId(list))
     }
     return map
   })
@@ -50,7 +50,7 @@ export const useBlockStore = defineStore('blocks', () => {
   }
 
   /** 加载指定 Page 的 Block 树 */
-  async function loadPage(pageId: string) {
+  async function loadPageBlocks(pageId: string) {
     loading.value = true
     try {
       blocks.value = await storage.getBlockTree(pageId)
@@ -79,17 +79,6 @@ export const useBlockStore = defineStore('blocks', () => {
   }
 
   /**
-   * 对 siblings 数组重排 left 值（完全重排策略）
-   * @param siblings 按 left 排序的 Block 数组
-   * @param step 间隔，默认 100
-   */
-  function recalculateLeftValues(siblings: BlockWithPos[], step = LEFT_STEP) {
-    siblings.forEach((block, index) => {
-      block.left = step * (index + 1)
-    })
-  }
-
-  /**
    * 检查 targetId 是否是 blockId 的后代
    * @param targetId 要检查的节点（移动目标）
    * @param blockId 潜在祖先（被拖拽的 block）
@@ -114,27 +103,22 @@ export const useBlockStore = defineStore('blocks', () => {
   ): Promise<BlockWithPos> {
     const parentId = opts.parentId ?? null
 
-    // 如果传入了 left 值，直接使用；否则计算新的 left 值
-    let left: number
-    if (opts.left !== undefined) {
-      left = opts.left
-    } else {
-      const siblings = blocks.value.filter(b => b.parentId === parentId && b.pageId === opts.pageId)
-      left = calculateNewLeft(siblings)
-    }
+    // 找到最后一个同级 Block，设置 leftId
+    const siblings = blocks.value.filter(b => b.parentId === parentId && b.pageId === opts.pageId)
+    const sortedSiblings = sortByLeftId(siblings)
+    const lastSibling = sortedSiblings[sortedSiblings.length - 1]
 
     const block: BlockWithPos = {
       id: generateUUID(),
       content: opts.content,
       parentId,
       pageId: opts.pageId,
-      left,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      isPage: opts.isPage ?? false,
-      title: opts.title,
-      properties: opts.properties,
-      collapsed: opts.collapsed ?? false,
+      leftId: lastSibling?.id ?? null,
+      format: opts.format ?? {},
+      type: opts.type ?? 'bullet',
+      properties: opts.properties ?? {},
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
       pos: 0
     }
 
@@ -158,9 +142,8 @@ export const useBlockStore = defineStore('blocks', () => {
     const textOffset = Math.max(0, cursorPos - 1)
     const before = block.content.slice(0, textOffset)
     const after = block.content.slice(textOffset)
-
     block.content = before
-    block.updatedAt = new Date().toISOString()
+    block.updatedAt = Date.now()
     await storage.saveBlock(block)
 
     const childBlocks = getChildren(block.id)
@@ -170,18 +153,10 @@ export const useBlockStore = defineStore('blocks', () => {
 
     const newParentId = isCreateChild ? block.id : block.parentId
 
-    const siblings = blocks.value.filter(
-      b => b.parentId === newParentId && b.pageId === block.pageId
-    )
-    if(isCreateChild) {
-      blockId = ''
-    }
-
     const newBlock = await createBlock({
       pageId: block.pageId,
       content: after,
       parentId: newParentId,
-      left: calculateNewLeft(siblings,  blockId),
       pos: 0
     })
 
@@ -191,7 +166,7 @@ export const useBlockStore = defineStore('blocks', () => {
   /**
    * 找到指定 Block 在文档序中的前一个 Block（树前序遍历前驱）。
    * 算法：
-   *   1. 找同级前兄弟（same parentId, left < block.left, left 最大的）
+   *   1. 找同级前兄弟（same parentId, 按 leftId 排序）
    *   2. 有前兄弟 → 取其最深末端子节点
    *   3. 无前兄弟 → 返回父节点（顶层块无前驱）
    */
@@ -200,10 +175,17 @@ export const useBlockStore = defineStore('blocks', () => {
     if (!block) return undefined
 
     const siblings = blocks.value
-      .filter(b => b.parentId === block.parentId && b.pageId === block.pageId && b.left < block.left)
-      .sort((a, b) => b.left - a.left)
+      .filter(b => b.parentId === block.parentId && b.pageId === block.pageId)
+      .sort((a, b) => {
+        if (a.id === block.id) return 1
+        if (b.id === block.id) return -1
+        if (!a.leftId) return -1
+        if (!b.leftId) return 1
+        return a.leftId.localeCompare(b.leftId)
+      })
 
-    const prevSibling = siblings[0]
+    const blockIndex = siblings.findIndex(b => b.id === block.id)
+    const prevSibling = blockIndex > 0 ? siblings[blockIndex - 1] : undefined
 
     if (prevSibling) {
       // 有前兄弟 → 找最深末端子节点
@@ -211,12 +193,16 @@ export const useBlockStore = defineStore('blocks', () => {
       const childrenOf = (id: string) =>
         blocks.value
           .filter(b => b.parentId === id && b.pageId === block.pageId)
-          .sort((a, b) => b.left - a.left)
+          .sort((a, b) => {
+            if (!a.leftId) return -1
+            if (!b.leftId) return 1
+            return a.leftId.localeCompare(b.leftId)
+          })
 
       while (true) {
         const children = childrenOf(current.id)
         if (children.length === 0) break
-        current = children[children.length - 1] // 同级 left 最大的子节点
+        current = children[children.length - 1] // 同级最后一个子节点
       }
       return current
     }
@@ -241,17 +227,30 @@ export const useBlockStore = defineStore('blocks', () => {
     // 1. 有子节点 → 返回第一个子节点
     const children = blocks.value
       .filter(b => b.parentId === block.id && b.pageId === block.pageId)
-      .sort((a, b) => a.left - b.left)
+      .sort((a, b) => {
+        if (!a.leftId) return -1
+        if (!b.leftId) return 1
+        return a.leftId.localeCompare(b.leftId)
+      })
     if (children.length > 0) {
       return children[0]
     }
 
     // 2. 找同级后兄弟
     const siblings = blocks.value
-      .filter(b => b.parentId === block.parentId && b.pageId === block.pageId && b.left > block.left)
-      .sort((a, b) => a.left - b.left)
-    if (siblings.length > 0) {
-      return siblings[0]
+      .filter(b => b.parentId === block.parentId && b.pageId === block.pageId)
+      .sort((a, b) => {
+        if (a.id === block.id) return -1
+        if (b.id === block.id) return 1
+        if (!a.leftId) return -1
+        if (!b.leftId) return 1
+        return a.leftId.localeCompare(b.leftId)
+      })
+
+    const blockIndex = siblings.findIndex(b => b.id === block.id)
+    const nextSibling = blockIndex < siblings.length - 1 ? siblings[blockIndex + 1] : undefined
+    if (nextSibling) {
+      return nextSibling
     }
 
     // 3. 向上回溯找祖先的后兄弟
@@ -261,10 +260,19 @@ export const useBlockStore = defineStore('blocks', () => {
       if (!parent) break
 
       const parentSiblings = blocks.value
-        .filter(b => b.parentId === parent.parentId && b.pageId === block.pageId && b.left > parent.left)
-        .sort((a, b) => a.left - b.left)
-      if (parentSiblings.length > 0) {
-        return parentSiblings[0]
+        .filter(b => b.parentId === parent.parentId && b.pageId === block.pageId)
+        .sort((a, b) => {
+          if (a.id === parent.id) return -1
+          if (b.id === parent.id) return 1
+          if (!a.leftId) return -1
+          if (!b.leftId) return 1
+          return a.leftId.localeCompare(b.leftId)
+        })
+
+      const parentIndex = parentSiblings.findIndex(b => b.id === parent.id)
+      const nextParentSibling = parentIndex < parentSiblings.length - 1 ? parentSiblings[parentIndex + 1] : undefined
+      if (nextParentSibling) {
+        return nextParentSibling
       }
 
       currentParentId = parent.parentId
@@ -285,7 +293,7 @@ export const useBlockStore = defineStore('blocks', () => {
     prev.content += block.content
     // ProseMirror position = text offset + 1 (paragraph opening tag)
     const cursorPos = prevContentLen + 1
-    prev.updatedAt = new Date().toISOString()
+    prev.updatedAt = Date.now()
     await storage.saveBlock(prev)
 
     await deleteBlock(blockId)
@@ -298,18 +306,29 @@ export const useBlockStore = defineStore('blocks', () => {
     if (!block) return
 
     const siblings = blocks.value
-      .filter(b => b.parentId === block.parentId && b.pageId === block.pageId && b.left < block.left)
-      .sort((a, b) => b.left - a.left)
+      .filter(b => b.parentId === block.parentId && b.pageId === block.pageId)
+      .sort((a, b) => {
+        if (a.id === block.id) return 1
+        if (b.id === block.id) return -1
+        if (!a.leftId) return -1
+        if (!b.leftId) return 1
+        return a.leftId.localeCompare(b.leftId)
+      })
 
-    const prev = siblings[0]
+    const blockIndex = siblings.findIndex(b => b.id === block.id)
+    const prev = blockIndex > 0 ? siblings[blockIndex - 1] : undefined
     if (!prev) return
 
-    // 计算新的 left 值
-    const parent = prev
-    const children = blocks.value.filter(b => b.parentId === parent.id)
-    block.parentId = parent.id
-    block.left = calculateIndentLeft(parent, children)
-    block.updatedAt = new Date().toISOString()
+    // 更新 parentId 和 leftId
+    block.parentId = prev.id
+    
+    // 找到新父节点的最后一个子节点
+    const children = blocks.value.filter(b => b.parentId === prev.id)
+    const sortedChildren = sortByLeftId(children)
+    const lastChild = sortedChildren[sortedChildren.length - 1]
+    block.leftId = lastChild?.id ?? null
+    block.createdAt = Date.now()
+    block.updatedAt = Date.now()
 
     _scheduleSave(block)
   }
@@ -322,12 +341,17 @@ export const useBlockStore = defineStore('blocks', () => {
     const parent = findBlockById(block.parentId, blocks.value)
     if (!parent) return
 
-    // 计算新的 left 值
+    // 更新 parentId
     const newParentId = parent.parentId
-    const siblings = blocks.value.filter(b => b.parentId === newParentId && b.pageId === block.pageId)
     block.parentId = newParentId
-    block.left = calculateOutdentLeft(parent, siblings)
-    block.updatedAt = new Date().toISOString()
+    
+    // 找到新父节点的最后一个子节点
+    const siblings = blocks.value.filter(b => b.parentId === newParentId && b.pageId === block.pageId)
+    const sortedSiblings = sortByLeftId(siblings)
+    const lastSibling = sortedSiblings[sortedSiblings.length - 1]
+    block.leftId = lastSibling?.id ?? null
+    
+    block.updatedAt = Date.now()
 
     _scheduleSave(block)
   }
@@ -346,7 +370,7 @@ export const useBlockStore = defineStore('blocks', () => {
     toParentId: string | null
     newIndex: number
   }) {
-    const { blockId, fromParentId, toParentId, newIndex } = opts
+    const { blockId, toParentId, newIndex } = opts
     const block = findBlockById(blockId, blocks.value)
     if (!block) return
 
@@ -358,49 +382,51 @@ export const useBlockStore = defineStore('blocks', () => {
 
     const pageId = block.pageId
 
-    // 2. 同一 parent 内移动
-    if (fromParentId === toParentId) {
-      const siblings = blocks.value
-        .filter(b => b.parentId === toParentId && b.pageId === pageId)
-        .sort((a, b) => a.left - b.left)
+    // 2. 更新 block 的 parentId
+    block.parentId = toParentId
 
-      const fromIndex = siblings.findIndex(b => b.id === blockId)
-      if (fromIndex === -1) return
+    // 3. 重新计算所有相关 Block 的 leftId
+    // 这里简化处理，只更新移动的 Block 的 leftId
+    // 实际应用中可能需要更复杂的逻辑来维护 leftId 链
+    
+    // 找到目标位置的前后 Block
+    const targetSiblings = blocks.value
+      .filter(b => b.parentId === toParentId && b.pageId === pageId && b.id !== blockId)
+      .sort((a, b) => {
+        if (!a.leftId) return -1
+        if (!b.leftId) return 1
+        return a.leftId.localeCompare(b.leftId)
+      })
 
-      const [moved] = siblings.splice(fromIndex, 1)
-      const targetIndex = Math.min(newIndex, siblings.length)
-      siblings.splice(targetIndex, 0, moved)
-      recalculateLeftValues(siblings)
-
+    if (newIndex === 0) {
+      // 移动到第一个位置
+      block.leftId = null
+      // 更新原第一个 Block 的 leftId 为当前 Block 的 id
+      if (targetSiblings.length > 0) {
+        const firstSibling = targetSiblings[0]
+        firstSibling.leftId = block.id
+        firstSibling.updatedAt = Date.now()
+        _scheduleSave(firstSibling)
+      }
+    } else if (newIndex >= targetSiblings.length) {
+      // 移动到最后一个位置
+      const lastSibling = targetSiblings[targetSiblings.length - 1]
+      block.leftId = lastSibling?.id ?? null
     } else {
-      // 3. 跨 parent 移动
-
-      // 3a. 先更新 block 的 parentId（必须在获取 source siblings 之后）
-      block.parentId = toParentId
-
-      // 3b. 从 source parent 移除后重排
-      const sourceSiblings = blocks.value
-        .filter(b => b.parentId === fromParentId && b.pageId === pageId && b.id !== blockId)
-        .sort((a, b) => a.left - b.left)
-      recalculateLeftValues(sourceSiblings)
-
-      // 3c. 插入到 target parent 后重排
-      const targetSiblings = blocks.value
-        .filter(b => b.parentId === toParentId && b.pageId === pageId && b.id !== blockId)
-        .sort((a, b) => a.left - b.left)
-      const targetIndex = Math.min(newIndex, targetSiblings.length)
-      targetSiblings.splice(targetIndex, 0, block)
-      recalculateLeftValues(targetSiblings)
+      // 移动到中间位置
+      const prevSibling = targetSiblings[newIndex - 1]
+      const nextSibling = targetSiblings[newIndex]
+      block.leftId = prevSibling?.id ?? null
+      if (nextSibling) {
+        nextSibling.leftId = block.id
+        nextSibling.updatedAt = Date.now()
+        _scheduleSave(nextSibling)
+      }
     }
 
-    // 4. 更新 updatedAt 并批量保存（防抖）
-    const updatedBlocks = blocks.value.filter(
-      b => b.pageId === pageId && (b.parentId === fromParentId || b.parentId === toParentId)
-    )
-    for (const b of updatedBlocks) {
-      b.updatedAt = new Date().toISOString()
-      _scheduleSave(b)
-    }
+    // 4. 更新 updatedAt 并保存
+    block.updatedAt = Date.now()
+    _scheduleSave(block)
   }
 
   /** 删除 Block（删除前取消该 block 的 pending save，防止死块复活） */
@@ -415,6 +441,20 @@ export const useBlockStore = defineStore('blocks', () => {
       await deleteBlock(child.id)
     }
 
+    // 找到当前 Block 的下一个兄弟，更新其 leftId 为当前 Block 的 leftId
+    const block = findBlockById(blockId, blocks.value)
+    if (block) {
+      const siblings = blocks.value.filter(b => b.parentId === block.parentId && b.pageId === block.pageId)
+      const sortedSiblings = sortByLeftId(siblings)
+      const blockIndex = sortedSiblings.findIndex(b => b.id === blockId)
+      if (blockIndex < sortedSiblings.length - 1) {
+        const nextSibling = sortedSiblings[blockIndex + 1]
+        nextSibling.leftId = block.leftId
+        nextSibling.updatedAt = Date.now()
+        _scheduleSave(nextSibling)
+      }
+    }
+
     blocks.value = blocks.value.filter(b => b.id !== blockId)
     await storage.deleteBlock(blockId)
     invalidateTagCache()
@@ -425,7 +465,7 @@ export const useBlockStore = defineStore('blocks', () => {
     const block = findBlockById(blockId, blocks.value)
     if (!block) return
     block.content = content
-    block.updatedAt = new Date().toISOString()
+    block.updatedAt = Date.now()
     _scheduleSave(block)
     invalidateTagCache()
 
@@ -438,31 +478,21 @@ export const useBlockStore = defineStore('blocks', () => {
     }
   }
 
-  /** 重新索引 left 值以修复间隙和确保一致性 */
-  async function reindexBlocks() {
-    const updates = reindexLeftValues(blocks.value)
-
-    for (const update of updates) {
-      const block = findBlockById(update.id, blocks.value)
-      if (block && block.left !== update.left) {
-        block.left = update.left
-        block.updatedAt = new Date().toISOString()
-        _scheduleSave(block)
-      }
-    }
-  }
-
-  /** 验证 left 值的一致性 */
-  function validateBlocks() {
-    return validateLeftValues(blocks.value)
-  }
-
-  /** 更新 Block 的折叠状态并持久化 */
-  async function updateBlockCollapsed(blockId: string, collapsed: boolean) {
+  /** 更新 Block 的格式 */
+  async function updateBlockFormat(blockId: string, format: Record<string, any>) {
     const block = findBlockById(blockId, blocks.value)
     if (!block) return
-    block.collapsed = collapsed
-    block.updatedAt = new Date().toISOString()
+    block.format = { ...block.format, ...format }
+    block.updatedAt = Date.now()
+    _scheduleSave(block)
+  }
+
+  /** 更新 Block 的属性 */
+  async function updateBlockProperties(blockId: string, properties: Record<string, any>) {
+    const block = findBlockById(blockId, blocks.value)
+    if (!block) return
+    block.properties = { ...block.properties, ...properties }
+    block.updatedAt = Date.now()
     _scheduleSave(block)
   }
 
@@ -473,7 +503,7 @@ export const useBlockStore = defineStore('blocks', () => {
     currentPageId,
     loading,
     getChildren,
-    loadPage,
+    loadPageBlocks,
     createBlock,
     splitBlock,
     mergeWithPrevious,
@@ -484,9 +514,8 @@ export const useBlockStore = defineStore('blocks', () => {
     moveBlock,
     deleteBlock,
     updateBlockContent,
-    reindexBlocks,
-    validateBlocks,
-    isDescendantOf,
-    updateBlockCollapsed
+    updateBlockFormat,
+    updateBlockProperties,
+    isDescendantOf
   }
 })

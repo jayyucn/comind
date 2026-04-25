@@ -1,7 +1,7 @@
 # Phase 1.1 开发文档
 
-> 版本：v0.2
-> 日期：2026-04-24
+> 版本：v0.3
+> 日期：2026-04-25
 > 状态：开发中
 > 关联文档：[phase-1-1-plan.md](./phase-1-1-plan.md)
 
@@ -62,23 +62,20 @@ const currentJournalPageId = ref<string>() // 从列表进入时记录，用于�
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│ ← 返回    日记列表                            [2026-04] ▼  │  ← Header
+│ ← 返回    日记列表                               📅 2026-04 ▼│  ← Header
 ├────────────────────────────────────────────────────────────┤
 │                                                            │
 │  📅 2026-04-23  周四                              今天     │  ← 日期标题（可点击）
 │  ┌──────────────────────────────────────────────────────┐  │
-│  │                                                      │  │
-│  │  [日记内容 Block 列表 - 可直接编辑]                   │  │  ← 内容区（内联编辑）
-│  │                                                      │  │
+│  │  [日记内容 Block 列表 - 可直接编辑,高度根据内容自动扩展]  │  │  ← 内容区（内联编辑）
 │  │  • 第一条 Block                                      │  │
 │  │    • 子 Block                                        │  │
 │  │  • 第二条 Block                                      │  │
-│  │                                                      │  │
 │  └──────────────────────────────────────────────────────┘  │
 │                                                            │
 │  📅 2026-04-22  周三                                      │
 │  ┌──────────────────────────────────────────────────────┐  │
-│  │  [日记内容 Block 列表 - 可直接编辑]                   │  │
+│  │  [日记内容 Block 列表 - 高度根据内容自动扩展]          │  │
 │  └──────────────────────────────────────────────────────┘  │
 │                                                            │
 └────────────────────────────────────────────────────────────┘
@@ -98,10 +95,13 @@ const currentJournalPageId = ref<string>() // 从列表进入时记录，用于�
         <span>返回</span>
       </button>
       <h1 class="journal-title">日记列表</h1>
-      <div class="month-picker">
-        <button class="month-btn" @click="prevMonth">◀</button>
-        <span class="month-label">{{ monthLabel }}</span>
-        <button class="month-btn" @click="nextMonth">▶</button>
+      <div class="date-picker">
+        <input
+          type="month"
+          class="month-input"
+          :value="monthValue"
+          @input="onMonthChange"
+        />
       </div>
     </header>
 
@@ -114,8 +114,8 @@ const currentJournalPageId = ref<string>() // 从列表进入时记录，用于�
         :class="{ 'is-today': journal.title === today }"
       >
         <!-- 日期标题（点击跳转独立页面） -->
-        <header 
-          class="entry-header" 
+        <header
+          class="entry-header"
           @click="openJournalPage(journal.id)"
         >
           <span class="entry-icon">📅</span>
@@ -124,9 +124,9 @@ const currentJournalPageId = ref<string>() // 从列表进入时记录，用于�
           <span v-if="journal.title === today" class="today-badge">今天</span>
         </header>
 
-        <!-- 内容区：内联 Block 列表（可直接编辑） -->
+        <!-- 内容区：内联 Block 列表（高度根据内容自动扩展） -->
         <div class="entry-content">
-          <BlockList 
+          <BlockList
             :page-id="journal.id"
             :top-level-only="false"
           />
@@ -185,38 +185,27 @@ const currentJournalPageId = ref<string>() // 从列表进入时记录，用于�
 .back-btn:hover { background: var(--bg-hover); }
 ```
 
-**月份选择器：**
+**月份选择器（日期选择器）：**
 ```css
-.month-picker {
+.date-picker {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
 }
 
-.month-btn {
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-hover);
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-size: 12px;
-  color: var(--text-secondary);
-  transition: background 80ms;
-}
-.month-btn:hover { background: var(--bg-active); }
-
-.month-label {
+.month-input {
   font-family: var(--font-mono);
   font-size: 14px;
   font-weight: 500;
   color: var(--text-primary);
-  min-width: 80px;
-  text-align: center;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: border-color 80ms;
 }
+.month-input:hover { border-color: var(--border-active); }
+.month-input:focus { outline: none; border-color: var(--accent); }
 ```
 
 **日记条目：**
@@ -266,31 +255,30 @@ const currentJournalPageId = ref<string>() // 从列表进入时记录，用于�
 
 .entry-content {
   padding: var(--space-3) var(--space-4) var(--space-4);
+  height: auto;
+  min-height: 0;
 }
 ```
 
-### 3.4 月份筛选器
+### 3.4 日期筛选器
 
-**实现：** 使用 `date-fns` 处理月份切换
+**实现：** 使用原生 `type="month"` 的 `<input>` 元素，配合 `date-fns` 处理筛选逻辑。
 
 ```typescript
-import { startOfMonth, subMonths, addMonths, format } from 'date-fns'
+import { startOfMonth, format, parse } from 'date-fns'
 
 const currentMonth = ref<Date>(startOfMonth(new Date()))
 
-const monthLabel = computed(() => format(currentMonth.value, 'yyyy-MM'))
+const monthValue = computed(() => format(currentMonth.value, 'yyyy-MM'))
 
 const filteredJournals = computed(() => {
-  const monthStr = format(currentMonth.value, 'yyyy-MM')
+  const monthStr = monthValue.value
   return journalPages.value.filter(p => p.title.startsWith(monthStr))
 })
 
-function prevMonth() {
-  currentMonth.value = subMonths(currentMonth.value, 1)
-}
-
-function nextMonth() {
-  currentMonth.value = addMonths(currentMonth.value, 1)
+function onMonthChange(e: Event) {
+  const value = (e.target as HTMLInputElement).value
+  currentMonth.value = parse(value, 'yyyy-MM', new Date())
 }
 ```
 
@@ -603,7 +591,7 @@ npm install date-fns
 | P0 | `JournalListView.vue` 组件 | 4h | 核心功能 |
 | P0 | App.vue 视图切换集成 | 1.5h | 状态联动 |
 | P0 | `SidebarJournal.vue` 触发逻辑 | 0.5h | 入口联动 |
-| P1 | 月份筛选器（date-fns） | 2h | 可用性增强 |
+| P1 | 日期筛选器（原生 month input） | 1h | 使用原生日期选择器 |
 | P2 | 动效优化（entry 展开/折叠） | 2h | 体验优化 |
 
 ---
@@ -618,10 +606,10 @@ npm install date-fns
 | 单编辑器原则 | 同一时间只有一个 Block 处于编辑态 |
 | 标题导航 | 点击日记标题跳转到该日记独立页面 |
 | 返回 | 点击返回按钮回到 Journal 列表 |
-| 月份切换 | 左右箭头可切换月份，列表实时更新 |
+| 日期筛选 | 使用日期选择器筛选月份，列表实时更新 |
 | 今天高亮 | 今天日记条目有特殊样式标识 |
 | Backlinks | Journal 列表视图不显示 Backlinks |
 
 ---
 
-*文档 v0.2，开发中。*
+*文档 v0.3，开发中。*

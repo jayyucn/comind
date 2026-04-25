@@ -1,42 +1,79 @@
 import { db } from './db'
 import type { Block, BlockRecord } from '../types/block'
-import type { LinkRecord, PageRecord } from '../types/link'
+import type { LinkRecord } from '../types/link'
+import type { Page, PageRecord } from '../types/page'
 import { parseBlockLinks, type LinkParse } from '../utils/parser'
 import { generateUUID } from '../utils/id'
 
 function recordToBlock(record: BlockRecord): Block {
   return {
     id: record.id,
-    content: record.content,
-    parentId: record.parentId,
     pageId: record.pageId,
-    left: record.left,
-    createdAt: new Date(record.createdAt).toISOString(),
-    updatedAt: new Date(record.updatedAt).toISOString(),
-    isPage: record.isPage,
+    parentId: record.parentId,
+    leftId: record.leftId,
+    content: record.content,
+    format: JSON.parse(record.format),
+    type: record.type as 'bullet' | 'property' | 'query' | 'embed',
+    properties: JSON.parse(record.properties),
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt
+  }
+}
+
+function blockToRecord(block: Block): BlockRecord {
+  return {
+    id: block.id,
+    pageId: block.pageId,
+    parentId: block.parentId,
+    leftId: block.leftId,
+    content: block.content,
+    format: JSON.stringify(block.format),
+    type: block.type,
+    properties: JSON.stringify(block.properties),
+    createdAt: new Date(block.createdAt).getTime(),
+    updatedAt: new Date(block.updatedAt).getTime()
+  }
+}
+
+function pageToRecord(page: Page): PageRecord {
+  return {
+    id: page.id,
+    blockId: page.blockId,
+    title: page.title,
+    type: page.type,
+    icon: page.icon,
+    cover: page.cover,
+    aliases: JSON.stringify(page.aliases),
+    filePath: page.filePath,
+    childrenCount: page.childrenCount,
+    wordCount: page.wordCount,
+    createdAt: page.createdAt,
+    updatedAt: page.updatedAt
+  }
+}
+
+function recordToPage(record: PageRecord): Page {
+  return {
+    id: record.id,
+    blockId: record.blockId,
     title: record.title,
-    properties: record.properties ? JSON.parse(record.properties) : undefined,
-    collapsed: record.collapsed
+    type: record.type as 'normal' | 'journal',
+    icon: record.icon,
+    cover: record.cover,
+    aliases: JSON.parse(record.aliases),
+    filePath: record.filePath,
+    childrenCount: record.childrenCount,
+    wordCount: record.wordCount,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt
   }
 }
 
 export class IndexedDBAdapter {
   async saveBlock(block: Block): Promise<void> {
-    await db.transaction('rw', db.links, db.pages, db.blocks, async () => {
+    await db.transaction('rw', db.links, db.blocks, db.pages, async () => {
       // 保存 Block 记录
-      await db.blocks.put({
-        id: block.id,
-        content: block.content,
-        parentId: block.parentId,
-        pageId: block.pageId,
-        left: block.left,
-        createdAt: new Date(block.createdAt).getTime(),
-        updatedAt: Date.now(),
-        isPage: block.isPage,
-        title: block.title,
-        properties: block.properties ? JSON.stringify(block.properties) : undefined,
-        collapsed: block.collapsed
-      })
+      await db.blocks.put(blockToRecord(block))
 
       // 解析并保存链接
       await this.saveLinks(block.id, block.pageId, parseBlockLinks(block.content))
@@ -48,38 +85,42 @@ export class IndexedDBAdapter {
     await db.links.where('sourceBlockId').equals(sourceBlockId).delete()
 
     for (const link of linkParses) {
-      let targetPageId: string | null = null
-
       if (!link.isExternal) {
         // 内部链接：查找或创建目标 Page
         let targetPage = await db.pages.where('title').equals(link.targetTitle).first()
 
         if (!targetPage) {
           const pageId = generateUUID()
-          targetPage = {
+          targetPage = pageToRecord({
             id: pageId,
+            blockId: null,
             title: link.targetTitle,
+            type: 'normal',
+            icon: null,
+            cover: null,
+            aliases: [],
+            filePath: null,
+            childrenCount: 0,
+            wordCount: 0,
             createdAt: Date.now(),
             updatedAt: Date.now()
-          }
+          })
           await db.pages.put(targetPage)
         }
-        targetPageId = targetPage.id
-      }
 
-      await db.links.add({
-        sourceBlockId,
-        targetPageId,
-        displayText: link.displayText,
-        position: link.position,
-        linkType: link.isExternal ? 'external' : 'internal',
-        createdAt: Date.now()
-      })
+        await db.links.add({
+          id: generateUUID(),
+          sourceBlockId,
+          targetPageId: targetPage.id,
+          displayText: link.displayText,
+          createdAt: Date.now()
+        })
+      }
     }
   }
 
   async getBlockTree(pageId: string): Promise<Block[]> {
-    // 按 parentId 分组，每组内按 left 排序，最后 DFS 展平
+    // 按 parentId 分组，每组内按 leftId 排序，最后 DFS 展平
     const allRecords = await db.blocks.where('pageId').equals(pageId).toArray()
     const blocks = allRecords.map(recordToBlock)
 
@@ -91,9 +132,13 @@ export class IndexedDBAdapter {
       byParent.get(parentId)!.push(block)
     }
 
-    // 每组按 left 排序
+    // 每组按 leftId 排序（使用 Gap 排序逻辑）
     for (const children of byParent.values()) {
-      children.sort((a, b) => a.left - b.left)
+      children.sort((a, b) => {
+        if (!a.leftId) return -1
+        if (!b.leftId) return 1
+        return a.leftId.localeCompare(b.leftId)
+      })
     }
 
     // DFS 展平: parentId=null 在前，然后递归 children
@@ -133,50 +178,67 @@ export class IndexedDBAdapter {
     })
   }
 
-  async getPage(title: string): Promise<PageRecord | undefined> {
-    return db.pages.where('title').equals(title).first()
+  async getPage(title: string): Promise<Page | undefined> {
+    const record = await db.pages.where('title').equals(title).first()
+    return record ? recordToPage(record) : undefined
   }
 
-  async createPage(title: string): Promise<PageRecord> {
-    const page: PageRecord = {
+  /**
+   * 创建 Page（仅创建 Page 记录，不创建关联的根 Block）
+   *
+   * 注意：此方法目前未被调用。正常页面创建应使用 createPageWithRootBlock，
+   * 确保页面创建后立即有一个可编辑的空 Block。
+   *
+   * 保留此方法用于以下场景：
+   * - 批量数据迁移：先批量创建页面占位，后续异步填充 Block
+   * - 模板系统：模板实例化时页面已包含预定义 Block
+   * - 外部数据同步：先创建页面占位，Block 内容由后续同步拉取
+   */
+  async createPage(title: string, type: 'normal' | 'journal' = 'normal'): Promise<Page> {
+    const now = Date.now()
+    const page: Page = {
       id: generateUUID(),
+      blockId: null,
       title,
-      createdAt: Date.now(),
-      updatedAt: Date.now()
+      type,
+      icon: null,
+      cover: null,
+      aliases: [],
+      filePath: null,
+      childrenCount: 0,
+      wordCount: 0,
+      createdAt: now,
+      updatedAt: now
     }
-    await db.pages.put(page)
+    await db.pages.put(pageToRecord(page))
     return page
   }
 
-  async getAllPages(): Promise<PageRecord[]> {
-    return db.pages.orderBy('title').toArray()
+  async getAllPages(): Promise<Page[]> {
+    const records = await db.pages.orderBy('title').toArray()
+    return records.map(recordToPage)
   }
 
   async getBacklinks(pageId: string): Promise<LinkRecord[]> {
     return db.links.where('targetPageId').equals(pageId).toArray()
   }
 
-  /** 重命名页面（事务：更新 pages 表 + blocks 表的 title） */
+  /** 重命名页面 */
   async renamePage(pageId: string, newTitle: string): Promise<void> {
-    await db.transaction('rw', [db.pages, db.blocks], async () => {
-      const page = await db.pages.get(pageId)
-      if (page) {
+    await db.transaction('rw', [db.pages], async () => {
+      const record = await db.pages.get(pageId)
+      if (record) {
+        const page = recordToPage(record)
         page.title = newTitle
         page.updatedAt = Date.now()
-        await db.pages.put(page)
-      }
-      const block = await db.blocks.get(pageId)
-      if (block) {
-        block.title = newTitle
-        block.updatedAt = Date.now()
-        await db.blocks.put(block)
+        await db.pages.put(pageToRecord(page))
       }
     })
   }
 
-  /** 更新 Page（主要用于 updatedAt 同步） */
-  async updatePage(page: PageRecord): Promise<void> {
-    await db.pages.put(page)
+  /** 更新 Page */
+  async updatePage(page: Page): Promise<void> {
+    await db.pages.put(pageToRecord(page))
   }
 
   /**
@@ -186,65 +248,136 @@ export class IndexedDBAdapter {
   async mergePage(sourceId: string, targetId: string): Promise<void> {
     await db.transaction('rw', [db.blocks, db.links, db.pages], async () => {
       // 获取源页面标题（用于文本替换）
-      const sourcePage = await db.pages.get(sourceId)
-      const targetPage = await db.pages.get(targetId)
-      if (!sourcePage || !targetPage) return
+      const sourceRecord = await db.pages.get(sourceId)
+      const targetRecord = await db.pages.get(targetId)
+      if (!sourceRecord || !targetRecord) return
+      const sourcePage = recordToPage(sourceRecord)
+      const targetPage = recordToPage(targetRecord)
       const sourceTitle = sourcePage.title
       const targetTitle = targetPage.title
 
-      // 1. 获取源页面所有 Block（排除 Page Block 本身）
+      // 1. 获取源页面所有 Block
       const sourceBlocks = await db.blocks.where('pageId').equals(sourceId).toArray()
-      const blocksToMove = sourceBlocks.filter(b => b.id !== sourceId)
+      const blocksToMove = sourceBlocks.map(recordToBlock)
 
-      // 2. 获取目标页面顶级 Block 的最大 left 值
-      const targetTopBlocks = await db.blocks
-        .where('pageId').equals(targetId)
-        .filter(b => b.parentId === null && b.id !== targetId)
-        .toArray()
-      const maxLeft = targetTopBlocks.reduce((max, b) => Math.max(max, b.left), 0)
-
-      // 3. 源页面顶级 Block 的 left 值重算（追加到目标页面末尾）
-      const sourceTopBlocks = blocksToMove.filter(b => b.parentId === null)
-      const leftMap = new Map<string, number>()
-      sourceTopBlocks.forEach((b, i) => {
-        leftMap.set(b.id, maxLeft + (i + 1) * 100)
-      })
-
-      // 4. 迁移所有 Block：更新 pageId + 替换文本中指向源页面的链接
+      // 2. 迁移所有 Block：更新 pageId + 替换文本中指向源页面的链接
       for (const block of blocksToMove) {
         block.pageId = targetId
         block.content = replacePageLink(block.content, sourceTitle, targetTitle)
         block.updatedAt = Date.now()
-        if (leftMap.has(block.id)) {
-          block.left = leftMap.get(block.id)!
-        }
-        await db.blocks.put(block)
+        await db.blocks.put(blockToRecord(block))
         // 重新解析并保存链接（内容已变）
         await this.saveLinks(block.id, targetId, parseBlockLinks(block.content))
       }
 
-      // 5. 替换目标页面 Block 文本中指向源页面的链接
-      //    （例如 B 引用了 A → [[A]] 要变成 [[B]]）
+      // 3. 替换目标页面 Block 文本中指向源页面的链接
       const targetBlocks = await db.blocks.where('pageId').equals(targetId).toArray()
-      for (const block of targetBlocks) {
+      for (const record of targetBlocks) {
+        const block = recordToBlock(record)
         const newContent = replacePageLink(block.content, sourceTitle, targetTitle)
         if (newContent !== block.content) {
           block.content = newContent
           block.updatedAt = Date.now()
-          await db.blocks.put(block)
+          await db.blocks.put(blockToRecord(block))
           await this.saveLinks(block.id, targetId, parseBlockLinks(block.content))
         }
       }
 
-      // 6. 删除所有指向源页面的链接记录（已通过 saveLinks 重新生成）
+      // 4. 删除所有指向源页面的链接记录（已通过 saveLinks 重新生成）
       await db.links.where('targetPageId').equals(sourceId).delete()
 
-      // 7. 删除源 Page 记录
+      // 5. 删除源 Page 记录
       await db.pages.delete(sourceId)
-
-      // 8. 删除源 Page Block
-      await db.blocks.delete(sourceId)
     })
+  }
+
+  /**
+   * 创建页面并关联根 Block
+   */
+  async createPageWithRootBlock(title: string, type: 'normal' | 'journal' = 'normal'): Promise<Page> {
+    const now = Date.now()
+
+    // 1. 创建根 Block
+    const rootBlock: Block = {
+      id: generateUUID(),
+      pageId: '', // 先空，后续更新
+      parentId: null,
+      leftId: null,
+      content: '',
+      format: {},
+      type: 'bullet',
+      properties: {},
+      createdAt: now,
+      updatedAt: now
+    }
+
+    // 2. 创建 Page
+    const page: Page = {
+      id: generateUUID(),
+      blockId: rootBlock.id,
+      title,
+      type,
+      icon: null,
+      cover: null,
+      aliases: [],
+      filePath: null,
+      childrenCount: 0,
+      wordCount: 0,
+      createdAt: now,
+      updatedAt: now
+    }
+
+    // 3. 更新 Block 的 pageId
+    rootBlock.pageId = page.id
+
+    // 4. 事务保存
+    await db.transaction('rw', [db.pages, db.blocks], async () => {
+      await db.pages.put(pageToRecord(page))
+      await db.blocks.put(blockToRecord(rootBlock))
+    })
+
+    return page
+  }
+
+  /**
+   * 删除页面（级联删除所有相关 Block 和 Link）
+   */
+  async deletePage(pageId: string): Promise<void> {
+    await db.transaction('rw', [db.pages, db.blocks, db.links], async () => {
+      // 1. 获取页面所有 Block
+      const blocks = await db.blocks.where('pageId').equals(pageId).toArray()
+      const blockIds = blocks.map(b => b.id)
+
+      // 2. 删除所有相关 Link
+      // 源 Block 在该页面内的链接
+      await db.links.where('sourceBlockId').anyOf(blockIds).delete()
+      // 目标指向该页面的链接
+      await db.links.where('targetPageId').equals(pageId).delete()
+
+      // 3. 删除所有 Block
+      await db.blocks.bulkDelete(blockIds)
+
+      // 4. 删除 Page
+      await db.pages.delete(pageId)
+    })
+  }
+
+  /**
+   * 同步页面统计信息
+   */
+  async syncPageStats(pageId: string): Promise<void> {
+    const blocks = await this.getBlockTree(pageId)
+    const count = blocks.length
+    const words = blocks.reduce((sum, b) => sum + b.content.split(/\s+/).length, 0)
+
+    const record = await db.pages.get(pageId)
+    if (record) {
+      const page = recordToPage(record)
+      page.childrenCount = count
+      page.wordCount = words
+      page.updatedAt = Date.now()
+      await db.pages.put(pageToRecord(page))
+    }
   }
 }
 

@@ -183,41 +183,52 @@
 import Dexie, { Table } from 'dexie'
 
 export interface BlockRecord {
-  id: string           // Block UUID
-  content: string      // Block 内容（Markdown 片段）
-  parentId: string | null  // 父 Block ID
-  pageId: string       // 所属 Page ID
-  order: number        // 同级排序
-  createdAt: number    // 创建时间戳
-  updatedAt: number    // 更新时间戳
-  collapsed?: boolean       // 折叠状态
+  id: string          // Block UUID
+  pageId: string      // 所属页面 ID（必须，非空）
+  parentId: string | null // 父 Block（null = 直接子节点）
+  leftId: string | null   // 左侧兄弟（Gap 排序）
+  content: string         // 纯文本
+  format: string          // JSON 字符串
+  type: string            // 'bullet' | 'property' | 'query' | 'embed'
+  properties: string      // JSON 字符串
+  createdAt: number       // IndexedDB 内部存 number 时间戳，adapter 负责与 ISO string 互转
+  updatedAt: number       // 同上
 }
 
 export interface PageRecord {
-  id: string           // Page UUID（也是 Block ID）
-  title: string        // Page 标题
-  createdAt: number
-  updatedAt: number
+  id: string
+  blockId: string | null  // 根 Block ID
+  title: string
+  type: 'normal' | 'journal'
+  icon: string | null
+  cover: string | null
+  aliases: string         // JSON 数组字符串
+  filePath: string | null
+  childrenCount: number   // 缓存
+  wordCount: number       // 缓存
+  createdAt: number       // number 时间戳
+  updatedAt: number       // number 时间戳
 }
 
 export interface LinkRecord {
-  id?: number          // 自增主键
-  sourceId: string     // 源 Block ID
-  targetId: string     // 目标 Page/Block ID
-  displayText?: string // 显示文本
+  id: string
+  sourceBlockId: string
+  targetPageId: string
+  displayText: string
+  createdAt: number
 }
 
 export class ComindDB extends Dexie {
   blocks!: Table<BlockRecord, string>
   pages!: Table<PageRecord, string>
-  links!: Table<LinkRecord, number>
+  links!: Table<LinkRecord, string>
 
   constructor() {
     super('comind')
     this.version(1).stores({
-      blocks: 'id, parentId, pageId, order, createdAt, updatedAt',
-      pages: 'id, title, createdAt, updatedAt',
-      links: '++id, sourceId, targetId'
+      blocks: 'id, pageId, parentId, leftId, createdAt, updatedAt',
+      pages: 'id, blockId, title, type, createdAt, updatedAt',
+      links: 'id, sourceBlockId, targetPageId'
     })
   }
 }

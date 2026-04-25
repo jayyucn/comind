@@ -1,11 +1,11 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { PageRecord } from '../types/link'
+import type { Page } from '../types/page'
 import { storage } from '../storage/indexedDB'
 import { useBlockStore } from './blocks'
 
 export const usePageStore = defineStore('pages', () => {
-  const pages = ref<PageRecord[]>([])
+  const pages = ref<Page[]>([])
   const currentPageId = ref<string>('')
   const loading = ref(false)
 
@@ -25,35 +25,25 @@ export const usePageStore = defineStore('pages', () => {
   async function openPage(pageId: string) {
     currentPageId.value = pageId
     const blockStore = useBlockStore()
-    await blockStore.loadPage(pageId)
+    await blockStore.loadPageBlocks(pageId)
   }
 
-  async function createPage(title: string): Promise<PageRecord> {
-    const page = await storage.createPage(title)
+  async function createPage(title: string, type: 'normal' | 'journal' = 'normal'): Promise<Page> {
+    const page = await storage.createPageWithRootBlock(title, type)
     pages.value.push(page)
-
-    // 同时在 blocks 中创建对应的 Page Block
-    const blockStore = useBlockStore()
-    await blockStore.createBlock({
-      pageId: page.id,
-      content: '',
-      isPage: true,
-      title
-    })
-
     return page
   }
 
-  function getPage(pageId: string): PageRecord | undefined {
+  function getPage(pageId: string): Page | undefined {
     return pages.value.find(p => p.id === pageId)
   }
 
-  function getPageByTitle(title: string): PageRecord | undefined {
+  function getPageByTitle(title: string): Page | undefined {
     return pages.value.find(p => p.title === title)
   }
 
   /** 重命名页面，返回重复信息（如有） */
-  async function renamePage(pageId: string, newTitle: string): Promise<{ duplicated?: PageRecord }> {
+  async function renamePage(pageId: string, newTitle: string): Promise<{ duplicated?: Page }> {
     if (!newTitle.trim()) return {}
     const page = getPage(pageId)
     if (!page) return {}
@@ -79,5 +69,14 @@ export const usePageStore = defineStore('pages', () => {
     }
   }
 
-  return { pages, currentPageId, loading, loadAllPages, openPage, createPage, getPage, getPageByTitle, renamePage, mergePage }
+  /** 删除页面 */
+  async function deletePage(pageId: string): Promise<void> {
+    await storage.deletePage(pageId)
+    pages.value = pages.value.filter(p => p.id !== pageId)
+    if (currentPageId.value === pageId) {
+      currentPageId.value = pages.value.length > 0 ? pages.value[0].id : ''
+    }
+  }
+
+  return { pages, currentPageId, loading, loadAllPages, openPage, createPage, getPage, getPageByTitle, renamePage, mergePage, deletePage }
 })

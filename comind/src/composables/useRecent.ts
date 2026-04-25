@@ -9,7 +9,7 @@ export function useRecent() {
   // 按 Page.updatedAt 降序排列
   const recentPages = computed(() => {
     return [...pageStore.pages]
-      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
       .slice(0, isExpanded.value ? 10 : 3)
   })
 

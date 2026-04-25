@@ -1,7 +1,7 @@
 # 存储格式规范
 
-> 版本：v0.5
-> 日期：2026-04-16
+> 版本：v0.6
+> 日期：2026-04-24
 > 状态：评审完成，已确认
 
 ***
@@ -28,46 +28,51 @@ import Dexie, { Table } from 'dexie'
 
 export interface BlockRecord {
   id: string
-  content: string
-  parentId: string | null
-  pageId: string
-  left: number            // 同级排序位置（与 data-model.md 一致）
+  pageId: string          // 所属页面 ID（必须，非空）
+  parentId: string | null // 父 Block（null = 直接子节点）
+  leftId: string | null   // 左侧兄弟（Gap 排序）
+  content: string         // 纯文本
+  format: string          // JSON 字符串
+  type: string            // 'bullet' | 'property' | 'query' | 'embed'
+  properties: string      // JSON 字符串
   createdAt: number       // IndexedDB 内部存 number 时间戳，adapter 负责与 ISO string 互转
   updatedAt: number       // 同上
-  isPage: boolean
-  title?: string
-  properties?: string    // JSON 字符串（与 data-model.md 一致）
-  collapsed?: boolean
 }
 
 export interface PageRecord {
   id: string
+  blockId: string | null  // 根 Block ID
   title: string
+  type: 'normal' | 'journal'
+  icon: string | null
+  cover: string | null
+  aliases: string         // JSON 数组字符串
+  filePath: string | null
+  childrenCount: number   // 缓存
+  wordCount: number       // 缓存
   createdAt: number       // number 时间戳
   updatedAt: number       // number 时间戳
 }
 
 export interface LinkRecord {
-  id?: number
+  id: string
   sourceBlockId: string
-  targetPageId: string | null
-  displayText?: string
-  position?: number       // 链接在 sourceBlock.content 中的字符偏移（与 data-model.md 一致）
-  linkType: 'internal' | 'external'  // 内部双链 vs 外部 URL（与 data-model.md 一致）
+  targetPageId: string
+  displayText: string
   createdAt: number
 }
 
 export class ComindDB extends Dexie {
   blocks!: Table<BlockRecord, string>
   pages!: Table<PageRecord, string>
-  links!: Table<LinkRecord, number>
+  links!: Table<LinkRecord, string>
 
   constructor() {
     super('comind')
     this.version(1).stores({
-      blocks: 'id, parentId, pageId, left, createdAt, updatedAt',
-      pages: 'id, title, createdAt, updatedAt',
-      links: '++id, sourceBlockId, targetPageId, linkType'
+      blocks: 'id, pageId, parentId, leftId, createdAt, updatedAt',
+      pages: 'id, blockId, title, type, createdAt, updatedAt',
+      links: 'id, sourceBlockId, targetPageId'
     })
   }
 }
@@ -76,7 +81,7 @@ export class ComindDB extends Dexie {
 **Phase 1 → Phase 2 迁移路径：**
 
 1. Phase 1 实现 `IndexedDBAdapter`（基于 Dexie）
-   - 字段名与 `data-model.md` 对齐：`left`（排序）、ISO 8601 string（时间）、JSON string（properties）
+   - 字段名与 `data-model.md` 对齐：`leftId`（排序）、ISO 8601 string（时间）、JSON string（properties）
    - IndexedDB 内部用 number 时间戳，adapter 负责转换
    - 详见本节上方 Phase 1 摘要代码
 2. Phase 2 抽象 `StorageAdapter` 接口（定义统一的 CRUD 契约）
@@ -165,6 +170,7 @@ export class ComindDB extends Dexie {
 [文件头：Page Properties]
 ---
 title:: 页面标题
+type:: normal
 created-at:: 2026-04-16T10:30:00Z
 updated-at:: 2026-04-16T11:00:00Z
 alias:: [别名1, 别名2]
@@ -185,21 +191,22 @@ alias:: [别名1, 别名2]
 ```
 Block 树                           Markdown 文件内容
 ─────────────────────────────────────────────────────────
-Page Block（isPage=true）         # 页面标题                    ← H1 = 页面级
-├── Block A（level=1）            ## Block A 内容               ← ## = 缩进 1
-│   ├── Block B（level=2）         ### Block B 内容              ← ### = 缩进 2
-│   └── Block C（level=2）         ### Block C 内容
-└── Block D（level=1）            ## Block D 内容
+Page（独立实体）                # 页面标题                    ← H1 = 页面标题
+├── 根 Block（parentId = null）  ## 根 Block 内容             ← ## = 根 Block
+│   ├── Block A（level=1）        ### Block A 内容            ← ### = 缩进 1
+│   │   ├── Block B（level=2）     #### Block B 内容           ← #### = 缩进 2
+│   │   └── Block C（level=2）     #### Block C 内容
+│   └── Block D（level=1）        ### Block D 内容
 ```
 
 **映射规则：**
 
 | Block 缩进层级 | Markdown 标题级别   | 说明        |
 | ---------- | --------------- | --------- |
-| 0（Page 自身） | H1（`#`）         | 仅标题行，无正文  |
-| 1          | H2（`##`）        | <br />    |
-| 2          | H3（`###`）       | <br />    |
-| 3+         | H4+（`####` 及以上） | 深层缩进      |
+| 根 Block    | H2（`##`）        | 页面内容的根节点 |
+| 1          | H3（`###`）       | <br />    |
+| 2          | H4（`####`）      | <br />    |
+| 3+         | H5+（`#####` 及以上） | 深层缩进      |
 | 无标题 Block  | 普通段落（无 `#` 前缀）  | 仅正文，无子节点时 |
 
 **Block 内不存缩进信息**，层级完全由标题级别决定。
@@ -213,33 +220,30 @@ Page Block（isPage=true）         # 页面标题                    ← H1 = �
 **示例：**
 
 ```markdown
-# 数据模型设计                    ← Page Block（H1）：content = ""
-## Block A 内容                  ← Block A（H2）：content = "Block A 内容"
-这是 Block A 的后续正文
+# 数据模型设计                    ← Page 标题
+## 根 Block 内容                  ← 根 Block（H2）：content = "根 Block 内容"
+这是根 Block 的后续正文
+### Block A 内容                 ← Block A（H3）：content = "Block A 内容"
+Block A 的正文段落
 ### Block B 内容                 ← Block B（H3）：content = "Block B 内容"
-Block B 的正文段落
-### Block C 内容                 ← Block C（H3）：content = "Block C 内容"
-## Block D                       ← Block D（H2）：content = "Block D"
 ```
 
 解析后各 Block.content：
 
-- Page：`""`
-- Block A：`"这是 Block A 的后续正文"`
-- Block B：`"Block B 的正文段落"`
-- Block C：`""`
-- Block D：`""`
+- 根 Block：`"这是根 Block 的后续正文"`
+- Block A：`"Block A 的正文段落"`
+- Block B：`""`
 
 ### 3.3 多行 Block
 
 Block 内容跨越多行时，使用 Markdown 引用块（`>`）或缩进段落：
 
 ```markdown
-## Block A 内容（第一行）
-这是 Block A 的第二行内容
-Block A 的第三行
+## 根 Block 内容（第一行）
+这是根 Block 的第二行内容
+根 Block 的第三行
 
-### 子 Block B
+### 子 Block A
 ```
 
 ### 3.4 Property 行与正文的区分
@@ -250,13 +254,14 @@ Block A 的第三行
 ```markdown
 ---
 title:: 页面标题
+type:: normal
 ---
 
-## Block A
+## 根 Block
 状态:: 进行中
-这是 Block A 的正文
+这是根 Block 的正文
 
-## Block B
+### Block A
 tags:: [设计, 数据]
 ```
 
@@ -272,55 +277,70 @@ tags:: [设计, 数据]
 ### 4.1 表结构
 
 ```sql
+CREATE TABLE Page (
+    id              TEXT PRIMARY KEY,     -- UUID v4
+    blockId         TEXT,                 -- 根 Block ID
+    title           TEXT NOT NULL,
+    type            TEXT NOT NULL DEFAULT 'normal',  -- 'normal' | 'journal'
+    icon            TEXT,
+    cover           TEXT,
+    aliases         TEXT,                 -- JSON 数组字符串
+    filePath        TEXT,
+    childrenCount   INTEGER NOT NULL DEFAULT 0,
+    wordCount       INTEGER NOT NULL DEFAULT 0,
+    createdAt       TEXT NOT NULL,        -- ISO 8601
+    updatedAt       TEXT NOT NULL,        -- ISO 8601
+    FOREIGN KEY (blockId) REFERENCES Block(id)
+);
+
 CREATE TABLE Block (
-    id          TEXT PRIMARY KEY,     -- UUID v4
-    content     TEXT NOT NULL DEFAULT '',
-    parentId    TEXT,                  -- NULL = 顶级；isPage = true 时为 Page Block
-    pageId      TEXT NOT NULL,        -- 所属页面 Block.id；Page Block 的 pageId = 自身 id
-    "left"      INTEGER NOT NULL DEFAULT 0,
-    createdAt   TEXT NOT NULL,        -- ISO 8601，创建时间
-    updatedAt   TEXT NOT NULL,        -- ISO 8601，文件 mtime 或编辑时间
-    isPage      INTEGER NOT NULL DEFAULT 0,  -- 1 = Page Block，0 = Bullet
-    title       TEXT,                  -- 页面显示名称，isPage = 1 时有效
-    properties  TEXT,                  -- JSON 字符串，建议不超过 4KB
-    filePath    TEXT                   -- 对应 Markdown 文件的相对路径（相对于工作区根目录）
+    id              TEXT PRIMARY KEY,     -- UUID v4
+    pageId          TEXT NOT NULL,        -- 所属页面 ID
+    parentId        TEXT,                 -- 父 Block ID
+    leftId          TEXT,                 -- 左侧兄弟 Block ID
+    content         TEXT NOT NULL DEFAULT '',
+    format          TEXT NOT NULL DEFAULT '{}',  -- JSON 字符串
+    type            TEXT NOT NULL DEFAULT 'bullet',  -- 'bullet' | 'property' | 'query' | 'embed'
+    properties      TEXT NOT NULL DEFAULT '{}',  -- JSON 字符串
+    createdAt       TEXT NOT NULL,        -- ISO 8601
+    updatedAt       TEXT NOT NULL,        -- ISO 8601
+    FOREIGN KEY (pageId) REFERENCES Page(id)
 );
 
 CREATE TABLE Link (
-    id              TEXT PRIMARY KEY,
-    sourceBlockId   TEXT NOT NULL,
-    targetPageId    TEXT,              -- 内部链接指向 Page.id；外部链接时 NULL
-    displayText     TEXT,              -- 链接显示文本；NULL 时用 targetPage.title
-    position        INTEGER,           -- 链接在 sourceBlock.content 中的字符偏移
-    linkType        TEXT NOT NULL DEFAULT 'internal',  -- 'internal' | 'external'
-    createdAt       TEXT NOT NULL,     -- ISO 8601
-    FOREIGN KEY (sourceBlockId) REFERENCES Block(id)
+    id              TEXT PRIMARY KEY,     -- UUID v4
+    sourceBlockId   TEXT NOT NULL,        -- 链接来源 Block
+    targetPageId    TEXT NOT NULL,        -- 链接目标 Page
+    displayText     TEXT NOT NULL,
+    createdAt       TEXT NOT NULL,        -- ISO 8601
+    FOREIGN KEY (sourceBlockId) REFERENCES Block(id),
+    FOREIGN KEY (targetPageId) REFERENCES Page(id)
 );
 
 -- 常用索引
+CREATE INDEX idx_page_blockId    ON Page(blockId);
+CREATE INDEX idx_page_type       ON Page(type);
+CREATE INDEX idx_page_updatedAt  ON Page(updatedAt);
 CREATE INDEX idx_block_pageId    ON Block(pageId);
 CREATE INDEX idx_block_parentId  ON Block(parentId);
-CREATE INDEX idx_block_left     ON Block(parentId, "left");
-CREATE INDEX idx_block_isPage   ON Block(isPage);
-CREATE INDEX idx_block_filePath ON Block(filePath);
-CREATE INDEX idx_link_target    ON Link(targetPageId);
-CREATE INDEX idx_link_source    ON Link(sourceBlockId);
-CREATE INDEX idx_link_type      ON Link(linkType);
+CREATE INDEX idx_block_leftId    ON Block(leftId);
+CREATE INDEX idx_link_target     ON Link(targetPageId);
+CREATE INDEX idx_link_source     ON Link(sourceBlockId);
 ```
 
 **新增字段说明：**
 
 | 字段               | 说明                                                              |
 | ---------------- | --------------------------------------------------------------- |
-| `Block.filePath` | 该 Block 所属 Markdown 文件的相对路径，如 `pages/数据模型设计_20260416T103000.md` |
-| `Link.linkType`  | 链接类型：`internal`（内部双链 `[[...]]`）或 `external`（外部 URL）             |
+| `Page.blockId`   | 页面根 Block ID，建立 Page 与 Block 的关联                           |
+| `Block.leftId`   | 左侧兄弟 Block ID，用于 Gap 排序                                  |
+| `Block.type`     | Block 类型，如 'bullet'（普通条目）、'property'（属性）等                |
+| `Block.format`   | Block 格式信息，JSON 字符串                                         |
 
-### 4.2 Link 表 linkType 字段
+### 4.2 Link 表说明
 
-- `[[页面名]]` → `linkType = 'internal'`
-- 外部 URL（如 `https://example.com`）→ `linkType = 'external'`，`targetPageId` 字段留空
-
-**说明：** 外部链接写入 Link 表的目的：支持"哪些 Block 引用了某个外部 URL"的查询。
+- `[[页面名]]` → 写入 Link 表，`targetPageId` 为目标 Page 的 ID
+- 外部 URL（如 `https://example.com`）→ 暂不写入 Link 表，后续版本支持
 
 ***
 
@@ -332,23 +352,25 @@ CREATE INDEX idx_link_type      ON Link(linkType);
 
 ### 5.2 文件命名
 
-日志文件以 `日志_` 前缀区分：
+日志文件以日期为标题：
 
 ```
-日志_20260416T000000.md      ← 2026年4月16日的日志页
-日志_20260417T000000.md      ← 2026年4月17日的日志页
+2026-04-16_20260416T000000.md      ← 2026年4月16日的日志页
+2026-04-17_20260417T000000.md      ← 2026年4月17日的日志页
 ```
 
 日志文件同样存于 `pages/` 目录，与普通 Page 共用同一命名空间和文件命名规则（标题 + 时间戳）。
 
 ### 5.3 日志文件的 Page 属性
 
-日志 Page 使用 `journal-date` 属性标识日期：
+日志 Page 使用 `type: 'journal'` 标识：
 
 ```markdown
 ---
-journal-date:: 2026-04-16
+title:: 2026-04-16
 type:: journal
+created-at:: 2026-04-16T00:00:00Z
+updated-at:: 2026-04-16T18:00:00Z
 ---
 
 ## 上午
@@ -359,11 +381,10 @@ type:: journal
 完成文档初稿
 ```
 
-| 属性             | 值            | 说明               |
-| -------------- | ------------ | ---------------- |
-| `journal-date` | `YYYY-MM-DD` | 日志条目日期，用于日历视图    |
-| `type`         | `journal`    | 标识为日志类型（可选，辅助分类） |
-| `title`        | 可选           | 日志标题，默认为日期       |
+| 属性     | 值            | 说明               |
+| ------ | ------------ | ---------------- |
+| `title` | `YYYY-MM-DD` | 日志标题，默认为日期       |
+| `type`  | `journal`    | 标识为日志类型          |
 
 ### 5.4 日志索引页（待实现）
 
@@ -415,7 +436,7 @@ assets/
   ↓
 扫描 pages/ 目录下所有 .md 文件
   ↓
-按文件时间戳和内容解析 Block 树
+按文件时间戳和内容解析 Page 和 Block 树
   ↓
 更新 SQLite（增量：只更新 mtime 或 content hash 变化的文件）
   ↓

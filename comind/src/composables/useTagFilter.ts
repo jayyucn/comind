@@ -18,7 +18,6 @@ async function preloadAllBlocks(pageStore: ReturnType<typeof usePageStore>): Pro
   const results: Array<{ block: Block; pageTitle: string }> = []
 
   for (const block of allBlocks) {
-    if (block.isPage) continue
     const page = pageStore.getPage(block.pageId)
     results.push({ block, pageTitle: page?.title ?? 'Unknown' })
   }

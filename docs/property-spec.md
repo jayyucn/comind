@@ -217,11 +217,16 @@ Phase 1 不引入独立 Property 表。Property 作为 Block.content 内嵌文�
 // Phase 1 存储：BlockRecord.properties
 interface BlockRecord {
   id: string
-  content: string
-  // ...
-  properties?: string  // JSON string，如 '{"状态": "进行中", "优先级": "高"}'
+  pageId: string          // 所属页面 ID（必须，非空）
+  parentId: string | null // 父 Block（null = 直接子节点）
+  leftId: string | null   // 左侧兄弟（Gap 排序）
+  content: string         // 纯文本
+  format: string          // JSON 字符串
+  type: string            // 'bullet' | 'property' | 'query' | 'embed'
+  properties: string      // JSON 字符串，如 '{"状态": "进行中", "优先级": "高"}'
+  createdAt: number       // IndexedDB 内部存 number 时间戳，adapter 负责与 ISO string 互转
+  updatedAt: number       // 同上
 }
-```
 
 **写入流程：**
 ```
