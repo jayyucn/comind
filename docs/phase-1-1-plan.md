@@ -1,7 +1,7 @@
 # Phase 1.1 规划
 
-> 版本：v0.2
-> 日期：2026-04-22
+> 版本：v0.3
+> 日期：2026-04-26
 > 状态：**进行中**
 
 ---
@@ -288,7 +288,32 @@ export function useJournal() {
 
 ## 4. 任务清单
 
+### Sprint 5：路由系统 🔴 新增
+
+> 详见 [routing-design.md](./routing-design.md)
+
+| 序号 | 任务 | 预估 | 优先级 |
+|------|------|------|--------|
+| P5.1 | 安装 vue-router | 0.5h | P0 |
+| P5.2 | 新建 `router/` 目录，定义路由和 router 实例 | 1h | P0 |
+| P5.3 | `main.ts` 注册 router plugin | 0.5h | P0 |
+| P5.4 | 视图组件迁移：`JournalList.vue` → `views/JournalView.vue` | 1h | P0 |
+| P5.5 | 视图组件迁移：`Page/index.vue` → `views/PageView.vue` | 1h | P0 |
+| P5.6 | `SidebarJournal.vue` 改用 `router.push('/journal')` | 0.5h | P0 |
+| P5.7 | `SidebarRecent.vue` 改用 `router.push('/page/:id')` | 0.5h | P0 |
+| P5.8 | `useNavigateToPage.ts` 改用 `router.push()` | 0.5h | P0 |
+| P5.9 | `App.vue` 替换 `currentView` 为 `<RouterView>` | 1h | P0 |
+| P5.10 | 路由守卫 `beforeEach` 统一加载 Page 数据 | 1h | P0 |
+| P5.11 | 删除 `types/view.ts` 和废弃的 `openJournalList` 逻辑 | 0.5h | P1 |
+| P5.12 | 浏览器 back/forward + 刷新验收测试 | 1h | P0 |
+
+**设计文档：** [routing-design.md](./routing-design.md)
+
 ### Sprint 1：Phase 1 遗留收尾
+
+~~| P1.1 | 属性解析 `key:: value` → properties | 3h | P0 |~~ → 已回滚
+~~| P1.2 | 属性类型推断 | 2h | P0 |~~ → 已回滚
+~~| P1.3 | 属性 UI 渲染 | 2h | P0 |~~ → 已回滚
 
 | 序号 | 任务 | 预估 | 优先级 |
 |------|------|------|--------|

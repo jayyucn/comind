@@ -1,9 +1,9 @@
 # Phase 1.1 开发文档
 
-> 版本：v0.5
-> 日期：2026-04-25
+> 版本：v0.6
+> 日期：2026-04-26
 > 状态：开发中
-> 关联文档：[phase-1-1-plan.md](./phase-1-1-plan.md)
+> 关联文档：[phase-1-1-plan.md](./phase-1-1-plan.md)、[routing-design.md](./routing-design.md)
 
 ---
 
@@ -26,24 +26,37 @@
 
 ## 2. 架构设计
 
-### 2.1 视图状态
+### 2.1 路由设计
 
-```typescript
-// src/types/view.ts
-export type AppView = 'editor' | 'journal-list'
+> 详见 [routing-design.md](./routing-design.md) §3 路由设计。
+
+Phase 1.1 采用 vue-router（history 模式），URL 是视图状态的唯一来源。
+
+**路由表：**
+
+| 路由 | URL 示例 | 视图 |
+|------|----------|------|
+| 首页重定向 | `/` | → `/journal` |
+| 日记列表 | `/journal` | JournalView |
+| 日记正文 | `/journal/:date` | PageView |
+| 普通页面 | `/page/:pageId` | PageView |
+
+**App.vue 不再持有视图状态** — `currentView` ref 删除，视图由 `<RouterView>` 渲染。
+
+### 2.2 状态管理原则
+
+```
+URL 变化 → Router → beforeEach 守卫加载 Page 数据 → RouterView 渲染对应组件
 ```
 
-**App.vue 状态管理：**
-```typescript
-const currentView = ref<AppView>('editor')
-const currentJournalPageId = ref<string>() // 从列表进入时记录，用于返回
-```
+| 操作 | 导航方式 |
+|------|----------|
+| Sidebar Journal 点击 | `router.push('/journal')` |
+| Sidebar Recent 页面点击 | `router.push('/page/${pageId}')` |
+| [[WikiLink]] 点击 | `router.push('/page/${pageId}')` |
+| 日记列表条目点击 | `router.push('/journal/${date}')` |
 
-**视图切换规则：**
-| 触发 | 动作 | 结果 |
-|------|------|------|
-| 点击 Sidebar Journal Card | `journal.openJournalList()` | `currentView = 'journal-list'` |
-| 点击日记标题 | `journal.openJournal(pageId)` | `currentView = 'editor'`，打开对应 Page |
+`pageStore.openPage(id)` 保留，负责设置 `currentPageId` + 加载 Blocks，**不负责视图切换**。
 
 ### 2.2 与 Logseq 对照
 
@@ -430,87 +443,124 @@ export function useJournal() {
 
 ## 6. App.vue 集成
 
-### 6.1 视图状态管理
+### 6.1 Router 注册
+
+```typescript
+// main.ts
+import { createApp } from 'vue'
+import { createPinia } from 'pinia'
+import router from './router'
+import App from './App.vue'
+import './style.css'
+
+const app = createApp(App)
+app.use(createPinia())
+app.use(router)    // ← 新增
+app.mount('#app')
+```
+
+### 6.2 App.vue
 
 ```vue
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import type { AppView } from './types/view'
-import { useJournal } from './composables/useJournal'
-import JournalList from './components/Journal/JournalList.vue'
-// ... 其他 imports
-
-const journal = useJournal()
-const currentView = ref<AppView>('editor')
-const currentJournalPageId = ref<string>()
-
-// 监听 journal.isOpen 变化，同步视图状态
-watch(() => journal.isOpen.value, (open) => {
-  if (open) {
-    currentView.value = 'journal-list'
-  } else {
-    currentView.value = 'editor'
-  }
-})
+import Sidebar from './components/Sidebar/index.vue'
+// 移除 currentView ref 和 view.ts
 </script>
 
 <template>
   <div class="app-layout">
     <Sidebar />
-
     <div class="page-scroll-wrapper">
       <div class="page-body">
         <main class="main-content">
-           <template v-if="currentView === 'editor'">
-            <Page :page-id="blockStore.currentPageId" :editable-title="true" />
-          </template>
-
-          <!-- Journal 列表视图 -->
-          <JournalList
-            v-else-if="currentView === 'journal-list'"
-            @open-page="(id) => { currentJournalPageId = id; journal.openJournal(id) }"
-          />
+          <RouterView />
         </main>
-        <SlashCommandMenu v-if="currentView === 'editor'" />
       </div>
     </div>
   </div>
 </template>
 ```
 
-### 6.2 SidebarJournal 组件
+### 6.3 router/index.ts
 
-**文件：** `src/components/Sidebar/SidebarJournal.vue`
+```typescript
+// src/router/index.ts
+import { createRouter, createWebHistory } from 'vue-router'
+import routes from './routes'
+import { usePageStore } from '../stores/pages'
 
-```vue
-<script setup lang="ts">
-import { useJournal } from '../../composables/useJournal'
+const router = createRouter({
+  history: createWebHistory(),
+  routes,
+})
 
-const { today, todayJournalExists, openJournalList, createTodayJournal } = useJournal()
-
-async function handleClick() {
-  if (todayJournalExists.value) {
-    openJournalList()
-  } else {
-    await createTodayJournal()
+// 全局守卫：所有路由切换前确保 Page 数据已加载
+router.beforeEach(async () => {
+  const pageStore = usePageStore()
+  if (pageStore.pages.length === 0) {
+    await pageStore.loadAllPages()
   }
-}
-</script>
+})
 
-<template>
-  <div class="journal-hero" @click="handleClick">
-    <div class="journal-content">
-      <div class="journal-icon">📓</div>
-      <div class="journal-text">
-        <div class="journal-title">今日日记</div>
-        <div class="journal-date">{{ today }}</div>
-      </div>
-    </div>
-    <div class="journal-arrow">
-      <span>→</span>
-    </div>
-  </div>
-</template>
+export default router
+```
+
+### 6.4 router/routes.ts
+
+```typescript
+// src/router/routes.ts
+import type { RouteRecordRaw } from 'vue-router'
+
+const routes: RouteRecordRaw[] = [
+  { path: '/', redirect: '/journal' },
+  {
+    path: '/journal',
+    name: 'journal-list',
+    component: () => import('../views/JournalView.vue'),
+  },
+  {
+    path: '/journal/:date',
+    name: 'journal-page',
+    component: () => import('../views/PageView.vue'),
+  },
+  {
+    path: '/page/:pageId',
+    name: 'page',
+    component: () => import('../views/PageView.vue'),
+  },
+  // 404 兜底
+  { path: '/:pathMatch(.*)*', redirect: '/journal' },
+]
+
+export default routes
+```
+
+### 6.5 SidebarJournal 组件
+
+**改造前：**
+```typescript
+const { openJournalList } = useJournal()
+function handleClick() { openJournalList() }
+```
+
+**改造后：**
+```typescript
+import { useRouter } from 'vue-router'
+const router = useRouter()
+function handleClick() { router.push('/journal') }
+```
+
+### 6.6 useNavigateToPage.ts
+
+**改造前：**
+```typescript
+await pageStore.openPage(pageId)
+currentView.value = 'editor'
+```
+
+**改造后：**
+```typescript
+router.push(`/page/${pageId}`)
 ```
 
 ---
@@ -550,21 +600,26 @@ export const useEditorStore = defineStore('editor', () => {
 
 ```
 src/
+├── router/                           # 新增
+│   ├── index.ts                     # router 实例 + beforeEach 守卫
+│   └── routes.ts                    # 路由定义
+├── views/                            # 新增（由现有组件改名）
+│   ├── JournalView.vue               # 改名自 JournalList.vue
+│   └── PageView.vue                  # 改名自 Page/index.vue
+└── types/
+    └── view.ts                       # 删除（AppView 不再需要）
+
+src/ （导航改造）
+├── App.vue                           # 移除 currentView，替换为 <RouterView>
+├── main.ts                           # 注册 router plugin
 ├── components/
-│   ├── Journal/
-│   │   └── JournalList.vue      # 新增：日记列表主视图（包含 SlashCommandMenu）
-│   ├── BlockList.vue                 # 新增：可复用的 Block 列表
-│   ├── Backlinks.vue                 # 复用：引用现有组件
-│   ├── TagFilterPanel.vue            # 复用：引用现有组件
-│   ├── SlashCommandMenu.vue          # 复用：引用现有组件
 │   └── Sidebar/
-│       └── SidebarJournal.vue        # 修改：点击触发 journal.openJournalList()
+│       ├── SidebarContainer.vue     # 移除 handleNavigate 中的 store.openPage
+│       └── SidebarJournal.vue        # router.push('/journal')
 ├── composables/
-│   └── useJournal.ts                 # 已有，移除 closeJournalList 方法
-├── types/
-│   └── view.ts                       # 新增：AppView 类型定义
-├── App.vue                           # 修改：视图状态管理 + JournalListView 集成
-└── main.ts                           # 修改：注册 date-fns（如未安装）
+│   └── useNavigateToPage.ts         # router.push() 替代 store.openPage
+└── stores/
+    └── pages.ts                      # 恢复 loadAllPages（由 beforeEach 调用）
 ```
 
 ---
@@ -572,7 +627,7 @@ src/
 ## 9. 依赖
 
 ```bash
-npm install date-fns
+npm install vue-router date-fns
 ```
 
 ---
@@ -592,19 +647,32 @@ npm install date-fns
 
 ## 11. 验收标准
 
+### Journal 功能
+
 | 功能 | 验收标准 |
 |------|----------|
-| 入口 | 点击 Sidebar Journal Card 打开 Journal 列表视图 |
+| 入口 | 点击 Sidebar Journal Card → URL 变为 `/journal` |
 | 列表显示 | 显示当月所有日记，按日期倒序排列 |
 | 内联编辑 | 可在 Journal 列表中直接编辑任意日记内容 |
 | 单编辑器原则 | 同一时间只有一个 Block 处于编辑态 |
-| 标题导航 | 点击日记标题跳转到该日记独立页面 |
+| 标题导航 | 点击日记标题 URL 变为 `/journal/:date` |
 | 日期筛选 | 使用日期选择器筛选月份，列表实时更新 |
 | 今天高亮 | 今天日记条目有特殊样式标识 |
-| Backlinks | Journal 列表视图显示与 Page.vue 相同的 Backlinks |
-| TagFilterPanel | Journal 列表视图显示与 Page.vue 相同的 TagFilterPanel |
-| SlashCommandMenu | Journal 列表视图显示与 Page.vue 相同的 SlashCommandMenu |
+| Backlinks | Journal 列表视图显示与 PageView 相同的 Backlinks |
+| TagFilterPanel | Journal 列表视图显示与 PageView 相同的 TagFilterPanel |
+| SlashCommandMenu | Journal 列表视图显示与 PageView 相同的 SlashCommandMenu |
+
+### 路由功能
+
+| 功能 | 验收标准 |
+|------|----------|
+| URL 正确 | 日记列表 `/journal`，日记正文 `/journal/:date`，普通页面 `/page/:pageId` |
+| 刷新恢复 | 在 `/page/abc` 刷新页面，仍停留在 `/page/abc`，数据完整 |
+| 分享可用 | 复制的 URL 打开后直接进入对应视图 |
+| Back/Forward | 浏览器 back/forward 按钮切换视图，不丢状态 |
+| 404 优雅 | 访问不存在的 `/page/xxx` 不会崩溃，重定向到 `/journal` |
+| 无回归 | Sidebar Journal/Recent、WikiLink 导航、SlashCommand 导航均正常 |
 
 ---
 
-*文档 v0.5，开发中。*
+*文档 v0.6，开发中。*
