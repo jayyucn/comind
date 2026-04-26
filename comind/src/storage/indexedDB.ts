@@ -4,6 +4,7 @@ import type { LinkRecord } from '../types/link'
 import type { Page, PageRecord } from '../types/page'
 import { parseBlockLinks, type LinkParse } from '../utils/parser'
 import { generateUUID } from '../utils/id'
+import { inferPageType } from '../utils/journal-detect'
 
 function recordToBlock(record: BlockRecord): Block {
   return {
@@ -95,7 +96,7 @@ export class IndexedDBAdapter {
             id: pageId,
             blockId: null,
             title: link.targetTitle,
-            type: 'normal',
+            type: inferPageType(link.targetTitle),
             icon: null,
             cover: null,
             aliases: [],
@@ -216,6 +217,11 @@ export class IndexedDBAdapter {
 
   async getAllPages(): Promise<Page[]> {
     const records = await db.pages.orderBy('title').toArray()
+    return records.map(recordToPage)
+  }
+
+  async getPagesByType(type: 'normal' | 'journal'): Promise<Page[]> {
+    const records = await db.pages.where('type').equals(type).sortBy('title')
     return records.map(recordToPage)
   }
 

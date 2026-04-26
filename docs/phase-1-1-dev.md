@@ -1,6 +1,6 @@
 # Phase 1.1 开发文档
 
-> 版本：v0.3
+> 版本：v0.5
 > 日期：2026-04-25
 > 状态：开发中
 > 关联文档：[phase-1-1-plan.md](./phase-1-1-plan.md)
@@ -20,6 +20,7 @@
 - 与 Page 编辑视图平级，通过 App.vue 的 view 状态切换
 - 列表中每个日记条目**直接显示完整内容**，支持**内联编辑**
 - 点击日记标题导航到该日记的独立页面视图
+- **与 Page.vue 的区别：** 只有标题是否可编辑和页面高度（日记列表项标题不可编辑，高度根据内容自动调整）
 
 ---
 
@@ -43,7 +44,6 @@ const currentJournalPageId = ref<string>() // 从列表进入时记录，用于�
 |------|------|------|
 | 点击 Sidebar Journal Card | `journal.openJournalList()` | `currentView = 'journal-list'` |
 | 点击日记标题 | `journal.openJournal(pageId)` | `currentView = 'editor'`，打开对应 Page |
-| 点击返回按钮 | `journal.closeJournalList()` | `currentView = 'editor'`，恢复之前页面 |
 
 ### 2.2 与 Logseq 对照
 
@@ -62,20 +62,27 @@ const currentJournalPageId = ref<string>() // 从列表进入时记录，用于�
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│ ← 返回    日记列表                               📅 2026-04 ▼│  ← Header
+│    日记列表                               📅 2026-04 ▼│  ← Header
 ├────────────────────────────────────────────────────────────┤
 │                                                            │
 │  📅 2026-04-23  周四                              今天     │  ← 日期标题（可点击）
 │  ┌──────────────────────────────────────────────────────┐  │
-│  │  [日记内容 Block 列表 - 可直接编辑,高度根据内容自动扩展]  │  │  ← 内容区（内联编辑）
+│  │  [日记内容 Block 列表 - 高度根据内容自动扩展]          │  │  ← 内容区（内联编辑）
 │  │  • 第一条 Block                                      │  │
 │  │    • 子 Block                                        │  │
 │  │  • 第二条 Block                                      │  │
+│  │                                                      │  │
+│  │  [Backlinks - 与 Page.vue 相同]                     │  │
+│  │  [TagFilterPanel - 与 Page.vue 相同]                │  │
+│  │  [SlashCommandMenu - 与 Page.vue 相同]             │  │
 │  └──────────────────────────────────────────────────────┘  │
 │                                                            │
 │  📅 2026-04-22  周三                                      │
 │  ┌──────────────────────────────────────────────────────┐  │
 │  │  [日记内容 Block 列表 - 高度根据内容自动扩展]          │  │
+│  │  [Backlinks - 与 Page.vue 相同]                     │  │
+│  │  [TagFilterPanel - 与 Page.vue 相同]                │  │
+│  │  [SlashCommandMenu - 与 Page.vue 相同]             │  │
 │  └──────────────────────────────────────────────────────┘  │
 │                                                            │
 └────────────────────────────────────────────────────────────┘
@@ -83,17 +90,13 @@ const currentJournalPageId = ref<string>() // 从列表进入时记录，用于�
 
 ### 3.2 组件设计
 
-**文件：** `src/components/Journal/JournalListView.vue`
+**文件：** `src/components/Journal/JournalList.vue`
 
 ```vue
 <template>
   <div class="journal-list-view">
     <!-- Header -->
     <header class="journal-header">
-      <button class="back-btn" @click="goBack">
-        <span class="back-icon">←</span>
-        <span>返回</span>
-      </button>
       <h1 class="journal-title">日记列表</h1>
       <div class="date-picker">
         <input
@@ -113,7 +116,7 @@ const currentJournalPageId = ref<string>() // 从列表进入时记录，用于�
         class="journal-entry"
         :class="{ 'is-today': journal.title === today }"
       >
-        <!-- 日期标题（点击跳转独立页面） -->
+        <!-- 日期标题（点击跳转独立页面，不可编辑） -->
         <header
           class="entry-header"
           @click="openJournalPage(journal.id)"
@@ -130,6 +133,11 @@ const currentJournalPageId = ref<string>() // 从列表进入时记录，用于�
             :page-id="journal.id"
             :top-level-only="false"
           />
+          
+          <!-- 与 Page.vue 相同的组件 -->
+          <Backlinks :page-id="journal.id" />
+          <TagFilterPanel :page-id="journal.id" />
+          <SlashCommandMenu />
         </div>
       </article>
     </div>
@@ -168,21 +176,6 @@ const currentJournalPageId = ref<string>() // 从列表进入时记录，用于�
   margin: 0;
   flex: 1;
 }
-
-.back-btn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 14px;
-  color: var(--link);
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: var(--radius-sm);
-  transition: background 80ms;
-}
-.back-btn:hover { background: var(--bg-hover); }
 ```
 
 **月份选择器（日期选择器）：**
@@ -257,6 +250,15 @@ const currentJournalPageId = ref<string>() // 从列表进入时记录，用于�
   padding: var(--space-3) var(--space-4) var(--space-4);
   height: auto;
   min-height: 0;
+}
+
+/* 与 Page.vue 相同的组件样式 */
+.entry-content .backlinks,
+.entry-content .tag-filter-panel,
+.entry-content .slash-command-menu {
+  margin-top: var(--space-4);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
 }
 ```
 
@@ -373,10 +375,6 @@ export function useJournal() {
     isOpen.value = true
   }
 
-  function closeJournalList() {
-    isOpen.value = false
-  }
-
   async function openJournal(pageId: string) {
     const page = pageStore.getPage(pageId)
     if (!page) return
@@ -385,14 +383,12 @@ export function useJournal() {
     isReadOnly.value = !isToday
 
     await pageStore.openPage(pageId)
-    closeJournalList()
   }
 
   async function createTodayJournal() {
     const existing = journalPages.value.find(p => p.title === today.value)
     if (existing) {
       await pageStore.openPage(existing.id)
-      closeJournalList()
       return
     }
 
@@ -405,7 +401,6 @@ export function useJournal() {
     })
     
     await pageStore.openPage(newPage.id)
-    closeJournalList()
   }
 
   async function checkAndCreateTodayJournal() {
@@ -424,7 +419,6 @@ export function useJournal() {
     journalPages,
     todayJournalExists,
     openJournalList,
-    closeJournalList,
     openJournal,
     createTodayJournal,
     checkAndCreateTodayJournal,
@@ -443,6 +437,7 @@ export function useJournal() {
 import { ref, watch } from 'vue'
 import type { AppView } from './types/view'
 import { useJournal } from './composables/useJournal'
+import JournalList from './components/Journal/JournalList.vue'
 // ... 其他 imports
 
 const journal = useJournal()
@@ -466,21 +461,17 @@ watch(() => journal.isOpen.value, (open) => {
     <div class="page-scroll-wrapper">
       <div class="page-body">
         <main class="main-content">
-          <!-- 编辑视图 -->
-          <template v-if="currentView === 'editor'">
-            <div class="page-header">...</div>
-            <div class="block-list">...</div>
+           <template v-if="currentView === 'editor'">
+            <Page :page-id="blockStore.currentPageId" :editable-title="true" />
           </template>
 
           <!-- Journal 列表视图 -->
-          <JournalListView
+          <JournalList
             v-else-if="currentView === 'journal-list'"
             @open-page="(id) => { currentJournalPageId = id; journal.openJournal(id) }"
           />
         </main>
-
-        <!-- Backlinks 只在编辑视图显示 -->
-        <Backlinks v-if="currentView === 'editor'" />
+        <SlashCommandMenu v-if="currentView === 'editor'" />
       </div>
     </div>
   </div>
@@ -561,12 +552,15 @@ export const useEditorStore = defineStore('editor', () => {
 src/
 ├── components/
 │   ├── Journal/
-│   │   └── JournalListView.vue      # 新增：日记列表主视图
+│   │   └── JournalList.vue      # 新增：日记列表主视图（包含 SlashCommandMenu）
 │   ├── BlockList.vue                 # 新增：可复用的 Block 列表
+│   ├── Backlinks.vue                 # 复用：引用现有组件
+│   ├── TagFilterPanel.vue            # 复用：引用现有组件
+│   ├── SlashCommandMenu.vue          # 复用：引用现有组件
 │   └── Sidebar/
 │       └── SidebarJournal.vue        # 修改：点击触发 journal.openJournalList()
 ├── composables/
-│   └── useJournal.ts                 # 已有，确认 isOpen 与 App.vue 联动
+│   └── useJournal.ts                 # 已有，移除 closeJournalList 方法
 ├── types/
 │   └── view.ts                       # 新增：AppView 类型定义
 ├── App.vue                           # 修改：视图状态管理 + JournalListView 集成
@@ -588,7 +582,7 @@ npm install date-fns
 | 优先级 | 任务 | 预估 | 说明 |
 |--------|------|------|------|
 | P0 | `types/view.ts` + `BlockList.vue` | 1h | 基础组件提取 |
-| P0 | `JournalListView.vue` 组件 | 4h | 核心功能 |
+| P0 | `JournalList.vue` 组件 | 4h | 核心功能 |
 | P0 | App.vue 视图切换集成 | 1.5h | 状态联动 |
 | P0 | `SidebarJournal.vue` 触发逻辑 | 0.5h | 入口联动 |
 | P1 | 日期筛选器（原生 month input） | 1h | 使用原生日期选择器 |
@@ -605,11 +599,12 @@ npm install date-fns
 | 内联编辑 | 可在 Journal 列表中直接编辑任意日记内容 |
 | 单编辑器原则 | 同一时间只有一个 Block 处于编辑态 |
 | 标题导航 | 点击日记标题跳转到该日记独立页面 |
-| 返回 | 点击返回按钮回到 Journal 列表 |
 | 日期筛选 | 使用日期选择器筛选月份，列表实时更新 |
 | 今天高亮 | 今天日记条目有特殊样式标识 |
-| Backlinks | Journal 列表视图不显示 Backlinks |
+| Backlinks | Journal 列表视图显示与 Page.vue 相同的 Backlinks |
+| TagFilterPanel | Journal 列表视图显示与 Page.vue 相同的 TagFilterPanel |
+| SlashCommandMenu | Journal 列表视图显示与 Page.vue 相同的 SlashCommandMenu |
 
 ---
 
-*文档 v0.3，开发中。*
+*文档 v0.5，开发中。*

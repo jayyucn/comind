@@ -9,19 +9,6 @@ export const usePageStore = defineStore('pages', () => {
   const currentPageId = ref<string>('')
   const loading = ref(false)
 
-  async function loadAllPages() {
-    loading.value = true
-    try {
-      pages.value = await storage.getAllPages()
-      // 空 IDB -> 创建第一个默认 page
-      if (pages.value.length === 0) {
-        await createPage('comind')
-      }
-    } finally {
-      loading.value = false
-    }
-  }
-
   async function openPage(pageId: string) {
     currentPageId.value = pageId
     const blockStore = useBlockStore()
@@ -41,6 +28,8 @@ export const usePageStore = defineStore('pages', () => {
   function getPageByTitle(title: string): Page | undefined {
     return pages.value.find(p => p.title === title)
   }
+
+  
 
   /** 重命名页面，返回重复信息（如有） */
   async function renamePage(pageId: string, newTitle: string): Promise<{ duplicated?: Page }> {
@@ -78,5 +67,5 @@ export const usePageStore = defineStore('pages', () => {
     }
   }
 
-  return { pages, currentPageId, loading, loadAllPages, openPage, createPage, getPage, getPageByTitle, renamePage, mergePage, deletePage }
+  return { pages, currentPageId, loading, openPage, createPage, getPage, getPageByTitle, renamePage, mergePage, deletePage }
 })

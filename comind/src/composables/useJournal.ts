@@ -1,19 +1,14 @@
 // composables/useJournal.ts
 import { ref, computed } from 'vue'
+import { format, isSameDay } from 'date-fns'
 import { usePageStore } from '../stores/pages'
 import { useBlockStore } from '../stores/blocks'
 import type { Page } from '../types/page'
-
-// 判断 Page 是否为日记（标题符合日期格式 YYYY-MM-DD）
-function isJournalPage(page: Page): boolean {
-  // return /^\d{4}-\d{2}-\d{2}$/.test(page.title)
-  return page.type === 'journal'
-}
+import { parseToDate } from '../utils/journal-detect'
 
 export function useJournal() {
   const pageStore = usePageStore()
   const blockStore = useBlockStore()
-  const isOpen = ref(false)  // 日记列表 Panel 展开状态
 
   // ===== Session 级状态 =====
   // App 运行时标记：今天是否已处理过创建检查
@@ -24,21 +19,27 @@ export function useJournal() {
   // 当前打开的日记是否为只读（过往日记）
   const isReadOnly = ref(false)
 
-  // 今天的日期字符串（YYYY-MM-DD）
+  // 今天的日期字符串（YYYY-MM-DD，本地时区）
   const today = computed(() => {
-    return new Date().toISOString().slice(0, 10)
+    return format(new Date(), 'yyyy-MM-dd')
   })
 
   // 所有日记 Page（按日期倒序）
   const journalPages = computed(() => {
     return pageStore.pages
-      .filter(isJournalPage)
+      .filter((page): page is Page => page.type === 'journal')
       .sort((a, b) => b.title.localeCompare(a.title))  // 日期倒序
   })
 
+  // 判断某 Page title 是否为今天（兼容任意日期格式）
+  const isTodayTitle = (title: string): boolean => {
+    const parsed = parseToDate(title)
+    return parsed !== null && isSameDay(parsed, new Date())
+  }
+
   // 今天的日记是否已存在
   const todayJournalExists = computed(() => {
-    return journalPages.value.some(p => p.title === today.value)
+    return journalPages.value.some(p => isTodayTitle(p.title))
   })
 
   // 打开日记列表 Panel（同时确保今天日记存在）
@@ -47,15 +48,14 @@ export function useJournal() {
     if (!todayJournalExists.value) {
       await ensureTodayJournalExists()
     }
-    isOpen.value = true
   }
 
   // 确保今天的日记页面存在（若不存在则创建）
   async function ensureTodayJournalExists(): Promise<void> {
-    const existing = journalPages.value.find(p => p.title === today.value)
+    const existing = journalPages.value.find(p => isTodayTitle(p.title))
     if (existing) return
 
-    const newPage = await pageStore.createPage(today.value)
+    const newPage = await pageStore.createPage(today.value, 'journal')
     await blockStore.createBlock({
       pageId: newPage.id,
       content: today.value,
@@ -63,17 +63,12 @@ export function useJournal() {
     })
   }
 
-  // 关闭日记列表 Panel
-  function closeJournalList() {
-    isOpen.value = false
-  }
-
   // 打开指定日记（若不存在则创建，仅当天可写）
   async function openJournal(pageId: string) {
     const page = pageStore.getPage(pageId)
     if (!page) return
 
-    const isToday = page.title === today.value
+    const isToday = isTodayTitle(page.title)
 
     // 设置 readOnly 模式：过往日记不可编辑
     isReadOnly.value = !isToday
@@ -81,21 +76,6 @@ export function useJournal() {
     // 今天 → 可编辑 | 过往 → 只读（仍打开，但不进入编辑状态）
     await pageStore.openPage(pageId)
 
-    closeJournalList()
-  }
-
-  // 打开今天的日记（若不存在则先创建）
-  async function openOrCreateTodayJournal() {
-    try {
-      await ensureTodayJournalExists()
-      const todayPage = journalPages.value.find(p => p.title === today.value)
-      if (todayPage) {
-        await pageStore.openPage(todayPage.id)
-        closeJournalList()
-      }
-    } catch (error) {
-      console.error('打开今日日记失败:', error)
-    }
   }
 
   // 检查并确保今天日记存在（Session 级，只触发一次）
@@ -112,16 +92,14 @@ export function useJournal() {
   const checkAndOpenOrCreateTodayJournal = checkAndEnsureTodayJournal
 
   return {
-    isOpen: computed(() => isOpen.value),
     isReadOnly: computed(() => isReadOnly.value),
     today,
     journalPages,
     todayJournalExists,
     openJournalList,
-    closeJournalList,
     openJournal,
-    openOrCreateTodayJournal,
     checkAndEnsureTodayJournal,
     checkAndOpenOrCreateTodayJournal,
+    ensureTodayJournalExists,
   }
 }

@@ -1,5 +1,6 @@
 import { usePageStore } from '../stores/pages'
 import { storage } from '../storage/indexedDB'
+import { inferPageType } from '../utils/journal-detect'
 
 export function useNavigateToPage() {
   const pageStore = usePageStore()
@@ -12,7 +13,8 @@ export function useNavigateToPage() {
     if (page) {
       await pageStore.openPage(page.id)
     } else {
-      const newPage = await pageStore.createPage(pageName)
+      
+      const newPage = await pageStore.createPage(pageName, inferPageType(pageName))
       await pageStore.openPage(newPage.id)
     }
   }

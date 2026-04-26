@@ -8,6 +8,10 @@ import { useTagFilter } from '../../composables/useTagFilter'
 import { TAG_REGEX } from '../../utils/parser'
 import Editor from '../Editor.vue'
 
+defineOptions({
+  name: 'Block'
+})
+
 const props = defineProps<{
   blockId: string
   block: import('../../types/block').BlockWithPos

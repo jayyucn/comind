@@ -1,21 +1,11 @@
 <script setup lang="ts">
 import { useJournal } from '../../composables/useJournal'
 
-const emit = defineEmits<{
-  'navigate': [pageId: string]
-}>()
 
-const { today, journalPages, todayJournalExists, createTodayJournal } = useJournal()
+const { today, openJournalList } = useJournal()
 
-async function handleClick() {
-  if (todayJournalExists.value) {
-    const todayPage = journalPages.value.find(p => p.title === today.value)
-    if (todayPage) {
-      emit('navigate', todayPage.id)
-    }
-  } else {
-    await createTodayJournal()
-  }
+function handleClick() {
+  openJournalList()
 }
 </script>
 
@@ -24,7 +14,7 @@ async function handleClick() {
     <div class="journal-content">
       <div class="journal-icon">📓</div>
       <div class="journal-text">
-        <div class="journal-title">今日日记</div>
+        <div class="journal-title">日记</div>
         <div class="journal-date">{{ today }}</div>
       </div>
     </div>

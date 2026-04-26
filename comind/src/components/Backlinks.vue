@@ -1,11 +1,17 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { usePageStore } from '../stores/pages'
 import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
 import { storage } from '../storage/indexedDB'
 import { db } from '../storage/db'
 import type { LinkRecord } from '../types/link'
+
+const props = withDefaults(defineProps<{
+  pageId?: string
+}>(), {
+  pageId: undefined
+})
 
 const pageStore = usePageStore()
 const blockStore = useBlockStore()
@@ -22,7 +28,13 @@ const loading = ref(false)
 const collapsed = ref(false)
 const linkStatusMap = ref<Map<string, { blockExists: boolean; pageExists: boolean }>>(new Map())
 
-// 点击 Backlink：跳转到�?Block 所�?Page，并激活该 Block
+// 判断是否有Backlinks数据（用于条件显示）
+const hasBacklinks = computed(() => backlinkItems.value.length > 0)
+
+// 获取当前需要加载的pageId
+const targetPageId = computed(() => props.pageId ?? pageStore.currentPageId)
+
+// 点击 Backlink：跳转到该Block所在Page，并激活该Block
 async function handleBacklinkClick(link: LinkRecord) {
   const status = getLinkStatus(link)
   if (!status.blockExists || !status.pageExists) return
@@ -42,7 +54,6 @@ async function handleBacklinkClick(link: LinkRecord) {
 
   if (blockRecord.pageId !== pageStore.currentPageId) {
     await pageStore.openPage(blockRecord.pageId)
-    await blockStore.loadPage(blockRecord.pageId)
   }
 
   setTimeout(() => {
@@ -50,9 +61,10 @@ async function handleBacklinkClick(link: LinkRecord) {
   }, 0)
 }
 
-// 预计算每�?link 的存在状�?+ 获取�?block 内容和所�?page 标题
+// 预计算每个link的存在状态 + 获取该block内容和所在page标题
 async function loadBacklinks() {
-  if (!pageStore.currentPageId) {
+  const currentId = targetPageId.value
+  if (!currentId) {
     backlinkItems.value = []
     linkStatusMap.value = new Map()
     return
@@ -60,7 +72,7 @@ async function loadBacklinks() {
 
   loading.value = true
   try {
-    const links = await storage.getBacklinks(pageStore.currentPageId)
+    const links = await storage.getBacklinks(currentId)
 
     const results = await Promise.all(
       links.map(async (link) => {
@@ -118,29 +130,29 @@ function getLinkStatus(link: LinkRecord) {
   return linkStatusMap.value.get(key) ?? { blockExists: true, pageExists: true }
 }
 
-// 监听当前 Page 变化，重新加�?Backlinks
+// 监听targetPageId变化，重新加载Backlinks
 watch(
-  () => pageStore.currentPageId,
+  targetPageId,
   () => loadBacklinks(),
   { immediate: true }
 )
 </script>
 
 <template>
-  <div class="backlinks-panel" :class="{ 'is-collapsed': collapsed }">
+  <div v-if="hasBacklinks" class="backlinks-panel" :class="{ 'is-collapsed': collapsed }">
     <!-- 面板 Header：始终可见，点击切换折叠 -->
     <div class="backlinks-header" @click="collapsed = !collapsed">
       <span class="backlinks-title">
         <span class="backlinks-icon">🔗</span>
         反向链接
-        <span v-if="backlinkItems.length > 0" class="backlinks-count">({{ backlinkItems.length }})</span>
+        <span class="backlinks-count">({{ backlinkItems.length }})</span>
       </span>
       <span class="backlinks-toggle">{{ collapsed ? '▶' : '▼' }}</span>
     </div>
 
     <!-- 折叠内容区：max-height 动画控制 -->
     <div class="backlinks-body">
-      <div v-if="loading" class="backlinks-loading">加载�?..</div>
+      <div v-if="loading" class="backlinks-loading">加载中...</div>
 
       <div v-else-if="backlinkItems.length === 0" class="backlinks-empty">
         暂无反向链接
@@ -160,7 +172,7 @@ watch(
           <span class="backlink-text">{{ item.sourceContent || '空块' }}</span>
           <span class="backlink-page">{{ item.sourcePageTitle }}</span>
           <span v-if="!getLinkStatus(item.link).blockExists" class="backlink-hint">(来源块已删除)</span>
-          <span v-else-if="!getLinkStatus(item.link).pageExists" class="backlink-hint">(来源页面已删�?</span>
+          <span v-else-if="!getLinkStatus(item.link).pageExists" class="backlink-hint">(来源页面已删除)</span>
         </div>
       </div>
     </div>

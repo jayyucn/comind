@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { useSidebar } from '../../composables/useSidebar'
 import { usePageStore } from '../../stores/pages'
-import { useBlockStore } from '../../stores/blocks'
-import { useJournal } from '../../composables/useJournal'
 import SidebarHeader from './SidebarHeader.vue'
 import SidebarJournal from './SidebarJournal.vue'
 import SidebarRecent from './SidebarRecent.vue'
@@ -10,26 +8,13 @@ import SidebarFavorites from './SidebarFavorites.vue'
 import SidebarFooter from './SidebarFooter.vue'
 
 const pageStore = usePageStore()
-const blockStore = useBlockStore()
-const journal = useJournal()
 const { isCollapsed, toggle } = useSidebar()
 
-function ensureFirstBlock() {
-  const hasBlock = blockStore.blocks.some(b => b.pageId === pageStore.currentPageId && b.parentId === null)
-  if (!hasBlock) {
-    blockStore.createBlock({ pageId: pageStore.currentPageId, content: '' })
-  }
-}
 
 async function handleNavigate(pageId: string) {
   await pageStore.openPage(pageId)
-  ensureFirstBlock()
 }
 
-async function handleCreateToday() {
-  await journal.createTodayJournal()
-  ensureFirstBlock()
-}
 </script>
 
 <template>
@@ -38,10 +23,7 @@ async function handleCreateToday() {
       <SidebarHeader @toggle-collapse="toggle" />
       
       <div class="sidebar-content">
-        <SidebarJournal 
-          @navigate="handleNavigate"
-          @create-today="handleCreateToday"
-        />
+        <SidebarJournal />
         
         <SidebarRecent @navigate="handleNavigate" />
         
