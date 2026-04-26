@@ -24,8 +24,9 @@ const allJournals = computed(() => {
     .sort((a, b) => b.title.localeCompare(a.title))
 })
 
-// 确保今天的日记存在
+// 确保今天的日记存在（先从 IDB 加载 pages，避免重复创建）
 onMounted(async () => {
+  await pageStore.loadAllPages()
   if (!journal.todayJournalExists.value) {
     await journal.ensureTodayJournalExists()
     await nextTick()

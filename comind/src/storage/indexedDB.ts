@@ -4,7 +4,7 @@ import type { LinkRecord } from '../types/link'
 import type { Page, PageRecord } from '../types/page'
 import { parseBlockLinks, type LinkParse } from '../utils/parser'
 import { generateUUID } from '../utils/id'
-import { inferPageType } from '../utils/journal-detect'
+import { inferPageType, normalizeJournalTitle } from '../utils/journal-detect'
 
 function recordToBlock(record: BlockRecord): Block {
   return {
@@ -88,15 +88,19 @@ export class IndexedDBAdapter {
     for (const link of linkParses) {
       if (!link.isExternal) {
         // 内部链接：查找或创建目标 Page
-        let targetPage = await db.pages.where('title').equals(link.targetTitle).first()
+        // 日记标题规范化：[[2026/04/26]] → 查找/创建 title="2026-04-26"
+        const normalized = normalizeJournalTitle(link.targetTitle)
+        const lookupTitle = normalized ?? link.targetTitle
+        let targetPage = await db.pages.where('title').equals(lookupTitle).first()
 
         if (!targetPage) {
           const pageId = generateUUID()
+          const pageType = normalized ? 'journal' : inferPageType(link.targetTitle)
           targetPage = pageToRecord({
             id: pageId,
             blockId: null,
-            title: link.targetTitle,
-            type: inferPageType(link.targetTitle),
+            title: lookupTitle,
+            type: pageType,
             icon: null,
             cover: null,
             aliases: [],
