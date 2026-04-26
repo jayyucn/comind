@@ -1,1 +1,0 @@
-export type AppView = 'editor' | 'journal-list'

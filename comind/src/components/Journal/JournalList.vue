@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 import { useJournal } from '../../composables/useJournal'
 import { usePageStore } from '../../stores/pages'
 import JournalListItem from './JournalListItem.vue'
 import SlashCommandMenu from '../SlashCommandMenu.vue'
 
-const emit = defineEmits<{
-  'open-page': [pageId: string]
-}>()
-
+const router = useRouter()
 const journal = useJournal()
 const pageStore = usePageStore()
 
@@ -33,6 +31,15 @@ onMounted(async () => {
     refreshKey.value++
   }
 })
+
+function handleOpenPage(pageId: string) {
+  const page = pageStore.getPage(pageId)
+  if (page?.type === 'journal') {
+    router.push(`/journal/${page.title}`)
+  } else {
+    router.push(`/page/${pageId}`)
+  }
+}
 </script>
 
 <template>
@@ -43,7 +50,7 @@ onMounted(async () => {
         v-for="journalPage in allJournals"
         :key="journalPage.id"
         :page-id="journalPage.id"
-        @open-page="emit('open-page', $event)"
+        @open-page="handleOpenPage"
       />
 
       <div v-if="allJournals.length === 0" class="empty-state">

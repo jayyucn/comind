@@ -1,18 +1,24 @@
 <script setup lang="ts">
+import { useRouter } from 'vue-router'
 import { useFavorites } from '../../composables/useFavorites'
 import { usePageStore } from '../../stores/pages'
 import PageItem from './PageItem.vue'
 
 const emit = defineEmits<{
-  navigate: [pageId: string]
   'add-favorite': []
 }>()
 
+const router = useRouter()
 const pageStore = usePageStore()
 const { favoritePages, removeFavorite } = useFavorites()
 
 function handleNavigate(pageId: string) {
-  emit('navigate', pageId)
+  const page = pageStore.getPage(pageId)
+  if (page?.type === 'journal') {
+    router.push(`/journal/${page.title}`)
+  } else {
+    router.push(`/page/${pageId}`)
+  }
 }
 
 function handleRemoveFavorite(pageId: string, event: Event) {

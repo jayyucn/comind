@@ -1,17 +1,20 @@
 <script setup lang="ts">
+import { useRouter } from 'vue-router'
 import { useRecent } from '../../composables/useRecent'
 import { usePageStore } from '../../stores/pages'
 import PageItem from './PageItem.vue'
 
-const emit = defineEmits<{
-  navigate: [pageId: string]
-}>()
-
+const router = useRouter()
 const pageStore = usePageStore()
 const { recentPages, isExpanded, toggleExpand } = useRecent()
 
 function handleNavigate(pageId: string) {
-  emit('navigate', pageId)
+  const page = pageStore.getPage(pageId)
+  if (page?.type === 'journal') {
+    router.push(`/journal/${page.title}`)
+  } else {
+    router.push(`/page/${pageId}`)
+  }
 }
 </script>
 

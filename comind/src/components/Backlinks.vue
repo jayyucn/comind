@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
 import { usePageStore } from '../stores/pages'
-import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
 import { storage } from '../storage/indexedDB'
 import { db } from '../storage/db'
@@ -14,7 +13,6 @@ const props = withDefaults(defineProps<{
 })
 
 const pageStore = usePageStore()
-const blockStore = useBlockStore()
 const editorStore = useEditorStore()
 
 interface BacklinkItem {

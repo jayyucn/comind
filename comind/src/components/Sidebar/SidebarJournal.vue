@@ -1,11 +1,12 @@
 <script setup lang="ts">
+import { useRouter } from 'vue-router'
 import { useJournal } from '../../composables/useJournal'
 
-
-const { today, openJournalList } = useJournal()
+const router = useRouter()
+const { today } = useJournal()
 
 function handleClick() {
-  openJournalList()
+  router.push('/journal')
 }
 </script>
 

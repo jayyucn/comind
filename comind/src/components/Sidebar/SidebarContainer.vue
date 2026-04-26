@@ -1,20 +1,12 @@
 <script setup lang="ts">
 import { useSidebar } from '../../composables/useSidebar'
-import { usePageStore } from '../../stores/pages'
 import SidebarHeader from './SidebarHeader.vue'
 import SidebarJournal from './SidebarJournal.vue'
 import SidebarRecent from './SidebarRecent.vue'
 import SidebarFavorites from './SidebarFavorites.vue'
 import SidebarFooter from './SidebarFooter.vue'
 
-const pageStore = usePageStore()
 const { isCollapsed, toggle } = useSidebar()
-
-
-async function handleNavigate(pageId: string) {
-  await pageStore.openPage(pageId)
-}
-
 </script>
 
 <template>
@@ -25,10 +17,9 @@ async function handleNavigate(pageId: string) {
       <div class="sidebar-content">
         <SidebarJournal />
         
-        <SidebarRecent @navigate="handleNavigate" />
+        <SidebarRecent />
         
         <SidebarFavorites 
-          @navigate="handleNavigate"
           @add-favorite="() => {}"
         />
       </div>

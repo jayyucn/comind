@@ -17,7 +17,7 @@ export function useJournal() {
 
   // ===== Session 级状态 =====
   // App 运行时标记：今天是否已处理过创建检查
-  // 关闭 APP 后重开，状态重置，符合"首次访问"直觉
+  // 关闭 APP 后重开，状态重置，符合“首次访问”直觉
   const createdTodayThisSession = ref(false)
 
   // ===== readOnly 模式 =====
@@ -48,13 +48,6 @@ export function useJournal() {
   const todayJournalExists = computed(() => {
     return journalPages.value.some(p => isTodayTitle(p.title))
   })
-
-  // 打开日记列表 Panel（同时确保今天日记存在）
-  async function openJournalList() {
-    if (!todayJournalExists.value) {
-      await ensureTodayJournalExists()
-    }
-  }
 
   // 确保今天的日记页面存在（若不存在则创建）
   async function ensureTodayJournalExists(): Promise<void> {
@@ -94,7 +87,6 @@ export function useJournal() {
     today,
     journalPages,
     todayJournalExists,
-    openJournalList,
     openJournal,
     checkAndEnsureTodayJournal,
     checkAndOpenOrCreateTodayJournal,

@@ -1,8 +1,10 @@
+import { useRouter } from 'vue-router'
 import { usePageStore } from '../stores/pages'
 import { storage } from '../storage/indexedDB'
 import { normalizeJournalTitle } from '../utils/journal-detect'
 
 export function useNavigateToPage() {
+  const router = useRouter()
   const pageStore = usePageStore()
 
   async function navigateToPage(pageName: string): Promise<void> {
@@ -16,10 +18,20 @@ export function useNavigateToPage() {
       page = await storage.getPage(lookupTitle)
     }
     if (page) {
-      await pageStore.openPage(page.id)
+      // 根据页面类型路由
+      if (page.type === 'journal') {
+        router.push(`/journal/${page.title}`)
+      } else {
+        router.push(`/page/${page.id}`)
+      }
     } else {
       const newPage = await pageStore.createPage(lookupTitle, pageType)
-      await pageStore.openPage(newPage.id)
+      // 根据页面类型路由
+      if (newPage.type === 'journal') {
+        router.push(`/journal/${newPage.title}`)
+      } else {
+        router.push(`/page/${newPage.id}`)
+      }
     }
   }
 
