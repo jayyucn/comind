@@ -20,10 +20,6 @@ export function useJournal() {
   // 关闭 APP 后重开，状态重置，符合“首次访问”直觉
   const createdTodayThisSession = ref(false)
 
-  // ===== readOnly 模式 =====
-  // 当前打开的日记是否为只读（过往日记）
-  const isReadOnly = ref(false)
-
   // 今天的日期字符串（yyyy-MM-dd，本地时区）
   const today = computed(() => {
     return format(new Date(), 'yyyy-MM-dd')
@@ -58,17 +54,6 @@ export function useJournal() {
     await blockStore.loadPageBlocks(newPage.id)
   }
 
-  // 打开指定日记（仅当天可写）
-  async function openJournal(pageId: string) {
-    const page = pageStore.getPage(pageId)
-    if (!page) return
-
-    // 设置 readOnly 模式：过往日记不可编辑
-    isReadOnly.value = !isTodayTitle(page.title)
-
-    await pageStore.openPage(pageId)
-  }
-
   // 检查并确保今天日记存在（Session 级，只触发一次）
   async function checkAndEnsureTodayJournal() {
     if (createdTodayThisSession.value) return
@@ -83,11 +68,9 @@ export function useJournal() {
   const checkAndOpenOrCreateTodayJournal = checkAndEnsureTodayJournal
 
   return {
-    isReadOnly: computed(() => isReadOnly.value),
     today,
     journalPages,
     todayJournalExists,
-    openJournal,
     checkAndEnsureTodayJournal,
     checkAndOpenOrCreateTodayJournal,
     ensureTodayJournalExists,
