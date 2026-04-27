@@ -23,20 +23,22 @@ import {
 /**
  * 安全计算插入位置，带自动重试机制
  *
- * 当间隔耗尽时自动触发重新编号，然后重试一次。
- * 如果重试后仍然失败，抛出错误。
+ * 当间隔耗尽时自动触发重新编号，然后通过回调重新计算位置参数。
+ * 这解决了重编号后 prevPos/nextPos 过时的问题。
  *
  * @param prevPos 前一个节点的 pos
  * @param nextPos 后一个节点的 pos
  * @param blocksRef Block 列表引用（用于重新编号）
  * @param storageRef 存储引用（用于持久化重新编号结果）
+ * @param recalcPos 可选：重编号后重新计算位置的回调函数
  * @returns 新节点的 pos 值
  */
 async function safeCalcInsertPos(
   prevPos: number | null,
   nextPos: number | null,
   blocksRef: Block[],
-  storageRef: typeof storage
+  storageRef: typeof storage,
+  recalcPos?: () => { prevPos: number | null; nextPos: number | null }
 ): Promise<number> {
   try {
     return calcInsertPos(prevPos, nextPos)
@@ -52,12 +54,26 @@ async function safeCalcInsertPos(
         await storageRef.saveBlock(block)
       }
       
-      console.info('[safeCalcInsertPos] Renumbering complete, retrying insert...')
+      console.info('[safeCalcInsertPos] Renumbering complete, recalculating positions...')
       
-      // 重试计算（重新编号后应该有足够空间）
-      // 注意：prevPos 和 nextPos 可能已改变，需要重新获取
-      // 由于调用方已经计算好了 prevPos/nextPos，这里简单地重试
-      // 如果仍然失败，说明有更严重的问题
+      // 通过回调重新计算位置参数（关键修复！）
+      if (recalcPos) {
+        const { prevPos: newPrevPos, nextPos: newNextPos } = recalcPos()
+        console.info(`[safeCalcInsertPos] Recalculated: prev=${newPrevPos}, next=${newNextPos}`)
+        
+        try {
+          return calcInsertPos(newPrevPos, newNextPos)
+        } catch (retryError) {
+          console.error('[safeCalcInsertPos] Retry failed after renumbering:', retryError)
+          throw new Error(
+            'Failed to calculate insert position even after renumbering. ' +
+            'This indicates a serious data consistency issue.'
+          )
+        }
+      }
+      
+      // 无回调时，尝试用原参数重试（向后兼容，但可能失败）
+      console.warn('[safeCalcInsertPos] No recalcPos callback provided, retrying with original positions')
       try {
         return calcInsertPos(prevPos, nextPos)
       } catch (retryError) {
@@ -183,9 +199,13 @@ export const useBlockStore = defineStore('blocks', () => {
     if (opts.pos !== undefined) {
       newPos = opts.pos
     } else {
-      const siblings = getSortedChildren(blocks.value, parentId, opts.pageId)
-      const lastPos = siblings.length > 0 ? siblings[siblings.length - 1].pos : null
-      newPos = await safeCalcInsertPos(lastPos, null, blocks.value, storage)
+      const calcPositions = () => {
+        const siblings = getSortedChildren(blocks.value, parentId, opts.pageId)
+        const lastPos = siblings.length > 0 ? siblings[siblings.length - 1].pos : null
+        return { prevPos: lastPos, nextPos: null }
+      }
+      const { prevPos, nextPos } = calcPositions()
+      newPos = await safeCalcInsertPos(prevPos, nextPos, blocks.value, storage, calcPositions)
     }
 
     const block: Block = {
@@ -286,15 +306,25 @@ export const useBlockStore = defineStore('blocks', () => {
     block: Block,
     blockFormat?: Record<string, any>
   ): Promise<Block> {
-    const siblings = getSortedSiblings(blocks.value, block, false)
-    const blockIndex = findBlockIndex(siblings, block.id)
-    const prevSibling = blockIndex > 0 ? siblings[blockIndex - 1] : undefined
+    // 计算新节点位置：在上一个兄弟节点之后，当前节点之前
+    const calcPositions = () => {
+      const siblings = getSortedSiblings(blocks.value, block, false)
+      const blockIndex = findBlockIndex(siblings, block.id)
+      const prevSibling = blockIndex > 0 ? siblings[blockIndex - 1] : undefined
+      return {
+        prevPos: prevSibling?.pos ?? null,
+        nextPos: block.pos
+      }
+    }
 
-    // 计算新节点位置：在上一个兄弟节点之后，第一个兄弟之前
-    // 若无上一个兄弟，则插入到当前父节点的最前面（prevPos = null，nextPos = 第一个兄弟的 pos）
-    const prevPos = prevSibling?.pos ?? null
-    const nextPos = block.pos
-    const newPos = await safeCalcInsertPos(prevPos, nextPos, blocks.value, storage)
+    const { prevPos, nextPos } = calcPositions()
+    const newPos = await safeCalcInsertPos(
+      prevPos,
+      nextPos,
+      blocks.value,
+      storage,
+      calcPositions  // 传入回调，重编号后重新计算
+    )
 
     return createBlock({
       pageId: block.pageId,
@@ -312,7 +342,7 @@ export const useBlockStore = defineStore('blocks', () => {
    * @param parentId - 父节点 ID（null 表示根级）
    * @param content - 新节点内容
    * @param refBlock - 参考 Block（用于计算位置）
-   * @param childBlocks - refBlock 的现有子节点（用于子节点插入定位）
+   * @param childBlocks - refBlock 的现有子节点（已废弃，保留参数签名兼容）
    * @param asFirstChild - 是否作为第一个子节点插入
    * @param blockFormat - 可选：格式
    */
@@ -321,7 +351,7 @@ export const useBlockStore = defineStore('blocks', () => {
     parentId: string | null,
     content: string,
     refBlock: Block,
-    childBlocks: Block[],
+    _childBlocks: Block[],
     asFirstChild: boolean,
     blockFormat?: Record<string, any>
   ): Promise<Block> {
@@ -329,12 +359,42 @@ export const useBlockStore = defineStore('blocks', () => {
 
     if (asFirstChild) {
       // 作为第一个子节点：插入到现有子节点之前
-      const firstChildPos = childBlocks.length > 0 ? childBlocks[0].pos : null
-      newPos = await safeCalcInsertPos(null, firstChildPos, blocks.value, storage)
+      const calcPositions = () => {
+        // 重编号后重新获取子节点列表
+        const updatedChildren = getSortedChildren(blocks.value, refBlock.id, pageId)
+        return {
+          prevPos: null,
+          nextPos: updatedChildren.length > 0 ? updatedChildren[0].pos : null
+        }
+      }
+
+      const { prevPos, nextPos } = calcPositions()
+      newPos = await safeCalcInsertPos(
+        prevPos,
+        nextPos,
+        blocks.value,
+        storage,
+        calcPositions  // 传入回调
+      )
     } else {
       // 作为下方兄弟节点：插入到 refBlock 之后
-      const nextSibling = getNextSibling(blocks.value, refBlock)
-      newPos = await safeCalcInsertPos(refBlock.pos, nextSibling?.pos ?? null, blocks.value, storage)
+      const calcPositions = () => {
+        // 重编号后重新获取兄弟节点
+        const nextSibling = getNextSibling(blocks.value, refBlock)
+        return {
+          prevPos: refBlock.pos,
+          nextPos: nextSibling?.pos ?? null
+        }
+      }
+
+      const { prevPos, nextPos } = calcPositions()
+      newPos = await safeCalcInsertPos(
+        prevPos,
+        nextPos,
+        blocks.value,
+        storage,
+        calcPositions  // 传入回调
+      )
     }
 
     return createBlock({
@@ -499,9 +559,13 @@ export const useBlockStore = defineStore('blocks', () => {
     if (!prev) return
 
     // 先计算新位置（在修改 parentId 之前）
-    const children = getChildren(prev.id)
-    const lastPos = children.length > 0 ? children[children.length - 1].pos : null
-    const newPos = await safeCalcInsertPos(lastPos, null, blocks.value, storage)
+    const calcPositions = () => {
+      const children = getChildren(prev.id)
+      const lastPos = children.length > 0 ? children[children.length - 1].pos : null
+      return { prevPos: lastPos, nextPos: null }
+    }
+    const { prevPos, nextPos } = calcPositions()
+    const newPos = await safeCalcInsertPos(prevPos, nextPos, blocks.value, storage, calcPositions)
 
     // 再修改 parentId 和 pos
     block.parentId = prev.id
@@ -522,8 +586,12 @@ export const useBlockStore = defineStore('blocks', () => {
     const newParentId = parent.parentId
 
     // 先计算新位置（在修改 parentId 之前）
-    const nextSibling = getNextSibling(blocks.value, parent)
-    const newPos = await safeCalcInsertPos(parent.pos, nextSibling?.pos ?? null, blocks.value, storage)
+    const calcPositions = () => {
+      const nextSibling = getNextSibling(blocks.value, parent)
+      return { prevPos: parent.pos, nextPos: nextSibling?.pos ?? null }
+    }
+    const { prevPos, nextPos } = calcPositions()
+    const newPos = await safeCalcInsertPos(prevPos, nextPos, blocks.value, storage, calcPositions)
 
     // 再修改 parentId 和 pos
     block.parentId = newParentId
@@ -548,14 +616,18 @@ export const useBlockStore = defineStore('blocks', () => {
       return
     }
 
-    const targetSiblings = getSortedChildren(blocks.value, toParentId, block.pageId, blockId)
-    const clampedIndex = Math.max(0, Math.min(newIndex, targetSiblings.length))
+    const calcPositions = () => {
+      const targetSiblings = getSortedChildren(blocks.value, toParentId, block.pageId, blockId)
+      const clampedIndex = Math.max(0, Math.min(newIndex, targetSiblings.length))
+      return {
+        prevPos: clampedIndex > 0 ? targetSiblings[clampedIndex - 1].pos : null,
+        nextPos: clampedIndex < targetSiblings.length ? targetSiblings[clampedIndex].pos : null
+      }
+    }
 
-    const prevPos = clampedIndex > 0 ? targetSiblings[clampedIndex - 1].pos : null
-    const nextPos = clampedIndex < targetSiblings.length ? targetSiblings[clampedIndex].pos : null
-
+    const { prevPos, nextPos } = calcPositions()
     block.parentId = toParentId
-    block.pos = await safeCalcInsertPos(prevPos, nextPos, blocks.value, storage)
+    block.pos = await safeCalcInsertPos(prevPos, nextPos, blocks.value, storage, calcPositions)
     block.updatedAt = Date.now()
 
     _scheduleSave(block)
