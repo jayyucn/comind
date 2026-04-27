@@ -187,7 +187,7 @@ function calculateLevelLineHeight() {
 }
 
 /** mousedown：捕获点击坐标，在 tiptap 挂载前通知 editor store */
-function handleContentMouseDown(e: MouseEvent) {
+function startEditingAtClick(e: MouseEvent) {
   const target = e.target as HTMLElement
   // 链接和标签点击由 handleContentClick 单独处理，不触发编辑态
   if (target.closest('.block-link, .block-tag')) return
@@ -337,7 +337,7 @@ function handleContentClick(e: MouseEvent) {
 }
 
 /** 切换折叠状态 */
-async function handleToggleCollapse() {
+async function toggleCollapse() {
   if (children.value.length === 0 || isAnimating.value) return
 
   const newCollapsed = !collapsed.value
@@ -345,7 +345,7 @@ async function handleToggleCollapse() {
 }
 
 /** HTML 转义（防 XSS） */
-function escapeHtml(text: string): string {
+function escapeHtmlEntities(text: string): string {
   return text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -354,15 +354,15 @@ function escapeHtml(text: string): string {
 }
 
 /** 渲染内容（[[链接]] 高亮、#标签 样式） */
-function renderContent(text: string): string {
-  const html = escapeHtml(text)
+function renderContentToHtml(text: string): string {
+  const html = escapeHtmlEntities(text)
   return html
     .replace(/\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g, (_, target, alias) => {
       const display = alias || target
-      return `<span class="block-link" data-page="${escapeHtml(target)}">${display}</span>`
+      return `<span class="block-link" data-page="${escapeHtmlEntities(target)}">${display}</span>`
     })
     .replace(/\[\[(https?:\/\/[^\]]+)\]\]/g, (_, url) => {
-      return `<span class="block-link external" data-external href="${escapeHtml(url)}">${url}</span>`
+      return `<span class="block-link external" data-external href="${escapeHtmlEntities(url)}">${url}</span>`
     })
     // 标签：使用 parser.ts 导出的 TAG_REGEX（单一来源，DRY）
     // 负向后顾断言逻辑已内聚到 TAG_REGEX 常量中
@@ -372,7 +372,7 @@ function renderContent(text: string): string {
       // 层级标签：斜杠分隔，每级独立着色
       const parts = tag.split('/')
       const rendered = parts.map((p: string, i: number) => {
-        const span = `<span class="tag-segment">${escapeHtml(p)}</span>`
+        const span = `<span class="tag-segment">${escapeHtmlEntities(p)}</span>`
         return i < parts.length - 1 ? span + '<span class="tag-sep">/</span>' : span
       }).join('')
       return `<span class="block-tag">#${rendered}</span>`
@@ -392,20 +392,20 @@ function renderContent(text: string): string {
 
       <!-- Bullet -->
       <span class="block-bullet" :class="{ collapsed }"
-        @click.stop="handleToggleCollapse">
+        @click.stop="toggleCollapse">
         <span v-if="children.length > 0" class="bullet-chevron" :class="{ 'is-collapsed': collapsed }"></span>
         <span v-else class="bullet-dot"></span>
       </span>
 
       <!-- 内容区 -->
-      <div class="block-content" @mousedown="handleContentMouseDown">
+      <div class="block-content" @mousedown="startEditingAtClick">
         <Editor v-if="isActive" ref="editorRef" :block-id="blockId" :content="block.content" @save="handleSave"
           @split="handleSplit" @merge="handleMerge" @delete="handleDelete" @indent="handleIndent"
           @outdent="handleOutdent" @move-up="handleMoveUp" @move-down="handleMoveDown" @exit-edit="handleExitEdit"
           @cursor-change="handleCursorChange" />
         <div v-else class="block-text" @click="handleContentClick">
           <span v-if="isSingleEmptyBlock" class="block-placeholder">Type something...</span>
-          <span v-else v-html="renderContent(block.content)"></span>
+          <span v-else v-html="renderContentToHtml(block.content)"></span>
         </div>
       </div>
     </div>
