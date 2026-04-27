@@ -11,7 +11,7 @@ function recordToBlock(record: BlockRecord): Block {
     id: record.id,
     pageId: record.pageId,
     parentId: record.parentId,
-    leftId: record.leftId,
+    pos: record.pos,
     content: record.content,
     format: JSON.parse(record.format),
     type: record.type as 'bullet' | 'property' | 'query' | 'embed',
@@ -26,7 +26,7 @@ function blockToRecord(block: Block): BlockRecord {
     id: block.id,
     pageId: block.pageId,
     parentId: block.parentId,
-    leftId: block.leftId,
+    pos: block.pos,
     content: block.content,
     format: JSON.stringify(block.format),
     type: block.type,
@@ -111,7 +111,6 @@ export class IndexedDBAdapter {
   }
 
   async getBlockTree(pageId: string): Promise<Block[]> {
-    // 按 parentId 分组，每组内按 leftId 排序，最后 DFS 展平
     const allRecords = await db.blocks.where('pageId').equals(pageId).toArray()
     const blocks = allRecords.map(recordToBlock)
 
@@ -123,13 +122,9 @@ export class IndexedDBAdapter {
       byParent.get(parentId)!.push(block)
     }
 
-    // 每组按 leftId 排序（使用 Gap 排序逻辑）
+    // 每组按 pos 排序（Gap 排序）
     for (const children of byParent.values()) {
-      children.sort((a, b) => {
-        if (!a.leftId) return -1
-        if (!b.leftId) return 1
-        return a.leftId.localeCompare(b.leftId)
-      })
+      children.sort((a, b) => a.pos - b.pos)
     }
 
     // DFS 展平: parentId=null 在前，然后递归 children
@@ -138,7 +133,6 @@ export class IndexedDBAdapter {
       const children = byParent.get(parentId) ?? []
       for (const child of children) {
         result.push(child)
-        // 递归 children（只处理 parentId 指向真实存在的 block，避免孤儿节点）
         dfs(child.id)
       }
     }
@@ -303,7 +297,7 @@ export class IndexedDBAdapter {
       id: generateUUID(),
       pageId: '', // 先空，后续更新
       parentId: null,
-      leftId: null,
+      pos: 1000,
       content: '',
       format: {},
       type: 'bullet',

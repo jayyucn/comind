@@ -1,92 +1,73 @@
-import type { BlockWithPos } from '../types/block'
+import type { Block } from '../types/block'
 
 /**
- * ProseMirror 光标位置转换工具
+ * Block 排序工具
  *
- * ProseMirror 的位置系统包括节点标签开销：
- * - 空段落: <p>|</p> 位置 0-1
- * - 有文本: <p>|text</p> 位置 0-1-5 (位置 1 是文本开始)
- *
- * 因此，ProseMirror 位置 = 文本偏移量 + 1（段落开始标签开销）
+ * 使用 Gap 整数排序（pos 字段）：
+ * - 初始间隔 1000，预留足够的插入空间
+ * - 排序只需 a.pos - b.pos，O(n log n)
+ * - 插入取中间值 (prev.pos + next.pos) / 2
+ * - 只有间隔耗尽时才需要重编号
  */
 
-/** ProseMirror 位置转文本偏移量 */
+/** Gap 排序的初始间隔 */
+export const GAP_SIZE = 1000
+
+/** ProseMirror 光标位置转换工具 */
 export function pmPosToTextOffset(pmPos: number): number {
   return Math.max(0, pmPos - 1)
 }
 
-/** 文本偏移量转 ProseMirror 位置 */
 export function textOffsetToPmPos(textOffset: number): number {
   return textOffset + 1
 }
 
 /**
+ * 按 pos 排序（原地排序）
+ */
+export function sortByPos<T extends { pos: number }>(items: T[]): T[] {
+  return items.sort((a, b) => a.pos - b.pos)
+}
+
+/**
  * 获取指定父节点下的排序后的子节点
- * @param blocks 所有 Block 列表
- * @param parentId 父节点 ID（null 表示顶层）
- * @param pageId 所属页面 ID
- * @param excludeId 排除的 Block ID（可选）
  */
 export function getSortedChildren(
-  blocks: BlockWithPos[],
+  blocks: Block[],
   parentId: string | null,
   pageId: string,
   excludeId?: string
-): BlockWithPos[] {
+): Block[] {
   return blocks
     .filter(b =>
       b.parentId === parentId &&
       b.pageId === pageId &&
       b.id !== excludeId
     )
-    .sort((a, b) => {
-      if (!a.leftId) return -1
-      if (!b.leftId) return 1
-      return a.leftId.localeCompare(b.leftId)
-    })
+    .sort((a, b) => a.pos - b.pos)
 }
 
 /**
  * 获取指定 Block 的同级兄弟节点（排序后）
- * @param blocks 所有 Block 列表
- * @param block 目标 Block
- * @param excludeSelf 是否排除自身
  */
 export function getSortedSiblings(
-  blocks: BlockWithPos[],
-  block: BlockWithPos,
+  blocks: Block[],
+  block: Block,
   excludeSelf: boolean = false
-): BlockWithPos[] {
+): Block[] {
   return blocks
     .filter(b =>
       b.parentId === block.parentId &&
       b.pageId === block.pageId &&
       (!excludeSelf || b.id !== block.id)
     )
-    .sort((a, b) => {
-      if (!a.leftId) return -1
-      if (!b.leftId) return 1
-      return a.leftId.localeCompare(b.leftId)
-    })
-}
-
-/**
- * 按 leftId 排序（原地排序）
- */
-export function sortByLeftId<T extends { leftId: string | null }>(items: T[]): T[] {
-  return items.sort((a, b) => {
-    if (!a.leftId) return -1
-    if (!b.leftId) return 1
-    return a.leftId.localeCompare(b.leftId)
-  })
+    .sort((a, b) => a.pos - b.pos)
 }
 
 /**
  * 查找 Block 在排序兄弟中的索引位置
- * @param sortedSiblings 已排序的兄弟节点列表
- * @param blockId 目标 Block ID
  */
-export function findBlockIndex(sortedSiblings: BlockWithPos[], blockId: string): number {
+export function findBlockIndex(sortedSiblings: Block[], blockId: string): number {
   return sortedSiblings.findIndex(b => b.id === blockId)
 }
 
@@ -94,10 +75,10 @@ export function findBlockIndex(sortedSiblings: BlockWithPos[], blockId: string):
  * 获取指定 Block 在排序兄弟中的前一个兄弟
  */
 export function getPrevSibling(
-  blocks: BlockWithPos[],
-  block: BlockWithPos
-): BlockWithPos | undefined {
-  const siblings = getSortedSiblings(blocks, block, true)
+  blocks: Block[],
+  block: Block
+): Block | undefined {
+  const siblings = getSortedSiblings(blocks, block, false)
   const index = findBlockIndex(siblings, block.id)
   return index > 0 ? siblings[index - 1] : undefined
 }
@@ -106,12 +87,45 @@ export function getPrevSibling(
  * 获取指定 Block 在排序兄弟中的后一个兄弟
  */
 export function getNextSibling(
-  blocks: BlockWithPos[],
-  block: BlockWithPos
-): BlockWithPos | undefined {
-  const siblings = getSortedSiblings(blocks, block, true)
+  blocks: Block[],
+  block: Block
+): Block | undefined {
+  const siblings = getSortedSiblings(blocks, block, false)
   const index = findBlockIndex(siblings, block.id)
   return index < siblings.length - 1 ? siblings[index + 1] : undefined
+}
+
+/**
+ * 计算插入位置的 pos 值
+ * @param prevPos 前一个节点的 pos（null 表示在开头）
+ * @param nextPos 后一个节点的 pos（null 表示在末尾）
+ * @returns 新节点的 pos 值
+ */
+export function calcInsertPos(prevPos: number | null, nextPos: number | null): number {
+  if (prevPos === null && nextPos === null) {
+    return GAP_SIZE
+  }
+  if (prevPos === null) {
+    return nextPos! - GAP_SIZE
+  }
+  if (nextPos === null) {
+    return prevPos + GAP_SIZE
+  }
+  const mid = (prevPos + nextPos) / 2
+  if (mid === prevPos || mid === nextPos) {
+    console.warn('[calcInsertPos] Gap exhausted, renumbering needed')
+  }
+  return mid
+}
+
+/**
+ * 重新编号（当间隔耗尽时）
+ */
+export function renumberBlocks(blocks: Block[]): void {
+  const sorted = sortByPos([...blocks])
+  sorted.forEach((block, index) => {
+    block.pos = (index + 1) * GAP_SIZE
+  })
 }
 
 /** 防抖保存的延迟时间（毫秒） */

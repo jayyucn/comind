@@ -38,11 +38,7 @@ const topLevelBlocks = computed(() => {
   const pageId = resolvedPageId.value
   return blockStore.blocks
     .filter(b => b.parentId === null && b.pageId === pageId)
-    .sort((a, b) => {
-      if (!a.leftId) return -1
-      if (!b.leftId) return 1
-      return a.leftId.localeCompare(b.leftId)
-    })
+    .sort((a, b) => a.pos - b.pos)
 })
 
 const currentPageTitle = computed(() => {

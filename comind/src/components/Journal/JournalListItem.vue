@@ -24,11 +24,7 @@ const page = computed(() => pageStore.getPage(props.pageId))
 const topLevelBlocks = computed(() => {
   return blockStore.blocks
     .filter(b => b.parentId === null && b.pageId === props.pageId)
-    .sort((a, b) => {
-      if (!a.leftId) return -1
-      if (!b.leftId) return 1
-      return a.leftId.localeCompare(b.leftId)
-    })
+    .sort((a, b) => a.pos - b.pos)
 })
 
 function getWeekday(dateStr: string): string {

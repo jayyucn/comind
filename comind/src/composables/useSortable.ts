@@ -49,11 +49,10 @@ export function useSortable(el: HTMLElement) {
       const blockId = (evt.item as HTMLElement).dataset.blockId
       if (!blockId) return
 
-      const fromParentId = (evt.from as HTMLElement).dataset.parentId || null
       const toParentId = (evt.to as HTMLElement).dataset.parentId || null
       const newIndex = evt.newIndex ?? 0
 
-      blockStore.moveBlock({ blockId, fromParentId, toParentId, newIndex })
+      blockStore.moveBlock({ blockId, toParentId, newIndex })
     }
   })
 

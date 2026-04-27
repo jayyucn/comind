@@ -15,12 +15,8 @@ const blocks = computed(() => {
   if (props.topLevelOnly) {
     list = list.filter(b => b.parentId === null)
   }
-  // 按 leftId 排序
-  return list.sort((a, b) => {
-    if (!a.leftId) return -1
-    if (!b.leftId) return 1
-    return a.leftId.localeCompare(b.leftId)
-  })
+  // 按 pos 排序
+  return list.sort((a, b) => a.pos - b.pos)
 })
 </script>
 

@@ -2,7 +2,7 @@ export interface Block {
   id: string
   pageId: string
   parentId: string | null
-  leftId: string | null
+  pos: number  // 排序位置（Gap 排序，初始间隔 1000）
   content: string
   format: Record<string, any>
   type: 'bullet' | 'property' | 'query' | 'embed'
@@ -15,7 +15,7 @@ export interface BlockRecord {
   id: string
   pageId: string
   parentId: string | null
-  leftId: string | null
+  pos: number
   content: string
   format: string
   type: string
@@ -24,7 +24,5 @@ export interface BlockRecord {
   updatedAt: number
 }
 
-// 定义BlockWithPos接口的pos字段
-export interface BlockWithPos extends Block {
-  pos?: number
-}
+// BlockWithPos 已被 pos 字段取代，保留类型别名以兼容
+export type BlockWithPos = Block
