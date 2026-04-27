@@ -77,10 +77,9 @@ function handleOpenPage(pageId: string) {
 
 <style scoped>
 .journal-list-view {
-  max-width: 800px;
+  max-width: var(--max-width);
   width: 100%;
   margin: 0 auto;
-  padding: var(--space-8) 48px;
   box-sizing: border-box;
 }
 

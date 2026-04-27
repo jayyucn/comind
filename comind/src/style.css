@@ -19,6 +19,9 @@
   --border:         #E5E4DF;  /* 分割线、容器边框 */
   --border-strong:  #C9C8C3;  /* 强分割，折叠图标区域 */
 
+  /* ── 布局 ── */
+  --max-width: 720px;
+
   /* ── 交互色 ── */
   --accent:         #B45309;  /* 主强调色，琥珀深橙 */
   --accent-hover:   #92400E;  /* 强调色 hover */

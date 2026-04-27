@@ -224,7 +224,7 @@ watch([backlinkItems, loading], async () => {
   display: flex;
   flex-direction: column;
   padding: 0;
-  max-width: 800px;
+  max-width: var(--max-width);
   width: 100%;
   box-sizing: border-box;
 }
