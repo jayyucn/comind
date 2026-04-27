@@ -126,15 +126,14 @@ function openPage() {
   padding: 0;
   display: flex;
   flex-direction: column;
-  min-height: 400px;
+  min-height: 800px;
 }
 
 .block-list {
   padding-left: 0;
-  flex: 1;
 }
 
 .entry-content > :deep(.backlinks-panel) {
-  margin-bottom: auto;
+  margin-top: auto;
 }
 </style>
