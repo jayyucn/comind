@@ -97,8 +97,8 @@ const levelLineLeft = computed(() => {
   return `${indentPx}px`
 })
 
-/** 是否折叠 - 本地状态，不持久化 */
-const collapsed = ref(false)
+/** 是否折叠 - 运行时状态，同步到 format.collapsed */
+const collapsed = ref(!!blockStore.blocks.find(b => b.id === props.blockId)?.format?.collapsed)
 
 /** 动画进行中（防止快速切换导致动画错乱） */
 const isAnimating = ref(false)
@@ -132,6 +132,9 @@ watch(children, async () => {
  * - 展开：使用 childrenHeight（而非 scrollHeight，解决嵌套折叠时 scrollHeight=0 的问题）
  */
 watch(collapsed, async (isCollapsed) => {
+  // 同步折叠状态到 Block 数据模型（format.collapsed），供 store 层逻辑使用
+  blockStore.updateBlockFormat(props.blockId, { collapsed: isCollapsed })
+
   if (!childrenRef.value) return
 
   if (isCollapsed) {

@@ -402,22 +402,92 @@ export const useBlockStore = defineStore('blocks', () => {
     return undefined
   }
 
-  /** 与上一个 Block 合并 */
+  /**
+   * 找到上一个 Block 的最后一个可见后代
+   *
+   * "可见" 定义：该 Block 本身没有展开的子 Block，即：
+   * - 没有子 Block，或
+   * - 已折叠（format.collapsed === true）
+   *
+   * 如果上一个 Block 本身满足以上条件，则返回上一个 Block 本身。
+   */
+  function findLastVisibleDescendant(blockId: string): Block | undefined {
+    const block = blocks.value.find(b => b.id === blockId)
+    if (!block) return undefined
+
+    // 检查是否有展开的子 Block
+    const children = getSortedChildren(blocks.value, block.id, block.pageId)
+    const isCollapsed = block.format?.collapsed === true
+
+    // 没有子 Block 或已折叠 → 自己就是最后一个可见节点
+    if (children.length === 0 || isCollapsed) {
+      return block
+    }
+
+    // 有展开的子 Block → 递归进入最后一个子 Block
+    const lastChild = children[children.length - 1]
+    return findLastVisibleDescendant(lastChild.id)
+  }
+
+  /**
+   * 找到当前 Block 在视觉上的前一个 Block（考虑折叠状态）
+   *
+   * 与 findPreviousBlockInTreeOrder 不同，此函数考虑折叠状态：
+   * - 如果前一个兄弟 Block 有展开的子 Block，会深入到最后一个可见后代
+   * - 如果前一个兄弟 Block 已折叠或没有子 Block，返回前一个兄弟本身
+   * - 如果没有前一个兄弟，返回父 Block
+   */
+  function findPreviousVisibleBlock(blockId: string): Block | undefined {
+    const block = blocks.value.find(b => b.id === blockId)
+    if (!block) return undefined
+
+    const siblings = getSortedSiblings(blocks.value, block, false)
+    const blockIndex = siblings.findIndex(b => b.id === blockId)
+    const prevSibling = blockIndex > 0 ? siblings[blockIndex - 1] : undefined
+
+    if (prevSibling) {
+      // 从前一个兄弟开始，找到最后一个可见后代
+      return findLastVisibleDescendant(prevSibling.id)
+    }
+
+    // 没有前一个兄弟 → 返回父 Block
+    return block.parentId
+      ? blocks.value.find(b => b.id === block.parentId)
+      : undefined
+  }
+
+  /**
+   * 与上一个可见 Block 合并（Backspace 键操作）
+   *
+   * 合并规则：
+   * 1. 找到当前 Block 在视觉上的前一个 Block（考虑折叠状态）
+   *    a. 前驱没有子 Block / 已折叠 → 前驱本身就是合并目标
+   *    b. 前驱有展开的子 Block → 最后一个可见后代是合并目标
+   * 2. 合并后保留所有文本内容、格式信息和元数据
+   * 3. 光标定位到合并后内容的拼接位置（目标 Block 原有内容的末尾）
+   */
   async function mergeWithPrevious(blockId: string) {
     const block = blocks.value.find(b => b.id === blockId)
     if (!block) return
 
-    const prev = findPreviousBlockInTreeOrder(blockId)
-    if (!prev) return
+    // 找到视觉上的前一个 Block
+    const mergeTarget = findPreviousVisibleBlock(blockId)
+    if (!mergeTarget) return
 
-    const prevContentLen = prev.content.length
-    prev.content += block.content
-    const cursorPos = prevContentLen + 1
-    prev.updatedAt = Date.now()
-    await storage.saveBlock(prev)
+    // ── 执行合并 ───────────────────────────────────────────────────────
+    const targetContentLen = mergeTarget.content.length
+    mergeTarget.content += block.content
 
+    // 合并策略：目标 Block 的 format 优先保留
+    // （光标在目标 Block 中，目标的格式上下文更相关）
+    const cursorPos = targetContentLen + 1  // PM position = textOffset + 1
+    mergeTarget.updatedAt = Date.now()
+    await storage.saveBlock(mergeTarget)
+
+    // 删除当前 Block（子节点随父节点一起删除）
     await deleteBlock(blockId)
-    return { id: prev.id, cursorPos }
+
+    return { id: mergeTarget.id, cursorPos }
   }
 
   /** 缩进 */
@@ -575,6 +645,8 @@ export const useBlockStore = defineStore('blocks', () => {
     insertAtPosition,
     mergeWithPrevious,
     findPreviousBlockInTreeOrder,
+    findPreviousVisibleBlock,
+    findLastVisibleDescendant,
     findNextBlockInTreeOrder,
     indent,
     outdent,
