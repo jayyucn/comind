@@ -61,7 +61,10 @@ function openPage() {
           :block="block"
         />
       </div>
-      <Backlinks :page-id="pageId" />
+
+      <div class="block-list-footer">
+        <Backlinks :page-id="pageId" />
+      </div>
       <TagFilterPanel />
     </div>
   </div>
@@ -126,14 +129,19 @@ function openPage() {
   padding: 0;
   display: flex;
   flex-direction: column;
-  min-height: 800px;
+  min-height: 600px;
 }
 
 .block-list {
   padding-left: 0;
 }
 
-.entry-content > :deep(.backlinks-panel) {
+.block-list-footer {
+  padding-top: var(--space-4);
   margin-top: auto;
+}
+
+.block-list-footer > :deep(.backlinks-panel) {
+  padding-top: var(--space-4);
 }
 </style>

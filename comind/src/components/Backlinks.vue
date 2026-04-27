@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, nextTick } from 'vue'
 import { usePageStore } from '../stores/pages'
 import { useEditorStore } from '../stores/editor'
 import { storage } from '../storage/indexedDB'
@@ -24,6 +24,8 @@ interface BacklinkItem {
 const backlinkItems = ref<BacklinkItem[]>([])
 const loading = ref(false)
 const collapsed = ref(false)
+const bodyRef = ref<HTMLElement | null>(null)
+const isAnimating = ref(false)
 const linkStatusMap = ref<Map<string, { blockExists: boolean; pageExists: boolean }>>(new Map())
 
 // 判断是否有Backlinks数据（用于条件显示）
@@ -134,6 +136,38 @@ watch(
   () => loadBacklinks(),
   { immediate: true }
 )
+
+// 折叠动画
+watch(collapsed, async (isCollapsed) => {
+  const el = bodyRef.value
+  if (!el) return
+  if (isCollapsed) {
+    el.style.maxHeight = el.scrollHeight + 'px'
+    await nextTick()
+    requestAnimationFrame(() => {
+      el.style.maxHeight = '0px'
+      setTimeout(() => { isAnimating.value = false }, 220)
+    })
+    isAnimating.value = true
+  } else {
+    el.style.maxHeight = 'none'
+    const targetHeight = el.scrollHeight
+    el.style.maxHeight = '0px'
+    await nextTick()
+    requestAnimationFrame(() => {
+      el.style.maxHeight = targetHeight + 'px'
+      setTimeout(() => { isAnimating.value = false }, 220)
+    })
+    isAnimating.value = true
+  }
+}, { flush: 'post' })
+
+// 链接数量变化时重算高度
+watch([backlinkItems, loading], async () => {
+  if (collapsed.value) return
+  await nextTick()
+  if (bodyRef.value) bodyRef.value.style.maxHeight = 'none'
+})
 </script>
 
 <template>
@@ -149,7 +183,7 @@ watch(
     </div>
 
     <!-- 折叠内容区：max-height 动画控制 -->
-    <div class="backlinks-body">
+    <div ref="bodyRef" class="backlinks-body">
       <div v-if="loading" class="backlinks-loading">加载中...</div>
 
       <div v-else-if="backlinkItems.length === 0" class="backlinks-empty">
@@ -157,16 +191,11 @@ watch(
       </div>
 
       <div v-else class="backlinks-list">
-        <div
-          v-for="item in backlinkItems"
-          :key="item.link.sourceBlockId + item.link.targetPageId"
-          class="backlink-item"
+        <div v-for="item in backlinkItems" :key="item.link.sourceBlockId + item.link.targetPageId" class="backlink-item"
           :class="{
             'orphan-block': !getLinkStatus(item.link).blockExists,
             'orphan-page': getLinkStatus(item.link).blockExists && !getLinkStatus(item.link).pageExists
-          }"
-          @click="handleBacklinkClick(item.link)"
-        >
+          }" @click="handleBacklinkClick(item.link)">
           <span class="backlink-text">{{ item.sourceContent || '空块' }}</span>
           <span class="backlink-page">{{ item.sourcePageTitle }}</span>
           <span v-if="!getLinkStatus(item.link).blockExists" class="backlink-hint">(来源块已删除)</span>
@@ -197,7 +226,6 @@ watch(
   padding: 0;
   max-width: 800px;
   width: 100%;
-  margin: auto auto 200px;
   box-sizing: border-box;
 }
 
@@ -241,13 +269,11 @@ watch(
   padding: 2px var(--space-1);
 }
 
-/* 内容区：无 max-height 限制，自然高度 */
+/* 内容区：JS 通过 maxHeight 控制折叠动画 */
 .backlinks-body {
-  /* 移除 max-height 限制，跟随内容自然延展 */
-  overflow-y: visible;
+  overflow: hidden;
   padding: 0 0 var(--space-4);
-  transition: none;
-  /* WebKit 滚动�?*/
+  /* WebKit 滚动条 */
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
@@ -263,13 +289,6 @@ watch(
 
 .backlinks-body::-webkit-scrollbar-thumb:hover {
   background: var(--text-tertiary);
-}
-
-/* 折叠时内容区高度归零 */
-.backlinks-panel.is-collapsed .backlinks-body {
-  max-height: 0;
-  overflow: hidden;
-  padding-bottom: 0;
 }
 
 .backlinks-loading,

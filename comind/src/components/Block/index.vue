@@ -109,22 +109,53 @@ const isAnimating = ref(false)
  *  必须用此值作为展开动画的目标高度。 */
 const childrenHeight = ref(0)
 
-/** 更新 childrenHeight：计算当前 .block-children 的 scrollHeight */
+/** 更新 childrenHeight：计算当前 .block-children 的 scrollHeight + 所有子块高度 */
 async function updateChildrenHeight() {
   if (childrenRef.value) {
-    childrenHeight.value = childrenRef.value.scrollHeight
+    // 情况1：子块有高度 → 直接用 scrollHeight
+    // 情况2：子块全部折叠 → scrollHeight=0，需累加每个子块高度
+    const scrollH = childrenRef.value.scrollHeight
+    childrenHeight.value = scrollH > 0 ? scrollH : await calcAllChildrenHeight()
   }
-  /** 更新层级线高度 */
   calculateLevelLineHeight()
 }
 
-/** 监听直接子块数量变化时更新 childrenHeight
- *  当子块挂载/卸载时，scrollHeight 会反映新的完整展开高度，
- *  这解决了嵌套折叠场景中子块已折叠时 scrollHeight=0 的问题。 */
-watch(children, async () => {
-  await nextTick()
-  updateChildrenHeight()
-}, { deep: false })
+/** 递归计算所有子块的展开高度（用于嵌套折叠场景） */
+async function calcAllChildrenHeight(): Promise<number> {
+  if (!childrenRef.value) return 0
+  let total = 0
+  for (const childEl of childrenRef.value.children) {
+    const rowEl = childEl.querySelector('.block-row') as HTMLElement | null
+    if (rowEl) total += rowEl.offsetHeight
+    // 递归累加子块高度
+    const grandchildrenEl = childEl.querySelector('.block-children') as HTMLElement | null
+    if (grandchildrenEl) {
+      // 当前子块已折叠则只计其 block-row；展开则递归
+      const blockId = (childEl as HTMLElement).dataset.blockId
+      const block = blockStore.blocks.find(b => b.id === blockId)
+      if (block?.format?.collapsed) {
+        total += 1 // 折叠指示线高度（最小占位）
+      } else {
+        // 临时切换到子块容器计算滚动高度
+        const orig = grandchildrenEl.style.maxHeight
+        grandchildrenEl.style.maxHeight = 'none'
+        total += grandchildrenEl.scrollHeight
+        grandchildrenEl.style.maxHeight = orig
+      }
+    }
+  }
+  return total
+}
+
+/** 监听直接子块数量/内容变化时更新 childrenHeight */
+watch(
+  () => children.value.map(b => b.id).join(','),
+  async () => {
+    await nextTick()
+    updateChildrenHeight()
+  },
+  { flush: 'post' }
+)
 
 /**
  * 监听 collapsed 状态，通过 nextTick + requestAnimationFrame 精确控制 maxHeight：
@@ -136,6 +167,9 @@ watch(collapsed, async (isCollapsed) => {
   blockStore.updateBlockFormat(props.blockId, { collapsed: isCollapsed })
 
   if (!childrenRef.value) return
+
+  // 重算 childrenHeight（展开折叠切换时子块数量/折叠状态不变，但 scrollHeight 可能已变）
+  await updateChildrenHeight()
 
   if (isCollapsed) {
     // 折叠：先恢复到当前高度，再异步设为 0
