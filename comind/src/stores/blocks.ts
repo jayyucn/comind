@@ -23,7 +23,6 @@ function sortByLeftId(blocks: BlockWithPos[]): BlockWithPos[] {
 
 export const useBlockStore = defineStore('blocks', () => {
   const blocks = ref<BlockWithPos[]>([])
-  const currentPageId = ref<string>('')
   const loading = ref(false)
 
   /** 按 leftId 排序的扁平 Block 列表 */
@@ -51,10 +50,29 @@ export const useBlockStore = defineStore('blocks', () => {
 
   /** 加载指定 Page 的 Block 树 */
   async function loadPageBlocks(pageId: string) {
+    blocks.value = await storage.getBlockTree(pageId)
+    return blocks
+  }
+
+  /** 批量加载多个 Page 的 Block 树（append 模式，不清空已有数据）
+   *  用于 JournalList 等需要同时展示多个 Page 内容的场景
+   */
+  async function loadMultiPageBlocks(pageIds: string[]) {
     loading.value = true
     try {
-      blocks.value = await storage.getBlockTree(pageId)
-      currentPageId.value = pageId
+      const allBlocks = await Promise.all(
+        pageIds.map(id => storage.getBlockTree(id))
+      )
+      // 合并，去重（避免重复加载）
+      const existingIds = new Set(blocks.value.map(b => b.id))
+      for (const pageBlocks of allBlocks) {
+        for (const block of pageBlocks) {
+          if (!existingIds.has(block.id)) {
+            blocks.value.push(block as BlockWithPos)
+            existingIds.add(block.id)
+          }
+        }
+      }
     } finally {
       loading.value = false
     }
@@ -321,7 +339,7 @@ export const useBlockStore = defineStore('blocks', () => {
 
     // 更新 parentId 和 leftId
     block.parentId = prev.id
-    
+
     // 找到新父节点的最后一个子节点
     const children = blocks.value.filter(b => b.parentId === prev.id)
     const sortedChildren = sortByLeftId(children)
@@ -344,13 +362,13 @@ export const useBlockStore = defineStore('blocks', () => {
     // 更新 parentId
     const newParentId = parent.parentId
     block.parentId = newParentId
-    
+
     // 找到新父节点的最后一个子节点
     const siblings = blocks.value.filter(b => b.parentId === newParentId && b.pageId === block.pageId)
     const sortedSiblings = sortByLeftId(siblings)
     const lastSibling = sortedSiblings[sortedSiblings.length - 1]
     block.leftId = lastSibling?.id ?? null
-    
+
     block.updatedAt = Date.now()
 
     _scheduleSave(block)
@@ -388,7 +406,7 @@ export const useBlockStore = defineStore('blocks', () => {
     // 3. 重新计算所有相关 Block 的 leftId
     // 这里简化处理，只更新移动的 Block 的 leftId
     // 实际应用中可能需要更复杂的逻辑来维护 leftId 链
-    
+
     // 找到目标位置的前后 Block
     const targetSiblings = blocks.value
       .filter(b => b.parentId === toParentId && b.pageId === pageId && b.id !== blockId)
@@ -500,10 +518,10 @@ export const useBlockStore = defineStore('blocks', () => {
     blocks,
     sortedBlocks,
     blockTree,
-    currentPageId,
     loading,
     getChildren,
     loadPageBlocks,
+    loadMultiPageBlocks,
     createBlock,
     splitBlock,
     mergeWithPrevious,

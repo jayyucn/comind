@@ -94,25 +94,11 @@ export class IndexedDBAdapter {
         let targetPage = await db.pages.where('title').equals(lookupTitle).first()
 
         if (!targetPage) {
-          const pageId = generateUUID()
           const pageType = normalized ? 'journal' : inferPageType(link.targetTitle)
-          targetPage = pageToRecord({
-            id: pageId,
-            blockId: null,
-            title: lookupTitle,
-            type: pageType,
-            icon: null,
-            cover: null,
-            aliases: [],
-            filePath: null,
-            childrenCount: 0,
-            wordCount: 0,
-            createdAt: Date.now(),
-            updatedAt: Date.now()
-          })
+          const newPage = await this.createPageWithRootBlock(lookupTitle, pageType)
+          targetPage = pageToRecord(newPage)
           await db.pages.put(targetPage)
         }
-
         await db.links.add({
           id: generateUUID(),
           sourceBlockId,
@@ -222,6 +208,11 @@ export class IndexedDBAdapter {
   async getAllPages(): Promise<Page[]> {
     const records = await db.pages.orderBy('title').toArray()
     return records.map(recordToPage)
+  }
+
+  async getById(id: string): Promise<Page | undefined> {
+    const record = await db.pages.get(id)
+    return record ? recordToPage(record) : undefined
   }
 
   async getPagesByType(type: 'normal' | 'journal'): Promise<Page[]> {

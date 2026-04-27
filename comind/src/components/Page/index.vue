@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, nextTick } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import Block from '../Block/index.vue'
 import Backlinks from '../Backlinks.vue'
 import MergeDialog from '../MergeDialog.vue'
@@ -22,9 +22,22 @@ const pageStore = usePageStore()
 const blockStore = useBlockStore()
 const editorStore = useEditorStore()
 
+/** 解析实际的 pageId：props 可能是 UUID 或 date title（journal-page 路由） */
+const resolvedPageId = computed(() => {
+  // 先尝试直接当作 UUID 查找
+  const direct = pageStore.getPage(props.pageId)
+  if (direct) return direct.id
+  // 再尝试当作 title 查找（journal-page 路由传入的是 date 字符串）
+  const byTitle = pageStore.getPageByTitle(props.pageId)
+  if (byTitle) return byTitle.id
+  // 都找不到，返回原始值（渲染时显示 comind 默认标题）
+  return props.pageId
+})
+
 const topLevelBlocks = computed(() => {
+  const pageId = resolvedPageId.value
   return blockStore.blocks
-    .filter(b => b.parentId === null && b.pageId === props.pageId)
+    .filter(b => b.parentId === null && b.pageId === pageId)
     .sort((a, b) => {
       if (!a.leftId) return -1
       if (!b.leftId) return 1
@@ -33,7 +46,7 @@ const topLevelBlocks = computed(() => {
 })
 
 const currentPageTitle = computed(() => {
-  const page = pageStore.getPage(props.pageId)
+  const page = pageStore.getPage(resolvedPageId.value)
   return page?.title ?? 'comind'
 })
 
@@ -52,16 +65,21 @@ onMounted(() => {
   }
 })
 
+// 路由切换时清理编辑状态（SPEC.md §7 单编辑器原则）
+onBeforeUnmount(() => {
+  editorStore.deactivateBlock()
+})
+
 function handleMainClick(e: MouseEvent) {
   const target = e.target as HTMLElement
   if (target.closest('.block')) return
   editorStore.deactivateBlock()
 }
 
-function startEditTitle() {
+async function startEditTitle() {
   if (!props.editableTitle) return
   editorStore.deactivateBlock()
-  editingTitle.value = currentPageTitle.value
+  editingTitle.value = await currentPageTitle.value
   isEditingTitle.value = true
   nextTick(() => {
     titleInputRef.value?.focus()
@@ -72,9 +90,9 @@ function startEditTitle() {
 async function saveTitle() {
   isEditingTitle.value = false
   const newTitle = editingTitle.value.trim()
-  if (!newTitle || newTitle === currentPageTitle.value) return
+  if (!newTitle || newTitle === await currentPageTitle.value) return
 
-  const result = await pageStore.renamePage(props.pageId, newTitle)
+  const result = await pageStore.renamePage(await resolvedPageId.value, newTitle)
   if (result.duplicated) {
     editingTitle.value = newTitle
     showMergeDialog.value = true
@@ -89,7 +107,7 @@ function cancelEditTitle() {
 
 async function handleMerge() {
   if (!mergeTarget.value) return
-  const sourceId = props.pageId
+  const sourceId = await resolvedPageId.value
   const targetId = mergeTarget.value.id
   showMergeDialog.value = false
   mergeTarget.value = null

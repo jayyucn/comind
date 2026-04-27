@@ -36,6 +36,7 @@ export const usePageStore = defineStore('pages', () => {
   }
 
   function getPageByTitle(title: string): Page | undefined {
+    if (!title.trim()) return undefined
     return pages.value.find(p => p.title === title)
   }
 

@@ -7,6 +7,7 @@ import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import { useTagFilter } from '../../composables/useTagFilter'
 import { TAG_REGEX } from '../../utils/parser'
 import Editor from '../Editor.vue'
+import { usePageStore } from '../../stores/pages'
 
 defineOptions({
   name: 'Block'
@@ -19,6 +20,7 @@ const props = defineProps<{
 
 const editorStore = useEditorStore()
 const blockStore = useBlockStore()
+const pageStore = usePageStore()
 const { navigateToPage } = useNavigateToPage()
 const { openFilter } = useTagFilter()
 
@@ -28,7 +30,7 @@ const children = computed(() => blockStore.getChildren(props.blockId))
 /** 页面是否仅有一个空 Block（唯一场景显示 placeholder） */
 const isSingleEmptyBlock = computed(() => {
   const contentBlocks = blockStore.blocks.filter(
-    b => b.pageId === blockStore.currentPageId
+    b => b.pageId === pageStore.currentPageId
   )
   return contentBlocks.length === 1 && contentBlocks[0].content === '' && contentBlocks[0].id === props.blockId
 })
@@ -326,7 +328,6 @@ function handleContentClick(e: MouseEvent) {
     window.open(link.dataset.external, '_blank')
     return
   }
-
   const pageName = link.dataset.page
   if (pageName) {
     navigateToPage(pageName).catch(err => {

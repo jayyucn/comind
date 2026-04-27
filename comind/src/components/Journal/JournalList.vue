@@ -3,12 +3,14 @@ import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useJournal } from '../../composables/useJournal'
 import { usePageStore } from '../../stores/pages'
+import { useBlockStore } from '../../stores/blocks'
 import JournalListItem from './JournalListItem.vue'
 import SlashCommandMenu from '../SlashCommandMenu.vue'
 
 const router = useRouter()
 const journal = useJournal()
 const pageStore = usePageStore()
+const blockStore = useBlockStore()
 
 // 用于强制刷新的计数器
 const refreshKey = ref(0)
@@ -23,12 +25,21 @@ const allJournals = computed(() => {
 })
 
 // 确保今天的日记存在（先从 IDB 加载 pages，避免重复创建）
+// 然后加载所有 journal page 的 blocks
 onMounted(async () => {
   await pageStore.loadAllPages()
   if (!journal.todayJournalExists.value) {
     await journal.ensureTodayJournalExists()
     await nextTick()
     refreshKey.value++
+  }
+
+  // 加载所有 journal page 的 blocks 到 blockStore
+  const journalIds = pageStore.pages
+    .filter(p => p.type === 'journal')
+    .map(p => p.id)
+  if (journalIds.length > 0) {
+    await blockStore.loadMultiPageBlocks(journalIds)
   }
 })
 

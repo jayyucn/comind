@@ -51,7 +51,7 @@ export function useJournal() {
     if (existing) return
 
     const newPage = await pageStore.createPage(today.value, 'journal')
-    await blockStore.loadPageBlocks(newPage.id)
+    await pageStore.openPage(newPage.id)
   }
 
   // 检查并确保今天日记存在（Session 级，只触发一次）
@@ -65,14 +65,12 @@ export function useJournal() {
   }
 
   // 兼容旧名称
-  const checkAndOpenOrCreateTodayJournal = checkAndEnsureTodayJournal
 
   return {
     today,
     journalPages,
     todayJournalExists,
     checkAndEnsureTodayJournal,
-    checkAndOpenOrCreateTodayJournal,
     ensureTodayJournalExists,
   }
 }

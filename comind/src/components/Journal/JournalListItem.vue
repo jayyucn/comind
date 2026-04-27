@@ -128,9 +128,17 @@ function openPage() {
 
 .entry-content {
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 400px;
 }
 
 .block-list {
   padding-left: 0;
+  flex: 1;
+}
+
+.entry-content > :deep(.backlinks-panel) {
+  margin-top: auto;
 }
 </style>
