@@ -47,6 +47,11 @@ onMounted(() => {
   if (childrenRef.value) {
     useSortable(childrenRef.value)
     updateChildrenHeight()
+    // 修复：页面刷新时，折叠状态已从 store 恢复，但 maxHeight 未初始化
+    // 需要根据初始 collapsed 状态设置正确的 maxHeight
+    if (collapsed.value) {
+      childrenRef.value.style.maxHeight = '0px'
+    }
   }
 })
 
