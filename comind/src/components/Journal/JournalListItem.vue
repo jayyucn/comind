@@ -139,6 +139,6 @@ function openPage() {
 }
 
 .entry-content > :deep(.backlinks-panel) {
-  margin-top: auto;
+  margin-bottom: auto;
 }
 </style>
