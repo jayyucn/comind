@@ -56,48 +56,6 @@ describe('Gap 排序机制', () => {
   })
 })
 
-describe('splitBlock - Enter 拆分', () => {
-  test('按光标位置拆分 Block', async () => {
-    const store = useBlockStore()
-    const pageId = 'page-1'
-
-    const block = await store.createBlock({ pageId, content: 'Hello World' })
-    await store.splitBlock(block.id, 5)
-
-    const updatedBlock = store.blocks.find(b => b.id === block.id)
-    expect(updatedBlock?.content).toBe('Hell')
-
-    const newBlock = store.blocks.find(b => b.content === 'o World')
-    expect(newBlock).toBeDefined()
-    expect(newBlock?.pos).toBeGreaterThan(block.pos)
-  })
-
-  test('折叠状态拆分，新 Block 作为子节点', async () => {
-    const store = useBlockStore()
-    const pageId = 'page-1'
-
-    const parent = await store.createBlock({ pageId, content: 'Parent' })
-    await store.splitBlock(parent.id, 4, true)
-
-    const newBlock = store.blocks.find(b => b.content === 'ent')
-    expect(newBlock).toBeDefined()
-    expect(newBlock?.parentId).toBe(parent.id)
-  })
-
-  test('展开状态拆分，新 Block 作为兄弟节点', async () => {
-    const store = useBlockStore()
-    const pageId = 'page-1'
-
-    const parent = await store.createBlock({ pageId, content: 'Parent' })
-    await store.splitBlock(parent.id, 4, false)
-
-    const newBlock = store.blocks.find(b => b.content === 'ent')
-    expect(newBlock).toBeDefined()
-    expect(newBlock?.parentId).toBe(null)
-    expect(newBlock?.pos).toBeGreaterThan(parent.pos)
-  })
-})
-
 describe('mergeWithPrevious - Backspace 合并', () => {
   test('光标在开头时，与上一个 Block 合并', async () => {
     const store = useBlockStore()

@@ -14,8 +14,63 @@ import {
   getPrevSibling,
   getNextSibling,
   calcInsertPos,
-  SAVE_DEBOUNCE_MS
+  renumberBlocks,
+  isGapExhaustedError,
+  SAVE_DEBOUNCE_MS,
+  findBlockIndex
 } from '../utils/block-helpers'
+
+/**
+ * 安全计算插入位置，带自动重试机制
+ *
+ * 当间隔耗尽时自动触发重新编号，然后重试一次。
+ * 如果重试后仍然失败，抛出错误。
+ *
+ * @param prevPos 前一个节点的 pos
+ * @param nextPos 后一个节点的 pos
+ * @param blocksRef Block 列表引用（用于重新编号）
+ * @param storageRef 存储引用（用于持久化重新编号结果）
+ * @returns 新节点的 pos 值
+ */
+async function safeCalcInsertPos(
+  prevPos: number | null,
+  nextPos: number | null,
+  blocksRef: Block[],
+  storageRef: typeof storage
+): Promise<number> {
+  try {
+    return calcInsertPos(prevPos, nextPos)
+  } catch (error) {
+    if (isGapExhaustedError(error)) {
+      console.warn('[safeCalcInsertPos] Gap exhausted, triggering renumbering...')
+      
+      // 重新编号所有 Block
+      renumberBlocks(blocksRef)
+      
+      // 持久化重新编号结果
+      for (const block of blocksRef) {
+        await storageRef.saveBlock(block)
+      }
+      
+      console.info('[safeCalcInsertPos] Renumbering complete, retrying insert...')
+      
+      // 重试计算（重新编号后应该有足够空间）
+      // 注意：prevPos 和 nextPos 可能已改变，需要重新获取
+      // 由于调用方已经计算好了 prevPos/nextPos，这里简单地重试
+      // 如果仍然失败，说明有更严重的问题
+      try {
+        return calcInsertPos(prevPos, nextPos)
+      } catch (retryError) {
+        console.error('[safeCalcInsertPos] Retry failed after renumbering:', retryError)
+        throw new Error(
+          'Failed to calculate insert position even after renumbering. ' +
+          'This indicates a serious data consistency issue.'
+        )
+      }
+    }
+    throw error
+  }
+}
 
 export const useBlockStore = defineStore('blocks', () => {
   const blocks = ref<Block[]>([])
@@ -113,14 +168,25 @@ export const useBlockStore = defineStore('blocks', () => {
     return false
   }
 
-  /** 创建新 Block */
+  /**
+   * 创建新 Block
+   *
+   * @param opts.pos - 可选。若传入则直接使用；否则自动计算（追加到末尾）
+   */
   async function createBlock(
     opts: Partial<Block> & { pageId: string; content: string }
   ): Promise<Block> {
     const parentId = opts.parentId ?? null
-    const siblings = getSortedChildren(blocks.value, parentId, opts.pageId)
-    const lastPos = siblings.length > 0 ? siblings[siblings.length - 1].pos : null
-    const newPos = calcInsertPos(lastPos, null)
+
+    // 若调用方已提供 pos 则直接使用；否则计算末尾位置（带自动恢复）
+    let newPos: number
+    if (opts.pos !== undefined) {
+      newPos = opts.pos
+    } else {
+      const siblings = getSortedChildren(blocks.value, parentId, opts.pageId)
+      const lastPos = siblings.length > 0 ? siblings[siblings.length - 1].pos : null
+      newPos = await safeCalcInsertPos(lastPos, null, blocks.value, storage)
+    }
 
     const block: Block = {
       id: generateUUID(),
@@ -141,43 +207,143 @@ export const useBlockStore = defineStore('blocks', () => {
     return block
   }
 
-  /** 在光标位置拆分 Block */
-  async function splitBlock(blockId: string, cursorPos: number, isCollapsed?: boolean) {
+  /**
+   * 在光标位置插入新节点
+   *
+   * 插入逻辑基于光标位置：
+   * - 行首：当前节点上方插入兄弟节点
+   * - 行尾：子节点展开时插入为第一个子节点；否则插入为下方兄弟节点
+   * - 文本中间：拆分当前节点为前后两部分，前部留原节点，后部创建新节点
+   *
+   * @param blockId - 目标 Block ID
+   * @param cursorPos - ProseMirror 坐标系的绝对位置（1-based）
+   * @param isCollapsed - 当前 Block 是否处于折叠状态
+   * @param blockFormat - 可选：复制给新节点的格式（用于保持样式一致）
+   * @returns 新创建的 Block（或 null）
+   */
+  async function insertBlockAtCursor(
+    blockId: string,
+    cursorPos: number,
+    isCollapsed: boolean,
+    blockFormat?: Record<string, any>
+  ): Promise<Block | null> {
     const block = blocks.value.find(b => b.id === blockId)
-    if (!block) return
+    if (!block) return null
 
     const textOffset = pmPosToTextOffset(cursorPos)
-    const before = block.content.slice(0, textOffset)
-    const after = block.content.slice(textOffset)
+    const contentLen = block.content.length
 
-    block.content = before
-    block.updatedAt = Date.now()
-    await storage.saveBlock(block)
+    // ── 位置判断 ─────────────────────────────────────────────────────────
+    // 空行（contentLen === 0）应视作行尾，插入子节点而非兄弟节点
+    const isEmptyLine = contentLen === 0
+    const isAtLineStart = !isEmptyLine && textOffset === 0
+    const isAtLineEnd = textOffset >= contentLen  // 包含空行情况
+    const isInMiddle = !isAtLineStart && !isAtLineEnd
 
-    const childBlocks = getChildren(block.id)
-    const isCreateChild = isCollapsed || childBlocks.length > 0
-    const newParentId = isCreateChild ? block.id : block.parentId
+    // ── 边界处理 ──────────────────────────────────────────────────────────
+    // 单字符（contentLen === 1）：cursorPos 只能在 1（行首）或 2（行尾）
+    // 这两种情况都被上面的条件正确覆盖，无需额外处理
 
-    // 计算新 Block 的位置
-    let newPos: number
-    if (isCreateChild) {
-      // 作为子节点：插入到现有子节点末尾
-      const lastChildPos = childBlocks.length > 0 ? childBlocks[childBlocks.length - 1].pos : null
-      newPos = calcInsertPos(lastChildPos, null)
-    } else {
-      // 作为兄弟节点：插入到当前 Block 之后
-      const nextSibling = getNextSibling(blocks.value, block)
-      newPos = calcInsertPos(block.pos, nextSibling?.pos ?? null)
+    // ── 情况1：行首位置 ─────────────────────────────────────────────────
+    if (isAtLineStart) {
+      // 在当前节点紧邻上方插入新的兄弟节点
+      return insertSiblingAbove(block, blockFormat)
     }
 
-    const newBlock = await createBlock({
-      pageId: block.pageId,
-      content: after,
-      parentId: newParentId,
-      pos: newPos
-    })
+    // ── 情况2/3：行尾或文本中间 ────────────────────────────────────────
+    // 获取子节点用于判断插入位置
+    const childBlocks = getChildren(block.id)
+    const hasExpandedChildren = !isCollapsed && childBlocks.length > 0
 
-    return newBlock
+    // 确定新节点的 parentId
+    // - 有展开的子节点 → 作为第一个子节点（parentId = block.id）
+    // - 其他情况 → 作为下方兄弟节点（parentId = block.parentId）
+    const newParentId = hasExpandedChildren ? block.id : block.parentId
+
+    if (isInMiddle) {
+      // ── 文本中间：拆分内容 ───────────────────────────────────────────
+      const before = block.content.slice(0, textOffset)
+      const after = block.content.slice(textOffset)
+
+      // 更新当前节点的内容（前半部分）
+      block.content = before
+      block.updatedAt = Date.now()
+      _scheduleSave(block)
+
+      // 在指定位置插入新节点（后半部分）
+      return insertAtPosition(block.pageId, newParentId, after, block, childBlocks, hasExpandedChildren, blockFormat)
+    } else {
+      // ── 行尾：无文本拆分 ─────────────────────────────────────────────
+      return insertAtPosition(block.pageId, newParentId, '', block, childBlocks, hasExpandedChildren, blockFormat)
+    }
+  }
+
+  /**
+   * 在当前节点紧邻的上方插入新的兄弟节点
+   * 新节点与当前节点保持相同的层级关系（parentId 相同）
+   */
+  async function insertSiblingAbove(
+    block: Block,
+    blockFormat?: Record<string, any>
+  ): Promise<Block> {
+    const siblings = getSortedSiblings(blocks.value, block, false)
+    const blockIndex = findBlockIndex(siblings, block.id)
+    const prevSibling = blockIndex > 0 ? siblings[blockIndex - 1] : undefined
+
+    // 计算新节点位置：在上一个兄弟节点之后，第一个兄弟之前
+    // 若无上一个兄弟，则插入到当前父节点的最前面（prevPos = null，nextPos = 第一个兄弟的 pos）
+    const prevPos = prevSibling?.pos ?? null
+    const nextPos = block.pos
+    const newPos = await safeCalcInsertPos(prevPos, nextPos, blocks.value, storage)
+
+    return createBlock({
+      pageId: block.pageId,
+      content: '',
+      parentId: block.parentId,
+      pos: newPos,
+      format: blockFormat ?? {}
+    })
+  }
+
+  /**
+   * 在指定位置插入新节点（内部辅助）
+   *
+   * @param pageId - 页面 ID
+   * @param parentId - 父节点 ID（null 表示根级）
+   * @param content - 新节点内容
+   * @param refBlock - 参考 Block（用于计算位置）
+   * @param childBlocks - refBlock 的现有子节点（用于子节点插入定位）
+   * @param asFirstChild - 是否作为第一个子节点插入
+   * @param blockFormat - 可选：格式
+   */
+  async function insertAtPosition(
+    pageId: string,
+    parentId: string | null,
+    content: string,
+    refBlock: Block,
+    childBlocks: Block[],
+    asFirstChild: boolean,
+    blockFormat?: Record<string, any>
+  ): Promise<Block> {
+    let newPos: number
+
+    if (asFirstChild) {
+      // 作为第一个子节点：插入到现有子节点之前
+      const firstChildPos = childBlocks.length > 0 ? childBlocks[0].pos : null
+      newPos = await safeCalcInsertPos(null, firstChildPos, blocks.value, storage)
+    } else {
+      // 作为下方兄弟节点：插入到 refBlock 之后
+      const nextSibling = getNextSibling(blocks.value, refBlock)
+      newPos = await safeCalcInsertPos(refBlock.pos, nextSibling?.pos ?? null, blocks.value, storage)
+    }
+
+    return createBlock({
+      pageId,
+      content,
+      parentId,
+      pos: newPos,
+      format: blockFormat ?? {}
+    })
   }
 
   /** 找到文档序前驱（树前序遍历） */
@@ -265,7 +431,7 @@ export const useBlockStore = defineStore('blocks', () => {
     // 先计算新位置（在修改 parentId 之前）
     const children = getChildren(prev.id)
     const lastPos = children.length > 0 ? children[children.length - 1].pos : null
-    const newPos = calcInsertPos(lastPos, null)
+    const newPos = await safeCalcInsertPos(lastPos, null, blocks.value, storage)
 
     // 再修改 parentId 和 pos
     block.parentId = prev.id
@@ -287,7 +453,7 @@ export const useBlockStore = defineStore('blocks', () => {
 
     // 先计算新位置（在修改 parentId 之前）
     const nextSibling = getNextSibling(blocks.value, parent)
-    const newPos = calcInsertPos(parent.pos, nextSibling?.pos ?? null)
+    const newPos = await safeCalcInsertPos(parent.pos, nextSibling?.pos ?? null, blocks.value, storage)
 
     // 再修改 parentId 和 pos
     block.parentId = newParentId
@@ -319,7 +485,7 @@ export const useBlockStore = defineStore('blocks', () => {
     const nextPos = clampedIndex < targetSiblings.length ? targetSiblings[clampedIndex].pos : null
 
     block.parentId = toParentId
-    block.pos = calcInsertPos(prevPos, nextPos)
+    block.pos = await safeCalcInsertPos(prevPos, nextPos, blocks.value, storage)
     block.updatedAt = Date.now()
 
     _scheduleSave(block)
@@ -404,7 +570,9 @@ export const useBlockStore = defineStore('blocks', () => {
     loadPageBlocks,
     loadMultiPageBlocks,
     createBlock,
-    splitBlock,
+    insertBlockAtCursor,
+    insertSiblingAbove,
+    insertAtPosition,
     mergeWithPrevious,
     findPreviousBlockInTreeOrder,
     findNextBlockInTreeOrder,

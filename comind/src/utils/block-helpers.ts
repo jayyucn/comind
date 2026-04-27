@@ -97,9 +97,16 @@ export function getNextSibling(
 
 /**
  * 计算插入位置的 pos 值
+ *
+ * 使用 Gap 排序算法：
+ * - 初始间隔 GAP_SIZE = 1000
+ * - 插入取中间值 floor((prevPos + nextPos) / 2)
+ * - 间隔耗尽时抛出错误，需调用方触发 renumberBlocks
+ *
  * @param prevPos 前一个节点的 pos（null 表示在开头）
  * @param nextPos 后一个节点的 pos（null 表示在末尾）
- * @returns 新节点的 pos 值
+ * @returns 新节点的 pos 值（保证为整数）
+ * @throws {Error} 当间隔耗尽时（prevPos 与 nextPos 相邻）
  */
 export function calcInsertPos(prevPos: number | null, nextPos: number | null): number {
   if (prevPos === null && nextPos === null) {
@@ -111,11 +118,46 @@ export function calcInsertPos(prevPos: number | null, nextPos: number | null): n
   if (nextPos === null) {
     return prevPos + GAP_SIZE
   }
-  const mid = (prevPos + nextPos) / 2
-  if (mid === prevPos || mid === nextPos) {
-    console.warn('[calcInsertPos] Gap exhausted, renumbering needed')
+
+  // 使用 Math.floor 确保结果为整数，避免浮点数累积误差
+  const mid = Math.floor((prevPos + nextPos) / 2)
+
+  // 检测间隔耗尽：当 mid 等于 prevPos 时，说明 prevPos 和 nextPos 之间已无空间
+  if (mid === prevPos) {
+    const error = new Error(
+      `[calcInsertPos] Gap exhausted between pos ${prevPos} and ${nextPos}. ` +
+      `Call renumberBlocks() to recover.`
+    )
+    error.name = 'GapExhaustedError'
+    console.error(error.message)
+    throw error
   }
+
   return mid
+}
+
+/** 间隔耗尽错误类型 */
+export class GapExhaustedError extends Error {
+  readonly prevPos: number
+  readonly nextPos: number
+
+  constructor(prevPos: number, nextPos: number, message?: string) {
+    super(
+      message ??
+      `Gap exhausted between pos ${prevPos} and ${nextPos}. Call renumberBlocks() to recover.`
+    )
+    this.name = 'GapExhaustedError'
+    this.prevPos = prevPos
+    this.nextPos = nextPos
+  }
+}
+
+/**
+ * 检测是否为间隔耗尽错误
+ */
+export function isGapExhaustedError(error: unknown): error is GapExhaustedError {
+  return error instanceof GapExhaustedError ||
+    (error instanceof Error && error.name === 'GapExhaustedError')
 }
 
 /**

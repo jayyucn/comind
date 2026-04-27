@@ -215,7 +215,7 @@ async function handleSplit(cursorPosArg: number) {
     await handleSave(editorRef.value.getText())
   }
   editorStore.deactivateBlock()
-  const newBlock = await blockStore.splitBlock(props.blockId, cursorPosArg, collapsed.value)
+  const newBlock = await blockStore.insertBlockAtCursor(props.blockId, cursorPosArg, collapsed.value)
   if (newBlock) {
     editorStore.activateBlock(newBlock.id, 1)
   }

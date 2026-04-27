@@ -1,8 +1,8 @@
 # Page（Block 树）交互规范
 
-> 版本：v0.6\
-> 日期：2026-04-22\
-> 状态：**已更新** — §3.8 ESC 退出编辑、§3.9 Ctrl+S 手动保存实现完成\
+> 版本：v0.8\
+> 日期：2026-04-27\
+> 状态：**已更新** — §3.1 空行视为行尾处理
 > 依据：`SPEC.md` `block-editor-spec.md` `ui-ux-spec.md` `data-model.md`
 
 ***
@@ -364,43 +364,104 @@ async function handleBacklinkClick(link: LinkRecord) {
 
 **前提：** 当前 Block 处于 `edit` 态，光标在任意位置
 
-**行为：**
+**行为（基于光标位置分流）：**
 
-1. 将 Block 内容按光标位置截断
-2. 后半部分生成新 Block（`newBlock`）
-3. `newBlock` 作为当前 Block 的下一个兄弟插入
-4. `newBlock` 自动切换为 `edit` 态，光标落入开头
-5. `newBlock.createdAt` = 当前时间，`newBlock.updatedAt` = 当前时间
+| 光标位置 | 条件 | 插入行为 |
+|--------|------|--------|
+| **行首** | `cursorPos === 1` 且 `contentLen > 0` | 在当前 Block **上方**插入空兄弟节点 |
+| **行尾** | `cursorPos === contentLen + 1`（含空行） | 若有展开子节点 → 插入为**第一个子节点**；否则插入为**下方兄弟** |
+| **中间** | 其他情况 | 拆分内容，前半保留原节点，后半创建新节点作为**下方兄弟** |
+
+**特殊规则：**
+
+- **空行（contentLen === 0）**：视为行尾处理。空行按 Enter 时，在该行下方插入兄弟节点。
+  - 若该行有展开的子节点 → 插入为第一个子节点
+  - 否则 → 插入为下方兄弟
+- 这是因为空行本身是空白输入区域，用户按 Enter 应该是"开始新的一行"而非"在当前位置上方插入"
+
+**详细行为：**
+
+1. **行首位置（cursorPos === 1）：**
+   - 创建空 Block 作为当前 Block 的**前一个兄弟**
+   - 新 Block 自动切换为 `edit` 态，光标落入开头
+
+2. **行尾位置（cursorPos === contentLen + 1）：**
+   - 若当前 Block 有展开的子节点（`isCollapsed === false && children.length > 0`）：
+     - 创建空 Block 作为当前 Block 的**第一个子节点**
+   - 否则：
+     - 创建空 Block 作为当前 Block 的**下一个兄弟**
+   - 新 Block 自动切换为 `edit` 态，光标落入开头
+
+3. **中间位置：**
+   - 将 Block 内容按光标位置截断
+   - 前半部分保留在原 Block
+   - 后半部分创建新 Block，作为当前 Block 的**下一个兄弟**
+   - 新 Block 自动切换为 `edit` 态，光标落入开头
 
 **实现状态：✅ 已实现**
 
 **实现细节：**
 
 ```typescript
-// Block.vue
-async function handleSplit(cursorPosArg: number) {
-  editorRef.value?.markSaved()
-  await handleSave(editorRef.value.getText())
-  editorStore.deactivateBlock()          // 同步失活，不等 onBlur 链
-  const newBlock = await blockStore.splitBlock(props.blockId, cursorPosArg)
-  if (newBlock) {
-    editorStore.activateBlock(newBlock.id, 1)  // 光标在开头
+// blocks.ts - 核心分流逻辑
+async function insertBlockAtCursor(
+  blockId: string,
+  cursorPos: number,
+  isCollapsed: boolean,
+  blockFormat?: Record<string, any>
+): Promise<Block | undefined> {
+  const block = blocks.value.find(b => b.id === blockId)
+  if (!block) return
+
+  const textOffset = pmPosToTextOffset(cursorPos)
+  const contentLen = block.content.length
+  const childBlocks = getSortedChildren(blocks.value, block.id, block.pageId)
+
+  // 行首：在上方插入兄弟
+  if (isAtLineStart(textOffset, contentLen)) {
+    return insertSiblingAbove(block, blockFormat)
   }
+
+  // 行尾：根据子节点状态决定插入位置
+  if (isAtLineEnd(textOffset, contentLen)) {
+    const hasExpandedChildren = !isCollapsed && childBlocks.length > 0
+    return insertAtPosition(
+      block.pageId,
+      hasExpandedChildren ? block.id : block.parentId,
+      '',
+      block,
+      childBlocks,
+      hasExpandedChildren,  // asFirstChild
+      blockFormat
+    )
+  }
+
+  // 中间：拆分内容
+  const before = block.content.slice(0, textOffset)
+  const after = block.content.slice(textOffset)
+  await updateBlockContent(blockId, before)
+  // ... 创建新 Block 包含 after 内容
 }
 ```
 
 **边界情况：**
 
-| 场景                              | 行为                                   | 状态 |
-| ------------------------------- | ------------------------------------ | -- |
-| 空 Block（无任何文字）按 Enter           | 在当前 Block 之后插入空 Block，光标落入新 Block 开头 | ✅  |
-| Block 只有空白字符                    | 视为空 Block                            | ✅  |
-| Enter 触发后立即触发其他快捷键（如 Backspace） | 依次处理，不阻塞                             | ✅  |
-| 拆分后新 Block 需要缩进（Tab）            | 正常处理，新 Block 成为当前 Block 的兄弟          | ✅  |
-| 页面最后一个 Block 按 Enter            | 在最后插入新 Block                         | ✅  |
-| Block 有子 Block                  | 仅拆分当前 Block，不影响子 Block               | ✅  |
+| 场景 | 行为 | 状态 |
+|------|------|------|
+| 空 Block（contentLen = 0）按 Enter | 视为行尾 → 插入为下方兄弟或第一个子节点 | ✅ |
+| 单字符 Block，光标在开头（cursorPos = 1） | 行首逻辑 → 上方插入空兄弟 | ✅ |
+| 单字符 Block，光标在末尾（cursorPos = 2） | 行尾逻辑 → 下方插入空兄弟或第一个子节点 | ✅ |
+| 行尾且有展开子节点 | 插入为第一个子节点 | ✅ |
+| 行尾但子节点已折叠 | 插入为下方兄弟 | ✅ |
+| Block 有子节点，中间拆分 | 仅拆分当前 Block，子节点保持不变 | ✅ |
+| 页面最后一个 Block 按 Enter（行尾） | 插入为下方兄弟 | ✅ |
+| Enter 触发后立即触发其他快捷键 | 依次处理，不阻塞 | ✅ |
 
-> ~~⚠️~~ **~~光标位置差异~~**：规范已修正为与实现一致——统一在当前 Block **之后**插入新 Block。
+**实现差异说明：**
+
+- 旧版：统一在当前 Block **之后**插入兄弟节点
+- 新版：根据光标位置（行首/行尾/中间）分流处理，更符合用户直觉
+- 行尾有展开子节点时插入为第一个子节点，支持"在子节点前插入新子节点"的场景
 
 ***
 
@@ -758,4 +819,4 @@ ESC               （退出编辑 / 取消）
 
 ***
 
-*文档 v0.6，更新 §3.8 ESC 退出编辑、§3.9 Ctrl+S 手动保存实现完成。*
+*文档 v0.7，更新 §3.1 Enter 拆分逻辑重构（基于光标位置分流）。*
