@@ -2,7 +2,6 @@
 import { ref, computed } from 'vue'
 import { format, isSameDay } from 'date-fns'
 import { usePageStore } from '../stores/pages'
-import { useBlockStore } from '../stores/blocks'
 import type { Page } from '../types/page'
 import { parseToDate } from '../utils/journal-detect'
 
@@ -13,7 +12,6 @@ function isJournalPage(page: Page): boolean {
 
 export function useJournal() {
   const pageStore = usePageStore()
-  const blockStore = useBlockStore()
 
   // ===== Session 级状态 =====
   // App 运行时标记：今天是否已处理过创建检查
