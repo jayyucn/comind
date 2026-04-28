@@ -73,11 +73,23 @@ export function useSortable(containerRef: Ref<HTMLElement | null>) {
         // onMove：拖拽过程中判断是否能放置
         // 返回 false → Sortable 显示"禁止"图标，阻止放置
         onMove(evt) {
+          const draggedId = (evt.dragged as HTMLElement).dataset.blockId
+          const related = evt.related as HTMLElement
+
+          // B-4 修复：如果放置到自身或自身内容区域，阻止放置
+          // evt.related 是 Sortable 正在hover的元素
+          if (draggedId && related) {
+            const targetBlock = related.closest('.block') as HTMLElement | null
+            // 检测目标是否是自身
+            if (targetBlock?.dataset.blockId === draggedId) {
+              return false
+            }
+          }
+
           // data-parent-id="" 在 JS 中是空字符串 ''，而根级 parentId 实际是 null
           // 需统一：空字符串 → null
           const rawTargetId = (evt.to as HTMLElement).dataset.parentId ?? null
           const targetId = rawTargetId === '' ? null : rawTargetId
-          const draggedId = (evt.dragged as HTMLElement).dataset.blockId
 
           if (draggedId && blockStore.isDescendantOf(targetId, draggedId)) {
             return false
