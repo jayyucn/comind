@@ -181,3 +181,28 @@
 :deep(.block-tag .tag-segment) {
   /* 每级标签继承父级颜色，可按需分级着色 */
 }
+
+/* ── 拖拽样式（Sortable.js ghostClass / dragClass）──
+ *
+ * ghost（block-ghost）：幽灵占位符，克隆被拖拽项作为放置位置的视觉指示
+ *   → 墨水晕开感 + 淡琥珀底 + 虚线边框
+ *
+ * drag（block-drag）：原始元素在拖拽中，视觉上已"抬起"
+ *   → 降低透明度 + 微旋转 + 阴影，暗示元素漂浮中
+ */
+.block-ghost {
+  /* 幽灵占位符：半透明琥珀底 + 虚线边框，墨水盖章感 */
+  opacity: 0.35;
+  background: var(--accent-06);
+  border: 2px dashed var(--color-accent);
+  border-radius: var(--radius-md);
+}
+
+.block-drag {
+  /* 正在被拖拽的原始元素：微旋转 + 阴影，表示"漂浮中" */
+  opacity: 0.45;
+  transform: rotate(1.5deg) scale(1.02);
+  box-shadow: 0 6px 20px var(--overlay);
+  border-radius: var(--radius-md);
+  cursor: grabbing;
+}
