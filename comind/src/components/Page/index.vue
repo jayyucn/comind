@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, onBeforeUnmount, nextTick } from 'vue'
-import Block from '../Block/index.vue'
+import BlockList from '../BlockList.vue'
 import Backlinks from '../Backlinks.vue'
 import MergeDialog from '../MergeDialog.vue'
 import TagFilterPanel from '../TagFilterPanel.vue'
 import SlashCommandMenu from '../SlashCommandMenu.vue'
 import { usePageStore } from '../../stores/pages'
-import { useBlockStore } from '../../stores/blocks'
 import { useEditorStore } from '../../stores/editor'
-import { useSortable } from '../../composables/useSortable'
 import type { Page } from '../../types/page'
 
 const props = withDefaults(defineProps<{
@@ -19,7 +17,6 @@ const props = withDefaults(defineProps<{
 })
 
 const pageStore = usePageStore()
-const blockStore = useBlockStore()
 const editorStore = useEditorStore()
 
 /** 解析实际的 pageId：props 可能是 UUID 或 date title（journal-page 路由） */
@@ -34,19 +31,10 @@ const resolvedPageId = computed(() => {
   return props.pageId
 })
 
-const topLevelBlocks = computed(() => {
-  const pageId = resolvedPageId.value
-  return blockStore.blocks
-    .filter(b => b.parentId === null && b.pageId === pageId)
-    .sort((a, b) => a.pos - b.pos)
-})
-
 const currentPageTitle = computed(() => {
   const page = pageStore.getPage(resolvedPageId.value)
   return page?.title ?? 'comind'
 })
-
-const blockListRef = ref<HTMLElement | null>(null)
 
 const isEditingTitle = ref(false)
 const editingTitle = ref('')
@@ -54,9 +42,6 @@ const titleInputRef = ref<HTMLInputElement | null>(null)
 
 const showMergeDialog = ref(false)
 const mergeTarget = ref<Page | null>(null)
-
-// 根容器的 Sortable（必须在 setup 阶段调用）
-useSortable(blockListRef)
 
 // 路由切换时清理编辑状态（SPEC.md §7 单编辑器原则）
 onBeforeUnmount(() => {
@@ -137,14 +122,7 @@ function handleCancelMerge() {
           />
         </div>
 
-        <div class="block-list" ref="blockListRef" data-parent-id="">
-          <Block
-            v-for="block in topLevelBlocks"
-            :key="block.id"
-            :block-id="block.id"
-            :block="block"
-          />
-        </div>
+        <BlockList :page-id="resolvedPageId" />
       </main>
 
       <Backlinks />

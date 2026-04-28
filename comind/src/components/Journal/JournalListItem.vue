@@ -1,12 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { useJournal } from '../../composables/useJournal'
 import { usePageStore } from '../../stores/pages'
-import { useBlockStore } from '../../stores/blocks'
-import Block from '../Block/index.vue'
+import BlockList from '../BlockList.vue'
 import Backlinks from '../Backlinks.vue'
 import TagFilterPanel from '../TagFilterPanel.vue'
-import { useSortable } from '../../composables/useSortable'
 
 const props = defineProps<{
   pageId: string
@@ -18,19 +16,8 @@ const emit = defineEmits<{
 
 const journal = useJournal()
 const pageStore = usePageStore()
-const blockStore = useBlockStore()
-const blockListRef = ref<HTMLElement | null>(null)
-
-// 根容器的 Sortable（必须在 setup 阶段调用）
-useSortable(blockListRef)
 
 const page = computed(() => pageStore.getPage(props.pageId))
-
-const topLevelBlocks = computed(() => {
-  return blockStore.blocks
-    .filter(b => b.parentId === null && b.pageId === props.pageId)
-    .sort((a, b) => a.pos - b.pos)
-})
 
 function getWeekday(dateStr: string): string {
   const date = new Date(dateStr)
@@ -58,14 +45,7 @@ function openPage() {
 
     <!-- 内容区 -->
     <div class="entry-content">
-      <div class="block-list" ref="blockListRef">
-        <Block
-          v-for="block in topLevelBlocks"
-          :key="block.id"
-          :block-id="block.id"
-          :block="block"
-        />
-      </div>
+      <BlockList :page-id="pageId" />
 
       <div class="block-list-footer">
         <Backlinks :page-id="pageId" />
@@ -135,10 +115,6 @@ function openPage() {
   display: flex;
   flex-direction: column;
   min-height: 400px;
-}
-
-.block-list {
-  padding-left: 0;
 }
 
 .block-list-footer {

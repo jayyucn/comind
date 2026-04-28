@@ -73,7 +73,10 @@ export function useSortable(containerRef: Ref<HTMLElement | null>) {
         // onMove：拖拽过程中判断是否能放置
         // 返回 false → Sortable 显示"禁止"图标，阻止放置
         onMove(evt) {
-          const targetId = (evt.to as HTMLElement).dataset.parentId || null
+          // data-parent-id="" 在 JS 中是空字符串 ''，而根级 parentId 实际是 null
+          // 需统一：空字符串 → null
+          const rawTargetId = (evt.to as HTMLElement).dataset.parentId ?? null
+          const targetId = rawTargetId === '' ? null : rawTargetId
           const draggedId = (evt.dragged as HTMLElement).dataset.blockId
 
           if (draggedId && blockStore.isDescendantOf(targetId, draggedId)) {
@@ -95,7 +98,10 @@ export function useSortable(containerRef: Ref<HTMLElement | null>) {
           const fromEl = evt.from as HTMLElement
           const oldIndex = evt.oldIndex
 
-          const toParentId = (evt.to as HTMLElement).dataset.parentId || null
+          // data-parent-id="" 在 JS 中是空字符串 ''，而根级 parentId 实际是 null
+          // 需统一：空字符串 → null，保持与 Block.parentId 类型一致
+          const rawToParentId = (evt.to as HTMLElement).dataset.parentId ?? null
+          const toParentId = rawToParentId === '' ? null : rawToParentId
           const newIndex = evt.newIndex ?? 0
 
           try {
