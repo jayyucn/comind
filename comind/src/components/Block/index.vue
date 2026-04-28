@@ -216,11 +216,16 @@ async function handleSave(content: string) {
   await blockStore.updateBlockContent(props.blockId, content)
 }
 
-async function handleSplit(cursorPosArg: number) {
+/** 同步block未保存内容到store */
+async function syncBlockContent() {
   if (editorRef.value) {
     editorRef.value.markSaved()
     await handleSave(editorRef.value.getText())
   }
+}
+
+async function handleSplit(cursorPosArg: number) {
+  await syncBlockContent()
   editorStore.deactivateBlock()
   const newBlock = await blockStore.insertBlockAtCursor(props.blockId, cursorPosArg, collapsed.value)
   if (newBlock) {
@@ -229,10 +234,7 @@ async function handleSplit(cursorPosArg: number) {
 }
 
 async function handleMerge() {
-  if (editorRef.value) {
-    editorRef.value.markSaved()
-    await handleSave(editorRef.value.getText())
-  }
+  await syncBlockContent()
   editorStore.deactivateBlock()
   const result = await blockStore.mergeWithPrevious(props.blockId)
   if (result) {
@@ -260,30 +262,21 @@ async function handleDelete() {
 }
 
 async function handleIndent() {
-  if (editorRef.value) {
-    editorRef.value.markSaved()
-    await handleSave(editorRef.value.getText())
-  }
+  await syncBlockContent()
   editorStore.deactivateBlock()
   await blockStore.indent(props.blockId)
   editorStore.activateBlock(props.blockId)
 }
 
 async function handleOutdent() {
-  if (editorRef.value) {
-    editorRef.value.markSaved()
-    await handleSave(editorRef.value.getText())
-  }
+  await syncBlockContent()
   editorStore.deactivateBlock()
   await blockStore.outdent(props.blockId)
   editorStore.activateBlock(props.blockId)
 }
 
 async function handleMoveUp() {
-  if (editorRef.value) {
-    editorRef.value.markSaved()
-    await handleSave(editorRef.value.getText())
-  }
+  await syncBlockContent()
   const prevBlock = blockStore.findPreviousBlockInTreeOrder(props.blockId)
   if (prevBlock) {
     editorStore.deactivateBlock()
@@ -292,10 +285,7 @@ async function handleMoveUp() {
 }
 
 async function handleMoveDown() {
-  if (editorRef.value) {
-    editorRef.value.markSaved()
-    await handleSave(editorRef.value.getText())
-  }
+  await syncBlockContent()
   const nextBlock = blockStore.findNextBlockInTreeOrder(props.blockId)
   if (nextBlock) {
     editorStore.deactivateBlock()
@@ -304,10 +294,7 @@ async function handleMoveDown() {
 }
 
 async function handleExitEdit() {
-  if (editorRef.value) {
-    editorRef.value.markSaved()
-    await handleSave(editorRef.value.getText())
-  }
+  await syncBlockContent()
   editorStore.deactivateBlock()
 }
 
