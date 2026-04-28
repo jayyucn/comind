@@ -15,15 +15,35 @@
   height: 100%;
 }
 
-/* 层级线 */
-.block-level-line {
+/* ── 缩进线（Indent Lines）──
+ * 纯 CSS 实现：每个 .block-children 用 ::before 伪元素画竖线，
+ * 高度自动跟随容器，无需 JS 计算。
+ * 
+ * 结构：
+ *   .block-children       → 有子节点时渲染（v-if）
+ *   .block-children.has-children → 有子节点且当前为展开状态时添加
+ *   ::before              → 画 1px 竖线，从顶部延伸到底部
+ *
+ * 嵌套层级自动叠加线条（规范：level 2 → 1 条线，level 3 → 2 条线）
+ */
+.block-children::before {
+  content: '';
   position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--indent-depth, 0) * 24px + 9px); /* 对齐折叠箭头尖端（7px chevron 左边距6.5px + 边框交汇点≈2.5px） */
   width: 1px;
   background: var(--color-accent);
-  opacity: 0.15;
+  opacity: 0.12;
   pointer-events: none;
   z-index: 0;
-  transition: height 200ms ease-out, opacity 200ms ease-out;
+  /* 折叠时线条消失（has-children 不添加） */
+  transition: opacity 200ms ease-out;
+}
+
+/* 折叠时隐藏线条 */
+.block-children:not(.has-children)::before {
+  opacity: 0;
 }
 
 /* Bullet 区域 */
@@ -118,6 +138,7 @@
 
 /* 子节点容器 */
 .block-children {
+  position: relative;
   overflow: hidden;
   padding-left: 20px;
   /* 初始 maxHeight 由 JS 控制（见 Transition 钩子） */

@@ -37,10 +37,7 @@ const isSingleEmptyBlock = computed(() => {
 
 const editorRef = ref<InstanceType<typeof Editor> | null>(null)
 const childrenRef = ref<HTMLElement | null>(null)
-const levelLineRef = ref<HTMLElement | null>(null)
 const cursorPos = ref(0)
-const levelLineHeight = ref('0px')
-const levelLineTop = ref('0px')
 
 // ── 子节点容器的 Sortable ──────────────────────────────────────────────
 onMounted(() => {
@@ -96,12 +93,6 @@ const indentDepth = computed(() => {
 /** 缩进宽度（每层 24px） */
 const indentWidth = computed(() => `${indentDepth.value * 24}px`)
 
-/** 层级线左偏移（缩进宽度 - 2px） */
-const levelLineLeft = computed(() => {
-  const indentPx = indentDepth.value * 24 + 9
-  return `${indentPx}px`
-})
-
 /** 是否折叠 - 运行时状态，同步到 format.collapsed */
 const collapsed = ref(!!blockStore.blocks.find(b => b.id === props.blockId)?.format?.collapsed)
 
@@ -122,7 +113,6 @@ async function updateChildrenHeight() {
     const scrollH = childrenRef.value.scrollHeight
     childrenHeight.value = scrollH > 0 ? scrollH : await calcAllChildrenHeight()
   }
-  calculateLevelLineHeight()
 }
 
 /** 递归计算所有子块的展开高度（用于嵌套折叠场景） */
@@ -201,32 +191,6 @@ watch(collapsed, async (isCollapsed) => {
   }
 })
 
-/**
- * 计算层级线高度：从当前 block 下方开始，到最后一个子孙节点底部
- */
-function calculateLevelLineHeight() {
-  if (!levelLineRef.value) return
-
-  const blockEl = levelLineRef.value.parentElement
-  if (!blockEl) return
-
-  const blockRect = blockEl.getBoundingClientRect()
-  const blockBottom = blockRect.bottom
-
-  if (childrenRef.value) {
-    const lastChild = childrenRef.value.lastElementChild as HTMLElement | null
-    if (lastChild) {
-      const lastChildRect = lastChild.getBoundingClientRect()
-      const height = lastChildRect.bottom - blockBottom
-      levelLineHeight.value = Math.max(0, height) + 'px'
-    } else {
-      levelLineHeight.value = '0px'
-    }
-  } else {
-    levelLineHeight.value = '0px'
-  }
-  levelLineTop.value = `${blockRect.height}px`
-}
 
 /** mousedown：捕获点击坐标，在 tiptap 挂载前通知 editor store */
 function startEditingAtClick(e: MouseEvent) {
@@ -425,10 +389,6 @@ function renderContentToHtml(text: string): string {
 <template>
   <div class="block" :class="{ active: isActive }" :data-block-id="blockId">
     <div class="block-row">
-      <!-- 层级线 -->
-      <div v-if="children.length > 0 && !collapsed" ref="levelLineRef" class="block-level-line"
-        :style="{ top: levelLineTop, height: levelLineHeight, left: levelLineLeft }"></div>
-
       <!-- 缩进占位 -->
       <div class="block-indent" :style="{ width: indentWidth }"></div>
 
@@ -459,7 +419,15 @@ function renderContentToHtml(text: string): string {
       - JS watch collapsed 状态直接控制 max-height，实现折叠动画
       - 注意：v-if 移除时 Sortable.destroy() 由 onBeforeUnmount 清理
     -->
-    <div v-if="children.length > 0" ref="childrenRef" class="block-children" :data-parent-id="blockId">
+    <!--
+      子节点容器（Sortable group）
+      - v-if 只在有子节点时渲染（Sortable 不需要空容器）
+      - childrenRef = 此 div，onMounted 时初始化 Sortable
+      - JS watch collapsed 状态直接控制 max-height，实现折叠动画
+      - 注意：v-if 移除时 Sortable.destroy() 由 onBeforeUnmount 清理
+      - .has-children 类：控制缩进线的显示（有子节点且展开时才显示）
+    -->
+    <div v-if="children.length > 0" ref="childrenRef" class="block-children" :class="{ 'has-children': !collapsed }" :style="{ '--indent-depth': indentDepth }" :data-parent-id="blockId">
       <Block v-for="child in children" :key="child.id" :block-id="child.id" :block="child" />
     </div>
   </div>
