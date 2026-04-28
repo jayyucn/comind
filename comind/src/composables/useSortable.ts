@@ -29,6 +29,7 @@ import { useEditorStore } from '../stores/editor'
  */
 export function useSortable(containerRef: Ref<HTMLElement | null>) {
   const blockStore = useBlockStore()
+  const editorStore = useEditorStore()
   const sortableRef = ref<Sortable | null>(null)
 
   // 在 onMounted 中创建 Sortable 实例（此时 DOM 已挂载）
@@ -74,7 +75,6 @@ export function useSortable(containerRef: Ref<HTMLElement | null>) {
         // onStart：拖拽开始时，让当前活跃 block 失活
         // 避免拖拽过程中编辑器仍然处于编辑状态
         onStart() {
-          const editorStore = useEditorStore()
           editorStore.deactivateBlock()
         },
 
