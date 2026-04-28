@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useJournal } from '../../composables/useJournal'
 import { usePageStore } from '../../stores/pages'
 import { useBlockStore } from '../../stores/blocks'
 import Block from '../Block/index.vue'
 import Backlinks from '../Backlinks.vue'
 import TagFilterPanel from '../TagFilterPanel.vue'
+import { useSortable } from '../../composables/useSortable'
 
 const props = defineProps<{
   pageId: string
@@ -18,6 +19,10 @@ const emit = defineEmits<{
 const journal = useJournal()
 const pageStore = usePageStore()
 const blockStore = useBlockStore()
+const blockListRef = ref<HTMLElement | null>(null)
+
+// 根容器的 Sortable（必须在 setup 阶段调用）
+useSortable(blockListRef)
 
 const page = computed(() => pageStore.getPage(props.pageId))
 
@@ -53,7 +58,7 @@ function openPage() {
 
     <!-- 内容区 -->
     <div class="entry-content">
-      <div class="block-list">
+      <div class="block-list" ref="blockListRef">
         <Block
           v-for="block in topLevelBlocks"
           :key="block.id"
