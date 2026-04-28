@@ -40,15 +40,16 @@ const childrenRef = ref<HTMLElement | null>(null)
 const cursorPos = ref(0)
 
 // ── 子节点容器的 Sortable ──────────────────────────────────────────────
+// 注意：useSortable 必须在 setup 阶段调用，传入 ref 而不是元素本身
+useSortable(childrenRef)
+
+// 初始化折叠状态相关逻辑
 onMounted(() => {
-  if (childrenRef.value) {
-    useSortable(childrenRef.value)
-    updateChildrenHeight()
-    // 修复：页面刷新时，折叠状态已从 store 恢复，但 maxHeight 未初始化
-    // 需要根据初始 collapsed 状态设置正确的 maxHeight
-    if (collapsed.value) {
-      childrenRef.value.style.maxHeight = '0px'
-    }
+  updateChildrenHeight()
+  // 修复：页面刷新时，折叠状态已从 store 恢复，但 maxHeight 未初始化
+  // 需要根据初始 collapsed 状态设置正确的 maxHeight
+  if (collapsed.value && childrenRef.value) {
+    childrenRef.value.style.maxHeight = '0px'
   }
 })
 

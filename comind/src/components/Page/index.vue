@@ -55,11 +55,8 @@ const titleInputRef = ref<HTMLInputElement | null>(null)
 const showMergeDialog = ref(false)
 const mergeTarget = ref<Page | null>(null)
 
-onMounted(() => {
-  if (blockListRef.value) {
-    useSortable(blockListRef.value)
-  }
-})
+// 根容器的 Sortable（必须在 setup 阶段调用）
+useSortable(blockListRef)
 
 // 路由切换时清理编辑状态（SPEC.md §7 单编辑器原则）
 onBeforeUnmount(() => {

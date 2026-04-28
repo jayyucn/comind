@@ -182,3 +182,37 @@ body {
   outline-offset: 2px;
   border-radius: 3px;
 }
+
+/* ===================================================
+   Sortable.js 拖拽占位符样式
+   隐藏所有可能的横向黑线
+   =================================================== */
+
+/* 隐藏 Sortable.js 的占位符元素 */
+.sortable-ghost,
+.sortable-chosen,
+.sortable-drag {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* 确保占位符不显示伪元素 */
+.sortable-ghost::before,
+.sortable-ghost::after,
+.sortable-chosen::before,
+.sortable-chosen::after,
+.sortable-drag::before,
+.sortable-drag::after {
+  display: none !important;
+}
+
+/* 禁用 Sortable.js 的默认占位符 */
+[draggable="true"] {
+  -webkit-user-drag: element;
+}
+
+/* 临时占位符元素（跨容器拖拽时插入） */
+.block-children > div:not([data-block-id]) {
+  display: none !important;
+}
