@@ -45,14 +45,31 @@ export function useSortable(el: HTMLElement) {
 
     // onEnd：拖拽结束，核心回调
     // 注意：Sortable.js 已在 DOM 层面移动了元素，此处只更新数据
-    onEnd(evt) {
+    // B-2 修复：使用 async/await 确保异步操作完成，防止并发导致数据不一致
+    // B-3 修复：失败时回滚 DOM，保持 DOM 与数据层一致
+    onEnd: async (evt) => {
       const blockId = (evt.item as HTMLElement).dataset.blockId
       if (!blockId) return
+
+      // 记录原始位置，用于失败时回滚
+      const fromEl = evt.from as HTMLElement
+      const oldIndex = evt.oldIndex
 
       const toParentId = (evt.to as HTMLElement).dataset.parentId || null
       const newIndex = evt.newIndex ?? 0
 
-      blockStore.moveBlock({ blockId, toParentId, newIndex })
+      try {
+        await blockStore.moveBlock({ blockId, toParentId, newIndex })
+      } catch (error) {
+        console.error('[useSortable] moveBlock failed, rolling back DOM:', error)
+        // 将元素移回原始容器和位置
+        // Sortable 移除元素后 children 已偏移，所以 fromEl.children[oldIndex] 指向原位置的下一个元素
+        // insertBefore(item, refChild) 会把 item 插到 refChild 前面，恰好恢复原位置
+        if (fromEl && oldIndex != null) {
+          const refChild = fromEl.children[oldIndex] ?? null
+          fromEl.insertBefore(evt.item, refChild)
+        }
+      }
     }
   })
 
