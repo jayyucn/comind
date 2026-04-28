@@ -16,6 +16,7 @@
 import { ref, onMounted, onBeforeUnmount, type Ref } from 'vue'
 import Sortable from 'sortablejs'
 import { useBlockStore } from '../stores/blocks'
+import { useEditorStore } from '../stores/editor'
 
 /**
  * 使用响应式 ref 初始化 Sortable 实例
@@ -69,6 +70,13 @@ export function useSortable(containerRef: Ref<HTMLElement | null>) {
 
         // swapThreshold: 0.65,
         // invertSwap: true,
+
+        // onStart：拖拽开始时，让当前活跃 block 失活
+        // 避免拖拽过程中编辑器仍然处于编辑状态
+        onStart() {
+          const editorStore = useEditorStore()
+          editorStore.deactivateBlock()
+        },
 
         // onMove：拖拽过程中判断是否能放置
         // 返回 false → Sortable 显示"禁止"图标，阻止放置
