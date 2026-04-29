@@ -638,6 +638,7 @@ export const useBlockStore = defineStore('blocks', () => {
     block.updatedAt = Date.now()
 
     _scheduleSave(block)
+    structureVersion.value++
   }
 
   /** 删除 Block */
@@ -708,6 +709,8 @@ export const useBlockStore = defineStore('blocks', () => {
     block.properties = { ...block.properties, ...properties }
     block.updatedAt = Date.now()
     _scheduleSave(block)
+    
+    structureVersion.value++
   }
 
   return {
