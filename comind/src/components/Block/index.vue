@@ -41,9 +41,9 @@ const cursorPos = ref(0)
 
 // ── 子节点容器的 Sortable ──────────────────────────────────────────────
 // 注意：useSortable 必须在 setup 阶段调用，传入 ref 而不是元素本身
-// 传入 children.length 以监听子节点变化，自动重建 Sortable 实例
+// 通过监听 structureVersion 自动重建 Sortable 实例
 // 解决缩进/反缩进后 DOM 与 Sortable 状态不同步的问题
-useSortable(childrenRef, computed(() => children.value.length))
+useSortable(childrenRef)
 
 // 初始化折叠状态相关逻辑
 onMounted(() => {

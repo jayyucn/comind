@@ -91,6 +91,9 @@ async function safeCalcInsertPos(
 export const useBlockStore = defineStore('blocks', () => {
   const blocks = ref<Block[]>([])
   const loading = ref(false)
+  
+  /** 结构版本号 - 用于触发 Sortable 实例重建 */
+  const structureVersion = ref(0)
 
   /** 按 pos 排序的扁平 Block 列表 */
   const sortedBlocks = computed(() => sortByPos([...blocks.value]))
@@ -573,6 +576,8 @@ export const useBlockStore = defineStore('blocks', () => {
 
     block.updatedAt = Date.now()
     _scheduleSave(block)
+    
+    structureVersion.value++
   }
 
   /** 反缩进 */
@@ -599,6 +604,8 @@ export const useBlockStore = defineStore('blocks', () => {
 
     block.updatedAt = Date.now()
     _scheduleSave(block)
+    
+    structureVersion.value++
   }
 
   /** 移动 Block */
@@ -708,6 +715,7 @@ export const useBlockStore = defineStore('blocks', () => {
     sortedBlocks,
     blockTree,
     loading,
+    structureVersion,
     getChildren,
     loadPageBlocks,
     loadMultiPageBlocks,
