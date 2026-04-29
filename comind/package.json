@@ -22,12 +22,14 @@
     "vue-router": "^5.0.6"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@types/node": "^24.12.2",
     "@types/sortablejs": "^1.15.9",
     "@vitejs/plugin-vue": "^6.0.6",
     "@vue/test-utils": "^2.4.6",
     "@vue/tsconfig": "^0.9.1",
     "jsdom": "^29.0.2",
+    "playwright": "^1.59.1",
     "typescript": "~6.0.2",
     "vite": "^8.0.4",
     "vitest": "^4.1.4",

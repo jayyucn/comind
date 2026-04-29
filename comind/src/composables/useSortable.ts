@@ -23,8 +23,7 @@ import { useEditorStore } from '../stores/editor'
  */
 function createSortableOptions(
   blockStore: ReturnType<typeof useBlockStore>, 
-  editorStore: ReturnType<typeof useEditorStore>,
-  onMoveBlockComplete: () => void
+  editorStore: ReturnType<typeof useEditorStore>
 ) {
   return {
     group: 'blocks',
@@ -35,6 +34,7 @@ function createSortableOptions(
     handle: '.block-bullet',
     emptyInsertThreshold: 0,
     swap: false,
+    forceFallback: true,
     onStart() {
       editorStore.deactivateBlock()
     },
@@ -77,8 +77,6 @@ function createSortableOptions(
           const refChild = fromEl.children[oldIndex] ?? null
           fromEl.insertBefore(evt.item, refChild)
         }
-      } finally {
-        onMoveBlockComplete()
       }
     }
   }
@@ -105,15 +103,8 @@ export function useSortable(containerRef: Ref<HTMLElement | null>) {
       sortableRef.value = null
     }
     if (containerRef.value) {
-      sortableRef.value = Sortable.create(containerRef.value, createSortableOptions(blockStore, editorStore, handleMoveBlockComplete))
+      sortableRef.value = Sortable.create(containerRef.value, createSortableOptions(blockStore, editorStore))
     }
-  }
-
-  /** 拖拽完成后的处理 - 在 onEnd 完全结束后重建实例 */
-  function handleMoveBlockComplete() {
-    setTimeout(() => {
-      createSortable()
-    }, 0)
   }
 
   /** 重置 Sortable 实例（销毁并重建） */
