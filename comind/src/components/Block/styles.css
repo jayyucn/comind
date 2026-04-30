@@ -141,18 +141,39 @@
   position: relative;
   padding-left: 20px;
   overflow: hidden;
-  max-height: 1000px;
-  transition: max-height 220ms ease-out;
+  max-height: 2000px;
+  opacity: 1;
+  transform: translateY(0);
+  transition: 
+    max-height 300ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 200ms ease-out,
+    transform 250ms ease-out;
 }
 
 /* 折叠状态 */
 .block-children.is-collapsed {
   max-height: 0;
+  opacity: 0.6;
+  transform: translateY(-8px);
 }
 
 /* 动画进行中 */
 .block-children.is-animating {
   overflow: hidden;
+}
+
+/* 子块项的进入/退出动画 */
+.block-children > .block {
+  opacity: 1;
+  transform: translateX(0);
+  transition: 
+    opacity 200ms ease-out,
+    transform 200ms ease-out;
+}
+
+.block-children.is-collapsed > .block {
+  opacity: 0;
+  transform: translateX(-8px);
 }
 
 /* Link & Tag styles */
