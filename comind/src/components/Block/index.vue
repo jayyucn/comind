@@ -39,6 +39,10 @@ const editorRef = ref<InstanceType<typeof Editor> | null>(null)
 const childrenRef = ref<HTMLElement | null>(null)
 const cursorPos = ref(0)
 
+// ── 常量配置 ──────────────────────────────────────────────
+const COLLAPSE_ANIMATION_DURATION = 220 // ms
+const INDENT_WIDTH_PER_LEVEL = 24 // px
+
 // ── 子节点容器的 Sortable ──────────────────────────────────────────────
 // 注意：useSortable 必须在 setup 阶段调用，传入 ref 而不是元素本身
 // 通过监听 structureVersion 自动重建 Sortable 实例
@@ -48,11 +52,6 @@ useSortable(childrenRef)
 // 初始化折叠状态相关逻辑
 onMounted(() => {
   updateChildrenHeight()
-  // 修复：页面刷新时，折叠状态已从 store 恢复，但 maxHeight 未初始化
-  // 需要根据初始 collapsed 状态设置正确的 maxHeight
-  if (collapsed.value && childrenRef.value) {
-    childrenRef.value.style.maxHeight = '0px'
-  }
 })
 
 watch(
@@ -93,11 +92,11 @@ const indentDepth = computed(() => {
   return depth
 })
 
-/** 缩进宽度（每层 24px） */
-const indentWidth = computed(() => `${indentDepth.value * 24}px`)
+/** 缩进宽度（每层 INDENT_WIDTH_PER_LEVEL px） */
+const indentWidth = computed(() => `${indentDepth.value * INDENT_WIDTH_PER_LEVEL}px`)
 
 /** 是否折叠 - 运行时状态，同步到 format.collapsed */
-const collapsed = ref(!!blockStore.blocks.find(b => b.id === props.blockId)?.format?.collapsed)
+const collapsed = ref(props.block?.format?.collapsed ?? false)
 
 /** 动画进行中（防止快速切换导致动画错乱） */
 const isAnimating = ref(false)
@@ -108,11 +107,17 @@ const isAnimating = ref(false)
  *  必须用此值作为展开动画的目标高度。 */
 const childrenHeight = ref(0)
 
+/** 子节点容器的 CSS 类（数据驱动样式） */
+const childrenContainerClass = computed(() => ({
+  'block-children': true,
+  'has-children': !collapsed.value && children.value.length > 0,
+  'is-collapsed': collapsed.value,
+  'is-animating': isAnimating.value
+}))
+
 /** 更新 childrenHeight：计算当前 .block-children 的 scrollHeight + 所有子块高度 */
 async function updateChildrenHeight() {
   if (childrenRef.value) {
-    // 情况1：子块有高度 → 直接用 scrollHeight
-    // 情况2：子块全部折叠 → scrollHeight=0，需累加每个子块高度
     const scrollH = childrenRef.value.scrollHeight
     childrenHeight.value = scrollH > 0 ? scrollH : await calcAllChildrenHeight()
   }
@@ -125,16 +130,13 @@ async function calcAllChildrenHeight(): Promise<number> {
   for (const childEl of childrenRef.value.children) {
     const rowEl = childEl.querySelector('.block-row') as HTMLElement | null
     if (rowEl) total += rowEl.offsetHeight
-    // 递归累加子块高度
     const grandchildrenEl = childEl.querySelector('.block-children') as HTMLElement | null
     if (grandchildrenEl) {
-      // 当前子块已折叠则只计其 block-row；展开则递归
       const blockId = (childEl as HTMLElement).dataset.blockId
       const block = blockStore.blocks.find(b => b.id === blockId)
       if (block?.format?.collapsed) {
-        total += 1 // 折叠指示线高度（最小占位）
+        total += 1
       } else {
-        // 临时切换到子块容器计算滚动高度
         const orig = grandchildrenEl.style.maxHeight
         grandchildrenEl.style.maxHeight = 'none'
         total += grandchildrenEl.scrollHeight
@@ -156,42 +158,19 @@ watch(
 )
 
 /**
- * 监听 collapsed 状态，通过 nextTick + requestAnimationFrame 精确控制 maxHeight：
- * - 折叠：动画设为 0
- * - 展开：使用 childrenHeight（而非 scrollHeight，解决嵌套折叠时 scrollHeight=0 的问题）
+ * 监听 collapsed 状态：
+ * - 同步到 store 层
+ * - 控制动画状态
  */
 watch(collapsed, async (isCollapsed) => {
-  // 同步折叠状态到 Block 数据模型（format.collapsed），供 store 层逻辑使用
   blockStore.updateBlockFormat(props.blockId, { collapsed: isCollapsed })
 
-  if (!childrenRef.value) return
+  if (children.value.length === 0) return
 
-  // 重算 childrenHeight（展开折叠切换时子块数量/折叠状态不变，但 scrollHeight 可能已变）
   await updateChildrenHeight()
-
-  if (isCollapsed) {
-    // 折叠：先恢复到当前高度，再异步设为 0
-    childrenRef.value.style.maxHeight = childrenRef.value.scrollHeight + 'px'
-    await nextTick()
-    requestAnimationFrame(() => {
-      if (childrenRef.value) {
-        childrenRef.value.style.maxHeight = '0px'
-      }
-      setTimeout(() => { isAnimating.value = false }, 220)
-    })
-    isAnimating.value = true
-  } else {
-    // 展开：使用 childrenHeight（所有子块完整展开时的高度）
-    const targetHeight = childrenHeight.value || childrenRef.value.scrollHeight
-    await nextTick()
-    requestAnimationFrame(() => {
-      if (childrenRef.value) {
-        childrenRef.value.style.maxHeight = targetHeight + 'px'
-      }
-      setTimeout(() => { isAnimating.value = false }, 220)
-    })
-    isAnimating.value = true
-  }
+  
+  isAnimating.value = true
+  setTimeout(() => { isAnimating.value = false }, COLLAPSE_ANIMATION_DURATION)
 })
 
 
@@ -413,11 +392,10 @@ function renderContentToHtml(text: string): string {
       子节点容器（Sortable group）
       - v-if 只在有子节点时渲染（Sortable 不需要空容器）
       - childrenRef = 此 div，onMounted 时初始化 Sortable
-      - JS watch collapsed 状态直接控制 max-height，实现折叠动画
+      - 通过 childrenContainerClass 计算属性控制折叠状态（数据驱动样式）
       - 注意：v-if 移除时 Sortable.destroy() 由 onBeforeUnmount 清理
-      - .has-children 类：控制缩进线的显示（有子节点且展开时才显示）
     -->
-    <div v-if="children.length > 0" ref="childrenRef" class="block-children" :class="{ 'has-children': !collapsed }" :style="{ '--indent-depth': indentDepth }" :data-parent-id="blockId">
+    <div v-if="children.length > 0" ref="childrenRef" :class="childrenContainerClass" :style="{ '--indent-depth': indentDepth }" :data-parent-id="blockId">
       <Block v-for="child in children" :key="child.id" :block-id="child.id" :block="child" />
     </div>
   </div>

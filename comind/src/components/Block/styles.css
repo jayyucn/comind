@@ -139,17 +139,19 @@
 /* 子节点容器 */
 .block-children {
   position: relative;
-  overflow: hidden;
   padding-left: 20px;
-  /* 初始 maxHeight 由 JS 控制（见 Transition 钩子） */
+  overflow: hidden;
+  max-height: 1000px;
+  transition: max-height 220ms ease-out;
 }
 
-/* ── 折叠过渡动画 ──
-   注意：不设置 max-height 值，JS 钩子通过 el.style.maxHeight 动态控制
-   （避免 CSS 优先级（!important）阻止 JS 设置的内联值） */
-.collapse-enter-active,
-.collapse-leave-active {
-  transition: max-height 200ms ease-out;
+/* 折叠状态 */
+.block-children.is-collapsed {
+  max-height: 0;
+}
+
+/* 动画进行中 */
+.block-children.is-animating {
   overflow: hidden;
 }
 
