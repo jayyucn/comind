@@ -118,6 +118,11 @@ export const useBlockStore = defineStore('blocks', () => {
     return blockTree.value.get(parentId) ?? []
   }
 
+  /** 获取指定页面的所有 Block */
+  function getBlocksByPage(pageId: string): Block[] {
+    return blocks.value.filter(b => b.pageId === pageId)
+  }
+
   /** 加载指定 Page 的 Block 树 */
   async function loadPageBlocks(pageId: string) {
     blocks.value = await storage.getBlockTree(pageId)
@@ -719,6 +724,7 @@ export const useBlockStore = defineStore('blocks', () => {
     loading,
     structureVersion,
     getChildren,
+    getBlocksByPage,
     loadPageBlocks,
     loadMultiPageBlocks,
     createBlock,

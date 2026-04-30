@@ -5,7 +5,7 @@ import { useBlockStore } from '../../stores/blocks'
 import { useSortable } from '../../composables/useSortable'
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import { useTagFilter } from '../../composables/useTagFilter'
-import { TAG_REGEX } from '../../utils/parser'
+import { useContentRenderer } from '../../composables/useContentRenderer'
 import Editor from '../Editor.vue'
 import { usePageStore } from '../../stores/pages'
 
@@ -23,15 +23,14 @@ const blockStore = useBlockStore()
 const pageStore = usePageStore()
 const { navigateToPage } = useNavigateToPage()
 const { openFilter } = useTagFilter()
+const { renderContentToHtml } = useContentRenderer()
 
 const isActive = computed(() => editorStore.activeBlockId === props.blockId)
 const children = computed(() => blockStore.getChildren(props.blockId))
 
 /** 页面是否仅有一个空 Block（唯一场景显示 placeholder） */
 const isSingleEmptyBlock = computed(() => {
-  const contentBlocks = blockStore.blocks.filter(
-    b => b.pageId === pageStore.currentPageId
-  )
+  const contentBlocks = blockStore.getBlocksByPage(pageStore.currentPageId)
   return contentBlocks.length === 1 && contentBlocks[0].content === '' && contentBlocks[0].id === props.blockId
 })
 
@@ -205,26 +204,31 @@ async function syncBlockContent() {
   }
 }
 
-async function handleSplit(cursorPosArg: number) {
-  await syncBlockContent()
+/** 高阶函数：统一处理内容同步 */
+function withContentSync<T extends (...args: any[]) => Promise<void>>(fn: T): T {
+  return (async (...args: Parameters<T>) => {
+    await syncBlockContent()
+    return fn(...args)
+  }) as T
+}
+
+const handleSplit = withContentSync(async (cursorPosArg: number) => {
   editorStore.deactivateBlock()
   const newBlock = await blockStore.insertBlockAtCursor(props.blockId, cursorPosArg, collapsed.value)
   if (newBlock) {
     editorStore.activateBlock(newBlock.id, 1)
   }
-}
+})
 
-async function handleMerge() {
-  await syncBlockContent()
+const handleMerge = withContentSync(async () => {
   editorStore.deactivateBlock()
   const result = await blockStore.mergeWithPrevious(props.blockId)
   if (result) {
     editorStore.activateBlock(result.id, result.cursorPos)
   }
-}
+})
 
 async function handleDelete() {
-  // 找到前一个兄弟节点
   const prevBlock = blockStore.findPreviousBlockInTreeOrder(props.blockId)
   const prevId = prevBlock?.id
 
@@ -242,42 +246,37 @@ async function handleDelete() {
   }
 }
 
-async function handleIndent() {
-  await syncBlockContent()
+const handleIndent = withContentSync(async () => {
   editorStore.deactivateBlock()
   await blockStore.indent(props.blockId)
   editorStore.activateBlock(props.blockId)
-}
+})
 
-async function handleOutdent() {
-  await syncBlockContent()
+const handleOutdent = withContentSync(async () => {
   editorStore.deactivateBlock()
   await blockStore.outdent(props.blockId)
   editorStore.activateBlock(props.blockId)
-}
+})
 
-async function handleMoveUp() {
-  await syncBlockContent()
+const handleMoveUp = withContentSync(async () => {
   const prevBlock = blockStore.findPreviousBlockInTreeOrder(props.blockId)
   if (prevBlock) {
     editorStore.deactivateBlock()
     editorStore.activateBlock(prevBlock.id)
   }
-}
+})
 
-async function handleMoveDown() {
-  await syncBlockContent()
+const handleMoveDown = withContentSync(async () => {
   const nextBlock = blockStore.findNextBlockInTreeOrder(props.blockId)
   if (nextBlock) {
     editorStore.deactivateBlock()
     editorStore.activateBlock(nextBlock.id)
   }
-}
+})
 
-async function handleExitEdit() {
-  await syncBlockContent()
+const handleExitEdit = withContentSync(async () => {
   editorStore.deactivateBlock()
-}
+})
 
 function handleCursorChange(pos: number) {
   cursorPos.value = pos
@@ -319,40 +318,6 @@ async function toggleCollapse() {
   collapsed.value = newCollapsed
 }
 
-/** HTML 转义（防 XSS） */
-function escapeHtmlEntities(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-}
-
-/** 渲染内容（[[链接]] 高亮、#标签 样式） */
-function renderContentToHtml(text: string): string {
-  const html = escapeHtmlEntities(text)
-  return html
-    .replace(/\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g, (_, target, alias) => {
-      const display = alias || target
-      return `<span class="block-link" data-page="${escapeHtmlEntities(target)}">${display}</span>`
-    })
-    .replace(/\[\[(https?:\/\/[^\]]+)\]\]/g, (_, url) => {
-      return `<span class="block-link external" data-external href="${escapeHtmlEntities(url)}">${url}</span>`
-    })
-    // 标签：使用 parser.ts 导出的 TAG_REGEX（单一来源，DRY）
-    // 负向后顾断言逻辑已内聚到 TAG_REGEX 常量中
-    .replace(TAG_REGEX, (_, tag) => {
-      // 排除含 . 的（如域名中的 .）
-      if (tag.includes('.')) return `#${tag}`
-      // 层级标签：斜杠分隔，每级独立着色
-      const parts = tag.split('/')
-      const rendered = parts.map((p: string, i: number) => {
-        const span = `<span class="tag-segment">${escapeHtmlEntities(p)}</span>`
-        return i < parts.length - 1 ? span + '<span class="tag-sep">/</span>' : span
-      }).join('')
-      return `<span class="block-tag">#${rendered}</span>`
-    })
-}
 </script>
 
 <template>
