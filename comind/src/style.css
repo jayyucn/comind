@@ -213,6 +213,7 @@ body {
 }
 
 /* 临时占位符元素（跨容器拖拽时插入） */
-.block-children > div:not([data-block-id]) {
+.block-children > div:not([data-block-id])
+.block-list > div:not([data-block-id]) {
   display: none !important;
 }

@@ -1,7 +1,6 @@
 import { describe, test, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useBlockStore } from './blocks'
-import { GAP_SIZE } from '../utils/block-helpers'
 
 // Mock IndexedDB 存储层
 vi.mock('../storage/indexedDB', () => ({
@@ -41,7 +40,7 @@ describe('moveBlock - 拖拽子节点问题修复', () => {
       content: 'Child1',
       parentId: parent.id
     })
-    const child2 = await store.createBlock({
+    await store.createBlock({
       pageId,
       content: 'Child2',
       parentId: parent.id
@@ -88,8 +87,6 @@ describe('moveBlock - 拖拽子节点问题修复', () => {
 
     // 记录初始位置
     const child1PosBefore = child1.pos
-    const child2PosBefore = child2.pos
-    const child3PosBefore = child3.pos
 
     // 移动 child1 到末尾（index 2）
     await store.moveBlock({
@@ -100,8 +97,6 @@ describe('moveBlock - 拖拽子节点问题修复', () => {
 
     // 验证：只有 child1 的 pos 改变
     const child1After = store.blocks.find(b => b.id === child1.id)
-    const child2After = store.blocks.find(b => b.id === child2.id)
-    const child3After = store.blocks.find(b => b.id === child3.id)
 
     // child1 的 pos 应该改变（移动到末尾）
     expect(child1After?.pos).not.toBe(child1PosBefore)
@@ -173,7 +168,7 @@ describe('moveBlock - 拖拽子节点问题修复', () => {
       content: 'Child1',
       parentId: parent.id
     })
-    const child2 = await store.createBlock({
+    await store.createBlock({
       pageId,
       content: 'Child2',
       parentId: parent.id
@@ -209,10 +204,9 @@ describe('moveBlock - 边界条件处理', () => {
     const pageId = 'page-1'
 
     const block1 = await store.createBlock({ pageId, content: 'Block1' })
-    const block2 = await store.createBlock({ pageId, content: 'Block2' })
+    await store.createBlock({ pageId, content: 'Block2' })
 
     const block1PosBefore = block1.pos
-    const block2PosBefore = block2.pos
 
     // 移动 block1 到当前位置（index 0 → index 0）
     await store.moveBlock({
@@ -317,12 +311,7 @@ describe('moveBlock - 边界条件处理', () => {
 
 describe('isDescendantOf - 循环检测', () => {
   test('节点不是自己的后代', () => {
-    const store = useBlockStore()
-
-    // 直接调用会返回 false（需要先创建 block）
-    // isDescendantOf 检查的是 parentId 链，不是 id 相等
-    // 但如果 targetId === blockId，应该返回 true（根据实现）
-    // 让我们测试实际行为
+    // isDescendantOf 需要先创建 block，空 store 时行为已在其他测试中覆盖
   })
 
   test('直接子节点是后代', async () => {
