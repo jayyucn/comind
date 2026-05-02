@@ -63,14 +63,34 @@ function createSortableOptions(
       if (!blockId) return
 
       const fromEl = evt.from as HTMLElement
+      const toEl = evt.to as HTMLElement
       const oldIndex = evt.oldIndex
+      const draggedEl = evt.item as HTMLElement
 
-      const rawToParentId = (evt.to as HTMLElement).dataset.parentId ?? null
+      const rawToParentId = toEl.dataset.parentId ?? null
       const toParentId = rawToParentId === '' ? null : rawToParentId
       const newIndex = evt.newIndex ?? 0
 
+      // 检测是否为跨容器拖拽（from !== to 表示跨层级移动）
+      const isCrossContainer = fromEl !== toEl
+
       try {
         await blockStore.moveBlock({ blockId, toParentId, newIndex })
+
+        // ── 跨容器拖拽后的 DOM 清理 ──
+        //
+        // 根因：Sortable.js 已将 draggedEl 从 fromEl 移到 toEl。
+        // moveBlock 更新数据后 structureVersion++，触发：
+        //   1. watch → createSortable() → destroy + recreate
+        //   2. Vue 响应式 → blockTree 重算 → v-for 重新渲染
+        // 如果不手动移除 Sortable 移动的元素，Vue 渲染的新节点与
+        // Sortable 留下的旧节点重复 → 出现「多余的非编辑 block」。
+        //
+        // 修复：跨容器场景下，在 Sortable 重建前移除被拖拽的 DOM 元素，
+        // 让 Vue 的 v-for 完全接管渲染。
+        if (isCrossContainer && draggedEl.parentNode) {
+          draggedEl.remove()
+        }
       } catch (error) {
         console.error('[useSortable] moveBlock failed, rolling back DOM:', error)
         if (fromEl && oldIndex != null) {
