@@ -26,3 +26,16 @@ export interface BlockRecord {
 
 // BlockWithPos 已被 pos 字段取代，保留类型别名以兼容
 export type BlockWithPos = Block
+
+/**
+ * 树形节点 — Block 的树形视图
+ *
+ * 由 useBlockTree 从扁平 blocks[] 构建，
+ * 作为 VueDraggable 的 v-model 数据源，
+ * 驱动递归渲染和拖拽排序。
+ */
+export interface TreeNode {
+  id: string
+  block: Block
+  children: TreeNode[]
+}

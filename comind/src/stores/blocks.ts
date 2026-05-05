@@ -232,6 +232,7 @@ export const useBlockStore = defineStore('blocks', () => {
     blocks.value.push(block)
     await storage.saveBlock(block)
     invalidateTagCache()
+    structureVersion.value++
     return block
   }
 
@@ -677,6 +678,7 @@ export const useBlockStore = defineStore('blocks', () => {
     }
 
     invalidateTagCache()
+    structureVersion.value++
   }
 
   /** 更新 Block 内容 */
@@ -719,6 +721,12 @@ export const useBlockStore = defineStore('blocks', () => {
     structureVersion.value++
   }
 
+  /** 调度单个 Block 的防抖持久化（供外部拖拽同步调用） */
+  function scheduleSave(blockId: string) {
+    const block = blocks.value.find(b => b.id === blockId)
+    if (block) _scheduleSave(block)
+  }
+
   return {
     blocks,
     sortedBlocks,
@@ -745,6 +753,7 @@ export const useBlockStore = defineStore('blocks', () => {
     updateBlockContent,
     updateBlockFormat,
     updateBlockProperties,
+    scheduleSave,
     isDescendantOf
   }
 })

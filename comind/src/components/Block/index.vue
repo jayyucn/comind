@@ -1,21 +1,38 @@
 <script setup lang="ts">
-import { computed, ref, watch, nextTick, onMounted } from 'vue'
+/**
+ * Block - 基于 TreeNode 的递归 Block 组件
+ *
+ * 架构变化（vs 旧版 useSortable）：
+ * - 接收 TreeNode 而非 Block，子节点直接从 node.children 读取
+ * - 子节点容器使用 VueDraggable（vue-draggable-plus）替代 Sortable.js
+ * - 拖拽后 VueDraggable 直接修改 node.children（v-model），
+ *   通过 inject 的 onDragEnd 同步回 store
+ * - depth prop 替代 parentId 链计算缩进层级（O(1) vs O(n)）
+ *
+ * 数据流：
+ *   tree ref (BlockList) → VueDraggable v-model → node.children (渲染)
+ *   拖拽结束 → onDragEnd → syncTreeToStore → store → structureVersion++
+ *   → BlockList watch → syncFromStore → tree 重建
+ */
+import { computed, ref, watch, nextTick, onMounted, inject } from 'vue'
+import { VueDraggable } from 'vue-draggable-plus'
 import { useEditorStore } from '../../stores/editor'
 import { useBlockStore } from '../../stores/blocks'
-import { useSortable } from '../../composables/useSortable'
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import { useTagFilter } from '../../composables/useTagFilter'
 import { useContentRenderer } from '../../composables/useContentRenderer'
 import Editor from '../Editor.vue'
 import { usePageStore } from '../../stores/pages'
+import type { TreeNode } from '../../types/block'
 
 defineOptions({
   name: 'Block'
 })
 
 const props = defineProps<{
-  blockId: string
-  block: import('../../types/block').BlockWithPos
+  node: TreeNode
+  pageId: string
+  depth: number
 }>()
 
 const editorStore = useEditorStore()
@@ -25,30 +42,52 @@ const { navigateToPage } = useNavigateToPage()
 const { openFilter } = useTagFilter()
 const { renderContentToHtml } = useContentRenderer()
 
-const isActive = computed(() => editorStore.activeBlockId === props.blockId)
-const children = computed(() => blockStore.getChildren(props.blockId))
+// 注入拖拽结束回调（由 BlockList 提供）
+const onDragEnd = inject<() => void>('onDragEnd')
+
+// ── 便捷访问 ──
+const blockId = computed(() => props.node.id)
+const block = computed(() => props.node.block)
+const isActive = computed(() => editorStore.activeBlockId === blockId.value)
 
 /** 页面是否仅有一个空 Block（唯一场景显示 placeholder） */
 const isSingleEmptyBlock = computed(() => {
   const contentBlocks = blockStore.getBlocksByPage(pageStore.currentPageId)
-  return contentBlocks.length === 1 && contentBlocks[0].content === '' && contentBlocks[0].id === props.blockId
+  return contentBlocks.length === 1 && contentBlocks[0].content === '' && contentBlocks[0].id === blockId.value
 })
 
 const editorRef = ref<InstanceType<typeof Editor> | null>(null)
-const childrenRef = ref<HTMLElement | null>(null)
 const cursorPos = ref(0)
 
 // ── 常量配置 ──────────────────────────────────────────────
 const COLLAPSE_ANIMATION_DURATION = 220 // ms
 const INDENT_WIDTH_PER_LEVEL = 24 // px
 
-// ── 子节点容器的 Sortable ──────────────────────────────────────────────
-// 注意：useSortable 必须在 setup 阶段调用，传入 ref 而不是元素本身
-// 通过监听 structureVersion 自动重建 Sortable 实例
-// 解决缩进/反缩进后 DOM 与 Sortable 状态不同步的问题
-useSortable(childrenRef)
+// ── 缩进（由 depth prop 直接计算，O(1)） ──
+const indentWidth = computed(() => `${props.depth * INDENT_WIDTH_PER_LEVEL}px`)
 
-// 初始化折叠状态相关逻辑
+// ── 折叠状态 ──
+const collapsed = ref(block.value?.format?.collapsed ?? false)
+const isAnimating = ref(false)
+const childrenHeight = ref(0)
+
+// VueDraggable ref（用于获取 DOM 元素做高度测量）
+const draggableRef = ref<any>(null)
+
+/** 获取子节点容器的 DOM 元素 */
+const childrenEl = computed(() => {
+  // VueDraggable 渲染 tag="div"，$el 即为该 div
+  return draggableRef.value?.$el as HTMLElement | null
+})
+
+/** 子节点容器的 CSS 类 */
+const childrenContainerClass = computed(() => ({
+  'block-children': true,
+  'has-children': !collapsed.value && props.node.children.length > 0,
+  'is-collapsed': collapsed.value,
+  'is-animating': isAnimating.value
+}))
+
 onMounted(() => {
   updateChildrenHeight()
 })
@@ -59,7 +98,6 @@ watch(
     if (active) {
       await nextTick()
       if (editorRef.value) {
-        // 设置当前编辑器实例
         const editor = editorRef.value.getEditor()
         if (editor) {
           editorStore.setActiveEditor(editor)
@@ -73,67 +111,34 @@ watch(
         }
       }
     } else {
-      // 失活时清除编辑器实例
       editorStore.setActiveEditor(null)
     }
   },
   { immediate: false }
 )
 
-const indentDepth = computed(() => {
-  let depth = 0
-  let pid = props.block.parentId
-  while (pid) {
-    depth++
-    const parent = blockStore.blocks.find(b => b.id === pid)
-    pid = parent?.parentId ?? null
-  }
-  return depth
-})
-
-/** 缩进宽度（每层 INDENT_WIDTH_PER_LEVEL px） */
-const indentWidth = computed(() => `${indentDepth.value * INDENT_WIDTH_PER_LEVEL}px`)
-
-/** 是否折叠 - 运行时状态，同步到 format.collapsed */
-const collapsed = ref(props.block?.format?.collapsed ?? false)
-
-/** 动画进行中（防止快速切换导致动画错乱） */
-const isAnimating = ref(false)
-
-/** 当前子节点展开总高度（px）
- *  当子块挂载/卸载或内容变化时更新。
- *  用于嵌套折叠场景：子块已折叠时 scrollHeight=0，
- *  必须用此值作为展开动画的目标高度。 */
-const childrenHeight = ref(0)
-
-/** 子节点容器的 CSS 类（数据驱动样式） */
-const childrenContainerClass = computed(() => ({
-  'block-children': true,
-  'has-children': !collapsed.value && children.value.length > 0,
-  'is-collapsed': collapsed.value,
-  'is-animating': isAnimating.value
-}))
-
-/** 更新 childrenHeight：计算当前 .block-children 的 scrollHeight + 所有子块高度 */
+/** 更新 childrenHeight */
 async function updateChildrenHeight() {
-  if (childrenRef.value) {
-    const scrollH = childrenRef.value.scrollHeight
+  const el = childrenEl.value
+  if (el) {
+    const scrollH = el.scrollHeight
     childrenHeight.value = scrollH > 0 ? scrollH : await calcAllChildrenHeight()
   }
 }
 
-/** 递归计算所有子块的展开高度（用于嵌套折叠场景） */
+/** 递归计算所有子块的展开高度 */
 async function calcAllChildrenHeight(): Promise<number> {
-  if (!childrenRef.value) return 0
+  const el = childrenEl.value
+  if (!el) return 0
   let total = 0
-  for (const childEl of childrenRef.value.children) {
+  for (const childEl of el.children) {
     const rowEl = childEl.querySelector('.block-row') as HTMLElement | null
     if (rowEl) total += rowEl.offsetHeight
     const grandchildrenEl = childEl.querySelector('.block-children') as HTMLElement | null
     if (grandchildrenEl) {
-      const blockId = (childEl as HTMLElement).dataset.blockId
-      const block = blockStore.blocks.find(b => b.id === blockId)
-      if (block?.format?.collapsed) {
+      const bid = (childEl as HTMLElement).dataset.blockId
+      const blk = blockStore.blocks.find(b => b.id === bid)
+      if (blk?.format?.collapsed) {
         total += 1
       } else {
         const orig = grandchildrenEl.style.maxHeight
@@ -146,9 +151,9 @@ async function calcAllChildrenHeight(): Promise<number> {
   return total
 }
 
-/** 监听直接子块数量/内容变化时更新 childrenHeight */
+/** 监听子节点数量/内容变化时更新 childrenHeight */
 watch(
-  () => children.value.map(b => b.id).join(','),
+  () => props.node.children.map(c => c.id).join(','),
   async () => {
     await nextTick()
     updateChildrenHeight()
@@ -156,15 +161,11 @@ watch(
   { flush: 'post' }
 )
 
-/**
- * 监听 collapsed 状态：
- * - 同步到 store 层
- * - 控制动画状态
- */
+/** 监听折叠状态：同步到 store + 控制动画 */
 watch(collapsed, async (isCollapsed) => {
-  blockStore.updateBlockFormat(props.blockId, { collapsed: isCollapsed })
+  blockStore.updateBlockFormat(blockId.value, { collapsed: isCollapsed })
 
-  if (children.value.length === 0) return
+  if (props.node.children.length === 0) return
 
   await updateChildrenHeight()
   
@@ -172,16 +173,14 @@ watch(collapsed, async (isCollapsed) => {
   setTimeout(() => { isAnimating.value = false }, COLLAPSE_ANIMATION_DURATION)
 })
 
-
 /** mousedown：捕获点击坐标，在 tiptap 挂载前通知 editor store */
 function startEditingAtClick(e: MouseEvent) {
   const target = e.target as HTMLElement
-  // 链接和标签点击由 handleContentClick 单独处理，不触发编辑态
   if (target.closest('.block-link, .block-tag')) return
 
   const cursorPosVal = getCaretPositionFromPoint(e.clientX, e.clientY) ?? 0
   editorStore.setCursorPos(cursorPosVal + 1)
-  editorStore.activateBlock(props.blockId)
+  editorStore.activateBlock(blockId.value)
 }
 
 function getCaretPositionFromPoint(x: number, y: number): number | null {
@@ -193,7 +192,7 @@ function getCaretPositionFromPoint(x: number, y: number): number | null {
 }
 
 async function handleSave(content: string) {
-  await blockStore.updateBlockContent(props.blockId, content)
+  await blockStore.updateBlockContent(blockId.value, content)
 }
 
 /** 同步block未保存内容到store */
@@ -214,7 +213,7 @@ function withContentSync<T extends (...args: any[]) => Promise<void>>(fn: T): T 
 
 const handleSplit = withContentSync(async (cursorPosArg: number) => {
   editorStore.deactivateBlock()
-  const newBlock = await blockStore.insertBlockAtCursor(props.blockId, cursorPosArg, collapsed.value)
+  const newBlock = await blockStore.insertBlockAtCursor(blockId.value, cursorPosArg, collapsed.value)
   if (newBlock) {
     editorStore.activateBlock(newBlock.id, 1)
   }
@@ -222,25 +221,25 @@ const handleSplit = withContentSync(async (cursorPosArg: number) => {
 
 const handleMerge = withContentSync(async () => {
   editorStore.deactivateBlock()
-  const result = await blockStore.mergeWithPrevious(props.blockId)
+  const result = await blockStore.mergeWithPrevious(blockId.value)
   if (result) {
     editorStore.activateBlock(result.id, result.cursorPos)
   }
 })
 
 async function handleDelete() {
-  const prevBlock = blockStore.findPreviousBlockInTreeOrder(props.blockId)
+  const prevBlock = blockStore.findPreviousBlockInTreeOrder(blockId.value)
   const prevId = prevBlock?.id
 
   if (!prevId) {
     if (editorRef.value) editorRef.value.markSaved()
-    await blockStore.updateBlockContent(props.blockId, '')
+    await blockStore.updateBlockContent(blockId.value, '')
     return
   }
 
   if (editorRef.value) editorRef.value.markSaved()
   editorStore.deactivateBlock()
-  await blockStore.deleteBlock(props.blockId)
+  await blockStore.deleteBlock(blockId.value)
   if (prevId) {
     editorStore.activateBlock(prevId)
   }
@@ -248,18 +247,18 @@ async function handleDelete() {
 
 const handleIndent = withContentSync(async () => {
   editorStore.deactivateBlock()
-  await blockStore.indent(props.blockId)
-  editorStore.activateBlock(props.blockId)
+  await blockStore.indent(blockId.value)
+  editorStore.activateBlock(blockId.value)
 })
 
 const handleOutdent = withContentSync(async () => {
   editorStore.deactivateBlock()
-  await blockStore.outdent(props.blockId)
-  editorStore.activateBlock(props.blockId)
+  await blockStore.outdent(blockId.value)
+  editorStore.activateBlock(blockId.value)
 })
 
 const handleMoveUp = withContentSync(async () => {
-  const prevBlock = blockStore.findPreviousBlockInTreeOrder(props.blockId)
+  const prevBlock = blockStore.findPreviousBlockInTreeOrder(blockId.value)
   if (prevBlock) {
     editorStore.deactivateBlock()
     editorStore.activateBlock(prevBlock.id)
@@ -267,7 +266,7 @@ const handleMoveUp = withContentSync(async () => {
 })
 
 const handleMoveDown = withContentSync(async () => {
-  const nextBlock = blockStore.findNextBlockInTreeOrder(props.blockId)
+  const nextBlock = blockStore.findNextBlockInTreeOrder(blockId.value)
   if (nextBlock) {
     editorStore.deactivateBlock()
     editorStore.activateBlock(nextBlock.id)
@@ -285,7 +284,6 @@ function handleCursorChange(pos: number) {
 function handleContentClick(e: MouseEvent) {
   const target = e.target as HTMLElement
 
-  // 标签点击 → 打开筛选面板
   const tagEl = target.closest('.block-tag') as HTMLElement | null
   if (tagEl) {
     const tagText = tagEl.textContent?.replace(/^#/, '').trim() ?? ''
@@ -312,12 +310,39 @@ function handleContentClick(e: MouseEvent) {
 
 /** 切换折叠状态 */
 async function toggleCollapse() {
-  if (children.value.length === 0 || isAnimating.value) return
-
-  const newCollapsed = !collapsed.value
-  collapsed.value = newCollapsed
+  if (props.node.children.length === 0 || isAnimating.value) return
+  collapsed.value = !collapsed.value
 }
 
+/** 拖拽移动检测（防止循环嵌套） */
+function handleDragMove(evt: any): boolean | void {
+  const draggedId = (evt.dragged as HTMLElement)?.dataset.blockId
+  const related = evt.related as HTMLElement
+
+  if (draggedId && related) {
+    const targetBlock = related.closest('.block') as HTMLElement | null
+    if (targetBlock?.dataset.blockId === draggedId) {
+      return false
+    }
+  }
+
+  const toEl = evt.to as HTMLElement
+  if (!toEl) return true
+
+  const rawTargetId = toEl.dataset.parentId ?? null
+  const targetId = rawTargetId === '' ? null : rawTargetId
+
+  if (draggedId && targetId && blockStore.isDescendantOf(targetId, draggedId)) {
+    return false
+  }
+
+  return true
+}
+
+/** 拖拽结束：通知 BlockList 同步到 store */
+function handleBlockDragEnd() {
+  onDragEnd?.()
+}
 </script>
 
 <template>
@@ -329,7 +354,7 @@ async function toggleCollapse() {
       <!-- Bullet -->
       <span class="block-bullet" :class="{ collapsed }"
         @click.stop="toggleCollapse">
-        <span v-if="children.length > 0" class="bullet-chevron" :class="{ 'is-collapsed': collapsed }"></span>
+        <span v-if="node.children.length > 0" class="bullet-chevron" :class="{ 'is-collapsed': collapsed }"></span>
         <span v-else class="bullet-dot"></span>
       </span>
 
@@ -347,22 +372,34 @@ async function toggleCollapse() {
     </div>
 
     <!--
-      子节点容器（Sortable group）
-      - v-if 只在有子节点时渲染（Sortable 不需要空容器）
-      - childrenRef = 此 div，onMounted 时初始化 Sortable
-      - JS watch collapsed 状态直接控制 max-height，实现折叠动画
-      - 注意：v-if 移除时 Sortable.destroy() 由 onBeforeUnmount 清理
+      子节点容器（VueDraggable）
+      - v-model="node.children" 驱动渲染和拖拽
+      - vue-draggable-plus 直接修改 node.children 数组
+      - tag="div" 渲染为 <div>，接受 class/style/data-* 属性
+      - v-if 只在有子节点时渲染
     -->
-    <!--
-      子节点容器（Sortable group）
-      - v-if 只在有子节点时渲染（Sortable 不需要空容器）
-      - childrenRef = 此 div，onMounted 时初始化 Sortable
-      - 通过 childrenContainerClass 计算属性控制折叠状态（数据驱动样式）
-      - 注意：v-if 移除时 Sortable.destroy() 由 onBeforeUnmount 清理
-    -->
-    <div v-if="children.length > 0" ref="childrenRef" :class="childrenContainerClass" :style="{ '--indent-depth': indentDepth }" :data-parent-id="blockId">
-      <Block v-for="child in children" :key="child.id" :block-id="child.id" :block="child" />
-    </div>
+    <VueDraggable
+      ref="draggableRef"
+      v-model="node.children"
+      tag="div"
+      :group="{ name: 'blocks', pull: true, put: true }"
+      :sort="true"
+      handle=".block-bullet"
+      :animation="150"
+      ghost-class="block-ghost"
+      drag-class="block-drag"
+      chosen-class="block-chosen"
+      :force-fallback="true"
+      :empty-insert-threshold="0"
+      :class="childrenContainerClass"
+      :data-parent-id="blockId"
+      :style="{ '--indent-depth': depth }"
+      @start="editorStore.deactivateBlock()"
+      @move="handleDragMove"
+      @end="handleBlockDragEnd"
+    >
+      <Block v-for="child in node.children" :key="child.id" :node="child" :page-id="pageId" :depth="depth + 1" />
+    </VueDraggable>
   </div>
 </template>
 
