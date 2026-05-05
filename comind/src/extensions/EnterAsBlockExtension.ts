@@ -16,7 +16,9 @@ const EnterAsBlockExtension = Extension.create({
         return true
       },
 
-      'Shift-Enter': () => false,
+      'Shift-Enter': ({ editor }) => {
+        return editor.commands.setHardBreak()
+      },
 
       Backspace: ({ editor }) => {
         // Backspace 不受模态层影响（模态层通常自己处理）

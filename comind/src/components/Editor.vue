@@ -77,6 +77,14 @@ function handleEnterAsBlock(event: Event) {
   }
 }
 
+function textToHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\n/g, '<br>')
+}
+
 const editor = shallowRef(useEditor({
   extensions: [
     StarterKit.configure({ heading: false, codeBlock: false, blockquote: false, horizontalRule: false }),
@@ -85,7 +93,7 @@ const editor = shallowRef(useEditor({
     WikiLinkExtension,
     BracketPairExtension,
   ],
-  content: props.content,
+  content: textToHtml(props.content),
   autofocus: false,
   onBlur: () => {
     if (syncing) return
@@ -113,7 +121,7 @@ watch(
     if (!editor.value) return
     if (editor.value.getText() !== newContent) {
       syncing = true
-      editor.value.commands.setContent(newContent)
+      editor.value.commands.setContent(textToHtml(newContent))
       syncing = false
     }
   }
