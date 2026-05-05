@@ -136,8 +136,8 @@ body {
    =================================================== */
 .tiptap {
   outline: none;
-  min-height: 1.5em;
-  line-height: 1.75;
+  min-height: 1.3em;
+  line-height: 1.4;
 }
 
 .tiptap p {
