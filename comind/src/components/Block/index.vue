@@ -351,22 +351,25 @@ function handleBlockDragEnd() {
       <!-- 缩进占位 -->
       <div class="block-indent" :style="{ width: indentWidth }"></div>
 
-      <!-- Bullet -->
-      <span class="block-bullet" :class="{ collapsed }"
-        @click.stop="toggleCollapse">
-        <span v-if="node.children.length > 0" class="bullet-chevron" :class="{ 'is-collapsed': collapsed }"></span>
-        <span v-else class="bullet-dot"></span>
-      </span>
+      <!-- 内容区域（bullet + content）- 选中时边框只应用到此容器 -->
+      <div class="block-inner">
+        <!-- Bullet -->
+        <span class="block-bullet" :class="{ collapsed }"
+          @click.stop="toggleCollapse">
+          <span v-if="node.children.length > 0" class="bullet-chevron" :class="{ 'is-collapsed': collapsed }"></span>
+          <span v-else class="bullet-dot"></span>
+        </span>
 
-      <!-- 内容区 -->
-      <div class="block-content" @mousedown="startEditingAtClick">
-        <Editor v-if="isActive" ref="editorRef" :block-id="blockId" :content="block.content" @save="handleSave"
-          @split="handleSplit" @merge="handleMerge" @delete="handleDelete" @indent="handleIndent"
-          @outdent="handleOutdent" @move-up="handleMoveUp" @move-down="handleMoveDown" @exit-edit="handleExitEdit"
-          @cursor-change="handleCursorChange" />
-        <div v-else class="block-text" @click="handleContentClick">
-          <span v-if="isSingleEmptyBlock" class="block-placeholder">Type something...</span>
-          <span v-else v-html="renderContentToHtml(block.content)"></span>
+        <!-- 内容区 -->
+        <div class="block-content" @mousedown="startEditingAtClick">
+          <Editor v-if="isActive" ref="editorRef" :block-id="blockId" :content="block.content" @save="handleSave"
+            @split="handleSplit" @merge="handleMerge" @delete="handleDelete" @indent="handleIndent"
+            @outdent="handleOutdent" @move-up="handleMoveUp" @move-down="handleMoveDown" @exit-edit="handleExitEdit"
+            @cursor-change="handleCursorChange" />
+          <div v-else class="block-text" @click="handleContentClick">
+            <span v-if="isSingleEmptyBlock" class="block-placeholder">Type something...</span>
+            <span v-else v-html="renderContentToHtml(block.content)"></span>
+          </div>
         </div>
       </div>
     </div>

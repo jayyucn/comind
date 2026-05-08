@@ -224,6 +224,17 @@
 .block-chosen {
   /* 被选中的元素：半透明高亮 */
   opacity: 0.8;
+}
+
+/* block-inner：bullet + content 的容器 */
+.block-inner {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+/* 选中状态：边框只应用到 .block-inner，不包含缩进 */
+.block-chosen .block-inner {
   background: var(--accent-04);
   border-radius: var(--radius-md);
 }
