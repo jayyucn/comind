@@ -648,6 +648,62 @@ export const useBlockStore = defineStore('blocks', () => {
     structureVersion.value++
   }
 
+  /**
+   * 将 block 移动到指定位置
+   *
+   * @param opts.blockId         被移动的 Block ID
+   * @param opts.toParentId      目标父节点 ID（null = 根级）
+   * @param opts.insertBeforeId   插入到此 ID 之前（null = 追加到末尾）
+   */
+  async function moveBlockToPosition(opts: {
+    blockId: string
+    toParentId: string | null
+    insertBeforeId: string | null
+  }) {
+    const { blockId, toParentId, insertBeforeId } = opts
+    const block = blocks.value.find(b => b.id === blockId)
+    if (!block) return
+
+    if (isDescendantOf(toParentId, blockId)) {
+      console.warn('[moveBlockToPosition] 禁止循环嵌套')
+      return
+    }
+
+    const calcPositions = () => {
+      const siblings = getSortedChildren(blocks.value, toParentId, block.pageId, blockId)
+
+      if (insertBeforeId === null) {
+        const lastSibling = siblings.length > 0 ? siblings[siblings.length - 1] : undefined
+        return {
+          prevPos: lastSibling?.pos ?? null,
+          nextPos: null
+        }
+      }
+
+      const insertIndex = siblings.findIndex(b => b.id === insertBeforeId)
+      if (insertIndex === -1) {
+        return {
+          prevPos: siblings.length > 0 ? siblings[siblings.length - 1].pos : null,
+          nextPos: null
+        }
+      }
+
+      return {
+        prevPos: insertIndex > 0 ? siblings[insertIndex - 1].pos : null,
+        nextPos: siblings[insertIndex].pos
+      }
+    }
+
+    const { prevPos, nextPos } = calcPositions()
+
+    block.parentId = toParentId
+    block.pos = await safeCalcInsertPos(prevPos, nextPos, blocks.value, storage, calcPositions)
+    block.updatedAt = Date.now()
+
+    _scheduleSave(block)
+    structureVersion.value++
+  }
+
   /** 删除 Block */
   async function deleteBlock(blockId: string) {
     const toDelete = new Set<string>([blockId])
@@ -749,6 +805,7 @@ export const useBlockStore = defineStore('blocks', () => {
     indent,
     outdent,
     moveBlock,
+    moveBlockToPosition,
     deleteBlock,
     updateBlockContent,
     updateBlockFormat,
