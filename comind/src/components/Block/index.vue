@@ -23,7 +23,7 @@ import { useTagFilter } from '../../composables/useTagFilter'
 import { useContentRenderer } from '../../composables/useContentRenderer'
 import Editor from '../Editor.vue'
 import { usePageStore } from '../../stores/pages'
-import type { TreeNode } from '../../types/block'
+import type { TreeNode, Block } from '../../types/block'
 
 defineOptions({
   name: 'Block'
@@ -63,6 +63,12 @@ const cursorPos = ref(0)
 const COLLAPSE_ANIMATION_DURATION = 220 // ms
 const INDENT_WIDTH_PER_LEVEL = 24 // px
 
+// 拖拽阈值配置
+const DRAG_THRESHOLD = {
+  LEFT: 20,
+  RIGHT: 20
+}
+
 // ── 缩进（由 depth prop 直接计算，O(1)） ──
 const indentWidth = computed(() => `${props.depth * INDENT_WIDTH_PER_LEVEL}px`)
 
@@ -70,6 +76,15 @@ const indentWidth = computed(() => `${props.depth * INDENT_WIDTH_PER_LEVEL}px`)
 const collapsed = ref(block.value?.format?.collapsed ?? false)
 const isAnimating = ref(false)
 const childrenHeight = ref(0)
+
+// 拖拽状态
+const dragState = ref<{
+  currentDropTarget: { parentId: string | null; insertBeforeId: string | null } | null
+  indicator: HTMLElement | null
+}>({
+  currentDropTarget: null,
+  indicator: null
+})
 
 // VueDraggable ref（用于获取 DOM 元素做高度测量）
 const draggableRef = ref<any>(null)
@@ -314,7 +329,112 @@ async function toggleCollapse() {
   collapsed.value = !collapsed.value
 }
 
-/** 拖拽移动检测（防止循环嵌套） */
+/** 计算放置区域 */
+function computeDropZone(cursorX: number, bulletRect: DOMRect): 'left' | 'center' | 'right' {
+  if (cursorX <= bulletRect.left + DRAG_THRESHOLD.LEFT) return 'left'
+  if (cursorX >= bulletRect.right - DRAG_THRESHOLD.RIGHT) return 'right'
+  return 'center'
+}
+
+/** 向上冒泡查找放置目标 */
+function findDropTarget(
+  cursorX: number,
+  targetBlockEl: HTMLElement
+): { parentId: string | null; insertBeforeId: string | null } | null {
+  let node = targetBlockEl
+
+  while (node) {
+    const bullet = node.querySelector('.block-bullet') as HTMLElement
+    if (!bullet) break
+
+    const rect = bullet.getBoundingClientRect()
+    const zone = computeDropZone(cursorX, rect)
+
+    if (zone === 'left') {
+      const parentBlock = node.parentElement?.closest('.block') as HTMLElement | null
+
+      if (parentBlock) {
+        const parentBullet = parentBlock.querySelector('.block-bullet') as HTMLElement
+        const parentRect = parentBullet?.getBoundingClientRect()
+
+        if (parentRect && cursorX <= parentRect.left + DRAG_THRESHOLD.LEFT) {
+          node = parentBlock
+          continue
+        }
+
+        return {
+          parentId: parentBlock.dataset.blockId ?? null,
+          insertBeforeId: node.dataset.blockId ?? null
+        }
+      }
+
+      return { parentId: null, insertBeforeId: node.dataset.blockId ?? null }
+    }
+
+    if (zone === 'right') {
+      return {
+        parentId: node.dataset.blockId ?? null,
+        insertBeforeId: null
+      }
+    }
+
+    if (zone === 'center') {
+      const parentBlock = node.parentElement?.closest('.block') as HTMLElement | null
+      const parentId = parentBlock?.dataset.blockId ?? null
+
+      return {
+        parentId,
+        insertBeforeId: node.dataset.blockId ?? null
+      }
+    }
+
+    break
+  }
+
+  return null
+}
+
+/** 渲染放置指示线 */
+function renderDropIndicator(targetBlockEl: HTMLElement, dropTarget: { parentId: string | null; insertBeforeId: string | null }) {
+  let indicator = document.querySelector('.drop-indicator') as HTMLElement | null
+
+  if (!indicator) {
+    indicator = document.createElement('div')
+    indicator.className = 'drop-indicator'
+    document.body.appendChild(indicator)
+    dragState.value.indicator = indicator
+  }
+
+  const bullet = targetBlockEl.querySelector('.block-bullet')
+  if (!bullet) return
+
+  const rect = bullet.getBoundingClientRect()
+  const scrollY = window.scrollY
+
+  indicator.style.top = `${rect.bottom + scrollY}px`
+  indicator.style.width = `${rect.right - rect.left}px`
+  indicator.classList.add('visible')
+
+  if (dropTarget.insertBeforeId === null && dropTarget.parentId !== null) {
+    indicator.classList.add('indent')
+    indicator.classList.remove('sort')
+  } else {
+    indicator.classList.remove('indent')
+    indicator.classList.add('sort')
+  }
+}
+
+/** 清除指示线 */
+function clearDropIndicator() {
+  const indicator = document.querySelector('.drop-indicator') as HTMLElement | null
+  if (indicator) {
+    indicator.classList.remove('visible')
+    setTimeout(() => indicator.remove(), 150)
+  }
+  dragState.value.indicator = null
+}
+
+/** 拖拽移动检测 */
 function handleDragMove(evt: any): boolean | void {
   const draggedId = (evt.dragged as HTMLElement)?.dataset.blockId
   const related = evt.related as HTMLElement
@@ -322,25 +442,74 @@ function handleDragMove(evt: any): boolean | void {
   if (draggedId && related) {
     const targetBlock = related.closest('.block') as HTMLElement | null
     if (targetBlock?.dataset.blockId === draggedId) {
+      clearDropIndicator()
       return false
     }
   }
 
   const toEl = evt.to as HTMLElement
-  if (!toEl) return true
+  if (!toEl) {
+    clearDropIndicator()
+    return true
+  }
 
   const rawTargetId = toEl.dataset.parentId ?? null
   const targetId = rawTargetId === '' ? null : rawTargetId
 
   if (draggedId && targetId && blockStore.isDescendantOf(targetId, draggedId)) {
+    clearDropIndicator()
     return false
   }
 
-  return true
+  const cursorX = evt.originalEvent.clientX
+  const targetBlock = related?.closest('.block') as HTMLElement | null
+
+  if (targetBlock) {
+    const dropTarget = findDropTarget(cursorX, targetBlock)
+    if (dropTarget) {
+      dragState.value.currentDropTarget = dropTarget
+      renderDropIndicator(targetBlock, dropTarget)
+    }
+  }
+
+  return false
 }
 
-/** 拖拽结束：通知 BlockList 同步到 store */
-function handleBlockDragEnd() {
+/** 拖拽结束：计算放置位置并同步到 store */
+async function handleBlockDragEnd() {
+  const dropTarget = dragState.value.currentDropTarget
+
+  if (dropTarget && dropTarget.parentId !== undefined) {
+    const draggedEl = document.querySelector('.block-chosen') as HTMLElement
+    const draggedId = draggedEl?.dataset.blockId
+
+    if (draggedId) {
+      let newIndex: number
+      let siblings: Block[]
+
+      if (dropTarget.parentId === null) {
+        siblings = blockStore.getBlocksByPage(pageStore.currentPageId).filter(b => b.parentId === null)
+      } else {
+        siblings = blockStore.getChildren(dropTarget.parentId)
+      }
+      
+      if (dropTarget.insertBeforeId === null) {
+        newIndex = siblings.length
+      } else {
+        const insertIdx = siblings.findIndex(b => b.id === dropTarget.insertBeforeId)
+        newIndex = insertIdx >= 0 ? insertIdx : siblings.length
+      }
+
+      await blockStore.moveBlock({
+        blockId: draggedId,
+        toParentId: dropTarget.parentId,
+        newIndex
+      })
+    }
+  }
+
+  clearDropIndicator()
+  dragState.value.currentDropTarget = null
   onDragEnd?.()
 }
 </script>
