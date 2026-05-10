@@ -409,6 +409,7 @@ function getOrCreateIndicator(): HTMLElement {
   if (!indicator) {
     indicator = document.createElement('div')
     indicator.className = 'drop-indicator'
+    indicator.style.cssText = 'position:fixed;pointer-events:none;z-index:1000;opacity:0;transition:opacity 0ms;'
     document.body.appendChild(indicator)
     dragState.value.indicator = indicator
   }
@@ -418,30 +419,55 @@ function getOrCreateIndicator(): HTMLElement {
 function renderDropIndicator(targetBlockEl: HTMLElement, dropTarget: DropTarget) {
   const indicator = getOrCreateIndicator()
   const bullet = targetBlockEl.querySelector('.block-bullet')
-  if (!bullet) return
+  if (!bullet) {
+    clearDropIndicator()
+    return
+  }
 
   const rect = bullet.getBoundingClientRect()
-  const scrollY = window.scrollY
 
-  indicator.style.left = `${rect.left}px`
-  indicator.style.width = `${rect.right - rect.left}px`
-  indicator.style.top = `${rect.top + scrollY}px`
+  if (rect.width <= 0 || rect.height <= 0) {
+    clearDropIndicator()
+    return
+  }
+
+  const viewportHeight = window.innerHeight
+  const viewportWidth = window.innerWidth
+
+  if (rect.bottom < 0 || rect.top > viewportHeight || rect.right < 0 || rect.left > viewportWidth) {
+    clearDropIndicator()
+    return
+  }
+
+  const left = Math.max(0, Math.min(rect.left, viewportWidth - 1))
+  const width = Math.max(1, Math.min(rect.right - rect.left, viewportWidth - left))
+
+  indicator.style.left = `${left}px`
+  indicator.style.width = `${width}px`
+  indicator.style.top = `${rect.top}px`
   indicator.style.height = '2px'
 
   indicator.className = 'drop-indicator'
   if (dropTarget.action === 'sort') {
     const position = dropTarget.beforeId ? 'before' : 'after'
     if (position === 'after') {
-      indicator.style.top = `${rect.bottom + scrollY}px`
+      indicator.style.top = `${rect.bottom}px`
+    } else {
+      indicator.style.top = `${rect.top}px`
     }
     indicator.classList.add('sort')
   } else if (dropTarget.action === 'nest') {
     const targetDepth = parseInt(targetBlockEl.dataset.depth ?? '0', 10)
     const indentWidth = 24 * (targetDepth + 1)
-    indicator.style.left = `${rect.left + indentWidth}px`
-    indicator.style.width = `${rect.right - rect.left - indentWidth}px`
+    const nestLeft = Math.max(0, Math.min(rect.left + indentWidth, viewportWidth - 1))
+    const nestWidth = Math.max(1, Math.min(rect.right - rect.left - indentWidth, viewportWidth - nestLeft))
+    indicator.style.left = `${nestLeft}px`
+    indicator.style.width = `${nestWidth}px`
+    indicator.style.top = `${rect.top}px`
+    indicator.style.height = `${Math.max(1, rect.height)}px`
     indicator.classList.add('nest')
   } else if (dropTarget.action === 'promote') {
+    indicator.style.top = `${rect.top}px`
     indicator.classList.add('promote')
   }
 
@@ -487,14 +513,29 @@ function handleDragMove(evt: any): boolean | void {
   const cursorY = evt.originalEvent.clientY
   const targetBlock = related?.closest('.block') as HTMLElement | null
 
-  if (targetBlock) {
-    const dropTarget = findDropTarget(cursorX, cursorY, targetBlock)
-    if (dropTarget) {
-      dragState.value.currentDropTarget = dropTarget
-      renderDropIndicator(targetBlock, dropTarget)
-    } else {
+  if (!targetBlock) {
+    clearDropIndicator()
+    return true
+  }
+
+  const dropTarget = findDropTarget(cursorX, cursorY, targetBlock)
+  if (dropTarget) {
+    const bullet = targetBlock.querySelector('.block-bullet')
+    if (!bullet) {
       clearDropIndicator()
+      return true
     }
+
+    const rect = bullet.getBoundingClientRect()
+    if (rect.top < 0 || rect.bottom > window.innerHeight) {
+      clearDropIndicator()
+      return true
+    }
+
+    dragState.value.currentDropTarget = dropTarget
+    renderDropIndicator(targetBlock, dropTarget)
+  } else {
+    clearDropIndicator()
   }
 
   return true

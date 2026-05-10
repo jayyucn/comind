@@ -250,11 +250,20 @@
   background: var(--accent-06);
   border: 2px dashed var(--color-accent);
   border-radius: var(--radius-md);
+  position: relative !important;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .block-ghost .block-content,
 .block-ghost .block-bullet {
   visibility: hidden;
+}
+
+.block-ghost::after {
+  content: '';
+  display: block;
+  height: 24px;
 }
 
 /* 隐藏 ghost 元素的缩进线，避免黑线闪烁 */
