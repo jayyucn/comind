@@ -404,6 +404,58 @@ function findDropTarget(
   }
 }
 
+function getOrCreateIndicator(): HTMLElement {
+  let indicator = document.querySelector('.drop-indicator') as HTMLElement | null
+  if (!indicator) {
+    indicator = document.createElement('div')
+    indicator.className = 'drop-indicator'
+    document.body.appendChild(indicator)
+    dragState.value.indicator = indicator
+  }
+  return indicator
+}
+
+function renderDropIndicator(targetBlockEl: HTMLElement, dropTarget: DropTarget) {
+  const indicator = getOrCreateIndicator()
+  const bullet = targetBlockEl.querySelector('.block-bullet')
+  if (!bullet) return
+
+  const rect = bullet.getBoundingClientRect()
+  const scrollY = window.scrollY
+
+  indicator.style.left = `${rect.left}px`
+  indicator.style.width = `${rect.right - rect.left}px`
+  indicator.style.top = `${rect.top + scrollY}px`
+  indicator.style.height = '2px'
+
+  indicator.className = 'drop-indicator'
+  if (dropTarget.action === 'sort') {
+    const position = dropTarget.beforeId ? 'before' : 'after'
+    if (position === 'after') {
+      indicator.style.top = `${rect.bottom + scrollY}px`
+    }
+    indicator.classList.add('sort')
+  } else if (dropTarget.action === 'nest') {
+    const targetDepth = parseInt(targetBlockEl.dataset.depth ?? '0', 10)
+    const indentWidth = 24 * (targetDepth + 1)
+    indicator.style.left = `${rect.left + indentWidth}px`
+    indicator.style.width = `${rect.right - rect.left - indentWidth}px`
+    indicator.classList.add('nest')
+  } else if (dropTarget.action === 'promote') {
+    indicator.classList.add('promote')
+  }
+
+  indicator.classList.add('visible')
+}
+
+function clearDropIndicator() {
+  const indicator = document.querySelector('.drop-indicator') as HTMLElement | null
+  if (indicator) {
+    indicator.classList.remove('visible')
+  }
+  dragState.value.indicator = null
+}
+
 /** 拖拽移动检测（防止循环嵌套） */
 function handleDragMove(evt: any): boolean | void {
   const draggedId = (evt.dragged as HTMLElement)?.dataset.blockId
