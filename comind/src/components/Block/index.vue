@@ -464,25 +464,80 @@ function handleDragMove(evt: any): boolean | void {
   if (draggedId && related) {
     const targetBlock = related.closest('.block') as HTMLElement | null
     if (targetBlock?.dataset.blockId === draggedId) {
+      clearDropIndicator()
       return false
     }
   }
 
   const toEl = evt.to as HTMLElement
-  if (!toEl) return true
+  if (!toEl) {
+    clearDropIndicator()
+    return true
+  }
 
   const rawTargetId = toEl.dataset.parentId ?? null
   const targetId = rawTargetId === '' ? null : rawTargetId
 
   if (draggedId && targetId && blockStore.isDescendantOf(targetId, draggedId)) {
+    clearDropIndicator()
     return false
+  }
+
+  const cursorX = evt.originalEvent.clientX
+  const cursorY = evt.originalEvent.clientY
+  const targetBlock = related?.closest('.block') as HTMLElement | null
+
+  if (targetBlock) {
+    const dropTarget = findDropTarget(cursorX, cursorY, targetBlock)
+    if (dropTarget) {
+      dragState.value.currentDropTarget = dropTarget
+      renderDropIndicator(targetBlock, dropTarget)
+    } else {
+      clearDropIndicator()
+    }
   }
 
   return true
 }
 
-/** 拖拽结束：通知 BlockList 同步到 store */
-function handleBlockDragEnd() {
+/** 拖拽结束：计算放置位置并同步到 store */
+async function handleBlockDragEnd() {
+  const dropTarget = dragState.value.currentDropTarget
+
+  if (dropTarget && dropTarget.action) {
+    const draggedEl = document.querySelector('.block-chosen') as HTMLElement
+    const draggedId = draggedEl?.dataset.blockId
+
+    if (draggedId) {
+      let siblings: Block[]
+      if (dropTarget.toParentId === null) {
+        siblings = blockStore.getBlocksByPage(pageStore.currentPageId).filter(b => b.parentId === null)
+      } else {
+        siblings = blockStore.getChildren(dropTarget.toParentId)
+      }
+
+      let newIndex: number
+      if (dropTarget.action === 'sort') {
+        if (dropTarget.beforeId === null) {
+          newIndex = siblings.length
+        } else {
+          const insertIdx = siblings.findIndex(b => b.id === dropTarget.beforeId)
+          newIndex = insertIdx >= 0 ? insertIdx : siblings.length
+        }
+      } else {
+        newIndex = siblings.length
+      }
+
+      await blockStore.moveBlock({
+        blockId: draggedId,
+        toParentId: dropTarget.toParentId,
+        newIndex
+      })
+    }
+  }
+
+  clearDropIndicator()
+  dragState.value.currentDropTarget = null
   onDragEnd?.()
 }
 </script>

@@ -246,11 +246,15 @@
 }
 
 .block-ghost {
-  /* 幽灵占位符：半透明琥珀底 + 虚线边框，墨水盖章感 */
-  opacity: 0.35;
+  opacity: 0.3;
   background: var(--accent-06);
   border: 2px dashed var(--color-accent);
   border-radius: var(--radius-md);
+}
+
+.block-ghost .block-content,
+.block-ghost .block-bullet {
+  visibility: hidden;
 }
 
 /* 隐藏 ghost 元素的缩进线，避免黑线闪烁 */
@@ -264,10 +268,30 @@
 }
 
 .block-drag {
-  /* 正在被拖拽的原始元素：微阴影，表示"漂浮中" */
-  opacity: 0.45;
+  opacity: 1;
   transform: scale(1.02);
   box-shadow: 0 6px 20px var(--overlay);
   border-radius: var(--radius-md);
   cursor: grabbing;
+}
+
+/* ── 放置指示线 ── */
+.drop-indicator {
+  position: fixed;
+  height: 2px;
+  background: var(--color-accent);
+  pointer-events: none;
+  z-index: 1000;
+  opacity: 0;
+  transition: opacity 0ms;
+}
+
+.drop-indicator.visible {
+  opacity: 1;
+}
+
+.drop-indicator.nest {
+  border-left: 2px solid var(--color-accent);
+  background: transparent;
+  height: 0;
 }
