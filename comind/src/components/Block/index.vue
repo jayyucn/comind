@@ -338,6 +338,72 @@ async function toggleCollapse() {
   collapsed.value = !collapsed.value
 }
 
+function computeDropZone(cursorX: number, bulletRect: DOMRect): 'left' | 'center' | 'right' {
+  if (cursorX <= bulletRect.left + DRAG_THRESHOLD.LEFT) return 'left'
+  if (cursorX >= bulletRect.right - DRAG_THRESHOLD.RIGHT) return 'right'
+  return 'center'
+}
+
+function computeSortPosition(cursorY: number, bulletRect: DOMRect): 'before' | 'after' {
+  const bulletCenterY = bulletRect.top + bulletRect.height / 2
+  return cursorY < bulletCenterY ? 'before' : 'after'
+}
+
+function findDropTarget(
+  cursorX: number,
+  cursorY: number,
+  targetBlockEl: HTMLElement
+): DropTarget | null {
+  const bullet = targetBlockEl.querySelector('.block-bullet') as HTMLElement
+  if (!bullet) return null
+
+  const bulletRect = bullet.getBoundingClientRect()
+  const zone = computeDropZone(cursorX, bulletRect)
+
+  if (zone === 'left') {
+    const parentBlock = targetBlockEl.parentElement?.closest('.block') as HTMLElement | null
+    if (parentBlock) {
+      return {
+        action: 'promote',
+        toParentId: parentBlock.dataset.blockId ?? null,
+        beforeId: targetBlockEl.dataset.blockId ?? null
+      }
+    }
+    return {
+      action: 'sort',
+      toParentId: null,
+      beforeId: targetBlockEl.dataset.blockId ?? null
+    }
+  }
+
+  if (zone === 'right') {
+    return {
+      action: 'nest',
+      toParentId: targetBlockEl.dataset.blockId ?? null,
+      beforeId: null
+    }
+  }
+
+  const position = computeSortPosition(cursorY, bulletRect)
+  const parentBlock = targetBlockEl.parentElement?.closest('.block') as HTMLElement | null
+  const parentId = parentBlock?.dataset.blockId ?? null
+
+  if (position === 'before') {
+    return {
+      action: 'sort',
+      toParentId: parentId,
+      beforeId: targetBlockEl.dataset.blockId ?? null
+    }
+  } else {
+    const nextSibling = targetBlockEl.nextElementSibling as HTMLElement | null
+    return {
+      action: 'sort',
+      toParentId: parentId,
+      beforeId: nextSibling?.dataset.blockId ?? null
+    }
+  }
+}
+
 /** 拖拽移动检测（防止循环嵌套） */
 function handleDragMove(evt: any): boolean | void {
   const draggedId = (evt.dragged as HTMLElement)?.dataset.blockId
