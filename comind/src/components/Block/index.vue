@@ -23,7 +23,7 @@ import { useTagFilter } from '../../composables/useTagFilter'
 import { useContentRenderer } from '../../composables/useContentRenderer'
 import Editor from '../Editor.vue'
 import { usePageStore } from '../../stores/pages'
-import type { TreeNode } from '../../types/block'
+import type { TreeNode, Block } from '../../types/block'
 
 defineOptions({
   name: 'Block'
@@ -62,6 +62,30 @@ const cursorPos = ref(0)
 // ── 常量配置 ──────────────────────────────────────────────
 const COLLAPSE_ANIMATION_DURATION = 220 // ms
 const INDENT_WIDTH_PER_LEVEL = 24 // px
+
+// ── 拖拽阈值配置 ──
+const DRAG_THRESHOLD = {
+  LEFT: 20,
+  RIGHT: 20
+}
+
+// ── 放置目标类型 ──
+type DropAction = 'sort' | 'nest' | 'promote' | null
+
+interface DropTarget {
+  action: DropAction
+  toParentId: string | null
+  beforeId: string | null
+}
+
+// ── 拖拽状态 ──
+const dragState = ref<{
+  currentDropTarget: DropTarget | null
+  indicator: HTMLElement | null
+}>({
+  currentDropTarget: null,
+  indicator: null
+})
 
 // ── 缩进（由 depth prop 直接计算，O(1)） ──
 const indentWidth = computed(() => `${props.depth * INDENT_WIDTH_PER_LEVEL}px`)
