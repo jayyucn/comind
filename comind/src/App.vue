@@ -29,10 +29,12 @@ import Sidebar from './components/Sidebar/index.vue'
 .page-scroll-wrapper {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .page-body {
   max-width: 800px;
+  min-width: 0;
   margin: 0 auto;
   padding: 0 24px;
 }
