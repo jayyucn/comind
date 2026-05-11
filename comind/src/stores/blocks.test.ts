@@ -369,6 +369,78 @@ describe('isDescendantOf - 循环检测', () => {
   })
 })
 
+describe('mergeWithPrevious - 子节点保留测试', () => {
+  test('合并时子节点应保留并转移到目标节点', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const blockX = await store.createBlock({ pageId, content: 'X' })
+    const blockA = await store.createBlock({ pageId, content: 'A' })
+    const blockB = await store.createBlock({
+      pageId,
+      content: 'B',
+      parentId: blockA.id
+    })
+
+    const blockBId = blockB.id
+
+    await store.mergeWithPrevious(blockA.id)
+
+    const blockBAfter = store.blocks.find(b => b.id === blockBId)
+    expect(blockBAfter).toBeDefined()
+    expect(blockBAfter?.parentId).toBe(blockX.id)
+  })
+
+  test('合并空父节点的子节点时，子节点应保留', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const blockX = await store.createBlock({ pageId, content: 'X' })
+    const blockA = await store.createBlock({ pageId, content: '' })
+    const blockB = await store.createBlock({
+      pageId,
+      content: 'Child of A',
+      parentId: blockA.id
+    })
+
+    const blockBId = blockB.id
+
+    await store.mergeWithPrevious(blockA.id)
+
+    const blockBAfter = store.blocks.find(b => b.id === blockBId)
+    expect(blockBAfter).toBeDefined()
+    expect(blockBAfter?.parentId).toBe(blockX.id)
+  })
+
+  test('合并有多个子节点的块时，所有子节点都应保留', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const blockX = await store.createBlock({ pageId, content: 'X' })
+    const blockA = await store.createBlock({ pageId, content: 'A' })
+    const child1 = await store.createBlock({
+      pageId,
+      content: 'Child1',
+      parentId: blockA.id
+    })
+    const child2 = await store.createBlock({
+      pageId,
+      content: 'Child2',
+      parentId: blockA.id
+    })
+
+    const child1Id = child1.id
+    const child2Id = child2.id
+
+    await store.mergeWithPrevious(blockA.id)
+
+    const child1After = store.blocks.find(b => b.id === child1Id)
+    const child2After = store.blocks.find(b => b.id === child2Id)
+    expect(child1After?.parentId).toBe(blockX.id)
+    expect(child2After?.parentId).toBe(blockX.id)
+  })
+})
+
 describe('原有测试（保持兼容性）', () => {
   test('移动到新位置', async () => {
     const store = useBlockStore()

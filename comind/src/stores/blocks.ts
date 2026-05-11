@@ -534,26 +534,47 @@ export const useBlockStore = defineStore('blocks', () => {
    *    b. 前驱有展开的子 Block → 最后一个可见后代是合并目标
    * 2. 合并后保留所有文本内容、格式信息和元数据
    * 3. 光标定位到合并后内容的拼接位置（目标 Block 原有内容的末尾）
+   * 4. 被合并节点的子节点保留并转移到目标节点
    */
   async function mergeWithPrevious(blockId: string) {
     const block = blocks.value.find(b => b.id === blockId)
     if (!block) return
 
-    // 找到视觉上的前一个 Block
     const mergeTarget = findPreviousVisibleBlock(blockId)
     if (!mergeTarget) return
 
-    // ── 执行合并 ───────────────────────────────────────────────────────
     const targetContentLen = mergeTarget.content.length
     mergeTarget.content += block.content
 
-    // 合并策略：目标 Block 的 format 优先保留
-    // （光标在目标 Block 中，目标的格式上下文更相关）
-    const cursorPos = targetContentLen + 1  // PM position = textOffset + 1
+    const cursorPos = targetContentLen + 1
     mergeTarget.updatedAt = Date.now()
     await storage.saveBlock(mergeTarget)
 
-    // 删除当前 Block（子节点随父节点一起删除）
+    const childrenToMove: Block[] = []
+    for (const child of blocks.value) {
+      if (child.parentId === block.id) {
+        childrenToMove.push(child)
+      }
+    }
+
+    if (childrenToMove.length > 0) {
+      const mergeTargetChildren = blocks.value.filter(b => b.parentId === mergeTarget.id)
+      const lastMergeChild = mergeTargetChildren[mergeTargetChildren.length - 1]
+      const nextPos = getNextSibling(blocks.value, block)?.pos ?? null
+
+      let prevPos = lastMergeChild?.pos ?? null
+      for (const child of childrenToMove) {
+        const newPos = calcInsertPos(prevPos, nextPos)
+        child.parentId = mergeTarget.id
+        child.pos = newPos
+        child.updatedAt = Date.now()
+        _scheduleSave(child)
+        prevPos = newPos
+      }
+
+      structureVersion.value++
+    }
+
     await deleteBlock(blockId)
 
     return { id: mergeTarget.id, cursorPos }
