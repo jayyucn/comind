@@ -78,11 +78,16 @@ npm run test:coverage
 
 详细文档位于 [docs/](docs/) 目录：
 
-- [SPEC.md](docs/SPEC.md) - 项目规格说明
-- [data-model.md](docs/data-model.md) - 数据模型设计
-- [dev-guide.md](docs/dev-guide.md) - 开发指南
-- [tech-selection.md](docs/tech-selection.md) - 技术选型说明
-- [functional-design-spec.md](docs/functional-design-spec.md) - 功能设计规格
+- [docs/README.md](docs/README.md) - 文档总索引
+- [docs/1-overview/](docs/1-overview/) - 项目概览
+- [docs/2-architecture/](docs/2-architecture/) - 架构设计
+- [docs/3-features/](docs/3-features/) - 功能规格
+- [docs/4-ui/](docs/4-ui/) - UI/UX 设计
+- [docs/5-development/](docs/5-development/) - 开发指南
+- [docs/6-reports/](docs/6-reports/) - 验证报告
+- [docs/7-sidebar/](docs/7-sidebar/) - 侧边栏
+- [docs/sort/](docs/sort/) - 排序功能
+- [docs/superpowers/](docs/superpowers/) - 能力增强
 
 ## 开发指南
 

@@ -297,13 +297,26 @@ xychart-beta
 
 ## 15. 附：需要关注的具体文件
 
-- `D:\comind\comind\src\stores\blocks.ts`：核心 Store 过重，编辑/拖拽/持久化耦合。
-- `D:\comind\comind\src\components\Block\index.vue`：核心组件过重，含 `v-html`、外链打开、拖拽 DOM 逻辑。
-- `D:\comind\comind\src\composables\useContentRenderer.ts`：外部 WikiLink 正则顺序与 `data-external` 问题。
-- `D:\comind\comind\src\App.vue` 与 `D:\comind\comind\src\components\Page\index.vue`：重复 `.page-scroll-wrapper`。
-- `D:\comind\comind\e2e\routing.test.ts`：当前 5 个失败用例集中地。
-- `D:\comind\comind\vitest.config.ts`：未包含根级回归测试，未配置 coverage。
-- `D:\comind\README.md` 与 `D:\comind\comind\README.md`：入口文档缺失或模板化。
+### 代码文件
+
+- `D:\comind\comind\src\stores\blocks.ts`：核心 Store 过重，编辑/拖拽/持久化耦合（Phase 2 优化目标）。
+- `D:\comind\comind\src\components\Block\index.vue`：核心组件过重，含拖拽 DOM 逻辑（Phase 3 优化目标）。
+
+### 文档目录
+
+项目文档已按主题分类整理到 `D:\comind\docs\` 目录：
+
+| 目录 | 内容 |
+| --- | --- |
+| [docs/1-overview/](docs/1-overview/) | 项目概览 - SPEC、tech-selection、TODO |
+| [docs/2-architecture/](docs/2-architecture/) | 架构设计 - data-model、routing-design、storage-spec |
+| [docs/3-features/](docs/3-features/) | 功能规格 - block-editor、link、tag、slash-commands |
+| [docs/4-ui/](docs/4-ui/) | UI/UX 设计 - ui-ux-spec、interaction-spec |
+| [docs/5-development/](docs/5-development/) | 开发指南 - dev-guide、page-block-crud |
+| [docs/6-reports/](docs/6-reports/) | 验证报告 - 项目评估、功能验证报告 |
+| [docs/7-sidebar/](docs/7-sidebar/) | 侧边栏 - sidebar-implementation、sidebar-redesign |
+| [docs/sort/](docs/sort/) | 排序功能 - sortable-implementation、phase-1-1-plan |
+| [docs/superpowers/](docs/superpowers/) | 能力增强 - 特性设计与实现计划 |
 
 ---
 
@@ -334,11 +347,35 @@ xychart-beta
 
 ### 后续待改进项
 
-| 优先级 | 工作项 |
-| --- | --- |
-| P1 | 修复外部 WikiLink 渲染/打开逻辑 |
-| P1 | 建立 coverage 与 lint 门禁 |
-| P1 | 解决重复 `.page-scroll-wrapper` |
-| P2 | 拆分 `Block/index.vue` 拖拽逻辑 |
-| P2 | 拆分 `blocks.ts` 领域操作 |
-| P2 | 整理 E2E 目录 |
+| 优先级 | 工作项 | 状态 | 阶段 |
+| --- | --- | --- | --- |
+| P1 | 修复外部 WikiLink 渲染/打开逻辑 | ✅ 已完成 | - |
+| P1 | 建立 coverage 与 lint 门禁 | ✅ 已完成 | - |
+| P1 | 解决重复 `.page-scroll-wrapper` | ✅ 已完成 | - |
+| P2 | 整理 E2E 目录 | ✅ 已完成 | - |
+| P2 | 拆分 `Block/index.vue` 拖拽逻辑 | 📋 后续阶段 | Phase 3 |
+| P2 | 拆分 `blocks.ts` 领域操作 | 📋 后续阶段 | Phase 2 |
+
+### 阶段规划
+
+- **Phase 2**: 创建 Block 领域服务（2-4 周）
+- **Phase 3**: 组件拆分（长期，视需求而定）
+
+### 已完成的 P1/P2 优化详情
+
+**P1 - 外部 WikiLink 渲染/打开逻辑**：
+- `src/composables/useContentRenderer.ts` 已优先匹配外部链接正则
+- `data-external` 属性正确写入 URL
+- `src/components/Block/index.vue` 使用安全调用 `window.open(url, '_blank', 'noopener,noreferrer')`
+
+**P1 - 建立 coverage 与 lint 门禁**：
+- `npm run lint` - ESLint 检查
+- `npm run test:coverage` - Vitest 覆盖率报告
+- `vitest.config.ts` 已包含 `test-*.spec.ts`（gap exhausted 回归测试）
+
+**P1 - 重复 `.page-scroll-wrapper`**：
+- 仅 `src/App.vue` 保留定义，`src/components/Page/index.vue` 已移除
+
+**P2 - E2E 目录整理**：
+- 调试脚本已移入 `e2e/archive/`
+- `e2e/README.md` 说明正式测试与归档文件的区别
