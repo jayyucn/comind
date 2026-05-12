@@ -19,12 +19,12 @@ export function useContentRenderer() {
   function renderContentToHtml(text: string): string {
     const html = escapeHtmlEntities(text)
     return html
+      .replace(/\[\[(https?:\/\/[^\]]+)\]\]/g, (_, url) => {
+        return `<span class="${CSS_CLASSES.blockLink} external" data-external="${escapeHtmlEntities(url)}">${url}</span>`
+      })
       .replace(/\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g, (_, target, alias) => {
         const display = alias || target
         return `<span class="${CSS_CLASSES.blockLink}" data-page="${escapeHtmlEntities(target)}">${display}</span>`
-      })
-      .replace(/\[\[(https?:\/\/[^\]]+)\]\]/g, (_, url) => {
-        return `<span class="${CSS_CLASSES.blockLink} external" data-external>${url}</span>`
       })
       .replace(TAG_REGEX, (_, tag) => {
         if (tag.includes('.')) return `#${tag}`

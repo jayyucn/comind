@@ -544,22 +544,21 @@ export const useBlockStore = defineStore('blocks', () => {
     }
 
     if (childrenToMove.length > 0) {
-      const mergeTargetChildren = blocks.value.filter(b => b.parentId === mergeTarget.id)
-      const lastMergeChild = mergeTargetChildren[mergeTargetChildren.length - 1]
-      const nextPos = getNextSibling(blocks.value, block)?.pos ?? null
+    const mergeTargetChildren = blocks.value.filter(b => b.parentId === mergeTarget.id)
+    const lastMergeChild = mergeTargetChildren[mergeTargetChildren.length - 1]
 
-      let prevPos = lastMergeChild?.pos ?? null
-      for (const child of childrenToMove) {
-        const newPos = calcInsertPos(prevPos, nextPos)
-        child.parentId = mergeTarget.id
-        child.pos = newPos
-        child.updatedAt = Date.now()
-        _scheduleSave(child)
-        prevPos = newPos
-      }
-
-      structureVersion.value++
+    let prevPos = lastMergeChild?.pos ?? null
+    for (const child of childrenToMove) {
+      const newPos = calcInsertPos(prevPos, null)
+      child.parentId = mergeTarget.id
+      child.pos = newPos
+      child.updatedAt = Date.now()
+      _scheduleSave(child)
+      prevPos = newPos
     }
+
+    structureVersion.value++
+  }
 
     await deleteBlock(blockId)
 

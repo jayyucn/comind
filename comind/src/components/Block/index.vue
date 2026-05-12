@@ -317,7 +317,7 @@ function handleContentClick(e: MouseEvent) {
   if (!link) return
 
   if (link.dataset.external) {
-    window.open(link.dataset.external, '_blank')
+    window.open(link.dataset.external, '_blank', 'noopener,noreferrer')
     return
   }
   const pageName = link.dataset.page

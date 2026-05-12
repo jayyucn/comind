@@ -4,19 +4,21 @@
  * 测试场景：连续快速创建 Block，验证间隔耗尽时的重编号逻辑
  */
 
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import { useBlockStore } from '../src/stores/blocks'
-import { calcInsertPos, renumberBlocks, GAP_SIZE } from '../src/utils/block-helpers'
-import type { Block } from '../src/types/block'
+import { useBlockStore } from './src/stores/blocks'
+import { calcInsertPos, renumberBlocks, GAP_SIZE } from './src/utils/block-helpers'
+import type { Block } from './src/types/block'
 
-// Mock storage
-const mockStorage = {
-  saveBlock: async (block: Block) => {},
-  getBlockTree: async (pageId: string) => [],
-  deleteBlockCascade: async (ids: string[]) => {},
-  updatePage: async (page: any) => {}
-}
+// Mock IndexedDB 存储层
+vi.mock('./src/storage/indexedDB', () => ({
+  storage: {
+    saveBlock: vi.fn(),
+    deleteBlock: vi.fn(),
+    deleteBlockCascade: vi.fn(),
+    getBlockTree: vi.fn().mockResolvedValue([])
+  }
+}))
 
 describe('Gap Exhausted Fix', () => {
   beforeEach(() => {

@@ -9,7 +9,7 @@
 
 .main-content {
   max-width: var(--max-width);
-  min-height: calc(100vh * 0.618); /* 黄金比例：屏幕高度的61.8% */
+  min-height: calc(100vh * 0.618);
   width: 100%;
   margin: 0 auto;
   box-sizing: border-box;
