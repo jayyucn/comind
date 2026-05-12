@@ -23,6 +23,8 @@ import { useTagFilter } from '../../composables/useTagFilter'
 import { useContentRenderer } from '../../composables/useContentRenderer'
 import Editor from '../Editor.vue'
 import { usePageStore } from '../../stores/pages'
+import { isDescendantOf } from '../../utils/block-helpers'
+import { computeDropZone, computeSortPosition } from '../../composables/useDragDrop'
 import type { TreeNode, Block } from '../../types/block'
 
 defineOptions({
@@ -62,12 +64,6 @@ const cursorPos = ref(0)
 // ── 常量配置 ──────────────────────────────────────────────
 const COLLAPSE_ANIMATION_DURATION = 220 // ms
 const INDENT_WIDTH_PER_LEVEL = 24 // px
-
-// ── 拖拽阈值配置 ──
-const DRAG_THRESHOLD = {
-  LEFT: 20,
-  RIGHT: 20
-}
 
 // ── 放置目标类型 ──
 type DropAction = 'sort' | 'nest' | 'promote' | null
@@ -338,17 +334,6 @@ async function toggleCollapse() {
   collapsed.value = !collapsed.value
 }
 
-function computeDropZone(cursorX: number, bulletRect: DOMRect): 'left' | 'center' | 'right' {
-  if (cursorX <= bulletRect.left + DRAG_THRESHOLD.LEFT) return 'left'
-  if (cursorX >= bulletRect.right - DRAG_THRESHOLD.RIGHT) return 'right'
-  return 'center'
-}
-
-function computeSortPosition(cursorY: number, bulletRect: DOMRect): 'before' | 'after' {
-  const bulletCenterY = bulletRect.top + bulletRect.height / 2
-  return cursorY < bulletCenterY ? 'before' : 'after'
-}
-
 function findDropTarget(
   cursorX: number,
   cursorY: number,
@@ -504,7 +489,7 @@ function handleDragMove(evt: any): boolean | void {
   const rawTargetId = toEl.dataset.parentId ?? null
   const targetId = rawTargetId === '' ? null : rawTargetId
 
-  if (draggedId && targetId && blockStore.isDescendantOf(targetId, draggedId)) {
+  if (draggedId && targetId && isDescendantOf(blockStore.blocks, targetId, draggedId)) {
     clearDropIndicator()
     return false
   }

@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useBlockStore } from './blocks'
+import { isDescendantOf } from '../utils/block-helpers'
 
 // Mock IndexedDB 存储层
 vi.mock('../storage/indexedDB', () => ({
@@ -326,10 +327,10 @@ describe('isDescendantOf - 循环检测', () => {
     })
 
     // child 是 parent 的后代
-    expect(store.isDescendantOf(child.id, parent.id)).toBe(true)
+    expect(isDescendantOf(store.blocks, child.id, parent.id)).toBe(true)
 
     // parent 不是 child 的后代
-    expect(store.isDescendantOf(parent.id, child.id)).toBe(false)
+    expect(isDescendantOf(store.blocks, parent.id, child.id)).toBe(false)
   })
 
   test('孙节点是祖先的后代', async () => {
@@ -349,13 +350,13 @@ describe('isDescendantOf - 循环检测', () => {
     })
 
     // child 是 grandparent 的后代
-    expect(store.isDescendantOf(child.id, grandparent.id)).toBe(true)
+    expect(isDescendantOf(store.blocks, child.id, grandparent.id)).toBe(true)
 
     // child 是 parent 的后代
-    expect(store.isDescendantOf(child.id, parent.id)).toBe(true)
+    expect(isDescendantOf(store.blocks, child.id, parent.id)).toBe(true)
 
     // grandparent 不是 child 的后代
-    expect(store.isDescendantOf(grandparent.id, child.id)).toBe(false)
+    expect(isDescendantOf(store.blocks, grandparent.id, child.id)).toBe(false)
   })
 
   test('null 不是任何节点的后代', async () => {
@@ -365,7 +366,7 @@ describe('isDescendantOf - 循环检测', () => {
     const block = await store.createBlock({ pageId, content: 'Block' })
 
     // null 作为 targetId 应该返回 false
-    expect(store.isDescendantOf(null, block.id)).toBe(false)
+    expect(isDescendantOf(store.blocks, null, block.id)).toBe(false)
   })
 })
 

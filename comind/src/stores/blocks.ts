@@ -17,7 +17,8 @@ import {
   renumberBlocks,
   isGapExhaustedError,
   SAVE_DEBOUNCE_MS,
-  findBlockIndex
+  findBlockIndex,
+  isDescendantOf
 } from '../utils/block-helpers'
 
 /**
@@ -175,21 +176,6 @@ export const useBlockStore = defineStore('blocks', () => {
     const d = debounce(_doSave, SAVE_DEBOUNCE_MS)
     pendingSaves.set(block.id, d)
     d(block)
-  }
-
-  /** 检查循环引用 */
-  function isDescendantOf(targetId: string | null, blockId: string): boolean {
-    if (!targetId) return false
-    if (targetId === blockId) return true
-    const visited = new Set<string>()
-    let current: string | null = targetId
-    while (current && !visited.has(current)) {
-      visited.add(current)
-      if (current === blockId) return true
-      const ancestor = blocks.value.find(b => b.id === current)
-      current = ancestor?.parentId ?? null
-    }
-    return false
   }
 
   /**
@@ -645,7 +631,7 @@ export const useBlockStore = defineStore('blocks', () => {
     const block = blocks.value.find(b => b.id === blockId)
     if (!block) return
 
-    if (isDescendantOf(toParentId, blockId)) {
+    if (isDescendantOf(blocks.value, toParentId, blockId)) {
       console.warn('[moveBlock] 禁止循环移动')
       return
     }
@@ -774,7 +760,6 @@ export const useBlockStore = defineStore('blocks', () => {
     updateBlockContent,
     updateBlockFormat,
     updateBlockProperties,
-    scheduleSave,
-    isDescendantOf
+    scheduleSave
   }
 })

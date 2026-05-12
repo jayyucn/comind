@@ -172,3 +172,20 @@ export function renumberBlocks(blocks: Block[]): void {
 
 /** 防抖保存的延迟时间（毫秒） */
 export const SAVE_DEBOUNCE_MS = 300
+
+/**
+ * 检查 targetId 是否是 blockId 的后代（循环引用检测）
+ */
+export function isDescendantOf(blocks: Block[], targetId: string | null, blockId: string): boolean {
+  if (!targetId) return false
+  if (targetId === blockId) return true
+  const visited = new Set<string>()
+  let current: string | null = targetId
+  while (current && !visited.has(current)) {
+    visited.add(current)
+    if (current === blockId) return true
+    const ancestor = blocks.find(b => b.id === current)
+    current = ancestor?.parentId ?? null
+  }
+  return false
+}
