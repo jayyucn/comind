@@ -4,6 +4,7 @@ import type { Block } from '../types/block'
 import { storage } from '../storage/indexedDB'
 import { generateUUID } from '../utils/id'
 import { debounce } from '../utils/debounce'
+import { logger } from '../utils/logger'
 import { invalidateTagCache } from '../composables/useTagFilter'
 import { usePageStore } from './pages'
 import {
@@ -73,7 +74,7 @@ async function safeCalcInsertPos(
       }
       
       // 无回调时，尝试用原参数重试（向后兼容，但可能失败）
-      console.warn('[safeCalcInsertPos] No recalcPos callback provided, retrying with original positions')
+      logger.warn('[safeCalcInsertPos] No recalcPos callback provided, retrying with original positions')
       try {
         return calcInsertPos(prevPos, nextPos)
       } catch (retryError) {
@@ -694,7 +695,7 @@ export const useBlockStore = defineStore('blocks', () => {
     try {
       await storage.deleteBlockCascade(Array.from(toDelete))
     } catch (error) {
-      console.error('[deleteBlock] Failed to delete blocks from IDB:', error)
+      logger.error('[deleteBlock] Failed to delete blocks from IDB:', error)
     }
 
     invalidateTagCache()
