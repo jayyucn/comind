@@ -363,8 +363,10 @@ export class IndexedDBAdapter {
   async syncPageStats(pageId: string): Promise<void> {
     const blocks = await this.getBlockTree(pageId)
     const count = blocks.length
-    const words = blocks.reduce((sum, b) => sum + b.content.split(/\s+/).length, 0)
-
+    const words = blocks.reduce((sum, b) => {
+      if (!b.content || !b.content.trim()) return sum
+      return sum + b.content.trim().split(/\s+/).length
+    }, 0)
     const record = await db.pages.get(pageId)
     if (record) {
       const page = recordToPage(record)
