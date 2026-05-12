@@ -1,25 +1,3 @@
-.page-scroll-wrapper {
-  flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
-  min-width: 0;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
-}
-
-.page-scroll-wrapper::-webkit-scrollbar {
-  width: 6px;
-}
-
-.page-scroll-wrapper::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: 3px;
-}
-
-.page-scroll-wrapper::-webkit-scrollbar-thumb:hover {
-  background: var(--text-tertiary);
-}
-
 .page-body {
   display: flex;
   flex-direction: column;

@@ -48,12 +48,6 @@ onBeforeUnmount(() => {
   editorStore.deactivateBlock()
 })
 
-function handleMainClick(e: MouseEvent) {
-  const target = e.target as HTMLElement
-  if (target.closest('.block')) return
-  editorStore.deactivateBlock()
-}
-
 async function startEditTitle() {
   if (!props.editableTitle) return
   editorStore.deactivateBlock()
@@ -101,7 +95,7 @@ function handleCancelMerge() {
 </script>
 
 <template>
-  <div class="page-scroll-wrapper" @click="handleMainClick">
+  <div class="page-container">
     <div class="page-body">
       <main class="main-content">
         <div class="page-header">
