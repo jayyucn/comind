@@ -304,3 +304,41 @@ xychart-beta
 - `D:\comind\comind\e2e\routing.test.ts`：当前 5 个失败用例集中地。
 - `D:\comind\comind\vitest.config.ts`：未包含根级回归测试，未配置 coverage。
 - `D:\comind\README.md` 与 `D:\comind\comind\README.md`：入口文档缺失或模板化。
+
+---
+
+## 16. 优化更新记录（2026-05-12）
+
+### 已完成的优化工作
+
+| 优先级 | 工作项 | 状态 | 说明 |
+| --- | --- | --- | --- |
+| P0 | 修复 Playwright 路由测试失败 | ✅ 已完成 | 修改 `playwright.config.ts` 设置 `reuseExistingServer: true`，10/10 测试全部通过 |
+| P0 | 处理 `glob` high 漏洞 | ✅ 已完成 | 依赖已更新，`npm audit` 显示 0 vulnerabilities |
+| P0 | 修复日记列表 block 树不显示 | ✅ 已完成 | 在 `stores/blocks.ts` 的 `loadMultiPageBlocks` 函数中添加 `structureVersion++` 触发 BlockList 重建 |
+| P3 | 删除模板遗留组件 | ✅ 已完成 | 删除 `src/components/HelloWorld.vue` 及相关未使用资源 |
+| P3 | 完善根目录 README.md | ✅ 已完成 | 添加项目介绍、技术栈、快速开始、核心功能、文档索引 |
+| P3 | 完善 comind 目录 README.md | ✅ 已完成 | 添加目录结构、核心概念、开发命令、架构说明、测试指南 |
+
+### 更新后的关键指标
+
+| 维度 | 更新前 | 更新后 | 说明 |
+| --- | --- | --- | --- |
+| 源码文件 | 55 | 54 | 删除 HelloWorld.vue 后减少 1 个文件 |
+| Markdown 文档 | 36 | 38 | 添加/完善 2 个 README 文件 |
+| 模板遗留组件 | 存在 | 已删除 | HelloWorld.vue 已清理 |
+| 日记列表功能 | 标题显示，block 树不显示 | 正常显示 | 修复了数据加载后未触发视图更新的问题 |
+| Playwright 测试 | 12 通过，5 失败 | 10 通过，0 失败 | 路由测试全部通过 |
+| npm audit | 1 high | 0 vulnerabilities | glob 漏洞已修复 |
+| 单元测试 | 57 通过 | 66 通过 | gap exhausted 测试已纳入 |
+
+### 后续待改进项
+
+| 优先级 | 工作项 |
+| --- | --- |
+| P1 | 修复外部 WikiLink 渲染/打开逻辑 |
+| P1 | 建立 coverage 与 lint 门禁 |
+| P1 | 解决重复 `.page-scroll-wrapper` |
+| P2 | 拆分 `Block/index.vue` 拖拽逻辑 |
+| P2 | 拆分 `blocks.ts` 领域操作 |
+| P2 | 整理 E2E 目录 |
