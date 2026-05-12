@@ -21,13 +21,10 @@ const editorStore = useEditorStore()
 
 /** 解析实际的 pageId：props 可能是 UUID 或 date title（journal-page 路由） */
 const resolvedPageId = computed(() => {
-  // 先尝试直接当作 UUID 查找
   const direct = pageStore.getPage(props.pageId)
   if (direct) return direct.id
-  // 再尝试当作 title 查找（journal-page 路由传入的是 date 字符串）
   const byTitle = pageStore.getPageByTitle(props.pageId)
   if (byTitle) return byTitle.id
-  // 都找不到，返回原始值（渲染时显示 comind 默认标题）
   return props.pageId
 })
 
@@ -43,7 +40,6 @@ const titleInputRef = ref<HTMLInputElement | null>(null)
 const showMergeDialog = ref(false)
 const mergeTarget = ref<Page | null>(null)
 
-// 路由切换时清理编辑状态（SPEC.md §7 单编辑器原则）
 onBeforeUnmount(() => {
   editorStore.deactivateBlock()
 })

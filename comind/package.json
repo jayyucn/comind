@@ -8,7 +8,10 @@
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src --ext .vue,.ts,.tsx,.js,.jsx",
+    "lint:fix": "eslint src --ext .vue,.ts,.tsx,.js,.jsx --fix"
   },
   "dependencies": {
     "@tiptap/extension-placeholder": "^3.22.3",
@@ -22,16 +25,25 @@
     "vue-router": "^5.0.6"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.59.1",
     "@types/node": "^24.12.2",
+    "@typescript-eslint/eslint-plugin": "^8.59.2",
+    "@typescript-eslint/parser": "^8.59.2",
     "@vitejs/plugin-vue": "^6.0.6",
+    "@vitest/coverage-v8": "^4.1.6",
     "@vue/test-utils": "^2.4.6",
     "@vue/tsconfig": "^0.9.1",
+    "eslint": "^10.3.0",
+    "eslint-plugin-vue": "^10.9.1",
+    "globals": "^17.6.0",
     "jsdom": "^29.0.2",
     "playwright": "^1.59.1",
     "typescript": "~6.0.2",
+    "typescript-eslint": "^8.59.3",
     "vite": "^8.0.4",
     "vitest": "^4.1.4",
+    "vue-eslint-parser": "^10.4.0",
     "vue-tsc": "^3.2.6"
   }
 }
