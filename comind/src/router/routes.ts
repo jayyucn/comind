@@ -1,4 +1,5 @@
 import type { RouteRecordRaw } from 'vue-router'
+import { logger } from '../utils/logger'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -108,7 +109,7 @@ const routes: RouteRecordRaw[] = [
         
         await pageStore.openPage(page.id)
       } catch (error) {
-        console.error('[beforeEnter /page/:pageId] Failed to load page:', error)
+        logger.error('[beforeEnter /page/:pageId] Failed to load page:', error)
         return { name: 'journal-list' }
       }
     },

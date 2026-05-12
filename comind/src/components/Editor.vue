@@ -8,6 +8,7 @@ import BracketPairExtension from '../extensions/BracketPairExtension'
 import { SlashCommandExtension } from '../extensions/SlashCommandExtension'
 import { useNavigateToPage } from '../composables/useNavigateToPage'
 import { debounce } from '../utils/debounce'
+import { logger } from '../utils/logger'
 
 const props = defineProps<{
   blockId: string
@@ -139,12 +140,12 @@ onBeforeUnmount(() => {
     if (err instanceof Error && err.message.includes('editor view is not available')) {
       return
     }
-    console.warn('移除事件监听器失败:', err)
+    logger.warn('移除事件监听器失败:', err)
   }
   try {
     editor.value?.destroy()
   } catch (err) {
-    console.warn('销毁编辑器失败:', err)
+    logger.warn('销毁编辑器失败:', err)
   }
 })
 

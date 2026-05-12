@@ -24,6 +24,7 @@ import { useContentRenderer } from '../../composables/useContentRenderer'
 import Editor from '../Editor.vue'
 import { usePageStore } from '../../stores/pages'
 import type { TreeNode, Block } from '../../types/block'
+import { logger } from '../../utils/logger'
 
 defineOptions({
   name: 'Block'
@@ -327,7 +328,7 @@ function handleContentClick(e: MouseEvent) {
   const pageName = link.dataset.page
   if (pageName) {
     navigateToPage(pageName).catch(err => {
-      console.error('导航失败:', err)
+      logger.error('导航失败:', err)
     })
   }
 }

@@ -1,4 +1,5 @@
 import type { Block } from '../types/block'
+import { logger } from './logger'
 
 /**
  * Block 排序工具
@@ -129,7 +130,7 @@ export function calcInsertPos(prevPos: number | null, nextPos: number | null): n
       `Call renumberBlocks() to recover.`
     )
     error.name = 'GapExhaustedError'
-    console.error(error.message)
+    logger.error(error.message)
     throw error
   }
 

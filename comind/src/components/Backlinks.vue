@@ -5,6 +5,7 @@ import { useEditorStore } from '../stores/editor'
 import { storage } from '../storage/indexedDB'
 import { db } from '../storage/db'
 import type { LinkRecord } from '../types/link'
+import { logger } from '../utils/logger'
 
 const props = withDefaults(defineProps<{
   pageId?: string
@@ -95,7 +96,7 @@ async function loadBacklinks() {
             pageExists = !!pageRecord
             pageTitle = pageRecord?.title ?? '未命名页面'
           } catch (err) {
-            console.error('获取页面失败:', err)
+            logger.error('获取页面失败:', err)
           }
         }
 
