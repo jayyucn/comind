@@ -1,12 +1,21 @@
 <script setup lang="ts">
 import Sidebar from './components/Sidebar/index.vue'
+import { useEditorStore } from './stores/editor'
+
+const editorStore = useEditorStore()
+
+function handleMainClick(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (target.closest('.block')) return
+  editorStore.deactivateBlock()
+}
 </script>
 
 <template>
   <div class="app-layout">
     <Sidebar />
     
-    <div class="page-scroll-wrapper">
+    <div class="page-scroll-wrapper" @click="handleMainClick">
       <div class="page-body">
         <main class="main-content">
           <RouterView />

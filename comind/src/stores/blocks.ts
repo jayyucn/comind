@@ -151,6 +151,7 @@ export const useBlockStore = defineStore('blocks', () => {
           console.error('[loadMultiPageBlocks] Failed to load blocks:', result.reason)
         }
       }
+      structureVersion.value++
     } catch (error) {
       console.error('[loadMultiPageBlocks] Unexpected error:', error)
     } finally {
