@@ -1,7 +1,7 @@
 # comind SPEC.md — 项目总规范
 
-> 版本：v0.2
-> 日期：2026-04-16
+> 版本：v0.3
+> 日期：2026-05-12
 > 状态：评审完成，已确认
 
 ***
@@ -135,22 +135,19 @@
 | 本地持久化         | IndexedDB 存储，刷新页面数据不丢失         |
 | 性能基线          | 100+ Block 操作流畅，无明显卡顿          |
 
-#### Phase 1.1（下一迭代）
+#### Phase 1.1（已完成 ✅ / 部分完成
 
-> **注意：** Phase 1 完成后，以下功能移至 Phase 1.1。
+> **2026-05-12 更新：** 以下功能实现情况。
 
-| 功能 | 优先级 | 说明 |
-|------|--------|------|
-| 属性解析 `key:: value` | P0 | 正则解析 → Block.properties JSON |
-| 属性类型推断 | P0 | string / number / date / boolean / list / page |
-| 属性 UI 渲染 | P0 | Block 内容下方显示属性行 |
-| 标签点击筛选 | P1 | 点击标签 → 筛选所有含该标签的 Block |
-| 命令面板 | P0 | Ctrl+K 触发，搜索页面、Block、命令 |
-| Journal（日记流） | P1 | 每日自动创建日记 Page |
-| 窄屏响应式 | P2 | <1024px 时 Sidebar 折叠 |
-| 性能验证 | P1 | 100+ Block 流畅度测试 |
-| 外部链接编辑态高亮 | P1 | `[[https://...]]` 编辑态可点击 |
-| Placeholder 对齐 | P2 | 文案更新为 "输入文字，或使用 [[链接]] 或 #标签..." |
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 属性解析 `key:: value` | ⚠️ 部分完成 | parser.ts 已实现，保存时未调用 |
+| 属性类型推断 | ⚠️ 部分完成 | parsePropertyValue 已实现，保存时未整合 |
+| 属性 UI 渲染 | ❌ 未完成 | Block 组件中未实现 |
+| 标签点击筛选 | ✅ 已实现 | TagFilterPanel 组件，点击标签 → 筛选所有含该标签的 Block |
+| 命令面板（斜杠命令） | ✅ 已实现 | `/` 触发 SlashCommandMenu，支持创建页面、切换页面等命令 |
+| Journal（日记流） | ✅ 已实现 | 自动创建每日日记 Page，JournalList 日记列表视图 |
+| 外部链接编辑态高亮 | ✅ 已实现 | `[[https://...]]` 编辑态可点击，安全打开外部链接 |
 
 #### 暂不实现
 
@@ -347,17 +344,34 @@ Link 表操作（事务）
 
 ## 10. 文档体系
 
-本文档是 comind 的总规范，各专项文档：
+本文档是 comind 的总规范，各专项文档位于 `docs/` 目录：
 
-| 文档       | 描述                                           |
-| -------- | -------------------------------------------- |
-| `SPEC.md` | 本文档，项目总规范                                    |
-| `data-model.md` | 核心数据模型（Block、Link、Tag、Property）          |
-| `dev-guide.md` | 开发指南（核心架构约束 + 实现参考，已整合原 block-editor-spec.md） |
-| `link-spec.md` | 双向链接系统详细规范                                 |
-| `storage-spec.md` | 存储层规范（Phase 1 IndexedDB → Phase 2/3 SQLite） |
-| `tech-selection.md` | Phase 1 技术选型与项目结构                        |
-| `ui-ux-spec.md` | UI/UX 视觉系统规范                              |
+### 目录结构
+
+| 目录 | 内容 |
+| --- | --- |
+| `docs/1-overview/` | 项目概览 - SPEC、tech-selection、TODO |
+| `docs/2-architecture/` | 架构设计 - data-model、routing-design、storage-spec |
+| `docs/3-features/` | 功能规格 - block-editor、link、tag、slash-commands |
+| `docs/4-ui/` | UI/UX 设计 - ui-ux-spec、interaction-spec |
+| `docs/5-development/` | 开发指南 - dev-guide、page-block-crud |
+| `docs/6-reports/` | 验证报告 - 项目评估、功能验证报告 |
+| `docs/7-sidebar/` | 侧边栏 - sidebar-implementation、sidebar-redesign |
+| `docs/sort/` | 排序功能 - sortable-implementation、phase-1-1-plan |
+| `docs/superpowers/` | 能力增强 - 特性设计与实现计划 |
+
+### 核心文档
+
+| 文档 | 描述 |
+| --- | --- |
+| [SPEC.md](docs/1-overview/SPEC.md) | 项目总规范 |
+| [data-model.md](docs/2-architecture/data-model.md) | 核心数据模型（Block、Link、Tag、Property） |
+| [dev-guide.md](docs/5-development/dev-guide.md) | 开发指南 |
+| [link-spec.md](docs/3-features/link-spec.md) | 双向链接系统详细规范 |
+| [storage-spec.md](docs/2-architecture/storage-spec.md) | 存储层规范 |
+| [tech-selection.md](docs/1-overview/tech-selection.md) | 技术选型说明 |
+| [ui-ux-spec.md](docs/4-ui/ui-ux-spec.md) | UI/UX 视觉系统规范 |
+| [interaction-spec.md](docs/4-ui/interaction-spec.md) | 交互规格 |
 
 ***
 
@@ -369,16 +383,25 @@ Link 表操作（事务）
 | ------------ | ------------------------- |
 | 链接解析时机       | Phase 1 采用"保存时解析"方案       |
 | 反向链接         | 纳入 Phase 1，显示在 Page 底部面板  |
-| 标签点击筛选       | 不纳入 Phase 1，推迟至 Phase 1.1 |
-| Journal（日记流） | 不纳入 Phase 1，推迟至 Phase 1.1 |
+| 标签点击筛选       | ✅ Phase 1.1 已实现           |
+| Journal（日记流） | ✅ Phase 1.1 已实现           |
 | 虚拟列表         | Phase 1 跳过，按需引入           |
 | 产品定位         | "而非传统笔记工具"                |
+| 外部链接安全       | ✅ 使用 `noopener,noreferrer`  |
+| 单编辑器架构       | ✅ 已实现                    |
 
 ***
 
-## 12. 待定事项
+## 12. 后续阶段规划
 
-以下决策暂未确定，将在 Phase 1 开发过程中补充：
+| 阶段 | 目标 | 说明 |
+| --- | --- | --- |
+| **Phase 2** | 创建 Block 领域服务 | 将 `blocks.ts` 的树遍历/位置计算下沉到领域服务 |
+| **Phase 3** | 组件拆分 | 将 `Block/index.vue` 拖拽逻辑抽为独立模块 |
+
+### 待定事项
+
+以下决策暂未确定，将在后续阶段补充：
 
 | 事项           | 说明                                      |
 | ------------ | --------------------------------------- |
@@ -390,4 +413,24 @@ Link 表操作（事务）
 
 ***
 
-*文档 v0.2 评审完成，已确认。*
+## 13. 质量状态（2026-05-12）
+
+### 测试覆盖
+
+| 测试类型 | 状态 | 详情 |
+| --- | --- | --- |
+| 单元测试 | ✅ 66/66 通过 | Vitest + 覆盖 blocks、parser、blockTree |
+| E2E 测试 | ✅ 10/10 通过 | Playwright 路由测试 |
+| 安全审计 | ✅ 0 漏洞 | npm audit |
+
+### 代码质量
+
+| 指标 | 状态 |
+| --- | --- |
+| TypeScript 构建 | ✅ 通过 |
+| ESLint | ✅ 已配置 |
+| 测试覆盖率 | ✅ 可用 |
+
+***
+
+*文档 v0.3 评审完成，已确认。*
