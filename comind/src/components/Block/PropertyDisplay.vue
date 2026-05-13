@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { usePropertyStore } from '../../stores/property'
+import { useEditorStore } from '../../stores/editor'
 import type { Property } from '../../types/property'
 
 interface Props {
@@ -9,6 +10,7 @@ interface Props {
 
 const props = defineProps<Props>()
 const propertyStore = usePropertyStore()
+const editorStore = useEditorStore()
 
 const allProperties = computed<Property[]>(() => 
   propertyStore.getBlockProperties(props.blockId)
@@ -21,6 +23,10 @@ const visibleProperties = computed<Property[]>(() =>
 function isBuiltIn(key: string): boolean {
   const def = propertyStore.getPropertyDef(key)
   return def?.isBuiltIn ?? false
+}
+
+function editProperty(blockId: string, key: string) {
+  editorStore.showPropertyEditor(blockId, key)
 }
 
 function getPropertyTitle(key: string): string {
@@ -57,6 +63,7 @@ function renderPropertyValue(property: Property): string {
         :key="prop.id"
         class="property-item"
         :class="{ 'built-in': isBuiltIn(prop.key) }"
+        @click.stop="editProperty(props.blockId, prop.key)"
       >
         <span class="property-key">{{ getPropertyTitle(prop.key) }}:</span>
         <span class="property-value">{{ renderPropertyValue(prop) }}</span>
@@ -84,6 +91,14 @@ function renderPropertyValue(property: Property): string {
   align-items: center;
   gap: 4px;
   font-size: 13px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background 120ms ease;
+}
+
+.property-item:hover {
+  background: var(--accent-08);
 }
 
 .property-item.built-in .property-key {

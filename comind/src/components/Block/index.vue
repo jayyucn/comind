@@ -24,6 +24,7 @@ import { useTagFilter } from '../../composables/useTagFilter'
 import { useContentRenderer } from '../../composables/useContentRenderer'
 import Editor from '../Editor.vue'
 import PropertyDisplay from './PropertyDisplay.vue'
+import PropertyEditor from './PropertyEditor.vue'
 import { usePageStore } from '../../stores/pages'
 import { isDescendantOf } from '../../utils/block-helpers'
 import { computeDropZone, computeSortPosition } from '../../composables/useDragDrop'
@@ -645,6 +646,9 @@ async function handleBlockDragEnd() {
     >
       <Block v-for="child in node.children" :key="child.id" :node="child" :page-id="pageId" :depth="depth + 1" />
     </VueDraggable>
+
+    <!-- Property Editor -->
+    <PropertyEditor />
   </div>
 </template>
 

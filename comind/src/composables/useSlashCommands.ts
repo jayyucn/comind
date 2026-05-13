@@ -336,6 +336,16 @@ export const commands: Command[] = [
     action: () => {
       // 由 SlashCommandMenu.vue 特殊处理
     }
+  },
+  {
+    id: 'property',
+    name: 'Add property',
+    alias: ['属性', 'property', 'prop'],
+    group: '属性',
+    icon: '🏷️',
+    action: () => {
+      // 由 SlashCommandMenu.vue 特殊处理
+    }
   }
 ]
 

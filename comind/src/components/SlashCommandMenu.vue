@@ -113,13 +113,22 @@ function executeCommand(command: Command) {
   const editor = editorStore.activeEditor
   if (!editor || !range.value) return
 
+  // 关闭面板
+  close()
+
+  // 特殊处理属性命令
+  if (command.id === 'property') {
+    const blockId = editorStore.activeBlockId
+    if (blockId) {
+      editorStore.showPropertyEditor(blockId)
+    }
+    return
+  }
+
   const currentRange = {
     from: range.value.from,
     to: editor.state.selection.from
   }
-
-  // 关闭面板
-  close()
 
   // 执行命令
   command.action({

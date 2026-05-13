@@ -84,6 +84,27 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
+  /** 属性编辑器状态 */
+  const propertyEditor = ref<{
+    visible: boolean
+    blockId: string | null
+    initialKey: string | null
+  } | null>(null)
+
+  function showPropertyEditor(blockId: string, initialKey?: string) {
+    propertyEditor.value = {
+      visible: true,
+      blockId,
+      initialKey: initialKey ?? null
+    }
+  }
+
+  function hidePropertyEditor() {
+    if (propertyEditor.value) {
+      propertyEditor.value.visible = false
+    }
+  }
+
   return {
     activeBlockId,
     pendingCursorPos,
@@ -97,6 +118,9 @@ export const useEditorStore = defineStore('editor', () => {
     showSlashCommand,
     hideSlashCommand,
     updateSlashQuery,
-    updateSlashSelectedIndex
+    updateSlashSelectedIndex,
+    propertyEditor,
+    showPropertyEditor,
+    hidePropertyEditor
   }
 })
