@@ -304,3 +304,9 @@
   background: transparent;
   height: 0;
 }
+
+/* 属性显示区域 */
+.block-properties {
+  margin-left: calc(var(--indent-depth, 0) * 24px + 20px);
+  padding-right: 8px;
+}

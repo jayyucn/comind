@@ -12,16 +12,18 @@
  * 数据流：
  *   tree ref (BlockList) → VueDraggable v-model → node.children (渲染)
  *   拖拽结束 → onDragEnd → syncTreeToStore → store → structureVersion++
- *   → BlockList watch → syncFromStore → tree 重建
+ *   → BlockList watch → syncTreeToStore → tree 重建
  */
 import { computed, ref, watch, nextTick, onMounted, inject } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
 import { useEditorStore } from '../../stores/editor'
 import { useBlockStore } from '../../stores/blocks'
+import { usePropertyStore } from '../../stores/property'
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import { useTagFilter } from '../../composables/useTagFilter'
 import { useContentRenderer } from '../../composables/useContentRenderer'
 import Editor from '../Editor.vue'
+import PropertyDisplay from './PropertyDisplay.vue'
 import { usePageStore } from '../../stores/pages'
 import { isDescendantOf } from '../../utils/block-helpers'
 import { computeDropZone, computeSortPosition } from '../../composables/useDragDrop'
@@ -39,10 +41,22 @@ const props = defineProps<{
 
 const editorStore = useEditorStore()
 const blockStore = useBlockStore()
+const propertyStore = usePropertyStore()
 const pageStore = usePageStore()
 const { navigateToPage } = useNavigateToPage()
 const { openFilter } = useTagFilter()
 const { renderContentToHtml } = useContentRenderer()
+
+// Load properties for this block
+onMounted(async () => {
+  await propertyStore.loadBlockProperties(blockId.value)
+})
+
+watch(() => props.node.id, async (newBlockId) => {
+  if (newBlockId) {
+    await propertyStore.loadBlockProperties(newBlockId)
+  }
+})
 
 // 注入拖拽结束回调（由 BlockList 提供）
 const onDragEnd = inject<() => void>('onDragEnd')
@@ -595,6 +609,11 @@ async function handleBlockDragEnd() {
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- 属区显示区 -->
+    <div class="block-properties">
+      <PropertyDisplay :block-id="blockId" />
     </div>
 
     <!--

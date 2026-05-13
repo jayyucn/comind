@@ -2,6 +2,7 @@ import { db } from './db'
 import type { Block, BlockRecord } from '../types/block'
 import type { LinkRecord } from '../types/link'
 import type { Page, PageRecord } from '../types/page'
+import type { Property, PropertyRecord } from '../types/property'
 import { parseBlockLinks, type LinkParse } from '../utils/parser'
 import { generateUUID } from '../utils/id'
 import { inferPageType, normalizeJournalTitle } from '../utils/journal-detect'
@@ -67,6 +68,38 @@ function recordToPage(record: PageRecord): Page {
     wordCount: record.wordCount,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt
+  }
+}
+
+function recordToProperty(record: PropertyRecord): Property {
+  return {
+    id: record.id,
+    blockId: record.blockId,
+    key: record.key,
+    value: JSON.parse(record.value),
+    type: record.type as Property['type'],
+    sortOrder: record.sortOrder,
+    isHidden: record.isHidden === 1,
+    isDeleted: record.isDeleted === 1,
+    schemaVersion: record.schemaVersion,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt
+  }
+}
+
+function propertyToRecord(property: Property): PropertyRecord {
+  return {
+    id: property.id,
+    blockId: property.blockId,
+    key: property.key,
+    value: JSON.stringify(property.value),
+    type: property.type,
+    sortOrder: property.sortOrder,
+    isHidden: property.isHidden ? 1 : 0,
+    isDeleted: property.isDeleted ? 1 : 0,
+    schemaVersion: property.schemaVersion,
+    createdAt: property.createdAt,
+    updatedAt: property.updatedAt
   }
 }
 
@@ -147,19 +180,24 @@ export class IndexedDBAdapter {
   }
 
   async deleteBlock(blockId: string): Promise<void> {
-    await db.transaction('rw', db.blocks, db.links, async () => {
+    await db.transaction('rw', db.blocks, db.links, db.properties, async () => {
       await db.blocks.delete(blockId)
       await db.links.where('sourceBlockId').equals(blockId).delete()
+      await this.deletePropertiesByBlockId(blockId)
     })
   }
 
-  /** 级联删除多个 Block 及其所有 Links */
+  /** 级联删除多个 Block 及其所有 Links 和 Properties */
   async deleteBlockCascade(blockIds: string[]): Promise<void> {
-    await db.transaction('rw', db.blocks, db.links, async () => {
+    await db.transaction('rw', [db.blocks, db.links, db.properties], async () => {
       // 批量删除 Blocks
       await db.blocks.bulkDelete(blockIds)
       // 批量删除所有相关 Links（sourceBlockId 在列表中的记录）
       await db.links.where('sourceBlockId').anyOf(blockIds).delete()
+      // 批量删除所有相关 Properties
+      for (const blockId of blockIds) {
+        await this.deletePropertiesByBlockId(blockId)
+      }
     })
   }
 
@@ -373,6 +411,70 @@ export class IndexedDBAdapter {
       page.updatedAt = Date.now()
       await db.pages.put(pageToRecord(page))
     }
+  }
+
+  // === Property 相关方法 ===
+
+  async saveProperty(property: Property): Promise<void> {
+    await db.properties.put(propertyToRecord(property))
+  }
+
+  async getPropertyById(id: string): Promise<Property | undefined> {
+    const record = await db.properties.get(id)
+    if (record && !record.isDeleted) {
+      return recordToProperty(record)
+    }
+    return undefined
+  }
+
+  async getProperties(blockId: string): Promise<Property[]> {
+    const records = await db.properties
+      .where('blockId').equals(blockId)
+      .filter(p => !p.isDeleted)
+      .sortBy('sortOrder')
+    return records.map(recordToProperty)
+  }
+
+  async getProperty(blockId: string, key: string): Promise<Property | undefined> {
+    const record = await db.properties.get([blockId, key])
+    if (record && !record.isDeleted) {
+      return recordToProperty(record)
+    }
+    return undefined
+  }
+
+  async deleteProperty(id: string): Promise<void> {
+    const record = await db.properties.get(id)
+    if (record) {
+      record.isDeleted = 1
+      record.updatedAt = Date.now()
+      await db.properties.put(record)
+    }
+  }
+
+  async hardDeleteProperty(id: string): Promise<void> {
+    await db.properties.delete(id)
+  }
+
+  async deletePropertiesByBlockId(blockId: string): Promise<void> {
+    const records = await db.properties.where('blockId').equals(blockId).toArray()
+    const ids = records.map(r => r.id)
+    await db.properties.bulkDelete(ids)
+  }
+
+  async getPropertiesByBlockIds(blockIds: string[]): Promise<Map<string, Property[]>> {
+    const records = await db.properties
+      .where('blockId').anyOf(blockIds)
+      .filter(p => !p.isDeleted)
+      .toArray()
+
+    const result = new Map<string, Property[]>()
+    for (const record of records) {
+      const list = result.get(record.blockId) ?? []
+      list.push(recordToProperty(record))
+      result.set(record.blockId, list)
+    }
+    return result
   }
 }
 
