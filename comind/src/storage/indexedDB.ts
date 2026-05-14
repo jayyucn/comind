@@ -8,15 +8,27 @@ import { generateUUID } from '../utils/id'
 import { inferPageType, normalizeJournalTitle } from '../utils/journal-detect'
 
 function recordToBlock(record: BlockRecord): Block {
+  let format: Block['format']
+  let properties: Block['properties']
+  try {
+    format = JSON.parse(record.format)
+  } catch {
+    format = {}
+  }
+  try {
+    properties = JSON.parse(record.properties)
+  } catch {
+    properties = {}
+  }
   return {
     id: record.id,
     pageId: record.pageId,
     parentId: record.parentId,
     pos: record.pos,
     content: record.content,
-    format: JSON.parse(record.format),
+    format,
     type: record.type as 'bullet' | 'property' | 'query' | 'embed',
-    properties: JSON.parse(record.properties),
+    properties,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt
   }
@@ -55,6 +67,12 @@ function pageToRecord(page: Page): PageRecord {
 }
 
 function recordToPage(record: PageRecord): Page {
+  let aliases: Page['aliases']
+  try {
+    aliases = JSON.parse(record.aliases)
+  } catch {
+    aliases = []
+  }
   return {
     id: record.id,
     blockId: record.blockId,
@@ -62,7 +80,7 @@ function recordToPage(record: PageRecord): Page {
     type: record.type as 'normal' | 'journal',
     icon: record.icon,
     cover: record.cover,
-    aliases: JSON.parse(record.aliases),
+    aliases,
     filePath: record.filePath,
     childrenCount: record.childrenCount,
     wordCount: record.wordCount,
@@ -72,11 +90,17 @@ function recordToPage(record: PageRecord): Page {
 }
 
 function recordToProperty(record: PropertyRecord): Property {
+  let value: Property['value']
+  try {
+    value = JSON.parse(record.value)
+  } catch {
+    value = ''
+  }
   return {
     id: record.id,
     blockId: record.blockId,
     key: record.key,
-    value: JSON.parse(record.value),
+    value,
     type: record.type as Property['type'],
     sortOrder: record.sortOrder,
     isHidden: record.isHidden === 1,
