@@ -115,6 +115,18 @@ export const BUILT_IN_PROPERTIES: PropertyDefinition[] = [
     type: 'array',
     isBuiltIn: true,
   },
+  {
+    key: 'project',
+    title: '项目',
+    type: 'string',
+    isBuiltIn: true,
+  },
+  {
+    key: 'area',
+    title: '领域',
+    type: 'string',
+    isBuiltIn: true,
+  },
 ]
 
 /**
