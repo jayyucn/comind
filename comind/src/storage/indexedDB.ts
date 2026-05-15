@@ -7,7 +7,7 @@ import { parseBlockLinks, type LinkParse } from '../utils/parser'
 import { generateUUID } from '../utils/id'
 import { inferPageType, normalizeJournalTitle } from '../utils/journal-detect'
 
-function recordToBlock(record: BlockRecord): Block {
+export function recordToBlock(record: BlockRecord): Block {
   let format: Block['format']
   let properties: Block['properties']
   try {
@@ -34,7 +34,7 @@ function recordToBlock(record: BlockRecord): Block {
   }
 }
 
-function blockToRecord(block: Block): BlockRecord {
+export function blockToRecord(block: Block): BlockRecord {
   return {
     id: block.id,
     pageId: block.pageId,
@@ -49,7 +49,7 @@ function blockToRecord(block: Block): BlockRecord {
   }
 }
 
-function pageToRecord(page: Page): PageRecord {
+export function pageToRecord(page: Page): PageRecord {
   return {
     id: page.id,
     blockId: page.blockId,
@@ -66,7 +66,7 @@ function pageToRecord(page: Page): PageRecord {
   }
 }
 
-function recordToPage(record: PageRecord): Page {
+export function recordToPage(record: PageRecord): Page {
   let aliases: Page['aliases']
   try {
     aliases = JSON.parse(record.aliases)
@@ -89,7 +89,7 @@ function recordToPage(record: PageRecord): Page {
   }
 }
 
-function recordToProperty(record: PropertyRecord): Property {
+export function recordToProperty(record: PropertyRecord): Property {
   let value: Property['value']
   try {
     value = JSON.parse(record.value)
@@ -111,7 +111,7 @@ function recordToProperty(record: PropertyRecord): Property {
   }
 }
 
-function propertyToRecord(property: Property): PropertyRecord {
+export function propertyToRecord(property: Property): PropertyRecord {
   return {
     id: property.id,
     blockId: property.blockId,
