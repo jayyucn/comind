@@ -25,6 +25,7 @@ import { useContentRenderer } from '../../composables/useContentRenderer'
 import Editor from '../Editor.vue'
 import PropertyDisplay from './PropertyDisplay.vue'
 import PropertyEditor from './PropertyEditor.vue'
+import PropertyInline from './PropertyInline.vue'
 import { usePageStore } from '../../stores/pages'
 import { isDescendantOf } from '../../utils/block-helpers'
 import { computeDropZone, computeSortPosition } from '../../composables/useDragDrop'
@@ -598,6 +599,9 @@ async function handleBlockDragEnd() {
           <span v-else class="bullet-dot"></span>
         </span>
 
+        <!-- Between 属性显示 -->
+        <PropertyInline :block-id="blockId" position="between-bullet-content" />
+
         <!-- 内容区 -->
         <div class="block-content" @mousedown="startEditingAtClick">
           <Editor v-if="isActive" ref="editorRef" :block-id="blockId" :content="block.content" @save="handleSave"
@@ -609,6 +613,9 @@ async function handleBlockDragEnd() {
             <span v-else v-html="renderContentToHtml(block.content)"></span>
           </div>
         </div>
+
+        <!-- Right 属性显示 -->
+        <PropertyInline :block-id="blockId" position="right-of-content" />
       </div>
     </div>
 

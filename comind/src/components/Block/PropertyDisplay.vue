@@ -12,21 +12,18 @@ const props = defineProps<Props>()
 const propertyStore = usePropertyStore()
 const editorStore = useEditorStore()
 
-const allProperties = computed<Property[]>(() => 
-  propertyStore.getBlockProperties(props.blockId)
-)
-
-const visibleProperties = computed<Property[]>(() => 
-  allProperties.value.filter(p => !p.isHidden)
-)
+const visibleProperties = computed<Property[]>(() => {
+  const all = propertyStore.getBlockProperties(props.blockId)
+  return all.filter(prop => !prop.isHidden && (propertyStore.getPropertyDef(prop.key)?.displayPosition === 'bottom-of-block'))
+})
 
 function isBuiltIn(key: string): boolean {
   const def = propertyStore.getPropertyDef(key)
   return def?.isBuiltIn ?? false
 }
 
-function editProperty(blockId: string, key: string) {
-  editorStore.showPropertyEditor(blockId, key)
+function editProperty(key: string) {
+  editorStore.showPropertyEditor(props.blockId, key)
 }
 
 function getPropertyTitle(key: string): string {
@@ -34,23 +31,54 @@ function getPropertyTitle(key: string): string {
   return def?.title ?? key
 }
 
-function renderPropertyValue(property: Property): string {
-  const def = propertyStore.getPropertyDef(property.key)
+function renderPropertyValue(prop: Property): string {
+  const def = propertyStore.getPropertyDef(prop.key)
+  const style = def?.displayStyle || 'icon-text'
+  
+  let icon: string | null = null
+  let label: string = ''
   
   if (def?.closedValues) {
-    const closedValue = def.closedValues.find(cv => cv.value === property.value)
-    if (closedValue) {
-      return closedValue.icon ? `${closedValue.icon} ${closedValue.label}` : closedValue.label
+    const cv = def.closedValues.find(cv => cv.value === prop.value)
+    if (cv) {
+      icon = cv.icon || null
+      label = cv.label
     }
   }
-
-  switch (property.type) {
-    case 'boolean':
-      return property.value ? '✅' : '❌'
-    case 'array':
-      return Array.isArray(property.value) ? property.value.join(', ') : String(property.value)
-    default:
-      return String(property.value)
+  
+  if (!icon) {
+    switch (prop.key) {
+      case 'deadline':
+      case 'scheduled':
+        icon = '📅'
+        label = String(prop.value)
+        break
+      case 'tags':
+        icon = '🏷️'
+        label = Array.isArray(prop.value) ? prop.value.join(', ') : String(prop.value)
+        break
+      case 'project':
+        icon = '📁'
+        label = String(prop.value)
+        break
+      case 'area':
+        icon = '🌐'
+        label = String(prop.value)
+        break
+      case 'boolean':
+        label = prop.value ? '✅' : '❌'
+        break
+      default:
+        label = String(prop.value)
+    }
+  }
+  
+  if (style === 'icon' && icon) {
+    return icon
+  } else if (style === 'text') {
+    return label
+  } else {
+    return icon ? `${icon} ${label}` : label
   }
 }
 </script>
@@ -63,7 +91,7 @@ function renderPropertyValue(property: Property): string {
         :key="prop.id"
         class="property-item"
         :class="{ 'built-in': isBuiltIn(prop.key) }"
-        @click.stop="editProperty(props.blockId, prop.key)"
+        @click.stop="editProperty(prop.key)"
       >
         <span class="property-key">{{ getPropertyTitle(prop.key) }}:</span>
         <span class="property-value">{{ renderPropertyValue(prop) }}</span>

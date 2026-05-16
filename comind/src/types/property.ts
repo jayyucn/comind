@@ -23,6 +23,10 @@ export interface PropertyDefinition {
   closedValues?: ClosedValue[]
   isBuiltIn?: boolean
   description?: string
+  
+  // 新增配置字段
+  displayPosition?: 'between-bullet-content' | 'right-of-content' | 'bottom-of-block'
+  displayStyle?: 'icon-text' | 'icon' | 'text'
 }
 
 /**
@@ -84,6 +88,8 @@ export const BUILT_IN_PROPERTIES: PropertyDefinition[] = [
     title: '状态',
     type: 'string',
     isBuiltIn: true,
+    displayPosition: 'between-bullet-content',
+    displayStyle: 'icon',
     closedValues: [
       { value: 'Todo', label: '待办', icon: '📋' },
       { value: 'Doing', label: '进行中', icon: '🔄' },
@@ -96,6 +102,8 @@ export const BUILT_IN_PROPERTIES: PropertyDefinition[] = [
     title: '优先级',
     type: 'string',
     isBuiltIn: true,
+    displayPosition: 'between-bullet-content',
+    displayStyle: 'icon',
     closedValues: [
       { value: 'Low', label: '低', icon: '🟢' },
       { value: 'Medium', label: '中', icon: '🟡' },
@@ -108,24 +116,40 @@ export const BUILT_IN_PROPERTIES: PropertyDefinition[] = [
     title: '截止日期',
     type: 'date',
     isBuiltIn: true,
+    displayPosition: 'bottom-of-block',
+    displayStyle: 'icon-text',
+  },
+  {
+    key: 'scheduled',
+    title: '计划日期',
+    type: 'date',
+    isBuiltIn: true,
+    displayPosition: 'bottom-of-block',
+    displayStyle: 'icon-text',
   },
   {
     key: 'tags',
     title: '标签',
     type: 'array',
     isBuiltIn: true,
+    displayPosition: 'bottom-of-block',
+    displayStyle: 'icon-text',
   },
   {
     key: 'project',
     title: '项目',
     type: 'string',
     isBuiltIn: true,
+    displayPosition: 'bottom-of-block',
+    displayStyle: 'icon-text',
   },
   {
     key: 'area',
     title: '领域',
     type: 'string',
     isBuiltIn: true,
+    displayPosition: 'bottom-of-block',
+    displayStyle: 'icon-text',
   },
 ]
 
