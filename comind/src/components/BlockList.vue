@@ -92,5 +92,8 @@ onMounted(syncFromStore)
 
 .block-list-padding {
   height: 40px;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
 }
 </style>
