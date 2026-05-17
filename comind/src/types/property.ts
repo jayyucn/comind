@@ -91,10 +91,10 @@ export const BUILT_IN_PROPERTIES: PropertyDefinition[] = [
     displayPosition: 'between-bullet-content',
     displayStyle: 'icon',
     closedValues: [
-      { value: 'Todo', label: '待办', icon: '📋' },
-      { value: 'Doing', label: '进行中', icon: '🔄' },
-      { value: 'Done', label: '已完成', icon: '✅' },
-      { value: 'Canceled', label: '已取消', icon: '❌' },
+      { value: 'Todo', label: '待办', icon: '○' },
+      { value: 'Doing', label: '进行中', icon: '⚡' },
+      { value: 'Done', label: '已完成', icon: '✓' },
+      { value: 'Canceled', label: '已取消', icon: '✕' },
     ],
   },
   {
@@ -102,8 +102,8 @@ export const BUILT_IN_PROPERTIES: PropertyDefinition[] = [
     title: '优先级',
     type: 'string',
     isBuiltIn: true,
-    displayPosition: 'between-bullet-content',
-    displayStyle: 'icon',
+    displayPosition: 'right-of-content',
+    displayStyle: 'icon-text',
     closedValues: [
       { value: 'Low', label: '低', icon: '🟢' },
       { value: 'Medium', label: '中', icon: '🟡' },

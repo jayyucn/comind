@@ -67,15 +67,6 @@ export const SlashCommandExtension = Extension.create({
             view.dom.dispatchEvent(event)
 
             return false // 不阻止默认行为，让 `/` 正常输入
-          },
-          handleKeyDown: (_view, event) => {
-            if (event.key === 'Backspace') {
-           
-              return false
-            }
-            if(event.key === 'Enter'){
-              return true
-            }
           }
         }
       })

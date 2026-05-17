@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useEditorStore } from '../stores/editor'
-import { useSlashCommands, filterCommands, groupCommands } from '../composables/useSlashCommands'
+import { usePropertyStore } from '../stores/property'
+import { useSlashCommands, filterCommands, groupCommands, parseCommandInput } from '../composables/useSlashCommands'
 import { useModalKeyboardRef } from '../composables/useModalKeyboard'
+import { parseDateInput } from '../utils/date-parser'
 import type { Command } from '../types/command'
 
 const editorStore = useEditorStore()
+const propertyStore = usePropertyStore()
 const { commands } = useSlashCommands()
 
 // 本地状态
@@ -109,31 +112,95 @@ function updateQuery() {
 }
 
 // 执行命令
-function executeCommand(command: Command) {
+async function executeCommand(command: Command) {
   const editor = editorStore.activeEditor
   if (!editor || !range.value) return
+
+  const blockId = editorStore.activeBlockId
+
+  // 解析命令和参数
+  const { argument } = parseCommandInput(query.value)
+
+  // 计算完整的要删除的范围（从 / 字符开始到当前光标位置）
+  const fullDeleteRange = {
+    from: range.value.from,
+    to: editor.state.selection.from
+  }
+
+  // 记录光标应该恢复到的位置（/ 符号之前）
+  const cursorPosition = range.value.from
 
   // 关闭面板
   close()
 
+  // 先清除斜杠命令文本，并将光标恢复到 / 符号之前的位置
+  editor.chain()
+    .deleteRange(fullDeleteRange)
+    .setTextSelection(cursorPosition)
+    .focus()
+    .run()
+
+  // 处理属性命令
+  if (command.propertyKey && blockId) {
+    // 立即执行设置属性（如 /todo, /done, /low 等）
+    if (command.immediate && command.propertyValue) {
+      await propertyStore.setProperty(
+        blockId,
+        command.propertyKey,
+        command.propertyValue as string
+      )
+      return
+    }
+
+    // 接受参数的命令（如 /deadline 2024-05-20, /tags work）
+    if (command.acceptArgument && argument) {
+      let value: any = argument
+
+      // 对于日期类型进行特殊处理
+      if (command.propertyKey === 'deadline' || command.propertyKey === 'scheduled') {
+        const parsedDate = parseDateInput(argument)
+        if (parsedDate) {
+          value = parsedDate
+        }
+      }
+
+      // 对于 tags 类型，支持多个标签（逗号分隔）
+      if (command.propertyKey === 'tags') {
+        const existingProp = propertyStore.getBlockProperty(blockId, 'tags')
+        const existingTags = Array.isArray(existingProp?.value) ? existingProp.value : []
+        const newTags = argument.split(',').map(t => t.trim()).filter(t => t)
+        value = [...new Set([...existingTags, ...newTags])]
+      }
+
+      await propertyStore.setProperty(
+        blockId,
+        command.propertyKey,
+        value
+      )
+      return
+    }
+
+    // 打开编辑器（如 /status, /priority, /deadline 不带参数）
+    if (command.openEditor) {
+      editorStore.showQuickPropertyEditor(blockId, command.propertyKey, position.value)
+      return
+    }
+  }
+
   // 特殊处理属性命令
   if (command.id === 'property') {
-    const blockId = editorStore.activeBlockId
     if (blockId) {
       editorStore.showPropertyEditor(blockId)
     }
     return
   }
 
-  const currentRange = {
-    from: range.value.from,
-    to: editor.state.selection.from
-  }
-
-  // 执行命令
+  // 执行普通命令（如 /today, /tomorrow 等）
+  // 此时文本已经被清除，光标在 / 符号之前的位置
+  // 让命令自己决定如何插入内容
   command.action({
     editor,
-    range: currentRange
+    range: { from: cursorPosition, to: cursorPosition }
   })
 }
 

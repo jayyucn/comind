@@ -11,15 +11,6 @@ function formatDate(date: Date): string {
 }
 
 /**
- * 格式化时间为 HH:mm
- */
-function formatTime(date: Date): string {
-  const hours = String(date.getHours()).padStart(2, '0')
-  const minutes = String(date.getMinutes()).padStart(2, '0')
-  return `${hours}:${minutes}`
-}
-
-/**
  * 获取今天的日期链接
  */
 function insertToday({ editor, range }: CommandProps) {
@@ -61,7 +52,8 @@ function insertYesterday({ editor, range }: CommandProps) {
  * 插入当前时间
  */
 function insertTime({ editor, range }: CommandProps) {
-  const time = formatTime(new Date())
+  const now = new Date()
+  const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
   editor.chain()
     .deleteRange(range)
     .insertContent(time)
@@ -70,47 +62,15 @@ function insertTime({ editor, range }: CommandProps) {
 }
 
 /**
- * 插入日期选择器（Phase 1.1 简化为插入今天日期）
+ * 插入日期选择器占位符
  */
 function insertDatePicker({ editor, range }: CommandProps) {
-  // Phase 1.1 暂不实现日期选择器，直接插入今天日期
   const today = formatDate(new Date())
   editor.chain()
     .deleteRange(range)
     .insertContent(`[[${today}]]`)
     .focus()
     .run()
-}
-
-/**
- * 在 Block 开头插入状态标记
- */
-function insertStatus(status: string) {
-  return ({ editor, range }: CommandProps) => {
-    const text = editor.getText()
-    const beforeCursor = text.slice(0, range.from - 1)
-    const afterCursor = text.slice(range.to - 1)
-
-    // 如果开头已有状态标记，替换它
-    const statusPattern = /^(TODO|DOING|DONE|LATER|NOW)\s*/
-    const match = beforeCursor.match(statusPattern)
-
-    let newContent: string
-    if (match) {
-      // 替换现有状态
-      newContent = status + ' ' + beforeCursor.slice(match[0].length) + afterCursor
-    } else {
-      // 插入状态到开头
-      newContent = status + ' ' + beforeCursor + afterCursor
-    }
-
-    editor.chain()
-      .deleteRange({ from: 1, to: text.length + 1 })
-      .insertContent(newContent)
-      .setTextSelection(status.length + 1)
-      .focus()
-      .run()
-  }
 }
 
 /**
@@ -122,14 +82,12 @@ function insertFormat(mark: string, placeholder = '|') {
     const selectedText = editor.state.doc.textBetween(from, to)
 
     if (selectedText) {
-      // 包裹选中文字
       editor.chain()
         .deleteRange(range)
         .insertContent(`${mark}${selectedText}${mark}`)
         .focus()
         .run()
     } else {
-      // 插入模板，光标在中间
       const beforePlaceholder = mark + placeholder + mark
       const cursorPos = range.from + mark.length
       editor.chain()
@@ -143,8 +101,7 @@ function insertFormat(mark: string, placeholder = '|') {
 }
 
 /**
- * 插入代码块（创建新 Block）
- * Phase 1.1 简化：插入 ``` 代码块标记
+ * 插入代码块
  */
 function insertCodeBlock({ editor, range }: CommandProps) {
   editor.chain()
@@ -224,46 +181,162 @@ export const commands: Command[] = [
     action: insertDatePicker
   },
 
-  // 任务状态
+  // 任务状态（立即执行）
   {
     id: 'todo',
-    name: 'TODO',
+    name: 'Todo',
     alias: ['待办'],
-    group: '任务状态',
-    icon: '☐',
-    action: insertStatus('TODO')
+    group: '属性',
+    icon: '📋',
+    action: () => {},
+    propertyKey: 'status',
+    propertyValue: 'Todo',
+    immediate: true
   },
   {
     id: 'doing',
-    name: 'DOING',
+    name: 'Doing',
     alias: ['进行中'],
-    group: '任务状态',
-    icon: '◐',
-    action: insertStatus('DOING')
+    group: '属性',
+    icon: '🔄',
+    action: () => {},
+    propertyKey: 'status',
+    propertyValue: 'Doing',
+    immediate: true
   },
   {
     id: 'done',
-    name: 'DONE',
+    name: 'Done',
     alias: ['完成'],
-    group: '任务状态',
-    icon: '✓',
-    action: insertStatus('DONE')
+    group: '属性',
+    icon: '✅',
+    action: () => {},
+    propertyKey: 'status',
+    propertyValue: 'Done',
+    immediate: true
+  },
+
+  // 优先级（立即执行）
+  {
+    id: 'priority-low',
+    name: 'Low priority',
+    alias: ['低优先级', 'low'],
+    group: '属性',
+    icon: '🟢',
+    action: () => {},
+    propertyKey: 'priority',
+    propertyValue: 'Low',
+    immediate: true
   },
   {
-    id: 'later',
-    name: 'LATER',
-    alias: ['稍后'],
-    group: '任务状态',
-    icon: '⏳',
-    action: insertStatus('LATER')
+    id: 'priority-medium',
+    name: 'Medium priority',
+    alias: ['中优先级', 'medium'],
+    group: '属性',
+    icon: '🟡',
+    action: () => {},
+    propertyKey: 'priority',
+    propertyValue: 'Medium',
+    immediate: true
   },
   {
-    id: 'now',
-    name: 'NOW',
-    alias: ['现在'],
-    group: '任务状态',
-    icon: '🎯',
-    action: insertStatus('NOW')
+    id: 'priority-high',
+    name: 'High priority',
+    alias: ['高优先级', 'high'],
+    group: '属性',
+    icon: '🟠',
+    action: () => {},
+    propertyKey: 'priority',
+    propertyValue: 'High',
+    immediate: true
+  },
+  {
+    id: 'priority-urgent',
+    name: 'Urgent priority',
+    alias: ['紧急', 'urgent'],
+    group: '属性',
+    icon: '🔴',
+    action: () => {},
+    propertyKey: 'priority',
+    propertyValue: 'Urgent',
+    immediate: true
+  },
+
+  // 属性编辑（打开编辑器）
+  {
+    id: 'status',
+    name: 'Status',
+    alias: ['状态', 's'],
+    group: '属性',
+    icon: '📋',
+    action: () => {},
+    propertyKey: 'status',
+    openEditor: true
+  },
+  {
+    id: 'priority',
+    name: 'Priority',
+    alias: ['优先级', 'p'],
+    group: '属性',
+    icon: '🔴',
+    action: () => {},
+    propertyKey: 'priority',
+    openEditor: true
+  },
+  {
+    id: 'deadline',
+    name: 'Deadline',
+    alias: ['截止日期', 'due'],
+    group: '属性',
+    icon: '📅',
+    action: () => {},
+    propertyKey: 'deadline',
+    openEditor: true,
+    acceptArgument: true
+  },
+  {
+    id: 'scheduled',
+    name: 'Scheduled',
+    alias: ['计划日期', 'sched'],
+    group: '属性',
+    icon: '📅',
+    action: () => {},
+    propertyKey: 'scheduled',
+    openEditor: true,
+    acceptArgument: true
+  },
+  {
+    id: 'tags',
+    name: 'Tags',
+    alias: ['标签', 'tag'],
+    group: '属性',
+    icon: '🏷️',
+    action: () => {},
+    propertyKey: 'tags',
+    openEditor: true,
+    acceptArgument: true
+  },
+  {
+    id: 'project',
+    name: 'Project',
+    alias: ['项目', 'proj'],
+    group: '属性',
+    icon: '📁',
+    action: () => {},
+    propertyKey: 'project',
+    openEditor: true,
+    acceptArgument: true
+  },
+  {
+    id: 'area',
+    name: 'Area',
+    alias: ['领域'],
+    group: '属性',
+    icon: '🌐',
+    action: () => {},
+    propertyKey: 'area',
+    openEditor: true,
+    acceptArgument: true
   },
 
   // 文本格式
@@ -340,7 +413,7 @@ export const commands: Command[] = [
   {
     id: 'property',
     name: 'Add property',
-    alias: ['属性', 'property', 'prop'],
+    alias: ['属性', 'prop'],
     group: '属性',
     icon: '🏷️',
     action: () => {
@@ -399,12 +472,42 @@ export function groupCommands(commandList: Command[]): Map<string, Command[]> {
 }
 
 /**
+ * 解析命令和参数（例如 "/deadline 2024-05-20" -> { command: deadlineCommand, argument: "2024-05-20" }）
+ */
+export function parseCommandInput(input: string): {
+  command: Command | null,
+  argument: string | null
+} {
+  const trimmedInput = input.trim()
+
+  // 查找匹配的命令
+  for (const cmd of commands) {
+    // 检查命令名是否匹配
+    const commandNames = [cmd.name.toLowerCase(), ...(cmd.alias?.map(a => a.toLowerCase()) || [])]
+
+    for (const name of commandNames) {
+      // 完全匹配或者匹配前缀（后面跟空格）
+      if (trimmedInput === name || trimmedInput.startsWith(name + ' ')) {
+        const argument = trimmedInput.slice(name.length).trim()
+        return {
+          command: cmd,
+          argument: argument || null
+        }
+      }
+    }
+  }
+
+  return { command: null, argument: null }
+}
+
+/**
  * Slash Commands composable
  */
 export function useSlashCommands() {
   return {
     commands,
     filterCommands,
-    groupCommands
+    groupCommands,
+    parseCommandInput
   }
 }

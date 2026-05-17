@@ -105,6 +105,33 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
+  /** 快捷属性编辑器状态 */
+  const quickPropertyEditor = ref<{
+    visible: boolean
+    blockId: string
+    key: string
+    position: { x: number; y: number } | null
+  } | null>(null)
+
+  function showQuickPropertyEditor(
+    blockId: string,
+    key: string,
+    position?: { x: number; y: number }
+  ) {
+    quickPropertyEditor.value = {
+      visible: true,
+      blockId,
+      key,
+      position: position ?? null
+    }
+  }
+
+  function hideQuickPropertyEditor() {
+    if (quickPropertyEditor.value) {
+      quickPropertyEditor.value.visible = false
+    }
+  }
+
   return {
     activeBlockId,
     pendingCursorPos,
@@ -121,6 +148,9 @@ export const useEditorStore = defineStore('editor', () => {
     updateSlashSelectedIndex,
     propertyEditor,
     showPropertyEditor,
-    hidePropertyEditor
+    hidePropertyEditor,
+    quickPropertyEditor,
+    showQuickPropertyEditor,
+    hideQuickPropertyEditor
   }
 })

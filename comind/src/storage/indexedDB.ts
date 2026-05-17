@@ -460,8 +460,12 @@ export class IndexedDBAdapter {
   }
 
   async getProperty(blockId: string, key: string): Promise<Property | undefined> {
-    const record = await db.properties.get([blockId, key])
-    if (record && !record.isDeleted) {
+    const records = await db.properties
+      .where('[blockId+key]').equals([blockId, key])
+      .toArray()
+    
+    const record = records.find(r => !r.isDeleted)
+    if (record) {
       return recordToProperty(record)
     }
     return undefined

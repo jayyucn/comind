@@ -14,7 +14,7 @@
  *   拖拽结束 → onDragEnd → syncTreeToStore → store → structureVersion++
  *   → BlockList watch → syncTreeToStore → tree 重建
  */
-import { computed, ref, watch, nextTick, onMounted, inject } from 'vue'
+import { computed, ref, watch, nextTick, onMounted, onBeforeUnmount, inject } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
 import { useEditorStore } from '../../stores/editor'
 import { useBlockStore } from '../../stores/blocks'
@@ -26,6 +26,7 @@ import Editor from '../Editor.vue'
 import PropertyDisplay from './PropertyDisplay.vue'
 import PropertyEditor from './PropertyEditor.vue'
 import PropertyInline from './PropertyInline.vue'
+import PropertyQuickEditor from './PropertyQuickEditor.vue'
 import { usePageStore } from '../../stores/pages'
 import { isDescendantOf } from '../../utils/block-helpers'
 import { computeDropZone, computeSortPosition } from '../../composables/useDragDrop'
@@ -75,6 +76,7 @@ const isSingleEmptyBlock = computed(() => {
 })
 
 const editorRef = ref<InstanceType<typeof Editor> | null>(null)
+const blockContentRef = ref<HTMLDivElement | null>(null)
 const cursorPos = ref(0)
 
 // ── 常量配置 ──────────────────────────────────────────────
@@ -126,7 +128,45 @@ const childrenContainerClass = computed(() => ({
 
 onMounted(() => {
   updateChildrenHeight()
+
+  // 监听删除 between 属性的事件
+  // 使用捕获阶段监听，以便在事件冒泡前处理
+  document.addEventListener('delete-between-property', handleDeleteBetweenProperty, true)
 })
+
+onBeforeUnmount(() => {
+  document.removeEventListener('delete-between-property', handleDeleteBetweenProperty, true)
+})
+
+async function handleDeleteBetweenProperty(e: Event) {
+  const customEvent = e as CustomEvent
+  
+  // 检查事件是否已经处理过
+  if (customEvent.defaultPrevented) {
+    return
+  }
+  
+  // 只在当前 Block 激活时处理
+  if (!isActive.value) {
+    return
+  }
+  
+  const blockProps = propertyStore.getBlockProperties(blockId.value)
+
+  // 查找 between 位置的属性（status/priority）
+  const betweenProps = blockProps.filter(prop => {
+    const def = propertyStore.getPropertyDef(prop.key)
+    return def?.displayPosition === 'between-bullet-content'
+  })
+
+  if (betweenProps.length > 0) {
+    // 阻止默认的 merge 行为
+    customEvent.preventDefault()
+    
+    // 删除属性
+    await propertyStore.deleteProperty(betweenProps[0].id, blockId.value)
+  }
+}
 
 watch(
   isActive,
@@ -603,7 +643,7 @@ async function handleBlockDragEnd() {
         <PropertyInline :block-id="blockId" position="between-bullet-content" />
 
         <!-- 内容区 -->
-        <div class="block-content" @mousedown="startEditingAtClick">
+        <div class="block-content" ref="blockContentRef" @mousedown="startEditingAtClick">
           <Editor v-if="isActive" ref="editorRef" :block-id="blockId" :content="block.content" @save="handleSave"
             @split="handleSplit" @merge="handleMerge" @delete="handleDelete" @indent="handleIndent"
             @outdent="handleOutdent" @move-up="handleMoveUp" @move-down="handleMoveDown" @exit-edit="handleExitEdit"
@@ -656,6 +696,7 @@ async function handleBlockDragEnd() {
 
     <!-- Property Editor -->
     <PropertyEditor />
+    <PropertyQuickEditor />
   </div>
 </template>
 

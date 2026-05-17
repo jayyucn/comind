@@ -18,6 +18,13 @@ export interface Command {
   group: string
   icon: string
   action: (props: CommandProps) => void
+
+  // 属性命令相关
+  propertyKey?: string
+  propertyValue?: string | string[]
+  immediate?: boolean
+  openEditor?: boolean
+  acceptArgument?: boolean
 }
 
 /**

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { usePropertyStore } from '../../stores/property'
 import { useEditorStore } from '../../stores/editor'
 import type { Property } from '../../types/property'
@@ -15,8 +15,19 @@ const editorStore = useEditorStore()
 
 const properties = computed<Property[]>(() => {
   const all = propertyStore.getBlockProperties(props.blockId)
-  return all.filter(prop => !prop.isHidden && (propertyStore.getPropertyDef(prop.key)?.displayPosition === props.position))
+  return all.filter(prop => {
+    if (prop.isHidden) return false
+    const def = propertyStore.getPropertyDef(prop.key)
+    return def?.displayPosition === props.position
+  })
 })
+
+const hoveredPropertyId = ref<string | null>(null)
+
+function isBuiltIn(key: string): boolean {
+  const def = propertyStore.getPropertyDef(key)
+  return def?.isBuiltIn ?? false
+}
 
 function getIcon(key: string, value: Property['value']): string | null {
   const def = propertyStore.getPropertyDef(key)
@@ -62,8 +73,22 @@ function getLabel(key: string, value: Property['value']): string {
   }
 }
 
-function editProperty(key: string) {
-  editorStore.showPropertyEditor(props.blockId, key)
+function editProperty(prop: Property, event: MouseEvent) {
+  if (isBuiltIn(prop.key)) {
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+    editorStore.showQuickPropertyEditor(
+      props.blockId,
+      prop.key,
+      { x: rect.left, y: rect.bottom + 4 }
+    )
+  } else {
+    editorStore.showPropertyEditor(props.blockId, prop.key)
+  }
+}
+
+function deleteProperty(prop: Property, event: MouseEvent) {
+  event.stopPropagation()
+  propertyStore.deleteProperty(prop.id, props.blockId)
 }
 </script>
 
@@ -73,19 +98,38 @@ function editProperty(key: string) {
       v-for="prop in properties"
       :key="prop.id"
       class="property-inline-item"
-      @click.stop="editProperty(prop.key)"
+      :class="{ 
+        'built-in': isBuiltIn(prop.key),
+        'icon-only': propertyStore.getPropertyDef(prop.key)?.displayStyle === 'icon'
+      }"
+      @mouseenter="hoveredPropertyId = prop.id"
+      @mouseleave="hoveredPropertyId = null"
+      @click.stop="editProperty(prop, $event)"
     >
       <template v-if="getIcon(prop.key, prop.value) as string">
         <span class="property-icon">
           {{ getIcon(prop.key, prop.value) as string }}
         </span>
-        <span v-if="propertyStore.getPropertyDef(prop.key)?.displayStyle !== 'icon'" class="property-label">
+        <span
+          v-if="
+            propertyStore.getPropertyDef(prop.key)?.displayStyle !== 'icon'
+          "
+          class="property-label"
+        >
           {{ getLabel(prop.key, prop.value) }}
         </span>
       </template>
       <template v-else>
         <span>{{ getLabel(prop.key, prop.value) }}</span>
       </template>
+      <button
+        v-if="position === 'right-of-content' && hoveredPropertyId === prop.id"
+        class="delete-button"
+        @click.stop="deleteProperty(prop, $event)"
+        title="删除属性"
+      >
+        ×
+      </button>
     </div>
   </div>
 </template>
@@ -102,16 +146,57 @@ function editProperty(key: string) {
   align-items: center;
   cursor: pointer;
   padding: 2px 6px;
+  padding-right: 20px;
   border-radius: 4px;
   transition: background 120ms ease;
   font-size: 14px;
+  position: relative;
+}
+
+.property-inline-item.built-in {
+  font-weight: 500;
+}
+
+.property-inline-item.icon-only {
+  padding: 2px 0;
+  padding-right: 0;
+  margin-right: 6px;
+}
+
+.property-inline-item.icon-only .property-icon {
+  margin-right: 0;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .property-inline-item:hover {
-  background: var(--accent-08, rgba(0, 128, 255, 0.08));
+  background: var(--accent-08, rgba(59, 130, 246, 0.08));
 }
 
 .property-icon {
   margin-right: 4px;
+}
+
+.delete-button {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  color: #9ca3af;
+  padding: 0 4px;
+  border-radius: 4px;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.delete-button:hover {
+  color: #374151;
+  background: rgba(0, 0, 0, 0.05);
 }
 </style>
