@@ -11,6 +11,7 @@ export type PropertyType = 'string' | 'number' | 'boolean' | 'date' | 'datetime'
 export interface ClosedValue {
   value: string | number | boolean
   label: string
+  description?: string
   icon?: string
 }
 
@@ -107,10 +108,10 @@ export const BUILT_IN_PROPERTIES: PropertyDefinition[] = [
     displayPosition: 'right-of-content',
     displayStyle: 'icon-text',
     closedValues: [
-      { value: 'Low', label: '不紧急不重要', icon: TASK_PRIORITY_ICONS.Low },
-      { value: 'Medium', label: '重要不紧急', icon: TASK_PRIORITY_ICONS.Medium },
-      { value: 'High', label: '紧急不重要', icon: TASK_PRIORITY_ICONS.High },
-      { value: 'Urgent', label: '紧急且重要', icon: TASK_PRIORITY_ICONS.Urgent },
+      { value: 'Low', label: '低', description: '不紧急不重要', icon: TASK_PRIORITY_ICONS.Low },
+      { value: 'Medium', label: '中', description: '重要不紧急', icon: TASK_PRIORITY_ICONS.Medium },
+      { value: 'High', label: '高', description: '紧急不重要', icon: TASK_PRIORITY_ICONS.High },
+      { value: 'Urgent', label: '急', description: '紧急且重要', icon: TASK_PRIORITY_ICONS.Urgent },
     ],
   },
   {

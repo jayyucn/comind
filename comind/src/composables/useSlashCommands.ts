@@ -220,7 +220,7 @@ export const commands: Command[] = [
   // 优先级（立即执行）
   {
     id: TASK_PRIORITY_ICONS.Urgent,
-    name: 'Urgent priority',
+    name: 'Urgent',
     alias: ['重要紧急', 'urgent'],
     group: '属性',
     icon: TASK_PRIORITY_ICONS.Urgent,
@@ -231,7 +231,7 @@ export const commands: Command[] = [
   },
   {
     id: TASK_PRIORITY_ICONS.High,
-    name: 'High priority',
+    name: 'High',
     alias: ['紧急不重要', 'high'],
     group: '属性',
     icon: TASK_PRIORITY_ICONS.High,
@@ -242,7 +242,7 @@ export const commands: Command[] = [
   },
   {
     id: TASK_PRIORITY_ICONS.Medium,
-    name: 'Medium priority',
+    name: 'Medium',
     alias: ['重要不紧急', 'medium'],
     group: '属性',
     icon: TASK_PRIORITY_ICONS.Medium,
@@ -253,7 +253,7 @@ export const commands: Command[] = [
   },
   {
     id: TASK_PRIORITY_ICONS.Low,
-    name: 'Low priority',
+    name: 'Low',
     alias: ['不重要不紧急', 'low'],
     group: '属性',
     icon: TASK_PRIORITY_ICONS.Low,

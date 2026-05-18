@@ -163,7 +163,10 @@ function isSvgIcon(icon: string): boolean {
                 />
                 <span v-else>{{ cv.icon }}</span>
               </span>
-              <span class="option-label">{{ cv.label }}</span>
+              <div class="option-text">
+                <span class="option-label">{{ cv.label }}</span>
+                <span v-if="cv.description" class="option-description">{{ cv.description }}</span>
+              </div>
             </div>
           </template>
 
@@ -242,7 +245,7 @@ function isSvgIcon(icon: string): boolean {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 10px 12px;
   cursor: pointer;
   transition: background 0.15s ease;
 }
@@ -264,8 +267,20 @@ function isSvgIcon(icon: string): boolean {
   font-size: 14px;
 }
 
+.option-text {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+}
+
 .option-label {
   font-size: 14px;
+}
+
+.option-description {
+  margin-top: auto;
+  font-size: 12px;
+  color: #9ca3af;
 }
 
 .date-input,
