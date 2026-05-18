@@ -17,7 +17,8 @@ const visibleProperties = computed<Property[]>(() => {
   return all.filter(prop => {
     if (prop.isHidden) return false
     const def = propertyStore.getPropertyDef(prop.key)
-    return def?.displayPosition === 'bottom-of-block'
+    // 显示内置属性（displayPosition === 'bottom-of-block'）和所有自定义属性
+    return def?.displayPosition === 'bottom-of-block' || !def?.isBuiltIn
   })
 })
 

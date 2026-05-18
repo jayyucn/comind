@@ -1,7 +1,6 @@
 // 解析结果类型定义
 export interface ParseResult {
   links: LinkParse[]
-  tags: string[]
   properties: Record<string, any>
 }
 
@@ -64,63 +63,27 @@ export function parseBlockLinks(content: string): LinkParse[] {
   return sorted
 }
 
-/** 标签正则核心模式：# 后紧跟 Unicode 字母或 _，支持层级标签（斜杠分隔） */
-const TAG_PATTERN = '([\\p{L}_][\\p{L}\\p{N}_]*(?:\\/[\\p{L}_][\\p{L}\\p{N}_]*)*)'
-
-/**
- * 标签正则（单一来源，供 parser.ts 和 Block.vue 共用）
- *
- * 排除策略（双层）：
- * 1. 正则层：单字符 lookbehind 排除 |/>|@ 紧邻 # 的情况
- * 2. 代码层：isTagInUrlContext() 检查 # 前方是否有 :// 或 @ 模式
- *
- * 正则无法用 lookbehind 排除 ://（3 字符变长），
- * 因此 URL 锚点由代码层 isTagInUrlContext() 过滤。
- */
-export const TAG_REGEX = new RegExp(`(?<![\\/|>|@])#${TAG_PATTERN}`, 'gu')
-
-/**
- * 检查标签匹配是否在 URL / 邮箱上下文中（应排除）
- *
- * 识别：
- * - ://xxx#xxx → URL 锚点（如 https://x.com#section）
- * - @xxx#xxx → 邮箱锚点（如 user@domain#tag）
- * - x:#xxx → 协议后锚点（如 mailto:#tag）
- */
-function isTagInUrlContext(content: string, hashIndex: number): boolean {
-  const lookback = content.slice(Math.max(0, hashIndex - 50), hashIndex)
-  if (/:\/\/[^#\s]*$/.test(lookback)) return true
-  if (/@[^#\s]*$/.test(lookback)) return true
-  if (hashIndex > 0 && content[hashIndex - 1] === ':') return true
-  return false
-}
-
 /** 属性 key 正则：支持 Unicode 字母开头（中文 key 如「作者::」「状态::」） */
 const PROP_KEY_REGEX = /^([\p{L}_][\p{L}\p{N}_]*)::\s*(.+)$/gmu
 
+/**
+ * 解析内容中的 [[链接]] 和属性
+ *
+ * #tag 不再作为独立的 tag 解析
+ * 现在由 useContentRenderer 将 #tag 渲染为 Page 链接
+ */
 export function parseContent(content: string): ParseResult {
   const links: LinkParse[] = parseBlockLinks(content)
-
-  const tags: string[] = []
-  // 克隆正则避免 lastIndex 污染
-  const tagRegex = new RegExp(TAG_REGEX.source, 'gu')
-  let match
-  while ((match = tagRegex.exec(content)) !== null) {
-    const tag = match[1]
-    // 排除含 . 的标签（如版本号 #v2.0）和 URL/邮箱上下文
-    if (tag.includes('.')) continue
-    if (isTagInUrlContext(content, match.index)) continue
-    tags.push(tag)
-  }
 
   // 解析属性（key:: value）
   const properties: Record<string, any> = {}
   const propRegex = new RegExp(PROP_KEY_REGEX.source, 'gmu')
+  let match
   while ((match = propRegex.exec(content)) !== null) {
     properties[match[1]] = parsePropertyValue(match[2])
   }
 
-  return { links, tags, properties }
+  return { links, properties }
 }
 
 /**

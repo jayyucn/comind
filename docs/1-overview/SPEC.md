@@ -50,7 +50,7 @@
 | Block   | 最小编辑单位，一段文字 + 可选子 Block                       |
 | Page    | 顶级 Block（parentId = NULL，isPage = true）       |
 | Bullet  | 普通 Block（parentId ≠ NULL，或顶级但 isPage = false） |
-| Content | Block 的文本内容，`[[双链]]` 和 `#标签` 从中解析             |
+| Content | Block 的文本内容，`[[双链]]` 和 `#Page名`（Page 链接）从中解析             |
 
 > **核心原则：** 所有能力必须围绕 Block 构建，禁止引入"文档级模型"。
 

@@ -22,5 +22,5 @@
 
 | 文件 | 说明 |
 | --- | --- |
-| [tag-spec.md](tag-spec.md) | 标签规格 - `#tag` 语法与过滤 |
+| [tag-spec.md](tag-spec.md) | ⚠️ 已废弃 - Tag 统一为 Page 链接（见 link-spec.md） |
 | [property-spec.md](property-spec.md) | 属性规格 - `key:: value` 语法 |

@@ -131,14 +131,6 @@ export const BUILT_IN_PROPERTIES: PropertyDefinition[] = [
     displayStyle: 'icon-text',
   },
   {
-    key: 'tags',
-    title: '标签',
-    type: 'array',
-    isBuiltIn: true,
-    displayPosition: 'bottom-of-block',
-    displayStyle: 'icon-text',
-  },
-  {
     key: 'project',
     title: '项目',
     type: 'string',

@@ -3,7 +3,6 @@ import { computed, ref, onBeforeUnmount, nextTick } from 'vue'
 import BlockList from '../BlockList.vue'
 import Backlinks from '../Backlinks.vue'
 import MergeDialog from '../MergeDialog.vue'
-import TagFilterPanel from '../TagFilterPanel.vue'
 import SlashCommandMenu from '../SlashCommandMenu.vue'
 import PropertyQuickEditor from '../Block/PropertyQuickEditor.vue'
 import PropertyEditor from '../Block/PropertyEditor.vue'
@@ -128,7 +127,6 @@ function handleCancelMerge() {
       @cancel="handleCancelMerge"
     />
 
-    <TagFilterPanel />
     <SlashCommandMenu />
     <PropertyQuickEditor />
     <PropertyEditor />

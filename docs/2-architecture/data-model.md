@@ -76,7 +76,7 @@ enum BlockType {
 **说明：**
 - `pageId` 必须非空，每个 Block 必须属于某个 Page
 - `leftId` 实现同级排序（GAP 逻辑）
-- `properties` 存储 Property、Tag、Link 解析后的结构化数据
+- `properties` 存储 Property、Link 解析后的结构化数据
 
 ### 2.3 Link 表
 
@@ -93,15 +93,6 @@ enum BlockType {
 - 外部链接 `targetPageId` 为 NULL
 - 内部链接同时存储 `targetPageId` 和 `displayText`
 
-### 2.4 Tag 表
-
-| 字段 | 类型 | 约束 | 说明 |
-|------|------|------|------|
-| `id` | string | PK, UUID | 唯一标识 |
-| `name` | string | UNIQUE, NOT NULL | 标签名（不含 #） |
-| `createdAt` | integer | NOT NULL | 创建时间戳 |
-
----
 
 ## 3. Page ↔ Block 联动规则
 
@@ -173,11 +164,11 @@ interface PageStore {
 
 ## 5. Phase 适用说明
 
-| Phase | 存储方案 | Page 表 | Block 表 | Link 表 | Tag 表 |
-|-------|----------|---------|----------|---------|--------|
-| Phase 1 | LocalStorage | ✅ | ✅ | ✅ | ✅ |
-| Phase 2 | Markdown + SQLite | ✅ | ✅ | ✅ | ✅ |
-| Phase 3 | Tauri + rusqlite | ✅ | ✅ | ✅ | ✅ |
+| Phase | 存储方案 | Page 表 | Block 表 | Link 表 |
+|-------|----------|---------|----------|---------|
+| Phase 1 | LocalStorage | ✅ | ✅ | ✅ |
+| Phase 2 | Markdown + SQLite | ✅ | ✅ | ✅ |
+| Phase 3 | Tauri + rusqlite | ✅ | ✅ | ✅ |
 
 **Phase 1 特殊处理：**
 - LocalStorage 不支持事务，通过 `batchUpdate` 模拟

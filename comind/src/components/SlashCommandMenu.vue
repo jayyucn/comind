@@ -153,7 +153,7 @@ async function executeCommand(command: Command) {
       return
     }
 
-    // 接受参数的命令（如 /deadline 2024-05-20, /tags work）
+    // 接受参数的命令（如 /deadline 2024-05-20, /project 项目A）
     if (command.acceptArgument && argument) {
       let value: any = argument
 
@@ -163,14 +163,6 @@ async function executeCommand(command: Command) {
         if (parsedDate) {
           value = parsedDate
         }
-      }
-
-      // 对于 tags 类型，支持多个标签（逗号分隔）
-      if (command.propertyKey === 'tags') {
-        const existingProp = propertyStore.getBlockProperty(blockId, 'tags')
-        const existingTags = Array.isArray(existingProp?.value) ? existingProp.value : []
-        const newTags = argument.split(',').map(t => t.trim()).filter(t => t)
-        value = [...new Set([...existingTags, ...newTags])]
       }
 
       await propertyStore.setProperty(

@@ -2,7 +2,7 @@
 import { ref, computed, watch } from 'vue'
 import { useEditorStore } from '../../stores/editor'
 import { usePropertyStore } from '../../stores/property'
-import type { PropertyValue, PropertyDefinition } from '../../types/property'
+import type { PropertyValue, PropertyType } from '../../types/property'
 
 const editorStore = useEditorStore()
 const propertyStore = usePropertyStore()
@@ -11,56 +11,58 @@ const visible = computed(() => editorStore.propertyEditor?.visible ?? false)
 const blockId = computed(() => editorStore.propertyEditor?.blockId ?? '')
 const initialKey = computed(() => editorStore.propertyEditor?.initialKey ?? null)
 
-const builtInProperties = computed(() => propertyStore.builtInProperties)
-const selectedKey = ref<string>('')
+// 自定义属性的状态
+const customKey = ref<string>('')
+const selectedType = ref<PropertyType>('string')
 const currentValue = ref<PropertyValue>('')
 const arrayInput = ref('')
 
-const currentDef = computed<PropertyDefinition | undefined>(() => {
-  if (!selectedKey.value) return undefined
-  return propertyStore.getPropertyDef(selectedKey.value)
-})
-
-const hasClosedValues = computed(() => (currentDef.value?.closedValues?.length ?? 0) > 0)
+const propertyTypes: { type: PropertyType; label: string }[] = [
+  { type: 'string', label: '文本' },
+  { type: 'number', label: '数字' },
+  { type: 'boolean', label: '布尔值' },
+  { type: 'date', label: '日期' },
+  { type: 'array', label: '数组/标签' },
+]
 
 const currentArrayValue = computed<string[]>({
   get: () => Array.isArray(currentValue.value) ? currentValue.value : [],
   set: (val) => { currentValue.value = val }
 })
 
-const canSave = computed(() => selectedKey.value && currentValue.value !== '')
+const canSave = computed(() => {
+  if (!customKey.value.trim()) return false
+  if (selectedType.value === 'array' && currentArrayValue.value.length === 0) return false
+  if (selectedType.value !== 'array' && currentValue.value === '') return false
+  return true
+})
 
 function open() {
   if (initialKey.value) {
-    selectedKey.value = initialKey.value
+    // 编辑模式
+    customKey.value = initialKey.value
     const existing = propertyStore.getBlockProperty(blockId.value, initialKey.value)
     if (existing) {
+      selectedType.value = existing.type
       currentValue.value = existing.value
     } else {
-      currentValue.value = currentDef.value?.closedValues?.[0]?.value ?? ''
+      currentValue.value = selectedType.value === 'array' ? [] : ''
     }
   } else {
-    selectedKey.value = builtInProperties.value[0]?.key || ''
+    // 新建模式
+    customKey.value = ''
+    selectedType.value = 'string'
     currentValue.value = ''
+    arrayInput.value = ''
   }
 }
 
 function close() {
   editorStore.hidePropertyEditor()
-  selectedKey.value = ''
+  customKey.value = ''
+  selectedType.value = 'string'
   currentValue.value = ''
   arrayInput.value = ''
-}
-
-function onKeyChange() {
-  if (blockId.value && selectedKey.value) {
-    const existing = propertyStore.getBlockProperty(blockId.value, selectedKey.value)
-    if (existing) {
-      currentValue.value = existing.value
-    } else {
-      currentValue.value = currentDef.value?.closedValues?.[0]?.value ?? ''
-    }
-  }
 }
 
 function addArrayItem() {
@@ -81,9 +83,9 @@ async function save() {
   try {
     await propertyStore.setProperty(
       blockId.value,
-      selectedKey.value,
+      customKey.value.trim(),
       currentValue.value,
-      currentDef.value?.type
+      selectedType.value
     )
     close()
   } catch (error) {
@@ -104,36 +106,35 @@ watch(visible, (val) => {
       <div v-if="visible" class="property-editor-overlay" @click.self="close">
         <div class="property-editor-dialog">
           <div class="dialog-header">
-            <h3>{{ initialKey ? '编辑属性' : '添加属性' }}</h3>
+            <h3>{{ initialKey ? '编辑自定义属性' : '添加自定义属性' }}</h3>
             <button @click="close" class="close-btn">×</button>
           </div>
           
           <div class="dialog-body">
             <div class="form-group">
-              <label>属性</label>
-              <select v-model="selectedKey" @change="onKeyChange">
-                <option v-for="def in builtInProperties" :key="def.key" :value="def.key">
-                  {{ def.title }}
+              <label>属性名称</label>
+              <input
+                v-model="customKey"
+                type="text"
+                placeholder="输入属性名称"
+                :disabled="!!initialKey"
+              >
+            </div>
+
+            <div class="form-group">
+              <label>类型</label>
+              <select v-model="selectedType" :disabled="!!initialKey">
+                <option v-for="t in propertyTypes" :key="t.type" :value="t.type">
+                  {{ t.label }}
                 </option>
               </select>
             </div>
 
-            <div v-if="selectedKey" class="form-group">
+            <div class="form-group">
               <label>值</label>
               
-              <!-- Closed values dropdown (status, priority) -->
-              <select v-if="hasClosedValues" v-model="currentValue">
-                <option
-                  v-for="cv in currentDef?.closedValues"
-                  :key="String(cv.value)"
-                  :value="cv.value"
-                >
-                  {{ cv.icon ? `${cv.icon} ` : '' }}{{ cv.label }}
-                </option>
-              </select>
-
               <!-- Boolean -->
-              <div v-else-if="currentDef?.type === 'boolean'" class="boolean-options">
+              <div v-if="selectedType === 'boolean'" class="boolean-options">
                 <label class="boolean-option">
                   <input type="radio" v-model="currentValue" :value="true">
                   <span>是</span>
@@ -145,13 +146,13 @@ watch(visible, (val) => {
               </div>
 
               <!-- Date -->
-              <input v-else-if="currentDef?.type === 'date'" type="date" v-model="currentValue">
+              <input v-else-if="selectedType === 'date'" type="date" v-model="currentValue">
 
               <!-- Number -->
-              <input v-else-if="currentDef?.type === 'number'" type="number" v-model.number="currentValue">
+              <input v-else-if="selectedType === 'number'" type="number" v-model.number="currentValue">
 
               <!-- Array (tags) -->
-              <div v-else-if="currentDef?.type === 'array'" class="array-input">
+              <div v-else-if="selectedType === 'array'" class="array-input">
                 <input
                   v-model="arrayInput"
                   @keydown.enter.prevent="addArrayItem"
@@ -170,7 +171,7 @@ watch(visible, (val) => {
               </div>
 
               <!-- Default: string -->
-              <input v-else type="text" v-model="currentValue">
+              <input v-else type="text" v-model="currentValue" placeholder="输入值">
             </div>
           </div>
 

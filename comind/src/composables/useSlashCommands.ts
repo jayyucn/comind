@@ -126,7 +126,7 @@ function insertPageRef({ editor, range }: CommandProps) {
 }
 
 /**
- * 插入标签
+ * 插入标签（# 页面链接）
  */
 function insertTag({ editor, range }: CommandProps) {
   editor.chain()
@@ -302,17 +302,6 @@ export const commands: Command[] = [
     icon: '📅',
     action: () => {},
     propertyKey: 'scheduled',
-    openEditor: true,
-    acceptArgument: true
-  },
-  {
-    id: 'tags',
-    name: 'Tags',
-    alias: ['标签', 'tag'],
-    group: '属性',
-    icon: '🏷️',
-    action: () => {},
-    propertyKey: 'tags',
     openEditor: true,
     acceptArgument: true
   },

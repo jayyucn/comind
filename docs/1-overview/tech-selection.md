@@ -139,7 +139,6 @@
 | BlockNode | Block 容器，支持嵌套 |
 | PageNode | Page 标记（Block 的特殊形态） |
 | LinkMark | 行内链接 `[[...]]` |
-| TagMark | 标签 `#...` |
 | PropertyNode | 属性块 `key:: value` |
 
 ---

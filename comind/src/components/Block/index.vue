@@ -20,7 +20,6 @@ import { useEditorStore } from '../../stores/editor'
 import { useBlockStore } from '../../stores/blocks'
 import { usePropertyStore } from '../../stores/property'
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
-import { useTagFilter } from '../../composables/useTagFilter'
 import { useContentRenderer } from '../../composables/useContentRenderer'
 import Editor from '../Editor.vue'
 import PropertyDisplay from './PropertyDisplay.vue'
@@ -46,7 +45,6 @@ const blockStore = useBlockStore()
 const propertyStore = usePropertyStore()
 const pageStore = usePageStore()
 const { navigateToPage } = useNavigateToPage()
-const { openFilter } = useTagFilter()
 const { renderContentToHtml } = useContentRenderer()
 
 // 获取当前 block 的优先级
@@ -262,7 +260,7 @@ watch(collapsed, async (isCollapsed) => {
 /** mousedown：捕获点击坐标，在 tiptap 挂载前通知 editor store */
 function startEditingAtClick(e: MouseEvent) {
   const target = e.target as HTMLElement
-  if (target.closest('.block-link, .block-tag')) return
+  if (target.closest('.block-link')) return
 
   const cursorPosVal = getCaretPositionFromPoint(e.clientX, e.clientY) ?? 0
   editorStore.setCursorPos(cursorPosVal + 1)
@@ -369,15 +367,6 @@ function handleCursorChange(pos: number) {
 
 function handleContentClick(e: MouseEvent) {
   const target = e.target as HTMLElement
-
-  const tagEl = target.closest('.block-tag') as HTMLElement | null
-  if (tagEl) {
-    const tagText = tagEl.textContent?.replace(/^#/, '').trim() ?? ''
-    if (tagText) {
-      openFilter(tagText)
-    }
-    return
-  }
 
   const link = target.closest('.block-link') as HTMLElement | null
   if (!link) return

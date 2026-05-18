@@ -4,7 +4,6 @@ import { useJournal } from '../../composables/useJournal'
 import { usePageStore } from '../../stores/pages'
 import BlockList from '../BlockList.vue'
 import Backlinks from '../Backlinks.vue'
-import TagFilterPanel from '../TagFilterPanel.vue'
 
 const props = defineProps<{
   pageId: string
@@ -50,7 +49,6 @@ function openPage() {
       <div class="block-list-footer">
         <Backlinks :page-id="pageId" />
       </div>
-      <TagFilterPanel />
     </div>
   </div>
 </template>

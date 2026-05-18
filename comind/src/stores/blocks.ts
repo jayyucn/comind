@@ -4,7 +4,6 @@ import type { Block } from '../types/block'
 import { storage } from '../storage/indexedDB'
 import { generateUUID } from '../utils/id'
 import { debounce } from '../utils/debounce'
-import { invalidateTagCache } from '../composables/useTagFilter'
 import { usePageStore } from './pages'
 import {
   pmPosToTextOffset,
@@ -218,7 +217,6 @@ export const useBlockStore = defineStore('blocks', () => {
 
     blocks.value.push(block)
     await storage.saveBlock(block)
-    invalidateTagCache()
     structureVersion.value++
     return block
   }
@@ -684,7 +682,6 @@ export const useBlockStore = defineStore('blocks', () => {
       console.error('[deleteBlock] Failed to delete blocks from IDB:', error)
     }
 
-    invalidateTagCache()
     structureVersion.value++
   }
 
@@ -696,7 +693,6 @@ export const useBlockStore = defineStore('blocks', () => {
     block.content = content
     block.updatedAt = Date.now()
     _scheduleSave(block)
-    invalidateTagCache()
 
     const pageStore = usePageStore()
     const page = pageStore.getPage(block.pageId)
