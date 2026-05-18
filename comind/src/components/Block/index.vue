@@ -24,9 +24,8 @@ import { useTagFilter } from '../../composables/useTagFilter'
 import { useContentRenderer } from '../../composables/useContentRenderer'
 import Editor from '../Editor.vue'
 import PropertyDisplay from './PropertyDisplay.vue'
-import PropertyEditor from './PropertyEditor.vue'
 import PropertyInline from './PropertyInline.vue'
-import PropertyQuickEditor from './PropertyQuickEditor.vue'
+
 import { usePageStore } from '../../stores/pages'
 import { isDescendantOf } from '../../utils/block-helpers'
 import { computeDropZone, computeSortPosition } from '../../composables/useDragDrop'
@@ -88,7 +87,6 @@ const isSingleEmptyBlock = computed(() => {
 })
 
 const editorRef = ref<InstanceType<typeof Editor> | null>(null)
-const blockContentRef = ref<HTMLDivElement | null>(null)
 const cursorPos = ref(0)
 
 // ── 常量配置 ──────────────────────────────────────────────
@@ -655,7 +653,7 @@ async function handleBlockDragEnd() {
         <PropertyInline :block-id="blockId" position="between-bullet-content" />
 
         <!-- 内容区 -->
-        <div class="block-content" ref="blockContentRef" @mousedown="startEditingAtClick">
+        <div class="block-content" @mousedown="startEditingAtClick">
           <Editor v-if="isActive" ref="editorRef" :block-id="blockId" :content="block.content" @save="handleSave"
             @split="handleSplit" @merge="handleMerge" @delete="handleDelete" @indent="handleIndent"
             @outdent="handleOutdent" @move-up="handleMoveUp" @move-down="handleMoveDown" @exit-edit="handleExitEdit"
@@ -705,10 +703,6 @@ async function handleBlockDragEnd() {
     >
       <Block v-for="child in node.children" :key="child.id" :node="child" :page-id="pageId" :depth="depth + 1" />
     </VueDraggable>
-
-    <!-- Property Editor -->
-    <PropertyEditor />
-    <PropertyQuickEditor />
   </div>
 </template>
 

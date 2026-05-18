@@ -5,6 +5,8 @@ import Backlinks from '../Backlinks.vue'
 import MergeDialog from '../MergeDialog.vue'
 import TagFilterPanel from '../TagFilterPanel.vue'
 import SlashCommandMenu from '../SlashCommandMenu.vue'
+import PropertyQuickEditor from '../Block/PropertyQuickEditor.vue'
+import PropertyEditor from '../Block/PropertyEditor.vue'
 import { usePageStore } from '../../stores/pages'
 import { useEditorStore } from '../../stores/editor'
 import type { Page } from '../../types/page'
@@ -128,6 +130,8 @@ function handleCancelMerge() {
 
     <TagFilterPanel />
     <SlashCommandMenu />
+    <PropertyQuickEditor />
+    <PropertyEditor />
   </div>
 </template>
 

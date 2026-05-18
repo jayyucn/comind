@@ -6,6 +6,8 @@ import { usePageStore } from '../../stores/pages'
 import { useBlockStore } from '../../stores/blocks'
 import JournalListItem from './JournalListItem.vue'
 import SlashCommandMenu from '../SlashCommandMenu.vue'
+import PropertyQuickEditor from '../Block/PropertyQuickEditor.vue'
+import PropertyEditor from '../Block/PropertyEditor.vue'
 
 const router = useRouter()
 const journal = useJournal()
@@ -71,8 +73,10 @@ function handleOpenPage(pageId: string) {
     </div>
   </div>
 
-  <!-- SlashCommandMenu放在JournalList外层，确保页面只有一个实例 -->
+  <!-- SlashCommandMenu和PropertyQuickEditor、PropertyEditor放在JournalList外层，确保页面只有一个实例 -->
   <SlashCommandMenu />
+  <PropertyQuickEditor />
+  <PropertyEditor />
 </template>
 
 <style scoped>
