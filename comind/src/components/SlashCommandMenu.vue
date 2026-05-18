@@ -5,6 +5,7 @@ import { usePropertyStore } from '../stores/property'
 import { useSlashCommands, filterCommands, groupCommands, parseCommandInput } from '../composables/useSlashCommands'
 import { useModalKeyboardRef } from '../composables/useModalKeyboard'
 import { parseDateInput } from '../utils/date-parser'
+import { TaskIcon } from '../components/Icons'
 import type { Command } from '../types/command'
 
 const editorStore = useEditorStore()
@@ -220,6 +221,10 @@ function handleClickOutside(event: MouseEvent) {
   }
 }
 
+function isSvgIcon(icon: string): boolean {
+  return icon.startsWith('status-') || icon.startsWith('priority-') || icon.startsWith('icon-')
+}
+
 // 监听编辑器更新（用于实时更新查询）
 let editorUpdateListener: (() => void) | null = null
 
@@ -295,7 +300,14 @@ watch(visible, (isVisible) => {
                 @click="executeCommand(cmd)"
                 @mouseenter="selectedIndex = flatCommands.indexOf(cmd)"
               >
-                <span class="slash-command-icon">{{ cmd.icon }}</span>
+                <span class="slash-command-icon">
+                  <TaskIcon 
+                    v-if="isSvgIcon(cmd.icon)"
+                    :name="cmd.icon"
+                    :size="16"
+                  />
+                  <span v-else>{{ cmd.icon }}</span>
+                </span>
                 <span class="slash-command-name">{{ cmd.name }}</span>
                 <span v-if="cmd.alias && cmd.alias.length > 0" class="slash-command-alias">
                   {{ cmd.alias[0] }}

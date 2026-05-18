@@ -23,10 +23,10 @@ export function textOffsetToPmPos(textOffset: number): number {
 }
 
 /**
- * 按 pos 排序（原地排序）
+ * 按 pos 排序（返回新数组）
  */
 export function sortByPos<T extends { pos: number }>(items: T[]): T[] {
-  return items.sort((a, b) => a.pos - b.pos)
+  return [...items].sort((a, b) => a.pos - b.pos)
 }
 
 /**
@@ -164,8 +164,10 @@ export function isGapExhaustedError(error: unknown): error is GapExhaustedError 
  * 重新编号（当间隔耗尽时）
  */
 export function renumberBlocks(blocks: Block[]): void {
-  const sorted = sortByPos([...blocks])
-  sorted.forEach((block, index) => {
+  // 先按 pos 排序原数组
+  blocks.sort((a, b) => a.pos - b.pos)
+  // 然后重新编号
+  blocks.forEach((block, index) => {
     block.pos = (index + 1) * GAP_SIZE
   })
 }

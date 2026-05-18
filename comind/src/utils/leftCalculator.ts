@@ -20,8 +20,8 @@ export function calculateNewLeft(
 
   if (!insertAfterId) {
     // Insert at end
-    const lastSibling = sortedSiblings[0]
-    return lastSibling.left - 100
+    const lastSibling = sortedSiblings[sortedSiblings.length - 1]
+    return lastSibling.left + 100
   }
 
   // Insert after specific block

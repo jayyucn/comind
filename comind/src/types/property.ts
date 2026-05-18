@@ -1,3 +1,5 @@
+import { TASK_PRIORITY_ICONS, TASK_STATUS_ICONS } from "../components/Icons"
+
 /**
  * 属性类型
  */
@@ -91,10 +93,10 @@ export const BUILT_IN_PROPERTIES: PropertyDefinition[] = [
     displayPosition: 'between-bullet-content',
     displayStyle: 'icon',
     closedValues: [
-      { value: 'Todo', label: '待办', icon: '○' },
-      { value: 'Doing', label: '进行中', icon: '⚡' },
-      { value: 'Done', label: '已完成', icon: '✓' },
-      { value: 'Canceled', label: '已取消', icon: '✕' },
+      { value: 'Todo', label: '待办', icon: TASK_STATUS_ICONS.Todo },
+      { value: 'Doing', label: '进行中', icon: TASK_STATUS_ICONS.Doing },
+      { value: 'Done', label: '已完成', icon: TASK_STATUS_ICONS.Done },
+      { value: 'Canceled', label: '已取消', icon: TASK_STATUS_ICONS.Canceled },
     ],
   },
   {
@@ -105,10 +107,10 @@ export const BUILT_IN_PROPERTIES: PropertyDefinition[] = [
     displayPosition: 'right-of-content',
     displayStyle: 'icon-text',
     closedValues: [
-      { value: 'Low', label: '低', icon: '🟢' },
-      { value: 'Medium', label: '中', icon: '🟡' },
-      { value: 'High', label: '高', icon: '🟠' },
-      { value: 'Urgent', label: '紧急', icon: '🔴' },
+      { value: 'Low', label: '不紧急不重要', icon: TASK_PRIORITY_ICONS.Low },
+      { value: 'Medium', label: '重要不紧急', icon: TASK_PRIORITY_ICONS.Medium },
+      { value: 'High', label: '紧急不重要', icon: TASK_PRIORITY_ICONS.High },
+      { value: 'Urgent', label: '紧急且重要', icon: TASK_PRIORITY_ICONS.Urgent },
     ],
   },
   {

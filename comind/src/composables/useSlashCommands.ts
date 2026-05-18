@@ -1,3 +1,4 @@
+import { TASK_PRIORITY_ICONS, TASK_STATUS_ICONS } from '../components/Icons'
 import type { Command, CommandProps } from '../types/command'
 
 /**
@@ -186,8 +187,8 @@ export const commands: Command[] = [
     id: 'todo',
     name: 'Todo',
     alias: ['待办'],
-    group: '属性',
-    icon: '📋',
+    group: '任务',
+    icon: TASK_STATUS_ICONS.Todo,
     action: () => {},
     propertyKey: 'status',
     propertyValue: 'Todo',
@@ -197,8 +198,8 @@ export const commands: Command[] = [
     id: 'doing',
     name: 'Doing',
     alias: ['进行中'],
-    group: '属性',
-    icon: '🔄',
+    group: '任务',
+    icon: TASK_STATUS_ICONS.Doing,
     action: () => {},
     propertyKey: 'status',
     propertyValue: 'Doing',
@@ -208,8 +209,8 @@ export const commands: Command[] = [
     id: 'done',
     name: 'Done',
     alias: ['完成'],
-    group: '属性',
-    icon: '✅',
+    group: '任务',
+    icon: TASK_STATUS_ICONS.Done,
     action: () => {},
     propertyKey: 'status',
     propertyValue: 'Done',
@@ -218,50 +219,49 @@ export const commands: Command[] = [
 
   // 优先级（立即执行）
   {
-    id: 'priority-low',
-    name: 'Low priority',
-    alias: ['低优先级', 'low'],
+    id: TASK_PRIORITY_ICONS.Urgent,
+    name: 'Urgent priority',
+    alias: ['重要紧急', 'urgent'],
     group: '属性',
-    icon: '🟢',
+    icon: TASK_PRIORITY_ICONS.Urgent,
     action: () => {},
     propertyKey: 'priority',
-    propertyValue: 'Low',
+    propertyValue: 'Urgent',
     immediate: true
   },
   {
-    id: 'priority-medium',
-    name: 'Medium priority',
-    alias: ['中优先级', 'medium'],
-    group: '属性',
-    icon: '🟡',
-    action: () => {},
-    propertyKey: 'priority',
-    propertyValue: 'Medium',
-    immediate: true
-  },
-  {
-    id: 'priority-high',
+    id: TASK_PRIORITY_ICONS.High,
     name: 'High priority',
-    alias: ['高优先级', 'high'],
+    alias: ['紧急不重要', 'high'],
     group: '属性',
-    icon: '🟠',
+    icon: TASK_PRIORITY_ICONS.High,
     action: () => {},
     propertyKey: 'priority',
     propertyValue: 'High',
     immediate: true
   },
   {
-    id: 'priority-urgent',
-    name: 'Urgent priority',
-    alias: ['紧急', 'urgent'],
+    id: TASK_PRIORITY_ICONS.Medium,
+    name: 'Medium priority',
+    alias: ['重要不紧急', 'medium'],
     group: '属性',
-    icon: '🔴',
+    icon: TASK_PRIORITY_ICONS.Medium,
     action: () => {},
     propertyKey: 'priority',
-    propertyValue: 'Urgent',
+    propertyValue: 'Medium',
     immediate: true
   },
-
+  {
+    id: TASK_PRIORITY_ICONS.Low,
+    name: 'Low priority',
+    alias: ['不重要不紧急', 'low'],
+    group: '属性',
+    icon: TASK_PRIORITY_ICONS.Low,
+    action: () => {},
+    propertyKey: 'priority',
+    propertyValue: 'Low',
+    immediate: true
+  },
   // 属性编辑（打开编辑器）
   {
     id: 'status',

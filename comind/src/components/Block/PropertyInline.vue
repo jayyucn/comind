@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { usePropertyStore } from '../../stores/property'
 import { useEditorStore } from '../../stores/editor'
 import type { Property } from '../../types/property'
+import { TaskIcon } from '../Icons'
 
 interface Props {
   blockId: string
@@ -90,6 +91,10 @@ function deleteProperty(prop: Property, event: MouseEvent) {
   event.stopPropagation()
   propertyStore.deleteProperty(prop.id, props.blockId)
 }
+
+function isSvgIcon(icon: string): boolean {
+  return icon.startsWith('status-') || icon.startsWith('priority-') || icon.startsWith('icon-')
+}
 </script>
 
 <template>
@@ -108,7 +113,12 @@ function deleteProperty(prop: Property, event: MouseEvent) {
     >
       <template v-if="getIcon(prop.key, prop.value) as string">
         <span class="property-icon">
-          {{ getIcon(prop.key, prop.value) as string }}
+          <TaskIcon 
+            v-if="isSvgIcon(getIcon(prop.key, prop.value) as string)"
+            :name="getIcon(prop.key, prop.value) as string"
+            :size="18"
+          />
+          <span v-else>{{ getIcon(prop.key, prop.value) as string }}</span>
         </span>
         <span
           v-if="
@@ -147,7 +157,6 @@ function deleteProperty(prop: Property, event: MouseEvent) {
   cursor: pointer;
   padding: 2px 6px;
   padding-right: 20px;
-  border-radius: 4px;
   transition: background 120ms ease;
   font-size: 14px;
   position: relative;
@@ -172,7 +181,7 @@ function deleteProperty(prop: Property, event: MouseEvent) {
 }
 
 .property-inline-item:hover {
-  background: var(--accent-08, rgba(59, 130, 246, 0.08));
+  transform: scale(1.15);
 }
 
 .property-icon {

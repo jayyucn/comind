@@ -4,6 +4,7 @@ import { useEditorStore } from '../../stores/editor'
 import { usePropertyStore } from '../../stores/property'
 import type { PropertyValue } from '../../types/property'
 import { getAllPropertyDefinitions } from '../../types/property'
+import { TaskIcon } from '../Icons'
 
 const editorStore = useEditorStore()
 const propertyStore = usePropertyStore()
@@ -129,6 +130,10 @@ function getEditorPosition() {
     transform: 'translate(-50%, -50%)'
   }
 }
+
+function isSvgIcon(icon: string): boolean {
+  return icon.startsWith('status-') || icon.startsWith('priority-') || icon.startsWith('icon-')
+}
 </script>
 
 <template>
@@ -150,7 +155,14 @@ function getEditorPosition() {
               :class="{ selected: cv.value === currentValue }"
               @click.stop="handleSelectClosedValue(cv.value as string)"
             >
-              <span v-if="cv.icon" class="option-icon">{{ cv.icon }}</span>
+              <span v-if="cv.icon" class="option-icon">
+                <TaskIcon 
+                  v-if="isSvgIcon(cv.icon)"
+                  :name="cv.icon"
+                  :size="16"
+                />
+                <span v-else>{{ cv.icon }}</span>
+              </span>
               <span class="option-label">{{ cv.label }}</span>
             </div>
           </template>
@@ -218,7 +230,7 @@ function getEditorPosition() {
 
 .quick-editor-dropdown {
   position: absolute;
-  min-width: 200px;
+  min-width: 100px;
   background: var(--color-paper, #ffffff);
   border: 1px solid var(--color-border, #e5e7eb);
   border-radius: 8px;
@@ -244,6 +256,11 @@ function getEditorPosition() {
 }
 
 .option-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
   font-size: 14px;
 }
 

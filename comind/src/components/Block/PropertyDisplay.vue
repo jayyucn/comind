@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { usePropertyStore } from '../../stores/property'
 import { useEditorStore } from '../../stores/editor'
 import type { Property } from '../../types/property'
+import { TaskIcon } from '../Icons'
 
 const props = defineProps<{
   blockId: string
@@ -50,55 +51,54 @@ function getPropertyTitle(key: string): string {
   return def?.title ?? key
 }
 
-function renderPropertyValue(prop: Property): string {
-  const def = propertyStore.getPropertyDef(prop.key)
-  const style = def?.displayStyle ?? 'icon-text'
-
-  let icon: string | null = null
-  let label: string = ''
-
+function getIcon(key: string, value: Property['value']): string | null {
+  const def = propertyStore.getPropertyDef(key)
   if (def?.closedValues) {
-    const cv = def.closedValues.find(cv => cv.value === prop.value)
-    if (cv) {
-      icon = cv.icon ?? null
-      label = cv.label
+    const cv = def.closedValues.find(cv => cv.value === value)
+    if (cv?.icon) {
+      return cv.icon
     }
   }
+  switch (key) {
+    case 'deadline':
+    case 'scheduled':
+      return '📅'
+    case 'tags':
+      return '🏷️'
+    case 'project':
+      return '📁'
+    case 'area':
+      return '🌐'
+    default:
+      return null
+  }
+}
 
-  if (!icon) {
-    switch (prop.key) {
-      case 'deadline':
-      case 'scheduled':
-        icon = '📅'
-        label = String(prop.value)
-        break
-      case 'tags':
-        icon = '🏷️'
-        label = Array.isArray(prop.value) ? prop.value.join(', ') : String(prop.value)
-        break
-      case 'project':
-        icon = '📁'
-        label = String(prop.value)
-        break
-      case 'area':
-        icon = '🌐'
-        label = String(prop.value)
-        break
-      case 'boolean':
-        label = prop.value ? '✅' : '❌'
-        break
-      default:
-        label = String(prop.value)
+function getLabel(key: string, value: Property['value']): string {
+  const def = propertyStore.getPropertyDef(key)
+  if (def?.closedValues) {
+    const cv = def.closedValues.find(cv => cv.value === value)
+    if (cv?.label) {
+      return cv.label
     }
   }
-
-  if (style === 'icon' && icon) {
-    return icon
-  } else if (style === 'text') {
-    return label
-  } else {
-    return icon ? `${icon} ${label}` : label
+  switch (key) {
+    case 'deadline':
+    case 'scheduled':
+    case 'project':
+    case 'area':
+      return String(value)
+    case 'tags':
+      return Array.isArray(value) ? value.join(', ') : String(value)
+    case 'boolean':
+      return value ? '是' : '否'
+    default:
+      return String(value)
   }
+}
+
+function isSvgIcon(icon: string): boolean {
+  return icon.startsWith('status-') || icon.startsWith('priority-') || icon.startsWith('icon-')
 }
 </script>
 
@@ -115,7 +115,20 @@ function renderPropertyValue(prop: Property): string {
         @click.stop="editProperty(prop, $event)"
       >
         <span class="property-key">{{ getPropertyTitle(prop.key) }}:</span>
-        <span class="property-value">{{ renderPropertyValue(prop) }}</span>
+        <span class="property-value">
+          <template v-if="getIcon(prop.key, prop.value)">
+            <TaskIcon 
+              v-if="isSvgIcon(getIcon(prop.key, prop.value)!)"
+              :name="getIcon(prop.key, prop.value)!"
+              :size="14"
+            />
+            <span v-else>{{ getIcon(prop.key, prop.value) }}</span>
+            <span v-if="getLabel(prop.key, prop.value) && propertyStore.getPropertyDef(prop.key)?.displayStyle !== 'icon'">
+              {{ getLabel(prop.key, prop.value) }}
+            </span>
+          </template>
+          <span v-else>{{ getLabel(prop.key, prop.value) }}</span>
+        </span>
         <button
           v-if="hoveredPropertyId === prop.id"
           class="delete-button"
