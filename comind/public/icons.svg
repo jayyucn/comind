@@ -52,7 +52,7 @@
   </symbol>
 
   <symbol id="priority-medium" viewBox="0 0 20 20">
-    <circle cx="10" cy="10" r="7" fill="#f59e0b" stroke="#d97706" stroke-width="1.5"/>
+    <circle cx="10" cy="10" r="7" fill="#eab308" stroke="#ca8a04" stroke-width="1.5"/>
   </symbol>
 
   <symbol id="priority-high" viewBox="0 0 20 20">
@@ -60,7 +60,7 @@
   </symbol>
 
   <symbol id="priority-urgent" viewBox="0 0 20 20">
-    <polygon points="10,2 12,8 18,8 13,12 15,18 10,14 5,18 7,12 2,8 8,8" fill="#ef4444" stroke="#dc2626" stroke-width="1" stroke-linejoin="round"/>
+    <circle cx="10" cy="10" r="7" fill="#ef4444" stroke="#dc2626" stroke-width="1.5"/>
   </symbol>
 
   <symbol id="icon-calendar" viewBox="0 0 20 20">

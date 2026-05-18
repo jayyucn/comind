@@ -305,6 +305,36 @@
   height: 0;
 }
 
+/* 优先级渐变背景色 */
+.block.priority-low .block-inner {
+  background: linear-gradient(90deg, rgba(148, 163, 184, 0.12) 0%, rgba(148, 163, 184, 0.02) 100%);
+  border-radius: 6px;
+}
+
+.block.priority-medium .block-inner {
+  background: linear-gradient(90deg, rgba(234, 179, 8, 0.14) 0%, rgba(234, 179, 8, 0.02) 100%);
+  border-radius: 6px;
+}
+
+.block.priority-high .block-inner {
+  background: linear-gradient(90deg, rgba(249, 115, 22, 0.16) 0%, rgba(249, 115, 22, 0.02) 100%);
+  border-radius: 6px;
+}
+
+.block.priority-urgent .block-inner {
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.18) 0%, rgba(239, 68, 68, 0.02) 100%);
+  border-radius: 6px;
+}
+
+/* active 状态下保持背景色 */
+.block.active.priority-low .block-inner,
+.block.active.priority-medium .block-inner,
+.block.active.priority-high .block-inner,
+.block.active.priority-urgent .block-inner {
+  /* 保持优先级背景色，但稍微调整以显示 active 状态 */
+  filter: brightness(1.02);
+}
+
 /* 属性显示区域 */
 .block-properties {
   margin-left: calc(var(--indent-depth, 0) * 24px + 20px);

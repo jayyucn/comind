@@ -160,6 +160,8 @@ function isSvgIcon(icon: string): boolean {
   transition: background 120ms ease;
   font-size: 14px;
   position: relative;
+  /* 确保内部所有元素的基线对齐 */
+  line-height: 1.5;
 }
 
 .property-inline-item.built-in {
@@ -169,7 +171,6 @@ function isSvgIcon(icon: string): boolean {
 .property-inline-item.icon-only {
   padding: 2px 0;
   padding-right: 0;
-  margin-right: 6px;
 }
 
 .property-inline-item.icon-only .property-icon {
@@ -186,6 +187,11 @@ function isSvgIcon(icon: string): boolean {
 
 .property-icon {
   margin-right: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 确保 icon 和文本的垂直对齐 */
+  line-height: 1;
 }
 
 .delete-button {

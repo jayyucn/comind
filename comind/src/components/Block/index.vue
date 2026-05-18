@@ -50,6 +50,18 @@ const { navigateToPage } = useNavigateToPage()
 const { openFilter } = useTagFilter()
 const { renderContentToHtml } = useContentRenderer()
 
+// 获取当前 block 的优先级
+const blockPriority = computed(() => {
+  const prop = propertyStore.getBlockProperty(blockId.value, 'priority')
+  return prop?.value as string | undefined
+})
+
+// 优先级对应的 CSS 类名
+const priorityClass = computed(() => {
+  if (!blockPriority.value) return ''
+  return `priority-${blockPriority.value.toLowerCase()}`
+})
+
 // Load properties for this block
 onMounted(async () => {
   await propertyStore.loadBlockProperties(blockId.value)
@@ -625,7 +637,7 @@ async function handleBlockDragEnd() {
 </script>
 
 <template>
-  <div class="block" :class="{ active: isActive }" :data-block-id="blockId">
+  <div class="block" :class="[priorityClass, { active: isActive }]" :data-block-id="blockId">
     <div class="block-row">
       <!-- 缩进占位 -->
       <div class="block-indent" :style="{ width: indentWidth }"></div>
