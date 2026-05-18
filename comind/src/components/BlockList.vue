@@ -48,6 +48,21 @@ function handleDragEnd() {
   blockStore.structureVersion++
 }
 
+// ── 双击底部留白区域创建新 block ──
+async function handleCreateBlock() {
+  const newBlock = await blockStore.createBlock({
+    pageId: props.pageId,
+    parentId: null,
+    content: '',
+    format: {}
+  })
+
+  if (newBlock) {
+    blockStore.structureVersion++
+    editorStore.activateBlock(newBlock.id, 1)
+  }
+}
+
 // ── 提供给子 Block 组件 ──
 provide('onDragEnd', handleDragEnd)
 
@@ -78,8 +93,8 @@ onMounted(syncFromStore)
     >
       <Block v-for="node in tree" :key="node.id" :node="node" :page-id="pageId" :depth="0" />
     </VueDraggable>
-    <!-- 底部留白：确保拖拽到列表底部时目标容器被正确识别 -->
-    <div class="block-list-padding" />
+    <!-- 底部留白：确保拖拽到列表底部时目标容器被正确识别，双击创建新 block -->
+    <div class="block-list-padding" @dblclick="handleCreateBlock" />
   </div>
 </template>
 
