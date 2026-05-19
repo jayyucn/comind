@@ -1,16 +1,14 @@
 # Property 规范
 
-> 版本：v0.2
-> 日期：2026-04-16
-> 状态：草案（Phase 2 特性，详细规范见本文档）
+> 版本：v0.3
+> 日期：2026-05-19
+> 状态：✅ 已实现
 
-**Phase 1 定位：** Property 作为 Block.content 的内嵌元数据（`key:: value` 嵌入正文），解析后序列化存入 `Block.properties` JSON 字段。独立 Property 表和 UI 属性面板属于 Phase 2 特性，Phase 1 暂不实现。
-
-***
+---
 
 ## 1. 概述
 
-Property（属性）是 comind 中用于为 Block/Page 附加结构化元数据的机制。本文档定义 Property 的语法规则、数据类型、存储策略和 UI 交互。
+Property（属性）是 comind 中用于为 Block 附加结构化元数据的机制。本文档定义 Property 的数据模型、存储策略、API 接口和 UI 交互。
 
 **Property 的定位：**
 
@@ -21,35 +19,399 @@ Property（属性）是 comind 中用于为 Block/Page 附加结构化元数据�
 | 用途 | 元数据/配置 | 关联、分类 |
 | 查询 | 支持按 key/value 筛选 | 按目标筛选 |
 
-***
+**核心设计决策：**
+- Property 只关联 Block（通过 `blockId`），不直接关联 Page
+- Page 的属性通过其根 Block 的 Property 表达
+- 支持内置属性定义（带 UI 显示配置）
 
-## 2. 语法定义
+---
 
-### 2.1 基础语法
+## 2. 数据模型
+
+### 2.1 PropertyType（属性值类型）
+
+```typescript
+export type PropertyType = 'string' | 'number' | 'boolean' | 'date' | 'datetime' | 'array' | 'page'
+```
+
+**说明：**
+- `page` 类型：引用另一个 Page（替代早期设计的 `link` 类型）
+- 不支持 `link` 类型（Link 由独立 Link 表处理）
+
+### 2.2 ClosedValue（封闭值选项）
+
+```typescript
+export interface ClosedValue {
+  value: string | number | boolean
+  label: string
+  description?: string
+  icon?: string
+}
+```
+
+用于枚举类型的属性值（如下拉选择）。
+
+### 2.3 PropertyDefinition（属性定义）
+
+```typescript
+export interface PropertyDefinition {
+  key: string
+  title: string
+  type: PropertyType
+  closedValues?: ClosedValue[]
+  isBuiltIn?: boolean
+  description?: string
+  
+  // UI 显示配置
+  displayPosition?: 'between-bullet-content' | 'right-of-content' | 'bottom-of-block'
+  displayStyle?: 'icon' | 'text' | 'icon-text'
+}
+```
+
+**字段说明：**
+- `key`：属性唯一标识（如 `status`、`priority`）
+- `title`：显示名称（如 `状态`、`优先级`）
+- `closedValues`：可选，枚举值列表
+- `isBuiltIn`：是否为内置属性
+- `displayPosition`：UI 显示位置
+  - `between-bullet-content`：bullet 和内容之间（如状态图标）
+  - `right-of-content`：内容右侧（如优先级标签）
+  - `bottom-of-block`：Block 底部（如截止日期）
+- `displayStyle`：显示样式
+  - `icon`：仅图标
+  - `text`：仅文本
+  - `icon-text`：图标 + 文本
+
+### 2.4 PropertyValueMap（类型映射）
+
+```typescript
+export type PropertyValueMap = {
+  string: string
+  number: number
+  boolean: boolean
+  date: string
+  datetime: string
+  array: string[]
+  page: string
+}
+
+export type PropertyValue = PropertyValueMap[PropertyType]
+```
+
+### 2.5 Property（属性实例）
+
+```typescript
+export interface Property<T = PropertyValue> {
+  id: string
+  blockId: string          // 外键 → Block.id
+  key: string
+  value: T
+  type: PropertyType
+  sortOrder: number        // 排序权重
+  isHidden: boolean        // 是否隐藏
+  isDeleted: boolean       // 软删除标记
+  schemaVersion: number    // Schema 版本
+  createdAt: number        // 创建时间戳（毫秒）
+  updatedAt: number        // 更新时间戳（毫秒）
+}
+```
+
+**说明：**
+- `sortOrder`：控制同一 Block 内属性的显示顺序
+- `isHidden`：UI 可切换显示/隐藏
+- `isDeleted`：软删除（不物理删除，便于恢复）
+- `schemaVersion`：属性 Schema 版本（用于迁移）
+
+### 2.6 PropertyRecord（IndexedDB 存储记录）
+
+```typescript
+export interface PropertyRecord {
+  id: string
+  blockId: string
+  key: string
+  value: string            // JSON 序列化
+  type: string
+  sortOrder: number
+  isHidden: number         // 0 | 1（IndexedDB 不支持 boolean）
+  isDeleted: number        // 0 | 1
+  schemaVersion: number
+  createdAt: number
+  updatedAt: number
+}
+```
+
+**IndexedDB 适配：**
+- `value`：JSON 序列化存储
+- `isHidden`/`isDeleted`：number（0 | 1）存储，读取时转换为 boolean
+
+---
+
+## 3. 内置属性
+
+系统内置 6 个属性定义（`BUILT_IN_PROPERTIES`）：
+
+### 3.1 status（状态）
+
+```typescript
+{
+  key: 'status',
+  title: '状态',
+  type: 'string',
+  isBuiltIn: true,
+  displayPosition: 'between-bullet-content',
+  displayStyle: 'icon',
+  closedValues: [
+    { value: 'Todo', label: '待办', icon: '○' },
+    { value: 'Doing', label: '进行中', icon: '●' },
+    { value: 'Done', label: '已完成', icon: '✓' },
+    { value: 'Canceled', label: '已取消', icon: '✗' },
+  ],
+}
+```
+
+**显示效果：**
+- 位置：bullet 和内容之间
+- 样式：仅图标（○ ● ✓ ✗）
+
+### 3.2 priority（优先级）
+
+```typescript
+{
+  key: 'priority',
+  title: '优先级',
+  type: 'string',
+  isBuiltIn: true,
+  displayPosition: 'right-of-content',
+  displayStyle: 'icon-text',
+  closedValues: [
+    { value: 'Low', label: '低', description: '不紧急不重要', icon: '🔵' },
+    { value: 'Medium', label: '中', description: '重要不紧急', icon: '🟡' },
+    { value: 'High', label: '高', description: '紧急不重要', icon: '🟠' },
+    { value: 'Urgent', label: '急', description: '紧急且重要', icon: '🔴' },
+  ],
+}
+```
+
+**显示效果：**
+- 位置：内容右侧
+- 样式：图标 + 文本（如 🔴 急）
+
+### 3.3 deadline（截止日期）
+
+```typescript
+{
+  key: 'deadline',
+  title: '截止日期',
+  type: 'date',
+  isBuiltIn: true,
+  displayPosition: 'bottom-of-block',
+  displayStyle: 'icon-text',
+}
+```
+
+**显示效果：**
+- 位置：Block 底部
+- 样式：图标 + 文本（如 📅 2026-05-20）
+
+### 3.4 scheduled（计划日期）
+
+```typescript
+{
+  key: 'scheduled',
+  title: '计划日期',
+  type: 'date',
+  isBuiltIn: true,
+  displayPosition: 'bottom-of-block',
+  displayStyle: 'icon-text',
+}
+```
+
+### 3.5 project（项目）
+
+```typescript
+{
+  key: 'project',
+  title: '项目',
+  type: 'string',
+  isBuiltIn: true,
+  displayPosition: 'bottom-of-block',
+  displayStyle: 'icon-text',
+}
+```
+
+### 3.6 area（领域）
+
+```typescript
+{
+  key: 'area',
+  title: '领域',
+  type: 'string',
+  isBuiltIn: true,
+  displayPosition: 'bottom-of-block',
+  displayStyle: 'icon-text',
+}
+```
+
+---
+
+## 4. 存储策略
+
+### 4.1 IndexedDB 存储（已实现）
+
+Property 表在 IndexedDB 中定义为：
+
+```typescript
+// db.ts
+export const db = new Dexie('comind') as TypedDexie
+
+db.version(1).stores({
+  pages: '++id, title, type',
+  blocks: '++id, pageId, parentId, pos',
+  properties: '++id, blockId, [blockId+key], key, type',  // 复合索引
+  links: '++id, sourceBlockId, targetPageId',
+})
+```
+
+**索引说明：**
+- `blockId`：查询某个 Block 的所有属性
+- `[blockId+key]`：复合索引，查询某个 Block 的特定属性（唯一约束）
+- `key`：按属性名查询（如查找所有 `status=Done` 的 Block）
+- `type`：按属性类型查询
+
+### 4.2 软删除策略
+
+```typescript
+// 软删除
+async deleteProperty(id: string): Promise<void> {
+  const record = await db.properties.get(id)
+  if (record) {
+    record.isDeleted = 1
+    record.updatedAt = Date.now()
+    await db.properties.put(record)
+  }
+}
+```
+
+**查询时过滤软删除：**
+```typescript
+async getProperties(blockId: string): Promise<Property[]> {
+  const records = await db.properties
+    .where('blockId').equals(blockId)
+    .filter(p => !p.isDeleted)  // 过滤软删除
+    .sortBy('sortOrder')
+  return records.map(recordToProperty)
+}
+```
+
+### 4.3 级联删除
+
+删除 Block 时，级联删除其所有 Property：
+
+```typescript
+async deleteBlockCascade(blockIds: string[]): Promise<void> {
+  await db.transaction('rw', [db.blocks, db.links, db.properties], async () => {
+    await db.blocks.bulkDelete(blockIds)
+    await db.links.where('sourceBlockId').anyOf(blockIds).delete()
+    for (const blockId of blockIds) {
+      await this.deletePropertiesByBlockId(blockId)
+    }
+  })
+}
+```
+
+---
+
+## 5. API 接口
+
+### 5.1 PropertyService（业务逻辑层）
+
+```typescript
+class PropertyService {
+  // 查询
+  async getProperties(blockId: string): Promise<Property[]>
+  async getProperty(blockId: string, key: string): Promise<Property | undefined>
+  async getPropertiesByBlockIds(blockIds: string[]): Promise<Map<string, Property[]>>
+  
+  // 写入
+  async setProperty(blockId: string, key: string, value: PropertyValue, type?: PropertyType): Promise<Property>
+  
+  // 删除
+  async deleteProperty(id: string): Promise<void>       // 软删除
+  async hardDeleteProperty(id: string): Promise<void>    // 硬删除
+  async deletePropertiesByBlockId(blockId: string): Promise<void>
+  
+  // 排序
+  async updateSortOrder(blockId: string, sortedIds: string[]): Promise<void>
+  
+  // 显示控制
+  async toggleHidden(id: string): Promise<Property>
+  
+  // 定义查询
+  getPropertyDefinition(key: string): PropertyDefinition | undefined
+  getAllPropertyDefinitions(): PropertyDefinition[]
+}
+```
+
+### 5.2 usePropertyStore（Pinia Store）
+
+```typescript
+export const usePropertyStore = defineStore('property', () => {
+  // State
+  const propertiesByBlock = ref<Map<string, Property[]>>(new Map())
+  const loading = ref(false)
+  
+  // Getters
+  const builtInProperties = computed<PropertyDefinition[]>(() => getAllPropertyDefinitions())
+  
+  // Actions
+  function getPropertyDef(key: string): PropertyDefinition | undefined
+  function getBlockProperties(blockId: string): Property[]
+  function getBlockProperty(blockId: string, key: string): Property | undefined
+  async function loadBlockProperties(blockId: string): Promise<Property[]>
+  async function loadMultiBlockProperties(blockIds: string[]): Promise<void>
+  async function setProperty(blockId: string, key: string, value: PropertyValue, type?: PropertyType): Promise<Property>
+  async function deleteProperty(id: string, blockId: string): Promise<void>
+  async function updateSortOrder(blockId: string, sortedIds: string[]): Promise<void>
+  async function toggleHidden(id: string, blockId: string): Promise<Property>
+  async function clearBlockCache(blockId: string): Promise<void>
+  
+  return { /* ... */ }
+})
+```
+
+**缓存策略：**
+- `propertiesByBlock`：内存缓存，key = blockId，value = Property[]
+- `loadBlockProperties`：从 IndexedDB 加载并写入缓存
+- `loadMultiBlockProperties`：批量加载多个 Block 的属性（性能优化）
+- `clearBlockCache`：手动清除缓存（如 Block 删除后）
+
+---
+
+## 6. 语法规则
+
+### 6.1 基础语法
 
 ```
 key:: value
 ```
 
 **规则：**
-
 - `key`：属性名，只能包含字母、数字、中文、连字符 `-`、下划线 `_`
 - `::`：分隔符，冒号后必须有一个空格（`:: `）
 - `value`：属性值，支持多种数据类型
 - 一行一个属性
 
 **有效示例：**
-
 ```
 状态:: 进行中
 优先级:: 高
 created-at:: 2026-04-16
 tags:: [设计, 数据模型]
 完成度:: 0.75
+项目:: [[项目A]]
 ```
 
 **无效示例：**
-
 ```
 key:value       ← 缺少空格
 key :: value    ← 冒号前有空格
@@ -57,7 +419,7 @@ key :: value    ← 冒号前有空格
 key::           ← 缺少 value（空值需显式写 null 或 ""）
 ```
 
-### 2.2 Key 命名规范
+### 6.2 Key 命名规范
 
 | 规则 | 说明 | 示例 |
 |------|------|------|
@@ -67,13 +429,7 @@ key::           ← 缺少 value（空值需显式写 null 或 ""）
 | 长度限制 | 1-64 字符 | 超出截断 |
 | 保留前缀 | `sys-` 前缀保留给系统属性 | `sys-id`, `sys-version` |
 
-**命名建议：**
-
-- 使用小写字母 + 连字符（kebab-case）：`created-at`, `due-date`
-- 或使用中文（用户友好）：`创建时间`, `截止日期`
-- 避免混用中英文 key
-
-### 2.3 Value 数据类型
+### 6.3 Value 数据类型
 
 Property value 支持以下类型：
 
@@ -85,11 +441,11 @@ Property value 支持以下类型：
 | **Date** | `截止日期:: 2026-04-16` | `"2026-04-16"` | ISO 8601 日期 |
 | **DateTime** | `创建时间:: 2026-04-16T10:30:00Z` | `"2026-04-16T10:30:00Z"` | ISO 8601 日期时间 |
 | **Array** | `标签:: [设计, 数据]` | `["设计", "数据"]` | 方括号包裹，逗号分隔 |
-| **Link** | `关联:: [[页面名]]` | `{"type": "link", "target": "页面名"}` | 内嵌页面引用 |
+| **Page** | `项目:: [[项目A]]` | `"项目A"` | 引用 Page 标题 |
 
-### 2.4 类型推断规则
+### 6.4 类型推断规则
 
-系统自动推断 value 类型：
+系统自动推断 value 类型（启发式）：
 
 ```typescript
 function inferType(value: string): PropertyType {
@@ -97,8 +453,8 @@ function inferType(value: string): PropertyType {
   if (value === 'true' || value === 'false') return 'boolean'
   
   // 2. Number
-  if (/^-?\d+$/.test(value)) return 'number'      // 整数
-  if (/^-?\d+\.\d+$/.test(value)) return 'number' // 浮点数
+  if (/^-?\d+$/.test(value)) return 'number'
+  if (/^-?\d+\.\d+$/.test(value)) return 'number'
   
   // 3. Array
   if (value.startsWith('[') && value.endsWith(']')) return 'array'
@@ -109,8 +465,8 @@ function inferType(value: string): PropertyType {
   // 5. Date
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return 'date'
   
-  // 6. Link（包含 [[...]]）
-  if (/\[\[.+?\]\]/.test(value)) return 'link'
+  // 6. Page（包含 [[...]]）
+  if (/\[\[.+?\]\]/.test(value)) return 'page'
   
   // 7. String（默认）
   return 'string'
@@ -119,7 +475,7 @@ function inferType(value: string): PropertyType {
 
 **注意：** 类型推断是启发式的，用户可通过 UI 强制指定类型。
 
-### 2.5 特殊 Value 格式
+### 6.5 特殊 Value 格式
 
 #### 多行文本
 
@@ -141,41 +497,17 @@ function inferType(value: string): PropertyType {
 备注:: []        ← 空数组
 ```
 
-***
-
-## 3. 属性位置
-
-### 3.1 Page Properties（页面属性）
-
-位于 Markdown 文件头部，以 `---` 分隔：
-
-```markdown
----
-title:: 页面标题
-created-at:: 2026-04-16T10:30:00Z
-alias:: [别名1, 别名2]
-type:: journal
 ---
 
-# 页面标题
+## 7. 属性位置与解析
 
-正文内容...
-```
-
-**规则：**
-
-- 必须位于文件最开头
-- 以 `---` 开始，以 `---` 或空行结束
-- 仅对 Page Block 有效
-- 系统保留属性：`title`, `created-at`, `updated-at`, `alias`, `type`
-
-### 3.2 Block Properties（块属性）
+### 7.1 Block Properties（块属性）
 
 嵌入在 Block 内容中：
 
 ```markdown
 ## 任务 A
-状态:: 进行中
+status:: Done
 优先级:: 高
 截止日期:: 2026-04-20
 
@@ -183,309 +515,184 @@ type:: journal
 ```
 
 **规则：**
-
 - 位于 Block 内容开头（标题行之后）
 - 连续多行属性，遇空行或正文结束
-- 属性行不计入 Block.content
+- 属性行不计入 Block.content（解析后提取）
 
-### 3.3 属性与正文的边界
+### 7.2 属性与正文的边界
 
 ```markdown
 ## 任务标题
-状态:: 进行中      ← 属性
-负责人:: 张三       ← 属性
+status:: Done        ← 属性
+负责人:: 张三         ← 属性
 
-这是正文内容...     ← 正文开始
-状态:: 已完成       ← 这行属于正文，不是属性！
+这是正文内容...       ← 正文开始
+status:: 进行中       ← 这行属于正文，不是属性！
 ```
 
 **识别规则：**
-
 - 标题行后的连续 `key:: value` 行 → 属性
 - 遇空行、非 `key:: value` 格式行 → 正文开始
 - 正文中的 `key:: value` 视为普通文本
 
-***
+### 7.3 Page Properties（页面属性）
 
-## 4. 存储策略
+Page 的属性通过其**根 Block** 表达：
 
-### 4.1 Phase 1（Block.properties 缓存字段）
-
-Phase 1 不引入独立 Property 表。Property 作为 Block.content 内嵌文本解析后，序列化存入 `Block.properties` JSON 字段。
-
-```typescript
-// Phase 1 存储：BlockRecord.properties
-interface BlockRecord {
-  id: string
-  pageId: string          // 所属页面 ID（必须，非空）
-  parentId: string | null // 父 Block（null = 直接子节点）
-  leftId: string | null   // 左侧兄弟（Gap 排序）
-  content: string         // 纯文本
-  format: string          // JSON 字符串
-  type: string            // 'bullet' | 'property' | 'query' | 'embed'
-  properties: string      // JSON 字符串，如 '{"状态": "进行中", "优先级": "高"}'
-  createdAt: number       // IndexedDB 内部存 number 时间戳，adapter 负责与 ISO string 互转
-  updatedAt: number       // 同上
-}
-
-**写入流程：**
 ```
-Block.content 输入
-    ↓
-Parser.parseBlockProperties(content)  // 提取所有 key:: value
-    ↓
-序列化为 JSON 对象
-    ↓
-写入 Block.properties（覆盖式）
-    ↓
-BlockRecord 整体写入 IndexedDB
+Page.blockId → Block.properties
 ```
 
-**读取流程：**
-```
-从 IndexedDB 读取 BlockRecord
-    ↓
-JSON.parse(properties) → 内存对象
-    ↓
-UI 直接消费内存对象
-```
+**规范：** Page 没有独立的属性存储，所有页面级属性都存储在根 Block 的 Property 表中。
 
-**说明：**
-- Phase 1 按 key 查询 = 全表扫描 BlockRecord + 逐条解析 JSON，性能较差但 MVP 可接受
-- Phase 2 引入 Property 表后，按 key 查询走索引，性能提升
+---
 
-### 4.2 Phase 2/3（独立 Property 表）
+## 8. UI 交互
 
-```sql
-CREATE TABLE Property (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    blockId     TEXT NOT NULL,
-    key         TEXT NOT NULL,
-    value       TEXT NOT NULL,        -- JSON 序列化
-    type        TEXT NOT NULL,        -- 'string' | 'number' | 'boolean' | 'date' | 'datetime' | 'array' | 'link'
-    createdAt   TEXT NOT NULL,        -- ISO 8601
-    updatedAt   TEXT NOT NULL,        -- ISO 8601
-    UNIQUE(blockId, key),
-    FOREIGN KEY (blockId) REFERENCES Block(id)
-);
+### 8.1 属性显示位置
 
--- 索引
-CREATE INDEX idx_property_blockId ON Property(blockId);
-CREATE INDEX idx_property_key ON Property(key);
-CREATE INDEX idx_property_type ON Property(type);
-```
+根据 `PropertyDefinition.displayPosition`：
 
-### 4.3 Phase 2/3 缓存策略：Property 表与 Block.properties 双写
-
-Phase 2/3 引入独立 Property 表后，`Block.properties` JSON 字段降级为只读缓存，Property 表为数据源：
-
-```typescript
-interface BlockRecord {
-  id: string
-  content: string
-  // ...
-  properties?: string  // JSON 字符串，如 '{"状态": "进行中", "优先级": "高"}'
-}
-```
-
-**同步策略：**
-
-- 写入时：同时更新 `Property` 表和 `Block.properties`
-- 读取时：优先从 `Block.properties` 解析（单表查询）
-- 不一致时：以 `Property` 表为准，重建缓存
-
-***
-
-## 5. 系统保留属性
-
-### 5.1 Page 级保留属性
-
-| 属性 | 类型 | 说明 |
+| 位置 | 说明 | 示例 |
 |------|------|------|
-| `title` | string | 页面显示标题 |
-| `created-at` | datetime | 创建时间 |
-| `updated-at` | datetime | 最后更新时间 |
-| `alias` | array | 页面别名列表 |
-| `type` | string | 页面类型：`page` / `journal` |
-| `journal-date` | date | 日志日期（type=journal 时） |
+| `between-bullet-content` | bullet 和内容之间 | 状态图标（○ ● ✓ ✗） |
+| `right-of-content` | 内容右侧 | 优先级标签（🔴 急） |
+| `bottom-of-block` | Block 底部 | 截止日期（📅 2026-05-20） |
 
-### 5.2 系统前缀 `sys-`
+### 8.2 属性显示样式
 
-以 `sys-` 开头的属性保留给系统使用，用户不建议使用：
+根据 `PropertyDefinition.displayStyle`：
+
+| 样式 | 说明 | 示例 |
+|------|------|------|
+| `icon` | 仅图标 | ● |
+| `text` | 仅文本 | 进行中 |
+| `icon-text` | 图标 + 文本 | ● 进行中 |
+
+### 8.3 内置属性 UI 示例
+
+#### status（状态）
+
+显示位置：between-bullet-content  
+显示样式：icon
 
 ```
-sys-version:: 1.0.0
-sys-sync-id:: xxx-xxx
+○ 任务标题        ← Todo
+● 任务标题        ← Doing
+✓ 任务标题        ← Done
+✗ 任务标题        ← Canceled
 ```
 
-***
+#### priority（优先级）
 
-## 6. UI 交互
+显示位置：right-of-content  
+显示样式：icon-text
 
-> **Phase 1 范围：** 仅支持在 Block 编辑态中直接编辑内嵌 `key:: value` 文本，不提供独立属性面板。Phase 2 新增属性面板和高级 UI。
+```
+任务标题 🔴 急
+任务标题 🟠 高
+任务标题 🟡 中
+任务标题 🔵 低
+```
 
-### 6.1 Phase 1：Block 内嵌编辑
+#### deadline（截止日期）
+
+显示位置：bottom-of-block  
+显示样式：icon-text
+
+```
+任务标题
+📅 2026-05-20
+```
+
+### 8.4 属性编辑
 
 **行内编辑：**
-
-```
-┌─────────────────────────────────────┐
-│ 状态:: [进行中 ▼]  优先级:: [高 ▼]   │
-│ 负责人:: [张三      ]               │
-│ 截止日期:: [2026-04-20]             │
-└─────────────────────────────────────┘
-```
-
-**编辑模式：**
-
 - 单击属性值 → 进入编辑
+- 枚举类型：下拉选择（如 status、priority）
+- 日期类型：日期选择器
+- 文本类型：直接输入
 - 按 Enter → 保存并退出
 - 按 Esc → 取消编辑
-- 属性行末尾 `+` 按钮 → 添加新属性
 
-### 6.2 属性面板
-
-侧边栏属性面板：
+**属性面板（侧边栏）：**
 
 ```
 ┌─────────────────┐
 │ 属性            │
 ├─────────────────┤
-│ 状态      进行中 │
-│ 优先级    高     │
-│ 截止日期  4/20   │
+│ 状态      ● 进行中 │
+│ 优先级    🔴 高     │
+│ 截止日期  2026-05-20│
 │                 │
 │ [+ 添加属性]    │
 └─────────────────┘
 ```
 
-### 6.3 属性输入辅助
+### 8.5 属性排序
 
-**类型选择器：**
-
-添加属性时选择类型：
-
-```
-属性名: [________]
-属性类型: [文本 ▼]
-          ├─ 文本
-          ├─ 数字
-          ├─ 日期
-          ├─ 选项
-          └─ 链接
-```
-
-**自动完成：**
-
-- 输入属性名时提示已有属性
-- 输入属性值时根据类型提示（如日期选择器、数字滑块）
-
-### 6.4 属性筛选
-
-查询构建器：
-
-```
-筛选: [状态 ▼] [等于 ▼] [已完成]
-   AND [优先级 ▼] [属于 ▼] [高, 紧急]
-   AND [截止日期 ▼] [早于 ▼] [今天]
-```
-
-***
-
-## 7. 与 tiptap 集成
-
-### 7.1 Property Node
+用户可拖拽排序属性，排序结果保存在 `Property.sortOrder`：
 
 ```typescript
-import { Node } from '@tiptap/core'
-
-export const Property = Node.create({
-  name: 'property',
+async updateSortOrder(blockId: string, sortedIds: string[]): Promise<void> {
+  const properties = await this.getProperties(blockId)
+  const map = new Map(properties.map(p => [p.id, p]))
   
-  group: 'block',
-  defining: true,
-  
-  addAttributes() {
-    return {
-      key: { default: '' },
-      value: { default: '' },
-      type: { default: 'string' },
+  for (let i = 0; i < sortedIds.length; i++) {
+    const prop = map.get(sortedIds[i])
+    if (prop) {
+      prop.sortOrder = i
+      prop.updatedAt = Date.now()
+      await storage.saveProperty(prop)
     }
-  },
-  
-  parseHTML() {
-    return [
-      {
-        tag: 'div[data-property]',
-        getAttrs: element => ({
-          key: element.getAttribute('data-key'),
-          value: element.getAttribute('data-value'),
-          type: element.getAttribute('data-type'),
-        }),
-      },
-    ]
-  },
-  
-  renderHTML({ HTMLAttributes }) {
-    return ['div', mergeAttributes(
-      { 
-        'data-property': '',
-        'data-key': HTMLAttributes.key,
-        'data-value': HTMLAttributes.value,
-        'data-type': HTMLAttributes.type,
-        class: 'property-line',
-      },
-      HTMLAttributes
-    ), `${HTMLAttributes.key}:: ${HTMLAttributes.value}`]
-  },
-})
-```
-
-### 7.2 输入规则
-
-输入 `key:: `（冒号+空格）自动识别为属性行：
-
-```typescript
-addInputRules() {
-  return [
-    textInputRule({
-      find: /^([\w\u4e00-\u9fa5_-]+):: $/,
-      type: this.type,
-      getAttributes: match => ({ 
-        key: match[1], 
-        value: '',
-        type: 'string',
-      }),
-    }),
-  ]
+  }
 }
 ```
 
-***
+### 8.6 属性隐藏/显示
 
-## 8. 查询 API
+```typescript
+async toggleHidden(id: string): Promise<Property> {
+  const prop = await storage.getPropertyById(id)
+  if (!prop) throw new Error('Property not found')
+  prop.isHidden = !prop.isHidden
+  prop.updatedAt = Date.now()
+  await storage.saveProperty(prop)
+  return prop
+}
+```
 
-### 8.1 基础查询
+---
+
+## 9. 查询 API
+
+### 9.1 基础查询
 
 ```typescript
 // 获取 Block 的所有属性
-function getBlockProperties(blockId: string): Promise<Record<string, any>>
+function getBlockProperties(blockId: string): Property[]
 
-// 获取特定属性值
-function getProperty(blockId: string, key: string): Promise<any>
+// 获取 Block 的特定属性
+function getBlockProperty(blockId: string, key: string): Property | undefined
 
-// 按属性筛选 Block
+// 获取属性定义
+function getPropertyDef(key: string): PropertyDefinition | undefined
+
+// 获取所有内置属性定义
+function getAllPropertyDefinitions(): PropertyDefinition[]
+```
+
+### 9.2 复杂查询（待实现）
+
+```typescript
+// 按属性筛选 Block（待实现）
 function findBlocksByProperty(
-  key: string, 
+  key: string,
   operator: 'eq' | 'ne' | 'gt' | 'lt' | 'in' | 'contains',
   value: any
 ): Promise<Block[]>
-```
 
-### 8.2 复杂查询
-
-```typescript
-// 多条件组合
+// 多条件组合（待实现）
 interface PropertyFilter {
   key: string
   operator: 'eq' | 'ne' | 'gt' | 'lt' | 'in' | 'contains'
@@ -493,17 +700,27 @@ interface PropertyFilter {
 }
 
 function findBlocks(filters: PropertyFilter[], logic: 'AND' | 'OR'): Promise<Block[]>
-
-// 使用示例
-findBlocks([
-  { key: '状态', operator: 'eq', value: '进行中' },
-  { key: '优先级', operator: 'in', value: ['高', '紧急'] },
-], 'AND')
 ```
 
-***
+---
 
-## 9. 测试用例
+## 10. 与 Tag、Link 的关系
+
+| 场景 | 处理 |
+|------|------|
+| Property value 含 `#标签` | 作为纯文本存储，不创建 Tag 关联 |
+| Property value 含 `[[链接]]` | 解析为 `page` 类型，存储 Page 标题 |
+| Tag 与 Property 同名 | 独立处理，互不影响 |
+| 属性名 `tags` | 建议用数组类型存储，与 `#标签` 语法区分 |
+
+**Link 表独立维护：**
+- Link 表记录 `[[页面名]]` 的解析结果
+- Property 表中的 `page` 类型仅存储 Page 标题，不创建 Link 记录
+- 两者通过 Block.content 解析时统一处理
+
+---
+
+## 11. 测试用例
 
 ```typescript
 describe('Property Parser', () => {
@@ -539,24 +756,54 @@ describe('Property Parser', () => {
     })
   })
   
+  test('Page 类型', () => {
+    expect(parseProperty('项目:: [[项目A]]')).toEqual({
+      key: '项目',
+      value: '项目A',
+      type: 'page',
+    })
+  })
+  
   test('无效格式', () => {
     expect(parseProperty('key:value')).toBeNull()  // 缺少空格
     expect(parseProperty(':: value')).toBeNull()   // 缺少 key
   })
 })
+
+describe('PropertyService', () => {
+  test('setProperty - 创建新属性', async () => {
+    const prop = await propertyService.setProperty(blockId, 'status', 'Done', 'string')
+    expect(prop.key).toBe('status')
+    expect(prop.value).toBe('Done')
+    expect(prop.sortOrder).toBe(0)
+  })
+  
+  test('setProperty - 更新已有属性', async () => {
+    await propertyService.setProperty(blockId, 'status', 'Done', 'string')
+    const updated = await propertyService.setProperty(blockId, 'status', 'Todo', 'string')
+    expect(updated.value).toBe('Todo')
+  })
+  
+  test('soft delete - isDeleted 标记', async () => {
+    const prop = await propertyService.setProperty(blockId, 'status', 'Done', 'string')
+    await propertyService.deleteProperty(prop.id)
+    const retrieved = await propertyService.getProperty(blockId, 'status')
+    expect(retrieved).toBeUndefined()  // 软删除后查询不到
+  })
+})
 ```
 
-***
+---
 
-## 10. 与 Tag、Link 的关系
+## 12. 待实现功能
 
-| 场景 | 处理 |
-|------|------|
-| Property value 含 `#标签` | 作为纯文本存储，不创建 Tag 关联 |
-| Property value 含 `[[链接]]` | 解析为 link 类型，创建 Link 记录 |
-| Tag 与 Property 同名 | 独立处理，互不影响 |
-| 属性名 `tags` | 建议用数组类型存储，与 `#标签` 语法区分 |
+- [ ] 按属性筛选 Block（`findBlocksByProperty`）
+- [ ] 多条件组合查询（`findBlocks`）
+- [ ] 属性值验证（根据 `PropertyDefinition` 验证）
+- [ ] 自定义属性定义（用户可创建非内置属性）
+- [ ] 属性模板（批量应用属性定义）
+- [ ] 属性继承（子 Block 继承父 Block 属性）
 
-***
+---
 
-*文档由 AI 助手协助生成，待开发者评审确认。*
+*文档基于代码实现更新（2026-05-19），替代 v0.2（2026-04-16）。*

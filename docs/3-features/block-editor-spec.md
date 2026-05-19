@@ -1,10 +1,10 @@
 # Block 编辑器架构规范
 
-> 版本：v0.2
-> 日期：2026-04-16
-> 状态：✅ 已确认
+> 版本：v0.3
+> 日期：2026-05-19
+> 状态：✅ 已实现
 >
-> **📌 说明：** 本文档是 comind 的核心架构约束文档。开发实现参考请见 `dev-guide.md`（已整合本文档全部内容，并补充代码示例）。
+> **📌 说明：** 本文档是 comind 的核心架构约束文档。开发实现参考请见 `dev-guide.md`。
 
 ---
 
@@ -34,8 +34,8 @@
 > 系统所有能力必须围绕 Block 构建。禁止引入"文档级模型"。
 
 - 所有编辑操作作用于单个 Block
-- 页面（Page）= `isPage = true` 的顶级 Block
-- 系统只有 Block，没有"页面文档"、"笔记文档"等独立概念
+- 页面（Page）是独立实体，通过 `Page.blockId` 关联根 Block
+- Block 是内容载体，Page 是容器和组织单元
 
 ---
 
@@ -45,8 +45,29 @@
 
 **EditorState（Pinia）：**
 ```typescript
+// useEditorStore（src/stores/editor.ts）
 interface EditorState {
-  activeBlockId: string | null  // 光标位置由 tiptap 内部 state.selection 管理
+  activeBlockId: string | null        // 当前编辑的 Block ID
+  pendingCursorPos: number | null     // 待恢复的光标位置（PM position）
+  activeEditor: Editor | null         // tiptap 编辑器实例
+  slashCommand: {                     // 斜杠命令面板状态
+    visible: boolean
+    query: string
+    selectedIndex: number
+    position: { x: number; y: number }
+    range: { from: number; to: number }
+  } | null
+  propertyEditor: {                   // 属性编辑器状态
+    visible: boolean
+    blockId: string | null
+    initialKey: string | null
+  } | null
+  quickPropertyEditor: {              // 快捷属性编辑器状态
+    visible: boolean
+    blockId: string
+    key: string
+    position: { x: number; y: number } | null
+  } | null
 }
 ```
 
@@ -62,26 +83,55 @@ Phase 1 性能保障：Block 组件 memo 化 + 非编辑态静态 HTML + 输入�
 
 ## 编辑行为规范
 
-### Enter（拆分 Block）
+### Enter（拆分/插入 Block）
 
-- 按光标位置将当前 Block 内容截断
-- 后半部分生成新 Block，作为兄弟节点
-- 光标移动到新 Block
+**代码实现：** `useBlockStore.insertBlockAtCursor()`
+
+根据光标位置决定行为：
+
+| 光标位置 | 行为 | 说明 |
+|----------|------|------|
+| 行首（offset=0） | 在当前 Block 上方插入兄弟 | `insertSiblingAbove()` |
+| 行尾 + 有展开子节点 | 作为第一个子节点插入 | `insertAtPosition(asFirstChild=true)` |
+| 行尾 + 无子节点 | 在下方插入兄弟 | `insertAtPosition(asFirstChild=false)` |
+| 文本中间 | 拆分当前 Block，后半创建新节点 | 内容截断 + `insertAtPosition()` |
+| 空行 | 等同行尾，插入子节点或兄弟 | `contentLen === 0` |
+
+**Gap 排序 + 自动重编号：**
+```typescript
+// 安全计算插入位置，间隔耗尽时自动重编号
+async function safeCalcInsertPos(
+  prevPos: number | null,
+  nextPos: number | null,
+  blocksRef: Block[],
+  storageRef: typeof storage,
+  recalcPos?: () => { prevPos: number | null; nextPos: number | null }
+): Promise<number>
+```
 
 ### Backspace（合并 Block）
 
-- 光标在 Block 开头时，与上一个 Block 合并
-- 删除当前 Block，光标移动到上一个 Block 末尾
+**代码实现：** `useBlockStore.mergeWithPrevious()`
+
+- 光标在 Block 开头时，与视觉前一个 Block 合并
+- 考虑折叠状态：前一个 Block 折叠时，合并到该 Block 自身
+- 被合并节点的子节点转移到目标节点
+- 返回合并后的光标位置：`{ id: mergeTarget.id, cursorPos: targetContentLen + 1 }`
 
 ### Tab（缩进）
 
-- 当前 Block 成为前一个 Block 的子节点
-- 更新 `parentId` 和 `left`
+**代码实现：** `useBlockStore.indent()`
+
+- 当前 Block 成为前一个兄弟的子节点
+- 更新 `parentId` 和 `pos`
+- 使用 `safeCalcInsertPos` 计算新位置
 
 ### Shift+Tab（反缩进）
 
-- 当前 Block 提升层级，成为前一个 Block 的兄弟
-- 移出当前父节点
+**代码实现：** `useBlockStore.outdent()`
+
+- 当前 Block 提升到父 Block 的同级
+- 更新 `parentId` 和 `pos`
 
 ---
 
@@ -110,6 +160,45 @@ block.id === activeBlockId → 渲染 tiptap Editor（Edit 态）
 输出流：IndexedDB → Pinia → 按需渲染 → Block 组件展示
 ```
 
+**防抖保存：**
+- 每个 Block 独立防抖（`pendingSaves` Map）
+- 防抖间隔：`SAVE_DEBOUNCE_MS`（300ms）
+- 删除 Block 时取消防抖
+
+**结构版本号：**
+- `structureVersion` ref：每次 Block 增删移时递增
+- 用于触发 Sortable 实例重建
+
+---
+
+## Block 树遍历
+
+**已实现的遍历方法：**
+
+| 方法 | 说明 |
+|------|------|
+| `findPreviousBlockInTreeOrder` | 树前序遍历前驱 |
+| `findNextBlockInTreeOrder` | 树前序遍历后继 |
+| `findPreviousVisibleBlock` | 视觉前一个 Block（考虑折叠） |
+| `findLastVisibleDescendant` | 最后一个可见后代（考虑折叠） |
+
+---
+
+## 已实现功能
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 单编辑器切换 | ✅ | C1 约束已实现 |
+| Block CRUD | ✅ | 创建、读取、更新、删除 |
+| Enter 拆分/插入 | ✅ | 根据光标位置分流 |
+| Backspace 合并 | ✅ | 考虑折叠状态 |
+| Tab/Shift+Tab 缩进 | ✅ | Gap 排序 + 自动重编号 |
+| 拖拽排序 | ✅ | Sortable.js + `moveBlock()` |
+| 防抖保存 | ✅ | 每个 Block 独立 300ms 防抖 |
+| 斜杠命令 | ✅ | Slash Command 面板 |
+| 属性编辑器 | ✅ | Property Editor + Quick Editor |
+| Gap 排序自动恢复 | ✅ | `safeCalcInsertPos` + `renumberBlocks` |
+
 ---
 
 ## 成功标准
@@ -135,6 +224,12 @@ block.id === activeBlockId → 渲染 tiptap Editor（Edit 态）
 
 ## 相关文档
 
-- **开发实现参考** → `dev-guide.md`（已整合本文档全部约束）
+- **开发实现参考** → `dev-guide.md`
 - **数据模型定义** → `data-model.md`
 - **UI/UX 规范** → `ui-ux-spec.md`
+- **Property 规范** → `property-spec.md`
+- **存储格式规范** → `storage-spec.md`
+
+---
+
+*文档基于代码实现更新（2026-05-19），替代 v0.2（2026-04-16）。*
