@@ -61,7 +61,12 @@ async function handleSoftDelete() {
   if (!currentPage.value) return
   closeMenu()
   await pageStore.softDeletePage(currentPage.value.id)
-  router.push('/journal')
+  // 从路由历史中移除当前页面记录，然后导航到首页
+  if (router.options.history.state) {
+    router.replace('/journal')
+  } else {
+    router.push('/journal')
+  }
 }
 
 function handlePermanentDelete() {
@@ -74,7 +79,12 @@ async function confirmPermanentDelete() {
   if (!currentPage.value) return
   showPermanentDeleteConfirm.value = false
   await pageStore.permanentDeletePage(currentPage.value.id)
-  router.push('/journal')
+  // 从路由历史中移除当前页面记录，然后导航到首页
+  if (router.options.history.state) {
+    router.replace('/journal')
+  } else {
+    router.push('/journal')
+  }
 }
 
 function handleNavigateToTrash() {

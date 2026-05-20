@@ -132,17 +132,24 @@ export function propertyToRecord(property: Property): PropertyRecord {
 }
 
 export class IndexedDBAdapter {
-  async saveBlock(block: Block): Promise<void> {
+  async saveBlock(block: Block): Promise<{ skippedTrashedPages?: string[] }> {
+    const skippedTrashedPages: string[] = []
+
     await db.transaction('rw', db.links, db.blocks, db.pages, async () => {
       // 保存 Block 记录
       await db.blocks.put(blockToRecord(block))
 
       // 解析并保存链接
-      await this.saveLinks(block.id, block.pageId, parseBlockLinks(block.content))
+      const result = await this.saveLinks(block.id, block.pageId, parseBlockLinks(block.content))
+      skippedTrashedPages.push(...result.skippedTrashedPages)
     })
+
+    return skippedTrashedPages.length > 0 ? { skippedTrashedPages } : {}
   }
 
-  private async saveLinks(sourceBlockId: string, _pageId: string, linkParses: LinkParse[]): Promise<void> {
+  private async saveLinks(sourceBlockId: string, _pageId: string, linkParses: LinkParse[]): Promise<{ skippedTrashedPages: string[] }> {
+    const skippedTrashedPages: string[] = []
+
     // 删除旧链接
     await db.links.where('sourceBlockId').equals(sourceBlockId).delete()
 
@@ -152,23 +159,34 @@ export class IndexedDBAdapter {
         // 日记标题规范化：[[2026/04/26]] → 查找/创建 title="2026-04-26"
         const normalized = normalizeJournalTitle(link.targetTitle)
         const lookupTitle = normalized ?? link.targetTitle
-        let targetPage = await db.pages.where('title').equals(lookupTitle).first()
+        const existingPage = await db.pages.where('title').equals(lookupTitle).first()
 
-        if (!targetPage) {
+        // 检查页面是否存在于回收站中
+        if (existingPage && existingPage.deleted === 1) {
+          skippedTrashedPages.push(lookupTitle)
+          continue
+        }
+
+        if (!existingPage) {
           const pageType = normalized ? 'journal' : inferPageType(link.targetTitle)
           const newPage = await this.createPageWithRootBlock(lookupTitle, pageType)
-          targetPage = pageToRecord(newPage)
-          await db.pages.put(targetPage)
+          await db.pages.put(pageToRecord(newPage))
         }
-        await db.links.add({
-          id: generateUUID(),
-          sourceBlockId,
-          targetPageId: targetPage.id,
-          displayText: link.displayText,
-          createdAt: Date.now()
-        })
+
+        const targetPage = await db.pages.where('title').equals(lookupTitle).first()
+        if (targetPage) {
+          await db.links.add({
+            id: generateUUID(),
+            sourceBlockId,
+            targetPageId: targetPage.id,
+            displayText: link.displayText,
+            createdAt: Date.now()
+          })
+        }
       }
     }
+
+    return { skippedTrashedPages }
   }
 
   async getBlockTree(pageId: string): Promise<Block[]> {
@@ -286,6 +304,15 @@ export class IndexedDBAdapter {
 
   async getBacklinks(pageId: string): Promise<LinkRecord[]> {
     return db.links.where('targetPageId').equals(pageId).toArray()
+  }
+
+  /** 检查回收站中是否有指定标题的页面 */
+  async getTrashedPageByTitle(title: string): Promise<Page | undefined> {
+    const record = await db.pages
+      .where('title').equals(title)
+      .and(r => r.deleted === 1)
+      .first()
+    return record ? recordToPage(record) : undefined
   }
 
   /** 重命名页面 */
@@ -431,6 +458,7 @@ export class IndexedDBAdapter {
 
   /** 软删除页面（移至回收站） */
   async softDeletePage(pageId: string): Promise<void> {
+    await this.cleanupPageReferences(pageId)
     await db.transaction('rw', [db.pages], async () => {
       const record = await db.pages.get(pageId)
       if (record) {
@@ -459,6 +487,9 @@ export class IndexedDBAdapter {
 
   /** 物理删除页面（从回收站永久删除） */
   async permanentDeletePage(pageId: string): Promise<void> {
+    // 先清理其他页面对该页面的 [[]] 引用
+    await this.cleanupPageReferences(pageId)
+
     await db.transaction('rw', [db.pages, db.blocks, db.links], async () => {
       // 1. 获取页面所有 Block
       const blocks = await db.blocks.where('pageId').equals(pageId).toArray()
@@ -473,6 +504,45 @@ export class IndexedDBAdapter {
 
       // 4. 删除 Page
       await db.pages.delete(pageId)
+    })
+  }
+
+  /** 清理所有对指定页面的 [[]] 引用 */
+  async cleanupPageReferences(pageId: string): Promise<void> {
+    const pageRecord = await db.pages.get(pageId)
+    if (!pageRecord) return
+
+    const pageTitle = pageRecord.title
+    const escapedTitle = pageTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const linkPattern = new RegExp(`\\[\\[${escapedTitle}(?:\\|[^\\]]+)?\\]\\]`, 'g')
+
+    const allBlocks = await db.blocks.toArray()
+    const blocksWithRefs = allBlocks.filter(b => linkPattern.test(b.content))
+
+    if (blocksWithRefs.length === 0) return
+
+    await db.transaction('rw', db.blocks, db.links, async () => {
+      for (const block of blocksWithRefs) {
+        const originalContent = block.content
+        const cleanedContent = originalContent.replace(linkPattern, pageTitle)
+
+        if (cleanedContent !== originalContent) {
+          await db.blocks.update(block.id, {
+            content: cleanedContent,
+            updatedAt: Date.now()
+          })
+
+          const oldLinks = await db.links.where('sourceBlockId').equals(block.id).toArray()
+          const pageTitleForLink = pageTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          const linkRegex = new RegExp(`\\[\\[${pageTitleForLink}(?:\\|[^\\]]+)?\\]\\]`)
+
+          for (const link of oldLinks) {
+            if (linkRegex.test(link.displayText) || linkRegex.test(`[[${link.displayText}]]`)) {
+              await db.links.delete(link.id)
+            }
+          }
+        }
+      }
     })
   }
 

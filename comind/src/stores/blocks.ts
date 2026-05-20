@@ -91,7 +91,15 @@ async function safeCalcInsertPos(
 export const useBlockStore = defineStore('blocks', () => {
   const blocks = ref<Block[]>([])
   const loading = ref(false)
-  
+
+  /** 待处理的已删除页面警告列表 */
+  const trashedPageWarnings = ref<string[]>([])
+
+  /** 清除已删除页面警告 */
+  function clearTrashedPageWarnings() {
+    trashedPageWarnings.value = []
+  }
+
   /** 结构版本号 - 用于触发 Sortable 实例重建 */
   const structureVersion = ref(0)
 
@@ -167,8 +175,12 @@ export const useBlockStore = defineStore('blocks', () => {
       pendingSaves.delete(block.id)
       return
     }
-    await storage.saveBlock(block)
+    const result = await storage.saveBlock(block)
     pendingSaves.delete(block.id)
+
+    if (result.skippedTrashedPages && result.skippedTrashedPages.length > 0) {
+      trashedPageWarnings.value = result.skippedTrashedPages
+    }
   }
 
   function _scheduleSave(block: Block): void {
@@ -756,6 +768,8 @@ export const useBlockStore = defineStore('blocks', () => {
     updateBlockContent,
     updateBlockFormat,
     updateBlockProperties,
-    scheduleSave
+    scheduleSave,
+    trashedPageWarnings,
+    clearTrashedPageWarnings
   }
 })

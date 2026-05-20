@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, inject } from 'vue'
 import type { Page } from '../types/page'
 import { storage } from '../storage/indexedDB'
 import { useBlockStore } from './blocks'
@@ -10,6 +10,8 @@ export const usePageStore = defineStore('pages', () => {
   const currentPageId = ref<string>('')
   const loading = ref(false)
   const trashPages = ref<Page[]>([])
+  
+  const removePageFromHistory = inject<((pageId: string) => void) | undefined>('removePageFromHistory')
 
   /** 从 IndexedDB 加载所有 Page 到内存 */
   async function loadAllPages() {
@@ -76,6 +78,9 @@ export const usePageStore = defineStore('pages', () => {
     if (currentPageId.value === pageId) {
       currentPageId.value = pages.value.length > 0 ? pages.value[0].id : ''
     }
+    if (removePageFromHistory) {
+      removePageFromHistory(pageId)
+    }
   }
 
   /** 加载回收站页面 */
@@ -92,6 +97,9 @@ export const usePageStore = defineStore('pages', () => {
     }
     const { removeFavorite } = useFavorites()
     removeFavorite(pageId)
+    if (removePageFromHistory) {
+      removePageFromHistory(pageId)
+    }
   }
 
   /** 恢复页面（从回收站还原） */
@@ -107,6 +115,9 @@ export const usePageStore = defineStore('pages', () => {
     trashPages.value = trashPages.value.filter(p => p.id !== pageId)
     if (currentPageId.value === pageId) {
       currentPageId.value = ''
+    }
+    if (removePageFromHistory) {
+      removePageFromHistory(pageId)
     }
   }
 

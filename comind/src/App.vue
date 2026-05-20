@@ -1,25 +1,73 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, provide } from 'vue'
 import { useRoute } from 'vue-router'
 import Sidebar from './components/Sidebar/index.vue'
 import PageMenuButton from './components/PageMenuButton.vue'
+import ConfirmDialog from './components/ConfirmDialog.vue'
 import { useEditorStore } from './stores/editor'
+import { useBlockStore } from './stores/blocks'
+import { usePageStore } from './stores/pages'
+import { storage } from './storage/indexedDB'
 
 const editorStore = useEditorStore()
 const route = useRoute()
+const blockStore = useBlockStore()
+const pageStore = usePageStore()
 
-const historyStack = ref<string[]>([''])
+type HistoryItem = {
+  path: string
+  pageId?: string
+}
+
+const historyStack = ref<HistoryItem[]>([{ path: '' }])
 const historyIndex = ref(0)
 
-watch(() => route.fullPath, (newPath) => {
-  if (newPath === historyStack.value[historyIndex.value]) return
+const showTrashedPageWarning = ref(false)
+const trashedPageToRestore = ref<string | null>(null)
+
+watch(() => route.fullPath, async (newPath) => {
+  if (newPath === historyStack.value[historyIndex.value]?.path) return
 
   if (historyIndex.value < historyStack.value.length - 1) {
     historyStack.value = historyStack.value.slice(0, historyIndex.value + 1)
   }
-  historyStack.value.push(newPath)
+  
+  // 尝试获取当前页面ID
+  let pageId: string | undefined
+  if (route.params.pageId || route.params.date) {
+    const idOrTitle = (route.params.pageId || route.params.date) as string
+    const page = pageStore.getPage(idOrTitle) ?? pageStore.getPageByTitle(idOrTitle)
+    if (page) {
+      pageId = page.id
+    }
+  }
+  
+  historyStack.value.push({ path: newPath, pageId })
   historyIndex.value = historyStack.value.length - 1
 })
+
+watch(() => blockStore.trashedPageWarnings, async (warnings) => {
+  if (warnings && warnings.length > 0) {
+    trashedPageToRestore.value = warnings[0]
+    showTrashedPageWarning.value = true
+  }
+})
+
+async function confirmRestoreTrashedPage() {
+  if (trashedPageToRestore.value) {
+    const trashedPage = await storage.getTrashedPageByTitle(trashedPageToRestore.value)
+    if (trashedPage) {
+      await pageStore.restorePage(trashedPage.id)
+    }
+  }
+  showTrashedPageWarning.value = false
+  blockStore.clearTrashedPageWarnings()
+}
+
+function cancelRestoreTrashedPage() {
+  showTrashedPageWarning.value = false
+  blockStore.clearTrashedPageWarnings()
+}
 
 const canGoBack = computed(() => historyIndex.value > 0)
 const canGoForward = computed(() => historyIndex.value < historyStack.value.length - 1)
@@ -35,6 +83,27 @@ function handleGoForward() {
   historyIndex.value++
   window.history.go(1)
 }
+
+function removePageFromHistory(pageId: string) {
+  // 过滤掉包含该页面ID的历史记录
+  const newStack = historyStack.value.filter(item => item.pageId !== pageId)
+  
+  // 如果当前指向的页面被删除了，需要调整索引
+  if (historyIndex.value >= newStack.length) {
+    historyIndex.value = Math.max(0, newStack.length - 1)
+  }
+  
+  // 如果新栈长度为0，添加默认路径
+  if (newStack.length === 0) {
+    historyStack.value = [{ path: '' }]
+    historyIndex.value = 0
+  } else {
+    historyStack.value = newStack
+  }
+}
+
+// 提供移除历史记录的方法
+provide('removePageFromHistory', removePageFromHistory)
 
 function handleMainClick(e: MouseEvent) {
   const target = e.target as HTMLElement
@@ -76,6 +145,16 @@ function handleMainClick(e: MouseEvent) {
     </div>
     
     <PageMenuButton />
+
+    <ConfirmDialog
+      :visible="showTrashedPageWarning"
+      title="页面已在回收站中"
+      :message="`页面「${trashedPageToRestore || ''}」曾在回收站中。是否要恢复该页面？`"
+      confirm-text="恢复页面"
+      cancel-text="忽略"
+      @confirm="confirmRestoreTrashedPage"
+      @cancel="cancelRestoreTrashedPage"
+    />
   </div>
 </template>
 
