@@ -3,11 +3,13 @@ import { ref } from 'vue'
 import type { Page } from '../types/page'
 import { storage } from '../storage/indexedDB'
 import { useBlockStore } from './blocks'
+import { useFavorites } from '../composables/useFavorites'
 
 export const usePageStore = defineStore('pages', () => {
   const pages = ref<Page[]>([])
   const currentPageId = ref<string>('')
   const loading = ref(false)
+  const trashPages = ref<Page[]>([])
 
   /** 从 IndexedDB 加载所有 Page 到内存 */
   async function loadAllPages() {
@@ -76,5 +78,37 @@ export const usePageStore = defineStore('pages', () => {
     }
   }
 
-  return { pages, currentPageId, loading, loadAllPages, openPage, createPage, getPage, getPageByTitle, renamePage, mergePage, deletePage }
+  /** 加载回收站页面 */
+  async function loadTrashPages() {
+    trashPages.value = await storage.getTrashedPages()
+  }
+
+  /** 软删除页面（移至回收站） */
+  async function softDeletePage(pageId: string): Promise<void> {
+    await storage.softDeletePage(pageId)
+    pages.value = pages.value.filter(p => p.id !== pageId)
+    if (currentPageId.value === pageId) {
+      currentPageId.value = ''
+    }
+    const { removeFavorite } = useFavorites()
+    removeFavorite(pageId)
+  }
+
+  /** 恢复页面（从回收站还原） */
+  async function restorePage(pageId: string): Promise<void> {
+    await storage.restorePage(pageId)
+    trashPages.value = trashPages.value.filter(p => p.id !== pageId)
+    await loadAllPages()
+  }
+
+  /** 永久删除页面 */
+  async function permanentDeletePage(pageId: string): Promise<void> {
+    await storage.permanentDeletePage(pageId)
+    trashPages.value = trashPages.value.filter(p => p.id !== pageId)
+    if (currentPageId.value === pageId) {
+      currentPageId.value = ''
+    }
+  }
+
+  return { pages, currentPageId, loading, trashPages, loadAllPages, openPage, createPage, getPage, getPageByTitle, renamePage, mergePage, deletePage, loadTrashPages, softDeletePage, restorePage, permanentDeletePage }
 })

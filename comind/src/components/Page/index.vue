@@ -96,21 +96,23 @@ function handleCancelMerge() {
     <div class="page-body">
       <main class="main-content">
         <div class="page-header">
-          <h1
-            v-if="!isEditingTitle"
-            class="page-title page-title--display"
-            :class="{ 'page-title--editable': editableTitle }"
-            @click="startEditTitle"
-          >{{ currentPageTitle }}</h1>
-          <input
-            v-else
-            ref="titleInputRef"
-            v-model="editingTitle"
-            class="page-title page-title--input"
-            @blur="saveTitle"
-            @keydown.enter.prevent="saveTitle"
-            @keydown.escape="cancelEditTitle"
-          />
+          <div class="page-header-content">
+            <h1
+              v-if="!isEditingTitle"
+              class="page-title page-title--display"
+              :class="{ 'page-title--editable': editableTitle }"
+              @click="startEditTitle"
+            >{{ currentPageTitle }}</h1>
+            <input
+              v-else
+              ref="titleInputRef"
+              v-model="editingTitle"
+              class="page-title page-title--input"
+              @blur="saveTitle"
+              @keydown.enter.prevent="saveTitle"
+              @keydown.escape="cancelEditTitle"
+            />
+          </div>
         </div>
 
         <BlockList :page-id="resolvedPageId" />

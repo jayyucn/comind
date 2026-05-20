@@ -12,10 +12,10 @@ export class ComindDB extends Dexie {
 
   constructor() {
     super('comind')
-    this.version(4).stores({
+    this.version(5).stores({
       blocks: 'id, pageId, parentId, pos, createdAt, updatedAt',
       links: 'id, sourceBlockId, targetPageId, displayText, createdAt',
-      pages: 'id, blockId, title, type, createdAt, updatedAt',
+      pages: 'id, blockId, title, type, deleted, createdAt, updatedAt',
       properties: 'id, blockId, [blockId+key]'
     })
   }

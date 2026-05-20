@@ -62,7 +62,9 @@ export function pageToRecord(page: Page): PageRecord {
     childrenCount: page.childrenCount,
     wordCount: page.wordCount,
     createdAt: page.createdAt,
-    updatedAt: page.updatedAt
+    updatedAt: page.updatedAt,
+    deleted: page.deleted ? 1 : 0,
+    deletedAt: page.deletedAt
   }
 }
 
@@ -85,7 +87,9 @@ export function recordToPage(record: PageRecord): Page {
     childrenCount: record.childrenCount,
     wordCount: record.wordCount,
     createdAt: record.createdAt,
-    updatedAt: record.updatedAt
+    updatedAt: record.updatedAt,
+    deleted: record.deleted === 1,
+    deletedAt: record.deletedAt ?? null
   }
 }
 
@@ -255,7 +259,9 @@ export class IndexedDBAdapter {
       childrenCount: 0,
       wordCount: 0,
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+      deleted: false,
+      deletedAt: null
     }
     await db.pages.put(pageToRecord(page))
     return page
@@ -263,7 +269,9 @@ export class IndexedDBAdapter {
 
   async getAllPages(): Promise<Page[]> {
     const records = await db.pages.orderBy('title').toArray()
-    return records.map(recordToPage)
+    return records
+      .filter(r => r.deleted !== 1)
+      .map(recordToPage)
   }
 
   async getById(id: string): Promise<Page | undefined> {
@@ -381,7 +389,9 @@ export class IndexedDBAdapter {
       childrenCount: 0,
       wordCount: 0,
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+      deleted: false,
+      deletedAt: null
     }
 
     // 3. 更新 Block 的 pageId
@@ -417,6 +427,59 @@ export class IndexedDBAdapter {
       // 4. 删除 Page
       await db.pages.delete(pageId)
     })
+  }
+
+  /** 软删除页面（移至回收站） */
+  async softDeletePage(pageId: string): Promise<void> {
+    await db.transaction('rw', [db.pages], async () => {
+      const record = await db.pages.get(pageId)
+      if (record) {
+        const page = recordToPage(record)
+        page.deleted = true
+        page.deletedAt = Date.now()
+        page.updatedAt = Date.now()
+        await db.pages.put(pageToRecord(page))
+      }
+    })
+  }
+
+  /** 恢复页面（从回收站还原） */
+  async restorePage(pageId: string): Promise<void> {
+    await db.transaction('rw', [db.pages], async () => {
+      const record = await db.pages.get(pageId)
+      if (record) {
+        const page = recordToPage(record)
+        page.deleted = false
+        page.deletedAt = null
+        page.updatedAt = Date.now()
+        await db.pages.put(pageToRecord(page))
+      }
+    })
+  }
+
+  /** 物理删除页面（从回收站永久删除） */
+  async permanentDeletePage(pageId: string): Promise<void> {
+    await db.transaction('rw', [db.pages, db.blocks, db.links], async () => {
+      // 1. 获取页面所有 Block
+      const blocks = await db.blocks.where('pageId').equals(pageId).toArray()
+      const blockIds = blocks.map(b => b.id)
+
+      // 2. 删除所有相关 Link
+      await db.links.where('sourceBlockId').anyOf(blockIds).delete()
+      await db.links.where('targetPageId').equals(pageId).delete()
+
+      // 3. 删除所有 Block
+      await db.blocks.bulkDelete(blockIds)
+
+      // 4. 删除 Page
+      await db.pages.delete(pageId)
+    })
+  }
+
+  /** 获取回收站中的页面 */
+  async getTrashedPages(): Promise<Page[]> {
+    const records = await db.pages.where('deleted').equals(1).sortBy('deletedAt')
+    return records.map(recordToPage).reverse()
   }
 
   /**

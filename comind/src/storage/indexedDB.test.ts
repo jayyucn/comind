@@ -528,7 +528,9 @@ describe('Conversion Functions', () => {
         childrenCount: 0,
         wordCount: 0,
         createdAt: 0,
-        updatedAt: 0
+        updatedAt: 0,
+        deleted: false,
+        deletedAt: null
       }
 
       const record = pageToRecord(page)

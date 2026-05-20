@@ -11,6 +11,8 @@ export interface Page {
   wordCount: number
   createdAt: number
   updatedAt: number
+  deleted: boolean
+  deletedAt: number | null
 }
 
 export interface PageRecord {
@@ -26,4 +28,6 @@ export interface PageRecord {
   wordCount: number
   createdAt: number
   updatedAt: number
+  deleted: number
+  deletedAt: number | null
 }
