@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, provide } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import Sidebar from './components/Sidebar/index.vue'
 import PageMenuButton from './components/PageMenuButton.vue'
@@ -102,8 +102,8 @@ function removePageFromHistory(pageId: string) {
   }
 }
 
-// 提供移除历史记录的方法
-provide('removePageFromHistory', removePageFromHistory)
+// 注册移除历史记录的回调
+pageStore.onRemovePageFromHistory(removePageFromHistory)
 
 function handleMainClick(e: MouseEvent) {
   const target = e.target as HTMLElement
