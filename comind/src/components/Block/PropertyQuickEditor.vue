@@ -104,8 +104,10 @@ watch(visible, async (v) => {
       tagInputRef.value?.focus()
     }
     
-    document.addEventListener('click', handleClickOutside)
-    document.addEventListener('keydown', handleKeyDown)
+    setTimeout(() => {
+      document.addEventListener('click', handleClickOutside)
+      document.addEventListener('keydown', handleKeyDown)
+    }, 0)
   } else {
     document.removeEventListener('click', handleClickOutside)
     document.removeEventListener('keydown', handleKeyDown)
