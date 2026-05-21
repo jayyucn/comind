@@ -1,31 +1,83 @@
-# 文档目录
+# comind 文档索引
 
-comind 项目的技术文档集合。
+> 更新日期：2026-05-21
+> 本文档是 docs/ 目录的唯一入口点。Agent 只需加载 `active/` 目录即可获得完整项目上下文。
 
-## 目录结构
+---
 
-| 目录 | 说明 |
-| --- | --- |
-| [1-overview/](1-overview/) | 项目概览 - 规格说明、技术选型、待办事项 |
-| [2-architecture/](2-architecture/) | 架构设计 - 数据模型、路由、存储 |
-| [3-features/](3-features/) | 功能规格 - 块编辑、链接、标签、属性等 |
-| [4-ui/](4-ui/) | UI/UX 设计 - 交互规格 |
-| [5-development/](5-development/) | 开发指南 - 开发者指南、CRUD 操作 |
-| [6-reports/](6-reports/) | 验证报告 - 测试报告、项目评估 |
-| [7-sidebar/](7-sidebar/) | 侧边栏 - 侧边栏实现与重构 |
-| [sort/](sort/) | 排序功能 - 拖拽排序实现与计划 |
-| [superpowers/](superpowers/) | 能力增强 - 特性规格与实现计划 |
+## 文档结构
+
+```
+docs/
+├── README.md              ← 你在这里
+└── active/                ← 活跃文档（Agent 日常参考）
+    ├── spec.md            # 项目规范（定位 + 概念 + TODO）
+    ├── architecture.md    # 架构设计（数据模型 + 存储 + 路由 + 编辑器）
+    ├── features.md        # 功能规格（链接 + 命令 + Block 操作）
+    ├── interaction.md     # 交互规范（视觉 + 状态机 + 鼠标/键盘操作）
+    ├── development.md     # 开发指南（技术栈 + 项目结构 + CRUD + 检查清单）
+    └── product-vision.md  # 产品愿景（定位 + 功能清单 + 界面规划）
+```
+
+---
 
 ## 快速导航
 
-### 新贡献者
-1. 阅读 [1-overview/SPEC.md](1-overview/SPEC.md) 了解项目规格
-2. 阅读 [5-development/dev-guide.md](5-development/dev-guide.md) 开始开发
+| 你需要了解... | 阅读文档 | 关键章节 |
+|-------------|---------|---------|
+| 项目是什么 | `spec.md` | §1 项目概述、§2 产品定位 |
+| 核心概念 | `spec.md` | §3 核心概念（Block/Page/Link/Property） |
+| 技术栈 | `development.md` | §1 技术栈 |
+| 数据模型 | `architecture.md` | §1 数据模型 |
+| 存储格式 | `architecture.md` | §2 存储格式 |
+| 路由设计 | `architecture.md` | §3 路由设计 |
+| 编辑器约束 | `architecture.md` | §4 编辑器架构（C1-C4 约束） |
+| 属性系统 | `architecture.md` | §5 属性系统 |
+| 排序机制 | `architecture.md` | §6 排序机制（Gap Pos） |
+| 链接系统 | `features.md` | §1 链接系统 |
+| 斜杠命令 | `features.md` | §2 斜杠命令 |
+| Block 操作 | `features.md` | §3 功能设计 |
+| 视觉规范 | `interaction.md` | §1 视觉系统 |
+| Block 状态机 | `interaction.md` | §2 Block 状态机 |
+| 鼠标操作 | `interaction.md` | §3 鼠标操作 |
+| 键盘操作 | `interaction.md` | §4 键盘操作 |
+| 项目结构 | `development.md` | §2 项目结构 |
+| 核心约束 | `development.md` | §3 核心架构约束 |
+| CRUD 操作 | `development.md` | §5 Page ↔ Block CRUD |
+| 内容解析 | `development.md` | §6 内容解析 |
+| 产品愿景 | `product-vision.md` | §1-§9 完整产品规划 |
+| 功能 TODO | `spec.md` | §7 TODO |
 
-### 功能开发
-1. 查看 [3-features/](3-features/) 了解功能规格
-2. 查看 [4-ui/interaction-spec.md](4-ui/interaction-spec.md) 了解交互规范
+---
 
-### 架构理解
-1. 查看 [2-architecture/](2-architecture/) 了解数据模型和存储
-2. 查看 [6-reports/project-evaluation-2026-05-11.md](6-reports/project-evaluation-2026-05-11.md) 查看项目评估报告
+## 文档版本记录
+
+| 文档 | 版本 | 更新日期 | 来源 |
+|------|------|---------|------|
+| spec.md | v1.0 | 2026-05-21 | 合并自 SPEC.md + TODO.md |
+| architecture.md | v4.0 | 2026-05-21 | 合并自 data-model + storage-spec + routing + block-editor-spec + property-spec + block-ordering-redesign |
+| features.md | v1.0 | 2026-05-21 | 合并自 link-spec + slash-commands-spec + functional-design |
+| interaction.md | v1.0 | 2026-05-21 | 合并自 interaction-spec + ui-ux-spec |
+| development.md | v4.0 | 2026-05-21 | 合并自 dev-guide + page-block-crud + tech-selection |
+| product-vision.md | v1.4 | 2026-05-20 | 从 comind/docs/ 迁入 |
+
+---
+
+## Agent 使用指南
+
+### 最小上下文加载
+Agent 启动时只需加载 `docs/active/` 下的 6 个文件即可获得完整项目上下文。
+
+### 按需加载
+- 开发新功能 → 阅读 `spec.md` + `architecture.md` + `development.md`
+- 修改交互 → 阅读 `interaction.md`
+- 修改数据模型 → 阅读 `architecture.md`
+- 开发存储层 → 阅读 `architecture.md` §2 + `development.md` §7
+- 了解产品方向 → 阅读 `product-vision.md`
+
+### 添加新文档
+新功能规格文档应追加到对应的 `active/` 文件中（如新功能属于已有功能域），或创建新文件（如全新功能域）。
+
+---
+
+*本文档于 2026-05-21 创建，作为文档体系重整的一部分。*
