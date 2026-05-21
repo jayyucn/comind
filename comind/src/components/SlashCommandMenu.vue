@@ -346,7 +346,7 @@ watch(visible, (isVisible) => {
   position: fixed;
   z-index: 1000;
   width: 280px;
-  max-height: 320px;
+  max-height: 640px;
   background: var(--bg-base, #FAFAF8);
   border: 1px solid var(--border, #E7E5E4);
   border-radius: 8px;
@@ -356,7 +356,7 @@ watch(visible, (isVisible) => {
 
 .slash-command-list {
   overflow-y: auto;
-  max-height: 320px;
+  max-height: 640px;
 }
 
 .slash-command-group {
