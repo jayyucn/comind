@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useEditorStore } from '../stores/editor'
 import { usePropertyStore } from '../stores/property'
 import { useSlashCommands, filterCommands, groupCommands, parseCommandInput } from '../composables/useSlashCommands'
@@ -18,6 +18,7 @@ const query = ref('')
 const selectedIndex = ref(0)
 const position = ref({ x: 0, y: 0 })
 const range = ref<{ from: number; to: number } | null>(null)
+const listRef = ref<HTMLElement | null>(null)
 
 // 注册模态键盘拦截层（基于 visible 状态）
 // visible = true 时 push 到 modalStack，visible = false 时 pop
@@ -258,6 +259,27 @@ onBeforeUnmount(() => {
   unbindEditorUpdate()
 })
 
+// 自动滚动到选中项
+function scrollToSelected() {
+  nextTick(() => {
+    if (!listRef.value || !flatCommands.value.length) return
+    
+    const items = listRef.value.querySelectorAll('.slash-command-item')
+    const selectedItem = items[selectedIndex.value] as HTMLElement | undefined
+    
+    if (selectedItem) {
+      selectedItem.scrollIntoView({ block: 'nearest' })
+    }
+  })
+}
+
+// 监听 selectedIndex 变化，自动滚动
+watch(selectedIndex, () => {
+  if (visible.value) {
+    scrollToSelected()
+  }
+})
+
 // 监听 visible 变化，统一处理编辑器更新和 store 状态
 watch(visible, (isVisible) => {
   if (isVisible) {
@@ -265,6 +287,8 @@ watch(visible, (isVisible) => {
     if (range.value) {
       editorStore.showSlashCommand(position.value, range.value)
     }
+    // 初始滚动
+    nextTick(scrollToSelected)
   } else {
     unbindEditorUpdate()
     editorStore.hideSlashCommand()
@@ -280,7 +304,7 @@ watch(visible, (isVisible) => {
         class="slash-command-menu"
         :style="{ left: `${position.x}px`, top: `${position.y}px` }"
       >
-        <div class="slash-command-list">
+        <div class="slash-command-list" ref="listRef">
           <template v-for="[group, cmds] in groupedCommands" :key="group">
             <div class="slash-command-group">
               <div class="slash-command-group-title">{{ group }}</div>
