@@ -6,6 +6,7 @@ import type { Editor } from '@tiptap/vue-3'
 export interface CommandProps {
   editor: Editor
   range: { from: number; to: number }
+  blockId?: string
 }
 
 /**

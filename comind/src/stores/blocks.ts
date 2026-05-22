@@ -724,6 +724,16 @@ export const useBlockStore = defineStore('blocks', () => {
     _scheduleSave(block)
   }
 
+  /** 更新 Block 类型 */
+  async function updateBlockType(blockId: string, type: Block['type']) {
+    const block = blocks.value.find(b => b.id === blockId)
+    if (!block) return
+
+    block.type = type
+    block.updatedAt = Date.now()
+    _scheduleSave(block)
+  }
+
   /** 更新 Block 属性 */
   async function updateBlockProperties(blockId: string, properties: Record<string, any>) {
     const block = blocks.value.find(b => b.id === blockId)
@@ -767,6 +777,7 @@ export const useBlockStore = defineStore('blocks', () => {
     deleteBlock,
     updateBlockContent,
     updateBlockFormat,
+    updateBlockType,
     updateBlockProperties,
     scheduleSave,
     trashedPageWarnings,

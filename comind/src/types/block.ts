@@ -5,7 +5,7 @@ export interface Block {
   pos: number  // 排序位置（Gap 排序，初始间隔 1000）
   content: string
   format: Record<string, any>
-  type: 'bullet' | 'property' | 'query' | 'embed'
+  type: 'bullet' | 'property' | 'query' | 'embed' | 'code'
   properties: Record<string, any>
   createdAt: number
   updatedAt: number

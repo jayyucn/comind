@@ -1,5 +1,6 @@
 import { TASK_PRIORITY_ICONS, TASK_STATUS_ICONS } from '../components/Icons'
 import type { Command, CommandProps } from '../types/command'
+import { useBlockStore } from '../stores/blocks'
 
 /**
  * 格式化日期为 YYYY-MM-DD
@@ -104,13 +105,18 @@ function insertFormat(mark: string, placeholder = '|') {
 /**
  * 插入代码块
  */
-function insertCodeBlock({ editor, range }: CommandProps) {
+function insertCodeBlock({ editor, range, blockId }: CommandProps) {
+  // 删除斜杠命令文本
   editor.chain()
     .deleteRange(range)
-    .insertContent('```\n\n```')
-    .setTextSelection(range.from + 4)
     .focus()
     .run()
+  
+  // 切换到 code block 类型
+  const blockStore = useBlockStore()
+  if (blockId) {
+    blockStore.updateBlockType(blockId, 'code')
+  }
 }
 
 /**
@@ -359,7 +365,7 @@ export const commands: Command[] = [
     alias: ['代码'],
     group: '文本格式',
     icon: '💻',
-    action: insertFormat('`')
+    action: insertCodeBlock
   },
   {
     id: 'code-block',
@@ -369,6 +375,7 @@ export const commands: Command[] = [
     icon: '📄',
     action: insertCodeBlock
   },
+
 
   // 链接引用
   {

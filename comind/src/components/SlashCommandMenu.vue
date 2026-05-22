@@ -194,7 +194,8 @@ async function executeCommand(command: Command) {
   // 让命令自己决定如何插入内容
   command.action({
     editor,
-    range: { from: cursorPosition, to: cursorPosition }
+    range: { from: cursorPosition, to: cursorPosition },
+    blockId: blockId ?? undefined
   })
 }
 

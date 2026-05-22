@@ -20,8 +20,9 @@ import { useEditorStore } from '../../stores/editor'
 import { useBlockStore } from '../../stores/blocks'
 import { usePropertyStore } from '../../stores/property'
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
-import { useContentRenderer } from '../../composables/useContentRenderer'
-import Editor from '../Editor.vue'
+import { useBlockRegistry } from '../../composables/useBlockRegistry'
+import './handlers/bullet'
+import './handlers/code'
 import PropertyDisplay from './PropertyDisplay.vue'
 import PropertyInline from './PropertyInline.vue'
 
@@ -29,6 +30,7 @@ import { usePageStore } from '../../stores/pages'
 import { isDescendantOf } from '../../utils/block-helpers'
 import { computeDropZone, computeSortPosition } from '../../composables/useDragDrop'
 import type { TreeNode, Block } from '../../types/block'
+import type { BlockTypeEditorExposed } from '../../types/block-type'
 
 defineOptions({
   name: 'Block'
@@ -45,7 +47,7 @@ const blockStore = useBlockStore()
 const propertyStore = usePropertyStore()
 const pageStore = usePageStore()
 const { navigateToPage } = useNavigateToPage()
-const { renderContentToHtml } = useContentRenderer()
+const { getHandler } = useBlockRegistry()
 
 // 获取当前 block 的优先级
 const blockPriority = computed(() => {
@@ -77,6 +79,7 @@ const onDragEnd = inject<() => void>('onDragEnd')
 const blockId = computed(() => props.node.id)
 const block = computed(() => props.node.block)
 const isActive = computed(() => editorStore.activeBlockId === blockId.value)
+const handler = computed(() => getHandler(block.value.type))
 
 /** 页面是否仅有一个空 Block（唯一场景显示 placeholder） */
 const isSingleEmptyBlock = computed(() => {
@@ -84,7 +87,7 @@ const isSingleEmptyBlock = computed(() => {
   return contentBlocks.length === 1 && contentBlocks[0].content === '' && contentBlocks[0].id === blockId.value
 })
 
-const editorRef = ref<InstanceType<typeof Editor> | null>(null)
+const editorRef = ref<BlockTypeEditorExposed | null>(null)
 const cursorPos = ref(0)
 
 // ── 常量配置 ──────────────────────────────────────────────
@@ -277,6 +280,10 @@ function getCaretPositionFromPoint(x: number, y: number): number | null {
 
 async function handleSave(content: string) {
   await blockStore.updateBlockContent(blockId.value, content)
+}
+
+async function handleLanguageChange(lang: string) {
+  await blockStore.updateBlockProperties(blockId.value, { language: lang })
 }
 
 /** 同步block未保存内容到store */
@@ -643,13 +650,38 @@ async function handleBlockDragEnd() {
 
         <!-- 内容区 -->
         <div class="block-content" @mousedown="startEditingAtClick">
-          <Editor v-if="isActive" ref="editorRef" :block-id="blockId" :content="block.content" @save="handleSave"
-            @split="handleSplit" @merge="handleMerge" @delete="handleDelete" @indent="handleIndent"
-            @outdent="handleOutdent" @move-up="handleMoveUp" @move-down="handleMoveDown" @exit-edit="handleExitEdit"
-            @cursor-change="handleCursorChange" />
-          <div v-else class="block-text" @click="handleContentClick">
-            <span v-if="isSingleEmptyBlock" class="block-placeholder">Type something...</span>
-            <span v-else v-html="renderContentToHtml(block.content)"></span>
+          <component
+            v-if="isActive && handler"
+            :is="handler.editorComponent"
+            ref="editorRef"
+            :block-id="blockId"
+            :content="block.content"
+            :language="block.properties.language"
+            @save="handleSave"
+            @split="handleSplit"
+            @merge="handleMerge"
+            @delete="handleDelete"
+            @indent="handleIndent"
+            @outdent="handleOutdent"
+            @move-up="handleMoveUp"
+            @move-down="handleMoveDown"
+            @exit-edit="handleExitEdit"
+            @cursor-change="handleCursorChange"
+            @language-change="handleLanguageChange"
+          />
+          <component
+            v-else-if="handler"
+            :is="handler.renderComponent"
+            :block-id="blockId"
+            :content="block.content"
+            :language="block.properties.language"
+            :show-placeholder="isSingleEmptyBlock"
+            :readonly="true"
+            @content-click="handleContentClick"
+            @language-change="handleLanguageChange"
+          />
+          <div v-else class="block-text block-text--unregistered">
+            <span class="block-placeholder">{{ block.type }} (not registered)</span>
           </div>
         </div>
 
