@@ -20,7 +20,7 @@ function extractLinkMatches(content: string): Array<{ match: RegExpExecArray; is
   const results: Array<{ match: RegExpExecArray; isExternal: boolean }> = []
 
   // 外部链接 [[http://...]]
-  const externalRegex = /\[\[(https?:\/\/|ftp:\/\/|mailto:)([^\]]+)\]\]/gi
+  const externalRegex = /\[\[(https?:\/\/|ftp:\/\/|mailto:)([^\]]*)\]\]/gi
   let match
   while ((match = externalRegex.exec(content)) !== null) {
     results.push({ match, isExternal: true })
@@ -48,8 +48,17 @@ export function parseBlockLinks(content: string): LinkParse[] {
   // 按 position 排序后去重
   const sorted = linkMatches
     .map(({ match, isExternal }) => {
-      const target = match[1].trim()
-      const display = (match[2] || target).trim()
+      let target: string
+      let display: string
+      if (isExternal) {
+        // 外部链接：协议 + 剩余部分
+        target = (match[1] + (match[2] || '')).trim()
+        display = target
+      } else {
+        // 内部链接
+        target = match[1].trim()
+        display = (match[2] || target).trim()
+      }
       return {
         targetTitle: target,
         displayText: display,

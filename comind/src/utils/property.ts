@@ -82,9 +82,10 @@ export function inferPropertyType(value: string): PropertyType {
 
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(trimmed)) return 'datetime'
 
-  if (trimmed.startsWith('[') && trimmed.endsWith(']')) return 'array'
-
+  // page 类型检查必须在 array 类型之前，因为 [[页面名]] 同时满足 startsWith('[')
   if (trimmed.startsWith('[[') && trimmed.endsWith(']]')) return 'page'
+
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) return 'array'
 
   return 'string'
 }
