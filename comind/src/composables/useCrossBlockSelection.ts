@@ -60,8 +60,11 @@ export function useCrossBlockSelection() {
 
     let current = startId
     let foundForward = false
+    let walkCount = 0
+    const MAX_WALK = blockStore.blocks.length * 2
 
-    while (current) {
+    while (current && walkCount < MAX_WALK) {
+      walkCount++
       if (current === targetBlockId) {
         foundForward = true
         break
@@ -76,7 +79,9 @@ export function useCrossBlockSelection() {
       : [targetBlockId, startId]
 
     current = fromId
-    while (current) {
+    walkCount = 0
+    while (current && walkCount < MAX_WALK) {
+      walkCount++
       addDescendants(current)
       if (current === toId) break
       const next = blockStore.findNextBlockInTreeOrder(current)
@@ -160,8 +165,15 @@ export function useCrossBlockSelection() {
     const text = parts.join('\n')
     try {
       await navigator.clipboard.writeText(text)
-    } catch (error) {
-      console.warn('[crossBlockSelection] Failed to copy to clipboard:', error)
+    } catch {
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
     }
   }
 
