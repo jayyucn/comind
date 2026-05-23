@@ -54,10 +54,10 @@ describe('PropertyEditor', () => {
     })
 
     expect(wrapper.find('.property-editor-dialog').exists()).toBe(true)
-    expect(wrapper.find('.dialog-header h3').text()).toBe('添加属性')
+    expect(wrapper.find('.dialog-header h3').text()).toBe('添加自定义属性')
   })
 
-  it('shows built-in properties in dropdown', () => {
+  it('shows property type dropdown', () => {
     const wrapper = mount(PropertyEditor, {
       global: {
         stubs: {
@@ -66,7 +66,9 @@ describe('PropertyEditor', () => {
       }
     })
 
-    const options = wrapper.findAll('select option')
+    const typeSelect = wrapper.find('select')
+    expect(typeSelect.exists()).toBe(true)
+    const options = typeSelect.findAll('option')
     expect(options.length).toBeGreaterThan(0)
   })
 })

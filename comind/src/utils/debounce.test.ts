@@ -93,7 +93,7 @@ describe('debounce', () => {
 
       expect(() => debounced.cancel()).not.toThrow()
       vi.advanceTimersByTime(100)
-      expect(fn).toHaveBeenCalledTimes(1)
+      expect(fn).toHaveBeenCalledTimes(0)
     })
 
     it('can cancel and then call again', () => {

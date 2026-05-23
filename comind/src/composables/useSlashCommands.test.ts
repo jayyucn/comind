@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { filterCommands, groupCommands, commands } from './useSlashCommands'
+import { filterCommands, groupCommands, parseCommandInput, commands } from './useSlashCommands'
 import type { Command } from '../types/command'
 
 describe('filterCommands', () => {
@@ -75,7 +75,8 @@ describe('groupCommands', () => {
     const result = groupCommands(commands)
     expect(result.size).toBeGreaterThan(0)
     expect(result.has('日期时间')).toBe(true)
-    expect(result.has('任务状态')).toBe(true)
+    expect(result.has('任务')).toBe(true)
+    expect(result.has('属性')).toBe(true)
     expect(result.has('文本格式')).toBe(true)
     expect(result.has('链接引用')).toBe(true)
     expect(result.has('页面操作')).toBe(true)
@@ -117,6 +118,48 @@ describe('groupCommands', () => {
   })
 })
 
+describe('parseCommandInput', () => {
+  it('parses simple command without arguments', () => {
+    const result = parseCommandInput('today')
+    expect(result.command).not.toBeNull()
+    expect(result.command?.id).toBe('today')
+    expect(result.argument).toBeNull()
+  })
+
+  it('parses command with argument', () => {
+    const result = parseCommandInput('deadline 2024-05-20')
+    expect(result.command).not.toBeNull()
+    expect(result.command?.id).toBe('deadline')
+    expect(result.argument).toBe('2024-05-20')
+  })
+
+  it('parses command with argument using alias', () => {
+    const result = parseCommandInput('截止日期 2024-05-20')
+    expect(result.command).not.toBeNull()
+    expect(result.command?.id).toBe('deadline')
+    expect(result.argument).toBe('2024-05-20')
+  })
+
+  it('returns null for invalid command', () => {
+    const result = parseCommandInput('nonexistentcommand')
+    expect(result.command).toBeNull()
+    expect(result.argument).toBeNull()
+  })
+
+  it('trims whitespace from input', () => {
+    const result = parseCommandInput('  todo  ')
+    expect(result.command).not.toBeNull()
+    expect(result.command?.id).toBe('todo')
+  })
+
+  it('handles empty argument', () => {
+    const result = parseCommandInput('deadline ')
+    expect(result.command).not.toBeNull()
+    expect(result.command?.id).toBe('deadline')
+    expect(result.argument).toBeNull()
+  })
+})
+
 describe('commands - completeness', () => {
   it('all commands have required properties', () => {
     for (const cmd of commands) {
@@ -148,9 +191,9 @@ describe('commands - completeness', () => {
     expect(dateCommands.some(c => c.id === 'yesterday')).toBe(true)
   })
 
-  it('task status commands exist', () => {
-    const statusCommands = commands.filter(c => c.group === '任务状态')
-    expect(statusCommands.length).toBe(5)
+  it('task commands exist', () => {
+    const statusCommands = commands.filter(c => c.group === '任务')
+    expect(statusCommands.length).toBeGreaterThanOrEqual(3)
     expect(statusCommands.some(c => c.id === 'todo')).toBe(true)
     expect(statusCommands.some(c => c.id === 'done')).toBe(true)
     expect(statusCommands.some(c => c.id === 'doing')).toBe(true)

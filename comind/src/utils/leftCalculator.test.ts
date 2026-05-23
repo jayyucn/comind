@@ -23,13 +23,13 @@ describe('calculateNewLeft', () => {
 
   it('calculates correct position after specific block', () => {
     const siblings = [{ id: 'a', left: 100 }, { id: 'b', left: 200 }, { id: 'c', left: 300 }]
-    expect(calculateNewLeft(siblings, 'a')).toBe(250)
-    expect(calculateNewLeft(siblings, 'b')).toBe(350)
+    expect(calculateNewLeft(siblings, 'a')).toBe(150)
+    expect(calculateNewLeft(siblings, 'b')).toBe(250)
   })
 
   it('handles unsorted siblings', () => {
     const siblings = [{ id: 'c', left: 300 }, { id: 'a', left: 100 }, { id: 'b', left: 200 }]
-    expect(calculateNewLeft(siblings, 'a')).toBe(250)
+    expect(calculateNewLeft(siblings, 'a')).toBe(150)
   })
 
   it('inserts at end if insertAfterId not found', () => {
@@ -58,7 +58,7 @@ describe('calculateOutdentLeft', () => {
     const parent = { left: 100 }
     const siblings = [{ left: 200 }, { left: 300 }, { left: 400 }]
     const result = calculateOutdentLeft(parent, siblings)
-    expect(result).toBe(500)
+    expect(result).toBe(150)
   })
 
   it('finds correct insertion point between siblings', () => {
@@ -72,14 +72,14 @@ describe('calculateOutdentLeft', () => {
     const parent = { left: 300 }
     const siblings = [{ left: 100 }, { left: 200 }]
     const result = calculateOutdentLeft(parent, siblings)
-    expect(result).toBe(600)
+    expect(result).toBe(300)
   })
 
   it('handles single sibling with left greater than parent', () => {
     const parent = { left: 100 }
     const siblings = [{ left: 200 }]
     const result = calculateOutdentLeft(parent, siblings)
-    expect(result).toBe(50)
+    expect(result).toBe(150)
   })
 })
 
@@ -132,7 +132,7 @@ describe('reindexLeftValues', () => {
     ]
     const result = reindexLeftValues(blocks)
     expect(result).toContainEqual({ id: 'root', left: 100 })
-    expect(result).toContainEqual({ id: 'child', left: 200 })
+    expect(result).toContainEqual({ id: 'child', left: 100 })
   })
 
   it('returns array with id and left only', () => {

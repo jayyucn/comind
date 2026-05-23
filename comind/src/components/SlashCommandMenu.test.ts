@@ -15,13 +15,29 @@ vi.mock('../stores/property', () => ({
   usePropertyStore: vi.fn()
 }))
 
-vi.mock('../composables/useSlashCommands', () => ({
-  useSlashCommands: vi.fn()
-}))
+vi.mock('../composables/useSlashCommands', async () => {
+  const actual = await vi.importActual('../composables/useSlashCommands')
+  return {
+    ...actual,
+    useSlashCommands: vi.fn()
+  }
+})
 
-// Mock TaskIcon component
+// Mock Icons module
 vi.mock('./Icons', () => ({
-  TaskIcon: { template: '<span class="task-icon"></span>' }
+  TaskIcon: { template: '<span class="task-icon"></span>' },
+  TASK_STATUS_ICONS: {
+    Todo: 'status-todo',
+    Doing: 'status-doing',
+    Done: 'status-done',
+    Canceled: 'status-canceled',
+  },
+  TASK_PRIORITY_ICONS: {
+    Low: 'priority-low',
+    Medium: 'priority-medium',
+    High: 'priority-high',
+    Urgent: 'priority-urgent',
+  }
 }))
 
 function createMockCommands(count: number) {
@@ -40,6 +56,12 @@ describe('SlashCommandMenu', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     
+    // Mock scrollIntoView
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: vi.fn()
+    })
+    
     const mockEditorStore = {
       activeEditor: null,
       showSlashCommand: vi.fn(),
@@ -57,7 +79,10 @@ describe('SlashCommandMenu', () => {
   it('renders correctly when visible', async () => {
     const mockCommands = createMockCommands(5)
     vi.mocked(useSlashCommands).mockReturnValue({
-      commands: mockCommands
+      commands: mockCommands,
+      filterCommands: vi.fn((query: string) => mockCommands),
+      groupCommands: vi.fn(() => new Map([['Test Group', mockCommands]])),
+      parseCommandInput: vi.fn(() => ({ command: null, argument: null }))
     } as any)
 
     const wrapper = mount(SlashCommandMenu, {
@@ -86,7 +111,10 @@ describe('SlashCommandMenu', () => {
     // 创建足够多的命令，确保列表会超出可视范围
     const mockCommands = createMockCommands(20)
     vi.mocked(useSlashCommands).mockReturnValue({
-      commands: mockCommands
+      commands: mockCommands,
+      filterCommands: vi.fn((query: string) => mockCommands),
+      groupCommands: vi.fn(() => new Map([['Test Group', mockCommands]])),
+      parseCommandInput: vi.fn(() => ({ command: null, argument: null }))
     } as any)
 
     const wrapper = mount(SlashCommandMenu, {
@@ -108,7 +136,6 @@ describe('SlashCommandMenu', () => {
 
     await flushPromises()
 
-    const listElement = wrapper.find('.slash-command-list').element as HTMLElement
     const scrollIntoViewSpy = vi.spyOn(HTMLElement.prototype, 'scrollIntoView')
 
     // 模拟向下按多次，直到选中项超出可视范围

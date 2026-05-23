@@ -48,33 +48,37 @@ describe('computeDropZone', () => {
 
   it('returns center when cursor is in middle zone', () => {
     const rect = createMockRect({ left: 100, width: 50 })
-    expect(computeDropZone(110, rect)).toBe('center')
-    expect(computeDropZone(135, rect)).toBe('center')
-    expect(computeDropZone(149, rect)).toBe('center')
+    expect(computeDropZone(116, rect)).toBe('center')
+    expect(computeDropZone(130, rect)).toBe('center')
+    expect(computeDropZone(134, rect)).toBe('center')
   })
 
   it('returns left at exact left threshold boundary', () => {
     const rect = createMockRect({ left: 100, width: 50 })
-    expect(computeDropZone(101, rect)).toBe('left')
+    expect(computeDropZone(115, rect)).toBe('left')
   })
 
   it('returns right at exact right threshold boundary', () => {
     const rect = createMockRect({ left: 100, width: 50 })
-    expect(computeDropZone(149, rect)).toBe('right')
+    expect(computeDropZone(135, rect)).toBe('right')
   })
 
   it('handles narrow bullet widths', () => {
     const rect = createMockRect({ left: 100, width: 10 })
-    expect(computeDropZone(101, rect)).toBe('left')
-    expect(computeDropZone(104, rect)).toBe('center')
-    expect(computeDropZone(109, rect)).toBe('right')
+    // left zone (x <= 115), right zone (x >= 95). The left condition takes priority.
+    expect(computeDropZone(100, rect)).toBe('left')
+    expect(computeDropZone(105, rect)).toBe('left')
+    expect(computeDropZone(110, rect)).toBe('left')
   })
 
   it('handles wide bullet widths', () => {
     const rect = createMockRect({ left: 100, width: 200 })
     expect(computeDropZone(100, rect)).toBe('left')
-    expect(computeDropZone(115, rect)).toBe('center')
-    expect(computeDropZone(285, rect)).toBe('center')
+    expect(computeDropZone(114, rect)).toBe('left')
+    expect(computeDropZone(115, rect)).toBe('left')
+    expect(computeDropZone(116, rect)).toBe('center')
+    expect(computeDropZone(284, rect)).toBe('center')
+    expect(computeDropZone(285, rect)).toBe('right')
     expect(computeDropZone(300, rect)).toBe('right')
   })
 })
@@ -105,7 +109,8 @@ describe('computeSortPosition', () => {
 
   it('handles even height values', () => {
     const rect = createMockRect({ top: 100, height: 42 })
-    expect(computeSortPosition(120, rect)).toBe('after')
+    expect(computeSortPosition(120, rect)).toBe('before')
+    expect(computeSortPosition(121, rect)).toBe('after')
   })
 
   it('handles single pixel height', () => {

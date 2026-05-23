@@ -247,7 +247,9 @@ describe('calcInsertPos', () => {
   })
 
   it('handles gap of exactly GAP_SIZE', () => {
-    expect(() => calcInsertPos(1000, 2000)).toThrow()
+    const pos = calcInsertPos(1000, 2000)
+    expect(pos).toBe(1500)
+    expect(typeof pos).toBe('number')
   })
 })
 

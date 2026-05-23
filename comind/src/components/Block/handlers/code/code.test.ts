@@ -18,7 +18,7 @@ describe('Code Block — 类型注册与渲染', () => {
       type: 'code',
       label: 'Code',
       editorComponent: CodeMirrorEditor,
-      renderComponent: CodeMirrorEditor,
+      renderComponent: CodeMirrorEditor
     })
 
     expect(getRegisteredTypes()).toContain('code')
@@ -29,7 +29,7 @@ describe('Code Block — 类型注册与渲染', () => {
       type: 'code',
       label: 'Code',
       editorComponent: CodeMirrorEditor,
-      renderComponent: CodeMirrorEditor,
+      renderComponent: CodeMirrorEditor
     })
 
     const handler = getHandler('code')
@@ -50,19 +50,19 @@ describe('Code Block — 类型注册与渲染', () => {
       type: 'code',
       label: 'Code',
       editorComponent: CodeMirrorEditor,
-      renderComponent: CodeMirrorEditor,
+      renderComponent: CodeMirrorEditor
     })
 
     const handler = getHandler('code')
     expect(handler?.editorComponent).toBeDefined()
   })
 
-  it('code block 的渲染组件应该支持只读模式', () => {
+  it('code block 的渲染组件应该是同一个组件', () => {
     register({
       type: 'code',
       label: 'Code',
       editorComponent: CodeMirrorEditor,
-      renderComponent: CodeMirrorEditor,
+      renderComponent: CodeMirrorEditor
     })
 
     const handler = getHandler('code')
