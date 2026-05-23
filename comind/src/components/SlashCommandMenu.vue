@@ -189,6 +189,16 @@ async function executeCommand(command: Command) {
     return
   }
 
+  // 处理 convertBlockType（如 /image 转为 image 类型）
+  if (command.convertBlockType && blockId) {
+    command.action({
+      editor,
+      range: { from: cursorPosition, to: cursorPosition },
+      blockId
+    })
+    return
+  }
+
   // 执行普通命令（如 /today, /tomorrow 等）
   // 此时文本已经被清除，光标在 / 符号之前的位置
   // 让命令自己决定如何插入内容

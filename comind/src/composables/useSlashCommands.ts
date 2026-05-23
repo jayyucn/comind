@@ -143,6 +143,22 @@ function insertTag({ editor, range }: CommandProps) {
 }
 
 /**
+ * 插入 Image Block
+ */
+function insertImage({ editor, range, blockId }: CommandProps) {
+  editor.chain()
+    .deleteRange(range)
+    .focus()
+    .run()
+
+  const blockStore = useBlockStore()
+  if (blockId) {
+    blockStore.updateBlockType(blockId, 'image')
+    blockStore.updateBlockContent(blockId, '![]()')
+  }
+}
+
+/**
  * MVP 命令列表（18 个）
  */
 export const commands: Command[] = [
@@ -374,6 +390,15 @@ export const commands: Command[] = [
     group: '文本格式',
     icon: '📄',
     action: insertCodeBlock
+  },
+  {
+    id: 'image',
+    name: 'Image',
+    alias: ['图片', 'img'],
+    group: '文本格式',
+    icon: '🖼️',
+    action: insertImage,
+    convertBlockType: 'image'
   },
 
 

@@ -23,6 +23,7 @@ import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import { useBlockRegistry } from '../../composables/useBlockRegistry'
 import './handlers/bullet'
 import './handlers/code'
+import './handlers/image'
 import PropertyDisplay from './PropertyDisplay.vue'
 import PropertyInline from './PropertyInline.vue'
 
@@ -143,10 +144,24 @@ onMounted(() => {
   // 监听删除 between 属性的事件
   // 使用捕获阶段监听，以便在事件冒泡前处理
   document.addEventListener('delete-between-property', handleDeleteBetweenProperty, true)
+
+  const el = document.querySelector(`[data-block-id="${blockId.value}"]`)
+  if (el) {
+    el.addEventListener('dragover', handleDragOver as EventListener)
+    el.addEventListener('drop', handleDrop as EventListener)
+    el.addEventListener('paste', handlePaste as unknown as EventListener)
+  }
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('delete-between-property', handleDeleteBetweenProperty, true)
+
+  const el = document.querySelector(`[data-block-id="${blockId.value}"]`)
+  if (el) {
+    el.removeEventListener('dragover', handleDragOver as EventListener)
+    el.removeEventListener('drop', handleDrop as EventListener)
+    el.removeEventListener('paste', handlePaste as unknown as EventListener)
+  }
 })
 
 async function handleDeleteBetweenProperty(e: Event) {
@@ -628,6 +643,54 @@ async function handleBlockDragEnd() {
   dragState.value.currentDropTarget = null
   onDragEnd?.()
 }
+
+async function handleClear() {
+  if (editorRef.value) editorRef.value.markSaved()
+  await blockStore.updateBlockContent(blockId.value, '')
+}
+
+function handleDragOver(e: DragEvent) {
+  if (handler.value?.type !== 'image') return
+  if (!e.dataTransfer?.types.includes('Files')) return
+  const file = e.dataTransfer.items[0]
+  if (!file || !file.type.startsWith('image/')) return
+  e.preventDefault()
+  e.stopPropagation()
+}
+
+function handleDrop(e: DragEvent) {
+  if (handler.value?.type !== 'image') return
+  const file = e.dataTransfer?.files?.[0]
+  if (!file || !file.type.startsWith('image/')) return
+  e.preventDefault()
+  e.stopPropagation()
+
+  void (async () => {
+    const { assetStorage } = await import('../../storage/asset')
+    const asset = await assetStorage.save(file)
+    const content = `![${asset.name}](asset://${asset.id})`
+    await blockStore.updateBlockContent(blockId.value, content)
+  })()
+}
+
+async function handlePaste(e: ClipboardEvent) {
+  if (handler.value?.type !== 'image') return
+  const items = e.clipboardData?.items
+  if (!items) return
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].type.startsWith('image/')) {
+      e.preventDefault()
+      e.stopPropagation()
+      const file = items[i].getAsFile()
+      if (!file) continue
+      const { assetStorage } = await import('../../storage/asset')
+      const asset = await assetStorage.save(file)
+      const content = `![${asset.name}](asset://${asset.id})`
+      await blockStore.updateBlockContent(blockId.value, content)
+      return
+    }
+  }
+}
 </script>
 
 <template>
@@ -679,6 +742,7 @@ async function handleBlockDragEnd() {
             :readonly="true"
             @content-click="handleContentClick"
             @language-change="handleLanguageChange"
+            @clear="handleClear"
           />
           <div v-else class="block-text block-text--unregistered">
             <span class="block-placeholder">{{ block.type }} (not registered)</span>

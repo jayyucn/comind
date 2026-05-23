@@ -27,7 +27,7 @@ export function recordToBlock(record: BlockRecord): Block {
     pos: record.pos,
     content: record.content,
     format,
-    type: record.type as 'bullet' | 'property' | 'query' | 'embed',
+    type: record.type as 'bullet' | 'property' | 'query' | 'embed' | 'code' | 'image',
     properties,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt

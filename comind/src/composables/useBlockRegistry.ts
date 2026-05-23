@@ -5,7 +5,7 @@ const registry = new Map<string, BlockTypeHandler>()
 export function useBlockRegistry() {
   function register(handler: BlockTypeHandler) {
     if (registry.has(handler.type)) {
-      console.warn(`[BlockRegistry] 类型 "${handler.type}" 已注册，将被覆盖`)
+      return
     }
     registry.set(handler.type, handler)
   }

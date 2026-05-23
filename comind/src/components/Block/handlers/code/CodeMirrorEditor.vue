@@ -11,7 +11,8 @@ import { css } from '@codemirror/lang-css'
 import { sql } from '@codemirror/lang-sql'
 import { rust } from '@codemirror/lang-rust'
 import { go } from '@codemirror/lang-go'
-import { oneDark } from '@codemirror/theme-one-dark'
+import { syntaxHighlighting, HighlightStyle } from '@codemirror/language'
+import { tags } from '@lezer/highlight'
 
 const props = withDefaults(defineProps<{
   blockId: string
@@ -87,6 +88,74 @@ function getLanguageExtension(lang: string) {
   }
 }
 
+const githubHighlightStyle = HighlightStyle.define([
+  { tag: tags.keyword, color: '#cf222e' },
+  { tag: tags.operator, color: '#cf222e' },
+  { tag: tags.special(tags.variableName), color: '#24292e' },
+  { tag: tags.typeName, color: '#6f42c1' },
+  { tag: tags.atom, color: '#005cc5' },
+  { tag: tags.number, color: '#005cc5' },
+  { tag: tags.definition(tags.variableName), color: '#6f42c1' },
+  { tag: tags.string, color: '#0a3069' },
+  { tag: tags.special(tags.string), color: '#0a3069' },
+  { tag: tags.comment, color: '#6a737d' },
+  { tag: tags.variableName, color: '#24292e' },
+  { tag: tags.tagName, color: '#22863a' },
+  { tag: tags.bracket, color: '#24292e' },
+  { tag: tags.meta, color: '#e36209' },
+  { tag: tags.link, color: '#0a3069', textDecoration: 'underline' },
+  { tag: tags.heading, fontWeight: 'bold', color: '#24292e' },
+  { tag: tags.emphasis, fontStyle: 'italic' },
+  { tag: tags.strong, fontWeight: 'bold' },
+  { tag: tags.bool, color: '#005cc5' },
+  { tag: tags.null, color: '#005cc5' },
+  { tag: tags.className, color: '#6f42c1' },
+  { tag: tags.propertyName, color: '#005cc5' },
+  { tag: tags.function(tags.variableName), color: '#6f42c1' },
+  { tag: tags.function(tags.propertyName), color: '#6f42c1' },
+])
+
+const githubTheme = EditorView.theme({
+  '&': {
+    fontSize: '14px',
+    backgroundColor: '#f6f8fa',
+    color: '#24292e',
+    border: '1px solid #d0d7de',
+    borderRadius: '6px',
+  },
+  '.cm-content': {
+    fontFamily: "'SFMono-Regular', 'Consolas', 'Liberation Mono', 'Menlo', monospace",
+    padding: '32px 12px 12px 12px',
+    minHeight: '60px',
+    caretColor: '#0969da',
+  },
+  '.cm-gutters': {
+    backgroundColor: '#f6f8fa',
+    color: '#6a737d',
+    border: 'none',
+    paddingRight: '8px',
+    borderRight: '1px solid #d0d7de',
+  },
+  '.cm-activeLineGutter': {
+    backgroundColor: '#eff1f3',
+  },
+  '.cm-activeLine': {
+    backgroundColor: '#eff1f3',
+  },
+  '.cm-cursor': {
+    borderLeftColor: '#0969da',
+  },
+  '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
+    backgroundColor: '#b6d5f5',
+  },
+  '.cm-scroller': {
+    overflow: 'auto',
+  },
+  '.cm-line': {
+    padding: '0 4px',
+  },
+})
+
 function createEditor() {
   if (!editorRef.value) return
 
@@ -148,7 +217,8 @@ function createEditor() {
         }
       }
     ]),
-    oneDark,
+    githubTheme,
+    syntaxHighlighting(githubHighlightStyle),
     getLanguageExtension(currentLang.value),
     EditorView.updateListener.of((update) => {
       if (update.docChanged && !props.readonly) {
@@ -158,32 +228,6 @@ function createEditor() {
         emit('cursor-change', update.state.selection.main.head)
       }
     }),
-    EditorView.theme({
-      '&': {
-        fontSize: '14px',
-        backgroundColor: '#1e1e1e'
-      },
-      '.cm-content': {
-        fontFamily: "'Fira Code', 'Monaco', 'Consolas', monospace",
-        padding: '32px 12px 12px 12px',
-        minHeight: '60px'
-      },
-      '.cm-gutters': {
-        backgroundColor: '#1e1e1e',
-        color: '#666',
-        border: 'none',
-        paddingRight: '8px'
-      },
-      '.cm-activeLineGutter': {
-        backgroundColor: '#2a2a2a'
-      },
-      '.cm-activeLine': {
-        backgroundColor: '#2a2a2a'
-      },
-      '.cm-scroller': {
-        overflow: 'auto'
-      }
-    })
   ]
 
   const state = EditorState.create({
@@ -344,7 +388,7 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
         @click.stop="toggleMenu"
       >
         {{ currentLangLabel }}
-        <span class="dropdown-arrow">▼</span>
+        <span class="dropdown-arrow">▾</span>
       </button>
       <Teleport to="body">
         <Transition name="fade">
@@ -370,10 +414,15 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
       <button
         class="code-copy-button"
         @click.stop="copyCode"
-        :title="showCopied ? 'Copied!' : 'Copy code'"
+        :title="showCopied ? 'Copied!' : 'Copy'"
       >
-        <span v-if="showCopied" class="copy-icon">✓</span>
-        <span v-else class="copy-icon">📋</span>
+        <svg v-if="showCopied" class="copy-icon" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+          <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"/>
+        </svg>
+        <svg v-else class="copy-icon" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+          <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/>
+          <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/>
+        </svg>
       </button>
     </div>
     <div ref="editorRef" class="code-editor-container"></div>
@@ -383,18 +432,19 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
 <style scoped>
 .code-editor-wrapper {
   position: relative;
-  background: #1e1e1e;
-  border-radius: 4px;
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
   overflow: hidden;
 }
 
 .code-lang-button-container {
   position: absolute;
-  top: 4px;
-  left: 4px;
+  top: 8px;
+  left: 8px;
   z-index: 10;
   opacity: 0;
-  transition: opacity 0.15s ease;
+  transition: opacity 0.2s;
 }
 
 .code-editor-wrapper:hover .code-lang-button-container {
@@ -403,11 +453,11 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
 
 .code-copy-button-container {
   position: absolute;
-  top: 4px;
-  right: 4px;
+  top: 8px;
+  right: 8px;
   z-index: 10;
   opacity: 0;
-  transition: opacity 0.15s ease;
+  transition: opacity 0.2s;
 }
 
 .code-editor-wrapper:hover .code-copy-button-container {
@@ -415,37 +465,39 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
 }
 
 .code-lang-button {
-  background: #333;
-  color: #d4d4d4;
-  border: 1px solid #555;
-  border-radius: 4px;
-  padding: 4px 8px;
+  background: #f6f8fa;
+  color: #24292f;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  padding: 3px 10px;
   font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 4px;
-  transition: all 0.15s ease;
+  transition: all 0.2s;
+  box-shadow: 0 1px 0 rgba(31, 35, 40, 0.04);
 }
 
 .code-copy-button {
-  background: #333;
-  color: #d4d4d4;
-  border: 1px solid #555;
-  border-radius: 4px;
-  padding: 4px 8px;
+  background: #f6f8fa;
+  color: #24292f;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  padding: 5px 6px;
   font-size: 12px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s ease;
-  min-width: 32px;
+  transition: all 0.2s;
+  box-shadow: 0 1px 0 rgba(31, 35, 40, 0.04);
 }
 
 .code-lang-button:hover, .code-copy-button:hover {
-  background: #444;
-  border-color: #666;
+  background-color: #f3f4f6;
+  border-color: #d0d7de;
 }
 
 .dropdown-arrow {
@@ -454,7 +506,8 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
 }
 
 .copy-icon {
-  font-size: 14px;
+  width: 16px;
+  height: 16px;
 }
 
 .code-editor-container {
@@ -463,12 +516,12 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
 
 .lang-menu {
   position: fixed;
-  background: #2d2d2d;
-  border: 1px solid #555;
-  border-radius: 4px;
+  background: #ffffff;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
   margin-top: 4px;
-  min-width: 150px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  min-width: 140px;
+  box-shadow: 0 8px 24px rgba(149, 157, 165, 0.2);
   z-index: 1000;
   overflow: hidden;
 }
@@ -476,18 +529,19 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
 .lang-item {
   padding: 8px 12px;
   font-size: 13px;
-  color: #d4d4d4;
+  color: #24292f;
   cursor: pointer;
-  transition: background 0.1s ease;
+  transition: background 0.2s;
 }
 
 .lang-item:hover {
-  background: #3a3a3a;
+  background: #f6f8fa;
 }
 
 .lang-item.active {
-  background: #3d3d3d;
-  border-left: 2px solid #569cd6;
+  background: #f6f8fa;
+  font-weight: 500;
+  border-left: 2px solid #0969da;
   padding-left: 10px;
 }
 

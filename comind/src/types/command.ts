@@ -1,4 +1,5 @@
 import type { Editor } from '@tiptap/vue-3'
+import type { Block } from './block'
 
 /**
  * 斜杠命令执行上下文
@@ -26,6 +27,7 @@ export interface Command {
   immediate?: boolean
   openEditor?: boolean
   acceptArgument?: boolean
+  convertBlockType?: Block['type']
 }
 
 /**
