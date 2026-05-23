@@ -141,7 +141,19 @@ export function useCrossBlockSelection() {
     const parts: string[] = []
     const visited = new Set<string>()
 
-    function collect(blockId: string) {
+    function computeDepth(blockId: string): number {
+      let depth = 0
+      let currentId = blockId
+      while (true) {
+        const b = blockStore.blocks.find(x => x.id === currentId)
+        if (!b || !b.parentId) break
+        currentId = b.parentId
+        depth++
+      }
+      return depth
+    }
+
+    function collect(blockId: string, depth: number) {
       if (visited.has(blockId)) return
       const block = blockStore.blocks.find(b => b.id === blockId)
       if (!block) return
@@ -149,17 +161,18 @@ export function useCrossBlockSelection() {
 
       if (!anchorIds.has(blockId)) return
 
-      parts.push(block.content)
+      const indent = '  '.repeat(depth)
+      parts.push(indent + block.content)
 
       if (block.format?.collapsed) return
 
       for (const child of blockStore.getChildren(blockId)) {
-        collect(child.id)
+        collect(child.id, depth + 1)
       }
     }
 
     for (const block of blockStore.sortedBlocks) {
-      collect(block.id)
+      collect(block.id, computeDepth(block.id))
     }
 
     const text = parts.join('\n')
