@@ -89,8 +89,16 @@ function handleDocMouseMove(e: MouseEvent) {
   }
 }
 
-function handleDocMouseUp() {
-  if (!selection.dragStartBlockId.value) return
+function handleDocMouseUp(e: MouseEvent) {
+  if (!selection.dragStartBlockId.value) {
+    if (selection.anchorIds.size > 0) {
+      const target = e.target as HTMLElement
+      if (!target.closest('.block') && !target.closest('.block-list')) {
+        selection.clearSelection()
+      }
+    }
+    return
+  }
 
   if (selection.isDragging.value) {
     selection.finalizeSelection()

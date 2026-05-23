@@ -82,6 +82,12 @@ const selection = inject<CrossBlockSelection>('crossBlockSelection')
 const blockId = computed(() => props.node.id)
 const block = computed(() => props.node.block)
 const isActive = computed(() => editorStore.activeBlockId === blockId.value)
+const hasSelectedAncestor = computed(() => {
+  if (!selection) return false
+  const parentId = block.value.parentId
+  if (!parentId) return false
+  return selection.isBlockSelected(parentId)
+})
 const isSelected = computed(() => {
   if (!selection) return false
   return selection.isBlockSelected(blockId.value)
@@ -712,7 +718,7 @@ async function handlePaste(e: ClipboardEvent) {
 </script>
 
 <template>
-  <div class="block" :class="[priorityClass, { active: isActive, 'cb-selected': isSelected }]" :data-block-id="blockId">
+  <div class="block" :class="[priorityClass, { active: isActive, 'cb-selected': isSelected && !hasSelectedAncestor }]" :data-block-id="blockId">
     <div class="block-row">
       <!-- 缩进占位 -->
       <div class="block-indent" :style="{ width: indentWidth }"></div>
