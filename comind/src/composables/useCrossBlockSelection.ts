@@ -1,3 +1,11 @@
+/**
+ * 跨 Block 选择状态管理
+ *
+ * 管理拖拽选区（selectedIds）和固化选区（anchorIds）双重状态。
+ * - selectedIds: 拖拽过程中的实时选区
+ * - anchorIds: mouseup 后固化的最终选区，用于复制等操作
+ * - isDragging: 由外部消费者（BlockList）在 mousemove 中设置
+ */
 import { reactive, ref } from 'vue'
 import { useBlockStore } from '../stores/blocks'
 
@@ -150,7 +158,11 @@ export function useCrossBlockSelection() {
     }
 
     const text = parts.join('\n')
-    await navigator.clipboard.writeText(text)
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch (error) {
+      console.warn('[crossBlockSelection] Failed to copy to clipboard:', error)
+    }
   }
 
   return {
