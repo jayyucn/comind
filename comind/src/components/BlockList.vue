@@ -13,13 +13,15 @@
  * - handleDragEnd 将 tree 变更同步回 store（parentId + pos）
  * - store 变更通过 structureVersion watch 触发 syncFromStore 重建树
  */
-import { ref, watch, onMounted, provide } from 'vue'
+import { ref, watch, onMounted, onBeforeUnmount, provide } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
 import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
 import Block from './Block/index.vue'
 import { buildTree, syncTreeToStore } from '../composables/useBlockTree'
 import type { TreeNode } from '../types/block'
+import { useCrossBlockSelection } from '../composables/useCrossBlockSelection'
+import type { CrossBlockSelection } from '../composables/useCrossBlockSelection'
 
 const props = defineProps<{
   /** 页面 ID，用于过滤 Block */
@@ -63,16 +65,83 @@ async function handleCreateBlock() {
   }
 }
 
+// ── 跨 Block 选区事件处理 ──
+function handleDocMouseMove(e: MouseEvent) {
+  if (!selection.dragStartBlockId.value) return
+
+  const el = document.elementFromPoint(e.clientX, e.clientY)
+  const blockEl = el?.closest('[data-block-id]') as HTMLElement | null
+  if (!blockEl) return
+
+  const targetId = blockEl.dataset.blockId
+  if (!targetId) return
+
+  if (!selection.isDragging.value) {
+    if (targetId === selection.dragStartBlockId.value) return
+    editorStore.deactivateBlock()
+    selection.isDragging.value = true
+  }
+
+  const range = selection.computeRange(targetId, props.pageId)
+  selection.selectedIds.clear()
+  for (const id of range) {
+    selection.selectedIds.add(id)
+  }
+}
+
+function handleDocMouseUp() {
+  if (!selection.dragStartBlockId.value) return
+
+  if (selection.isDragging.value) {
+    selection.finalizeSelection()
+  } else {
+    const blockId = selection.dragStartBlockId.value
+    selection.clearTracking()
+    editorStore.activateBlock(blockId)
+  }
+}
+
+function handleDocKeyDown(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    selection.clearSelection()
+    return
+  }
+  if ((e.key === 'c' || e.key === 'C') && (e.ctrlKey || e.metaKey)) {
+    if (selection.anchorIds.size > 0) {
+      e.preventDefault()
+      selection.copyToClipboard()
+    }
+  }
+}
+
 // ── 提供给子 Block 组件 ──
+const selection = useCrossBlockSelection()
+provide<CrossBlockSelection>('crossBlockSelection', selection)
 provide('onDragEnd', handleDragEnd)
 
 // ── 监听结构变化重建树 ──
 watch(() => blockStore.structureVersion, syncFromStore)
 
 // ── 页面 ID 变化时重建 ──
-watch(() => props.pageId, syncFromStore)
+watch(() => props.pageId, (newId, oldId) => {
+  if (newId !== oldId) {
+    selection.clearSelection()
+  }
+  syncFromStore()
+})
 
-onMounted(syncFromStore)
+onMounted(() => {
+  syncFromStore()
+  document.addEventListener('mousemove', handleDocMouseMove)
+  document.addEventListener('mouseup', handleDocMouseUp)
+  document.addEventListener('keydown', handleDocKeyDown)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('mousemove', handleDocMouseMove)
+  document.removeEventListener('mouseup', handleDocMouseUp)
+  document.removeEventListener('keydown', handleDocKeyDown)
+})
 </script>
 
 <template>
