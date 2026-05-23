@@ -289,7 +289,7 @@ function handleContentMousedown(e: MouseEvent) {
 
   if (e.ctrlKey || e.metaKey) {
     if (selection) {
-      selection.toggleBlock(blockId.value, pageStore.currentPageId)
+      selection.toggleBlock(blockId.value, props.pageId)
       e.preventDefault()
     }
     return
