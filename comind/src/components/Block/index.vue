@@ -32,6 +32,7 @@ import { isDescendantOf } from '../../utils/block-helpers'
 import { computeDropZone, computeSortPosition } from '../../composables/useDragDrop'
 import type { TreeNode, Block } from '../../types/block'
 import type { BlockTypeEditorExposed } from '../../types/block-type'
+import type { CrossBlockSelection } from '../../composables/useCrossBlockSelection'
 
 defineOptions({
   name: 'Block'
@@ -75,11 +76,16 @@ watch(() => props.node.id, async (newBlockId) => {
 
 // 注入拖拽结束回调（由 BlockList 提供）
 const onDragEnd = inject<() => void>('onDragEnd')
+const selection = inject<CrossBlockSelection>('crossBlockSelection')
 
 // ── 便捷访问 ──
 const blockId = computed(() => props.node.id)
 const block = computed(() => props.node.block)
 const isActive = computed(() => editorStore.activeBlockId === blockId.value)
+const isSelected = computed(() => {
+  if (!selection) return false
+  return selection.isBlockSelected(blockId.value)
+})
 const handler = computed(() => getHandler(block.value.type))
 
 /** 页面是否仅有一个空 Block（唯一场景显示 placeholder） */
@@ -198,6 +204,7 @@ watch(
   isActive,
   async (active) => {
     if (active) {
+      selection?.clearSelection()
       await nextTick()
       if (editorRef.value) {
         const editor = editorRef.value.getEditor()
@@ -276,13 +283,24 @@ watch(collapsed, async (isCollapsed) => {
 })
 
 /** mousedown：捕获点击坐标，在 tiptap 挂载前通知 editor store */
-function startEditingAtClick(e: MouseEvent) {
+function handleContentMousedown(e: MouseEvent) {
   const target = e.target as HTMLElement
   if (target.closest('.block-link')) return
 
+  if (e.ctrlKey || e.metaKey) {
+    if (selection) {
+      selection.toggleBlock(blockId.value, pageStore.currentPageId)
+      e.preventDefault()
+    }
+    return
+  }
+
   const cursorPosVal = getCaretPositionFromPoint(e.clientX, e.clientY) ?? 0
   editorStore.setCursorPos(cursorPosVal + 1)
-  editorStore.activateBlock(blockId.value)
+
+  if (selection) {
+    selection.startTracking(blockId.value)
+  }
 }
 
 function getCaretPositionFromPoint(x: number, y: number): number | null {
@@ -694,7 +712,7 @@ async function handlePaste(e: ClipboardEvent) {
 </script>
 
 <template>
-  <div class="block" :class="[priorityClass, { active: isActive }]" :data-block-id="blockId">
+  <div class="block" :class="[priorityClass, { active: isActive, 'cb-selected': isSelected }]" :data-block-id="blockId">
     <div class="block-row">
       <!-- 缩进占位 -->
       <div class="block-indent" :style="{ width: indentWidth }"></div>
@@ -712,7 +730,7 @@ async function handlePaste(e: ClipboardEvent) {
         <PropertyInline :block-id="blockId" position="between-bullet-content" />
 
         <!-- 内容区 -->
-        <div class="block-content" @mousedown="startEditingAtClick">
+        <div class="block-content" @mousedown="handleContentMousedown">
           <component
             v-if="isActive && handler"
             :is="handler.editorComponent"
