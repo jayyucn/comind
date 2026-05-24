@@ -159,6 +159,22 @@ function insertImage({ editor, range, blockId }: CommandProps) {
 }
 
 /**
+ * 插入 Embed Block
+ */
+function insertEmbed({ editor, range, blockId }: CommandProps) {
+  editor.chain()
+    .deleteRange(range)
+    .focus()
+    .run()
+
+  const blockStore = useBlockStore()
+  if (blockId) {
+    blockStore.updateBlockType(blockId, 'embed')
+    blockStore.updateBlockProperties(blockId, { sourceBlockId: '', sourcePageId: '' })
+  }
+}
+
+/**
  * MVP 命令列表（18 个）
  */
 export const commands: Command[] = [
@@ -399,6 +415,15 @@ export const commands: Command[] = [
     icon: '🖼️',
     action: insertImage,
     convertBlockType: 'image'
+  },
+  {
+    id: 'embed',
+    name: 'Embed',
+    alias: ['嵌入', '引用'],
+    group: '文本格式',
+    icon: '📌',
+    action: insertEmbed,
+    convertBlockType: 'embed'
   },
 
 

@@ -317,6 +317,18 @@ describe('useCrossBlockSelection', () => {
           writeText: vi.fn().mockResolvedValue(undefined)
         }
       })
+      vi.stubGlobal('document', {
+        createElement: vi.fn().mockReturnValue({
+          value: '',
+          style: {},
+          select: vi.fn()
+        }),
+        body: {
+          appendChild: vi.fn(),
+          removeChild: vi.fn()
+        },
+        execCommand: vi.fn()
+      })
     })
 
     test('应复制选中块的内容', async () => {
@@ -386,6 +398,47 @@ describe('useCrossBlockSelection', () => {
       const lines = writtenText.split('\n')
       expect(lines[0]).toBe('Root')
       expect(lines[1]).toMatch(/^\s+Child/)
+    })
+
+    test('使用 pageId 参数时应只复制指定页面的块', async () => {
+      const selection = useCrossBlockSelection()
+      const page1Id = 'page-1'
+      const page2Id = 'page-2'
+
+      const block1Page1 = await blockStore.createBlock({ pageId: page1Id, content: 'Page 1 - Block 1' })
+      const block2Page1 = await blockStore.createBlock({ pageId: page1Id, content: 'Page 1 - Block 2' })
+      const block1Page2 = await blockStore.createBlock({ pageId: page2Id, content: 'Page 2 - Block 1' })
+
+      selection.anchorIds.add(block1Page1.id)
+      selection.anchorIds.add(block2Page1.id)
+      selection.anchorIds.add(block1Page2.id)
+
+      await selection.copyToClipboard(page1Id)
+
+      expect(navigator.clipboard.writeText).toHaveBeenCalled()
+      const writtenText = (navigator.clipboard.writeText as any).mock.calls[0][0]
+      expect(writtenText).toContain('Page 1 - Block 1')
+      expect(writtenText).toContain('Page 1 - Block 2')
+      expect(writtenText).not.toContain('Page 2 - Block 1')
+    })
+
+    test('剪贴板 API 失败时应使用 fallback 方法', async () => {
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+
+      const block = await blockStore.createBlock({ pageId, content: 'Fallback Test' })
+      selection.anchorIds.add(block.id)
+
+      // 让剪贴板 API 失败
+      vi.stubGlobal('navigator', {
+        clipboard: {
+          writeText: vi.fn().mockRejectedValue(new Error('Clipboard failed'))
+        }
+      })
+
+      await selection.copyToClipboard()
+
+      expect(document.execCommand).toHaveBeenCalledWith('copy')
     })
   })
 
