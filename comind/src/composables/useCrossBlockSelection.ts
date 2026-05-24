@@ -137,7 +137,7 @@ export function useCrossBlockSelection() {
       : selectedIds.has(blockId)
   }
 
-  async function copyToClipboard() {
+  async function copyToClipboard(pageId?: string) {
     const parts: string[] = []
     const visited = new Set<string>()
 
@@ -145,6 +145,8 @@ export function useCrossBlockSelection() {
       if (visited.has(blockId)) return
       const block = blockStore.blocks.find(b => b.id === blockId)
       if (!block) return
+      // 如果提供了 pageId，只处理该页面的块
+      if (pageId && block.pageId !== pageId) return
       visited.add(blockId)
 
       if (anchorIds.has(blockId)) {
@@ -159,7 +161,8 @@ export function useCrossBlockSelection() {
       }
     }
 
-    const roots = blockStore.sortedBlocks.filter(b => !b.parentId)
+    // 获取所有根块（如果提供了 pageId，只获取该页面的根块）
+    const roots = blockStore.sortedBlocks.filter(b => !b.parentId && (!pageId || b.pageId === pageId))
     for (const root of roots) {
       collect(root.id, 0)
     }
