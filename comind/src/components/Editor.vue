@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, watch, nextTick, shallowRef } from 'vue'
+import { onBeforeUnmount, onMounted, watch, nextTick, shallowRef, ref } from 'vue'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import { WikiLinkExtension } from '../extensions/WikiLinkExtension'
+import { WikiLinkTriggerExtension } from '../extensions/WikiLinkTriggerExtension'
 import EnterAsBlockExtension from '../extensions/EnterAsBlockExtension'
 import BracketPairExtension from '../extensions/BracketPairExtension'
 import { SlashCommandExtension } from '../extensions/SlashCommandExtension'
 import { useNavigateToPage } from '../composables/useNavigateToPage'
 import { debounce } from '../utils/debounce'
+import PageLinkMenu from './PageLinkMenu.vue'
 
 const props = defineProps<{
   blockId: string
@@ -32,14 +34,58 @@ let savedFromOutside = false
 
 const { navigateToPage } = useNavigateToPage()
 
-// 防抖保存（300ms）
 const debouncedEmitSave = debounce((content: string) => {
   emit('save', content)
 }, 300)
 
+const menuVisible = ref(false)
+const menuPosition = ref({ x: 0, y: 0 })
+const menuRange = ref({ from: 0, to: 0 })
+const menuRef = ref<InstanceType<typeof PageLinkMenu> | null>(null)
+
 function handleWikiLinkClick(event: Event) {
   const customEvent = event as CustomEvent<{ pageName: string }>
   navigateToPage(customEvent.detail.pageName)
+}
+
+function handleWikiLinkTrigger(event: Event) {
+  const customEvent = event as CustomEvent<{
+    view: any
+    position: number
+    range: { from: number; to: number }
+  }>
+
+  const { view, position, range } = customEvent.detail
+  const coords = view.coordsAtPos(position)
+
+  menuPosition.value = { x: coords.left, y: coords.bottom + 8 }
+  menuRange.value = range
+  menuVisible.value = true
+
+  // 从编辑器中提取 [[]] 之间的内容
+  const state = view.state
+  const contentBetween = state.doc.textBetween(range.from + 2, range.to - 2)
+
+  nextTick(() => {
+    menuRef.value?.updateQuery(contentBetween)
+  })
+}
+
+function handleWikiLinkSelect(pageName: string) {
+  if (!editor.value) return
+
+  editor.value.chain()
+    .deleteRange(menuRange.value)
+    .insertContent(`[[${pageName}]]`)
+    .setTextSelection(menuRange.value.from + pageName.length + 4)
+    .focus()
+    .run()
+
+  menuVisible.value = false
+}
+
+function handleWikiLinkClose() {
+  menuVisible.value = false
 }
 
 function handleEnterAsBlock(event: Event) {
@@ -91,6 +137,7 @@ const editor = shallowRef(useEditor({
     SlashCommandExtension,
     EnterAsBlockExtension,
     WikiLinkExtension,
+    WikiLinkTriggerExtension,
     BracketPairExtension,
   ],
   content: textToHtml(props.content),
@@ -109,7 +156,6 @@ const editor = shallowRef(useEditor({
     if (editor.value) {
       const { from } = editor.value.state.selection
       emit('cursor-change', from)
-      // 防抖保存：用户输入 300ms 后自动触发保存
       debouncedEmitSave(editor.value.getText())
     }
   }
@@ -133,6 +179,7 @@ onBeforeUnmount(() => {
     const view = editor.value?.view
     if (view) {
       view.dom.removeEventListener('wiki-link-click', handleWikiLinkClick as EventListener)
+      view.dom.removeEventListener('wiki-link-trigger', handleWikiLinkTrigger as EventListener)
       view.dom.removeEventListener('enter-as-block', handleEnterAsBlock as EventListener)
     }
   } catch (err) {
@@ -152,6 +199,7 @@ onMounted(() => {
   nextTick(() => {
     if (editor.value?.view) {
       editor.value.view.dom.addEventListener('wiki-link-click', handleWikiLinkClick as EventListener)
+      editor.value.view.dom.addEventListener('wiki-link-trigger', handleWikiLinkTrigger as EventListener)
       editor.value.view.dom.addEventListener('enter-as-block', handleEnterAsBlock as EventListener)
     }
   })
@@ -196,6 +244,14 @@ defineExpose({ syncContent, focus, getText: () => editor.value?.getText() ?? '',
 <template>
   <div class="editor-wrapper">
     <EditorContent :editor="editor" />
+    <PageLinkMenu
+      ref="menuRef"
+      :visible="menuVisible"
+      :position="menuPosition"
+      :range="menuRange"
+      @select="handleWikiLinkSelect"
+      @close="handleWikiLinkClose"
+    />
   </div>
 </template>
 
