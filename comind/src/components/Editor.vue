@@ -3,7 +3,7 @@ import { onBeforeUnmount, onMounted, watch, nextTick, shallowRef, ref } from 'vu
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import { WikiLinkExtension } from '../extensions/WikiLinkExtension'
-import { WikiLinkTriggerExtension } from '../extensions/WikiLinkTriggerExtension'
+import { WikiLinkTriggerExtension, notifyWikiLinkMenuSelect } from '../extensions/WikiLinkTriggerExtension'
 import EnterAsBlockExtension from '../extensions/EnterAsBlockExtension'
 import BracketPairExtension from '../extensions/BracketPairExtension'
 import { SlashCommandExtension } from '../extensions/SlashCommandExtension'
@@ -41,6 +41,7 @@ const debouncedEmitSave = debounce((content: string) => {
 const menuVisible = ref(false)
 const menuPosition = ref({ x: 0, y: 0 })
 const menuRange = ref({ from: 0, to: 0 })
+const menuQuery = ref('')
 const menuRef = ref<InstanceType<typeof PageLinkMenu> | null>(null)
 
 function handleWikiLinkClick(event: Event) {
@@ -53,38 +54,89 @@ function handleWikiLinkTrigger(event: Event) {
     view: any
     position: number
     range: { from: number; to: number }
+    query: string
   }>
 
-  const { view, position, range } = customEvent.detail
+  const { view, position, range, query } = customEvent.detail
   const coords = view.coordsAtPos(position)
 
   menuPosition.value = { x: coords.left, y: coords.bottom + 8 }
   menuRange.value = range
+  menuQuery.value = query
   menuVisible.value = true
+}
 
-  // 从编辑器中提取 [[]] 之间的内容
-  const state = view.state
-  const contentBetween = state.doc.textBetween(range.from + 2, range.to - 2)
+function handleWikiLinkUpdate(event: Event) {
+  const customEvent = event as CustomEvent<{
+    query: string
+  }>
 
-  nextTick(() => {
-    menuRef.value?.updateQuery(contentBetween)
-  })
+  menuQuery.value = customEvent.detail.query
+}
+
+function handleWikiLinkClose() {
+  menuVisible.value = false
+}
+
+function handleWikiLinkMenuEnter() {
+  menuRef.value?.confirmSelect()
+}
+
+function handleWikiLinkMenuEscape() {
+  menuRef.value?.close()
+}
+
+function handleWikiLinkMenuArrowDown() {
+  menuRef.value?.selectNext()
+}
+
+function handleWikiLinkMenuArrowUp() {
+  menuRef.value?.selectPrev()
 }
 
 function handleWikiLinkSelect(pageName: string) {
   if (!editor.value) return
 
+  notifyWikiLinkMenuSelect()
+
+  const state = editor.value.state
+  const selection = state.selection
+  const cursorPos = selection.from
+
+  // 反向扫描找到 [[ 的起始位置
+  let from = cursorPos - 1
+  while (from >= 0) {
+    if (from >= 1 && state.doc.textBetween(from - 1, from + 1) === '[[' ) {
+      from = from - 1
+      break
+    }
+    from--
+  }
+  if (from < 0) from = 0 // 兜底
+
+  // 正向扫描找到可能的 ]]
+  let to = cursorPos
+  while (to < state.doc.content.size - 1) {
+    if (state.doc.textBetween(to, to + 2) === ']]') {
+      to = to + 2
+      break
+    }
+    // 如果遇到空格或换行，可能表示链接结束
+    const char = state.doc.textBetween(to, to + 1)
+    if (char === ' ' || char === '\n' || char === '\r') {
+      break
+    }
+    to++
+  }
+  if (to > state.doc.content.size) to = state.doc.content.size // 兜底
+
   editor.value.chain()
-    .deleteRange(menuRange.value)
+    .deleteRange({ from, to })
     .insertContent(`[[${pageName}]]`)
-    .setTextSelection(menuRange.value.from + pageName.length + 4)
+    .setTextSelection(from + pageName.length + 4)
     .focus()
     .run()
 
-  menuVisible.value = false
-}
-
-function handleWikiLinkClose() {
   menuVisible.value = false
 }
 
@@ -175,11 +227,18 @@ watch(
 
 onBeforeUnmount(() => {
   savedFromOutside = false
+  
   try {
     const view = editor.value?.view
     if (view) {
       view.dom.removeEventListener('wiki-link-click', handleWikiLinkClick as EventListener)
       view.dom.removeEventListener('wiki-link-trigger', handleWikiLinkTrigger as EventListener)
+      view.dom.removeEventListener('wiki-link-update', handleWikiLinkUpdate as EventListener)
+      view.dom.removeEventListener('wiki-link-close', handleWikiLinkClose as EventListener)
+      view.dom.removeEventListener('wiki-link-menu-enter', handleWikiLinkMenuEnter as EventListener)
+      view.dom.removeEventListener('wiki-link-menu-escape', handleWikiLinkMenuEscape as EventListener)
+      view.dom.removeEventListener('wiki-link-menu-arrowdown', handleWikiLinkMenuArrowDown as EventListener)
+      view.dom.removeEventListener('wiki-link-menu-arrowup', handleWikiLinkMenuArrowUp as EventListener)
       view.dom.removeEventListener('enter-as-block', handleEnterAsBlock as EventListener)
     }
   } catch (err) {
@@ -200,6 +259,12 @@ onMounted(() => {
     if (editor.value?.view) {
       editor.value.view.dom.addEventListener('wiki-link-click', handleWikiLinkClick as EventListener)
       editor.value.view.dom.addEventListener('wiki-link-trigger', handleWikiLinkTrigger as EventListener)
+      editor.value.view.dom.addEventListener('wiki-link-update', handleWikiLinkUpdate as EventListener)
+      editor.value.view.dom.addEventListener('wiki-link-close', handleWikiLinkClose as EventListener)
+      editor.value.view.dom.addEventListener('wiki-link-menu-enter', handleWikiLinkMenuEnter as EventListener)
+      editor.value.view.dom.addEventListener('wiki-link-menu-escape', handleWikiLinkMenuEscape as EventListener)
+      editor.value.view.dom.addEventListener('wiki-link-menu-arrowdown', handleWikiLinkMenuArrowDown as EventListener)
+      editor.value.view.dom.addEventListener('wiki-link-menu-arrowup', handleWikiLinkMenuArrowUp as EventListener)
       editor.value.view.dom.addEventListener('enter-as-block', handleEnterAsBlock as EventListener)
     }
   })
@@ -249,6 +314,7 @@ defineExpose({ syncContent, focus, getText: () => editor.value?.getText() ?? '',
       :visible="menuVisible"
       :position="menuPosition"
       :range="menuRange"
+      :query="menuQuery"
       @select="handleWikiLinkSelect"
       @close="handleWikiLinkClose"
     />

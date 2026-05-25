@@ -47,6 +47,15 @@ export const WikiLinkExtension = Extension.create({
             const link = target.closest('.wiki-link')
             if (!link) return false
 
+            // 检查点击是否发生在编辑器内部
+            const editorContainer = view.dom.closest('[contenteditable="true"]')
+            const isInEditor = editorContainer !== null
+
+            // 如果在编辑器内部（编辑状态），不触发点击跳转
+            if (isInEditor) {
+              return false
+            }
+
             // 阻止默认点击行为
             event.preventDefault()
             event.stopPropagation()

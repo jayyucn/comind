@@ -1,110 +1,116 @@
-<script setup lang="ts">import { ref, computed, watch, nextTick, onUnmounted } from 'vue';
+<script setup lang="ts">
+import { ref, computed, watch, onUnmounted } from 'vue';
 import { usePageStore } from '../stores/pages';
 import { pushModal, popModal } from '../composables/useModalKeyboard';
+
 const props = defineProps<{
- visible: boolean;
- position: {
- x: number;
- y: number;
- };
- range: {
- from: number;
- to: number;
- };
+  visible: boolean;
+  position: {
+    x: number;
+    y: number;
+  };
+  range: {
+    from: number;
+    to: number;
+  };
+  query: string;
 }>();
+
 const emit = defineEmits<{
- (e: 'select', pageName: string): void;
- (e: 'close'): void;
+  (e: 'select', pageName: string): void;
+  (e: 'close'): void;
 }>();
+
 const pageStore = usePageStore();
-const searchInputRef = ref<HTMLInputElement | null>(null);
-watch(() => props.visible, (isVisible) => {
- if (isVisible) {
- pushModal('wiki-link-menu');
- nextTick(() => {
- searchInputRef.value?.focus();
- });
- } else {
- popModal('wiki-link-menu');
- }
-});
-onUnmounted(() => {
- popModal('wiki-link-menu');
-});
-const query = ref('');
 const selectedIndex = ref(0);
+
+watch(() => props.visible, (isVisible) => {
+  if (isVisible) {
+    pushModal('wiki-link-menu')
+    selectedIndex.value = 0
+  } else {
+    popModal('wiki-link-menu')
+  }
+})
+
+onUnmounted(() => {
+  popModal('wiki-link-menu')
+})
+
+watch(() => props.query, () => {
+  selectedIndex.value = 0
+})
+
 const filteredPages = computed(() => {
- if (!query.value) {
- return pageStore.pages
- .filter(p => !p.deleted)
- .sort((a, b) => b.updatedAt - a.updatedAt)
- .slice(0, 10);
- }
- return pageStore.pages
- .filter(p => !p.deleted && p.title.toLowerCase().includes(query.value.toLowerCase()))
- .sort((a, b) => b.updatedAt - a.updatedAt);
+  if (!props.query) {
+    return pageStore.pages
+      .filter(p => !p.deleted)
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, 10);
+  }
+  return pageStore.pages
+    .filter(p => !p.deleted && p.title.toLowerCase().includes(props.query.toLowerCase()))
+    .sort((a, b) => b.updatedAt - a.updatedAt);
 });
+
 const menuItems = computed(() => {
- const items: Array<{
- type: 'page' | 'create';
- title: string;
- pageId?: string;
- }> = [];
- filteredPages.value.forEach(page => {
- items.push({
- type: 'page',
- title: page.title,
- pageId: page.id
- });
- });
- if (query.value.trim()) {
- const exists = filteredPages.value.some(p => p.title.toLowerCase() === query.value.toLowerCase());
- if (!exists) {
- items.push({
- type: 'create',
- title: query.value.trim()
- });
- }
- }
- return items;
+  const items: Array<{
+    type: 'page' | 'create';
+    title: string;
+    pageId?: string;
+  }> = [];
+
+  filteredPages.value.forEach(page => {
+    items.push({
+      type: 'page',
+      title: page.title,
+      pageId: page.id
+    });
+  });
+
+  if (props.query.trim()) {
+    const exists = filteredPages.value.some(p => p.title.toLowerCase() === props.query.toLowerCase());
+    if (!exists) {
+      items.push({
+        type: 'create',
+        title: props.query.trim()
+      });
+    }
+  }
+
+  return items;
 });
+
 function selectItem(item: typeof menuItems.value[0]) {
- if (item.type === 'page') {
- emit('select', item.title);
- }
- else {
- emit('select', item.title);
- }
+  emit('select', item.title);
 }
-function handleKeyDown(event: KeyboardEvent) {
- if (!props.visible)
- return;
- switch (event.key) {
- case 'ArrowDown':
- event.preventDefault();
- selectedIndex.value = Math.min(selectedIndex.value + 1, menuItems.value.length - 1);
- break;
- case 'ArrowUp':
- event.preventDefault();
- selectedIndex.value = Math.max(selectedIndex.value - 1, 0);
- break;
- case 'Enter':
- event.preventDefault();
- if (menuItems.value[selectedIndex.value]) {
- selectItem(menuItems.value[selectedIndex.value]);
- }
- break;
- case 'Escape':
- event.preventDefault();
- emit('close');
- break;
- }
+
+function selectNext() {
+  if (menuItems.value.length > 0) {
+    selectedIndex.value = Math.min(selectedIndex.value + 1, menuItems.value.length - 1);
+  }
 }
-function updateQuery(newQuery: string) {
- query.value = newQuery;
- selectedIndex.value = 0;
+
+function selectPrev() {
+  if (menuItems.value.length > 0) {
+    selectedIndex.value = Math.max(selectedIndex.value - 1, 0);
+  }
 }
-defineExpose({ updateQuery });
+
+function confirmSelect() {
+  if (menuItems.value.length === 0 || !menuItems.value[selectedIndex.value]) {
+    emit('close')
+    return
+  }
+  
+  selectItem(menuItems.value[selectedIndex.value])
+}
+
+function close() {
+  emit('close');
+}
+
+defineExpose({ selectNext, selectPrev, confirmSelect, close });
 </script>
 
 <template>
@@ -114,15 +120,6 @@ defineExpose({ updateQuery });
         class="wiki-link-menu"
         :style="{ left: `${position.x}px`, top: `${position.y}px` }"
       >
-        <div class="wlm-header">
-          <input
-            ref="searchInputRef"
-            v-model="query"
-            class="wlm-search"
-            placeholder="Search or create page..."
-            @keydown="handleKeyDown"
-          />
-        </div>
         <div class="wlm-body">
           <div v-if="menuItems.length === 0" class="wlm-empty">
             <span v-if="!query">No pages yet</span>
@@ -166,26 +163,6 @@ defineExpose({ updateQuery });
   flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--border-color, #E7E5E4);
-}
-
-.wlm-header {
-  padding: 8px;
-  border-bottom: 1px solid var(--border-color, #E7E5E4);
-}
-
-.wlm-search {
-  width: 100%;
-  border: 1px solid var(--border-color, #E7E5E4);
-  border-radius: 4px;
-  padding: 8px 12px;
-  font-size: 14px;
-  outline: none;
-  background: var(--bg-primary, #fff);
-  box-sizing: border-box;
-}
-
-.wlm-search:focus {
-  border-color: var(--accent-color, #2563EB);
 }
 
 .wlm-body {
