@@ -24,10 +24,12 @@ import { useBlockRegistry } from '../../composables/useBlockRegistry'
 import './handlers/bullet'
 import './handlers/code'
 import './handlers/image'
+import './handlers/embed'
 import PropertyDisplay from './PropertyDisplay.vue'
 import PropertyInline from './PropertyInline.vue'
 
 import { usePageStore } from '../../stores/pages'
+import BlockSelector from '../BlockSelector.vue'
 import { isDescendantOf } from '../../utils/block-helpers'
 import { computeDropZone, computeSortPosition } from '../../composables/useDragDrop'
 import type { TreeNode, Block } from '../../types/block'
@@ -50,6 +52,13 @@ const propertyStore = usePropertyStore()
 const pageStore = usePageStore()
 const { navigateToPage } = useNavigateToPage()
 const { getHandler } = useBlockRegistry()
+
+const showBlockSelector = ref(false)
+
+function handleEmbedSelect(sourceBlockId: string, sourcePageId: string) {
+  blockStore.updateBlockProperties(blockId.value, { sourceBlockId, sourcePageId })
+  showBlockSelector.value = false
+}
 
 // 获取当前 block 的优先级
 const blockPriority = computed(() => {
@@ -84,15 +93,29 @@ const block = computed(() => props.node.block)
 const isActive = computed(() => editorStore.activeBlockId === blockId.value)
 const hasSelectedAncestor = computed(() => {
   if (!selection) return false
-  const parentId = block.value.parentId
-  if (!parentId) return false
-  return selection.isBlockSelected(parentId)
+  let currentParentId = block.value.parentId
+  while (currentParentId) {
+    if (selection.isBlockSelected(currentParentId)) {
+      return true
+    }
+    const parentBlock = blockStore.blocks.find(b => b.id === currentParentId)
+    currentParentId = parentBlock?.parentId ?? null
+  }
+  return false
 })
 const isSelected = computed(() => {
   if (!selection) return false
   return selection.isBlockSelected(blockId.value)
 })
 const handler = computed(() => getHandler(block.value.type))
+
+const editContent = computed(() => {
+  if (handler.value?.type === 'embed') {
+    const sourceBlock = blockStore.blocks.find(b => b.id === block.value.properties.sourceBlockId)
+    return sourceBlock?.content ?? ''
+  }
+  return block.value.content
+})
 
 /** 页面是否仅有一个空 Block（唯一场景显示 placeholder） */
 const isSingleEmptyBlock = computed(() => {
@@ -318,6 +341,13 @@ function getCaretPositionFromPoint(x: number, y: number): number | null {
 }
 
 async function handleSave(content: string) {
+  if (handler.value?.type === 'embed') {
+    const sourceBlock = blockStore.blocks.find(b => b.id === block.value.properties.sourceBlockId)
+    if (sourceBlock) {
+      await blockStore.updateBlockContent(sourceBlock.id, content)
+      return
+    }
+  }
   await blockStore.updateBlockContent(blockId.value, content)
 }
 
@@ -412,6 +442,11 @@ function handleCursorChange(pos: number) {
 }
 
 function handleContentClick(e: MouseEvent) {
+  if (handler.value?.type === 'embed') {
+    showBlockSelector.value = true
+    return
+  }
+
   const target = e.target as HTMLElement
 
   const link = target.closest('.block-link') as HTMLElement | null
@@ -742,7 +777,8 @@ async function handlePaste(e: ClipboardEvent) {
             :is="handler.editorComponent"
             ref="editorRef"
             :block-id="blockId"
-            :content="block.content"
+            :content="editContent"
+            :properties="block.properties"
             :language="block.properties.language"
             @save="handleSave"
             @split="handleSplit"
@@ -761,6 +797,7 @@ async function handlePaste(e: ClipboardEvent) {
             :is="handler.renderComponent"
             :block-id="blockId"
             :content="block.content"
+            :properties="block.properties"
             :language="block.properties.language"
             :show-placeholder="isSingleEmptyBlock"
             :readonly="true"
@@ -791,6 +828,7 @@ async function handlePaste(e: ClipboardEvent) {
       - v-if 只在有子节点时渲染
     -->
     <VueDraggable
+      v-if="block.type !== 'embed'"
       ref="draggableRef"
       v-model="node.children"
       tag="div"
@@ -812,6 +850,13 @@ async function handlePaste(e: ClipboardEvent) {
     >
       <Block v-for="child in node.children" :key="child.id" :node="child" :page-id="pageId" :depth="depth + 1" />
     </VueDraggable>
+
+    <BlockSelector
+      :visible="showBlockSelector"
+      :exclude-block-id="blockId"
+      @select="handleEmbedSelect"
+      @close="showBlockSelector = false"
+    />
   </div>
 </template>
 

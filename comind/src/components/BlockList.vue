@@ -117,7 +117,7 @@ function handleDocKeyDown(e: KeyboardEvent) {
   if ((e.key === 'c' || e.key === 'C') && (e.ctrlKey || e.metaKey)) {
     if (selection.anchorIds.size > 0) {
       e.preventDefault()
-      selection.copyToClipboard()
+      selection.copyToClipboard(props.pageId)
     }
   }
 }
