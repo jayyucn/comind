@@ -6,9 +6,18 @@ const router = createRouter({
   routes,
 })
 
-router.beforeEach(async (to) => {
+router.beforeEach(async (to, from) => {
   // 跳过静态页面
   if (to.name === 'journal-list' || to.name === 'trash' || to.name === 'settings') {
+    return
+  }
+
+  // 防止无限重定向：如果我们正在从 page 重定向到 journal 或反之，直接放行
+  const isRedirectingBetweenPageAndJournal = 
+    (from.name === 'page' && to.name === 'journal-page') ||
+    (from.name === 'journal-page' && to.name === 'page')
+  
+  if (isRedirectingBetweenPageAndJournal) {
     return
   }
 
