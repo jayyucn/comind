@@ -1,6 +1,14 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { filterCommands, groupCommands, parseCommandInput, commands } from './useSlashCommands'
 import type { Command } from '../types/command'
+
+vi.mock('../stores/blocks', () => ({
+  useBlockStore: vi.fn(() => ({
+    updateBlockType: vi.fn(),
+    updateBlockContent: vi.fn(),
+    updateBlockProperties: vi.fn()
+  }))
+}))
 
 describe('filterCommands', () => {
   it('returns all commands when query is empty', () => {
@@ -205,4 +213,273 @@ describe('commands - completeness', () => {
     expect(formatCommands.some(c => c.id === 'bold')).toBe(true)
     expect(formatCommands.some(c => c.id === 'italic')).toBe(true)
   })
+
+  it('embed and image commands exist', () => {
+    const embedCmd = commands.find(c => c.id === 'embed')
+    expect(embedCmd).toBeDefined()
+    expect(embedCmd?.group).toBe('文本格式')
+    expect(embedCmd?.convertBlockType).toBe('embed')
+
+    const imageCmd = commands.find(c => c.id === 'image')
+    expect(imageCmd).toBeDefined()
+    expect(imageCmd?.group).toBe('文本格式')
+    expect(imageCmd?.convertBlockType).toBe('image')
+  })
+
+  it('immediate commands (todo, doing, done) exist with correct property keys', () => {
+    const todoCmd = commands.find(c => c.id === 'todo')
+    expect(todoCmd).toBeDefined()
+    expect(todoCmd?.propertyKey).toBe('status')
+    expect(todoCmd?.propertyValue).toBe('Todo')
+    expect(todoCmd?.immediate).toBe(true)
+
+    const doneCmd = commands.find(c => c.id === 'done')
+    expect(doneCmd).toBeDefined()
+    expect(doneCmd?.propertyKey).toBe('status')
+    expect(doneCmd?.propertyValue).toBe('Done')
+    expect(doneCmd?.immediate).toBe(true)
+  })
+
+  it('priority commands exist with correct property keys', () => {
+    const urgentCmd = commands.find(c => c.name === 'Urgent')
+    expect(urgentCmd).toBeDefined()
+    expect(urgentCmd?.propertyKey).toBe('priority')
+    expect(urgentCmd?.propertyValue).toBe('Urgent')
+    expect(urgentCmd?.immediate).toBe(true)
+  })
+
+  it('date commands (today, tomorrow, yesterday) have correct aliases', () => {
+    const todayCmd = commands.find(c => c.id === 'today')
+    expect(todayCmd).toBeDefined()
+    expect(todayCmd?.alias).toContain('今天')
+
+    const tomorrowCmd = commands.find(c => c.id === 'tomorrow')
+    expect(tomorrowCmd).toBeDefined()
+    expect(tomorrowCmd?.alias).toContain('明天')
+
+    const yesterdayCmd = commands.find(c => c.id === 'yesterday')
+    expect(yesterdayCmd).toBeDefined()
+    expect(yesterdayCmd?.alias).toContain('昨天')
+  })
+
+  it('page-ref command inserts [[]] with cursor at position 2', () => {
+    const pageRefCmd = commands.find(c => c.id === 'page-ref')
+    expect(pageRefCmd).toBeDefined()
+    expect(typeof pageRefCmd?.action).toBe('function')
+  })
 })
+
+describe('formatDate', () => {
+  it('formats date as YYYY-MM-DD', () => {
+    const date = new Date('2024-05-15T12:00:00')
+    const result = formatDate(date)
+    expect(result).toBe('2024-05-15')
+  })
+
+  it('pads single-digit month and day with leading zeros', () => {
+    const date = new Date('2024-01-05T12:00:00')
+    const result = formatDate(date)
+    expect(result).toBe('2024-01-05')
+  })
+
+  it('handles December correctly', () => {
+    const date = new Date('2024-12-25T12:00:00')
+    const result = formatDate(date)
+    expect(result).toBe('2024-12-25')
+  })
+})
+
+describe('insertEmbed action', () => {
+  it('should delete range and focus editor', () => {
+    const mockEditor = {
+      chain: vi.fn().mockReturnThis(),
+      deleteRange: vi.fn().mockReturnThis(),
+      focus: vi.fn().mockReturnThis(),
+      run: vi.fn()
+    }
+
+    const mockRange = { from: 10, to: 20 }
+    const mockBlockId = 'block-123'
+
+    const embedCmd = commands.find(c => c.id === 'embed')
+    expect(embedCmd).toBeDefined()
+
+    embedCmd!.action({
+      editor: mockEditor as any,
+      range: mockRange,
+      blockId: mockBlockId
+    })
+
+    expect(mockEditor.chain).toHaveBeenCalled()
+    expect(mockEditor.deleteRange).toHaveBeenCalledWith(mockRange)
+    expect(mockEditor.focus).toHaveBeenCalled()
+    expect(mockEditor.run).toHaveBeenCalled()
+  })
+
+  it('should handle missing blockId gracefully', () => {
+    const mockEditor = {
+      chain: vi.fn().mockReturnThis(),
+      deleteRange: vi.fn().mockReturnThis(),
+      focus: vi.fn().mockReturnThis(),
+      run: vi.fn()
+    }
+
+    const embedCmd = commands.find(c => c.id === 'embed')
+    embedCmd!.action({
+      editor: mockEditor as any,
+      range: { from: 10, to: 20 },
+      blockId: undefined
+    })
+
+    expect(mockEditor.chain).toHaveBeenCalled()
+    expect(mockEditor.deleteRange).toHaveBeenCalled()
+  })
+})
+
+describe('insertImage action', () => {
+  it('should delete range, focus editor, and update block type', async () => {
+    const mockEditor = {
+      chain: vi.fn().mockReturnThis(),
+      deleteRange: vi.fn().mockReturnThis(),
+      focus: vi.fn().mockReturnThis(),
+      insertContent: vi.fn().mockReturnThis(),
+      run: vi.fn()
+    }
+
+    const mockRange = { from: 10, to: 20 }
+    const mockBlockId = 'block-456'
+
+    const imageCmd = commands.find(c => c.id === 'image')
+    expect(imageCmd).toBeDefined()
+
+    imageCmd!.action({
+      editor: mockEditor as any,
+      range: mockRange,
+      blockId: mockBlockId
+    })
+
+    expect(mockEditor.chain).toHaveBeenCalled()
+    expect(mockEditor.deleteRange).toHaveBeenCalledWith(mockRange)
+    expect(mockEditor.focus).toHaveBeenCalled()
+    expect(mockEditor.run).toHaveBeenCalled()
+  })
+
+  it('should update block content with image placeholder via blockStore', async () => {
+    const { useBlockStore } = await import('../stores/blocks')
+    const mockUpdateBlockContent = vi.fn()
+    vi.mocked(useBlockStore).mockReturnValue({
+      updateBlockContent: mockUpdateBlockContent,
+      updateBlockType: vi.fn()
+    } as any)
+
+    const mockEditor = {
+      chain: vi.fn().mockReturnThis(),
+      deleteRange: vi.fn().mockReturnThis(),
+      focus: vi.fn().mockReturnThis(),
+      run: vi.fn()
+    }
+
+    const imageCmd = commands.find(c => c.id === 'image')
+    imageCmd!.action({
+      editor: mockEditor as any,
+      range: { from: 10, to: 20 },
+      blockId: 'block-789'
+    })
+
+    expect(mockUpdateBlockContent).toHaveBeenCalledWith('block-789', '![]()')
+  })
+})
+
+describe('insertFormat action', () => {
+  it('should wrap selected text with format markers', () => {
+    const mockEditor = {
+      chain: vi.fn().mockReturnThis(),
+      deleteRange: vi.fn().mockReturnThis(),
+      insertContent: vi.fn().mockReturnThis(),
+      setTextSelection: vi.fn().mockReturnThis(),
+      focus: vi.fn().mockReturnThis(),
+      run: vi.fn()
+    }
+
+    const boldCmd = commands.find(c => c.id === 'bold')
+    expect(boldCmd).toBeDefined()
+
+    const mockSelection = { from: 10, to: 20 }
+    mockEditor.state = {
+      selection: mockSelection,
+      doc: {
+        textBetween: vi.fn(() => 'selected text')
+      }
+    }
+
+    boldCmd!.action({
+      editor: mockEditor as any,
+      range: mockSelection,
+      blockId: 'block-123'
+    })
+
+    expect(mockEditor.insertContent).toHaveBeenCalledWith('**selected text**')
+  })
+
+  it('should insert placeholder when no text is selected', () => {
+    const mockEditor = {
+      chain: vi.fn().mockReturnThis(),
+      deleteRange: vi.fn().mockReturnThis(),
+      insertContent: vi.fn().mockReturnThis(),
+      setTextSelection: vi.fn().mockReturnThis(),
+      focus: vi.fn().mockReturnThis(),
+      run: vi.fn()
+    }
+
+    const italicCmd = commands.find(c => c.id === 'italic')
+    const mockRange = { from: 10, to: 10 }
+    mockEditor.state = {
+      selection: mockRange,
+      doc: {
+        textBetween: vi.fn(() => '')
+      }
+    }
+
+    italicCmd!.action({
+      editor: mockEditor as any,
+      range: mockRange,
+      blockId: 'block-123'
+    })
+
+    expect(mockEditor.insertContent).toHaveBeenCalled()
+    expect(mockEditor.setTextSelection).toHaveBeenCalled()
+  })
+})
+
+describe('insertPageRef action', () => {
+  it('should insert [[]] and set cursor at position 2', () => {
+    const mockEditor = {
+      chain: vi.fn().mockReturnThis(),
+      deleteRange: vi.fn().mockReturnThis(),
+      insertContent: vi.fn().mockReturnThis(),
+      setTextSelection: vi.fn().mockReturnThis(),
+      focus: vi.fn().mockReturnThis(),
+      run: vi.fn()
+    }
+
+    const pageRefCmd = commands.find(c => c.id === 'page-ref')
+    expect(pageRefCmd).toBeDefined()
+
+    const mockRange = { from: 10, to: 20 }
+    pageRefCmd!.action({
+      editor: mockEditor as any,
+      range: mockRange,
+      blockId: 'block-123'
+    })
+
+    expect(mockEditor.insertContent).toHaveBeenCalledWith('[[]]')
+    expect(mockEditor.setTextSelection).toHaveBeenCalledWith(12)
+  })
+})
+
+function formatDate(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
