@@ -42,33 +42,6 @@ export const WikiLinkExtension = Extension.create({
 
             return DecorationSet.create(doc, decorations)
           },
-          handleClick(view, _pos, event) {
-            const target = event.target as HTMLElement
-            const link = target.closest('.wiki-link')
-            if (!link) return false
-
-            // 检查点击是否发生在编辑器内部
-            const editorContainer = view.dom.closest('[contenteditable="true"]')
-            const isInEditor = editorContainer !== null
-
-            // 如果在编辑器内部（编辑状态），不触发点击跳转
-            if (isInEditor) {
-              return false
-            }
-
-            // 阻止默认点击行为
-            event.preventDefault()
-            event.stopPropagation()
-
-            // 触发自定义事件（由 Editor 组件监听）
-            const pageName = link.getAttribute('data-page') || ''
-            view.dom.dispatchEvent(new CustomEvent('wiki-link-click', {
-              bubbles: true,
-              detail: { pageName }
-            }))
-
-            return true
-          }
         }
       })
     ]
