@@ -205,6 +205,31 @@ export const WikiLinkTriggerExtension = Extension.create({
 
             return false
           },
+          handleDOMEvents: {
+            compositionend(view) {
+              if (selectingFromMenu) return false
+
+              setTimeout(() => {
+                const { state } = view
+                const cursorPos = state.selection.from
+                const result = findWikiLinkAtCursor(state.doc, cursorPos)
+
+                if (result.found && result.range) {
+                  if (!menuIsOpen) {
+                    triggerWikiLinkMenu(view, cursorPos, result.range, result.query)
+                  } else {
+                    const updateEvent = new CustomEvent<WikiLinkUpdateEvent>('wiki-link-update', {
+                      bubbles: true,
+                      detail: { query: result.query }
+                    })
+                    view.dom.dispatchEvent(updateEvent)
+                  }
+                }
+              }, 0)
+
+              return false
+            }
+          },
           handleClick(_view, _pos, _event) {
             const editorContainer = _view.dom.closest('[contenteditable="true"]')
             const isInEditor = editorContainer !== null
