@@ -246,8 +246,26 @@ export const WikiLinkTriggerExtension = Extension.create({
           }
         },
         view(_view) {
-
           return {
+            update(view, prevState) {
+              if (view.state.doc === prevState.doc) return
+
+              const { state } = view
+              const cursorPos = state.selection.from
+              const result = findWikiLinkAtCursor(state.doc, cursorPos)
+
+              if (result.found && result.range) {
+                if (!menuIsOpen) {
+                  triggerWikiLinkMenu(view, cursorPos, result.range, result.query)
+                } else {
+                  const updateEvent = new CustomEvent<WikiLinkUpdateEvent>('wiki-link-update', {
+                    bubbles: true,
+                    detail: { query: result.query }
+                  })
+                  view.dom.dispatchEvent(updateEvent)
+                }
+              }
+            },
             destroy() {
               setTimeout(() => {
                 menuIsOpen = false
