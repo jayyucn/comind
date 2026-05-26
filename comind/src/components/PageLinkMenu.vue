@@ -54,6 +54,9 @@ const filteredPages = computed(() => {
     .sort((a, b) => {
       const aTitle = a.title.toLowerCase();
       const bTitle = b.title.toLowerCase();
+      const aExact = aTitle === q ? 0 : 1;
+      const bExact = bTitle === q ? 0 : 1;
+      if (aExact !== bExact) return aExact - bExact;
       const aStartsWith = aTitle.startsWith(q) ? 0 : 1;
       const bStartsWith = bTitle.startsWith(q) ? 0 : 1;
       if (aStartsWith !== bStartsWith) return aStartsWith - bStartsWith;
