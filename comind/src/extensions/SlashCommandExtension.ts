@@ -8,6 +8,12 @@ function isInURL(doc: any, pos: number): boolean {
   const $pos = doc.resolve(pos)
   const textBefore = $pos.nodeBefore?.text || ''
 
+  //检测是否在 [[[...]] 中
+  if (textBefore.match(/\[\[([^\[\]]*)/)){
+    const textAfter = $pos.nodeAfter?.text || ''
+    if (textAfter.match(/[^\[\]]*\]\]/)) return true
+  }
+
   // 检查前面是否有 ://（URL 协议）
   if (textBefore.match(/https?:\/\/[^\s]*$/)) return true
   if (textBefore.match(/ftp:\/\/[^\s]*$/)) return true
