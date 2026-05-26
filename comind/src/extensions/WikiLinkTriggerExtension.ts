@@ -1,6 +1,5 @@
 import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
-import { DecorationSet } from '@tiptap/pm/view'
 
 export interface WikiLinkTriggerEvent {
   view: any
@@ -11,19 +10,6 @@ export interface WikiLinkTriggerEvent {
 
 export interface WikiLinkUpdateEvent {
   query: string
-}
-
-function dispatchWikiLinkUpdateEvent(view: any) {
-  setTimeout(() => {
-    const { state } = view
-    const cursorPos = state.selection.from
-    const result = findWikiLinkAtCursor(state.doc, cursorPos)
-    const updateEvent = new CustomEvent<WikiLinkUpdateEvent>('wiki-link-update', {
-      bubbles: true,
-      detail: { query: result.query }
-    })
-    view.dom.dispatchEvent(updateEvent)
-  }, 0)
 }
 
 export interface WikiLinkCloseEvent {
@@ -46,10 +32,6 @@ export function notifyWikiLinkMenuSelect() {
   }, 100)
 }
 
-/**
- * 在文档中查找光标位置处的 Wiki 链接
- * 支持：[[page]]、[[page|display]]、[[page（未闭合）
- */
 export function findWikiLinkAtCursor(
   doc: any,
   pos: number
@@ -81,13 +63,18 @@ export function findWikiLinkAtCursor(
     }
   })
 
-  linkRegex.lastIndex = 0
   return result
 }
 
-/**
- * 统一触发 WikiLink 菜单显示
- */
+function closeWikiLinkMenu(view: any) {
+  menuIsOpen = false
+  const closeEvent = new CustomEvent<WikiLinkCloseEvent>('wiki-link-close', {
+    bubbles: true,
+    detail: { reason: 'cursor-move' }
+  })
+  view.dom.dispatchEvent(closeEvent)
+}
+
 function triggerWikiLinkMenu(
   view: any,
   position: number,
@@ -103,6 +90,23 @@ function triggerWikiLinkMenu(
   view.dom.dispatchEvent(triggerEvent)
 }
 
+function handleWikiLinkDetection(view: any) {
+  const { state } = view
+  const cursorPos = state.selection.from
+  const result = findWikiLinkAtCursor(state.doc, cursorPos)
+
+  if (result.found && result.range) {
+    if (!menuIsOpen) {
+      triggerWikiLinkMenu(view, cursorPos, result.range, result.query)
+    } else {
+      const updateEvent = new CustomEvent<WikiLinkUpdateEvent>('wiki-link-update', {
+        bubbles: true,
+        detail: { query: result.query }
+      })
+      view.dom.dispatchEvent(updateEvent)
+    }
+  }
+}
 
 export const WikiLinkTriggerExtension = Extension.create({
   name: 'wikiLinkTrigger',
@@ -115,54 +119,26 @@ export const WikiLinkTriggerExtension = Extension.create({
           handleKeyDown: (view, event) => {
             if (event.key === '[') {
               const { state } = view
-              const selection = state.selection
-              const pos = selection.from
-
-              const $pos = state.doc.resolve(pos)
+              const $pos = state.doc.resolve(state.selection.from)
               const textBefore = $pos.nodeBefore?.text || ''
 
               if (textBefore.endsWith('[')) {
                 setTimeout(() => {
-                  const { state } = view
-                  const pos = state.selection.from
-                  let from = pos - 2
-                  let to = pos
-
-                  if (pos < state.doc.content.size) {
-                    const charAfter = state.doc.textBetween(pos, pos + 1)
-                    if (charAfter === ']') {
-                      to = pos + 1
-                    }
-                  }
-
-                  const textAtRange = state.doc.textBetween(from, to)
-                  const queryMatch = textAtRange.match(/^\[\[(.*?)\]/)
-                  const query = queryMatch ? queryMatch[1] : ''
-
-                  menuIsOpen = true
-
-                  const triggerEvent = new CustomEvent<WikiLinkTriggerEvent>('wiki-link-trigger', {
-                    bubbles: true,
-                    detail: { view, position: pos, range: { from, to }, query }
-                  })
-                  view.dom.dispatchEvent(triggerEvent)
+                  handleWikiLinkDetection(view)
                 }, 0)
               }
             }
 
             if (menuIsOpen) {
               if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-                menuIsOpen = false
-                const closeEvent = new CustomEvent<WikiLinkCloseEvent>('wiki-link-close', {
-                  bubbles: true,
-                  detail: { reason: 'cursor-move' }
-                })
-                view.dom.dispatchEvent(closeEvent)
+                closeWikiLinkMenu(view)
                 return true
               }
 
               if (event.key === 'Backspace') {
-                dispatchWikiLinkUpdateEvent(view)
+                setTimeout(() => {
+                  handleWikiLinkDetection(view)
+                }, 0)
               }
 
               if (event.key === 'Enter' || event.key === 'Escape' || event.key === 'ArrowUp' || event.key === 'ArrowDown') {
@@ -186,21 +162,7 @@ export const WikiLinkTriggerExtension = Extension.create({
             if (selectingFromMenu) return false
 
             setTimeout(() => {
-              const { state } = view
-              const cursorPos = state.selection.from
-              const result = findWikiLinkAtCursor(state.doc, cursorPos)
-
-              if (result.found && result.range) {
-                if (!menuIsOpen) {
-                  triggerWikiLinkMenu(view, cursorPos, result.range, result.query)
-                } else {
-                  const updateEvent = new CustomEvent<WikiLinkUpdateEvent>('wiki-link-update', {
-                    bubbles: true,
-                    detail: { query: result.query }
-                  })
-                  view.dom.dispatchEvent(updateEvent)
-                }
-              }
+              handleWikiLinkDetection(view)
             }, 0)
 
             return false
@@ -210,37 +172,18 @@ export const WikiLinkTriggerExtension = Extension.create({
               if (selectingFromMenu) return false
 
               setTimeout(() => {
-                const { state } = view
-                const cursorPos = state.selection.from
-                const result = findWikiLinkAtCursor(state.doc, cursorPos)
-
-                if (result.found && result.range) {
-                  if (!menuIsOpen) {
-                    triggerWikiLinkMenu(view, cursorPos, result.range, result.query)
-                  } else {
-                    const updateEvent = new CustomEvent<WikiLinkUpdateEvent>('wiki-link-update', {
-                      bubbles: true,
-                      detail: { query: result.query }
-                    })
-                    view.dom.dispatchEvent(updateEvent)
-                  }
-                }
+                handleWikiLinkDetection(view)
               }, 0)
 
               return false
             }
           },
-          handleClick(_view, _pos, _event) {
-            const editorContainer = _view.dom.closest('[contenteditable="true"]')
-            const isInEditor = editorContainer !== null
+          handleClick(view, pos, event) {
+            if (!menuIsOpen) return false
 
-            if (!isInEditor && menuIsOpen) {
-              menuIsOpen = false
-              const closeEvent = new CustomEvent<WikiLinkCloseEvent>('wiki-link-close', {
-                bubbles: true,
-                detail: { reason: 'cursor-move' }
-              })
-              _view.dom.dispatchEvent(closeEvent)
+            const result = findWikiLinkAtCursor(view.state.doc, pos)
+            if (!result.found) {
+              closeWikiLinkMenu(view)
             }
             return false
           }
@@ -250,26 +193,10 @@ export const WikiLinkTriggerExtension = Extension.create({
             update(view, prevState) {
               if (view.state.doc === prevState.doc) return
 
-              const { state } = view
-              const cursorPos = state.selection.from
-              const result = findWikiLinkAtCursor(state.doc, cursorPos)
-
-              if (result.found && result.range) {
-                if (!menuIsOpen) {
-                  triggerWikiLinkMenu(view, cursorPos, result.range, result.query)
-                } else {
-                  const updateEvent = new CustomEvent<WikiLinkUpdateEvent>('wiki-link-update', {
-                    bubbles: true,
-                    detail: { query: result.query }
-                  })
-                  view.dom.dispatchEvent(updateEvent)
-                }
-              }
+              handleWikiLinkDetection(view)
             },
             destroy() {
-              setTimeout(() => {
-                menuIsOpen = false
-              }, 0)
+              menuIsOpen = false
             }
           }
         }
@@ -277,7 +204,3 @@ export const WikiLinkTriggerExtension = Extension.create({
     ]
   }
 })
-
-export function setMenuOpen(open: boolean) {
-  menuIsOpen = open
-}
