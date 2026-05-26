@@ -42,7 +42,15 @@ export const WikiLinkExtension = Extension.create({
 
             return DecorationSet.create(doc, decorations)
           },
-        }
+        },
+        state: {
+          init() {
+            return DecorationSet.empty
+          },
+          apply(tr, prev) {
+            return prev.map(tr.mapping, tr.doc)
+          }
+        },
       })
     ]
   }
