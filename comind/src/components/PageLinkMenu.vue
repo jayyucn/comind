@@ -48,9 +48,18 @@ const filteredPages = computed(() => {
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .slice(0, 10);
   }
+  const q = props.query.toLowerCase();
   return pageStore.pages
-    .filter(p => !p.deleted && p.title.toLowerCase().includes(props.query.toLowerCase()))
-    .sort((a, b) => b.updatedAt - a.updatedAt);
+    .filter(p => !p.deleted && p.title.toLowerCase().includes(q))
+    .sort((a, b) => {
+      const aTitle = a.title.toLowerCase();
+      const bTitle = b.title.toLowerCase();
+      const aStartsWith = aTitle.startsWith(q) ? 0 : 1;
+      const bStartsWith = bTitle.startsWith(q) ? 0 : 1;
+      if (aStartsWith !== bStartsWith) return aStartsWith - bStartsWith;
+      return b.updatedAt - a.updatedAt;
+    })
+    .slice(0, 10);
 });
 
 const menuItems = computed(() => {
