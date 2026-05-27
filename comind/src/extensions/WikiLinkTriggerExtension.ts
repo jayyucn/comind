@@ -105,6 +105,8 @@ function handleWikiLinkDetection(view: any) {
       })
       view.dom.dispatchEvent(updateEvent)
     }
+  } else if (menuIsOpen) {
+    closeWikiLinkMenu(view)
   }
 }
 
@@ -132,7 +134,7 @@ export const WikiLinkTriggerExtension = Extension.create({
             if (menuIsOpen) {
               if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
                 closeWikiLinkMenu(view)
-                return true
+                return false
               }
 
               if (event.key === 'Backspace') {
@@ -178,8 +180,16 @@ export const WikiLinkTriggerExtension = Extension.create({
               return false
             }
           },
-          handleClick(view, pos, event) {
+          handleClick(view, pos, _event) {
             if (!menuIsOpen) return false
+
+            const editorContainer = view.dom.closest('[contenteditable="true"]')
+            const isInEditor = editorContainer !== null
+
+            if (!isInEditor) {
+              closeWikiLinkMenu(view)
+              return false
+            }
 
             const result = findWikiLinkAtCursor(view.state.doc, pos)
             if (!result.found) {

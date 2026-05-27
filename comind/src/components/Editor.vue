@@ -44,11 +44,6 @@ const menuRange = ref({ from: 0, to: 0 })
 const menuQuery = ref('')
 const menuRef = ref<InstanceType<typeof PageLinkMenu> | null>(null)
 
-function handleWikiLinkClick(event: Event) {
-  const customEvent = event as CustomEvent<{ pageName: string }>
-  navigateToPage(customEvent.detail.pageName)
-}
-
 function handleWikiLinkTrigger(event: Event) {
   const customEvent = event as CustomEvent<{
     view: any
@@ -231,7 +226,6 @@ onBeforeUnmount(() => {
   try {
     const view = editor.value?.view
     if (view) {
-      view.dom.removeEventListener('wiki-link-click', handleWikiLinkClick as EventListener)
       view.dom.removeEventListener('wiki-link-trigger', handleWikiLinkTrigger as EventListener)
       view.dom.removeEventListener('wiki-link-update', handleWikiLinkUpdate as EventListener)
       view.dom.removeEventListener('wiki-link-close', handleWikiLinkClose as EventListener)
@@ -257,7 +251,6 @@ onBeforeUnmount(() => {
 onMounted(() => {
   nextTick(() => {
     if (editor.value?.view) {
-      editor.value.view.dom.addEventListener('wiki-link-click', handleWikiLinkClick as EventListener)
       editor.value.view.dom.addEventListener('wiki-link-trigger', handleWikiLinkTrigger as EventListener)
       editor.value.view.dom.addEventListener('wiki-link-update', handleWikiLinkUpdate as EventListener)
       editor.value.view.dom.addEventListener('wiki-link-close', handleWikiLinkClose as EventListener)
