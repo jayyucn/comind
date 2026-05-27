@@ -1,0 +1,99 @@
+// Design Token Semantic - 语义化层
+// 引用原始值，赋予功能语义
+
+@use 'primitives' as *;
+
+:root {
+  // 背景层级
+  --bg-base: #{$color-stone-50};
+  --bg-sidebar: #{$color-stone-100};
+  --bg-hover: #{$color-stone-200};
+  --bg-active: #{$color-stone-300};
+
+  // 文字层级
+  --text-primary: #{$color-stone-900};
+  --text-secondary: #{$color-stone-600};
+  --text-tertiary: #{$color-stone-500};
+  --text-disabled: #{$color-stone-400};
+
+  // 边框层级
+  --border: #{$color-stone-200};
+  --border-light: #{$color-stone-300};
+  --border-strong: #{$color-stone-400};
+
+  // 强调色
+  --accent: #{$color-amber-500};
+  --accent-hover: #{$color-amber-600};
+  --accent-subtle: #{$color-amber-100};
+  --accent-bg: #{$color-amber-100};
+
+  // 透明度变体
+  --accent-03: #{$accent-03};
+  --accent-06: #{$accent-06};
+  --accent-08: #{$accent-08};
+  --accent-10: #{$accent-10};
+  --accent-40: #{$accent-40};
+  --tag-10: #{$tag-10};
+  --tag-40: #{$tag-40};
+  --ext-40: #{$ext-40};
+  --overlay: #{$overlay};
+
+  // 间距
+  --space-1: #{$space-1};
+  --space-2: #{$space-2};
+  --space-3: #{$space-3};
+  --space-4: #{$space-4};
+  --space-5: #{$space-5};
+  --space-6: #{$space-6};
+  --space-8: #{$space-8};
+  --space-10: #{$space-10};
+  --space-12: #{$space-12};
+
+  // 圆角
+  --radius-sm: #{$radius-sm};
+  --radius-md: #{$radius-md};
+  --radius-lg: #{$radius-lg};
+
+  // 字号
+  --text-xs: #{$text-xs};
+  --text-sm: #{$text-sm};
+  --text-base: #{$text-base};
+  --text-lg: #{$text-lg};
+  --text-xl: #{$text-xl};
+  --text-2xl: #{$text-2xl};
+
+  // 字体
+  --font-sans: #{$font-sans};
+  --font-mono: #{$font-mono};
+
+  // 阴影
+  --shadow-focus: #{$shadow-focus};
+  --shadow-modal: #{$shadow-modal};
+  --shadow-elevation-1: #{$shadow-elevation-1};
+  --shadow-elevation-2: #{$shadow-elevation-2};
+
+  // 布局
+  --max-width: #{$max-width-content};
+  --sidebar-width: #{$sidebar-width};
+
+  // 兼容别名（从原 style.css 保留）
+  --color-paper: #FFFBF5;
+  --color-ink: #{$color-stone-900};
+  --color-ink-secondary: #{$color-stone-600};
+  --color-ink-muted: #{$color-stone-600};
+  --color-ink-faint: #{$color-stone-500};
+  --color-accent: #{$color-amber-500};
+  --color-accent-deep: #{$color-amber-600};
+  --color-accent-bg: #{$color-amber-100};
+  --color-border: #{$color-stone-200};
+  --color-border-light: #{$color-stone-300};
+  --color-border-strong: #{$color-stone-400};
+  --color-hover: #{$color-stone-200};
+  --color-surface: #{$color-stone-200};
+  --color-sidebar-bg: #{$color-stone-100};
+  --color-highlight: #{$color-amber-200};
+  --color-white: #FFFFFF;
+  --color-tag: #6366F1;
+  --color-external: #{$color-external};
+  --color-scrollbar: #{$color-stone-400};
+}

@@ -860,6 +860,5 @@ async function handlePaste(e: ClipboardEvent) {
   </div>
 </template>
 
-<style scoped>
-@import './styles.css';
+<style scoped lang="scss">
 </style>

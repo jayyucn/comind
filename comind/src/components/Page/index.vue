@@ -135,6 +135,5 @@ function handleCancelMerge() {
   </div>
 </template>
 
-<style scoped>
-@import './styles.css';
+<style scoped lang="scss">
 </style>

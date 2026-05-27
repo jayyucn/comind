@@ -1,0 +1,19 @@
+// comind 主样式入口
+// 使用 @use 导入所有模块
+
+// 设计令牌
+@use 'tokens/primitives' as *;
+@use 'tokens/semantic';
+@use 'tokens/components';
+
+// 基础样式
+@use 'base/reset';
+
+// Mixins
+@use 'mixins';
+
+// 组件样式
+@use 'components/block';
+@use 'components/page';
+@use 'components/sidebar';
+@use 'components/common';
