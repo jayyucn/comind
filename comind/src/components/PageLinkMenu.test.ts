@@ -297,4 +297,223 @@ describe('PageLinkMenu', () => {
       expect(menu.attributes('style')).toContain('top: 200px')
     })
   })
+
+  describe('搜索排序逻辑', () => {
+    test('空查询时按更新时间倒序排列，显示前10条', async () => {
+      const wrapper = mount(PageLinkMenu, {
+        props: {
+          visible: true,
+          position: { x: 100, y: 200 },
+          range: { from: 10, to: 20 },
+          query: ''
+        },
+        global: {
+          stubs: {
+            Teleport: { template: '<div><slot /></div>' }
+          }
+        }
+      })
+
+      await flushPromises()
+
+      const vm = wrapper.vm as any
+      const filteredPages = vm.filteredPages
+      
+      expect(filteredPages.length).toBe(10)
+      expect(filteredPages[0].title).toBe('Last Page')
+      expect(filteredPages[1].title).toBe('Test Page')
+    })
+
+    test('精确匹配的结果排在最前面', async () => {
+      const wrapper = mount(PageLinkMenu, {
+        props: {
+          visible: true,
+          position: { x: 100, y: 200 },
+          range: { from: 10, to: 20 },
+          query: 'Project'
+        },
+        global: {
+          stubs: {
+            Teleport: { template: '<div><slot /></div>' }
+          }
+        }
+      })
+
+      await flushPromises()
+
+      const vm = wrapper.vm as any
+      const filteredPages = vm.filteredPages
+      
+      expect(filteredPages[0].title).toBe('Project')
+      expect(filteredPages[1].title).toBe('PROJECT')
+    })
+
+    test('以查询词开头的结果排在精确匹配之后', async () => {
+      const wrapper = mount(PageLinkMenu, {
+        props: {
+          visible: true,
+          position: { x: 100, y: 200 },
+          range: { from: 10, to: 20 },
+          query: 'Proj'
+        },
+        global: {
+          stubs: {
+            Teleport: { template: '<div><slot /></div>' }
+          }
+        }
+      })
+
+      await flushPromises()
+
+      const vm = wrapper.vm as any
+      const filteredPages = vm.filteredPages
+      
+      expect(filteredPages[0].title).toBe('Proj')
+      expect(filteredPages[1].title).toBe('Project')
+      expect(filteredPages[2].title).toBe('PROJECT')
+    })
+
+    test('搜索不区分大小写', async () => {
+      const wrapper = mount(PageLinkMenu, {
+        props: {
+          visible: true,
+          position: { x: 100, y: 200 },
+          range: { from: 10, to: 20 },
+          query: 'project'
+        },
+        global: {
+          stubs: {
+            Teleport: { template: '<div><slot /></div>' }
+          }
+        }
+      })
+
+      await flushPromises()
+
+      const vm = wrapper.vm as any
+      const filteredPages = vm.filteredPages
+      
+      expect(filteredPages.some(p => p.title === 'Project')).toBe(true)
+      expect(filteredPages.some(p => p.title === 'PROJECT')).toBe(true)
+    })
+
+    test('只显示前10条搜索结果', async () => {
+      const wrapper = mount(PageLinkMenu, {
+        props: {
+          visible: true,
+          position: { x: 100, y: 200 },
+          range: { from: 10, to: 20 },
+          query: 'P'
+        },
+        global: {
+          stubs: {
+            Teleport: { template: '<div><slot /></div>' }
+          }
+        }
+      })
+
+      await flushPromises()
+
+      const vm = wrapper.vm as any
+      const filteredPages = vm.filteredPages
+      
+      expect(filteredPages.length).toBe(10)
+    })
+
+    test('不显示已删除的页面', async () => {
+      const wrapper = mount(PageLinkMenu, {
+        props: {
+          visible: true,
+          position: { x: 100, y: 200 },
+          range: { from: 10, to: 20 },
+          query: ''
+        },
+        global: {
+          stubs: {
+            Teleport: { template: '<div><slot /></div>' }
+          }
+        }
+      })
+
+      await flushPromises()
+
+      const vm = wrapper.vm as any
+      const filteredPages = vm.filteredPages
+      
+      expect(filteredPages.every(p => !p.deleted)).toBe(true)
+    })
+
+    test('菜单选项包含创建新页面选项', async () => {
+      const wrapper = mount(PageLinkMenu, {
+        props: {
+          visible: true,
+          position: { x: 100, y: 200 },
+          range: { from: 10, to: 20 },
+          query: 'New Page That Does Not Exist'
+        },
+        global: {
+          stubs: {
+            Teleport: { template: '<div><slot /></div>' }
+          }
+        }
+      })
+
+      await flushPromises()
+
+      const vm = wrapper.vm as any
+      const menuItems = vm.menuItems
+      
+      const createItem = menuItems.find(item => item.type === 'create')
+      expect(createItem).toBeDefined()
+      expect(createItem?.title).toBe('New Page That Does Not Exist')
+    })
+
+    test('当查询词为空时不显示创建新页面选项', async () => {
+      const wrapper = mount(PageLinkMenu, {
+        props: {
+          visible: true,
+          position: { x: 100, y: 200 },
+          range: { from: 10, to: 20 },
+          query: ''
+        },
+        global: {
+          stubs: {
+            Teleport: { template: '<div><slot /></div>' }
+          }
+        }
+      })
+
+      await flushPromises()
+
+      const vm = wrapper.vm as any
+      const menuItems = vm.menuItems
+      
+      const createItem = menuItems.find(item => item.type === 'create')
+      expect(createItem).toBeUndefined()
+    })
+
+    test('当查询词已存在时不显示创建新页面选项', async () => {
+      const wrapper = mount(PageLinkMenu, {
+        props: {
+          visible: true,
+          position: { x: 100, y: 200 },
+          range: { from: 10, to: 20 },
+          query: 'Project'
+        },
+        global: {
+          stubs: {
+            Teleport: { template: '<div><slot /></div>' }
+          }
+        }
+      })
+
+      await flushPromises()
+
+      const vm = wrapper.vm as any
+      const menuItems = vm.menuItems
+      
+      const createItem = menuItems.find(item => item.type === 'create')
+      expect(createItem).toBeUndefined()
+    })
+  })
 })

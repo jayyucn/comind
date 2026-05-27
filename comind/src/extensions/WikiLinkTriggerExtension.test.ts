@@ -537,4 +537,19 @@ describe('WikiLinkTriggerExtension', () => {
       expect(true).toBe(true)
     })
   })
+
+  describe('菜单交互行为', () => {
+    test('当光标移出 wiki 链接范围时应该关闭菜单', () => {
+      // 此逻辑在 handleWikiLinkDetection 中
+      // 我们可以验证 findWikiLinkAtCursor 在没有找到链接时返回正确结果
+      const doc = createMockDoc([{ text: '[[WikiLink]] some other text', pos: 0 }])
+      const result = findWikiLinkAtCursor(doc as any, 20)
+      
+      expect(result.found).toBe(false)
+    })
+
+    test('closeWikiLinkMenuByEditor 应该能够被调用', () => {
+      expect(() => closeWikiLinkMenuByEditor()).not.toThrow()
+    })
+  })
 })
