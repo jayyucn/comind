@@ -1,0 +1,332 @@
+// Block 组件样式
+
+@use '../tokens/primitives' as *;
+@use '../mixins' as *;
+
+// VueDraggable wrapper div - 必须有宽度才能让子元素伸展
+.block-list > div[data-parent-id] {
+  width: 100%;
+}
+
+.block {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  user-select: none;
+}
+
+.block-row {
+  display: flex;
+  align-items: center;
+  min-height: 1.3em;
+  line-height: $leading-tight;
+}
+
+.block-indent {
+  flex-shrink: 0;
+  height: 100%;
+}
+
+// 缩进线（Indent Lines）
+.block-children::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--indent-depth, 0) * var(--block-indent-width) + 9px);
+  width: 1px;
+  background: var(--block-bullet-color);
+  opacity: 0.12;
+  pointer-events: none;
+  z-index: 0;
+  transition: opacity 200ms ease-out;
+}
+
+.block-children:not(.has-children)::before {
+  opacity: 0;
+}
+
+// Bullet 区域
+.block-bullet {
+  flex-shrink: 0;
+  width: 20px;
+  height: 1.8em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: $radius-sm;
+  cursor: pointer;
+}
+
+// Bullet 圆点（叶节点）
+.bullet-dot {
+  width: var(--block-bullet-size);
+  height: var(--block-bullet-size);
+  border-radius: 50%;
+  background: var(--block-bullet-color);
+  opacity: var(--block-bullet-opacity);
+  transform: translateY(1px);
+  transition: opacity 150ms ease-out, transform 150ms ease-out, box-shadow 150ms ease-out;
+  flex-shrink: 0;
+}
+
+// Chevron 箭头（父节点）
+.bullet-chevron {
+  width: var(--block-chevron-size);
+  height: var(--block-chevron-size);
+  border-right: 1.5px solid var(--block-bullet-color);
+  border-bottom: 1.5px solid var(--block-bullet-color);
+  transform: rotate(45deg) translateY(1px);
+  opacity: var(--block-chevron-opacity);
+  transition: transform 180ms ease-out, opacity 150ms ease-out;
+  flex-shrink: 0;
+
+  &.is-collapsed {
+    transform: rotate(-45deg) translateY(1px);
+  }
+}
+
+// Hover 效果
+.block-bullet:hover {
+  .bullet-dot {
+    opacity: 0.7;
+    transform: scale(1.4) translateY(1px);
+    box-shadow: 0 0 0 3px var(--accent-08);
+  }
+
+  .bullet-chevron {
+    opacity: 0.75;
+    transform: rotate(45deg) scale(1.2) translateY(1px);
+    box-shadow: 0 0 0 3px var(--accent-06);
+
+    &.is-collapsed {
+      transform: rotate(-45deg) scale(1.2) translateY(1px);
+    }
+  }
+}
+
+// Active Block
+.block.active {
+  .bullet-dot {
+    opacity: 0.55;
+  }
+
+  .bullet-chevron {
+    opacity: 0.6;
+  }
+}
+
+.block-content {
+  flex: 1;
+  cursor: text;
+  min-width: 0;
+}
+
+.block-text {
+  min-height: 1.3em;
+  padding: 0 $space-1;
+  border-radius: $radius-sm;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.block-placeholder {
+  color: var(--color-ink-faint);
+  font-style: italic;
+  pointer-events: none;
+}
+
+.block.active .block-text {
+  background: var(--accent-06);
+}
+
+// 子节点容器
+.block-children {
+  position: relative;
+  padding-left: 20px;
+  padding-top: 2px;
+  overflow: hidden;
+  max-height: 2000px;
+  opacity: 1;
+  transform: translateY(0);
+  min-height: 0;
+  transition:
+    max-height var(--block-transition-collapse),
+    opacity 200ms ease-out,
+    transform 250ms ease-out;
+
+  &.is-collapsed {
+    max-height: 0;
+    opacity: 0.6;
+    transform: translateY(-8px);
+  }
+
+  &.is-animating {
+    overflow: hidden;
+  }
+}
+
+// 子块项的进入/退出动画
+.block-children > .block {
+  opacity: 1;
+  transform: translateX(0);
+  margin-top: 2px;
+  transition:
+    opacity 200ms ease-out,
+    transform 200ms ease-out;
+
+  .block-children.is-collapsed > & {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+}
+
+// Link & Tag styles
+.block-link {
+  color: var(--color-accent);
+  cursor: pointer;
+  border-bottom: 1px solid var(--accent-40);
+
+  &.external {
+    color: var(--color-external);
+    border-bottom-color: var(--ext-40);
+  }
+}
+
+.block-tag {
+  color: var(--color-tag);
+  background: var(--tag-10);
+  padding: 0 2px;
+  border-radius: 3px;
+  font-size: 0.9em;
+
+  .tag-sep {
+    color: var(--tag-40);
+    margin: 0 1px;
+  }
+}
+
+// 拖拽样式
+.block-chosen {
+  opacity: 0.8;
+}
+
+.block-inner {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+.block-chosen .block-inner {
+  background: var(--accent-04);
+  border-radius: var(--radius-md);
+}
+
+.block-chosen::before,
+.block-chosen .block-children::before {
+  opacity: 0.3 !important;
+}
+
+.block-ghost {
+  opacity: 0.3;
+  background: var(--accent-06);
+  border: 2px dashed var(--color-accent);
+  border-radius: var(--radius-md);
+  position: relative !important;
+  max-width: 100%;
+  box-sizing: border-box;
+
+  .block-content,
+  .block-bullet {
+    visibility: hidden;
+  }
+
+  &::after {
+    content: '';
+    display: block;
+    height: 24px;
+  }
+
+  &::before {
+    display: none !important;
+  }
+
+  .block-children::before {
+    display: none !important;
+  }
+}
+
+.block-drag {
+  opacity: 1;
+  transform: scale(1.02);
+  box-shadow: 0 6px 20px var(--overlay);
+  border-radius: var(--radius-md);
+  cursor: grabbing;
+}
+
+// 放置指示线
+.drop-indicator {
+  position: fixed;
+  height: 2px;
+  background: var(--color-accent);
+  pointer-events: none;
+  z-index: $z-dropdown;
+  opacity: 0;
+  transition: opacity 0ms;
+
+  &.visible {
+    opacity: 1;
+  }
+
+  &.nest {
+    border-left: 2px solid var(--color-accent);
+    background: transparent;
+    height: 0;
+  }
+}
+
+// 优先级背景色
+.block.priority-low .block-inner {
+  background: linear-gradient(90deg, var(--priority-low-bg) 0%, rgba(148, 163, 184, 0.02) 100%);
+  border-radius: $radius-md;
+}
+
+.block.priority-medium .block-inner {
+  background: linear-gradient(90deg, var(--priority-medium-bg) 0%, rgba(234, 179, 8, 0.02) 100%);
+  border-radius: $radius-md;
+}
+
+.block.priority-high .block-inner {
+  background: linear-gradient(90deg, var(--priority-high-bg) 0%, rgba(249, 115, 22, 0.02) 100%);
+  border-radius: $radius-md;
+}
+
+.block.priority-urgent .block-inner {
+  background: linear-gradient(90deg, var(--priority-urgent-bg) 0%, rgba(239, 68, 68, 0.02) 100%);
+  border-radius: $radius-md;
+}
+
+.block.active.priority-low .block-inner,
+.block.active.priority-medium .block-inner,
+.block.active.priority-high .block-inner,
+.block.active.priority-urgent .block-inner {
+  filter: brightness(1.02);
+}
+
+// 属性显示区域
+.block-properties {
+  margin-left: calc(var(--indent-depth, 0) * var(--block-indent-width) + 20px);
+  padding-right: $space-2;
+}
+
+// 跨 Block 选中遮罩
+.block.cb-selected::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--selection-bg);
+  pointer-events: none;
+  border-radius: $radius-sm;
+  z-index: 1;
+}

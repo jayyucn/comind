@@ -1,3 +1,7 @@
+// Page 组件样式
+
+@use '../tokens/primitives' as *;
+
 .page-body {
   display: flex;
   flex-direction: column;
@@ -33,11 +37,11 @@
 .page-title {
   font-family: var(--font-sans);
   font-size: var(--text-xl);
-  font-weight: 600;
+  font-weight: $font-semibold;
   color: var(--text-primary);
   margin: 0;
   letter-spacing: -0.5px;
-  line-height: 1.4;
+  line-height: $leading-tight;
 }
 
 .page-title--display {

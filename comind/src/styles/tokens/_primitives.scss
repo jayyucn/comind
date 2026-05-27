@@ -1,0 +1,105 @@
+// Design Token Primitives - 原始值层
+// 这些是具体的设计值，被语义化层引用
+
+// 颜色 - Amber（强调色系）
+$color-amber-50: #FFFBEB;
+$color-amber-100: #FEF3C7;
+$color-amber-200: #FDE68A;
+$color-amber-300: #FCD34D;
+$color-amber-400: #FBBF24;
+$color-amber-500: #B45309;
+$color-amber-600: #92400E;
+$color-amber-700: #78350F;
+
+// 颜色 - Stone（中性色系）
+$color-stone-50: #FAFAF9;
+$color-stone-100: #F5F5F4;
+$color-stone-200: #E7E5E4;
+$color-stone-300: #D6D3D1;
+$color-stone-400: #C9C8C3;
+$color-stone-500: #A8A29E;
+$color-stone-600: #78716C;
+$color-stone-700: #57534E;
+$color-stone-800: #44403C;
+$color-stone-900: #1C1917;
+
+// 颜色 - 功能色
+$color-link: #1D4ED8;
+$color-link-hover: #1E40AF;
+$color-tag-text: #047857;
+$color-tag-bg: #ECFDF5;
+$color-success: #059669;
+$color-warning: #D97706;
+$color-error: #DC2626;
+$color-external: #64748B;
+
+// 透明度变体
+$accent-03: rgba(180, 83, 9, 0.03);
+$accent-06: rgba(180, 83, 9, 0.06);
+$accent-08: rgba(180, 83, 9, 0.08);
+$accent-10: rgba(180, 83, 9, 0.10);
+$accent-40: rgba(180, 83, 9, 0.40);
+$tag-10: rgba(99, 102, 241, 0.10);
+$tag-40: rgba(99, 102, 241, 0.40);
+$ext-40: rgba(100, 116, 139, 0.40);
+$overlay: rgba(28, 25, 23, 0.30);
+
+// 间距（4px 基准网格）
+$space-1: 4px;
+$space-2: 8px;
+$space-3: 12px;
+$space-4: 16px;
+$space-5: 20px;
+$space-6: 24px;
+$space-8: 32px;
+$space-10: 40px;
+$space-12: 48px;
+
+// 圆角
+$radius-sm: 4px;
+$radius-md: 6px;
+$radius-lg: 8px;
+
+// 字号
+$text-xs: 0.75rem;
+$text-sm: 0.875rem;
+$text-base: 0.9375rem;
+$text-lg: 1.125rem;
+$text-xl: 1.25rem;
+$text-2xl: 1.5rem;
+
+// 行高
+$leading-tight: 1.25;
+$leading-normal: 1.5;
+$leading-relaxed: 1.75;
+
+// 字重
+$font-normal: 400;
+$font-medium: 500;
+$font-semibold: 600;
+$font-bold: 700;
+
+// 阴影
+$shadow-focus: 0 0 0 3px rgba(180, 83, 9, 0.10);
+$shadow-modal: 0 8px 32px rgba(28, 25, 23, 0.12);
+$shadow-elevation-1: 0 1px 3px rgba(28, 25, 23, 0.08);
+$shadow-elevation-2: 0 4px 12px rgba(28, 25, 23, 0.10);
+
+// 字体
+$font-sans: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+$font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+// 布局
+$max-width-content: 720px;
+$sidebar-width: 260px;
+
+// 过渡
+$transition-fast: 120ms ease;
+$transition-base: 150ms ease;
+$transition-slow: 200ms ease-out;
+$transition-collapse: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+
+// Z-index 层级
+$z-dropdown: 100;
+$z-modal: 200;
+$z-toast: 300;
