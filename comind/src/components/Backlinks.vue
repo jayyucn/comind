@@ -4,6 +4,7 @@ import { usePageStore } from '../stores/pages'
 import { useEditorStore } from '../stores/editor'
 import { storage } from '../storage/indexedDB'
 import { db } from '../storage/db'
+import { useNavigateToPage } from '../composables/useNavigateToPage'
 import type { LinkRecord } from '../types/link'
 
 const props = withDefaults(defineProps<{
@@ -14,6 +15,7 @@ const props = withDefaults(defineProps<{
 
 const pageStore = usePageStore()
 const editorStore = useEditorStore()
+const { navigateToPage } = useNavigateToPage()
 
 interface BacklinkItem {
   link: LinkRecord
@@ -53,12 +55,11 @@ async function handleBacklinkClick(link: LinkRecord) {
   if (!blockRecord) return
 
   if (blockRecord.pageId !== pageStore.currentPageId) {
-    await pageStore.openPage(blockRecord.pageId)
+    await navigateToPage(blockRecord.pageId)
   }
 
-  setTimeout(() => {
-    editorStore.activateBlock(link.sourceBlockId)
-  }, 0)
+  await nextTick()
+  editorStore.activateBlock(link.sourceBlockId)
 }
 
 // 预计算每个link的存在状态 + 获取该block内容和所在page标题
