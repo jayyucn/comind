@@ -150,35 +150,24 @@ export class IndexedDBAdapter {
   private async saveLinks(sourceBlockId: string, _pageId: string, linkParses: LinkParse[]): Promise<{ skippedTrashedPages: string[] }> {
     const skippedTrashedPages: string[] = []
 
-    // 删除旧链接
     await db.links.where('sourceBlockId').equals(sourceBlockId).delete()
 
     for (const link of linkParses) {
       if (!link.isExternal) {
-        // 内部链接：查找或创建目标 Page
-        // 日记标题规范化：[[2026/04/26]] → 查找/创建 title="2026-04-26"
         const normalized = normalizeJournalTitle(link.targetTitle)
         const lookupTitle = normalized ?? link.targetTitle
         const existingPage = await db.pages.where('title').equals(lookupTitle).first()
 
-        // 检查页面是否存在于回收站中
         if (existingPage && existingPage.deleted === 1) {
           skippedTrashedPages.push(lookupTitle)
           continue
         }
 
-        if (!existingPage) {
-          const pageType = normalized ? 'journal' : inferPageType(link.targetTitle)
-          const newPage = await this.createPageWithRootBlock(lookupTitle, pageType)
-          await db.pages.put(pageToRecord(newPage))
-        }
-
-        const targetPage = await db.pages.where('title').equals(lookupTitle).first()
-        if (targetPage) {
+        if (existingPage) {
           await db.links.add({
             id: generateUUID(),
             sourceBlockId,
-            targetPageId: targetPage.id,
+            targetPageId: existingPage.id,
             displayText: link.displayText,
             createdAt: Date.now()
           })

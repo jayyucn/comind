@@ -32,6 +32,10 @@ export function notifyWikiLinkMenuSelect() {
   }, 100)
 }
 
+export function closeWikiLinkMenuByEditor() {
+  menuIsOpen = false
+}
+
 export function findWikiLinkAtCursor(
   doc: any,
   pos: number

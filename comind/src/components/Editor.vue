@@ -3,7 +3,7 @@ import { onBeforeUnmount, onMounted, watch, nextTick, shallowRef, ref } from 'vu
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import { WikiLinkExtension } from '../extensions/WikiLinkExtension'
-import { WikiLinkTriggerExtension, notifyWikiLinkMenuSelect } from '../extensions/WikiLinkTriggerExtension'
+import { WikiLinkTriggerExtension, notifyWikiLinkMenuSelect, closeWikiLinkMenuByEditor } from '../extensions/WikiLinkTriggerExtension'
 import EnterAsBlockExtension from '../extensions/EnterAsBlockExtension'
 import BracketPairExtension from '../extensions/BracketPairExtension'
 import { SlashCommandExtension } from '../extensions/SlashCommandExtension'
@@ -133,6 +133,7 @@ function handleWikiLinkSelect(pageName: string) {
     .run()
 
   menuVisible.value = false
+  closeWikiLinkMenuByEditor()
 }
 
 function handleEnterAsBlock(event: Event) {
