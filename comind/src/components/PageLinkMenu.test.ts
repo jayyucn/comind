@@ -3,9 +3,23 @@ import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises } from '@vue/test-utils'
 import PageLinkMenu from './PageLinkMenu.vue'
 
+const mockPages = [
+  { id: 'page-1', title: 'Project Notes', updatedAt: 1000, deleted: false },
+  { id: 'page-2', title: 'Project Overview', updatedAt: 2000, deleted: false },
+  { id: 'page-3', title: 'Meeting Notes', updatedAt: 3000, deleted: false },
+  { id: 'page-4', title: 'My Project', updatedAt: 4000, deleted: false },
+  { id: 'page-5', title: 'Project', updatedAt: 5000, deleted: false },
+  { id: 'page-6', title: 'Other Page', updatedAt: 6000, deleted: false },
+  { id: 'page-7', title: 'Another Project Page', updatedAt: 7000, deleted: false },
+  { id: 'page-8', title: 'Proj', updatedAt: 8000, deleted: false },
+  { id: 'page-9', title: 'PROJECT', updatedAt: 9000, deleted: false },
+  { id: 'page-10', title: 'Test Page', updatedAt: 10000, deleted: false },
+  { id: 'page-11', title: 'Last Page', updatedAt: 11000, deleted: false },
+]
+
 vi.mock('../stores/pages', () => ({
   usePageStore: vi.fn(() => ({
-    pages: [],
+    pages: mockPages,
     loadAllPages: vi.fn().mockResolvedValue(undefined),
     createPage: vi.fn().mockImplementation((title: string) => ({
       id: `page-${Date.now()}`,
