@@ -3,11 +3,11 @@ import { onBeforeUnmount, onMounted, watch, nextTick, shallowRef, ref } from 'vu
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import { WikiLinkExtension } from '../extensions/WikiLinkExtension'
-import { WikiLinkTriggerExtension, notifyWikiLinkMenuSelect, closeWikiLinkMenuByEditor } from '../extensions/WikiLinkTriggerExtension'
+import { WikiLinkTriggerExtension, notifyWikiLinkMenuSelect, closeWikiLinkMenuByEditor, findWikiLinkAtCursor } from '../extensions/WikiLinkTriggerExtension'
 import EnterAsBlockExtension from '../extensions/EnterAsBlockExtension'
 import BracketPairExtension from '../extensions/BracketPairExtension'
 import { SlashCommandExtension } from '../extensions/SlashCommandExtension'
-import { useNavigateToPage } from '../composables/useNavigateToPage'
+import { usePageStore } from '../stores/pages'
 import { debounce } from '../utils/debounce'
 import PageLinkMenu from './PageLinkMenu.vue'
 
@@ -31,8 +31,6 @@ const emit = defineEmits<{
 
 let syncing = false
 let savedFromOutside = false
-
-const { navigateToPage } = useNavigateToPage()
 
 const debouncedEmitSave = debounce((content: string) => {
   emit('save', content)
@@ -69,8 +67,24 @@ function handleWikiLinkUpdate(event: Event) {
   menuQuery.value = customEvent.detail.query
 }
 
-function handleWikiLinkClose() {
+async function handleWikiLinkClose(event: Event) {
   menuVisible.value = false
+  closeWikiLinkMenuByEditor()
+
+  const customEvent = event as CustomEvent<{ reason: string; query: string }>
+  const query = customEvent.detail.query?.trim()
+  if (!query) return
+
+  if (!editor.value) return
+  const { state } = editor.value
+  const cursorPos = state.selection.from
+  const result = findWikiLinkAtCursor(state.doc, cursorPos)
+  if (!result.found || !result.range) return
+
+  const pageStore = usePageStore()
+  if (!pageStore.getPageByTitle(query)) {
+    await pageStore.createPage(query)
+  }
 }
 
 function handleWikiLinkMenuEnter() {
@@ -94,36 +108,11 @@ function handleWikiLinkSelect(pageName: string) {
 
   notifyWikiLinkMenuSelect()
 
-  const state = editor.value.state
-  const selection = state.selection
-  const cursorPos = selection.from
-
-  // 反向扫描找到 [[ 的起始位置
-  let from = cursorPos - 1
-  while (from >= 0) {
-    if (from >= 1 && state.doc.textBetween(from - 1, from + 1) === '[[' ) {
-      from = from - 1
-      break
-    }
-    from--
-  }
-  if (from < 0) from = 0 // 兜底
-
-  // 正向扫描找到可能的 ]]
-  let to = cursorPos
-  while (to < state.doc.content.size - 1) {
-    if (state.doc.textBetween(to, to + 2) === ']]') {
-      to = to + 2
-      break
-    }
-    // 如果遇到空格或换行，可能表示链接结束
-    const char = state.doc.textBetween(to, to + 1)
-    if (char === ' ' || char === '\n' || char === '\r') {
-      break
-    }
-    to++
-  }
-  if (to > state.doc.content.size) to = state.doc.content.size // 兜底
+  const { state } = editor.value
+  const cursorPos = state.selection.from
+  const result = findWikiLinkAtCursor(state.doc, cursorPos)
+  const from = result.range?.from ?? cursorPos
+  const to = result.range?.to ?? cursorPos
 
   editor.value.chain()
     .deleteRange({ from, to })
@@ -134,6 +123,11 @@ function handleWikiLinkSelect(pageName: string) {
 
   menuVisible.value = false
   closeWikiLinkMenuByEditor()
+
+  const pageStore = usePageStore()
+  if (!pageStore.getPageByTitle(pageName)) {
+    pageStore.createPage(pageName)
+  }
 }
 
 function handleEnterAsBlock(event: Event) {
@@ -310,7 +304,7 @@ defineExpose({ syncContent, focus, getText: () => editor.value?.getText() ?? '',
       :range="menuRange"
       :query="menuQuery"
       @select="handleWikiLinkSelect"
-      @close="handleWikiLinkClose"
+      @close="handleWikiLinkClose as any"
     />
   </div>
 </template>

@@ -113,6 +113,22 @@ describe('IndexedDBAdapter', () => {
 
       expect(saveLinksSpy).toHaveBeenCalled()
     })
+
+    it('does not create page when linked page does not exist', async () => {
+      const { db } = await import('./db')
+
+      ;(db.pages.where('title').equals as any).mockImplementation(() => ({
+        first: vi.fn().mockResolvedValue(undefined)
+      }))
+
+      const createPageSpy = vi.spyOn(adapter, 'createPageWithRootBlock')
+
+      const block = createMockBlock({ content: 'Check [[NewLinkedPage]]' })
+      await adapter.saveBlock(block)
+
+      expect(createPageSpy).not.toHaveBeenCalled()
+      expect(db.links.add).not.toHaveBeenCalled()
+    })
   })
 
   describe('getBlockTree', () => {

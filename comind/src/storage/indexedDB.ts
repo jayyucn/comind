@@ -5,7 +5,7 @@ import type { Page, PageRecord } from '../types/page'
 import type { Property, PropertyRecord } from '../types/property'
 import { parseBlockLinks, type LinkParse } from '../utils/parser'
 import { generateUUID } from '../utils/id'
-import { inferPageType, normalizeJournalTitle } from '../utils/journal-detect'
+import { normalizeJournalTitle } from '../utils/journal-detect'
 
 export function recordToBlock(record: BlockRecord): Block {
   let format: Block['format']

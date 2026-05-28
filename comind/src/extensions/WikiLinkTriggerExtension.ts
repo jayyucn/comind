@@ -14,6 +14,7 @@ export interface WikiLinkUpdateEvent {
 
 export interface WikiLinkCloseEvent {
   reason: 'cursor-move' | 'doc-change'
+  query: string
 }
 
 export interface WikiLinkAtCursorResult {
@@ -24,6 +25,7 @@ export interface WikiLinkAtCursorResult {
 
 let menuIsOpen = false
 let selectingFromMenu = false
+let currentQuery = ''
 
 export function notifyWikiLinkMenuSelect() {
   selectingFromMenu = true
@@ -34,6 +36,7 @@ export function notifyWikiLinkMenuSelect() {
 
 export function closeWikiLinkMenuByEditor() {
   menuIsOpen = false
+  currentQuery = ''
 }
 
 export function findWikiLinkAtCursor(
@@ -71,10 +74,12 @@ export function findWikiLinkAtCursor(
 }
 
 function closeWikiLinkMenu(view: any) {
+  const query = currentQuery
   menuIsOpen = false
+  currentQuery = ''
   const closeEvent = new CustomEvent<WikiLinkCloseEvent>('wiki-link-close', {
     bubbles: true,
-    detail: { reason: 'cursor-move' }
+    detail: { reason: 'cursor-move', query }
   })
   view.dom.dispatchEvent(closeEvent)
 }
@@ -86,6 +91,7 @@ function triggerWikiLinkMenu(
   query: string
 ) {
   menuIsOpen = true
+  currentQuery = query
 
   const triggerEvent = new CustomEvent<WikiLinkTriggerEvent>('wiki-link-trigger', {
     bubbles: true,
@@ -103,6 +109,7 @@ function handleWikiLinkDetection(view: any) {
     if (!menuIsOpen) {
       triggerWikiLinkMenu(view, cursorPos, result.range, result.query)
     } else {
+      currentQuery = result.query
       const updateEvent = new CustomEvent<WikiLinkUpdateEvent>('wiki-link-update', {
         bubbles: true,
         detail: { query: result.query }
