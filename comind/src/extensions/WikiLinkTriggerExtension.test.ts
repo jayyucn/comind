@@ -520,6 +520,42 @@ describe('WikiLinkTriggerExtension', () => {
       expect(result.found).toBe(true)
       expect(result.query).toBe('PageName')
     })
+
+    test('should handle multiple text nodes', () => {
+      const doc = createMockDoc([
+        { text: 'Start ', pos: 0 },
+        { text: '[[Link]]', pos: 6 },
+        { text: ' End', pos: 14 }
+      ])
+      const result = findWikiLinkAtCursor(doc as any, 10)
+      
+      expect(result.found).toBe(true)
+      expect(result.query).toBe('Link')
+    })
+
+    test('should find first matching link when cursor in multiple links', () => {
+      const doc = createMockDoc([{ text: '[[First]] and [[Second]]', pos: 0 }])
+      const result = findWikiLinkAtCursor(doc as any, 3)
+      
+      expect(result.found).toBe(true)
+      expect(result.query).toBe('First')
+    })
+
+    test('should handle link with pipe and display text', () => {
+      const doc = createMockDoc([{ text: '[[Target|Display Text]]', pos: 0 }])
+      const result = findWikiLinkAtCursor(doc as any, 5)
+      
+      expect(result.found).toBe(true)
+      expect(result.query).toBe('Target')
+    })
+
+    test('should handle unicode page names', () => {
+      const doc = createMockDoc([{ text: '[[日本語ページ]]', pos: 0 }])
+      const result = findWikiLinkAtCursor(doc as any, 3)
+      
+      expect(result.found).toBe(true)
+      expect(result.query).toBe('日本語ページ')
+    })
   })
 
   describe('closeWikiLinkMenuByEditor', () => {

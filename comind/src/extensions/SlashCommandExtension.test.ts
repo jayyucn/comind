@@ -88,6 +88,75 @@ describe('SlashCommandExtension utilities', () => {
     })
   })
 
+  describe('wiki link bracket detection', () => {
+    function isInWikiLink(doc: any, pos: number): boolean {
+      const $pos = doc.resolve(pos)
+      const textBefore = $pos.nodeBefore?.text || ''
+
+      if (textBefore.match(/\[\[([^\[\]]*)/)) {
+        const textAfter = $pos.nodeAfter?.text || ''
+        if (textAfter.match(/[^\[\]]*\]\]/)) return true
+      }
+
+      return false
+    }
+
+    function createMockDocWithAfter(textBefore: string, textAfter: string) {
+      return {
+        resolve: (_pos: number) => ({
+          nodeBefore: textBefore ? { text: textBefore } : null,
+          nodeAfter: textAfter ? { text: textAfter } : null
+        })
+      }
+    }
+
+    it('detects cursor inside complete wiki link [[...]]', () => {
+      const doc = createMockDocWithAfter('[[Page', 'Name]]')
+      expect(isInWikiLink(doc, 6)).toBe(true)
+    })
+
+    it('returns false when only opening bracket present', () => {
+      const doc = createMockDocWithAfter('[[Page', '')
+      expect(isInWikiLink(doc, 6)).toBe(false)
+    })
+
+    it('returns false when only closing bracket present', () => {
+      const doc = createMockDocWithAfter('Page', ']]')
+      expect(isInWikiLink(doc, 4)).toBe(false)
+    })
+
+    it('detects wiki link with pipe separator [[...|...]]', () => {
+      const doc = createMockDocWithAfter('[[Page|Display', ']]')
+      expect(isInWikiLink(doc, 14)).toBe(true)
+    })
+
+    it('detects wiki link at start of document', () => {
+      const doc = createMockDocWithAfter('', '[[Link]]')
+      const $pos = doc.resolve(0)
+      expect($pos.nodeBefore?.text || '').toBe('')
+    })
+
+    it('handles empty textBefore with wiki link after', () => {
+      const doc = createMockDocWithAfter('', 'Link]]')
+      expect(isInWikiLink(doc, 0)).toBe(false)
+    })
+
+    it('handles nested brackets in wiki link text', () => {
+      const doc = createMockDocWithAfter('[[Text with (paren)', 'thes]]')
+      expect(isInWikiLink(doc, 18)).toBe(true)
+    })
+
+    it('does not detect when only opening brackets present without closing', () => {
+      const doc = createMockDocWithAfter('[[Incomplete', '')
+      expect(isInWikiLink(doc, 13)).toBe(false)
+    })
+
+    it('does not detect when only closing brackets present without opening', () => {
+      const doc = createMockDocWithAfter('Complete', ']]')
+      expect(isInWikiLink(doc, 8)).toBe(false)
+    })
+  })
+
   describe('slash command trigger conditions', () => {
     function shouldTriggerSlashCommand(textBefore: string | null): boolean {
       if (!textBefore || textBefore.length === 0) return true

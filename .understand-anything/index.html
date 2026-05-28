@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Comind 知识图谱 - 代码理解助手</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+    header { text-align: center; margin-bottom: 3rem; padding: 2rem 0; border-bottom: 1px solid #333; }
+    h1 { font-size: 2.5rem; margin-bottom: 0.5rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .subtitle { color: #888; font-size: 1.1rem; }
+    .stats { display: flex; justify-content: center; gap: 3rem; margin: 2rem 0; flex-wrap: wrap; }
+    .stat { text-align: center; }
+    .stat-number { font-size: 3rem; font-weight: bold; color: #667eea; }
+    .stat-label { color: #888; margin-top: 0.5rem; }
+    .section { margin: 3rem 0; }
+    .section-title { font-size: 1.5rem; margin-bottom: 1.5rem; padding-bottom: 0.5rem; border-bottom: 2px solid #667eea; display: flex; align-items: center; gap: 0.5rem; }
+    .layers { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
+    .layer { background: #16213e; border-radius: 12px; padding: 1.5rem; border: 1px solid #333; transition: all 0.3s; }
+    .layer:hover { border-color: #667eea; transform: translateY(-2px); }
+    .layer-name { font-size: 1.2rem; font-weight: bold; color: #667eea; margin-bottom: 0.5rem; }
+    .layer-desc { color: #aaa; font-size: 0.9rem; margin-bottom: 1rem; }
+    .layer-count { background: #667eea22; color: #667eea; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.85rem; display: inline-block; }
+    .tour { display: flex; flex-direction: column; gap: 1rem; }
+    .tour-step { background: #16213e; border-radius: 12px; padding: 1.5rem; border: 1px solid #333; display: flex; gap: 1.5rem; align-items: flex-start; }
+    .tour-number { background: #667eea; color: white; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; flex-shrink: 0; }
+    .tour-content { flex: 1; }
+    .tour-title { font-size: 1.1rem; font-weight: bold; margin-bottom: 0.5rem; }
+    .tour-desc { color: #aaa; font-size: 0.9rem; line-height: 1.6; }
+    .tech-stack { display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap; margin: 2rem 0; }
+    .tech-badge { background: #16213e; border: 1px solid #667eea; color: #667eea; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.9rem; }
+    .node-types { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.75rem; margin-top: 1rem; }
+    .node-type { background: #0f3460; padding: 0.75rem; border-radius: 8px; text-align: center; }
+    .node-type-count { font-size: 1.5rem; font-weight: bold; color: #667eea; }
+    .node-type-name { color: #888; font-size: 0.8rem; margin-top: 0.25rem; }
+    footer { text-align: center; padding: 2rem; color: #666; border-top: 1px solid #333; margin-top: 3rem; }
+    .graph-icon { font-size: 4rem; margin-bottom: 1rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="graph-icon">🧠</div>
+      <h1>Comind 知识图谱</h1>
+      <p class="subtitle">一个基于 Vue 3 的本地优先块编辑器和知识管理应用</p>
+      <div class="tech-stack">
+        <span class="tech-badge">Vue 3</span>
+        <span class="tech-badge">TipTap</span>
+        <span class="tech-badge">Pinia</span>
+        <span class="tech-badge">Dexie</span>
+        <span class="tech-badge">CodeMirror</span>
+        <span class="tech-badge">TypeScript</span>
+      </div>
+    </header>
+
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-number" id="total-nodes">274</div>
+        <div class="stat-label">节点总数</div>
+      </div>
+      <div class="stat">
+        <div class="stat-number" id="total-edges">280</div>
+        <div class="stat-label">边总数</div>
+      </div>
+      <div class="stat">
+        <div class="stat-number">9</div>
+        <div class="stat-label">架构层次</div>
+      </div>
+      <div class="stat">
+        <div class="stat-number">7</div>
+        <div class="stat-label">导览步骤</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2 class="section-title">📊 架构层次</h2>
+      <div class="layers">
+        <div class="layer">
+          <div class="layer-name">🏠 入口层</div>
+          <div class="layer-desc">应用启动入口和根组件</div>
+          <span class="layer-count">2 个节点</span>
+        </div>
+        <div class="layer">
+          <div class="layer-name">🛣️ 路由层</div>
+          <div class="layer-desc">Vue Router 页面路由配置</div>
+          <span class="layer-count">7 个节点</span>
+        </div>
+        <div class="layer">
+          <div class="layer-name">📦 状态管理层</div>
+          <div class="layer-desc">Pinia 状态管理 (blocks, pages, editor, property)</div>
+          <span class="layer-count">22 个节点</span>
+        </div>
+        <div class="layer">
+          <div class="layer-name">🧩 组件层</div>
+          <div class="layer-desc">Vue 组件 (Editor, Block, Sidebar, Journal 等)</div>
+          <span class="layer-count">44 个节点</span>
+        </div>
+        <div class="layer">
+          <div class="layer-name">✏️ 编辑器层</div>
+          <div class="layer-desc">TipTap 编辑器扩展和 Composables</div>
+          <span class="layer-count">62 个节点</span>
+        </div>
+        <div class="layer">
+          <div class="layer-name">💾 存储层</div>
+          <div class="layer-desc">IndexedDB (Dexie) 数据持久化</div>
+          <span class="layer-count">24 个节点</span>
+        </div>
+        <div class="layer">
+          <div class="layer-name">⚙️ 服务层</div>
+          <div class="layer-desc">PropertyService 等业务服务</div>
+          <span class="layer-count">3 个节点</span>
+        </div>
+        <div class="layer">
+          <div class="layer-name">📝 类型层</div>
+          <div class="layer-desc">TypeScript 类型定义</div>
+          <span class="layer-count">32 个节点</span>
+        </div>
+        <div class="layer">
+          <div class="layer-name">🔧 工具层</div>
+          <div class="layer-desc">辅助函数和解析器</div>
+          <span class="layer-count">78 个节点</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2 class="section-title">🎯 引导导览</h2>
+      <div class="tour">
+        <div class="tour-step">
+          <div class="tour-number">1</div>
+          <div class="tour-content">
+            <div class="tour-title">项目概览 - 入口文件</div>
+            <div class="tour-desc">从 main.ts 入口文件开始，了解应用的启动流程和根组件结构。</div>
+          </div>
+        </div>
+        <div class="tour-step">
+          <div class="tour-number">2</div>
+          <div class="tour-content">
+            <div class="tour-title">状态管理 - Pinia Stores</div>
+            <div class="tour-desc">探索 blocks.ts, pages.ts, editor.ts 等状态管理模块，理解数据流。</div>
+          </div>
+        </div>
+        <div class="tour-step">
+          <div class="tour-number">3</div>
+          <div class="tour-content">
+            <div class="tour-title">编辑器核心 - TipTap + Extensions</div>
+            <div class="tour-desc">学习 WikiLinkExtension, SlashCommandExtension 等自定义扩展的实现。</div>
+          </div>
+        </div>
+        <div class="tour-step">
+          <div class="tour-number">4</div>
+          <div class="tour-content">
+            <div class="tour-title">块编辑器系统 - Block 组件</div>
+            <div class="tour-desc">深入 Block/index.vue 和各种块处理器 (bullet, code, embed, image)。</div>
+          </div>
+        </div>
+        <div class="tour-step">
+          <div class="tour-number">5</div>
+          <div class="tour-content">
+            <div class="tour-title">存储层 - IndexedDB</div>
+            <div class="tour-desc">了解 IndexedDB 适配器和数据记录转换逻辑。</div>
+          </div>
+        </div>
+        <div class="tour-step">
+          <div class="tour-number">6</div>
+          <div class="tour-content">
+            <div class="tour-title">工具函数 - 辅助函数</div>
+            <div class="tour-desc">探索 block-helpers.ts, parser.ts 等工具模块。</div>
+          </div>
+        </div>
+        <div class="tour-step">
+          <div class="tour-number">7</div>
+          <div class="tour-content">
+            <div class="tour-title">页面管理 - 页面和日记功能</div>
+            <div class="tour-desc">学习页面创建、编辑和日记自动生成功能。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2 class="section-title">🔗 节点类型分布</h2>
+      <div class="node-types">
+        <div class="node-type">
+          <div class="node-type-count">83</div>
+          <div class="node-type-name">文件节点</div>
+        </div>
+        <div class="node-type">
+          <div class="node-type-count">140</div>
+          <div class="node-type-name">函数节点</div>
+        </div>
+        <div class="node-type">
+          <div class="node-type-count">25</div>
+          <div class="node-type-name">接口节点</div>
+        </div>
+        <div class="node-type">
+          <div class="node-type-count">15</div>
+          <div class="node-type-name">类节点</div>
+        </div>
+        <div class="node-type">
+          <div class="node-type-count">11</div>
+          <div class="node-type-name">变量节点</div>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      <p>知识图谱生成时间: 2026-05-28</p>
+      <p>Git 提交: c96b88f5</p>
+      <p style="margin-top: 1rem;">使用 /understand 重新分析项目以更新图谱</p>
+    </footer>
+  </div>
+
+  <script>
+    fetch('./.understand-anything/knowledge-graph.json')
+      .then(r => r.json())
+      .then(data => {
+        document.getElementById('total-nodes').textContent = data.nodes.length;
+        document.getElementById('total-edges').textContent = data.edges.length;
+      })
+      .catch(() => console.log('使用默认统计'));
+  </script>
+</body>
+</html>

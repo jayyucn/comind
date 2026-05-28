@@ -1,0 +1,5412 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "name": "comind",
+    "languages": [
+      "TypeScript",
+      "Vue",
+      "SCSS",
+      "Markdown"
+    ],
+    "frameworks": [
+      "Vue 3",
+      "TipTap",
+      "Pinia",
+      "Dexie"
+    ],
+    "description": "一个基于 Vue 3 的本地优先的块编辑器和知识管理应用",
+    "analyzedAt": "2026-05-28",
+    "gitCommitHash": "c96b88f50572cd4a4e0ee110932bd59e4fdad6ca"
+  },
+  "nodes": [
+    {
+      "id": "file: src/main.ts",
+      "type": "file",
+      "name": "main.ts",
+      "summary": "文件节点",
+      "tags": [
+        "核心模块"
+      ],
+      "path": "src/main.ts"
+    },
+    {
+      "id": "file: src/App.vue",
+      "type": "file",
+      "name": "App.vue",
+      "summary": "文件节点",
+      "tags": [
+        "核心模块"
+      ],
+      "path": "src/App.vue"
+    },
+    {
+      "id": "file: src/types/block.ts",
+      "type": "file",
+      "name": "block.ts",
+      "summary": "文件节点",
+      "tags": [
+        "类型定义",
+        "块"
+      ],
+      "path": "src/types/block.ts"
+    },
+    {
+      "id": "file: src/types/page.ts",
+      "type": "file",
+      "name": "page.ts",
+      "summary": "文件节点",
+      "tags": [
+        "类型定义",
+        "页面"
+      ],
+      "path": "src/types/page.ts"
+    },
+    {
+      "id": "file: src/router/index.ts",
+      "type": "file",
+      "name": "index.ts",
+      "summary": "文件节点",
+      "tags": [
+        "路由"
+      ],
+      "path": "src/router/index.ts"
+    },
+    {
+      "id": "file: src/router/routes.ts",
+      "type": "file",
+      "name": "routes.ts",
+      "summary": "文件节点",
+      "tags": [
+        "路由"
+      ],
+      "path": "src/router/routes.ts"
+    },
+    {
+      "id": "file: src/stores/blocks.ts",
+      "type": "file",
+      "name": "blocks.ts",
+      "summary": "文件节点",
+      "tags": [
+        "状态管理",
+        "块"
+      ],
+      "path": "src/stores/blocks.ts"
+    },
+    {
+      "id": "file: src/stores/pages.ts",
+      "type": "file",
+      "name": "pages.ts",
+      "summary": "文件节点",
+      "tags": [
+        "状态管理",
+        "页面"
+      ],
+      "path": "src/stores/pages.ts"
+    },
+    {
+      "id": "file: src/stores/editor.ts",
+      "type": "file",
+      "name": "editor.ts",
+      "summary": "文件节点",
+      "tags": [
+        "状态管理"
+      ],
+      "path": "src/stores/editor.ts"
+    },
+    {
+      "id": "file: src/stores/property.ts",
+      "type": "file",
+      "name": "property.ts",
+      "summary": "文件节点",
+      "tags": [
+        "状态管理",
+        "属性"
+      ],
+      "path": "src/stores/property.ts"
+    },
+    {
+      "id": "file: src/composables/useBlockTree.ts",
+      "type": "file",
+      "name": "useBlockTree.ts",
+      "summary": "文件节点",
+      "tags": [
+        "组合式函数",
+        "块"
+      ],
+      "path": "src/composables/useBlockTree.ts"
+    },
+    {
+      "id": "file: src/composables/useDragDrop.ts",
+      "type": "file",
+      "name": "useDragDrop.ts",
+      "summary": "文件节点",
+      "tags": [
+        "组合式函数"
+      ],
+      "path": "src/composables/useDragDrop.ts"
+    },
+    {
+      "id": "file: src/composables/useSlashCommands.ts",
+      "type": "file",
+      "name": "useSlashCommands.ts",
+      "summary": "文件节点",
+      "tags": [
+        "组合式函数"
+      ],
+      "path": "src/composables/useSlashCommands.ts"
+    },
+    {
+      "id": "file: src/composables/useJournal.ts",
+      "type": "file",
+      "name": "useJournal.ts",
+      "summary": "文件节点",
+      "tags": [
+        "组合式函数",
+        "日记"
+      ],
+      "path": "src/composables/useJournal.ts"
+    },
+    {
+      "id": "file: src/components/Editor.vue",
+      "type": "file",
+      "name": "Editor.vue",
+      "summary": "文件节点",
+      "tags": [
+        "组件"
+      ],
+      "path": "src/components/Editor.vue"
+    },
+    {
+      "id": "file: src/components/BlockList.vue",
+      "type": "file",
+      "name": "BlockList.vue",
+      "summary": "文件节点",
+      "tags": [
+        "组件",
+        "块"
+      ],
+      "path": "src/components/BlockList.vue"
+    },
+    {
+      "id": "file: src/components/Sidebar/SidebarContainer.vue",
+      "type": "file",
+      "name": "SidebarContainer.vue",
+      "summary": "文件节点",
+      "tags": [
+        "组件",
+        "侧边栏"
+      ],
+      "path": "src/components/Sidebar/SidebarContainer.vue"
+    },
+    {
+      "id": "file: src/components/Block/index.vue",
+      "type": "file",
+      "name": "index.vue",
+      "summary": "文件节点",
+      "tags": [
+        "组件",
+        "块"
+      ],
+      "path": "src/components/Block/index.vue"
+    },
+    {
+      "id": "file: src/extensions/WikiLinkExtension.ts",
+      "type": "file",
+      "name": "WikiLinkExtension.ts",
+      "summary": "文件节点",
+      "tags": [
+        "编辑器扩展"
+      ],
+      "path": "src/extensions/WikiLinkExtension.ts"
+    },
+    {
+      "id": "file: src/extensions/SlashCommandExtension.ts",
+      "type": "file",
+      "name": "SlashCommandExtension.ts",
+      "summary": "文件节点",
+      "tags": [
+        "编辑器扩展"
+      ],
+      "path": "src/extensions/SlashCommandExtension.ts"
+    },
+    {
+      "id": "file: src/storage/indexedDB.ts",
+      "type": "file",
+      "name": "indexedDB.ts",
+      "summary": "文件节点",
+      "tags": [
+        "存储"
+      ],
+      "path": "src/storage/indexedDB.ts"
+    },
+    {
+      "id": "file: src/storage/db.ts",
+      "type": "file",
+      "name": "db.ts",
+      "summary": "文件节点",
+      "tags": [
+        "存储"
+      ],
+      "path": "src/storage/db.ts"
+    },
+    {
+      "id": "file: src/utils/block-helpers.ts",
+      "type": "file",
+      "name": "block-helpers.ts",
+      "summary": "文件节点",
+      "tags": [
+        "工具函数",
+        "块"
+      ],
+      "path": "src/utils/block-helpers.ts"
+    },
+    {
+      "id": "file: src/utils/parser.ts",
+      "type": "file",
+      "name": "parser.ts",
+      "summary": "文件节点",
+      "tags": [
+        "工具函数"
+      ],
+      "path": "src/utils/parser.ts"
+    },
+    {
+      "id": "src/types/block.ts:Block",
+      "type": "interface",
+      "name": "Block",
+      "summary": "接口定义",
+      "tags": [
+        "类型定义",
+        "块"
+      ]
+    },
+    {
+      "id": "src/types/block.ts:BlockRecord",
+      "type": "interface",
+      "name": "BlockRecord",
+      "summary": "接口定义",
+      "tags": [
+        "类型定义",
+        "块"
+      ]
+    },
+    {
+      "id": "src/types/block.ts:TreeNode",
+      "type": "interface",
+      "name": "TreeNode",
+      "summary": "接口定义",
+      "tags": [
+        "类型定义",
+        "块"
+      ]
+    },
+    {
+      "id": "src/types/page.ts:Page",
+      "type": "interface",
+      "name": "Page",
+      "summary": "接口定义",
+      "tags": [
+        "类型定义",
+        "页面"
+      ]
+    },
+    {
+      "id": "src/types/page.ts:PageRecord",
+      "type": "interface",
+      "name": "PageRecord",
+      "summary": "接口定义",
+      "tags": [
+        "类型定义",
+        "页面"
+      ]
+    },
+    {
+      "id": "src/router/routes.ts:routes",
+      "type": "variable",
+      "name": "routes",
+      "summary": "变量",
+      "tags": [
+        "路由"
+      ]
+    },
+    {
+      "id": "src/stores/blocks.ts:safeCalcInsertPos",
+      "type": "function",
+      "name": "safeCalcInsertPos",
+      "summary": "函数",
+      "tags": [
+        "状态管理",
+        "块"
+      ]
+    },
+    {
+      "id": "src/stores/blocks.ts:useBlockStore",
+      "type": "function",
+      "name": "useBlockStore",
+      "summary": "函数",
+      "tags": [
+        "状态管理",
+        "块"
+      ]
+    },
+    {
+      "id": "src/stores/pages.ts:usePageStore",
+      "type": "function",
+      "name": "usePageStore",
+      "summary": "函数",
+      "tags": [
+        "状态管理",
+        "页面"
+      ]
+    },
+    {
+      "id": "src/stores/editor.ts:useEditorStore",
+      "type": "function",
+      "name": "useEditorStore",
+      "summary": "函数",
+      "tags": [
+        "状态管理"
+      ]
+    },
+    {
+      "id": "src/stores/property.ts:usePropertyStore",
+      "type": "function",
+      "name": "usePropertyStore",
+      "summary": "函数",
+      "tags": [
+        "状态管理",
+        "属性"
+      ]
+    },
+    {
+      "id": "src/composables/useBlockTree.ts:buildTree",
+      "type": "function",
+      "name": "buildTree",
+      "summary": "函数",
+      "tags": [
+        "组合式函数",
+        "块"
+      ]
+    },
+    {
+      "id": "src/composables/useBlockTree.ts:syncTreeToStore",
+      "type": "function",
+      "name": "syncTreeToStore",
+      "summary": "函数",
+      "tags": [
+        "组合式函数",
+        "块"
+      ]
+    },
+    {
+      "id": "src/composables/useDragDrop.ts:computeDropZone",
+      "type": "function",
+      "name": "computeDropZone",
+      "summary": "函数",
+      "tags": [
+        "组合式函数"
+      ]
+    },
+    {
+      "id": "src/composables/useDragDrop.ts:computeSortPosition",
+      "type": "function",
+      "name": "computeSortPosition",
+      "summary": "函数",
+      "tags": [
+        "组合式函数"
+      ]
+    },
+    {
+      "id": "src/composables/useSlashCommands.ts:commands",
+      "type": "variable",
+      "name": "commands",
+      "summary": "变量",
+      "tags": [
+        "组合式函数"
+      ]
+    },
+    {
+      "id": "src/composables/useSlashCommands.ts:filterCommands",
+      "type": "function",
+      "name": "filterCommands",
+      "summary": "函数",
+      "tags": [
+        "组合式函数"
+      ]
+    },
+    {
+      "id": "src/composables/useSlashCommands.ts:groupCommands",
+      "type": "function",
+      "name": "groupCommands",
+      "summary": "函数",
+      "tags": [
+        "组合式函数"
+      ]
+    },
+    {
+      "id": "src/composables/useSlashCommands.ts:parseCommandInput",
+      "type": "function",
+      "name": "parseCommandInput",
+      "summary": "函数",
+      "tags": [
+        "组合式函数"
+      ]
+    },
+    {
+      "id": "src/composables/useSlashCommands.ts:useSlashCommands",
+      "type": "function",
+      "name": "useSlashCommands",
+      "summary": "函数",
+      "tags": [
+        "组合式函数"
+      ]
+    },
+    {
+      "id": "src/composables/useJournal.ts:isJournalPage",
+      "type": "function",
+      "name": "isJournalPage",
+      "summary": "函数",
+      "tags": [
+        "组合式函数",
+        "页面",
+        "日记"
+      ]
+    },
+    {
+      "id": "src/composables/useJournal.ts:useJournal",
+      "type": "function",
+      "name": "useJournal",
+      "summary": "函数",
+      "tags": [
+        "组合式函数",
+        "日记"
+      ]
+    },
+    {
+      "id": "src/extensions/WikiLinkExtension.ts:WikiLinkExtension",
+      "type": "function",
+      "name": "WikiLinkExtension",
+      "summary": "函数",
+      "tags": [
+        "编辑器扩展"
+      ]
+    },
+    {
+      "id": "src/extensions/SlashCommandExtension.ts:SlashCommandExtension",
+      "type": "function",
+      "name": "SlashCommandExtension",
+      "summary": "函数",
+      "tags": [
+        "编辑器扩展"
+      ]
+    },
+    {
+      "id": "src/extensions/SlashCommandExtension.ts:isInURL",
+      "type": "function",
+      "name": "isInURL",
+      "summary": "函数",
+      "tags": [
+        "编辑器扩展"
+      ]
+    },
+    {
+      "id": "src/storage/indexedDB.ts:IndexedDBAdapter",
+      "type": "class",
+      "name": "IndexedDBAdapter",
+      "summary": "类定义",
+      "tags": [
+        "存储"
+      ]
+    },
+    {
+      "id": "src/storage/indexedDB.ts:storage",
+      "type": "variable",
+      "name": "storage",
+      "summary": "变量",
+      "tags": [
+        "存储"
+      ]
+    },
+    {
+      "id": "src/storage/indexedDB.ts:recordToBlock",
+      "type": "function",
+      "name": "recordToBlock",
+      "summary": "函数",
+      "tags": [
+        "存储",
+        "块"
+      ]
+    },
+    {
+      "id": "src/storage/indexedDB.ts:blockToRecord",
+      "type": "function",
+      "name": "blockToRecord",
+      "summary": "函数",
+      "tags": [
+        "存储",
+        "块"
+      ]
+    },
+    {
+      "id": "src/storage/indexedDB.ts:pageToRecord",
+      "type": "function",
+      "name": "pageToRecord",
+      "summary": "函数",
+      "tags": [
+        "存储",
+        "页面"
+      ]
+    },
+    {
+      "id": "src/storage/indexedDB.ts:recordToPage",
+      "type": "function",
+      "name": "recordToPage",
+      "summary": "函数",
+      "tags": [
+        "存储",
+        "页面"
+      ]
+    },
+    {
+      "id": "src/storage/indexedDB.ts:recordToProperty",
+      "type": "function",
+      "name": "recordToProperty",
+      "summary": "函数",
+      "tags": [
+        "存储",
+        "属性"
+      ]
+    },
+    {
+      "id": "src/storage/indexedDB.ts:propertyToRecord",
+      "type": "function",
+      "name": "propertyToRecord",
+      "summary": "函数",
+      "tags": [
+        "存储",
+        "属性"
+      ]
+    },
+    {
+      "id": "src/storage/db.ts:ComindDB",
+      "type": "class",
+      "name": "ComindDB",
+      "summary": "类定义",
+      "tags": [
+        "存储"
+      ]
+    },
+    {
+      "id": "src/storage/db.ts:db",
+      "type": "variable",
+      "name": "db",
+      "summary": "变量",
+      "tags": [
+        "存储"
+      ]
+    },
+    {
+      "id": "src/utils/block-helpers.ts:GAP_SIZE",
+      "type": "constant",
+      "name": "GAP_SIZE",
+      "summary": "常量",
+      "tags": [
+        "工具函数",
+        "块"
+      ]
+    },
+    {
+      "id": "src/utils/block-helpers.ts:SAVE_DEBOUNCE_MS",
+      "type": "constant",
+      "name": "SAVE_DEBOUNCE_MS",
+      "summary": "常量",
+      "tags": [
+        "工具函数",
+        "块"
+      ]
+    },
+    {
+      "id": "src/utils/block-helpers.ts:pmPosToTextOffset",
+      "type": "function",
+      "name": "pmPosToTextOffset",
+      "summary": "函数",
+      "tags": [
+        "工具函数",
+        "块"
+      ]
+    },
+    {
+      "id": "src/utils/block-helpers.ts:textOffsetToPmPos",
+      "type": "function",
+      "name": "textOffsetToPmPos",
+      "summary": "函数",
+      "tags": [
+        "工具函数",
+        "块"
+      ]
+    },
+    {
+      "id": "src/utils/block-helpers.ts:sortByPos",
+      "type": "function",
+      "name": "sortByPos",
+      "summary": "函数",
+      "tags": [
+        "工具函数",
+        "块"
+      ]
+    },
+    {
+      "id": "src/utils/block-helpers.ts:getSortedChildren",
+      "type": "function",
+      "name": "getSortedChildren",
+      "summary": "函数",
+      "tags": [
+        "工具函数",
+        "块"
+      ]
+    },
+    {
+      "id": "src/utils/block-helpers.ts:getSortedSiblings",
+      "type": "function",
+      "name": "getSortedSiblings",
+      "summary": "函数",
+      "tags": [
+        "工具函数",
+        "块"
+      ]
+    },
+    {
+      "id": "src/utils/block-helpers.ts:findBlockIndex",
+      "type": "function",
+      "name": "findBlockIndex",
+      "summary": "函数",
+      "tags": [
+        "工具函数",
+        "块"
+      ]
+    },
+    {
+      "id": "src/utils/block-helpers.ts:getPrevSibling",
+      "type": "function",
+      "name": "getPrevSibling",
+      "summary": "函数",
+      "tags": [
+        "工具函数",
+        "块"
+      ]
+    },
+    {
+      "id": "src/utils/block-helpers.ts:getNextSibling",
+      "type": "function",
+      "name": "getNextSibling",
+      "summary": "函数",
+      "tags": [
+        "工具函数",
+        "块"
+      ]
+    },
+    {
+      "id": "src/utils/block-helpers.ts:calcInsertPos",
+      "type": "function",
+      "name": "calcInsertPos",
+      "summary": "函数",
+      "tags": [
+        "工具函数",
+        "块"
+      ]
+    },
+    {
+      "id": "src/utils/block-helpers.ts:GapExhaustedError",
+      "type": "class",
+      "name": "GapExhaustedError",
+      "summary": "类定义",
+      "tags": [
+        "工具函数",
+        "块"
+      ]
+    },
+    {
+      "id": "src/utils/block-helpers.ts:isGapExhaustedError",
+      "type": "function",
+      "name": "isGapExhaustedError",
+      "summary": "函数",
+      "tags": [
+        "工具函数",
+        "块"
+      ]
+    },
+    {
+      "id": "src/utils/block-helpers.ts:renumberBlocks",
+      "type": "function",
+      "name": "renumberBlocks",
+      "summary": "函数",
+      "tags": [
+        "工具函数",
+        "块"
+      ]
+    },
+    {
+      "id": "src/utils/block-helpers.ts:isDescendantOf",
+      "type": "function",
+      "name": "isDescendantOf",
+      "summary": "函数",
+      "tags": [
+        "工具函数",
+        "块"
+      ]
+    },
+    {
+      "id": "src/utils/parser.ts:ParseResult",
+      "type": "interface",
+      "name": "ParseResult",
+      "summary": "接口定义",
+      "tags": [
+        "工具函数"
+      ]
+    },
+    {
+      "id": "src/utils/parser.ts:LinkParse",
+      "type": "interface",
+      "name": "LinkParse",
+      "summary": "接口定义",
+      "tags": [
+        "工具函数"
+      ]
+    },
+    {
+      "id": "src/utils/parser.ts:extractLinkMatches",
+      "type": "function",
+      "name": "extractLinkMatches",
+      "summary": "函数",
+      "tags": [
+        "工具函数"
+      ]
+    },
+    {
+      "id": "src/utils/parser.ts:parseBlockLinks",
+      "type": "function",
+      "name": "parseBlockLinks",
+      "summary": "函数",
+      "tags": [
+        "工具函数",
+        "块"
+      ]
+    },
+    {
+      "id": "src/utils/parser.ts:parseContent",
+      "type": "function",
+      "name": "parseContent",
+      "summary": "函数",
+      "tags": [
+        "工具函数"
+      ]
+    },
+    {
+      "id": "src/utils/parser.ts:parsePropertyValue",
+      "type": "function",
+      "name": "parsePropertyValue",
+      "summary": "函数",
+      "tags": [
+        "工具函数",
+        "属性"
+      ]
+    },
+    {
+      "id": "src/components/Page/index.vue",
+      "type": "file",
+      "name": "Page/index.vue",
+      "summary": "页面主组件，负责页面渲染、标题编辑和页面合并功能",
+      "tags": [
+        "页面组件"
+      ],
+      "data": {
+        "name": "Page/index.vue",
+        "category": "页面组件",
+        "description": "页面主组件，负责页面渲染、标题编辑和页面合并功能",
+        "imports": [
+          "BlockList",
+          "Backlinks",
+          "MergeDialog",
+          "SlashCommandMenu",
+          "PropertyQuickEditor",
+          "PropertyEditor",
+          "usePageStore",
+          "useEditorStore"
+        ]
+      }
+    },
+    {
+      "id": "src/components/Journal/JournalList.vue",
+      "type": "file",
+      "name": "JournalList.vue",
+      "summary": "日记列表组件，显示所有日记条目",
+      "tags": [
+        "页面组件"
+      ],
+      "data": {
+        "name": "JournalList.vue",
+        "category": "页面组件",
+        "description": "日记列表组件，显示所有日记条目",
+        "imports": [
+          "JournalListItem",
+          "SlashCommandMenu",
+          "PropertyQuickEditor",
+          "PropertyEditor",
+          "useJournal",
+          "usePageStore",
+          "useBlockStore"
+        ]
+      }
+    },
+    {
+      "id": "src/components/Journal/JournalListItem.vue",
+      "type": "file",
+      "name": "JournalListItem.vue",
+      "summary": "日记列表项组件，显示单个日记条目",
+      "tags": [
+        "页面组件"
+      ],
+      "data": {
+        "name": "JournalListItem.vue",
+        "category": "页面组件",
+        "description": "日记列表项组件，显示单个日记条目",
+        "imports": [
+          "BlockList",
+          "Backlinks",
+          "useJournal",
+          "usePageStore"
+        ]
+      }
+    },
+    {
+      "id": "src/components/Trash/TrashList.vue",
+      "type": "file",
+      "name": "TrashList.vue",
+      "summary": "回收站列表组件，显示已删除页面并提供恢复和永久删除功能",
+      "tags": [
+        "页面组件"
+      ],
+      "data": {
+        "name": "TrashList.vue",
+        "category": "页面组件",
+        "description": "回收站列表组件，显示已删除页面并提供恢复和永久删除功能",
+        "imports": [
+          "ConfirmDialog",
+          "usePageStore"
+        ]
+      }
+    },
+    {
+      "id": "src/components/Settings/Settings.vue",
+      "type": "file",
+      "name": "Settings.vue",
+      "summary": "设置页面组件，显示应用设置选项",
+      "tags": [
+        "设置和菜单"
+      ],
+      "data": {
+        "name": "Settings.vue",
+        "category": "设置和菜单",
+        "description": "设置页面组件，显示应用设置选项",
+        "imports": []
+      }
+    },
+    {
+      "id": "src/components/PageLinkMenu.vue",
+      "type": "file",
+      "name": "PageLinkMenu.vue",
+      "summary": "页面链接菜单组件，用于创建和选择页面链接",
+      "tags": [
+        "设置和菜单"
+      ],
+      "data": {
+        "name": "PageLinkMenu.vue",
+        "category": "设置和菜单",
+        "description": "页面链接菜单组件，用于创建和选择页面链接",
+        "imports": [
+          "usePageStore",
+          "useModalKeyboard"
+        ]
+      }
+    },
+    {
+      "id": "src/components/PageMenuButton.vue",
+      "type": "file",
+      "name": "PageMenuButton.vue",
+      "summary": "页面菜单按钮组件，提供页面操作菜单",
+      "tags": [
+        "设置和菜单"
+      ],
+      "data": {
+        "name": "PageMenuButton.vue",
+        "category": "设置和菜单",
+        "description": "页面菜单按钮组件，提供页面操作菜单",
+        "imports": [
+          "ConfirmDialog",
+          "useFavorites",
+          "usePageStore"
+        ]
+      }
+    },
+    {
+      "id": "src/components/SlashCommandMenu.vue",
+      "type": "file",
+      "name": "SlashCommandMenu.vue",
+      "summary": "斜杠命令菜单组件，提供快捷命令输入",
+      "tags": [
+        "设置和菜单"
+      ],
+      "data": {
+        "name": "SlashCommandMenu.vue",
+        "category": "设置和菜单",
+        "description": "斜杠命令菜单组件，提供快捷命令输入",
+        "imports": [
+          "TaskIcon",
+          "useEditorStore",
+          "usePropertyStore",
+          "useSlashCommands",
+          "useModalKeyboardRef"
+        ]
+      }
+    },
+    {
+      "id": "src/components/Sidebar/SidebarHeader.vue",
+      "type": "file",
+      "name": "SidebarHeader.vue",
+      "summary": "侧边栏头部组件，显示Logo和折叠按钮",
+      "tags": [
+        "侧边栏组件"
+      ],
+      "data": {
+        "name": "SidebarHeader.vue",
+        "category": "侧边栏组件",
+        "description": "侧边栏头部组件，显示Logo和折叠按钮",
+        "imports": []
+      }
+    },
+    {
+      "id": "src/components/Sidebar/SidebarFooter.vue",
+      "type": "file",
+      "name": "SidebarFooter.vue",
+      "summary": "侧边栏底部组件，显示快捷键提示",
+      "tags": [
+        "侧边栏组件"
+      ],
+      "data": {
+        "name": "SidebarFooter.vue",
+        "category": "侧边栏组件",
+        "description": "侧边栏底部组件，显示快捷键提示",
+        "imports": []
+      }
+    },
+    {
+      "id": "src/components/Sidebar/SidebarFavorites.vue",
+      "type": "file",
+      "name": "SidebarFavorites.vue",
+      "summary": "收藏组件，显示用户收藏的页面列表",
+      "tags": [
+        "侧边栏组件"
+      ],
+      "data": {
+        "name": "SidebarFavorites.vue",
+        "category": "侧边栏组件",
+        "description": "收藏组件，显示用户收藏的页面列表",
+        "imports": [
+          "PageItem",
+          "useFavorites",
+          "usePageStore"
+        ]
+      }
+    },
+    {
+      "id": "src/components/Sidebar/SidebarRecent.vue",
+      "type": "file",
+      "name": "SidebarRecent.vue",
+      "summary": "最近访问组件，显示最近访问的页面列表",
+      "tags": [
+        "侧边栏组件"
+      ],
+      "data": {
+        "name": "SidebarRecent.vue",
+        "category": "侧边栏组件",
+        "description": "最近访问组件，显示最近访问的页面列表",
+        "imports": [
+          "PageItem",
+          "useRecent",
+          "usePageStore"
+        ]
+      }
+    },
+    {
+      "id": "src/components/Sidebar/SidebarJournal.vue",
+      "type": "file",
+      "name": "SidebarJournal.vue",
+      "summary": "日记快捷入口组件，显示今日日记",
+      "tags": [
+        "侧边栏组件"
+      ],
+      "data": {
+        "name": "SidebarJournal.vue",
+        "category": "侧边栏组件",
+        "description": "日记快捷入口组件，显示今日日记",
+        "imports": [
+          "useJournal"
+        ]
+      }
+    },
+    {
+      "id": "src/components/Sidebar/PageItem.vue",
+      "type": "file",
+      "name": "PageItem.vue",
+      "summary": "页面项组件，用于在侧边栏中显示单个页面",
+      "tags": [
+        "侧边栏组件"
+      ],
+      "data": {
+        "name": "PageItem.vue",
+        "category": "侧边栏组件",
+        "description": "页面项组件，用于在侧边栏中显示单个页面",
+        "imports": []
+      }
+    },
+    {
+      "id": "src/components/Block/PropertyDisplay.vue",
+      "type": "file",
+      "name": "PropertyDisplay.vue",
+      "summary": "属性显示组件，显示块的内置属性",
+      "tags": [
+        "块组件"
+      ],
+      "data": {
+        "name": "PropertyDisplay.vue",
+        "category": "块组件",
+        "description": "属性显示组件，显示块的内置属性",
+        "imports": [
+          "TaskIcon",
+          "usePropertyStore",
+          "useEditorStore"
+        ]
+      }
+    },
+    {
+      "id": "src/components/Block/PropertyEditor.vue",
+      "type": "file",
+      "name": "PropertyEditor.vue",
+      "summary": "属性编辑器组件，用于编辑自定义属性",
+      "tags": [
+        "块组件"
+      ],
+      "data": {
+        "name": "PropertyEditor.vue",
+        "category": "块组件",
+        "description": "属性编辑器组件，用于编辑自定义属性",
+        "imports": [
+          "useEditorStore",
+          "usePropertyStore"
+        ]
+      }
+    },
+    {
+      "id": "src/components/Block/PropertyInline.vue",
+      "type": "file",
+      "name": "PropertyInline.vue",
+      "summary": "行内属性组件，在块内容中显示属性",
+      "tags": [
+        "块组件"
+      ],
+      "data": {
+        "name": "PropertyInline.vue",
+        "category": "块组件",
+        "description": "行内属性组件，在块内容中显示属性",
+        "imports": [
+          "TaskIcon",
+          "usePropertyStore",
+          "useEditorStore"
+        ]
+      }
+    },
+    {
+      "id": "src/components/Block/PropertyQuickEditor.vue",
+      "type": "file",
+      "name": "PropertyQuickEditor.vue",
+      "summary": "快速属性编辑器组件，快捷编辑内置属性",
+      "tags": [
+        "块组件"
+      ],
+      "data": {
+        "name": "PropertyQuickEditor.vue",
+        "category": "块组件",
+        "description": "快速属性编辑器组件，快捷编辑内置属性",
+        "imports": [
+          "TaskIcon",
+          "useEditorStore",
+          "usePropertyStore",
+          "getAllPropertyDefinitions"
+        ]
+      }
+    },
+    {
+      "id": "src/components/Block/handlers/bullet/BulletRender.vue",
+      "type": "file",
+      "name": "BulletRender.vue",
+      "summary": "列表渲染组件，用于渲染列表块内容",
+      "tags": [
+        "块处理器"
+      ],
+      "data": {
+        "name": "BulletRender.vue",
+        "category": "块处理器",
+        "description": "列表渲染组件，用于渲染列表块内容",
+        "imports": [
+          "useContentRenderer"
+        ]
+      }
+    },
+    {
+      "id": "src/components/Block/handlers/code/CodeRender.vue",
+      "type": "file",
+      "name": "CodeRender.vue",
+      "summary": "代码渲染组件，显示语法高亮的代码块",
+      "tags": [
+        "块处理器"
+      ],
+      "data": {
+        "name": "CodeRender.vue",
+        "category": "块处理器",
+        "description": "代码渲染组件，显示语法高亮的代码块",
+        "imports": [
+          "useCodeBlock",
+          "useLanguageMenu",
+          "useCopyButton"
+        ]
+      }
+    },
+    {
+      "id": "src/components/Block/handlers/code/CodeEditor.vue",
+      "type": "file",
+      "name": "CodeEditor.vue",
+      "summary": "代码编辑器组件，用于编辑代码块",
+      "tags": [
+        "块处理器"
+      ],
+      "data": {
+        "name": "CodeEditor.vue",
+        "category": "块处理器",
+        "description": "代码编辑器组件，用于编辑代码块",
+        "imports": [
+          "useCodeBlock",
+          "useLanguageMenu"
+        ]
+      }
+    },
+    {
+      "id": "src/components/Block/handlers/embed/EmbedRender.vue",
+      "type": "file",
+      "name": "EmbedRender.vue",
+      "summary": "嵌入渲染组件，渲染嵌入的其他页面块",
+      "tags": [
+        "块处理器"
+      ],
+      "data": {
+        "name": "EmbedRender.vue",
+        "category": "块处理器",
+        "description": "嵌入渲染组件，渲染嵌入的其他页面块",
+        "imports": [
+          "useBlockStore",
+          "usePageStore",
+          "useBlockRegistry",
+          "useNavigateToPage",
+          "storage"
+        ]
+      }
+    },
+    {
+      "id": "src/components/Block/handlers/image/ImageRender.vue",
+      "type": "file",
+      "name": "ImageRender.vue",
+      "summary": "图片渲染组件，显示图片块",
+      "tags": [
+        "块处理器"
+      ],
+      "data": {
+        "name": "ImageRender.vue",
+        "category": "块处理器",
+        "description": "图片渲染组件，显示图片块",
+        "imports": [
+          "assetStorage"
+        ]
+      }
+    },
+    {
+      "id": "src/components/Backlinks.vue",
+      "type": "file",
+      "name": "Backlinks.vue",
+      "summary": "反向链接组件，显示链接到当前页面的块",
+      "tags": [
+        "其他组件"
+      ],
+      "data": {
+        "name": "Backlinks.vue",
+        "category": "其他组件",
+        "description": "反向链接组件，显示链接到当前页面的块",
+        "imports": [
+          "usePageStore",
+          "useEditorStore",
+          "storage",
+          "db",
+          "useNavigateToPage"
+        ]
+      }
+    },
+    {
+      "id": "src/components/BlockSelector.vue",
+      "type": "file",
+      "name": "BlockSelector.vue",
+      "summary": "块选择器组件，用于选择要嵌入的块",
+      "tags": [
+        "其他组件"
+      ],
+      "data": {
+        "name": "BlockSelector.vue",
+        "category": "其他组件",
+        "description": "块选择器组件，用于选择要嵌入的块",
+        "imports": [
+          "usePageStore",
+          "useBlockStore",
+          "storage"
+        ]
+      }
+    },
+    {
+      "id": "src/components/ConfirmDialog.vue",
+      "type": "file",
+      "name": "ConfirmDialog.vue",
+      "summary": "确认对话框组件，通用确认弹窗",
+      "tags": [
+        "其他组件"
+      ],
+      "data": {
+        "name": "ConfirmDialog.vue",
+        "category": "其他组件",
+        "description": "确认对话框组件，通用确认弹窗",
+        "imports": []
+      }
+    },
+    {
+      "id": "src/components/MergeDialog.vue",
+      "type": "file",
+      "name": "MergeDialog.vue",
+      "summary": "合并对话框组件，页面合并确认弹窗",
+      "tags": [
+        "其他组件"
+      ],
+      "data": {
+        "name": "MergeDialog.vue",
+        "category": "其他组件",
+        "description": "合并对话框组件，页面合并确认弹窗",
+        "imports": []
+      }
+    },
+    {
+      "id": "src/components/Icons/TaskIcon.vue",
+      "type": "file",
+      "name": "TaskIcon.vue",
+      "summary": "任务图标组件，渲染SVG图标",
+      "tags": [
+        "其他组件"
+      ],
+      "data": {
+        "name": "TaskIcon.vue",
+        "category": "其他组件",
+        "description": "任务图标组件，渲染SVG图标",
+        "imports": []
+      }
+    },
+    {
+      "id": "src/composables/useBlockRegistry.test.ts",
+      "type": "file",
+      "name": "useBlockRegistry.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "useBlockRegistry.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/composables/useBlockRegistry",
+      "type": "function",
+      "name": "useBlockRegistry",
+      "summary": "函数",
+      "tags": [
+        "组合式函数",
+        "块"
+      ],
+      "data": {
+        "name": "useBlockRegistry",
+        "file": "useBlockRegistry.test.ts"
+      }
+    },
+    {
+      "id": "src/composables/useBlockTree.test.ts",
+      "type": "file",
+      "name": "useBlockTree.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "useBlockTree.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/composables/buildTree",
+      "type": "function",
+      "name": "buildTree",
+      "summary": "函数",
+      "tags": [
+        "组合式函数"
+      ],
+      "data": {
+        "name": "buildTree",
+        "file": "useBlockTree.test.ts"
+      }
+    },
+    {
+      "id": "src/composables/syncTreeToStore",
+      "type": "function",
+      "name": "syncTreeToStore",
+      "summary": "函数",
+      "tags": [
+        "组合式函数"
+      ],
+      "data": {
+        "name": "syncTreeToStore",
+        "file": "useBlockTree.test.ts"
+      }
+    },
+    {
+      "id": "src/composables/useContentRenderer.test.ts",
+      "type": "file",
+      "name": "useContentRenderer.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "useContentRenderer.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/composables/useContentRenderer",
+      "type": "function",
+      "name": "useContentRenderer",
+      "summary": "函数",
+      "tags": [
+        "组合式函数"
+      ],
+      "data": {
+        "name": "useContentRenderer",
+        "file": "useContentRenderer.test.ts"
+      }
+    },
+    {
+      "id": "src/composables/renderContentToHtml",
+      "type": "function",
+      "name": "renderContentToHtml",
+      "summary": "函数",
+      "tags": [
+        "组合式函数"
+      ],
+      "data": {
+        "name": "renderContentToHtml",
+        "file": "useContentRenderer.test.ts"
+      }
+    },
+    {
+      "id": "src/composables/useCrossBlockSelection.test.ts",
+      "type": "file",
+      "name": "useCrossBlockSelection.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "useCrossBlockSelection.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/composables/useCrossBlockSelection",
+      "type": "function",
+      "name": "useCrossBlockSelection",
+      "summary": "函数",
+      "tags": [
+        "组合式函数",
+        "块"
+      ],
+      "data": {
+        "name": "useCrossBlockSelection",
+        "file": "useCrossBlockSelection.test.ts"
+      }
+    },
+    {
+      "id": "src/composables/useDragDrop.test.ts",
+      "type": "file",
+      "name": "useDragDrop.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "useDragDrop.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/composables/computeDropZone",
+      "type": "function",
+      "name": "computeDropZone",
+      "summary": "函数",
+      "tags": [
+        "组合式函数"
+      ],
+      "data": {
+        "name": "computeDropZone",
+        "file": "useDragDrop.test.ts"
+      }
+    },
+    {
+      "id": "src/composables/computeSortPosition",
+      "type": "function",
+      "name": "computeSortPosition",
+      "summary": "函数",
+      "tags": [
+        "组合式函数"
+      ],
+      "data": {
+        "name": "computeSortPosition",
+        "file": "useDragDrop.test.ts"
+      }
+    },
+    {
+      "id": "src/composables/DRAG_THRESHOLD",
+      "type": "variable",
+      "name": "DRAG_THRESHOLD",
+      "summary": "变量",
+      "tags": [
+        "组合式函数"
+      ],
+      "data": {
+        "name": "DRAG_THRESHOLD",
+        "file": "useDragDrop.test.ts"
+      }
+    },
+    {
+      "id": "src/composables/useFavorites.test.ts",
+      "type": "file",
+      "name": "useFavorites.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "useFavorites.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/composables/useFavorites",
+      "type": "function",
+      "name": "useFavorites",
+      "summary": "函数",
+      "tags": [
+        "组合式函数"
+      ],
+      "data": {
+        "name": "useFavorites",
+        "file": "useFavorites.test.ts"
+      }
+    },
+    {
+      "id": "src/composables/useJournal.test.ts",
+      "type": "file",
+      "name": "useJournal.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "useJournal.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/composables/useJournal",
+      "type": "function",
+      "name": "useJournal",
+      "summary": "函数",
+      "tags": [
+        "组合式函数",
+        "日记"
+      ],
+      "data": {
+        "name": "useJournal",
+        "file": "useJournal.test.ts"
+      }
+    },
+    {
+      "id": "src/composables/useNavigateToPage.test.ts",
+      "type": "file",
+      "name": "useNavigateToPage.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "useNavigateToPage.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/composables/useNavigateToPage",
+      "type": "function",
+      "name": "useNavigateToPage",
+      "summary": "函数",
+      "tags": [
+        "组合式函数",
+        "页面"
+      ],
+      "data": {
+        "name": "useNavigateToPage",
+        "file": "useNavigateToPage.test.ts"
+      }
+    },
+    {
+      "id": "src/composables/navigateToPage",
+      "type": "function",
+      "name": "navigateToPage",
+      "summary": "函数",
+      "tags": [
+        "组合式函数",
+        "页面"
+      ],
+      "data": {
+        "name": "navigateToPage",
+        "file": "useNavigateToPage.test.ts"
+      }
+    },
+    {
+      "id": "src/composables/useRecent.test.ts",
+      "type": "file",
+      "name": "useRecent.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "useRecent.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/composables/useRecent",
+      "type": "function",
+      "name": "useRecent",
+      "summary": "函数",
+      "tags": [
+        "组合式函数"
+      ],
+      "data": {
+        "name": "useRecent",
+        "file": "useRecent.test.ts"
+      }
+    },
+    {
+      "id": "src/composables/useSidebar.test.ts",
+      "type": "file",
+      "name": "useSidebar.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "useSidebar.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/composables/useSidebar",
+      "type": "function",
+      "name": "useSidebar",
+      "summary": "函数",
+      "tags": [
+        "组合式函数",
+        "侧边栏"
+      ],
+      "data": {
+        "name": "useSidebar",
+        "file": "useSidebar.test.ts"
+      }
+    },
+    {
+      "id": "src/composables/useSlashCommands.test.ts",
+      "type": "file",
+      "name": "useSlashCommands.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "useSlashCommands.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/composables/filterCommands",
+      "type": "function",
+      "name": "filterCommands",
+      "summary": "函数",
+      "tags": [
+        "组合式函数"
+      ],
+      "data": {
+        "name": "filterCommands",
+        "file": "useSlashCommands.test.ts"
+      }
+    },
+    {
+      "id": "src/composables/groupCommands",
+      "type": "function",
+      "name": "groupCommands",
+      "summary": "函数",
+      "tags": [
+        "组合式函数"
+      ],
+      "data": {
+        "name": "groupCommands",
+        "file": "useSlashCommands.test.ts"
+      }
+    },
+    {
+      "id": "src/composables/parseCommandInput",
+      "type": "function",
+      "name": "parseCommandInput",
+      "summary": "函数",
+      "tags": [
+        "组合式函数"
+      ],
+      "data": {
+        "name": "parseCommandInput",
+        "file": "useSlashCommands.test.ts"
+      }
+    },
+    {
+      "id": "src/composables/commands",
+      "type": "variable",
+      "name": "commands",
+      "summary": "变量",
+      "tags": [
+        "组合式函数"
+      ],
+      "data": {
+        "name": "commands",
+        "file": "useSlashCommands.test.ts"
+      }
+    },
+    {
+      "id": "src/composables/formatDate",
+      "type": "function",
+      "name": "formatDate",
+      "summary": "函数",
+      "tags": [
+        "组合式函数"
+      ],
+      "data": {
+        "name": "formatDate",
+        "file": "useSlashCommands.test.ts"
+      }
+    },
+    {
+      "id": "src/composables/insertEmbed",
+      "type": "function",
+      "name": "insertEmbed",
+      "summary": "函数",
+      "tags": [
+        "组合式函数"
+      ],
+      "data": {
+        "name": "insertEmbed",
+        "file": "useSlashCommands.test.ts"
+      }
+    },
+    {
+      "id": "src/composables/insertImage",
+      "type": "function",
+      "name": "insertImage",
+      "summary": "函数",
+      "tags": [
+        "组合式函数"
+      ],
+      "data": {
+        "name": "insertImage",
+        "file": "useSlashCommands.test.ts"
+      }
+    },
+    {
+      "id": "src/composables/insertFormat",
+      "type": "function",
+      "name": "insertFormat",
+      "summary": "函数",
+      "tags": [
+        "组合式函数"
+      ],
+      "data": {
+        "name": "insertFormat",
+        "file": "useSlashCommands.test.ts"
+      }
+    },
+    {
+      "id": "src/composables/insertPageRef",
+      "type": "function",
+      "name": "insertPageRef",
+      "summary": "函数",
+      "tags": [
+        "组合式函数",
+        "页面"
+      ],
+      "data": {
+        "name": "insertPageRef",
+        "file": "useSlashCommands.test.ts"
+      }
+    },
+    {
+      "id": "src/extensions/BracketPairExtension.test.ts",
+      "type": "file",
+      "name": "BracketPairExtension.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "BracketPairExtension.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/extensions/SlashCommandExtension.test.ts",
+      "type": "file",
+      "name": "SlashCommandExtension.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "SlashCommandExtension.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/extensions/WikiLinkExtension.test.ts",
+      "type": "file",
+      "name": "WikiLinkExtension.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "WikiLinkExtension.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/extensions/WikiLinkTriggerExtension.test.ts",
+      "type": "file",
+      "name": "WikiLinkTriggerExtension.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "WikiLinkTriggerExtension.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/extensions/notifyWikiLinkMenuSelect",
+      "type": "function",
+      "name": "notifyWikiLinkMenuSelect",
+      "summary": "函数",
+      "tags": [
+        "编辑器扩展"
+      ],
+      "data": {
+        "name": "notifyWikiLinkMenuSelect",
+        "file": "WikiLinkTriggerExtension.test.ts"
+      }
+    },
+    {
+      "id": "src/extensions/findWikiLinkAtCursor",
+      "type": "function",
+      "name": "findWikiLinkAtCursor",
+      "summary": "函数",
+      "tags": [
+        "编辑器扩展"
+      ],
+      "data": {
+        "name": "findWikiLinkAtCursor",
+        "file": "WikiLinkTriggerExtension.test.ts"
+      }
+    },
+    {
+      "id": "src/extensions/closeWikiLinkMenuByEditor",
+      "type": "function",
+      "name": "closeWikiLinkMenuByEditor",
+      "summary": "函数",
+      "tags": [
+        "编辑器扩展"
+      ],
+      "data": {
+        "name": "closeWikiLinkMenuByEditor",
+        "file": "WikiLinkTriggerExtension.test.ts"
+      }
+    },
+    {
+      "id": "src/storage/indexedDB.test.ts",
+      "type": "file",
+      "name": "indexedDB.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "indexedDB.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/storage/IndexedDBAdapter",
+      "type": "class",
+      "name": "IndexedDBAdapter",
+      "summary": "类定义",
+      "tags": [
+        "存储"
+      ],
+      "data": {
+        "name": "IndexedDBAdapter",
+        "file": "indexedDB.test.ts"
+      }
+    },
+    {
+      "id": "src/storage/recordToBlock",
+      "type": "function",
+      "name": "recordToBlock",
+      "summary": "函数",
+      "tags": [
+        "存储",
+        "块"
+      ],
+      "data": {
+        "name": "recordToBlock",
+        "file": "indexedDB.test.ts"
+      }
+    },
+    {
+      "id": "src/storage/recordToPage",
+      "type": "function",
+      "name": "recordToPage",
+      "summary": "函数",
+      "tags": [
+        "存储",
+        "页面"
+      ],
+      "data": {
+        "name": "recordToPage",
+        "file": "indexedDB.test.ts"
+      }
+    },
+    {
+      "id": "src/storage/recordToProperty",
+      "type": "function",
+      "name": "recordToProperty",
+      "summary": "函数",
+      "tags": [
+        "存储",
+        "属性"
+      ],
+      "data": {
+        "name": "recordToProperty",
+        "file": "indexedDB.test.ts"
+      }
+    },
+    {
+      "id": "src/storage/blockToRecord",
+      "type": "function",
+      "name": "blockToRecord",
+      "summary": "函数",
+      "tags": [
+        "存储",
+        "块"
+      ],
+      "data": {
+        "name": "blockToRecord",
+        "file": "indexedDB.test.ts"
+      }
+    },
+    {
+      "id": "src/storage/pageToRecord",
+      "type": "function",
+      "name": "pageToRecord",
+      "summary": "函数",
+      "tags": [
+        "存储",
+        "页面"
+      ],
+      "data": {
+        "name": "pageToRecord",
+        "file": "indexedDB.test.ts"
+      }
+    },
+    {
+      "id": "src/storage/propertyToRecord",
+      "type": "function",
+      "name": "propertyToRecord",
+      "summary": "函数",
+      "tags": [
+        "存储",
+        "属性"
+      ],
+      "data": {
+        "name": "propertyToRecord",
+        "file": "indexedDB.test.ts"
+      }
+    },
+    {
+      "id": "src/storage/asset.test.ts",
+      "type": "file",
+      "name": "asset.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "asset.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/storage/IndexedDBAssetStorage",
+      "type": "class",
+      "name": "IndexedDBAssetStorage",
+      "summary": "类定义",
+      "tags": [
+        "存储"
+      ],
+      "data": {
+        "name": "IndexedDBAssetStorage",
+        "file": "asset.test.ts"
+      }
+    },
+    {
+      "id": "src/storage/assetStorage",
+      "type": "variable",
+      "name": "assetStorage",
+      "summary": "变量",
+      "tags": [
+        "存储"
+      ],
+      "data": {
+        "name": "assetStorage",
+        "file": "asset.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/block-helpers.test.ts",
+      "type": "file",
+      "name": "block-helpers.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "block-helpers.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/utils/GAP_SIZE",
+      "type": "variable",
+      "name": "GAP_SIZE",
+      "summary": "变量",
+      "tags": [
+        "工具函数"
+      ],
+      "data": {
+        "name": "GAP_SIZE",
+        "file": "block-helpers.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/pmPosToTextOffset",
+      "type": "function",
+      "name": "pmPosToTextOffset",
+      "summary": "函数",
+      "tags": [
+        "工具函数"
+      ],
+      "data": {
+        "name": "pmPosToTextOffset",
+        "file": "block-helpers.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/textOffsetToPmPos",
+      "type": "function",
+      "name": "textOffsetToPmPos",
+      "summary": "函数",
+      "tags": [
+        "工具函数"
+      ],
+      "data": {
+        "name": "textOffsetToPmPos",
+        "file": "block-helpers.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/sortByPos",
+      "type": "function",
+      "name": "sortByPos",
+      "summary": "函数",
+      "tags": [
+        "工具函数"
+      ],
+      "data": {
+        "name": "sortByPos",
+        "file": "block-helpers.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/getSortedChildren",
+      "type": "function",
+      "name": "getSortedChildren",
+      "summary": "函数",
+      "tags": [
+        "工具函数"
+      ],
+      "data": {
+        "name": "getSortedChildren",
+        "file": "block-helpers.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/getSortedSiblings",
+      "type": "function",
+      "name": "getSortedSiblings",
+      "summary": "函数",
+      "tags": [
+        "工具函数"
+      ],
+      "data": {
+        "name": "getSortedSiblings",
+        "file": "block-helpers.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/findBlockIndex",
+      "type": "function",
+      "name": "findBlockIndex",
+      "summary": "函数",
+      "tags": [
+        "工具函数",
+        "块"
+      ],
+      "data": {
+        "name": "findBlockIndex",
+        "file": "block-helpers.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/getPrevSibling",
+      "type": "function",
+      "name": "getPrevSibling",
+      "summary": "函数",
+      "tags": [
+        "工具函数"
+      ],
+      "data": {
+        "name": "getPrevSibling",
+        "file": "block-helpers.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/getNextSibling",
+      "type": "function",
+      "name": "getNextSibling",
+      "summary": "函数",
+      "tags": [
+        "工具函数"
+      ],
+      "data": {
+        "name": "getNextSibling",
+        "file": "block-helpers.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/calcInsertPos",
+      "type": "function",
+      "name": "calcInsertPos",
+      "summary": "函数",
+      "tags": [
+        "工具函数"
+      ],
+      "data": {
+        "name": "calcInsertPos",
+        "file": "block-helpers.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/renumberBlocks",
+      "type": "function",
+      "name": "renumberBlocks",
+      "summary": "函数",
+      "tags": [
+        "工具函数",
+        "块"
+      ],
+      "data": {
+        "name": "renumberBlocks",
+        "file": "block-helpers.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/isGapExhaustedError",
+      "type": "function",
+      "name": "isGapExhaustedError",
+      "summary": "函数",
+      "tags": [
+        "工具函数"
+      ],
+      "data": {
+        "name": "isGapExhaustedError",
+        "file": "block-helpers.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/isDescendantOf",
+      "type": "function",
+      "name": "isDescendantOf",
+      "summary": "函数",
+      "tags": [
+        "工具函数"
+      ],
+      "data": {
+        "name": "isDescendantOf",
+        "file": "block-helpers.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/block-helpers.ts",
+      "type": "file",
+      "name": "block-helpers.ts",
+      "summary": "文件节点",
+      "tags": [
+        "source"
+      ],
+      "data": {
+        "name": "block-helpers.ts",
+        "extension": ".ts",
+        "category": "source"
+      }
+    },
+    {
+      "id": "src/utils/GapExhaustedError",
+      "type": "class",
+      "name": "GapExhaustedError",
+      "summary": "类定义",
+      "tags": [
+        "工具函数"
+      ],
+      "data": {
+        "name": "GapExhaustedError",
+        "file": "block-helpers.ts"
+      }
+    },
+    {
+      "id": "src/utils/date-parser.test.ts",
+      "type": "file",
+      "name": "date-parser.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "date-parser.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/utils/formatDate",
+      "type": "function",
+      "name": "formatDate",
+      "summary": "函数",
+      "tags": [
+        "工具函数"
+      ],
+      "data": {
+        "name": "formatDate",
+        "file": "date-parser.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/parseDateInput",
+      "type": "function",
+      "name": "parseDateInput",
+      "summary": "函数",
+      "tags": [
+        "工具函数"
+      ],
+      "data": {
+        "name": "parseDateInput",
+        "file": "date-parser.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/date-parser.ts",
+      "type": "file",
+      "name": "date-parser.ts",
+      "summary": "文件节点",
+      "tags": [
+        "source"
+      ],
+      "data": {
+        "name": "date-parser.ts",
+        "extension": ".ts",
+        "category": "source"
+      }
+    },
+    {
+      "id": "src/utils/debounce.test.ts",
+      "type": "file",
+      "name": "debounce.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "debounce.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/utils/debounce",
+      "type": "function",
+      "name": "debounce",
+      "summary": "函数",
+      "tags": [
+        "工具函数"
+      ],
+      "data": {
+        "name": "debounce",
+        "file": "debounce.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/debounce.ts",
+      "type": "file",
+      "name": "debounce.ts",
+      "summary": "文件节点",
+      "tags": [
+        "source"
+      ],
+      "data": {
+        "name": "debounce.ts",
+        "extension": ".ts",
+        "category": "source"
+      }
+    },
+    {
+      "id": "src/utils/id.test.ts",
+      "type": "file",
+      "name": "id.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "id.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/utils/generateUUID",
+      "type": "function",
+      "name": "generateUUID",
+      "summary": "函数",
+      "tags": [
+        "工具函数"
+      ],
+      "data": {
+        "name": "generateUUID",
+        "file": "id.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/id.ts",
+      "type": "file",
+      "name": "id.ts",
+      "summary": "文件节点",
+      "tags": [
+        "source"
+      ],
+      "data": {
+        "name": "id.ts",
+        "extension": ".ts",
+        "category": "source"
+      }
+    },
+    {
+      "id": "src/utils/journal-detect.test.ts",
+      "type": "file",
+      "name": "journal-detect.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "journal-detect.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/utils/JOURNAL_FORMATS",
+      "type": "variable",
+      "name": "JOURNAL_FORMATS",
+      "summary": "变量",
+      "tags": [
+        "工具函数"
+      ],
+      "data": {
+        "name": "JOURNAL_FORMATS",
+        "file": "journal-detect.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/JOURNAL_CANONICAL_FORMAT",
+      "type": "variable",
+      "name": "JOURNAL_CANONICAL_FORMAT",
+      "summary": "变量",
+      "tags": [
+        "工具函数"
+      ],
+      "data": {
+        "name": "JOURNAL_CANONICAL_FORMAT",
+        "file": "journal-detect.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/parseToDate",
+      "type": "function",
+      "name": "parseToDate",
+      "summary": "函数",
+      "tags": [
+        "工具函数"
+      ],
+      "data": {
+        "name": "parseToDate",
+        "file": "journal-detect.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/isJournalTitle",
+      "type": "function",
+      "name": "isJournalTitle",
+      "summary": "函数",
+      "tags": [
+        "工具函数",
+        "日记"
+      ],
+      "data": {
+        "name": "isJournalTitle",
+        "file": "journal-detect.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/normalizeJournalTitle",
+      "type": "function",
+      "name": "normalizeJournalTitle",
+      "summary": "函数",
+      "tags": [
+        "工具函数",
+        "日记"
+      ],
+      "data": {
+        "name": "normalizeJournalTitle",
+        "file": "journal-detect.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/inferPageType",
+      "type": "function",
+      "name": "inferPageType",
+      "summary": "函数",
+      "tags": [
+        "工具函数",
+        "页面"
+      ],
+      "data": {
+        "name": "inferPageType",
+        "file": "journal-detect.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/journal-detect.ts",
+      "type": "file",
+      "name": "journal-detect.ts",
+      "summary": "文件节点",
+      "tags": [
+        "source"
+      ],
+      "data": {
+        "name": "journal-detect.ts",
+        "extension": ".ts",
+        "category": "source"
+      }
+    },
+    {
+      "id": "src/utils/leftCalculator.test.ts",
+      "type": "file",
+      "name": "leftCalculator.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "leftCalculator.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/utils/calculateNewLeft",
+      "type": "function",
+      "name": "calculateNewLeft",
+      "summary": "函数",
+      "tags": [
+        "工具函数"
+      ],
+      "data": {
+        "name": "calculateNewLeft",
+        "file": "leftCalculator.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/calculateOutdentLeft",
+      "type": "function",
+      "name": "calculateOutdentLeft",
+      "summary": "函数",
+      "tags": [
+        "工具函数"
+      ],
+      "data": {
+        "name": "calculateOutdentLeft",
+        "file": "leftCalculator.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/calculateIndentLeft",
+      "type": "function",
+      "name": "calculateIndentLeft",
+      "summary": "函数",
+      "tags": [
+        "工具函数"
+      ],
+      "data": {
+        "name": "calculateIndentLeft",
+        "file": "leftCalculator.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/reindexLeftValues",
+      "type": "function",
+      "name": "reindexLeftValues",
+      "summary": "函数",
+      "tags": [
+        "工具函数"
+      ],
+      "data": {
+        "name": "reindexLeftValues",
+        "file": "leftCalculator.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/validateLeftValues",
+      "type": "function",
+      "name": "validateLeftValues",
+      "summary": "函数",
+      "tags": [
+        "工具函数"
+      ],
+      "data": {
+        "name": "validateLeftValues",
+        "file": "leftCalculator.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/leftCalculator.ts",
+      "type": "file",
+      "name": "leftCalculator.ts",
+      "summary": "文件节点",
+      "tags": [
+        "source"
+      ],
+      "data": {
+        "name": "leftCalculator.ts",
+        "extension": ".ts",
+        "category": "source"
+      }
+    },
+    {
+      "id": "src/utils/parser.test.ts",
+      "type": "file",
+      "name": "parser.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "parser.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/utils/parseContent",
+      "type": "function",
+      "name": "parseContent",
+      "summary": "函数",
+      "tags": [
+        "工具函数"
+      ],
+      "data": {
+        "name": "parseContent",
+        "file": "parser.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/parsePropertyValue",
+      "type": "function",
+      "name": "parsePropertyValue",
+      "summary": "函数",
+      "tags": [
+        "工具函数",
+        "属性"
+      ],
+      "data": {
+        "name": "parsePropertyValue",
+        "file": "parser.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/parser.ts",
+      "type": "file",
+      "name": "parser.ts",
+      "summary": "文件节点",
+      "tags": [
+        "source"
+      ],
+      "data": {
+        "name": "parser.ts",
+        "extension": ".ts",
+        "category": "source"
+      }
+    },
+    {
+      "id": "src/utils/ParseResult",
+      "type": "interface",
+      "name": "ParseResult",
+      "summary": "接口定义",
+      "tags": [
+        "工具函数"
+      ],
+      "data": {
+        "name": "ParseResult",
+        "file": "parser.ts"
+      }
+    },
+    {
+      "id": "src/utils/LinkParse",
+      "type": "interface",
+      "name": "LinkParse",
+      "summary": "接口定义",
+      "tags": [
+        "工具函数"
+      ],
+      "data": {
+        "name": "LinkParse",
+        "file": "parser.ts"
+      }
+    },
+    {
+      "id": "src/utils/extractLinkMatches",
+      "type": "function",
+      "name": "extractLinkMatches",
+      "summary": "函数",
+      "tags": [
+        "工具函数"
+      ],
+      "data": {
+        "name": "extractLinkMatches",
+        "file": "parser.ts"
+      }
+    },
+    {
+      "id": "src/utils/parseBlockLinks",
+      "type": "function",
+      "name": "parseBlockLinks",
+      "summary": "函数",
+      "tags": [
+        "工具函数",
+        "块"
+      ],
+      "data": {
+        "name": "parseBlockLinks",
+        "file": "parser.ts"
+      }
+    },
+    {
+      "id": "src/utils/property.test.ts",
+      "type": "file",
+      "name": "property.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "property.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/utils/formatPropertyValue",
+      "type": "function",
+      "name": "formatPropertyValue",
+      "summary": "函数",
+      "tags": [
+        "工具函数",
+        "属性"
+      ],
+      "data": {
+        "name": "formatPropertyValue",
+        "file": "property.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/inferPropertyType",
+      "type": "function",
+      "name": "inferPropertyType",
+      "summary": "函数",
+      "tags": [
+        "工具函数",
+        "属性"
+      ],
+      "data": {
+        "name": "inferPropertyType",
+        "file": "property.test.ts"
+      }
+    },
+    {
+      "id": "src/utils/property.ts",
+      "type": "file",
+      "name": "property.ts",
+      "summary": "文件节点",
+      "tags": [
+        "source"
+      ],
+      "data": {
+        "name": "property.ts",
+        "extension": ".ts",
+        "category": "source"
+      }
+    },
+    {
+      "id": "src/utils/logger.ts",
+      "type": "file",
+      "name": "logger.ts",
+      "summary": "文件节点",
+      "tags": [
+        "source"
+      ],
+      "data": {
+        "name": "logger.ts",
+        "extension": ".ts",
+        "category": "source"
+      }
+    },
+    {
+      "id": "src/utils/logger",
+      "type": "variable",
+      "name": "logger",
+      "summary": "变量",
+      "tags": [
+        "工具函数"
+      ],
+      "data": {
+        "name": "logger",
+        "file": "logger.ts"
+      }
+    },
+    {
+      "id": "src/components/Editor.test.ts",
+      "type": "file",
+      "name": "Editor.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "Editor.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/components/Editor.vue",
+      "type": "file",
+      "name": "Editor.vue",
+      "summary": "文件节点",
+      "tags": [
+        "source"
+      ],
+      "data": {
+        "name": "Editor.vue",
+        "extension": ".vue",
+        "category": "source"
+      }
+    },
+    {
+      "id": "src/components/Backlinks.test.ts",
+      "type": "file",
+      "name": "Backlinks.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "Backlinks.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/components/PageLinkMenu.test.ts",
+      "type": "file",
+      "name": "PageLinkMenu.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "PageLinkMenu.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/components/SlashCommandMenu.test.ts",
+      "type": "file",
+      "name": "SlashCommandMenu.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "SlashCommandMenu.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/components/Block/PropertyDisplay.test.ts",
+      "type": "file",
+      "name": "PropertyDisplay.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "PropertyDisplay.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/components/Block/PropertyEditor.test.ts",
+      "type": "file",
+      "name": "PropertyEditor.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "PropertyEditor.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/components/Block/PropertyInline.test.ts",
+      "type": "file",
+      "name": "PropertyInline.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "PropertyInline.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/components/Block/handlers/code/CodeMirrorEditor.test.ts",
+      "type": "file",
+      "name": "CodeMirrorEditor.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "CodeMirrorEditor.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/components/Block/handlers/code/CodeMirrorEditor.vue",
+      "type": "file",
+      "name": "CodeMirrorEditor.vue",
+      "summary": "文件节点",
+      "tags": [
+        "source"
+      ],
+      "data": {
+        "name": "CodeMirrorEditor.vue",
+        "extension": ".vue",
+        "category": "source"
+      }
+    },
+    {
+      "id": "src/components/Block/handlers/code/code.test.ts",
+      "type": "file",
+      "name": "code.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "code.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/components/Block/handlers/embed/EmbedRender.test.ts",
+      "type": "file",
+      "name": "EmbedRender.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "EmbedRender.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/router/index.test.ts",
+      "type": "file",
+      "name": "index.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "index.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/router/index.ts",
+      "type": "file",
+      "name": "index.ts",
+      "summary": "文件节点",
+      "tags": [
+        "source"
+      ],
+      "data": {
+        "name": "index.ts",
+        "extension": ".ts",
+        "category": "source"
+      }
+    },
+    {
+      "id": "src/router/router-guards.test.ts",
+      "type": "file",
+      "name": "router-guards.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "router-guards.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/router/router-guards.ts",
+      "type": "file",
+      "name": "router-guards.ts",
+      "summary": "文件节点",
+      "tags": [
+        "source"
+      ],
+      "data": {
+        "name": "router-guards.ts",
+        "extension": ".ts",
+        "category": "source"
+      }
+    },
+    {
+      "id": "src/stores/blocks.test.ts",
+      "type": "file",
+      "name": "blocks.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "blocks.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/stores/useBlockStore",
+      "type": "function",
+      "name": "useBlockStore",
+      "summary": "函数",
+      "tags": [
+        "状态管理",
+        "块"
+      ],
+      "data": {
+        "name": "useBlockStore",
+        "file": "blocks.test.ts"
+      }
+    },
+    {
+      "id": "src/stores/blocks-store.test.ts",
+      "type": "file",
+      "name": "blocks-store.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "blocks-store.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/stores/blocks.ts",
+      "type": "file",
+      "name": "blocks.ts",
+      "summary": "文件节点",
+      "tags": [
+        "source"
+      ],
+      "data": {
+        "name": "blocks.ts",
+        "extension": ".ts",
+        "category": "source"
+      }
+    },
+    {
+      "id": "src/stores/pages.test.ts",
+      "type": "file",
+      "name": "pages.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "pages.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/stores/pages.ts",
+      "type": "file",
+      "name": "pages.ts",
+      "summary": "文件节点",
+      "tags": [
+        "source"
+      ],
+      "data": {
+        "name": "pages.ts",
+        "extension": ".ts",
+        "category": "source"
+      }
+    },
+    {
+      "id": "src/stores/usePageStore",
+      "type": "function",
+      "name": "usePageStore",
+      "summary": "函数",
+      "tags": [
+        "状态管理",
+        "页面"
+      ],
+      "data": {
+        "name": "usePageStore",
+        "file": "pages.test.ts"
+      }
+    },
+    {
+      "id": "src/stores/editor.test.ts",
+      "type": "file",
+      "name": "editor.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "editor.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/stores/editor.ts",
+      "type": "file",
+      "name": "editor.ts",
+      "summary": "文件节点",
+      "tags": [
+        "source"
+      ],
+      "data": {
+        "name": "editor.ts",
+        "extension": ".ts",
+        "category": "source"
+      }
+    },
+    {
+      "id": "src/stores/useEditorStore",
+      "type": "function",
+      "name": "useEditorStore",
+      "summary": "函数",
+      "tags": [
+        "状态管理"
+      ],
+      "data": {
+        "name": "useEditorStore",
+        "file": "editor.test.ts"
+      }
+    },
+    {
+      "id": "src/stores/property.test.ts",
+      "type": "file",
+      "name": "property.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "property.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/stores/property.ts",
+      "type": "file",
+      "name": "property.ts",
+      "summary": "文件节点",
+      "tags": [
+        "source"
+      ],
+      "data": {
+        "name": "property.ts",
+        "extension": ".ts",
+        "category": "source"
+      }
+    },
+    {
+      "id": "src/stores/usePropertyStore",
+      "type": "function",
+      "name": "usePropertyStore",
+      "summary": "函数",
+      "tags": [
+        "状态管理",
+        "属性"
+      ],
+      "data": {
+        "name": "usePropertyStore",
+        "file": "property.test.ts"
+      }
+    },
+    {
+      "id": "src/services/property.ts",
+      "type": "file",
+      "name": "property.ts",
+      "summary": "文件节点",
+      "tags": [
+        "source"
+      ],
+      "data": {
+        "name": "property.ts",
+        "extension": ".ts",
+        "category": "source"
+      }
+    },
+    {
+      "id": "src/services/PropertyService",
+      "type": "class",
+      "name": "PropertyService",
+      "summary": "类定义",
+      "tags": [
+        "服务",
+        "属性"
+      ],
+      "data": {
+        "name": "PropertyService",
+        "file": "services/property.ts"
+      }
+    },
+    {
+      "id": "src/services/property.test.ts",
+      "type": "file",
+      "name": "property.test.ts",
+      "summary": "文件节点",
+      "tags": [
+        "test"
+      ],
+      "data": {
+        "name": "property.test.ts",
+        "extension": ".ts",
+        "category": "test"
+      }
+    },
+    {
+      "id": "src/storage/asset.ts",
+      "type": "file",
+      "name": "asset.ts",
+      "summary": "文件节点",
+      "tags": [
+        "source"
+      ],
+      "data": {
+        "name": "asset.ts",
+        "extension": ".ts",
+        "category": "source"
+      }
+    },
+    {
+      "id": "src/types/asset.ts",
+      "type": "file",
+      "name": "asset.ts",
+      "summary": "文件节点",
+      "tags": [
+        "type"
+      ],
+      "data": {
+        "name": "asset.ts",
+        "extension": ".ts",
+        "category": "type"
+      }
+    },
+    {
+      "id": "src/types/Asset",
+      "type": "interface",
+      "name": "Asset",
+      "summary": "接口定义",
+      "tags": [
+        "类型定义"
+      ],
+      "data": {
+        "name": "Asset",
+        "file": "types/asset.ts"
+      }
+    },
+    {
+      "id": "src/types/AssetStorage",
+      "type": "interface",
+      "name": "AssetStorage",
+      "summary": "接口定义",
+      "tags": [
+        "类型定义"
+      ],
+      "data": {
+        "name": "AssetStorage",
+        "file": "types/asset.ts"
+      }
+    },
+    {
+      "id": "src/types/block-type.ts",
+      "type": "file",
+      "name": "block-type.ts",
+      "summary": "文件节点",
+      "tags": [
+        "type"
+      ],
+      "data": {
+        "name": "block-type.ts",
+        "extension": ".ts",
+        "category": "type"
+      }
+    },
+    {
+      "id": "src/types/BlockTypeHandler",
+      "type": "interface",
+      "name": "BlockTypeHandler",
+      "summary": "接口定义",
+      "tags": [
+        "类型定义",
+        "块"
+      ],
+      "data": {
+        "name": "BlockTypeHandler",
+        "file": "types/block-type.ts"
+      }
+    },
+    {
+      "id": "src/types/BlockTypeEditorExposed",
+      "type": "interface",
+      "name": "BlockTypeEditorExposed",
+      "summary": "接口定义",
+      "tags": [
+        "类型定义",
+        "块"
+      ],
+      "data": {
+        "name": "BlockTypeEditorExposed",
+        "file": "types/block-type.ts"
+      }
+    },
+    {
+      "id": "src/types/BlockTypeRenderExposed",
+      "type": "interface",
+      "name": "BlockTypeRenderExposed",
+      "summary": "接口定义",
+      "tags": [
+        "类型定义",
+        "块"
+      ],
+      "data": {
+        "name": "BlockTypeRenderExposed",
+        "file": "types/block-type.ts"
+      }
+    },
+    {
+      "id": "src/types/command.ts",
+      "type": "file",
+      "name": "command.ts",
+      "summary": "文件节点",
+      "tags": [
+        "type"
+      ],
+      "data": {
+        "name": "command.ts",
+        "extension": ".ts",
+        "category": "type"
+      }
+    },
+    {
+      "id": "src/types/CommandProps",
+      "type": "interface",
+      "name": "CommandProps",
+      "summary": "接口定义",
+      "tags": [
+        "类型定义"
+      ],
+      "data": {
+        "name": "CommandProps",
+        "file": "types/command.ts"
+      }
+    },
+    {
+      "id": "src/types/Command",
+      "type": "interface",
+      "name": "Command",
+      "summary": "接口定义",
+      "tags": [
+        "类型定义"
+      ],
+      "data": {
+        "name": "Command",
+        "file": "types/command.ts"
+      }
+    },
+    {
+      "id": "src/types/CommandGroup",
+      "type": "interface",
+      "name": "CommandGroup",
+      "summary": "接口定义",
+      "tags": [
+        "类型定义"
+      ],
+      "data": {
+        "name": "CommandGroup",
+        "file": "types/command.ts"
+      }
+    },
+    {
+      "id": "src/types/link.ts",
+      "type": "file",
+      "name": "link.ts",
+      "summary": "文件节点",
+      "tags": [
+        "type"
+      ],
+      "data": {
+        "name": "link.ts",
+        "extension": ".ts",
+        "category": "type"
+      }
+    },
+    {
+      "id": "src/types/Link",
+      "type": "interface",
+      "name": "Link",
+      "summary": "接口定义",
+      "tags": [
+        "类型定义"
+      ],
+      "data": {
+        "name": "Link",
+        "file": "types/link.ts"
+      }
+    },
+    {
+      "id": "src/types/LinkRecord",
+      "type": "interface",
+      "name": "LinkRecord",
+      "summary": "接口定义",
+      "tags": [
+        "类型定义"
+      ],
+      "data": {
+        "name": "LinkRecord",
+        "file": "types/link.ts"
+      }
+    },
+    {
+      "id": "src/types/property.ts",
+      "type": "file",
+      "name": "property.ts",
+      "summary": "文件节点",
+      "tags": [
+        "type"
+      ],
+      "data": {
+        "name": "property.ts",
+        "extension": ".ts",
+        "category": "type"
+      }
+    },
+    {
+      "id": "src/types/PropertyType",
+      "type": "type",
+      "name": "PropertyType",
+      "summary": "类型定义",
+      "tags": [
+        "类型定义",
+        "属性"
+      ],
+      "data": {
+        "name": "PropertyType",
+        "file": "types/property.ts"
+      }
+    },
+    {
+      "id": "src/types/ClosedValue",
+      "type": "interface",
+      "name": "ClosedValue",
+      "summary": "接口定义",
+      "tags": [
+        "类型定义"
+      ],
+      "data": {
+        "name": "ClosedValue",
+        "file": "types/property.ts"
+      }
+    },
+    {
+      "id": "src/types/PropertyDefinition",
+      "type": "interface",
+      "name": "PropertyDefinition",
+      "summary": "接口定义",
+      "tags": [
+        "类型定义",
+        "属性"
+      ],
+      "data": {
+        "name": "PropertyDefinition",
+        "file": "types/property.ts"
+      }
+    },
+    {
+      "id": "src/types/PropertyValueMap",
+      "type": "type",
+      "name": "PropertyValueMap",
+      "summary": "类型定义",
+      "tags": [
+        "类型定义",
+        "属性"
+      ],
+      "data": {
+        "name": "PropertyValueMap",
+        "file": "types/property.ts"
+      }
+    },
+    {
+      "id": "src/types/PropertyValue",
+      "type": "type",
+      "name": "PropertyValue",
+      "summary": "类型定义",
+      "tags": [
+        "类型定义",
+        "属性"
+      ],
+      "data": {
+        "name": "PropertyValue",
+        "file": "types/property.ts"
+      }
+    },
+    {
+      "id": "src/types/Property",
+      "type": "interface",
+      "name": "Property",
+      "summary": "接口定义",
+      "tags": [
+        "类型定义",
+        "属性"
+      ],
+      "data": {
+        "name": "Property",
+        "file": "types/property.ts"
+      }
+    },
+    {
+      "id": "src/types/PropertyRecord",
+      "type": "interface",
+      "name": "PropertyRecord",
+      "summary": "接口定义",
+      "tags": [
+        "类型定义",
+        "属性"
+      ],
+      "data": {
+        "name": "PropertyRecord",
+        "file": "types/property.ts"
+      }
+    },
+    {
+      "id": "src/types/BUILT_IN_PROPERTIES",
+      "type": "variable",
+      "name": "BUILT_IN_PROPERTIES",
+      "summary": "变量",
+      "tags": [
+        "类型定义"
+      ],
+      "data": {
+        "name": "BUILT_IN_PROPERTIES",
+        "file": "types/property.ts"
+      }
+    },
+    {
+      "id": "src/types/getPropertyDefinition",
+      "type": "function",
+      "name": "getPropertyDefinition",
+      "summary": "函数",
+      "tags": [
+        "类型定义",
+        "属性"
+      ],
+      "data": {
+        "name": "getPropertyDefinition",
+        "file": "types/property.ts"
+      }
+    },
+    {
+      "id": "src/types/getAllPropertyDefinitions",
+      "type": "function",
+      "name": "getAllPropertyDefinitions",
+      "summary": "函数",
+      "tags": [
+        "类型定义",
+        "属性"
+      ],
+      "data": {
+        "name": "getAllPropertyDefinitions",
+        "file": "types/property.ts"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "file: src/main.ts",
+      "target": "file: src/App.vue",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/App.vue",
+      "target": "file: src/components/Sidebar/SidebarContainer.vue",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/App.vue",
+      "target": "file: src/stores/editor.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/App.vue",
+      "target": "file: src/stores/blocks.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/App.vue",
+      "target": "file: src/stores/pages.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/App.vue",
+      "target": "file: src/storage/indexedDB.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/main.ts",
+      "target": "file: src/router/index.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/router/index.ts",
+      "target": "file: src/router/routes.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/router/index.ts",
+      "target": "file: src/stores/pages.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/router/index.ts",
+      "target": "file: src/storage/indexedDB.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/stores/blocks.ts",
+      "target": "file: src/types/block.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/stores/blocks.ts",
+      "target": "file: src/storage/indexedDB.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/stores/blocks.ts",
+      "target": "file: src/utils/block-helpers.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/stores/blocks.ts",
+      "target": "file: src/stores/pages.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/stores/pages.ts",
+      "target": "file: src/types/page.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/stores/pages.ts",
+      "target": "file: src/storage/indexedDB.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/stores/pages.ts",
+      "target": "file: src/stores/blocks.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/stores/editor.ts",
+      "target": "file: src/types/block.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/stores/property.ts",
+      "target": "file: src/types/property.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/composables/useBlockTree.ts",
+      "target": "file: src/types/block.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/composables/useSlashCommands.ts",
+      "target": "file: src/stores/blocks.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/composables/useSlashCommands.ts",
+      "target": "file: src/types/command.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/composables/useJournal.ts",
+      "target": "file: src/stores/pages.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/composables/useJournal.ts",
+      "target": "file: src/types/page.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/composables/useJournal.ts",
+      "target": "file: src/utils/journal-detect.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/components/Editor.vue",
+      "target": "file: src/extensions/WikiLinkExtension.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/components/Editor.vue",
+      "target": "file: src/extensions/WikiLinkTriggerExtension.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/components/Editor.vue",
+      "target": "file: src/extensions/EnterAsBlockExtension.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/components/Editor.vue",
+      "target": "file: src/extensions/BracketPairExtension.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/components/Editor.vue",
+      "target": "file: src/extensions/SlashCommandExtension.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/components/Editor.vue",
+      "target": "file: src/stores/pages.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/components/Editor.vue",
+      "target": "file: src/utils/debounce.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/components/BlockList.vue",
+      "target": "file: src/stores/blocks.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/components/BlockList.vue",
+      "target": "file: src/stores/editor.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/components/BlockList.vue",
+      "target": "file: src/components/Block/index.vue",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/components/BlockList.vue",
+      "target": "file: src/composables/useBlockTree.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/components/BlockList.vue",
+      "target": "file: src/types/block.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/components/BlockList.vue",
+      "target": "file: src/composables/useCrossBlockSelection.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/components/Sidebar/SidebarContainer.vue",
+      "target": "file: src/composables/useSidebar.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/components/Block/index.vue",
+      "target": "file: src/stores/editor.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/components/Block/index.vue",
+      "target": "file: src/stores/blocks.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/components/Block/index.vue",
+      "target": "file: src/stores/property.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/components/Block/index.vue",
+      "target": "file: src/stores/pages.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/components/Block/index.vue",
+      "target": "file: src/composables/useNavigateToPage.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/components/Block/index.vue",
+      "target": "file: src/composables/useBlockRegistry.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/components/Block/index.vue",
+      "target": "file: src/composables/useDragDrop.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/components/Block/index.vue",
+      "target": "file: src/types/block.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/components/Block/index.vue",
+      "target": "file: src/utils/block-helpers.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/extensions/WikiLinkExtension.ts",
+      "target": "file: src/types/block.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/extensions/SlashCommandExtension.ts",
+      "target": "file: src/types/block.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/storage/indexedDB.ts",
+      "target": "file: src/storage/db.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/storage/indexedDB.ts",
+      "target": "file: src/types/block.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/storage/indexedDB.ts",
+      "target": "file: src/types/page.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/storage/indexedDB.ts",
+      "target": "file: src/types/property.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/storage/indexedDB.ts",
+      "target": "file: src/types/link.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/storage/indexedDB.ts",
+      "target": "file: src/utils/parser.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/storage/db.ts",
+      "target": "file: src/types/block.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/storage/db.ts",
+      "target": "file: src/types/page.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/storage/db.ts",
+      "target": "file: src/types/property.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/storage/db.ts",
+      "target": "file: src/types/link.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/storage/db.ts",
+      "target": "file: src/types/asset.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/utils/block-helpers.ts",
+      "target": "file: src/types/block.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/utils/parser.ts",
+      "target": "file: src/types/block.ts",
+      "type": "imports"
+    },
+    {
+      "source": "file: src/stores/blocks.ts:safeCalcInsertPos",
+      "target": "src/utils/block-helpers.ts:calcInsertPos",
+      "type": "calls"
+    },
+    {
+      "source": "file: src/stores/blocks.ts:safeCalcInsertPos",
+      "target": "src/utils/block-helpers.ts:renumberBlocks",
+      "type": "calls"
+    },
+    {
+      "source": "file: src/stores/blocks.ts:safeCalcInsertPos",
+      "target": "src/utils/block-helpers.ts:isGapExhaustedError",
+      "type": "calls"
+    },
+    {
+      "source": "file: src/stores/blocks.ts:useBlockStore",
+      "target": "src/utils/block-helpers.ts:getSortedChildren",
+      "type": "calls"
+    },
+    {
+      "source": "file: src/stores/blocks.ts:useBlockStore",
+      "target": "src/utils/block-helpers.ts:getSortedSiblings",
+      "type": "calls"
+    },
+    {
+      "source": "file: src/stores/blocks.ts:useBlockStore",
+      "target": "src/utils/block-helpers.ts:sortByPos",
+      "type": "calls"
+    },
+    {
+      "source": "file: src/stores/blocks.ts:useBlockStore",
+      "target": "src/utils/block-helpers.ts:findBlockIndex",
+      "type": "calls"
+    },
+    {
+      "source": "file: src/stores/blocks.ts:useBlockStore",
+      "target": "src/utils/block-helpers.ts:getPrevSibling",
+      "type": "calls"
+    },
+    {
+      "source": "file: src/stores/blocks.ts:useBlockStore",
+      "target": "src/utils/block-helpers.ts:getNextSibling",
+      "type": "calls"
+    },
+    {
+      "source": "file: src/stores/blocks.ts:useBlockStore",
+      "target": "src/utils/block-helpers.ts:calcInsertPos",
+      "type": "calls"
+    },
+    {
+      "source": "file: src/stores/blocks.ts:useBlockStore",
+      "target": "src/utils/block-helpers.ts:isDescendantOf",
+      "type": "calls"
+    },
+    {
+      "source": "file: src/storage/indexedDB.ts:IndexedDBAdapter",
+      "target": "src/utils/parser.ts:parseBlockLinks",
+      "type": "calls"
+    },
+    {
+      "source": "file: src/utils/parser.ts:parseContent",
+      "target": "src/utils/parser.ts:parseBlockLinks",
+      "type": "calls"
+    },
+    {
+      "source": "file: src/utils/parser.ts:parseBlockLinks",
+      "target": "src/utils/parser.ts:extractLinkMatches",
+      "type": "calls"
+    },
+    {
+      "source": "file: src/composables/useSlashCommands.ts:useSlashCommands",
+      "target": "src/composables/useSlashCommands.ts:commands",
+      "type": "contains"
+    },
+    {
+      "source": "file: src/composables/useSlashCommands.ts:useSlashCommands",
+      "target": "src/composables/useSlashCommands.ts:filterCommands",
+      "type": "contains"
+    },
+    {
+      "source": "file: src/composables/useSlashCommands.ts:useSlashCommands",
+      "target": "src/composables/useSlashCommands.ts:groupCommands",
+      "type": "contains"
+    },
+    {
+      "source": "file: src/composables/useSlashCommands.ts:useSlashCommands",
+      "target": "src/composables/useSlashCommands.ts:parseCommandInput",
+      "type": "contains"
+    },
+    {
+      "source": "file: src/composables/useJournal.ts:useJournal",
+      "target": "src/composables/useJournal.ts:isJournalPage",
+      "type": "contains"
+    },
+    {
+      "source": "file: src/composables/useBlockTree.ts:buildTree",
+      "target": "src/types/block.ts:TreeNode",
+      "type": "contains"
+    },
+    {
+      "source": "file: src/storage/indexedDB.ts:IndexedDBAdapter",
+      "target": "src/storage/indexedDB.ts:recordToBlock",
+      "type": "contains"
+    },
+    {
+      "source": "file: src/storage/indexedDB.ts:IndexedDBAdapter",
+      "target": "src/storage/indexedDB.ts:blockToRecord",
+      "type": "contains"
+    },
+    {
+      "source": "file: src/storage/indexedDB.ts:IndexedDBAdapter",
+      "target": "src/storage/indexedDB.ts:pageToRecord",
+      "type": "contains"
+    },
+    {
+      "source": "file: src/storage/indexedDB.ts:IndexedDBAdapter",
+      "target": "src/storage/indexedDB.ts:recordToPage",
+      "type": "contains"
+    },
+    {
+      "source": "file: src/storage/indexedDB.ts:IndexedDBAdapter",
+      "target": "src/storage/indexedDB.ts:recordToProperty",
+      "type": "contains"
+    },
+    {
+      "source": "file: src/storage/indexedDB.ts:IndexedDBAdapter",
+      "target": "src/storage/indexedDB.ts:propertyToRecord",
+      "type": "contains"
+    },
+    {
+      "source": "file: src/storage/db.ts:ComindDB",
+      "target": "src/types/block.ts:BlockRecord",
+      "type": "contains"
+    },
+    {
+      "source": "file: src/storage/db.ts:ComindDB",
+      "target": "src/types/page.ts:PageRecord",
+      "type": "contains"
+    },
+    {
+      "source": "file: src/utils/parser.ts:ParseResult",
+      "target": "src/utils/parser.ts:LinkParse",
+      "type": "contains"
+    },
+    {
+      "source": "src/components/Page/index.vue",
+      "target": "src/components/BlockList.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Page/index.vue",
+      "target": "src/components/Backlinks.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Page/index.vue",
+      "target": "src/components/MergeDialog.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Page/index.vue",
+      "target": "src/components/SlashCommandMenu.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Page/index.vue",
+      "target": "src/components/Block/PropertyQuickEditor.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Page/index.vue",
+      "target": "src/components/Block/PropertyEditor.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Journal/JournalList.vue",
+      "target": "src/components/Journal/JournalListItem.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Journal/JournalList.vue",
+      "target": "src/components/SlashCommandMenu.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Journal/JournalList.vue",
+      "target": "src/components/Block/PropertyQuickEditor.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Journal/JournalList.vue",
+      "target": "src/components/Block/PropertyEditor.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Journal/JournalListItem.vue",
+      "target": "src/components/BlockList.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Journal/JournalListItem.vue",
+      "target": "src/components/Backlinks.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Trash/TrashList.vue",
+      "target": "src/components/ConfirmDialog.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/PageMenuButton.vue",
+      "target": "src/components/ConfirmDialog.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/SlashCommandMenu.vue",
+      "target": "src/components/Icons/TaskIcon.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Sidebar/SidebarFavorites.vue",
+      "target": "src/components/Sidebar/PageItem.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Sidebar/SidebarRecent.vue",
+      "target": "src/components/Sidebar/PageItem.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Block/PropertyDisplay.vue",
+      "target": "src/components/Icons/TaskIcon.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Block/PropertyInline.vue",
+      "target": "src/components/Icons/TaskIcon.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Block/PropertyQuickEditor.vue",
+      "target": "src/components/Icons/TaskIcon.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/composables/useBlockRegistry.test.ts",
+      "target": "src/composables/useBlockRegistry",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/composables/useBlockRegistry.test.ts",
+      "target": "src/types/block-type.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/composables/useBlockTree.test.ts",
+      "target": "src/composables/useBlockTree",
+      "type": "imports"
+    },
+    {
+      "source": "src/composables/useBlockTree.test.ts",
+      "target": "src/types/block.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/composables/useBlockTree.test.ts",
+      "target": "src/composables/buildTree",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/composables/useBlockTree.test.ts",
+      "target": "src/composables/syncTreeToStore",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/composables/useContentRenderer.test.ts",
+      "target": "src/composables/useContentRenderer",
+      "type": "imports"
+    },
+    {
+      "source": "src/composables/useContentRenderer.test.ts",
+      "target": "src/composables/renderContentToHtml",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/composables/useCrossBlockSelection.test.ts",
+      "target": "src/composables/useCrossBlockSelection",
+      "type": "imports"
+    },
+    {
+      "source": "src/composables/useCrossBlockSelection.test.ts",
+      "target": "src/stores/blocks.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/composables/useDragDrop.test.ts",
+      "target": "src/composables/useDragDrop",
+      "type": "imports"
+    },
+    {
+      "source": "src/composables/useDragDrop.test.ts",
+      "target": "src/composables/computeDropZone",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/composables/useDragDrop.test.ts",
+      "target": "src/composables/computeSortPosition",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/composables/useDragDrop.test.ts",
+      "target": "src/composables/DRAG_THRESHOLD",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/composables/useFavorites.test.ts",
+      "target": "src/composables/useFavorites",
+      "type": "imports"
+    },
+    {
+      "source": "src/composables/useFavorites.test.ts",
+      "target": "src/stores/pages.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/composables/useJournal.test.ts",
+      "target": "src/composables/useJournal",
+      "type": "imports"
+    },
+    {
+      "source": "src/composables/useNavigateToPage.test.ts",
+      "target": "src/composables/useNavigateToPage",
+      "type": "imports"
+    },
+    {
+      "source": "src/composables/useNavigateToPage.test.ts",
+      "target": "src/utils/journal-detect.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/composables/useRecent.test.ts",
+      "target": "src/composables/useRecent",
+      "type": "imports"
+    },
+    {
+      "source": "src/composables/useRecent.test.ts",
+      "target": "src/stores/pages.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/composables/useSidebar.test.ts",
+      "target": "src/composables/useSidebar",
+      "type": "imports"
+    },
+    {
+      "source": "src/composables/useSlashCommands.test.ts",
+      "target": "src/composables/useSlashCommands",
+      "type": "imports"
+    },
+    {
+      "source": "src/composables/useSlashCommands.test.ts",
+      "target": "src/types/command.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/composables/useSlashCommands.test.ts",
+      "target": "src/stores/blocks.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/composables/useSlashCommands.test.ts",
+      "target": "src/composables/filterCommands",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/composables/useSlashCommands.test.ts",
+      "target": "src/composables/groupCommands",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/composables/useSlashCommands.test.ts",
+      "target": "src/composables/parseCommandInput",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/composables/useSlashCommands.test.ts",
+      "target": "src/composables/commands",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/composables/useSlashCommands.test.ts",
+      "target": "src/composables/formatDate",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/composables/useSlashCommands.test.ts",
+      "target": "src/composables/insertEmbed",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/composables/useSlashCommands.test.ts",
+      "target": "src/composables/insertImage",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/composables/useSlashCommands.test.ts",
+      "target": "src/composables/insertFormat",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/composables/useSlashCommands.test.ts",
+      "target": "src/composables/insertPageRef",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/extensions/WikiLinkTriggerExtension.test.ts",
+      "target": "src/extensions/WikiLinkTriggerExtension",
+      "type": "imports"
+    },
+    {
+      "source": "src/extensions/WikiLinkTriggerExtension.test.ts",
+      "target": "src/extensions/notifyWikiLinkMenuSelect",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/extensions/WikiLinkTriggerExtension.test.ts",
+      "target": "src/extensions/findWikiLinkAtCursor",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/extensions/WikiLinkTriggerExtension.test.ts",
+      "target": "src/extensions/closeWikiLinkMenuByEditor",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/storage/indexedDB.test.ts",
+      "target": "src/storage/indexedDB.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/storage/indexedDB.test.ts",
+      "target": "src/types/block.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/storage/indexedDB.test.ts",
+      "target": "src/utils/parser.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/storage/indexedDB.test.ts",
+      "target": "src/storage/db.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/storage/indexedDB.test.ts",
+      "target": "src/types/property.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/storage/indexedDB.test.ts",
+      "target": "src/types/page.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/storage/indexedDB.test.ts",
+      "target": "src/storage/IndexedDBAdapter",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/storage/indexedDB.test.ts",
+      "target": "src/storage/recordToBlock",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/storage/indexedDB.test.ts",
+      "target": "src/storage/recordToPage",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/storage/indexedDB.test.ts",
+      "target": "src/storage/recordToProperty",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/storage/indexedDB.test.ts",
+      "target": "src/storage/blockToRecord",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/storage/indexedDB.test.ts",
+      "target": "src/storage/pageToRecord",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/storage/indexedDB.test.ts",
+      "target": "src/storage/propertyToRecord",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/storage/asset.test.ts",
+      "target": "src/types/asset.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/storage/asset.test.ts",
+      "target": "src/storage/asset.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/storage/asset.test.ts",
+      "target": "src/storage/IndexedDBAssetStorage",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/storage/asset.test.ts",
+      "target": "src/storage/assetStorage",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/block-helpers.test.ts",
+      "target": "src/utils/block-helpers.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/utils/block-helpers.test.ts",
+      "target": "src/types/block.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/utils/block-helpers.test.ts",
+      "target": "src/utils/GAP_SIZE",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/block-helpers.test.ts",
+      "target": "src/utils/pmPosToTextOffset",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/block-helpers.test.ts",
+      "target": "src/utils/textOffsetToPmPos",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/block-helpers.test.ts",
+      "target": "src/utils/sortByPos",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/block-helpers.test.ts",
+      "target": "src/utils/getSortedChildren",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/block-helpers.test.ts",
+      "target": "src/utils/getSortedSiblings",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/block-helpers.test.ts",
+      "target": "src/utils/findBlockIndex",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/block-helpers.test.ts",
+      "target": "src/utils/getPrevSibling",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/block-helpers.test.ts",
+      "target": "src/utils/getNextSibling",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/block-helpers.test.ts",
+      "target": "src/utils/calcInsertPos",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/block-helpers.test.ts",
+      "target": "src/utils/renumberBlocks",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/block-helpers.test.ts",
+      "target": "src/utils/isGapExhaustedError",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/block-helpers.test.ts",
+      "target": "src/utils/isDescendantOf",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/date-parser.test.ts",
+      "target": "src/utils/date-parser.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/utils/date-parser.test.ts",
+      "target": "src/utils/formatDate",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/date-parser.test.ts",
+      "target": "src/utils/parseDateInput",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/debounce.test.ts",
+      "target": "src/utils/debounce.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/utils/debounce.test.ts",
+      "target": "src/utils/debounce",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/id.test.ts",
+      "target": "src/utils/id.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/utils/id.test.ts",
+      "target": "src/utils/generateUUID",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/journal-detect.test.ts",
+      "target": "src/utils/journal-detect.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/utils/journal-detect.test.ts",
+      "target": "src/utils/JOURNAL_FORMATS",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/journal-detect.test.ts",
+      "target": "src/utils/JOURNAL_CANONICAL_FORMAT",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/journal-detect.test.ts",
+      "target": "src/utils/parseToDate",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/journal-detect.test.ts",
+      "target": "src/utils/isJournalTitle",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/journal-detect.test.ts",
+      "target": "src/utils/normalizeJournalTitle",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/journal-detect.test.ts",
+      "target": "src/utils/inferPageType",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/leftCalculator.test.ts",
+      "target": "src/utils/leftCalculator.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/utils/leftCalculator.test.ts",
+      "target": "src/utils/calculateNewLeft",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/leftCalculator.test.ts",
+      "target": "src/utils/calculateOutdentLeft",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/leftCalculator.test.ts",
+      "target": "src/utils/calculateIndentLeft",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/leftCalculator.test.ts",
+      "target": "src/utils/reindexLeftValues",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/leftCalculator.test.ts",
+      "target": "src/utils/validateLeftValues",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/parser.test.ts",
+      "target": "src/utils/parser.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/utils/parser.test.ts",
+      "target": "src/utils/parseContent",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/parser.test.ts",
+      "target": "src/utils/parsePropertyValue",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/property.test.ts",
+      "target": "src/utils/property.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/utils/property.test.ts",
+      "target": "src/utils/formatPropertyValue",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/utils/property.test.ts",
+      "target": "src/utils/inferPropertyType",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/components/Editor.test.ts",
+      "target": "src/components/Editor.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Editor.test.ts",
+      "target": "src/composables/useNavigateToPage",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Editor.test.ts",
+      "target": "src/extensions/WikiLinkExtension",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Editor.test.ts",
+      "target": "src/extensions/WikiLinkTriggerExtension",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Backlinks.test.ts",
+      "target": "src/components/Backlinks.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Backlinks.test.ts",
+      "target": "src/stores/pages.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Backlinks.test.ts",
+      "target": "src/stores/editor.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Backlinks.test.ts",
+      "target": "src/composables/useNavigateToPage",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Backlinks.test.ts",
+      "target": "src/storage/indexedDB.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/PageLinkMenu.test.ts",
+      "target": "src/components/PageLinkMenu.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/PageLinkMenu.test.ts",
+      "target": "src/stores/pages.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/SlashCommandMenu.test.ts",
+      "target": "src/components/SlashCommandMenu.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/SlashCommandMenu.test.ts",
+      "target": "src/stores/editor.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/SlashCommandMenu.test.ts",
+      "target": "src/stores/property.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/SlashCommandMenu.test.ts",
+      "target": "src/composables/useSlashCommands",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Block/PropertyDisplay.test.ts",
+      "target": "src/components/Block/PropertyDisplay.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Block/PropertyDisplay.test.ts",
+      "target": "src/stores/property.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Block/PropertyEditor.test.ts",
+      "target": "src/components/Block/PropertyEditor.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Block/PropertyEditor.test.ts",
+      "target": "src/stores/editor.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Block/PropertyEditor.test.ts",
+      "target": "src/stores/property.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Block/PropertyInline.test.ts",
+      "target": "src/components/Block/PropertyInline.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Block/PropertyInline.test.ts",
+      "target": "src/stores/property.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Block/PropertyInline.test.ts",
+      "target": "src/stores/editor.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Block/handlers/code/CodeMirrorEditor.test.ts",
+      "target": "src/components/Block/handlers/code/CodeMirrorEditor.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Block/handlers/code/code.test.ts",
+      "target": "src/composables/useBlockRegistry",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Block/handlers/code/code.test.ts",
+      "target": "src/components/Block/handlers/code/CodeMirrorEditor.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Block/handlers/embed/EmbedRender.test.ts",
+      "target": "src/components/Block/handlers/embed/EmbedRender.vue",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Block/handlers/embed/EmbedRender.test.ts",
+      "target": "src/stores/blocks.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Block/handlers/embed/EmbedRender.test.ts",
+      "target": "src/stores/pages.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Block/handlers/embed/EmbedRender.test.ts",
+      "target": "src/types/block.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Block/handlers/embed/EmbedRender.test.ts",
+      "target": "src/storage/indexedDB.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/components/Block/handlers/embed/EmbedRender.test.ts",
+      "target": "src/composables/useNavigateToPage",
+      "type": "imports"
+    },
+    {
+      "source": "src/router/index.test.ts",
+      "target": "src/router/index.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/router/index.test.ts",
+      "target": "src/stores/pages.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/router/index.test.ts",
+      "target": "src/utils/journal-detect.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/router/router-guards.test.ts",
+      "target": "src/router/router-guards.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/router/router-guards.test.ts",
+      "target": "src/stores/pages.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/router/router-guards.test.ts",
+      "target": "src/utils/journal-detect.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/router/router-guards.test.ts",
+      "target": "src/storage/indexedDB.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/stores/blocks.test.ts",
+      "target": "src/stores/blocks.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/stores/blocks.test.ts",
+      "target": "src/utils/block-helpers.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/stores/blocks.test.ts",
+      "target": "src/storage/indexedDB.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/stores/blocks.test.ts",
+      "target": "src/stores/useBlockStore",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/stores/blocks.test.ts",
+      "target": "src/utils/isDescendantOf",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/stores/blocks.test.ts",
+      "target": "src/utils/calcInsertPos",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/stores/blocks-store.test.ts",
+      "target": "src/stores/blocks.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/stores/pages.test.ts",
+      "target": "src/stores/pages.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/stores/pages.test.ts",
+      "target": "src/stores/usePageStore",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/stores/pages.test.ts",
+      "target": "src/storage/indexedDB.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/stores/editor.test.ts",
+      "target": "src/stores/editor.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/stores/editor.test.ts",
+      "target": "src/stores/useEditorStore",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/stores/property.test.ts",
+      "target": "src/stores/property.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/stores/property.test.ts",
+      "target": "src/services/property.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/stores/property.test.ts",
+      "target": "src/types/property.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/stores/property.test.ts",
+      "target": "src/stores/usePropertyStore",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/services/property.test.ts",
+      "target": "src/services/property.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/services/property.test.ts",
+      "target": "src/services/PropertyService",
+      "type": "tested_by"
+    },
+    {
+      "source": "src/services/property.test.ts",
+      "target": "src/storage/indexedDB.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/services/property.test.ts",
+      "target": "src/utils/id.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/services/property.test.ts",
+      "target": "src/types/property.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/services/property.test.ts",
+      "target": "src/utils/property.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/services/property.ts",
+      "target": "src/utils/id.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/services/property.ts",
+      "target": "src/storage/indexedDB.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/services/property.ts",
+      "target": "src/types/property.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/services/property.ts",
+      "target": "src/utils/property.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/storage/asset.ts",
+      "target": "src/storage/db.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/storage/asset.ts",
+      "target": "src/utils/id.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/storage/asset.ts",
+      "target": "src/types/asset.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/utils/parser.ts",
+      "target": "src/types/property.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/utils/property.ts",
+      "target": "src/types/property.ts",
+      "type": "imports"
+    },
+    {
+      "source": "src/types/property.ts",
+      "target": "src/components/Icons.tsx",
+      "type": "imports"
+    },
+    {
+      "source": "src/utils/journal-detect.ts",
+      "target": "src/types/date-fns.ts",
+      "type": "imports"
+    }
+  ],
+  "layers": [
+    {
+      "id": "entry",
+      "name": "入口层",
+      "description": "应用入口和根组件",
+      "nodeCount": 2,
+      "nodeIds": [
+        "file: src/main.ts",
+        "file: src/App.vue"
+      ]
+    },
+    {
+      "id": "routing",
+      "name": "路由层",
+      "description": "Vue Router 配置和路由守卫",
+      "nodeCount": 7,
+      "nodeIds": [
+        "file: src/router/index.ts",
+        "file: src/router/routes.ts",
+        "src/router/routes.ts:routes",
+        "src/router/index.test.ts",
+        "src/router/index.ts",
+        "src/router/router-guards.test.ts",
+        "src/router/router-guards.ts"
+      ]
+    },
+    {
+      "id": "state",
+      "name": "状态管理层",
+      "description": "Pinia 状态管理 stores",
+      "nodeCount": 22,
+      "nodeIds": [
+        "file: src/stores/blocks.ts",
+        "file: src/stores/pages.ts",
+        "file: src/stores/editor.ts",
+        "file: src/stores/property.ts",
+        "src/stores/blocks.ts:safeCalcInsertPos",
+        "src/stores/blocks.ts:useBlockStore",
+        "src/stores/pages.ts:usePageStore",
+        "src/stores/editor.ts:useEditorStore",
+        "src/stores/property.ts:usePropertyStore",
+        "src/stores/blocks.test.ts",
+        "src/stores/useBlockStore",
+        "src/stores/blocks-store.test.ts",
+        "src/stores/blocks.ts",
+        "src/stores/pages.test.ts",
+        "src/stores/pages.ts",
+        "src/stores/usePageStore",
+        "src/stores/editor.test.ts",
+        "src/stores/editor.ts",
+        "src/stores/useEditorStore",
+        "src/stores/property.test.ts",
+        "src/stores/property.ts",
+        "src/stores/usePropertyStore"
+      ]
+    },
+    {
+      "id": "components",
+      "name": "组件层",
+      "description": "Vue 组件",
+      "nodeCount": 44,
+      "nodeIds": [
+        "file: src/components/Editor.vue",
+        "file: src/components/BlockList.vue",
+        "file: src/components/Sidebar/SidebarContainer.vue",
+        "file: src/components/Block/index.vue",
+        "src/components/Page/index.vue",
+        "src/components/Journal/JournalList.vue",
+        "src/components/Journal/JournalListItem.vue",
+        "src/components/Trash/TrashList.vue",
+        "src/components/Settings/Settings.vue",
+        "src/components/PageLinkMenu.vue",
+        "src/components/PageMenuButton.vue",
+        "src/components/SlashCommandMenu.vue",
+        "src/components/Sidebar/SidebarHeader.vue",
+        "src/components/Sidebar/SidebarFooter.vue",
+        "src/components/Sidebar/SidebarFavorites.vue",
+        "src/components/Sidebar/SidebarRecent.vue",
+        "src/components/Sidebar/SidebarJournal.vue",
+        "src/components/Sidebar/PageItem.vue",
+        "src/components/Block/PropertyDisplay.vue",
+        "src/components/Block/PropertyEditor.vue",
+        "src/components/Block/PropertyInline.vue",
+        "src/components/Block/PropertyQuickEditor.vue",
+        "src/components/Block/handlers/bullet/BulletRender.vue",
+        "src/components/Block/handlers/code/CodeRender.vue",
+        "src/components/Block/handlers/code/CodeEditor.vue",
+        "src/components/Block/handlers/embed/EmbedRender.vue",
+        "src/components/Block/handlers/image/ImageRender.vue",
+        "src/components/Backlinks.vue",
+        "src/components/BlockSelector.vue",
+        "src/components/ConfirmDialog.vue",
+        "src/components/MergeDialog.vue",
+        "src/components/Icons/TaskIcon.vue",
+        "src/components/Editor.test.ts",
+        "src/components/Editor.vue",
+        "src/components/Backlinks.test.ts",
+        "src/components/PageLinkMenu.test.ts",
+        "src/components/SlashCommandMenu.test.ts",
+        "src/components/Block/PropertyDisplay.test.ts",
+        "src/components/Block/PropertyEditor.test.ts",
+        "src/components/Block/PropertyInline.test.ts",
+        "src/components/Block/handlers/code/CodeMirrorEditor.test.ts",
+        "src/components/Block/handlers/code/CodeMirrorEditor.vue",
+        "src/components/Block/handlers/code/code.test.ts",
+        "src/components/Block/handlers/embed/EmbedRender.test.ts"
+      ]
+    },
+    {
+      "id": "editor",
+      "name": "编辑器层",
+      "description": "TipTap 编辑器核心和扩展",
+      "nodeCount": 62,
+      "nodeIds": [
+        "file: src/composables/useBlockTree.ts",
+        "file: src/composables/useDragDrop.ts",
+        "file: src/composables/useSlashCommands.ts",
+        "file: src/composables/useJournal.ts",
+        "file: src/extensions/WikiLinkExtension.ts",
+        "file: src/extensions/SlashCommandExtension.ts",
+        "src/composables/useBlockTree.ts:buildTree",
+        "src/composables/useBlockTree.ts:syncTreeToStore",
+        "src/composables/useDragDrop.ts:computeDropZone",
+        "src/composables/useDragDrop.ts:computeSortPosition",
+        "src/composables/useSlashCommands.ts:commands",
+        "src/composables/useSlashCommands.ts:filterCommands",
+        "src/composables/useSlashCommands.ts:groupCommands",
+        "src/composables/useSlashCommands.ts:parseCommandInput",
+        "src/composables/useSlashCommands.ts:useSlashCommands",
+        "src/composables/useJournal.ts:isJournalPage",
+        "src/composables/useJournal.ts:useJournal",
+        "src/extensions/WikiLinkExtension.ts:WikiLinkExtension",
+        "src/extensions/SlashCommandExtension.ts:SlashCommandExtension",
+        "src/extensions/SlashCommandExtension.ts:isInURL",
+        "src/composables/useBlockRegistry.test.ts",
+        "src/composables/useBlockRegistry",
+        "src/composables/useBlockTree.test.ts",
+        "src/composables/buildTree",
+        "src/composables/syncTreeToStore",
+        "src/composables/useContentRenderer.test.ts",
+        "src/composables/useContentRenderer",
+        "src/composables/renderContentToHtml",
+        "src/composables/useCrossBlockSelection.test.ts",
+        "src/composables/useCrossBlockSelection",
+        "src/composables/useDragDrop.test.ts",
+        "src/composables/computeDropZone",
+        "src/composables/computeSortPosition",
+        "src/composables/DRAG_THRESHOLD",
+        "src/composables/useFavorites.test.ts",
+        "src/composables/useFavorites",
+        "src/composables/useJournal.test.ts",
+        "src/composables/useJournal",
+        "src/composables/useNavigateToPage.test.ts",
+        "src/composables/useNavigateToPage",
+        "src/composables/navigateToPage",
+        "src/composables/useRecent.test.ts",
+        "src/composables/useRecent",
+        "src/composables/useSidebar.test.ts",
+        "src/composables/useSidebar",
+        "src/composables/useSlashCommands.test.ts",
+        "src/composables/filterCommands",
+        "src/composables/groupCommands",
+        "src/composables/parseCommandInput",
+        "src/composables/commands",
+        "src/composables/formatDate",
+        "src/composables/insertEmbed",
+        "src/composables/insertImage",
+        "src/composables/insertFormat",
+        "src/composables/insertPageRef",
+        "src/extensions/BracketPairExtension.test.ts",
+        "src/extensions/SlashCommandExtension.test.ts",
+        "src/extensions/WikiLinkExtension.test.ts",
+        "src/extensions/WikiLinkTriggerExtension.test.ts",
+        "src/extensions/notifyWikiLinkMenuSelect",
+        "src/extensions/findWikiLinkAtCursor",
+        "src/extensions/closeWikiLinkMenuByEditor"
+      ]
+    },
+    {
+      "id": "storage",
+      "name": "存储层",
+      "description": "IndexedDB 数据库适配器",
+      "nodeCount": 24,
+      "nodeIds": [
+        "file: src/storage/indexedDB.ts",
+        "file: src/storage/db.ts",
+        "src/storage/indexedDB.ts:IndexedDBAdapter",
+        "src/storage/indexedDB.ts:storage",
+        "src/storage/indexedDB.ts:recordToBlock",
+        "src/storage/indexedDB.ts:blockToRecord",
+        "src/storage/indexedDB.ts:pageToRecord",
+        "src/storage/indexedDB.ts:recordToPage",
+        "src/storage/indexedDB.ts:recordToProperty",
+        "src/storage/indexedDB.ts:propertyToRecord",
+        "src/storage/db.ts:ComindDB",
+        "src/storage/db.ts:db",
+        "src/storage/indexedDB.test.ts",
+        "src/storage/IndexedDBAdapter",
+        "src/storage/recordToBlock",
+        "src/storage/recordToPage",
+        "src/storage/recordToProperty",
+        "src/storage/blockToRecord",
+        "src/storage/pageToRecord",
+        "src/storage/propertyToRecord",
+        "src/storage/asset.test.ts",
+        "src/storage/IndexedDBAssetStorage",
+        "src/storage/assetStorage",
+        "src/storage/asset.ts"
+      ]
+    },
+    {
+      "id": "services",
+      "name": "服务层",
+      "description": "业务逻辑服务",
+      "nodeCount": 3,
+      "nodeIds": [
+        "src/services/property.ts",
+        "src/services/PropertyService",
+        "src/services/property.test.ts"
+      ]
+    },
+    {
+      "id": "types",
+      "name": "类型层",
+      "description": "TypeScript 类型定义",
+      "nodeCount": 32,
+      "nodeIds": [
+        "file: src/types/block.ts",
+        "file: src/types/page.ts",
+        "src/types/block.ts:Block",
+        "src/types/block.ts:BlockRecord",
+        "src/types/block.ts:TreeNode",
+        "src/types/page.ts:Page",
+        "src/types/page.ts:PageRecord",
+        "src/types/asset.ts",
+        "src/types/Asset",
+        "src/types/AssetStorage",
+        "src/types/block-type.ts",
+        "src/types/BlockTypeHandler",
+        "src/types/BlockTypeEditorExposed",
+        "src/types/BlockTypeRenderExposed",
+        "src/types/command.ts",
+        "src/types/CommandProps",
+        "src/types/Command",
+        "src/types/CommandGroup",
+        "src/types/link.ts",
+        "src/types/Link",
+        "src/types/LinkRecord",
+        "src/types/property.ts",
+        "src/types/PropertyType",
+        "src/types/ClosedValue",
+        "src/types/PropertyDefinition",
+        "src/types/PropertyValueMap",
+        "src/types/PropertyValue",
+        "src/types/Property",
+        "src/types/PropertyRecord",
+        "src/types/BUILT_IN_PROPERTIES",
+        "src/types/getPropertyDefinition",
+        "src/types/getAllPropertyDefinitions"
+      ]
+    },
+    {
+      "id": "utils",
+      "name": "工具层",
+      "description": "工具函数",
+      "nodeCount": 78,
+      "nodeIds": [
+        "file: src/utils/block-helpers.ts",
+        "file: src/utils/parser.ts",
+        "src/utils/block-helpers.ts:GAP_SIZE",
+        "src/utils/block-helpers.ts:SAVE_DEBOUNCE_MS",
+        "src/utils/block-helpers.ts:pmPosToTextOffset",
+        "src/utils/block-helpers.ts:textOffsetToPmPos",
+        "src/utils/block-helpers.ts:sortByPos",
+        "src/utils/block-helpers.ts:getSortedChildren",
+        "src/utils/block-helpers.ts:getSortedSiblings",
+        "src/utils/block-helpers.ts:findBlockIndex",
+        "src/utils/block-helpers.ts:getPrevSibling",
+        "src/utils/block-helpers.ts:getNextSibling",
+        "src/utils/block-helpers.ts:calcInsertPos",
+        "src/utils/block-helpers.ts:GapExhaustedError",
+        "src/utils/block-helpers.ts:isGapExhaustedError",
+        "src/utils/block-helpers.ts:renumberBlocks",
+        "src/utils/block-helpers.ts:isDescendantOf",
+        "src/utils/parser.ts:ParseResult",
+        "src/utils/parser.ts:LinkParse",
+        "src/utils/parser.ts:extractLinkMatches",
+        "src/utils/parser.ts:parseBlockLinks",
+        "src/utils/parser.ts:parseContent",
+        "src/utils/parser.ts:parsePropertyValue",
+        "src/utils/block-helpers.test.ts",
+        "src/utils/GAP_SIZE",
+        "src/utils/pmPosToTextOffset",
+        "src/utils/textOffsetToPmPos",
+        "src/utils/sortByPos",
+        "src/utils/getSortedChildren",
+        "src/utils/getSortedSiblings",
+        "src/utils/findBlockIndex",
+        "src/utils/getPrevSibling",
+        "src/utils/getNextSibling",
+        "src/utils/calcInsertPos",
+        "src/utils/renumberBlocks",
+        "src/utils/isGapExhaustedError",
+        "src/utils/isDescendantOf",
+        "src/utils/block-helpers.ts",
+        "src/utils/GapExhaustedError",
+        "src/utils/date-parser.test.ts",
+        "src/utils/formatDate",
+        "src/utils/parseDateInput",
+        "src/utils/date-parser.ts",
+        "src/utils/debounce.test.ts",
+        "src/utils/debounce",
+        "src/utils/debounce.ts",
+        "src/utils/id.test.ts",
+        "src/utils/generateUUID",
+        "src/utils/id.ts",
+        "src/utils/journal-detect.test.ts",
+        "src/utils/JOURNAL_FORMATS",
+        "src/utils/JOURNAL_CANONICAL_FORMAT",
+        "src/utils/parseToDate",
+        "src/utils/isJournalTitle",
+        "src/utils/normalizeJournalTitle",
+        "src/utils/inferPageType",
+        "src/utils/journal-detect.ts",
+        "src/utils/leftCalculator.test.ts",
+        "src/utils/calculateNewLeft",
+        "src/utils/calculateOutdentLeft",
+        "src/utils/calculateIndentLeft",
+        "src/utils/reindexLeftValues",
+        "src/utils/validateLeftValues",
+        "src/utils/leftCalculator.ts",
+        "src/utils/parser.test.ts",
+        "src/utils/parseContent",
+        "src/utils/parsePropertyValue",
+        "src/utils/parser.ts",
+        "src/utils/ParseResult",
+        "src/utils/LinkParse",
+        "src/utils/extractLinkMatches",
+        "src/utils/parseBlockLinks",
+        "src/utils/property.test.ts",
+        "src/utils/formatPropertyValue",
+        "src/utils/inferPropertyType",
+        "src/utils/property.ts",
+        "src/utils/logger.ts",
+        "src/utils/logger"
+      ]
+    }
+  ],
+  "tour": [
+    {
+      "id": "step-1",
+      "title": "项目概览",
+      "description": "了解项目入口文件和根组件结构",
+      "nodeIds": [
+        "file: src/main.ts",
+        "file: src/App.vue"
+      ]
+    },
+    {
+      "id": "step-2",
+      "title": "状态管理",
+      "description": "掌握 Pinia stores 的状态管理模式",
+      "nodeIds": [
+        "file: src/stores/pages.ts",
+        "file: src/stores/blocks.ts",
+        "file: src/stores/editor.ts",
+        "file: src/stores/property.ts"
+      ]
+    },
+    {
+      "id": "step-3",
+      "title": "编辑器核心",
+      "description": "理解 TipTap 编辑器和自定义扩展机制",
+      "nodeIds": [
+        "file: src/components/Editor.vue",
+        "file: src/extensions/WikiLinkExtension.ts",
+        "file: src/extensions/SlashCommandExtension.ts"
+      ]
+    },
+    {
+      "id": "step-4",
+      "title": "块编辑器系统",
+      "description": "深入 Block 组件架构和块树管理",
+      "nodeIds": [
+        "file: src/components/Block/index.vue",
+        "file: src/components/BlockList.vue",
+        "file: src/composables/useBlockTree.ts",
+        "file: src/composables/useDragDrop.ts"
+      ]
+    },
+    {
+      "id": "step-5",
+      "title": "存储层",
+      "description": "探索 IndexedDB 数据持久化方案",
+      "nodeIds": [
+        "file: src/storage/indexedDB.ts",
+        "file: src/storage/db.ts",
+        "file: src/storage/asset.ts"
+      ]
+    },
+    {
+      "id": "step-6",
+      "title": "工具函数",
+      "description": "学习核心工具函数实现",
+      "nodeIds": [
+        "file: src/utils/block-helpers.ts",
+        "file: src/utils/parser.ts",
+        "file: src/utils/leftCalculator.ts"
+      ]
+    },
+    {
+      "id": "step-7",
+      "title": "页面管理",
+      "description": "了解页面创建、导航和日记功能",
+      "nodeIds": [
+        "file: src/components/Page/index.vue",
+        "file: src/components/Journal/JournalList.vue",
+        "file: src/composables/useJournal.ts",
+        "file: src/composables/useNavigateToPage.ts"
+      ]
+    }
+  ]
+}

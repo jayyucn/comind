@@ -542,3 +542,368 @@ describe('原有测试（保持兼容性）', () => {
     expect(updatedParent?.parentId).toBe(null) // 未改变
   })
 })
+
+describe('insertBlockAtCursor - 光标位置插入', () => {
+  test('行首位置插入 - 在当前节点上方插入兄弟节点', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const block1 = await store.createBlock({ pageId, content: 'Block 1' })
+    const block2 = await store.createBlock({ pageId, content: 'Block 2' })
+
+    // 光标在 block2 行首（ProseMirror position 1 = 文本偏移 0）
+    const newBlock = await store.insertBlockAtCursor(block2.id, 1, false)
+
+    expect(newBlock).not.toBeNull()
+    const sorted = store.sortedBlocks
+    expect(sorted.length).toBe(3)
+    expect(sorted[0].id).toBe(block1.id)
+    expect(sorted[1].id).toBe(newBlock?.id)
+    expect(sorted[2].id).toBe(block2.id)
+  })
+
+  test('行尾位置插入（无子节点）- 在当前节点下方插入兄弟节点', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const block1 = await store.createBlock({ pageId, content: 'Block 1' })
+    const block2 = await store.createBlock({ pageId, content: 'Block 2' })
+
+    // 光标在 block1 行尾（ProseMirror position = content.length + 1）
+    const newBlock = await store.insertBlockAtCursor(block1.id, block1.content.length + 1, false)
+
+    expect(newBlock).not.toBeNull()
+    const sorted = store.sortedBlocks
+    expect(sorted.length).toBe(3)
+    expect(sorted[0].id).toBe(block1.id)
+    expect(sorted[1].id).toBe(newBlock?.id)
+    expect(sorted[2].id).toBe(block2.id)
+  })
+
+  test('行尾位置插入（有展开子节点）- 作为第一个子节点插入', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const parent = await store.createBlock({ pageId, content: 'Parent' })
+    const child = await store.createBlock({
+      pageId,
+      content: 'Child',
+      parentId: parent.id
+    })
+
+    // 光标在 parent 行尾，且 parent 有展开的子节点
+    const newBlock = await store.insertBlockAtCursor(parent.id, parent.content.length + 1, false)
+
+    expect(newBlock).not.toBeNull()
+    expect(newBlock?.parentId).toBe(parent.id)
+    
+    const children = store.getChildren(parent.id)
+    expect(children.length).toBe(2)
+    expect(children[0].id).toBe(newBlock?.id)
+    expect(children[1].id).toBe(child.id)
+  })
+
+  test('文本中间插入 - 拆分当前节点', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const block = await store.createBlock({ pageId, content: 'Hello World' })
+
+    // 光标在 'Hello' 和 'World' 之间（ProseMirror position 7 = 文本偏移 6）
+    const newBlock = await store.insertBlockAtCursor(block.id, 7, false)
+
+    expect(newBlock).not.toBeNull()
+    expect(block.content).toBe('Hello ')
+    expect(newBlock?.content).toBe('World')
+    
+    const sorted = store.sortedBlocks
+    expect(sorted.length).toBe(2)
+    expect(sorted[0].id).toBe(block.id)
+    expect(sorted[1].id).toBe(newBlock?.id)
+  })
+
+  test('空行插入（无子节点）- 作为兄弟节点插入', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const parent = await store.createBlock({ pageId, content: '' })
+
+    // 空行的光标位置（任意位置都应视为行尾），无子节点时插入为兄弟
+    const newBlock = await store.insertBlockAtCursor(parent.id, 1, false)
+
+    expect(newBlock).not.toBeNull()
+    expect(newBlock?.parentId).toBe(null)
+  })
+
+  test('插入不存在的 block 返回 null', async () => {
+    const store = useBlockStore()
+
+    const result = await store.insertBlockAtCursor('non-existent-id', 1, false)
+    expect(result).toBeNull()
+  })
+})
+
+describe('indent/outdent - 缩进与反缩进', () => {
+  test('缩进 - 将块变为前一个兄弟的子节点', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const block1 = await store.createBlock({ pageId, content: 'Block 1' })
+    const block2 = await store.createBlock({ pageId, content: 'Block 2' })
+
+    await store.indent(block2.id)
+
+    const block2After = store.blocks.find(b => b.id === block2.id)
+    expect(block2After?.parentId).toBe(block1.id)
+  })
+
+  test('缩进第一个块无操作（无前一个兄弟）', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const block1 = await store.createBlock({ pageId, content: 'Block 1' })
+
+    await store.indent(block1.id)
+
+    const block1After = store.blocks.find(b => b.id === block1.id)
+    expect(block1After?.parentId).toBe(null)
+  })
+
+  test('反缩进 - 将块提升到父节点同级', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const parent = await store.createBlock({ pageId, content: 'Parent' })
+    const child = await store.createBlock({
+      pageId,
+      content: 'Child',
+      parentId: parent.id
+    })
+
+    await store.outdent(child.id)
+
+    const childAfter = store.blocks.find(b => b.id === child.id)
+    expect(childAfter?.parentId).toBe(null)
+  })
+
+  test('反缩进根节点无操作', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const block = await store.createBlock({ pageId, content: 'Block' })
+
+    await store.outdent(block.id)
+
+    const blockAfter = store.blocks.find(b => b.id === block.id)
+    expect(blockAfter?.parentId).toBe(null)
+  })
+
+  test('反缩进不存在的块无操作', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    await store.createBlock({ pageId, content: 'Block' })
+
+    await store.outdent('non-existent-id')
+
+    expect(store.blocks).toHaveLength(1)
+  })
+})
+
+describe('文档序遍历 - findPreviousBlockInTreeOrder / findNextBlockInTreeOrder', () => {
+  test('findPreviousBlockInTreeOrder - 返回前一个兄弟', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const block1 = await store.createBlock({ pageId, content: 'Block 1' })
+    const block2 = await store.createBlock({ pageId, content: 'Block 2' })
+
+    const prev = store.findPreviousBlockInTreeOrder(block2.id)
+    expect(prev?.id).toBe(block1.id)
+  })
+
+  test('findPreviousBlockInTreeOrder - 第一个块返回 undefined', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const block = await store.createBlock({ pageId, content: 'Block' })
+
+    const prev = store.findPreviousBlockInTreeOrder(block.id)
+    expect(prev).toBeUndefined()
+  })
+
+  test('findPreviousBlockInTreeOrder - 子节点返回父节点', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const parent = await store.createBlock({ pageId, content: 'Parent' })
+    const child = await store.createBlock({
+      pageId,
+      content: 'Child',
+      parentId: parent.id
+    })
+
+    const prev = store.findPreviousBlockInTreeOrder(child.id)
+    expect(prev?.id).toBe(parent.id)
+  })
+
+  test('findNextBlockInTreeOrder - 返回后一个兄弟', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const block1 = await store.createBlock({ pageId, content: 'Block 1' })
+    const block2 = await store.createBlock({ pageId, content: 'Block 2' })
+
+    const next = store.findNextBlockInTreeOrder(block1.id)
+    expect(next?.id).toBe(block2.id)
+  })
+
+  test('findNextBlockInTreeOrder - 最后一个块返回 undefined', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const block = await store.createBlock({ pageId, content: 'Block' })
+
+    const next = store.findNextBlockInTreeOrder(block.id)
+    expect(next).toBeUndefined()
+  })
+
+  test('findNextBlockInTreeOrder - 父节点返回第一个子节点', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const parent = await store.createBlock({ pageId, content: 'Parent' })
+    const child = await store.createBlock({
+      pageId,
+      content: 'Child',
+      parentId: parent.id
+    })
+
+    const next = store.findNextBlockInTreeOrder(parent.id)
+    expect(next?.id).toBe(child.id)
+  })
+
+  test('findNextBlockInTreeOrder - 无子节点返回下一个兄弟', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const block1 = await store.createBlock({ pageId, content: 'Block 1' })
+    const block2 = await store.createBlock({ pageId, content: 'Block 2' })
+
+    const next = store.findNextBlockInTreeOrder(block1.id)
+    expect(next?.id).toBe(block2.id)
+  })
+})
+
+describe('可见性感知遍历 - findLastVisibleDescendant / findPreviousVisibleBlock', () => {
+  test('findLastVisibleDescendant - 无子节点返回自身', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const block = await store.createBlock({ pageId, content: 'Block' })
+
+    const result = store.findLastVisibleDescendant(block.id)
+    expect(result?.id).toBe(block.id)
+  })
+
+  test('findLastVisibleDescendant - 已折叠返回自身', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const parent = await store.createBlock({
+      pageId,
+      content: 'Parent',
+      format: { collapsed: true }
+    })
+    await store.createBlock({
+      pageId,
+      content: 'Child',
+      parentId: parent.id
+    })
+
+    const result = store.findLastVisibleDescendant(parent.id)
+    expect(result?.id).toBe(parent.id)
+  })
+
+  test('findLastVisibleDescendant - 有展开子节点返回最后一个可见后代', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const parent = await store.createBlock({ pageId, content: 'Parent' })
+    const child1 = await store.createBlock({
+      pageId,
+      content: 'Child 1',
+      parentId: parent.id
+    })
+    const child2 = await store.createBlock({
+      pageId,
+      content: 'Child 2',
+      parentId: parent.id
+    })
+
+    const result = store.findLastVisibleDescendant(parent.id)
+    expect(result?.id).toBe(child2.id)
+  })
+
+  test('findPreviousVisibleBlock - 返回前一个兄弟', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const block1 = await store.createBlock({ pageId, content: 'Block 1' })
+    const block2 = await store.createBlock({ pageId, content: 'Block 2' })
+
+    const result = store.findPreviousVisibleBlock(block2.id)
+    expect(result?.id).toBe(block1.id)
+  })
+
+  test('findPreviousVisibleBlock - 无前一个兄弟返回父节点', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const parent = await store.createBlock({ pageId, content: 'Parent' })
+    const child = await store.createBlock({
+      pageId,
+      content: 'Child',
+      parentId: parent.id
+    })
+
+    const result = store.findPreviousVisibleBlock(child.id)
+    expect(result?.id).toBe(parent.id)
+  })
+
+  test('findPreviousVisibleBlock - 前一个兄弟有展开子节点返回最后一个后代', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const block1 = await store.createBlock({ pageId, content: 'Block 1' })
+    const childOfBlock1 = await store.createBlock({
+      pageId,
+      content: 'Child of Block 1',
+      parentId: block1.id
+    })
+    const block2 = await store.createBlock({ pageId, content: 'Block 2' })
+
+    const result = store.findPreviousVisibleBlock(block2.id)
+    expect(result?.id).toBe(childOfBlock1.id)
+  })
+
+  test('findPreviousVisibleBlock - 前一个兄弟已折叠返回前一个兄弟', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const block1 = await store.createBlock({
+      pageId,
+      content: 'Block 1',
+      format: { collapsed: true }
+    })
+    await store.createBlock({
+      pageId,
+      content: 'Child of Block 1',
+      parentId: block1.id
+    })
+    const block2 = await store.createBlock({ pageId, content: 'Block 2' })
+
+    const result = store.findPreviousVisibleBlock(block2.id)
+    expect(result?.id).toBe(block1.id)
+  })
+})
