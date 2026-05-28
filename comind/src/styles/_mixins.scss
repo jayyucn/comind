@@ -89,7 +89,7 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-1);
-  padding: var(--space-1) var(--space-2);
+  padding: var(--space-1) var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-base);
@@ -127,7 +127,7 @@
 // 输入框基础
 @mixin input-base {
   width: 100%;
-  padding: var(--space-2);
+  padding: var(--space-1) var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-base);

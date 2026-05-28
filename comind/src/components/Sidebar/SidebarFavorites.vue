@@ -2,15 +2,12 @@
 import { useRouter } from 'vue-router'
 import { useFavorites } from '../../composables/useFavorites'
 import { usePageStore } from '../../stores/pages'
+import { ChevronUp, ChevronDown, X } from 'lucide-vue-next'
 import PageItem from './PageItem.vue'
-
-const emit = defineEmits<{
-  'add-favorite': []
-}>()
 
 const router = useRouter()
 const pageStore = usePageStore()
-const { favoritePages, removeFavorite } = useFavorites()
+const { favoritePages, removeFavorite, isExpanded, toggleExpand } = useFavorites()
 
 function handleNavigate(pageId: string) {
   const page = pageStore.getPage(pageId)
@@ -29,14 +26,15 @@ function handleRemoveFavorite(pageId: string, event: Event) {
 
 <template>
   <div class="favorites-section">
-    <div class="section-header">
+    <div class="section-header" @click="toggleExpand">
       <span class="section-title">收藏</span>
-      <button class="add-btn" title="添加收藏" @click="emit('add-favorite')">
-        +
-      </button>
+      <span class="expand-icon">
+        <ChevronUp v-if="isExpanded" :size="12" :stroke-width="2" />
+        <ChevronDown v-else :size="12" :stroke-width="2" />
+      </span>
     </div>
-    
-    <div class="section-content">
+
+    <div v-show="isExpanded" class="section-content">
       <div
         v-for="page in favoritePages"
         :key="page.id"
@@ -46,18 +44,21 @@ function handleRemoveFavorite(pageId: string, event: Event) {
           :page="page"
           :active="pageStore.currentPageId === page.id"
           @click="handleNavigate(page.id)"
-        />
-        <button 
-          class="remove-btn" 
-          title="取消收藏"
-          @click="handleRemoveFavorite(page.id, $event)"
         >
-          ×
-        </button>
+          <template #suffix>
+            <button
+              class="remove-btn"
+              title="取消收藏"
+              @click="handleRemoveFavorite(page.id, $event)"
+            >
+              <X :size="12" :stroke-width="2" />
+            </button>
+          </template>
+        </PageItem>
       </div>
-      
+
       <div v-if="favoritePages.length === 0" class="empty-text">
-        暂无收藏，点击 + 添加
+        暂无收藏页面
       </div>
     </div>
   </div>
@@ -65,7 +66,7 @@ function handleRemoveFavorite(pageId: string, event: Event) {
 
 <style scoped>
 .favorites-section {
-  padding: var(--space-2) 0;
+  padding: var(--space-1) 0;
 }
 
 .section-header {
@@ -73,45 +74,38 @@ function handleRemoveFavorite(pageId: string, event: Event) {
   align-items: center;
   justify-content: space-between;
   padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+  user-select: none;
+  border-radius: 6px;
+  margin: 0 var(--space-2);
+  transition: background 80ms ease;
+}
+
+.section-header:hover {
+  background: var(--bg-hover);
 }
 
 .section-title {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  color: var(--text-secondary);
+  color: var(--sidebar-text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.5px;
+  line-height: 1.4;
 }
 
-.add-btn {
-  width: 18px;
-  height: 18px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
+.expand-icon {
   display: flex;
   align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  color: var(--text-tertiary);
-  font-size: 16px;
-  line-height: 1;
-  transition: all 80ms ease;
-}
-
-.add-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-secondary);
+  color: var(--sidebar-text-hint);
 }
 
 .section-content {
-  padding: 0 var(--space-2);
+  padding: var(--space-1) var(--space-2);
 }
 
 .favorite-item {
   position: relative;
-  display: flex;
-  align-items: center;
 }
 
 .favorite-item:hover .remove-btn {
@@ -119,22 +113,19 @@ function handleRemoveFavorite(pageId: string, event: Event) {
 }
 
 .remove-btn {
-  position: absolute;
-  right: 4px;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border: none;
-  background: var(--bg-hover);
+  background: transparent;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
-  color: var(--text-tertiary);
-  font-size: 14px;
-  line-height: 1;
+  border-radius: 6px;
+  color: var(--sidebar-text-hint);
   opacity: 0;
   transition: all 80ms ease;
+  flex-shrink: 0;
 }
 
 .remove-btn:hover {
@@ -145,7 +136,6 @@ function handleRemoveFavorite(pageId: string, event: Event) {
 .empty-text {
   padding: var(--space-2) var(--space-3);
   font-size: 12px;
-  color: var(--text-tertiary);
-  font-style: italic;
+  color: var(--sidebar-text-hint);
 }
 </style>

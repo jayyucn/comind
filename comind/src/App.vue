@@ -8,11 +8,14 @@ import { useEditorStore } from './stores/editor'
 import { useBlockStore } from './stores/blocks'
 import { usePageStore } from './stores/pages'
 import { storage } from './storage/indexedDB'
+import { useSidebar } from './composables/useSidebar'
+import { ArrowLeft, ArrowRight, PanelLeftClose, PanelLeftOpen } from 'lucide-vue-next'
 
 const editorStore = useEditorStore()
 const route = useRoute()
 const blockStore = useBlockStore()
 const pageStore = usePageStore()
+const { isCollapsed, toggle } = useSidebar()
 
 type HistoryItem = {
   path: string
@@ -31,7 +34,7 @@ watch(() => route.fullPath, async (newPath) => {
   if (historyIndex.value < historyStack.value.length - 1) {
     historyStack.value = historyStack.value.slice(0, historyIndex.value + 1)
   }
-  
+
   // 尝试获取当前页面ID
   let pageId: string | undefined
   if (route.params.pageId || route.params.date) {
@@ -41,7 +44,7 @@ watch(() => route.fullPath, async (newPath) => {
       pageId = page.id
     }
   }
-  
+
   historyStack.value.push({ path: newPath, pageId })
   historyIndex.value = historyStack.value.length - 1
 })
@@ -87,12 +90,12 @@ function handleGoForward() {
 function removePageFromHistory(pageId: string) {
   // 过滤掉包含该页面ID的历史记录
   const newStack = historyStack.value.filter(item => item.pageId !== pageId)
-  
+
   // 如果当前指向的页面被删除了，需要调整索引
   if (historyIndex.value >= newStack.length) {
     historyIndex.value = Math.max(0, newStack.length - 1)
   }
-  
+
   // 如果新栈长度为0，添加默认路径
   if (newStack.length === 0) {
     historyStack.value = [{ path: '' }]
@@ -118,24 +121,24 @@ function handleMainClick(e: MouseEvent) {
 
     <div class="page-scroll-wrapper" @click="handleMainClick">
       <div class="nav-controls">
-        <button
-          class="nav-btn"
-          :class="{ disabled: !canGoBack }"
-          :disabled="!canGoBack"
-          title="后退"
-          @click="handleGoBack"
-        >
-          <span class="nav-icon">←</span>
+        <button class="collapse-btn" :title="isCollapsed ? '展开侧边栏' : '折叠侧边栏'" @click="toggle">
+          <PanelLeftClose v-if="!isCollapsed" />
+          <PanelLeftOpen v-else />
         </button>
-        <button
-          class="nav-btn"
-          :class="{ disabled: !canGoForward }"
-          :disabled="!canGoForward"
-          title="前进"
-          @click="handleGoForward"
-        >
-          <span class="nav-icon">→</span>
-        </button>
+        <template v-if="!isCollapsed">
+          <button class="nav-btn" :class="{ disabled: !canGoBack }" :disabled="!canGoBack" title="后退"
+            @click="handleGoBack">
+            <span class="nav-icon left-icon">
+              <ArrowLeft :size="16" :stroke-width="1.75" />
+            </span>
+          </button>
+          <button class="nav-btn" :class="{ disabled: !canGoForward }" :disabled="!canGoForward" title="前进"
+            @click="handleGoForward">
+            <span class="nav-icon right-icon">
+              <ArrowRight :size="16" :stroke-width="1.75" />
+            </span>
+          </button>
+        </template>
       </div>
       <div class="page-body">
         <main class="main-content">
@@ -143,18 +146,12 @@ function handleMainClick(e: MouseEvent) {
         </main>
       </div>
     </div>
-    
+
     <PageMenuButton />
 
-    <ConfirmDialog
-      :visible="showTrashedPageWarning"
-      title="页面已在回收站中"
-      :message="`页面「${trashedPageToRestore || ''}」曾在回收站中。是否要恢复该页面？`"
-      confirm-text="恢复页面"
-      cancel-text="忽略"
-      @confirm="confirmRestoreTrashedPage"
-      @cancel="cancelRestoreTrashedPage"
-    />
+    <ConfirmDialog :visible="showTrashedPageWarning" title="页面已在回收站中"
+      :message="`页面「${trashedPageToRestore || ''}」曾在回收站中。是否要恢复该页面？`" confirm-text="恢复页面" cancel-text="忽略"
+      @confirm="confirmRestoreTrashedPage" @cancel="cancelRestoreTrashedPage" />
   </div>
 </template>
 
@@ -178,6 +175,28 @@ function handleMainClick(e: MouseEvent) {
   position: relative;
 }
 
+.collapse-btn {
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  color: var(--text-tertiary);
+  transition: all 100ms ease;
+}
+
+.collapse-btn:hover {
+  color: var(--text-secondary);
+}
+
+.collapse-btn:active {
+  transform: scale(0.95);
+}
+
 .nav-controls {
   position: sticky;
   top: 12px;
@@ -189,23 +208,22 @@ function handleMainClick(e: MouseEvent) {
 }
 
 .nav-btn {
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--border);
-  background: var(--bg-sidebar);
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: transparent;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  transition: all 120ms ease;
+  color: var(--text-tertiary);
+  transition: all 100ms ease;
 }
 
 .nav-btn:hover:not(.disabled) {
   background: var(--bg-hover);
-  color: var(--text-primary);
-  border-color: var(--border-strong);
+  color: var(--text-secondary);
 }
 
 .nav-btn:active:not(.disabled) {
@@ -214,13 +232,14 @@ function handleMainClick(e: MouseEvent) {
 }
 
 .nav-btn.disabled {
-  opacity: 0.4;
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
 .nav-icon {
-  font-size: 14px;
-  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .page-scroll-wrapper::-webkit-scrollbar {

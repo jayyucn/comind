@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { FileText } from 'lucide-vue-next'
 
 const props = withDefaults(defineProps<{
   page: any
@@ -26,7 +27,7 @@ function formatTime(timestamp: number, format: 'relative' | 'absolute'): string 
     const d = new Date(timestamp)
     return `${d.getMonth() + 1}月${d.getDate()}日`
   }
-  
+
   const now = Date.now()
   const diff = now - timestamp
   const minute = 60 * 1000
@@ -34,9 +35,9 @@ function formatTime(timestamp: number, format: 'relative' | 'absolute'): string 
   const day = 24 * hour
 
   if (diff < minute) return '刚刚'
-  if (diff < hour) return `${Math.floor(diff / minute)} 分钟前`
-  if (diff < 2 * hour) return '1 小时前'
-  if (diff < day) return `${Math.floor(diff / hour)} 小时前`
+  if (diff < hour) return `${Math.floor(diff / minute)} min前`
+  if (diff < 2 * hour) return '1 h前'
+  if (diff < day) return `${Math.floor(diff / hour)} h前`
   if (diff < 2 * day) return '昨天'
 
   const d = new Date(timestamp)
@@ -52,9 +53,12 @@ function formatTime(timestamp: number, format: 'relative' | 'absolute'): string 
     @click="emit('click')"
     @keydown.enter="emit('click')"
   >
-    <span class="page-icon">📄</span>
+    <span class="page-icon">
+      <FileText :size="14" :stroke-width="1.75" />
+    </span>
     <span class="page-title">{{ page.title }}</span>
     <span v-if="showTime" class="page-time">{{ timeDisplay }}</span>
+    <slot name="suffix" />
   </div>
 </template>
 
@@ -63,15 +67,13 @@ function formatTime(timestamp: number, format: 'relative' | 'absolute'): string 
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px;
-  font-size: 13px;
-  color: var(--text-primary);
+  padding: 6px 10px;
   cursor: pointer;
-  border-radius: 5px;
-  transition: none;
+  border-radius: 8px;
   position: relative;
   height: 32px;
   box-sizing: border-box;
+  transition: background 80ms ease;
 }
 
 .page-item:hover {
@@ -79,24 +81,30 @@ function formatTime(timestamp: number, format: 'relative' | 'absolute'): string 
 }
 
 .page-item.active {
-  background: var(--bg-active);
+  background: var(--accent-bg);
 }
 
 .page-item.active::before {
   content: '';
   position: absolute;
   left: 0;
-  top: 4px;
-  bottom: 4px;
+  top: 5px;
+  bottom: 5px;
   width: 2px;
   background: var(--accent);
   border-radius: 1px;
 }
 
 .page-icon {
-  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--sidebar-text-hint);
   flex-shrink: 0;
-  line-height: 1;
+}
+
+.page-item.active .page-icon {
+  color: var(--accent);
 }
 
 .page-title {
@@ -105,13 +113,16 @@ function formatTime(timestamp: number, format: 'relative' | 'absolute'): string 
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: 400;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--sidebar-text-primary);
+  line-height: 1.4;
 }
 
 .page-time {
-  font-size: 12px;
-  color: var(--text-secondary);
+  font-size: 11px;
+  color: var(--sidebar-text-hint);
   flex-shrink: 0;
-  font-weight: 400;
+  line-height: 1.4;
 }
 </style>

@@ -9,6 +9,7 @@ const favoriteIds = ref<string[]>([])
 
 export function useFavorites() {
   const pageStore = usePageStore()
+  const isExpanded = ref(false)
 
   // 初始化：从 LocalStorage 加载
   onMounted(() => {
@@ -59,11 +60,17 @@ export function useFavorites() {
     }
   }
 
+  function toggleExpand() {
+    isExpanded.value = !isExpanded.value
+  }
+
   return {
     favoritePages,
     isFavorite,
     addFavorite,
     removeFavorite,
     toggleFavorite,
+    isExpanded: computed(() => isExpanded.value),
+    toggleExpand,
   }
 }

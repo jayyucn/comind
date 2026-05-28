@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html>
+<head>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; padding: 24px; background: #EDEEF2; font-family: 'Noto Sans SC', sans-serif; }
+  h2 { color: #1C1917; margin-bottom: 4px; }
+  .subtitle { color: #78716C; margin-bottom: 20px; font-size: 14px; }
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 1040px; }
+  .panel { border-radius: 12px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+  .panel-header { padding: 10px 16px; font-weight: 600; font-size: 13px; letter-spacing: 0.03em; }
+  .panel-body { padding: 16px; }
+  .section-label { font-size: 11px; font-weight: 600; color: #A8A29E; text-transform: uppercase; letter-spacing: 0.05em; margin: 14px 0 8px; }
+  .section-label:first-child { margin-top: 0; }
+  .spec-table { width: 100%; font-size: 11px; border-collapse: collapse; margin-bottom: 8px; }
+  .spec-table th { text-align: left; color: #A8A29E; font-weight: 500; padding: 2px 6px 2px 0; }
+  .spec-table td { padding: 2px 6px 2px 0; color: #57534E; }
+  .spec-table .changed { color: #6366F1; font-weight: 600; }
+
+  /* Current (Amber + Compact) */
+  .current .panel-header { background: #FEF3C7; color: #92400E; }
+  .current .panel-body { background: #FFFBF5; }
+  .current .btn { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 4px; font-size: 12px; border: 1px solid #D6D3D1; background: #fff; color: #57534E; cursor: default; }
+  .current .btn-primary { background: #B45309; color: #fff; border-color: #B45309; }
+  .current .btn-icon { width: 28px; height: 28px; padding: 0; justify-content: center; border-radius: 4px; font-size: 14px; }
+  .current .input { padding: 4px 8px; border-radius: 4px; border: 1px solid #D6D3D1; font-size: 12px; width: 100%; box-sizing: border-box; background: #fff; font-family: inherit; }
+  .current .input:focus { outline: none; border-color: #B45309; box-shadow: 0 0 0 3px rgba(180,83,9,0.10); }
+  .current .sidebar-item { padding: 4px 8px; border-radius: 4px; font-size: 12px; color: #57534E; margin-bottom: 2px; display: flex; align-items: center; gap: 6px; }
+  .current .sidebar-item.active { background: #FEF3C7; color: #B45309; }
+  .current .sidebar-item:hover { background: #E7E5E4; }
+  .current .block-dot { width: 5px; height: 5px; border-radius: 50%; background: #B45309; opacity: 0.35; flex-shrink: 0; }
+  .current .block-chevron { width: 7px; height: 7px; border-right: 1.5px solid #B45309; border-bottom: 1.5px solid #B45309; transform: rotate(45deg); opacity: 0.45; flex-shrink: 0; }
+  .current .block-text { font-size: 12px; color: #1C1917; }
+  .current .block-text-sub { font-size: 12px; color: #78716C; }
+  .current .tag { font-size: 10px; padding: 1px 4px; border-radius: 3px; background: #ECFDF5; color: #047857; }
+  .current .active-bg { background: rgba(180,83,9,0.06); border-radius: 4px; padding: 3px 6px; }
+  .current .dialog { background: #fff; border: 1px solid #D6D3D1; border-radius: 6px; padding: 24px; box-shadow: 0 8px 32px rgba(28,25,23,0.12); max-width: 320px; }
+  .current .menu { background: #fff; border: 1px solid #D6D3D1; border-radius: 6px; padding: 4px; box-shadow: 0 4px 12px rgba(28,25,23,0.10); max-width: 200px; }
+  .current .menu-item { padding: 8px 12px; border-radius: 4px; font-size: 12px; color: #57534E; display: flex; align-items: center; gap: 6px; }
+  .current .menu-item:hover { background: #E7E5E4; }
+  .current .menu-item.active { background: #FEF3C7; color: #B45309; }
+  .current .tooltip { background: #1C1917; color: #fff; padding: 4px 8px; border-radius: 4px; font-size: 11px; display: inline-block; }
+  .current .card-box { border: 1px solid #D6D3D1; border-radius: 6px; padding: 12px; background: #fff; }
+  .current .indent-line { width: 1px; background: #B45309; opacity: 0.12; height: 40px; margin-left: 9px; }
+
+  /* New (Indigo + Rounded) */
+  .new .panel-header { background: #EEF2FF; color: #4F46E5; }
+  .new .panel-body { background: #FAFAFE; }
+  .new .btn { display: inline-flex; align-items: center; gap: 4px; padding: 6px 14px; border-radius: 6px; font-size: 12px; border: 1px solid #C7D2FE; background: #fff; color: #57534E; cursor: default; }
+  .new .btn-primary { background: #6366F1; color: #fff; border-color: #6366F1; }
+  .new .btn-icon { width: 30px; height: 30px; padding: 0; justify-content: center; border-radius: 6px; font-size: 14px; }
+  .new .input { padding: 6px 10px; border-radius: 6px; border: 1px solid #C7D2FE; font-size: 12px; width: 100%; box-sizing: border-box; background: #fff; font-family: inherit; }
+  .new .input:focus { outline: none; border-color: #6366F1; box-shadow: 0 0 0 3px rgba(99,102,241,0.12); }
+  .new .sidebar-item { padding: 6px 10px; border-radius: 8px; font-size: 12px; color: #57534E; margin-bottom: 2px; display: flex; align-items: center; gap: 6px; }
+  .new .sidebar-item.active { background: #EEF2FF; color: #6366F1; }
+  .new .sidebar-item:hover { background: #E0E7FF; }
+  .new .block-dot { width: 6px; height: 6px; border-radius: 50%; background: #6366F1; opacity: 0.30; flex-shrink: 0; }
+  .new .block-chevron { width: 8px; height: 8px; border-right: 1.5px solid #6366F1; border-bottom: 1.5px solid #6366F1; transform: rotate(45deg); opacity: 0.40; flex-shrink: 0; }
+  .new .block-text { font-size: 12px; color: #1C1917; }
+  .new .block-text-sub { font-size: 12px; color: #78716C; }
+  .new .tag { font-size: 10px; padding: 2px 6px; border-radius: 6px; background: #EEF2FF; color: #6366F1; }
+  .new .active-bg { background: rgba(99,102,241,0.06); border-radius: 6px; padding: 4px 8px; }
+  .new .dialog { background: #fff; border: 1px solid #C7D2FE; border-radius: 10px; padding: 20px; box-shadow: 0 8px 32px rgba(30,27,57,0.10); max-width: 320px; }
+  .new .menu { background: #fff; border: 1px solid #C7D2FE; border-radius: 10px; padding: 4px; box-shadow: 0 4px 12px rgba(30,27,57,0.08); max-width: 200px; }
+  .new .menu-item { padding: 8px 12px; border-radius: 6px; font-size: 12px; color: #57534E; display: flex; align-items: center; gap: 6px; }
+  .new .menu-item:hover { background: #E0E7FF; }
+  .new .menu-item.active { background: #EEF2FF; color: #6366F1; }
+  .new .tooltip { background: #1C1917; color: #fff; padding: 4px 8px; border-radius: 6px; font-size: 11px; display: inline-block; }
+  .new .card-box { border: 1px solid #C7D2FE; border-radius: 10px; padding: 12px; background: #fff; }
+  .new .indent-line { width: 1px; background: #6366F1; opacity: 0.10; height: 40px; margin-left: 10px; }
+
+  .row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
+  .col { display: flex; flex-direction: column; gap: 4px; }
+</style>
+</head>
+<body>
+<h2>组件样式细节对比</h2>
+<p class="subtitle">左侧：当前 Amber + 紧凑 · 右侧：提案 Indigo + 圆润柔和</p>
+
+<div class="split">
+  <!-- Current -->
+  <div class="panel current">
+    <div class="panel-header">当前 · Amber + 紧凑 (radius: 4/6/8px)</div>
+    <div class="panel-body">
+
+      <div class="section-label">圆角 & 间距参数</div>
+      <table class="spec-table">
+        <tr><th>Token</th><th>值</th></tr>
+        <tr><td>radius-sm</td><td>4px</td></tr>
+        <tr><td>radius-md</td><td>6px</td></tr>
+        <tr><td>radius-lg</td><td>8px</td></tr>
+        <tr><td>btn padding</td><td>4px 8px</td></tr>
+        <tr><td>input padding</td><td>8px</td></tr>
+        <tr><td>sidebar-item</td><td>4px 8px</td></tr>
+        <tr><td>bullet size</td><td>5px</td></tr>
+        <tr><td>chevron size</td><td>7px</td></tr>
+      </table>
+
+      <div class="section-label">按钮</div>
+      <div class="row">
+        <button class="btn">默认</button>
+        <button class="btn-primary btn">主要</button>
+        <button class="btn" style="opacity:0.5">禁用</button>
+        <button class="btn btn-icon">☰</button>
+      </div>
+
+      <div class="section-label">输入框</div>
+      <input class="input" placeholder="搜索页面..." value="聚焦状态" style="border-color:#B45309;box-shadow:0 0 0 3px rgba(180,83,9,0.10);" />
+
+      <div class="section-label">侧边栏项</div>
+      <div style="background:#F5F5F4;border-radius:8px;padding:6px;width:180px;">
+        <div class="sidebar-item active">📝 日常笔记</div>
+        <div class="sidebar-item">📋 项目计划</div>
+        <div class="sidebar-item">💡 灵感收集</div>
+      </div>
+
+      <div class="section-label">Block 编辑器</div>
+      <div style="padding:4px 0;">
+        <div class="row" style="margin-bottom:4px;">
+          <span class="block-chevron"></span>
+          <span class="block-text">本周重点任务</span>
+          <span class="tag">工作</span>
+        </div>
+        <div style="display:flex;gap:0;margin-bottom:4px;">
+          <div class="indent-line"></div>
+          <div style="padding-left:10px;">
+            <div class="row" style="margin-bottom:4px;">
+              <span class="block-dot"></span>
+              <span class="block-text-sub">完成设计评审</span>
+            </div>
+            <div class="active-bg row" style="margin-bottom:0;">
+              <span class="block-dot" style="opacity:0.55"></span>
+              <span class="block-text">整理文档资料</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-label">卡片</div>
+      <div class="card-box">
+        <div style="font-size:13px;font-weight:600;color:#1C1917;margin-bottom:4px;">项目概览</div>
+        <div style="font-size:12px;color:#78716C;">共 12 个页面，3 个收藏</div>
+      </div>
+
+      <div class="section-label">菜单</div>
+      <div class="menu">
+        <div class="menu-item active">✏️ 编辑</div>
+        <div class="menu-item">📋 复制</div>
+        <div class="menu-item">🗑️ 删除</div>
+      </div>
+
+      <div class="section-label">工具提示</div>
+      <div class="tooltip">快捷键: Ctrl+N</div>
+
+      <div class="section-label">对话框</div>
+      <div class="dialog">
+        <div style="font-size:14px;font-weight:600;color:#1C1917;margin-bottom:4px;">删除确认</div>
+        <div style="font-size:12px;color:#78716C;margin-bottom:12px;">确定要删除这个页面吗？此操作无法撤销。</div>
+        <div style="display:flex;gap:6px;justify-content:flex-end;">
+          <button class="btn">取消</button>
+          <button class="btn" style="background:#DC2626;color:#fff;border-color:#DC2626;">删除</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- New -->
+  <div class="panel new">
+    <div class="panel-header">提案 · Indigo + 圆润柔和 (radius: 6/10/14px)</div>
+    <div class="panel-body">
+
+      <div class="section-label">圆角 & 间距参数</div>
+      <table class="spec-table">
+        <tr><th>Token</th><th>值</th></tr>
+        <tr><td>radius-sm</td><td class="changed">6px</td></tr>
+        <tr><td>radius-md</td><td class="changed">10px</td></tr>
+        <tr><td>radius-lg</td><td class="changed">14px</td></tr>
+        <tr><td>btn padding</td><td class="changed">6px 14px</td></tr>
+        <tr><td>input padding</td><td class="changed">6px 10px</td></tr>
+        <tr><td>sidebar-item</td><td class="changed">6px 10px</td></tr>
+        <tr><td>bullet size</td><td class="changed">6px</td></tr>
+        <tr><td>chevron size</td><td class="changed">8px</td></tr>
+      </table>
+
+      <div class="section-label">按钮</div>
+      <div class="row">
+        <button class="btn">默认</button>
+        <button class="btn-primary btn">主要</button>
+        <button class="btn" style="opacity:0.5">禁用</button>
+        <button class="btn btn-icon">☰</button>
+      </div>
+
+      <div class="section-label">输入框</div>
+      <input class="input" placeholder="搜索页面..." value="聚焦状态" style="border-color:#6366F1;box-shadow:0 0 0 3px rgba(99,102,241,0.12);" />
+
+      <div class="section-label">侧边栏项</div>
+      <div style="background:#F3F4F8;border-radius:8px;padding:6px;width:180px;">
+        <div class="sidebar-item active">📝 日常笔记</div>
+        <div class="sidebar-item">📋 项目计划</div>
+        <div class="sidebar-item">💡 灵感收集</div>
+      </div>
+
+      <div class="section-label">Block 编辑器</div>
+      <div style="padding:4px 0;">
+        <div class="row" style="margin-bottom:4px;">
+          <span class="block-chevron"></span>
+          <span class="block-text">本周重点任务</span>
+          <span class="tag">工作</span>
+        </div>
+        <div style="display:flex;gap:0;margin-bottom:4px;">
+          <div class="indent-line"></div>
+          <div style="padding-left:11px;">
+            <div class="row" style="margin-bottom:4px;">
+              <span class="block-dot"></span>
+              <span class="block-text-sub">完成设计评审</span>
+            </div>
+            <div class="active-bg row" style="margin-bottom:0;">
+              <span class="block-dot" style="opacity:0.55"></span>
+              <span class="block-text">整理文档资料</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-label">卡片</div>
+      <div class="card-box">
+        <div style="font-size:13px;font-weight:600;color:#1C1917;margin-bottom:4px;">项目概览</div>
+        <div style="font-size:12px;color:#78716C;">共 12 个页面，3 个收藏</div>
+      </div>
+
+      <div class="section-label">菜单</div>
+      <div class="menu">
+        <div class="menu-item active">✏️ 编辑</div>
+        <div class="menu-item">📋 复制</div>
+        <div class="menu-item">🗑️ 删除</div>
+      </div>
+
+      <div class="section-label">工具提示</div>
+      <div class="tooltip">快捷键: Ctrl+N</div>
+
+      <div class="section-label">对话框</div>
+      <div class="dialog">
+        <div style="font-size:14px;font-weight:600;color:#1C1917;margin-bottom:4px;">删除确认</div>
+        <div style="font-size:12px;color:#78716C;margin-bottom:12px;">确定要删除这个页面吗？此操作无法撤销。</div>
+        <div style="display:flex;gap:6px;justify-content:flex-end;">
+          <button class="btn">取消</button>
+          <button class="btn" style="background:#DC2626;color:#fff;border-color:#DC2626;">删除</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

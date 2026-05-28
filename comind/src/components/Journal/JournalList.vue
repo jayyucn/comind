@@ -8,6 +8,7 @@ import JournalListItem from './JournalListItem.vue'
 import SlashCommandMenu from '../SlashCommandMenu.vue'
 import PropertyQuickEditor from '../Block/PropertyQuickEditor.vue'
 import PropertyEditor from '../Block/PropertyEditor.vue'
+import { TaskIcon } from '../Icons'
 
 const router = useRouter()
 const journal = useJournal()
@@ -67,7 +68,9 @@ function handleOpenPage(pageId: string) {
       />
 
       <div v-if="allJournals.length === 0" class="empty-state">
-        <div class="empty-icon">📅</div>
+        <div class="empty-icon">
+          <TaskIcon name="icon-calendar" :size="40" color="var(--text-tertiary)" />
+        </div>
         <div class="empty-text">暂无日记</div>
       </div>
     </div>

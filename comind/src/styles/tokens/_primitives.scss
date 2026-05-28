@@ -1,15 +1,14 @@
 // Design Token Primitives - 原始值层
 // 这些是具体的设计值，被语义化层引用
 
-// 颜色 - Amber（强调色系）
-$color-amber-50: #FFFBEB;
-$color-amber-100: #FEF3C7;
-$color-amber-200: #FDE68A;
-$color-amber-300: #FCD34D;
-$color-amber-400: #FBBF24;
-$color-amber-500: #B45309;
-$color-amber-600: #92400E;
-$color-amber-700: #78350F;
+// 颜色 - Indigo（强调色系）
+$color-indigo-50: #EEF2FF;
+$color-indigo-100: #E0E7FF;
+$color-indigo-200: #C7D2FE;
+$color-indigo-400: #818CF8;
+$color-indigo-500: #6366F1;
+$color-indigo-600: #4F46E5;
+$color-indigo-700: #4338CA;
 
 // 颜色 - Stone（中性色系）
 $color-stone-50: #FAFAF9;
@@ -24,21 +23,21 @@ $color-stone-800: #44403C;
 $color-stone-900: #1C1917;
 
 // 颜色 - 功能色
-$color-link: #1D4ED8;
-$color-link-hover: #1E40AF;
-$color-tag-text: #047857;
-$color-tag-bg: #ECFDF5;
+$color-link: #4F46E5;
+$color-link-hover: #4338CA;
+$color-tag-text: #6366F1;
+$color-tag-bg: #EEF2FF;
 $color-success: #059669;
 $color-warning: #D97706;
 $color-error: #DC2626;
 $color-external: #64748B;
 
 // 透明度变体
-$accent-03: rgba(180, 83, 9, 0.03);
-$accent-06: rgba(180, 83, 9, 0.06);
-$accent-08: rgba(180, 83, 9, 0.08);
-$accent-10: rgba(180, 83, 9, 0.10);
-$accent-40: rgba(180, 83, 9, 0.40);
+$accent-03: rgba(99, 102, 241, 0.03);
+$accent-06: rgba(99, 102, 241, 0.06);
+$accent-08: rgba(99, 102, 241, 0.08);
+$accent-10: rgba(99, 102, 241, 0.10);
+$accent-40: rgba(99, 102, 241, 0.40);
 $tag-10: rgba(99, 102, 241, 0.10);
 $tag-40: rgba(99, 102, 241, 0.40);
 $ext-40: rgba(100, 116, 139, 0.40);
@@ -56,9 +55,9 @@ $space-10: 40px;
 $space-12: 48px;
 
 // 圆角
-$radius-sm: 4px;
-$radius-md: 6px;
-$radius-lg: 8px;
+$radius-sm: 6px;
+$radius-md: 10px;
+$radius-lg: 14px;
 
 // 字号
 $text-xs: 0.75rem;
@@ -80,10 +79,10 @@ $font-semibold: 600;
 $font-bold: 700;
 
 // 阴影
-$shadow-focus: 0 0 0 3px rgba(180, 83, 9, 0.10);
-$shadow-modal: 0 8px 32px rgba(28, 25, 23, 0.12);
-$shadow-elevation-1: 0 1px 3px rgba(28, 25, 23, 0.08);
-$shadow-elevation-2: 0 4px 12px rgba(28, 25, 23, 0.10);
+$shadow-focus: 0 0 0 3px rgba(99, 102, 241, 0.12);
+$shadow-modal: 0 8px 32px rgba(30, 27, 57, 0.10);
+$shadow-elevation-1: 0 1px 3px rgba(30, 27, 57, 0.06);
+$shadow-elevation-2: 0 4px 12px rgba(30, 27, 57, 0.08);
 
 // 字体
 $font-sans: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;

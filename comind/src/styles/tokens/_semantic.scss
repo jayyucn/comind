@@ -5,16 +5,21 @@
 
 :root {
   // 背景层级
-  --bg-base: #{$color-stone-50};
-  --bg-sidebar: #{$color-stone-100};
+  --bg-base: #FAFAFE;
+  --bg-sidebar: #F3F4F8;
   --bg-hover: #{$color-stone-200};
   --bg-active: #{$color-stone-300};
 
-  // 文字层级
+  // 文字层级（适用于浅色背景）
   --text-primary: #{$color-stone-900};
   --text-secondary: #{$color-stone-600};
   --text-tertiary: #{$color-stone-500};
   --text-disabled: #{$color-stone-400};
+
+  // 侧边栏文字层级（侧边栏背景 #F3F4F8 比主内容区更浅，需要更高对比度）
+  --sidebar-text-primary: #{$color-stone-800};
+  --sidebar-text-secondary: #{$color-stone-600};
+  --sidebar-text-hint: #524F4B;
 
   // 边框层级
   --border: #{$color-stone-200};
@@ -22,10 +27,10 @@
   --border-strong: #{$color-stone-400};
 
   // 强调色
-  --accent: #{$color-amber-500};
-  --accent-hover: #{$color-amber-600};
-  --accent-subtle: #{$color-amber-100};
-  --accent-bg: #{$color-amber-100};
+  --accent: #{$color-indigo-500};
+  --accent-hover: #{$color-indigo-600};
+  --accent-subtle: #{$color-indigo-50};
+  --accent-bg: #{$color-indigo-100};
 
   // 透明度变体
   --accent-03: #{$accent-03};
@@ -77,21 +82,21 @@
   --sidebar-width: #{$sidebar-width};
 
   // 兼容别名（从原 style.css 保留）
-  --color-paper: #FFFBF5;
+  --color-paper: #FAFAFE;
   --color-ink: #{$color-stone-900};
   --color-ink-secondary: #{$color-stone-600};
   --color-ink-muted: #{$color-stone-600};
   --color-ink-faint: #{$color-stone-500};
-  --color-accent: #{$color-amber-500};
-  --color-accent-deep: #{$color-amber-600};
-  --color-accent-bg: #{$color-amber-100};
+  --color-accent: #{$color-indigo-500};
+  --color-accent-deep: #{$color-indigo-600};
+  --color-accent-bg: #{$color-indigo-100};
   --color-border: #{$color-stone-200};
   --color-border-light: #{$color-stone-300};
   --color-border-strong: #{$color-stone-400};
   --color-hover: #{$color-stone-200};
   --color-surface: #{$color-stone-200};
-  --color-sidebar-bg: #{$color-stone-100};
-  --color-highlight: #{$color-amber-200};
+  --color-sidebar-bg: #F3F4F8;
+  --color-highlight: #{$color-indigo-200};
   --color-white: #FFFFFF;
   --color-tag: #6366F1;
   --color-external: #{$color-external};

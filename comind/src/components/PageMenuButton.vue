@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useFavorites } from '../composables/useFavorites'
 import { usePageStore } from '../stores/pages'
 import ConfirmDialog from './ConfirmDialog.vue'
+import { TaskIcon } from './Icons'
 
 const router = useRouter()
 const route = useRoute()
@@ -118,9 +119,7 @@ onUnmounted(() => {
 <template>
   <div class="page-menu-button">
     <button class="menu-trigger" @click.stop="toggleMenu">
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-        <use href="/icons.svg#icon-menu" />
-      </svg>
+      <TaskIcon name="icon-menu" :size="16" />
     </button>
 
     <Transition name="menu">
@@ -128,34 +127,24 @@ onUnmounted(() => {
         <!-- 页面相关功能仅在页面路由中显示 -->
         <template v-if="isOnPage && currentPage">
           <button class="menu-item" @click="handleToggleFavorite">
-            <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-              <use :href="favorited ? '/icons.svg#icon-star-filled' : '/icons.svg#icon-star'" />
-            </svg>
+            <TaskIcon :name="favorited ? 'icon-star-filled' : 'icon-star'" :size="16" />
             <span>{{ favorited ? '取消收藏' : '添加收藏' }}</span>
           </button>
 
           <div class="menu-item has-submenu" @click="toggleDeleteSubmenu">
-            <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-              <use href="/icons.svg#icon-trash" />
-            </svg>
+            <TaskIcon name="icon-trash2" :size="16" />
             <span>删除本页</span>
-            <svg class="arrow-icon" :class="{ rotated: isDeleteSubmenuOpen }" width="12" height="12" viewBox="0 0 20 20" fill="none">
-              <use href="/icons.svg#icon-arrow-right" />
-            </svg>
+            <TaskIcon class="arrow-icon" :class="{ rotated: isDeleteSubmenuOpen }" name="icon-arrow-right" :size="16" />
           </div>
 
           <Transition name="submenu">
             <div v-if="isDeleteSubmenuOpen" class="submenu">
               <button class="menu-item submenu-item" @click="handleSoftDelete">
-                <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-                  <use href="/icons.svg#icon-trash" />
-                </svg>
+                <TaskIcon name="icon-trash2" :size="16" />
                 <span>移至回收站</span>
               </button>
               <button class="menu-item submenu-item danger" @click="handlePermanentDelete">
-                <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-                  <use href="/icons.svg#icon-trash-permanent" />
-                </svg>
+                <TaskIcon name="icon-trash-permanent" :size="16" />
                 <span>永久删除</span>
               </button>
             </div>
@@ -166,16 +155,12 @@ onUnmounted(() => {
 
         <!-- 全局功能始终显示 -->
         <button class="menu-item" @click="handleNavigateToTrash">
-          <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-            <use href="/icons.svg#icon-trash" />
-          </svg>
+          <TaskIcon name="icon-trash" :size="16" />
           <span>回收站</span>
         </button>
 
         <button class="menu-item" @click="handleNavigateToSettings">
-          <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-            <use href="/icons.svg#icon-settings" />
-          </svg>
+          <TaskIcon name="icon-settings" :size="16" />
           <span>设置</span>
         </button>
       </div>

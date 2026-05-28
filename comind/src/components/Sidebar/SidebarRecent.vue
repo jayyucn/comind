@@ -2,6 +2,7 @@
 import { useRouter } from 'vue-router'
 import { useRecent } from '../../composables/useRecent'
 import { usePageStore } from '../../stores/pages'
+import { ChevronUp, ChevronDown } from 'lucide-vue-next'
 import PageItem from './PageItem.vue'
 
 const router = useRouter()
@@ -22,10 +23,13 @@ function handleNavigate(pageId: string) {
   <div class="recent-section">
     <div class="section-header" @click="toggleExpand">
       <span class="section-title">最近</span>
-      <span class="expand-icon">{{ isExpanded ? '▲' : '▼' }}</span>
+      <span class="expand-icon">
+        <ChevronUp v-if="isExpanded" :size="12" :stroke-width="2" />
+        <ChevronDown v-else :size="12" :stroke-width="2" />
+      </span>
     </div>
-    
-    <div class="section-content">
+
+    <div v-show="isExpanded" class="section-content">
       <PageItem
         v-for="page in recentPages"
         :key="page.id"
@@ -33,9 +37,9 @@ function handleNavigate(pageId: string) {
         :active="pageStore.currentPageId === page.id"
         @click="handleNavigate(page.id)"
       />
-      
+
       <div v-if="recentPages.length === 0" class="empty-text">
-        暂无最近页面
+        浏览页面后将显示在此处
       </div>
     </div>
   </div>
@@ -43,7 +47,7 @@ function handleNavigate(pageId: string) {
 
 <style scoped>
 .recent-section {
-  padding: var(--space-2) 0;
+  padding: var(--space-1) 0;
 }
 
 .section-header {
@@ -53,6 +57,9 @@ function handleNavigate(pageId: string) {
   padding: var(--space-2) var(--space-3);
   cursor: pointer;
   user-select: none;
+  border-radius: 6px;
+  margin: 0 var(--space-2);
+  transition: background 80ms ease;
 }
 
 .section-header:hover {
@@ -60,26 +67,27 @@ function handleNavigate(pageId: string) {
 }
 
 .section-title {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  color: var(--text-secondary);
+  color: var(--sidebar-text-hint);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.5px;
+  line-height: 1.4;
 }
 
 .expand-icon {
-  font-size: 8px;
-  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  color: var(--sidebar-text-hint);
 }
 
 .section-content {
-  padding: 0 var(--space-2);
+  padding: var(--space-1) var(--space-2);
 }
 
 .empty-text {
   padding: var(--space-2) var(--space-3);
   font-size: 12px;
-  color: var(--text-tertiary);
-  font-style: italic;
+  color: var(--sidebar-text-hint);
 }
 </style>

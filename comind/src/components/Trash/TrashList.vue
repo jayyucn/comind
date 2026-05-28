@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePageStore } from '../../stores/pages'
 import ConfirmDialog from '../ConfirmDialog.vue'
+import { TaskIcon } from '../Icons'
 
 const router = useRouter()
 const pageStore = usePageStore()
@@ -75,24 +76,18 @@ function formatDate(timestamp: number): string {
         </div>
         <div class="trash-item-actions">
           <button class="action-btn restore" title="恢复" @click="handleRestore(page.id)">
-            <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-              <use href="/icons.svg#icon-restore" />
-            </svg>
+            <TaskIcon name="icon-restore" :size="16" />
             <span>恢复</span>
           </button>
           <button class="action-btn delete" title="永久删除" @click="handlePermanentDelete(page.id)">
-            <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-              <use href="/icons.svg#icon-trash-permanent" />
-            </svg>
+            <TaskIcon name="icon-trash-permanent" :size="16" />
             <span>删除</span>
           </button>
         </div>
       </div>
 
       <div v-if="pageStore.trashPages.length === 0" class="empty-state">
-        <svg width="48" height="48" viewBox="0 0 20 20" fill="none">
-          <use href="/icons.svg#icon-trash" />
-        </svg>
+        <TaskIcon name="icon-trash" :size="48" />
         <div class="empty-text">回收站为空</div>
       </div>
     </div>

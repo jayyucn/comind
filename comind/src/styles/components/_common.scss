@@ -42,19 +42,38 @@
 }
 
 .nav-btn {
-  width: 32px;
-  height: 32px;
-  @include button-base;
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: $radius-sm;
+  color: var(--text-tertiary);
+  transition: all 100ms ease;
+
+  &:hover:not(.disabled) {
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+  }
+
+  &:active:not(.disabled) {
+    background: var(--bg-active);
+    transform: scale(0.95);
+  }
 
   &.disabled {
-    opacity: 0.4;
+    opacity: 0.35;
     cursor: not-allowed;
   }
 }
 
 .nav-icon {
-  font-size: 14px;
-  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 // 通用按钮
@@ -75,8 +94,8 @@
 }
 
 .btn-icon {
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   padding: 0;
 }
 
