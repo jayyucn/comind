@@ -1,10 +1,20 @@
-# Sidebar Redesign - v0.8
+# Sidebar Redesign - v0.9
 
-> 版本：v0.8.1（Journal 行为调整）(推翻 v0.7 重来)
-> 日期:2026-04-23
+> 版本：v0.9
+> 日期:2026-05-28
 > 状态:**评审通过**
-> 评审:comind-review + frontend-design(2026-04-23 21:02)
-> 触发:评审 v0.7 后发现结构性问题
+> 更新:风格重设计（Amber → Indigo）
+
+---
+
+## 更新说明（v0.9）
+
+本版本主要更新：
+
+1. **色彩系统**：从 Amber（琥珀）切换到 Indigo（薰衣草紫）
+2. **圆角体系**：增大圆角（5px → 6px, 8px → 10px）
+3. **组件图标**：从 SVG Sprite 迁移到 Lucide 图标库
+4. **SidebarHeader**：简化设计，移除社交图标
 
 ---
 
@@ -94,16 +104,16 @@ v0.7 解决了"页面列表"的问题,但引入了新的结构性问题:
 尺寸: width: 100%, height: 80px
 margin: 0 8px 4px
 padding: 12px 12px 10px
-radius: 8px
-背景: var(--accent-subtle, #FEF3C7)
+radius: var(--radius-md) (10px)
+背景: var(--accent-subtle, #EEF2FF)
 border: none
 box-shadow: none
 
 内部布局(flex column):
-  [📔] [日记                              ]  ← 主行
-  [查看全部                            →]  ← 入口(hover 时右移)
+  [图标] [日记                              ]  ← 主行
+  [查看全部                              →]  ← 入口(hover 时右移)
 
-hover: 背景 → #FEF0C0,箭头 translateX(2px)
+hover: 背景 → #E0E7FF,箭头 translateX(2px)
 active: scale(0.96),80ms ease-out
 ```
 
@@ -123,20 +133,20 @@ active: scale(0.96),80ms ease-out
 ## Recent Section
 
 ```
-SectionLabel: "最近", 10px 500, letter-spacing 0.1em, --text-tertiary
+SectionLabel: "最近", 11px 600, letter-spacing 0.5px, --sidebar-text-secondary
 margin: 8px 8px 4px
 
 最多显示 3 条(v0.7 是 5 条,更克制)
-展开按钮 [▼]:[+] 区域右侧 20×20px,radius 4px
+展开按钮 [▼]:[+] 区域右侧 20×20px,radius var(--radius-sm) (6px)
   hover: --bg-hover
   展开后显示最多 10 条,超出提示"查看全部 →"
 
 PageItem:
   height: 32px(触控友好)
-  padding: 4px 8px
-  radius: 5px
+  padding: 4px 10px
+  radius: var(--radius-sm) (6px)
   gap: 6px
-  结构: [📄] [title ellipsis] [time]
+  结构: [图标] [title ellipsis] [time]
   title: 13px, ellipsis, flex: 1
   time: 11px, JetBrains Mono, --text-tertiary
   active: 左 2px accent,背景 --bg-active,字重 500
@@ -157,7 +167,7 @@ PageItem:
 ## Favorites Section
 
 ```
-SectionLabel: "收藏", 10px 500, letter-spacing 0.1em, --text-tertiary
+SectionLabel: "收藏", 11px 600, letter-spacing 0.5px, --sidebar-text-secondary
 margin: 8px 8px 4px
 
 "添加收藏" 作为最后一项存在:
@@ -209,23 +219,23 @@ border-top: 1px solid var(--border)
 
 ---
 
-## 组件结构(v0.8)
+## 组件结构(v0.9)
 
 ```
 src/
 ├── components/
 │   └── Sidebar/
 │       ├── SidebarContainer.vue     # 主容器(flex column)
-│       ├── SidebarHeader.vue         # Logo + 折叠按钮
-│       ├── SidebarJournal.vue        # Journal Card（列表入口）
-│       ├── SidebarRecent.vue          # Recent Section(复用 PageItem)
-│       │   └── PageItem.vue          # 单条 Page 展示(Recent 和 Favorites 共用)
-│       ├── SidebarFavorites.vue       # Favorites Section(复用 PageItem)
-│       └── SidebarFooter.vue         # 快捷键提示
+│       ├── SidebarHeader.vue       # Logo + 折叠按钮
+│       ├── SidebarJournal.vue      # Journal Card（列表入口）
+│       ├── SidebarRecent.vue        # Recent Section(复用 PageItem)
+│       │   └── PageItem.vue       # 单条 Page 展示(Recent 和 Favorites 共用)
+│       ├── SidebarFavorites.vue     # Favorites Section(复用 PageItem)
+│       └── SidebarFooter.vue      # 快捷键提示
 └── composables/
-    ├── useSidebar.ts                 # 折叠状态(isCollapsed, toggle)
-    ├── useRecent.ts                  # 最近页面(≤3,展开≤10)
-    └── useFavorites.ts               # 收藏(add/remove,LocalStorage 持久化)
+    ├── useSidebar.ts              # 折叠状态(isCollapsed, toggle)
+    ├── useRecent.ts               # 最近页面(≤3,展开≤10)
+    └── useFavorites.ts            # 收藏(add/remove,LocalStorage 持久化)
 ```
 
 **PageItem.vue 共用策略:**
@@ -233,14 +243,25 @@ src/
 - 通过 `source` prop 区分('recent' | 'favorites')
 - active 状态逻辑:比较 `pageStore.currentPageId === page.id`
 
+**图标方案 (v0.9):**
+- 所有图标使用 Lucide 图标库（lucide-vue-next）
+- 组件：`TaskIcon.vue`（动态渲染）
+- 已删除：`public/icons.svg`（SVG Sprite）
+
+**SidebarHeader (v0.9):**
+- Logo "COMIND"：13px 700，letter-spacing 0.08em，--text-secondary
+- 折叠按钮：使用 `PanelLeftClose` / `PanelLeftOpen` 图标
+- 高度：40px（原 48px，更紧凑）
+- 移除社交图标（Bluesky、Discord、GitHub 等）
+
 ---
 
-## 状态汇总(v0.8)
+## 状态汇总(v0.9)
 
 | 状态 | 组件 | 样式 |
 |------|------|------|
-| Default | JournalCard | 背景 accent-subtle,圆角 8px |
-| Hover | JournalCard | 背景 #FEF0C0,箭头右移 2px |
+| Default | JournalCard | 背景 accent-subtle (#EEF2FF),圆角 10px |
+| Hover | JournalCard | 背景 #E0E7FF,箭头右移 2px |
 | Active | JournalCard | scale(0.98),80ms |
 | Default | PageItem(Recent/Fav)| 无背景 |
 | Hover | PageItem | 背景 --bg-hover |

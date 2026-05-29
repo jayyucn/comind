@@ -1,24 +1,25 @@
 # comind UI/UX 规范
 
-> 版本：v0.6
-> 日期：2026-04-23
-> 状态：**待评审**（Sidebar 重新设计，配合 Phase 1.1 Journal）
+> 版本：v0.7
+> 日期：2026-05-28
+> 状态：**评审通过**（风格重设计：Amber → Indigo）
 
 ---
 
 ## 设计哲学
 
-### 概念方向：墨水与纸张
+### 概念方向：柔和清新
 
 > comind 的核心隐喻是**墨水落在纸上**——内容是主角，结构是纸张的折痕，工具隐入背景。
 >
-> 不追求"App 感"，追求"书写感"。
+> 视觉风格从「墨水与纸张」的温暖书卷气，演变为「柔和清新」的现代感。
 
 具体来说：
 
 - **质地优先于装饰**：用纸张纹理和墨水深浅表达层级，而非颜色区块
 - **静谧**：整体低对比度，让链接、标签、折叠状态从内容中自然浮现
 - **精准**：每个交互有明确的视觉反馈，不模糊
+- **柔和**：更大的圆角、冷色调强调色，营造友好的视觉体验
 
 ---
 
@@ -27,13 +28,15 @@
 ### 调色板
 
 > 不依赖 Tailwind 默认色，每组颜色有冷暖一致性。
+>
+> **2026-05-28 更新：** 从 Amber（琥珀暖色）切换到 Indigo（薰衣草紫冷色）。
 
 ```
 背景层级：
-  --bg-base:        #FAFAF8   /* 主内容区背景，温润的米白，非刺眼纯白 */
-  --bg-sidebar:      #F3F2EE   /* Sidebar 背景，稍暖的灰 */
-  --bg-hover:        #EEEDE9   /* Hover 态背景 */
-  --bg-active:       #E8E7E3   /* Active / 已选中背景 */
+  --bg-base:        #FAFAFE   /* 主内容区背景，冷调米白 */
+  --bg-sidebar:      #F3F4F8   /* Sidebar 背景，冷调灰 */
+  --bg-hover:        #E7E5E4   /* Hover 态背景 */
+  --bg-active:       #D6D3D1   /* Active / 已选中背景 */
 
 文字层级：
   --text-primary:    #1C1917   /* 主文字，暖近黑（不是 #000000） */
@@ -44,20 +47,27 @@
   --border:          #E5E4DF   /* 分割线、容器边框 */
   --border-strong:   #C9C8C3   /* 强分割，折叠图标区域 */
 
-交互色：
-  --accent:          #B45309   /* 主强调色，琥珀深橙，非典型蓝，有书卷气 */
-  --accent-hover:    #92400E   /* 强调色 hover */
-  --accent-subtle:   #FEF3C7   /* 强调色浅底，用于当前 Block 高亮 */
+交互色（Indigo 薰衣草紫系）：
+  --accent:          #6366F1   /* 主强调色，薰衣草紫 */
+  --accent-hover:    #4F46E5   /* 强调色 hover */
+  --accent-subtle:   #EEF2FF   /* 强调色浅底，用于当前 Block 高亮 */
+
+透明度变体：
+  --accent-03: rgba(99, 102, 241, 0.03)
+  --accent-06: rgba(99, 102, 241, 0.06)
+  --accent-08: rgba(99, 102, 241, 0.08)
+  --accent-10: rgba(99, 102, 241, 0.10)
+  --accent-40: rgba(99, 102, 241, 0.40)
 
 链接：
-  --link:            #1D4ED8   /* 链接蓝，相对沉稳 */
-  --link-hover:      #1E40AF   /* 链接 hover */
+  --link:            #4F46E5   /* 链接紫，沉稳现代 */
+  --link-hover:      #4338CA   /* 链接 hover */
 
-标签：
-  --tag-text:        #047857   /* 标签文字，墨绿 */
-  --tag-bg:          #ECFDF5   /* 标签背景薄荷绿 */
+标签（Indigo 系）：
+  --tag-text:        #6366F1   /* 标签文字，Indigo */
+  --tag-bg:          #EEF2FF   /* 标签背景浅紫 */
 
-功能色（Phase 1 暂不需要，可预留）：
+功能色（保持不变）：
   --success:         #059669
   --warning:         #D97706
   --error:           #DC2626
@@ -121,12 +131,23 @@ Block 垂直间距：      2px  （紧密大纲感）
 Block 左缩进（每级）：  24px
 Sidebar 内边距：        12px（3 单位）
 Sidebar 项目间距：      2px  （紧凑列表）
+Sidebar 项目内边距：    10px（水平，v0.7 更新）
 Sidebar 折叠图标宽：    16px
 Block 操作区宽度：      40px（折叠图标 + 拖拽手柄）
 Backlinks 内边距：     16px
-主内容区左右边距：      自适应（Sidebar 240px 固定，剩余居中）
+主内容区左右边距：      自适应（Sidebar 260px 固定，剩余居中）
 主内容最大宽度：        无上限（内容撑满，Sidebar 外区域全部利用）
 ```
+
+### 圆角体系（v0.7 新增）
+
+```
+$radius-sm: 6px    /* 按钮、输入框、小组件 */
+$radius-md: 10px   /* 卡片、弹出层 */
+$radius-lg: 14px   /* 模态框、大容器 */
+```
+
+> **关键变更：圆角从 4/6/8px 增大到 6/10/14px。** 更大的圆角营造柔和友好的视觉体验。
 
 > **关键变更：去掉了 800px max-width。** 内容密集型工具不应人为压窄，Sidebar 固定 240px 后主内容区自然达到 900-1200px（取决于屏幕宽度）。
 
@@ -167,8 +188,20 @@ Hover 态：
 
 Focus Ring（键盘导航焦点）：
   无动画
-  样式：2px solid --accent，offset 2px，border-radius 3px
+  样式：2px solid --accent，offset 2px，border-radius var(--radius-sm) (6px)
+  阴影：0 0 0 3px rgba(99, 102, 241, 0.12)
 ```
+
+### 阴影系统（v0.7 更新）
+
+```
+$shadow-focus: 0 0 0 3px rgba(99, 102, 241, 0.12)   /* 适配 Indigo */
+$shadow-modal: 0 8px 32px rgba(30, 27, 57, 0.10)     /* 冷色调阴影 */
+$shadow-elevation-1: 0 1px 3px rgba(30, 27, 57, 0.06)
+$shadow-elevation-2: 0 4px 12px rgba(30, 27, 57, 0.08)
+```
+
+> **阴影色调从暖灰 rgba(28,25,23,x) 更新为冷灰 rgba(30,27,57,x)。** 与 Indigo 色系协调。
 
 ---
 
@@ -531,19 +564,76 @@ Block 本身不需要 Focus Ring（通过左侧 accent 边框和背景色区分 
 
 ## 图标方案
 
-> Phase 1 使用 emoji（零依赖），Phase 2/3 迁移至 SVG sprite。
+> ✅ **v0.7 已迁移至 Lucide 图标库**（lucide-vue-next）
 
-| 位置 | emoji | 说明 |
-|------|-------|------|
-| PageItem 图标 | 📄 | Page 类型 |
-| JournalItem 图标（Phase 1.1） | 📅 | 日记类型 |
-| BacklinksSectionHeader | ↩ | 反向链接 |
-| Block 折叠（折叠态） | ▶ | 右三角 |
-| Block 折叠（展开态） | ▼ | 下三角 |
-| 新建按钮 | + | 加号 |
-| 跳转按钮 | → | 右箭头 |
+### 方案
+
+- **依赖：** `lucide-vue-next ^1.0.0`
+- **组件：** `TaskIcon.vue`（动态渲染）
+- **已删除：** `public/icons.svg`（SVG Sprite 已移除）
+
+### 图标映射表
+
+| 功能 | Lucide Icon | 说明 |
+|------|-------------|------|
+| 待办 | `Circle` | status-todo |
+| 进行中 | `Loader` | status-doing |
+| 已完成 | `CheckCircle2` | status-done |
+| 已取消 | `XCircle` | status-canceled |
+| 低优先级 | `ArrowDown` | priority-low |
+| 中优先级 | `Minus` | priority-medium |
+| 高优先级 | `ArrowUp` | priority-high |
+| 紧急 | `AlertTriangle` | priority-urgent |
+| 收藏 | `Star` | icon-star |
+| 收藏(填充) | `Star` + CSS fill | icon-star-filled |
+| 删除 | `Trash` / `Trash2` | icon-trash |
+| 设置 | `Settings` | icon-settings |
+| 菜单 | `Menu` | icon-menu |
+| 日历 | `Calendar` | icon-calendar |
+| 标签 | `Tag` | icon-tag |
+| 文件夹 | `Folder` | icon-folder |
+| 链接 | `Link` | icon-link |
+| 恢复 | `Undo2` | icon-restore |
+| 箭头 | `ArrowRight` | icon-arrow-right |
+| 折叠侧边栏 | `PanelLeftClose` | - |
+| 展开侧边栏 | `PanelLeftOpen` | - |
+
+### 社交图标
+
+社交图标（Bluesky、Discord、GitHub、X 等）保留为自定义 SVG 组件，不在 Lucide 库中。
 
 ---
+
+## 组件尺寸（v0.7 更新）
+
+```
+图标按钮 (.btn-icon):
+  尺寸: 30×30px（原 32×32px）
+  padding: 0
+  border-radius: var(--radius-sm) (6px)
+
+导航按钮 (.nav-btn):
+  尺寸: 30×30px（原 32×32px）
+  padding: 0
+  border-radius: var(--radius-sm) (6px)
+
+按钮基础 (button-base mixin):
+  padding: 6px 12px（原 4px 8px）
+
+输入框 (input-base mixin):
+  padding: 6px 10px（原 8px）
+```
+
+---
+
+## Block 编辑器微调（v0.7 更新）
+
+```
+--block-bullet-size: 6px（原 5px）
+--block-chevron-size: 8px（原 7px）
+--block-bullet-opacity: 0.30（原 0.35）
+--block-chevron-opacity: 0.40（原 0.45）
+```
 
 ## 响应式
 

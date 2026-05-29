@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>comind 风格重设计 - Indigo vs Amber 对比</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: #f5f5f5;
+      padding: 20px;
+    }
+    .container { max-width: 1400px; margin: 0 auto; }
+    h1 { text-align: center; font-size: 28px; font-weight: 700; color: #1C1917; margin-bottom: 10px; }
+    .subtitle { text-align: center; color: #78716C; font-size: 14px; margin-bottom: 40px; }
+
+    .comparison-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 32px; }
+    .panel { background: white; border-radius: 12px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid; }
+    .panel-title { font-size: 18px; font-weight: 600; }
+    .version-badge { padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; }
+
+    .amber-panel .panel-header { border-color: #B45309; }
+    .amber-panel .panel-title { color: #B45309; }
+    .amber-panel .version-badge { background: #FEF3C7; color: #92400E; }
+
+    .indigo-panel .panel-header { border-color: #6366F1; }
+    .indigo-panel .panel-title { color: #6366F1; }
+    .indigo-panel .version-badge { background: #EEF2FF; color: #4338CA; }
+
+    .color-section { margin-bottom: 24px; }
+    .section-label { font-size: 13px; font-weight: 600; color: #78716C; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .color-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .color-swatch { border-radius: 8px; height: 60px; display: flex; flex-direction: column; justify-content: flex-end; padding: 8px; position: relative; overflow: hidden; }
+    .color-swatch::before { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(135deg, rgba(255,255,255,0.2), transparent); }
+    .color-name { font-size: 11px; font-weight: 600; color: inherit; position: relative; z-index: 1; text-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+    .color-value { font-size: 9px; opacity: 0.9; position: relative; z-index: 1; font-family: 'JetBrains Mono', monospace; }
+
+    .amber-accent { background: #B45309; color: white; }
+    .amber-accent-hover { background: #92400E; color: white; }
+    .amber-accent-subtle { background: #FEF3C7; color: #92400E; }
+    .amber-tag { background: #047857; color: white; }
+
+    .indigo-accent { background: #6366F1; color: white; }
+    .indigo-accent-hover { background: #4F46E5; color: white; }
+    .indigo-accent-subtle { background: #EEF2FF; color: #4338CA; }
+    .indigo-tag { background: #6366F1; color: white; }
+
+    .component-section { margin-bottom: 24px; }
+    .component-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+
+    .btn { padding: var(--btn-padding-y, 6px) var(--btn-padding-x, 14px); border: 1px solid var(--border-color, #E5E4DF); border-radius: var(--btn-radius, 6px); background: var(--bg-color, white); color: var(--text-color, #78716C); font-size: 14px; cursor: pointer; transition: all 150ms ease; font-weight: 500; }
+    .btn:hover { background: var(--hover-bg, #EEEDE9); border-color: var(--border-strong, #C9C8C3); }
+    .btn-primary { background: var(--accent-color); color: white; border-color: var(--accent-color); }
+    .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+
+    .amber-panel .btn { --accent-color: #B45309; --accent-hover: #92400E; --btn-padding-x: 8px; --btn-padding-y: 4px; --btn-radius: 4px; }
+    .amber-panel .btn-icon { width: 32px; height: 32px; padding: 0; }
+    .indigo-panel .btn { --accent-color: #6366F1; --accent-hover: #4F46E5; --btn-padding-x: 12px; --btn-padding-y: 6px; --btn-radius: 6px; }
+    .indigo-panel .btn-icon { width: 30px; height: 30px; padding: 0; }
+
+    .input { width: 100%; padding: var(--input-padding, 8px); border: 1px solid var(--border-color, #E5E4DF); border-radius: var(--input-radius, 6px); background: var(--bg-color, white); color: var(--text-color, #1C1917); font-size: 14px; }
+    .input:focus { outline: none; border-color: var(--focus-border, #B45309); box-shadow: 0 0 0 3px var(--focus-shadow, rgba(180,83,9,0.10)); }
+    .amber-panel .input { --input-padding: 8px; --input-radius: 4px; --focus-border: #B45309; --focus-shadow: rgba(180,83,9,0.10); }
+    .indigo-panel .input { --input-padding: 6px 10px; --input-radius: 6px; --focus-border: #6366F1; --focus-shadow: rgba(99,102,241,0.12); }
+
+    .tag { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+    .amber-panel .tag { background: #ECFDF5; color: #047857; }
+    .indigo-panel .tag { background: #EEF2FF; color: #6366F1; }
+
+    .radius-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 12px; }
+    .radius-table th, .radius-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #f0f0f0; }
+    .radius-table th { font-weight: 600; color: #78716C; background: #fafafa; }
+    .radius-demo { display: inline-block; background: currentColor; opacity: 0.15; vertical-align: middle; }
+    .old-value { text-decoration: line-through; color: #DC2626; opacity: 0.7; }
+    .new-value { color: #059669; font-weight: 600; }
+
+    .sidebar-preview { background: var(--sidebar-bg, #F3F2EE); border-radius: 8px; overflow: hidden; border: 1px solid var(--border-color, #E5E4DF); }
+    .amber-panel .sidebar-preview { --sidebar-bg: #F3F2EE; }
+    .indigo-panel .sidebar-preview { --sidebar-bg: #F3F4F8; }
+    .sidebar-header { padding: 14px 16px; border-bottom: 1px solid var(--border-color, #E5E4DF); font-weight: 700; font-size: 13px; letter-spacing: 0.18em; color: var(--sidebar-logo-color, #78716C); }
+    .sidebar-section { padding: 12px; }
+    .section-title { font-size: 11px; font-weight: 600; color: #A8A29E; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+    .journal-card { padding: 12px; border-radius: var(--journal-radius, 8px); background: var(--journal-bg, #FEF3C7); margin-bottom: 8px; }
+    .amber-panel .journal-card { --journal-radius: 8px; --journal-bg: #FEF3C7; }
+    .indigo-panel .journal-card { --journal-radius: 10px; --journal-bg: #EEF2FF; }
+    .page-item { display: flex; align-items: center; gap: 8px; padding: 6px var(--page-item-padding, 8px); border-radius: var(--page-item-radius, 5px); font-size: 13px; color: #1C1917; margin-bottom: 2px; }
+    .page-item:hover { background: rgba(0,0,0,0.04); }
+    .amber-panel .page-item { --page-item-padding: 8px; --page-item-radius: 5px; }
+    .indigo-panel .page-item { --page-item-padding: 10px; --page-item-radius: 6px; }
+    .page-item.active { background: var(--active-bg, #E8E7E3); border-left: 2px solid var(--accent-active, #B45309); }
+    .amber-panel .page-item.active { --active-bg: #E8E7E3; --accent-active: #B45309; }
+    .indigo-panel .page-item.active { --active-bg: #E0E7FF; --accent-active: #6366F1; }
+    .page-time { margin-left: auto; font-size: 11px; color: #A8A29E; font-family: 'JetBrains Mono', monospace; }
+
+    .footer-note { text-align: center; margin-top: 32px; padding: 16px; background: white; border-radius: 8px; color: #78716C; font-size: 13px; }
+    .footer-note strong { color: #1C1917; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎨 comind 风格重设计对比</h1>
+    <p class="subtitle">Amber (琥珀暖色) → Indigo (薰衣草紫冷色) · v0.6 → v0.7 · 2026-05-28</p>
+
+    <div class="comparison-grid">
+      <!-- AMBER (旧) -->
+      <div class="panel amber-panel">
+        <div class="panel-header">
+          <span class="panel-title">🔶 Amber 主题（旧版）</span>
+          <span class="version-badge">v0.6</span>
+        </div>
+        <div class="color-section">
+          <div class="section-label">色彩系统</div>
+          <div class="color-grid">
+            <div class="color-swatch amber-accent"><span class="color-name">Accent</span><span class="color-value">#B45309</span></div>
+            <div class="color-swatch amber-accent-hover"><span class="color-name">Hover</span><span class="color-value">#92400E</span></div>
+            <div class="color-swatch amber-accent-subtle"><span class="color-name">Subtle</span><span class="color-value">#FEF3C7</span></div>
+            <div class="color-swatch amber-tag"><span class="color-name">Tag</span><span class="color-value">#047857</span></div>
+          </div>
+        </div>
+        <div class="component-section">
+          <div class="section-label">圆角体系</div>
+          <table class="radius-table">
+            <tr><th>Token</th><th>旧值</th><th>预览</th></tr>
+            <tr><td>$radius-sm</td><td><span class="old-value">4px</span></td><td><span class="radius-demo" style="width:40px;height:40px;border-radius:4px;background:#B45309;"></span></td></tr>
+            <tr><td>$radius-md</td><td><span class="old-value">6px</span></td><td><span class="radius-demo" style="width:50px;height:50px;border-radius:6px;background:#B45309;"></span></td></tr>
+            <tr><td>$radius-lg</td><td><span class="old-value">8px</span></td><td><span class="radius-demo" style="width:60px;height:60px;border-radius:8px;background:#B45309;"></span></td></tr>
+          </table>
+        </div>
+        <div class="component-section">
+          <div class="section-label">组件示例</div>
+          <div class="component-row" style="margin-bottom:12px;">
+            <button class="btn btn-primary">主要按钮</button>
+            <button class="btn">次要按钮</button>
+          </div>
+          <div class="component-row" style="margin-bottom:12px;">
+            <input type="text" class="input" placeholder="输入框 (padding: 8px)" style="flex:1;">
+          </div>
+          <div class="component-row">
+            <span class="tag">#标签</span>
+            <button class="btn btn-icon">★</button>
+          </div>
+        </div>
+        <div class="component-section">
+          <div class="section-label">Sidebar 预览</div>
+          <div class="sidebar-preview">
+            <div class="sidebar-header">COMIND</div>
+            <div class="sidebar-section">
+              <div class="section-title">日记</div>
+              <div class="journal-card"><strong>今天</strong><div style="font-size:12px;color:#78716C;margin-top:4px;">2026-05-28 · 周四</div></div>
+              <div class="section-title" style="margin-top:12px;">页面</div>
+              <div class="page-item active">📄 数据模型设计<span class="page-time">3分钟前</span></div>
+              <div class="page-item">📄 Phase 1 技术选型<span class="page-time">昨天</span></div>
+              <div class="page-item">📄 UI/UX 规范<span class="page-time">4月14日</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- INDIGO (新) -->
+      <div class="panel indigo-panel">
+        <div class="panel-header">
+          <span class="panel-title">💜 Indigo 主题（新版）</span>
+          <span class="version-badge">v0.7</span>
+        </div>
+        <div class="color-section">
+          <div class="section-label">色彩系统</div>
+          <div class="color-grid">
+            <div class="color-swatch indigo-accent"><span class="color-name">Accent</span><span class="color-value">#6366F1</span></div>
+            <div class="color-swatch indigo-accent-hover"><span class="color-name">Hover</span><span class="color-value">#4F46E5</span></div>
+            <div class="color-swatch indigo-accent-subtle"><span class="color-name">Subtle</span><span class="color-value">#EEF2FF</span></div>
+            <div class="color-swatch indigo-tag"><span class="color-name">Tag</span><span class="color-value">#6366F1</span></div>
+          </div>
+        </div>
+        <div class="component-section">
+          <div class="section-label">圆角体系</div>
+          <table class="radius-table">
+            <tr><th>Token</th><th>新值</th><th>预览</th></tr>
+            <tr><td>$radius-sm</td><td><span class="new-value">6px</span> (+2)</td><td><span class="radius-demo" style="width:40px;height:40px;border-radius:6px;background:#6366F1;"></span></td></tr>
+            <tr><td>$radius-md</td><td><span class="new-value">10px</span> (+4)</td><td><span class="radius-demo" style="width:50px;height:50px;border-radius:10px;background:#6366F1;"></span></td></tr>
+            <tr><td>$radius-lg</td><td><span class="new-value">14px</span> (+6)</td><td><span class="radius-demo" style="width:60px;height:60px;border-radius:14px;background:#6366F1;"></span></td></tr>
+          </table>
+        </div>
+        <div class="component-section">
+          <div class="section-label">组件示例</div>
+          <div class="component-row" style="margin-bottom:12px;">
+            <button class="btn btn-primary">主要按钮</button>
+            <button class="btn">次要按钮</button>
+          </div>
+          <div class="component-row" style="margin-bottom:12px;">
+            <input type="text" class="input" placeholder="输入框 (padding: 6px 10px)" style="flex:1;">
+          </div>
+          <div class="component-row">
+            <span class="tag">#标签</span>
+            <button class="btn btn-icon">★</button>
+          </div>
+        </div>
+        <div class="component-section">
+          <div class="section-label">Sidebar 预览</div>
+          <div class="sidebar-preview">
+            <div class="sidebar-header">COMIND</div>
+            <div class="sidebar-section">
+              <div class="section-title">日记</div>
+              <div class="journal-card"><strong>今天</strong><div style="font-size:12px;color:#78716C;margin-top:4px;">2026-05-28 · 周四</div></div>
+              <div class="section-title" style="margin-top:12px;">页面</div>
+              <div class="page-item active">📄 数据模型设计<span class="page-time">3分钟前</span></div>
+              <div class="page-item">📄 Phase 1 技术选型<span class="page-time">昨天</span></div>
+              <div class="page-item">📄 UI/UX 规范<span class="page-time">4月14日</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" style="max-width:900px;margin:0 auto;">
+      <div class="section-label" style="font-size:15px;margin-bottom:16px;">📋 核心变更摘要</div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead><tr style="background:#fafafa;"><th style="padding:10px;text-align:left;border-bottom:2px solid #e5e5e5;">维度</th><th style="padding:10px;text-align:left;border-bottom:2px solid #e5e5e5;">旧值 (Amber)</th><th style="padding:10px;text-align:left;border-bottom:2px solid #e5e5e5;">新值 (Indigo)</th></tr></thead>
+        <tbody>
+          <tr><td style="padding:10px;border-bottom:1px solid #f0f0f0;"><strong>强调色</strong></td><td style="padding:10px;border-bottom:1px solid #f0f0f0;color:#B45309;font-weight:600;">#B45309 琥珀橙</td><td style="padding:10px;border-bottom:1px solid #f0f0f0;color:#6366F1;font-weight:600;">#6366F1 薰衣草紫</td></tr>
+          <tr><td style="padding:10px;border-bottom:1px solid #f0f0f0;"><strong>圆角 SM/MD/LG</strong></td><td style="padding:10px;border-bottom:1px solid #f0f0f0;"><span style="color:#DC2626;">4 / 6 / 8 px</span></td><td style="padding:10px;border-bottom:1px solid #f0f0f0;"><span style="color:#059669;">6 / 10 / 14 px</span></td></tr>
+          <tr><td style="padding:10px;border-bottom:1px solid #f0f0f0;"><strong>按钮 Padding</strong></td><td style="padding:10px;border-bottom:1px solid #f0f0f0;">4px 8px (紧凑)</td><td style="padding:10px;border-bottom:1px solid #f0f0f0;">6px 12px (宽敞)</td></tr>
+          <tr><td style="padding:10px;border-bottom:1px solid #f0f0f0;"><strong>图标方案</strong></td><td style="padding:10px;border-bottom:1px solid #f0f0f0;">SVG Sprite (26 icons)</td><td style="padding:10px;border-bottom:1px solid #f0f0f0;">lucide-vue-next (动态)</td></tr>
+          <tr><td style="padding:10px;border-bottom:1px solid #f0f0f0;"><strong>背景色调</strong></td><td style="padding:10px;border-bottom:1px solid #f0f0f0;">#FAFAF8 (暖白)</td><td style="padding:10px;border-bottom:1px solid #f0f0f0;">#FAFAFE (冷白)</td></tr>
+          <tr><td style="padding:10px;border-bottom:1px solid #f0f0f0;"><strong>阴影色调</strong></td><td style="padding:10px;border-bottom:1px solid #f0f0f0;">rgba(28,25,23, x) 暖灰</td><td style="padding:10px;border-bottom:1px solid #f0f0f0;">rgba(30,27,57, x) 冷灰</td></tr>
+          <tr><td style="padding:10px;border-bottom:1px solid #f0f0f0;"><strong>标签色</strong></td><td style="padding:10px;border-bottom:1px solid #f0f0f0;color:#047857;">#047857 墨绿</td><td style="padding:10px;border-bottom:1px solid #f0f0f0;color:#6366F1;">#6366F1 Indigo</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="footer-note">
+      <strong>设计理念：</strong>从「墨水与纸张」的温暖书卷气 → 「柔和清新」的现代感<br>
+      更大的圆角 + 冷色调强调色 + Lucide 图标库 = 更现代、更友好的视觉体验
+    </div>
+  </div>
+</body>
+</html>

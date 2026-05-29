@@ -6,7 +6,7 @@ import SidebarRecent from './SidebarRecent.vue'
 import SidebarFavorites from './SidebarFavorites.vue'
 import SidebarFooter from './SidebarFooter.vue'
 
-const { isCollapsed, toggle } = useSidebar()
+const { isCollapsed } = useSidebar()
 </script>
 
 <template>
