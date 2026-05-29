@@ -4,18 +4,36 @@ import { useRecent } from '../../composables/useRecent'
 import { usePageStore } from '../../stores/pages'
 import { ChevronUp, ChevronDown } from 'lucide-vue-next'
 import PageItem from './PageItem.vue'
+import PageItemMenu from './PageItemMenu.vue'
+import { ref } from 'vue'
 
 const router = useRouter()
 const pageStore = usePageStore()
 const { recentPages, isExpanded, toggleExpand } = useRecent()
 
+const renamingPageId = ref<string | null>(null)
+
 function handleNavigate(pageId: string) {
+  if (renamingPageId.value === pageId) return
   const page = pageStore.getPage(pageId)
   if (page?.type === 'journal') {
     router.push(`/journal/${page.title}`)
   } else {
     router.push(`/page/${pageId}`)
   }
+}
+
+function handleStartRename(pageId: string) {
+  renamingPageId.value = pageId
+}
+
+function handleRename(pageId: string, newTitle: string) {
+  pageStore.renamePage(pageId, newTitle)
+  renamingPageId.value = null
+}
+
+function handleCancelRename() {
+  renamingPageId.value = null
 }
 </script>
 
@@ -35,8 +53,18 @@ function handleNavigate(pageId: string) {
         :key="page.id"
         :page="page"
         :active="pageStore.currentPageId === page.id"
+        :is-renaming="renamingPageId === page.id"
         @click="handleNavigate(page.id)"
-      />
+        @rename="(newTitle) => handleRename(page.id, newTitle)"
+        @cancel-rename="handleCancelRename"
+      >
+        <template #suffix>
+          <PageItemMenu
+            :page="page"
+            @rename="handleStartRename(page.id)"
+          />
+        </template>
+      </PageItem>
 
       <div v-if="recentPages.length === 0" class="empty-text">
         浏览页面后将显示在此处

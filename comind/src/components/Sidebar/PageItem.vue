@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { FileText } from 'lucide-vue-next'
 
 const props = withDefaults(defineProps<{
@@ -7,15 +7,34 @@ const props = withDefaults(defineProps<{
   active?: boolean
   showTime?: boolean
   timeFormat?: 'relative' | 'absolute'
+  isRenaming?: boolean
 }>(), {
   active: false,
   showTime: true,
-  timeFormat: 'relative'
+  timeFormat: 'relative',
+  isRenaming: false
 })
 
 const emit = defineEmits<{
   click: []
+  rename: [newTitle: string]
+  cancelRename: []
 }>()
+
+const localRenaming = ref(false)
+const newTitle = ref('')
+const inputRef = ref<HTMLInputElement>()
+
+watch(() => props.isRenaming, (val) => {
+  localRenaming.value = val
+  if (val) {
+    newTitle.value = props.page.title
+    setTimeout(() => {
+      inputRef.value?.focus()
+      inputRef.value?.select()
+    }, 0)
+  }
+})
 
 const timeDisplay = computed(() => {
   if (!props.showTime) return ''
@@ -43,6 +62,29 @@ function formatTime(timestamp: number, format: 'relative' | 'absolute'): string 
   const d = new Date(timestamp)
   return `${d.getMonth() + 1}月${d.getDate()}日`
 }
+
+function handleConfirm() {
+  if (newTitle.value.trim() && newTitle.value !== props.page.title) {
+    emit('rename', newTitle.value.trim())
+  }
+  localRenaming.value = false
+}
+
+function handleCancel() {
+  localRenaming.value = false
+  newTitle.value = ''
+  emit('cancelRename')
+}
+
+function handleKeydown(event: KeyboardEvent) {
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    handleConfirm()
+  } else if (event.key === 'Escape') {
+    event.preventDefault()
+    handleCancel()
+  }
+}
 </script>
 
 <template>
@@ -50,13 +92,21 @@ function formatTime(timestamp: number, format: 'relative' | 'absolute'): string 
     class="page-item"
     :class="{ active }"
     tabindex="0"
-    @click="emit('click')"
-    @keydown.enter="emit('click')"
+    @click="!localRenaming && emit('click')"
+    @keydown.enter="!localRenaming && emit('click')"
   >
     <span class="page-icon">
       <FileText :size="14" :stroke-width="1.75" />
     </span>
-    <span class="page-title">{{ page.title }}</span>
+    <input
+      v-if="localRenaming"
+      ref="inputRef"
+      v-model="newTitle"
+      class="page-title-input"
+      @blur="handleConfirm"
+      @keydown="handleKeydown"
+    />
+    <span v-else class="page-title">{{ page.title }}</span>
     <span v-if="showTime" class="page-time">{{ timeDisplay }}</span>
     <slot name="suffix" />
   </div>
@@ -107,6 +157,12 @@ function formatTime(timestamp: number, format: 'relative' | 'absolute'): string 
   color: var(--accent);
 }
 
+.page-item:hover :deep(.menu-trigger),
+.page-item.active :deep(.menu-trigger) {
+  color: var(--sidebar-text-hint);
+  opacity: 1;
+}
+
 .page-title {
   flex: 1;
   min-width: 0;
@@ -124,5 +180,23 @@ function formatTime(timestamp: number, format: 'relative' | 'absolute'): string 
   color: var(--sidebar-text-hint);
   flex-shrink: 0;
   line-height: 1.4;
+}
+
+.page-title-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--sidebar-text-primary);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 2px 4px;
+  outline: none;
+  font-family: inherit;
+}
+
+.page-title-input:focus {
+  border-color: var(--accent);
 }
 </style>

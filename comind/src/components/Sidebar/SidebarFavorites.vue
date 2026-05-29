@@ -2,14 +2,19 @@
 import { useRouter } from 'vue-router'
 import { useFavorites } from '../../composables/useFavorites'
 import { usePageStore } from '../../stores/pages'
-import { ChevronUp, ChevronDown, X } from 'lucide-vue-next'
+import { ChevronUp, ChevronDown } from 'lucide-vue-next'
 import PageItem from './PageItem.vue'
+import PageItemMenu from './PageItemMenu.vue'
+import { ref } from 'vue'
 
 const router = useRouter()
 const pageStore = usePageStore()
-const { favoritePages, removeFavorite, isExpanded, toggleExpand } = useFavorites()
+const { favoritePages, isExpanded, toggleExpand } = useFavorites()
+
+const renamingPageId = ref<string | null>(null)
 
 function handleNavigate(pageId: string) {
+  if (renamingPageId.value === pageId) return
   const page = pageStore.getPage(pageId)
   if (page?.type === 'journal') {
     router.push(`/journal/${page.title}`)
@@ -18,9 +23,17 @@ function handleNavigate(pageId: string) {
   }
 }
 
-function handleRemoveFavorite(pageId: string, event: Event) {
-  event.stopPropagation()
-  removeFavorite(pageId)
+function handleStartRename(pageId: string) {
+  renamingPageId.value = pageId
+}
+
+function handleRename(pageId: string, newTitle: string) {
+  pageStore.renamePage(pageId, newTitle)
+  renamingPageId.value = null
+}
+
+function handleCancelRename() {
+  renamingPageId.value = null
 }
 </script>
 
@@ -35,27 +48,23 @@ function handleRemoveFavorite(pageId: string, event: Event) {
     </div>
 
     <div v-show="isExpanded" class="section-content">
-      <div
+      <PageItem
         v-for="page in favoritePages"
         :key="page.id"
-        class="favorite-item"
+        :page="page"
+        :active="pageStore.currentPageId === page.id"
+        :is-renaming="renamingPageId === page.id"
+        @click="handleNavigate(page.id)"
+        @rename="(newTitle) => handleRename(page.id, newTitle)"
+        @cancel-rename="handleCancelRename"
       >
-        <PageItem
-          :page="page"
-          :active="pageStore.currentPageId === page.id"
-          @click="handleNavigate(page.id)"
-        >
-          <template #suffix>
-            <button
-              class="remove-btn"
-              title="取消收藏"
-              @click="handleRemoveFavorite(page.id, $event)"
-            >
-              <X :size="12" :stroke-width="2" />
-            </button>
-          </template>
-        </PageItem>
-      </div>
+        <template #suffix>
+          <PageItemMenu
+            :page="page"
+            @rename="handleStartRename(page.id)"
+          />
+        </template>
+      </PageItem>
 
       <div v-if="favoritePages.length === 0" class="empty-text">
         暂无收藏页面
@@ -102,35 +111,6 @@ function handleRemoveFavorite(pageId: string, event: Event) {
 
 .section-content {
   padding: var(--space-1) var(--space-2);
-}
-
-.favorite-item {
-  position: relative;
-}
-
-.favorite-item:hover .remove-btn {
-  opacity: 1;
-}
-
-.remove-btn {
-  width: 20px;
-  height: 20px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  color: var(--sidebar-text-hint);
-  opacity: 0;
-  transition: all 80ms ease;
-  flex-shrink: 0;
-}
-
-.remove-btn:hover {
-  background: #FEE2E2;
-  color: #DC2626;
 }
 
 .empty-text {
