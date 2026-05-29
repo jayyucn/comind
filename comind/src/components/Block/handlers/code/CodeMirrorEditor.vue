@@ -13,6 +13,8 @@ import { rust } from '@codemirror/lang-rust'
 import { go } from '@codemirror/lang-go'
 import { syntaxHighlighting, HighlightStyle } from '@codemirror/language'
 import { tags } from '@lezer/highlight'
+import { oneDark, oneDarkHighlightStyle } from '@codemirror/theme-one-dark'
+import { useTheme } from '../../../../composables/useTheme'
 
 const props = withDefaults(defineProps<{
   blockId: string
@@ -44,6 +46,7 @@ const showLangMenu = ref(false)
 const menuPosition = ref({ top: 0, left: 0 })
 const currentLang = ref(props.language || 'plain')
 const showCopied = ref(false)
+const { resolvedTheme } = useTheme()
 
 const languages = [
   { id: 'plain', label: 'Plain Text' },
@@ -217,8 +220,8 @@ function createEditor() {
         }
       }
     ]),
-    githubTheme,
-    syntaxHighlighting(githubHighlightStyle),
+    resolvedTheme.value === 'dark' ? oneDark : githubTheme,
+    resolvedTheme.value === 'dark' ? syntaxHighlighting(oneDarkHighlightStyle) : syntaxHighlighting(githubHighlightStyle),
     getLanguageExtension(currentLang.value),
     EditorView.updateListener.of((update) => {
       if (update.docChanged && !props.readonly) {
@@ -290,6 +293,13 @@ watch(
     createEditor()
   }
 )
+
+watch(resolvedTheme, () => {
+  createEditor()
+  nextTick(() => {
+    view.value?.focus()
+  })
+})
 
 onMounted(() => {
   createEditor()
@@ -432,8 +442,8 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
 <style scoped>
 .code-editor-wrapper {
   position: relative;
-  background: #f6f8fa;
-  border: 1px solid #d0d7de;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
   border-radius: 6px;
   overflow: hidden;
 }
@@ -465,9 +475,9 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
 }
 
 .code-lang-button {
-  background: #f6f8fa;
-  color: #24292f;
-  border: 1px solid #d0d7de;
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 3px 10px;
   font-size: 12px;
@@ -477,13 +487,13 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
   align-items: center;
   gap: 4px;
   transition: all 0.2s;
-  box-shadow: 0 1px 0 rgba(31, 35, 40, 0.04);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
 }
 
 .code-copy-button {
-  background: #f6f8fa;
-  color: #24292f;
-  border: 1px solid #d0d7de;
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 5px 6px;
   font-size: 12px;
@@ -492,12 +502,12 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
-  box-shadow: 0 1px 0 rgba(31, 35, 40, 0.04);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
 }
 
 .code-lang-button:hover, .code-copy-button:hover {
-  background-color: #f3f4f6;
-  border-color: #d0d7de;
+  background-color: var(--bg-active);
+  border-color: var(--border-strong);
 }
 
 .dropdown-arrow {
@@ -516,12 +526,12 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
 
 .lang-menu {
   position: fixed;
-  background: #ffffff;
-  border: 1px solid #d0d7de;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
   border-radius: 6px;
   margin-top: 4px;
   min-width: 140px;
-  box-shadow: 0 8px 24px rgba(149, 157, 165, 0.2);
+  box-shadow: var(--shadow-elevation-2);
   z-index: 1000;
   overflow: hidden;
 }
@@ -529,19 +539,20 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
 .lang-item {
   padding: 8px 12px;
   font-size: 13px;
-  color: #24292f;
+  color: var(--text-secondary);
   cursor: pointer;
   transition: background 0.2s;
 }
 
 .lang-item:hover {
-  background: #f6f8fa;
+  background: var(--bg-hover);
 }
 
 .lang-item.active {
-  background: #f6f8fa;
+  background: var(--accent-subtle);
   font-weight: 500;
-  border-left: 2px solid #0969da;
+  color: var(--accent);
+  border-left: 2px solid var(--accent);
   padding-left: 10px;
 }
 
