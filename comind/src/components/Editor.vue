@@ -103,7 +103,7 @@ function handleWikiLinkMenuArrowUp() {
   menuRef.value?.selectPrev()
 }
 
-function handleWikiLinkSelect(pageName: string) {
+async function handleWikiLinkSelect(pageName: string) {
   if (!editor.value) return
 
   notifyWikiLinkMenuSelect()
@@ -126,7 +126,7 @@ function handleWikiLinkSelect(pageName: string) {
 
   const pageStore = usePageStore()
   if (!pageStore.getPageByTitle(pageName)) {
-    pageStore.createPage(pageName)
+    await pageStore.createPage(pageName)
   }
 }
 

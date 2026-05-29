@@ -247,6 +247,68 @@ describe('Editor WikiLink Selection Logic', () => {
     })
   })
 
+  describe('handleWikiLinkSelect async behavior', () => {
+    test('should await createPage when page does not exist', async () => {
+      const mockPageStore = {
+        getPageByTitle: vi.fn().mockReturnValue(undefined),
+        createPage: vi.fn().mockResolvedValue({ id: 'new-page-id', title: 'NewPage' })
+      }
+
+      const pageName = 'NewPage'
+      const pageExists = !!mockPageStore.getPageByTitle(pageName)
+
+      expect(pageExists).toBe(false)
+
+      if (!pageExists) {
+        await mockPageStore.createPage(pageName)
+      }
+
+      expect(mockPageStore.createPage).toHaveBeenCalledWith('NewPage')
+    })
+
+    test('should not call createPage when page already exists', async () => {
+      const mockPageStore = {
+        getPageByTitle: vi.fn().mockReturnValue({ id: 'existing-id', title: 'ExistingPage' }),
+        createPage: vi.fn()
+      }
+
+      const pageName = 'ExistingPage'
+      const pageExists = !!mockPageStore.getPageByTitle(pageName)
+
+      expect(pageExists).toBe(true)
+
+      if (!pageExists) {
+        await mockPageStore.createPage(pageName)
+      }
+
+      expect(mockPageStore.createPage).not.toHaveBeenCalled()
+    })
+
+    test('createPage returns Promise that must be awaited', async () => {
+      const mockPageStore = {
+        getPageByTitle: vi.fn().mockReturnValue(undefined),
+        createPage: vi.fn().mockImplementation(() => {
+          return new Promise((resolve) => {
+            setTimeout(() => resolve({ id: 'test-id', title: 'Test' }), 10)
+          })
+        })
+      }
+
+      const pageName = 'TestPage'
+      const pageStore = mockPageStore
+
+      async function handleSelect(name: string) {
+        if (!pageStore.getPageByTitle(name)) {
+          await pageStore.createPage(name)
+        }
+      }
+
+      await handleSelect(pageName)
+
+      expect(mockPageStore.createPage).toHaveBeenCalledWith('TestPage')
+    })
+  })
+
   describe('menu state management', () => {
     test('menu visible state should control menu display', () => {
       const menuVisible = true
