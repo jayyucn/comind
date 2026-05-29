@@ -3,6 +3,7 @@ import { ref, computed, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useFavorites } from '../composables/useFavorites'
 import { usePageStore } from '../stores/pages'
+import { useSettingsModal } from '../composables/useSettingsModal'
 import ConfirmDialog from './ConfirmDialog.vue'
 import { TaskIcon } from './Icons'
 
@@ -10,6 +11,7 @@ const router = useRouter()
 const route = useRoute()
 const pageStore = usePageStore()
 const { isFavorite, toggleFavorite } = useFavorites()
+const { open: openSettings } = useSettingsModal()
 
 const isMenuOpen = ref(false)
 const isDeleteSubmenuOpen = ref(false)
@@ -95,7 +97,7 @@ function handleNavigateToTrash() {
 
 function handleNavigateToSettings() {
   closeMenu()
-  router.push('/settings')
+  openSettings()
 }
 
 function handleClickOutside(event: MouseEvent) {
