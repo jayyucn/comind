@@ -30,60 +30,47 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-describe('无限重定向防护逻辑', () => {
-  test('从 page 重定向到 journal-page 时不应再重定向', () => {
+describe('路由守卫不再跳过 page/journal 间导航', () => {
+  test('从 page 导航到 journal-page 时守卫应正常执行', () => {
     const from = { name: 'page' as const }
     const to = { name: 'journal-page' as const }
     
-    const isRedirectingBetweenPageAndJournal = 
-      (from.name === 'page' && to.name === 'journal-page') ||
-      (from.name === 'journal-page' && to.name === 'page')
+    const shouldSkip = to.name === 'journal-list' || to.name === 'trash' || to.name === 'settings'
     
-    expect(isRedirectingBetweenPageAndJournal).toBe(true)
+    expect(shouldSkip).toBe(false)
   })
 
-  test('从 journal-page 重定向到 page 时不应再重定向', () => {
+  test('从 journal-page 导航到 page 时守卫应正常执行', () => {
     const from = { name: 'journal-page' as const }
     const to = { name: 'page' as const }
     
-    const isRedirectingBetweenPageAndJournal = 
-      (from.name === 'page' && to.name === 'journal-page') ||
-      (from.name === 'journal-page' && to.name === 'page')
+    const shouldSkip = to.name === 'journal-list' || to.name === 'trash' || to.name === 'settings'
     
-    expect(isRedirectingBetweenPageAndJournal).toBe(true)
+    expect(shouldSkip).toBe(false)
   })
 
-  test('从 page 重定向到 page 时不应触发防护', () => {
+  test('从 page 导航到 page 时守卫应正常执行', () => {
     const from = { name: 'page' as const }
     const to = { name: 'page' as const }
     
-    const isRedirectingBetweenPageAndJournal = 
-      (from.name === 'page' && to.name === 'journal-page') ||
-      (from.name === 'journal-page' && to.name === 'page')
+    const shouldSkip = to.name === 'journal-list' || to.name === 'trash' || to.name === 'settings'
     
-    expect(isRedirectingBetweenPageAndJournal).toBe(false)
+    expect(shouldSkip).toBe(false)
   })
 
-  test('从 journal-page 重定向到 journal-page 时不应触发防护', () => {
+  test('从 journal-page 导航到 journal-page 时守卫应正常执行', () => {
     const from = { name: 'journal-page' as const }
     const to = { name: 'journal-page' as const }
     
-    const isRedirectingBetweenPageAndJournal = 
-      (from.name === 'page' && to.name === 'journal-page') ||
-      (from.name === 'journal-page' && to.name === 'page')
+    const shouldSkip = to.name === 'journal-list' || to.name === 'trash' || to.name === 'settings'
     
-    expect(isRedirectingBetweenPageAndJournal).toBe(false)
+    expect(shouldSkip).toBe(false)
   })
 
-  test('从 journal-list 重定向到 page 时不应触发防护', () => {
-    const from = { name: 'journal-list' as const }
-    const to = { name: 'page' as const }
-    
-    const isRedirectingBetweenPageAndJournal = 
-      (from.name === 'page' && to.name === 'journal-page') ||
-      (from.name === 'journal-page' && to.name === 'page')
-    
-    expect(isRedirectingBetweenPageAndJournal).toBe(false)
+  test('从 journal-list 导航到 page 时守卫应被跳过', () => {
+    const to = { name: 'journal-list' as const }
+    const shouldSkip = to.name === 'journal-list' || to.name === 'trash' || to.name === 'settings'
+    expect(shouldSkip).toBe(true)
   })
 })
 

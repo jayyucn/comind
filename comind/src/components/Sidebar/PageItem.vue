@@ -67,13 +67,14 @@ function handleConfirm() {
   if (newTitle.value.trim() && newTitle.value !== props.page.title) {
     emit('rename', newTitle.value.trim())
   }
+  emit('cancelRename')
   localRenaming.value = false
 }
 
 function handleCancel() {
-  localRenaming.value = false
   newTitle.value = ''
   emit('cancelRename')
+  localRenaming.value = false
 }
 
 function handleKeydown(event: KeyboardEvent) {

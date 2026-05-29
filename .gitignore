@@ -1,5 +1,7 @@
 test.md
 comind/playwright-report/
 comind/test-results/
+test_screenshots/
+*.py
 comind/test-results/drag-drop-拖拽子节点到父节点上方不应产生额外节点-chromium/error-context.md
 .omx/

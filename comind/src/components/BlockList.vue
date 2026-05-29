@@ -128,14 +128,16 @@ provide<CrossBlockSelection>('crossBlockSelection', selection)
 provide('onDragEnd', handleDragEnd)
 
 // ── 监听结构变化重建树 ──
-watch(() => blockStore.structureVersion, syncFromStore)
+watch(() => blockStore.structureVersion, () => {
+  syncFromStore()
+})
 
-// ── 页面 ID 变化时重建 ──
+// ── 页面 ID 变化时清除选区，同步由 structureVersion 变化触发 ──
 watch(() => props.pageId, (newId, oldId) => {
   if (newId !== oldId) {
     selection.clearSelection()
+    syncFromStore()
   }
-  syncFromStore()
 })
 
 onMounted(() => {

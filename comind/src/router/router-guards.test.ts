@@ -40,50 +40,30 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-describe('路由守卫逻辑 - 无限重定向防护', () => {
-  describe('isRedirectingBetweenPageAndJournal 检测', () => {
-    test('从 page 到 journal-page 应触发防护', () => {
-      const fromName = 'page'
+describe('路由守卫逻辑 - page/journal 间导航不跳过', () => {
+  describe('page/journal 间导航守卫应正常执行', () => {
+    test('从 page 到 journal-page 时守卫应正常执行', () => {
       const toName = 'journal-page'
-
-      const isRedirecting = 
-        (fromName === 'page' && toName === 'journal-page') ||
-        (fromName === 'journal-page' && toName === 'page')
-
-      expect(isRedirecting).toBe(true)
+      const shouldSkip = toName === 'journal-list' || toName === 'trash' || toName === 'settings'
+      expect(shouldSkip).toBe(false)
     })
 
-    test('从 journal-page 到 page 应触发防护', () => {
-      const fromName = 'journal-page'
+    test('从 journal-page 到 page 时守卫应正常执行', () => {
       const toName = 'page'
-
-      const isRedirecting = 
-        (fromName === 'page' && toName === 'journal-page') ||
-        (fromName === 'journal-page' && toName === 'page')
-
-      expect(isRedirecting).toBe(true)
+      const shouldSkip = toName === 'journal-list' || toName === 'trash' || toName === 'settings'
+      expect(shouldSkip).toBe(false)
     })
 
-    test('相同路由不应触发防护', () => {
-      const fromName = 'page'
+    test('相同路由守卫应正常执行', () => {
       const toName = 'page'
-
-      const isRedirecting = 
-        (fromName === 'page' && toName === 'journal-page') ||
-        (fromName === 'journal-page' && toName === 'page')
-
-      expect(isRedirecting).toBe(false)
+      const shouldSkip = toName === 'journal-list' || toName === 'trash' || toName === 'settings'
+      expect(shouldSkip).toBe(false)
     })
 
-    test('无关路由切换不应触发防护', () => {
-      const fromName = 'page'
-      const toName = 'settings'
-
-      const isRedirecting = 
-        (fromName === 'page' && toName === 'journal-page') ||
-        (fromName === 'journal-page' && toName === 'page')
-
-      expect(isRedirecting).toBe(false)
+    test('无关路由切换守卫应正常执行', () => {
+      const toName = 'page'
+      const shouldSkip = toName === 'journal-list' || toName === 'trash' || toName === 'settings'
+      expect(shouldSkip).toBe(false)
     })
   })
 

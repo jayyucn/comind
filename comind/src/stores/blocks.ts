@@ -134,6 +134,7 @@ export const useBlockStore = defineStore('blocks', () => {
   /** 加载指定 Page 的 Block 树 */
   async function loadPageBlocks(pageId: string) {
     blocks.value = await storage.getBlockTree(pageId)
+    structureVersion.value++
     return blocks
   }
 
