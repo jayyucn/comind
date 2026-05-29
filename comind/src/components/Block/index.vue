@@ -58,6 +58,7 @@ const showBlockSelector = ref(false)
 function handleEmbedSelect(sourceBlockId: string, sourcePageId: string) {
   blockStore.updateBlockProperties(blockId.value, { sourceBlockId, sourcePageId })
   showBlockSelector.value = false
+  editorStore.deactivateBlock()
 }
 
 // 获取当前 block 的优先级
@@ -90,6 +91,15 @@ const selection = inject<CrossBlockSelection>('crossBlockSelection')
 // ── 便捷访问 ──
 const blockId = computed(() => props.node.id)
 const block = computed(() => props.node.block)
+
+watch(() => block.value.type, (newType) => {
+  if (newType === 'embed' && !block.value.properties?.sourceBlockId) {
+    nextTick(() => {
+      showBlockSelector.value = true
+    })
+  }
+})
+
 const isActive = computed(() => editorStore.activeBlockId === blockId.value)
 const hasSelectedAncestor = computed(() => {
   if (!selection) return false
@@ -110,10 +120,6 @@ const isSelected = computed(() => {
 const handler = computed(() => getHandler(block.value.type))
 
 const editContent = computed(() => {
-  if (handler.value?.type === 'embed') {
-    const sourceBlock = blockStore.blocks.find(b => b.id === block.value.properties.sourceBlockId)
-    return sourceBlock?.content ?? ''
-  }
   return block.value.content
 })
 
@@ -316,6 +322,11 @@ function handleContentMousedown(e: MouseEvent) {
   const target = e.target as HTMLElement
   if (target.closest('.block-link')) return
 
+  if (handler.value?.type === 'embed' && block.value.properties?.sourceBlockId) {
+    e.preventDefault()
+    return
+  }
+
   if (e.ctrlKey || e.metaKey) {
     if (selection) {
       selection.toggleBlock(blockId.value, pageStore.currentPageId)
@@ -341,13 +352,6 @@ function getCaretPositionFromPoint(x: number, y: number): number | null {
 }
 
 async function handleSave(content: string) {
-  if (handler.value?.type === 'embed') {
-    const sourceBlock = blockStore.blocks.find(b => b.id === block.value.properties.sourceBlockId)
-    if (sourceBlock) {
-      await blockStore.updateBlockContent(sourceBlock.id, content)
-      return
-    }
-  }
   await blockStore.updateBlockContent(blockId.value, content)
 }
 
@@ -443,7 +447,15 @@ function handleCursorChange(pos: number) {
 
 function handleContentClick(e: MouseEvent) {
   if (handler.value?.type === 'embed') {
-    showBlockSelector.value = true
+    const sourceBlockId = block.value.properties?.sourceBlockId
+    if (sourceBlockId) {
+      const sourcePage = pageStore.pages.find(p => p.id === block.value.properties?.sourcePageId)
+      if (sourcePage) {
+        navigateToPage(sourcePage.title)
+      }
+    } else {
+      showBlockSelector.value = true
+    }
     return
   }
 

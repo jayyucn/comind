@@ -36,3 +36,8 @@ export interface TreeNode {
   block: Block
   children: TreeNode[]
 }
+
+export interface SubtreeNode {
+  block: Block
+  children: SubtreeNode[]
+}

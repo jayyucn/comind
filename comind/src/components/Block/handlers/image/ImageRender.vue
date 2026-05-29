@@ -152,7 +152,7 @@ function clearImage() {
 }
 
 .block-placeholder {
-  color: var(--text-muted, #78716C);
+  color: var(--text-tertiary);
   font-style: italic;
 }
 </style>

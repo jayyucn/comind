@@ -168,13 +168,13 @@ defineExpose({ selectNext, selectPrev, confirmSelect, close });
   position: absolute;
   width: 320px;
   max-height: 360px;
-  background: var(--bg-primary, #fff);
+  background: var(--bg-base);
   border-radius: 8px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-elevation-2);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--border-color, #E7E5E4);
+  border: 1px solid var(--border);
 }
 
 .wlm-body {
@@ -185,7 +185,7 @@ defineExpose({ selectNext, selectPrev, confirmSelect, close });
 
 .wlm-empty {
   padding: 16px;
-  color: var(--text-muted, #78716C);
+  color: var(--text-tertiary);
   font-style: italic;
   text-align: center;
   font-size: 14px;
@@ -203,15 +203,15 @@ defineExpose({ selectNext, selectPrev, confirmSelect, close });
 }
 
 .wlm-item:hover {
-  background: var(--bg-secondary, #F5F5F4);
+  background: var(--bg-hover);
 }
 
 .wlm-item.active {
-  background: var(--accent-color-light, #DBEAFE);
+  background: var(--accent-subtle);
 }
 
 .wlm-item.wlm-create {
-  color: var(--accent-color, #2563EB);
+  color: var(--accent);
 }
 
 .wlm-icon {

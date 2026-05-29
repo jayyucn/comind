@@ -3,6 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { usePageStore } from '../stores/pages'
 import { useBlockStore } from '../stores/blocks'
 import { storage } from '../storage/indexedDB'
+import { pushModal, popModal } from '../composables/useModalKeyboard'
 import type { Block } from '../types/block'
 
 const props = defineProps<{
@@ -19,36 +20,54 @@ const pageStore = usePageStore()
 const blockStore = useBlockStore()
 
 const searchQuery = ref('')
-const selectedPageId = ref<string | null>(null)
-const selectedPageBlocks = ref<Block[]>([])
+const allBlocks = ref<Block[]>([])
+const selectedIndex = ref(0)
 
-const pages = computed(() =>
-  pageStore.pages
-    .filter(p => !p.deleted)
-    .filter(p => searchQuery.value === '' ||
-      p.title.toLowerCase().includes(searchQuery.value.toLowerCase()))
-    .sort((a, b) => b.updatedAt - a.updatedAt)
-)
+const filteredBlocks = computed(() => {
+  const q = searchQuery.value.toLowerCase()
+  let blocks = allBlocks.value.filter(b => b.id !== props.excludeBlockId && b.type !== 'embed' && b.content.trim() !== '')
 
-const pageBlocks = computed(() =>
-  selectedPageBlocks.value
-    .filter(b => b.id !== props.excludeBlockId)
-    .sort((a, b) => a.pos - b.pos)
-)
-
-async function selectPage(pageId: string) {
-  selectedPageId.value = pageId
-  if (pageId === pageStore.currentPageId) {
-    selectedPageBlocks.value = blockStore.blocks.filter(b => b.pageId === pageId)
-  } else {
-    selectedPageBlocks.value = await storage.getBlockTree(pageId)
+  if (q) {
+    blocks = blocks.filter(b => b.content.toLowerCase().includes(q))
   }
+
+  return blocks.slice(0, 50)
+})
+
+const menuItems = computed(() => {
+  return filteredBlocks.value.map(block => {
+    const page = pageStore.pages.find(p => p.id === block.pageId)
+    return {
+      blockId: block.id,
+      pageId: block.pageId,
+      content: block.content,
+      type: block.type,
+      pageTitle: page?.title ?? 'Deleted page',
+      pageIcon: page?.icon ?? '📄'
+    }
+  })
+})
+
+async function loadAllBlocks() {
+  const currentBlocks = blockStore.blocks.filter(b => b.id !== props.excludeBlockId && b.type !== 'embed')
+  const currentPageId = pageStore.currentPageId
+  const otherPageIds = pageStore.pages
+    .filter(p => !p.deleted && p.id !== currentPageId)
+    .map(p => p.id)
+
+  const otherBlocks: Block[] = []
+  for (const pageId of otherPageIds) {
+    const blocks = await storage.getBlockTree(pageId)
+    otherBlocks.push(...blocks.filter(b => b.id !== props.excludeBlockId && b.type !== 'embed'))
+  }
+
+  allBlocks.value = [...currentBlocks, ...otherBlocks]
 }
 
 function selectBlock(blockId: string) {
-  const block = selectedPageBlocks.value.find(b => b.id === blockId)
-  if (!block) return
-  emit('select', blockId, block.pageId)
+  const item = menuItems.value.find(m => m.blockId === blockId)
+  if (!item) return
+  emit('select', blockId, item.pageId)
 }
 
 function getBlockPreview(content: string): string {
@@ -70,50 +89,77 @@ function getBlockTypeLabel(type: string): string {
 
 watch(() => props.visible, (v) => {
   if (v) {
+    pushModal('block-selector')
     searchQuery.value = ''
-    selectedPageId.value = null
+    selectedIndex.value = 0
+    loadAllBlocks()
+  } else {
+    popModal('block-selector')
   }
 })
+
+watch(searchQuery, () => {
+  selectedIndex.value = 0
+})
+
+function handleKeyDown(e: KeyboardEvent) {
+  if (!props.visible) return
+
+  switch (e.key) {
+    case 'ArrowDown':
+      e.preventDefault()
+      selectedIndex.value = Math.min(selectedIndex.value + 1, menuItems.value.length - 1)
+      break
+    case 'ArrowUp':
+      e.preventDefault()
+      selectedIndex.value = Math.max(selectedIndex.value - 1, 0)
+      break
+    case 'Enter':
+      e.preventDefault()
+      if (menuItems.value[selectedIndex.value]) {
+        selectBlock(menuItems.value[selectedIndex.value].blockId)
+      }
+      break
+    case 'Escape':
+      e.preventDefault()
+      emit('close')
+      break
+  }
+}
 </script>
 
 <template>
   <Teleport to="body">
-    <div v-if="visible" class="block-selector-overlay" @click.self="emit('close')">
+    <div v-if="visible" class="block-selector-overlay" @click.self="emit('close')" @keydown="handleKeyDown">
       <div class="block-selector">
         <div class="bs-header">
           <input
             v-model="searchQuery"
             class="bs-search"
-            placeholder="Search pages..."
+            placeholder="Search blocks..."
             autofocus
+            @keydown="handleKeyDown"
           />
           <button class="bs-close-btn" @click="emit('close')">✕</button>
         </div>
         <div class="bs-body">
-          <div class="bs-pages">
-            <div
-              v-for="page in pages"
-              :key="page.id"
-              class="bs-page-item"
-              :class="{ active: selectedPageId === page.id }"
-              @click="selectPage(page.id)"
-            >
-              {{ page.icon || '📄' }} {{ page.title }}
-            </div>
-            <div v-if="pages.length === 0" class="bs-empty">No pages found</div>
+          <div v-if="menuItems.length === 0" class="bs-empty">
+            <span v-if="!searchQuery">No blocks found</span>
+            <span v-else>No blocks match "{{ searchQuery }}"</span>
           </div>
-          <div class="bs-blocks">
-            <div v-if="!selectedPageId" class="bs-empty">Select a page</div>
-            <div
-              v-for="block in pageBlocks"
-              :key="block.id"
-              class="bs-block-item"
-              @click="selectBlock(block.id)"
-            >
-              <span class="bs-block-type">{{ getBlockTypeLabel(block.type) }}</span>
-              <span class="bs-block-preview">{{ getBlockPreview(block.content) }}</span>
+          <div
+            v-for="(item, index) in menuItems"
+            :key="item.blockId"
+            class="bs-block-item"
+            :class="{ active: selectedIndex === index }"
+            @click="selectBlock(item.blockId)"
+            @mouseenter="selectedIndex = index"
+          >
+            <span class="bs-block-type">{{ getBlockTypeLabel(item.type) }}</span>
+            <div class="bs-block-info">
+              <span class="bs-block-preview">{{ getBlockPreview(item.content) }}</span>
+              <span class="bs-block-page">{{ item.pageIcon }} {{ item.pageTitle }}</span>
             </div>
-            <div v-if="selectedPageId && pageBlocks.length === 0" class="bs-empty">No blocks</div>
           </div>
         </div>
       </div>
@@ -125,7 +171,7 @@ watch(() => props.visible, (v) => {
 .block-selector-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -133,11 +179,11 @@ watch(() => props.visible, (v) => {
 }
 
 .block-selector {
-  width: 640px;
+  width: 520px;
   max-height: 480px;
-  background: var(--bg-primary, #fff);
+  background: var(--bg-base);
   border-radius: 8px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-elevation-2);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -147,22 +193,22 @@ watch(() => props.visible, (v) => {
   display: flex;
   align-items: center;
   padding: 12px;
-  border-bottom: 1px solid var(--border-color, #E7E5E4);
+  border-bottom: 1px solid var(--border);
   gap: 8px;
 }
 
 .bs-search {
   flex: 1;
-  border: 1px solid var(--border-color, #E7E5E4);
+  border: 1px solid var(--border);
   border-radius: 4px;
   padding: 6px 10px;
   font-size: 14px;
   outline: none;
-  background: var(--bg-primary, #fff);
+  background: var(--bg-base);
 }
 
 .bs-search:focus {
-  border-color: var(--accent-color, #2563EB);
+  border-color: var(--accent);
 }
 
 .bs-close-btn {
@@ -170,75 +216,65 @@ watch(() => props.visible, (v) => {
   border: none;
   font-size: 16px;
   cursor: pointer;
-  color: var(--text-muted, #78716C);
+  color: var(--text-tertiary);
   padding: 4px;
 }
 
 .bs-body {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-}
-
-.bs-pages {
-  width: 200px;
-  overflow-y: auto;
-  border-right: 1px solid var(--border-color, #E7E5E4);
-  padding: 4px;
-}
-
-.bs-blocks {
   flex: 1;
   overflow-y: auto;
   padding: 4px;
-}
-
-.bs-page-item {
-  padding: 6px 10px;
-  cursor: pointer;
-  border-radius: 4px;
-  font-size: 13px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.bs-page-item:hover,
-.bs-page-item.active {
-  background: var(--bg-secondary, #F5F5F4);
 }
 
 .bs-block-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
-  padding: 6px 10px;
+  padding: 8px 12px;
   cursor: pointer;
   border-radius: 4px;
   font-size: 13px;
 }
 
-.bs-block-item:hover {
-  background: var(--bg-secondary, #F5F5F4);
+.bs-block-item:hover,
+.bs-block-item.active {
+  background: var(--bg-hover);
 }
 
 .bs-block-type {
   flex-shrink: 0;
   width: 24px;
   text-align: center;
-  color: var(--text-muted, #78716C);
+  color: var(--text-tertiary);
+  padding-top: 1px;
+}
+
+.bs-block-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .bs-block-preview {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text-secondary, #44403C);
+  color: var(--text-primary);
+}
+
+.bs-block-page {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .bs-empty {
   padding: 16px;
-  color: var(--text-muted, #78716C);
+  color: var(--text-tertiary);
   font-style: italic;
   text-align: center;
 }

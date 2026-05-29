@@ -378,7 +378,7 @@ watch(visible, (isVisible) => {
   padding: 6px 12px;
   font-size: 11px;
   font-weight: 500;
-  color: var(--text-muted, #78716C);
+  color: var(--text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -415,18 +415,18 @@ watch(visible, (isVisible) => {
 .slash-command-name {
   flex: 1;
   font-size: 14px;
-  color: var(--text-base, #1C1917);
+  color: var(--text-primary);
 }
 
 .slash-command-alias {
   font-size: 12px;
-  color: var(--text-muted, #78716C);
+  color: var(--text-tertiary);
 }
 
 .slash-command-empty {
   padding: 16px;
   text-align: center;
-  color: var(--text-muted, #78716C);
+  color: var(--text-tertiary);
   font-size: 14px;
 }
 

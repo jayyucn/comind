@@ -170,7 +170,6 @@ function insertEmbed({ editor, range, blockId }: CommandProps) {
   const blockStore = useBlockStore()
   if (blockId) {
     blockStore.updateBlockType(blockId, 'embed')
-    blockStore.updateBlockProperties(blockId, { sourceBlockId: '', sourcePageId: '' })
   }
 }
 
