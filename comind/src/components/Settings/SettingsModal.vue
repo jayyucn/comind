@@ -1,12 +1,21 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useSettingsModal } from '../../composables/useSettingsModal'
-import { useModalKeyboard } from '../../composables/useModalKeyboard'
+import { pushModal, popModal } from '../../composables/useModalKeyboard'
 import { useTheme } from '../../composables/useTheme'
 import { X, Sun, Moon, Monitor } from 'lucide-vue-next'
 
 const { isOpen, close } = useSettingsModal()
-useModalKeyboard('settings-modal')
+
+watch(isOpen, (visible) => {
+  if (visible) {
+    pushModal('settings-modal')
+  } else {
+    popModal('settings-modal')
+  }
+})
+
+onUnmounted(() => popModal('settings-modal'))
 const { theme, setTheme } = useTheme()
 
 type Section = 'appearance' | 'editor' | 'data' | 'about'
