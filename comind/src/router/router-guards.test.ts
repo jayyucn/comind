@@ -44,25 +44,25 @@ describe('路由守卫逻辑 - page/journal 间导航不跳过', () => {
   describe('page/journal 间导航守卫应正常执行', () => {
     test('从 page 到 journal-page 时守卫应正常执行', () => {
       const toName = 'journal-page'
-      const shouldSkip = toName === 'journal-list' || toName === 'trash' || toName === 'settings'
+      const shouldSkip = toName === 'journal-list' || toName === 'trash'
       expect(shouldSkip).toBe(false)
     })
 
     test('从 journal-page 到 page 时守卫应正常执行', () => {
       const toName = 'page'
-      const shouldSkip = toName === 'journal-list' || toName === 'trash' || toName === 'settings'
+      const shouldSkip = toName === 'journal-list' || toName === 'trash'
       expect(shouldSkip).toBe(false)
     })
 
     test('相同路由守卫应正常执行', () => {
       const toName = 'page'
-      const shouldSkip = toName === 'journal-list' || toName === 'trash' || toName === 'settings'
+      const shouldSkip = toName === 'journal-list' || toName === 'trash'
       expect(shouldSkip).toBe(false)
     })
 
     test('无关路由切换守卫应正常执行', () => {
       const toName = 'page'
-      const shouldSkip = toName === 'journal-list' || toName === 'trash' || toName === 'settings'
+      const shouldSkip = toName === 'journal-list' || toName === 'trash'
       expect(shouldSkip).toBe(false)
     })
   })
@@ -70,31 +70,25 @@ describe('路由守卫逻辑 - page/journal 间导航不跳过', () => {
   describe('静态页面跳过逻辑', () => {
     test('journal-list 路由应被跳过', () => {
       const routeName = 'journal-list'
-      const shouldSkip = routeName === 'journal-list' || routeName === 'trash' || routeName === 'settings'
+      const shouldSkip = routeName === 'journal-list' || routeName === 'trash'
       expect(shouldSkip).toBe(true)
     })
 
     test('trash 路由应被跳过', () => {
       const routeName = 'trash'
-      const shouldSkip = routeName === 'journal-list' || routeName === 'trash' || routeName === 'settings'
-      expect(shouldSkip).toBe(true)
-    })
-
-    test('settings 路由应被跳过', () => {
-      const routeName = 'settings'
-      const shouldSkip = routeName === 'journal-list' || routeName === 'trash' || routeName === 'settings'
+      const shouldSkip = routeName === 'journal-list' || routeName === 'trash'
       expect(shouldSkip).toBe(true)
     })
 
     test('page 路由不应被跳过', () => {
       const routeName = 'page'
-      const shouldSkip = routeName === 'journal-list' || routeName === 'trash' || routeName === 'settings'
+      const shouldSkip = routeName === 'journal-list' || routeName === 'trash'
       expect(shouldSkip).toBe(false)
     })
 
     test('journal-page 路由不应被跳过', () => {
       const routeName = 'journal-page'
-      const shouldSkip = routeName === 'journal-list' || routeName === 'trash' || routeName === 'settings'
+      const shouldSkip = routeName === 'journal-list' || routeName === 'trash'
       expect(shouldSkip).toBe(false)
     })
   })

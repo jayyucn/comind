@@ -35,7 +35,7 @@ describe('路由守卫不再跳过 page/journal 间导航', () => {
     const from = { name: 'page' as const }
     const to = { name: 'journal-page' as const }
     
-    const shouldSkip = to.name === 'journal-list' || to.name === 'trash' || to.name === 'settings'
+    const shouldSkip = to.name === 'journal-list' || to.name === 'trash'
     
     expect(shouldSkip).toBe(false)
   })
@@ -44,7 +44,7 @@ describe('路由守卫不再跳过 page/journal 间导航', () => {
     const from = { name: 'journal-page' as const }
     const to = { name: 'page' as const }
     
-    const shouldSkip = to.name === 'journal-list' || to.name === 'trash' || to.name === 'settings'
+    const shouldSkip = to.name === 'journal-list' || to.name === 'trash'
     
     expect(shouldSkip).toBe(false)
   })
@@ -53,7 +53,7 @@ describe('路由守卫不再跳过 page/journal 间导航', () => {
     const from = { name: 'page' as const }
     const to = { name: 'page' as const }
     
-    const shouldSkip = to.name === 'journal-list' || to.name === 'trash' || to.name === 'settings'
+    const shouldSkip = to.name === 'journal-list' || to.name === 'trash'
     
     expect(shouldSkip).toBe(false)
   })
@@ -62,14 +62,14 @@ describe('路由守卫不再跳过 page/journal 间导航', () => {
     const from = { name: 'journal-page' as const }
     const to = { name: 'journal-page' as const }
     
-    const shouldSkip = to.name === 'journal-list' || to.name === 'trash' || to.name === 'settings'
+    const shouldSkip = to.name === 'journal-list' || to.name === 'trash'
     
     expect(shouldSkip).toBe(false)
   })
 
   test('从 journal-list 导航到 page 时守卫应被跳过', () => {
     const to = { name: 'journal-list' as const }
-    const shouldSkip = to.name === 'journal-list' || to.name === 'trash' || to.name === 'settings'
+    const shouldSkip = to.name === 'journal-list' || to.name === 'trash'
     expect(shouldSkip).toBe(true)
   })
 })
@@ -77,25 +77,19 @@ describe('路由守卫不再跳过 page/journal 间导航', () => {
 describe('静态页面路由跳过逻辑', () => {
   test('journal-list 路由应被跳过', () => {
     const to = { name: 'journal-list' as const }
-    const shouldSkip = to.name === 'journal-list' || to.name === 'trash' || to.name === 'settings'
+    const shouldSkip = to.name === 'journal-list' || to.name === 'trash'
     expect(shouldSkip).toBe(true)
   })
 
   test('trash 路由应被跳过', () => {
     const to = { name: 'trash' as const }
-    const shouldSkip = to.name === 'journal-list' || to.name === 'trash' || to.name === 'settings'
-    expect(shouldSkip).toBe(true)
-  })
-
-  test('settings 路由应被跳过', () => {
-    const to = { name: 'settings' as const }
-    const shouldSkip = to.name === 'journal-list' || to.name === 'trash' || to.name === 'settings'
+    const shouldSkip = to.name === 'journal-list' || to.name === 'trash'
     expect(shouldSkip).toBe(true)
   })
 
   test('page 路由不应被跳过', () => {
     const to = { name: 'page' as const }
-    const shouldSkip = to.name === 'journal-list' || to.name === 'trash' || to.name === 'settings'
+    const shouldSkip = to.name === 'journal-list' || to.name === 'trash'
     expect(shouldSkip).toBe(false)
   })
 })
