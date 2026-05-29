@@ -1,9 +1,15 @@
 <script setup lang="ts">
-// 静态组件，仅显示快捷键提示
+import { Settings } from 'lucide-vue-next'
+import { useSettingsModal } from '../../composables/useSettingsModal'
+
+const { open } = useSettingsModal()
 </script>
 
 <template>
   <div class="sidebar-footer">
+    <button class="settings-btn" title="设置" @click="open">
+      <Settings :size="15" :stroke-width="1.75" />
+    </button>
     <div class="shortcut-hint">
       <kbd>Ctrl</kbd>+<kbd>K</kbd>
       <span class="hint-text">命令与搜索</span>
@@ -16,6 +22,26 @@
   padding: var(--space-3);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
+}
+
+.settings-btn {
+  width: 100%;
+  height: 30px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  color: var(--text-tertiary);
+  transition: background 80ms ease, color 80ms ease;
+  margin-bottom: var(--space-2);
+}
+
+.settings-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
 }
 
 .shortcut-hint {
