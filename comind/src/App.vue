@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import Sidebar from './components/Sidebar/index.vue'
 import PageMenuButton from './components/PageMenuButton.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
+import SettingsModal from './components/Settings/SettingsModal.vue'
 import { useEditorStore } from './stores/editor'
 import { useBlockStore } from './stores/blocks'
 import { usePageStore } from './stores/pages'
@@ -152,6 +153,8 @@ function handleMainClick(e: MouseEvent) {
     <ConfirmDialog :visible="showTrashedPageWarning" title="页面已在回收站中"
       :message="`页面「${trashedPageToRestore || ''}」曾在回收站中。是否要恢复该页面？`" confirm-text="恢复页面" cancel-text="忽略"
       @confirm="confirmRestoreTrashedPage" @cancel="cancelRestoreTrashedPage" />
+
+    <SettingsModal />
   </div>
 </template>
 
