@@ -315,6 +315,232 @@ describe('IndexedDBAdapter', () => {
     })
   })
 
+  describe('softDeletePage', () => {
+    it('marks page as deleted without removing blocks', async () => {
+      const { db } = await import('./db')
+      ;(db.pages.get as any).mockResolvedValueOnce({
+        id: 'page-1',
+        title: 'Test Page',
+        type: 'normal',
+        blockId: null,
+        icon: null,
+        cover: null,
+        aliases: '[]',
+        filePath: null,
+        childrenCount: 0,
+        wordCount: 0,
+        createdAt: 0,
+        updatedAt: 0,
+        deleted: 0
+      })
+
+      await adapter.softDeletePage('page-1')
+
+      expect(db.pages.put).toHaveBeenCalled()
+      const updateCall = (db.pages.put as any).mock.calls[0][0]
+      expect(updateCall.deleted).toBe(1)
+      expect(updateCall.deletedAt).toBeDefined()
+    })
+
+    it('does nothing for non-existent page', async () => {
+      const { db } = await import('./db')
+      ;(db.pages.get as any).mockResolvedValueOnce(undefined)
+
+      await adapter.softDeletePage('non-existent')
+
+      expect(db.pages.put).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('restorePage', () => {
+    it('restores deleted page', async () => {
+      const { db } = await import('./db')
+      ;(db.pages.get as any).mockResolvedValueOnce({
+        id: 'page-1',
+        title: 'Test Page',
+        type: 'normal',
+        blockId: null,
+        icon: null,
+        cover: null,
+        aliases: '[]',
+        filePath: null,
+        childrenCount: 0,
+        wordCount: 0,
+        createdAt: 0,
+        updatedAt: 0,
+        deleted: 1,
+        deletedAt: Date.now()
+      })
+
+      await adapter.restorePage('page-1')
+
+      expect(db.pages.put).toHaveBeenCalled()
+      const updateCall = (db.pages.put as any).mock.calls[0][0]
+      expect(updateCall.deleted).toBe(0)
+      expect(updateCall.deletedAt).toBeNull()
+    })
+
+    it('does nothing for non-existent page', async () => {
+      const { db } = await import('./db')
+      ;(db.pages.get as any).mockResolvedValueOnce(undefined)
+
+      await adapter.restorePage('non-existent')
+
+      expect(db.pages.put).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('permanentDeletePage', () => {
+    it('deletes page from database', async () => {
+      const { db } = await import('./db')
+      ;(db.pages.get as any).mockResolvedValue({
+        id: 'page-1',
+        title: 'Test Page',
+        type: 'normal',
+        blockId: null,
+        icon: null,
+        cover: null,
+        aliases: '[]',
+        filePath: null,
+        childrenCount: 0,
+        wordCount: 0,
+        createdAt: 0,
+        updatedAt: 0
+      })
+      ;(db.blocks.toArray as any).mockResolvedValue([
+        { id: 'block-1', pageId: 'page-1', content: 'Test content' }
+      ])
+
+      await adapter.permanentDeletePage('page-1')
+
+      expect(db.pages.delete).toHaveBeenCalledWith('page-1')
+    })
+  })
+
+  describe('getTrashedPages', () => {
+    it('returns deleted pages sorted by deletedAt descending', async () => {
+      const { db } = await import('./db')
+      ;(db.pages.where as any).mockImplementation(() => ({
+        equals: (value: number) => ({
+          sortBy: (field: string) => Promise.resolve([
+            { id: 'page-1', title: 'Deleted 1', type: 'normal', deleted: 1, deletedAt: 1000 },
+            { id: 'page-2', title: 'Deleted 2', type: 'normal', deleted: 1, deletedAt: 2000 }
+          ])
+        })
+      }))
+
+      const result = await adapter.getTrashedPages()
+
+      expect(result).toHaveLength(2)
+      expect(result[0].id).toBe('page-2')
+      expect(result[1].id).toBe('page-1')
+    })
+
+    it('returns empty array when no deleted pages', async () => {
+      const { db } = await import('./db')
+      ;(db.pages.where as any).mockImplementation(() => ({
+        equals: (value: number) => ({
+          sortBy: (field: string) => Promise.resolve([])
+        })
+      }))
+
+      const result = await adapter.getTrashedPages()
+
+      expect(result).toEqual([])
+    })
+  })
+
+  describe('cleanupPageReferences', () => {
+    it('handles non-existent page gracefully', async () => {
+      const { db } = await import('./db')
+      ;(db.pages.get as any).mockResolvedValueOnce(undefined)
+
+      await adapter.cleanupPageReferences('non-existent')
+
+      expect(db.blocks.toArray).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('getTrashedPageByTitle', () => {
+    it('returns deleted page by title', async () => {
+      const { db } = await import('./db')
+      ;(db.pages.where as any).mockImplementation(() => ({
+        equals: (value: string) => ({
+          and: (fn: (r: any) => boolean) => ({
+            first: () => Promise.resolve({
+              id: 'page-1',
+              title: 'Deleted Page',
+              type: 'normal',
+              deleted: 1
+            })
+          })
+        })
+      }))
+
+      const result = await adapter.getTrashedPageByTitle('Deleted Page')
+
+      expect(result).toBeDefined()
+      expect(result?.title).toBe('Deleted Page')
+    })
+
+    it('returns undefined when page not found', async () => {
+      const { db } = await import('./db')
+      ;(db.pages.where as any).mockImplementation(() => ({
+        equals: (value: string) => ({
+          and: () => ({
+            first: () => Promise.resolve(undefined)
+          })
+        })
+      }))
+
+      const result = await adapter.getTrashedPageByTitle('Non-existent')
+
+      expect(result).toBeUndefined()
+    })
+  })
+
+  describe('getBacklinks', () => {
+    it('returns links pointing to target page', async () => {
+      const { db } = await import('./db')
+      ;(db.links.where as any).mockImplementation(() => ({
+        equals: () => ({
+          toArray: () => Promise.resolve([
+            { id: 'link-1', targetPageId: 'page-1' }
+          ])
+        })
+      }))
+
+      const result = await adapter.getBacklinks('page-1')
+
+      expect(result).toHaveLength(1)
+      expect(result[0].id).toBe('link-1')
+    })
+  })
+
+  describe('updatePage', () => {
+    it('updates page record', async () => {
+      const { db } = await import('./db')
+      const page: Page = {
+        id: 'page-1',
+        blockId: 'block-1',
+        title: 'Updated Title',
+        type: 'normal',
+        icon: null,
+        cover: null,
+        aliases: [],
+        filePath: null,
+        childrenCount: 0,
+        wordCount: 0,
+        createdAt: 0,
+        updatedAt: Date.now()
+      }
+
+      await adapter.updatePage(page)
+
+      expect(db.pages.put).toHaveBeenCalled()
+    })
+  })
+
   describe('syncPageStats', () => {
     it('updates page with correct count and word count', async () => {
       const { db } = await import('./db')

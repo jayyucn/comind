@@ -16,7 +16,11 @@ vi.mock('../storage/indexedDB', () => ({
     mergePage: vi.fn(),
     deletePage: vi.fn(),
     getPage: vi.fn(),
-    getById: vi.fn()
+    getById: vi.fn(),
+    softDeletePage: vi.fn().mockResolvedValue(undefined),
+    permanentDeletePage: vi.fn().mockResolvedValue(undefined),
+    restorePage: vi.fn().mockResolvedValue(undefined),
+    getTrashedPages: vi.fn().mockResolvedValue([])
   }
 }))
 
@@ -139,6 +143,15 @@ describe('usePageStore', () => {
       
       expect(result).toEqual({})
     })
+
+    test('journal 页面禁止重命名', async () => {
+      const store = usePageStore()
+      const page = await store.createPage('2026-05-29', 'journal')
+      const result = await store.renamePage(page.id, 'New Title')
+      
+      expect(result).toEqual({})
+      expect(store.getPage(page.id)?.title).toBe('2026-05-29')
+    })
   })
 
   describe('mergePage', () => {
@@ -237,6 +250,119 @@ describe('usePageStore', () => {
       await store.openPage(page.id)
       
       expect(store.currentPageId).toBe(page.id)
+    })
+  })
+
+  describe('loadTrashPages', () => {
+    test('加载回收站页面', async () => {
+      const store = usePageStore()
+      
+      await store.loadTrashPages()
+      
+      expect(store.trashPages).toBeDefined()
+      expect(Array.isArray(store.trashPages)).toBe(true)
+    })
+  })
+
+  describe('softDeletePage', () => {
+    test('软删除页面从列表移除', async () => {
+      const store = usePageStore()
+      const page = await store.createPage('To Soft Delete')
+      
+      expect(store.pages.length).toBe(1)
+      
+      await store.softDeletePage(page.id)
+      
+      expect(store.pages.length).toBe(0)
+    })
+
+    test('软删除当前页面时 currentPageId 为空', async () => {
+      const store = usePageStore()
+      const page = await store.createPage('Current Page to Soft Delete')
+      
+      store.currentPageId = page.id
+      await store.softDeletePage(page.id)
+      
+      expect(store.currentPageId).toBe('')
+    })
+
+    test('软删除非当前页面时 currentPageId 不变', async () => {
+      const store = usePageStore()
+      const page1 = await store.createPage('Page1')
+      const page2 = await store.createPage('Page2')
+      
+      store.currentPageId = page1.id
+      await store.softDeletePage(page2.id)
+      
+      expect(store.currentPageId).toBe(page1.id)
+    })
+
+    test('软删除不存在的页面无操作', async () => {
+      const store = usePageStore()
+      await store.createPage('Test')
+      
+      await store.softDeletePage('non-existent')
+      
+      expect(store.pages.length).toBe(1)
+    })
+  })
+
+  describe('restorePage', () => {
+    test('恢复页面调用 store 方法', async () => {
+      const store = usePageStore()
+      
+      await store.restorePage('page-1')
+      
+      const { storage } = await import('../storage/indexedDB')
+      expect(storage.restorePage).toHaveBeenCalledWith('page-1')
+    })
+
+    test('恢复页面从回收站移除', async () => {
+      const store = usePageStore()
+      const page = await store.createPage('To Restore')
+      
+      await store.loadTrashPages()
+      expect(store.trashPages.some(p => p.id === page.id)).toBe(false)
+      
+      await store.restorePage(page.id)
+      
+      expect(store.trashPages.some(p => p.id === page.id)).toBe(false)
+    })
+  })
+
+  describe('permanentDeletePage', () => {
+    test('永久删除页面从回收站移除', async () => {
+      const store = usePageStore()
+      const page = await store.createPage('To Permanent Delete')
+      
+      await store.loadTrashPages()
+      expect(store.trashPages.some(p => p.id === page.id)).toBe(false)
+      
+      await store.permanentDeletePage(page.id)
+      
+      expect(store.trashPages.some(p => p.id === page.id)).toBe(false)
+    })
+
+    test('永久删除不存在的页面无操作', async () => {
+      const store = usePageStore()
+      
+      await store.loadTrashPages()
+      await store.permanentDeletePage('non-existent')
+      
+      expect(store.trashPages.length).toBe(0)
+    })
+  })
+
+  describe('onRemovePageFromHistory', () => {
+    test('注册页面历史移除回调', () => {
+      const store = usePageStore()
+      let removedId: string | undefined
+      
+      store.onRemovePageFromHistory((pageId) => {
+        removedId = pageId
+      })
+      
+      expect(store.onRemovePageFromHistory).toBeDefined()
     })
   })
 })

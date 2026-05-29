@@ -52,6 +52,7 @@ export const usePageStore = defineStore('pages', () => {
     if (!newTitle.trim()) return {}
     const page = getPage(pageId)
     if (!page) return {}
+    if (page.type === 'journal') return {}
     const trimmedTitle = newTitle.trim()
     if (page.title === trimmedTitle) return {}
 

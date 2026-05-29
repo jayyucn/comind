@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, onBeforeUnmount, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 import BlockList from '../BlockList.vue'
 import Backlinks from '../Backlinks.vue'
 import MergeDialog from '../MergeDialog.vue'
@@ -10,13 +11,11 @@ import { usePageStore } from '../../stores/pages'
 import { useEditorStore } from '../../stores/editor'
 import type { Page } from '../../types/page'
 
-const props = withDefaults(defineProps<{
+const props = defineProps<{
   pageId: string
-  editableTitle?: boolean
-}>(), {
-  editableTitle: false
-})
+}>()
 
+const router = useRouter()
 const pageStore = usePageStore()
 const editorStore = useEditorStore()
 
@@ -34,6 +33,11 @@ const currentPageTitle = computed(() => {
   return page?.title ?? 'comind'
 })
 
+const isTitleEditable = computed(() => {
+  const page = pageStore.getPage(resolvedPageId.value)
+  return page?.type !== 'journal'
+})
+
 const isEditingTitle = ref(false)
 const editingTitle = ref('')
 const titleInputRef = ref<HTMLInputElement | null>(null)
@@ -46,7 +50,7 @@ onBeforeUnmount(() => {
 })
 
 async function startEditTitle() {
-  if (!props.editableTitle) return
+  if (!isTitleEditable.value) return
   editorStore.deactivateBlock()
   editingTitle.value = await currentPageTitle.value
   isEditingTitle.value = true
@@ -81,7 +85,7 @@ async function handleMerge() {
   showMergeDialog.value = false
   mergeTarget.value = null
   await pageStore.mergePage(sourceId, targetId)
-  await pageStore.openPage(targetId)
+  router.push(`/page/${targetId}`)
 }
 
 function handleCancelMerge() {
@@ -100,7 +104,7 @@ function handleCancelMerge() {
             <h1
               v-if="!isEditingTitle"
               class="page-title page-title--display"
-              :class="{ 'page-title--editable': editableTitle }"
+              :class="{ 'page-title--editable': isTitleEditable }"
               @click="startEditTitle"
             >{{ currentPageTitle }}</h1>
             <input

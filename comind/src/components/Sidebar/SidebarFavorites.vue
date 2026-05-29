@@ -24,6 +24,8 @@ function handleNavigate(pageId: string) {
 }
 
 function handleStartRename(pageId: string) {
+  const page = pageStore.getPage(pageId)
+  if (page?.type === 'journal') return
   renamingPageId.value = pageId
 }
 

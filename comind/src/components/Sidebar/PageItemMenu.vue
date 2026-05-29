@@ -103,7 +103,7 @@ onUnmounted(() => {
 
     <Transition name="menu">
       <div v-if="isMenuOpen" class="menu-dropdown" @click.stop>
-        <button class="menu-item" @click="startRename">
+        <button v-if="page.type !== 'journal'" class="menu-item" @click="startRename">
           <Pencil :size="16" />
           <span>重命名</span>
         </button>
