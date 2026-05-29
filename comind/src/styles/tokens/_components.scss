@@ -43,3 +43,22 @@
   --scrollbar-size: 6px;
   --scrollbar-radius: 3px;
 }
+
+[data-theme="dark"] {
+  --link: #818CF8;
+  --link-hover: #6366F1;
+  --tag-text: #818CF8;
+  --tag-bg: rgba(129, 140, 248, 0.10);
+
+  --success: #34D399;
+  --warning: #FBBF24;
+  --error: #F87171;
+  --info: #818CF8;
+
+  --priority-low-bg: rgba(148, 163, 184, 0.10);
+  --priority-medium-bg: rgba(251, 191, 36, 0.12);
+  --priority-high-bg: rgba(251, 146, 60, 0.14);
+  --priority-urgent-bg: rgba(248, 113, 113, 0.16);
+
+  --selection-bg: rgba(129, 140, 248, 0.15);
+}
