@@ -2,10 +2,12 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useSettingsModal } from '../../composables/useSettingsModal'
 import { useModalKeyboard } from '../../composables/useModalKeyboard'
-import { X } from 'lucide-vue-next'
+import { useTheme } from '../../composables/useTheme'
+import { X, Sun, Moon, Monitor } from 'lucide-vue-next'
 
 const { isOpen, close } = useSettingsModal()
 useModalKeyboard('settings-modal')
+const { theme, setTheme } = useTheme()
 
 type Section = 'appearance' | 'editor' | 'data' | 'about'
 
@@ -16,6 +18,12 @@ const sections: { key: Section; label: string }[] = [
   { key: 'editor', label: '编辑器' },
   { key: 'data', label: '数据管理' },
   { key: 'about', label: '关于' },
+]
+
+const themeOptions: { value: 'light' | 'dark' | 'system'; label: string; icon: any }[] = [
+  { value: 'light', label: '浅色', icon: Sun },
+  { value: 'dark', label: '暗色', icon: Moon },
+  { value: 'system', label: '跟随系统', icon: Monitor },
 ]
 
 function handleOverlayClick() {
@@ -68,9 +76,20 @@ onUnmounted(() => {
                 <div class="setting-item">
                   <div class="setting-info">
                     <span class="setting-label">主题</span>
-                    <span class="setting-desc">选择应用主题（即将推出）</span>
+                    <span class="setting-desc">选择应用主题</span>
                   </div>
-                  <span class="setting-value">浅色</span>
+                  <div class="theme-selector">
+                    <button
+                      v-for="option in themeOptions"
+                      :key="option.value"
+                      class="theme-option"
+                      :class="{ active: theme === option.value }"
+                      @click="setTheme(option.value)"
+                    >
+                      <component :is="option.icon" :size="14" :stroke-width="1.75" />
+                      {{ option.label }}
+                    </button>
+                  </div>
                 </div>
               </template>
 
@@ -130,9 +149,9 @@ onUnmounted(() => {
 }
 
 .settings-modal {
-  width: 720px;
-  max-height: 70vh;
-  min-height: 480px;
+  width: 960px;
+  max-height: 85vh;
+  min-height: 600px;
   background: var(--color-paper);
   border: 1px solid var(--color-border);
   border-radius: 12px;
@@ -288,6 +307,40 @@ onUnmounted(() => {
 
 .setting-btn:not(:disabled):hover {
   background: var(--bg-active);
+}
+
+.theme-selector {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-hover);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.theme-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-family: inherit;
+  transition: background 80ms ease, color 80ms ease;
+}
+
+.theme-option:hover {
+  color: var(--text-secondary);
+}
+
+.theme-option.active {
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-weight: 500;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
 .settings-modal-enter-active,
