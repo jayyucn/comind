@@ -8,7 +8,7 @@ const router = createRouter({
 
 router.beforeEach(async (to) => {
   // 跳过静态页面
-  if (to.name === 'journal-list' || to.name === 'trash' || to.name === 'settings') {
+  if (to.name === 'journal-list' || to.name === 'trash') {
     return
   }
 

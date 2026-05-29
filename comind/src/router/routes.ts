@@ -27,11 +27,6 @@ const routes: RouteRecordRaw[] = [
     name: 'trash',
     component: () => import('../components/Trash/TrashList.vue'),
   },
-  {
-    path: '/settings',
-    name: 'settings',
-    component: () => import('../components/Settings/Settings.vue'),
-  },
   // 404 兜底
   {
     path: '/:pathMatch(.*)*',
