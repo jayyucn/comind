@@ -1,8 +1,12 @@
 # comind UI/UX 规范
 
-> 版本：v0.7
-> 日期：2026-05-28
-> 状态：**评审通过**（风格重设计：Amber → Indigo）
+> 版本：v0.8
+> 日期：2026-05-29
+> 状态：**已更新**（新增暗色主题 v0.4 + 设置模态框）
+> 更新内容：
+> - 新增暗色主题支持（浅色/暗色/跟随系统）
+> - 新增设置模态框组件
+> - 侧边栏 v0.9 样式调整（Indigo 色彩系统 + Lucide 图标）
 
 ---
 
@@ -559,6 +563,124 @@ Block 本身不需要 Focus Ring（通过左侧 accent 边框和背景色区分 
   width: 4px
   &-thumb: background --border，border-radius 2px
 ```
+
+---
+
+## 暗色主题（v0.4 新增）
+
+### 概述
+
+comind v0.4 新增暗色主题支持，用户可在浅色/暗色/跟随系统三种模式间切换。
+
+### 主题模式
+
+| 模式 | 说明 |
+|------|------|
+| 浅色 | 固定使用浅色主题 |
+| 暗色 | 固定使用暗色主题 |
+| 跟随系统 | 自动跟随操作系统偏好 |
+
+### 技术实现
+
+**切换机制：** 在 `<html>` 元素上设置 `data-theme` 属性：
+- `data-theme="light"` → 浅色主题
+- `data-theme="dark"` → 暗色主题
+
+**主题状态管理：** `useTheme()` composable
+```typescript
+// src/composables/useTheme.ts
+type Theme = 'light' | 'dark' | 'system'
+
+function setTheme(t: Theme) {
+  theme.value = t
+  localStorage.setItem('comind-theme', t)
+  applyTheme(t)
+}
+```
+
+**FOUC 防护：** `index.html` 中的内联脚本确保首次渲染即应用正确主题：
+```html
+<script>
+  (function(){
+    var t = localStorage.getItem('comind-theme');
+    var d = t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme:dark)').matches);
+    document.documentElement.setAttribute('data-theme', d ? 'dark' : 'light');
+  })();
+</script>
+```
+
+### 暗色令牌（部分）
+
+| 令牌 | 浅色 | 暗色 |
+|------|------|------|
+| `--bg-base` | `#FAFAFE` | `#1A1A1E` |
+| `--bg-sidebar` | `#F3F4F8` | `#222225` |
+| `--text-primary` | `#1C1917` | `#E4E4E7` |
+| `--accent` | `#6366F1` | `#818CF8` |
+| `--border` | `#E7E5E4` | `#2E2E32` |
+
+### CodeMirror 暗色主题
+
+代码编辑器使用 `one-dark` 主题配合暗色模式：
+- 浅色模式：`githubTheme`
+- 暗色模式：`oneDark`
+- 通过 `useTheme()` 获取当前 resolved 主题
+
+---
+
+## 设置模态框（v0.4 新增）
+
+### 概述
+
+设置界面从独立路由页面 (`/settings`) 改为模态窗口，提升操作连贯性。
+
+### 组件结构
+
+| 组件 | 路径 | 说明 |
+|------|------|------|
+| SettingsModal.vue | `src/components/Settings/SettingsModal.vue` | 模态窗口主组件 |
+| useSettingsModal.ts | `src/composables/useSettingsModal.ts` | 状态管理 composable |
+
+### 入口触发点
+
+1. **SidebarFooter 设置按钮**：侧边栏底部快捷键提示区域下方
+2. **PageMenuButton 菜单**：右上角菜单中的"设置"项
+
+### 模态窗口规格
+
+| 属性 | 值 |
+|------|------|
+| 宽度 | 720px |
+| 高度 | `max(480px, 70vh)` |
+| 定位 | 居中 |
+| 左侧导航宽度 | 180px |
+| 动画 | 淡入淡出 180ms |
+
+### 设置分类
+
+| 分类 | 说明 |
+|------|------|
+| 外观 | 主题选择（浅色/暗色/跟随系统） |
+| 编辑器 | 编辑器相关设置（Phase 2） |
+| 数据管理 | 数据导入导出（Phase 2） |
+| 关于 | 版本信息（Phase 2） |
+
+### 状态管理
+
+```typescript
+// src/composables/useSettingsModal.ts
+const isOpen = ref(false)
+
+function open() {
+  isOpen.value = true
+}
+
+function close() {
+  isOpen.value = false
+}
+```
+
+使用模块级单例模式，确保 PageMenuButton 和 SidebarFooter 调用同一状态。
 
 ---
 

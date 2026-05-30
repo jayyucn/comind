@@ -1,9 +1,10 @@
 # comind 开发指南
 
-> 版本：v4.0（Dexie v4, Gap Pos 排序）
-> 日期：2026-05-21
+> 版本：v4.1（Dexie v4, Gap Pos 排序）
+> 日期：2026-05-29
 > 状态：活跃
 > 来源：合并自 dev-guide.md + page-block-crud.md + tech-selection.md
+> 更新：v0.4 新增 useTheme + useSettingsModal composable
 
 ---
 
@@ -71,7 +72,9 @@ src/
 ├── composables/            # 组合式函数
 │   ├── useBlock.ts         # Block 操作逻辑
 │   ├── useLink.ts          # 链接跳转逻辑
-│   └── useSortable.ts      # 拖拽排序逻辑
+│   ├── useSortable.ts      # 拖拽排序逻辑
+│   ├── useTheme.ts         # 主题状态管理（v0.4 新增）
+│   └── useSettingsModal.ts # 设置模态框控制（v0.4 新增）
 ├── storage/                # 存储层
 │   ├── interface.ts        # StorageAdapter 接口定义
 │   ├── db.ts               # Dexie 数据库定义

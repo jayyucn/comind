@@ -1,7 +1,7 @@
 # Block 编辑器架构规范
 
-> 版本：v0.3
-> 日期：2026-05-19
+> 版本：v0.4
+> 日期：2026-05-29
 > 状态：✅ 已实现
 >
 > **📌 说明：** 本文档是 comind 的核心架构约束文档。开发实现参考请见 `dev-guide.md`。
@@ -198,12 +198,76 @@ block.id === activeBlockId → 渲染 tiptap Editor（Edit 态）
 | 斜杠命令 | ✅ | Slash Command 面板 |
 | 属性编辑器 | ✅ | Property Editor + Quick Editor |
 | Gap 排序自动恢复 | ✅ | `safeCalcInsertPos` + `renumberBlocks` |
+| 嵌入块（Embed Block） | ✅ | `/embed` 命令 + BlockSelector 选择器 + 双向同步 |
+
+---
+
+## Embed Block（嵌入块）
+
+### 概述
+
+Embed Block 是 v0.4 新增的 Block 类型，支持引用其他页面的某个具体 Block，实现双向同步编辑。
+
+### 数据模型
+
+```typescript
+interface EmbedBlock {
+  type: 'embed'
+  content: ''           // 不使用，源 block.content 是唯一数据源
+  properties: {
+    sourceBlockId: string   // 源 block 的 ID
+    sourcePageId: string    // 源 block 所在页面 ID
+  }
+}
+```
+
+### 核心特性
+
+| 特性 | 说明 |
+|------|------|
+| 双向同步 | 编辑嵌入内容时，源 block 同步更新 |
+| 子树渲染 | 自动递归渲染源 block 及其所有子 block |
+| 只读子树 | 嵌入内的子 block 仅用于展示，不可编辑 |
+| 环路检测 | 最大嵌套深度 3 层，防止死循环 |
+
+### 组件结构
+
+| 组件 | 路径 | 说明 |
+|------|------|------|
+| EmbedRender.vue | `src/components/Block/handlers/embed/EmbedRender.vue` | 嵌入渲染组件 |
+| SubtreeRenderer.ts | `src/components/Block/handlers/embed/SubtreeRenderer.ts` | 子树递归渲染器 |
+| BlockSelector.vue | `src/components/BlockSelector.vue` | 嵌入源选择弹窗 |
+
+### 交互流程
+
+1. 输入 `/embed` → 弹出 BlockSelector
+2. 选择目标页面 → 显示该页面下的 block 列表
+3. 选中 block → 创建 embed block
+4. 卡片式显示：页眉（源页面名 + 跳转按钮）+ 内容区
+
+### 边界场景处理
+
+| 场景 | 处理方式 |
+|------|----------|
+| 源 block 不存在 | 显示 "Source block not found" 占位符 |
+| 源页面被删除 | 页眉显示 "Deleted page"，隐藏跳转按钮 |
+| 环路嵌套 | 最大深度 3 层，超过显示链接代替 |
+| 嵌入内点击 | 拦截 `@content-click`，不触发编辑 |
+
+---
+
+## 相关文档
+
+- **开发实现参考** → `dev-guide.md`
+- **数据模型定义** → `data-model.md`
+- **UI/UX 规范** → `ui-ux-spec.md`
+- **Property 规范** → `property-spec.md`
+- **存储格式规范** → `storage-spec.md`
+- **嵌入块设计** → `docs/superpowers/specs/2026-05-22-embed-block-design.md`
 
 ---
 
 ## 成功标准
-
-系统必须满足：
 
 - 1000+ Block 流畅滚动（Phase 1 按需渲染保障）
 - 编辑器切换 < 50ms

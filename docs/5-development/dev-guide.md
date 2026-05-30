@@ -1,10 +1,10 @@
 # 开发指南（Development Guide）
 
-> 版本：v0.3
-> 日期：2026-04-16
+> 版本：v0.4
+> 日期：2026-05-29
 > 适用阶段：Phase 1 MVP
 > 技术栈：Vue 3 + TypeScript + Pinia + Vite + tiptap + IndexedDB
-> 状态：已整合 block-editor-spec.md 约束，本文档为唯一开发参考
+> 状态：已整合暗色主题和设置模态框开发指南
 
 ***
 
@@ -91,7 +91,9 @@ src/
 ├── composables/            # 组合式函数
 │   ├── useBlock.ts         # Block 操作逻辑
 │   ├── useLink.ts          # 链接跳转逻辑
-│   └── useKeyboard.ts      # 键盘快捷键
+│   ├── useKeyboard.ts      # 键盘快捷键
+│   ├── useTheme.ts         # 主题状态管理（v0.4 新增）
+│   └── useSettingsModal.ts # 设置模态框控制（v0.4 新增）
 ├── storage/                # 存储层
 │   ├── interface.ts        # StorageAdapter 接口定义
 │   ├── db.ts               # Dexie 数据库定义
@@ -339,7 +341,98 @@ export function useKeyboard() {
 
 **说明：** `cursorPos` 通过 tiptap 编辑器实例获取，无需在 EditorState 中维护。
 
-### 5.4 内容解析
+### 5.4 主题管理（useTheme）
+
+**用途：** 管理应用主题状态，支持浅色/暗色/跟随系统三种模式。
+
+**实现位置：** `src/composables/useTheme.ts`
+
+```typescript
+type Theme = 'light' | 'dark' | 'system'
+
+const STORAGE_KEY = 'comind-theme'
+
+const theme = ref<Theme>(loadTheme())
+const resolvedTheme = ref<'light' | 'dark'>(resolve(theme.value))
+
+function loadTheme(): Theme {
+  const stored = localStorage.getItem(STORAGE_KEY)
+  if (stored === 'light' || stored === 'dark' || stored === 'system') return stored
+  return 'system'
+}
+
+function resolve(t: Theme): 'light' | 'dark' {
+  if (t !== 'system') return t
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
+
+function applyTheme(t: Theme) {
+  const resolved = resolve(t)
+  document.documentElement.setAttribute('data-theme', resolved)
+  resolvedTheme.value = resolved
+}
+
+function setTheme(t: Theme) {
+  theme.value = t
+  localStorage.setItem(STORAGE_KEY, t)
+  applyTheme(t)
+}
+
+export function useTheme() {
+  return { theme, resolvedTheme, setTheme }
+}
+```
+
+**使用方式：**
+```typescript
+const { theme, resolvedTheme, setTheme } = useTheme()
+
+// 切换主题
+setTheme('dark')
+
+// 监听当前解析后的主题
+watch(resolvedTheme, (newTheme) => {
+  // 主题已更新
+})
+```
+
+### 5.5 设置模态框（useSettingsModal）
+
+**用途：** 控制设置模态框的打开/关闭状态。
+
+**实现位置：** `src/composables/useSettingsModal.ts`
+
+```typescript
+const isOpen = ref(false)
+
+function open() {
+  isOpen.value = true
+}
+
+function close() {
+  isOpen.value = false
+}
+
+export function useSettingsModal() {
+  return { isOpen, open, close }
+}
+```
+
+**使用方式：**
+```typescript
+const { isOpen, open, close } = useSettingsModal()
+
+// 在组件中
+<SettingsModal v-model:visible="isOpen" />
+
+// 打开设置
+open()
+
+// 关闭设置
+close()
+```
+
+### 5.6 内容解析
 
 **utils/parser.ts：**
 

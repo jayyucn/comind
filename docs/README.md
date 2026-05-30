@@ -1,6 +1,6 @@
 # comind 文档索引
 
-> 更新日期：2026-05-21
+> 更新日期：2026-05-29
 > 本文档是 docs/ 目录的唯一入口点。Agent 只需加载 `active/` 目录即可获得完整项目上下文。
 
 ---
@@ -60,6 +60,9 @@ docs/
 | interaction.md | v1.0 | 2026-05-21 | 合并自 interaction-spec + ui-ux-spec |
 | development.md | v4.0 | 2026-05-21 | 合并自 dev-guide + page-block-crud + tech-selection |
 | product-vision.md | v1.4 | 2026-05-20 | 从 comind/docs/ 迁入 |
+| block-editor-spec.md | **v0.4** | **2026-05-29** | **新增 Embed Block 章节** |
+| ui-ux-spec.md | **v0.8** | **2026-05-29** | **新增暗色主题 + 设置模态框** |
+| dev-guide.md | **v0.4** | **2026-05-29** | **新增 useTheme + useSettingsModal** |
 
 ---
 
@@ -80,4 +83,20 @@ Agent 启动时只需加载 `docs/active/` 下的 6 个文件即可获得完整�
 
 ---
 
-*本文档于 2026-05-21 创建，作为文档体系重整的一部分。*
+## v0.4 更新摘要（2026-05-29）
+
+### 主要功能
+- **暗色主题**：支持浅色/暗色/跟随系统三种模式
+- **设置模态框**：从路由页面迁移到模态窗口
+- **嵌入块重构**：样式和交互优化
+- **侧边栏 v0.9**：Indigo 色彩系统 + Lucide 图标
+
+### 相关文档
+- `docs/3-features/block-editor-spec.md` - Embed Block 章节
+- `docs/4-ui/ui-ux-spec.md` - 暗色主题 + 设置模态框章节
+- `docs/5-development/dev-guide.md` - useTheme + useSettingsModal
+- `docs/6-reports/v0-4-feature-verification-report.md` - 验证报告
+
+---
+
+*本文档于 2026-05-21 创建，作为文档体系重整的一部分。最新更新于 2026-05-29（v0.4）。*
