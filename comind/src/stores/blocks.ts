@@ -5,6 +5,7 @@ import { storage } from '../storage/indexedDB'
 import { generateUUID } from '../utils/id'
 import { debounce } from '../utils/debounce'
 import { usePageStore } from './pages'
+import { parseBlockLinks } from '../utils/parser'
 import {
   pmPosToTextOffset,
   getSortedChildren,
@@ -712,6 +713,36 @@ export const useBlockStore = defineStore('blocks', () => {
     if (page) {
       page.updatedAt = Date.now()
       await storage.updatePage(page)
+    }
+
+    // 同步同一页面的链接关系类型
+    await syncPageLinksRelationship(block.pageId, blockId)
+  }
+
+  /**
+   * 同步同一页面的链接关系类型
+   * 同一页面多个指向相同页面的链接，它的关系类型必定一致
+   */
+  async function syncPageLinksRelationship(pageId: string, excludeBlockId?: string): Promise<void> {
+    const pageBlocks = blocks.value.filter(b => b.pageId === pageId && b.id !== excludeBlockId)
+    const linkMap = new Map<string, { relationshipType: string | null; blockId: string }>()
+
+    for (const block of pageBlocks) {
+      const links = parseBlockLinks(block.content)
+      for (const link of links) {
+        if (link.isExternal) continue
+        const normalized = link.targetTitle
+        const existing = linkMap.get(normalized)
+        if (!existing) {
+          linkMap.set(normalized, {
+            relationshipType: link.relationshipType,
+            blockId: block.id
+          })
+        } else if (link.relationshipType !== existing.relationshipType) {
+          // 同步到数据库
+          await storage.updateLinksWithRelationshipType(block.id, normalized, existing.relationshipType)
+        }
+      }
     }
   }
 

@@ -330,3 +330,28 @@
   border-radius: $radius-sm;
   z-index: 1;
 }
+
+// WikiLink 样式
+.wiki-link {
+  color: var(--color-accent);
+  cursor: pointer;
+  border-bottom: 1px solid var(--accent-40);
+  transition: color 0.15s, border-color 0.15s;
+
+  &:hover {
+    color: var(--accent-hover);
+    border-bottom-color: var(--accent-hover);
+  }
+}
+
+.wiki-link-relationship {
+  cursor: pointer;
+  border-bottom: 1px dashed currentColor;
+  opacity: 0.85;
+  transition: opacity 0.15s;
+
+  &:hover {
+    opacity: 1;
+    border-bottom-style: solid;
+  }
+}

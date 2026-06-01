@@ -2,7 +2,7 @@
 import { onBeforeUnmount, onMounted, watch, nextTick, shallowRef, ref } from 'vue'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
-import { WikiLinkExtension } from '../extensions/WikiLinkExtension'
+import { WikiLinkExtension, setRelationshipMenuCallback, clearRelationshipMenuCallback } from '../extensions/WikiLinkExtension'
 import { WikiLinkTriggerExtension, notifyWikiLinkMenuSelect, closeWikiLinkMenuByEditor, findWikiLinkAtCursor } from '../extensions/WikiLinkTriggerExtension'
 import EnterAsBlockExtension from '../extensions/EnterAsBlockExtension'
 import BracketPairExtension from '../extensions/BracketPairExtension'
@@ -10,6 +10,7 @@ import { SlashCommandExtension } from '../extensions/SlashCommandExtension'
 import { usePageStore } from '../stores/pages'
 import { debounce } from '../utils/debounce'
 import PageLinkMenu from './PageLinkMenu.vue'
+import RelationshipTypeMenu from './RelationshipTypeMenu.vue'
 
 const props = defineProps<{
   blockId: string
@@ -41,6 +42,88 @@ const menuPosition = ref({ x: 0, y: 0 })
 const menuRange = ref({ from: 0, to: 0 })
 const menuQuery = ref('')
 const menuRef = ref<InstanceType<typeof PageLinkMenu> | null>(null)
+const relMenuVisible = ref(false)
+const relMenuPosition = ref({ x: 0, y: 0 })
+const relMenuRange = ref({ from: 0, to: 0 })
+const relMenuCurrentType = ref<string | null>(null)
+
+function handleRelationshipMenuTrigger(pos: number, range: { from: number; to: number }, currentType: string | null) {
+  relMenuRange.value = range
+  relMenuCurrentType.value = currentType
+
+  if (editor.value?.view) {
+    const coords = editor.value.view.coordsAtPos(pos)
+    relMenuPosition.value = { x: coords.left, y: coords.bottom + 8 }
+  }
+
+  relMenuVisible.value = true
+}
+
+function handleRelationshipMenuSelect(relationshipType: string | null) {
+  if (!editor.value) return
+
+  const content = props.content
+  const plainLinkRegex = /\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g
+
+  let newContent: string
+  if (relationshipType !== null) {
+    newContent = content.replace(plainLinkRegex, (match, _page, display) => {
+      if (display) {
+        return `${match}^(${relationshipType})`
+      }
+      return `${match}^(${relationshipType})`
+    })
+  } else {
+    newContent = content.replace(/\[\[([^\]]+?)\]\]\^?\([^)]+\)/g, '[[$1]]')
+  }
+
+  if (newContent !== content) {
+    emit('save', newContent)
+    nextTick(() => {
+      if (editor.value) {
+        editor.value.commands.setContent(textToHtml(newContent))
+      }
+    })
+  }
+
+  relMenuVisible.value = false
+}
+
+function handleRelationshipMenuSelectBidirectional(relationshipType: string | null) {
+  if (!editor.value || !relationshipType) return
+
+  const content = props.content
+  const plainLinkRegex = /\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g
+
+  const newContent = content.replace(plainLinkRegex, (match) => {
+    return `${match}^(${relationshipType}!)`
+  })
+
+  if (newContent !== content) {
+    emit('save', newContent)
+    nextTick(() => {
+      if (editor.value) {
+        editor.value.commands.setContent(textToHtml(newContent))
+      }
+    })
+  }
+
+  relMenuVisible.value = false
+}
+
+function handleRelationshipMenuClose() {
+  relMenuVisible.value = false
+}
+
+function handleWikiLinkPageClick(event: Event) {
+  const customEvent = event as CustomEvent<{ page: string }>
+  const pageName = customEvent.detail.page
+  const pageStore = usePageStore()
+  const page = pageStore.getPageByTitle(pageName)
+  if (page) {
+    pageStore.openPage(page.id)
+  }
+}
 
 function handleWikiLinkTrigger(event: Event) {
   const customEvent = event as CustomEvent<{
@@ -217,7 +300,8 @@ watch(
 
 onBeforeUnmount(() => {
   savedFromOutside = false
-  
+  clearRelationshipMenuCallback()
+
   try {
     const view = editor.value?.view
     if (view) {
@@ -229,6 +313,7 @@ onBeforeUnmount(() => {
       view.dom.removeEventListener('wiki-link-menu-arrowdown', handleWikiLinkMenuArrowDown as EventListener)
       view.dom.removeEventListener('wiki-link-menu-arrowup', handleWikiLinkMenuArrowUp as EventListener)
       view.dom.removeEventListener('enter-as-block', handleEnterAsBlock as EventListener)
+      view.dom.removeEventListener('wiki-link-page-click', handleWikiLinkPageClick as EventListener)
     }
   } catch (err) {
     if (err instanceof Error && err.message.includes('editor view is not available')) {
@@ -254,7 +339,9 @@ onMounted(() => {
       editor.value.view.dom.addEventListener('wiki-link-menu-arrowdown', handleWikiLinkMenuArrowDown as EventListener)
       editor.value.view.dom.addEventListener('wiki-link-menu-arrowup', handleWikiLinkMenuArrowUp as EventListener)
       editor.value.view.dom.addEventListener('enter-as-block', handleEnterAsBlock as EventListener)
+      editor.value.view.dom.addEventListener('wiki-link-page-click', handleWikiLinkPageClick as EventListener)
     }
+    setRelationshipMenuCallback(handleRelationshipMenuTrigger)
   })
 })
 
@@ -305,6 +392,14 @@ defineExpose({ syncContent, focus, getText: () => editor.value?.getText() ?? '',
       :query="menuQuery"
       @select="handleWikiLinkSelect"
       @close="handleWikiLinkClose as any"
+    />
+    <RelationshipTypeMenu
+      :visible="relMenuVisible"
+      :position="relMenuPosition"
+      :current-relationship-type="relMenuCurrentType"
+      @select="handleRelationshipMenuSelect"
+      @select-bidirectional="handleRelationshipMenuSelectBidirectional"
+      @close="handleRelationshipMenuClose"
     />
   </div>
 </template>

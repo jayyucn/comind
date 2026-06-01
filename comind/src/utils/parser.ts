@@ -9,33 +9,109 @@ export interface LinkParse {
   displayText: string
   position: number
   isExternal: boolean
+  relationshipType: string | null
+  inverseRelationshipType: string | null
+}
+
+// 预定义关系类型
+export const PREDEFINED_RELATIONSHIPS = [
+  { key: 'parent', inverseKey: 'child', label: '父级', inverseLabel: '子级', color: '#4CAF50' },
+  { key: 'child', inverseKey: 'parent', label: '子级', inverseLabel: '父级', color: '#8BC34A' },
+  { key: 'related', inverseKey: 'related', label: '相关', inverseLabel: '相关', color: '#607D8B' },
+  { key: 'depends-on', inverseKey: 'required-by', label: '依赖', inverseLabel: '被依赖', color: '#FF9800' },
+  { key: 'required-by', inverseKey: 'depends-on', label: '被依赖', inverseLabel: '依赖', color: '#FFC107' },
+  { key: 'references', inverseKey: 'referenced-by', label: '引用', inverseLabel: '被引用', color: '#2196F3' },
+  { key: 'referenced-by', inverseKey: 'references', label: '被引用', inverseLabel: '引用', color: '#03A9F4' },
+  { key: 'example-of', inverseKey: 'has-example', label: '示例', inverseLabel: '拥有示例', color: '#9C27B0' },
+  { key: 'has-example', inverseKey: 'example-of', label: '拥有示例', inverseLabel: '示例', color: '#E91E63' },
+]
+
+// 获取关系类型配置（返回预定义配置或默认配置）
+export function getRelationshipConfig(key: string | null) {
+  if (!key) {
+    return { key: null, label: '关联', color: '#9E9E9E' }
+  }
+  const config = PREDEFINED_RELATIONSHIPS.find(r => r.key === key)
+  if (config) {
+    return { key: config.key, label: config.label, color: config.color }
+  }
+  // 自定义关系类型的默认配置
+  return { key, label: key, color: '#9E9E9E' }
 }
 
 /**
  * 解析 [[链接]]
- * 支持 [[页面名]] 和 [[页面名|别名]]
+ * 支持 [[页面名]]、[[页面名|别名]]、[[页面名]]^(关系类型)、[[页面名|别名]]^(关系类型)
  * 外部链接识别：http:// https:// ftp:// mailto://
  */
-function extractLinkMatches(content: string): Array<{ match: RegExpExecArray; isExternal: boolean }> {
-  const results: Array<{ match: RegExpExecArray; isExternal: boolean }> = []
+function extractLinkMatches(content: string): Array<{ match: RegExpExecArray; isExternal: boolean; position: number }> {
+  const results: Array<{ match: RegExpExecArray; isExternal: boolean; position: number }> = []
 
   // 外部链接 [[http://...]]
   const externalRegex = /\[\[(https?:\/\/|ftp:\/\/|mailto:)([^\]]*)\]\]/gi
-  let match
+  let match: RegExpExecArray | null
   while ((match = externalRegex.exec(content)) !== null) {
-    results.push({ match, isExternal: true })
+    results.push({ match, isExternal: true, position: match.index })
   }
 
-  // 内部链接 [[页面名]] 或 [[页面名|别名]]
-  const internalRegex = /\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/gi
-  while ((match = internalRegex.exec(content)) !== null) {
-    // 排除已匹配为外部链接的情况（通过检查是否以 http/https/ftp/mailto 开头）
+  // 内部链接带关系类型 [[页面名]]^(关系类型) 或 [[页面名|别名]]^(关系类型)
+  const internalWithRelRegex = /\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]\^\(([^)]+)\)/gi
+  while ((match = internalWithRelRegex.exec(content)) !== null) {
     const target = match[1]
     if (/^(https?:\/\/|ftp:\/\/|mailto:)/i.test(target)) continue
-    results.push({ match, isExternal: false })
+    results.push({ match, isExternal: false, position: match.index })
+  }
+
+  // 普通内部链接 [[页面名]] 或 [[页面名|别名]]
+  const internalRegex = /\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/gi
+  while ((match = internalRegex.exec(content)) !== null) {
+    // 检查是否已被关系类型链接匹配（因为两个正则可能重叠）
+    const alreadyMatched = results.some(r => r.position === match!.index)
+    if (alreadyMatched) continue
+    const target = match[1]
+    if (/^(https?:\/\/|ftp:\/\/|mailto:)/i.test(target)) continue
+    results.push({ match, isExternal: false, position: match.index })
   }
 
   return results
+}
+
+/**
+ * 解析关系类型部分
+ * 支持：
+ * - "depends-on" → { type: "depends-on", inverse: null }
+ * - "depends-on<->required-by" → { type: "depends-on", inverse: "required-by" }
+ * - "depends-on!" → { type: "depends-on", inverse: "auto" }
+ */
+function parseRelationshipPart(part: string): {
+  relationshipType: string | null
+  inverseRelationshipType: string | null
+} {
+  // 格式 1: "depends-on<->required-by"
+  const bidirectionalMatch = part.match(/^([^<]+)<->(.+)$/)
+  if (bidirectionalMatch) {
+    return {
+      relationshipType: bidirectionalMatch[1].trim(),
+      inverseRelationshipType: bidirectionalMatch[2].trim(),
+    }
+  }
+
+  // 格式 2: "depends-on!"（自动使用预定义反向）
+  const autoInverseMatch = part.match(/^(.+)!$/)
+  if (autoInverseMatch) {
+    const type = autoInverseMatch[1].trim()
+    const predefined = PREDEFINED_RELATIONSHIPS.find(r => r.key === type)
+    return {
+      relationshipType: type,
+      inverseRelationshipType: predefined?.inverseKey || null,
+    }
+  }
+
+  // 格式 3: "depends-on"（单向）
+  return {
+    relationshipType: part.trim(),
+    inverseRelationshipType: null,
+  }
 }
 
 /**
@@ -47,23 +123,40 @@ export function parseBlockLinks(content: string): LinkParse[] {
 
   // 按 position 排序后去重
   const sorted = linkMatches
-    .map(({ match, isExternal }) => {
+    .map(({ match, isExternal, position }) => {
       let target: string
       let display: string
+      let relationshipType: string | null = null
+      let inverseRelationshipType: string | null = null
+
       if (isExternal) {
         // 外部链接：协议 + 剩余部分
         target = (match[1] + (match[2] || '')).trim()
         display = target
       } else {
         // 内部链接
-        target = match[1].trim()
-        display = (match[2] || target).trim()
+        if (match[3]) {
+          // 带关系类型：[[页面名]]^(关系类型)
+          const relPart = match[3].trim()
+          const parsedRel = parseRelationshipPart(relPart)
+          relationshipType = parsedRel.relationshipType
+          inverseRelationshipType = parsedRel.inverseRelationshipType
+          target = match[1].trim()
+          display = (match[2] || target).trim()
+        } else {
+          // 普通链接：[[页面名]]
+          target = match[1].trim()
+          display = (match[2] || target).trim()
+        }
       }
+
       return {
         targetTitle: target,
         displayText: display,
-        position: match.index,
+        position,
         isExternal,
+        relationshipType,
+        inverseRelationshipType,
       } satisfies LinkParse
     })
     .filter((item, index, arr) => arr.findIndex(i => i.position === item.position) === index)

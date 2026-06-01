@@ -3,6 +3,7 @@ import { computed, ref, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import BlockList from '../BlockList.vue'
 import Backlinks from '../Backlinks.vue'
+import ConceptGraph from '../ConceptGraph.vue'
 import MergeDialog from '../MergeDialog.vue'
 import SlashCommandMenu from '../SlashCommandMenu.vue'
 import PropertyQuickEditor from '../Block/PropertyQuickEditor.vue'
@@ -122,7 +123,10 @@ function handleCancelMerge() {
         <BlockList :page-id="resolvedPageId" />
       </main>
 
-      <Backlinks />
+      <aside class="sidebar">
+        <Backlinks />
+        <ConceptGraph :page-id="resolvedPageId" />
+      </aside>
     </div>
 
     <MergeDialog

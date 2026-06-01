@@ -5,6 +5,7 @@ import type { LinkParse } from '../utils/parser'
 import type { BlockRecord, PageRecord, PropertyRecord } from './db'
 import type { Property } from '../types/property'
 import type { Page } from '../types/page'
+import type { LinkRecord } from '../types/link'
 
 vi.mock('./db', () => ({
   db: {
@@ -21,7 +22,8 @@ vi.mock('./db', () => ({
           delete: vi.fn()
         })
       }),
-      bulkDelete: vi.fn()
+      bulkDelete: vi.fn(),
+      toArray: vi.fn().mockResolvedValue([])
     },
     pages: {
       put: vi.fn(),
@@ -47,7 +49,8 @@ vi.mock('./db', () => ({
         anyOf: vi.fn().mockReturnValue({
           delete: vi.fn()
         })
-      })
+      }),
+      toArray: vi.fn().mockResolvedValue([])
     },
     properties: {
       put: vi.fn(),
@@ -800,6 +803,179 @@ describe('Conversion Functions', () => {
       expect(JSON.parse(record.value)).toEqual({ nested: 'value' })
       expect(record.isHidden).toBe(0)
       expect(record.isDeleted).toBe(0)
+    })
+  })
+
+  describe('getConceptGraph', () => {
+    it('returns empty graph when no links exist', async () => {
+      const { db } = await import('./db')
+      ;(db.links.toArray as any).mockResolvedValueOnce([])
+      ;(db.pages.get as any).mockResolvedValueOnce({
+        id: 'page-1',
+        title: 'Current Page',
+        type: 'normal',
+        blockId: null,
+        icon: null,
+        cover: null,
+        aliases: '[]',
+        filePath: null,
+        childrenCount: 0,
+        wordCount: 0,
+        createdAt: 0,
+        updatedAt: 0
+      })
+
+      const result = await adapter.getConceptGraph('page-1', 2)
+
+      expect(result.nodes).toHaveLength(1)
+      expect(result.nodes[0].id).toBe('page-1')
+      expect(result.edges).toHaveLength(0)
+    })
+
+    it('returns graph with 1st degree connections', async () => {
+      const { db } = await import('./db')
+      ;(db.links.toArray as any).mockResolvedValueOnce([
+        {
+          id: 'link-1',
+          sourceBlockId: 'block-1',
+          targetPageId: 'page-2',
+          displayText: 'Page 2',
+          createdAt: 0,
+          relationshipType: 'references',
+          inverseRelationshipType: null
+        },
+        {
+          id: 'link-2',
+          sourceBlockId: 'block-2',
+          targetPageId: 'page-3',
+          displayText: 'Page 3',
+          createdAt: 0,
+          relationshipType: 'depends-on',
+          inverseRelationshipType: 'required-by'
+        }
+      ])
+      ;(db.pages.get as any).mockImplementation((id: string) => {
+        if (id === 'page-1') {
+          return Promise.resolve({
+            id: 'page-1',
+            title: 'Current Page',
+            type: 'normal',
+            blockId: null,
+            icon: null,
+            cover: null,
+            aliases: '[]',
+            filePath: null,
+            childrenCount: 0,
+            wordCount: 0,
+            createdAt: 0,
+            updatedAt: 0
+          })
+        }
+        if (id === 'page-2') {
+          return Promise.resolve({
+            id: 'page-2',
+            title: 'Linked Page 2',
+            type: 'normal',
+            blockId: null,
+            icon: null,
+            cover: null,
+            aliases: '[]',
+            filePath: null,
+            childrenCount: 0,
+            wordCount: 0,
+            createdAt: 0,
+            updatedAt: 0
+          })
+        }
+        if (id === 'page-3') {
+          return Promise.resolve({
+            id: 'page-3',
+            title: 'Linked Page 3',
+            type: 'normal',
+            blockId: null,
+            icon: null,
+            cover: null,
+            aliases: '[]',
+            filePath: null,
+            childrenCount: 0,
+            wordCount: 0,
+            createdAt: 0,
+            updatedAt: 0
+          })
+        }
+        return Promise.resolve(undefined)
+      })
+      ;(db.blocks.get as any).mockResolvedValueOnce({
+        id: 'block-1',
+        pageId: 'page-1'
+      }).mockResolvedValueOnce({
+        id: 'block-2',
+        pageId: 'page-1'
+      })
+
+      const result = await adapter.getConceptGraph('page-1', 1)
+
+      expect(result.nodes).toHaveLength(3)
+      expect(result.edges).toHaveLength(2)
+    })
+
+    it('includes backlinks (incoming links) in the graph', async () => {
+      const { db } = await import('./db')
+      ;(db.links.toArray as any).mockResolvedValueOnce([
+        {
+          id: 'link-1',
+          sourceBlockId: 'block-other',
+          targetPageId: 'page-1',
+          displayText: 'Current Page',
+          createdAt: 0,
+          relationshipType: 'child',
+          inverseRelationshipType: 'parent'
+        }
+      ])
+      ;(db.pages.get as any).mockImplementation((id: string) => {
+        if (id === 'page-1') {
+          return Promise.resolve({
+            id: 'page-1',
+            title: 'Current Page',
+            type: 'normal',
+            blockId: null,
+            icon: null,
+            cover: null,
+            aliases: '[]',
+            filePath: null,
+            childrenCount: 0,
+            wordCount: 0,
+            createdAt: 0,
+            updatedAt: 0
+          })
+        }
+        if (id === 'page-other') {
+          return Promise.resolve({
+            id: 'page-other',
+            title: 'Other Page',
+            type: 'normal',
+            blockId: null,
+            icon: null,
+            cover: null,
+            aliases: '[]',
+            filePath: null,
+            childrenCount: 0,
+            wordCount: 0,
+            createdAt: 0,
+            updatedAt: 0
+          })
+        }
+        return Promise.resolve(undefined)
+      })
+      ;(db.blocks.get as any).mockResolvedValueOnce({
+        id: 'block-other',
+        pageId: 'page-other'
+      })
+
+      const result = await adapter.getConceptGraph('page-1', 1)
+
+      expect(result.nodes).toHaveLength(2)
+      expect(result.edges).toHaveLength(1)
     })
   })
 })

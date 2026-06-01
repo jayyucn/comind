@@ -1,9 +1,9 @@
 import { db } from './db'
 import type { Block, BlockRecord } from '../types/block'
-import type { LinkRecord } from '../types/link'
+import type { LinkRecord, GraphNode, GraphEdge, ConceptGraphData } from '../types/link'
 import type { Page, PageRecord } from '../types/page'
 import type { Property, PropertyRecord } from '../types/property'
-import { parseBlockLinks, type LinkParse } from '../utils/parser'
+import { parseBlockLinks, type LinkParse, getRelationshipConfig, PREDEFINED_RELATIONSHIPS } from '../utils/parser'
 import { generateUUID } from '../utils/id'
 import { normalizeJournalTitle } from '../utils/journal-detect'
 
@@ -136,18 +136,48 @@ export class IndexedDBAdapter {
     const skippedTrashedPages: string[] = []
 
     await db.transaction('rw', db.links, db.blocks, db.pages, async () => {
-      // 保存 Block 记录
       await db.blocks.put(blockToRecord(block))
-
-      // 解析并保存链接
       const result = await this.saveLinks(block.id, block.pageId, parseBlockLinks(block.content))
       skippedTrashedPages.push(...result.skippedTrashedPages)
+      await this.inferInverseRelationships(block.id, block.pageId)
     })
 
     return skippedTrashedPages.length > 0 ? { skippedTrashedPages } : {}
   }
 
-  private async saveLinks(sourceBlockId: string, _pageId: string, linkParses: LinkParse[]): Promise<{ skippedTrashedPages: string[] }> {
+  private async inferInverseRelationships(sourceBlockId: string, sourcePageId: string): Promise<void> {
+    const sourceLinks = await db.links.where('sourceBlockId').equals(sourceBlockId).toArray()
+    const sourcePageRecord = await db.pages.get(sourcePageId)
+    if (!sourcePageRecord) return
+
+    for (const sourceLink of sourceLinks) {
+      if (sourceLink.relationshipType) continue
+      const targetPageId = sourceLink.targetPageId
+      if (targetPageId === sourcePageId) continue
+
+      const allLinks = await db.links.toArray()
+      for (const link of allLinks) {
+        if (link.targetPageId === sourcePageId && link.relationshipType) {
+          const inverseType = this.getInverseRelationshipType(link.relationshipType)
+          if (inverseType) {
+            link.inverseRelationshipType = inverseType
+            await db.links.put(link)
+            sourceLink.relationshipType = link.relationshipType
+            sourceLink.inverseRelationshipType = inverseType
+            await db.links.put(sourceLink)
+            break
+          }
+        }
+      }
+    }
+  }
+
+  private getInverseRelationshipType(relationshipType: string): string | null {
+    const predefined = PREDEFINED_RELATIONSHIPS.find(r => r.key === relationshipType)
+    return predefined?.inverseKey ?? null
+  }
+
+  private async saveLinks(sourceBlockId: string, sourcePageId: string, linkParses: LinkParse[]): Promise<{ skippedTrashedPages: string[] }> {
     const skippedTrashedPages: string[] = []
 
     await db.links.where('sourceBlockId').equals(sourceBlockId).delete()
@@ -164,18 +194,223 @@ export class IndexedDBAdapter {
         }
 
         if (existingPage) {
-          await db.links.add({
+          const newLink = {
             id: generateUUID(),
             sourceBlockId,
             targetPageId: existingPage.id,
             displayText: link.displayText,
-            createdAt: Date.now()
-          })
+            createdAt: Date.now(),
+            relationshipType: link.relationshipType ?? null,
+            inverseRelationshipType: link.inverseRelationshipType ?? null,
+          }
+          await db.links.add(newLink)
+
+          // 如果有反向关系，创建反向链接
+          if (link.inverseRelationshipType) {
+            await this.createInverseLink(
+              sourceBlockId,
+              sourcePageId,
+              existingPage.id,
+              link.targetTitle,
+              link.inverseRelationshipType
+            )
+          }
         }
       }
     }
 
     return { skippedTrashedPages }
+  }
+
+  /**
+   * 创建反向链接
+   */
+  private async createInverseLink(
+    _sourceBlockId: string,
+    sourcePageId: string,
+    targetPageId: string,
+    _targetPageTitle: string,
+    inverseRelationshipType: string
+  ): Promise<void> {
+    const sourcePage = await db.pages.get(sourcePageId)
+    if (!sourcePage) return
+
+    const targetBlocks = await db.blocks.where('pageId').equals(targetPageId).toArray()
+
+    let found = false
+
+    for (const block of targetBlocks) {
+      const links = await this.parseBlockLinksFromContent(block.content)
+      const hasLinkToSource = links.some(l => l.targetTitle === sourcePage.title)
+
+      if (hasLinkToSource) {
+        await this.updateLinksWithRelationshipType(block.id, sourcePage.title, inverseRelationshipType)
+        const updatedBlock = await db.blocks.get(block.id)
+        if (updatedBlock && updatedBlock.content !== block.content) {
+          const newLinkParses = await this.parseBlockLinksFromContent(updatedBlock.content)
+          await this.saveLinksWithoutInverse(block.id, targetPageId, newLinkParses)
+        }
+
+        found = true
+        break
+      }
+    }
+
+    if (found) return
+
+    // 未找到现有链接，插入到最后一个一级 Block
+    const topLevelBlocks = targetBlocks.filter(b =>
+      b.parentId === null
+    ).sort((a, b) => a.pos - b.pos)
+
+    if (topLevelBlocks.length > 0) {
+      // 追加到最后一个一级 Block
+      const lastBlock = topLevelBlocks[topLevelBlocks.length - 1]
+      const inverseLinkText = `[[${sourcePage.title}]]^(${inverseRelationshipType})`
+      const separator = lastBlock.content.trim() ? ' ' : ''
+
+      await db.blocks.update(lastBlock.id, {
+        content: lastBlock.content + separator + inverseLinkText,
+        updatedAt: Date.now()
+      })
+    } else {
+      // 目标页面没有内容，创建根 Block
+      const rootBlock = await this.createRootBlockWithLink(
+        targetPageId,
+        sourcePage.title,
+        inverseRelationshipType
+      )
+
+      // 更新页面的 blockId
+      await db.pages.update(targetPageId, { blockId: rootBlock.id })
+    }
+  }
+
+  /**
+   * 从内容解析链接但不触发反向链接创建
+   */
+  private async parseBlockLinksFromContent(content: string): Promise<LinkParse[]> {
+    // 复用 parseBlockLinks，但这里需要动态导入
+    // 由于依赖循环问题，直接调用工具函数
+    const { parseBlockLinks: parseFn } = await import('../utils/parser')
+    return parseFn(content)
+  }
+
+  /**
+   * 保存链接但不触发反向链接创建
+   */
+  private async saveLinksWithoutInverse(sourceBlockId: string, _sourcePageId: string, linkParses: LinkParse[]): Promise<void> {
+    await db.links.where('sourceBlockId').equals(sourceBlockId).delete()
+
+    for (const link of linkParses) {
+      if (!link.isExternal) {
+        const normalized = normalizeJournalTitle(link.targetTitle)
+        const lookupTitle = normalized ?? link.targetTitle
+        const existingPage = await db.pages.where('title').equals(lookupTitle).first()
+
+        if (existingPage && existingPage.deleted !== 1) {
+          await db.links.add({
+            id: generateUUID(),
+            sourceBlockId,
+            targetPageId: existingPage.id,
+            displayText: link.displayText,
+            createdAt: Date.now(),
+            relationshipType: link.relationshipType ?? null,
+            inverseRelationshipType: null // 不触发反向链接创建
+          })
+        }
+      }
+    }
+  }
+
+  /**
+   * 更新 Block 内容中指向特定页面的链接，追加关系类型
+   */
+  async updateLinksWithRelationshipType(
+    blockId: string,
+    targetPageTitle: string,
+    relationshipType: string | null
+  ): Promise<void> {
+    const block = await db.blocks.get(blockId)
+    if (!block) return
+
+    let updatedContent: string
+    if (relationshipType === null) {
+      // 移除关系类型
+      updatedContent = this.removeLinksRelationshipType(block.content, targetPageTitle)
+    } else {
+      // 添加或更新关系类型
+      updatedContent = this.addLinksRelationshipType(block.content, targetPageTitle, relationshipType)
+    }
+
+    if (updatedContent !== block.content) {
+      await db.blocks.update(block.id, {
+        content: updatedContent,
+        updatedAt: Date.now()
+      })
+    }
+  }
+
+  private addLinksRelationshipType(
+    content: string,
+    targetPageTitle: string,
+    relationshipType: string
+  ): string {
+    const escapedTitle = targetPageTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const linkRegex = new RegExp(
+      `\\[\\[${escapedTitle}(?:\\|[^\\]]+?)?\\]\\](?:\\^\\([^)]+?\\))?`,
+      'g'
+    )
+
+    return content.replace(linkRegex, (match) => {
+      const baseMatch = match.match(/^\[\[[^\]]+?\]\]/)
+      if (!baseMatch) return match
+      return `${baseMatch[0]}^(${relationshipType})`
+    })
+  }
+
+  private removeLinksRelationshipType(
+    content: string,
+    targetPageTitle: string
+  ): string {
+    const escapedTitle = targetPageTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const linkRegex = new RegExp(
+      `\\[\\[${escapedTitle}(?:\\|[^\\]]+?)?\\]\\]\\^\\([^)]+?\\)`,
+      'g'
+    )
+
+    return content.replace(linkRegex, (match) => {
+      const baseMatch = match.match(/^\[\[[^\]]+?\]\]/)
+      if (!baseMatch) return match
+      return baseMatch[0]
+    })
+  }
+
+  /**
+   * 创建包含链接的根 Block
+   */
+  private async createRootBlockWithLink(
+    pageId: string,
+    targetTitle: string,
+    relationshipType: string
+  ): Promise<BlockRecord> {
+    const now = Date.now()
+    const rootBlock: Block = {
+      id: generateUUID(),
+      pageId,
+      parentId: null,
+      pos: 1000,
+      content: `[[${targetTitle}]]^(${relationshipType})`,
+      format: {},
+      type: 'bullet',
+      properties: {},
+      createdAt: now,
+      updatedAt: now
+    }
+
+    const record = blockToRecord(rootBlock)
+    await db.blocks.put(record)
+    return record
   }
 
   async getBlockTree(pageId: string): Promise<Block[]> {
@@ -556,6 +791,109 @@ export class IndexedDBAdapter {
       page.wordCount = words
       page.updatedAt = Date.now()
       await db.pages.put(pageToRecord(page))
+    }
+  }
+
+  /**
+   * 获取概念图谱数据（支持多深度）
+   */
+  async getConceptGraph(startPageId: string, maxDepth: number = 2): Promise<ConceptGraphData> {
+    const nodesMap = new Map<string, GraphNode>()
+    const edgesMap = new Map<string, GraphEdge>()
+    const processedPages = new Set<string>()
+
+    // 队列：{ pageId, depth }
+    const queue: Array<{ pageId: string; depth: number }> = [{ pageId: startPageId, depth: 0 }]
+
+    while (queue.length > 0) {
+      const { pageId, depth } = queue.shift()!
+      if (processedPages.has(pageId) || depth > maxDepth) continue
+      processedPages.add(pageId)
+
+      // 添加当前页面节点
+      const page = await db.pages.get(pageId)
+      if (!page) continue
+      const isStart = pageId === startPageId
+      nodesMap.set(pageId, {
+        id: pageId,
+        title: page.title,
+        isCurrentPage: isStart
+      })
+
+      if (depth < maxDepth) {
+        // 获取所有链接（正向、反向）
+        const allLinks = await db.links.toArray()
+
+        for (const link of allLinks) {
+          // 先获取源块所在页面
+          const sourceBlock = await db.blocks.get(link.sourceBlockId)
+          if (!sourceBlock) continue
+          const sourcePageId = sourceBlock.pageId
+
+          // 情况 1：当前页面是源（出链）
+          if (sourcePageId === pageId) {
+            const targetPageId = link.targetPageId
+
+            // 添加边
+            const edgeId = `${sourcePageId}-${targetPageId}-${link.id}`
+            const config = getRelationshipConfig(link.relationshipType)
+            edgesMap.set(edgeId, {
+              id: edgeId,
+              source: sourcePageId,
+              target: targetPageId,
+              relationshipType: link.relationshipType,
+              relationshipLabel: config.label,
+              relationshipColor: config.color
+            })
+
+            // 添加目标节点到队列（如果还没处理过）
+            if (!processedPages.has(targetPageId)) {
+              const targetPage = await db.pages.get(targetPageId)
+              if (targetPage) {
+                nodesMap.set(targetPageId, {
+                  id: targetPageId,
+                  title: targetPage.title
+                })
+                queue.push({ pageId: targetPageId, depth: depth + 1 })
+              }
+            }
+          }
+
+          // 情况 2：当前页面是目标（入链）
+          if (link.targetPageId === pageId) {
+            const sourcePageId = sourceBlock.pageId
+
+            // 添加边
+            const edgeId = `${sourcePageId}-${pageId}-${link.id}`
+            const config = getRelationshipConfig(link.relationshipType)
+            edgesMap.set(edgeId, {
+              id: edgeId,
+              source: sourcePageId,
+              target: pageId,
+              relationshipType: link.relationshipType,
+              relationshipLabel: config.label,
+              relationshipColor: config.color
+            })
+
+            // 添加源节点到队列（如果还没处理过）
+            if (!processedPages.has(sourcePageId)) {
+              const sourcePage = await db.pages.get(sourcePageId)
+              if (sourcePage) {
+                nodesMap.set(sourcePageId, {
+                  id: sourcePageId,
+                  title: sourcePage.title
+                })
+                queue.push({ pageId: sourcePageId, depth: depth + 1 })
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return {
+      nodes: Array.from(nodesMap.values()),
+      edges: Array.from(edgesMap.values())
     }
   }
 

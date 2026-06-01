@@ -14,12 +14,25 @@ export class ComindDB extends Dexie {
 
   constructor() {
     super('comind')
-    this.version(6).stores({
+    this.version(7).stores({
       blocks: 'id, pageId, parentId, pos, createdAt, updatedAt',
-      links: 'id, sourceBlockId, targetPageId, displayText, createdAt',
+      links: 'id, sourceBlockId, targetPageId, displayText, createdAt, relationshipType, inverseRelationshipType',
       pages: 'id, blockId, title, type, deleted, createdAt, updatedAt',
       properties: 'id, blockId, [blockId+key]',
       assets: 'id'
+    }).upgrade(async (tx) => {
+      // 为现有链接添加默认值
+      const linksTable = tx.table('links') as Table<LinkRecord, string>
+      const links = await linksTable.toArray()
+      for (const link of links) {
+        const typedLink = link as Partial<LinkRecord>
+        if (!('relationshipType' in typedLink)) {
+          await linksTable.update(typedLink.id as string, {
+            relationshipType: null,
+            inverseRelationshipType: null
+          })
+        }
+      }
     })
   }
 }
