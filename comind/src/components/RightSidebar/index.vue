@@ -4,7 +4,7 @@ import { useRightSidebar } from '../../composables/useRightSidebar'
 import { getRegisteredPanels } from './panels'
 import { X } from 'lucide-vue-next'
 
-const { visible, activePanelId, settings, setActivePanel, setVisible, setWidth } = useRightSidebar()
+const { visible, activePanelId, settings, setActivePanel, setVisible, setWidth, persistSettings } = useRightSidebar()
 
 const isResizing = ref(false)
 
@@ -36,11 +36,13 @@ function handleResizeStart(e: MouseEvent) {
 
   function onMouseMove(ev: MouseEvent) {
     const delta = startX - ev.clientX
-    setWidth(startWidth + delta)
+    setWidth(startWidth + delta, false)
   }
 
   function onMouseUp() {
     isResizing.value = false
+    // 拖拽结束时持久化宽度
+    persistSettings()
     document.removeEventListener('mousemove', onMouseMove)
     document.removeEventListener('mouseup', onMouseUp)
     document.body.style.cursor = ''

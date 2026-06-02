@@ -48,6 +48,14 @@ export function getInverseRelationshipType(type: string): string | null {
 }
 
 /**
+ * 获取关系类型对应的中文标签
+ */
+export function getRelationshipLabel(type: string): string {
+  const predefined = getPredefinedRelationship(type)
+  return predefined?.label ?? type
+}
+
+/**
  * 获取关系类型对应的颜色
  */
 export function getRelationshipColor(type: string): string {

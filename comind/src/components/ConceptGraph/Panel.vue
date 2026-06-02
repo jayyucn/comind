@@ -6,16 +6,17 @@ import { usePageStore } from '../../stores/pages'
 import { storage } from '../../storage/indexedDB'
 import { db } from '../../storage/db'
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
-import { getRelationshipColor, getInverseRelationshipType } from '../../types/relationship'
+import { getRelationshipColor, getRelationshipLabel, getInverseRelationshipType } from '../../types/relationship'
+import { useRightSidebar } from '../../composables/useRightSidebar'
 
 const pageStore = usePageStore()
 const { navigateToPage } = useNavigateToPage()
+const rightSidebar = useRightSidebar()
 
 const containerRef = ref<HTMLElement | null>(null)
 const graphRef = ref<Graph | null>(null)
 const maxDepth = ref(2)
 const currentLayout = ref<string>('force')
-const showEdgeLabels = ref(true)
 
 const currentPageId = computed(() => pageStore.currentPageId)
 
@@ -47,13 +48,14 @@ async function buildGraphData(pageId: string, depth: number) {
       const targetPage = pageStore.getPage(link.targetPageId)
       if (!targetPage) continue
       const color = getRelationshipColor(link.relationshipType ?? 'related')
+      const label = getRelationshipLabel(link.relationshipType ?? 'related')
       edges.push({
         id: link.id,
         source: pid,
         target: link.targetPageId,
         data: {
           relationshipType: link.relationshipType ?? 'related',
-          label: link.relationshipType ?? '',
+          label,
           color
         }
       })
@@ -66,44 +68,54 @@ async function buildGraphData(pageId: string, depth: number) {
       const sourcePageId = block.pageId
       const sourcePage = pageStore.getPage(sourcePageId)
       if (!sourcePage) continue
-      // 跳过已存在的正向边（outLinks 已创建）
-      if (edges.find(e => e.id === link.id)) continue
-      const edgeId = `inv-${link.id}`
-      if (edges.find(e => e.id === edgeId)) continue
-      const inverseType = getInverseRelationshipType(link.relationshipType ?? 'related') ?? 'related'
-      const color = getRelationshipColor(inverseType)
-      edges.push({
-        id: edgeId,
-        source: sourcePageId,
-        target: pid,
-        data: {
-          relationshipType: inverseType,
-          label: inverseType,
-          color
-        }
-      })
+      // 只遍历发现节点，不创建反向边（避免与 outLinks 的正向边冗余）
       await traverse(sourcePageId, level + 1)
     }
   }
 
   await traverse(pageId, 0)
 
+  // 去重反向关系对：A→B(depends-on) 和 B→A(required-by) 只保留一条
+  // 保留 source level 更低（离当前页更近）的那条
+  const nodeLevelMap = new Map(nodes.map(n => [n.id, (n.data as any)?.level ?? Infinity]))
+  const edgesToRemove = new Set<string>()
+  for (let i = 0; i < edges.length; i++) {
+    if (edgesToRemove.has(edges[i].id)) continue
+    for (let j = i + 1; j < edges.length; j++) {
+      if (edgesToRemove.has(edges[j].id)) continue
+      const a = edges[i], b = edges[j]
+      if (a.source === b.target && a.target === b.source) {
+        const aType = a.data.relationshipType as string
+        const bType = b.data.relationshipType as string
+        const aInverse = getInverseRelationshipType(aType)
+        if (aInverse === bType) {
+          // 保留 source level 更低的边
+          const aLevel = nodeLevelMap.get(a.source) ?? Infinity
+          const bLevel = nodeLevelMap.get(b.source) ?? Infinity
+          edgesToRemove.add(aLevel <= bLevel ? b.id : a.id)
+        }
+      }
+    }
+  }
+  const dedupedEdges = edges.filter(e => !edgesToRemove.has(e.id))
+
   // 计算同一对节点间多条边的曲线偏移，避免重叠
   const edgeCountMap = new Map<string, number>()
-  for (const edge of edges) {
+  for (const edge of dedupedEdges) {
     const key = [edge.source, edge.target].sort().join('-')
     const idx = edgeCountMap.get(key) ?? 0
     edgeCountMap.set(key, idx + 1)
-    const total = edgeCountMap.get(key)!
-    if (total > 1) {
-      // 多条边时交替偏移
-      edge.data.curveOffset = (idx % 2 === 0 ? 1 : -1) * Math.ceil(idx / 2) * 20
-    } else {
+    if (idx === 0) {
       edge.data.curveOffset = 0
+    } else {
+      // 对称偏移：1→20, 2→-20, 3→40, 4→-40, ...
+      const sign = idx % 2 === 1 ? 1 : -1
+      const magnitude = Math.ceil(idx / 2) * 20
+      edge.data.curveOffset = sign * magnitude
     }
   }
 
-  return { nodes, edges }
+  return { nodes, edges: dedupedEdges }
 }
 
 function getNodeSize(isCurrent: boolean): [number, number] {
@@ -160,7 +172,7 @@ async function initGraph() {
         strokeWidth: 1.5,
         endArrow: true,
         curveOffset: (d: any) => d.data?.curveOffset ?? 0,
-        labelText: (d: any) => showEdgeLabels.value ? (d.data?.label ?? '') : '',
+        labelText: (d: any) => d.data?.label ?? '',
         labelFontSize: 9,
         labelFill: '#999999',
         labelBackground: true,
@@ -244,11 +256,18 @@ async function handleRefresh() {
 }
 
 watch(currentPageId, async () => {
+  if (!rightSidebar.visible.value) return
   await refreshGraphData()
 })
 
 watch(maxDepth, async () => {
+  if (!rightSidebar.visible.value) return
   await refreshGraphData()
+})
+
+// 侧边栏打开时刷新数据（隐藏期间可能切换了页面）
+watch(() => rightSidebar.visible.value, async (visible) => {
+  if (visible) await refreshGraphData()
 })
 
 let resizeObserver: ResizeObserver | null = null

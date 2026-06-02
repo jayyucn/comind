@@ -52,13 +52,17 @@ export function useRightSidebar() {
     activePanelId.value = id
   }
 
-  function setWidth(w: number) {
+  function setWidth(w: number, persist = true) {
     settings.value = { ...settings.value, width: Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, w)) }
-    saveSettings(settings.value)
+    if (persist) saveSettings(settings.value)
   }
 
   function updateSettings(newSettings: Partial<RightSidebarSettings>) {
     settings.value = { ...settings.value, ...newSettings }
+    saveSettings(settings.value)
+  }
+
+  function persistSettings() {
     saveSettings(settings.value)
   }
 
@@ -70,6 +74,7 @@ export function useRightSidebar() {
     toggleVisible,
     setActivePanel,
     setWidth,
+    persistSettings,
     updateSettings
   }
 }
