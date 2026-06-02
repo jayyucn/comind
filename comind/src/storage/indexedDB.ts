@@ -439,6 +439,15 @@ export class IndexedDBAdapter {
     return db.links.where('targetPageId').equals(pageId).toArray()
   }
 
+  async getLinksBySourcePage(pageId: string): Promise<LinkRecord[]> {
+    const blockIds = (await db.blocks.where('pageId').equals(pageId).toArray()).map(b => b.id)
+    return db.links.where('sourceBlockId').anyOf(blockIds).toArray()
+  }
+
+  async getLinksByTargetPage(pageId: string): Promise<LinkRecord[]> {
+    return db.links.where('targetPageId').equals(pageId).toArray()
+  }
+
   /** 检查回收站中是否有指定标题的页面 */
   async getTrashedPageByTitle(title: string): Promise<Page | undefined> {
     const record = await db.pages
@@ -701,20 +710,6 @@ export class IndexedDBAdapter {
       page.updatedAt = Date.now()
       await db.pages.put(pageToRecord(page))
     }
-  }
-
-  // === 概念图谱相关方法 ===
-
-  async getOutgoingLinks(pageId: string): Promise<LinkRecord[]> {
-    // 获取页面所有 Block 的出链
-    const blocks = await db.blocks.where('pageId').equals(pageId).toArray()
-    const blockIds = blocks.map(b => b.id)
-    return db.links.where('sourceBlockId').anyOf(blockIds).toArray()
-  }
-
-  async getPageById(pageId: string): Promise<Page | undefined> {
-    const record = await db.pages.get(pageId)
-    return record ? recordToPage(record) : undefined
   }
 
   // === Property 相关方法 ===

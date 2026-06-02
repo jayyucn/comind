@@ -184,10 +184,7 @@ onUnmounted(() => {
 
 <style scoped>
 .page-menu-button {
-  position: fixed;
-  top: 24px;
-  right: 24px;
-  z-index: 1000;
+  position: relative;
 }
 
 .menu-trigger {

@@ -31,6 +31,10 @@ export const PREDEFINED_RELATIONSHIPS: PredefinedRelationship[] = [
 /**
  * 根据类型获取预定义关系
  */
+export const RELATIONSHIP_COLORS: Record<string, string> = Object.fromEntries(
+  PREDEFINED_RELATIONSHIPS.map(r => [r.type, r.color])
+)
+
 export function getPredefinedRelationship(type: string): PredefinedRelationship | undefined {
   return PREDEFINED_RELATIONSHIPS.find(r => r.type === type)
 }

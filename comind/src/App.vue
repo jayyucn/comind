@@ -10,13 +10,26 @@ import { useBlockStore } from './stores/blocks'
 import { usePageStore } from './stores/pages'
 import { storage } from './storage/indexedDB'
 import { useSidebar } from './composables/useSidebar'
-import { ArrowLeft, ArrowRight, PanelLeftClose, PanelLeftOpen } from 'lucide-vue-next'
+import { useRightSidebar } from './composables/useRightSidebar'
+import { ArrowLeft, ArrowRight, PanelLeftClose, PanelLeftOpen, PanelRightOpen, PanelRightClose } from 'lucide-vue-next'
+import RightSidebar from './components/RightSidebar/index.vue'
+import { registerPanel } from './components/RightSidebar/panels'
+import ConceptGraphPanel from './components/ConceptGraph/Panel.vue'
+
+registerPanel({
+  id: 'concept-graph',
+  label: '概念图谱',
+  icon: '🧠',
+  component: ConceptGraphPanel
+})
+
+const { isCollapsed, toggle } = useSidebar()
+const rightSidebar = useRightSidebar()
 
 const editorStore = useEditorStore()
 const route = useRoute()
 const blockStore = useBlockStore()
 const pageStore = usePageStore()
-const { isCollapsed, toggle } = useSidebar()
 
 type HistoryItem = {
   path: string
@@ -141,6 +154,19 @@ function handleMainClick(e: MouseEvent) {
           </button>
         </template>
       </div>
+
+      <div class="top-right-controls">
+        <PageMenuButton />
+        <button
+          class="right-sidebar-toggle"
+          :title="rightSidebar.visible.value ? '关闭右侧面板' : '打开概念图谱'"
+          @click="rightSidebar.toggleVisible()"
+        >
+          <PanelRightClose v-if="rightSidebar.visible.value" :size="16" :stroke-width="1.75" />
+          <PanelRightOpen v-else :size="16" :stroke-width="1.75" />
+        </button>
+      </div>
+
       <div class="page-body">
         <main class="main-content">
           <RouterView />
@@ -148,7 +174,7 @@ function handleMainClick(e: MouseEvent) {
       </div>
     </div>
 
-    <PageMenuButton />
+    <RightSidebar />
 
     <ConfirmDialog :visible="showTrashedPageWarning" title="页面已在回收站中"
       :message="`页面「${trashedPageToRestore || ''}」曾在回收站中。是否要恢复该页面？`" confirm-text="恢复页面" cancel-text="忽略"
@@ -267,5 +293,44 @@ function handleMainClick(e: MouseEvent) {
 
 .main-content {
   padding: 48px 0;
+}
+
+.top-right-controls {
+  position: sticky;
+  top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  z-index: 10;
+  justify-content: flex-end;
+  padding-right: 12px;
+  margin-top: -48px;
+  pointer-events: none;
+}
+
+.top-right-controls > * {
+  pointer-events: auto;
+}
+
+.right-sidebar-toggle {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  color: var(--text-tertiary);
+  transition: all 100ms ease;
+}
+
+.right-sidebar-toggle:hover {
+  color: var(--text-secondary);
+}
+
+.right-sidebar-toggle:active {
+  transform: scale(0.95);
 }
 </style>
