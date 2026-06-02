@@ -6,7 +6,7 @@ import { usePageStore } from '../../stores/pages'
 import { storage } from '../../storage/indexedDB'
 import { db } from '../../storage/db'
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
-import { getRelationshipColor } from '../../types/relationship'
+import { getRelationshipColor, getInverseRelationshipType } from '../../types/relationship'
 
 const pageStore = usePageStore()
 const { navigateToPage } = useNavigateToPage()
@@ -70,14 +70,15 @@ async function buildGraphData(pageId: string, depth: number) {
       if (edges.find(e => e.id === link.id)) continue
       const edgeId = `inv-${link.id}`
       if (edges.find(e => e.id === edgeId)) continue
-      const color = getRelationshipColor(link.relationshipType ?? 'related')
+      const inverseType = getInverseRelationshipType(link.relationshipType ?? 'related') ?? 'related'
+      const color = getRelationshipColor(inverseType)
       edges.push({
         id: edgeId,
         source: sourcePageId,
         target: pid,
         data: {
-          relationshipType: link.relationshipType ?? 'related',
-          label: link.relationshipType ?? '',
+          relationshipType: inverseType,
+          label: inverseType,
           color
         }
       })
