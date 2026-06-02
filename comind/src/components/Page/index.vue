@@ -3,6 +3,7 @@ import { computed, ref, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import BlockList from '../BlockList.vue'
 import Backlinks from '../Backlinks.vue'
+import ConceptGraph from '../ConceptGraph.vue'
 import MergeDialog from '../MergeDialog.vue'
 import SlashCommandMenu from '../SlashCommandMenu.vue'
 import PropertyQuickEditor from '../Block/PropertyQuickEditor.vue'
@@ -123,6 +124,7 @@ function handleCancelMerge() {
       </main>
 
       <Backlinks />
+      <ConceptGraph />
     </div>
 
     <MergeDialog

@@ -703,6 +703,20 @@ export class IndexedDBAdapter {
     }
   }
 
+  // === 概念图谱相关方法 ===
+
+  async getOutgoingLinks(pageId: string): Promise<LinkRecord[]> {
+    // 获取页面所有 Block 的出链
+    const blocks = await db.blocks.where('pageId').equals(pageId).toArray()
+    const blockIds = blocks.map(b => b.id)
+    return db.links.where('sourceBlockId').anyOf(blockIds).toArray()
+  }
+
+  async getPageById(pageId: string): Promise<Page | undefined> {
+    const record = await db.pages.get(pageId)
+    return record ? recordToPage(record) : undefined
+  }
+
   // === Property 相关方法 ===
 
   async saveProperty(property: Property): Promise<void> {
