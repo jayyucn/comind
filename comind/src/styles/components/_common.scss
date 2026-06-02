@@ -24,10 +24,8 @@
   overflow-y: auto;
   overflow-x: hidden;
   min-width: 0;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
+  scrollbar-width: none;
   position: relative;
-  @include custom-scrollbar;
 }
 
 // 导航按钮

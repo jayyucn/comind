@@ -66,6 +66,8 @@ async function buildGraphData(pageId: string, depth: number) {
       const sourcePageId = block.pageId
       const sourcePage = pageStore.getPage(sourcePageId)
       if (!sourcePage) continue
+      // 跳过已存在的正向边（outLinks 已创建）
+      if (edges.find(e => e.id === link.id)) continue
       const edgeId = `inv-${link.id}`
       if (edges.find(e => e.id === edgeId)) continue
       const color = getRelationshipColor(link.relationshipType ?? 'related')
@@ -84,6 +86,22 @@ async function buildGraphData(pageId: string, depth: number) {
   }
 
   await traverse(pageId, 0)
+
+  // 计算同一对节点间多条边的曲线偏移，避免重叠
+  const edgeCountMap = new Map<string, number>()
+  for (const edge of edges) {
+    const key = [edge.source, edge.target].sort().join('-')
+    const idx = edgeCountMap.get(key) ?? 0
+    edgeCountMap.set(key, idx + 1)
+    const total = edgeCountMap.get(key)!
+    if (total > 1) {
+      // 多条边时交替偏移
+      edge.data.curveOffset = (idx % 2 === 0 ? 1 : -1) * Math.ceil(idx / 2) * 20
+    } else {
+      edge.data.curveOffset = 0
+    }
+  }
+
   return { nodes, edges }
 }
 
@@ -135,16 +153,18 @@ async function initGraph() {
       }
     },
     edge: {
-      type: 'line',
+      type: 'quadratic',
       style: {
         stroke: (d: any) => d.data?.color ?? '#8c8c8c',
         strokeWidth: 1.5,
         endArrow: true,
+        curveOffset: (d: any) => d.data?.curveOffset ?? 0,
         labelText: (d: any) => showEdgeLabels.value ? (d.data?.label ?? '') : '',
         labelFontSize: 9,
         labelFill: '#999999',
         labelBackground: true,
-        labelBackgroundFill: '#fafafa',
+        labelBackgroundFill: '#ffffff',
+        labelBackgroundOpacity: 1,
         labelBackgroundRadius: 2,
         labelBackgroundPadding: [2, 4] as [number, number],
       }

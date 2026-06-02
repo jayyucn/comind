@@ -199,8 +199,7 @@ function handleMainClick(e: MouseEvent) {
   overflow-y: auto;
   overflow-x: hidden;
   min-width: 0;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
+  scrollbar-width: none;
   position: relative;
 }
 
@@ -272,16 +271,7 @@ function handleMainClick(e: MouseEvent) {
 }
 
 .page-scroll-wrapper::-webkit-scrollbar {
-  width: 6px;
-}
-
-.page-scroll-wrapper::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: 3px;
-}
-
-.page-scroll-wrapper::-webkit-scrollbar-thumb:hover {
-  background: var(--text-tertiary);
+  display: none;
 }
 
 .page-body {
