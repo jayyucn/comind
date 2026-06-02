@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, computed } from 'vue'
 import { usePageStore } from '../stores/pages'
 import { storage } from '../storage/indexedDB'
 import { db } from '../storage/db'
@@ -19,6 +19,10 @@ interface GraphEdge {
   label?: string
   relationshipType: string | null
   color: string
+  sourceX: number
+  sourceY: number
+  targetX: number
+  targetY: number
 }
 
 const pageStore = usePageStore()
@@ -27,6 +31,37 @@ const graphLayout = ref<'force' | 'dagre' | 'circular'>('force')
 const nodes = ref<GraphNode[]>([])
 const edges = ref<GraphEdge[]>([])
 const isLoading = ref(false)
+
+/** 预计算坐标的边 */
+const edgesWithCoords = computed(() => {
+  const nodeMap = new Map(nodes.value.map(n => [n.id, n]))
+  return edges.value.map(edge => {
+    const sourceNode = nodeMap.get(edge.source)
+    const targetNode = nodeMap.get(edge.target)
+    return {
+      ...edge,
+      sourceX: sourceNode?.x ?? 0,
+      sourceY: sourceNode?.y ?? 0,
+      targetX: targetNode?.x ?? 0,
+      targetY: targetNode?.y ?? 0,
+    }
+  })
+})
+
+/** 获取唯一关系类型列表 */
+const uniqueRelationships = computed(() => {
+  const unique: Array<{ label: string | null; color: string }> = []
+  const seen = new Set<string | null>()
+  
+  for (const edge of edges.value) {
+    if (!seen.has(edge.relationshipType)) {
+      seen.add(edge.relationshipType)
+      unique.push({ label: edge.relationshipType, color: edge.color })
+    }
+  }
+  
+  return unique
+})
 
 /** 递归构建图数据 */
 async function buildGraphData() {
@@ -50,7 +85,7 @@ async function buildGraphData() {
 
     // 根据深度收集节点
     const pageIds = new Set([currentPageId])
-    const newEdges: GraphEdge[] = []
+    const newEdges: Omit<GraphEdge, 'sourceX' | 'sourceY' | 'targetX' | 'targetY'>[] = []
     const visited = new Set<string>()
 
     function traverse(pageId: string, depth: number) {
@@ -131,7 +166,7 @@ async function buildGraphData() {
     }
 
     nodes.value = newNodes
-    edges.value = newEdges
+    edges.value = newEdges as GraphEdge[]
   } finally {
     isLoading.value = false
   }
@@ -144,26 +179,6 @@ onMounted(() => {
 watch([() => pageStore.currentPageId, graphDepth, graphLayout], () => {
   buildGraphData()
 })
-
-/** 通过 ID 获取节点 */
-function getNode(nodeId: string): GraphNode | undefined {
-  return nodes.value.find(n => n.id === nodeId)
-}
-
-/** 获取唯一关系类型列表 */
-function getUniqueRelationships() {
-  const unique: Array<{ label: string | null; color: string }> = []
-  const seen = new Set<string | null>()
-  
-  for (const edge of edges.value) {
-    if (!seen.has(edge.relationshipType)) {
-      seen.add(edge.relationshipType)
-      unique.push({ label: edge.relationshipType, color: edge.color })
-    }
-  }
-  
-  return unique
-}
 </script>
 
 <template>
@@ -185,7 +200,7 @@ function getUniqueRelationships() {
         </select>
       </div>
     </div>
-    <div ref="graphContainer" class="concept-graph-body">
+    <div class="concept-graph-body">
       <div v-if="isLoading" class="loading">加载中...</div>
       <div v-else-if="nodes.length === 0" class="placeholder">
         <p>暂无页面关联数据</p>
@@ -194,12 +209,12 @@ function getUniqueRelationships() {
         <!-- 先画边 -->
         <g class="edges">
           <line
-            v-for="(edge, i) in edges"
+            v-for="(edge, i) in edgesWithCoords"
             :key="`edge-${i}`"
-            :x1="getNode(edge.source)?.x ?? 0"
-            :y1="getNode(edge.source)?.y ?? 0"
-            :x2="getNode(edge.target)?.x ?? 0"
-            :y2="getNode(edge.target)?.y ?? 0"
+            :x1="edge.sourceX"
+            :y1="edge.sourceY"
+            :x2="edge.targetX"
+            :y2="edge.targetY"
             :stroke="edge.color"
             stroke-width="2"
             stroke-linecap="round"
@@ -236,7 +251,7 @@ function getUniqueRelationships() {
       <div class="legend" v-if="edges.length > 0">
         <div class="legend-title">关系类型：</div>
         <div class="legend-items">
-          <div class="legend-item" v-for="(item, i) in getUniqueRelationships()" :key="i">
+          <div class="legend-item" v-for="(item, i) in uniqueRelationships" :key="i">
             <span class="legend-color" :style="{ background: item.color }"></span>
             <span class="legend-label">{{ item.label || '默认' }}</span>
           </div>
