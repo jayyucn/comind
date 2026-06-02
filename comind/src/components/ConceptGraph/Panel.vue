@@ -119,7 +119,6 @@ async function initGraph() {
     container,
     width,
     height,
-    autoFit: 'view',
     node: {
       type: 'rect',
       style: {
@@ -129,6 +128,7 @@ async function initGraph() {
         stroke: (d: NodeData) => getNodeStroke(!!d.data?.isCurrent),
         lineWidth: 1,
         labelText: (d: NodeData) => (d.data?.label as string) ?? '',
+        labelPlacement: 'center',
         labelFill: (d: NodeData) => getNodeLabelFill(!!d.data?.isCurrent),
         labelFontSize: 11,
         labelFontWeight: (d: NodeData) => d.data?.isCurrent ? 600 : 400,
@@ -173,9 +173,9 @@ async function initGraph() {
 
   if (currentPageId.value) {
     await refreshGraphData(graph)
+  } else {
+    await graph.render()
   }
-
-  await graph.render()
 }
 
 async function refreshGraphData(graph?: Graph) {
@@ -187,6 +187,9 @@ async function refreshGraphData(graph?: Graph) {
   g.setData({ nodes, edges })
   await g.render()
   await g.fitView()
+  // fitView 后缩小一点留出边距
+  const zoom = g.getZoom()
+  await g.zoomTo(zoom * 0.85)
 }
 
 function handleDepthChange(delta: number) {
@@ -202,12 +205,16 @@ async function handleLayoutChange(layout: string) {
     graphRef.value.setLayout({ type: layout, preventOverlap: true, nodeSize: 100 })
     await graphRef.value.layout()
     await graphRef.value.fitView()
+    const zoom = graphRef.value.getZoom()
+    await graphRef.value.zoomTo(zoom * 0.85)
   }
 }
 
 async function handleFitView() {
   if (graphRef.value) {
     await graphRef.value.fitView()
+    const zoom = graphRef.value.getZoom()
+    await graphRef.value.zoomTo(zoom * 0.85)
   }
 }
 

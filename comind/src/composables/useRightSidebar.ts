@@ -3,20 +3,31 @@ import { ref, computed } from 'vue'
 export interface RightSidebarSettings {
   defaultPanel: string
   panelOrder: string[]
+  width: number
 }
 
 const STORAGE_KEY = 'comind-right-sidebar'
+
+const MIN_WIDTH = 280
+const MAX_WIDTH = 600
+const DEFAULT_WIDTH = 360
 
 function loadSettings(): RightSidebarSettings {
   const stored = localStorage.getItem(STORAGE_KEY)
   if (stored) {
     try {
-      return JSON.parse(stored)
+      const parsed = JSON.parse(stored)
+      return {
+        defaultPanel: parsed.defaultPanel ?? 'concept-graph',
+        panelOrder: parsed.panelOrder ?? ['concept-graph'],
+        width: Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, parsed.width ?? DEFAULT_WIDTH)),
+      }
     } catch { /* fallback */ }
   }
   return {
     defaultPanel: 'concept-graph',
-    panelOrder: ['concept-graph']
+    panelOrder: ['concept-graph'],
+    width: DEFAULT_WIDTH
   }
 }
 
@@ -41,6 +52,11 @@ export function useRightSidebar() {
     activePanelId.value = id
   }
 
+  function setWidth(w: number) {
+    settings.value = { ...settings.value, width: Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, w)) }
+    saveSettings(settings.value)
+  }
+
   function updateSettings(newSettings: Partial<RightSidebarSettings>) {
     settings.value = { ...settings.value, ...newSettings }
     saveSettings(settings.value)
@@ -53,6 +69,7 @@ export function useRightSidebar() {
     setVisible,
     toggleVisible,
     setActivePanel,
+    setWidth,
     updateSettings
   }
 }

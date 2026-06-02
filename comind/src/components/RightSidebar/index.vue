@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRightSidebar } from '../../composables/useRightSidebar'
 import { getRegisteredPanels } from './panels'
 import { X } from 'lucide-vue-next'
 
-const { visible, activePanelId, settings, setActivePanel, setVisible } = useRightSidebar()
+const { visible, activePanelId, settings, setActivePanel, setVisible, setWidth } = useRightSidebar()
+
+const isResizing = ref(false)
+
+const sidebarWidth = computed(() => settings.value.width + 'px')
 
 const orderedPanels = computed(() => {
   const all = getRegisteredPanels()
@@ -23,11 +27,38 @@ const orderedPanels = computed(() => {
 const activePanel = computed(() => {
   return orderedPanels.value.find(p => p.id === activePanelId.value)
 })
+
+function handleResizeStart(e: MouseEvent) {
+  e.preventDefault()
+  isResizing.value = true
+  const startX = e.clientX
+  const startWidth = settings.value.width
+
+  function onMouseMove(ev: MouseEvent) {
+    const delta = startX - ev.clientX
+    setWidth(startWidth + delta)
+  }
+
+  function onMouseUp() {
+    isResizing.value = false
+    document.removeEventListener('mousemove', onMouseMove)
+    document.removeEventListener('mouseup', onMouseUp)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }
+
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+  document.addEventListener('mousemove', onMouseMove)
+  document.addEventListener('mouseup', onMouseUp)
+}
 </script>
 
 <template>
   <Transition name="right-sidebar">
-    <div v-if="visible" class="right-sidebar">
+    <div v-if="visible" class="right-sidebar" :style="{ width: sidebarWidth }">
+      <div class="resize-handle" @mousedown="handleResizeStart"></div>
+
       <div class="right-sidebar-header">
         <div class="right-sidebar-tabs">
           <button
@@ -55,7 +86,6 @@ const activePanel = computed(() => {
 
 <style scoped>
 .right-sidebar {
-  width: 360px;
   height: 100%;
   background: var(--bg-sidebar);
   border-left: 1px solid var(--border);
@@ -63,6 +93,23 @@ const activePanel = computed(() => {
   flex-direction: column;
   flex-shrink: 0;
   overflow: hidden;
+  position: relative;
+}
+
+.resize-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+}
+
+.resize-handle:hover,
+.resize-handle:active {
+  background: var(--color-primary, #1890ff);
+  opacity: 0.4;
 }
 
 .right-sidebar-header {
@@ -150,7 +197,7 @@ const activePanel = computed(() => {
 
 .right-sidebar-enter-from,
 .right-sidebar-leave-to {
-  width: 0;
+  width: 0 !important;
   opacity: 0;
 }
 </style>
