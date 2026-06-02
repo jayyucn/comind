@@ -6,7 +6,117 @@
  * - 不再在 parser 层提取 tags
  */
 import { describe, it, expect } from 'vitest'
-import { parseContent, parsePropertyValue } from './parser'
+import { parseContent, parsePropertyValue, parseBlockLinks } from './parser'
+
+// ────────────────────────────────────────────────────────
+// parseBlockLinks 关系类型解析
+// ────────────────────────────────────────────────────────
+
+describe('parseBlockLinks', () => {
+  describe('基本链接解析', () => {
+    it('应正确解析普通链接 [[页面]]', () => {
+      const result = parseBlockLinks('这是 [[项目A]] 的链接')
+      expect(result).toHaveLength(1)
+      expect(result[0].targetTitle).toBe('项目A')
+      expect(result[0].displayText).toBe('项目A')
+      expect(result[0].relationshipType).toBeNull()
+      expect(result[0].inverseRelationshipType).toBeNull()
+    })
+
+    it('应正确解析带别名的链接 [[页面|别名]]', () => {
+      const result = parseBlockLinks('这是 [[项目A|别名]] 的链接')
+      expect(result).toHaveLength(1)
+      expect(result[0].targetTitle).toBe('项目A')
+      expect(result[0].displayText).toBe('别名')
+      expect(result[0].relationshipType).toBeNull()
+    })
+  })
+
+  describe('关系类型解析', () => {
+    it('应正确解析单向关系类型 [[页面]]^(depends-on)', () => {
+      const result = parseBlockLinks('[[项目A]]^(depends-on)')
+      expect(result).toHaveLength(1)
+      expect(result[0].targetTitle).toBe('项目A')
+      expect(result[0].relationshipType).toBe('depends-on')
+      expect(result[0].inverseRelationshipType).toBeNull()
+    })
+
+    it('应正确解析带别名的关系类型 [[页面|别名]]^(depends-on)', () => {
+      const result = parseBlockLinks('[[项目A|别名]]^(depends-on)')
+      expect(result).toHaveLength(1)
+      expect(result[0].targetTitle).toBe('项目A')
+      expect(result[0].displayText).toBe('别名')
+      expect(result[0].relationshipType).toBe('depends-on')
+    })
+
+    it('应正确解析双向关系类型 [[页面]]^(depends-on<->required-by)', () => {
+      const result = parseBlockLinks('[[项目A]]^(depends-on<->required-by)')
+      expect(result).toHaveLength(1)
+      expect(result[0].targetTitle).toBe('项目A')
+      expect(result[0].relationshipType).toBe('depends-on')
+      expect(result[0].inverseRelationshipType).toBe('required-by')
+    })
+
+    it('应正确解析自动推断反向关系 [[页面]]^(depends-on!)', () => {
+      const result = parseBlockLinks('[[项目A]]^(depends-on!)')
+      expect(result).toHaveLength(1)
+      expect(result[0].targetTitle).toBe('项目A')
+      expect(result[0].relationshipType).toBe('depends-on')
+      expect(result[0].inverseRelationshipType).toBe('required-by')
+    })
+
+    it('应正确解析自定义关系类型 [[页面]]^(我的自定义关系)', () => {
+      const result = parseBlockLinks('[[项目A]]^(我的自定义关系)')
+      expect(result).toHaveLength(1)
+      expect(result[0].targetTitle).toBe('项目A')
+      expect(result[0].relationshipType).toBe('我的自定义关系')
+      expect(result[0].inverseRelationshipType).toBeNull()
+    })
+  })
+
+  describe('多个链接解析', () => {
+    it('应正确解析多个链接', () => {
+      const result = parseBlockLinks('[[项目A]] 和 [[项目B]]^(parent) 和 [[项目C]]')
+      expect(result).toHaveLength(3)
+      expect(result[0].targetTitle).toBe('项目A')
+      expect(result[0].relationshipType).toBeNull()
+      expect(result[1].targetTitle).toBe('项目B')
+      expect(result[1].relationshipType).toBe('parent')
+      expect(result[2].targetTitle).toBe('项目C')
+      expect(result[2].relationshipType).toBeNull()
+    })
+  })
+
+  describe('外部链接解析', () => {
+    it('应正确解析外部链接', () => {
+      const result = parseBlockLinks('访问 [[https://example.com]] 获取更多信息')
+      expect(result).toHaveLength(1)
+      expect(result[0].targetTitle).toBe('https://example.com')
+      expect(result[0].isExternal).toBe(true)
+      expect(result[0].relationshipType).toBeNull()
+    })
+  })
+
+  describe('位置和排序', () => {
+    it('应正确返回链接位置', () => {
+      const content = '[[第一个]] 中间 [[第二个]]'
+      const result = parseBlockLinks(content)
+      expect(result).toHaveLength(2)
+      expect(result[0].position).toBe(0)
+      // [[第一个]] 从0开始，长度 11（[[第一个]]），然后一个空格，然后 " 中间 "，所以第二个链接从 11 开始
+      expect(result[1].position).toBe(11)
+    })
+
+    it('应按位置排序', () => {
+      const content = '[[B]] [[A]] [[C]]'
+      const result = parseBlockLinks(content)
+      expect(result).toHaveLength(3)
+      expect(result[0].targetTitle).toBe('B')
+      expect(result[1].targetTitle).toBe('A')
+      expect(result[2].targetTitle).toBe('C')
+    })
+  })
+})
 
 // ────────────────────────────────────────────────────────
 // 1. parseContent — 属性 key Unicode

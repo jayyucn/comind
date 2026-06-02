@@ -3,6 +3,7 @@ import type { Block, BlockRecord } from '../types/block'
 import type { LinkRecord } from '../types/link'
 import type { Page, PageRecord } from '../types/page'
 import type { Property, PropertyRecord } from '../types/property'
+import { getPredefinedRelationship } from '../types/relationship'
 import { parseBlockLinks, type LinkParse } from '../utils/parser'
 import { generateUUID } from '../utils/id'
 import { normalizeJournalTitle } from '../utils/journal-detect'
@@ -147,7 +148,7 @@ export class IndexedDBAdapter {
     return skippedTrashedPages.length > 0 ? { skippedTrashedPages } : {}
   }
 
-  private async saveLinks(sourceBlockId: string, _pageId: string, linkParses: LinkParse[]): Promise<{ skippedTrashedPages: string[] }> {
+  private async saveLinks(sourceBlockId: string, pageId: string, linkParses: LinkParse[]): Promise<{ skippedTrashedPages: string[] }> {
     const skippedTrashedPages: string[] = []
 
     await db.links.where('sourceBlockId').equals(sourceBlockId).delete()
@@ -164,18 +165,161 @@ export class IndexedDBAdapter {
         }
 
         if (existingPage) {
-          await db.links.add({
-            id: generateUUID(),
+          const linkRecord: Omit<LinkRecord, 'id' | 'createdAt'> = {
             sourceBlockId,
             targetPageId: existingPage.id,
             displayText: link.displayText,
+            relationshipType: link.relationshipType,
+            inverseRelationshipType: link.inverseRelationshipType
+          }
+          await db.links.add({
+            id: generateUUID(),
+            ...linkRecord,
             createdAt: Date.now()
           })
+
+          // 如果有双向关系，创建反向链接
+          if (link.relationshipType) {
+            await this.createInverseLink(pageId, link.targetTitle, link.relationshipType, link.inverseRelationshipType)
+          }
         }
       }
     }
 
     return { skippedTrashedPages }
+  }
+
+  /** 创建反向关系链接 */
+  private async createInverseLink(
+    sourcePageId: string,
+    targetPageTitle: string,
+    relationshipType: string,
+    inverseRelationshipType: string | null
+  ): Promise<void> {
+    const targetPage = await db.pages.where('title').equals(targetPageTitle).first()
+    if (!targetPage) return
+
+    // 如果没有提供反向关系类型，从预定义类型中查找
+    let actualInverseType = inverseRelationshipType
+    if (!actualInverseType) {
+      const predefined = getPredefinedRelationship(relationshipType)
+      if (predefined?.inverse) {
+        actualInverseType = predefined.inverse
+      }
+    }
+
+    if (!actualInverseType) return
+
+    // 在目标页面创建或更新反向关系
+    await this.createRootBlockWithLink(
+      targetPage.id,
+      sourcePageId,
+      actualInverseType
+    )
+  }
+
+  /** 在页面根块创建或更新链接 */
+  private async createRootBlockWithLink(
+    pageId: string,
+    targetPageId: string,
+    relationshipType: string
+  ): Promise<void> {
+    // 获取页面信息
+    const sourcePage = await db.pages.get(pageId)
+    if (!sourcePage) return
+
+    const targetPage = await db.pages.get(targetPageId)
+    if (!targetPage) return
+
+    // 获取根 Block，或创建新的
+    let rootBlock: BlockRecord | undefined | null = null
+    if (sourcePage.blockId) {
+      rootBlock = await db.blocks.get(sourcePage.blockId)
+    }
+
+    const now = Date.now()
+    let content = rootBlock ? rootBlock.content : ''
+    const linkText = `[[${targetPage.title}]]^(${relationshipType})`
+
+    // 检查是否已存在相同关系的链接
+    if (content.includes(linkText)) return
+
+    // 更新或创建根 Block 内容
+    content = content ? `${content}\n- ${linkText}` : linkText
+
+    if (rootBlock) {
+      // 更新现有根 Block
+      await db.blocks.update(rootBlock.id, {
+        content,
+        updatedAt: now
+      })
+      // 重新解析并保存链接
+      await this.saveLinks(rootBlock.id, pageId, parseBlockLinks(content))
+    } else {
+      // 创建新的根 Block
+      const newBlockId = generateUUID()
+      const newBlock: Block = {
+        id: newBlockId,
+        pageId,
+        parentId: null,
+        pos: 1000,
+        content,
+        format: {},
+        type: 'bullet',
+        properties: {},
+        createdAt: now,
+        updatedAt: now
+      }
+      await db.blocks.put(blockToRecord(newBlock))
+      // 更新页面的 blockId
+      await db.pages.update(pageId, { blockId: newBlockId, updatedAt: now })
+      // 保存链接
+      await this.saveLinks(newBlockId, pageId, parseBlockLinks(content))
+    }
+  }
+
+  /** 同步同一页面内的多链接关系类型 */
+  async updateLinksWithRelationshipType(pageId: string, sourceBlockId: string, targetPageId: string, relationshipType: string | null): Promise<void> {
+    const pageBlocks = await db.blocks.where('pageId').equals(pageId).toArray()
+    const blockIds = pageBlocks.map(b => b.id)
+
+    // 查找所有指向同一目标页面的链接
+    const links = await db.links
+      .where('sourceBlockId').anyOf(blockIds)
+      .and(l => l.targetPageId === targetPageId)
+      .toArray()
+
+    for (const link of links) {
+      if (link.id !== (await db.links.where('sourceBlockId').equals(sourceBlockId).first())?.id) {
+        await db.links.update(link.id, { relationshipType })
+      }
+    }
+  }
+
+  /** 根据关系类型获取链接 */
+  async getLinksByRelationshipType(pageId: string, relationshipType?: string): Promise<LinkRecord[]> {
+    if (relationshipType) {
+      // 获取所有指向该页面或从该页面出发的链接
+      const outboundLinks = await db.links
+        .where('sourceBlockId').anyOf(
+          (await db.blocks.where('pageId').equals(pageId).toArray()).map(b => b.id)
+        )
+        .and(l => l.relationshipType === relationshipType)
+        .toArray()
+      
+      const inboundLinks = await db.links
+        .where('targetPageId').equals(pageId)
+        .and(l => l.inverseRelationshipType === relationshipType || l.relationshipType === relationshipType)
+        .toArray()
+      
+      return [...outboundLinks, ...inboundLinks]
+    }
+    // 如果没有指定类型，返回所有带关系类型的链接
+    const allBlockIds = (await db.blocks.where('pageId').equals(pageId).toArray()).map(b => b.id)
+    return db.links
+      .where('sourceBlockId').anyOf(allBlockIds)
+      .and(l => l.relationshipType !== null)
+      .toArray()
   }
 
   async getBlockTree(pageId: string): Promise<Block[]> {

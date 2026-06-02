@@ -67,23 +67,26 @@ function handleWikiLinkUpdate(event: Event) {
   menuQuery.value = customEvent.detail.query
 }
 
-async function handleWikiLinkClose(event: Event) {
+async function handleWikiLinkClose(event?: Event) {
   menuVisible.value = false
   closeWikiLinkMenuByEditor()
 
-  const customEvent = event as CustomEvent<{ reason: string; query: string }>
-  const query = customEvent.detail.query?.trim()
-  if (!query) return
+  // 只在有自定义事件时处理查询创建逻辑
+  if (event && 'detail' in event) {
+    const customEvent = event as CustomEvent<{ reason: string; query: string }>
+    const query = customEvent.detail.query?.trim()
+    if (!query) return
 
-  if (!editor.value) return
-  const { state } = editor.value
-  const cursorPos = state.selection.from
-  const result = findWikiLinkAtCursor(state.doc, cursorPos)
-  if (!result.found || !result.range) return
+    if (!editor.value) return
+    const { state } = editor.value
+    const cursorPos = state.selection.from
+    const result = findWikiLinkAtCursor(state.doc, cursorPos)
+    if (!result.found || !result.range) return
 
-  const pageStore = usePageStore()
-  if (!pageStore.getPageByTitle(query)) {
-    await pageStore.createPage(query)
+    const pageStore = usePageStore()
+    if (!pageStore.getPageByTitle(query)) {
+      await pageStore.createPage(query)
+    }
   }
 }
 

@@ -3,6 +3,8 @@ export interface Link {
   sourceBlockId: string
   targetPageId: string
   displayText: string
+  relationshipType: string | null
+  inverseRelationshipType: string | null
   createdAt: number
 }
 
@@ -11,5 +13,7 @@ export interface LinkRecord {
   sourceBlockId: string
   targetPageId: string
   displayText: string
+  relationshipType: string | null
+  inverseRelationshipType: string | null
   createdAt: number
 }
