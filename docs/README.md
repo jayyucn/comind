@@ -1,6 +1,6 @@
 # comind 文档索引
 
-> 更新日期：2026-05-29
+> 更新日期：2026-06-03
 > 本文档是 docs/ 目录的唯一入口点。Agent 只需加载 `active/` 目录即可获得完整项目上下文。
 
 ---
@@ -58,11 +58,11 @@ docs/
 | architecture.md | v4.0 | 2026-05-21 | 合并自 data-model + storage-spec + routing + block-editor-spec + property-spec + block-ordering-redesign |
 | features.md | v1.0 | 2026-05-21 | 合并自 link-spec + slash-commands-spec + functional-design |
 | interaction.md | v1.0 | 2026-05-21 | 合并自 interaction-spec + ui-ux-spec |
-| development.md | v4.0 | 2026-05-21 | 合并自 dev-guide + page-block-crud + tech-selection |
+| development.md | **v4.2** | **2026-06-03** | **新增 useRightSidebar + 概念图谱面板系统** |
 | product-vision.md | v1.4 | 2026-05-20 | 从 comind/docs/ 迁入 |
-| block-editor-spec.md | **v0.4** | **2026-05-29** | **新增 Embed Block 章节** |
-| ui-ux-spec.md | **v0.8** | **2026-05-29** | **新增暗色主题 + 设置模态框** |
-| dev-guide.md | **v0.4** | **2026-05-29** | **新增 useTheme + useSettingsModal** |
+| block-editor-spec.md | **v0.4** | **2026-05-29** | Embed Block 章节 |
+| ui-ux-spec.md | **v0.9** | **2026-06-03** | **新增概念图谱右侧边栏 + 滚动条隐藏** |
+| concept-graph-spec.md | **v0.5** | **2026-06-03** | **已实现 Phase 1 基础功能** |
 
 ---
 
@@ -80,6 +80,22 @@ Agent 启动时只需加载 `docs/active/` 下的 6 个文件即可获得完整�
 
 ### 添加新文档
 新功能规格文档应追加到对应的 `active/` 文件中（如新功能属于已有功能域），或创建新文件（如全新功能域）。
+
+---
+
+## v0.5 更新摘要（2026-06-03）
+
+### 主要功能
+- **概念图谱右侧边栏**：全新面板系统，支持 G6 力导向图可视化
+- **右侧边栏宽度可调**：支持拖拽调节宽度，图形自适应适配
+- **关系展示优化**：修复反向关系类型处理和样式显示
+- **滚动条样式简化**：全局隐藏滚动条，简化样式代码
+
+### 相关文档
+- `docs/3-features/concept-graph-spec.md` - 概念图谱功能规格
+- `docs/4-ui/ui-ux-spec.md` - 交互规格更新
+- `docs/active/development.md` - 开发指南更新
+- `docs/superpowers/specs/2026-06-02-concept-graph-right-sidebar-design.md` - 右侧边栏设计规范
 
 ---
 

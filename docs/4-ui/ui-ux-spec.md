@@ -1,12 +1,11 @@
 # comind UI/UX 规范
 
-> 版本：v0.8
-> 日期：2026-05-29
-> 状态：**已更新**（新增暗色主题 v0.4 + 设置模态框）
+> 版本：v0.9
+> 日期：2026-06-03
+> 状态：**已更新**（新增概念图谱右侧边栏 + 滚动条样式简化）
 > 更新内容：
-> - 新增暗色主题支持（浅色/暗色/跟随系统）
-> - 新增设置模态框组件
-> - 侧边栏 v0.9 样式调整（Indigo 色彩系统 + Lucide 图标）
+> - v0.5 新增概念图谱右侧边栏（可调节宽度）
+> - v0.5 滚动条样式全局隐藏简化
 
 ---
 
@@ -564,6 +563,17 @@ Block 本身不需要 Focus Ring（通过左侧 accent 边框和背景色区分 
   &-thumb: background --border，border-radius 2px
 ```
 
+### 滚动条隐藏（v0.5 新增）
+
+> 全局隐藏滚动条，简化样式代码。
+
+```scss
+// styles/components/_common.scss
+::-webkit-scrollbar {
+  display: none
+}
+```
+
 ---
 
 ## 暗色主题（v0.4 新增）
@@ -681,6 +691,59 @@ function close() {
 ```
 
 使用模块级单例模式，确保 PageMenuButton 和 SidebarFooter 调用同一状态。
+
+---
+
+## 右侧边栏（v0.5 新增）
+
+### 概述
+
+v0.5 新增右侧边栏系统，用于展示概念图谱等辅助面板。
+
+### 组件结构
+
+| 组件 | 路径 | 说明 |
+|------|------|------|
+| RightSidebar/index.vue | `src/components/RightSidebar/index.vue` | 右侧边栏容器 |
+| RightSidebar/panels.ts | `src/components/RightSidebar/panels.ts` | 面板注册机制 |
+| ConceptGraph/Panel.vue | `src/components/ConceptGraph/Panel.vue` | 概念图谱面板 |
+| useRightSidebar.ts | `src/composables/useRightSidebar.ts` | 状态管理 |
+
+### 宽度可调节
+
+右侧边栏支持拖拽调节宽度：
+- 拖拽边线调整宽度
+- 图形可视化随宽度变化自适应
+- 宽度状态通过 `useRightSidebar` 管理
+
+### 面板注册机制
+
+```typescript
+// src/components/RightSidebar/panels.ts
+export interface RightSidebarPanel {
+  id: string
+  label: string
+  icon: string
+  component: Component
+}
+
+export const registeredPanels: RightSidebarPanel[] = [
+  {
+    id: 'concept-graph',
+    label: '概念图谱',
+    icon: '🧠',
+    component: ConceptGraphPanel
+  }
+]
+```
+
+### 概念图谱面板
+
+- G6 力导向布局
+- 当前页面高亮显示
+- 关系类型颜色区分
+- 点击节点跳转页面
+- 最大深度可配置
 
 ---
 

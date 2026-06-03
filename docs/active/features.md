@@ -1,9 +1,10 @@
 # comind 功能规格
 
-> 版本：v1.0
-> 日期：2026-05-21
+> 版本：v1.1
+> 日期：2026-06-03
 > 状态：活跃
 > 来源：合并自 link-spec.md + slash-commands-spec.md + slash-commands-logseq-reference.md + functional-design-spec.md
+> 更新：v0.5 新增概念图谱右侧边栏面板
 
 ---
 

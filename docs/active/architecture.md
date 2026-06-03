@@ -1,9 +1,10 @@
 # comind 架构设计
 
-> 版本：v4.0（Gap Pos 排序）
-> 日期：2026-05-21
+> 版本：v4.1（Gap Pos 排序）
+> 日期：2026-06-03
 > 状态：活跃
 > 来源：合并自 data-model.md + storage-spec.md + routing-design.md + block-editor-spec.md + property-spec.md + block-ordering-redesign.md
+> 更新：v0.5 Link 数据模型扩展（支持 relationshipType）
 
 ---
 
@@ -75,6 +76,8 @@ interface Link {
   sourceBlockId: string
   targetPageId: string
   displayText: string
+  relationshipType: string | null  // v0.5 新增
+  inverseRelationshipType: string | null  // v0.5 新增
   createdAt: number
 }
 ```
@@ -89,12 +92,12 @@ interface Link {
 
 ## 2. 存储格式
 
-### 2.1 Dexie Schema（版本 4）
+### 2.1 Dexie Schema（版本 7，v0.5 扩展）
 
 ```typescript
-this.version(4).stores({
+this.version(7).stores({
   blocks: 'id, pageId, parentId, pos, createdAt, updatedAt',
-  links: 'id, sourceBlockId, targetPageId, displayText, createdAt',
+  links: 'id, sourceBlockId, targetPageId, displayText, relationshipType, createdAt',  // v0.5 新增 relationshipType 索引
   pages: 'id, blockId, title, type, createdAt, updatedAt'
 })
 ```

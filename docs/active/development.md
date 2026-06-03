@@ -1,10 +1,10 @@
 # comind 开发指南
 
-> 版本：v4.1（Dexie v4, Gap Pos 排序）
-> 日期：2026-05-29
+> 版本：v4.2（Dexie v4, Gap Pos 排序）
+> 日期：2026-06-03
 > 状态：活跃
 > 来源：合并自 dev-guide.md + page-block-crud.md + tech-selection.md
-> 更新：v0.4 新增 useTheme + useSettingsModal composable
+> 更新：v0.5 新增 useRightSidebar + 概念图谱面板系统
 
 ---
 
@@ -68,13 +68,19 @@ src/
 │   ├── Editor.vue          # tiptap 编辑器封装
 │   ├── Sidebar.vue         # 侧边栏
 │   ├── Backlinks.vue       # 反向链接面板
+│   ├── RightSidebar/       # 右侧边栏（v0.5 新增）
+│   │   ├── index.vue       # 右侧边栏容器
+│   │   └── panels.ts      # 面板注册机制
+│   ├── ConceptGraph/       # 概念图谱面板（v0.5 新增）
+│   │   └── Panel.vue      # 概念图谱面板组件
 │   └── LinkPopup.vue       # 链接弹出框
 ├── composables/            # 组合式函数
 │   ├── useBlock.ts         # Block 操作逻辑
 │   ├── useLink.ts          # 链接跳转逻辑
 │   ├── useSortable.ts      # 拖拽排序逻辑
 │   ├── useTheme.ts         # 主题状态管理（v0.4 新增）
-│   └── useSettingsModal.ts # 设置模态框控制（v0.4 新增）
+│   ├── useSettingsModal.ts # 设置模态框控制（v0.4 新增）
+│   └── useRightSidebar.ts # 右侧边栏状态管理（v0.5 新增）
 ├── storage/                # 存储层
 │   ├── interface.ts        # StorageAdapter 接口定义
 │   ├── db.ts               # Dexie 数据库定义
