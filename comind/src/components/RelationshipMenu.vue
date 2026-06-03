@@ -18,37 +18,39 @@ defineExpose({ moveSelection, select, close })
 </script>
 
 <template>
-  <div
-    v-if="state.visible"
-    class="rel-menu"
-    :style="{ left: state.position ? state.position.x + 'px' : '0', top: state.position ? state.position.y + 'px' : '0' }"
-  >
-    <ul
-      v-if="items.length > 0"
-      class="rel-menu-list"
-    >
-      <li
-        v-for="(item, index) in items"
-        :key="item.type"
-        class="rel-menu-item"
-        :class="{ selected: index === state.selectedIndex }"
-        :style="{ '--rel-color': item.color }"
-        @mousedown="onItemMouseDown($event, index)"
-      >
-        <span class="rel-menu-type">{{ item.type }}</span>
-        <span
-          v-if="item.inverse"
-          class="rel-menu-inverse"
-        >→ {{ item.inverse }}</span>
-      </li>
-    </ul>
+  <Teleport to="body">
     <div
-      v-else
-      class="rel-menu-empty"
+      v-if="state.visible"
+      class="rel-menu"
+      :style="{ left: (state.position?.x ?? 0) + 'px', top: (state.position?.y ?? 0) + 'px' }"
     >
-      No matches
+      <ul
+        v-if="items.length > 0"
+        class="rel-menu-list"
+      >
+        <li
+          v-for="(item, index) in items"
+          :key="item.type"
+          class="rel-menu-item"
+          :class="{ selected: index === state.selectedIndex }"
+          :style="{ '--rel-color': item.color }"
+          @mousedown="onItemMouseDown($event, index)"
+        >
+          <span class="rel-menu-type">{{ item.type }}</span>
+          <span
+            v-if="item.inverse"
+            class="rel-menu-inverse"
+          >→ {{ item.inverse }}</span>
+        </li>
+      </ul>
+      <div
+        v-else
+        class="rel-menu-empty"
+      >
+        No matches
+      </div>
     </div>
-  </div>
+  </Teleport>
 </template>
 
 <style scoped>
