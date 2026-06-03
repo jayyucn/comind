@@ -12,6 +12,7 @@ vi.mock('./db', () => ({
       put: vi.fn(),
       delete: vi.fn(),
       get: vi.fn(),
+      update: vi.fn(),
       where: vi.fn().mockReturnValue({
         equals: vi.fn().mockReturnValue({
           first: vi.fn(),
@@ -27,6 +28,7 @@ vi.mock('./db', () => ({
       put: vi.fn(),
       delete: vi.fn(),
       get: vi.fn(),
+      update: vi.fn(),
       where: vi.fn().mockReturnValue({
         equals: vi.fn().mockReturnValue({
           first: vi.fn()
@@ -128,6 +130,141 @@ describe('IndexedDBAdapter', () => {
 
       expect(createPageSpy).not.toHaveBeenCalled()
       expect(db.links.add).not.toHaveBeenCalled()
+    })
+
+    it('does not create inverse link when link is a self-reference', async () => {
+      const { db } = await import('./db')
+
+      // 自引用场景：源页面 page-1 链接到自己
+      const selfPage = {
+        id: 'page-1',
+        title: 'Page1',
+        type: 'normal',
+        blockId: null,
+        icon: null,
+        cover: null,
+        aliases: '[]',
+        filePath: null,
+        childrenCount: 0,
+        wordCount: 0,
+        createdAt: 0,
+        updatedAt: 0,
+        deleted: 0,
+        deletedAt: null
+      }
+
+      // where('title').equals 用于查找目标页（返回自己）
+      ;(db.pages.where('title').equals as any).mockImplementation(() => ({
+        first: vi.fn().mockResolvedValue(selfPage)
+      }))
+      // pages.get 用于 createRootBlockWithLink 中获取页面
+      ;(db.pages.get as any).mockImplementation(() => Promise.resolve(selfPage))
+
+      const beforeGetCalls = (db.pages.get as any).mock.calls.length
+
+      // 调用 createInverseLink，参数: sourcePageId, targetPageTitle, relationshipType, inverseRelationshipType
+      await (adapter as any).createInverseLink('page-1', 'Page1', 'required-by', null)
+
+      const afterGetCalls = (db.pages.get as any).mock.calls.length
+
+      // 自引用场景：createRootBlockWithLink 不应该被调用
+      // 即 createInverseLink 应该在查找到 targetPage 后立即返回，不调用 db.pages.get(targetPageId)
+      // 当前 bug: 它会调用 db.pages.get 创建反向链接块
+      expect(afterGetCalls).toBe(beforeGetCalls)
+    })
+
+    it('should not recursively create inverse links when saveLinks is called with skipInverseCreation=true', async () => {
+      const { db } = await import('./db')
+
+      // 模拟目标页面存在
+      const targetPage = {
+        id: 'target-page-id',
+        title: 'TargetPage',
+        type: 'normal',
+        blockId: 'root-block-id',
+        icon: null,
+        cover: null,
+        aliases: '[]',
+        filePath: null,
+        childrenCount: 0,
+        wordCount: 0,
+        createdAt: 0,
+        updatedAt: 0,
+        deleted: 0,
+        deletedAt: null
+      }
+
+      const sourcePage = {
+        id: 'source-page-id',
+        title: 'SourcePage',
+        type: 'normal',
+        blockId: 'source-root-block-id',
+        icon: null,
+        cover: null,
+        aliases: '[]',
+        filePath: null,
+        childrenCount: 0,
+        wordCount: 0,
+        createdAt: 0,
+        updatedAt: 0,
+        deleted: 0,
+        deletedAt: null
+      }
+
+      // 设置 pages.get 的 mock - 前两次返回目标页面，之后返回源页面（用于 createRootBlockWithLink）
+      let getCallCount = 0
+      ;(db.pages.get as any).mockImplementation((id: string) => {
+        getCallCount++
+        if (id === 'target-page-id') return Promise.resolve(targetPage)
+        if (id === 'source-page-id') return Promise.resolve(sourcePage)
+        return Promise.resolve(undefined)
+      })
+
+      // 设置 pages.where('title').equals 返回目标页面
+      ;(db.pages.where as any).mockImplementation(() => ({
+        equals: (title: string) => ({
+          first: () => {
+            if (title === 'TargetPage') return Promise.resolve(targetPage)
+            return Promise.resolve(undefined)
+          }
+        })
+      }))
+
+      // 模拟根 Block 已存在
+      const rootBlock = {
+        id: 'root-block-id',
+        pageId: 'target-page-id',
+        parentId: null,
+        pos: 1000,
+        content: 'Existing content',
+        format: '{}',
+        type: 'bullet',
+        properties: '{}',
+        createdAt: 0,
+        updatedAt: 0
+      }
+
+      // blocks.get 用于 createRootBlockWithLink 中获取根 Block
+      ;(db.blocks.get as any).mockImplementation((id: string) => {
+        if (id === 'root-block-id') return Promise.resolve(rootBlock)
+        return Promise.resolve(undefined)
+      })
+
+      // 追踪 createInverseLink 调用次数
+      let createInverseLinkCalled = 0
+      const originalCreateInverseLink = (adapter as any).createInverseLink
+      ;(adapter as any).createInverseLink = async function(...args: any[]) {
+        createInverseLinkCalled++
+        return originalCreateInverseLink.apply(this, args)
+      }
+
+      // 调用 createInverseLink，这会触发 createRootBlockWithLink，
+      // 而 createRootBlockWithLink 会调用 saveLinks(skipInverseCreation=true)
+      await (adapter as any).createInverseLink('source-page-id', 'TargetPage', 'depends-on', 'required-by')
+
+      // 验证 createInverseLink 只被调用一次（源页面指向目标页面）
+      // 不会因为 createRootBlockWithLink 中的 saveLinks 调用而递归创建
+      expect(createInverseLinkCalled).toBe(1)
     })
   })
 
