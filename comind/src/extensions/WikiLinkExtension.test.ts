@@ -1,4 +1,41 @@
 import { describe, it, expect } from 'vitest'
+import { Editor } from '@tiptap/core'
+import Document from '@tiptap/extension-document'
+import Paragraph from '@tiptap/extension-paragraph'
+import Text from '@tiptap/extension-text'
+import { WikiLinkExtension } from './WikiLinkExtension'
+
+interface DecoratedEditor {
+  editor: Editor
+  element: HTMLElement
+  renderedHTML: string
+}
+
+function createDecoratedEditor(content: string): DecoratedEditor {
+  const element = document.createElement('div')
+  document.body.appendChild(element)
+  const editor = new Editor({
+    element,
+    extensions: [Document, Paragraph, Text, WikiLinkExtension],
+    content: `<p>${content}</p>`
+  })
+  return { editor, element, renderedHTML: element.innerHTML }
+}
+
+function destroyDecoratedEditor(handle: DecoratedEditor): void {
+  handle.editor.destroy()
+  handle.element.remove()
+}
+
+/**
+ * Collect data-page of all spans that have class="wiki-link".
+ * The plugin sets `class` and `data-page` together on a single span,
+ * so this gives the pages that are decorated as wiki-links.
+ */
+function decoratedPages(handle: DecoratedEditor): string[] {
+  const spans = handle.element.querySelectorAll('span.wiki-link')
+  return Array.from(spans).map(s => s.getAttribute('data-page') ?? '')
+}
 
 describe('WikiLinkExtension utilities', () => {
   describe('wiki link regex patterns', () => {
@@ -168,6 +205,39 @@ describe('WikiLinkExtension utilities', () => {
     it('returns null for no match', () => {
       const result = getDisplayText('no link here')
       expect(result).toBeNull()
+    })
+  })
+
+  describe('WikiLinkExtension decoration behavior', () => {
+    it('普通 [[X]] 应渲染 wiki-link 装饰', () => {
+      const handle = createDecoratedEditor('See [[X]] for details')
+      const pages = decoratedPages(handle)
+      expect(pages).toContain('X')
+      expect(handle.renderedHTML).toContain('class="wiki-link"')
+      expect(handle.renderedHTML).toContain('data-page="X"')
+      destroyDecoratedEditor(handle)
+    })
+
+    it('带类型的 [[X]]^(type) 不应渲染 wiki-link 装饰', () => {
+      const handle = createDecoratedEditor('See [[X]]^(depends-on) for details')
+      const pages = decoratedPages(handle)
+      expect(pages).not.toContain('X')
+      destroyDecoratedEditor(handle)
+    })
+
+    it('普通 [[X]] 与 typed [[Y]]^(type) 共存时，[[X]] 有装饰而 [[Y]] 没有', () => {
+      const handle = createDecoratedEditor('See [[X]] and [[Y]]^(depends-on)')
+      const pages = decoratedPages(handle)
+      expect(pages).toContain('X')
+      expect(pages).not.toContain('Y')
+      destroyDecoratedEditor(handle)
+    })
+
+    it('[[X|alias]]^(type) 不应渲染装饰', () => {
+      const handle = createDecoratedEditor('See [[Y|Y-alias]]^(related) more')
+      const pages = decoratedPages(handle)
+      expect(pages).not.toContain('Y')
+      destroyDecoratedEditor(handle)
     })
   })
 })

@@ -17,16 +17,31 @@ export const WikiLinkExtension = Extension.create({
           decorations(state) {
             const decorations: Decoration[] = []
             const { doc } = state
-            const linkRegex = /\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g
+            const linkOnlyRegex = /\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g
+            const typedLinkRegex = /\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]\^?\(([^)]+)\)/g
 
+            // 第一遍：收集所有 typed link 范围
+            const typedRanges: Array<[number, number]> = []
             doc.descendants((node, pos) => {
               if (!node.isText) return
-
               const text = node.text || ''
-              let match
-              while ((match = linkRegex.exec(text)) !== null) {
+              let m: RegExpExecArray | null
+              typedLinkRegex.lastIndex = 0
+              while ((m = typedLinkRegex.exec(text)) !== null) {
+                typedRanges.push([pos + m.index, pos + m.index + m[0].length])
+              }
+            })
+
+            // 第二遍：装饰普通 wiki link，跳过 typed range
+            doc.descendants((node, pos) => {
+              if (!node.isText) return
+              const text = node.text || ''
+              let match: RegExpExecArray | null
+              linkOnlyRegex.lastIndex = 0
+              while ((match = linkOnlyRegex.exec(text)) !== null) {
                 const start = pos + match.index
                 const end = start + match[0].length
+                if (typedRanges.some(([s, e]) => start >= s && end <= e)) continue
                 const display = match[2] || match[1]
 
                 // 创建装饰：将 [[page]] 文本包裹在带有样式的 span 中
