@@ -4,6 +4,7 @@ import { useContentRenderer } from '../../../../composables/useContentRenderer'
 const props = defineProps<{
   content: string
   showPlaceholder?: boolean
+  blockId?: string
 }>()
 
 const emit = defineEmits<{
@@ -20,6 +21,6 @@ function handleClick(e: MouseEvent) {
 <template>
   <div class="block-text" @click="handleClick">
     <span v-if="showPlaceholder && !content" class="block-placeholder">Type something...</span>
-    <span v-else v-html="renderContentToHtml(content)"></span>
+    <span v-else v-html="renderContentToHtml(content, blockId ?? '')"></span>
   </div>
 </template>

@@ -82,3 +82,40 @@ describe('useContentRenderer — 渲染测试', () => {
     })
   })
 })
+
+describe('useContentRenderer - typed wiki links', () => {
+  it('[[X]]^(depends-on) 渲染为点下划线 + 标签', () => {
+    const html = renderContentToHtml('See [[X]]^(depends-on) for details', 'block-1')
+    expect(html).toContain('class="block-link-typed"')
+    expect(html).toContain('data-page="X"')
+    expect(html).toContain('data-rel-type="depends-on"')
+    expect(html).toContain('class="rel-type-label"')
+    expect(html).toContain('data-block-id="block-1"')
+  })
+
+  it('未知类型渲染为灰色 #9CA3AF', () => {
+    const html = renderContentToHtml('[[X]]^(unknown-type)', 'block-1')
+    expect(html).toContain('data-rel-type="unknown-type"')
+    expect(html).toMatch(/--rel-color:\s*#9CA3AF/)
+  })
+
+  it('[[X]]^(depends-on) 的字符偏移正确写入 data 属性', () => {
+    const html = renderContentToHtml('[[X]]^(depends-on)', 'block-1')
+    // 原始文本 [[X]]^(depends-on) 长度 18
+    const typedFrom = html.match(/data-typed-from="(\d+)"/)
+    const typedTo = html.match(/data-typed-to="(\d+)"/)
+    expect(typedFrom?.[1]).toBe('0')
+    expect(typedTo?.[1]).toBe('18')
+    // depends-on 在原始文本中的范围是 7..18
+    const labelFrom = html.match(/data-label-from="(\d+)"/)
+    const labelTo = html.match(/data-label-to="(\d+)"/)
+    expect(labelFrom?.[1]).toBe('7')
+    expect(labelTo?.[1]).toBe('18')
+  })
+
+  it('普通 [[X]] 不被识别为 typed link', () => {
+    const html = renderContentToHtml('See [[X]] plain', 'block-1')
+    expect(html).not.toContain('block-link-typed')
+    expect(html).toContain('class="block-link"')
+  })
+})
