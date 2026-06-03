@@ -207,6 +207,11 @@ async function initGraph() {
     container,
     width,
     height,
+    // 关闭多层 canvas，避免 g-lite 2.7.0 在多 EventService 之间转发
+    // drag 事件时触发 "is illegal to free an event not managed by this EventBoundary"
+    canvas: {
+      enableMultiLayer: false,
+    },
     node: {
       type: 'rect',
       style: {
@@ -321,6 +326,29 @@ async function handleRefresh() {
   await refreshGraphData()
 }
 
+/** 导出图谱为 PNG 图片 */
+async function handleExportPng() {
+  if (!graphRef.value) return
+  try {
+    const dataURL = await graphRef.value.toDataURL({
+      type: 'image/png'
+    })
+    triggerDownload(dataURL, `concept-graph-${Date.now()}.png`)
+  } catch (error) {
+    console.error('[ConceptGraph] PNG export failed:', error)
+  }
+}
+
+/** 触发浏览器下载 dataURL */
+function triggerDownload(dataURL: string, filename: string) {
+  const link = document.createElement('a')
+  link.href = dataURL
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
 function handleNodeClick(nodeId: string) {
   if (nodeId === highlightedNodeId.value) {
     highlightedNodeId.value = null
@@ -407,6 +435,7 @@ onBeforeUnmount(() => {
       <div class="control-group">
         <button class="control-btn" title="适应视图" @click="handleFitView">⊞</button>
         <button class="control-btn" title="刷新" @click="handleRefresh">↻</button>
+        <button class="control-btn" title="导出 PNG" @click="handleExportPng">⤓</button>
       </div>
     </div>
     <div ref="containerRef" class="concept-graph-canvas"></div>
