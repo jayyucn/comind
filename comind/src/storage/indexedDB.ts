@@ -199,6 +199,9 @@ export class IndexedDBAdapter {
     const targetPage = await db.pages.where('title').equals(targetPageTitle).first()
     if (!targetPage) return
 
+    // 防止自引用产生无意义的反向链接（例如 [[E]]^(required-by) 在 E 自身页面）
+    if (sourcePageId === targetPage.id) return
+
     // 如果没有提供反向关系类型，从预定义类型中查找
     let actualInverseType = inverseRelationshipType
     if (!actualInverseType) {
@@ -218,7 +221,7 @@ export class IndexedDBAdapter {
     )
   }
 
-  /** 在页面根块创建或更新链接 */
+  /** 在目标页查找或创建独立的反向链接 block（不修改页面根块） */
   private async createRootBlockWithLink(
     pageId: string,
     targetPageId: string,
@@ -231,39 +234,44 @@ export class IndexedDBAdapter {
     const targetPage = await db.pages.get(targetPageId)
     if (!targetPage) return
 
-    // 获取根 Block，或创建新的
-    let rootBlock: BlockRecord | undefined | null = null
-    if (sourcePage.blockId) {
-      rootBlock = await db.blocks.get(sourcePage.blockId)
-    }
+    const linkText = `[[${targetPage.title}]]^(${relationshipType})`
+    const escapedTitle = targetPage.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    // 匹配单行：[[title]]^(type) 或 [[title|alias]]^(type)，可有前导的 "- " 或空白
+    const linePattern = new RegExp(
+      `^\\s*-?\\s*\\[\\[${escapedTitle}(?:\\|[^\\]]+)?\\]\\]\\^?\\([^)]+\\)\\s*$`
+    )
+
+    // 在目标页所有 block 中查找是否已有指向源页（任意类型）的反向链接
+    const allBlocks = await db.blocks.where('pageId').equals(pageId).toArray()
+    const existingBlock = allBlocks.find(b =>
+      b.content.split('\n').some(line => linePattern.test(line))
+    )
 
     const now = Date.now()
-    let content = rootBlock ? rootBlock.content : ''
-    const linkText = `[[${targetPage.title}]]^(${relationshipType})`
 
-    // 检查是否已存在相同关系的链接
-    if (content.includes(linkText)) return
+    if (existingBlock) {
+      // 已有指向同一源页的 block，更新其内容（不会修改页面的根块或其他用户 block）
+      if (existingBlock.content.includes(linkText)) return
 
-    // 更新或创建根 Block 内容
-    content = content ? `${content}\n- ${linkText}` : linkText
+      const newContent = existingBlock.content
+        .split('\n')
+        .map(line => linePattern.test(line) ? linkText : line)
+        .join('\n')
 
-    if (rootBlock) {
-      // 更新现有根 Block
-      await db.blocks.update(rootBlock.id, {
-        content,
+      await db.blocks.update(existingBlock.id, {
+        content: newContent,
         updatedAt: now
       })
-      // 重新解析并保存链接（跳过反向链接创建，避免递归）
-      await this.saveLinks(rootBlock.id, pageId, parseBlockLinks(content), true)
+      await this.saveLinks(existingBlock.id, pageId, parseBlockLinks(newContent), true)
     } else {
-      // 创建新的根 Block
+      // 新建独立的 top-level block 承载反向链接
       const newBlockId = generateUUID()
       const newBlock: Block = {
         id: newBlockId,
         pageId,
         parentId: null,
         pos: 1000,
-        content,
+        content: linkText,
         format: {},
         type: 'bullet',
         properties: {},
@@ -271,10 +279,7 @@ export class IndexedDBAdapter {
         updatedAt: now
       }
       await db.blocks.put(blockToRecord(newBlock))
-      // 更新页面的 blockId
-      await db.pages.update(pageId, { blockId: newBlockId, updatedAt: now })
-      // 保存链接（跳过反向链接创建，避免递归）
-      await this.saveLinks(newBlockId, pageId, parseBlockLinks(content), true)
+      await this.saveLinks(newBlockId, pageId, parseBlockLinks(linkText), true)
     }
   }
 

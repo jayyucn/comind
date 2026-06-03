@@ -55,19 +55,24 @@ async function buildGraphData(pageId: string, depth: number) {
       if (!targetPage) continue
       const color = getRelationshipColor(link.relationshipType ?? 'related')
       const label = getRelationshipLabel(link.relationshipType ?? 'related')
-      // 只在目标节点会被遍历时添加边（避免边指向不存在的节点）
-      if (level + 1 <= depth && !visited.has(link.targetPageId)) {
-        edges.push({
-          id: link.id,
-          source: pid,
-          target: link.targetPageId,
-          data: {
-            relationshipType: link.relationshipType ?? 'related',
-            label,
-            color
-          }
-        })
-        await traverse(link.targetPageId, level + 1)
+      if (level + 1 <= depth) {
+        // 总是添加边，即使目标节点已被访问（避免直接依赖关系因遍历顺序丢失）
+        if (!edges.find(e => e.id === link.id)) {
+          edges.push({
+            id: link.id,
+            source: pid,
+            target: link.targetPageId,
+            data: {
+              relationshipType: link.relationshipType ?? 'related',
+              label,
+              color
+            }
+          })
+        }
+        // 仅当目标节点未被访问时才递归遍历
+        if (!visited.has(link.targetPageId)) {
+          await traverse(link.targetPageId, level + 1)
+        }
       }
     }
 
@@ -83,22 +88,23 @@ async function buildGraphData(pageId: string, depth: number) {
       const sourcePageId = block.pageId
       const sourcePage = pageStore.getPage(sourcePageId)
       if (!sourcePage) continue
-      // 只添加未访问过的入链节点和边，不继续深度遍历（避免拉入无关节点）
-      const canAdd = level + 1 <= depth && !visited.has(sourcePageId)
-      if (canAdd) {
-        visited.add(sourcePageId)
-        nodes.push({
-          id: sourcePage.id,
-          data: {
-            label: sourcePage.title,
-            isCurrent: sourcePage.id === pageId,
-            level: level + 1
-          }
-        })
-        // 添加入链边（source→current），仅在节点被添加时
+      if (level + 1 <= depth) {
+        const color = getRelationshipColor(link.relationshipType ?? 'related')
+        const label = getRelationshipLabel(link.relationshipType ?? 'related')
+        // 仅在节点未被访问时才加入节点
+        if (!visited.has(sourcePageId)) {
+          visited.add(sourcePageId)
+          nodes.push({
+            id: sourcePage.id,
+            data: {
+              label: sourcePage.title,
+              isCurrent: sourcePage.id === pageId,
+              level: level + 1
+            }
+          })
+        }
+        // 总是添加入链边（即使来源节点已访问），避免反向关系因遍历顺序丢失
         if (!edges.find(e => e.id === link.id)) {
-          const color = getRelationshipColor(link.relationshipType ?? 'related')
-          const label = getRelationshipLabel(link.relationshipType ?? 'related')
           edges.push({
             id: link.id,
             source: sourcePageId,

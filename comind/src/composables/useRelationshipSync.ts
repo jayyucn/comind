@@ -176,7 +176,7 @@ export function useRelationshipSync(
  * - 若 newRelationshipType 不为 null：若链接已有关系类型则替换，否则追加
  *
  * 处理两种形式：
- * - [[link]]^(existingType) → 替换或移除 existingType
+ * bghntvy567link]]^(existingType) → 替换或移除 existingType
  * - [[link]] → 追加 ^(newType)
  */
 function applyRelationshipTypeToBlockContent(
