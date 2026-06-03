@@ -148,7 +148,7 @@ export class IndexedDBAdapter {
     return skippedTrashedPages.length > 0 ? { skippedTrashedPages } : {}
   }
 
-  private async saveLinks(sourceBlockId: string, pageId: string, linkParses: LinkParse[]): Promise<{ skippedTrashedPages: string[] }> {
+  private async saveLinks(sourceBlockId: string, pageId: string, linkParses: LinkParse[], skipInverseCreation = false): Promise<{ skippedTrashedPages: string[] }> {
     const skippedTrashedPages: string[] = []
 
     await db.links.where('sourceBlockId').equals(sourceBlockId).delete()
@@ -178,8 +178,8 @@ export class IndexedDBAdapter {
             createdAt: Date.now()
           })
 
-          // 如果有双向关系，创建反向链接
-          if (link.relationshipType) {
+          // 如果有双向关系，创建反向链接（自动生成的反向链接不再递归创建）
+          if (link.relationshipType && !skipInverseCreation) {
             await this.createInverseLink(pageId, link.targetTitle, link.relationshipType, link.inverseRelationshipType)
           }
         }
@@ -253,8 +253,8 @@ export class IndexedDBAdapter {
         content,
         updatedAt: now
       })
-      // 重新解析并保存链接
-      await this.saveLinks(rootBlock.id, pageId, parseBlockLinks(content))
+      // 重新解析并保存链接（跳过反向链接创建，避免递归）
+      await this.saveLinks(rootBlock.id, pageId, parseBlockLinks(content), true)
     } else {
       // 创建新的根 Block
       const newBlockId = generateUUID()
@@ -273,8 +273,8 @@ export class IndexedDBAdapter {
       await db.blocks.put(blockToRecord(newBlock))
       // 更新页面的 blockId
       await db.pages.update(pageId, { blockId: newBlockId, updatedAt: now })
-      // 保存链接
-      await this.saveLinks(newBlockId, pageId, parseBlockLinks(content))
+      // 保存链接（跳过反向链接创建，避免递归）
+      await this.saveLinks(newBlockId, pageId, parseBlockLinks(content), true)
     }
   }
 

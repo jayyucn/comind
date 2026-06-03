@@ -5,25 +5,28 @@ import type { NodeData } from '@antv/g6'
 import { usePageStore } from '../../stores/pages'
 import { storage } from '../../storage/indexedDB'
 import { db } from '../../storage/db'
-import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import { getRelationshipColor, getRelationshipLabel, getInverseRelationshipType } from '../../types/relationship'
 import { useRightSidebar } from '../../composables/useRightSidebar'
 
 const pageStore = usePageStore()
-const { navigateToPage } = useNavigateToPage()
 const rightSidebar = useRightSidebar()
 
 const containerRef = ref<HTMLElement | null>(null)
 const graphRef = ref<Graph | null>(null)
-const maxDepth = ref(2)
+const maxDepth = ref(1)
 const currentLayout = ref<string>('force')
+const highlightedNodeId = ref<string | null>(null)
 
 const currentPageId = computed(() => pageStore.currentPageId)
+
+// 刷新代数：用于取消过期的异步渲染
+let refreshGeneration = 0
 
 async function buildGraphData(pageId: string, depth: number) {
   const nodes: NodeData[] = []
   const edges: { id: string; source: string; target: string; data: Record<string, unknown> }[] = []
   const visited = new Set<string>()
+  const blockCache = new Map<string, { pageId: string }>()
 
   async function traverse(pid: string, level: number) {
     if (level > depth || visited.has(pid)) return
@@ -41,35 +44,73 @@ async function buildGraphData(pageId: string, depth: number) {
       }
     })
 
-    const outLinks = await storage.getLinksBySourcePage(pid)
-    const inLinks = await storage.getLinksByTargetPage(pid)
+    // 并行查询出链和入链
+    const [outLinks, inLinks] = await Promise.all([
+      storage.getLinksBySourcePage(pid),
+      storage.getLinksByTargetPage(pid),
+    ])
 
     for (const link of outLinks) {
       const targetPage = pageStore.getPage(link.targetPageId)
       if (!targetPage) continue
       const color = getRelationshipColor(link.relationshipType ?? 'related')
       const label = getRelationshipLabel(link.relationshipType ?? 'related')
-      edges.push({
-        id: link.id,
-        source: pid,
-        target: link.targetPageId,
-        data: {
-          relationshipType: link.relationshipType ?? 'related',
-          label,
-          color
-        }
-      })
-      await traverse(link.targetPageId, level + 1)
+      // 只在目标节点会被遍历时添加边（避免边指向不存在的节点）
+      if (level + 1 <= depth && !visited.has(link.targetPageId)) {
+        edges.push({
+          id: link.id,
+          source: pid,
+          target: link.targetPageId,
+          data: {
+            relationshipType: link.relationshipType ?? 'related',
+            label,
+            color
+          }
+        })
+        await traverse(link.targetPageId, level + 1)
+      }
     }
 
     for (const link of inLinks) {
-      const block = await db.blocks.get(link.sourceBlockId)
-      if (!block) continue
+      // 使用缓存避免重复 IDB 查询
+      let block = blockCache.get(link.sourceBlockId)
+      if (!block) {
+        const record = await db.blocks.get(link.sourceBlockId)
+        if (!record) continue
+        block = { pageId: record.pageId }
+        blockCache.set(link.sourceBlockId, block)
+      }
       const sourcePageId = block.pageId
       const sourcePage = pageStore.getPage(sourcePageId)
       if (!sourcePage) continue
-      // 只遍历发现节点，不创建反向边（避免与 outLinks 的正向边冗余）
-      await traverse(sourcePageId, level + 1)
+      // 只添加未访问过的入链节点和边，不继续深度遍历（避免拉入无关节点）
+      const canAdd = level + 1 <= depth && !visited.has(sourcePageId)
+      if (canAdd) {
+        visited.add(sourcePageId)
+        nodes.push({
+          id: sourcePage.id,
+          data: {
+            label: sourcePage.title,
+            isCurrent: sourcePage.id === pageId,
+            level: level + 1
+          }
+        })
+        // 添加入链边（source→current），仅在节点被添加时
+        if (!edges.find(e => e.id === link.id)) {
+          const color = getRelationshipColor(link.relationshipType ?? 'related')
+          const label = getRelationshipLabel(link.relationshipType ?? 'related')
+          edges.push({
+            id: link.id,
+            source: sourcePageId,
+            target: pid,
+            data: {
+              relationshipType: link.relationshipType ?? 'related',
+              label,
+              color
+            }
+          })
+        }
+      }
     }
   }
 
@@ -118,20 +159,36 @@ async function buildGraphData(pageId: string, depth: number) {
   return { nodes, edges: dedupedEdges }
 }
 
-function getNodeSize(isCurrent: boolean): [number, number] {
+function getNodeSize(d: NodeData): [number, number] {
+  const isCurrent = !!d.data?.isCurrent
+  const isHighlighted = !!d.data?.isHighlighted && !isCurrent
+  if (isHighlighted) return [100, 32]
   return isCurrent ? [120, 36] : [90, 28]
 }
 
-function getNodeFill(isCurrent: boolean): string {
+function getNodeFill(d: NodeData): string {
+  const isCurrent = !!d.data?.isCurrent
+  const isHighlighted = !!d.data?.isHighlighted && !isCurrent
+  if (isHighlighted) return '#e6f7ff'
   return isCurrent ? '#1890ff' : '#ffffff'
 }
 
-function getNodeStroke(isCurrent: boolean): string {
+function getNodeStroke(d: NodeData): string {
+  const isCurrent = !!d.data?.isCurrent
+  const isHighlighted = !!d.data?.isHighlighted && !isCurrent
+  if (isHighlighted) return '#1890ff'
   return isCurrent ? '#1890ff' : '#e8e8e8'
 }
 
-function getNodeLabelFill(isCurrent: boolean): string {
+function getNodeLabelFill(d: NodeData): string {
+  const isCurrent = !!d.data?.isCurrent
+  const isHighlighted = !!d.data?.isHighlighted && !isCurrent
+  if (isHighlighted) return '#1890ff'
   return isCurrent ? '#ffffff' : '#333333'
+}
+
+function getNodeLineWidth(d: NodeData): number {
+  return (!!d.data?.isCurrent || !!d.data?.isHighlighted) ? 2 : 1
 }
 
 async function initGraph() {
@@ -153,16 +210,16 @@ async function initGraph() {
     node: {
       type: 'rect',
       style: {
-        size: (d: NodeData) => getNodeSize(!!d.data?.isCurrent),
+        size: (d: NodeData) => getNodeSize(d),
         radius: 6,
-        fill: (d: NodeData) => getNodeFill(!!d.data?.isCurrent),
-        stroke: (d: NodeData) => getNodeStroke(!!d.data?.isCurrent),
-        lineWidth: 1,
+        fill: (d: NodeData) => getNodeFill(d),
+        stroke: (d: NodeData) => getNodeStroke(d),
+        lineWidth: (d: NodeData) => getNodeLineWidth(d),
         labelText: (d: NodeData) => (d.data?.label as string) ?? '',
         labelPlacement: 'center',
-        labelFill: (d: NodeData) => getNodeLabelFill(!!d.data?.isCurrent),
+        labelFill: (d: NodeData) => getNodeLabelFill(d),
         labelFontSize: 11,
-        labelFontWeight: (d: NodeData) => d.data?.isCurrent ? 600 : 400,
+        labelFontWeight: (d: NodeData) => d.data?.isCurrent ? 600 : d.data?.isHighlighted ? 500 : 400,
       }
     },
     edge: {
@@ -197,9 +254,8 @@ async function initGraph() {
 
   graph.on('node:click', (evt: any) => {
     const nodeId = evt.target?.id
-    if (nodeId && nodeId !== currentPageId.value) {
-      navigateToPage(nodeId)
-    }
+    if (!nodeId) return
+    handleNodeClick(nodeId)
   })
 
   graphRef.value = graph
@@ -215,10 +271,20 @@ async function refreshGraphData(graph?: Graph) {
   const g = graph ?? graphRef.value
   if (!g || !currentPageId.value) return
 
+  // 递增 generation，如果后续有新的 refresh 请求，当前操作会被跳过
+  const gen = ++refreshGeneration
+
   const { nodes, edges } = await buildGraphData(currentPageId.value, maxDepth.value)
 
+  // 检查是否已被更新的请求取代
+  if (gen !== refreshGeneration) return
+
   g.setData({ nodes, edges })
-  await g.render()
+  await g.draw()
+  await g.layout()
+
+  if (gen !== refreshGeneration) return
+
   await g.fitView()
   // fitView 后缩小一点留出边距
   const zoom = g.getZoom()
@@ -255,8 +321,32 @@ async function handleRefresh() {
   await refreshGraphData()
 }
 
+function handleNodeClick(nodeId: string) {
+  if (nodeId === highlightedNodeId.value) {
+    highlightedNodeId.value = null
+  } else {
+    highlightedNodeId.value = nodeId
+  }
+  updateNodeHighlight()
+}
+
+function updateNodeHighlight() {
+  const g = graphRef.value
+  if (!g) return
+  const nodeData = g.getNodeData()
+  for (const node of nodeData) {
+    ;(node.data as any).isHighlighted = node.id === highlightedNodeId.value
+  }
+  g.setData({ nodes: nodeData, edges: g.getEdgeData() })
+  g.draw()
+}
+
 watch(currentPageId, async () => {
   if (!rightSidebar.visible.value) return
+  // 防抖：快速切换页面时只执行最后一次
+  const gen = ++refreshGeneration
+  await new Promise(r => setTimeout(r, 150))
+  if (gen !== refreshGeneration) return
   await refreshGraphData()
 })
 

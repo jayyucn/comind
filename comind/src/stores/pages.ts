@@ -116,10 +116,13 @@ export const usePageStore = defineStore('pages', () => {
   /** 永久删除页面 */
   async function permanentDeletePage(pageId: string): Promise<void> {
     await storage.permanentDeletePage(pageId)
+    pages.value = pages.value.filter(p => p.id !== pageId)
     trashPages.value = trashPages.value.filter(p => p.id !== pageId)
     if (currentPageId.value === pageId) {
       currentPageId.value = ''
     }
+    const { removeFavorite } = useFavorites()
+    removeFavorite(pageId)
     if (removePageFromHistoryFn) {
       removePageFromHistoryFn(pageId)
     }

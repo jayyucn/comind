@@ -2,7 +2,6 @@
 import { ref, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePageStore } from '../../stores/pages'
-import { useFavorites } from '../../composables/useFavorites'
 import { MoreVertical, Pencil, Trash2, ChevronRight } from 'lucide-vue-next'
 import ConfirmDialog from '../ConfirmDialog.vue'
 
@@ -16,7 +15,6 @@ const emit = defineEmits<{
 
 const router = useRouter()
 const pageStore = usePageStore()
-const { removeFavorite } = useFavorites()
 
 const isMenuOpen = ref(false)
 const isDeleteSubmenuOpen = ref(false)
@@ -56,7 +54,6 @@ function showSoftDeleteDialog(event: Event) {
 async function handleSoftDelete() {
   showSoftDeleteConfirm.value = false
   await pageStore.softDeletePage(props.page.id)
-  removeFavorite(props.page.id)
   if (router.currentRoute.value.params.pageId === props.page.id) {
     router.push('/journal')
   }
@@ -71,7 +68,6 @@ function showPermanentDeleteDialog(event: Event) {
 async function handlePermanentDelete() {
   showPermanentDeleteConfirm.value = false
   await pageStore.permanentDeletePage(props.page.id)
-  removeFavorite(props.page.id)
   if (router.currentRoute.value.params.pageId === props.page.id) {
     router.push('/journal')
   }
