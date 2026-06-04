@@ -33,14 +33,15 @@ defineExpose({ moveSelection, select, close })
           :key="item.type"
           class="rel-menu-item"
           :class="{ selected: index === state.selectedIndex }"
+          :data-type="item.type"
           :style="{ '--rel-color': item.color }"
           @mousedown="onItemMouseDown($event, index)"
         >
-          <span class="rel-menu-type">{{ item.type }}</span>
+          <span class="rel-menu-type">{{ item.label }}</span>
           <span
-            v-if="item.inverse"
+            v-if="item.inverseLabel && item.inverseLabel !== item.label"
             class="rel-menu-inverse"
-          >→ {{ item.inverse }}</span>
+          >→ {{ item.inverseLabel }}</span>
         </li>
       </ul>
       <div
