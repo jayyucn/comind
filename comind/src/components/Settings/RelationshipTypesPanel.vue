@@ -356,6 +356,8 @@ function moveDown(id: string): void {
   color: var(--text-primary);
   font-size: 12px;
   font-family: inherit;
+  /* 允许 grid 列收缩到内容以下，避免 1fr 列因 input 固有宽度溢出 row */
+  min-width: 0;
 }
 
 .rel-input:focus {
