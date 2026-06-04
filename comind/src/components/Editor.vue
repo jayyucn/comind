@@ -4,10 +4,12 @@ import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import { WikiLinkExtension } from '../extensions/WikiLinkExtension'
 import { WikiLinkTriggerExtension, notifyWikiLinkMenuSelect, closeWikiLinkMenuByEditor, findWikiLinkAtCursor } from '../extensions/WikiLinkTriggerExtension'
+import { RelationshipTriggerExtension, notifyRelationshipMenuSelect, closeRelationshipMenuByEditor } from '../extensions/RelationshipTriggerExtension'
 import EnterAsBlockExtension from '../extensions/EnterAsBlockExtension'
 import BracketPairExtension from '../extensions/BracketPairExtension'
 import { SlashCommandExtension } from '../extensions/SlashCommandExtension'
 import { usePageStore } from '../stores/pages'
+import { useRelationshipMenu } from '../composables/useRelationshipMenu'
 import { debounce } from '../utils/debounce'
 import PageLinkMenu from './PageLinkMenu.vue'
 
@@ -41,6 +43,39 @@ const menuPosition = ref({ x: 0, y: 0 })
 const menuRange = ref({ from: 0, to: 0 })
 const menuQuery = ref('')
 const menuRef = ref<InstanceType<typeof PageLinkMenu> | null>(null)
+
+const relMenu = useRelationshipMenu()
+
+function handleRelationshipTrigger(event: Event) {
+  const customEvent = event as CustomEvent<{
+    view: any
+    position: number
+    range: { from: number; to: number }
+    wikiEnd: number
+    pageName: string
+  }>
+  const { view, position, range, wikiEnd } = customEvent.detail
+  const coords = view.coordsAtPos(position)
+
+  relMenu.open({
+    view,
+    position: { x: coords.left, y: coords.bottom + 6 },
+    range,
+    initialQuery: '',
+    onSelect: (newType) => {
+      if (!editor.value) return
+      const { state, view: edView } = editor.value
+      // wikiEnd 是 wiki link ']]' 之后的 doc 位置（不含任何 BracketPair 冗余 ']]'）
+      // 范围 [wikiEnd, range.to) = '...^'（含冗余 ']]' 数量 = range.to - wikiEnd - 1）
+      // 替换为 '^(newType)'，最终得到 '[[X]]^(newType)'
+      const tr = state.tr
+      tr.insertText(`^(${newType})`, wikiEnd, range.to)
+      edView.dispatch(tr)
+      notifyRelationshipMenuSelect()
+      closeRelationshipMenuByEditor()
+    }
+  })
+}
 
 function handleWikiLinkTrigger(event: Event) {
   const customEvent = event as CustomEvent<{
@@ -183,6 +218,7 @@ const editor = shallowRef(useEditor({
     EnterAsBlockExtension,
     WikiLinkExtension,
     WikiLinkTriggerExtension,
+    RelationshipTriggerExtension,
     BracketPairExtension,
   ],
   content: textToHtml(props.content),
@@ -220,7 +256,7 @@ watch(
 
 onBeforeUnmount(() => {
   savedFromOutside = false
-  
+
   try {
     const view = editor.value?.view
     if (view) {
@@ -232,6 +268,7 @@ onBeforeUnmount(() => {
       view.dom.removeEventListener('wiki-link-menu-arrowdown', handleWikiLinkMenuArrowDown as EventListener)
       view.dom.removeEventListener('wiki-link-menu-arrowup', handleWikiLinkMenuArrowUp as EventListener)
       view.dom.removeEventListener('enter-as-block', handleEnterAsBlock as EventListener)
+      view.dom.removeEventListener('relationship-trigger', handleRelationshipTrigger as EventListener)
     }
   } catch (err) {
     if (err instanceof Error && err.message.includes('editor view is not available')) {
@@ -257,6 +294,7 @@ onMounted(() => {
       editor.value.view.dom.addEventListener('wiki-link-menu-arrowdown', handleWikiLinkMenuArrowDown as EventListener)
       editor.value.view.dom.addEventListener('wiki-link-menu-arrowup', handleWikiLinkMenuArrowUp as EventListener)
       editor.value.view.dom.addEventListener('enter-as-block', handleEnterAsBlock as EventListener)
+      editor.value.view.dom.addEventListener('relationship-trigger', handleRelationshipTrigger as EventListener)
     }
   })
 })

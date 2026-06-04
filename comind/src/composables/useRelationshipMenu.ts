@@ -2,7 +2,10 @@ import { ref, computed } from 'vue'
 import { PREDEFINED_RELATIONSHIPS } from '../types/relationship'
 
 export interface RelationshipMenuOpenOpts {
-  view: { dom: { isConnected: boolean } }
+  // Tiptap EditorView 兼容（自带 .dom.isConnected），
+  // 或测试桩 { dom: { isConnected: boolean } }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  view: any
   position: { x: number; y: number }
   range: { from: number; to: number }
   initialQuery?: string

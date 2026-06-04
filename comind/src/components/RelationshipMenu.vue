@@ -21,43 +21,55 @@ defineExpose({ moveSelection, select, close })
   <Teleport to="body">
     <div
       v-if="state.visible"
-      class="rel-menu"
-      :style="{ left: (state.position?.x ?? 0) + 'px', top: (state.position?.y ?? 0) + 'px' }"
+      class="rel-menu-overlay"
+      @click.self="close"
+      @contextmenu.prevent
     >
-      <ul
-        v-if="items.length > 0"
-        class="rel-menu-list"
-      >
-        <li
-          v-for="(item, index) in items"
-          :key="item.type"
-          class="rel-menu-item"
-          :class="{ selected: index === state.selectedIndex }"
-          :data-type="item.type"
-          :style="{ '--rel-color': item.color }"
-          @mousedown="onItemMouseDown($event, index)"
-        >
-          <span class="rel-menu-type">{{ item.label }}</span>
-          <span
-            v-if="item.inverseLabel && item.inverseLabel !== item.label"
-            class="rel-menu-inverse"
-          >→ {{ item.inverseLabel }}</span>
-        </li>
-      </ul>
       <div
-        v-else
-        class="rel-menu-empty"
+        class="rel-menu"
+        :style="{ left: (state.position?.x ?? 0) + 'px', top: (state.position?.y ?? 0) + 'px' }"
+        @mousedown.stop
       >
-        No matches
+        <ul
+          v-if="items.length > 0"
+          class="rel-menu-list"
+        >
+          <li
+            v-for="(item, index) in items"
+            :key="item.type"
+            class="rel-menu-item"
+            :class="{ selected: index === state.selectedIndex }"
+            :data-type="item.type"
+            :style="{ '--rel-color': item.color }"
+            @mousedown="onItemMouseDown($event, index)"
+          >
+            <span class="rel-menu-type">{{ item.label }}</span>
+            <span
+              v-if="item.inverseLabel && item.inverseLabel !== item.label"
+              class="rel-menu-inverse"
+            >→ {{ item.inverseLabel }}</span>
+          </li>
+        </ul>
+        <div
+          v-else
+          class="rel-menu-empty"
+        >
+          No matches
+        </div>
       </div>
     </div>
   </Teleport>
 </template>
 
 <style scoped>
-.rel-menu {
+.rel-menu-overlay {
   position: fixed;
+  inset: 0;
   z-index: 1000;
+}
+
+.rel-menu {
+  position: absolute;
   background: var(--bg-primary, #fff);
   border: 1px solid var(--border-color, #e5e7eb);
   border-radius: 6px;
