@@ -1,8 +1,8 @@
 # Link 解析规范
 
-> 版本：v0.2
-> 日期：2026-04-16
-> 状态：✅ 已确认（与 data-model.md、SPEC.md 保持一致）
+> 版本：v0.3
+> 日期：2026-06-04
+> 状态：✅ 已更新（支持关系类型链接）
 
 ---
 
@@ -25,12 +25,32 @@
 | 页面链接 | `[[页面名]]` | "页面名" | 目标 Page.id |
 | 别名链接 | `[[目标页面\|别名]]` | "别名" | 目标 Page.id |
 | 外部链接 | `[[https://example.com]]` 或 `[[https://example.com\|显示文本]]` | 末段或别名 | NULL |
+| **关系类型链接** | `[[页面名]]^(type)` | "页面名" | 目标 Page.id |
+| **别名关系链接** | `[[目标页面\|别名]]^(type)` | "别名" | 目标 Page.id |
 
 **分隔符规则：**
 - 内部链接用 `|` 分隔：`[[目标|别名]]`
 - 外部链接以 `http://` 或 `https://` 开头
+- 关系类型用 `^(type)` 后缀附加在链接后
 
-### 2.2 解析正则
+### 2.2 关系类型链接
+
+**格式说明**：
+- 关系类型使用 `^(type)` 后缀附加在链接后
+- 预定义类型：parent/child, depends-on/required-by, references/referenced-by, example-of/has-example, related, similar
+- 每种类型有对应的颜色配置
+- 关系类型不影响链接跳转，仅用于知识图谱可视化和语义化
+
+**正则表达式**：
+```typescript
+const TYPED_LINK_REGEX = /\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]\^?\(([^)]+)\)/g
+```
+
+**示例**：
+- `[[PageA]]^(parent)`
+- `[[PageB\|项目B]]^(depends-on)`
+
+### 2.3 解析正则
 
 ```typescript
 // 内部双链正则
@@ -596,4 +616,76 @@ describe('Link Parser', () => {
 
 ---
 
-*文档由 AI 助手协助生成，待开发者评审确认。*
+## 11. 关系类型同步系统
+
+### 11.1 跨 Block 关系类型同步
+
+**Composable 位置**：`composables/useRelationshipSync.ts`
+
+**核心职责**：
+1. 跟踪当前正在编辑的 Block（保护编辑中的内容不被自动覆盖）
+2. 扫描页面内所有 Block，提取关系类型链接快照
+3. 提供 API 同步/移除同一页面内指向相同目标的关系类型
+
+**使用场景**：
+- 页面 A 有 Block 1、2、3 都引用了 `[[PageB]]`
+- 用户在 Block 1 中添加 `^(depends-on)` 类型
+- 调用 `syncRelationshipType()` 后，Block 2、3 自动带上相同类型
+- 用户删除类型时，调用 `removeRelationshipType()` 清理其他链接
+
+**关键约束**：
+- 跳过当前正在编辑的 Block
+- 修改 Block 后需重新调用 `refreshSnapshot()`
+
+### 11.2 主要 API
+
+- `setEditingBlock(blockId)`: 设置当前正在编辑的 Block
+- `refreshSnapshot()`: 刷新关系类型链接快照
+- `syncRelationshipType(sourceBlockId, targetTitle, newType)`: 同步关系类型到其他 Block
+- `removeRelationshipType(targetTitle)`: 移除页面内所有关系类型
+
+---
+
+## 12. 渲染系统
+
+### 12.1 带类型链接的渲染
+
+**Composable 位置**：`composables/useContentRenderer.ts`
+
+**渲染特性**：
+- `[[X]]^(type)` 渲染为两个独立 span：
+  - 链接主体（`[[X]]`）：`.block-link-typed`，带关系类型颜色
+  - 类型标签（`type`）：`.rel-type-label`，单独点击区域
+- 点线下划线样式区分带类型链接
+- 分离的事件区域：点击链接跳转，点击类型打开菜单
+
+### 12.2 #Tag 渲染优化
+
+**关键改进**：
+- 在分段文本上处理 #tag，避免误匹配 CSS 颜色值（如 `#9CA3AF`）
+- 使用 `renderSegmentWithTags()` 函数在链接间的纯文本段上单独处理
+- 处理顺序：带类型链接 → 外部链接 → 普通 wiki 链接
+
+---
+
+## 13. 反向链接机制
+
+### 13.1 自动反向链接创建
+
+**存储层实现**：`storage/indexedDB.ts`
+
+**主要功能**：
+- 创建正向链接时自动创建反向链接
+- 支持关系类型同步
+- 防止自引用
+- 去重处理
+
+**关键修复**：
+1. 自引用检测：避免创建指向自己的反向链接
+2. 独立存储：反向链接独立存储，不绑定到页面根块
+3. 去重处理：防止重复创建反向链接
+4. 关系类型变更：自动更新反向链接的类型
+
+---
+
+*文档由 AI 助手协助生成，已更新至 v0.3 版本。*

@@ -228,14 +228,14 @@ export class IndexedDBAdapter {
     relationshipType: string
   ): Promise<void> {
     // 获取页面信息
-    const sourcePage = await db.pages.get(pageId)
+    const sourcePage = await db.pages.get(targetPageId) // 原始链接的源页面（反向链接要指向的页面）
     if (!sourcePage) return
 
-    const targetPage = await db.pages.get(targetPageId)
+    const targetPage = await db.pages.get(pageId) // 要在这个页面创建反向链接
     if (!targetPage) return
 
-    const linkText = `[[${targetPage.title}]]^(${relationshipType})`
-    const escapedTitle = targetPage.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const linkText = `[[${sourcePage.title}]]^(${relationshipType})`
+    const escapedTitle = sourcePage.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     // 匹配单行：[[title]]^(type) 或 [[title|alias]]^(type)，可有前导的 "- " 或空白
     const linePattern = new RegExp(
       `^\\s*-?\\s*\\[\\[${escapedTitle}(?:\\|[^\\]]+)?\\]\\]\\^?\\([^)]+\\)\\s*$`

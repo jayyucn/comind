@@ -1,6 +1,6 @@
 # comind 文档索引
 
-> 更新日期：2026-06-03
+> 更新日期：2026-06-04
 > 本文档是 docs/ 目录的唯一入口点。Agent 只需加载 `active/` 目录即可获得完整项目上下文。
 
 ---
@@ -35,9 +35,12 @@ docs/
 | 属性系统 | `architecture.md` | §5 属性系统 |
 | 排序机制 | `architecture.md` | §6 排序机制（Gap Pos） |
 | 链接系统 | `features.md` | §1 链接系统 |
+| 关系类型链接 | `link-spec.md` | §2.2 关系类型链接 |
+| 概念图谱 | `concept-graph-spec.md` | 完整功能规格 |
 | 斜杠命令 | `features.md` | §2 斜杠命令 |
 | Block 操作 | `features.md` | §3 功能设计 |
 | 视觉规范 | `interaction.md` | §1 视觉系统 |
+| 关系类型 UI | `ui-ux-spec.md` | §关系类型系统 UI |
 | Block 状态机 | `interaction.md` | §2 Block 状态机 |
 | 鼠标操作 | `interaction.md` | §3 鼠标操作 |
 | 键盘操作 | `interaction.md` | §4 键盘操作 |
@@ -58,11 +61,12 @@ docs/
 | architecture.md | v4.0 | 2026-05-21 | 合并自 data-model + storage-spec + routing + block-editor-spec + property-spec + block-ordering-redesign |
 | features.md | v1.0 | 2026-05-21 | 合并自 link-spec + slash-commands-spec + functional-design |
 | interaction.md | v1.0 | 2026-05-21 | 合并自 interaction-spec + ui-ux-spec |
-| development.md | **v4.2** | **2026-06-03** | **新增 useRightSidebar + 概念图谱面板系统** |
+| development.md | v4.2 | 2026-06-03 | 新增 useRightSidebar + 概念图谱面板系统 |
 | product-vision.md | v1.4 | 2026-05-20 | 从 comind/docs/ 迁入 |
-| block-editor-spec.md | **v0.4** | **2026-05-29** | Embed Block 章节 |
-| ui-ux-spec.md | **v0.9** | **2026-06-03** | **新增概念图谱右侧边栏 + 滚动条隐藏** |
-| concept-graph-spec.md | **v0.5** | **2026-06-03** | **已实现 Phase 1 基础功能** |
+| block-editor-spec.md | v0.4 | 2026-05-29 | Embed Block 章节 |
+| ui-ux-spec.md | **v1.0** | **2026-06-04** | **新增关系类型菜单 + 带类型链接渲染** |
+| link-spec.md | **v0.3** | **2026-06-04** | **新增关系类型链接 + 同步系统** |
+| concept-graph-spec.md | **v0.6** | **2026-06-04** | **已实现 Phase 1 + Phase 2 功能** |
 
 ---
 
@@ -80,6 +84,25 @@ Agent 启动时只需加载 `docs/active/` 下的 6 个文件即可获得完整�
 
 ### 添加新文档
 新功能规格文档应追加到对应的 `active/` 文件中（如新功能属于已有功能域），或创建新文件（如全新功能域）。
+
+---
+
+## v0.6 更新摘要（2026-06-04）
+
+### 主要功能
+- **关系类型菜单系统**：新增 `RelationshipMenu` 组件，支持模糊搜索预定义关系类型
+- **关系类型状态管理**：新增 `useRelationshipMenu` composable，管理菜单状态
+- **带类型链接渲染**：优化 `useContentRenderer`，支持 `[[Page]]^(type)` 格式的渲染
+- **关系类型同步系统**：新增 `useRelationshipSync` composable，页面内多 Block 关系类型自动同步
+- **反向链接机制修复**：修复概念图谱边丢失和反向链接创建逻辑，增加多项测试
+- **#Tag 渲染优化**：在分段文本上处理 #tag，避免误匹配 CSS 颜色值
+- **概念图谱 PNG 导出**：新增导出功能，支持导出当前视图为 PNG 图片
+
+### 相关文档
+- `docs/3-features/concept-graph-spec.md` - 概念图谱功能规格（更新至 v0.6）
+- `docs/3-features/link-spec.md` - 链接解析规范（更新至 v0.3）
+- `docs/4-ui/ui-ux-spec.md` - 交互规格（更新至 v1.0）
+- 新增 5 个自动反向链接相关测试用例
 
 ---
 
@@ -115,4 +138,4 @@ Agent 启动时只需加载 `docs/active/` 下的 6 个文件即可获得完整�
 
 ---
 
-*本文档于 2026-05-21 创建，作为文档体系重整的一部分。最新更新于 2026-05-29（v0.4）。*
+*本文档于 2026-05-21 创建，作为文档体系重整的一部分。最新更新于 2026-06-04（v0.6）。*

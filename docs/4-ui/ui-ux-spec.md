@@ -1,11 +1,13 @@
 # comind UI/UX 规范
 
-> 版本：v0.9
-> 日期：2026-06-03
-> 状态：**已更新**（新增概念图谱右侧边栏 + 滚动条样式简化）
+> 版本：v1.0
+> 日期：2026-06-04
+> 状态：**已更新**（关系类型菜单 + 带类型链接渲染）
 > 更新内容：
-> - v0.5 新增概念图谱右侧边栏（可调节宽度）
-> - v0.5 滚动条样式全局隐藏简化
+> - v1.0 新增关系类型选择菜单（支持模糊搜索）
+> - v1.0 新增带类型链接的渲染（点线下划线 + 分离的类型标签）
+> - v0.9 新增概念图谱右侧边栏（可调节宽度）
+> - v0.9 滚动条样式全局隐藏简化
 
 ---
 
@@ -283,6 +285,52 @@ MainContent
   &::-webkit-scrollbar-thumb { background: --border-strong; border-radius: 3px }
   &::-webkit-scrollbar-thumb:hover { background: --text-tertiary }
 ```
+
+---
+
+## 关系类型系统 UI
+
+### 关系类型选择菜单
+
+**组件位置**：`components/RelationshipMenu.vue`
+
+**设计规范**：
+- **定位**：Teleport 到 body，z-index: 1000
+- **尺寸**：min-width: 200px，max-height: 280px，overflow-y: auto
+- **样式**：圆角 6px，边框 1px，阴影 0 4px 12px rgba(0,0,0,0.1)
+- **菜单项**：
+  - 高度：自适应，padding: 6px 12px
+  - 悬停态：背景色 rgba(0,0,0,0.04)
+  - 选中态：左侧边框 3px，颜色为关系类型颜色
+  - 显示：关系类型名（彩色） + 反向关系名（灰色斜体）
+- **空状态**：显示 "No matches"
+
+**交互**：
+- 支持鼠标悬停高亮
+- 支持键盘 ↑/↓ 导航
+- 支持 Enter 确认选择
+- 点击外部或 ESC 关闭
+
+### 带类型链接渲染
+
+**样式类**：
+- `.block-link-typed`：带类型的链接主体
+- `.rel-type-label`：关系类型标签
+
+**视觉特征**：
+- 链接主体：点线下划线，颜色为关系类型颜色
+- 类型标签：独立区域，可点击，显示关系类型名
+- CSS 变量：`--rel-color` 用于关系类型颜色
+
+### 关系类型颜色规范
+
+预定义关系类型颜色：
+- `parent/child`：#1890ff（蓝色）
+- `depends-on/required-by`：#faad14（琥珀色）
+- `references/referenced-by`：#52c41a（绿色）
+- `example-of/has-example`：#eb2f96（粉色）
+- `related`：#8c8c8c（灰色）
+- `similar`：#722ed1（紫色）
 
 ---
 

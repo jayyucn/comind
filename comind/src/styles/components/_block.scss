@@ -211,7 +211,7 @@
 // 颜色由内联 style="--rel-color:..." 注入
 .rel-type-label {
   color: var(--rel-color, currentColor);
-  font-size: 0.9em;
+  font-size: var(--text-xs);
   font-style: italic;
   margin-left: 2px;
   padding: 0 4px;
