@@ -19,14 +19,13 @@ watch(isOpen, (visible) => {
 onUnmounted(() => popModal('settings-modal'))
 const { theme, setTheme } = useTheme()
 
-type Section = 'appearance' | 'editor' | 'relationships' | 'data' | 'about'
+type Section = 'appearance' | 'editor' | 'data' | 'about'
 
 const activeSection = ref<Section>('appearance')
 
 const sections: { key: Section; label: string }[] = [
   { key: 'appearance', label: '外观' },
   { key: 'editor', label: '编辑器' },
-  { key: 'relationships', label: '关系类型' },
   { key: 'data', label: '数据管理' },
   { key: 'about', label: '关于' },
 ]
@@ -112,9 +111,6 @@ onUnmounted(() => {
                   </div>
                   <span class="setting-value">默认</span>
                 </div>
-              </template>
-
-              <template v-if="activeSection === 'relationships'">
                 <div class="setting-item setting-item--column">
                   <div class="setting-info">
                     <span class="setting-label">关系类型</span>
