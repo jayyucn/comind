@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import 'fake-indexeddb/auto'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
@@ -23,6 +24,8 @@ import Block from './index.vue'
 import { useBlockStore } from '../../stores/blocks'
 import { usePageStore } from '../../stores/pages'
 import { useRelationshipMenu } from '../../composables/useRelationshipMenu'
+import { useRelationshipTypes } from '../../composables/useRelationshipTypes'
+import { db } from '../../storage/db'
 import type { TreeNode } from '../../types/block'
 
 vi.mock('../../storage/indexedDB', () => ({
@@ -119,6 +122,13 @@ describe('Block - rel-type-label click handling', () => {
   beforeEach(async () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+
+    // useRelationshipMenu.items 依赖 useRelationshipTypes 的 state；
+    // 加载种子数据，确保菜单分组有效、setSelectedGroupIndex(2) 能命中
+    await db.relationshipTypes.clear()
+    const { _resetForTest, load } = useRelationshipTypes()
+    _resetForTest()
+    await load()
 
     blockStore = useBlockStore()
     pageStore = usePageStore()

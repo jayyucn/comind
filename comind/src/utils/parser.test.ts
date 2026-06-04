@@ -5,14 +5,26 @@
  * - #tag 现在作为 Page 链接处理，由渲染层负责
  * - 不再在 parser 层提取 tags
  */
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
+import 'fake-indexeddb/auto'
 import { parseContent, parsePropertyValue, parseBlockLinks } from './parser'
+import { useRelationshipTypes } from '../composables/useRelationshipTypes'
+import { db } from '../storage/db'
 
 // ────────────────────────────────────────────────────────
 // parseBlockLinks 关系类型解析
 // ────────────────────────────────────────────────────────
 
 describe('parseBlockLinks', () => {
+  beforeEach(async () => {
+    // getPredefinedRelationship 依赖 useRelationshipTypes 的 state；
+    // 测试环境下初始化种子数据，让依赖反向推断的断言可工作
+    await db.relationshipTypes.clear()
+    const { _resetForTest, load } = useRelationshipTypes()
+    _resetForTest()
+    await load()
+  })
+
   describe('基本链接解析', () => {
     it('应正确解析普通链接 [[页面]]', () => {
       const result = parseBlockLinks('这是 [[项目A]] 的链接')

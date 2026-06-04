@@ -1,5 +1,8 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
+import 'fake-indexeddb/auto'
 import { useContentRenderer } from './useContentRenderer'
+import { useRelationshipTypes } from './useRelationshipTypes'
+import { db } from '../storage/db'
 
 const { renderContentToHtml } = useContentRenderer()
 
@@ -84,6 +87,15 @@ describe('useContentRenderer — 渲染测试', () => {
 })
 
 describe('useContentRenderer - typed wiki links', () => {
+  beforeEach(async () => {
+    // getPredefinedRelationship 依赖 useRelationshipTypes 的 state；
+    // 加载种子数据让中文 label/颜色 等断言可工作
+    await db.relationshipTypes.clear()
+    const { _resetForTest, load } = useRelationshipTypes()
+    _resetForTest()
+    await load()
+  })
+
   it('[[X]] 渲染为普通 block-link，关系标签显示 ^中文label', () => {
     // 渲染样式：
     // - [[X]] 部分保持原样（block-link 样式）
