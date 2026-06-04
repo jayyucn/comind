@@ -2,6 +2,7 @@ import { ref, computed } from 'vue'
 import { nanoid } from 'nanoid'
 import { db, type RelationshipTypeRecord } from '../storage/db'
 import { RELATIONSHIP_TYPES_SEED } from '../config/relationship-types-seed'
+import { TYPE_REGEX, COLOR_REGEX } from './relationship-type-constants'
 
 /** 用户编辑/新建时的输入（不含 id/order/builtin/deleted） */
 export interface RelationshipTypeInput {
@@ -11,9 +12,6 @@ export interface RelationshipTypeInput {
   inverseLabel: string
   color: string
 }
-
-const TYPE_REGEX = /^[a-z][a-z0-9-]*$/
-const COLOR_REGEX = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/
 
 /** 校验输入；返回 null 表示通过，否则返回错误信息 */
 export function validateRelationshipTypeInput(
