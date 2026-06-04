@@ -225,3 +225,95 @@ describe('Block - rel-type-label click handling', () => {
     wrapper.unmount()
   })
 })
+
+describe('Block - handleDelete 关系清理集成', () => {
+  let blockStore: ReturnType<typeof useBlockStore>
+  let pageStore: ReturnType<typeof usePageStore>
+  const PAGE_TITLE = 'P'  // 本页面 title，匹配 block 中 [[P]]
+  const TARGET_TITLE = 'X' // 目标页面 title，匹配 block 中 [[X]]
+
+  beforeEach(async () => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+
+    blockStore = useBlockStore()
+    pageStore = usePageStore()
+    // 创建本页面（P）和目标页面（X）
+    await pageStore.createPage(PAGE_TITLE, 'normal')
+    const ourPage = pageStore.pages[pageStore.pages.length - 1]
+    await pageStore.createPage(TARGET_TITLE, 'normal')
+    const targetPage = pageStore.pages[pageStore.pages.length - 1]
+    // 重置 createPage 后的 currentPageId 副作用
+    Object.defineProperty(pageStore, 'currentPageId', { value: ourPage.id, configurable: true })
+
+    // 注入主页 block
+    blockStore.blocks.push({
+      id: 'block-prev',
+      pageId: ourPage.id,
+      parentId: null,
+      pos: 500,
+      content: 'prev block',
+      format: {},
+      type: 'bullet',
+      properties: {},
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    })
+    // 注入主页 block
+    blockStore.blocks.push({
+      id: 'block-del',
+      pageId: ourPage.id,
+      parentId: null,
+      pos: 1000,
+      content: 'see [[X]]^(depends-on<->required-by)',
+      format: {},
+      type: 'bullet',
+      properties: {},
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    })
+    // 注入目标页 block（含反向引用）
+    blockStore.blocks.push({
+      id: 'block-target',
+      pageId: targetPage.id,
+      parentId: null,
+      pos: 1000,
+      content: 'reverse [[P]]^(required-by)',
+      format: {},
+      type: 'bullet',
+      properties: {},
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    })
+  })
+
+  it('删除带 typed-link 的 block 后应触发跨页反向降级', async () => {
+    const blockDel = blockStore.blocks.find(b => b.id === 'block-del')!
+    const wrapper = mount(Block, {
+      props: {
+        node: {
+          id: 'block-del',
+          block: blockDel,
+          children: []
+        },
+        pageId: blockDel.pageId, // 实际是 ourPage.id
+        depth: 0
+      },
+      global: {
+        stubs: { BulletRender: StubBulletRender }
+      }
+    })
+    await flushPromises()
+
+    // 直接调用暴露的 handleDelete 方法
+    await (wrapper.vm as any).handleDelete()
+
+    // 主页 block 应被删除
+    expect(blockStore.blocks.find(b => b.id === 'block-del')).toBeUndefined()
+    // 目标页 block 应被降级
+    const after = blockStore.blocks.find(b => b.id === 'block-target')
+    expect(after?.content).toBe('reverse [[P]]')
+
+    wrapper.unmount()
+  })
+})

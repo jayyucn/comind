@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useBlockStore } from '../stores/blocks'
+import { usePageStore } from '../stores/pages'
 import { useCrossBlockSelection } from './useCrossBlockSelection'
 
 vi.mock('../storage/indexedDB', () => ({
@@ -8,7 +9,20 @@ vi.mock('../storage/indexedDB', () => ({
     saveBlock: vi.fn(),
     deleteBlock: vi.fn(),
     deleteBlockCascade: vi.fn(),
-    getBlockTree: vi.fn().mockResolvedValue([])
+    updateBlock: vi.fn(),
+    getBlockTree: vi.fn().mockResolvedValue([]),
+    createPageWithRootBlock: vi.fn().mockImplementation(async (title: string, type: 'normal' | 'journal' = 'normal') => ({
+      id: `page-${title}-${Math.random().toString(36).slice(2)}`,
+      title,
+      type,
+      icon: null,
+      blockId: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      isTrashed: false,
+      trashedAt: null
+    })),
+    updatePage: vi.fn()
   }
 }))
 
@@ -519,6 +533,36 @@ describe('useCrossBlockSelection', () => {
 
       expect(blockStore.blocks.length).toBe(beforeCount)
       expect((storage.deleteBlockCascade as any).mock.calls.length).toBe(callsBefore)
+    })
+
+    test('被删 block 含 typed-link 时应触发跨页反向降级', async () => {
+      const pageStore = usePageStore()
+      await pageStore.createPage('P', 'normal')
+      const ourPage = pageStore.pages[pageStore.pages.length - 1]
+      await pageStore.createPage('X', 'normal')
+      const targetPage = pageStore.pages[pageStore.pages.length - 1]
+
+      const selection = useCrossBlockSelection()
+
+      // 主页 block：双向 typed-link
+      const block1 = await blockStore.createBlock({
+        pageId: ourPage.id,
+        content: 'see [[X]]^(depends-on<->required-by)'
+      })
+      // 目标页 block：含反向引用
+      const targetBlock = await blockStore.createBlock({
+        pageId: targetPage.id,
+        content: 'reverse [[P]]^(required-by)'
+      })
+
+      selection.anchorIds.add(block1.id)
+      await selection.deleteSelected()
+
+      // 目标页 block 应被降级
+      const after = blockStore.blocks.find(b => b.id === targetBlock.id)
+      expect(after?.content).toBe('reverse [[P]]')
+      // 选区应被清空
+      expect(selection.anchorIds.size).toBe(0)
     })
   })
 
