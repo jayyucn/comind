@@ -322,7 +322,11 @@ watch(collapsed, async (isCollapsed) => {
 /** mousedown：捕获点击坐标，在 tiptap 挂载前通知 editor store */
 function handleContentMousedown(e: MouseEvent) {
   const target = e.target as HTMLElement
+  // .block-link 与 .rel-type-label 都由 handleContentClick 处理点击，
+  // 不要让 mousedown 触发 setCursorPos/startTracking 导致 BulletRender 被替换、
+  // 进而让后续 click 事件落在新挂载的 Editor 上。
   if (target.closest('.block-link')) return
+  if (target.closest('.rel-type-label')) return
 
   if (handler.value?.type === 'embed' && block.value.properties?.sourceBlockId) {
     e.preventDefault()
