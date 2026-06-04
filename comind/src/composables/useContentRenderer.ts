@@ -93,13 +93,16 @@ export function useContentRenderer() {
       // ^(type) 部分：rel-type-label（关系色、小号字体）
       // 携带 typed 范围（用于点击时替换整段）和 label 范围（仅关系部分）
       // 标签显示 `^中文label`（caret + 中文 label）
+      // label-to = typedEnd - 1 排除 typed link 末尾的 ')'：
+      //   typed link = `[[X]]^(type)`，rel type 在 typedEnd - relType.length - 1 到 typedEnd - 2 之间
+      //   如果用 typedEnd（含 ')'），点击替换会吃掉 ')'，导致下一次切换继续丢字符
       result += `<span class="${CSS_CLASSES.relTypeLabel}" ` +
                 `data-rel-type="${safeRelType}" ` +
                 `data-block-id="${safeBlockId}" ` +
                 `data-typed-from="${typedStart}" ` +
                 `data-typed-to="${typedEnd}" ` +
                 `data-label-from="${typedEnd - relType.length - 1}" ` +
-                `data-label-to="${typedEnd}" ` +
+                `data-label-to="${typedEnd - 1}" ` +
                 `style="--rel-color:${color}">^${safeLabel}</span>`
 
       lastIndex = typedEnd

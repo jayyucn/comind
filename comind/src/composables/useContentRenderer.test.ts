@@ -125,11 +125,11 @@ describe('useContentRenderer - typed wiki links', () => {
     const typedTo = html.match(/data-typed-to="(\d+)"/)
     expect(typedFrom?.[1]).toBe('0')
     expect(typedTo?.[1]).toBe('18')
-    // depends-on 在原始文本中的范围是 7..18
+    // depends-on 在原始文本中的范围是 7..17（不含末尾的 ')'，否则点击替换会吃掉 ')'）
     const labelFrom = html.match(/data-label-from="(\d+)"/)
     const labelTo = html.match(/data-label-to="(\d+)"/)
     expect(labelFrom?.[1]).toBe('7')
-    expect(labelTo?.[1]).toBe('18')
+    expect(labelTo?.[1]).toBe('17')
   })
 
   it('普通 [[X]] 不被识别为 typed link', () => {
