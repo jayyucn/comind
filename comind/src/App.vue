@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import Sidebar from './components/Sidebar/index.vue'
 import PageMenuButton from './components/PageMenuButton.vue'
@@ -11,6 +11,7 @@ import { usePageStore } from './stores/pages'
 import { storage } from './storage/indexedDB'
 import { useSidebar } from './composables/useSidebar'
 import { useRightSidebar } from './composables/useRightSidebar'
+import { useRelationshipTypes } from './composables/useRelationshipTypes'
 import { ArrowLeft, ArrowRight, PanelLeftClose, PanelLeftOpen, PanelRightOpen, PanelRightClose } from 'lucide-vue-next'
 import RightSidebar from './components/RightSidebar/index.vue'
 import { registerPanel } from './components/RightSidebar/panels'
@@ -30,6 +31,10 @@ const editorStore = useEditorStore()
 const route = useRoute()
 const blockStore = useBlockStore()
 const pageStore = usePageStore()
+
+onMounted(async () => {
+  await useRelationshipTypes().load()
+})
 
 type HistoryItem = {
   path: string
