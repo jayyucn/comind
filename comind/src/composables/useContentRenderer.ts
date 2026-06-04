@@ -23,37 +23,41 @@ function escapeHtmlEntities(text: string): string {
 
 export function useContentRenderer() {
   /**
+   * 转义 + 处理 #tag。用于 typed link 之间的纯文本段，
+   * 不在最终 HTML 上跑 #tag 正则（避免误匹配 color 值的 #xxxxxx）。
+   */
+  function renderSegmentWithTags(text: string): string {
+    return escapeHtmlEntities(text).replace(TAG_TRIGGER_REGEX, (_, tag) => {
+      if (tag.includes('.')) return `#${tag}`
+      return `<span class="${CSS_CLASSES.blockLink} ${CSS_CLASSES.blockTag}" data-page="${escapeHtmlEntities(tag)}">#${escapeHtmlEntities(tag)}</span>`
+    })
+  }
+
+  /**
    * 将 Block 内容渲染为 HTML
    *
    * 处理（按顺序）：
    * 1. 带类型链接 [[X]]^(type) → .block-link-typed + .rel-type-label
-   *    （在原始 text 上做字符偏移，保证 data-typed-from/to 是原文偏移）
+   *    段间 #tag 在原始 text 上处理，避免误匹配 style 里的 #xxxxxx 颜色值
    * 2. 外部链接 [[https://...]]
    * 3. 普通链接 [[X]] 或 [[X|alias]] → .block-link
-   * 4. #tag → .block-link.block-tag
    */
   function renderContentToHtml(text: string, blockId: string = ''): string {
-    // 1. 带类型链接（必须在外部/普通链接之前 — 它的语法里也含 `[[...]]`）
+    // 1. 带类型链接 + 段间 #tag（基于原始 text）
     const withTyped = renderTypedLinks(text, blockId)
 
-    // 2. 外部链接
+    // 2. 外部链接（HTML 中无 [[，安全）
     const withExternal = withTyped.replace(EXTERNAL_LINK_REGEX, (_, url) => {
       return `<span class="${CSS_CLASSES.blockLink} external" data-external="${escapeHtmlEntities(url)}">${url}</span>`
     })
 
-    // 3. 普通 wiki link（typed 链接已变成 span，外部链接也已 span，剩下的是普通 wiki link）
+    // 3. 普通 wiki link（HTML 中无 [[，安全）
     const withWikiLinks = withExternal.replace(WIKI_LINK_REGEX, (_, target, alias) => {
       const display = alias || target
       return `<span class="${CSS_CLASSES.blockLink}" data-page="${escapeHtmlEntities(target)}">${display}</span>`
     })
 
-    // 4. #tag
-    const final = withWikiLinks.replace(TAG_TRIGGER_REGEX, (_, tag) => {
-      if (tag.includes('.')) return `#${tag}`
-      return `<span class="${CSS_CLASSES.blockLink} ${CSS_CLASSES.blockTag}" data-page="${escapeHtmlEntities(tag)}">#${escapeHtmlEntities(tag)}</span>`
-    })
-
-    return final
+    return withWikiLinks
   }
 
   function renderTypedLinks(text: string, blockId: string): string {
@@ -70,8 +74,8 @@ export function useContentRenderer() {
       const relType = m[3]
       const display = alias || target
 
-      // append 上一段（已转义）
-      result += escapeHtmlEntities(text.slice(lastIndex, typedStart))
+      // 段间纯文本（原始 text），在 escape 后做 #tag 处理
+      result += renderSegmentWithTags(text.slice(lastIndex, typedStart))
 
       const rel = getPredefinedRelationship(relType)
       const color = rel?.color ?? '#9CA3AF'
@@ -98,7 +102,7 @@ export function useContentRenderer() {
 
       lastIndex = typedEnd
     }
-    result += escapeHtmlEntities(text.slice(lastIndex))
+    result += renderSegmentWithTags(text.slice(lastIndex))
     return result
   }
 

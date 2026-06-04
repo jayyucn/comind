@@ -118,4 +118,33 @@ describe('useContentRenderer - typed wiki links', () => {
     expect(html).not.toContain('block-link-typed')
     expect(html).toContain('class="block-link"')
   })
+
+  it('[[X]]^(required-by) 的 style 属性不被 #tag 正则误匹配', () => {
+    // 回归测试：style="--rel-color:#faad14" 中的 #faad14 不应被 #tag 正则包装
+    const html = renderContentToHtml('[[First]]^(required-by)', 'block-1')
+    expect(html).toMatch(/style="--rel-color:#faad14"/)
+    expect(html).not.toContain('data-page="faad14"')
+  })
+
+  it('[[X]]^(depends-on) 的 #faad14 颜色值不被 #tag 正则误匹配', () => {
+    // 依赖关系 depends-on 颜色也是 #faad14（同 inverse）
+    const html = renderContentToHtml('[[A]]^(depends-on)', 'block-1')
+    expect(html).toMatch(/style="--rel-color:#faad14"/)
+    expect(html).not.toContain('data-page="faad14"')
+  })
+
+  it('[[X]]^(parent) 的 #1890ff 颜色值不被 #tag 正则误匹配', () => {
+    // 父级关系颜色是 #1890ff
+    const html = renderContentToHtml('[[A]]^(parent)', 'block-1')
+    expect(html).toMatch(/style="--rel-color:#1890ff"/)
+    expect(html).not.toContain('data-page="1890ff"')
+  })
+
+  it('typed link 与 #tag 共存时两者都正确渲染', () => {
+    // 段间 #tag 应在原始 text 上处理，typed 链接后样式完整
+    const html = renderContentToHtml('see #myproject and [[A]]^(related)', 'block-1')
+    expect(html).toMatch(/data-page="myproject"/)
+    expect(html).toMatch(/data-rel-type="related"/)
+    expect(html).toMatch(/style="--rel-color:#8c8c8c"/)
+  })
 })
