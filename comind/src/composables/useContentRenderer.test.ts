@@ -84,18 +84,37 @@ describe('useContentRenderer — 渲染测试', () => {
 })
 
 describe('useContentRenderer - typed wiki links', () => {
-  it('[[X]]^(depends-on) 渲染为点下划线 + 标签', () => {
+  it('[[X]] 渲染为普通 block-link，关系标签显示 ^中文label', () => {
+    // 渲染样式：
+    // - [[X]] 部分保持原样（block-link 样式）
+    // - 关系部分显示为 `^依赖`（caret + 中文 label），颜色用关系色
     const html = renderContentToHtml('See [[X]]^(depends-on) for details', 'block-1')
-    expect(html).toContain('class="block-link-typed"')
+    // [[X]] 部分：普通 block-link
     expect(html).toContain('data-page="X"')
+    expect(html).toMatch(/<span class="block-link"[^>]*data-page="X"[^>]*>X<\/span>/)
+    // 不应使用 block-link-typed
+    expect(html).not.toContain('block-link-typed')
+    // 关系部分：rel-type-label 携带 data-rel-type 和 caret+中文label
     expect(html).toContain('data-rel-type="depends-on"')
-    expect(html).toContain('class="rel-type-label"')
     expect(html).toContain('data-block-id="block-1"')
+    expect(html).toMatch(/<span class="rel-type-label"[^>]*>\^依赖<\/span>/)
   })
 
-  it('未知类型渲染为灰色 #9CA3AF', () => {
+  it('关系标签的显示文本 = 中文 label + ^ 前缀', () => {
+    expect(renderContentToHtml('[[A]]^(depends-on)', 'b')).toMatch(
+      /<span class="rel-type-label"[^>]*>\^依赖<\/span>/
+    )
+    expect(renderContentToHtml('[[A]]^(required-by)', 'b')).toMatch(
+      /<span class="rel-type-label"[^>]*>\^被依赖<\/span>/
+    )
+    expect(renderContentToHtml('[[A]]^(parent)', 'b')).toMatch(
+      /<span class="rel-type-label"[^>]*>\^父级<\/span>/
+    )
+  })
+
+  it('未知类型显示 ^unknown-type（fallback 到类型本身）', () => {
     const html = renderContentToHtml('[[X]]^(unknown-type)', 'block-1')
-    expect(html).toContain('data-rel-type="unknown-type"')
+    expect(html).toMatch(/<span class="rel-type-label"[^>]*>\^unknown-type<\/span>/)
     expect(html).toMatch(/--rel-color:\s*#9CA3AF/)
   })
 

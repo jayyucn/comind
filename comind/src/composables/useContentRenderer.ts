@@ -2,7 +2,6 @@ import { getPredefinedRelationship } from '../types/relationship'
 
 const CSS_CLASSES = {
   blockLink: 'block-link',
-  blockLinkTyped: 'block-link-typed',
   relTypeLabel: 'rel-type-label',
   blockTag: 'block-tag'
 }
@@ -37,7 +36,9 @@ export function useContentRenderer() {
    * 将 Block 内容渲染为 HTML
    *
    * 处理（按顺序）：
-   * 1. 带类型链接 [[X]]^(type) → .block-link-typed + .rel-type-label
+   * 1. 带类型链接 [[X]]^(type)：
+   *    - [[X]] 部分渲染为普通 .block-link（保持原样）
+   *    - ^(type) 部分渲染为 .rel-type-label，显示 `^中文label`，颜色用关系色
    *    段间 #tag 在原始 text 上处理，避免误匹配 style 里的 #xxxxxx 颜色值
    * 2. 外部链接 [[https://...]]
    * 3. 普通链接 [[X]] 或 [[X|alias]] → .block-link
@@ -79,26 +80,27 @@ export function useContentRenderer() {
 
       const rel = getPredefinedRelationship(relType)
       const color = rel?.color ?? '#9CA3AF'
+      const chineseLabel = rel?.label ?? relType
       const safeRelType = escapeHtmlEntities(relType)
       const safePage = escapeHtmlEntities(target)
       const safeDisplay = escapeHtmlEntities(display)
       const safeBlockId = escapeHtmlEntities(blockId)
+      const safeLabel = escapeHtmlEntities(chineseLabel)
 
-      // label 范围覆盖 `^(type)` 中的 `(type)`（含开括号和闭括号）
-      // 例如 [[X]]^(depends-on) 中 `(depends-on)` 起始于 typedEnd - relType.length - 1
-      result += `<span class="${CSS_CLASSES.blockLinkTyped}" ` +
-                `data-page="${safePage}" ` +
+      // [[X]] 部分：普通 block-link（保持原样，无关系样式）
+      result += `<span class="${CSS_CLASSES.blockLink}" data-page="${safePage}">${safeDisplay}</span>`
+
+      // ^(type) 部分：rel-type-label（关系色、小号字体）
+      // 携带 typed 范围（用于点击时替换整段）和 label 范围（仅关系部分）
+      // 标签显示 `^中文label`（caret + 中文 label）
+      result += `<span class="${CSS_CLASSES.relTypeLabel}" ` +
                 `data-rel-type="${safeRelType}" ` +
                 `data-block-id="${safeBlockId}" ` +
                 `data-typed-from="${typedStart}" ` +
                 `data-typed-to="${typedEnd}" ` +
-                `style="--rel-color:${color}">${safeDisplay}</span>` +
-                `<span class="${CSS_CLASSES.relTypeLabel}" ` +
-                `data-rel-type="${safeRelType}" ` +
-                `data-block-id="${safeBlockId}" ` +
                 `data-label-from="${typedEnd - relType.length - 1}" ` +
                 `data-label-to="${typedEnd}" ` +
-                `style="--rel-color:${color}">${safeRelType}</span>`
+                `style="--rel-color:${color}">^${safeLabel}</span>`
 
       lastIndex = typedEnd
     }
