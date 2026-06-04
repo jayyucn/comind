@@ -30,9 +30,9 @@ const initialState: RelationshipMenuState = {
   onSelect: null
 }
 
-export function useRelationshipMenu() {
-  const state = ref<RelationshipMenuState>({ ...initialState })
+const state = ref<RelationshipMenuState>({ ...initialState })
 
+export function useRelationshipMenu() {
   const items = computed(() => {
     if (!state.value.query) return PREDEFINED_RELATIONSHIPS
     const q = state.value.query.toLowerCase()

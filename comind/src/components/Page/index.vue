@@ -7,8 +7,10 @@ import MergeDialog from '../MergeDialog.vue'
 import SlashCommandMenu from '../SlashCommandMenu.vue'
 import PropertyQuickEditor from '../Block/PropertyQuickEditor.vue'
 import PropertyEditor from '../Block/PropertyEditor.vue'
+import RelationshipMenu from '../RelationshipMenu.vue'
 import { usePageStore } from '../../stores/pages'
 import { useEditorStore } from '../../stores/editor'
+import { useRelationshipMenu } from '../../composables/useRelationshipMenu'
 import type { Page } from '../../types/page'
 
 const props = defineProps<{
@@ -18,6 +20,7 @@ const props = defineProps<{
 const router = useRouter()
 const pageStore = usePageStore()
 const editorStore = useEditorStore()
+const relMenu = useRelationshipMenu()
 
 /** 解析实际的 pageId：props 可能是 UUID 或 date title（journal-page 路由） */
 const resolvedPageId = computed(() => {
@@ -136,6 +139,7 @@ function handleCancelMerge() {
     <SlashCommandMenu />
     <PropertyQuickEditor />
     <PropertyEditor />
+    <RelationshipMenu :menu="relMenu" />
   </div>
 </template>
 

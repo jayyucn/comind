@@ -6,6 +6,7 @@ describe('useRelationshipMenu', () => {
 
   beforeEach(() => {
     menu = useRelationshipMenu()
+    menu.close()
   })
 
   it('初始状态不可见', () => {

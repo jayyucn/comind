@@ -21,6 +21,7 @@ import { useBlockStore } from '../../stores/blocks'
 import { usePropertyStore } from '../../stores/property'
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import { useBlockRegistry } from '../../composables/useBlockRegistry'
+import { useRelationshipMenu } from '../../composables/useRelationshipMenu'
 import './handlers/bullet'
 import './handlers/code'
 import './handlers/image'
@@ -52,6 +53,7 @@ const propertyStore = usePropertyStore()
 const pageStore = usePageStore()
 const { navigateToPage } = useNavigateToPage()
 const { getHandler } = useBlockRegistry()
+const relMenu = useRelationshipMenu()
 
 const showBlockSelector = ref(false)
 
@@ -460,6 +462,35 @@ function handleContentClick(e: MouseEvent) {
   }
 
   const target = e.target as HTMLElement
+
+  const relLabel = target.closest('.rel-type-label') as HTMLElement | null
+  if (relLabel) {
+    const relType = relLabel.dataset.relType
+    const targetBlockId = relLabel.dataset.blockId
+    const labelFrom = Number(relLabel.dataset.labelFrom)
+    const labelTo = Number(relLabel.dataset.labelTo)
+    if (!relType || !targetBlockId || Number.isNaN(labelFrom) || Number.isNaN(labelTo)) return
+
+    if (!blockStore.blocks.find(b => b.id === targetBlockId)) return
+
+    const rect = relLabel.getBoundingClientRect()
+    e.preventDefault()
+    e.stopPropagation()
+
+    relMenu.openSwitch({
+      view: { dom: { isConnected: true } },
+      position: { x: rect.left, y: rect.bottom + 4 },
+      range: { from: labelFrom, to: labelTo },
+      currentType: relType,
+      onSelect: (newType) => {
+        const latest = blockStore.blocks.find(b => b.id === targetBlockId)
+        if (!latest) return
+        const newContent = latest.content.slice(0, labelFrom) + newType + latest.content.slice(labelTo)
+        blockStore.updateBlockContent(targetBlockId, newContent)
+      }
+    })
+    return
+  }
 
   const link = target.closest('.block-link') as HTMLElement | null
   if (!link) return
