@@ -33,15 +33,16 @@ export interface RelationshipAtCaretResult {
 }
 
 /**
- * 在光标前检测 '[[X]]...^' 模式。
+ * 在光标前检测 '[[X]]^' 模式。
  *
- * 关键：BracketPair 在用户输入 '[[' 时会自动闭合 ']]'，所以连续输入
- * '[[X]]' 后文档里实际有冗余 ']]'。如 '[[X]]]]'（共 7 字符）。
+ * 关键约束：'^' 必须紧贴在 wiki link 闭合 ']]' 之后，中间不能有空格
+ * 或其它字符。BracketPair 在用户输入 '[[' 时会自动闭合 ']]'，所以连续
+ * 输入 '[[X]]' 后文档里实际有冗余 ']]'。如 '[[X]]]]'（共 7 字符）。
  * 用户再按 '^' 触发，文档为 '[[X]]]]^'，cursor=8。
  *
  * 因此我们：
  *   1) 确认光标前最后一个字符是 '^'
- *   2) 在 '^' 之前找最近的 ']]' 作为 wiki link 闭合
+ *   2) 确认 '^' 之前紧贴着 ']]'（beforeCaret 必须以 ']]' 结尾）
  *   3) 在 ']]' 之前找最近的 '[[' 作为 wiki link 起点
  *   4) 中间作为 page name（不应含 '[' ']' '|'）
  *   5) 返回 doc 位置（不是 textBetween 偏移后的文本位置）：
@@ -62,11 +63,13 @@ export function findRelationshipAtCaret(
   }
 
   const beforeCaret = text.slice(0, -1) // 去掉末尾的 '^'
-  const lastCloseIdx = beforeCaret.lastIndexOf(']]')
-  if (lastCloseIdx < 0) {
+  // 约束：^ 必须紧贴 ]]，否则不触发
+  if (!beforeCaret.endsWith(']]')) {
     return { found: false, range: null, wikiEnd: null, pageName: '' }
   }
 
+  // ]] 在 beforeCaret 中的起始位置
+  const lastCloseIdx = beforeCaret.length - 2
   const wikiEndInText = lastCloseIdx + 2
   const beforeWiki = beforeCaret.slice(0, lastCloseIdx)
   const lastOpenIdx = beforeWiki.lastIndexOf('[[')
@@ -79,19 +82,14 @@ export function findRelationshipAtCaret(
     return { found: false, range: null, wikiEnd: null, pageName: '' }
   }
 
-  // 找 wiki link 文本节点在 doc 中的起始位置（doc position）
-  // 从 pos - text.length 往前扫到 text 的开头 = doc 中对应位置
-  // 但更稳的方式：迭代 text 找 '[[' 的位置
+  // textStart 是 doc 中第一段 text 节点的起始位置（doc position）
+  // 例如 doc = <p>[[X]]^]]，paragraph open 在 pos 0，text 起点在 pos 1
+  // textBetween(0, 7) 返回 6 chars '[[X]]^'，textStart = 7 - 6 = 1
+  // 这正好是 text node 在 doc 中的起点
   const textStart = pos - text.length
   const wikiStartInText = lastOpenIdx
   const wikiEndInTextAfter = wikiEndInText
 
-  // textStart 是 doc position of the first text char，
-  // 但注意 doc.textBetween(0, pos) 跳过了 paragraph open token（1 unit）
-  // 所以 textStart 就是 doc position 中的文本起点
-  // 例如 doc = <p>[[X]]^]]，paragraph open 在 pos 0，text 起点在 pos 1
-  // textBetween(0, 7) 返回 6 chars '[[X]]^'，textStart = 7 - 6 = 1
-  // 这正好是 text node 在 doc 中的起点
   const fromDocPos = textStart + wikiStartInText
   const wikiEndDocPos = textStart + wikiEndInTextAfter
 
