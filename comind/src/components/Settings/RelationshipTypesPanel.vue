@@ -6,8 +6,6 @@ import { useRelationshipTypes, validateRelationshipTypeInput, type RelationshipT
 const { all, create, update, softDelete, restore, reorder } = useRelationshipTypes()
 
 interface EditState {
-  /** 列表渲染 key；新建时为临时字符串 */
-  rowKey: string
   type: string
   /** 编辑态下始终是 string（v-model 需要），空串代表 null */
   inverse: string
@@ -37,7 +35,6 @@ function startEdit(id: string): void {
   if (!r) return
   editingKey.value = id
   editState.value = {
-    rowKey: id,
     type: r.type,
     inverse: r.inverse ?? '',
     label: r.label,
@@ -49,10 +46,8 @@ function startEdit(id: string): void {
 }
 
 function startNew(): void {
-  const tempKey = `temp_new_${Date.now()}`
-  editingKey.value = tempKey
+  editingKey.value = `temp_new_${Date.now()}`
   editState.value = {
-    rowKey: tempKey,
     type: '',
     inverse: '',
     label: '',
