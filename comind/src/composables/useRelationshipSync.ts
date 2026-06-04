@@ -179,7 +179,7 @@ export function useRelationshipSync(
  * bghntvy567link]]^(existingType) → 替换或移除 existingType
  * - [[link]] → 追加 ^(newType)
  */
-function applyRelationshipTypeToBlockContent(
+export function applyRelationshipTypeToBlockContent(
   content: string,
   targetTitle: string,
   newRelationshipType: string | null

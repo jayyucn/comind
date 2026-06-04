@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { ref } from 'vue'
-import { useRelationshipSync } from './useRelationshipSync'
+import {
+  useRelationshipSync,
+  applyRelationshipTypeToBlockContent
+} from './useRelationshipSync'
 
 describe('useRelationshipSync', () => {
   describe('setEditingBlock', () => {
@@ -172,5 +175,35 @@ describe('useRelationshipSync', () => {
       blocks.value = [{ id: 'b1', content: '[[B]]^(depends-on)' }]
       expect(linkSnapshot.value.get('b1')?.get('B')).toBe('depends-on')
     })
+  })
+})
+
+describe('applyRelationshipTypeToBlockContent（export）', () => {
+  it('应能作为命名导出函数从模块顶层导入', () => {
+    expect(typeof applyRelationshipTypeToBlockContent).toBe('function')
+  })
+
+  it('应能移除 [[Target]]^(type) 的类型后缀', () => {
+    const content = 'see [[Target]]^(depends-on) for details'
+    const result = applyRelationshipTypeToBlockContent(content, 'Target', null)
+    expect(result).toBe('see [[Target]] for details')
+  })
+
+  it('应能替换 [[Target]]^(oldType) 为 [[Target]]^(newType)', () => {
+    const content = 'see [[Target]]^(depends-on) for details'
+    const result = applyRelationshipTypeToBlockContent(content, 'Target', 'related')
+    expect(result).toBe('see [[Target]]^(related) for details')
+  })
+
+  it('应支持别名形式 [[Target|alias]]^(type)', () => {
+    const content = 'see [[Target|display]]^(depends-on)'
+    const result = applyRelationshipTypeToBlockContent(content, 'Target', null)
+    expect(result).toBe('see [[Target|display]]')
+  })
+
+  it('不应影响指向其他目标的链接', () => {
+    const content = '[[A]]^(depends-on) and [[B]]^(related)'
+    const result = applyRelationshipTypeToBlockContent(content, 'A', null)
+    expect(result).toBe('[[A]] and [[B]]^(related)')
   })
 })
