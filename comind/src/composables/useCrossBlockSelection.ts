@@ -8,9 +8,11 @@
  */
 import { reactive, ref } from 'vue'
 import { useBlockStore } from '../stores/blocks'
+import { useBlockRelationshipCleanup } from './useBlockRelationshipCleanup'
 
 export function useCrossBlockSelection() {
   const blockStore = useBlockStore()
+  const relationshipCleanup = useBlockRelationshipCleanup()
 
   const dragStartBlockId = ref<string | null>(null)
   const isDragging = ref(false)
@@ -184,10 +186,19 @@ export function useCrossBlockSelection() {
 
   async function deleteSelected() {
     if (anchorIds.size === 0) return
-    for (const id of anchorIds) {
-      await blockStore.deleteBlock(id)
-    }
+    const toDelete = [...anchorIds]
     anchorIds.clear()
+
+    // 推导被删 block 所属 pageId 唯一集合（按页分别 cleanup）
+    const pageIds = new Set<string>()
+    for (const id of toDelete) {
+      const b = blockStore.blocks.find(x => x.id === id)
+      if (b) pageIds.add(b.pageId)
+    }
+
+    for (const pageId of pageIds) {
+      await relationshipCleanup.cleanupAfterDelete(pageId, toDelete)
+    }
   }
 
   return {
