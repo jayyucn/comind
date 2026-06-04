@@ -13,7 +13,7 @@ const rightSidebar = useRightSidebar()
 
 const containerRef = ref<HTMLElement | null>(null)
 const graphRef = ref<Graph | null>(null)
-const maxDepth = ref(1)
+const maxDepth = ref(2)
 const currentLayout = ref<string>('force')
 const highlightedNodeId = ref<string | null>(null)
 

@@ -564,6 +564,93 @@ describe('useCrossBlockSelection', () => {
       // 选区应被清空
       expect(selection.anchorIds.size).toBe(0)
     })
+
+    test('多块同页含 typed-link 删除时应触发跨页反向降级', async () => {
+      const pageStore = usePageStore()
+      await pageStore.createPage('P', 'normal')
+      const ourPage = pageStore.pages[pageStore.pages.length - 1]
+      await pageStore.createPage('X', 'normal')
+      const targetPage = pageStore.pages[pageStore.pages.length - 1]
+
+      const selection = useCrossBlockSelection()
+
+      // 主页两个 block，都含 typed-link 到 X
+      const block1 = await blockStore.createBlock({
+        pageId: ourPage.id,
+        content: 'see [[X]]^(depends-on<->required-by)'
+      })
+      const block2 = await blockStore.createBlock({
+        pageId: ourPage.id,
+        content: 'also see [[X]]^(depends-on<->required-by)'
+      })
+      // 目标页 block：含反向引用
+      const targetBlock = await blockStore.createBlock({
+        pageId: targetPage.id,
+        content: 'reverse [[P]]^(required-by)'
+      })
+
+      selection.anchorIds.add(block1.id)
+      selection.anchorIds.add(block2.id)
+      await selection.deleteSelected()
+
+      // 两块都应被删除
+      expect(blockStore.blocks.find(b => b.id === block1.id)).toBeUndefined()
+      expect(blockStore.blocks.find(b => b.id === block2.id)).toBeUndefined()
+      // 目标页 block 应被降级
+      const after = blockStore.blocks.find(b => b.id === targetBlock.id)
+      expect(after?.content).toBe('reverse [[P]]')
+      // 选区应被清空
+      expect(selection.anchorIds.size).toBe(0)
+    })
+
+    test('跨页删除多块时应正确路由到各页面的关系清理', async () => {
+      const pageStore = usePageStore()
+      await pageStore.createPage('P', 'normal')
+      const ourPage = pageStore.pages[pageStore.pages.length - 1]
+      await pageStore.createPage('X', 'normal')
+      const targetPage1 = pageStore.pages[pageStore.pages.length - 1]
+      await pageStore.createPage('Y', 'normal')
+      const targetPage2 = pageStore.pages[pageStore.pages.length - 1]
+
+      const selection = useCrossBlockSelection()
+
+      // P 页面的 block 引用 X
+      const block1 = await blockStore.createBlock({
+        pageId: ourPage.id,
+        content: 'see [[X]]^(depends-on<->required-by)'
+      })
+      // X 页面的 block 引用 Y
+      const block2 = await blockStore.createBlock({
+        pageId: targetPage1.id,
+        content: 'link [[Y]]^(depends-on<->required-by)'
+      })
+      // X 目标页面的 block 有反向引用到 P
+      const targetBlock1 = await blockStore.createBlock({
+        pageId: targetPage1.id,
+        content: 'reverse [[P]]^(required-by)'
+      })
+      // Y 目标页面的 block 有反向引用
+      const targetBlock2 = await blockStore.createBlock({
+        pageId: targetPage2.id,
+        content: 'reverse [[Y]]^(required-by)'
+      })
+
+      selection.anchorIds.add(block1.id)
+      selection.anchorIds.add(block2.id)
+      await selection.deleteSelected()
+
+      // 两块都应被删除
+      expect(blockStore.blocks.find(b => b.id === block1.id)).toBeUndefined()
+      expect(blockStore.blocks.find(b => b.id === block2.id)).toBeUndefined()
+      // P 指向 X 的链被删后，X 指向 P 的反向引用应被降级
+      const after1 = blockStore.blocks.find(b => b.id === targetBlock1.id)
+      expect(after1?.content).toBe('reverse [[P]]')
+      // Y 指向 Y 自己的引用被删后，Y 指向 Y 的反向引用应被降级（如果存在的话）
+      // 但这里 targetBlock2 是 Y 页面指向 Y 自己的引用，已经被删了
+      expect(blockStore.blocks.find(b => b.id === targetBlock2.id)).toBeUndefined()
+      // 选区应被清空
+      expect(selection.anchorIds.size).toBe(0)
+    })
   })
 
   describe('边界条件', () => {

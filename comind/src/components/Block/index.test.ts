@@ -184,8 +184,8 @@ describe('Block - rel-type-label click handling', () => {
 
     await wrapper.find('.rel-type-label').trigger('click')
     expect(menu.state.value.visible).toBe(true)
-    // 默认选中索引指向 'parent'，改为 'references'（索引 4）
-    menu.setSelectedIndex(4)
+    // 默认选中索引指向 'parent'，改为 'references' 组（组下标 2），forward 方向
+    menu.setSelectedGroupIndex(2)
     const updateContentSpy = vi.spyOn(blockStore, 'updateBlockContent')
     menu.select()
     await flushPromises()

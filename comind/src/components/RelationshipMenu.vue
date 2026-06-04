@@ -1,20 +1,64 @@
 <script setup lang="ts">
+import { onMounted, onBeforeUnmount, watch, nextTick, ref, computed } from 'vue'
 import type { useRelationshipMenu } from '../composables/useRelationshipMenu'
+import { attachKeyboardListener, detachKeyboardListener } from '../composables/useRelationshipMenu'
+import { useModalKeyboardRef } from '../composables/useModalKeyboard'
 
 const props = defineProps<{
   menu: ReturnType<typeof useRelationshipMenu>
 }>()
 
-const { state, items, select, moveSelection, close } = props.menu
+const { state, items, select, close } = props.menu
+
+// 模态栈：与 Extension 的 menuIsOpen 协同（Extension 还会拦截 ProseMirror 默认行为）
+useModalKeyboardRef('relationship-menu', computed(() => state.value.visible))
+
+onMounted(() => {
+  // 单例 attach，避免多组件实例叠加监听器
+  attachKeyboardListener(props.menu)
+})
+
+onBeforeUnmount(() => {
+  detachKeyboardListener()
+})
+
+// 打开时滚动到当前选中组
+const listRef = ref<HTMLElement | null>(null)
+async function scrollSelectedIntoView() {
+  await nextTick()
+  if (!listRef.value) return
+  const rows = listRef.value.querySelectorAll('.rel-menu-item')
+  const selected = rows[state.value.selectedGroupIndex] as HTMLElement | undefined
+  // jsdom 等测试环境没有 scrollIntoView
+  if (selected && typeof selected.scrollIntoView === 'function') {
+    selected.scrollIntoView({ block: 'nearest' })
+  }
+}
+
+watch(() => state.value.visible, (visible) => {
+  if (visible) scrollSelectedIntoView()
+})
+watch(() => state.value.selectedGroupIndex, () => {
+  if (state.value.visible) scrollSelectedIntoView()
+})
 
 function onItemMouseDown(event: MouseEvent, index: number) {
   // 防止编辑器失焦
   event.preventDefault()
-  props.menu.setSelectedIndex(index)
+  props.menu.setSelectedGroupIndex(index)
   select()
 }
 
-defineExpose({ moveSelection, select, close })
+function onDirectionMouseDown(event: MouseEvent, index: number, direction: 'forward' | 'inverse') {
+  // 防止编辑器失焦
+  event.preventDefault()
+  props.menu.setSelectedGroupIndex(index)
+  props.menu.setDirection(direction)
+  select()
+}
+
+// 兼容旧 API：select / close 暴露给外部按需触发
+defineExpose({ select, close })
 </script>
 
 <template>
@@ -32,22 +76,54 @@ defineExpose({ moveSelection, select, close })
       >
         <ul
           v-if="items.length > 0"
+          ref="listRef"
           class="rel-menu-list"
         >
           <li
             v-for="(item, index) in items"
             :key="item.type"
             class="rel-menu-item"
-            :class="{ selected: index === state.selectedIndex }"
+            :class="{
+              selected: index === state.selectedGroupIndex,
+              'has-inverse': item.inverse !== null
+            }"
             :data-type="item.type"
             :style="{ '--rel-color': item.color }"
-            @mousedown="onItemMouseDown($event, index)"
           >
-            <span class="rel-menu-type">{{ item.label }}</span>
-            <span
-              v-if="item.inverseLabel && item.inverseLabel !== item.label"
-              class="rel-menu-inverse"
-            >→ {{ item.inverseLabel }}</span>
+            <template v-if="item.inverse">
+              <button
+                type="button"
+                class="rel-menu-direction rel-menu-direction-forward"
+                :class="{ active: index === state.selectedGroupIndex && state.selectedDirection === 'forward' }"
+                :data-direction="item.type"
+                @mousedown="onDirectionMouseDown($event, index, 'forward')"
+              >
+                <span class="rel-menu-type">{{ item.label }}</span>
+              </button>
+              <span
+                class="rel-menu-sep"
+                aria-hidden="true"
+              >↔</span>
+              <button
+                type="button"
+                class="rel-menu-direction rel-menu-direction-inverse"
+                :class="{ active: index === state.selectedGroupIndex && state.selectedDirection === 'inverse' }"
+                :data-direction="item.inverse"
+                @mousedown="onDirectionMouseDown($event, index, 'inverse')"
+              >
+                <span class="rel-menu-type">{{ item.inverseLabel }}</span>
+              </button>
+            </template>
+            <button
+              v-else
+              type="button"
+              class="rel-menu-direction rel-menu-direction-forward rel-menu-direction-single"
+              :class="{ active: index === state.selectedGroupIndex }"
+              :data-direction="item.type"
+              @mousedown="onItemMouseDown($event, index)"
+            >
+              <span class="rel-menu-type">{{ item.label }}</span>
+            </button>
           </li>
         </ul>
         <div
@@ -70,11 +146,11 @@ defineExpose({ moveSelection, select, close })
 
 .rel-menu {
   position: absolute;
-  background: var(--bg-primary, #fff);
-  border: 1px solid var(--border-color, #e5e7eb);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  min-width: 200px;
+  box-shadow: var(--shadow-elevation-2);
+  min-width: 220px;
   max-height: 280px;
   overflow-y: auto;
   padding: 4px 0;
@@ -87,36 +163,68 @@ defineExpose({ moveSelection, select, close })
 }
 
 .rel-menu-item {
-  padding: 6px 12px;
-  cursor: pointer;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  align-items: stretch;
   font-size: 13px;
   border-left: 3px solid transparent;
 }
 
-.rel-menu-item:hover,
 .rel-menu-item.selected {
-  background: rgba(0, 0, 0, 0.04);
   border-left-color: var(--rel-color);
+}
+
+.rel-menu-direction {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  min-width: 0;
+}
+
+.rel-menu-direction-forward {
+  justify-content: flex-start;
+}
+
+.rel-menu-direction-inverse {
+  justify-content: flex-end;
+}
+
+.rel-menu-direction-single {
+  width: 100%;
+}
+
+.rel-menu-direction:hover,
+.rel-menu-direction.active {
+  background: var(--bg-hover);
+}
+
+.rel-menu-sep {
+  display: flex;
+  align-items: center;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  padding: 0 2px;
+  user-select: none;
 }
 
 .rel-menu-type {
   font-weight: 500;
   color: var(--rel-color);
-}
-
-.rel-menu-inverse {
-  font-size: 11px;
-  color: var(--text-secondary, #6b7280);
-  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .rel-menu-empty {
   padding: 12px;
   text-align: center;
-  color: var(--text-secondary, #6b7280);
+  color: var(--text-tertiary);
   font-size: 13px;
 }
 </style>

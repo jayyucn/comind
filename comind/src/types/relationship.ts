@@ -29,6 +29,47 @@ export const PREDEFINED_RELATIONSHIPS: PredefinedRelationship[] = [
 ]
 
 /**
+ * 关系组：用于菜单显示。正反两条合并为一组；自反关系 inverse 为 null。
+ */
+export interface RelationshipGroup {
+  /** 正向 type（自反时与 inverse 相同，但此处 inverse 始终为 null） */
+  type: string
+  /** 反向 type；自反关系为 null */
+  inverse: string | null
+  label: string
+  inverseLabel: string
+  color: string
+}
+
+export const RELATIONSHIP_GROUPS: RelationshipGroup[] = [
+  { type: 'parent',     inverse: 'child',         label: '父级', inverseLabel: '子级',     color: '#1890ff' },
+  { type: 'depends-on', inverse: 'required-by',   label: '依赖', inverseLabel: '被依赖',   color: '#faad14' },
+  { type: 'references', inverse: 'referenced-by', label: '引用', inverseLabel: '被引用',   color: '#52c41a' },
+  { type: 'example-of', inverse: 'has-example',   label: '示例', inverseLabel: '有示例',   color: '#eb2f96' },
+  { type: 'related',    inverse: null,            label: '相关', inverseLabel: '相关',     color: '#8c8c8c' },
+  { type: 'similar',    inverse: null,            label: '相似', inverseLabel: '相似',     color: '#722ed1' },
+]
+
+/**
+ * 根据 type 反查所属关系组。
+ * 自反关系返回其正向组（如 'related' -> { type: 'related', inverse: null }）。
+ */
+export function getGroupByType(type: string): RelationshipGroup | undefined {
+  return RELATIONSHIP_GROUPS.find(g => g.type === type || g.inverse === type)
+}
+
+/**
+ * 判断 type 在其所属组里是 'forward' 还是 'inverse'。
+ * 自反关系始终返回 'forward'。
+ */
+export function getDirectionInGroup(type: string): 'forward' | 'inverse' | null {
+  const group = getGroupByType(type)
+  if (!group) return null
+  if (type === group.type) return 'forward'
+  return 'inverse'
+}
+
+/**
  * 根据类型获取预定义关系
  */
 export const RELATIONSHIP_COLORS: Record<string, string> = Object.fromEntries(

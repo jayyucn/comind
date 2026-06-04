@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import {
   PREDEFINED_RELATIONSHIPS,
+  RELATIONSHIP_GROUPS,
   getPredefinedRelationship,
+  getGroupByType,
+  getDirectionInGroup,
   getInverseRelationshipType,
   getRelationshipColor,
   type PredefinedRelationship
@@ -49,6 +52,35 @@ describe('relationship', () => {
     })
   })
 
+  describe('RELATIONSHIP_GROUPS', () => {
+    it('应有 6 组（4 对正反 + 2 条自反）', () => {
+      expect(RELATIONSHIP_GROUPS).toHaveLength(6)
+    })
+
+    it('每组都应有完整的属性', () => {
+      for (const g of RELATIONSHIP_GROUPS) {
+        expect(g.type).toBeTruthy()
+        expect(g.label).toBeTruthy()
+        expect(g.inverseLabel).toBeTruthy()
+        expect(g.color).toBeTruthy()
+      }
+    })
+
+    it('自反组的 inverse 应为 null', () => {
+      const selfInverseGroups = RELATIONSHIP_GROUPS.filter(g => g.inverse === null)
+      const types = selfInverseGroups.map(g => g.type)
+      expect(types).toEqual(expect.arrayContaining(['related', 'similar']))
+    })
+
+    it('配对组的 inverse 应指向真实存在的 type', () => {
+      for (const g of RELATIONSHIP_GROUPS) {
+        if (g.inverse) {
+          expect(PREDEFINED_RELATIONSHIPS.find(r => r.type === g.inverse)).toBeTruthy()
+        }
+      }
+    })
+  })
+
   describe('getPredefinedRelationship', () => {
     it('应通过类型获取预定义关系', () => {
       const result = getPredefinedRelationship('parent')
@@ -72,6 +104,52 @@ describe('relationship', () => {
         expect(result).toBeTruthy()
         expect(result?.type).toBe(type)
       }
+    })
+  })
+
+  describe('getGroupByType', () => {
+    it('应通过正向 type 找到所属组', () => {
+      const group = getGroupByType('parent')
+      expect(group).toBeDefined()
+      expect(group?.type).toBe('parent')
+    })
+
+    it('应通过反向 type 找到所属组', () => {
+      const group = getGroupByType('child')
+      expect(group).toBeDefined()
+      expect(group?.type).toBe('parent')
+    })
+
+    it('自反 type 应返回其自身所在组', () => {
+      const group = getGroupByType('related')
+      expect(group).toBeDefined()
+      expect(group?.type).toBe('related')
+      expect(group?.inverse).toBeNull()
+    })
+
+    it('对不存在的 type 应返回 undefined', () => {
+      expect(getGroupByType('non-existent-type')).toBeUndefined()
+    })
+  })
+
+  describe('getDirectionInGroup', () => {
+    it('正向 type 应返回 "forward"', () => {
+      expect(getDirectionInGroup('parent')).toBe('forward')
+      expect(getDirectionInGroup('depends-on')).toBe('forward')
+    })
+
+    it('反向 type 应返回 "inverse"', () => {
+      expect(getDirectionInGroup('child')).toBe('inverse')
+      expect(getDirectionInGroup('required-by')).toBe('inverse')
+    })
+
+    it('自反 type 应返回 "forward"', () => {
+      expect(getDirectionInGroup('related')).toBe('forward')
+      expect(getDirectionInGroup('similar')).toBe('forward')
+    })
+
+    it('对不存在的 type 应返回 null', () => {
+      expect(getDirectionInGroup('non-existent-type')).toBeNull()
     })
   })
 
