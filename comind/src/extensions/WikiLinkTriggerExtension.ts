@@ -213,8 +213,16 @@ export const WikiLinkTriggerExtension = Extension.create({
           return {
             update(view, prevState) {
               if (view.state.doc === prevState.doc) return
-
-              handleWikiLinkDetection(view)
+              // 文档结构变化时（如 Backspace 删除 '^'）只关闭菜单，
+              // 不主动弹菜单 — 弹菜单由 handleTextInput / '[' 键 /
+              // compositionend 等用户主动输入事件触发。
+              // 这样可以避免关系菜单关闭后 PageLinkMenu 又弹出的问题。
+              if (menuIsOpen) {
+                const result = findWikiLinkAtCursor(view.state.doc, view.state.selection.from)
+                if (!result.found) {
+                  closeWikiLinkMenu(view)
+                }
+              }
             },
             destroy() {
               menuIsOpen = false

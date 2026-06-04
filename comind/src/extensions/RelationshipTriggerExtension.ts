@@ -11,6 +11,10 @@ export interface RelationshipTriggerEvent {
   pageName: string
 }
 
+export interface RelationshipCloseEvent {
+  reason: 'cursor-move' | 'doc-change' | 'escape'
+}
+
 let menuIsOpen = false
 let selectingFromMenu = false
 
@@ -101,6 +105,16 @@ export function findRelationshipAtCaret(
   }
 }
 
+function closeRelationshipMenuByExtension(view: any, reason: 'cursor-move' | 'doc-change' | 'escape' = 'doc-change') {
+  if (!menuIsOpen) return
+  menuIsOpen = false
+  const closeEvent = new CustomEvent<RelationshipCloseEvent>('relationship-close', {
+    bubbles: true,
+    detail: { reason }
+  })
+  view.dom.dispatchEvent(closeEvent)
+}
+
 function triggerRelationshipMenu(
   view: any,
   position: number,
@@ -147,17 +161,23 @@ export const RelationshipTriggerExtension = Extension.create({
           },
           handleKeyDown: (view, event) => {
             if (!menuIsOpen) return false
-            if (event.key === 'Escape' || event.key === 'Enter') {
+            if (event.key === 'Escape') {
               event.preventDefault()
               event.stopPropagation()
+              closeRelationshipMenuByExtension(view, 'escape')
+              return true
+            }
+            if (event.key === 'Enter') {
               // 选中和关闭由 menu 自己处理（onSelect 走 select()）
+              event.preventDefault()
+              event.stopPropagation()
               return true
             }
             if (event.key === 'Backspace' || event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
               setTimeout(() => {
                 const r = findRelationshipAtCaret(view.state.doc, view.state.selection.from)
                 if (!r.found && menuIsOpen) {
-                  menuIsOpen = false
+                  closeRelationshipMenuByExtension(view, 'doc-change')
                 } else if (r.found) {
                   handleRelationshipDetection(view)
                 }
@@ -174,7 +194,7 @@ export const RelationshipTriggerExtension = Extension.create({
               // 文档结构变化时重新检测
               const r = findRelationshipAtCaret(view.state.doc, view.state.selection.from)
               if (!r.found && menuIsOpen) {
-                menuIsOpen = false
+                closeRelationshipMenuByExtension(view, 'doc-change')
               }
             },
             destroy() {

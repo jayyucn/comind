@@ -77,6 +77,12 @@ function handleRelationshipTrigger(event: Event) {
   })
 }
 
+function handleRelationshipClose(_event: Event) {
+  // 扩展在 ']]^' 模式被破坏时（Backspace / 输入字符 / 转义）
+  // 派发此事件，关闭关系菜单 UI。
+  relMenu.close()
+}
+
 function handleWikiLinkTrigger(event: Event) {
   const customEvent = event as CustomEvent<{
     view: any
@@ -269,6 +275,7 @@ onBeforeUnmount(() => {
       view.dom.removeEventListener('wiki-link-menu-arrowup', handleWikiLinkMenuArrowUp as EventListener)
       view.dom.removeEventListener('enter-as-block', handleEnterAsBlock as EventListener)
       view.dom.removeEventListener('relationship-trigger', handleRelationshipTrigger as EventListener)
+      view.dom.removeEventListener('relationship-close', handleRelationshipClose as EventListener)
     }
   } catch (err) {
     if (err instanceof Error && err.message.includes('editor view is not available')) {
@@ -295,6 +302,7 @@ onMounted(() => {
       editor.value.view.dom.addEventListener('wiki-link-menu-arrowup', handleWikiLinkMenuArrowUp as EventListener)
       editor.value.view.dom.addEventListener('enter-as-block', handleEnterAsBlock as EventListener)
       editor.value.view.dom.addEventListener('relationship-trigger', handleRelationshipTrigger as EventListener)
+      editor.value.view.dom.addEventListener('relationship-close', handleRelationshipClose as EventListener)
     }
   })
 })
