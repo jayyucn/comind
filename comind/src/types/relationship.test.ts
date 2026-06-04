@@ -1,90 +1,30 @@
-import { describe, it, expect } from 'vitest'
+// d:\comind\comind\src\types\relationship.test.ts
+import { describe, it, expect, beforeEach } from 'vitest'
+import 'fake-indexeddb/auto'
+import { db } from '../storage/db'
 import {
-  PREDEFINED_RELATIONSHIPS,
-  RELATIONSHIP_GROUPS,
   getPredefinedRelationship,
   getGroupByType,
   getDirectionInGroup,
   getInverseRelationshipType,
-  getRelationshipColor,
-  type PredefinedRelationship
+  getRelationshipLabel,
+  getRelationshipColor
 } from './relationship'
+import { useRelationshipTypes } from '../composables/useRelationshipTypes'
 
-describe('relationship', () => {
-  describe('PREDEFINED_RELATIONSHIPS', () => {
-    it('应包含所有预定义关系类型', () => {
-      expect(PREDEFINED_RELATIONSHIPS).toHaveLength(10)
-    })
-
-    it('每个关系都应有完整的属性', () => {
-      for (const rel of PREDEFINED_RELATIONSHIPS) {
-        expect(rel.type).toBeTruthy()
-        expect(rel.label).toBeTruthy()
-        expect(rel.inverseLabel).toBeTruthy()
-        expect(rel.color).toBeTruthy()
-      }
-    })
-
-    it('反向关系配对应一致', () => {
-      // 检查 parent <-> child 配对
-      const parent = PREDEFINED_RELATIONSHIPS.find(r => r.type === 'parent')
-      const child = PREDEFINED_RELATIONSHIPS.find(r => r.type === 'child')
-      expect(parent?.inverse).toBe('child')
-      expect(child?.inverse).toBe('parent')
-
-      // 检查 depends-on <-> required-by 配对
-      const dependsOn = PREDEFINED_RELATIONSHIPS.find(r => r.type === 'depends-on')
-      const requiredBy = PREDEFINED_RELATIONSHIPS.find(r => r.type === 'required-by')
-      expect(dependsOn?.inverse).toBe('required-by')
-      expect(requiredBy?.inverse).toBe('depends-on')
-
-      // 检查 references <-> referenced-by 配对
-      const references = PREDEFINED_RELATIONSHIPS.find(r => r.type === 'references')
-      const referencedBy = PREDEFINED_RELATIONSHIPS.find(r => r.type === 'referenced-by')
-      expect(references?.inverse).toBe('referenced-by')
-      expect(referencedBy?.inverse).toBe('references')
-
-      // 检查 example-of <-> has-example 配对
-      const exampleOf = PREDEFINED_RELATIONSHIPS.find(r => r.type === 'example-of')
-      const hasExample = PREDEFINED_RELATIONSHIPS.find(r => r.type === 'has-example')
-      expect(exampleOf?.inverse).toBe('has-example')
-      expect(hasExample?.inverse).toBe('example-of')
-    })
-  })
-
-  describe('RELATIONSHIP_GROUPS', () => {
-    it('应有 6 组（4 对正反 + 2 条自反）', () => {
-      expect(RELATIONSHIP_GROUPS).toHaveLength(6)
-    })
-
-    it('每组都应有完整的属性', () => {
-      for (const g of RELATIONSHIP_GROUPS) {
-        expect(g.type).toBeTruthy()
-        expect(g.label).toBeTruthy()
-        expect(g.inverseLabel).toBeTruthy()
-        expect(g.color).toBeTruthy()
-      }
-    })
-
-    it('自反组的 inverse 应为 null', () => {
-      const selfInverseGroups = RELATIONSHIP_GROUPS.filter(g => g.inverse === null)
-      const types = selfInverseGroups.map(g => g.type)
-      expect(types).toEqual(expect.arrayContaining(['related', 'similar']))
-    })
-
-    it('配对组的 inverse 应指向真实存在的 type', () => {
-      for (const g of RELATIONSHIP_GROUPS) {
-        if (g.inverse) {
-          expect(PREDEFINED_RELATIONSHIPS.find(r => r.type === g.inverse)).toBeTruthy()
-        }
-      }
-    })
+describe('relationship（运行时配置）', () => {
+  beforeEach(async () => {
+    // fake-indexeddb 跨测试持久化，软删状态会泄漏；与 useRelationshipTypes.test.ts 一致地清表
+    await db.relationshipTypes.clear()
+    const { _resetForTest, load } = useRelationshipTypes()
+    _resetForTest()
+    await load()
   })
 
   describe('getPredefinedRelationship', () => {
-    it('应通过类型获取预定义关系', () => {
-      const result = getPredefinedRelationship('parent')
-      expect(result).toEqual<Pick<PredefinedRelationship, 'type' | 'inverse' | 'label' | 'inverseLabel' | 'color'>>({
+    it('正向 type 返回组信息', () => {
+      const r = getPredefinedRelationship('parent')
+      expect(r).toEqual({
         type: 'parent',
         inverse: 'child',
         label: '父级',
@@ -93,108 +33,134 @@ describe('relationship', () => {
       })
     })
 
-    it('对不存在的类型应返回 undefined', () => {
-      expect(getPredefinedRelationship('non-existent-type')).toBeUndefined()
+    it('反向 type 返回反向后的 label/inverseLabel', () => {
+      const r = getPredefinedRelationship('child')
+      expect(r).toEqual({
+        type: 'parent',
+        inverse: 'child',
+        label: '子级',
+        inverseLabel: '父级',
+        color: '#1890ff'
+      })
     })
 
-    it('应正确获取所有预定义关系类型', () => {
-      const types = ['parent', 'child', 'depends-on', 'required-by', 'references', 'referenced-by', 'example-of', 'has-example', 'related', 'similar']
-      for (const type of types) {
-        const result = getPredefinedRelationship(type)
-        expect(result).toBeTruthy()
-        expect(result?.type).toBe(type)
-      }
+    it('自反 type 返回自身', () => {
+      const r = getPredefinedRelationship('related')
+      expect(r?.type).toBe('related')
+      expect(r?.inverse).toBeNull()
+    })
+
+    it('不存在返回 undefined', () => {
+      expect(getPredefinedRelationship('not-exist')).toBeUndefined()
     })
   })
 
   describe('getGroupByType', () => {
-    it('应通过正向 type 找到所属组', () => {
-      const group = getGroupByType('parent')
-      expect(group).toBeDefined()
-      expect(group?.type).toBe('parent')
+    it('正向 type 找到组', () => {
+      const g = getGroupByType('parent')
+      expect(g?.type).toBe('parent')
     })
 
-    it('应通过反向 type 找到所属组', () => {
-      const group = getGroupByType('child')
-      expect(group).toBeDefined()
-      expect(group?.type).toBe('parent')
+    it('反向 type 找到组', () => {
+      const g = getGroupByType('child')
+      expect(g?.type).toBe('parent')
     })
 
-    it('自反 type 应返回其自身所在组', () => {
-      const group = getGroupByType('related')
-      expect(group).toBeDefined()
-      expect(group?.type).toBe('related')
-      expect(group?.inverse).toBeNull()
+    it('自反 type 找到自身组', () => {
+      const g = getGroupByType('related')
+      expect(g?.type).toBe('related')
     })
 
-    it('对不存在的 type 应返回 undefined', () => {
-      expect(getGroupByType('non-existent-type')).toBeUndefined()
+    it('不存在返回 undefined', () => {
+      expect(getGroupByType('not-exist')).toBeUndefined()
+    })
+
+    it('软删后不再被找到（items 不含已删）', async () => {
+      const { softDelete, _resetForTest, load } = useRelationshipTypes()
+      _resetForTest()
+      await load()
+      await softDelete('rt_seed_parent')
+      expect(getGroupByType('parent')).toBeUndefined()
     })
   })
 
   describe('getDirectionInGroup', () => {
-    it('正向 type 应返回 "forward"', () => {
+    it('正向 → forward', () => {
       expect(getDirectionInGroup('parent')).toBe('forward')
-      expect(getDirectionInGroup('depends-on')).toBe('forward')
     })
 
-    it('反向 type 应返回 "inverse"', () => {
+    it('反向 → inverse', () => {
       expect(getDirectionInGroup('child')).toBe('inverse')
-      expect(getDirectionInGroup('required-by')).toBe('inverse')
     })
 
-    it('自反 type 应返回 "forward"', () => {
+    it('自反 → forward', () => {
       expect(getDirectionInGroup('related')).toBe('forward')
-      expect(getDirectionInGroup('similar')).toBe('forward')
     })
 
-    it('对不存在的 type 应返回 null', () => {
-      expect(getDirectionInGroup('non-existent-type')).toBeNull()
+    it('不存在 → null', () => {
+      expect(getDirectionInGroup('not-exist')).toBeNull()
     })
   })
 
   describe('getInverseRelationshipType', () => {
-    it('应返回预定义关系的反向类型', () => {
+    it('parent → child', () => {
       expect(getInverseRelationshipType('parent')).toBe('child')
+    })
+
+    it('child → parent', () => {
       expect(getInverseRelationshipType('child')).toBe('parent')
-      expect(getInverseRelationshipType('depends-on')).toBe('required-by')
-      expect(getInverseRelationshipType('required-by')).toBe('depends-on')
-      expect(getInverseRelationshipType('references')).toBe('referenced-by')
-      expect(getInverseRelationshipType('referenced-by')).toBe('references')
-      expect(getInverseRelationshipType('example-of')).toBe('has-example')
-      expect(getInverseRelationshipType('has-example')).toBe('example-of')
     })
 
-    it('对自反关系应返回自身', () => {
+    it('自反 → 自身', () => {
       expect(getInverseRelationshipType('related')).toBe('related')
-      expect(getInverseRelationshipType('similar')).toBe('similar')
     })
 
-    it('对不存在的关系类型应返回 null', () => {
-      expect(getInverseRelationshipType('non-existent-type')).toBeNull()
+    it('不存在 → null', () => {
+      expect(getInverseRelationshipType('not-exist')).toBeNull()
+    })
+  })
+
+  describe('getRelationshipLabel', () => {
+    it('返回正向中文标签', () => {
+      expect(getRelationshipLabel('parent')).toBe('父级')
+    })
+
+    it('返回反向中文标签', () => {
+      expect(getRelationshipLabel('child')).toBe('子级')
+    })
+
+    it('不存在返回 type 字符串', () => {
+      expect(getRelationshipLabel('not-exist')).toBe('not-exist')
+    })
+
+    it('软删的 type 返回 "<label> (已删除)"', async () => {
+      const { softDelete, _resetForTest, load } = useRelationshipTypes()
+      _resetForTest()
+      await load()
+      await softDelete('rt_seed_parent')
+      expect(getRelationshipLabel('parent')).toBe('父级 (已删除)')
     })
   })
 
   describe('getRelationshipColor', () => {
-    it('应返回预定义关系的颜色', () => {
+    it('返回预定义颜色', () => {
       expect(getRelationshipColor('parent')).toBe('#1890ff')
+    })
+
+    it('反向 type 同色', () => {
       expect(getRelationshipColor('child')).toBe('#1890ff')
-      expect(getRelationshipColor('depends-on')).toBe('#faad14')
-      expect(getRelationshipColor('required-by')).toBe('#faad14')
-      expect(getRelationshipColor('references')).toBe('#52c41a')
-      expect(getRelationshipColor('referenced-by')).toBe('#52c41a')
-      expect(getRelationshipColor('example-of')).toBe('#eb2f96')
-      expect(getRelationshipColor('has-example')).toBe('#eb2f96')
-      expect(getRelationshipColor('related')).toBe('#8c8c8c')
-      expect(getRelationshipColor('similar')).toBe('#722ed1')
     })
 
-    it('对不存在的关系类型应返回默认灰色', () => {
-      expect(getRelationshipColor('non-existent-type')).toBe('#8c8c8c')
+    it('不存在返回默认灰', () => {
+      expect(getRelationshipColor('not-exist')).toBe('#8c8c8c')
     })
 
-    it('对空字符串应返回默认灰色', () => {
-      expect(getRelationshipColor('')).toBe('#8c8c8c')
+    it('软删的 type 返回灰色 #bfbfbf', async () => {
+      const { softDelete, _resetForTest, load } = useRelationshipTypes()
+      _resetForTest()
+      await load()
+      await softDelete('rt_seed_parent')
+      expect(getRelationshipColor('parent')).toBe('#bfbfbf')
     })
   })
 })

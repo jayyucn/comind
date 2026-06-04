@@ -1,6 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
+import 'fake-indexeddb/auto'
 import { useRelationshipMenu } from './useRelationshipMenu'
-import { RELATIONSHIP_GROUPS, getGroupByType } from '../types/relationship'
+import { useRelationshipTypes } from './useRelationshipTypes'
+import { getGroupByType } from '../types/relationship'
+
+beforeEach(async () => {
+  const { _resetForTest, load } = useRelationshipTypes()
+  _resetForTest()
+  await load()
+})
 
 describe('useRelationshipMenu', () => {
   let menu: ReturnType<typeof useRelationshipMenu>
@@ -41,7 +49,8 @@ describe('useRelationshipMenu', () => {
       onSelect: vi.fn()
     })
     const group = getGroupByType('child')!
-    const idx = RELATIONSHIP_GROUPS.findIndex(g => g === group)
+    const items = useRelationshipTypes().items.value
+    const idx = items.findIndex(g => g.type === group!.type)
     expect(menu.state.value.selectedGroupIndex).toBe(idx)
     expect(menu.state.value.selectedDirection).toBe('inverse')
   })
@@ -85,7 +94,7 @@ describe('useRelationshipMenu', () => {
 
   it('items 默认返回所有 6 个组', () => {
     menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: vi.fn() })
-    expect(menu.items.value).toHaveLength(RELATIONSHIP_GROUPS.length)
+    expect(menu.items.value).toHaveLength(useRelationshipTypes().items.value.length)
   })
 
   it('items 按 query 过滤（匹配正反 type 和 label）', () => {
@@ -110,12 +119,12 @@ describe('useRelationshipMenu', () => {
     menu.moveGroup(-1)
     expect(menu.state.value.selectedGroupIndex).toBe(0)
     menu.moveGroup(-1)
-    expect(menu.state.value.selectedGroupIndex).toBe(RELATIONSHIP_GROUPS.length - 1)
+    expect(menu.state.value.selectedGroupIndex).toBe(useRelationshipTypes().items.value.length - 1)
   })
 
   it('切换到自反组时 direction 强制为 forward', () => {
     menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: vi.fn() })
-    menu.setSelectedGroupIndex(RELATIONSHIP_GROUPS.length - 1) // similar
+    menu.setSelectedGroupIndex(useRelationshipTypes().items.value.length - 1) // similar
     expect(menu.state.value.selectedDirection).toBe('forward')
     menu.setDirection('inverse')
     expect(menu.state.value.selectedDirection).toBe('forward') // 自反组忽略 inverse
@@ -145,5 +154,32 @@ describe('useRelationshipMenu', () => {
     menu.select()
     expect(onSelect).toHaveBeenCalledWith('referenced-by')
     expect(menu.state.value.visible).toBe(false)
+  })
+})
+
+describe('useRelationshipMenu 与 useRelationshipTypes 联动', () => {
+  it('创建新类型后菜单 items 立即出现', async () => {
+    const menu = useRelationshipMenu()
+    menu.close()
+    const { create } = useRelationshipTypes()
+    await create({ type: 'blocker', inverse: 'blocked-by', label: '阻塞', inverseLabel: '被阻塞', color: '#ff0000' })
+    expect(menu.items.value.find(g => g.type === 'blocker')).toBeTruthy()
+  })
+
+  it('软删后菜单 items 不再包含', async () => {
+    const menu = useRelationshipMenu()
+    menu.close()
+    const { softDelete } = useRelationshipTypes()
+    await softDelete('rt_seed_parent')
+    expect(menu.items.value.find(g => g.type === 'parent')).toBeUndefined()
+  })
+
+  it('恢复后菜单 items 重新包含', async () => {
+    const menu = useRelationshipMenu()
+    menu.close()
+    const { softDelete, restore } = useRelationshipTypes()
+    await softDelete('rt_seed_parent')
+    await restore('rt_seed_parent')
+    expect(menu.items.value.find(g => g.type === 'parent')).toBeTruthy()
   })
 })

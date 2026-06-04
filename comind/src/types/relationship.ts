@@ -1,3 +1,19 @@
+// d:\comind\comind\src\types\relationship.ts
+import { useRelationshipTypes } from '../composables/useRelationshipTypes'
+
+/** 关系组（菜单用；正反两条共享一条记录；自反 inverse 为 null） */
+export interface RelationshipGroup {
+  type: string
+  inverse: string | null
+  label: string
+  inverseLabel: string
+  color: string
+}
+
+/**
+ * 兼容旧 API：返回 type 对应的展示信息。
+ * 注：旧 PREDEFINED_RELATIONSHIPS 接口不再导出，因为新数据模型是"成对组"而非"单条记录"。
+ */
 export interface PredefinedRelationship {
   type: string
   inverse: string | null
@@ -6,100 +22,62 @@ export interface PredefinedRelationship {
   color: string
 }
 
-export const PREDEFINED_RELATIONSHIPS: PredefinedRelationship[] = [
-  // 层级关系
-  { type: 'parent', inverse: 'child', label: '父级', inverseLabel: '子级', color: '#1890ff' },
-  { type: 'child', inverse: 'parent', label: '子级', inverseLabel: '父级', color: '#1890ff' },
-
-  // 依赖关系
-  { type: 'depends-on', inverse: 'required-by', label: '依赖', inverseLabel: '被依赖', color: '#faad14' },
-  { type: 'required-by', inverse: 'depends-on', label: '被依赖', inverseLabel: '依赖', color: '#faad14' },
-
-  // 引用关系
-  { type: 'references', inverse: 'referenced-by', label: '引用', inverseLabel: '被引用', color: '#52c41a' },
-  { type: 'referenced-by', inverse: 'references', label: '被引用', inverseLabel: '引用', color: '#52c41a' },
-
-  // 示例关系
-  { type: 'example-of', inverse: 'has-example', label: '示例', inverseLabel: '有示例', color: '#eb2f96' },
-  { type: 'has-example', inverse: 'example-of', label: '有示例', inverseLabel: '示例', color: '#eb2f96' },
-
-  // 通用关系
-  { type: 'related', inverse: 'related', label: '相关', inverseLabel: '相关', color: '#8c8c8c' },
-  { type: 'similar', inverse: 'similar', label: '相似', inverseLabel: '相似', color: '#722ed1' },
-]
-
-/**
- * 关系组：用于菜单显示。正反两条合并为一组；自反关系 inverse 为 null。
- */
-export interface RelationshipGroup {
-  /** 正向 type（自反时与 inverse 相同，但此处 inverse 始终为 null） */
-  type: string
-  /** 反向 type；自反关系为 null */
-  inverse: string | null
-  label: string
-  inverseLabel: string
-  color: string
+function findByType(type: string): PredefinedRelationship | undefined {
+  const all = useRelationshipTypes().all.value
+  // 正向/反向都匹配
+  const found = all.find(r => r.type === type || r.inverse === type)
+  if (!found) return undefined
+  const isForward = found.type === type
+  return {
+    type: found.type,
+    inverse: found.inverse,
+    label: isForward ? found.label : found.inverseLabel,
+    inverseLabel: isForward ? found.inverseLabel : found.label,
+    color: found.color
+  }
 }
 
-export const RELATIONSHIP_GROUPS: RelationshipGroup[] = [
-  { type: 'parent',     inverse: 'child',         label: '父级', inverseLabel: '子级',     color: '#1890ff' },
-  { type: 'depends-on', inverse: 'required-by',   label: '依赖', inverseLabel: '被依赖',   color: '#faad14' },
-  { type: 'references', inverse: 'referenced-by', label: '引用', inverseLabel: '被引用',   color: '#52c41a' },
-  { type: 'example-of', inverse: 'has-example',   label: '示例', inverseLabel: '有示例',   color: '#eb2f96' },
-  { type: 'related',    inverse: null,            label: '相关', inverseLabel: '相关',     color: '#8c8c8c' },
-  { type: 'similar',    inverse: null,            label: '相似', inverseLabel: '相似',     color: '#722ed1' },
-]
+export function getPredefinedRelationship(type: string): PredefinedRelationship | undefined {
+  return findByType(type)
+}
 
-/**
- * 根据 type 反查所属关系组。
- * 自反关系返回其正向组（如 'related' -> { type: 'related', inverse: null }）。
- */
+export function getInverseRelationshipType(type: string): string | null {
+  const all = useRelationshipTypes().all.value
+  const found = all.find(r => r.type === type || r.inverse === type)
+  if (!found) return null
+  // 正向查询：返回 inverse（自反时 inverse 为 null，回退到自身 type）
+  if (found.type === type) return found.inverse ?? found.type
+  // 反向查询：返回组的正向 type
+  return found.type
+}
+
+export function getRelationshipLabel(type: string): string {
+  const all = useRelationshipTypes().all.value
+  const found = all.find(r => r.type === type || r.inverse === type)
+  if (!found) return type
+  const isForward = found.type === type
+  if (found.deleted) return `${isForward ? found.label : found.inverseLabel} (已删除)`
+  return isForward ? found.label : found.inverseLabel
+}
+
+export function getRelationshipColor(type: string): string {
+  const all = useRelationshipTypes().all.value
+  const found = all.find(r => r.type === type || r.inverse === type)
+  if (!found) return '#8c8c8c'
+  if (found.deleted) return '#bfbfbf'
+  return found.color
+}
+
+/** 根据 type 反查所属组 */
 export function getGroupByType(type: string): RelationshipGroup | undefined {
-  return RELATIONSHIP_GROUPS.find(g => g.type === type || g.inverse === type)
+  const items = useRelationshipTypes().items.value
+  return items.find(g => g.type === type || g.inverse === type)
 }
 
-/**
- * 判断 type 在其所属组里是 'forward' 还是 'inverse'。
- * 自反关系始终返回 'forward'。
- */
+/** 判断 type 在组里是 forward 还是 inverse；自反为 forward；不存在为 null */
 export function getDirectionInGroup(type: string): 'forward' | 'inverse' | null {
   const group = getGroupByType(type)
   if (!group) return null
   if (type === group.type) return 'forward'
   return 'inverse'
-}
-
-/**
- * 根据类型获取预定义关系
- */
-export const RELATIONSHIP_COLORS: Record<string, string> = Object.fromEntries(
-  PREDEFINED_RELATIONSHIPS.map(r => [r.type, r.color])
-)
-
-export function getPredefinedRelationship(type: string): PredefinedRelationship | undefined {
-  return PREDEFINED_RELATIONSHIPS.find(r => r.type === type)
-}
-
-/**
- * 获取关系的反向类型
- */
-export function getInverseRelationshipType(type: string): string | null {
-  const predefined = getPredefinedRelationship(type)
-  return predefined?.inverse ?? null
-}
-
-/**
- * 获取关系类型对应的中文标签
- */
-export function getRelationshipLabel(type: string): string {
-  const predefined = getPredefinedRelationship(type)
-  return predefined?.label ?? type
-}
-
-/**
- * 获取关系类型对应的颜色
- */
-export function getRelationshipColor(type: string): string {
-  const predefined = getPredefinedRelationship(type)
-  return predefined?.color ?? '#8c8c8c'
 }

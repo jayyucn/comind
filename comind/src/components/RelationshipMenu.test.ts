@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import 'fake-indexeddb/auto'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import RelationshipMenu from './RelationshipMenu.vue'
 import { useRelationshipMenu } from '../composables/useRelationshipMenu'
-import { RELATIONSHIP_GROUPS, PREDEFINED_RELATIONSHIPS } from '../types/relationship'
+import { useRelationshipTypes } from '../composables/useRelationshipTypes'
+import { db } from '../storage/db'
 
 const mountOptions = {
   global: {
@@ -17,7 +19,11 @@ describe('RelationshipMenu', () => {
   let menu: ReturnType<typeof useRelationshipMenu>
   let wrapper: VueWrapper | null = null
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await db.relationshipTypes.clear()
+    const { _resetForTest, load } = useRelationshipTypes()
+    _resetForTest()
+    await load()
     menu = useRelationshipMenu()
     menu.close()
   })
@@ -42,7 +48,7 @@ describe('RelationshipMenu', () => {
     mountMenu()
     menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: () => {} })
     await nextTick()
-    expect(wrapper!.findAll('.rel-menu-item')).toHaveLength(RELATIONSHIP_GROUPS.length)
+    expect(wrapper!.findAll('.rel-menu-item')).toHaveLength(useRelationshipTypes().items.value.length)
   })
 
   it('第一行默认高亮 forward 方向', async () => {
@@ -79,7 +85,7 @@ describe('RelationshipMenu', () => {
     const items = wrapper!.findAll('.rel-menu-item')
     items.forEach((item, i) => {
       const forwardLabel = item.find('.rel-menu-direction-forward .rel-menu-type').text()
-      expect(forwardLabel).toBe(RELATIONSHIP_GROUPS[i].label)
+      expect(forwardLabel).toBe(menu.items.value[i].label)
     })
   })
 
@@ -89,7 +95,7 @@ describe('RelationshipMenu', () => {
     menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: (t) => { selected = t } })
     await nextTick()
     await wrapper!.findAll('.rel-menu-item')[0].find('.rel-menu-direction-forward').trigger('mousedown')
-    expect(selected).toBe(RELATIONSHIP_GROUPS[0].type)
+    expect(selected).toBe(menu.items.value[0].type)
     expect(menu.state.value.visible).toBe(false)
   })
 
@@ -99,7 +105,7 @@ describe('RelationshipMenu', () => {
     menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: (t) => { selected = t } })
     await nextTick()
     await wrapper!.findAll('.rel-menu-item')[0].find('.rel-menu-direction-inverse').trigger('mousedown')
-    expect(selected).toBe(RELATIONSHIP_GROUPS[0].inverse)
+    expect(selected).toBe(menu.items.value[0].inverse)
     expect(menu.state.value.visible).toBe(false)
   })
 
@@ -108,10 +114,10 @@ describe('RelationshipMenu', () => {
     let selected: string | null = null
     menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: (t) => { selected = t } })
     await nextTick()
-    const lastIndex = RELATIONSHIP_GROUPS.length - 1
+    const lastIndex = menu.items.value.length - 1
     const lastItem = wrapper!.findAll('.rel-menu-item')[lastIndex]
     await lastItem.find('.rel-menu-direction-single').trigger('mousedown')
-    expect(selected).toBe(RELATIONSHIP_GROUPS[lastIndex].type)
+    expect(selected).toBe(menu.items.value[lastIndex].type)
     expect(menu.state.value.visible).toBe(false)
   })
 
@@ -176,7 +182,7 @@ describe('RelationshipMenu', () => {
     // 默认 group=0, direction=forward -> parent
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     await nextTick()
-    expect(selected).toBe(PREDEFINED_RELATIONSHIPS[0].type) // parent
+    expect(selected).toBe('parent')
     expect(menu.state.value.visible).toBe(false)
   })
 

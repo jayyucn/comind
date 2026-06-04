@@ -1,10 +1,6 @@
 import { ref, computed } from 'vue'
-import {
-  RELATIONSHIP_GROUPS,
-  getGroupByType,
-  getDirectionInGroup,
-  type RelationshipGroup
-} from '../types/relationship'
+import { useRelationshipTypes } from './useRelationshipTypes'
+import { getGroupByType, getDirectionInGroup, type RelationshipGroup } from '../types/relationship'
 
 export interface RelationshipMenuOpenOpts {
   // Tiptap EditorView 兼容（自带 .dom.isConnected），
@@ -112,9 +108,10 @@ function detachKeyboardListener() {
 export function useRelationshipMenu() {
   // 过滤后的组
   const items = computed<RelationshipGroup[]>(() => {
-    if (!state.value.query) return RELATIONSHIP_GROUPS
+    const all = useRelationshipTypes().items.value
+    if (!state.value.query) return all
     const q = state.value.query.toLowerCase()
-    return RELATIONSHIP_GROUPS.filter(g => {
+    return all.filter(g => {
       if (g.type.toLowerCase().includes(q)) return true
       if (g.inverse && g.inverse.toLowerCase().includes(q)) return true
       if (g.label.includes(q)) return true
@@ -135,7 +132,8 @@ export function useRelationshipMenu() {
       const group = getGroupByType(currentType)
       const dir = getDirectionInGroup(currentType)
       if (group && dir) {
-        const idx = RELATIONSHIP_GROUPS.findIndex(g => g === group)
+        const all = useRelationshipTypes().items.value
+        const idx = all.findIndex(g => g.type === group.type)
         if (idx >= 0) {
           selectedGroupIndex = idx
           selectedDirection = dir
