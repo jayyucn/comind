@@ -207,6 +207,30 @@
   }
 }
 
+// 关系类型标签：[[X]]^(type) 中的 ^(type) 部分
+// 颜色由内联 style="--rel-color:..." 注入
+.rel-type-label {
+  color: var(--rel-color, currentColor);
+  font-size: 0.9em;
+  font-style: italic;
+  margin-left: 2px;
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  user-select: none;
+
+  &:hover {
+    background: color-mix(in srgb, var(--rel-color) 12%, transparent);
+  }
+}
+
+// color-mix() 降级方案：旧浏览器
+@supports not (background: color-mix(in srgb, red 10%, transparent)) {
+  .rel-type-label:hover {
+    background: rgba(0, 0, 0, 0.05);
+  }
+}
+
 // 拖拽样式
 .block-chosen {
   opacity: 0.8;
