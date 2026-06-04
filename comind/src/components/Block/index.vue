@@ -22,6 +22,7 @@ import { usePropertyStore } from '../../stores/property'
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import { useBlockRegistry } from '../../composables/useBlockRegistry'
 import { useRelationshipMenu } from '../../composables/useRelationshipMenu'
+import { useBlockRelationshipCleanup } from '../../composables/useBlockRelationshipCleanup'
 import './handlers/bullet'
 import './handlers/code'
 import './handlers/image'
@@ -54,6 +55,7 @@ const pageStore = usePageStore()
 const { navigateToPage } = useNavigateToPage()
 const { getHandler } = useBlockRegistry()
 const relMenu = useRelationshipMenu()
+const relationshipCleanup = useBlockRelationshipCleanup()
 
 const showBlockSelector = ref(false)
 
@@ -409,7 +411,7 @@ async function handleDelete() {
 
   if (editorRef.value) editorRef.value.markSaved()
   editorStore.deactivateBlock()
-  await blockStore.deleteBlock(blockId.value)
+  await relationshipCleanup.cleanupAfterDelete(props.pageId, [blockId.value])
   if (prevId) {
     editorStore.activateBlock(prevId)
   }
