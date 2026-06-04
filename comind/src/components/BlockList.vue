@@ -120,6 +120,10 @@ function handleDocKeyDown(e: KeyboardEvent) {
       selection.copyToClipboard(props.pageId)
     }
   }
+  if (e.key === 'Backspace' && selection.anchorIds.size > 0) {
+    e.preventDefault()
+    selection.deleteSelected()
+  }
 }
 
 // ── 提供给子 Block 组件 ──

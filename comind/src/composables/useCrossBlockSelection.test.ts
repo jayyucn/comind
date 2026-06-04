@@ -442,6 +442,86 @@ describe('useCrossBlockSelection', () => {
     })
   })
 
+  describe('deleteSelected', () => {
+    test('应删除所有 anchorIds 中的块', async () => {
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+
+      const block1 = await blockStore.createBlock({ pageId, content: 'Block 1' })
+      const block2 = await blockStore.createBlock({ pageId, content: 'Block 2' })
+      const block3 = await blockStore.createBlock({ pageId, content: 'Block 3' })
+
+      selection.anchorIds.add(block1.id)
+      selection.anchorIds.add(block2.id)
+
+      await selection.deleteSelected()
+
+      expect(blockStore.blocks.find(b => b.id === block1.id)).toBeUndefined()
+      expect(blockStore.blocks.find(b => b.id === block2.id)).toBeUndefined()
+      expect(blockStore.blocks.find(b => b.id === block3.id)).toBeDefined()
+    })
+
+    test('应级联删除选中块的子块', async () => {
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+
+      const parent = await blockStore.createBlock({ pageId, content: 'Parent' })
+      const child = await blockStore.createBlock({ pageId, content: 'Child', parentId: parent.id })
+      const grandchild = await blockStore.createBlock({ pageId, content: 'Grandchild', parentId: child.id })
+
+      selection.anchorIds.add(parent.id)
+
+      await selection.deleteSelected()
+
+      expect(blockStore.blocks.find(b => b.id === parent.id)).toBeUndefined()
+      expect(blockStore.blocks.find(b => b.id === child.id)).toBeUndefined()
+      expect(blockStore.blocks.find(b => b.id === grandchild.id)).toBeUndefined()
+    })
+
+    test('删除后应清空 anchorIds 选区', async () => {
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+
+      const block1 = await blockStore.createBlock({ pageId, content: 'Block 1' })
+      const block2 = await blockStore.createBlock({ pageId, content: 'Block 2' })
+
+      selection.anchorIds.add(block1.id)
+      selection.anchorIds.add(block2.id)
+
+      await selection.deleteSelected()
+
+      expect(selection.anchorIds.size).toBe(0)
+    })
+
+    test('应触发 storage.deleteBlockCascade 持久化', async () => {
+      const { storage } = await import('../storage/indexedDB')
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+
+      const block1 = await blockStore.createBlock({ pageId, content: 'Block 1' })
+      selection.anchorIds.add(block1.id)
+
+      await selection.deleteSelected()
+
+      expect(storage.deleteBlockCascade).toHaveBeenCalled()
+    })
+
+    test('空选区时应不执行任何删除', async () => {
+      const { storage } = await import('../storage/indexedDB')
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+
+      await blockStore.createBlock({ pageId, content: 'Block' })
+      const beforeCount = blockStore.blocks.length
+      const callsBefore = (storage.deleteBlockCascade as any).mock.calls.length
+
+      await selection.deleteSelected()
+
+      expect(blockStore.blocks.length).toBe(beforeCount)
+      expect((storage.deleteBlockCascade as any).mock.calls.length).toBe(callsBefore)
+    })
+  })
+
   describe('边界条件', () => {
     test('computeRange 对不存在的目标块返回空集合', async () => {
       const selection = useCrossBlockSelection()

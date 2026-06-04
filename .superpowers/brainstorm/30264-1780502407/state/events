@@ -11,3 +11,4 @@
 {"type":"click","text":"This task [[X]] depends-on for production.\n    \n    \n      点下划线 + 类型标签\n      链接用点下划线（区别于普通链接的实线），类型作为更浅的内联文字。最不打扰阅读。","choice":"underline","id":null,"timestamp":1780503830814}
 {"type":"click","text":"This task [[X]] depends-on for production.\n    \n    \n      点下划线 + 类型标签\n      链接用点下划线（区别于普通链接的实线），类型作为更浅的内联文字。最不打扰阅读。","choice":"underline","id":null,"timestamp":1780503831237}
 {"type":"click","text":"This task [[X]] depends-on for production.\n    \n    \n      点下划线 + 类型标签\n      链接用点下划线（区别于普通链接的实线），类型作为更浅的内联文字。最不打扰阅读。","choice":"underline","id":null,"timestamp":1780503831797}
+{"type":"click","text":"This task [[X]]^(depends-on) for production.\n    \n    \n      整块着色 (Tinted)\n      整个 [[X]]^(type) 作为一块带背景色。颜色直接暗示关系类型（红=阻塞、绿=支持、蓝=参考等）。","choice":"tinted","id":null,"timestamp":1780551698128}

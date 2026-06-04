@@ -182,6 +182,14 @@ export function useCrossBlockSelection() {
     }
   }
 
+  async function deleteSelected() {
+    if (anchorIds.size === 0) return
+    for (const id of anchorIds) {
+      await blockStore.deleteBlock(id)
+    }
+    anchorIds.clear()
+  }
+
   return {
     dragStartBlockId,
     isDragging,
@@ -194,7 +202,8 @@ export function useCrossBlockSelection() {
     finalizeSelection,
     toggleBlock,
     isBlockSelected,
-    copyToClipboard
+    copyToClipboard,
+    deleteSelected
   }
 }
 
