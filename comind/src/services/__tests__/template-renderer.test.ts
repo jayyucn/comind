@@ -92,7 +92,7 @@ describe('TemplateRenderer.render', () => {
     expect(drafts[8].pos).toBe(10000)
   })
 
-  test('cursorMarker 仅第一个非 null 的生效（后续忽略）', () => {
+  test('cursorMarker 复制到所有含 {{cursor}} 的 Block（consumer 取首个作为光标位置）', () => {
     const drafts = TemplateRenderer.render(baseTemplate, baseContext, baseAnchor)
     const cursors = drafts.filter(d => d.cursorMarker === '__CURSOR__')
     expect(cursors.length).toBe(2)

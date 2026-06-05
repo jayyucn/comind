@@ -94,6 +94,8 @@ export interface TemplateContext {
 
 /** Block 草稿（渲染产物，待写入 IndexedDB） */
 export interface BlockDraft {
+  /** 新分配的 Block ID（由 deserializeBlockTree 生成） */
+  id: string
   pageId: string
   parentId: string | null
   /** 已计算 pos（基于 anchorBlock 重新分配） */

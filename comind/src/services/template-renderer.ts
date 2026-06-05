@@ -22,6 +22,18 @@ export interface ExpandResult {
 
 const VAR_REGEX = /\{\{([a-zA-Z_][a-zA-Z0-9_]*)\}\}/g
 
+/**
+ * 预定义变量名 → TemplateContext 字段的别名映射。
+ * 未列出的 {{var}}（例如 {{name}}、{{user_name}}）保留为可见文本。
+ */
+const VAR_ALIAS: Record<string, keyof TemplateContext> = {
+  date: 'date',
+  time: 'time',
+  iso_date: 'isoDate',
+  page_title: 'pageTitle',
+  clipboard: 'clipboard',
+}
+
 export class TemplateRenderer {
   /**
    * 构建预定义变量上下文。
@@ -56,7 +68,7 @@ export class TemplateRenderer {
   /**
    * 展开 content 中的 {{var}}。
    * - 预定义变量：替换
-   * - {{cursor}}：替换为 __CURSOR__，并在 placeholders 中记录位置
+   * - {{cursor}}：替换为 context.cursor 字面量，并在 placeholders 中记录位置
    * - 其他 {{xxx}}（如 {{name}}）：保留为可见文本
    */
   static expandContent(content: string, context: TemplateContext): ExpandResult {
@@ -66,14 +78,12 @@ export class TemplateRenderer {
         const start = offset
         const end = offset + match.length - 1
         placeholders.push({ type: 'cursor', start, end })
-        return '__CURSOR__'
+        return context.cursor
       }
-      const resolved =
-        varName === 'page_title' ? 'pageTitle' :
-        varName === 'iso_date' ? 'isoDate' :
-        varName
-      if (resolved in context) {
-        return (context as Record<string, string>)[resolved]
+      const key = VAR_ALIAS[varName]
+      if (key !== undefined) {
+        const value = context[key]
+        return typeof value === 'string' ? value : match
       }
       return match
     })
@@ -84,6 +94,9 @@ export class TemplateRenderer {
    * 渲染模板为 BlockDraft 列表（DFS 顺序，pos 连续递增）。
    *
    * 不写库，仅生成待插入数据。由调用方负责调用 blocksStore 写入。
+   *
+   * 注意：`id` / `createdAt` / `updatedAt` 由 `deserializeBlockTree` 在调用时即时生成，
+   * 因此相同输入下 `render()` 输出不保证完全一致（非纯函数）；结构、pos、content 确定。
    */
   static render(
     template: NormalizedTemplate,
