@@ -1,6 +1,11 @@
 import { TASK_PRIORITY_ICONS, TASK_STATUS_ICONS } from '../components/Icons'
+import type { Editor } from '@tiptap/vue-3'
 import type { Command, CommandProps } from '../types/command'
 import { useBlockStore } from '../stores/blocks'
+import { useEditorStore } from '../stores/editor'
+import { usePageStore } from '../stores/pages'
+import { useTemplateRegistry } from './useTemplateRegistry'
+import { TemplateRenderer } from '../services/template-renderer'
 
 /**
  * 格式化日期为 YYYY-MM-DD
@@ -555,4 +560,100 @@ export function useSlashCommands() {
     groupCommands,
     parseCommandInput
   }
+}
+
+// ─── 模板命令（Plan B Task 2） ─────────────────────────────────
+
+/**
+ * 触发模板插入：清除斜杠命令文本 → 渲染 → 写入 blocksStore → 定位光标。
+ * 由 SlashCommandMenu.vue 在 command.id 形如 `template:<id>` 时调用。
+ */
+export async function executeTemplateCommand(
+  blockId: string | undefined,
+  templateId: string,
+  editorInstance: Editor,
+  range: { from: number; to: number }
+): Promise<void> {
+  if (!blockId) return
+
+  const registry = useTemplateRegistry()
+  if (!registry.isLoaded.value) {
+    await registry.loadAll()
+  }
+  const template = registry.getById(templateId)
+  if (!template) {
+    console.warn(`[executeTemplateCommand] Template not found: ${templateId}`)
+    return
+  }
+
+  const blockStore = useBlockStore()
+  const editorStore = useEditorStore()
+  const anchor = blockStore.blocks.find(b => b.id === blockId)
+  if (!anchor) {
+    console.warn(`[executeTemplateCommand] Anchor block not found: ${blockId}`)
+    return
+  }
+
+  // 1. 清除斜杠命令文本（从 / 字符到当前光标）
+  const editor = editorInstance
+  const cursorNow = editor.state.selection.from
+  editor.chain()
+    .deleteRange({ from: range.from, to: cursorNow })
+    .focus()
+    .run()
+
+  // 2. 构建上下文 + 渲染
+  const pageTitle = usePageStore().getPage(anchor.pageId)?.title ?? anchor.pageId
+  const context = await TemplateRenderer.buildContext(pageTitle)
+  const drafts = TemplateRenderer.render(template, context, anchor)
+
+  // 3. 写入 blocks（按 pos 倒序插入，保证 anchor.pos+1000, +2000... 递增）
+  const sortedDrafts = [...drafts].sort((a, b) => b.pos - a.pos)
+  const newIds: string[] = []
+  for (const draft of sortedDrafts) {
+    const created = await blockStore.createBlock({
+      pageId: draft.pageId,
+      parentId: draft.parentId,
+      pos: draft.pos,
+      content: draft.content,
+      format: draft.format,
+      type: draft.type,
+      properties: draft.properties,
+    })
+    newIds.push(created.id)
+  }
+
+  // 4. 定位到第一个含 cursorMarker 的 Block（若有），否则聚焦到第一个新 Block
+  const firstCursor = drafts.find(d => d.cursorMarker === '__CURSOR__')
+  if (firstCursor) {
+    const target = blockStore.blocks.find(
+      b => b.pageId === firstCursor.pageId && b.pos === firstCursor.pos
+    )
+    if (target) {
+      editorStore.activateBlock(target.id)
+    }
+  } else {
+    const firstNewId = newIds[newIds.length - 1] // 倒序插入后最后 push 的是 pos 最小
+    if (firstNewId) {
+      editorStore.activateBlock(firstNewId)
+    }
+  }
+}
+
+/**
+ * 为所有 NormalizedTemplate 构建对应的 Command[]。
+ * 调用方需先 await useTemplateRegistry().loadAll()，否则 user 模板缺失。
+ */
+export function buildTemplateCommands(): Command[] {
+  const registry = useTemplateRegistry()
+  return registry.all.value.map((t): Command => ({
+    id: `template:${t.id}`,
+    name: t.name,
+    alias: ['template', 'tpl', ...(t.aliases ?? []), t.id.startsWith('user:') ? t.id.slice(5) : t.id],
+    group: '模板',
+    icon: t.icon,
+    action: ({ editor, range, blockId }) => {
+      void executeTemplateCommand(blockId, t.id, editor, range)
+    },
+  }))
 }
