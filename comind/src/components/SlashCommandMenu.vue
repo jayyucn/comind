@@ -32,10 +32,7 @@ const listRef = ref<HTMLElement | null>(null)
 
 // 子视图状态
 const isTemplateListView = ref(false)
-const templateListData = computed(() => {
-  if (!isTemplateListView.value) return []
-  return templateRegistry.all.value
-})
+const templateListData = computed(() => templateRegistry.all.value)
 
 // 注册模态键盘拦截层（基于 visible 状态）
 // visible = true 时 push 到 modalStack，visible = false 时 pop
@@ -84,21 +81,36 @@ function handleSlashCommandTrigger(event: Event) {
 function handleKeyDown(event: KeyboardEvent) {
   if (!visible.value) return
 
+  // 子视图（template list）使用 templateListData 而非 flatCommands
+  const listLength = isTemplateListView.value
+    ? templateListData.value.length
+    : flatCommands.value.length
+
   switch (event.key) {
     case 'ArrowDown':
       event.preventDefault()
-      selectedIndex.value = (selectedIndex.value + 1) % flatCommands.value.length
+      if (listLength === 0) return
+      selectedIndex.value = (selectedIndex.value + 1) % listLength
       break
     case 'ArrowUp':
       event.preventDefault()
+      if (listLength === 0) return
       selectedIndex.value = selectedIndex.value === 0
-        ? flatCommands.value.length - 1
+        ? listLength - 1
         : selectedIndex.value - 1
       break
     case 'Enter':
       event.preventDefault()
-      if (flatCommands.value[selectedIndex.value]) {
-        executeCommand(flatCommands.value[selectedIndex.value])
+      if (isTemplateListView.value) {
+        const t = templateListData.value[selectedIndex.value]
+        if (t) {
+          void useTemplateFromList(t.id)
+        }
+      } else {
+        const cmd = flatCommands.value[selectedIndex.value]
+        if (cmd) {
+          void executeCommand(cmd)
+        }
       }
       break
     case 'Backspace':
