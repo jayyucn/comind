@@ -51,9 +51,13 @@ const groupedCommands = computed(() => {
   return groupCommands(filteredCommands.value)
 })
 
-// 扁平化的命令列表（用于键盘导航）
+// 扁平化的命令列表（用于键盘导航，必须与 groupedCommands 渲染顺序一致）
 const flatCommands = computed(() => {
-  return filteredCommands.value
+  const result: Command[] = []
+  for (const [, cmds] of groupedCommands.value) {
+    result.push(...cmds)
+  }
+  return result
 })
 
 // 监听 slash-command-trigger 事件
@@ -139,10 +143,13 @@ function updateQuery() {
   const startPos = range.value.to
   const textAfterSlash = editor.state.doc.textBetween(startPos, from)
 
-  query.value = textAfterSlash
+  const newQuery = textAfterSlash
 
-  // 重置选中索引
-  selectedIndex.value = 0
+  // 只在 query 实际变化时重置选中索引（避免 ArrowDown 等非文本操作触发重置）
+  if (newQuery !== query.value) {
+    query.value = newQuery
+    selectedIndex.value = 0
+  }
 
   // 检测 /template list 切换到模板子视图
   if (query.value.trim() === 'template list') {
