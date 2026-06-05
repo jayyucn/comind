@@ -23,8 +23,9 @@ export interface CleanupResult {
  *
  * 流程：
  * 1. 解析被删 blocks 中带 inverse 的 typed-link 目标
- * 2. 调 blockStore.deleteBlock 删除（级联清理 link 表的出向 link + properties）
- * 3. 对每个目标：若本页 SURVIVING blocks 已无 typed-link 维持，跨页降级反向引用
+ * 2. 检查本页 SURVIVING blocks 是否仍含 typed-link 维持（关键：在删除前完成！）
+ * 3. 调 blockStore.deleteBlock 删除（级联清理 link 表的出向 link + properties）
+ * 4. 对每个目标：若本页 SURVIVING blocks 已无 typed-link 维持，跨页降级反向引用
  *
  * 边界：
  * - 仅处理带 inverseRelationshipType 的 link（单向 ^(depends-on) 不参与）
@@ -52,11 +53,14 @@ export function useBlockRelationshipCleanup() {
 
     if (deletedBlockIds.length === 0) return result
 
+    // 在删除前保存 blocks 的快照，因为删除后 blockStore.blocks 会改变！
+    const blocksBeforeDelete = [...blockStore.blocks]
+
     // 1. 收集被删 blocks 中带 inverse 的 typed-link 目标（去重）
     // targetTitle -> inverseType
     const targetSet = new Map<string, string>()
     for (const id of deletedBlockIds) {
-      const block = blockStore.blocks.find(b => b.id === id)
+      const block = blocksBeforeDelete.find(b => b.id === id)
       if (!block) continue
       const links = parseBlockLinks(block.content)
       for (const link of links) {
@@ -67,29 +71,40 @@ export function useBlockRelationshipCleanup() {
       }
     }
 
-    // 2. 调 blockStore.deleteBlock 删除（级联）— 无论是否能解析 page title，都要先删
+    // 2. 跨页清理准备：解析当前 pageId 对应的 title
+    const ourPageTitle = pageStore.pages.find(p => p.id === pageId)?.title ?? null
+
+    // 3. 检查本页 SURVIVING blocks 是否仍含 typed-link 维持（关键：在删除之前！）
+    // 这是关键修复点！如果我们先删除再检查，检查逻辑会错误地判断所有 blocks 都是 surviving
+    const survivingTypedLinks = new Set<string>()
+    if (ourPageTitle) {
+      for (const [targetTitle] of targetSet) {
+        const stillHasTypedLink = blocksBeforeDelete.some(b => {
+          if (b.pageId !== pageId) return false
+          if (deletedBlockIds.includes(b.id)) return false
+          const links = parseBlockLinks(b.content)
+          return links.some(l =>
+            !l.isExternal &&
+            l.targetTitle === targetTitle &&
+            l.relationshipType !== null
+          )
+        })
+        if (stillHasTypedLink) {
+          survivingTypedLinks.add(targetTitle)
+        }
+      }
+    }
+
+    // 4. 调 blockStore.deleteBlock 删除（级联）
     for (const id of deletedBlockIds) {
       await blockStore.deleteBlock(id)
     }
 
-    // 3. 跨页清理：解析当前 pageId 对应的 title，定位反向引用
-    const ourPageTitle = pageStore.pages.find(p => p.id === pageId)?.title ?? null
     if (!ourPageTitle) return result
 
-    // 4. 对每个目标：检查本页 SURVIVING blocks 是否仍有 typed-link 维持
+    // 5. 跨页清理：对每个目标，如果没有同页 surviving typed-link 维持，则降级反向引用
     for (const [targetTitle, inverseType] of targetSet) {
-      const stillHasTypedLink = blockStore.blocks.some(b => {
-        if (b.pageId !== pageId) return false
-        if (deletedBlockIds.includes(b.id)) return false
-        const links = parseBlockLinks(b.content)
-        return links.some(l =>
-          !l.isExternal &&
-          l.targetTitle === targetTitle &&
-          l.relationshipType !== null
-        )
-      })
-
-      if (stillHasTypedLink) continue
+      if (survivingTypedLinks.has(targetTitle)) continue
 
       // 跨页降级：扫描目标页面所有 blocks，移除 [[ourPageTitle]]^(...) 类型后缀
       result.orphanedTargets.push({ targetTitle, inverseType })
