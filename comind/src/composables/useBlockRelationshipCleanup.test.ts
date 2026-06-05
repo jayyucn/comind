@@ -1,8 +1,11 @@
 import { describe, test, expect, beforeEach, vi } from 'vitest'
+import 'fake-indexeddb/auto'
 import { setActivePinia, createPinia } from 'pinia'
 import { useBlockStore } from '../stores/blocks'
 import { usePageStore } from '../stores/pages'
 import { useBlockRelationshipCleanup } from './useBlockRelationshipCleanup'
+import { useRelationshipTypes } from './useRelationshipTypes'
+import { db } from '../storage/db'
 
 vi.mock('../storage/indexedDB', () => ({
   storage: {
@@ -26,8 +29,13 @@ vi.mock('../storage/indexedDB', () => ({
   }
 }))
 
-beforeEach(() => {
+beforeEach(async () => {
   setActivePinia(createPinia())
+  // 初始化关系类型数据
+  await db.relationshipTypes.clear()
+  const { _resetForTest, load } = useRelationshipTypes()
+  _resetForTest()
+  await load()
 })
 
 /**
