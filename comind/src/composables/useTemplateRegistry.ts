@@ -12,10 +12,15 @@ import { useUserTemplatesStore } from '../stores/user-templates'
  * 3. 用户模板 ID 加 `user:` 前缀避免与内置冲突
  * 4. 同 ID 时用户模板优先（最新创建）
  */
+
+// 模块级共享 state —— 多次调用 useTemplateRegistry() 必须返回同一个 ref，
+// 否则多个消费者各自刷新数据时会出现"一个拿到数据、一个拿到空"的 bug
+// （见 SlashCommandMenu 中 buildTemplateCommands() 与 onMounted 的实例不一致问题）
+const all = ref<NormalizedTemplate[]>([])
+const loaded = ref(false)
+
 export function useTemplateRegistry() {
   const userStore = useUserTemplatesStore()
-  const all = ref<NormalizedTemplate[]>([])
-  const loaded = ref(false)
 
   const builtinAsNormalized: NormalizedTemplate[] = BUILTIN_TEMPLATES.map((t: BuiltinTemplate) => ({
     id: t.id,

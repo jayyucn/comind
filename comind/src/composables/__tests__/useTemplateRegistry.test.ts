@@ -104,3 +104,16 @@ describe('useTemplateRegistry', () => {
     expect(results.some(t => t.id === 'meeting-notes')).toBe(true)
   })
 })
+
+describe('useTemplateRegistry - singleton state', () => {
+  test('两次调用共享 all ref（不创建新空 ref）', async () => {
+    const r1 = useTemplateRegistry()
+    await r1.loadAll()
+    expect(r1.all.value.length).toBeGreaterThan(0)
+
+    const r2 = useTemplateRegistry()
+    expect(r2.all.value).toBe(r1.all.value)  // 同一个数组引用
+    expect(r2.all.value.length).toBeGreaterThan(0)
+    expect(r2.isLoaded.value).toBe(true)
+  })
+})
