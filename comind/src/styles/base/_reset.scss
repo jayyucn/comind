@@ -100,8 +100,8 @@ body {
 }
 
 // 临时占位符元素（跨容器拖拽时插入）
-.block-children > div:not([data-block-id]):not([data-parent-id]),
-.block-list > div:not([data-block-id]):not([data-parent-id]) {
+.block-children > div:not([data-block-id]):not([data-parent-id]):not(.block-list-padding),
+.block-list > div:not([data-block-id]):not([data-parent-id]):not(.block-list-padding) {
   display: none !important;
 }
 
