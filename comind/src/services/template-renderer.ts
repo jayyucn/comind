@@ -7,17 +7,11 @@ import type {
 } from '../types/template'
 import { deserializeBlockTree } from './serialize-block-tree'
 
-/** 占位符标记（用于 cursor 定位） */
-export interface PlaceholderMarker {
-  type: 'cursor'
-  start: number
-  end: number
-}
-
 /** 变量展开结果 */
 export interface ExpandResult {
   text: string
-  placeholders: PlaceholderMarker[]
+  /** 当前 content 是否含 {{cursor}} —— 用于决定 BlockDraft.cursorMarker */
+  hasCursor: boolean
 }
 
 const VAR_REGEX = /\{\{([a-zA-Z_][a-zA-Z0-9_]*)\}\}/g
@@ -67,18 +61,16 @@ export class TemplateRenderer {
 
   /**
    * 展开 content 中的 {{var}}。
-   * - 预定义变量：替换
-   * - {{cursor}}：替换为 context.cursor 字面量，并在 placeholders 中记录位置
+   * - 预定义变量：替换为对应字段值
+   * - {{cursor}}：从 text 中剥离（不留字面痕迹），仅在 hasCursor 中标记
    * - 其他 {{xxx}}（如 {{name}}）：保留为可见文本
    */
   static expandContent(content: string, context: TemplateContext): ExpandResult {
-    const placeholders: PlaceholderMarker[] = []
-    const text = content.replace(VAR_REGEX, (match, varName: string, offset: number) => {
+    let hasCursor = false
+    const text = content.replace(VAR_REGEX, (match, varName: string) => {
       if (varName === 'cursor') {
-        const start = offset
-        const end = offset + match.length - 1
-        placeholders.push({ type: 'cursor', start, end })
-        return context.cursor
+        hasCursor = true
+        return ''
       }
       const key = VAR_ALIAS[varName]
       if (key !== undefined) {
@@ -87,7 +79,7 @@ export class TemplateRenderer {
       }
       return match
     })
-    return { text, placeholders }
+    return { text, hasCursor }
   }
 
   /**
@@ -127,8 +119,7 @@ export class TemplateRenderer {
     const walk = (tmpl: TemplateBlock[]) => {
       for (const t of tmpl) {
         const skeleton = skeletons[cursor]
-        const { text, placeholders } = this.expandContent(t.content, context)
-        const hasCursor = placeholders.length > 0
+        const { text, hasCursor } = this.expandContent(t.content, context)
         const finalContent = t.type === 'property' && t.propertyKey
           ? `${t.propertyKey}:: ${text}`
           : text

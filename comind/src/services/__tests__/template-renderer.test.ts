@@ -43,7 +43,7 @@ describe('TemplateRenderer.expandContent', () => {
   test('替换所有预定义变量', () => {
     const result = TemplateRenderer.expandContent('Today is {{date}} at {{time}}', baseContext)
     expect(result.text).toBe('Today is 2026年6月5日 at 14:30')
-    expect(result.placeholders).toEqual([])
+    expect(result.hasCursor).toBe(false)
   })
 
   test('未匹配的 {{name}} 保留为可见文本', () => {
@@ -51,10 +51,17 @@ describe('TemplateRenderer.expandContent', () => {
     expect(result.text).toBe('Hello {{user_name}}')
   })
 
-  test('{{cursor}} 替换为特殊标记并加入 placeholders', () => {
+  test('{{cursor}} 被剥离（不泄漏为字面文本）', () => {
     const result = TemplateRenderer.expandContent('A {{cursor}} B', baseContext)
-    expect(result.text).toBe('A __CURSOR__ B')
-    expect(result.placeholders).toEqual([{ type: 'cursor', start: 2, end: 11 }])
+    expect(result.text).toBe('A  B')
+    expect(result.text).not.toContain('__CURSOR__')
+    expect(result.hasCursor).toBe(true)
+  })
+
+  test('无 {{cursor}} 时 hasCursor 为 false', () => {
+    const result = TemplateRenderer.expandContent('Hello {{date}}', baseContext)
+    expect(result.text).toBe('Hello 2026年6月5日')
+    expect(result.hasCursor).toBe(false)
   })
 
   test('多个变量混合替换', () => {
@@ -84,9 +91,9 @@ describe('TemplateRenderer.render', () => {
     expect(drafts[4].content).toBe('My Page')
     expect(drafts[5].content).toBe('2026-06-05')
     expect(drafts[6].content).toBe('clip-text')
-    expect(drafts[7].content).toBe('Title __CURSOR__')
+    expect(drafts[7].content).toBe('Title ')
     expect(drafts[7].cursorMarker).toBe('__CURSOR__')
-    expect(drafts[8].content).toBe('__CURSOR__')
+    expect(drafts[8].content).toBe('')
     expect(drafts[8].cursorMarker).toBe('__CURSOR__')
     expect(drafts[0].pos).toBe(2000)
     expect(drafts[8].pos).toBe(10000)
