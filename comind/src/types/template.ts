@@ -82,7 +82,9 @@ export interface TemplateContext {
   isoDate: string
   /** 当前页面标题（Page.title） */
   pageTitle: string
-  /** 特殊标记：插入后光标应落在此处（仅第一个生效） */
+  /**
+   * 渲染时 `{{cursor}}` 被替换为该字面量；仅第一个出现的占位符最终成为 BlockDraft.cursorMarker。
+   */
   cursor: '__CURSOR__'
   /** 剪贴板内容（读取失败时为空字符串） */
   clipboard: string
@@ -98,10 +100,13 @@ export interface BlockDraft {
   pos: number
   /** 已展开变量替换（不再含 {{...}}） */
   content: string
-  format: {
-    type?: 'heading'
-    level?: 1 | 2 | 3
-  }
+  /**
+   * Block 格式元数据
+   *
+   * 约定：heading 类型写入 `{ type: 'heading', level: 1 | 2 | 3 }`。
+   * 与 `Block.format` 类型保持一致以便直接兼容。
+   */
+  format: Record<string, any>
   type: 'bullet' | 'property' | 'query' | 'embed' | 'code' | 'image'
   properties: Record<string, any>
   /** 来自 {{cursor}} 替换，插入后用于定位光标；仅第一个非 null 的生效 */
