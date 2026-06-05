@@ -352,6 +352,6 @@
   inset: 0;
   background: var(--selection-bg);
   pointer-events: none;
-  border-radius: $radius-sm;
+  border-radius:  0;
   z-index: 1;
 }
