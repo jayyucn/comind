@@ -2,8 +2,10 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useEditorStore } from '../stores/editor'
 import { usePropertyStore } from '../stores/property'
-import { useSlashCommands, filterCommands, groupCommands, parseCommandInput } from '../composables/useSlashCommands'
+import { useSlashCommands, filterCommands, groupCommands, parseCommandInput, buildTemplateCommands, executeTemplateCommand } from '../composables/useSlashCommands'
 import { useModalKeyboardRef } from '../composables/useModalKeyboard'
+import { useTemplateRegistry } from '../composables/useTemplateRegistry'
+import { useUserTemplatesStore } from '../stores/user-templates'
 import { parseDateInput } from '../utils/date-parser'
 import { TaskIcon } from '../components/Icons'
 import type { Command } from '../types/command'
@@ -11,6 +13,14 @@ import type { Command } from '../types/command'
 const editorStore = useEditorStore()
 const propertyStore = usePropertyStore()
 const { commands } = useSlashCommands()
+const templateRegistry = useTemplateRegistry()
+const userTemplatesStore = useUserTemplatesStore()
+const templateCommands = ref<Command[]>([])
+
+onMounted(async () => {
+  await templateRegistry.loadAll()
+  templateCommands.value = buildTemplateCommands()
+})
 
 // 本地状态
 const visible = ref(false)
@@ -20,13 +30,23 @@ const position = ref({ x: 0, y: 0 })
 const range = ref<{ from: number; to: number } | null>(null)
 const listRef = ref<HTMLElement | null>(null)
 
+// 子视图状态
+const isTemplateListView = ref(false)
+const templateListData = computed(() => {
+  if (!isTemplateListView.value) return []
+  return templateRegistry.all.value
+})
+
 // 注册模态键盘拦截层（基于 visible 状态）
 // visible = true 时 push 到 modalStack，visible = false 时 pop
 useModalKeyboardRef('slash-command', visible)
 
+// 合并基础命令 + 模板命令
+const allCommands = computed(() => [...commands, ...templateCommands.value])
+
 // 过滤后的命令
 const filteredCommands = computed(() => {
-  return filterCommands(query.value, commands)
+  return filterCommands(query.value, allCommands.value)
 })
 
 // 分组后的命令
@@ -111,6 +131,13 @@ function updateQuery() {
 
   // 重置选中索引
   selectedIndex.value = 0
+
+  // 检测 /template list 切换到模板子视图
+  if (query.value.trim() === 'template list') {
+    isTemplateListView.value = true
+  } else {
+    isTemplateListView.value = false
+  }
 }
 
 // 执行命令
@@ -119,6 +146,14 @@ async function executeCommand(command: Command) {
   if (!editor || !range.value) return
 
   const blockId = editorStore.activeBlockId
+
+  // 模板命令特殊处理
+  if (command.id.startsWith('template:')) {
+    const templateId = command.id.slice('template:'.length)
+    await executeTemplateCommand(blockId ?? undefined, templateId, editor, range.value ?? { from: 0, to: 0 })
+    close()
+    return
+  }
 
   // 解析命令和参数
   const { argument } = parseCommandInput(query.value)
@@ -215,6 +250,7 @@ function close() {
   query.value = ''
   selectedIndex.value = 0
   range.value = null
+  isTemplateListView.value = false
 }
 
 // 点击外部关闭
@@ -227,6 +263,29 @@ function handleClickOutside(event: MouseEvent) {
 
 function isSvgIcon(icon: string): boolean {
   return icon.startsWith('status-') || icon.startsWith('priority-') || icon.startsWith('icon-')
+}
+
+// 从子视图应用模板
+async function useTemplateFromList(templateId: string) {
+  const blockId = editorStore.activeBlockId
+  const editor = editorStore.activeEditor
+  if (!editor) return
+  const r = range.value ?? { from: 0, to: 0 }
+  await executeTemplateCommand(blockId ?? undefined, templateId, editor, r)
+  close()
+}
+
+// 从子视图删除用户模板
+async function deleteTemplateFromList(templateId: string) {
+  if (!templateId.startsWith('user:')) {
+    window.alert('内置模板不可删除')
+    return
+  }
+  const id = templateId.slice('user:'.length)
+  if (!window.confirm('确定删除该模板？')) return
+  await userTemplatesStore.remove(id)
+  await templateRegistry.loadAll()
+  templateCommands.value = buildTemplateCommands()
 }
 
 // 监听编辑器更新（用于实时更新查询）
@@ -315,35 +374,77 @@ watch(visible, (isVisible) => {
         class="slash-command-menu"
         :style="{ left: `${position.x}px`, top: `${position.y}px` }"
       >
-        <div class="slash-command-list" ref="listRef">
-          <template v-for="[group, cmds] in groupedCommands" :key="group">
+        <div
+          ref="listRef"
+          class="slash-command-list"
+        >
+          <template v-if="isTemplateListView">
             <div class="slash-command-group">
-              <div class="slash-command-group-title">{{ group }}</div>
+              <div class="slash-command-group-title">
+                我的模板（点击使用）
+              </div>
               <div
-                v-for="cmd in cmds"
-                :key="cmd.id"
-                class="slash-command-item"
-                :class="{ selected: flatCommands.indexOf(cmd) === selectedIndex }"
-                @click="executeCommand(cmd)"
-                @mouseenter="selectedIndex = flatCommands.indexOf(cmd)"
+                v-for="(t, idx) in templateListData"
+                :key="t.id"
+                class="slash-command-item template-item"
+                :class="{ selected: idx === selectedIndex }"
+                @click="useTemplateFromList(t.id)"
+                @mouseenter="selectedIndex = idx"
               >
-                <span class="slash-command-icon">
-                  <TaskIcon 
-                    v-if="isSvgIcon(cmd.icon)"
-                    :name="cmd.icon"
-                    :size="16"
-                  />
-                  <span v-else>{{ cmd.icon }}</span>
-                </span>
-                <span class="slash-command-name">{{ cmd.name }}</span>
-                <span v-if="cmd.alias && cmd.alias.length > 0" class="slash-command-alias">
-                  {{ cmd.alias[0] }}
-                </span>
+                <span class="template-icon">{{ t.icon }}</span>
+                <span class="template-name">{{ t.name }}</span>
+                <span class="template-source">[{{ t.source === 'builtin' ? '内置' : '我的' }}]</span>
+                <button
+                  v-if="t.source === 'user'"
+                  class="template-delete"
+                  @click.stop="deleteTemplateFromList(t.id)"
+                >
+                  ×
+                </button>
               </div>
             </div>
           </template>
+          <template v-else>
+            <template
+              v-for="[group, cmds] in groupedCommands"
+              :key="group"
+            >
+              <div class="slash-command-group">
+                <div class="slash-command-group-title">
+                  {{ group }}
+                </div>
+                <div
+                  v-for="cmd in cmds"
+                  :key="cmd.id"
+                  class="slash-command-item"
+                  :class="{ selected: flatCommands.indexOf(cmd) === selectedIndex }"
+                  @click="executeCommand(cmd)"
+                  @mouseenter="selectedIndex = flatCommands.indexOf(cmd)"
+                >
+                  <span class="slash-command-icon">
+                    <TaskIcon
+                      v-if="isSvgIcon(cmd.icon)"
+                      :name="cmd.icon"
+                      :size="16"
+                    />
+                    <span v-else>{{ cmd.icon }}</span>
+                  </span>
+                  <span class="slash-command-name">{{ cmd.name }}</span>
+                  <span
+                    v-if="cmd.alias && cmd.alias.length > 0"
+                    class="slash-command-alias"
+                  >
+                    {{ cmd.alias[0] }}
+                  </span>
+                </div>
+              </div>
+            </template>
+          </template>
 
-          <div v-if="flatCommands.length === 0" class="slash-command-empty">
+          <div
+            v-if="flatCommands.length === 0 && !isTemplateListView"
+            class="slash-command-empty"
+          >
             无匹配命令
           </div>
         </div>
@@ -440,5 +541,38 @@ watch(visible, (isVisible) => {
 .fade-slide-leave-to {
   opacity: 0;
   transform: translateY(-8px);
+}
+
+.template-icon {
+  font-size: 16px;
+  width: 20px;
+  text-align: center;
+}
+
+.template-name {
+  flex: 1;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.template-source {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.template-delete {
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+}
+
+.template-delete:hover {
+  color: #dc2626;
 }
 </style>
