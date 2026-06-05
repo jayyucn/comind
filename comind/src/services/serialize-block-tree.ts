@@ -31,7 +31,7 @@ export function serializeBlockTree(blocks: Block[], rootBlockId: string): Templa
     arr.sort((a, b) => a.pos - b.pos)
   }
 
-  const serialize = (block: Block): TemplateBlock | null => {
+  const serialize = (block: Block): TemplateBlock => {
     if (UNSUPPORTED_TYPES.has(block.type)) {
       console.warn(`[serializeBlockTree] Block type "${block.type}" not supported in templates, downgrading to bullet`)
       return { type: 'bullet', content: block.content }
@@ -63,15 +63,13 @@ export function serializeBlockTree(blocks: Block[], rootBlockId: string): Templa
     return { type: 'bullet', content: block.content }
   }
 
-  const build = (block: Block): TemplateBlock | null => {
+  const build = (block: Block): TemplateBlock => {
     const tmpl = serialize(block)
-    if (!tmpl) return null
 
     const children = childrenOf.get(block.id) ?? []
     const childTmpls: TemplateBlock[] = []
     for (const child of children) {
-      const ct = build(child)
-      if (ct) childTmpls.push(ct)
+      childTmpls.push(build(child))
     }
     if (childTmpls.length > 0) {
       tmpl.children = childTmpls
@@ -79,7 +77,8 @@ export function serializeBlockTree(blocks: Block[], rootBlockId: string): Templa
     return tmpl
   }
 
-  return [build(root)!].filter(Boolean) as TemplateBlock[]
+  const tmpl = build(root)
+  return tmpl ? [tmpl] : []
 }
 
 export interface DeserializeOptions {

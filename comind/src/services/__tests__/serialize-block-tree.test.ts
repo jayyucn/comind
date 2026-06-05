@@ -82,6 +82,16 @@ describe('serializeBlockTree', () => {
     const result = serializeBlockTree(blocks, 'b1')
     expect(result).toEqual([{ type: 'bullet', content: 'no separator' }])
   })
+
+  test('rootBlockId 不存在时应返回空数组', () => {
+    const blocks: Block[] = [{
+      id: 'b1', pageId: 'p1', parentId: null, pos: 1000,
+      content: 'hello', format: {}, type: 'bullet',
+      properties: {}, createdAt: 0, updatedAt: 0
+    }]
+    const result = serializeBlockTree(blocks, 'non-existent-id')
+    expect(result).toEqual([])
+  })
 })
 
 describe('deserializeBlockTree', () => {
