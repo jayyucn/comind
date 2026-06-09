@@ -129,7 +129,9 @@ pageStore.onRemovePageFromHistory(removePageFromHistory)
 
 function handleMainClick(e: MouseEvent) {
   const target = e.target as HTMLElement
-  if (target.closest('.block')) return
+  // 如果 target 已被 Vue 从 DOM 移除（如 Concept Block 切换模式时），跳过
+  if (!document.contains(target)) return
+  if (target.closest('.block') || target.closest('.concept-block') || target.closest('.page-concept-block')) return
   editorStore.deactivateBlock()
 }
 </script>

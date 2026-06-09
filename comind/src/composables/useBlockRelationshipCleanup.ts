@@ -44,7 +44,8 @@ export function useBlockRelationshipCleanup() {
    */
   async function cleanupAfterDelete(
     pageId: string,
-    deletedBlockIds: string[]
+    deletedBlockIds: string[],
+    blocksBeforeDelete?: Array<ReturnType<typeof useBlockStore>['blocks'][0]>
   ): Promise<CleanupResult> {
     const result: CleanupResult = {
       modifiedCrossPageBlocks: [],
@@ -54,13 +55,13 @@ export function useBlockRelationshipCleanup() {
     if (deletedBlockIds.length === 0) return result
 
     // 在删除前保存 blocks 的快照，因为删除后 blockStore.blocks 会改变！
-    const blocksBeforeDelete = [...blockStore.blocks]
+    const blocks = blocksBeforeDelete ?? [...blockStore.blocks]
 
     // 1. 收集被删 blocks 中带 inverse 的 typed-link 目标（去重）
     // targetTitle -> inverseType
     const targetSet = new Map<string, string>()
     for (const id of deletedBlockIds) {
-      const block = blocksBeforeDelete.find(b => b.id === id)
+      const block = blocks.find(b => b.id === id)
       if (!block) continue
       const links = parseBlockLinks(block.content)
       for (const link of links) {
@@ -79,7 +80,7 @@ export function useBlockRelationshipCleanup() {
     const survivingTypedLinks = new Set<string>()
     if (ourPageTitle) {
       for (const [targetTitle] of targetSet) {
-        const stillHasTypedLink = blocksBeforeDelete.some(b => {
+        const stillHasTypedLink = blocks.some(b => {
           if (b.pageId !== pageId) return false
           if (deletedBlockIds.includes(b.id)) return false
           const links = parseBlockLinks(b.content)

@@ -4,9 +4,6 @@ const registry = new Map<string, BlockTypeHandler>()
 
 export function useBlockRegistry() {
   function register(handler: BlockTypeHandler) {
-    if (registry.has(handler.type)) {
-      return
-    }
     registry.set(handler.type, handler)
   }
 

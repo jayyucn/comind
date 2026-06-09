@@ -1,8 +1,9 @@
 # 存储格式规范
 
-> 版本：v0.7
-> 日期：2026-05-19
+> 版本：v0.8
+> 日期：2026-06-05
 > 状态：✅ 已实现（Phase 1 IndexedDB 部分）
+> 变更：v0.8 新增 Dexie v9 支持 templates 表、v8 新增 relationshipTypes 表
 
 ***
 
@@ -19,26 +20,69 @@
 **当前存储方案为 IndexedDB + Dexie.js，已完成实现。**
 
 ```typescript
-// src/storage/db.ts
+// comind/src/storage/db.ts
 import Dexie, { type Table } from 'dexie'
-import type { BlockRecord } from '../types/block'
-import type { LinkRecord } from '../types/link'
-import type { PageRecord } from '../types/page'
-import type { PropertyRecord } from '../types/property'
+
+// RelationshipType 记录
+export interface RelationshipTypeRecord {
+  id: string           // 主键；种子用 `rt_seed_<type>`，用户新建用 `rt_user_<nanoid>`
+  type: string         // 正向英文标识
+  inverse: string | null  // 反向英文标识；自反为 null
+  label: string       // 正向中文标签
+  inverseLabel: string  // 反向中文标签
+  color: string       // 颜色，hex 格式
+  order: number       // 排序权重，越小越靠前
+  deleted: boolean    // 软删除标记
+  builtin: boolean    // 是否内置默认
+}
+
+// UserTemplate 记录
+export interface UserTemplate {
+  id: string
+  name: string
+  category: string
+  content: string     // 模板内容（Block 树 JSON）
+  createdAt: number
+  updatedAt: number
+}
 
 export class ComindDB extends Dexie {
   blocks!: Table<BlockRecord, string>
   links!: Table<LinkRecord, string>
   pages!: Table<PageRecord, string>
   properties!: Table<PropertyRecord, string>
+  assets!: Table<Asset, string>
+  relationshipTypes!: Table<RelationshipTypeRecord, string>
+  templates!: Table<UserTemplate, string>
 
   constructor() {
     super('comind')
-    this.version(4).stores({
+    // v7 兼容版本
+    this.version(7).stores({
       blocks: 'id, pageId, parentId, pos, createdAt, updatedAt',
-      links: 'id, sourceBlockId, targetPageId, displayText, createdAt',
-      pages: 'id, blockId, title, type, createdAt, updatedAt',
-      properties: 'id, blockId, [blockId+key]'
+      links: 'id, sourceBlockId, targetPageId, displayText, relationshipType, createdAt',
+      pages: 'id, blockId, title, type, deleted, createdAt, updatedAt',
+      properties: 'id, blockId, [blockId+key]',
+      assets: 'id'
+    })
+    // v8 新增 relationshipTypes 表
+    this.version(8).stores({
+      blocks: 'id, pageId, parentId, pos, createdAt, updatedAt',
+      links: 'id, sourceBlockId, targetPageId, displayText, relationshipType, createdAt',
+      pages: 'id, blockId, title, type, deleted, createdAt, updatedAt',
+      properties: 'id, blockId, [blockId+key]',
+      assets: 'id',
+      relationshipTypes: 'id, type, deleted, builtin, order'
+    })
+    // v9 新增 templates 表
+    this.version(9).stores({
+      blocks: 'id, pageId, parentId, pos, createdAt, updatedAt',
+      links: 'id, sourceBlockId, targetPageId, displayText, relationshipType, createdAt',
+      pages: 'id, blockId, title, type, deleted, createdAt, updatedAt',
+      properties: 'id, blockId, [blockId+key]',
+      assets: 'id',
+      relationshipTypes: 'id, type, deleted, builtin, order',
+      templates: 'id, category, updatedAt, name'
     })
   }
 }
@@ -49,7 +93,7 @@ export const db = new ComindDB()
 **Record 类型定义：**
 
 ```typescript
-// PageRecord（src/types/page.ts）
+// PageRecord（comind/src/types/page.ts）
 export interface PageRecord {
   id: string
   blockId: string | null
@@ -61,11 +105,12 @@ export interface PageRecord {
   filePath: string | null
   childrenCount: number
   wordCount: number
+  deleted: number            // 0 | 1（软删除标记）
   createdAt: number          // 毫秒时间戳
   updatedAt: number
 }
 
-// BlockRecord（src/types/block.ts）
+// BlockRecord（comind/src/types/block.ts）
 export interface BlockRecord {
   id: string
   pageId: string
@@ -79,16 +124,17 @@ export interface BlockRecord {
   updatedAt: number
 }
 
-// LinkRecord（src/types/link.ts）
+// LinkRecord（comind/src/types/link.ts）
 export interface LinkRecord {
   id: string
   sourceBlockId: string
   targetPageId: string
   displayText: string
+  relationshipType: string | null  // 关系类型（v0.6+ 新增）
   createdAt: number
 }
 
-// PropertyRecord（src/types/property.ts）
+// PropertyRecord（comind/src/types/property.ts）
 export interface PropertyRecord {
   id: string
   blockId: string
@@ -104,16 +150,15 @@ export interface PropertyRecord {
 }
 ```
 
-**与 v0.6 的主要差异：**
+**与 v0.7 的主要差异：**
 
-| 变更项 | v0.6 | v0.7（当前实现） |
+| 变更项 | v0.7 | v0.8（当前实现） |
 |--------|------|-------------|
-| Block 排序 | `leftId` | `pos`（Gap 排序） |
-| Property 表 | 不存在 | 已实现（4 个表） |
-| Dexie 版本 | version(1) | version(4) |
-| Block 索引 | `leftId` | `pos` |
-| Property 索引 | 不存在 | `blockId`, `[blockId+key]` |
-| 时间戳格式 | ISO 8601 string | number（毫秒） |
+| Dexie 版本 | version(4) | version(9) |
+| relationshipTypes 表 | 不存在 | 已实现（v8） |
+| templates 表 | 不存在 | 已实现（v9） |
+| Page.deleted 字段 | 不存在 | 已实现 |
+| Link.relationshipType 字段 | 已存在 | 继续保留 |
 
 **Phase 1 → Phase 2 迁移路径：**
 

@@ -1,0 +1,240 @@
+<h2>Concept Block · 三方案对比</h2>
+<p class="subtitle">同一内容「函数式编程」，三种截然不同的视觉组织方式</p>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- 方案 A: 折叠式四区卡片（已展示过） -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="mockup">
+  <div class="mockup-header">A · 折叠式四区卡片</div>
+  <div class="mockup-body" style="background:var(--bg-base,#FAFAFE);font-family:'Noto Sans SC','PingFang SC',sans-serif;">
+
+    <!-- 标题栏 -->
+    <div style="padding:12px 16px 10px;border-bottom:1px solid #E7E5E4;display:flex;align-items:center;gap:8px;">
+      <div style="width:24px;height:24px;border-radius:6px;background:linear-gradient(135deg,#6366F1,#818CF8);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="3" fill="white"/><circle cx="8" cy="8" r="6.5" stroke="white" stroke-width="1.2" stroke-dasharray="2 2"/></svg>
+      </div>
+      <span style="font-size:15px;font-weight:700;color:#1C1917;">函数式编程</span>
+      <span style="font-size:10px;color:#6366F1;background:#EEF2FF;padding:2px 6px;border-radius:3px;margin-left:auto;">概念</span>
+    </div>
+
+    <!-- 区1: 核心定义 -->
+    <div style="padding:10px 16px;border-bottom:1px solid #E7E5E4;">
+      <div style="font-size:10px;font-weight:600;color:#D97706;letter-spacing:1px;margin-bottom:6px;">01 · 核心定义 ▾</div>
+      <div style="border-left:3px solid #6366F1;padding:8px 12px;background:rgba(99,102,241,0.04);border-radius:0 6px 6px 0;">
+        <p style="margin:0;font-size:12px;line-height:1.6;color:#1C1917;">将计算视为<b style="color:#6366F1;">数学函数求值</b>、避免状态变更和可变数据的编程范式。</p>
+      </div>
+    </div>
+
+    <!-- 区2: 边界范围 -->
+    <div style="padding:10px 16px;border-bottom:1px solid #E7E5E4;">
+      <div style="font-size:10px;font-weight:600;color:#059669;letter-spacing:1px;margin-bottom:6px;">02 · 边界范围 ▾</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+        <div style="background:rgba(5,150,105,0.05);border:1px solid rgba(5,150,105,0.15);border-radius:6px;padding:8px 10px;">
+          <div style="font-size:10px;font-weight:600;color:#059669;margin-bottom:3px;">✓ 外延</div>
+          <div style="font-size:11px;color:#78716C;line-height:1.6;">纯函数 · 不可变数据 · 声明式处理</div>
+        </div>
+        <div style="background:rgba(220,38,38,0.04);border:1px solid rgba(220,38,38,0.12);border-radius:6px;padding:8px 10px;">
+          <div style="font-size:10px;font-weight:600;color:#DC2626;margin-bottom:3px;">✗ 禁区</div>
+          <div style="font-size:11px;color:#78716C;line-height:1.6;">"用函数写代码"≠FP · ≠性能差 · ≠Haskell</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 区3: 对标辨析 -->
+    <div style="padding:10px 16px;border-bottom:1px solid #E7E5E4;">
+      <div style="font-size:10px;font-weight:600;color:#6366F1;letter-spacing:1px;margin-bottom:6px;">03 · 对标辨析 ▾</div>
+      <div style="display:flex;gap:6px;align-items:stretch;">
+        <div style="flex:1;background:#EEF2FF;border-radius:6px;padding:6px 10px;text-align:center;">
+          <div style="font-size:11px;font-weight:600;color:#6366F1;">函数式</div>
+          <div style="font-size:10px;color:#A8A29E;">描述「是什么」</div>
+        </div>
+        <div style="display:flex;align-items:center;font-size:10px;color:#A8A29E;">VS</div>
+        <div style="flex:1;background:rgba(217,119,6,0.06);border-radius:6px;padding:6px 10px;text-align:center;">
+          <div style="font-size:11px;font-weight:600;color:#D97706;">命令式</div>
+          <div style="font-size:10px;color:#A8A29E;">描述「怎么做」</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 区4: 实例+应用 -->
+    <div style="padding:10px 16px;">
+      <div style="font-size:10px;font-weight:600;color:#7C3AED;letter-spacing:1px;margin-bottom:6px;">04 · 实例与应用 ▾</div>
+      <div style="font-size:11px;color:#78716C;line-height:1.6;">
+        <b style="color:#7C3AED;">实例</b>：map/filter/reduce · React组件 · SQL查询<br>
+        <b style="color:#6366F1;">用法</b>：数据管道 · Redux reducer · 并行计算
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- 方案 B: 标签页切换式 -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="mockup">
+  <div class="mockup-header">B · 标签页切换式</div>
+  <div class="mockup-body" style="background:var(--bg-base,#FAFAFE);font-family:'Noto Sans SC','PingFang SC',sans-serif;">
+
+    <!-- 标题栏 -->
+    <div style="padding:12px 16px 0;display:flex;align-items:center;gap:8px;">
+      <div style="width:24px;height:24px;border-radius:6px;background:linear-gradient(135deg,#6366F1,#818CF8);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="3" fill="white"/><circle cx="8" cy="8" r="6.5" stroke="white" stroke-width="1.2" stroke-dasharray="2 2"/></svg>
+      </div>
+      <span style="font-size:15px;font-weight:700;color:#1C1917;">函数式编程</span>
+    </div>
+
+    <!-- 标签栏 -->
+    <div style="display:flex;gap:0;padding:10px 16px 0;border-bottom:1px solid #E7E5E4;">
+      <div style="padding:6px 14px;font-size:12px;font-weight:600;color:#6366F1;border-bottom:2px solid #6366F1;margin-bottom:-1px;cursor:pointer;">定义</div>
+      <div style="padding:6px 14px;font-size:12px;color:#A8A29E;cursor:pointer;">边界</div>
+      <div style="padding:6px 14px;font-size:12px;color:#A8A29E;cursor:pointer;">辨析</div>
+      <div style="padding:6px 14px;font-size:12px;color:#A8A29E;cursor:pointer;">实例</div>
+    </div>
+
+    <!-- 当前标签内容: 定义 -->
+    <div style="padding:14px 16px;">
+      <div style="border-left:3px solid #6366F1;padding:10px 14px;background:rgba(99,102,241,0.04);border-radius:0 6px 6px 0;margin-bottom:10px;">
+        <p style="margin:0;font-size:13px;line-height:1.7;color:#1C1917;">将计算视为<b style="color:#6366F1;">数学函数求值</b>、避免状态变更和可变数据的编程范式。</p>
+      </div>
+      <div style="font-size:11px;color:#A8A29E;line-height:1.6;">
+        同一输入永远产生同一输出，不依赖也不修改外部状态。核心思想：用「描述关系」替代「描述步骤」。
+      </div>
+    </div>
+
+    <!-- 模拟其他标签的缩略预览 -->
+    <div style="padding:0 16px 12px;display:flex;gap:6px;">
+      <div style="flex:1;background:#F5F5F4;border-radius:6px;padding:8px 10px;opacity:0.6;">
+        <div style="font-size:10px;font-weight:600;color:#059669;margin-bottom:2px;">边界</div>
+        <div style="font-size:10px;color:#A8A29E;">外延 · 禁区</div>
+      </div>
+      <div style="flex:1;background:#F5F5F4;border-radius:6px;padding:8px 10px;opacity:0.6;">
+        <div style="font-size:10px;font-weight:600;color:#6366F1;margin-bottom:2px;">辨析</div>
+        <div style="font-size:10px;color:#A8A29E;">VS 命令式 · VS OOP</div>
+      </div>
+      <div style="flex:1;background:#F5F5F4;border-radius:6px;padding:8px 10px;opacity:0.6;">
+        <div style="font-size:10px;font-weight:600;color:#7C3AED;margin-bottom:2px;">实例</div>
+        <div style="font-size:10px;color:#A8A29E;">3例 · 落地用法</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- 方案 C: 渐进式信息流 -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="mockup">
+  <div class="mockup-header">C · 渐进式信息流</div>
+  <div class="mockup-body" style="background:var(--bg-base,#FAFAFE);font-family:'Noto Sans SC','PingFang SC',sans-serif;">
+
+    <!-- 标题 + 定义 融合 -->
+    <div style="padding:16px 18px;background:linear-gradient(135deg,rgba(99,102,241,0.06),rgba(129,140,248,0.03));border-radius:10px;margin:12px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <div style="width:24px;height:24px;border-radius:6px;background:linear-gradient(135deg,#6366F1,#818CF8);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="3" fill="white"/><circle cx="8" cy="8" r="6.5" stroke="white" stroke-width="1.2" stroke-dasharray="2 2"/></svg>
+        </div>
+        <span style="font-size:16px;font-weight:700;color:#1C1917;">函数式编程</span>
+        <span style="font-size:11px;color:#A8A29E;">Functional Programming</span>
+      </div>
+      <p style="margin:0;font-size:13px;line-height:1.7;color:#1C1917;">将计算视为<b style="color:#6366F1;">数学函数求值</b>、避免状态变更和可变数据的编程范式。</p>
+    </div>
+
+    <!-- 连接线 + 边界 -->
+    <div style="padding:0 18px;position:relative;">
+      <div style="position:absolute;left:28px;top:0;bottom:0;width:2px;background:linear-gradient(to bottom,#059669,#DC2626);border-radius:1px;opacity:0.3;"></div>
+
+      <div style="padding-left:20px;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <div style="width:10px;height:10px;border-radius:50%;background:#059669;flex-shrink:0;margin-left:-25px;"></div>
+          <span style="font-size:11px;font-weight:600;color:#059669;">属于</span>
+        </div>
+        <div style="font-size:12px;color:#78716C;line-height:1.6;padding-left:0;">
+          纯函数设计 · 不可变数据流 · 声明式数据处理
+        </div>
+      </div>
+
+      <div style="padding-left:20px;">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <div style="width:10px;height:10px;border-radius:50%;background:#DC2626;flex-shrink:0;margin-left:-25px;"></div>
+          <span style="font-size:11px;font-weight:600;color:#DC2626;">不属于</span>
+        </div>
+        <div style="font-size:12px;color:#78716C;line-height:1.6;padding-left:0;">
+          "用函数写代码"≠FP · 函数式≠性能差 · 不等同于Haskell
+        </div>
+      </div>
+    </div>
+
+    <!-- 分隔 -->
+    <div style="padding:12px 18px 0;">
+      <div style="height:1px;background:linear-gradient(90deg,transparent,#E7E5E4 20%,#E7E5E4 80%,transparent);"></div>
+    </div>
+
+    <!-- 辨析 + 实例 融合 -->
+    <div style="padding:12px 18px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+        <div style="background:#EEF2FF;border-radius:8px;padding:10px;text-align:center;">
+          <div style="font-size:12px;font-weight:600;color:#6366F1;">函数式</div>
+          <div style="font-size:10px;color:#A8A29E;margin-top:2px;">描述「是什么」<br>数据不可变</div>
+        </div>
+        <div style="background:rgba(217,119,6,0.06);border-radius:8px;padding:10px;text-align:center;">
+          <div style="font-size:12px;font-weight:600;color:#D97706;">命令式</div>
+          <div style="font-size:10px;color:#A8A29E;margin-top:2px;">描述「怎么做」<br>状态可封装修改</div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:#78716C;line-height:1.7;">
+        <b style="color:#7C3AED;">实例</b> map/filter/reduce · React组件 · SQL查询<br>
+        <b style="color:#6366F1;">用法</b> 数据管道 · Redux reducer · 并行计算
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- 对比总结 -->
+<!-- ═══════════════════════════════════════════ -->
+<div style="margin-top:20px;padding:16px 20px;background:#F5F5F4;border-radius:10px;">
+  <div style="font-size:14px;font-weight:600;color:#1C1917;margin-bottom:10px;">三方案对比</div>
+  <table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <thead>
+      <tr style="border-bottom:2px solid #E7E5E4;">
+        <th style="text-align:left;padding:6px 8px;color:#A8A29E;font-weight:500;"></th>
+        <th style="text-align:left;padding:6px 8px;color:#6366F1;font-weight:600;">A 折叠式</th>
+        <th style="text-align:left;padding:6px 8px;color:#6366F1;font-weight:600;">B 标签页</th>
+        <th style="text-align:left;padding:6px 8px;color:#6366F1;font-weight:600;">C 信息流</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr style="border-bottom:1px solid #E7E5E4;">
+        <td style="padding:6px 8px;color:#78716C;font-weight:500;">信息密度</td>
+        <td style="padding:6px 8px;color:#1C1917;">高 — 四区同时可见</td>
+        <td style="padding:6px 8px;color:#1C1917;">低 — 一次只看一区</td>
+        <td style="padding:6px 8px;color:#1C1917;">中 — 渐进展开</td>
+      </tr>
+      <tr style="border-bottom:1px solid #E7E5E4;">
+        <td style="padding:6px 8px;color:#78716C;font-weight:500;">纵向空间</td>
+        <td style="padding:6px 8px;color:#1C1917;">长，需滚动</td>
+        <td style="padding:6px 8px;color:#1C1917;">紧凑，不滚动</td>
+        <td style="padding:6px 8px;color:#1C1917;">中等</td>
+      </tr>
+      <tr style="border-bottom:1px solid #E7E5E4;">
+        <td style="padding:6px 8px;color:#78716C;font-weight:500;">全局感</td>
+        <td style="padding:6px 8px;color:#1C1917;">强 — 一眼纵览</td>
+        <td style="padding:6px 8px;color:#1C1917;">弱 — 需切换</td>
+        <td style="padding:6px 8px;color:#1C1917;">中 — 有连接感</td>
+      </tr>
+      <tr style="border-bottom:1px solid #E7E5E4;">
+        <td style="padding:6px 8px;color:#78716C;font-weight:500;">编辑体验</td>
+        <td style="padding:6px 8px;color:#1C1917;">各区独立编辑</td>
+        <td style="padding:6px 8px;color:#1C1917;">聚焦当前区</td>
+        <td style="padding:6px 8px;color:#1C1917;">流式填写</td>
+      </tr>
+      <tr>
+        <td style="padding:6px 8px;color:#78716C;font-weight:500;">适合场景</td>
+        <td style="padding:6px 8px;color:#1C1917;">复习回顾、快速查阅</td>
+        <td style="padding:6px 8px;color:#1C1917;">深度学习、逐区消化</td>
+        <td style="padding:6px 8px;color:#1C1917;">首次理解、叙事阅读</td>
+      </tr>
+    </tbody>
+  </table>
+</div>

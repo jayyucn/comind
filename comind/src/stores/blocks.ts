@@ -179,7 +179,7 @@ export const useBlockStore = defineStore('blocks', () => {
     const result = await storage.saveBlock(block)
     pendingSaves.delete(block.id)
 
-    if (result.skippedTrashedPages && result.skippedTrashedPages.length > 0) {
+    if (result && result.skippedTrashedPages && result.skippedTrashedPages.length > 0) {
       trashedPageWarnings.value = result.skippedTrashedPages
     }
   }

@@ -1,0 +1,131 @@
+<h2>Concept Block 设计方案</h2>
+<p class="subtitle">四维概念深潜 · 标准化呈现形式</p>
+
+<!-- 方案：折叠式四区结构 -->
+<div class="mockup">
+  <div class="mockup-header">推荐方案 · 折叠式四区卡片</div>
+  <div class="mockup-body" style="background:var(--bg-base,#FAFAFE);padding:0;font-family:'Noto Sans SC','PingFang SC',sans-serif;">
+
+    <!-- 概念标题栏 -->
+    <div style="padding:16px 20px 12px;border-bottom:1px solid var(--border,#E7E5E4);display:flex;align-items:center;gap:10px;">
+      <div style="width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#6366F1,#818CF8);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="3" fill="white"/><circle cx="8" cy="8" r="6.5" stroke="white" stroke-width="1.2" stroke-dasharray="2 2"/></svg>
+      </div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:18px;font-weight:700;color:var(--text-primary,#1C1917);line-height:1.3;">函数式编程</div>
+        <div style="font-size:12px;color:var(--text-tertiary,#A8A29E);margin-top:1px;">Functional Programming</div>
+      </div>
+      <div style="font-size:11px;color:var(--accent,#6366F1);background:var(--accent-subtle,#EEF2FF);padding:3px 8px;border-radius:4px;font-weight:500;">概念</div>
+    </div>
+
+    <!-- 区1: 核心定义 - 始终展开 -->
+    <div style="padding:14px 20px;border-bottom:1px solid var(--border,#E7E5E4);">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+        <span style="font-size:11px;font-weight:600;color:#D97706;letter-spacing:1px;text-transform:uppercase;">01 · 核心定义</span>
+        <div style="flex:1;height:1px;background:var(--border,#E7E5E4);"></div>
+      </div>
+      <div style="background:linear-gradient(90deg,rgba(99,102,241,0.04),transparent);border-left:3px solid var(--accent,#6366F1);padding:10px 14px;border-radius:0 6px 6px 0;">
+        <p style="margin:0;font-size:14px;line-height:1.7;color:var(--text-primary,#1C1917);">
+          一种将计算视为<b style="color:var(--accent,#6366F1);">数学函数求值</b>、避免状态变更和可变数据的编程范式。
+        </p>
+      </div>
+    </div>
+
+    <!-- 区2: 边界范围 - 展开 -->
+    <div style="padding:14px 20px;border-bottom:1px solid var(--border,#E7E5E4);">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
+        <span style="font-size:11px;font-weight:600;color:#059669;letter-spacing:1px;text-transform:uppercase;">02 · 边界范围</span>
+        <div style="flex:1;height:1px;background:var(--border,#E7E5E4);"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div style="background:rgba(5,150,105,0.05);border:1px solid rgba(5,150,105,0.15);border-radius:8px;padding:10px 12px;">
+          <div style="font-size:11px;font-weight:600;color:#059669;margin-bottom:5px;">✓ 外延</div>
+          <ul style="margin:0;padding-left:14px;font-size:13px;color:var(--text-secondary,#78716C);line-height:1.7;">
+            <li>纯函数设计</li>
+            <li>不可变数据流</li>
+            <li>声明式数据处理</li>
+          </ul>
+        </div>
+        <div style="background:rgba(220,38,38,0.04);border:1px solid rgba(220,38,38,0.12);border-radius:8px;padding:10px 12px;">
+          <div style="font-size:11px;font-weight:600;color:#DC2626;margin-bottom:5px;">✗ 禁区</div>
+          <ul style="margin:0;padding-left:14px;font-size:13px;color:var(--text-secondary,#78716C);line-height:1.7;">
+            <li>"用函数写代码"≠FP</li>
+            <li>函数式≠性能差</li>
+            <li>不等同于 Haskell</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- 区3: 对标辨析 - 展开 -->
+    <div style="padding:14px 20px;border-bottom:1px solid var(--border,#E7E5E4);">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
+        <span style="font-size:11px;font-weight:600;color:#6366F1;letter-spacing:1px;text-transform:uppercase;">03 · 对标辨析</span>
+        <div style="flex:1;height:1px;background:var(--border,#E7E5E4);"></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div style="display:flex;align-items:stretch;gap:8px;">
+          <div style="flex:1;background:var(--accent-subtle,#EEF2FF);border-radius:6px;padding:8px 12px;text-align:center;">
+            <div style="font-size:13px;font-weight:600;color:var(--accent,#6366F1);">函数式</div>
+            <div style="font-size:11px;color:var(--text-tertiary,#A8A29E);margin-top:2px;">描述「是什么」</div>
+          </div>
+          <div style="display:flex;align-items:center;font-size:11px;color:var(--text-tertiary,#A8A29E);font-weight:500;">VS</div>
+          <div style="flex:1;background:rgba(217,119,6,0.06);border-radius:6px;padding:8px 12px;text-align:center;">
+            <div style="font-size:13px;font-weight:600;color:#D97706;">命令式</div>
+            <div style="font-size:11px;color:var(--text-tertiary,#A8A29E);margin-top:2px;">描述「怎么做」</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:stretch;gap:8px;">
+          <div style="flex:1;background:var(--accent-subtle,#EEF2FF);border-radius:6px;padding:8px 12px;text-align:center;">
+            <div style="font-size:13px;font-weight:600;color:var(--accent,#6366F1);">函数式</div>
+            <div style="font-size:11px;color:var(--text-tertiary,#A8A29E);margin-top:2px;">数据不可变</div>
+          </div>
+          <div style="display:flex;align-items:center;font-size:11px;color:var(--text-tertiary,#A8A29E);font-weight:500;">VS</div>
+          <div style="flex:1;background:rgba(217,119,6,0.06);border-radius:6px;padding:8px 12px;text-align:center;">
+            <div style="font-size:13px;font-weight:600;color:#D97706;">面向对象</div>
+            <div style="font-size:11px;color:var(--text-tertiary,#A8A29E);margin-top:2px;">状态可封装修改</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 区4: 实例+应用 - 展开 -->
+    <div style="padding:14px 20px;">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
+        <span style="font-size:11px;font-weight:600;color:#7C3AED;letter-spacing:1px;text-transform:uppercase;">04 · 实例与应用</span>
+        <div style="flex:1;height:1px;background:var(--border,#E7E5E4);"></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div style="background:rgba(124,58,237,0.05);border:1px solid rgba(124,58,237,0.12);border-radius:8px;padding:10px 12px;">
+          <div style="font-size:11px;font-weight:600;color:#7C3AED;margin-bottom:4px;">正向实例</div>
+          <div style="font-size:13px;color:var(--text-secondary,#78716C);line-height:1.7;">
+            <div style="margin-bottom:4px;">1. <code style="background:var(--accent-subtle,#EEF2FF);padding:1px 5px;border-radius:3px;font-size:12px;">[1,2,3].map(x => x*2)</code> — 纯变换，无副作用</div>
+            <div style="margin-bottom:4px;">2. React 组件 — <code style="background:var(--accent-subtle,#EEF2FF);padding:1px 5px;border-radius:3px;font-size:12px;">props → UI</code>，输入决定输出</div>
+            <div>3. SQL 查询 — 声明「要什么」而非「怎么取」</div>
+          </div>
+        </div>
+        <div style="background:rgba(99,102,241,0.04);border:1px solid rgba(99,102,241,0.10);border-radius:8px;padding:10px 12px;">
+          <div style="font-size:11px;font-weight:600;color:var(--accent,#6366F1);margin-bottom:4px;">落地用法</div>
+          <div style="font-size:13px;color:var(--text-secondary,#78716C);line-height:1.7;">
+            <div style="margin-bottom:4px;">• 数据管道处理 — 用 map/filter/reduce 替代 for 循环</div>
+            <div style="margin-bottom:4px;">• 状态管理 — Redux 的 reducer 就是纯函数</div>
+            <div>• 并行计算 — 无共享状态 → 天然线程安全</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- 设计要点说明 -->
+<div style="margin-top:20px;padding:16px 20px;background:var(--accent-subtle,#EEF2FF);border-radius:10px;border-left:3px solid var(--accent,#6366F1);">
+  <div style="font-size:14px;font-weight:600;color:var(--accent,#6366F1);margin-bottom:8px;">设计要点</div>
+  <ul style="margin:0;padding-left:18px;font-size:13px;color:var(--text-secondary,#78716C);line-height:2;">
+    <li><b>四区折叠</b> — 每个区域可独立折叠/展开，核心定义默认展开</li>
+    <li><b>色彩编码</b> — 定义=琥珀、边界=绿/红、辨析=靛蓝、实例=紫，一眼区分</li>
+    <li><b>VS 对比卡</b> — 辨析区用左右对比卡，差异点一目了然</li>
+    <li><b>绿红分栏</b> — 边界区外延/禁区并排，正反对照</li>
+    <li><b>融入 Block 体系</b> — 作为新 block type，通过 /concept 触发</li>
+  </ul>
+</div>

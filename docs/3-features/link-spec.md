@@ -1,8 +1,8 @@
 # Link 解析规范
 
-> 版本：v0.3
-> 日期：2026-06-04
-> 状态：✅ 已更新（支持关系类型链接）
+> 版本：v0.4
+> 日期：2026-06-05
+> 状态：✅ 已更新（支持关系类型链接 + 自定义管理）
 
 ---
 
@@ -688,4 +688,102 @@ describe('Link Parser', () => {
 
 ---
 
-*文档由 AI 助手协助生成，已更新至 v0.3 版本。*
+## 14. 关系类型自定义系统（Phase 3）
+
+### 14.1 概述
+
+关系类型自定义允许用户在设置面板中管理预定义和自定义关系类型，包括创建、编辑、删除和排序。
+
+### 14.2 数据模型
+
+**Composable 位置**：`comind/src/composables/useRelationshipTypes.ts`
+
+**类型定义**：
+
+```typescript
+export interface RelationshipType {
+  id: string           // 主键；种子用 `rt_seed_<type>`，用户新建用 `rt_user_<nanoid>`
+  type: string         // 正向英文标识
+  inverse: string | null  // 反向英文标识；自反为 null
+  label: string       // 正向中文标签
+  inverseLabel: string  // 反向中文标签
+  color: string       // 颜色，hex 格式
+  order: number       // 排序权重，越小越靠前
+  deleted: boolean    // 软删除标记
+  builtin: boolean    // 是否内置默认
+}
+```
+
+### 14.3 主要 API
+
+- `loadRelationshipTypes()`: 从 IndexedDB 加载所有关系类型
+- `createRelationshipType(data)`: 创建新的自定义关系类型
+- `updateRelationshipType(id, data)`: 更新现有关系类型
+- `deleteRelationshipType(id)`: 软删除关系类型
+- `reorderRelationshipTypes(ids)`: 批量更新排序
+- `getActiveRelationshipTypes()`: 获取未删除的关系类型列表
+
+### 14.4 存储层
+
+**表名**：`relationshipTypes`
+
+**索引**：`id, type, deleted, builtin, order`
+
+**种子数据**（内置默认类型）：
+
+```typescript
+// comind/src/config/relationship-types-seed.ts
+const PREDEFINED_RELATIONSHIPS = [
+  { type: 'parent', inverse: 'child', label: '父级', inverseLabel: '子级', color: '#1890ff' },
+  { type: 'child', inverse: 'parent', label: '子级', inverseLabel: '父级', color: '#1890ff' },
+  { type: 'depends-on', inverse: 'required-by', label: '依赖', inverseLabel: '被依赖', color: '#faad14' },
+  { type: 'required-by', inverse: 'depends-on', label: '被依赖', inverseLabel: '依赖', color: '#faad14' },
+  { type: 'references', inverse: 'referenced-by', label: '引用', inverseLabel: '被引用', color: '#52c41a' },
+  { type: 'referenced-by', inverse: 'references', label: '被引用', inverseLabel: '引用', color: '#52c41a' },
+  { type: 'example-of', inverse: 'has-example', label: '示例', inverseLabel: '有示例', color: '#eb2f96' },
+  { type: 'has-example', inverse: 'example-of', label: '有示例', inverseLabel: '示例', color: '#eb2f96' },
+  { type: 'related', inverse: null, label: '相关', inverseLabel: '相关', color: '#8c8c8c' },
+  { type: 'similar', inverse: null, label: '相似', inverseLabel: '相似', color: '#722ed1' },
+]
+```
+
+### 14.5 设置面板集成
+
+**组件位置**：`comind/src/components/Settings/RelationshipTypesPanel.vue`
+
+**功能**：
+- 列表展示所有关系类型（内置 + 自定义）
+- 支持创建新关系类型
+- 支持编辑现有关系类型
+- 支持删除自定义关系类型（内置不可删除）
+- 支持拖拽排序
+
+**入口**：`SettingsModal.vue` 中的「关系类型」标签页
+
+---
+
+## 15. 块删除关系清理
+
+### 15.1 useBlockRelationshipCleanup Composable
+
+**位置**：`comind/src/composables/useBlockRelationshipCleanup.ts`
+
+**职责**：当 Block 被删除时，自动处理跨页面指向该 Block 的类型链接
+
+**主要 API**：
+- `cleanupBlockRelationships(blockId)`: 清理与被删除 Block 关联的所有类型链接
+
+**清理逻辑**：
+1. 查找所有包含指向被删除 Block 的 `[[...]]` 链接的 Block
+2. 检查这些链接是否带有关系类型 `^(type)`
+3. 如果有，将类型链接降级为普通链接（移除 `^(type)` 部分）
+
+### 15.2 集成点
+
+**单块删除**：通过 `Block/index.vue` 的删除操作调用
+
+**多选删除**：通过 `useCrossBlockSelection.ts` 的批量删除操作调用
+
+---
+
+*文档由 AI 助手协助生成，已更新至 v0.4 版本（新增关系类型自定义 + 块删除清理）。*

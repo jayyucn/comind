@@ -131,6 +131,16 @@ function toggleSection(section: keyof typeof collapsedState.value) {
   blockStore.updateBlockFormat(props.blockId, newFormat)
 }
 
+// ── 激活时自动 focus ──
+watch(isActive, async (active) => {
+  if (active) {
+    await nextTick()
+    const emptyIdx = fieldRefs.value.findIndex(r => r.value && r.value.value === '')
+    const targetIdx = emptyIdx >= 0 ? emptyIdx : 0
+    fieldRefs.value[targetIdx]?.value?.focus()
+  }
+})
+
 // ── BlockTypeEditorExposed 接口 ──
 defineExpose({
   getEditor: () => null,
@@ -147,7 +157,7 @@ defineExpose({
 </script>
 
 <template>
-  <div class="concept-block" @mousedown.stop @click="emit('content-click', $event)">
+  <div class="concept-block" @mousedown.stop @click.stop="emit('content-click', $event)">
 
     <!-- ═══ 展示模式 ═══ -->
     <template v-if="!isActive">
@@ -159,7 +169,7 @@ defineExpose({
         label-color="#D97706"
         @toggle="toggleSection('definition')"
       >
-        <div class="definition-quote">
+        <div class="definition-quote" :class="{ 'is-placeholder': !fmt.definition }">
           {{ fmt.definition || '一句话抓本质...' }}
         </div>
       </ConceptSection>
@@ -175,11 +185,11 @@ defineExpose({
         <div class="boundary-content">
           <div class="boundary-extension">
             <div class="boundary-label">✓ 外延</div>
-            <div class="boundary-text">{{ fmt.boundaryExtension || '包含哪些事物...' }}</div>
+            <div class="boundary-text" :class="{ 'is-placeholder': !fmt.boundaryExtension }">{{ fmt.boundaryExtension || '包含哪些事物...' }}</div>
           </div>
           <div class="boundary-forbidden">
             <div class="boundary-label">✗ 禁区</div>
-            <div class="boundary-text">{{ fmt.boundaryForbidden || '哪些不属于该概念...' }}</div>
+            <div class="boundary-text" :class="{ 'is-placeholder': !fmt.boundaryForbidden }">{{ fmt.boundaryForbidden || '哪些不属于该概念...' }}</div>
           </div>
         </div>
       </ConceptSection>
@@ -193,9 +203,9 @@ defineExpose({
         @toggle="toggleSection('comparison')"
       >
         <div class="comparison-content">
-          <div class="comparison-left">{{ fmt.comparisonLeft || '左侧对比...' }}</div>
+          <div class="comparison-left" :class="{ 'is-placeholder': !fmt.comparisonLeft }">{{ fmt.comparisonLeft || '左侧对比...' }}</div>
           <div class="comparison-vs">VS</div>
-          <div class="comparison-right">{{ fmt.comparisonRight || '右侧对比...' }}</div>
+          <div class="comparison-right" :class="{ 'is-placeholder': !fmt.comparisonRight }">{{ fmt.comparisonRight || '右侧对比...' }}</div>
         </div>
       </ConceptSection>
 
@@ -210,11 +220,11 @@ defineExpose({
         <div class="example-content">
           <div class="example-examples">
             <div class="example-label">正向实例</div>
-            <div class="example-text">{{ fmt.exampleInstances || '2-3个正向实例...' }}</div>
+            <div class="example-text" :class="{ 'is-placeholder': !fmt.exampleInstances }">{{ fmt.exampleInstances || '2-3个正向实例...' }}</div>
           </div>
           <div class="example-usage">
             <div class="example-label">落地用法</div>
-            <div class="example-text">{{ fmt.exampleUsage || '现实中什么时候用...' }}</div>
+            <div class="example-text" :class="{ 'is-placeholder': !fmt.exampleUsage }">{{ fmt.exampleUsage || '现实中什么时候用...' }}</div>
           </div>
         </div>
       </ConceptSection>
@@ -225,7 +235,7 @@ defineExpose({
       <!-- 01. 核心定义 -->
       <ConceptSection
         section="definition"
-        :collapsed="false"
+        :collapsed="collapsedState.definition"
         label="01 · 核心定义"
         label-color="#D97706"
         @toggle="toggleSection('definition')"
@@ -246,7 +256,7 @@ defineExpose({
       <!-- 02. 边界范围 -->
       <ConceptSection
         section="boundary"
-        :collapsed="false"
+        :collapsed="collapsedState.boundary"
         label="02 · 边界范围"
         label-color="#059669"
         @toggle="toggleSection('boundary')"
@@ -286,7 +296,7 @@ defineExpose({
       <!-- 03. 对标辨析 -->
       <ConceptSection
         section="comparison"
-        :collapsed="false"
+        :collapsed="collapsedState.comparison"
         label="03 · 对标辨析"
         label-color="#6366F1"
         @toggle="toggleSection('comparison')"
@@ -321,7 +331,7 @@ defineExpose({
       <!-- 04. 实例与应用 -->
       <ConceptSection
         section="example"
-        :collapsed="false"
+        :collapsed="collapsedState.example"
         label="04 · 实例与应用"
         label-color="#7C3AED"
         @toggle="toggleSection('example')"
@@ -367,6 +377,12 @@ defineExpose({
   border: 1px solid var(--border);
   border-radius: 10px;
   overflow: hidden;
+}
+
+/* ── 展示模式 placeholder 样式 ── */
+.is-placeholder {
+  color: var(--text-tertiary) !important;
+  font-style: italic;
 }
 
 /* ── 编辑模式输入框 ── */

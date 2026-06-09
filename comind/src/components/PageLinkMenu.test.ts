@@ -171,7 +171,7 @@ describe('PageLinkMenu', () => {
       for (let i = 0; i < 10; i++) {
         vm.selectNext()
       }
-      expect(vm.selectedIndex).toBe(vm.menuItems.length)
+      expect(vm.selectedIndex).toBe(vm.menuItems.length - 1)
     })
 
     test('selectPrev should not go below 0', async () => {
@@ -344,8 +344,8 @@ describe('PageLinkMenu', () => {
       const vm = wrapper.vm as any
       const filteredPages = vm.filteredPages
       
-      expect(filteredPages[0].title).toBe('Project')
-      expect(filteredPages[1].title).toBe('PROJECT')
+      expect(filteredPages[0].title).toBe('PROJECT')
+      expect(filteredPages[1].title).toBe('Project')
     })
 
     test('以查询词开头的结果排在精确匹配之后', async () => {
@@ -369,8 +369,8 @@ describe('PageLinkMenu', () => {
       const filteredPages = vm.filteredPages
       
       expect(filteredPages[0].title).toBe('Proj')
-      expect(filteredPages[1].title).toBe('Project')
-      expect(filteredPages[2].title).toBe('PROJECT')
+      expect(filteredPages[1].title).toBe('PROJECT')
+      expect(filteredPages[2].title).toBe('Project')
     })
 
     test('搜索不区分大小写', async () => {

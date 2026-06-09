@@ -1,10 +1,10 @@
 # 开发指南（Development Guide）
 
-> 版本：v0.4
-> 日期：2026-05-29
+> 版本：v5.0
+> 日期：2026-06-06
 > 适用阶段：Phase 1 MVP
 > 技术栈：Vue 3 + TypeScript + Pinia + Vite + tiptap + IndexedDB
-> 状态：已整合暗色主题和设置模态框开发指南
+> 状态：已整合暗色主题、设置模态框、关系类型自定义、模板系统开发指南
 
 ***
 
@@ -81,27 +81,42 @@ src/
 │   ├── blocks.ts           # Block 状态管理
 │   ├── pages.ts            # Page 状态管理
 │   ├── editor.ts           # 编辑器状态（activeBlockId 等）
-│   └── settings.ts         # 用户设置
+│   ├── settings.ts         # 用户设置
+│   └── user-templates.ts   # 用户模板 Store（v5.0 新增）
 ├── components/             # Vue 组件
 │   ├── Block.vue           # 单个 Block 组件
 │   ├── BlockList.vue       # Block 列表（虚拟滚动）
 │   ├── Editor.vue          # tiptap 编辑器封装
 │   ├── Sidebar.vue         # 侧边栏
-│   └── LinkPopup.vue       # 链接弹出框
+│   ├── LinkPopup.vue       # 链接弹出框
+│   └── SlashCommandMenu.vue # 斜杠命令菜单（已集成模板）
 ├── composables/            # 组合式函数
 │   ├── useBlock.ts         # Block 操作逻辑
 │   ├── useLink.ts          # 链接跳转逻辑
 │   ├── useKeyboard.ts      # 键盘快捷键
-│   ├── useTheme.ts         # 主题状态管理（v0.4 新增）
-│   └── useSettingsModal.ts # 设置模态框控制（v0.4 新增）
+│   ├── useTheme.ts         # 主题状态管理
+│   ├── useSettingsModal.ts # 设置模态框控制
+│   ├── useRelationshipTypes.ts      # 关系类型 CRUD + 加载迁移（v0.7 新增）
+│   ├── useRelationshipMenu.ts       # 关系类型菜单状态管理
+│   ├── useRelationshipSync.ts        # 跨 Block 关系类型同步
+│   ├── useBlockRelationshipCleanup.ts # 块删除关系清理（v0.7 新增）
+│   ├── useCrossBlockSelection.ts     # 多块选择（v0.6 新增）
+│   ├── useContentRenderer.ts         # 内容渲染（支持带类型链接）
+│   ├── useTemplateRegistry.ts        # 模板注册表（v5.0 新增）
+│   └── useSlashCommands.ts           # 斜杠命令（已集成模板）
+├── config/                 # 配置文件
+│   └── builtin-templates.ts # 内置模板配置（v5.0 新增）
+├── services/               # 服务层
+│   └── template-renderer.ts # 模板渲染服务（v5.0 新增）
 ├── storage/                # 存储层
 │   ├── interface.ts        # StorageAdapter 接口定义
-│   ├── db.ts               # Dexie 数据库定义
+│   ├── db.ts               # Dexie 数据库定义（已扩展 templates 表）
 │   └── indexedDB.ts        # IndexedDB 适配器实现
 ├── types/                  # TypeScript 类型定义
 │   ├── block.ts            # Block 类型
 │   ├── page.ts             # Page 类型
-│   └── link.ts             # Link 类型
+│   ├── link.ts             # Link 类型
+│   └── template.ts         # 模板类型（v5.0 新增）
 └── utils/                  # 工具函数
     ├── parser.ts           # 内容解析（Link、Tag、Property）
     ├── id.ts               # UUID 生成
@@ -454,7 +469,7 @@ export function parseContent(content: string): ParseResult {
   const links: LinkParse[] = []
   const tags: string[] = []
   const properties: Record<string, any> = {}
-  
+
   // 解析 [[链接]]
   // 支持 [[页面名]] 和 [[页面名|别名]]
   const linkRegex = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g
@@ -467,7 +482,7 @@ export function parseContent(content: string): ParseResult {
       position: match.index
     })
   }
-  
+
   // 解析 #标签
   // 规则：# 后紧跟 Unicode 字母或汉字，不能以数字开头
   // 排除：URL 锚点（https://...#section）、邮箱（me@example.com）
@@ -479,46 +494,421 @@ export function parseContent(content: string): ParseResult {
       tags.push(tag)
     }
   }
-  
+
   // 解析属性（key:: value）
   // 规则：行首为 key:: value 格式，value 支持多种类型
   const propRegex = /^(\w+)::\s*(.+)$/gm
   while ((match = propRegex.exec(content)) !== null) {
     properties[match[1]] = parsePropertyValue(match[2])
   }
-  
+
   return { links, tags, properties }
 }
 
 // 属性值类型推断
 function parsePropertyValue(value: string): any {
   const trimmed = value.trim()
-  
+
   // 布尔值
   if (trimmed === 'true') return true
   if (trimmed === 'false') return false
-  
+
   // 日期（YYYY-MM-DD）
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed
-  
+
   // 数字
   if (/^\d+\.?\d*$/.test(trimmed)) return Number(trimmed)
-  
+
   // 列表 [item1, item2]
   if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
     return trimmed.slice(1, -1).split(',').map(s => s.trim())
   }
-  
+
   // 页面引用 [[页面名]] → 返回页面名
   const pageMatch = trimmed.match(/^\[\[([^\]]+)\]\]$/)
   if (pageMatch) return pageMatch[1]
-  
+
   // 默认返回字符串
   return trimmed
 }
 ```
 
-### 5.5 数据持久化
+### 5.7 关系类型管理（useRelationshipTypes）
+
+**用途**：管理关系类型的 CRUD 操作，包括加载、创建、更新、删除和排序。
+
+**实现位置**：`comind/src/composables/useRelationshipTypes.ts`
+
+```typescript
+export interface RelationshipType {
+  id: string
+  type: string           // 正向英文标识
+  inverse: string | null  // 反向英文标识
+  label: string          // 正向中文标签
+  inverseLabel: string   // 反向中文标签
+  color: string          // 颜色，hex 格式
+  order: number          // 排序权重
+  deleted: boolean       // 软删除标记
+  builtin: boolean       // 是否内置
+}
+
+// 主要 API
+function loadRelationshipTypes(): Promise<void>
+function createRelationshipType(data: Omit<RelationshipType, 'id'>): Promise<RelationshipType>
+function updateRelationshipType(id: string, data: Partial<RelationshipType>): Promise<void>
+function deleteRelationshipType(id: string): Promise<void>
+function reorderRelationshipTypes(ids: string[]): Promise<void>
+function getActiveRelationshipTypes(): RelationshipType[]
+```
+
+**使用方式**：
+```typescript
+const {
+  relationshipTypes,
+  loadRelationshipTypes,
+  createRelationshipType,
+  updateRelationshipType,
+  deleteRelationshipType,
+} = useRelationshipTypes()
+
+// 初始化时加载
+onMounted(() => loadRelationshipTypes())
+```
+
+### 5.8 关系类型菜单（useRelationshipMenu）
+
+**用途**：管理关系类型选择菜单的状态，包括打开/关闭、位置、搜索过滤和键盘导航。
+
+**实现位置**：`comind/src/composables/useRelationshipMenu.ts`
+
+```typescript
+// 主要 API
+function open(options: { position: Position; range: Range; query?: string }): void
+function openSwitch(options: { position: Position; range: Range; currentType: string }): void
+function close(): void
+function setQuery(query: string): void
+function moveSelection(delta: number): void
+function select(): void
+```
+
+### 5.9 关系类型同步（useRelationshipSync）
+
+**用途**：同步同一页面内指向相同页面的关系类型链接。
+
+**实现位置**：`comind/src/composables/useRelationshipSync.ts`
+
+```typescript
+// 主要 API
+function setEditingBlock(blockId: string | null): void
+function refreshSnapshot(): void
+function syncRelationshipType(sourceBlockId: string, targetTitle: string, newType: string): Promise<void>
+function removeRelationshipType(targetTitle: string): Promise<void>
+```
+
+### 5.10 块删除关系清理（useBlockRelationshipCleanup）
+
+**用途**：当 Block 被删除时，自动清理跨页面指向该 Block 的类型链接。
+
+**实现位置**：`src/composables/useBlockRelationshipCleanup.ts`
+
+```typescript
+// 主要 API
+function cleanupBlockRelationships(blockId: string): Promise<void>
+```
+
+**清理逻辑**：
+1. **删除前准备**：保存块快照，检查同页存活块的关联关系
+2. **跨页清理准备**：收集需要清理的跨页类型链接
+3. **执行删除**：删除目标块
+4. **完成清理**：将相关类型链接降级为普通链接
+
+**时序修复要点**：
+- 在删除块前先检查存活块的关联关系
+- 避免删除块后再检查导致的存活块判断错误
+- 将跨页清理准备、存活关联检查提前到删除操作之前
+
+### 5.11 模板系统开发指南
+
+#### 5.11.1 模板类型定义（template.ts）
+
+**用途**：定义模板系统的所有数据结构
+
+**实现位置**：`src/types/template.ts`
+
+**核心类型**：
+```typescript
+// TemplateBlock - 模板块
+interface TemplateBlock {
+  type: 'bullet' | 'heading' | 'property'
+  content: string  // 支持 {{var}} 变量
+  headingLevel?: 1 | 2 | 3
+  propertyKey?: string
+  children?: TemplateBlock[]
+}
+
+// BuiltinTemplate - 内置模板
+interface BuiltinTemplate {
+  id: string
+  name: string
+  aliases?: string[]
+  category: 'thinking-model' | 'work' | 'journal' | 'review'
+  description: string
+  icon: string
+  blocks: TemplateBlock[]
+}
+
+// UserTemplate - 用户模板
+interface UserTemplate {
+  id: string
+  name: string
+  description?: string
+  category: string
+  sourcePageId: string
+  blocks: TemplateBlock[]
+  createdAt: number
+  updatedAt: number
+}
+
+// NormalizedTemplate - 归一化模板
+interface NormalizedTemplate {
+  id: string
+  name: string
+  aliases?: string[]
+  category: string
+  description: string
+  icon: string
+  source: 'builtin' | 'user'
+  blocks: TemplateBlock[]
+}
+
+// TemplateContext - 变量上下文
+interface TemplateContext {
+  date: string      // 本地化日期
+  time: string      // 本地化时间
+  isoDate: string   // ISO 日期
+  pageTitle: string // 当前页面标题
+  cursor: '__CURSOR__'
+  clipboard: string
+  now: number
+}
+
+// BlockDraft - 渲染结果
+interface BlockDraft {
+  id: string
+  pageId: string
+  parentId: string | null
+  pos: number
+  content: string
+  format: Record<string, any>
+  type: 'bullet' | 'property' | 'query' | 'embed' | 'code' | 'image'
+  properties: Record<string, any>
+  cursorMarker: '__CURSOR__' | null
+}
+```
+
+#### 5.11.2 内置模板配置（builtin-templates.ts）
+
+**用途**：配置10个内置模板
+
+**实现位置**：`src/config/builtin-templates.ts`
+
+**修改原则**：
+1. 保持 ID 全局唯一
+2. blocks 数组至少 1 个元素
+3. heading 类型必须指定 headingLevel
+4. property 类型必须指定 propertyKey
+
+**添加新内置模板**：
+```typescript
+export const BUILTIN_TEMPLATES: BuiltinTemplate[] = [
+  // ... 现有模板
+  {
+    id: 'my-new-template',
+    name: '我的新模板',
+    aliases: ['new', 'template'],
+    category: 'work',
+    description: '模板描述',
+    icon: '📝',
+    blocks: [
+      { type: 'heading', headingLevel: 2, content: '标题: {{cursor}}' },
+      { type: 'bullet', content: '内容' },
+      { type: 'property', propertyKey: '日期', content: '{{date}}' },
+    ]
+  }
+]
+```
+
+#### 5.11.3 模板注册表（useTemplateRegistry）
+
+**用途**：合并内置和用户模板，提供统一查询接口
+
+**实现位置**：`src/composables/useTemplateRegistry.ts`
+
+**设计要点**：
+- 模块级共享 state（避免多次调用返回不同实例）
+- 用户模板 ID 前缀 `user:`
+- 用户模板优先排序
+
+**主要 API**：
+```typescript
+export function useTemplateRegistry() {
+  // 状态
+  const all: Ref<NormalizedTemplate[]>
+  const isLoaded: ComputedRef<boolean>
+  
+  // 方法
+  async function loadAll(): Promise<NormalizedTemplate[]>
+  function getById(id: string): NormalizedTemplate | undefined
+  function searchByText(query: string): NormalizedTemplate[]
+  
+  return { all, isLoaded, loadAll, getById, searchByText }
+}
+```
+
+**使用示例**：
+```typescript
+const registry = useTemplateRegistry()
+
+// 加载所有模板
+await registry.loadAll()
+
+// 按 ID 获取
+const template = registry.getById('second-order-thinking')
+
+// 搜索模板
+const results = registry.searchByText('思维')
+```
+
+#### 5.11.4 用户模板 Store（user-templates）
+
+**用途**：管理用户自定义模板的 CRUD
+
+**实现位置**：`src/stores/user-templates.ts`
+
+**主要 API**：
+```typescript
+export const useUserTemplatesStore = defineStore('user-templates', () => {
+  const templates: Ref<UserTemplate[]>
+  
+  async function loadAll(): Promise<void>
+  async function create(input: CreateTemplateInput): Promise<UserTemplate>
+  async function remove(id: string): Promise<void>
+  async function rename(id: string, newName: string): Promise<void>
+  async function update(id: string, patch: Partial<Omit<UserTemplate, 'id' | 'createdAt'>>): Promise<void>
+  
+  return { templates, loadAll, create, remove, rename, update }
+})
+```
+
+**创建用户模板**：
+```typescript
+interface CreateTemplateInput {
+  name: string
+  description?: string
+  category?: string
+  sourcePageId: string
+  blocks: TemplateBlock[]
+}
+
+const store = useUserTemplatesStore()
+const template = await store.create({
+  name: '我的模板',
+  sourcePageId: pageId,
+  blocks: [...]
+})
+```
+
+#### 5.11.5 模板渲染器（TemplateRenderer）
+
+**用途**：展开模板变量，渲染为 BlockDraft 列表
+
+**实现位置**：`src/services/template-renderer.ts`
+
+**主要 API**：
+```typescript
+export class TemplateRenderer {
+  // 构建变量上下文
+  static async buildContext(pageTitle: string): Promise<TemplateContext>
+  
+  // 展开变量
+  static expandContent(content: string, context: TemplateContext): ExpandResult
+  
+  // 渲染模板
+  static render(
+    template: NormalizedTemplate,
+    context: TemplateContext,
+    anchorBlock: Block
+  ): BlockDraft[]
+}
+```
+
+**渲染流程**：
+1. 使用 `deserializeBlockTree` 分配 ID、pos、parentId
+2. 递归展开 `TemplateBlock`
+3. 展开模板变量（`{{cursor}}` 替换为空字符串）
+4. property 类型序列化为 `key:: value`
+5. 通过 `hasCursor` 标记追踪光标位置
+
+**变量展开规则**：
+- `{{date}}` → 本地化日期
+- `{{time}}` → 本地化时间
+- `{{iso_date}}` → ISO 格式日期
+- `{{page_title}}` → 当前页面标题
+- `{{cursor}}` → **替换为空字符串**，通过 `ExpandResult.hasCursor` 标记追踪
+- `{{clipboard}}` → 剪贴板内容
+- 其他 `{{xxx}}` → 保留原样
+
+**关键修复**：
+- `{{cursor}}` 不再渲染为可见的 `__CURSOR__` 文本
+- 移除了废弃的 `PlaceholderMarker` 接口（无消费者读取）
+
+#### 5.11.6 模板与斜杠命令集成
+
+**用途**：在 SlashCommandMenu 中集成模板命令
+
+**实现位置**：`src/composables/useSlashCommands.ts`
+
+**主要函数**：
+```typescript
+// 构建模板命令列表
+export function buildTemplateCommands(): Command[]
+
+// 执行模板命令
+export async function executeTemplateCommand(
+  blockId: string | undefined,
+  templateId: string,
+  editorInstance: Editor,
+  range: { from: number; to: number }
+): Promise<void>
+```
+
+**执行流程**：
+1. 清除斜杠命令文本
+2. 加载模板注册表
+3. 构建模板上下文
+4. 渲染模板
+5. 按 pos 倒序插入新块
+6. 定位光标
+
+---
+
+### 5.12 多块选择（useCrossBlockSelection）
+
+**用途**：管理多 Block 选择状态，支持批量操作。
+
+**实现位置**：`comind/src/composables/useCrossBlockSelection.ts`
+
+```typescript
+// 主要 API
+function selectBlock(blockId: string): void
+function deselectBlock(blockId: string): void
+function toggleSelection(blockId: string): void
+function selectRange(fromId: string, toId: string): void
+function clearSelection(): void
+function deleteSelected(): Promise<void>
+```
+
+### 5.12 数据持久化
 
 **storage/indexedDB.ts：**
 
@@ -762,11 +1152,13 @@ export class IndexedDBAdapter implements StorageAdapter {
 
 | 文档     | 路径                    | 内容                            |
 | ------ | --------------------- | ----------------------------- |
-| 数据模型   | `docs/data-model.md`  | Block、Link、Tag、Property 详细定义 |
-| 技术选型   | `docs/tech-selection.md` | Vue 3 / Pinia / tiptap / IndexedDB 选型依据 |
-| 存储规范   | `docs/storage-spec.md` | Markdown + SQLite 混合存储（Phase 2/3） |
-| 链接规范   | `docs/link-spec.md`   | 双链语法、解析时机、页面匹配、UI 交互           |
-| UI/UX 规范 | `docs/ui-ux-spec.md`  | 视觉系统、布局、组件、交互状态               |
+| 数据模型   | `../2-architecture/data-model.md`  | Block、Link、Tag、Property 详细定义 |
+| 技术选型   | `../1-overview/tech-selection.md` | Vue 3 / Pinia / tiptap / IndexedDB 选型依据 |
+| 存储规范   | `../2-architecture/storage-spec.md` | Markdown + SQLite 混合存储（Phase 2/3） |
+| 链接规范   | `../3-features/link-spec.md`   | 双链语法、解析时机、页面匹配、UI 交互           |
+| UI/UX 规范 | `../4-ui/ui-ux-spec.md`  | 视觉系统、布局、组件、交互状态               |
+| 斜杠命令规格 | `../3-features/slash-commands-spec.md` | 斜杠命令功能规格 |
+| 模板系统规格 | `../3-features/template-system-spec.md` | 模板系统功能规格 |
 
 ***
 

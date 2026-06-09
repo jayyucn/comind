@@ -1,5 +1,14 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useBlockRegistry } from '../../../../composables/useBlockRegistry'
+
+// Mock useTheme before importing the component
+vi.mock('../../../../composables/useTheme', () => ({
+  useTheme: vi.fn(() => ({
+    theme: { value: 'light' },
+    resolvedTheme: { value: 'light' },
+  })),
+}))
+
 import CodeMirrorEditor from './CodeMirrorEditor.vue'
 
 describe('Code Block — 类型注册与渲染', () => {

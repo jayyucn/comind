@@ -214,9 +214,6 @@ async function insertConcept({ editor, range, blockId }: { editor: any, range: {
   // 转换当前 Block 为 concept 类型
   await blockStore.updateBlockType(blockId, 'concept')
 
-  // 将 Concept Block 移到页面顶部
-  await blockStore.moveBlock({ blockId, toParentId: null, newIndex: 0 })
-
   // 激活 Concept Block 进入编辑模式
   await nextTick()
   editorStore.activateBlock(blockId, 1)

@@ -214,8 +214,8 @@ describe('auto-inverse new block (no root block pollution)', () => {
       return Promise.resolve(1)
     })
 
-    // A 添加 [[C]]^(depends-on) → 应在 C 新建 block: [[First]]^(required-by)
-    const blockOnA = createMockBlock({ id: 'block-a', pageId: 'page-a', content: '[[C]]^(depends-on)' })
+    // A 添加 [[C]]^(depends-on<->required-by) → 应在 C 新建 block: [[First]]^(required-by)
+    const blockOnA = createMockBlock({ id: 'block-a', pageId: 'page-a', content: '[[C]]^(depends-on<->required-by)' })
     await adapter.saveBlock(blockOnA)
 
     // 1. C 现有 block 内容应保持不变

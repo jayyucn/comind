@@ -123,8 +123,8 @@ describe('auto-inverse stale entry bug', () => {
 
     // 持久化状态
     const state = {
-      page2BlockId: null as string | null,
-      page2Content: '' as string
+      page2RootBlockId: 'page2-root',
+      page2Blocks: [] as Array<{ id: string; pageId: string; parentId: string | null; pos: number; content: string; format: string; type: string; properties: string; createdAt: number; updatedAt: number }>
     }
 
     ;(db.pages.get as any).mockImplementation((id: string) => {
@@ -132,7 +132,7 @@ describe('auto-inverse stale entry bug', () => {
         return Promise.resolve(createMockPage({ id: 'page-1', title: 'Page1', blockId: null }))
       }
       if (id === 'page-2') {
-        return Promise.resolve(createMockPage({ id: 'page-2', title: 'Page2', blockId: state.page2BlockId }))
+        return Promise.resolve(createMockPage({ id: 'page-2', title: 'Page2', blockId: state.page2RootBlockId }))
       }
       return Promise.resolve(undefined)
     })
@@ -150,51 +150,58 @@ describe('auto-inverse stale entry bug', () => {
     }))
 
     ;(db.blocks.get as any).mockImplementation((id: string) => {
-      if (id === state.page2BlockId) {
-        return Promise.resolve({
-          id: state.page2BlockId,
-          pageId: 'page-2',
-          parentId: null,
-          pos: 1000,
-          content: state.page2Content,
-          format: '{}',
-          type: 'bullet',
-          properties: '{}',
-          createdAt: 1000,
-          updatedAt: 1000
-        })
+      const found = state.page2Blocks.find(b => b.id === id)
+      if (found) {
+        return Promise.resolve(found)
       }
       return Promise.resolve(undefined)
     })
 
+    // db.blocks.where('pageId').equals
+    ;(db.blocks.where as any).mockImplementation((field: string) => ({
+      equals: vi.fn().mockImplementation((value: string) => ({
+        toArray: vi.fn().mockImplementation(() => {
+          if (field === 'pageId' && value === 'page-2') {
+            return Promise.resolve(state.page2Blocks)
+          }
+          return Promise.resolve([])
+        }),
+        first: vi.fn()
+      }))
+    }))
+
     ;(db.blocks.put as any).mockImplementation((record: any) => {
       if (record.pageId === 'page-2') {
-        state.page2BlockId = record.id
-        state.page2Content = record.content
+        const existingIndex = state.page2Blocks.findIndex(b => b.id === record.id)
+        if (existingIndex !== -1) {
+          state.page2Blocks[existingIndex] = record
+        } else {
+          state.page2Blocks.push(record)
+        }
       }
       return Promise.resolve(record.id)
     })
 
     ;(db.blocks.update as any).mockImplementation((id: string, changes: any) => {
-      if (id === state.page2BlockId) {
-        state.page2Content = changes.content
+      const index = state.page2Blocks.findIndex(b => b.id === id)
+      if (index !== -1) {
+        state.page2Blocks[index] = { ...state.page2Blocks[index], ...changes }
       }
       return Promise.resolve(1)
     })
 
-    // 第一次保存: [[Page2]]^(depends-on) → 反向链接 [[Page1]]^(required-by)
-    const block1 = createMockBlock({ id: 'block-1', pageId: 'page-1', content: '[[Page2]]^(depends-on)' })
+    // 第一次保存: [[Page2]]^(depends-on<->required-by) → 反向链接 [[Page1]]^(required-by)
+    const block1 = createMockBlock({ id: 'block-1', pageId: 'page-1', content: '[[Page2]]^(depends-on<->required-by)' })
     await adapter.saveBlock(block1)
-    console.log('After first save:', state.page2Content)
 
-    // 第二次保存: 改变为 [[Page2]]^(related) → 反向链接 [[Page1]]^(related)
-    const block2 = createMockBlock({ id: 'block-1', pageId: 'page-1', content: '[[Page2]]^(related)' })
+    // 第二次保存: 改变为 [[Page2]]^(related<->related) → 反向链接 [[Page1]]^(related)
+    const block2 = createMockBlock({ id: 'block-1', pageId: 'page-1', content: '[[Page2]]^(related<->related)' })
     await adapter.saveBlock(block2)
-    console.log('After change to related:', state.page2Content)
 
     // 期望：旧的反向链接 [[Page1]]^(required-by) 应该被替换为 [[Page1]]^(related)
     // 而不是累积成两行
-    expect(state.page2Content).not.toContain('[[Page1]]^(required-by)')
-    expect(state.page2Content).toContain('[[Page1]]^(related)')
+    const page2Contents = state.page2Blocks.map(b => b.content).join('\n')
+    expect(page2Contents).not.toContain('[[Page1]]^(required-by)')
+    expect(page2Contents).toContain('[[Page1]]^(related)')
   })
 })

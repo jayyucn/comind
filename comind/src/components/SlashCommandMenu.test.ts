@@ -201,6 +201,67 @@ describe('SlashCommandMenu', () => {
     
     scrollIntoViewSpy.mockRestore()
   })
+
+  it('ArrowDown navigation should persist across editor updates when query unchanged (keyboard selection fix)', async () => {
+    // 这个测试验证了 commit 191d4df 的修复：
+    // updateQuery() 不应在 query 未变化时重置 selectedIndex
+    const mockCommands = createMockCommands(5)
+    const filterMock = vi.fn((query: string) => mockCommands)
+    vi.mocked(useSlashCommands).mockReturnValue({
+      commands: mockCommands,
+      filterCommands: filterMock,
+      groupCommands: vi.fn(() => new Map([['Test Group', mockCommands]])),
+      parseCommandInput: vi.fn(() => ({ command: null, argument: null }))
+    } as any)
+
+    const wrapper = mount(SlashCommandMenu, {
+      global: {
+        stubs: {
+          Teleport: { template: '<div><slot /></div>' }
+        }
+      }
+    })
+
+    // 触发显示菜单
+    document.dispatchEvent(new CustomEvent('slash-command-trigger', {
+      detail: {
+        view: { coordsAtPos: () => ({ left: 100, bottom: 200 }) },
+        position: 0,
+        range: { from: 0, to: 1 }
+      }
+    }))
+
+    await flushPromises()
+
+    const vm = wrapper.vm as any
+
+    // 初始状态：selectedIndex = 0
+    expect(vm.selectedIndex).toBe(0)
+
+    // 按 ArrowDown 一次，应该选中第二项
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }))
+    await flushPromises()
+    expect(vm.selectedIndex).toBe(1)
+
+    // 模拟编辑器更新，但 query 没有变化（doc.textBetween 返回空字符串，因为 query 仍是空的）
+    // 这模拟了用户按了 ArrowDown 后编辑器触发 update 事件的场景
+    const editorStore = useEditorStore()
+    const activeEditor = editorStore.activeEditor as any
+    activeEditor.state.doc.textBetween.mockReturnValue('')
+
+    // 手动调用 updateQuery（这在真实场景中由编辑器 update 事件触发）
+    vm.updateQuery()
+    await flushPromises()
+
+    // 关键断言：selectedIndex 不应被重置回 0！
+    // 如果 updateQuery 无条件重置 selectedIndex，这个测试会失败
+    expect(vm.selectedIndex).toBe(1)
+
+    // 再按 ArrowDown 一次，应该选中第三项
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }))
+    await flushPromises()
+    expect(vm.selectedIndex).toBe(2)
+  })
 })
 
 describe('SlashCommandMenu - Template List Subview', () => {
@@ -382,6 +443,90 @@ describe('SlashCommandMenu - Template List Subview', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' }))
     await flushPromises()
     expect(vm.selectedIndex).toBe(0)
+  })
+
+  // 测试 ArrowUp/ArrowDown 在子视图边界时的循环行为
+  // 验证 commit 6149fd9 的修复：ArrowUp/ArrowDown 使用 templateListData.length 作为边界
+  it('ArrowDown at last item wraps to first in template subview', async () => {
+    const mockCommands = createMockCommands(3)
+    vi.mocked(useSlashCommands).mockReturnValue({
+      commands: mockCommands,
+      filterCommands: vi.fn(() => []),
+      groupCommands: vi.fn(() => new Map()),
+      parseCommandInput: vi.fn(() => ({ command: null, argument: null }))
+    } as any)
+
+    const wrapper = mount(SlashCommandMenu, {
+      global: {
+        stubs: {
+          Teleport: { template: '<div><slot /></div>' }
+        }
+      }
+    })
+
+    // 触发显示菜单
+    document.dispatchEvent(new CustomEvent('slash-command-trigger', {
+      detail: {
+        view: { coordsAtPos: () => ({ left: 100, bottom: 200 }) },
+        position: 0,
+        range: { from: 0, to: 1 }
+      }
+    }))
+
+    await flushPromises()
+
+    const vm = wrapper.vm as any
+    // 模板列表有 2 个模板 (meeting-notes, my-template)
+    // 先导航到最后一项 (index 1)
+    vm.isTemplateListView = true
+    vm.selectedIndex = 1
+    await flushPromises()
+
+    // 在末项按 ArrowDown 应该循环到第一项 (index 0)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }))
+    await flushPromises()
+    expect(vm.selectedIndex).toBe(0)
+  })
+
+  it('ArrowUp at first item wraps to last in template subview', async () => {
+    const mockCommands = createMockCommands(3)
+    vi.mocked(useSlashCommands).mockReturnValue({
+      commands: mockCommands,
+      filterCommands: vi.fn(() => []),
+      groupCommands: vi.fn(() => new Map()),
+      parseCommandInput: vi.fn(() => ({ command: null, argument: null }))
+    } as any)
+
+    const wrapper = mount(SlashCommandMenu, {
+      global: {
+        stubs: {
+          Teleport: { template: '<div><slot /></div>' }
+        }
+      }
+    })
+
+    // 触发显示菜单
+    document.dispatchEvent(new CustomEvent('slash-command-trigger', {
+      detail: {
+        view: { coordsAtPos: () => ({ left: 100, bottom: 200 }) },
+        position: 0,
+        range: { from: 0, to: 1 }
+      }
+    }))
+
+    await flushPromises()
+
+    const vm = wrapper.vm as any
+    // 模板列表有 2 个模板
+    // 从第一项 (index 0) 开始
+    vm.isTemplateListView = true
+    vm.selectedIndex = 0
+    await flushPromises()
+
+    // 在首项按 ArrowUp 应该循环到最后一项 (index 1)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' }))
+    await flushPromises()
+    expect(vm.selectedIndex).toBe(1)
   })
 
   it('executes template command when Enter is pressed in subview', async () => {

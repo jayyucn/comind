@@ -1,6 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { nextTick, ref } from 'vue'
+
+// Mock useTheme before importing the component
+vi.mock('../../../../composables/useTheme', () => ({
+  useTheme: vi.fn(() => ({
+    theme: { value: 'light' },
+    resolvedTheme: { value: 'light' },
+  })),
+}))
+
 import CodeMirrorEditor from './CodeMirrorEditor.vue'
 
 const MockClipboard = {

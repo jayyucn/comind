@@ -189,15 +189,23 @@ export function useCrossBlockSelection() {
     const toDelete = [...anchorIds]
     anchorIds.clear()
 
-    // 推导被删 block 所属 pageId 唯一集合（按页分别 cleanup）
-    const pageIds = new Set<string>()
+    // 先保存所有块的快照，在删除任何块之前！
+    const blocksBeforeDelete = [...blockStore.blocks]
+
+    // 按 pageId 分组被删块的 id
+    const deletedByPage = new Map<string, string[]>()
     for (const id of toDelete) {
-      const b = blockStore.blocks.find(x => x.id === id)
-      if (b) pageIds.add(b.pageId)
+      const b = blocksBeforeDelete.find(x => x.id === id)
+      if (b) {
+        const existing = deletedByPage.get(b.pageId) || []
+        existing.push(id)
+        deletedByPage.set(b.pageId, existing)
+      }
     }
 
-    for (const pageId of pageIds) {
-      await relationshipCleanup.cleanupAfterDelete(pageId, toDelete)
+    // 按页分别调用 cleanupAfterDelete，只传该页的被删块 id 和快照
+    for (const [pageId, pageDeletedIds] of deletedByPage) {
+      await relationshipCleanup.cleanupAfterDelete(pageId, pageDeletedIds, blocksBeforeDelete)
     }
   }
 

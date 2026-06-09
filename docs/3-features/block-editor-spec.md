@@ -1,10 +1,10 @@
 # Block 编辑器架构规范
 
-> 版本：v0.4
-> 日期：2026-05-29
-> 状态：✅ 已实现
->
-> **📌 说明：** 本文档是 comind 的核心架构约束文档。开发实现参考请见 `dev-guide.md`。
+&gt; 版本：v0.5
+&gt; 日期：2026-06-07
+&gt; 状态：✅ 已实现
+&gt;
+&gt; **📌 说明：** 本文档是 comind 的核心架构约束文档。开发实现参考请见 `dev-guide.md`。
 
 ---
 
@@ -253,6 +253,73 @@ interface EmbedBlock {
 | 源页面被删除 | 页眉显示 "Deleted page"，隐藏跳转按钮 |
 | 环路嵌套 | 最大深度 3 层，超过显示链接代替 |
 | 嵌入内点击 | 拦截 `@content-click`，不触发编辑 |
+
+---
+
+## Concept Block（概念块）
+
+### 概述
+
+Concept Block 是 v0.5 新增的功能，是一种标准化的概念深潜工具，固定在页面顶部，帮助用户系统地理解和记录概念。
+
+**关键特点：**
+- 不作为普通 Block 存储，而是作为 Page 元数据（`page.format.concept`）
+- 固定在页面顶部（标题下方，Blocks 列表上方）
+- 每个页面最多一个 Concept Block
+- 不可拖拽排序
+
+### 四区结构
+
+Concept Block 包含四个固定区域：
+
+1. **核心定义**（琥珀色）：一句话抓本质
+2. **边界范围**（绿红双栏）：外延 + 禁区
+3. **对标辨析**（靛蓝色）：VS 对比卡
+4. **实例与应用**（紫色）：正向实例 + 落地用法
+
+### 数据模型
+
+```typescript
+// Page 元数据中存储
+interface Page {
+  format?: {
+    concept?: {
+      definition?: string
+      boundaryExtension?: string
+      boundaryForbidden?: string
+      comparisonLeft?: string
+      comparisonRight?: string
+      exampleInstances?: string
+      exampleUsage?: string
+      collapsed?: {
+        definition?: boolean
+        boundary?: boolean
+        comparison?: boolean
+        example?: boolean
+      }
+    }
+  }
+}
+```
+
+### 交互特性
+
+- **触发方式**：`/concept` 斜杠命令
+- **Tab 导航**：在输入字段间切换焦点
+- **折叠状态**：编辑与展示模式间保持同步
+- **占位符**：空字段显示提示文本（斜体，灰色）
+- **事件处理**：点击 Concept Block 不触发普通块的失活
+
+### 组件位置
+
+- `src/components/Page/PageConceptBlock.vue`
+- `src/components/Block/handlers/concept/`
+
+### 与 Block 树的关系
+
+- `buildTree` 函数过滤 `type: 'concept'` 的 Block（向后兼容）
+- 不在 BlockList 中渲染
+- 独立的编辑/展示状态管理
 
 ---
 

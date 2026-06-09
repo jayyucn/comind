@@ -811,7 +811,7 @@ async function handlePaste(e: ClipboardEvent) {
       <!-- 内容区域（bullet + content）- 选中时边框只应用到此容器 -->
       <div class="block-inner">
         <!-- Bullet -->
-        <span v-if="block.type !== 'concept'" class="block-bullet" :class="{ collapsed }"
+        <span class="block-bullet" :class="{ collapsed }"
           @click.stop="toggleCollapse">
           <span v-if="node.children.length > 0" class="bullet-chevron" :class="{ 'is-collapsed': collapsed }"></span>
           <span v-else class="bullet-dot"></span>
@@ -878,7 +878,7 @@ async function handlePaste(e: ClipboardEvent) {
       - v-if 只在有子节点时渲染
     -->
     <VueDraggable
-      v-if="block.type !== 'embed' && block.type !== 'concept'"
+      v-if="block.type !== 'embed'"
       ref="draggableRef"
       v-model="node.children"
       tag="div"

@@ -123,8 +123,8 @@ describe('auto-inverse dedup bug', () => {
 
     // 持久化状态：模拟 Page2 已经有反向链接
     const state = {
-      page2BlockId: null as string | null,
-      page2Content: '' as string
+      page2RootBlockId: 'page2-root',
+      page2Blocks: [] as Array<{ id: string; pageId: string; parentId: string | null; pos: number; content: string; format: string; type: string; properties: string; createdAt: number; updatedAt: number }>
     }
 
     ;(db.pages.get as any).mockImplementation((id: string) => {
@@ -132,7 +132,7 @@ describe('auto-inverse dedup bug', () => {
         return Promise.resolve(createMockPage({ id: 'page-1', title: 'Page1', blockId: null }))
       }
       if (id === 'page-2') {
-        return Promise.resolve(createMockPage({ id: 'page-2', title: 'Page2', blockId: state.page2BlockId }))
+        return Promise.resolve(createMockPage({ id: 'page-2', title: 'Page2', blockId: state.page2RootBlockId }))
       }
       return Promise.resolve(undefined)
     })
@@ -150,35 +150,43 @@ describe('auto-inverse dedup bug', () => {
     }))
 
     ;(db.blocks.get as any).mockImplementation((id: string) => {
-      if (id === state.page2BlockId) {
-        return Promise.resolve({
-          id: state.page2BlockId,
-          pageId: 'page-2',
-          parentId: null,
-          pos: 1000,
-          content: state.page2Content,
-          format: '{}',
-          type: 'bullet',
-          properties: '{}',
-          createdAt: 1000,
-          updatedAt: 1000
-        })
+      const found = state.page2Blocks.find(b => b.id === id)
+      if (found) {
+        return Promise.resolve(found)
       }
       return Promise.resolve(undefined)
     })
 
+    // db.blocks.where('pageId').equals
+    ;(db.blocks.where as any).mockImplementation((field: string) => ({
+      equals: vi.fn().mockImplementation((value: string) => ({
+        toArray: vi.fn().mockImplementation(() => {
+          if (field === 'pageId' && value === 'page-2') {
+            return Promise.resolve(state.page2Blocks)
+          }
+          return Promise.resolve([])
+        }),
+        first: vi.fn()
+      }))
+    }))
+
     // 捕获 put 和 update 调用
     ;(db.blocks.put as any).mockImplementation((record: any) => {
       if (record.pageId === 'page-2') {
-        state.page2BlockId = record.id
-        state.page2Content = record.content
+        const existingIndex = state.page2Blocks.findIndex(b => b.id === record.id)
+        if (existingIndex !== -1) {
+          state.page2Blocks[existingIndex] = record
+        } else {
+          state.page2Blocks.push(record)
+        }
       }
       return Promise.resolve(record.id)
     })
 
     ;(db.blocks.update as any).mockImplementation((id: string, changes: any) => {
-      if (id === state.page2BlockId) {
-        state.page2Content = changes.content
+      const index = state.page2Blocks.findIndex(b => b.id === id)
+      if (index !== -1) {
+        state.page2Blocks[index] = { ...state.page2Blocks[index], ...changes }
       }
       return Promise.resolve(1)
     })
@@ -188,26 +196,16 @@ describe('auto-inverse dedup bug', () => {
       return Promise.resolve(1)
     })
 
-    // 第一次保存：Block 1 在 Page1 上引用 [[Page2]]^(depends-on)
-    const block1 = createMockBlock({ id: 'block-1', pageId: 'page-1', content: '[[Page2]]^(depends-on)' })
+    // 第一次保存：Block 1 在 Page1 上引用 [[Page2]]^(depends-on<->required-by)
+    const block1 = createMockBlock({ id: 'block-1', pageId: 'page-1', content: '[[Page2]]^(depends-on<->required-by)' })
     await adapter.saveBlock(block1)
 
-    console.log('After save block 1:')
-    console.log('  state.page2Content =', state.page2Content)
-    console.log('  state.page2BlockId =', state.page2BlockId)
-
-    // 第二次保存：Block 2 在 Page1 上也引用 [[Page2]]^(depends-on)
-    const block2 = createMockBlock({ id: 'block-2', pageId: 'page-1', content: '[[Page2]]^(depends-on)' })
+    // 第二次保存：Block 2 在 Page1 上也引用 [[Page2]]^(depends-on<->required-by)
+    const block2 = createMockBlock({ id: 'block-2', pageId: 'page-1', content: '[[Page2]]^(depends-on<->required-by)' })
     await adapter.saveBlock(block2)
 
-    console.log('After save block 2:')
-    console.log('  state.page2Content =', state.page2Content)
-
-    // Page2 的根块内容应该只有一个反向链接，不应该有重复
-    expect(state.page2Content).toBe('[[Page1]]^(required-by)')
-
-    // 计算出现的次数，应该只有一次
-    const occurrences = (state.page2Content.match(/\[\[Page1\]\]\^\(required-by\)/g) || []).length
-    expect(occurrences).toBe(1)
+    // Page2 应该只有一个反向链接块
+    expect(state.page2Blocks.length).toBe(1)
+    expect(state.page2Blocks[0].content).toBe('[[Page1]]^(required-by)')
   })
 })

@@ -645,9 +645,11 @@ describe('useCrossBlockSelection', () => {
       // P 指向 X 的链被删后，X 指向 P 的反向引用应被降级
       const after1 = blockStore.blocks.find(b => b.id === targetBlock1.id)
       expect(after1?.content).toBe('reverse [[P]]')
-      // Y 指向 Y 自己的引用被删后，Y 指向 Y 的反向引用应被降级（如果存在的话）
-      // 但这里 targetBlock2 是 Y 页面指向 Y 自己的引用，已经被删了
-      expect(blockStore.blocks.find(b => b.id === targetBlock2.id)).toBeUndefined()
+      // X 指向 Y 的链被删后，Y 指向 X 的反向引用（如果存在）应被降级
+      // targetBlock2 是 Y 页面指向自己的引用，所以它应该仍然存在，没有变化
+      const after2 = blockStore.blocks.find(b => b.id === targetBlock2.id)
+      expect(after2).toBeDefined()
+      expect(after2?.content).toBe('reverse [[Y]]^(required-by)')
       // 选区应被清空
       expect(selection.anchorIds.size).toBe(0)
     })

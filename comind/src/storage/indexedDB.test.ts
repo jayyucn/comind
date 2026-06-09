@@ -13,6 +13,7 @@ vi.mock('./db', () => ({
       delete: vi.fn(),
       get: vi.fn(),
       update: vi.fn(),
+      toArray: vi.fn().mockResolvedValue([]),
       where: vi.fn().mockReturnValue({
         equals: vi.fn().mockReturnValue({
           first: vi.fn(),
@@ -31,7 +32,8 @@ vi.mock('./db', () => ({
       update: vi.fn(),
       where: vi.fn().mockReturnValue({
         equals: vi.fn().mockReturnValue({
-          first: vi.fn()
+          first: vi.fn(),
+          toArray: vi.fn().mockResolvedValue([])
         })
       }),
       orderBy: vi.fn().mockReturnValue({
@@ -44,7 +46,8 @@ vi.mock('./db', () => ({
       delete: vi.fn(),
       where: vi.fn().mockReturnValue({
         equals: vi.fn().mockReturnValue({
-          delete: vi.fn()
+          delete: vi.fn(),
+          toArray: vi.fn().mockResolvedValue([])
         }),
         anyOf: vi.fn().mockReturnValue({
           delete: vi.fn()
@@ -55,6 +58,7 @@ vi.mock('./db', () => ({
       put: vi.fn(),
       delete: vi.fn(),
       get: vi.fn(),
+      bulkDelete: vi.fn(),
       where: vi.fn().mockReturnValue({
         equals: vi.fn().mockReturnValue({
           first: vi.fn(),
@@ -388,19 +392,30 @@ describe('IndexedDBAdapter', () => {
   describe('getPage', () => {
     it('returns page by title', async () => {
       const { db } = await import('./db')
-      ;(db.pages.where('title').equals('Test').first as any).mockResolvedValueOnce({
-        id: 'page-1',
-        title: 'Test',
-        type: 'normal',
-        blockId: null,
-        icon: null,
-        cover: null,
-        aliases: '[]',
-        filePath: null,
-        childrenCount: 0,
-        wordCount: 0,
-        createdAt: 0,
-        updatedAt: 0
+      ;(db.pages.where as any).mockImplementation((field: string) => {
+        if (field === 'title') {
+          return {
+            equals: (value: string) => {
+              return {
+                first: vi.fn().mockResolvedValue(value === 'Test' ? {
+                  id: 'page-1',
+                  title: 'Test',
+                  type: 'normal',
+                  blockId: null,
+                  icon: null,
+                  cover: null,
+                  aliases: '[]',
+                  filePath: null,
+                  childrenCount: 0,
+                  wordCount: 0,
+                  createdAt: 0,
+                  updatedAt: 0
+                } : undefined)
+              }
+            }
+          }
+        }
+        return { equals: () => ({ first: vi.fn() }) }
       })
 
       const result = await adapter.getPage('Test')
@@ -409,7 +424,18 @@ describe('IndexedDBAdapter', () => {
 
     it('returns undefined for non-existent page', async () => {
       const { db } = await import('./db')
-      ;(db.pages.where('title').equals('NonExistent').first as any).mockResolvedValueOnce(undefined)
+      ;(db.pages.where as any).mockImplementation((field: string) => {
+        if (field === 'title') {
+          return {
+            equals: (value: string) => {
+              return {
+                first: vi.fn().mockResolvedValue(undefined)
+              }
+            }
+          }
+        }
+        return { equals: () => ({ first: vi.fn() }) }
+      })
 
       const result = await adapter.getPage('NonExistent')
       expect(result).toBeUndefined()
@@ -443,10 +469,24 @@ describe('IndexedDBAdapter', () => {
   describe('deletePage', () => {
     it('deletes page and all related blocks', async () => {
       const { db } = await import('./db')
-      ;(db.blocks.where('pageId').equals('page-1').toArray as any).mockResolvedValueOnce([
-        { id: 'block-1', pageId: 'page-1' },
-        { id: 'block-2', pageId: 'page-1' }
-      ])
+      ;(db.blocks.where as any).mockImplementation((field: string) => {
+        if (field === 'pageId') {
+          return {
+            equals: (value: string) => {
+              if (value === 'page-1') {
+                return {
+                  toArray: vi.fn().mockResolvedValue([
+                    { id: 'block-1', pageId: 'page-1' },
+                    { id: 'block-2', pageId: 'page-1' }
+                  ])
+                }
+              }
+              return { toArray: vi.fn() }
+            }
+          }
+        }
+        return { equals: () => ({ toArray: vi.fn() }) }
+      })
 
       await adapter.deletePage('page-1')
 
@@ -459,6 +499,20 @@ describe('IndexedDBAdapter', () => {
     it('marks page as deleted without removing blocks', async () => {
       const { db } = await import('./db')
       ;(db.pages.get as any).mockResolvedValueOnce({
+        id: 'page-1',
+        title: 'Test Page',
+        type: 'normal',
+        blockId: null,
+        icon: null,
+        cover: null,
+        aliases: '[]',
+        filePath: null,
+        childrenCount: 0,
+        wordCount: 0,
+        createdAt: 0,
+        updatedAt: 0,
+        deleted: 0
+      }).mockResolvedValueOnce({
         id: 'page-1',
         title: 'Test Page',
         type: 'normal',
@@ -684,11 +738,24 @@ describe('IndexedDBAdapter', () => {
   describe('syncPageStats', () => {
     it('updates page with correct count and word count', async () => {
       const { db } = await import('./db')
-
-      ;(db.blocks.where('pageId').equals('page-1').toArray as any).mockResolvedValueOnce([
-        { id: 'b1', pageId: 'page-1', parentId: null, pos: 1000, content: 'Hello world', format: '{}', type: 'bullet', properties: '{}', createdAt: 0, updatedAt: 0 },
-        { id: 'b2', pageId: 'page-1', parentId: null, pos: 2000, content: 'Test content', format: '{}', type: 'bullet', properties: '{}', createdAt: 0, updatedAt: 0 }
-      ])
+      ;(db.blocks.where as any).mockImplementation((field: string) => {
+        if (field === 'pageId') {
+          return {
+            equals: (value: string) => {
+              if (value === 'page-1') {
+                return {
+                  toArray: vi.fn().mockResolvedValue([
+                    { id: 'b1', pageId: 'page-1', parentId: null, pos: 1000, content: 'Hello world', format: '{}', type: 'bullet', properties: '{}', createdAt: 0, updatedAt: 0 },
+                    { id: 'b2', pageId: 'page-1', parentId: null, pos: 2000, content: 'Test content', format: '{}', type: 'bullet', properties: '{}', createdAt: 0, updatedAt: 0 }
+                  ])
+                }
+              }
+              return { toArray: vi.fn() }
+            }
+          }
+        }
+        return { equals: () => ({ toArray: vi.fn() }) }
+      })
 
       ;(db.pages.get as any).mockResolvedValueOnce({
         id: 'page-1',
