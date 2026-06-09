@@ -355,3 +355,10 @@
   border-radius:  0;
   z-index: 1;
 }
+
+// Concept Block styles
+.block[data-type="concept"] {
+  .concept-block {
+    margin: 4px 0;
+  }
+}

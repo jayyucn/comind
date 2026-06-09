@@ -264,12 +264,12 @@ export class IndexedDBAdapter {
       })
       await this.saveLinks(existingBlock.id, pageId, parseBlockLinks(newContent), true)
     } else {
-      // 新建独立的 top-level block 承载反向链接
+      // 新建独立的 top-level block 承载反向链接（parentId 指向页面根 Block）
       const newBlockId = generateUUID()
       const newBlock: Block = {
         id: newBlockId,
         pageId,
-        parentId: null,
+        parentId: targetPage.blockId, // 指向页面根 Block
         pos: 1000,
         content: linkText,
         format: {},
@@ -390,39 +390,6 @@ export class IndexedDBAdapter {
     return record ? recordToPage(record) : undefined
   }
 
-  /**
-   * 创建 Page（仅创建 Page 记录，不创建关联的根 Block）
-   *
-   * 注意：此方法目前未被调用。正常页面创建应使用 createPageWithRootBlock，
-   * 确保页面创建后立即有一个可编辑的空 Block。
-   *
-   * 保留此方法用于以下场景：
-   * - 批量数据迁移：先批量创建页面占位，后续异步填充 Block
-   * - 模板系统：模板实例化时页面已包含预定义 Block
-   * - 外部数据同步：先创建页面占位，Block 内容由后续同步拉取
-   */
-  async createPage(title: string, type: 'normal' | 'journal' = 'normal'): Promise<Page> {
-    const now = Date.now()
-    const page: Page = {
-      id: generateUUID(),
-      blockId: null,
-      title,
-      type,
-      icon: null,
-      cover: null,
-      aliases: [],
-      filePath: null,
-      childrenCount: 0,
-      wordCount: 0,
-      createdAt: now,
-      updatedAt: now,
-      deleted: false,
-      deletedAt: null
-    }
-    await db.pages.put(pageToRecord(page))
-    return page
-  }
-
   async getAllPages(): Promise<Page[]> {
     const records = await db.pages.orderBy('title').toArray()
     return records
@@ -532,17 +499,20 @@ export class IndexedDBAdapter {
 
   /**
    * 创建页面并关联根 Block
+   *
+   * 根 Block 的 content 为页面标题，parentId 为 null。
+   * 页面下可见的一级 block 的 parentId 指向根 Block。
    */
   async createPageWithRootBlock(title: string, type: 'normal' | 'journal' = 'normal'): Promise<Page> {
     const now = Date.now()
 
-    // 1. 创建根 Block
+    // 1. 创建根 Block（content 为页面标题，不渲染为可见 block）
     const rootBlock: Block = {
       id: generateUUID(),
       pageId: '', // 先空，后续更新
       parentId: null,
-      pos: 1000,
-      content: '',
+      pos: 0,
+      content: title,
       format: {},
       type: 'bullet',
       properties: {},

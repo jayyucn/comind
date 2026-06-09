@@ -723,6 +723,7 @@ export const useBlockStore = defineStore('blocks', () => {
     block.format = { ...block.format, ...format }
     block.updatedAt = Date.now()
     _scheduleSave(block)
+    structureVersion.value++
   }
 
   /** 更新 Block 类型 */

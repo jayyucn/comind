@@ -66,7 +66,10 @@ vi.mock('./db', () => ({
         })
       })
     },
-    transaction: vi.fn((stores, callback) => callback())
+    transaction: vi.fn((...args: unknown[]) => {
+      const callback = args[args.length - 1]
+      return typeof callback === 'function' ? (callback as () => unknown)() : undefined
+    })
   }
 }))
 

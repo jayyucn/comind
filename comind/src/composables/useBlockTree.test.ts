@@ -5,7 +5,7 @@ import type { Block, TreeNode } from '../types/block'
 describe('buildTree', () => {
   test('空数组返回空根节点', () => {
     const blocks: Block[] = []
-    const roots = buildTree(blocks, 'page-1')
+    const roots = buildTree(blocks, 'page-1', null)
     expect(roots).toEqual([])
   })
 
@@ -22,7 +22,7 @@ describe('buildTree', () => {
       createdAt: Date.now(),
       updatedAt: Date.now()
     }]
-    const roots = buildTree(blocks, 'page-1')
+    const roots = buildTree(blocks, 'page-1', null)
     expect(roots.length).toBe(1)
     expect(roots[0].id).toBe('block-1')
     expect(roots[0].children).toEqual([])
@@ -34,7 +34,7 @@ describe('buildTree', () => {
       { id: 'c1', pageId: 'page-1', parentId: 'p1', pos: 1000, content: 'Child1', format: {}, type: 'bullet', properties: {}, createdAt: 0, updatedAt: 0 },
       { id: 'c2', pageId: 'page-1', parentId: 'p1', pos: 2000, content: 'Child2', format: {}, type: 'bullet', properties: {}, createdAt: 0, updatedAt: 0 }
     ]
-    const roots = buildTree(blocks, 'page-1')
+    const roots = buildTree(blocks, 'page-1', null)
     expect(roots.length).toBe(1)
     expect(roots[0].children.length).toBe(2)
     expect(roots[0].children[0].id).toBe('c1')
@@ -47,7 +47,7 @@ describe('buildTree', () => {
       { id: 'p', pageId: 'page-1', parentId: 'gp', pos: 1000, content: 'Parent', format: {}, type: 'bullet', properties: {}, createdAt: 0, updatedAt: 0 },
       { id: 'c', pageId: 'page-1', parentId: 'p', pos: 1000, content: 'Child', format: {}, type: 'bullet', properties: {}, createdAt: 0, updatedAt: 0 }
     ]
-    const roots = buildTree(blocks, 'page-1')
+    const roots = buildTree(blocks, 'page-1', null)
     expect(roots.length).toBe(1)
     expect(roots[0].children.length).toBe(1)
     expect(roots[0].children[0].children.length).toBe(1)
@@ -59,7 +59,7 @@ describe('buildTree', () => {
       { id: 'b1', pageId: 'page-1', parentId: null, pos: 1000, content: 'B1', format: {}, type: 'bullet', properties: {}, createdAt: 0, updatedAt: 0 },
       { id: 'b2', pageId: 'page-1', parentId: 'non-existent', pos: 1000, content: 'Orphan', format: {}, type: 'bullet', properties: {}, createdAt: 0, updatedAt: 0 }
     ]
-    const roots = buildTree(blocks, 'page-1')
+    const roots = buildTree(blocks, 'page-1', null)
     expect(roots.length).toBe(1)
     expect(roots[0].id).toBe('b1')
   })
@@ -70,7 +70,7 @@ describe('buildTree', () => {
       { id: 'b1', pageId: 'page-1', parentId: null, pos: 1000, content: 'B1', format: {}, type: 'bullet', properties: {}, createdAt: 0, updatedAt: 0 },
       { id: 'b2', pageId: 'page-1', parentId: null, pos: 2000, content: 'B2', format: {}, type: 'bullet', properties: {}, createdAt: 0, updatedAt: 0 }
     ]
-    const roots = buildTree(blocks, 'page-1')
+    const roots = buildTree(blocks, 'page-1', null)
     expect(roots.length).toBe(3)
     expect(roots[0].id).toBe('b1')
     expect(roots[1].id).toBe('b2')
@@ -82,7 +82,7 @@ describe('buildTree', () => {
       { id: 'b1', pageId: 'page-1', parentId: null, pos: 1000, content: 'Page1 Block', format: {}, type: 'bullet', properties: {}, createdAt: 0, updatedAt: 0 },
       { id: 'b2', pageId: 'page-2', parentId: null, pos: 1000, content: 'Page2 Block', format: {}, type: 'bullet', properties: {}, createdAt: 0, updatedAt: 0 }
     ]
-    const roots = buildTree(blocks, 'page-1')
+    const roots = buildTree(blocks, 'page-1', null)
     expect(roots.length).toBe(1)
     expect(roots[0].id).toBe('b1')
   })

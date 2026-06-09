@@ -13,10 +13,11 @@
  * - handleDragEnd 将 tree 变更同步回 store（parentId + pos）
  * - store 变更通过 structureVersion watch 触发 syncFromStore 重建树
  */
-import { ref, watch, onMounted, onBeforeUnmount, provide } from 'vue'
+import { ref, watch, onMounted, onBeforeUnmount, provide, computed } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
 import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
+import { usePageStore } from '../stores/pages'
 import Block from './Block/index.vue'
 import { buildTree, syncTreeToStore } from '../composables/useBlockTree'
 import type { TreeNode } from '../types/block'
@@ -26,24 +27,26 @@ import type { CrossBlockSelection } from '../composables/useCrossBlockSelection'
 const props = defineProps<{
   /** 页面 ID，用于过滤 Block */
   pageId: string
-  /** 父节点 ID，null 表示根级（保留兼容，当前固定为 null） */
-  parentId?: string | null
 }>()
 
 const blockStore = useBlockStore()
 const editorStore = useEditorStore()
+const pageStore = usePageStore()
+
+/** 当前页面的根 Block ID */
+const rootBlockId = computed(() => pageStore.getPage(props.pageId)?.blockId ?? null)
 
 // ── 树形结构（writable ref，作为 VueDraggable 的 v-model） ──
 const tree = ref<TreeNode[]>([])
 
 // ── 从 store 构建 tree ──
 function syncFromStore() {
-  tree.value = buildTree(blockStore.blocks, props.pageId)
+  tree.value = buildTree(blockStore.blocks, props.pageId, rootBlockId.value)
 }
 
 // ── 拖拽结束：tree 已被 vue-draggable-plus 修改，同步回 store ──
 function handleDragEnd() {
-  const changed = syncTreeToStore(tree.value, null, blockStore.blocks)
+  const changed = syncTreeToStore(tree.value, rootBlockId.value, blockStore.blocks)
   for (const id of changed) {
     blockStore.scheduleSave(id)
   }
@@ -54,7 +57,7 @@ function handleDragEnd() {
 async function handleCreateBlock() {
   const newBlock = await blockStore.createBlock({
     pageId: props.pageId,
-    parentId: null,
+    parentId: rootBlockId.value,
     content: '',
     format: {}
   })

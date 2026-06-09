@@ -135,11 +135,13 @@ describe('auto-inverse new block (no root block pollution)', () => {
       updatedAt: number
     }
     const state = {
+      // C 页面的根 Block
+      cRootBlockId: 'c-root-block',
       // C 页面预先存在一个 block: [[B]]^(required-by)
       existingCBlock: {
         id: 'c-existing-block',
         pageId: 'page-c',
-        parentId: null,
+        parentId: 'c-root-block',
         pos: 1000,
         content: '[[B]]^(required-by)',
         format: '{}',
@@ -157,7 +159,7 @@ describe('auto-inverse new block (no root block pollution)', () => {
         return Promise.resolve(createMockPage({ id: 'page-a', title: 'First', blockId: null }))
       }
       if (id === 'page-c') {
-        return Promise.resolve(createMockPage({ id: 'page-c', title: 'C', blockId: state.existingCBlock.id }))
+        return Promise.resolve(createMockPage({ id: 'page-c', title: 'C', blockId: state.cRootBlockId }))
       }
       if (id === 'page-b') {
         return Promise.resolve(createMockPage({ id: 'page-b', title: 'B', blockId: null }))

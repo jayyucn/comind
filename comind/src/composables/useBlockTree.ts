@@ -8,11 +8,12 @@ import type { TreeNode, Block } from '../types/block'
  *
  * @param blocks - 当前页面的所有 Block（扁平数组）
  * @param pageId - 页面 ID（过滤用）
- * @returns 根节点列表（parentId === null 的节点）
+ * @param rootBlockId - 页面根 Block ID（不渲染为可见节点，其子节点作为可见一级节点）
+ * @returns 可见根节点列表（parentId === rootBlockId 的节点）
  */
-export function buildTree(blocks: Block[], pageId: string): TreeNode[] {
+export function buildTree(blocks: Block[], pageId: string, rootBlockId: string | null): TreeNode[] {
   const pageBlocks = blocks
-    .filter(b => b.pageId === pageId)
+    .filter(b => b.pageId === pageId && b.id !== rootBlockId) // 排除根 Block
     .sort((a, b) => a.pos - b.pos)
 
   const map = new Map<string, TreeNode>()
@@ -28,10 +29,11 @@ export function buildTree(blocks: Block[], pageId: string): TreeNode[] {
     const node = map.get(block.id)!
     if (block.parentId && map.has(block.parentId)) {
       map.get(block.parentId)!.children.push(node)
-    } else if (!block.parentId) {
+    } else if (block.parentId === rootBlockId || !block.parentId) {
+      // parentId 指向根 Block 或为 null → 作为可见一级节点
       roots.push(node)
     }
-    // block.parentId 存在但找不到父节点 → 孤儿节点，不挂载
+    // block.parentId 存在但找不到父节点且不是根 Block → 孤儿节点，不挂载
   }
 
   return roots
