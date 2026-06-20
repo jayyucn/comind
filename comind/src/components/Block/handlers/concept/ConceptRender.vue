@@ -165,20 +165,20 @@ defineExpose({
       <ConceptSection
         section="definition"
         :collapsed="collapsedState.definition"
-        label="01 · 核心定义"
+        label="Definition · 核心定义"
         label-color="#D97706"
         @toggle="toggleSection('definition')"
       >
         <div class="definition-quote" :class="{ 'is-placeholder': !fmt.definition }">
           {{ fmt.definition || '一句话抓本质...' }}
-        </div>
+        </div> 
       </ConceptSection>
 
       <!-- 02. 边界范围 -->
       <ConceptSection
         section="boundary"
         :collapsed="collapsedState.boundary"
-        label="02 · 边界范围"
+        label="boundary · 边界范围"
         label-color="#059669"
         @toggle="toggleSection('boundary')"
       >
@@ -198,7 +198,7 @@ defineExpose({
       <ConceptSection
         section="comparison"
         :collapsed="collapsedState.comparison"
-        label="03 · 对标辨析"
+        label="comparison · 对标辨析"
         label-color="#6366F1"
         @toggle="toggleSection('comparison')"
       >
@@ -213,7 +213,7 @@ defineExpose({
       <ConceptSection
         section="example"
         :collapsed="collapsedState.example"
-        label="04 · 实例与应用"
+        label="examples · 实例与应用"
         label-color="#7C3AED"
         @toggle="toggleSection('example')"
       >
