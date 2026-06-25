@@ -5,7 +5,7 @@ import type { NodeData } from '@antv/g6'
 import { usePageStore } from '../../stores/pages'
 import { storage } from '../../storage/indexedDB'
 import { db } from '../../storage/db'
-import { getRelationshipColor, getRelationshipLabel } from '../../types/relationship'
+import { getRelationshipColor, getRelationshipLabel, getDirectionInGroup, getGroupByType } from '../../types/relationship'
 import { useRouter } from 'vue-router'
 import SearchFilter from './SearchFilter.vue'
 
@@ -29,6 +29,35 @@ function filterLinkByType(relationshipType: string | null | undefined): boolean 
   if (activeFilters.value.length === 0) return true
   if (!relationshipType) return false
   return activeFilters.value.includes(relationshipType)
+}
+
+function normalizeEdge(edge: { id: string; source: string; target: string; data: Record<string, unknown> }) {
+  const type = edge.data.relationshipType as string
+  const direction = getDirectionInGroup(type)
+  const group = getGroupByType(type)
+  
+  if (direction === 'inverse' && group) {
+    const forwardType = group.type
+    return {
+      id: edge.id,
+      source: edge.target,
+      target: edge.source,
+      data: {
+        ...edge.data,
+        relationshipType: forwardType,
+        label: getRelationshipLabel(forwardType),
+        color: getRelationshipColor(forwardType),
+      }
+    }
+  }
+  return edge
+}
+
+function getEdgeDedupeKey(edge: { source: string; target: string; data: Record<string, unknown> }): string {
+  const type = edge.data.relationshipType as string
+  const group = getGroupByType(type)
+  const groupKey = group ? group.type : type
+  return `${edge.source}-${edge.target}-${groupKey}`
 }
 
 async function loadPageNodeEdges(
@@ -142,9 +171,21 @@ async function buildGraphData() {
     await loadPageNodeEdges(pid, nodes, edges, visitedEdges, blockCache)
   }
 
+  const normalizedEdges = edges.map(e => normalizeEdge(e))
+
+  const seenKeys = new Set<string>()
+  const dedupedEdges: typeof edges = []
+  for (const edge of normalizedEdges) {
+    const key = getEdgeDedupeKey(edge)
+    if (seenKeys.has(key)) continue
+    seenKeys.add(key)
+    dedupedEdges.push(edge)
+  }
+
   const edgeCountMap = new Map<string, number>()
-  for (const edge of edges) {
-    const key = [edge.source, edge.target].sort().join('-')
+  const pairKey = (a: string, b: string) => [a, b].sort().join('-')
+  for (const edge of dedupedEdges) {
+    const key = pairKey(edge.source, edge.target)
     const idx = edgeCountMap.get(key) ?? 0
     edgeCountMap.set(key, idx + 1)
     if (idx === 0) {
@@ -156,7 +197,7 @@ async function buildGraphData() {
     }
   }
 
-  return { nodes, edges }
+  return { nodes, edges: dedupedEdges }
 }
 
 function getNodeSize(d: NodeData): [number, number] {
