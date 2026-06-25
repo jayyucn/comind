@@ -234,11 +234,11 @@ export class IndexedDBAdapter {
     const targetPage = await db.pages.get(pageId) // 要在这个页面创建反向链接
     if (!targetPage) return
 
-    const linkText = `[[${sourcePage.title}]]^(${relationshipType})`
+    const linkText = `((${relationshipType}))[[${sourcePage.title}]]`
     const escapedTitle = sourcePage.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    // 匹配单行：[[title]]^(type) 或 [[title|alias]]^(type)，可有前导的 "- " 或空白
+    // 匹配单行：((type))[[title]] 或 ((type))[[title|alias]]，可有前导的 "- " 或空白
     const linePattern = new RegExp(
-      `^\\s*-?\\s*\\[\\[${escapedTitle}(?:\\|[^\\]]+)?\\]\\]\\^?\\([^)]+\\)\\s*$`
+      `^\\s*-?\\s*\\(\\([^)]+\\)\\)\\[\\[${escapedTitle}(?:\\|[^\\]]+)?\\]\\]\\s*$`
     )
 
     // 在目标页所有 block 中查找是否已有指向源页（任意类型）的反向链接

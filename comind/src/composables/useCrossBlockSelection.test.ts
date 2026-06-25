@@ -547,12 +547,12 @@ describe('useCrossBlockSelection', () => {
       // 主页 block：双向 typed-link
       const block1 = await blockStore.createBlock({
         pageId: ourPage.id,
-        content: 'see [[X]]^(depends-on<->required-by)'
+        content: 'see ((depends-on<->required-by))[[X]]'
       })
       // 目标页 block：含反向引用
       const targetBlock = await blockStore.createBlock({
         pageId: targetPage.id,
-        content: 'reverse [[P]]^(required-by)'
+        content: 'reverse ((required-by))[[P]]'
       })
 
       selection.anchorIds.add(block1.id)
@@ -577,16 +577,16 @@ describe('useCrossBlockSelection', () => {
       // 主页两个 block，都含 typed-link 到 X
       const block1 = await blockStore.createBlock({
         pageId: ourPage.id,
-        content: 'see [[X]]^(depends-on<->required-by)'
+        content: 'see ((depends-on<->required-by))[[X]]'
       })
       const block2 = await blockStore.createBlock({
         pageId: ourPage.id,
-        content: 'also see [[X]]^(depends-on<->required-by)'
+        content: 'also see ((depends-on<->required-by))[[X]]'
       })
       // 目标页 block：含反向引用
       const targetBlock = await blockStore.createBlock({
         pageId: targetPage.id,
-        content: 'reverse [[P]]^(required-by)'
+        content: 'reverse ((required-by))[[P]]'
       })
 
       selection.anchorIds.add(block1.id)
@@ -617,22 +617,22 @@ describe('useCrossBlockSelection', () => {
       // P 页面的 block 引用 X
       const block1 = await blockStore.createBlock({
         pageId: ourPage.id,
-        content: 'see [[X]]^(depends-on<->required-by)'
+        content: 'see ((depends-on<->required-by))[[X]]'
       })
       // X 页面的 block 引用 Y
       const block2 = await blockStore.createBlock({
         pageId: targetPage1.id,
-        content: 'link [[Y]]^(depends-on<->required-by)'
+        content: 'link ((depends-on<->required-by))[[Y]]'
       })
       // X 目标页面的 block 有反向引用到 P
       const targetBlock1 = await blockStore.createBlock({
         pageId: targetPage1.id,
-        content: 'reverse [[P]]^(required-by)'
+        content: 'reverse ((required-by))[[P]]'
       })
       // Y 目标页面的 block 有反向引用
       const targetBlock2 = await blockStore.createBlock({
         pageId: targetPage2.id,
-        content: 'reverse [[Y]]^(required-by)'
+        content: 'reverse ((required-by))[[Y]]'
       })
 
       selection.anchorIds.add(block1.id)
@@ -649,7 +649,7 @@ describe('useCrossBlockSelection', () => {
       // targetBlock2 是 Y 页面指向自己的引用，所以它应该仍然存在，没有变化
       const after2 = blockStore.blocks.find(b => b.id === targetBlock2.id)
       expect(after2).toBeDefined()
-      expect(after2?.content).toBe('reverse [[Y]]^(required-by)')
+      expect(after2?.content).toBe('reverse ((required-by))[[Y]]')
       // 选区应被清空
       expect(selection.anchorIds.size).toBe(0)
     })

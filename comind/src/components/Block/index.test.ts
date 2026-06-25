@@ -54,19 +54,16 @@ vi.mock('../../composables/useNavigateToPage', () => ({
 }))
 
 const STUB_RENDER_CONTENT = (content: string, blockId: string): string => {
-  // 模拟 BulletRender 的 v-html 输出：[[X]]^(depends-on)
-  // typedStart=0, typedEnd=`[[X]]^(depends-on)`.length=21
-  // relType=`depends-on`, labelFrom=21-10-1=10, labelTo=21
-  const typed = '[[X]]^(depends-on)'
+  const typed = '((depends-on))[[X]]'
   const typedStart = content.indexOf(typed)
   const typedEnd = typedStart + typed.length
   const relType = 'depends-on'
   return (
-    `<span class="block-link" data-page="X">X</span>` +
     `<span class="rel-type-label" data-rel-type="${relType}" ` +
     `data-block-id="${blockId}" ` +
     `data-typed-from="${typedStart}" data-typed-to="${typedEnd}" ` +
-    `data-label-from="${typedEnd - relType.length - 1}" data-label-to="${typedEnd}">^依赖</span>`
+    `data-label-from="${typedStart + 2}" data-label-to="${typedStart + 2 + relType.length}">—依赖→</span>` +
+    `<span class="block-link" data-page="X">X</span>`
   )
 }
 
@@ -98,7 +95,7 @@ describe('Block - rel-type-label click handling', () => {
 
   const BLOCK_ID = 'block-1'
   const PAGE_ID = 'page-1'
-  const ORIGINAL_CONTENT = 'prefix [[X]]^(depends-on) suffix'
+  const ORIGINAL_CONTENT = 'prefix ((depends-on))[[X]] suffix'
 
   function makeNode(): TreeNode {
     return {
@@ -123,8 +120,6 @@ describe('Block - rel-type-label click handling', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
 
-    // useRelationshipMenu.items 依赖 useRelationshipTypes 的 state；
-    // 加载种子数据，确保菜单分组有效、setSelectedGroupIndex(2) 能命中
     await db.relationshipTypes.clear()
     const { _resetForTest, load } = useRelationshipTypes()
     _resetForTest()
@@ -133,11 +128,9 @@ describe('Block - rel-type-label click handling', () => {
     blockStore = useBlockStore()
     pageStore = usePageStore()
     await pageStore.createPage('Test Page', 'normal')
-    // 重置 createPage 后的 currentPageId 副作用
     const created = pageStore.pages[pageStore.pages.length - 1]
     Object.defineProperty(pageStore, 'currentPageId', { value: created?.id ?? PAGE_ID, configurable: true })
 
-    // 直接在 blockStore.blocks 注入测试 block
     blockStore.blocks.push({
       id: BLOCK_ID,
       pageId: created?.id ?? PAGE_ID,
@@ -194,7 +187,6 @@ describe('Block - rel-type-label click handling', () => {
 
     await wrapper.find('.rel-type-label').trigger('click')
     expect(menu.state.value.visible).toBe(true)
-    // 默认选中索引指向 'parent'，改为 'references' 组（组下标 2），forward 方向
     menu.setSelectedGroupIndex(2)
     const updateContentSpy = vi.spyOn(blockStore, 'updateBlockContent')
     menu.select()
@@ -203,11 +195,7 @@ describe('Block - rel-type-label click handling', () => {
     expect(updateContentSpy).toHaveBeenCalledTimes(1)
     const [calledBlockId, calledContent] = updateContentSpy.mock.calls[0]
     expect(calledBlockId).toBe(BLOCK_ID)
-    // ORIGINAL_CONTENT = 'prefix [[X]]^(depends-on) suffix' (32 chars)
-    // typedStart=7, typedEnd=25, relType='depends-on' (10 chars)
-    // labelFrom = 25 - 10 - 1 = 14，labelTo = 25
-    // slice(0, 14) = 'prefix [[X]]^('，slice(25) = ' suffix'
-    expect(calledContent).toBe('prefix [[X]]^(references suffix')
+    expect(calledContent).toBe('prefix ((references))[[X]] suffix')
     expect(calledContent).not.toContain('depends-on')
     expect(calledContent).toContain('references')
 
@@ -225,7 +213,6 @@ describe('Block - rel-type-label click handling', () => {
     })
     await flushPromises()
 
-    // 触发 .block-text 容器上、但 target 是 div 本身的点击（closest('.rel-type-label') 为 null, closest('.block-link') 为 null）
     const container = wrapper.find('.block-text')
     expect(container.exists()).toBe(true)
     await container.trigger('click')
@@ -239,8 +226,8 @@ describe('Block - rel-type-label click handling', () => {
 describe('Block - handleDelete 关系清理集成', () => {
   let blockStore: ReturnType<typeof useBlockStore>
   let pageStore: ReturnType<typeof usePageStore>
-  const PAGE_TITLE = 'P'  // 本页面 title，匹配 block 中 [[P]]
-  const TARGET_TITLE = 'X' // 目标页面 title，匹配 block 中 [[X]]
+  const PAGE_TITLE = 'P'
+  const TARGET_TITLE = 'X'
 
   beforeEach(async () => {
     setActivePinia(createPinia())
@@ -248,15 +235,12 @@ describe('Block - handleDelete 关系清理集成', () => {
 
     blockStore = useBlockStore()
     pageStore = usePageStore()
-    // 创建本页面（P）和目标页面（X）
     await pageStore.createPage(PAGE_TITLE, 'normal')
     const ourPage = pageStore.pages[pageStore.pages.length - 1]
     await pageStore.createPage(TARGET_TITLE, 'normal')
     const targetPage = pageStore.pages[pageStore.pages.length - 1]
-    // 重置 createPage 后的 currentPageId 副作用
     Object.defineProperty(pageStore, 'currentPageId', { value: ourPage.id, configurable: true })
 
-    // 注入主页 block
     blockStore.blocks.push({
       id: 'block-prev',
       pageId: ourPage.id,
@@ -269,26 +253,24 @@ describe('Block - handleDelete 关系清理集成', () => {
       createdAt: Date.now(),
       updatedAt: Date.now()
     })
-    // 注入主页 block
     blockStore.blocks.push({
       id: 'block-del',
       pageId: ourPage.id,
       parentId: null,
       pos: 1000,
-      content: 'see [[X]]^(depends-on<->required-by)',
+      content: 'see ((depends-on<->required-by))[[X]]',
       format: {},
       type: 'bullet',
       properties: {},
       createdAt: Date.now(),
       updatedAt: Date.now()
     })
-    // 注入目标页 block（含反向引用）
     blockStore.blocks.push({
       id: 'block-target',
       pageId: targetPage.id,
       parentId: null,
       pos: 1000,
-      content: 'reverse [[P]]^(required-by)',
+      content: 'reverse ((required-by))[[P]]',
       format: {},
       type: 'bullet',
       properties: {},
@@ -306,7 +288,7 @@ describe('Block - handleDelete 关系清理集成', () => {
           block: blockDel,
           children: []
         },
-        pageId: blockDel.pageId, // 实际是 ourPage.id
+        pageId: blockDel.pageId,
         depth: 0
       },
       global: {
@@ -315,12 +297,9 @@ describe('Block - handleDelete 关系清理集成', () => {
     })
     await flushPromises()
 
-    // 直接调用暴露的 handleDelete 方法
     await (wrapper.vm as any).handleDelete()
 
-    // 主页 block 应被删除
     expect(blockStore.blocks.find(b => b.id === 'block-del')).toBeUndefined()
-    // 目标页 block 应被降级
     const after = blockStore.blocks.find(b => b.id === 'block-target')
     expect(after?.content).toBe('reverse [[P]]')
 

@@ -118,10 +118,9 @@ describe('auto-inverse dedup bug', () => {
     adapter = new IndexedDBAdapter()
   })
 
-  it('scenario: 用户在 Page1 上保存两个块都引用 Page2^(depends-on)，Page2 上不应有重复反向链接', async () => {
+  it('scenario: 用户在 Page1 上保存两个块都引用 ((depends-on<->required-by))[[Page2]]，Page2 上不应有重复反向链接', async () => {
     const { db } = await import('./db')
 
-    // 持久化状态：模拟 Page2 已经有反向链接
     const state = {
       page2RootBlockId: 'page2-root',
       page2Blocks: [] as Array<{ id: string; pageId: string; parentId: string | null; pos: number; content: string; format: string; type: string; properties: string; createdAt: number; updatedAt: number }>
@@ -157,7 +156,6 @@ describe('auto-inverse dedup bug', () => {
       return Promise.resolve(undefined)
     })
 
-    // db.blocks.where('pageId').equals
     ;(db.blocks.where as any).mockImplementation((field: string) => ({
       equals: vi.fn().mockImplementation((value: string) => ({
         toArray: vi.fn().mockImplementation(() => {
@@ -170,7 +168,6 @@ describe('auto-inverse dedup bug', () => {
       }))
     }))
 
-    // 捕获 put 和 update 调用
     ;(db.blocks.put as any).mockImplementation((record: any) => {
       if (record.pageId === 'page-2') {
         const existingIndex = state.page2Blocks.findIndex(b => b.id === record.id)
@@ -192,20 +189,16 @@ describe('auto-inverse dedup bug', () => {
     })
 
     ;(db.pages.update as any).mockImplementation((id: string, changes: any) => {
-      // 模拟页面更新
       return Promise.resolve(1)
     })
 
-    // 第一次保存：Block 1 在 Page1 上引用 [[Page2]]^(depends-on<->required-by)
-    const block1 = createMockBlock({ id: 'block-1', pageId: 'page-1', content: '[[Page2]]^(depends-on<->required-by)' })
+    const block1 = createMockBlock({ id: 'block-1', pageId: 'page-1', content: '((depends-on<->required-by))[[Page2]]' })
     await adapter.saveBlock(block1)
 
-    // 第二次保存：Block 2 在 Page1 上也引用 [[Page2]]^(depends-on<->required-by)
-    const block2 = createMockBlock({ id: 'block-2', pageId: 'page-1', content: '[[Page2]]^(depends-on<->required-by)' })
+    const block2 = createMockBlock({ id: 'block-2', pageId: 'page-1', content: '((depends-on<->required-by))[[Page2]]' })
     await adapter.saveBlock(block2)
 
-    // Page2 应该只有一个反向链接块
     expect(state.page2Blocks.length).toBe(1)
-    expect(state.page2Blocks[0].content).toBe('[[Page1]]^(required-by)')
+    expect(state.page2Blocks[0].content).toBe('((required-by))[[Page1]]')
   })
 })

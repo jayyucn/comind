@@ -118,10 +118,9 @@ describe('auto-inverse new block (no root block pollution)', () => {
     adapter = new IndexedDBAdapter()
   })
 
-  it('C 已有 block [[B]]^(required-by), A 添加 [[C]]^(depends-on) 后应为 A 新建 block, 不修改 C 现有 block', async () => {
+  it('C 已有 block ((required-by))[[B]], A 添加 ((depends-on<->required-by))[[C]] 后应为 A 新建 block, 不修改 C 现有 block', async () => {
     const { db } = await import('./db')
 
-    // 持久化 C 页所有 block
     interface BlockSnapshot {
       id: string
       pageId: string
@@ -135,22 +134,19 @@ describe('auto-inverse new block (no root block pollution)', () => {
       updatedAt: number
     }
     const state = {
-      // C 页面的根 Block
       cRootBlockId: 'c-root-block',
-      // C 页面预先存在一个 block: [[B]]^(required-by)
       existingCBlock: {
         id: 'c-existing-block',
         pageId: 'page-c',
         parentId: 'c-root-block',
         pos: 1000,
-        content: '[[B]]^(required-by)',
+        content: '((required-by))[[B]]',
         format: '{}',
         type: 'bullet',
         properties: '{}',
         createdAt: 1000,
         updatedAt: 1000
       } as BlockSnapshot,
-      // 自动创建的新 block 集合
       autoCreatedBlocks: [] as BlockSnapshot[]
     }
 
@@ -176,7 +172,6 @@ describe('auto-inverse new block (no root block pollution)', () => {
       })
     }))
 
-    // db.blocks.get: 用于获取 page.blockId 指向的根 block
     ;(db.blocks.get as unknown as ReturnType<typeof vi.fn>).mockImplementation((id: string) => {
       if (id === state.existingCBlock.id) {
         return Promise.resolve(state.existingCBlock)
@@ -185,7 +180,6 @@ describe('auto-inverse new block (no root block pollution)', () => {
       return Promise.resolve(found)
     })
 
-    // db.blocks.where('pageId').equals: 列出页面的所有 block
     ;(db.blocks.where as unknown as ReturnType<typeof vi.fn>).mockImplementation((field: string) => ({
       equals: vi.fn().mockImplementation((value: string) => ({
         toArray: vi.fn().mockImplementation(() => {
@@ -197,7 +191,6 @@ describe('auto-inverse new block (no root block pollution)', () => {
       }))
     }))
 
-    // db.blocks.put: 记录新建的 block
     ;(db.blocks.put as unknown as ReturnType<typeof vi.fn>).mockImplementation((record: { id: string; pageId: string }) => {
       if (record.pageId === 'page-c') {
         state.autoCreatedBlocks.push(record as BlockSnapshot)
@@ -205,25 +198,20 @@ describe('auto-inverse new block (no root block pollution)', () => {
       return Promise.resolve(record.id)
     })
 
-    // db.blocks.update: 不应被调用（不应修改 C 现有 block）
     ;(db.blocks.update as unknown as ReturnType<typeof vi.fn>).mockImplementation((id: string, changes: { content?: string; updatedAt?: number }) => {
       if (id === state.existingCBlock.id) {
-        // 标记为已修改（这是 bug 行为）
         state.existingCBlock = { ...state.existingCBlock, ...changes }
       }
       return Promise.resolve(1)
     })
 
-    // A 添加 [[C]]^(depends-on<->required-by) → 应在 C 新建 block: [[First]]^(required-by)
-    const blockOnA = createMockBlock({ id: 'block-a', pageId: 'page-a', content: '[[C]]^(depends-on<->required-by)' })
+    const blockOnA = createMockBlock({ id: 'block-a', pageId: 'page-a', content: '((depends-on<->required-by))[[C]]' })
     await adapter.saveBlock(blockOnA)
 
-    // 1. C 现有 block 内容应保持不变
-    expect(state.existingCBlock.content).toBe('[[B]]^(required-by)')
+    expect(state.existingCBlock.content).toBe('((required-by))[[B]]')
 
-    // 2. C 应有一个新 block, 内容是 [[First]]^(required-by)
     const newBlockForA = state.autoCreatedBlocks.find(b => b.pageId === 'page-c')
     expect(newBlockForA).toBeDefined()
-    expect(newBlockForA!.content).toBe('[[First]]^(required-by)')
+    expect(newBlockForA!.content).toBe('((required-by))[[First]]')
   })
 })

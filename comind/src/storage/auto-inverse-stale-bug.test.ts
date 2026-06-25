@@ -121,7 +121,6 @@ describe('auto-inverse stale entry bug', () => {
   it('scenario: 切换关系类型后，旧的反向链接应被替换/移除', async () => {
     const { db } = await import('./db')
 
-    // 持久化状态
     const state = {
       page2RootBlockId: 'page2-root',
       page2Blocks: [] as Array<{ id: string; pageId: string; parentId: string | null; pos: number; content: string; format: string; type: string; properties: string; createdAt: number; updatedAt: number }>
@@ -157,7 +156,6 @@ describe('auto-inverse stale entry bug', () => {
       return Promise.resolve(undefined)
     })
 
-    // db.blocks.where('pageId').equals
     ;(db.blocks.where as any).mockImplementation((field: string) => ({
       equals: vi.fn().mockImplementation((value: string) => ({
         toArray: vi.fn().mockImplementation(() => {
@@ -190,18 +188,14 @@ describe('auto-inverse stale entry bug', () => {
       return Promise.resolve(1)
     })
 
-    // 第一次保存: [[Page2]]^(depends-on<->required-by) → 反向链接 [[Page1]]^(required-by)
-    const block1 = createMockBlock({ id: 'block-1', pageId: 'page-1', content: '[[Page2]]^(depends-on<->required-by)' })
+    const block1 = createMockBlock({ id: 'block-1', pageId: 'page-1', content: '((depends-on<->required-by))[[Page2]]' })
     await adapter.saveBlock(block1)
 
-    // 第二次保存: 改变为 [[Page2]]^(related<->related) → 反向链接 [[Page1]]^(related)
-    const block2 = createMockBlock({ id: 'block-1', pageId: 'page-1', content: '[[Page2]]^(related<->related)' })
+    const block2 = createMockBlock({ id: 'block-1', pageId: 'page-1', content: '((related<->related))[[Page2]]' })
     await adapter.saveBlock(block2)
 
-    // 期望：旧的反向链接 [[Page1]]^(required-by) 应该被替换为 [[Page1]]^(related)
-    // 而不是累积成两行
     const page2Contents = state.page2Blocks.map(b => b.content).join('\n')
-    expect(page2Contents).not.toContain('[[Page1]]^(required-by)')
-    expect(page2Contents).toContain('[[Page1]]^(related)')
+    expect(page2Contents).not.toContain('((required-by))[[Page1]]')
+    expect(page2Contents).toContain('((related))[[Page1]]')
   })
 })
