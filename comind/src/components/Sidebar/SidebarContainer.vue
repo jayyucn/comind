@@ -2,6 +2,7 @@
 import { useSidebar } from '../../composables/useSidebar'
 import SidebarHeader from './SidebarHeader.vue'
 import SidebarJournal from './SidebarJournal.vue'
+import SidebarGraphItem from './SidebarGraphItem.vue'
 import SidebarRecent from './SidebarRecent.vue'
 import SidebarFavorites from './SidebarFavorites.vue'
 import SidebarFooter from './SidebarFooter.vue'
@@ -16,6 +17,8 @@ const { isCollapsed } = useSidebar()
 
       <div class="sidebar-content">
         <SidebarJournal />
+
+        <SidebarGraphItem />
 
         <SidebarRecent />
 

@@ -32,6 +32,8 @@ const route = useRoute()
 const blockStore = useBlockStore()
 const pageStore = usePageStore()
 
+const isFullWidthPage = computed(() => route.meta.fullWidth === true)
+
 onMounted(async () => {
   await useRelationshipTypes().load()
 })
@@ -175,7 +177,7 @@ function handleMainClick(e: MouseEvent) {
       </div>
 
       <div class="page-body">
-        <main class="main-content">
+        <main class="main-content" :class="{ 'is-fullwidth-content': isFullWidthPage }">
           <RouterView />
         </main>
       </div>
@@ -282,10 +284,7 @@ function handleMainClick(e: MouseEvent) {
 }
 
 .page-body {
-  max-width: 800px;
   min-width: 0;
-  margin: 0 auto;
-  padding: 0 24px;
 }
 
 .main-content {
@@ -329,5 +328,11 @@ function handleMainClick(e: MouseEvent) {
 
 .right-sidebar-toggle:active {
   transform: scale(0.95);
+}
+
+.main-content.is-fullwidth-content {
+  max-width: none;
+  margin: 0;
+  padding: 0;
 }
 </style>
