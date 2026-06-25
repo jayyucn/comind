@@ -55,7 +55,10 @@ function getEdgeDedupeKey(edge: { source: string; target: string; data: Record<s
   const type = edge.data.relationshipType as string
   const group = getGroupByType(type)
   const groupKey = group ? group.type : type
-  return `${edge.source}-${edge.target}-${groupKey}`
+  
+  const [source, target] = [edge.source, edge.target].sort()
+  
+  return `${source}-${target}-${groupKey}`
 }
 
 async function loadPageNodeEdges(
@@ -185,10 +188,12 @@ async function buildGraphData() {
     edgeCountMap.set(key, idx + 1)
     if (idx === 0) {
       edge.data.curveOffset = 0
+      edge.data.endPointOffset = [0, 0]
     } else {
       const sign = idx % 2 === 1 ? 1 : -1
       const magnitude = Math.ceil(idx / 2) * 20
       edge.data.curveOffset = sign * magnitude
+      edge.data.endPointOffset = [0, sign * 8]
     }
   }
 
@@ -281,6 +286,7 @@ async function initGraph() {
         labelBackgroundOpacity: 1,
         labelBackgroundRadius: 2,
         labelBackgroundPadding: [2, 4] as [number, number],
+        endPointOffset: (d: any) => d.data?.endPointOffset ?? [0, 0],
       }
     },
     layout: {
