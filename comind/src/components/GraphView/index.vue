@@ -14,12 +14,10 @@ const router = useRouter()
 
 const containerRef = ref<HTMLElement | null>(null)
 const graphRef = ref<Graph | null>(null)
-const maxDepth = ref(2)
 const currentLayout = ref<string>('force')
 const highlightedNodeId = ref<string | null>(null)
 const searchQuery = ref('')
 const activeFilters = ref<string[]>([])
-const expandedNodeIds = ref<Set<string>>(new Set())
 
 const currentPageId = computed(() => pageStore.currentPageId)
 
@@ -84,7 +82,6 @@ async function loadPageNodeEdges(
         data: {
           label: targetPage.title,
           isCurrent: targetPage.id === currentPageId.value,
-          expanded: expandedNodeIds.value.has(targetPage.id),
         }
       })
     }
@@ -126,7 +123,6 @@ async function loadPageNodeEdges(
         data: {
           label: sourcePage.title,
           isCurrent: sourcePage.id === currentPageId.value,
-          expanded: expandedNodeIds.value.has(sourcePage.id),
         }
       })
     }
@@ -161,14 +157,13 @@ async function buildGraphData() {
       data: {
         label: page.title,
         isCurrent: page.id === currentPageId.value,
-        expanded: expandedNodeIds.value.has(page.id),
       }
     })
   }
 
-  const toExpand = Array.from(expandedNodeIds.value)
-  for (const pid of toExpand) {
-    await loadPageNodeEdges(pid, nodes, edges, visitedEdges, blockCache)
+  for (const page of allPages) {
+    if (page.deleted) continue
+    await loadPageNodeEdges(page.id, nodes, edges, visitedEdges, blockCache)
   }
 
   const normalizedEdges = edges.map(e => normalizeEdge(e))
@@ -221,9 +216,8 @@ function getNodeStroke(d: NodeData): string {
   return isCurrent ? '#1890ff' : '#e8e8e8'
 }
 
-function getNodeLineType(d: NodeData): 'solid' | 'dashed' {
-  const expanded = !!d.data?.expanded
-  return expanded ? 'solid' : 'dashed'
+function getNodeLineType(_d: NodeData): 'solid' | 'dashed' {
+  return 'solid'
 }
 
 function getNodeLabelFill(d: NodeData): string {
@@ -316,10 +310,6 @@ async function initGraph() {
 
   graphRef.value = graph
 
-  if (currentPageId.value && !expandedNodeIds.value.has(currentPageId.value)) {
-    expandedNodeIds.value.add(currentPageId.value)
-  }
-
   await refreshGraphData(graph)
 }
 
@@ -342,13 +332,6 @@ async function refreshGraphData(graph?: Graph) {
   await g.fitView()
   const zoom = g.getZoom()
   await g.zoomTo(zoom * 0.85)
-}
-
-function handleDepthChange(delta: number) {
-  const newVal = Math.max(1, Math.min(5, maxDepth.value + delta))
-  if (newVal !== maxDepth.value) {
-    maxDepth.value = newVal
-  }
 }
 
 async function handleLayoutChange(layout: string) {
@@ -396,11 +379,6 @@ function handleNodeClick(nodeId: string) {
     highlightedNodeId.value = null
   } else {
     highlightedNodeId.value = nodeId
-  }
-
-  if (!expandedNodeIds.value.has(nodeId)) {
-    expandedNodeIds.value.add(nodeId)
-    refreshGraphData()
   }
   updateNodeHighlight()
 }
@@ -496,12 +474,6 @@ onBeforeUnmount(() => {
     <div class="graph-view-header">
       <h1 class="graph-view-title"></h1>
       <div class="graph-view-controls">
-        <div class="control-group">
-          <span class="control-label">深度</span>
-          <button class="control-btn" @click="handleDepthChange(-1)">−</button>
-          <span class="control-value">{{ maxDepth }}</span>
-          <button class="control-btn" @click="handleDepthChange(1)">+</button>
-        </div>
         <div class="control-group">
           <button
             v-for="layout in ['force', 'radial', 'dagre']"
