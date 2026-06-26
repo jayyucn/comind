@@ -179,18 +179,144 @@
 
 ***
 
-## 5. Phase 2 & Phase 3 预览
+## 5. Phase 2 — 架构优化与搜索增强
 
-### Phase 2：Core 层抽离
+### 5.1 核心目标
 
-| 变化                | 说明                                                |
-| ----------------- | ------------------------------------------------- |
-| Core 独立           | Block/Link/Tag 逻辑抽离为框架无关的 Core Layer              |
-| Storage Interface | 抽象 `StorageAdapter` 接口，支持 IndexedDB → SQLite 平滑迁移 |
-| 全文搜索              | 引入搜索能力                                            |
-| 测试覆盖              | Core 层单元测试覆盖                                      |
+> **架构解耦 + 搜索能力**
 
-### Phase 3：Tauri 套壳
+将核心业务逻辑从 Vue/Pinia/tiptap 框架中抽离，形成框架无关的 Core Layer，为 Phase 3 的 Tauri 桌面应用做准备；同时引入全文搜索功能，提升内容查找效率。
+
+| 目标 | 描述 | 优先级 |
+|------|------|--------|
+| **架构解耦** | 将 Block、Link、Tag、Property、GapSort 逻辑抽离为框架无关的 Core Layer | P0 |
+| **存储抽象** | 设计 `StorageAdapter` 接口，支持 IndexedDB → SQLite 平滑迁移 | P0 |
+| **全文搜索** | 引入 Lunr.js + 中文分词，实现内容快速检索 | P0 |
+| **质量保障** | 建立 Core 层单元测试体系，确保重构安全性 | P1 |
+
+### 5.2 技术要求
+
+#### 5.2.1 Core Layer 架构
+
+```
+src/core/
+├── types/           # 类型定义（Block, Link, Tag, Property）
+├── services/        # 领域服务（blockService, linkService, tagService, propertyService）
+├── storage/         # 存储抽象（StorageAdapter, Repository 接口）
+└── search/          # 搜索模块（searchService, lunrAdapter）
+```
+
+**核心原则：**
+- Core Layer 不得依赖任何框架（Vue、Pinia、tiptap）
+- 所有对外接口通过 TypeScript 类型定义
+- 依赖注入通过参数传递，不使用全局状态
+
+#### 5.2.2 StorageAdapter 设计
+
+采用 **Repository 模式**，每个实体对应独立的 Repository：
+
+```typescript
+interface StorageAdapter {
+  blocks: BlockRepository
+  links: LinkRepository
+  tags: TagRepository
+  properties: PropertyRepository
+  transaction<R>(fn: (tx: StorageAdapter) => Promise<R>): Promise<R>
+}
+```
+
+#### 5.2.3 全文搜索方案
+
+- **引擎：** Lunr.js（纯 JS 实现，无外部依赖）
+- **中文分词：** segmentit（轻量级中文分词库）
+- **索引策略：** 增量更新，Block 保存时同步更新索引
+- **搜索范围：** Block.content + Page.title
+
+### 5.3 实施步骤（4 个 Sprint）
+
+#### Sprint 1（Week 1-2）：Core 层架构设计 + Block/Link 抽离
+
+| 任务 | 描述 | 交付物 |
+|------|------|--------|
+| T1.1 | 定义 Core 层类型系统 | `core/types/` 目录 |
+| T1.2 | 抽离 Block 树操作逻辑 | `core/services/blockService.ts` |
+| T1.3 | 抽离 Gap Sort 排序算法 | `core/services/blockService.ts` |
+| T1.4 | 抽离 Link 管理逻辑 | `core/services/linkService.ts` |
+| T1.5 | 编写 Core 层单元测试 | `core/**/*.test.ts` |
+
+#### Sprint 2（Week 3-4）：Tag/Property 抽离 + StorageAdapter 接口
+
+| 任务 | 描述 | 交付物 |
+|------|------|--------|
+| T2.1 | 抽离 Tag 解析逻辑 | `core/services/tagService.ts` |
+| T2.2 | 抽离 Property 解析逻辑 | `core/services/propertyService.ts` |
+| T2.3 | 定义 StorageAdapter 接口 | `core/storage/adapter.ts` |
+| T2.4 | 实现 IndexedDB Adapter | `core/storage/indexedDBAdapter.ts` |
+| T2.5 | 集成 Pinia Store 到 Core | 重构 `stores/blocks.ts` 等 |
+
+#### Sprint 3（Week 5-6）：Lunr.js 搜索集成 + 搜索 UI
+
+| 任务 | 描述 | 交付物 |
+|------|------|--------|
+| T3.1 | 集成 Lunr.js + segmentit | `core/search/lunrSearch.ts` |
+| T3.2 | 实现增量索引更新 | `core/search/indexManager.ts` |
+| T3.3 | 实现搜索 API | `core/search/searchService.ts` |
+| T3.4 | 创建搜索面板组件 | `components/SearchPanel.vue` |
+| T3.5 | 集成搜索快捷键（Ctrl+K） | 全局搜索触发 |
+
+#### Sprint 4（Week 7-8）：测试覆盖 + 回归验证 + 文档更新
+
+| 任务 | 描述 | 交付物 |
+|------|------|--------|
+| T4.1 | 完善 Core 层单元测试 | 覆盖率 ≥ 80% |
+| T4.2 | 运行回归测试 | 所有 Phase 1 测试通过 |
+| T4.3 | 性能基准测试 | 1000+ Block 操作流畅 |
+| T4.4 | 更新技术文档 | `docs/2-architecture/core-layer.md` |
+| T4.5 | 更新开发指南 | `docs/5-development/dev-guide.md` |
+
+### 5.4 关键功能点
+
+| 功能 | 说明 | 验收标准 |
+|------|------|----------|
+| Core Layer 抽离 | Block/Link/Tag/Property/GapSort 逻辑完全脱离框架 | 可独立运行单元测试 |
+| StorageAdapter | 抽象存储接口，支持多后端切换 | IndexedDB 实现通过测试 |
+| 全文搜索 | Lunr.js 搜索，支持中文分词 | 搜索响应 < 200ms |
+| 增量索引 | Block 保存时自动更新索引 | 索引更新延迟 < 100ms |
+| 搜索 UI | 全局搜索面板，支持模糊匹配 | 支持 Ctrl+K 触发 |
+
+### 5.5 预期成果
+
+| 成果 | 说明 |
+|------|------|
+| **框架无关的 Core Layer** | 可在 Vue、React、Tauri 等不同环境中复用 |
+| **存储抽象层** | 支持从 IndexedDB 平滑迁移到 SQLite |
+| **全文搜索能力** | 提升内容查找效率，支持中文分词 |
+| **完善的测试体系** | Core 层单元测试覆盖核心逻辑 |
+| **技术文档** | 完整的 Core Layer 架构文档和开发指南 |
+
+### 5.6 时间节点
+
+| 阶段 | 周期 | 时间 |
+|------|------|------|
+| Sprint 1 | Week 1-2 | 2026-07-01 ~ 2026-07-14 |
+| Sprint 2 | Week 3-4 | 2026-07-15 ~ 2026-07-28 |
+| Sprint 3 | Week 5-6 | 2026-07-29 ~ 2026-08-11 |
+| Sprint 4 | Week 7-8 | 2026-08-12 ~ 2026-08-25 |
+
+### 5.7 相关资源链接
+
+| 资源 | 路径 | 状态 |
+|------|------|------|
+| Core Layer 架构设计 | `docs/2-architecture/core-layer.md` | ✅ 已创建 |
+| StorageAdapter 接口规范 | `docs/2-architecture/storage-adapter.md` | ✅ 已创建 |
+| Sprint 1 详细计划 | `docs/2-architecture/sprint-1-plan.md` | ✅ 已创建 |
+| 全文搜索设计 | `docs/3-features/search-spec.md` | 待创建 |
+| 技术选型说明 | `docs/1-overview/tech-selection.md` | 已有 |
+| 开发指南 | `docs/5-development/dev-guide.md` | 已有 |
+
+***
+
+## 6. Phase 3 — Tauri 套壳
 
 | 变化   | 说明                            |
 | ---- | ----------------------------- |
@@ -201,9 +327,9 @@
 
 ***
 
-## 6. 用户旅程
+## 7. 用户旅程
 
-### 6.1 典型使用场景
+### 7.1 典型使用场景
 
 **场景：记录"数据模型设计"这个项目**
 
@@ -234,7 +360,7 @@
    → 打开 [[存储规范]] 页面 → 底部面板显示 "数据模型设计 引用了你"
 ```
 
-### 6.2 键盘快捷键
+### 7.2 键盘快捷键
 
 | 快捷键               | 行为                                       |
 | ----------------- | ---------------------------------------- |
@@ -250,24 +376,24 @@
 
 ***
 
-## 7. 单编辑器原则
+## 8. 单编辑器原则
 
 > 这是 comind 最重要的架构约束。
 
-### 7.1 核心规则
+### 8.1 核心规则
 
 - ❗ 任何时刻，系统只能存在 **1 个活跃的 tiptap 编辑器实例**
 - ❗ 任何时刻，只有 **1 个 Block 处于编辑状态**
 - ❗ 编辑器必须随 Block 切换而销毁或复用
 
-### 7.2 编辑器状态
+### 8.2 编辑器状态
 
 | 状态           | 说明               |
 | ------------ | ---------------- |
 | Display（展示态） | 纯 HTML 渲染，无编辑器实例 |
 | Edit（编辑态）    | tiptap 实例挂载，光标可见 |
 
-### 7.3 切换规则
+### 8.3 切换规则
 
 ```
 切换 Block 时：
@@ -279,7 +405,7 @@
 
 ***
 
-## 8. 数据流
+## 9. 数据流
 
 ```
 用户输入 → tiptap → Pinia（运行态） → debounce → IndexedDB（持久化）
@@ -287,7 +413,7 @@
 IndexedDB → Pinia → Vue 响应式渲染 → Block 组件展示
 ```
 
-### 8.1 状态层次
+### 9.1 状态层次
 
 | 层次        | 作用                                 |
 | --------- | ---------------------------------- |
@@ -295,7 +421,7 @@ IndexedDB → Pinia → Vue 响应式渲染 → Block 组件展示
 | IndexedDB | 持久化存储（Block、Page、Link）             |
 | tiptap    | 单编辑器实例（文本编辑）                       |
 
-### 8.2 链接解析时机
+### 9.2 链接解析时机
 
 **Phase 1 方案：保存时解析 + 编辑时临时高亮**
 
@@ -330,7 +456,7 @@ Link 表操作（事务）
 
 ***
 
-## 9. 性能约束
+## 10. 性能约束
 
 | 约束    | 目标                     |
 | ----- | ---------------------- |
@@ -343,16 +469,16 @@ Link 表操作（事务）
 
 ***
 
-## 10. 文档体系
+## 11. 文档体系
 
 本文档是 comind 的总规范，各专项文档位于 `docs/` 目录：
 
-### 目录结构
+### 11.1 目录结构
 
 | 目录 | 内容 |
 | --- | --- |
 | `docs/1-overview/` | 项目概览 - SPEC、tech-selection、TODO |
-| `docs/2-architecture/` | 架构设计 - data-model、routing-design、storage-spec |
+| `docs/2-architecture/` | 架构设计 - data-model、routing-design、storage-spec、core-layer、storage-adapter、sprint-1-plan |
 | `docs/3-features/` | 功能规格 - block-editor、link、tag、slash-commands |
 | `docs/4-ui/` | UI/UX 设计 - ui-ux-spec、interaction-spec |
 | `docs/5-development/` | 开发指南 - dev-guide、page-block-crud |
@@ -361,22 +487,25 @@ Link 表操作（事务）
 | `docs/sort/` | 排序功能 - sortable-implementation、phase-1-1-plan |
 | `docs/superpowers/` | 能力增强 - 特性设计与实现计划 |
 
-### 核心文档
+### 11.2 核心文档
 
 | 文档 | 描述 |
 | --- | --- |
 | [SPEC.md](docs/1-overview/SPEC.md) | 项目总规范 |
 | [data-model.md](docs/2-architecture/data-model.md) | 核心数据模型（Block、Link、Tag、Property） |
+| [core-layer.md](docs/2-architecture/core-layer.md) | Core Layer 架构设计 |
+| [storage-adapter.md](docs/2-architecture/storage-adapter.md) | StorageAdapter 接口规范 |
+| [storage-spec.md](docs/2-architecture/storage-spec.md) | 存储层规范 |
+| [sprint-1-plan.md](docs/2-architecture/sprint-1-plan.md) | Phase 2 Sprint 1 详细计划 |
 | [dev-guide.md](docs/5-development/dev-guide.md) | 开发指南 |
 | [link-spec.md](docs/3-features/link-spec.md) | 双向链接系统详细规范 |
-| [storage-spec.md](docs/2-architecture/storage-spec.md) | 存储层规范 |
 | [tech-selection.md](docs/1-overview/tech-selection.md) | 技术选型说明 |
 | [ui-ux-spec.md](docs/4-ui/ui-ux-spec.md) | UI/UX 视觉系统规范 |
 | [interaction-spec.md](docs/4-ui/interaction-spec.md) | 交互规格 |
 
 ***
 
-## 11. 已确认事项
+## 12. 已确认事项
 
 以下事项已在本轮评审中确认：
 
@@ -390,17 +519,22 @@ Link 表操作（事务）
 | 产品定位         | "而非传统笔记工具"                |
 | 外部链接安全       | ✅ 使用 `noopener,noreferrer`  |
 | 单编辑器架构       | ✅ 已实现                    |
+| **Phase 2 Core 层抽离** | ✅ 已确认：Block/Link/Tag/Property/GapSort 全部抽离 |
+| **Phase 2 StorageAdapter** | ✅ 已确认：采用 Repository 模式 |
+| **Phase 2 全文搜索** | ✅ 已确认：Lunr.js + segmentit 中文分词 |
+| **Phase 2 时间规划** | ✅ 已确认：4 个 Sprint，8 周（2026-07-01 ~ 2026-08-25） |
+| **Phase 2 Sprint 1 准备** | ✅ 已完成：Core 层目录结构 + 类型定义 + 基础服务 |
 
 ***
 
-## 12. 后续阶段规划
+## 13. 后续阶段规划
 
 | 阶段 | 目标 | 说明 |
 | --- | --- | --- |
 | **Phase 2** | 创建 Block 领域服务 | 将 `blocks.ts` 的树遍历/位置计算下沉到领域服务 |
 | **Phase 3** | 组件拆分 | 将 `Block/index.vue` 拖拽逻辑抽为独立模块 |
 
-### 待定事项
+### 13.1 待定事项
 
 以下决策暂未确定，将在后续阶段补充：
 
@@ -414,9 +548,9 @@ Link 表操作（事务）
 
 ***
 
-## 13. 质量状态（2026-05-12）
+## 14. 质量状态（2026-05-12）
 
-### 测试覆盖
+### 14.1 测试覆盖
 
 | 测试类型 | 状态 | 详情 |
 | --- | --- | --- |
@@ -424,7 +558,7 @@ Link 表操作（事务）
 | E2E 测试 | ✅ 10/10 通过 | Playwright 路由测试 |
 | 安全审计 | ✅ 0 漏洞 | npm audit |
 
-### 代码质量
+### 14.2 代码质量
 
 | 指标 | 状态 |
 | --- | --- |
