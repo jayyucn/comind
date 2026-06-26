@@ -181,11 +181,37 @@ Phase 2 不会立即删除现有 `stores/`，而是：
 ## 7. 下一步
 
 Sprint 1 完成后，进入 **Sprint 2（Week 3-4）**：
-- T2.1：抽离 Tag 解析逻辑 → TagService（已完成）
-- T2.2：抽离 Property 解析逻辑 → PropertyService（已完成）
-- T2.3：定义 StorageAdapter 接口 → adapter.ts（已完成）
-- T2.4：实现 IndexedDB Adapter
-- T2.5：集成 Pinia Store 到 Core
+
+| 任务 | 描述 | 状态 |
+|------|------|------|
+| T2.1 | 抽离 Tag 解析逻辑 → TagService | ✅ 已完成 |
+| T2.2 | 抽离 Property 解析逻辑 → PropertyService | ✅ 已完成 |
+| T2.3 | 定义 StorageAdapter 接口 → adapter.ts | ✅ 已完成 |
+| **T2.4** | **实现 IndexedDB Adapter** | ✅ 已完成 |
+| **T2.5** | **集成 Pinia Store 到 Core** | 🔲 待开始 |
+
+### T2.4：IndexedDB Adapter ✅
+
+**状态**：已完成
+
+**产出**：`src/core/storage/indexedDBAdapter.ts`
+
+**功能**：
+- 使用 Dexie.js 实现 StorageAdapter 接口
+- Core 层类型与 Record 类型转换
+- 支持 Block、Page、Link、Property Repository
+- 事务支持
+- 与现有 IndexedDB 数据库交互
+
+### T2.5：集成 Pinia Store 到 Core
+
+**状态**：待开始
+
+**任务**：
+- 重构现有 Pinia stores 使用 Core 层
+- BlockStore → BlockService
+- LinkStore → LinkService
+- 保持 UI 层与 Core 层的桥接
 
 ---
 

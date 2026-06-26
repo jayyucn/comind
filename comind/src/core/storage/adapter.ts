@@ -169,9 +169,6 @@ export type StorageAdapterType = 'indexeddb' | 'sqlite' | 'memory'
  * @param type 存储类型
  * @param options 存储选项
  * @returns Storage Adapter 实例
- *
- * @todo Phase 2 Sprint 2 实现 IndexedDBAdapter
- * @todo Phase 3 实现 SQLiteAdapter
  */
 export async function createStorageAdapter(
   type: StorageAdapterType,
@@ -179,8 +176,10 @@ export async function createStorageAdapter(
 ): Promise<StorageAdapter> {
   switch (type) {
     case 'indexeddb':
-      // Phase 2 Sprint 2 实现
-      throw new Error('IndexedDB adapter not implemented yet. Use Memory adapter for testing.')
+      const { IndexedDBAdapter } = await import('./indexedDBAdapter')
+      const adapter = new IndexedDBAdapter()
+      await adapter.open()
+      return adapter
 
     case 'sqlite':
       // Phase 3 实现
