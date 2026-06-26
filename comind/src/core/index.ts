@@ -1,35 +1,94 @@
 /**
- * Core Layer - 核心导出
+ * Core Layer - 初始化入口
  *
- * 框架无关的核心层，提供：
- * - 类型定义（types/）
- * - 领域服务（services/）
- * - 存储抽象（storage/）
- * - 搜索功能（search/）
- *
- * 使用方式：
- * ```typescript
- * import { BlockService, LinkService, TagService, PropertyService } from '@/core'
- * import { createStorageAdapter } from '@/core'
- *
- * const storage = await createStorageAdapter('indexeddb')
- * const blockService = new BlockService({ storage })
- * const linkService = new LinkService({ storage })
- * ```
+ * 负责初始化 Core 层服务，连接到存储后端。
+ * 这是 UI 层与 Core 层之间的桥接点。
  */
 
-// Types
+import { createStorageAdapter, type StorageAdapter } from './storage/adapter'
+import { BlockService } from './services/blockService'
+import { LinkService } from './services/linkService'
+import { TagService } from './services/tagService'
+import { PropertyService } from './services/propertyService'
+import { PageService } from './services/pageService'
+
+/**
+ * Core 层上下文
+ */
+export interface CoreContext {
+  storage: StorageAdapter
+  blockService: BlockService
+  linkService: LinkService
+  tagService: TagService
+  propertyService: PropertyService
+  pageService: PageService
+}
+
+/** 全局 Core 上下文 */
+let coreContext: CoreContext | null = null
+
+/**
+ * 初始化 Core 层
+ *
+ * @param type 存储类型 ('indexeddb' | 'memory')
+ * @returns Core 上下文
+ */
+export async function initCore(type: 'indexeddb' | 'memory' = 'indexeddb'): Promise<CoreContext> {
+  if (coreContext) {
+    return coreContext
+  }
+
+  // 创建存储适配器
+  const storage = await createStorageAdapter(type)
+
+  // 创建服务实例
+  const blockService = new BlockService({ storage })
+  const linkService = new LinkService({ storage })
+  const tagService = new TagService()
+  const propertyService = new PropertyService({ storage })
+  const pageService = new PageService({ storage })
+
+  coreContext = {
+    storage,
+    blockService,
+    linkService,
+    tagService,
+    propertyService,
+    pageService,
+  }
+
+  return coreContext
+}
+
+/**
+ * 获取 Core 上下文
+ *
+ * @throws 如果 Core 未初始化
+ */
+export function getCore(): CoreContext {
+  if (!coreContext) {
+    throw new Error('Core not initialized. Call initCore() first.')
+  }
+  return coreContext
+}
+
+/**
+ * 检查 Core 是否已初始化
+ */
+export function isCoreInitialized(): boolean {
+  return coreContext !== null
+}
+
+/**
+ * 关闭 Core 层
+ */
+export async function closeCore(): Promise<void> {
+  if (coreContext) {
+    await coreContext.storage.close()
+    coreContext = null
+  }
+}
+
+// Re-export types and utilities
 export * from './types'
-
-// Services
-export { BlockService } from './services'
-export { LinkService } from './services'
-export { TagService } from './services'
-export { PropertyService } from './services'
-
-// Storage
-export { createStorageAdapter } from './storage'
-export type { StorageAdapter, StorageAdapterType } from './storage'
-
-// Search
-export type { SearchService, SearchOptions, SearchResult } from './search'
+export * from './storage/adapter'

@@ -3,6 +3,12 @@ import { createPinia } from 'pinia'
 import router from './router'
 import './styles/main.scss'
 import App from './App.vue'
+import { initCore } from './core'
+
+// 初始化 Core 层
+initCore('indexeddb').catch(err => {
+  console.error('[main] Failed to initialize Core layer:', err)
+})
 
 const app = createApp(App)
 app.use(createPinia())

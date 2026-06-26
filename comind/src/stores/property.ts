@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { propertyService } from '../services/property'
+import { getCore } from '../core'
 import type { Property, PropertyDefinition, PropertyValue, PropertyType } from '../types/property'
 import { getAllPropertyDefinitions, getPropertyDefinition } from '../types/property'
 
@@ -28,7 +28,8 @@ export const usePropertyStore = defineStore('property', () => {
   async function loadBlockProperties(blockId: string): Promise<Property[]> {
     loading.value = true
     try {
-      const props = await propertyService.getProperties(blockId)
+      const core = getCore()
+      const props = await core.propertyService.getByBlockId(blockId)
       propertiesByBlock.value.set(blockId, props)
       return props
     } finally {
@@ -39,8 +40,9 @@ export const usePropertyStore = defineStore('property', () => {
   async function loadMultiBlockProperties(blockIds: string[]): Promise<void> {
     loading.value = true
     try {
-      const map = await propertyService.getPropertiesByBlockIds(blockIds)
-      for (const [blockId, props] of map.entries()) {
+      const core = getCore()
+      for (const blockId of blockIds) {
+        const props = await core.propertyService.getByBlockId(blockId)
         propertiesByBlock.value.set(blockId, props)
       }
     } finally {
@@ -54,24 +56,28 @@ export const usePropertyStore = defineStore('property', () => {
     value: PropertyValue,
     type?: PropertyType
   ): Promise<Property> {
-    const prop = await propertyService.setProperty(blockId, key, value, type)
+    const core = getCore()
+    const prop = await core.propertyService.setProperty(blockId, key, value, type)
     // Refresh the block's properties
     await loadBlockProperties(blockId)
     return prop
   }
 
   async function deleteProperty(id: string, blockId: string): Promise<void> {
-    await propertyService.deleteProperty(id)
+    const core = getCore()
+    await core.propertyService.deletePropertyById(id)
     await loadBlockProperties(blockId)
   }
 
   async function updateSortOrder(blockId: string, sortedIds: string[]): Promise<void> {
-    await propertyService.updateSortOrder(blockId, sortedIds)
+    const core = getCore()
+    await core.propertyService.updateSortOrder(blockId, sortedIds)
     await loadBlockProperties(blockId)
   }
 
   async function toggleHidden(id: string, blockId: string): Promise<Property> {
-    const prop = await propertyService.toggleHidden(id)
+    const core = getCore()
+    const prop = await core.propertyService.toggleHidden(id)
     await loadBlockProperties(blockId)
     return prop
   }

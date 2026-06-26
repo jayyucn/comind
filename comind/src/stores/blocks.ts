@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Block } from '../types/block'
-import { storage } from '../storage/indexedDB'
+import { getCore } from '../core'
 import { generateUUID } from '../utils/id'
 import { debounce } from '../utils/debounce'
 import { usePageStore } from './pages'
@@ -29,7 +29,6 @@ import {
  * @param prevPos 前一个节点的 pos
  * @param nextPos 后一个节点的 pos
  * @param blocksRef Block 列表引用（用于重新编号）
- * @param storageRef 存储引用（用于持久化重新编号结果）
  * @param recalcPos 可选：重编号后重新计算位置的回调函数
  * @returns 新节点的 pos 值
  */
@@ -37,7 +36,6 @@ async function safeCalcInsertPos(
   prevPos: number | null,
   nextPos: number | null,
   blocksRef: Block[],
-  storageRef: typeof storage,
   recalcPos?: () => { prevPos: number | null; nextPos: number | null }
 ): Promise<number> {
   try {
@@ -45,22 +43,23 @@ async function safeCalcInsertPos(
   } catch (error) {
     if (isGapExhaustedError(error)) {
       console.warn('[safeCalcInsertPos] Gap exhausted, triggering renumbering...')
-      
+
       // 重新编号所有 Block
       renumberBlocks(blocksRef)
-      
-      // 持久化重新编号结果
+
+      // 持久化重新编号结果（使用 Core 层）
+      const core = getCore()
       for (const block of blocksRef) {
-        await storageRef.saveBlock(block)
+        await core.blockService.update(block.id, { pos: block.pos })
       }
-      
+
       console.info('[safeCalcInsertPos] Renumbering complete, recalculating positions...')
-      
+
       // 通过回调重新计算位置参数（关键修复！）
       if (recalcPos) {
         const { prevPos: newPrevPos, nextPos: newNextPos } = recalcPos()
         console.info(`[safeCalcInsertPos] Recalculated: prev=${newPrevPos}, next=${newNextPos}`)
-        
+
         try {
           return calcInsertPos(newPrevPos, newNextPos)
         } catch (retryError) {
@@ -71,7 +70,7 @@ async function safeCalcInsertPos(
           )
         }
       }
-      
+
       // 无回调时，尝试用原参数重试（向后兼容，但可能失败）
       console.warn('[safeCalcInsertPos] No recalcPos callback provided, retrying with original positions')
       try {
@@ -133,7 +132,8 @@ export const useBlockStore = defineStore('blocks', () => {
 
   /** 加载指定 Page 的 Block 树 */
   async function loadPageBlocks(pageId: string) {
-    blocks.value = await storage.getBlockTree(pageId)
+    const core = getCore()
+    blocks.value = await core.blockService.getByPageId(pageId)
     structureVersion.value++
     return blocks
   }
@@ -141,9 +141,10 @@ export const useBlockStore = defineStore('blocks', () => {
   /** 批量加载多个 Page 的 Block 树 */
   async function loadMultiPageBlocks(pageIds: string[]) {
     loading.value = true
+    const core = getCore()
     try {
       const results = await Promise.allSettled(
-        pageIds.map(id => storage.getBlockTree(id))
+        pageIds.map(id => core.blockService.getByPageId(id))
       )
 
       const existingIds = new Set(blocks.value.map(b => b.id))
@@ -176,11 +177,16 @@ export const useBlockStore = defineStore('blocks', () => {
       pendingSaves.delete(block.id)
       return
     }
-    const result = await storage.saveBlock(block)
+    const core = getCore()
+    const result = await core.blockService.update(block.id, block)
     pendingSaves.delete(block.id)
 
-    if (result && result.skippedTrashedPages && result.skippedTrashedPages.length > 0) {
-      trashedPageWarnings.value = result.skippedTrashedPages
+    // 如果存储返回了被跳过的回收站页面警告
+    if (result && 'skippedTrashedPages' in result) {
+      const skippedPages = (result as any).skippedTrashedPages
+      if (skippedPages && skippedPages.length > 0) {
+        trashedPageWarnings.value = skippedPages
+      }
     }
   }
 
@@ -212,7 +218,7 @@ export const useBlockStore = defineStore('blocks', () => {
         return { prevPos: lastPos, nextPos: null }
       }
       const { prevPos, nextPos } = calcPositions()
-      newPos = await safeCalcInsertPos(prevPos, nextPos, blocks.value, storage, calcPositions)
+      newPos = await safeCalcInsertPos(prevPos, nextPos, blocks.value, calcPositions)
     }
 
     const block: Block = {
@@ -229,7 +235,7 @@ export const useBlockStore = defineStore('blocks', () => {
     }
 
     blocks.value.push(block)
-    await storage.saveBlock(block)
+    // 注意：这里不直接调用 saveBlock，由 _scheduleSave 处理
     structureVersion.value++
     return block
   }
@@ -329,7 +335,6 @@ export const useBlockStore = defineStore('blocks', () => {
       prevPos,
       nextPos,
       blocks.value,
-      storage,
       calcPositions  // 传入回调，重编号后重新计算
     )
 
@@ -380,7 +385,6 @@ export const useBlockStore = defineStore('blocks', () => {
         prevPos,
         nextPos,
         blocks.value,
-        storage,
         calcPositions  // 传入回调
       )
     } else {
@@ -399,7 +403,6 @@ export const useBlockStore = defineStore('blocks', () => {
         prevPos,
         nextPos,
         blocks.value,
-        storage,
         calcPositions  // 传入回调
       )
     }
@@ -546,7 +549,7 @@ export const useBlockStore = defineStore('blocks', () => {
 
     const cursorPos = targetContentLen + 1
     mergeTarget.updatedAt = Date.now()
-    await storage.saveBlock(mergeTarget)
+    _scheduleSave(mergeTarget)
 
     const childrenToMove: Block[] = []
     for (const child of blocks.value) {
@@ -592,7 +595,7 @@ export const useBlockStore = defineStore('blocks', () => {
       return { prevPos: lastPos, nextPos: null }
     }
     const { prevPos, nextPos } = calcPositions()
-    const newPos = await safeCalcInsertPos(prevPos, nextPos, blocks.value, storage, calcPositions)
+    const newPos = await safeCalcInsertPos(prevPos, nextPos, blocks.value, calcPositions)
 
     // 再修改 parentId 和 pos
     block.parentId = prev.id
@@ -600,7 +603,7 @@ export const useBlockStore = defineStore('blocks', () => {
 
     block.updatedAt = Date.now()
     _scheduleSave(block)
-    
+
     structureVersion.value++
   }
 
@@ -620,7 +623,7 @@ export const useBlockStore = defineStore('blocks', () => {
       return { prevPos: parent.pos, nextPos: nextSibling?.pos ?? null }
     }
     const { prevPos, nextPos } = calcPositions()
-    const newPos = await safeCalcInsertPos(prevPos, nextPos, blocks.value, storage, calcPositions)
+    const newPos = await safeCalcInsertPos(prevPos, nextPos, blocks.value, calcPositions)
 
     // 再修改 parentId 和 pos
     block.parentId = newParentId
@@ -628,7 +631,7 @@ export const useBlockStore = defineStore('blocks', () => {
 
     block.updatedAt = Date.now()
     _scheduleSave(block)
-    
+
     structureVersion.value++
   }
 
@@ -658,11 +661,11 @@ export const useBlockStore = defineStore('blocks', () => {
 
     const { prevPos, nextPos } = calcPositions()
     block.parentId = toParentId
-    block.pos = await safeCalcInsertPos(prevPos, nextPos, blocks.value, storage, calcPositions)
+    block.pos = await safeCalcInsertPos(prevPos, nextPos, blocks.value, calcPositions)
     block.updatedAt = Date.now()
 
     _scheduleSave(block)
-    
+
     structureVersion.value++
   }
 
@@ -689,10 +692,14 @@ export const useBlockStore = defineStore('blocks', () => {
 
     blocks.value = blocks.value.filter(b => !toDelete.has(b.id))
 
+    // 使用 Core 层删除 Block
     try {
-      await storage.deleteBlockCascade(Array.from(toDelete))
+      const core = getCore()
+      for (const id of toDelete) {
+        await core.blockService.delete(id)
+      }
     } catch (error) {
-      console.error('[deleteBlock] Failed to delete blocks from IDB:', error)
+      console.error('[deleteBlock] Failed to delete blocks:', error)
     }
 
     structureVersion.value++
@@ -707,10 +714,14 @@ export const useBlockStore = defineStore('blocks', () => {
     block.updatedAt = Date.now()
     _scheduleSave(block)
 
+    // 更新页面统计
     const pageStore = usePageStore()
     const page = pageStore.getPage(block.pageId)
     if (page) {
       page.updatedAt = Date.now()
+      // 注意：这里使用旧的 storage.updatePage，因为它有完整的页面更新逻辑
+      // 后续可以迁移到 Core 层
+      const { storage } = await import('../storage/indexedDB')
       await storage.updatePage(page)
     }
   }

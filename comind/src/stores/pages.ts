@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { Page } from '../types/page'
-import { storage } from '../storage/indexedDB'
+import { getCore } from '../core'
 import { useBlockStore } from './blocks'
 import { useFavorites } from '../composables/useFavorites'
 
@@ -20,7 +20,8 @@ export const usePageStore = defineStore('pages', () => {
   async function loadAllPages() {
     loading.value = true
     try {
-      pages.value = await storage.getAllPages()
+      const core = getCore()
+      pages.value = await core.pageService.getAll()
     } finally {
       loading.value = false
     }
@@ -33,7 +34,8 @@ export const usePageStore = defineStore('pages', () => {
   }
 
   async function createPage(title: string, type: 'normal' | 'journal' = 'normal'): Promise<Page> {
-    const page = await storage.createPageWithRootBlock(title, type)
+    const core = getCore()
+    const page = await core.pageService.create({ title, type })
     pages.value.push(page)
     return page
   }
@@ -61,13 +63,16 @@ export const usePageStore = defineStore('pages', () => {
       return { duplicated: duplicate }
     }
 
-    await storage.renamePage(pageId, trimmedTitle)
+    const core = getCore()
+    await core.pageService.rename(pageId, trimmedTitle)
     page.title = trimmedTitle
     return {}
   }
 
   /** 合并源页面到目标页面（事务操作） */
   async function mergePage(sourceId: string, targetId: string): Promise<void> {
+    // TODO: 后续使用 Core 层的事务支持
+    const { storage } = await import('../storage/indexedDB')
     await storage.mergePage(sourceId, targetId)
     pages.value = pages.value.filter(p => p.id !== sourceId)
     if (currentPageId.value === sourceId) {
@@ -77,6 +82,7 @@ export const usePageStore = defineStore('pages', () => {
 
   /** 删除页面 */
   async function deletePage(pageId: string): Promise<void> {
+    const { storage } = await import('../storage/indexedDB')
     await storage.deletePage(pageId)
     pages.value = pages.value.filter(p => p.id !== pageId)
     if (currentPageId.value === pageId) {
@@ -89,12 +95,15 @@ export const usePageStore = defineStore('pages', () => {
 
   /** 加载回收站页面 */
   async function loadTrashPages() {
-    trashPages.value = await storage.getTrashedPages()
+    const core = getCore()
+    const result = await core.pageService.getDeleted()
+    trashPages.value = result.items
   }
 
   /** 软删除页面（移至回收站） */
   async function softDeletePage(pageId: string): Promise<void> {
-    await storage.softDeletePage(pageId)
+    const core = getCore()
+    await core.pageService.softDelete(pageId)
     pages.value = pages.value.filter(p => p.id !== pageId)
     if (currentPageId.value === pageId) {
       currentPageId.value = ''
@@ -108,14 +117,16 @@ export const usePageStore = defineStore('pages', () => {
 
   /** 恢复页面（从回收站还原） */
   async function restorePage(pageId: string): Promise<void> {
-    await storage.restorePage(pageId)
+    const core = getCore()
+    await core.pageService.restore(pageId)
     trashPages.value = trashPages.value.filter(p => p.id !== pageId)
     await loadAllPages()
   }
 
   /** 永久删除页面 */
   async function permanentDeletePage(pageId: string): Promise<void> {
-    await storage.permanentDeletePage(pageId)
+    const core = getCore()
+    await core.pageService.permanentDelete(pageId)
     pages.value = pages.value.filter(p => p.id !== pageId)
     trashPages.value = trashPages.value.filter(p => p.id !== pageId)
     if (currentPageId.value === pageId) {

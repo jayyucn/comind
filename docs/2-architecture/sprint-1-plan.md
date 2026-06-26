@@ -187,8 +187,8 @@ Sprint 1 完成后，进入 **Sprint 2（Week 3-4）**：
 | T2.1 | 抽离 Tag 解析逻辑 → TagService | ✅ 已完成 |
 | T2.2 | 抽离 Property 解析逻辑 → PropertyService | ✅ 已完成 |
 | T2.3 | 定义 StorageAdapter 接口 → adapter.ts | ✅ 已完成 |
-| **T2.4** | **实现 IndexedDB Adapter** | ✅ 已完成 |
-| **T2.5** | **集成 Pinia Store 到 Core** | 🔲 待开始 |
+| T2.4 | 实现 IndexedDB Adapter | ✅ 已完成 |
+| T2.5 | 集成 Pinia Store 到 Core | ✅ 已完成 |
 
 ### T2.4：IndexedDB Adapter ✅
 
@@ -203,16 +203,25 @@ Sprint 1 完成后，进入 **Sprint 2（Week 3-4）**：
 - 事务支持
 - 与现有 IndexedDB 数据库交互
 
-### T2.5：集成 Pinia Store 到 Core
+### T2.5：集成 Pinia Store 到 Core ✅
 
-**状态**：待开始
+**状态**：已完成
 
-**任务**：
-- 重构现有 Pinia stores 使用 Core 层
-- BlockStore → BlockService
-- LinkStore → LinkService
-- 保持 UI 层与 Core 层的桥接
+**产出**：
+- `src/core/index.ts` - Core 层初始化入口
+- `src/core/services/pageService.ts` - Page 服务
+- 更新 `src/stores/blocks.ts` - 使用 Core 层
+- 更新 `src/stores/pages.ts` - 使用 Core 层
+- 更新 `src/stores/property.ts` - 使用 Core 层
+- `tests/setup.ts` - 测试初始化
+
+**集成内容**：
+- Core 层初始化入口 (`initCore`)
+- BlockService → blocks store
+- PageService → pages store
+- PropertyService → property store
+- 测试环境支持
 
 ---
 
-*文档版本 v1.0，Sprint 1 准备完成。*
+*文档版本 v1.1，Sprint 2 完成。*

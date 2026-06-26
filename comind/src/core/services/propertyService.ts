@@ -92,9 +92,47 @@ export class PropertyService {
 
   /**
    * 删除属性
+   *
+   * @param blockId Block ID
+   * @param key 属性键
    */
   async deleteProperty(blockId: string, key: string): Promise<void> {
     await this.repository.deleteByBlockIdAndKey(blockId, key)
+  }
+
+  /**
+   * 删除属性（通过 ID）
+   *
+   * @param id 属性 ID
+   */
+  async deletePropertyById(id: string): Promise<void> {
+    await this.repository.delete(id)
+  }
+
+  /**
+   * 更新属性排序
+   */
+  async updateSortOrder(blockId: string, sortedIds: string[]): Promise<void> {
+    const properties = await this.repository.findByBlockId(blockId)
+    const map = new Map(properties.map(p => [p.id, p]))
+
+    for (let i = 0; i < sortedIds.length; i++) {
+      const prop = map.get(sortedIds[i])
+      if (prop) {
+        await this.repository.update(prop.id, { sortOrder: i })
+      }
+    }
+  }
+
+  /**
+   * 切换属性显示/隐藏
+   */
+  async toggleHidden(id: string): Promise<Property> {
+    const prop = await this.repository.findById(id)
+    if (!prop) {
+      throw new Error('Property not found')
+    }
+    return this.repository.update(id, { isHidden: !prop.isHidden })
   }
 
   /**

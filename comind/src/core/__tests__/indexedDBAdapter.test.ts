@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { IndexedDBAdapter } from '../indexedDBAdapter'
+import { IndexedDBAdapter } from '../storage/indexedDBAdapter'
 
 // =============================================================================
 // Skip in non-browser environment
