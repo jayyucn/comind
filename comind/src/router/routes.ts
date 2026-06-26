@@ -43,6 +43,7 @@ const routes: RouteRecordRaw[] = [
     path: '/trash',
     name: 'trash',
     component: () => import('../components/Trash/TrashList.vue'),
+    meta: { fullWidth: true, hideRightSidebarToggle: true },
   },
   {
     path: '/graph',
