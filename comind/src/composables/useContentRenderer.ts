@@ -7,8 +7,10 @@ const CSS_CLASSES = {
 }
 
 const TAG_PATTERN = '([\\p{L}_][\\p{L}\\p{N}_]*(?:\\/[\\p{L}_][\\p{L}\\p{N}_]*)*)'
-const TYPED_LINK_REGEX = /\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]\^?\(([^)]+)\)/g
+// 新格式：((type))[[target]] 或 ((type))[[target|alias]]
+const TYPED_LINK_REGEX = /\(\(([^)]+)\)\)\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g
 const EXTERNAL_LINK_REGEX = /\[\[(https?:\/\/[^\]]+)\]\]/g
+// 普通 wiki link：不能匹配已被 typed link 匹配的部分
 const WIKI_LINK_REGEX = /\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g
 const TAG_TRIGGER_REGEX = new RegExp(`(?<![\\/|>|@])#${TAG_PATTERN}`, 'gu')
 
@@ -36,10 +38,9 @@ export function useContentRenderer() {
    * 将 Block 内容渲染为 HTML
    *
    * 处理（按顺序）：
-   * 1. 带类型链接 [[X]]^(type)：
-   *    - [[X]] 部分渲染为普通 .block-link（保持原样）
-   *    - ^(type) 部分渲染为 .rel-type-label，显示 `^中文label`，颜色用关系色
-   *    段间 #tag 在原始 text 上处理，避免误匹配 style 里的 #xxxxxx 颜色值
+   * 1. 带类型链接 ((type))[[X]]：
+   *    - 渲染为 `关系类型 [[X]]`
+   *    - 段间 #tag 在原始 text 上处理，避免误匹配 style 里的 #xxxxxx 颜色值
    * 2. 外部链接 [[https://...]]
    * 3. 普通链接 [[X]] 或 [[X|alias]] → .block-link
    */
@@ -61,6 +62,14 @@ export function useContentRenderer() {
     return withWikiLinks
   }
 
+  /**
+   * 渲染带类型的链接 ((type))[[target]]
+   * 新格式：((type))[[target]] 或 ((type))[[target|alias]]
+   * 渲染为：关系类型 [[target]]
+   *
+   * @param text 原始文本内容
+   * @param blockId 当前 block 的 ID
+   */
   function renderTypedLinks(text: string, blockId: string): string {
     let result = ''
     let lastIndex = 0
@@ -70,12 +79,12 @@ export function useContentRenderer() {
     while ((m = TYPED_LINK_REGEX.exec(text)) !== null) {
       const typedStart = m.index
       const typedEnd = m.index + m[0].length
-      const target = m[1]
-      const alias = m[2]
-      const relType = m[3]
+      // 新格式：match[1] = type, match[2] = target, match[3] = alias (可选)
+      const relType = m[1]
+      const target = m[2]
+      const alias = m[3]
       const display = alias || target
 
-      // 段间纯文本（原始 text），在 escape 后做 #tag 处理
       result += renderSegmentWithTags(text.slice(lastIndex, typedStart))
 
       const rel = getPredefinedRelationship(relType)
@@ -87,23 +96,17 @@ export function useContentRenderer() {
       const safeBlockId = escapeHtmlEntities(blockId)
       const safeLabel = escapeHtmlEntities(chineseLabel)
 
-      // [[X]] 部分：普通 block-link（保持原样，无关系样式）
-      result += `<span class="${CSS_CLASSES.blockLink}" data-page="${safePage}">${safeDisplay}</span>`
-
-      // ^(type) 部分：rel-type-label（关系色、小号字体）
-      // 携带 typed 范围（用于点击时替换整段）和 label 范围（仅关系部分）
-      // 标签显示 `^中文label`（caret + 中文 label）
-      // label-to = typedEnd - 1 排除 typed link 末尾的 ')'：
-      //   typed link = `[[X]]^(type)`，rel type 在 typedEnd - relType.length - 1 到 typedEnd - 2 之间
-      //   如果用 typedEnd（含 ')'），点击替换会吃掉 ')'，导致下一次切换继续丢字符
+      // 渲染格式：关系类型 [[target]]
+      // 直接输出完整的 block-link HTML，避免后续 WIKI_LINK_REGEX 重复处理
       result += `<span class="${CSS_CLASSES.relTypeLabel}" ` +
                 `data-rel-type="${safeRelType}" ` +
                 `data-block-id="${safeBlockId}" ` +
                 `data-typed-from="${typedStart}" ` +
                 `data-typed-to="${typedEnd}" ` +
-                `data-label-from="${typedEnd - relType.length - 1}" ` +
-                `data-label-to="${typedEnd - 1}" ` +
-                `style="--rel-color:${color}">^${safeLabel}</span>`
+                `data-label-from="${typedStart + 2}" ` +
+                `data-label-to="${typedStart + 2 + relType.length}" ` +
+                `style="--rel-color:${color}">${safeLabel}</span>` +
+                `<span class="${CSS_CLASSES.blockLink}" data-page="${safePage}">${safeDisplay}</span>`
 
       lastIndex = typedEnd
     }

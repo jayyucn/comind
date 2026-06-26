@@ -58,7 +58,7 @@ function parseRelationshipPart(part: string): {
 /**
  * 解析 [[链接]]
  * 支持 [[页面名]] 和 [[页面名|别名]]
- * 支持 [[页面名]]^(关系类型) 和 [[页面名|别名]]^(关系类型)
+ * 支持 ((关系类型))[[页面名]] 和 ((关系类型))[[页面名|别名]]
  * 外部链接识别：http:// https:// ftp:// mailto://
  */
 function extractLinkMatches(content: string): Array<{ match: RegExpExecArray; isExternal: boolean }> {
@@ -71,11 +71,13 @@ function extractLinkMatches(content: string): Array<{ match: RegExpExecArray; is
     results.push({ match, isExternal: true })
   }
 
-  // 带关系类型的内部链接 [[页面名|别名]]^(关系类型) 或 [[页面名]]^(关系类型)
+  // 带关系类型的内部链接 ((关系类型))[[页面名|别名]] 或 ((关系类型))[[页面名]]
   // 必须在普通链接之前匹配，避免重复
-  const relationshipRegex = /\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]\^?\(([^)]+)\)/gi
+  // 新格式：((type))[[target|alias]] 或 ((type))[[target]]
+  const relationshipRegex = /\(\(([^)]+)\)\)\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/gi
   while ((match = relationshipRegex.exec(content)) !== null) {
-    const target = match[1]
+    // match[1] = 关系类型, match[2] = target, match[3] = alias (可选)
+    const target = match[2]
     if (/^(https?:\/\/|ftp:\/\/|mailto:)/i.test(target)) continue
     results.push({ match, isExternal: false })
   }
@@ -86,8 +88,16 @@ function extractLinkMatches(content: string): Array<{ match: RegExpExecArray; is
     // 排除已匹配为外部链接的情况（通过检查是否以 http/https/ftp/mailto 开头）
     const target = match[1]
     if (/^(https?:\/\/|ftp:\/\/|mailto:)/i.test(target)) continue
-    // 检查是否已被关系类型链接匹配（通过位置）
-    const alreadyMatched = results.some(r => r.match.index === match!.index)
+    // 检查是否已被关系类型链接匹配（通过位置范围）
+    // 新格式 ((type))[[target]] 中，[[target]] 的位置在 ((type)) 之后
+    // 需要检查当前 match 的范围是否被任何已匹配结果的范围包含
+    const matchStart = match.index
+    const matchEnd = match.index + match[0].length
+    const alreadyMatched = results.some(r => {
+      const rStart = r.match.index
+      const rEnd = rStart + r.match[0].length
+      return matchStart >= rStart && matchEnd <= rEnd
+    })
     if (alreadyMatched) continue
     results.push({ match, isExternal: false })
   }
@@ -115,15 +125,16 @@ export function parseBlockLinks(content: string): LinkParse[] {
         target = (match[1] + (match[2] || '')).trim()
         display = target
       } else {
-        // 检查是否是带关系类型的链接：如果 match[3] 存在且非空
-        // (正则匹配的话是[[...](关系类型)
-        if (match[3]) {
-          // 带关系类型：[[页面名|别名]]^(关系类型)
-          target = match[1].trim()
-          display = (match[2] || target).trim()
-          const parsed = parseRelationshipPart(match[3])
+        // 检查是否是带关系类型的链接：匹配字符串以 (( 开头
+        // 新格式：((type))[[target|alias]]
+        if (match[0].startsWith('((')) {
+          // 带关系类型：((关系类型))[[页面名|别名]] 或 ((关系类型))[[页面名]]
+          // match[1] = 关系类型, match[2] = target, match[3] = alias (可选)
+          const parsed = parseRelationshipPart(match[1])
           relationshipType = parsed.relationshipType
           inverseRelationshipType = parsed.inverseRelationshipType
+          target = match[2].trim()
+          display = (match[3] || target).trim()
         } else {
           // 普通链接：[[页面名]] 或 [[页面名|别名]]
           target = match[1].trim()

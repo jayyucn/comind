@@ -30,12 +30,21 @@ describe('RelationshipTypesPanel', () => {
     await load()
   })
 
-  it('渲染 6 个内置关系类型', () => {
+  it('渲染 8 个内置关系类型', () => {
     const wrapper = mountPanel()
     const rows = wrapper.findAll('.rel-row')
-    expect(rows.length).toBeGreaterThanOrEqual(6)
-    expect(wrapper.text()).toContain('父级')
+    expect(rows.length).toBeGreaterThanOrEqual(8)
+    expect(wrapper.text()).toContain('是一个')
     expect(wrapper.text()).toContain('依赖')
+  })
+
+  it('显示态每行有强度标记', () => {
+    const wrapper = mountPanel()
+    const badges = wrapper.findAll('.rel-strength-badge')
+    expect(badges.length).toBeGreaterThanOrEqual(8)
+    // is-a 应该是 strong
+    const isARow = wrapper.findAll('.rel-row').find(r => r.text().includes('是一个'))
+    expect(isARow?.find('.rel-strength-badge--strong').exists()).toBe(true)
   })
 
   it('点编辑切换为编辑态', async () => {
@@ -45,6 +54,7 @@ describe('RelationshipTypesPanel', () => {
     await editButtons[0].trigger('click')
     expect(wrapper.find('.rel-row--editing').exists()).toBe(true)
     expect(wrapper.find('input[placeholder*="type"]').exists()).toBe(true)
+    expect(wrapper.find('select[title="强度等级"]').exists()).toBe(true)
   })
 
   it('点删除出现 toast', async () => {
@@ -66,11 +76,11 @@ describe('RelationshipTypesPanel', () => {
   it('软删的 type 不出现在主列表，但出现在"已删除"分组', async () => {
     const wrapper = mountPanel()
     const { softDelete } = useRelationshipTypes()
-    await softDelete('rt_seed_parent')
+    await softDelete('rt_seed_is-a')
     await wrapper.vm.$nextTick()
     const rows = wrapper.findAll('.rel-row:not(.rel-row--deleted)')
     const text = rows.map(r => r.text()).join('')
-    expect(text).not.toContain('父级')
+    expect(text).not.toContain('是一个')
     const deletedToggle = wrapper.find('.rel-deleted-toggle')
     expect(deletedToggle.exists()).toBe(true)
     expect(deletedToggle.text()).toContain('已删除（1）')

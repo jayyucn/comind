@@ -45,10 +45,10 @@ describe('useRelationshipMenu', () => {
       view: { dom: { isConnected: true } },
       position: { x: 0, y: 0 },
       range: { from: 0, to: 0 },
-      currentType: 'child',
+      currentType: 'has-instance',
       onSelect: vi.fn()
     })
-    const group = getGroupByType('child')!
+    const group = getGroupByType('has-instance')!
     const items = useRelationshipTypes().items.value
     const idx = items.findIndex(g => g.type === group!.type)
     expect(menu.state.value.selectedGroupIndex).toBe(idx)
@@ -92,23 +92,23 @@ describe('useRelationshipMenu', () => {
     expect(menu.state.value.range).toBeNull()
   })
 
-  it('items 默认返回所有 6 个组', () => {
+  it('items 默认返回所有 8 个组', () => {
     menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: vi.fn() })
     expect(menu.items.value).toHaveLength(useRelationshipTypes().items.value.length)
   })
 
   it('items 按 query 过滤（匹配正反 type 和 label）', () => {
     menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: vi.fn() })
-    menu.setQuery('parent')
-    // parent/child 组有 label "父级"，但 type 字段是 forward 的 'parent'
-    expect(menu.items.value.some(g => g.type === 'parent')).toBe(true)
+    menu.setQuery('is-a')
+    // is-a/has-instance 组有 label "是一个"，但 type 字段是 forward 的 'is-a'
+    expect(menu.items.value.some(g => g.type === 'is-a')).toBe(true)
 
     menu.setQuery('依赖')
     // 依赖 组同时有 label "依赖" 和 inverseLabel "被依赖"，匹配中文 query
     expect(menu.items.value.some(g => g.type === 'depends-on')).toBe(true)
     // 正反 type 都参与英文匹配
-    menu.setQuery('referenced')
-    expect(menu.items.value.some(g => g.type === 'references')).toBe(true)
+    menu.setQuery('supported')
+    expect(menu.items.value.some(g => g.type === 'supports')).toBe(true)
   })
 
   it('moveGroup 上下移动 selectedGroupIndex 并在边界环绕', () => {
@@ -124,7 +124,7 @@ describe('useRelationshipMenu', () => {
 
   it('切换到自反组时 direction 强制为 forward', () => {
     menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: vi.fn() })
-    menu.setSelectedGroupIndex(useRelationshipTypes().items.value.length - 1) // similar
+    menu.setSelectedGroupIndex(useRelationshipTypes().items.value.length - 1) // related
     expect(menu.state.value.selectedDirection).toBe('forward')
     menu.setDirection('inverse')
     expect(menu.state.value.selectedDirection).toBe('forward') // 自反组忽略 inverse
@@ -141,18 +141,18 @@ describe('useRelationshipMenu', () => {
 
   it('resolveType 根据 (group, direction) 解析为正确 type', () => {
     menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: vi.fn() })
-    expect(menu.resolveType()).toBe('parent')
+    expect(menu.resolveType()).toBe('is-a')
     menu.setDirection('inverse')
-    expect(menu.resolveType()).toBe('child')
+    expect(menu.resolveType()).toBe('has-instance')
   })
 
   it('select 触发 onSelect 并传入解析后的 type', () => {
     const onSelect = vi.fn()
     menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect })
-    menu.setSelectedGroupIndex(2) // references
-    menu.setDirection('inverse') // referenced-by
+    menu.setSelectedGroupIndex(5) // supports
+    menu.setDirection('inverse') // supported-by
     menu.select()
-    expect(onSelect).toHaveBeenCalledWith('referenced-by')
+    expect(onSelect).toHaveBeenCalledWith('supported-by')
     expect(menu.state.value.visible).toBe(false)
   })
 })
@@ -162,7 +162,7 @@ describe('useRelationshipMenu 与 useRelationshipTypes 联动', () => {
     const menu = useRelationshipMenu()
     menu.close()
     const { create } = useRelationshipTypes()
-    await create({ type: 'blocker', inverse: 'blocked-by', label: '阻塞', inverseLabel: '被阻塞', color: '#ff0000' })
+    await create({ type: 'blocker', inverse: 'blocked-by', label: '阻塞', inverseLabel: '被阻塞', color: '#ff0000', strength: 'medium' })
     expect(menu.items.value.find(g => g.type === 'blocker')).toBeTruthy()
   })
 
@@ -170,16 +170,16 @@ describe('useRelationshipMenu 与 useRelationshipTypes 联动', () => {
     const menu = useRelationshipMenu()
     menu.close()
     const { softDelete } = useRelationshipTypes()
-    await softDelete('rt_seed_parent')
-    expect(menu.items.value.find(g => g.type === 'parent')).toBeUndefined()
+    await softDelete('rt_seed_is-a')
+    expect(menu.items.value.find(g => g.type === 'is-a')).toBeUndefined()
   })
 
   it('恢复后菜单 items 重新包含', async () => {
     const menu = useRelationshipMenu()
     menu.close()
     const { softDelete, restore } = useRelationshipTypes()
-    await softDelete('rt_seed_parent')
-    await restore('rt_seed_parent')
-    expect(menu.items.value.find(g => g.type === 'parent')).toBeTruthy()
+    await softDelete('rt_seed_is-a')
+    await restore('rt_seed_is-a')
+    expect(menu.items.value.find(g => g.type === 'is-a')).toBeTruthy()
   })
 })

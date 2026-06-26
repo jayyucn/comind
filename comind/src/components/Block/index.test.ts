@@ -187,7 +187,7 @@ describe('Block - rel-type-label click handling', () => {
 
     await wrapper.find('.rel-type-label').trigger('click')
     expect(menu.state.value.visible).toBe(true)
-    menu.setSelectedGroupIndex(2)
+    menu.setSelectedGroupIndex(5)
     const updateContentSpy = vi.spyOn(blockStore, 'updateBlockContent')
     menu.select()
     await flushPromises()
@@ -195,9 +195,9 @@ describe('Block - rel-type-label click handling', () => {
     expect(updateContentSpy).toHaveBeenCalledTimes(1)
     const [calledBlockId, calledContent] = updateContentSpy.mock.calls[0]
     expect(calledBlockId).toBe(BLOCK_ID)
-    expect(calledContent).toBe('prefix ((references))[[X]] suffix')
+    expect(calledContent).toBe('prefix ((supports))[[X]] suffix')
     expect(calledContent).not.toContain('depends-on')
-    expect(calledContent).toContain('references')
+    expect(calledContent).toContain('supports')
 
     wrapper.unmount()
   })

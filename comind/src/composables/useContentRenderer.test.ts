@@ -96,52 +96,51 @@ describe('useContentRenderer - typed wiki links', () => {
     await load()
   })
 
-  it('[[X]] 渲染为普通 block-link，关系标签显示 ^中文label', () => {
+  it('((type))[[X]] 渲染为关系标签 + block-link，关系标签显示中文label', () => {
+    // 新格式：((type))[[X]]
     // 渲染样式：
-    // - [[X]] 部分保持原样（block-link 样式）
-    // - 关系部分显示为 `^依赖`（caret + 中文 label），颜色用关系色
-    const html = renderContentToHtml('See [[X]]^(depends-on) for details', 'block-1')
+    // - 关系部分显示为 `依赖`（中文 label），颜色用关系色
+    // - [[X]] 部分为普通 block-link
+    const html = renderContentToHtml('See ((depends-on))[[X]] for details', 'block-1')
     // [[X]] 部分：普通 block-link
     expect(html).toContain('data-page="X"')
-    expect(html).toMatch(/<span class="block-link"[^>]*data-page="X"[^>]*>X<\/span>/)
-    // 不应使用 block-link-typed
-    expect(html).not.toContain('block-link-typed')
-    // 关系部分：rel-type-label 携带 data-rel-type 和 caret+中文label
+    expect(html).toMatch(/<span class="block-link"[^>]*data-page="X"[^>]*>X<\/span>/s)
+    // 关系部分：rel-type-label 携带 data-rel-type 和中文label
     expect(html).toContain('data-rel-type="depends-on"')
     expect(html).toContain('data-block-id="block-1"')
-    expect(html).toMatch(/<span class="rel-type-label"[^>]*>\^依赖<\/span>/)
+    expect(html).toMatch(/<span class="rel-type-label"[^>]*>依赖<\/span><span class="block-link"[^>]*>X<\/span>/s)
   })
 
-  it('关系标签的显示文本 = 中文 label + ^ 前缀', () => {
-    expect(renderContentToHtml('[[A]]^(depends-on)', 'b')).toMatch(
-      /<span class="rel-type-label"[^>]*>\^依赖<\/span>/
+  it('关系标签的显示文本 = 中文label', () => {
+    expect(renderContentToHtml('((depends-on))[[A]]', 'b')).toMatch(
+      /<span class="rel-type-label"[^>]*>依赖<\/span>/
     )
-    expect(renderContentToHtml('[[A]]^(required-by)', 'b')).toMatch(
-      /<span class="rel-type-label"[^>]*>\^被依赖<\/span>/
+    expect(renderContentToHtml('((required-by))[[A]]', 'b')).toMatch(
+      /<span class="rel-type-label"[^>]*>被依赖<\/span>/
     )
-    expect(renderContentToHtml('[[A]]^(parent)', 'b')).toMatch(
-      /<span class="rel-type-label"[^>]*>\^父级<\/span>/
+    expect(renderContentToHtml('((is-a))[[A]]', 'b')).toMatch(
+      /<span class="rel-type-label"[^>]*>是一个<\/span>/
     )
   })
 
-  it('未知类型显示 ^unknown-type（fallback 到类型本身）', () => {
-    const html = renderContentToHtml('[[X]]^(unknown-type)', 'block-1')
-    expect(html).toMatch(/<span class="rel-type-label"[^>]*>\^unknown-type<\/span>/)
+  it('未知类型显示 unknown-type（fallback 到类型本身）', () => {
+    const html = renderContentToHtml('((unknown-type))[[X]]', 'block-1')
+    expect(html).toMatch(/<span class="rel-type-label"[^>]*>unknown-type<\/span>/)
     expect(html).toMatch(/--rel-color:\s*#9CA3AF/)
   })
 
-  it('[[X]]^(depends-on) 的字符偏移正确写入 data 属性', () => {
-    const html = renderContentToHtml('[[X]]^(depends-on)', 'block-1')
-    // 原始文本 [[X]]^(depends-on) 长度 18
+  it('((depends-on))[[X]] 的字符偏移正确写入 data 属性', () => {
+    const html = renderContentToHtml('((depends-on))[[X]]', 'block-1')
+    // 原始文本 ((depends-on))[[X]] 长度 19
     const typedFrom = html.match(/data-typed-from="(\d+)"/)
     const typedTo = html.match(/data-typed-to="(\d+)"/)
     expect(typedFrom?.[1]).toBe('0')
-    expect(typedTo?.[1]).toBe('18')
-    // depends-on 在原始文本中的范围是 7..17（不含末尾的 ')'，否则点击替换会吃掉 ')'）
+    expect(typedTo?.[1]).toBe('19')
+    // depends-on 在原始文本中的范围是 2..12（(( 之后）
     const labelFrom = html.match(/data-label-from="(\d+)"/)
     const labelTo = html.match(/data-label-to="(\d+)"/)
-    expect(labelFrom?.[1]).toBe('7')
-    expect(labelTo?.[1]).toBe('17')
+    expect(labelFrom?.[1]).toBe('2')
+    expect(labelTo?.[1]).toBe('12')
   })
 
   it('普通 [[X]] 不被识别为 typed link', () => {
@@ -150,30 +149,30 @@ describe('useContentRenderer - typed wiki links', () => {
     expect(html).toContain('class="block-link"')
   })
 
-  it('[[X]]^(required-by) 的 style 属性不被 #tag 正则误匹配', () => {
-    // 回归测试：style="--rel-color:#faad14" 中的 #faad14 不应被 #tag 正则包装
-    const html = renderContentToHtml('[[First]]^(required-by)', 'block-1')
-    expect(html).toMatch(/style="--rel-color:#faad14"/)
-    expect(html).not.toContain('data-page="faad14"')
+  it('((required-by))[[First]] 的 style 属性不被 #tag 正则误匹配', () => {
+    // 回归测试：style="--rel-color:#f5222d" 中的 #f5222d 不应被 #tag 正则包装
+    const html = renderContentToHtml('((required-by))[[First]]', 'block-1')
+    expect(html).toMatch(/style="--rel-color:#f5222d"/)
+    expect(html).not.toContain('data-page="f5222d"')
   })
 
-  it('[[X]]^(depends-on) 的 #faad14 颜色值不被 #tag 正则误匹配', () => {
-    // 依赖关系 depends-on 颜色也是 #faad14（同 inverse）
-    const html = renderContentToHtml('[[A]]^(depends-on)', 'block-1')
-    expect(html).toMatch(/style="--rel-color:#faad14"/)
-    expect(html).not.toContain('data-page="faad14"')
+  it('((depends-on))[[A]] 的 #f5222d 颜色值不被 #tag 正则误匹配', () => {
+    // 依赖关系 depends-on 颜色也是 #f5222d（同 inverse）
+    const html = renderContentToHtml('((depends-on))[[A]]', 'block-1')
+    expect(html).toMatch(/style="--rel-color:#f5222d"/)
+    expect(html).not.toContain('data-page="f5222d"')
   })
 
-  it('[[X]]^(parent) 的 #1890ff 颜色值不被 #tag 正则误匹配', () => {
-    // 父级关系颜色是 #1890ff
-    const html = renderContentToHtml('[[A]]^(parent)', 'block-1')
+  it('((is-a))[[A]] 的 #1890ff 颜色值不被 #tag 正则误匹配', () => {
+    // is-a 关系颜色是 #1890ff
+    const html = renderContentToHtml('((is-a))[[A]]', 'block-1')
     expect(html).toMatch(/style="--rel-color:#1890ff"/)
     expect(html).not.toContain('data-page="1890ff"')
   })
 
   it('typed link 与 #tag 共存时两者都正确渲染', () => {
     // 段间 #tag 应在原始 text 上处理，typed 链接后样式完整
-    const html = renderContentToHtml('see #myproject and [[A]]^(related)', 'block-1')
+    const html = renderContentToHtml('see #myproject and ((related))[[A]]', 'block-1')
     expect(html).toMatch(/data-page="myproject"/)
     expect(html).toMatch(/data-rel-type="related"/)
     expect(html).toMatch(/style="--rel-color:#8c8c8c"/)

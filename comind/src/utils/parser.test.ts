@@ -45,40 +45,40 @@ describe('parseBlockLinks', () => {
   })
 
   describe('关系类型解析', () => {
-    it('应正确解析单向关系类型 [[页面]]^(depends-on)', () => {
-      const result = parseBlockLinks('[[项目A]]^(depends-on)')
+    it('应正确解析单向关系类型 ((depends-on))[[页面]]', () => {
+      const result = parseBlockLinks('((depends-on))[[项目A]]')
       expect(result).toHaveLength(1)
       expect(result[0].targetTitle).toBe('项目A')
       expect(result[0].relationshipType).toBe('depends-on')
       expect(result[0].inverseRelationshipType).toBeNull()
     })
 
-    it('应正确解析带别名的关系类型 [[页面|别名]]^(depends-on)', () => {
-      const result = parseBlockLinks('[[项目A|别名]]^(depends-on)')
+    it('应正确解析带别名的关系类型 ((depends-on))[[页面|别名]]', () => {
+      const result = parseBlockLinks('((depends-on))[[项目A|别名]]')
       expect(result).toHaveLength(1)
       expect(result[0].targetTitle).toBe('项目A')
       expect(result[0].displayText).toBe('别名')
       expect(result[0].relationshipType).toBe('depends-on')
     })
 
-    it('应正确解析双向关系类型 [[页面]]^(depends-on<->required-by)', () => {
-      const result = parseBlockLinks('[[项目A]]^(depends-on<->required-by)')
+    it('应正确解析双向关系类型 ((depends-on<->required-by))[[页面]]', () => {
+      const result = parseBlockLinks('((depends-on<->required-by))[[项目A]]')
       expect(result).toHaveLength(1)
       expect(result[0].targetTitle).toBe('项目A')
       expect(result[0].relationshipType).toBe('depends-on')
       expect(result[0].inverseRelationshipType).toBe('required-by')
     })
 
-    it('应正确解析自动推断反向关系 [[页面]]^(depends-on!)', () => {
-      const result = parseBlockLinks('[[项目A]]^(depends-on!)')
+    it('应正确解析自动推断反向关系 ((depends-on!))[[页面]]', () => {
+      const result = parseBlockLinks('((depends-on!))[[项目A]]')
       expect(result).toHaveLength(1)
       expect(result[0].targetTitle).toBe('项目A')
       expect(result[0].relationshipType).toBe('depends-on')
       expect(result[0].inverseRelationshipType).toBe('required-by')
     })
 
-    it('应正确解析自定义关系类型 [[页面]]^(我的自定义关系)', () => {
-      const result = parseBlockLinks('[[项目A]]^(我的自定义关系)')
+    it('应正确解析自定义关系类型 ((我的自定义关系))[[页面]]', () => {
+      const result = parseBlockLinks('((我的自定义关系))[[项目A]]')
       expect(result).toHaveLength(1)
       expect(result[0].targetTitle).toBe('项目A')
       expect(result[0].relationshipType).toBe('我的自定义关系')
@@ -88,12 +88,12 @@ describe('parseBlockLinks', () => {
 
   describe('多个链接解析', () => {
     it('应正确解析多个链接', () => {
-      const result = parseBlockLinks('[[项目A]] 和 [[项目B]]^(parent) 和 [[项目C]]')
+      const result = parseBlockLinks('[[项目A]] 和 ((is-a))[[项目B]] 和 [[项目C]]')
       expect(result).toHaveLength(3)
       expect(result[0].targetTitle).toBe('项目A')
       expect(result[0].relationshipType).toBeNull()
       expect(result[1].targetTitle).toBe('项目B')
-      expect(result[1].relationshipType).toBe('parent')
+      expect(result[1].relationshipType).toBe('is-a')
       expect(result[2].targetTitle).toBe('项目C')
       expect(result[2].relationshipType).toBeNull()
     })

@@ -172,12 +172,12 @@ export function useRelationshipSync(
 
 /**
  * 在 Block 内容中，对所有指向 targetTitle 的链接应用新的关系类型。
- * - 若 newRelationshipType 为 null：移除 ^(...) 部分
+ * - 若 newRelationshipType 为 null：移除 ((type)) 部分
  * - 若 newRelationshipType 不为 null：若链接已有关系类型则替换，否则追加
  *
  * 处理两种形式：
- * bghntvy567link]]^(existingType) → 替换或移除 existingType
- * - [[link]] → 追加 ^(newType)
+ * - ((existingType))[[target|alias]] → 替换或移除 ((existingType))
+ * - [[target|alias]] → 追加 ((newType))
  */
 export function applyRelationshipTypeToBlockContent(
   content: string,
@@ -185,31 +185,27 @@ export function applyRelationshipTypeToBlockContent(
   newRelationshipType: string | null
 ): string {
   const escapedTitle = targetTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  // 匹配 [[target]] 或 [[target|alias]]，可选带 ^(relationType)
-  // 使用两个独立的正则：带关系类型、不带关系类型
+  // 匹配 ((type))[[target]] 或 ((type))[[target|alias]]
   const withTypeRegex = new RegExp(
-    `\\[\\[(${escapedTitle})(?:\\|[^\\]]+?)?\\]\\]\\^?\\(([^)]+)\\)`,
+    `\\(\\(([^)]+)\\)\\)\\[\\[(${escapedTitle})(?:\\|[^\\]]+?)?\\]\\]`,
     'g'
   )
+  // 匹配纯 [[target]] 或 [[target|alias]]（前面没有 ((type))）
   const plainLinkRegex = new RegExp(
-    `\\[\\[(${escapedTitle})(?:\\|[^\\]]+?)?\\]\\](?!\\^\\()`,
+    `(?<!\\(\\([^)]+\\)\\))\\[\\[(${escapedTitle})(?:\\|[^\\]]+?)?\\]\\]`,
     'g'
   )
 
   // 第一步：替换已带关系类型的链接
-  let result = content.replace(withTypeRegex, (match) => {
-    const baseMatch = match.match(/^\[\[[^\]]+?\]\]/)
-    if (!baseMatch) return match
-    if (newRelationshipType === null) return baseMatch[0]
-    return `${baseMatch[0]}^(${newRelationshipType})`
+  let result = content.replace(withTypeRegex, (_, __, title) => {
+    if (newRelationshipType === null) return `[[${title}]]`
+    return `((${newRelationshipType}))[[${title}]]`
   })
 
   // 第二步：仅当需要添加新类型时，处理不带关系类型的链接
   if (newRelationshipType !== null) {
-    // 使用更严格的负向先行：避免重复处理已被 withTypeRegex 替换的链接
-    // 由于 withTypeRegex 已处理所有带类型的链接，剩下都是纯 [[link]] 形式
-    result = result.replace(plainLinkRegex, (match) => {
-      return `${match}^(${newRelationshipType})`
+    result = result.replace(plainLinkRegex, (_, title) => {
+      return `((${newRelationshipType}))[[${title}]]`
     })
   }
 

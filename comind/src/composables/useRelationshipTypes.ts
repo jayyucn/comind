@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue'
 import { nanoid } from 'nanoid'
-import { db, type RelationshipTypeRecord } from '../storage/db'
+import { db, type RelationshipTypeRecord, type Strength } from '../storage/db'
 import { RELATIONSHIP_TYPES_SEED } from '../config/relationship-types-seed'
 import { TYPE_REGEX, COLOR_REGEX } from './relationship-type-constants'
 
@@ -11,7 +11,10 @@ export interface RelationshipTypeInput {
   label: string
   inverseLabel: string
   color: string
+  strength: Strength
 }
+
+const VALID_STRENGTHS: readonly Strength[] = ['strong', 'medium', 'weak']
 
 /** 校验输入；返回 null 表示通过，否则返回错误信息 */
 export function validateRelationshipTypeInput(
@@ -22,6 +25,7 @@ export function validateRelationshipTypeInput(
   if (!input.label.trim()) return 'label 必填'
   if (!input.inverseLabel.trim()) return 'inverseLabel 必填'
   if (!COLOR_REGEX.test(input.color)) return 'color 格式不符：hex 颜色如 #1890ff'
+  if (!VALID_STRENGTHS.includes(input.strength)) return 'strength 必须为 strong/medium/weak'
   if (existing.some(r => !r.deleted && r.type === input.type)) return '该 type 已存在'
   return null
 }
@@ -71,6 +75,7 @@ export function useRelationshipTypes() {
             label: seed.label,
             inverseLabel: seed.inverseLabel,
             color: seed.color,
+            strength: seed.strength,
             order: order++,
             deleted: seed.deleted,
             builtin: seed.builtin
@@ -99,6 +104,7 @@ export function useRelationshipTypes() {
         label: input.label.trim(),
         inverseLabel: input.inverseLabel.trim(),
         color: input.color,
+        strength: input.strength,
         order: maxOrder + 1,
         deleted: false,
         builtin: false
@@ -117,7 +123,8 @@ export function useRelationshipTypes() {
         inverse: patch.inverse === undefined ? existing.inverse : patch.inverse,
         label: patch.label ?? existing.label,
         inverseLabel: patch.inverseLabel ?? existing.inverseLabel,
-        color: patch.color ?? existing.color
+        color: patch.color ?? existing.color,
+        strength: patch.strength ?? existing.strength
       }
       // 唯一性校验：除自己外不重复
       const err = validateRelationshipTypeInput(
@@ -134,7 +141,8 @@ export function useRelationshipTypes() {
         inverse: merged.inverse,
         label: merged.label.trim(),
         inverseLabel: merged.inverseLabel.trim(),
-        color: merged.color
+        color: merged.color,
+        strength: merged.strength
       }
       await db.relationshipTypes.put(updated)
       state.value.items = state.value.items.map(r => r.id === id ? updated : r)

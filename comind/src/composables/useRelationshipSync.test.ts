@@ -23,8 +23,8 @@ describe('useRelationshipSync', () => {
   describe('refreshSnapshot', () => {
     it('应建立 blockId -> targetTitle -> relationshipType 快照', () => {
       const blocks = ref<Array<{ id: string; content: string }>>([
-        { id: 'b1', content: '[[B]]^(depends-on) [[C]]' },
-        { id: 'b2', content: '[[B]]^(related) [[D]]^(parent)' }
+        { id: 'b1', content: '((depends-on))[[B]] [[C]]' },
+        { id: 'b2', content: '((related))[[B]] ((is-a))[[D]]' }
       ])
       const pageId = ref<string | null>('page-1')
       const { linkSnapshot, refreshSnapshot } = useRelationshipSync(pageId, blocks)
@@ -32,15 +32,14 @@ describe('useRelationshipSync', () => {
       refreshSnapshot()
 
       expect(linkSnapshot.value.get('b1')?.get('B')).toBe('depends-on')
-      // b1 中 [[C]] 没有关系类型，不应在快照中
       expect(linkSnapshot.value.get('b1')?.has('C')).toBe(false)
       expect(linkSnapshot.value.get('b2')?.get('B')).toBe('related')
-      expect(linkSnapshot.value.get('b2')?.get('D')).toBe('parent')
+      expect(linkSnapshot.value.get('b2')?.get('D')).toBe('is-a')
     })
 
     it('应跳过当前正在编辑的 Block', () => {
       const blocks = ref<Array<{ id: string; content: string }>>([
-        { id: 'b1', content: '[[B]]^(depends-on)' }
+        { id: 'b1', content: '((depends-on))[[B]]' }
       ])
       const pageId = ref<string | null>('page-1')
       const { linkSnapshot, refreshSnapshot, setEditingBlock } = useRelationshipSync(pageId, blocks)
@@ -55,7 +54,7 @@ describe('useRelationshipSync', () => {
   describe('syncRelationshipType', () => {
     it('应将新关系类型同步到其他指向相同目标的链接', () => {
       const blocks = ref<Array<{ id: string; content: string }>>([
-        { id: 'b1', content: '[[B]]^(depends-on)' },
+        { id: 'b1', content: '((depends-on))[[B]]' },
         { id: 'b2', content: '参考 [[B]] 的设计' }
       ])
       const pageId = ref<string | null>('page-1')
@@ -68,12 +67,12 @@ describe('useRelationshipSync', () => {
 
       expect(updated).toHaveLength(1)
       expect(updated[0].id).toBe('b2')
-      expect(updated[0].content).toBe('参考 [[B]]^(related) 的设计')
+      expect(updated[0].content).toBe('参考 ((related))[[B]] 的设计')
     })
 
     it('应跳过正在编辑的 Block（不修改其内容）', () => {
       const blocks = ref<Array<{ id: string; content: string }>>([
-        { id: 'b1', content: '[[B]]^(depends-on)' },
+        { id: 'b1', content: '((depends-on))[[B]]' },
         { id: 'b2', content: '[[B]]' }
       ])
       const pageId = ref<string | null>('page-1')
@@ -89,8 +88,8 @@ describe('useRelationshipSync', () => {
 
     it('当 newRelationshipType 为 null 时应移除关系类型', () => {
       const blocks = ref<Array<{ id: string; content: string }>>([
-        { id: 'b1', content: '[[B]]^(depends-on)' },
-        { id: 'b2', content: '参考 [[B]]^(related) 的设计' }
+        { id: 'b1', content: '((depends-on))[[B]]' },
+        { id: 'b2', content: '参考 ((related))[[B]] 的设计' }
       ])
       const pageId = ref<string | null>('page-1')
       const { syncRelationshipType, refreshSnapshot, setEditingBlock } = useRelationshipSync(pageId, blocks)
@@ -107,7 +106,7 @@ describe('useRelationshipSync', () => {
 
     it('应保留链接的别名部分', () => {
       const blocks = ref<Array<{ id: string; content: string }>>([
-        { id: 'b1', content: '[[B]]^(depends-on)' },
+        { id: 'b1', content: '((depends-on))[[B]]' },
         { id: 'b2', content: '[[B|项目B]]' }
       ])
       const pageId = ref<string | null>('page-1')
@@ -119,12 +118,12 @@ describe('useRelationshipSync', () => {
       const updated = syncRelationshipType('b1', 'B', 'related')
 
       expect(updated).toHaveLength(1)
-      expect(updated[0].content).toBe('[[B|项目B]]^(related)')
+      expect(updated[0].content).toBe('((related))[[B]]')
     })
 
     it('不包含目标链接的 Block 不应被修改', () => {
       const blocks = ref<Array<{ id: string; content: string }>>([
-        { id: 'b1', content: '[[B]]^(depends-on)' },
+        { id: 'b1', content: '((depends-on))[[B]]' },
         { id: 'b2', content: '[[C]]' }
       ])
       const pageId = ref<string | null>('page-1')
@@ -142,9 +141,9 @@ describe('useRelationshipSync', () => {
   describe('removeRelationshipType', () => {
     it('应移除页面内所有非编辑 Block 中对 targetTitle 的关系类型', () => {
       const blocks = ref<Array<{ id: string; content: string }>>([
-        { id: 'b1', content: '[[B]]^(depends-on)' },
-        { id: 'b2', content: '[[B]]^(related)' },
-        { id: 'b3', content: '[[B]]^(parent)' }
+        { id: 'b1', content: '((depends-on))[[B]]' },
+        { id: 'b2', content: '((related))[[B]]' },
+        { id: 'b3', content: '((is-a))[[B]]' }
       ])
       const pageId = ref<string | null>('page-1')
       const { removeRelationshipType, refreshSnapshot, setEditingBlock } = useRelationshipSync(pageId, blocks)
@@ -168,11 +167,9 @@ describe('useRelationshipSync', () => {
       const pageId = ref<string | null>('page-1')
       const { linkSnapshot } = useRelationshipSync(pageId, blocks)
 
-      // 初次同步：b1 中 [[B]] 没有关系类型，快照应为空
       expect(linkSnapshot.value.has('b1')).toBe(false)
 
-      // 修改 b1 内容
-      blocks.value = [{ id: 'b1', content: '[[B]]^(depends-on)' }]
+      blocks.value = [{ id: 'b1', content: '((depends-on))[[B]]' }]
       expect(linkSnapshot.value.get('b1')?.get('B')).toBe('depends-on')
     })
   })
@@ -183,27 +180,27 @@ describe('applyRelationshipTypeToBlockContent（export）', () => {
     expect(typeof applyRelationshipTypeToBlockContent).toBe('function')
   })
 
-  it('应能移除 [[Target]]^(type) 的类型后缀', () => {
-    const content = 'see [[Target]]^(depends-on) for details'
+  it('应能移除 ((type))[[Target]] 的类型前缀', () => {
+    const content = 'see ((depends-on))[[Target]] for details'
     const result = applyRelationshipTypeToBlockContent(content, 'Target', null)
     expect(result).toBe('see [[Target]] for details')
   })
 
-  it('应能替换 [[Target]]^(oldType) 为 [[Target]]^(newType)', () => {
-    const content = 'see [[Target]]^(depends-on) for details'
+  it('应能替换 ((oldType))[[Target]] 为 ((newType))[[Target]]', () => {
+    const content = 'see ((depends-on))[[Target]] for details'
     const result = applyRelationshipTypeToBlockContent(content, 'Target', 'related')
-    expect(result).toBe('see [[Target]]^(related) for details')
+    expect(result).toBe('see ((related))[[Target]] for details')
   })
 
-  it('应支持别名形式 [[Target|alias]]^(type)', () => {
-    const content = 'see [[Target|display]]^(depends-on)'
+  it('应支持别名形式 ((type))[[Target|alias]]', () => {
+    const content = 'see ((depends-on))[[Target|display]]'
     const result = applyRelationshipTypeToBlockContent(content, 'Target', null)
-    expect(result).toBe('see [[Target|display]]')
+    expect(result).toBe('see [[Target]]')
   })
 
   it('不应影响指向其他目标的链接', () => {
-    const content = '[[A]]^(depends-on) and [[B]]^(related)'
+    const content = '((depends-on))[[A]] and ((related))[[B]]'
     const result = applyRelationshipTypeToBlockContent(content, 'A', null)
-    expect(result).toBe('[[A]] and [[B]]^(related)')
+    expect(result).toBe('[[A]] and ((related))[[B]]')
   })
 })

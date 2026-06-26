@@ -44,7 +44,7 @@ describe('RelationshipMenu', () => {
     expect(wrapper!.find('.rel-menu').exists()).toBe(false)
   })
 
-  it('visible=true 时渲染 6 行（4 对 + 2 自反）', async () => {
+  it('visible=true 时渲染 8 行（7 对 + 1 自反）', async () => {
     mountMenu()
     menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: () => {} })
     await nextTick()
@@ -65,7 +65,7 @@ describe('RelationshipMenu', () => {
     mountMenu()
     menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: () => {} })
     await nextTick()
-    const firstItem = wrapper!.findAll('.rel-menu-item')[0] // parent/child
+    const firstItem = wrapper!.findAll('.rel-menu-item')[0] // is-a/has-instance
     expect(firstItem.findAll('.rel-menu-direction')).toHaveLength(2)
     expect(firstItem.find('.rel-menu-sep').exists()).toBe(true)
   })
@@ -75,7 +75,7 @@ describe('RelationshipMenu', () => {
     menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: () => {} })
     await nextTick()
     const selfInverseItems = wrapper!.findAll('.rel-menu-item').filter(i => i.find('.rel-menu-direction-single').exists())
-    expect(selfInverseItems).toHaveLength(2)
+    expect(selfInverseItems).toHaveLength(1)
   })
 
   it('每行 forward 按钮显示中文 label', async () => {
@@ -124,12 +124,12 @@ describe('RelationshipMenu', () => {
   it('输入过滤后只剩匹配组', async () => {
     mountMenu()
     menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: () => {} })
-    menu.setQuery('parent')
+    menu.setQuery('is-a')
     await nextTick()
     const items = wrapper!.findAll('.rel-menu-item')
     expect(items.length).toBeGreaterThan(0)
     items.forEach(item => {
-      expect(item.attributes('data-type')).toBe('parent')
+      expect(item.attributes('data-type')).toBe('is-a')
     })
   })
 
@@ -179,10 +179,10 @@ describe('RelationshipMenu', () => {
     let selected: string | null = null
     menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: (t) => { selected = t } })
     await nextTick()
-    // 默认 group=0, direction=forward -> parent
+    // 默认 group=0, direction=forward -> is-a
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     await nextTick()
-    expect(selected).toBe('parent')
+    expect(selected).toBe('is-a')
     expect(menu.state.value.visible).toBe(false)
   })
 
@@ -191,11 +191,14 @@ describe('RelationshipMenu', () => {
     let selected: string | null = null
     menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: (t) => { selected = t } })
     await nextTick()
-    // Step 1: 移到 references 组（index=2）
+    // Step 1: 移到 supports 组（index=5）
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
     await nextTick()
-    expect(menu.state.value.selectedGroupIndex).toBe(2)
+    expect(menu.state.value.selectedGroupIndex).toBe(5)
     // Step 2: 切到 inverse
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
     await nextTick()
@@ -203,7 +206,7 @@ describe('RelationshipMenu', () => {
     // 确认
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     await nextTick()
-    expect(selected).toBe('referenced-by')
+    expect(selected).toBe('supported-by')
   })
 
   it('键盘 Escape 关闭菜单', async () => {
