@@ -478,7 +478,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="graph-view-page">
     <div class="graph-view-header">
-      <h1 class="graph-view-title"></h1>
+      <h1 class="graph-view-title">概念网络</h1>
       <div class="graph-view-controls">
         <div class="control-group">
           <button
@@ -520,18 +520,17 @@ onBeforeUnmount(() => {
 
 .graph-view-header {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  padding: 12px 16px;
+  padding: 0 16px 12px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 
 .graph-view-title {
-  font-size: 18px;
+  font-size: 24px;
   font-weight: 600;
   color: var(--text-primary);
-  padding-top: 20px;
 }
 
 .graph-view-controls {

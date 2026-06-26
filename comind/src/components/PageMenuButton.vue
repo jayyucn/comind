@@ -121,7 +121,7 @@ onUnmounted(() => {
 <template>
   <div class="page-menu-button">
     <button class="menu-trigger" @click.stop="toggleMenu">
-      <TaskIcon name="icon-menu" :size="16" />
+      <TaskIcon name="icon-menu" />
     </button>
 
     <Transition name="menu">

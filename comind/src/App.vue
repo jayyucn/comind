@@ -143,40 +143,42 @@ function handleMainClick(e: MouseEvent) {
     <Sidebar />
 
     <div class="page-scroll-wrapper" @click="handleMainClick">
-      <div class="nav-controls">
-        <button class="collapse-btn" :title="isCollapsed ? '展开侧边栏' : '折叠侧边栏'" @click="toggle">
-          <PanelLeftClose v-if="!isCollapsed" />
-          <PanelLeftOpen v-else />
-        </button>
-        <template v-if="!isCollapsed">
-          <button class="nav-btn" :class="{ disabled: !canGoBack }" :disabled="!canGoBack" title="后退"
-            @click="handleGoBack">
-            <span class="nav-icon left-icon">
-              <ArrowLeft :size="16" :stroke-width="1.75" />
-            </span>
+      <div class="sticky-header">
+        <div class="nav-controls">
+          <button class="collapse-btn" :title="isCollapsed ? '展开侧边栏' : '折叠侧边栏'" @click="toggle">
+            <PanelLeftClose v-if="!isCollapsed" />
+            <PanelLeftOpen v-else />
           </button>
-          <button class="nav-btn" :class="{ disabled: !canGoForward }" :disabled="!canGoForward" title="前进"
-            @click="handleGoForward">
-            <span class="nav-icon right-icon">
-              <ArrowRight :size="16" :stroke-width="1.75" />
-            </span>
+          <template v-if="!isCollapsed">
+            <button class="nav-btn" :class="{ disabled: !canGoBack }" :disabled="!canGoBack" title="后退"
+              @click="handleGoBack">
+              <span class="nav-icon left-icon">
+                <ArrowLeft :size="16" :stroke-width="1.75" />
+              </span>
+            </button>
+            <button class="nav-btn" :class="{ disabled: !canGoForward }" :disabled="!canGoForward" title="前进"
+              @click="handleGoForward">
+              <span class="nav-icon right-icon">
+                <ArrowRight :size="16" :stroke-width="1.75" />
+              </span>
+            </button>
+          </template>
+        </div>
+
+        <div class="top-right-controls">
+          <PageMenuButton />
+          <button
+            class="right-sidebar-toggle"
+            :title="rightSidebar.visible.value ? '关闭右侧面板' : '打开概念图谱'"
+            @click="rightSidebar.toggleVisible()"
+          >
+            <PanelRightClose v-if="rightSidebar.visible.value"  :stroke-width="1.75" />
+            <PanelRightOpen v-else :stroke-width="1.75" />
           </button>
-        </template>
+        </div>
       </div>
 
-      <div class="top-right-controls">
-        <PageMenuButton />
-        <button
-          class="right-sidebar-toggle"
-          :title="rightSidebar.visible.value ? '关闭右侧面板' : '打开概念图谱'"
-          @click="rightSidebar.toggleVisible()"
-        >
-          <PanelRightClose v-if="rightSidebar.visible.value" :size="16" :stroke-width="1.75" />
-          <PanelRightOpen v-else :size="16" :stroke-width="1.75" />
-        </button>
-      </div>
-
-      <div class="page-body">
+      <div class="content-body">
         <main class="main-content" :class="{ 'is-fullwidth-content': isFullWidthPage }">
           <RouterView />
         </main>
@@ -213,8 +215,8 @@ function handleMainClick(e: MouseEvent) {
 }
 
 .collapse-btn {
-  width: 36px;
-  height: 36px;
+  width: 24px;
+  height: 24px;
   border: none;
   background: transparent;
   cursor: pointer;
@@ -234,13 +236,20 @@ function handleMainClick(e: MouseEvent) {
   transform: scale(0.95);
 }
 
-.nav-controls {
+.sticky-header {
   position: sticky;
-  top: 12px;
-  left: 12px;
+  top: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 12px 12px 0;
+  z-index: 10;
+  background: var(--bg-base);
+}
+
+.nav-controls {
   display: flex;
   gap: 4px;
-  z-index: 10;
   width: fit-content;
 }
 
@@ -283,24 +292,15 @@ function handleMainClick(e: MouseEvent) {
   display: none;
 }
 
-.page-body {
+.content-body {
   min-width: 0;
 }
 
-.main-content {
-  padding: 48px 0;
-}
-
 .top-right-controls {
-  position: sticky;
-  top: 12px;
   display: flex;
   align-items: center;
   gap: 2px;
-  z-index: 10;
   justify-content: flex-end;
-  padding-right: 12px;
-  margin-top: -48px;
   pointer-events: none;
 }
 
@@ -309,8 +309,8 @@ function handleMainClick(e: MouseEvent) {
 }
 
 .right-sidebar-toggle {
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   border: none;
   background: transparent;
   cursor: pointer;
