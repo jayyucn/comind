@@ -2,8 +2,19 @@
 import { ref, computed } from 'vue'
 import { ArrowUp, ArrowDown, Pencil, Trash2, Plus, ChevronDown, ChevronRight, Undo2, X, Check } from 'lucide-vue-next'
 import { useRelationshipTypes, validateRelationshipTypeInput, type RelationshipTypeInput } from '../../composables/useRelationshipTypes'
+import type { Strength } from '../../storage/db'
 
 const { all, create, update, softDelete, restore, reorder } = useRelationshipTypes()
+
+const STRENGTH_OPTIONS: { value: Strength; text: string }[] = [
+  { value: 'strong', text: '强' },
+  { value: 'medium', text: '中' },
+  { value: 'weak', text: '弱' }
+]
+
+function strengthText(s: Strength): string {
+  return STRENGTH_OPTIONS.find(o => o.value === s)?.text ?? '中'
+}
 
 interface EditState {
   type: string
@@ -12,6 +23,7 @@ interface EditState {
   label: string
   inverseLabel: string
   color: string
+  strength: Strength
   /** null 表示新增；string 表示编辑的记录 id */
   originalId: string | null
   isNew: boolean
@@ -40,6 +52,7 @@ function startEdit(id: string): void {
     label: r.label,
     inverseLabel: r.inverseLabel,
     color: r.color,
+    strength: r.strength,
     originalId: id,
     isNew: false
   }
@@ -53,6 +66,7 @@ function startNew(): void {
     label: '',
     inverseLabel: '',
     color: '#1890ff',
+    strength: 'medium',
     originalId: null,
     isNew: true
   }
@@ -71,7 +85,8 @@ const validateResult = computed<string | null>(() => {
       inverse: editState.value.inverse.trim() || null,
       label: editState.value.label,
       inverseLabel: editState.value.inverseLabel,
-      color: editState.value.color
+      color: editState.value.color,
+      strength: editState.value.strength
     },
     all.value
       .filter(r => r.id !== editState.value?.originalId)
@@ -89,7 +104,8 @@ async function saveEdit(): Promise<void> {
     inverse: s.inverse.trim() || null,
     label: s.label.trim(),
     inverseLabel: s.inverseLabel.trim(),
-    color: s.color
+    color: s.color,
+    strength: s.strength
   }
   if (s.isNew) {
     await create(input)
@@ -147,6 +163,9 @@ function moveDown(id: string): void {
             <input v-model="editState.inverse" class="rel-input" placeholder="inverse (可空)" />
             <input v-model="editState.label" class="rel-input" placeholder="正向中文标签" />
             <input v-model="editState.inverseLabel" class="rel-input" placeholder="反向中文标签" />
+            <select v-model="editState.strength" class="rel-input rel-input--strength" title="强度等级">
+              <option v-for="o in STRENGTH_OPTIONS" :key="o.value" :value="o.value">{{ o.text }}</option>
+            </select>
             <input v-model="editState.color" class="rel-input rel-input--color" placeholder="#hex" />
             <div class="rel-edit-actions">
               <button class="rel-btn rel-btn--primary" :disabled="!canSave" @click="saveEdit">
@@ -174,6 +193,7 @@ function moveDown(id: string): void {
             <span class="rel-sep">/</span>
             <span class="rel-label">{{ r.inverseLabel }}</span>
           </div>
+          <span class="rel-strength-badge" :class="`rel-strength-badge--${r.strength}`" :title="`强度：${strengthText(r.strength)}`">{{ strengthText(r.strength) }}</span>
           <div class="rel-color-block" :style="{ background: r.color }" :title="r.color"></div>
           <div class="rel-actions">
             <button class="rel-icon-btn" title="编辑" @click="startEdit(r.id)">
@@ -193,6 +213,9 @@ function moveDown(id: string): void {
           <input v-model="editState.inverse" class="rel-input" placeholder="inverse (可空)" />
           <input v-model="editState.label" class="rel-input" placeholder="正向中文标签" />
           <input v-model="editState.inverseLabel" class="rel-input" placeholder="反向中文标签" />
+          <select v-model="editState.strength" class="rel-input rel-input--strength" title="强度等级">
+            <option v-for="o in STRENGTH_OPTIONS" :key="o.value" :value="o.value">{{ o.text }}</option>
+          </select>
           <input v-model="editState.color" class="rel-input rel-input--color" placeholder="#hex" />
           <div class="rel-edit-actions">
             <button class="rel-btn rel-btn--primary" :disabled="!canSave" @click="saveEdit">
@@ -225,6 +248,7 @@ function moveDown(id: string): void {
             <span class="rel-sep">/</span>
             <span class="rel-label">{{ r.inverseLabel }}</span>
           </div>
+          <span class="rel-strength-badge" :class="`rel-strength-badge--${r.strength}`">{{ strengthText(r.strength) }}</span>
           <div class="rel-color-block" :style="{ background: r.color }"></div>
           <div class="rel-actions">
             <button class="rel-btn" @click="restore(r.id)">
@@ -336,6 +360,35 @@ function moveDown(id: string): void {
   flex-shrink: 0;
 }
 
+.rel-strength-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 18px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.rel-strength-badge--strong {
+  border-color: #262626;
+  color: #262626;
+  font-weight: 600;
+}
+
+.rel-strength-badge--medium {
+  border-color: var(--text-tertiary);
+  color: var(--text-secondary);
+}
+
+.rel-strength-badge--weak {
+  opacity: 0.6;
+}
+
 .rel-actions {
   display: flex;
   gap: 4px;
@@ -343,7 +396,7 @@ function moveDown(id: string): void {
 
 .rel-edit-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr 90px auto;
+  grid-template-columns: 1fr 1fr 1fr 1fr 56px 90px auto;
   gap: 6px;
   align-items: center;
 }
@@ -367,6 +420,12 @@ function moveDown(id: string): void {
 
 .rel-input--color {
   font-family: monospace;
+}
+
+.rel-input--strength {
+  padding: 4px 4px;
+  text-align: center;
+  cursor: pointer;
 }
 
 .rel-edit-actions {

@@ -6,6 +6,9 @@ import type { PropertyRecord } from '../types/property'
 import type { Asset } from '../types/asset'
 import type { UserTemplate } from '../types/template'
 
+/** 关系强度等级：用于图谱线宽映射 */
+export type Strength = 'strong' | 'medium' | 'weak'
+
 /** 关系类型记录（成对组） */
 export interface RelationshipTypeRecord {
   /** 稳定主键；种子用 `rt_seed_<type>`，用户新建用 `rt_user_<nanoid>` */
@@ -20,6 +23,8 @@ export interface RelationshipTypeRecord {
   inverseLabel: string
   /** 颜色，hex 格式 */
   color: string
+  /** 强度等级，用于图谱线宽映射 */
+  strength: Strength
   /** 排序权重，越小越靠前 */
   order: number
   /** 软删除标记 */

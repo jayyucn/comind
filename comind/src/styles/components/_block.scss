@@ -207,7 +207,7 @@
   }
 }
 
-// 关系类型标签：[[X]]^(type) 中的 ^(type) 部分
+// 关系类型标签：((type))[[X]] 中的 ((type)) 部分
 // 颜色由内联 style="--rel-color:..." 注入
 .rel-type-label {
   color: var(--rel-color, currentColor);
@@ -219,6 +219,12 @@
   border-radius: var(--radius-sm);
   cursor: pointer;
   user-select: none;
+
+  .rel-page-title {
+    color: var(--text-secondary);
+    font-style: normal;
+    margin-left: 2px;
+  }
 
   &:hover {
     background: color-mix(in srgb, var(--rel-color) 12%, transparent);

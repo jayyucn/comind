@@ -5,7 +5,7 @@ import type { NodeData } from '@antv/g6'
 import { usePageStore } from '../../stores/pages'
 import { storage } from '../../storage/indexedDB'
 import { db } from '../../storage/db'
-import { getRelationshipColor, getRelationshipLabel, getInverseRelationshipType } from '../../types/relationship'
+import { getRelationshipColor, getRelationshipLabel, getInverseRelationshipType, getRelationshipStrength, STRENGTH_TO_WIDTH } from '../../types/relationship'
 import { useRightSidebar } from '../../composables/useRightSidebar'
 
 const pageStore = usePageStore()
@@ -237,7 +237,7 @@ async function initGraph() {
       type: 'quadratic',
       style: {
         stroke: (d: any) => d.data?.color ?? '#8c8c8c',
-        strokeWidth: 1.5,
+        strokeWidth: (d: any) => STRENGTH_TO_WIDTH[getRelationshipStrength((d.data?.relationshipType as string) ?? 'related')],
         endArrow: true,
         curveOffset: (d: any) => d.data?.curveOffset ?? 0,
         labelText: (d: any) => d.data?.label ?? '',
