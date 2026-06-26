@@ -33,6 +33,7 @@ const blockStore = useBlockStore()
 const pageStore = usePageStore()
 
 const isFullWidthPage = computed(() => route.meta.fullWidth === true)
+const showRightSidebarToggle = computed(() => route.meta.hideRightSidebarToggle !== true)
 
 onMounted(async () => {
   await useRelationshipTypes().load()
@@ -68,6 +69,12 @@ watch(() => route.fullPath, async (newPath) => {
 
   historyStack.value.push({ path: newPath, pageId })
   historyIndex.value = historyStack.value.length - 1
+})
+
+watch(() => route.meta.hideRightSidebarToggle, (hide) => {
+  if (hide) {
+    rightSidebar.setVisible(false)
+  }
 })
 
 watch(() => blockStore.trashedPageWarnings, async (warnings) => {
@@ -168,6 +175,7 @@ function handleMainClick(e: MouseEvent) {
         <div class="top-right-controls">
           <PageMenuButton />
           <button
+            v-if="showRightSidebarToggle"
             class="right-sidebar-toggle"
             :title="rightSidebar.visible.value ? '关闭右侧面板' : '打开概念图谱'"
             @click="rightSidebar.toggleVisible()"
