@@ -214,7 +214,7 @@ function getResultTypeLabel(result: SearchResult): string {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--overlay);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -225,18 +225,18 @@ function getResultTypeLabel(result: SearchResult): string {
 .search-panel {
   width: 600px;
   max-height: 500px;
-  background: var(--bg-primary);
+  background: var(--bg-base);
   border-radius: 12px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-modal);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
 }
 
 .search-header {
   padding: 16px;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -246,15 +246,15 @@ function getResultTypeLabel(result: SearchResult): string {
   width: 100%;
   padding: 12px 16px;
   font-size: 16px;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--bg-secondary);
+  background: var(--bg-sidebar);
   color: var(--text-primary);
   outline: none;
   transition: border-color 0.2s;
 
   &:focus {
-    border-color: var(--accent-color);
+    border-color: var(--accent);
   }
 }
 
@@ -266,9 +266,9 @@ function getResultTypeLabel(result: SearchResult): string {
 
   kbd {
     padding: 2px 6px;
-    background: var(--bg-tertiary);
+    background: var(--bg-hover);
     border-radius: 4px;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--border);
     font-family: monospace;
   }
 }
@@ -309,7 +309,7 @@ function getResultTypeLabel(result: SearchResult): string {
 
   &:hover,
   &.active {
-    background: var(--bg-secondary);
+    background: var(--bg-hover);
   }
 }
 
