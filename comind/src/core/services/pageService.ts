@@ -124,4 +124,93 @@ export class PageService {
   async emptyTrash(): Promise<void> {
     return this.repository.emptyTrash()
   }
+
+  /**
+   * 根据标题获取回收站中的页面
+   */
+  async getTrashedPageByTitle(title: string): Promise<Page | undefined> {
+    const deleted = await this.repository.findDeleted(1000, 0)
+    return deleted.items.find(p => p.title === title)
+  }
+
+  /**
+   * 更新页面（完整对象更新）
+   */
+  async updatePage(page: Page): Promise<void> {
+    await this.repository.update(page.id, {
+      title: page.title,
+      icon: page.icon,
+      type: page.type,
+      cover: page.cover,
+      aliases: page.aliases,
+      filePath: page.filePath,
+    })
+  }
+
+  /**
+   * 删除页面（级联删除 blocks 和 links）
+   */
+  async deletePage(pageId: string): Promise<void> {
+    await this.storage.transaction(async () => {
+      const blocks = await this.storage.blocks.findByPageId(pageId)
+      const blockIds = blocks.map(b => b.id)
+
+      for (const blockId of blockIds) {
+        await this.storage.links.deleteBySourceBlockId(blockId)
+      }
+
+      for (const blockId of blockIds) {
+        await this.storage.blocks.delete(blockId)
+      }
+
+      await this.storage.links.deleteByTargetPageId(pageId)
+
+      await this.repository.permanentDelete(pageId)
+    })
+  }
+
+  /**
+   * 合并两个页面
+   */
+  async mergePage(sourceId: string, targetId: string): Promise<void> {
+    await this.storage.transaction(async () => {
+      const sourcePage = await this.repository.findById(sourceId)
+      const targetPage = await this.repository.findById(targetId)
+      if (!sourcePage || !targetPage) return
+
+      const sourceBlocks = await this.storage.blocks.findByPageId(sourceId)
+
+      for (const block of sourceBlocks) {
+        const newBlock = await this.storage.blocks.create({
+          pageId: targetId,
+          parentId: null,
+          content: block.content,
+          type: block.type,
+          properties: block.properties,
+        })
+
+        const links = await this.storage.links.findBySourceBlockId(block.id)
+        for (const link of links) {
+          await this.storage.links.create({
+            sourceBlockId: newBlock.id,
+            targetPageId: link.targetPageId,
+            displayText: link.displayText,
+            relationshipType: link.relationshipType,
+          })
+        }
+
+        const props = await this.storage.properties.findByBlockId(block.id)
+        for (const prop of props) {
+          await this.storage.properties.create({
+            blockId: newBlock.id,
+            key: prop.key,
+            value: prop.value,
+            type: prop.type,
+          })
+        }
+      }
+
+      await this.deletePage(sourceId)
+    })
+  }
 }

@@ -71,9 +71,8 @@ export const usePageStore = defineStore('pages', () => {
 
   /** 合并源页面到目标页面（事务操作） */
   async function mergePage(sourceId: string, targetId: string): Promise<void> {
-    // TODO: 后续使用 Core 层的事务支持
-    const { storage } = await import('../storage/indexedDB')
-    await storage.mergePage(sourceId, targetId)
+    const core = getCore()
+    await core.pageService.mergePage(sourceId, targetId)
     pages.value = pages.value.filter(p => p.id !== sourceId)
     if (currentPageId.value === sourceId) {
       currentPageId.value = targetId
@@ -82,8 +81,8 @@ export const usePageStore = defineStore('pages', () => {
 
   /** 删除页面 */
   async function deletePage(pageId: string): Promise<void> {
-    const { storage } = await import('../storage/indexedDB')
-    await storage.deletePage(pageId)
+    const core = getCore()
+    await core.pageService.deletePage(pageId)
     pages.value = pages.value.filter(p => p.id !== pageId)
     if (currentPageId.value === pageId) {
       currentPageId.value = pages.value.length > 0 ? pages.value[0].id : ''

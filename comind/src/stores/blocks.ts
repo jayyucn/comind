@@ -719,10 +719,8 @@ export const useBlockStore = defineStore('blocks', () => {
     const page = pageStore.getPage(block.pageId)
     if (page) {
       page.updatedAt = Date.now()
-      // 注意：这里使用旧的 storage.updatePage，因为它有完整的页面更新逻辑
-      // 后续可以迁移到 Core 层
-      const { storage } = await import('../storage/indexedDB')
-      await storage.updatePage(page)
+      const core = getCore()
+      await core.pageService.updatePage(page)
     }
   }
 
