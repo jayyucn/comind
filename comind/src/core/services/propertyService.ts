@@ -56,6 +56,18 @@ export class PropertyService {
   }
 
   /**
+   * 批量获取多个 Block 的属性
+   */
+  async getByBlockIds(blockIds: string[]): Promise<Map<string, Property[]>> {
+    const result = new Map<string, Property[]>()
+    for (const blockId of blockIds) {
+      const props = await this.repository.findByBlockId(blockId)
+      result.set(blockId, props)
+    }
+    return result
+  }
+
+  /**
    * 根据 Block ID 和 Key 获取属性
    */
   async getByKey(blockId: string, key: string): Promise<Property | undefined> {

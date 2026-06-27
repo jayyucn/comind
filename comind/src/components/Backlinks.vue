@@ -2,10 +2,9 @@
 import { ref, watch, computed, nextTick } from 'vue'
 import { usePageStore } from '../stores/pages'
 import { useEditorStore } from '../stores/editor'
-import { storage } from '../storage/indexedDB'
-import { db } from '../storage/db'
+import { getCore } from '../core'
 import { useNavigateToPage } from '../composables/useNavigateToPage'
-import type { LinkRecord } from '../types/link'
+import type { Link } from '../core/types'
 
 const props = withDefaults(defineProps<{
   pageId?: string
@@ -18,7 +17,7 @@ const editorStore = useEditorStore()
 const { navigateToPage } = useNavigateToPage()
 
 interface BacklinkItem {
-  link: LinkRecord
+  link: Link
   sourceContent: string
   sourcePageTitle: string
 }
@@ -37,7 +36,7 @@ const hasBacklinks = computed(() => backlinkItems.value.length > 0)
 const targetPageId = computed(() => props.pageId ?? pageStore.currentPageId)
 
 // 点击 Backlink：跳转到该Block所在Page，并激活该Block
-async function handleBacklinkClick(link: LinkRecord) {
+async function handleBacklinkClick(link: Link) {
   const status = getLinkStatus(link)
   if (!status.blockExists || !status.pageExists) return
 
@@ -47,7 +46,8 @@ async function handleBacklinkClick(link: LinkRecord) {
 
   let blockRecord
   try {
-    blockRecord = await db.blocks.get(link.sourceBlockId)
+    const core = getCore()
+    blockRecord = await core.blockService.getById(link.sourceBlockId)
   } catch (err) {
     console.error('获取源块失败:', err)
     return
@@ -73,7 +73,8 @@ async function loadBacklinks() {
 
   loading.value = true
   try {
-    const links = await storage.getBacklinks(currentId)
+    const core = getCore()
+    const links = await core.linkService.getBacklinks(currentId)
 
     const results = await Promise.all(
       links.map(async (link) => {
@@ -82,7 +83,7 @@ async function loadBacklinks() {
         let blockRecord = null
 
         try {
-          blockRecord = await db.blocks.get(link.sourceBlockId)
+          blockRecord = await core.blockService.getById(link.sourceBlockId)
           blockExists = !!blockRecord
         } catch (err) {
           console.error('获取源块失败:', err)
@@ -92,7 +93,7 @@ async function loadBacklinks() {
         let pageTitle = ''
         if (blockExists && blockRecord) {
           try {
-            const pageRecord = await db.pages.get(blockRecord.pageId)
+            const pageRecord = await core.pageService.getById(blockRecord.pageId)
             pageExists = !!pageRecord
             pageTitle = pageRecord?.title ?? '未命名页面'
           } catch (err) {
@@ -126,7 +127,7 @@ async function loadBacklinks() {
   }
 }
 
-function getLinkStatus(link: LinkRecord) {
+function getLinkStatus(link: Link) {
   const key = `${link.sourceBlockId}_${link.targetPageId}`
   return linkStatusMap.value.get(key) ?? { blockExists: true, pageExists: true }
 }

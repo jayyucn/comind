@@ -1,10 +1,10 @@
 # 开发指南（Development Guide）
 
-> 版本：v5.0
-> 日期：2026-06-06
-> 适用阶段：Phase 1 MVP
-> 技术栈：Vue 3 + TypeScript + Pinia + Vite + tiptap + IndexedDB
-> 状态：已整合暗色主题、设置模态框、关系类型自定义、模板系统开发指南
+> 版本：v6.0
+> 日期：2026-06-27
+> 适用阶段：Phase 2 Sprint 3 已完成
+> 技术栈：Vue 3 + TypeScript + Pinia + Vite + tiptap + IndexedDB + Lunr.js
+> 状态：已整合 Core Layer、全文搜索、暗色主题、设置模态框、关系类型自定义、模板系统开发指南
 
 ***
 
@@ -34,9 +34,287 @@
 
 ***
 
-## 1. 快速开始
+## 1. Core Layer 架构（Phase 2）
 
-### 1.1 环境要求
+### 1.1 架构总览
+
+comind 的核心业务逻辑已抽离到框架无关的 Core Layer，遵循以下分层架构：
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    UI Layer                         │
+│  (Vue 3 Components, Pinia Stores, tiptap Editor)    │
+├─────────────────────────────────────────────────────┤
+│                    Core Layer                       │
+│  ┌──────────┐  ┌──────────┐  ┌──────────────────┐ │
+│  │ Services │  │  Search  │  │  Storage Adapter │ │
+│  └──────────┘  └──────────┘  └──────────────────┘ │
+│  ┌──────────────────────────────────────────────┐  │
+│  │               Types & Utils                  │  │
+│  └──────────────────────────────────────────────┘  │
+├─────────────────────────────────────────────────────┤
+│              Infrastructure Layer                   │
+│  (IndexedDB / SQLite / LocalStorage / FileSystem)   │
+└─────────────────────────────────────────────────────┘
+```
+
+**Core Layer 核心原则：**
+- **框架无关**：不依赖 Vue、Pinia、tiptap 等任何框架
+- **纯 TypeScript**：仅使用 TypeScript 类型和原生 JavaScript API
+- **依赖注入**：所有外部依赖通过构造函数参数注入
+- **可测试**：纯逻辑代码，易于单元测试（当前覆盖率 95%+）
+- **可复用**：可在 Web、桌面、移动等不同环境中复用
+
+### 1.2 Core Layer 使用指南
+
+**初始化 Core Layer：**
+
+```typescript
+import { initCore, getCore, isCoreInitialized } from '@/core'
+
+// 应用启动时初始化（main.ts）
+async function initializeApp() {
+  // 初始化 Core Layer（使用 IndexedDB 存储）
+  const core = await initCore('indexeddb')
+
+  // Core 层包含以下服务
+  console.log(core.blockService)      // Block 领域服务
+  console.log(core.linkService)       // Link 领域服务
+  console.log(core.tagService)        // Tag 领域服务
+  console.log(core.propertyService)   // Property 领域服务
+  console.log(core.pageService)       // Page 领域服务
+  console.log(core.searchService)     // Search 搜索服务
+
+  // 检查是否已初始化
+  if (isCoreInitialized()) {
+    console.log('Core Layer 已初始化')
+  }
+}
+```
+
+**在 Vue 组件中使用 Core Layer：**
+
+```typescript
+import { getCore } from '@/core'
+import type { Block } from '@/core/types'
+
+// 获取 Core 上下文
+const core = getCore()
+
+// 创建 Block
+const newBlock: Block = await core.blockService.create({
+  pageId: 'page-123',
+  parentId: null,
+  content: '新建 Block 内容',
+  order: 100
+})
+
+// 搜索 Block
+const searchResults = await core.searchService.search('关键词', {
+  limit: 20,
+  type: 'block'
+})
+
+// 更新 Block
+await core.blockService.update(newBlock.id, {
+  content: '更新后的内容'
+})
+```
+
+**在 Pinia Store 中集成 Core Layer：**
+
+```typescript
+import { defineStore } from 'pinia'
+import { getCore } from '@/core'
+
+export const useBlocksStore = defineStore('blocks', () => {
+  const blocks = ref<Block[]>([])
+
+  // 使用 Core Layer 的 BlockService
+  async function loadBlocks(pageId: string) {
+    const core = getCore()
+    blocks.value = await core.blockService.getByPageId(pageId)
+  }
+
+  async function createBlock(options: BlockCreateOptions) {
+    const core = getCore()
+    const block = await core.blockService.create(options)
+    blocks.value.push(block)
+    return block
+  }
+
+  return { blocks, loadBlocks, createBlock }
+})
+```
+
+### 1.3 Core Layer 服务接口
+
+**BlockService：**
+
+```typescript
+class BlockService {
+  // CRUD 操作
+  getById(id: string): Promise<Block | null>
+  getByPageId(pageId: string): Promise<Block[]>
+  getChildren(parentId: string): Promise<Block[]>
+  create(options: BlockCreateOptions): Promise<Block>
+  update(id: string, options: BlockUpdateOptions): Promise<Block>
+  delete(id: string): Promise<void>
+
+  // 树形结构操作
+  buildTree(blocks: Block[]): TreeNode[]
+  getBlockPath(id: string): Promise<BlockPath>
+
+  // Block 移动
+  move(id: string, newParentId: string | null): Promise<Block>
+  indent(id: string): Promise<Block>
+  outdent(id: string): Promise<Block>
+
+  // Gap Sort 排序
+  checkAndRebalance(parentId: string): Promise<void>
+}
+```
+
+**LinkService：**
+
+```typescript
+class LinkService {
+  getById(id: string): Promise<Link | null>
+  getBySourceBlockId(blockId: string): Promise<Link[]>
+  getBacklinks(pageId: string): Promise<Link[]>
+  create(options: LinkCreateOptions): Promise<Link>
+  syncBlockLinks(blockId: string, content: string): Promise<Link[]>
+}
+```
+
+**PropertyService：**
+
+```typescript
+class PropertyService {
+  getById(id: string): Promise<Property | null>
+  getByBlockId(blockId: string): Promise<Property[]>
+  create(options: PropertyCreateOptions): Promise<Property>
+  update(id: string, options: PropertyUpdateOptions): Promise<Property>
+  delete(id: string): Promise<void>
+}
+```
+
+**PageService：**
+
+```typescript
+class PageService {
+  getById(id: string): Promise<Page | null>
+  getAll(): Promise<Page[]>
+  create(options: PageCreateOptions): Promise<Page>
+  update(id: string, options: PageUpdateOptions): Promise<Page>
+  delete(id: string): Promise<void>
+}
+```
+
+**SearchService：**
+
+```typescript
+class SearchService {
+  async initialize(): Promise<void>
+  async search(query: string, options?: SearchOptions): Promise<SearchResult[]>
+  async indexBlock(block: Block): Promise<void>
+  async indexPage(page: Page): Promise<void>
+  async removeIndex(id: string): Promise<void>
+}
+```
+
+### 1.4 存储适配器接口
+
+Core Layer 通过 StorageAdapter 接口与底层存储通信：
+
+```typescript
+interface StorageAdapter {
+  // Block 操作
+  getBlockById(id: string): Promise<Block | null>
+  getBlocksByPageId(pageId: string): Promise<Block[]>
+  getBlockChildren(parentId: string): Promise<Block[]>
+  createBlock(block: Block): Promise<Block>
+  updateBlock(id: string, updates: Partial<Block>): Promise<Block>
+  deleteBlock(id: string): Promise<void>
+
+  // Page 操作
+  getPageById(id: string): Promise<Page | null>
+  getAllPages(): Promise<Page[]>
+  createPage(page: Page): Promise<Page>
+  updatePage(id: string, updates: Partial<Page>): Promise<Page>
+  deletePage(id: string): Promise<void>
+
+  // Link 操作
+  getLinkById(id: string): Promise<Link | null>
+  getLinksBySourceBlockId(blockId: string): Promise<Link[]>
+  getBacklinks(pageId: string): Promise<Link[]>
+  createLink(link: Link): Promise<Link>
+  deleteLink(id: string): Promise<void>
+
+  // Property 操作
+  getPropertyById(id: string): Promise<Property | null>
+  getPropertiesByBlockId(blockId: string): Promise<Property[]>
+  createProperty(property: Property): Promise<Property>
+  updateProperty(id: string, updates: Partial<Property>): Promise<Property>
+  deleteProperty(id: string): Promise<void>
+
+  // 通用操作
+  close(): Promise<void>
+}
+```
+
+**当前实现：**
+
+| 适配器 | 适用场景 | 状态 |
+|--------|---------|------|
+| `IndexedDBAdapter` | 生产环境 | ✅ Phase 2 Sprint 2 完成 |
+| `MemoryAdapter` | 单元测试 | ✅ Phase 2 Sprint 1 完成 |
+
+### 1.5 测试策略
+
+Core Layer 采用纯单元测试策略，使用 Vitest + MemoryAdapter：
+
+```typescript
+// 测试示例（blockService.test.ts）
+import { describe, it, expect, beforeEach } from 'vitest'
+import { BlockService } from '../services/blockService'
+import { MemoryAdapter } from '../storage/memoryAdapter'
+
+describe('BlockService', () => {
+  let service: BlockService
+  let storage: MemoryAdapter
+
+  beforeEach(async () => {
+    storage = new MemoryAdapter()
+    service = new BlockService({ storage })
+  })
+
+  it('应该创建 Block', async () => {
+    const block = await service.create({
+      pageId: 'test-page',
+      parentId: null,
+      content: '测试内容',
+      order: 100
+    })
+
+    expect(block.id).toBeDefined()
+    expect(block.content).toBe('测试内容')
+  })
+})
+```
+
+**当前测试覆盖率：**
+- BlockService: 95%+
+- LinkService: 95%+
+- PropertyService: 95%+
+- SearchService: 95%+
+- 总计：159 个测试用例通过
+
+---
+
+## 2. 快速开始
+
+### 2.1 环境要求
 
 | 工具                | 版本要求   | 说明          |
 | ----------------- | ------ | ----------- |

@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useBlockStore } from '../../../../stores/blocks'
 import { usePageStore } from '../../../../stores/pages'
 import { useNavigateToPage } from '../../../../composables/useNavigateToPage'
-import { storage } from '../../../../storage/indexedDB'
+import { getCore } from '../../../../core'
 import SubtreeRenderer from './SubtreeRenderer'
 import type { SubtreeNode } from '../../../../types/block'
 import type { Block } from '../../../../types/block'
@@ -44,9 +44,10 @@ async function loadSourceBlock() {
     return
   }
   try {
+    const core = getCore()
     const pageId = sourcePageId.value
     if (pageId) {
-      const blocks = await storage.getBlockTree(pageId)
+      const blocks = await core.blockService.getBlockTree(pageId)
       remoteBlocks.value = blocks
       remoteBlock.value = blocks.find(b => b.id === id) ?? null
     } else {

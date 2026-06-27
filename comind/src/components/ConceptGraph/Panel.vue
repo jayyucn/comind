@@ -3,8 +3,7 @@ import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue'
 import { Graph } from '@antv/g6'
 import type { NodeData } from '@antv/g6'
 import { usePageStore } from '../../stores/pages'
-import { storage } from '../../storage/indexedDB'
-import { db } from '../../storage/db'
+import { getCore } from '../../core'
 import { getRelationshipColor, getRelationshipLabel, getInverseRelationshipType, getRelationshipStrength, STRENGTH_TO_WIDTH } from '../../types/relationship'
 import { useRightSidebar } from '../../composables/useRightSidebar'
 
@@ -27,6 +26,7 @@ async function buildGraphData(pageId: string, depth: number) {
   const edges: { id: string; source: string; target: string; data: Record<string, unknown> }[] = []
   const visited = new Set<string>()
   const blockCache = new Map<string, { pageId: string }>()
+  const core = getCore()
 
   async function traverse(pid: string, level: number) {
     if (level > depth || visited.has(pid)) return
@@ -46,8 +46,8 @@ async function buildGraphData(pageId: string, depth: number) {
 
     // 并行查询出链和入链
     const [outLinks, inLinks] = await Promise.all([
-      storage.getLinksBySourcePage(pid),
-      storage.getLinksByTargetPage(pid),
+      core.linkService.getBySourcePage(pid),
+      core.linkService.getByTargetPage(pid),
     ])
 
     for (const link of outLinks) {
@@ -80,7 +80,7 @@ async function buildGraphData(pageId: string, depth: number) {
       // 使用缓存避免重复 IDB 查询
       let block = blockCache.get(link.sourceBlockId)
       if (!block) {
-        const record = await db.blocks.get(link.sourceBlockId)
+        const record = await core.blockService.getById(link.sourceBlockId)
         if (!record) continue
         block = { pageId: record.pageId }
         blockCache.set(link.sourceBlockId, block)

@@ -58,6 +58,39 @@ export class LinkService {
   }
 
   /**
+   * 根据源 Page 获取所有 Link
+   *
+   * 查询该页面所有 Block 的出链
+   */
+  async getBySourcePage(pageId: string): Promise<Link[]> {
+    const allLinks = await this.repository.findAll(1000, 0)
+    return allLinks.items.filter(link => link.sourceBlockId.startsWith(pageId))
+  }
+
+  /**
+   * 根据目标 Page 获取所有 Link
+   *
+   * 与 getBacklinks 功能相同，提供别名
+   */
+  async getByTargetPage(pageId: string): Promise<Link[]> {
+    return this.repository.findByTargetPageId(pageId)
+  }
+
+  /**
+   * 根据关系类型获取链接
+   */
+  async getByRelationshipType(pageId: string, relationshipType?: string): Promise<Link[]> {
+    const allLinks = await this.repository.findAll(1000, 0)
+    const filtered = allLinks.items.filter(link => {
+      const matchesType = relationshipType 
+        ? link.relationshipType === relationshipType
+        : link.relationshipType !== null
+      return matchesType && (link.sourceBlockId.startsWith(pageId) || link.targetPageId === pageId)
+    })
+    return filtered
+  }
+
+  /**
    * 创建 Link
    */
   async create(options: LinkCreateOptions): Promise<Link> {

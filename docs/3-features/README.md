@@ -32,3 +32,9 @@
 | --- | --- |
 | [template-system-spec.md](template-system-spec.md) | ✨ 模板系统规格 - 内置10个模板 + 用户自定义 |
 | [concept-graph-spec.md](concept-graph-spec.md) | 概念图谱规格 - 概念网络可视化 |
+
+## 搜索功能
+
+| 文件 | 说明 |
+| --- | --- |
+| [search-spec.md](search-spec.md) | ✨ 全局搜索规格 - 全文检索 + 中英文支持 + 增量索引（Phase 2 Sprint 3）|

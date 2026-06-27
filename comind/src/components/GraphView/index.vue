@@ -3,8 +3,7 @@ import { ref, onMounted, onBeforeUnmount, watch, computed, nextTick } from 'vue'
 import { Graph } from '@antv/g6'
 import type { NodeData } from '@antv/g6'
 import { usePageStore } from '../../stores/pages'
-import { storage } from '../../storage/indexedDB'
-import { db } from '../../storage/db'
+import { getCore } from '../../core'
 import { getRelationshipColor, getRelationshipLabel, getDirectionInGroup, getGroupByType, getRelationshipStrength, STRENGTH_TO_WIDTH } from '../../types/relationship'
 import { useRouter } from 'vue-router'
 import SearchFilter from './SearchFilter.vue'
@@ -68,9 +67,10 @@ async function loadPageNodeEdges(
   visitedEdges: Set<string>,
   blockCache: Map<string, { pageId: string }>
 ) {
+  const core = getCore()
   const [outLinks, inLinks] = await Promise.all([
-    storage.getLinksBySourcePage(pageId),
-    storage.getLinksByTargetPage(pageId),
+    core.linkService.getBySourcePage(pageId),
+    core.linkService.getByTargetPage(pageId),
   ])
 
   for (const link of outLinks) {
@@ -110,7 +110,7 @@ async function loadPageNodeEdges(
 
     let block = blockCache.get(link.sourceBlockId)
     if (!block) {
-      const record = await db.blocks.get(link.sourceBlockId)
+      const record = await core.blockService.getById(link.sourceBlockId)
       if (!record) continue
       block = { pageId: record.pageId }
       blockCache.set(link.sourceBlockId, block)
@@ -152,7 +152,8 @@ async function buildGraphData() {
   const visitedEdges = new Set<string>()
   const blockCache = new Map<string, { pageId: string }>()
 
-  const allPages = await storage.getAllPages()
+  const core = getCore()
+  const allPages = await core.pageService.getAll()
   for (const page of allPages) {
     if (page.deleted) continue
     nodes.push({

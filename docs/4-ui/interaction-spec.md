@@ -1,9 +1,9 @@
 # Page（Block 树）交互规范
 
-> 版本：v0.8\
-> 日期：2026-04-27\
-> 状态：**已更新** — §3.1 空行视为行尾处理
-> 依据：`SPEC.md` `block-editor-spec.md` `ui-ux-spec.md` `data-model.md`
+> 版本：v0.9\
+> 日期：2026-06-27\
+> 状态：**已更新** — 新增全局搜索交互规范（§7）
+> 依据：`SPEC.md` `block-editor-spec.md` `ui-ux-spec.md` `data-model.md` `search-spec.md`
 
 ***
 
@@ -804,7 +804,230 @@ ESC               （退出编辑 / 取消）
 
 ***
 
-## 7. 未涵盖场景（Phase 2+）
+## 7. 全局搜索交互规范
+
+> **Phase 2 Sprint 3 新增功能**
+> 详细功能规格见 [search-spec.md](../3-features/search-spec.md)
+
+### 7.1 快捷键触发
+
+**快捷键：**
+
+| 平台 | 快捷键 | 说明 |
+|------|--------|------|
+| Windows/Linux | `Ctrl+K` | 打开搜索面板 |
+| macOS | `Cmd+K` | 打开搜索面板 |
+
+**触发时机：**
+
+- 任何时刻均可触发（不依赖 Block 状态）
+- 如果当前有 `edit` 态 Block，不保存内容，仅打开搜索面板
+
+**实现状态：✅ 已实现**
+
+```typescript
+// App.vue
+function handleKeydown(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+    e.preventDefault()
+    showSearch.value = true
+  }
+}
+```
+
+***
+
+### 7.2 搜索面板交互
+
+**状态定义：**
+
+| 状态 | 说明 | 视觉 |
+|------|------|------|
+| `closed` | 面板关闭 | 不可见 |
+| `open` | 面板打开 | 居中弹窗，模态遮罩 |
+| `loading` | 搜索中 | 输入框下方显示加载指示器 |
+| `results` | 显示结果 | 列表展示搜索结果 |
+| `empty` | 无结果 | 显示"无搜索结果"提示 |
+
+**状态转换图：**
+
+```
+closed ──[Ctrl+K/Cmd+K]──→ open
+  ↑                            │
+  └──[Esc / 点击遮罩]──────────┘
+
+open ──[输入文本]──→ loading
+  │                     │
+  │                     └─→ results (有结果)
+  │                     │
+  │                     └─→ empty (无结果)
+  │                     │
+  └──[清空文本]──→ open (等待输入)
+```
+
+**实现状态：✅ 已实现**
+
+***
+
+### 7.3 搜索输入交互
+
+**输入行为：**
+
+| 操作 | 行为 | 实现状态 |
+|------|------|---------|
+| 输入文本 | 实时搜索（200ms 防抖） | ✅ |
+| 清空文本 | 清空结果列表，回到初始状态 | ✅ |
+| 输入框自动聚焦 | 面板打开时自动聚焦输入框 | ✅ |
+
+**搜索选项：**
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `limit` | 20 | 最大返回结果数 |
+| `type` | 'all' | 结果类型过滤（block/page/all） |
+
+**实现细节：**
+
+```typescript
+// SearchPanel.vue
+const query = ref('')
+const results = ref<SearchResult[]>([])
+
+watch(query, debounce(async (newQuery) => {
+  if (!newQuery.trim()) {
+    results.value = []
+    return
+  }
+
+  loading.value = true
+  const core = getCore()
+  const searchResults = await core.searchService.search(newQuery)
+  results.value = searchResults
+  loading.value = false
+}, 200))
+```
+
+***
+
+### 7.4 搜索结果导航
+
+**键盘导航：**
+
+| 按键 | 行为 | 实现状态 |
+|------|------|---------|
+| `↑` | 选择上一个结果（循环） | ✅ |
+| `↓` | 选择下一个结果（循环） | ✅ |
+| `Enter` | 打开选中的结果 | ✅ |
+| `Esc` | 关闭搜索面板 | ✅ |
+
+**选中状态：**
+
+- `selectedIndex` 控制当前选中的结果项（0-indexed）
+- 选中项有视觉高亮（accent 边框 + 背景色）
+- 循环导航：超出边界时回到另一端
+
+**实现细节：**
+
+```typescript
+// SearchPanel.vue
+const selectedIndex = ref(0)
+
+function handleKeydown(e: KeyboardEvent) {
+  if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    selectedIndex.value = (selectedIndex.value + 1) % results.value.length
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    selectedIndex.value = (selectedIndex.value - 1 + results.value.length) % results.value.length
+  } else if (e.key === 'Enter') {
+    e.preventDefault()
+    navigateToResult(results.value[selectedIndex.value])
+  } else if (e.key === 'Escape') {
+    e.preventDefault()
+    emit('close')
+  }
+}
+```
+
+***
+
+### 7.5 打开搜索结果
+
+**结果类型：**
+
+| 类型 | 打开行为 | 说明 |
+|------|---------|------|
+| `page` | 跳转到页面，不激活任何 Block | 直接打开页面 |
+| `block` | 跳转到所在页面，并激活该 Block | 带有 blockId 查询参数 |
+
+**实现状态：✅ 已实现**
+
+```typescript
+// SearchPanel.vue
+function navigateToResult(result: SearchResult) {
+  if (result.type === 'page') {
+    router.push({ name: 'page', params: { pageId: result.id } })
+  } else {
+    router.push({
+      name: 'page',
+      params: { pageId: result.pageId },
+      query: { blockId: result.blockId }
+    })
+  }
+  emit('close')
+}
+```
+
+***
+
+### 7.6 搜索结果展示
+
+**结果项结构：**
+
+```
+┌─────────────────────────────────────────┐
+│ [图标] 标题（Page 名称或 Block 预览）    │
+│         内容片段（高亮匹配文本）          │
+│         类型标签：Block / Page          │
+└─────────────────────────────────────────┘
+```
+
+**高亮显示：**
+
+- 匹配文本使用 `<mark>` 标签高亮
+- 高亮颜色为 accent 色
+- 仅高亮第一个匹配片段
+
+**实现状态：✅ 已实现**
+
+***
+
+### 7.7 边界情况
+
+| 场景 | 行为 | 实现状态 |
+|------|------|---------|
+| 无搜索结果 | 显示"无搜索结果"提示 | ✅ |
+| 搜索面板已打开时按快捷键 | 无操作（保持打开） | ✅ |
+| 搜索结果超出 20 条 | 仅显示前 20 条 | ✅ |
+| 结果页面不存在 | 跳转时创建新页面 | ✅ |
+| 结果 Block 已删除 | 过滤掉已删除的 Block | ✅ |
+| 中文搜索（无分词） | 使用 bigram 分词支持 | ✅ |
+| 中英文混合搜索 | 同时支持中文和英文搜索 | ✅ |
+
+***
+
+### 7.8 搜索性能要求
+
+| 操作 | 性能指标 | 实现状态 |
+|------|---------|---------|
+| 初始化索引 | < 100ms | ✅ |
+| 搜索响应 | < 50ms | ✅ |
+| 结果渲染 | < 20ms | ✅ |
+| 索引增量更新 | 300ms Debounce | ✅ |
+
+***
+
+## 8. 未涵盖场景（Phase 2+）
 
 | 场景                           | 说明         |
 | ---------------------------- | ---------- |
@@ -812,11 +1035,11 @@ ESC               （退出编辑 / 取消）
 | 批量拖拽                         | Phase 2 考虑 |
 | 块级引用（Block Reference）        | Phase 2 考虑 |
 | 富文本快捷键（Ctrl+B, Ctrl+I 等）     | Phase 2 考虑 |
-| 全局快捷键（不聚焦 Block 时）           | Phase 2 考虑 |
+| 全局搜索（Ctrl+K/Cmd+K）        | ✅ 已实现（Phase 2 Sprint 3） |
 | 撤销/重做（Ctrl+Z / Ctrl+Shift+Z） | Phase 2 考虑 |
 | 移动端触摸交互                      | 远期规划       |
 | 语音输入                         | 远期规划       |
 
 ***
 
-*文档 v0.7，更新 §3.1 Enter 拆分逻辑重构（基于光标位置分流）。*
+*文档 v0.9，更新 §7 全局搜索交互规范（Phase 2 Sprint 3）。*

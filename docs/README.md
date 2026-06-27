@@ -1,6 +1,6 @@
 # comind 文档索引
 
-&gt; 更新日期：2026-06-07
+&gt; 更新日期：2026-06-27
 &gt; 本文档是 docs/ 目录的唯一入口点。Agent 只需加载 `active/` 目录即可获得完整项目上下文。
 
 ---
@@ -35,6 +35,7 @@ docs/
 | 属性系统 | `architecture.md` | §5 属性系统 |
 | 排序机制 | `architecture.md` | §6 排序机制（Gap Pos） |
 | 链接系统 | `features.md` | §1 链接系统 |
+| 全局搜索 | `search-spec.md` | ✨ 完整功能规格（全文检索 + 中英文支持） |
 | 关系类型链接 | `link-spec.md` | §2.2 关系类型链接 |
 | 概念图谱 | `concept-graph-spec.md` | 完整功能规格 |
 | 概念块 | `concept-block-spec.md` | ✨ 完整功能规格（四区结构概念深潜） |
@@ -48,6 +49,7 @@ docs/
 | 键盘操作 | `interaction.md` | §4 键盘操作 |
 | 项目结构 | `development.md` | §2 项目结构 |
 | 核心约束 | `development.md` | §3 核心架构约束 |
+| Core Layer | `development.md` | §1 Core Layer 架构（框架无关） |
 | CRUD 操作 | `development.md` | §5 Page ↔ Block CRUD |
 | 内容解析 | `development.md` | §6 内容解析 |
 | 产品愿景 | `product-vision.md` | §1-§9 完整产品规划 |
@@ -63,7 +65,7 @@ docs/
 | architecture.md | v4.0 | 2026-05-21 | 合并自 data-model + storage-spec + routing + block-editor-spec + property-spec + block-ordering-redesign |
 | features.md | v1.0 | 2026-05-21 | 合并自 link-spec + slash-commands-spec + functional-design |
 | interaction.md | v1.0 | 2026-05-21 | 合并自 interaction-spec + ui-ux-spec |
-| development.md | **v5.0** | **2026-06-06** | **新增模板系统完整开发指南** |
+| development.md | **v6.0** | **2026-06-27** | **新增 Core Layer 架构章节** |
 | product-vision.md | v1.4 | 2026-05-20 | 从 comind/docs/ 迁入 |
 | block-editor-spec.md | **v0.5** | **2026-06-07** | **新增 Concept Block 章节** |
 | ui-ux-spec.md | v1.1 | 2026-06-05 | 新增关系类型标签点击切换 |
@@ -73,6 +75,10 @@ docs/
 | slash-commands-spec.md | **v1.0** | **2026-06-06** | **新增模板系统集成** |
 | template-system-spec.md | **v1.0** | **2026-06-06** | **新增模板系统完整规格** |
 | concept-block-spec.md | **v1.0** | **2026-06-07** | **✨ 新概念块完整规格** |
+| search-spec.md | **v1.0** | **2026-06-27** | **✨ 全局搜索完整规格** |
+| core-layer.md | **v1.0** | **2026-06-27** | **✨ Core Layer 架构设计** |
+| storage-adapter.md | **v1.0** | **2026-06-27** | **✨ Storage Adapter 接口规范** |
+| sprint-1-plan.md | **v1.0** | **2026-06-27** | **✨ Phase 2 Sprint 1 计划** |
 
 ---
 
@@ -90,6 +96,40 @@ Agent 启动时只需加载 `docs/active/` 下的 6 个文件即可获得完整�
 
 ### 添加新文档
 新功能规格文档应追加到对应的 `active/` 文件中（如新功能属于已有功能域），或创建新文件（如全新功能域）。
+
+---
+
+## Phase 2 Sprint 3 更新摘要（2026-06-27）
+
+### 主要功能
+
+#### Core Layer 架构重构完成
+- **框架无关设计**：核心业务逻辑抽离到纯 TypeScript 层，不依赖 Vue/Pinia/tiptap
+- **服务层抽象**：BlockService、LinkService、TagService、PropertyService、PageService、SearchService
+- **存储适配器接口**：IndexedDBAdapter（生产）+ MemoryAdapter（测试）
+- **依赖注入模式**：所有服务通过构造函数注入存储适配器
+- **测试覆盖率**：159 个测试用例，95%+ 覆盖率
+
+#### 全文搜索系统（Phase 2 Sprint 3）
+- **LunrSearch 搜索引擎**：基于 Lunr.js 的全文搜索引擎
+- **中英文支持**：英文标准分词 + 中文 bigram 字符二元切分
+- **增量索引**：IndexManager 自动监听数据变化，300ms Debounce 延迟重建
+- **SearchService API**：统一搜索接口，支持类型过滤（block/page/all）
+- **SearchPanel 组件**：全局搜索弹窗，Ctrl+K/Cmd+K 快捷键唤起
+- **键盘导航**：上下箭头选择结果，Enter 打开，Esc 关闭
+- **结果高亮**：搜索结果中高亮显示匹配文本
+- **20 个新增测试**：lunrSearch.test.ts + searchService.test.ts
+
+### 架构文档新增
+- **Core Layer 架构设计**（core-layer.md）- 完整架构总览、模块结构、核心原则
+- **Storage Adapter 接口规范**（storage-adapter.md）- 适配器接口定义、实现要求、测试策略
+- **Phase 2 Sprint 1 计划**（sprint-1-plan.md）- Sprint 交付物、任务分解、验收标准
+
+### 相关文档更新
+- `docs/1-overview/SPEC.md` - 更新 Phase 2 规划状态
+- `docs/3-features/search-spec.md` - 新增全局搜索完整规格（v1.0）
+- `docs/5-development/dev-guide.md` - 更新至 v6.0（新增 Core Layer 章节）
+- `docs/6-reports/phase-2-sprint-3-verification-report.md` - Sprint 3 验证报告
 
 ---
 
@@ -281,4 +321,4 @@ Agent 启动时只需加载 `docs/active/` 下的 6 个文件即可获得完整�
 
 ---
 
-*本文档于 2026-05-21 创建，作为文档体系重整的一部分。最新更新于 2026-06-07（v0.9）。*
+*本文档于 2026-05-21 创建，作为文档体系重整的一部分。最新更新于 2026-06-27（Phase 2 Sprint 3）。*

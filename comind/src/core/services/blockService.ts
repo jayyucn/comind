@@ -146,6 +146,32 @@ export class BlockService {
   }
 
   /**
+   * 获取页面的 Block 树（扁平化数组形式）
+   */
+  async getBlockTree(pageId: string): Promise<Block[]> {
+    const tree = await this.buildTree(pageId)
+    const blocks: Block[] = []
+
+    const flatten = (nodes: TreeNode[]) => {
+      for (const node of nodes) {
+        blocks.push(node.block)
+        flatten(node.children)
+      }
+    }
+
+    flatten(tree)
+    return blocks
+  }
+
+  /**
+   * 获取所有 Block
+   */
+  async getAllBlocks(): Promise<Block[]> {
+    const result = await this.repository.findAll(10000, 0)
+    return result.items
+  }
+
+  /**
    * 移动 Block 到新位置
    */
   async move(blockId: string, newParentId: string | null, afterBlockId?: string): Promise<void> {

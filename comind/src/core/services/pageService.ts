@@ -59,7 +59,7 @@ export class PageService {
    */
   async getAll(): Promise<Page[]> {
     const result = await this.repository.findAll(1000, 0)
-    return result.items
+    return result.items.filter(p => !p.deleted)
   }
 
   /**
