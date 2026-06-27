@@ -11,6 +11,7 @@ import { LinkService } from './services/linkService'
 import { TagService } from './services/tagService'
 import { PropertyService } from './services/propertyService'
 import { PageService } from './services/pageService'
+import { SearchService } from './search/searchService'
 
 /**
  * Core 层上下文
@@ -22,6 +23,7 @@ export interface CoreContext {
   tagService: TagService
   propertyService: PropertyService
   pageService: PageService
+  searchService: SearchService
 }
 
 /** 全局 Core 上下文 */
@@ -47,6 +49,7 @@ export async function initCore(type: 'indexeddb' | 'memory' = 'indexeddb'): Prom
   const tagService = new TagService()
   const propertyService = new PropertyService({ storage })
   const pageService = new PageService({ storage })
+  const searchService = new SearchService({ storage })
 
   coreContext = {
     storage,
@@ -55,6 +58,7 @@ export async function initCore(type: 'indexeddb' | 'memory' = 'indexeddb'): Prom
     tagService,
     propertyService,
     pageService,
+    searchService,
   }
 
   return coreContext

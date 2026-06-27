@@ -16,6 +16,7 @@ import { ArrowLeft, ArrowRight, PanelLeftClose, PanelLeftOpen, PanelRightOpen, P
 import RightSidebar from './components/RightSidebar/index.vue'
 import { registerPanel } from './components/RightSidebar/panels'
 import ConceptGraphPanel from './components/ConceptGraph/Panel.vue'
+import SearchPanel from './components/SearchPanel.vue'
 
 registerPanel({
   id: 'concept-graph',
@@ -37,7 +38,15 @@ const showRightSidebarToggle = computed(() => route.meta.hideRightSidebarToggle 
 
 onMounted(async () => {
   await useRelationshipTypes().load()
+  document.addEventListener('keydown', handleGlobalKeydown)
 })
+
+function handleGlobalKeydown(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+    e.preventDefault()
+    showSearchPanel.value = !showSearchPanel.value
+  }
+}
 
 type HistoryItem = {
   path: string
@@ -49,6 +58,7 @@ const historyIndex = ref(0)
 
 const showTrashedPageWarning = ref(false)
 const trashedPageToRestore = ref<string | null>(null)
+const showSearchPanel = ref(false)
 
 watch(() => route.fullPath, async (newPath) => {
   if (newPath === historyStack.value[historyIndex.value]?.path) return
@@ -200,6 +210,8 @@ function handleMainClick(e: MouseEvent) {
       @confirm="confirmRestoreTrashedPage" @cancel="cancelRestoreTrashedPage" />
 
     <SettingsModal />
+
+    <SearchPanel :visible="showSearchPanel" @close="showSearchPanel = false" />
   </div>
 </template>
 
