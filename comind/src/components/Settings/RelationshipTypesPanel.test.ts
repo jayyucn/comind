@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
-import 'fake-indexeddb/auto'
 import RelationshipTypesPanel from './RelationshipTypesPanel.vue'
 import { useRelationshipTypes } from '../../composables/useRelationshipTypes'
 import { getCore } from '../../core'

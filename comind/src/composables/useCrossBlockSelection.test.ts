@@ -552,17 +552,21 @@ describe('useCrossBlockSelection', () => {
       expect(selection.anchorIds.size).toBe(0)
     })
 
-    test('应触发 blockService.delete 持久化', async () => {
-      const { blockService } = getCore()
+    test('应触发 deleteBlock 持久化', async () => {
       const selection = useCrossBlockSelection()
       const pageId = 'page-1'
 
       const block1 = await blockStore.createBlock({ pageId, content: 'Block 1' })
       selection.anchorIds.add(block1.id)
 
+      // 记录删除前的数量
+      const beforeCount = blockStore.blocks.length
+
       await selection.deleteSelected()
 
-      expect(blockService.delete).toHaveBeenCalled()
+      // 验证 block 已从 store 中移除（间接验证 deleteBlock 被调用）
+      expect(blockStore.blocks.length).toBe(beforeCount - 1)
+      expect(blockStore.blocks.find(b => b.id === block1.id)).toBeUndefined()
     })
 
     test('空选区时应不执行任何删除', async () => {

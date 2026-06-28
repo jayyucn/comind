@@ -53,6 +53,7 @@ describe('useRelationshipTypes', () => {
     it('非空时不覆盖已有记录', async () => {
       // 预置一条用户修改过的种子
       await getCore().storage.relationshipTypes.create({
+        id: 'rt_seed_is-a',
         type: 'is-a',
         inverse: 'has-instance',
         label: '是一个（已修改）',
@@ -61,6 +62,8 @@ describe('useRelationshipTypes', () => {
         color: '#000000',
         group: 'concept',
         strength: 'strong',
+        order: 0,
+        builtin: true,
       })
       const { load, all } = useRelationshipTypes()
       await load()
@@ -72,8 +75,8 @@ describe('useRelationshipTypes', () => {
 
     it('非空时为缺失的种子补齐', async () => {
       // 预置前 2 条种子
-      await getCore().storage.relationshipTypes.create({ type: 'is-a', inverse: 'has-instance', label: '是一个', inverseLabel: '有实例', description: null, color: '#1890ff', group: 'concept', strength: 'strong' })
-      await getCore().storage.relationshipTypes.create({ type: 'part-of', inverse: 'has-part', label: '部分于', inverseLabel: '有部分', description: null, color: '#13c2c2', group: 'concept', strength: 'strong' })
+      await getCore().storage.relationshipTypes.create({ id: 'rt_seed_is-a', type: 'is-a', inverse: 'has-instance', label: '是一个', inverseLabel: '有实例', description: null, color: '#1890ff', group: 'concept', strength: 'strong', order: 0, builtin: true })
+      await getCore().storage.relationshipTypes.create({ id: 'rt_seed_part-of', type: 'part-of', inverse: 'has-part', label: '部分于', inverseLabel: '有部分', description: null, color: '#13c2c2', group: 'concept', strength: 'strong', order: 1, builtin: true })
       const { load, all } = useRelationshipTypes()
       await load()
       expect(all.value).toHaveLength(8)

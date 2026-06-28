@@ -95,6 +95,9 @@ export function useRelationshipTypes() {
       if (err) throw new Error(err)
 
       const core = getCore()
+      const maxOrder = state.value.items.length > 0
+        ? Math.max(...state.value.items.map(r => r.order))
+        : -1
       const record = await core.relationshipTypeService.create({
         type: input.type,
         inverse: input.inverse,
@@ -104,6 +107,7 @@ export function useRelationshipTypes() {
         color: input.color,
         group: input.group,
         strength: input.strength,
+        order: maxOrder + 1,
       })
       state.value.items = [...state.value.items, record]
       return record
@@ -146,19 +150,17 @@ export function useRelationshipTypes() {
     async softDelete(id: string): Promise<void> {
       const core = getCore()
       await core.relationshipTypeService.softDelete(id)
-      const existing = state.value.items.find(r => r.id === id)
-      if (existing) {
-        existing.deleted = true
-      }
+      state.value.items = state.value.items.map(r =>
+        r.id === id ? { ...r, deleted: true, updatedAt: Date.now() } : r
+      )
     },
 
     async restore(id: string): Promise<void> {
       const core = getCore()
       await core.relationshipTypeService.restore(id)
-      const existing = state.value.items.find(r => r.id === id)
-      if (existing) {
-        existing.deleted = false
-      }
+      state.value.items = state.value.items.map(r =>
+        r.id === id ? { ...r, deleted: false, updatedAt: Date.now() } : r
+      )
     },
 
     async reorder(orderedIds: string[]): Promise<void> {
