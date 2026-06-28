@@ -67,6 +67,12 @@ vi.mock('../core', () => ({
       update: vi.fn(),
       delete: vi.fn(),
       updatePage: vi.fn(),
+    },
+    searchService: {
+      updateBlock: vi.fn(),
+      removeBlock: vi.fn(),
+      updatePage: vi.fn(),
+      removePage: vi.fn(),
     }
   })
 }))

@@ -1,8 +1,8 @@
 # Core Layer 架构设计
 
-> 版本：v1.0
-> 日期：2026-06-27
-> 状态：Phase 2 规划
+> 版本：v1.1
+> 日期：2026-06-28
+> 状态：Phase 2 Sprint 4 - 已完成 Core 层主体架构
 
 ***
 
@@ -28,6 +28,15 @@ Core Layer 是 comind 的核心业务逻辑层，与任何前端框架无关。
 | 难以进行单元测试 | 框架无关的代码更容易编写测试 |
 | 未来迁移成本高 | 切换框架（如 React）只需重写 UI 层 |
 | 多端复用困难 | Core 逻辑可在 Web、桌面、移动端复用 |
+
+### 1.3 Phase 2 完成状态
+
+| Sprint | 内容 | 状态 |
+|--------|------|------|
+| Sprint 1 | Core 层目录结构 + Block/Link 抽离 | ✅ 完成 |
+| Sprint 2 | Tag/Property 抽离 + StorageAdapter 接口 | ✅ 完成 |
+| Sprint 3 | Lunr.js 搜索集成 + 搜索 UI | ✅ 完成 |
+| Sprint 4 | 测试覆盖 + 回归验证 + 文档更新 | 🔄 进行中 |
 
 ***
 
@@ -107,6 +116,9 @@ src/core/
 | `PropertyDefinition` | 属性定义（元数据） |
 | `PropertyType` | 属性类型枚举 |
 | `PropertyValue` | 属性值联合类型 |
+| `RelationshipType` | 关系类型（Phase 2 Sprint 2） |
+| `UserTemplate` | 用户模板（Phase 2 Sprint 2） |
+| `TemplateBlock` | 模板块结构 |
 | `SearchResult` | 搜索结果 |
 | `SearchOptions` | 搜索选项 |
 | `Result<T>` | 通用操作结果 |
