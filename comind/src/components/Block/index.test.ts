@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import 'fake-indexeddb/auto'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
@@ -25,7 +24,7 @@ import { useBlockStore } from '../../stores/blocks'
 import { usePageStore } from '../../stores/pages'
 import { useRelationshipMenu } from '../../composables/useRelationshipMenu'
 import { useRelationshipTypes } from '../../composables/useRelationshipTypes'
-import { db } from '../../storage/db'
+import { getCore } from '../../core'
 import type { TreeNode } from '../../types/block'
 
 vi.mock('../../storage/indexedDB', () => ({
@@ -120,7 +119,9 @@ describe('Block - rel-type-label click handling', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
 
-    await db.relationshipTypes.clear()
+    await getCore().storage.relationshipTypes.findAll().then(result => 
+      Promise.all(result.items.map(r => getCore().storage.relationshipTypes.delete(r.id)))
+    )
     const { _resetForTest, load } = useRelationshipTypes()
     _resetForTest()
     await load()

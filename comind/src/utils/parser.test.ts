@@ -6,10 +6,9 @@
  * - 不再在 parser 层提取 tags
  */
 import { describe, it, expect, beforeEach } from 'vitest'
-import 'fake-indexeddb/auto'
 import { parseContent, parsePropertyValue, parseBlockLinks } from './parser'
 import { useRelationshipTypes } from '../composables/useRelationshipTypes'
-import { db } from '../storage/db'
+import { getCore } from '../core'
 
 // ────────────────────────────────────────────────────────
 // parseBlockLinks 关系类型解析
@@ -19,7 +18,9 @@ describe('parseBlockLinks', () => {
   beforeEach(async () => {
     // getPredefinedRelationship 依赖 useRelationshipTypes 的 state；
     // 测试环境下初始化种子数据，让依赖反向推断的断言可工作
-    await db.relationshipTypes.clear()
+    await getCore().storage.relationshipTypes.findAll().then(result => 
+      Promise.all(result.items.map(r => getCore().storage.relationshipTypes.delete(r.id)))
+    )
     const { _resetForTest, load } = useRelationshipTypes()
     _resetForTest()
     await load()

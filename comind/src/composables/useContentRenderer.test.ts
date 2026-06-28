@@ -1,8 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import 'fake-indexeddb/auto'
 import { useContentRenderer } from './useContentRenderer'
 import { useRelationshipTypes } from './useRelationshipTypes'
-import { db } from '../storage/db'
+import { getCore } from '../core'
 
 const { renderContentToHtml } = useContentRenderer()
 
@@ -88,11 +87,23 @@ describe('useContentRenderer — 渲染测试', () => {
 
 describe('useContentRenderer - typed wiki links', () => {
   beforeEach(async () => {
-    // getPredefinedRelationship 依赖 useRelationshipTypes 的 state；
-    // 加载种子数据让中文 label/颜色 等断言可工作
-    await db.relationshipTypes.clear()
     const { _resetForTest, load } = useRelationshipTypes()
+    
+    // 完全重置 state
     _resetForTest()
+    
+    // 清空 storage 中的 relationshipTypes - 先软删除活跃项，再硬删除所有项
+    const core = getCore()
+    const activeResult = await core.relationshipTypeService.getActive()
+    for (const r of activeResult) {
+      await core.relationshipTypeService.softDelete(r.id)
+    }
+    const allResult = await core.storage.relationshipTypes.findAll()
+    for (const r of allResult.items) {
+      await core.storage.relationshipTypes.delete(r.id)
+    }
+    
+    // 重新加载种子数据
     await load()
   })
 

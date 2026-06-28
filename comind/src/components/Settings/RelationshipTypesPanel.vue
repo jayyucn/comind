@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import { ArrowUp, ArrowDown, Pencil, Trash2, Plus, ChevronDown, ChevronRight, Undo2, X, Check } from 'lucide-vue-next'
 import { useRelationshipTypes, validateRelationshipTypeInput, type RelationshipTypeInput } from '../../composables/useRelationshipTypes'
-import type { Strength } from '../../storage/db'
+import type { Strength } from '../../core/types'
 
 const { all, create, update, softDelete, restore, reorder } = useRelationshipTypes()
 
@@ -22,7 +22,9 @@ interface EditState {
   inverse: string
   label: string
   inverseLabel: string
+  description: string
   color: string
+  group: 'family' | 'work' | 'concept' | 'action' | 'custom'
   strength: Strength
   /** null 表示新增；string 表示编辑的记录 id */
   originalId: string | null
@@ -51,7 +53,9 @@ function startEdit(id: string): void {
     inverse: r.inverse ?? '',
     label: r.label,
     inverseLabel: r.inverseLabel,
+    description: r.description ?? '',
     color: r.color,
+    group: r.group,
     strength: r.strength,
     originalId: id,
     isNew: false
@@ -65,7 +69,9 @@ function startNew(): void {
     inverse: '',
     label: '',
     inverseLabel: '',
+    description: '',
     color: '#1890ff',
+    group: 'custom',
     strength: 'medium',
     originalId: null,
     isNew: true
@@ -85,7 +91,9 @@ const validateResult = computed<string | null>(() => {
       inverse: editState.value.inverse.trim() || null,
       label: editState.value.label,
       inverseLabel: editState.value.inverseLabel,
+      description: editState.value.description || null,
       color: editState.value.color,
+      group: editState.value.group,
       strength: editState.value.strength
     },
     all.value
@@ -104,7 +112,9 @@ async function saveEdit(): Promise<void> {
     inverse: s.inverse.trim() || null,
     label: s.label.trim(),
     inverseLabel: s.inverseLabel.trim(),
+    description: s.description || null,
     color: s.color,
+    group: s.group,
     strength: s.strength
   }
   if (s.isNew) {

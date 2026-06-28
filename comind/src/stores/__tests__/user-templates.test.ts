@@ -1,18 +1,19 @@
 import { describe, test, expect, beforeEach } from 'vitest'
-import 'fake-indexeddb/auto'
 import { setActivePinia, createPinia } from 'pinia'
 import { useUserTemplatesStore } from '../user-templates'
-import { db } from '../../storage/db'
+import { getCore } from '../../core'
 import type { UserTemplate } from '../../types/template'
 
 describe('user-templates store', () => {
   beforeEach(async () => {
     setActivePinia(createPinia())
-    await db.delete()
-    await db.open()
+    // 清空 templates（Memory Adapter 无持久化，测试间需要手动清空）
+    await getCore().storage.templates.findAll().then(result => 
+      Promise.all(result.items.map(t => getCore().storage.templates.delete(t.id)))
+    )
   })
 
-  test('create 写入 db 并更新内存', async () => {
+  test('create 写入 storage 并更新内存', async () => {
     const store = useUserTemplatesStore()
     const t = await store.create({
       name: 'Test',
@@ -22,29 +23,31 @@ describe('user-templates store', () => {
     expect(t.id).toBeTruthy()
     expect(t.category).toBe('custom')
     expect(store.templates.length).toBe(1)
-    const fromDb = await db.templates.get(t.id)
-    expect(fromDb).toBeDefined()
+    const fromStorage = await getCore().storage.templates.findById(t.id)
+    expect(fromStorage).toBeDefined()
   })
 
-  test('loadAll 从 db 加载', async () => {
+  test('loadAll 从 storage 加载', async () => {
+    // 直接在 storage 中插入模板数据（绕过 store）
     const seed: UserTemplate = {
       id: 't1', name: 'A', category: 'work', sourcePageId: 'p',
       blocks: [], createdAt: 0, updatedAt: 0,
     }
-    await db.templates.put(seed)
+    // 使用类型断言直接操作 MemoryTemplateRepository 内部的 Map 以插入特定 ID 的数据
+    ;(getCore().storage.templates as any).templates.set(seed.id, seed)
     const store = useUserTemplatesStore()
     await store.loadAll()
     expect(store.templates.length).toBe(1)
     expect(store.templates[0].id).toBe('t1')
   })
 
-  test('remove 从 db 与内存同时删除', async () => {
+  test('remove 从 storage 与内存同时删除', async () => {
     const store = useUserTemplatesStore()
     const t = await store.create({ name: 'X', sourcePageId: 'p', blocks: [] })
     await store.remove(t.id)
     expect(store.templates.length).toBe(0)
-    const fromDb = await db.templates.get(t.id)
-    expect(fromDb).toBeUndefined()
+    const fromStorage = await getCore().storage.templates.findById(t.id)
+    expect(fromStorage).toBeUndefined()
   })
 
   test('rename 修改 name 并更新 updatedAt', async () => {
@@ -142,7 +145,7 @@ describe('user-templates store', () => {
     await store.create({ name: 'InMemory', sourcePageId: 'p1', blocks: [] })
     expect(store.templates.length).toBe(1)
     
-    // 直接在 db 中插入另一个模板（绕过 store）
+    // 直接在 storage 中插入另一个模板（绕过 store）
     const anotherTemplate: UserTemplate = {
       id: 't-another',
       name: 'Another',
@@ -152,9 +155,10 @@ describe('user-templates store', () => {
       createdAt: Date.now(),
       updatedAt: Date.now(),
     }
-    await db.templates.put(anotherTemplate)
+    // 使用类型断言直接操作 MemoryTemplateRepository 内部的 Map 以插入特定 ID 的数据
+    ;(getCore().storage.templates as any).templates.set(anotherTemplate.id, anotherTemplate)
     
-    // loadAll 应该加载所有模板（包括 db 中的）
+    // loadAll 应该加载所有模板（包括 storage 中的）
     await store.loadAll()
     expect(store.templates.length).toBe(2)
     expect(store.templates.map(t => t.id)).toContain('t-another')

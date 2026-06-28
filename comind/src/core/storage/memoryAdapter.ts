@@ -18,6 +18,12 @@ import type {
   Property,
   PropertyCreateOptions,
   PropertyUpdateOptions,
+  RelationshipType,
+  RelationshipTypeCreateOptions,
+  RelationshipTypeUpdateOptions,
+  UserTemplate,
+  TemplateCreateOptions,
+  TemplateUpdateOptions,
   PagedResult,
 } from '../types'
 import type {
@@ -27,6 +33,8 @@ import type {
   LinkRepository,
   TagRepository,
   PropertyRepository,
+  RelationshipTypeRepository,
+  TemplateRepository,
   TransactionCallback,
 } from './adapter'
 import { generateUUID } from '../../utils/id'
@@ -405,6 +413,8 @@ export class MemoryAdapter implements StorageAdapter {
   readonly links: LinkRepository = new MemoryLinkRepository()
   readonly tags: TagRepository = new MemoryTagRepository()
   readonly properties: PropertyRepository = new MemoryPropertyRepository()
+  readonly relationshipTypes: RelationshipTypeRepository = new MemoryRelationshipTypeRepository()
+  readonly templates: TemplateRepository = new MemoryTemplateRepository()
 
   async transaction<T>(callback: TransactionCallback<T>): Promise<T> {
     // 内存存储天然支持事务，直接执行回调
@@ -417,5 +427,134 @@ export class MemoryAdapter implements StorageAdapter {
 
   isReady(): boolean {
     return true
+  }
+}
+
+class MemoryRelationshipTypeRepository implements RelationshipTypeRepository {
+  private relationshipTypes: Map<string, RelationshipType> = new Map()
+
+  async findById(id: string): Promise<RelationshipType | undefined> {
+    return this.relationshipTypes.get(id)
+  }
+
+  async findByType(type: string): Promise<RelationshipType | undefined> {
+    return Array.from(this.relationshipTypes.values()).find(r => r.type === type)
+  }
+
+  async findAll(limit = 100, offset = 0): Promise<PagedResult<RelationshipType>> {
+    const all = Array.from(this.relationshipTypes.values()).sort((a, b) => a.order - b.order)
+    const items = all.slice(offset, offset + limit)
+    return { items, total: all.length, page: Math.floor(offset / limit) + 1, pageSize: limit, hasMore: offset + limit < all.length }
+  }
+
+  async findActive(): Promise<RelationshipType[]> {
+    return Array.from(this.relationshipTypes.values())
+      .filter(r => !r.deleted)
+      .sort((a, b) => a.order - b.order)
+  }
+
+  async findByGroup(group: string): Promise<RelationshipType[]> {
+    return Array.from(this.relationshipTypes.values())
+      .filter(r => !r.deleted && r.group === group)
+      .sort((a, b) => a.order - b.order)
+  }
+
+  async create(options: RelationshipTypeCreateOptions): Promise<RelationshipType> {
+    const now = Date.now()
+    const id = options.id ?? (options.type.startsWith('rt_') ? options.type : `rt_user_${generateUUID()}`)
+    const relationshipType: RelationshipType = {
+      id,
+      type: options.type,
+      inverse: options.inverse,
+      label: options.label,
+      inverseLabel: options.inverseLabel,
+      description: options.description ?? null,
+      color: options.color ?? '#1890ff',
+      group: options.group ?? 'custom',
+      strength: options.strength ?? 'medium',
+      order: options.order ?? 0,
+      deleted: false,
+      builtin: options.builtin ?? false,
+      createdAt: now,
+      updatedAt: now,
+    }
+    this.relationshipTypes.set(relationshipType.id, relationshipType)
+    return relationshipType
+  }
+
+  async update(id: string, options: RelationshipTypeUpdateOptions): Promise<RelationshipType> {
+    const relationshipType = this.relationshipTypes.get(id)
+    if (!relationshipType) throw new Error(`RelationshipType not found: ${id}`)
+    const updated: RelationshipType = { ...relationshipType, ...options, updatedAt: Date.now() }
+    this.relationshipTypes.set(id, updated)
+    return updated
+  }
+
+  async delete(id: string): Promise<void> {
+    this.relationshipTypes.delete(id)
+  }
+
+  async softDelete(id: string): Promise<void> {
+    const relationshipType = this.relationshipTypes.get(id)
+    if (relationshipType) {
+      relationshipType.deleted = true
+      relationshipType.updatedAt = Date.now()
+    }
+  }
+
+  async restore(id: string): Promise<void> {
+    const relationshipType = this.relationshipTypes.get(id)
+    if (relationshipType) {
+      relationshipType.deleted = false
+      relationshipType.updatedAt = Date.now()
+    }
+  }
+}
+
+class MemoryTemplateRepository implements TemplateRepository {
+  private templates: Map<string, UserTemplate> = new Map()
+
+  async findById(id: string): Promise<UserTemplate | undefined> {
+    return this.templates.get(id)
+  }
+
+  async findByCategory(category: string): Promise<UserTemplate[]> {
+    return Array.from(this.templates.values())
+      .filter(t => t.category === category)
+      .sort((a, b) => a.updatedAt - b.updatedAt)
+  }
+
+  async findAll(limit = 100, offset = 0): Promise<PagedResult<UserTemplate>> {
+    const all = Array.from(this.templates.values()).sort((a, b) => b.updatedAt - a.updatedAt)
+    const items = all.slice(offset, offset + limit)
+    return { items, total: all.length, page: Math.floor(offset / limit) + 1, pageSize: limit, hasMore: offset + limit < all.length }
+  }
+
+  async create(options: TemplateCreateOptions): Promise<UserTemplate> {
+    const now = Date.now()
+    const template: UserTemplate = {
+      id: `tpl_${generateUUID()}`,
+      name: options.name,
+      description: options.description,
+      category: options.category ?? 'custom',
+      sourcePageId: options.sourcePageId,
+      blocks: options.blocks,
+      createdAt: now,
+      updatedAt: now,
+    }
+    this.templates.set(template.id, template)
+    return template
+  }
+
+  async update(id: string, options: TemplateUpdateOptions): Promise<UserTemplate> {
+    const template = this.templates.get(id)
+    if (!template) throw new Error(`Template not found: ${id}`)
+    const updated: UserTemplate = { ...template, ...options, updatedAt: Date.now() }
+    this.templates.set(id, updated)
+    return updated
+  }
+
+  async delete(id: string): Promise<void> {
+    this.templates.delete(id)
   }
 }

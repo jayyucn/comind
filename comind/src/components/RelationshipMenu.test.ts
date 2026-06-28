@@ -1,11 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import 'fake-indexeddb/auto'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import RelationshipMenu from './RelationshipMenu.vue'
 import { useRelationshipMenu } from '../composables/useRelationshipMenu'
 import { useRelationshipTypes } from '../composables/useRelationshipTypes'
-import { db } from '../storage/db'
+import { getCore } from '../core'
 
 const mountOptions = {
   global: {
@@ -20,7 +19,9 @@ describe('RelationshipMenu', () => {
   let wrapper: VueWrapper | null = null
 
   beforeEach(async () => {
-    await db.relationshipTypes.clear()
+    await getCore().storage.relationshipTypes.findAll().then(result => 
+      Promise.all(result.items.map(r => getCore().storage.relationshipTypes.delete(r.id)))
+    )
     const { _resetForTest, load } = useRelationshipTypes()
     _resetForTest()
     await load()

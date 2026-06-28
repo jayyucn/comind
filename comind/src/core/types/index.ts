@@ -354,6 +354,7 @@ export interface RelationshipType {
   label: string
   inverseLabel: string
   description: string | null
+  color: string
   group: 'family' | 'work' | 'concept' | 'action' | 'custom'
   strength: Strength
   order: number
@@ -367,14 +368,17 @@ export interface RelationshipType {
  * 关系类型创建选项
  */
 export interface RelationshipTypeCreateOptions {
+  id?: string
   type: string
   inverse: string | null
   label: string
   inverseLabel: string
   description?: string | null
+  color?: string
   group?: 'family' | 'work' | 'concept' | 'action' | 'custom'
   strength?: Strength
   order?: number
+  builtin?: boolean
 }
 
 /**
@@ -384,6 +388,7 @@ export interface RelationshipTypeUpdateOptions {
   label?: string
   inverseLabel?: string
   description?: string | null
+  color?: string
   group?: 'family' | 'work' | 'concept' | 'action' | 'custom'
   strength?: Strength
   order?: number
@@ -394,14 +399,25 @@ export interface RelationshipTypeUpdateOptions {
 // Template Types
 // =============================================================================
 
+/** 模板块（树形结构） */
+export interface TemplateBlock {
+  type: 'bullet' | 'heading' | 'property'
+  content: string
+  headingLevel?: 1 | 2 | 3
+  propertyKey?: string
+  children?: TemplateBlock[]
+}
+
 /**
  * 用户模板
  */
 export interface UserTemplate {
   id: string
   name: string
+  description?: string
   category: string
-  blocks: unknown[]
+  sourcePageId: string
+  blocks: TemplateBlock[]
   createdAt: number
   updatedAt: number
 }
@@ -411,8 +427,10 @@ export interface UserTemplate {
  */
 export interface TemplateCreateOptions {
   name: string
-  category: string
-  blocks: unknown[]
+  description?: string
+  category?: string
+  sourcePageId: string
+  blocks: TemplateBlock[]
 }
 
 /**
@@ -420,8 +438,10 @@ export interface TemplateCreateOptions {
  */
 export interface TemplateUpdateOptions {
   name?: string
+  description?: string
   category?: string
-  blocks?: unknown[]
+  sourcePageId?: string
+  blocks?: TemplateBlock[]
 }
 
 // =============================================================================

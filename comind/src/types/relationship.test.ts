@@ -1,7 +1,6 @@
 // d:\comind\comind\src\types\relationship.test.ts
 import { describe, it, expect, beforeEach } from 'vitest'
-import 'fake-indexeddb/auto'
-import { db } from '../storage/db'
+import { getCore } from '../core'
 import {
   getPredefinedRelationship,
   getGroupByType,
@@ -15,8 +14,10 @@ import { useRelationshipTypes } from '../composables/useRelationshipTypes'
 
 describe('relationship（运行时配置）', () => {
   beforeEach(async () => {
-    // fake-indexeddb 跨测试持久化，软删状态会泄漏；与 useRelationshipTypes.test.ts 一致地清表
-    await db.relationshipTypes.clear()
+    // 跨测试持久化，软删状态会泄漏；与 useRelationshipTypes.test.ts 一致地清表
+    await getCore().storage.relationshipTypes.findAll().then(result => 
+      Promise.all(result.items.map(r => getCore().storage.relationshipTypes.delete(r.id)))
+    )
     const { _resetForTest, load } = useRelationshipTypes()
     _resetForTest()
     await load()

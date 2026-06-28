@@ -775,7 +775,7 @@ function handleDrop(e: DragEvent) {
   e.stopPropagation()
 
   void (async () => {
-    const { assetStorage } = await import('../../storage/asset')
+    const { assetStorage } = await import('../../utils/asset')
     const asset = await assetStorage.save(file)
     const content = `![${asset.name}](asset://${asset.id})`
     await blockStore.updateBlockContent(blockId.value, content)
@@ -792,7 +792,7 @@ async function handlePaste(e: ClipboardEvent) {
       e.stopPropagation()
       const file = items[i].getAsFile()
       if (!file) continue
-      const { assetStorage } = await import('../../storage/asset')
+      const { assetStorage } = await import('../../utils/asset')
       const asset = await assetStorage.save(file)
       const content = `![${asset.name}](asset://${asset.id})`
       await blockStore.updateBlockContent(blockId.value, content)

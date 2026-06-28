@@ -11,6 +11,8 @@ import { LinkService } from './services/linkService'
 import { TagService } from './services/tagService'
 import { PropertyService } from './services/propertyService'
 import { PageService } from './services/pageService'
+import { RelationshipTypeService } from './services/relationshipTypeService'
+import { TemplateService } from './services/templateService'
 import { SearchService } from './search/searchService'
 
 /**
@@ -23,6 +25,8 @@ export interface CoreContext {
   tagService: TagService
   propertyService: PropertyService
   pageService: PageService
+  relationshipTypeService: RelationshipTypeService
+  templateService: TemplateService
   searchService: SearchService
 }
 
@@ -49,6 +53,8 @@ export async function initCore(type: 'indexeddb' | 'memory' = 'indexeddb'): Prom
   const tagService = new TagService()
   const propertyService = new PropertyService({ storage })
   const pageService = new PageService({ storage })
+  const relationshipTypeService = new RelationshipTypeService({ storage })
+  const templateService = new TemplateService({ storage })
   const searchService = new SearchService({ storage })
 
   coreContext = {
@@ -58,6 +64,8 @@ export async function initCore(type: 'indexeddb' | 'memory' = 'indexeddb'): Prom
     tagService,
     propertyService,
     pageService,
+    relationshipTypeService,
+    templateService,
     searchService,
   }
 

@@ -20,6 +20,12 @@ import type {
   PropertyUpdateOptions,
   PagedResult,
   Tag,
+  RelationshipType,
+  RelationshipTypeCreateOptions,
+  RelationshipTypeUpdateOptions,
+  UserTemplate,
+  TemplateCreateOptions,
+  TemplateUpdateOptions,
 } from '../types'
 import type {
   StorageAdapter,
@@ -28,6 +34,8 @@ import type {
   LinkRepository,
   TagRepository,
   PropertyRepository,
+  RelationshipTypeRepository,
+  TemplateRepository,
   TransactionCallback,
 } from './adapter'
 import { generateUUID } from '../../utils/id'
@@ -103,16 +111,50 @@ class CoreDB extends Dexie {
   links!: Dexie.Table<LinkRecord, string>
   pages!: Dexie.Table<PageRecord, string>
   properties!: Dexie.Table<PropertyRecord, string>
+  relationshipTypes!: Dexie.Table<RelationshipTypeRecord, string>
+  templates!: Dexie.Table<TemplateRecord, string>
 
   constructor() {
     super('comind')
-    this.version(1).stores({
+    this.version(9).stores({
       blocks: 'id, pageId, parentId, pos, createdAt, updatedAt',
       links: 'id, sourceBlockId, targetPageId, displayText, relationshipType, createdAt',
       pages: 'id, blockId, title, type, deleted, createdAt, updatedAt',
       properties: 'id, blockId, [blockId+key]',
+      relationshipTypes: 'id, type, deleted, builtin, order',
+      templates: 'id, category, updatedAt, name',
     })
   }
+}
+
+/** RelationshipType 存储记录 */
+interface RelationshipTypeRecord {
+  id: string
+  type: string
+  inverse: string | null
+  label: string
+  inverseLabel: string
+  description: string | null
+  color: string
+  group: string
+  strength: string
+  order: number
+  deleted: boolean
+  builtin: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+/** Template 存储记录（使用 any 避免递归类型推断问题） */
+interface TemplateRecord {
+  id: string
+  name: string
+  description?: string
+  category: string
+  sourcePageId: string
+  blocks: any[]
+  createdAt: number
+  updatedAt: number
 }
 
 // =============================================================================
@@ -691,6 +733,8 @@ export class IndexedDBAdapter implements StorageAdapter {
   readonly links: LinkRepository
   readonly tags: TagRepository
   readonly properties: PropertyRepository
+  readonly relationshipTypes: RelationshipTypeRepository
+  readonly templates: TemplateRepository
 
   private db: CoreDB
   private _ready = false
@@ -702,6 +746,8 @@ export class IndexedDBAdapter implements StorageAdapter {
     this.links = new IndexedDBLinkRepository(this.db)
     this.tags = new IndexedDBTagRepository()
     this.properties = new IndexedDBPropertyRepository(this.db)
+    this.relationshipTypes = new IndexedDBRelationshipTypeRepository(this.db)
+    this.templates = new IndexedDBTemplateRepository(this.db)
   }
 
   isReady(): boolean {
@@ -714,11 +760,215 @@ export class IndexedDBAdapter implements StorageAdapter {
   }
 
   async transaction<T>(callback: TransactionCallback<T>): Promise<T> {
-    return this.db.transaction('rw', [this.db.blocks, this.db.pages, this.db.links, this.db.properties], callback as any) as Promise<T>
+    return this.db.transaction('rw', [this.db.blocks, this.db.pages, this.db.links, this.db.properties, this.db.relationshipTypes, this.db.templates], callback as any) as Promise<T>
   }
 
   async close(): Promise<void> {
     await this.db.close()
     this._ready = false
   }
+}
+
+// =============================================================================
+// RelationshipType Repository
+// =============================================================================
+
+class IndexedDBRelationshipTypeRepository implements RelationshipTypeRepository {
+  private db: CoreDB
+
+  constructor(db: CoreDB) {
+    this.db = db
+  }
+
+  async findById(id: string): Promise<RelationshipType | undefined> {
+    const record = await this.db.relationshipTypes.get(id)
+    return record ? recordToRelationshipType(record) : undefined
+  }
+
+  async findByType(type: string): Promise<RelationshipType | undefined> {
+    const record = await this.db.relationshipTypes.where('type').equals(type).first()
+    return record ? recordToRelationshipType(record) : undefined
+  }
+
+  async findAll(limit = 100, offset = 0): Promise<PagedResult<RelationshipType>> {
+    const records = await this.db.relationshipTypes
+      .orderBy('order')
+      .offset(offset)
+      .limit(limit)
+      .toArray()
+    const total = await this.db.relationshipTypes.count()
+    return {
+      items: records.map(recordToRelationshipType),
+      total,
+      page: Math.floor(offset / limit) + 1,
+      pageSize: limit,
+      hasMore: offset + limit < total,
+    }
+  }
+
+  async findActive(): Promise<RelationshipType[]> {
+    const records = await this.db.relationshipTypes
+      .filter(r => !r.deleted)
+      .sortBy('order')
+    return records.map(recordToRelationshipType)
+  }
+
+  async findByGroup(group: string): Promise<RelationshipType[]> {
+    const records = await this.db.relationshipTypes
+      .filter(r => !r.deleted && r.group === group)
+      .sortBy('order')
+    return records.map(recordToRelationshipType)
+  }
+
+  async create(options: RelationshipTypeCreateOptions): Promise<RelationshipType> {
+    const now = Date.now()
+    const record: RelationshipTypeRecord = {
+      id: options.type.startsWith('rt_') ? options.type : `rt_user_${generateUUID()}`,
+      type: options.type,
+      inverse: options.inverse,
+      label: options.label,
+      inverseLabel: options.inverseLabel,
+      description: options.description ?? null,
+      color: options.color ?? '#1890ff',
+      group: options.group ?? 'custom',
+      strength: options.strength ?? 'medium',
+      order: options.order ?? 0,
+      deleted: false,
+      builtin: false,
+      createdAt: now,
+      updatedAt: now,
+    }
+    await this.db.relationshipTypes.add(record)
+    return recordToRelationshipType(record)
+  }
+
+  async update(id: string, options: RelationshipTypeUpdateOptions): Promise<RelationshipType> {
+    const record = await this.db.relationshipTypes.get(id)
+    if (!record) throw new Error(`RelationshipType not found: ${id}`)
+
+    const updated = {
+      ...record,
+      ...options,
+      updatedAt: Date.now(),
+    }
+    await this.db.relationshipTypes.put(updated)
+    return recordToRelationshipType(updated)
+  }
+
+  async delete(id: string): Promise<void> {
+    await this.db.relationshipTypes.delete(id)
+  }
+
+  async softDelete(id: string): Promise<void> {
+    const record = await this.db.relationshipTypes.get(id)
+    if (!record) return
+    record.deleted = true
+    record.updatedAt = Date.now()
+    await this.db.relationshipTypes.put(record)
+  }
+
+  async restore(id: string): Promise<void> {
+    const record = await this.db.relationshipTypes.get(id)
+    if (!record) return
+    record.deleted = false
+    record.updatedAt = Date.now()
+    await this.db.relationshipTypes.put(record)
+  }
+}
+
+function recordToRelationshipType(record: RelationshipTypeRecord): RelationshipType {
+  return {
+    id: record.id,
+    type: record.type,
+    inverse: record.inverse,
+    label: record.label,
+    inverseLabel: record.inverseLabel,
+    description: record.description,
+    color: record.color,
+    group: record.group as RelationshipType['group'],
+    strength: record.strength as RelationshipType['strength'],
+    order: record.order,
+    deleted: record.deleted,
+    builtin: record.builtin,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  }
+}
+
+// =============================================================================
+// Template Repository
+// =============================================================================
+
+class IndexedDBTemplateRepository implements TemplateRepository {
+  private db: CoreDB
+
+  constructor(db: CoreDB) {
+    this.db = db
+  }
+
+  async findById(id: string): Promise<UserTemplate | undefined> {
+    const record = await this.db.templates.get(id)
+    return record ? recordToTemplate(record) : undefined
+  }
+
+  async findByCategory(category: string): Promise<UserTemplate[]> {
+    const records = await this.db.templates
+      .where('category').equals(category)
+      .sortBy('updatedAt')
+    return records.map(recordToTemplate)
+  }
+
+  async findAll(limit = 100, offset = 0): Promise<PagedResult<UserTemplate>> {
+    const records = await this.db.templates
+      .orderBy('updatedAt')
+      .reverse()
+      .offset(offset)
+      .limit(limit)
+      .toArray()
+    const total = await this.db.templates.count()
+    return {
+      items: records.map(recordToTemplate),
+      total,
+      page: Math.floor(offset / limit) + 1,
+      pageSize: limit,
+      hasMore: offset + limit < total,
+    }
+  }
+
+  async create(options: TemplateCreateOptions): Promise<UserTemplate> {
+    const now = Date.now()
+    const record: TemplateRecord = {
+      id: `tpl_${generateUUID()}`,
+      name: options.name,
+      description: options.description,
+      category: options.category ?? 'custom',
+      sourcePageId: options.sourcePageId,
+      blocks: options.blocks as any[],
+      createdAt: now,
+      updatedAt: now,
+    }
+    await this.db.templates.add(record)
+    return recordToTemplate(record)
+  }
+
+  async update(id: string, options: TemplateUpdateOptions): Promise<UserTemplate> {
+    const record = await this.db.templates.get(id)
+    if (!record) throw new Error(`Template not found: ${id}`)
+
+    const updated: TemplateRecord = {
+      ...record,
+      ...options,
+      updatedAt: Date.now(),
+    }
+    await this.db.templates.put(updated)
+    return recordToTemplate(updated)
+  }
+
+  async delete(id: string): Promise<void> {
+    await this.db.templates.delete(id)
+  }
+}
+
+function recordToTemplate(record: TemplateRecord): UserTemplate {
+  return record as unknown as UserTemplate
 }

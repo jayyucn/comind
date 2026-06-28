@@ -18,6 +18,12 @@ import type {
   Property,
   PropertyCreateOptions,
   PropertyUpdateOptions,
+  RelationshipType,
+  RelationshipTypeCreateOptions,
+  RelationshipTypeUpdateOptions,
+  UserTemplate,
+  TemplateCreateOptions,
+  TemplateUpdateOptions,
   PagedResult,
 } from '../types'
 
@@ -105,6 +111,34 @@ export interface PropertyRepository {
   deleteByBlockIdAndKey(blockId: string, key: string): Promise<void>
 }
 
+/**
+ * RelationshipType Repository - 关系类型数据访问接口
+ */
+export interface RelationshipTypeRepository {
+  findById(id: string): Promise<RelationshipType | undefined>
+  findByType(type: string): Promise<RelationshipType | undefined>
+  findAll(limit?: number, offset?: number): Promise<PagedResult<RelationshipType>>
+  findActive(): Promise<RelationshipType[]>
+  findByGroup(group: string): Promise<RelationshipType[]>
+  create(options: RelationshipTypeCreateOptions): Promise<RelationshipType>
+  update(id: string, options: RelationshipTypeUpdateOptions): Promise<RelationshipType>
+  delete(id: string): Promise<void>
+  softDelete(id: string): Promise<void>
+  restore(id: string): Promise<void>
+}
+
+/**
+ * Template Repository - 模板数据访问接口
+ */
+export interface TemplateRepository {
+  findById(id: string): Promise<UserTemplate | undefined>
+  findByCategory(category: string): Promise<UserTemplate[]>
+  findAll(limit?: number, offset?: number): Promise<PagedResult<UserTemplate>>
+  create(options: TemplateCreateOptions): Promise<UserTemplate>
+  update(id: string, options: TemplateUpdateOptions): Promise<UserTemplate>
+  delete(id: string): Promise<void>
+}
+
 // =============================================================================
 // Storage Adapter Interface
 // =============================================================================
@@ -134,6 +168,12 @@ export interface StorageAdapter {
 
   /** Property 数据访问 */
   properties: PropertyRepository
+
+  /** RelationshipType 数据访问 */
+  relationshipTypes: RelationshipTypeRepository
+
+  /** Template 数据访问 */
+  templates: TemplateRepository
 
   /**
    * 执行事务

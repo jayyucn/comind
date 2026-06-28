@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { assetStorage } from '../../../../storage/asset'
+import { assetStorage } from '../../../../utils/asset'
 
 const props = defineProps<{
   content: string

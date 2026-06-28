@@ -1,18 +1,39 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import 'fake-indexeddb/auto'
-import { db } from '../storage/db'
+import { getCore } from '../core'
 import { useRelationshipTypes, validateRelationshipTypeInput } from './useRelationshipTypes'
 
 describe('useRelationshipTypes', () => {
   beforeEach(async () => {
-    await db.relationshipTypes.clear()
+    // 清除 relationshipTypes 数据 - 先软删除所有活跃项，再硬删除所有项
+    const core = getCore()
+    const activeResult = await core.relationshipTypeService.getActive()
+    for (const r of activeResult) {
+      await core.relationshipTypeService.softDelete(r.id)
+    }
+    // 硬删除所有项（包括软删除的）
+    const allResult = await core.storage.relationshipTypes.findAll()
+    for (const r of allResult.items) {
+      await core.storage.relationshipTypes.delete(r.id)
+    }
     // 清除模块级 state
     const { _resetForTest } = useRelationshipTypes()
     _resetForTest()
   })
 
   afterEach(async () => {
-    await db.relationshipTypes.clear()
+    // 清除 relationshipTypes 数据 - 先软删除所有活跃项，再硬删除所有项
+    const core = getCore()
+    const activeResult = await core.relationshipTypeService.getActive()
+    for (const r of activeResult) {
+      await core.relationshipTypeService.softDelete(r.id)
+    }
+    const allResult = await core.storage.relationshipTypes.findAll()
+    for (const r of allResult.items) {
+      await core.storage.relationshipTypes.delete(r.id)
+    }
+    // 清除模块级 state
+    const { _resetForTest } = useRelationshipTypes()
+    _resetForTest()
   })
 
   describe('load', () => {
@@ -31,17 +52,15 @@ describe('useRelationshipTypes', () => {
 
     it('非空时不覆盖已有记录', async () => {
       // 预置一条用户修改过的种子
-      await db.relationshipTypes.put({
-        id: 'rt_seed_is-a',
+      await getCore().storage.relationshipTypes.create({
         type: 'is-a',
         inverse: 'has-instance',
         label: '是一个（已修改）',
         inverseLabel: '有实例（已修改）',
+        description: null,
         color: '#000000',
+        group: 'concept',
         strength: 'strong',
-        order: 0,
-        deleted: false,
-        builtin: true
       })
       const { load, all } = useRelationshipTypes()
       await load()
@@ -53,8 +72,8 @@ describe('useRelationshipTypes', () => {
 
     it('非空时为缺失的种子补齐', async () => {
       // 预置前 2 条种子
-      await db.relationshipTypes.put({ id: 'rt_seed_is-a', type: 'is-a', inverse: 'has-instance', label: '是一个', inverseLabel: '有实例', color: '#1890ff', strength: 'strong', order: 0, deleted: false, builtin: true })
-      await db.relationshipTypes.put({ id: 'rt_seed_part-of', type: 'part-of', inverse: 'has-part', label: '部分于', inverseLabel: '有部分', color: '#13c2c2', strength: 'strong', order: 1, deleted: false, builtin: true })
+      await getCore().storage.relationshipTypes.create({ type: 'is-a', inverse: 'has-instance', label: '是一个', inverseLabel: '有实例', description: null, color: '#1890ff', group: 'concept', strength: 'strong' })
+      await getCore().storage.relationshipTypes.create({ type: 'part-of', inverse: 'has-part', label: '部分于', inverseLabel: '有部分', description: null, color: '#13c2c2', group: 'concept', strength: 'strong' })
       const { load, all } = useRelationshipTypes()
       await load()
       expect(all.value).toHaveLength(8)
@@ -72,7 +91,7 @@ describe('useRelationshipTypes', () => {
     it('过滤掉已软删的', async () => {
       const { load, create, softDelete, items } = useRelationshipTypes()
       await load()
-      const custom = await create({ type: 'custom', inverse: null, label: '自定义', inverseLabel: '自定义', color: '#111111', strength: 'medium' })
+      const custom = await create({ type: 'custom', inverse: null, label: '自定义', inverseLabel: '自定义', description: null, color: '#111111', group: 'custom', strength: 'medium' })
       expect(items.value.find(r => r.type === 'custom')).toBeTruthy()
       await softDelete(custom.id)
       expect(items.value.find(r => r.type === 'custom')).toBeUndefined()
@@ -93,7 +112,7 @@ describe('useRelationshipTypes', () => {
     it('成功路径：写入 Dexie + 更新 state', async () => {
       const { load, create, all } = useRelationshipTypes()
       await load()
-      const created = await create({ type: 'blocker', inverse: 'blocked-by', label: '阻塞', inverseLabel: '被阻塞', color: '#ff0000', strength: 'medium' })
+      const created = await create({ type: 'blocker', inverse: 'blocked-by', label: '阻塞', inverseLabel: '被阻塞', description: null, color: '#ff0000', group: 'work', strength: 'medium' })
       expect(created.id).toMatch(/^rt_user_/)
       expect(created.order).toBe(8)  // 8 种子后
       expect(created.builtin).toBe(false)
@@ -104,34 +123,34 @@ describe('useRelationshipTypes', () => {
     it('type 重复时抛出错误', async () => {
       const { load, create } = useRelationshipTypes()
       await load()
-      await expect(create({ type: 'is-a', inverse: null, label: 'X', inverseLabel: 'X', color: '#000', strength: 'medium' })).rejects.toThrow(/已存在/)
+      await expect(create({ type: 'is-a', inverse: null, label: 'X', inverseLabel: 'X', description: null, color: '#000', group: 'custom', strength: 'medium' })).rejects.toThrow(/已存在/)
     })
 
     it('type 与已软删记录冲突时允许创建', async () => {
       const { load, create, softDelete } = useRelationshipTypes()
       await load()
-      const c1 = await create({ type: 'tmp', inverse: null, label: 'A', inverseLabel: 'A', color: '#000', strength: 'medium' })
+      const c1 = await create({ type: 'tmp', inverse: null, label: 'A', inverseLabel: 'A', description: null, color: '#000', group: 'custom', strength: 'medium' })
       await softDelete(c1.id)
-      const c2 = await create({ type: 'tmp', inverse: null, label: 'B', inverseLabel: 'B', color: '#000', strength: 'medium' })
+      const c2 = await create({ type: 'tmp', inverse: null, label: 'B', inverseLabel: 'B', description: null, color: '#000', group: 'custom', strength: 'medium' })
       expect(c2.id).not.toBe(c1.id)
     })
 
     it('label 为空时抛出错误', async () => {
       const { load, create } = useRelationshipTypes()
       await load()
-      await expect(create({ type: 'x', inverse: null, label: '', inverseLabel: 'x', color: '#000', strength: 'medium' })).rejects.toThrow(/label/i)
+      await expect(create({ type: 'x', inverse: null, label: '', inverseLabel: 'x', description: null, color: '#000', group: 'custom', strength: 'medium' })).rejects.toThrow(/label/i)
     })
 
     it('color 格式错时抛出错误', async () => {
       const { load, create } = useRelationshipTypes()
       await load()
-      await expect(create({ type: 'x', inverse: null, label: 'x', inverseLabel: 'x', color: 'red', strength: 'medium' })).rejects.toThrow(/color/i)
+      await expect(create({ type: 'x', inverse: null, label: 'x', inverseLabel: 'x', description: null, color: 'red', group: 'custom', strength: 'medium' })).rejects.toThrow(/color/i)
     })
 
     it('type 不符合正则时抛出错误', async () => {
       const { load, create } = useRelationshipTypes()
       await load()
-      await expect(create({ type: 'Has-Cap', inverse: null, label: 'x', inverseLabel: 'x', color: '#000', strength: 'medium' })).rejects.toThrow(/type/i)
+      await expect(create({ type: 'Has-Cap', inverse: null, label: 'x', inverseLabel: 'x', description: null, color: '#000', group: 'custom', strength: 'medium' })).rejects.toThrow(/type/i)
     })
   })
 
@@ -200,34 +219,34 @@ describe('useRelationshipTypes', () => {
 
 describe('validateRelationshipTypeInput', () => {
   const existing = [
-    { type: 'parent', inverse: 'child', label: '父级', inverseLabel: '子级', color: '#1890ff' }
+    { type: 'parent', inverse: 'child', label: '父级', inverseLabel: '子级', deleted: false }
   ]
 
   it('合法输入返回 null', () => {
-    expect(validateRelationshipTypeInput({ type: 'new', inverse: null, label: '新', inverseLabel: '新', color: '#fff', strength: 'medium' }, existing)).toBeNull()
+    expect(validateRelationshipTypeInput({ type: 'new', inverse: null, label: '新', inverseLabel: '新', description: null, color: '#fff', group: 'custom', strength: 'medium' }, existing)).toBeNull()
   })
 
   it('type 重复返回错误', () => {
-    expect(validateRelationshipTypeInput({ type: 'parent', inverse: null, label: 'x', inverseLabel: 'x', color: '#000', strength: 'medium' }, existing)).toMatch(/已存在/)
+    expect(validateRelationshipTypeInput({ type: 'parent', inverse: null, label: 'x', inverseLabel: 'x', description: null, color: '#000', group: 'custom', strength: 'medium' }, existing)).toMatch(/已存在/)
   })
 
   it('label 空返回错误', () => {
-    expect(validateRelationshipTypeInput({ type: 'new', inverse: null, label: '', inverseLabel: 'x', color: '#000', strength: 'medium' }, existing)).toMatch(/label/i)
+    expect(validateRelationshipTypeInput({ type: 'new', inverse: null, label: '', inverseLabel: 'x', description: null, color: '#000', group: 'custom', strength: 'medium' }, existing)).toMatch(/label/i)
   })
 
   it('inverseLabel 空返回错误', () => {
-    expect(validateRelationshipTypeInput({ type: 'new', inverse: null, label: 'x', inverseLabel: '', color: '#000', strength: 'medium' }, existing)).toMatch(/label/i)
+    expect(validateRelationshipTypeInput({ type: 'new', inverse: null, label: 'x', inverseLabel: '', description: null, color: '#000', group: 'custom', strength: 'medium' }, existing)).toMatch(/label/i)
   })
 
   it('color 格式错返回错误', () => {
-    expect(validateRelationshipTypeInput({ type: 'new', inverse: null, label: 'x', inverseLabel: 'x', color: 'red', strength: 'medium' }, existing)).toMatch(/color/i)
+    expect(validateRelationshipTypeInput({ type: 'new', inverse: null, label: 'x', inverseLabel: 'x', description: null, color: 'red', group: 'custom', strength: 'medium' }, existing)).toMatch(/color/i)
   })
 
   it('type 非法字符返回错误', () => {
-    expect(validateRelationshipTypeInput({ type: 'Has_Cap', inverse: null, label: 'x', inverseLabel: 'x', color: '#000', strength: 'medium' }, existing)).toMatch(/type/i)
+    expect(validateRelationshipTypeInput({ type: 'Has_Cap', inverse: null, label: 'x', inverseLabel: 'x', description: null, color: '#000', group: 'custom', strength: 'medium' }, existing)).toMatch(/type/i)
   })
 
   it('strength 非法值返回错误', () => {
-    expect(validateRelationshipTypeInput({ type: 'new', inverse: null, label: 'x', inverseLabel: 'x', color: '#000', strength: 'invalid' as any }, existing)).toMatch(/strength/i)
+    expect(validateRelationshipTypeInput({ type: 'new', inverse: null, label: 'x', inverseLabel: 'x', description: null, color: '#000', group: 'custom', strength: 'invalid' as any }, existing)).toMatch(/strength/i)
   })
 })

@@ -3,27 +3,72 @@ import { setActivePinia, createPinia } from 'pinia'
 import { useBlockStore } from '../stores/blocks'
 import { usePageStore } from '../stores/pages'
 import { useCrossBlockSelection } from './useCrossBlockSelection'
+import { getCore } from '../core'
 
-vi.mock('../storage/indexedDB', () => ({
-  storage: {
-    saveBlock: vi.fn(),
-    deleteBlock: vi.fn(),
-    deleteBlockCascade: vi.fn(),
-    updateBlock: vi.fn(),
-    getBlockTree: vi.fn().mockResolvedValue([]),
-    createPageWithRootBlock: vi.fn().mockImplementation(async (title: string, type: 'normal' | 'journal' = 'normal') => ({
-      id: `page-${title}-${Math.random().toString(36).slice(2)}`,
-      title,
-      type,
-      icon: null,
-      blockId: null,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      isTrashed: false,
-      trashedAt: null
-    })),
-    updatePage: vi.fn()
-  }
+vi.mock('../core', () => ({
+  getCore: () => ({
+    storage: {
+      saveBlock: vi.fn(),
+      deleteBlock: vi.fn(),
+      deleteBlockCascade: vi.fn(),
+      updateBlock: vi.fn(),
+      getBlockTree: vi.fn().mockResolvedValue([]),
+      createPageWithRootBlock: vi.fn().mockImplementation(async (title: string, type: 'normal' | 'journal' = 'normal') => ({
+        id: `page-${title}-${Math.random().toString(36).slice(2)}`,
+        title,
+        type,
+        icon: null,
+        blockId: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        isTrashed: false,
+        trashedAt: null
+      })),
+      updatePage: vi.fn()
+    },
+    pageService: {
+      create: vi.fn().mockImplementation(async ({ title, type }: { title: string; type: string }) => ({
+        id: `page-${title}-${Math.random().toString(36).slice(2)}`,
+        title,
+        type,
+        icon: null,
+        cover: null,
+        aliases: [],
+        filePath: null,
+        childrenCount: 0,
+        wordCount: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        deleted: false,
+        deletedAt: null
+      })),
+      getAll: vi.fn().mockResolvedValue([]),
+      rename: vi.fn(),
+      mergePage: vi.fn(),
+      deletePage: vi.fn(),
+      softDelete: vi.fn(),
+      restore: vi.fn(),
+      permanentDelete: vi.fn(),
+      getDeleted: vi.fn().mockResolvedValue({ items: [] }),
+      updatePage: vi.fn(),
+      get: vi.fn(),
+    },
+    blockService: {
+      create: vi.fn().mockImplementation(async (options: any) => ({
+        id: `block-${Math.random().toString(36).slice(2)}`,
+        pageId: options.pageId,
+        parentId: options.parentId ?? null,
+        content: options.content ?? '',
+        children: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })),
+      getByPageId: vi.fn().mockResolvedValue([]),
+      update: vi.fn(),
+      delete: vi.fn(),
+      updatePage: vi.fn(),
+    }
+  })
 }))
 
 beforeEach(() => {
@@ -507,8 +552,8 @@ describe('useCrossBlockSelection', () => {
       expect(selection.anchorIds.size).toBe(0)
     })
 
-    test('应触发 storage.deleteBlockCascade 持久化', async () => {
-      const { storage } = await import('../storage/indexedDB')
+    test('应触发 blockService.delete 持久化', async () => {
+      const { blockService } = getCore()
       const selection = useCrossBlockSelection()
       const pageId = 'page-1'
 
@@ -517,22 +562,22 @@ describe('useCrossBlockSelection', () => {
 
       await selection.deleteSelected()
 
-      expect(storage.deleteBlockCascade).toHaveBeenCalled()
+      expect(blockService.delete).toHaveBeenCalled()
     })
 
     test('空选区时应不执行任何删除', async () => {
-      const { storage } = await import('../storage/indexedDB')
+      const { blockService } = getCore()
       const selection = useCrossBlockSelection()
       const pageId = 'page-1'
 
       await blockStore.createBlock({ pageId, content: 'Block' })
       const beforeCount = blockStore.blocks.length
-      const callsBefore = (storage.deleteBlockCascade as any).mock.calls.length
+      const callsBefore = (blockService.delete as any).mock.calls.length
 
       await selection.deleteSelected()
 
       expect(blockStore.blocks.length).toBe(beforeCount)
-      expect((storage.deleteBlockCascade as any).mock.calls.length).toBe(callsBefore)
+      expect((blockService.delete as any).mock.calls.length).toBe(callsBefore)
     })
 
     test('被删 block 含 typed-link 时应触发跨页反向降级', async () => {

@@ -1,11 +1,10 @@
 import { describe, test, expect, beforeEach, vi } from 'vitest'
-import 'fake-indexeddb/auto'
 import { setActivePinia, createPinia } from 'pinia'
 import { useBlockStore } from '../stores/blocks'
 import { usePageStore } from '../stores/pages'
 import { useBlockRelationshipCleanup } from './useBlockRelationshipCleanup'
 import { useRelationshipTypes } from './useRelationshipTypes'
-import { db } from '../storage/db'
+import { getCore } from '../core'
 
 vi.mock('../storage/indexedDB', () => ({
   storage: {
@@ -31,7 +30,9 @@ vi.mock('../storage/indexedDB', () => ({
 
 beforeEach(async () => {
   setActivePinia(createPinia())
-  await db.relationshipTypes.clear()
+  await getCore().storage.relationshipTypes.findAll().then(result => 
+    Promise.all(result.items.map(r => getCore().storage.relationshipTypes.delete(r.id)))
+  )
   const { _resetForTest, load } = useRelationshipTypes()
   _resetForTest()
   await load()

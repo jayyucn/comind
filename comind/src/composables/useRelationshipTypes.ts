@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue'
-import { nanoid } from 'nanoid'
-import { db, type RelationshipTypeRecord, type Strength } from '../storage/db'
+import { getCore } from '../core'
+import type { RelationshipType, Strength } from '../core/types'
 import { RELATIONSHIP_TYPES_SEED } from '../config/relationship-types-seed'
 import { TYPE_REGEX, COLOR_REGEX } from './relationship-type-constants'
 
@@ -10,7 +10,9 @@ export interface RelationshipTypeInput {
   inverse: string | null
   label: string
   inverseLabel: string
+  description: string | null
   color: string
+  group: 'family' | 'work' | 'concept' | 'action' | 'custom'
   strength: Strength
 }
 
@@ -19,7 +21,7 @@ const VALID_STRENGTHS: readonly Strength[] = ['strong', 'medium', 'weak']
 /** 校验输入；返回 null 表示通过，否则返回错误信息 */
 export function validateRelationshipTypeInput(
   input: RelationshipTypeInput,
-  existing: Pick<RelationshipTypeRecord, 'type' | 'deleted'>[]
+  existing: Pick<RelationshipType, 'type' | 'deleted'>[]
 ): string | null {
   if (!TYPE_REGEX.test(input.type)) return 'type 格式不符：仅小写字母、数字、`-`，且首字符为字母'
   if (!input.label.trim()) return 'label 必填'
@@ -30,17 +32,13 @@ export function validateRelationshipTypeInput(
   return null
 }
 
-const state = ref<{ items: RelationshipTypeRecord[]; loaded: boolean }>({
+const state = ref<{ items: RelationshipType[]; loaded: boolean }>({
   items: [],
   loaded: false
 })
 
 function makeId(type: string): string {
   return `rt_seed_${type}`
-}
-
-function makeUserId(): string {
-  return `rt_user_${nanoid(10)}`
 }
 
 export function useRelationshipTypes() {
@@ -58,58 +56,55 @@ export function useRelationshipTypes() {
     loaded: computed(() => state.value.loaded),
 
     async load(): Promise<void> {
-      const existing = await db.relationshipTypes.toArray()
+      const core = getCore()
+      const existing = await core.relationshipTypeService.getActive()
       const existingIds = new Set(existing.map(r => r.id))
 
-      // 缺失的种子补齐
       let order = existing.length > 0
         ? Math.max(...existing.map(r => r.order), -1) + 1
         : 0
       for (const seed of RELATIONSHIP_TYPES_SEED) {
         const id = makeId(seed.type)
         if (!existingIds.has(id)) {
-          const record: RelationshipTypeRecord = {
+          const record = await core.relationshipTypeService.create({
             id,
             type: seed.type,
             inverse: seed.inverse,
             label: seed.label,
             inverseLabel: seed.inverseLabel,
+            description: seed.description ?? null,
             color: seed.color,
+            group: seed.group,
             strength: seed.strength,
             order: order++,
-            deleted: seed.deleted,
-            builtin: seed.builtin
-          }
-          await db.relationshipTypes.put(record)
+            builtin: true,
+          })
           existing.push(record)
         }
       }
 
-      state.value.items = await db.relationshipTypes.toArray()
+      state.value.items = existing
       state.value.loaded = true
     },
 
-    async create(input: RelationshipTypeInput): Promise<RelationshipTypeRecord> {
+    async create(input: RelationshipTypeInput): Promise<RelationshipType> {
       const err = validateRelationshipTypeInput(
         input,
         state.value.items.map(r => ({ type: r.type, deleted: r.deleted }))
       )
       if (err) throw new Error(err)
 
-      const maxOrder = state.value.items.reduce((m, r) => Math.max(m, r.order), -1)
-      const record: RelationshipTypeRecord = {
-        id: makeUserId(),
+      const core = getCore()
+      const record = await core.relationshipTypeService.create({
         type: input.type,
         inverse: input.inverse,
         label: input.label.trim(),
         inverseLabel: input.inverseLabel.trim(),
+        description: input.description,
         color: input.color,
+        group: input.group,
         strength: input.strength,
-        order: maxOrder + 1,
-        deleted: false,
-        builtin: false
-      }
-      await db.relationshipTypes.put(record)
+      })
       state.value.items = [...state.value.items, record]
       return record
     },
@@ -123,10 +118,11 @@ export function useRelationshipTypes() {
         inverse: patch.inverse === undefined ? existing.inverse : patch.inverse,
         label: patch.label ?? existing.label,
         inverseLabel: patch.inverseLabel ?? existing.inverseLabel,
+        description: patch.description ?? existing.description,
         color: patch.color ?? existing.color,
+        group: patch.group ?? existing.group,
         strength: patch.strength ?? existing.strength
       }
-      // 唯一性校验：除自己外不重复
       const err = validateRelationshipTypeInput(
         merged,
         state.value.items
@@ -135,49 +131,47 @@ export function useRelationshipTypes() {
       )
       if (err) throw new Error(err)
 
-      const updated: RelationshipTypeRecord = {
-        ...existing,
-        type: merged.type,
-        inverse: merged.inverse,
+      const core = getCore()
+      const updated = await core.relationshipTypeService.update(id, {
         label: merged.label.trim(),
         inverseLabel: merged.inverseLabel.trim(),
+        description: merged.description,
         color: merged.color,
-        strength: merged.strength
-      }
-      await db.relationshipTypes.put(updated)
+        group: merged.group,
+        strength: merged.strength,
+      })
       state.value.items = state.value.items.map(r => r.id === id ? updated : r)
     },
 
     async softDelete(id: string): Promise<void> {
+      const core = getCore()
+      await core.relationshipTypeService.softDelete(id)
       const existing = state.value.items.find(r => r.id === id)
-      if (!existing) return
-      const updated: RelationshipTypeRecord = { ...existing, deleted: true }
-      await db.relationshipTypes.put(updated)
-      state.value.items = state.value.items.map(r => r.id === id ? updated : r)
+      if (existing) {
+        existing.deleted = true
+      }
     },
 
     async restore(id: string): Promise<void> {
+      const core = getCore()
+      await core.relationshipTypeService.restore(id)
       const existing = state.value.items.find(r => r.id === id)
-      if (!existing) return
-      const updated: RelationshipTypeRecord = { ...existing, deleted: false }
-      await db.relationshipTypes.put(updated)
-      state.value.items = state.value.items.map(r => r.id === id ? updated : r)
+      if (existing) {
+        existing.deleted = false
+      }
     },
 
     async reorder(orderedIds: string[]): Promise<void> {
-      await db.transaction('rw', db.relationshipTypes, async () => {
-        const map = new Map(state.value.items.map(r => [r.id, r]))
-        for (let i = 0; i < orderedIds.length; i++) {
-          const id = orderedIds[i]
-          const r = map.get(id)
-          if (r) {
-            const updated: RelationshipTypeRecord = { ...r, order: i }
-            await db.relationshipTypes.put(updated)
-            map.set(id, updated)
-          }
+      const core = getCore()
+      await core.relationshipTypeService.updateOrder(orderedIds)
+      const map = new Map(state.value.items.map(r => [r.id, r]))
+      for (let i = 0; i < orderedIds.length; i++) {
+        const r = map.get(orderedIds[i])
+        if (r) {
+          r.order = i
         }
-        state.value.items = Array.from(map.values())
-      })
+      }
+      state.value.items = Array.from(map.values())
     },
 
     /** 仅供测试使用：重置模块级 state */
