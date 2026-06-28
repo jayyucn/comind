@@ -338,6 +338,93 @@ export interface SortOptions {
 }
 
 // =============================================================================
+// Relationship Type Types
+// =============================================================================
+
+/** 关系强度等级：用于图谱线宽映射 */
+export type Strength = 'strong' | 'medium' | 'weak'
+
+/**
+ * 关系类型
+ */
+export interface RelationshipType {
+  id: string
+  type: string
+  inverse: string | null
+  label: string
+  inverseLabel: string
+  description: string | null
+  group: 'family' | 'work' | 'concept' | 'action' | 'custom'
+  strength: Strength
+  order: number
+  deleted: boolean
+  builtin: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+/**
+ * 关系类型创建选项
+ */
+export interface RelationshipTypeCreateOptions {
+  type: string
+  inverse: string | null
+  label: string
+  inverseLabel: string
+  description?: string | null
+  group?: 'family' | 'work' | 'concept' | 'action' | 'custom'
+  strength?: Strength
+  order?: number
+}
+
+/**
+ * 关系类型更新选项
+ */
+export interface RelationshipTypeUpdateOptions {
+  label?: string
+  inverseLabel?: string
+  description?: string | null
+  group?: 'family' | 'work' | 'concept' | 'action' | 'custom'
+  strength?: Strength
+  order?: number
+  deleted?: boolean
+}
+
+// =============================================================================
+// Template Types
+// =============================================================================
+
+/**
+ * 用户模板
+ */
+export interface UserTemplate {
+  id: string
+  name: string
+  category: string
+  blocks: unknown[]
+  createdAt: number
+  updatedAt: number
+}
+
+/**
+ * 模板创建选项
+ */
+export interface TemplateCreateOptions {
+  name: string
+  category: string
+  blocks: unknown[]
+}
+
+/**
+ * 模板更新选项
+ */
+export interface TemplateUpdateOptions {
+  name?: string
+  category?: string
+  blocks?: unknown[]
+}
+
+// =============================================================================
 // Result Types
 // =============================================================================
 

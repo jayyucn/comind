@@ -2,15 +2,20 @@ import { describe, test, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { usePropertyStore } from './property'
 
-vi.mock('../services/property', () => ({
-  propertyService: {
-    getProperties: vi.fn(),
-    getPropertiesByBlockIds: vi.fn(),
-    setProperty: vi.fn(),
-    deleteProperty: vi.fn(),
-    updateSortOrder: vi.fn(),
-    toggleHidden: vi.fn()
-  }
+const mockPropertyService = {
+  getByBlockId: vi.fn(),
+  getByBlockIds: vi.fn(),
+  create: vi.fn(),
+  update: vi.fn(),
+  delete: vi.fn(),
+  updateSortOrder: vi.fn(),
+  toggleHidden: vi.fn()
+}
+
+vi.mock('../core', () => ({
+  getCore: () => ({
+    propertyService: mockPropertyService
+  })
 }))
 
 vi.mock('../types/property', () => ({
@@ -62,9 +67,8 @@ describe('usePropertyStore', () => {
     })
 
     test('获取已加载的属性', async () => {
-      const { propertyService } = await import('../services/property')
-      vi.mocked(propertyService.getProperties).mockResolvedValue([
-        { id: 'prop-1', blockId: 'block-1', key: 'priority', value: 'high', type: 'select' }
+      vi.mocked(mockPropertyService.getByBlockId).mockResolvedValue([
+        { id: 'prop-1', blockId: 'block-1', key: 'priority', value: 'high', type: 'select', sortOrder: 0, isHidden: false, isDeleted: false, schemaVersion: 1, createdAt: Date.now(), updatedAt: Date.now() }
       ])
 
       const store = usePropertyStore()
@@ -76,9 +80,8 @@ describe('usePropertyStore', () => {
 
   describe('getBlockProperty', () => {
     test('通过 key 获取属性', async () => {
-      const { propertyService } = await import('../services/property')
-      vi.mocked(propertyService.getProperties).mockResolvedValue([
-        { id: 'prop-1', blockId: 'block-1', key: 'priority', value: 'high', type: 'select' }
+      vi.mocked(mockPropertyService.getByBlockId).mockResolvedValue([
+        { id: 'prop-1', blockId: 'block-1', key: 'priority', value: 'high', type: 'select', sortOrder: 0, isHidden: false, isDeleted: false, schemaVersion: 1, createdAt: Date.now(), updatedAt: Date.now() }
       ])
 
       const store = usePropertyStore()
@@ -89,8 +92,7 @@ describe('usePropertyStore', () => {
     })
 
     test('获取不存在的属性返回 undefined', async () => {
-      const { propertyService } = await import('../services/property')
-      vi.mocked(propertyService.getProperties).mockResolvedValue([])
+      vi.mocked(mockPropertyService.getByBlockId).mockResolvedValue([])
 
       const store = usePropertyStore()
       await store.loadBlockProperties('block-1')
@@ -101,9 +103,8 @@ describe('usePropertyStore', () => {
 
   describe('loadBlockProperties', () => {
     test('加载属性并缓存', async () => {
-      const { propertyService } = await import('../services/property')
-      vi.mocked(propertyService.getProperties).mockResolvedValue([
-        { id: 'prop-1', blockId: 'block-1', key: 'priority', value: 'high', type: 'select' }
+      vi.mocked(mockPropertyService.getByBlockId).mockResolvedValue([
+        { id: 'prop-1', blockId: 'block-1', key: 'priority', value: 'high', type: 'select', sortOrder: 0, isHidden: false, isDeleted: false, schemaVersion: 1, createdAt: Date.now(), updatedAt: Date.now() }
       ])
 
       const store = usePropertyStore()
@@ -111,21 +112,23 @@ describe('usePropertyStore', () => {
       const props = await store.loadBlockProperties('block-1')
       expect(store.loading).toBe(false)
       expect(props.length).toBe(1)
-      expect(propertyService.getProperties).toHaveBeenCalledWith('block-1')
+      expect(mockPropertyService.getByBlockId).toHaveBeenCalledWith('block-1')
     })
   })
 
   describe('loadMultiBlockProperties', () => {
     test('批量加载多个 block 的属性', async () => {
-      const { propertyService } = await import('../services/property')
-      const mockMap = new Map()
-      mockMap.set('block-1', [{ id: 'prop-1', blockId: 'block-1', key: 'priority', value: 'high' }])
-      mockMap.set('block-2', [{ id: 'prop-2', blockId: 'block-2', key: 'status', value: 'active' }])
-      vi.mocked(propertyService.getPropertiesByBlockIds).mockResolvedValue(mockMap)
+      vi.mocked(mockPropertyService.getByBlockId).mockResolvedValueOnce([
+        { id: 'prop-1', blockId: 'block-1', key: 'priority', value: 'high', type: 'select', sortOrder: 0, isHidden: false, isDeleted: false, schemaVersion: 1, createdAt: Date.now(), updatedAt: Date.now() }
+      ])
+      vi.mocked(mockPropertyService.getByBlockId).mockResolvedValueOnce([
+        { id: 'prop-2', blockId: 'block-2', key: 'status', value: 'active', type: 'text', sortOrder: 0, isHidden: false, isDeleted: false, schemaVersion: 1, createdAt: Date.now(), updatedAt: Date.now() }
+      ])
 
       const store = usePropertyStore()
       await store.loadMultiBlockProperties(['block-1', 'block-2'])
-      expect(propertyService.getPropertiesByBlockIds).toHaveBeenCalledWith(['block-1', 'block-2'])
+      expect(mockPropertyService.getByBlockId).toHaveBeenCalledWith('block-1')
+      expect(mockPropertyService.getByBlockId).toHaveBeenCalledWith('block-2')
       expect(store.getBlockProperties('block-1').length).toBe(1)
       expect(store.getBlockProperties('block-2').length).toBe(1)
     })
@@ -133,67 +136,62 @@ describe('usePropertyStore', () => {
 
   describe('setProperty', () => {
     test('设置属性并重新加载', async () => {
-      const { propertyService } = await import('../services/property')
-      const newProp = { id: 'prop-1', blockId: 'block-1', key: 'priority', value: 'medium', type: 'select' }
-      vi.mocked(propertyService.setProperty).mockResolvedValue(newProp)
-      vi.mocked(propertyService.getProperties).mockResolvedValue([newProp])
+      const newProp = { id: 'prop-1', blockId: 'block-1', key: 'priority', value: 'medium', type: 'select', sortOrder: 0, isHidden: false, isDeleted: false, schemaVersion: 1, createdAt: Date.now(), updatedAt: Date.now() }
+      vi.mocked(mockPropertyService.create).mockResolvedValue(newProp)
+      vi.mocked(mockPropertyService.getByBlockId).mockResolvedValue([newProp])
 
       const store = usePropertyStore()
       const result = await store.setProperty('block-1', 'priority', 'medium', 'select')
       expect(result).toEqual(newProp)
-      expect(propertyService.setProperty).toHaveBeenCalledWith('block-1', 'priority', 'medium', 'select')
+      expect(mockPropertyService.create).toHaveBeenCalledWith('block-1', 'priority', 'medium', 'select')
     })
   })
 
   describe('deleteProperty', () => {
     test('删除属性并重新加载', async () => {
-      const { propertyService } = await import('../services/property')
-      vi.mocked(propertyService.deleteProperty).mockResolvedValue(undefined)
-      vi.mocked(propertyService.getProperties).mockResolvedValue([])
+      vi.mocked(mockPropertyService.delete).mockResolvedValue(undefined)
+      vi.mocked(mockPropertyService.getByBlockId).mockResolvedValue([])
 
       const store = usePropertyStore()
       await store.deleteProperty('prop-1', 'block-1')
-      expect(propertyService.deleteProperty).toHaveBeenCalledWith('prop-1')
+      expect(mockPropertyService.delete).toHaveBeenCalledWith('prop-1')
     })
   })
 
   describe('updateSortOrder', () => {
     test('更新排序并重新加载', async () => {
-      const { propertyService } = await import('../services/property')
-      vi.mocked(propertyService.updateSortOrder).mockResolvedValue(undefined)
-      vi.mocked(propertyService.getProperties).mockResolvedValue([])
+      vi.mocked(mockPropertyService.updateSortOrder).mockResolvedValue(undefined)
+      vi.mocked(mockPropertyService.getByBlockId).mockResolvedValue([])
 
       const store = usePropertyStore()
       await store.updateSortOrder('block-1', ['prop-1', 'prop-2'])
-      expect(propertyService.updateSortOrder).toHaveBeenCalledWith('block-1', ['prop-1', 'prop-2'])
+      expect(mockPropertyService.updateSortOrder).toHaveBeenCalledWith('block-1', ['prop-1', 'prop-2'])
     })
   })
 
   describe('toggleHidden', () => {
     test('切换隐藏状态并重新加载', async () => {
-      const { propertyService } = await import('../services/property')
-      const updatedProp = { id: 'prop-1', blockId: 'block-1', key: 'priority', value: 'high', hidden: true }
-      vi.mocked(propertyService.toggleHidden).mockResolvedValue(updatedProp)
-      vi.mocked(propertyService.getProperties).mockResolvedValue([updatedProp])
+      const updatedProp = { id: 'prop-1', blockId: 'block-1', key: 'priority', value: 'high', type: 'select', sortOrder: 0, isHidden: true, isDeleted: false, schemaVersion: 1, createdAt: Date.now(), updatedAt: Date.now() }
+      vi.mocked(mockPropertyService.toggleHidden).mockResolvedValue(updatedProp)
+      vi.mocked(mockPropertyService.getByBlockId).mockResolvedValue([updatedProp])
 
       const store = usePropertyStore()
       const result = await store.toggleHidden('prop-1', 'block-1')
-      expect(result.hidden).toBe(true)
-      expect(propertyService.toggleHidden).toHaveBeenCalledWith('prop-1')
+      expect(result.isHidden).toBe(true)
+      expect(mockPropertyService.toggleHidden).toHaveBeenCalledWith('prop-1')
     })
   })
 
   describe('clearBlockCache', () => {
     test('清除 block 缓存', async () => {
-      const { propertyService } = await import('../services/property')
-      vi.mocked(propertyService.getProperties).mockResolvedValue([
-        { id: 'prop-1', blockId: 'block-1', key: 'priority', value: 'high', type: 'select' }
+      vi.mocked(mockPropertyService.getByBlockId).mockResolvedValue([
+        { id: 'prop-1', blockId: 'block-1', key: 'priority', value: 'high', type: 'select', sortOrder: 0, isHidden: false, isDeleted: false, schemaVersion: 1, createdAt: Date.now(), updatedAt: Date.now() }
       ])
 
       const store = usePropertyStore()
       await store.loadBlockProperties('block-1')
       expect(store.getBlockProperties('block-1').length).toBe(1)
-      
+
       store.clearBlockCache('block-1')
       expect(store.getBlockProperties('block-1')).toEqual([])
     })
