@@ -37,6 +37,8 @@ export const usePageStore = defineStore('pages', () => {
     const core = getCore()
     const page = await core.pageService.create({ title, type })
     pages.value.push(page)
+    // 更新搜索索引
+    core.searchService.updatePage(page)
     return page
   }
 
@@ -66,6 +68,8 @@ export const usePageStore = defineStore('pages', () => {
     const core = getCore()
     await core.pageService.rename(pageId, trimmedTitle)
     page.title = trimmedTitle
+    // 更新搜索索引
+    core.searchService.updatePage(page)
     return {}
   }
 
@@ -90,6 +94,8 @@ export const usePageStore = defineStore('pages', () => {
     if (removePageFromHistoryFn) {
       removePageFromHistoryFn(pageId)
     }
+    // 更新搜索索引
+    core.searchService.removePage(pageId)
   }
 
   /** 加载回收站页面 */
@@ -112,6 +118,8 @@ export const usePageStore = defineStore('pages', () => {
     if (removePageFromHistoryFn) {
       removePageFromHistoryFn(pageId)
     }
+    // 更新搜索索引
+    core.searchService.removePage(pageId)
   }
 
   /** 恢复页面（从回收站还原） */
@@ -120,6 +128,11 @@ export const usePageStore = defineStore('pages', () => {
     await core.pageService.restore(pageId)
     trashPages.value = trashPages.value.filter(p => p.id !== pageId)
     await loadAllPages()
+    // 更新搜索索引 - 重新加载所有页面后更新
+    const restoredPage = getPage(pageId)
+    if (restoredPage) {
+      core.searchService.updatePage(restoredPage)
+    }
   }
 
   /** 永久删除页面 */

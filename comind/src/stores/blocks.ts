@@ -237,6 +237,15 @@ export const useBlockStore = defineStore('blocks', () => {
     blocks.value.push(block)
     // 注意：这里不直接调用 saveBlock，由 _scheduleSave 处理
     structureVersion.value++
+
+    // 更新搜索索引
+    try {
+      const core = getCore()
+      core.searchService.updateBlock(block)
+    } catch (error) {
+      console.error('[createBlock] Failed to update search index:', error)
+    }
+
     return block
   }
 
@@ -697,6 +706,8 @@ export const useBlockStore = defineStore('blocks', () => {
       const core = getCore()
       for (const id of toDelete) {
         await core.blockService.delete(id)
+        // 更新搜索索引
+        core.searchService.removeBlock(id)
       }
     } catch (error) {
       console.error('[deleteBlock] Failed to delete blocks:', error)
@@ -721,6 +732,8 @@ export const useBlockStore = defineStore('blocks', () => {
       page.updatedAt = Date.now()
       const core = getCore()
       await core.pageService.updatePage(page)
+      // 更新搜索索引
+      core.searchService.updateBlock(block)
     }
   }
 
