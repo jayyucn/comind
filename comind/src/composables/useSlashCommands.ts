@@ -668,7 +668,6 @@ export async function executeTemplateCommand(
       content: draft.content,
       format: draft.format,
       type: draft.type,
-      properties: draft.properties,
     })
     newIds.push(created.id)
   }

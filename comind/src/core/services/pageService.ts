@@ -186,7 +186,6 @@ export class PageService {
           parentId: null,
           content: block.content,
           type: block.type,
-          properties: block.properties,
         })
 
         const links = await this.storage.links.findBySourceBlockId(block.id)

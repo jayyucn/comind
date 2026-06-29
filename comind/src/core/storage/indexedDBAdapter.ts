@@ -53,7 +53,6 @@ interface BlockRecord {
   content: string
   format: string      // JSON string
   type: string
-  properties: string  // JSON string
   createdAt: number
   updatedAt: number
 }
@@ -171,7 +170,6 @@ function recordToBlock(record: BlockRecord): Block {
     content: record.content,
     format: JSON.parse(record.format || '{}'),
     type: record.type as Block['type'],
-    properties: JSON.parse(record.properties || '{}'),
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   }
@@ -187,7 +185,6 @@ function blockToRecord(block: Block): BlockRecord {
     content: block.content,
     format: JSON.stringify(block.format || {}),
     type: block.type,
-    properties: JSON.stringify(block.properties || {}),
     createdAt: block.createdAt,
     updatedAt: block.updatedAt,
   }
@@ -334,7 +331,6 @@ class IndexedDBBlockRepository implements BlockRepository {
       content: options.content ?? '',
       format: {},
       type: options.type ?? 'bullet',
-      properties: options.properties ?? {},
       createdAt: now,
       updatedAt: now,
     }

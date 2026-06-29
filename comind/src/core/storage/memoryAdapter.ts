@@ -78,7 +78,6 @@ class MemoryBlockRepository implements BlockRepository {
       content: options.content ?? '',
       format: {},
       type: options.type ?? 'bullet',
-      properties: options.properties ?? {},
       createdAt: now,
       updatedAt: now,
     }

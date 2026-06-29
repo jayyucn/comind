@@ -6,7 +6,6 @@ export interface Block {
   content: string
   format: Record<string, any>
   type: 'bullet' | 'property' | 'query' | 'embed' | 'code' | 'image' | 'concept'
-  properties: Record<string, any>
   createdAt: number
   updatedAt: number
 }
@@ -19,7 +18,6 @@ export interface BlockRecord {
   content: string
   format: string
   type: string
-  properties: string
   createdAt: number
   updatedAt: number
 }

@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useBlockStore } from '../../stores/blocks'
 import { useEditorStore } from '../../stores/editor'
+import { usePropertyStore } from '../../stores/property'
 import ConceptRender from '../Block/handlers/concept/ConceptRender.vue'
 
 const props = defineProps<{
@@ -10,11 +11,21 @@ const props = defineProps<{
 
 const blockStore = useBlockStore()
 const editorStore = useEditorStore()
+const propertyStore = usePropertyStore()
 
-// 查找当前页面的 concept 块
 const conceptBlock = computed(() =>
   blockStore.blocks.find(b => b.pageId === props.pageId && b.type === 'concept')
 )
+
+function getBlockPropertiesMap(): Record<string, any> {
+  if (!conceptBlock.value) return {}
+  const props = propertyStore.getBlockProperties(conceptBlock.value.id)
+  const result: Record<string, any> = {}
+  for (const prop of props) {
+    result[prop.key] = prop.value
+  }
+  return result
+}
 
 function activateConcept() {
   if (conceptBlock.value) {
@@ -28,7 +39,7 @@ function activateConcept() {
     <ConceptRender
       :block-id="conceptBlock.id"
       :content="conceptBlock.content"
-      :properties="conceptBlock.properties"
+      :properties="getBlockPropertiesMap()"
       @content-click="activateConcept"
       @exit-edit="editorStore.deactivateBlock()"
     />

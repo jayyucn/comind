@@ -132,7 +132,6 @@ export class TemplateRenderer {
           content: finalContent,
           format: skeleton.format as BlockDraft['format'],
           type: skeleton.type as BlockDraft['type'],
-          properties: skeleton.properties,
           cursorMarker: hasCursor ? '__CURSOR__' : null,
         }
         drafts.push(draft)

@@ -101,7 +101,6 @@ describe('BlockService', () => {
       expect(block.pos).toBe(1000)
       expect(block.content).toBe('')
       expect(block.type).toBe('bullet')
-      expect(block.properties).toEqual({})
     })
 
     it('应使用提供的值覆盖默认值', async () => {
@@ -110,13 +109,11 @@ describe('BlockService', () => {
         parentId: 'parent-1',
         content: 'Custom Content',
         type: 'concept',
-        properties: { status: 'done' },
       })
 
       expect(block.parentId).toBe('parent-1')
       expect(block.content).toBe('Custom Content')
       expect(block.type).toBe('concept')
-      expect(block.properties).toEqual({ status: 'done' })
     })
   })
 
@@ -133,12 +130,10 @@ describe('BlockService', () => {
       const updated = await service.update(block.id, {
         content: 'New Content',
         type: 'concept',
-        properties: { newProp: 'value' },
       })
 
       expect(updated.content).toBe('New Content')
       expect(updated.type).toBe('concept')
-      expect(updated.properties).toEqual({ newProp: 'value' })
     })
   })
 

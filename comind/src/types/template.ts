@@ -110,7 +110,6 @@ export interface BlockDraft {
    */
   format: Record<string, any>
   type: 'bullet' | 'property' | 'query' | 'embed' | 'code' | 'image'
-  properties: Record<string, any>
   /** 来自 {{cursor}} 替换，插入后用于定位光标；仅第一个非 null 的生效 */
   cursorMarker: '__CURSOR__' | null
 }

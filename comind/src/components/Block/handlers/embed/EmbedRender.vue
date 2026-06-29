@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useBlockStore } from '../../../../stores/blocks'
 import { usePageStore } from '../../../../stores/pages'
+import { usePropertyStore } from '../../../../stores/property'
 import { useNavigateToPage } from '../../../../composables/useNavigateToPage'
 import { getCore } from '../../../../core'
 import SubtreeRenderer from './SubtreeRenderer'
@@ -12,6 +13,7 @@ const props = defineProps<{
   content: string
   showPlaceholder?: boolean
   properties: Record<string, any>
+  blockId: string
 }>()
 
 const emit = defineEmits<{
@@ -21,6 +23,7 @@ const emit = defineEmits<{
 
 const blockStore = useBlockStore()
 const pageStore = usePageStore()
+const propertyStore = usePropertyStore()
 const { navigateToPage } = useNavigateToPage()
 
 const MAX_EMBED_DEPTH = 3
@@ -73,11 +76,18 @@ function detectCircular(targetId: string, depth: number = 0): boolean {
   if (depth > MAX_EMBED_DEPTH) return true
   const block = blockStore.blocks.find(b => b.id === targetId) ?? remoteBlocks.value.find(b => b.id === targetId)
   if (!block || block.type !== 'embed') return false
-  const nextId = block.properties?.sourceBlockId
+  const nextId = getBlockPropertyValue(targetId, 'sourceBlockId')
   if (!nextId) return false
   if (nextId === sourceBlockId.value) return true
   if (depth >= MAX_EMBED_DEPTH) return true
   return detectCircular(nextId, depth + 1)
+}
+
+function getBlockPropertyValue(blockId: string, key: string): string | undefined {
+  const prop = blockStore.blocks.find(b => b.id === blockId) 
+    ? propertyStore.getBlockProperty(blockId, key)
+    : undefined
+  return prop?.value as string | undefined
 }
 
 const circularDetected = computed(() => {

@@ -97,8 +97,22 @@ const selection = inject<CrossBlockSelection>('crossBlockSelection')
 const blockId = computed(() => props.node.id)
 const block = computed(() => props.node.block)
 
+function getBlockProperty(key: string): string | undefined {
+  const prop = propertyStore.getBlockProperty(blockId.value, key)
+  return prop?.value as string | undefined
+}
+
+function getBlockPropertiesMap(): Record<string, any> {
+  const props = propertyStore.getBlockProperties(blockId.value)
+  const result: Record<string, any> = {}
+  for (const prop of props) {
+    result[prop.key] = prop.value
+  }
+  return result
+}
+
 watch(() => block.value.type, (newType) => {
-  if (newType === 'embed' && !block.value.properties?.sourceBlockId) {
+  if (newType === 'embed' && !getBlockProperty('sourceBlockId')) {
     nextTick(() => {
       showBlockSelector.value = true
     })
@@ -331,7 +345,7 @@ function handleContentMousedown(e: MouseEvent) {
   if (target.closest('.block-link')) return
   if (target.closest('.rel-type-label')) return
 
-  if (handler.value?.type === 'embed' && block.value.properties?.sourceBlockId) {
+  if (handler.value?.type === 'embed' && getBlockProperty('sourceBlockId')) {
     e.preventDefault()
     return
   }
@@ -456,9 +470,9 @@ function handleCursorChange(pos: number) {
 
 function handleContentClick(e: MouseEvent) {
   if (handler.value?.type === 'embed') {
-    const sourceBlockId = block.value.properties?.sourceBlockId
+    const sourceBlockId = getBlockProperty('sourceBlockId')
     if (sourceBlockId) {
-      const sourcePage = pageStore.pages.find(p => p.id === block.value.properties?.sourcePageId)
+      const sourcePage = pageStore.pages.find(p => p.id === getBlockProperty('sourcePageId'))
       if (sourcePage) {
         navigateToPage(sourcePage.title)
       }
@@ -828,8 +842,8 @@ async function handlePaste(e: ClipboardEvent) {
             ref="editorRef"
             :block-id="blockId"
             :content="editContent"
-            :properties="block.properties"
-            :language="block.properties.language"
+            :properties="getBlockPropertiesMap()"
+            :language="getBlockProperty('language')"
             @save="handleSave"
             @split="handleSplit"
             @merge="handleMerge"
@@ -847,8 +861,8 @@ async function handlePaste(e: ClipboardEvent) {
             :is="handler.renderComponent"
             :block-id="blockId"
             :content="block.content"
-            :properties="block.properties"
-            :language="block.properties.language"
+            :properties="getBlockPropertiesMap()"
+            :language="getBlockProperty('language')"
             :show-placeholder="isSingleEmptyBlock"
             :readonly="true"
             @content-click="handleContentClick"

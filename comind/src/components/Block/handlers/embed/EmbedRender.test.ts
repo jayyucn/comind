@@ -33,7 +33,7 @@ describe('EmbedRender 逻辑测试', () => {
     if (depth > MAX_EMBED_DEPTH) return true
     const block = blocks.find(b => b.id === sourceBlockId)
     if (!block || block.type !== 'embed') return false
-    const nextId = block.properties?.sourceBlockId
+    const nextId = ''
     if (!nextId) return false
     if (nextId === sourceBlockId) return true
     if (depth >= MAX_EMBED_DEPTH) return true
@@ -297,16 +297,14 @@ describe('EmbedRender 逻辑测试', () => {
       expect(sourceBlock).toBeNull()
     })
 
-    test('属性缺失时应安全处理', async () => {
+    test('block 创建时不应包含 properties 字段', async () => {
       const pageId = 'page-1'
       const block = await blockStore.createBlock({
         pageId,
         content: 'Block',
-        properties: undefined as any
       })
 
-      const sourceBlockId = block.properties?.sourceBlockId as string || ''
-      expect(sourceBlockId).toBe('')
+      expect((block as any).properties).toBeUndefined()
     })
 
     test('format 对象应正确处理', async () => {

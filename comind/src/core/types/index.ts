@@ -27,7 +27,6 @@ export interface Block {
   content: string
   format: Record<string, any>
   type: BlockType
-  properties: Record<string, any>
   createdAt: number
   updatedAt: number
 }
@@ -40,7 +39,6 @@ export interface BlockCreateOptions {
   parentId?: string | null
   content?: string
   type?: BlockType
-  properties?: Record<string, any>
 }
 
 /**
@@ -51,7 +49,6 @@ export interface BlockUpdateOptions {
   parentId?: string | null
   pos?: number
   format?: Record<string, any>
-  properties?: Record<string, any>
   type?: BlockType
 }
 

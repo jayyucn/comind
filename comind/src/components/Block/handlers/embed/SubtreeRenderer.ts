@@ -1,5 +1,6 @@
 import { defineComponent, h, type PropType } from 'vue'
 import { useBlockRegistry } from '../../../../composables/useBlockRegistry'
+import { usePropertyStore } from '../../../../stores/property'
 import type { SubtreeNode } from '../../../../types/block'
 
 const SubtreeRenderer = defineComponent({
@@ -11,6 +12,7 @@ const SubtreeRenderer = defineComponent({
   emits: ['content-click', 'language-change'],
   setup(props, { emit }) {
     const { getHandler } = useBlockRegistry()
+    const propertyStore = usePropertyStore()
 
     function handleContentClick(e: MouseEvent) {
       e.stopPropagation()
@@ -19,6 +21,15 @@ const SubtreeRenderer = defineComponent({
 
     function handleLanguageChange(lang: string) {
       emit('language-change', lang)
+    }
+
+    function getBlockProperties(blockId: string): Record<string, any> {
+      const props = propertyStore.getBlockProperties(blockId)
+      const result: Record<string, any> = {}
+      for (const prop of props) {
+        result[prop.key] = prop.value
+      }
+      return result
     }
 
     return (): ReturnType<typeof h> => {
@@ -61,7 +72,7 @@ const SubtreeRenderer = defineComponent({
           h('div', { class: 'embed-block-content' }, [
             h(handler.renderComponent, {
               content: node.block.content,
-              properties: node.block.properties,
+              properties: getBlockProperties(node.block.id),
               showPlaceholder: false,
               readonly: true,
               key: node.block.id,

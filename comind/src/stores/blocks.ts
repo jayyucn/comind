@@ -229,7 +229,6 @@ export const useBlockStore = defineStore('blocks', () => {
       pos: newPos,
       format: opts.format ?? {},
       type: opts.type ?? 'bullet',
-      properties: opts.properties ?? {},
       createdAt: Date.now(),
       updatedAt: Date.now()
     }
@@ -758,15 +757,12 @@ export const useBlockStore = defineStore('blocks', () => {
     _scheduleSave(block)
   }
 
-  /** 更新 Block 属性 */
+  /** 更新 Block 属性（使用独立的 properties 表） */
   async function updateBlockProperties(blockId: string, properties: Record<string, any>) {
-    const block = blocks.value.find(b => b.id === blockId)
-    if (!block) return
-
-    block.properties = { ...block.properties, ...properties }
-    block.updatedAt = Date.now()
-    _scheduleSave(block)
-    
+    const core = getCore()
+    for (const [key, value] of Object.entries(properties)) {
+      await core.propertyService.setProperty(blockId, key, value)
+    }
     structureVersion.value++
   }
 
