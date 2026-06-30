@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,4 +47,11 @@ impl Block {
             updated_at: now,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct BlockTree {
+    pub block_map: HashMap<String, Block>,
+    pub root_blocks: Vec<String>,
+    pub children_map: HashMap<String, Vec<String>>,
 }
