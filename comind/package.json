@@ -14,7 +14,9 @@
     "lint:fix": "eslint src --ext .vue,.ts,.tsx,.js,.jsx --fix",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "wasm:build": "wasm-pack build crates/comind-wasm --target web --out-dir ../pkg",
+    "wasm:build:release": "wasm-pack build crates/comind-wasm --target web --out-dir ../pkg --release"
   },
   "dependencies": {
     "@antv/g6": "^5.1.1",

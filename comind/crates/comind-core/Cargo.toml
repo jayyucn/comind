@@ -7,12 +7,21 @@ edition = "2021"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 uuid = { version = "1.0", features = ["v4", "serde"] }
-rusqlite = { version = "0.32", features = ["bundled", "serde_json"] }
 thiserror = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 rand = "0.8"
 hex = "0.4"
 regex = "1.10"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rusqlite = { version = "0.32", features = ["bundled", "serde_json"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+getrandom = { version = "0.2", features = ["js"] }
+uuid = { version = "1.0", features = ["v4", "serde", "js"] }
+chrono = { version = "0.4", features = ["wasmbind"] }
 
 [dev-dependencies]
 tempfile = "3.0"
