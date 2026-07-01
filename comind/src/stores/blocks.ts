@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Block } from '../types/block'
-import { getCore } from '../core'
+import { initCoreClient } from '../wasm/client'
 import { generateUUID } from '../utils/id'
 import { debounce } from '../utils/debounce'
 import { usePageStore } from './pages'
@@ -19,6 +19,21 @@ import {
   findBlockIndex,
   isDescendantOf
 } from '../utils/block-helpers'
+
+import type { CoreClient } from '../wasm/client'
+
+let coreClientPromise: Promise<CoreClient> | null = null
+
+async function getClient() {
+  if (!coreClientPromise) {
+    coreClientPromise = initCoreClient()
+  }
+  const client = await coreClientPromise
+  if (!client) {
+    throw new Error('Core client not initialized')
+  }
+  return client
+}
 
 /**
  * 安全计算插入位置，带自动重试机制
@@ -44,18 +59,23 @@ async function safeCalcInsertPos(
     if (isGapExhaustedError(error)) {
       console.warn('[safeCalcInsertPos] Gap exhausted, triggering renumbering...')
 
-      // 重新编号所有 Block
       renumberBlocks(blocksRef)
 
-      // 持久化重新编号结果（使用 Core 层）
-      const core = getCore()
+      const client = await getClient()
       for (const block of blocksRef) {
-        await core.blockService.update(block.id, { pos: block.pos })
+        await client.saveBlockTree([{
+          id: block.id,
+          page_id: block.pageId,
+          parent_id: block.parentId,
+          pos: block.pos,
+          content: block.content,
+          format: block.format || {},
+          type: block.type
+        }])
       }
 
       console.info('[safeCalcInsertPos] Renumbering complete, recalculating positions...')
 
-      // 通过回调重新计算位置参数（关键修复！）
       if (recalcPos) {
         const { prevPos: newPrevPos, nextPos: newNextPos } = recalcPos()
         console.info(`[safeCalcInsertPos] Recalculated: prev=${newPrevPos}, next=${newNextPos}`)
@@ -71,7 +91,6 @@ async function safeCalcInsertPos(
         }
       }
 
-      // 无回调时，尝试用原参数重试（向后兼容，但可能失败）
       console.warn('[safeCalcInsertPos] No recalcPos callback provided, retrying with original positions')
       try {
         return calcInsertPos(prevPos, nextPos)
@@ -130,10 +149,54 @@ export const useBlockStore = defineStore('blocks', () => {
     return blocks.value.filter(b => b.pageId === pageId)
   }
 
+  /** 根据 ID 获取单个 Block */
+  function getBlock(blockId: string): Block | undefined {
+    return blocks.value.find(b => b.id === blockId)
+  }
+
+  /** 获取指定页面的出链 */
+  async function getOutlinks(pageId: string): Promise<{ id: string; sourceBlockId: string; targetPageId: string; relationshipType: string | null; createdAt: number }[]> {
+    const client = await getClient()
+    const links = await client.getOutlinks(pageId)
+    return links.map(link => ({
+      id: link.id,
+      sourceBlockId: link.source_block_id,
+      targetPageId: link.target_page_id,
+      relationshipType: link.relationship_type,
+      createdAt: link.created_at
+    }))
+  }
+
+  /** 获取指定页面的入链（反向链接） */
+  async function getBacklinks(pageId: string): Promise<{ id: string; sourceBlockId: string; targetPageId: string; relationshipType: string | null; createdAt: number }[]> {
+    const client = await getClient()
+    const links = await client.getBacklinks(pageId)
+    return links.map(link => ({
+      id: link.id,
+      sourceBlockId: link.source_block_id,
+      targetPageId: link.target_page_id,
+      relationshipType: link.relationship_type,
+      createdAt: link.created_at
+    }))
+  }
+
   /** 加载指定 Page 的 Block 树 */
   async function loadPageBlocks(pageId: string) {
-    const core = getCore()
-    blocks.value = await core.blockService.getByPageId(pageId)
+    const client = await getClient()
+    const rustBlocks = await client.getBlocksByPage(pageId)
+    
+    blocks.value = rustBlocks.map(rustBlock => ({
+      id: rustBlock.id,
+      pageId: rustBlock.page_id,
+      parentId: rustBlock.parent_id,
+      pos: rustBlock.pos,
+      content: rustBlock.content,
+      format: JSON.parse(rustBlock.format || '{}'),
+      type: rustBlock.type as Block['type'],
+      properties: {},
+      createdAt: rustBlock.created_at,
+      updatedAt: rustBlock.updated_at
+    }))
     structureVersion.value++
     return blocks
   }
@@ -141,10 +204,24 @@ export const useBlockStore = defineStore('blocks', () => {
   /** 批量加载多个 Page 的 Block 树 */
   async function loadMultiPageBlocks(pageIds: string[]) {
     loading.value = true
-    const core = getCore()
+    const client = await getClient()
     try {
       const results = await Promise.allSettled(
-        pageIds.map(id => core.blockService.getByPageId(id))
+        pageIds.map(async id => {
+          const rustBlocks = await client.getBlocksByPage(id)
+          return rustBlocks.map(rustBlock => ({
+            id: rustBlock.id,
+            pageId: rustBlock.page_id,
+            parentId: rustBlock.parent_id,
+            pos: rustBlock.pos,
+            content: rustBlock.content,
+            format: JSON.parse(rustBlock.format || '{}'),
+            type: rustBlock.type as Block['type'],
+            properties: {},
+            createdAt: rustBlock.created_at,
+            updatedAt: rustBlock.updated_at
+          }))
+        })
       )
 
       const existingIds = new Set(blocks.value.map(b => b.id))
@@ -177,17 +254,20 @@ export const useBlockStore = defineStore('blocks', () => {
       pendingSaves.delete(block.id)
       return
     }
-    const core = getCore()
-    const result = await core.blockService.update(block.id, block)
-    pendingSaves.delete(block.id)
-
-    // 如果存储返回了被跳过的回收站页面警告
-    if (result && 'skippedTrashedPages' in result) {
-      const skippedPages = (result as any).skippedTrashedPages
-      if (skippedPages && skippedPages.length > 0) {
-        trashedPageWarnings.value = skippedPages
-      }
+    
+    const client = await getClient()
+    const blockUpdate = {
+      id: currentBlock.id,
+      page_id: currentBlock.pageId,
+      parent_id: currentBlock.parentId,
+      pos: currentBlock.pos,
+      content: currentBlock.content,
+      format: currentBlock.format || {},
+      type: currentBlock.type
     }
+    
+    await client.saveBlockTree([blockUpdate])
+    pendingSaves.delete(block.id)
   }
 
   function _scheduleSave(block: Block): void {
@@ -234,16 +314,7 @@ export const useBlockStore = defineStore('blocks', () => {
     }
 
     blocks.value.push(block)
-    // 注意：这里不直接调用 saveBlock，由 _scheduleSave 处理
     structureVersion.value++
-
-    // 更新搜索索引
-    try {
-      const core = getCore()
-      core.searchService.updateBlock(block)
-    } catch (error) {
-      console.error('[createBlock] Failed to update search index:', error)
-    }
 
     return block
   }
@@ -700,13 +771,10 @@ export const useBlockStore = defineStore('blocks', () => {
 
     blocks.value = blocks.value.filter(b => !toDelete.has(b.id))
 
-    // 使用 Core 层删除 Block
     try {
-      const core = getCore()
+      const client = await getClient()
       for (const id of toDelete) {
-        await core.blockService.delete(id)
-        // 更新搜索索引
-        core.searchService.removeBlock(id)
+        await client.deleteBlock(id)
       }
     } catch (error) {
       console.error('[deleteBlock] Failed to delete blocks:', error)
@@ -724,15 +792,15 @@ export const useBlockStore = defineStore('blocks', () => {
     block.updatedAt = Date.now()
     _scheduleSave(block)
 
-    // 更新页面统计
     const pageStore = usePageStore()
     const page = pageStore.getPage(block.pageId)
     if (page) {
-      page.updatedAt = Date.now()
-      const core = getCore()
-      await core.pageService.updatePage(page)
-      // 更新搜索索引
-      core.searchService.updateBlock(block)
+      const client = await getClient()
+      await client.savePage({
+        id: page.id,
+        title: page.title,
+        type: page.type
+      })
     }
   }
 
@@ -759,9 +827,10 @@ export const useBlockStore = defineStore('blocks', () => {
 
   /** 更新 Block 属性（使用独立的 properties 表） */
   async function updateBlockProperties(blockId: string, properties: Record<string, any>) {
-    const core = getCore()
+    const client = await getClient()
     for (const [key, value] of Object.entries(properties)) {
-      await core.propertyService.setProperty(blockId, key, value)
+      const valueStr = typeof value === 'string' ? value : JSON.stringify(value)
+      await client.setProperty(blockId, key, valueStr, typeof value === 'string' ? 'string' : 'object')
     }
     structureVersion.value++
   }
@@ -780,6 +849,9 @@ export const useBlockStore = defineStore('blocks', () => {
     structureVersion,
     getChildren,
     getBlocksByPage,
+    getBlock,
+    getOutlinks,
+    getBacklinks,
     loadPageBlocks,
     loadMultiPageBlocks,
     createBlock,

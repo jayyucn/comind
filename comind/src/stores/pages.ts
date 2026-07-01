@@ -1,9 +1,24 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { Page } from '../types/page'
-import { getCore } from '../core'
+import { initCoreClient } from '../wasm/client'
 import { useBlockStore } from './blocks'
 import { useFavorites } from '../composables/useFavorites'
+
+import type { CoreClient } from '../wasm/client'
+
+let coreClientPromise: Promise<CoreClient> | null = null
+
+async function getClient() {
+  if (!coreClientPromise) {
+    coreClientPromise = initCoreClient()
+  }
+  const client = await coreClientPromise
+  if (!client) {
+    throw new Error('Core client not initialized')
+  }
+  return client
+}
 
 export const usePageStore = defineStore('pages', () => {
   const pages = ref<Page[]>([])
@@ -16,12 +31,29 @@ export const usePageStore = defineStore('pages', () => {
     removePageFromHistoryFn = fn
   }
 
-  /** 从 IndexedDB 加载所有 Page 到内存 */
+  /** 从 Rust Core 加载所有 Page 到内存 */
   async function loadAllPages() {
     loading.value = true
     try {
-      const core = getCore()
-      pages.value = await core.pageService.getAll()
+      const client = await getClient()
+      const rustPages = await client.getAllPages()
+      
+      pages.value = rustPages.map(rustPage => ({
+        id: rustPage.id,
+        blockId: rustPage.block_id,
+        title: rustPage.title,
+        type: rustPage.type as Page['type'],
+        icon: rustPage.icon,
+        cover: rustPage.cover,
+        aliases: JSON.parse(rustPage.aliases || '[]') as string[],
+        filePath: rustPage.file_path,
+        childrenCount: rustPage.children_count,
+        wordCount: rustPage.word_count,
+        createdAt: rustPage.created_at,
+        updatedAt: rustPage.updated_at,
+        deleted: rustPage.deleted === 1,
+        deletedAt: null
+      }))
     } finally {
       loading.value = false
     }
@@ -34,11 +66,27 @@ export const usePageStore = defineStore('pages', () => {
   }
 
   async function createPage(title: string, type: 'normal' | 'journal' = 'normal'): Promise<Page> {
-    const core = getCore()
-    const page = await core.pageService.create({ title, type })
+    const client = await getClient()
+    const rustPage = await client.savePage({ title, type })
+    
+    const page: Page = {
+      id: rustPage.id,
+      blockId: rustPage.block_id,
+      title: rustPage.title,
+      type: rustPage.type as Page['type'],
+      icon: rustPage.icon,
+      cover: rustPage.cover,
+      aliases: JSON.parse(rustPage.aliases || '[]') as string[],
+      filePath: rustPage.file_path,
+      childrenCount: rustPage.children_count,
+      wordCount: rustPage.word_count,
+      createdAt: rustPage.created_at,
+      updatedAt: rustPage.updated_at,
+      deleted: rustPage.deleted === 1,
+      deletedAt: null
+    }
+    
     pages.value.push(page)
-    // 更新搜索索引
-    core.searchService.updatePage(page)
     return page
   }
 
@@ -65,18 +113,30 @@ export const usePageStore = defineStore('pages', () => {
       return { duplicated: duplicate }
     }
 
-    const core = getCore()
-    await core.pageService.rename(pageId, trimmedTitle)
+    const client = await getClient()
+    await client.savePage({ id: pageId, title: trimmedTitle, type: page.type })
     page.title = trimmedTitle
-    // 更新搜索索引
-    core.searchService.updatePage(page)
     return {}
   }
 
   /** 合并源页面到目标页面（事务操作） */
   async function mergePage(sourceId: string, targetId: string): Promise<void> {
-    const core = getCore()
-    await core.pageService.mergePage(sourceId, targetId)
+    const client = await getClient()
+    const sourceBlocks = await client.getBlocksByPage(sourceId)
+    
+    for (const rustBlock of sourceBlocks) {
+      await client.saveBlockTree([{
+        id: rustBlock.id,
+        page_id: targetId,
+        parent_id: rustBlock.parent_id,
+        pos: rustBlock.pos,
+        content: rustBlock.content,
+        format: JSON.parse(rustBlock.format || '{}'),
+        type: rustBlock.type
+      }])
+    }
+    
+    await client.deletePageCascade(sourceId)
     pages.value = pages.value.filter(p => p.id !== sourceId)
     if (currentPageId.value === sourceId) {
       currentPageId.value = targetId
@@ -85,8 +145,8 @@ export const usePageStore = defineStore('pages', () => {
 
   /** 删除页面 */
   async function deletePage(pageId: string): Promise<void> {
-    const core = getCore()
-    await core.pageService.deletePage(pageId)
+    const client = await getClient()
+    await client.deletePageCascade(pageId)
     pages.value = pages.value.filter(p => p.id !== pageId)
     if (currentPageId.value === pageId) {
       currentPageId.value = pages.value.length > 0 ? pages.value[0].id : ''
@@ -94,21 +154,43 @@ export const usePageStore = defineStore('pages', () => {
     if (removePageFromHistoryFn) {
       removePageFromHistoryFn(pageId)
     }
-    // 更新搜索索引
-    core.searchService.removePage(pageId)
   }
 
   /** 加载回收站页面 */
   async function loadTrashPages() {
-    const core = getCore()
-    const result = await core.pageService.getDeleted()
-    trashPages.value = result.items
+    const client = await getClient()
+    const rustPages = await client.getAllPages()
+    trashPages.value = rustPages
+      .filter(rustPage => rustPage.deleted === 1)
+      .map(rustPage => ({
+        id: rustPage.id,
+        blockId: rustPage.block_id,
+        title: rustPage.title,
+        type: rustPage.type as Page['type'],
+        icon: rustPage.icon,
+        cover: rustPage.cover,
+        aliases: JSON.parse(rustPage.aliases || '[]') as string[],
+        filePath: rustPage.file_path,
+        childrenCount: rustPage.children_count,
+        wordCount: rustPage.word_count,
+        createdAt: rustPage.created_at,
+        updatedAt: rustPage.updated_at,
+        deleted: true,
+        deletedAt: null
+      }))
   }
 
   /** 软删除页面（移至回收站） */
   async function softDeletePage(pageId: string): Promise<void> {
-    const core = getCore()
-    await core.pageService.softDelete(pageId)
+    const client = await getClient()
+    const page = getPage(pageId)
+    if (page) {
+      await client.savePage({ 
+        id: pageId, 
+        title: page.title, 
+        type: page.type 
+      })
+    }
     pages.value = pages.value.filter(p => p.id !== pageId)
     if (currentPageId.value === pageId) {
       currentPageId.value = ''
@@ -118,27 +200,27 @@ export const usePageStore = defineStore('pages', () => {
     if (removePageFromHistoryFn) {
       removePageFromHistoryFn(pageId)
     }
-    // 更新搜索索引
-    core.searchService.removePage(pageId)
   }
 
   /** 恢复页面（从回收站还原） */
   async function restorePage(pageId: string): Promise<void> {
-    const core = getCore()
-    await core.pageService.restore(pageId)
+    const client = await getClient()
+    const page = getPage(pageId)
+    if (page) {
+      await client.savePage({ 
+        id: pageId, 
+        title: page.title, 
+        type: page.type 
+      })
+    }
     trashPages.value = trashPages.value.filter(p => p.id !== pageId)
     await loadAllPages()
-    // 更新搜索索引 - 重新加载所有页面后更新
-    const restoredPage = getPage(pageId)
-    if (restoredPage) {
-      core.searchService.updatePage(restoredPage)
-    }
   }
 
   /** 永久删除页面 */
   async function permanentDeletePage(pageId: string): Promise<void> {
-    const core = getCore()
-    await core.pageService.permanentDelete(pageId)
+    const client = await getClient()
+    await client.deletePageCascade(pageId)
     pages.value = pages.value.filter(p => p.id !== pageId)
     trashPages.value = trashPages.value.filter(p => p.id !== pageId)
     if (currentPageId.value === pageId) {

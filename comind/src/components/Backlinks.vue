@@ -2,9 +2,8 @@
 import { ref, watch, computed, nextTick } from 'vue'
 import { usePageStore } from '../stores/pages'
 import { useEditorStore } from '../stores/editor'
-import { getCore } from '../core'
 import { useNavigateToPage } from '../composables/useNavigateToPage'
-import type { Link } from '../core/types'
+import { useBlockStore } from '../stores/blocks'
 
 const props = withDefaults(defineProps<{
   pageId?: string
@@ -14,7 +13,16 @@ const props = withDefaults(defineProps<{
 
 const pageStore = usePageStore()
 const editorStore = useEditorStore()
+const blockStore = useBlockStore()
 const { navigateToPage } = useNavigateToPage()
+
+interface Link {
+  id: string
+  sourceBlockId: string
+  targetPageId: string
+  relationshipType: string | null
+  createdAt: number
+}
 
 interface BacklinkItem {
   link: Link
@@ -46,8 +54,7 @@ async function handleBacklinkClick(link: Link) {
 
   let blockRecord
   try {
-    const core = getCore()
-    blockRecord = await core.blockService.getById(link.sourceBlockId)
+    blockRecord = blockStore.getBlock(link.sourceBlockId)
   } catch (err) {
     console.error('获取源块失败:', err)
     return
@@ -73,8 +80,8 @@ async function loadBacklinks() {
 
   loading.value = true
   try {
-    const core = getCore()
-    const links = await core.linkService.getBacklinks(currentId)
+    await blockStore.loadMultiPageBlocks([currentId])
+    const links = await blockStore.getBacklinks(currentId)
 
     const results = await Promise.all(
       links.map(async (link) => {
@@ -83,7 +90,7 @@ async function loadBacklinks() {
         let blockRecord = null
 
         try {
-          blockRecord = await core.blockService.getById(link.sourceBlockId)
+          blockRecord = blockStore.getBlock(link.sourceBlockId)
           blockExists = !!blockRecord
         } catch (err) {
           console.error('获取源块失败:', err)
@@ -93,7 +100,7 @@ async function loadBacklinks() {
         let pageTitle = ''
         if (blockExists && blockRecord) {
           try {
-            const pageRecord = await core.pageService.getById(blockRecord.pageId)
+            const pageRecord = pageStore.getPage(blockRecord.pageId)
             pageExists = !!pageRecord
             pageTitle = pageRecord?.title ?? '未命名页面'
           } catch (err) {

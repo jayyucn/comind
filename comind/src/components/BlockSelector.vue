@@ -2,7 +2,6 @@
 import { ref, computed, watch } from 'vue'
 import { usePageStore } from '../stores/pages'
 import { useBlockStore } from '../stores/blocks'
-import { getCore } from '../core'
 import { pushModal, popModal } from '../composables/useModalKeyboard'
 import type { Block } from '../types/block'
 
@@ -55,12 +54,10 @@ async function loadAllBlocks() {
     .filter(p => !p.deleted && p.id !== currentPageId)
     .map(p => p.id)
 
-  const core = getCore()
-  const otherBlocks: Block[] = []
-  for (const pageId of otherPageIds) {
-    const blocks = await core.blockService.getBlockTree(pageId)
-    otherBlocks.push(...blocks.filter(b => b.id !== props.excludeBlockId && b.type !== 'embed'))
-  }
+  await blockStore.loadMultiPageBlocks(otherPageIds)
+  const otherBlocks = blockStore.blocks.filter(b => 
+    otherPageIds.includes(b.pageId) && b.id !== props.excludeBlockId && b.type !== 'embed'
+  )
 
   allBlocks.value = [...currentBlocks, ...otherBlocks]
 }

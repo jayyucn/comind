@@ -13,10 +13,14 @@ export default defineConfig({
       target: 'esnext'
     }
   },
+  build: {
+    target: 'esnext',
+    assetsInclude: ['**/*.wasm']
+  },
   resolve: {
     alias: {
       '@': '/src',
-      '@wasm': '/target/wasm32-unknown-unknown/debug'
+      '@wasm': '/pkg'
     }
   }
 })

@@ -1,9 +1,18 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { getCore } from '../core'
+import { initCoreClient } from '../wasm/client'
 import type { SearchResult } from '../core/types'
 import { pushModal, popModal } from '../composables/useModalKeyboard'
+
+let clientPromise: ReturnType<typeof initCoreClient> | null = null
+
+async function getClient() {
+  if (!clientPromise) {
+    clientPromise = initCoreClient()
+  }
+  return clientPromise
+}
 
 const props = defineProps<{
   visible: boolean
@@ -19,7 +28,6 @@ const query = ref('')
 const selectedIndex = ref(0)
 const loading = ref(false)
 const results = ref<SearchResult[]>([])
-const searchInitialized = ref(false)
 
 watch(() => props.visible, (isVisible) => {
   if (isVisible) {
@@ -90,12 +98,19 @@ watch(query, () => {
   searchTimeout = setTimeout(async () => {
     loading.value = true
     try {
-      const core = getCore()
-      if (!searchInitialized.value) {
-        await core.searchService.initialize()
-        searchInitialized.value = true
-      }
-      results.value = await core.searchService.search(query.value, { limit: 20 })
+      const client = await getClient()
+      const coreResults = await client.search(query.value)
+      results.value = coreResults.map(r => ({
+        id: r.block_id,
+        blockId: r.block_id,
+        pageId: r.page_id,
+        title: r.title,
+        content: r.content,
+        type: 'block' as const,
+        score: r.score,
+        matchedText: '',
+        highlights: []
+      }))
       selectedIndex.value = 0
     } catch (err) {
       console.error('[SearchPanel] Search failed:', err)

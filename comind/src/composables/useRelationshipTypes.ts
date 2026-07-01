@@ -1,10 +1,10 @@
 import { ref, computed } from 'vue'
-import { getCore } from '../core'
-import type { RelationshipType, Strength } from '../core/types'
+import { initCoreClient } from '../wasm/client'
+import type { RelationshipType as CoreRelationshipType } from '../wasm/types'
 import { RELATIONSHIP_TYPES_SEED } from '../config/relationship-types-seed'
 import { TYPE_REGEX, COLOR_REGEX } from './relationship-type-constants'
+import type { RelationshipType, Strength } from '../core/types'
 
-/** 用户编辑/新建时的输入（不含 id/order/builtin/deleted） */
 export interface RelationshipTypeInput {
   type: string
   inverse: string | null
@@ -18,7 +18,6 @@ export interface RelationshipTypeInput {
 
 const VALID_STRENGTHS: readonly Strength[] = ['strong', 'medium', 'weak']
 
-/** 校验输入；返回 null 表示通过，否则返回错误信息 */
 export function validateRelationshipTypeInput(
   input: RelationshipTypeInput,
   existing: Pick<RelationshipType, 'type' | 'deleted'>[]
@@ -32,32 +31,59 @@ export function validateRelationshipTypeInput(
   return null
 }
 
+function makeId(type: string): string {
+  return `rt_seed_${type}`
+}
+
+function convertCoreToFrontend(coreType: CoreRelationshipType): RelationshipType {
+  return {
+    id: coreType.id,
+    type: coreType.type,
+    inverse: coreType.inverse,
+    label: coreType.label,
+    inverseLabel: coreType.inverse_label,
+    description: null,
+    color: coreType.color,
+    group: 'custom',
+    strength: coreType.strength,
+    order: coreType.order,
+    deleted: coreType.deleted === 1,
+    builtin: coreType.builtin === 1,
+    createdAt: coreType.created_at,
+    updatedAt: coreType.updated_at
+  }
+}
+
 const state = ref<{ items: RelationshipType[]; loaded: boolean }>({
   items: [],
   loaded: false
 })
 
-function makeId(type: string): string {
-  return `rt_seed_${type}`
+let clientPromise: ReturnType<typeof initCoreClient> | null = null
+
+async function getClient() {
+  if (!clientPromise) {
+    clientPromise = initCoreClient()
+  }
+  return clientPromise
 }
 
 export function useRelationshipTypes() {
   return {
-    /** 菜单用：仅未软删，按 order 升序 */
     items: computed(() =>
       state.value.items
         .filter(r => !r.deleted)
         .sort((a, b) => a.order - b.order)
     ),
-    /** 设置页用：全部（含已软删），按 order 升序 */
     all: computed(() =>
       [...state.value.items].sort((a, b) => a.order - b.order)
     ),
     loaded: computed(() => state.value.loaded),
 
     async load(): Promise<void> {
-      const core = getCore()
-      const existing = await core.relationshipTypeService.getActive()
+      const client = await getClient()
+      const coreTypes = await client.getRelationshipTypes()
+      const existing = coreTypes.map(convertCoreToFrontend)
       const existingIds = new Set(existing.map(r => r.id))
 
       let order = existing.length > 0
@@ -66,7 +92,24 @@ export function useRelationshipTypes() {
       for (const seed of RELATIONSHIP_TYPES_SEED) {
         const id = makeId(seed.type)
         if (!existingIds.has(id)) {
-          const record = await core.relationshipTypeService.create({
+          await client.executeBatch([{
+            entity: 'relationship_type',
+            action: 'create',
+            params: {
+              id,
+              type: seed.type,
+              inverse: seed.inverse,
+              label: seed.label,
+              inverse_label: seed.inverseLabel,
+              description: seed.description ?? null,
+              color: seed.color,
+              group: seed.group,
+              strength: seed.strength,
+              order: order++,
+              builtin: 1,
+            }
+          }])
+          existing.push({
             id,
             type: seed.type,
             inverse: seed.inverse,
@@ -76,10 +119,12 @@ export function useRelationshipTypes() {
             color: seed.color,
             group: seed.group,
             strength: seed.strength,
-            order: order++,
+            order: order - 1,
+            deleted: false,
             builtin: true,
+            createdAt: Date.now(),
+            updatedAt: Date.now()
           })
-          existing.push(record)
         }
       }
 
@@ -94,11 +139,13 @@ export function useRelationshipTypes() {
       )
       if (err) throw new Error(err)
 
-      const core = getCore()
+      const client = await getClient()
       const maxOrder = state.value.items.length > 0
         ? Math.max(...state.value.items.map(r => r.order))
         : -1
-      const record = await core.relationshipTypeService.create({
+
+      const record: RelationshipType = {
+        id: `rt_${Date.now()}`,
         type: input.type,
         inverse: input.inverse,
         label: input.label.trim(),
@@ -108,7 +155,30 @@ export function useRelationshipTypes() {
         group: input.group,
         strength: input.strength,
         order: maxOrder + 1,
-      })
+        deleted: false,
+        builtin: false,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      }
+
+      await client.executeBatch([{
+        entity: 'relationship_type',
+        action: 'create',
+        params: {
+          id: record.id,
+          type: record.type,
+          inverse: record.inverse,
+          label: record.label,
+          inverse_label: record.inverseLabel,
+          description: record.description,
+          color: record.color,
+          group: record.group,
+          strength: record.strength,
+          order: record.order,
+          builtin: 0,
+        }
+      }])
+
       state.value.items = [...state.value.items, record]
       return record
     },
@@ -135,37 +205,70 @@ export function useRelationshipTypes() {
       )
       if (err) throw new Error(err)
 
-      const core = getCore()
-      const updated = await core.relationshipTypeService.update(id, {
-        label: merged.label.trim(),
-        inverseLabel: merged.inverseLabel.trim(),
-        description: merged.description,
-        color: merged.color,
-        group: merged.group,
-        strength: merged.strength,
-      })
-      state.value.items = state.value.items.map(r => r.id === id ? updated : r)
+      const client = await getClient()
+      await client.executeBatch([{
+        entity: 'relationship_type',
+        action: 'update',
+        params: {
+          id,
+          label: merged.label.trim(),
+          inverse_label: merged.inverseLabel.trim(),
+          description: merged.description,
+          color: merged.color,
+          group: merged.group,
+          strength: merged.strength,
+        }
+      }])
+
+      state.value.items = state.value.items.map(r =>
+        r.id === id
+          ? {
+              ...r,
+              label: merged.label.trim(),
+              inverseLabel: merged.inverseLabel.trim(),
+              description: merged.description,
+              color: merged.color,
+              group: merged.group,
+              strength: merged.strength,
+              updatedAt: Date.now()
+            }
+          : r
+      )
     },
 
     async softDelete(id: string): Promise<void> {
-      const core = getCore()
-      await core.relationshipTypeService.softDelete(id)
+      const client = await getClient()
+      await client.executeBatch([{
+        entity: 'relationship_type',
+        action: 'update',
+        params: { id, deleted: 1 }
+      }])
       state.value.items = state.value.items.map(r =>
         r.id === id ? { ...r, deleted: true, updatedAt: Date.now() } : r
       )
     },
 
     async restore(id: string): Promise<void> {
-      const core = getCore()
-      await core.relationshipTypeService.restore(id)
+      const client = await getClient()
+      await client.executeBatch([{
+        entity: 'relationship_type',
+        action: 'update',
+        params: { id, deleted: 0 }
+      }])
       state.value.items = state.value.items.map(r =>
         r.id === id ? { ...r, deleted: false, updatedAt: Date.now() } : r
       )
     },
 
     async reorder(orderedIds: string[]): Promise<void> {
-      const core = getCore()
-      await core.relationshipTypeService.updateOrder(orderedIds)
+      const client = await getClient()
+      const operations = orderedIds.map((id, index) => ({
+        entity: 'relationship_type' as const,
+        action: 'update' as const,
+        params: { id, order: index }
+      }))
+      await client.executeBatch(operations)
+
       const map = new Map(state.value.items.map(r => [r.id, r]))
       for (let i = 0; i < orderedIds.length; i++) {
         const r = map.get(orderedIds[i])
@@ -176,7 +279,6 @@ export function useRelationshipTypes() {
       state.value.items = Array.from(map.values())
     },
 
-    /** 仅供测试使用：重置模块级 state */
     _resetForTest(): void {
       state.value = { items: [], loaded: false }
     }

@@ -3,12 +3,13 @@ import { ref, onMounted, onBeforeUnmount, watch, computed, nextTick } from 'vue'
 import { Graph } from '@antv/g6'
 import type { NodeData } from '@antv/g6'
 import { usePageStore } from '../../stores/pages'
-import { getCore } from '../../core'
+import { useBlockStore } from '../../stores/blocks'
 import { getRelationshipColor, getRelationshipLabel, getDirectionInGroup, getGroupByType, getRelationshipStrength, STRENGTH_TO_WIDTH } from '../../types/relationship'
 import { useRouter } from 'vue-router'
 import SearchFilter from './SearchFilter.vue'
 
 const pageStore = usePageStore()
+const blockStore = useBlockStore()
 const router = useRouter()
 
 const containerRef = ref<HTMLElement | null>(null)
@@ -67,11 +68,9 @@ async function loadPageNodeEdges(
   visitedEdges: Set<string>,
   blockCache: Map<string, { pageId: string }>
 ) {
-  const core = getCore()
-  const [outLinks, inLinks] = await Promise.all([
-    core.linkService.getBySourcePage(pageId),
-    core.linkService.getByTargetPage(pageId),
-  ])
+  await blockStore.loadMultiPageBlocks([pageId])
+  const outLinks = await blockStore.getOutlinks(pageId)
+  const inLinks = await blockStore.getBacklinks(pageId)
 
   for (const link of outLinks) {
     if (!filterLinkByType(link.relationshipType)) continue
@@ -110,7 +109,7 @@ async function loadPageNodeEdges(
 
     let block = blockCache.get(link.sourceBlockId)
     if (!block) {
-      const record = await core.blockService.getById(link.sourceBlockId)
+      const record = blockStore.getBlock(link.sourceBlockId)
       if (!record) continue
       block = { pageId: record.pageId }
       blockCache.set(link.sourceBlockId, block)
@@ -152,10 +151,8 @@ async function buildGraphData() {
   const visitedEdges = new Set<string>()
   const blockCache = new Map<string, { pageId: string }>()
 
-  const core = getCore()
-  const allPages = await core.pageService.getAll()
+  const allPages = pageStore.pages.filter(p => !p.deleted)
   for (const page of allPages) {
-    if (page.deleted) continue
     nodes.push({
       id: page.id,
       data: {
@@ -166,7 +163,6 @@ async function buildGraphData() {
   }
 
   for (const page of allPages) {
-    if (page.deleted) continue
     await loadPageNodeEdges(page.id, nodes, edges, visitedEdges, blockCache)
   }
 

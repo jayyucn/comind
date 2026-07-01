@@ -8,7 +8,6 @@ import SettingsModal from './components/Settings/SettingsModal.vue'
 import { useEditorStore } from './stores/editor'
 import { useBlockStore } from './stores/blocks'
 import { usePageStore } from './stores/pages'
-import { getCore } from './core'
 import { useSidebar } from './composables/useSidebar'
 import { useRightSidebar } from './composables/useRightSidebar'
 import { useRelationshipTypes } from './composables/useRelationshipTypes'
@@ -96,8 +95,7 @@ watch(() => blockStore.trashedPageWarnings, async (warnings) => {
 
 async function confirmRestoreTrashedPage() {
   if (trashedPageToRestore.value) {
-    const core = getCore()
-    const trashedPage = await core.pageService.getTrashedPageByTitle(trashedPageToRestore.value)
+    const trashedPage = pageStore.pages.find(p => p.title === trashedPageToRestore.value && p.deleted)
     if (trashedPage) {
       await pageStore.restorePage(trashedPage.id)
     }

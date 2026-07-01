@@ -4,7 +4,6 @@ import { useBlockStore } from '../../../../stores/blocks'
 import { usePageStore } from '../../../../stores/pages'
 import { usePropertyStore } from '../../../../stores/property'
 import { useNavigateToPage } from '../../../../composables/useNavigateToPage'
-import { getCore } from '../../../../core'
 import SubtreeRenderer from './SubtreeRenderer'
 import type { SubtreeNode } from '../../../../types/block'
 import type { Block } from '../../../../types/block'
@@ -47,12 +46,11 @@ async function loadSourceBlock() {
     return
   }
   try {
-    const core = getCore()
     const pageId = sourcePageId.value
     if (pageId) {
-      const blocks = await core.blockService.getBlockTree(pageId)
-      remoteBlocks.value = blocks
-      remoteBlock.value = blocks.find(b => b.id === id) ?? null
+      await blockStore.loadPageBlocks(pageId)
+      remoteBlocks.value = blockStore.blocks.filter(b => b.pageId === pageId)
+      remoteBlock.value = remoteBlocks.value.find(b => b.id === id) ?? null
     } else {
       remoteBlock.value = null
       remoteBlocks.value = []

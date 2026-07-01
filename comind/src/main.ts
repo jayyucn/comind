@@ -3,14 +3,13 @@ import { createPinia } from 'pinia'
 import router from './router'
 import './styles/main.scss'
 import App from './App.vue'
-import { initCore } from './core'
+import { initCoreClient } from './wasm/client'
 
-// 先初始化 Core 层，再启动 Vue App
 async function bootstrap() {
   try {
-    await initCore('indexeddb')
+    await initCoreClient()
   } catch (err) {
-    console.error('[main] Failed to initialize Core layer:', err)
+    console.error('[main] Failed to initialize Core client:', err)
   }
 
   const app = createApp(App)
