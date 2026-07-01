@@ -81,8 +81,28 @@ pub async fn save_page(db: State<'_, super::state::DatabaseConnection>, page: se
             .map_err(|e| format!("Failed to parse page: {}", e))?;
         let existing = storage.pages().get_by_id(&page.id);
         match existing {
-            Ok(_) => storage.pages().update(&page),
-            Err(_) => storage.pages().create(&page),
+            Ok(_) => PageService::update(
+                storage,
+                &page.id,
+                Some(&page.title),
+                Some(&page.r#type),
+                page.icon.as_deref(),
+                page.cover.as_deref(),
+                Some(&page.aliases),
+                page.file_path.as_deref(),
+                Some(page.children_count),
+                Some(page.word_count),
+            ),
+            Err(_) => PageService::create(
+                storage,
+                page.block_id.as_deref().unwrap_or(""),
+                &page.title,
+                Some(&page.r#type),
+                page.icon.as_deref(),
+                page.cover.as_deref(),
+                Some(&page.aliases),
+                page.file_path.as_deref(),
+            ),
         }
     })
 }

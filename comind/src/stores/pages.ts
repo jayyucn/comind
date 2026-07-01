@@ -66,8 +66,18 @@ export const usePageStore = defineStore('pages', () => {
   }
 
   async function createPage(title: string, type: 'normal' | 'journal' = 'normal'): Promise<Page> {
+    const trimmedTitle = title.trim()
+    if (!trimmedTitle) {
+      throw new Error('Page title cannot be empty')
+    }
+
+    const existingPage = getPageByTitle(trimmedTitle)
+    if (existingPage) {
+      throw new Error(`Page with title '${trimmedTitle}' already exists`)
+    }
+
     const client = await getClient()
-    const rustPage = await client.savePage({ title, type })
+    const rustPage = await client.savePage({ title: trimmedTitle, type })
     
     const page: Page = {
       id: rustPage.id,
@@ -131,8 +141,10 @@ export const usePageStore = defineStore('pages', () => {
         parent_id: rustBlock.parent_id,
         pos: rustBlock.pos,
         content: rustBlock.content,
-        format: JSON.parse(rustBlock.format || '{}'),
-        type: rustBlock.type
+        format: rustBlock.format,
+        type: rustBlock.type,
+        created_at: rustBlock.created_at,
+        updated_at: Date.now()
       }])
     }
     

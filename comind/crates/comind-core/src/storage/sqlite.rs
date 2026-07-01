@@ -41,7 +41,7 @@ impl SQLiteAdapter {
             "CREATE TABLE IF NOT EXISTS Page (
                 id              TEXT PRIMARY KEY,
                 block_id        TEXT,
-                title           TEXT NOT NULL,
+                title           TEXT NOT NULL UNIQUE,
                 type            TEXT NOT NULL DEFAULT 'normal',
                 icon            TEXT,
                 cover           TEXT,
@@ -126,9 +126,9 @@ impl SQLiteAdapter {
                 tokenize = 'unicode61'
             );
             
-            CREATE INDEX IF NOT EXISTS idx_page_blockId    ON Page(block_id);
-            CREATE INDEX IF NOT EXISTS idx_page_type       ON Page(type);
-            CREATE INDEX IF NOT EXISTS idx_page_updatedAt  ON Page(updated_at);
+            CREATE INDEX IF NOT EXISTS idx_page_blockId        ON Page(block_id);
+            CREATE INDEX IF NOT EXISTS idx_page_type           ON Page(type);
+            CREATE INDEX IF NOT EXISTS idx_page_updatedAt      ON Page(updated_at);
             CREATE INDEX IF NOT EXISTS idx_block_pageId    ON Block(page_id);
             CREATE INDEX IF NOT EXISTS idx_block_parentId  ON Block(parent_id);
             CREATE INDEX IF NOT EXISTS idx_block_pos       ON Block(pos);
@@ -138,6 +138,30 @@ impl SQLiteAdapter {
             CREATE INDEX IF NOT EXISTS idx_property_key    ON Property(key);"
         )?;
         
+        Self::migrate_add_page_title_unique(conn)?;
+        
+        Ok(())
+    }
+    
+    fn migrate_add_page_title_unique(conn: &rusqlite::Connection) -> Result<(), Box<dyn Error>> {
+        let result = conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_page_title ON Page(title);", []);
+        if let Err(e) = result {
+            if e.to_string().contains("UNIQUE constraint failed") || e.to_string().contains("duplicate") {
+                let count: i64 = conn.query_row(
+                    "SELECT COUNT(*) FROM (SELECT title FROM Page WHERE deleted = 0 GROUP BY title HAVING COUNT(*) > 1)",
+                    [],
+                    |row| row.get(0)
+                ).unwrap_or(0);
+                
+                if count > 0 {
+                    conn.execute(
+                        "DELETE FROM Page WHERE id NOT IN (SELECT MIN(id) FROM Page WHERE deleted = 0 GROUP BY title)",
+                        []
+                    )?;
+                    conn.execute("CREATE UNIQUE INDEX idx_page_title ON Page(title);", [])?;
+                }
+            }
+        }
         Ok(())
     }
 }

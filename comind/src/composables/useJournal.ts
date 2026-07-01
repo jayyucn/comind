@@ -46,16 +46,28 @@ export function useJournal() {
   // 确保今天的日记页面存在（若不存在则创建）
   async function ensureTodayJournalExists(): Promise<void> {
     const existing = journalPages.value.find(p => isTodayTitle(p.title))
-    if (existing) return
+    if (existing) {
+      await pageStore.openPage(existing.id)
+      return
+    }
 
-    const newPage = await pageStore.createPage(today.value, 'journal')
-    await pageStore.openPage(newPage.id)
+    try {
+      const newPage = await pageStore.createPage(today.value, 'journal')
+      await pageStore.openPage(newPage.id)
+    } catch (error) {
+      const existingAfterError = journalPages.value.find(p => isTodayTitle(p.title))
+      if (existingAfterError) {
+        await pageStore.openPage(existingAfterError.id)
+      }
+    }
   }
 
   // 检查并确保今天日记存在（Session 级，只触发一次）
   async function checkAndEnsureTodayJournal() {
     if (createdTodayThisSession.value) return
     createdTodayThisSession.value = true
+
+    await pageStore.loadAllPages()
 
     if (!todayJournalExists.value) {
       await ensureTodayJournalExists()

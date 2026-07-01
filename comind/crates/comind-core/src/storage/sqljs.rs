@@ -133,7 +133,9 @@ impl SqlJsAdapter {
     }
 
     fn init_schema(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
-        Self::exec(db, "CREATE TABLE IF NOT EXISTS Page (id TEXT PRIMARY KEY, block_id TEXT, title TEXT NOT NULL, type TEXT NOT NULL DEFAULT 'normal', icon TEXT, cover TEXT, aliases TEXT NOT NULL DEFAULT '[]', file_path TEXT, children_count INTEGER NOT NULL DEFAULT 0, word_count INTEGER NOT NULL DEFAULT 0, deleted INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
+        Self::exec(db, "CREATE TABLE IF NOT EXISTS Page (id TEXT PRIMARY KEY, block_id TEXT, title TEXT NOT NULL UNIQUE, type TEXT NOT NULL DEFAULT 'normal', icon TEXT, cover TEXT, aliases TEXT NOT NULL DEFAULT '[]', file_path TEXT, children_count INTEGER NOT NULL DEFAULT 0, word_count INTEGER NOT NULL DEFAULT 0, deleted INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
+        
+        Self::migrate_add_page_title_unique(db)?;
         
         Self::exec(db, "CREATE TABLE IF NOT EXISTS Block (id TEXT PRIMARY KEY, page_id TEXT NOT NULL, parent_id TEXT, pos INTEGER NOT NULL DEFAULT 1000, content TEXT NOT NULL DEFAULT '', format TEXT NOT NULL DEFAULT '{}', type TEXT NOT NULL DEFAULT 'bullet', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
         
@@ -145,6 +147,7 @@ impl SqlJsAdapter {
         
         Self::exec(db, "CREATE TABLE IF NOT EXISTS UserTemplate (id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL, content TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
 
+        Self::exec(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_page_title ON Page(title);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_page_blockId ON Page(block_id);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_page_type ON Page(type);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_page_updatedAt ON Page(updated_at);")?;
@@ -156,6 +159,18 @@ impl SqlJsAdapter {
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_property_blockId ON Property(block_id);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_property_key ON Property(key);")?;
 
+        Ok(())
+    }
+
+    fn migrate_add_page_title_unique(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        let result = Self::exec(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_page_title ON Page(title);");
+        if result.is_err() {
+            let duplicate_result = Self::query(db, "SELECT title, COUNT(*) as cnt FROM Page WHERE deleted = 0 GROUP BY title HAVING cnt > 1;", &[]);
+            if duplicate_result.is_ok() && !duplicate_result.as_ref().unwrap().is_empty() {
+                Self::exec(db, "DELETE FROM Page WHERE id NOT IN (SELECT MIN(id) FROM Page WHERE deleted = 0 GROUP BY title);")?;
+                Self::exec(db, "CREATE UNIQUE INDEX idx_page_title ON Page(title);")?;
+            }
+        }
         Ok(())
     }
 

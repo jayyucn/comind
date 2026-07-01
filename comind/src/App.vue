@@ -11,6 +11,7 @@ import { usePageStore } from './stores/pages'
 import { useSidebar } from './composables/useSidebar'
 import { useRightSidebar } from './composables/useRightSidebar'
 import { useRelationshipTypes } from './composables/useRelationshipTypes'
+import { useJournal } from './composables/useJournal'
 import { ArrowLeft, ArrowRight, PanelLeftClose, PanelLeftOpen, PanelRightOpen, PanelRightClose } from 'lucide-vue-next'
 import RightSidebar from './components/RightSidebar/index.vue'
 import { registerPanel } from './components/RightSidebar/panels'
@@ -37,6 +38,8 @@ const showRightSidebarToggle = computed(() => route.meta.hideRightSidebarToggle 
 
 onMounted(async () => {
   await useRelationshipTypes().load()
+  await pageStore.loadAllPages()
+  await useJournal().checkAndEnsureTodayJournal()
   document.addEventListener('keydown', handleGlobalKeydown)
 })
 

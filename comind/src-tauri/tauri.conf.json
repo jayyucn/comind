@@ -3,13 +3,19 @@
   "productName": "comind",
   "version": "0.1.0",
   "identifier": "com.comind.app",
+  "build": {
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist",
+    "beforeBuildCommand": "npm run build"
+  },
   "app": {
     "windows": [
       {
         "title": "comind",
         "width": 1200,
         "height": 800,
-        "center": true
+        "center": true,
+        "visible": true
       }
     ],
     "security": {
@@ -19,6 +25,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/icon.ico", "icons/icon.png", "icons/32x32.png", "icons/128x128.png", "icons/icon.icns"]
+    "icon": ["icons/icon.ico", "icons/icon.png", "icons/32x32.png", "icons/128x128.png", "icons/icon.icns"],
+    "windows": {
+      "nsis": null
+    }
   }
 }

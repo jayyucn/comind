@@ -4,7 +4,7 @@ import type { Block } from '../types/block'
 import { initCoreClient } from '../wasm/client'
 import { generateUUID } from '../utils/id'
 import { debounce } from '../utils/debounce'
-import { usePageStore } from './pages'
+
 import {
   pmPosToTextOffset,
   getSortedChildren,
@@ -70,7 +70,9 @@ async function safeCalcInsertPos(
           pos: block.pos,
           content: block.content,
           format: JSON.stringify(block.format || {}),
-          type: block.type
+          type: block.type,
+          created_at: block.createdAt,
+          updated_at: Date.now()
         }])
       }
 
@@ -263,7 +265,9 @@ export const useBlockStore = defineStore('blocks', () => {
       pos: currentBlock.pos,
       content: currentBlock.content,
       format: JSON.stringify(currentBlock.format || {}),
-      type: currentBlock.type
+      type: currentBlock.type,
+      created_at: currentBlock.createdAt,
+      updated_at: Date.now()
     }
     
     await client.saveBlockTree([blockUpdate])
@@ -791,17 +795,6 @@ export const useBlockStore = defineStore('blocks', () => {
     block.content = content
     block.updatedAt = Date.now()
     _scheduleSave(block)
-
-    const pageStore = usePageStore()
-    const page = pageStore.getPage(block.pageId)
-    if (page) {
-      const client = await getClient()
-      await client.savePage({
-        id: page.id,
-        title: page.title,
-        type: page.type
-      })
-    }
   }
 
   /** 更新 Block 格式 */

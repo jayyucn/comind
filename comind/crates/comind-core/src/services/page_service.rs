@@ -38,6 +38,10 @@ impl PageService {
         aliases: Option<&str>,
         file_path: Option<&str>,
     ) -> Result<Page, Box<dyn Error>> {
+        if Self::exists_by_title(storage, title)? {
+            return Err(format!("Page with title '{}' already exists", title).into());
+        }
+
         let now = chrono::Utc::now().timestamp_millis();
 
         let page = Page {
@@ -74,6 +78,9 @@ impl PageService {
         let mut page = repository::PageRepository::get_by_id(storage.pages(), id)?;
 
         if let Some(t) = title {
+            if t != page.title && Self::exists_by_title(storage, t)? {
+                return Err(format!("Page with title '{}' already exists", t).into());
+            }
             page.title = t.to_string();
         }
         if let Some(typ) = r#type {
