@@ -42,7 +42,7 @@ impl PageService {
 
         let page = Page {
             id: Self::generate_id(),
-            block_id: Some(block_id.to_string()),
+            block_id: if block_id.is_empty() { None } else { Some(block_id.to_string()) },
             title: title.to_string(),
             r#type: r#type.unwrap_or("normal").to_string(),
             icon: icon.map(|s| s.to_string()),

@@ -1,17 +1,16 @@
 import type {
   Block, Page, Property, Link, RelationshipType,
-  SearchResult, BlockUpdate, PageUpdate,
-  BatchOperation, BatchResult
+  SearchResult, BatchResult
 } from './types'
 
 export interface WasmClient {
   get_block(blockId: string): Promise<Block>
   get_blocks_by_page(pageId: string): Promise<Block[]>
-  save_block_tree(blocks: BlockUpdate[]): Promise<Block[]>
+  save_block_tree(blocks: string): Promise<Block[]>
 
   get_page(pageId: string): Promise<Page>
   get_all_pages(): Promise<Page[]>
-  save_page(page: PageUpdate): Promise<Page>
+  save_page(page: string): Promise<Page>
   delete_page_cascade(pageId: string): Promise<void>
 
   get_backlinks(pageId: string): Promise<Link[]>
@@ -26,7 +25,7 @@ export interface WasmClient {
 
   search(query: string): Promise<SearchResult[]>
 
-  execute_batch(operations: BatchOperation[]): Promise<BatchResult[]>
+  execute_batch(operations: string): Promise<BatchResult[]>
 }
 
 let wasmClient: WasmClient | null = null
@@ -52,15 +51,97 @@ async function ensureSqlJsLoaded(): Promise<void> {
   throw new Error('sql.js not loaded')
 }
 
+function parseJsonResult<T>(result: any): T {
+  if (typeof result === 'string') {
+    return JSON.parse(result) as T
+  }
+  return result as T
+}
+
 export async function initWasmClient(): Promise<WasmClient> {
-  if (wasmClient) return wasmClient as WasmClient
+  if (wasmClient) return wasmClient
 
   await ensureSqlJsLoaded()
-  const wasm = await import('@wasm/comind_wasm')
-  await wasm.default()
-  await wasm.init()
-  wasmClient = wasm as unknown as WasmClient
-  return wasmClient as WasmClient
+  const wasmModule = await import('@wasm/comind_wasm')
+  await wasmModule.default()
+  await wasmModule.init()
+
+  const client: WasmClient = {
+    async get_block(blockId: string): Promise<Block> {
+      const result = await wasmModule.get_block(blockId)
+      return parseJsonResult<Block>(result)
+    },
+
+    async get_blocks_by_page(pageId: string): Promise<Block[]> {
+      const result = await wasmModule.get_blocks_by_page(pageId)
+      return parseJsonResult<Block[]>(result)
+    },
+
+    async save_block_tree(blocks: string): Promise<Block[]> {
+      const result = await wasmModule.save_block_tree(blocks)
+      return parseJsonResult<Block[]>(result)
+    },
+
+    async get_page(pageId: string): Promise<Page> {
+      const result = await wasmModule.get_page(pageId)
+      return parseJsonResult<Page>(result)
+    },
+
+    async get_all_pages(): Promise<Page[]> {
+      const result = await wasmModule.get_all_pages()
+      return parseJsonResult<Page[]>(result)
+    },
+
+    async save_page(page: string): Promise<Page> {
+      const result = await wasmModule.save_page(page)
+      return parseJsonResult<Page>(result)
+    },
+
+    async delete_page_cascade(pageId: string): Promise<void> {
+      await wasmModule.delete_page_cascade(pageId)
+    },
+
+    async get_backlinks(pageId: string): Promise<Link[]> {
+      const result = await wasmModule.get_backlinks(pageId)
+      return parseJsonResult<Link[]>(result)
+    },
+
+    async get_outlinks(_pageId: string): Promise<Link[]> {
+      return []
+    },
+
+    async get_properties(blockId: string): Promise<Property[]> {
+      const result = await wasmModule.get_properties(blockId)
+      return parseJsonResult<Property[]>(result)
+    },
+
+    async set_property(blockId: string, key: string, value: string, type: string): Promise<Property> {
+      const result = await wasmModule.set_property(blockId, key, value, type)
+      return parseJsonResult<Property>(result)
+    },
+
+    async delete_property(blockId: string, key: string): Promise<void> {
+      await wasmModule.delete_property(blockId, key)
+    },
+
+    async get_relationship_types(): Promise<RelationshipType[]> {
+      const result = await wasmModule.get_relationship_types()
+      return parseJsonResult<RelationshipType[]>(result)
+    },
+
+    async search(query: string): Promise<SearchResult[]> {
+      const result = await wasmModule.search(query)
+      return parseJsonResult<SearchResult[]>(result)
+    },
+
+    async execute_batch(operations: string): Promise<BatchResult[]> {
+      const result = await wasmModule.execute_batch(operations)
+      return parseJsonResult<BatchResult[]>(result)
+    }
+  }
+
+  wasmClient = client
+  return client
 }
 
 export function getWasmClient(): WasmClient | null {

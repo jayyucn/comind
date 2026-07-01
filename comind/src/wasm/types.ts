@@ -87,8 +87,10 @@ export interface BlockUpdate {
   parent_id: string | null
   pos: number
   content: string
-  format: Record<string, any>
+  format: string
   type: string
+  created_at?: number
+  updated_at?: number
 }
 
 export interface PageUpdate {

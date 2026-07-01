@@ -15,11 +15,96 @@ pub struct SqlJsAdapter {
 
 #[cfg(target_arch = "wasm32")]
 impl SqlJsAdapter {
+    const STORAGE_KEY: &'static str = "comind:sqljs-database";
+
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
         let sql = Self::get_sql_module()?;
         let db = Self::create_database(&sql)?;
         Self::init_schema(&db)?;
+        Self::load_from_storage(&db)?;
         Ok(Self { db })
+    }
+
+    fn load_from_storage(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        let storage = js_sys::eval("typeof window !== 'undefined' ? window.localStorage : null")
+            .map_err(|e| format!("Failed to get localStorage: {:?}", e))?;
+        
+        if storage.is_null() || storage.is_undefined() {
+            return Ok(());
+        }
+
+        let get_item = js_sys::Reflect::get(&Object::from(storage.clone()), &JsValue::from_str("getItem"))
+            .map_err(|e| format!("Failed to get getItem: {:?}", e))?;
+        
+        let result = js_sys::Function::from(get_item).call1(&Object::from(storage), &JsValue::from_str(Self::STORAGE_KEY))
+            .map_err(|e| format!("Failed to call getItem: {:?}", e))?;
+        
+        if result.is_null() || result.is_undefined() {
+            return Ok(());
+        }
+
+        let data_str = result.as_string().unwrap_or_default();
+        if data_str.is_empty() {
+            return Ok(());
+        }
+
+        let array = js_sys::eval(&format!("Uint8Array.from(atob('{}'), c => c.charCodeAt(0))", data_str))
+            .map_err(|e| format!("Failed to decode data: {:?}", e))?;
+        
+        let array_buffer = js_sys::Reflect::get(&Object::from(array), &JsValue::from_str("buffer"))
+            .map_err(|e| format!("Failed to get buffer: {:?}", e))?;
+        
+        let load_fn = js_sys::Reflect::get(db, &JsValue::from_str("load"))
+            .map_err(|e| format!("Failed to get load: {:?}", e))?;
+        js_sys::Function::from(load_fn).call1(db, &array_buffer)
+            .map_err(|e| format!("Failed to load database: {:?}", e))?;
+
+        Ok(())
+    }
+
+    pub fn save_to_storage(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let storage = js_sys::eval("typeof window !== 'undefined' ? window.localStorage : null")
+            .map_err(|e| format!("Failed to get localStorage: {:?}", e))?;
+        
+        if storage.is_null() || storage.is_undefined() {
+            return Ok(());
+        }
+
+        let export_fn = js_sys::Reflect::get(&self.db, &JsValue::from_str("export"))
+            .map_err(|e| format!("Failed to get export: {:?}", e))?;
+        let buffer = js_sys::Function::from(export_fn).call0(&self.db)
+            .map_err(|e| format!("Failed to export database: {:?}", e))?;
+        
+        let uint8_array = js_sys::eval("new Uint8Array(arguments[0])")
+            .map_err(|e| format!("Failed to create Uint8Array: {:?}", e))?;
+        
+        let result = js_sys::Function::from(uint8_array).call0(&buffer)
+            .map_err(|e| format!("Failed to call Uint8Array: {:?}", e))?;
+        
+        let string_from_char_code = js_sys::eval("String.fromCharCode")
+            .map_err(|e| format!("Failed to get String.fromCharCode: {:?}", e))?;
+        
+        let array = Array::from(&result);
+        let chars: Vec<String> = (0..array.length())
+            .map(|i| {
+                let code = array.get(i).as_f64().unwrap_or(0.0) as u32;
+                char::from_u32(code).unwrap_or('\0').to_string()
+            })
+            .collect();
+        
+        let binary_str = chars.join("");
+        
+        let btoa = js_sys::eval("btoa")
+            .map_err(|e| format!("Failed to get btoa: {:?}", e))?;
+        let base64 = js_sys::Function::from(btoa).call1(&JsValue::NULL, &JsValue::from_str(&binary_str))
+            .map_err(|e| format!("Failed to encode: {:?}", e))?;
+        
+        let set_item = js_sys::Reflect::get(&Object::from(storage.clone()), &JsValue::from_str("setItem"))
+            .map_err(|e| format!("Failed to get setItem: {:?}", e))?;
+        js_sys::Function::from(set_item).call2(&Object::from(storage), &JsValue::from_str(Self::STORAGE_KEY), &base64)
+            .map_err(|e| format!("Failed to call setItem: {:?}", e))?;
+
+        Ok(())
     }
 
     fn get_sql_module() -> Result<Object, Box<dyn std::error::Error>> {
@@ -133,16 +218,18 @@ impl SqlJsAdapter {
     }
 
     fn run_with_params(db: &Object, sql: &str, params: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
-        let array = Array::new();
-        array.push(&JsValue::from_str(sql));
-        
+        let param_array = Array::new();
         for param in params {
-            array.push(&JsValue::from_str(param));
+            param_array.push(&JsValue::from_str(param));
         }
+
+        let args = Array::new();
+        args.push(&JsValue::from_str(sql));
+        args.push(&param_array);
 
         let run_fn = js_sys::Reflect::get(db, &JsValue::from_str("run"))
             .map_err(|e| format!("Failed to get run: {:?}", e))?;
-        js_sys::Function::from(run_fn).apply(db, &array)
+        js_sys::Function::from(run_fn).apply(db, &args)
             .map_err(|e| format!("SQL run failed: {:?}", e))?;
         Ok(())
     }

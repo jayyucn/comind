@@ -3,7 +3,7 @@ import { createPinia } from 'pinia'
 import router from './router'
 import './styles/main.scss'
 import App from './App.vue'
-import { initCoreClient } from './wasm/client'
+import { initCoreClient, getCoreClient } from './wasm/client'
 
 async function bootstrap() {
   try {
@@ -19,3 +19,5 @@ async function bootstrap() {
 }
 
 bootstrap()
+
+;(window as any).__get_core_client = getCoreClient

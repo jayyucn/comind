@@ -5,7 +5,7 @@ use super::super::types::*;
 use super::repository::*;
 
 pub struct SQLiteAdapter {
-    conn: Connection,
+    pub conn: Connection,
 }
 
 impl SQLiteAdapter {
@@ -102,7 +102,7 @@ impl SQLiteAdapter {
                 label           TEXT NOT NULL,
                 inverse_label   TEXT NOT NULL,
                 color           TEXT NOT NULL,
-                order           INTEGER NOT NULL DEFAULT 0,
+                `order`           INTEGER NOT NULL DEFAULT 0,
                 strength        TEXT NOT NULL DEFAULT 'medium',
                 deleted         INTEGER NOT NULL DEFAULT 0,
                 builtin         INTEGER NOT NULL DEFAULT 1,

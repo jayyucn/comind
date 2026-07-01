@@ -4,7 +4,11 @@ use comind_core::services::*;
 use comind_core::storage::{SqlJsAdapter, StorageAdapter};
 use lazy_static::lazy_static;
 use std::sync::Mutex;
+use serde::{Serialize, Deserialize};
 use serde_json::json;
+
+#[cfg(test)]
+mod lib_test;
 
 lazy_static! {
     static ref ADAPTER: Mutex<Option<SqlJsAdapter>> = Mutex::new(None);
@@ -64,80 +68,149 @@ pub fn get_all_pages() -> Result<JsValue, JsValue> {
     })
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct BlockUpdate {
+    id: String,
+    page_id: String,
+    parent_id: Option<String>,
+    pos: i64,
+    content: String,
+    format: String,
+    r#type: String,
+    #[serde(default = "default_timestamp")]
+    created_at: i64,
+    #[serde(default = "default_timestamp")]
+    updated_at: i64,
+}
+
+fn default_timestamp() -> i64 {
+    chrono::Utc::now().timestamp_millis()
+}
+
 #[wasm_bindgen]
-pub fn save_block_tree(blocks: JsValue) -> Result<JsValue, JsValue> {
-    let blocks: Vec<Block> = serde_json::from_str(&blocks.as_string().unwrap_or_else(|| "[]".to_string()))
+pub fn save_block_tree(blocks: &str) -> Result<String, JsValue> {
+    let updates: Vec<BlockUpdate> = serde_json::from_str(blocks)
         .map_err(|e| JsValue::from_str(&format!("Failed to parse blocks: {}", e)))?;
     
+    if updates.is_empty() {
+        return Err(JsValue::from_str("No blocks provided"));
+    }
+    
+    let first_block = &updates[0];
+    if first_block.page_id.is_empty() {
+        return Err(JsValue::from_str(&format!("page_id is empty for block: {}", first_block.id)));
+    }
+    
     with_adapter(|adapter| {
-        for block in &blocks {
-            let existing = BlockService::get_by_id(adapter, &block.id);
+        for update in &updates {
+            let existing = comind_core::storage::repository::BlockRepository::get_by_id(adapter.blocks(), &update.id);
             match existing {
                 Ok(_) => {
-                    BlockService::update(
-                        adapter,
-                        &block.id,
-                        Some(&block.content),
-                        Some(&block.format),
-                        Some(&block.r#type),
-                        block.parent_id.as_deref(),
-                        Some(block.pos),
-                    )?;
+                    let block = Block {
+                        id: update.id.clone(),
+                        page_id: update.page_id.clone(),
+                        parent_id: update.parent_id.clone(),
+                        pos: update.pos,
+                        content: update.content.clone(),
+                        format: update.format.clone(),
+                        r#type: update.r#type.clone(),
+                        created_at: update.created_at,
+                        updated_at: update.updated_at,
+                    };
+                    comind_core::storage::repository::BlockRepository::update(adapter.blocks(), &block)?;
                 }
                 Err(_) => {
                     let _ = BlockService::create(
                         adapter,
-                        &block.page_id,
-                        block.parent_id.as_deref(),
-                        &block.content,
-                        &block.format,
-                        &block.r#type,
+                        &update.page_id,
+                        update.parent_id.as_deref(),
+                        &update.content,
+                        &update.format,
+                        &update.r#type,
                     )?;
                 }
             }
         }
-        Ok(to_js_value(json!({"success": true})))
+        Ok(serde_json::to_string(&json!({"success": true})).unwrap_or_else(|_| "{\"success\": true}".to_string()))
     })
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PageUpdate {
+    id: Option<String>,
+    block_id: Option<String>,
+    title: String,
+    r#type: String,
+    icon: Option<String>,
+    cover: Option<String>,
+    #[serde(default = "default_aliases")]
+    aliases: String,
+    file_path: Option<String>,
+    children_count: Option<i64>,
+    word_count: Option<i64>,
+}
+
+fn default_aliases() -> String {
+    "[]".to_string()
+}
+
 #[wasm_bindgen]
-pub fn save_page(page: JsValue) -> Result<JsValue, JsValue> {
-    let page: Page = serde_json::from_str(&page.as_string().unwrap_or_else(|| "{}".to_string()))
+pub fn save_page(page: &str) -> Result<String, JsValue> {
+    let update: PageUpdate = serde_json::from_str(page)
         .map_err(|e| JsValue::from_str(&format!("Failed to parse page: {}", e)))?;
     
     with_adapter(|adapter| {
-        let existing = PageService::get_by_id(adapter, &page.id);
-        match existing {
-            Ok(_) => {
-                let updated = PageService::update(
-                    adapter,
-                    &page.id,
-                    Some(&page.title),
-                    Some(&page.r#type),
-                    page.icon.as_deref(),
-                    page.cover.as_deref(),
-                    Some(&page.aliases),
-                    page.file_path.as_deref(),
-                    Some(page.children_count),
-                    Some(page.word_count),
-                )?;
-                Ok(to_js_value(updated))
+        let result = match update.id {
+            Some(id) => {
+                let existing = PageService::get_by_id(adapter, &id);
+                match existing {
+                    Ok(_) => {
+                        let updated = PageService::update(
+                            adapter,
+                            &id,
+                            Some(&update.title),
+                            Some(&update.r#type),
+                            update.icon.as_deref(),
+                            update.cover.as_deref(),
+                            Some(&update.aliases),
+                            update.file_path.as_deref(),
+                            update.children_count.or(Some(0)),
+                            update.word_count.or(Some(0)),
+                        )?;
+                        serde_json::to_string(&updated).unwrap_or_else(|_| "{}".to_string())
+                    }
+                    Err(_) => {
+                        let block_id = update.block_id.as_deref().unwrap_or("");
+                        let created = PageService::create(
+                            adapter,
+                            block_id,
+                            &update.title,
+                            Some(&update.r#type),
+                            update.icon.as_deref(),
+                            update.cover.as_deref(),
+                            Some(&update.aliases),
+                            update.file_path.as_deref(),
+                        )?;
+                        serde_json::to_string(&created).unwrap_or_else(|_| "{}".to_string())
+                    }
+                }
             }
-            Err(_) => {
-                let block_id = page.block_id.as_deref().unwrap_or("");
+            None => {
+                let block_id = update.block_id.as_deref().unwrap_or("");
                 let created = PageService::create(
                     adapter,
                     block_id,
-                    &page.title,
-                    Some(&page.r#type),
-                    page.icon.as_deref(),
-                    page.cover.as_deref(),
-                    Some(&page.aliases),
-                    page.file_path.as_deref(),
+                    &update.title,
+                    Some(&update.r#type),
+                    update.icon.as_deref(),
+                    update.cover.as_deref(),
+                    Some(&update.aliases),
+                    update.file_path.as_deref(),
                 )?;
-                Ok(to_js_value(created))
+                serde_json::to_string(&created).unwrap_or_else(|_| "{}".to_string())
             }
-        }
+        };
+        Ok(result)
     })
 }
 
@@ -230,8 +303,8 @@ pub fn get_relationship_types() -> Result<JsValue, JsValue> {
 }
 
 #[wasm_bindgen]
-pub fn execute_batch(operations: JsValue) -> Result<JsValue, JsValue> {
-    let ops: Vec<serde_json::Value> = serde_json::from_str(&operations.as_string().unwrap_or_else(|| "[]".to_string()))
+pub fn execute_batch(operations: &str) -> Result<String, JsValue> {
+    let ops: Vec<serde_json::Value> = serde_json::from_str(operations)
         .map_err(|e| JsValue::from_str(&format!("Failed to parse operations: {}", e)))?;
     
     with_adapter(|adapter| {
@@ -385,6 +458,6 @@ pub fn execute_batch(operations: JsValue) -> Result<JsValue, JsValue> {
             
             results.push(result.unwrap_or_else(|_| serde_json::Value::Null));
         }
-        Ok(to_js_value(results))
+        Ok(serde_json::to_string(&results).unwrap_or_else(|_| "[]".to_string()))
     })
 }

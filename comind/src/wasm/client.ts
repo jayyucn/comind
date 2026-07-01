@@ -1,6 +1,13 @@
 import { isTauriEnvironment } from './tauri-client'
 import { initWasmClient, type WasmClient } from './wasm-client'
 import * as tauri from './tauri-client'
+
+function parseJsonResult<T>(result: any): T {
+  if (typeof result === 'string') {
+    return JSON.parse(result) as T
+  }
+  return result as T
+}
 import type {
   Block, Page, Property, Link, RelationshipType,
   UserTemplate, SearchResult, BlockUpdate, PageUpdate,
@@ -120,15 +127,18 @@ class WasmClientAdapter implements CoreClient {
   }
 
   async saveBlockTree(blocks: BlockUpdate[]): Promise<Block[]> {
-    return this.wasm.save_block_tree(blocks)
+    const blocksJson = JSON.stringify(blocks)
+    const result = await this.wasm.save_block_tree(blocksJson)
+    return parseJsonResult(result)
   }
 
   async deleteBlock(blockId: string): Promise<void> {
-    await this.wasm.execute_batch([{
+    const opsJson = JSON.stringify([{
       entity: 'block',
       action: 'delete',
       params: { id: blockId }
     }])
+    await this.wasm.execute_batch(opsJson)
   }
 
   async getPage(pageId: string): Promise<Page> {
@@ -140,7 +150,9 @@ class WasmClientAdapter implements CoreClient {
   }
 
   async savePage(page: PageUpdate): Promise<Page> {
-    return this.wasm.save_page(page)
+    const pageJson = JSON.stringify(page)
+    const result = await this.wasm.save_page(pageJson)
+    return parseJsonResult(result)
   }
 
   async deletePageCascade(pageId: string): Promise<void> {
@@ -176,11 +188,12 @@ class WasmClientAdapter implements CoreClient {
   }
 
   async getTemplates(): Promise<UserTemplate[]> {
-    const results = await this.wasm.execute_batch([{
+    const opsJson = JSON.stringify([{
       entity: 'template',
       action: 'get',
       params: {}
     }])
+    const results = await this.wasm.execute_batch(opsJson)
     return results as unknown as UserTemplate[]
   }
 
@@ -189,7 +202,9 @@ class WasmClientAdapter implements CoreClient {
   }
 
   async executeBatch(operations: BatchOperation[]): Promise<BatchResult[]> {
-    return this.wasm.execute_batch(operations)
+    const opsJson = JSON.stringify(operations)
+    const result = await this.wasm.execute_batch(opsJson)
+    return parseJsonResult(result)
   }
 }
 

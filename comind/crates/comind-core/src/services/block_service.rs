@@ -124,7 +124,7 @@ impl BlockService {
     ) -> Result<BlockTree, Box<dyn Error>> {
         let blocks = repository::BlockRepository::get_by_page_id(storage.blocks(), page_id)?;
 
-        let mut block_map: HashMap<String, Block> = blocks
+        let block_map: HashMap<String, Block> = blocks
             .into_iter()
             .map(|b| (b.id.clone(), b))
             .collect();

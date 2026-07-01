@@ -6,6 +6,18 @@ pub mod tag_service;
 pub mod relationship_type_service;
 pub mod template_service;
 
+#[cfg(test)]
+pub mod block_service_test;
+
+#[cfg(test)]
+pub mod page_service_test;
+
+#[cfg(test)]
+pub mod link_service_test;
+
+#[cfg(test)]
+pub mod property_service_test;
+
 pub use block_service::BlockService;
 pub use link_service::LinkService;
 pub use page_service::PageService;

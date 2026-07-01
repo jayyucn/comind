@@ -69,7 +69,7 @@ async function safeCalcInsertPos(
           parent_id: block.parentId,
           pos: block.pos,
           content: block.content,
-          format: block.format || {},
+          format: JSON.stringify(block.format || {}),
           type: block.type
         }])
       }
@@ -262,7 +262,7 @@ export const useBlockStore = defineStore('blocks', () => {
       parent_id: currentBlock.parentId,
       pos: currentBlock.pos,
       content: currentBlock.content,
-      format: currentBlock.format || {},
+      format: JSON.stringify(currentBlock.format || {}),
       type: currentBlock.type
     }
     

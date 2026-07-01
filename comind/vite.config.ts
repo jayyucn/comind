@@ -11,16 +11,16 @@ export default defineConfig({
   optimizeDeps: {
     esbuildOptions: {
       target: 'esnext'
-    }
+    },
+    exclude: ['@wasm/comind_wasm']
   },
   build: {
-    target: 'esnext',
-    assetsInclude: ['**/*.wasm']
+    target: 'esnext'
   },
   resolve: {
     alias: {
       '@': '/src',
-      '@wasm': '/pkg'
+      '@wasm': '/crates/pkg'
     }
   }
 })
