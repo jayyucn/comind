@@ -475,7 +475,7 @@ impl PropertyRepository for SqlJsAdapter {
 #[cfg(target_arch = "wasm32")]
 impl RelationshipTypeRepository for SqlJsAdapter {
     fn get_by_id(&self, id: &str) -> Result<RelationshipType, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, type, inverse, label, inverse_label, color, order, strength, deleted, builtin, created_at, updated_at FROM RelationshipType WHERE id = ?", &[id])?;
+        let result = Self::query(&self.db, "SELECT id, type, inverse, label, inverse_label, color, `order`, strength, deleted, builtin, created_at, updated_at FROM RelationshipType WHERE id = ?", &[id])?;
         if result.is_empty() {
             return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "RelationshipType not found")));
         }
@@ -483,7 +483,7 @@ impl RelationshipTypeRepository for SqlJsAdapter {
     }
 
     fn get_by_type(&self, r#type: &str) -> Result<Option<RelationshipType>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, type, inverse, label, inverse_label, color, order, strength, deleted, builtin, created_at, updated_at FROM RelationshipType WHERE type = ? AND deleted = 0", &[r#type])?;
+        let result = Self::query(&self.db, "SELECT id, type, inverse, label, inverse_label, color, `order`, strength, deleted, builtin, created_at, updated_at FROM RelationshipType WHERE type = ? AND deleted = 0", &[r#type])?;
         if result.is_empty() {
             Ok(None)
         } else {
@@ -492,13 +492,13 @@ impl RelationshipTypeRepository for SqlJsAdapter {
     }
 
     fn get_all(&self) -> Result<Vec<RelationshipType>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, type, inverse, label, inverse_label, color, order, strength, deleted, builtin, created_at, updated_at FROM RelationshipType WHERE deleted = 0 ORDER BY order", &[])?;
+        let result = Self::query(&self.db, "SELECT id, type, inverse, label, inverse_label, color, `order`, strength, deleted, builtin, created_at, updated_at FROM RelationshipType WHERE deleted = 0 ORDER BY `order`", &[])?;
         Ok(result.into_iter().map(|r| row_to_relationship_type(&r)).collect())
     }
 
     fn create(&mut self, rt: &RelationshipType) -> Result<RelationshipType, Box<dyn std::error::Error>> {
         let inverse = rt.inverse.as_deref().unwrap_or("");
-        Self::run_with_params(&self.db, "INSERT INTO RelationshipType (id, type, inverse, label, inverse_label, color, order, strength, deleted, builtin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", &[
+        Self::run_with_params(&self.db, "INSERT INTO RelationshipType (id, type, inverse, label, inverse_label, color, `order`, strength, deleted, builtin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", &[
             &rt.id, &rt.r#type, inverse, &rt.label, &rt.inverse_label, &rt.color,
             &rt.order.to_string(), &rt.strength, &rt.deleted.to_string(), &rt.builtin.to_string(),
             &rt.created_at.to_string(), &rt.updated_at.to_string()
@@ -508,7 +508,7 @@ impl RelationshipTypeRepository for SqlJsAdapter {
 
     fn update(&mut self, rt: &RelationshipType) -> Result<RelationshipType, Box<dyn std::error::Error>> {
         let inverse = rt.inverse.as_deref().unwrap_or("");
-        Self::run_with_params(&self.db, "UPDATE RelationshipType SET type = ?, inverse = ?, label = ?, inverse_label = ?, color = ?, order = ?, strength = ?, deleted = ?, updated_at = ? WHERE id = ?", &[
+        Self::run_with_params(&self.db, "UPDATE RelationshipType SET type = ?, inverse = ?, label = ?, inverse_label = ?, color = ?, `order` = ?, strength = ?, deleted = ?, updated_at = ? WHERE id = ?", &[
             &rt.r#type, inverse, &rt.label, &rt.inverse_label, &rt.color,
             &rt.order.to_string(), &rt.strength, &rt.deleted.to_string(),
             &rt.updated_at.to_string(), &rt.id

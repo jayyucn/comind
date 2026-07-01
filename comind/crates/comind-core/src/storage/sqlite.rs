@@ -674,7 +674,7 @@ impl PropertyRepository for SQLiteAdapter {
 impl RelationshipTypeRepository for SQLiteAdapter {
     fn get_by_id(&self, id: &str) -> Result<RelationshipType, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, type, inverse, label, inverse_label, color, order, strength, deleted, builtin, created_at, updated_at 
+            "SELECT id, type, inverse, label, inverse_label, color, `order`, strength, deleted, builtin, created_at, updated_at 
              FROM RelationshipType WHERE id = ?1"
         )?;
         
@@ -700,7 +700,7 @@ impl RelationshipTypeRepository for SQLiteAdapter {
     
     fn get_by_type(&self, r#type: &str) -> Result<Option<RelationshipType>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, type, inverse, label, inverse_label, color, order, strength, deleted, builtin, created_at, updated_at 
+            "SELECT id, type, inverse, label, inverse_label, color, `order`, strength, deleted, builtin, created_at, updated_at 
              FROM RelationshipType WHERE type = ?1 AND deleted = 0"
         )?;
         
@@ -730,8 +730,8 @@ impl RelationshipTypeRepository for SQLiteAdapter {
     
     fn get_all(&self) -> Result<Vec<RelationshipType>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, type, inverse, label, inverse_label, color, order, strength, deleted, builtin, created_at, updated_at 
-             FROM RelationshipType WHERE deleted = 0 ORDER BY order"
+            "SELECT id, type, inverse, label, inverse_label, color, `order`, strength, deleted, builtin, created_at, updated_at 
+             FROM RelationshipType WHERE deleted = 0 ORDER BY `order`"
         )?;
         
         let rts = stmt.query_map([], |row| {
@@ -756,7 +756,7 @@ impl RelationshipTypeRepository for SQLiteAdapter {
     
     fn create(&mut self, rt: &RelationshipType) -> Result<RelationshipType, Box<dyn Error>> {
         self.conn.execute(
-            "INSERT INTO RelationshipType (id, type, inverse, label, inverse_label, color, order, strength, deleted, builtin, created_at, updated_at)
+            "INSERT INTO RelationshipType (id, type, inverse, label, inverse_label, color, `order`, strength, deleted, builtin, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 rt.id,
@@ -779,7 +779,7 @@ impl RelationshipTypeRepository for SQLiteAdapter {
     
     fn update(&mut self, rt: &RelationshipType) -> Result<RelationshipType, Box<dyn Error>> {
         self.conn.execute(
-            "UPDATE RelationshipType SET type = ?2, inverse = ?3, label = ?4, inverse_label = ?5, color = ?6, order = ?7, strength = ?8, deleted = ?9, updated_at = ?10
+            "UPDATE RelationshipType SET type = ?2, inverse = ?3, label = ?4, inverse_label = ?5, color = ?6, `order` = ?7, strength = ?8, deleted = ?9, updated_at = ?10
              WHERE id = ?1",
             params![
                 rt.id,
@@ -1597,7 +1597,7 @@ impl<'a> PropertyRepository for SQLiteTransactionAdapter<'a> {
 impl<'a> RelationshipTypeRepository for SQLiteTransactionAdapter<'a> {
     fn get_by_id(&self, id: &str) -> Result<RelationshipType, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, type, inverse, label, inverse_label, color, order, strength, deleted, builtin, created_at, updated_at
+            "SELECT id, type, inverse, label, inverse_label, color, `order`, strength, deleted, builtin, created_at, updated_at
              FROM RelationshipType WHERE id = ?1"
         )?;
 
@@ -1623,7 +1623,7 @@ impl<'a> RelationshipTypeRepository for SQLiteTransactionAdapter<'a> {
 
     fn get_by_type(&self, r#type: &str) -> Result<Option<RelationshipType>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, type, inverse, label, inverse_label, color, order, strength, deleted, builtin, created_at, updated_at
+            "SELECT id, type, inverse, label, inverse_label, color, `order`, strength, deleted, builtin, created_at, updated_at
              FROM RelationshipType WHERE type = ?1 AND deleted = 0"
         )?;
 
@@ -1653,8 +1653,8 @@ impl<'a> RelationshipTypeRepository for SQLiteTransactionAdapter<'a> {
 
     fn get_all(&self) -> Result<Vec<RelationshipType>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, type, inverse, label, inverse_label, color, order, strength, deleted, builtin, created_at, updated_at
-             FROM RelationshipType WHERE deleted = 0 ORDER BY order"
+            "SELECT id, type, inverse, label, inverse_label, color, `order`, strength, deleted, builtin, created_at, updated_at
+             FROM RelationshipType WHERE deleted = 0 ORDER BY `order`"
         )?;
 
         let rts = stmt.query_map([], |row| {
@@ -1679,7 +1679,7 @@ impl<'a> RelationshipTypeRepository for SQLiteTransactionAdapter<'a> {
 
     fn create(&mut self, rt: &RelationshipType) -> Result<RelationshipType, Box<dyn Error>> {
         self.conn.execute(
-            "INSERT INTO RelationshipType (id, type, inverse, label, inverse_label, color, order, strength, deleted, builtin, created_at, updated_at)
+            "INSERT INTO RelationshipType (id, type, inverse, label, inverse_label, color, `order`, strength, deleted, builtin, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 rt.id,
@@ -1702,7 +1702,7 @@ impl<'a> RelationshipTypeRepository for SQLiteTransactionAdapter<'a> {
 
     fn update(&mut self, rt: &RelationshipType) -> Result<RelationshipType, Box<dyn Error>> {
         self.conn.execute(
-            "UPDATE RelationshipType SET type = ?2, inverse = ?3, label = ?4, inverse_label = ?5, color = ?6, order = ?7, strength = ?8, deleted = ?9, updated_at = ?10
+            "UPDATE RelationshipType SET type = ?2, inverse = ?3, label = ?4, inverse_label = ?5, color = ?6, `order` = ?7, strength = ?8, deleted = ?9, updated_at = ?10
              WHERE id = ?1",
             params![
                 rt.id,
