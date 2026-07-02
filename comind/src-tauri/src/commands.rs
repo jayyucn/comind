@@ -40,6 +40,19 @@ pub async fn get_backlinks(db: State<'_, super::state::DatabaseConnection>, page
 }
 
 #[tauri::command]
+pub async fn get_outlinks(db: State<'_, super::state::DatabaseConnection>, page_id: &str) -> Result<Vec<Link>, String> {
+    execute_with_adapter(db, |storage| {
+        let blocks = BlockService::get_by_page_id(storage, page_id)?;
+        let mut outlinks = Vec::new();
+        for block in blocks {
+            let links = LinkService::get_by_source_block_id(storage, &block.id)?;
+            outlinks.extend(links);
+        }
+        Ok(outlinks)
+    })
+}
+
+#[tauri::command]
 pub async fn search(db: State<'_, super::state::DatabaseConnection>, query: &str) -> Result<Vec<SearchResult>, String> {
     execute_with_adapter(db, |storage| {
         storage.search().search(query, 20)

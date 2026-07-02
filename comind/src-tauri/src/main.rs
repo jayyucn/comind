@@ -27,6 +27,7 @@ fn main() {
             commands::get_page,
             commands::get_all_pages,
             commands::get_backlinks,
+            commands::get_outlinks,
             commands::search,
             commands::get_properties,
             commands::get_relationship_types,
