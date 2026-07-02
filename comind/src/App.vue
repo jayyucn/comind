@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import Sidebar from './components/Sidebar/index.vue'
 import PageMenuButton from './components/PageMenuButton.vue'
@@ -12,11 +12,13 @@ import { useSidebar } from './composables/useSidebar'
 import { useRightSidebar } from './composables/useRightSidebar'
 import { useRelationshipTypes } from './composables/useRelationshipTypes'
 import { useJournal } from './composables/useJournal'
-import { ArrowLeft, ArrowRight, PanelLeftClose, PanelLeftOpen, PanelRightOpen, PanelRightClose } from 'lucide-vue-next'
+import { ArrowLeft, ArrowRight, PanelLeftClose, PanelLeftOpen, PanelRightOpen, PanelRightClose, Minus, Square, X, Maximize2 } from 'lucide-vue-next'
 import RightSidebar from './components/RightSidebar/index.vue'
 import { registerPanel } from './components/RightSidebar/panels'
 import ConceptGraphPanel from './components/ConceptGraph/Panel.vue'
 import SearchPanel from './components/SearchPanel.vue'
+import { isTauriEnvironment, tauriMinimizeWindow, tauriToggleMaximizeWindow, tauriCloseWindow, tauriIsMaximized } from './wasm/tauri-client'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 
 registerPanel({
   id: 'concept-graph',
@@ -61,6 +63,59 @@ const historyIndex = ref(0)
 const showTrashedPageWarning = ref(false)
 const trashedPageToRestore = ref<string | null>(null)
 const showSearchPanel = ref(false)
+const isMaximized = ref(false)
+
+async function handleHeaderMouseDown(e: MouseEvent) {
+  if (!isTauriEnvironment()) return
+  const target = e.target as HTMLElement
+  if (target.closest('button') || target.closest('.top-right-controls')) return
+  const window = getCurrentWindow()
+  await window.startDragging()
+}
+
+async function handleMinimize() {
+  if (!isTauriEnvironment()) return
+  await tauriMinimizeWindow()
+}
+
+async function handleMaximize() {
+  if (!isTauriEnvironment()) return
+  await tauriToggleMaximizeWindow()
+  isMaximized.value = await tauriIsMaximized()
+}
+
+async function handleClose() {
+  if (!isTauriEnvironment()) {
+    window.close()
+    return
+  }
+  await tauriCloseWindow()
+}
+
+async function updateMaximizedState() {
+  if (isTauriEnvironment()) {
+    isMaximized.value = await tauriIsMaximized()
+  }
+}
+
+onMounted(async () => {
+  await useRelationshipTypes().load()
+  await pageStore.loadAllPages()
+  await useJournal().checkAndEnsureTodayJournal()
+  document.addEventListener('keydown', handleGlobalKeydown)
+  await updateMaximizedState()
+
+  if (isTauriEnvironment()) {
+    const window = getCurrentWindow()
+    window.listen('tauri://resize', async () => {
+      isMaximized.value = await tauriIsMaximized()
+    })
+  }
+})
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleGlobalKeydown)
+})
 
 watch(() => route.fullPath, async (newPath) => {
   if (newPath === historyStack.value[historyIndex.value]?.path) return
@@ -162,7 +217,7 @@ function handleMainClick(e: MouseEvent) {
     <Sidebar />
 
     <div class="page-scroll-wrapper" @click="handleMainClick">
-      <div class="sticky-header">
+      <div class="sticky-header" @mousedown="handleHeaderMouseDown">
         <div class="nav-controls">
           <button class="collapse-btn" :title="isCollapsed ? '展开侧边栏' : '折叠侧边栏'" @click="toggle">
             <PanelLeftClose v-if="!isCollapsed" />
@@ -195,6 +250,18 @@ function handleMainClick(e: MouseEvent) {
             <PanelRightClose v-if="rightSidebar.visible.value"  :stroke-width="1.75" />
             <PanelRightOpen v-else :stroke-width="1.75" />
           </button>
+          <div class="window-controls" v-if="isTauriEnvironment()">
+            <button class="window-control-btn minimize-btn" title="最小化" @click="handleMinimize">
+              <Minus :size="14" :stroke-width="1.75" />
+            </button>
+            <button class="window-control-btn maximize-btn" :title="isMaximized ? '还原' : '最大化'" @click="handleMaximize">
+              <Square v-if="isMaximized" :size="12" :stroke-width="1.75" />
+              <Maximize2 v-else :size="14" :stroke-width="1.75" />
+            </button>
+            <button class="window-control-btn close-btn" title="关闭" @click="handleClose">
+              <X :size="14" :stroke-width="1.75" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -356,5 +423,56 @@ function handleMainClick(e: MouseEvent) {
   max-width: none;
   margin: 0;
   padding: 0;
+}
+
+.window-controls {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-left: 8px;
+  pointer-events: auto;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.window-control-btn {
+  width: 46px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  transition: all 100ms ease;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.window-control-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.window-control-btn:active {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.minimize-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.maximize-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.close-btn:hover {
+  background: var(--danger-color, #e81123);
+  color: white;
+}
+
+.close-btn:active {
+  background: var(--danger-color, #e81123);
+  opacity: 0.8;
 }
 </style>

@@ -1,4 +1,5 @@
-import { invoke } from '@tauri-apps/api/core'
+import { invoke, isTauri } from '@tauri-apps/api/core'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import type {
   Block, Page, Property, Link, RelationshipType,
   UserTemplate, SearchResult, BlockUpdate, PageUpdate,
@@ -6,7 +7,7 @@ import type {
 } from './types'
 
 export function isTauriEnvironment(): boolean {
-  return typeof window !== 'undefined' && '__TAURI__' in window
+  return isTauri()
 }
 
 export async function tauriGetBlock(blockId: string): Promise<Block> {
@@ -82,4 +83,29 @@ export async function tauriExecuteBatch(
   operations: BatchOperation[]
 ): Promise<BatchResult[]> {
   return invoke('execute_batch', { operations })
+}
+
+export async function tauriMinimizeWindow(): Promise<void> {
+  const window = getCurrentWindow()
+  await window.minimize()
+}
+
+export async function tauriToggleMaximizeWindow(): Promise<void> {
+  const window = getCurrentWindow()
+  const isMaximized = await window.isMaximized()
+  if (isMaximized) {
+    await window.unmaximize()
+  } else {
+    await window.maximize()
+  }
+}
+
+export async function tauriCloseWindow(): Promise<void> {
+  const window = getCurrentWindow()
+  await window.close()
+}
+
+export async function tauriIsMaximized(): Promise<boolean> {
+  const window = getCurrentWindow()
+  return window.isMaximized()
 }

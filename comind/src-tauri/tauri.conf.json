@@ -11,11 +11,14 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "comind",
         "width": 1200,
         "height": 800,
         "center": true,
-        "visible": true
+        "visible": true,
+        "decorations": false,
+        "transparent": true
       }
     ],
     "security": {

@@ -270,8 +270,14 @@ export const useBlockStore = defineStore('blocks', () => {
       updated_at: Date.now()
     }
     
-    await client.saveBlockTree([blockUpdate])
-    pendingSaves.delete(block.id)
+    try {
+      await client.saveBlockTree([blockUpdate])
+    } catch (error) {
+      console.error('[BlockStore] Failed to save block:', error)
+      throw error
+    } finally {
+      pendingSaves.delete(block.id)
+    }
   }
 
   function _scheduleSave(block: Block): void {
@@ -319,6 +325,7 @@ export const useBlockStore = defineStore('blocks', () => {
 
     blocks.value.push(block)
     structureVersion.value++
+    _scheduleSave(block)
 
     return block
   }
