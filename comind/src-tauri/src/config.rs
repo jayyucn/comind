@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -49,7 +49,10 @@ pub fn get_default_db_path(app_handle: &tauri::AppHandle) -> PathBuf {
     if let Ok(exe_dir) = app_handle.path().executable_dir() {
         return exe_dir.join("sqlite");
     }
-    app_handle.path().app_data_dir().expect("Failed to get app data directory")
+    app_handle
+        .path()
+        .app_data_dir()
+        .expect("Failed to get app data directory")
 }
 
 pub fn get_db_path(app_handle: &tauri::AppHandle, config: &AppConfig) -> PathBuf {

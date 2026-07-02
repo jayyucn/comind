@@ -1,12 +1,15 @@
-use tauri::State;
 use comind_core::{
-    services::{BlockService, PageService, LinkService, PropertyService, RelationshipTypeService},
-    types::*,
+    services::{BlockService, LinkService, PageService, PropertyService, RelationshipTypeService},
     storage::StorageAdapter,
+    types::*,
 };
 use std::error::Error;
+use tauri::State;
 
-fn execute_with_adapter<F, R>(db: State<'_, super::state::DatabaseConnection>, f: F) -> Result<R, String>
+fn execute_with_adapter<F, R>(
+    db: State<'_, super::state::DatabaseConnection>,
+    f: F,
+) -> Result<R, String>
 where
     F: FnOnce(&mut dyn StorageAdapter) -> Result<R, Box<dyn Error>>,
 {
@@ -15,32 +18,51 @@ where
 }
 
 #[tauri::command]
-pub async fn get_block(db: State<'_, super::state::DatabaseConnection>, block_id: &str) -> Result<Block, String> {
+pub async fn get_block(
+    db: State<'_, super::state::DatabaseConnection>,
+    block_id: &str,
+) -> Result<Block, String> {
     execute_with_adapter(db, |storage| BlockService::get_by_id(storage, block_id))
 }
 
 #[tauri::command]
-pub async fn get_blocks_by_page(db: State<'_, super::state::DatabaseConnection>, page_id: &str) -> Result<Vec<Block>, String> {
+pub async fn get_blocks_by_page(
+    db: State<'_, super::state::DatabaseConnection>,
+    page_id: &str,
+) -> Result<Vec<Block>, String> {
     execute_with_adapter(db, |storage| BlockService::get_by_page_id(storage, page_id))
 }
 
 #[tauri::command]
-pub async fn get_page(db: State<'_, super::state::DatabaseConnection>, page_id: &str) -> Result<Page, String> {
+pub async fn get_page(
+    db: State<'_, super::state::DatabaseConnection>,
+    page_id: &str,
+) -> Result<Page, String> {
     execute_with_adapter(db, |storage| PageService::get_by_id(storage, page_id))
 }
 
 #[tauri::command]
-pub async fn get_all_pages(db: State<'_, super::state::DatabaseConnection>) -> Result<Vec<Page>, String> {
+pub async fn get_all_pages(
+    db: State<'_, super::state::DatabaseConnection>,
+) -> Result<Vec<Page>, String> {
     execute_with_adapter(db, |storage| PageService::get_all(storage))
 }
 
 #[tauri::command]
-pub async fn get_backlinks(db: State<'_, super::state::DatabaseConnection>, page_id: &str) -> Result<Vec<Link>, String> {
-    execute_with_adapter(db, |storage| LinkService::get_by_target_page_id(storage, page_id))
+pub async fn get_backlinks(
+    db: State<'_, super::state::DatabaseConnection>,
+    page_id: &str,
+) -> Result<Vec<Link>, String> {
+    execute_with_adapter(db, |storage| {
+        LinkService::get_by_target_page_id(storage, page_id)
+    })
 }
 
 #[tauri::command]
-pub async fn get_outlinks(db: State<'_, super::state::DatabaseConnection>, page_id: &str) -> Result<Vec<Link>, String> {
+pub async fn get_outlinks(
+    db: State<'_, super::state::DatabaseConnection>,
+    page_id: &str,
+) -> Result<Vec<Link>, String> {
     execute_with_adapter(db, |storage| {
         let blocks = BlockService::get_by_page_id(storage, page_id)?;
         let mut outlinks = Vec::new();
@@ -53,24 +75,35 @@ pub async fn get_outlinks(db: State<'_, super::state::DatabaseConnection>, page_
 }
 
 #[tauri::command]
-pub async fn search(db: State<'_, super::state::DatabaseConnection>, query: &str) -> Result<Vec<SearchResult>, String> {
+pub async fn search(
+    db: State<'_, super::state::DatabaseConnection>,
+    query: &str,
+) -> Result<Vec<SearchResult>, String> {
+    execute_with_adapter(db, |storage| storage.search().search(query, 20))
+}
+
+#[tauri::command]
+pub async fn get_properties(
+    db: State<'_, super::state::DatabaseConnection>,
+    block_id: &str,
+) -> Result<Vec<Property>, String> {
     execute_with_adapter(db, |storage| {
-        storage.search().search(query, 20)
+        PropertyService::get_by_block_id(storage, block_id)
     })
 }
 
 #[tauri::command]
-pub async fn get_properties(db: State<'_, super::state::DatabaseConnection>, block_id: &str) -> Result<Vec<Property>, String> {
-    execute_with_adapter(db, |storage| PropertyService::get_by_block_id(storage, block_id))
-}
-
-#[tauri::command]
-pub async fn get_relationship_types(db: State<'_, super::state::DatabaseConnection>) -> Result<Vec<RelationshipType>, String> {
+pub async fn get_relationship_types(
+    db: State<'_, super::state::DatabaseConnection>,
+) -> Result<Vec<RelationshipType>, String> {
     execute_with_adapter(db, |storage| RelationshipTypeService::get_all(storage))
 }
 
 #[tauri::command]
-pub async fn save_block_tree(db: State<'_, super::state::DatabaseConnection>, blocks: Vec<serde_json::Value>) -> Result<Vec<Block>, String> {
+pub async fn save_block_tree(
+    db: State<'_, super::state::DatabaseConnection>,
+    blocks: Vec<serde_json::Value>,
+) -> Result<Vec<Block>, String> {
     execute_with_adapter(db, |storage| {
         let mut results = Vec::new();
         for block_json in blocks {
@@ -88,10 +121,13 @@ pub async fn save_block_tree(db: State<'_, super::state::DatabaseConnection>, bl
 }
 
 #[tauri::command]
-pub async fn save_page(db: State<'_, super::state::DatabaseConnection>, page: serde_json::Value) -> Result<Page, String> {
+pub async fn save_page(
+    db: State<'_, super::state::DatabaseConnection>,
+    page: serde_json::Value,
+) -> Result<Page, String> {
     execute_with_adapter(db, |storage| {
-        let page: Page = serde_json::from_value(page)
-            .map_err(|e| format!("Failed to parse page: {}", e))?;
+        let page: Page =
+            serde_json::from_value(page).map_err(|e| format!("Failed to parse page: {}", e))?;
         let existing = storage.pages().get_by_id(&page.id);
         match existing {
             Ok(_) => PageService::update(
@@ -121,7 +157,10 @@ pub async fn save_page(db: State<'_, super::state::DatabaseConnection>, page: se
 }
 
 #[tauri::command]
-pub async fn delete_page_cascade(db: State<'_, super::state::DatabaseConnection>, page_id: &str) -> Result<(), String> {
+pub async fn delete_page_cascade(
+    db: State<'_, super::state::DatabaseConnection>,
+    page_id: &str,
+) -> Result<(), String> {
     execute_with_adapter(db, |storage| {
         storage.properties().delete_by_block_id(page_id)?;
         storage.links().delete_by_source_block_id(page_id)?;
@@ -132,7 +171,13 @@ pub async fn delete_page_cascade(db: State<'_, super::state::DatabaseConnection>
 }
 
 #[tauri::command]
-pub async fn set_property(db: State<'_, super::state::DatabaseConnection>, block_id: &str, key: &str, value: &str, type_: &str) -> Result<Property, String> {
+pub async fn set_property(
+    db: State<'_, super::state::DatabaseConnection>,
+    block_id: &str,
+    key: &str,
+    value: &str,
+    type_: &str,
+) -> Result<Property, String> {
     execute_with_adapter(db, |storage| {
         let existing = PropertyService::get_by_block_id_and_key(storage, block_id, key)?;
         match existing {
@@ -148,7 +193,11 @@ pub async fn set_property(db: State<'_, super::state::DatabaseConnection>, block
 }
 
 #[tauri::command]
-pub async fn delete_property(db: State<'_, super::state::DatabaseConnection>, block_id: &str, key: &str) -> Result<(), String> {
+pub async fn delete_property(
+    db: State<'_, super::state::DatabaseConnection>,
+    block_id: &str,
+    key: &str,
+) -> Result<(), String> {
     execute_with_adapter(db, |storage| {
         if let Some(prop) = PropertyService::get_by_block_id_and_key(storage, block_id, key)? {
             storage.properties().delete(&prop.id)?;
@@ -158,7 +207,9 @@ pub async fn delete_property(db: State<'_, super::state::DatabaseConnection>, bl
 }
 
 #[tauri::command]
-pub async fn get_db_path(db: State<'_, super::state::DatabaseConnection>) -> Result<String, String> {
+pub async fn get_db_path(
+    db: State<'_, super::state::DatabaseConnection>,
+) -> Result<String, String> {
     Ok(db.get_db_path())
 }
 
@@ -176,7 +227,8 @@ pub async fn set_db_path(
     let config = super::config::AppConfig {
         database_path: Some(path.to_string()),
     };
-    config.save(&config_dir)
+    config
+        .save(&config_dir)
         .map_err(|e| format!("Failed to save config: {}", e))?;
     Ok(path.to_string())
 }
@@ -189,21 +241,27 @@ pub async fn reset_db_path(
     let config = super::config::AppConfig {
         database_path: None,
     };
-    config.save(&config_dir)
+    config
+        .save(&config_dir)
         .map_err(|e| format!("Failed to save config: {}", e))?;
     Ok("default".to_string())
 }
 
 #[tauri::command]
-pub async fn execute_batch(db: State<'_, super::state::DatabaseConnection>, operations: Vec<serde_json::Value>) -> Result<Vec<serde_json::Value>, String> {
+pub async fn execute_batch(
+    db: State<'_, super::state::DatabaseConnection>,
+    operations: Vec<serde_json::Value>,
+) -> Result<Vec<serde_json::Value>, String> {
     execute_with_adapter(db, |storage| {
         let mut results = Vec::new();
         for op in operations {
-            let entity: String = op.get("entity")
+            let entity: String = op
+                .get("entity")
                 .and_then(|v| v.as_str())
                 .unwrap_or_default()
                 .to_string();
-            let action: String = op.get("action")
+            let action: String = op
+                .get("action")
                 .and_then(|v| v.as_str())
                 .unwrap_or_default()
                 .to_string();
@@ -221,7 +279,11 @@ pub async fn execute_batch(db: State<'_, super::state::DatabaseConnection>, oper
                     serde_json::to_value(result)?
                 }
                 ("block", "delete") => {
-                    let id: String = params.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                    let id: String = params
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string();
                     storage.blocks().delete(&id)?;
                     serde_json::to_value("OK")?
                 }
@@ -236,7 +298,11 @@ pub async fn execute_batch(db: State<'_, super::state::DatabaseConnection>, oper
                     serde_json::to_value(result)?
                 }
                 ("page", "delete") => {
-                    let id: String = params.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                    let id: String = params
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string();
                     storage.pages().delete(&id)?;
                     serde_json::to_value("OK")?
                 }
@@ -246,7 +312,11 @@ pub async fn execute_batch(db: State<'_, super::state::DatabaseConnection>, oper
                     serde_json::to_value(result)?
                 }
                 ("link", "delete") => {
-                    let id: String = params.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                    let id: String = params
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string();
                     storage.links().delete(&id)?;
                     serde_json::to_value("OK")?
                 }
@@ -261,7 +331,11 @@ pub async fn execute_batch(db: State<'_, super::state::DatabaseConnection>, oper
                     serde_json::to_value(result)?
                 }
                 ("property", "delete") => {
-                    let id: String = params.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                    let id: String = params
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string();
                     storage.properties().delete(&id)?;
                     serde_json::to_value("OK")?
                 }
@@ -276,7 +350,11 @@ pub async fn execute_batch(db: State<'_, super::state::DatabaseConnection>, oper
                     serde_json::to_value(result)?
                 }
                 ("relationship_type", "delete") => {
-                    let id: String = params.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                    let id: String = params
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string();
                     storage.relationship_types().delete(&id)?;
                     serde_json::to_value("OK")?
                 }
@@ -291,7 +369,11 @@ pub async fn execute_batch(db: State<'_, super::state::DatabaseConnection>, oper
                     serde_json::to_value(result)?
                 }
                 ("template", "delete") => {
-                    let id: String = params.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                    let id: String = params
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string();
                     storage.templates().delete(&id)?;
                     serde_json::to_value("OK")?
                 }

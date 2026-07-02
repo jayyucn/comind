@@ -1,5 +1,6 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { open } from '@tauri-apps/plugin-dialog'
 import type {
   Block, Page, Property, Link, RelationshipType,
   UserTemplate, SearchResult, BlockUpdate, PageUpdate,
@@ -120,4 +121,16 @@ export async function tauriSetDbPath(path: string): Promise<string> {
 
 export async function tauriResetDbPath(): Promise<string> {
   return invoke('reset_db_path')
+}
+
+export async function tauriPickDirectory(): Promise<string | null> {
+  const selected = await open({
+    directory: true,
+    multiple: false,
+    title: '选择数据库目录',
+  })
+  if (typeof selected === 'string') {
+    return selected
+  }
+  return null
 }

@@ -5,7 +5,7 @@ import { pushModal, popModal } from '../../composables/useModalKeyboard'
 import { useTheme } from '../../composables/useTheme'
 import RelationshipTypesPanel from './RelationshipTypesPanel.vue'
 import { getDbPath, setDbPath, resetDbPath } from '../../wasm/client'
-import { isTauriEnvironment } from '../../wasm/tauri-client'
+import { isTauriEnvironment, tauriPickDirectory } from '../../wasm/tauri-client'
 import { X, Sun, Moon, Monitor, Folder, RotateCcw, AlertCircle } from 'lucide-vue-next'
 
 const { isOpen, close } = useSettingsModal()
@@ -58,6 +58,18 @@ async function handleResetDbPath() {
     showDbPathInput.value = false
   } catch (e) {
     console.error('Failed to reset database path:', e)
+  }
+}
+
+async function handlePickDirectory() {
+  try {
+    const selected = await tauriPickDirectory()
+    if (selected) {
+      customDbPath.value = selected
+      showDbPathInput.value = true
+    }
+  } catch (e) {
+    console.error('Failed to pick directory:', e)
   }
 }
 
@@ -179,7 +191,7 @@ onUnmounted(() => {
                       <span class="db-path-text">{{ dbPath || '加载中...' }}</span>
                     </div>
                     <div v-if="!showDbPathInput" class="db-path-actions">
-                      <button class="db-path-btn" @click="showDbPathInput = true">
+                      <button class="db-path-btn db-path-btn--secondary" @click="showDbPathInput = true">
                         更改路径
                       </button>
                       <button class="db-path-btn db-path-btn--secondary" @click="handleResetDbPath">
@@ -195,6 +207,9 @@ onUnmounted(() => {
                         placeholder="输入新的数据库目录路径"
                         @keydown.enter="handleSetDbPath"
                       />
+                      <button class="db-path-btn" @click="handlePickDirectory">
+                        <Folder :size="12" :stroke-width="1.75" />
+                      </button>
                       <button class="db-path-btn" @click="handleSetDbPath">确定</button>
                       <button class="db-path-btn db-path-btn--secondary" @click="showDbPathInput = false">取消</button>
                     </div>
