@@ -1,4 +1,4 @@
-import type { RelationshipType } from '../core/types'
+import type { RelationshipType } from '../types/relationship-type'
 
 /**
  * 内置关系类型种子（首启写入 IndexedDB；用户修改后不会被覆盖）。

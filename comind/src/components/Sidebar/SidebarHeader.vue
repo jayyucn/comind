@@ -1,8 +1,16 @@
 <script setup lang="ts">
+import { isTauriEnvironment } from '../../wasm/tauri-client'
+import { getCurrentWindow } from '@tauri-apps/api/window'
+
+async function handleMouseDown() {
+  if (!isTauriEnvironment()) return
+  const window = getCurrentWindow()
+  await window.startDragging()
+}
 </script>
 
 <template>
-  <div class="sidebar-header">
+  <div class="sidebar-header" @mousedown="handleMouseDown">
     <span class="sidebar-logo">COMIND</span>
   </div>
 </template>

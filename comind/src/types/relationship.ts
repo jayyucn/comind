@@ -1,6 +1,6 @@
 // d:\comind\comind\src\types\relationship.ts
 import { useRelationshipTypes } from '../composables/useRelationshipTypes'
-import type { Strength } from '../core/types'
+import type { Strength } from './relationship-type'
 
 export type { Strength }
 

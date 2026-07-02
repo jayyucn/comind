@@ -3,7 +3,7 @@ import { initCoreClient } from '../wasm/client'
 import type { RelationshipType as CoreRelationshipType } from '../wasm/types'
 import { RELATIONSHIP_TYPES_SEED } from '../config/relationship-types-seed'
 import { TYPE_REGEX, COLOR_REGEX } from './relationship-type-constants'
-import type { RelationshipType, Strength } from '../core/types'
+import type { RelationshipType, Strength } from '../types/relationship-type'
 
 export interface RelationshipTypeInput {
   type: string
