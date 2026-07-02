@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue'
 import { initCoreClient } from '../wasm/client'
-import type { RelationshipType as CoreRelationshipType } from '../wasm/types'
+import type { RelationshipType as CoreRelationshipType, BatchOperation } from '../wasm/types'
 import { RELATIONSHIP_TYPES_SEED } from '../config/relationship-types-seed'
 import { TYPE_REGEX, COLOR_REGEX } from './relationship-type-constants'
 import type { RelationshipType, Strength } from '../types/relationship-type'
@@ -106,6 +106,7 @@ export function useRelationshipTypes() {
               group: seed.group,
               strength: seed.strength,
               order: order++,
+              deleted: 0,
               builtin: 1,
             }
           }])
@@ -175,6 +176,7 @@ export function useRelationshipTypes() {
           group: record.group,
           strength: record.strength,
           order: record.order,
+          deleted: 0,
           builtin: 0,
         }
       }])
@@ -211,12 +213,19 @@ export function useRelationshipTypes() {
         action: 'update',
         params: {
           id,
+          type: existing.type,
+          inverse: existing.inverse,
           label: merged.label.trim(),
           inverse_label: merged.inverseLabel.trim(),
           description: merged.description,
           color: merged.color,
           group: merged.group,
           strength: merged.strength,
+          order: existing.order,
+          deleted: existing.deleted ? 1 : 0,
+          builtin: existing.builtin ? 1 : 0,
+          created_at: existing.createdAt,
+          updated_at: Date.now(),
         }
       }])
 
@@ -237,11 +246,29 @@ export function useRelationshipTypes() {
     },
 
     async softDelete(id: string): Promise<void> {
+      const existing = state.value.items.find(r => r.id === id)
+      if (!existing) throw new Error('记录不存在')
+
       const client = await getClient()
       await client.executeBatch([{
         entity: 'relationship_type',
         action: 'update',
-        params: { id, deleted: 1 }
+        params: {
+          id: existing.id,
+          type: existing.type,
+          inverse: existing.inverse,
+          label: existing.label,
+          inverse_label: existing.inverseLabel,
+          description: existing.description,
+          color: existing.color,
+          group: existing.group,
+          strength: existing.strength,
+          order: existing.order,
+          deleted: 1,
+          builtin: existing.builtin ? 1 : 0,
+          created_at: existing.createdAt,
+          updated_at: Date.now(),
+        }
       }])
       state.value.items = state.value.items.map(r =>
         r.id === id ? { ...r, deleted: true, updatedAt: Date.now() } : r
@@ -249,11 +276,29 @@ export function useRelationshipTypes() {
     },
 
     async restore(id: string): Promise<void> {
+      const existing = state.value.items.find(r => r.id === id)
+      if (!existing) throw new Error('记录不存在')
+
       const client = await getClient()
       await client.executeBatch([{
         entity: 'relationship_type',
         action: 'update',
-        params: { id, deleted: 0 }
+        params: {
+          id: existing.id,
+          type: existing.type,
+          inverse: existing.inverse,
+          label: existing.label,
+          inverse_label: existing.inverseLabel,
+          description: existing.description,
+          color: existing.color,
+          group: existing.group,
+          strength: existing.strength,
+          order: existing.order,
+          deleted: 0,
+          builtin: existing.builtin ? 1 : 0,
+          created_at: existing.createdAt,
+          updated_at: Date.now(),
+        }
       }])
       state.value.items = state.value.items.map(r =>
         r.id === id ? { ...r, deleted: false, updatedAt: Date.now() } : r
@@ -262,11 +307,32 @@ export function useRelationshipTypes() {
 
     async reorder(orderedIds: string[]): Promise<void> {
       const client = await getClient()
-      const operations = orderedIds.map((id, index) => ({
-        entity: 'relationship_type' as const,
-        action: 'update' as const,
-        params: { id, order: index }
-      }))
+      const operations: BatchOperation[] = []
+      for (let index = 0; index < orderedIds.length; index++) {
+        const id = orderedIds[index]
+        const existing = state.value.items.find(r => r.id === id)
+        if (!existing) continue
+        operations.push({
+          entity: 'relationship_type',
+          action: 'update',
+          params: {
+            id: existing.id,
+            type: existing.type,
+            inverse: existing.inverse,
+            label: existing.label,
+            inverse_label: existing.inverseLabel,
+            description: existing.description,
+            color: existing.color,
+            group: existing.group,
+            strength: existing.strength,
+            order: index,
+            deleted: existing.deleted ? 1 : 0,
+            builtin: existing.builtin ? 1 : 0,
+            created_at: existing.createdAt,
+            updated_at: Date.now(),
+          }
+        })
+      }
       await client.executeBatch(operations)
 
       const map = new Map(state.value.items.map(r => [r.id, r]))
