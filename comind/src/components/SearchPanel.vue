@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { initCoreClient } from '../wasm/client'
-import type { SearchResult } from '../core/types'
+import type { SearchResult } from '../types/search'
 import { pushModal, popModal } from '../composables/useModalKeyboard'
 
 let clientPromise: ReturnType<typeof initCoreClient> | null = null

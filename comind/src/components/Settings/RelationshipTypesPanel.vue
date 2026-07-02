@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import { ArrowUp, ArrowDown, Pencil, Trash2, Plus, ChevronDown, ChevronRight, Undo2, X, Check } from 'lucide-vue-next'
 import { useRelationshipTypes, validateRelationshipTypeInput, type RelationshipTypeInput } from '../../composables/useRelationshipTypes'
-import type { Strength } from '../../core/types'
+import type { Strength } from '../../types/relationship-type'
 
 const { all, create, update, softDelete, restore, reorder } = useRelationshipTypes()
 
