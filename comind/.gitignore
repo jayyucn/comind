@@ -26,4 +26,4 @@ dist-ssr
 #e2e
 e2e/
 
-tests/
+tests/e2e/
