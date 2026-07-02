@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import RelationshipTypesPanel from './RelationshipTypesPanel.vue'
 import { useRelationshipTypes } from '../../composables/useRelationshipTypes'
-import { getCore } from '../../core'
+import { cleanupRelationshipTypes } from '../../../tests/core-client'
 
 function mountPanel() {
   return mount(RelationshipTypesPanel, {
@@ -25,17 +25,7 @@ function mountPanel() {
 
 describe('RelationshipTypesPanel', () => {
   beforeEach(async () => {
-    // Clean up storage first to ensure test isolation
-    const core = getCore()
-    const activeResult = await core.relationshipTypeService.getActive()
-    for (const r of activeResult) {
-      await core.relationshipTypeService.softDelete(r.id)
-    }
-    const allResult = await core.storage.relationshipTypes.findAll()
-    for (const r of allResult.items) {
-      await core.storage.relationshipTypes.delete(r.id)
-    }
-
+    await cleanupRelationshipTypes()
     const { _resetForTest, load } = useRelationshipTypes()
     _resetForTest()
     await load()

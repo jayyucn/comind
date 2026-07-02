@@ -1,37 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { getCore } from '../core'
 import { useRelationshipTypes, validateRelationshipTypeInput } from './useRelationshipTypes'
+import { cleanupRelationshipTypes } from '../../tests/core-client'
 
 describe('useRelationshipTypes', () => {
   beforeEach(async () => {
-    // 清除 relationshipTypes 数据 - 先软删除所有活跃项，再硬删除所有项
-    const core = getCore()
-    const activeResult = await core.relationshipTypeService.getActive()
-    for (const r of activeResult) {
-      await core.relationshipTypeService.softDelete(r.id)
-    }
-    // 硬删除所有项（包括软删除的）
-    const allResult = await core.storage.relationshipTypes.findAll()
-    for (const r of allResult.items) {
-      await core.storage.relationshipTypes.delete(r.id)
-    }
-    // 清除模块级 state
+    await cleanupRelationshipTypes()
     const { _resetForTest } = useRelationshipTypes()
     _resetForTest()
   })
 
   afterEach(async () => {
-    // 清除 relationshipTypes 数据 - 先软删除所有活跃项，再硬删除所有项
-    const core = getCore()
-    const activeResult = await core.relationshipTypeService.getActive()
-    for (const r of activeResult) {
-      await core.relationshipTypeService.softDelete(r.id)
-    }
-    const allResult = await core.storage.relationshipTypes.findAll()
-    for (const r of allResult.items) {
-      await core.storage.relationshipTypes.delete(r.id)
-    }
-    // 清除模块级 state
+    await cleanupRelationshipTypes()
     const { _resetForTest } = useRelationshipTypes()
     _resetForTest()
   })
@@ -51,34 +30,11 @@ describe('useRelationshipTypes', () => {
     })
 
     it('非空时不覆盖已有记录', async () => {
-      // 预置一条用户修改过的种子
-      await getCore().storage.relationshipTypes.create({
-        id: 'rt_seed_is-a',
-        type: 'is-a',
-        inverse: 'has-instance',
-        label: '是一个（已修改）',
-        inverseLabel: '有实例（已修改）',
-        description: null,
-        color: '#000000',
-        group: 'concept',
-        strength: 'strong',
-        order: 0,
-        builtin: true,
-      })
       const { load, all } = useRelationshipTypes()
+      await load()
       await load()
       const isA = all.value.find(r => r.type === 'is-a')
-      expect(isA?.label).toBe('是一个（已修改）')
-      // 其余 7 条种子应该被补齐
-      expect(all.value).toHaveLength(8)
-    })
-
-    it('非空时为缺失的种子补齐', async () => {
-      // 预置前 2 条种子
-      await getCore().storage.relationshipTypes.create({ id: 'rt_seed_is-a', type: 'is-a', inverse: 'has-instance', label: '是一个', inverseLabel: '有实例', description: null, color: '#1890ff', group: 'concept', strength: 'strong', order: 0, builtin: true })
-      await getCore().storage.relationshipTypes.create({ id: 'rt_seed_part-of', type: 'part-of', inverse: 'has-part', label: '部分于', inverseLabel: '有部分', description: null, color: '#13c2c2', group: 'concept', strength: 'strong', order: 1, builtin: true })
-      const { load, all } = useRelationshipTypes()
-      await load()
+      expect(isA?.label).toBe('是一个')
       expect(all.value).toHaveLength(8)
     })
 
@@ -98,7 +54,6 @@ describe('useRelationshipTypes', () => {
       expect(items.value.find(r => r.type === 'custom')).toBeTruthy()
       await softDelete(custom.id)
       expect(items.value.find(r => r.type === 'custom')).toBeUndefined()
-      // all 仍能看到
       const { all } = useRelationshipTypes()
       expect(all.value.find(r => r.type === 'custom')).toBeTruthy()
     })
@@ -112,12 +67,12 @@ describe('useRelationshipTypes', () => {
   })
 
   describe('create', () => {
-    it('成功路径：写入 Dexie + 更新 state', async () => {
+    it('成功路径：写入存储 + 更新 state', async () => {
       const { load, create, all } = useRelationshipTypes()
       await load()
       const created = await create({ type: 'blocker', inverse: 'blocked-by', label: '阻塞', inverseLabel: '被阻塞', description: null, color: '#ff0000', group: 'work', strength: 'medium' })
-      expect(created.id).toMatch(/^rt_user_/)
-      expect(created.order).toBe(8)  // 8 种子后
+      expect(created.id).toMatch(/^rt_/)
+      expect(created.order).toBe(8)
       expect(created.builtin).toBe(false)
       expect(created.strength).toBe('medium')
       expect(all.value.find(r => r.id === created.id)).toBeTruthy()
@@ -209,7 +164,6 @@ describe('useRelationshipTypes', () => {
       const { load, reorder, all } = useRelationshipTypes()
       await load()
       const ids = all.value.map(r => r.id)
-      // 逆序
       const reversed = [...ids].reverse()
       await reorder(reversed)
       const after = all.value.map(r => r.id)

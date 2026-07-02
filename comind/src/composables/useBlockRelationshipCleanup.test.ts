@@ -4,7 +4,7 @@ import { useBlockStore } from '../stores/blocks'
 import { usePageStore } from '../stores/pages'
 import { useBlockRelationshipCleanup } from './useBlockRelationshipCleanup'
 import { useRelationshipTypes } from './useRelationshipTypes'
-import { getCore } from '../core'
+import { cleanupRelationshipTypes } from '../../tests/core-client'
 
 vi.mock('../storage/indexedDB', () => ({
   storage: {
@@ -30,9 +30,7 @@ vi.mock('../storage/indexedDB', () => ({
 
 beforeEach(async () => {
   setActivePinia(createPinia())
-  await getCore().storage.relationshipTypes.findAll().then(result => 
-    Promise.all(result.items.map(r => getCore().storage.relationshipTypes.delete(r.id)))
-  )
+  await cleanupRelationshipTypes()
   const { _resetForTest, load } = useRelationshipTypes()
   _resetForTest()
   await load()

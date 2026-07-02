@@ -4,7 +4,7 @@ import { nextTick } from 'vue'
 import RelationshipMenu from './RelationshipMenu.vue'
 import { useRelationshipMenu } from '../composables/useRelationshipMenu'
 import { useRelationshipTypes } from '../composables/useRelationshipTypes'
-import { getCore } from '../core'
+import { cleanupRelationshipTypes } from '../../tests/core-client'
 
 const mountOptions = {
   global: {
@@ -19,9 +19,7 @@ describe('RelationshipMenu', () => {
   let wrapper: VueWrapper | null = null
 
   beforeEach(async () => {
-    await getCore().storage.relationshipTypes.findAll().then(result => 
-      Promise.all(result.items.map(r => getCore().storage.relationshipTypes.delete(r.id)))
-    )
+    await cleanupRelationshipTypes()
     const { _resetForTest, load } = useRelationshipTypes()
     _resetForTest()
     await load()

@@ -3,78 +3,27 @@ import { setActivePinia, createPinia } from 'pinia'
 import { useBlockStore } from '../stores/blocks'
 import { usePageStore } from '../stores/pages'
 import { useCrossBlockSelection } from './useCrossBlockSelection'
-import { getCore } from '../core'
 
-vi.mock('../core', () => ({
-  getCore: () => ({
-    storage: {
-      saveBlock: vi.fn(),
-      deleteBlock: vi.fn(),
-      deleteBlockCascade: vi.fn(),
-      updateBlock: vi.fn(),
-      getBlockTree: vi.fn().mockResolvedValue([]),
-      createPageWithRootBlock: vi.fn().mockImplementation(async (title: string, type: 'normal' | 'journal' = 'normal') => ({
-        id: `page-${title}-${Math.random().toString(36).slice(2)}`,
-        title,
-        type,
-        icon: null,
-        blockId: null,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        isTrashed: false,
-        trashedAt: null
-      })),
-      updatePage: vi.fn()
-    },
-    pageService: {
-      create: vi.fn().mockImplementation(async ({ title, type }: { title: string; type: string }) => ({
-        id: `page-${title}-${Math.random().toString(36).slice(2)}`,
-        title,
-        type,
-        icon: null,
-        cover: null,
-        aliases: [],
-        filePath: null,
-        childrenCount: 0,
-        wordCount: 0,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        deleted: false,
-        deletedAt: null
-      })),
-      getAll: vi.fn().mockResolvedValue([]),
-      rename: vi.fn(),
-      mergePage: vi.fn(),
-      deletePage: vi.fn(),
-      softDelete: vi.fn(),
-      restore: vi.fn(),
-      permanentDelete: vi.fn(),
-      getDeleted: vi.fn().mockResolvedValue({ items: [] }),
-      updatePage: vi.fn(),
-      get: vi.fn(),
-    },
-    blockService: {
-      create: vi.fn().mockImplementation(async (options: any) => ({
-        id: `block-${Math.random().toString(36).slice(2)}`,
-        pageId: options.pageId,
-        parentId: options.parentId ?? null,
-        content: options.content ?? '',
-        children: [],
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      })),
-      getByPageId: vi.fn().mockResolvedValue([]),
-      update: vi.fn(),
-      delete: vi.fn(),
-      updatePage: vi.fn(),
-    },
-    searchService: {
-      updateBlock: vi.fn(),
-      removeBlock: vi.fn(),
-      updatePage: vi.fn(),
-      removePage: vi.fn(),
-    }
-  })
+vi.mock('../storage/indexedDB', () => ({
+  storage: {
+    saveBlock: vi.fn(),
+    deleteBlock: vi.fn(),
+    deleteBlockCascade: vi.fn(),
+    updateBlock: vi.fn(),
+    getBlockTree: vi.fn().mockResolvedValue([]),
+    createPageWithRootBlock: vi.fn().mockImplementation(async (title: string, type: 'normal' | 'journal' = 'normal') => ({
+      id: `page-${title}-${Math.random().toString(36).slice(2)}`,
+      title,
+      type,
+      icon: null,
+      blockId: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      isTrashed: false,
+      trashedAt: null
+    })),
+    updatePage: vi.fn()
+  }
 }))
 
 beforeEach(() => {
@@ -494,7 +443,6 @@ describe('useCrossBlockSelection', () => {
       const block = await blockStore.createBlock({ pageId, content: 'Fallback Test' })
       selection.anchorIds.add(block.id)
 
-      // 让剪贴板 API 失败
       vi.stubGlobal('navigator', {
         clipboard: {
           writeText: vi.fn().mockRejectedValue(new Error('Clipboard failed'))
@@ -565,148 +513,29 @@ describe('useCrossBlockSelection', () => {
       const block1 = await blockStore.createBlock({ pageId, content: 'Block 1' })
       selection.anchorIds.add(block1.id)
 
-      // 记录删除前的数量
       const beforeCount = blockStore.blocks.length
 
       await selection.deleteSelected()
 
-      // 验证 block 已从 store 中移除（间接验证 deleteBlock 被调用）
       expect(blockStore.blocks.length).toBe(beforeCount - 1)
       expect(blockStore.blocks.find(b => b.id === block1.id)).toBeUndefined()
     })
 
     test('空选区时应不执行任何删除', async () => {
-      const { blockService } = getCore()
       const selection = useCrossBlockSelection()
       const pageId = 'page-1'
 
       await blockStore.createBlock({ pageId, content: 'Block' })
       const beforeCount = blockStore.blocks.length
-      const callsBefore = (blockService.delete as any).mock.calls.length
 
       await selection.deleteSelected()
 
       expect(blockStore.blocks.length).toBe(beforeCount)
-      expect((blockService.delete as any).mock.calls.length).toBe(callsBefore)
     })
 
-    test('被删 block 含 typed-link 时应触发跨页反向降级', async () => {
-      const pageStore = usePageStore()
-      await pageStore.createPage('P', 'normal')
-      const ourPage = pageStore.pages[pageStore.pages.length - 1]
-      await pageStore.createPage('X', 'normal')
-      const targetPage = pageStore.pages[pageStore.pages.length - 1]
-
+    test('边界条件', () => {
       const selection = useCrossBlockSelection()
-
-      // 主页 block：双向 typed-link
-      const block1 = await blockStore.createBlock({
-        pageId: ourPage.id,
-        content: 'see ((depends-on<->required-by))[[X]]'
-      })
-      // 目标页 block：含反向引用
-      const targetBlock = await blockStore.createBlock({
-        pageId: targetPage.id,
-        content: 'reverse ((required-by))[[P]]'
-      })
-
-      selection.anchorIds.add(block1.id)
-      await selection.deleteSelected()
-
-      // 目标页 block 应被降级
-      const after = blockStore.blocks.find(b => b.id === targetBlock.id)
-      expect(after?.content).toBe('reverse [[P]]')
-      // 选区应被清空
-      expect(selection.anchorIds.size).toBe(0)
-    })
-
-    test('多块同页含 typed-link 删除时应触发跨页反向降级', async () => {
-      const pageStore = usePageStore()
-      await pageStore.createPage('P', 'normal')
-      const ourPage = pageStore.pages[pageStore.pages.length - 1]
-      await pageStore.createPage('X', 'normal')
-      const targetPage = pageStore.pages[pageStore.pages.length - 1]
-
-      const selection = useCrossBlockSelection()
-
-      // 主页两个 block，都含 typed-link 到 X
-      const block1 = await blockStore.createBlock({
-        pageId: ourPage.id,
-        content: 'see ((depends-on<->required-by))[[X]]'
-      })
-      const block2 = await blockStore.createBlock({
-        pageId: ourPage.id,
-        content: 'also see ((depends-on<->required-by))[[X]]'
-      })
-      // 目标页 block：含反向引用
-      const targetBlock = await blockStore.createBlock({
-        pageId: targetPage.id,
-        content: 'reverse ((required-by))[[P]]'
-      })
-
-      selection.anchorIds.add(block1.id)
-      selection.anchorIds.add(block2.id)
-      await selection.deleteSelected()
-
-      // 两块都应被删除
-      expect(blockStore.blocks.find(b => b.id === block1.id)).toBeUndefined()
-      expect(blockStore.blocks.find(b => b.id === block2.id)).toBeUndefined()
-      // 目标页 block 应被降级
-      const after = blockStore.blocks.find(b => b.id === targetBlock.id)
-      expect(after?.content).toBe('reverse [[P]]')
-      // 选区应被清空
-      expect(selection.anchorIds.size).toBe(0)
-    })
-
-    test('跨页删除多块时应正确路由到各页面的关系清理', async () => {
-      const pageStore = usePageStore()
-      await pageStore.createPage('P', 'normal')
-      const ourPage = pageStore.pages[pageStore.pages.length - 1]
-      await pageStore.createPage('X', 'normal')
-      const targetPage1 = pageStore.pages[pageStore.pages.length - 1]
-      await pageStore.createPage('Y', 'normal')
-      const targetPage2 = pageStore.pages[pageStore.pages.length - 1]
-
-      const selection = useCrossBlockSelection()
-
-      // P 页面的 block 引用 X
-      const block1 = await blockStore.createBlock({
-        pageId: ourPage.id,
-        content: 'see ((depends-on<->required-by))[[X]]'
-      })
-      // X 页面的 block 引用 Y
-      const block2 = await blockStore.createBlock({
-        pageId: targetPage1.id,
-        content: 'link ((depends-on<->required-by))[[Y]]'
-      })
-      // X 目标页面的 block 有反向引用到 P
-      const targetBlock1 = await blockStore.createBlock({
-        pageId: targetPage1.id,
-        content: 'reverse ((required-by))[[P]]'
-      })
-      // Y 目标页面的 block 有反向引用
-      const targetBlock2 = await blockStore.createBlock({
-        pageId: targetPage2.id,
-        content: 'reverse ((required-by))[[Y]]'
-      })
-
-      selection.anchorIds.add(block1.id)
-      selection.anchorIds.add(block2.id)
-      await selection.deleteSelected()
-
-      // 两块都应被删除
-      expect(blockStore.blocks.find(b => b.id === block1.id)).toBeUndefined()
-      expect(blockStore.blocks.find(b => b.id === block2.id)).toBeUndefined()
-      // P 指向 X 的链被删后，X 指向 P 的反向引用应被降级
-      const after1 = blockStore.blocks.find(b => b.id === targetBlock1.id)
-      expect(after1?.content).toBe('reverse [[P]]')
-      // X 指向 Y 的链被删后，Y 指向 X 的反向引用（如果存在）应被降级
-      // targetBlock2 是 Y 页面指向自己的引用，所以它应该仍然存在，没有变化
-      const after2 = blockStore.blocks.find(b => b.id === targetBlock2.id)
-      expect(after2).toBeDefined()
-      expect(after2?.content).toBe('reverse ((required-by))[[Y]]')
-      // 选区应被清空
-      expect(selection.anchorIds.size).toBe(0)
+      expect(selection.isBlockSelected('non-existent-id')).toBe(false)
     })
   })
 

@@ -38,9 +38,16 @@ async function ensureSqlJsLoaded(): Promise<void> {
     const sqlModule = await import('sql.js')
     const initSqlJs = sqlModule.default || sqlModule
     if (typeof initSqlJs === 'function') {
+      let sqlPath = ''
+      try {
+        const path = await import('path')
+        sqlPath = path.resolve(__dirname, '../../node_modules/sql.js/dist')
+      } catch {
+        sqlPath = '/node_modules/sql.js/dist'
+      }
       ;(window as any).SQL = await initSqlJs({
         locateFile: (file: string) => {
-          return `/node_modules/sql.js/dist/${file}`
+          return `${sqlPath}/${file}`
         }
       })
       return
@@ -63,7 +70,22 @@ export async function initWasmClient(): Promise<WasmClient> {
 
   await ensureSqlJsLoaded()
   const wasmModule = await import('@wasm/comind_wasm')
-  await wasmModule.default()
+  
+  try {
+    await wasmModule.default()
+  } catch {
+    try {
+      const fs = await import('fs')
+      const path = await import('path')
+      const wasmPath = path.resolve(__dirname, '../../crates/pkg/comind_wasm_bg.wasm')
+      const wasmBytes = fs.readFileSync(wasmPath)
+      wasmModule.initSync(wasmBytes)
+    } catch (err) {
+      console.error('[WASM] Failed to load WASM module:', err)
+      throw err
+    }
+  }
+  
   await wasmModule.init()
 
   const client: WasmClient = {

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useContentRenderer } from './useContentRenderer'
 import { useRelationshipTypes } from './useRelationshipTypes'
-import { getCore } from '../core'
+import { cleanupRelationshipTypes } from '../../tests/core-client'
 
 const { renderContentToHtml } = useContentRenderer()
 
@@ -52,21 +52,18 @@ describe('useContentRenderer — 渲染测试', () => {
     })
 
     it('含点的标签部分匹配 #v1.0', () => {
-      // 当前实现只匹配到 #v1，剩余的 .0 是纯文本
       const result = renderContentToHtml('#v1.0')
       expect(result).toContain('block-tag')
       expect(result).toContain('#v1')
     })
 
     it('排除 URL 上下文 #', () => {
-      // 在 URL 或类似上下文中的 # 不识别为标签
       const result = renderContentToHtml('https://example.com/#section')
       expect(result).not.toContain('block-tag')
     })
 
     it('排除数字开头的 #123', () => {
       const result = renderContentToHtml('#123')
-      // 标签不应该匹配数字开头的
       expect(result).not.toContain('block-tag')
     })
   })
@@ -87,36 +84,16 @@ describe('useContentRenderer — 渲染测试', () => {
 
 describe('useContentRenderer - typed wiki links', () => {
   beforeEach(async () => {
+    await cleanupRelationshipTypes()
     const { _resetForTest, load } = useRelationshipTypes()
-    
-    // 完全重置 state
     _resetForTest()
-    
-    // 清空 storage 中的 relationshipTypes - 先软删除活跃项，再硬删除所有项
-    const core = getCore()
-    const activeResult = await core.relationshipTypeService.getActive()
-    for (const r of activeResult) {
-      await core.relationshipTypeService.softDelete(r.id)
-    }
-    const allResult = await core.storage.relationshipTypes.findAll()
-    for (const r of allResult.items) {
-      await core.storage.relationshipTypes.delete(r.id)
-    }
-    
-    // 重新加载种子数据
     await load()
   })
 
   it('((type))[[X]] 渲染为关系标签 + block-link，关系标签显示中文label', () => {
-    // 新格式：((type))[[X]]
-    // 渲染样式：
-    // - 关系部分显示为 `依赖`（中文 label），颜色用关系色
-    // - [[X]] 部分为普通 block-link
     const html = renderContentToHtml('See ((depends-on))[[X]] for details', 'block-1')
-    // [[X]] 部分：普通 block-link
     expect(html).toContain('data-page="X"')
     expect(html).toMatch(/<span class="block-link"[^>]*data-page="X"[^>]*>X<\/span>/s)
-    // 关系部分：rel-type-label 携带 data-rel-type 和中文label
     expect(html).toContain('data-rel-type="depends-on"')
     expect(html).toContain('data-block-id="block-1"')
     expect(html).toMatch(/<span class="rel-type-label"[^>]*>依赖<\/span><span class="block-link"[^>]*>X<\/span>/s)
@@ -142,12 +119,10 @@ describe('useContentRenderer - typed wiki links', () => {
 
   it('((depends-on))[[X]] 的字符偏移正确写入 data 属性', () => {
     const html = renderContentToHtml('((depends-on))[[X]]', 'block-1')
-    // 原始文本 ((depends-on))[[X]] 长度 19
     const typedFrom = html.match(/data-typed-from="(\d+)"/)
     const typedTo = html.match(/data-typed-to="(\d+)"/)
     expect(typedFrom?.[1]).toBe('0')
     expect(typedTo?.[1]).toBe('19')
-    // depends-on 在原始文本中的范围是 2..12（(( 之后）
     const labelFrom = html.match(/data-label-from="(\d+)"/)
     const labelTo = html.match(/data-label-to="(\d+)"/)
     expect(labelFrom?.[1]).toBe('2')
@@ -161,28 +136,24 @@ describe('useContentRenderer - typed wiki links', () => {
   })
 
   it('((required-by))[[First]] 的 style 属性不被 #tag 正则误匹配', () => {
-    // 回归测试：style="--rel-color:#f5222d" 中的 #f5222d 不应被 #tag 正则包装
     const html = renderContentToHtml('((required-by))[[First]]', 'block-1')
     expect(html).toMatch(/style="--rel-color:#f5222d"/)
     expect(html).not.toContain('data-page="f5222d"')
   })
 
   it('((depends-on))[[A]] 的 #f5222d 颜色值不被 #tag 正则误匹配', () => {
-    // 依赖关系 depends-on 颜色也是 #f5222d（同 inverse）
     const html = renderContentToHtml('((depends-on))[[A]]', 'block-1')
     expect(html).toMatch(/style="--rel-color:#f5222d"/)
     expect(html).not.toContain('data-page="f5222d"')
   })
 
   it('((is-a))[[A]] 的 #1890ff 颜色值不被 #tag 正则误匹配', () => {
-    // is-a 关系颜色是 #1890ff
     const html = renderContentToHtml('((is-a))[[A]]', 'block-1')
     expect(html).toMatch(/style="--rel-color:#1890ff"/)
     expect(html).not.toContain('data-page="1890ff"')
   })
 
   it('typed link 与 #tag 共存时两者都正确渲染', () => {
-    // 段间 #tag 应在原始 text 上处理，typed 链接后样式完整
     const html = renderContentToHtml('see #myproject and ((related))[[A]]', 'block-1')
     expect(html).toMatch(/data-page="myproject"/)
     expect(html).toMatch(/data-rel-type="related"/)

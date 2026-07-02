@@ -1,7 +1,6 @@
 import { describe, test, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { usePageStore } from './pages'
-import { getCore } from '../core'
 
 // Mock the old storage layer - not used anymore but kept for compatibility
 vi.mock('../storage/indexedDB', () => ({

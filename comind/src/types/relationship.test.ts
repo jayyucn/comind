@@ -1,6 +1,4 @@
-// d:\comind\comind\src\types\relationship.test.ts
 import { describe, it, expect, beforeEach } from 'vitest'
-import { getCore } from '../core'
 import {
   getPredefinedRelationship,
   getGroupByType,
@@ -11,13 +9,11 @@ import {
   getRelationshipStrength
 } from './relationship'
 import { useRelationshipTypes } from '../composables/useRelationshipTypes'
+import { cleanupRelationshipTypes } from '../../tests/core-client'
 
 describe('relationship（运行时配置）', () => {
   beforeEach(async () => {
-    // 跨测试持久化，软删状态会泄漏；与 useRelationshipTypes.test.ts 一致地清表
-    await getCore().storage.relationshipTypes.findAll().then(result => 
-      Promise.all(result.items.map(r => getCore().storage.relationshipTypes.delete(r.id)))
-    )
+    await cleanupRelationshipTypes()
     const { _resetForTest, load } = useRelationshipTypes()
     _resetForTest()
     await load()

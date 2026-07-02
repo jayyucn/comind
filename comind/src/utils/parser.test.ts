@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { parseContent, parsePropertyValue, parseBlockLinks } from './parser'
 import { useRelationshipTypes } from '../composables/useRelationshipTypes'
-import { getCore } from '../core'
+import { cleanupRelationshipTypes } from '../../tests/core-client'
 
 // ────────────────────────────────────────────────────────
 // parseBlockLinks 关系类型解析
@@ -16,11 +16,7 @@ import { getCore } from '../core'
 
 describe('parseBlockLinks', () => {
   beforeEach(async () => {
-    // getPredefinedRelationship 依赖 useRelationshipTypes 的 state；
-    // 测试环境下初始化种子数据，让依赖反向推断的断言可工作
-    await getCore().storage.relationshipTypes.findAll().then(result => 
-      Promise.all(result.items.map(r => getCore().storage.relationshipTypes.delete(r.id)))
-    )
+    await cleanupRelationshipTypes()
     const { _resetForTest, load } = useRelationshipTypes()
     _resetForTest()
     await load()

@@ -24,7 +24,7 @@ import { useBlockStore } from '../../stores/blocks'
 import { usePageStore } from '../../stores/pages'
 import { useRelationshipMenu } from '../../composables/useRelationshipMenu'
 import { useRelationshipTypes } from '../../composables/useRelationshipTypes'
-import { getCore } from '../../core'
+import { cleanupRelationshipTypes, cleanupPages } from '../../../tests/core-client'
 import type { TreeNode } from '../../types/block'
 
 vi.mock('../../storage/indexedDB', () => ({
@@ -93,15 +93,14 @@ describe('Block - rel-type-label click handling', () => {
   let menu: ReturnType<typeof useRelationshipMenu>
 
   const BLOCK_ID = 'block-1'
-  const PAGE_ID = 'page-1'
   const ORIGINAL_CONTENT = 'prefix ((depends-on))[[X]] suffix'
 
-  function makeNode(): TreeNode {
+  function makeNode(pageId: string): TreeNode {
     return {
       id: BLOCK_ID,
       block: {
         id: BLOCK_ID,
-        pageId: PAGE_ID,
+        pageId,
         parentId: null,
         pos: 1000,
         content: ORIGINAL_CONTENT,
@@ -119,9 +118,8 @@ describe('Block - rel-type-label click handling', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
 
-    await getCore().storage.relationshipTypes.findAll().then(result => 
-      Promise.all(result.items.map(r => getCore().storage.relationshipTypes.delete(r.id)))
-    )
+    await cleanupRelationshipTypes()
+    await cleanupPages()
     const { _resetForTest, load } = useRelationshipTypes()
     _resetForTest()
     await load()
@@ -130,11 +128,11 @@ describe('Block - rel-type-label click handling', () => {
     pageStore = usePageStore()
     await pageStore.createPage('Test Page', 'normal')
     const created = pageStore.pages[pageStore.pages.length - 1]
-    Object.defineProperty(pageStore, 'currentPageId', { value: created?.id ?? PAGE_ID, configurable: true })
+    Object.defineProperty(pageStore, 'currentPageId', { value: created?.id, configurable: true })
 
     blockStore.blocks.push({
       id: BLOCK_ID,
-      pageId: created?.id ?? PAGE_ID,
+      pageId: created?.id,
       parentId: null,
       pos: 1000,
       content: ORIGINAL_CONTENT,
@@ -149,11 +147,16 @@ describe('Block - rel-type-label click handling', () => {
     menu.close()
   })
 
+  afterEach(async () => {
+    await cleanupPages()
+  })
+
   it('点击 .rel-type-label 打开菜单并预选当前类型', async () => {
     const updateContentSpy = vi.spyOn(blockStore, 'updateBlockContent')
+    const currentPageId = pageStore.currentPageId
 
     const wrapper = mount(Block, {
-      props: { node: makeNode(), pageId: PAGE_ID, depth: 0 },
+      props: { node: makeNode(currentPageId), pageId: currentPageId, depth: 0 },
       global: {
         stubs: {
           BulletRender: StubBulletRender
@@ -176,8 +179,9 @@ describe('Block - rel-type-label click handling', () => {
   })
 
   it('选择新关系类型后通过 blockStore.updateBlockContent 更新内容', async () => {
+    const currentPageId = pageStore.currentPageId
     const wrapper = mount(Block, {
-      props: { node: makeNode(), pageId: PAGE_ID, depth: 0 },
+      props: { node: makeNode(currentPageId), pageId: currentPageId, depth: 0 },
       global: {
         stubs: {
           BulletRender: StubBulletRender
@@ -204,8 +208,9 @@ describe('Block - rel-type-label click handling', () => {
   })
 
   it('点击非 rel-type-label、非 block-link 元素不打开菜单', async () => {
+    const currentPageId = pageStore.currentPageId
     const wrapper = mount(Block, {
-      props: { node: makeNode(), pageId: PAGE_ID, depth: 0 },
+      props: { node: makeNode(currentPageId), pageId: currentPageId, depth: 0 },
       global: {
         stubs: {
           BulletRender: StubBulletRender
@@ -233,6 +238,12 @@ describe('Block - handleDelete 关系清理集成', () => {
   beforeEach(async () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+
+    await cleanupRelationshipTypes()
+    await cleanupPages()
+    const { _resetForTest, load } = useRelationshipTypes()
+    _resetForTest()
+    await load()
 
     blockStore = useBlockStore()
     pageStore = usePageStore()
