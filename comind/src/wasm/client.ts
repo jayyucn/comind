@@ -228,3 +228,24 @@ export async function initCoreClient(): Promise<CoreClient> {
 export function getCoreClient(): CoreClient | null {
   return coreClient
 }
+
+export async function getDbPath(): Promise<string> {
+  if (isTauriEnvironment()) {
+    return tauri.tauriGetDbPath()
+  }
+  return Promise.resolve('Web: IndexedDB')
+}
+
+export async function setDbPath(path: string): Promise<string> {
+  if (isTauriEnvironment()) {
+    return tauri.tauriSetDbPath(path)
+  }
+  throw new Error('Database path setting is only available in desktop app')
+}
+
+export async function resetDbPath(): Promise<string> {
+  if (isTauriEnvironment()) {
+    return tauri.tauriResetDbPath()
+  }
+  throw new Error('Database path setting is only available in desktop app')
+}

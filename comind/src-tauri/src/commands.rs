@@ -158,6 +158,43 @@ pub async fn delete_property(db: State<'_, super::state::DatabaseConnection>, bl
 }
 
 #[tauri::command]
+pub async fn get_db_path(db: State<'_, super::state::DatabaseConnection>) -> Result<String, String> {
+    Ok(db.get_db_path())
+}
+
+#[tauri::command]
+pub async fn set_db_path(
+    _app_config: State<'_, super::config::AppConfig>,
+    config_dir: State<'_, std::path::PathBuf>,
+    path: &str,
+) -> Result<String, String> {
+    let new_path = std::path::PathBuf::from(path);
+    if !new_path.exists() {
+        std::fs::create_dir_all(&new_path)
+            .map_err(|e| format!("Failed to create directory: {}", e))?;
+    }
+    let config = super::config::AppConfig {
+        database_path: Some(path.to_string()),
+    };
+    config.save(&config_dir)
+        .map_err(|e| format!("Failed to save config: {}", e))?;
+    Ok(path.to_string())
+}
+
+#[tauri::command]
+pub async fn reset_db_path(
+    _app_config: State<'_, super::config::AppConfig>,
+    config_dir: State<'_, std::path::PathBuf>,
+) -> Result<String, String> {
+    let config = super::config::AppConfig {
+        database_path: None,
+    };
+    config.save(&config_dir)
+        .map_err(|e| format!("Failed to save config: {}", e))?;
+    Ok("default".to_string())
+}
+
+#[tauri::command]
 pub async fn execute_batch(db: State<'_, super::state::DatabaseConnection>, operations: Vec<serde_json::Value>) -> Result<Vec<serde_json::Value>, String> {
     execute_with_adapter(db, |storage| {
         let mut results = Vec::new();

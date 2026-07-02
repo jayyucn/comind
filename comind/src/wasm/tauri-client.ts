@@ -109,3 +109,15 @@ export async function tauriIsMaximized(): Promise<boolean> {
   const window = getCurrentWindow()
   return window.isMaximized()
 }
+
+export async function tauriGetDbPath(): Promise<string> {
+  return invoke('get_db_path')
+}
+
+export async function tauriSetDbPath(path: string): Promise<string> {
+  return invoke('set_db_path', { path })
+}
+
+export async function tauriResetDbPath(): Promise<string> {
+  return invoke('reset_db_path')
+}

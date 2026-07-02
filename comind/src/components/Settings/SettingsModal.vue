@@ -4,7 +4,9 @@ import { useSettingsModal } from '../../composables/useSettingsModal'
 import { pushModal, popModal } from '../../composables/useModalKeyboard'
 import { useTheme } from '../../composables/useTheme'
 import RelationshipTypesPanel from './RelationshipTypesPanel.vue'
-import { X, Sun, Moon, Monitor } from 'lucide-vue-next'
+import { getDbPath, setDbPath, resetDbPath } from '../../wasm/client'
+import { isTauriEnvironment } from '../../wasm/tauri-client'
+import { X, Sun, Moon, Monitor, Folder, RotateCcw, AlertCircle } from 'lucide-vue-next'
 
 const { isOpen, close } = useSettingsModal()
 
@@ -22,6 +24,51 @@ const { theme, setTheme } = useTheme()
 type Section = 'appearance' | 'editor' | 'data' | 'about'
 
 const activeSection = ref<Section>('appearance')
+
+const dbPath = ref('')
+const customDbPath = ref('')
+const showDbPathInput = ref(false)
+const isDesktop = isTauriEnvironment()
+
+async function loadDbPath() {
+  if (!isDesktop) return
+  try {
+    dbPath.value = await getDbPath()
+  } catch (e) {
+    console.error('Failed to load database path:', e)
+  }
+}
+
+async function handleSetDbPath() {
+  if (!customDbPath.value.trim()) return
+  try {
+    await setDbPath(customDbPath.value.trim())
+    dbPath.value = customDbPath.value.trim()
+    showDbPathInput.value = false
+    customDbPath.value = ''
+  } catch (e) {
+    console.error('Failed to set database path:', e)
+  }
+}
+
+async function handleResetDbPath() {
+  try {
+    await resetDbPath()
+    dbPath.value = await getDbPath()
+    showDbPathInput.value = false
+  } catch (e) {
+    console.error('Failed to reset database path:', e)
+  }
+}
+
+watch(isOpen, async (visible) => {
+  if (visible) {
+    pushModal('settings-modal')
+    await loadDbPath()
+  } else {
+    popModal('settings-modal')
+  }
+})
 
 const sections: { key: Section; label: string }[] = [
   { key: 'appearance', label: '外观' },
@@ -121,6 +168,49 @@ onUnmounted(() => {
               </template>
 
               <template v-if="activeSection === 'data'">
+                <div v-if="isDesktop" class="setting-item setting-item--column">
+                  <div class="setting-info">
+                    <span class="setting-label">数据库位置</span>
+                    <span class="setting-desc">当前数据库文件所在目录</span>
+                  </div>
+                  <div class="db-path-container">
+                    <div class="db-path-display">
+                      <Folder :size="14" :stroke-width="1.75" />
+                      <span class="db-path-text">{{ dbPath || '加载中...' }}</span>
+                    </div>
+                    <div v-if="!showDbPathInput" class="db-path-actions">
+                      <button class="db-path-btn" @click="showDbPathInput = true">
+                        更改路径
+                      </button>
+                      <button class="db-path-btn db-path-btn--secondary" @click="handleResetDbPath">
+                        <RotateCcw :size="12" :stroke-width="1.75" />
+                        恢复默认
+                      </button>
+                    </div>
+                    <div v-else class="db-path-input-container">
+                      <input
+                        v-model="customDbPath"
+                        type="text"
+                        class="db-path-input"
+                        placeholder="输入新的数据库目录路径"
+                        @keydown.enter="handleSetDbPath"
+                      />
+                      <button class="db-path-btn" @click="handleSetDbPath">确定</button>
+                      <button class="db-path-btn db-path-btn--secondary" @click="showDbPathInput = false">取消</button>
+                    </div>
+                  </div>
+                  <div class="db-path-note">
+                    <AlertCircle :size="12" :stroke-width="1.75" />
+                    <span>更改路径后需要重启应用生效</span>
+                  </div>
+                </div>
+                <div v-if="!isDesktop" class="setting-item">
+                  <div class="setting-info">
+                    <span class="setting-label">数据库位置</span>
+                    <span class="setting-desc">Web 版本使用浏览器 IndexedDB</span>
+                  </div>
+                  <span class="setting-value">IndexedDB</span>
+                </div>
                 <div class="setting-item">
                   <div class="setting-info">
                     <span class="setting-label">导出数据</span>
@@ -383,6 +473,94 @@ onUnmounted(() => {
 
 .settings-modal-enter-from .settings-modal {
   transform: translateY(8px);
+}
+
+.db-path-container {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.db-path-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-hover);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.db-path-text {
+  flex: 1;
+  font-family: monospace;
+}
+
+.db-path-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.db-path-input-container {
+  display: flex;
+  gap: 8px;
+}
+
+.db-path-input {
+  flex: 1;
+  padding: 8px 12px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: monospace;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.db-path-input:focus {
+  border-color: var(--accent);
+}
+
+.db-path-btn {
+  padding: 6px 12px;
+  background: var(--bg-active);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 80ms ease;
+}
+
+.db-path-btn:hover {
+  background: var(--bg-hover);
+}
+
+.db-path-btn--secondary {
+  background: transparent;
+  color: var(--text-tertiary);
+}
+
+.db-path-btn--secondary:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.db-path-note {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  padding-top: 4px;
 }
 
 @media (max-width: 768px) {
