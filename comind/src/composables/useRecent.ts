@@ -4,7 +4,7 @@ import { usePageStore } from '../stores/pages'
 
 export function useRecent() {
   const pageStore = usePageStore()
-  const isExpanded = ref(false)
+  const isExpanded = ref(true)
 
   // 按 Page.updatedAt 降序排列
   const recentPages = computed(() => {
