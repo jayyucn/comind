@@ -217,6 +217,12 @@ pub fn save_page(page: &str) -> Result<String, JsValue> {
 #[wasm_bindgen]
 pub fn delete_page_cascade(page_id: &str) -> Result<JsValue, JsValue> {
     with_adapter(|adapter| {
+        let blocks = BlockService::get_by_page_id(adapter, page_id)?;
+        for block in &blocks {
+            comind_core::storage::repository::PropertyRepository::delete_by_block_id(adapter.properties(), &block.id)?;
+            comind_core::storage::repository::LinkRepository::delete_by_source_block_id(adapter.links(), &block.id)?;
+        }
+        LinkService::delete_by_target_page_id(adapter, page_id)?;
         BlockService::delete_by_page_id(adapter, page_id)?;
         PageService::delete(adapter, page_id)?;
         Ok(to_js_value(json!({"success": true})))
@@ -236,6 +242,19 @@ pub fn get_backlinks(page_id: &str) -> Result<JsValue, JsValue> {
     with_adapter(|adapter| {
         let links = LinkService::get_by_target_page_id(adapter, page_id)?;
         Ok(to_js_value(links))
+    })
+}
+
+#[wasm_bindgen]
+pub fn get_outlinks(page_id: &str) -> Result<JsValue, JsValue> {
+    with_adapter(|adapter| {
+        let blocks = BlockService::get_by_page_id(adapter, page_id)?;
+        let mut outlinks = Vec::new();
+        for block in blocks {
+            let links = LinkService::get_by_source_block_id(adapter, &block.id)?;
+            outlinks.extend(links);
+        }
+        Ok(to_js_value(outlinks))
     })
 }
 
@@ -347,6 +366,8 @@ pub fn execute_batch(operations: &str) -> Result<String, JsValue> {
                 }
                 ("block", "delete") => {
                     let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                    comind_core::storage::repository::LinkRepository::delete_by_source_block_id(adapter.links(), id)?;
+                    comind_core::storage::repository::PropertyRepository::delete_by_block_id(adapter.properties(), id)?;
                     BlockService::delete(adapter, id)?;
                     serde_json::to_value(json!({"success": true}))
                 }
@@ -419,6 +440,27 @@ pub fn execute_batch(operations: &str) -> Result<String, JsValue> {
                     let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
                     LinkService::delete(adapter, id)?;
                     serde_json::to_value(json!({"success": true}))
+                }
+                ("link", "sync_by_block") => {
+                    let block_id = params.get("block_id").and_then(|v| v.as_str()).unwrap_or("");
+                    let links_data = params.get("links").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                    LinkService::delete_by_source_block_id(adapter, block_id)?;
+                    let mut created = Vec::new();
+                    for link_data in links_data {
+                        let source_block_id = link_data.get("source_block_id").and_then(|v| v.as_str()).unwrap_or("");
+                        let target_page_id = link_data.get("target_page_id").and_then(|v| v.as_str()).unwrap_or("");
+                        let display_text = link_data.get("display_text").and_then(|v| v.as_str()).unwrap_or("");
+                        let relationship_type = link_data.get("relationship_type").and_then(|v| v.as_str());
+                        let new_link = LinkService::create(
+                            adapter,
+                            source_block_id,
+                            target_page_id,
+                            display_text,
+                            relationship_type,
+                        )?;
+                        created.push(new_link);
+                    }
+                    serde_json::to_value(created)
                 }
                 ("relationshipType", "create") => {
                     let rt: RelationshipType = serde_json::from_value(params.clone())?;

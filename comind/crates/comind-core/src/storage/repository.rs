@@ -28,6 +28,7 @@ pub trait LinkRepository {
     fn create_many(&mut self, links: &[Link]) -> Result<Vec<Link>, Box<dyn Error>>;
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
     fn delete_by_source_block_id(&mut self, source_block_id: &str) -> Result<(), Box<dyn Error>>;
+    fn delete_by_target_page_id(&mut self, target_page_id: &str) -> Result<(), Box<dyn Error>>;
 }
 
 pub trait PropertyRepository {

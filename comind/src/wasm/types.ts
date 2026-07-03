@@ -104,7 +104,7 @@ export interface PageUpdate {
 
 export interface BatchOperation {
   entity: 'block' | 'page' | 'link' | 'property' | 'relationship_type' | 'template'
-  action: 'create' | 'update' | 'delete' | 'get'
+  action: 'create' | 'update' | 'delete' | 'get' | 'sync_by_block'
   params: Record<string, any>
 }
 

@@ -71,6 +71,13 @@ impl LinkService {
         repository::LinkRepository::delete_by_source_block_id(storage.links(), source_block_id)
     }
 
+    pub fn delete_by_target_page_id(
+        storage: &mut dyn StorageAdapter,
+        target_page_id: &str,
+    ) -> Result<(), Box<dyn Error>> {
+        repository::LinkRepository::delete_by_target_page_id(storage.links(), target_page_id)
+    }
+
     pub fn sync_links_for_block<S>(
         storage: &mut S,
         block_id: &str,

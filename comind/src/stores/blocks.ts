@@ -4,6 +4,8 @@ import type { Block } from '../types/block'
 import { initCoreClient } from '../wasm/client'
 import { generateUUID } from '../utils/id'
 import { debounce } from '../utils/debounce'
+import { parseBlockLinks } from '../utils/parser'
+import { usePageStore } from './pages'
 
 import {
   pmPosToTextOffset,
@@ -256,7 +258,7 @@ export const useBlockStore = defineStore('blocks', () => {
       pendingSaves.delete(block.id)
       return
     }
-    
+
     const client = await getClient()
     const blockUpdate = {
       id: currentBlock.id,
@@ -269,15 +271,43 @@ export const useBlockStore = defineStore('blocks', () => {
       created_at: currentBlock.createdAt,
       updated_at: Date.now()
     }
-    
+
     try {
       await client.saveBlockTree([blockUpdate])
+      await _syncBlockLinks(currentBlock, client)
     } catch (error) {
       console.error('[BlockStore] Failed to save block:', error)
       throw error
     } finally {
       pendingSaves.delete(block.id)
     }
+  }
+
+  async function _syncBlockLinks(block: Block, client: CoreClient): Promise<void> {
+    const parsedLinks = parseBlockLinks(block.content)
+    const pageStore = usePageStore()
+    const links = parsedLinks
+      .filter(l => !l.isExternal)
+      .map(l => {
+        const targetPage = pageStore.getPageByTitle(l.targetTitle)
+        if (!targetPage) return null
+        return {
+          source_block_id: block.id,
+          target_page_id: targetPage.id,
+          display_text: l.displayText,
+          relationship_type: l.relationshipType
+        }
+      })
+      .filter((l): l is NonNullable<typeof l> => l !== null)
+
+    await client.executeBatch([{
+      entity: 'link',
+      action: 'sync_by_block',
+      params: {
+        block_id: block.id,
+        links
+      }
+    }])
   }
 
   function _scheduleSave(block: Block): void {

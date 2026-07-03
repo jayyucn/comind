@@ -519,6 +519,11 @@ impl LinkRepository for SqlJsAdapter {
         Self::run_with_params(&self.db, "DELETE FROM Link WHERE source_block_id = ?", &[source_block_id])?;
         Ok(())
     }
+
+    fn delete_by_target_page_id(&mut self, target_page_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+        Self::run_with_params(&self.db, "DELETE FROM Link WHERE target_page_id = ?", &[target_page_id])?;
+        Ok(())
+    }
 }
 
 #[cfg(target_arch = "wasm32")]

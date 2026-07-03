@@ -562,6 +562,11 @@ impl LinkRepository for SQLiteAdapter {
         self.conn.execute("DELETE FROM Link WHERE source_block_id = ?1", params![source_block_id])?;
         Ok(())
     }
+
+    fn delete_by_target_page_id(&mut self, target_page_id: &str) -> Result<(), Box<dyn Error>> {
+        self.conn.execute("DELETE FROM Link WHERE target_page_id = ?1", params![target_page_id])?;
+        Ok(())
+    }
 }
 
 impl PropertyRepository for SQLiteAdapter {
@@ -1483,6 +1488,11 @@ impl<'a> LinkRepository for SQLiteTransactionAdapter<'a> {
 
     fn delete_by_source_block_id(&mut self, source_block_id: &str) -> Result<(), Box<dyn Error>> {
         self.conn.execute("DELETE FROM Link WHERE source_block_id = ?1", params![source_block_id])?;
+        Ok(())
+    }
+
+    fn delete_by_target_page_id(&mut self, target_page_id: &str) -> Result<(), Box<dyn Error>> {
+        self.conn.execute("DELETE FROM Link WHERE target_page_id = ?1", params![target_page_id])?;
         Ok(())
     }
 }

@@ -128,8 +128,9 @@ export async function initWasmClient(): Promise<WasmClient> {
       return parseJsonResult<Link[]>(result)
     },
 
-    async get_outlinks(_pageId: string): Promise<Link[]> {
-      return []
+    async get_outlinks(pageId: string): Promise<Link[]> {
+      const result = await wasmModule.get_outlinks(pageId)
+      return parseJsonResult<Link[]>(result)
     },
 
     async get_properties(blockId: string): Promise<Property[]> {

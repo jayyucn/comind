@@ -162,10 +162,14 @@ pub async fn delete_page_cascade(
     page_id: &str,
 ) -> Result<(), String> {
     execute_with_adapter(db, |storage| {
-        storage.properties().delete_by_block_id(page_id)?;
-        storage.links().delete_by_source_block_id(page_id)?;
-        storage.blocks().delete_by_page_id(page_id)?;
-        storage.pages().delete(page_id)?;
+        let blocks = BlockService::get_by_page_id(storage, page_id)?;
+        for block in &blocks {
+            storage.properties().delete_by_block_id(&block.id)?;
+            storage.links().delete_by_source_block_id(&block.id)?;
+        }
+        LinkService::delete_by_target_page_id(storage, page_id)?;
+        BlockService::delete_by_page_id(storage, page_id)?;
+        PageService::delete(storage, page_id)?;
         Ok(())
     })
 }
@@ -284,6 +288,8 @@ pub async fn execute_batch(
                         .and_then(|v| v.as_str())
                         .unwrap_or_default()
                         .to_string();
+                    storage.links().delete_by_source_block_id(&id)?;
+                    storage.properties().delete_by_block_id(&id)?;
                     storage.blocks().delete(&id)?;
                     serde_json::to_value("OK")?
                 }
@@ -319,6 +325,35 @@ pub async fn execute_batch(
                         .to_string();
                     storage.links().delete(&id)?;
                     serde_json::to_value("OK")?
+                }
+                ("link", "sync_by_block") => {
+                    let block_id: String = params
+                        .get("block_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string();
+                    let links_data = params
+                        .get("links")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    LinkService::delete_by_source_block_id(storage, &block_id)?;
+                    let mut created = Vec::new();
+                    for link_data in links_data {
+                        let source_block_id = link_data.get("source_block_id").and_then(|v| v.as_str()).unwrap_or("");
+                        let target_page_id = link_data.get("target_page_id").and_then(|v| v.as_str()).unwrap_or("");
+                        let display_text = link_data.get("display_text").and_then(|v| v.as_str()).unwrap_or("");
+                        let relationship_type = link_data.get("relationship_type").and_then(|v| v.as_str());
+                        let new_link = LinkService::create(
+                            storage,
+                            source_block_id,
+                            target_page_id,
+                            display_text,
+                            relationship_type,
+                        )?;
+                        created.push(new_link);
+                    }
+                    serde_json::to_value(created)?
                 }
                 ("property", "create") => {
                     let prop: Property = serde_json::from_value(params)?;
