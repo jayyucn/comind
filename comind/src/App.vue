@@ -304,8 +304,6 @@ function handleMainClick(e: MouseEvent) {
 }
 
 .collapse-btn {
-  width: 24px;
-  height: 24px;
   border: none;
   background: transparent;
   cursor: pointer;
@@ -398,8 +396,6 @@ function handleMainClick(e: MouseEvent) {
 }
 
 .right-sidebar-toggle {
-  width: 24px;
-  height: 24px;
   border: none;
   background: transparent;
   cursor: pointer;

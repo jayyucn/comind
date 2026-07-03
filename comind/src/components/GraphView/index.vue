@@ -6,7 +6,8 @@ import { usePageStore } from '../../stores/pages'
 import { useBlockStore } from '../../stores/blocks'
 import { getRelationshipColor, getRelationshipLabel, getDirectionInGroup, getGroupByType, getRelationshipStrength, STRENGTH_TO_WIDTH } from '../../types/relationship'
 import { useRouter } from 'vue-router'
-import SearchFilter from './SearchFilter.vue'
+import FilterPanel from './FilterPanel.vue'
+import type { FilterState } from './FilterPanel.vue'
 
 const pageStore = usePageStore()
 const blockStore = useBlockStore()
@@ -18,15 +19,56 @@ const currentLayout = ref<string>('force')
 const highlightedNodeId = ref<string | null>(null)
 const searchQuery = ref('')
 const activeFilters = ref<string[]>([])
+const currentFilterState = ref<FilterState>({ conditions: [], expandedGroups: new Set() })
+const stats = ref({ totalNodes: 0, filteredNodes: 0, totalEdges: 0, filteredEdges: 0 })
 
 const currentPageId = computed(() => pageStore.currentPageId)
 
 let refreshGeneration = 0
 
-function filterLinkByType(relationshipType: string | null | undefined): boolean {
-  if (activeFilters.value.length === 0) return true
-  if (!relationshipType) return false
-  return activeFilters.value.includes(relationshipType)
+function applyFilterConditions(pageId: string): boolean {
+  const page = pageStore.getPage(pageId)
+  if (!page) return false
+  
+  for (const condition of currentFilterState.value.conditions) {
+    let matches = true
+    
+    switch (condition.type) {
+      case 'journal':
+        const shouldHideJournal = condition.value as boolean
+        if (shouldHideJournal && page.type === 'journal') {
+          matches = false
+        }
+        break
+        
+      case 'time':
+        const dateRange = condition.value as { start: number | null; end: number | null }
+        if (dateRange.start !== null || dateRange.end !== null) {
+          const pageTime = page.createdAt
+          if (dateRange.start !== null && pageTime < dateRange.start) matches = false
+          if (dateRange.end !== null && pageTime >= dateRange.end) matches = false
+        }
+        break
+        
+      case 'search':
+        const query = condition.value as string
+        if (query.trim()) {
+          const q = query.toLowerCase()
+          const titleMatches = page.title.toLowerCase().includes(q)
+          if (!titleMatches) {
+            matches = false
+          }
+        }
+        break
+    }
+    
+    if (!matches) {
+      if (condition.logic === 'NOT') return true
+      return false
+    }
+  }
+  
+  return true
 }
 
 function normalizeEdge(edge: { id: string; source: string; target: string; data: Record<string, unknown> }) {
@@ -61,6 +103,25 @@ function getEdgeDedupeKey(edge: { source: string; target: string; data: Record<s
   return `${source}-${target}-${groupKey}`
 }
 
+function shouldFilterEdge(edge: { source: string; target: string; data: Record<string, unknown> }): boolean {
+  const relationshipType = edge.data.relationshipType as string
+  
+  const relCondition = currentFilterState.value.conditions.find(c => c.type === 'relationship')
+  if (relCondition) {
+    const selectedTypes = relCondition.value as string[]
+    if (selectedTypes.length > 0) {
+      const logic = relCondition.logic
+      const hasType = selectedTypes.includes(relationshipType)
+      
+      if (logic === 'AND' && !hasType) return true
+      if (logic === 'OR' && !hasType) return true
+      if (logic === 'NOT' && hasType) return true
+    }
+  }
+  
+  return false
+}
+
 async function loadPageNodeEdges(
   pageId: string,
   nodes: NodeData[],
@@ -73,7 +134,8 @@ async function loadPageNodeEdges(
   const inLinks = await blockStore.getBacklinks(pageId)
 
   for (const link of outLinks) {
-    if (!filterLinkByType(link.relationshipType)) continue
+    if (!applyFilterConditions(link.targetPageId)) continue
+    if (shouldFilterEdge({ source: pageId, target: link.targetPageId, data: { relationshipType: link.relationshipType } })) continue
     if (visitedEdges.has(link.id)) continue
     const targetPage = pageStore.getPage(link.targetPageId)
     if (!targetPage) continue
@@ -104,7 +166,8 @@ async function loadPageNodeEdges(
   }
 
   for (const link of inLinks) {
-    if (!filterLinkByType(link.relationshipType)) continue
+    if (!applyFilterConditions(link.sourceBlockId)) continue
+    if (shouldFilterEdge({ source: '', target: pageId, data: { relationshipType: link.relationshipType } })) continue
     if (visitedEdges.has(link.id)) continue
 
     let block = blockCache.get(link.sourceBlockId)
@@ -116,6 +179,8 @@ async function loadPageNodeEdges(
     }
 
     const sourcePageId = block.pageId
+    if (!applyFilterConditions(sourcePageId)) continue
+    
     const sourcePage = pageStore.getPage(sourcePageId)
     if (!sourcePage) continue
 
@@ -152,7 +217,12 @@ async function buildGraphData() {
   const blockCache = new Map<string, { pageId: string }>()
 
   const allPages = pageStore.pages.filter(p => !p.deleted)
-  for (const page of allPages) {
+  const filteredPages = allPages.filter(p => applyFilterConditions(p.id))
+  
+  stats.value.totalNodes = allPages.length
+  stats.value.filteredNodes = filteredPages.length
+
+  for (const page of filteredPages) {
     nodes.push({
       id: page.id,
       data: {
@@ -162,9 +232,12 @@ async function buildGraphData() {
     })
   }
 
-  for (const page of allPages) {
+  for (const page of filteredPages) {
     await loadPageNodeEdges(page.id, nodes, edges, visitedEdges, blockCache)
   }
+
+  stats.value.totalEdges = visitedEdges.size
+  stats.value.filteredEdges = edges.length
 
   const normalizedEdges = edges.map(e => normalizeEdge(e))
 
@@ -430,20 +503,27 @@ function handleSearch(query: string) {
   }
 }
 
-function handleToggleFilter(type: string) {
-  const idx = activeFilters.value.indexOf(type)
-  if (idx === -1) {
-    activeFilters.value.push(type)
-  } else {
-    activeFilters.value.splice(idx, 1)
+function handleFilterChange(filters: FilterState) {
+  currentFilterState.value = filters
+  
+  const searchCondition = filters.conditions.find(c => c.type === 'search')
+  if (searchCondition) {
+    handleSearch(searchCondition.value as string)
   }
-}
-
-function handleClearFilters() {
-  activeFilters.value = []
+  
+  const relCondition = filters.conditions.find(c => c.type === 'relationship')
+  if (relCondition) {
+    activeFilters.value = relCondition.value as string[]
+  }
+  
+  refreshGraphData()
 }
 
 watch(activeFilters, () => {
+  refreshGraphData()
+}, { deep: true })
+
+watch(currentFilterState, () => {
   refreshGraphData()
 }, { deep: true })
 
@@ -493,16 +573,20 @@ onBeforeUnmount(() => {
           <button class="control-btn" title="刷新" @click="handleRefresh">↻</button>
           <button class="control-btn" title="导出 PNG" @click="handleExportPng">⤓</button>
         </div>
+        <div class="stats-group">
+          <span class="stat-item">
+            节点: <strong>{{ stats.filteredNodes }}</strong> / {{ stats.totalNodes }}
+          </span>
+          <span class="stat-item">
+            边: <strong>{{ stats.filteredEdges }}</strong> / {{ stats.totalEdges }}
+          </span>
+        </div>
       </div>
     </div>
-    <SearchFilter
-      :search-query="searchQuery"
-      :active-filters="activeFilters"
-      @update:search-query="handleSearch"
-      @toggle-filter="handleToggleFilter"
-      @clear-filters="handleClearFilters"
-    />
-    <div ref="containerRef" class="graph-view-canvas"></div>
+    <div class="graph-view-body">
+      <FilterPanel @filter-change="handleFilterChange" />
+      <div ref="containerRef" class="graph-view-canvas"></div>
+    </div>
   </div>
 </template>
 
@@ -524,6 +608,12 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 
+.graph-view-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
 .graph-view-title {
   font-size: 24px;
   font-weight: 600;
@@ -533,7 +623,7 @@ onBeforeUnmount(() => {
 .graph-view-controls {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
   flex-wrap: wrap;
 }
 
@@ -599,6 +689,18 @@ onBeforeUnmount(() => {
   color: var(--text-primary);
   font-weight: 500;
   border-color: #1890ff;
+}
+
+.stats-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.stat-item strong {
+  color: var(--text-primary);
 }
 
 .graph-view-canvas {
