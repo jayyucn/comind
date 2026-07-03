@@ -150,10 +150,10 @@
 | 4.2.1 | `utils/graphExport.ts` | PNG/SVG 导出 | P2 |
 | 4.2.2 | `components/ConceptGraph.vue` | 导出按钮 | P2 |
 
-#### 4.3 全库图谱
+#### 4.3 概念网络
 | 任务 ID | 文件 | 描述 | 优先级 |
 |---------|------|------|--------|
-| 4.3.1 | `views/GlobalGraph.vue` | 全库图谱视图 | P2 |
+| 4.3.1 | `views/GlobalGraph.vue` | 概念网络视图 | P2 |
 | 4.3.2 | `router/routes.ts` | 路由配置 | P2 |
 | 4.3.3 | `components/Sidebar/SidebarNav.vue` | 导航入口 | P2 |
 
@@ -181,7 +181,7 @@ src/utils/
 └── graphExport.ts                    # 图谱导出
 
 src/views/
-└── GlobalGraph.vue                   # 全库图谱视图
+└── GlobalGraph.vue                   # 概念网络视图
 
 src/types/
 └── custom-relationship.ts           # 自定义关系类型

@@ -1008,7 +1008,7 @@ async getPageById(pageId: string): Promise<Page | undefined> {
 ### Phase 4: 高级功能
 
 - [x] 图谱导出（PNG）
-- [ ] 全库图谱视图
+- [ ] 概念网络视图
 - [ ] 自定义关系类型的持久化存储
 
 ---

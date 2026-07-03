@@ -23,7 +23,7 @@ function handleClick() {
         <Network :size="18" :stroke-width="1.75" />
       </div>
       <div class="graph-body">
-        <span class="graph-title">全库图谱</span>
+        <span class="graph-title">概念网络</span>
         <span class="graph-meta">浏览知识网络</span>
       </div>
     </div>

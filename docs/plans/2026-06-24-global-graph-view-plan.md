@@ -1,4 +1,4 @@
-# 全库图谱视图（Phase 4）实施方案
+# 概念网络视图（Phase 4）实施方案
 
 > **面向智能体执行者：** 通过 subagent-driven-development（推荐）或 executing-plans 逐任务执行本方案。步骤使用复选框（`- [ ]`）格式用于进度追踪。
 >
@@ -34,7 +34,7 @@
 ```
 src/components/
 └── GraphView/
-    ├── index.vue                      # 新建：全库图谱主页面组件
+    ├── index.vue                      # 新建：概念网络主页面组件
     └── SearchFilter.vue               # 新建：搜索框 + 关系类型过滤 chips
 
 src/router/
@@ -45,7 +45,7 @@ src/components/Sidebar/
 ├── SidebarHeader.vue                  # 修改：添加图谱入口按钮
 
 src/composables/
-└── useGlobalGraph.ts                  # 新建：全库图谱数据加载与状态管理
+└── useGlobalGraph.ts                  # 新建：概念网络数据加载与状态管理
 ```
 
 ---
@@ -85,7 +85,7 @@ git commit -m "feat(graph): add /graph route for global knowledge graph"
 
 ---
 
-## 任务 2：创建全库图谱页面组件
+## 任务 2：创建概念网络页面组件
 
 **涉及文件：**
 - 新建：`comind/src/components/GraphView/index.vue`
@@ -241,7 +241,7 @@ function getTypeLabel(type: string): string {
 </style>
 ```
 
-### 2.2 创建全库图谱主组件
+### 2.2 创建概念网络主组件
 
 - [ ] **步骤 2：新建 `GraphView/index.vue`**
 
@@ -692,7 +692,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="graph-view-page">
     <div class="graph-view-header">
-      <h1 class="graph-view-title">🌐 全库图谱</h1>
+      <h1 class="graph-view-title">🌐 概念网络</h1>
       <div class="graph-view-controls">
         <div class="control-group">
           <span class="control-label">深度</span>
@@ -867,7 +867,7 @@ git commit -m "feat(graph): add global graph view with search and filter"
 <button
   class="sidebar-nav-btn"
   @click="$router.push('/graph')"
-  title="全库图谱"
+  title="概念网络"
 >
   🌐
 </button>
@@ -954,7 +954,7 @@ git commit -m "feat(graph): complete global knowledge graph view (Phase 4)"
 ## 验收清单
 
 - [ ] `/graph` 路由注册成功，可通过侧边栏按钮访问
-- [ ] 全库图谱页面显示所有页面节点（虚线表示未展开）
+- [ ] 概念网络页面显示所有页面节点（虚线表示未展开）
 - [ ] 搜索框支持按标题搜索并聚焦节点
 - [ ] 关系类型过滤 chips 支持多类型过滤
 - [ ] 单击节点展开邻居边（节点变为实线）
@@ -978,7 +978,7 @@ git commit -m "feat(graph): complete global knowledge graph view (Phase 4)"
 
 ## 下一步
 
-本方案完成后，全库图谱功能可用。后续可扩展：
+本方案完成后，概念网络功能可用。后续可扩展：
 - **节点聚类**：按领域/连接度自动分组
 - **全文搜索**：支持按页面内容搜索
 - **路由参数支持**：`/graph?focus=pageId&filter=depends-on`
