@@ -15,6 +15,7 @@ chrono = { version = "0.4", features = ["serde"] }
 tauri-plugin-dialog = "2"
 regex = "1"
 log = "0.4"
+simple_logger = "4"
 tokio = { version = "1", features = ["full"] }
 
 [build-dependencies]

@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fs::{self, File};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Debug, Serialize)]
 pub struct ExportResult {
@@ -19,6 +19,7 @@ pub struct ExportResult {
     pub relationship_types_exported: usize,
     pub templates_exported: usize,
     pub directory: String,
+    pub last_sync_time: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -240,6 +241,7 @@ pub fn export_all(
         relationship_types_exported: config.relationship_types.len(),
         templates_exported: config.templates.len(),
         directory: dir.to_string_lossy().to_string(),
+        last_sync_time: config.last_sync_time,
     })
 }
 
@@ -337,6 +339,7 @@ pub fn export_changed(
         relationship_types_exported: changed_relationship_types.len(),
         templates_exported: changed_templates.len(),
         directory: dir.to_string_lossy().to_string(),
+        last_sync_time,
     })
 }
 
@@ -454,7 +457,7 @@ pub fn import_all(
         let existing_page = PageService::get_by_title(storage, &metadata.id).ok().flatten()
             .or_else(|| PageService::get_by_title(storage, &entry.path().file_stem().unwrap_or_default().to_string_lossy()).ok().flatten());
 
-        let page = if let Some(mut existing) = existing_page {
+        let page = if let Some(existing) = existing_page {
             if strategy == "merge" {
                 let blocks = BlockService::get_by_page_id(storage, &existing.id)?;
                 for block in &blocks {

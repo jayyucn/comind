@@ -3,8 +3,28 @@ use comind_core::{
     storage::StorageAdapter,
     types::*,
 };
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 use tauri::State;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PageUpdate {
+    id: Option<String>,
+    block_id: Option<String>,
+    title: String,
+    r#type: String,
+    icon: Option<String>,
+    cover: Option<String>,
+    #[serde(default = "default_aliases")]
+    aliases: String,
+    file_path: Option<String>,
+    children_count: Option<i64>,
+    word_count: Option<i64>,
+}
+
+fn default_aliases() -> String {
+    "[]".to_string()
+}
 
 fn execute_with_adapter<F, R>(
     db: State<'_, super::state::DatabaseConnection>,
@@ -106,9 +126,12 @@ pub async fn save_block_tree(
 ) -> Result<Vec<Block>, String> {
     execute_with_adapter(db, |storage| {
         let mut results = Vec::new();
+        let mut page_ids = std::collections::HashSet::new();
+        
         for block_json in blocks {
             let block: Block = serde_json::from_value(block_json)
                 .map_err(|e| format!("Failed to parse block: {}", e))?;
+            page_ids.insert(block.page_id.clone());
             let existing = storage.blocks().get_by_id(&block.id);
             let result = match existing {
                 Ok(_) => storage.blocks().update(&block),
@@ -116,6 +139,22 @@ pub async fn save_block_tree(
             };
             results.push(result?);
         }
+        
+        for page_id in page_ids {
+            let _ = PageService::update(
+                storage,
+                &page_id,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
+        }
+        
         Ok(results)
     })
 }
@@ -126,31 +165,45 @@ pub async fn save_page(
     page: serde_json::Value,
 ) -> Result<Page, String> {
     execute_with_adapter(db, |storage| {
-        let page: Page =
+        let update: PageUpdate =
             serde_json::from_value(page).map_err(|e| format!("Failed to parse page: {}", e))?;
-        let existing = storage.pages().get_by_id(&page.id);
-        match existing {
-            Ok(_) => PageService::update(
+        match update.id {
+            Some(id) => {
+                let existing = storage.pages().get_by_id(&id);
+                match existing {
+                    Ok(_) => PageService::update(
+                        storage,
+                        &id,
+                        Some(&update.title),
+                        Some(&update.r#type),
+                        update.icon.as_deref(),
+                        update.cover.as_deref(),
+                        Some(&update.aliases),
+                        update.file_path.as_deref(),
+                        update.children_count.or(Some(0)),
+                        update.word_count.or(Some(0)),
+                    ),
+                    Err(_) => PageService::create(
+                        storage,
+                        update.block_id.as_deref().unwrap_or(""),
+                        &update.title,
+                        Some(&update.r#type),
+                        update.icon.as_deref(),
+                        update.cover.as_deref(),
+                        Some(&update.aliases),
+                        update.file_path.as_deref(),
+                    ),
+                }
+            }
+            None => PageService::create(
                 storage,
-                &page.id,
-                Some(&page.title),
-                Some(&page.r#type),
-                page.icon.as_deref(),
-                page.cover.as_deref(),
-                Some(&page.aliases),
-                page.file_path.as_deref(),
-                Some(page.children_count),
-                Some(page.word_count),
-            ),
-            Err(_) => PageService::create(
-                storage,
-                page.block_id.as_deref().unwrap_or(""),
-                &page.title,
-                Some(&page.r#type),
-                page.icon.as_deref(),
-                page.cover.as_deref(),
-                Some(&page.aliases),
-                page.file_path.as_deref(),
+                update.block_id.as_deref().unwrap_or(""),
+                &update.title,
+                Some(&update.r#type),
+                update.icon.as_deref(),
+                update.cover.as_deref(),
+                Some(&update.aliases),
+                update.file_path.as_deref(),
             ),
         }
     })
@@ -184,7 +237,7 @@ pub async fn set_property(
 ) -> Result<Property, String> {
     execute_with_adapter(db, |storage| {
         let existing = PropertyService::get_by_block_id_and_key(storage, block_id, key)?;
-        match existing {
+        let result = match existing {
             Some(mut prop) => {
                 prop.value = value.to_string();
                 prop.r#type = type_.to_string();
@@ -192,7 +245,24 @@ pub async fn set_property(
                 storage.properties().update(&prop)
             }
             None => PropertyService::create(storage, block_id, key, value, type_, 0, 0, 1),
+        };
+        
+        if let Ok(block) = storage.blocks().get_by_id(block_id) {
+            let _ = PageService::update(
+                storage,
+                &block.page_id,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
         }
+        
+        result
     })
 }
 
@@ -206,6 +276,22 @@ pub async fn delete_property(
         if let Some(prop) = PropertyService::get_by_block_id_and_key(storage, block_id, key)? {
             storage.properties().delete(&prop.id)?;
         }
+        
+        if let Ok(block) = storage.blocks().get_by_id(block_id) {
+            let _ = PageService::update(
+                storage,
+                &block.page_id,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
+        }
+        
         Ok(())
     })
 }
@@ -260,6 +346,8 @@ pub async fn execute_batch(
 ) -> Result<Vec<serde_json::Value>, String> {
     execute_with_adapter(db, |storage| {
         let mut results = Vec::new();
+        let mut page_ids = std::collections::HashSet::new();
+        
         for op in operations {
             let entity: String = op
                 .get("entity")
@@ -276,11 +364,13 @@ pub async fn execute_batch(
             let result = match (entity.as_str(), action.as_str()) {
                 ("block", "create") => {
                     let block: Block = serde_json::from_value(params)?;
+                    page_ids.insert(block.page_id.clone());
                     let result = storage.blocks().create(&block)?;
                     serde_json::to_value(result)?
                 }
                 ("block", "update") => {
                     let block: Block = serde_json::from_value(params)?;
+                    page_ids.insert(block.page_id.clone());
                     let result = storage.blocks().update(&block)?;
                     serde_json::to_value(result)?
                 }
@@ -290,6 +380,9 @@ pub async fn execute_batch(
                         .and_then(|v| v.as_str())
                         .unwrap_or_default()
                         .to_string();
+                    if let Ok(block) = storage.blocks().get_by_id(&id) {
+                        page_ids.insert(block.page_id);
+                    }
                     storage.links().delete_by_source_block_id(&id)?;
                     storage.properties().delete_by_block_id(&id)?;
                     storage.blocks().delete(&id)?;
@@ -418,6 +511,22 @@ pub async fn execute_batch(
             };
             results.push(result);
         }
+        
+        for page_id in page_ids {
+            let _ = PageService::update(
+                storage,
+                &page_id,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
+        }
+        
         Ok(results)
     })
 }

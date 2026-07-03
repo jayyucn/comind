@@ -1,5 +1,4 @@
-use std::path::Path;
-use tauri::{Manager, RunEvent, WindowEvent};
+use tauri::{Manager, WindowEvent};
 
 mod commands;
 mod config;
@@ -8,6 +7,13 @@ mod state;
 mod sync;
 
 fn main() {
+    simple_logger::SimpleLogger::new()
+        .with_level(log::LevelFilter::Warn)
+        .init()
+        .expect("Failed to initialize logger");
+    
+    log::info!("Starting comind application");
+    
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
