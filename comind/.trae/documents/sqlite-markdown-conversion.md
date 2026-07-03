@@ -2,7 +2,7 @@
 
 ## Context
 
-用户请求"添加 sqlite 和 markdown 之间的转换入口"，并附加需求："增加 sqlite→md 自动同步的功能，每隔5分钟自动同步一次，关闭页面或关闭程序时同步"。
+用户请求"添加 sqlite 和 markdown 之间的转换入口"，并附加需求："增加 sqlite→md 自动同步的功能，每隔5秒自动同步一次，关闭页面或关闭程序时同步"。
 
 **现状**：
 - `SettingsModal.vue` 的"数据管理"区有两个**禁用**的导出/导入按钮（当前标签为 JSON）
@@ -12,7 +12,7 @@
 
 **目标**：
 1. 启用 SettingsModal 的导出/导入按钮，实现 SQLite ↔ Markdown 转换
-2. 添加自动同步开关（每5分钟一次，关闭时同步）
+2. 添加自动同步开关（每5秒一次，关闭时同步）
 3. 全部在 Rust 实现（Tauri 命令直接操作 SQLite + `std::fs` 读写文件）
 
 ## 设计决策
@@ -27,6 +27,8 @@
 | 元数据格式 | 单行 JSON HTML 注释 | 复用 `serde_json`，无需引入 YAML |
 | 同步开关运行时生效 | 配置变更需重启生效 | 与现有"数据库路径变更需重启"行为一致 |
 | replace 策略实现 | 清空所有 Block/Link/Property + Page upsert | 避免软删除 Page 的 UNIQUE 冲突问题 |
+| 同步间隔 | 5秒 | 确保内容快速同步，设备切换时内容一致 |
+| 配置版本管理 | 添加 config_version 字段 | 支持默认值变更时自动迁移 |
 
 **关键技术约束**（已验证）：
 - `Page::delete` 是**软删除**（`UPDATE deleted=1`），SQLite UNIQUE 约束是全局的，所以不能简单"软删除后创建同名 Page"
@@ -34,6 +36,7 @@
 - `BlockService::build_tree(storage, page_id)` 返回 `BlockTree { block_map, root_blocks, children_map }`，可直接复用
 - `PageService::get_by_title` 只查 `deleted=0`，无法找到已删除的 Page
 - `Page.aliases` 在 Rust 是 JSON 字符串（如 `'["a","b"]'`），需 `serde_json::from_str::<Vec<String>>` 解析
+- 当用户修改 Block 内容时，需要更新对应 Page 的 `updated_at` 字段，否则变更同步无法检测到变化
 
 ## MD2 格式规范
 
@@ -153,10 +156,11 @@ pub fn sync_on_focus(app_handle: &tauri::AppHandle)
 
 | 场景 | 同步类型 | 触发方式 | 是否异步 |
 |------|----------|----------|----------|
-| 定时自动同步（每5分钟） | 变更同步 | `tokio::time::interval` | ✅ 异步 |
+| 应用启动首次同步 | 全量同步 | `IS_FIRST_SYNC` 标志 | ✅ 异步 |
+| 定时自动同步（每5秒） | 变更同步 | `tokio::time::interval` | ✅ 异步 |
 | 应用退出 | 全量同步 | `RunEvent::ExitRequested` | ✅ 异步（后台执行，带超时） |
 | 窗口最小化/切换到后台 | 变更同步 | `WindowEvent::Focused(false)` | ✅ 异步 |
-| 窗口恢复/切换到前台 | 全量同步（仅首次） | `WindowEvent::Focused(true)` | ✅ 异步 |
+| 窗口恢复/切换到前台 | 全量同步（仅距上次全量同步超过1小时） | `WindowEvent::Focused(true)` | ✅ 异步 |
 | 用户手动点击"立即同步" | 全量同步 | Tauri 命令 | ✅ 异步 |
 | 页面保存后（防抖5秒） | 变更同步 | 前端事件通知 | ✅ 异步 |
 
@@ -164,11 +168,14 @@ pub fn sync_on_focus(app_handle: &tauri::AppHandle)
 - 导出所有 Page + Block + Property + RelationshipType + Template
 - 覆盖所有文件
 - 用于首次同步、应用退出、手动触发
+- 应用启动后第一次同步执行全量同步，确保所有内容都能导出
 
 **变更同步（export_changed）**：
 - 只导出 `updated_at > last_sync_time` 的内容
 - 只更新修改过的文件
 - 用于定时同步、窗口切换等频繁场景
+- 只有当 `last_sync_time > now`（上次同步时间在未来）时，才回退到全量同步
+- 当用户修改 Block/Property 等内容时，需要更新对应 Page 的 `updated_at` 字段
 
 **最后同步时间记录**：
 - 在 `.comind.json` 中存储 `last_sync_time`
@@ -185,8 +192,22 @@ pub fn sync_on_focus(app_handle: &tauri::AppHandle)
 - 如果超时，只记录日志，不阻塞退出（优先保证退出流畅）
 
 `start_sync_task`：在 setup 中调用，读取 AppConfig，若 `sync_enabled` 则启动后台任务：
+- 使用 `ConfigManager` 获取配置，支持运行时配置更新
 - `tauri::async_runtime::spawn` + `tokio::time::interval(Duration::from_secs(sync_interval_secs))`
-- 每 tick 调用 `markdown::export_changed`（变更同步）
+- 应用启动后第一次同步执行全量同步（`IS_FIRST_SYNC` 标志）
+- 后续每 tick 调用 `markdown::export_changed`（变更同步）
+- 动态检测配置变化，自动更新同步间隔
+
+`ConfigManager`：基于 `Mutex` 的配置管理结构，解决多线程配置访问与更新问题：
+- `get_config()`：获取配置的 `MutexGuard`
+- `update_config()`：更新内存中的配置
+- 所有配置读取路径（sync.rs、commands.rs）通过 ConfigManager 获取配置
+
+**配置版本迁移**：
+- `config_version` 字段记录配置版本（默认为 0）
+- `CURRENT_CONFIG_VERSION` 常量定义当前版本
+- 加载配置时自动执行迁移，迁移后保存更新配置
+- 当前版本 0→1 迁移：将 `sync_interval_secs` 更新为新默认值 5
 
 `sync_on_exit`：在 `RunEvent::ExitRequested` 中调用，**异步执行**一次 `markdown::export_all`（全量同步）：
 - 使用 `tauri::async_runtime::spawn` 启动后台任务
@@ -212,13 +233,15 @@ pub async fn import_from_markdown(db: State<...>, directory: String, strategy: S
 pub async fn get_sync_config(app_config: State<...>) -> Result<serde_json::Value, String>
 
 #[tauri::command]
-pub async fn set_sync_config(config_dir: State<...>, enabled: bool, directory: Option<String>, interval_secs: Option<u64>) -> Result<(), String>
+pub async fn set_sync_config(config_manager: State<ConfigManager>, config_dir: State<...>, enabled: bool, directory: Option<String>, interval_secs: Option<u64>) -> Result<(), String>
 
 #[tauri::command]
 pub async fn sync_now(db: State<...>, app_config: State<...>) -> Result<ExportResult, String>
 ```
 
-`set_sync_config` 通过 `AppConfig::load` + 修改 + `save` 实现（State 是只读的，修改后需重启生效）
+`set_sync_config` 通过 `AppConfig::load` + 修改 + `save` + `config_manager.update_config()` 实现（修改后通过 ConfigManager 更新内存状态，运行时生效）
+
+`save_block_tree`、`set_property`、`delete_property`、`execute_batch` 命令在修改内容后会更新对应 Page 的 `updated_at` 字段，确保变更同步能检测到变化
 
 ### 步骤 6: main.rs 注册模块和命令
 
@@ -278,12 +301,14 @@ function triggerSyncDebounced() {
 **新建**：
 - `d:\comind\comind\src-tauri\src\markdown.rs` — 序列化/反序列化核心
 - `d:\comind\comind\src-tauri\src\sync.rs` — 自动同步管理
+- `d:\comind\comind\src-tauri\src\state.rs` — 状态管理（ConfigManager）
 
 **修改**：
-- `d:\comind\comind\src-tauri\Cargo.toml` — 添加 regex 依赖
-- `d:\comind\comind\src-tauri\src\config.rs` — 扩展 AppConfig
-- `d:\comind\comind\src-tauri\src\commands.rs` — 新增 5 个命令
-- `d:\comind\comind\src-tauri\src\main.rs` — 注册模块/命令 + 启动同步 + 关闭回调
+- `d:\comind\comind\src-tauri\Cargo.toml` — 添加 regex、log、tokio、simple_logger 依赖
+- `d:\comind\comind\src-tauri\src\config.rs` — 扩展 AppConfig（添加 sync_enabled、sync_directory、sync_interval_secs、config_version）
+- `d:\comind\comind\src-tauri\src\commands.rs` — 新增 5 个命令 + 修改 save_block_tree/set_property/delete_property/execute_batch 更新 Page updated_at
+- `d:\comind\comind\src-tauri\src\main.rs` — 注册模块/命令 + 启动同步 + 关闭回调 + 日志初始化
+- `d:\comind\comind\crates\comind-core\src\storage\sqlite.rs` — 添加默认关系类型初始化
 - `d:\comind\comind\src\wasm\tauri-client.ts` — 新增调用函数
 - `d:\comind\comind\src\wasm\client.ts` — 新增导出函数
 - `d:\comind\comind\src\components\Settings\SettingsModal.vue` — UI 改动
