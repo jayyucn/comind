@@ -16,7 +16,7 @@ pub struct AppConfig {
 }
 
 fn default_sync_interval() -> u64 {
-    300
+    5
 }
 
 impl Default for AppConfig {

@@ -219,7 +219,7 @@ pub async fn get_db_path(
 
 #[tauri::command]
 pub async fn set_db_path(
-    _app_config: State<'_, super::config::AppConfig>,
+    config_manager: State<'_, super::state::ConfigManager>,
     config_dir: State<'_, std::path::PathBuf>,
     path: &str,
 ) -> Result<String, String> {
@@ -228,32 +228,28 @@ pub async fn set_db_path(
         std::fs::create_dir_all(&new_path)
             .map_err(|e| format!("Failed to create directory: {}", e))?;
     }
-    let config = super::config::AppConfig {
-        database_path: Some(path.to_string()),
-        sync_enabled: false,
-        sync_directory: None,
-        sync_interval_secs: 300,
-    };
+    let mut config = super::config::AppConfig::load(&config_dir).unwrap_or_default();
+    config.database_path = Some(path.to_string());
     config
         .save(&config_dir)
         .map_err(|e| format!("Failed to save config: {}", e))?;
+    
+    config_manager.update_config(config)?;
     Ok(path.to_string())
 }
 
 #[tauri::command]
 pub async fn reset_db_path(
-    _app_config: State<'_, super::config::AppConfig>,
+    config_manager: State<'_, super::state::ConfigManager>,
     config_dir: State<'_, std::path::PathBuf>,
 ) -> Result<String, String> {
-    let config = super::config::AppConfig {
-        database_path: None,
-        sync_enabled: false,
-        sync_directory: None,
-        sync_interval_secs: 300,
-    };
+    let mut config = super::config::AppConfig::load(&config_dir).unwrap_or_default();
+    config.database_path = None;
     config
         .save(&config_dir)
         .map_err(|e| format!("Failed to save config: {}", e))?;
+    
+    config_manager.update_config(config)?;
     Ok("default".to_string())
 }
 

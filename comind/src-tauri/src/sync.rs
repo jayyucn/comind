@@ -16,7 +16,7 @@ fn get_config_clone(app_handle: &AppHandle) -> Option<AppConfig> {
 
 pub fn start_sync_task(app_handle: AppHandle) {
     tauri::async_runtime::spawn(async move {
-        let mut interval = interval(Duration::from_secs(300));
+        let mut interval = interval(Duration::from_secs(5));
 
         loop {
             interval.tick().await;
