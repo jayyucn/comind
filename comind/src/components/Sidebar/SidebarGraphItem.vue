@@ -24,7 +24,7 @@ function handleClick() {
       </div>
       <div class="graph-body">
         <span class="graph-title">概念网络</span>
-        <span class="graph-meta">浏览知识网络</span>
+        <span class="graph-meta">浏览概念网络</span>
       </div>
     </div>
     <div class="graph-arrow">
