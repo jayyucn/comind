@@ -13,8 +13,8 @@
       {
         "label": "main",
         "title": "comind",
-        "width": 1200,
-        "height": 800,
+        "width": 1600,
+        "height": 1080,
         "center": true,
         "visible": true,
         "decorations": false,
