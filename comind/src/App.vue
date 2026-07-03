@@ -265,14 +265,16 @@ function handleMainClick(e: MouseEvent) {
         </div>
       </div>
 
-      <div class="content-body">
-        <main class="main-content" :class="{ 'is-fullwidth-content': isFullWidthPage }">
-          <RouterView />
-        </main>
+      <div class="page-content-wrapper">
+        <div class="content-body">
+          <main class="main-content" :class="{ 'is-fullwidth-content': isFullWidthPage }">
+            <RouterView />
+          </main>
+        </div>
+
+        <RightSidebar />
       </div>
     </div>
-
-    <RightSidebar />
 
     <ConfirmDialog :visible="showTrashedPageWarning" title="页面已在回收站中"
       :message="`页面「${trashedPageToRestore || ''}」曾在回收站中。是否要恢复该页面？`" confirm-text="恢复页面" cancel-text="忽略"
@@ -296,11 +298,18 @@ function handleMainClick(e: MouseEvent) {
 
 .page-scroll-wrapper {
   flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   min-width: 0;
-  scrollbar-width: none;
   position: relative;
+}
+
+.page-content-wrapper {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-width: 0;
 }
 
 .collapse-btn {
@@ -380,7 +389,15 @@ function handleMainClick(e: MouseEvent) {
 }
 
 .content-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
   min-width: 0;
+  scrollbar-width: none;
+}
+
+.content-body::-webkit-scrollbar {
+  display: none;
 }
 
 .top-right-controls {
