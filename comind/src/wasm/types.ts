@@ -115,3 +115,28 @@ export interface BatchResult {
   id?: string
   error?: string
 }
+
+export interface ExportResult {
+  pages_exported: number
+  blocks_exported: number
+  properties_exported: number
+  relationship_types_exported: number
+  templates_exported: number
+  directory: string
+}
+
+export interface ImportResult {
+  pages_imported: number
+  blocks_imported: number
+  properties_imported: number
+  links_created: number
+  relationship_types_imported: number
+  templates_imported: number
+  strategy: string
+}
+
+export interface SyncConfig {
+  sync_enabled: boolean
+  sync_directory: string | null
+  sync_interval_secs: number
+}

@@ -11,7 +11,7 @@ function parseJsonResult<T>(result: any): T {
 import type {
   Block, Page, Property, Link, RelationshipType,
   UserTemplate, SearchResult, BlockUpdate, PageUpdate,
-  BatchOperation, BatchResult
+  BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig
 } from './types'
 
 export interface CoreClient {
@@ -248,4 +248,54 @@ export async function resetDbPath(): Promise<string> {
     return tauri.tauriResetDbPath()
   }
   throw new Error('Database path setting is only available in desktop app')
+}
+
+export async function exportToMarkdown(directory: string): Promise<ExportResult> {
+  if (isTauriEnvironment()) {
+    return tauri.tauriExportToMarkdown(directory)
+  }
+  throw new Error('Markdown export is only available in desktop app')
+}
+
+export async function importFromMarkdown(directory: string, strategy: string): Promise<ImportResult> {
+  if (isTauriEnvironment()) {
+    return tauri.tauriImportFromMarkdown(directory, strategy)
+  }
+  throw new Error('Markdown import is only available in desktop app')
+}
+
+export async function getSyncConfig(): Promise<SyncConfig> {
+  if (isTauriEnvironment()) {
+    return tauri.tauriGetSyncConfig()
+  }
+  return Promise.resolve({
+    sync_enabled: false,
+    sync_directory: null,
+    sync_interval_secs: 300,
+  })
+}
+
+export async function setSyncConfig(
+  enabled: boolean,
+  directory?: string,
+  intervalSecs?: number
+): Promise<void> {
+  if (isTauriEnvironment()) {
+    return tauri.tauriSetSyncConfig(enabled, directory, intervalSecs)
+  }
+  throw new Error('Sync config is only available in desktop app')
+}
+
+export async function syncNow(): Promise<ExportResult> {
+  if (isTauriEnvironment()) {
+    return tauri.tauriSyncNow()
+  }
+  throw new Error('Sync is only available in desktop app')
+}
+
+export async function triggerSync(): Promise<ExportResult> {
+  if (isTauriEnvironment()) {
+    return tauri.tauriTriggerSync()
+  }
+  throw new Error('Sync is only available in desktop app')
 }

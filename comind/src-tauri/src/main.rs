@@ -1,9 +1,11 @@
 use std::path::Path;
-use tauri::Manager;
+use tauri::{Manager, RunEvent, WindowEvent};
 
 mod commands;
 mod config;
+mod markdown;
 mod state;
+mod sync;
 
 fn main() {
     tauri::Builder::default()
@@ -28,10 +30,27 @@ fn main() {
                 state::DatabaseConnection::new(&db_path).expect("Failed to initialize database");
             app.manage(db);
 
-            app.manage(app_config);
+            let config_manager = state::ConfigManager::new(app_config);
+            app.manage(config_manager);
             app.manage(config_dir);
 
+            sync::start_sync_task(app_handle.clone());
+
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let WindowEvent::Focused(focused) = event {
+                let app_handle = window.app_handle();
+                if !focused {
+                    sync::sync_on_minimize(app_handle.clone());
+                } else {
+                    sync::sync_on_focus(app_handle.clone());
+                }
+            }
+            if let WindowEvent::CloseRequested { .. } = event {
+                let app_handle = window.app_handle();
+                sync::sync_on_exit(app_handle.clone());
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_block,
@@ -52,6 +71,12 @@ fn main() {
             commands::get_db_path,
             commands::set_db_path,
             commands::reset_db_path,
+            commands::export_to_markdown,
+            commands::import_from_markdown,
+            commands::get_sync_config,
+            commands::set_sync_config,
+            commands::sync_now,
+            commands::trigger_sync,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

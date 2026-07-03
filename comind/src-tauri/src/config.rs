@@ -4,15 +4,28 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use tauri::Manager;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub database_path: Option<String>,
+    #[serde(default)]
+    pub sync_enabled: bool,
+    #[serde(default)]
+    pub sync_directory: Option<String>,
+    #[serde(default = "default_sync_interval")]
+    pub sync_interval_secs: u64,
+}
+
+fn default_sync_interval() -> u64 {
+    300
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
             database_path: None,
+            sync_enabled: false,
+            sync_directory: None,
+            sync_interval_secs: 300,
         }
     }
 }

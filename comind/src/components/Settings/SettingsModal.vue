@@ -4,9 +4,9 @@ import { useSettingsModal } from '../../composables/useSettingsModal'
 import { pushModal, popModal } from '../../composables/useModalKeyboard'
 import { useTheme } from '../../composables/useTheme'
 import RelationshipTypesPanel from './RelationshipTypesPanel.vue'
-import { getDbPath, setDbPath, resetDbPath } from '../../wasm/client'
+import { getDbPath, setDbPath, resetDbPath, exportToMarkdown, importFromMarkdown, getSyncConfig, setSyncConfig, syncNow } from '../../wasm/client'
 import { isTauriEnvironment, tauriPickDirectory } from '../../wasm/tauri-client'
-import { X, Sun, Moon, Monitor, Folder, RotateCcw, AlertCircle } from 'lucide-vue-next'
+import { X, Sun, Moon, Monitor, Folder, RotateCcw, AlertCircle, Upload, Download, RefreshCw, ToggleLeft, ToggleRight } from 'lucide-vue-next'
 
 const { isOpen, close } = useSettingsModal()
 
@@ -30,12 +30,33 @@ const customDbPath = ref('')
 const showDbPathInput = ref(false)
 const isDesktop = isTauriEnvironment()
 
+const syncEnabled = ref(false)
+const syncDirectory = ref('')
+const syncInterval = ref(5)
+const showSyncDirectoryInput = ref(false)
+
+const exportLoading = ref(false)
+const importLoading = ref(false)
+const syncLoading = ref(false)
+
 async function loadDbPath() {
   if (!isDesktop) return
   try {
     dbPath.value = await getDbPath()
   } catch (e) {
     console.error('Failed to load database path:', e)
+  }
+}
+
+async function loadSyncConfig() {
+  if (!isDesktop) return
+  try {
+    const config = await getSyncConfig()
+    syncEnabled.value = config.sync_enabled
+    syncDirectory.value = config.sync_directory || ''
+    syncInterval.value = config.sync_interval_secs / 60
+  } catch (e) {
+    console.error('Failed to load sync config:', e)
   }
 }
 
@@ -73,10 +94,83 @@ async function handlePickDirectory() {
   }
 }
 
+async function handlePickSyncDirectory() {
+  try {
+    const selected = await tauriPickDirectory()
+    if (selected) {
+      syncDirectory.value = selected
+      showSyncDirectoryInput.value = false
+      await setSyncConfig(syncEnabled.value, selected, syncInterval.value * 60)
+    }
+  } catch (e) {
+    console.error('Failed to pick sync directory:', e)
+  }
+}
+
+async function handleSetSyncDirectory() {
+  if (!syncDirectory.value.trim()) return
+  try {
+    await setSyncConfig(syncEnabled.value, syncDirectory.value.trim(), syncInterval.value * 60)
+    showSyncDirectoryInput.value = false
+  } catch (e) {
+    console.error('Failed to set sync directory:', e)
+  }
+}
+
+async function handleToggleSync() {
+  try {
+    syncEnabled.value = !syncEnabled.value
+    await setSyncConfig(syncEnabled.value, syncDirectory.value || undefined, syncInterval.value * 60)
+  } catch (e) {
+    console.error('Failed to toggle sync:', e)
+    syncEnabled.value = !syncEnabled.value
+  }
+}
+
+async function handleExport() {
+  try {
+    exportLoading.value = true
+    const selected = await tauriPickDirectory()
+    if (selected) {
+      await exportToMarkdown(selected)
+    }
+  } catch (e) {
+    console.error('Failed to export:', e)
+  } finally {
+    exportLoading.value = false
+  }
+}
+
+async function handleImport() {
+  try {
+    importLoading.value = true
+    const selected = await tauriPickDirectory()
+    if (selected) {
+      await importFromMarkdown(selected, 'merge')
+    }
+  } catch (e) {
+    console.error('Failed to import:', e)
+  } finally {
+    importLoading.value = false
+  }
+}
+
+async function handleSyncNow() {
+  try {
+    syncLoading.value = true
+    await syncNow()
+  } catch (e) {
+    console.error('Failed to sync:', e)
+  } finally {
+    syncLoading.value = false
+  }
+}
+
 watch(isOpen, async (visible) => {
   if (visible) {
     pushModal('settings-modal')
     await loadDbPath()
+    await loadSyncConfig()
   } else {
     popModal('settings-modal')
   }
@@ -226,19 +320,81 @@ onUnmounted(() => {
                   </div>
                   <span class="setting-value">IndexedDB</span>
                 </div>
+                <div v-if="isDesktop" class="setting-item setting-item--column">
+                  <div class="setting-info">
+                    <span class="setting-label">自动同步</span>
+                    <span class="setting-desc">将数据自动同步到 Markdown 文件，切换设备时保持一致</span>
+                  </div>
+                  <div class="sync-container">
+                    <button class="sync-toggle" @click="handleToggleSync">
+                      <ToggleLeft v-if="!syncEnabled" :size="16" :stroke-width="1.75" />
+                      <ToggleRight v-else :size="16" :stroke-width="1.75" />
+                      <span>{{ syncEnabled ? '已开启' : '已关闭' }}</span>
+                    </button>
+                    <div v-if="syncEnabled" class="sync-options">
+                      <div class="sync-directory">
+                        <div v-if="!showSyncDirectoryInput" class="sync-directory-display">
+                          <Folder :size="12" :stroke-width="1.75" />
+                          <span>{{ syncDirectory || '未设置目录' }}</span>
+                          <button class="sync-pick-btn" @click="showSyncDirectoryInput = true">选择</button>
+                        </div>
+                        <div v-else class="sync-directory-input">
+                          <input
+                            v-model="syncDirectory"
+                            type="text"
+                            class="sync-input"
+                            placeholder="输入同步目录路径"
+                            @keydown.enter="handleSetSyncDirectory"
+                          />
+                          <button class="sync-input-btn" @click="handlePickSyncDirectory">
+                            <Folder :size="12" :stroke-width="1.75" />
+                          </button>
+                          <button class="sync-input-btn" @click="handleSetSyncDirectory">确定</button>
+                          <button class="sync-input-btn sync-input-btn--secondary" @click="showSyncDirectoryInput = false">取消</button>
+                        </div>
+                      </div>
+                      <div class="sync-interval">
+                        <span>同步间隔</span>
+                        <input
+                          v-model.number="syncInterval"
+                          type="number"
+                          min="1"
+                          max="60"
+                          class="sync-interval-input"
+                          @change="setSyncConfig(syncEnabled, syncDirectory || undefined, syncInterval * 60)"
+                        />
+                        <span>分钟</span>
+                      </div>
+                      <button class="sync-now-btn" :disabled="syncLoading" @click="handleSyncNow">
+                        <RefreshCw :size="12" :stroke-width="1.75" :class="{ spinning: syncLoading }" />
+                        {{ syncLoading ? '同步中...' : '立即同步' }}
+                      </button>
+                    </div>
+                  </div>
+                  <div class="sync-note">
+                    <AlertCircle :size="12" :stroke-width="1.75" />
+                    <span>开启后会定时将数据导出到指定目录的 Markdown 文件</span>
+                  </div>
+                </div>
                 <div class="setting-item">
                   <div class="setting-info">
                     <span class="setting-label">导出数据</span>
-                    <span class="setting-desc">将所有页面和块导出为 JSON（即将推出）</span>
+                    <span class="setting-desc">将所有页面和块导出为 Markdown 文件</span>
                   </div>
-                  <button class="setting-btn" disabled>导出</button>
+                  <button class="setting-btn" :disabled="!isDesktop || exportLoading" @click="handleExport">
+                    <Download :size="12" :stroke-width="1.75" />
+                    {{ exportLoading ? '导出中...' : '导出' }}
+                  </button>
                 </div>
                 <div class="setting-item">
                   <div class="setting-info">
                     <span class="setting-label">导入数据</span>
-                    <span class="setting-desc">从 JSON 文件导入数据（即将推出）</span>
+                    <span class="setting-desc">从 Markdown 文件导入数据（合并模式）</span>
                   </div>
-                  <button class="setting-btn" disabled>导入</button>
+                  <button class="setting-btn" :disabled="!isDesktop || importLoading" @click="handleImport">
+                    <Upload :size="12" :stroke-width="1.75" />
+                    {{ importLoading ? '导入中...' : '导入' }}
+                  </button>
                 </div>
               </template>
 
@@ -576,6 +732,185 @@ onUnmounted(() => {
   font-size: 11px;
   color: var(--text-tertiary);
   padding-top: 4px;
+}
+
+.sync-container {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sync-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-family: inherit;
+  align-self: flex-start;
+  transition: background 80ms ease;
+}
+
+.sync-toggle:hover {
+  background: var(--bg-active);
+}
+
+.sync-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-left: 20px;
+  border-left: 1px solid var(--border);
+}
+
+.sync-directory {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sync-directory-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--bg-hover);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.sync-pick-btn {
+  margin-left: auto;
+  padding: 4px 8px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-family: inherit;
+}
+
+.sync-pick-btn:hover {
+  background: var(--bg-active);
+  color: var(--text-secondary);
+}
+
+.sync-directory-input {
+  display: flex;
+  gap: 8px;
+}
+
+.sync-input {
+  flex: 1;
+  padding: 6px 10px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.sync-input:focus {
+  border-color: var(--accent);
+}
+
+.sync-input-btn {
+  padding: 6px 10px;
+  background: var(--bg-active);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sync-input-btn:hover {
+  background: var(--bg-hover);
+}
+
+.sync-input-btn--secondary {
+  background: transparent;
+  color: var(--text-tertiary);
+}
+
+.sync-interval {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.sync-interval-input {
+  width: 60px;
+  padding: 4px 8px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-primary);
+  text-align: center;
+  outline: none;
+}
+
+.sync-interval-input:focus {
+  border-color: var(--accent);
+}
+
+.sync-now-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--accent);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  color: white;
+  font-family: inherit;
+  align-self: flex-start;
+}
+
+.sync-now-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.sync-now-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.sync-note {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  padding-top: 4px;
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 @media (max-width: 768px) {

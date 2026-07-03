@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Block } from '../types/block'
-import { initCoreClient } from '../wasm/client'
+import { initCoreClient, triggerSync } from '../wasm/client'
 import { generateUUID } from '../utils/id'
 import { debounce } from '../utils/debounce'
 import { parseBlockLinks } from '../utils/parser'
@@ -252,6 +252,15 @@ export const useBlockStore = defineStore('blocks', () => {
   /** 每个 Block 独立的防抖保存 */
   const pendingSaves = new Map<string, ReturnType<typeof debounce<typeof _doSave>>>()
 
+  let syncDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+  function _triggerSyncDebounced() {
+    if (syncDebounceTimer) clearTimeout(syncDebounceTimer)
+    syncDebounceTimer = setTimeout(() => {
+      triggerSync().catch(console.error)
+    }, 5000)
+  }
+
   async function _doSave(block: Block): Promise<void> {
     const currentBlock = blocks.value.find(b => b.id === block.id)
     if (!currentBlock) {
@@ -275,6 +284,7 @@ export const useBlockStore = defineStore('blocks', () => {
     try {
       await client.saveBlockTree([blockUpdate])
       await _syncBlockLinks(currentBlock, client)
+      _triggerSyncDebounced()
     } catch (error) {
       console.error('[BlockStore] Failed to save block:', error)
       throw error

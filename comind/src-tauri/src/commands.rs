@@ -230,6 +230,9 @@ pub async fn set_db_path(
     }
     let config = super::config::AppConfig {
         database_path: Some(path.to_string()),
+        sync_enabled: false,
+        sync_directory: None,
+        sync_interval_secs: 300,
     };
     config
         .save(&config_dir)
@@ -244,6 +247,9 @@ pub async fn reset_db_path(
 ) -> Result<String, String> {
     let config = super::config::AppConfig {
         database_path: None,
+        sync_enabled: false,
+        sync_directory: None,
+        sync_interval_secs: 300,
     };
     config
         .save(&config_dir)
@@ -418,4 +424,79 @@ pub async fn execute_batch(
         }
         Ok(results)
     })
+}
+
+#[tauri::command]
+pub async fn export_to_markdown(
+    db: State<'_, super::state::DatabaseConnection>,
+    directory: &str,
+) -> Result<super::markdown::ExportResult, String> {
+    let dir = std::path::Path::new(directory);
+    execute_with_adapter(db, |storage| super::markdown::export_all(storage, dir))
+}
+
+#[tauri::command]
+pub async fn import_from_markdown(
+    db: State<'_, super::state::DatabaseConnection>,
+    directory: &str,
+    strategy: &str,
+) -> Result<super::markdown::ImportResult, String> {
+    let dir = std::path::Path::new(directory);
+    execute_with_adapter(db, |storage| super::markdown::import_all(storage, dir, strategy))
+}
+
+#[tauri::command]
+pub async fn get_sync_config(
+    config_manager: State<'_, super::state::ConfigManager>,
+) -> Result<serde_json::Value, String> {
+    let config = config_manager.get_config()?;
+    serde_json::to_value(&*config).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn set_sync_config(
+    config_manager: State<'_, super::state::ConfigManager>,
+    config_dir: State<'_, std::path::PathBuf>,
+    enabled: bool,
+    directory: Option<String>,
+    interval_secs: Option<u64>,
+) -> Result<(), String> {
+    let mut config = super::config::AppConfig::load(&config_dir).unwrap_or_default();
+    config.sync_enabled = enabled;
+    config.sync_directory = directory;
+    if let Some(interval) = interval_secs {
+        config.sync_interval_secs = interval;
+    }
+    config.save(&config_dir).map_err(|e| e.to_string())?;
+    
+    config_manager.update_config(config)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn sync_now(
+    db: State<'_, super::state::DatabaseConnection>,
+    config_manager: State<'_, super::state::ConfigManager>,
+) -> Result<super::markdown::ExportResult, String> {
+    let config = config_manager.get_config()?;
+    let sync_dir = match &config.sync_directory {
+        Some(d) => d.clone(),
+        None => return Err("Sync directory not configured".to_string()),
+    };
+    let dir = std::path::Path::new(&sync_dir);
+    execute_with_adapter(db, |storage| super::markdown::export_all(storage, dir))
+}
+
+#[tauri::command]
+pub async fn trigger_sync(
+    db: State<'_, super::state::DatabaseConnection>,
+    config_manager: State<'_, super::state::ConfigManager>,
+) -> Result<super::markdown::ExportResult, String> {
+    let config = config_manager.get_config()?;
+    let sync_dir = match &config.sync_directory {
+        Some(d) => d.clone(),
+        None => return Err("Sync directory not configured".to_string()),
+    };
+    let dir = std::path::Path::new(&sync_dir);
+    execute_with_adapter(db, |storage| super::markdown::export_changed(storage, dir))
 }

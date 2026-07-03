@@ -4,7 +4,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import type {
   Block, Page, Property, Link, RelationshipType,
   UserTemplate, SearchResult, BlockUpdate, PageUpdate,
-  BatchOperation, BatchResult
+  BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig
 } from './types'
 
 export function isTauriEnvironment(): boolean {
@@ -133,4 +133,32 @@ export async function tauriPickDirectory(): Promise<string | null> {
     return selected
   }
   return null
+}
+
+export async function tauriExportToMarkdown(directory: string): Promise<ExportResult> {
+  return invoke('export_to_markdown', { directory })
+}
+
+export async function tauriImportFromMarkdown(directory: string, strategy: string): Promise<ImportResult> {
+  return invoke('import_from_markdown', { directory, strategy })
+}
+
+export async function tauriGetSyncConfig(): Promise<SyncConfig> {
+  return invoke('get_sync_config')
+}
+
+export async function tauriSetSyncConfig(
+  enabled: boolean,
+  directory?: string,
+  intervalSecs?: number
+): Promise<void> {
+  return invoke('set_sync_config', { enabled, directory, intervalSecs })
+}
+
+export async function tauriSyncNow(): Promise<ExportResult> {
+  return invoke('sync_now')
+}
+
+export async function tauriTriggerSync(): Promise<ExportResult> {
+  return invoke('trigger_sync')
 }
