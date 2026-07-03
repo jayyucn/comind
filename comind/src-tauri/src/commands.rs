@@ -1,5 +1,5 @@
 use comind_core::{
-    services::{BlockService, LinkService, PageService, PropertyService, RelationshipTypeService},
+    services::{BlockService, LinkService, PageService, PropertyService, RelationshipTypeService, BlockVersionService},
     storage::StorageAdapter,
     types::*,
 };
@@ -604,4 +604,53 @@ pub async fn trigger_sync(
     };
     let dir = std::path::Path::new(&sync_dir);
     execute_with_adapter(db, |storage| super::markdown::export_changed(storage, dir))
+}
+
+#[tauri::command]
+pub async fn create_block_version(
+    db: State<'_, super::state::DatabaseConnection>,
+    block_id: &str,
+    snapshot: &str,
+    hash: &str,
+    reason: &str,
+    checkpoint_name: Option<String>,
+) -> Result<BlockVersion, String> {
+    execute_with_adapter(db, |storage| {
+        BlockVersionService::create(storage, block_id, snapshot, hash, reason, checkpoint_name.as_deref(), None)
+    })
+}
+
+#[tauri::command]
+pub async fn get_block_versions(
+    db: State<'_, super::state::DatabaseConnection>,
+    block_id: &str,
+) -> Result<Vec<BlockVersion>, String> {
+    execute_with_adapter(db, |storage| {
+        BlockVersionService::list(storage, block_id)
+    })
+}
+
+#[tauri::command]
+pub async fn get_block_version_by_id(
+    db: State<'_, super::state::DatabaseConnection>,
+    id: &str,
+) -> Result<BlockVersion, String> {
+    execute_with_adapter(db, |storage| BlockVersionService::get_by_id(storage, id))
+}
+
+#[tauri::command]
+pub async fn restore_block_version(
+    db: State<'_, super::state::DatabaseConnection>,
+    version_id: &str,
+) -> Result<BlockVersion, String> {
+    let mut adapter = db.get_adapter()?;
+    BlockVersionService::restore(&mut *adapter, version_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn cleanup_block_versions(
+    db: State<'_, super::state::DatabaseConnection>,
+    retention_days: i64,
+) -> Result<(), String> {
+    execute_with_adapter(db, |storage| BlockVersionService::cleanup(storage, retention_days))
 }

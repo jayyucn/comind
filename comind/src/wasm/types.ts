@@ -140,3 +140,15 @@ export interface SyncConfig {
   sync_directory: string | null
   sync_interval_secs: number
 }
+
+export interface BlockVersion {
+  id: string
+  block_id: string
+  snapshot: string
+  hash: string
+  version: number
+  source: string
+  message: string | null
+  restored_from_version_id: string | null
+  created_at: number
+}

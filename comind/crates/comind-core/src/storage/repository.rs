@@ -65,6 +65,16 @@ pub trait SearchRepository {
     fn delete_from_index(&mut self, block_id: &str) -> Result<(), Box<dyn Error>>;
 }
 
+pub trait BlockVersionRepository {
+    fn get_by_id(&self, id: &str) -> Result<BlockVersion, Box<dyn Error>>;
+    fn get_by_block_id(&self, block_id: &str) -> Result<Vec<BlockVersion>, Box<dyn Error>>;
+    fn get_latest_version(&self, block_id: &str) -> Result<Option<BlockVersion>, Box<dyn Error>>;
+    fn create(&mut self, version: &BlockVersion) -> Result<BlockVersion, Box<dyn Error>>;
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
+    fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>>;
+    fn delete_older_than(&mut self, block_id: &str, timestamp: i64) -> Result<(), Box<dyn Error>>;
+}
+
 pub trait StorageAdapter {
     fn blocks(&mut self) -> &mut dyn BlockRepository;
     fn pages(&mut self) -> &mut dyn PageRepository;
@@ -73,6 +83,7 @@ pub trait StorageAdapter {
     fn relationship_types(&mut self) -> &mut dyn RelationshipTypeRepository;
     fn templates(&mut self) -> &mut dyn TemplateRepository;
     fn search(&mut self) -> &mut dyn SearchRepository;
+    fn block_versions(&mut self) -> &mut dyn BlockVersionRepository;
 }
 
 pub trait TransactionalStorageAdapter: StorageAdapter {

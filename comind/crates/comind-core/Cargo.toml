@@ -12,6 +12,7 @@ chrono = { version = "0.4", features = ["serde"] }
 rand = "0.8"
 hex = "0.4"
 regex = "1.10"
+sha2 = "0.10"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rusqlite = { version = "0.32", features = ["bundled", "serde_json"] }

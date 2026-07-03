@@ -5,6 +5,7 @@ pub mod property_service;
 pub mod tag_service;
 pub mod relationship_type_service;
 pub mod template_service;
+pub mod block_version_service;
 
 #[cfg(test)]
 pub mod block_service_test;
@@ -25,3 +26,4 @@ pub use property_service::PropertyService;
 pub use tag_service::TagService;
 pub use relationship_type_service::RelationshipTypeService;
 pub use template_service::TemplateService;
+pub use block_version_service::BlockVersionService;

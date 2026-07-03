@@ -6,6 +6,7 @@ pub mod tag;
 pub mod relationship_type;
 pub mod template;
 pub mod search;
+pub mod block_version;
 
 pub use block::*;
 pub use page::*;
@@ -15,3 +16,4 @@ pub use tag::*;
 pub use relationship_type::*;
 pub use template::*;
 pub use search::*;
+pub use block_version::*;

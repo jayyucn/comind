@@ -83,6 +83,11 @@ fn main() {
             commands::set_sync_config,
             commands::sync_now,
             commands::trigger_sync,
+            commands::create_block_version,
+            commands::get_block_versions,
+            commands::get_block_version_by_id,
+            commands::restore_block_version,
+            commands::cleanup_block_versions,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

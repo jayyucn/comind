@@ -6,6 +6,8 @@ import { generateUUID } from '../utils/id'
 import { debounce } from '../utils/debounce'
 import { parseBlockLinks } from '../utils/parser'
 import { usePageStore } from './pages'
+import { useBlockVersionStore } from './blockVersion'
+import type { BlockSnapshot } from '../types/blockVersion'
 
 import {
   pmPosToTextOffset,
@@ -285,11 +287,32 @@ export const useBlockStore = defineStore('blocks', () => {
       await client.saveBlockTree([blockUpdate])
       await _syncBlockLinks(currentBlock, client)
       _triggerSyncDebounced()
+      await _createBlockVersion(currentBlock, client)
     } catch (error) {
       console.error('[BlockStore] Failed to save block:', error)
       throw error
     } finally {
       pendingSaves.delete(block.id)
+    }
+  }
+
+  async function _createBlockVersion(block: Block, client: CoreClient): Promise<void> {
+    try {
+      const properties = await client.getProperties(block.id)
+      const outlinks = await client.getOutlinks(block.pageId)
+      
+      const blockLinks = outlinks.filter(link => link.source_block_id === block.id)
+      
+      const snapshot: BlockSnapshot = {
+        block: { ...block },
+        properties: properties as unknown as BlockSnapshot['properties'],
+        relationships: blockLinks as unknown as BlockSnapshot['relationships']
+      }
+      
+      const versionStore = useBlockVersionStore()
+      versionStore.scheduleVersion(block.id, snapshot, 'auto')
+    } catch (error) {
+      console.error('[BlockStore] Failed to create block version:', error)
     }
   }
 

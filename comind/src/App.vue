@@ -16,6 +16,7 @@ import { ArrowLeft, ArrowRight, PanelLeftClose, PanelLeftOpen, PanelRightOpen, P
 import RightSidebar from './components/RightSidebar/index.vue'
 import { registerPanel } from './components/RightSidebar/panels'
 import ConceptGraphPanel from './components/ConceptGraph/Panel.vue'
+import BlockVersionPanel from './components/RightSidebar/BlockVersionPanel.vue'
 import SearchPanel from './components/SearchPanel.vue'
 import { isTauriEnvironment, tauriMinimizeWindow, tauriToggleMaximizeWindow, tauriCloseWindow, tauriIsMaximized } from './wasm/tauri-client'
 import { getCurrentWindow } from '@tauri-apps/api/window'
@@ -25,6 +26,13 @@ registerPanel({
   label: '概念图谱',
   icon: '🧠',
   component: ConceptGraphPanel
+})
+
+registerPanel({
+  id: 'block-version',
+  label: '版本历史',
+  icon: '📜',
+  component: BlockVersionPanel
 })
 
 const { isCollapsed, toggle } = useSidebar()
@@ -208,6 +216,8 @@ function handleMainClick(e: MouseEvent) {
   // 如果 target 已被 Vue 从 DOM 移除（如 Concept Block 切换模式时），跳过
   if (!document.contains(target)) return
   if (target.closest('.block') || target.closest('.concept-block') || target.closest('.page-concept-block')) return
+  // 点击右侧面板时保持当前 Block 激活状态（版本历史等面板需要依赖 activeBlockId）
+  if (target.closest('.right-sidebar')) return
   editorStore.deactivateBlock()
 }
 </script>

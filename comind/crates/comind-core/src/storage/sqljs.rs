@@ -146,6 +146,8 @@ impl SqlJsAdapter {
         Self::exec(db, "CREATE TABLE IF NOT EXISTS RelationshipType (id TEXT PRIMARY KEY, type TEXT NOT NULL, inverse TEXT, label TEXT NOT NULL, inverse_label TEXT NOT NULL, color TEXT NOT NULL, `order` INTEGER NOT NULL DEFAULT 0, strength TEXT NOT NULL DEFAULT 'medium', deleted INTEGER NOT NULL DEFAULT 0, builtin INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
         
         Self::exec(db, "CREATE TABLE IF NOT EXISTS UserTemplate (id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL, content TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
+        
+        Self::exec(db, "CREATE TABLE IF NOT EXISTS BlockVersion (id TEXT PRIMARY KEY, block_id TEXT NOT NULL, version INTEGER NOT NULL, snapshot TEXT NOT NULL, hash TEXT NOT NULL, message TEXT, source TEXT NOT NULL, restored_from_version_id TEXT, created_at INTEGER NOT NULL);")?;
 
         Self::exec(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_page_title ON Page(title);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_page_blockId ON Page(block_id);")?;
@@ -361,6 +363,27 @@ fn row_to_template(row: &HashMap<String, String>) -> UserTemplate {
         content: row.get("content").cloned().unwrap_or_default(),
         created_at: row.get("created_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
         updated_at: row.get("updated_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn row_to_block_version(row: &HashMap<String, String>) -> BlockVersion {
+    BlockVersion {
+        id: row.get("id").cloned().unwrap_or_default(),
+        block_id: row.get("block_id").cloned().unwrap_or_default(),
+        version: row.get("version").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
+        snapshot: row.get("snapshot").cloned().unwrap_or_default(),
+        hash: row.get("hash").cloned().unwrap_or_default(),
+        message: {
+            let p = row.get("message").cloned().unwrap_or_default();
+            if p.is_empty() { None } else { Some(p) }
+        },
+        source: row.get("source").cloned().unwrap_or_default(),
+        restored_from_version_id: {
+            let p = row.get("restored_from_version_id").cloned().unwrap_or_default();
+            if p.is_empty() { None } else { Some(p) }
+        },
+        created_at: row.get("created_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
     }
 }
 
@@ -692,6 +715,57 @@ impl SearchRepository for SqlJsAdapter {
 }
 
 #[cfg(target_arch = "wasm32")]
+impl BlockVersionRepository for SqlJsAdapter {
+    fn get_by_id(&self, id: &str) -> Result<BlockVersion, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, block_id, version, snapshot, hash, message, source, restored_from_version_id, created_at FROM BlockVersion WHERE id = ?", &[id])?;
+        if result.is_empty() {
+            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "BlockVersion not found")));
+        }
+        Ok(row_to_block_version(&result[0]))
+    }
+
+    fn get_by_block_id(&self, block_id: &str) -> Result<Vec<BlockVersion>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, block_id, version, snapshot, hash, message, source, restored_from_version_id, created_at FROM BlockVersion WHERE block_id = ? ORDER BY version DESC", &[block_id])?;
+        Ok(result.into_iter().map(|r| row_to_block_version(&r)).collect())
+    }
+
+    fn get_latest_version(&self, block_id: &str) -> Result<Option<BlockVersion>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, block_id, version, snapshot, hash, message, source, restored_from_version_id, created_at FROM BlockVersion WHERE block_id = ? ORDER BY version DESC LIMIT 1", &[block_id])?;
+        if result.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(row_to_block_version(&result[0])))
+        }
+    }
+
+    fn create(&mut self, version: &BlockVersion) -> Result<BlockVersion, Box<dyn std::error::Error>> {
+        let message = version.message.as_deref().unwrap_or("");
+        let restored_from_version_id = version.restored_from_version_id.as_deref().unwrap_or("");
+        Self::run_with_params(&self.db, "INSERT INTO BlockVersion (id, block_id, version, snapshot, hash, message, source, restored_from_version_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", &[
+            &version.id, &version.block_id, &version.version.to_string(),
+            &version.snapshot, &version.hash, message,
+            &version.source, restored_from_version_id, &version.created_at.to_string()
+        ])?;
+        Ok(version.clone())
+    }
+
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn std::error::Error>> {
+        Self::run_with_params(&self.db, "DELETE FROM BlockVersion WHERE id = ?", &[id])?;
+        Ok(())
+    }
+
+    fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+        Self::run_with_params(&self.db, "DELETE FROM BlockVersion WHERE block_id = ?", &[block_id])?;
+        Ok(())
+    }
+
+    fn delete_older_than(&mut self, block_id: &str, timestamp: i64) -> Result<(), Box<dyn std::error::Error>> {
+        Self::run_with_params(&self.db, "DELETE FROM BlockVersion WHERE block_id = ? AND created_at < ?", &[block_id, &timestamp.to_string()])?;
+        Ok(())
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
 impl StorageAdapter for SqlJsAdapter {
     fn blocks(&mut self) -> &mut dyn BlockRepository {
         self
@@ -718,6 +792,10 @@ impl StorageAdapter for SqlJsAdapter {
     }
 
     fn search(&mut self) -> &mut dyn SearchRepository {
+        self
+    }
+    
+    fn block_versions(&mut self) -> &mut dyn BlockVersionRepository {
         self
     }
 }

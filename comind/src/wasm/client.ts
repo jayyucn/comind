@@ -1,6 +1,13 @@
 import { isTauriEnvironment } from './tauri-client'
 import { initWasmClient, type WasmClient } from './wasm-client'
 import * as tauri from './tauri-client'
+import {
+  createWebBlockVersion,
+  getWebBlockVersions,
+  getWebBlockVersionById,
+  restoreWebBlockVersion,
+  cleanupWebBlockVersions
+} from './web-version-storage'
 
 function parseJsonResult<T>(result: any): T {
   if (typeof result === 'string') {
@@ -11,7 +18,7 @@ function parseJsonResult<T>(result: any): T {
 import type {
   Block, Page, Property, Link, RelationshipType,
   UserTemplate, SearchResult, BlockUpdate, PageUpdate,
-  BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig
+  BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig, BlockVersion
 } from './types'
 
 export interface CoreClient {
@@ -39,6 +46,12 @@ export interface CoreClient {
   search(query: string): Promise<SearchResult[]>
 
   executeBatch(operations: BatchOperation[]): Promise<BatchResult[]>
+
+  createBlockVersion(blockId: string, snapshot: string, hash: string, reason: string, checkpointName?: string): Promise<BlockVersion>
+  getBlockVersions(blockId: string): Promise<BlockVersion[]>
+  getBlockVersionById(id: string): Promise<BlockVersion>
+  restoreBlockVersion(versionId: string): Promise<BlockVersion>
+  cleanupBlockVersions(retentionDays: number): Promise<void>
 }
 
 class TauriClient implements CoreClient {
@@ -108,6 +121,26 @@ class TauriClient implements CoreClient {
 
   async executeBatch(operations: BatchOperation[]): Promise<BatchResult[]> {
     return tauri.tauriExecuteBatch(operations)
+  }
+
+  async createBlockVersion(blockId: string, snapshot: string, hash: string, reason: string, checkpointName?: string): Promise<BlockVersion> {
+    return tauri.tauriCreateBlockVersion(blockId, snapshot, hash, reason, checkpointName)
+  }
+
+  async getBlockVersions(blockId: string): Promise<BlockVersion[]> {
+    return tauri.tauriGetBlockVersions(blockId)
+  }
+
+  async getBlockVersionById(id: string): Promise<BlockVersion> {
+    return tauri.tauriGetBlockVersionById(id)
+  }
+
+  async restoreBlockVersion(versionId: string): Promise<BlockVersion> {
+    return tauri.tauriRestoreBlockVersion(versionId)
+  }
+
+  async cleanupBlockVersions(retentionDays: number): Promise<void> {
+    return tauri.tauriCleanupBlockVersions(retentionDays)
   }
 }
 
@@ -205,6 +238,34 @@ class WasmClientAdapter implements CoreClient {
     const opsJson = JSON.stringify(operations)
     const result = await this.wasm.execute_batch(opsJson)
     return parseJsonResult(result)
+  }
+
+  async createBlockVersion(blockId: string, snapshot: string, hash: string, reason: string, checkpointName?: string): Promise<BlockVersion> {
+    return createWebBlockVersion(blockId, snapshot, hash, reason, checkpointName)
+  }
+
+  async getBlockVersions(blockId: string): Promise<BlockVersion[]> {
+    return getWebBlockVersions(blockId)
+  }
+
+  async getBlockVersionById(id: string): Promise<BlockVersion> {
+    const version = await getWebBlockVersionById(id)
+    if (!version) {
+      throw new Error(`Block version not found: ${id}`)
+    }
+    return version
+  }
+
+  async restoreBlockVersion(versionId: string): Promise<BlockVersion> {
+    const version = await restoreWebBlockVersion(versionId)
+    if (!version) {
+      throw new Error(`Block version not found: ${versionId}`)
+    }
+    return version
+  }
+
+  async cleanupBlockVersions(retentionDays: number): Promise<void> {
+    return cleanupWebBlockVersions(retentionDays)
   }
 }
 

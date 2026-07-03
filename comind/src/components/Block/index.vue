@@ -876,6 +876,8 @@ async function handlePaste(e: ClipboardEvent) {
 
         <!-- Right 属性显示 -->
         <PropertyInline :block-id="blockId" position="right-of-content" />
+
+        
       </div>
     </div>
 

@@ -4,7 +4,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import type {
   Block, Page, Property, Link, RelationshipType,
   UserTemplate, SearchResult, BlockUpdate, PageUpdate,
-  BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig
+  BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig, BlockVersion
 } from './types'
 
 export function isTauriEnvironment(): boolean {
@@ -161,4 +161,30 @@ export async function tauriSyncNow(): Promise<ExportResult> {
 
 export async function tauriTriggerSync(): Promise<ExportResult> {
   return invoke('trigger_sync')
+}
+
+export async function tauriCreateBlockVersion(
+  blockId: string,
+  snapshot: string,
+  hash: string,
+  reason: string,
+  checkpointName?: string
+): Promise<BlockVersion> {
+  return invoke('create_block_version', { blockId, snapshot, hash, reason, checkpointName })
+}
+
+export async function tauriGetBlockVersions(blockId: string): Promise<BlockVersion[]> {
+  return invoke('get_block_versions', { blockId })
+}
+
+export async function tauriGetBlockVersionById(id: string): Promise<BlockVersion> {
+  return invoke('get_block_version_by_id', { id })
+}
+
+export async function tauriRestoreBlockVersion(versionId: string): Promise<BlockVersion> {
+  return invoke('restore_block_version', { versionId })
+}
+
+export async function tauriCleanupBlockVersions(retentionDays: number): Promise<void> {
+  return invoke('cleanup_block_versions', { retentionDays })
 }

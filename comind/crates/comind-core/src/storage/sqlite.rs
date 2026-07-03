@@ -126,16 +126,31 @@ impl SQLiteAdapter {
                 tokenize = 'unicode61'
             );
             
+            CREATE TABLE IF NOT EXISTS BlockVersion (
+                id                      TEXT PRIMARY KEY,
+                block_id                TEXT NOT NULL,
+                version                 INTEGER NOT NULL,
+                snapshot                TEXT NOT NULL,
+                hash                    TEXT NOT NULL,
+                message                 TEXT,
+                source                  TEXT NOT NULL,
+                restored_from_version_id TEXT,
+                created_at              INTEGER NOT NULL,
+                FOREIGN KEY (block_id) REFERENCES Block(id)
+            );
+            
             CREATE INDEX IF NOT EXISTS idx_page_blockId        ON Page(block_id);
             CREATE INDEX IF NOT EXISTS idx_page_type           ON Page(type);
             CREATE INDEX IF NOT EXISTS idx_page_updatedAt      ON Page(updated_at);
-            CREATE INDEX IF NOT EXISTS idx_block_pageId    ON Block(page_id);
-            CREATE INDEX IF NOT EXISTS idx_block_parentId  ON Block(parent_id);
-            CREATE INDEX IF NOT EXISTS idx_block_pos       ON Block(pos);
-            CREATE INDEX IF NOT EXISTS idx_link_target     ON Link(target_page_id);
-            CREATE INDEX IF NOT EXISTS idx_link_source     ON Link(source_block_id);
-            CREATE INDEX IF NOT EXISTS idx_property_blockId ON Property(block_id);
-            CREATE INDEX IF NOT EXISTS idx_property_key    ON Property(key);"
+            CREATE INDEX IF NOT EXISTS idx_block_pageId        ON Block(page_id);
+            CREATE INDEX IF NOT EXISTS idx_block_parentId      ON Block(parent_id);
+            CREATE INDEX IF NOT EXISTS idx_block_pos           ON Block(pos);
+            CREATE INDEX IF NOT EXISTS idx_link_target         ON Link(target_page_id);
+            CREATE INDEX IF NOT EXISTS idx_link_source         ON Link(source_block_id);
+            CREATE INDEX IF NOT EXISTS idx_property_blockId    ON Property(block_id);
+            CREATE INDEX IF NOT EXISTS idx_property_key        ON Property(key);
+            CREATE INDEX IF NOT EXISTS idx_block_version_blockId ON BlockVersion(block_id);
+            CREATE INDEX IF NOT EXISTS idx_block_version_hash ON BlockVersion(hash);"
         )?;
         
         Self::migrate_add_page_title_unique(conn)?;
@@ -1022,6 +1037,119 @@ impl SQLiteAdapter {
     }
 }
 
+impl BlockVersionRepository for SQLiteAdapter {
+    fn get_by_id(&self, id: &str) -> Result<BlockVersion, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, block_id, version, snapshot, hash, message, source, restored_from_version_id, created_at 
+             FROM BlockVersion WHERE id = ?1"
+        )?;
+        
+        let version = stmt.query_row(params![id], |row| {
+            Ok(BlockVersion {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                version: row.get(2)?,
+                snapshot: row.get(3)?,
+                hash: row.get(4)?,
+                message: row.get(5)?,
+                source: row.get(6)?,
+                restored_from_version_id: row.get(7)?,
+                created_at: row.get(8)?,
+            })
+        })?;
+        
+        Ok(version)
+    }
+    
+    fn get_by_block_id(&self, block_id: &str) -> Result<Vec<BlockVersion>, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, block_id, version, snapshot, hash, message, source, restored_from_version_id, created_at 
+             FROM BlockVersion WHERE block_id = ?1 ORDER BY version DESC"
+        )?;
+        
+        let versions = stmt.query_map(params![block_id], |row| {
+            Ok(BlockVersion {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                version: row.get(2)?,
+                snapshot: row.get(3)?,
+                hash: row.get(4)?,
+                message: row.get(5)?,
+                source: row.get(6)?,
+                restored_from_version_id: row.get(7)?,
+                created_at: row.get(8)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        
+        Ok(versions)
+    }
+    
+    fn get_latest_version(&self, block_id: &str) -> Result<Option<BlockVersion>, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, block_id, version, snapshot, hash, message, source, restored_from_version_id, created_at 
+             FROM BlockVersion WHERE block_id = ?1 ORDER BY version DESC LIMIT 1"
+        )?;
+        
+        let result = stmt.query_row(params![block_id], |row| {
+            Ok(BlockVersion {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                version: row.get(2)?,
+                snapshot: row.get(3)?,
+                hash: row.get(4)?,
+                message: row.get(5)?,
+                source: row.get(6)?,
+                restored_from_version_id: row.get(7)?,
+                created_at: row.get(8)?,
+            })
+        });
+        
+        match result {
+            Ok(version) => Ok(Some(version)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(Box::new(e)),
+        }
+    }
+    
+    fn create(&mut self, version: &BlockVersion) -> Result<BlockVersion, Box<dyn Error>> {
+        self.conn.execute(
+            "INSERT INTO BlockVersion (id, block_id, version, snapshot, hash, message, source, restored_from_version_id, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                version.id,
+                version.block_id,
+                version.version,
+                version.snapshot,
+                version.hash,
+                version.message,
+                version.source,
+                version.restored_from_version_id,
+                version.created_at
+            ]
+        )?;
+        
+        Ok(version.clone())
+    }
+    
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
+        self.conn.execute("DELETE FROM BlockVersion WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+    
+    fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>> {
+        self.conn.execute("DELETE FROM BlockVersion WHERE block_id = ?1", params![block_id])?;
+        Ok(())
+    }
+    
+    fn delete_older_than(&mut self, block_id: &str, timestamp: i64) -> Result<(), Box<dyn Error>> {
+        self.conn.execute(
+            "DELETE FROM BlockVersion WHERE block_id = ?1 AND created_at < ?2",
+            params![block_id, timestamp]
+        )?;
+        Ok(())
+    }
+}
+
 impl StorageAdapter for SQLiteAdapter {
     fn blocks(&mut self) -> &mut dyn BlockRepository {
         self
@@ -1048,6 +1176,10 @@ impl StorageAdapter for SQLiteAdapter {
     }
     
     fn search(&mut self) -> &mut dyn SearchRepository {
+        self
+    }
+    
+    fn block_versions(&mut self) -> &mut dyn BlockVersionRepository {
         self
     }
 }
@@ -1922,6 +2054,119 @@ impl<'a> SearchRepository for SQLiteTransactionAdapter<'a> {
     }
 }
 
+impl<'a> BlockVersionRepository for SQLiteTransactionAdapter<'a> {
+    fn get_by_id(&self, id: &str) -> Result<BlockVersion, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, block_id, version, snapshot, hash, message, source, restored_from_version_id, created_at 
+             FROM BlockVersion WHERE id = ?1"
+        )?;
+        
+        let version = stmt.query_row(params![id], |row| {
+            Ok(BlockVersion {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                version: row.get(2)?,
+                snapshot: row.get(3)?,
+                hash: row.get(4)?,
+                message: row.get(5)?,
+                source: row.get(6)?,
+                restored_from_version_id: row.get(7)?,
+                created_at: row.get(8)?,
+            })
+        })?;
+        
+        Ok(version)
+    }
+    
+    fn get_by_block_id(&self, block_id: &str) -> Result<Vec<BlockVersion>, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, block_id, version, snapshot, hash, message, source, restored_from_version_id, created_at 
+             FROM BlockVersion WHERE block_id = ?1 ORDER BY version DESC"
+        )?;
+        
+        let versions = stmt.query_map(params![block_id], |row| {
+            Ok(BlockVersion {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                version: row.get(2)?,
+                snapshot: row.get(3)?,
+                hash: row.get(4)?,
+                message: row.get(5)?,
+                source: row.get(6)?,
+                restored_from_version_id: row.get(7)?,
+                created_at: row.get(8)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        
+        Ok(versions)
+    }
+    
+    fn get_latest_version(&self, block_id: &str) -> Result<Option<BlockVersion>, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, block_id, version, snapshot, hash, message, source, restored_from_version_id, created_at 
+             FROM BlockVersion WHERE block_id = ?1 ORDER BY version DESC LIMIT 1"
+        )?;
+        
+        let result = stmt.query_row(params![block_id], |row| {
+            Ok(BlockVersion {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                version: row.get(2)?,
+                snapshot: row.get(3)?,
+                hash: row.get(4)?,
+                message: row.get(5)?,
+                source: row.get(6)?,
+                restored_from_version_id: row.get(7)?,
+                created_at: row.get(8)?,
+            })
+        });
+        
+        match result {
+            Ok(version) => Ok(Some(version)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(Box::new(e)),
+        }
+    }
+    
+    fn create(&mut self, version: &BlockVersion) -> Result<BlockVersion, Box<dyn Error>> {
+        self.conn.execute(
+            "INSERT INTO BlockVersion (id, block_id, version, snapshot, hash, message, source, restored_from_version_id, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                version.id,
+                version.block_id,
+                version.version,
+                version.snapshot,
+                version.hash,
+                version.message,
+                version.source,
+                version.restored_from_version_id,
+                version.created_at
+            ]
+        )?;
+        
+        Ok(version.clone())
+    }
+    
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
+        self.conn.execute("DELETE FROM BlockVersion WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+    
+    fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>> {
+        self.conn.execute("DELETE FROM BlockVersion WHERE block_id = ?1", params![block_id])?;
+        Ok(())
+    }
+    
+    fn delete_older_than(&mut self, block_id: &str, timestamp: i64) -> Result<(), Box<dyn Error>> {
+        self.conn.execute(
+            "DELETE FROM BlockVersion WHERE block_id = ?1 AND created_at < ?2",
+            params![block_id, timestamp]
+        )?;
+        Ok(())
+    }
+}
+
 impl<'a> StorageAdapter for SQLiteTransactionAdapter<'a> {
     fn blocks(&mut self) -> &mut dyn BlockRepository {
         self
@@ -1948,6 +2193,10 @@ impl<'a> StorageAdapter for SQLiteTransactionAdapter<'a> {
     }
 
     fn search(&mut self) -> &mut dyn SearchRepository {
+        self
+    }
+    
+    fn block_versions(&mut self) -> &mut dyn BlockVersionRepository {
         self
     }
 }
