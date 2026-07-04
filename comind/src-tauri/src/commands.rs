@@ -654,3 +654,11 @@ pub async fn cleanup_block_versions(
 ) -> Result<(), String> {
     execute_with_adapter(db, |storage| BlockVersionService::cleanup(storage, retention_days))
 }
+
+#[tauri::command]
+pub async fn delete_block_version(
+    db: State<'_, super::state::DatabaseConnection>,
+    version_id: &str,
+) -> Result<(), String> {
+    execute_with_adapter(db, |storage| BlockVersionService::delete(storage, version_id))
+}

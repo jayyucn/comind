@@ -83,6 +83,10 @@ export async function restoreWebBlockVersion(versionId: string): Promise<BlockVe
   return convertToBlockVersion(restoredVersion)
 }
 
+export async function deleteWebBlockVersion(versionId: string): Promise<void> {
+  await versionDb.versions.delete(versionId)
+}
+
 export async function cleanupWebBlockVersions(retentionDays: number): Promise<void> {
   const cutoffTime = Date.now() - retentionDays * 24 * 60 * 60 * 1000
   await versionDb.versions.where('createdAt').below(cutoffTime).delete()

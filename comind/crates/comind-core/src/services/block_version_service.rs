@@ -172,6 +172,13 @@ impl BlockVersionService {
         Ok(())
     }
     
+    pub fn delete(
+        storage: &mut dyn repository::StorageAdapter,
+        version_id: &str,
+    ) -> Result<(), Box<dyn Error>> {
+        repository::BlockVersionRepository::delete(storage.block_versions(), version_id)
+    }
+    
     pub fn build_snapshot(
         storage: &mut dyn repository::StorageAdapter,
         block_id: &str,

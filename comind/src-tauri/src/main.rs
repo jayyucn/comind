@@ -88,6 +88,7 @@ fn main() {
             commands::get_block_version_by_id,
             commands::restore_block_version,
             commands::cleanup_block_versions,
+            commands::delete_block_version,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

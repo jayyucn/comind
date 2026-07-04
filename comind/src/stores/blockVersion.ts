@@ -84,6 +84,20 @@ export const useBlockVersionStore = defineStore('blockVersion', () => {
 
     try {
       const client = await initCoreClient()
+      
+      const existingVersions = await client.getBlockVersions(blockId)
+      if (existingVersions.length > 0) {
+        const latestVersion = existingVersions.reduce((prev, curr) => 
+          curr.version > prev.version ? curr : prev
+        )
+        if (latestVersion.hash === hash) {
+          pendingBlocks.value.delete(blockId)
+          layer1Timers.value.delete(blockId)
+          console.info('[BlockVersion] Skipping version creation - content unchanged')
+          return
+        }
+      }
+
       await client.createBlockVersion(blockId, serialized, hash, pending.reason)
       
       snapshotCache.value[blockId] = {
@@ -147,6 +161,16 @@ export const useBlockVersionStore = defineStore('blockVersion', () => {
     }
   }
 
+  async function deleteVersion(versionId: string) {
+    try {
+      const client = await initCoreClient()
+      await client.deleteBlockVersion(versionId)
+    } catch (error) {
+      console.error('[BlockVersion] Failed to delete version:', error)
+      throw error
+    }
+  }
+
   async function cleanupVersions(retentionDays: number = 30) {
     try {
       const client = await initCoreClient()
@@ -180,6 +204,7 @@ export const useBlockVersionStore = defineStore('blockVersion', () => {
     getVersions,
     getVersionById,
     restoreVersion,
+    deleteVersion,
     cleanupVersions,
     cancelPending,
     clearAll

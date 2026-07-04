@@ -188,3 +188,7 @@ export async function tauriRestoreBlockVersion(versionId: string): Promise<Block
 export async function tauriCleanupBlockVersions(retentionDays: number): Promise<void> {
   return invoke('cleanup_block_versions', { retentionDays })
 }
+
+export async function tauriDeleteBlockVersion(versionId: string): Promise<void> {
+  return invoke('delete_block_version', { versionId })
+}

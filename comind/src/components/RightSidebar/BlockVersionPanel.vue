@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
-import { RotateCcw, Clock, MessageSquare, AlertCircle } from 'lucide-vue-next'
+import { RotateCcw, Clock, MessageSquare, AlertCircle, Trash2 } from 'lucide-vue-next'
 import { useBlockVersionStore } from '../../stores/blockVersion'
 import { useEditorStore } from '../../stores/editor'
 import { useBlockStore } from '../../stores/blocks'
@@ -28,6 +28,8 @@ const versions = ref<BlockVersion[]>([])
 const selectedVersion = ref<BlockVersion | null>(null)
 const isLoading = ref(false)
 const restoreError = ref<string | null>(null)
+const deleteConfirmVersion = ref<BlockVersion | null>(null)
+const deleteError = ref<string | null>(null)
 
 const activeBlockId = computed(() => editorStore.activeBlockId)
 
@@ -60,7 +62,6 @@ async function handleRestore(versionId: string) {
   try {
     await versionStore.restoreVersion(versionId)
 
-    // 恢复成功后，重新加载 Block 所在 Page 的数据以同步前端状态
     const block = blockStore.getBlock(activeBlockId.value)
     if (block) {
       await blockStore.loadPageBlocks(block.pageId)
@@ -73,9 +74,38 @@ async function handleRestore(versionId: string) {
   }
 }
 
+function handleDelete(version: BlockVersion) {
+  deleteConfirmVersion.value = version
+  deleteError.value = null
+}
+
+async function confirmDelete() {
+  if (!deleteConfirmVersion.value) return
+
+  deleteError.value = null
+
+  try {
+    await versionStore.deleteVersion(deleteConfirmVersion.value.id)
+    if (selectedVersion.value?.id === deleteConfirmVersion.value.id) {
+      selectedVersion.value = null
+    }
+    await loadVersions()
+  } catch (error) {
+    console.error('[BlockVersionPanel] Failed to delete:', error)
+    deleteError.value = '删除失败，请重试'
+  } finally {
+    deleteConfirmVersion.value = null
+  }
+}
+
+function cancelDelete() {
+  deleteConfirmVersion.value = null
+  deleteError.value = null
+}
+
 function formatDate(timestamp: number): string {
   const date = new Date(timestamp)
-  return format(date, 'yyyy-MM-dd HH:mm:ss')
+  return format(date, 'yyyy-MM-dd HH:mm')
 }
 
 function getSourceLabel(source: string): string {
@@ -134,6 +164,11 @@ onMounted(async () => {
       {{ restoreError }}
     </div>
 
+    <div v-if="deleteError" class="error-message">
+      <AlertCircle :size="14" />
+      {{ deleteError }}
+    </div>
+
     <div v-if="!activeBlockId" class="no-selection">
       <Clock :size="48" />
       <p>请选中一个 Block</p>
@@ -152,7 +187,7 @@ onMounted(async () => {
     </div>
 
     <div v-else class="version-list">
-      <div class="version-header">
+      <div class="version-list-header">
         <span class="version-count">共 {{ versions.length }} 个版本</span>
       </div>
 
@@ -163,63 +198,86 @@ onMounted(async () => {
         :class="{ selected: selectedVersion?.id === version.id }"
         @click="selectedVersion = version"
       >
-        <div class="version-meta-row">
-          <div class="version-info">
-            <div class="version-header-row">
-              <span class="version-number">版本 {{ version.version }}</span>
-              <span class="version-source">{{ getSourceLabel(version.source) }}</span>
-            </div>
-            <div class="version-meta">
-              <span class="version-date">{{ formatDate(version.created_at) }}</span>
-              <span v-if="version.message" class="version-message">
-                <MessageSquare :size="12" />
-                {{ version.message }}
-              </span>
-            </div>
+        <div class="version-header">
+          <span class="version-date">{{ formatDate(version.created_at) }}</span>
+          <div class="version-actions">
+            <button
+              v-if="selectedVersion?.id === version.id"
+              class="action-btn restore-btn"
+              @click.stop="handleRestore(version.id)"
+              title="恢复此版本"
+            >
+              <RotateCcw :size="14" />
+            </button>
+            <button
+              class="action-btn delete-btn"
+              @click.stop="handleDelete(version)"
+              title="删除此版本"
+            >
+              <Trash2 :size="14" />
+            </button>
           </div>
-          <button
-            v-if="selectedVersion?.id === version.id"
-            class="restore-button"
-            @click.stop="handleRestore(version.id)"
-          >
-            <RotateCcw :size="14" />
-            恢复
-          </button>
         </div>
 
-        <div class="version-content-preview">
-          <div class="block-row">
-            <span class="block-bullet">
-              <span class="bullet-dot"></span>
+        <div class="version-body">
+          <div class="version-title-row">
+            <span class="version-number">版本 {{ version.version }}</span>
+            <span class="version-source">{{ getSourceLabel(version.source) }}</span>
+            <span v-if="version.message" class="version-message">
+              <MessageSquare :size="12" />
+              {{ version.message }}
             </span>
-            <div class="block-text" v-html="renderBlockContent(version.snapshot, version.block_id)"></div>
           </div>
 
-          <div v-if="getProperties(version.snapshot).length > 0" class="version-properties">
-            <div
-              v-for="prop in getProperties(version.snapshot)"
-              :key="prop.key"
-              class="property-item"
-            >
-              <span class="property-key">{{ prop.key }}</span>
-              <span class="property-value">{{ prop.value }}</span>
+          <div v-if="selectedVersion?.id === version.id" class="version-content-preview">
+            <div class="block-row">
+              <span class="block-bullet">
+                <span class="bullet-dot"></span>
+              </span>
+              <div class="block-text" v-html="renderBlockContent(version.snapshot, version.block_id)"></div>
             </div>
-          </div>
 
-          <div v-if="getRelationships(version.snapshot).length > 0" class="version-relationships">
-            <div
-              v-for="rel in getRelationships(version.snapshot)"
-              :key="rel.target_page_id"
-              class="relationship-item"
-            >
-              <span class="rel-arrow">→</span>
-              <span class="rel-target">{{ rel.display_text }}</span>
+            <div v-if="getProperties(version.snapshot).length > 0" class="version-properties">
+              <div
+                v-for="prop in getProperties(version.snapshot)"
+                :key="prop.key"
+                class="property-item"
+              >
+                <span class="property-key">{{ prop.key }}</span>
+                <span class="property-value">{{ prop.value }}</span>
+              </div>
+            </div>
+
+            <div v-if="getRelationships(version.snapshot).length > 0" class="version-relationships">
+              <div
+                v-for="rel in getRelationships(version.snapshot)"
+                :key="rel.target_page_id"
+                class="relationship-item"
+              >
+                <span class="rel-arrow">→</span>
+                <span class="rel-target">{{ rel.display_text }}</span>
+              </div>
             </div>
           </div>
         </div>
       </div>
     </div>
   </div>
+
+  <Teleport to="body">
+    <div v-if="deleteConfirmVersion" class="delete-confirm-modal" @click.self="cancelDelete">
+      <div class="delete-confirm-dialog">
+        <div class="delete-confirm-title">确认删除</div>
+        <div class="delete-confirm-message">
+          确定要删除此版本吗？此操作不可撤销。
+        </div>
+        <div class="delete-confirm-actions">
+          <button class="delete-confirm-btn cancel-btn" @click="cancelDelete">取消</button>
+          <button class="delete-confirm-btn confirm-btn" @click="confirmDelete">删除</button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped lang="scss">
@@ -286,8 +344,8 @@ onMounted(async () => {
   to { transform: rotate(360deg); }
 }
 
-.version-header {
-  padding: 8px 12px;
+.version-list-header {
+  padding: 6px 10px;
   margin-bottom: 4px;
 }
 
@@ -299,14 +357,14 @@ onMounted(async () => {
 .version-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .version-item {
   display: flex;
   flex-direction: column;
-  padding: 10px 12px;
-  border-radius: var(--radius-md);
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background-color 0.15s ease;
   border: 1px solid transparent;
@@ -322,23 +380,76 @@ onMounted(async () => {
   }
 }
 
-.version-meta-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.version-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.version-header-row {
+.version-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
   margin-bottom: 4px;
+}
+
+.version-date {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.version-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+
+  .version-item:hover &,
+  .version-item.selected & {
+    opacity: 1;
+  }
+}
+
+.action-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-tertiary);
+  transition: background-color 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    background-color: var(--bg-hover);
+    color: var(--text-secondary);
+  }
+}
+
+.restore-btn {
+  &:hover {
+    color: var(--accent);
+    background-color: var(--accent-08);
+  }
+}
+
+.delete-btn {
+  &:hover {
+    color: var(--color-error);
+    background-color: rgba(239, 68, 68, 0.08);
+  }
+}
+
+.version-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.version-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .version-number {
@@ -349,51 +460,26 @@ onMounted(async () => {
 
 .version-source {
   font-size: var(--text-xs);
-  padding: 2px 6px;
+  padding: 1px 5px;
   border-radius: var(--radius-sm);
   background-color: var(--bg-active);
   color: var(--text-secondary);
 }
 
-.version-meta {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-}
-
 .version-message {
   display: flex;
   align-items: center;
-  gap: 4px;
-}
-
-.restore-button {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 10px;
+  gap: 3px;
   font-size: var(--text-xs);
-  font-weight: 500;
-  color: var(--color-white);
-  background-color: var(--accent);
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: background-color 0.15s ease;
-  flex-shrink: 0;
-
-  &:hover {
-    background-color: var(--accent-hover);
-  }
+  color: var(--text-tertiary);
 }
 
 .version-content-preview {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
+  gap: 4px;
+  padding: 6px 8px;
+  margin-top: 2px;
   background: var(--bg-sidebar);
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
@@ -401,7 +487,7 @@ onMounted(async () => {
 
 .block-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 4px;
   min-height: 1.3em;
   line-height: 1.5;
@@ -411,14 +497,14 @@ onMounted(async () => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 1.8em;
+  width: 16px;
+  height: 1.6em;
   flex-shrink: 0;
 }
 
 .bullet-dot {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: var(--text-tertiary);
   opacity: 0.6;
@@ -468,16 +554,16 @@ onMounted(async () => {
 .version-properties {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  padding-top: 6px;
+  gap: 4px;
+  padding-top: 4px;
   border-top: 1px dashed var(--border);
 }
 
 .property-item {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 6px;
+  gap: 3px;
+  padding: 1px 5px;
   border-radius: var(--radius-sm);
   background: var(--bg-active);
   font-size: var(--text-xs);
@@ -495,16 +581,16 @@ onMounted(async () => {
 .version-relationships {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  padding-top: 6px;
+  gap: 4px;
+  padding-top: 4px;
   border-top: 1px dashed var(--border);
 }
 
 .relationship-item {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 6px;
+  gap: 3px;
+  padding: 1px 5px;
   border-radius: var(--radius-sm);
   background: var(--accent-08);
   font-size: var(--text-xs);
@@ -517,5 +603,74 @@ onMounted(async () => {
 
 .rel-target {
   color: var(--accent);
+}
+
+.delete-confirm-modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  backdrop-filter: blur(2px);
+}
+
+.delete-confirm-dialog {
+  background: var(--bg-base);
+  border-radius: var(--radius-md);
+  padding: 20px;
+  min-width: 320px;
+  max-width: 90vw;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-modal);
+}
+
+.delete-confirm-title {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.delete-confirm-message {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+
+.delete-confirm-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.delete-confirm-btn {
+  padding: 6px 14px;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.cancel-btn {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+
+  &:hover {
+    background: var(--bg-active);
+  }
+}
+
+.confirm-btn {
+  background: var(--color-error);
+  color: var(--color-white);
+
+  &:hover {
+    background: #dc2626;
+  }
 }
 </style>

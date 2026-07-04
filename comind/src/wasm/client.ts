@@ -6,6 +6,7 @@ import {
   getWebBlockVersions,
   getWebBlockVersionById,
   restoreWebBlockVersion,
+  deleteWebBlockVersion,
   cleanupWebBlockVersions
 } from './web-version-storage'
 
@@ -51,6 +52,7 @@ export interface CoreClient {
   getBlockVersions(blockId: string): Promise<BlockVersion[]>
   getBlockVersionById(id: string): Promise<BlockVersion>
   restoreBlockVersion(versionId: string): Promise<BlockVersion>
+  deleteBlockVersion(versionId: string): Promise<void>
   cleanupBlockVersions(retentionDays: number): Promise<void>
 }
 
@@ -139,10 +141,14 @@ class TauriClient implements CoreClient {
     return tauri.tauriRestoreBlockVersion(versionId)
   }
 
-  async cleanupBlockVersions(retentionDays: number): Promise<void> {
-    return tauri.tauriCleanupBlockVersions(retentionDays)
+  async deleteBlockVersion(versionId: string): Promise<void> {
+      return tauri.tauriDeleteBlockVersion(versionId)
+    }
+
+    async cleanupBlockVersions(retentionDays: number): Promise<void> {
+      return tauri.tauriCleanupBlockVersions(retentionDays)
+    }
   }
-}
 
 class WasmClientAdapter implements CoreClient {
   private wasm: WasmClient
@@ -262,6 +268,10 @@ class WasmClientAdapter implements CoreClient {
       throw new Error(`Block version not found: ${versionId}`)
     }
     return version
+  }
+
+  async deleteBlockVersion(versionId: string): Promise<void> {
+    await deleteWebBlockVersion(versionId)
   }
 
   async cleanupBlockVersions(retentionDays: number): Promise<void> {
