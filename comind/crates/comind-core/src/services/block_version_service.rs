@@ -64,15 +64,42 @@ impl BlockVersionService {
         S: TransactionalStorageAdapter,
     {
         let version = repository::BlockVersionRepository::get_by_id(storage.block_versions(), version_id)?;
-        
-        let snapshot: serde_json::Value = serde_json::from_str(&version.snapshot)?;
-        
+
+        let mut snapshot: serde_json::Value = serde_json::from_str(&version.snapshot)?;
+
+        // 兼容旧格式：
+        // 1. block 字段可能是 camelCase（pageId/parentId/createdAt/updatedAt），需转换为 snake_case
+        // 2. format 字段可能是 map（对象），需转换为 JSON 字符串以匹配 Block.format: String
+        if let Some(block_data) = snapshot.get_mut("block") {
+            if let Some(obj) = block_data.as_object_mut() {
+                // camelCase → snake_case 字段名映射
+                for (camel, snake) in [
+                    ("pageId", "page_id"),
+                    ("parentId", "parent_id"),
+                    ("createdAt", "created_at"),
+                    ("updatedAt", "updated_at"),
+                ] {
+                    if let Some(val) = obj.remove(camel) {
+                        obj.insert(snake.to_string(), val);
+                    }
+                }
+
+                // format 字段：map → JSON 字符串
+                if let Some(format_val) = obj.get_mut("format") {
+                    if !format_val.is_string() {
+                        let format_str = serde_json::to_string(format_val)?;
+                        *format_val = serde_json::Value::String(format_str);
+                    }
+                }
+            }
+        }
+
         let block_data = snapshot.get("block").ok_or("Snapshot missing block data")?;
         let block: Block = serde_json::from_value(block_data.clone())?;
-        
+
         let properties_data = snapshot.get("properties").ok_or("Snapshot missing properties")?;
         let properties: Vec<Property> = serde_json::from_value(properties_data.clone())?;
-        
+
         let relationships_data = snapshot.get("relationships").ok_or("Snapshot missing relationships")?;
         let relationships: Vec<Link> = serde_json::from_value(relationships_data.clone())?;
         

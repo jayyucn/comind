@@ -300,15 +300,28 @@ export const useBlockStore = defineStore('blocks', () => {
     try {
       const properties = await client.getProperties(block.id)
       const outlinks = await client.getOutlinks(block.pageId)
-      
+
       const blockLinks = outlinks.filter(link => link.source_block_id === block.id)
-      
+
+      // Rust 端 Block.format 是 String 类型，需要序列化为 JSON 字符串以匹配 Rust 结构
+      const blockRecord = {
+        id: block.id,
+        page_id: block.pageId,
+        parent_id: block.parentId,
+        pos: block.pos,
+        content: block.content,
+        format: JSON.stringify(block.format || {}),
+        type: block.type,
+        created_at: block.createdAt,
+        updated_at: block.updatedAt
+      }
+
       const snapshot: BlockSnapshot = {
-        block: { ...block },
+        block: blockRecord as unknown as BlockSnapshot['block'],
         properties: properties as unknown as BlockSnapshot['properties'],
         relationships: blockLinks as unknown as BlockSnapshot['relationships']
       }
-      
+
       const versionStore = useBlockVersionStore()
       versionStore.scheduleVersion(block.id, snapshot, 'auto')
     } catch (error) {

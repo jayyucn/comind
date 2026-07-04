@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { RotateCcw, Clock, MessageSquare, AlertCircle } from 'lucide-vue-next'
 import { useBlockVersionStore } from '../../stores/blockVersion'
 import { useEditorStore } from '../../stores/editor'
+import { useBlockStore } from '../../stores/blocks'
 import { useContentRenderer } from '../../composables/useContentRenderer'
 import type { BlockVersion } from '../../wasm/types'
 import { format } from 'date-fns'
@@ -20,6 +21,7 @@ interface SnapshotData {
 
 const versionStore = useBlockVersionStore()
 const editorStore = useEditorStore()
+const blockStore = useBlockStore()
 const { renderContentToHtml } = useContentRenderer()
 
 const versions = ref<BlockVersion[]>([])
@@ -57,6 +59,13 @@ async function handleRestore(versionId: string) {
 
   try {
     await versionStore.restoreVersion(versionId)
+
+    // 恢复成功后，重新加载 Block 所在 Page 的数据以同步前端状态
+    const block = blockStore.getBlock(activeBlockId.value)
+    if (block) {
+      await blockStore.loadPageBlocks(block.pageId)
+    }
+
     await loadVersions()
   } catch (error) {
     console.error('[BlockVersionPanel] Failed to restore:', error)
