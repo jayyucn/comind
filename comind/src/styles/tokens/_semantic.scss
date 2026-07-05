@@ -101,6 +101,7 @@
   --color-tag: #6366F1;
   --color-external: #{$color-external};
   --color-scrollbar: #{$color-stone-400};
+  --color-error: #{$color-error};
 }
 
 [data-theme="dark"] {
@@ -157,8 +158,9 @@
   --color-surface: #2E2E32;
   --color-sidebar-bg: #222225;
   --color-highlight: rgba(129, 140, 248, 0.25);
-  --color-white: #1A1A1E;
+  --color-white: #FFFFFF;
   --color-tag: #818CF8;
   --color-external: #94A3B8;
   --color-scrollbar: #4A4A50;
+  --color-error: #{$color-error};
 }

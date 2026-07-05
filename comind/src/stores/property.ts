@@ -8,6 +8,14 @@ import type { CoreClient } from '../wasm/client'
 
 let coreClientPromise: Promise<CoreClient> | null = null
 
+function safeParseJson(value: string): any {
+  try {
+    return JSON.parse(value)
+  } catch {
+    return value
+  }
+}
+
 async function getClient() {
   if (!coreClientPromise) {
     coreClientPromise = initCoreClient()
@@ -50,7 +58,7 @@ export const usePropertyStore = defineStore('property', () => {
         id: rustProp.id,
         blockId: rustProp.block_id,
         key: rustProp.key,
-        value: JSON.parse(rustProp.value),
+        value: safeParseJson(rustProp.value),
         type: rustProp.type as PropertyType,
         sortOrder: rustProp.sort_order,
         isHidden: rustProp.is_hidden === 1,
@@ -77,7 +85,7 @@ export const usePropertyStore = defineStore('property', () => {
           id: rustProp.id,
           blockId: rustProp.block_id,
           key: rustProp.key,
-          value: JSON.parse(rustProp.value),
+          value: safeParseJson(rustProp.value),
           type: rustProp.type as PropertyType,
           sortOrder: rustProp.sort_order,
           isHidden: rustProp.is_hidden === 1,
