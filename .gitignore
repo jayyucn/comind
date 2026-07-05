@@ -9,3 +9,5 @@ comind/test-e2e/
 e2e/
 comind/target/
 test-results/
+comind/test-gap-exhausted.spec.ts
+comind/test-merge-children.spec.ts
