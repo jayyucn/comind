@@ -1,3 +1,4 @@
+# ![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use tauri::{Manager, WindowEvent};
 
 mod commands;
@@ -5,7 +6,6 @@ mod config;
 mod markdown;
 mod state;
 mod sync;
-
 fn main() {
     simple_logger::SimpleLogger::new()
         .with_level(log::LevelFilter::Warn)
@@ -88,7 +88,6 @@ fn main() {
             commands::get_block_version_by_id,
             commands::restore_block_version,
             commands::cleanup_block_versions,
-            commands::delete_block_version,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
