@@ -138,12 +138,12 @@ function handleResizeStart(e: MouseEvent) {
   border: none;
   background: transparent;
   cursor: pointer;
-  border-radius: var(--radius-sm);
   font-size: 11px;
   color: var(--text-tertiary);
   font-family: inherit;
-  transition: background 80ms ease, color 80ms ease;
+  transition: background 80ms ease, color 80ms ease, border-color 120ms ease;
   white-space: nowrap;
+  border-bottom: 2px solid transparent;
 }
 
 .tab-btn:hover {
@@ -155,6 +155,7 @@ function handleResizeStart(e: MouseEvent) {
   background: var(--bg-active);
   color: var(--text-primary);
   font-weight: 500;
+  border-bottom-color: var(--accent);
 }
 
 .tab-icon {
