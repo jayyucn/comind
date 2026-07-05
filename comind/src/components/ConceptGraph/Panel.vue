@@ -16,6 +16,7 @@ const graphRef = ref<Graph | null>(null)
 const maxDepth = ref(2)
 const currentLayout = ref<string>('force')
 const highlightedNodeId = ref<string | null>(null)
+const isFirstLayoutDone = ref(false)
 
 const currentPageId = computed(() => pageStore.currentPageId)
 
@@ -253,7 +254,13 @@ async function initGraph() {
       'zoom-canvas',
       'drag-element',
     ],
-    animation: true,
+    animation: false,
+  })
+
+  graph.on('afterlayout', () => {
+    if (!isFirstLayoutDone.value) {
+      isFirstLayoutDone.value = true
+    }
   })
 
   graph.on('node:click', (evt: any) => {
@@ -305,7 +312,7 @@ function handleDepthChange(delta: number) {
 async function handleLayoutChange(layout: string) {
   currentLayout.value = layout
   if (graphRef.value) {
-    graphRef.value.setLayout({ type: layout, preventOverlap: true, nodeSize: 100 })
+    graphRef.value.setLayout({ type: layout, preventOverlap: true, nodeSize: 100, animate: isFirstLayoutDone.value })
     await graphRef.value.layout()
     await graphRef.value.fitView()
     const zoom = graphRef.value.getZoom()
@@ -437,7 +444,12 @@ onBeforeUnmount(() => {
         <button class="control-btn" title="导出 PNG" @click="handleExportPng">⤓</button>
       </div>
     </div>
-    <div ref="containerRef" class="concept-graph-canvas"></div>
+    <div ref="containerRef" class="concept-graph-canvas">
+      <div v-if="!isFirstLayoutDone" class="graph-loading-overlay">
+        <div class="loading-spinner"></div>
+        <span>加载中...</span>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -527,5 +539,32 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  position: relative;
+}
+
+.graph-loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-sidebar);
+  z-index: 10;
+  gap: 8px;
+}
+
+.graph-loading-overlay .loading-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.graph-loading-overlay span {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
 }
 </style>

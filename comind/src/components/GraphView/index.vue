@@ -21,6 +21,7 @@ const searchQuery = ref('')
 const activeFilters = ref<string[]>([])
 const currentFilterState = ref<FilterState>({ conditions: [], expandedGroups: new Set() })
 const stats = ref({ totalNodes: 0, filteredNodes: 0, totalEdges: 0, filteredEdges: 0 })
+const isFirstLayoutDone = ref(false)
 
 const currentPageId = computed(() => pageStore.currentPageId)
 
@@ -369,7 +370,13 @@ async function initGraph() {
       'zoom-canvas',
       'drag-element',
     ],
-    animation: true,
+    animation: false,
+  })
+
+  graph.on('afterlayout', () => {
+    if (!isFirstLayoutDone.value) {
+      isFirstLayoutDone.value = true
+    }
   })
 
   graph.on('node:click', (evt: any) => {
@@ -413,7 +420,7 @@ async function refreshGraphData(graph?: Graph) {
 async function handleLayoutChange(layout: string) {
   currentLayout.value = layout
   if (graphRef.value) {
-    graphRef.value.setLayout({ type: layout, preventOverlap: true, nodeSize: 100 })
+    graphRef.value.setLayout({ type: layout, preventOverlap: true, nodeSize: 100, animate: isFirstLayoutDone.value })
     await graphRef.value.layout()
     await graphRef.value.fitView()
     const zoom = graphRef.value.getZoom()
@@ -585,7 +592,12 @@ onBeforeUnmount(() => {
     </div>
     <div class="graph-view-body">
       <FilterPanel @filter-change="handleFilterChange" />
-      <div ref="containerRef" class="graph-view-canvas"></div>
+      <div ref="containerRef" class="graph-view-canvas">
+        <div v-if="!isFirstLayoutDone" class="graph-loading-overlay">
+          <div class="loading-spinner"></div>
+          <span>加载中...</span>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -707,5 +719,32 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  position: relative;
+}
+
+.graph-loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-base);
+  z-index: 10;
+  gap: 8px;
+}
+
+.graph-loading-overlay .loading-spinner {
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.graph-loading-overlay span {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
 }
 </style>
