@@ -42,6 +42,13 @@ fn main() {
 
             sync::start_sync_task(app_handle.clone());
 
+            #[cfg(debug_assertions)]
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_title("comind [DEV]");
+                }
+            }
+
             Ok(())
         })
         .on_window_event(|window, event| {
