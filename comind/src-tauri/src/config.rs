@@ -31,8 +31,19 @@ impl Default for AppConfig {
 }
 
 impl AppConfig {
+    pub fn config_filename() -> &'static str {
+        #[cfg(debug_assertions)]
+        {
+            "config.dev.json"
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            "config.json"
+        }
+    }
+
     pub fn load(config_dir: &Path) -> Result<Self, String> {
-        let config_path = config_dir.join("config.json");
+        let config_path = config_dir.join(Self::config_filename());
         if config_path.exists() {
             let content = fs::read_to_string(&config_path)
                 .map_err(|e| format!("Failed to read config file: {}", e))?;
@@ -48,7 +59,7 @@ impl AppConfig {
             fs::create_dir_all(config_dir)
                 .map_err(|e| format!("Failed to create config directory: {}", e))?;
         }
-        let config_path = config_dir.join("config.json");
+        let config_path = config_dir.join(Self::config_filename());
         let content = serde_json::to_string_pretty(self)
             .map_err(|e| format!("Failed to serialize config: {}", e))?;
         let mut file = File::create(&config_path)
@@ -60,12 +71,28 @@ impl AppConfig {
 
 pub fn get_default_db_path(app_handle: &tauri::AppHandle) -> PathBuf {
     if let Ok(exe_dir) = app_handle.path().executable_dir() {
-        return exe_dir.join("sqlite");
+        #[cfg(debug_assertions)]
+        {
+            return exe_dir.join("sqlite-dev");
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            return exe_dir.join("sqlite");
+        }
     }
-    app_handle
+    let base_dir = app_handle
         .path()
         .app_data_dir()
-        .expect("Failed to get app data directory")
+        .expect("Failed to get app data directory");
+
+    #[cfg(debug_assertions)]
+    {
+        base_dir.join("sqlite-dev")
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        base_dir
+    }
 }
 
 pub fn get_db_path(app_handle: &tauri::AppHandle, config: &AppConfig) -> PathBuf {

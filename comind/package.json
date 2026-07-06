@@ -71,13 +71,13 @@
     "playwright": "^1.59.1",
     "rollup": "^4.62.2",
     "sass-embedded": "^1.100.0",
-    "typescript": "~6.0.2",
+    "typescript": "^6.0.3",
     "typescript-eslint": "^8.59.3",
     "vite": "^8.0.4",
     "vite-plugin-top-level-await": "^1.6.0",
     "vite-plugin-wasm": "^3.6.0",
     "vitest": "^4.1.4",
     "vue-eslint-parser": "^10.4.0",
-    "vue-tsc": "^3.2.6"
+    "vue-tsc": "^3.3.6"
   }
 }

@@ -3,10 +3,9 @@
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
     "types": ["vite/client", "node"],
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"],
-      "@wasm/*": ["crates/pkg/*"]
+      "@/*": ["./src/*"],
+      "@wasm/*": ["./crates/pkg/*"]
     },
     /* Linting */
     "noUnusedLocals": true,
