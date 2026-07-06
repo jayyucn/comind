@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { useContentRenderer } from './useContentRenderer'
+import { useContentRenderer, parseHeading } from './useContentRenderer'
 import { useRelationshipTypes } from './useRelationshipTypes'
 import { cleanupRelationshipTypes } from '../../tests/core-client'
 
@@ -158,5 +158,77 @@ describe('useContentRenderer - typed wiki links', () => {
     expect(html).toMatch(/data-page="myproject"/)
     expect(html).toMatch(/data-rel-type="related"/)
     expect(html).toMatch(/style="--rel-color:#8c8c8c"/)
+  })
+})
+
+describe('parseHeading — 标题解析测试', () => {
+  it('解析 h1 标题', () => {
+    const result = parseHeading('# 一级标题')
+    expect(result).toEqual({ level: 1, title: '一级标题' })
+  })
+
+  it('解析 h2 标题', () => {
+    const result = parseHeading('## 二级标题')
+    expect(result).toEqual({ level: 2, title: '二级标题' })
+  })
+
+  it('解析 h3 标题', () => {
+    const result = parseHeading('### 三级标题')
+    expect(result).toEqual({ level: 3, title: '三级标题' })
+  })
+
+  it('解析 h4 标题', () => {
+    const result = parseHeading('#### 四级标题')
+    expect(result).toEqual({ level: 4, title: '四级标题' })
+  })
+
+  it('解析 h5 标题', () => {
+    const result = parseHeading('##### 五级标题')
+    expect(result).toEqual({ level: 5, title: '五级标题' })
+  })
+
+  it('解析 h6 标题', () => {
+    const result = parseHeading('###### 六级标题')
+    expect(result).toEqual({ level: 6, title: '六级标题' })
+  })
+
+  it('超过 6 个 # 不识别为标题', () => {
+    const result = parseHeading('####### 七级标题')
+    expect(result).toBeNull()
+  })
+
+  it('无空格的 #tag 不识别为标题', () => {
+    const result = parseHeading('#标签')
+    expect(result).toBeNull()
+  })
+
+  it('纯文本不识别为标题', () => {
+    const result = parseHeading('这是普通文本')
+    expect(result).toBeNull()
+  })
+
+  it('标题后接标签', () => {
+    const result = parseHeading('# 标题 #标签')
+    expect(result).toEqual({ level: 1, title: '标题 #标签' })
+  })
+
+  it('标题含 wiki 链接', () => {
+    const result = parseHeading('## [[页面A]]')
+    expect(result).toEqual({ level: 2, title: '[[页面A]]' })
+  })
+
+  it('标题含关系链接', () => {
+    const result = parseHeading('### ((depends-on))[[X]]')
+    expect(result).toEqual({ level: 3, title: '((depends-on))[[X]]' })
+  })
+
+  it('空标题不识别', () => {
+    const result = parseHeading('# ')
+    expect(result).toBeNull()
+  })
+
+  it('空格开头的 # 不识别为标题', () => {
+    const result = parseHeading(' # 标题')
+    expect(result).toBeNull()
   })
 })

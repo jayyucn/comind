@@ -368,3 +368,45 @@
     margin: 4px 0;
   }
 }
+
+// Heading styles
+.block-text ::deep(.block-heading) {
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+.block-text ::deep(.block-heading.h1) {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.block-text ::deep(.block-heading.h2) {
+  font-size: 1.3rem;
+  font-weight: 600;
+}
+
+.block-text ::deep(.block-heading.h3) {
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.block-text ::deep(.block-heading.h4) {
+  font-size: 1.05rem;
+  font-weight: 500;
+}
+
+.block-text ::deep(.block-heading.h5) {
+  font-size: 1rem;
+  font-weight: 500;
+  opacity: 0.85;
+}
+
+.block-text ::deep(.block-heading.h6) {
+  font-size: 0.95rem;
+  font-weight: 500;
+  opacity: 0.75;
+}

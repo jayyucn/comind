@@ -124,8 +124,57 @@ const EnterAsBlockExtension = Extension.create({
         }))
         return true
       },
+
+      'Mod-1': ({ editor }) => {
+        if (hasModalOpen()) return false
+        applyHeading(editor, 1)
+        return true
+      },
+
+      'Mod-2': ({ editor }) => {
+        if (hasModalOpen()) return false
+        applyHeading(editor, 2)
+        return true
+      },
+
+      'Mod-3': ({ editor }) => {
+        if (hasModalOpen()) return false
+        applyHeading(editor, 3)
+        return true
+      },
+
+      'Mod-4': ({ editor }) => {
+        if (hasModalOpen()) return false
+        applyHeading(editor, 4)
+        return true
+      },
+
+      'Mod-5': ({ editor }) => {
+        if (hasModalOpen()) return false
+        applyHeading(editor, 5)
+        return true
+      },
+
+      'Mod-6': ({ editor }) => {
+        if (hasModalOpen()) return false
+        applyHeading(editor, 6)
+        return true
+      },
     }
   }
 })
+
+function applyHeading(editor: any, level: number) {
+  const content = editor.getText()
+  const headingPrefix = '#'.repeat(level) + ' '
+
+  const headingMatch = content.match(/^#{1,6}\s+/)
+  if (headingMatch) {
+    const newContent = content.replace(/^#{1,6}\s+/, headingPrefix)
+    editor.chain().setContent(newContent).focus().run()
+  } else {
+    editor.chain().setContent(headingPrefix + content).focus().run()
+  }
+}
 
 export default EnterAsBlockExtension

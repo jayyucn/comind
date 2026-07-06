@@ -22,6 +22,19 @@ function escapeHtmlEntities(text: string): string {
     .replace(/"/g, '&quot;')
 }
 
+export interface HeadingParseResult {
+  level: number
+  title: string
+}
+
+export function parseHeading(text: string): HeadingParseResult | null {
+  const match = text.match(/^(#{1,6})\s+(.+)$/)
+  if (match) {
+    return { level: match[1].length, title: match[2] }
+  }
+  return null
+}
+
 export function useContentRenderer() {
   /**
    * 转义 + 处理 #tag。用于 typed link 之间的纯文本段，

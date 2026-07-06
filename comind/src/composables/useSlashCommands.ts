@@ -453,6 +453,66 @@ export const commands: Command[] = [
     action: insertCodeBlock
   },
   {
+    id: 'h1',
+    name: 'Heading 1',
+    alias: ['标题1', '一级标题'],
+    group: '文本格式',
+    icon: 'H1',
+    action: ({ editor, range }) => {
+      editor.chain().deleteRange(range).insertContent('# ').focus().run()
+    }
+  },
+  {
+    id: 'h2',
+    name: 'Heading 2',
+    alias: ['标题2', '二级标题'],
+    group: '文本格式',
+    icon: 'H2',
+    action: ({ editor, range }) => {
+      editor.chain().deleteRange(range).insertContent('## ').focus().run()
+    }
+  },
+  {
+    id: 'h3',
+    name: 'Heading 3',
+    alias: ['标题3', '三级标题'],
+    group: '文本格式',
+    icon: 'H3',
+    action: ({ editor, range }) => {
+      editor.chain().deleteRange(range).insertContent('### ').focus().run()
+    }
+  },
+  {
+    id: 'h4',
+    name: 'Heading 4',
+    alias: ['标题4', '四级标题'],
+    group: '文本格式',
+    icon: 'H4',
+    action: ({ editor, range }) => {
+      editor.chain().deleteRange(range).insertContent('#### ').focus().run()
+    }
+  },
+  {
+    id: 'h5',
+    name: 'Heading 5',
+    alias: ['标题5', '五级标题'],
+    group: '文本格式',
+    icon: 'H5',
+    action: ({ editor, range }) => {
+      editor.chain().deleteRange(range).insertContent('##### ').focus().run()
+    }
+  },
+  {
+    id: 'h6',
+    name: 'Heading 6',
+    alias: ['标题6', '六级标题'],
+    group: '文本格式',
+    icon: 'H6',
+    action: ({ editor, range }) => {
+      editor.chain().deleteRange(range).insertContent('###### ').focus().run()
+    }
+  },
+  {
     id: 'image',
     name: 'Image',
     alias: ['图片', 'img'],
