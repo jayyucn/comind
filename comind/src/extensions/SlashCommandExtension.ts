@@ -47,17 +47,9 @@ export const SlashCommandExtension = Extension.create({
             if (text !== '/') return false
 
             const { state } = view
-            const $from = state.doc.resolve(from)
 
             // 检查是否在 URL 中（不触发）
             if (isInURL(state.doc, from)) {
-              return false
-            }
-
-            // 检查触发条件：block开头 或 前一个字符是空格
-            const textBefore = $from.nodeBefore?.text || ''
-            if (textBefore.length > 0 && !textBefore.match(/[\s\n]$/)) {
-              // 前面有文本但末尾不是空格或换行，在单词中间，不触发
               return false
             }
 

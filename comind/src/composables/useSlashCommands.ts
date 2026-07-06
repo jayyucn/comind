@@ -109,6 +109,38 @@ function insertFormat(mark: string, placeholder = '|') {
 }
 
 /**
+ * 在行首插入标题
+ */
+function insertHeadingAtLineStart(editor: any, level: number) {
+  const { $from } = editor.state.selection
+  const lineStart = $from.start()
+  const originalCursorPos = $from.pos
+
+  const headingPrefix = '#'.repeat(level) + ' '
+
+  const lineContent = editor.state.doc.textBetween(lineStart, editor.state.doc.content.size)
+  const existingHeading = lineContent.match(/^#{1,6}\s+/)
+
+  if (existingHeading) {
+    const existingLength = existingHeading[0].length
+    const newCursorPos = originalCursorPos - existingLength + headingPrefix.length
+    editor.chain()
+      .deleteRange({ from: lineStart, to: lineStart + existingLength })
+      .insertContentAt(lineStart, headingPrefix)
+      .setTextSelection(newCursorPos)
+      .focus()
+      .run()
+  } else {
+    const newCursorPos = originalCursorPos + headingPrefix.length
+    editor.chain()
+      .insertContentAt(lineStart, headingPrefix)
+      .setTextSelection(newCursorPos)
+      .focus()
+      .run()
+  }
+}
+
+/**
  * 插入代码块
  */
 function insertCodeBlock({ editor, range, blockId }: CommandProps) {
@@ -455,67 +487,67 @@ export const commands: Command[] = [
   {
     id: 'h1',
     name: 'Heading 1',
-    alias: ['标题1', '一级标题'],
+    alias: ['h1', '标题1', '一级标题'],
     group: '文本格式',
     icon: 'H1',
-    action: ({ editor, range }) => {
-      editor.chain().deleteRange(range).insertContent('# ').focus().run()
+    action: ({ editor }) => {
+      insertHeadingAtLineStart(editor, 1)
     }
   },
   {
     id: 'h2',
     name: 'Heading 2',
-    alias: ['标题2', '二级标题'],
+    alias: ['h2', '标题2', '二级标题'],
     group: '文本格式',
     icon: 'H2',
-    action: ({ editor, range }) => {
-      editor.chain().deleteRange(range).insertContent('## ').focus().run()
+    action: ({ editor }) => {
+      insertHeadingAtLineStart(editor, 2)
     }
   },
   {
     id: 'h3',
     name: 'Heading 3',
-    alias: ['标题3', '三级标题'],
+    alias: ['h3', '标题3', '三级标题'],
     group: '文本格式',
     icon: 'H3',
-    action: ({ editor, range }) => {
-      editor.chain().deleteRange(range).insertContent('### ').focus().run()
+    action: ({ editor }) => {
+      insertHeadingAtLineStart(editor, 3)
     }
   },
   {
     id: 'h4',
     name: 'Heading 4',
-    alias: ['标题4', '四级标题'],
+    alias: ['h4', '标题4', '四级标题'],
     group: '文本格式',
     icon: 'H4',
-    action: ({ editor, range }) => {
-      editor.chain().deleteRange(range).insertContent('#### ').focus().run()
+    action: ({ editor }) => {
+      insertHeadingAtLineStart(editor, 4)
     }
   },
   {
     id: 'h5',
     name: 'Heading 5',
-    alias: ['标题5', '五级标题'],
+    alias: ['h5', '标题5', '五级标题'],
     group: '文本格式',
     icon: 'H5',
-    action: ({ editor, range }) => {
-      editor.chain().deleteRange(range).insertContent('##### ').focus().run()
+    action: ({ editor }) => {
+      insertHeadingAtLineStart(editor, 5)
     }
   },
   {
     id: 'h6',
     name: 'Heading 6',
-    alias: ['标题6', '六级标题'],
+    alias: ['h6', '标题6', '六级标题'],
     group: '文本格式',
     icon: 'H6',
-    action: ({ editor, range }) => {
-      editor.chain().deleteRange(range).insertContent('###### ').focus().run()
+    action: ({ editor }) => {
+      insertHeadingAtLineStart(editor, 6)
     }
   },
   {
     id: 'image',
     name: 'Image',
-    alias: ['图片', 'img'],
+    alias: ['image', '图片', 'img'],
     group: '文本格式',
     icon: '🖼️',
     action: insertImage,

@@ -9,6 +9,7 @@ import { RelationshipTriggerExtension, notifyRelationshipMenuSelect, closeRelati
 import EnterAsBlockExtension from '../extensions/EnterAsBlockExtension'
 import BracketPairExtension from '../extensions/BracketPairExtension'
 import { SlashCommandExtension } from '../extensions/SlashCommandExtension'
+import { HeadingPreviewExtension } from '../extensions/HeadingPreviewExtension'
 import { usePageStore } from '../stores/pages'
 import { useRelationshipMenu } from '../composables/useRelationshipMenu'
 import { debounce } from '../utils/debounce'
@@ -240,6 +241,7 @@ const editor = shallowRef(useEditor({
     WikiLinkTriggerExtension,
     RelationshipTriggerExtension,
     BracketPairExtension,
+    HeadingPreviewExtension,
   ],
   content: textToHtml(props.content),
   autofocus: false,
@@ -382,5 +384,42 @@ defineExpose({ syncContent, focus, getText: () => editor.value?.getText() ?? '',
   outline: none;
   min-height: 1.5em;
   padding: 0 4px;
+}
+
+.editor-wrapper :deep(.heading-preview) {
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.editor-wrapper :deep(.heading-preview-h1) {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.editor-wrapper :deep(.heading-preview-h2) {
+  font-size: 1.3rem;
+  font-weight: 600;
+}
+
+.editor-wrapper :deep(.heading-preview-h3) {
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.editor-wrapper :deep(.heading-preview-h4) {
+  font-size: 1.05rem;
+  font-weight: 500;
+}
+
+.editor-wrapper :deep(.heading-preview-h5) {
+  font-size: 1rem;
+  font-weight: 500;
+  opacity: 0.85;
+}
+
+.editor-wrapper :deep(.heading-preview-h6) {
+  font-size: 0.95rem;
+  font-weight: 500;
+  opacity: 0.75;
 }
 </style>

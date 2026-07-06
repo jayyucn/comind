@@ -410,3 +410,41 @@
   font-weight: 500;
   opacity: 0.75;
 }
+
+// Heading preview styles for editor
+.tiptap .heading-preview {
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.tiptap .heading-preview-h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.tiptap .heading-preview-h2 {
+  font-size: 1.3rem;
+  font-weight: 600;
+}
+
+.tiptap .heading-preview-h3 {
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.tiptap .heading-preview-h4 {
+  font-size: 1.05rem;
+  font-weight: 500;
+}
+
+.tiptap .heading-preview-h5 {
+  font-size: 1rem;
+  font-weight: 500;
+  opacity: 0.85;
+}
+
+.tiptap .heading-preview-h6 {
+  font-size: 0.95rem;
+  font-weight: 500;
+  opacity: 0.75;
+}
