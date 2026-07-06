@@ -419,6 +419,7 @@ pub fn import_all(
         } else {
             RelationshipTypeService::create(
                 storage,
+                None,
                 &rt.r#type,
                 rt.inverse.as_deref(),
                 &rt.label,

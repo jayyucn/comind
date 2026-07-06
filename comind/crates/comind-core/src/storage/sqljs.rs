@@ -81,7 +81,7 @@ impl SqlJsAdapter {
         let result = js_sys::Function::from(uint8_array).call0(&buffer)
             .map_err(|e| format!("Failed to call Uint8Array: {:?}", e))?;
         
-        let string_from_char_code = js_sys::eval("String.fromCharCode")
+        let _string_from_char_code = js_sys::eval("String.fromCharCode")
             .map_err(|e| format!("Failed to get String.fromCharCode: {:?}", e))?;
         
         let array = Array::from(&result);
@@ -701,15 +701,15 @@ impl TemplateRepository for SqlJsAdapter {
 
 #[cfg(target_arch = "wasm32")]
 impl SearchRepository for SqlJsAdapter {
-    fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchResult>, Box<dyn std::error::Error>> {
+    fn search(&self, _query: &str, _limit: usize) -> Result<Vec<SearchResult>, Box<dyn std::error::Error>> {
         Ok(Vec::new())
     }
 
-    fn update_index(&mut self, block_id: &str, content: &str, title: &str) -> Result<(), Box<dyn std::error::Error>> {
+    fn update_index(&mut self, _block_id: &str, _content: &str, _title: &str) -> Result<(), Box<dyn std::error::Error>> {
         Ok(())
     }
 
-    fn delete_from_index(&mut self, block_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+    fn delete_from_index(&mut self, _block_id: &str) -> Result<(), Box<dyn std::error::Error>> {
         Ok(())
     }
 }

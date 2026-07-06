@@ -12,8 +12,14 @@ pub struct Property {
     pub is_hidden: i64,
     pub is_deleted: i64,
     pub schema_version: i64,
+    #[serde(default = "default_timestamp")]
     pub created_at: i64,
+    #[serde(default = "default_timestamp")]
     pub updated_at: i64,
+}
+
+fn default_timestamp() -> i64 {
+    chrono::Utc::now().timestamp_millis()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

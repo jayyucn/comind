@@ -30,6 +30,7 @@ impl RelationshipTypeService {
 
     pub fn create(
         storage: &mut dyn StorageAdapter,
+        id: Option<&str>,
         r#type: &str,
         inverse: Option<&str>,
         label: &str,
@@ -42,7 +43,7 @@ impl RelationshipTypeService {
         let now = chrono::Utc::now().timestamp_millis();
 
         let rt = RelationshipType {
-            id: Self::generate_id(),
+            id: id.map(|s| s.to_string()).unwrap_or_else(|| Self::generate_id()),
             r#type: r#type.to_string(),
             inverse: inverse.map(|s| s.to_string()),
             label: label.to_string(),

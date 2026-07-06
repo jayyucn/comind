@@ -20,7 +20,12 @@ pub struct BlockVersion {
     pub message: Option<String>,
     pub source: String,
     pub restored_from_version_id: Option<String>,
+    #[serde(default = "default_timestamp")]
     pub created_at: i64,
+}
+
+fn default_timestamp() -> i64 {
+    chrono::Utc::now().timestamp_millis()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

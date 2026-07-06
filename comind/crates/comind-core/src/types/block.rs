@@ -11,8 +11,14 @@ pub struct Block {
     pub content: String,
     pub format: String,
     pub r#type: String,
+    #[serde(default = "default_timestamp")]
     pub created_at: i64,
+    #[serde(default = "default_timestamp")]
     pub updated_at: i64,
+}
+
+fn default_timestamp() -> i64 {
+    chrono::Utc::now().timestamp_millis()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
