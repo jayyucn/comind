@@ -138,7 +138,8 @@
 }
 
 .block.active .block-text {
-  background: var(--accent-06);
+  background: var(--selection-bg);
+  border-radius: $radius-sm;
 }
 
 // 子节点容器

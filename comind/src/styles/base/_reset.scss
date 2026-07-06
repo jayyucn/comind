@@ -45,9 +45,12 @@ body {
   padding: 0;
 }
 
+
+
+
 // 选中文本样式
 ::selection {
-  background: var(--color-accent-bg);
+  background:  var(--selection-bg);
   color: var(--color-ink);
 }
 
