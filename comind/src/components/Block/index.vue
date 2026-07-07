@@ -842,6 +842,7 @@ async function handlePaste(e: ClipboardEvent) {
             ref="editorRef"
             :block-id="blockId"
             :content="editContent"
+            :show-full-placeholder="isSingleEmptyBlock"
             :properties="getBlockPropertiesMap()"
             :language="getBlockProperty('language')"
             @save="handleSave"

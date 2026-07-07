@@ -38,7 +38,7 @@ function handleClick(e: MouseEvent) {
 
 <template>
   <div class="block-text" @click="handleClick">
-    <span v-if="showPlaceholder && !content" class="block-placeholder">Type something...</span>
+    <span v-if="showPlaceholder && !content" class="block-placeholder">写点什么…</span>
     <component
       v-else-if="headingTag"
       :is="headingTag"

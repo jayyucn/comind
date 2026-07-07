@@ -18,6 +18,7 @@ import PageLinkMenu from './PageLinkMenu.vue'
 const props = defineProps<{
   blockId: string
   content: string
+  showFullPlaceholder?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -40,6 +41,7 @@ const debouncedEmitSave = debounce((content: string) => {
   emit('save', content)
 }, 300)
 
+const hasContent = ref(!!props.content)
 const menuVisible = ref(false)
 const menuPosition = ref({ x: 0, y: 0 })
 const menuRange = ref({ from: 0, to: 0 })
@@ -257,6 +259,7 @@ const editor = shallowRef(useEditor({
   },
   onUpdate: () => {
     if (editor.value) {
+      hasContent.value = !!editor.value.getText()
       const { from } = editor.value.state.selection
       emit('cursor-change', from)
       debouncedEmitSave(editor.value.getText())
@@ -361,6 +364,7 @@ defineExpose({ syncContent, focus, getText: () => editor.value?.getText() ?? '',
 
 <template>
   <div class="editor-wrapper">
+    <div v-if="showFullPlaceholder && !hasContent" class="editor-placeholder">写点什么…</div>
     <EditorContent :editor="editor" />
     <PageLinkMenu
       ref="menuRef"
@@ -378,6 +382,18 @@ defineExpose({ syncContent, focus, getText: () => editor.value?.getText() ?? '',
 .editor-wrapper {
   flex: 1;
   outline: none;
+  position: relative;
+}
+
+.editor-placeholder {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  pointer-events: none;
+  user-select: none;
+  color: var(--text-tertiary);
+  font-style: normal;
+  opacity: 0.55;
 }
 
 .editor-wrapper :deep(.tiptap) {
