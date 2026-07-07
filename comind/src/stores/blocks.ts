@@ -251,6 +251,33 @@ export const useBlockStore = defineStore('blocks', () => {
     }
   }
 
+  /** 按 ID 加载单个 Block 并合并进缓存（若已存在则直接返回缓存） */
+  async function loadBlock(blockId: string): Promise<Block | undefined> {
+    const existing = blocks.value.find(b => b.id === blockId)
+    if (existing) return existing
+
+    const client = await getClient()
+    try {
+      const rustBlock = await client.getBlock(blockId)
+      const block: Block = {
+        id: rustBlock.id,
+        pageId: rustBlock.page_id,
+        parentId: rustBlock.parent_id,
+        pos: rustBlock.pos,
+        content: rustBlock.content,
+        format: JSON.parse(rustBlock.format || '{}'),
+        type: rustBlock.type as Block['type'],
+        createdAt: rustBlock.created_at,
+        updatedAt: rustBlock.updated_at
+      }
+      blocks.value.push(block)
+      return block
+    } catch (err) {
+      console.error('[loadBlock] Failed to load block:', err)
+      return undefined
+    }
+  }
+
   /** 每个 Block 独立的防抖保存 */
   const pendingSaves = new Map<string, ReturnType<typeof debounce<typeof _doSave>>>()
 
@@ -930,6 +957,7 @@ export const useBlockStore = defineStore('blocks', () => {
     getBacklinks,
     loadPageBlocks,
     loadMultiPageBlocks,
+    loadBlock,
     createBlock,
     insertBlockAtCursor,
     insertSiblingAbove,

@@ -2,6 +2,7 @@ import { describe, test, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useBlockStore } from './blocks'
 import { isDescendantOf, calcInsertPos, GAP_SIZE } from '../utils/block-helpers'
+import { initTestCore } from '../../tests/core-client'
 
 // Mock IndexedDB 存储层
 vi.mock('../storage/indexedDB', () => ({
@@ -905,5 +906,69 @@ describe('可见性感知遍历 - findLastVisibleDescendant / findPreviousVisibl
 
     const result = store.findPreviousVisibleBlock(block2.id)
     expect(result?.id).toBe(block1.id)
+  })
+})
+
+// ============================================================
+// loadBlock 测试
+// ============================================================
+describe('loadBlock', () => {
+  test('缓存命中时直接返回缓存中的块', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-loadblock-1'
+    const block = await store.createBlock({ pageId, content: 'Cached Block' })
+
+    const result = await store.loadBlock(block.id)
+    expect(result).toBeDefined()
+    expect(result?.id).toBe(block.id)
+    expect(result?.content).toBe('Cached Block')
+  })
+
+  test('缓存未命中时从 DB 加载并合并进缓存', async () => {
+    const store = useBlockStore()
+    const client = await initTestCore()
+    const pageId = 'page-loadblock-2'
+    const dbBlockId = 'db-block-loadblock-2'
+
+    // 模拟 getBlock 返回 DB 中的 block（snake_case 字段）
+    // 注：测试环境 WASM DB 持久化存在问题（saveBlockTree/executeBatch 创建的 block
+    // 不会持久化），因此这里 spy client.getBlock 以验证 loadBlock 的加载与合并逻辑
+    const rustBlock = {
+      id: dbBlockId,
+      page_id: pageId,
+      parent_id: null,
+      pos: 1000,
+      content: 'From DB',
+      format: '{}',
+      type: 'bullet',
+      created_at: 1000,
+      updated_at: 2000
+    }
+    const getBlockSpy = vi.spyOn(client, 'getBlock').mockResolvedValue(rustBlock as any)
+
+    // 清空缓存，模拟未访问过该页
+    store.blocks = []
+    expect(store.blocks).toHaveLength(0)
+
+    // loadBlock 应从 DB 加载
+    const result = await store.loadBlock(dbBlockId)
+    expect(result).toBeDefined()
+    expect(result?.id).toBe(dbBlockId)
+    expect(result?.content).toBe('From DB')
+    expect(result?.pageId).toBe(pageId)
+
+    // 验证已合并进缓存
+    expect(store.blocks.find(b => b.id === dbBlockId)).toBeDefined()
+
+    // 验证确实调用了 client.getBlock
+    expect(getBlockSpy).toHaveBeenCalledWith(dbBlockId)
+
+    getBlockSpy.mockRestore()
+  })
+
+  test('不存在的 blockId 返回 undefined', async () => {
+    const store = useBlockStore()
+    const result = await store.loadBlock('non-existent-block-id')
+    expect(result).toBeUndefined()
   })
 })
