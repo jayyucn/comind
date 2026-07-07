@@ -1,0 +1,109 @@
+// 共享弹窗样式
+// 所有弹窗（MergeDialog / ConfirmDialog / RenameDialog）共用
+
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--overlay);
+  backdrop-filter: blur(4px);
+}
+
+.dialog-card {
+  background: var(--color-paper);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 20px var(--space-8) 34px;
+  min-width: 360px;
+  max-width: 420px;
+  box-shadow: var(--shadow-modal);
+  // 黄金比例偏移：视觉中心略高于物理中心
+  margin-top: -20vh;
+}
+
+.dialog-icon {
+  text-align: center;
+  font-size: 24px;
+  margin-bottom: var(--space-3);
+}
+
+.dialog-title {
+  text-align: center;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-ink);
+  margin-bottom: var(--space-3);
+}
+
+.dialog-body {
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--color-ink-secondary);
+  line-height: 1.6;
+  margin-bottom: var(--space-6);
+}
+
+.dialog-highlight {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.dialog-actions .btn {
+  padding: 6px var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 120ms ease, box-shadow 120ms ease;
+}
+
+.dialog-actions .btn-cancel {
+  background: transparent;
+  color: var(--color-ink-secondary);
+  border: 1px solid var(--color-border);
+}
+
+.dialog-actions .btn-cancel:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.dialog-actions .btn-confirm {
+  background: var(--color-accent);
+  color: var(--color-white);
+  border: none;
+  font-weight: 500;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.dialog-actions .btn-confirm:hover {
+  background: var(--color-accent-deep);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+.dialog-actions .btn-confirm.danger {
+  background: var(--error);
+}
+
+.dialog-actions .btn-confirm.danger:hover {
+  background: #b91c1c;
+}
+
+// 淡入淡出过渡
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 160ms ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
