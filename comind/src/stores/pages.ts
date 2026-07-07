@@ -63,6 +63,15 @@ export const usePageStore = defineStore('pages', () => {
     currentPageId.value = pageId
     const blockStore = useBlockStore()
     await blockStore.loadPageBlocks(pageId)
+
+    // 页面无 Block 时自动创建一个空的根级 Block
+    if (blockStore.blocks.length === 0) {
+      await blockStore.createBlock({
+        pageId,
+        content: '',
+        parentId: null,
+      })
+    }
   }
 
   async function createPage(title: string, type: 'normal' | 'journal' = 'normal'): Promise<Page> {
