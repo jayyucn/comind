@@ -4,6 +4,12 @@ import { usePageStore } from '../stores/pages'
 import { useEditorStore } from '../stores/editor'
 import { useNavigateToPage } from '../composables/useNavigateToPage'
 import { useBlockStore } from '../stores/blocks'
+import { usePropertyStore } from '../stores/property'
+import { useBlockRegistry } from '../composables/useBlockRegistry'
+import { buildDocumentOrder } from '../utils/block-helpers'
+import type { Block } from '../types/block'
+import PropertyInline from './Block/PropertyInline.vue'
+import PropertyDisplay from './Block/PropertyDisplay.vue'
 
 const props = withDefaults(defineProps<{
   pageId?: string
@@ -14,7 +20,9 @@ const props = withDefaults(defineProps<{
 const pageStore = usePageStore()
 const editorStore = useEditorStore()
 const blockStore = useBlockStore()
+const propertyStore = usePropertyStore()
 const { navigateToPage } = useNavigateToPage()
+const { getHandler } = useBlockRegistry()
 
 interface Link {
   id: string
@@ -26,120 +34,139 @@ interface Link {
 
 interface BacklinkItem {
   link: Link
-  sourceContent: string
-  sourcePageTitle: string
+  block: Block
 }
 
-const backlinkItems = ref<BacklinkItem[]>([])
+interface BacklinkGroup {
+  sourcePageId: string
+  sourcePageTitle: string
+  items: BacklinkItem[]
+}
+
+const groupedBacklinks = ref<BacklinkGroup[]>([])
 const loading = ref(false)
 const collapsed = ref(false)
 const bodyRef = ref<HTMLElement | null>(null)
 const isAnimating = ref(false)
-const linkStatusMap = ref<Map<string, { blockExists: boolean; pageExists: boolean }>>(new Map())
 
-// 判断是否有Backlinks数据（用于条件显示）
-const hasBacklinks = computed(() => backlinkItems.value.length > 0)
-
-// 获取当前需要加载的pageId
+const hasBacklinks = computed(() => groupedBacklinks.value.length > 0)
 const targetPageId = computed(() => props.pageId ?? pageStore.currentPageId)
 
-// 点击 Backlink：跳转到该Block所在Page，并激活该Block
-async function handleBacklinkClick(link: Link) {
-  const status = getLinkStatus(link)
-  if (!status.blockExists || !status.pageExists) return
-
-  if (editorStore.activeBlockId) {
-    editorStore.deactivateBlock()
-  }
-
-  let blockRecord
-  try {
-    blockRecord = blockStore.getBlock(link.sourceBlockId)
-  } catch (err) {
-    console.error('获取源块失败:', err)
-    return
-  }
-  if (!blockRecord) return
-
-  if (blockRecord.pageId !== pageStore.currentPageId) {
-    await navigateToPage(blockRecord.pageId)
-  }
-
-  await nextTick()
-  editorStore.activateBlock(link.sourceBlockId)
-}
-
-// 预计算每个link的存在状态 + 获取该block内容和所在page标题
 async function loadBacklinks() {
   const currentId = targetPageId.value
   if (!currentId) {
-    backlinkItems.value = []
-    linkStatusMap.value = new Map()
+    groupedBacklinks.value = []
     return
   }
 
   loading.value = true
   try {
+    // 1. 加载当前页块（保留现有行为）
     await blockStore.loadMultiPageBlocks([currentId])
+
+    // 2. 获取指向当前页的所有反链
     const links = await blockStore.getBacklinks(currentId)
 
-    const results = await Promise.all(
-      links.map(async (link) => {
-        const key = `${link.sourceBlockId}_${link.targetPageId}`
-        let blockExists = false
-        let blockRecord = null
+    // 3. 解析每个 link 的 sourceBlockId → block（含 pageId）
+    const itemMap = new Map<string, BacklinkItem>()
+    for (const link of links) {
+      if (itemMap.has(link.sourceBlockId)) continue // 去重
+      const block = await blockStore.loadBlock(link.sourceBlockId)
+      if (!block) continue // orphan-block 跳过
+      itemMap.set(link.sourceBlockId, { link, block })
+    }
 
-        try {
-          blockRecord = blockStore.getBlock(link.sourceBlockId)
-          blockExists = !!blockRecord
-        } catch (err) {
-          console.error('获取源块失败:', err)
-        }
+    // 4. 收集所有 sourcePageId，加载完整页树（文档顺序排序需要）
+    const sourcePageIds = [...new Set(
+      [...itemMap.values()].map(item => item.block.pageId)
+    )]
+    if (sourcePageIds.length > 0) {
+      await blockStore.loadMultiPageBlocks(sourcePageIds)
+    }
 
-        let pageExists = false
-        let pageTitle = ''
-        if (blockExists && blockRecord) {
-          try {
-            const pageRecord = pageStore.getPage(blockRecord.pageId)
-            pageExists = !!pageRecord
-            pageTitle = pageRecord?.title ?? '未命名页面'
-          } catch (err) {
-            console.error('获取页面失败:', err)
-          }
-        }
+    // 5. 过滤 orphan-page + 按 sourcePageId 分组
+    const groupMap = new Map<string, BacklinkItem[]>()
+    for (const item of itemMap.values()) {
+      const page = pageStore.getPage(item.block.pageId)
+      if (!page) continue // orphan-page 跳过
+      const existing = groupMap.get(item.block.pageId) ?? []
+      existing.push(item)
+      groupMap.set(item.block.pageId, existing)
+    }
 
-        return {
-          link,
-          sourceContent: blockExists && blockRecord ? blockRecord.content : '',
-          sourcePageTitle: pageTitle,
-          status: { blockExists, pageExists },
-          key
-        }
+    // 6. 组内排序（文档顺序）+ 组间排序（字母序）
+    const groups: BacklinkGroup[] = []
+    for (const [sourcePageId, items] of groupMap) {
+      const page = pageStore.getPage(sourcePageId)!
+      // 获取该页所有块，构建文档顺序
+      const pageBlocks = blockStore.getBlocksByPage(sourcePageId)
+      const orderMap = buildDocumentOrder(pageBlocks)
+      // 按文档顺序排序组内块
+      items.sort((a, b) => {
+        const oa = orderMap.get(a.block.id) ?? 0
+        const ob = orderMap.get(b.block.id) ?? 0
+        return oa - ob
       })
+      groups.push({
+        sourcePageId,
+        sourcePageTitle: page.title ?? '未命名页面',
+        items
+      })
+    }
+    // 按页面标题字母序排序
+    groups.sort((a, b) => a.sourcePageTitle.localeCompare(b.sourcePageTitle))
+
+    // 7. 加载所有块的属性（PropertyDisplay/PropertyInline 需要）
+    const allBlockIds = groups.flatMap(g => g.items.map(i => i.block.id))
+    await Promise.allSettled(
+      allBlockIds.map(id => propertyStore.loadBlockProperties(id))
     )
 
-    backlinkItems.value = results.map(r => ({
-      link: r.link,
-      sourceContent: r.sourceContent,
-      sourcePageTitle: r.sourcePageTitle
-    }))
-
-    const statusMap = new Map<string, { blockExists: boolean; pageExists: boolean }>()
-    for (const r of results) {
-      statusMap.set(r.key, r.status)
-    }
-    linkStatusMap.value = statusMap
+    groupedBacklinks.value = groups
   } finally {
     loading.value = false
   }
 }
 
-function getLinkStatus(link: Link) {
-  const key = `${link.sourceBlockId}_${link.targetPageId}`
-  return linkStatusMap.value.get(key) ?? { blockExists: true, pageExists: true }
+// 点击反链块：跳转到源页 + 激活该块
+async function handleBacklinkClick(item: BacklinkItem) {
+  if (editorStore.activeBlockId) {
+    editorStore.deactivateBlock()
+  }
+
+  const block = blockStore.getBlock(item.link.sourceBlockId)
+  if (!block) return
+
+  if (block.pageId !== pageStore.currentPageId) {
+    await navigateToPage(block.pageId)
+  }
+
+  await nextTick()
+  editorStore.activateBlock(item.link.sourceBlockId)
 }
 
-// 监听targetPageId变化，重新加载Backlinks
+// 点击组标题：跳转到源页（不激活块）
+async function handleGroupClick(sourcePageId: string) {
+  if (sourcePageId !== pageStore.currentPageId) {
+    await navigateToPage(sourcePageId)
+  }
+}
+
+function getBlockPropertiesMap(blockId: string): Record<string, any> {
+  const props = propertyStore.getBlockProperties(blockId)
+  const result: Record<string, any> = {}
+  for (const prop of props) {
+    result[prop.key] = prop.value
+  }
+  return result
+}
+
+function getBlockLanguage(blockId: string): string | undefined {
+  const prop = propertyStore.getBlockProperty(blockId, 'language')
+  return prop?.value as string | undefined
+}
+
+// 监听 targetPageId 变化，重新加载 Backlinks
 watch(
   targetPageId,
   () => loadBacklinks(),
@@ -171,8 +198,8 @@ watch(collapsed, async (isCollapsed) => {
   }
 }, { flush: 'post' })
 
-// 链接数量变化时重算高度
-watch([backlinkItems, loading], async () => {
+// 分组数据变化时重算高度
+watch([groupedBacklinks, loading], async () => {
   if (collapsed.value) return
   await nextTick()
   if (bodyRef.value) bodyRef.value.style.maxHeight = 'none'
@@ -186,7 +213,7 @@ watch([backlinkItems, loading], async () => {
       <span class="backlinks-title">
         <span class="backlinks-icon">🔗</span>
         反向链接
-        <span class="backlinks-count">({{ backlinkItems.length }})</span>
+        <span class="backlinks-count">({{ groupedBacklinks.reduce((sum, g) => sum + g.items.length, 0) }})</span>
       </span>
       <span class="backlinks-toggle">{{ collapsed ? '▶' : '▼' }}</span>
     </div>
@@ -195,20 +222,62 @@ watch([backlinkItems, loading], async () => {
     <div ref="bodyRef" class="backlinks-body">
       <div v-if="loading" class="backlinks-loading">加载中...</div>
 
-      <div v-else-if="backlinkItems.length === 0" class="backlinks-empty">
-        暂无反向链接
-      </div>
+      <div v-else class="backlinks-groups">
+        <div
+          v-for="group in groupedBacklinks"
+          :key="group.sourcePageId"
+          class="backlink-group"
+        >
+          <!-- 组标题：[[A]] (count)，点击跳转到源页 -->
+          <div class="backlink-group-header" @click="handleGroupClick(group.sourcePageId)">
+            <span class="backlink-group-title">[[{{ group.sourcePageTitle }}]]</span>
+            <span class="backlink-group-count">({{ group.items.length }})</span>
+          </div>
 
-      <div v-else class="backlinks-list">
-        <div v-for="item in backlinkItems" :key="item.link.sourceBlockId + item.link.targetPageId" class="backlink-item"
-          :class="{
-            'orphan-block': !getLinkStatus(item.link).blockExists,
-            'orphan-page': getLinkStatus(item.link).blockExists && !getLinkStatus(item.link).pageExists
-          }" @click="handleBacklinkClick(item.link)">
-          <span class="backlink-text">{{ item.sourceContent || '空块' }}</span>
-          <span class="backlink-page">{{ item.sourcePageTitle }}</span>
-          <span v-if="!getLinkStatus(item.link).blockExists" class="backlink-hint">(来源块已删除)</span>
-          <span v-else-if="!getLinkStatus(item.link).pageExists" class="backlink-hint">(来源页面已删除)</span>
+          <!-- 块列表：向右缩进 24px -->
+          <div class="backlink-block-list">
+            <div
+              v-for="item in group.items"
+              :key="item.link.sourceBlockId"
+              class="backlink-block"
+              @click="handleBacklinkClick(item)"
+            >
+              <!-- Bullet（纯展示圆点，不可拖拽/折叠） -->
+              <span class="block-bullet backlink-bullet">
+                <span class="bullet-dot"></span>
+              </span>
+
+              <!-- PropertyInline: between-bullet-content -->
+              <PropertyInline
+                :block-id="item.link.sourceBlockId"
+                position="between-bullet-content"
+              />
+
+              <!-- 块内容：renderComponent（readonly） -->
+              <component
+                v-if="getHandler(item.block.type)"
+                :is="getHandler(item.block.type)!.renderComponent"
+                :block-id="item.link.sourceBlockId"
+                :content="item.block.content"
+                :properties="getBlockPropertiesMap(item.link.sourceBlockId)"
+                :language="getBlockLanguage(item.link.sourceBlockId)"
+                :readonly="true"
+                @content-click.stop
+              />
+              <span v-else class="backlink-text-fallback">{{ item.block.content || '空块' }}</span>
+
+              <!-- PropertyInline: right-of-content -->
+              <PropertyInline
+                :block-id="item.link.sourceBlockId"
+                position="right-of-content"
+              />
+
+              <!-- PropertyDisplay（下方属性区，stopPropagation） -->
+              <div class="backlink-properties" @click.stop>
+                <PropertyDisplay :block-id="item.link.sourceBlockId" />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -217,13 +286,10 @@ watch([backlinkItems, loading], async () => {
 
 <style scoped>
 /*
- * Backlinks 面板布局方案�? * - 面板固定在页面底部，不随页面滚动
- * - 高度随链接数量增高，上限 400px（超出内部滚动）
- * - 页面主体区域可独立滚�? *
- * 父级布局要求（App.vue）：
- *   .app { display: flex; flex-direction: column; height: 100vh; }
- *   .main-scroll { flex: 1; overflow-y: auto; }
- *   .backlinks-panel { flex-shrink: 0; }
+ * Backlinks 面板布局方案（分组重构）
+ * - 面板固定在页面底部，不随页面滚动
+ * - 按来源页面分组，组标题左上角，块向右缩进 24px
+ * - 面板级折叠（maxHeight 动画）
  */
 
 .backlinks-panel {
@@ -282,7 +348,6 @@ watch([backlinkItems, loading], async () => {
 .backlinks-body {
   overflow: hidden;
   padding: 0 0 var(--space-4);
-  /* WebKit 滚动条 */
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
@@ -300,78 +365,105 @@ watch([backlinkItems, loading], async () => {
   background: var(--text-tertiary);
 }
 
-.backlinks-loading,
-.backlinks-empty {
+.backlinks-loading {
   font-size: var(--text-xs);
   color: var(--text-tertiary);
   padding: var(--space-4) var(--space-1);
   text-align: center;
 }
 
-.backlinks-list {
+/* 分组容器 */
+.backlinks-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* 组标题 */
+.backlink-group-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: var(--space-2) 0;
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  transition: background 80ms ease;
+}
+
+.backlink-group-header:hover {
+  background: var(--bg-hover);
+}
+
+.backlink-group-title {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.backlink-group-count {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
+/* 块列表：向右缩进 24px（= INDENT_WIDTH_PER_LEVEL） */
+.backlink-block-list {
+  padding-left: 24px;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.backlink-item {
-  padding: var(--space-3) var(--space-4);
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-  cursor: pointer;
-  border-radius: var(--radius-md);
+/* 单个反链块 */
+.backlink-block {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  align-items: flex-start;
   flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  cursor: pointer;
   transition: background 80ms ease;
 }
 
-.backlink-item:hover:not(.orphan-block):not(.orphan-page) {
+.backlink-block:hover {
   background: var(--bg-hover);
-  color: var(--text-primary);
 }
 
-.backlink-text {
+/* Bullet：覆盖全局 .block-bullet 的 cursor 和 hover */
+.backlink-bullet {
+  cursor: default;
+}
+
+.backlink-bullet:hover .bullet-dot {
+  opacity: var(--block-bullet-opacity);
+  transform: translateY(1px);
+  box-shadow: none;
+}
+
+/* renderComponent 内容区 */
+.backlink-block > :deep(.block-render) {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+/* fallback 纯文本（无 handler 时） */
+.backlink-text-fallback {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: 400;
+  font-size: var(--text-sm);
   color: var(--text-primary);
 }
 
-.backlink-page {
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-
-.backlink-hint {
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-  font-style: italic;
-}
-
-/* 悬空链接样式 - �?Block 已删�?*/
-.backlink-item.orphan-block {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.backlink-item.orphan-block .backlink-text {
-  text-decoration: line-through;
-}
-
-/* 悬空链接样式 - �?Page 已删�?*/
-.backlink-item.orphan-page {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.backlink-item.orphan-page .backlink-text {
-  text-decoration: line-through;
+/* PropertyDisplay 下方属性区 */
+.backlink-properties {
+  width: 100%;
+  padding-left: 28px; /* 对齐 bullet 宽度 20px + gap 8px */
 }
 </style>
