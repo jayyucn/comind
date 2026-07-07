@@ -5,7 +5,6 @@ import { usePageStore } from '../../stores/pages'
 import BlockList from '../BlockList.vue'
 import Backlinks from '../Backlinks.vue'
 import { TaskIcon } from '../Icons'
-import { FilePen } from 'lucide-vue-next'
 
 const props = defineProps<{
   pageId: string
@@ -55,7 +54,7 @@ function openPage() {
       </div>
       <div class="date-right">
         <span v-if="isToday" class="today-tag">今天</span>
-        <span class="entry-chevron"><FilePen /></span>
+
       </div>
     </div>
 
@@ -154,16 +153,7 @@ function openPage() {
   line-height: 1.4;
 }
 
-.entry-chevron {
-  font-size: 14px;
-  color: var(--text-tertiary);
-  transition: transform 160ms ease;
-}
 
-.entry-date-card:hover .entry-chevron {
-  transform: translateX(3px);
-  color: var(--accent);
-}
 
 .entry-body {
   padding: 0;
