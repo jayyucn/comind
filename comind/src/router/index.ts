@@ -30,6 +30,12 @@ router.beforeEach(async (to) => {
         return { name: 'journal-page', params: { date: page.title } }
       }
 
+      // 规范化 URL 为 UUID，避免 resolvedPageId computed 在页面重命名后
+      // 因旧标题查询失败而回退为非 UUID 值
+      if (page.id !== rawParam) {
+        return { name: 'page', params: { pageId: page.id }, replace: true }
+      }
+
       await pageStore.openPage(page.id)
     } catch (error) {
       console.error('[beforeEach /page] Failed to load page:', error)

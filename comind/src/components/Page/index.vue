@@ -49,6 +49,9 @@ const titleInputRef = ref<HTMLInputElement | null>(null)
 const showMergeDialog = ref(false)
 const mergeTarget = ref<Page | null>(null)
 
+const showRenameDialog = ref(false)
+const pendingNewTitle = ref('')
+
 onBeforeUnmount(() => {
   editorStore.deactivateBlock()
 })
@@ -60,7 +63,9 @@ async function startEditTitle() {
   isEditingTitle.value = true
   nextTick(() => {
     titleInputRef.value?.focus()
-    titleInputRef.value?.select()
+    // 光标放到末尾，不选中全选
+    const len = titleInputRef.value?.value.length ?? 0
+    titleInputRef.value?.setSelectionRange(len, len)
   })
 }
 
@@ -69,12 +74,32 @@ async function saveTitle() {
   const newTitle = editingTitle.value.trim()
   if (!newTitle || newTitle === await currentPageTitle.value) return
 
-  const result = await pageStore.renamePage(await resolvedPageId.value, newTitle)
-  if (result.duplicated) {
+  // 先检查重名冲突
+  const pageId = await resolvedPageId.value
+  const existingPage = pageStore.getPageByTitle(newTitle)
+  if (existingPage && existingPage.id !== pageId) {
     editingTitle.value = newTitle
+    mergeTarget.value = existingPage
     showMergeDialog.value = true
-    mergeTarget.value = result.duplicated
+    return
   }
+
+  // 确认弹窗
+  pendingNewTitle.value = newTitle
+  showRenameDialog.value = true
+}
+
+async function handleConfirmRename() {
+  showRenameDialog.value = false
+  if (!pendingNewTitle.value) return
+  await pageStore.renamePage(await resolvedPageId.value, pendingNewTitle.value)
+  pendingNewTitle.value = ''
+}
+
+function handleCancelRename() {
+  showRenameDialog.value = false
+  pendingNewTitle.value = ''
+  cancelEditTitle()
 }
 
 function cancelEditTitle() {
@@ -143,8 +168,125 @@ function handleCancelMerge() {
     <PropertyQuickEditor />
     <PropertyEditor />
     <RelationshipMenu :menu="relMenu" />
+
+    <!-- 重命名确认弹窗 -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div
+          v-if="showRenameDialog"
+          class="rename-overlay"
+          @click.self="handleCancelRename"
+        >
+        <div class="rename-dialog">
+          <div class="rename-dialog-title">修改页面标题</div>
+          <div class="rename-dialog-body">
+            将页面标题从「<strong class="rename-highlight">{{ currentPageTitle }}</strong>」
+            修改为「<strong class="rename-highlight">{{ pendingNewTitle }}</strong>」？
+          </div>
+          <div class="rename-dialog-actions">
+            <button class="btn btn-cancel" @click="handleCancelRename">取消</button>
+            <button class="btn btn-confirm" @click="handleConfirmRename">确认修改</button>
+          </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
 <style scoped lang="scss">
+// backdrop
+.rename-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+}
+
+// dialog card
+.rename-dialog {
+  background: var(--color-paper);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  padding: 32px 40px 24px;
+  min-width: 340px;
+  max-width: 400px;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.12),
+    0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.rename-dialog-title {
+  text-align: center;
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-ink);
+  margin-bottom: 20px;
+}
+
+.rename-dialog-body {
+  font-size: 14px;
+  color: var(--color-ink-secondary);
+  line-height: 1.7;
+  margin-bottom: 28px;
+  text-align: center;
+}
+
+.rename-highlight {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.rename-dialog-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+.rename-dialog-actions .btn {
+  padding: 8px 24px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 120ms ease, box-shadow 120ms ease;
+}
+
+.rename-dialog-actions .btn-cancel {
+  background: transparent;
+  color: var(--color-ink-secondary);
+  border: 1px solid var(--color-border);
+}
+
+.rename-dialog-actions .btn-cancel:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.rename-dialog-actions .btn-confirm {
+  background: var(--color-accent);
+  color: #fff;
+  border: none;
+  font-weight: 500;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.rename-dialog-actions .btn-confirm:hover {
+  background: var(--color-accent-deep);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+// fade transition
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 160ms ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
 </style>
