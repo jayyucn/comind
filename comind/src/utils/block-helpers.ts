@@ -191,3 +191,36 @@ export function isDescendantOf(blocks: Block[], targetId: string | null, blockId
   }
   return false
 }
+
+/**
+ * 构建文档顺序映射（前序遍历 DFS）
+ *
+ * 给定同一页面的扁平 Block 列表，返回 blockId → 顺序索引的 Map。
+ * 用于反链组内按源页文档顺序排序。
+ *
+ * @param blocks 同一页面的扁平 Block 列表
+ * @returns Map<blockId, orderIndex>
+ */
+export function buildDocumentOrder(blocks: Block[]): Map<string, number> {
+  const childrenMap = new Map<string | null, Block[]>()
+  for (const b of blocks) {
+    const parent = b.parentId ?? null
+    if (!childrenMap.has(parent)) childrenMap.set(parent, [])
+    childrenMap.get(parent)!.push(b)
+  }
+  for (const siblings of childrenMap.values()) {
+    siblings.sort((a, b) => (a.pos ?? 0) - (b.pos ?? 0))
+  }
+
+  const order = new Map<string, number>()
+  let index = 0
+  function dfs(parentId: string | null) {
+    const children = childrenMap.get(parentId) ?? []
+    for (const child of children) {
+      order.set(child.id, index++)
+      dfs(child.id)
+    }
+  }
+  dfs(null)
+  return order
+}

@@ -12,7 +12,8 @@ import {
   calcInsertPos,
   renumberBlocks,
   isGapExhaustedError,
-  isDescendantOf
+  isDescendantOf,
+  buildDocumentOrder
 } from './block-helpers'
 import type { Block } from '../types/block'
 
@@ -360,5 +361,49 @@ describe('isDescendantOf', () => {
       createBlock('b', pageId, 'a', 2000)
     ]
     expect(() => isDescendantOf(cyclicBlocks, 'a', 'b')).not.toThrow()
+  })
+})
+
+// ============================================================
+// buildDocumentOrder 测试
+// ============================================================
+describe('buildDocumentOrder', () => {
+  test('扁平列表（无父子关系）按 pos 排序', () => {
+    const blocks: Block[] = [
+      createBlock('b3', 'p1', null, 3000),
+      createBlock('b1', 'p1', null, 1000),
+      createBlock('b2', 'p1', null, 2000)
+    ]
+    const order = buildDocumentOrder(blocks)
+    expect(order.get('b1')).toBe(0)
+    expect(order.get('b2')).toBe(1)
+    expect(order.get('b3')).toBe(2)
+  })
+
+  test('嵌套树按前序遍历排序', () => {
+    // 结构：
+    // b1 (pos=1000)
+    //   b1c1 (pos=1000, parent=b1)
+    //     b1c1g1 (pos=1000, parent=b1c1)
+    //   b1c2 (pos=2000, parent=b1)
+    // b2 (pos=2000)
+    const blocks: Block[] = [
+      createBlock('b1', 'p1', null, 1000),
+      createBlock('b2', 'p1', null, 2000),
+      createBlock('b1c1', 'p1', 'b1', 1000),
+      createBlock('b1c2', 'p1', 'b1', 2000),
+      createBlock('b1c1g1', 'p1', 'b1c1', 1000)
+    ]
+    const order = buildDocumentOrder(blocks)
+    expect(order.get('b1')).toBe(0)
+    expect(order.get('b1c1')).toBe(1)
+    expect(order.get('b1c1g1')).toBe(2)
+    expect(order.get('b1c2')).toBe(3)
+    expect(order.get('b2')).toBe(4)
+  })
+
+  test('空数组返回空 Map', () => {
+    const order = buildDocumentOrder([])
+    expect(order.size).toBe(0)
   })
 })
