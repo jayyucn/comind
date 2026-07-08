@@ -321,10 +321,6 @@ watch(
   transition: background 80ms ease;
 }
 
-.backlinks-header:hover {
-  background: var(--bg-hover);
-}
-
 .backlinks-title {
   display: flex;
   align-items: center;
