@@ -215,12 +215,12 @@ watch(
   <div v-if="hasBacklinks" class="backlinks-panel" :class="{ 'is-collapsed': collapsed }">
     <!-- 面板 Header：始终可见，点击切换折叠 -->
     <div class="backlinks-header" @click="collapsed = !collapsed">
+      <span class="backlinks-toggle">{{ collapsed ? '▶' : '▼' }}</span>
       <span class="backlinks-title">
         <span class="backlinks-icon">🔗</span>
         反向链接
         <span class="backlinks-count">({{ groupedBacklinks.reduce((sum, g) => sum + g.items.length, 0) }})</span>
       </span>
-      <span class="backlinks-toggle">{{ collapsed ? '▶' : '▼' }}</span>
     </div>
 
     <!-- 折叠内容区：grid-template-rows 动画，无 JS maxHeight 操作 -->
