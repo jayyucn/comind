@@ -5,7 +5,8 @@ import Backlinks from './Backlinks.vue'
 
 vi.mock('../stores/pages', () => ({
   usePageStore: vi.fn(() => ({
-    currentPageId: 'test-page-id'
+    currentPageId: 'test-page-id',
+    getPage: vi.fn(() => ({ id: 'source-page-1', title: '页面A' }))
   }))
 }))
 
@@ -23,21 +24,40 @@ vi.mock('../composables/useNavigateToPage', () => ({
   }))
 }))
 
-vi.mock('../storage/indexedDB', () => ({
-  storage: {
-    getBacklinks: vi.fn().mockResolvedValue([])
-  }
+vi.mock('../stores/blocks', () => ({
+  useBlockStore: vi.fn(() => ({
+    loadMultiPageBlocks: vi.fn().mockResolvedValue([]),
+    loadBlock: vi.fn().mockResolvedValue(undefined),
+    getBacklinks: vi.fn().mockResolvedValue([]),
+    getBlock: vi.fn(() => undefined),
+    getBlocksByPage: vi.fn(() => [])
+  }))
 }))
 
-vi.mock('../storage/db', () => ({
-  db: {
-    blocks: {
-      get: vi.fn()
-    },
-    pages: {
-      get: vi.fn()
-    }
-  }
+vi.mock('../stores/property', () => ({
+  usePropertyStore: vi.fn(() => ({
+    loadBlockProperties: vi.fn().mockResolvedValue([]),
+    getBlockProperties: vi.fn(() => []),
+    getBlockProperty: vi.fn(() => undefined)
+  }))
+}))
+
+vi.mock('../composables/useBlockRegistry', () => ({
+  useBlockRegistry: vi.fn(() => ({
+    getHandler: vi.fn(() => undefined)
+  }))
+}))
+
+vi.mock('./Block/PropertyInline.vue', () => ({
+  default: { template: '<span class="property-inline-stub" />' }
+}))
+
+vi.mock('./Block/PropertyDisplay.vue', () => ({
+  default: { template: '<div class="property-display-stub" />' }
+}))
+
+vi.mock('../utils/block-helpers', () => ({
+  buildDocumentOrder: vi.fn(() => new Map())
 }))
 
 describe('Backlinks.vue', () => {
@@ -47,22 +67,14 @@ describe('Backlinks.vue', () => {
   })
 
   describe('基本功能', () => {
-    test('组件能正确渲染', () => {
+    test('无反链时面板不渲染', () => {
+      const wrapper = mount(Backlinks)
+      expect(wrapper.find('.backlinks-panel').exists()).toBe(false)
+    })
+
+    test('组件能正确挂载', () => {
       const wrapper = mount(Backlinks)
       expect(wrapper.exists()).toBe(true)
-    })
-  })
-
-  describe('内部函数逻辑', () => {
-    test('hasBacklinks 计算属性工作正确', async () => {
-      // 由于 backlinkItems 是内部响应式数据，我们需要更复杂的方式测试
-      // 这里我们只验证组件能正确挂载
-      expect(true).toBe(true)
-    })
-
-    test('getLinkStatus 函数默认值', () => {
-      // 由于 getLinkStatus 是内部函数，我们通过测试其他行为来验证
-      expect(true).toBe(true)
     })
   })
 })
