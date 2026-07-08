@@ -113,12 +113,20 @@ export const usePropertyStore = defineStore('property', () => {
     
     const rustProp = await client.setProperty(blockId, key, valueStr, propType)
     
+    // 反序列化：string/page 类型 Rust 直接返回字符串，无需 JSON.parse
+    // number/boolean/date/datetime/array 类型 Rust 返回 JSON 编码字符串，需要解析
+    const parsedType = rustProp.type as PropertyType
+    const isPlainStringType = parsedType === 'string' || parsedType === 'page'
+    const parsedValue: PropertyValue = isPlainStringType
+      ? rustProp.value
+      : JSON.parse(rustProp.value)
+
     const prop: Property = {
       id: rustProp.id,
       blockId: rustProp.block_id,
       key: rustProp.key,
-      value: JSON.parse(rustProp.value),
-      type: rustProp.type as PropertyType,
+      value: parsedValue,
+      type: parsedType,
       sortOrder: rustProp.sort_order,
       isHidden: rustProp.is_hidden === 1,
       isDeleted: rustProp.is_deleted === 1,

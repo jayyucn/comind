@@ -160,6 +160,28 @@ pub async fn save_block_tree(
 }
 
 #[tauri::command]
+pub async fn delete_block(
+    db: State<'_, super::state::DatabaseConnection>,
+    block_id: &str,
+) -> Result<(), String> {
+    execute_with_adapter(db, |storage| {
+        if let Ok(block) = storage.blocks().get_by_id(block_id) {
+            storage.links().delete_by_source_block_id(block_id)?;
+            storage.properties().delete_by_block_id(block_id)?;
+            // BlockVersion has FK (block_id) RESTRICT — must delete before Block
+            storage.block_versions().delete_by_block_id(block_id)?;
+            storage.blocks().delete(block_id)?;
+            let _ = PageService::update(
+                storage,
+                &block.page_id,
+                None, None, None, None, None, None, None, None,
+            );
+        }
+        Ok(())
+    })
+}
+
+#[tauri::command]
 pub async fn save_page(
     db: State<'_, super::state::DatabaseConnection>,
     page: serde_json::Value,
@@ -219,6 +241,8 @@ pub async fn delete_page_cascade(
         for block in &blocks {
             storage.properties().delete_by_block_id(&block.id)?;
             storage.links().delete_by_source_block_id(&block.id)?;
+            // BlockVersion has FK (block_id) RESTRICT — must delete before Block
+            storage.block_versions().delete_by_block_id(&block.id)?;
         }
         LinkService::delete_by_target_page_id(storage, page_id)?;
         BlockService::delete_by_page_id(storage, page_id)?;
@@ -385,6 +409,8 @@ pub async fn execute_batch(
                     }
                     storage.links().delete_by_source_block_id(&id)?;
                     storage.properties().delete_by_block_id(&id)?;
+                    // BlockVersion has FK (block_id) RESTRICT — must delete before Block
+                    storage.block_versions().delete_by_block_id(&id)?;
                     storage.blocks().delete(&id)?;
                     serde_json::to_value("OK")?
                 }

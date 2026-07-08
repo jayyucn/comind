@@ -512,14 +512,17 @@ export const useBlockStore = defineStore('blocks', () => {
     block: Block,
     blockFormat?: Record<string, any>
   ): Promise<Block> {
-    // 计算新节点位置：在上一个兄弟节点之后，当前节点之前
+    // 预先捕获 nextPos，避免 renumber 后 block.pos 被就地修改导致回调中的 nextPos 偏离
+    const originalNextPos = block.pos
+
     const calcPositions = () => {
       const siblings = getSortedSiblings(blocks.value, block, false)
       const blockIndex = findBlockIndex(siblings, block.id)
       const prevSibling = blockIndex > 0 ? siblings[blockIndex - 1] : undefined
       return {
         prevPos: prevSibling?.pos ?? null,
-        nextPos: block.pos
+        // 必须用原始 nextPos，不能用 block.pos（renumber 后 block.pos 已改变）
+        nextPos: originalNextPos
       }
     }
 
@@ -528,7 +531,7 @@ export const useBlockStore = defineStore('blocks', () => {
       prevPos,
       nextPos,
       blocks.value,
-      calcPositions  // 传入回调，重编号后重新计算
+      calcPositions
     )
 
     return createBlock({
@@ -562,6 +565,9 @@ export const useBlockStore = defineStore('blocks', () => {
   ): Promise<Block> {
     let newPos: number
 
+    // 预先捕获 refBlock.pos，避免 renumber 后 refBlock.pos 被就地修改
+    const originalPrevPos = refBlock.pos
+
     if (asFirstChild) {
       // 作为第一个子节点：插入到现有子节点之前
       const calcPositions = () => {
@@ -578,7 +584,7 @@ export const useBlockStore = defineStore('blocks', () => {
         prevPos,
         nextPos,
         blocks.value,
-        calcPositions  // 传入回调
+        calcPositions
       )
     } else {
       // 作为下方兄弟节点：插入到 refBlock 之后
@@ -586,7 +592,8 @@ export const useBlockStore = defineStore('blocks', () => {
         // 重编号后重新获取兄弟节点
         const nextSibling = getNextSibling(blocks.value, refBlock)
         return {
-          prevPos: refBlock.pos,
+          // 必须用原始 prevPos，不能用 refBlock.pos（renumber 后已改变）
+          prevPos: originalPrevPos,
           nextPos: nextSibling?.pos ?? null
         }
       }
@@ -596,7 +603,7 @@ export const useBlockStore = defineStore('blocks', () => {
         prevPos,
         nextPos,
         blocks.value,
-        calcPositions  // 传入回调
+        calcPositions
       )
     }
 
@@ -752,21 +759,23 @@ export const useBlockStore = defineStore('blocks', () => {
     }
 
     if (childrenToMove.length > 0) {
-    const mergeTargetChildren = blocks.value.filter(b => b.parentId === mergeTarget.id)
-    const lastMergeChild = mergeTargetChildren[mergeTargetChildren.length - 1]
+      const mergeTargetChildren = blocks.value.filter(b => b.parentId === mergeTarget.id)
+      const lastMergeChild = mergeTargetChildren[mergeTargetChildren.length - 1]
 
-    let prevPos = lastMergeChild?.pos ?? null
-    for (const child of childrenToMove) {
-      const newPos = calcInsertPos(prevPos, null)
-      child.parentId = mergeTarget.id
-      child.pos = newPos
-      child.updatedAt = Date.now()
-      _scheduleSave(child)
-      prevPos = newPos
+      // 使用 safeCalcInsertPos，避免 Gap 耗尽时直接抛错
+      let prevPos = lastMergeChild?.pos ?? null
+      for (const child of childrenToMove) {
+        const calcPositions = () => ({ prevPos, nextPos: null })
+        const newPos = await safeCalcInsertPos(prevPos, null, blocks.value, calcPositions)
+        child.parentId = mergeTarget.id
+        child.pos = newPos
+        child.updatedAt = Date.now()
+        _scheduleSave(child)
+        prevPos = newPos
+      }
+
+      structureVersion.value++
     }
-
-    structureVersion.value++
-  }
 
     await deleteBlock(blockId)
 
