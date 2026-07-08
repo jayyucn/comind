@@ -897,27 +897,30 @@ export const useBlockStore = defineStore('blocks', () => {
       }
     }
 
-    // 2. 立即从 reactive 数组移除（同步，UI 无延迟）
+    // 2. 立即从 reactive 数组移除（同步，触发 tree rebuild）
     for (const id of toDelete) {
       pendingSaves.get(id)?.cancel()
       pendingSaves.delete(id)
     }
     blocks.value = blocks.value.filter(b => !toDelete.has(b.id))
 
-    // 3. 一次 execute_batch 删除所有块
-    try {
-      const client = await getClient()
-      const operations: BatchOperation[] = [...toDelete].map(id => ({
-        entity: 'block',
-        action: 'delete',
-        params: { id }
-      }))
-      await client.executeBatch(operations)
-    } catch (error) {
-      console.error('[deleteBlocks] Failed to delete blocks:', error)
-    }
-
+    // 3. 触发 tree rebuild
     structureVersion.value++
+
+    // 4. RPC fire-and-forget（paint 之后才发出）
+    const operations: BatchOperation[] = [...toDelete].map(id => ({
+      entity: 'block',
+      action: 'delete',
+      params: { id }
+    }))
+    setTimeout(async () => {
+      try {
+        const client = await getClient()
+        await client.executeBatch(operations)
+      } catch (error) {
+        console.error('[deleteBlocks] execute_batch failed:', error)
+      }
+    }, 0)
   }
 
   /** 删除单个 Block（委托给批量删除） */

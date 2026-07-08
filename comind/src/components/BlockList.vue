@@ -113,6 +113,17 @@ function handleDocMouseUp(e: MouseEvent) {
 }
 
 function handleDocKeyDown(e: KeyboardEvent) {
+  if (e.key === 'Backspace') {
+    const selected = [...selection.anchorIds]
+    if (selected.length > 0) {
+      e.preventDefault()
+      // 同步：仅 tree 过滤（store 保留，cleanupAfterDelete 需要这些块数据）
+      tree.value = tree.value.filter(node => !selected.includes(node.id))
+      // paint 完成后才从 store 删除（含 cleanupAfterDelete 的 cross-page link 降级）
+      setTimeout(() => { selection.deleteSelected() }, 0)
+      return
+    }
+  }
   if (e.key === 'Escape') {
     selection.clearSelection()
     return
@@ -122,10 +133,6 @@ function handleDocKeyDown(e: KeyboardEvent) {
       e.preventDefault()
       selection.copyToClipboard(props.pageId)
     }
-  }
-  if (e.key === 'Backspace' && selection.anchorIds.size > 0) {
-    e.preventDefault()
-    selection.deleteSelected()
   }
 }
 

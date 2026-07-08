@@ -187,7 +187,6 @@ export function useCrossBlockSelection() {
   async function deleteSelected() {
     if (anchorIds.size === 0) return
     const toDelete = [...anchorIds]
-    anchorIds.clear()
 
     // 先保存所有块的快照，在删除任何块之前！
     const blocksBeforeDelete = [...blockStore.blocks]

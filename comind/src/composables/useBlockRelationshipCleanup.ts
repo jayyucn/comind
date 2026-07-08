@@ -99,6 +99,9 @@ export function useBlockRelationshipCleanup() {
     // 4. 一次性批量删除所有块（含子孙节点）
     await blockStore.deleteBlocks(deletedBlockIds)
 
+    // 交还给浏览器：让 Vue flush 完 reactive 更新、DOM paint 之后，再继续跨页清理
+    await 0
+
     if (!ourPageTitle) return result
 
     // 5. 跨页清理：对每个目标，如果没有同页 surviving typed-link 维持，则降级反向引用
