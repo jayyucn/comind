@@ -68,12 +68,28 @@ async function loadBacklinks() {
     const links = await blockStore.getBacklinks(currentId)
 
     // 3. 解析每个 link 的 sourceBlockId → block（含 pageId）
-    const itemMap = new Map<string, BacklinkItem>()
+    // 去重：按 sourceBlockId 去重（一个块内多个 [[B]] 引用只显示一次）
+    const uniqueLinks = new Map<string, Link>()
     for (const link of links) {
-      if (itemMap.has(link.sourceBlockId)) continue // 去重
-      const block = await blockStore.loadBlock(link.sourceBlockId)
-      if (!block) continue // orphan-block 跳过
-      itemMap.set(link.sourceBlockId, { link, block })
+      if (!uniqueLinks.has(link.sourceBlockId)) {
+        uniqueLinks.set(link.sourceBlockId, link)
+      }
+    }
+
+    // 并行加载所有去重后的块
+    const blockEntries = await Promise.all(
+      [...uniqueLinks.entries()].map(async ([sourceBlockId, link]) => {
+        const block = await blockStore.loadBlock(sourceBlockId)
+        return block ? { link, block } : null
+      })
+    )
+
+    // 构建 itemMap，跳过 orphan-block
+    const itemMap = new Map<string, BacklinkItem>()
+    for (const entry of blockEntries) {
+      if (entry) {
+        itemMap.set(entry.link.sourceBlockId, entry)
+      }
     }
 
     // 4. 收集所有 sourcePageId，加载完整页树（文档顺序排序需要）
@@ -128,8 +144,29 @@ async function loadBacklinks() {
   }
 }
 
+// 点击块内容：处理 wiki link 导航（[[页面名]] / 外部链接），普通文本点击冒泡到 backlink-block
+function handleContentClick(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  const link = target.closest('.block-link') as HTMLElement | null
+  if (!link) return
+
+  if (link.dataset.external) {
+    window.open(link.dataset.external, '_blank', 'noopener,noreferrer')
+    return
+  }
+  const pageName = link.dataset.page
+  if (pageName) {
+    navigateToPage(pageName).catch(err => {
+      console.error('导航失败:', err)
+    })
+  }
+}
+
 // 点击反链块：跳转到源页 + 激活该块
-async function handleBacklinkClick(item: BacklinkItem) {
+// wiki link 点击由 handleContentClick 负责导航，此处跳过避免双重导航
+async function handleBacklinkClick(item: BacklinkItem, event: MouseEvent) {
+  if ((event.target as HTMLElement).closest('.block-link')) return
+
   if (editorStore.activeBlockId) {
     editorStore.deactivateBlock()
   }
@@ -240,7 +277,7 @@ watch([groupedBacklinks, loading], async () => {
               v-for="item in group.items"
               :key="item.link.sourceBlockId"
               class="backlink-block"
-              @click="handleBacklinkClick(item)"
+              @click="handleBacklinkClick(item, $event)"
             >
               <!-- Bullet（纯展示圆点，不可拖拽/折叠） -->
               <span class="block-bullet backlink-bullet">
@@ -262,7 +299,7 @@ watch([groupedBacklinks, loading], async () => {
                 :properties="getBlockPropertiesMap(item.link.sourceBlockId)"
                 :language="getBlockLanguage(item.link.sourceBlockId)"
                 :readonly="true"
-                @content-click.stop
+                @content-click="handleContentClick"
               />
               <span v-else class="backlink-text-fallback">{{ item.block.content || '空块' }}</span>
 
