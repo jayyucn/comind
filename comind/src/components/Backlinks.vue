@@ -413,7 +413,7 @@ watch([groupedBacklinks, loading], async () => {
 .backlinks-groups {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-1);
 }
 
 /* 组标题 */
@@ -456,7 +456,7 @@ watch([groupedBacklinks, loading], async () => {
   display: flex;
   align-items: flex-start;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  gap: var(--space-0);
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-md);
   cursor: pointer;
@@ -501,6 +501,6 @@ watch([groupedBacklinks, loading], async () => {
 /* PropertyDisplay 下方属性区 */
 .backlink-properties {
   width: 100%;
-  padding-left: 28px; /* 对齐 bullet 宽度 20px + gap 8px */
+  padding-left: 24px; /* 对齐 bullet 宽度 20px + gap 4px */
 }
 </style>

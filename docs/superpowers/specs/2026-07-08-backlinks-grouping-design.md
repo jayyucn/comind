@@ -79,12 +79,12 @@ Concept Block 作为普通块参与分组和排序，不做特殊处理。它在
 
 ### D11. 点击行为与事件冒泡
 
-| 点击目标 | 行为 |
-|---------|------|
-| 块内 wiki link（如 `[[C]]`） | 导航到 C，`stopPropagation` 阻止冒泡 |
+| 点击目标                                 | 行为                                                                                     |
+| ------------------------------------ | -------------------------------------------------------------------------------------- |
+| 块内 wiki link（如 `[[C]]`）              | 导航到 C，`stopPropagation` 阻止冒泡                                                           |
 | 块其他区域（bullet / 纯文本 / PropertyInline） | 触发 `handleBacklinkClick`：`navigateToPage(sourcePage)` + `activateBlock(sourceBlockId)` |
-| PropertyDisplay | `stopPropagation`，不触发反链跳转 |
-| 组标题 `[[A]] (count)` | `navigateToPage(A)`，不激活块 |
+| PropertyDisplay                      | `stopPropagation`，不触发反链跳转                                                              |
+| 组标题 `[[A]] (count)`                  | `navigateToPage(A)`，不激活块                                                               |
 
 实现：外层块容器 `@click="handleBacklinkClick"`；renderComponent 内部 wiki link 的点击由其自身处理并 `stopPropagation`（需确认 renderComponent 是否已 stopPropagation，若无则在外层包一层 `@click.stop`）；PropertyDisplay 区域加 `@click.stop`。
 
@@ -116,7 +116,7 @@ Backlinks.vue（重构）
 
 ### 数据流
 
-> **关键问题**：Link 结构（[crates/comind-core/src/types/link.rs:5-13](file:///d:/comind/comind/crates/comind-core/src/types/link.rs#L5-L13)）只含 `source_block_id` + `target_page_id`，**不含 `source_page_id`**。`getBacklinks` 的 SQL（[sqlite.rs:512-530](file:///d:/comind/comind/crates/comind-core/src/storage/sqlite.rs#L512-L530)）也不 JOIN Block 表。当前代码靠 `blocks.value` 跨页缓存命中源块——若用户从未访问过源页，`getBlock` 返回 undefined，反链会被误判为 orphan。新方案必须显式加载源块。
+> **关键问题**：Link 结构（[crates/comind-core/src/types/link.rs:5-13](file:///d:/comind/comind/crates/comind-core/src/types/link.rs#L5-L13)）只含 `source_block_id` + `target_page_id`，**不含** **`source_page_id`**。`getBacklinks` 的 SQL（[sqlite.rs:512-530](file:///d:/comind/comind/crates/comind-core/src/storage/sqlite.rs#L512-L530)）也不 JOIN Block 表。当前代码靠 `blocks.value` 跨页缓存命中源块——若用户从未访问过源页，`getBlock` 返回 undefined，反链会被误判为 orphan。新方案必须显式加载源块。
 
 ```
 targetPageId 变化
@@ -160,14 +160,14 @@ targetPageId 变化
 
 ### 职责边界
 
-| 单元 | 职责 |
-|------|------|
-| `Backlinks.vue` | 反链面板整体：加载、分组、排序、渲染、折叠 |
-| `blockStore` | 提供 `loadMultiPageBlocks`、`getBlock`、`getBacklinks`（已有）；**新增 `loadBlock(blockId)`**：按 ID 加载单个块并合并进 `blocks.value` 缓存（用于反链场景解析 sourcePageId） |
-| `pageStore` | 提供 `getPage`（已有，不改） |
-| `propertyStore` | 提供 `loadBlockProperties`、`getBlockProperty`（已有，不改） |
-| `useBlockRegistry` | 提供 `getHandler(block.type)` 获取 renderComponent（已有，不改） |
-| `useNavigateToPage` | 提供 `navigateToPage`（已有，不改） |
+| 单元                  | 职责                                                                                                                                             |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Backlinks.vue`     | 反链面板整体：加载、分组、排序、渲染、折叠                                                                                                                          |
+| `blockStore`        | 提供 `loadMultiPageBlocks`、`getBlock`、`getBacklinks`（已有）；**新增** **`loadBlock(blockId)`**：按 ID 加载单个块并合并进 `blocks.value` 缓存（用于反链场景解析 sourcePageId） |
+| `pageStore`         | 提供 `getPage`（已有，不改）                                                                                                                            |
+| `propertyStore`     | 提供 `loadBlockProperties`、`getBlockProperty`（已有，不改）                                                                                             |
+| `useBlockRegistry`  | 提供 `getHandler(block.type)` 获取 renderComponent（已有，不改）                                                                                          |
+| `useNavigateToPage` | 提供 `navigateToPage`（已有，不改）                                                                                                                     |
 
 ### blockStore.loadBlock 新增方法
 
@@ -294,3 +294,4 @@ interface BacklinkItem {
 7. **Concept Block**：源页 Concept Block 引用 B，应作为第一条显示在组内
 8. **blockStore.loadBlock**：缓存命中时直接返回不重复请求；缓存未命中时调用 `client.getBlock` 并合并进 `blocks.value`
 9. **编译检查**：`npm run build` 通过（TypeScript 类型检查 + Vite 构建）
+
