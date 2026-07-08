@@ -96,10 +96,8 @@ export function useBlockRelationshipCleanup() {
       }
     }
 
-    // 4. 调 blockStore.deleteBlock 删除（级联）
-    for (const id of deletedBlockIds) {
-      await blockStore.deleteBlock(id)
-    }
+    // 4. 一次性批量删除所有块（含子孙节点）
+    await blockStore.deleteBlocks(deletedBlockIds)
 
     if (!ourPageTitle) return result
 

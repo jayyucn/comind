@@ -25,6 +25,7 @@ import {
 } from '../utils/block-helpers'
 
 import type { CoreClient } from '../wasm/client'
+import type { BatchOperation } from '@/wasm/types'
 
 let coreClientPromise: Promise<CoreClient> | null = null
 
@@ -871,39 +872,57 @@ export const useBlockStore = defineStore('blocks', () => {
     structureVersion.value++
   }
 
-  /** 删除 Block */
-  async function deleteBlock(blockId: string) {
-    const toDelete = new Set<string>([blockId])
-    const queue = [blockId]
+  /**
+   * 批量删除 Block（支持级联子节点）
+   * - 一次性收集所有根节点 + 子孙节点
+   * - 一次性过滤 reactive 数组（无延迟）
+   * - 一次 execute_batch 调用（无串行 IPC 往返）
+   */
+  async function deleteBlocks(rootIds: string[]) {
+    if (rootIds.length === 0) return
 
-    while (queue.length > 0) {
-      const currentId = queue.pop()!
-      const children = blocks.value.filter(b => b.parentId === currentId)
-      for (const child of children) {
-        if (!toDelete.has(child.id)) {
-          toDelete.add(child.id)
-          queue.push(child.id)
+    // 1. 收集所有要删除的块（含子孙）
+    const toDelete = new Set<string>()
+    for (const rootId of rootIds) {
+      if (toDelete.has(rootId)) continue
+      const queue = [rootId]
+      while (queue.length > 0) {
+        const currentId = queue.pop()!
+        toDelete.add(currentId)
+        for (const child of blocks.value) {
+          if (child.parentId === currentId && !toDelete.has(child.id)) {
+            queue.push(child.id)
+          }
         }
       }
     }
 
+    // 2. 立即从 reactive 数组移除（同步，UI 无延迟）
     for (const id of toDelete) {
       pendingSaves.get(id)?.cancel()
       pendingSaves.delete(id)
     }
-
     blocks.value = blocks.value.filter(b => !toDelete.has(b.id))
 
+    // 3. 一次 execute_batch 删除所有块
     try {
       const client = await getClient()
-      for (const id of toDelete) {
-        await client.deleteBlock(id)
-      }
+      const operations: BatchOperation[] = [...toDelete].map(id => ({
+        entity: 'block',
+        action: 'delete',
+        params: { id }
+      }))
+      await client.executeBatch(operations)
     } catch (error) {
-      console.error('[deleteBlock] Failed to delete blocks:', error)
+      console.error('[deleteBlocks] Failed to delete blocks:', error)
     }
 
     structureVersion.value++
+  }
+
+  /** 删除单个 Block（委托给批量删除） */
+  async function deleteBlock(blockId: string) {
+    await deleteBlocks([blockId])
   }
 
   /** 更新 Block 内容 */
@@ -980,6 +999,7 @@ export const useBlockStore = defineStore('blocks', () => {
     outdent,
     moveBlock,
     deleteBlock,
+    deleteBlocks,
     updateBlockContent,
     updateBlockFormat,
     updateBlockType,
