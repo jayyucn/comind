@@ -46,8 +46,6 @@ interface BacklinkGroup {
 const groupedBacklinks = ref<BacklinkGroup[]>([])
 const loading = ref(false)
 const collapsed = ref(false)
-const bodyRef = ref<HTMLElement | null>(null)
-const isAnimating = ref(false)
 
 const hasBacklinks = computed(() => groupedBacklinks.value.length > 0)
 const targetPageId = computed(() => props.pageId ?? pageStore.currentPageId)
@@ -210,37 +208,7 @@ watch(
   { immediate: true }
 )
 
-// 折叠动画
-watch(collapsed, async (isCollapsed) => {
-  const el = bodyRef.value
-  if (!el) return
-  if (isCollapsed) {
-    el.style.maxHeight = el.scrollHeight + 'px'
-    await nextTick()
-    requestAnimationFrame(() => {
-      el.style.maxHeight = '0px'
-      setTimeout(() => { isAnimating.value = false }, 220)
-    })
-    isAnimating.value = true
-  } else {
-    el.style.maxHeight = 'none'
-    const targetHeight = el.scrollHeight
-    el.style.maxHeight = '0px'
-    await nextTick()
-    requestAnimationFrame(() => {
-      el.style.maxHeight = targetHeight + 'px'
-      setTimeout(() => { isAnimating.value = false }, 220)
-    })
-    isAnimating.value = true
-  }
-}, { flush: 'post' })
-
-// 分组数据变化时重算高度
-watch([groupedBacklinks, loading], async () => {
-  if (collapsed.value) return
-  await nextTick()
-  if (bodyRef.value) bodyRef.value.style.maxHeight = 'none'
-})
+// grid-template-rows 由 CSS .is-collapsed 类控制，无需 JS 动画
 </script>
 
 <template>
@@ -255,63 +223,65 @@ watch([groupedBacklinks, loading], async () => {
       <span class="backlinks-toggle">{{ collapsed ? '▶' : '▼' }}</span>
     </div>
 
-    <!-- 折叠内容区：max-height 动画控制 -->
-    <div ref="bodyRef" class="backlinks-body">
-      <div v-if="loading" class="backlinks-loading">加载中...</div>
+    <!-- 折叠内容区：grid-template-rows 动画，无 JS maxHeight 操作 -->
+    <div class="backlinks-body-wrapper" :class="{ 'is-collapsed': collapsed }">
+      <div class="backlinks-body">
+        <div v-if="loading" class="backlinks-loading">加载中...</div>
 
-      <div v-else class="backlinks-groups">
-        <div
-          v-for="group in groupedBacklinks"
-          :key="group.sourcePageId"
-          class="backlink-group"
-        >
-          <!-- 组标题：[[A]] (count)，点击跳转到源页 -->
-          <div class="backlink-group-header" @click="handleGroupClick(group.sourcePageId)">
-            <span class="backlink-group-title">[[{{ group.sourcePageTitle }}]]</span>
-            <span class="backlink-group-count">({{ group.items.length }})</span>
-          </div>
+        <div v-else class="backlinks-groups">
+          <div
+            v-for="group in groupedBacklinks"
+            :key="group.sourcePageId"
+            class="backlink-group"
+          >
+            <!-- 组标题：[[A]] (count)，点击跳转到源页 -->
+            <div class="backlink-group-header" @click="handleGroupClick(group.sourcePageId)">
+              <span class="backlink-group-title">[[{{ group.sourcePageTitle }}]]</span>
+              <span class="backlink-group-count">({{ group.items.length }})</span>
+            </div>
 
-          <!-- 块列表：向右缩进 24px -->
-          <div class="backlink-block-list">
-            <div
-              v-for="item in group.items"
-              :key="item.link.sourceBlockId"
-              class="backlink-block"
-              @click="handleBacklinkClick(item, $event)"
-            >
-              <!-- Bullet（纯展示圆点，不可拖拽/折叠） -->
-              <span class="block-bullet backlink-bullet">
-                <span class="bullet-dot"></span>
-              </span>
+            <!-- 块列表：向右缩进 24px -->
+            <div class="backlink-block-list">
+              <div
+                v-for="item in group.items"
+                :key="item.link.sourceBlockId"
+                class="backlink-block"
+                @click="handleBacklinkClick(item, $event)"
+              >
+                <!-- Bullet（纯展示圆点，不可拖拽/折叠） -->
+                <span class="block-bullet backlink-bullet">
+                  <span class="bullet-dot"></span>
+                </span>
 
-              <!-- PropertyInline: between-bullet-content -->
-              <PropertyInline
-                :block-id="item.link.sourceBlockId"
-                position="between-bullet-content"
-              />
+                <!-- PropertyInline: between-bullet-content -->
+                <PropertyInline
+                  :block-id="item.link.sourceBlockId"
+                  position="between-bullet-content"
+                />
 
-              <!-- 块内容：renderComponent（readonly） -->
-              <component
-                v-if="getHandler(item.block.type)"
-                :is="getHandler(item.block.type)!.renderComponent"
-                :block-id="item.link.sourceBlockId"
-                :content="item.block.content"
-                :properties="getBlockPropertiesMap(item.link.sourceBlockId)"
-                :language="getBlockLanguage(item.link.sourceBlockId)"
-                :readonly="true"
-                @content-click="handleContentClick"
-              />
-              <span v-else class="backlink-text-fallback">{{ item.block.content || '空块' }}</span>
+                <!-- 块内容：renderComponent（readonly） -->
+                <component
+                  v-if="getHandler(item.block.type)"
+                  :is="getHandler(item.block.type)!.renderComponent"
+                  :block-id="item.link.sourceBlockId"
+                  :content="item.block.content"
+                  :properties="getBlockPropertiesMap(item.link.sourceBlockId)"
+                  :language="getBlockLanguage(item.link.sourceBlockId)"
+                  :readonly="true"
+                  @content-click="handleContentClick"
+                />
+                <span v-else class="backlink-text-fallback">{{ item.block.content || '空块' }}</span>
 
-              <!-- PropertyInline: right-of-content -->
-              <PropertyInline
-                :block-id="item.link.sourceBlockId"
-                position="right-of-content"
-              />
+                <!-- PropertyInline: right-of-content -->
+                <PropertyInline
+                  :block-id="item.link.sourceBlockId"
+                  position="right-of-content"
+                />
 
-              <!-- PropertyDisplay（下方属性区，stopPropagation） -->
-              <div class="backlink-properties" @click.stop>
-                <PropertyDisplay :block-id="item.link.sourceBlockId" />
+                <!-- PropertyDisplay（下方属性区，stopPropagation） -->
+                <div class="backlink-properties" @click.stop>
+                  <PropertyDisplay :block-id="item.link.sourceBlockId" />
+                </div>
               </div>
             </div>
           </div>
@@ -326,12 +296,12 @@ watch([groupedBacklinks, loading], async () => {
  * Backlinks 面板布局方案（分组重构）
  * - 面板固定在页面底部，不随页面滚动
  * - 按来源页面分组，组标题左上角，块向右缩进 24px
- * - 面板级折叠（maxHeight 动画）
+ * - 面板级折叠（grid-template-rows CSS 动画）
  */
 
 .backlinks-panel {
   flex-shrink: 0;
-  border-top: 2px dashed var(--border);
+  border-top: 2px  var(--border);
   background: var(--bg-base);
   display: flex;
   flex-direction: column;
@@ -381,10 +351,31 @@ watch([groupedBacklinks, loading], async () => {
   padding: 2px var(--space-1);
 }
 
-/* 内容区：JS 通过 maxHeight 控制折叠动画 */
-.backlinks-body {
+/*
+ * 折叠动画：grid-template-rows: 0fr → 1fr
+ * - 无 JS maxHeight 操作，纯 CSS 过渡
+ * - overflow: hidden 始终在 inner 层，内容彻底裁剪无泄漏
+ * - 0fr 等效于 row 高度 0（子元素 overflow hidden），1fr 等效于 auto
+ */
+.backlinks-body-wrapper {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 200ms ease;
   overflow: hidden;
-  padding: 0 0 var(--space-4);
+}
+
+.backlinks-body-wrapper.is-collapsed {
+  grid-template-rows: 0fr;
+  height: 0;
+}
+
+/* inner 层：min-height: 0 + overflow: hidden 彻底裁剪 */
+.backlinks-body {
+  /* min-height: 0 允许 grid item 收缩到 0（覆盖默认的 min-height: auto） */
+  min-height: 0;
+  overflow: hidden;
+  /* padding 放在 inner 层，这样折叠时 padding 也被裁剪 */
+  padding-bottom: var(--space-4);
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
