@@ -217,7 +217,6 @@ watch(
     <div class="backlinks-header" @click="collapsed = !collapsed">
       <span class="backlinks-toggle">{{ collapsed ? '▶' : '▼' }}</span>
       <span class="backlinks-title">
-        <span class="backlinks-icon">🔗</span>
         反向链接
         <span class="backlinks-count">({{ groupedBacklinks.reduce((sum, g) => sum + g.items.length, 0) }})</span>
       </span>
@@ -313,8 +312,7 @@ watch(
 
 .backlinks-header {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   padding: var(--space-3) 0;
   cursor: pointer;
   border-radius: var(--radius-md);
@@ -358,6 +356,8 @@ watch(
   grid-template-rows: 1fr;
   transition: grid-template-rows 200ms ease;
   overflow: hidden;
+  /* body 相对 header 向右缩进 24px（与 backlink-block-list 对齐） */
+  padding-left: 24px;
 }
 
 .backlinks-body-wrapper.is-collapsed {
@@ -430,9 +430,8 @@ watch(
   font-weight: 400;
 }
 
-/* 块列表：向右缩进 24px（= INDENT_WIDTH_PER_LEVEL） */
+/* 块列表：由外层 backlinks-body-wrapper 统一缩进 */
 .backlink-block-list {
-  padding-left: 24px;
   display: flex;
   flex-direction: column;
   gap: 2px;
