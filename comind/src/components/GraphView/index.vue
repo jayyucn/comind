@@ -20,7 +20,7 @@ const highlightedNodeId = ref<string | null>(null)
 const searchQuery = ref('')
 const activeFilters = ref<string[]>([])
 const currentFilterState = ref<FilterState>({ conditions: [], expandedGroups: new Set() })
-const stats = ref({ totalNodes: 0, filteredNodes: 0, totalEdges: 0, filteredEdges: 0 })
+const stats = ref({ normalNodes: 0, filteredNodes: 0, normalEdges: 0, filteredEdges: 0 })
 const isFirstLayoutDone = ref(false)
 
 const currentPageId = computed(() => pageStore.currentPageId)
@@ -128,14 +128,14 @@ async function loadPageNodeEdges(
   nodes: NodeData[],
   edges: { id: string; source: string; target: string; data: Record<string, unknown> }[],
   visitedEdges: Set<string>,
-  blockCache: Map<string, { pageId: string }>
+  blockCache: Map<string, { pageId: string }>,
+  isFilteredMap: Map<string, boolean>
 ) {
   await blockStore.loadMultiPageBlocks([pageId])
   const outLinks = await blockStore.getOutlinks(pageId)
   const inLinks = await blockStore.getBacklinks(pageId)
 
   for (const link of outLinks) {
-    if (!applyFilterConditions(link.targetPageId)) continue
     if (shouldFilterEdge({ source: pageId, target: link.targetPageId, data: { relationshipType: link.relationshipType } })) continue
     if (visitedEdges.has(link.id)) continue
     const targetPage = pageStore.getPage(link.targetPageId)
@@ -147,12 +147,14 @@ async function loadPageNodeEdges(
         data: {
           label: targetPage.title,
           isCurrent: targetPage.id === currentPageId.value,
+          isFiltered: isFilteredMap.get(targetPage.id) ?? false,
         }
       })
     }
 
     const color = getRelationshipColor(link.relationshipType ?? 'related')
     const label = getRelationshipLabel(link.relationshipType ?? 'related')
+    const isFiltered = (isFilteredMap.get(pageId) ?? false) || (isFilteredMap.get(link.targetPageId) ?? false)
     visitedEdges.add(link.id)
     edges.push({
       id: link.id,
@@ -161,13 +163,13 @@ async function loadPageNodeEdges(
       data: {
         relationshipType: link.relationshipType ?? 'related',
         label,
-        color
+        color,
+        isFiltered,
       }
     })
   }
 
   for (const link of inLinks) {
-    if (!applyFilterConditions(link.sourceBlockId)) continue
     if (shouldFilterEdge({ source: '', target: pageId, data: { relationshipType: link.relationshipType } })) continue
     if (visitedEdges.has(link.id)) continue
 
@@ -180,8 +182,6 @@ async function loadPageNodeEdges(
     }
 
     const sourcePageId = block.pageId
-    if (!applyFilterConditions(sourcePageId)) continue
-    
     const sourcePage = pageStore.getPage(sourcePageId)
     if (!sourcePage) continue
 
@@ -191,12 +191,14 @@ async function loadPageNodeEdges(
         data: {
           label: sourcePage.title,
           isCurrent: sourcePage.id === currentPageId.value,
+          isFiltered: isFilteredMap.get(sourcePageId) ?? false,
         }
       })
     }
 
     const color = getRelationshipColor(link.relationshipType ?? 'related')
     const label = getRelationshipLabel(link.relationshipType ?? 'related')
+    const isFiltered = (isFilteredMap.get(sourcePageId) ?? false) || (isFilteredMap.get(pageId) ?? false)
     visitedEdges.add(link.id)
     edges.push({
       id: link.id,
@@ -205,7 +207,8 @@ async function loadPageNodeEdges(
       data: {
         relationshipType: link.relationshipType ?? 'related',
         label,
-        color
+        color,
+        isFiltered,
       }
     })
   }
@@ -218,30 +221,42 @@ async function buildGraphData() {
   const blockCache = new Map<string, { pageId: string }>()
 
   const allPages = pageStore.pages.filter(p => !p.deleted)
-  const filteredPages = allPages.filter(p => applyFilterConditions(p.id))
-  
-  stats.value.totalNodes = allPages.length
-  stats.value.filteredNodes = filteredPages.length
 
-  for (const page of filteredPages) {
+  // 1. 计算每个 page 的过滤状态（不满足筛选 = true）
+  const isFilteredMap = new Map<string, boolean>()
+  for (const page of allPages) {
+    isFilteredMap.set(page.id, !applyFilterConditions(page.id))
+  }
+
+  // 2. 全部节点加入，置灰节点用 isFiltered 标记
+  for (const page of allPages) {
     nodes.push({
       id: page.id,
       data: {
         label: page.title,
         isCurrent: page.id === currentPageId.value,
+        isFiltered: isFilteredMap.get(page.id) ?? false,
       }
     })
   }
 
-  for (const page of filteredPages) {
-    await loadPageNodeEdges(page.id, nodes, edges, visitedEdges, blockCache)
+  // 3. 边：仅以“关系类型筛选”过滤，节点不过滤
+  for (const page of allPages) {
+    await loadPageNodeEdges(page.id, nodes, edges, visitedEdges, blockCache, isFilteredMap)
   }
 
-  stats.value.totalEdges = visitedEdges.size
-  stats.value.filteredEdges = edges.length
+  // 4. 节点统计
+  let normalNodes = 0
+  let filteredNodes = 0
+  for (const page of allPages) {
+    if (isFilteredMap.get(page.id)) filteredNodes++
+    else normalNodes++
+  }
+  stats.value.normalNodes = normalNodes
+  stats.value.filteredNodes = filteredNodes
 
+  // 5. 边去重
   const normalizedEdges = edges.map(e => normalizeEdge(e))
-
   const seenKeys = new Set<string>()
   const dedupedEdges: typeof edges = []
   for (const edge of normalizedEdges) {
@@ -251,6 +266,17 @@ async function buildGraphData() {
     dedupedEdges.push(edge)
   }
 
+  // 6. 边统计
+  let normalEdges = 0
+  let filteredEdges = 0
+  for (const edge of dedupedEdges) {
+    if (edge.data.isFiltered) filteredEdges++
+    else normalEdges++
+  }
+  stats.value.normalEdges = normalEdges
+  stats.value.filteredEdges = filteredEdges
+
+  // 7. 平行边偏移
   const edgeCountMap = new Map<string, number>()
   const pairKey = (a: string, b: string) => [a, b].sort().join('-')
   for (const edge of dedupedEdges) {
@@ -274,22 +300,27 @@ async function buildGraphData() {
 function getNodeSize(d: NodeData): [number, number] {
   const isCurrent = !!d.data?.isCurrent
   const isHighlighted = !!d.data?.isHighlighted && !isCurrent
+  if (isCurrent) return [120, 36]
   if (isHighlighted) return [100, 32]
-  return isCurrent ? [120, 36] : [90, 28]
+  return [90, 28]
 }
 
 function getNodeFill(d: NodeData): string {
   const isCurrent = !!d.data?.isCurrent
   const isHighlighted = !!d.data?.isHighlighted && !isCurrent
+  if (isCurrent) return '#1890ff'
   if (isHighlighted) return '#e6f7ff'
-  return isCurrent ? '#1890ff' : '#ffffff'
+  if (d.data?.isFiltered) return '#808080'
+  return '#ffffff'
 }
 
 function getNodeStroke(d: NodeData): string {
   const isCurrent = !!d.data?.isCurrent
   const isHighlighted = !!d.data?.isHighlighted && !isCurrent
+  if (isCurrent) return '#1890ff'
   if (isHighlighted) return '#1890ff'
-  return isCurrent ? '#1890ff' : '#e8e8e8'
+  if (d.data?.isFiltered) return '#808080'
+  return '#e8e8e8'
 }
 
 function getNodeLineType(_d: NodeData): 'solid' | 'dashed' {
@@ -299,12 +330,44 @@ function getNodeLineType(_d: NodeData): 'solid' | 'dashed' {
 function getNodeLabelFill(d: NodeData): string {
   const isCurrent = !!d.data?.isCurrent
   const isHighlighted = !!d.data?.isHighlighted && !isCurrent
+  if (isCurrent) return '#ffffff'
   if (isHighlighted) return '#1890ff'
-  return isCurrent ? '#ffffff' : '#333333'
+  if (d.data?.isFiltered) return '#808080'
+  return '#333333'
 }
 
 function getNodeLineWidth(d: NodeData): number {
   return (!!d.data?.isCurrent || !!d.data?.isHighlighted) ? 2 : 1
+}
+
+function getNodeFillOpacity(d: NodeData): number {
+  if (d.data?.isCurrent || d.data?.isHighlighted) return 1
+  if (d.data?.isFiltered) return 0.15
+  return 1
+}
+
+function getNodeStrokeOpacity(d: NodeData): number {
+  if (d.data?.isCurrent || d.data?.isHighlighted) return 1
+  if (d.data?.isFiltered) return 0.25
+  return 1
+}
+
+
+
+function getEdgeStroke(d: any): string {
+  if (d.data?.isFiltered) return '#808080'
+  return d.data?.color ?? '#8c8c8c'
+}
+
+function getEdgeStrokeOpacity(d: any): number {
+  if (d.data?.isFiltered) return 0.25
+  return 1
+}
+
+
+function getEdgeLabelFill(d: any): string {
+  if (d.data?.isFiltered) return '#808080'
+  return '#999999'
 }
 
 async function initGraph() {
@@ -332,9 +395,11 @@ async function initGraph() {
         size: (d: NodeData) => getNodeSize(d),
         radius: 6,
         fill: (d: NodeData) => getNodeFill(d),
+        fillOpacity: (d: NodeData) => getNodeFillOpacity(d),
         stroke: (d: NodeData) => getNodeStroke(d),
         lineWidth: (d: NodeData) => getNodeLineWidth(d),
         lineType: (d: NodeData) => getNodeLineType(d),
+        strokeOpacity: (d: NodeData) => getNodeStrokeOpacity(d),
         labelText: (d: NodeData) => (d.data?.label as string) ?? '',
         labelPlacement: 'center',
         labelFill: (d: NodeData) => getNodeLabelFill(d),
@@ -345,13 +410,14 @@ async function initGraph() {
     edge: {
       type: 'quadratic',
       style: {
-        stroke: (d: any) => d.data?.color ?? '#8c8c8c',
+        stroke: (d: any) => getEdgeStroke(d),
+        strokeOpacity: (d: any) => getEdgeStrokeOpacity(d),
         strokeWidth: (d: any) => STRENGTH_TO_WIDTH[getRelationshipStrength((d.data?.relationshipType as string) ?? 'related')],
         endArrow: true,
         curveOffset: (d: any) => d.data?.curveOffset ?? 0,
         labelText: (d: any) => d.data?.label ?? '',
         labelFontSize: 9,
-        labelFill: '#999999',
+        labelFill: (d: any) => getEdgeLabelFill(d),
         labelBackground: true,
         labelBackgroundFill: '#ffffff',
         labelBackgroundOpacity: 1,
@@ -582,10 +648,10 @@ onBeforeUnmount(() => {
         </div>
         <div class="stats-group">
           <span class="stat-item">
-            节点: <strong>{{ stats.filteredNodes }}</strong> / {{ stats.totalNodes }}
+            节点: <strong>正常({{ stats.normalNodes }})</strong> / 置灰({{ stats.filteredNodes }})
           </span>
           <span class="stat-item">
-            边: <strong>{{ stats.filteredEdges }}</strong> / {{ stats.totalEdges }}
+            边: <strong>正常({{ stats.normalEdges }})</strong> / 置灰({{ stats.filteredEdges }})
           </span>
         </div>
       </div>
