@@ -80,10 +80,9 @@ export const usePageStore = defineStore('pages', () => {
       throw new Error('Page title cannot be empty')
     }
 
+    // 幂等：并发时可能已被另一方创建，直接复用
     const existingPage = getPageByTitle(trimmedTitle)
-    if (existingPage) {
-      throw new Error(`Page with title '${trimmedTitle}' already exists`)
-    }
+    if (existingPage) return existingPage
 
     const client = await getClient()
     const rustPage = await client.savePage({ title: trimmedTitle, type })
@@ -116,6 +115,18 @@ export const usePageStore = defineStore('pages', () => {
   function getPageByTitle(title: string): Page | undefined {
     if (!title.trim()) return undefined
     return pages.value.find(p => p.title === title)
+  }
+
+  /**
+   * 根据标题查找页面；不存在则自动创建（"引用即创建" 模式）
+   */
+  async function getOrCreatePageByTitle(title: string): Promise<Page> {
+    const trimmed = title.trim()
+    if (!trimmed) throw new Error('Page title cannot be empty')
+    const existing = getPageByTitle(trimmed)
+    if (existing) return existing
+    // 不存在 → 自动创建普通页面
+    return await createPage(trimmed, 'normal')
   }
 
   /** 重命名页面，返回重复信息（如有） */
@@ -254,5 +265,5 @@ export const usePageStore = defineStore('pages', () => {
     }
   }
 
-  return { pages, currentPageId, loading, trashPages, loadAllPages, openPage, createPage, getPage, getPageByTitle, renamePage, mergePage, deletePage, loadTrashPages, softDeletePage, restorePage, permanentDeletePage, onRemovePageFromHistory }
+  return { pages, currentPageId, loading, trashPages, loadAllPages, openPage, createPage, getPage, getPageByTitle, getOrCreatePageByTitle, renamePage, mergePage, deletePage, loadTrashPages, softDeletePage, restorePage, permanentDeletePage, onRemovePageFromHistory }
 })

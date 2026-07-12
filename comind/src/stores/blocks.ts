@@ -360,11 +360,12 @@ export const useBlockStore = defineStore('blocks', () => {
   async function _syncBlockLinks(block: Block, client: CoreClient): Promise<void> {
     const parsedLinks = parseBlockLinks(block.content)
     const pageStore = usePageStore()
-    const links = parsedLinks
-      .filter(l => !l.isExternal)
-      .map(l => {
-        const targetPage = pageStore.getPageByTitle(l.targetTitle)
-        if (!targetPage) return null
+    const internalLinks = parsedLinks.filter(l => !l.isExternal)
+
+    // "引用即创建"：目标页面不存在时自动创建
+    const links = await Promise.all(
+      internalLinks.map(async l => {
+        const targetPage = await pageStore.getOrCreatePageByTitle(l.targetTitle)
         return {
           source_block_id: block.id,
           target_page_id: targetPage.id,
@@ -372,7 +373,7 @@ export const useBlockStore = defineStore('blocks', () => {
           relationship_type: l.relationshipType
         }
       })
-      .filter((l): l is NonNullable<typeof l> => l !== null)
+    )
 
     await client.executeBatch([{
       entity: 'link',
