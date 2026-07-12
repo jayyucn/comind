@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { useRelationshipTypes } from '../../composables/useRelationshipTypes'
 import { usePageStore } from '../../stores/pages'
 import { useBlockStore } from '../../stores/blocks'
@@ -301,11 +302,10 @@ init()
   <div class="filter-panel" :class="{ collapsed }">
     <div class="filter-panel-header">
       <div class="filter-panel-title">筛选条件</div>
-      <div class="filter-panel-actions">
-        <button class="action-btn" @click="toggleCollapse" title="折叠面板">
-          {{ collapsed ? '→' : '←' }}
-        </button>
-      </div>
+      <button class="collapse-btn" @click="toggleCollapse" :title="collapsed ? '展开面板' : '折叠面板'">
+        <ChevronRight v-if="collapsed" :size="16" />
+        <ChevronLeft v-else :size="16" />
+      </button>
     </div>
     
     <div v-if="!collapsed" class="filter-panel-content">
@@ -494,6 +494,7 @@ init()
 
 .filter-panel.collapsed {
   width: 40px;
+  border-right: none;
 }
 
 .filter-panel-header {
@@ -514,28 +515,29 @@ init()
   display: none;
 }
 
-.filter-panel-actions {
-  display: flex;
-  gap: 4px;
+.filter-panel.collapsed .filter-panel-header {
+  border-bottom: none;
 }
 
-.action-btn {
+.collapse-btn {
   width: 24px;
   height: 24px;
-  border: none;
-  background: transparent;
+  border: 1px solid var(--border);
+  background: var(--bg-hover);
   border-radius: var(--radius-sm);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
   color: var(--text-secondary);
-  transition: background 80ms ease;
+  transition: background 80ms ease, border-color 80ms ease, color 80ms ease;
+  flex-shrink: 0;
 }
 
-.action-btn:hover {
-  background: var(--bg-hover);
+.collapse-btn:hover {
+  background: var(--bg-active);
+  border-color: var(--text-tertiary);
+  color: var(--text-primary);
 }
 
 .filter-panel-content {
