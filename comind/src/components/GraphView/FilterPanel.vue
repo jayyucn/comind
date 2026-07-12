@@ -744,22 +744,24 @@ init()
 .quick-range-btn {
   padding: 4px 8px;
   border: 1px solid var(--border);
-  background: var(--bg-base);
+  background: transparent;
   border-radius: var(--radius-sm);
   font-size: 11px;
   color: var(--text-secondary);
   cursor: pointer;
   font-family: inherit;
+  transition: background 80ms ease, border-color 80ms ease, color 80ms ease;
 }
 
 .quick-range-btn:hover {
   background: var(--bg-hover);
+  border-color: var(--text-tertiary);
 }
 
 .quick-range-btn.active {
-  background: var(--accent-subtle);
+  background: var(--accent);
   border-color: var(--accent);
-  color: var(--accent);
+  color: #fff;
 }
 
 .custom-date-range {
@@ -777,6 +779,8 @@ init()
   background: var(--bg-base);
   color: var(--text-primary);
   font-family: inherit;
+  box-sizing: border-box;
+  min-width: 0;
 }
 
 .date-separator {
