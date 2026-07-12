@@ -17,7 +17,6 @@ const containerRef = ref<HTMLElement | null>(null)
 const graphRef = ref<Graph | null>(null)
 const currentLayout = ref<string>('force')
 const highlightedNodeId = ref<string | null>(null)
-const searchQuery = ref('')
 const activeFilters = ref<string[]>([])
 const currentFilterState = ref<FilterState>({ conditions: [], expandedGroups: new Set() })
 const stats = ref({ normalNodes: 0, filteredNodes: 0, normalEdges: 0, filteredEdges: 0 })
@@ -148,6 +147,7 @@ async function loadPageNodeEdges(
           label: targetPage.title,
           isCurrent: targetPage.id === currentPageId.value,
           isFiltered: isFilteredMap.get(targetPage.id) ?? false,
+          isHighlighted: targetPage.id === highlightedNodeId.value,
         }
       })
     }
@@ -192,6 +192,7 @@ async function loadPageNodeEdges(
           label: sourcePage.title,
           isCurrent: sourcePage.id === currentPageId.value,
           isFiltered: isFilteredMap.get(sourcePageId) ?? false,
+          isHighlighted: sourcePage.id === highlightedNodeId.value,
         }
       })
     }
@@ -249,6 +250,7 @@ async function buildGraphData() {
         label: page.title,
         isCurrent: page.id === currentPageId.value,
         isFiltered: isFilteredMap.get(page.id) ?? false,
+        isHighlighted: page.id === highlightedNodeId.value,
       }
     })
   }
@@ -565,38 +567,19 @@ function updateNodeHighlight() {
   g.draw()
 }
 
-function handleSearch(query: string) {
-  searchQuery.value = query
-  if (!query) {
-    highlightedNodeId.value = null
-    updateNodeHighlight()
-    return
-  }
-
-  const g = graphRef.value
-  if (!g) return
-
-  const nodeData = g.getNodeData()
-  const matched = nodeData.find(n => {
-    const label = (n.data?.label as string) ?? ''
-    return label.toLowerCase().includes(query.toLowerCase())
-  })
-
-  if (matched) {
-    highlightedNodeId.value = matched.id
-    if (typeof (g as any).focus === 'function') {
-      (g as any).focus(matched.id)
-    }
-    updateNodeHighlight()
-  }
-}
-
 function handleFilterChange(filters: FilterState) {
   currentFilterState.value = filters
   
   const searchCondition = filters.conditions.find(c => c.type === 'search')
-  if (searchCondition) {
-    handleSearch(searchCondition.value as string)
+  const query = (searchCondition?.value as string) ?? ''
+  if (!query) {
+    highlightedNodeId.value = null
+  } else {
+    // 从 pageStore 搜索匹配的节点，由 buildGraphData 统一处理 isHighlighted
+    const matched = pageStore.pages.find(p =>
+      !p.deleted && p.title.toLowerCase().includes(query.toLowerCase())
+    )
+    highlightedNodeId.value = matched?.id ?? null
   }
   
   const relCondition = filters.conditions.find(c => c.type === 'relationship')
