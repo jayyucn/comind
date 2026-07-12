@@ -343,6 +343,14 @@ watch(
   font-size: 10px;
   color: var(--text-tertiary);
   padding: 2px var(--space-1);
+  /* 展开 + 非 hover 时隐藏；hover 或折叠时可见 */
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.backlinks-header:hover .backlinks-toggle,
+.backlinks-panel.is-collapsed .backlinks-toggle {
+  opacity: 1;
 }
 
 /*
