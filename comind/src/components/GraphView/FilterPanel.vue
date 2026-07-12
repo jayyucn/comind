@@ -46,7 +46,7 @@ const defaultConditions: FilterCondition[] = [
 ]
 
 const conditions = ref<FilterCondition[]>([...defaultConditions])
-const expandedGroups = ref<Set<string>>(new Set(['search', 'relationship', 'time', 'journal']))
+const expandedGroups = ref<Set<string>>(new Set(['search', 'relationship', 'time']))
 const searchResults = ref<{ id: string; title: string; contentMatch?: string }[]>([])
 const isSearching = ref(false)
 const collapsed = ref(false)
@@ -281,9 +281,9 @@ function updateJournalFilter(value: boolean) {
     journalCondition.value.value = value
     
     if (value) {
-      hideJournalCount.value = pageStore.pages.filter(p => !p.deleted && p.type === 'journal').length
-    } else {
       hideJournalCount.value = 0
+    } else {
+      hideJournalCount.value = pageStore.pages.filter(p => !p.deleted && p.type === 'journal').length
     }
     
     emit('filter-change', getFilterState())
@@ -291,10 +291,21 @@ function updateJournalFilter(value: boolean) {
 }
 
 function resetFilters() {
-  conditions.value = [...defaultConditions]
+  // 逐个条件重置，确保 reactivity 正确触发
+  if (searchCondition.value) {
+    searchCondition.value.value = ''
+  }
+  if (relationshipCondition.value) {
+    relationshipCondition.value.value = []
+  }
+  if (timeCondition.value) {
+    timeCondition.value.value = { start: null, end: null }
+  }
+  if (journalCondition.value) {
+    journalCondition.value.value = false
+  }
   searchResults.value = []
-  hideJournalCount.value = 0
-  emit('filter-change', getFilterState())
+  hideJournalCount.value = pageStore.pages.filter(p => !p.deleted && p.type === 'journal').length
 }
 
 function toggleCollapse() {
@@ -323,6 +334,9 @@ function init() {
   
   const journalPages = pageStore.pages.filter(p => !p.deleted && p.type === 'journal')
   hideJournalCount.value = journalPages.length
+
+  // 初始状态立即推送给父组件，确保首次渲染即应用默认筛选
+  emit('filter-change', getFilterState())
 }
 
 init()
@@ -481,31 +495,19 @@ init()
         </div>
       </div>
 
-      <div class="filter-group">
-        <div class="filter-group-header" @click="toggleGroup('journal')">
-          <span class="filter-group-title">📔 日记屏蔽</span>
-          <span class="filter-group-arrow">{{ expandedGroups.has('journal') ? '▼' : '▶' }}</span>
-        </div>
-        <div v-if="expandedGroups.has('journal')" class="filter-group-body">
-          <div class="toggle-switch-wrapper">
-            <label class="toggle-switch">
-              <input
-                type="checkbox"
-                :checked="journalCondition?.value as boolean"
-                @change="updateJournalFilter(($event.target as HTMLInputElement).checked)"
-              />
-              <span class="toggle-slider"></span>
-            </label>
-            <span class="toggle-label">{{ journalCondition?.value ? '隐藏日记' : '显示日记' }}</span>
-            <span v-if="journalCondition?.value && hideJournalCount > 0" class="toggle-count">
-              (已隐藏 {{ hideJournalCount }} 篇)
-            </span>
-          </div>
-        </div>
-      </div>
-
       <div class="filter-panel-footer">
-        <button class="reset-btn" @click="resetFilters">重置筛选</button>
+        <div class="journal-toggle-row">
+          <label class="toggle-switch">
+            <input
+              type="checkbox"
+              :checked="journalCondition?.value as boolean"
+              @change="updateJournalFilter(($event.target as HTMLInputElement).checked)"
+            />
+            <span class="toggle-slider"></span>
+          </label>
+          <span class="toggle-label">显示日记</span>
+        </div>
+        <button class="reset-btn" @click="resetFilters">重置</button>
       </div>
     </div>
   </div>
@@ -866,13 +868,23 @@ init()
 }
 
 .filter-panel-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 12px;
   border-top: 1px solid var(--border);
+  gap: 24px;
+}
+
+.journal-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .reset-btn {
-  width: 100%;
-  padding: 8px;
+  padding: 6px 14px;
   border: 1px solid var(--border);
   background: var(--bg-base);
   border-radius: var(--radius-sm);
@@ -880,6 +892,8 @@ init()
   color: var(--text-secondary);
   cursor: pointer;
   font-family: inherit;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .reset-btn:hover {

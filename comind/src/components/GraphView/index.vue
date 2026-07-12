@@ -36,9 +36,8 @@ function applyFilterConditions(pageId: string): boolean {
     
     switch (condition.type) {
       case 'journal':
-        const shouldHideJournal = condition.value as boolean
-        if (shouldHideJournal && page.type === 'journal') {
-          matches = false
+        if (page.type === 'journal') {
+          matches = !!condition.value
         }
         break
         
@@ -225,7 +224,7 @@ async function buildGraphData() {
 
   // 1a. 日记隐藏：筛选激活时完全从图中移除（节点 + 边均不出现）
   const hideJournals = currentFilterState.value.conditions.some(
-    c => c.type === 'journal' && c.value === true
+    c => c.type === 'journal' && c.value === false
   )
   const hiddenPageIds = new Set<string>()
   if (hideJournals) {
