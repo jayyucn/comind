@@ -96,6 +96,36 @@ const logicOptions = [
   { value: 'NOT', label: '非' },
 ]
 
+const activeTimeRange = computed((): string | null => {
+  if (!timeCondition.value) return null
+  const range = timeCondition.value.value as DateRange
+  if (range.start === null) return 'all'
+
+  const oneDay = 24 * 60 * 60 * 1000
+  const oneWeek = 7 * oneDay
+  const today = new Date()
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()
+
+  if (range.start === todayStart && range.end === todayStart + oneDay) return 'today'
+
+  const weekStart = new Date()
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay())
+  const weekStartTs = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate()).getTime()
+  if (range.start === weekStartTs && range.end === weekStartTs + oneWeek) return 'week'
+
+  const monthStart = new Date()
+  monthStart.setDate(1)
+  const monthStartTs = new Date(monthStart.getFullYear(), monthStart.getMonth(), monthStart.getDate()).getTime()
+  const monthEndTs = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 1).getTime()
+  if (range.start === monthStartTs && range.end === monthEndTs) return 'month'
+
+  const yearStartTs = new Date(today.getFullYear(), 0, 1).getTime()
+  const yearEndTs = new Date(today.getFullYear() + 1, 0, 1).getTime()
+  if (range.start === yearStartTs && range.end === yearEndTs) return 'year'
+
+  return null
+})
+
 function toggleGroup(group: string) {
   if (expandedGroups.value.has(group)) {
     expandedGroups.value.delete(group)
@@ -414,7 +444,7 @@ init()
               v-for="range in quickTimeRanges"
               :key="range.value"
               class="quick-range-btn"
-              :class="{ active: timeCondition?.value && (timeCondition.value as DateRange).start !== null }"
+              :class="{ active: range.value === activeTimeRange }"
               @click="updateTimeRange(range.value)"
             >
               {{ range.label }}
