@@ -129,7 +129,8 @@ async function loadPageNodeEdges(
   edges: { id: string; source: string; target: string; data: Record<string, unknown> }[],
   visitedEdges: Set<string>,
   blockCache: Map<string, { pageId: string }>,
-  isFilteredMap: Map<string, boolean>
+  isFilteredMap: Map<string, boolean>,
+  hiddenPageIds: Set<string>
 ) {
   await blockStore.loadMultiPageBlocks([pageId])
   const outLinks = await blockStore.getOutlinks(pageId)
@@ -139,7 +140,7 @@ async function loadPageNodeEdges(
     if (shouldFilterEdge({ source: pageId, target: link.targetPageId, data: { relationshipType: link.relationshipType } })) continue
     if (visitedEdges.has(link.id)) continue
     const targetPage = pageStore.getPage(link.targetPageId)
-    if (!targetPage) continue
+    if (!targetPage || hiddenPageIds.has(targetPage.id)) continue
 
     if (!nodes.find(n => n.id === targetPage.id)) {
       nodes.push({
@@ -183,7 +184,7 @@ async function loadPageNodeEdges(
 
     const sourcePageId = block.pageId
     const sourcePage = pageStore.getPage(sourcePageId)
-    if (!sourcePage) continue
+    if (!sourcePage || hiddenPageIds.has(sourcePage.id)) continue
 
     if (!nodes.find(n => n.id === sourcePageId)) {
       nodes.push({
@@ -222,14 +223,27 @@ async function buildGraphData() {
 
   const allPages = pageStore.pages.filter(p => !p.deleted)
 
-  // 1. 计算每个 page 的过滤状态（不满足筛选 = true）
+  // 1a. 日记隐藏：筛选激活时完全从图中移除（节点 + 边均不出现）
+  const hideJournals = currentFilterState.value.conditions.some(
+    c => c.type === 'journal' && c.value === true
+  )
+  const hiddenPageIds = new Set<string>()
+  if (hideJournals) {
+    for (const p of allPages) {
+      if (p.type === 'journal') hiddenPageIds.add(p.id)
+    }
+  }
+
+  // 1b. 计算每个 page 的过滤状态（不满足筛选 = true）
   const isFilteredMap = new Map<string, boolean>()
   for (const page of allPages) {
+    if (hiddenPageIds.has(page.id)) continue
     isFilteredMap.set(page.id, !applyFilterConditions(page.id))
   }
 
-  // 2. 全部节点加入，置灰节点用 isFiltered 标记
+  // 2. 展示节点加入，置灰节点用 isFiltered 标记
   for (const page of allPages) {
+    if (hiddenPageIds.has(page.id)) continue
     nodes.push({
       id: page.id,
       data: {
@@ -242,13 +256,15 @@ async function buildGraphData() {
 
   // 3. 边：仅以“关系类型筛选”过滤，节点不过滤
   for (const page of allPages) {
-    await loadPageNodeEdges(page.id, nodes, edges, visitedEdges, blockCache, isFilteredMap)
+    if (hiddenPageIds.has(page.id)) continue
+    await loadPageNodeEdges(page.id, nodes, edges, visitedEdges, blockCache, isFilteredMap, hiddenPageIds)
   }
 
-  // 4. 节点统计
+  // 4. 节点统计（隐藏页不计入）
   let normalNodes = 0
   let filteredNodes = 0
   for (const page of allPages) {
+    if (hiddenPageIds.has(page.id)) continue
     if (isFilteredMap.get(page.id)) filteredNodes++
     else normalNodes++
   }
