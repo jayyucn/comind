@@ -73,7 +73,7 @@ const isFilled = computed(() => props.name === 'icon-star-filled')
   <component
     :is="iconComponent"
     v-if="iconComponent"
-    :size="size || 24"
+    :size="size || 16"
     :color="color"
     :style="isFilled ? { fill: color || 'currentColor' } : {}"
   />

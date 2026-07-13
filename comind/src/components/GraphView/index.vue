@@ -772,7 +772,7 @@ onBeforeUnmount(() => {
 .layout-btn {
   padding: 4px 10px;
   border: 1px solid var(--border);
-  background: var(--bg-base);
+  background: var(--bg-sidebar);
   cursor: pointer;
   border-radius: var(--radius-sm);
   font-size: 11px;

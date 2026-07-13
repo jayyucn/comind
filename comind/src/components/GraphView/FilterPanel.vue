@@ -516,7 +516,7 @@ init()
 <style scoped>
 .filter-panel {
   width: 280px;
-  background: var(--bg-base);
+  background: var(--bg-sidebar);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
