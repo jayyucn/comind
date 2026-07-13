@@ -1,10 +1,10 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, computed, watch, onUnmounted, nextTick } from 'vue'
 import { useEditorStore } from '../../stores/editor'
 import { usePropertyStore } from '../../stores/property'
 import type { PropertyValue } from '../../types/property'
 import { getAllPropertyDefinitions } from '../../types/property'
-import { TaskIcon } from '../Icons'
+import { Icon } from '../Icons'
 
 const editorStore = useEditorStore()
 const propertyStore = usePropertyStore()
@@ -158,7 +158,7 @@ function isSvgIcon(icon: string): boolean {
               @click.stop="handleSelectClosedValue(cv.value as string)"
             >
               <span v-if="cv.icon" class="option-icon">
-                <TaskIcon 
+                <Icon 
                   v-if="isSvgIcon(cv.icon)"
                   :name="cv.icon"
                   :size="16"

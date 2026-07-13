@@ -19,8 +19,14 @@ import {
   Undo2,
   Settings,
   ArrowRight,
+  ArrowLeft,
   PanelLeft,
   PanelLeftClose,
+  PanelRightOpen,
+  PanelRightClose,
+  Maximize2,
+  Square,
+  X,
   Trash
 } from 'lucide-vue-next'
 
@@ -52,8 +58,16 @@ const GENERAL_ICONS: Record<string, any> = {
   'icon-restore': Undo2,
   'icon-settings': Settings,
   'icon-arrow-right': ArrowRight,
+  'icon-arrow-left': ArrowLeft,
   'icon-panel-left': PanelLeft,
   'icon-panel-left-close': PanelLeftClose,
+  'icon-panel-left-open': PanelLeft,
+  'icon-panel-right-open': PanelRightOpen,
+  'icon-panel-right-close': PanelRightClose,
+  'icon-minimize': Minus,
+  'icon-square': Square,
+  'icon-maximize': Maximize2,
+  'icon-close': X,
 }
 
 const ALL_ICONS = { ...STATUS_ICONS, ...PRIORITY_ICONS, ...GENERAL_ICONS }
@@ -62,6 +76,7 @@ const props = defineProps<{
   name: string
   size?: number
   color?: string
+  strokeWidth?: number
 }>()
 
 const iconComponent = computed(() => ALL_ICONS[props.name])
@@ -75,6 +90,7 @@ const isFilled = computed(() => props.name === 'icon-star-filled')
     v-if="iconComponent"
     :size="size || 16"
     :color="color"
+    :stroke-width="strokeWidth ?? 2"
     :style="isFilled ? { fill: color || 'currentColor' } : {}"
   />
 </template>

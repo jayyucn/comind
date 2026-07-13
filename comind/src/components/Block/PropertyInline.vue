@@ -1,9 +1,9 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, ref } from 'vue'
 import { usePropertyStore } from '../../stores/property'
 import { useEditorStore } from '../../stores/editor'
 import type { Property } from '../../types/property'
-import { TaskIcon } from '../Icons'
+import { Icon } from '../Icons'
 
 interface Props {
   blockId: string
@@ -113,7 +113,7 @@ function isSvgIcon(icon: string): boolean {
     >
       <template v-if="getIcon(prop.key, prop.value) as string">
         <span class="property-icon">
-          <TaskIcon 
+          <Icon 
             v-if="isSvgIcon(getIcon(prop.key, prop.value) as string)"
             :name="getIcon(prop.key, prop.value) as string"
             :size="18"

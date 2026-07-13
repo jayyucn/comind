@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useEditorStore } from '../stores/editor'
 import { usePropertyStore } from '../stores/property'
@@ -7,7 +7,7 @@ import { useModalKeyboardRef } from '../composables/useModalKeyboard'
 import { useTemplateRegistry } from '../composables/useTemplateRegistry'
 import { useUserTemplatesStore } from '../stores/user-templates'
 import { parseDateInput } from '../utils/date-parser'
-import { TaskIcon } from '../components/Icons'
+import { Icon } from '../components/Icons'
 import type { Command } from '../types/command'
 
 const editorStore = useEditorStore()
@@ -441,7 +441,7 @@ watch(visible, (isVisible) => {
                   @mouseenter="selectedIndex = flatCommands.indexOf(cmd)"
                 >
                   <span class="slash-command-icon">
-                    <TaskIcon
+                    <Icon
                       v-if="isSvgIcon(cmd.icon)"
                       :name="cmd.icon"
                       :size="16"

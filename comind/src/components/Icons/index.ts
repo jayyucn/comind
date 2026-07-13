@@ -1,4 +1,4 @@
-export { default as TaskIcon } from './TaskIcon.vue'
+export { default as Icon } from './Icon.vue'
 
 export const TASK_STATUS_ICONS = {
   Todo: 'status-todo',

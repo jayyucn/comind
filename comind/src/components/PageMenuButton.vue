@@ -1,11 +1,11 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, computed, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useFavorites } from '../composables/useFavorites'
 import { usePageStore } from '../stores/pages'
 import { useSettingsModal } from '../composables/useSettingsModal'
 import ConfirmDialog from './ConfirmDialog.vue'
-import { TaskIcon } from './Icons'
+import { Icon } from './Icons'
 
 const router = useRouter()
 const route = useRoute()
@@ -121,7 +121,7 @@ onUnmounted(() => {
 <template>
   <div class="page-menu-button">
     <button class="menu-trigger" @click.stop="toggleMenu">
-      <TaskIcon name="icon-menu" />
+      <Icon name="icon-menu" />
     </button>
 
     <Transition name="menu">
@@ -129,24 +129,24 @@ onUnmounted(() => {
         <!-- 页面相关功能仅在页面路由中显示 -->
         <template v-if="isOnPage && currentPage">
           <button class="menu-item" @click="handleToggleFavorite">
-            <TaskIcon :name="favorited ? 'icon-star-filled' : 'icon-star'" :size="16" />
+            <Icon :name="favorited ? 'icon-star-filled' : 'icon-star'" :size="16" />
             <span>{{ favorited ? '取消收藏' : '添加收藏' }}</span>
           </button>
 
           <div class="menu-item has-submenu" @click="toggleDeleteSubmenu">
-            <TaskIcon name="icon-trash2" :size="16" />
+            <Icon name="icon-trash2" :size="16" />
             <span>删除本页</span>
-            <TaskIcon class="arrow-icon" :class="{ rotated: isDeleteSubmenuOpen }" name="icon-arrow-right" :size="16" />
+            <Icon class="arrow-icon" :class="{ rotated: isDeleteSubmenuOpen }" name="icon-arrow-right" :size="16" />
           </div>
 
           <Transition name="submenu">
             <div v-if="isDeleteSubmenuOpen" class="submenu">
               <button class="menu-item submenu-item" @click="handleSoftDelete">
-                <TaskIcon name="icon-trash2" :size="16" />
+                <Icon name="icon-trash2" :size="16" />
                 <span>移至回收站</span>
               </button>
               <button class="menu-item submenu-item danger" @click="handlePermanentDelete">
-                <TaskIcon name="icon-trash-permanent" :size="16" />
+                <Icon name="icon-trash-permanent" :size="16" />
                 <span>永久删除</span>
               </button>
             </div>
@@ -157,12 +157,12 @@ onUnmounted(() => {
 
         <!-- 全局功能始终显示 -->
         <button class="menu-item" @click="handleNavigateToTrash">
-          <TaskIcon name="icon-trash" :size="16" />
+          <Icon name="icon-trash" :size="16" />
           <span>回收站</span>
         </button>
 
         <button class="menu-item" @click="handleNavigateToSettings">
-          <TaskIcon name="icon-settings" :size="16" />
+          <Icon name="icon-settings" :size="16" />
           <span>设置</span>
         </button>
       </div>

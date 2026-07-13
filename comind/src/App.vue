@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import Sidebar from './components/Sidebar/index.vue'
@@ -12,7 +12,7 @@ import { useSidebar } from './composables/useSidebar'
 import { useRightSidebar } from './composables/useRightSidebar'
 import { useRelationshipTypes } from './composables/useRelationshipTypes'
 import { useJournal } from './composables/useJournal'
-import { ArrowLeft, ArrowRight, PanelLeftClose, PanelLeftOpen, PanelRightOpen, PanelRightClose, Minus, Square, X, Maximize2 } from 'lucide-vue-next'
+import Icon from './components/Icons/Icon.vue'
 import RightSidebar from './components/RightSidebar/index.vue'
 import { registerPanel } from './components/RightSidebar/panels'
 import ConceptGraphPanel from './components/ConceptGraph/Panel.vue'
@@ -230,21 +230,16 @@ function handleMainClick(e: MouseEvent) {
       <div class="sticky-header" @mousedown="handleHeaderMouseDown">
         <div class="nav-controls">
           <button class="collapse-btn" :title="isCollapsed ? '展开侧边栏' : '折叠侧边栏'" @click="toggle">
-            <PanelLeftClose v-if="!isCollapsed" />
-            <PanelLeftOpen v-else />
+            <Icon :name="isCollapsed ? 'icon-panel-left-open' : 'icon-panel-left-close'" :size="16" />
           </button>
           <template v-if="!isCollapsed">
             <button class="nav-btn" :class="{ disabled: !canGoBack }" :disabled="!canGoBack" title="后退"
               @click="handleGoBack">
-              <span class="nav-icon left-icon">
-                <ArrowLeft :size="16" :stroke-width="1.75" />
-              </span>
+              <Icon name="icon-arrow-left" :size="16"  />
             </button>
             <button class="nav-btn" :class="{ disabled: !canGoForward }" :disabled="!canGoForward" title="前进"
               @click="handleGoForward">
-              <span class="nav-icon right-icon">
-                <ArrowRight :size="16" :stroke-width="1.75" />
-              </span>
+              <Icon name="icon-arrow-right" :size="16"  />
             </button>
           </template>
         </div>
@@ -257,19 +252,17 @@ function handleMainClick(e: MouseEvent) {
             :title="rightSidebar.visible.value ? '关闭右侧面板' : '打开概念图谱'"
             @click="rightSidebar.toggleVisible()"
           >
-            <PanelRightClose v-if="rightSidebar.visible.value"  :stroke-width="1.75" />
-            <PanelRightOpen v-else :stroke-width="1.75" />
+            <Icon :name="rightSidebar.visible.value ? 'icon-panel-right-close' : 'icon-panel-right-open'" :size="16"/>
           </button>
           <div class="window-controls" v-if="isTauriEnvironment()">
             <button class="window-control-btn minimize-btn" title="最小化" @click="handleMinimize">
-              <Minus :size="14" :stroke-width="1.75" />
+              <Icon name="icon-minimize" :size="14" />
             </button>
             <button class="window-control-btn maximize-btn" :title="isMaximized ? '还原' : '最大化'" @click="handleMaximize">
-              <Square v-if="isMaximized" :size="12" :stroke-width="1.75" />
-              <Maximize2 v-else :size="14" :stroke-width="1.75" />
+              <Icon :name="isMaximized ? 'icon-square' : 'icon-maximize'" :size="14"/>
             </button>
             <button class="window-control-btn close-btn" title="关闭" @click="handleClose">
-              <X :size="14" :stroke-width="1.75" />
+              <Icon name="icon-close" :size="14" />
             </button>
           </div>
         </div>

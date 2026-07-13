@@ -1,7 +1,7 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { useRouter } from 'vue-router'
 import { useJournal } from '../../composables/useJournal'
-import { TaskIcon } from '../Icons'
+import { Icon } from '../Icons'
 
 const router = useRouter()
 const { today } = useJournal()
@@ -17,7 +17,7 @@ function handleClick() {
     <div class="journal-glow"></div>
     <div class="journal-content">
       <div class="journal-icon-wrap">
-        <TaskIcon name="icon-star" :size="18" color="var(--accent)" />
+        <Icon name="icon-star" :size="18" color="var(--accent)" />
       </div>
       <div class="journal-body">
         <span class="journal-title">日记</span>

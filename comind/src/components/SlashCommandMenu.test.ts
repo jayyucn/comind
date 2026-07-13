@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+﻿import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises } from '@vue/test-utils'
 import SlashCommandMenu from './SlashCommandMenu.vue'
@@ -37,7 +37,7 @@ vi.mock('../composables/useTemplateRegistry', () => ({
 
 // Mock Icons module
 vi.mock('./Icons', () => ({
-  TaskIcon: { template: '<span class="task-icon"></span>' },
+  Icon: { template: '<span class="task-icon"></span>' },
   TASK_STATUS_ICONS: {
     Todo: 'status-todo',
     Doing: 'status-doing',

@@ -1,10 +1,10 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed } from 'vue'
 import { useJournal } from '../../composables/useJournal'
 import { usePageStore } from '../../stores/pages'
 import BlockList from '../BlockList.vue'
 import Backlinks from '../Backlinks.vue'
-import { TaskIcon } from '../Icons'
+import { Icon } from '../Icons'
 
 const props = defineProps<{
   pageId: string
@@ -44,7 +44,7 @@ function openPage() {
     <div class="entry-date-card" @click="openPage">
       <div class="date-left">
         <div class="date-icon-box">
-          <TaskIcon name="icon-calendar" :size="18" :color="isToday ? 'var(--accent)' : 'var(--text-tertiary)'" />
+          <Icon name="icon-calendar" :size="18" :color="isToday ? 'var(--accent)' : 'var(--text-tertiary)'" />
         </div>
         <div class="date-divider"></div>
         <div class="date-text">
