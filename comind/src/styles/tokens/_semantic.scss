@@ -5,8 +5,8 @@
 
 :root {
   // 背景层级
-  --bg-base: #FAFAFE;
-  --bg-sidebar: #F3F4F8;
+  --bg-base: #FAFAF9;
+  --bg-sidebar: #F5F5F4;
   --bg-hover: #{$color-stone-200};
   --bg-active: #{$color-stone-300};
 
@@ -16,7 +16,7 @@
   --text-tertiary: #{$color-stone-500};
   --text-disabled: #{$color-stone-400};
 
-  // 侧边栏文字层级（侧边栏背景 #F3F4F8 比主内容区更浅，需要更高对比度）
+  // 侧边栏文字层级（侧边栏背景 #F5F5F4 比主内容区更浅，需要更高对比度）
   --sidebar-text-primary: #{$color-stone-800};
   --sidebar-text-secondary: #{$color-stone-600};
   --sidebar-text-hint: #524F4B;
@@ -82,7 +82,7 @@
   --sidebar-width: #{$sidebar-width};
 
   // 兼容别名（从原 style.css 保留）
-  --color-paper: #FAFAFE;
+  --color-paper: #FAFAF9;
   --color-ink: #{$color-stone-900};
   --color-ink-secondary: #{$color-stone-600};
   --color-ink-muted: #{$color-stone-600};
@@ -95,7 +95,7 @@
   --color-border-strong: #{$color-stone-400};
   --color-hover: #{$color-stone-200};
   --color-surface: #{$color-stone-200};
-  --color-sidebar-bg: #F3F4F8;
+  --color-sidebar-bg: #F5F5F4;
   --color-highlight: #{$color-indigo-200};
   --color-white: #FFFFFF;
   --color-tag: #6366F1;
