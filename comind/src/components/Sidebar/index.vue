@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import SidebarContainer from './SidebarContainer.vue'
 
-// Re-export with the name that App.vue expects
 defineOptions({ name: 'Sidebar' })
+
+defineProps<{
+  canGoBack: boolean
+  canGoForward: boolean
+}>()
 </script>
 
 <template>
-  <SidebarContainer />
+  <SidebarContainer v-bind="$props" @go-back="$emit('goBack')" @go-forward="$emit('goForward')" />
 </template>

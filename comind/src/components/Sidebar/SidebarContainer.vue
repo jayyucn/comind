@@ -8,12 +8,17 @@ import SidebarFavorites from './SidebarFavorites.vue'
 import SidebarFooter from './SidebarFooter.vue'
 
 const { isCollapsed } = useSidebar()
+
+defineProps<{
+  canGoBack: boolean
+  canGoForward: boolean
+}>()
 </script>
 
 <template>
   <div class="sidebar-wrapper" :class="{ collapsed: isCollapsed }">
     <aside class="sidebar">
-      <SidebarHeader />
+      <SidebarHeader v-bind="$props" @go-back="$emit('goBack')" @go-forward="$emit('goForward')" />
 
       <div class="sidebar-content">
         <SidebarJournal />

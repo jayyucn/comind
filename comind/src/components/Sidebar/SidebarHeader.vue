@@ -1,6 +1,17 @@
 <script setup lang="ts">
 import { isTauriEnvironment } from '../../wasm/tauri-client'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import Icon from '../Icons/Icon.vue'
+
+defineProps<{
+  canGoBack: boolean
+  canGoForward: boolean
+}>()
+
+const emit = defineEmits<{
+  goBack: []
+  goForward: []
+}>()
 
 async function handleMouseDown() {
   if (!isTauriEnvironment()) return
@@ -11,19 +22,47 @@ async function handleMouseDown() {
 
 <template>
   <div class="sidebar-header" @mousedown="handleMouseDown">
-    <span class="sidebar-logo">COMIND</span>
+    <div class="sidebar-logo-wrap">
+      <span class="sidebar-logo">COMIND</span>
+    </div>
+    <div class="sidebar-nav">
+      <button
+        class="sidebar-nav-btn"
+        :class="{ disabled: !canGoBack }"
+        :disabled="!canGoBack"
+        title="后退"
+        @click="emit('goBack')"
+      >
+        <Icon name="icon-arrow-left" :size="14" />
+      </button>
+      <button
+        class="sidebar-nav-btn"
+        :class="{ disabled: !canGoForward }"
+        :disabled="!canGoForward"
+        title="前进"
+        @click="emit('goForward')"
+      >
+        <Icon name="icon-arrow-right" :size="14" />
+      </button>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .sidebar-header {
-  padding: 14px var(--space-4) 12px;
+  padding: 10px var(--space-3) 10px;
   border-bottom: 1px solid var(--border);
-  height: 40px;
   display: flex;
   align-items: center;
-  box-sizing: border-box;
+  gap: 4px;
   flex-shrink: 0;
+  box-sizing: border-box;
+  height: 40px;
+}
+
+.sidebar-logo-wrap {
+  flex: 1;
+  min-width: 0;
 }
 
 .sidebar-logo {
@@ -32,5 +71,40 @@ async function handleMouseDown() {
   color: var(--text-secondary);
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.sidebar-nav {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.sidebar-nav-btn {
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  transition: background 100ms ease, color 100ms ease;
+}
+
+.sidebar-nav-btn:hover:not(.disabled) {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.sidebar-nav-btn:active:not(.disabled) {
+  background: var(--bg-active);
+  transform: scale(0.95);
+}
+
+.sidebar-nav-btn.disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 </style>

@@ -224,7 +224,7 @@ function handleMainClick(e: MouseEvent) {
 
 <template>
   <div class="app-layout">
-    <Sidebar />
+    <Sidebar :canGoBack="canGoBack" :canGoForward="canGoForward" @goBack="handleGoBack" @goForward="handleGoForward" />
 
     <div class="page-scroll-wrapper" @click="handleMainClick">
       <div class="sticky-header" @mousedown="handleHeaderMouseDown">
@@ -232,16 +232,6 @@ function handleMainClick(e: MouseEvent) {
           <button class="collapse-btn" :title="isCollapsed ? '展开侧边栏' : '折叠侧边栏'" @click="toggle">
             <Icon :name="isCollapsed ? 'icon-panel-left-open' : 'icon-panel-left-close'" :size="16" />
           </button>
-          <template v-if="!isCollapsed">
-            <button class="nav-btn" :class="{ disabled: !canGoBack }" :disabled="!canGoBack" title="后退"
-              @click="handleGoBack">
-              <Icon name="icon-arrow-left" :size="16"  />
-            </button>
-            <button class="nav-btn" :class="{ disabled: !canGoForward }" :disabled="!canGoForward" title="前进"
-              @click="handleGoForward">
-              <Icon name="icon-arrow-right" :size="16"  />
-            </button>
-          </template>
         </div>
 
         <div class="top-right-controls">
@@ -350,41 +340,6 @@ function handleMainClick(e: MouseEvent) {
   display: flex;
   gap: 4px;
   width: fit-content;
-}
-
-.nav-btn {
-  width: 30px;
-  height: 30px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-sm);
-  color: var(--text-tertiary);
-  transition: all 100ms ease;
-}
-
-.nav-btn:hover:not(.disabled) {
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-}
-
-.nav-btn:active:not(.disabled) {
-  background: var(--bg-active);
-  transform: scale(0.95);
-}
-
-.nav-btn.disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-
-.nav-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .page-scroll-wrapper::-webkit-scrollbar {
