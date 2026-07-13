@@ -1,21 +1,36 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { ref, computed, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useFavorites } from '../composables/useFavorites'
 import { usePageStore } from '../stores/pages'
 import { useSettingsModal } from '../composables/useSettingsModal'
+import { useTheme } from '../composables/useTheme'
 import ConfirmDialog from './ConfirmDialog.vue'
 import { Icon } from './Icons'
+import { Sun, Moon, Monitor } from 'lucide-vue-next'
 
 const router = useRouter()
 const route = useRoute()
 const pageStore = usePageStore()
 const { isFavorite, toggleFavorite } = useFavorites()
 const { open: openSettings } = useSettingsModal()
+const { theme, setTheme } = useTheme()
 
 const isMenuOpen = ref(false)
 const isDeleteSubmenuOpen = ref(false)
 const showPermanentDeleteConfirm = ref(false)
+
+const themeIconMap = {
+  light: Sun,
+  dark: Moon,
+  system: Monitor,
+}
+
+const themeLabelMap: Record<string, string> = {
+  light: '浅色',
+  dark: '深色',
+  system: '跟随系统',
+}
 
 // 判断当前是否在页面路由中（有可操作的页面）
 const isOnPage = computed(() => {
@@ -60,11 +75,15 @@ function toggleDeleteSubmenu() {
   isDeleteSubmenuOpen.value = !isDeleteSubmenuOpen.value
 }
 
+function handleSelectTheme(t: 'light' | 'dark' | 'system') {
+  setTheme(t)
+  isMenuOpen.value = false
+}
+
 async function handleSoftDelete() {
   if (!currentPage.value) return
   closeMenu()
   await pageStore.softDeletePage(currentPage.value.id)
-  // 从路由历史中移除当前页面记录，然后导航到首页
   if (router.options.history.state) {
     router.replace('/journal')
   } else {
@@ -82,7 +101,6 @@ async function confirmPermanentDelete() {
   if (!currentPage.value) return
   showPermanentDeleteConfirm.value = false
   await pageStore.permanentDeletePage(currentPage.value.id)
-  // 从路由历史中移除当前页面记录，然后导航到首页
   if (router.options.history.state) {
     router.replace('/journal')
   } else {
@@ -156,6 +174,20 @@ onUnmounted(() => {
         </template>
 
         <!-- 全局功能始终显示 -->
+        <div class="theme-selector">
+          <span class="theme-label">主题</span>
+          <button
+            v-for="t in (['light', 'dark', 'system'] as const)"
+            :key="t"
+            class="theme-option"
+            :class="{ active: theme === t }"
+            :title="themeLabelMap[t]"
+            @click.stop="handleSelectTheme(t)"
+          >
+            <component :is="themeIconMap[t]" :size="15" :stroke-width="1.75" />
+          </button>
+        </div>
+
         <button class="menu-item" @click="handleNavigateToTrash">
           <Icon name="icon-trash" :size="16" />
           <span>回收站</span>
@@ -199,7 +231,6 @@ onUnmounted(() => {
   border-radius: var(--radius-md);
   color: var(--text-secondary);
   transition: background 120ms ease, color 120ms ease;
-  /* border: 1px solid var(--color-border-light); */
 }
 
 .menu-trigger:hover {
@@ -253,15 +284,61 @@ onUnmounted(() => {
 }
 
 .menu-item.has-submenu {
-  justify-content: space-between;
+  justify-content: flex-start;
 }
 
 .menu-item.has-submenu span {
   flex: 1;
 }
 
+.theme-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-hover);
+  border-radius: var(--radius-md);
+  padding: 3px;
+  margin: 4px 6px;
+}
+
+.theme-label {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  padding-left: 4px;
+  padding-right: 4px;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.theme-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  transition: background 80ms ease, color 80ms ease;
+  flex-shrink: 0;
+}
+
+.theme-option:hover {
+  color: var(--text-secondary);
+  background: var(--color-hover);
+}
+
+.theme-option.active {
+  background: var(--bg-base);
+  color: var(--accent);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
 .arrow-icon {
   transition: transform 150ms ease;
+  flex-shrink: 0;
 }
 
 .arrow-icon.rotated {
@@ -274,11 +351,6 @@ onUnmounted(() => {
   margin-left: 12px;
   margin-top: 2px;
   margin-bottom: 2px;
-}
-
-.submenu-item {
-  padding: 6px 10px;
-  font-size: var(--text-xs);
 }
 
 .menu-divider {
