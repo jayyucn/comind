@@ -102,22 +102,15 @@ function getEdgeDedupeKey(edge: { source: string; target: string; data: Record<s
   return `${source}-${target}-${groupKey}`
 }
 
-function shouldFilterEdge(edge: { source: string; target: string; data: Record<string, unknown> }): boolean {
-  const relationshipType = edge.data.relationshipType as string
-  
+/** 检查边的关系类型是否被选定。空选定 = 全不过滤 */
+function getRelationshipFilteredStatus(type: string): boolean {
   const relCondition = currentFilterState.value.conditions.find(c => c.type === 'relationship')
   if (relCondition) {
     const selectedTypes = relCondition.value as string[]
     if (selectedTypes.length > 0) {
-      const logic = relCondition.logic
-      const hasType = selectedTypes.includes(relationshipType)
-      
-      if (logic === 'AND' && !hasType) return true
-      if (logic === 'OR' && !hasType) return true
-      if (logic === 'NOT' && hasType) return true
+      return !selectedTypes.includes(type)
     }
   }
-  
   return false
 }
 
@@ -135,7 +128,6 @@ async function loadPageNodeEdges(
   const inLinks = await blockStore.getBacklinks(pageId)
 
   for (const link of outLinks) {
-    if (shouldFilterEdge({ source: pageId, target: link.targetPageId, data: { relationshipType: link.relationshipType } })) continue
     if (visitedEdges.has(link.id)) continue
     const targetPage = pageStore.getPage(link.targetPageId)
     if (!targetPage || hiddenPageIds.has(targetPage.id)) continue
@@ -152,25 +144,26 @@ async function loadPageNodeEdges(
       })
     }
 
-    const color = getRelationshipColor(link.relationshipType ?? 'related')
-    const label = getRelationshipLabel(link.relationshipType ?? 'related')
-    const isFiltered = (isFilteredMap.get(pageId) ?? false) || (isFilteredMap.get(link.targetPageId) ?? false)
+    const type = link.relationshipType ?? 'related'
+    const color = getRelationshipColor(type)
+    const label = getRelationshipLabel(type)
+    const nodeFiltered = (isFilteredMap.get(pageId) ?? false) || (isFilteredMap.get(link.targetPageId) ?? false)
+    const typeFiltered = getRelationshipFilteredStatus(type)
     visitedEdges.add(link.id)
     edges.push({
       id: link.id,
       source: pageId,
       target: link.targetPageId,
       data: {
-        relationshipType: link.relationshipType ?? 'related',
+        relationshipType: type,
         label,
         color,
-        isFiltered,
+        isFiltered: nodeFiltered || typeFiltered,
       }
     })
   }
 
   for (const link of inLinks) {
-    if (shouldFilterEdge({ source: '', target: pageId, data: { relationshipType: link.relationshipType } })) continue
     if (visitedEdges.has(link.id)) continue
 
     let block = blockCache.get(link.sourceBlockId)
@@ -199,14 +192,15 @@ async function loadPageNodeEdges(
 
     const color = getRelationshipColor(link.relationshipType ?? 'related')
     const label = getRelationshipLabel(link.relationshipType ?? 'related')
-    const isFiltered = (isFilteredMap.get(sourcePageId) ?? false) || (isFilteredMap.get(pageId) ?? false)
+    const type = link.relationshipType ?? 'related'
+    const isFiltered = (isFilteredMap.get(sourcePageId) ?? false) || (isFilteredMap.get(pageId) ?? false) || getRelationshipFilteredStatus(type)
     visitedEdges.add(link.id)
     edges.push({
       id: link.id,
       source: sourcePageId,
       target: pageId,
       data: {
-        relationshipType: link.relationshipType ?? 'related',
+        relationshipType: type,
         label,
         color,
         isFiltered,
@@ -261,17 +255,6 @@ async function buildGraphData() {
     await loadPageNodeEdges(page.id, nodes, edges, visitedEdges, blockCache, isFilteredMap, hiddenPageIds)
   }
 
-  // 4. 节点统计（隐藏页不计入）
-  let normalNodes = 0
-  let filteredNodes = 0
-  for (const page of allPages) {
-    if (hiddenPageIds.has(page.id)) continue
-    if (isFilteredMap.get(page.id)) filteredNodes++
-    else normalNodes++
-  }
-  stats.value.normalNodes = normalNodes
-  stats.value.filteredNodes = filteredNodes
-
   // 5. 边去重
   const normalizedEdges = edges.map(e => normalizeEdge(e))
   const seenKeys = new Set<string>()
@@ -283,17 +266,7 @@ async function buildGraphData() {
     dedupedEdges.push(edge)
   }
 
-  // 6. 边统计
-  let normalEdges = 0
-  let filteredEdges = 0
-  for (const edge of dedupedEdges) {
-    if (edge.data.isFiltered) filteredEdges++
-    else normalEdges++
-  }
-  stats.value.normalEdges = normalEdges
-  stats.value.filteredEdges = filteredEdges
-
-  // 7. 平行边偏移
+  // 6. 平行边偏移
   const edgeCountMap = new Map<string, number>()
   const pairKey = (a: string, b: string) => [a, b].sort().join('-')
   for (const edge of dedupedEdges) {
@@ -310,6 +283,44 @@ async function buildGraphData() {
       edge.data.endPointOffset = [0, sign * 8]
     }
   }
+
+  // 7. 关系类型后处理：无任何选中类型边的节点额外置灰
+  const relCondition = currentFilterState.value.conditions.find(c => c.type === 'relationship')
+  const selectedRelTypes = (relCondition?.value as string[]) ?? []
+  if (selectedRelTypes.length > 0) {
+    const nodeHasSelectedType = new Set<string>()
+    for (const edge of dedupedEdges) {
+      const type = edge.data.relationshipType as string
+      if (selectedRelTypes.includes(type)) {
+        nodeHasSelectedType.add(edge.source)
+        nodeHasSelectedType.add(edge.target)
+      }
+    }
+    for (const node of nodes) {
+      if (!nodeHasSelectedType.has(node.id)) {
+        ;(node.data as Record<string, unknown>).isFiltered = true
+      }
+    }
+  }
+
+  // 8. 统计
+  let normalNodes = 0
+  let filteredNodes = 0
+  for (const node of nodes) {
+    if (node.data?.isFiltered) filteredNodes++
+    else normalNodes++
+  }
+  stats.value.normalNodes = normalNodes
+  stats.value.filteredNodes = filteredNodes
+
+  let normalEdges = 0
+  let filteredEdges = 0
+  for (const edge of dedupedEdges) {
+    if (edge.data.isFiltered) filteredEdges++
+    else normalEdges++
+  }
+  stats.value.normalEdges = normalEdges
+  stats.value.filteredEdges = filteredEdges
 
   return { nodes, edges: dedupedEdges }
 }
@@ -495,9 +506,28 @@ async function refreshGraphData(graph?: Graph) {
 
   if (gen !== refreshGeneration) return
 
-  await g.fitView()
-  const zoom = g.getZoom()
-  await g.zoomTo(zoom * 0.85)
+  // 找到符合条件的节点（非置灰），居中到其包围盒
+  const allNodeData = g.getNodeData()
+  const normalNodeData = allNodeData.filter(n => !n.data?.isFiltered)
+  if (normalNodeData.length > 0) {
+    const xs: number[] = normalNodeData.map(n => n.x ?? 0) as number[]
+    const ys: number[] = normalNodeData.map(n => n.y ?? 0) as number[]
+    const minX = Math.min(...xs), maxX = Math.max(...xs)
+    const minY = Math.min(...ys), maxY = Math.max(...ys)
+    const cx = (minX + maxX) / 2
+    const cy = (minY + maxY) / 2
+    const bboxW = maxX - minX + 160
+    const bboxH = maxY - minY + 160
+    const el = containerRef.value as HTMLElement
+    const viewW = el.clientWidth || 800
+    const viewH = el.clientHeight || 600
+    const scale = Math.min(viewW / bboxW, viewH / bboxH, 1.5)
+    await g.zoomTo(scale * 0.85, false, [cx, cy])
+  } else {
+    await g.fitView()
+    const zoom = g.getZoom()
+    await g.zoomTo(zoom * 0.85)
+  }
 }
 
 async function handleLayoutChange(layout: string) {
@@ -589,10 +619,6 @@ function handleFilterChange(filters: FilterState) {
   
   refreshGraphData()
 }
-
-watch(activeFilters, () => {
-  refreshGraphData()
-}, { deep: true })
 
 watch(currentFilterState, () => {
   refreshGraphData()
