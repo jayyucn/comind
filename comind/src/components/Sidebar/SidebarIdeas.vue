@@ -17,7 +17,7 @@ function handleClick() {
     <div class="ideas-glow"></div>
     <div class="ideas-content">
       <div class="ideas-icon-wrap">
-        <Icon name="icon-star" :size="18" color="var(--accent)" />
+        <Icon name="icon-droplet" :size="18" color="var(--accent)" />
       </div>
       <div class="ideas-body">
         <span class="ideas-title">点滴</span>

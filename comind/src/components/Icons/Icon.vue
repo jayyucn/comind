@@ -27,7 +27,8 @@ import {
   Maximize2,
   Square,
   X,
-  Trash
+  Trash,
+  Droplet
 } from 'lucide-vue-next'
 
 const STATUS_ICONS: Record<string, any> = {
@@ -68,6 +69,7 @@ const GENERAL_ICONS: Record<string, any> = {
   'icon-square': Square,
   'icon-maximize': Maximize2,
   'icon-close': X,
+  'icon-droplet': Droplet,
 }
 
 const ALL_ICONS = { ...STATUS_ICONS, ...PRIORITY_ICONS, ...GENERAL_ICONS }
