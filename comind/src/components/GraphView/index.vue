@@ -224,7 +224,7 @@ async function buildGraphData() {
   const hiddenPageIds = new Set<string>()
   if (hideIdeas) {
     for (const p of allPages) {
-      if (p.type === 'ideas') hiddenPageIds.add(p.id)
+      if (p.type === 'ideas' || p.type === 'journal') hiddenPageIds.add(p.id)
     }
   }
 
@@ -652,7 +652,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="graph-view-page">
     <div class="graph-view-header">
-      <h1 class="graph-view-title">概念网络</h1>
+      <h1 class="graph-view-title">图谱</h1>
       <div class="graph-view-controls">
         <div class="control-group">
           <button

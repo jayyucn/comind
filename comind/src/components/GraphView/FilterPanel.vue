@@ -505,7 +505,7 @@ init()
             />
             <span class="toggle-slider"></span>
           </label>
-          <span class="toggle-label">显示日记</span>
+          <span class="toggle-label">显示点滴</span>
         </div>
         <button class="reset-btn" @click="resetFilters">重置</button>
       </div>
@@ -527,6 +527,7 @@ init()
 .filter-panel.collapsed {
   width: 40px;
   border-right: none;
+  background: transparent;
 }
 
 .filter-panel-header {
