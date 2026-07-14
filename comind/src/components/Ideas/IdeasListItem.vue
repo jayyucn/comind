@@ -1,6 +1,6 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed } from 'vue'
-import { useJournal } from '../../composables/useJournal'
+import { useIdeas } from '../../composables/useIdeas'
 import { usePageStore } from '../../stores/pages'
 import BlockList from '../BlockList.vue'
 import Backlinks from '../Backlinks.vue'
@@ -14,11 +14,11 @@ const emit = defineEmits<{
   'open-page': [pageId: string]
 }>()
 
-const journal = useJournal()
+const ideas = useIdeas()
 const pageStore = usePageStore()
 
 const page = computed(() => pageStore.getPage(props.pageId))
-const isToday = computed(() => page.value?.title === journal.today.value)
+const isToday = computed(() => page.value?.title === ideas.today.value)
 
 function getWeekday(dateStr: string): string {
   const date = new Date(dateStr)
@@ -40,7 +40,7 @@ function openPage() {
 </script>
 
 <template>
-  <div class="journal-entry" :class="{ 'is-today': isToday }" v-if="page">
+  <div class="ideas-entry" :class="{ 'is-today': isToday }" v-if="page">
     <div class="entry-date-card" @click="openPage">
       <div class="date-left">
         <div class="date-icon-box">
@@ -68,7 +68,7 @@ function openPage() {
 </template>
 
 <style scoped>
-.journal-entry {
+.ideas-entry {
   position: relative;
   padding: var(--space-5) 0;
   margin-bottom: var(--space-4);

@@ -1,6 +1,6 @@
 # Sidebar 组件实现方案
 
-> 版本：v1.0（Journal v0.8.1 行为调整）
+> 版本：v1.0（Ideas v0.8.1 行为调整）
 > 日期：2026-04-23
 
 ---
@@ -14,7 +14,7 @@ src/
 │       ├── index.vue                # 导出入口（= SidebarContainer）
 │       ├── SidebarContainer.vue     # 主容器
 │       ├── SidebarHeader.vue        # Logo + 折叠
-│       ├── SidebarJournal.vue       # Journal Hero Card
+│       ├── SidebarIdeas.vue       # Ideas Hero Card
 │       ├── SidebarRecent.vue        # Recent Section
 │       ├── SidebarFavorites.vue     # Favorites Section
 │       ├── SidebarFooter.vue        # 快捷键提示
@@ -23,7 +23,7 @@ src/
     ├── useSidebar.ts                # 折叠状态
     ├── useRecent.ts                 # 最近页面
     ├── useFavorites.ts              # 收藏状态
-    └── useJournal.ts                # 日记逻辑
+    └── useIdeas.ts                # 点滴逻辑
 ```
 
 ---
@@ -177,39 +177,39 @@ export function useFavorites() {
 
 ---
 
-### 2.4 useJournal
+### 2.4 useIdeas
 
 ```typescript
-// composables/useJournal.ts
+// composables/useIdeas.ts
 import { ref, computed } from 'vue'
 import { usePageStore } from '../stores/pages'
 import { useBlockStore } from '../stores/blocks'
 
-// 判断 Page 是否为日记（标题符合日期格式 YYYY-MM-DD）
-function isJournalPage(page: PageRecord): boolean {
+// 判断 Page 是否为点滴（标题符合日期格式 YYYY-MM-DD）
+function isIdeasPage(page: PageRecord): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(page.title)
 }
 
-export function useJournal() {
+export function useIdeas() {
   const pageStore = usePageStore()
   const blockStore = useBlockStore()
-  const isOpen = ref(false)  // 日记列表 Panel 展开状态
+  const isOpen = ref(false)  // 点滴列表 Panel 展开状态
 
   // 今天的日期字符串（YYYY-MM-DD）
   const today = computed(() => {
     return new Date().toISOString().slice(0, 10)
   })
 
-  // 所有日记 Page（按日期倒序）
-  const journalPages = computed(() => {
+  // 所有点滴 Page（按日期倒序）
+  const IdeasPages = computed(() => {
     return pageStore.pages
-      .filter(isJournalPage)
+      .filter(isIdeasPage)
       .sort((a, b) => b.title.localeCompare(a.title))  // 日期倒序
   })
 
-  // 今天的日记是否已存在
-  const todayJournalExists = computed(() => {
-    return journalPages.value.some(p => p.title === today.value)
+  // 今天的点滴是否已存在
+  const todayIdeasExists = computed(() => {
+    return IdeasPages.value.some(p => p.title === today.value)
   })
 
   // ===== Session 级状态 =====
@@ -217,58 +217,58 @@ export function useJournal() {
   // 关闭 APP 后重开，状态重置，符合"首次访问"直觉
   const createdTodayThisSession = ref(false)
 
-  // 检查并创建今天日记（Session 级，只触发一次）
-  async function checkAndCreateTodayJournal() {
+  // 检查并创建今天点滴（Session 级，只触发一次）
+  async function checkAndCreateTodayIdeas() {
     if (createdTodayThisSession.value) return  // 已处理过
     createdTodayThisSession.value = true
 
-    // 今天日记不存在 → 创建
-    if (!todayJournalExists.value) {
-      await createTodayJournal()
+    // 今天点滴不存在 → 创建
+    if (!todayIdeasExists.value) {
+      await createTodayIdeas()
     }
   }
 
   // ===== readOnly 模式 =====
-  // 当前打开的日记是否为只读（过往日记）
+  // 当前打开的点滴是否为只读（过往点滴）
   const isReadOnly = ref(false)
 
-  // 打开日记列表 Panel
-  function openJournalList() {
+  // 打开点滴列表 Panel
+  function openIdeasList() {
     isOpen.value = true
   }
 
-  // 关闭日记列表 Panel
-  function closeJournalList() {
+  // 关闭点滴列表 Panel
+  function closeIdeasList() {
     isOpen.value = false
   }
 
-  // 打开指定日记（若不存在则创建，仅当天可写）
-  async function openJournal(pageId: string) {
+  // 打开指定点滴（若不存在则创建，仅当天可写）
+  async function openIdeas(pageId: string) {
     const page = pageStore.getPage(pageId)
     if (!page) return
 
     const isToday = page.title === today.value
 
-    // 设置 readOnly 模式：过往日记不可编辑
+    // 设置 readOnly 模式：过往点滴不可编辑
     isReadOnly.value = !isToday
 
     // 今天 → 可编辑 | 过往 → 只读（仍打开，但不进入编辑状态）
     await pageStore.openPage(pageId)
 
-    closeJournalList()
+    closeIdeasList()
   }
 
-  // 创建今天日记（仅当天可创建）
-  async function createTodayJournal() {
+  // 创建今天点滴（仅当天可创建）
+  async function createTodayIdeas() {
     // 检查是否已存在
-    const existing = journalPages.value.find(p => p.title === today.value)
+    const existing = IdeasPages.value.find(p => p.title === today.value)
     if (existing) {
       await pageStore.openPage(existing.id)
-      closeJournalList()
+      closeIdeasList()
       return
     }
 
-    // 创建新日记 Page
+    // 创建新点滴 Page
     const newPage = await pageStore.createPage(today.value)
     
     // 注入模板：第一个 Block 为日期
@@ -279,41 +279,41 @@ export function useJournal() {
     })
     
     await pageStore.openPage(newPage.id)
-    closeJournalList()
+    closeIdeasList()
   }
 
   return {
     isOpen: computed(() => isOpen.value),
     isReadOnly: computed(() => isReadOnly.value),
     today,
-    journalPages,
-    todayJournalExists,
-    openJournalList,
-    closeJournalList,
-    openJournal,
-    createTodayJournal,
-    checkAndCreateTodayJournal,
+    IdeasPages,
+    todayIdeasExists,
+    openIdeasList,
+    closeIdeasList,
+    openIdeas,
+    createTodayIdeas,
+    checkAndCreateTodayIdeas,
   }
 }
 ```
 
 **行为规则：**
 - 标题固定为日期（YYYY-MM-DD），不可修改
-- 只能创建当天日记（today）
-- 过往日记不可编辑（只读）
+- 只能创建当天点滴（today）
+- 过往点滴不可编辑（只读）
 
 **App.vue 初始化调用**：
 ```typescript
 // App.vue onMounted
-const journal = useJournal()
-journal.checkAndCreateTodayJournal()
+const Ideas = useIdeas()
+Ideas.checkAndCreateTodayIdeas()
 ```
 
 **Editor 组件响应 readOnly**：
 ```typescript
 // Editor.vue
-const journal = useJournal()
-const showReadOnlyOverlay = computed(() => journal.isReadOnly.value)
+const Ideas = useIdeas()
+const showReadOnlyOverlay = computed(() => Ideas.isReadOnly.value)
 ```
 
 ---
@@ -370,21 +370,21 @@ interface Emits {
 
 ---
 
-### 3.2 SidebarJournal.vue
+### 3.2 SidebarIdeas.vue
 
 ```typescript
-// Journal Hero Card
+// Ideas Hero Card
 interface Props {
-  // 无 props，内部使用 useJournal
+  // 无 props，内部使用 useIdeas
 }
 
 interface Emits {
-  (e: 'navigate', pageId: string): void   // 导航到今日日记
-  (e: 'create-today'): void              // 创建今日日记
+  (e: 'navigate', pageId: string): void   // 导航到今日点滴
+  (e: 'create-today'): void              // 创建今日点滴
 }
 ```
 
-**行为说明：** 内部调用 `useJournal()` 获取状态，点击事件通过 emit 向上冒泡给 `SidebarContainer` 统一处理导航和创建逻辑。
+**行为说明：** 内部调用 `useIdeas()` 获取状态，点击事件通过 emit 向上冒泡给 `SidebarContainer` 统一处理导航和创建逻辑。
 
 **样式：**
 - height: 80px
@@ -451,8 +451,8 @@ interface Emits {
 │  │   └─ useSidebar().toggle()                           │   │
 │  └─────────────────────────────────────────────────────┘   │
 │  ┌─────────────────────────────────────────────────────┐   │
-│  │ SidebarJournal                                       │   │
-│  │   └─ useJournal().openTodayJournal()                 │   │
+│  │ SidebarIdeas                                       │   │
+│  │   └─ useIdeas().openTodayIdeas()                 │   │
 │  │        └─ pageStore.createPage() / openPage()        │   │
 │  └─────────────────────────────────────────────────────┘   │
 │  ┌─────────────────────────────────────────────────────┐   │
@@ -538,12 +538,12 @@ mkdir -p src/components/Sidebar
 1. `useSidebar.ts`
 2. `useRecent.ts`
 3. `useFavorites.ts`
-4. `useJournal.ts`
+4. `useIdeas.ts`
 
 ### Step 3：实现组件（自底向上）
 1. `PageItem.vue`（共用）
 2. `SidebarHeader.vue`
-3. `SidebarJournal.vue`
+3. `SidebarIdeas.vue`
 4. `SidebarRecent.vue`
 5. `SidebarFavorites.vue`
 6. `SidebarFooter.vue`
@@ -571,7 +571,7 @@ rm src/components/Sidebar.vue
 
 | 测试项 | 验证点 |
 |--------|--------|
-| Journal 跳转 | 点击 Card → 打开/创建今日日记 |
+| Ideas 跳转 | 点击 Card → 打开/创建今日点滴 |
 | Recent 排序 | 按 updatedAt 降序，最多 3 条 |
 | Recent 展开 | 点击 [▼] → 显示最多 10 条 |
 | Favorites 持久化 | 刷新页面后收藏状态保留 |

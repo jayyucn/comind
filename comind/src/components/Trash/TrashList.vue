@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePageStore } from '../../stores/pages'
@@ -38,8 +38,8 @@ async function confirmPermanentDelete() {
 
 function handleNavigateToPage(pageId: string) {
   const page = pageStore.trashPages.find(p => p.id === pageId)
-  if (page?.type === 'journal') {
-    router.push(`/journal/${page.title}`)
+  if (page?.type === 'ideas') {
+    router.push(`/ideas/${page.title}`)
   } else {
     router.push(`/page/${pageId}`)
   }

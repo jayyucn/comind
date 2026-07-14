@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useSidebar } from '../../composables/useSidebar'
 import SidebarHeader from './SidebarHeader.vue'
-import SidebarJournal from './SidebarJournal.vue'
+import SidebarIdeas from './SidebarIdeas.vue'
 import SidebarGraphItem from './SidebarGraphItem.vue'
 import SidebarRecent from './SidebarRecent.vue'
 import SidebarFavorites from './SidebarFavorites.vue'
@@ -21,7 +21,7 @@ defineProps<{
       <SidebarHeader v-bind="$props" @go-back="$emit('goBack')" @go-forward="$emit('goForward')" />
 
       <div class="sidebar-content">
-        <SidebarJournal />
+        <SidebarIdeas />
 
         <SidebarGraphItem />
 

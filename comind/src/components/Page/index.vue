@@ -23,7 +23,7 @@ const pageStore = usePageStore()
 const editorStore = useEditorStore()
 const relMenu = useRelationshipMenu()
 
-/** 解析实际的 pageId：props 可能是 UUID 或 date title（journal-page 路由） */
+/** 解析实际的 pageId：props 可能是 UUID 或 date title（ideas-page 路由） */
 const resolvedPageId = computed(() => {
   const direct = pageStore.getPage(props.pageId)
   if (direct) return direct.id
@@ -39,7 +39,7 @@ const currentPageTitle = computed(() => {
 
 const isTitleEditable = computed(() => {
   const page = pageStore.getPage(resolvedPageId.value)
-  return page?.type !== 'journal'
+  return page?.type !== 'ideas'
 })
 
 const isEditingTitle = ref(false)

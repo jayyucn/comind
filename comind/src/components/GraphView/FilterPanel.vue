@@ -17,7 +17,7 @@ const emit = defineEmits<{
 
 export interface FilterCondition {
   id: string
-  type: 'search' | 'relationship' | 'time' | 'journal'
+  type: 'search' | 'relationship' | 'time' | 'ideas'
   operator: FilterOperator
   value: string | string[] | boolean | DateRange | null
   logic: 'AND' | 'OR' | 'NOT'
@@ -42,7 +42,7 @@ const defaultConditions: FilterCondition[] = [
   { id: 'search-1', type: 'search', operator: 'contains', value: '', logic: 'AND' },
   { id: 'relationship-1', type: 'relationship', operator: 'contains', value: [], logic: 'AND' },
   { id: 'time-1', type: 'time', operator: 'between', value: { start: null, end: null }, logic: 'AND' },
-  { id: 'journal-1', type: 'journal', operator: 'is_not', value: false, logic: 'AND' },
+  { id: 'ideas-1', type: 'ideas', operator: 'is_not', value: false, logic: 'AND' },
 ]
 
 const conditions = ref<FilterCondition[]>([...defaultConditions])
@@ -50,7 +50,7 @@ const expandedGroups = ref<Set<string>>(new Set(['search', 'relationship', 'time
 const searchResults = ref<{ id: string; title: string; contentMatch?: string }[]>([])
 const isSearching = ref(false)
 const collapsed = ref(false)
-const hideJournalCount = ref(0)
+const hideIdeasCount = ref(0)
 const highlightedNodeId = ref<string | null>(null)
 
 const groupedRelationshipTypes = computed(() => {
@@ -76,7 +76,7 @@ const groupLabels: Record<string, string> = {
 const searchCondition = computed(() => conditions.value.find(c => c.type === 'search'))
 const relationshipCondition = computed(() => conditions.value.find(c => c.type === 'relationship'))
 const timeCondition = computed(() => conditions.value.find(c => c.type === 'time'))
-const journalCondition = computed(() => conditions.value.find(c => c.type === 'journal'))
+const ideasCondition = computed(() => conditions.value.find(c => c.type === 'ideas'))
 
 const selectedRelationshipTypes = computed(() => {
   return (relationshipCondition.value?.value as string[]) ?? []
@@ -276,14 +276,14 @@ function getTimeRangeEnd(): string {
   return new Date(dateRange.end).toISOString().split('T')[0]
 }
 
-function updateJournalFilter(value: boolean) {
-  if (journalCondition.value) {
-    journalCondition.value.value = value
+function updateIdeasFilter(value: boolean) {
+  if (ideasCondition.value) {
+    ideasCondition.value.value = value
     
     if (value) {
-      hideJournalCount.value = 0
+      hideIdeasCount.value = 0
     } else {
-      hideJournalCount.value = pageStore.pages.filter(p => !p.deleted && p.type === 'journal').length
+      hideIdeasCount.value = pageStore.pages.filter(p => !p.deleted && p.type === 'ideas').length
     }
     
     emit('filter-change', getFilterState())
@@ -301,11 +301,11 @@ function resetFilters() {
   if (timeCondition.value) {
     timeCondition.value.value = { start: null, end: null }
   }
-  if (journalCondition.value) {
-    journalCondition.value.value = false
+  if (ideasCondition.value) {
+    ideasCondition.value.value = false
   }
   searchResults.value = []
-  hideJournalCount.value = pageStore.pages.filter(p => !p.deleted && p.type === 'journal').length
+  hideIdeasCount.value = pageStore.pages.filter(p => !p.deleted && p.type === 'ideas').length
 }
 
 function toggleCollapse() {
@@ -332,8 +332,8 @@ function init() {
   const saved = localStorage.getItem('graph-filter-panel-collapsed')
   collapsed.value = saved === 'true'
   
-  const journalPages = pageStore.pages.filter(p => !p.deleted && p.type === 'journal')
-  hideJournalCount.value = journalPages.length
+  const ideasPages = pageStore.pages.filter(p => !p.deleted && p.type === 'ideas')
+  hideIdeasCount.value = ideasPages.length
 
   // 初始状态立即推送给父组件，确保首次渲染即应用默认筛选
   emit('filter-change', getFilterState())
@@ -496,12 +496,12 @@ init()
       </div>
 
       <div class="filter-panel-footer">
-        <div class="journal-toggle-row">
+        <div class="ideas-toggle-row">
           <label class="toggle-switch">
             <input
               type="checkbox"
-              :checked="journalCondition?.value as boolean"
-              @change="updateJournalFilter(($event.target as HTMLInputElement).checked)"
+              :checked="ideasCondition?.value as boolean"
+              @change="updateIdeasFilter(($event.target as HTMLInputElement).checked)"
             />
             <span class="toggle-slider"></span>
           </label>
@@ -876,7 +876,7 @@ init()
   gap: 24px;
 }
 
-.journal-toggle-row {
+.ideas-toggle-row {
   display: flex;
   align-items: center;
   gap: 6px;

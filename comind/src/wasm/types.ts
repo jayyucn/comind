@@ -14,7 +14,7 @@ export interface Page {
   id: string
   block_id: string | null
   title: string
-  type: 'normal' | 'journal'
+  type: 'normal' | 'ideas'
   icon: string | null
   cover: string | null
   aliases: string
@@ -96,7 +96,7 @@ export interface BlockUpdate {
 export interface PageUpdate {
   id?: string
   title: string
-  type: 'normal' | 'journal'
+  type: 'normal' | 'ideas'
   icon?: string | null
   cover?: string | null
   aliases?: string[]

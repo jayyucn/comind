@@ -147,10 +147,10 @@ export const BUILTIN_TEMPLATES: BuiltinTemplate[] = [
     ]
   },
   {
-    id: 'daily-journal',
+    id: 'daily-ideas',
     name: '今日记录',
-    aliases: ['daily', 'journal', '日记', '今日'],
-    category: 'journal',
+    aliases: ['daily', 'ideas', '点滴', '今日'],
+    category: 'ideas',
     description: '心情/进展/卡点/明日计划',
     icon: '🌅',
     blocks: [

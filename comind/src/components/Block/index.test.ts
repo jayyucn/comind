@@ -36,7 +36,7 @@ vi.mock('../../storage/indexedDB', () => ({
     deleteBlockCascade: vi.fn().mockResolvedValue(undefined),
     getBlockTree: vi.fn().mockResolvedValue([]),
     getProperties: vi.fn().mockResolvedValue([]),
-    createPageWithRootBlock: vi.fn().mockImplementation((title: string, type: 'normal' | 'journal') => ({
+    createPageWithRootBlock: vi.fn().mockImplementation((title: string, type: 'normal' | 'ideas') => ({
       id: `page-${Date.now()}-${Math.random()}`,
       title,
       type,

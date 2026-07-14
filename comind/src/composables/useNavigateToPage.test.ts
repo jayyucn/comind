@@ -9,7 +9,7 @@ vi.mock('vue-router', () => ({
   }))
 }))
 
-vi.mock('../utils/journal-detect', () => ({
+vi.mock('../utils/ideas-detect', () => ({
   normalizeJournalTitle: vi.fn()
 }))
 
@@ -19,7 +19,7 @@ beforeEach(() => {
 
 describe('useNavigateToPage', () => {
   test('navigateToPage 跳转到普通页面', async () => {
-    const { normalizeJournalTitle } = await import('../utils/journal-detect')
+    const { normalizeJournalTitle } = await import('../utils/ideas-detect')
     vi.mocked(normalizeJournalTitle).mockReturnValue(null)
 
     const { navigateToPage } = useNavigateToPage()
@@ -29,17 +29,17 @@ describe('useNavigateToPage', () => {
   })
 
   test('navigateToPage 跳转到日记页面', async () => {
-    const { normalizeJournalTitle } = await import('../utils/journal-detect')
+    const { normalizeJournalTitle } = await import('../utils/ideas-detect')
     vi.mocked(normalizeJournalTitle).mockReturnValue('2026-04-26')
 
     const { navigateToPage } = useNavigateToPage()
     await navigateToPage('2026-04-26')
 
-    expect(mockPush).toHaveBeenCalledWith('/journal/2026-04-26')
+    expect(mockPush).toHaveBeenCalledWith('/ideas/2026-04-26')
   })
 
   test('navigateToPage 对 URL 特殊字符进行编码', async () => {
-    const { normalizeJournalTitle } = await import('../utils/journal-detect')
+    const { normalizeJournalTitle } = await import('../utils/ideas-detect')
     vi.mocked(normalizeJournalTitle).mockReturnValue(null)
 
     const { navigateToPage } = useNavigateToPage()
@@ -49,7 +49,7 @@ describe('useNavigateToPage', () => {
   })
 
   test('navigateToPage 使用 UUID 直接跳转', async () => {
-    const { normalizeJournalTitle } = await import('../utils/journal-detect')
+    const { normalizeJournalTitle } = await import('../utils/ideas-detect')
     vi.mocked(normalizeJournalTitle).mockReturnValue(null)
 
     const { navigateToPage } = useNavigateToPage()

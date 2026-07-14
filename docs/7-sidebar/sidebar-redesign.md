@@ -25,9 +25,9 @@ v0.7 解决了"页面列表"的问题,但引入了新的结构性问题:
 | 问题 | 描述 |
 |------|------|
 | **Search 重复** | SearchBar 点击触发 Ctrl+K,而 Ctrl+K 本身就是全局命令面板。Sidebar 里再放一个 SearchBar 是重复的入口 |
-| **Journal 地位不足** | Journal 是 comind 的核心场景(日记流),但 v0.7 里只是 Section 内的一个 Button,视觉权重不够 |
+| **Ideas 地位不足** | Ideas 是 comind 的核心场景(点滴流),但 v0.7 里只是 Section 内的一个 Button,视觉权重不够 |
 | **Graph 无意义占位** | 一个写着"敬请期待"的占位元素,既不美观也没有信息量 |
-| **Section 数量过多** | Header + Search + Journal + Recent + Favorites + Graph + Footer = 7 个 Zone,信息密度高但重点不突出 |
+| **Section 数量过多** | Header + Search + Ideas + Recent + Favorites + Graph + Footer = 7 个 Zone,信息密度高但重点不突出 |
 | **Search/Recent 有重叠** | Search = 搜索所有页面,Recent = 5 条最近编辑,功能有重叠,用户不知道该用哪个 |
 
 ---
@@ -40,7 +40,7 @@ v0.7 解决了"页面列表"的问题,但引入了新的结构性问题:
 
 **它只负责 3 件事:**
 
-1. **今天**:今天要写什么?→ Journal
+1. **今天**:今天要写什么?→ Ideas
 2. **刚才**:刚才在做什么?→ Recent(≤3条)
 3. **常驻**:哪些页面需要一直可见?→ Favorites
 
@@ -58,9 +58,9 @@ v0.7 解决了"页面列表"的问题,但引入了新的结构性问题:
 │ COMIND                          [◀]   │  ← Header(44px)
 ├────────────────────────────────────────┤
 │                                        │
-│   🌤️ 今天                            │  ← Journal Hero Card
+│   🌤️ 今天                            │  ← Ideas Hero Card
 │   2026-04-23 · 周四                   │     高度: 80px
-│   ▶ 打开日记                          │     背景: accent-subtle
+│   ▶ 打开点滴                          │     背景: accent-subtle
 │                                        │     重点: 今天的日期 + 入口
 ├────────────────────────────────────────┤
 │ 最近                               [▼] │  ← Recent(≤3 条,折叠)
@@ -79,7 +79,7 @@ v0.7 解决了"页面列表"的问题,但引入了新的结构性问题:
 
 | 变更 | v0.7 | v0.8 |
 |------|------|------|
-| Journal | Section 内 Button | Journal Card（80px，日记列表入口）|
+| Ideas | Section 内 Button | Ideas Card（80px，点滴列表入口）|
 | SearchBar | 有(独立 Zone)| 删除(Ctrl+K 统一入口)|
 | Graph | 占位 Section | 删除(Phase 2 再加)|
 | Recent 上限 | 5 条 | **3 条**(更克制)|
@@ -88,14 +88,14 @@ v0.7 解决了"页面列表"的问题,但引入了新的结构性问题:
 
 ---
 
-## Journal(日记列表入口)
+## Ideas(点滴列表入口)
 
 **定位变更(v0.8 → v0.8.1,根据 2026-04-23 21:26 用户反馈):**
 | 变更 | 说明 |
 |------|------|
-| 入口 | 打开**日记列表**(不是直接打开当天日记)|
+| 入口 | 打开**点滴列表**(不是直接打开当天点滴)|
 | 标题 | 不可修改,固定为日期(YYYY-MM-DD)|
-| 创建 | 只能创建**当天**日记,第一次访问时触发 |
+| 创建 | 只能创建**当天**点滴,第一次访问时触发 |
 | 过往 | 不可编辑,仅读 |
 
 **设计规格:**
@@ -110,7 +110,7 @@ border: none
 box-shadow: none
 
 内部布局(flex column):
-  [图标] [日记                              ]  ← 主行
+  [图标] [点滴                              ]  ← 主行
   [查看全部                              →]  ← 入口(hover 时右移)
 
 hover: 背景 → #E0E7FF,箭头 translateX(2px)
@@ -118,15 +118,15 @@ active: scale(0.96),80ms ease-out
 ```
 
 **新的交互流程:**
-1. 点击 Card → 打开**日记列表 Panel**
-2. 列表显示所有日记 Page(按日期倒序)
-3. 点击"今天"条目 → 创建今天日记(首次访问)
+1. 点击 Card → 打开**点滴列表 Panel**
+2. 列表显示所有点滴 Page(按日期倒序)
+3. 点击"今天"条目 → 创建今天点滴(首次访问)
 4. 过往条目 → 只读(hover 显示"仅查看")
 
 **为什么这样改:**
-- 日记是时间流,查看历史和创建新的是同一入口
+- 点滴是时间流,查看历史和创建新的是同一入口
 - 标题固定日期,保证一致性
-- 过往不可编辑,保证日记的不可篡改性
+- 过往不可编辑,保证点滴的不可篡改性
 
 ---
 
@@ -227,7 +227,7 @@ src/
 │   └── Sidebar/
 │       ├── SidebarContainer.vue     # 主容器(flex column)
 │       ├── SidebarHeader.vue       # Logo + 折叠按钮
-│       ├── SidebarJournal.vue      # Journal Card（列表入口）
+│       ├── SidebarIdeas.vue      # Ideas Card（列表入口）
 │       ├── SidebarRecent.vue        # Recent Section(复用 PageItem)
 │       │   └── PageItem.vue       # 单条 Page 展示(Recent 和 Favorites 共用)
 │       ├── SidebarFavorites.vue     # Favorites Section(复用 PageItem)
@@ -260,9 +260,9 @@ src/
 
 | 状态 | 组件 | 样式 |
 |------|------|------|
-| Default | JournalCard | 背景 accent-subtle (#EEF2FF),圆角 10px |
-| Hover | JournalCard | 背景 #E0E7FF,箭头右移 2px |
-| Active | JournalCard | scale(0.98),80ms |
+| Default | IdeasCard | 背景 accent-subtle (#EEF2FF),圆角 10px |
+| Hover | IdeasCard | 背景 #E0E7FF,箭头右移 2px |
+| Active | IdeasCard | scale(0.98),80ms |
 | Default | PageItem(Recent/Fav)| 无背景 |
 | Hover | PageItem | 背景 --bg-hover |
 | Active | PageItem | 左 2px accent,背景 --bg-active,字重 500 |
@@ -276,7 +276,7 @@ src/
 
 | 项目 | v0.7 | v0.8 |
 |------|------|------|
-| Journal | Section 内 Button | **Hero Card(80px)** |
+| Ideas | Section 内 Button | **Hero Card(80px)** |
 | SearchBar | 独立 Zone(重复入口)| **删除** |
 | Graph | 占位 Section | **删除** |
 | Recent 上限 | 5 条 | **3 条** |
@@ -291,7 +291,7 @@ src/
 | 功能 | Logseq | comind v0.8 | 差异 |
 |------|--------|-------------|------|
 | 搜索 | Ctrl+K 命令面板 | Ctrl+K 命令面板 | 一致 |
-| 日记 | Journal 按钮 | **Journal Card** | comind 权重更高 |
+| 点滴 | Ideas 按钮 | **Ideas Card** | comind 权重更高 |
 | 页面列表 | 所有页面(可折叠)| 无 | **comind 更克制** |
 | 最近 | Recent 列表 | Recent(≤3条)| comind 限制更严 |
 | 收藏 | Favorites | Favorites | 一致 |
@@ -305,7 +305,7 @@ src/
 2. **新建** `src/components/Sidebar/` 目录,按组件结构重写
 3. **新增** `useRecent` composable(从 pageStore 派生,按 updatedAt 排序)
 4. **新增** `useFavorites` composable(LocalStorage 持久化)
-5. **新增** `useJournal` composable(openTodayJournal 逻辑)
+5. **新增** `useIdeas` composable(openTodayIdeas 逻辑)
 6. **App.vue** 引用 `Sidebar/SidebarContainer.vue`,其余不变
 7. **Sidebar 折叠功能**:App.vue 监听 `useSidebar().isCollapsed`,调整主内容区 margin
 

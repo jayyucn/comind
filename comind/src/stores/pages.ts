@@ -74,7 +74,7 @@ export const usePageStore = defineStore('pages', () => {
     }
   }
 
-  async function createPage(title: string, type: 'normal' | 'journal' = 'normal'): Promise<Page> {
+  async function createPage(title: string, type: 'normal' | 'ideas' = 'normal'): Promise<Page> {
     const trimmedTitle = title.trim()
     if (!trimmedTitle) {
       throw new Error('Page title cannot be empty')
@@ -134,7 +134,7 @@ export const usePageStore = defineStore('pages', () => {
     if (!newTitle.trim()) return {}
     const page = getPage(pageId)
     if (!page) return {}
-    if (page.type === 'journal') return {}
+    if (page.type === 'ideas') return {}
     const trimmedTitle = newTitle.trim()
     if (page.title === trimmedTitle) return {}
 

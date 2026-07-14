@@ -2,7 +2,7 @@ export interface Page {
   id: string
   blockId: string | null
   title: string
-  type: 'normal' | 'journal'
+  type: 'normal' | 'ideas'
   icon: string | null
   cover: string | null
   aliases: string[]
@@ -19,7 +19,7 @@ export interface PageRecord {
   id: string
   blockId: string | null
   title: string
-  type: 'normal' | 'journal'
+  type: 'normal' | 'ideas'
   icon: string | null
   cover: string | null
   aliases: string

@@ -20,16 +20,16 @@ import './types'
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
-    redirect: '/journal',
+    redirect: '/ideas',
   },
   {
-    path: '/journal',
-    name: 'journal-list',
-    component: () => import('../components/Journal/JournalList.vue'),
+    path: '/ideas',
+    name: 'ideas-list',
+    component: () => import('../components/Ideas/IdeasList.vue'),
   },
   {
-    path: '/journal/:date',
-    name: 'journal-page',
+    path: '/ideas/:date',
+    name: 'ideas-page',
     component: () => import('../components/Page/index.vue'),
     props: (route) => ({ pageId: route.params.date as string }),
   },
@@ -54,7 +54,7 @@ const routes: RouteRecordRaw[] = [
   // 404 兜底
   {
     path: '/:pathMatch(.*)*',
-    redirect: '/journal',
+    redirect: '/ideas',
   },
 ]
 

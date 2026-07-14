@@ -34,8 +34,8 @@ function applyFilterConditions(pageId: string): boolean {
     let matches = true
     
     switch (condition.type) {
-      case 'journal':
-        if (page.type === 'journal') {
+      case 'ideas':
+        if (page.type === 'ideas') {
           matches = !!condition.value
         }
         break
@@ -218,13 +218,13 @@ async function buildGraphData() {
   const allPages = pageStore.pages.filter(p => !p.deleted)
 
   // 1a. 日记隐藏：筛选激活时完全从图中移除（节点 + 边均不出现）
-  const hideJournals = currentFilterState.value.conditions.some(
-    c => c.type === 'journal' && c.value === false
+  const hideIdeas = currentFilterState.value.conditions.some(
+    c => c.type === 'ideas' && c.value === false
   )
   const hiddenPageIds = new Set<string>()
-  if (hideJournals) {
+  if (hideIdeas) {
     for (const p of allPages) {
-      if (p.type === 'journal') hiddenPageIds.add(p.id)
+      if (p.type === 'ideas') hiddenPageIds.add(p.id)
     }
   }
 

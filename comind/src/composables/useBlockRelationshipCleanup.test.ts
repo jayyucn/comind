@@ -13,7 +13,7 @@ vi.mock('../storage/indexedDB', () => ({
     deleteBlockCascade: vi.fn(),
     updateBlock: vi.fn(),
     getBlockTree: vi.fn().mockResolvedValue([]),
-    createPageWithRootBlock: vi.fn().mockImplementation(async (title: string, type: 'normal' | 'journal' = 'normal') => ({
+    createPageWithRootBlock: vi.fn().mockImplementation(async (title: string, type: 'normal' | 'ideas' = 'normal') => ({
       id: `page-${title}-${Math.random().toString(36).slice(2)}`,
       title,
       type,

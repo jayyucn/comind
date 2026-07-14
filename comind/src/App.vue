@@ -11,7 +11,7 @@ import { usePageStore } from './stores/pages'
 import { useSidebar } from './composables/useSidebar'
 import { useRightSidebar } from './composables/useRightSidebar'
 import { useRelationshipTypes } from './composables/useRelationshipTypes'
-import { useJournal } from './composables/useJournal'
+import { useIdeas } from './composables/useIdeas'
 import Icon from './components/Icons/Icon.vue'
 import RightSidebar from './components/RightSidebar/index.vue'
 import { registerPanel } from './components/RightSidebar/panels'
@@ -49,7 +49,7 @@ const showRightSidebarToggle = computed(() => route.meta.hideRightSidebarToggle 
 onMounted(async () => {
   await useRelationshipTypes().load()
   await pageStore.loadAllPages()
-  await useJournal().checkAndEnsureTodayJournal()
+  await useIdeas().checkAndEnsureTodayIdeas()
   document.addEventListener('keydown', handleGlobalKeydown)
 })
 
@@ -109,7 +109,7 @@ async function updateMaximizedState() {
 onMounted(async () => {
   await useRelationshipTypes().load()
   await pageStore.loadAllPages()
-  await useJournal().checkAndEnsureTodayJournal()
+  await useIdeas().checkAndEnsureTodayIdeas()
   document.addEventListener('keydown', handleGlobalKeydown)
   await updateMaximizedState()
 

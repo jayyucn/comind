@@ -55,7 +55,7 @@ async function handleSoftDelete() {
   showSoftDeleteConfirm.value = false
   await pageStore.softDeletePage(props.page.id)
   if (router.currentRoute.value.params.pageId === props.page.id) {
-    router.push('/journal')
+    router.push('/ideas')
   }
 }
 
@@ -69,7 +69,7 @@ async function handlePermanentDelete() {
   showPermanentDeleteConfirm.value = false
   await pageStore.permanentDeletePage(props.page.id)
   if (router.currentRoute.value.params.pageId === props.page.id) {
-    router.push('/journal')
+    router.push('/ideas')
   }
 }
 
@@ -99,7 +99,7 @@ onUnmounted(() => {
 
     <Transition name="menu">
       <div v-if="isMenuOpen" class="menu-dropdown" @click.stop>
-        <button v-if="page.type !== 'journal'" class="menu-item" @click="startRename">
+        <button v-if="page.type !== 'ideas'" class="menu-item" @click="startRename">
           <Pencil :size="16" />
           <span>重命名</span>
         </button>

@@ -18,7 +18,7 @@ vi.mock('../storage/indexedDB', () => ({
   }
 }))
 
-vi.mock('../utils/journal-detect', () => ({
+vi.mock('../utils/ideas-detect', () => ({
   normalizeJournalTitle: vi.fn((title: string) => {
     const regex = /^\d{4}-\d{2}-\d{2}$/
     return regex.test(title) ? title : null
@@ -30,21 +30,21 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-describe('路由守卫不再跳过 page/journal 间导航', () => {
-  test('从 page 导航到 journal-page 时守卫应正常执行', () => {
+describe('路由守卫不再跳过 page/ideas 间导航', () => {
+  test('从 page 导航到 ideas-page 时守卫应正常执行', () => {
     const from = { name: 'page' as const }
-    const to = { name: 'journal-page' as const }
+    const to = { name: 'ideas-page' as const }
     
-    const shouldSkip = to.name === 'journal-list' || to.name === 'trash'
+    const shouldSkip = to.name === 'ideas-list' || to.name === 'trash'
     
     expect(shouldSkip).toBe(false)
   })
 
-  test('从 journal-page 导航到 page 时守卫应正常执行', () => {
-    const from = { name: 'journal-page' as const }
+  test('从 ideas-page 导航到 page 时守卫应正常执行', () => {
+    const from = { name: 'ideas-page' as const }
     const to = { name: 'page' as const }
     
-    const shouldSkip = to.name === 'journal-list' || to.name === 'trash'
+    const shouldSkip = to.name === 'ideas-list' || to.name === 'trash'
     
     expect(shouldSkip).toBe(false)
   })
@@ -53,43 +53,43 @@ describe('路由守卫不再跳过 page/journal 间导航', () => {
     const from = { name: 'page' as const }
     const to = { name: 'page' as const }
     
-    const shouldSkip = to.name === 'journal-list' || to.name === 'trash'
+    const shouldSkip = to.name === 'ideas-list' || to.name === 'trash'
     
     expect(shouldSkip).toBe(false)
   })
 
-  test('从 journal-page 导航到 journal-page 时守卫应正常执行', () => {
-    const from = { name: 'journal-page' as const }
-    const to = { name: 'journal-page' as const }
+  test('从 ideas-page 导航到 ideas-page 时守卫应正常执行', () => {
+    const from = { name: 'ideas-page' as const }
+    const to = { name: 'ideas-page' as const }
     
-    const shouldSkip = to.name === 'journal-list' || to.name === 'trash'
+    const shouldSkip = to.name === 'ideas-list' || to.name === 'trash'
     
     expect(shouldSkip).toBe(false)
   })
 
-  test('从 journal-list 导航到 page 时守卫应被跳过', () => {
-    const to = { name: 'journal-list' as const }
-    const shouldSkip = to.name === 'journal-list' || to.name === 'trash'
+  test('从 ideas-list 导航到 page 时守卫应被跳过', () => {
+    const to = { name: 'ideas-list' as const }
+    const shouldSkip = to.name === 'ideas-list' || to.name === 'trash'
     expect(shouldSkip).toBe(true)
   })
 })
 
 describe('静态页面路由跳过逻辑', () => {
-  test('journal-list 路由应被跳过', () => {
-    const to = { name: 'journal-list' as const }
-    const shouldSkip = to.name === 'journal-list' || to.name === 'trash'
+  test('ideas-list 路由应被跳过', () => {
+    const to = { name: 'ideas-list' as const }
+    const shouldSkip = to.name === 'ideas-list' || to.name === 'trash'
     expect(shouldSkip).toBe(true)
   })
 
   test('trash 路由应被跳过', () => {
     const to = { name: 'trash' as const }
-    const shouldSkip = to.name === 'journal-list' || to.name === 'trash'
+    const shouldSkip = to.name === 'ideas-list' || to.name === 'trash'
     expect(shouldSkip).toBe(true)
   })
 
   test('page 路由不应被跳过', () => {
     const to = { name: 'page' as const }
-    const shouldSkip = to.name === 'journal-list' || to.name === 'trash'
+    const shouldSkip = to.name === 'ideas-list' || to.name === 'trash'
     expect(shouldSkip).toBe(false)
   })
 })
@@ -121,28 +121,28 @@ describe('页面查找逻辑', () => {
   })
 })
 
-describe('journal-page 路由逻辑', () => {
+describe('ideas-page 路由逻辑', () => {
   test('normalizeJournalTitle 对 YYYY-MM-DD 格式返回标准化标题', async () => {
-    const { normalizeJournalTitle } = await import('../utils/journal-detect')
+    const { normalizeJournalTitle } = await import('../utils/ideas-detect')
     expect(normalizeJournalTitle('2026-05-24')).toBe('2026-05-24')
     expect(normalizeJournalTitle('2024-12-31')).toBe('2024-12-31')
   })
 
   test('normalizeJournalTitle 对非日期格式返回 null', async () => {
-    const { normalizeJournalTitle } = await import('../utils/journal-detect')
+    const { normalizeJournalTitle } = await import('../utils/ideas-detect')
     expect(normalizeJournalTitle('My Page')).toBeNull()
     expect(normalizeJournalTitle('Random Text')).toBeNull()
   })
 
-  test('journal 类型页面应该被正确识别', async () => {
+  test('ideas 类型页面应该被正确识别', async () => {
     const pageStore = usePageStore()
-    const journalPage = await pageStore.createPage('2026-05-24', 'journal')
+    const ideasPage = await pageStore.createPage('2026-05-24', 'ideas')
     
-    expect(journalPage.type).toBe('journal')
-    expect(journalPage.title).toBe('2026-05-24')
+    expect(ideasPage.type).toBe('ideas')
+    expect(ideasPage.title).toBe('2026-05-24')
   })
 
-  test('普通页面类型不应该被识别为 journal', async () => {
+  test('普通页面类型不应该被识别为 ideas', async () => {
     const pageStore = usePageStore()
     const normalPage = await pageStore.createPage('normal-page', 'normal')
     
@@ -161,10 +161,10 @@ describe('页面不存在时的处理', () => {
   test('createPage 应该创建正确类型的页面', async () => {
     const pageStore = usePageStore()
     const normalPage = await pageStore.createPage('new-normal-page', 'normal')
-    const journalPage = await pageStore.createPage('2026-05-24', 'journal')
+    const ideasPage = await pageStore.createPage('2026-05-24', 'ideas')
     
     expect(normalPage.type).toBe('normal')
-    expect(journalPage.type).toBe('journal')
+    expect(ideasPage.type).toBe('ideas')
   })
 })
 

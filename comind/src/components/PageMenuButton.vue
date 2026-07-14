@@ -34,7 +34,7 @@ const themeLabelMap: Record<string, string> = {
 
 // 判断当前是否在页面路由中（有可操作的页面）
 const isOnPage = computed(() => {
-  return route.name === 'page' || route.name === 'journal-page'
+  return route.name === 'page' || route.name === 'ideas-page'
 })
 
 // 获取当前页面ID
@@ -85,9 +85,9 @@ async function handleSoftDelete() {
   closeMenu()
   await pageStore.softDeletePage(currentPage.value.id)
   if (router.options.history.state) {
-    router.replace('/journal')
+    router.replace('/ideas')
   } else {
-    router.push('/journal')
+    router.push('/ideas')
   }
 }
 
@@ -102,9 +102,9 @@ async function confirmPermanentDelete() {
   showPermanentDeleteConfirm.value = false
   await pageStore.permanentDeletePage(currentPage.value.id)
   if (router.options.history.state) {
-    router.replace('/journal')
+    router.replace('/ideas')
   } else {
-    router.push('/journal')
+    router.push('/ideas')
   }
 }
 

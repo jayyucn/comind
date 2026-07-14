@@ -7,7 +7,7 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to) => {
-  if (to.name === 'journal-list' || to.name === 'trash') {
+  if (to.name === 'ideas-list' || to.name === 'trash') {
     return
   }
 
@@ -26,8 +26,8 @@ router.beforeEach(async (to) => {
         page = await pageStore.createPage(rawParam, 'normal')
       }
 
-      if (page && page.type === 'journal') {
-        return { name: 'journal-page', params: { date: page.title } }
+      if (page && page.type === 'ideas') {
+        return { name: 'ideas-page', params: { date: page.title } }
       }
 
       // 规范化 URL 为 UUID，避免 resolvedPageId computed 在页面重命名后
@@ -39,11 +39,11 @@ router.beforeEach(async (to) => {
       await pageStore.openPage(page.id)
     } catch (error) {
       console.error('[beforeEach /page] Failed to load page:', error)
-      return { name: 'journal-list' }
+      return { name: 'ideas-list' }
     }
   }
 
-  if (to.name === 'journal-page') {
+  if (to.name === 'ideas-page') {
     try {
       const { normalizeJournalTitle } = await import('../utils/journal-detect')
 
@@ -57,17 +57,17 @@ router.beforeEach(async (to) => {
       let page = pageStore.getPageByTitle(normalized)
 
       if (!page) {
-        page = await pageStore.createPage(normalized, 'journal')
+        page = await pageStore.createPage(normalized, 'ideas')
       }
 
-      if (page && page.type !== 'journal') {
+      if (page && page.type !== 'ideas') {
         return { name: 'page', params: { pageId: normalized } }
       }
 
       await pageStore.openPage(page.id)
     } catch (error) {
-      console.error('[beforeEach /journal] Failed to load page:', error)
-      return { name: 'journal-list' }
+      console.error('[beforeEach /ideas] Failed to load page:', error)
+      return { name: 'ideas-list' }
     }
   }
 })

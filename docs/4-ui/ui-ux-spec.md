@@ -261,7 +261,7 @@ SidebarHeader
   border-bottom: 1px solid --border
   flex-shrink: 0
 
-SectionJournal
+SectionIdeas
   padding: 10px 8px 8px
   flex-shrink: 0
 
@@ -338,16 +338,16 @@ MainContent
 
 ### Sidebar
 
-Sidebar 由四个区域构成：Header、Journal Section、Pages Section、Footer。
-Journal Section（琥珀底色按钮）是 Phase 1.1 引入的独立功能区，与 Pages 视觉平等但功能上有主次。
+Sidebar 由四个区域构成：Header、Ideas Section、Pages Section、Footer。
+Ideas Section（琥珀底色按钮）是 Phase 1.1 引入的独立功能区，与 Pages 视觉平等但功能上有主次。
 
 ```
 ┌──────────────────────────────────────────────┐
 │ COMIND                                [◀]    │  ← SidebarHeader（48px）
 ├──────────────────────────────────────────────┤
-│ 日记                                        │  ← Section Label（10px 全大写）
+│ 点滴                                        │  ← Section Label（10px 全大写）
 │ ┌────────────────────────────────────────┐  │
-│ │ 🌤️ 2026-04-23                         │  │  ← JournalButton（琥珀底）
+│ │ 🌤️ 2026-04-23                         │  │  ← IdeasButton（琥珀底）
 │ │    今天                              → │  │
 │ └────────────────────────────────────────┘  │
 ├──────────────────────────────────────────────┤
@@ -367,12 +367,12 @@ Journal Section（琥珀底色按钮）是 Phase 1.1 引入的独立功能区，
 - Toggle 按钮：24×24px，radius 4px，折叠动画 200ms
 - 高度：48px，底部分割线 1px --border
 
-**SectionJournal:**
-- Section Label "日记"：10px 500，letter-spacing 0.12em，--text-tertiary，padding 0 6px 5px
-- JournalButton：宽度 100%，padding 8px 10px，radius 6px，背景 --accent-subtle
+**SectionIdeas:**
+- Section Label "点滴"：10px 500，letter-spacing 0.12em，--text-tertiary，padding 0 6px 5px
+- IdeasButton：宽度 100%，padding 8px 10px，radius 6px，背景 --accent-subtle
 - 左侧竖条：2.5px --accent，始终可见
 - hover：背景 #FEF0C0，箭头右移 2px
-- sub 行："今天"（今天日记，accent 色）/ 具体日期（历史日记，--text-tertiary）
+- sub 行："今天"（今天点滴，accent 色）/ 具体日期（历史点滴，--text-tertiary）
 
 **SectionPages:**
 - Section Label "页面"：10px 500，letter-spacing 0.12em，--text-tertiary

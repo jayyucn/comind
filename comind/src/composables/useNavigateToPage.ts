@@ -23,17 +23,17 @@ export function useNavigateToPage() {
    * 
    * 流程：
    * 1. 规范化日记标题（如 "2026/04/26" → "2026-04-26"）
-   * 2. 根据标题类型选择路由（journal → /journal/:date，normal → /page/:pageId）
+   * 2. 根据标题类型选择路由（ideas → /ideas/:date，normal → /page/:pageId）
    * 3. beforeEnter 守卫自动处理：查找/创建页面、加载数据
    */
   async function navigateToPage(pageName: string): Promise<void> {
     const normalized = normalizeJournalTitle(pageName)
     const lookupTitle = normalized ?? pageName
-    const isJournal = normalized !== null
+    const isIdeas = normalized !== null
 
     // 直接路由跳转，beforeEnter 会自动处理一切
-    if (isJournal) {
-      await router.push(`/journal/${encodeURIComponent(lookupTitle)}`)
+    if (isIdeas) {
+      await router.push(`/ideas/${encodeURIComponent(lookupTitle)}`)
     } else {
       await router.push(`/page/${encodeURIComponent(lookupTitle)}`)
     }

@@ -6,7 +6,7 @@ import {
   isJournalTitle,
   normalizeJournalTitle,
   inferPageType
-} from './journal-detect'
+} from './ideas-detect'
 
 describe('JOURNAL_FORMATS', () => {
   it('contains multiple date formats', () => {
@@ -87,7 +87,7 @@ describe('parseToDate', () => {
 })
 
 describe('isJournalTitle', () => {
-  it('returns true for valid journal dates', () => {
+  it('returns true for valid ideas dates', () => {
     expect(isJournalTitle('2026-04-26')).toBe(true)
     expect(isJournalTitle('2026/04/26')).toBe(true)
     expect(isJournalTitle('Apr 26th, 2026')).toBe(true)
@@ -136,12 +136,12 @@ describe('normalizeJournalTitle', () => {
 })
 
 describe('inferPageType', () => {
-  it('returns journal for journal titles', () => {
-    expect(inferPageType('2026-04-26')).toBe('journal')
-    expect(inferPageType('Apr 26th, 2026')).toBe('journal')
+  it('returns ideas for ideas titles', () => {
+    expect(inferPageType('2026-04-26')).toBe('ideas')
+    expect(inferPageType('Apr 26th, 2026')).toBe('ideas')
   })
 
-  it('returns normal for non-journal titles', () => {
+  it('returns normal for non-ideas titles', () => {
     expect(inferPageType('Meeting Notes')).toBe('normal')
     expect(inferPageType('Project Plan')).toBe('normal')
   })

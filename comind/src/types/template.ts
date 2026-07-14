@@ -25,7 +25,7 @@ export interface TemplateBlock {
 }
 
 /** 内置模板分类 */
-export type BuiltinTemplateCategory = 'thinking-model' | 'work' | 'journal' | 'review'
+export type BuiltinTemplateCategory = 'thinking-model' | 'work' | 'ideas' | 'review'
 
 /** 内置模板（静态 JSON，无存储） */
 export interface BuiltinTemplate {

@@ -28,7 +28,7 @@ vi.mock('../storage/indexedDB', () => ({
   }
 }))
 
-vi.mock('../utils/journal-detect', () => ({
+vi.mock('../utils/ideas-detect', () => ({
   normalizeJournalTitle: vi.fn((title: string) => {
     const regex = /^\d{4}-\d{2}-\d{2}$/
     return regex.test(title) ? title : null
@@ -40,55 +40,55 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-describe('路由守卫逻辑 - page/journal 间导航不跳过', () => {
-  describe('page/journal 间导航守卫应正常执行', () => {
-    test('从 page 到 journal-page 时守卫应正常执行', () => {
-      const toName = 'journal-page'
-      const shouldSkip = toName === 'journal-list' || toName === 'trash'
+describe('路由守卫逻辑 - page/ideas 间导航不跳过', () => {
+  describe('page/ideas 间导航守卫应正常执行', () => {
+    test('从 page 到 ideas-page 时守卫应正常执行', () => {
+      const toName = 'ideas-page'
+      const shouldSkip = toName === 'ideas-list' || toName === 'trash'
       expect(shouldSkip).toBe(false)
     })
 
-    test('从 journal-page 到 page 时守卫应正常执行', () => {
+    test('从 ideas-page 到 page 时守卫应正常执行', () => {
       const toName = 'page'
-      const shouldSkip = toName === 'journal-list' || toName === 'trash'
+      const shouldSkip = toName === 'ideas-list' || toName === 'trash'
       expect(shouldSkip).toBe(false)
     })
 
     test('相同路由守卫应正常执行', () => {
       const toName = 'page'
-      const shouldSkip = toName === 'journal-list' || toName === 'trash'
+      const shouldSkip = toName === 'ideas-list' || toName === 'trash'
       expect(shouldSkip).toBe(false)
     })
 
     test('无关路由切换守卫应正常执行', () => {
       const toName = 'page'
-      const shouldSkip = toName === 'journal-list' || toName === 'trash'
+      const shouldSkip = toName === 'ideas-list' || toName === 'trash'
       expect(shouldSkip).toBe(false)
     })
   })
 
   describe('静态页面跳过逻辑', () => {
-    test('journal-list 路由应被跳过', () => {
-      const routeName = 'journal-list'
-      const shouldSkip = routeName === 'journal-list' || routeName === 'trash'
+    test('ideas-list 路由应被跳过', () => {
+      const routeName = 'ideas-list'
+      const shouldSkip = routeName === 'ideas-list' || routeName === 'trash'
       expect(shouldSkip).toBe(true)
     })
 
     test('trash 路由应被跳过', () => {
       const routeName = 'trash'
-      const shouldSkip = routeName === 'journal-list' || routeName === 'trash'
+      const shouldSkip = routeName === 'ideas-list' || routeName === 'trash'
       expect(shouldSkip).toBe(true)
     })
 
     test('page 路由不应被跳过', () => {
       const routeName = 'page'
-      const shouldSkip = routeName === 'journal-list' || routeName === 'trash'
+      const shouldSkip = routeName === 'ideas-list' || routeName === 'trash'
       expect(shouldSkip).toBe(false)
     })
 
-    test('journal-page 路由不应被跳过', () => {
-      const routeName = 'journal-page'
-      const shouldSkip = routeName === 'journal-list' || routeName === 'trash'
+    test('ideas-page 路由不应被跳过', () => {
+      const routeName = 'ideas-page'
+      const shouldSkip = routeName === 'ideas-list' || routeName === 'trash'
       expect(shouldSkip).toBe(false)
     })
   })
@@ -117,12 +117,12 @@ describe('路由守卫逻辑 - /page/:pageId 处理', () => {
     expect(page?.id).toBe(existingPage.id)
   })
 
-  test('journal 类型页面应重定向到 journal-page', async () => {
+  test('ideas 类型页面应重定向到 ideas-page', async () => {
     const pageStore = usePageStore()
-    const journalPage = await pageStore.createPage('2026-05-24', 'journal')
+    const ideasPage = await pageStore.createPage('2026-05-24', 'ideas')
 
-    const page = journalPage
-    const shouldRedirect = page && page.type === 'journal'
+    const page = ideasPage
+    const shouldRedirect = page && page.type === 'ideas'
 
     expect(shouldRedirect).toBe(true)
   })
@@ -134,15 +134,15 @@ describe('路由守卫逻辑 - /page/:pageId 处理', () => {
     expect(page).toBeUndefined()
   })
 
-  test('页面加载失败应返回到 journal-list', async () => {
+  test('页面加载失败应返回到 ideas-list', async () => {
     // Test skipped - references old storage layer
     expect(true).toBe(true)
   })
 })
 
-describe('路由守卫逻辑 - /journal/:date 处理', () => {
+describe('路由守卫逻辑 - /ideas/:date 处理', () => {
   test('标准日期格式应通过 normalizeJournalTitle', async () => {
-    const { normalizeJournalTitle } = await import('../utils/journal-detect')
+    const { normalizeJournalTitle } = await import('../utils/ideas-detect')
 
     expect(normalizeJournalTitle('2026-05-24')).toBe('2026-05-24')
     expect(normalizeJournalTitle('2026-01-01')).toBe('2026-01-01')
@@ -150,37 +150,37 @@ describe('路由守卫逻辑 - /journal/:date 处理', () => {
   })
 
   test('非日期格式应返回 null 并重定向到 page', async () => {
-    const { normalizeJournalTitle } = await import('../utils/journal-detect')
+    const { normalizeJournalTitle } = await import('../utils/ideas-detect')
 
     const result = normalizeJournalTitle('My Page')
     expect(result).toBeNull()
   })
 
-  test('不存在的 journal 应创建新 journal 页面', async () => {
+  test('不存在的 ideas 应创建新 ideas 页面', async () => {
     const pageStore = usePageStore()
 
     const normalized = '2026-05-24'
     let page = pageStore.getPageByTitle(normalized)
 
     if (!page) {
-      page = await pageStore.createPage(normalized, 'journal')
+      page = await pageStore.createPage(normalized, 'ideas')
     }
 
     expect(page).toBeDefined()
-    expect(page?.type).toBe('journal')
+    expect(page?.type).toBe('ideas')
     expect(page?.title).toBe(normalized)
   })
 
-  test('已存在的 journal 页面不应重复创建', async () => {
+  test('已存在的 ideas 页面不应重复创建', async () => {
     const pageStore = usePageStore()
-    const existingJournal = await pageStore.createPage('2026-05-24', 'journal')
+    const existingJournal = await pageStore.createPage('2026-05-24', 'ideas')
 
     const normalized = '2026-05-24'
     let page = pageStore.getPageByTitle(normalized)
     let created = false
 
     if (!page) {
-      page = await pageStore.createPage(normalized, 'journal')
+      page = await pageStore.createPage(normalized, 'ideas')
       created = true
     }
 
@@ -193,12 +193,12 @@ describe('路由守卫逻辑 - /journal/:date 处理', () => {
     const normalPage = await pageStore.createPage('2026-05-24', 'normal')
 
     const page = normalPage
-    const shouldRedirectToPage = page && page.type !== 'journal'
+    const shouldRedirectToPage = page && page.type !== 'ideas'
 
     expect(shouldRedirectToPage).toBe(true)
   })
 
-  test('journal 页面加载失败应返回到 journal-list', async () => {
+  test('ideas 页面加载失败应返回到 ideas-list', async () => {
     // This test is skipped because it references the old storage layer
     // The error handling now uses Core layer services
     expect(true).toBe(true) // Placeholder
@@ -206,11 +206,11 @@ describe('路由守卫逻辑 - /journal/:date 处理', () => {
 })
 
 describe('页面类型识别', () => {
-  test('标准日期格式应识别为 journal 类型', async () => {
+  test('标准日期格式应识别为 ideas 类型', async () => {
     const pageStore = usePageStore()
-    const journalPage = await pageStore.createPage('2026-05-24', 'journal')
+    const ideasPage = await pageStore.createPage('2026-05-24', 'ideas')
 
-    expect(journalPage.type).toBe('journal')
+    expect(ideasPage.type).toBe('ideas')
   })
 
   test('普通标题应识别为 normal 类型', async () => {
@@ -260,9 +260,9 @@ describe('错误边界和异常处理', () => {
 })
 
 describe('路由守卫集成场景', () => {
-  test('用户直接访问 /journal/2026-05-24 应正确创建 journal 页面', async () => {
+  test('用户直接访问 /ideas/2026-05-24 应正确创建 ideas 页面', async () => {
     const pageStore = usePageStore()
-    const { normalizeJournalTitle } = await import('../utils/journal-detect')
+    const { normalizeJournalTitle } = await import('../utils/ideas-detect')
 
     const rawParam = '2026-05-24'
     const normalized = normalizeJournalTitle(rawParam)
@@ -271,11 +271,11 @@ describe('路由守卫集成场景', () => {
 
     let page = pageStore.getPageByTitle(normalized!)
     if (!page) {
-      page = await pageStore.createPage(normalized!, 'journal')
+      page = await pageStore.createPage(normalized!, 'ideas')
     }
 
     expect(page).toBeDefined()
-    expect(page?.type).toBe('journal')
+    expect(page?.type).toBe('ideas')
   })
 
   test('用户直接访问 /page/某个标题 应正确创建普通页面', async () => {
@@ -293,7 +293,7 @@ describe('路由守卫集成场景', () => {
     expect(page?.title).toBe(rawParam)
   })
 
-  test('普通页面访问被删除的 journal 标题应创建普通页面', async () => {
+  test('普通页面访问被删除的 ideas 标题应创建普通页面', async () => {
     const pageStore = usePageStore()
 
     const rawParam = 'Deleted Journal'

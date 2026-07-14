@@ -49,10 +49,10 @@ describe('usePageStore', () => {
 
     test('创建日记页面', async () => {
       const store = usePageStore()
-      const page = await store.createPage('2026-04-26', 'journal')
+      const page = await store.createPage('2026-04-26', 'ideas')
       
       expect(page.title).toBe('2026-04-26')
-      expect(page.type).toBe('journal')
+      expect(page.type).toBe('ideas')
     })
   })
 
@@ -145,9 +145,9 @@ describe('usePageStore', () => {
       expect(result).toEqual({})
     })
 
-    test('journal 页面禁止重命名', async () => {
+    test('ideas 页面禁止重命名', async () => {
       const store = usePageStore()
-      const page = await store.createPage('2026-05-29', 'journal')
+      const page = await store.createPage('2026-05-29', 'ideas')
       const result = await store.renamePage(page.id, 'New Title')
       
       expect(result).toEqual({})

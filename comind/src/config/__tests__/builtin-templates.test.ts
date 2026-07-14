@@ -29,7 +29,7 @@ describe('BUILTIN_TEMPLATES', () => {
     expect(BUILTIN_TEMPLATES.every(t => Array.isArray(t.blocks) && t.blocks.length > 0)).toBe(true)
   })
 
-  test('分类分布：5 thinking-model + 5 work/journal/review', () => {
+  test('分类分布：5 thinking-model + 5 work/ideas/review', () => {
     const thinking = BUILTIN_TEMPLATES.filter(t => t.category === 'thinking-model')
     expect(thinking.length).toBe(5)
     const others = BUILTIN_TEMPLATES.filter(t => t.category !== 'thinking-model')
@@ -39,7 +39,7 @@ describe('BUILTIN_TEMPLATES', () => {
   test('必须包含预期 ID', () => {
     const expectedIds = [
       'second-order-thinking', 'five-whys', 'mece', 'first-principles', 'premortem',
-      'meeting-notes', 'weekly-review', 'daily-journal', 'decision-record', 'reading-notes'
+      'meeting-notes', 'weekly-review', 'daily-ideas', 'decision-record', 'reading-notes'
     ]
     for (const id of expectedIds) {
       expect(BUILTIN_TEMPLATES.some(t => t.id === id)).toBe(true)

@@ -1,30 +1,30 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { useRouter } from 'vue-router'
-import { useJournal } from '../../composables/useJournal'
+import { useIdeas } from '../../composables/useIdeas'
 import { Icon } from '../Icons'
 
 const router = useRouter()
-const { today } = useJournal()
+const { today } = useIdeas()
 const weekday = new Date(today.value).toLocaleDateString('zh-CN', { weekday: 'short' })
 
 function handleClick() {
-  router.push('/journal')
+  router.push('/ideas')
 }
 </script>
 
 <template>
-  <div class="journal-hero" @click="handleClick">
-    <div class="journal-glow"></div>
-    <div class="journal-content">
-      <div class="journal-icon-wrap">
+  <div class="ideas-hero" @click="handleClick">
+    <div class="ideas-glow"></div>
+    <div class="ideas-content">
+      <div class="ideas-icon-wrap">
         <Icon name="icon-star" :size="18" color="var(--accent)" />
       </div>
-      <div class="journal-body">
-        <span class="journal-title">日记</span>
-        <span class="journal-meta">{{ today }} · {{ weekday }}</span>
+      <div class="ideas-body">
+        <span class="ideas-title">点滴</span>
+        <span class="ideas-meta">{{ today }} · {{ weekday }}</span>
       </div>
     </div>
-    <div class="journal-indicator">
+    <div class="ideas-indicator">
       <div class="indicator-dot"></div>
       <div class="indicator-pulse"></div>
     </div>
@@ -32,7 +32,7 @@ function handleClick() {
 </template>
 
 <style scoped>
-.journal-hero {
+.ideas-hero {
   position: relative;
   height: 52px;
   margin: var(--space-3) var(--space-3) var(--space-2);
@@ -48,16 +48,16 @@ function handleClick() {
   transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
-.journal-hero:hover {
+.ideas-hero:hover {
   border-color: var(--accent);
   box-shadow: 0 2px 12px var(--accent-10);
 }
 
-.journal-hero:active {
+.ideas-hero:active {
   transform: scale(0.97);
 }
 
-.journal-glow {
+.ideas-glow {
   position: absolute;
   top: -20px;
   left: -40px;
@@ -69,7 +69,7 @@ function handleClick() {
   pointer-events: none;
 }
 
-.journal-content {
+.ideas-content {
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -77,7 +77,7 @@ function handleClick() {
   z-index: 1;
 }
 
-.journal-icon-wrap {
+.ideas-icon-wrap {
   width: 34px;
   height: 34px;
   display: flex;
@@ -88,26 +88,26 @@ function handleClick() {
   flex-shrink: 0;
 }
 
-.journal-body {
+.ideas-body {
   display: flex;
   flex-direction: column;
   gap: 1px;
 }
 
-.journal-title {
+.ideas-title {
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
   line-height: 1.3;
 }
 
-.journal-meta {
+.ideas-meta {
   font-size: 11px;
   color: var(--text-tertiary);
   line-height: 1.3;
 }
 
-.journal-indicator {
+.ideas-indicator {
   position: relative;
   width: 8px;
   height: 8px;
@@ -134,10 +134,10 @@ function handleClick() {
   position: absolute;
   top: 0;
   left: 0;
-  animation: journal-pulse 2s ease-out infinite;
+  animation: ideas-pulse 2s ease-out infinite;
 }
 
-@keyframes journal-pulse {
+@keyframes ideas-pulse {
   0% {
     transform: scale(1);
     opacity: 0.25;
