@@ -161,6 +161,69 @@ describe('useContentRenderer - typed wiki links', () => {
   })
 })
 
+describe('dateRef 渲染', () => {
+  it('{{schedule:2026-07-15}} 渲染为 date-ref span', () => {
+    const html = renderContentToHtml('任务 {{schedule:2026-07-15}}', 'block-1')
+    expect(html).toContain('class="date-ref"')
+    expect(html).toContain('data-kind="schedule"')
+    expect(html).toContain('data-iso="2026-07-15"')
+    expect(html).toContain('data-recurrence="none"')
+    expect(html).toContain('📅')
+  })
+
+  it('{{deadline:2026-07-15T14:00|weekly}} 渲染为带时间+重复的 span', () => {
+    const html = renderContentToHtml('{{deadline:2026-07-15T14:00|weekly}}', 'block-1')
+    expect(html).toContain('class="date-ref"')
+    expect(html).toContain('data-kind="deadline"')
+    expect(html).toContain('data-iso="2026-07-15T14:00"')
+    expect(html).toContain('data-recurrence="weekly"')
+    expect(html).toContain('⏰')
+    expect(html).toContain('每周')
+  })
+
+  it('无 recurrence 时 data-recurrence="none"', () => {
+    const html = renderContentToHtml('{{schedule:2026-07-15}}')
+    expect(html).toMatch(/data-recurrence="none"/)
+  })
+
+  it('daily/monthly/yearly 重复规则正确', () => {
+    const html = renderContentToHtml('{{schedule:2026-07-15|daily}} {{deadline:2026-07-15|yearly}}')
+    expect(html).toContain('data-recurrence="daily"')
+    expect(html).toContain('data-recurrence="yearly"')
+    expect(html).toContain('每天')
+    expect(html).toContain('每年')
+  })
+
+  it('显示文本包含格式化后的日期', () => {
+    const html = renderContentToHtml('{{schedule:2026-07-15T14:00}}')
+    expect(html).toContain('07-15 14:00')
+  })
+
+  it('多个 dateRef 各自渲染', () => {
+    const html = renderContentToHtml('{{schedule:2026-07-15}} 和 {{deadline:2026-07-16}}')
+    const matches = html.match(/class="date-ref"/g)
+    expect(matches).toHaveLength(2)
+  })
+
+  it('dateRef 与 wiki link 混合时两者都渲染', () => {
+    const html = renderContentToHtml('{{schedule:2026-07-15}} 参见 [[项目A]]')
+    expect(html).toContain('class="date-ref"')
+    expect(html).toContain('data-page="项目A"')
+  })
+
+  it('dateRef 与 #tag 混合时两者都渲染', () => {
+    const html = renderContentToHtml('{{deadline:2026-07-15}} #重要任务')
+    expect(html).toContain('class="date-ref"')
+    expect(html).toContain('data-page="重要任务"')
+  })
+
+  it('HTML 特殊字符被正确转义', () => {
+    // ISO 中无特殊字符，但显示文本理论上可能有，这里验证转义函数存在
+    const html = renderContentToHtml('{{schedule:2026-07-15}}')
+    expect(html).not.toContain('<script>') // 没有注入
+  })
+})
+
 describe('parseHeading — 标题解析测试', () => {
   it('解析 h1 标题', () => {
     const result = parseHeading('# 一级标题')

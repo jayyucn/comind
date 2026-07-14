@@ -1,9 +1,17 @@
 import { getPredefinedRelationship } from '../types/relationship'
+import {
+  DATE_REF_REGEX,
+  formatDateRefDisplay,
+  parseDateRefs,
+  normalizeRecurrence,
+  type DateRef,
+} from '../utils/date-ref'
 
 const CSS_CLASSES = {
   blockLink: 'block-link',
   relTypeLabel: 'rel-type-label',
-  blockTag: 'block-tag'
+  blockTag: 'block-tag',
+  dateRef: 'date-ref',
 }
 
 const TAG_PATTERN = '([\\p{L}_][\\p{L}\\p{N}_]*(?:\\/[\\p{L}_][\\p{L}\\p{N}_]*)*)'
@@ -48,25 +56,50 @@ export function useContentRenderer() {
   }
 
   /**
+   * 渲染 dateRef {{kind:ISO|recurrence}} 为可交互 span
+   * dateRef 使用 {{...}} 格式，与 typed link `((...))[[...]]` 不冲突，
+   * 可在 typed link 之后、wiki link 之前处理。
+   */
+  function renderDateRefs(text: string): string {
+    return text.replace(DATE_REF_REGEX, (full, kind, iso, rec) => {
+      const ref: DateRef = {
+        kind: kind as DateRef['kind'],
+        iso: iso.trim(),
+        recurrence: normalizeRecurrence(rec),
+      }
+      const display = formatDateRefDisplay(ref)
+      return `<span class="${CSS_CLASSES.dateRef}" ` +
+        `data-kind="${escapeHtmlEntities(kind)}" ` +
+        `data-iso="${escapeHtmlEntities(iso.trim())}" ` +
+        `data-recurrence="${escapeHtmlEntities(ref.recurrence)}">` +
+        `${escapeHtmlEntities(display)}</span>`
+    })
+  }
+
+  /**
    * 将 Block 内容渲染为 HTML
    *
    * 处理（按顺序）：
    * 1. 带类型链接 ((type))[[X]]：
    *    - 渲染为 `关系类型 [[X]]`
    *    - 段间 #tag 在原始 text 上处理，避免误匹配 style 里的 #xxxxxx 颜色值
-   * 2. 外部链接 [[https://...]]
-   * 3. 普通链接 [[X]] 或 [[X|alias]] → .block-link
+   * 2. dateRef {{...}}（在 wiki link 之前，防止 [[...]] 冲突）
+   * 3. 外部链接 [[https://...]]
+   * 4. 普通链接 [[X]] 或 [[X|alias]] → .block-link
    */
   function renderContentToHtml(text: string, blockId: string = ''): string {
     // 1. 带类型链接 + 段间 #tag（基于原始 text）
     const withTyped = renderTypedLinks(text, blockId)
 
-    // 2. 外部链接（HTML 中无 [[，安全）
-    const withExternal = withTyped.replace(EXTERNAL_LINK_REGEX, (_, url) => {
+    // 2. dateRef（基于原始 text，{{...}} 格式与 typed link 不冲突）
+    const withDateRefs = renderDateRefs(withTyped)
+
+    // 3. 外部链接（HTML 中无 [[，安全）
+    const withExternal = withDateRefs.replace(EXTERNAL_LINK_REGEX, (_, url) => {
       return `<span class="${CSS_CLASSES.blockLink} external" data-external="${escapeHtmlEntities(url)}">${url}</span>`
     })
 
-    // 3. 普通 wiki link（HTML 中无 [[，安全）
+    // 4. 普通 wiki link（HTML 中无 [[，安全）
     const withWikiLinks = withExternal.replace(WIKI_LINK_REGEX, (_, target, alias) => {
       const display = alias || target
       return `<span class="${CSS_CLASSES.blockLink}" data-page="${escapeHtmlEntities(target)}">${display}</span>`
