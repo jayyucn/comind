@@ -24,7 +24,7 @@ const props = defineProps<{
   visible: boolean
   /** 锚点屏幕坐标 */
   position: { x: number; y: number }
-  /** 当前 dateRef 的 kind */
+  /** 当前 dateRef 的 kind（只读，用于初始化） */
   kind: DateRefKind
   /** 预填 ISO，格式 2026-07-15 或 2026-07-15T14:00 */
   initialIso: string
@@ -40,6 +40,7 @@ const emit = defineEmits<{
 const editorStore = useEditorStore()
 
 // ── 本地状态（每次 open 时从 props 同步） ──────────────────────────────────────
+const localKind = ref<DateRefKind>('schedule')
 const localDate = ref('')
 const localTime = ref('')
 const localRecurrence = ref<RecurrenceRule>('none')
@@ -97,6 +98,7 @@ watch(
   () => props.visible,
   (v) => {
     if (v) {
+      localKind.value = props.kind
       // 从 initialIso 分离 date / time
       const [datePart, timePart] = (props.initialIso || today.value).split('T')
       localDate.value = datePart || today.value
@@ -105,6 +107,11 @@ watch(
     }
   }
 )
+
+// ── kind 切换 ──────────────────────────────────────────────────────────────────
+function toggleKind() {
+  localKind.value = localKind.value === 'schedule' ? 'deadline' : 'schedule'
+}
 
 // ── 快捷日期 ──────────────────────────────────────────────────────────────────
 function setDate(date: string) {
@@ -119,7 +126,7 @@ function setNextWeek() { localDate.value = nextWeek.value; localTime.value = '' 
 function handleConfirm() {
   if (!localDate.value) return
   emit('confirm', {
-    kind: props.kind,
+    kind: localKind.value,
     iso: previewIso.value,
     recurrence: localRecurrence.value,
   })
@@ -170,11 +177,16 @@ watch(
         <!-- 标题栏 -->
         <div class="dtp-header">
           <span class="dtp-title">
-            {{ kind === 'schedule' ? '📅 计划时间' : '⏰ 截止时间' }}
+            {{ localKind === 'schedule' ? '📅 计划时间' : '⏰ 截止时间' }}
           </span>
-          <button class="dtp-icon-btn" title="关闭" @click="handleCancel">
-            <X :size="12" :stroke-width="2" />
-          </button>
+          <div class="dtp-header-actions">
+            <button class="dtp-icon-btn" title="切换类型" @click="toggleKind">
+              {{ localKind === 'schedule' ? '⏰' : '📅' }}
+            </button>
+            <button class="dtp-icon-btn" title="关闭" @click="handleCancel">
+              <X :size="12" :stroke-width="2" />
+            </button>
+          </div>
         </div>
 
         <!-- 日期 + 时间 -->
@@ -272,6 +284,12 @@ watch(
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.dtp-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .dtp-title {

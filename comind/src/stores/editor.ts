@@ -3,6 +3,12 @@ import { ref, shallowRef } from 'vue'
 import type { Editor } from '@tiptap/vue-3'
 import type { DateRefKind, RecurrenceRule } from '../utils/date-ref'
 
+export interface ToastMessage {
+  id: string
+  message: string
+  type?: 'info' | 'warning' | 'error'
+}
+
 export const useEditorStore = defineStore('editor', () => {
   const activeBlockId = ref<string | null>(null)
   /** 激活后要恢复的目标光标位置（ProseMirror position），用完即清 */
@@ -142,6 +148,28 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
+  /** Toast 提示状态 */
+  const toasts = ref<ToastMessage[]>([])
+
+  function showToast(message: string, type: 'info' | 'warning' | 'error' = 'info') {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+    toasts.value.push({ id, message, type })
+    
+    setTimeout(() => {
+      const idx = toasts.value.findIndex(t => t.id === id)
+      if (idx !== -1) {
+        toasts.value.splice(idx, 1)
+      }
+    }, 3000)
+  }
+
+  function removeToast(id: string) {
+    const idx = toasts.value.findIndex(t => t.id === id)
+    if (idx !== -1) {
+      toasts.value.splice(idx, 1)
+    }
+  }
+
   /** 快捷属性编辑器状态 */
   const quickPropertyEditor = ref<{
     visible: boolean
@@ -192,5 +220,8 @@ export const useEditorStore = defineStore('editor', () => {
     dateRefEditor,
     openDateRefEditor,
     closeDateRefEditor,
+    toasts,
+    showToast,
+    removeToast,
   }
 })

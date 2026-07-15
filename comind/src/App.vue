@@ -1,10 +1,11 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import Sidebar from './components/Sidebar/index.vue'
 import PageMenuButton from './components/PageMenuButton.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import SettingsModal from './components/Settings/SettingsModal.vue'
+import Toast from './components/Toast.vue'
 import { useEditorStore } from './stores/editor'
 import { useBlockStore } from './stores/blocks'
 import { usePageStore } from './stores/pages'
@@ -276,6 +277,8 @@ function handleMainClick(e: MouseEvent) {
     <SettingsModal />
 
     <SearchPanel :visible="showSearchPanel" @close="showSearchPanel = false" />
+
+    <Toast :visible="true" :messages="editorStore.toasts" @remove="editorStore.removeToast" />
   </div>
 </template>
 

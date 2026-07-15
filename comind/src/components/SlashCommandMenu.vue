@@ -1,17 +1,20 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useEditorStore } from '../stores/editor'
 import { usePropertyStore } from '../stores/property'
+import { useBlockStore } from '../stores/blocks'
 import { useSlashCommands, filterCommands, groupCommands, parseCommandInput, buildTemplateCommands, executeTemplateCommand } from '../composables/useSlashCommands'
 import { useModalKeyboardRef } from '../composables/useModalKeyboard'
 import { useTemplateRegistry } from '../composables/useTemplateRegistry'
 import { useUserTemplatesStore } from '../stores/user-templates'
 import { parseDateInput } from '../utils/date-parser'
+import { parseDateRefs } from '../utils/date-ref'
 import { Icon } from '../components/Icons'
 import type { Command } from '../types/command'
 
 const editorStore = useEditorStore()
 const propertyStore = usePropertyStore()
+const blockStore = useBlockStore()
 const { commands } = useSlashCommands()
 const templateRegistry = useTemplateRegistry()
 const userTemplatesStore = useUserTemplatesStore()
@@ -255,13 +258,29 @@ async function executeCommand(command: Command) {
 
   // 处理 /schedule 和 /deadline — 打开 DateTimePickerPanel
   if (command.id === 'schedule' || command.id === 'deadline') {
+    const kind = command.id as 'schedule' | 'deadline'
+    
+    if (blockId) {
+      const block = blockStore.blocks.find(b => b.id === blockId)
+      if (block) {
+        const existingRefs = parseDateRefs(block.content)
+        const hasSameKind = existingRefs.some(r => r.kind === kind)
+        if (hasSameKind) {
+          const kindLabel = kind === 'schedule' ? '计划时间' : '截止时间'
+          editorStore.showToast(`该任务已有${kindLabel}，如需重复请使用重复规则`, 'warning')
+          close()
+          return
+        }
+      }
+    }
+    
     const rect = new DOMRect(position.value.x, position.value.y, 0, 0)
     editorStore.openDateRefEditor({
       blockId: blockId ?? null,
       from: cursorPosition,
       to: cursorPosition,
       source: 'editor',
-      kind: command.id as 'schedule' | 'deadline',
+      kind,
       iso: new Date().toISOString().slice(0, 10),
       recurrence: 'none',
       position: { x: rect.left, y: rect.bottom + 6 },
