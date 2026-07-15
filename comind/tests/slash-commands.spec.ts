@@ -80,13 +80,15 @@ test.describe('Slash Commands - Date/Schedule/Deadline', () => {
     const panel = page.locator('.dtp-panel')
     await expect(panel).toBeVisible()
     
-    await expect(panel.locator('.dtp-input--date')).toBeVisible()
-    await expect(panel.locator('.dtp-input--time')).toBeVisible()
-    await expect(panel.locator('.dtp-input--select')).toBeVisible()
+    await expect(panel.locator('.dtp-calendar')).toBeVisible()
+    await expect(panel.locator('.dtp-calendar-grid')).toBeVisible()
+    await expect(panel.locator('.dtp-calendar-day')).toHaveCount(42)
     
-    await expect(panel.locator('.dtp-preset-btn', { hasText: '今天' })).toBeVisible()
-    await expect(panel.locator('.dtp-preset-btn', { hasText: '明天' })).toBeVisible()
-    await expect(panel.locator('.dtp-preset-btn', { hasText: '下周' })).toBeVisible()
+    await expect(panel.locator('.dtp-calendar-day--today')).toBeVisible()
+    await expect(panel.locator('.dtp-calendar-day--selected')).toBeVisible()
+    
+    await expect(panel.locator('.dtp-checkbox')).toBeVisible()
+    await expect(panel.locator('.dtp-input--select')).toBeVisible()
     
     await expect(panel.locator('.dtp-btn--cancel')).toBeVisible()
     await expect(panel.locator('.dtp-btn--confirm')).toBeVisible()
@@ -108,7 +110,7 @@ test.describe('Slash Commands - Date/Schedule/Deadline', () => {
     const panel = page.locator('.dtp-panel')
     await expect(panel).toBeVisible()
     
-    await panel.locator('.dtp-preset-btn', { hasText: '明天' }).click()
+    await panel.locator('.dtp-calendar-day--today').click()
     await panel.locator('.dtp-btn--confirm').click()
     
     await page.waitForTimeout(500)
@@ -133,7 +135,7 @@ test.describe('Slash Commands - Date/Schedule/Deadline', () => {
     const panel = page.locator('.dtp-panel')
     await expect(panel).toBeVisible()
     
-    await panel.locator('.dtp-preset-btn', { hasText: '明天' }).click()
+    await panel.locator('.dtp-calendar-day--today').click()
     
     const select = panel.locator('.dtp-input--select')
     await select.selectOption('weekly')
@@ -223,7 +225,7 @@ test.describe('Slash Commands - Date/Schedule/Deadline', () => {
     const panel = page.locator('.dtp-panel')
     await expect(panel).toBeVisible()
     
-    await panel.locator('.dtp-preset-btn', { hasText: '明天' }).click()
+    await panel.locator('.dtp-calendar-day--today').click()
     await panel.locator('.dtp-btn--confirm').click()
     
     await page.waitForTimeout(800)
@@ -256,7 +258,7 @@ test.describe('Slash Commands - Date/Schedule/Deadline', () => {
     const panel = page.locator('.dtp-panel')
     await expect(panel).toBeVisible()
     
-    await panel.locator('.dtp-preset-btn', { hasText: '明天' }).click()
+    await panel.locator('.dtp-calendar-day--today').click()
     await panel.locator('.dtp-btn--confirm').click()
     
     await page.waitForTimeout(800)
@@ -288,7 +290,9 @@ test.describe('Slash Commands - Date/Schedule/Deadline', () => {
     
     await expect(panel).toBeVisible()
     
-    await panel.locator('.dtp-preset-btn', { hasText: '下周' }).click()
+    const nextMonthBtn = panel.locator('.dtp-calendar-nav').nth(1)
+    await nextMonthBtn.click()
+    await panel.locator('.dtp-calendar-day').first().click()
     await panel.locator('.dtp-btn--confirm').click()
     
     await page.waitForTimeout(800)
@@ -322,7 +326,7 @@ test.describe('Slash Commands - Date/Schedule/Deadline', () => {
     const panel = page.locator('.dtp-panel')
     await expect(panel).toBeVisible()
     
-    await panel.locator('.dtp-preset-btn', { hasText: '明天' }).click()
+    await panel.locator('.dtp-calendar-day--today').click()
     await panel.locator('.dtp-btn--confirm').click()
     
     await page.waitForTimeout(800)
@@ -354,7 +358,9 @@ test.describe('Slash Commands - Date/Schedule/Deadline', () => {
     
     await expect(panel).toBeVisible()
     
-    await panel.locator('.dtp-preset-btn', { hasText: '下周' }).click()
+    const nextMonthBtn = panel.locator('.dtp-calendar-nav').nth(1)
+    await nextMonthBtn.click()
+    await panel.locator('.dtp-calendar-day').first().click()
     await panel.locator('.dtp-btn--confirm').click()
     
     await page.waitForTimeout(800)

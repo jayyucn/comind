@@ -6,7 +6,9 @@ import PageMenuButton from './components/PageMenuButton.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import SettingsModal from './components/Settings/SettingsModal.vue'
 import Toast from './components/Toast.vue'
+import DateTimePickerPanel from './components/DateTimePickerPanel.vue'
 import { useEditorStore } from './stores/editor'
+import { useDateTimePickerPanel } from './composables/useDateTimePickerPanel'
 import { useBlockStore } from './stores/blocks'
 import { usePageStore } from './stores/pages'
 import { useSidebar } from './composables/useSidebar'
@@ -43,6 +45,16 @@ const editorStore = useEditorStore()
 const route = useRoute()
 const blockStore = useBlockStore()
 const pageStore = usePageStore()
+
+const {
+  visible: dateRefPanelVisible,
+  position: dateRefPanelPosition,
+  kind: dateRefPanelKind,
+  initialIso: dateRefPanelIso,
+  initialRecurrence: dateRefPanelRecurrence,
+  close: closeDateRefPanel,
+  handleConfirm: handleDateRefConfirm,
+} = useDateTimePickerPanel()
 
 const isFullWidthPage = computed(() => route.meta.fullWidth === true)
 const showRightSidebarToggle = computed(() => route.meta.hideRightSidebarToggle !== true)
@@ -279,6 +291,16 @@ function handleMainClick(e: MouseEvent) {
     <SearchPanel :visible="showSearchPanel" @close="showSearchPanel = false" />
 
     <Toast :visible="true" :messages="editorStore.toasts" @remove="editorStore.removeToast" />
+
+    <DateTimePickerPanel
+      :visible="dateRefPanelVisible"
+      :position="dateRefPanelPosition"
+      :kind="dateRefPanelKind"
+      :initial-iso="dateRefPanelIso"
+      :initial-recurrence="dateRefPanelRecurrence"
+      @confirm="handleDateRefConfirm"
+      @cancel="closeDateRefPanel"
+    />
   </div>
 </template>
 

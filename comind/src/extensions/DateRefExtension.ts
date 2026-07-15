@@ -54,13 +54,15 @@ function findDecorationRange(
   return null
 }
 
+const DATE_REF_PLUGIN_KEY = new PluginKey('dateRef')
+
 export const DateRefExtension = Extension.create({
   name: 'dateRef',
 
   addProseMirrorPlugins() {
     return [
       new Plugin({
-        key: new PluginKey('dateRef'),
+        key: DATE_REF_PLUGIN_KEY,
 
         props: {
           decorations(state: any) {
@@ -73,8 +75,7 @@ export const DateRefExtension = Extension.create({
             const target = event.target as HTMLElement
             if (!target.classList.contains('date-ref')) return false
 
-            // 从 plugin state 查精确 decoration 区间
-            const pluginState = this.key.getState(view.state) as DecorationSet | undefined
+            const pluginState = DATE_REF_PLUGIN_KEY.getState(view.state) as DecorationSet | undefined
             const range = pluginState ? findDecorationRange(pluginState, pos) : null
             const from = range?.from ?? pos
             const to = range?.to ?? pos
@@ -82,13 +83,12 @@ export const DateRefExtension = Extension.create({
             const payload: DateRefClickPayload = {
               from,
               to,
-              blockId: '', // caller fills from editor store
+              blockId: '',
               kind: target.dataset.kind as DateRefKind,
               iso: target.dataset.iso ?? '',
               recurrence: normalizeRecurrence(target.dataset.recurrence),
             }
 
-            // 派发到 editor DOM 上，由 Block.vue 组件监听并转发 editor store
             target.dispatchEvent(
               new CustomEvent(DATE_REF_CLICK_EVENT, {
                 bubbles: true,

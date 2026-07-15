@@ -1,16 +1,6 @@
 <script setup lang="ts">
-/**
- * DateTimePickerPanel — 日期 / 时间 / 重复选择器面板
- *
- * 用法：
- *   import { useDateTimePickerPanel } from '../composables/useDateTimePickerPanel'
- *   const { visible, position, open, close, confirm } = useDateTimePickerPanel()
- *
- * emit confirm({ kind, iso, recurrence })
- * emit cancel
- */
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { Calendar, Clock, Repeat, X, Check } from 'lucide-vue-next'
+import { Calendar, Clock, Repeat, X, Check, ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { useEditorStore } from '../stores/editor'
 import type { DateRefKind, RecurrenceRule } from '../utils/date-ref'
 
@@ -22,13 +12,9 @@ export interface DateTimePickerConfirm {
 
 const props = defineProps<{
   visible: boolean
-  /** 锚点屏幕坐标 */
   position: { x: number; y: number }
-  /** 当前 dateRef 的 kind（只读，用于初始化） */
   kind: DateRefKind
-  /** 预填 ISO，格式 2026-07-15 或 2026-07-15T14:00 */
   initialIso: string
-  /** 预填 recurrence */
   initialRecurrence: RecurrenceRule
 }>()
 
@@ -39,90 +25,126 @@ const emit = defineEmits<{
 
 const editorStore = useEditorStore()
 
-// ── 本地状态（每次 open 时从 props 同步） ──────────────────────────────────────
 const localKind = ref<DateRefKind>('schedule')
 const localDate = ref('')
 const localTime = ref('')
 const localRecurrence = ref<RecurrenceRule>('none')
+const enableTime = ref(false)
 
-// mode：date → 只显示日期选择；datetime → 日期 + 时间
-const mode = computed<'date' | 'datetime'>(() => {
-  // deadline 默认带时间；schedule 也带时间
-  return 'datetime'
-})
-
-// 预设快捷日期
 const today = computed(() => {
   const d = new Date()
   return d.toISOString().slice(0, 10)
 })
 
-const tomorrow = computed(() => {
-  const d = new Date()
-  d.setDate(d.getDate() + 1)
-  return d.toISOString().slice(0, 10)
+const calendarYear = ref(2026)
+const calendarMonth = ref(6)
+
+const weekDays = ['一', '二', '三', '四', '五', '六', '日']
+
+const calendarDays = computed(() => {
+  const year = calendarYear.value
+  const month = calendarMonth.value
+  const firstDay = new Date(year, month, 1)
+  const lastDay = new Date(year, month + 1, 0)
+  const days: { date: number; currentMonth: boolean; today: boolean; selected: boolean }[] = []
+
+  const startPadding = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1
+  const prevMonthLastDay = new Date(year, month, 0).getDate()
+  for (let i = startPadding - 1; i >= 0; i--) {
+    days.push({ date: prevMonthLastDay - i, currentMonth: false, today: false, selected: false })
+  }
+
+  for (let i = 1; i <= lastDay.getDate(); i++) {
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`
+    days.push({
+      date: i,
+      currentMonth: true,
+      today: dateStr === today.value,
+      selected: dateStr === localDate.value,
+    })
+  }
+
+  const remaining = 42 - days.length
+  for (let i = 1; i <= remaining; i++) {
+    days.push({ date: i, currentMonth: false, today: false, selected: false })
+  }
+
+  return days
 })
 
-const nextWeek = computed(() => {
-  const d = new Date()
-  d.setDate(d.getDate() + 7)
-  return d.toISOString().slice(0, 10)
-})
+const monthNames = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']
 
-// 选中日期的星期标签
-const dayLabel = computed(() => {
-  if (!localDate.value) return ''
-  const d = new Date(localDate.value + 'T00:00:00')
-  return ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][d.getDay()]
-})
+function prevMonth() {
+  if (calendarMonth.value === 0) {
+    calendarMonth.value = 11
+    calendarYear.value--
+  } else {
+    calendarMonth.value--
+  }
+}
 
-// 实时预览 ISO
+function nextMonth() {
+  if (calendarMonth.value === 11) {
+    calendarMonth.value = 0
+    calendarYear.value++
+  } else {
+    calendarMonth.value++
+  }
+}
+
+function selectDate(day: { date: number; currentMonth: boolean }) {
+  if (!day.currentMonth) {
+    if (day.date > 15) {
+      prevMonth()
+    } else {
+      nextMonth()
+    }
+    day.date = day.currentMonth ? day.date : (day.date > 15 ? day.date : day.date)
+  }
+  const year = calendarYear.value
+  const month = calendarMonth.value
+  localDate.value = `${year}-${String(month + 1).padStart(2, '0')}-${String(day.date).padStart(2, '0')}`
+}
+
 const previewIso = computed(() => {
   if (!localDate.value) return ''
-  return localTime.value
+  return enableTime.value && localTime.value
     ? `${localDate.value}T${localTime.value}`
     : localDate.value
 })
 
-// 预览文本（与 date-ref.ts 的 formatIsoDisplay 保持一致）
 const previewText = computed(() => {
   if (!previewIso.value) return ''
   const [datePart, timePart] = previewIso.value.split('T')
   if (!datePart) return ''
-  const mmdd = datePart.slice(5) // MM-DD
+  const mmdd = datePart.slice(5)
   return timePart ? `${mmdd} ${timePart}` : mmdd
 })
 
-// ── 同步 props → 本地状态 ──────────────────────────────────────────────────────
 watch(
   () => props.visible,
   (v) => {
     if (v) {
       localKind.value = props.kind
-      // 从 initialIso 分离 date / time
       const [datePart, timePart] = (props.initialIso || today.value).split('T')
       localDate.value = datePart || today.value
       localTime.value = timePart || ''
       localRecurrence.value = props.initialRecurrence || 'none'
+      enableTime.value = !!timePart
+
+      if (localDate.value) {
+        const [y, m] = localDate.value.split('-').map(Number)
+        calendarYear.value = y
+        calendarMonth.value = m - 1
+      }
     }
   }
 )
 
-// ── kind 切换 ──────────────────────────────────────────────────────────────────
 function toggleKind() {
   localKind.value = localKind.value === 'schedule' ? 'deadline' : 'schedule'
 }
 
-// ── 快捷日期 ──────────────────────────────────────────────────────────────────
-function setDate(date: string) {
-  localDate.value = date
-}
-
-function setToday() { localDate.value = today.value; localTime.value = '' }
-function setTomorrow() { localDate.value = tomorrow.value; localTime.value = '' }
-function setNextWeek() { localDate.value = nextWeek.value; localTime.value = '' }
-
-// ── 确认 / 取消 ────────────────────────────────────────────────────────────────
 function handleConfirm() {
   if (!localDate.value) return
   emit('confirm', {
@@ -136,7 +158,6 @@ function handleCancel() {
   emit('cancel')
 }
 
-// ── 键盘 ───────────────────────────────────────────────────────────────────────
 function onKeyDown(e: KeyboardEvent) {
   if (!props.visible) return
   if (e.key === 'Escape') {
@@ -148,21 +169,8 @@ function onKeyDown(e: KeyboardEvent) {
   }
 }
 
-// ── 生命周期 ──────────────────────────────────────────────────────────────────
 onMounted(() => document.addEventListener('keydown', onKeyDown))
 onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown))
-
-// ── 焦点管理 ───────────────────────────────────────────────────────────────────
-const dateInputRef = ref<HTMLInputElement | null>(null)
-watch(
-  () => props.visible,
-  async (v) => {
-    if (v) {
-      await nextTick()
-      dateInputRef.value?.focus()
-    }
-  }
-)
 </script>
 
 <template>
@@ -174,7 +182,6 @@ watch(
         :style="{ left: `${position.x}px`, top: `${position.y}px` }"
         @click.stop
       >
-        <!-- 标题栏 -->
         <div class="dtp-header">
           <span class="dtp-title">
             {{ localKind === 'schedule' ? '📅 计划时间' : '⏰ 截止时间' }}
@@ -189,42 +196,78 @@ watch(
           </div>
         </div>
 
-        <!-- 日期 + 时间 -->
-        <div class="dtp-fields">
-          <div class="dtp-field">
-            <label class="dtp-label">
-              <Calendar :size="11" :stroke-width="2" /> 日期
-            </label>
-            <input
-              ref="dateInputRef"
-              v-model="localDate"
-              type="date"
-              class="dtp-input dtp-input--date"
-            />
-            <span v-if="dayLabel" class="dtp-day-label">{{ dayLabel }}</span>
+        <div class="dtp-calendar">
+          <div class="dtp-calendar-header">
+            <button class="dtp-calendar-nav" @click="prevMonth">
+              <ChevronLeft :size="14" :stroke-width="2" />
+            </button>
+            <span class="dtp-calendar-title">
+              {{ calendarYear }}年 {{ monthNames[calendarMonth] }}
+            </span>
+            <button class="dtp-calendar-nav" @click="nextMonth">
+              <ChevronRight :size="14" :stroke-width="2" />
+            </button>
           </div>
 
-          <div v-if="mode === 'datetime'" class="dtp-field">
-            <label class="dtp-label">
-              <Clock :size="11" :stroke-width="2" /> 时间
-            </label>
-            <input
-              v-model="localTime"
-              type="time"
-              class="dtp-input dtp-input--time"
-              placeholder="—"
-            />
+          <div class="dtp-calendar-weekdays">
+            <span v-for="day in weekDays" :key="day" class="dtp-calendar-weekday">
+              {{ day }}
+            </span>
+          </div>
+
+          <div class="dtp-calendar-grid">
+            <button
+              v-for="(day, index) in calendarDays"
+              :key="index"
+              class="dtp-calendar-day"
+              :class="{
+                'dtp-calendar-day--other': !day.currentMonth,
+                'dtp-calendar-day--today': day.today,
+                'dtp-calendar-day--selected': day.selected,
+              }"
+              @click="selectDate(day)"
+            >
+              {{ day.date }}
+            </button>
           </div>
         </div>
 
-        <!-- 快捷日期 -->
-        <div class="dtp-presets">
-          <button class="dtp-preset-btn" @click="setToday">今天</button>
-          <button class="dtp-preset-btn" @click="setTomorrow">明天</button>
-          <button class="dtp-preset-btn" @click="setNextWeek">下周</button>
+        <div class="dtp-time-toggle">
+          <label class="dtp-checkbox-label">
+            <input type="checkbox" v-model="enableTime" class="dtp-checkbox" />
+            <span class="dtp-checkbox-text">设置时间</span>
+          </label>
+          <div v-if="enableTime" class="dtp-time-selector">
+            <Clock :size="12" :stroke-width="2" />
+            <select v-model="localTime" class="dtp-time-input">
+              <option value="00:00">00:00</option>
+              <option value="01:00">01:00</option>
+              <option value="02:00">02:00</option>
+              <option value="03:00">03:00</option>
+              <option value="04:00">04:00</option>
+              <option value="05:00">05:00</option>
+              <option value="06:00">06:00</option>
+              <option value="07:00">07:00</option>
+              <option value="08:00">08:00</option>
+              <option value="09:00">09:00</option>
+              <option value="10:00">10:00</option>
+              <option value="11:00">11:00</option>
+              <option value="12:00">12:00</option>
+              <option value="13:00">13:00</option>
+              <option value="14:00">14:00</option>
+              <option value="15:00">15:00</option>
+              <option value="16:00">16:00</option>
+              <option value="17:00">17:00</option>
+              <option value="18:00">18:00</option>
+              <option value="19:00">19:00</option>
+              <option value="20:00">20:00</option>
+              <option value="21:00">21:00</option>
+              <option value="22:00">22:00</option>
+              <option value="23:00">23:00</option>
+            </select>
+          </div>
         </div>
 
-        <!-- 重复规则 -->
         <div class="dtp-field dtp-field--full">
           <label class="dtp-label">
             <Repeat :size="11" :stroke-width="2" /> 重复
@@ -238,7 +281,6 @@ watch(
           </select>
         </div>
 
-        <!-- 预览 + 确认 -->
         <div class="dtp-footer">
           <span v-if="previewText" class="dtp-preview">
             {{ previewText
@@ -268,7 +310,7 @@ watch(
 .dtp-panel {
   position: fixed;
   z-index: 1100;
-  width: 280px;
+  width: 300px;
   background: var(--bg-base, #FAFAF8);
   border: 1px solid var(--border, #E7E5E4);
   border-radius: 8px;
@@ -317,9 +359,145 @@ watch(
   color: var(--text-primary);
 }
 
-.dtp-fields {
+.dtp-calendar {
   display: flex;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dtp-calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+}
+
+.dtp-calendar-nav {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 0;
+}
+
+.dtp-calendar-nav:hover {
+  background: var(--bg-hover);
+}
+
+.dtp-calendar-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.dtp-calendar-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.dtp-calendar-weekday {
+  font-size: 10px;
+  text-align: center;
+  color: var(--text-tertiary);
+  padding: 4px 0;
+}
+
+.dtp-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.dtp-calendar-day {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  border-radius: 50%;
+  font-size: 12px;
+  padding: 0;
+}
+
+.dtp-calendar-day:hover {
+  background: var(--bg-hover);
+}
+
+.dtp-calendar-day--other {
+  color: var(--text-tertiary);
+}
+
+.dtp-calendar-day--today {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.dtp-calendar-day--selected {
+  background: var(--accent);
+  color: #fff;
+}
+
+.dtp-calendar-day--today.dtp-calendar-day--selected {
+  background: var(--accent);
+  color: #fff;
+}
+
+.dtp-time-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.dtp-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.dtp-checkbox {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+}
+
+.dtp-checkbox-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.dtp-time-selector {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-tertiary);
+}
+
+.dtp-time-input {
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  appearance: auto;
+  min-width: 70px;
 }
 
 .dtp-field {
@@ -347,15 +525,6 @@ watch(
   letter-spacing: 0.04em;
 }
 
-.dtp-day-label {
-  position: absolute;
-  right: 8px;
-  bottom: 6px;
-  font-size: 10px;
-  color: var(--text-tertiary);
-  pointer-events: none;
-}
-
 .dtp-input {
   padding: 5px 8px;
   border: 1px solid var(--border);
@@ -372,42 +541,10 @@ watch(
   border-color: var(--accent);
 }
 
-.dtp-input--date {
-  flex: 1;
-  color-scheme: light;
-}
-
-.dtp-input--time {
-  width: 90px;
-}
-
 .dtp-input--select {
   flex: 1;
   cursor: pointer;
   appearance: auto;
-}
-
-.dtp-presets {
-  display: flex;
-  gap: 4px;
-}
-
-.dtp-preset-btn {
-  flex: 1;
-  padding: 4px 0;
-  background: var(--bg-hover);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 11px;
-  color: var(--text-secondary);
-  font-family: inherit;
-  transition: background 0.12s;
-}
-
-.dtp-preset-btn:hover {
-  background: var(--bg-active);
-  color: var(--text-primary);
 }
 
 .dtp-footer {
@@ -462,7 +599,7 @@ watch(
 
 .dtp-btn--confirm {
   background: var(--accent);
-  color: var(--color-paper);
+  color: #fff;
   border-color: var(--accent);
 }
 
@@ -475,7 +612,6 @@ watch(
   cursor: not-allowed;
 }
 
-/* 动画 */
 .fade-slide-enter-active,
 .fade-slide-leave-active {
   transition: opacity 0.15s ease, transform 0.15s ease;

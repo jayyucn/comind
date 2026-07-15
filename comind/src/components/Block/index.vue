@@ -23,12 +23,7 @@ import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import { useBlockRegistry } from '../../composables/useBlockRegistry'
 import { useRelationshipMenu } from '../../composables/useRelationshipMenu'
 import { useBlockRelationshipCleanup } from '../../composables/useBlockRelationshipCleanup'
-import {
-  useDateTimePickerPanel,
-  useDateRefClickListener,
-} from '../../composables/useDateTimePickerPanel'
-import type { DateTimePickerConfirm } from '../../composables/useDateTimePickerPanel'
-import DateTimePickerPanel from '../DateTimePickerPanel.vue'
+import { useDateTimePickerPanel, useDateRefClickListener } from '../../composables/useDateTimePickerPanel'
 import './handlers/bullet'
 import './handlers/code'
 import './handlers/image'
@@ -66,27 +61,12 @@ const relationshipCleanup = useBlockRelationshipCleanup()
 
 // ── dateRef 编辑面板 ────────────────────────────────────────────────────────
 const {
-  visible: dateRefPanelVisible,
-  position: dateRefPanelPosition,
-  kind: dateRefPanelKind,
-  initialIso: dateRefPanelIso,
-  initialRecurrence: dateRefPanelRecurrence,
   open: openDateRefPanel,
-  close: closeDateRefPanel,
-  handleConfirm: handleDateRefConfirm,
 } = useDateTimePickerPanel()
 
-/** 注册 dateRefClick 监听（全局，在第一个 Block mount 时注册一次） */
 useDateRefClickListener((payload, position) => {
   openDateRefPanel({ ...payload, position })
 })
-
-/** dateRef 面板确认 → 执行编辑闭环 */
-function onDateRefPanelConfirm(value: DateTimePickerConfirm) {
-  handleDateRefConfirm(value)
-  // syncContent 由 editor blur/save 事件自动触发，此处触发一次保底
-  editorRef.value?.syncContent?.(editorRef.value?.getText?.() ?? '')
-}
 
 const showBlockSelector = ref(false)
 
@@ -1007,17 +987,6 @@ async function handlePaste(e: ClipboardEvent) {
       :exclude-block-id="blockId"
       @select="handleEmbedSelect"
       @close="showBlockSelector = false"
-    />
-
-    <!-- dateRef 编辑面板（全局仅渲染一份） -->
-    <DateTimePickerPanel
-      :visible="dateRefPanelVisible"
-      :position="dateRefPanelPosition"
-      :kind="dateRefPanelKind"
-      :initial-iso="dateRefPanelIso"
-      :initial-recurrence="dateRefPanelRecurrence"
-      @confirm="onDateRefPanelConfirm"
-      @cancel="closeDateRefPanel"
     />
   </div>
 </template>

@@ -21,7 +21,7 @@ test.describe('Toast 提示功能', () => {
     const panel = page.locator('.dtp-panel')
     await expect(panel).toBeVisible()
 
-    await panel.locator('.dtp-preset-btn', { hasText: '明天' }).click()
+    await panel.locator('.dtp-calendar-day--today').click()
     await panel.locator('.dtp-btn--confirm').click()
 
     await page.waitForTimeout(800)
@@ -56,7 +56,7 @@ test.describe('Toast 提示功能', () => {
     const panel = page.locator('.dtp-panel')
     await expect(panel).toBeVisible()
 
-    await panel.locator('.dtp-preset-btn', { hasText: '明天' }).click()
+    await panel.locator('.dtp-calendar-day--today').click()
     await panel.locator('.dtp-btn--confirm').click()
 
     await page.waitForTimeout(800)
@@ -71,7 +71,7 @@ test.describe('Toast 提示功能', () => {
     await page.waitForTimeout(500)
 
     await expect(panel).toBeVisible()
-    await panel.locator('.dtp-preset-btn', { hasText: '明天' }).click()
+    await panel.locator('.dtp-calendar-day--today').click()
     await panel.locator('.dtp-btn--confirm').click()
 
     await page.waitForTimeout(500)
@@ -94,7 +94,7 @@ test.describe('Toast 提示功能', () => {
     const panel = page.locator('.dtp-panel')
     await expect(panel).toBeVisible()
 
-    await panel.locator('.dtp-preset-btn', { hasText: '明天' }).click()
+    await panel.locator('.dtp-calendar-day--today').click()
     await panel.locator('.dtp-btn--confirm').click()
 
     await page.waitForTimeout(800)
@@ -128,7 +128,7 @@ test.describe('Toast 提示功能', () => {
     const panel = page.locator('.dtp-panel')
     await expect(panel).toBeVisible()
 
-    await panel.locator('.dtp-preset-btn', { hasText: '明天' }).click()
+    await panel.locator('.dtp-calendar-day--today').click()
     await panel.locator('.dtp-btn--confirm').click()
 
     await page.waitForTimeout(800)
