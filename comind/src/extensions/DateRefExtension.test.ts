@@ -5,6 +5,7 @@ import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
 import { DateRefExtension, DATE_REF_CLICK_EVENT } from './DateRefExtension'
 import type { DateRefClickPayload } from './DateRefExtension'
+import { WikiLinkExtension } from './WikiLinkExtension'
 
 interface DecoratedEditor {
   editor: Editor

@@ -10,6 +10,7 @@ interface PairConfig {
 const PAIRS: PairConfig[] = [
   { open: '[', close: ']' },
   { open: '(', close: ')' },
+  { open: '{', close: '}' },
 ]
 
 const pluginKey = new PluginKey('bracketPair')

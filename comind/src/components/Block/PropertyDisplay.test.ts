@@ -33,11 +33,11 @@ describe('PropertyDisplay', () => {
   it('renders properties when they exist', () => {
     const mockStore = {
       getBlockProperties: vi.fn().mockReturnValue([
-        { id: 'p1', key: 'deadline', value: '2024-06-01', type: 'date' },
+        { id: 'p1', key: 'area', value: '个人', type: 'string' },
         { id: 'p2', key: 'project', value: 'Test Project', type: 'string' }
       ]),
       getPropertyDef: vi.fn((key: string) => {
-        if (key === 'deadline') return { key: 'deadline', title: '截止日期', isBuiltIn: true, displayPosition: 'bottom-of-block' }
+        if (key === 'area') return { key: 'area', title: '领域', isBuiltIn: true, displayPosition: 'bottom-of-block' }
         if (key === 'project') return { key: 'project', title: '项目', isBuiltIn: true, displayPosition: 'bottom-of-block' }
         return undefined
       })
@@ -48,8 +48,8 @@ describe('PropertyDisplay', () => {
       props: { blockId: 'block-1' }
     })
 
-    expect(wrapper.text()).toContain('截止日期')
-    expect(wrapper.text()).toContain('2024-06-01')
+    expect(wrapper.text()).toContain('领域')
+    expect(wrapper.text()).toContain('个人')
     expect(wrapper.text()).toContain('项目')
     expect(wrapper.text()).toContain('Test Project')
   })
@@ -57,11 +57,11 @@ describe('PropertyDisplay', () => {
   it('hides properties where isHidden is true', () => {
     const mockStore = {
       getBlockProperties: vi.fn().mockReturnValue([
-        { id: 'p1', key: 'deadline', value: '2024-06-01', type: 'date', isHidden: false },
+        { id: 'p1', key: 'area', value: '个人', type: 'string', isHidden: false },
         { id: 'p2', key: 'project', value: 'Test Project', type: 'string', isHidden: true }
       ]),
       getPropertyDef: vi.fn((key: string) => {
-        if (key === 'deadline') return { key: 'deadline', title: '截止日期', isBuiltIn: true, displayPosition: 'bottom-of-block' }
+        if (key === 'area') return { key: 'area', title: '领域', isBuiltIn: true, displayPosition: 'bottom-of-block' }
         if (key === 'project') return { key: 'project', title: '项目', isBuiltIn: true, displayPosition: 'bottom-of-block' }
         return undefined
       })
@@ -72,7 +72,7 @@ describe('PropertyDisplay', () => {
       props: { blockId: 'block-1' }
     })
 
-    expect(wrapper.text()).toContain('截止日期')
+    expect(wrapper.text()).toContain('领域')
     expect(wrapper.text()).not.toContain('项目')
     expect(wrapper.text()).not.toContain('Test Project')
   })
@@ -80,10 +80,10 @@ describe('PropertyDisplay', () => {
   it('applies built-in property styling', () => {
     const mockStore = {
       getBlockProperties: vi.fn().mockReturnValue([
-        { id: 'p1', key: 'deadline', value: '2024-06-01', type: 'date' }
+        { id: 'p1', key: 'area', value: '个人', type: 'string' }
       ]),
       getPropertyDef: vi.fn().mockReturnValue({
-        key: 'deadline', title: '截止日期', isBuiltIn: true, displayPosition: 'bottom-of-block'
+        key: 'area', title: '领域', isBuiltIn: true, displayPosition: 'bottom-of-block'
       })
     }
     vi.mocked(usePropertyStore).mockReturnValue(mockStore as any)

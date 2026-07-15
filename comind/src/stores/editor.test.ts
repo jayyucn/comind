@@ -158,6 +158,70 @@ describe('useEditorStore', () => {
     })
   })
 
+  describe('dateRef 编辑面板', () => {
+    test('初始 dateRefEditor 为 null', () => {
+      const store = useEditorStore()
+      expect(store.dateRefEditor).toBeNull()
+    })
+
+    test('openDateRefEditor 打开面板并填充状态', () => {
+      const store = useEditorStore()
+      store.openDateRefEditor({
+        blockId: 'block-1',
+        from: 10,
+        to: 30,
+        kind: 'deadline',
+        iso: '2026-07-15T14:00',
+        recurrence: 'weekly',
+        position: { x: 200, y: 300 },
+      })
+      expect(store.dateRefEditor).toMatchObject({
+        visible: true,
+        blockId: 'block-1',
+        from: 10,
+        to: 30,
+        kind: 'deadline',
+        iso: '2026-07-15T14:00',
+        recurrence: 'weekly',
+        position: { x: 200, y: 300 },
+      })
+    })
+
+    test('openDateRefEditor 无 blockId 时为 null', () => {
+      const store = useEditorStore()
+      store.openDateRefEditor({
+        blockId: null,
+        from: 5,
+        to: 5,
+        kind: 'schedule',
+        iso: '2026-07-20',
+        recurrence: 'none',
+        position: { x: 0, y: 0 },
+      })
+      expect(store.dateRefEditor?.blockId).toBeNull()
+    })
+
+    test('closeDateRefEditor 关闭面板（visible=false）', () => {
+      const store = useEditorStore()
+      store.openDateRefEditor({
+        blockId: 'b',
+        from: 0,
+        to: 0,
+        kind: 'schedule',
+        iso: '2026-07-15',
+        recurrence: 'none',
+        position: { x: 0, y: 0 },
+      })
+      store.closeDateRefEditor()
+      expect(store.dateRefEditor?.visible).toBe(false)
+    })
+
+    test('closeDateRefEditor 在面板未打开时不报错', () => {
+      const store = useEditorStore()
+      expect(() => store.closeDateRefEditor()).not.toThrow()
+    })
+  })
+
   describe('快捷属性编辑器', () => {
     test('初始 quickPropertyEditor 为 null', () => {
       const store = useEditorStore()

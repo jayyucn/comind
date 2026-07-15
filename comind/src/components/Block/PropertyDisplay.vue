@@ -16,6 +16,8 @@ const visibleProperties = computed<Property[]>(() => {
   const all = propertyStore.getBlockProperties(props.blockId)
   return all.filter(prop => {
     if (prop.isHidden) return false
+    // T14: deadline/scheduled 已内联为 dateRef，不在属性面板展示
+    if (prop.key === 'deadline' || prop.key === 'scheduled') return false
     const def = propertyStore.getPropertyDef(prop.key)
     // 显示内置属性（displayPosition === 'bottom-of-block'）和所有自定义属性
     return def?.displayPosition === 'bottom-of-block' || !def?.isBuiltIn
@@ -61,9 +63,6 @@ function getIcon(key: string, value: Property['value']): string | null {
     }
   }
   switch (key) {
-    case 'deadline':
-    case 'scheduled':
-      return '📅'
     case 'tags':
       return '🏷️'
     case 'project':
@@ -84,8 +83,6 @@ function getLabel(key: string, value: Property['value']): string {
     }
   }
   switch (key) {
-    case 'deadline':
-    case 'scheduled':
     case 'project':
     case 'area':
       return String(value)

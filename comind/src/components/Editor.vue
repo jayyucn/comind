@@ -10,6 +10,7 @@ import EnterAsBlockExtension from '../extensions/EnterAsBlockExtension'
 import BracketPairExtension from '../extensions/BracketPairExtension'
 import { SlashCommandExtension } from '../extensions/SlashCommandExtension'
 import { HeadingPreviewExtension } from '../extensions/HeadingPreviewExtension'
+import { DateRefExtension } from '../extensions/DateRefExtension'
 import { usePageStore } from '../stores/pages'
 import { useRelationshipMenu } from '../composables/useRelationshipMenu'
 import { debounce } from '../utils/debounce'
@@ -244,6 +245,7 @@ const editor = shallowRef(useEditor({
     RelationshipTriggerExtension,
     BracketPairExtension,
     HeadingPreviewExtension,
+    DateRefExtension,
   ],
   content: textToHtml(props.content),
   autofocus: false,

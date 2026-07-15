@@ -253,7 +253,23 @@ async function executeCommand(command: Command) {
     return
   }
 
-  // 执行普通命令（如 /today, /tomorrow 等）
+  // 处理 /schedule 和 /deadline — 打开 DateTimePickerPanel
+  if (command.id === 'schedule' || command.id === 'deadline') {
+    const rect = new DOMRect(position.value.x, position.value.y, 0, 0)
+    editorStore.openDateRefEditor({
+      blockId: blockId ?? null,
+      from: cursorPosition,
+      to: cursorPosition,
+      source: 'editor',
+      kind: command.id as 'schedule' | 'deadline',
+      iso: new Date().toISOString().slice(0, 10),
+      recurrence: 'none',
+      position: { x: rect.left, y: rect.bottom + 6 },
+    })
+    return
+  }
+
+  // 执行普通命令（如 /time, /date 等）
   // 此时文本已经被清除，光标在 / 符号之前的位置
   // 让命令自己决定如何插入内容
   command.action({

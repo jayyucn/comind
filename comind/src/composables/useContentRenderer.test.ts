@@ -162,21 +162,23 @@ describe('useContentRenderer - typed wiki links', () => {
 })
 
 describe('dateRef 渲染', () => {
-  it('{{schedule:2026-07-15}} 渲染为 date-ref span', () => {
+  it('{{schedule:2026-07-15}} 渲染为 date-ref span（含 data-raw）', () => {
     const html = renderContentToHtml('任务 {{schedule:2026-07-15}}', 'block-1')
     expect(html).toContain('class="date-ref"')
     expect(html).toContain('data-kind="schedule"')
     expect(html).toContain('data-iso="2026-07-15"')
     expect(html).toContain('data-recurrence="none"')
+    expect(html).toContain('data-raw="{{schedule:2026-07-15}}"')
     expect(html).toContain('📅')
   })
 
-  it('{{deadline:2026-07-15T14:00|weekly}} 渲染为带时间+重复的 span', () => {
+  it('{{deadline:2026-07-15T14:00|weekly}} 渲染为带时间+重复的 span（含 data-raw）', () => {
     const html = renderContentToHtml('{{deadline:2026-07-15T14:00|weekly}}', 'block-1')
     expect(html).toContain('class="date-ref"')
     expect(html).toContain('data-kind="deadline"')
     expect(html).toContain('data-iso="2026-07-15T14:00"')
     expect(html).toContain('data-recurrence="weekly"')
+    expect(html).toContain('data-raw="{{deadline:2026-07-15T14:00|weekly}}"')
     expect(html).toContain('⏰')
     expect(html).toContain('每周')
   })

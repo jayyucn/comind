@@ -464,8 +464,8 @@ describe('filterCommands', () => {
   it('按 name 前缀匹配排序（最高优先级）', () => {
     const result = filterCommands('tod')
     expect(result.length).toBeGreaterThan(0)
-    // 'today' 和 'todo' 都以 'tod' 开头，按字母顺序排列
-    expect(result[0].id).toBe('today')
+    // 'todo' 以 'tod' 开头（'today' 已废弃）
+    expect(result[0].id).toBe('todo')
     expect(result.some(c => c.id === 'todo')).toBe(true)
   })
 
@@ -476,12 +476,11 @@ describe('filterCommands', () => {
   })
 
   it('按 name 包含匹配排序', () => {
-    const result = filterCommands('day')
+    const result = filterCommands('date')
     expect(result.length).toBeGreaterThan(0)
-    // Today, Yesterday 都包含 'day'
+    // date 包含 'date'（today/yesterday 已废弃）
     const ids = result.map(c => c.id)
-    expect(ids).toContain('today')
-    expect(ids).toContain('yesterday')
+    expect(ids).toContain('date')
   })
 
   it('按 alias 包含匹配排序', () => {
@@ -491,8 +490,8 @@ describe('filterCommands', () => {
   })
 
   it('大小写不敏感', () => {
-    const lower = filterCommands('today')
-    const upper = filterCommands('TODAY')
+    const lower = filterCommands('date')
+    const upper = filterCommands('DATE')
     expect(lower.map(c => c.id)).toEqual(upper.map(c => c.id))
   })
 
@@ -534,8 +533,10 @@ describe('groupCommands', () => {
     const groups = groupCommands(commands)
     const dateGroup = groups.get('日期时间')
     expect(dateGroup).toBeDefined()
-    expect(dateGroup?.some(c => c.id === 'today')).toBe(true)
+    expect(dateGroup?.some(c => c.id === 'date')).toBe(true)
     expect(dateGroup?.some(c => c.id === 'time')).toBe(true)
+    expect(dateGroup?.some(c => c.id === 'schedule')).toBe(true)
+    expect(dateGroup?.some(c => c.id === 'deadline')).toBe(true)
   })
 
   it('空命令列表返回空 Map', () => {
@@ -558,16 +559,16 @@ describe('groupCommands', () => {
 
 describe('parseCommandInput', () => {
   it('完全匹配命令名', () => {
-    const result = parseCommandInput('today')
+    const result = parseCommandInput('date')
     expect(result.command).not.toBeNull()
-    expect(result.command?.id).toBe('today')
+    expect(result.command?.id).toBe('date')
     expect(result.argument).toBeNull()
   })
 
   it('匹配命令别名', () => {
-    const result = parseCommandInput('今天')
+    const result = parseCommandInput('日期')
     expect(result.command).not.toBeNull()
-    expect(result.command?.id).toBe('today')
+    expect(result.command?.id).toBe('date')
     expect(result.argument).toBeNull()
   })
 
@@ -586,11 +587,11 @@ describe('parseCommandInput', () => {
   })
 
   it('大小写不敏感', () => {
-    const lower = parseCommandInput('today')
-    const upper = parseCommandInput('TODAY')
+    const lower = parseCommandInput('date')
+    const upper = parseCommandInput('DATE')
     // parseCommandInput 实现是大小写敏感的，所以这里测试实际行为
-    expect(lower.command?.id).toBe('today')
-    // TODAY 不会匹配 today（大小写敏感）
+    expect(lower.command?.id).toBe('date')
+    // DATE 不会匹配 date（大小写敏感）
     expect(upper.command).toBeNull()
   })
 
@@ -619,8 +620,8 @@ describe('parseCommandInput', () => {
   })
 
   it('命令名后仅空格无参数', () => {
-    const result = parseCommandInput('today ')
-    expect(result.command?.id).toBe('today')
+    const result = parseCommandInput('date ')
+    expect(result.command?.id).toBe('date')
     expect(result.argument).toBeNull()
   })
 })

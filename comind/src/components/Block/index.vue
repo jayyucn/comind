@@ -23,6 +23,12 @@ import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import { useBlockRegistry } from '../../composables/useBlockRegistry'
 import { useRelationshipMenu } from '../../composables/useRelationshipMenu'
 import { useBlockRelationshipCleanup } from '../../composables/useBlockRelationshipCleanup'
+import {
+  useDateTimePickerPanel,
+  useDateRefClickListener,
+} from '../../composables/useDateTimePickerPanel'
+import type { DateTimePickerConfirm } from '../../composables/useDateTimePickerPanel'
+import DateTimePickerPanel from '../DateTimePickerPanel.vue'
 import './handlers/bullet'
 import './handlers/code'
 import './handlers/image'
@@ -57,6 +63,30 @@ const { navigateToPage } = useNavigateToPage()
 const { getHandler } = useBlockRegistry()
 const relMenu = useRelationshipMenu()
 const relationshipCleanup = useBlockRelationshipCleanup()
+
+// ── dateRef 编辑面板 ────────────────────────────────────────────────────────
+const {
+  visible: dateRefPanelVisible,
+  position: dateRefPanelPosition,
+  kind: dateRefPanelKind,
+  initialIso: dateRefPanelIso,
+  initialRecurrence: dateRefPanelRecurrence,
+  open: openDateRefPanel,
+  close: closeDateRefPanel,
+  handleConfirm: handleDateRefConfirm,
+} = useDateTimePickerPanel()
+
+/** 注册 dateRefClick 监听（全局，在第一个 Block mount 时注册一次） */
+useDateRefClickListener((payload, position) => {
+  openDateRefPanel({ ...payload, position })
+})
+
+/** dateRef 面板确认 → 执行编辑闭环 */
+function onDateRefPanelConfirm(value: DateTimePickerConfirm) {
+  handleDateRefConfirm(value)
+  // syncContent 由 editor blur/save 事件自动触发，此处触发一次保底
+  editorRef.value?.syncContent?.(editorRef.value?.getText?.() ?? '')
+}
 
 const showBlockSelector = ref(false)
 
@@ -339,11 +369,12 @@ watch(collapsed, async (isCollapsed) => {
 /** mousedown：捕获点击坐标，在 tiptap 挂载前通知 editor store */
 function handleContentMousedown(e: MouseEvent) {
   const target = e.target as HTMLElement
-  // .block-link 与 .rel-type-label 都由 handleContentClick 处理点击，
+  // .block-link 与 .rel-type-label 与 .date-ref 都由 handleContentClick 处理点击，
   // 不要让 mousedown 触发 setCursorPos/startTracking 导致 BulletRender 被替换、
   // 进而让后续 click 事件落在新挂载的 Editor 上。
   if (target.closest('.block-link')) return
   if (target.closest('.rel-type-label')) return
+  if (target.closest('.date-ref')) return
 
   if (handler.value?.type === 'embed' && getBlockProperty('sourceBlockId')) {
     e.preventDefault()
@@ -510,6 +541,59 @@ function handleContentClick(e: MouseEvent) {
         blockStore.updateBlockContent(targetBlockId, newContent)
       }
     })
+    return
+  }
+
+  // ── dateRef 阅读态点击（非 PM 编辑器环境，span 由 useContentRenderer 渲染）──
+  const dateRefSpan = target.closest('.date-ref') as HTMLElement | null
+  if (dateRefSpan) {
+    e.preventDefault()
+    const raw = dateRefSpan.dataset.raw
+    const kind = dateRefSpan.dataset.kind as string | undefined
+    const iso = dateRefSpan.dataset.iso
+    const recurrence = dateRefSpan.dataset.recurrence
+    if (!raw || !kind || !iso || !recurrence) return
+
+    // 在 block.content 中查找该 span 对应的 {{...}} 位置
+    // 先数一下该 span 在同级 .block-text 内是第几个 .date-ref（支持重复内容）
+    const blockText = dateRefSpan.closest('.block-text')
+    let occurrence = 0
+    if (blockText) {
+      const allDateRefs = blockText.querySelectorAll('.date-ref')
+      for (let i = 0; i < allDateRefs.length; i++) {
+        if (allDateRefs[i] === dateRefSpan) {
+          occurrence = i
+          break
+        }
+      }
+    }
+
+    const content = blockStore.blocks.find(b => b.id === blockId.value)?.content ?? ''
+    let idx = -1
+    let matchCount = 0
+    const searchPattern = /\x7b\x7b([^:]+):([^\x7d|]+)(?:\|([^\x7d]+))?\x7d\x7d/g
+    let m: RegExpExecArray | null
+    while ((m = searchPattern.exec(content)) !== null) {
+      if (m[0] === raw && matchCount === occurrence) {
+        idx = m.index
+        break
+      }
+      matchCount++
+    }
+    if (idx === -1) return
+
+    openDateRefPanel(
+      {
+        blockId: blockId.value,
+        from: idx,
+        to: idx + raw.length,
+        kind: kind as any,
+        iso,
+        recurrence: recurrence as any,
+        position: { x: e.clientX, y: e.clientY },
+      },
+      'content'
+    )
     return
   }
 
@@ -923,6 +1007,17 @@ async function handlePaste(e: ClipboardEvent) {
       :exclude-block-id="blockId"
       @select="handleEmbedSelect"
       @close="showBlockSelector = false"
+    />
+
+    <!-- dateRef 编辑面板（全局仅渲染一份） -->
+    <DateTimePickerPanel
+      :visible="dateRefPanelVisible"
+      :position="dateRefPanelPosition"
+      :kind="dateRefPanelKind"
+      :initial-iso="dateRefPanelIso"
+      :initial-recurrence="dateRefPanelRecurrence"
+      @confirm="onDateRefPanelConfirm"
+      @cancel="closeDateRefPanel"
     />
   </div>
 </template>

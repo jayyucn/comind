@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, shallowRef } from 'vue'
 import type { Editor } from '@tiptap/vue-3'
+import type { DateRefKind, RecurrenceRule } from '../utils/date-ref'
 
 export const useEditorStore = defineStore('editor', () => {
   const activeBlockId = ref<string | null>(null)
@@ -105,6 +106,42 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
+  /** dateRef 编辑面板状态 */
+  /** dateRef 编辑面板状态
+   * @property source — 'editor' = PM 文档坐标（from/to 是 PM pos）
+   *                  | 'content' = 字符串索引（from/to 是 content 字符串偏移）
+   */
+  const dateRefEditor = ref<{
+    visible: boolean
+    blockId: string | null
+    from: number
+    to: number
+    source: 'editor' | 'content'
+    kind: DateRefKind
+    iso: string
+    recurrence: RecurrenceRule
+    position: { x: number; y: number }
+  } | null>(null)
+
+  function openDateRefEditor(payload: {
+    blockId: string | null
+    from: number
+    to: number
+    source?: 'editor' | 'content'
+    kind: DateRefKind
+    iso: string
+    recurrence: RecurrenceRule
+    position: { x: number; y: number }
+  }) {
+    dateRefEditor.value = { ...payload, source: payload.source ?? 'editor', visible: true }
+  }
+
+  function closeDateRefEditor() {
+    if (dateRefEditor.value) {
+      dateRefEditor.value.visible = false
+    }
+  }
+
   /** 快捷属性编辑器状态 */
   const quickPropertyEditor = ref<{
     visible: boolean
@@ -151,6 +188,9 @@ export const useEditorStore = defineStore('editor', () => {
     hidePropertyEditor,
     quickPropertyEditor,
     showQuickPropertyEditor,
-    hideQuickPropertyEditor
+    hideQuickPropertyEditor,
+    dateRefEditor,
+    openDateRefEditor,
+    closeDateRefEditor,
   }
 })

@@ -39,9 +39,6 @@ function getIcon(key: string, value: Property['value']): string | null {
     }
   }
   switch (key) {
-    case 'deadline':
-    case 'scheduled':
-      return '📅'
     case 'tags':
       return '🏷️'
     case 'project':
@@ -62,8 +59,6 @@ function getLabel(key: string, value: Property['value']): string {
     }
   }
   switch (key) {
-    case 'deadline':
-    case 'scheduled':
     case 'project':
     case 'area':
       return String(value)

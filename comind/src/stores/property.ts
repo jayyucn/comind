@@ -3,6 +3,9 @@ import { ref, computed } from 'vue'
 import { initCoreClient } from '../wasm/client'
 import type { Property, PropertyDefinition, PropertyValue, PropertyType } from '../types/property'
 import { getAllPropertyDefinitions, getPropertyDefinition } from '../types/property'
+import { useBlockStore } from './blocks'
+import { parseDateRefs, serializeDateRef } from '../utils/date-ref'
+import { calculateNextRecurrence } from '../utils/recurrence'
 
 import type { CoreClient } from '../wasm/client'
 
@@ -114,7 +117,7 @@ export const usePropertyStore = defineStore('property', () => {
     const rustProp = await client.setProperty(blockId, key, valueStr, propType)
     
     // 反序列化：string/page 类型 Rust 直接返回字符串，无需 JSON.parse
-    // number/boolean/date/datetime/array 类型 Rust 返回 JSON 编码字符串，需要解析
+    // number/boolean/date/array 类型 Rust 返回 JSON 编码字符串，需要解析
     const parsedType = rustProp.type as PropertyType
     const isPlainStringType = parsedType === 'string' || parsedType === 'page'
     const parsedValue: PropertyValue = isPlainStringType
@@ -136,7 +139,43 @@ export const usePropertyStore = defineStore('property', () => {
     }
     
     await loadBlockProperties(blockId)
+    
+    // T11: 自动推进 dateRef（Done 语义）
+    if (key === 'status' && value === 'Done') {
+      await advanceDateRefInBlock(blockId)
+    }
+    
     return prop
+  }
+
+  /**
+   * T11: 推进 block content 中的 dateRef
+   * 如果 block.content 含带 recurrence 的 dateRef，则推进日期 + 重置 status=Todo
+   */
+  async function advanceDateRefInBlock(blockId: string): Promise<void> {
+    const blockStore = useBlockStore()
+    const block = blockStore.blocks.find(b => b.id === blockId)
+    if (!block || !block.content) return
+    
+    const refs = parseDateRefs(block.content)
+    const refsToAdvance = refs.filter(ref => ref.recurrence && ref.recurrence !== 'none')
+    if (refsToAdvance.length === 0) return
+    
+    // 推进日期
+    let newContent = block.content
+    for (const ref of refsToAdvance) {
+      const nextIso = calculateNextRecurrence(ref.iso, ref.recurrence!)
+      const oldText = serializeDateRef(ref)
+      const newText = serializeDateRef({ kind: ref.kind, iso: nextIso, recurrence: ref.recurrence })
+      newContent = newContent.replace(oldText, newText)
+    }
+    
+    // 更新 content
+    await blockStore.updateBlockContent(blockId, newContent)
+    
+    // 重置 status 为 Todo（递归调用 setProperty 会再次触发 advanceDateRefInBlock，
+    // 但此时 content 已无带 recurrence 的 dateRef，所以不会无限循环）
+    await setProperty(blockId, 'status', 'Todo', 'string')
   }
 
   function inferType(value: PropertyValue): PropertyType {
@@ -191,6 +230,7 @@ export const usePropertyStore = defineStore('property', () => {
     deleteProperty,
     updateSortOrder,
     toggleHidden,
-    clearBlockCache
+    clearBlockCache,
+    advanceDateRefInBlock
   }
 })

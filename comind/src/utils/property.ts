@@ -26,22 +26,12 @@ export function formatPropertyValue(
 
       case 'date': {
         const dateStr = String(value).trim()
-        // YYYY-MM-DD format
-        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr
-        // Try to parse and format
-        const date = new Date(dateStr)
-        if (isNaN(date.getTime())) return null
-        const y = date.getFullYear()
-        const m = String(date.getMonth() + 1).padStart(2, '0')
-        const d = String(date.getDate()).padStart(2, '0')
-        return `${y}-${m}-${d}`
-      }
-
-      case 'datetime': {
-        const dateStr = String(value).trim()
-        const date = new Date(dateStr)
-        if (isNaN(date.getTime())) return null
-        return date.toISOString()
+        // YYYY-MM-DD or YYYY-MM-DDTHH:mm format
+        if (dateStr.length >= 10) {
+          const d = new Date(dateStr)
+          if (!isNaN(d.getTime())) return dateStr.slice(0, 10)
+        }
+        return null
       }
 
       case 'array':
@@ -79,8 +69,6 @@ export function inferPropertyType(value: string): PropertyType {
   if (/^\d+$/.test(trimmed) || /^\d+\.\d+$/.test(trimmed)) return 'number'
 
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return 'date'
-
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(trimmed)) return 'datetime'
 
   // page 类型检查必须在 array 类型之前，因为 [[页面名]] 同时满足 startsWith('[')
   if (trimmed.startsWith('[[') && trimmed.endsWith(']]')) return 'page'

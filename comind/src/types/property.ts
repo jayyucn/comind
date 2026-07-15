@@ -3,7 +3,7 @@ import { TASK_PRIORITY_ICONS, TASK_STATUS_ICONS } from "../components/Icons"
 /**
  * 属性类型
  */
-export type PropertyType = 'string' | 'number' | 'boolean' | 'date' | 'datetime' | 'array' | 'page'
+export type PropertyType = 'string' | 'number' | 'boolean' | 'date' | 'array' | 'page'
 
 /**
  * 封闭值选项
@@ -40,7 +40,6 @@ export type PropertyValueMap = {
   number: number
   boolean: boolean
   date: string
-  datetime: string
   array: string[]
   page: string
 }
@@ -113,22 +112,6 @@ export const BUILT_IN_PROPERTIES: PropertyDefinition[] = [
       { value: 'High', label: '高', description: '紧急不重要', icon: TASK_PRIORITY_ICONS.High },
       { value: 'Urgent', label: '急', description: '紧急且重要', icon: TASK_PRIORITY_ICONS.Urgent },
     ],
-  },
-  {
-    key: 'deadline',
-    title: '截止日期',
-    type: 'date',
-    isBuiltIn: true,
-    displayPosition: 'bottom-of-block',
-    displayStyle: 'icon-text',
-  },
-  {
-    key: 'scheduled',
-    title: '计划日期',
-    type: 'date',
-    isBuiltIn: true,
-    displayPosition: 'bottom-of-block',
-    displayStyle: 'icon-text',
   },
   {
     key: 'project',

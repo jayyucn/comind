@@ -4,6 +4,7 @@ import {
   formatDateRefDisplay,
   parseDateRefs,
   normalizeRecurrence,
+  serializeDateRef,
   type DateRef,
 } from '../utils/date-ref'
 
@@ -68,10 +69,12 @@ export function useContentRenderer() {
         recurrence: normalizeRecurrence(rec),
       }
       const display = formatDateRefDisplay(ref)
+      const serialized = serializeDateRef(ref)
       return `<span class="${CSS_CLASSES.dateRef}" ` +
         `data-kind="${escapeHtmlEntities(kind)}" ` +
         `data-iso="${escapeHtmlEntities(iso.trim())}" ` +
-        `data-recurrence="${escapeHtmlEntities(ref.recurrence)}">` +
+        `data-recurrence="${escapeHtmlEntities(ref.recurrence)}" ` +
+        `data-raw="${escapeHtmlEntities(serialized)}">` +
         `${escapeHtmlEntities(display)}</span>`
     })
   }

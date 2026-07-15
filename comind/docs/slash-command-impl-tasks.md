@@ -103,7 +103,7 @@ T16 测试与验证（依赖全部）
 - **依赖**：T6
 - **验收**：store 状态变化可驱动面板开关
 
-### T8 · 编辑态点击编辑闭环（修改）
+### T8 · 编辑态点击编辑闭环 ✅ 完成
 - **文件**：`src/extensions/DateRefExtension.ts` + `src/stores/editor.ts` + 编辑器命令
 - **目标**：点击编辑态 dateRef → 弹面板 → 确认后改 content
 - **内容**：
@@ -111,17 +111,23 @@ T16 测试与验证（依赖全部）
   - 面板 confirm → 用 `editor.chain().insertContentAt({from, to}, serializeDateRef(newVal))` 替换文档区间
   - 替换后 ProseMirror `tr.mapping` 自动重渲染 Decoration
 - **依赖**：T4, T6, T7
-- **验收**：点 dateRef → 弹面板（预填旧值）→ 改 → content 更新、装饰重渲染
+- **验收**：✅ 已完成 — 133 项相关测试全通过
+  - `insertContentAt` 替换 `[from, to]` 区间
+  - `serializeDateRef` 生成 `{{kind:iso|rec}}` 语法
+  - 关闭面板
 - **注意**：操作在 **PM 文档坐标**，不是字符串 replace（content 编辑时是 PM doc）
 
-### T9 · 阅读态点击编辑闭环（修改）
+### T9 · 阅读态点击编辑闭环 ✅ 完成
 - **文件**：`src/composables/useContentRenderer.ts` + 渲染容器事件
 - **目标**：阅读态点击 dateRef 也能编辑
 - **内容**：span 绑定 click → 从 `data-*` 取值 + 计算该 span 在 content 字符串中的区间 → 打开面板 → 确认后字符串替换并保存 block
 - **依赖**：T5, T7
-- **验收**：阅读态点击触发编辑，保存后 content 含新 `{{...}}`
+- **验收**：✅ 已完成 — 138 项相关测试全通过
+  - `data-raw` 存储原始 `{{...}}` → 精确定位字符串 index
+  - `source: 'content'` → 字符串替换 + blockStore.save
+  - 支持重复 dateRef 内容（occurrence 计数）
 
-### T10 · 斜杠命令集成（修改）
+### T10 · 斜杠命令集成 ✅ 完成
 - **文件**：`src/composables/useSlashCommands.ts`（已存在）+ `src/components/SlashCommandMenu.vue`（已存在）
 - **目标**：三条命令插入正确语法；废弃命令处理
 - **内容**：
@@ -131,13 +137,16 @@ T16 测试与验证（依赖全部）
   - `/time` → 插入 `HH:mm`（保留）
   - 废弃 `/today` `/tomorrow` `/yesterday`：从菜单移除，或重定向提示用 `/date`
 - **依赖**：T2, T6, T7
-- **验收**：三条命令插入正确语法；废弃命令不可见/有提示
+- **验收**：✅ 已完成 — 150 项相关测试全通过
+  - `/date` → 插入 `[[YYYY-MM-DD]]` WikiLink
+  - `/schedule` `/deadline` → 打开 DateTimePickerPanel → 插入 `{{kind:...}}`
+  - `/today` `/tomorrow` `/yesterday` 已从命令列表移除（废弃）
 
 ---
 
 ## Phase 3 · 索引与推进
 
-### T11 · 自动推进（Done 语义）（修改）
+### T11 · 自动推进（Done 语义） ✅ 完成
 - **文件**：状态切换 action 所在（定位 `stores/blocks.ts` 或 task 相关 action）
 - **目标**：带 recurrence 的任务标记 Done 时，dateRef 自动推进 + status 重置 Todo
 - **内容**：
@@ -151,10 +160,12 @@ T16 测试与验证（依赖全部）
   ```
   - markDone：若 content 含带 recurrence 的 dateRef → 替换 content；status 重置 Todo（status 是外部属性）
 - **依赖**：T1, T3
-- **验收**：带 weekly 的任务 Done 后日期+7、status=Todo；无 recurrence 不动
-- **风险**：需先定位 markDone 实际位置（可能在 blocks-store 或独立 task action）
+- **验收**：✅ 已完成 — 6 项测试全通过
+  - `status=Done` + content 含 recurrence → 推进日期 + status 重置 Todo
+  - `status=Done` + content 无 recurrence → 不推进
+  - 支持 weekly/daily/monthly/yearly
 
-### T12 · date-ref 索引（新建）
+### T12 · date-ref 索引 ✅ 完成
 - **文件**：`src/services/date-ref-index.ts`
 - **目标**：支撑日历视图 / 按日期筛选
 - **内容**：
@@ -162,35 +173,37 @@ T16 测试与验证（依赖全部）
   - 增量更新：content 变更时更新对应 block 条目
   - 查询 API：`queryByDateRange(kind, from, to)` / `queryOverdue()`
 - **依赖**：T1
-- **验收**：索引与 content 一致；查询返回正确 block 列表
+- **验收**：✅ 已完成 — 22 项测试全通过
+  - DateRefIndex 类（byBlock + byKind 双 Map）
+  - 增量 update 支持（内容变更时同步）
+  - 查询：queryByDateRange / queryOverdue / queryByDate
 
 ---
 
 ## Phase 4 · 清理与迁移
 
-### T13 · property store 清理（修改）
+### T13 · property store 清理 ✅ 完成
 - **文件**：`src/stores/property.ts`（已存在）+ `src/types/property.ts`（已存在）
 - **目标**：日期类属性从外部属性系统移除，仅留 status/priority
 - **内容**：
   - `setProperty` 不再处理 deadline/scheduled/recurrence
   - 删除 `types/property.ts` 中 datetime 类型定义
 - **依赖**：T11（推进不再依赖 property）
-- **验收**：setProperty 拒绝日期类；status/priority 行为不变
+- **验收**：✅ 已完成 — setProperty 拒绝日期类；status/priority 行为不变；TS 通过；全量 57 失败（-1，PropertyDisplay 测试修复）
 
-### T14 · 展示组件清理（修改）
+### T14 · 展示组件清理 ✅ 完成
 - **文件**：`PropertyInline.vue` / `PropertyDisplay.vue`（定位确认路径）
 - **目标**：移除日期右侧徽章显示（改由 DateRefExtension 内联）
 - **内容**：删除 deadline/scheduled/recurrence 显示逻辑
 - **依赖**：T13
-- **验收**：日期不再以右侧徽章出现；status/priority 徽章保留
+- **验收**：✅ 已完成 — 日期不再以右侧徽章出现；status/priority 徽章保留；全量 56 失败（再 -1）
 
-### T15 · 存量数据迁移（条件执行）
-- **文件**：迁移脚本（新建，或 `services/migrate.ts`）
+### T15 · 存量数据迁移 ✅ 完成（脚本就绪）
+- **文件**：`src/services/migrate.ts` + `src/services/__tests__/migrate.test.ts`
 - **目标**：若已有 block 用 properties.deadline/scheduled/recurrence，转为 content 中 `{{...}}`
 - **内容**：扫描 → 拼接 `{{kind:iso|rec}}` 插入 content 开头 → 清除 properties 日期字段
 - **依赖**：T1, T13
-- **验收**：迁移后 properties 无日期字段，content 含 `{{...}}`；幂等可重跑
-- **注意**：当前项目为空（仅 README），若确认无存量数据可跳过
+- **验收**：✅ 10/10 测试通过，TS 编译通过，幂等可重跑
 
 ---
 

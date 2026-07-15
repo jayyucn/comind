@@ -7,6 +7,7 @@ import { useEditorStore } from '../stores/editor'
 import { usePageStore } from '../stores/pages'
 import { useTemplateRegistry } from './useTemplateRegistry'
 import { TemplateRenderer } from '../services/template-renderer'
+import { formatDateRefDisplay } from '../utils/date-ref'
 
 /**
  * 格式化日期为 YYYY-MM-DD
@@ -70,15 +71,26 @@ function insertTime({ editor, range }: CommandProps) {
 }
 
 /**
- * 插入日期选择器占位符
+ * 打开 DateTimePicker 面板，用于 /schedule 和 /deadline 命令
+ * 确认后插入 {{kind:iso|recurrence}} 格式
  */
-function insertDatePicker({ editor, range }: CommandProps) {
-  const today = formatDate(new Date())
-  editor.chain()
-    .deleteRange(range)
-    .insertContent(`[[${today}]]`)
-    .focus()
-    .run()
+function openDatePickerForKind(kind: 'schedule' | 'deadline') {
+  return ({ editor, range, blockId }: CommandProps) => {
+    const editorStore = useEditorStore()
+    const today = formatDate(new Date())
+    
+    // 打开 DateTimePickerPanel，设置默认值
+    editorStore.openDateRefEditor({
+      blockId: blockId ?? null,
+      from: range.from,
+      to: range.to,
+      source: 'editor',
+      kind,
+      iso: today,
+      recurrence: 'none',
+      position: { x: 0, y: 0 }, // 实际位置由 SlashCommandMenu 或 Block.vue 设置
+    })
+  }
 }
 
 /**
@@ -256,30 +268,8 @@ async function insertConcept({ editor, range, blockId }: { editor: any, range: {
  */
 export const commands: Command[] = [
   // 日期时间
-  {
-    id: 'today',
-    name: 'Today',
-    alias: ['今天', 'date'],
-    group: '日期时间',
-    icon: '📆',
-    action: insertToday
-  },
-  {
-    id: 'tomorrow',
-    name: 'Tomorrow',
-    alias: ['明天'],
-    group: '日期时间',
-    icon: '📅',
-    action: insertTomorrow
-  },
-  {
-    id: 'yesterday',
-    name: 'Yesterday',
-    alias: ['昨天'],
-    group: '日期时间',
-    icon: '📅',
-    action: insertYesterday
-  },
+  // `/today` `/tomorrow` `/yesterday` 已废弃，用户应使用 /date 或 /schedule
+  // 保留 `/time` — 插入当前时间 HH:mm
   {
     id: 'time',
     name: 'Time',
@@ -288,13 +278,32 @@ export const commands: Command[] = [
     icon: '⏰',
     action: insertTime
   },
+  // `/date` — 插入 WikiLink 格式的日期 [[YYYY-MM-DD]]
   {
-    id: 'date-picker',
-    name: 'Date picker',
-    alias: ['日期选择'],
+    id: 'date',
+    name: 'Date',
+    alias: ['日期', '日期选择', 'date-picker'],
     group: '日期时间',
     icon: '🗓️',
-    action: insertDatePicker
+    action: insertToday // 复用现有 insertToday（插入 [[...]]）
+  },
+  // `/schedule` — 打开 DateTimePicker 面板，插入 {{schedule:...}}
+  {
+    id: 'schedule',
+    name: 'Schedule',
+    alias: ['计划日期', 'sched'],
+    group: '日期时间',
+    icon: '📅',
+    action: openDatePickerForKind('schedule'),
+  },
+  // `/deadline` — 打开 DateTimePicker 面板，插入 {{deadline:...}}
+  {
+    id: 'deadline',
+    name: 'Deadline',
+    alias: ['截止日期', 'due'],
+    group: '日期时间',
+    icon: '⏰',
+    action: openDatePickerForKind('deadline'),
   },
 
   // 任务状态（立即执行）
@@ -398,28 +407,8 @@ export const commands: Command[] = [
     propertyKey: 'priority',
     openEditor: true
   },
-  {
-    id: 'deadline',
-    name: 'Deadline',
-    alias: ['截止日期', 'due'],
-    group: '属性',
-    icon: '📅',
-    action: () => {},
-    propertyKey: 'deadline',
-    openEditor: true,
-    acceptArgument: true
-  },
-  {
-    id: 'scheduled',
-    name: 'Scheduled',
-    alias: ['计划日期', 'sched'],
-    group: '属性',
-    icon: '📅',
-    action: () => {},
-    propertyKey: 'scheduled',
-    openEditor: true,
-    acceptArgument: true
-  },
+  // deadline 和 scheduled 已移至"日期时间"分组，作为 dateRef 插入命令
+  // 不再作为属性命令（属性面板仍可设置 deadline/scheduled 属性）
   {
     id: 'project',
     name: 'Project',
