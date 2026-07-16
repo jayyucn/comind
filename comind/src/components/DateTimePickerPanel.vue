@@ -38,8 +38,16 @@ const today = computed(() => {
   return d.toISOString().slice(0, 10)
 })
 
+const currentYear = computed(() => new Date().getFullYear())
+
 const calendarYear = ref(2026)
 const calendarMonth = ref(6)
+
+// 年份下拉选项：前后各扩展 10 年
+const yearOptions = computed(() => {
+  const y = currentYear.value
+  return Array.from({ length: 21 }, (_, i) => y - 10 + i)
+})
 
 const weekDays = ['一', '二', '三', '四', '五', '六', '日']
 
@@ -236,7 +244,10 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown, true))
               </select>
             </div>
             <span class="dtp-calendar-title">
-              {{ calendarYear }}年 {{ monthNames[calendarMonth] }}
+              <select v-model="calendarYear" class="dtp-year-select">
+                <option v-for="y in yearOptions" :key="y" :value="y">{{ y }}年</option>
+              </select>
+              {{ monthNames[calendarMonth] }}
             </span>
             <div class="dtp-calendar-nav-group">
               <button class="dtp-calendar-nav" @click="prevMonth">
@@ -449,6 +460,37 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown, true))
   font-size: 13px;
   font-weight: 500;
   color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dtp-year-select {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--accent);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 2px 20px 2px 6px;
+  font-family: inherit;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%233b82f6' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 5px center;
+  background-size: 10px;
+  min-width: 72px;
+}
+
+.dtp-year-select:hover {
+  border-color: var(--border-strong);
+}
+
+.dtp-year-select:focus {
+  border-color: var(--accent);
 }
 
 .dtp-calendar-weekdays {

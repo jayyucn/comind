@@ -75,13 +75,19 @@ function recurrenceLabel(rec: RecurrenceRule): string {
 
 /**
  * 本地 ISO → 展示文本
- *   2026-07-15T14:00 → 07-15 14:00
- *   2026-07-15       → 07-15
+ *   不是今年：   2025-07-15T14:00 → 2025-07-15 14:00
+ *              2025-07-15       → 2025-07-15
+ *   今年：      2026-07-15T14:00 → 07-15 14:00
+ *              2026-07-15       → 07-15
  */
 export function formatIsoDisplay(iso: string): string {
   const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2}))?/)
   if (!m) return iso
-  const [, , mm, dd, hh, min] = m
+  const [full, year, mm, dd, hh, min] = m
   const time = hh !== undefined ? ` ${hh}:${min}` : ''
+  const now = new Date()
+  if (parseInt(year, 10) !== now.getFullYear()) {
+    return `${year}-${mm}-${dd}${time}`
+  }
   return `${mm}-${dd}${time}`
 }
