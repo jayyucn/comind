@@ -267,7 +267,8 @@ async function executeCommand(command: Command) {
         const hasSameKind = existingRefs.some(r => r.kind === kind)
         if (hasSameKind) {
           const kindLabel = kind === 'schedule' ? '计划时间' : '截止时间'
-          editorStore.showToast(`该任务已有${kindLabel}，如需重复请使用重复规则`, 'warning')
+          const toastStr = `该任务已有${kindLabel}${kind === 'schedule' ? '，如需重复请使用重复规则' : ''}`
+          editorStore.showToast(toastStr, 'warning')
           close()
           return
         }

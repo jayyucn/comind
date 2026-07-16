@@ -35,6 +35,26 @@ export function computeDatePickerPosition(dateRefEl: HTMLElement): { x: number; 
   return { x: refRect.left, y: blockRect.bottom + DATE_PICKER_BOTTOM_OFFSET }
 }
 
+/** 去掉 content 中多余的 kind 类型 date-ref，仅保留第一个 */
+export function deduplicateDateRef(content: string, kind: string): string {
+  const re = /\{\{([^:]+):([^\|]+)(?:\|([^\}]+))?\}\}/g
+  const parts: string[] = []
+  let lastIndex = 0
+  let count = 0
+  let m: RegExpExecArray | null
+  while ((m = re.exec(content)) !== null) {
+    if (m[1] === kind) {
+      count++
+      if (count > 1) {
+        parts.push(content.slice(lastIndex, m.index))
+        lastIndex = m.index + m[0].length
+      }
+    }
+  }
+  parts.push(content.slice(lastIndex))
+  return parts.join('')
+}
+
 /** 暴露给外部的状态和回调 */
 export function useDateTimePickerPanel() {
   const editorStore = useEditorStore()
@@ -98,13 +118,15 @@ export function useDateTimePickerPanel() {
       // T8: 替换 PM 文档中的 [from, to] 区间
       editor.chain().insertContentAt({ from, to }, newText).run()
     } else {
-      // T9: 替换阅读态 block content 字符串
+      // T9: 替换阅读态 block content 字符串，并去重
       const blockStore = useBlockStore()
       if (blockId) {
         const block = blockStore.blocks.find(b => b.id === blockId)
         if (block) {
-          const newContent =
+          let newContent =
             block.content.slice(0, from) + newText + block.content.slice(to)
+          // 切换 kind 时去重：确保同种 ref 仅剩当前这条
+          newContent = deduplicateDateRef(newContent, value.kind)
           blockStore.updateBlockContent(blockId, newContent)
         }
       }

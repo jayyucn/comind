@@ -2,6 +2,8 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { Calendar, Clock, Repeat, Check, ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { useEditorStore } from '../stores/editor'
+import { useBlockStore } from '../stores/blocks'
+import { parseDateRefs } from '../utils/date-ref'
 import type { DateRefKind, RecurrenceRule } from '../utils/date-ref'
 
 export interface DateTimePickerConfirm {
@@ -141,9 +143,31 @@ watch(
   }
 )
 
-watch(localKind, (newKind) => {
+let kindGuard = false
+
+watch(localKind, (newKind, oldKind) => {
+  if (kindGuard) { kindGuard = false; return }
+
   if (newKind === 'deadline') {
     localRecurrence.value = 'none'
+  }
+
+  // 切换 kind 时：确认 block 尚未有同种 date-ref，避免创建重复命令
+  if (oldKind !== undefined && newKind !== oldKind) {
+    const state = editorStore.dateRefEditor
+    if (state && state.blockId) {
+      const blockStore = useBlockStore()
+      const block = blockStore.blocks.find(b => b.id === state.blockId)
+      if (block) {
+        const refs = parseDateRefs(block.content)
+        if (refs.some(r => r.kind === newKind)) {
+          const label = newKind === 'deadline' ? '截止时间' : '计划时间'
+          editorStore.showToast(`该任务已有${label}`, 'warning')
+          kindGuard = true
+          localKind.value = oldKind
+        }
+      }
+    }
   }
 })
 
