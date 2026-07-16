@@ -364,20 +364,27 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown))
   font-size: 12px;
   font-weight: 500;
   color: var(--text-secondary);
-  border: none;
-  background: transparent;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 6px;
   cursor: pointer;
-  padding: 0;
+  padding: 3px 24px 3px 6px;
   font-family: inherit;
   outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  background-size: 12px;
 }
 
 .dtp-kind-select:hover {
-  color: var(--text-primary);
+  border-color: var(--border-strong);
 }
 
 .dtp-kind-select:focus {
-  outline: none;
+  border-color: var(--accent);
 }
 
 .dtp-calendar-nav-group {
