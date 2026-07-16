@@ -462,6 +462,10 @@ export const useBlockStore = defineStore('blocks', () => {
     const textOffset = pmPosToTextOffset(cursorPos)
     const contentLen = block.content.length
 
+    // ── 获取原 block 的 status（新 block 也加 todo）────────────────────────
+    const propertyStore = usePropertyStore()
+    const hasSourceStatus = !!propertyStore.getBlockProperty(blockId, 'status')
+
     // ── 位置判断 ─────────────────────────────────────────────────────────
     // 空行（contentLen === 0）应视作行尾，插入子节点而非兄弟节点
     const isEmptyLine = contentLen === 0
@@ -473,38 +477,50 @@ export const useBlockStore = defineStore('blocks', () => {
     // 单字符（contentLen === 1）：cursorPos 只能在 1（行首）或 2（行尾）
     // 这两种情况都被上面的条件正确覆盖，无需额外处理
 
+    let newBlock: Block | null = null
+
     // ── 情况1：行首位置 ─────────────────────────────────────────────────
     if (isAtLineStart) {
       // 在当前节点紧邻上方插入新的兄弟节点
-      return insertSiblingAbove(block, blockFormat)
-    }
-
-    // ── 情况2/3：行尾或文本中间 ────────────────────────────────────────
-    // 获取子节点用于判断插入位置
-    const childBlocks = getChildren(block.id)
-    const hasExpandedChildren = !isCollapsed && childBlocks.length > 0
-
-    // 确定新节点的 parentId
-    // - 有展开的子节点 → 作为第一个子节点（parentId = block.id）
-    // - 其他情况 → 作为下方兄弟节点（parentId = block.parentId）
-    const newParentId = hasExpandedChildren ? block.id : block.parentId
-
-    if (isInMiddle) {
-      // ── 文本中间：拆分内容 ───────────────────────────────────────────
-      const before = block.content.slice(0, textOffset)
-      const after = block.content.slice(textOffset)
-
-      // 更新当前节点的内容（前半部分）
-      block.content = before
-      block.updatedAt = Date.now()
-      _scheduleSave(block)
-
-      // 在指定位置插入新节点（后半部分）
-      return insertAtPosition(block.pageId, newParentId, after, block, childBlocks, hasExpandedChildren, blockFormat)
+      newBlock = await insertSiblingAbove(block, blockFormat)
     } else {
-      // ── 行尾：无文本拆分 ─────────────────────────────────────────────
-      return insertAtPosition(block.pageId, newParentId, '', block, childBlocks, hasExpandedChildren, blockFormat)
+      // ── 情况2/3：行尾或文本中间 ────────────────────────────────────────
+      // 获取子节点用于判断插入位置
+      const childBlocks = getChildren(block.id)
+      const hasExpandedChildren = !isCollapsed && childBlocks.length > 0
+
+      // 确定新节点的 parentId
+      // - 有展开的子节点 → 作为第一个子节点（parentId = block.id）
+      // - 其他情况 → 作为下方兄弟节点（parentId = block.parentId）
+      const newParentId = hasExpandedChildren ? block.id : block.parentId
+
+      if (isInMiddle) {
+        // ── 文本中间：拆分内容 ───────────────────────────────────────────
+        const before = block.content.slice(0, textOffset)
+        const after = block.content.slice(textOffset)
+
+        // 更新当前节点的内容（前半部分）
+        block.content = before
+        block.updatedAt = Date.now()
+        _scheduleSave(block)
+
+        // 在指定位置插入新节点（后半部分）
+        newBlock = await insertAtPosition(block.pageId, newParentId, after, block, childBlocks, hasExpandedChildren, blockFormat)
+      } else {
+        // ── 行尾：无文本拆分 ─────────────────────────────────────────────
+        newBlock = await insertAtPosition(block.pageId, newParentId, '', block, childBlocks, hasExpandedChildren, blockFormat)
+      }
     }
+
+    // ── 原 block 有 status 时，新 block 加 Todo ───────────────────────────
+    // 注意：需先 _doSave 将新 block 持久化到数据库，否则 setProperty 会因
+    // FOREIGN KEY 约束失败（property 表引用不存在的 block）
+    if (newBlock && hasSourceStatus) {
+      await _doSave(newBlock)
+      await propertyStore.setProperty(newBlock.id, 'status', 'Todo', 'string')
+    }
+
+    return newBlock
   }
 
   /**
