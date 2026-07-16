@@ -123,10 +123,13 @@ const previewText = computed(() => {
   return timePart ? `${mmdd} ${timePart}` : mmdd
 })
 
+let initializingKind = false
+
 watch(
   () => props.visible,
-  (v) => {
+  async (v) => {
     if (v) {
+      initializingKind = true
       localKind.value = props.kind
       const [datePart, timePart] = (props.initialIso || today.value).split('T')
       localDate.value = datePart || today.value
@@ -139,6 +142,10 @@ watch(
         calendarYear.value = y
         calendarMonth.value = m - 1
       }
+
+      // 等 watch(localKind) 的 pre-flush 队列执行完毕后再重置标记
+      await nextTick()
+      initializingKind = false
     }
   }
 )
@@ -148,11 +155,14 @@ let kindGuard = false
 watch(localKind, (newKind, oldKind) => {
   if (kindGuard) { kindGuard = false; return }
 
+  // 初始化阶段（从 props.kind 设置）跳过重复检查
+  if (initializingKind) return
+
   if (newKind === 'deadline') {
     localRecurrence.value = 'none'
   }
 
-  // 切换 kind 时：确认 block 尚未有同种 date-ref，避免创建重复命令
+  // 用户主动切换 kind 时：确认 block 尚未有同种 date-ref，避免创建重复命令
   if (oldKind !== undefined && newKind !== oldKind) {
     const state = editorStore.dateRefEditor
     if (state && state.blockId) {
