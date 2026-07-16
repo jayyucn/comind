@@ -11,7 +11,10 @@ import BracketPairExtension from '../extensions/BracketPairExtension'
 import { SlashCommandExtension } from '../extensions/SlashCommandExtension'
 import { HeadingPreviewExtension } from '../extensions/HeadingPreviewExtension'
 import { DateRefExtension } from '../extensions/DateRefExtension'
+import { DateRefTriggerExtension } from '../extensions/DateRefTriggerExtension'
 import { usePageStore } from '../stores/pages'
+import { useEditorStore } from '../stores/editor'
+import { useDateTimePickerPanel } from '../composables/useDateTimePickerPanel'
 import { useRelationshipMenu } from '../composables/useRelationshipMenu'
 import { debounce } from '../utils/debounce'
 import PageLinkMenu from './PageLinkMenu.vue'
@@ -99,6 +102,31 @@ function handleRelationshipClose(_event: Event) {
   // 扩展在 '(( ' 模式被破坏时（Backspace / 输入字符 / 转义）
   // 派发此事件，关闭关系菜单 UI。
   relMenu.close()
+}
+
+function handleDateRefTrigger(event: Event) {
+  const customEvent = event as CustomEvent<{
+    view: any
+    position: number
+    range: { from: number; to: number }
+    kind: 'schedule' | 'deadline'
+  }>
+  const { position, range, kind } = customEvent.detail
+  const coords = customEvent.detail.view.coordsAtPos(position)
+
+  const { open: openDateRefPanel } = useDateTimePickerPanel()
+  openDateRefPanel(
+    {
+      blockId: null,
+      from: range.from,
+      to: range.to,
+      kind,
+      iso: new Date().toISOString().slice(0, 10),
+      recurrence: 'none',
+      position: { x: coords.left, y: coords.bottom + 6 },
+    },
+    'editor'
+  )
 }
 
 function handleWikiLinkTrigger(event: Event) {
@@ -246,6 +274,7 @@ const editor = shallowRef(useEditor({
     BracketPairExtension,
     HeadingPreviewExtension,
     DateRefExtension,
+    DateRefTriggerExtension,
   ],
   content: textToHtml(props.content),
   autofocus: false,
@@ -297,6 +326,7 @@ onBeforeUnmount(() => {
       view.dom.removeEventListener('enter-as-block', handleEnterAsBlock as EventListener)
       view.dom.removeEventListener('relationship-trigger', handleRelationshipTrigger as EventListener)
       view.dom.removeEventListener('relationship-close', handleRelationshipClose as EventListener)
+      view.dom.removeEventListener('dateRefTrigger', handleDateRefTrigger as EventListener)
     }
   } catch (err) {
     if (err instanceof Error && err.message.includes('editor view is not available')) {
@@ -324,6 +354,7 @@ onMounted(() => {
       editor.value.view.dom.addEventListener('enter-as-block', handleEnterAsBlock as EventListener)
       editor.value.view.dom.addEventListener('relationship-trigger', handleRelationshipTrigger as EventListener)
       editor.value.view.dom.addEventListener('relationship-close', handleRelationshipClose as EventListener)
+      editor.value.view.dom.addEventListener('dateRefTrigger', handleDateRefTrigger as EventListener)
     }
   })
 })

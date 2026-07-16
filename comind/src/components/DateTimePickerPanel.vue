@@ -209,8 +209,8 @@ function onKeyDown(e: KeyboardEvent) {
   }
 }
 
-onMounted(() => document.addEventListener('keydown', onKeyDown))
-onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown))
+onMounted(() => document.addEventListener('keydown', onKeyDown, true))
+onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown, true))
 </script>
 
 <template>

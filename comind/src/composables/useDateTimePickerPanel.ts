@@ -13,6 +13,7 @@ import { DATE_REF_CLICK_EVENT } from '../extensions/DateRefExtension'
 import { serializeDateRef } from '../utils/date-ref'
 import type { DateRefKind, RecurrenceRule, DateRef } from '../utils/date-ref'
 import type { DateRefClickPayload } from '../extensions/DateRefExtension'
+import { closeDateRefMenu } from '../extensions/DateRefTriggerExtension'
 
 export interface DateTimePickerConfirm {
   kind: DateRefKind
@@ -91,14 +92,16 @@ export function useDateTimePickerPanel() {
 
   /**
    * 确认回调：执行 T8 闭环
-   * 1. 用 editor.chain().insertContentAt 替换 PM 文档中的旧 dateRef
-   * 2. 关闭面板
-   * 3. 触发 syncContent（由 Block.vue 处理）
+   * 1. 用 editor.chain().insertContentAt 替换 PM 文档中的旧 dateRef（editor 模式）
+   *    或写入 block.content 字符串（content 模式）
+   * 2. content 模式：切换 kind 时去重
+   * 3. 关闭面板
    */
   function handleConfirm(value: DateTimePickerConfirm) {
     const state = editorStore.dateRefEditor
     if (!state) {
       close()
+      closeDateRefMenu()
       return
     }
 
@@ -111,20 +114,62 @@ export function useDateTimePickerPanel() {
 
     if (source === 'editor') {
       const editor = editorStore.activeEditor
-      if (!editor) {
+      if (!editor || !editor.state?.doc?.content) {
         close()
+        closeDateRefMenu()
         return
       }
-      // T8: 替换 PM 文档中的 [from, to] 区间
-      editor.chain().insertContentAt({ from, to }, newText).run()
+
+      const docSize = editor.state.doc.content.size
+      const cursor = editor.state.selection.from
+
+      // 核心验证：只有当 textBetween(from, to) 真的等于 {{
+      // 才能用 saved range。这样既验证了边界，也验证了内容正确性
+      if (from >= 0 && from < docSize && to > from) {
+        const sliced = editor.state.doc.textBetween(from, to, ' ')
+        if (sliced === '{{') {
+          editor.chain().deleteRange({ from, to }).insertContent(newText).run()
+          close()
+          closeDateRefMenu()
+          return
+        }
+      }
+
+      // saved range 不可用，在光标附近搜索最近的 {{
+      const searchWindow = 30
+      let found = false
+      let resolvedFrom = cursor
+      let resolvedTo = cursor
+
+      editor.state.doc.descendants((node: any, pos: number) => {
+        if (!node.isText || found) return
+        const text = node.text || ''
+        for (let i = 0; i < text.length; i++) {
+          if (text[i] === '{' && i + 1 < text.length && text[i + 1] === '{') {
+            const absFrom = pos + i
+            const absTo = pos + i + 2
+            if (Math.abs(absFrom - cursor) <= searchWindow) {
+              resolvedFrom = absFrom
+              resolvedTo = absTo
+              found = true
+              return false
+            }
+          }
+        }
+      })
+
+      if (found) {
+        editor.chain().deleteRange({ from: resolvedFrom, to: resolvedTo }).insertContent(newText).run()
+      } else {
+        editor.chain().insertContentAt(cursor, newText).run()
+      }
     } else {
       // T9: 替换阅读态 block content 字符串，并去重
       const blockStore = useBlockStore()
       if (blockId) {
         const block = blockStore.blocks.find(b => b.id === blockId)
         if (block) {
-          let newContent =
-            block.content.slice(0, from) + newText + block.content.slice(to)
+          let newContent = block.content.slice(0, from) + newText + block.content.slice(to)
           // 切换 kind 时去重：确保同种 ref 仅剩当前这条
           newContent = deduplicateDateRef(newContent, value.kind)
           blockStore.updateBlockContent(blockId, newContent)
@@ -133,6 +178,7 @@ export function useDateTimePickerPanel() {
     }
 
     close()
+    closeDateRefMenu()
   }
 
   return {

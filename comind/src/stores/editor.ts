@@ -116,6 +116,7 @@ export const useEditorStore = defineStore('editor', () => {
   /** dateRef 编辑面板状态
    * @property source — 'editor' = PM 文档坐标（from/to 是 PM pos）
    *                  | 'content' = 字符串索引（from/to 是 content 字符串偏移）
+   * @property initialKind — 初始 kind，仅用于新插入场景（editor 模式，从 {{ 触发）
    */
   const dateRefEditor = ref<{
     visible: boolean
@@ -127,6 +128,8 @@ export const useEditorStore = defineStore('editor', () => {
     iso: string
     recurrence: RecurrenceRule
     position: { x: number; y: number }
+    /** 仅 editor 模式新插入时有效，告知面板用 initialKind 而非 localKind 做校验 */
+    initialKind?: DateRefKind
   } | null>(null)
 
   function openDateRefEditor(payload: {
@@ -138,6 +141,7 @@ export const useEditorStore = defineStore('editor', () => {
     iso: string
     recurrence: RecurrenceRule
     position: { x: number; y: number }
+    initialKind?: DateRefKind
   }) {
     dateRefEditor.value = { ...payload, source: payload.source ?? 'editor', visible: true }
   }
