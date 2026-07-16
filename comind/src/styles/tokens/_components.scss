@@ -3,6 +3,14 @@
 
 @use 'primitives' as *;
 
+// DateRef 专属色（定义在 mixin 层以便同时用于 light/dark）
+$date-ref-schedule-text: #0EA5E9;
+$date-ref-schedule-bg: rgba(14, 165, 233, 0.08);
+$date-ref-deadline-text: #F59E0B;
+$date-ref-deadline-bg: rgba(245, 158, 11, 0.08);
+$date-ref-overdue-text: #DC2626;
+$date-ref-overdue-bg: rgba(220, 38, 38, 0.08);
+
 :root {
   // Block 组件
   --block-bullet-color: var(--accent);
@@ -42,6 +50,14 @@
   // 滚动条
   --scrollbar-size: 6px;
   --scrollbar-radius: 3px;
+
+  // DateRef 专属色
+  --date-ref-schedule-text: #{$date-ref-schedule-text};
+  --date-ref-schedule-bg: #{$date-ref-schedule-bg};
+  --date-ref-deadline-text: #{$date-ref-deadline-text};
+  --date-ref-deadline-bg: #{$date-ref-deadline-bg};
+  --date-ref-overdue-text: #{$date-ref-overdue-text};
+  --date-ref-overdue-bg: #{$date-ref-overdue-bg};
 }
 
 [data-theme="dark"] {
@@ -61,4 +77,9 @@
   --priority-urgent-bg: rgba(248, 113, 113, 0.16);
 
   --selection-bg: rgba(129, 140, 248, 0.55);
+
+  // DateRef 专属色（暗色模式略调亮）
+  --date-ref-schedule-text: #38BDF8;
+  --date-ref-deadline-text: #FBBF24;
+  --date-ref-overdue-text: #F87171;
 }

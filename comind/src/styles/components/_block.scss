@@ -232,6 +232,45 @@
   }
 }
 
+// DateRef 渲染样式
+// 渲染为：📅 07-16 或 ⏰ 07-16 格式
+.date-ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.9em;
+  line-height: 1.4;
+  transition: background 120ms ease;
+
+  &:hover {
+    filter: brightness(0.95);
+  }
+
+  // Schedule - 天蓝色
+  &[data-kind="schedule"] {
+    color: var(--date-ref-schedule-text);
+    background: var(--date-ref-schedule-bg);
+    border-bottom: 1px solid rgba(14, 165, 233, 0.25);
+  }
+
+  // Deadline - 琥珀色
+  &[data-kind="deadline"] {
+    color: var(--date-ref-deadline-text);
+    background: var(--date-ref-deadline-bg);
+    border-bottom: 1px solid rgba(245, 158, 11, 0.25);
+  }
+
+  // 逾期态（可由 JS 动态添加 .overdue 类）
+  &.overdue {
+    color: var(--date-ref-overdue-text);
+    background: var(--date-ref-overdue-bg);
+    border-bottom-color: rgba(220, 38, 38, 0.25);
+  }
+}
+
 // color-mix() 降级方案：旧浏览器
 @supports not (background: color-mix(in srgb, red 10%, transparent)) {
   .rel-type-label:hover {

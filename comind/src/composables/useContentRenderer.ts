@@ -57,6 +57,25 @@ export function useContentRenderer() {
   }
 
   /**
+   * 判断 dateRef 是否已逾期
+   * 仅 deadline 需要判断逾期，schedule 逾期无意义（过去的时间点依然是计划）
+   */
+  function isOverdue(ref: DateRef): boolean {
+    if (ref.kind !== 'deadline') return false
+    const iso = ref.iso.trim()
+    // 提取 date/datetime 部分，构造本地时间
+    const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/)
+    if (!m) return false
+    const [, y, mo, d, h, mi] = m
+    const hour = h !== undefined ? parseInt(h, 10) : 23
+    const minute = mi !== undefined ? parseInt(mi, 10) : 59
+    const target = new Date(parseInt(y), parseInt(mo) - 1, parseInt(d), hour, minute)
+    const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    return target < today
+  }
+
+  /**
    * 渲染 dateRef {{kind:ISO|recurrence}} 为可交互 span
    * dateRef 使用 {{...}} 格式，与 typed link `((...))[[...]]` 不冲突，
    * 可在 typed link 之后、wiki link 之前处理。
@@ -68,9 +87,11 @@ export function useContentRenderer() {
         iso: iso.trim(),
         recurrence: normalizeRecurrence(rec),
       }
+      const overdue = isOverdue(ref)
       const display = formatDateRefDisplay(ref)
       const serialized = serializeDateRef(ref)
-      return `<span class="${CSS_CLASSES.dateRef}" ` +
+      const classes = [CSS_CLASSES.dateRef, ref.kind, overdue ? 'overdue' : ''].filter(Boolean).join(' ')
+      return `<span class="${classes}" ` +
         `data-kind="${escapeHtmlEntities(kind)}" ` +
         `data-iso="${escapeHtmlEntities(iso.trim())}" ` +
         `data-recurrence="${escapeHtmlEntities(ref.recurrence)}" ` +
