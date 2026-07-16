@@ -7,6 +7,7 @@ import { debounce } from '../utils/debounce'
 import { parseBlockLinks } from '../utils/parser'
 import { usePageStore } from './pages'
 import { useBlockVersionStore } from './blockVersion'
+import { usePropertyStore } from './property'
 import type { BlockSnapshot } from '../types/blockVersion'
 
 import {
@@ -937,6 +938,16 @@ export const useBlockStore = defineStore('blocks', () => {
     block.content = content
     block.updatedAt = Date.now()
     _scheduleSave(block)
+
+    // 自动将带 schedule/deadline 的 block 标记为 Todo 任务。
+    // 这是所有写入 content 路径的统一收口（/schedule、/deadline 命令、
+    // 输入 {{、粘贴等最终都会流经此处），因此无论用何种方式写入 dateRef，
+    // block 都会自动成为任务。仅当 block 尚无 status 时补 Todo；
+    // 移除 dateRef 时不会反向清除 status（保持任务状态）。
+    if (/\{\{(?:schedule|deadline):/.test(content)) {
+      const propertyStore = usePropertyStore()
+      await propertyStore.ensureTodo(blockId)
+    }
   }
 
   /** 更新 Block 格式 */

@@ -9,6 +9,7 @@
 import { computed, onMounted, onBeforeUnmount } from 'vue'
 import { useEditorStore } from '../stores/editor'
 import { useBlockStore } from '../stores/blocks'
+import { usePropertyStore } from '../stores/property'
 import { DATE_REF_CLICK_EVENT } from '../extensions/DateRefExtension'
 import { serializeDateRef } from '../utils/date-ref'
 import type { DateRefKind, RecurrenceRule, DateRef } from '../utils/date-ref'
@@ -97,7 +98,7 @@ export function useDateTimePickerPanel() {
    * 2. content 模式：切换 kind 时去重
    * 3. 关闭面板
    */
-  function handleConfirm(value: DateTimePickerConfirm) {
+  async function handleConfirm(value: DateTimePickerConfirm) {
     const state = editorStore.dateRefEditor
     if (!state) {
       close()
@@ -111,6 +112,8 @@ export function useDateTimePickerPanel() {
       iso: value.iso,
       recurrence: value.recurrence,
     })
+
+    let inserted = false
 
     if (source === 'editor') {
       const editor = editorStore.activeEditor
@@ -129,39 +132,40 @@ export function useDateTimePickerPanel() {
         const sliced = editor.state.doc.textBetween(from, to, ' ')
         if (sliced === '{{') {
           editor.chain().deleteRange({ from, to }).insertContent(newText).run()
-          close()
-          closeDateRefMenu()
-          return
+          inserted = true
         }
       }
 
-      // saved range 不可用，在光标附近搜索最近的 {{
-      const searchWindow = 30
-      let found = false
-      let resolvedFrom = cursor
-      let resolvedTo = cursor
+      if (!inserted) {
+        // saved range 不可用，在光标附近搜索最近的 {{
+        const searchWindow = 30
+        let found = false
+        let resolvedFrom = cursor
+        let resolvedTo = cursor
 
-      editor.state.doc.descendants((node: any, pos: number) => {
-        if (!node.isText || found) return
-        const text = node.text || ''
-        for (let i = 0; i < text.length; i++) {
-          if (text[i] === '{' && i + 1 < text.length && text[i + 1] === '{') {
-            const absFrom = pos + i
-            const absTo = pos + i + 2
-            if (Math.abs(absFrom - cursor) <= searchWindow) {
-              resolvedFrom = absFrom
-              resolvedTo = absTo
-              found = true
-              return false
+        editor.state.doc.descendants((node: any, pos: number) => {
+          if (!node.isText || found) return
+          const text = node.text || ''
+          for (let i = 0; i < text.length; i++) {
+            if (text[i] === '{' && i + 1 < text.length && text[i + 1] === '{') {
+              const absFrom = pos + i
+              const absTo = pos + i + 2
+              if (Math.abs(absFrom - cursor) <= searchWindow) {
+                resolvedFrom = absFrom
+                resolvedTo = absTo
+                found = true
+                return false
+              }
             }
           }
-        }
-      })
+        })
 
-      if (found) {
-        editor.chain().deleteRange({ from: resolvedFrom, to: resolvedTo }).insertContent(newText).run()
-      } else {
-        editor.chain().insertContentAt(cursor, newText).run()
+        if (found) {
+          editor.chain().deleteRange({ from: resolvedFrom, to: resolvedTo }).insertContent(newText).run()
+        } else {
+          editor.chain().insertContentAt(cursor, newText).run()
+        }
+        inserted = true
       }
     } else {
       // T9: 替换阅读态 block content 字符串，并去重
@@ -173,8 +177,18 @@ export function useDateTimePickerPanel() {
           // 切换 kind 时去重：确保同种 ref 仅剩当前这条
           newContent = deduplicateDateRef(newContent, value.kind)
           blockStore.updateBlockContent(blockId, newContent)
+          inserted = true
         }
       }
+    }
+
+    // 自动将 block 标记为 Todo 任务：
+    // 添加 /schedule 或 /deadline（即插入 schedule/deadline 类型的 dateRef）时，
+    // 若 block 尚未有任何 status（Todo/Doing/Done/Canceled），则补一个 Todo。
+    // 注意：删除 dateRef 时不会反向清除 status（保持任务状态），见需求约束。
+    if (inserted && blockId && (value.kind === 'schedule' || value.kind === 'deadline')) {
+      const propertyStore = usePropertyStore()
+      await propertyStore.ensureTodo(blockId)
     }
 
     close()

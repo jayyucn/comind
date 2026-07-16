@@ -187,6 +187,19 @@ export const usePropertyStore = defineStore('property', () => {
     return 'string'
   }
 
+  /**
+   * 自动将 block 标记为 Todo 任务：仅当 block 尚未有任何 status
+   * （Todo/Doing/Done/Canceled）时才补一个 Todo。
+   *
+   * 用于：为带 schedule/deadline 的 block 自动成为任务。
+   * 注意：不会因移除 dateRef 而清除 status（保持任务状态，见需求约束）。
+   */
+  async function ensureTodo(blockId: string): Promise<void> {
+    const existing = getBlockProperty(blockId, 'status')
+    if (existing) return
+    await setProperty(blockId, 'status', 'Todo', 'string')
+  }
+
   async function deleteProperty(id: string, blockId: string): Promise<void> {
     const client = await getClient()
     const props = getBlockProperties(blockId)
@@ -227,6 +240,7 @@ export const usePropertyStore = defineStore('property', () => {
     loadBlockProperties,
     loadMultiBlockProperties,
     setProperty,
+    ensureTodo,
     deleteProperty,
     updateSortOrder,
     toggleHidden,

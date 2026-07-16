@@ -111,13 +111,25 @@ function handleDateRefTrigger(event: Event) {
     range: { from: number; to: number }
     kind: 'schedule' | 'deadline'
   }>
-  const { position, range, kind } = customEvent.detail
-  const coords = customEvent.detail.view.coordsAtPos(position)
+  const { view, position, range, kind } = customEvent.detail
+  const coords = view.coordsAtPos(position)
+
+  // PM 节点不携带 blockId，需借助 .block[data-block-id] 包裹层从 DOM 解析
+  let blockId: string | null = null
+  try {
+    const domAt = view.domAtPos(position)
+    let domEl: any = domAt.node
+    if (domEl && domEl.nodeType === 3) domEl = domEl.parentElement
+    const blockEl = domEl?.closest?.('[data-block-id]') as HTMLElement | null
+    blockId = blockEl?.dataset?.blockId ?? null
+  } catch {
+    blockId = null
+  }
 
   const { open: openDateRefPanel } = useDateTimePickerPanel()
   openDateRefPanel(
     {
-      blockId: null,
+      blockId,
       from: range.from,
       to: range.to,
       kind,
