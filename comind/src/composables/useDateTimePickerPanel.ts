@@ -20,6 +20,21 @@ export interface DateTimePickerConfirm {
   recurrence: RecurrenceRule
 }
 
+/** 面板顶部与 block 底部的垂直间距(px)，避免遮住 block 内容 */
+export const DATE_PICKER_BOTTOM_OFFSET = 8
+
+/**
+ * 计算面板坐标：
+ * - 水平对齐 date-ref 文字左缘
+ * - 垂直落在 block 底部下方（间距由 DATE_PICKER_BOTTOM_OFFSET 决定）
+ */
+export function computeDatePickerPosition(dateRefEl: HTMLElement): { x: number; y: number } {
+  const blockEl = dateRefEl.closest('.block')
+  const blockRect = blockEl ? blockEl.getBoundingClientRect() : dateRefEl.getBoundingClientRect()
+  const refRect = dateRefEl.getBoundingClientRect()
+  return { x: refRect.left, y: blockRect.bottom + DATE_PICKER_BOTTOM_OFFSET }
+}
+
 /** 暴露给外部的状态和回调 */
 export function useDateTimePickerPanel() {
   const editorStore = useEditorStore()
@@ -118,8 +133,7 @@ export function useDateRefClickListener(
     const e = event as CustomEvent<DateRefClickPayload> & { target: HTMLElement }
     const payload = e.detail
     if (!payload) return
-    const rect = e.target.getBoundingClientRect()
-    onClick(payload, { x: rect.left, y: rect.bottom + 6 })
+    onClick(payload, computeDatePickerPosition(e.target as HTMLElement))
   }
 
   onMounted(() => document.addEventListener(DATE_REF_CLICK_EVENT, handler as EventListener))

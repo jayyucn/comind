@@ -23,7 +23,7 @@ import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import { useBlockRegistry } from '../../composables/useBlockRegistry'
 import { useRelationshipMenu } from '../../composables/useRelationshipMenu'
 import { useBlockRelationshipCleanup } from '../../composables/useBlockRelationshipCleanup'
-import { useDateTimePickerPanel, useDateRefClickListener } from '../../composables/useDateTimePickerPanel'
+import { useDateTimePickerPanel, useDateRefClickListener, computeDatePickerPosition } from '../../composables/useDateTimePickerPanel'
 import './handlers/bullet'
 import './handlers/code'
 import './handlers/image'
@@ -562,6 +562,7 @@ function handleContentClick(e: MouseEvent) {
     }
     if (idx === -1) return
 
+    // 垂直用 block 底部，水平用 date-ref 文字左侧对齐
     openDateRefPanel(
       {
         blockId: blockId.value,
@@ -570,7 +571,7 @@ function handleContentClick(e: MouseEvent) {
         kind: kind as any,
         iso,
         recurrence: recurrence as any,
-        position: { x: e.clientX, y: e.clientY },
+        position: computeDatePickerPosition(dateRefSpan),
       },
       'content'
     )
