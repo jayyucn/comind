@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { Calendar, Clock, Repeat, X, Check, ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import { Calendar, Clock, Repeat, Check, ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { useEditorStore } from '../stores/editor'
 import type { DateRefKind, RecurrenceRule } from '../utils/date-ref'
 
@@ -141,6 +141,12 @@ watch(
   }
 )
 
+watch(localKind, (newKind) => {
+  if (newKind === 'deadline') {
+    localRecurrence.value = 'none'
+  }
+})
+
 function toggleKind() {
   localKind.value = localKind.value === 'schedule' ? 'deadline' : 'schedule'
 }
@@ -178,35 +184,34 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown))
     <Transition name="fade-slide">
       <div
         v-if="visible"
-        class="dtp-panel"
-        :style="{ left: `${position.x}px`, top: `${position.y}px` }"
-        @click.stop
+        class="dtp-overlay"
+        @click.self="handleCancel"
       >
-        <div class="dtp-header">
-          <span class="dtp-title">
-            {{ localKind === 'schedule' ? '📅 计划时间' : '⏰ 截止时间' }}
-          </span>
-          <div class="dtp-header-actions">
-            <button class="dtp-icon-btn" title="切换类型" @click="toggleKind">
-              {{ localKind === 'schedule' ? '⏰' : '📅' }}
-            </button>
-            <button class="dtp-icon-btn" title="关闭" @click="handleCancel">
-              <X :size="12" :stroke-width="2" />
-            </button>
-          </div>
-        </div>
-
+        <div
+          class="dtp-panel"
+          :style="{ left: `${position.x}px`, top: `${position.y}px` }"
+          @click.stop
+        >
         <div class="dtp-calendar">
           <div class="dtp-calendar-header">
-            <button class="dtp-calendar-nav" @click="prevMonth">
-              <ChevronLeft :size="14" :stroke-width="2" />
-            </button>
+            <div class="dtp-kind-wrapper">
+              <span class="dtp-kind-icon">{{ localKind === 'schedule' ? '📅' : '⏰' }}</span>
+              <select v-model="localKind" class="dtp-kind-select">
+                <option value="schedule">计划时间</option>
+                <option value="deadline">截止时间</option>
+              </select>
+            </div>
             <span class="dtp-calendar-title">
               {{ calendarYear }}年 {{ monthNames[calendarMonth] }}
             </span>
-            <button class="dtp-calendar-nav" @click="nextMonth">
-              <ChevronRight :size="14" :stroke-width="2" />
-            </button>
+            <div class="dtp-calendar-nav-group">
+              <button class="dtp-calendar-nav" @click="prevMonth">
+                <ChevronLeft :size="14" :stroke-width="2" />
+              </button>
+              <button class="dtp-calendar-nav" @click="nextMonth">
+                <ChevronRight :size="14" :stroke-width="2" />
+              </button>
+            </div>
           </div>
 
           <div class="dtp-calendar-weekdays">
@@ -268,7 +273,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown))
           </div>
         </div>
 
-        <div class="dtp-field dtp-field--full">
+        <div v-if="localKind !== 'deadline'" class="dtp-field dtp-field--full">
           <label class="dtp-label">
             <Repeat :size="11" :stroke-width="2" /> 重复
           </label>
@@ -301,15 +306,22 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown))
             </button>
           </div>
         </div>
+        </div>
       </div>
     </Transition>
   </Teleport>
 </template>
 
 <style scoped>
+.dtp-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+}
+
 .dtp-panel {
   position: fixed;
-  z-index: 1100;
+  z-index: 1101;
   width: 300px;
   background: var(--bg-base, #FAFAF8);
   border: 1px solid var(--border, #E7E5E4);
@@ -320,43 +332,6 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown))
   flex-direction: column;
   gap: 8px;
   font-family: inherit;
-}
-
-.dtp-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.dtp-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.dtp-title {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-
-.dtp-icon-btn {
-  width: 22px;
-  height: 22px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: transparent;
-  color: var(--text-tertiary);
-  cursor: pointer;
-  border-radius: 4px;
-  padding: 0;
-}
-
-.dtp-icon-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
 }
 
 .dtp-calendar {
@@ -370,6 +345,45 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown))
   align-items: center;
   justify-content: space-between;
   padding: 4px 0;
+  gap: 8px;
+}
+
+.dtp-kind-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.dtp-kind-icon {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.dtp-kind-select {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+  outline: none;
+}
+
+.dtp-kind-select:hover {
+  color: var(--text-primary);
+}
+
+.dtp-kind-select:focus {
+  outline: none;
+}
+
+.dtp-calendar-nav-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .dtp-calendar-nav {

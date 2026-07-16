@@ -40,8 +40,8 @@ test.describe('Slash Commands - Date/Schedule/Deadline', () => {
     const panel = page.locator('.dtp-panel')
     await expect(panel).toBeVisible()
     
-    const title = await panel.locator('.dtp-title').innerText()
-    expect(title).toContain('计划时间')
+    const title = await panel.locator('.dtp-kind-select').inputValue()
+    expect(title).toBe('schedule')
   })
 
   test('/deadline opens DateTimePickerPanel', async ({ page }) => {
@@ -60,8 +60,8 @@ test.describe('Slash Commands - Date/Schedule/Deadline', () => {
     const panel = page.locator('.dtp-panel')
     await expect(panel).toBeVisible()
     
-    const title = await panel.locator('.dtp-title').innerText()
-    expect(title).toContain('截止时间')
+    const title = await panel.locator('.dtp-kind-select').inputValue()
+    expect(title).toBe('deadline')
   })
 
   test('DateTimePickerPanel has correct controls', async ({ page }) => {
@@ -127,8 +127,8 @@ test.describe('Slash Commands - Date/Schedule/Deadline', () => {
     await page.keyboard.type('/')
     await page.waitForTimeout(500)
     
-    const deadlineItem = page.locator('.slash-command-menu .slash-command-item', { hasText: 'Deadline' })
-    await deadlineItem.click()
+    const scheduleItem = page.locator('.slash-command-menu .slash-command-item', { hasText: 'Schedule' })
+    await scheduleItem.click()
     
     await page.waitForTimeout(500)
     
@@ -145,7 +145,7 @@ test.describe('Slash Commands - Date/Schedule/Deadline', () => {
     await page.waitForTimeout(500)
     
     const content = await page.locator('.block-content').first().innerText()
-    expect(content).toMatch(/\{\{deadline:\d{4}-\d{2}-\d{2}\|weekly\}\}/)
+    expect(content).toMatch(/\{\{schedule:\d{4}-\d{2}-\d{2}\|weekly\}\}/)
   })
 
   test('DateTimePickerPanel can be closed with cancel', async ({ page }) => {
