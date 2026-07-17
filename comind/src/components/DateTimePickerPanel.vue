@@ -10,6 +10,7 @@ export interface DateTimePickerConfirm {
   kind: DateRefKind
   iso: string
   recurrence: RecurrenceRule
+  leadMinutes: number
 }
 
 const props = defineProps<{
@@ -31,6 +32,7 @@ const localKind = ref<DateRefKind>('schedule')
 const localDate = ref('')
 const localTime = ref('')
 const localRecurrence = ref<RecurrenceRule>('none')
+const localLeadMinutes = ref(0)
 const enableTime = ref(false)
 
 const today = computed(() => {
@@ -199,6 +201,7 @@ function handleConfirm() {
     kind: localKind.value,
     iso: previewIso.value,
     recurrence: localRecurrence.value,
+    leadMinutes: localLeadMinutes.value,
   })
 }
 
@@ -328,6 +331,21 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown, true))
             <option value="weekly">每周</option>
             <option value="monthly">每月</option>
             <option value="yearly">每年</option>
+          </select>
+        </div>
+
+        <div class="dtp-field dtp-field--full">
+          <label class="dtp-label">
+            <Clock :size="11" :stroke-width="2" /> 提前提醒
+          </label>
+          <select v-model="localLeadMinutes" class="dtp-input dtp-input--select">
+            <option :value="0">准时提醒</option>
+            <option :value="15">提前 15 分钟</option>
+            <option :value="30">提前 30 分钟</option>
+            <option :value="60">提前 1 小时</option>
+            <option :value="120">提前 2 小时</option>
+            <option :value="720">提前 12 小时</option>
+            <option :value="1440">提前 1 天</option>
           </select>
         </div>
 

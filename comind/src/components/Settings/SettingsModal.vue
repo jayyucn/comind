@@ -6,7 +6,8 @@ import { useTheme } from '../../composables/useTheme'
 import RelationshipTypesPanel from './RelationshipTypesPanel.vue'
 import { getDbPath, setDbPath, resetDbPath, exportToMarkdown, importFromMarkdown, getSyncConfig, setSyncConfig, syncNow } from '../../wasm/client'
 import { isTauriEnvironment, tauriPickDirectory } from '../../wasm/tauri-client'
-import { X, Sun, Moon, Monitor, Folder, RotateCcw, AlertCircle, Upload, Download, RefreshCw, ToggleLeft, ToggleRight } from 'lucide-vue-next'
+import { X, Sun, Moon, Monitor, Folder, RotateCcw, AlertCircle, Upload, Download, RefreshCw, ToggleLeft, ToggleRight, Bell, BellOff, Clock } from 'lucide-vue-next'
+import { useNotificationStore } from '../../stores/notification'
 
 const { isOpen, close } = useSettingsModal()
 
@@ -20,8 +21,9 @@ watch(isOpen, (visible) => {
 
 onUnmounted(() => popModal('settings-modal'))
 const { theme, setTheme } = useTheme()
+const notificationStore = useNotificationStore()
 
-type Section = 'appearance' | 'editor' | 'data' | 'about'
+type Section = 'appearance' | 'editor' | 'data' | 'notifications' | 'about'
 
 const activeSection = ref<Section>('appearance')
 
@@ -180,6 +182,7 @@ const sections: { key: Section; label: string }[] = [
   { key: 'appearance', label: '外观' },
   { key: 'editor', label: '编辑器' },
   { key: 'data', label: '数据管理' },
+  { key: 'notifications', label: '通知' },
   { key: 'about', label: '关于' },
 ]
 
@@ -394,6 +397,101 @@ onUnmounted(() => {
                   <button class="setting-btn" :disabled="!isDesktop || importLoading" @click="handleImport">
                     <Upload :size="12" :stroke-width="1.75" />
                     {{ importLoading ? '导入中...' : '导入' }}
+                  </button>
+                </div>
+              </template>
+
+              <template v-if="activeSection === 'notifications'">
+                <div class="setting-item">
+                  <div class="setting-info">
+                    <span class="setting-label">通知总开关</span>
+                    <span class="setting-desc">启用或禁用所有通知</span>
+                  </div>
+                  <button class="sync-toggle" @click="notificationStore.toggleSetting('enabled')">
+                    <ToggleLeft v-if="!notificationStore.settings.enabled" :size="16" :stroke-width="1.75" />
+                    <ToggleRight v-else :size="16" :stroke-width="1.75" />
+                    <span>{{ notificationStore.settings.enabled ? '已开启' : '已关闭' }}</span>
+                  </button>
+                </div>
+
+                <div v-if="notificationStore.settings.enabled" class="setting-item">
+                  <div class="setting-info">
+                    <span class="setting-label">计划时间通知</span>
+                    <span class="setting-desc">接收计划时间提醒</span>
+                  </div>
+                  <button class="sync-toggle" @click="notificationStore.toggleSetting('schedule_enabled')">
+                    <ToggleLeft v-if="!notificationStore.settings.schedule_enabled" :size="16" :stroke-width="1.75" />
+                    <ToggleRight v-else :size="16" :stroke-width="1.75" />
+                    <span>{{ notificationStore.settings.schedule_enabled ? '已开启' : '已关闭' }}</span>
+                  </button>
+                </div>
+
+                <div v-if="notificationStore.settings.enabled" class="setting-item">
+                  <div class="setting-info">
+                    <span class="setting-label">截止时间通知</span>
+                    <span class="setting-desc">接收截止时间提醒</span>
+                  </div>
+                  <button class="sync-toggle" @click="notificationStore.toggleSetting('deadline_enabled')">
+                    <ToggleLeft v-if="!notificationStore.settings.deadline_enabled" :size="16" :stroke-width="1.75" />
+                    <ToggleRight v-else :size="16" :stroke-width="1.75" />
+                    <span>{{ notificationStore.settings.deadline_enabled ? '已开启' : '已关闭' }}</span>
+                  </button>
+                </div>
+
+                <div v-if="notificationStore.settings.enabled" class="setting-item">
+                  <div class="setting-info">
+                    <span class="setting-label">逾期通知</span>
+                    <span class="setting-desc">接收逾期任务提醒</span>
+                  </div>
+                  <button class="sync-toggle" @click="notificationStore.toggleSetting('overdue_enabled')">
+                    <ToggleLeft v-if="!notificationStore.settings.overdue_enabled" :size="16" :stroke-width="1.75" />
+                    <ToggleRight v-else :size="16" :stroke-width="1.75" />
+                    <span>{{ notificationStore.settings.overdue_enabled ? '已开启' : '已关闭' }}</span>
+                  </button>
+                </div>
+
+                <div v-if="notificationStore.settings.enabled" class="setting-item setting-item--column">
+                  <div class="setting-info">
+                    <span class="setting-label">免打扰时段</span>
+                    <span class="setting-desc">在此期间不发送通知</span>
+                  </div>
+                  <div class="quiet-hours-container">
+                    <div class="quiet-hours-row">
+                      <span class="quiet-hours-label">开始时间</span>
+                      <select
+                        :value="notificationStore.settings.quiet_hours_start || '22:00'"
+                        @change="notificationStore.updateSetting('quiet_hours_start', ($event.target as HTMLSelectElement).value)"
+                        class="quiet-hours-select"
+                      >
+                        <option v-for="h in 24" :key="`${h-1}:00`" :value="`${String(h-1).padStart(2, '0')}:00`">
+                          {{ String(h-1).padStart(2, '0') }}:00
+                        </option>
+                      </select>
+                    </div>
+                    <div class="quiet-hours-row">
+                      <span class="quiet-hours-label">结束时间</span>
+                      <select
+                        :value="notificationStore.settings.quiet_hours_end || '08:00'"
+                        @change="notificationStore.updateSetting('quiet_hours_end', ($event.target as HTMLSelectElement).value)"
+                        class="quiet-hours-select"
+                      >
+                        <option v-for="h in 24" :key="`${h-1}:00`" :value="`${String(h-1).padStart(2, '0')}:00`">
+                          {{ String(h-1).padStart(2, '0') }}:00
+                        </option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div v-if="notificationStore.settings.enabled && !isDesktop" class="setting-item">
+                  <div class="setting-info">
+                    <span class="setting-label">浏览器通知</span>
+                    <span class="setting-desc">在浏览器中显示通知</span>
+                  </div>
+                  <button class="sync-toggle" @click="notificationStore.toggleSetting('web_browser_notifications_enabled')">
+                    <ToggleLeft v-if="!notificationStore.settings.web_browser_notifications_enabled" :size="16" :stroke-width="1.75" />
+                    <ToggleRight v-else :size="16" :stroke-width="1.75" />
+                    <span>{{ notificationStore.settings.web_browser_notifications_enabled ? '已开启' : '已关闭' }}</span>
                   </button>
                 </div>
               </template>
@@ -911,6 +1009,43 @@ onUnmounted(() => {
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+.quiet-hours-container {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.quiet-hours-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.quiet-hours-label {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  width: 60px;
+  flex-shrink: 0;
+}
+
+.quiet-hours-select {
+  padding: 6px 10px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-primary);
+  font-family: inherit;
+  cursor: pointer;
+  min-width: 80px;
+}
+
+.quiet-hours-select:focus {
+  border-color: var(--accent);
+  outline: none;
 }
 
 @media (max-width: 768px) {

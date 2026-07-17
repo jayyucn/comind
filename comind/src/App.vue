@@ -7,6 +7,7 @@ import ConfirmDialog from './components/ConfirmDialog.vue'
 import SettingsModal from './components/Settings/SettingsModal.vue'
 import Toast from './components/Toast.vue'
 import DateTimePickerPanel from './components/DateTimePickerPanel.vue'
+import NotificationBell from './components/NotificationBell.vue'
 import { useEditorStore } from './stores/editor'
 import { useDateTimePickerPanel } from './composables/useDateTimePickerPanel'
 import { useBlockStore } from './stores/blocks'
@@ -248,6 +249,7 @@ function handleMainClick(e: MouseEvent) {
         </div>
 
         <div class="top-right-controls">
+          <NotificationBell />
           <PageMenuButton />
           <button
             v-if="showRightSidebarToggle"

@@ -20,6 +20,7 @@ export interface DateTimePickerConfirm {
   kind: DateRefKind
   iso: string
   recurrence: RecurrenceRule
+  leadMinutes: number
 }
 
 /** 面板顶部与 block 底部的垂直间距(px)，避免遮住 block 内容 */
@@ -111,6 +112,7 @@ export function useDateTimePickerPanel() {
       kind: value.kind,
       iso: value.iso,
       recurrence: value.recurrence,
+      leadMinutes: value.leadMinutes,
     })
 
     let inserted = false
