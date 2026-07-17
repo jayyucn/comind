@@ -18,15 +18,17 @@ export interface DateRef {
   /** 本地 ISO，形如 2026-07-15T14:00 或 2026-07-15（全天） */
   iso: string
   recurrence: RecurrenceRule
+  /** 提前提醒分钟数（0 = 准时），通过 date-ref 语法第三段指定 */
+  leadMinutes: number
 }
 
 const RECURRENCE_RULES: RecurrenceRule[] = ['none', 'daily', 'weekly', 'monthly', 'yearly']
 
 /**
- * 匹配 {{schedule:2026-07-15T14:00|weekly}} 或 {{deadline:2026-07-15}}
+ * 匹配 {{schedule:2026-07-15T14:00|weekly}} 或 {{deadline:2026-07-15}} 或 {{schedule:2026-07-15|weekly|15}}
  * 注意：全局正则带 lastIndex 状态，调用方应每次 new RegExp 后使用，避免复用污染。
  */
-export const DATE_REF_REGEX = /\{\{(schedule|deadline):([^}|]+?)(?:\|([^}]+?))?\}\}/g
+export const DATE_REF_REGEX = /\{\{(schedule|deadline):([^}|]+?)(?:\|([^}|]*))?(?:\|([^}]+?))?\}\}/g
 
 export function normalizeRecurrence(rec: string | undefined): RecurrenceRule {
   return rec && (RECURRENCE_RULES as string[]).includes(rec) ? (rec as RecurrenceRule) : 'none'
@@ -43,13 +45,21 @@ export function parseDateRefs(text: string): DateRef[] {
       kind: m[1] as DateRefKind,
       iso: m[2],
       recurrence: normalizeRecurrence(m[3]),
+      leadMinutes: m[4] ? parseInt(m[4], 10) || 0 : 0,
     })
   }
   return result
 }
 
-/** 结构化 dateRef → 文本语法。recurrence 为 none 时省略 | 段 */
+/** 结构化 dateRef → 文本语法。recurrence 为 none 时省略 | 段；leadMinutes > 0 时追加第三段 */
 export function serializeDateRef(ref: DateRef): string {
+  const lead = ref.leadMinutes && ref.leadMinutes > 0 ? ref.leadMinutes : 0
+  if (lead > 0 && ref.recurrence !== 'none') {
+    return `{{${ref.kind}:${ref.iso}|${ref.recurrence}|${lead}}}`
+  }
+  if (lead > 0 && ref.recurrence === 'none') {
+    return `{{${ref.kind}:${ref.iso}||${lead}}}`
+  }
   const rec = ref.recurrence && ref.recurrence !== 'none' ? `|${ref.recurrence}` : ''
   return `{{${ref.kind}:${ref.iso}${rec}}}`
 }
