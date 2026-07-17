@@ -152,3 +152,36 @@ export interface BlockVersion {
   restored_from_version_id: string | null
   created_at: number
 }
+
+export interface Notification {
+  id: string
+  block_id: string
+  page_id: string
+  /** 'schedule' | 'deadline' | 'overdue' */
+  kind: string
+  /** 触发此通知的事件 ISO（date-ref 中的 iso） */
+  event_iso: string
+  /** 实际触发时间戳（ms） */
+  fired_at: number
+  /** 'pending' | 'unread' | 'read' | 'dismissed' */
+  status: string
+  /** 非 null 表示 snooze 中 */
+  snooze_until: number | null
+  /** JSON 序列化的 NotificationPayload */
+  payload: string
+  created_at: number
+  updated_at: number
+}
+
+export interface NotificationSettings {
+  enabled: boolean
+  schedule_enabled: boolean
+  deadline_enabled: boolean
+  overdue_enabled: boolean
+  /** "22:00" 或 null */
+  quiet_hours_start: string | null
+  /** "08:00" 或 null */
+  quiet_hours_end: string | null
+  /** Web 浏览器通知授权状态（仅 Web 用） */
+  web_browser_notifications_enabled: boolean
+}
