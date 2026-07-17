@@ -19,7 +19,8 @@ function parseJsonResult<T>(result: any): T {
 import type {
   Block, Page, Property, Link, RelationshipType,
   UserTemplate, SearchResult, BlockUpdate, PageUpdate,
-  BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig, BlockVersion
+  BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig, BlockVersion,
+  Notification
 } from './types'
 
 export interface CoreClient {
@@ -54,6 +55,18 @@ export interface CoreClient {
   restoreBlockVersion(versionId: string): Promise<BlockVersion>
   deleteBlockVersion(versionId: string): Promise<void>
   cleanupBlockVersions(retentionDays: number): Promise<void>
+
+  getNotification(id: string): Promise<Notification>
+  getNotificationsByBlock(blockId: string): Promise<Notification[]>
+  queryUnreadNotifications(): Promise<Notification[]>
+  queryRecentNotifications(limit: number): Promise<Notification[]>
+  createNotification(notification: Notification): Promise<Notification>
+  batchCreateNotifications(notifications: Notification[]): Promise<Notification[]>
+  updateNotificationStatus(id: string, status: string): Promise<Notification>
+  setNotificationSnooze(id: string, snoozeUntil: number, status: string): Promise<Notification>
+  deleteNotification(id: string): Promise<void>
+  cleanupNotifications(timestamp: number): Promise<void>
+  markAllNotificationsRead(): Promise<void>
 }
 
 class TauriClient implements CoreClient {
@@ -147,6 +160,50 @@ class TauriClient implements CoreClient {
 
     async cleanupBlockVersions(retentionDays: number): Promise<void> {
       return tauri.tauriCleanupBlockVersions(retentionDays)
+    }
+
+    async getNotification(id: string): Promise<Notification> {
+      return tauri.tauriGetNotification(id)
+    }
+
+    async getNotificationsByBlock(blockId: string): Promise<Notification[]> {
+      return tauri.tauriGetNotificationsByBlock(blockId)
+    }
+
+    async queryUnreadNotifications(): Promise<Notification[]> {
+      return tauri.tauriQueryUnreadNotifications()
+    }
+
+    async queryRecentNotifications(limit: number): Promise<Notification[]> {
+      return tauri.tauriQueryRecentNotifications(limit)
+    }
+
+    async createNotification(notification: Notification): Promise<Notification> {
+      return tauri.tauriCreateNotification(notification)
+    }
+
+    async batchCreateNotifications(notifications: Notification[]): Promise<Notification[]> {
+      return tauri.tauriBatchCreateNotifications(notifications)
+    }
+
+    async updateNotificationStatus(id: string, status: string): Promise<Notification> {
+      return tauri.tauriUpdateNotificationStatus(id, status)
+    }
+
+    async setNotificationSnooze(id: string, snoozeUntil: number, status: string): Promise<Notification> {
+      return tauri.tauriSetNotificationSnooze(id, snoozeUntil, status)
+    }
+
+    async deleteNotification(id: string): Promise<void> {
+      return tauri.tauriDeleteNotification(id)
+    }
+
+    async cleanupNotifications(timestamp: number): Promise<void> {
+      return tauri.tauriCleanupNotifications(timestamp)
+    }
+
+    async markAllNotificationsRead(): Promise<void> {
+      return tauri.tauriMarkAllNotificationsRead()
     }
   }
 

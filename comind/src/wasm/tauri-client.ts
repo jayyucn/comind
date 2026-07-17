@@ -4,7 +4,8 @@ import { open } from '@tauri-apps/plugin-dialog'
 import type {
   Block, Page, Property, Link, RelationshipType,
   UserTemplate, SearchResult, BlockUpdate, PageUpdate,
-  BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig, BlockVersion
+  BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig, BlockVersion,
+  Notification
 } from './types'
 
 export function isTauriEnvironment(): boolean {
@@ -191,4 +192,48 @@ export async function tauriCleanupBlockVersions(retentionDays: number): Promise<
 
 export async function tauriDeleteBlockVersion(versionId: string): Promise<void> {
   return invoke('delete_block_version', { versionId })
+}
+
+export async function tauriGetNotification(id: string): Promise<Notification> {
+  return invoke('get_notification', { id })
+}
+
+export async function tauriGetNotificationsByBlock(blockId: string): Promise<Notification[]> {
+  return invoke('get_notifications_by_block', { blockId })
+}
+
+export async function tauriQueryUnreadNotifications(): Promise<Notification[]> {
+  return invoke('query_unread_notifications')
+}
+
+export async function tauriQueryRecentNotifications(limit: number): Promise<Notification[]> {
+  return invoke('query_recent_notifications', { limit })
+}
+
+export async function tauriCreateNotification(notification: Notification): Promise<Notification> {
+  return invoke('create_notification', { notification })
+}
+
+export async function tauriBatchCreateNotifications(notifications: Notification[]): Promise<Notification[]> {
+  return invoke('batch_create_notifications', { notifications })
+}
+
+export async function tauriUpdateNotificationStatus(id: string, status: string): Promise<Notification> {
+  return invoke('update_notification_status', { id, status })
+}
+
+export async function tauriSetNotificationSnooze(id: string, snoozeUntil: number, status: string): Promise<Notification> {
+  return invoke('set_notification_snooze', { id, snoozeUntil, status })
+}
+
+export async function tauriDeleteNotification(id: string): Promise<void> {
+  return invoke('delete_notification', { id })
+}
+
+export async function tauriCleanupNotifications(timestamp: number): Promise<void> {
+  return invoke('cleanup_notifications', { timestamp })
+}
+
+export async function tauriMarkAllNotificationsRead(): Promise<void> {
+  return invoke('mark_all_notifications_read')
 }
