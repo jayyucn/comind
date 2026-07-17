@@ -75,6 +75,22 @@ pub trait BlockVersionRepository {
     fn delete_older_than(&mut self, block_id: &str, timestamp: i64) -> Result<(), Box<dyn Error>>;
 }
 
+pub trait NotificationRepository {
+    fn get_by_id(&self, id: &str) -> Result<Notification, Box<dyn Error>>;
+    fn get_by_block_id(&self, block_id: &str) -> Result<Vec<Notification>, Box<dyn Error>>;
+    fn find_by_event(&self, block_id: &str, kind: &str, event_iso: &str) -> Result<Option<Notification>, Box<dyn Error>>;
+    fn query_unread(&self) -> Result<Vec<Notification>, Box<dyn Error>>;
+    fn query_pending_due(&self, now_ms: i64) -> Result<Vec<Notification>, Box<dyn Error>>;
+    fn query_recent(&self, limit: usize) -> Result<Vec<Notification>, Box<dyn Error>>;
+    fn create(&mut self, notification: &Notification) -> Result<Notification, Box<dyn Error>>;
+    fn batch_create(&mut self, notifications: &[Notification]) -> Result<Vec<Notification>, Box<dyn Error>>;
+    fn update_status(&mut self, id: &str, status: &str) -> Result<Notification, Box<dyn Error>>;
+    fn set_snooze(&mut self, id: &str, snooze_until: i64, status: &str) -> Result<Notification, Box<dyn Error>>;
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
+    fn delete_older_than(&mut self, timestamp: i64) -> Result<(), Box<dyn Error>>;
+    fn mark_all_read(&mut self) -> Result<(), Box<dyn Error>>;
+}
+
 pub trait StorageAdapter {
     fn blocks(&mut self) -> &mut dyn BlockRepository;
     fn pages(&mut self) -> &mut dyn PageRepository;
@@ -84,6 +100,7 @@ pub trait StorageAdapter {
     fn templates(&mut self) -> &mut dyn TemplateRepository;
     fn search(&mut self) -> &mut dyn SearchRepository;
     fn block_versions(&mut self) -> &mut dyn BlockVersionRepository;
+    fn notifications(&mut self) -> &mut dyn NotificationRepository;
 }
 
 pub trait TransactionalStorageAdapter: StorageAdapter {

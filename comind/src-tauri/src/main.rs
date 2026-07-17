@@ -97,6 +97,17 @@ fn main() {
             commands::restore_block_version,
             commands::cleanup_block_versions,
             commands::delete_block_version,
+            commands::get_notification,
+            commands::get_notifications_by_block,
+            commands::query_unread_notifications,
+            commands::query_recent_notifications,
+            commands::create_notification,
+            commands::batch_create_notifications,
+            commands::update_notification_status,
+            commands::set_notification_snooze,
+            commands::delete_notification,
+            commands::cleanup_notifications,
+            commands::mark_all_notifications_read,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

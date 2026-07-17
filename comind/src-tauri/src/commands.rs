@@ -688,3 +688,92 @@ pub async fn delete_block_version(
 ) -> Result<(), String> {
     execute_with_adapter(db, |storage| BlockVersionService::delete(storage, version_id))
 }
+
+#[tauri::command]
+pub async fn get_notification(
+    db: State<'_, super::state::DatabaseConnection>,
+    id: &str,
+) -> Result<Notification, String> {
+    execute_with_adapter(db, |storage| storage.notifications().get_by_id(id))
+}
+
+#[tauri::command]
+pub async fn get_notifications_by_block(
+    db: State<'_, super::state::DatabaseConnection>,
+    block_id: &str,
+) -> Result<Vec<Notification>, String> {
+    execute_with_adapter(db, |storage| storage.notifications().get_by_block_id(block_id))
+}
+
+#[tauri::command]
+pub async fn query_unread_notifications(
+    db: State<'_, super::state::DatabaseConnection>,
+) -> Result<Vec<Notification>, String> {
+    execute_with_adapter(db, |storage| storage.notifications().query_unread())
+}
+
+#[tauri::command]
+pub async fn query_recent_notifications(
+    db: State<'_, super::state::DatabaseConnection>,
+    limit: usize,
+) -> Result<Vec<Notification>, String> {
+    execute_with_adapter(db, |storage| storage.notifications().query_recent(limit))
+}
+
+#[tauri::command]
+pub async fn create_notification(
+    db: State<'_, super::state::DatabaseConnection>,
+    notification: Notification,
+) -> Result<Notification, String> {
+    execute_with_adapter(db, |storage| storage.notifications().create(&notification))
+}
+
+#[tauri::command]
+pub async fn batch_create_notifications(
+    db: State<'_, super::state::DatabaseConnection>,
+    notifications: Vec<Notification>,
+) -> Result<Vec<Notification>, String> {
+    execute_with_adapter(db, |storage| storage.notifications().batch_create(&notifications))
+}
+
+#[tauri::command]
+pub async fn update_notification_status(
+    db: State<'_, super::state::DatabaseConnection>,
+    id: &str,
+    status: &str,
+) -> Result<Notification, String> {
+    execute_with_adapter(db, |storage| storage.notifications().update_status(id, status))
+}
+
+#[tauri::command]
+pub async fn set_notification_snooze(
+    db: State<'_, super::state::DatabaseConnection>,
+    id: &str,
+    snooze_until: i64,
+    status: &str,
+) -> Result<Notification, String> {
+    execute_with_adapter(db, |storage| storage.notifications().set_snooze(id, snooze_until, status))
+}
+
+#[tauri::command]
+pub async fn delete_notification(
+    db: State<'_, super::state::DatabaseConnection>,
+    id: &str,
+) -> Result<(), String> {
+    execute_with_adapter(db, |storage| storage.notifications().delete(id))
+}
+
+#[tauri::command]
+pub async fn cleanup_notifications(
+    db: State<'_, super::state::DatabaseConnection>,
+    timestamp: i64,
+) -> Result<(), String> {
+    execute_with_adapter(db, |storage| storage.notifications().delete_older_than(timestamp))
+}
+
+#[tauri::command]
+pub async fn mark_all_notifications_read(
+    db: State<'_, super::state::DatabaseConnection>,
+) -> Result<(), String> {
+    execute_with_adapter(db, |storage| storage.notifications().mark_all_read())
+}
