@@ -24,6 +24,7 @@ export interface IndexEntry {
   kind: DateRefKind
   iso: string
   recurrence: string
+  leadMinutes: number
 }
 
 /**
@@ -135,6 +136,7 @@ export class DateRefIndex {
                   kind: ref.kind,
                   iso: ref.iso,
                   recurrence: ref.recurrence,
+                  leadMinutes: ref.leadMinutes ?? 0,
                 })
               }
             }
@@ -176,6 +178,7 @@ export class DateRefIndex {
                 kind: ref.kind,
                 iso: ref.iso,
                 recurrence: ref.recurrence,
+                leadMinutes: ref.leadMinutes ?? 0,
               })
             }
           }

@@ -249,4 +249,32 @@ describe('DateRefIndex', () => {
     index.remove('b2')
     expect(index.queryByDate('2026-07-15')).toHaveLength(1)
   })
+
+  // ── leadMinutes 扩展 ──────────────────────────────────────────────
+
+  it('IndexEntry 包含 leadMinutes 字段', () => {
+    index.build([
+      makeBlock('b1', '{{schedule:2026-07-15T14:00|weekly|15}}'),
+    ])
+    const result = index.queryByDateRange('schedule', '2026-07-15', '2026-07-15')
+    expect(result).toHaveLength(1)
+    expect(result[0].leadMinutes).toBe(15)
+  })
+
+  it('queryOverdue 返回含 leadMinutes', () => {
+    index.build([
+      makeBlock('b1', '{{deadline:2020-01-01||60}}'),
+    ])
+    const result = index.queryOverdue('2026-07-15')
+    expect(result).toHaveLength(1)
+    expect(result[0].leadMinutes).toBe(60)
+  })
+
+  it('旧语法（无 leadMinutes）默认为 0', () => {
+    index.build([
+      makeBlock('b1', '{{schedule:2026-07-15T14:00|weekly}}'),
+    ])
+    const result = index.queryByDateRange('schedule', '2026-07-15', '2026-07-15')
+    expect(result[0].leadMinutes).toBe(0)
+  })
 })
