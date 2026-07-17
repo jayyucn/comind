@@ -9,6 +9,19 @@ import {
   deleteWebBlockVersion,
   cleanupWebBlockVersions
 } from './web-version-storage'
+import {
+  getWebNotification,
+  getWebNotificationsByBlock,
+  queryWebUnreadNotifications,
+  queryWebRecentNotifications,
+  createWebNotification,
+  batchCreateWebNotifications,
+  updateWebNotificationStatus,
+  setWebNotificationSnooze,
+  deleteWebNotification,
+  cleanupWebNotifications,
+  markAllWebNotificationsRead
+} from './web-notification-storage'
 
 function parseJsonResult<T>(result: any): T {
   if (typeof result === 'string') {
@@ -333,6 +346,50 @@ class WasmClientAdapter implements CoreClient {
 
   async cleanupBlockVersions(retentionDays: number): Promise<void> {
     return cleanupWebBlockVersions(retentionDays)
+  }
+
+  async getNotification(id: string): Promise<Notification> {
+    return getWebNotification(id)
+  }
+
+  async getNotificationsByBlock(blockId: string): Promise<Notification[]> {
+    return getWebNotificationsByBlock(blockId)
+  }
+
+  async queryUnreadNotifications(): Promise<Notification[]> {
+    return queryWebUnreadNotifications()
+  }
+
+  async queryRecentNotifications(limit: number): Promise<Notification[]> {
+    return queryWebRecentNotifications(limit)
+  }
+
+  async createNotification(notification: Notification): Promise<Notification> {
+    return createWebNotification(notification)
+  }
+
+  async batchCreateNotifications(notifications: Notification[]): Promise<Notification[]> {
+    return batchCreateWebNotifications(notifications)
+  }
+
+  async updateNotificationStatus(id: string, status: string): Promise<Notification> {
+    return updateWebNotificationStatus(id, status)
+  }
+
+  async setNotificationSnooze(id: string, snoozeUntil: number, status: string): Promise<Notification> {
+    return setWebNotificationSnooze(id, snoozeUntil, status)
+  }
+
+  async deleteNotification(id: string): Promise<void> {
+    return deleteWebNotification(id)
+  }
+
+  async cleanupNotifications(timestamp: number): Promise<void> {
+    return cleanupWebNotifications(timestamp)
+  }
+
+  async markAllNotificationsRead(): Promise<void> {
+    return markAllWebNotificationsRead()
   }
 }
 
