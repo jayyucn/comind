@@ -532,6 +532,7 @@ function handleContentClick(e: MouseEvent) {
     const kind = dateRefSpan.dataset.kind as string | undefined
     const iso = dateRefSpan.dataset.iso
     const recurrence = dateRefSpan.dataset.recurrence
+    const leadMinutes = parseInt(dateRefSpan.dataset.leadMinutes || '0', 10) || 0
     if (!raw || !kind || !iso || !recurrence) return
 
     // 在 block.content 中查找该 span 对应的 {{...}} 位置
@@ -571,6 +572,7 @@ function handleContentClick(e: MouseEvent) {
         kind: kind as any,
         iso,
         recurrence: recurrence as any,
+        leadMinutes,
         position: computeDatePickerPosition(dateRefSpan),
       },
       'content'

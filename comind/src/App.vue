@@ -53,6 +53,7 @@ const {
   kind: dateRefPanelKind,
   initialIso: dateRefPanelIso,
   initialRecurrence: dateRefPanelRecurrence,
+  initialLeadMinutes: dateRefPanelLeadMinutes,
   close: closeDateRefPanel,
   handleConfirm: handleDateRefConfirm,
 } = useDateTimePickerPanel()
@@ -300,6 +301,7 @@ function handleMainClick(e: MouseEvent) {
       :kind="dateRefPanelKind"
       :initial-iso="dateRefPanelIso"
       :initial-recurrence="dateRefPanelRecurrence"
+      :initial-lead-minutes="dateRefPanelLeadMinutes"
       @confirm="handleDateRefConfirm"
       @cancel="closeDateRefPanel"
     />

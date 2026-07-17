@@ -11,7 +11,7 @@ import { useEditorStore } from '../stores/editor'
 import { useBlockStore } from '../stores/blocks'
 import { usePropertyStore } from '../stores/property'
 import { DATE_REF_CLICK_EVENT } from '../extensions/DateRefExtension'
-import { serializeDateRef } from '../utils/date-ref'
+import { serializeDateRef, DATE_REF_REGEX } from '../utils/date-ref'
 import type { DateRefKind, RecurrenceRule } from '../utils/date-ref'
 import type { DateRefClickPayload } from '../extensions/DateRefExtension'
 import { closeDateRefMenu } from '../extensions/DateRefTriggerExtension'
@@ -40,7 +40,7 @@ export function computeDatePickerPosition(dateRefEl: HTMLElement): { x: number; 
 
 /** 去掉 content 中多余的 kind 类型 date-ref，仅保留第一个 */
 export function deduplicateDateRef(content: string, kind: string): string {
-  const re = /\{\{([^:]+):([^\|]+)(?:\|([^\}]+))?\}\}/g
+  const re = new RegExp(DATE_REF_REGEX.source, 'g')
   const parts: string[] = []
   let lastIndex = 0
   let count = 0
@@ -67,6 +67,7 @@ export function useDateTimePickerPanel() {
   const kind = computed(() => editorStore.dateRefEditor?.kind ?? 'schedule')
   const initialIso = computed(() => editorStore.dateRefEditor?.iso ?? '')
   const initialRecurrence = computed(() => editorStore.dateRefEditor?.recurrence ?? 'none')
+  const initialLeadMinutes = computed(() => editorStore.dateRefEditor?.leadMinutes ?? 0)
 
   /** 打开面板（填充 editorStore.dateRefEditor）
    * @param source — 'editor'（默认，PM 坐标）| 'content'（字符串索引）
@@ -83,6 +84,7 @@ export function useDateTimePickerPanel() {
       kind: payload.kind,
       iso: payload.iso,
       recurrence: payload.recurrence,
+      leadMinutes: payload.leadMinutes,
       position: payload.position,
     })
   }
@@ -128,18 +130,19 @@ export function useDateTimePickerPanel() {
       const docSize = editor.state.doc.content.size
       const cursor = editor.state.selection.from
 
-      // 核心验证：只有当 textBetween(from, to) 真的等于 {{
-      // 才能用 saved range。这样既验证了边界，也验证了内容正确性
       if (from >= 0 && from < docSize && to > from) {
         const sliced = editor.state.doc.textBetween(from, to, ' ')
+
         if (sliced === '{{') {
+          editor.chain().deleteRange({ from, to }).insertContent(newText).run()
+          inserted = true
+        } else if (DATE_REF_REGEX.test(sliced)) {
           editor.chain().deleteRange({ from, to }).insertContent(newText).run()
           inserted = true
         }
       }
 
       if (!inserted) {
-        // saved range 不可用，在光标附近搜索最近的 {{
         const searchWindow = 30
         let found = false
         let resolvedFrom = cursor
@@ -148,16 +151,16 @@ export function useDateTimePickerPanel() {
         editor.state.doc.descendants((node: any, pos: number) => {
           if (!node.isText || found) return
           const text = node.text || ''
-          for (let i = 0; i < text.length; i++) {
-            if (text[i] === '{' && i + 1 < text.length && text[i + 1] === '{') {
-              const absFrom = pos + i
-              const absTo = pos + i + 2
-              if (Math.abs(absFrom - cursor) <= searchWindow) {
-                resolvedFrom = absFrom
-                resolvedTo = absTo
-                found = true
-                return false
-              }
+          const re = new RegExp(DATE_REF_REGEX.source, 'g')
+          let m: RegExpExecArray | null
+          while ((m = re.exec(text)) !== null) {
+            const absFrom = pos + m.index
+            const absTo = pos + m.index + m[0].length
+            if (Math.abs(absFrom - cursor) <= searchWindow) {
+              resolvedFrom = absFrom
+              resolvedTo = absTo
+              found = true
+              return false
             }
           }
         })
@@ -203,6 +206,7 @@ export function useDateTimePickerPanel() {
     kind,
     initialIso,
     initialRecurrence,
+    initialLeadMinutes,
     open,
     close,
     handleConfirm,

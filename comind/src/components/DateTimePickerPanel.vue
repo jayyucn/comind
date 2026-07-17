@@ -19,6 +19,7 @@ const props = defineProps<{
   kind: DateRefKind
   initialIso: string
   initialRecurrence: RecurrenceRule
+  initialLeadMinutes?: number
 }>()
 
 const emit = defineEmits<{
@@ -145,6 +146,7 @@ watch(
       localDate.value = datePart || today.value
       localTime.value = timePart || ''
       localRecurrence.value = props.initialRecurrence || 'none'
+      localLeadMinutes.value = props.initialLeadMinutes || 0
       enableTime.value = !!timePart
 
       if (localDate.value) {

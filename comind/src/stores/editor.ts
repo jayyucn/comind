@@ -127,6 +127,7 @@ export const useEditorStore = defineStore('editor', () => {
     kind: DateRefKind
     iso: string
     recurrence: RecurrenceRule
+    leadMinutes: number
     position: { x: number; y: number }
     /** 仅 editor 模式新插入时有效，告知面板用 initialKind 而非 localKind 做校验 */
     initialKind?: DateRefKind
@@ -140,10 +141,11 @@ export const useEditorStore = defineStore('editor', () => {
     kind: DateRefKind
     iso: string
     recurrence: RecurrenceRule
+    leadMinutes?: number
     position: { x: number; y: number }
     initialKind?: DateRefKind
   }) {
-    dateRefEditor.value = { ...payload, source: payload.source ?? 'editor', visible: true }
+    dateRefEditor.value = { ...payload, source: payload.source ?? 'editor', visible: true, leadMinutes: payload.leadMinutes ?? 0 }
   }
 
   function closeDateRefEditor() {

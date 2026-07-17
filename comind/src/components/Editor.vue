@@ -10,10 +10,9 @@ import EnterAsBlockExtension from '../extensions/EnterAsBlockExtension'
 import BracketPairExtension from '../extensions/BracketPairExtension'
 import { SlashCommandExtension } from '../extensions/SlashCommandExtension'
 import { HeadingPreviewExtension } from '../extensions/HeadingPreviewExtension'
-import { DateRefExtension } from '../extensions/DateRefExtension'
+import { DateRefExtension, DATE_REF_CLICK_EVENT, type DateRefClickPayload } from '../extensions/DateRefExtension'
 import { DateRefTriggerExtension } from '../extensions/DateRefTriggerExtension'
 import { usePageStore } from '../stores/pages'
-import { useEditorStore } from '../stores/editor'
 import { useDateTimePickerPanel } from '../composables/useDateTimePickerPanel'
 import { useRelationshipMenu } from '../composables/useRelationshipMenu'
 import { debounce } from '../utils/debounce'
@@ -129,13 +128,37 @@ function handleDateRefTrigger(event: Event) {
   const { open: openDateRefPanel } = useDateTimePickerPanel()
   openDateRefPanel(
     {
-      blockId,
+      blockId: blockId || '',
       from: range.from,
       to: range.to,
       kind,
       iso: new Date().toISOString().slice(0, 10),
       recurrence: 'none',
+      leadMinutes: 0,
       position: { x: coords.left, y: coords.bottom + 6 },
+    },
+    'editor'
+  )
+}
+
+function handleDateRefClick(event: Event) {
+  const customEvent = event as CustomEvent<DateRefClickPayload>
+  const { from, to, kind, iso, recurrence, leadMinutes } = customEvent.detail
+
+  const target = event.target as HTMLElement
+  const rect = target.getBoundingClientRect()
+
+  const { open: openDateRefPanel } = useDateTimePickerPanel()
+  openDateRefPanel(
+    {
+      blockId: props.blockId || '',
+      from,
+      to,
+      kind,
+      iso,
+      recurrence,
+      leadMinutes,
+      position: { x: rect.left, y: rect.bottom + 6 },
     },
     'editor'
   )
@@ -339,6 +362,7 @@ onBeforeUnmount(() => {
       view.dom.removeEventListener('relationship-trigger', handleRelationshipTrigger as EventListener)
       view.dom.removeEventListener('relationship-close', handleRelationshipClose as EventListener)
       view.dom.removeEventListener('dateRefTrigger', handleDateRefTrigger as EventListener)
+      view.dom.removeEventListener(DATE_REF_CLICK_EVENT, handleDateRefClick as EventListener)
     }
   } catch (err) {
     if (err instanceof Error && err.message.includes('editor view is not available')) {
@@ -367,6 +391,7 @@ onMounted(() => {
       editor.value.view.dom.addEventListener('relationship-trigger', handleRelationshipTrigger as EventListener)
       editor.value.view.dom.addEventListener('relationship-close', handleRelationshipClose as EventListener)
       editor.value.view.dom.addEventListener('dateRefTrigger', handleDateRefTrigger as EventListener)
+      editor.value.view.dom.addEventListener(DATE_REF_CLICK_EVENT, handleDateRefClick as EventListener)
     }
   })
 })

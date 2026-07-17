@@ -14,6 +14,7 @@ export interface DateRefClickPayload {
   kind: DateRefKind
   iso: string
   recurrence: RecurrenceRule
+  leadMinutes: number
 }
 
 function buildDecorations(doc: any, decorations: Decoration[]) {
@@ -28,6 +29,7 @@ function buildDecorations(doc: any, decorations: Decoration[]) {
       const kind = m[1] as DateRefKind
       const iso = m[2]
       const recurrence = normalizeRecurrence(m[3])
+      const leadMinutes = m[4] ? parseInt(m[4], 10) || 0 : 0
 
       decorations.push(
         Decoration.inline(start, end, {
@@ -35,6 +37,7 @@ function buildDecorations(doc: any, decorations: Decoration[]) {
           'data-kind': kind,
           'data-iso': iso,
           'data-recurrence': recurrence,
+          'data-lead-minutes': leadMinutes.toString(),
         })
       )
     }
@@ -87,6 +90,7 @@ export const DateRefExtension = Extension.create({
               kind: target.dataset.kind as DateRefKind,
               iso: target.dataset.iso ?? '',
               recurrence: normalizeRecurrence(target.dataset.recurrence),
+              leadMinutes: parseInt(target.dataset.leadMinutes || '0', 10) || 0,
             }
 
             target.dispatchEvent(

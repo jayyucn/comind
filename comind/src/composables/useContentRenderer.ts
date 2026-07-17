@@ -81,12 +81,13 @@ export function useContentRenderer() {
    * 可在 typed link 之后、wiki link 之前处理。
    */
   function renderDateRefs(text: string): string {
-    return text.replace(DATE_REF_REGEX, (full, kind, iso, rec) => {
+    return text.replace(DATE_REF_REGEX, (full, kind, iso, rec, lead) => {
+      const leadMinutes = lead ? parseInt(lead, 10) || 0 : 0
       const ref: DateRef = {
         kind: kind as DateRef['kind'],
         iso: iso.trim(),
         recurrence: normalizeRecurrence(rec),
-        leadMinutes: 0,
+        leadMinutes,
       }
       const overdue = isOverdue(ref)
       const display = formatDateRefDisplay(ref)
@@ -96,6 +97,7 @@ export function useContentRenderer() {
         `data-kind="${escapeHtmlEntities(kind)}" ` +
         `data-iso="${escapeHtmlEntities(iso.trim())}" ` +
         `data-recurrence="${escapeHtmlEntities(ref.recurrence)}" ` +
+        `data-lead-minutes="${leadMinutes}" ` +
         `data-raw="${escapeHtmlEntities(serialized)}">` +
         `${escapeHtmlEntities(display)}</span>`
     })
