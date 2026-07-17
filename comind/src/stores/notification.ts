@@ -38,23 +38,12 @@ export const useNotificationStore = defineStore('notification', () => {
 
   const groupedNotifications = computed(() => {
     const groups: { date: string; items: Notification[] }[] = []
-    const today = new Date().toDateString()
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toDateString()
 
     for (const notif of sortedNotifications.value) {
       const notifDate = new Date(notif.fired_at).toDateString()
       let group = groups.find(g => g.date === notifDate)
 
       if (!group) {
-        let label = notifDate
-        if (notifDate === today) {
-          label = '今天'
-        } else if (notifDate === yesterday) {
-          label = '昨天'
-        } else {
-          const d = new Date(notif.fired_at)
-          label = `${d.getMonth() + 1}月${d.getDate()}日`
-        }
         group = { date: notifDate, items: [] }
         groups.push(group)
       }
@@ -163,12 +152,26 @@ export const useNotificationStore = defineStore('notification', () => {
       return {
         title: '通知',
         body: '',
-        pageId: '',
+        blockSnippet: '',
+        eventDisplay: '',
         blockId: '',
+        pageId: '',
         pageTitle: '',
-        blockContent: '',
       }
     }
+  }
+
+  function toggleSetting(key: keyof NotificationSettings) {
+    const value = settings.value[key]
+    if (typeof value === 'boolean') {
+      (settings.value as unknown as Record<string, boolean>)[key] = !value
+      saveNotificationSettings(settings.value)
+    }
+  }
+
+  function updateSetting<K extends keyof NotificationSettings>(key: K, value: NotificationSettings[K]) {
+    settings.value[key] = value
+    saveNotificationSettings(settings.value)
   }
 
   return {
@@ -189,6 +192,8 @@ export const useNotificationStore = defineStore('notification', () => {
     deleteNotification,
     triggerCheckAndFire,
     parsePayload,
+    toggleSetting,
+    updateSetting,
     SNOOZE_PRESETS,
   }
 })

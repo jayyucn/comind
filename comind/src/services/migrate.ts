@@ -105,6 +105,7 @@ export async function migrateDateProperties(client: CoreClient): Promise<Migrati
             kind,
             iso,
             recurrence: recurrence as any,
+            leadMinutes: 0,
           })
 
           // 拼接 content（插在开头，与原有内容用空格隔开）

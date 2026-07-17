@@ -5,8 +5,12 @@ export type NotificationStatus = 'pending' | 'unread' | 'read' | 'dismissed'
 
 export interface NotificationPayload {
   title: string
+  body: string
   blockSnippet: string
   eventDisplay: string
+  blockId: string
+  pageId: string
+  pageTitle: string
 }
 
 export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {

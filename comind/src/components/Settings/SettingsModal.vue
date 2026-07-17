@@ -6,7 +6,7 @@ import { useTheme } from '../../composables/useTheme'
 import RelationshipTypesPanel from './RelationshipTypesPanel.vue'
 import { getDbPath, setDbPath, resetDbPath, exportToMarkdown, importFromMarkdown, getSyncConfig, setSyncConfig, syncNow } from '../../wasm/client'
 import { isTauriEnvironment, tauriPickDirectory } from '../../wasm/tauri-client'
-import { X, Sun, Moon, Monitor, Folder, RotateCcw, AlertCircle, Upload, Download, RefreshCw, ToggleLeft, ToggleRight, Bell, BellOff, Clock } from 'lucide-vue-next'
+import { X, Sun, Moon, Monitor, Folder, RotateCcw, AlertCircle, Upload, Download, RefreshCw, ToggleLeft, ToggleRight } from 'lucide-vue-next'
 import { useNotificationStore } from '../../stores/notification'
 
 const { isOpen, close } = useSettingsModal()

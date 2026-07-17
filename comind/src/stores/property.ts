@@ -166,7 +166,7 @@ export const usePropertyStore = defineStore('property', () => {
     for (const ref of refsToAdvance) {
       const nextIso = calculateNextRecurrence(ref.iso, ref.recurrence!)
       const oldText = serializeDateRef(ref)
-      const newText = serializeDateRef({ kind: ref.kind, iso: nextIso, recurrence: ref.recurrence })
+      const newText = serializeDateRef({ kind: ref.kind, iso: nextIso, recurrence: ref.recurrence, leadMinutes: ref.leadMinutes })
       newContent = newContent.replace(oldText, newText)
     }
     

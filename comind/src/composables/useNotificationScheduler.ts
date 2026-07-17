@@ -3,7 +3,6 @@ import { useNotificationStore } from '../stores/notification'
 
 const SCHEDULER_INTERVAL_MS = 60 * 1000
 
-let lock: Lock | null = null
 let intervalId: ReturnType<typeof setInterval> | null = null
 let isPrimary = ref(false)
 
@@ -17,20 +16,20 @@ export function useNotificationScheduler() {
     }
 
     try {
-      lock = await navigator.locks.request('comind-notification-scheduler', {
+      let granted = false
+      await navigator.locks.request('comind-notification-scheduler', {
         ifAvailable: true,
+      }, () => {
+        granted = true
+        return Promise.resolve()
       })
-      return lock !== null
+      return granted
     } catch {
       return true
     }
   }
 
-  async function releaseLock() {
-    if (lock) {
-      lock.release()
-      lock = null
-    }
+  function releaseLock() {
   }
 
   async function checkAndFire() {

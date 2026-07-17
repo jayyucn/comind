@@ -157,13 +157,15 @@ export class NotificationService {
       return null
     }
 
+    const blockSnippet = block.content.replace(/\{\{[^}]+\}\}/g, '').trim().slice(0, 100)
     const payload: NotificationPayload = {
       title: dateRef.kind === 'deadline' ? '截止日期提醒' : '日程提醒',
-      body: block.content.replace(/\{\{[^}]+\}\}/g, '').trim() || page.title,
-      pageId: page.id,
+      body: blockSnippet || page.title,
+      blockSnippet,
+      eventDisplay: eventIso,
       blockId: block.id,
+      pageId: page.id,
       pageTitle: page.title,
-      blockContent: block.content.replace(/\{\{[^}]+\}\}/g, '').trim(),
     }
 
     const notification: Notification = {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { Bell, ChevronDown, Check, X, Clock, Trash2 } from 'lucide-vue-next'
+import { Bell, Check, X, Clock, Trash2 } from 'lucide-vue-next'
 import { useNotificationStore } from '../stores/notification'
 import { useNavigateToPage } from '../composables/useNavigateToPage'
 import type { Notification } from '../wasm/types'
@@ -25,7 +25,7 @@ function closeDropdown() {
 function handleNotificationClick(notif: Notification) {
   closeDropdown()
   const payload = notificationStore.parsePayload(notif.payload)
-  navigateToPage.navigateToPage(payload.pageId, payload.blockId)
+  navigateToPage.navigateToPage(payload.pageId)
   notificationStore.markAsRead(notif.id)
 }
 
@@ -204,12 +204,12 @@ function handleClickOutside(event: MouseEvent) {
                   </button>
                   <div class="snooze-options">
                     <button
-                      v-for="preset in notificationStore.SNOOZE_PRESETS"
-                      :key="preset.minutes"
+                      v-for="[key, value] in Object.entries(notificationStore.SNOOZE_PRESETS)"
+                      :key="key"
                       class="snooze-option"
-                      @click.stop="handleSnooze(notif.id, preset.minutes)"
+                      @click.stop="handleSnooze(notif.id, value / 60000)"
                     >
-                      {{ preset.label }}
+                      {{ { '10m': '10分钟', '30m': '30分钟', '1h': '1小时', tomorrow: '明天' }[key] }}
                     </button>
                   </div>
                 </div>

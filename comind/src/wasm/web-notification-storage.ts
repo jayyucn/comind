@@ -44,7 +44,7 @@ export async function getWebNotificationsByBlock(blockId: string): Promise<Notif
     .sortBy('fired_at')
 }
 
-export async function findWebNotificationByEvent(blockId: string, kind: string, eventIso: string): Promise<Notification | null> {
+export async function findWebNotificationByEvent(blockId: string, kind: string, event_iso: string): Promise<Notification | null> {
   const records = await notificationDb.notifications
     .where('block_id')
     .equals(blockId)

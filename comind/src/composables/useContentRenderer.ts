@@ -86,6 +86,7 @@ export function useContentRenderer() {
         kind: kind as DateRef['kind'],
         iso: iso.trim(),
         recurrence: normalizeRecurrence(rec),
+        leadMinutes: 0,
       }
       const overdue = isOverdue(ref)
       const display = formatDateRefDisplay(ref)

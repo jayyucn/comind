@@ -12,7 +12,7 @@ import { useBlockStore } from '../stores/blocks'
 import { usePropertyStore } from '../stores/property'
 import { DATE_REF_CLICK_EVENT } from '../extensions/DateRefExtension'
 import { serializeDateRef } from '../utils/date-ref'
-import type { DateRefKind, RecurrenceRule, DateRef } from '../utils/date-ref'
+import type { DateRefKind, RecurrenceRule } from '../utils/date-ref'
 import type { DateRefClickPayload } from '../extensions/DateRefExtension'
 import { closeDateRefMenu } from '../extensions/DateRefTriggerExtension'
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { Calendar, Clock, Repeat, Check, ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import { Clock, Repeat, Check, ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { useEditorStore } from '../stores/editor'
 import { useBlockStore } from '../stores/blocks'
 import { parseDateRefs } from '../utils/date-ref'
@@ -190,10 +190,6 @@ watch(localKind, (newKind, oldKind) => {
     }
   }
 })
-
-function toggleKind() {
-  localKind.value = localKind.value === 'schedule' ? 'deadline' : 'schedule'
-}
 
 function handleConfirm() {
   if (!localDate.value) return
