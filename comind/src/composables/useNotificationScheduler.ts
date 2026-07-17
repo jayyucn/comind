@@ -33,14 +33,17 @@ export function useNotificationScheduler() {
   }
 
   async function checkAndFire() {
+    console.log('[NotificationScheduler] Check and fire')
     if (!isPrimary.value) {
       return
     }
-
+    console.log('[NotificationScheduler] Check and fire (primary)')
+    
     try {
       await notificationStore.triggerCheckAndFire()
+      console.log('[NotificationScheduler] Check and fire (primary) success')
     } catch (err) {
-      console.error('[NotificationScheduler] Check and fire failed:', err)
+      console.error('[NotificationScheduler] Check and fire (primary) failed:', err)
     }
   }
 

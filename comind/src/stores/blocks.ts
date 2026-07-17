@@ -459,7 +459,7 @@ export const useBlockStore = defineStore('blocks', () => {
     const block = blocks.value.find(b => b.id === blockId)
     if (!block) return null
 
-    const textOffset = pmPosToTextOffset(cursorPos)
+    let textOffset = pmPosToTextOffset(cursorPos)
     const contentLen = block.content.length
 
     // ── 获取原 block 的 status（新 block 也加 todo）────────────────────────
@@ -496,8 +496,24 @@ export const useBlockStore = defineStore('blocks', () => {
 
       if (isInMiddle) {
         // ── 文本中间：拆分内容 ───────────────────────────────────────────
-        const before = block.content.slice(0, textOffset)
-        const after = block.content.slice(textOffset)
+        let before = block.content.slice(0, textOffset)
+        let after = block.content.slice(textOffset)
+
+        // 检查是否在 date-ref 中间拆分，如果是，则调整拆分位置
+        // date-ref 格式：{{kind:ISO|recurrence|leadMinutes}}
+        const DATE_REF_REGEX = /\{\{(schedule|deadline):([^}|]+?)(?:\|([^}|]*))?(?:\|([^}]+?))?\}\}/g
+        let match
+        while ((match = DATE_REF_REGEX.exec(block.content)) !== null) {
+          const refStart = match.index
+          const refEnd = refStart + match[0].length
+          // 如果拆分位置在 date-ref 内部，则将拆分位置调整到 date-ref 之后
+          if (textOffset > refStart && textOffset < refEnd) {
+            textOffset = refEnd
+            before = block.content.slice(0, textOffset)
+            after = block.content.slice(textOffset)
+            break
+          }
+        }
 
         // 更新当前节点的内容（前半部分）
         block.content = before

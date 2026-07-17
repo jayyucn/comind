@@ -13,6 +13,7 @@ export interface BlockTypeEditorExposed {
   getText: () => string
   markSaved: () => void
   getEditor: () => any
+  cancelDebouncedSave?: () => void
 }
 
 export interface BlockTypeRenderExposed {

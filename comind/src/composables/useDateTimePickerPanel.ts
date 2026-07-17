@@ -110,11 +110,33 @@ export function useDateTimePickerPanel() {
     }
 
     const { from, to, source, blockId } = state
+
+    let effectiveLeadMinutes = value.leadMinutes
+
+    if (source === 'editor') {
+      const editor = editorStore.activeEditor
+      if (editor && editor.state?.doc) {
+        editor.state.doc.descendants((node: any, pos: number) => {
+          if (!node.isText) return
+          const text = node.text || ''
+          const re = new RegExp(DATE_REF_REGEX.source, 'g')
+          let m: RegExpExecArray | null
+          while ((m = re.exec(text)) !== null) {
+            const absFrom = pos + m.index
+            if (absFrom === from) {
+              effectiveLeadMinutes = m[4] ? parseInt(m[4], 10) || 0 : 0
+              return false
+            }
+          }
+        })
+      }
+    }
+
     const newText = serializeDateRef({
       kind: value.kind,
       iso: value.iso,
       recurrence: value.recurrence,
-      leadMinutes: value.leadMinutes,
+      leadMinutes: effectiveLeadMinutes,
     })
 
     let inserted = false
@@ -130,12 +152,38 @@ export function useDateTimePickerPanel() {
       const docSize = editor.state.doc.content.size
       const cursor = editor.state.selection.from
 
-      if (from >= 0 && from < docSize && to > from) {
+      if (from >= 0 && from < docSize) {
         const sliced = editor.state.doc.textBetween(from, to, ' ')
 
         if (sliced === '{{') {
-          editor.chain().deleteRange({ from, to }).insertContent(newText).run()
-          inserted = true
+          let found = false
+          let resolvedFrom = from
+          let resolvedTo = from
+
+          editor.state.doc.descendants((node: any, pos: number) => {
+            if (!node.isText || found) return
+            const text = node.text || ''
+            const re = new RegExp(DATE_REF_REGEX.source, 'g')
+            let m: RegExpExecArray | null
+            while ((m = re.exec(text)) !== null) {
+              const absFrom = pos + m.index
+              const absTo = pos + m.index + m[0].length
+              if (absFrom === from) {
+                resolvedFrom = absFrom
+                resolvedTo = absTo
+                found = true
+                return false
+              }
+            }
+          })
+
+          if (found) {
+            editor.chain().deleteRange({ from: resolvedFrom, to: resolvedTo }).insertContent(newText).run()
+            inserted = true
+          } else {
+            editor.chain().deleteRange({ from, to }).insertContent(newText).run()
+            inserted = true
+          }
         } else if (DATE_REF_REGEX.test(sliced)) {
           editor.chain().deleteRange({ from, to }).insertContent(newText).run()
           inserted = true

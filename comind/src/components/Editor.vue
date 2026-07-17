@@ -44,6 +44,10 @@ const debouncedEmitSave = debounce((content: string) => {
   emit('save', content)
 }, 300)
 
+function cancelDebouncedSave() {
+  debouncedEmitSave.cancel()
+}
+
 const hasContent = ref(!!props.content)
 const menuVisible = ref(false)
 const menuPosition = ref({ x: 0, y: 0 })
@@ -324,14 +328,17 @@ const editor = shallowRef(useEditor({
     }
   },
   onUpdate: () => {
-    if (editor.value) {
+    if (editor.value && !settingContent) {
       hasContent.value = !!editor.value.getText()
       const { from } = editor.value.state.selection
       emit('cursor-change', from)
-      debouncedEmitSave(editor.value.getText())
+      const content = editor.value.getText()
+      debouncedEmitSave(content)
     }
   }
 }))
+
+let settingContent = false
 
 watch(
   () => props.content,
@@ -339,7 +346,9 @@ watch(
     if (!editor.value) return
     if (editor.value.getText() !== newContent) {
       syncing = true
+      settingContent = true
       editor.value.commands.setContent(textToHtml(newContent))
+      settingContent = false
       syncing = false
     }
   }
@@ -429,7 +438,7 @@ function getEditor() {
   return editor.value
 }
 
-defineExpose({ syncContent, focus, getText: () => editor.value?.getText() ?? '', markSaved, getEditor })
+defineExpose({ syncContent, focus, getText: () => editor.value?.getText() ?? '', markSaved, getEditor, cancelDebouncedSave })
 </script>
 
 <template>

@@ -16,6 +16,7 @@ import { useSidebar } from './composables/useSidebar'
 import { useRightSidebar } from './composables/useRightSidebar'
 import { useRelationshipTypes } from './composables/useRelationshipTypes'
 import { useIdeas } from './composables/useIdeas'
+import { useNotificationScheduler } from './composables/useNotificationScheduler'
 import Icon from './components/Icons/Icon.vue'
 import RightSidebar from './components/RightSidebar/index.vue'
 import { registerPanel } from './components/RightSidebar/panels'
@@ -58,15 +59,10 @@ const {
   handleConfirm: handleDateRefConfirm,
 } = useDateTimePickerPanel()
 
+useNotificationScheduler()
+
 const isFullWidthPage = computed(() => route.meta.fullWidth === true)
 const showRightSidebarToggle = computed(() => route.meta.hideRightSidebarToggle !== true)
-
-onMounted(async () => {
-  await useRelationshipTypes().load()
-  await pageStore.loadAllPages()
-  await useIdeas().checkAndEnsureTodayIdeas()
-  document.addEventListener('keydown', handleGlobalKeydown)
-})
 
 function handleGlobalKeydown(e: KeyboardEvent) {
   if ((e.ctrlKey || e.metaKey) && e.key === 'k') {

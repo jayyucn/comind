@@ -35,6 +35,7 @@ import PropertyInline from './PropertyInline.vue'
 import { usePageStore } from '../../stores/pages'
 import BlockSelector from '../BlockSelector.vue'
 import { isDescendantOf } from '../../utils/block-helpers'
+import { DATE_REF_REGEX, serializeDateRef, normalizeRecurrence } from '../../utils/date-ref'
 import { computeDropZone, computeSortPosition } from '../../composables/useDragDrop'
 import type { TreeNode, Block } from '../../types/block'
 import type { BlockTypeEditorExposed } from '../../types/block-type'
@@ -386,7 +387,7 @@ function getCaretPositionFromPoint(x: number, y: number): number | null {
 }
 
 async function handleSave(content: string) {
-  await blockStore.updateBlockContent(blockId.value, content)
+  return await blockStore.updateBlockContent(blockId.value, content)
 }
 
 async function handleLanguageChange(lang: string) {
@@ -397,6 +398,10 @@ async function handleLanguageChange(lang: string) {
 async function syncBlockContent() {
   if (editorRef.value) {
     editorRef.value.markSaved()
+    const editorComponent = editorRef.value as any
+    if (editorComponent.cancelDebouncedSave) {
+      editorComponent.cancelDebouncedSave()
+    }
     await handleSave(editorRef.value.getText())
   }
 }
@@ -552,10 +557,16 @@ function handleContentClick(e: MouseEvent) {
     const content = blockStore.blocks.find(b => b.id === blockId.value)?.content ?? ''
     let idx = -1
     let matchCount = 0
-    const searchPattern = /\x7b\x7b([^:]+):([^\x7d|]+)(?:\|([^\x7d]+))?\x7d\x7d/g
+    const searchPattern = new RegExp(DATE_REF_REGEX.source, 'g')
     let m: RegExpExecArray | null
     while ((m = searchPattern.exec(content)) !== null) {
-      if (m[0] === raw && matchCount === occurrence) {
+      const matchedRaw = serializeDateRef({
+        kind: m[1] as any,
+        iso: m[2],
+        recurrence: normalizeRecurrence(m[3]),
+        leadMinutes: m[4] ? parseInt(m[4], 10) || 0 : 0,
+      })
+      if (matchedRaw === raw && matchCount === occurrence) {
         idx = m.index
         break
       }
