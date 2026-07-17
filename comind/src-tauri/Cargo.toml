@@ -13,6 +13,7 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 dirs = "5.0"
 chrono = { version = "0.4", features = ["serde"] }
 tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
 regex = "1"
 log = "0.4"
 simple_logger = "4"
