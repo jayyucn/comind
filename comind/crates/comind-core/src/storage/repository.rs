@@ -85,10 +85,31 @@ pub trait NotificationRepository {
     fn create(&mut self, notification: &Notification) -> Result<Notification, Box<dyn Error>>;
     fn batch_create(&mut self, notifications: &[Notification]) -> Result<Vec<Notification>, Box<dyn Error>>;
     fn update_status(&mut self, id: &str, status: &str) -> Result<Notification, Box<dyn Error>>;
+    fn update_payload(&mut self, id: &str, payload: &str) -> Result<Notification, Box<dyn Error>>;
+    /// 非 recurring 通知原地改期：把匹配 (block_id, kind) 的通知 event_iso 改为新值，
+    /// 状态重置为 unread、清 snooze。用于 block 内容改时间后，通知随 dateRef 一起挪动，
+    /// 而不是留下旧 event_iso 的孤儿 + 新时间到点又新建。仅匹配非 recurrence 的 dateRef 产生的通知。
+    fn reschedule(&mut self, block_id: &str, kind: &str, new_event_iso: &str) -> Result<(), Box<dyn Error>>;
     fn set_snooze(&mut self, id: &str, snooze_until: i64, status: &str) -> Result<Notification, Box<dyn Error>>;
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
     fn delete_older_than(&mut self, timestamp: i64) -> Result<(), Box<dyn Error>>;
     fn mark_all_read(&mut self) -> Result<(), Box<dyn Error>>;
+}
+
+pub trait DateRefRepository {
+    fn get_by_id(&self, id: &str) -> Result<DateRef, Box<dyn Error>>;
+    fn get_by_block_id(&self, block_id: &str) -> Result<Vec<DateRef>, Box<dyn Error>>;
+    fn query_by_date_range(
+        &self,
+        kind: &str,
+        from: &str,
+        to: &str,
+    ) -> Result<Vec<DateRef>, Box<dyn Error>>;
+    fn query_overdue(&self, today: &str) -> Result<Vec<DateRef>, Box<dyn Error>>;
+    fn create(&mut self, date_ref: &DateRef) -> Result<DateRef, Box<dyn Error>>;
+    fn create_many(&mut self, date_refs: &[DateRef]) -> Result<Vec<DateRef>, Box<dyn Error>>;
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
+    fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>>;
 }
 
 pub trait StorageAdapter {
@@ -101,6 +122,7 @@ pub trait StorageAdapter {
     fn search(&mut self) -> &mut dyn SearchRepository;
     fn block_versions(&mut self) -> &mut dyn BlockVersionRepository;
     fn notifications(&mut self) -> &mut dyn NotificationRepository;
+    fn date_refs(&mut self) -> &mut dyn DateRefRepository;
 }
 
 pub trait TransactionalStorageAdapter: StorageAdapter {

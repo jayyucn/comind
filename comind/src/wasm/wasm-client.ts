@@ -1,6 +1,6 @@
 import type {
   Block, Page, Property, Link, RelationshipType,
-  SearchResult, BatchResult
+  SearchResult, BatchResult, DateRefRecord
 } from './types'
 
 export interface WasmClient {
@@ -26,6 +26,10 @@ export interface WasmClient {
   search(query: string): Promise<SearchResult[]>
 
   execute_batch(operations: string): Promise<BatchResult[]>
+  query_date_refs(kind: string, from: string, to: string): Promise<DateRefRecord[]>
+  query_overdue_date_refs(today: string): Promise<DateRefRecord[]>
+  get_date_refs_by_block(block_id: string): Promise<DateRefRecord[]>
+  rebuild_date_refs(): Promise<{ rebuilt: number }>
 }
 
 let wasmClient: WasmClient | null = null
@@ -160,6 +164,26 @@ export async function initWasmClient(): Promise<WasmClient> {
     async execute_batch(operations: string): Promise<BatchResult[]> {
       const result = await wasmModule.execute_batch(operations)
       return parseJsonResult<BatchResult[]>(result)
+    },
+
+    async query_date_refs(kind: string, from: string, to: string): Promise<DateRefRecord[]> {
+      const result = await wasmModule.query_date_refs(kind, from, to)
+      return parseJsonResult<DateRefRecord[]>(result)
+    },
+
+    async query_overdue_date_refs(today: string): Promise<DateRefRecord[]> {
+      const result = await wasmModule.query_overdue_date_refs(today)
+      return parseJsonResult<DateRefRecord[]>(result)
+    },
+
+    async get_date_refs_by_block(block_id: string): Promise<DateRefRecord[]> {
+      const result = await wasmModule.get_date_refs_by_block(block_id)
+      return parseJsonResult<DateRefRecord[]>(result)
+    },
+
+    async rebuild_date_refs(): Promise<{ rebuilt: number }> {
+      const result = await wasmModule.rebuild_date_refs()
+      return parseJsonResult<{ rebuilt: number }>(result)
     }
   }
 

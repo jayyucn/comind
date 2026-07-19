@@ -156,6 +156,20 @@ impl SQLiteAdapter {
             CREATE INDEX IF NOT EXISTS idx_notifications_status ON Notification(status);
             CREATE INDEX IF NOT EXISTS idx_notifications_fired_at ON Notification(fired_at);
             CREATE INDEX IF NOT EXISTS idx_notifications_block_id ON Notification(block_id);
+
+            CREATE TABLE IF NOT EXISTS DateRef (
+                id              TEXT PRIMARY KEY,
+                block_id        TEXT NOT NULL,
+                kind            TEXT NOT NULL,
+                iso             TEXT NOT NULL,
+                date_day        TEXT NOT NULL,
+                recurrence      TEXT NOT NULL DEFAULT 'none',
+                lead_minutes    INTEGER NOT NULL DEFAULT 0,
+                created_at      INTEGER NOT NULL,
+                FOREIGN KEY (block_id) REFERENCES Block(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_dateref_kind_date ON DateRef(kind, date_day);
+            CREATE INDEX IF NOT EXISTS idx_dateref_block_id ON DateRef(block_id);
             
             CREATE INDEX IF NOT EXISTS idx_page_blockId        ON Page(block_id);
             CREATE INDEX IF NOT EXISTS idx_page_type           ON Page(type);
@@ -1204,6 +1218,123 @@ impl StorageAdapter for SQLiteAdapter {
     fn notifications(&mut self) -> &mut dyn NotificationRepository {
         self
     }
+
+    fn date_refs(&mut self) -> &mut dyn DateRefRepository {
+        self
+    }
+}
+
+impl DateRefRepository for SQLiteAdapter {
+    fn get_by_id(&self, id: &str) -> Result<DateRef, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at FROM DateRef WHERE id = ?"
+        )?;
+        let dr = stmt.query_row(params![id], |row| {
+            Ok(DateRef {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                kind: row.get(2)?,
+                iso: row.get(3)?,
+                date_day: row.get(4)?,
+                recurrence: row.get(5)?,
+                lead_minutes: row.get(6)?,
+                created_at: row.get(7)?,
+            })
+        });
+        match dr {
+            Ok(d) => Ok(d),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "DateRef not found"))),
+            Err(e) => Err(Box::new(e)),
+        }
+    }
+
+    fn get_by_block_id(&self, block_id: &str) -> Result<Vec<DateRef>, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at FROM DateRef WHERE block_id = ?"
+        )?;
+        let rows = stmt.query_map(params![block_id], |row| {
+            Ok(DateRef {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                kind: row.get(2)?,
+                iso: row.get(3)?,
+                date_day: row.get(4)?,
+                recurrence: row.get(5)?,
+                lead_minutes: row.get(6)?,
+                created_at: row.get(7)?,
+            })
+        })?;
+        let mut result = Vec::new();
+        for r in rows { result.push(r?); }
+        Ok(result)
+    }
+
+    fn query_by_date_range(&self, kind: &str, from: &str, to: &str) -> Result<Vec<DateRef>, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at FROM DateRef WHERE (kind = ?1 OR ?1 = '*') AND date_day BETWEEN ?2 AND ?3 ORDER BY date_day, block_id"
+        )?;
+        let rows = stmt.query_map(params![kind, from, to], |row| {
+            Ok(DateRef {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                kind: row.get(2)?,
+                iso: row.get(3)?,
+                date_day: row.get(4)?,
+                recurrence: row.get(5)?,
+                lead_minutes: row.get(6)?,
+                created_at: row.get(7)?,
+            })
+        })?;
+        let mut result = Vec::new();
+        for r in rows { result.push(r?); }
+        Ok(result)
+    }
+
+    fn query_overdue(&self, today: &str) -> Result<Vec<DateRef>, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at FROM DateRef WHERE kind = 'deadline' AND date_day < ? ORDER BY date_day"
+        )?;
+        let rows = stmt.query_map(params![today], |row| {
+            Ok(DateRef {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                kind: row.get(2)?,
+                iso: row.get(3)?,
+                date_day: row.get(4)?,
+                recurrence: row.get(5)?,
+                lead_minutes: row.get(6)?,
+                created_at: row.get(7)?,
+            })
+        })?;
+        let mut result = Vec::new();
+        for r in rows { result.push(r?); }
+        Ok(result)
+    }
+
+    fn create(&mut self, date_ref: &DateRef) -> Result<DateRef, Box<dyn Error>> {
+        self.conn.execute(
+            "INSERT INTO DateRef (id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            params![date_ref.id, date_ref.block_id, date_ref.kind, date_ref.iso, date_ref.date_day, date_ref.recurrence, date_ref.lead_minutes, date_ref.created_at],
+        )?;
+        Ok(date_ref.clone())
+    }
+
+    fn create_many(&mut self, date_refs: &[DateRef]) -> Result<Vec<DateRef>, Box<dyn Error>> {
+        for dr in date_refs {
+            DateRefRepository::create(self, dr)?;
+        }
+        Ok(date_refs.to_vec())
+    }
+
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
+        self.conn.execute("DELETE FROM DateRef WHERE id = ?", params![id])?;
+        Ok(())
+    }
+
+    fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>> {
+        self.conn.execute("DELETE FROM DateRef WHERE block_id = ?", params![block_id])?;
+        Ok(())
+    }
 }
 
 impl NotificationRepository for SQLiteAdapter {
@@ -1415,7 +1546,7 @@ impl NotificationRepository for SQLiteAdapter {
 
     fn delete_older_than(&mut self, timestamp: i64) -> Result<(), Box<dyn Error>> {
         self.conn.execute(
-            "DELETE FROM Notification WHERE status IN ('read', 'dismissed') AND updated_at < ?",
+            "DELETE FROM Notification WHERE status = 'read' AND updated_at < ?",
             params![timestamp],
         )?;
         Ok(())
@@ -1428,6 +1559,25 @@ impl NotificationRepository for SQLiteAdapter {
         )?;
         Ok(())
     }
+
+    fn update_payload(&mut self, id: &str, payload: &str) -> Result<Notification, Box<dyn Error>> {
+        self.conn.execute(
+            "UPDATE Notification SET payload = ?, updated_at = ? WHERE id = ?",
+            params![payload, chrono::Utc::now().timestamp_millis(), id],
+        )?;
+        crate::NotificationRepository::get_by_id(self, id)
+    }
+
+    fn reschedule(&mut self, block_id: &str, kind: &str, new_event_iso: &str) -> Result<(), Box<dyn Error>> {
+        // 非 recurring 通知原地改期：把匹配 (block_id, kind) 的通知 event_iso 改掉，
+        // 状态重置为 unread、清 snooze。event_iso 计算见 DateRefService::compute_event_iso（与 TS 一致）。
+        self.conn.execute(
+            "UPDATE Notification SET event_iso = ?, status = 'unread', snooze_until = NULL, updated_at = ? WHERE block_id = ? AND kind = ? AND status IN ('unread','read','dismissed')",
+            params![new_event_iso, chrono::Utc::now().timestamp_millis(), block_id, kind],
+        )?;
+        Ok(())
+    }
+
 }
 
 impl TransactionalStorageAdapter for SQLiteAdapter {
@@ -2449,6 +2599,123 @@ impl<'a> StorageAdapter for SQLiteTransactionAdapter<'a> {
     fn notifications(&mut self) -> &mut dyn NotificationRepository {
         self
     }
+
+    fn date_refs(&mut self) -> &mut dyn DateRefRepository {
+        self
+    }
+}
+
+impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
+    fn get_by_id(&self, id: &str) -> Result<DateRef, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at FROM DateRef WHERE id = ?"
+        )?;
+        let dr = stmt.query_row(params![id], |row| {
+            Ok(DateRef {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                kind: row.get(2)?,
+                iso: row.get(3)?,
+                date_day: row.get(4)?,
+                recurrence: row.get(5)?,
+                lead_minutes: row.get(6)?,
+                created_at: row.get(7)?,
+            })
+        });
+        match dr {
+            Ok(d) => Ok(d),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "DateRef not found"))),
+            Err(e) => Err(Box::new(e)),
+        }
+    }
+
+    fn get_by_block_id(&self, block_id: &str) -> Result<Vec<DateRef>, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at FROM DateRef WHERE block_id = ?"
+        )?;
+        let rows = stmt.query_map(params![block_id], |row| {
+            Ok(DateRef {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                kind: row.get(2)?,
+                iso: row.get(3)?,
+                date_day: row.get(4)?,
+                recurrence: row.get(5)?,
+                lead_minutes: row.get(6)?,
+                created_at: row.get(7)?,
+            })
+        })?;
+        let mut result = Vec::new();
+        for r in rows { result.push(r?); }
+        Ok(result)
+    }
+
+    fn query_by_date_range(&self, kind: &str, from: &str, to: &str) -> Result<Vec<DateRef>, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at FROM DateRef WHERE (kind = ?1 OR ?1 = '*') AND date_day BETWEEN ?2 AND ?3 ORDER BY date_day, block_id"
+        )?;
+        let rows = stmt.query_map(params![kind, from, to], |row| {
+            Ok(DateRef {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                kind: row.get(2)?,
+                iso: row.get(3)?,
+                date_day: row.get(4)?,
+                recurrence: row.get(5)?,
+                lead_minutes: row.get(6)?,
+                created_at: row.get(7)?,
+            })
+        })?;
+        let mut result = Vec::new();
+        for r in rows { result.push(r?); }
+        Ok(result)
+    }
+
+    fn query_overdue(&self, today: &str) -> Result<Vec<DateRef>, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at FROM DateRef WHERE kind = 'deadline' AND date_day < ? ORDER BY date_day"
+        )?;
+        let rows = stmt.query_map(params![today], |row| {
+            Ok(DateRef {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                kind: row.get(2)?,
+                iso: row.get(3)?,
+                date_day: row.get(4)?,
+                recurrence: row.get(5)?,
+                lead_minutes: row.get(6)?,
+                created_at: row.get(7)?,
+            })
+        })?;
+        let mut result = Vec::new();
+        for r in rows { result.push(r?); }
+        Ok(result)
+    }
+
+    fn create(&mut self, date_ref: &DateRef) -> Result<DateRef, Box<dyn Error>> {
+        self.conn.execute(
+            "INSERT INTO DateRef (id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            params![date_ref.id, date_ref.block_id, date_ref.kind, date_ref.iso, date_ref.date_day, date_ref.recurrence, date_ref.lead_minutes, date_ref.created_at],
+        )?;
+        Ok(date_ref.clone())
+    }
+
+    fn create_many(&mut self, date_refs: &[DateRef]) -> Result<Vec<DateRef>, Box<dyn Error>> {
+        for dr in date_refs {
+            DateRefRepository::create(self, dr)?;
+        }
+        Ok(date_refs.to_vec())
+    }
+
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
+        self.conn.execute("DELETE FROM DateRef WHERE id = ?", params![id])?;
+        Ok(())
+    }
+
+    fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>> {
+        self.conn.execute("DELETE FROM DateRef WHERE block_id = ?", params![block_id])?;
+        Ok(())
+    }
 }
 
 impl<'a> NotificationRepository for SQLiteTransactionAdapter<'a> {
@@ -2660,7 +2927,7 @@ impl<'a> NotificationRepository for SQLiteTransactionAdapter<'a> {
 
     fn delete_older_than(&mut self, timestamp: i64) -> Result<(), Box<dyn Error>> {
         self.conn.execute(
-            "DELETE FROM Notification WHERE status IN ('read', 'dismissed') AND updated_at < ?",
+            "DELETE FROM Notification WHERE status = 'read' AND updated_at < ?",
             params![timestamp],
         )?;
         Ok(())
@@ -2673,4 +2940,23 @@ impl<'a> NotificationRepository for SQLiteTransactionAdapter<'a> {
         )?;
         Ok(())
     }
+
+    fn update_payload(&mut self, id: &str, payload: &str) -> Result<Notification, Box<dyn Error>> {
+        self.conn.execute(
+            "UPDATE Notification SET payload = ?, updated_at = ? WHERE id = ?",
+            params![payload, chrono::Utc::now().timestamp_millis(), id],
+        )?;
+        crate::NotificationRepository::get_by_id(self, id)
+    }
+
+    fn reschedule(&mut self, block_id: &str, kind: &str, new_event_iso: &str) -> Result<(), Box<dyn Error>> {
+        // 非 recurring 通知原地改期：把匹配 (block_id, kind) 的通知 event_iso 改掉，
+        // 状态重置为 unread、清 snooze。event_iso 计算见 DateRefService::compute_event_iso（与 TS 一致）。
+        self.conn.execute(
+            "UPDATE Notification SET event_iso = ?, status = 'unread', snooze_until = NULL, updated_at = ? WHERE block_id = ? AND kind = ? AND status IN ('unread','read','dismissed')",
+            params![new_event_iso, chrono::Utc::now().timestamp_millis(), block_id, kind],
+        )?;
+        Ok(())
+    }
+
 }

@@ -1,13 +1,13 @@
 use crate::{
     types::{Block, BlockTree},
     storage::{repository, StorageAdapter},
+    services::DateRefService,
 };
 use rand::Rng;
 use std::collections::HashMap;
 use std::error::Error;
 
 pub struct BlockService;
-
 impl BlockService {
     pub fn get_by_id(
         storage: &mut dyn StorageAdapter,
@@ -57,7 +57,9 @@ impl BlockService {
             updated_at: now,
         };
 
-        repository::BlockRepository::create(storage.blocks(), &block)
+        let block = repository::BlockRepository::create(storage.blocks(), &block)?;
+        DateRefService::sync_date_refs_for_block(storage, &block.id, &block.content)?;
+        Ok(block)
     }
 
     pub fn update(
@@ -70,6 +72,7 @@ impl BlockService {
         pos: Option<i64>,
     ) -> Result<Block, Box<dyn Error>> {
         let mut block = repository::BlockRepository::get_by_id(storage.blocks(), id)?;
+        let old_content = block.content.clone();
 
         if let Some(c) = content {
             block.content = c.to_string();
@@ -88,13 +91,25 @@ impl BlockService {
         }
         block.updated_at = chrono::Utc::now().timestamp_millis();
 
-        repository::BlockRepository::update(storage.blocks(), &block)
+        let block = repository::BlockRepository::update(storage.blocks(), &block)?;
+        DateRefService::sync_date_refs_for_block(storage, &block.id, &block.content)?;
+        // 方案 A：非 recurring 通知随 block 改时间原地改期（仅当 iso 真的变化）
+        if content.is_some() {
+            DateRefService::reschedule_notifications_on_change(
+                storage,
+                &block.id,
+                &old_content,
+                &block.content,
+            )?;
+        }
+        Ok(block)
     }
 
     pub fn delete(
         storage: &mut dyn StorageAdapter,
         id: &str,
     ) -> Result<(), Box<dyn Error>> {
+        DateRefService::sync_date_refs_for_block(storage, id, "")?;
         repository::BlockRepository::delete(storage.blocks(), id)
     }
 

@@ -1,5 +1,5 @@
 use comind_core::{
-    services::{BlockService, LinkService, PageService, PropertyService, RelationshipTypeService, BlockVersionService},
+    services::{BlockService, DateRefService, LinkService, PageService, PropertyService, RelationshipTypeService, BlockVersionService},
     storage::StorageAdapter,
     types::*,
 };
@@ -120,6 +120,51 @@ pub async fn get_relationship_types(
 }
 
 #[tauri::command]
+pub async fn query_date_refs(
+    db: State<'_, super::state::DatabaseConnection>,
+    kind: String,
+    from: String,
+    to: String,
+) -> Result<Vec<DateRef>, String> {
+    execute_with_adapter(db, |storage| {
+        let refs = DateRefService::query_by_date_range(storage, &kind, &from, &to)?;
+        Ok(refs)
+    })
+}
+
+#[tauri::command]
+pub async fn query_overdue_date_refs(
+    db: State<'_, super::state::DatabaseConnection>,
+    today: String,
+) -> Result<Vec<DateRef>, String> {
+    execute_with_adapter(db, |storage| {
+        let refs = DateRefService::query_overdue(storage, &today)?;
+        Ok(refs)
+    })
+}
+
+#[tauri::command]
+pub async fn get_date_refs_by_block(
+    db: State<'_, super::state::DatabaseConnection>,
+    block_id: String,
+) -> Result<Vec<DateRef>, String> {
+    execute_with_adapter(db, |storage| {
+        let refs = DateRefService::get_by_block(storage, &block_id)?;
+        Ok(refs)
+    })
+}
+
+#[tauri::command]
+pub async fn rebuild_date_refs(
+    db: State<'_, super::state::DatabaseConnection>,
+) -> Result<String, String> {
+    execute_with_adapter(db, |storage| {
+        let count = DateRefService::rebuild_all(storage)?;
+        Ok(format!("{{\"rebuilt\":{}}}", count))
+    })
+}
+
+#[tauri::command]
 pub async fn save_block_tree(
     db: State<'_, super::state::DatabaseConnection>,
     blocks: Vec<serde_json::Value>,
@@ -132,10 +177,25 @@ pub async fn save_block_tree(
             let block: Block = serde_json::from_value(block_json)
                 .map_err(|e| format!("Failed to parse block: {}", e))?;
             page_ids.insert(block.page_id.clone());
-            let existing = storage.blocks().get_by_id(&block.id);
+            let existing = BlockService::get_by_id(storage, &block.id);
             let result = match existing {
-                Ok(_) => storage.blocks().update(&block),
-                Err(_) => storage.blocks().create(&block),
+                Ok(_) => BlockService::update(
+                    storage,
+                    &block.id,
+                    Some(&block.content),
+                    Some(&block.format),
+                    Some(&block.r#type),
+                    block.parent_id.as_deref(),
+                    Some(block.pos),
+                ),
+                Err(_) => BlockService::create(
+                    storage,
+                    &block.page_id,
+                    block.parent_id.as_deref(),
+                    &block.content,
+                    &block.format,
+                    &block.r#type,
+                ),
             };
             results.push(result?);
         }
@@ -743,6 +803,15 @@ pub async fn update_notification_status(
     status: &str,
 ) -> Result<Notification, String> {
     execute_with_adapter(db, |storage| storage.notifications().update_status(id, status))
+}
+
+#[tauri::command]
+pub async fn update_notification_payload(
+    db: State<'_, super::state::DatabaseConnection>,
+    id: &str,
+    payload: &str,
+) -> Result<Notification, String> {
+    execute_with_adapter(db, |storage| storage.notifications().update_payload(id, payload))
 }
 
 #[tauri::command]

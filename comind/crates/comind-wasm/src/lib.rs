@@ -108,18 +108,15 @@ mod wasm_impl {
                 let existing = comind_core::storage::repository::BlockRepository::get_by_id(adapter.blocks(), &update.id);
                 match existing {
                     Ok(_) => {
-                        let block = Block {
-                            id: update.id.clone(),
-                            page_id: update.page_id.clone(),
-                            parent_id: update.parent_id.clone(),
-                            pos: update.pos,
-                            content: update.content.clone(),
-                            format: update.format.clone(),
-                            r#type: update.r#type.clone(),
-                            created_at: update.created_at,
-                            updated_at: update.updated_at,
-                        };
-                        comind_core::storage::repository::BlockRepository::update(adapter.blocks(), &block)?;
+                        BlockService::update(
+                            adapter,
+                            &update.id,
+                            Some(&update.content),
+                            Some(&update.format),
+                            Some(&update.r#type),
+                            update.parent_id.as_deref(),
+                            Some(update.pos),
+                        )?;
                     }
                     Err(_) => {
                         let _ = BlockService::create(
@@ -236,6 +233,38 @@ mod wasm_impl {
         with_adapter(|adapter| {
             let results = adapter.search().search(query, 20)?;
             Ok(to_js_value(results))
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn query_date_refs(kind: &str, from: &str, to: &str) -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            let refs = DateRefService::query_by_date_range(adapter, kind, from, to)?;
+            Ok(to_js_value(refs))
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn query_overdue_date_refs(today: &str) -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            let refs = DateRefService::query_overdue(adapter, today)?;
+            Ok(to_js_value(refs))
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn get_date_refs_by_block(block_id: &str) -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            let refs = DateRefService::get_by_block(adapter, block_id)?;
+            Ok(to_js_value(refs))
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn rebuild_date_refs() -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            let count = DateRefService::rebuild_all(adapter)?;
+            Ok(to_js_value(json!({"rebuilt": count})))
         })
     }
 

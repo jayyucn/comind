@@ -8,6 +8,7 @@ pub mod template;
 pub mod search;
 pub mod block_version;
 pub mod notification;
+pub mod date_ref;
 
 pub use block::*;
 pub use page::*;
@@ -19,3 +20,4 @@ pub use template::*;
 pub use search::*;
 pub use block_version::*;
 pub use notification::*;
+pub use date_ref::*;

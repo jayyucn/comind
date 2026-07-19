@@ -105,10 +105,15 @@ fn main() {
             commands::create_notification,
             commands::batch_create_notifications,
             commands::update_notification_status,
+            commands::update_notification_payload,
             commands::set_notification_snooze,
             commands::delete_notification,
             commands::cleanup_notifications,
             commands::mark_all_notifications_read,
+            commands::query_date_refs,
+            commands::query_overdue_date_refs,
+            commands::get_date_refs_by_block,
+            commands::rebuild_date_refs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

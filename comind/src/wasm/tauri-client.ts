@@ -5,7 +5,7 @@ import type {
   Block, Page, Property, Link, RelationshipType,
   UserTemplate, SearchResult, BlockUpdate, PageUpdate,
   BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig, BlockVersion,
-  Notification
+  Notification, DateRefRecord
 } from './types'
 
 export function isTauriEnvironment(): boolean {
@@ -222,6 +222,10 @@ export async function tauriUpdateNotificationStatus(id: string, status: string):
   return invoke('update_notification_status', { id, status })
 }
 
+export async function tauriUpdateNotificationPayload(id: string, payload: string): Promise<Notification> {
+  return invoke('update_notification_payload', { id, payload })
+}
+
 export async function tauriSetNotificationSnooze(id: string, snoozeUntil: number, status: string): Promise<Notification> {
   return invoke('set_notification_snooze', { id, snoozeUntil, status })
 }
@@ -236,4 +240,20 @@ export async function tauriCleanupNotifications(timestamp: number): Promise<void
 
 export async function tauriMarkAllNotificationsRead(): Promise<void> {
   return invoke('mark_all_notifications_read')
+}
+
+export async function tauriQueryDateRefs(kind: string, from: string, to: string): Promise<DateRefRecord[]> {
+  return invoke('query_date_refs', { kind, from, to })
+}
+
+export async function tauriQueryOverdueDateRefs(today: string): Promise<DateRefRecord[]> {
+  return invoke('query_overdue_date_refs', { today })
+}
+
+export async function tauriGetDateRefsByBlock(blockId: string): Promise<DateRefRecord[]> {
+  return invoke('get_date_refs_by_block', { blockId })
+}
+
+export async function tauriRebuildDateRefs(): Promise<{ rebuilt: number }> {
+  return invoke('rebuild_date_refs')
 }

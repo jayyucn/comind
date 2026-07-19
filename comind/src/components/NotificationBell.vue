@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { Bell, Check, X, Clock, Trash2 } from 'lucide-vue-next'
+import { Bell, Check, Clock, Trash2 } from 'lucide-vue-next'
 import { useNotificationStore } from '../stores/notification'
 import { useNavigateToPage } from '../composables/useNavigateToPage'
 import type { Notification } from '../wasm/types'
@@ -31,10 +31,6 @@ function handleNotificationClick(notif: Notification) {
 
 function handleMarkAsRead(id: string) {
   notificationStore.markAsRead(id)
-}
-
-function handleDismiss(id: string) {
-  notificationStore.dismiss(id)
 }
 
 function handleSnooze(id: string, minutes: number) {
@@ -187,16 +183,7 @@ function handleClickOutside(event: MouseEvent) {
                 </button>
                 <button
                   v-if="notif.status !== 'dismissed'"
-                  class="action-btn action-btn--dismiss"
-                  @click.stop="handleDismiss(notif.id)"
-                  title="忽略"
-                >
-                  <X :size="12" />
-                </button>
-                <div class="snooze-dropdown">
-                  <button
-                    v-if="notif.status !== 'dismissed'"
-                    class="action-btn action-btn--snooze"
+                  class="action-btn action-btn--snooze"
                     @click.stop
                     title="稍后提醒"
                   >
@@ -212,7 +199,6 @@ function handleClickOutside(event: MouseEvent) {
                       {{ { '10m': '10分钟', '30m': '30分钟', '1h': '1小时', tomorrow: '明天' }[key] }}
                     </button>
                   </div>
-                </div>
                 <button
                   class="action-btn action-btn--delete"
                   @click.stop="handleDelete(notif.id)"
@@ -442,10 +428,6 @@ function handleClickOutside(event: MouseEvent) {
 
 .action-btn--read:hover {
   color: var(--accent);
-}
-
-.action-btn--dismiss:hover {
-  color: #EF4444;
 }
 
 .action-btn--snooze:hover {

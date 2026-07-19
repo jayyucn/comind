@@ -17,6 +17,7 @@ import {
   createWebNotification,
   batchCreateWebNotifications,
   updateWebNotificationStatus,
+  updateWebNotificationPayload,
   setWebNotificationSnooze,
   deleteWebNotification,
   cleanupWebNotifications,
@@ -33,7 +34,7 @@ import type {
   Block, Page, Property, Link, RelationshipType,
   UserTemplate, SearchResult, BlockUpdate, PageUpdate,
   BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig, BlockVersion,
-  Notification
+  Notification, DateRefRecord
 } from './types'
 
 export interface CoreClient {
@@ -76,10 +77,16 @@ export interface CoreClient {
   createNotification(notification: Notification): Promise<Notification>
   batchCreateNotifications(notifications: Notification[]): Promise<Notification[]>
   updateNotificationStatus(id: string, status: string): Promise<Notification>
+  updateNotificationPayload(id: string, payload: string): Promise<Notification>
   setNotificationSnooze(id: string, snoozeUntil: number, status: string): Promise<Notification>
   deleteNotification(id: string): Promise<void>
   cleanupNotifications(timestamp: number): Promise<void>
   markAllNotificationsRead(): Promise<void>
+
+  queryDateRefs(kind: string, from: string, to: string): Promise<DateRefRecord[]>
+  queryOverdueDateRefs(today: string): Promise<DateRefRecord[]>
+  getDateRefsByBlock(blockId: string): Promise<DateRefRecord[]>
+  rebuildDateRefs(): Promise<{ rebuilt: number }>
 }
 
 class TauriClient implements CoreClient {
@@ -203,6 +210,10 @@ class TauriClient implements CoreClient {
       return tauri.tauriUpdateNotificationStatus(id, status)
     }
 
+    async updateNotificationPayload(id: string, payload: string): Promise<Notification> {
+      return tauri.tauriUpdateNotificationPayload(id, payload)
+    }
+
     async setNotificationSnooze(id: string, snoozeUntil: number, status: string): Promise<Notification> {
       return tauri.tauriSetNotificationSnooze(id, snoozeUntil, status)
     }
@@ -217,6 +228,22 @@ class TauriClient implements CoreClient {
 
     async markAllNotificationsRead(): Promise<void> {
       return tauri.tauriMarkAllNotificationsRead()
+    }
+
+    async queryDateRefs(kind: string, from: string, to: string): Promise<DateRefRecord[]> {
+      return parseJsonResult(await tauri.tauriQueryDateRefs(kind, from, to))
+    }
+
+    async queryOverdueDateRefs(today: string): Promise<DateRefRecord[]> {
+      return parseJsonResult(await tauri.tauriQueryOverdueDateRefs(today))
+    }
+
+    async getDateRefsByBlock(blockId: string): Promise<DateRefRecord[]> {
+      return parseJsonResult(await tauri.tauriGetDateRefsByBlock(blockId))
+    }
+
+    async rebuildDateRefs(): Promise<{ rebuilt: number }> {
+      return parseJsonResult(await tauri.tauriRebuildDateRefs())
     }
   }
 
@@ -376,6 +403,10 @@ class WasmClientAdapter implements CoreClient {
     return updateWebNotificationStatus(id, status)
   }
 
+  async updateNotificationPayload(id: string, payload: string): Promise<Notification> {
+    return updateWebNotificationPayload(id, payload)
+  }
+
   async setNotificationSnooze(id: string, snoozeUntil: number, status: string): Promise<Notification> {
     return setWebNotificationSnooze(id, snoozeUntil, status)
   }
@@ -390,6 +421,22 @@ class WasmClientAdapter implements CoreClient {
 
   async markAllNotificationsRead(): Promise<void> {
     return markAllWebNotificationsRead()
+  }
+
+  async queryDateRefs(kind: string, from: string, to: string): Promise<DateRefRecord[]> {
+    return this.wasm.query_date_refs(kind, from, to)
+  }
+
+  async queryOverdueDateRefs(today: string): Promise<DateRefRecord[]> {
+    return this.wasm.query_overdue_date_refs(today)
+  }
+
+  async getDateRefsByBlock(blockId: string): Promise<DateRefRecord[]> {
+    return this.wasm.get_date_refs_by_block(blockId)
+  }
+
+  async rebuildDateRefs(): Promise<{ rebuilt: number }> {
+    return this.wasm.rebuild_date_refs()
   }
 }
 

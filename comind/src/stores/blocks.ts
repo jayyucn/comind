@@ -313,10 +313,23 @@ export const useBlockStore = defineStore('blocks', () => {
     }
 
     try {
-      await client.saveBlockTree([blockUpdate])
-      await _syncBlockLinks(currentBlock, client)
+      const [savedBlock] = await client.saveBlockTree([blockUpdate]) as [Block]
+      
+      // 若服务端生成了新 ID（新 block），同步本地 state 与后续引用的 ID
+      if (savedBlock.id !== currentBlock.id) {
+        const idx = blocks.value.findIndex(b => b.id === currentBlock.id)
+        if (idx >= 0) {
+          blocks.value[idx] = { ...blocks.value[idx], id: savedBlock.id }
+        }
+      }
+
+      const saved = savedBlock.id !== currentBlock.id
+        ? { ...currentBlock, id: savedBlock.id }
+        : currentBlock
+
+      await _syncBlockLinks(saved, client)
       _triggerSyncDebounced()
-      await _createBlockVersion(currentBlock, client)
+      await _createBlockVersion(saved, client)
     } catch (error) {
       console.error('[BlockStore] Failed to save block:', error)
       throw error

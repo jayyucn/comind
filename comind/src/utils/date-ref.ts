@@ -6,8 +6,15 @@
  *   ISO 本地时间 2026-07-15T14:00（不带时区后缀 Z）
  *   recurrence ∈ none | daily | weekly | monthly | yearly（缺省 none）
  *
- * 所有层（DateRefExtension / useContentRenderer / date-ref-index / 命令 / 自动推进）
+ * 所有层（DateRefExtension / useContentRenderer / 命令 / 自动推进）
  * 共用本文件的解析与序列化逻辑，禁止在各处重复编写正则。
+ *
+ * ⚠️ 存储层提取已迁 Rust（comind-core::services::DateRefService）。DateRef 表是
+ * date-ref 的派生存储事实来源，由 BlockService 在 block 写入路径中维护，并通过
+ * core.queryDateRefs / queryOverdueDateRefs / getDateRefsByBlock 查询。
+ * 本文件的 parseDateRefs 仅保留给「渲染/展示期解析」使用
+ * （DateTimePickerPanel、SlashCommandMenu、useContentRenderer、notification-service、
+ * property 等），请勿将其解析结果当作存储索引的唯一事实来源。
  */
 
 export type DateRefKind = 'schedule' | 'deadline'

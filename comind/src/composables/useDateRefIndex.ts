@@ -1,92 +1,79 @@
 /**
  * T12 · useDateRefIndex composable
  *
- * 桥接 DateRefIndex ↔ Pinia block store：
- * - 初始化时从 blocks 构建索引
- * - 监听块变更（由外部在 updateBlockContent/deleteBlock 处触发同步）
+ * 改造后：内存 DateRefIndex 已废弃。date-ref 索引改为由 comind-core（Rust/SQLite）在
+ * block 写入路径（BlockService::create / update / delete）中派生维护，存于 DateRef 表。
  *
- * 生命周期：
- *   应用启动 → useDateRefIndex() → index.build(allBlocks)
- *   block 变更 → watchBlockChange(blockId) → index.update()
- *   日历页面 → ref.value.queryByDateRange(...)
+ * 本 composable 不再自建 / 自同步索引——索引在写入时自动保持最新。这里只封装对
+ * comind-core 的只读查询（queryByDateRange / queryOverdue / queryByDate / getBlockRefs），
+ * 供日历视图、逾期红点等消费方使用。
+ *
+ * 兼容性说明：
+ * - build / updateBlock / removeBlock 保留为异步 no-op（索引已自动维护，无需外部驱动）。
+ *   · 历史 block 首次打开由 src/main.ts 调用 client.rebuildDateRefs() 全量回填一次。
+ *   · block 删除时 DateRef 表由 ON DELETE CASCADE 自动清理。
+ * - 对外查询方法签名保持（queryByDateRange / queryOverdue / queryByDate / getBlockRefs），
+ *   但改为 async，因为底层走数据库查询。
  */
-import { ref, computed, type Ref } from 'vue'
-import { DateRefIndex, type IndexEntry } from '../storage/date-ref-index'
-import { useBlockStore } from '../stores/blocks'
+
+import { initCoreClient, type CoreClient } from '../wasm/client'
 import type { DateRefKind } from '../utils/date-ref'
+import type { DateRefRecord } from '../wasm/types'
+
+let clientPromise: Promise<CoreClient> | null = null
+
+function getClient(): Promise<CoreClient> {
+  if (!clientPromise) {
+    clientPromise = initCoreClient()
+  }
+  return clientPromise
+}
 
 export function useDateRefIndex() {
-  const blockStore = useBlockStore()
-  const index = new DateRefIndex()
-
-  /**
-   * 从 block store 中构建索引。
-   * 应该在应用启动时或 blocks 列表发生大规模变更时调用。
-   */
-  function build(): void {
-    index.build(blockStore.blocks.map(b => ({ id: b.id, content: b.content })))
+  /** 索引由 core 在写入时自动维护；此处无需操作（历史回填见 main.ts）。 */
+  async function build(_blocks?: unknown): Promise<void> {
+    // no-op: indexing is maintained automatically by comind-core on block write.
   }
 
-  /**
-   * 增量更新单个 block 的索引。
-   * 在 block.content 变更后调用。
-   */
-  function updateBlock(blockId: string): void {
-    const block = blockStore.blocks.find(b => b.id === blockId)
-    index.update(blockId, block?.content ?? null)
+  /** 自动维护，无需操作。 */
+  async function updateBlock(_block: unknown): Promise<void> {
+    // no-op
   }
 
-  /**
-   * 从索引中移除某个 block。
-   * 在 block 被删除后调用。
-   */
-  function removeBlock(blockId: string): void {
-    index.remove(blockId)
+  /** block 删除由 DateRef 表 ON DELETE CASCADE 自动清理，无需操作。 */
+  async function removeBlock(_blockId: string): Promise<void> {
+    // no-op
   }
 
-  // ── 响应式查询结果 ──────────────────────────────────────────────
-
-  /** 当前索引数量 */
-  const indexedCount = computed(() => index.size)
-
-  /**
-   * 按日期范围查询
-   */
-  function queryByDateRange(
+  async function queryByDateRange(
     kind: DateRefKind | '*',
     from: string,
     to: string,
-  ): IndexEntry[] {
-    return index.queryByDateRange(kind, from, to)
+  ): Promise<DateRefRecord[]> {
+    const client = await getClient()
+    return client.queryDateRefs(kind, from, to)
   }
 
-  /**
-   * 查询逾期 deadline
-   */
-  function queryOverdue(nowIso?: string): IndexEntry[] {
-    return index.queryOverdue(nowIso)
+  async function queryOverdue(nowIso?: string): Promise<DateRefRecord[]> {
+    const today = (nowIso ?? new Date().toISOString()).slice(0, 10)
+    const client = await getClient()
+    return client.queryOverdueDateRefs(today)
   }
 
-  /**
-   * 查询单日
-   */
-  function queryByDate(date: string, kind?: DateRefKind): IndexEntry[] {
-    return index.queryByDate(date, kind)
+  async function queryByDate(date: string, kind?: DateRefKind): Promise<DateRefRecord[]> {
+    const client = await getClient()
+    return client.queryDateRefs(kind ?? '*', date, date)
   }
 
-  /**
-   * 获取某个 block 的 dateRef
-   */
-  function getBlockRefs(blockId: string) {
-    return index.getBlockRefs(blockId)
+  async function getBlockRefs(blockId: string): Promise<DateRefRecord[]> {
+    const client = await getClient()
+    return client.getDateRefsByBlock(blockId)
   }
 
   return {
-    index,
     build,
     updateBlock,
     removeBlock,
-    indexedCount,
     queryByDateRange,
     queryOverdue,
     queryByDate,

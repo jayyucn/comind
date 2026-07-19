@@ -49,6 +49,17 @@ export interface Link {
   created_at: number
 }
 
+export interface DateRefRecord {
+  id: string
+  block_id: string
+  kind: string
+  iso: string
+  date_day: string
+  recurrence: string
+  lead_minutes: number
+  created_at: number
+}
+
 export interface RelationshipType {
   id: string
   type: string

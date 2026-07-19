@@ -141,6 +141,11 @@ impl SqlJsAdapter {
         
         Self::exec(db, "CREATE TABLE IF NOT EXISTS Link (id TEXT PRIMARY KEY, source_block_id TEXT NOT NULL, target_page_id TEXT NOT NULL, display_text TEXT NOT NULL, relationship_type TEXT, created_at INTEGER NOT NULL);")?;
         
+        Self::exec(db, "CREATE TABLE IF NOT EXISTS DateRef (id TEXT PRIMARY KEY, block_id TEXT NOT NULL, kind TEXT NOT NULL, iso TEXT NOT NULL, date_day TEXT NOT NULL, recurrence TEXT NOT NULL DEFAULT 'none', lead_minutes INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);")?;
+        
+        Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_date_ref_kind_day ON DateRef(kind, date_day);")?;
+        Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_date_ref_block ON DateRef(block_id);")?;
+        
         Self::exec(db, "CREATE TABLE IF NOT EXISTS Property (id TEXT PRIMARY KEY, block_id TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, type TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0, is_hidden INTEGER NOT NULL DEFAULT 0, is_deleted INTEGER NOT NULL DEFAULT 0, schema_version INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, UNIQUE(block_id, key));")?;
         
         Self::exec(db, "CREATE TABLE IF NOT EXISTS RelationshipType (id TEXT PRIMARY KEY, type TEXT NOT NULL, inverse TEXT, label TEXT NOT NULL, inverse_label TEXT NOT NULL, color TEXT NOT NULL, `order` INTEGER NOT NULL DEFAULT 0, strength TEXT NOT NULL DEFAULT 'medium', deleted INTEGER NOT NULL DEFAULT 0, builtin INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
@@ -312,6 +317,20 @@ fn row_to_link(row: &HashMap<String, String>) -> Link {
             let p = row.get("relationship_type").cloned().unwrap_or_default();
             if p.is_empty() { None } else { Some(p) }
         },
+        created_at: row.get("created_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn row_to_date_ref(row: &HashMap<String, String>) -> DateRef {
+    DateRef {
+        id: row.get("id").cloned().unwrap_or_default(),
+        block_id: row.get("block_id").cloned().unwrap_or_default(),
+        kind: row.get("kind").cloned().unwrap_or_default(),
+        iso: row.get("iso").cloned().unwrap_or_default(),
+        date_day: row.get("date_day").cloned().unwrap_or_default(),
+        recurrence: row.get("recurrence").cloned().unwrap_or_default(),
+        lead_minutes: row.get("lead_minutes").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
         created_at: row.get("created_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
     }
 }
@@ -550,6 +569,63 @@ impl LinkRepository for SqlJsAdapter {
 }
 
 #[cfg(target_arch = "wasm32")]
+#[cfg(target_arch = "wasm32")]
+impl DateRefRepository for SqlJsAdapter {
+    fn get_by_id(&self, id: &str) -> Result<DateRef, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at FROM DateRef WHERE id = ?", &[id])?;
+        if result.is_empty() {
+            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "DateRef not found")));
+        }
+        Ok(row_to_date_ref(&result[0]))
+    }
+
+    fn get_by_block_id(&self, block_id: &str) -> Result<Vec<DateRef>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at FROM DateRef WHERE block_id = ?", &[block_id])?;
+        Ok(result.into_iter().map(|r| row_to_date_ref(&r)).collect())
+    }
+
+    fn query_by_date_range(&self, kind: &str, from: &str, to: &str) -> Result<Vec<DateRef>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at FROM DateRef WHERE (kind = ? OR ? = '*') AND date_day BETWEEN ? AND ? ORDER BY date_day, block_id", &[kind, kind, from, to])?;
+        Ok(result.into_iter().map(|r| row_to_date_ref(&r)).collect())
+    }
+
+    fn query_overdue(&self, today: &str) -> Result<Vec<DateRef>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at FROM DateRef WHERE kind = 'deadline' AND date_day < ? ORDER BY date_day", &[today])?;
+        Ok(result.into_iter().map(|r| row_to_date_ref(&r)).collect())
+    }
+
+    fn create(&mut self, date_ref: &DateRef) -> Result<DateRef, Box<dyn std::error::Error>> {
+        Self::run_with_params(&self.db, "INSERT INTO DateRef (id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", &[
+            &date_ref.id,
+            &date_ref.block_id,
+            &date_ref.kind,
+            &date_ref.iso,
+            &date_ref.date_day,
+            &date_ref.recurrence,
+            &date_ref.lead_minutes.to_string(),
+            &date_ref.created_at.to_string(),
+        ])?;
+        Ok(date_ref.clone())
+    }
+
+    fn create_many(&mut self, date_refs: &[DateRef]) -> Result<Vec<DateRef>, Box<dyn std::error::Error>> {
+        for date_ref in date_refs {
+            DateRefRepository::create(self, date_ref)?;
+        }
+        Ok(date_refs.to_vec())
+    }
+
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn std::error::Error>> {
+        Self::run_with_params(&self.db, "DELETE FROM DateRef WHERE id = ?", &[id])?;
+        Ok(())
+    }
+
+    fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+        Self::run_with_params(&self.db, "DELETE FROM DateRef WHERE block_id = ?", &[block_id])?;
+        Ok(())
+    }
+}
+
 impl PropertyRepository for SqlJsAdapter {
     fn get_by_id(&self, id: &str) -> Result<Property, Box<dyn std::error::Error>> {
         let result = Self::query(&self.db, "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at FROM Property WHERE id = ?", &[id])?;
@@ -796,6 +872,10 @@ impl StorageAdapter for SqlJsAdapter {
     }
     
     fn block_versions(&mut self) -> &mut dyn BlockVersionRepository {
+        self
+    }
+
+    fn date_refs(&mut self) -> &mut dyn DateRefRepository {
         self
     }
 }

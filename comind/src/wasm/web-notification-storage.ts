@@ -89,6 +89,16 @@ export async function batchCreateWebNotifications(notifications: Notification[])
   return notifications
 }
 
+export async function updateWebNotificationPayload(id: string, payload: string): Promise<Notification> {
+  const record = await notificationDb.notifications.get(id)
+  if (!record) {
+    throw new Error(`Notification not found: ${id}`)
+  }
+  const updated = { ...record, payload, updated_at: Date.now() }
+  await notificationDb.notifications.put(updated)
+  return updated
+}
+
 export async function updateWebNotificationStatus(id: string, status: string): Promise<Notification> {
   const record = await notificationDb.notifications.get(id)
   if (!record) {
@@ -114,9 +124,11 @@ export async function deleteWebNotification(id: string): Promise<void> {
 }
 
 export async function cleanupWebNotifications(timestamp: number): Promise<void> {
+  // 只清 read：dismissed 是 checkAndFire 的去重锚点，必须永久保留，
+  // 否则锚点被删除后 dateRef 仍在会触发重建 -> 已删除通知复活。
   await notificationDb.notifications
     .where('status')
-    .anyOf(['read', 'dismissed'])
+    .equals('read')
     .and(n => n.updated_at < timestamp)
     .delete()
 }
