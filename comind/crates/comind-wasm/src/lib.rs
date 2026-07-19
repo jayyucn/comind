@@ -126,6 +126,7 @@ mod wasm_impl {
                             &update.content,
                             &update.format,
                             &update.r#type,
+                            Some(&update.id),
                         )?;
                     }
                 }
@@ -379,6 +380,7 @@ mod wasm_impl {
                             &block.content,
                             &block.format,
                             &block.r#type,
+                            Some(&block.id),
                         )?;
                         serde_json::to_value(created)
                     }

@@ -523,6 +523,7 @@ pub fn import_all(
                 &content,
                 &format,
                 &r#type,
+                None,
             )?;
 
             parent_stack.push(block.id.clone());

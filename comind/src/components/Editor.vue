@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, watch, nextTick, shallowRef, ref } from 'vue'
+import { onBeforeUnmount, onMounted, watch, shallowRef, ref } from 'vue'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import { TextSelection } from '@tiptap/pm/state'
@@ -355,7 +355,17 @@ watch(
 )
 
 onBeforeUnmount(() => {
-  savedFromOutside = false
+  // 1. 取消 pending 的防抖保存，避免 destroy 后异步触发 emit('save')
+  cancelDebouncedSave()
+  // 2. 如果有未保存内容，立即同步保存
+  if (editor.value && !savedFromOutside) {
+    const text = editor.value.getText()
+    if (text) {
+      emit('save', text)
+    }
+  }
+  // 3. 标记已保存，防止 destroy() 触发 onBlur 时保存空内容（Bug: 内容消失）
+  savedFromOutside = true
 
   try {
     const view = editor.value?.view
@@ -387,22 +397,21 @@ onBeforeUnmount(() => {
 })
 
 onMounted(() => {
-  nextTick(() => {
-    if (editor.value?.view) {
-      editor.value.view.dom.addEventListener('wiki-link-trigger', handleWikiLinkTrigger as EventListener)
-      editor.value.view.dom.addEventListener('wiki-link-update', handleWikiLinkUpdate as EventListener)
-      editor.value.view.dom.addEventListener('wiki-link-close', handleWikiLinkClose as EventListener)
-      editor.value.view.dom.addEventListener('wiki-link-menu-enter', handleWikiLinkMenuEnter as EventListener)
-      editor.value.view.dom.addEventListener('wiki-link-menu-escape', handleWikiLinkMenuEscape as EventListener)
-      editor.value.view.dom.addEventListener('wiki-link-menu-arrowdown', handleWikiLinkMenuArrowDown as EventListener)
-      editor.value.view.dom.addEventListener('wiki-link-menu-arrowup', handleWikiLinkMenuArrowUp as EventListener)
-      editor.value.view.dom.addEventListener('enter-as-block', handleEnterAsBlock as EventListener)
-      editor.value.view.dom.addEventListener('relationship-trigger', handleRelationshipTrigger as EventListener)
-      editor.value.view.dom.addEventListener('relationship-close', handleRelationshipClose as EventListener)
-      editor.value.view.dom.addEventListener('dateRefTrigger', handleDateRefTrigger as EventListener)
-      editor.value.view.dom.addEventListener(DATE_REF_CLICK_EVENT, handleDateRefClick as EventListener)
-    }
-  })
+  // 同步注册事件监听器（不使用 nextTick），防止 Editor 刚挂载时 Enter 等事件无人处理（Bug: Enter 无法换行）
+  if (editor.value?.view) {
+    editor.value.view.dom.addEventListener('wiki-link-trigger', handleWikiLinkTrigger as EventListener)
+    editor.value.view.dom.addEventListener('wiki-link-update', handleWikiLinkUpdate as EventListener)
+    editor.value.view.dom.addEventListener('wiki-link-close', handleWikiLinkClose as EventListener)
+    editor.value.view.dom.addEventListener('wiki-link-menu-enter', handleWikiLinkMenuEnter as EventListener)
+    editor.value.view.dom.addEventListener('wiki-link-menu-escape', handleWikiLinkMenuEscape as EventListener)
+    editor.value.view.dom.addEventListener('wiki-link-menu-arrowdown', handleWikiLinkMenuArrowDown as EventListener)
+    editor.value.view.dom.addEventListener('wiki-link-menu-arrowup', handleWikiLinkMenuArrowUp as EventListener)
+    editor.value.view.dom.addEventListener('enter-as-block', handleEnterAsBlock as EventListener)
+    editor.value.view.dom.addEventListener('relationship-trigger', handleRelationshipTrigger as EventListener)
+    editor.value.view.dom.addEventListener('relationship-close', handleRelationshipClose as EventListener)
+    editor.value.view.dom.addEventListener('dateRefTrigger', handleDateRefTrigger as EventListener)
+    editor.value.view.dom.addEventListener(DATE_REF_CLICK_EVENT, handleDateRefClick as EventListener)
+  }
 })
 
 function syncContent(content: string, cursorPos?: number) {

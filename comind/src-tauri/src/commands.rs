@@ -195,6 +195,7 @@ pub async fn save_block_tree(
                     &block.content,
                     &block.format,
                     &block.r#type,
+                    Some(&block.id),
                 ),
             };
             results.push(result?);

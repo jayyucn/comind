@@ -16,7 +16,7 @@ mod tests {
         let mut adapter = create_test_adapter()?;
 
         let page = PageService::create(&mut adapter, "", "Search Test Page", None, None, None, None, None)?;
-        let block = BlockService::create(&mut adapter, &page.id, None, "This is a test content about Rust programming", "{}", "bullet")?;
+        let block = BlockService::create(&mut adapter, &page.id, None, "This is a test content about Rust programming", "{}", "bullet", None)?
 
         SearchService::update_index(&mut adapter, &block.id, &block.content, &page.title)?;
 
@@ -46,7 +46,7 @@ mod tests {
         let mut adapter = create_test_adapter()?;
 
         let page = PageService::create(&mut adapter, "", "Page", None, None, None, None, None)?;
-        let block = BlockService::create(&mut adapter, &page.id, None, "Test content", "{}", "bullet")?;
+        let block = BlockService::create(&mut adapter, &page.id, None, "Test content", "{}", "bullet", None)?;
 
         SearchService::update_index(&mut adapter, &block.id, &block.content, &page.title)?;
 
@@ -61,7 +61,7 @@ mod tests {
         let mut adapter = create_test_adapter()?;
 
         let page = PageService::create(&mut adapter, "", "Page", None, None, None, None, None)?;
-        let block = BlockService::create(&mut adapter, &page.id, None, "Test content", "{}", "bullet")?;
+        let block = BlockService::create(&mut adapter, &page.id, None, "Test content", "{}", "bullet", None)?;
 
         SearchService::update_index(&mut adapter, &block.id, &block.content, &page.title)?;
 
@@ -81,10 +81,10 @@ mod tests {
         let mut adapter = create_test_adapter()?;
 
         let page1 = PageService::create(&mut adapter, "", "Page One", None, None, None, None, None)?;
-        let _block1 = BlockService::create(&mut adapter, &page1.id, None, "Content for page one", "{}", "bullet")?;
+        let _block1 = BlockService::create(&mut adapter, &page1.id, None, "Content for page one", "{}", "bullet", None)?
 
         let page2 = PageService::create(&mut adapter, "", "Page Two", None, None, None, None, None)?;
-        let _block2 = BlockService::create(&mut adapter, &page2.id, None, "Content for page two", "{}", "bullet")?;
+        let _block2 = BlockService::create(&mut adapter, &page2.id, None, "Content for page two", "{}", "bullet", None)?
 
         SearchService::rebuild_index(&mut adapter)?;
 

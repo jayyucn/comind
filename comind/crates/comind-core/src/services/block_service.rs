@@ -37,6 +37,7 @@ impl BlockService {
         content: &str,
         format: &str,
         r#type: &str,
+        id: Option<&str>,
     ) -> Result<Block, Box<dyn Error>> {
         let now = chrono::Utc::now().timestamp_millis();
         let pos = if let Some(pid) = parent_id {
@@ -46,7 +47,7 @@ impl BlockService {
         };
 
         let block = Block {
-            id: Self::generate_id(),
+            id: id.map(|s| s.to_string()).unwrap_or_else(Self::generate_id),
             page_id: page_id.to_string(),
             parent_id: parent_id.map(|s| s.to_string()),
             pos,

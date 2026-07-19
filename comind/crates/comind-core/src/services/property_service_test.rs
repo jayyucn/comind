@@ -12,7 +12,7 @@ mod tests {
 
     fn create_test_block(adapter: &mut SQLiteAdapter) -> Result<String, Box<dyn Error>> {
         let page = PageService::create(adapter, "", "Page", None, None, None, None, None)?;
-        let block = BlockService::create(adapter, &page.id, None, "Content", "{}", "bullet")?;
+        let block = BlockService::create(adapter, &page.id, None, "Content", "{}", "bullet", None)?;
         Ok(block.id)
     }
 

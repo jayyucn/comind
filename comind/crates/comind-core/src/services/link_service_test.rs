@@ -15,7 +15,7 @@ mod tests {
         let mut adapter = create_test_adapter()?;
 
         let page = PageService::create(&mut adapter, "", "Source Page", None, None, None, None, None)?;
-        let block = BlockService::create(&mut adapter, &page.id, None, "Content", "{}", "bullet")?;
+        let block = BlockService::create(&mut adapter, &page.id, None, "Content", "{}", "bullet", None)?;
         let target_page = PageService::create(&mut adapter, "", "Target Page", None, None, None, None, None)?;
 
         let link = LinkService::create(
@@ -39,7 +39,7 @@ mod tests {
         let mut adapter = create_test_adapter()?;
 
         let page = PageService::create(&mut adapter, "", "Page", None, None, None, None, None)?;
-        let block = BlockService::create(&mut adapter, &page.id, None, "Content with links", "{}", "bullet")?;
+        let block = BlockService::create(&mut adapter, &page.id, None, "Content with links", "{}", "bullet", None)?;
         let target1 = PageService::create(&mut adapter, "", "Target 1", None, None, None, None, None)?;
         let target2 = PageService::create(&mut adapter, "", "Target 2", None, None, None, None, None)?;
 
@@ -61,8 +61,8 @@ mod tests {
         let page2 = PageService::create(&mut adapter, "", "Page 2", None, None, None, None, None)?;
         let target = PageService::create(&mut adapter, "", "Target", None, None, None, None, None)?;
 
-        let block1 = BlockService::create(&mut adapter, &page1.id, None, "Links to target", "{}", "bullet")?;
-        let block2 = BlockService::create(&mut adapter, &page2.id, None, "Also links to target", "{}", "bullet")?;
+        let block1 = BlockService::create(&mut adapter, &page1.id, None, "Links to target", "{}", "bullet", None)?;
+        let block2 = BlockService::create(&mut adapter, &page2.id, None, "Also links to target", "{}", "bullet", None)?;
 
         LinkService::create(&mut adapter, &block1.id, &target.id, "Target", None)?;
         LinkService::create(&mut adapter, &block2.id, &target.id, "Target", None)?;
@@ -79,7 +79,7 @@ mod tests {
         let mut adapter = create_test_adapter()?;
 
         let page = PageService::create(&mut adapter, "", "Page", None, None, None, None, None)?;
-        let block = BlockService::create(&mut adapter, &page.id, None, "Content", "{}", "bullet")?;
+        let block = BlockService::create(&mut adapter, &page.id, None, "Content", "{}", "bullet", None)?;
         let target = PageService::create(&mut adapter, "", "Target", None, None, None, None, None)?;
 
         let link = LinkService::create(&mut adapter, &block.id, &target.id, "Target", None)?;
@@ -96,7 +96,7 @@ mod tests {
         let mut adapter = create_test_adapter()?;
 
         let page = PageService::create(&mut adapter, "", "Page", None, None, None, None, None)?;
-        let block = BlockService::create(&mut adapter, &page.id, None, "Content", "{}", "bullet")?;
+        let block = BlockService::create(&mut adapter, &page.id, None, "Content", "{}", "bullet", None)?;
         let target = PageService::create(&mut adapter, "", "Target", None, None, None, None, None)?;
 
         LinkService::create(&mut adapter, &block.id, &target.id, "Target", None)?;
