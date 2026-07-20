@@ -165,11 +165,13 @@ impl SQLiteAdapter {
                 date_day        TEXT NOT NULL,
                 recurrence      TEXT NOT NULL DEFAULT 'none',
                 lead_minutes    INTEGER NOT NULL DEFAULT 0,
+                event_ts        INTEGER NOT NULL DEFAULT 0,
                 created_at      INTEGER NOT NULL,
                 FOREIGN KEY (block_id) REFERENCES Block(id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_dateref_kind_date ON DateRef(kind, date_day);
             CREATE INDEX IF NOT EXISTS idx_dateref_block_id ON DateRef(block_id);
+            CREATE INDEX IF NOT EXISTS idx_dateref_event_ts ON DateRef(event_ts);
             
             CREATE INDEX IF NOT EXISTS idx_page_blockId        ON Page(block_id);
             CREATE INDEX IF NOT EXISTS idx_page_type           ON Page(type);
@@ -186,10 +188,32 @@ impl SQLiteAdapter {
         )?;
         
         Self::migrate_add_page_title_unique(conn)?;
+        Self::migrate_date_ref_event_ts(conn)?;
         
         Ok(())
     }
     
+    fn migrate_date_ref_event_ts(conn: &rusqlite::Connection) -> Result<(), Box<dyn Error>> {
+        // 旧库 DateRef 表可能无 event_ts 列（CREATE TABLE IF NOT EXISTS 对已存在表是 no-op）。
+        // 幂等迁移：列不存在才 ALTER ADD，避免老库升级时报 "no such column"。
+        let has_column: bool = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('DateRef') WHERE name = 'event_ts'",
+            [],
+            |row| row.get::<_, i64>(0),
+        ).map(|c| c > 0).unwrap_or(false);
+        if !has_column {
+            conn.execute(
+                "ALTER TABLE DateRef ADD COLUMN event_ts INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_dateref_event_ts ON DateRef(event_ts);",
+                [],
+            )?;
+        }
+        Ok(())
+    }
+
     fn migrate_add_page_title_unique(conn: &rusqlite::Connection) -> Result<(), Box<dyn Error>> {
         let result = conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_page_title ON Page(title);", []);
         if let Err(e) = result {
@@ -1227,7 +1251,7 @@ impl StorageAdapter for SQLiteAdapter {
 impl DateRefRepository for SQLiteAdapter {
     fn get_by_id(&self, id: &str) -> Result<DateRef, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at FROM DateRef WHERE id = ?"
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts FROM DateRef WHERE id = ?"
         )?;
         let dr = stmt.query_row(params![id], |row| {
             Ok(DateRef {
@@ -1238,8 +1262,9 @@ impl DateRefRepository for SQLiteAdapter {
                 date_day: row.get(4)?,
                 recurrence: row.get(5)?,
                 lead_minutes: row.get(6)?,
-                created_at: row.get(7)?,
-            })
+                event_ts: row.get(7)?,
+                created_at: row.get(8)?,
+})
         });
         match dr {
             Ok(d) => Ok(d),
@@ -1250,7 +1275,7 @@ impl DateRefRepository for SQLiteAdapter {
 
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<DateRef>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at FROM DateRef WHERE block_id = ?"
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts FROM DateRef WHERE block_id = ?"
         )?;
         let rows = stmt.query_map(params![block_id], |row| {
             Ok(DateRef {
@@ -1261,8 +1286,9 @@ impl DateRefRepository for SQLiteAdapter {
                 date_day: row.get(4)?,
                 recurrence: row.get(5)?,
                 lead_minutes: row.get(6)?,
-                created_at: row.get(7)?,
-            })
+                event_ts: row.get(7)?,
+                created_at: row.get(8)?,
+})
         })?;
         let mut result = Vec::new();
         for r in rows { result.push(r?); }
@@ -1271,7 +1297,7 @@ impl DateRefRepository for SQLiteAdapter {
 
     fn query_by_date_range(&self, kind: &str, from: &str, to: &str) -> Result<Vec<DateRef>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at FROM DateRef WHERE (kind = ?1 OR ?1 = '*') AND date_day BETWEEN ?2 AND ?3 ORDER BY date_day, block_id"
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts FROM DateRef WHERE (kind = ?1 OR ?1 = '*') AND date_day BETWEEN ?2 AND ?3 ORDER BY date_day, block_id"
         )?;
         let rows = stmt.query_map(params![kind, from, to], |row| {
             Ok(DateRef {
@@ -1282,8 +1308,9 @@ impl DateRefRepository for SQLiteAdapter {
                 date_day: row.get(4)?,
                 recurrence: row.get(5)?,
                 lead_minutes: row.get(6)?,
-                created_at: row.get(7)?,
-            })
+                event_ts: row.get(7)?,
+                created_at: row.get(8)?,
+})
         })?;
         let mut result = Vec::new();
         for r in rows { result.push(r?); }
@@ -1292,7 +1319,7 @@ impl DateRefRepository for SQLiteAdapter {
 
     fn query_overdue(&self, today: &str) -> Result<Vec<DateRef>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at FROM DateRef WHERE kind = 'deadline' AND date_day < ? ORDER BY date_day"
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts FROM DateRef WHERE kind = 'deadline' AND date_day < ? ORDER BY date_day"
         )?;
         let rows = stmt.query_map(params![today], |row| {
             Ok(DateRef {
@@ -1303,7 +1330,52 @@ impl DateRefRepository for SQLiteAdapter {
                 date_day: row.get(4)?,
                 recurrence: row.get(5)?,
                 lead_minutes: row.get(6)?,
-                created_at: row.get(7)?,
+                event_ts: row.get(7)?,
+                created_at: row.get(8)?,
+})
+        })?;
+        let mut result = Vec::new();
+        for r in rows { result.push(r?); }
+        Ok(result)
+    }
+
+    fn query_due_non_recurring(&self, now_ms: i64) -> Result<Vec<DateRef>, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at FROM DateRef WHERE recurrence = 'none' AND (event_ts - lead_minutes * 60000) <= ?1"
+        )?;
+        let rows = stmt.query_map(params![now_ms], |row| {
+            Ok(DateRef {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                kind: row.get(2)?,
+                iso: row.get(3)?,
+                date_day: row.get(4)?,
+                recurrence: row.get(5)?,
+                lead_minutes: row.get(6)?,
+                event_ts: row.get(7)?,
+                created_at: row.get(8)?,
+            })
+        })?;
+        let mut result = Vec::new();
+        for r in rows { result.push(r?); }
+        Ok(result)
+    }
+
+    fn query_all_recurring(&self) -> Result<Vec<DateRef>, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at FROM DateRef WHERE recurrence != 'none'"
+        )?;
+        let rows = stmt.query_map(params![], |row| {
+            Ok(DateRef {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                kind: row.get(2)?,
+                iso: row.get(3)?,
+                date_day: row.get(4)?,
+                recurrence: row.get(5)?,
+                lead_minutes: row.get(6)?,
+                event_ts: row.get(7)?,
+                created_at: row.get(8)?,
             })
         })?;
         let mut result = Vec::new();
@@ -1313,8 +1385,8 @@ impl DateRefRepository for SQLiteAdapter {
 
     fn create(&mut self, date_ref: &DateRef) -> Result<DateRef, Box<dyn Error>> {
         self.conn.execute(
-            "INSERT INTO DateRef (id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            params![date_ref.id, date_ref.block_id, date_ref.kind, date_ref.iso, date_ref.date_day, date_ref.recurrence, date_ref.lead_minutes, date_ref.created_at],
+            "INSERT INTO DateRef (id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            params![date_ref.id, date_ref.block_id, date_ref.kind, date_ref.iso, date_ref.date_day, date_ref.recurrence, date_ref.lead_minutes, date_ref.event_ts, date_ref.created_at],
         )?;
         Ok(date_ref.clone())
     }
@@ -2608,7 +2680,7 @@ impl<'a> StorageAdapter for SQLiteTransactionAdapter<'a> {
 impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
     fn get_by_id(&self, id: &str) -> Result<DateRef, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at FROM DateRef WHERE id = ?"
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts FROM DateRef WHERE id = ?"
         )?;
         let dr = stmt.query_row(params![id], |row| {
             Ok(DateRef {
@@ -2619,8 +2691,9 @@ impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
                 date_day: row.get(4)?,
                 recurrence: row.get(5)?,
                 lead_minutes: row.get(6)?,
-                created_at: row.get(7)?,
-            })
+                event_ts: row.get(7)?,
+                created_at: row.get(8)?,
+})
         });
         match dr {
             Ok(d) => Ok(d),
@@ -2631,7 +2704,7 @@ impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
 
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<DateRef>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at FROM DateRef WHERE block_id = ?"
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts FROM DateRef WHERE block_id = ?"
         )?;
         let rows = stmt.query_map(params![block_id], |row| {
             Ok(DateRef {
@@ -2642,8 +2715,9 @@ impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
                 date_day: row.get(4)?,
                 recurrence: row.get(5)?,
                 lead_minutes: row.get(6)?,
-                created_at: row.get(7)?,
-            })
+                event_ts: row.get(7)?,
+                created_at: row.get(8)?,
+})
         })?;
         let mut result = Vec::new();
         for r in rows { result.push(r?); }
@@ -2652,7 +2726,7 @@ impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
 
     fn query_by_date_range(&self, kind: &str, from: &str, to: &str) -> Result<Vec<DateRef>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at FROM DateRef WHERE (kind = ?1 OR ?1 = '*') AND date_day BETWEEN ?2 AND ?3 ORDER BY date_day, block_id"
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts FROM DateRef WHERE (kind = ?1 OR ?1 = '*') AND date_day BETWEEN ?2 AND ?3 ORDER BY date_day, block_id"
         )?;
         let rows = stmt.query_map(params![kind, from, to], |row| {
             Ok(DateRef {
@@ -2663,8 +2737,9 @@ impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
                 date_day: row.get(4)?,
                 recurrence: row.get(5)?,
                 lead_minutes: row.get(6)?,
-                created_at: row.get(7)?,
-            })
+                event_ts: row.get(7)?,
+                created_at: row.get(8)?,
+})
         })?;
         let mut result = Vec::new();
         for r in rows { result.push(r?); }
@@ -2673,7 +2748,7 @@ impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
 
     fn query_overdue(&self, today: &str) -> Result<Vec<DateRef>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at FROM DateRef WHERE kind = 'deadline' AND date_day < ? ORDER BY date_day"
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts FROM DateRef WHERE kind = 'deadline' AND date_day < ? ORDER BY date_day"
         )?;
         let rows = stmt.query_map(params![today], |row| {
             Ok(DateRef {
@@ -2684,7 +2759,52 @@ impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
                 date_day: row.get(4)?,
                 recurrence: row.get(5)?,
                 lead_minutes: row.get(6)?,
-                created_at: row.get(7)?,
+                event_ts: row.get(7)?,
+                created_at: row.get(8)?,
+})
+        })?;
+        let mut result = Vec::new();
+        for r in rows { result.push(r?); }
+        Ok(result)
+    }
+
+    fn query_due_non_recurring(&self, now_ms: i64) -> Result<Vec<DateRef>, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at FROM DateRef WHERE recurrence = 'none' AND (event_ts - lead_minutes * 60000) <= ?1"
+        )?;
+        let rows = stmt.query_map(params![now_ms], |row| {
+            Ok(DateRef {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                kind: row.get(2)?,
+                iso: row.get(3)?,
+                date_day: row.get(4)?,
+                recurrence: row.get(5)?,
+                lead_minutes: row.get(6)?,
+                event_ts: row.get(7)?,
+                created_at: row.get(8)?,
+            })
+        })?;
+        let mut result = Vec::new();
+        for r in rows { result.push(r?); }
+        Ok(result)
+    }
+
+    fn query_all_recurring(&self) -> Result<Vec<DateRef>, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at FROM DateRef WHERE recurrence != 'none'"
+        )?;
+        let rows = stmt.query_map(params![], |row| {
+            Ok(DateRef {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                kind: row.get(2)?,
+                iso: row.get(3)?,
+                date_day: row.get(4)?,
+                recurrence: row.get(5)?,
+                lead_minutes: row.get(6)?,
+                event_ts: row.get(7)?,
+                created_at: row.get(8)?,
             })
         })?;
         let mut result = Vec::new();
@@ -2694,8 +2814,8 @@ impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
 
     fn create(&mut self, date_ref: &DateRef) -> Result<DateRef, Box<dyn Error>> {
         self.conn.execute(
-            "INSERT INTO DateRef (id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            params![date_ref.id, date_ref.block_id, date_ref.kind, date_ref.iso, date_ref.date_day, date_ref.recurrence, date_ref.lead_minutes, date_ref.created_at],
+            "INSERT INTO DateRef (id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            params![date_ref.id, date_ref.block_id, date_ref.kind, date_ref.iso, date_ref.date_day, date_ref.recurrence, date_ref.lead_minutes, date_ref.event_ts, date_ref.created_at],
         )?;
         Ok(date_ref.clone())
     }

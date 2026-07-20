@@ -29,6 +29,8 @@ export interface WasmClient {
   query_date_refs(kind: string, from: string, to: string): Promise<DateRefRecord[]>
   query_overdue_date_refs(today: string): Promise<DateRefRecord[]>
   get_date_refs_by_block(block_id: string): Promise<DateRefRecord[]>
+  query_due_non_recurring_date_refs(now_ms: number): Promise<DateRefRecord[]>
+  query_all_recurring_date_refs(): Promise<DateRefRecord[]>
   rebuild_date_refs(): Promise<{ rebuilt: number }>
 }
 
@@ -178,6 +180,16 @@ export async function initWasmClient(): Promise<WasmClient> {
 
     async get_date_refs_by_block(block_id: string): Promise<DateRefRecord[]> {
       const result = await wasmModule.get_date_refs_by_block(block_id)
+      return parseJsonResult<DateRefRecord[]>(result)
+    },
+
+    async query_due_non_recurring_date_refs(now_ms: number): Promise<DateRefRecord[]> {
+      const result = await wasmModule.query_due_non_recurring_date_refs(now_ms)
+      return parseJsonResult<DateRefRecord[]>(result)
+    },
+
+    async query_all_recurring_date_refs(): Promise<DateRefRecord[]> {
+      const result = await wasmModule.query_all_recurring_date_refs()
       return parseJsonResult<DateRefRecord[]>(result)
     },
 

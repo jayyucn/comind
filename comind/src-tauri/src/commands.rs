@@ -155,6 +155,27 @@ pub async fn get_date_refs_by_block(
 }
 
 #[tauri::command]
+pub async fn query_due_non_recurring_date_refs(
+    db: State<'_, super::state::DatabaseConnection>,
+    now_ms: i64,
+) -> Result<Vec<DateRef>, String> {
+    execute_with_adapter(db, |storage| {
+        let refs = DateRefService::query_due_non_recurring(storage, now_ms)?;
+        Ok(refs)
+    })
+}
+
+#[tauri::command]
+pub async fn query_all_recurring_date_refs(
+    db: State<'_, super::state::DatabaseConnection>,
+) -> Result<Vec<DateRef>, String> {
+    execute_with_adapter(db, |storage| {
+        let refs = DateRefService::query_all_recurring(storage)?;
+        Ok(refs)
+    })
+}
+
+#[tauri::command]
 pub async fn rebuild_date_refs(
     db: State<'_, super::state::DatabaseConnection>,
 ) -> Result<String, String> {

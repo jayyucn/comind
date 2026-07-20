@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import type { Notification, NotificationSettings } from '../wasm/types'
 import type { NotificationPayload } from '../types/notification'
 import { DEFAULT_NOTIFICATION_SETTINGS, SNOOZE_PRESETS } from '../types/notification'
-import { NotificationService, loadNotificationSettings, saveNotificationSettings } from '../services/notification-service'
+import { NotificationService, loadNotificationSettings, saveNotificationSettings, getNotificationService } from '../services/notification-service'
 import { getNotificationDelivery } from '../services/notification-delivery'
 import { initCoreClient } from '../wasm/client'
 
@@ -16,14 +16,9 @@ async function getClient() {
   return coreClientPromise
 }
 
-let notificationService: NotificationService | null = null
-
 async function getService(): Promise<NotificationService> {
-  if (!notificationService) {
-    const client = await getClient()
-    notificationService = new NotificationService(client)
-  }
-  return notificationService
+  const client = await getClient()
+  return getNotificationService(client)
 }
 
 export const useNotificationStore = defineStore('notification', () => {
@@ -155,9 +150,9 @@ export const useNotificationStore = defineStore('notification', () => {
     // 若在此累加会随触发次数增长，与实际未读数不符。
     await refreshUnreadCount()
 
-    // 从 DB 重拉（query_recent 只含 unread/read）：syncPayloadIfExists 已把最新 payload 写回 DB，
-    // 但那些「未到点」的通知不在 fired 中，内存数组的 payload 仍是旧快照，UI 会显示旧内容。
-    // 重拉使内存与 DB 一致，block 改内容后通知列表立即显示最新文案。
+    // 从 DB 重拉（query_recent 只含 unread/read）：未到点的通知不在 fired 中，
+    // 但它们的最新 payload 已由编辑路径的 syncPayloadForBlock 事件驱动写回 DB；
+    // 重拉使内存数组的 payload 与 DB 一致，block 改内容后通知列表立即显示最新文案。
     await loadNotifications()
   }
 

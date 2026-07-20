@@ -86,6 +86,8 @@ export interface CoreClient {
   queryDateRefs(kind: string, from: string, to: string): Promise<DateRefRecord[]>
   queryOverdueDateRefs(today: string): Promise<DateRefRecord[]>
   getDateRefsByBlock(blockId: string): Promise<DateRefRecord[]>
+  queryDueNonRecurringDateRefs(nowMs: number): Promise<DateRefRecord[]>
+  queryAllRecurringDateRefs(): Promise<DateRefRecord[]>
   rebuildDateRefs(): Promise<{ rebuilt: number }>
 }
 
@@ -240,6 +242,14 @@ class TauriClient implements CoreClient {
 
     async getDateRefsByBlock(blockId: string): Promise<DateRefRecord[]> {
       return parseJsonResult(await tauri.tauriGetDateRefsByBlock(blockId))
+    }
+
+    async queryDueNonRecurringDateRefs(nowMs: number): Promise<DateRefRecord[]> {
+      return parseJsonResult(await tauri.tauriQueryDueNonRecurringDateRefs(nowMs))
+    }
+
+    async queryAllRecurringDateRefs(): Promise<DateRefRecord[]> {
+      return parseJsonResult(await tauri.tauriQueryAllRecurringDateRefs())
     }
 
     async rebuildDateRefs(): Promise<{ rebuilt: number }> {
@@ -433,6 +443,14 @@ class WasmClientAdapter implements CoreClient {
 
   async getDateRefsByBlock(blockId: string): Promise<DateRefRecord[]> {
     return this.wasm.get_date_refs_by_block(blockId)
+  }
+
+  async queryDueNonRecurringDateRefs(nowMs: number): Promise<DateRefRecord[]> {
+    return this.wasm.query_due_non_recurring_date_refs(nowMs)
+  }
+
+  async queryAllRecurringDateRefs(): Promise<DateRefRecord[]> {
+    return this.wasm.query_all_recurring_date_refs()
   }
 
   async rebuildDateRefs(): Promise<{ rebuilt: number }> {

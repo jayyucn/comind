@@ -106,6 +106,11 @@ pub trait DateRefRepository {
         to: &str,
     ) -> Result<Vec<DateRef>, Box<dyn Error>>;
     fn query_overdue(&self, today: &str) -> Result<Vec<DateRef>, Box<dyn Error>>;
+    /// 非 recurring 且到期的 dateRef：`event_ts - lead_minutes * 60000 <= ?now`。
+    /// 用于 checkAndFire 替代全量遍历 block —— 直接命中到期记录，O(log n)。
+    fn query_due_non_recurring(&self, now_ms: i64) -> Result<Vec<DateRef>, Box<dyn Error>>;
+    /// 所有 recurring dateRef（数量小，全量扫），由 checkAndFire 在 TS 侧算下一周期。
+    fn query_all_recurring(&self) -> Result<Vec<DateRef>, Box<dyn Error>>;
     fn create(&mut self, date_ref: &DateRef) -> Result<DateRef, Box<dyn Error>>;
     fn create_many(&mut self, date_refs: &[DateRef]) -> Result<Vec<DateRef>, Box<dyn Error>>;
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;

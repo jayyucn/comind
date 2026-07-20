@@ -262,6 +262,22 @@ mod wasm_impl {
     }
 
     #[wasm_bindgen]
+    pub fn query_due_non_recurring_date_refs(now_ms: i64) -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            let refs = DateRefService::query_due_non_recurring(adapter, now_ms)?;
+            Ok(to_js_value(refs))
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn query_all_recurring_date_refs() -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            let refs = DateRefService::query_all_recurring(adapter)?;
+            Ok(to_js_value(refs))
+        })
+    }
+
+    #[wasm_bindgen]
     pub fn rebuild_date_refs() -> Result<JsValue, JsValue> {
         with_adapter(|adapter| {
             let count = DateRefService::rebuild_all(adapter)?;

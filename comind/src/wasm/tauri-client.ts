@@ -254,6 +254,14 @@ export async function tauriGetDateRefsByBlock(blockId: string): Promise<DateRefR
   return invoke('get_date_refs_by_block', { blockId })
 }
 
+export async function tauriQueryDueNonRecurringDateRefs(nowMs: number): Promise<DateRefRecord[]> {
+  return invoke('query_due_non_recurring_date_refs', { nowMs })
+}
+
+export async function tauriQueryAllRecurringDateRefs(): Promise<DateRefRecord[]> {
+  return invoke('query_all_recurring_date_refs')
+}
+
 export async function tauriRebuildDateRefs(): Promise<{ rebuilt: number }> {
   return invoke('rebuild_date_refs')
 }

@@ -313,7 +313,7 @@ export const useBlockStore = defineStore('blocks', () => {
     }
 
     try {
-      const [savedBlock] = await client.saveBlockTree([blockUpdate]) as [Block]
+      const [savedBlock] = await client.saveBlockTree([blockUpdate])
       
       // 若服务端生成了新 ID（新 block），同步本地 state 与后续引用的 ID
       if (savedBlock.id !== currentBlock.id) {
@@ -330,6 +330,16 @@ export const useBlockStore = defineStore('blocks', () => {
       await _syncBlockLinks(saved, client)
       _triggerSyncDebounced()
       await _createBlockVersion(saved, client)
+
+      // 事件驱动同步该 block 下未 dismissed 通知的 payload。
+      // 去掉 content 变化 guard（_doSave 内无法可靠捕获前值），
+      // syncPayloadForBlock 内部按 storedRefs 长度和 dismissed 状态自动跳过。
+      try {
+        const { getNotificationService } = await import('../services/notification-service')
+        await getNotificationService(client).syncPayloadForBlock(saved.id)
+      } catch (e) {
+        console.error('[BlockStore] syncPayloadForBlock failed:', e)
+      }
     } catch (error) {
       console.error('[BlockStore] Failed to save block:', error)
       throw error

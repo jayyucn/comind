@@ -57,6 +57,7 @@ export interface DateRefRecord {
   date_day: string
   recurrence: string
   lead_minutes: number
+  event_ts: number
   created_at: number
 }
 

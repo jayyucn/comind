@@ -113,6 +113,8 @@ fn main() {
             commands::query_date_refs,
             commands::query_overdue_date_refs,
             commands::get_date_refs_by_block,
+            commands::query_due_non_recurring_date_refs,
+            commands::query_all_recurring_date_refs,
             commands::rebuild_date_refs,
         ])
         .run(tauri::generate_context!())

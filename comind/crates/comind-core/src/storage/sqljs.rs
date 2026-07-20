@@ -1,4 +1,4 @@
-#[cfg(target_arch = "wasm32")]
+﻿#[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use js_sys::{Object, Array};
@@ -141,10 +141,11 @@ impl SqlJsAdapter {
         
         Self::exec(db, "CREATE TABLE IF NOT EXISTS Link (id TEXT PRIMARY KEY, source_block_id TEXT NOT NULL, target_page_id TEXT NOT NULL, display_text TEXT NOT NULL, relationship_type TEXT, created_at INTEGER NOT NULL);")?;
         
-        Self::exec(db, "CREATE TABLE IF NOT EXISTS DateRef (id TEXT PRIMARY KEY, block_id TEXT NOT NULL, kind TEXT NOT NULL, iso TEXT NOT NULL, date_day TEXT NOT NULL, recurrence TEXT NOT NULL DEFAULT 'none', lead_minutes INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);")?;
+        Self::exec(db, "CREATE TABLE IF NOT EXISTS DateRef (id TEXT PRIMARY KEY, block_id TEXT NOT NULL, kind TEXT NOT NULL, iso TEXT NOT NULL, date_day TEXT NOT NULL, recurrence TEXT NOT NULL DEFAULT 'none', lead_minutes INTEGER NOT NULL DEFAULT 0, event_ts INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);")?;
         
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_date_ref_kind_day ON DateRef(kind, date_day);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_date_ref_block ON DateRef(block_id);")?;
+        Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_date_ref_event_ts ON DateRef(event_ts);")?;
         
         Self::exec(db, "CREATE TABLE IF NOT EXISTS Property (id TEXT PRIMARY KEY, block_id TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, type TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0, is_hidden INTEGER NOT NULL DEFAULT 0, is_deleted INTEGER NOT NULL DEFAULT 0, schema_version INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, UNIQUE(block_id, key));")?;
         
@@ -166,6 +167,20 @@ impl SqlJsAdapter {
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_property_blockId ON Property(block_id);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_property_key ON Property(key);")?;
 
+        Self::migrate_date_ref_event_ts(db)?;
+
+        Ok(())
+    }
+
+    // 幂等迁移：老库 DateRef 表可能无 event_ts 列。
+    // sql.js 是单线程串行调用，借 PRAGMA table_info 查表结构判断是否存在；存在则跳过。
+    fn migrate_date_ref_event_ts(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        let rows = Self::query(db, "PRAGMA table_info(DateRef);", &[])?;
+        let has_column = rows.iter().any(|r| r.values().any(|v| v == "event_ts"));
+        if !has_column {
+            Self::exec(db, "ALTER TABLE DateRef ADD COLUMN event_ts INTEGER NOT NULL DEFAULT 0;")?;
+            Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_date_ref_event_ts ON DateRef(event_ts);")?;
+        }
         Ok(())
     }
 
@@ -331,6 +346,7 @@ fn row_to_date_ref(row: &HashMap<String, String>) -> DateRef {
         date_day: row.get("date_day").cloned().unwrap_or_default(),
         recurrence: row.get("recurrence").cloned().unwrap_or_default(),
         lead_minutes: row.get("lead_minutes").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
+        event_ts: row.get("event_ts").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
         created_at: row.get("created_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
     }
 }
@@ -572,7 +588,7 @@ impl LinkRepository for SqlJsAdapter {
 #[cfg(target_arch = "wasm32")]
 impl DateRefRepository for SqlJsAdapter {
     fn get_by_id(&self, id: &str) -> Result<DateRef, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at FROM DateRef WHERE id = ?", &[id])?;
+        let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts FROM DateRef WHERE id = ?", &[id])?;
         if result.is_empty() {
             return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "DateRef not found")));
         }
@@ -580,22 +596,32 @@ impl DateRefRepository for SqlJsAdapter {
     }
 
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<DateRef>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at FROM DateRef WHERE block_id = ?", &[block_id])?;
+        let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts FROM DateRef WHERE block_id = ?", &[block_id])?;
         Ok(result.into_iter().map(|r| row_to_date_ref(&r)).collect())
     }
 
     fn query_by_date_range(&self, kind: &str, from: &str, to: &str) -> Result<Vec<DateRef>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at FROM DateRef WHERE (kind = ? OR ? = '*') AND date_day BETWEEN ? AND ? ORDER BY date_day, block_id", &[kind, kind, from, to])?;
+        let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts FROM DateRef WHERE (kind = ? OR ? = '*') AND date_day BETWEEN ? AND ? ORDER BY date_day, block_id", &[kind, kind, from, to])?;
         Ok(result.into_iter().map(|r| row_to_date_ref(&r)).collect())
     }
 
     fn query_overdue(&self, today: &str) -> Result<Vec<DateRef>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at FROM DateRef WHERE kind = 'deadline' AND date_day < ? ORDER BY date_day", &[today])?;
+        let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts FROM DateRef WHERE kind = 'deadline' AND date_day < ? ORDER BY date_day", &[today])?;
+        Ok(result.into_iter().map(|r| row_to_date_ref(&r)).collect())
+    }
+
+    fn query_due_non_recurring(&self, now_ms: i64) -> Result<Vec<DateRef>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at FROM DateRef WHERE recurrence = 'none' AND (event_ts - lead_minutes * 60000) <= ?", &[&now_ms.to_string()])?;
+        Ok(result.into_iter().map(|r| row_to_date_ref(&r)).collect())
+    }
+
+    fn query_all_recurring(&self) -> Result<Vec<DateRef>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at FROM DateRef WHERE recurrence != 'none'", &[])?;
         Ok(result.into_iter().map(|r| row_to_date_ref(&r)).collect())
     }
 
     fn create(&mut self, date_ref: &DateRef) -> Result<DateRef, Box<dyn std::error::Error>> {
-        Self::run_with_params(&self.db, "INSERT INTO DateRef (id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", &[
+        Self::run_with_params(&self.db, "INSERT INTO DateRef (id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", &[
             &date_ref.id,
             &date_ref.block_id,
             &date_ref.kind,

@@ -1,6 +1,6 @@
 use crate::storage::StorageAdapter;
 use crate::types::DateRef;
-use chrono::{DateTime, Local, NaiveDate, Timelike, Utc};
+use chrono::Utc;
 use regex::Regex;
 use std::error::Error;
 
@@ -90,6 +90,22 @@ impl DateRefService {
         storage.date_refs().get_by_block_id(block_id)
     }
 
+    /// 到期且非 recurring 的 dateRef（event_ts - lead_minutes 已到期）。
+    /// 供 checkAndFire 热路径使用，避免每 60s 全表扫描。
+    pub fn query_due_non_recurring(
+        storage: &mut dyn StorageAdapter,
+        now_ms: i64,
+    ) -> Result<Vec<DateRef>, Box<dyn Error>> {
+        storage.date_refs().query_due_non_recurring(now_ms)
+    }
+
+    /// 所有 recurring dateRef（数量小，全量扫，由 checkAndFire 在 TS 侧算下一周期）。
+    pub fn query_all_recurring(
+        storage: &mut dyn StorageAdapter,
+    ) -> Result<Vec<DateRef>, Box<dyn Error>> {
+        storage.date_refs().query_all_recurring()
+    }
+
     /// 扫描所有 page 的 block 重新同步。幂等（先 delete 后插）。
     /// DB 打开后调用一次，用于回填历史 block（它们从未触发过写入即维护）。
     pub fn rebuild_all(storage: &mut dyn StorageAdapter) -> Result<usize, Box<dyn Error>> {
@@ -108,36 +124,17 @@ impl DateRefService {
     /// 复刻 TS 的 event_iso 计算（非 recurring 分支）：
     /// `new Date(iso).setHours(9,0,0,0)` 本地 → `toISOString().slice(0,16)` UTC。
     ///
-    /// 关键：JS 把 `"2026-07-20"` 这种无时区日期串解析为 **UTC 午夜**，
-    /// `setHours(9,...)` 改的是 **本地** 9:00，再 `toISOString()` 转回 UTC。
-    /// 桌面端 Rust 本地时区 = WebView 本地时区，二者一致（wasm 端 notifications 为预存缺口，不扩范围）。
+    /// 单一事实来源在 `DateRef::compute_event_ts`（类型层），此处复用其毫秒结果再格式化为 ISO 串，
+    /// 避免两端/两层各算一份导致漂移。
     pub fn compute_event_iso(iso: &str) -> String {
-        // 复刻 TS: new Date(iso).setHours(9,0,0,0) 本地 -> toISOString().slice(0,16) UTC
-        // JS 把 "2026-07-20" 解析为 UTC 午夜，setHours(9) 改本地 9:00，再转回 UTC。
-        if let Ok(naive) = NaiveDate::parse_from_str(iso, "%Y-%m-%d") {
-            let naive_midnight = match naive.and_hms_opt(0, 0, 0) {
-                Some(n) => n,
-                None => return iso.to_string(),
-            };
-            let midnight_utc = DateTime::<Utc>::from_naive_utc_and_offset(naive_midnight, Utc);
-            let local: DateTime<Local> = midnight_utc.with_timezone(&Local);
-            let mut local9: DateTime<Local> = local;
-            if let Some(t) = local.with_hour(9) {
-                local9 = t;
-            }
-            if let Some(t) = local9.with_minute(0) {
-                local9 = t;
-            }
-            if let Some(t) = local9.with_second(0) {
-                local9 = t;
-            }
-            if let Some(t) = local9.with_nanosecond(0) {
-                local9 = t;
-            }
-            let utc9: DateTime<Utc> = local9.with_timezone(&Utc);
-            return utc9.format("%Y-%m-%dT%H:%M").to_string();
+        let ms = DateRef::compute_event_ts(iso);
+        if ms == 0 {
+            return iso.to_string();
         }
-        iso.to_string()
+        match chrono::DateTime::<Utc>::from_timestamp_millis(ms) {
+            Some(dt) => dt.format("%Y-%m-%dT%H:%M").to_string(),
+            None => iso.to_string(),
+        }
     }
 
     /// 非 recurring 通知原地改期（方案 A）。
