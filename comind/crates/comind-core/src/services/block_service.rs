@@ -111,6 +111,8 @@ impl BlockService {
         id: &str,
     ) -> Result<(), Box<dyn Error>> {
         DateRefService::sync_date_refs_for_block(storage, id, "")?;
+        // 整块删除：连同该 block 的所有通知一起硬删除，避免 block 没了但通知残留（孤儿通知、点击跳转 404）。
+        storage.notifications().delete_by_block_id(id)?;
         repository::BlockRepository::delete(storage.blocks(), id)
     }
 
@@ -118,6 +120,12 @@ impl BlockService {
         storage: &mut dyn StorageAdapter,
         page_id: &str,
     ) -> Result<(), Box<dyn Error>> {
+        // 删页前逐个清理 block 的派生数据（DateRef + 通知），否则会留下孤儿通知。
+        let blocks = repository::BlockRepository::get_by_page_id(storage.blocks(), page_id)?;
+        for b in &blocks {
+            DateRefService::sync_date_refs_for_block(storage, &b.id, "")?;
+            storage.notifications().delete_by_block_id(&b.id)?;
+        }
         repository::BlockRepository::delete_by_page_id(storage.blocks(), page_id)
     }
 

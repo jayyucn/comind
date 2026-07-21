@@ -142,7 +142,9 @@ export class NotificationService {
     for (const dateRef of dateRefs) {
       const eventTime = this.calculateEventTime(dateRef)
       if (!eventTime) continue
-      const eventIso = new Date(eventTime).toISOString().slice(0, 16)
+      // 用 dateRef.iso 字面量（用户写的）作为 eventIso，与 block 渲染（formatIsoDisplay）一致，
+      // 避免 toISOString 把本地时区 event_ts 转 UTC 字符串后再被前端当成本地时区解析的偏差。
+      const eventIso = dateRef.iso
       const existing = await this.findExistingNotification(blockId, dateRef.kind, eventIso)
       if (!existing || existing.status === 'dismissed') {
         continue
@@ -219,7 +221,11 @@ export class NotificationService {
   }
 
   private async fireNotification(block: Block, page: Page, dateRef: DateRef | DateRefRecord, eventTime: number, existingIn: Notification | null): Promise<Notification | null> {
-    const eventIso = new Date(eventTime).toISOString().slice(0, 16)
+    // 用 dateRef.iso 字面量（用户写的）作为 eventIso：
+    // - 写入 Notification.event_iso 字段（去重匹配用，与 syncPayloadForBlock 保持一致）
+    // - 写入 payload.eventDisplay（前端 NotificationBell.formatEvent 用）
+    // 这样 block 上显示什么、通知里就显示什么，零时区换算偏差。
+    const eventIso = dateRef.iso
 
     // 调用方在 checkAndFire 中已查到 existing（复用锚点）；若未传则此处补查。
     const existing = existingIn ?? await this.findExistingNotification(block.id, dateRef.kind, eventIso)

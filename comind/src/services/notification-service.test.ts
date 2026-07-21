@@ -3,12 +3,10 @@ import { NotificationService, getNotificationService } from './notification-serv
 import type { CoreClient } from '../wasm/client'
 import type { Notification, Block, Page, DateRefRecord } from '../wasm/types'
 
-// 复刻 TS 侧 calculateEventTime 的 event_iso 计算（固定 9:00 本地），用于测试桩对齐。
-function eventIsoFromIso(iso: string, leadMinutes = 0): string {
-  const d = new Date(iso)
-  d.setHours(9, 0, 0, 0)
-  const eventTime = d.getTime() - leadMinutes * 60 * 1000
-  return new Date(eventTime).toISOString().slice(0, 16)
+// 复刻 service 行为：eventIso 直接用 dateRef.iso 字面量（不再走 toISOString 时区换算），
+// 避免上海时区下「火製出 UTC 字面→前端当本地解析」的双重转换偏差。
+function eventIsoFromIso(iso: string, _leadMinutes = 0): string {
+  return iso
 }
 
 function makeNow(): number {

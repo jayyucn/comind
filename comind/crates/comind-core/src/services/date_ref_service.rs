@@ -153,11 +153,21 @@ impl DateRefService {
     ) -> Result<(), Box<dyn Error>> {
         let old_refs = Self::extract_date_refs(old_content);
         let new_refs = Self::extract_date_refs(new_content);
+        // 1) 删除场景：old 有某 kind 的 dateRef，new 已无 → 该 kind 通知变孤儿，硬删除。
+        //    （block 内容删掉 {{schedule/deadline}} 时的清理，保留仍存在的另一 kind。）
+        for oref in &old_refs {
+            let still_present = new_refs.iter().any(|n| n.kind == oref.kind);
+            if !still_present {
+                storage
+                    .notifications()
+                    .delete_by_block_and_kind(block_id, &oref.kind)?;
+            }
+        }
+        // 2) 改期场景：同 (kind) 上的旧 ref，仅当 iso 真的变化才原地改期。
         for nref in &new_refs {
             if nref.recurrence != "none" {
                 continue;
             }
-            // 同 (kind) 上的旧 ref：仅当 iso 真的变化才改期
             if let Some(old) = old_refs.iter().find(|o| o.kind == nref.kind) {
                 if old.iso != nref.iso {
                     let new_event_iso = Self::compute_event_iso(&nref.iso);
@@ -201,5 +211,87 @@ mod tests {
         assert!(r2.event_ts > 0, "date-only iso must yield nonzero event_ts, got {}", r2.event_ts);
         // timed iso 的毫秒应大于 date-only 9:00 的毫秒（同日 14:00 > 9:00）
         assert!(r.event_ts > r2.event_ts);
+    }
+
+    // ===== 删除 schedule/deadline 后通知清理集成测试 =====
+    use crate::storage::sqlite::SQLiteAdapter;
+    use crate::{NotificationRepository, DateRefRepository};
+    use crate::types::Notification;
+    use crate::services::{BlockService, PageService};
+
+    // 建一个真实 page + block（满足 DateRef/Notification 的 FK 约束），返回 block_id。
+    fn setup_block(storage: &mut SQLiteAdapter, content: &str) -> String {
+        // page 需要一个宿主 block_id（page 同时是一个 block）
+        let page = PageService::create(storage, "", "Test Page", None, None, None, None, None).unwrap();
+        let block = BlockService::create(storage, &page.id, None, content, "{}", "bullet", None).unwrap();
+        block.id
+    }
+
+    fn seed_notification(storage: &mut SQLiteAdapter, block_id: &str, kind: &str, event_iso: &str) {
+        let now = chrono::Utc::now().timestamp_millis();
+        let n = Notification {
+            id: format!("{}-{}", block_id, kind),
+            block_id: block_id.to_string(),
+            page_id: "p1".to_string(),
+            kind: kind.to_string(),
+            event_iso: event_iso.to_string(),
+            fired_at: now,
+            status: "unread".to_string(),
+            snooze_until: None,
+            payload: "{}".to_string(),
+            created_at: now,
+            updated_at: now,
+        };
+        storage.notifications().create(&n).unwrap();
+    }
+
+    #[test]
+    fn removing_one_kind_deletes_only_that_kinds_notification() {
+        let mut storage = SQLiteAdapter::open_in_memory().unwrap();
+        // old 内容同时有 schedule + deadline（建 block 时自动 sync dateRef）
+        let old = "task {{schedule:2026-07-20T14:00}} {{deadline:2026-07-25}}";
+        let block_id = setup_block(&mut storage, old);
+        seed_notification(&mut storage, &block_id, "schedule", "2026-07-20T14:00");
+        seed_notification(&mut storage, &block_id, "deadline", "2026-07-25T09:00");
+        // new 内容删掉 schedule，保留 deadline（走 BlockService::update，它会 sync + reschedule）
+        let new = "task {{deadline:2026-07-25}}";
+        BlockService::update(&mut storage, &block_id, Some(new), None, None, None, None).unwrap();
+        // schedule 通知已删，deadline 通知仍在
+        let remaining = NotificationRepository::get_by_block_id(&storage, &block_id).unwrap();
+        assert_eq!(remaining.len(), 1, "only deadline notification should remain");
+        assert_eq!(remaining[0].kind, "deadline");
+        // DateRef 也只剩 deadline
+        let refs = DateRefRepository::get_by_block_id(&storage, &block_id).unwrap();
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].kind, "deadline");
+    }
+
+    #[test]
+    fn deleting_block_removes_all_its_notifications() {
+        let mut storage = SQLiteAdapter::open_in_memory().unwrap();
+        let content = "task {{schedule:2026-07-20T14:00}} {{deadline:2026-07-25}}";
+        let block_id = setup_block(&mut storage, content);
+        seed_notification(&mut storage, &block_id, "schedule", "2026-07-20T14:00");
+        seed_notification(&mut storage, &block_id, "deadline", "2026-07-25T09:00");
+        // 走真实 BlockService::delete（应清 DateRef + 通知）
+        BlockService::delete(&mut storage, &block_id).unwrap();
+        let remaining = NotificationRepository::get_by_block_id(&storage, &block_id).unwrap();
+        assert_eq!(remaining.len(), 0, "all notifications should be gone after block delete");
+        let refs = DateRefRepository::get_by_block_id(&storage, &block_id).unwrap();
+        assert_eq!(refs.len(), 0);
+    }
+
+    #[test]
+    fn rescheduling_still_works_when_iso_changes() {
+        let mut storage = SQLiteAdapter::open_in_memory().unwrap();
+        let old = "task {{schedule:2026-07-20T14:00}}";
+        let block_id = setup_block(&mut storage, old);
+        seed_notification(&mut storage, &block_id, "schedule", "2026-07-20T14:00");
+        // 改时间（非删除）：通知应保留并改期，不应被删
+        let new = "task {{schedule:2026-07-21T15:00}}";
+        BlockService::update(&mut storage, &block_id, Some(new), None, None, None, None).unwrap();
+        let remaining = NotificationRepository::get_by_block_id(&storage, &block_id).unwrap();
+        assert_eq!(remaining.len(), 1, "notification should be kept (rescheduled, not deleted)");
+        assert_eq!(remaining[0].kind, "schedule");
     }
 }

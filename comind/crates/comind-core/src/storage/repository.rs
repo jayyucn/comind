@@ -92,6 +92,10 @@ pub trait NotificationRepository {
     fn reschedule(&mut self, block_id: &str, kind: &str, new_event_iso: &str) -> Result<(), Box<dyn Error>>;
     fn set_snooze(&mut self, id: &str, snooze_until: i64, status: &str) -> Result<Notification, Box<dyn Error>>;
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
+    /// 删除某 block 的全部通知（整块删除 / 页面删除时清理，避免孤儿通知）。
+    fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>>;
+    /// 删除某 block 指定 kind 的通知（block 内容删掉某个 {{schedule/deadline}} 时清理，保留另一 kind）。
+    fn delete_by_block_and_kind(&mut self, block_id: &str, kind: &str) -> Result<(), Box<dyn Error>>;
     fn delete_older_than(&mut self, timestamp: i64) -> Result<(), Box<dyn Error>>;
     fn mark_all_read(&mut self) -> Result<(), Box<dyn Error>>;
 }

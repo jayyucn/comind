@@ -1616,6 +1616,16 @@ impl NotificationRepository for SQLiteAdapter {
         Ok(())
     }
 
+    fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>> {
+        self.conn.execute("DELETE FROM Notification WHERE block_id = ?", params![block_id])?;
+        Ok(())
+    }
+
+    fn delete_by_block_and_kind(&mut self, block_id: &str, kind: &str) -> Result<(), Box<dyn Error>> {
+        self.conn.execute("DELETE FROM Notification WHERE block_id = ? AND kind = ?", params![block_id, kind])?;
+        Ok(())
+    }
+
     fn delete_older_than(&mut self, timestamp: i64) -> Result<(), Box<dyn Error>> {
         self.conn.execute(
             "DELETE FROM Notification WHERE status = 'read' AND updated_at < ?",
@@ -3042,6 +3052,16 @@ impl<'a> NotificationRepository for SQLiteTransactionAdapter<'a> {
 
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
         self.conn.execute("DELETE FROM Notification WHERE id = ?", params![id])?;
+        Ok(())
+    }
+
+    fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>> {
+        self.conn.execute("DELETE FROM Notification WHERE block_id = ?", params![block_id])?;
+        Ok(())
+    }
+
+    fn delete_by_block_and_kind(&mut self, block_id: &str, kind: &str) -> Result<(), Box<dyn Error>> {
+        self.conn.execute("DELETE FROM Notification WHERE block_id = ? AND kind = ?", params![block_id, kind])?;
         Ok(())
     }
 
