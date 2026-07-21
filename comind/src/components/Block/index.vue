@@ -271,17 +271,25 @@ watch(
     if (active) {
       selection?.clearSelection()
       await nextTick()
+      // 等待浏览器完成 layout，确保 ProseMirror 的 view.dom 已渲染（posAtCoords 依赖布局信息）
+      await new Promise(resolve => requestAnimationFrame(resolve))
       if (editorRef.value) {
         const editor = editorRef.value.getEditor()
         if (editor) {
           editorStore.setActiveEditor(editor)
         }
-        
-        const pendingPos = editorStore.consumeCursorPos()
-        if (pendingPos !== null) {
-          editorRef.value.focus(pendingPos)
+
+        // 优先级：点击坐标 > cursorPos > end
+        const clickCoords = editorStore.consumeClickCoords()
+        if (clickCoords) {
+          editorRef.value.focusAtCoords(clickCoords.x, clickCoords.y)
         } else {
-          editorRef.value.focus('end')
+          const pendingPos = editorStore.consumeCursorPos()
+          if (pendingPos !== null) {
+            editorRef.value.focus(pendingPos)
+          } else {
+            editorRef.value.focus('end')
+          }
         }
       }
     } else {
@@ -351,7 +359,7 @@ watch(collapsed, async (isCollapsed) => {
 function handleContentMousedown(e: MouseEvent) {
   const target = e.target as HTMLElement
   // .block-link 与 .rel-type-label 与 .date-ref 都由 handleContentClick 处理点击，
-  // 不要让 mousedown 触发 setCursorPos/startTracking 导致 BulletRender 被替换、
+  // 不要让 mousedown 触发激活导致 BulletRender 被替换、
   // 进而让后续 click 事件落在新挂载的 Editor 上。
   if (target.closest('.block-link')) return
   if (target.closest('.rel-type-label')) return
@@ -370,20 +378,15 @@ function handleContentMousedown(e: MouseEvent) {
     return
   }
 
-  const cursorPosVal = getCaretPositionFromPoint(e.clientX, e.clientY) ?? 0
-  editorStore.setCursorPos(cursorPosVal + 1)
+  // 已激活的 block 交给 ProseMirror 原生处理光标定位
+  if (editorStore.activeBlockId === blockId.value) return
+
+  // 保存鼠标坐标，Editor 挂载后用 posAtCoords 精确定位
+  editorStore.setClickCoords(e.clientX, e.clientY)
 
   if (selection) {
     selection.startTracking(blockId.value)
   }
-}
-
-function getCaretPositionFromPoint(x: number, y: number): number | null {
-  if (document.caretPositionFromPoint) {
-    const pos = document.caretPositionFromPoint(x, y)
-    return pos?.offset ?? null
-  }
-  return null
 }
 
 async function handleSave(content: string) {

@@ -439,6 +439,32 @@ function focus(pos?: number | 'start' | 'end') {
   }
 }
 
+function focusAtCoords(x: number, y: number) {
+  if (!editor.value) return
+  const view = editor.value.view
+
+  // 标题补偿：编辑态文本含 "# " 前缀，渲染态不含，导致点击坐标在编辑态中偏前
+  // 用 coordsAtPos 计算 # 前缀的 DOM 宽度，将 x 向右补偿
+  const text = editor.value.state.doc.textContent
+  const headingMatch = text.match(/^(#{1,6})\s+/)
+  let adjustedX = x
+  if (headingMatch) {
+    const prefixEndPos = 1 + headingMatch[0].length // pos 1 = 首字符前
+    const prefixEndCoords = view.coordsAtPos(prefixEndPos)
+    const domRect = view.dom.getBoundingClientRect()
+    const prefixWidth = prefixEndCoords.left - domRect.left
+    adjustedX = x + prefixWidth
+  }
+
+  const pos = view.posAtCoords({ left: adjustedX, top: y })
+  if (pos) {
+    editor.value.commands.focus()
+    editor.value.commands.setTextSelection(pos.pos)
+  } else {
+    focus('end')
+  }
+}
+
 function markSaved() {
   savedFromOutside = true
 }
@@ -447,7 +473,7 @@ function getEditor() {
   return editor.value
 }
 
-defineExpose({ syncContent, focus, getText: () => editor.value?.getText() ?? '', markSaved, getEditor, cancelDebouncedSave })
+defineExpose({ syncContent, focus, focusAtCoords, getText: () => editor.value?.getText() ?? '', markSaved, getEditor, cancelDebouncedSave })
 </script>
 
 <template>

@@ -13,6 +13,8 @@ export const useEditorStore = defineStore('editor', () => {
   const activeBlockId = ref<string | null>(null)
   /** 激活后要恢复的目标光标位置（ProseMirror position），用完即清 */
   const pendingCursorPos = ref<number | null>(null)
+  /** 激活后用 posAtCoords 定位的鼠标坐标，用完即清 */
+  const pendingClickCoords = ref<{ x: number; y: number } | null>(null)
   
   /** 当前活跃的编辑器实例 */
   const activeEditor = shallowRef<Editor | null>(null)
@@ -51,6 +53,18 @@ export const useEditorStore = defineStore('editor', () => {
   /** 设置待恢复的光标位置（由 Block.vue mousedown 触发） */
   function setCursorPos(pos: number | null) {
     pendingCursorPos.value = pos
+  }
+
+  /** 设置待定位的鼠标坐标（由 Block.vue mousedown 触发） */
+  function setClickCoords(x: number, y: number) {
+    pendingClickCoords.value = { x, y }
+  }
+
+  /** 消费并清除待定位的鼠标坐标 */
+  function consumeClickCoords(): { x: number; y: number } | null {
+    const coords = pendingClickCoords.value
+    pendingClickCoords.value = null
+    return coords
   }
 
   /** 设置当前编辑器实例 */
@@ -206,12 +220,15 @@ export const useEditorStore = defineStore('editor', () => {
   return {
     activeBlockId,
     pendingCursorPos,
+    pendingClickCoords,
     activeEditor,
     slashCommand,
     activateBlock,
     deactivateBlock,
     consumeCursorPos,
     setCursorPos,
+    setClickCoords,
+    consumeClickCoords,
     setActiveEditor,
     showSlashCommand,
     hideSlashCommand,
