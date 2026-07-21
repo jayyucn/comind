@@ -486,44 +486,51 @@ defineExpose({ syncContent, focus, getText: () => editor.value?.getText() ?? '',
 
 .editor-wrapper :deep(.tiptap) {
   outline: none;
-  min-height: 1.5em;
+  min-height: 1.3em;
+  line-height: var(--leading-tight, 1.25);
   padding: 0 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .editor-wrapper :deep(.heading-preview) {
   font-weight: 600;
   line-height: 1.4;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
 }
 
 .editor-wrapper :deep(.heading-preview-h1) {
-  font-size: 1.5rem;
-  font-weight: 700;
+  font-size: var(--heading-1);
+  font-weight: var(--heading-1-weight);
 }
 
 .editor-wrapper :deep(.heading-preview-h2) {
-  font-size: 1.3rem;
-  font-weight: 600;
+  font-size: var(--heading-2);
+  font-weight: var(--heading-2-weight);
 }
 
 .editor-wrapper :deep(.heading-preview-h3) {
-  font-size: 1.15rem;
-  font-weight: 600;
+  font-size: var(--heading-3);
+  font-weight: var(--heading-3-weight);
 }
 
 .editor-wrapper :deep(.heading-preview-h4) {
-  font-size: 1.05rem;
-  font-weight: 500;
+  font-size: var(--heading-4);
+  font-weight: var(--heading-4-weight);
 }
 
 .editor-wrapper :deep(.heading-preview-h5) {
-  font-size: 1rem;
-  font-weight: 500;
-  opacity: 0.85;
+  font-size: var(--heading-5);
+  font-weight: var(--heading-5-weight);
+  opacity: var(--heading-5-opacity);
 }
 
 .editor-wrapper :deep(.heading-preview-h6) {
-  font-size: 0.95rem;
-  font-weight: 500;
-  opacity: 0.75;
+  font-size: var(--heading-6);
+  font-weight: var(--heading-6-weight);
+  opacity: var(--heading-6-opacity);
 }
 </style>

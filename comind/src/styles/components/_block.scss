@@ -18,7 +18,7 @@
 
 .block-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   min-height: 1.3em;
   line-height: $leading-tight;
 }
@@ -124,7 +124,9 @@
 }
 
 .block-text {
+  outline: none;
   min-height: 1.3em;
+  line-height: $leading-tight;
   padding: 0 $space-1;
   border-radius: $radius-sm;
   white-space: pre-wrap;
@@ -285,7 +287,7 @@
 
 .block-inner {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   flex: 1;
 }
 
@@ -409,82 +411,53 @@
   }
 }
 
-// Heading styles
-.block-text ::deep(.block-heading) {
+$heading-line-height: 1.4;
+
+// Heading styles - 渲染态样式
+// 编辑态样式在 Editor.vue 的 scoped style 中定义（需要 :deep() 穿透）
+// 注意：全局 SCSS 中不能使用 ::deep()，会导致整个规则被浏览器丢弃
+.block-text h1,
+.block-text h2,
+.block-text h3,
+.block-text h4,
+.block-text h5,
+.block-text h6 {
   font-weight: 600;
-  line-height: 1.4;
+  line-height: $heading-line-height;
   margin: 0;
   padding: 0;
   border: none;
   background: none;
 }
 
-.block-text ::deep(.block-heading.h1) {
-  font-size: 1.5rem;
-  font-weight: 700;
+.block-text h1 {
+  font-size: var(--heading-1);
+  font-weight: var(--heading-1-weight);
 }
 
-.block-text ::deep(.block-heading.h2) {
-  font-size: 1.3rem;
-  font-weight: 600;
+.block-text h2 {
+  font-size: var(--heading-2);
+  font-weight: var(--heading-2-weight);
 }
 
-.block-text ::deep(.block-heading.h3) {
-  font-size: 1.15rem;
-  font-weight: 600;
+.block-text h3 {
+  font-size: var(--heading-3);
+  font-weight: var(--heading-3-weight);
 }
 
-.block-text ::deep(.block-heading.h4) {
-  font-size: 1.05rem;
-  font-weight: 500;
+.block-text h4 {
+  font-size: var(--heading-4);
+  font-weight: var(--heading-4-weight);
 }
 
-.block-text ::deep(.block-heading.h5) {
-  font-size: 1rem;
-  font-weight: 500;
-  opacity: 0.85;
+.block-text h5 {
+  font-size: var(--heading-5);
+  font-weight: var(--heading-5-weight);
+  opacity: var(--heading-5-opacity);
 }
 
-.block-text ::deep(.block-heading.h6) {
-  font-size: 0.95rem;
-  font-weight: 500;
-  opacity: 0.75;
-}
-
-// Heading preview styles for editor
-.tiptap .heading-preview {
-  font-weight: 600;
-  line-height: 1.4;
-}
-
-.tiptap .heading-preview-h1 {
-  font-size: 1.5rem;
-  font-weight: 700;
-}
-
-.tiptap .heading-preview-h2 {
-  font-size: 1.3rem;
-  font-weight: 600;
-}
-
-.tiptap .heading-preview-h3 {
-  font-size: 1.15rem;
-  font-weight: 600;
-}
-
-.tiptap .heading-preview-h4 {
-  font-size: 1.05rem;
-  font-weight: 500;
-}
-
-.tiptap .heading-preview-h5 {
-  font-size: 1rem;
-  font-weight: 500;
-  opacity: 0.85;
-}
-
-.tiptap .heading-preview-h6 {
-  font-size: 0.95rem;
-  font-weight: 500;
-  opacity: 0.75;
+.block-text h6 {
+  font-size: var(--heading-6);
+  font-weight: var(--heading-6-weight);
+  opacity: var(--heading-6-opacity);
 }
