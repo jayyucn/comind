@@ -129,7 +129,7 @@ export function useContentRenderer() {
     // 4. 普通 wiki link（HTML 中无 [[，安全）
     const withWikiLinks = withExternal.replace(WIKI_LINK_REGEX, (_, target, alias) => {
       const display = alias || target
-      return `<span class="${CSS_CLASSES.blockLink}" data-page="${escapeHtmlEntities(target)}">${display}</span>`
+      return `<span class="${CSS_CLASSES.blockLink}" data-page="${escapeHtmlEntities(target)}"><span class="wiki-bracket">[[</span>${display}<span class="wiki-bracket">]]</span></span>`
     })
 
     return withWikiLinks

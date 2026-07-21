@@ -15,6 +15,7 @@
   --text-secondary: #{$color-stone-600};
   --text-tertiary: #{$color-stone-500};
   --text-disabled: #{$color-stone-400};
+  --text-faint: color-mix(in srgb, var(--bg-base) 90%, var(--text-primary));
 
   // 侧边栏文字层级（侧边栏背景 #F5F5F4 比主内容区更浅，需要更高对比度）
   --sidebar-text-primary: #{$color-stone-800};
