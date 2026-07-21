@@ -1,7 +1,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useNotificationStore } from '../stores/notification'
 
-const SCHEDULER_INTERVAL_MS = 15 * 1000
+const SCHEDULER_INTERVAL_MS = 60 * 1000
 
 let intervalId: ReturnType<typeof setInterval> | null = null
 let isPrimary = ref(false)
