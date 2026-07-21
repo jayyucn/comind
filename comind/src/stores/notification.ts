@@ -2,8 +2,8 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Notification, NotificationSettings } from '../wasm/types'
 import type { NotificationPayload } from '../types/notification'
-import { DEFAULT_NOTIFICATION_SETTINGS, SNOOZE_PRESETS } from '../types/notification'
-import { NotificationService, loadNotificationSettings, saveNotificationSettings, getNotificationService } from '../services/notification-service'
+import { SNOOZE_PRESETS } from '../types/notification'
+import { NotificationService, loadNotificationSettings, loadNotificationSettingsSync, saveNotificationSettings, getNotificationService } from '../services/notification-service'
 import { getNotificationDelivery } from '../services/notification-delivery'
 import { initCoreClient } from '../wasm/client'
 
@@ -23,7 +23,7 @@ async function getService(): Promise<NotificationService> {
 
 export const useNotificationStore = defineStore('notification', () => {
   const notifications = ref<Notification[]>([])
-  const settings = ref<NotificationSettings>({ ...DEFAULT_NOTIFICATION_SETTINGS })
+  const settings = ref<NotificationSettings>(loadNotificationSettingsSync())
   const unreadCount = ref(0)
   const isLoading = ref(false)
 

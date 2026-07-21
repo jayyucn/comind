@@ -268,7 +268,9 @@ export class NotificationService {
   }
 }
 
-export async function loadNotificationSettings(): Promise<NotificationSettings> {
+// 同步读取（localStorage 本身同步）：供 store 初始化时立即拿到真实设置，
+// 避免 enabled=false 时铃铛先按默认 true 渲染、异步 loadSettings 后才消失的闪现。
+export function loadNotificationSettingsSync(): NotificationSettings {
   try {
     const stored = localStorage.getItem('comind-notification-settings')
     if (stored) {
@@ -277,6 +279,10 @@ export async function loadNotificationSettings(): Promise<NotificationSettings> 
   } catch {
   }
   return { ...DEFAULT_NOTIFICATION_SETTINGS }
+}
+
+export async function loadNotificationSettings(): Promise<NotificationSettings> {
+  return loadNotificationSettingsSync()
 }
 
 export async function saveNotificationSettings(settings: NotificationSettings): Promise<void> {

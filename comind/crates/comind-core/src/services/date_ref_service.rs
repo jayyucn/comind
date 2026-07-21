@@ -189,4 +189,17 @@ mod tests {
     fn compute_event_iso_falls_back_on_garbage() {
         assert_eq!(DateRefService::compute_event_iso("not-a-date"), "not-a-date");
     }
+
+    #[test]
+    fn dateref_new_event_ts_nonzero_for_timed_iso() {
+        // 核心回归：带时间的 iso（如 "2026-07-20T14:00"）必须算出非零 event_ts，
+        // 否则 checkAndFire 会 if (!eventTime) continue 跳过 → 通知创建不出。
+        let r = DateRef::new("", "schedule", "2026-07-20T14:00", "none", 0);
+        assert!(r.event_ts > 0, "timed iso must yield nonzero event_ts, got {}", r.event_ts);
+        // 仅日期 iso 也应非零（本地 9:00）
+        let r2 = DateRef::new("", "deadline", "2026-07-20", "none", 0);
+        assert!(r2.event_ts > 0, "date-only iso must yield nonzero event_ts, got {}", r2.event_ts);
+        // timed iso 的毫秒应大于 date-only 9:00 的毫秒（同日 14:00 > 9:00）
+        assert!(r.event_ts > r2.event_ts);
+    }
 }

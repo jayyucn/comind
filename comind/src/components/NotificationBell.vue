@@ -77,11 +77,34 @@ function formatTime(timestamp: number): string {
 }
 
 function getKindLabel(kind: string): string {
-  return kind === 'deadline' ? '截止日期' : '日程'
+  if (kind === 'deadline') return '截止'
+  if (kind === 'overdue') return '逾期'
+  return '计划'
 }
 
 function getKindColor(kind: string): string {
-  return kind === 'deadline' ? 'text-red-500' : 'text-blue-500'
+  if (kind === 'deadline') return 'text-red-500'
+  if (kind === 'overdue') return 'text-red-700 font-bold'
+  return 'text-blue-500'
+}
+
+// 把 payload 里的事件时间（如 "2026-07-20T14:00"）格式化为 "今天 14:00"
+function formatEvent(iso: string | undefined): string {
+  if (!iso) return ''
+  const [datePart, timePart = ''] = iso.split('T')
+  const parts = datePart.split('-').map(Number)
+  if (parts.length < 3) return iso
+  const [y, m, d] = parts
+  const eventDate = new Date(y, m - 1, d)
+  const today = new Date()
+  const tomorrow = new Date(today)
+  tomorrow.setDate(today.getDate() + 1)
+  const key = (dt: Date) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
+  let dayLabel: string
+  if (key(eventDate) === key(today)) dayLabel = '今天'
+  else if (key(eventDate) === key(tomorrow)) dayLabel = '明天'
+  else dayLabel = `${m}月${d}日`
+  return `${dayLabel} ${timePart}`
 }
 
 onMounted(() => {
@@ -103,7 +126,7 @@ function handleClickOutside(event: MouseEvent) {
 </script>
 
 <template>
-  <div class="notification-bell relative">
+  <div v-if="notificationStore.settings.enabled" class="notification-bell relative">
     <button
       class="notification-bell-btn"
       @click="toggleDropdown"
@@ -161,15 +184,12 @@ function handleClickOutside(event: MouseEvent) {
               <div class="notification-status">{{ getStatusIcon(notif.status) }}</div>
               <div class="notification-body">
                 <div class="notification-title">
-                  <span :class="getKindColor(notif.kind)">{{ getKindLabel(notif.kind) }}</span>
-                  {{ notificationStore.parsePayload(notif.payload).title }}
-                </div>
-                <div class="notification-message">
-                  {{ notificationStore.parsePayload(notif.payload).body }}
+                  {{ notificationStore.parsePayload(notif.payload).blockSnippet || notificationStore.parsePayload(notif.payload).title }}
                 </div>
                 <div class="notification-meta">
-                  <span class="notification-time">{{ formatTime(notif.fired_at) }}</span>
-                  <span class="notification-page">{{ notificationStore.parsePayload(notif.payload).pageTitle }}</span>
+                  <span :class="getKindColor(notif.kind)">{{ getKindLabel(notif.kind) }}</span>
+                  <span v-if="notificationStore.parsePayload(notif.payload).pageTitle" class="notification-page">{{ notificationStore.parsePayload(notif.payload).pageTitle }}</span>
+                  <span v-if="formatEvent(notificationStore.parsePayload(notif.payload).eventDisplay)" class="notification-time">{{ formatEvent(notificationStore.parsePayload(notif.payload).eventDisplay) }}</span>
                 </div>
               </div>
               <div class="notification-actions">
@@ -363,18 +383,9 @@ function handleClickOutside(event: MouseEvent) {
 
 .notification-title {
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text-primary);
   margin-bottom: 2px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.notification-message {
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin-bottom: 4px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

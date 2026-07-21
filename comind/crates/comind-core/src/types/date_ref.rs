@@ -1,4 +1,4 @@
-use chrono::{Timelike, Utc};
+use chrono::{TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -45,24 +45,37 @@ impl DateRef {
     }
 
     /// 内联版本的 event_ts 推算，与 `DateRefService::compute_event_iso` 语义一致：
-    /// 把 `YYYY-MM-DD` 当 UTC 午夜 → 转本地 → 设本地 9:00 → 回 UTC → 毫秒。
+    /// - 带时间 `YYYY-MM-DDTHH:MM[:SS]`：取本地指定时间（lead_minutes 才有意义）
+    /// - 仅日期 `YYYY-MM-DD`：本地 9:00（与 TS compute_event_iso 同语义）
+    /// naive 一律当作「本地时间」解释（与 JS `new Date("...T..:..")` 一致），再转 UTC 毫秒。
     pub fn compute_event_ts(iso: &str) -> i64 {
-        let naive = match chrono::NaiveDate::parse_from_str(iso, "%Y-%m-%d") {
-            Ok(n) => n,
-            Err(_) => return 0,
-        };
-        let naive_midnight = match naive.and_hms_opt(0, 0, 0) {
-            Some(n) => n,
-            None => return 0,
-        };
-        let midnight_utc = chrono::DateTime::<Utc>::from_naive_utc_and_offset(naive_midnight, Utc);
-        let local: chrono::DateTime<chrono::Local> = midnight_utc.with_timezone(&chrono::Local);
-        let mut local9 = local;
-        if let Some(t) = local.with_hour(9) { local9 = t; }
-        if let Some(t) = local9.with_minute(0) { local9 = t; }
-        if let Some(t) = local9.with_second(0) { local9 = t; }
-        if let Some(t) = local9.with_nanosecond(0) { local9 = t; }
-        let utc9: chrono::DateTime<Utc> = local9.with_timezone(&Utc);
-        utc9.timestamp_millis()
+        // 带秒：YYYY-MM-DDTHH:MM:SS
+        if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(iso, "%Y-%m-%dT%H:%M:%S") {
+            if let Some(ms) = local_to_utc_ms(dt) {
+                return ms;
+            }
+        }
+        // 带分：YYYY-MM-DDTHH:MM
+        if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(iso, "%Y-%m-%dT%H:%M") {
+            if let Some(ms) = local_to_utc_ms(dt) {
+                return ms;
+            }
+        }
+        // 仅日期：本地 9:00
+        let date_part = iso.get(0..10).unwrap_or(iso);
+        if let Ok(d) = chrono::NaiveDate::parse_from_str(date_part, "%Y-%m-%d") {
+            if let Some(dt) = d.and_hms_opt(9, 0, 0) {
+                if let Some(ms) = local_to_utc_ms(dt) {
+                    return ms;
+                }
+            }
+        }
+        0
     }
+}
+
+/// 把「本地 naive 时间」转成 UTC 毫秒（与 JS `new Date(localString).getTime()` 同语义）。
+fn local_to_utc_ms(naive: chrono::NaiveDateTime) -> Option<i64> {
+    let local = chrono::Local.from_local_datetime(&naive).single()?;
+    Some(local.timestamp_millis())
 }
