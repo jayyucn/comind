@@ -177,7 +177,6 @@ const {
   collapsed,
   blockStore,
   editorStore,
-  propertyStore,
   pageStore,
   relationshipCleanup,
   selection: selection ?? undefined,

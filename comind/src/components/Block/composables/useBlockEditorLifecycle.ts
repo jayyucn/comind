@@ -10,7 +10,6 @@ import {
 import { DATE_REF_REGEX, serializeDateRef, normalizeRecurrence } from '../../../utils/date-ref'
 import type { useBlockStore } from '../../../stores/blocks'
 import type { useEditorStore } from '../../../stores/editor'
-import type { usePropertyStore } from '../../../stores/property'
 import type { usePageStore } from '../../../stores/pages'
 import type { useBlockRelationshipCleanup } from '../../../composables/useBlockRelationshipCleanup'
 import type { CrossBlockSelection } from '../../../composables/useCrossBlockSelection'
@@ -46,7 +45,6 @@ interface UseBlockEditorLifecycleOptions {
   collapsed: Ref<boolean>
   blockStore: ReturnType<typeof useBlockStore>
   editorStore: ReturnType<typeof useEditorStore>
-  propertyStore: ReturnType<typeof usePropertyStore>
   pageStore: ReturnType<typeof usePageStore>
   relationshipCleanup: ReturnType<typeof useBlockRelationshipCleanup>
   selection?: CrossBlockSelection | null

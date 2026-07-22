@@ -4,16 +4,34 @@ import { ref } from 'vue'
 import { useBlockEditorLifecycle } from './useBlockEditorLifecycle'
 import { useBlockStore } from '../../../stores/blocks'
 import { useEditorStore } from '../../../stores/editor'
-import { usePropertyStore } from '../../../stores/property'
 import { usePageStore } from '../../../stores/pages'
 import { useBlockRelationshipCleanup } from '../../../composables/useBlockRelationshipCleanup'
 import type { BlockTypeEditorExposed } from '../../../types/block-type'
 
 // useNavigateToPage 依赖 useRouter，单元测试中需 mock
+// 使用 vi.hoisted 暴露 navigateToPage mock，供 handleContentClick 测试断言
+const { navigateToPageMock } = vi.hoisted(() => ({
+  navigateToPageMock: vi.fn().mockResolvedValue(undefined)
+}))
+
 vi.mock('../../../composables/useNavigateToPage', () => ({
   useNavigateToPage: () => ({
-    navigateToPage: vi.fn()
+    navigateToPage: navigateToPageMock
   })
+}))
+
+// useRelationshipMenu 内部依赖 useRelationshipTypes，mock 掉以隔离
+// 暴露 relMenuMock 供 handleContentClick rel-type-label 测试断言
+const { relMenuMock } = vi.hoisted(() => ({
+  relMenuMock: {
+    openSwitch: vi.fn(),
+    open: vi.fn(),
+    close: vi.fn(),
+  }
+}))
+
+vi.mock('../../../composables/useRelationshipMenu', () => ({
+  useRelationshipMenu: () => relMenuMock
 }))
 
 // useDateRefClickListener 内部调用 onMounted/onBeforeUnmount；
@@ -37,7 +55,6 @@ describe('useBlockEditorLifecycle', () => {
   function setup() {
     const blockStore = useBlockStore()
     const editorStore = useEditorStore()
-    const propertyStore = usePropertyStore()
     const pageStore = usePageStore()
     const relationshipCleanup = useBlockRelationshipCleanup()
 
@@ -59,12 +76,11 @@ describe('useBlockEditorLifecycle', () => {
       collapsed,
       blockStore,
       editorStore,
-      propertyStore,
       pageStore,
       relationshipCleanup
     })
 
-    return { lifecycle, blockStore, editorStore, blockId, relationshipCleanup }
+    return { lifecycle, blockStore, editorStore, blockId, relationshipCleanup, cursorPos }
   }
 
   describe('handleSave', () => {
@@ -187,11 +203,88 @@ describe('useBlockEditorLifecycle', () => {
     })
   })
 
-  describe('handleCursorChange', () => {
-    it('updates cursorPos ref without throwing', () => {
+  describe('handleContentClick', () => {
+    it('navigates to page on wiki link click', () => {
       const { lifecycle } = setup()
+      const link: any = {
+        dataset: { page: 'MyPage' },
+      }
+      link.closest = (sel: string) => sel === '.block-link' ? link : null
+      const e = {
+        target: link,
+        preventDefault: () => {},
+        stopPropagation: () => {}
+      } as any
+      lifecycle.handleContentClick(e)
+      expect(navigateToPageMock).toHaveBeenCalledWith('MyPage')
+    })
+
+    it('opens external link via window.open', () => {
+      const { lifecycle } = setup()
+      const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+      const link: any = {
+        dataset: { external: 'https://example.com' },
+      }
+      link.closest = (sel: string) => sel === '.block-link' ? link : null
+      const e = {
+        target: link,
+        preventDefault: () => {},
+        stopPropagation: () => {}
+      } as any
+      lifecycle.handleContentClick(e)
+      expect(openSpy).toHaveBeenCalledWith('https://example.com', '_blank', 'noopener,noreferrer')
+    })
+
+    it('opens relationship switch menu on rel-type-label click', () => {
+      const { lifecycle } = setup()
+      const relLabel: any = {
+        dataset: {
+          relType: 'relates',
+          blockId: 'b1',
+          labelFrom: '0',
+          labelTo: '5'
+        },
+        getBoundingClientRect: () => ({
+          left: 10, top: 20, bottom: 40, right: 100, width: 90, height: 20
+        })
+      }
+      relLabel.closest = (sel: string) => sel === '.rel-type-label' ? relLabel : null
+      const e = {
+        target: relLabel,
+        preventDefault: () => {},
+        stopPropagation: () => {}
+      } as any
+      lifecycle.handleContentClick(e)
+      expect(relMenuMock.openSwitch).toHaveBeenCalledTimes(1)
+      expect(relMenuMock.openSwitch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          currentType: 'relates',
+          range: { from: 0, to: 5 },
+          position: { x: 10, y: 44 }
+        })
+      )
+    })
+
+    it('does nothing on non-link click', () => {
+      const { lifecycle } = setup()
+      const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+      const e = {
+        target: { closest: () => null },
+        preventDefault: () => {},
+        stopPropagation: () => {}
+      } as any
+      lifecycle.handleContentClick(e)
+      expect(navigateToPageMock).not.toHaveBeenCalled()
+      expect(openSpy).not.toHaveBeenCalled()
+      expect(relMenuMock.openSwitch).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('handleCursorChange', () => {
+    it('updates cursorPos ref', () => {
+      const { lifecycle, cursorPos } = setup()
       lifecycle.handleCursorChange(42)
-      expect(true).toBe(true)
+      expect(cursorPos.value).toBe(42)
     })
   })
 
