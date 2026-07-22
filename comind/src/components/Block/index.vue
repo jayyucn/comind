@@ -18,15 +18,13 @@ import { computed, ref, watch, nextTick, onMounted, onBeforeUnmount, inject } fr
 import { useEditorStore } from '../../stores/editor'
 import { useBlockStore } from '../../stores/blocks'
 import { usePropertyStore } from '../../stores/property'
-import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import { useBlockRegistry } from '../../composables/useBlockRegistry'
-import { useRelationshipMenu } from '../../composables/useRelationshipMenu'
 import { useBlockRelationshipCleanup } from '../../composables/useBlockRelationshipCleanup'
 import { useBlockPropertySync } from './composables/useBlockPropertySync'
 import { useBlockCollapse } from './composables/useBlockCollapse'
 import { useBlockDragDrop } from './composables/useBlockDragDrop'
+import { useBlockEditorLifecycle } from './composables/useBlockEditorLifecycle'
 import BlockChildren from './components/BlockChildren.vue'
-import { useDateTimePickerPanel, useDateRefClickListener, computeDatePickerPosition } from '../../composables/useDateTimePickerPanel'
 import './handlers/bullet'
 import './handlers/code'
 import './handlers/image'
@@ -37,7 +35,6 @@ import PropertyInline from './PropertyInline.vue'
 
 import { usePageStore } from '../../stores/pages'
 import BlockSelector from '../BlockSelector.vue'
-import { DATE_REF_REGEX, serializeDateRef, normalizeRecurrence } from '../../utils/date-ref'
 import type { TreeNode } from '../../types/block'
 import type { BlockTypeEditorExposed } from '../../types/block-type'
 import type { CrossBlockSelection } from '../../composables/useCrossBlockSelection'
@@ -56,21 +53,8 @@ const editorStore = useEditorStore()
 const blockStore = useBlockStore()
 const propertyStore = usePropertyStore()
 const pageStore = usePageStore()
-const { navigateToPage } = useNavigateToPage()
 const { getHandler } = useBlockRegistry()
-const relMenu = useRelationshipMenu()
 const relationshipCleanup = useBlockRelationshipCleanup()
-
-// ── dateRef 编辑面板 ────────────────────────────────────────────────────────
-const {
-  open: openDateRefPanel,
-} = useDateTimePickerPanel()
-
-useDateRefClickListener((payload, position) => {
-  openDateRefPanel({ ...payload, position })
-})
-
-const showBlockSelector = ref(false)
 
 function handleEmbedSelect(sourceBlockId: string, sourcePageId: string) {
   blockStore.updateBlockProperties(blockId.value, { sourceBlockId, sourcePageId })
@@ -101,7 +85,6 @@ watch(() => block.value.type, (newType) => {
   }
 })
 
-const isActive = computed(() => editorStore.activeBlockId === blockId.value)
 const hasSelectedAncestor = computed(() => {
   if (!selection) return false
   let currentParentId = block.value.parentId
@@ -162,6 +145,44 @@ const {
   blockStore,
   pageStore,
   onDragEnd,
+})
+
+// ── 编辑器生命周期（由 useBlockEditorLifecycle 统一管理） ──
+// 原 ~300 行 save/split/merge/delete/indent/outdent/move/exit/click/mousedown
+// 已抽离至 ./composables/useBlockEditorLifecycle。
+// watch(isActive, ...) 保留在此处：涉及 nextTick/requestAnimationFrame/editorRef，
+// 属于渲染周期协调，不宜移入 composable。
+const {
+  isActive,
+  showBlockSelector,
+  handleSave,
+  handleLanguageChange,
+  handleSplit,
+  handleMerge,
+  handleDelete,
+  handleIndent,
+  handleOutdent,
+  handleMoveUp,
+  handleMoveDown,
+  handleExitEdit,
+  handleClear,
+  handleCursorChange,
+  handleContentMousedown,
+  handleContentClick,
+} = useBlockEditorLifecycle({
+  blockId,
+  pageId: props.pageId,
+  editorRef,
+  cursorPos,
+  collapsed,
+  blockStore,
+  editorStore,
+  propertyStore,
+  pageStore,
+  relationshipCleanup,
+  selection: selection ?? undefined,
+  handler,
+  getBlockProperty,
 })
 
 // BlockChildren 实例 ref（用于获取子节点容器 DOM 做高度测量）
@@ -272,264 +293,9 @@ watch(
   { flush: 'post' }
 )
 
-/** mousedown：捕获点击坐标，在 tiptap 挂载前通知 editor store */
-function handleContentMousedown(e: MouseEvent) {
-  const target = e.target as HTMLElement
-  // .block-link 与 .rel-type-label 与 .date-ref 都由 handleContentClick 处理点击，
-  // 不要让 mousedown 触发激活导致 BulletRender 被替换、
-  // 进而让后续 click 事件落在新挂载的 Editor 上。
-  if (target.closest('.block-link')) return
-  if (target.closest('.rel-type-label')) return
-  if (target.closest('.date-ref')) return
-
-  if (handler.value?.type === 'embed' && getBlockProperty('sourceBlockId')) {
-    e.preventDefault()
-    return
-  }
-
-  if (e.ctrlKey || e.metaKey) {
-    if (selection) {
-      selection.toggleBlock(blockId.value, pageStore.currentPageId)
-      e.preventDefault()
-    }
-    return
-  }
-
-  // 已激活的 block 交给 ProseMirror 原生处理光标定位
-  if (editorStore.activeBlockId === blockId.value) return
-
-  // 保存鼠标坐标，Editor 挂载后用 posAtCoords 精确定位
-  editorStore.setClickCoords(e.clientX, e.clientY)
-
-  if (selection) {
-    selection.startTracking(blockId.value)
-  }
-}
-
-async function handleSave(content: string) {
-  return await blockStore.updateBlockContent(blockId.value, content)
-}
-
-async function handleLanguageChange(lang: string) {
-  await blockStore.updateBlockProperties(blockId.value, { language: lang })
-}
-
-/** 同步block未保存内容到store */
-async function syncBlockContent() {
-  if (editorRef.value) {
-    editorRef.value.markSaved()
-    const editorComponent = editorRef.value as any
-    if (editorComponent.cancelDebouncedSave) {
-      editorComponent.cancelDebouncedSave()
-    }
-    await handleSave(editorRef.value.getText())
-  }
-}
-
-/** 高阶函数：统一处理内容同步 */
-function withContentSync<T extends (...args: any[]) => Promise<void>>(fn: T): T {
-  return (async (...args: Parameters<T>) => {
-    await syncBlockContent()
-    return fn(...args)
-  }) as T
-}
-
-const handleSplit = withContentSync(async (cursorPosArg: number) => {
-  editorStore.deactivateBlock()
-  const newBlock = await blockStore.insertBlockAtCursor(blockId.value, cursorPosArg, collapsed.value)
-  if (newBlock) {
-    editorStore.activateBlock(newBlock.id, 1)
-  }
-})
-
-const handleMerge = withContentSync(async () => {
-  editorStore.deactivateBlock()
-  const result = await blockStore.mergeWithPrevious(blockId.value)
-  if (result) {
-    editorStore.activateBlock(result.id, result.cursorPos)
-  }
-})
-
-async function handleDelete() {
-  const prevBlock = blockStore.findPreviousBlockInTreeOrder(blockId.value)
-  const prevId = prevBlock?.id
-
-  if (!prevId) {
-    if (editorRef.value) editorRef.value.markSaved()
-    await blockStore.updateBlockContent(blockId.value, '')
-    return
-  }
-
-  if (editorRef.value) editorRef.value.markSaved()
-  editorStore.deactivateBlock()
-  await relationshipCleanup.cleanupAfterDelete(props.pageId, [blockId.value])
-  if (prevId) {
-    editorStore.activateBlock(prevId)
-  }
-}
-
-const handleIndent = withContentSync(async () => {
-  editorStore.deactivateBlock()
-  await blockStore.indent(blockId.value)
-  editorStore.activateBlock(blockId.value)
-})
-
-const handleOutdent = withContentSync(async () => {
-  editorStore.deactivateBlock()
-  await blockStore.outdent(blockId.value)
-  editorStore.activateBlock(blockId.value)
-})
-
-const handleMoveUp = withContentSync(async () => {
-  const prevBlock = blockStore.findPreviousBlockInTreeOrder(blockId.value)
-  if (prevBlock) {
-    editorStore.deactivateBlock()
-    editorStore.activateBlock(prevBlock.id)
-  }
-})
-
-const handleMoveDown = withContentSync(async () => {
-  const nextBlock = blockStore.findNextBlockInTreeOrder(blockId.value)
-  if (nextBlock) {
-    editorStore.deactivateBlock()
-    editorStore.activateBlock(nextBlock.id)
-  }
-})
-
-const handleExitEdit = withContentSync(async () => {
-  editorStore.deactivateBlock()
-})
-
-function handleCursorChange(pos: number) {
-  cursorPos.value = pos
-}
-
-function handleContentClick(e: MouseEvent) {
-  if (handler.value?.type === 'embed') {
-    const sourceBlockId = getBlockProperty('sourceBlockId')
-    if (sourceBlockId) {
-      const sourcePage = pageStore.pages.find(p => p.id === getBlockProperty('sourcePageId'))
-      if (sourcePage) {
-        navigateToPage(sourcePage.title)
-      }
-    } else {
-      showBlockSelector.value = true
-    }
-    return
-  }
-
-  const target = e.target as HTMLElement
-
-  const relLabel = target.closest('.rel-type-label') as HTMLElement | null
-  if (relLabel) {
-    const relType = relLabel.dataset.relType
-    const targetBlockId = relLabel.dataset.blockId
-    const labelFrom = Number(relLabel.dataset.labelFrom)
-    const labelTo = Number(relLabel.dataset.labelTo)
-    if (!relType || !targetBlockId || Number.isNaN(labelFrom) || Number.isNaN(labelTo)) return
-
-    if (!blockStore.blocks.find(b => b.id === targetBlockId)) return
-
-    const rect = relLabel.getBoundingClientRect()
-    e.preventDefault()
-    e.stopPropagation()
-
-    relMenu.openSwitch({
-      view: { dom: { isConnected: true } },
-      position: { x: rect.left, y: rect.bottom + 4 },
-      range: { from: labelFrom, to: labelTo },
-      currentType: relType,
-      onSelect: (newType) => {
-        const latest = blockStore.blocks.find(b => b.id === targetBlockId)
-        if (!latest) return
-        const newContent = latest.content.slice(0, labelFrom) + newType + latest.content.slice(labelTo)
-        blockStore.updateBlockContent(targetBlockId, newContent)
-      }
-    })
-    return
-  }
-
-  // ── dateRef 阅读态点击（非 PM 编辑器环境，span 由 useContentRenderer 渲染）──
-  const dateRefSpan = target.closest('.date-ref') as HTMLElement | null
-  if (dateRefSpan) {
-    e.preventDefault()
-    const raw = dateRefSpan.dataset.raw
-    const kind = dateRefSpan.dataset.kind as string | undefined
-    const iso = dateRefSpan.dataset.iso
-    const recurrence = dateRefSpan.dataset.recurrence
-    const leadMinutes = parseInt(dateRefSpan.dataset.leadMinutes || '0', 10) || 0
-    if (!raw || !kind || !iso || !recurrence) return
-
-    // 在 block.content 中查找该 span 对应的 {{...}} 位置
-    // 先数一下该 span 在同级 .block-text 内是第几个 .date-ref（支持重复内容）
-    const blockText = dateRefSpan.closest('.block-text')
-    let occurrence = 0
-    if (blockText) {
-      const allDateRefs = blockText.querySelectorAll('.date-ref')
-      for (let i = 0; i < allDateRefs.length; i++) {
-        if (allDateRefs[i] === dateRefSpan) {
-          occurrence = i
-          break
-        }
-      }
-    }
-
-    const content = blockStore.blocks.find(b => b.id === blockId.value)?.content ?? ''
-    let idx = -1
-    let matchCount = 0
-    const searchPattern = new RegExp(DATE_REF_REGEX.source, 'g')
-    let m: RegExpExecArray | null
-    while ((m = searchPattern.exec(content)) !== null) {
-      const matchedRaw = serializeDateRef({
-        kind: m[1] as any,
-        iso: m[2],
-        recurrence: normalizeRecurrence(m[3]),
-        leadMinutes: m[4] ? parseInt(m[4], 10) || 0 : 0,
-      })
-      if (matchedRaw === raw && matchCount === occurrence) {
-        idx = m.index
-        break
-      }
-      matchCount++
-    }
-    if (idx === -1) return
-
-    // 垂直用 block 底部，水平用 date-ref 文字左侧对齐
-    openDateRefPanel(
-      {
-        blockId: blockId.value,
-        from: idx,
-        to: idx + raw.length,
-        kind: kind as any,
-        iso,
-        recurrence: recurrence as any,
-        leadMinutes,
-        position: computeDatePickerPosition(dateRefSpan),
-      },
-      'content'
-    )
-    return
-  }
-
-  const link = target.closest('.block-link') as HTMLElement | null
-  if (!link) return
-
-  if (link.dataset.external) {
-    window.open(link.dataset.external, '_blank', 'noopener,noreferrer')
-    return
-  }
-  const pageName = link.dataset.page
-  if (pageName) {
-    navigateToPage(pageName).catch(err => {
-      console.error('导航失败:', err)
-    })
-  }
-}
-
-async function handleClear() {
-  if (editorRef.value) editorRef.value.markSaved()
-  await blockStore.updateBlockContent(blockId.value, '')
-}
+/** mousedown/click/save/split/merge/delete/indent/outdent/move/exit/cursor/clear
+ * 等编辑器生命周期逻辑已抽离至 ./composables/useBlockEditorLifecycle。
+ * 此处仅保留 watch(isActive, ...) 做渲染周期协调。 */
 
 function handleDragOver(e: DragEvent) {
   if (handler.value?.type !== 'image') return
