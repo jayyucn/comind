@@ -26,6 +26,8 @@ import { useRelationshipMenu } from '../../composables/useRelationshipMenu'
 import { useRelationshipTypes } from '../../composables/useRelationshipTypes'
 import { cleanupRelationshipTypes, cleanupPages } from '../../../tests/core-client'
 import type { TreeNode } from '../../types/block'
+import { useEditorStore } from '../../stores/editor'
+import { usePropertyStore } from '../../stores/property'
 
 vi.mock('../../storage/indexedDB', () => ({
   storage: {
@@ -315,6 +317,350 @@ describe('Block - handleDelete 关系清理集成', () => {
     const after = blockStore.blocks.find(b => b.id === 'block-target')
     expect(after?.content).toBe('reverse [[P]]')
 
+    wrapper.unmount()
+  })
+})
+
+// ── Stub components for characterization tests ──
+
+const StubEditor = defineComponent({
+  name: 'Editor',
+  props: {
+    blockId: { type: String, default: '' },
+    content: { type: String, default: '' },
+    showFullPlaceholder: { type: Boolean, default: false },
+    properties: { type: Object, default: () => ({}) },
+    language: { type: String, default: '' }
+  },
+  emits: ['save', 'split', 'merge', 'delete', 'indent', 'outdent', 'move-up', 'move-down', 'exit-edit', 'cursor-change', 'language-change'],
+  setup(_, { expose }) {
+    expose({
+      getEditor: () => ({}),
+      focus: () => {},
+      focusAtCoords: () => {},
+      markSaved: () => {},
+      getText: () => '',
+      syncContent: () => {},
+      cancelDebouncedSave: () => {}
+    })
+    return () => h('div', { class: 'stub-editor' })
+  }
+})
+
+const StubVueDraggable = defineComponent({
+  name: 'VueDraggable',
+  inheritAttrs: false,
+  setup() {
+    return () => h('div', { class: 'block-children' })
+  }
+})
+
+// ── Characterization tests (lock existing behavior before refactor) ──
+
+describe('characterization: render', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  it('renders block with data-block-id attribute', async () => {
+    const blockStore = useBlockStore()
+    blockStore.blocks = [{
+      id: 'block-1', pageId: 'page-1', parentId: null, pos: 0,
+      content: 'hello', format: {}, type: 'bullet',
+      createdAt: 0, updatedAt: 0
+    }]
+    const node: TreeNode = {
+      id: 'block-1',
+      block: blockStore.blocks[0],
+      children: []
+    }
+    const wrapper = mount(Block, {
+      props: { node, pageId: 'page-1', depth: 0 },
+      global: { stubs: { BulletRender: StubBulletRender } }
+    })
+    await flushPromises()
+    expect(wrapper.find('.block').attributes('data-block-id')).toBe('block-1')
+    wrapper.unmount()
+  })
+
+  it('applies priority class based on priority property', async () => {
+    const blockStore = useBlockStore()
+    const propertyStore = usePropertyStore()
+    blockStore.blocks = [{
+      id: 'block-1', pageId: 'page-1', parentId: null, pos: 0,
+      content: '', format: {}, type: 'bullet',
+      createdAt: 0, updatedAt: 0
+    }]
+    const node: TreeNode = {
+      id: 'block-1',
+      block: blockStore.blocks[0],
+      children: []
+    }
+    const wrapper = mount(Block, {
+      props: { node, pageId: 'page-1', depth: 0 },
+      global: { stubs: { BulletRender: StubBulletRender } }
+    })
+    await flushPromises()
+    propertyStore.propertiesByBlock.set('block-1', [{
+      id: 'p1', blockId: 'block-1', key: 'priority', value: 'High',
+      type: 'string' as const, sortOrder: 0, isHidden: false, isDeleted: false,
+      schemaVersion: 1, createdAt: 0, updatedAt: 0
+    }])
+    await flushPromises()
+    expect(wrapper.find('.block').classes()).toContain('priority-high')
+    wrapper.unmount()
+  })
+
+  it('applies active class when block is activated', async () => {
+    const blockStore = useBlockStore()
+    const editorStore = useEditorStore()
+    blockStore.blocks = [{
+      id: 'block-1', pageId: 'page-1', parentId: null, pos: 0,
+      content: '', format: {}, type: 'bullet',
+      createdAt: 0, updatedAt: 0
+    }]
+    const node: TreeNode = {
+      id: 'block-1',
+      block: blockStore.blocks[0],
+      children: []
+    }
+    const wrapper = mount(Block, {
+      props: { node, pageId: 'page-1', depth: 0 },
+      global: { stubs: { BulletRender: StubBulletRender, Editor: StubEditor } }
+    })
+    await flushPromises()
+    editorStore.activateBlock('block-1')
+    await flushPromises()
+    expect(wrapper.find('.block').classes()).toContain('active')
+    wrapper.unmount()
+  })
+})
+
+describe('characterization: editor lifecycle', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  it('calls setActiveEditor on activate', async () => {
+    const blockStore = useBlockStore()
+    const editorStore = useEditorStore()
+    blockStore.blocks = [{
+      id: 'b1', pageId: 'p1', parentId: null, pos: 0,
+      content: '', format: {}, type: 'bullet',
+      createdAt: 0, updatedAt: 0
+    }]
+    const setActiveEditorSpy = vi.spyOn(editorStore, 'setActiveEditor')
+    const node: TreeNode = { id: 'b1', block: blockStore.blocks[0], children: [] }
+    const wrapper = mount(Block, {
+      props: { node, pageId: 'p1', depth: 0 },
+      global: { stubs: { BulletRender: StubBulletRender, Editor: StubEditor } }
+    })
+    await flushPromises()
+    editorStore.activateBlock('b1', 0)
+    await flushPromises()
+    await new Promise(r => requestAnimationFrame(r))
+    await flushPromises()
+    expect(setActiveEditorSpy).toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('calls setActiveEditor(null) on deactivate', async () => {
+    const blockStore = useBlockStore()
+    const editorStore = useEditorStore()
+    blockStore.blocks = [{
+      id: 'b1', pageId: 'p1', parentId: null, pos: 0,
+      content: '', format: {}, type: 'bullet',
+      createdAt: 0, updatedAt: 0
+    }]
+    const setActiveEditorSpy = vi.spyOn(editorStore, 'setActiveEditor')
+    const node: TreeNode = { id: 'b1', block: blockStore.blocks[0], children: [] }
+    const wrapper = mount(Block, {
+      props: { node, pageId: 'p1', depth: 0 },
+      global: { stubs: { BulletRender: StubBulletRender, Editor: StubEditor } }
+    })
+    await flushPromises()
+    editorStore.activateBlock('b1')
+    await flushPromises()
+    await new Promise(r => requestAnimationFrame(r))
+    await flushPromises()
+    setActiveEditorSpy.mockClear()
+    editorStore.deactivateBlock()
+    await flushPromises()
+    expect(setActiveEditorSpy).toHaveBeenCalledWith(null)
+    wrapper.unmount()
+  })
+})
+
+describe('characterization: save', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  it('handleSave calls updateBlockContent', async () => {
+    const blockStore = useBlockStore()
+    const updateSpy = vi.spyOn(blockStore, 'updateBlockContent').mockResolvedValue(undefined)
+    blockStore.blocks = [{
+      id: 'b1', pageId: 'p1', parentId: null, pos: 0,
+      content: 'old', format: {}, type: 'bullet',
+      createdAt: 0, updatedAt: 0
+    }]
+    const node: TreeNode = { id: 'b1', block: blockStore.blocks[0], children: [] }
+    const wrapper = mount(Block, {
+      props: { node, pageId: 'p1', depth: 0 },
+      global: { stubs: { BulletRender: StubBulletRender } }
+    })
+    await flushPromises()
+    await (wrapper.vm as any).handleSave('new content')
+    expect(updateSpy).toHaveBeenCalledWith('b1', 'new content')
+    wrapper.unmount()
+  })
+})
+
+describe('characterization: delete', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  it('clears content when no previous block exists', async () => {
+    const blockStore = useBlockStore()
+    const updateSpy = vi.spyOn(blockStore, 'updateBlockContent').mockResolvedValue(undefined)
+    blockStore.blocks = [{
+      id: 'b1', pageId: 'p1', parentId: null, pos: 0,
+      content: 'text', format: {}, type: 'bullet',
+      createdAt: 0, updatedAt: 0
+    }]
+    vi.spyOn(blockStore, 'findPreviousBlockInTreeOrder').mockReturnValue(undefined)
+    const node: TreeNode = { id: 'b1', block: blockStore.blocks[0], children: [] }
+    const wrapper = mount(Block, {
+      props: { node, pageId: 'p1', depth: 0 },
+      global: { stubs: { BulletRender: StubBulletRender } }
+    })
+    await flushPromises()
+    await (wrapper.vm as any).handleDelete()
+    expect(updateSpy).toHaveBeenCalledWith('b1', '')
+    wrapper.unmount()
+  })
+})
+
+describe('characterization: collapse', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  it('toggleCollapse toggles collapsed state and calls updateBlockFormat', async () => {
+    const blockStore = useBlockStore()
+    const updateFormatSpy = vi.spyOn(blockStore, 'updateBlockFormat').mockResolvedValue(undefined)
+    const childBlock = {
+      id: 'b2', pageId: 'p1', parentId: 'b1', pos: 0,
+      content: '', format: {}, type: 'bullet' as const,
+      createdAt: 0, updatedAt: 0
+    }
+    blockStore.blocks = [
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 },
+      childBlock
+    ]
+    const node: TreeNode = {
+      id: 'b1',
+      block: blockStore.blocks[0],
+      children: [{ id: 'b2', block: childBlock, children: [] }]
+    }
+    const wrapper = mount(Block, {
+      props: { node, pageId: 'p1', depth: 0 },
+      global: {
+        stubs: {
+          BulletRender: StubBulletRender,
+          VueDraggable: StubVueDraggable
+        }
+      }
+    })
+    await flushPromises()
+    const bullet = wrapper.find('.block-bullet')
+    await bullet.trigger('click')
+    await flushPromises()
+    expect(updateFormatSpy).toHaveBeenCalledWith('b1', { collapsed: true })
+    wrapper.unmount()
+  })
+})
+
+describe('characterization: drag-drop', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  it('handleDragMove returns false when dragging onto self', async () => {
+    const blockStore = useBlockStore()
+    blockStore.blocks = [{
+      id: 'b1', pageId: 'p1', parentId: null, pos: 0,
+      content: '', format: {}, type: 'bullet',
+      createdAt: 0, updatedAt: 0
+    }]
+    const node: TreeNode = { id: 'b1', block: blockStore.blocks[0], children: [] }
+    const wrapper = mount(Block, {
+      props: { node, pageId: 'p1', depth: 0 },
+      global: { stubs: { BulletRender: StubBulletRender } }
+    })
+    await flushPromises()
+
+    const blockEl = document.createElement('div')
+    blockEl.className = 'block'
+    blockEl.dataset.blockId = 'b1'
+    const relatedEl = document.createElement('div')
+    blockEl.appendChild(relatedEl)
+    const draggedEl = document.createElement('div')
+    draggedEl.dataset.blockId = 'b1'
+
+    const result = (wrapper.vm as any).handleDragMove({
+      dragged: draggedEl,
+      related: relatedEl,
+      to: document.createElement('div'),
+      originalEvent: { clientX: 0, clientY: 0 }
+    })
+    expect(result).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('handleBlockDragEnd calls moveBlock', async () => {
+    const blockStore = useBlockStore()
+    const pageStore = usePageStore()
+    const moveSpy = vi.spyOn(blockStore, 'moveBlock').mockResolvedValue(undefined)
+    blockStore.blocks = [
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 },
+      { id: 'b2', pageId: 'p1', parentId: null, pos: 1000, content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 }
+    ]
+    pageStore.currentPageId = 'p1'
+    const node: TreeNode = { id: 'b1', block: blockStore.blocks[0], children: [] }
+    const wrapper = mount(Block, {
+      props: { node, pageId: 'p1', depth: 0 },
+      global: { stubs: { BulletRender: StubBulletRender } }
+    })
+    await flushPromises()
+
+    const vm = wrapper.vm as any
+    vm.dragState.currentDropTarget = {
+      action: 'sort',
+      toParentId: null,
+      beforeId: 'b2'
+    }
+
+    const chosenEl = document.createElement('div')
+    chosenEl.className = 'block-chosen'
+    chosenEl.dataset.blockId = 'b1'
+    document.body.appendChild(chosenEl)
+
+    await vm.handleBlockDragEnd()
+
+    expect(moveSpy).toHaveBeenCalledWith(expect.objectContaining({
+      blockId: 'b1',
+      toParentId: null
+    }))
+
+    document.body.removeChild(chosenEl)
     wrapper.unmount()
   })
 })
