@@ -193,27 +193,9 @@ function handleWikiLinkUpdate(event: Event) {
   menuQuery.value = customEvent.detail.query
 }
 
-async function handleWikiLinkClose(event?: Event) {
+function handleWikiLinkClose() {
   menuVisible.value = false
   closeWikiLinkMenuByEditor()
-
-  // 只在有自定义事件时处理查询创建逻辑
-  if (event && 'detail' in event) {
-    const customEvent = event as CustomEvent<{ reason: string; query: string }>
-    const query = customEvent.detail.query?.trim()
-    if (!query) return
-
-    if (!editor.value) return
-    const { state } = editor.value
-    const cursorPos = state.selection.from
-    const result = findWikiLinkAtCursor(state.doc, cursorPos)
-    if (!result.found || !result.range) return
-
-    const pageStore = usePageStore()
-    if (!pageStore.getPageByTitle(query)) {
-      await pageStore.createPage(query)
-    }
-  }
 }
 
 function handleWikiLinkMenuEnter() {
@@ -324,6 +306,20 @@ const editor = shallowRef(useEditor({
       return
     }
     if (editor.value) {
+      // wiki link 菜单仍打开时（用户未取消），失焦即创建对应页面
+      if (menuVisible.value) {
+        const { state } = editor.value
+        const cursorPos = state.selection.from
+        const result = findWikiLinkAtCursor(state.doc, cursorPos)
+        if (result.found && result.query.trim()) {
+          const pageStore = usePageStore()
+          if (!pageStore.getPageByTitle(result.query.trim())) {
+            pageStore.createPage(result.query.trim())
+          }
+        }
+        menuVisible.value = false
+        closeWikiLinkMenuByEditor()
+      }
       emit('save', editor.value.getText())
     }
   },

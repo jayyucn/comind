@@ -130,6 +130,11 @@ export const WikiLinkTriggerExtension = Extension.create({
         key: new PluginKey('wikiLinkTrigger'),
         props: {
           handleKeyDown: (view, event) => {
+            // IME 输入法组合中不拦截按键，避免 Enter 确认候选词时误触发菜单选择
+            if (event.isComposing || event.keyCode === 229) {
+              return false
+            }
+
             if (event.key === '[') {
               const { state } = view
               const $pos = state.doc.resolve(state.selection.from)

@@ -184,7 +184,7 @@ export async function initWasmClient(): Promise<WasmClient> {
     },
 
     async query_due_non_recurring_date_refs(now_ms: number): Promise<DateRefRecord[]> {
-      const result = await wasmModule.query_due_non_recurring_date_refs(now_ms)
+      const result = await wasmModule.query_due_non_recurring_date_refs(BigInt(now_ms))
       return parseJsonResult<DateRefRecord[]>(result)
     },
 

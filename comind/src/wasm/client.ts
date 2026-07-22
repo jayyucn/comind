@@ -1,4 +1,5 @@
 import { isTauriEnvironment } from './tauri-client'
+export { isTauriEnvironment } from './tauri-client'
 import { initWasmClient, type WasmClient } from './wasm-client'
 import * as tauri from './tauri-client'
 import {
@@ -340,7 +341,10 @@ class WasmClientAdapter implements CoreClient {
       params: {}
     }])
     const results = await this.wasm.execute_batch(opsJson)
-    return results as unknown as UserTemplate[]
+    // execute_batch 返回每个 op 的结果作为数组元素；template get 返回 UserTemplate[]，
+    // 因此外层 results 是 [[template1, template2, ...]]，需要取首元素。
+    const first = Array.isArray(results) ? results[0] : results
+    return (first as unknown as UserTemplate[]) || []
   }
 
   async search(query: string): Promise<SearchResult[]> {

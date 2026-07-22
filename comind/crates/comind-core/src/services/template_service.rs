@@ -83,7 +83,7 @@ impl TemplateService {
         repository::TemplateRepository::delete(storage.templates(), id)
     }
 
-    fn generate_id() -> String {
+    pub fn generate_id() -> String {
         let mut rng = rand::thread_rng();
         let bytes: Vec<u8> = (0..16).map(|_| rng.gen()).collect();
         hex::encode(bytes)

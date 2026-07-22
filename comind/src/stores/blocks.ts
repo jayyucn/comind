@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Block } from '../types/block'
-import { initCoreClient, triggerSync } from '../wasm/client'
+import { initCoreClient, triggerSync, isTauriEnvironment } from '../wasm/client'
 import { generateUUID } from '../utils/id'
 import { debounce } from '../utils/debounce'
 import { parseBlockLinks } from '../utils/parser'
@@ -286,6 +286,7 @@ export const useBlockStore = defineStore('blocks', () => {
   let syncDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
   function _triggerSyncDebounced() {
+    if (!isTauriEnvironment()) return
     if (syncDebounceTimer) clearTimeout(syncDebounceTimer)
     syncDebounceTimer = setTimeout(() => {
       triggerSync().catch(console.error)
@@ -386,18 +387,19 @@ export const useBlockStore = defineStore('blocks', () => {
     const pageStore = usePageStore()
     const internalLinks = parsedLinks.filter(l => !l.isExternal)
 
-    // "引用即创建"：目标页面不存在时自动创建
-    const links = await Promise.all(
-      internalLinks.map(async l => {
-        const targetPage = await pageStore.getOrCreatePageByTitle(l.targetTitle)
-        return {
-          source_block_id: block.id,
-          target_page_id: targetPage.id,
-          display_text: l.displayText,
-          relationship_type: l.relationshipType
-        }
+    // 仅同步目标页面已存在的链接；不在此处自动创建页面。
+    // 页面创建由用户交互（菜单选择/回车/失焦）显式触发，避免输入过程中产生中间页面。
+    const links: Array<{ source_block_id: string; target_page_id: string; display_text: string; relationship_type: string | null }> = []
+    for (const l of internalLinks) {
+      const targetPage = pageStore.getPageByTitle(l.targetTitle)
+      if (!targetPage) continue
+      links.push({
+        source_block_id: block.id,
+        target_page_id: targetPage.id,
+        display_text: l.displayText,
+        relationship_type: l.relationshipType
       })
-    )
+    }
 
     await client.executeBatch([{
       entity: 'link',

@@ -104,11 +104,12 @@ mod wasm_impl {
         }
         
         with_adapter(|adapter| {
+            let mut results: Vec<Block> = Vec::with_capacity(updates.len());
             for update in &updates {
                 let existing = comind_core::storage::repository::BlockRepository::get_by_id(adapter.blocks(), &update.id);
                 match existing {
                     Ok(_) => {
-                        BlockService::update(
+                        let block = BlockService::update(
                             adapter,
                             &update.id,
                             Some(&update.content),
@@ -117,9 +118,10 @@ mod wasm_impl {
                             update.parent_id.as_deref(),
                             Some(update.pos),
                         )?;
+                        results.push(block);
                     }
                     Err(_) => {
-                        let _ = BlockService::create(
+                        let block = BlockService::create(
                             adapter,
                             &update.page_id,
                             update.parent_id.as_deref(),
@@ -128,10 +130,11 @@ mod wasm_impl {
                             &update.r#type,
                             Some(&update.id),
                         )?;
+                        results.push(block);
                     }
                 }
             }
-            Ok(serde_json::to_string(&json!({"success": true})).unwrap_or_else(|_| "{\"success\": true}".to_string()))
+            Ok(serde_json::to_string(&results).unwrap_or_else(|_| "[]".to_string()))
         })
     }
 
@@ -543,6 +546,40 @@ mod wasm_impl {
                     ("relationshipType", "delete") => {
                         let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
                         RelationshipTypeService::delete(adapter, id)?;
+                        serde_json::to_value(json!({"success": true}))
+                    }
+                    ("template", "get") => {
+                        let templates = TemplateService::get_all(adapter)?;
+                        serde_json::to_value(templates)
+                    }
+                    ("template", "create") => {
+                        let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                        let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                        let category = params.get("category").and_then(|v| v.as_str()).unwrap_or("custom");
+                        let content = params.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                        let now = chrono::Utc::now().timestamp_millis();
+                        let template = UserTemplate {
+                            id: if id.is_empty() { TemplateService::generate_id() } else { id.to_string() },
+                            name: name.to_string(),
+                            category: category.to_string(),
+                            content: content.to_string(),
+                            created_at: now,
+                            updated_at: now,
+                        };
+                        let created = comind_core::storage::repository::TemplateRepository::create(adapter.templates(), &template)?;
+                        serde_json::to_value(created)
+                    }
+                    ("template", "update") => {
+                        let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                        let name = params.get("name").and_then(|v| v.as_str());
+                        let category = params.get("category").and_then(|v| v.as_str());
+                        let content = params.get("content").and_then(|v| v.as_str());
+                        let updated = TemplateService::update(adapter, id, name, category, content)?;
+                        serde_json::to_value(updated)
+                    }
+                    ("template", "delete") => {
+                        let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                        TemplateService::delete(adapter, id)?;
                         serde_json::to_value(json!({"success": true}))
                     }
                     _ => serde_json::to_value(json!({"error": format!("Unknown operation: {} {}", entity, action)}))

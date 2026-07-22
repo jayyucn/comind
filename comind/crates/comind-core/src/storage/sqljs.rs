@@ -1,4 +1,4 @@
-﻿#[cfg(target_arch = "wasm32")]
+#[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use js_sys::{Object, Array};
@@ -155,6 +155,11 @@ impl SqlJsAdapter {
         
         Self::exec(db, "CREATE TABLE IF NOT EXISTS BlockVersion (id TEXT PRIMARY KEY, block_id TEXT NOT NULL, version INTEGER NOT NULL, snapshot TEXT NOT NULL, hash TEXT NOT NULL, message TEXT, source TEXT NOT NULL, restored_from_version_id TEXT, created_at INTEGER NOT NULL);")?;
 
+        Self::exec(db, "CREATE TABLE IF NOT EXISTS Notification (id TEXT PRIMARY KEY, block_id TEXT NOT NULL, page_id TEXT NOT NULL, kind TEXT NOT NULL, event_iso TEXT NOT NULL, fired_at INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'unread', snooze_until INTEGER, payload TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
+        Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_notifications_status ON Notification(status);")?;
+        Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_notifications_fired_at ON Notification(fired_at);")?;
+        Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_notifications_block_id ON Notification(block_id);")?;
+
         Self::exec(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_page_title ON Page(title);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_page_blockId ON Page(block_id);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_page_type ON Page(type);")?;
@@ -205,16 +210,20 @@ impl SqlJsAdapter {
     }
 
     fn query(db: &Object, sql: &str, params: &[&str]) -> Result<Vec<HashMap<String, String>>, Box<dyn std::error::Error>> {
-        let array = Array::new();
-        array.push(&JsValue::from_str(sql));
-        
+        // sql.js 的 Database.exec(sql, params) 要求 params 为数组；
+        // 错误地 spread 为 db.exec(sql, p1, p2, ...) 会导致参数绑定失效、查询返回空。
+        let param_array = Array::new();
         for param in params {
-            array.push(&JsValue::from_str(param));
+            param_array.push(&JsValue::from_str(param));
         }
+
+        let args = Array::new();
+        args.push(&JsValue::from_str(sql));
+        args.push(&param_array);
 
         let exec_fn = js_sys::Reflect::get(db, &JsValue::from_str("exec"))
             .map_err(|e| format!("Failed to get exec: {:?}", e))?;
-        let result = js_sys::Function::from(exec_fn).apply(db, &array)
+        let result = js_sys::Function::from(exec_fn).apply(db, &args)
             .map_err(|e| format!("SQL query failed: {:?}", e))?;
 
         let results = Array::from(&result);
@@ -585,6 +594,132 @@ impl LinkRepository for SqlJsAdapter {
 }
 
 #[cfg(target_arch = "wasm32")]
+fn row_to_notification(row: &HashMap<String, String>) -> Notification {
+    Notification {
+        id: row.get("id").cloned().unwrap_or_default(),
+        block_id: row.get("block_id").cloned().unwrap_or_default(),
+        page_id: row.get("page_id").cloned().unwrap_or_default(),
+        kind: row.get("kind").cloned().unwrap_or_default(),
+        event_iso: row.get("event_iso").cloned().unwrap_or_default(),
+        fired_at: row.get("fired_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
+        status: row.get("status").cloned().unwrap_or_else(|| "unread".to_string()),
+        snooze_until: {
+            let s = row.get("snooze_until").cloned().unwrap_or_default();
+            if s.is_empty() { None } else { s.parse::<i64>().ok() }
+        },
+        payload: row.get("payload").cloned().unwrap_or_default(),
+        created_at: row.get("created_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
+        updated_at: row.get("updated_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl NotificationRepository for SqlJsAdapter {
+    fn get_by_id(&self, id: &str) -> Result<Notification, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE id = ?", &[id])?;
+        if result.is_empty() {
+            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Notification not found")));
+        }
+        Ok(row_to_notification(&result[0]))
+    }
+
+    fn get_by_block_id(&self, block_id: &str) -> Result<Vec<Notification>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE block_id = ? ORDER BY fired_at DESC", &[block_id])?;
+        Ok(result.into_iter().map(|r| row_to_notification(&r)).collect())
+    }
+
+    fn find_by_event(&self, block_id: &str, kind: &str, event_iso: &str) -> Result<Option<Notification>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE block_id = ? AND kind = ? AND event_iso = ? LIMIT 1", &[block_id, kind, event_iso])?;
+        if result.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(row_to_notification(&result[0])))
+        }
+    }
+
+    fn query_unread(&self) -> Result<Vec<Notification>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE status = 'unread' ORDER BY fired_at DESC", &[])?;
+        Ok(result.into_iter().map(|r| row_to_notification(&r)).collect())
+    }
+
+    fn query_pending_due(&self, now_ms: i64) -> Result<Vec<Notification>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE status = 'pending' AND snooze_until IS NOT NULL AND snooze_until <= ? ORDER BY snooze_until ASC", &[&now_ms.to_string()])?;
+        Ok(result.into_iter().map(|r| row_to_notification(&r)).collect())
+    }
+
+    fn query_recent(&self, limit: usize) -> Result<Vec<Notification>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE status IN ('unread', 'read') ORDER BY fired_at DESC LIMIT ?", &[&limit.to_string()])?;
+        Ok(result.into_iter().map(|r| row_to_notification(&r)).collect())
+    }
+
+    fn create(&mut self, notification: &Notification) -> Result<Notification, Box<dyn std::error::Error>> {
+        let snooze_until = notification.snooze_until.map(|s| s.to_string()).unwrap_or_default();
+        Self::run_with_params(&self.db, "INSERT INTO Notification (id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", &[
+            &notification.id, &notification.block_id, &notification.page_id, &notification.kind,
+            &notification.event_iso, &notification.fired_at.to_string(), &notification.status,
+            &snooze_until, &notification.payload, &notification.created_at.to_string(), &notification.updated_at.to_string()
+        ])?;
+        Ok(notification.clone())
+    }
+
+    fn batch_create(&mut self, notifications: &[Notification]) -> Result<Vec<Notification>, Box<dyn std::error::Error>> {
+        for n in notifications {
+            NotificationRepository::create(self, n)?;
+        }
+        Ok(notifications.to_vec())
+    }
+
+    fn update_status(&mut self, id: &str, status: &str) -> Result<Notification, Box<dyn std::error::Error>> {
+        let now = chrono::Utc::now().timestamp_millis();
+        Self::run_with_params(&self.db, "UPDATE Notification SET status = ?, updated_at = ? WHERE id = ?", &[status, &now.to_string(), id])?;
+        NotificationRepository::get_by_id(self, id)
+    }
+
+    fn update_payload(&mut self, id: &str, payload: &str) -> Result<Notification, Box<dyn std::error::Error>> {
+        let now = chrono::Utc::now().timestamp_millis();
+        Self::run_with_params(&self.db, "UPDATE Notification SET payload = ?, updated_at = ? WHERE id = ?", &[payload, &now.to_string(), id])?;
+        NotificationRepository::get_by_id(self, id)
+    }
+
+    fn reschedule(&mut self, block_id: &str, kind: &str, new_event_iso: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let now = chrono::Utc::now().timestamp_millis();
+        Self::run_with_params(&self.db, "UPDATE Notification SET event_iso = ?, status = 'unread', snooze_until = NULL, updated_at = ? WHERE block_id = ? AND kind = ? AND status IN ('unread','read','dismissed')", &[new_event_iso, &now.to_string(), block_id, kind])?;
+        Ok(())
+    }
+
+    fn set_snooze(&mut self, id: &str, snooze_until: i64, status: &str) -> Result<Notification, Box<dyn std::error::Error>> {
+        let now = chrono::Utc::now().timestamp_millis();
+        Self::run_with_params(&self.db, "UPDATE Notification SET snooze_until = ?, status = ?, updated_at = ? WHERE id = ?", &[&snooze_until.to_string(), status, &now.to_string(), id])?;
+        NotificationRepository::get_by_id(self, id)
+    }
+
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn std::error::Error>> {
+        Self::run_with_params(&self.db, "DELETE FROM Notification WHERE id = ?", &[id])?;
+        Ok(())
+    }
+
+    fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+        Self::run_with_params(&self.db, "DELETE FROM Notification WHERE block_id = ?", &[block_id])?;
+        Ok(())
+    }
+
+    fn delete_by_block_and_kind(&mut self, block_id: &str, kind: &str) -> Result<(), Box<dyn std::error::Error>> {
+        Self::run_with_params(&self.db, "DELETE FROM Notification WHERE block_id = ? AND kind = ?", &[block_id, kind])?;
+        Ok(())
+    }
+
+    fn delete_older_than(&mut self, timestamp: i64) -> Result<(), Box<dyn std::error::Error>> {
+        Self::run_with_params(&self.db, "DELETE FROM Notification WHERE status = 'read' AND updated_at < ?", &[&timestamp.to_string()])?;
+        Ok(())
+    }
+
+    fn mark_all_read(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let now = chrono::Utc::now().timestamp_millis();
+        Self::run_with_params(&self.db, "UPDATE Notification SET status = 'read', updated_at = ? WHERE status = 'unread'", &[&now.to_string()])?;
+        Ok(())
+    }
+}
+
 #[cfg(target_arch = "wasm32")]
 impl DateRefRepository for SqlJsAdapter {
     fn get_by_id(&self, id: &str) -> Result<DateRef, Box<dyn std::error::Error>> {
@@ -629,6 +764,7 @@ impl DateRefRepository for SqlJsAdapter {
             &date_ref.date_day,
             &date_ref.recurrence,
             &date_ref.lead_minutes.to_string(),
+            &date_ref.event_ts.to_string(),
             &date_ref.created_at.to_string(),
         ])?;
         Ok(date_ref.clone())
@@ -902,6 +1038,10 @@ impl StorageAdapter for SqlJsAdapter {
     }
 
     fn date_refs(&mut self) -> &mut dyn DateRefRepository {
+        self
+    }
+
+    fn notifications(&mut self) -> &mut dyn NotificationRepository {
         self
     }
 }
