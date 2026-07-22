@@ -23,6 +23,7 @@ import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import { useBlockRegistry } from '../../composables/useBlockRegistry'
 import { useRelationshipMenu } from '../../composables/useRelationshipMenu'
 import { useBlockRelationshipCleanup } from '../../composables/useBlockRelationshipCleanup'
+import { useBlockPropertySync } from './composables/useBlockPropertySync'
 import { useDateTimePickerPanel, useDateRefClickListener, computeDatePickerPosition } from '../../composables/useDateTimePickerPanel'
 import './handlers/bullet'
 import './handlers/code'
@@ -77,29 +78,6 @@ function handleEmbedSelect(sourceBlockId: string, sourcePageId: string) {
   editorStore.deactivateBlock()
 }
 
-// 获取当前 block 的优先级
-const blockPriority = computed(() => {
-  const prop = propertyStore.getBlockProperty(blockId.value, 'priority')
-  return prop?.value as string | undefined
-})
-
-// 优先级对应的 CSS 类名
-const priorityClass = computed(() => {
-  if (!blockPriority.value) return ''
-  return `priority-${blockPriority.value.toLowerCase()}`
-})
-
-// Load properties for this block
-onMounted(async () => {
-  await propertyStore.loadBlockProperties(blockId.value)
-})
-
-watch(() => props.node.id, async (newBlockId) => {
-  if (newBlockId) {
-    await propertyStore.loadBlockProperties(newBlockId)
-  }
-})
-
 // 注入拖拽结束回调（由 BlockList 提供）
 const onDragEnd = inject<() => void>('onDragEnd')
 const selection = inject<CrossBlockSelection>('crossBlockSelection')
@@ -108,19 +86,12 @@ const selection = inject<CrossBlockSelection>('crossBlockSelection')
 const blockId = computed(() => props.node.id)
 const block = computed(() => props.node.block)
 
-function getBlockProperty(key: string): string | undefined {
-  const prop = propertyStore.getBlockProperty(blockId.value, key)
-  return prop?.value as string | undefined
-}
-
-function getBlockPropertiesMap(): Record<string, any> {
-  const props = propertyStore.getBlockProperties(blockId.value)
-  const result: Record<string, any> = {}
-  for (const prop of props) {
-    result[prop.key] = prop.value
-  }
-  return result
-}
+// ── 属性读取 / 优先级 CSS 类（由 useBlockPropertySync 统一管理）──
+const {
+  getProperty: getBlockProperty,
+  getPropertiesMap: getBlockPropertiesMap,
+  priorityClass,
+} = useBlockPropertySync(blockId)
 
 watch(() => block.value.type, (newType) => {
   if (newType === 'embed' && !getBlockProperty('sourceBlockId')) {
