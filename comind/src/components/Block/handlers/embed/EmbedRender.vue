@@ -5,6 +5,7 @@ import { usePageStore } from '../../../../stores/pages'
 import { usePropertyStore } from '../../../../stores/property'
 import { useNavigateToPage } from '../../../../composables/useNavigateToPage'
 import SubtreeRenderer from './SubtreeRenderer'
+import BlockSelector from '../../../BlockSelector.vue'
 import type { SubtreeNode } from '../../../../types/block'
 import type { Block } from '../../../../types/block'
 
@@ -62,6 +63,18 @@ async function loadSourceBlock() {
 }
 
 watch(sourceBlockId, loadSourceBlock, { immediate: true })
+
+// ── BlockSelector 状态（无 source 时自动打开选择器）──
+const showBlockSelector = ref(false)
+
+watch(sourceBlockId, (newId) => {
+  showBlockSelector.value = !newId
+}, { immediate: true })
+
+async function handleEmbedSelect(sourceBlockId: string, sourcePageId: string) {
+  await blockStore.updateBlockProperties(props.blockId, { sourceBlockId, sourcePageId })
+  showBlockSelector.value = false
+}
 
 const sourceBlock = computed(() => remoteBlock.value)
 const sourcePage = computed(() => sourceBlock.value ? pageStore.getPage(sourceBlock.value.pageId) : null)
@@ -130,7 +143,15 @@ function handleLanguageChange(lang: string) {
 <template>
   <div class="embed-block" @mousedown.stop @click="emit('content-click', $event)">
     <template v-if="!sourceBlockId">
-      <div class="embed-placeholder">Select a block to embed...</div>
+      <div class="embed-placeholder" @click="showBlockSelector = true">
+        Select a block to embed...
+      </div>
+      <BlockSelector
+        :visible="showBlockSelector"
+        :exclude-block-id="blockId"
+        @select="handleEmbedSelect"
+        @close="showBlockSelector = false"
+      />
     </template>
     <template v-else-if="!sourceBlock">
       <div class="embed-error">Source block not found</div>

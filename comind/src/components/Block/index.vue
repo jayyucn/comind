@@ -34,9 +34,9 @@ import PropertyDisplay from './PropertyDisplay.vue'
 import PropertyInline from './PropertyInline.vue'
 
 import { usePageStore } from '../../stores/pages'
-import BlockSelector from '../BlockSelector.vue'
+import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import type { TreeNode } from '../../types/block'
-import type { BlockTypeEditorExposed } from '../../types/block-type'
+import type { BlockTypeEditorExposed, BlockSetupContext, BlockTypeHooks } from '../../types/block-type'
 import type { CrossBlockSelection } from '../../composables/useCrossBlockSelection'
 
 defineOptions({
@@ -55,12 +55,7 @@ const propertyStore = usePropertyStore()
 const pageStore = usePageStore()
 const { getHandler } = useBlockRegistry()
 const relationshipCleanup = useBlockRelationshipCleanup()
-
-function handleEmbedSelect(sourceBlockId: string, sourcePageId: string) {
-  blockStore.updateBlockProperties(blockId.value, { sourceBlockId, sourcePageId })
-  showBlockSelector.value = false
-  editorStore.deactivateBlock()
-}
+const { navigateToPage } = useNavigateToPage()
 
 // 注入拖拽结束回调（由 BlockList 提供）
 const onDragEnd = inject<() => void>('onDragEnd')
@@ -74,16 +69,9 @@ const block = computed(() => props.node.block)
 const {
   getProperty: getBlockProperty,
   getPropertiesMap: getBlockPropertiesMap,
+  setProperty,
   priorityClass,
 } = useBlockPropertySync(blockId)
-
-watch(() => block.value.type, (newType) => {
-  if (newType === 'embed' && !getBlockProperty('sourceBlockId')) {
-    nextTick(() => {
-      showBlockSelector.value = true
-    })
-  }
-})
 
 const hasSelectedAncestor = computed(() => {
   if (!selection) return false
@@ -154,7 +142,6 @@ const {
 // 属于渲染周期协调，不宜移入 composable。
 const {
   isActive,
-  showBlockSelector,
   handleSave,
   handleLanguageChange,
   handleSplit,
@@ -184,6 +171,31 @@ const {
   getBlockProperty,
 })
 
+// ── 类型特化钩子（由各 handler 的 setupBlock 提供）──
+// handler 变化（block.type 改变）时重新调用 setupBlock 获取该类型的钩子。
+// index.vue 不再包含任何 block.type === 'xxx' 分支，全部通过 typeHooks 派发。
+const setupCtx: BlockSetupContext = {
+  blockId,
+  block,
+  pageId: props.pageId,
+  getProperty: getBlockProperty,
+  getPropertiesMap: getBlockPropertiesMap,
+  setProperty,
+  blockStore,
+  editorStore,
+  propertyStore,
+  pageStore,
+  navigateToPage,
+}
+
+const typeHooks = computed<BlockTypeHooks | undefined>(() => {
+  return handler.value?.setupBlock?.(setupCtx)
+})
+
+watch(() => block.value.type, (newType, oldType) => {
+  typeHooks.value?.onTypeChanged?.(newType, oldType)
+})
+
 // BlockChildren 实例 ref（用于获取子节点容器 DOM 做高度测量）
 const blockChildrenRef = ref<InstanceType<typeof BlockChildren> | null>(null)
 
@@ -193,6 +205,7 @@ const childrenEl = computed(() => {
 })
 
 onMounted(() => {
+  typeHooks.value?.onMounted?.()
   updateChildrenHeight(childrenEl.value)
 
   // 监听删除 between 属性的事件
@@ -201,20 +214,21 @@ onMounted(() => {
 
   const el = document.querySelector(`[data-block-id="${blockId.value}"]`)
   if (el) {
-    el.addEventListener('dragover', handleDragOver as EventListener)
-    el.addEventListener('drop', handleDrop as EventListener)
-    el.addEventListener('paste', handlePaste as unknown as EventListener)
+    el.addEventListener('dragover', onDragOver as EventListener)
+    el.addEventListener('drop', onDrop as EventListener)
+    el.addEventListener('paste', onPaste as unknown as EventListener)
   }
 })
 
 onBeforeUnmount(() => {
+  typeHooks.value?.onBeforeUnmount?.()
   document.removeEventListener('delete-between-property', handleDeleteBetweenProperty, true)
 
   const el = document.querySelector(`[data-block-id="${blockId.value}"]`)
   if (el) {
-    el.removeEventListener('dragover', handleDragOver as EventListener)
-    el.removeEventListener('drop', handleDrop as EventListener)
-    el.removeEventListener('paste', handlePaste as unknown as EventListener)
+    el.removeEventListener('dragover', onDragOver as EventListener)
+    el.removeEventListener('drop', onDrop as EventListener)
+    el.removeEventListener('paste', onPaste as unknown as EventListener)
   }
 })
 
@@ -296,47 +310,38 @@ watch(
  * 等编辑器生命周期逻辑已抽离至 ./composables/useBlockEditorLifecycle。
  * 此处仅保留 watch(isActive, ...) 做渲染周期协调。 */
 
-function handleDragOver(e: DragEvent) {
-  if (handler.value?.type !== 'image') return
-  if (!e.dataTransfer?.types.includes('Files')) return
-  const file = e.dataTransfer.items[0]
-  if (!file || !file.type.startsWith('image/')) return
-  e.preventDefault()
-  e.stopPropagation()
+// ── 事件派发：先询问类型钩子，钩子返回 true 则跳过默认行为 ──
+function onContentMousedown(e: MouseEvent) {
+  if (typeHooks.value?.onContentMousedown?.(e) === true) return
+  handleContentMousedown(e)
 }
 
-function handleDrop(e: DragEvent) {
-  if (handler.value?.type !== 'image') return
-  const file = e.dataTransfer?.files?.[0]
-  if (!file || !file.type.startsWith('image/')) return
-  e.preventDefault()
-  e.stopPropagation()
-
-  void (async () => {
-    const { assetStorage } = await import('../../utils/asset')
-    const asset = await assetStorage.save(file)
-    const content = `![${asset.name}](asset://${asset.id})`
-    await blockStore.updateBlockContent(blockId.value, content)
-  })()
+function onContentClick(e: MouseEvent) {
+  if (typeHooks.value?.onContentClick?.(e) === true) return
+  handleContentClick(e)
 }
 
-async function handlePaste(e: ClipboardEvent) {
-  if (handler.value?.type !== 'image') return
-  const items = e.clipboardData?.items
-  if (!items) return
-  for (let i = 0; i < items.length; i++) {
-    if (items[i].type.startsWith('image/')) {
-      e.preventDefault()
-      e.stopPropagation()
-      const file = items[i].getAsFile()
-      if (!file) continue
-      const { assetStorage } = await import('../../utils/asset')
-      const asset = await assetStorage.save(file)
-      const content = `![${asset.name}](asset://${asset.id})`
-      await blockStore.updateBlockContent(blockId.value, content)
-      return
-    }
+async function onLanguageChange(lang: string) {
+  if (typeHooks.value?.onLanguageChange) {
+    await typeHooks.value.onLanguageChange(lang)
+  } else {
+    await handleLanguageChange(lang)
   }
+}
+
+function onDragOver(e: DragEvent) {
+  if (typeHooks.value?.onDragOver?.(e) === true) return
+  // 默认无行为
+}
+
+async function onDrop(e: DragEvent) {
+  // onDrop 钩子为 async，需 await 拿到布尔结果；e.preventDefault() 已在钩子内同步调用
+  if (await typeHooks.value?.onDrop?.(e) === true) return
+}
+
+async function onPaste(e: ClipboardEvent) {
+  // onPaste 钩子为 async，需 await 拿到布尔结果；e.preventDefault() 已在钩子内同步调用
+  if (await typeHooks.value?.onPaste?.(e) === true) return
 }
 </script>
 
@@ -359,7 +364,7 @@ async function handlePaste(e: ClipboardEvent) {
         <PropertyInline :block-id="blockId" position="between-bullet-content" />
 
         <!-- 内容区 -->
-        <div class="block-content" @mousedown="handleContentMousedown">
+        <div class="block-content" @mousedown="onContentMousedown">
           <component
             v-if="isActive && handler"
             :is="handler.editorComponent"
@@ -379,7 +384,7 @@ async function handlePaste(e: ClipboardEvent) {
             @move-down="handleMoveDown"
             @exit-edit="handleExitEdit"
             @cursor-change="handleCursorChange"
-            @language-change="handleLanguageChange"
+            @language-change="onLanguageChange"
           />
           <component
             v-else-if="handler"
@@ -390,8 +395,8 @@ async function handlePaste(e: ClipboardEvent) {
             :language="getBlockProperty('language')"
             :show-placeholder="isSingleEmptyBlock"
             :readonly="true"
-            @content-click="handleContentClick"
-            @language-change="handleLanguageChange"
+            @content-click="onContentClick"
+            @language-change="onLanguageChange"
             @clear="handleClear"
           />
           <div v-else class="block-text block-text--unregistered">
@@ -428,13 +433,6 @@ async function handlePaste(e: ClipboardEvent) {
       :move-handler="handleDragMove"
       @drag-start="editorStore.deactivateBlock()"
       @drag-end="handleBlockDragEnd"
-    />
-
-    <BlockSelector
-      :visible="showBlockSelector"
-      :exclude-block-id="blockId"
-      @select="handleEmbedSelect"
-      @close="showBlockSelector = false"
     />
   </div>
 </template>
