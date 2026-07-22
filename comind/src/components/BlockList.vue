@@ -19,6 +19,8 @@ import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
 import { usePageStore } from '../stores/pages'
 import Block from './Block/index.vue'
+import BlockDropIndicator from './Block/components/BlockDropIndicator.vue'
+import { useSharedDropIndicator } from './Block/composables/useBlockDragDrop'
 import { buildTree, syncTreeToStore } from '../composables/useBlockTree'
 import type { TreeNode } from '../types/block'
 import { useCrossBlockSelection } from '../composables/useCrossBlockSelection'
@@ -141,6 +143,15 @@ const selection = useCrossBlockSelection()
 provide<CrossBlockSelection>('crossBlockSelection', selection)
 provide('onDragEnd', handleDragEnd)
 
+// ── 拖放指示器（模块级共享状态，渲染一次） ──
+// 所有 Block 的 useBlockDragDrop 写入同一组 ref，这里统一渲染单个 <BlockDropIndicator>，
+// 复现原全局 .drop-indicator DOM 元素行为，避免跨容器拖拽时残留指示器。
+const {
+  style: indicatorStyle,
+  cssClass: indicatorClass,
+  visible: indicatorVisible
+} = useSharedDropIndicator()
+
 // ── 监听结构变化重建树 ──
 watch(() => blockStore.structureVersion, () => {
   syncFromStore()
@@ -188,6 +199,14 @@ onBeforeUnmount(() => {
     </VueDraggable>
     <!-- 底部留白：确保拖拽到列表底部时目标容器被正确识别，双击创建新 block -->
     <div class="block-list-padding" @dblclick="handleCreateBlock" />
+
+    <!-- 拖放指示器：模块级共享状态，整个 BlockList 只渲染一次。
+         由各 Block 的 useBlockDragDrop.handleDragMove 写入共享 ref。 -->
+    <BlockDropIndicator
+      :style="indicatorStyle"
+      :css-class="indicatorClass"
+      :visible="indicatorVisible"
+    />
   </div>
 </template>
 

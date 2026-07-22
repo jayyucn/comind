@@ -44,7 +44,8 @@ interface UseBlockDragDropOptions {
  * 与原实现的关键变化：
  * - 不再使用 document.querySelector('.drop-indicator') 创建/更新 DOM 元素
  * - 指示器位置/样式/可见性通过 indicatorStyle / indicatorClass / indicatorVisible 暴露
- * - 由 <BlockDropIndicator> 子组件消费这些 ref 渲染指示器
+ * - 这些 ref 为模块级共享状态：所有 Block 实例共用一个指示器，
+ *   由 BlockList 通过 useSharedDropIndicator() 渲染单个 <BlockDropIndicator>
  *
  * 注意：
  * - handleBlockDragEnd 仍通过 document.querySelector('.block-chosen') 读取被拖拽
@@ -52,6 +53,28 @@ interface UseBlockDragDropOptions {
  * - handleDragMove 必须保留 boolean 返回值（false 阻止非法移动），由 BlockChildren
  *   通过 moveHandler prop 透传给 VueDraggable 的 @move。
  */
+
+// ── 模块级共享指示器状态 ──────────────────────────────────────────────
+// 所有 Block 实例共享同一组 ref，复现原全局 .drop-indicator DOM 元素行为：
+// 任意时刻只有一个指示器，无论哪个 Block 的 handleDragMove 触发。
+const sharedIndicatorStyle = ref<Record<string, string>>({})
+const sharedIndicatorClass = ref<string>('')
+const sharedIndicatorVisible = ref(false)
+
+/**
+ * useSharedDropIndicator — 暴露模块级共享指示器 ref。
+ *
+ * 由 BlockList（或任何单一消费者）调用，渲染一个 <BlockDropIndicator>，
+ * 而非每个 Block 实例各渲染一个。匹配原实现中单个全局 .drop-indicator 元素的行为。
+ */
+export function useSharedDropIndicator() {
+  return {
+    style: sharedIndicatorStyle,
+    cssClass: sharedIndicatorClass,
+    visible: sharedIndicatorVisible
+  }
+}
+
 export function useBlockDragDrop(options: UseBlockDragDropOptions) {
   const { blockStore, pageStore, onDragEnd } = options
 
@@ -62,10 +85,10 @@ export function useBlockDragDrop(options: UseBlockDragDropOptions) {
     currentDropTarget: null
   })
 
-  // ── 指示器响应式状态（供 <BlockDropIndicator> 消费）──
-  const indicatorStyle = ref<Record<string, string>>({})
-  const indicatorClass = ref<string>('')
-  const indicatorVisible = ref(false)
+  // ── 指示器响应式状态（模块级共享，所有 Block 实例共用）──
+  const indicatorStyle = sharedIndicatorStyle
+  const indicatorClass = sharedIndicatorClass
+  const indicatorVisible = sharedIndicatorVisible
 
   /** 显式设置 dropTarget（主要供测试使用；运行时由 handleDragMove 内部调用） */
   function setDropTarget(target: DropTarget | null) {

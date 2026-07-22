@@ -26,7 +26,6 @@ import { useBlockPropertySync } from './composables/useBlockPropertySync'
 import { useBlockCollapse } from './composables/useBlockCollapse'
 import { useBlockDragDrop } from './composables/useBlockDragDrop'
 import BlockChildren from './components/BlockChildren.vue'
-import BlockDropIndicator from './components/BlockDropIndicator.vue'
 import { useDateTimePickerPanel, useDateRefClickListener, computeDatePickerPosition } from '../../composables/useDateTimePickerPanel'
 import './handlers/bullet'
 import './handlers/code'
@@ -152,11 +151,9 @@ const {
 // ── 拖放逻辑（由 useBlockDragDrop 统一管理） ──
 // 原 ~250 行 findDropTarget/handleDragMove/handleBlockDragEnd/指示器渲染
 // 已抽离至 ./composables/useBlockDragDrop。
-// 指示器改为响应式 <BlockDropIndicator> 子组件，消除 document.querySelector DOM 操作。
+// 指示器状态为模块级共享 ref，由 BlockList 渲染单个 <BlockDropIndicator> 消费，
+// 消除 document.querySelector DOM 操作并避免跨容器拖拽时的残留指示器。
 const {
-  indicatorStyle,
-  indicatorClass,
-  indicatorVisible,
   handleDragMove,
   handleBlockDragEnd,
 } = useBlockDragDrop({
@@ -673,13 +670,6 @@ async function handlePaste(e: ClipboardEvent) {
       :exclude-block-id="blockId"
       @select="handleEmbedSelect"
       @close="showBlockSelector = false"
-    />
-
-    <!-- 拖放指示器（由 useBlockDragDrop 的响应式状态驱动，替代原 document.querySelector DOM 操作） -->
-    <BlockDropIndicator
-      :style="indicatorStyle"
-      :css-class="indicatorClass"
-      :visible="indicatorVisible"
     />
   </div>
 </template>
