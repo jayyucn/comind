@@ -23,8 +23,8 @@ const embedHandler: BlockTypeHandler = {
       onContentClick(e: MouseEvent) {
         const sourceBlockId = ctx.getProperty('sourceBlockId')
         if (!sourceBlockId) {
-          // 让 EmbedRender 处理（显示 BlockSelector）
-          return false
+          // 让 EmbedRender placeholder 处理（点击打开 BlockSelector）
+          return true
         }
         // 有 source → 导航到源页面
         const sourcePageId = ctx.getProperty('sourcePageId')

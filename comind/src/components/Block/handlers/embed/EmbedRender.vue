@@ -64,12 +64,8 @@ async function loadSourceBlock() {
 
 watch(sourceBlockId, loadSourceBlock, { immediate: true })
 
-// ── BlockSelector 状态（无 source 时自动打开选择器）──
+// ── BlockSelector 状态（点击 placeholder 打开）──
 const showBlockSelector = ref(false)
-
-watch(sourceBlockId, (newId) => {
-  showBlockSelector.value = !newId
-}, { immediate: true })
 
 async function handleEmbedSelect(sourceBlockId: string, sourcePageId: string) {
   await blockStore.updateBlockProperties(props.blockId, { sourceBlockId, sourcePageId })
