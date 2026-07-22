@@ -15,7 +15,6 @@
  *   → BlockList watch → syncTreeToStore → tree 重建
  */
 import { computed, ref, watch, nextTick, onMounted, onBeforeUnmount, inject } from 'vue'
-import { VueDraggable } from 'vue-draggable-plus'
 import { useEditorStore } from '../../stores/editor'
 import { useBlockStore } from '../../stores/blocks'
 import { usePropertyStore } from '../../stores/property'
@@ -24,6 +23,8 @@ import { useBlockRegistry } from '../../composables/useBlockRegistry'
 import { useRelationshipMenu } from '../../composables/useRelationshipMenu'
 import { useBlockRelationshipCleanup } from '../../composables/useBlockRelationshipCleanup'
 import { useBlockPropertySync } from './composables/useBlockPropertySync'
+import { useBlockCollapse } from './composables/useBlockCollapse'
+import BlockChildren from './components/BlockChildren.vue'
 import { useDateTimePickerPanel, useDateRefClickListener, computeDatePickerPosition } from '../../composables/useDateTimePickerPanel'
 import './handlers/bullet'
 import './handlers/code'
@@ -134,7 +135,6 @@ const editorRef = ref<BlockTypeEditorExposed | null>(null)
 const cursorPos = ref(0)
 
 // ── 常量配置 ──────────────────────────────────────────────
-const COLLAPSE_ANIMATION_DURATION = 220 // ms
 const INDENT_WIDTH_PER_LEVEL = 24 // px
 
 // ── 放置目标类型 ──
@@ -158,30 +158,25 @@ const dragState = ref<{
 // ── 缩进（由 depth prop 直接计算，O(1)） ──
 const indentWidth = computed(() => `${props.depth * INDENT_WIDTH_PER_LEVEL}px`)
 
-// ── 折叠状态 ──
-const collapsed = ref(block.value?.format?.collapsed ?? false)
-const isAnimating = ref(false)
-const childrenHeight = ref(0)
+// ── 折叠状态（由 useBlockCollapse 统一管理） ──
+const {
+  collapsed,
+  isAnimating,
+  childrenHeight,
+  toggleCollapse,
+  updateChildrenHeight,
+} = useBlockCollapse(computed(() => props.node))
 
-// VueDraggable ref（用于获取 DOM 元素做高度测量）
-const draggableRef = ref<any>(null)
+// BlockChildren 实例 ref（用于获取子节点容器 DOM 做高度测量）
+const blockChildrenRef = ref<InstanceType<typeof BlockChildren> | null>(null)
 
-/** 获取子节点容器的 DOM 元素 */
+/** 获取子节点容器的 DOM 元素（透过 BlockChildren → VueDraggable → $el） */
 const childrenEl = computed(() => {
-  // VueDraggable 渲染 tag="div"，$el 即为该 div
-  return draggableRef.value?.$el as HTMLElement | null
+  return (blockChildrenRef.value as any)?.draggableRef?.$el as HTMLElement | null
 })
 
-/** 子节点容器的 CSS 类 */
-const childrenContainerClass = computed(() => ({
-  'block-children': true,
-  'has-children': !collapsed.value && props.node.children.length > 0,
-  'is-collapsed': collapsed.value,
-  'is-animating': isAnimating.value
-}))
-
 onMounted(() => {
-  updateChildrenHeight()
+  updateChildrenHeight(childrenEl.value)
 
   // 监听删除 between 属性的事件
   // 使用捕获阶段监听，以便在事件冒泡前处理
@@ -270,61 +265,15 @@ watch(
   { immediate: false }
 )
 
-/** 更新 childrenHeight */
-async function updateChildrenHeight() {
-  const el = childrenEl.value
-  if (el) {
-    const scrollH = el.scrollHeight
-    childrenHeight.value = scrollH > 0 ? scrollH : await calcAllChildrenHeight()
-  }
-}
-
-/** 递归计算所有子块的展开高度 */
-async function calcAllChildrenHeight(): Promise<number> {
-  const el = childrenEl.value
-  if (!el) return 0
-  let total = 0
-  for (const childEl of el.children) {
-    const rowEl = childEl.querySelector('.block-row') as HTMLElement | null
-    if (rowEl) total += rowEl.offsetHeight
-    const grandchildrenEl = childEl.querySelector('.block-children') as HTMLElement | null
-    if (grandchildrenEl) {
-      const bid = (childEl as HTMLElement).dataset.blockId
-      const blk = blockStore.blocks.find(b => b.id === bid)
-      if (blk?.format?.collapsed) {
-        total += 1
-      } else {
-        const orig = grandchildrenEl.style.maxHeight
-        grandchildrenEl.style.maxHeight = 'none'
-        total += grandchildrenEl.scrollHeight
-        grandchildrenEl.style.maxHeight = orig
-      }
-    }
-  }
-  return total
-}
-
 /** 监听子节点数量/内容变化时更新 childrenHeight */
 watch(
   () => props.node.children.map(c => c.id).join(','),
   async () => {
     await nextTick()
-    updateChildrenHeight()
+    updateChildrenHeight(childrenEl.value)
   },
   { flush: 'post' }
 )
-
-/** 监听折叠状态：同步到 store + 控制动画 */
-watch(collapsed, async (isCollapsed) => {
-  blockStore.updateBlockFormat(blockId.value, { collapsed: isCollapsed })
-
-  if (props.node.children.length === 0) return
-
-  await updateChildrenHeight()
-  
-  isAnimating.value = true
-  setTimeout(() => { isAnimating.value = false }, COLLAPSE_ANIMATION_DURATION)
-})
 
 /** mousedown：捕获点击坐标，在 tiptap 挂载前通知 editor store */
 function handleContentMousedown(e: MouseEvent) {
@@ -578,12 +527,6 @@ function handleContentClick(e: MouseEvent) {
       console.error('导航失败:', err)
     })
   }
-}
-
-/** 切换折叠状态 */
-async function toggleCollapse() {
-  if (props.node.children.length === 0 || isAnimating.value) return
-  collapsed.value = !collapsed.value
 }
 
 function findDropTarget(
@@ -940,35 +883,23 @@ async function handlePaste(e: ClipboardEvent) {
     </div>
 
     <!--
-      子节点容器（VueDraggable）
-      - v-model="node.children" 驱动渲染和拖拽
-      - vue-draggable-plus 直接修改 node.children 数组
-      - tag="div" 渲染为 <div>，接受 class/style/data-* 属性
-      - v-if 只在有子节点时渲染
+      子节点容器（<BlockChildren> 封装 VueDraggable + 折叠动画）
+      - 内部 v-model="node.children" 驱动渲染和拖拽
+      - move-handler 保留返回值以阻止循环嵌套等非法移动
+      - collapsed / isAnimating / childrenHeight 由 useBlockCollapse 管理
     -->
-    <VueDraggable
-      v-if="block.type !== 'embed'"
-      ref="draggableRef"
-      v-model="node.children"
-      tag="div"
-      :group="{ name: 'blocks', pull: true, put: true }"
-      :sort="true"
-      handle=".block-bullet"
-      :animation="150"
-      ghost-class="block-ghost"
-      drag-class="block-drag"
-      chosen-class="block-chosen"
-      :force-fallback="true"
-      :empty-insert-threshold="0"
-      :class="childrenContainerClass"
-      :data-parent-id="blockId"
-      :style="{ '--indent-depth': depth }"
-      @start="editorStore.deactivateBlock()"
-      @move="handleDragMove"
-      @end="handleBlockDragEnd"
-    >
-      <Block v-for="child in node.children" :key="child.id" :node="child" :page-id="pageId" :depth="depth + 1" />
-    </VueDraggable>
+    <BlockChildren
+      ref="blockChildrenRef"
+      :node="node"
+      :page-id="pageId"
+      :depth="depth"
+      :collapsed="collapsed"
+      :is-animating="isAnimating"
+      :children-height="childrenHeight"
+      :move-handler="handleDragMove"
+      @drag-start="editorStore.deactivateBlock()"
+      @drag-end="handleBlockDragEnd"
+    />
 
     <BlockSelector
       :visible="showBlockSelector"
