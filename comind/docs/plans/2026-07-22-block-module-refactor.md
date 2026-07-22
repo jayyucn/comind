@@ -8,32 +8,32 @@
 
 **技术栈**：Vue 3 + TypeScript + Pinia + vue-draggable-plus + ProseMirror (tiptap) + vitest + @vue/test-utils + Playwright
 
----
+***
 
 ## 决策快照
 
-| # | 决策点 | 结果 |
-|---|---|---|
-| 1 | 重构驱动力 | B (改一职责影响另一个) + A (加新类型痛) + C (难测) |
-| 2 | 拆分原语 | 路径 3+2 |
-| 3 | 子组件数 | 2 个：`<BlockChildren>` + `<BlockDropIndicator>` |
-| 4 | handleDelete | B2：合并到 `useBlockEditorLifecycle` |
-| 5 | Phase 范围 | Phase 1 = Block/index.vue；Phase 2 = blocks.ts（延后） |
+| # | 决策点           | 结果                                                         |
+| - | ------------- | ---------------------------------------------------------- |
+| 1 | 重构驱动力         | B (改一职责影响另一个) + A (加新类型痛) + C (难测)                         |
+| 2 | 拆分原语          | 路径 3+2                                                     |
+| 3 | 子组件数          | 2 个：`<BlockChildren>` + `<BlockDropIndicator>`             |
+| 4 | handleDelete  | B2：合并到 `useBlockEditorLifecycle`                           |
+| 5 | Phase 范围      | Phase 1 = Block/index.vue；Phase 2 = blocks.ts（延后）          |
 | 6 | setupBlock 接口 | Design A+；UI 搬 EmbedRender；ctx 暴露 store；return boolean；有默认 |
-| 7 | 文件位置 | Co-locate 到 `Block/composables/` + `Block/components/` |
+| 7 | 文件位置          | Co-locate 到 `Block/composables/` + `Block/components/`     |
 
 ### 职责归属表
 
-| # | 职责 | 归属 |
-|---|---|---|
-| 1 | 属性管理 | `useBlockPropertySync` |
-| 2 | 编辑器生命周期（含 handleDelete） | `useBlockEditorLifecycle` |
-| 3 | 折叠动画 | `useBlockCollapse` + `<BlockChildren>` |
-| 4 | 拖放 | `useBlockDragDrop` + `<BlockDropIndicator>` |
-| 5 | (合并到 #2) | — |
-| 6 | Date-ref | 不动（已用 `useDateTimePickerPanel`） |
-| 7 | Embed 选择 UI | 搬到 `EmbedRender.vue` |
-| 8 | 跨块选择 | 不动（仅读 inject） |
+| # | 职责                      | 归属                                          |
+| - | ----------------------- | ------------------------------------------- |
+| 1 | 属性管理                    | `useBlockPropertySync`                      |
+| 2 | 编辑器生命周期（含 handleDelete） | `useBlockEditorLifecycle`                   |
+| 3 | 折叠动画                    | `useBlockCollapse` + `<BlockChildren>`      |
+| 4 | 拖放                      | `useBlockDragDrop` + `<BlockDropIndicator>` |
+| 5 | (合并到 #2)                | —                                           |
+| 6 | Date-ref                | 不动（已用 `useDateTimePickerPanel`）             |
+| 7 | Embed 选择 UI             | 搬到 `EmbedRender.vue`                        |
+| 8 | 跨块选择                    | 不动（仅读 inject）                               |
 
 ### Commit 序列
 
@@ -113,11 +113,12 @@ interface BlockTypeHooks {
 }
 ```
 
----
+***
 
 ## 任务 1：Characterization 测试
 
 **涉及文件：**
+
 - 修改：`src/components/Block/index.test.ts`
 - 参考：`src/components/Block/index.vue`（锁定现有行为）
 
@@ -232,7 +233,7 @@ describe('characterization: save', () => {
 })
 ```
 
-- [ ] **步骤 5：运行测试，验证通过**
+- [ ] ** 步骤 5：运行测试，验证通过**
 
 执行命令：`npx vitest run src/components/Block/index.test.ts`
 
@@ -320,11 +321,12 @@ lifecycle, save, delete, and collapse behaviors to serve as
 regression protection for the upcoming composable extraction."
 ```
 
----
+***
 
 ## 任务 2：抽取 `useBlockPropertySync` Composable
 
 **涉及文件：**
+
 - 新建：`src/components/Block/composables/useBlockPropertySync.ts`
 - 新建：`src/components/Block/composables/useBlockPropertySync.test.ts`
 - 修改：`src/components/Block/index.vue`（移除属性相关代码，改为调用 composable）
@@ -333,7 +335,7 @@ regression protection for the upcoming composable extraction."
 
 ### 步骤
 
-- [ ] **步骤 1：编写 `useBlockPropertySync` 失败测试**
+- [ ] **步骤 1：编写** **`useBlockPropertySync`** **失败测试**
 
 新建 `src/components/Block/composables/useBlockPropertySync.test.ts`：
 
@@ -415,7 +417,7 @@ describe('useBlockPropertySync', () => {
 
 预期结果：失败，提示 `Cannot find module './useBlockPropertySync'`。
 
-- [ ] **步骤 3：编写 `useBlockPropertySync` 实现**
+- [ ] **步骤 3：编写** **`useBlockPropertySync`** **实现**
 
 新建 `src/components/Block/composables/useBlockPropertySync.ts`：
 
@@ -481,16 +483,18 @@ export function useBlockPropertySync(blockId: Ref<string>) {
 
 预期结果：全部通过。
 
-- [ ] **步骤 5：在 `index.vue` 中替换属性相关代码**
+- [ ] **步骤 5：在** **`index.vue`** **中替换属性相关代码**
 
 在 `src/components/Block/index.vue` 中：
 
 1. 在 `<script setup>` 顶部 import 区追加：
+
 ```ts
 import { useBlockPropertySync } from './composables/useBlockPropertySync'
 ```
 
-2. 删除以下代码块（约 80-95 行）：
+1. 删除以下代码块（约 80-95 行）：
+
 ```ts
 // 获取当前 block 的优先级
 const blockPriority = computed(() => {
@@ -516,7 +520,8 @@ watch(() => props.node.id, async (newBlockId) => {
 })
 ```
 
-3. 替换为：
+1. 替换为：
+
 ```ts
 const {
   getProperty: getBlockProperty,
@@ -528,6 +533,7 @@ const {
 ```
 
 注意：保留 `handleEmbedSelect` 中对 `blockStore.updateBlockProperties` 的调用不变（它通过 `setProperty` 替换）：
+
 ```ts
 function handleEmbedSelect(sourceBlockId: string, sourcePageId: string) {
   blockStore.updateBlockProperties(blockId.value, { sourceBlockId, sourcePageId })
@@ -535,15 +541,17 @@ function handleEmbedSelect(sourceBlockId: string, sourcePageId: string) {
   editorStore.deactivateBlock()
 }
 ```
+
 保留此函数原样，因为它在 commit 6 会被搬到 EmbedRender。
 
-4. 删除以下函数（已由 composable 提供）：
+1. 删除以下函数（已由 composable 提供）：
+
 ```ts
 function getBlockProperty(key: string): string | undefined { ... }
 function getBlockPropertiesMap(): Record<string, any> { ... }
 ```
 
-5. 保留 `handleDeleteBetweenProperty`（监听 document 事件，仍由 index.vue 注册），但内部改用 composable 提供的接口（保持 `propertyStore.getBlockProperties` 调用，因为 between 属性过滤需要 propertyStore 直读）。
+1. 保留 `handleDeleteBetweenProperty`（监听 document 事件，仍由 index.vue 注册），但内部改用 composable 提供的接口（保持 `propertyStore.getBlockProperties` 调用，因为 between 属性过滤需要 propertyStore 直读）。
 
 - [ ] **步骤 6：运行 characterization 测试，验证无回归**
 
@@ -569,11 +577,12 @@ Move property read/listen/priority-class logic out of index.vue into
 useBlockPropertySync. Reduces index.vue by ~30 lines."
 ```
 
----
+***
 
 ## 任务 3：抽取 `useBlockCollapse` + `<BlockChildren>`
 
 **涉及文件：**
+
 - 新建：`src/components/Block/composables/useBlockCollapse.ts`
 - 新建：`src/components/Block/composables/useBlockCollapse.test.ts`
 - 新建：`src/components/Block/components/BlockChildren.vue`
@@ -583,7 +592,7 @@ useBlockPropertySync. Reduces index.vue by ~30 lines."
 
 ### 步骤
 
-- [ ] **步骤 1：编写 `useBlockCollapse` 失败测试**
+- [ ] **步骤 1：编写** **`useBlockCollapse`** **失败测试**
 
 新建 `src/components/Block/composables/useBlockCollapse.test.ts`：
 
@@ -649,7 +658,7 @@ describe('useBlockCollapse', () => {
 
 预期结果：失败，模块未找到。
 
-- [ ] **步骤 3：编写 `useBlockCollapse` 实现**
+- [ ] **步骤 3：编写** **`useBlockCollapse`** **实现**
 
 新建 `src/components/Block/composables/useBlockCollapse.ts`：
 
@@ -736,7 +745,7 @@ export function useBlockCollapse(node: Ref<TreeNode>) {
 
 预期结果：全部通过。
 
-- [ ] **步骤 5：创建 `<BlockChildren>` 子组件**
+- [ ] **步骤 5：创建** **`<BlockChildren>`** **子组件**
 
 新建 `src/components/Block/components/BlockChildren.vue`：
 
@@ -834,17 +843,19 @@ function onMove(evt: any) {
 
 注意：`onMove` 的实现需要委托回 `useBlockDragDrop` 的 `handleDragMove`。在任务 4 中，`<BlockChildren>` 会通过 `@move` 事件 emit 给 index.vue，再由 index.vue 调用 composable。为简化，本任务中 `<BlockChildren>` 暂时直接 return true，任务 4 再接入完整逻辑。
 
-- [ ] **步骤 6：在 `index.vue` 中替换折叠相关代码**
+- [ ] **步骤 6：在** **`index.vue`** **中替换折叠相关代码**
 
 在 `src/components/Block/index.vue` 中：
 
 1. 追加 import：
+
 ```ts
 import { useBlockCollapse } from './composables/useBlockCollapse'
 import BlockChildren from './components/BlockChildren.vue'
 ```
 
-2. 删除以下代码块（折叠相关）：
+1. 删除以下代码块（折叠相关）：
+
 ```ts
 const COLLAPSE_ANIMATION_DURATION = 220 // ms
 const collapsed = ref(block.value?.format?.collapsed ?? false)
@@ -874,7 +885,8 @@ watch(
 )
 ```
 
-3. 替换为：
+1. 替换为：
+
 ```ts
 const {
   collapsed,
@@ -899,7 +911,8 @@ watch(
 )
 ```
 
-4. 模板中替换 `<VueDraggable>...</VueDraggable>` 为：
+1. 模板中替换 `<VueDraggable>...</VueDraggable>` 为：
+
 ```vue
 <BlockChildren
   :node="node"
@@ -916,7 +929,7 @@ watch(
 
 注意：`<BlockChildren>` 暂不接入 `@move`（任务 4 完成）。本任务中拖放逻辑仍在 index.vue，通过 `@move` emit 传递。
 
-5. 保留 `onMounted` 中的 `updateChildrenHeight()` 调用，改为 `updateChildrenHeight(childrenEl.value)`。
+1. 保留 `onMounted` 中的 `updateChildrenHeight()` 调用，改为 `updateChildrenHeight(childrenEl.value)`。
 
 - [ ] **步骤 7：运行 characterization 测试**
 
@@ -950,11 +963,12 @@ Extract VueDraggable wrapper to <BlockChildren> sub-component.
 index.vue no longer owns collapse state or animation timing."
 ```
 
----
+***
 
 ## 任务 4：抽取 `useBlockDragDrop` + `<BlockDropIndicator>` + 拖放 e2e
 
 **涉及文件：**
+
 - 新建：`src/components/Block/composables/useBlockDragDrop.ts`
 - 新建：`src/components/Block/composables/useBlockDragDrop.test.ts`
 - 新建：`src/components/Block/components/BlockDropIndicator.vue`
@@ -962,11 +976,11 @@ index.vue no longer owns collapse state or animation timing."
 - 修改：`src/components/Block/index.vue`
 - 修改：`src/components/Block/components/BlockChildren.vue`（接入 `@move` 事件）
 
-**目标**：将拖放逻辑（~250 行）抽到 `useBlockDragDrop`；将 indicator DOM 操作改为 `<BlockDropIndicator>` Vue 组件，消除 `document.querySelector('.drop-indicator')` 直接 DOM 操作。
+**目标**：将拖放逻辑（\~250 行）抽到 `useBlockDragDrop`；将 indicator DOM 操作改为 `<BlockDropIndicator>` Vue 组件，消除 `document.querySelector('.drop-indicator')` 直接 DOM 操作。
 
 ### 步骤
 
-- [ ] **步骤 1：编写 `useBlockDragDrop` 失败测试**
+- [ ] **步骤 1：编写** **`useBlockDragDrop`** **失败测试**
 
 新建 `src/components/Block/composables/useBlockDragDrop.test.ts`：
 
@@ -1060,7 +1074,7 @@ describe('useBlockDragDrop', () => {
 
 预期结果：失败，模块未找到。
 
-- [ ] **步骤 3：编写 `useBlockDragDrop` 实现**
+- [ ] **步骤 3：编写** **`useBlockDragDrop`** **实现**
 
 新建 `src/components/Block/composables/useBlockDragDrop.ts`：
 
@@ -1356,7 +1370,7 @@ export function useBlockDragDrop(opts: UseBlockDragDropOptions) {
 
 预期结果：全部通过。
 
-- [ ] **步骤 5：创建 `<BlockDropIndicator>` 子组件**
+- [ ] **步骤 5：创建** **`<BlockDropIndicator>`** **子组件**
 
 新建 `src/components/Block/components/BlockDropIndicator.vue`：
 
@@ -1398,17 +1412,19 @@ const props = defineProps<{
 </style>
 ```
 
-- [ ] **步骤 6：在 `index.vue` 中替换拖放相关代码**
+- [ ] **步骤 6：在** **`index.vue`** **中替换拖放相关代码**
 
 在 `src/components/Block/index.vue` 中：
 
 1. 追加 import：
+
 ```ts
 import { useBlockDragDrop } from './composables/useBlockDragDrop'
 import BlockDropIndicator from './components/BlockDropIndicator.vue'
 ```
 
-2. 删除以下代码块（拖放相关，约 618-849 行）：
+1. 删除以下代码块（拖放相关，约 618-849 行）：
+
 ```ts
 type DropAction = 'sort' | 'nest' | 'promote' | null
 interface DropTarget { ... }
@@ -1421,7 +1437,8 @@ function handleDragMove(...): boolean | void { ... }
 async function handleBlockDragEnd() { ... }
 ```
 
-3. 替换为：
+1. 替换为：
+
 ```ts
 const {
   dragState,
@@ -1445,7 +1462,8 @@ async function handleBlockDragEnd() {
 }
 ```
 
-4. 在模板中追加 `<BlockDropIndicator>`（放在根 `.block` div 内最末尾）：
+1. 在模板中追加 `<BlockDropIndicator>`（放在根 `.block` div 内最末尾）：
+
 ```vue
 <BlockDropIndicator
   :style="indicatorStyle"
@@ -1454,9 +1472,9 @@ async function handleBlockDragEnd() {
 />
 ```
 
-5. 删除 `onMounted` / `onBeforeUnmount` 中的 `handleDragOver` / `handleDrop` / `handlePaste` 注册（这些会在任务 6 通过 setupBlock 重新接入 image 类型）。暂时保留这三个函数定义（它们是 image 特化逻辑，任务 6 搬迁）。
+1. 删除 `onMounted` / `onBeforeUnmount` 中的 `handleDragOver` / `handleDrop` / `handlePaste` 注册（这些会在任务 6 通过 setupBlock 重新接入 image 类型）。暂时保留这三个函数定义（它们是 image 特化逻辑，任务 6 搬迁）。
+2. 更新 `<BlockChildren>` 的 `@move` 事件：
 
-6. 更新 `<BlockChildren>` 的 `@move` 事件：
 ```vue
 <BlockChildren
   ...
@@ -1466,6 +1484,7 @@ async function handleBlockDragEnd() {
 ```
 
 并在 `<BlockChildren.vue>` 中补全 emit 声明：
+
 ```ts
 const emit = defineEmits<{
   (e: 'drag-end'): void
@@ -1481,18 +1500,21 @@ function onMove(evt: any) {
 注意：VueDraggable 的 `@move` 事件需要返回 boolean。emit 无法直接返回值，所以 `<BlockChildren>` 需要通过 `defineExpose` 暴露 onMove，或者通过 inject 直接传递 handleDragMove。
 
 **推荐方案**：在 `<BlockChildren>` 中通过 `inject` 获取 `handleDragMove`：
+
 ```ts
 const handleDragMove = inject<(evt: any) => boolean | void>('handleDragMove', () => true)
 ```
+
 在 `index.vue` 中 `provide('handleDragMove', handleDragMove)`。
 
-- [ ] **步骤 7：在 `index.vue` 中 provide handleDragMove**
+- [ ] **步骤 7：在** **`index.vue`** **中 provide handleDragMove**
 
 ```ts
 provide('handleDragMove', handleDragMove)
 ```
 
 在 `<BlockChildren.vue>` 中：
+
 ```ts
 import { inject } from 'vue'
 const handleDragMove = inject<(evt: any) => boolean | void>('handleDragMove', () => true)
@@ -1630,11 +1652,12 @@ Replace document.querySelector DOM manipulation with reactive
 scenarios (sort, nest, circular prevention, indicator visibility)."
 ```
 
----
+***
 
 ## 任务 5：抽取 `useBlockEditorLifecycle`
 
 **涉及文件：**
+
 - 新建：`src/components/Block/composables/useBlockEditorLifecycle.ts`
 - 新建：`src/components/Block/composables/useBlockEditorLifecycle.test.ts`
 - 修改：`src/components/Block/index.vue`
@@ -1643,7 +1666,7 @@ scenarios (sort, nest, circular prevention, indicator visibility)."
 
 ### 步骤
 
-- [ ] **步骤 1：编写 `useBlockEditorLifecycle` 失败测试**
+- [ ] **步骤 1：编写** **`useBlockEditorLifecycle`** **失败测试**
 
 新建 `src/components/Block/composables/useBlockEditorLifecycle.test.ts`：
 
@@ -1783,7 +1806,7 @@ describe('useBlockEditorLifecycle', () => {
 
 预期结果：失败，模块未找到。
 
-- [ ] **步骤 3：编写 `useBlockEditorLifecycle` 实现**
+- [ ] **步骤 3：编写** **`useBlockEditorLifecycle`** **实现**
 
 新建 `src/components/Block/composables/useBlockEditorLifecycle.ts`：
 
@@ -2117,16 +2140,18 @@ export function useBlockEditorLifecycle(opts: UseBlockEditorLifecycleOptions) {
 
 预期结果：全部通过。
 
-- [ ] **步骤 5：在 `index.vue` 中替换编辑器生命周期相关代码**
+- [ ] **步骤 5：在** **`index.vue`** **中替换编辑器生命周期相关代码**
 
 在 `src/components/Block/index.vue` 中：
 
 1. 追加 import：
+
 ```ts
 import { useBlockEditorLifecycle } from './composables/useBlockEditorLifecycle'
 ```
 
-2. 删除以下代码块（编辑器生命周期相关，约 359-610 行）：
+1. 删除以下代码块（编辑器生命周期相关，约 359-610 行）：
+
 ```ts
 function handleContentMousedown(e: MouseEvent) { ... }
 async function handleSave(content: string) { ... }
@@ -2146,7 +2171,8 @@ function handleContentClick(e: MouseEvent) { ... }
 async function handleClear() { ... }
 ```
 
-3. 替换为：
+1. 替换为：
+
 ```ts
 const {
   isActive,
@@ -2180,7 +2206,8 @@ const {
 })
 ```
 
-4. 调整 `isActive` 的 watch（原 watch isActive → 新 watchActive）：
+1. 调整 `isActive` 的 watch（原 watch isActive → 新 watchActive）：
+
 ```ts
 watch(
   isActive,
@@ -2216,7 +2243,7 @@ watch(
 
 保留此 watch 在 index.vue 中，因为它涉及 nextTick / requestAnimationFrame / editorRef 操作，与渲染周期耦合。composable 提供 `watchActive` 仅作辅助，实际激活逻辑留 index.vue。
 
-5. 删除 `useDateRefClickListener` 注册（已搬入 composable 的 handleContentClick）。但需保留 index.vue 顶部的 `useDateTimePickerPanel` import 用于其他地方。
+1. 删除 `useDateRefClickListener` 注册（已搬入 composable 的 handleContentClick）。但需保留 index.vue 顶部的 `useDateTimePickerPanel` import 用于其他地方。
 
 注意：`useDateRefClickListener` 原本在 index.vue 顶部注册全局点击监听。搬入 composable 后，监听器在 composable 实例化时注册。确保 composable 在 index.vue setup 时被调用即可。
 
@@ -2246,11 +2273,12 @@ here per B2 decision. index.vue retains only the isActive watch for
 render-cycle coordination."
 ```
 
----
+***
 
 ## 任务 6：扩展 `BlockTypeHandler.setupBlock` + 迁移类型特化代码
 
 **涉及文件：**
+
 - 修改：`src/types/block-type.ts`（扩展接口）
 - 修改：`src/components/Block/handlers/embed/index.ts`（注册 setupBlock）
 - 修改：`src/components/Block/handlers/embed/EmbedRender.vue`（接收 BlockSelector）
@@ -2261,7 +2289,7 @@ render-cycle coordination."
 
 ### 步骤
 
-- [ ] **步骤 1：扩展 `BlockTypeHandler` 接口**
+- [ ] **步骤 1：扩展** **`BlockTypeHandler`** **接口**
 
 修改 `src/types/block-type.ts`：
 
@@ -2326,11 +2354,12 @@ export interface BlockTypeRenderExposed {
 
 注意：`BlockSetupContext` 中 store 类型用 `infer` 提取 ReturnType，避免循环 import。如果 TypeScript 编译报错，改用 `any` 或显式定义 store 接口类型。
 
-- [ ] **步骤 2：在 `index.vue` 中接入 setupBlock 钩子分发**
+- [ ] **步骤 2：在** **`index.vue`** **中接入 setupBlock 钩子分发**
 
 修改 `src/components/Block/index.vue`：
 
 1. 构建 `BlockSetupContext` 并调用 `setupBlock`：
+
 ```ts
 import type { BlockSetupContext, BlockTypeHooks } from '../../types/block-type'
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
@@ -2356,7 +2385,8 @@ const typeHooks = computed<BlockTypeHooks | undefined>(() => {
 })
 ```
 
-2. 修改事件处理函数，先调用 typeHooks：
+1. 修改事件处理函数，先调用 typeHooks：
+
 ```ts
 function onContentMousedown(e: MouseEvent) {
   if (typeHooks.value?.onContentMousedown?.(e) === true) return
@@ -2390,11 +2420,10 @@ async function onPaste(e: ClipboardEvent) {
 }
 ```
 
-3. 模板中将 `@mousedown="handleContentMousedown"` 改为 `@mousedown="onContentMousedown"`，`@content-click="handleContentClick"` 改为 `@content-click="onContentClick"`，`@language-change="handleLanguageChange"` 改为 `@language-change="onLanguageChange"`。
+1. 模板中将 `@mousedown="handleContentMousedown"` 改为 `@mousedown="onContentMousedown"`，`@content-click="handleContentClick"` 改为 `@content-click="onContentClick"`，`@language-change="handleLanguageChange"` 改为 `@language-change="onLanguageChange"`。
+2. `onMounted` / `onBeforeUnmount` 中注册的 dragover/drop/paste 监听改用 `onDragOver` / `onDrop` / `onPaste`。
+3. 调用 typeHooks 的生命周期：
 
-4. `onMounted` / `onBeforeUnmount` 中注册的 dragover/drop/paste 监听改用 `onDragOver` / `onDrop` / `onPaste`。
-
-5. 调用 typeHooks 的生命周期：
 ```ts
 onMounted(() => {
   typeHooks.value?.onMounted?.()
@@ -2407,28 +2436,30 @@ onBeforeUnmount(() => {
 })
 ```
 
-6. 删除 `watch(() => block.value.type, ...)` 中的 embed 特化逻辑，改为：
+1. 删除 `watch(() => block.value.type, ...)` 中的 embed 特化逻辑，改为：
+
 ```ts
 watch(() => block.value.type, (newType, oldType) => {
   typeHooks.value?.onTypeChanged?.(newType, oldType)
 })
 ```
 
-7. 删除 `showBlockSelector` ref 和 `handleEmbedSelect` 函数（搬到 EmbedRender.vue）。
-
-8. 删除模板中的 `<BlockSelector>` 元素。
+1. 删除 `showBlockSelector` ref 和 `handleEmbedSelect` 函数（搬到 EmbedRender.vue）。
+2. 删除模板中的 `<BlockSelector>` 元素。
 
 - [ ] **步骤 3：将 BlockSelector UI 搬到 EmbedRender.vue**
 
 修改 `src/components/Block/handlers/embed/EmbedRender.vue`：
 
 1. 追加 import：
+
 ```ts
 import BlockSelector from '../../../BlockSelector.vue'
 import { ref, watch } from 'vue'
 ```
 
-2. 在 `<script setup>` 中追加：
+1. 在 `<script setup>` 中追加：
+
 ```ts
 const showBlockSelector = ref(false)
 
@@ -2450,7 +2481,8 @@ async function handleEmbedSelect(sourceBlockId: string, sourcePageId: string) {
 
 注意：`propertyStore.setBlockProperty` 需确认是否存在；如不存在，用 `blockStore.updateBlockProperties(props.blockId, { sourceBlockId, sourcePageId })`。
 
-3. 模板中在 `<template v-if="!sourceBlockId">` 分支替换占位符：
+1. 模板中在 `<template v-if="!sourceBlockId">` 分支替换占位符：
+
 ```vue
 <template v-if="!sourceBlockId">
   <div class="embed-placeholder" @click="showBlockSelector = true">
@@ -2589,6 +2621,7 @@ register(imageHandler)
 - [ ] **步骤 7：手动验证 embed/image 行为**
 
 启动 dev 服务器：
+
 1. 创建 embed 类型 block，验证无 source 时显示 BlockSelector
 2. 选择源块后跳转正常
 3. 创建 image 类型 block，拖拽图片文件进入，验证上传
@@ -2618,11 +2651,12 @@ Migrate image's DnD/paste handlers to image handler's setupBlock.
 index.vue no longer contains any block.type === 'xxx' checks."
 ```
 
----
+***
 
 ## 任务 7：终态校验 + 清理
 
 **涉及文件：**
+
 - 修改：`src/components/Block/index.vue`（最终清理）
 - 检查：所有新增文件
 
@@ -2630,13 +2664,13 @@ index.vue no longer contains any block.type === 'xxx' checks."
 
 ### 步骤
 
-- [ ] **步骤 1：检查 `index.vue` 行数**
+- [ ] **步骤 1：检查** **`index.vue`** **行数**
 
 执行命令：`(Get-Content src/components/Block/index.vue | Measure-Object -Line).Lines`
 
 预期结果：< 200 行。如果超过，检查是否有未清理的死代码或注释。
 
-- [ ] **步骤 2：检查 `index.vue` 无类型特化判断**
+- [ ] **步骤 2：检查** **`index.vue`** **无类型特化判断**
 
 执行命令：`Select-String -Path src/components/Block/index.vue -Pattern "block\.type ===|block\.value\.type ===|handler\.value\?\.type ===" -CaseSensitive`
 
@@ -2651,10 +2685,10 @@ index.vue no longer contains any block.type === 'xxx' checks."
 - [ ] **步骤 4：清理 index.vue 中的死代码**
 
 检查并删除：
+
 - 未使用的 import（如 `VueDraggable` 已搬到 `<BlockChildren>`）
 - 未使用的 ref（如 `draggableRef` 如果已搬到 `<BlockChildren>`）
 - 未使用的工具函数 import
-
 - [ ] **步骤 5：运行 TypeScript 编译检查**
 
 执行命令：`npx vue-tsc -b`
@@ -2682,6 +2716,7 @@ index.vue no longer contains any block.type === 'xxx' checks."
 - [ ] **步骤 9：浏览器自动化验证**
 
 基于 webapp-testing 技能，验证以下关键流程：
+
 1. 创建 bullet/code/image/embed/concept 各类型 block
 2. 嵌套 block + 折叠/展开
 3. 拖拽排序 + 嵌套
@@ -2701,7 +2736,7 @@ checks remain. Confirm TypeScript compilation, Vite build, unit tests,
 and e2e tests all pass."
 ```
 
----
+***
 
 ## 自我审核
 
@@ -2709,16 +2744,16 @@ and e2e tests all pass."
 
 对照 grill-me 决策表：
 
-| 决策 | 对应任务 | 覆盖 |
-|---|---|---|
-| B (职责交织) | 任务 2-5 抽 4 个 composable | ✅ |
-| A (加新类型痛) | 任务 6 扩展 setupBlock | ✅ |
-| C (难测) | 任务 1 + 每个任务附测试 | ✅ |
-| 路径 3+2 | 任务 2-5 composable + 任务 3-4 子组件 | ✅ |
-| 职责归属表 8 行 | 任务 2-6 全部覆盖 | ✅ |
-| setupBlock 接口 | 任务 6 | ✅ |
-| 改良 Big-bang | 7 个 commit | ✅ |
-| 文件位置 Co-locate | 所有新文件在 Block/composables/ 或 Block/components/ | ✅ |
+| 决策             | 对应任务                                          | 覆盖 |
+| -------------- | --------------------------------------------- | -- |
+| B (职责交织)       | 任务 2-5 抽 4 个 composable                       | ✅  |
+| A (加新类型痛)      | 任务 6 扩展 setupBlock                            | ✅  |
+| C (难测)         | 任务 1 + 每个任务附测试                                | ✅  |
+| 路径 3+2         | 任务 2-5 composable + 任务 3-4 子组件                | ✅  |
+| 职责归属表 8 行      | 任务 2-6 全部覆盖                                   | ✅  |
+| setupBlock 接口  | 任务 6                                          | ✅  |
+| 改良 Big-bang    | 7 个 commit                                    | ✅  |
+| 文件位置 Co-locate | 所有新文件在 Block/composables/ 或 Block/components/ | ✅  |
 
 ### 2. 占位内容排查
 
@@ -2735,12 +2770,12 @@ and e2e tests all pass."
 
 ### 4. 已知风险点
 
-1. **任务 4 的 `<BlockChildren>` `@move` 事件**：VueDraggable 的 move 事件需要返回 boolean，但 Vue emit 无法返回值。方案用 `provide/inject` 传递 `handleDragMove` 函数。如不工作，备选方案是 `<BlockChildren>` 直接调用 `inject` 拿到的函数。
-2. **任务 5 的 `useDateRefClickListener`**：原在 index.vue 顶部注册全局监听，搬入 composable 后需确保 composable 在 setup 时被调用。如果监听器注册时机变化导致问题，可保留在 index.vue。
-3. **任务 6 的 `BlockSetupContext` store 类型**：用 `infer` 提取 ReturnType 可能有循环 import 问题，备选是 `any`。
-4. **任务 6 EmbedRender 的 `propertyStore.setBlockProperty`**：需确认该方法存在，否则用 `blockStore.updateBlockProperties`。
+1. **任务 4 的** **`<BlockChildren>`** **`@move`** **事件**：VueDraggable 的 move 事件需要返回 boolean，但 Vue emit 无法返回值。方案用 `provide/inject` 传递 `handleDragMove` 函数。如不工作，备选方案是 `<BlockChildren>` 直接调用 `inject` 拿到的函数。
+2. **任务 5 的** **`useDateRefClickListener`**：原在 index.vue 顶部注册全局监听，搬入 composable 后需确保 composable 在 setup 时被调用。如果监听器注册时机变化导致问题，可保留在 index.vue。
+3. **任务 6 的** **`BlockSetupContext`** **store 类型**：用 `infer` 提取 ReturnType 可能有循环 import 问题，备选是 `any`。
+4. **任务 6 EmbedRender 的** **`propertyStore.setBlockProperty`**：需确认该方法存在，否则用 `blockStore.updateBlockProperties`。
 
----
+***
 
 ## 执行交接
 
