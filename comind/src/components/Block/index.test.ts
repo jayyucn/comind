@@ -499,8 +499,9 @@ describe('characterization: save', () => {
     vi.clearAllMocks()
   })
 
-  it('handleSave calls updateBlockContent', async () => {
+  it('saving editor content calls updateBlockContent', async () => {
     const blockStore = useBlockStore()
+    const editorStore = useEditorStore()
     const updateSpy = vi.spyOn(blockStore, 'updateBlockContent').mockResolvedValue(undefined)
     blockStore.blocks = [{
       id: 'b1', pageId: 'p1', parentId: null, pos: 0,
@@ -510,10 +511,16 @@ describe('characterization: save', () => {
     const node: TreeNode = { id: 'b1', block: blockStore.blocks[0], children: [] }
     const wrapper = mount(Block, {
       props: { node, pageId: 'p1', depth: 0 },
-      global: { stubs: { BulletRender: StubBulletRender } }
+      global: { stubs: { BulletRender: StubBulletRender, Editor: StubEditor } }
     })
     await flushPromises()
-    await (wrapper.vm as any).handleSave('new content')
+    editorStore.activateBlock('b1', 0)
+    await flushPromises()
+    await new Promise(r => requestAnimationFrame(r))
+    const editor = wrapper.findComponent({ name: 'Editor' })
+    expect(editor.exists()).toBe(true)
+    editor.vm.$emit('save', 'new content')
+    await flushPromises()
     expect(updateSpy).toHaveBeenCalledWith('b1', 'new content')
     wrapper.unmount()
   })
@@ -525,8 +532,9 @@ describe('characterization: delete', () => {
     vi.clearAllMocks()
   })
 
-  it('clears content when no previous block exists', async () => {
+  it('deleting block with no previous block clears content', async () => {
     const blockStore = useBlockStore()
+    const editorStore = useEditorStore()
     const updateSpy = vi.spyOn(blockStore, 'updateBlockContent').mockResolvedValue(undefined)
     blockStore.blocks = [{
       id: 'b1', pageId: 'p1', parentId: null, pos: 0,
@@ -537,11 +545,45 @@ describe('characterization: delete', () => {
     const node: TreeNode = { id: 'b1', block: blockStore.blocks[0], children: [] }
     const wrapper = mount(Block, {
       props: { node, pageId: 'p1', depth: 0 },
-      global: { stubs: { BulletRender: StubBulletRender } }
+      global: { stubs: { BulletRender: StubBulletRender, Editor: StubEditor } }
     })
     await flushPromises()
-    await (wrapper.vm as any).handleDelete()
+    editorStore.activateBlock('b1')
+    await flushPromises()
+    await new Promise(r => requestAnimationFrame(r))
+    const editor = wrapper.findComponent({ name: 'Editor' })
+    expect(editor.exists()).toBe(true)
+    editor.vm.$emit('delete')
+    await flushPromises()
     expect(updateSpy).toHaveBeenCalledWith('b1', '')
+    wrapper.unmount()
+  })
+
+  it('deleting block with previous block activates previous and cleans up relationships', async () => {
+    const blockStore = useBlockStore()
+    const editorStore = useEditorStore()
+    const deleteSpy = vi.spyOn(blockStore, 'deleteBlocks').mockResolvedValue(undefined)
+    blockStore.blocks = [
+      { id: 'prev', pageId: 'p1', parentId: null, pos: 0, content: 'prev', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 },
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 1, content: 'text', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 }
+    ]
+    vi.spyOn(blockStore, 'findPreviousBlockInTreeOrder').mockReturnValue(blockStore.blocks[0])
+    const node: TreeNode = { id: 'b1', block: blockStore.blocks[1], children: [] }
+    const wrapper = mount(Block, {
+      props: { node, pageId: 'p1', depth: 0 },
+      global: { stubs: { BulletRender: StubBulletRender, Editor: StubEditor } }
+    })
+    await flushPromises()
+    const activateSpy = vi.spyOn(editorStore, 'activateBlock')
+    editorStore.activateBlock('b1')
+    await flushPromises()
+    await new Promise(r => requestAnimationFrame(r))
+    const editor = wrapper.findComponent({ name: 'Editor' })
+    expect(editor.exists()).toBe(true)
+    editor.vm.$emit('delete')
+    await flushPromises()
+    expect(deleteSpy).toHaveBeenCalledWith(['b1'])
+    expect(activateSpy).toHaveBeenCalledWith('prev')
     wrapper.unmount()
   })
 })
@@ -552,7 +594,7 @@ describe('characterization: collapse', () => {
     vi.clearAllMocks()
   })
 
-  it('toggleCollapse toggles collapsed state and calls updateBlockFormat', async () => {
+  it('clicking bullet toggles collapsed and persists format', async () => {
     const blockStore = useBlockStore()
     const updateFormatSpy = vi.spyOn(blockStore, 'updateBlockFormat').mockResolvedValue(undefined)
     const childBlock = {
@@ -587,80 +629,8 @@ describe('characterization: collapse', () => {
   })
 })
 
-describe('characterization: drag-drop', () => {
-  beforeEach(() => {
-    setActivePinia(createPinia())
-    vi.clearAllMocks()
-  })
-
-  it('handleDragMove returns false when dragging onto self', async () => {
-    const blockStore = useBlockStore()
-    blockStore.blocks = [{
-      id: 'b1', pageId: 'p1', parentId: null, pos: 0,
-      content: '', format: {}, type: 'bullet',
-      createdAt: 0, updatedAt: 0
-    }]
-    const node: TreeNode = { id: 'b1', block: blockStore.blocks[0], children: [] }
-    const wrapper = mount(Block, {
-      props: { node, pageId: 'p1', depth: 0 },
-      global: { stubs: { BulletRender: StubBulletRender } }
-    })
-    await flushPromises()
-
-    const blockEl = document.createElement('div')
-    blockEl.className = 'block'
-    blockEl.dataset.blockId = 'b1'
-    const relatedEl = document.createElement('div')
-    blockEl.appendChild(relatedEl)
-    const draggedEl = document.createElement('div')
-    draggedEl.dataset.blockId = 'b1'
-
-    const result = (wrapper.vm as any).handleDragMove({
-      dragged: draggedEl,
-      related: relatedEl,
-      to: document.createElement('div'),
-      originalEvent: { clientX: 0, clientY: 0 }
-    })
-    expect(result).toBe(false)
-    wrapper.unmount()
-  })
-
-  it('handleBlockDragEnd calls moveBlock', async () => {
-    const blockStore = useBlockStore()
-    const pageStore = usePageStore()
-    const moveSpy = vi.spyOn(blockStore, 'moveBlock').mockResolvedValue(undefined)
-    blockStore.blocks = [
-      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 },
-      { id: 'b2', pageId: 'p1', parentId: null, pos: 1000, content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 }
-    ]
-    pageStore.currentPageId = 'p1'
-    const node: TreeNode = { id: 'b1', block: blockStore.blocks[0], children: [] }
-    const wrapper = mount(Block, {
-      props: { node, pageId: 'p1', depth: 0 },
-      global: { stubs: { BulletRender: StubBulletRender } }
-    })
-    await flushPromises()
-
-    const vm = wrapper.vm as any
-    vm.dragState.currentDropTarget = {
-      action: 'sort',
-      toParentId: null,
-      beforeId: 'b2'
-    }
-
-    const chosenEl = document.createElement('div')
-    chosenEl.className = 'block-chosen'
-    chosenEl.dataset.blockId = 'b1'
-    document.body.appendChild(chosenEl)
-
-    await vm.handleBlockDragEnd()
-
-    expect(moveSpy).toHaveBeenCalledWith(expect.objectContaining({
-      blockId: 'b1',
-      toParentId: null
-    }))
-
-    document.body.removeChild(chosenEl)
-    wrapper.unmount()
-  })
-})
+// NOTE: Drag-drop behavior (handleDragMove circular detection, handleBlockDragEnd
+// calling moveBlock) is covered by Playwright e2e tests in Task 4
+// (tests/block-drag-drop.spec.ts). Unit-testing vue-draggable-plus event flow
+// in jsdom is unreliable and would couple to internal function names that will
+// move to useBlockDragDrop composable in commit 4.
