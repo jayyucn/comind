@@ -320,7 +320,11 @@ const editor = shallowRef(useEditor({
         menuVisible.value = false
         closeWikiLinkMenuByEditor()
       }
-      emit('save', editor.value.getText())
+      try {
+        emit('save', editor.value.getText())
+      } catch {
+        // schema 可能在卸载阶段已为 null，跳过保存
+      }
     }
   },
   onUpdate: () => {
@@ -355,9 +359,13 @@ onBeforeUnmount(() => {
   cancelDebouncedSave()
   // 2. 如果有未保存内容，立即同步保存
   if (editor.value && !savedFromOutside) {
-    const text = editor.value.getText()
-    if (text) {
-      emit('save', text)
+    try {
+      const text = editor.value.getText()
+      if (text) {
+        emit('save', text)
+      }
+    } catch {
+      // schema 可能在卸载阶段已为 null，跳过保存
     }
   }
   // 3. 标记已保存，防止 destroy() 触发 onBlur 时保存空内容（Bug: 内容消失）
