@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import type { Ref, ComputedRef } from 'vue'
 import { useNavigateToPage } from '../../../composables/useNavigateToPage'
 import { useRelationshipMenu } from '../../../composables/useRelationshipMenu'
@@ -13,7 +13,7 @@ import type { useEditorStore } from '../../../stores/editor'
 import type { usePageStore } from '../../../stores/pages'
 import type { useBlockRelationshipCleanup } from '../../../composables/useBlockRelationshipCleanup'
 import type { CrossBlockSelection } from '../../../composables/useCrossBlockSelection'
-import type { BlockTypeEditorExposed, BlockTypeHandler } from '../../../types/block-type'
+import type { BlockTypeEditorExposed } from '../../../types/block-type'
 
 /**
  * useBlockEditorLifecycle — Block 编辑器生命周期 composable
@@ -48,10 +48,6 @@ interface UseBlockEditorLifecycleOptions {
   pageStore: ReturnType<typeof usePageStore>
   relationshipCleanup: ReturnType<typeof useBlockRelationshipCleanup>
   selection?: CrossBlockSelection | null
-  /** 当前 block 的类型 handler（由 index.vue 通过 useBlockRegistry 计算） */
-  handler?: Ref<BlockTypeHandler | undefined>
-  /** 读取 block 属性（由 index.vue 通过 useBlockPropertySync 提供） */
-  getBlockProperty?: (key: string) => string | undefined
 }
 
 export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions) {
@@ -66,8 +62,6 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     pageStore,
     relationshipCleanup,
     selection = null,
-    handler = ref(undefined) as Ref<BlockTypeHandler | undefined>,
-    getBlockProperty = () => undefined,
   } = options
 
   // ── 内部依赖的 composables ──
@@ -79,9 +73,6 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
   useDateRefClickListener((payload, position) => {
     openDateRefPanel({ ...payload, position })
   })
-
-  // ── embed block 选择器状态（handleContentClick 设置 / handleEmbedSelect 清除）──
-  const showBlockSelector = ref(false)
 
   // ── 计算属性 ──
   const isActive: ComputedRef<boolean> = computed(
@@ -204,11 +195,6 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     if (target.closest('.rel-type-label')) return
     if (target.closest('.date-ref')) return
 
-    if (handler.value?.type === 'embed' && getBlockProperty('sourceBlockId')) {
-      e.preventDefault()
-      return
-    }
-
     if (e.ctrlKey || e.metaKey) {
       if (selection) {
         selection.toggleBlock(blockId.value, pageStore.currentPageId)
@@ -229,19 +215,6 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
   }
 
   function handleContentClick(e: MouseEvent) {
-    if (handler.value?.type === 'embed') {
-      const sourceBlockId = getBlockProperty('sourceBlockId')
-      if (sourceBlockId) {
-        const sourcePage = pageStore.pages.find(p => p.id === getBlockProperty('sourcePageId'))
-        if (sourcePage) {
-          navigateToPage(sourcePage.title)
-        }
-      } else {
-        showBlockSelector.value = true
-      }
-      return
-    }
-
     const target = e.target as HTMLElement
 
     const relLabel = target.closest('.rel-type-label') as HTMLElement | null
@@ -352,7 +325,6 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
 
   return {
     isActive,
-    showBlockSelector,
     handleSave,
     handleLanguageChange,
     syncBlockContent,

@@ -167,8 +167,6 @@ const {
   pageStore,
   relationshipCleanup,
   selection: selection ?? undefined,
-  handler,
-  getBlockProperty,
 })
 
 // ── 类型特化钩子（由各 handler 的 setupBlock 提供）──

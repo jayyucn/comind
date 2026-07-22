@@ -12,14 +12,6 @@ const embedHandler: BlockTypeHandler = {
   renderComponent: EmbedRender,
   setupBlock(ctx) {
     return {
-      onContentMousedown(e: MouseEvent) {
-        // embed 有 source 时不激活编辑器
-        if (ctx.getProperty('sourceBlockId')) {
-          e.preventDefault()
-          return true
-        }
-        return false
-      },
       onContentClick(e: MouseEvent) {
         const sourceBlockId = ctx.getProperty('sourceBlockId')
         if (!sourceBlockId) {
