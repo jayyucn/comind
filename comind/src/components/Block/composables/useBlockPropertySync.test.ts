@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { ref } from 'vue'
+import { flushPromises } from '@vue/test-utils'
 import { useBlockPropertySync } from './useBlockPropertySync'
 import { usePropertyStore } from '../../../stores/property'
 import { useBlockStore } from '../../../stores/blocks'
@@ -90,5 +91,16 @@ describe('useBlockPropertySync', () => {
       makeProp('b1', 'priority', 'Urgent'),
     ])
     expect(priorityClass.value).toBe('priority-urgent')
+  })
+
+  it('loads block properties when blockId changes', async () => {
+    const blockId = ref('b1')
+    const propertyStore = usePropertyStore()
+    const loadSpy = vi.spyOn(propertyStore, 'loadBlockProperties').mockResolvedValue([])
+    useBlockPropertySync(blockId)
+    // watch 不在初始化时触发；改变 blockId 后应触发加载
+    blockId.value = 'b2'
+    await flushPromises()
+    expect(loadSpy).toHaveBeenCalledWith('b2')
   })
 })
