@@ -24,7 +24,9 @@ import { useRelationshipMenu } from '../../composables/useRelationshipMenu'
 import { useBlockRelationshipCleanup } from '../../composables/useBlockRelationshipCleanup'
 import { useBlockPropertySync } from './composables/useBlockPropertySync'
 import { useBlockCollapse } from './composables/useBlockCollapse'
+import { useBlockDragDrop } from './composables/useBlockDragDrop'
 import BlockChildren from './components/BlockChildren.vue'
+import BlockDropIndicator from './components/BlockDropIndicator.vue'
 import { useDateTimePickerPanel, useDateRefClickListener, computeDatePickerPosition } from '../../composables/useDateTimePickerPanel'
 import './handlers/bullet'
 import './handlers/code'
@@ -36,10 +38,8 @@ import PropertyInline from './PropertyInline.vue'
 
 import { usePageStore } from '../../stores/pages'
 import BlockSelector from '../BlockSelector.vue'
-import { isDescendantOf } from '../../utils/block-helpers'
 import { DATE_REF_REGEX, serializeDateRef, normalizeRecurrence } from '../../utils/date-ref'
-import { computeDropZone, computeSortPosition } from '../../composables/useDragDrop'
-import type { TreeNode, Block } from '../../types/block'
+import type { TreeNode } from '../../types/block'
 import type { BlockTypeEditorExposed } from '../../types/block-type'
 import type { CrossBlockSelection } from '../../composables/useCrossBlockSelection'
 
@@ -137,24 +137,6 @@ const cursorPos = ref(0)
 // ── 常量配置 ──────────────────────────────────────────────
 const INDENT_WIDTH_PER_LEVEL = 24 // px
 
-// ── 放置目标类型 ──
-type DropAction = 'sort' | 'nest' | 'promote' | null
-
-interface DropTarget {
-  action: DropAction
-  toParentId: string | null
-  beforeId: string | null
-}
-
-// ── 拖拽状态 ──
-const dragState = ref<{
-  currentDropTarget: DropTarget | null
-  indicator: HTMLElement | null
-}>({
-  currentDropTarget: null,
-  indicator: null
-})
-
 // ── 缩进（由 depth prop 直接计算，O(1)） ──
 const indentWidth = computed(() => `${props.depth * INDENT_WIDTH_PER_LEVEL}px`)
 
@@ -166,6 +148,24 @@ const {
   toggleCollapse,
   updateChildrenHeight,
 } = useBlockCollapse(computed(() => props.node))
+
+// ── 拖放逻辑（由 useBlockDragDrop 统一管理） ──
+// 原 ~250 行 findDropTarget/handleDragMove/handleBlockDragEnd/指示器渲染
+// 已抽离至 ./composables/useBlockDragDrop。
+// 指示器改为响应式 <BlockDropIndicator> 子组件，消除 document.querySelector DOM 操作。
+const {
+  indicatorStyle,
+  indicatorClass,
+  indicatorVisible,
+  handleDragMove,
+  handleBlockDragEnd,
+} = useBlockDragDrop({
+  blockId,
+  pageId: props.pageId,
+  blockStore,
+  pageStore,
+  onDragEnd,
+})
 
 // BlockChildren 实例 ref（用于获取子节点容器 DOM 做高度测量）
 const blockChildrenRef = ref<InstanceType<typeof BlockChildren> | null>(null)
@@ -529,239 +529,6 @@ function handleContentClick(e: MouseEvent) {
   }
 }
 
-function findDropTarget(
-  cursorX: number,
-  cursorY: number,
-  targetBlockEl: HTMLElement
-): DropTarget | null {
-  const bullet = targetBlockEl.querySelector('.block-bullet') as HTMLElement
-  if (!bullet) return null
-
-  const bulletRect = bullet.getBoundingClientRect()
-  const zone = computeDropZone(cursorX, bulletRect)
-
-  if (zone === 'left') {
-    const parentBlock = targetBlockEl.parentElement?.closest('.block') as HTMLElement | null
-    if (parentBlock) {
-      return {
-        action: 'promote',
-        toParentId: parentBlock.dataset.blockId ?? null,
-        beforeId: targetBlockEl.dataset.blockId ?? null
-      }
-    }
-    return {
-      action: 'sort',
-      toParentId: null,
-      beforeId: targetBlockEl.dataset.blockId ?? null
-    }
-  }
-
-  if (zone === 'right') {
-    return {
-      action: 'nest',
-      toParentId: targetBlockEl.dataset.blockId ?? null,
-      beforeId: null
-    }
-  }
-
-  const position = computeSortPosition(cursorY, bulletRect)
-  const parentBlock = targetBlockEl.parentElement?.closest('.block') as HTMLElement | null
-  const parentId = parentBlock?.dataset.blockId ?? null
-
-  if (position === 'before') {
-    return {
-      action: 'sort',
-      toParentId: parentId,
-      beforeId: targetBlockEl.dataset.blockId ?? null
-    }
-  } else {
-    const nextSibling = targetBlockEl.nextElementSibling as HTMLElement | null
-    return {
-      action: 'sort',
-      toParentId: parentId,
-      beforeId: nextSibling?.dataset.blockId ?? null
-    }
-  }
-}
-
-function getOrCreateIndicator(): HTMLElement {
-  let indicator = document.querySelector('.drop-indicator') as HTMLElement | null
-  if (!indicator) {
-    indicator = document.createElement('div')
-    indicator.className = 'drop-indicator'
-    indicator.style.cssText = 'position:fixed;pointer-events:none;z-index:1000;opacity:0;transition:opacity 0ms;'
-    document.body.appendChild(indicator)
-    dragState.value.indicator = indicator
-  }
-  return indicator
-}
-
-function renderDropIndicator(targetBlockEl: HTMLElement, dropTarget: DropTarget) {
-  const indicator = getOrCreateIndicator()
-  const bullet = targetBlockEl.querySelector('.block-bullet')
-  if (!bullet) {
-    clearDropIndicator()
-    return
-  }
-
-  const rect = bullet.getBoundingClientRect()
-
-  if (rect.width <= 0 || rect.height <= 0) {
-    clearDropIndicator()
-    return
-  }
-
-  const viewportHeight = window.innerHeight
-  const viewportWidth = window.innerWidth
-
-  if (rect.bottom < 0 || rect.top > viewportHeight || rect.right < 0 || rect.left > viewportWidth) {
-    clearDropIndicator()
-    return
-  }
-
-  const left = Math.max(0, Math.min(rect.left, viewportWidth - 1))
-  const width = Math.max(1, Math.min(rect.right - rect.left, viewportWidth - left))
-
-  indicator.style.left = `${left}px`
-  indicator.style.width = `${width}px`
-  indicator.style.top = `${rect.top}px`
-  indicator.style.height = '2px'
-
-  indicator.className = 'drop-indicator'
-  if (dropTarget.action === 'sort') {
-    const position = dropTarget.beforeId ? 'before' : 'after'
-    if (position === 'after') {
-      indicator.style.top = `${rect.bottom}px`
-    } else {
-      indicator.style.top = `${rect.top}px`
-    }
-    indicator.classList.add('sort')
-  } else if (dropTarget.action === 'nest') {
-    const targetDepth = parseInt(targetBlockEl.dataset.depth ?? '0', 10)
-    const indentWidth = 24 * (targetDepth + 1)
-    const nestLeft = Math.max(0, Math.min(rect.left + indentWidth, viewportWidth - 1))
-    const nestWidth = Math.max(1, Math.min(rect.right - rect.left - indentWidth, viewportWidth - nestLeft))
-    indicator.style.left = `${nestLeft}px`
-    indicator.style.width = `${nestWidth}px`
-    indicator.style.top = `${rect.top}px`
-    indicator.style.height = `${Math.max(1, rect.height)}px`
-    indicator.classList.add('nest')
-  } else if (dropTarget.action === 'promote') {
-    indicator.style.top = `${rect.top}px`
-    indicator.classList.add('promote')
-  }
-
-  indicator.classList.add('visible')
-}
-
-function clearDropIndicator() {
-  const indicator = document.querySelector('.drop-indicator') as HTMLElement | null
-  if (indicator) {
-    indicator.classList.remove('visible')
-  }
-  dragState.value.indicator = null
-}
-
-/** 拖拽移动检测（防止循环嵌套） */
-function handleDragMove(evt: any): boolean | void {
-  const draggedId = (evt.dragged as HTMLElement)?.dataset.blockId
-  const related = evt.related as HTMLElement
-
-  if (draggedId && related) {
-    const targetBlock = related.closest('.block') as HTMLElement | null
-    if (targetBlock?.dataset.blockId === draggedId) {
-      clearDropIndicator()
-      return false
-    }
-  }
-
-  const toEl = evt.to as HTMLElement
-  if (!toEl) {
-    clearDropIndicator()
-    return true
-  }
-
-  const rawTargetId = toEl.dataset.parentId ?? null
-  const targetId = rawTargetId === '' ? null : rawTargetId
-
-  if (draggedId && targetId && isDescendantOf(blockStore.blocks, targetId, draggedId)) {
-    clearDropIndicator()
-    return false
-  }
-
-  const cursorX = evt.originalEvent.clientX
-  const cursorY = evt.originalEvent.clientY
-  const targetBlock = related?.closest('.block') as HTMLElement | null
-
-  if (!targetBlock) {
-    clearDropIndicator()
-    return true
-  }
-
-  const dropTarget = findDropTarget(cursorX, cursorY, targetBlock)
-  if (dropTarget) {
-    const bullet = targetBlock.querySelector('.block-bullet')
-    if (!bullet) {
-      clearDropIndicator()
-      return true
-    }
-
-    const rect = bullet.getBoundingClientRect()
-    if (rect.top < 0 || rect.bottom > window.innerHeight) {
-      clearDropIndicator()
-      return true
-    }
-
-    dragState.value.currentDropTarget = dropTarget
-    renderDropIndicator(targetBlock, dropTarget)
-  } else {
-    clearDropIndicator()
-  }
-
-  return true
-}
-
-/** 拖拽结束：计算放置位置并同步到 store */
-async function handleBlockDragEnd() {
-  const dropTarget = dragState.value.currentDropTarget
-
-  if (dropTarget && dropTarget.action) {
-    const draggedEl = document.querySelector('.block-chosen') as HTMLElement
-    const draggedId = draggedEl?.dataset.blockId
-
-    if (draggedId) {
-      let siblings: Block[]
-      if (dropTarget.toParentId === null) {
-        siblings = blockStore.getBlocksByPage(pageStore.currentPageId).filter(b => b.parentId === null)
-      } else {
-        siblings = blockStore.getChildren(dropTarget.toParentId)
-      }
-
-      let newIndex: number
-      if (dropTarget.action === 'sort') {
-        if (dropTarget.beforeId === null) {
-          newIndex = siblings.length
-        } else {
-          const insertIdx = siblings.findIndex(b => b.id === dropTarget.beforeId)
-          newIndex = insertIdx >= 0 ? insertIdx : siblings.length
-        }
-      } else {
-        newIndex = siblings.length
-      }
-
-      await blockStore.moveBlock({
-        blockId: draggedId,
-        toParentId: dropTarget.toParentId,
-        newIndex
-      })
-    }
-  }
-
-  clearDropIndicator()
-  dragState.value.currentDropTarget = null
-  onDragEnd?.()
-}
-
 async function handleClear() {
   if (editorRef.value) editorRef.value.markSaved()
   await blockStore.updateBlockContent(blockId.value, '')
@@ -906,6 +673,13 @@ async function handlePaste(e: ClipboardEvent) {
       :exclude-block-id="blockId"
       @select="handleEmbedSelect"
       @close="showBlockSelector = false"
+    />
+
+    <!-- 拖放指示器（由 useBlockDragDrop 的响应式状态驱动，替代原 document.querySelector DOM 操作） -->
+    <BlockDropIndicator
+      :style="indicatorStyle"
+      :css-class="indicatorClass"
+      :visible="indicatorVisible"
     />
   </div>
 </template>
