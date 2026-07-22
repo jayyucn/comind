@@ -10,9 +10,6 @@ export default defineConfig({
     allowedHosts: true
   },
   optimizeDeps: {
-    esbuildOptions: {
-      target: 'esnext'
-    },
     exclude: ['@wasm/comind_wasm']
   },
   build: {
