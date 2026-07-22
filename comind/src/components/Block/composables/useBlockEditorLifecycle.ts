@@ -357,6 +357,8 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     showBlockSelector,
     handleSave,
     handleLanguageChange,
+    syncBlockContent,
+    withContentSync,
     handleSplit,
     handleMerge,
     handleDelete,
