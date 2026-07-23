@@ -1,7 +1,11 @@
 <script setup lang="ts">
+import { Settings } from 'lucide-vue-next'
 import { isTauriEnvironment } from '../../wasm/tauri-client'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import Icon from '../Icons/Icon.vue'
+import { useSettingsModal } from '../../composables/useSettingsModal'
+
+const { open: openSettings } = useSettingsModal()
 
 defineProps<{
   canGoBack: boolean
@@ -25,7 +29,7 @@ async function handleMouseDown() {
     <div class="sidebar-logo-wrap">
       <span class="sidebar-logo">COMIND</span>
     </div>
-    <div class="sidebar-nav">
+    <div class="sidebar-nav" @mousedown.stop>
       <button
         class="sidebar-nav-btn"
         :class="{ disabled: !canGoBack }"
@@ -43,6 +47,13 @@ async function handleMouseDown() {
         @click="emit('goForward')"
       >
         <Icon name="icon-arrow-right" :size="14" />
+      </button>
+      <button
+        class="sidebar-nav-btn settings-btn"
+        title="设置"
+        @click="openSettings"
+      >
+        <Settings :size="15" :stroke-width="1.75" />
       </button>
     </div>
   </div>
