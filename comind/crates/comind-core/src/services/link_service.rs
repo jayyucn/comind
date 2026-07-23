@@ -45,6 +45,9 @@ impl LinkService {
             display_text: display_text.to_string(),
             relationship_type: relationship_type.map(|s| s.to_string()),
             created_at: now,
+            updated_at: now,
+            version: 0,
+            deleted_at: None,
         };
 
         repository::LinkRepository::create(storage.links(), &link)

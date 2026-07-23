@@ -1,4 +1,4 @@
-# ![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use tauri::{Manager, WindowEvent};
 
 mod commands;
@@ -11,9 +11,9 @@ fn main() {
         .with_level(log::LevelFilter::Warn)
         .init()
         .expect("Failed to initialize logger");
-    
+
     log::info!("Starting comind application");
-    
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())

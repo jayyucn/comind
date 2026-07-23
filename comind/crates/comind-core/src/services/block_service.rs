@@ -56,6 +56,8 @@ impl BlockService {
             r#type: r#type.to_string(),
             created_at: now,
             updated_at: now,
+            version: 0,
+            deleted_at: None,
         };
 
         let block = repository::BlockRepository::create(storage.blocks(), &block)?;

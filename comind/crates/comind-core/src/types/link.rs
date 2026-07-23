@@ -10,6 +10,14 @@ pub struct Link {
     pub relationship_type: Option<String>,
     #[serde(default = "default_timestamp")]
     pub created_at: i64,
+    #[serde(default = "default_timestamp")]
+    pub updated_at: i64,
+    /// 单调递增版本号，用于同步 LWW 判断。每次 update/delete 时 +1。
+    #[serde(default)]
+    pub version: i64,
+    /// 软删除时间戳（毫秒）。NULL = 未删除。同步时传播删除操作。
+    #[serde(default)]
+    pub deleted_at: Option<i64>,
 }
 
 fn default_timestamp() -> i64 {
@@ -33,6 +41,9 @@ impl Link {
             display_text: options.display_text,
             relationship_type: options.relationship_type,
             created_at: chrono::Utc::now().timestamp_millis(),
+            updated_at: chrono::Utc::now().timestamp_millis(),
+            version: 0,
+            deleted_at: None,
         }
     }
 }

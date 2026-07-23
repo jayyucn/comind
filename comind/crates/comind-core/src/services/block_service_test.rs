@@ -20,7 +20,7 @@ mod tests {
         let mut adapter = create_test_adapter()?;
         let page_id = create_test_page(&mut adapter, "Test Page")?;
 
-        let block = BlockService::create(&mut adapter, &page_id, None, "Test content", "{}", "bullet", None)?
+        let block = BlockService::create(&mut adapter, &page_id, None, "Test content", "{}", "bullet", None)?;
 
         assert!(!block.id.is_empty());
         assert_eq!(block.page_id, page_id);
@@ -36,7 +36,7 @@ mod tests {
         let mut adapter = create_test_adapter()?;
         let page_id = create_test_page(&mut adapter, "Test Page 2")?;
 
-        let created = BlockService::create(&mut adapter, &page_id, None, "Content", "{}", "bullet", None)?
+        let created = BlockService::create(&mut adapter, &page_id, None, "Content", "{}", "bullet", None)?;
         let retrieved = BlockService::get_by_id(&mut adapter, &created.id)?;
 
         assert_eq!(retrieved.id, created.id);
@@ -50,7 +50,7 @@ mod tests {
         let mut adapter = create_test_adapter()?;
         let page_id = create_test_page(&mut adapter, "Test Page 3")?;
 
-        let mut block = BlockService::create(&mut adapter, &page_id, None, "Old content", "{}", "bullet", None)?
+        let mut block = BlockService::create(&mut adapter, &page_id, None, "Old content", "{}", "bullet", None)?;
         block = BlockService::update(&mut adapter, &block.id, Some("New content"), None, None, None, None)?;
 
         assert_eq!(block.content, "New content");
@@ -63,7 +63,7 @@ mod tests {
         let mut adapter = create_test_adapter()?;
         let page_id = create_test_page(&mut adapter, "Test Page 4")?;
 
-        let block = BlockService::create(&mut adapter, &page_id, None, "Content to delete", "{}", "bullet", None)?
+        let block = BlockService::create(&mut adapter, &page_id, None, "Content to delete", "{}", "bullet", None)?;
         BlockService::delete(&mut adapter, &block.id)?;
 
         let result = BlockService::get_by_id(&mut adapter, &block.id);
@@ -79,7 +79,7 @@ mod tests {
 
         let root1 = BlockService::create(&mut adapter, &page_id, None, "Root 1", "{}", "bullet", None)?;
         let root2 = BlockService::create(&mut adapter, &page_id, None, "Root 2", "{}", "bullet", None)?;
-        let child1 = BlockService::create(&mut adapter, &page_id, Some(&root1.id), "Child 1", "{}", "bullet", None)?
+        let child1 = BlockService::create(&mut adapter, &page_id, Some(&root1.id), "Child 1", "{}", "bullet", None)?;
 
         let tree = BlockService::build_tree(&mut adapter, &page_id)?;
 
@@ -96,13 +96,13 @@ mod tests {
         let mut adapter = create_test_adapter()?;
         let page_id = create_test_page(&mut adapter, "Gap Sort Test")?;
 
-        let first = BlockService::create(&mut adapter, &page_id, None, "First", "{}", "bullet", None)?
+        let first = BlockService::create(&mut adapter, &page_id, None, "First", "{}", "bullet", None)?;
         assert_eq!(first.pos, 1000);
 
-        let second = BlockService::create(&mut adapter, &page_id, None, "Second", "{}", "bullet", None)?
+        let second = BlockService::create(&mut adapter, &page_id, None, "Second", "{}", "bullet", None)?;
         assert_eq!(second.pos, 500);
 
-        let third = BlockService::create(&mut adapter, &page_id, None, "Third", "{}", "bullet", None)?
+        let third = BlockService::create(&mut adapter, &page_id, None, "Third", "{}", "bullet", None)?;
         assert_eq!(third.pos, 250);
 
         Ok(())

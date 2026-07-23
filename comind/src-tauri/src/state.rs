@@ -40,14 +40,17 @@ impl ConfigManager {
         }
     }
 
-    pub fn get_config(&self) -> Result<std::sync::MutexGuard<'_, crate::config::AppConfig>, String> {
+    pub fn get_config(
+        &self,
+    ) -> Result<std::sync::MutexGuard<'_, crate::config::AppConfig>, String> {
         self.config
             .lock()
             .map_err(|e| format!("Failed to lock config: {}", e))
     }
 
     pub fn update_config(&self, new_config: crate::config::AppConfig) -> Result<(), String> {
-        let mut config = self.config
+        let mut config = self
+            .config
             .lock()
             .map_err(|e| format!("Failed to lock config: {}", e))?;
         *config = new_config;

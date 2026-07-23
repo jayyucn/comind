@@ -3,14 +3,14 @@ mod lib_test;
 
 #[cfg(target_arch = "wasm32")]
 mod wasm_impl {
-    use wasm_bindgen::prelude::*;
-    use comind_core::types::*;
     use comind_core::services::*;
-    use comind_core::storage::{StorageAdapter};
+    use comind_core::storage::StorageAdapter;
+    use comind_core::types::*;
     use lazy_static::lazy_static;
-    use std::sync::Mutex;
-    use serde::{Serialize, Deserialize};
+    use serde::{Deserialize, Serialize};
     use serde_json::json;
+    use std::sync::Mutex;
+    use wasm_bindgen::prelude::*;
 
     lazy_static! {
         static ref ADAPTER: Mutex<Option<comind_core::storage::SqlJsAdapter>> = Mutex::new(None);
@@ -20,8 +20,12 @@ mod wasm_impl {
     where
         F: FnOnce(&mut comind_core::storage::SqlJsAdapter) -> Result<R, Box<dyn std::error::Error>>,
     {
-        let mut adapter = ADAPTER.lock().map_err(|e| JsValue::from_str(&format!("Failed to lock adapter: {}", e)))?;
-        let adapter = adapter.as_mut().ok_or(JsValue::from_str("Adapter not initialized"))?;
+        let mut adapter = ADAPTER
+            .lock()
+            .map_err(|e| JsValue::from_str(&format!("Failed to lock adapter: {}", e)))?;
+        let adapter = adapter
+            .as_mut()
+            .ok_or(JsValue::from_str("Adapter not initialized"))?;
         f(adapter).map_err(|e| JsValue::from_str(&format!("Error: {}", e)))
     }
 
@@ -32,8 +36,11 @@ mod wasm_impl {
 
     #[wasm_bindgen]
     pub fn init() -> Result<(), JsValue> {
-        let mut adapter = ADAPTER.lock().map_err(|e| JsValue::from_str(&format!("Failed to lock adapter: {}", e)))?;
-        let new_adapter = comind_core::storage::SqlJsAdapter::new().map_err(|e| JsValue::from_str(&format!("Failed to create adapter: {}", e)))?;
+        let mut adapter = ADAPTER
+            .lock()
+            .map_err(|e| JsValue::from_str(&format!("Failed to lock adapter: {}", e)))?;
+        let new_adapter = comind_core::storage::SqlJsAdapter::new()
+            .map_err(|e| JsValue::from_str(&format!("Failed to create adapter: {}", e)))?;
         *adapter = Some(new_adapter);
         Ok(())
     }
@@ -93,20 +100,26 @@ mod wasm_impl {
     pub fn save_block_tree(blocks: &str) -> Result<String, JsValue> {
         let updates: Vec<BlockUpdate> = serde_json::from_str(blocks)
             .map_err(|e| JsValue::from_str(&format!("Failed to parse blocks: {}", e)))?;
-        
+
         if updates.is_empty() {
             return Err(JsValue::from_str("No blocks provided"));
         }
-        
+
         let first_block = &updates[0];
         if first_block.page_id.is_empty() {
-            return Err(JsValue::from_str(&format!("page_id is empty for block: {}", first_block.id)));
+            return Err(JsValue::from_str(&format!(
+                "page_id is empty for block: {}",
+                first_block.id
+            )));
         }
-        
+
         with_adapter(|adapter| {
             let mut results: Vec<Block> = Vec::with_capacity(updates.len());
             for update in &updates {
-                let existing = comind_core::storage::repository::BlockRepository::get_by_id(adapter.blocks(), &update.id);
+                let existing = comind_core::storage::repository::BlockRepository::get_by_id(
+                    adapter.blocks(),
+                    &update.id,
+                );
                 match existing {
                     Ok(_) => {
                         let block = BlockService::update(
@@ -161,7 +174,7 @@ mod wasm_impl {
     pub fn save_page(page: &str) -> Result<String, JsValue> {
         let update: PageUpdate = serde_json::from_str(page)
             .map_err(|e| JsValue::from_str(&format!("Failed to parse page: {}", e)))?;
-        
+
         with_adapter(|adapter| {
             let result = match update.id {
                 Some(id) => {
@@ -222,8 +235,14 @@ mod wasm_impl {
         with_adapter(|adapter| {
             let blocks = BlockService::get_by_page_id(adapter, page_id)?;
             for block in &blocks {
-                comind_core::storage::repository::PropertyRepository::delete_by_block_id(adapter.properties(), &block.id)?;
-                comind_core::storage::repository::LinkRepository::delete_by_source_block_id(adapter.links(), &block.id)?;
+                comind_core::storage::repository::PropertyRepository::delete_by_block_id(
+                    adapter.properties(),
+                    &block.id,
+                )?;
+                comind_core::storage::repository::LinkRepository::delete_by_source_block_id(
+                    adapter.links(),
+                    &block.id,
+                )?;
             }
             LinkService::delete_by_target_page_id(adapter, page_id)?;
             BlockService::delete_by_page_id(adapter, page_id)?;
@@ -318,7 +337,12 @@ mod wasm_impl {
     }
 
     #[wasm_bindgen]
-    pub fn set_property(block_id: &str, key: &str, value: &str, type_: &str) -> Result<JsValue, JsValue> {
+    pub fn set_property(
+        block_id: &str,
+        key: &str,
+        value: &str,
+        type_: &str,
+    ) -> Result<JsValue, JsValue> {
         with_adapter(|adapter| {
             let existing = PropertyService::get_by_block_id_and_key(adapter, block_id, key)?;
             match existing {
@@ -337,16 +361,8 @@ mod wasm_impl {
                     Ok(to_js_value(prop))
                 }
                 None => {
-                    let created = PropertyService::create(
-                        adapter,
-                        block_id,
-                        key,
-                        value,
-                        type_,
-                        0,
-                        0,
-                        1,
-                    )?;
+                    let created =
+                        PropertyService::create(adapter, block_id, key, value, type_, 0, 0, 1)?;
                     Ok(to_js_value(created))
                 }
             }
@@ -376,14 +392,14 @@ mod wasm_impl {
     pub fn execute_batch(operations: &str) -> Result<String, JsValue> {
         let ops: Vec<serde_json::Value> = serde_json::from_str(operations)
             .map_err(|e| JsValue::from_str(&format!("Failed to parse operations: {}", e)))?;
-        
+
         with_adapter(|adapter| {
             let mut results = Vec::new();
             for op in ops {
                 let entity = op.get("entity").and_then(|v| v.as_str()).unwrap_or("");
                 let action = op.get("action").and_then(|v| v.as_str()).unwrap_or("");
                 let params = op.get("params").unwrap_or(&serde_json::Value::Null);
-                
+
                 let result = match (entity, action) {
                     ("block", "get") => {
                         let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
@@ -419,7 +435,10 @@ mod wasm_impl {
                     ("block", "delete") => {
                         let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
                         comind_core::storage::repository::LinkRepository::delete_by_source_block_id(adapter.links(), id)?;
-                        comind_core::storage::repository::PropertyRepository::delete_by_block_id(adapter.properties(), id)?;
+                        comind_core::storage::repository::PropertyRepository::delete_by_block_id(
+                            adapter.properties(),
+                            id,
+                        )?;
                         BlockService::delete(adapter, id)?;
                         serde_json::to_value(json!({"success": true}))
                     }
@@ -465,11 +484,19 @@ mod wasm_impl {
                         serde_json::to_value(json!({"success": true}))
                     }
                     ("property", "set") => {
-                        let block_id = params.get("block_id").and_then(|v| v.as_str()).unwrap_or("");
+                        let block_id = params
+                            .get("block_id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
                         let key = params.get("key").and_then(|v| v.as_str()).unwrap_or("");
                         let value = params.get("value").and_then(|v| v.as_str()).unwrap_or("");
-                        let r#type = params.get("type").and_then(|v| v.as_str()).unwrap_or("text");
-                        let created = PropertyService::create(adapter, block_id, key, value, r#type, 0, 0, 1)?;
+                        let r#type = params
+                            .get("type")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("text");
+                        let created = PropertyService::create(
+                            adapter, block_id, key, value, r#type, 0, 0, 1,
+                        )?;
                         serde_json::to_value(created)
                     }
                     ("property", "delete") => {
@@ -494,15 +521,32 @@ mod wasm_impl {
                         serde_json::to_value(json!({"success": true}))
                     }
                     ("link", "sync_by_block") => {
-                        let block_id = params.get("block_id").and_then(|v| v.as_str()).unwrap_or("");
-                        let links_data = params.get("links").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                        let block_id = params
+                            .get("block_id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        let links_data = params
+                            .get("links")
+                            .and_then(|v| v.as_array())
+                            .cloned()
+                            .unwrap_or_default();
                         LinkService::delete_by_source_block_id(adapter, block_id)?;
                         let mut created = Vec::new();
                         for link_data in links_data {
-                            let source_block_id = link_data.get("source_block_id").and_then(|v| v.as_str()).unwrap_or("");
-                            let target_page_id = link_data.get("target_page_id").and_then(|v| v.as_str()).unwrap_or("");
-                            let display_text = link_data.get("display_text").and_then(|v| v.as_str()).unwrap_or("");
-                            let relationship_type = link_data.get("relationship_type").and_then(|v| v.as_str());
+                            let source_block_id = link_data
+                                .get("source_block_id")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            let target_page_id = link_data
+                                .get("target_page_id")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            let display_text = link_data
+                                .get("display_text")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            let relationship_type =
+                                link_data.get("relationship_type").and_then(|v| v.as_str());
                             let new_link = LinkService::create(
                                 adapter,
                                 source_block_id,
@@ -555,18 +599,28 @@ mod wasm_impl {
                     ("template", "create") => {
                         let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
                         let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                        let category = params.get("category").and_then(|v| v.as_str()).unwrap_or("custom");
+                        let category = params
+                            .get("category")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("custom");
                         let content = params.get("content").and_then(|v| v.as_str()).unwrap_or("");
                         let now = chrono::Utc::now().timestamp_millis();
                         let template = UserTemplate {
-                            id: if id.is_empty() { TemplateService::generate_id() } else { id.to_string() },
+                            id: if id.is_empty() {
+                                TemplateService::generate_id()
+                            } else {
+                                id.to_string()
+                            },
                             name: name.to_string(),
                             category: category.to_string(),
                             content: content.to_string(),
                             created_at: now,
                             updated_at: now,
                         };
-                        let created = comind_core::storage::repository::TemplateRepository::create(adapter.templates(), &template)?;
+                        let created = comind_core::storage::repository::TemplateRepository::create(
+                            adapter.templates(),
+                            &template,
+                        )?;
                         serde_json::to_value(created)
                     }
                     ("template", "update") => {
@@ -574,7 +628,8 @@ mod wasm_impl {
                         let name = params.get("name").and_then(|v| v.as_str());
                         let category = params.get("category").and_then(|v| v.as_str());
                         let content = params.get("content").and_then(|v| v.as_str());
-                        let updated = TemplateService::update(adapter, id, name, category, content)?;
+                        let updated =
+                            TemplateService::update(adapter, id, name, category, content)?;
                         serde_json::to_value(updated)
                     }
                     ("template", "delete") => {
@@ -582,9 +637,11 @@ mod wasm_impl {
                         TemplateService::delete(adapter, id)?;
                         serde_json::to_value(json!({"success": true}))
                     }
-                    _ => serde_json::to_value(json!({"error": format!("Unknown operation: {} {}", entity, action)}))
+                    _ => serde_json::to_value(
+                        json!({"error": format!("Unknown operation: {} {}", entity, action)}),
+                    ),
                 };
-                
+
                 results.push(result.unwrap_or_else(|_| serde_json::Value::Null));
             }
             Ok(serde_json::to_string(&results).unwrap_or_else(|_| "[]".to_string()))

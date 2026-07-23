@@ -1,5 +1,7 @@
 use comind_core::{
-    services::{BlockService, PageService, PropertyService, RelationshipTypeService, TemplateService},
+    services::{
+        BlockService, PageService, PropertyService, RelationshipTypeService, TemplateService,
+    },
     storage::StorageAdapter,
     types::{Block, BlockTree, Page, Property, RelationshipType, UserTemplate},
 };
@@ -75,7 +77,10 @@ struct PageMetadata {
 
 fn sanitize_filename(title: &str) -> String {
     let invalid_chars: HashSet<char> = ['/', '\\', ':', '*', '?', '"', '<', '>', '|'].into();
-    title.chars().map(|c| if invalid_chars.contains(&c) { '_' } else { c }).collect()
+    title
+        .chars()
+        .map(|c| if invalid_chars.contains(&c) { '_' } else { c })
+        .collect()
 }
 
 fn parse_block_content(line: &str) -> (String, String, String) {
@@ -90,7 +95,11 @@ fn parse_block_content(line: &str) -> (String, String, String) {
     } else if let Some(captures) = bullet_re.captures(line) {
         let content = captures[1].to_string();
         let format = "{}".to_string();
-        let r#type = if content.contains("::") { "property" } else { "bullet" };
+        let r#type = if content.contains("::") {
+            "property"
+        } else {
+            "bullet"
+        };
         (content, format, r#type.to_string())
     } else {
         (line.to_string(), "{}".to_string(), "bullet".to_string())
@@ -118,10 +127,7 @@ fn parse_link(content: &str) -> Vec<(String, Option<String>)> {
     links
 }
 
-fn serialize_block_tree(
-    tree: &BlockTree,
-    properties: &[Property],
-) -> String {
+fn serialize_block_tree(tree: &BlockTree, properties: &[Property]) -> String {
     let mut lines = Vec::new();
 
     fn dfs(
@@ -136,7 +142,8 @@ fn serialize_block_tree(
             let indent = "  ".repeat(depth);
 
             if block.r#type == "heading" {
-                let format: serde_json::Value = serde_json::from_str(&block.format).unwrap_or_default();
+                let format: serde_json::Value =
+                    serde_json::from_str(&block.format).unwrap_or_default();
                 let level = format.get("level").and_then(|v| v.as_i64()).unwrap_or(1);
                 let hashes = "#".repeat(level as usize);
                 lines.push(format!("{}{} {}", indent, hashes, block.content));
@@ -378,7 +385,9 @@ pub fn import_all(
                 let blocks = BlockService::get_by_page_id(storage, &page.id)?;
                 for block in &blocks {
                     PropertyService::delete_by_block_id(storage, &block.id)?;
-                    comind_core::services::LinkService::delete_by_source_block_id(storage, &block.id)?;
+                    comind_core::services::LinkService::delete_by_source_block_id(
+                        storage, &block.id,
+                    )?;
                 }
                 comind_core::services::LinkService::delete_by_target_page_id(storage, &page.id)?;
                 BlockService::delete_by_page_id(storage, &page.id)?;
@@ -400,7 +409,9 @@ pub fn import_all(
     }
 
     for rt in &config.relationship_types {
-        let existing = RelationshipTypeService::get_by_type(storage, &rt.r#type).ok().flatten();
+        let existing = RelationshipTypeService::get_by_type(storage, &rt.r#type)
+            .ok()
+            .flatten();
         if let Some(mut existing) = existing {
             existing.label = rt.label.clone();
             existing.inverse_label = rt.inverse_label.clone();
@@ -434,12 +445,19 @@ pub fn import_all(
     }
 
     for t in &config.templates {
-        let existing = TemplateService::get_all(storage).ok()
+        let existing = TemplateService::get_all(storage)
+            .ok()
             .and_then(|all| all.into_iter().find(|temp| temp.name == t.name));
         if let Some(mut existing) = existing {
             existing.category = t.category.clone();
             existing.content = t.content.clone();
-            TemplateService::update(storage, &existing.id, None, Some(&existing.category), Some(&existing.content))?;
+            TemplateService::update(
+                storage,
+                &existing.id,
+                None,
+                Some(&existing.category),
+                Some(&existing.content),
+            )?;
         } else {
             TemplateService::create(storage, &t.name, &t.category, &t.content)?;
         }
@@ -455,24 +473,48 @@ pub fn import_all(
             None => continue,
         };
 
-        let existing_page = PageService::get_by_title(storage, &metadata.id).ok().flatten()
-            .or_else(|| PageService::get_by_title(storage, &entry.path().file_stem().unwrap_or_default().to_string_lossy()).ok().flatten());
+        let existing_page = PageService::get_by_title(storage, &metadata.id)
+            .ok()
+            .flatten()
+            .or_else(|| {
+                PageService::get_by_title(
+                    storage,
+                    &entry
+                        .path()
+                        .file_stem()
+                        .unwrap_or_default()
+                        .to_string_lossy(),
+                )
+                .ok()
+                .flatten()
+            });
 
         let page = if let Some(existing) = existing_page {
             if strategy == "merge" {
                 let blocks = BlockService::get_by_page_id(storage, &existing.id)?;
                 for block in &blocks {
                     PropertyService::delete_by_block_id(storage, &block.id)?;
-                    comind_core::services::LinkService::delete_by_source_block_id(storage, &block.id)?;
+                    comind_core::services::LinkService::delete_by_source_block_id(
+                        storage, &block.id,
+                    )?;
                 }
-                comind_core::services::LinkService::delete_by_target_page_id(storage, &existing.id)?;
+                comind_core::services::LinkService::delete_by_target_page_id(
+                    storage,
+                    &existing.id,
+                )?;
                 BlockService::delete_by_page_id(storage, &existing.id)?;
             }
 
             PageService::update(
                 storage,
                 &existing.id,
-                Some(&entry.path().file_stem().unwrap_or_default().to_string_lossy()),
+                Some(
+                    &entry
+                        .path()
+                        .file_stem()
+                        .unwrap_or_default()
+                        .to_string_lossy(),
+                ),
                 Some(&metadata.r#type),
                 metadata.icon.as_deref(),
                 None,
@@ -485,7 +527,11 @@ pub fn import_all(
             PageService::create(
                 storage,
                 &metadata.block_id.clone().unwrap_or_default(),
-                &entry.path().file_stem().unwrap_or_default().to_string_lossy(),
+                &entry
+                    .path()
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy(),
                 Some(&metadata.r#type),
                 metadata.icon.as_deref(),
                 None,
@@ -494,7 +540,15 @@ pub fn import_all(
             )?
         };
 
-        title_to_page_id.insert(entry.path().file_stem().unwrap_or_default().to_string_lossy().to_string(), page.id.clone());
+        title_to_page_id.insert(
+            entry
+                .path()
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string(),
+            page.id.clone(),
+        );
         pages_imported += 1;
 
         let lines: Vec<&str> = content.lines().skip(2).collect();

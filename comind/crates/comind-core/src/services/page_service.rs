@@ -58,6 +58,8 @@ impl PageService {
             deleted: 0,
             created_at: now,
             updated_at: now,
+            version: 0,
+            deleted_at: None,
         };
 
         repository::PageRepository::create(storage.pages(), &page)

@@ -15,6 +15,14 @@ pub struct DateRef {
     /// 用于 `checkAndFire` 的到期查询：`event_ts - lead_minutes * 60000 <= now` 一条 SQL 命中，避免全量遍历 block。
     pub event_ts: i64,
     pub created_at: i64,
+    #[serde(default = "default_timestamp")]
+    pub updated_at: i64,
+    /// 单调递增版本号，用于同步 LWW 判断。每次 update/delete 时 +1。
+    #[serde(default)]
+    pub version: i64,
+    /// 软删除时间戳（毫秒）。NULL = 未删除。同步时传播删除操作。
+    #[serde(default)]
+    pub deleted_at: Option<i64>,
 }
 
 impl DateRef {
@@ -41,6 +49,9 @@ impl DateRef {
             lead_minutes,
             event_ts,
             created_at: Utc::now().timestamp_millis(),
+            updated_at: Utc::now().timestamp_millis(),
+            version: 0,
+            deleted_at: None,
         }
     }
 
@@ -72,6 +83,10 @@ impl DateRef {
         }
         0
     }
+}
+
+fn default_timestamp() -> i64 {
+    chrono::Utc::now().timestamp_millis()
 }
 
 /// 把「本地 naive 时间」转成 UTC 毫秒（与 JS `new Date(localString).getTime()` 同语义）。

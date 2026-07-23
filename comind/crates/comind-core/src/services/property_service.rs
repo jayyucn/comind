@@ -54,6 +54,8 @@ impl PropertyService {
             schema_version,
             created_at: now,
             updated_at: now,
+            version: 0,
+            deleted_at: None,
         };
 
         repository::PropertyRepository::create(storage.properties(), &property)

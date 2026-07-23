@@ -52,6 +52,8 @@ impl SQLiteAdapter {
                 deleted         INTEGER NOT NULL DEFAULT 0,
                 created_at      INTEGER NOT NULL,
                 updated_at      INTEGER NOT NULL,
+                version         INTEGER NOT NULL DEFAULT 0,
+                deleted_at      INTEGER,
                 FOREIGN KEY (block_id) REFERENCES Block(id)
             );
             
@@ -65,6 +67,8 @@ impl SQLiteAdapter {
                 type            TEXT NOT NULL DEFAULT 'bullet',
                 created_at      INTEGER NOT NULL,
                 updated_at      INTEGER NOT NULL,
+                version         INTEGER NOT NULL DEFAULT 0,
+                deleted_at      INTEGER,
                 FOREIGN KEY (page_id) REFERENCES Page(id)
             );
             
@@ -75,6 +79,9 @@ impl SQLiteAdapter {
                 display_text    TEXT NOT NULL,
                 relationship_type TEXT,
                 created_at      INTEGER NOT NULL,
+                updated_at      INTEGER NOT NULL,
+                version         INTEGER NOT NULL DEFAULT 0,
+                deleted_at      INTEGER,
                 FOREIGN KEY (source_block_id) REFERENCES Block(id),
                 FOREIGN KEY (target_page_id) REFERENCES Page(id)
             );
@@ -91,6 +98,8 @@ impl SQLiteAdapter {
                 schema_version  INTEGER NOT NULL DEFAULT 1,
                 created_at      INTEGER NOT NULL,
                 updated_at      INTEGER NOT NULL,
+                version         INTEGER NOT NULL DEFAULT 0,
+                deleted_at      INTEGER,
                 UNIQUE(block_id, key),
                 FOREIGN KEY (block_id) REFERENCES Block(id)
             );
@@ -107,7 +116,9 @@ impl SQLiteAdapter {
                 deleted         INTEGER NOT NULL DEFAULT 0,
                 builtin         INTEGER NOT NULL DEFAULT 1,
                 created_at      INTEGER NOT NULL,
-                updated_at      INTEGER NOT NULL
+                updated_at      INTEGER NOT NULL,
+                version         INTEGER NOT NULL DEFAULT 0,
+                deleted_at      INTEGER
             );
             
             CREATE TABLE IF NOT EXISTS UserTemplate (
@@ -167,6 +178,9 @@ impl SQLiteAdapter {
                 lead_minutes    INTEGER NOT NULL DEFAULT 0,
                 event_ts        INTEGER NOT NULL DEFAULT 0,
                 created_at      INTEGER NOT NULL,
+                updated_at      INTEGER,
+                version         INTEGER NOT NULL DEFAULT 0,
+                deleted_at      INTEGER,
                 FOREIGN KEY (block_id) REFERENCES Block(id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_dateref_kind_date ON DateRef(kind, date_day);
@@ -189,6 +203,7 @@ impl SQLiteAdapter {
         
         Self::migrate_add_page_title_unique(conn)?;
         Self::migrate_date_ref_event_ts(conn)?;
+        Self::migrate_add_version_and_deleted_at(conn)?;
         
         Ok(())
     }
@@ -235,13 +250,70 @@ impl SQLiteAdapter {
         }
         Ok(())
     }
+
+    fn migrate_add_version_and_deleted_at(conn: &rusqlite::Connection) -> Result<(), Box<dyn Error>> {
+        // 幂等迁移：检查列是否存在，不存在才 ALTER ADD
+        let has = |table: &str, col: &str| -> bool {
+            conn.query_row(
+                &format!("SELECT COUNT(*) FROM pragma_table_info('{}') WHERE name = '{}'", table, col),
+                [],
+                |row| row.get::<_, i64>(0),
+            ).map(|c| c > 0).unwrap_or(false)
+        };
+
+        if !has("Block", "version") {
+            conn.execute("ALTER TABLE Block ADD COLUMN version INTEGER NOT NULL DEFAULT 0", [])?;
+        }
+        if !has("Block", "deleted_at") {
+            conn.execute("ALTER TABLE Block ADD COLUMN deleted_at INTEGER", [])?;
+        }
+        if !has("Page", "version") {
+            conn.execute("ALTER TABLE Page ADD COLUMN version INTEGER NOT NULL DEFAULT 0", [])?;
+        }
+        if !has("Page", "deleted_at") {
+            conn.execute("ALTER TABLE Page ADD COLUMN deleted_at INTEGER", [])?;
+            conn.execute("UPDATE Page SET deleted_at = updated_at WHERE deleted = 1 AND deleted_at IS NULL", [])?;
+        }
+        if !has("Link", "updated_at") {
+            conn.execute("ALTER TABLE Link ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0", [])?;
+        }
+        if !has("Link", "version") {
+            conn.execute("ALTER TABLE Link ADD COLUMN version INTEGER NOT NULL DEFAULT 0", [])?;
+        }
+        if !has("Link", "deleted_at") {
+            conn.execute("ALTER TABLE Link ADD COLUMN deleted_at INTEGER", [])?;
+        }
+        if !has("Property", "version") {
+            conn.execute("ALTER TABLE Property ADD COLUMN version INTEGER NOT NULL DEFAULT 0", [])?;
+        }
+        if !has("Property", "deleted_at") {
+            conn.execute("ALTER TABLE Property ADD COLUMN deleted_at INTEGER", [])?;
+            conn.execute("UPDATE Property SET deleted_at = updated_at WHERE is_deleted = 1 AND deleted_at IS NULL", [])?;
+        }
+        if !has("RelationshipType", "version") {
+            conn.execute("ALTER TABLE RelationshipType ADD COLUMN version INTEGER NOT NULL DEFAULT 0", [])?;
+        }
+        if !has("RelationshipType", "deleted_at") {
+            conn.execute("ALTER TABLE RelationshipType ADD COLUMN deleted_at INTEGER", [])?;
+        }
+        if !has("DateRef", "updated_at") {
+            conn.execute("ALTER TABLE DateRef ADD COLUMN updated_at INTEGER", [])?;
+        }
+        if !has("DateRef", "version") {
+            conn.execute("ALTER TABLE DateRef ADD COLUMN version INTEGER NOT NULL DEFAULT 0", [])?;
+        }
+        if !has("DateRef", "deleted_at") {
+            conn.execute("ALTER TABLE DateRef ADD COLUMN deleted_at INTEGER", [])?;
+        }
+        Ok(())
+    }
 }
 
 impl BlockRepository for SQLiteAdapter {
     fn get_by_id(&self, id: &str) -> Result<Block, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, page_id, parent_id, pos, content, format, type, created_at, updated_at 
-             FROM Block WHERE id = ?1"
+            "SELECT id, page_id, parent_id, pos, content, format, type, created_at, updated_at, version, deleted_at 
+             FROM Block WHERE id = ?1 AND deleted_at IS NULL"
         )?;
         
         let block = stmt.query_row(params![id], |row| {
@@ -255,6 +327,8 @@ impl BlockRepository for SQLiteAdapter {
                 r#type: row.get(6)?,
                 created_at: row.get(7)?,
                 updated_at: row.get(8)?,
+                version: row.get(9)?,
+                deleted_at: row.get(10)?,
             })
         })?;
         
@@ -263,8 +337,8 @@ impl BlockRepository for SQLiteAdapter {
     
     fn get_by_page_id(&self, page_id: &str) -> Result<Vec<Block>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, page_id, parent_id, pos, content, format, type, created_at, updated_at 
-             FROM Block WHERE page_id = ?1 ORDER BY pos"
+            "SELECT id, page_id, parent_id, pos, content, format, type, created_at, updated_at, version, deleted_at 
+             FROM Block WHERE page_id = ?1 AND deleted_at IS NULL ORDER BY pos"
         )?;
         
         let blocks = stmt.query_map(params![page_id], |row| {
@@ -278,6 +352,8 @@ impl BlockRepository for SQLiteAdapter {
                 r#type: row.get(6)?,
                 created_at: row.get(7)?,
                 updated_at: row.get(8)?,
+                version: row.get(9)?,
+                deleted_at: row.get(10)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
         
@@ -286,8 +362,8 @@ impl BlockRepository for SQLiteAdapter {
     
     fn get_children(&self, parent_id: &str) -> Result<Vec<Block>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, page_id, parent_id, pos, content, format, type, created_at, updated_at 
-             FROM Block WHERE parent_id = ?1 ORDER BY pos"
+            "SELECT id, page_id, parent_id, pos, content, format, type, created_at, updated_at, version, deleted_at 
+             FROM Block WHERE parent_id = ?1 AND deleted_at IS NULL ORDER BY pos"
         )?;
         
         let blocks = stmt.query_map(params![parent_id], |row| {
@@ -301,6 +377,8 @@ impl BlockRepository for SQLiteAdapter {
                 r#type: row.get(6)?,
                 created_at: row.get(7)?,
                 updated_at: row.get(8)?,
+                version: row.get(9)?,
+                deleted_at: row.get(10)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
         
@@ -309,8 +387,8 @@ impl BlockRepository for SQLiteAdapter {
     
     fn create(&mut self, block: &Block) -> Result<Block, Box<dyn Error>> {
         self.conn.execute(
-            "INSERT INTO Block (id, page_id, parent_id, pos, content, format, type, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            "INSERT INTO Block (id, page_id, parent_id, pos, content, format, type, created_at, updated_at, version, deleted_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 block.id,
                 block.page_id,
@@ -320,7 +398,9 @@ impl BlockRepository for SQLiteAdapter {
                 block.format,
                 block.r#type,
                 block.created_at,
-                block.updated_at
+                block.updated_at,
+                block.version,
+                block.deleted_at
             ]
         )?;
         
@@ -331,7 +411,7 @@ impl BlockRepository for SQLiteAdapter {
     
     fn update(&mut self, block: &Block) -> Result<Block, Box<dyn Error>> {
         self.conn.execute(
-            "UPDATE Block SET page_id = ?2, parent_id = ?3, pos = ?4, content = ?5, format = ?6, type = ?7, updated_at = ?8
+            "UPDATE Block SET page_id = ?2, parent_id = ?3, pos = ?4, content = ?5, format = ?6, type = ?7, updated_at = ?8, version = version + 1
              WHERE id = ?1",
             params![
                 block.id,
@@ -351,7 +431,10 @@ impl BlockRepository for SQLiteAdapter {
     }
     
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM Block WHERE id = ?1", params![id])?;
+        self.conn.execute(
+            "UPDATE Block SET deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE id = ?1",
+            params![id, chrono::Utc::now().timestamp_millis()]
+        )?;
         
         self.conn.execute(
             "DELETE FROM SearchIndex WHERE block_id = ?1",
@@ -363,13 +446,16 @@ impl BlockRepository for SQLiteAdapter {
     
     fn delete_by_page_id(&mut self, page_id: &str) -> Result<(), Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id FROM Block WHERE page_id = ?1"
+            "SELECT id FROM Block WHERE page_id = ?1 AND deleted_at IS NULL"
         )?;
         let block_ids: Vec<String> = stmt.query_map(params![page_id], |row| {
             row.get(0)
         })?.collect::<Result<_, _>>()?;
         
-        self.conn.execute("DELETE FROM Block WHERE page_id = ?1", params![page_id])?;
+        self.conn.execute(
+            "UPDATE Block SET deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE page_id = ?1",
+            params![page_id, chrono::Utc::now().timestamp_millis()]
+        )?;
         
         for block_id in block_ids {
             self.conn.execute(
@@ -385,8 +471,8 @@ impl BlockRepository for SQLiteAdapter {
 impl PageRepository for SQLiteAdapter {
     fn get_by_id(&self, id: &str) -> Result<Page, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at 
-             FROM Page WHERE id = ?1"
+            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at 
+             FROM Page WHERE id = ?1 AND deleted_at IS NULL"
         )?;
         
         let page = stmt.query_row(params![id], |row| {
@@ -404,6 +490,8 @@ impl PageRepository for SQLiteAdapter {
                 deleted: row.get(10)?,
                 created_at: row.get(11)?,
                 updated_at: row.get(12)?,
+                version: row.get(13)?,
+                deleted_at: row.get(14)?,
             })
         })?;
         
@@ -412,8 +500,8 @@ impl PageRepository for SQLiteAdapter {
     
     fn get_by_title(&self, title: &str) -> Result<Option<Page>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at 
-             FROM Page WHERE title = ?1 AND deleted = 0"
+            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at 
+             FROM Page WHERE title = ?1 AND deleted = 0 AND deleted_at IS NULL"
         )?;
         
         let result = stmt.query_row(params![title], |row| {
@@ -431,6 +519,8 @@ impl PageRepository for SQLiteAdapter {
                 deleted: row.get(10)?,
                 created_at: row.get(11)?,
                 updated_at: row.get(12)?,
+                version: row.get(13)?,
+                deleted_at: row.get(14)?,
             })
         });
         
@@ -443,8 +533,8 @@ impl PageRepository for SQLiteAdapter {
     
     fn get_all(&self) -> Result<Vec<Page>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at 
-             FROM Page WHERE deleted = 0 ORDER BY updated_at DESC"
+            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at 
+             FROM Page WHERE deleted = 0 AND deleted_at IS NULL ORDER BY updated_at DESC"
         )?;
         
         let pages = stmt.query_map([], |row| {
@@ -462,6 +552,8 @@ impl PageRepository for SQLiteAdapter {
                 deleted: row.get(10)?,
                 created_at: row.get(11)?,
                 updated_at: row.get(12)?,
+                version: row.get(13)?,
+                deleted_at: row.get(14)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
         
@@ -470,8 +562,8 @@ impl PageRepository for SQLiteAdapter {
     
     fn create(&mut self, page: &Page) -> Result<Page, Box<dyn Error>> {
         self.conn.execute(
-            "INSERT INTO Page (id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            "INSERT INTO Page (id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             params![
                 page.id,
                 page.block_id,
@@ -485,7 +577,9 @@ impl PageRepository for SQLiteAdapter {
                 page.word_count,
                 page.deleted,
                 page.created_at,
-                page.updated_at
+                page.updated_at,
+                page.version,
+                page.deleted_at
             ]
         )?;
         
@@ -494,7 +588,7 @@ impl PageRepository for SQLiteAdapter {
     
     fn update(&mut self, page: &Page) -> Result<Page, Box<dyn Error>> {
         self.conn.execute(
-            "UPDATE Page SET block_id = ?2, title = ?3, type = ?4, icon = ?5, cover = ?6, aliases = ?7, file_path = ?8, children_count = ?9, word_count = ?10, deleted = ?11, updated_at = ?12
+            "UPDATE Page SET block_id = ?2, title = ?3, type = ?4, icon = ?5, cover = ?6, aliases = ?7, file_path = ?8, children_count = ?9, word_count = ?10, deleted = ?11, updated_at = ?12, version = version + 1
              WHERE id = ?1",
             params![
                 page.id,
@@ -517,7 +611,7 @@ impl PageRepository for SQLiteAdapter {
     
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
         self.conn.execute(
-            "UPDATE Page SET deleted = 1, updated_at = ?2 WHERE id = ?1",
+            "UPDATE Page SET deleted = 1, deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE id = ?1",
             params![id, chrono::Utc::now().timestamp_millis()]
         )?;
         Ok(())
@@ -527,8 +621,8 @@ impl PageRepository for SQLiteAdapter {
 impl LinkRepository for SQLiteAdapter {
     fn get_by_id(&self, id: &str) -> Result<Link, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, source_block_id, target_page_id, display_text, relationship_type, created_at 
-             FROM Link WHERE id = ?1"
+            "SELECT id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at 
+             FROM Link WHERE id = ?1 AND deleted_at IS NULL"
         )?;
         
         let link = stmt.query_row(params![id], |row| {
@@ -539,6 +633,9 @@ impl LinkRepository for SQLiteAdapter {
                 display_text: row.get(3)?,
                 relationship_type: row.get(4)?,
                 created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+                version: row.get(7)?,
+                deleted_at: row.get(8)?,
             })
         })?;
         
@@ -547,8 +644,8 @@ impl LinkRepository for SQLiteAdapter {
     
     fn get_by_source_block_id(&self, source_block_id: &str) -> Result<Vec<Link>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, source_block_id, target_page_id, display_text, relationship_type, created_at 
-             FROM Link WHERE source_block_id = ?1"
+            "SELECT id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at 
+             FROM Link WHERE source_block_id = ?1 AND deleted_at IS NULL"
         )?;
         
         let links = stmt.query_map(params![source_block_id], |row| {
@@ -559,6 +656,9 @@ impl LinkRepository for SQLiteAdapter {
                 display_text: row.get(3)?,
                 relationship_type: row.get(4)?,
                 created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+                version: row.get(7)?,
+                deleted_at: row.get(8)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
         
@@ -567,8 +667,8 @@ impl LinkRepository for SQLiteAdapter {
     
     fn get_by_target_page_id(&self, target_page_id: &str) -> Result<Vec<Link>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, source_block_id, target_page_id, display_text, relationship_type, created_at 
-             FROM Link WHERE target_page_id = ?1"
+            "SELECT id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at 
+             FROM Link WHERE target_page_id = ?1 AND deleted_at IS NULL"
         )?;
         
         let links = stmt.query_map(params![target_page_id], |row| {
@@ -579,6 +679,9 @@ impl LinkRepository for SQLiteAdapter {
                 display_text: row.get(3)?,
                 relationship_type: row.get(4)?,
                 created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+                version: row.get(7)?,
+                deleted_at: row.get(8)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
         
@@ -587,15 +690,18 @@ impl LinkRepository for SQLiteAdapter {
     
     fn create(&mut self, link: &Link) -> Result<Link, Box<dyn Error>> {
         self.conn.execute(
-            "INSERT INTO Link (id, source_block_id, target_page_id, display_text, relationship_type, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO Link (id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 link.id,
                 link.source_block_id,
                 link.target_page_id,
                 link.display_text,
                 link.relationship_type,
-                link.created_at
+                link.created_at,
+                link.updated_at,
+                link.version,
+                link.deleted_at
             ]
         )?;
         
@@ -625,17 +731,26 @@ impl LinkRepository for SQLiteAdapter {
     }
     
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM Link WHERE id = ?1", params![id])?;
+        self.conn.execute(
+            "UPDATE Link SET deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE id = ?1",
+            params![id, chrono::Utc::now().timestamp_millis()]
+        )?;
         Ok(())
     }
     
     fn delete_by_source_block_id(&mut self, source_block_id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM Link WHERE source_block_id = ?1", params![source_block_id])?;
+        self.conn.execute(
+            "UPDATE Link SET deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE source_block_id = ?1",
+            params![source_block_id, chrono::Utc::now().timestamp_millis()]
+        )?;
         Ok(())
     }
 
     fn delete_by_target_page_id(&mut self, target_page_id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM Link WHERE target_page_id = ?1", params![target_page_id])?;
+        self.conn.execute(
+            "UPDATE Link SET deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE target_page_id = ?1",
+            params![target_page_id, chrono::Utc::now().timestamp_millis()]
+        )?;
         Ok(())
     }
 }
@@ -643,8 +758,8 @@ impl LinkRepository for SQLiteAdapter {
 impl PropertyRepository for SQLiteAdapter {
     fn get_by_id(&self, id: &str) -> Result<Property, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at 
-             FROM Property WHERE id = ?1"
+            "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at 
+             FROM Property WHERE id = ?1 AND deleted_at IS NULL"
         )?;
         
         let property = stmt.query_row(params![id], |row| {
@@ -660,6 +775,8 @@ impl PropertyRepository for SQLiteAdapter {
                 schema_version: row.get(8)?,
                 created_at: row.get(9)?,
                 updated_at: row.get(10)?,
+                version: row.get(11)?,
+                deleted_at: row.get(12)?,
             })
         })?;
         
@@ -668,8 +785,8 @@ impl PropertyRepository for SQLiteAdapter {
     
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<Property>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at 
-             FROM Property WHERE block_id = ?1 AND is_deleted = 0 ORDER BY sort_order"
+            "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at 
+             FROM Property WHERE block_id = ?1 AND is_deleted = 0 AND deleted_at IS NULL ORDER BY sort_order"
         )?;
         
         let properties = stmt.query_map(params![block_id], |row| {
@@ -685,6 +802,8 @@ impl PropertyRepository for SQLiteAdapter {
                 schema_version: row.get(8)?,
                 created_at: row.get(9)?,
                 updated_at: row.get(10)?,
+                version: row.get(11)?,
+                deleted_at: row.get(12)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
         
@@ -693,8 +812,8 @@ impl PropertyRepository for SQLiteAdapter {
     
     fn get_by_block_id_and_key(&self, block_id: &str, key: &str) -> Result<Option<Property>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at 
-             FROM Property WHERE block_id = ?1 AND key = ?2 AND is_deleted = 0"
+            "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at 
+             FROM Property WHERE block_id = ?1 AND key = ?2 AND is_deleted = 0 AND deleted_at IS NULL"
         )?;
         
         let result = stmt.query_row(params![block_id, key], |row| {
@@ -710,6 +829,8 @@ impl PropertyRepository for SQLiteAdapter {
                 schema_version: row.get(8)?,
                 created_at: row.get(9)?,
                 updated_at: row.get(10)?,
+                version: row.get(11)?,
+                deleted_at: row.get(12)?,
             })
         });
         
@@ -722,8 +843,8 @@ impl PropertyRepository for SQLiteAdapter {
     
     fn create(&mut self, property: &Property) -> Result<Property, Box<dyn Error>> {
         self.conn.execute(
-            "INSERT INTO Property (id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            "INSERT INTO Property (id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 property.id,
                 property.block_id,
@@ -735,7 +856,9 @@ impl PropertyRepository for SQLiteAdapter {
                 property.is_deleted,
                 property.schema_version,
                 property.created_at,
-                property.updated_at
+                property.updated_at,
+                property.version,
+                property.deleted_at
             ]
         )?;
         
@@ -744,7 +867,7 @@ impl PropertyRepository for SQLiteAdapter {
     
     fn update(&mut self, property: &Property) -> Result<Property, Box<dyn Error>> {
         self.conn.execute(
-            "UPDATE Property SET value = ?2, type = ?3, sort_order = ?4, is_hidden = ?5, is_deleted = ?6, updated_at = ?7
+            "UPDATE Property SET value = ?2, type = ?3, sort_order = ?4, is_hidden = ?5, is_deleted = ?6, updated_at = ?7, version = version + 1
              WHERE id = ?1",
             params![
                 property.id,
@@ -761,12 +884,18 @@ impl PropertyRepository for SQLiteAdapter {
     }
     
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM Property WHERE id = ?1", params![id])?;
+        self.conn.execute(
+            "UPDATE Property SET deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE id = ?1",
+            params![id, chrono::Utc::now().timestamp_millis()]
+        )?;
         Ok(())
     }
     
     fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM Property WHERE block_id = ?1", params![block_id])?;
+        self.conn.execute(
+            "UPDATE Property SET deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE block_id = ?1",
+            params![block_id, chrono::Utc::now().timestamp_millis()]
+        )?;
         Ok(())
     }
 }
@@ -879,7 +1008,7 @@ impl RelationshipTypeRepository for SQLiteAdapter {
     
     fn update(&mut self, rt: &RelationshipType) -> Result<RelationshipType, Box<dyn Error>> {
         self.conn.execute(
-            "UPDATE RelationshipType SET type = ?2, inverse = ?3, label = ?4, inverse_label = ?5, color = ?6, `order` = ?7, strength = ?8, deleted = ?9, updated_at = ?10
+            "UPDATE RelationshipType SET type = ?2, inverse = ?3, label = ?4, inverse_label = ?5, color = ?6, `order` = ?7, strength = ?8, deleted = ?9, updated_at = ?10, version = version + 1
              WHERE id = ?1",
             params![
                 rt.id,
@@ -900,7 +1029,7 @@ impl RelationshipTypeRepository for SQLiteAdapter {
     
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
         self.conn.execute(
-            "UPDATE RelationshipType SET deleted = 1, updated_at = ?2 WHERE id = ?1",
+            "UPDATE RelationshipType SET deleted = 1, deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE id = ?1",
             params![id, chrono::Utc::now().timestamp_millis()]
         )?;
         Ok(())
@@ -1251,7 +1380,7 @@ impl StorageAdapter for SQLiteAdapter {
 impl DateRefRepository for SQLiteAdapter {
     fn get_by_id(&self, id: &str) -> Result<DateRef, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts FROM DateRef WHERE id = ?"
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts, updated_at, version, deleted_at FROM DateRef WHERE id = ? AND deleted_at IS NULL"
         )?;
         let dr = stmt.query_row(params![id], |row| {
             Ok(DateRef {
@@ -1264,6 +1393,9 @@ impl DateRefRepository for SQLiteAdapter {
                 lead_minutes: row.get(6)?,
                 event_ts: row.get(7)?,
                 created_at: row.get(8)?,
+                updated_at: row.get(9)?,
+                version: row.get(10)?,
+                deleted_at: row.get(11)?,
 })
         });
         match dr {
@@ -1275,7 +1407,7 @@ impl DateRefRepository for SQLiteAdapter {
 
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<DateRef>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts FROM DateRef WHERE block_id = ?"
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts, updated_at, version, deleted_at FROM DateRef WHERE block_id = ? AND deleted_at IS NULL"
         )?;
         let rows = stmt.query_map(params![block_id], |row| {
             Ok(DateRef {
@@ -1288,6 +1420,9 @@ impl DateRefRepository for SQLiteAdapter {
                 lead_minutes: row.get(6)?,
                 event_ts: row.get(7)?,
                 created_at: row.get(8)?,
+                updated_at: row.get(9)?,
+                version: row.get(10)?,
+                deleted_at: row.get(11)?,
 })
         })?;
         let mut result = Vec::new();
@@ -1297,7 +1432,7 @@ impl DateRefRepository for SQLiteAdapter {
 
     fn query_by_date_range(&self, kind: &str, from: &str, to: &str) -> Result<Vec<DateRef>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts FROM DateRef WHERE (kind = ?1 OR ?1 = '*') AND date_day BETWEEN ?2 AND ?3 ORDER BY date_day, block_id"
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts, updated_at, version, deleted_at FROM DateRef WHERE (kind = ?1 OR ?1 = '*') AND date_day BETWEEN ?2 AND ?3 AND deleted_at IS NULL ORDER BY date_day, block_id"
         )?;
         let rows = stmt.query_map(params![kind, from, to], |row| {
             Ok(DateRef {
@@ -1310,6 +1445,9 @@ impl DateRefRepository for SQLiteAdapter {
                 lead_minutes: row.get(6)?,
                 event_ts: row.get(7)?,
                 created_at: row.get(8)?,
+                updated_at: row.get(9)?,
+                version: row.get(10)?,
+                deleted_at: row.get(11)?,
 })
         })?;
         let mut result = Vec::new();
@@ -1319,7 +1457,7 @@ impl DateRefRepository for SQLiteAdapter {
 
     fn query_overdue(&self, today: &str) -> Result<Vec<DateRef>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts FROM DateRef WHERE kind = 'deadline' AND date_day < ? ORDER BY date_day"
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts, updated_at, version, deleted_at FROM DateRef WHERE kind = 'deadline' AND date_day < ? AND deleted_at IS NULL ORDER BY date_day"
         )?;
         let rows = stmt.query_map(params![today], |row| {
             Ok(DateRef {
@@ -1332,6 +1470,9 @@ impl DateRefRepository for SQLiteAdapter {
                 lead_minutes: row.get(6)?,
                 event_ts: row.get(7)?,
                 created_at: row.get(8)?,
+                updated_at: row.get(9)?,
+                version: row.get(10)?,
+                deleted_at: row.get(11)?,
 })
         })?;
         let mut result = Vec::new();
@@ -1341,7 +1482,7 @@ impl DateRefRepository for SQLiteAdapter {
 
     fn query_due_non_recurring(&self, now_ms: i64) -> Result<Vec<DateRef>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at FROM DateRef WHERE recurrence = 'none' AND (event_ts - lead_minutes * 60000) <= ?1"
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at, updated_at, version, deleted_at FROM DateRef WHERE recurrence = 'none' AND (event_ts - lead_minutes * 60000) <= ?1 AND deleted_at IS NULL"
         )?;
         let rows = stmt.query_map(params![now_ms], |row| {
             Ok(DateRef {
@@ -1354,6 +1495,9 @@ impl DateRefRepository for SQLiteAdapter {
                 lead_minutes: row.get(6)?,
                 event_ts: row.get(7)?,
                 created_at: row.get(8)?,
+                updated_at: row.get(9)?,
+                version: row.get(10)?,
+                deleted_at: row.get(11)?,
             })
         })?;
         let mut result = Vec::new();
@@ -1363,7 +1507,7 @@ impl DateRefRepository for SQLiteAdapter {
 
     fn query_all_recurring(&self) -> Result<Vec<DateRef>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at FROM DateRef WHERE recurrence != 'none'"
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at, updated_at, version, deleted_at FROM DateRef WHERE recurrence != 'none' AND deleted_at IS NULL"
         )?;
         let rows = stmt.query_map(params![], |row| {
             Ok(DateRef {
@@ -1376,6 +1520,9 @@ impl DateRefRepository for SQLiteAdapter {
                 lead_minutes: row.get(6)?,
                 event_ts: row.get(7)?,
                 created_at: row.get(8)?,
+                updated_at: row.get(9)?,
+                version: row.get(10)?,
+                deleted_at: row.get(11)?,
             })
         })?;
         let mut result = Vec::new();
@@ -1385,8 +1532,8 @@ impl DateRefRepository for SQLiteAdapter {
 
     fn create(&mut self, date_ref: &DateRef) -> Result<DateRef, Box<dyn Error>> {
         self.conn.execute(
-            "INSERT INTO DateRef (id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            params![date_ref.id, date_ref.block_id, date_ref.kind, date_ref.iso, date_ref.date_day, date_ref.recurrence, date_ref.lead_minutes, date_ref.event_ts, date_ref.created_at],
+            "INSERT INTO DateRef (id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at, updated_at, version, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            params![date_ref.id, date_ref.block_id, date_ref.kind, date_ref.iso, date_ref.date_day, date_ref.recurrence, date_ref.lead_minutes, date_ref.event_ts, date_ref.created_at, date_ref.updated_at, date_ref.version, date_ref.deleted_at],
         )?;
         Ok(date_ref.clone())
     }
@@ -1399,12 +1546,18 @@ impl DateRefRepository for SQLiteAdapter {
     }
 
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM DateRef WHERE id = ?", params![id])?;
+        self.conn.execute(
+            "UPDATE DateRef SET deleted_at = ?1, version = version + 1, updated_at = ?1 WHERE id = ?2",
+            params![chrono::Utc::now().timestamp_millis(), id]
+        )?;
         Ok(())
     }
 
     fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM DateRef WHERE block_id = ?", params![block_id])?;
+        self.conn.execute(
+            "UPDATE DateRef SET deleted_at = ?1, version = version + 1, updated_at = ?1 WHERE block_id = ?2",
+            params![chrono::Utc::now().timestamp_millis(), block_id]
+        )?;
         Ok(())
     }
 }
@@ -1682,8 +1835,8 @@ struct SQLiteTransactionAdapter<'a> {
 impl<'a> BlockRepository for SQLiteTransactionAdapter<'a> {
     fn get_by_id(&self, id: &str) -> Result<Block, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, page_id, parent_id, pos, content, format, type, created_at, updated_at 
-             FROM Block WHERE id = ?1"
+            "SELECT id, page_id, parent_id, pos, content, format, type, created_at, updated_at, version, deleted_at 
+             FROM Block WHERE id = ?1 AND deleted_at IS NULL"
         )?;
         
         let block = stmt.query_row(params![id], |row| {
@@ -1697,6 +1850,8 @@ impl<'a> BlockRepository for SQLiteTransactionAdapter<'a> {
                 r#type: row.get(6)?,
                 created_at: row.get(7)?,
                 updated_at: row.get(8)?,
+                version: row.get(9)?,
+                deleted_at: row.get(10)?,
             })
         })?;
         
@@ -1705,8 +1860,8 @@ impl<'a> BlockRepository for SQLiteTransactionAdapter<'a> {
     
     fn get_by_page_id(&self, page_id: &str) -> Result<Vec<Block>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, page_id, parent_id, pos, content, format, type, created_at, updated_at 
-             FROM Block WHERE page_id = ?1 ORDER BY pos"
+            "SELECT id, page_id, parent_id, pos, content, format, type, created_at, updated_at, version, deleted_at 
+             FROM Block WHERE page_id = ?1 AND deleted_at IS NULL ORDER BY pos"
         )?;
         
         let blocks = stmt.query_map(params![page_id], |row| {
@@ -1720,6 +1875,8 @@ impl<'a> BlockRepository for SQLiteTransactionAdapter<'a> {
                 r#type: row.get(6)?,
                 created_at: row.get(7)?,
                 updated_at: row.get(8)?,
+                version: row.get(9)?,
+                deleted_at: row.get(10)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
         
@@ -1728,8 +1885,8 @@ impl<'a> BlockRepository for SQLiteTransactionAdapter<'a> {
     
     fn get_children(&self, parent_id: &str) -> Result<Vec<Block>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, page_id, parent_id, pos, content, format, type, created_at, updated_at 
-             FROM Block WHERE parent_id = ?1 ORDER BY pos"
+            "SELECT id, page_id, parent_id, pos, content, format, type, created_at, updated_at, version, deleted_at 
+             FROM Block WHERE parent_id = ?1 AND deleted_at IS NULL ORDER BY pos"
         )?;
         
         let blocks = stmt.query_map(params![parent_id], |row| {
@@ -1743,6 +1900,8 @@ impl<'a> BlockRepository for SQLiteTransactionAdapter<'a> {
                 r#type: row.get(6)?,
                 created_at: row.get(7)?,
                 updated_at: row.get(8)?,
+                version: row.get(9)?,
+                deleted_at: row.get(10)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
         
@@ -1751,8 +1910,8 @@ impl<'a> BlockRepository for SQLiteTransactionAdapter<'a> {
     
     fn create(&mut self, block: &Block) -> Result<Block, Box<dyn Error>> {
         self.conn.execute(
-            "INSERT INTO Block (id, page_id, parent_id, pos, content, format, type, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            "INSERT INTO Block (id, page_id, parent_id, pos, content, format, type, created_at, updated_at, version, deleted_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 block.id,
                 block.page_id,
@@ -1762,7 +1921,9 @@ impl<'a> BlockRepository for SQLiteTransactionAdapter<'a> {
                 block.format,
                 block.r#type,
                 block.created_at,
-                block.updated_at
+                block.updated_at,
+                block.version,
+                block.deleted_at
             ]
         )?;
         
@@ -1773,7 +1934,7 @@ impl<'a> BlockRepository for SQLiteTransactionAdapter<'a> {
     
     fn update(&mut self, block: &Block) -> Result<Block, Box<dyn Error>> {
         self.conn.execute(
-            "UPDATE Block SET page_id = ?2, parent_id = ?3, pos = ?4, content = ?5, format = ?6, type = ?7, updated_at = ?8
+            "UPDATE Block SET page_id = ?2, parent_id = ?3, pos = ?4, content = ?5, format = ?6, type = ?7, updated_at = ?8, version = version + 1
              WHERE id = ?1",
             params![
                 block.id,
@@ -1793,7 +1954,10 @@ impl<'a> BlockRepository for SQLiteTransactionAdapter<'a> {
     }
     
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM Block WHERE id = ?1", params![id])?;
+        self.conn.execute(
+            "UPDATE Block SET deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE id = ?1",
+            params![id, chrono::Utc::now().timestamp_millis()]
+        )?;
         
         self.conn.execute(
             "DELETE FROM SearchIndex WHERE block_id = ?1",
@@ -1805,13 +1969,16 @@ impl<'a> BlockRepository for SQLiteTransactionAdapter<'a> {
     
     fn delete_by_page_id(&mut self, page_id: &str) -> Result<(), Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id FROM Block WHERE page_id = ?1"
+            "SELECT id FROM Block WHERE page_id = ?1 AND deleted_at IS NULL"
         )?;
         let block_ids: Vec<String> = stmt.query_map(params![page_id], |row| {
             row.get(0)
         })?.collect::<Result<_, _>>()?;
         
-        self.conn.execute("DELETE FROM Block WHERE page_id = ?1", params![page_id])?;
+        self.conn.execute(
+            "UPDATE Block SET deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE page_id = ?1",
+            params![page_id, chrono::Utc::now().timestamp_millis()]
+        )?;
         
         for block_id in block_ids {
             self.conn.execute(
@@ -1855,8 +2022,8 @@ impl<'a> SQLiteTransactionAdapter<'a> {
 impl<'a> PageRepository for SQLiteTransactionAdapter<'a> {
     fn get_by_id(&self, id: &str) -> Result<Page, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at
-             FROM Page WHERE id = ?1"
+            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at
+             FROM Page WHERE id = ?1 AND deleted_at IS NULL"
         )?;
 
         let page = stmt.query_row(params![id], |row| {
@@ -1874,6 +2041,8 @@ impl<'a> PageRepository for SQLiteTransactionAdapter<'a> {
                 deleted: row.get(10)?,
                 created_at: row.get(11)?,
                 updated_at: row.get(12)?,
+                version: row.get(13)?,
+                deleted_at: row.get(14)?,
             })
         })?;
 
@@ -1882,8 +2051,8 @@ impl<'a> PageRepository for SQLiteTransactionAdapter<'a> {
 
     fn get_by_title(&self, title: &str) -> Result<Option<Page>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at
-             FROM Page WHERE title = ?1 AND deleted = 0"
+            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at
+             FROM Page WHERE title = ?1 AND deleted = 0 AND deleted_at IS NULL"
         )?;
 
         let result = stmt.query_row(params![title], |row| {
@@ -1901,6 +2070,8 @@ impl<'a> PageRepository for SQLiteTransactionAdapter<'a> {
                 deleted: row.get(10)?,
                 created_at: row.get(11)?,
                 updated_at: row.get(12)?,
+                version: row.get(13)?,
+                deleted_at: row.get(14)?,
             })
         });
 
@@ -1913,8 +2084,8 @@ impl<'a> PageRepository for SQLiteTransactionAdapter<'a> {
 
     fn get_all(&self) -> Result<Vec<Page>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at
-             FROM Page WHERE deleted = 0 ORDER BY updated_at DESC"
+            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at
+             FROM Page WHERE deleted = 0 AND deleted_at IS NULL ORDER BY updated_at DESC"
         )?;
 
         let pages = stmt.query_map([], |row| {
@@ -1932,6 +2103,8 @@ impl<'a> PageRepository for SQLiteTransactionAdapter<'a> {
                 deleted: row.get(10)?,
                 created_at: row.get(11)?,
                 updated_at: row.get(12)?,
+                version: row.get(13)?,
+                deleted_at: row.get(14)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
 
@@ -1940,8 +2113,8 @@ impl<'a> PageRepository for SQLiteTransactionAdapter<'a> {
 
     fn create(&mut self, page: &Page) -> Result<Page, Box<dyn Error>> {
         self.conn.execute(
-            "INSERT INTO Page (id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            "INSERT INTO Page (id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             params![
                 page.id,
                 page.block_id,
@@ -1955,7 +2128,9 @@ impl<'a> PageRepository for SQLiteTransactionAdapter<'a> {
                 page.word_count,
                 page.deleted,
                 page.created_at,
-                page.updated_at
+                page.updated_at,
+                page.version,
+                page.deleted_at
             ]
         )?;
 
@@ -1964,7 +2139,7 @@ impl<'a> PageRepository for SQLiteTransactionAdapter<'a> {
 
     fn update(&mut self, page: &Page) -> Result<Page, Box<dyn Error>> {
         self.conn.execute(
-            "UPDATE Page SET block_id = ?2, title = ?3, type = ?4, icon = ?5, cover = ?6, aliases = ?7, file_path = ?8, children_count = ?9, word_count = ?10, deleted = ?11, updated_at = ?12
+            "UPDATE Page SET block_id = ?2, title = ?3, type = ?4, icon = ?5, cover = ?6, aliases = ?7, file_path = ?8, children_count = ?9, word_count = ?10, deleted = ?11, updated_at = ?12, version = version + 1
              WHERE id = ?1",
             params![
                 page.id,
@@ -1987,7 +2162,7 @@ impl<'a> PageRepository for SQLiteTransactionAdapter<'a> {
 
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
         self.conn.execute(
-            "UPDATE Page SET deleted = 1, updated_at = ?2 WHERE id = ?1",
+            "UPDATE Page SET deleted = 1, deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE id = ?1",
             params![id, chrono::Utc::now().timestamp_millis()]
         )?;
         Ok(())
@@ -1997,8 +2172,8 @@ impl<'a> PageRepository for SQLiteTransactionAdapter<'a> {
 impl<'a> LinkRepository for SQLiteTransactionAdapter<'a> {
     fn get_by_id(&self, id: &str) -> Result<Link, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, source_block_id, target_page_id, display_text, relationship_type, created_at
-             FROM Link WHERE id = ?1"
+            "SELECT id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at
+             FROM Link WHERE id = ?1 AND deleted_at IS NULL"
         )?;
 
         let link = stmt.query_row(params![id], |row| {
@@ -2009,6 +2184,9 @@ impl<'a> LinkRepository for SQLiteTransactionAdapter<'a> {
                 display_text: row.get(3)?,
                 relationship_type: row.get(4)?,
                 created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+                version: row.get(7)?,
+                deleted_at: row.get(8)?,
             })
         })?;
         
@@ -2017,8 +2195,8 @@ impl<'a> LinkRepository for SQLiteTransactionAdapter<'a> {
     
     fn get_by_source_block_id(&self, source_block_id: &str) -> Result<Vec<Link>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, source_block_id, target_page_id, display_text, relationship_type, created_at
-             FROM Link WHERE source_block_id = ?1"
+            "SELECT id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at
+             FROM Link WHERE source_block_id = ?1 AND deleted_at IS NULL"
         )?;
 
         let links = stmt.query_map(params![source_block_id], |row| {
@@ -2029,6 +2207,9 @@ impl<'a> LinkRepository for SQLiteTransactionAdapter<'a> {
                 display_text: row.get(3)?,
                 relationship_type: row.get(4)?,
                 created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+                version: row.get(7)?,
+                deleted_at: row.get(8)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
 
@@ -2037,8 +2218,8 @@ impl<'a> LinkRepository for SQLiteTransactionAdapter<'a> {
     
     fn get_by_target_page_id(&self, target_page_id: &str) -> Result<Vec<Link>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, source_block_id, target_page_id, display_text, relationship_type, created_at
-             FROM Link WHERE target_page_id = ?1"
+            "SELECT id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at
+             FROM Link WHERE target_page_id = ?1 AND deleted_at IS NULL"
         )?;
 
         let links = stmt.query_map(params![target_page_id], |row| {
@@ -2049,6 +2230,9 @@ impl<'a> LinkRepository for SQLiteTransactionAdapter<'a> {
                 display_text: row.get(3)?,
                 relationship_type: row.get(4)?,
                 created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+                version: row.get(7)?,
+                deleted_at: row.get(8)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
 
@@ -2057,15 +2241,18 @@ impl<'a> LinkRepository for SQLiteTransactionAdapter<'a> {
 
     fn create(&mut self, link: &Link) -> Result<Link, Box<dyn Error>> {
         self.conn.execute(
-            "INSERT INTO Link (id, source_block_id, target_page_id, display_text, relationship_type, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO Link (id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 link.id,
                 link.source_block_id,
                 link.target_page_id,
                 link.display_text,
                 link.relationship_type,
-                link.created_at
+                link.created_at,
+                link.updated_at,
+                link.version,
+                link.deleted_at
             ]
         )?;
 
@@ -2092,17 +2279,26 @@ impl<'a> LinkRepository for SQLiteTransactionAdapter<'a> {
     }
 
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM Link WHERE id = ?1", params![id])?;
+        self.conn.execute(
+            "UPDATE Link SET deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE id = ?1",
+            params![id, chrono::Utc::now().timestamp_millis()]
+        )?;
         Ok(())
     }
 
     fn delete_by_source_block_id(&mut self, source_block_id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM Link WHERE source_block_id = ?1", params![source_block_id])?;
+        self.conn.execute(
+            "UPDATE Link SET deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE source_block_id = ?1",
+            params![source_block_id, chrono::Utc::now().timestamp_millis()]
+        )?;
         Ok(())
     }
 
     fn delete_by_target_page_id(&mut self, target_page_id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM Link WHERE target_page_id = ?1", params![target_page_id])?;
+        self.conn.execute(
+            "UPDATE Link SET deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE target_page_id = ?1",
+            params![target_page_id, chrono::Utc::now().timestamp_millis()]
+        )?;
         Ok(())
     }
 }
@@ -2110,8 +2306,8 @@ impl<'a> LinkRepository for SQLiteTransactionAdapter<'a> {
 impl<'a> PropertyRepository for SQLiteTransactionAdapter<'a> {
     fn get_by_id(&self, id: &str) -> Result<Property, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at
-             FROM Property WHERE id = ?1"
+            "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at
+             FROM Property WHERE id = ?1 AND deleted_at IS NULL"
         )?;
 
         let property = stmt.query_row(params![id], |row| {
@@ -2127,6 +2323,8 @@ impl<'a> PropertyRepository for SQLiteTransactionAdapter<'a> {
                 schema_version: row.get(8)?,
                 created_at: row.get(9)?,
                 updated_at: row.get(10)?,
+                version: row.get(11)?,
+                deleted_at: row.get(12)?,
             })
         })?;
 
@@ -2135,8 +2333,8 @@ impl<'a> PropertyRepository for SQLiteTransactionAdapter<'a> {
 
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<Property>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at
-             FROM Property WHERE block_id = ?1 AND is_deleted = 0 ORDER BY sort_order"
+            "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at
+             FROM Property WHERE block_id = ?1 AND is_deleted = 0 AND deleted_at IS NULL ORDER BY sort_order"
         )?;
 
         let properties = stmt.query_map(params![block_id], |row| {
@@ -2152,6 +2350,8 @@ impl<'a> PropertyRepository for SQLiteTransactionAdapter<'a> {
                 schema_version: row.get(8)?,
                 created_at: row.get(9)?,
                 updated_at: row.get(10)?,
+                version: row.get(11)?,
+                deleted_at: row.get(12)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
 
@@ -2160,8 +2360,8 @@ impl<'a> PropertyRepository for SQLiteTransactionAdapter<'a> {
 
     fn get_by_block_id_and_key(&self, block_id: &str, key: &str) -> Result<Option<Property>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at
-             FROM Property WHERE block_id = ?1 AND key = ?2 AND is_deleted = 0"
+            "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at
+             FROM Property WHERE block_id = ?1 AND key = ?2 AND is_deleted = 0 AND deleted_at IS NULL"
         )?;
 
         let result = stmt.query_row(params![block_id, key], |row| {
@@ -2177,6 +2377,8 @@ impl<'a> PropertyRepository for SQLiteTransactionAdapter<'a> {
                 schema_version: row.get(8)?,
                 created_at: row.get(9)?,
                 updated_at: row.get(10)?,
+                version: row.get(11)?,
+                deleted_at: row.get(12)?,
             })
         });
 
@@ -2189,8 +2391,8 @@ impl<'a> PropertyRepository for SQLiteTransactionAdapter<'a> {
 
     fn create(&mut self, property: &Property) -> Result<Property, Box<dyn Error>> {
         self.conn.execute(
-            "INSERT INTO Property (id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            "INSERT INTO Property (id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 property.id,
                 property.block_id,
@@ -2202,7 +2404,9 @@ impl<'a> PropertyRepository for SQLiteTransactionAdapter<'a> {
                 property.is_deleted,
                 property.schema_version,
                 property.created_at,
-                property.updated_at
+                property.updated_at,
+                property.version,
+                property.deleted_at
             ]
         )?;
 
@@ -2211,7 +2415,7 @@ impl<'a> PropertyRepository for SQLiteTransactionAdapter<'a> {
 
     fn update(&mut self, property: &Property) -> Result<Property, Box<dyn Error>> {
         self.conn.execute(
-            "UPDATE Property SET value = ?2, type = ?3, sort_order = ?4, is_hidden = ?5, is_deleted = ?6, updated_at = ?7
+            "UPDATE Property SET value = ?2, type = ?3, sort_order = ?4, is_hidden = ?5, is_deleted = ?6, updated_at = ?7, version = version + 1
              WHERE id = ?1",
             params![
                 property.id,
@@ -2228,12 +2432,18 @@ impl<'a> PropertyRepository for SQLiteTransactionAdapter<'a> {
     }
 
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM Property WHERE id = ?1", params![id])?;
+        self.conn.execute(
+            "UPDATE Property SET deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE id = ?1",
+            params![id, chrono::Utc::now().timestamp_millis()]
+        )?;
         Ok(())
     }
 
     fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM Property WHERE block_id = ?1", params![block_id])?;
+        self.conn.execute(
+            "UPDATE Property SET deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE block_id = ?1",
+            params![block_id, chrono::Utc::now().timestamp_millis()]
+        )?;
         Ok(())
     }
 }
@@ -2346,7 +2556,7 @@ impl<'a> RelationshipTypeRepository for SQLiteTransactionAdapter<'a> {
 
     fn update(&mut self, rt: &RelationshipType) -> Result<RelationshipType, Box<dyn Error>> {
         self.conn.execute(
-            "UPDATE RelationshipType SET type = ?2, inverse = ?3, label = ?4, inverse_label = ?5, color = ?6, `order` = ?7, strength = ?8, deleted = ?9, updated_at = ?10
+            "UPDATE RelationshipType SET type = ?2, inverse = ?3, label = ?4, inverse_label = ?5, color = ?6, `order` = ?7, strength = ?8, deleted = ?9, updated_at = ?10, version = version + 1
              WHERE id = ?1",
             params![
                 rt.id,
@@ -2367,7 +2577,7 @@ impl<'a> RelationshipTypeRepository for SQLiteTransactionAdapter<'a> {
 
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
         self.conn.execute(
-            "UPDATE RelationshipType SET deleted = 1, updated_at = ?2 WHERE id = ?1",
+            "UPDATE RelationshipType SET deleted = 1, deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE id = ?1",
             params![id, chrono::Utc::now().timestamp_millis()]
         )?;
         Ok(())
@@ -2690,7 +2900,7 @@ impl<'a> StorageAdapter for SQLiteTransactionAdapter<'a> {
 impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
     fn get_by_id(&self, id: &str) -> Result<DateRef, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts FROM DateRef WHERE id = ?"
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts, updated_at, version, deleted_at FROM DateRef WHERE id = ? AND deleted_at IS NULL"
         )?;
         let dr = stmt.query_row(params![id], |row| {
             Ok(DateRef {
@@ -2703,6 +2913,9 @@ impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
                 lead_minutes: row.get(6)?,
                 event_ts: row.get(7)?,
                 created_at: row.get(8)?,
+                updated_at: row.get(9)?,
+                version: row.get(10)?,
+                deleted_at: row.get(11)?,
 })
         });
         match dr {
@@ -2714,7 +2927,7 @@ impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
 
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<DateRef>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts FROM DateRef WHERE block_id = ?"
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts, updated_at, version, deleted_at FROM DateRef WHERE block_id = ? AND deleted_at IS NULL"
         )?;
         let rows = stmt.query_map(params![block_id], |row| {
             Ok(DateRef {
@@ -2727,6 +2940,9 @@ impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
                 lead_minutes: row.get(6)?,
                 event_ts: row.get(7)?,
                 created_at: row.get(8)?,
+                updated_at: row.get(9)?,
+                version: row.get(10)?,
+                deleted_at: row.get(11)?,
 })
         })?;
         let mut result = Vec::new();
@@ -2736,7 +2952,7 @@ impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
 
     fn query_by_date_range(&self, kind: &str, from: &str, to: &str) -> Result<Vec<DateRef>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts FROM DateRef WHERE (kind = ?1 OR ?1 = '*') AND date_day BETWEEN ?2 AND ?3 ORDER BY date_day, block_id"
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts, updated_at, version, deleted_at FROM DateRef WHERE (kind = ?1 OR ?1 = '*') AND date_day BETWEEN ?2 AND ?3 AND deleted_at IS NULL ORDER BY date_day, block_id"
         )?;
         let rows = stmt.query_map(params![kind, from, to], |row| {
             Ok(DateRef {
@@ -2749,6 +2965,9 @@ impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
                 lead_minutes: row.get(6)?,
                 event_ts: row.get(7)?,
                 created_at: row.get(8)?,
+                updated_at: row.get(9)?,
+                version: row.get(10)?,
+                deleted_at: row.get(11)?,
 })
         })?;
         let mut result = Vec::new();
@@ -2758,7 +2977,7 @@ impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
 
     fn query_overdue(&self, today: &str) -> Result<Vec<DateRef>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts FROM DateRef WHERE kind = 'deadline' AND date_day < ? ORDER BY date_day"
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts, updated_at, version, deleted_at FROM DateRef WHERE kind = 'deadline' AND date_day < ? AND deleted_at IS NULL ORDER BY date_day"
         )?;
         let rows = stmt.query_map(params![today], |row| {
             Ok(DateRef {
@@ -2771,6 +2990,9 @@ impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
                 lead_minutes: row.get(6)?,
                 event_ts: row.get(7)?,
                 created_at: row.get(8)?,
+                updated_at: row.get(9)?,
+                version: row.get(10)?,
+                deleted_at: row.get(11)?,
 })
         })?;
         let mut result = Vec::new();
@@ -2780,7 +3002,7 @@ impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
 
     fn query_due_non_recurring(&self, now_ms: i64) -> Result<Vec<DateRef>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at FROM DateRef WHERE recurrence = 'none' AND (event_ts - lead_minutes * 60000) <= ?1"
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at, updated_at, version, deleted_at FROM DateRef WHERE recurrence = 'none' AND (event_ts - lead_minutes * 60000) <= ?1 AND deleted_at IS NULL"
         )?;
         let rows = stmt.query_map(params![now_ms], |row| {
             Ok(DateRef {
@@ -2793,6 +3015,9 @@ impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
                 lead_minutes: row.get(6)?,
                 event_ts: row.get(7)?,
                 created_at: row.get(8)?,
+                updated_at: row.get(9)?,
+                version: row.get(10)?,
+                deleted_at: row.get(11)?,
             })
         })?;
         let mut result = Vec::new();
@@ -2802,7 +3027,7 @@ impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
 
     fn query_all_recurring(&self) -> Result<Vec<DateRef>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at FROM DateRef WHERE recurrence != 'none'"
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at, updated_at, version, deleted_at FROM DateRef WHERE recurrence != 'none' AND deleted_at IS NULL"
         )?;
         let rows = stmt.query_map(params![], |row| {
             Ok(DateRef {
@@ -2815,6 +3040,9 @@ impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
                 lead_minutes: row.get(6)?,
                 event_ts: row.get(7)?,
                 created_at: row.get(8)?,
+                updated_at: row.get(9)?,
+                version: row.get(10)?,
+                deleted_at: row.get(11)?,
             })
         })?;
         let mut result = Vec::new();
@@ -2824,8 +3052,8 @@ impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
 
     fn create(&mut self, date_ref: &DateRef) -> Result<DateRef, Box<dyn Error>> {
         self.conn.execute(
-            "INSERT INTO DateRef (id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            params![date_ref.id, date_ref.block_id, date_ref.kind, date_ref.iso, date_ref.date_day, date_ref.recurrence, date_ref.lead_minutes, date_ref.event_ts, date_ref.created_at],
+            "INSERT INTO DateRef (id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at, updated_at, version, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            params![date_ref.id, date_ref.block_id, date_ref.kind, date_ref.iso, date_ref.date_day, date_ref.recurrence, date_ref.lead_minutes, date_ref.event_ts, date_ref.created_at, date_ref.updated_at, date_ref.version, date_ref.deleted_at],
         )?;
         Ok(date_ref.clone())
     }
@@ -2838,12 +3066,18 @@ impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
     }
 
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM DateRef WHERE id = ?", params![id])?;
+        self.conn.execute(
+            "UPDATE DateRef SET deleted_at = ?1, version = version + 1, updated_at = ?1 WHERE id = ?2",
+            params![chrono::Utc::now().timestamp_millis(), id]
+        )?;
         Ok(())
     }
 
     fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM DateRef WHERE block_id = ?", params![block_id])?;
+        self.conn.execute(
+            "UPDATE DateRef SET deleted_at = ?1, version = version + 1, updated_at = ?1 WHERE block_id = ?2",
+            params![chrono::Utc::now().timestamp_millis(), block_id]
+        )?;
         Ok(())
     }
 }

@@ -1,5 +1,8 @@
 use comind_core::{
-    services::{BlockService, DateRefService, LinkService, PageService, PropertyService, RelationshipTypeService, BlockVersionService},
+    services::{
+        BlockService, BlockVersionService, DateRefService, LinkService, PageService,
+        PropertyService, RelationshipTypeService,
+    },
     storage::StorageAdapter,
     types::*,
 };
@@ -193,7 +196,7 @@ pub async fn save_block_tree(
     execute_with_adapter(db, |storage| {
         let mut results = Vec::new();
         let mut page_ids = std::collections::HashSet::new();
-        
+
         for block_json in blocks {
             let block: Block = serde_json::from_value(block_json)
                 .map_err(|e| format!("Failed to parse block: {}", e))?;
@@ -221,22 +224,13 @@ pub async fn save_block_tree(
             };
             results.push(result?);
         }
-        
+
         for page_id in page_ids {
             let _ = PageService::update(
-                storage,
-                &page_id,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
+                storage, &page_id, None, None, None, None, None, None, None, None,
             );
         }
-        
+
         Ok(results)
     })
 }
@@ -256,7 +250,14 @@ pub async fn delete_block(
             let _ = PageService::update(
                 storage,
                 &block.page_id,
-                None, None, None, None, None, None, None, None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
             );
         }
         Ok(())
@@ -352,7 +353,7 @@ pub async fn set_property(
             }
             None => PropertyService::create(storage, block_id, key, value, type_, 0, 0, 1),
         };
-        
+
         if let Ok(block) = storage.blocks().get_by_id(block_id) {
             let _ = PageService::update(
                 storage,
@@ -367,7 +368,7 @@ pub async fn set_property(
                 None,
             );
         }
-        
+
         result
     })
 }
@@ -382,7 +383,7 @@ pub async fn delete_property(
         if let Some(prop) = PropertyService::get_by_block_id_and_key(storage, block_id, key)? {
             storage.properties().delete(&prop.id)?;
         }
-        
+
         if let Ok(block) = storage.blocks().get_by_id(block_id) {
             let _ = PageService::update(
                 storage,
@@ -397,7 +398,7 @@ pub async fn delete_property(
                 None,
             );
         }
-        
+
         Ok(())
     })
 }
@@ -425,7 +426,7 @@ pub async fn set_db_path(
     config
         .save(&config_dir)
         .map_err(|e| format!("Failed to save config: {}", e))?;
-    
+
     config_manager.update_config(config)?;
     Ok(path.to_string())
 }
@@ -440,7 +441,7 @@ pub async fn reset_db_path(
     config
         .save(&config_dir)
         .map_err(|e| format!("Failed to save config: {}", e))?;
-    
+
     config_manager.update_config(config)?;
     Ok("default".to_string())
 }
@@ -453,7 +454,7 @@ pub async fn execute_batch(
     execute_with_adapter(db, |storage| {
         let mut results = Vec::new();
         let mut page_ids = std::collections::HashSet::new();
-        
+
         for op in operations {
             let entity: String = op
                 .get("entity")
@@ -543,10 +544,20 @@ pub async fn execute_batch(
                     LinkService::delete_by_source_block_id(storage, &block_id)?;
                     let mut created = Vec::new();
                     for link_data in links_data {
-                        let source_block_id = link_data.get("source_block_id").and_then(|v| v.as_str()).unwrap_or("");
-                        let target_page_id = link_data.get("target_page_id").and_then(|v| v.as_str()).unwrap_or("");
-                        let display_text = link_data.get("display_text").and_then(|v| v.as_str()).unwrap_or("");
-                        let relationship_type = link_data.get("relationship_type").and_then(|v| v.as_str());
+                        let source_block_id = link_data
+                            .get("source_block_id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        let target_page_id = link_data
+                            .get("target_page_id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        let display_text = link_data
+                            .get("display_text")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        let relationship_type =
+                            link_data.get("relationship_type").and_then(|v| v.as_str());
                         let new_link = LinkService::create(
                             storage,
                             source_block_id,
@@ -619,22 +630,13 @@ pub async fn execute_batch(
             };
             results.push(result);
         }
-        
+
         for page_id in page_ids {
             let _ = PageService::update(
-                storage,
-                &page_id,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
+                storage, &page_id, None, None, None, None, None, None, None, None,
             );
         }
-        
+
         Ok(results)
     })
 }
@@ -655,7 +657,9 @@ pub async fn import_from_markdown(
     strategy: &str,
 ) -> Result<super::markdown::ImportResult, String> {
     let dir = std::path::Path::new(directory);
-    execute_with_adapter(db, |storage| super::markdown::import_all(storage, dir, strategy))
+    execute_with_adapter(db, |storage| {
+        super::markdown::import_all(storage, dir, strategy)
+    })
 }
 
 #[tauri::command]
@@ -681,7 +685,7 @@ pub async fn set_sync_config(
         config.sync_interval_secs = interval;
     }
     config.save(&config_dir).map_err(|e| e.to_string())?;
-    
+
     config_manager.update_config(config)?;
     Ok(())
 }
@@ -724,7 +728,15 @@ pub async fn create_block_version(
     checkpoint_name: Option<String>,
 ) -> Result<BlockVersion, String> {
     execute_with_adapter(db, |storage| {
-        BlockVersionService::create(storage, block_id, snapshot, hash, reason, checkpoint_name.as_deref(), None)
+        BlockVersionService::create(
+            storage,
+            block_id,
+            snapshot,
+            hash,
+            reason,
+            checkpoint_name.as_deref(),
+            None,
+        )
     })
 }
 
@@ -733,9 +745,7 @@ pub async fn get_block_versions(
     db: State<'_, super::state::DatabaseConnection>,
     block_id: &str,
 ) -> Result<Vec<BlockVersion>, String> {
-    execute_with_adapter(db, |storage| {
-        BlockVersionService::list(storage, block_id)
-    })
+    execute_with_adapter(db, |storage| BlockVersionService::list(storage, block_id))
 }
 
 #[tauri::command]
@@ -760,7 +770,9 @@ pub async fn cleanup_block_versions(
     db: State<'_, super::state::DatabaseConnection>,
     retention_days: i64,
 ) -> Result<(), String> {
-    execute_with_adapter(db, |storage| BlockVersionService::cleanup(storage, retention_days))
+    execute_with_adapter(db, |storage| {
+        BlockVersionService::cleanup(storage, retention_days)
+    })
 }
 
 #[tauri::command]
@@ -768,7 +780,9 @@ pub async fn delete_block_version(
     db: State<'_, super::state::DatabaseConnection>,
     version_id: &str,
 ) -> Result<(), String> {
-    execute_with_adapter(db, |storage| BlockVersionService::delete(storage, version_id))
+    execute_with_adapter(db, |storage| {
+        BlockVersionService::delete(storage, version_id)
+    })
 }
 
 #[tauri::command]
@@ -784,7 +798,9 @@ pub async fn get_notifications_by_block(
     db: State<'_, super::state::DatabaseConnection>,
     block_id: &str,
 ) -> Result<Vec<Notification>, String> {
-    execute_with_adapter(db, |storage| storage.notifications().get_by_block_id(block_id))
+    execute_with_adapter(db, |storage| {
+        storage.notifications().get_by_block_id(block_id)
+    })
 }
 
 #[tauri::command]
@@ -815,7 +831,9 @@ pub async fn batch_create_notifications(
     db: State<'_, super::state::DatabaseConnection>,
     notifications: Vec<Notification>,
 ) -> Result<Vec<Notification>, String> {
-    execute_with_adapter(db, |storage| storage.notifications().batch_create(&notifications))
+    execute_with_adapter(db, |storage| {
+        storage.notifications().batch_create(&notifications)
+    })
 }
 
 #[tauri::command]
@@ -824,7 +842,9 @@ pub async fn update_notification_status(
     id: &str,
     status: &str,
 ) -> Result<Notification, String> {
-    execute_with_adapter(db, |storage| storage.notifications().update_status(id, status))
+    execute_with_adapter(db, |storage| {
+        storage.notifications().update_status(id, status)
+    })
 }
 
 #[tauri::command]
@@ -833,7 +853,9 @@ pub async fn update_notification_payload(
     id: &str,
     payload: &str,
 ) -> Result<Notification, String> {
-    execute_with_adapter(db, |storage| storage.notifications().update_payload(id, payload))
+    execute_with_adapter(db, |storage| {
+        storage.notifications().update_payload(id, payload)
+    })
 }
 
 #[tauri::command]
@@ -843,7 +865,9 @@ pub async fn set_notification_snooze(
     snooze_until: i64,
     status: &str,
 ) -> Result<Notification, String> {
-    execute_with_adapter(db, |storage| storage.notifications().set_snooze(id, snooze_until, status))
+    execute_with_adapter(db, |storage| {
+        storage.notifications().set_snooze(id, snooze_until, status)
+    })
 }
 
 #[tauri::command]
@@ -859,7 +883,9 @@ pub async fn cleanup_notifications(
     db: State<'_, super::state::DatabaseConnection>,
     timestamp: i64,
 ) -> Result<(), String> {
-    execute_with_adapter(db, |storage| storage.notifications().delete_older_than(timestamp))
+    execute_with_adapter(db, |storage| {
+        storage.notifications().delete_older_than(timestamp)
+    })
 }
 
 #[tauri::command]
