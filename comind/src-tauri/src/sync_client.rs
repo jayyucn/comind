@@ -64,6 +64,8 @@ struct SyncClientInner {
     is_paired: Arc<RwLock<bool>>,
     reconnect_count: Arc<Mutex<u32>>,
     shutdown: Arc<Mutex<bool>>,
+    /// 上次收到对端消息的时间（用于心跳超时检测）
+    last_pong: Arc<Mutex<tokio::time::Instant>>,
 }
 
 impl Clone for SyncClient {
@@ -94,6 +96,7 @@ impl SyncClient {
                 is_paired: Arc::new(RwLock::new(false)),
                 reconnect_count: Arc::new(Mutex::new(0)),
                 shutdown: Arc::new(Mutex::new(false)),
+                last_pong: Arc::new(Mutex::new(tokio::time::Instant::now())),
             }),
         })
     }
@@ -163,6 +166,8 @@ impl SyncClient {
 
                 match msg {
                     Some(Ok(Message::Text(text))) => {
+                        // 收到任何消息即视为对端活跃，刷新心跳超时计时
+                        *inner.last_pong.lock().await = tokio::time::Instant::now();
                         match serde_json::from_str::<SyncMessage>(&text) {
                             Ok(sync_msg) => {
                                 Self::handle_message(&engine, &client_id, &inner, sync_msg).await;
@@ -287,12 +292,27 @@ impl SyncClient {
 
             match result {
                 Ok(Some(Ok(Message::Text(text)))) => {
-                    if let Ok(SyncMessage::PairingAck { paired, .. }) =
-                        serde_json::from_str::<SyncMessage>(&text)
-                    {
-                        return Ok(paired);
+                    // 收到消息刷新心跳计时
+                    *self.inner.last_pong.lock().await = tokio::time::Instant::now();
+                    match serde_json::from_str::<SyncMessage>(&text) {
+                        Ok(SyncMessage::PairingAck { paired, .. }) => {
+                            return Ok(paired);
+                        }
+                        Ok(other) => {
+                            // 非 Ack 消息不能丢弃（可能是配对后首批 FullSync 数据），
+                            // 交给 handle_message 处理，避免丢失
+                            Self::handle_message(
+                                &self.inner.engine,
+                                &self.inner.client_id,
+                                &self.inner,
+                                other,
+                            )
+                            .await;
+                        }
+                        Err(e) => {
+                            log::warn!("Invalid message during pairing: {}", e);
+                        }
                     }
-                    // 非 PairingAck 消息，交给后续 recv_loop 处理
                 }
                 Ok(Some(Ok(_))) => continue,
                 Ok(Some(Err(e))) => return Err(format!("WebSocket error: {}", e)),
@@ -345,15 +365,19 @@ impl SyncClient {
                 *count
             };
 
-            if current_count > 3 {
-                log::warn!("Reconnect failed 3 times, stopping. Waiting for manual reconnect.");
+            if current_count > 6 {
+                log::warn!("Reconnect failed 6 times, stopping. Waiting for manual reconnect.");
                 return;
             }
 
+            // NFR-4 指数退避：1s→2s→4s→8s→16s→30s
             let backoff = match current_count {
                 1 => Duration::from_secs(1),
                 2 => Duration::from_secs(2),
                 3 => Duration::from_secs(4),
+                4 => Duration::from_secs(8),
+                5 => Duration::from_secs(16),
+                6 => Duration::from_secs(30),
                 _ => return,
             };
 
@@ -372,6 +396,7 @@ impl SyncClient {
                     *self.inner.ws_stream.lock().await = Some(ws_stream);
                     *self.inner.is_connected.write().await = true;
                     *self.inner.reconnect_count.lock().await = 0;
+                    *self.inner.last_pong.lock().await = tokio::time::Instant::now();
                     log::info!("Reconnected successfully!");
 
                     // 重连成功后触发双向全量同步
@@ -459,6 +484,8 @@ impl SyncClient {
     }
 
     /// 启动心跳定时器（30s ping / 90s timeout）
+    /// 超时判定基于 inner.last_pong：由 recv_loop 在收到任何对端消息时刷新，
+    /// 因此只有真正收到 Pong/数据才算连接存活。
     pub fn start_heartbeat(&self) {
         let ws_stream = self.inner.ws_stream.clone();
         let client_id = self.inner.client_id.clone();
@@ -467,7 +494,6 @@ impl SyncClient {
 
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(30));
-            let mut last_pong = tokio::time::Instant::now();
 
             loop {
                 interval.tick().await;
@@ -481,23 +507,27 @@ impl SyncClient {
                     timestamp: chrono::Utc::now().timestamp_millis(),
                 };
 
+                // 发送 Ping（仅用于探活，不重置 last_pong）
                 {
                     let mut ws_guard = ws_stream.lock().await;
                     if let Some(stream) = ws_guard.as_mut() {
                         if let Ok(text) = serde_json::to_string(&ping) {
-                            if stream.send(Message::Text(text)).await.is_ok() {
-                                last_pong = tokio::time::Instant::now();
+                            if let Err(e) = stream.send(Message::Text(text)).await {
+                                log::warn!("Heartbeat ping send failed: {}", e);
                             }
                         }
                     }
                 }
 
-                // 90s timeout 检查
-                if last_pong.elapsed() > Duration::from_secs(90) {
-                    log::warn!("Heartbeat timeout, forcing reconnect...");
+                // 90s timeout 检查：基于上次收到对端消息的时间
+                let last = *inner.last_pong.lock().await;
+                if last.elapsed() > Duration::from_secs(90) {
+                    log::warn!("Heartbeat timeout (no message from server for {:?}), forcing reconnect...", last.elapsed());
                     *is_connected.write().await = false;
                     let client = SyncClient { inner: inner.clone() };
-                    client.start_reconnect().await;
+                    tokio::spawn(async move {
+                        client.start_reconnect().await;
+                    });
                     break;
                 }
             }
