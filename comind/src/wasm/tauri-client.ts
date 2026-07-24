@@ -1,6 +1,7 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open } from '@tauri-apps/plugin-dialog'
+import { platform } from '@tauri-apps/plugin-os'
 import type {
   Block, Page, Property, Link, RelationshipType,
   UserTemplate, SearchResult, BlockUpdate, PageUpdate,
@@ -10,6 +11,16 @@ import type {
 
 export function isTauriEnvironment(): boolean {
   return isTauri()
+}
+
+/** 是否运行在 Android 端（基于 Tauri os 插件，可靠检测） */
+export async function isAndroidPlatform(): Promise<boolean> {
+  if (!isTauri()) return false
+  try {
+    return await platform() === 'android'
+  } catch {
+    return false
+  }
 }
 
 export async function tauriGetBlock(blockId: string): Promise<Block> {
@@ -285,4 +296,32 @@ export async function tauriUnpairDevice(clientId: string): Promise<void> {
 
 export async function tauriTriggerFullSync(): Promise<void> {
   return invoke('trigger_full_sync')
+}
+
+// ===== Android 端同步命令 =====
+
+export interface SyncStatus {
+  connected: boolean
+  paired: boolean
+  server_name: string | null
+}
+
+/** Android 扫码后连接 PC 并配对 */
+export async function tauriConnectToServer(qrPayload: string): Promise<void> {
+  return invoke('connect_to_server', { qrPayload })
+}
+
+/** Android 断开同步连接 */
+export async function tauriDisconnectSync(): Promise<void> {
+  return invoke('disconnect_sync')
+}
+
+/** 获取当前同步状态（Android 端） */
+export async function tauriGetSyncStatus(): Promise<SyncStatus> {
+  return invoke('get_sync_status')
+}
+
+/** Android 手动触发全量同步 */
+export async function tauriTriggerFullSyncMobile(): Promise<void> {
+  return invoke('trigger_full_sync_mobile')
 }

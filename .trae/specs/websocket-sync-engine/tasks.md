@@ -94,7 +94,7 @@
   - `human-judgment` TR-6.3: wscat 连接后能收到 RowChange 消息
 - **Notes**: 写 command 清单：save_block_tree、delete_block、save_page、delete_page、create_link/update_link/delete_link、set_property/delete_property、save_date_ref/delete_date_ref、create_relationship_type/update_relationship_type/delete_relationship_type、create_template/update_template/delete_template
 
-## [ ] Task 7: 实现 SyncClient（Android 端）
+## [x] Task 7: 实现 SyncClient（Android 端）
 - **Priority**: high
 - **Depends On**: Task 3
 - **Parallel With**: Task 5, Task 6（互不依赖，可并行开发）
@@ -110,7 +110,7 @@
   - `human-judgment` TR-7.3: 配对后全量同步完成（7 表数据一致）
 - **Notes**: 重连成功后触发双向全量同步（互发 FullSyncRequest{None}）；连续 3 次失败后停止，等待手动重连
 
-## [ ] Task 8: 实现实时推送 + 定时全量校验
+## [x] Task 8: 实现实时推送 + 定时全量校验
 - **Priority**: high
 - **Depends On**: Task 6, Task 7
 - **Description**: 

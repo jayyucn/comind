@@ -22,6 +22,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_os::init())
         .setup(|app| {
             let app_handle = app.handle();
 
@@ -79,6 +80,13 @@ pub fn run() {
             }
 
             sync::start_sync_task(app_handle.clone());
+
+            // 移动端注册扫码插件
+            #[cfg(mobile)]
+            {
+                app.handle().plugin(tauri_plugin_barcode_scanner::init())
+                    .expect("failed to init barcode-scanner plugin");
+            }
 
             #[cfg(debug_assertions)]
             {

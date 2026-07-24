@@ -5,7 +5,8 @@ import { pushModal, popModal } from '../../composables/useModalKeyboard'
 import { useTheme } from '../../composables/useTheme'
 import RelationshipTypesPanel from './RelationshipTypesPanel.vue'
 import { getDbPath, setDbPath, resetDbPath, exportToMarkdown, importFromMarkdown, getSyncConfig, setSyncConfig, syncNow, getSyncQr, getPairedDevices, unpairDevice, triggerFullSync } from '../../wasm/client'
-import { isTauriEnvironment, tauriPickDirectory } from '../../wasm/tauri-client'
+import { isTauriEnvironment, tauriPickDirectory, isAndroidPlatform, tauriConnectToServer, tauriDisconnectSync, tauriGetSyncStatus, tauriTriggerFullSyncMobile } from '../../wasm/tauri-client'
+import type { SyncStatus } from '../../wasm/tauri-client'
 import { X, Sun, Moon, Monitor, Folder, RotateCcw, AlertCircle, Upload, Download, RefreshCw, ToggleLeft, ToggleRight, Smartphone, QrCode, Clock, Wifi } from 'lucide-vue-next'
 import { useNotificationStore } from '../../stores/notification'
 
@@ -47,6 +48,16 @@ const qrExpiryCountdown = ref(300)
 const pairedDevices = ref<{ client_id: string; peer_device_name: string; last_sync_at: number; paired_at: number | null }[]>([])
 const deviceSyncLoading = ref(false)
 const isPaired = ref(false)
+
+// Android 端同步状态
+const androidSyncStatus = ref<SyncStatus | null>(null)
+const androidConnecting = ref(false)
+const androidSyncing = ref(false)
+const androidIsAndroid = ref(false)
+
+onMounted(async () => {
+  androidIsAndroid.value = await isAndroidPlatform()
+})
 
 let qrTimer: ReturnType<typeof setInterval> | null = null
 
@@ -234,6 +245,52 @@ async function handleTriggerFullSync() {
   }
 }
 
+// ===== Android 端同步 =====
+
+async function loadAndroidSyncStatus() {
+  if (!androidIsAndroid.value) return
+  try {
+    androidSyncStatus.value = await tauriGetSyncStatus()
+  } catch (e) {
+    console.error('Failed to load android sync status:', e)
+  }
+}
+
+async function handleAndroidScan() {
+  try {
+    androidConnecting.value = true
+    const { scan, Format } = await import('@tauri-apps/plugin-barcode-scanner')
+    const result = await scan({ windowed: true, formats: [Format.QRCode] })
+    if (!result?.content) return
+    await tauriConnectToServer(result.content)
+    await loadAndroidSyncStatus()
+  } catch (e) {
+    console.error('Android scan/connect failed:', e)
+  } finally {
+    androidConnecting.value = false
+  }
+}
+
+async function handleAndroidDisconnect() {
+  try {
+    await tauriDisconnectSync()
+    await loadAndroidSyncStatus()
+  } catch (e) {
+    console.error('Android disconnect failed:', e)
+  }
+}
+
+async function handleAndroidFullSync() {
+  try {
+    androidSyncing.value = true
+    await tauriTriggerFullSyncMobile()
+  } catch (e) {
+    console.error('Android trigger full sync failed:', e)
+  } finally {
+    androidSyncing.value = false
+  }
+}
+
 function formatTimestamp(timestamp: number): string {
   if (!timestamp) return '-'
   const date = new Date(timestamp)
@@ -248,9 +305,14 @@ function formatTimestamp(timestamp: number): string {
 watch(isOpen, async (visible) => {
   if (visible) {
     pushModal('settings-modal')
+    // Android 端默认进入「数据管理」tab，便于访问扫码同步
+    if (androidIsAndroid.value) {
+      activeSection.value = 'data'
+    }
     await loadDbPath()
     await loadSyncConfig()
     await loadPairedDevices()
+    await loadAndroidSyncStatus()
   } else {
     popModal('settings-modal')
   }
@@ -567,6 +629,52 @@ onUnmounted(() => {
                         <AlertCircle :size="12" :stroke-width="1.75" />
                         <span>MVP 版本仅支持配对一台设备</span>
                       </div>
+                    </div>
+                  </div>
+                </div>
+                <!-- Android 端：扫码连接 PC -->
+                <div v-if="androidIsAndroid" class="setting-item setting-item--column">
+                  <div class="setting-info">
+                    <span class="setting-label">设备同步</span>
+                    <span class="setting-desc">扫描 PC 端二维码连接并同步数据</span>
+                  </div>
+                  <div class="device-sync-container">
+                    <div v-if="!androidSyncStatus?.connected" class="device-sync-unpaired">
+                      <button
+                        class="device-sync-qr-btn"
+                        :disabled="androidConnecting"
+                        @click="handleAndroidScan"
+                      >
+                        <QrCode :size="14" :stroke-width="1.75" />
+                        {{ androidConnecting ? '连接中...' : '扫码连接 PC' }}
+                      </button>
+                      <div class="device-sync-note">
+                        <Monitor :size="12" :stroke-width="1.75" />
+                        <span>在 PC 端「设置 → 设备同步」显示二维码后扫描</span>
+                      </div>
+                    </div>
+                    <div v-else class="device-sync-paired">
+                      <div class="paired-device-header">
+                        <div class="paired-device-status">
+                          <Wifi :size="14" :stroke-width="1.75" class="paired-status-icon" />
+                          <span>已连接{{ androidSyncStatus?.server_name ? ' · ' + androidSyncStatus.server_name : '' }}</span>
+                        </div>
+                        <button
+                          class="device-sync-resync-btn"
+                          :disabled="androidSyncing"
+                          @click="handleAndroidFullSync"
+                        >
+                          <RefreshCw :size="12" :stroke-width="1.75" :class="{ spinning: androidSyncing }" />
+                          立即同步
+                        </button>
+                      </div>
+                      <div class="device-sync-paired-note">
+                        <AlertCircle :size="12" :stroke-width="1.75" />
+                        <span>实时同步已开启，数据变更自动推送</span>
+                      </div>
+                      <button class="paired-device-unpair-btn" @click="handleAndroidDisconnect">
+                        断开连接
+                      </button>
                     </div>
                   </div>
                 </div>
