@@ -1,0 +1,14 @@
+# NDK toolchain config for Android cross-compilation
+# Windows: uses .cmd wrappers (shell scripts without extension don't work)
+# minSdkVersion = 24 → aarch64-linux-android24-clang
+# If minSdk changes, update the API level in all four paths below.
+
+[target.aarch64-linux-android]
+linker = "D:\\Android\\sdk\\ndk\\30.0.15729638\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\aarch64-linux-android24-clang.cmd"
+ar = "D:\\Android\\sdk\\ndk\\30.0.15729638\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\llvm-ar.exe"
+
+[target.aarch64-linux-android.env]
+# These ensure cc/cxx crate picks the right wrapper even if env vars are absent
+CC = "D:\\Android\\sdk\\ndk\\30.0.15729638\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\aarch64-linux-android24-clang.cmd"
+CXX = "D:\\Android\\sdk\\ndk\\30.0.15729638\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\aarch64-linux-android24-clang++.cmd"
+AR = "D:\\Android\\sdk\\ndk\\30.0.15729638\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\llvm-ar.exe"

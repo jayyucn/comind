@@ -201,6 +201,9 @@ impl SQLiteAdapter {
             CREATE INDEX IF NOT EXISTS idx_block_version_hash ON BlockVersion(hash);"
         )?;
         
+        // SyncState table for WebSocket sync pairing state
+        crate::sync::state::SyncStateRepository::create_table(conn)?;
+        
         Self::migrate_add_page_title_unique(conn)?;
         Self::migrate_date_ref_event_ts(conn)?;
         Self::migrate_add_version_and_deleted_at(conn)?;

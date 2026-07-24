@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, RwLock};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
 use futures_util::{SinkExt, StreamExt};
 use qrcode::QrCode;
-use image::{Rgba, ImageBuffer};
+use image::{Rgba, ImageEncoder};
 
 use comind_core::sync::{message::SyncMessage, engine::SyncEngine, message::SyncTable};
 
@@ -22,7 +22,7 @@ struct SyncServerInner {
     engine: Arc<SyncEngine>,
     clients: Arc<RwLock<HashMap<String, Arc<Mutex<Stream>>>>>,
     tokens: Arc<RwLock<HashMap<String, (Instant, String)>>>,
-    addr: Mutex<SocketAddr>,
+    addr: StdMutex<SocketAddr>,
     shutdown: Arc<Mutex<bool>>,
     device_name: String,
     server_client_id: String,
@@ -42,13 +42,13 @@ impl SyncServer {
     pub fn new(db_path: &Path, device_name: String) -> Result<Self, Box<dyn std::error::Error>> {
         let server_client_id = uuid::Uuid::new_v4().to_string();
         let engine = Arc::new(SyncEngine::new(server_client_id.clone(), db_path)?);
-        
+
         Ok(Self {
             inner: Arc::new(SyncServerInner {
                 engine,
                 clients: Arc::new(RwLock::new(HashMap::new())),
                 tokens: Arc::new(RwLock::new(HashMap::new())),
-                addr: Mutex::new(SocketAddr::from(([0, 0, 0, 0], 0))),
+                addr: StdMutex::new(SocketAddr::from(([0, 0, 0, 0], 0))),
                 shutdown: Arc::new(Mutex::new(false)),
                 device_name,
                 server_client_id,
@@ -62,16 +62,16 @@ impl SyncServer {
         let addr = format!("0.0.0.0:{}", port);
         let listener = tokio::net::TcpListener::bind(&addr).await?;
         let local_addr = listener.local_addr()?;
-        *self.inner.addr.lock().await = local_addr;
-        
+        *self.inner.addr.lock().unwrap() = local_addr;
+
         log::info!("SyncServer listening on {}", local_addr);
-        
+
         let clients = self.inner.clients.clone();
         let engine = self.inner.engine.clone();
         let tokens = self.inner.tokens.clone();
         let shutdown = self.inner.shutdown.clone();
         let server_client_id = self.inner.server_client_id.clone();
-        
+
         tokio::spawn(async move {
             while !*shutdown.lock().await {
                 match listener.accept().await {
@@ -81,7 +81,7 @@ impl SyncServer {
                         let engine_clone = engine.clone();
                         let tokens_clone = tokens.clone();
                         let server_client_id_clone = server_client_id.clone();
-                        
+
                         tokio::spawn(async move {
                             if let Err(e) = Self::handle_client(stream, clients_clone, engine_clone, tokens_clone, server_client_id_clone).await {
                                 log::error!("Client handler error: {}", e);
@@ -94,7 +94,7 @@ impl SyncServer {
                 }
             }
         });
-        
+
         Ok(())
     }
 
@@ -105,7 +105,7 @@ impl SyncServer {
     }
 
     pub fn get_listen_addr(&self) -> SocketAddr {
-        *self.inner.addr.blocking_lock()
+        *self.inner.addr.lock().unwrap()
     }
 
     pub fn build_qr_url(&self, token: &str) -> String {
@@ -117,44 +117,45 @@ impl SyncServer {
     pub fn generate_qr_image(&self, token: &str) -> Result<String, Box<dyn std::error::Error>> {
         let url = self.build_qr_url(token);
         let code = QrCode::new(url.as_bytes())?;
-        
-        let image_size = 256;
+
         let qr_size = code.width();
-        let scale = image_size / qr_size;
-        
-        let mut pixels = Vec::with_capacity(image_size * image_size);
-        
+        let scale = (256 / qr_size).max(1);
+        let image_size = qr_size * scale;
+
+        let mut pixels = vec![0u8; (image_size * image_size * 4) as usize];
+
         for y in 0..qr_size {
-            for _ in 0..scale {
-                for x in 0..qr_size {
-                    let color = code[(x, y)];
-                    for _ in 0..scale {
-                        if color == qrcode::Color::Dark {
-                            pixels.extend_from_slice(&[0, 0, 0, 255]);
-                        } else {
-                            pixels.extend_from_slice(&[255, 255, 255, 255]);
-                        }
+            for x in 0..qr_size {
+                let color = code[(x, y)];
+                let rgba: [u8; 4] = if color == qrcode::Color::Dark {
+                    [0, 0, 0, 255]
+                } else {
+                    [255, 255, 255, 255]
+                };
+                for dy in 0..scale {
+                    for dx in 0..scale {
+                        let py = y * scale + dy;
+                        let px = x * scale + dx;
+                        let idx = (py * image_size + px) * 4;
+                        pixels[idx..idx + 4].copy_from_slice(&rgba);
                     }
                 }
             }
         }
-        
-        let image = ImageBuffer::<Rgba<u8>, _>::from_vec(image_size as u32, image_size as u32, pixels)
+
+        let image = image::ImageBuffer::<Rgba<u8>, Vec<u8>>::from_vec(image_size as u32, image_size as u32, pixels)
             .ok_or("Failed to create image buffer")?;
-        
+
         let mut bytes: Vec<u8> = Vec::new();
-        {
-            use std::io::Write;
-            let mut buf_writer = std::io::BufWriter::new(&mut bytes);
-            image::codecs::png::PngEncoder::new(&mut buf_writer).encode(
-                &image,
-                image_size as u32,
-                image_size as u32,
-                image::ColorType::Rgba8,
-            )?;
-        }
-        
-        Ok(base64::encode(&bytes))
+        image::codecs::png::PngEncoder::new(&mut bytes).write_image(
+            image.as_raw(),
+            image_size as u32,
+            image_size as u32,
+            image::ExtendedColorType::Rgba8,
+        )?;
+
+        use base64::Engine;
+        Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
     }
 
     pub async fn trigger_full_sync(&self) -> Result<(), Box<dyn std::error::Error>> {
@@ -179,35 +180,35 @@ impl SyncServer {
                 entry.push(id);
             }
         }
-        
+
         let mut timer = self.inner.debounce_timer.lock().await;
         if let Some(handle) = timer.take() {
             handle.abort();
         }
-        
+
         let engine = self.inner.engine.clone();
         let clients = self.inner.clients.clone();
         let debounce_changes = self.inner.debounce_changes.clone();
-        
+
         let handle = tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(500)).await;
-            
+
             let changes = {
                 let mut lock = debounce_changes.lock().await;
                 std::mem::take(&mut *lock)
             };
-            
+
             for (table, ids) in changes {
                 if let Ok(rows) = engine.fetch_row_payloads(table, ids).await {
                     if rows.is_empty() {
                         continue;
                     }
-                    
+
                     if let Ok(messages) = engine.on_local_change(table, rows).await {
                         if messages.is_empty() {
                             continue;
                         }
-                        
+
                         let clients = clients.read().await;
                         for msg in messages {
                             if let Ok(msg_text) = serde_json::to_string(&msg) {
@@ -223,7 +224,7 @@ impl SyncServer {
                 }
             }
         });
-        
+
         *timer = Some(handle);
         Ok(())
     }
@@ -247,10 +248,10 @@ impl SyncServer {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let ws_stream = tokio_tungstenite::accept_async(stream).await?;
         let client_id = uuid::Uuid::new_v4().to_string();
-        
+
         let client_stream = Arc::new(Mutex::new(ws_stream));
         clients.write().await.insert(client_id.clone(), client_stream.clone());
-        
+
         tokio::spawn(async move {
             let mut ws = client_stream.lock().await;
             loop {
@@ -322,7 +323,7 @@ impl SyncServer {
                     }
                 }
             }
-            
+
             clients.write().await.remove(&client_id);
         });
 

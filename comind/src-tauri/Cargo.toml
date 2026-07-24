@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "comind"
+name = "comind_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
@@ -22,12 +22,12 @@ regex = "1"
 log = "0.4"
 simple_logger = "4"
 tokio = { version = "1", features = ["full"] }
-tokio-tungstenite = { version = "0.22", default-features = false, features = ["rustls-tls-webpki-roots"] }
+tokio-tungstenite = { version = "0.22", default-features = false, features = ["rustls-tls-webpki-roots", "connect"] }
 url = "2.5"
 urlencoding = "2.1"
 futures-util = "0.3"
 qrcode = "0.14"
-image = "0.24"
+image = "0.25"
 base64 = "0.22"
 
 [build-dependencies]

@@ -272,10 +272,22 @@ pub async fn delete_block(
 ) -> Result<(), String> {
     let block_id_clone = block_id.to_string();
     
+    // Collect cascade-deleted IDs for sync notification
+    let mut cascade_link_ids: Vec<String> = Vec::new();
+    let mut cascade_prop_ids: Vec<String> = Vec::new();
+    
     let result = execute_with_adapter(db, |storage| {
         if let Ok(block) = storage.blocks().get_by_id(block_id) {
+            // Collect cascade-deleted link IDs before deleting
+            let links = storage.links().get_by_source_block_id(block_id)?;
+            cascade_link_ids = links.into_iter().map(|l| l.id).collect();
             storage.links().delete_by_source_block_id(block_id)?;
+            
+            // Collect cascade-deleted property IDs before deleting
+            let props = storage.properties().get_by_block_id(block_id)?;
+            cascade_prop_ids = props.into_iter().map(|p| p.id).collect();
             storage.properties().delete_by_block_id(block_id)?;
+            
             // BlockVersion has FK (block_id) RESTRICT — must delete before Block
             storage.block_versions().delete_by_block_id(block_id)?;
             storage.blocks().delete(block_id)?;
@@ -299,6 +311,12 @@ pub async fn delete_block(
         let sync_server_clone = sync_server.inner().clone();
         tokio::spawn(async move {
             sync_server_clone.record_and_notify(SyncTable::Block, vec![block_id_clone]).await;
+            if !cascade_link_ids.is_empty() {
+                sync_server_clone.record_and_notify(SyncTable::Link, cascade_link_ids).await;
+            }
+            if !cascade_prop_ids.is_empty() {
+                sync_server_clone.record_and_notify(SyncTable::Property, cascade_prop_ids).await;
+            }
         });
     }
     
@@ -376,14 +394,36 @@ pub async fn delete_page_cascade(
 ) -> Result<(), String> {
     let page_id_clone = page_id.to_string();
     
+    // Collect cascade-deleted IDs for sync notification
+    let mut cascade_block_ids: Vec<String> = Vec::new();
+    let mut cascade_link_ids: Vec<String> = Vec::new();
+    let mut cascade_prop_ids: Vec<String> = Vec::new();
+    let mut cascade_target_link_ids: Vec<String> = Vec::new();
+    
     let result = execute_with_adapter(db, |storage| {
         let blocks = BlockService::get_by_page_id(storage, page_id)?;
         for block in &blocks {
+            // Collect block ID
+            cascade_block_ids.push(block.id.clone());
+            
+            // Collect cascade-deleted link IDs
+            let links = storage.links().get_by_source_block_id(&block.id)?;
+            cascade_link_ids.extend(links.into_iter().map(|l| l.id));
+            
+            // Collect cascade-deleted property IDs
+            let props = storage.properties().get_by_block_id(&block.id)?;
+            cascade_prop_ids.extend(props.into_iter().map(|p| p.id));
+            
             storage.properties().delete_by_block_id(&block.id)?;
             storage.links().delete_by_source_block_id(&block.id)?;
             // BlockVersion has FK (block_id) RESTRICT — must delete before Block
             storage.block_versions().delete_by_block_id(&block.id)?;
         }
+        
+        // Collect target links deleted
+        let target_links = storage.links().get_by_target_page_id(page_id)?;
+        cascade_target_link_ids = target_links.into_iter().map(|l| l.id).collect();
+        
         LinkService::delete_by_target_page_id(storage, page_id)?;
         BlockService::delete_by_page_id(storage, page_id)?;
         PageService::delete(storage, page_id)?;
@@ -394,6 +434,18 @@ pub async fn delete_page_cascade(
         let sync_server_clone = sync_server.inner().clone();
         tokio::spawn(async move {
             sync_server_clone.record_and_notify(SyncTable::Page, vec![page_id_clone]).await;
+            if !cascade_block_ids.is_empty() {
+                sync_server_clone.record_and_notify(SyncTable::Block, cascade_block_ids).await;
+            }
+            // Merge source + target link IDs
+            let mut all_link_ids = cascade_link_ids;
+            all_link_ids.extend(cascade_target_link_ids);
+            if !all_link_ids.is_empty() {
+                sync_server_clone.record_and_notify(SyncTable::Link, all_link_ids).await;
+            }
+            if !cascade_prop_ids.is_empty() {
+                sync_server_clone.record_and_notify(SyncTable::Property, cascade_prop_ids).await;
+            }
         });
     }
     
@@ -586,6 +638,11 @@ pub async fn execute_batch(
                     if let Ok(block) = storage.blocks().get_by_id(&id) {
                         page_ids.insert(block.page_id);
                     }
+                    // Collect cascade-deleted link/property IDs for sync
+                    let links = storage.links().get_by_source_block_id(&id)?;
+                    sync_changes.entry(SyncTable::Link).or_insert_with(Vec::new).extend(links.iter().map(|l| l.id.clone()));
+                    let props = storage.properties().get_by_block_id(&id)?;
+                    sync_changes.entry(SyncTable::Property).or_insert_with(Vec::new).extend(props.iter().map(|p| p.id.clone()));
                     storage.links().delete_by_source_block_id(&id)?;
                     storage.properties().delete_by_block_id(&id)?;
                     // BlockVersion has FK (block_id) RESTRICT — must delete before Block
@@ -1017,20 +1074,30 @@ pub async fn mark_all_notifications_read(
     execute_with_adapter(db, |storage| storage.notifications().mark_all_read())
 }
 
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 pub async fn get_sync_qr(
     sync_server: State<'_, super::state::SyncServerHandle>,
 ) -> Result<String, String> {
-    let server = sync_server.get_server().await.ok_or("SyncServer not started")?;
-    let token = server.generate_pairing_token().await;
-    server.generate_qr_image(&token).map_err(|e| e.to_string())
+    // Wait up to 5 seconds for SyncServer to be ready (it starts async)
+    for i in 0..50 {
+        if let Some(server) = sync_server.get_server().await {
+            let token = server.generate_pairing_token().await;
+            return server.generate_qr_image(&token).map_err(|e| e.to_string());
+        }
+        if i == 0 {
+            log::warn!("get_sync_qr: waiting for SyncServer to be ready...");
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    }
+    Err("SyncServer not started after 5s — check if port 8080 is available or see console logs".to_string())
 }
 
 #[tauri::command]
 pub async fn get_paired_devices(
     db: State<'_, super::state::DatabaseConnection>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let mut adapter = db.get_adapter()?;
+    let adapter = db.get_adapter()?;
     let states = comind_core::sync::state::SyncStateRepository::get_all(&adapter.conn)
         .map_err(|e| e.to_string())?;
     let mut result = Vec::new();
@@ -1050,16 +1117,90 @@ pub async fn unpair_device(
     db: State<'_, super::state::DatabaseConnection>,
     client_id: &str,
 ) -> Result<(), String> {
-    let mut adapter = db.get_adapter()?;
+    let adapter = db.get_adapter()?;
     comind_core::sync::state::SyncStateRepository::delete(&adapter.conn, client_id)
         .map_err(|e| e.to_string())?;
     Ok(())
 }
 
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 pub async fn trigger_full_sync(
     sync_server: State<'_, super::state::SyncServerHandle>,
 ) -> Result<(), String> {
     let server = sync_server.get_server().await.ok_or("SyncServer not started")?;
     server.trigger_full_sync().await.map_err(|e| e.to_string())
+}
+
+// ===== Android 端同步命令 =====
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn connect_to_server(
+    db: State<'_, super::state::DatabaseConnection>,
+    config_manager: State<'_, super::state::ConfigManager>,
+    sync_handle: State<'_, super::state::SyncServerHandle>,
+    qr_payload: &str,
+) -> Result<(), String> {
+    let device_name = {
+        let config = config_manager.get_config()?;
+        config.device_name.clone()
+    };
+
+    let db_path = db.get_db_path();
+    let db_path = std::path::Path::new(&db_path);
+
+    let client = crate::sync_client::SyncClient::from_qr(qr_payload, db_path, device_name)?;
+
+    client.connect_and_pair().await?;
+
+    // 启动心跳和定时全量校验
+    client.start_heartbeat();
+    client.start_periodic_full_sync();
+
+    sync_handle.set_client(client).await;
+    Ok(())
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn disconnect_sync(
+    sync_handle: State<'_, super::state::SyncServerHandle>,
+) -> Result<(), String> {
+    if let Some(client) = sync_handle.get_client().await {
+        client.disconnect().await;
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn get_sync_status(
+    sync_handle: State<'_, super::state::SyncServerHandle>,
+) -> Result<serde_json::Value, String> {
+    if let Some(client) = sync_handle.get_client().await {
+        let connected = client.is_connected().await;
+        let paired = client.is_paired().await;
+        let server_name = client.get_server_name().to_string();
+        Ok(serde_json::json!({
+            "connected": connected,
+            "paired": paired,
+            "server_name": server_name,
+        }))
+    } else {
+        Ok(serde_json::json!({
+            "connected": false,
+            "paired": false,
+            "server_name": null,
+        }))
+    }
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn trigger_full_sync_mobile(
+    sync_handle: State<'_, super::state::SyncServerHandle>,
+) -> Result<(), String> {
+    let client = sync_handle.get_client().await.ok_or("SyncClient not started")?;
+    client.trigger_full_sync().await
 }

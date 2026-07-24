@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio::task;
 use serde_json::json;
@@ -29,10 +28,7 @@ struct FullSyncBuffer {
 impl SyncEngine {
     pub fn new(client_id: String, db_path: &Path) -> SyncResult<Self> {
         let adapter = super::super::storage::sqlite::SQLiteAdapter::open(db_path)
-            .map_err(|e| SyncError::Database(rusqlite::Error::SqliteFailure(rusqlite::ffi::Error {
-                code: rusqlite::ffi::ErrorCode::CannotOpen,
-                extended_code: 0,
-            }, Some(e.to_string()))))?;
+            .map_err(|e| SyncError::Other(e.to_string()))?;
         Ok(Self {
             client_id,
             db: Arc::new(Mutex::new(adapter)),
@@ -137,10 +133,9 @@ fn handle_message_sync(
             Ok(vec![])
         }
         SyncMessage::Pairing { token: _, client_id: _, device_name: _ } => {
-            Ok(vec![SyncMessage::PairingAck {
-                server_client_id: client_id.to_string(),
-                paired: true,
-            }])
+            // Pairing is handled by the Server layer (sync_server.rs) which has
+            // access to token validation. Engine layer returns empty.
+            Ok(vec![])
         }
         _ => Ok(vec![]),
     }
@@ -238,17 +233,22 @@ fn fetch_row_payloads_sync(
         .map(|i| stmt.column_name(i).unwrap_or("unknown").to_string())
         .collect();
     
+    // Find columns by name (robust against column ordering shifts from `SELECT id, *`)
+    let id_col = col_names.iter().position(|n| n == "id").ok_or(SyncError::InvalidData("id column not found".to_string()))?;
+    let version_col = col_names.iter().position(|n| n == "version").ok_or(SyncError::InvalidData("version column not found".to_string()))?;
+    let deleted_at_col = col_names.iter().position(|n| n == "deleted_at").ok_or(SyncError::InvalidData("deleted_at column not found".to_string()))?;
+    let sync_updated_at_col = col_names.iter().position(|n| n == "sync_updated_at").ok_or(SyncError::InvalidData("sync_updated_at column not found".to_string()))?;
+    
     let params: Vec<Box<dyn ToSql>> = ids.iter().map(|id| Box::new(id.clone()) as Box<dyn ToSql>).collect();
     let mut rows = stmt.query(rusqlite::params_from_iter(params))?;
     
     let mut result = Vec::new();
     
     while let Some(row) = rows.next()? {
-        let id: String = row.get(0)?;
-        
-        let version: i64 = row.get(n_cols - 3)?;
-        let deleted_at: Option<i64> = row.get(n_cols - 2)?;
-        let sync_updated_at: i64 = row.get(n_cols - 1)?;
+        let id: String = row.get(id_col)?;
+        let version: i64 = row.get(version_col)?;
+        let deleted_at: Option<i64> = row.get(deleted_at_col)?;
+        let sync_updated_at: i64 = row.get(sync_updated_at_col)?;
         
         let mut data = json!({});
         for i in 0..n_cols {
@@ -282,9 +282,13 @@ fn commit_full_sync_sync(
     adapter.conn.execute("PRAGMA defer_foreign_keys = ON", [])?;
     let tx = adapter.conn.transaction()?;
     
-    for (table, rows) in buffer.data.drain() {
-        for row in rows {
-            apply_lww_sync_raw(&tx, table, &row)?;
+    // Apply in dependency order: RelationshipType -> Template -> Page -> Block -> Link -> Property -> DateRef
+    // (matches SyncTable::all() ordering for FK integrity and debuggability)
+    for table in SyncTable::all() {
+        if let Some(rows) = buffer.data.remove(table) {
+            for row in rows {
+                apply_lww_sync_raw(&tx, *table, &row)?;
+            }
         }
     }
     
@@ -323,20 +327,17 @@ fn apply_lww_sync_raw(
             Ok(val) => val,
             Err(_) => 0,
         };
-        let existing_deleted_at: Option<i64> = existing.get(2)?;
+        let _existing_deleted_at: Option<i64> = existing.get(2)?;
         
         let existing_key = (existing_version, existing_updated_at);
         let row_key = (row.version, row.updated_at);
         
         if row_key > existing_key {
+            // Incoming row is newer — apply update
             update_row_raw(conn, table_name, row)?;
-        } else if row_key == existing_key {
-            if row.deleted_at.is_some() || existing_deleted_at.is_some() {
-                update_row_raw(conn, table_name, row)?;
-            } else {
-                update_row_raw(conn, table_name, row)?;
-            }
         }
+        // If row_key == existing_key: data is identical, no-op
+        // If row_key < existing_key: incoming is stale, no-op
     } else {
         insert_row_raw(conn, table_name, row)?;
     }
@@ -455,7 +456,7 @@ impl DebounceBuffer {
 }
 
 impl FullSyncBuffer {
-    fn add_batch(&mut self, table: SyncTable, rows: Vec<RowPayload>, batch_index: usize, total_batches: usize) -> SyncResult<bool> {
+    fn add_batch(&mut self, table: SyncTable, rows: Vec<RowPayload>, _batch_index: usize, total_batches: usize) -> SyncResult<bool> {
         *self.expected_batches.entry(table).or_insert(0) = total_batches;
         *self.received_batches.entry(table).or_insert(0) += 1;
         
@@ -465,7 +466,7 @@ impl FullSyncBuffer {
         Ok(self.is_complete())
     }
 
-    fn add_batch_sync(&mut self, table: SyncTable, rows: Vec<RowPayload>, batch_index: usize, total_batches: usize) {
+    fn add_batch_sync(&mut self, table: SyncTable, rows: Vec<RowPayload>, _batch_index: usize, total_batches: usize) {
         *self.expected_batches.entry(table).or_insert(0) = total_batches;
         *self.received_batches.entry(table).or_insert(0) += 1;
         

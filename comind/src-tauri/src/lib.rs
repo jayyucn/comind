@@ -5,7 +5,10 @@ mod config;
 mod markdown;
 mod state;
 mod sync;
+#[cfg(not(target_os = "android"))]
 mod sync_server;
+#[cfg(target_os = "android")]
+mod sync_client;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -46,26 +49,34 @@ pub fn run() {
             let sync_server_handle = state::SyncServerHandle::new();
             app.manage(sync_server_handle.clone());
 
-            let db_path_for_sync = db_path.clone();
-            let config_clone = config::AppConfig::load(&config_dir).unwrap_or_default();
-            let device_name = config_clone.device_name;
+            #[cfg(not(target_os = "android"))]
+            {
+                let db_path_for_sync = db_path.join("comind.db");
+                let config_clone = config::AppConfig::load(&config_dir).unwrap_or_default();
+                let device_name = config_clone.device_name;
 
-            tauri::async_runtime::spawn(async move {
-                let mut server = match sync_server::SyncServer::new(&db_path_for_sync, device_name) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        log::error!("Failed to create SyncServer: {}", e);
+                tauri::async_runtime::spawn(async move {
+                    log::info!("SyncServer: initializing with db_path={}", db_path_for_sync.display());
+                    let mut server = match sync_server::SyncServer::new(&db_path_for_sync, device_name) {
+                        Ok(s) => {
+                            log::info!("SyncServer: created successfully");
+                            s
+                        }
+                        Err(e) => {
+                            log::error!("Failed to create SyncServer: {}", e);
+                            return;
+                        }
+                    };
+
+                    if let Err(e) = server.start(8080).await {
+                        log::error!("Failed to start SyncServer: {}", e);
                         return;
                     }
-                };
+                    log::info!("SyncServer: started on port 8080");
 
-                if let Err(e) = server.start(8080).await {
-                    log::error!("Failed to start SyncServer: {}", e);
-                    return;
-                }
-
-                sync_server_handle.set_server(server).await;
-            });
+                    sync_server_handle.set_server(server).await;
+                });
+            }
 
             sync::start_sync_task(app_handle.clone());
 
@@ -142,10 +153,20 @@ pub fn run() {
             commands::query_due_non_recurring_date_refs,
             commands::query_all_recurring_date_refs,
             commands::rebuild_date_refs,
+            #[cfg(not(target_os = "android"))]
             commands::get_sync_qr,
             commands::get_paired_devices,
             commands::unpair_device,
+            #[cfg(not(target_os = "android"))]
             commands::trigger_full_sync,
+            #[cfg(target_os = "android")]
+            commands::connect_to_server,
+            #[cfg(target_os = "android")]
+            commands::disconnect_sync,
+            #[cfg(target_os = "android")]
+            commands::get_sync_status,
+            #[cfg(target_os = "android")]
+            commands::trigger_full_sync_mobile,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
