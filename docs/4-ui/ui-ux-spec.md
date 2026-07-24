@@ -382,6 +382,7 @@ Ideas Section（琥珀底色按钮）是 Phase 1.1 引入的独立功能区，�
 **SidebarFooter:**
 - 快捷键提示：10px，--text-tertiary，居中
 - kbd 样式：JetBrains Mono 9px，背景 --bg-hover，边框 1px --border，radius 3px
+- 设置按钮已迁移至 SidebarHeader（右侧导航区域）
 
 **PageItem:**
 - 结构：[emoji 13px] [title + time 文本区 flex] [time]
@@ -701,7 +702,7 @@ function setTheme(t: Theme) {
 
 ### 入口触发点
 
-1. **SidebarFooter 设置按钮**：侧边栏底部快捷键提示区域下方
+1. **SidebarHeader 设置按钮**：侧边栏头部导航区域（后退/前进按钮右侧）
 2. **PageMenuButton 菜单**：右上角菜单中的"设置"项
 
 ### 模态窗口规格
@@ -738,7 +739,7 @@ function close() {
 }
 ```
 
-使用模块级单例模式，确保 PageMenuButton 和 SidebarFooter 调用同一状态。
+使用模块级单例模式，确保 PageMenuButton 和 SidebarHeader 调用同一状态。
 
 ---
 

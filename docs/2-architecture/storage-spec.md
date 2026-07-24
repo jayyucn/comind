@@ -1,9 +1,9 @@
 # 存储格式规范
 
-> 版本：v0.8
-> 日期：2026-06-05
+> 版本：v0.9
+> 日期：2026-07-24
 > 状态：✅ 已实现（Phase 1 IndexedDB 部分）
-> 变更：v0.8 新增 Dexie v9 支持 templates 表、v8 新增 relationshipTypes 表
+> 变更：v0.9 新增 version 和 deleted_at 字段，支持 LWW 同步和软删除；v0.8 新增 Dexie v9 支持 templates 表、v8 新增 relationshipTypes 表
 
 ***
 
@@ -367,6 +367,8 @@ CREATE TABLE Page (
     wordCount       INTEGER NOT NULL DEFAULT 0,
     createdAt       INTEGER NOT NULL,     -- 毫秒时间戳
     updatedAt       INTEGER NOT NULL,     -- 毫秒时间戳
+    version         INTEGER NOT NULL DEFAULT 0,  -- 单调递增版本号，用于 LWW 同步
+    deleted_at      INTEGER,              -- 软删除时间戳（毫秒），NULL = 未删除
     FOREIGN KEY (blockId) REFERENCES Block(id)
 );
 
@@ -381,6 +383,8 @@ CREATE TABLE Block (
     properties      TEXT NOT NULL DEFAULT '{}',  -- JSON 字符串
     createdAt       INTEGER NOT NULL,     -- 毫秒时间戳
     updatedAt       INTEGER NOT NULL,     -- 毫秒时间戳
+    version         INTEGER NOT NULL DEFAULT 0,  -- 单调递增版本号，用于 LWW 同步
+    deleted_at      INTEGER,              -- 软删除时间戳（毫秒），NULL = 未删除
     FOREIGN KEY (pageId) REFERENCES Page(id)
 );
 
@@ -390,6 +394,8 @@ CREATE TABLE Link (
     targetPageId    TEXT NOT NULL,        -- 链接目标 Page
     displayText     TEXT NOT NULL,
     createdAt       INTEGER NOT NULL,     -- 毫秒时间戳
+    version         INTEGER NOT NULL DEFAULT 0,  -- 单调递增版本号，用于 LWW 同步
+    deleted_at      INTEGER,              -- 软删除时间戳（毫秒），NULL = 未删除
     FOREIGN KEY (sourceBlockId) REFERENCES Block(id),
     FOREIGN KEY (targetPageId) REFERENCES Page(id)
 );
@@ -406,6 +412,8 @@ CREATE TABLE Property (
     schemaVersion   INTEGER NOT NULL DEFAULT 1,
     createdAt       INTEGER NOT NULL,     -- 毫秒时间戳
     updatedAt       INTEGER NOT NULL,     -- 毫秒时间戳
+    version         INTEGER NOT NULL DEFAULT 0,  -- 单调递增版本号，用于 LWW 同步
+    deleted_at      INTEGER,              -- 软删除时间戳（毫秒），NULL = 未删除
     UNIQUE(blockId, key),
     FOREIGN KEY (blockId) REFERENCES Block(id)
 );
@@ -414,15 +422,36 @@ CREATE TABLE Property (
 CREATE INDEX idx_page_blockId    ON Page(blockId);
 CREATE INDEX idx_page_type       ON Page(type);
 CREATE INDEX idx_page_updatedAt  ON Page(updatedAt);
+CREATE INDEX idx_page_version    ON Page(version);
+CREATE INDEX idx_page_deletedAt  ON Page(deleted_at);
 CREATE INDEX idx_block_pageId    ON Block(pageId);
 CREATE INDEX idx_block_parentId  ON Block(parentId);
 CREATE INDEX idx_block_pos       ON Block(pos);
+CREATE INDEX idx_block_version   ON Block(version);
+CREATE INDEX idx_block_deletedAt ON Block(deleted_at);
 CREATE INDEX idx_link_target     ON Link(targetPageId);
 CREATE INDEX idx_link_source     ON Link(sourceBlockId);
+CREATE INDEX idx_link_version    ON Link(version);
+CREATE INDEX idx_link_deletedAt  ON Link(deleted_at);
 CREATE INDEX idx_property_blockId ON Property(blockId);
 CREATE INDEX idx_property_key    ON Property(key);
 CREATE INDEX idx_property_type   ON Property(type);
+CREATE INDEX idx_property_version ON Property(version);
+CREATE INDEX idx_property_deletedAt ON Property(deleted_at);
 ```
+
+**与 v0.7 SQLite 的主要差异：**
+
+| 变更项 | v0.7 | v0.9 |
+|--------|------|------|
+| Page.version | 不存在 | 已实现 |
+| Page.deleted_at | 不存在 | 已实现 |
+| Block.version | 不存在 | 已实现 |
+| Block.deleted_at | 不存在 | 已实现 |
+| Link.version | 不存在 | 已实现 |
+| Link.deleted_at | 不存在 | 已实现 |
+| Property.version | 不存在 | 已实现 |
+| Property.deleted_at | 不存在 | 已实现 |
 
 **与 v0.6 SQLite 的主要差异：**
 

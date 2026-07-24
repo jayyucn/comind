@@ -1,10 +1,10 @@
 # comind 架构设计
 
-> 版本：v4.1（Gap Pos 排序）
-> 日期：2026-06-03
+> 版本：v4.2（同步基础能力）
+> 日期：2026-07-24
 > 状态：活跃
 > 来源：合并自 data-model.md + storage-spec.md + routing-design.md + block-editor-spec.md + property-spec.md + block-ordering-redesign.md
-> 更新：v0.5 Link 数据模型扩展（支持 relationshipType）
+> 更新：v0.5 Link 数据模型扩展（支持 relationshipType）；v4.2 新增 version 和 deleted_at 字段，支持 LWW 同步和软删除
 
 ---
 
@@ -34,6 +34,8 @@ interface Block {
   properties: Record<string, any> // 属性对象（存储层为 JSON 字符串）
   createdAt: number
   updatedAt: number
+  version: number         // 单调递增版本号，用于同步 LWW 判断
+  deletedAt: number | null // 软删除时间戳（毫秒），NULL = 未删除
 }
 ```
 
@@ -48,6 +50,8 @@ interface Block {
 | `content` | 纯文本内容，不含 Markdown 格式标记 |
 | `format` | 格式信息（标题级别、列表类型等） |
 | `properties` | 属性对象（`key:: value` 解析结果） |
+| `version` | 单调递增版本号，每次 update/delete 时 +1，用于多端同步 LWW 冲突解决 |
+| `deletedAt` | 软删除时间戳（毫秒），同步时传播删除操作 |
 
 ### 1.3 Page
 
@@ -65,6 +69,8 @@ interface Page {
   wordCount: number       // 缓存
   createdAt: number
   updatedAt: number
+  version: number         // 单调递增版本号，用于同步 LWW 判断
+  deletedAt: number | null // 软删除时间戳（毫秒），NULL = 未删除
 }
 ```
 
@@ -79,6 +85,8 @@ interface Link {
   relationshipType: string | null  // v0.5 新增
   inverseRelationshipType: string | null  // v0.5 新增
   createdAt: number
+  version: number         // 单调递增版本号，用于同步 LWW 判断
+  deletedAt: number | null // 软删除时间戳（毫秒），NULL = 未删除
 }
 ```
 

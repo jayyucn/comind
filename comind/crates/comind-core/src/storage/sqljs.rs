@@ -173,7 +173,61 @@ impl SqlJsAdapter {
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_property_key ON Property(key);")?;
 
         Self::migrate_date_ref_event_ts(db)?;
+        Self::migrate_add_version_and_deleted_at(db)?;
 
+        Ok(())
+    }
+
+    fn migrate_add_version_and_deleted_at(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        let has_column = |table: &str, col: &str| -> bool {
+            let rows = Self::query(db, &format!("PRAGMA table_info('{}');", table), &[]).unwrap_or_default();
+            rows.iter().any(|r| r.values().any(|v| v == col))
+        };
+
+        if !has_column("Block", "version") {
+            Self::exec(db, "ALTER TABLE Block ADD COLUMN version INTEGER NOT NULL DEFAULT 0;")?;
+        }
+        if !has_column("Block", "deleted_at") {
+            Self::exec(db, "ALTER TABLE Block ADD COLUMN deleted_at INTEGER;")?;
+        }
+        if !has_column("Page", "version") {
+            Self::exec(db, "ALTER TABLE Page ADD COLUMN version INTEGER NOT NULL DEFAULT 0;")?;
+        }
+        if !has_column("Page", "deleted_at") {
+            Self::exec(db, "ALTER TABLE Page ADD COLUMN deleted_at INTEGER;")?;
+            Self::exec(db, "UPDATE Page SET deleted_at = updated_at WHERE deleted = 1 AND deleted_at IS NULL;")?;
+        }
+        if !has_column("Link", "updated_at") {
+            Self::exec(db, "ALTER TABLE Link ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0;")?;
+        }
+        if !has_column("Link", "version") {
+            Self::exec(db, "ALTER TABLE Link ADD COLUMN version INTEGER NOT NULL DEFAULT 0;")?;
+        }
+        if !has_column("Link", "deleted_at") {
+            Self::exec(db, "ALTER TABLE Link ADD COLUMN deleted_at INTEGER;")?;
+        }
+        if !has_column("Property", "version") {
+            Self::exec(db, "ALTER TABLE Property ADD COLUMN version INTEGER NOT NULL DEFAULT 0;")?;
+        }
+        if !has_column("Property", "deleted_at") {
+            Self::exec(db, "ALTER TABLE Property ADD COLUMN deleted_at INTEGER;")?;
+            Self::exec(db, "UPDATE Property SET deleted_at = updated_at WHERE is_deleted = 1 AND deleted_at IS NULL;")?;
+        }
+        if !has_column("RelationshipType", "version") {
+            Self::exec(db, "ALTER TABLE RelationshipType ADD COLUMN version INTEGER NOT NULL DEFAULT 0;")?;
+        }
+        if !has_column("RelationshipType", "deleted_at") {
+            Self::exec(db, "ALTER TABLE RelationshipType ADD COLUMN deleted_at INTEGER;")?;
+        }
+        if !has_column("DateRef", "updated_at") {
+            Self::exec(db, "ALTER TABLE DateRef ADD COLUMN updated_at INTEGER;")?;
+        }
+        if !has_column("DateRef", "version") {
+            Self::exec(db, "ALTER TABLE DateRef ADD COLUMN version INTEGER NOT NULL DEFAULT 0;")?;
+        }
+        if !has_column("DateRef", "deleted_at") {
+            Self::exec(db, "ALTER TABLE DateRef ADD COLUMN deleted_at INTEGER;")?;
+        }
         Ok(())
     }
 
@@ -468,7 +522,8 @@ impl BlockRepository for SqlJsAdapter {
         Self::run_with_params(&self.db, "INSERT INTO Block (id, page_id, parent_id, pos, content, format, type, version, deleted_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)", &[
             &block.id, &block.page_id, parent_id,
             &block.pos.to_string(), &block.content, &block.format,
-            &block.r#type, &block.created_at.to_string(), &block.updated_at.to_string()
+            &block.r#type, &block.version.to_string(),
+            &block.created_at.to_string(), &block.updated_at.to_string()
         ])?;
         Ok(block.clone())
     }
@@ -529,6 +584,7 @@ impl PageRepository for SqlJsAdapter {
             &page.id, block_id, &page.title, &page.r#type, icon, cover,
             &page.aliases, file_path, &page.children_count.to_string(),
             &page.word_count.to_string(), &page.deleted.to_string(),
+            &page.version.to_string(),
             &page.created_at.to_string(), &page.updated_at.to_string()
         ])?;
         Ok(page.clone())
@@ -835,7 +891,8 @@ impl PropertyRepository for SqlJsAdapter {
         Self::run_with_params(&self.db, "INSERT INTO Property (id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, version, deleted_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)", &[
             &property.id, &property.block_id, &property.key, &property.value, &property.r#type,
             &property.sort_order.to_string(), &property.is_hidden.to_string(), &property.is_deleted.to_string(),
-            &property.schema_version.to_string(), &property.created_at.to_string(), &property.updated_at.to_string()
+            &property.schema_version.to_string(), &property.version.to_string(),
+            &property.created_at.to_string(), &property.updated_at.to_string()
         ])?;
         Ok(property.clone())
     }
@@ -898,7 +955,7 @@ impl RelationshipTypeRepository for SqlJsAdapter {
 
     fn update(&mut self, rt: &RelationshipType) -> Result<RelationshipType, Box<dyn std::error::Error>> {
         let inverse = rt.inverse.as_deref().unwrap_or("");
-        Self::run_with_params(&self.db, "UPDATE RelationshipType SET type = ?, inverse = ?, label = ?, inverse_label = ?, color = ?, `order` = ?, strength = ?, deleted = ?, updated_at = ? WHERE id = ?", &[
+        Self::run_with_params(&self.db, "UPDATE RelationshipType SET type = ?, inverse = ?, label = ?, inverse_label = ?, color = ?, `order` = ?, strength = ?, deleted = ?, updated_at = ?, version = version + 1 WHERE id = ?", &[
             &rt.r#type, inverse, &rt.label, &rt.inverse_label, &rt.color,
             &rt.order.to_string(), &rt.strength, &rt.deleted.to_string(),
             &rt.updated_at.to_string(), &rt.id
@@ -908,7 +965,7 @@ impl RelationshipTypeRepository for SqlJsAdapter {
 
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn std::error::Error>> {
         let now = chrono::Utc::now().timestamp_millis();
-        Self::run_with_params(&self.db, "UPDATE RelationshipType SET deleted = 1, updated_at = ? WHERE id = ?", &[&now.to_string(), id])?;
+        Self::run_with_params(&self.db, "UPDATE RelationshipType SET deleted = 1, deleted_at = ?, version = version + 1, updated_at = ? WHERE id = ?", &[&now.to_string(), &now.to_string(), id])?;
         Ok(())
     }
 }

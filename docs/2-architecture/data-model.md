@@ -1,8 +1,9 @@
 # 数据模型设计
 
-> 版本：v0.5
-> 日期：2026-05-19
+> 版本：v0.6
+> 日期：2026-07-24
 > 状态：✅ 已实现
+> 变更：v0.6 新增 version 和 deleted_at 字段，支持 LWW 同步和软删除
 
 ---
 
@@ -71,12 +72,16 @@ interface Block {
 | `wordCount` | integer | NOT NULL, DEFAULT 0 | 页面总字数 |
 | `createdAt` | number | NOT NULL | 创建时间戳（毫秒） |
 | `updatedAt` | number | NOT NULL | 更新时间戳（毫秒） |
+| `version` | number | NOT NULL, DEFAULT 0 | 单调递增版本号，用于同步 LWW 判断 |
+| `deletedAt` | number \| null | DEFAULT NULL | 软删除时间戳（毫秒），NULL = 未删除 |
 
 **说明：**
 - `blockId` 建立 Page 与根 Block 的 1:1 关联
 - `title` 独立存储，不依赖 Block.content
 - `type` 区分普通页面和日记页面
 - `aliases` 存储为 JSON 字符串（读取时解析）
+- `version` 每次 update/delete 时 +1，用于多端同步时的 LWW（Last Write Wins）冲突解决
+- `deletedAt` 替代旧 `deleted` 字段，同步时传播删除操作
 
 **IndexedDB 定义：**
 ```typescript
@@ -100,12 +105,16 @@ db.version(1).stores({
 | `properties` | string | NOT NULL, DEFAULT '{}' | 附加属性，JSON 对象 |
 | `createdAt` | number | NOT NULL | 创建时间戳（毫秒） |
 | `updatedAt` | number | NOT NULL | 更新时间戳（毫秒） |
+| `version` | number | NOT NULL, DEFAULT 0 | 单调递增版本号，用于同步 LWW 判断 |
+| `deletedAt` | number \| null | DEFAULT NULL | 软删除时间戳（毫秒），NULL = 未删除 |
 
 **说明：**
 - `pageId` 必须非空，每个 Block 必须属于某个 Page
 - `pos` 实现 Gap 排序（初始间隔 1000，插入时取中点）
 - `format` 存储为 JSON 字符串（如 `{'bold': true}`）
 - `properties` 存储为 JSON 字符串（与 Property 表冗余，用于快速查询）
+- `version` 每次 update/delete 时 +1，用于多端同步时的 LWW（Last Write Wins）冲突解决
+- `deletedAt` 同步时传播删除操作
 
 **IndexedDB 定义：**
 ```typescript
@@ -135,11 +144,15 @@ function calcInsertPos(prevPos: number | null, nextPos: number | null): number {
 | `targetPageId` | string \| null | FK → Page.id | 目标页面（内部链接） |
 | `displayText` | string | NOT NULL | 显示文本 |
 | `createdAt` | number | NOT NULL | 创建时间戳（毫秒） |
+| `version` | number | NOT NULL, DEFAULT 0 | 单调递增版本号，用于同步 LWW 判断 |
+| `deletedAt` | number \| null | DEFAULT NULL | 软删除时间戳（毫秒），NULL = 未删除 |
 
 **说明：**
 - 外部链接 `targetPageId` 为 NULL
 - 内部链接同时存储 `targetPageId` 和 `displayText`
 - 无 `type` 字段（Link 类型由 `targetPageId` 是否为 NULL 推断）
+- `version` 每次 update/delete 时 +1，用于多端同步时的 LWW（Last Write Wins）冲突解决
+- `deletedAt` 同步时传播删除操作
 
 **IndexedDB 定义：**
 ```typescript
@@ -166,6 +179,8 @@ db.version(1).stores({
 | `schemaVersion` | number | NOT NULL, DEFAULT 1 | Schema 版本 |
 | `createdAt` | number | NOT NULL | 创建时间戳（毫秒） |
 | `updatedAt` | number | NOT NULL | 更新时间戳（毫秒） |
+| `version` | number | NOT NULL, DEFAULT 0 | 单调递增版本号，用于同步 LWW 判断 |
+| `deletedAt` | number \| null | DEFAULT NULL | 软删除时间戳（毫秒），NULL = 未删除 |
 
 **索引：**
 - `blockId`：查询某个 Block 的所有属性
@@ -509,10 +524,11 @@ export const usePropertyStore = defineStore('property', () => {
 | Link 解析 | ✅ | 自动解析 `[[页面名]]` 和 `#标签` |
 | Property 读写 | ✅ | 支持 7 种数据类型 |
 | 内置属性 | ✅ | status, priority, deadline, scheduled, project, area |
-| 软删除 | ✅ | Property 软删除（isDeleted 标记） |
+| 软删除 | ✅ | 所有核心实体支持 `deletedAt` 软删除字段 |
 | 级联删除 | ✅ | 删除 Page/Block 时级联删除关联数据 |
 | 统计同步 | ✅ | childrenCount, wordCount 自动同步 |
 | 页面合并 | ✅ | 合并两个页面（迁移 Block + 重定向链接） |
+| 版本号同步 | ✅ | Page/Block/Property/Link/DateRef 新增 `version` 字段，支持 LWW 冲突解决 |
 
 ---
 

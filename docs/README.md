@@ -1,6 +1,6 @@
 # comind 文档索引
 
-&gt; 更新日期：2026-06-27
+&gt; 更新日期：2026-07-24
 &gt; 本文档是 docs/ 目录的唯一入口点。Agent 只需加载 `active/` 目录即可获得完整项目上下文。
 
 ---
@@ -62,7 +62,7 @@ docs/
 | 文档 | 版本 | 更新日期 | 来源 |
 |------|------|---------|------|
 | spec.md | v1.0 | 2026-05-21 | 合并自 SPEC.md + TODO.md |
-| architecture.md | v4.0 | 2026-05-21 | 合并自 data-model + storage-spec + routing + block-editor-spec + property-spec + block-ordering-redesign |
+| architecture.md | **v4.2** | **2026-07-24** | **新增 version 和 deleted_at 字段，支持 LWW 同步和软删除** |
 | features.md | v1.0 | 2026-05-21 | 合并自 link-spec + slash-commands-spec + functional-design |
 | interaction.md | v1.0 | 2026-05-21 | 合并自 interaction-spec + ui-ux-spec |
 | development.md | **v6.0** | **2026-06-27** | **新增 Core Layer 架构章节** |
@@ -71,7 +71,7 @@ docs/
 | ui-ux-spec.md | v1.1 | 2026-06-05 | 新增关系类型标签点击切换 |
 | link-spec.md | v0.4 | 2026-06-05 | 新增关系类型自定义 + 清理系统 |
 | concept-graph-spec.md | v0.6 | 2026-06-04 | 已实现 Phase 1 + Phase 2 功能 |
-| storage-spec.md | v0.8 | 2026-06-05 | Dexie v9 + templates 表 + relationshipTypes 表 |
+| storage-spec.md | **v0.9** | **2026-07-24** | **新增 version 和 deleted_at 字段** |
 | slash-commands-spec.md | **v1.0** | **2026-06-06** | **新增模板系统集成** |
 | template-system-spec.md | **v1.0** | **2026-06-06** | **新增模板系统完整规格** |
 | concept-block-spec.md | **v1.0** | **2026-06-07** | **✨ 新概念块完整规格** |
@@ -130,6 +130,28 @@ Agent 启动时只需加载 `docs/active/` 下的 6 个文件即可获得完整�
 - `docs/3-features/search-spec.md` - 新增全局搜索完整规格（v1.0）
 - `docs/5-development/dev-guide.md` - 更新至 v6.0（新增 Core Layer 章节）
 - `docs/6-reports/phase-2-sprint-3-verification-report.md` - Sprint 3 验证报告
+
+---
+
+## v0.10 更新摘要（2026-07-24）
+
+### 主要功能
+
+#### 数据同步基础能力完善
+- **版本号字段**：为 Page/Block/Property/Link/DateRef 等核心数据结构新增 `version` 字段，单调递增，用于多端同步时的 LWW（Last Write Wins）冲突解决
+- **软删除字段**：新增 `deleted_at` 字段替代旧 `deleted` 字段，支持软删除操作的同步传播
+- **默认值初始化**：补充所有新增字段的默认值初始化逻辑（version=0, deleted_at=null）
+- **同步模块调整**：优化 `src-tauri/src/sync.rs` 和命令层代码结构，提升可读性
+
+#### 侧边栏结构调整
+- **设置按钮迁移**：将设置按钮从侧边栏底部（SidebarFooter）迁移到侧边栏头部导航区域（SidebarHeader）
+- **冗余代码清理**：移除 SidebarFooter 中与设置按钮相关的样式和逻辑代码
+
+### 相关文档更新
+- `docs/2-architecture/data-model.md` - 更新至 v0.6（新增 version 和 deleted_at 字段）
+- `docs/2-architecture/storage-spec.md` - 更新至 v0.9（SQLite 表结构更新）
+- `docs/active/architecture.md` - 更新至 v4.2（数据模型定义更新）
+- `docs/4-ui/ui-ux-spec.md` - 更新设置按钮入口位置说明
 
 ---
 
