@@ -265,3 +265,24 @@ export async function tauriQueryAllRecurringDateRefs(): Promise<DateRefRecord[]>
 export async function tauriRebuildDateRefs(): Promise<{ rebuilt: number }> {
   return invoke('rebuild_date_refs')
 }
+
+export async function tauriGetSyncQr(): Promise<string> {
+  return invoke('get_sync_qr')
+}
+
+export async function tauriGetPairedDevices(): Promise<{
+  client_id: string
+  peer_device_name: string
+  last_sync_at: number
+  paired_at: number | null
+}[]> {
+  return invoke('get_paired_devices')
+}
+
+export async function tauriUnpairDevice(clientId: string): Promise<void> {
+  return invoke('unpair_device', { clientId })
+}
+
+export async function tauriTriggerFullSync(): Promise<void> {
+  return invoke('trigger_full_sync')
+}

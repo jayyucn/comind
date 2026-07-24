@@ -13,6 +13,7 @@ rand = "0.8"
 hex = "0.4"
 regex = "1.10"
 sha2 = "0.10"
+tokio = { version = "1.0", features = ["sync", "rt"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rusqlite = { version = "0.32", features = ["bundled", "serde_json"] }
@@ -26,3 +27,4 @@ chrono = { version = "0.4", features = ["wasmbind"] }
 
 [dev-dependencies]
 tempfile = "3.0"
+tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }

@@ -553,3 +553,38 @@ export async function triggerSync(): Promise<ExportResult> {
   }
   throw new Error('Sync is only available in desktop app')
 }
+
+export async function getSyncQr(): Promise<string> {
+  if (isTauriEnvironment()) {
+    return tauri.tauriGetSyncQr()
+  }
+  throw new Error('Device sync is only available in desktop app')
+}
+
+export interface PairedDevice {
+  client_id: string
+  peer_device_name: string
+  last_sync_at: number
+  paired_at: number | null
+}
+
+export async function getPairedDevices(): Promise<PairedDevice[]> {
+  if (isTauriEnvironment()) {
+    return tauri.tauriGetPairedDevices()
+  }
+  return Promise.resolve([])
+}
+
+export async function unpairDevice(clientId: string): Promise<void> {
+  if (isTauriEnvironment()) {
+    return tauri.tauriUnpairDevice(clientId)
+  }
+  throw new Error('Device sync is only available in desktop app')
+}
+
+export async function triggerFullSync(): Promise<void> {
+  if (isTauriEnvironment()) {
+    return tauri.tauriTriggerFullSync()
+  }
+  throw new Error('Device sync is only available in desktop app')
+}

@@ -6,6 +6,7 @@ mod config;
 mod markdown;
 mod state;
 mod sync;
+mod sync_server;
 fn main() {
     simple_logger::SimpleLogger::new()
         .with_level(log::LevelFilter::Warn)
@@ -39,7 +40,31 @@ fn main() {
 
             let config_manager = state::ConfigManager::new(app_config);
             app.manage(config_manager);
-            app.manage(config_dir);
+            app.manage(config_dir.clone());
+
+            let sync_server_handle = state::SyncServerHandle::new();
+            app.manage(sync_server_handle.clone());
+
+            let db_path_for_sync = db_path.clone();
+            let config_clone = config::AppConfig::load(&config_dir).unwrap_or_default();
+            let device_name = config_clone.device_name;
+            
+            tauri::async_runtime::spawn(async move {
+                let mut server = match sync_server::SyncServer::new(&db_path_for_sync, device_name) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        log::error!("Failed to create SyncServer: {}", e);
+                        return;
+                    }
+                };
+                
+                if let Err(e) = server.start(8080).await {
+                    log::error!("Failed to start SyncServer: {}", e);
+                    return;
+                }
+                
+                sync_server_handle.set_server(server).await;
+            });
 
             sync::start_sync_task(app_handle.clone());
 
@@ -116,6 +141,10 @@ fn main() {
             commands::query_due_non_recurring_date_refs,
             commands::query_all_recurring_date_refs,
             commands::rebuild_date_refs,
+            commands::get_sync_qr,
+            commands::get_paired_devices,
+            commands::unpair_device,
+            commands::trigger_full_sync,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

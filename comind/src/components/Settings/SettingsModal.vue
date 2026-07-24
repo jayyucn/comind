@@ -4,9 +4,9 @@ import { useSettingsModal } from '../../composables/useSettingsModal'
 import { pushModal, popModal } from '../../composables/useModalKeyboard'
 import { useTheme } from '../../composables/useTheme'
 import RelationshipTypesPanel from './RelationshipTypesPanel.vue'
-import { getDbPath, setDbPath, resetDbPath, exportToMarkdown, importFromMarkdown, getSyncConfig, setSyncConfig, syncNow } from '../../wasm/client'
+import { getDbPath, setDbPath, resetDbPath, exportToMarkdown, importFromMarkdown, getSyncConfig, setSyncConfig, syncNow, getSyncQr, getPairedDevices, unpairDevice, triggerFullSync } from '../../wasm/client'
 import { isTauriEnvironment, tauriPickDirectory } from '../../wasm/tauri-client'
-import { X, Sun, Moon, Monitor, Folder, RotateCcw, AlertCircle, Upload, Download, RefreshCw, ToggleLeft, ToggleRight } from 'lucide-vue-next'
+import { X, Sun, Moon, Monitor, Folder, RotateCcw, AlertCircle, Upload, Download, RefreshCw, ToggleLeft, ToggleRight, Smartphone, QrCode, Clock, Wifi } from 'lucide-vue-next'
 import { useNotificationStore } from '../../stores/notification'
 
 const { isOpen, close } = useSettingsModal()
@@ -40,6 +40,15 @@ const showSyncDirectoryInput = ref(false)
 const exportLoading = ref(false)
 const importLoading = ref(false)
 const syncLoading = ref(false)
+
+const showDeviceSyncQr = ref(false)
+const qrUrl = ref('')
+const qrExpiryCountdown = ref(300)
+const pairedDevices = ref<{ client_id: string; peer_device_name: string; last_sync_at: number; paired_at: number | null }[]>([])
+const deviceSyncLoading = ref(false)
+const isPaired = ref(false)
+
+let qrTimer: ReturnType<typeof setInterval> | null = null
 
 async function loadDbPath() {
   if (!isDesktop) return
@@ -168,11 +177,80 @@ async function handleSyncNow() {
   }
 }
 
+async function loadPairedDevices() {
+  if (!isDesktop) return
+  try {
+    const devices = await getPairedDevices()
+    pairedDevices.value = devices
+    isPaired.value = devices.length > 0
+  } catch (e) {
+    console.error('Failed to load paired devices:', e)
+  }
+}
+
+async function handleShowQr() {
+  try {
+    deviceSyncLoading.value = true
+    qrUrl.value = await getSyncQr()
+    qrExpiryCountdown.value = 300
+    showDeviceSyncQr.value = true
+    if (qrTimer) clearInterval(qrTimer)
+    qrTimer = setInterval(() => {
+      qrExpiryCountdown.value -= 1
+      if (qrExpiryCountdown.value <= 0) {
+        if (qrTimer) clearInterval(qrTimer)
+        showDeviceSyncQr.value = false
+      }
+    }, 1000)
+  } catch (e) {
+    console.error('Failed to get QR code:', e)
+  } finally {
+    deviceSyncLoading.value = false
+  }
+}
+
+function handleCloseQr() {
+  showDeviceSyncQr.value = false
+  if (qrTimer) clearInterval(qrTimer)
+}
+
+async function handleUnpair(deviceId: string) {
+  try {
+    await unpairDevice(deviceId)
+    await loadPairedDevices()
+  } catch (e) {
+    console.error('Failed to unpair device:', e)
+  }
+}
+
+async function handleTriggerFullSync() {
+  try {
+    deviceSyncLoading.value = true
+    await triggerFullSync()
+  } catch (e) {
+    console.error('Failed to trigger full sync:', e)
+  } finally {
+    deviceSyncLoading.value = false
+  }
+}
+
+function formatTimestamp(timestamp: number): string {
+  if (!timestamp) return '-'
+  const date = new Date(timestamp)
+  return date.toLocaleString('zh-CN', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
 watch(isOpen, async (visible) => {
   if (visible) {
     pushModal('settings-modal')
     await loadDbPath()
     await loadSyncConfig()
+    await loadPairedDevices()
   } else {
     popModal('settings-modal')
   }
@@ -213,6 +291,33 @@ onUnmounted(() => {
 
 <template>
   <Teleport to="body">
+    <Transition name="qr-modal">
+      <div v-if="showDeviceSyncQr" class="qr-modal-overlay" @click="handleCloseQr">
+        <div class="qr-modal" @click.stop>
+          <div class="qr-modal-header">
+            <span class="qr-modal-title">设备配对</span>
+            <button class="qr-modal-close" @click="handleCloseQr">
+              <X :size="16" :stroke-width="1.75" />
+            </button>
+          </div>
+          <div class="qr-modal-body">
+            <div class="qr-code-container">
+              <div class="qr-code">
+                <img :src="`data:image/png;base64,${qrUrl}`" alt="配对二维码" />
+              </div>
+              <div class="qr-code-expiry">
+                <Clock :size="12" :stroke-width="1.75" />
+                <span>二维码将在 {{ Math.floor(qrExpiryCountdown / 60) }}:{{ String(qrExpiryCountdown % 60).padStart(2, '0') }} 后过期</span>
+              </div>
+            </div>
+            <div class="qr-modal-info">
+              <Smartphone :size="16" :stroke-width="1.75" />
+              <span>在 Android 端打开扫码功能，扫描上方二维码完成配对</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
     <Transition name="settings-modal">
       <div v-if="isOpen" class="settings-modal-overlay" @click.self="handleOverlayClick">
         <div class="settings-modal">
@@ -398,6 +503,72 @@ onUnmounted(() => {
                     <Upload :size="12" :stroke-width="1.75" />
                     {{ importLoading ? '导入中...' : '导入' }}
                   </button>
+                </div>
+                <div v-if="isDesktop" class="setting-item setting-item--column">
+                  <div class="setting-info">
+                    <span class="setting-label">设备同步</span>
+                    <span class="setting-desc">与 Android 设备通过局域网直连同步数据</span>
+                  </div>
+                  <div class="device-sync-container">
+                    <div v-if="!isPaired" class="device-sync-unpaired">
+                      <button 
+                        class="device-sync-qr-btn" 
+                        :disabled="deviceSyncLoading" 
+                        @click="handleShowQr"
+                      >
+                        <QrCode :size="14" :stroke-width="1.75" />
+                        {{ deviceSyncLoading ? '生成中...' : '显示配对二维码' }}
+                      </button>
+                      <div class="device-sync-note">
+                        <Smartphone :size="12" :stroke-width="1.75" />
+                        <span>在 Android 端打开扫码功能，扫描二维码完成配对</span>
+                      </div>
+                    </div>
+                    <div v-else class="device-sync-paired">
+                      <div class="paired-device-header">
+                        <div class="paired-device-status">
+                          <Wifi :size="14" :stroke-width="1.75" class="paired-status-icon" />
+                          <span>已配对</span>
+                        </div>
+                        <button 
+                          class="device-sync-resync-btn" 
+                          :disabled="deviceSyncLoading" 
+                          @click="handleTriggerFullSync"
+                        >
+                          <RefreshCw :size="12" :stroke-width="1.75" :class="{ spinning: deviceSyncLoading }" />
+                          重新同步
+                        </button>
+                      </div>
+                      <div class="paired-device-list">
+                        <div 
+                          v-for="device in pairedDevices" 
+                          :key="device.client_id" 
+                          class="paired-device-item"
+                        >
+                          <div class="paired-device-info">
+                            <Smartphone :size="14" :stroke-width="1.75" />
+                            <span class="paired-device-name">{{ device.peer_device_name }}</span>
+                          </div>
+                          <div class="paired-device-meta">
+                            <div class="paired-device-time">
+                              <Clock :size="10" :stroke-width="1.75" />
+                              <span>{{ formatTimestamp(device.last_sync_at) }}</span>
+                            </div>
+                            <button 
+                              class="paired-device-unpair-btn" 
+                              @click="handleUnpair(device.client_id)"
+                            >
+                              取消配对
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="device-sync-paired-note">
+                        <AlertCircle :size="12" :stroke-width="1.75" />
+                        <span>MVP 版本仅支持配对一台设备</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </template>
 
@@ -1066,5 +1237,289 @@ onUnmounted(() => {
   .nav-title {
     display: none;
   }
+}
+
+.device-sync-container {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.device-sync-unpaired {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.device-sync-qr-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--accent);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: white;
+  font-family: inherit;
+  align-self: flex-start;
+  transition: opacity 80ms ease;
+}
+
+.device-sync-qr-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.device-sync-qr-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.device-sync-note {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.device-sync-paired {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  background: var(--bg-hover);
+  border-radius: 6px;
+}
+
+.paired-device-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.paired-device-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.paired-status-icon {
+  color: #22c55e;
+}
+
+.device-sync-resync-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--bg-active);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: inherit;
+  transition: background 80ms ease;
+}
+
+.device-sync-resync-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.device-sync-resync-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.paired-device-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.paired-device-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.paired-device-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.paired-device-name {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.paired-device-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.paired-device-time {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.paired-device-unpair-btn {
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-family: inherit;
+  transition: background 80ms ease, color 80ms ease;
+}
+
+.paired-device-unpair-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.device-sync-paired-note {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  padding-top: 4px;
+}
+
+.qr-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--overlay);
+  backdrop-filter: blur(4px);
+}
+
+.qr-modal {
+  width: 360px;
+  background: var(--color-paper);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-modal);
+  overflow: hidden;
+}
+
+.qr-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.qr-modal-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.qr-modal-close {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--text-tertiary);
+  transition: background 80ms ease, color 80ms ease;
+}
+
+.qr-modal-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.qr-modal-body {
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.qr-code-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.qr-code {
+  width: 200px;
+  height: 200px;
+  padding: 12px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.qr-code img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.qr-code-expiry {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.qr-modal-info {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding-top: 8px;
+}
+
+.qr-modal-enter-active,
+.qr-modal-leave-active {
+  transition: opacity 180ms ease;
+}
+
+.qr-modal-enter-active .qr-modal,
+.qr-modal-leave-active .qr-modal {
+  transition: transform 180ms ease;
+}
+
+.qr-modal-enter-from,
+.qr-modal-leave-to {
+  opacity: 0;
+}
+
+.qr-modal-enter-from .qr-modal {
+  transform: scale(0.95);
 }
 </style>

@@ -305,6 +305,12 @@ impl SQLiteAdapter {
         if !has("DateRef", "deleted_at") {
             conn.execute("ALTER TABLE DateRef ADD COLUMN deleted_at INTEGER", [])?;
         }
+        if !has("UserTemplate", "version") {
+            conn.execute("ALTER TABLE UserTemplate ADD COLUMN version INTEGER NOT NULL DEFAULT 0", [])?;
+        }
+        if !has("UserTemplate", "deleted_at") {
+            conn.execute("ALTER TABLE UserTemplate ADD COLUMN deleted_at INTEGER", [])?;
+        }
         Ok(())
     }
 }
@@ -1378,6 +1384,29 @@ impl StorageAdapter for SQLiteAdapter {
 }
 
 impl DateRefRepository for SQLiteAdapter {
+    fn get_all(&self) -> Result<Vec<DateRef>, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts, updated_at, version, deleted_at FROM DateRef WHERE deleted_at IS NULL"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(DateRef {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                kind: row.get(2)?,
+                iso: row.get(3)?,
+                date_day: row.get(4)?,
+                recurrence: row.get(5)?,
+                lead_minutes: row.get(6)?,
+                event_ts: row.get(7)?,
+                created_at: row.get(8)?,
+                updated_at: row.get(9)?,
+                version: row.get(10)?,
+                deleted_at: row.get(11)?,
+            })
+        })?;
+        Ok(rows.filter_map(Result::ok).collect())
+    }
+
     fn get_by_id(&self, id: &str) -> Result<DateRef, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts, updated_at, version, deleted_at FROM DateRef WHERE id = ? AND deleted_at IS NULL"
@@ -2898,6 +2927,29 @@ impl<'a> StorageAdapter for SQLiteTransactionAdapter<'a> {
 }
 
 impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
+    fn get_all(&self) -> Result<Vec<DateRef>, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts, updated_at, version, deleted_at FROM DateRef WHERE deleted_at IS NULL"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(DateRef {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                kind: row.get(2)?,
+                iso: row.get(3)?,
+                date_day: row.get(4)?,
+                recurrence: row.get(5)?,
+                lead_minutes: row.get(6)?,
+                event_ts: row.get(7)?,
+                created_at: row.get(8)?,
+                updated_at: row.get(9)?,
+                version: row.get(10)?,
+                deleted_at: row.get(11)?,
+            })
+        })?;
+        Ok(rows.filter_map(Result::ok).collect())
+    }
+
     fn get_by_id(&self, id: &str) -> Result<DateRef, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts, updated_at, version, deleted_at FROM DateRef WHERE id = ? AND deleted_at IS NULL"

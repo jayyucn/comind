@@ -18,6 +18,14 @@ regex = "1"
 log = "0.4"
 simple_logger = "4"
 tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = { version = "0.22", features = ["native-tls"] }
+url = "2.5"
+get_if_addrs = "0.5"
+urlencoding = "2.1"
+futures-util = "0.3"
+qrcode = "0.14"
+image = "0.24"
+base64 = "0.22"
 
 [build-dependencies]
 tauri-build = { version = "2.0", features = [] }

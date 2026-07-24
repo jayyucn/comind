@@ -13,6 +13,10 @@ pub struct AppConfig {
     pub sync_directory: Option<String>,
     #[serde(default = "default_sync_interval")]
     pub sync_interval_secs: u64,
+    #[serde(default)]
+    pub client_id: String,
+    #[serde(default)]
+    pub device_name: String,
 }
 
 fn default_sync_interval() -> u64 {
@@ -21,12 +25,50 @@ fn default_sync_interval() -> u64 {
 
 impl Default for AppConfig {
     fn default() -> Self {
+        let device_name = get_device_name();
         Self {
             database_path: None,
             sync_enabled: false,
             sync_directory: None,
             sync_interval_secs: 300,
+            client_id: uuid::Uuid::new_v4().to_string(),
+            device_name,
         }
+    }
+}
+
+fn get_device_name() -> String {
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+        match Command::new("hostname").output() {
+            Ok(output) => String::from_utf8_lossy(&output.stdout).trim().to_string(),
+            Err(_) => "PC".to_string(),
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        match Command::new("scutil").arg("--get").arg("ComputerName").output() {
+            Ok(output) => String::from_utf8_lossy(&output.stdout).trim().to_string(),
+            Err(_) => "Mac".to_string(),
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::Command;
+        match Command::new("hostname").output() {
+            Ok(output) => String::from_utf8_lossy(&output.stdout).trim().to_string(),
+            Err(_) => "Linux".to_string(),
+        }
+    }
+    #[cfg(target_os = "android")]
+    {
+        "Android".to_string()
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux", target_os = "android")))]
+    {
+        "Device".to_string()
     }
 }
 

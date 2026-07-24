@@ -101,6 +101,7 @@ pub trait NotificationRepository {
 }
 
 pub trait DateRefRepository {
+    fn get_all(&self) -> Result<Vec<DateRef>, Box<dyn Error>>;
     fn get_by_id(&self, id: &str) -> Result<DateRef, Box<dyn Error>>;
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<DateRef>, Box<dyn Error>>;
     fn query_by_date_range(

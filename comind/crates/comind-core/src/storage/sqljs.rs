@@ -795,6 +795,11 @@ impl NotificationRepository for SqlJsAdapter {
 
 #[cfg(target_arch = "wasm32")]
 impl DateRefRepository for SqlJsAdapter {
+    fn get_all(&self) -> Result<Vec<DateRef>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, updated_at, version, deleted_at, created_at FROM DateRef WHERE deleted_at IS NULL", &[])?;
+        Ok(result.into_iter().map(|r| row_to_date_ref(&r)).collect())
+    }
+
     fn get_by_id(&self, id: &str) -> Result<DateRef, Box<dyn std::error::Error>> {
         let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, updated_at, version, deleted_at, created_at FROM DateRef WHERE id = ? AND deleted_at IS NULL", &[id])?;
         if result.is_empty() {
