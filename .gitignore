@@ -11,3 +11,4 @@ comind/target/
 test-results/
 comind/test-gap-exhausted.spec.ts
 comind/test-merge-children.spec.ts
+comind/temp_cargo.txt

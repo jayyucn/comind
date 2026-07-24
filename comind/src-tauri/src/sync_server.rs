@@ -229,15 +229,13 @@ impl SyncServer {
     }
 
     fn get_local_ip() -> Option<String> {
-        for iface in get_if_addrs::get_if_addrs().ok()? {
-            if !iface.is_loopback() {
-                match iface.addr {
-                    get_if_addrs::IfAddr::V4(ipv4) => return Some(ipv4.ip.to_string()),
-                    get_if_addrs::IfAddr::V6(ipv6) => return Some(ipv6.ip.to_string()),
-                }
-            }
-        }
-        None
+        // Use std::net to find the local IP used for outbound connections.
+        // This avoids the get_if_addrs crate which requires C compilation
+        // and doesn't support Android NDK's versioned target triples.
+        let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+        socket.connect("8.8.8.8:80").ok()?;
+        let addr = socket.local_addr().ok()?;
+        Some(addr.ip().to_string())
     }
 
     async fn handle_client(

@@ -112,6 +112,8 @@ impl AppConfig {
 }
 
 pub fn get_default_db_path(app_handle: &tauri::AppHandle) -> PathBuf {
+    // executable_dir() is not available on mobile targets
+    #[cfg(not(target_os = "android"))]
     if let Ok(exe_dir) = app_handle.path().executable_dir() {
         #[cfg(debug_assertions)]
         {

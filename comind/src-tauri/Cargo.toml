@@ -3,6 +3,10 @@ name = "comind"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "comind"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
 [dependencies]
 tauri = { version = "2.0", features = ["default"] }
 comind-core = { path = "../crates/comind-core" }
@@ -18,9 +22,8 @@ regex = "1"
 log = "0.4"
 simple_logger = "4"
 tokio = { version = "1", features = ["full"] }
-tokio-tungstenite = { version = "0.22", features = ["native-tls"] }
+tokio-tungstenite = { version = "0.22", default-features = false, features = ["rustls-tls-webpki-roots"] }
 url = "2.5"
-get_if_addrs = "0.5"
 urlencoding = "2.1"
 futures-util = "0.3"
 qrcode = "0.14"
