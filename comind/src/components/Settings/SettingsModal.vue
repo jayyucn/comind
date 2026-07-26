@@ -4,7 +4,7 @@ import { useSettingsModal } from '../../composables/useSettingsModal'
 import { pushModal, popModal } from '../../composables/useModalKeyboard'
 import { useTheme } from '../../composables/useTheme'
 import RelationshipTypesPanel from './RelationshipTypesPanel.vue'
-import { getDbPath, setDbPath, resetDbPath, exportToMarkdown, importFromMarkdown, getSyncConfig, setSyncConfig, syncNow, getSyncQr, getPairedDevices, unpairDevice, triggerFullSync } from '../../wasm/client'
+import { getWorkspacePath, setWorkspacePath, resetWorkspacePath, exportToMarkdown, importFromMarkdown, getSyncConfig, setSyncConfig, syncNow, getSyncQr, getPairedDevices, unpairDevice, triggerFullSync } from '../../wasm/client'
 import { isTauriEnvironment, tauriPickDirectory, isAndroidPlatform, tauriConnectToServer, tauriDisconnectSync, tauriGetSyncStatus, tauriTriggerFullSyncMobile } from '../../wasm/tauri-client'
 import type { SyncStatus } from '../../wasm/tauri-client'
 import { X, Sun, Moon, Monitor, Folder, RotateCcw, AlertCircle, Upload, Download, RefreshCw, ToggleLeft, ToggleRight, Smartphone, QrCode, Clock, Wifi } from 'lucide-vue-next'
@@ -28,15 +28,13 @@ type Section = 'appearance' | 'editor' | 'data' | 'notifications' | 'about'
 
 const activeSection = ref<Section>('appearance')
 
-const dbPath = ref('')
-const customDbPath = ref('')
-const showDbPathInput = ref(false)
+const workspacePath = ref('')
+const customWorkspacePath = ref('')
+const showWorkspacePathInput = ref(false)
 const isDesktop = isTauriEnvironment()
 
 const syncEnabled = ref(false)
-const syncDirectory = ref('')
 const syncInterval = ref(5)
-const showSyncDirectoryInput = ref(false)
 
 const exportLoading = ref(false)
 const importLoading = ref(false)
@@ -61,12 +59,12 @@ onMounted(async () => {
 
 let qrTimer: ReturnType<typeof setInterval> | null = null
 
-async function loadDbPath() {
+async function loadWorkspacePath() {
   if (!isDesktop) return
   try {
-    dbPath.value = await getDbPath()
+    workspacePath.value = await getWorkspacePath()
   } catch (e) {
-    console.error('Failed to load database path:', e)
+    console.error('Failed to load workspace path:', e)
   }
 }
 
@@ -75,32 +73,31 @@ async function loadSyncConfig() {
   try {
     const config = await getSyncConfig()
     syncEnabled.value = config.sync_enabled
-    syncDirectory.value = config.sync_directory || ''
     syncInterval.value = config.sync_interval_secs / 60
   } catch (e) {
     console.error('Failed to load sync config:', e)
   }
 }
 
-async function handleSetDbPath() {
-  if (!customDbPath.value.trim()) return
+async function handleSetWorkspacePath() {
+  if (!customWorkspacePath.value.trim()) return
   try {
-    await setDbPath(customDbPath.value.trim())
-    dbPath.value = customDbPath.value.trim()
-    showDbPathInput.value = false
-    customDbPath.value = ''
+    await setWorkspacePath(customWorkspacePath.value.trim())
+    workspacePath.value = customWorkspacePath.value.trim()
+    showWorkspacePathInput.value = false
+    customWorkspacePath.value = ''
   } catch (e) {
-    console.error('Failed to set database path:', e)
+    console.error('Failed to set workspace path:', e)
   }
 }
 
-async function handleResetDbPath() {
+async function handleResetWorkspacePath() {
   try {
-    await resetDbPath()
-    dbPath.value = await getDbPath()
-    showDbPathInput.value = false
+    await resetWorkspacePath()
+    workspacePath.value = await getWorkspacePath()
+    showWorkspacePathInput.value = false
   } catch (e) {
-    console.error('Failed to reset database path:', e)
+    console.error('Failed to reset workspace path:', e)
   }
 }
 
@@ -108,41 +105,18 @@ async function handlePickDirectory() {
   try {
     const selected = await tauriPickDirectory()
     if (selected) {
-      customDbPath.value = selected
-      showDbPathInput.value = true
+      customWorkspacePath.value = selected
+      showWorkspacePathInput.value = true
     }
   } catch (e) {
     console.error('Failed to pick directory:', e)
   }
 }
 
-async function handlePickSyncDirectory() {
-  try {
-    const selected = await tauriPickDirectory()
-    if (selected) {
-      syncDirectory.value = selected
-      showSyncDirectoryInput.value = false
-      await setSyncConfig(syncEnabled.value, selected, syncInterval.value * 60)
-    }
-  } catch (e) {
-    console.error('Failed to pick sync directory:', e)
-  }
-}
-
-async function handleSetSyncDirectory() {
-  if (!syncDirectory.value.trim()) return
-  try {
-    await setSyncConfig(syncEnabled.value, syncDirectory.value.trim(), syncInterval.value * 60)
-    showSyncDirectoryInput.value = false
-  } catch (e) {
-    console.error('Failed to set sync directory:', e)
-  }
-}
-
 async function handleToggleSync() {
   try {
     syncEnabled.value = !syncEnabled.value
-    await setSyncConfig(syncEnabled.value, syncDirectory.value || undefined, syncInterval.value * 60)
+    await setSyncConfig(syncEnabled.value, syncInterval.value * 60)
   } catch (e) {
     console.error('Failed to toggle sync:', e)
     syncEnabled.value = !syncEnabled.value
@@ -152,10 +126,7 @@ async function handleToggleSync() {
 async function handleExport() {
   try {
     exportLoading.value = true
-    const selected = await tauriPickDirectory()
-    if (selected) {
-      await exportToMarkdown(selected)
-    }
+    await exportToMarkdown()
   } catch (e) {
     console.error('Failed to export:', e)
   } finally {
@@ -166,10 +137,7 @@ async function handleExport() {
 async function handleImport() {
   try {
     importLoading.value = true
-    const selected = await tauriPickDirectory()
-    if (selected) {
-      await importFromMarkdown(selected, 'merge')
-    }
+    await importFromMarkdown('merge')
   } catch (e) {
     console.error('Failed to import:', e)
   } finally {
@@ -309,7 +277,7 @@ watch(isOpen, async (visible) => {
     if (androidIsAndroid.value) {
       activeSection.value = 'data'
     }
-    await loadDbPath()
+    await loadWorkspacePath()
     await loadSyncConfig()
     await loadPairedDevices()
     await loadAndroidSyncStatus()
@@ -446,46 +414,46 @@ onUnmounted(() => {
               <template v-if="activeSection === 'data'">
                 <div v-if="isDesktop" class="setting-item setting-item--column">
                   <div class="setting-info">
-                    <span class="setting-label">数据库位置</span>
-                    <span class="setting-desc">当前数据库文件所在目录</span>
+                    <span class="setting-label">工作空间路径</span>
+                    <span class="setting-desc">统一管理数据库和 Markdown 同步文件的根目录</span>
                   </div>
                   <div class="db-path-container">
                     <div class="db-path-display">
                       <Folder :size="14" :stroke-width="1.75" />
-                      <span class="db-path-text">{{ dbPath || '加载中...' }}</span>
+                      <span class="db-path-text">{{ workspacePath || '加载中...' }}</span>
                     </div>
-                    <div v-if="!showDbPathInput" class="db-path-actions">
-                      <button class="db-path-btn db-path-btn--secondary" @click="showDbPathInput = true">
+                    <div v-if="!showWorkspacePathInput" class="db-path-actions">
+                      <button class="db-path-btn db-path-btn--secondary" @click="showWorkspacePathInput = true">
                         更改路径
                       </button>
-                      <button class="db-path-btn db-path-btn--secondary" @click="handleResetDbPath">
+                      <button class="db-path-btn db-path-btn--secondary" @click="handleResetWorkspacePath">
                         <RotateCcw :size="12" :stroke-width="1.75" />
                         恢复默认
                       </button>
                     </div>
                     <div v-else class="db-path-input-container">
                       <input
-                        v-model="customDbPath"
+                        v-model="customWorkspacePath"
                         type="text"
                         class="db-path-input"
-                        placeholder="输入新的数据库目录路径"
-                        @keydown.enter="handleSetDbPath"
+                        placeholder="输入新的工作空间目录路径"
+                        @keydown.enter="handleSetWorkspacePath"
                       />
                       <button class="db-path-btn" @click="handlePickDirectory">
                         <Folder :size="12" :stroke-width="1.75" />
                       </button>
-                      <button class="db-path-btn" @click="handleSetDbPath">确定</button>
-                      <button class="db-path-btn db-path-btn--secondary" @click="showDbPathInput = false">取消</button>
+                      <button class="db-path-btn" @click="handleSetWorkspacePath">确定</button>
+                      <button class="db-path-btn db-path-btn--secondary" @click="showWorkspacePathInput = false">取消</button>
                     </div>
                   </div>
                   <div class="db-path-note">
                     <AlertCircle :size="12" :stroke-width="1.75" />
-                    <span>更改路径后需要重启应用生效</span>
+                    <span>更改路径后需要重启应用生效（workspace 下包含 sqlite/ 和 markdown/ 子目录）</span>
                   </div>
                 </div>
                 <div v-if="!isDesktop" class="setting-item">
                   <div class="setting-info">
-                    <span class="setting-label">数据库位置</span>
+                    <span class="setting-label">工作空间路径</span>
                     <span class="setting-desc">Web 版本使用浏览器 IndexedDB</span>
                   </div>
                   <span class="setting-value">IndexedDB</span>
@@ -493,7 +461,7 @@ onUnmounted(() => {
                 <div v-if="isDesktop" class="setting-item setting-item--column">
                   <div class="setting-info">
                     <span class="setting-label">自动同步</span>
-                    <span class="setting-desc">将数据自动同步到 Markdown 文件，切换设备时保持一致</span>
+                    <span class="setting-desc">将数据自动同步到工作空间下的 Markdown 文件，切换设备时保持一致</span>
                   </div>
                   <div class="sync-container">
                     <button class="sync-toggle" @click="handleToggleSync">
@@ -502,27 +470,6 @@ onUnmounted(() => {
                       <span>{{ syncEnabled ? '已开启' : '已关闭' }}</span>
                     </button>
                     <div v-if="syncEnabled" class="sync-options">
-                      <div class="sync-directory">
-                        <div v-if="!showSyncDirectoryInput" class="sync-directory-display">
-                          <Folder :size="12" :stroke-width="1.75" />
-                          <span>{{ syncDirectory || '未设置目录' }}</span>
-                          <button class="sync-pick-btn" @click="showSyncDirectoryInput = true">选择</button>
-                        </div>
-                        <div v-else class="sync-directory-input">
-                          <input
-                            v-model="syncDirectory"
-                            type="text"
-                            class="sync-input"
-                            placeholder="输入同步目录路径"
-                            @keydown.enter="handleSetSyncDirectory"
-                          />
-                          <button class="sync-input-btn" @click="handlePickSyncDirectory">
-                            <Folder :size="12" :stroke-width="1.75" />
-                          </button>
-                          <button class="sync-input-btn" @click="handleSetSyncDirectory">确定</button>
-                          <button class="sync-input-btn sync-input-btn--secondary" @click="showSyncDirectoryInput = false">取消</button>
-                        </div>
-                      </div>
                       <div class="sync-interval">
                         <span>同步间隔</span>
                         <input
@@ -531,7 +478,7 @@ onUnmounted(() => {
                           min="1"
                           max="60"
                           class="sync-interval-input"
-                          @change="setSyncConfig(syncEnabled, syncDirectory || undefined, syncInterval * 60)"
+                          @change="setSyncConfig(syncEnabled, syncInterval * 60)"
                         />
                         <span>分钟</span>
                       </div>
@@ -543,7 +490,7 @@ onUnmounted(() => {
                   </div>
                   <div class="sync-note">
                     <AlertCircle :size="12" :stroke-width="1.75" />
-                    <span>开启后会定时将数据导出到指定目录的 Markdown 文件</span>
+                    <span>开启后会定时将数据导出到工作空间下 markdown/ 目录的 Markdown 文件</span>
                   </div>
                 </div>
                 <div class="setting-item">

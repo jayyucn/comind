@@ -490,30 +490,37 @@ export async function getDbPath(): Promise<string> {
   return Promise.resolve('Web: IndexedDB')
 }
 
-export async function setDbPath(path: string): Promise<string> {
+export async function getWorkspacePath(): Promise<string> {
   if (isTauriEnvironment()) {
-    return tauri.tauriSetDbPath(path)
+    return tauri.tauriGetWorkspacePath()
   }
-  throw new Error('Database path setting is only available in desktop app')
+  return Promise.resolve('Web: IndexedDB')
 }
 
-export async function resetDbPath(): Promise<string> {
+export async function setWorkspacePath(path: string): Promise<string> {
   if (isTauriEnvironment()) {
-    return tauri.tauriResetDbPath()
+    return tauri.tauriSetWorkspacePath(path)
   }
-  throw new Error('Database path setting is only available in desktop app')
+  throw new Error('Workspace path setting is only available in desktop app')
 }
 
-export async function exportToMarkdown(directory: string): Promise<ExportResult> {
+export async function resetWorkspacePath(): Promise<string> {
   if (isTauriEnvironment()) {
-    return tauri.tauriExportToMarkdown(directory)
+    return tauri.tauriResetWorkspacePath()
+  }
+  throw new Error('Workspace path setting is only available in desktop app')
+}
+
+export async function exportToMarkdown(): Promise<ExportResult> {
+  if (isTauriEnvironment()) {
+    return tauri.tauriExportToMarkdown()
   }
   throw new Error('Markdown export is only available in desktop app')
 }
 
-export async function importFromMarkdown(directory: string, strategy: string): Promise<ImportResult> {
+export async function importFromMarkdown(strategy: string): Promise<ImportResult> {
   if (isTauriEnvironment()) {
-    return tauri.tauriImportFromMarkdown(directory, strategy)
+    return tauri.tauriImportFromMarkdown(strategy)
   }
   throw new Error('Markdown import is only available in desktop app')
 }
@@ -524,18 +531,16 @@ export async function getSyncConfig(): Promise<SyncConfig> {
   }
   return Promise.resolve({
     sync_enabled: false,
-    sync_directory: null,
     sync_interval_secs: 300,
   })
 }
 
 export async function setSyncConfig(
   enabled: boolean,
-  directory?: string,
   intervalSecs?: number
 ): Promise<void> {
   if (isTauriEnvironment()) {
-    return tauri.tauriSetSyncConfig(enabled, directory, intervalSecs)
+    return tauri.tauriSetSyncConfig(enabled, intervalSecs)
   }
   throw new Error('Sync config is only available in desktop app')
 }

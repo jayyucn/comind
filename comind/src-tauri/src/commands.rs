@@ -9,7 +9,7 @@ use comind_core::{
 };
 use serde::{Deserialize, Serialize};
 use std::error::Error;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PageUpdate {
@@ -549,22 +549,34 @@ pub async fn delete_property(
 pub async fn get_db_path(
     db: State<'_, super::state::DatabaseConnection>,
 ) -> Result<String, String> {
+    // 保留前端兼容：返回当前数据库文件路径（workspace/sqlite/comind.db）
     Ok(db.get_db_path())
 }
 
 #[tauri::command]
-pub async fn set_db_path(
+pub async fn get_workspace_path(
+    config_manager: State<'_, super::state::ConfigManager>,
+    app_handle: AppHandle,
+) -> Result<String, String> {
+    let config = config_manager.get_config()?;
+    let workspace = super::config::get_workspace_path(&app_handle, &config);
+    Ok(workspace.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn set_workspace_path(
     config_manager: State<'_, super::state::ConfigManager>,
     config_dir: State<'_, std::path::PathBuf>,
     path: &str,
 ) -> Result<String, String> {
-    let new_path = std::path::PathBuf::from(path);
-    if !new_path.exists() {
-        std::fs::create_dir_all(&new_path)
-            .map_err(|e| format!("Failed to create directory: {}", e))?;
-    }
+    let workspace = std::path::PathBuf::from(path);
+    // 创建 sqlite/ 和 markdown/ 子目录
+    std::fs::create_dir_all(workspace.join("sqlite"))
+        .map_err(|e| format!("Failed to create sqlite directory: {}", e))?;
+    std::fs::create_dir_all(workspace.join("markdown"))
+        .map_err(|e| format!("Failed to create markdown directory: {}", e))?;
     let mut config = super::config::AppConfig::load(&config_dir).unwrap_or_default();
-    config.database_path = Some(path.to_string());
+    config.workspace_path = Some(path.to_string());
     config
         .save(&config_dir)
         .map_err(|e| format!("Failed to save config: {}", e))?;
@@ -574,12 +586,12 @@ pub async fn set_db_path(
 }
 
 #[tauri::command]
-pub async fn reset_db_path(
+pub async fn reset_workspace_path(
     config_manager: State<'_, super::state::ConfigManager>,
     config_dir: State<'_, std::path::PathBuf>,
 ) -> Result<String, String> {
     let mut config = super::config::AppConfig::load(&config_dir).unwrap_or_default();
-    config.database_path = None;
+    config.workspace_path = None;
     config
         .save(&config_dir)
         .map_err(|e| format!("Failed to save config: {}", e))?;
@@ -823,21 +835,29 @@ pub async fn execute_batch(
 #[tauri::command]
 pub async fn export_to_markdown(
     db: State<'_, super::state::DatabaseConnection>,
-    directory: &str,
+    config_manager: State<'_, super::state::ConfigManager>,
+    app_handle: AppHandle,
 ) -> Result<super::markdown::ExportResult, String> {
-    let dir = std::path::Path::new(directory);
-    execute_with_adapter(db, |storage| super::markdown::export_all(storage, dir))
+    let config = config_manager.get_config()?;
+    let workspace = super::config::get_workspace_path(&app_handle, &config);
+    let dir = super::config::get_markdown_path(&workspace);
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create markdown directory: {}", e))?;
+    execute_with_adapter(db, |storage| super::markdown::export_all(storage, &dir))
 }
 
 #[tauri::command]
 pub async fn import_from_markdown(
     db: State<'_, super::state::DatabaseConnection>,
-    directory: &str,
+    config_manager: State<'_, super::state::ConfigManager>,
+    app_handle: AppHandle,
     strategy: &str,
 ) -> Result<super::markdown::ImportResult, String> {
-    let dir = std::path::Path::new(directory);
+    let config = config_manager.get_config()?;
+    let workspace = super::config::get_workspace_path(&app_handle, &config);
+    let dir = super::config::get_markdown_path(&workspace);
     execute_with_adapter(db, |storage| {
-        super::markdown::import_all(storage, dir, strategy)
+        super::markdown::import_all(storage, &dir, strategy)
     })
 }
 
@@ -854,12 +874,10 @@ pub async fn set_sync_config(
     config_manager: State<'_, super::state::ConfigManager>,
     config_dir: State<'_, std::path::PathBuf>,
     enabled: bool,
-    directory: Option<String>,
     interval_secs: Option<u64>,
 ) -> Result<(), String> {
     let mut config = super::config::AppConfig::load(&config_dir).unwrap_or_default();
     config.sync_enabled = enabled;
-    config.sync_directory = directory;
     if let Some(interval) = interval_secs {
         config.sync_interval_secs = interval;
     }
@@ -873,28 +891,28 @@ pub async fn set_sync_config(
 pub async fn sync_now(
     db: State<'_, super::state::DatabaseConnection>,
     config_manager: State<'_, super::state::ConfigManager>,
+    app_handle: AppHandle,
 ) -> Result<super::markdown::ExportResult, String> {
     let config = config_manager.get_config()?;
-    let sync_dir = match &config.sync_directory {
-        Some(d) => d.clone(),
-        None => return Err("Sync directory not configured".to_string()),
-    };
-    let dir = std::path::Path::new(&sync_dir);
-    execute_with_adapter(db, |storage| super::markdown::export_all(storage, dir))
+    let workspace = super::config::get_workspace_path(&app_handle, &config);
+    let dir = super::config::get_markdown_path(&workspace);
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create markdown directory: {}", e))?;
+    execute_with_adapter(db, |storage| super::markdown::export_all(storage, &dir))
 }
 
 #[tauri::command]
 pub async fn trigger_sync(
     db: State<'_, super::state::DatabaseConnection>,
     config_manager: State<'_, super::state::ConfigManager>,
+    app_handle: AppHandle,
 ) -> Result<super::markdown::ExportResult, String> {
     let config = config_manager.get_config()?;
-    let sync_dir = match &config.sync_directory {
-        Some(d) => d.clone(),
-        None => return Err("Sync directory not configured".to_string()),
-    };
-    let dir = std::path::Path::new(&sync_dir);
-    execute_with_adapter(db, |storage| super::markdown::export_changed(storage, dir))
+    let workspace = super::config::get_workspace_path(&app_handle, &config);
+    let dir = super::config::get_markdown_path(&workspace);
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create markdown directory: {}", e))?;
+    execute_with_adapter(db, |storage| super::markdown::export_changed(storage, &dir))
 }
 
 #[tauri::command]

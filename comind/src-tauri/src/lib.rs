@@ -7,7 +7,7 @@ mod state;
 mod sync;
 #[cfg(not(target_os = "android"))]
 mod sync_server;
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", test))]
 mod sync_client;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -33,14 +33,16 @@ pub fn run() {
 
             let app_config = config::AppConfig::load(&config_dir).unwrap_or_default();
 
-            let db_path = config::get_db_path(&app_handle, &app_config);
+            let workspace = config::get_workspace_path(&app_handle, &app_config);
 
-            if !db_path.exists() {
-                std::fs::create_dir_all(&db_path).expect("Failed to create database directory");
-            }
+            // 创建 workspace 子目录：sqlite/ 和 markdown/
+            std::fs::create_dir_all(workspace.join("sqlite"))
+                .expect("Failed to create sqlite directory");
+            std::fs::create_dir_all(workspace.join("markdown"))
+                .expect("Failed to create markdown directory");
 
             let db =
-                state::DatabaseConnection::new(&db_path).expect("Failed to initialize database");
+                state::DatabaseConnection::new(&workspace).expect("Failed to initialize database");
             app.manage(db);
 
             let config_manager = state::ConfigManager::new(app_config);
@@ -52,7 +54,7 @@ pub fn run() {
 
             #[cfg(not(target_os = "android"))]
             {
-                let db_path_for_sync = db_path.join("comind.db");
+                let db_path_for_sync = config::get_db_path(&workspace);
                 let config_clone = config::AppConfig::load(&config_dir).unwrap_or_default();
                 let device_name = config_clone.device_name;
 
@@ -129,8 +131,9 @@ pub fn run() {
             commands::delete_property,
             commands::execute_batch,
             commands::get_db_path,
-            commands::set_db_path,
-            commands::reset_db_path,
+            commands::get_workspace_path,
+            commands::set_workspace_path,
+            commands::reset_workspace_path,
             commands::export_to_markdown,
             commands::import_from_markdown,
             commands::get_sync_config,

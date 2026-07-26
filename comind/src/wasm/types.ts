@@ -149,7 +149,6 @@ export interface ImportResult {
 
 export interface SyncConfig {
   sync_enabled: boolean
-  sync_directory: string | null
   sync_interval_secs: number
 }
 

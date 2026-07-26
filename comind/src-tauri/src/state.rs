@@ -9,8 +9,9 @@ pub struct DatabaseConnection {
 }
 
 impl DatabaseConnection {
-    pub fn new(data_dir: &Path) -> Result<Self, String> {
-        let db_path = data_dir.join("comind.db");
+    /// 接收 workspace 路径，在 workspace/sqlite/comind.db 处打开数据库
+    pub fn new(workspace_path: &Path) -> Result<Self, String> {
+        let db_path = workspace_path.join("sqlite").join("comind.db");
         let adapter =
             SQLiteAdapter::open(&db_path).map_err(|e| format!("Failed to open database: {}", e))?;
         Ok(Self {

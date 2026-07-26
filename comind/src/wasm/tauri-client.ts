@@ -127,19 +127,23 @@ export async function tauriGetDbPath(): Promise<string> {
   return invoke('get_db_path')
 }
 
-export async function tauriSetDbPath(path: string): Promise<string> {
-  return invoke('set_db_path', { path })
+export async function tauriGetWorkspacePath(): Promise<string> {
+  return invoke('get_workspace_path')
 }
 
-export async function tauriResetDbPath(): Promise<string> {
-  return invoke('reset_db_path')
+export async function tauriSetWorkspacePath(path: string): Promise<string> {
+  return invoke('set_workspace_path', { path })
+}
+
+export async function tauriResetWorkspacePath(): Promise<string> {
+  return invoke('reset_workspace_path')
 }
 
 export async function tauriPickDirectory(): Promise<string | null> {
   const selected = await open({
     directory: true,
     multiple: false,
-    title: '选择数据库目录',
+    title: '选择工作空间目录',
   })
   if (typeof selected === 'string') {
     return selected
@@ -147,12 +151,12 @@ export async function tauriPickDirectory(): Promise<string | null> {
   return null
 }
 
-export async function tauriExportToMarkdown(directory: string): Promise<ExportResult> {
-  return invoke('export_to_markdown', { directory })
+export async function tauriExportToMarkdown(): Promise<ExportResult> {
+  return invoke('export_to_markdown')
 }
 
-export async function tauriImportFromMarkdown(directory: string, strategy: string): Promise<ImportResult> {
-  return invoke('import_from_markdown', { directory, strategy })
+export async function tauriImportFromMarkdown(strategy: string): Promise<ImportResult> {
+  return invoke('import_from_markdown', { strategy })
 }
 
 export async function tauriGetSyncConfig(): Promise<SyncConfig> {
@@ -161,10 +165,9 @@ export async function tauriGetSyncConfig(): Promise<SyncConfig> {
 
 export async function tauriSetSyncConfig(
   enabled: boolean,
-  directory?: string,
   intervalSecs?: number
 ): Promise<void> {
-  return invoke('set_sync_config', { enabled, directory, intervalSecs })
+  return invoke('set_sync_config', { enabled, intervalSecs })
 }
 
 export async function tauriSyncNow(): Promise<ExportResult> {
