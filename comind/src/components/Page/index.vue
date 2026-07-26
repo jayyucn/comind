@@ -8,7 +8,6 @@ import SlashCommandMenu from '../SlashCommandMenu.vue'
 import PropertyQuickEditor from '../Block/PropertyQuickEditor.vue'
 import PropertyEditor from '../Block/PropertyEditor.vue'
 import RelationshipMenu from '../RelationshipMenu.vue'
-import PageConceptBlock from './PageConceptBlock.vue'
 import { usePageStore } from '../../stores/pages'
 import { useEditorStore } from '../../stores/editor'
 import { useRelationshipMenu } from '../../composables/useRelationshipMenu'
@@ -147,8 +146,6 @@ function handleCancelMerge() {
             />
           </div>
         </div>
-
-        <PageConceptBlock :page-id="resolvedPageId" />
 
         <BlockList :page-id="resolvedPageId" />
       </main>

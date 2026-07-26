@@ -29,7 +29,6 @@ import './handlers/bullet'
 import './handlers/code'
 import './handlers/image'
 import './handlers/embed'
-import './handlers/concept'
 import PropertyDisplay from './PropertyDisplay.vue'
 import PropertyInline from './PropertyInline.vue'
 

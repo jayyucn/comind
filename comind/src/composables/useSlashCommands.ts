@@ -1,5 +1,4 @@
 import { TASK_PRIORITY_ICONS, TASK_STATUS_ICONS } from '../components/Icons'
-import { nextTick } from 'vue'
 import type { Editor } from '@tiptap/vue-3'
 import type { Command, CommandProps } from '../types/command'
 import { useBlockStore } from '../stores/blocks'
@@ -221,46 +220,6 @@ function insertEmbed({ editor, range, blockId }: CommandProps) {
   if (blockId) {
     blockStore.updateBlockType(blockId, 'embed')
   }
-}
-
-/**
- * 插入 Concept Block（每页最多一个，固定在页面顶部）
- */
-async function insertConcept({ editor, range, blockId }: { editor: any, range: { from: number, to: number }, blockId?: string }) {
-  if (!blockId) return
-
-  const blockStore = useBlockStore()
-  const editorStore = useEditorStore()
-
-  const currentBlock = blockStore.blocks.find(b => b.id === blockId)
-  if (!currentBlock) return
-
-  const pageId = currentBlock.pageId
-
-  // 检查该页面是否已有 Concept Block
-  const existing = blockStore.blocks.find(
-    b => b.pageId === pageId && b.type === 'concept'
-  )
-  if (existing) {
-    // 已有则激活它
-    editor.chain().deleteRange(range).focus().run()
-    await nextTick()
-    editorStore.activateBlock(existing.id, 1)
-    return
-  }
-
-  // 清除斜杠命令文本
-  editor.chain()
-    .deleteRange(range)
-    .focus()
-    .run()
-
-  // 转换当前 Block 为 concept 类型
-  await blockStore.updateBlockType(blockId, 'concept')
-
-  // 激活 Concept Block 进入编辑模式
-  await nextTick()
-  editorStore.activateBlock(blockId, 1)
 }
 
 /**
@@ -550,15 +509,6 @@ export const commands: Command[] = [
     icon: '📌',
     action: insertEmbed,
     convertBlockType: 'embed'
-  },
-  {
-    id: 'concept',
-    name: 'Concept',
-    alias: ['概念', 'concept-block'],
-    group: '文本格式',
-    icon: '🧠',
-    action: insertConcept,
-    convertBlockType: 'concept'
   },
 
 

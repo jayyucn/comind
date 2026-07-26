@@ -18,15 +18,15 @@ function loadSettings(): RightSidebarSettings {
     try {
       const parsed = JSON.parse(stored)
       return {
-        defaultPanel: parsed.defaultPanel ?? 'concept-graph',
-        panelOrder: parsed.panelOrder ?? ['concept-graph'],
+        defaultPanel: parsed.defaultPanel ?? 'block-version',
+        panelOrder: parsed.panelOrder ?? ['block-version'],
         width: Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, parsed.width ?? DEFAULT_WIDTH)),
       }
     } catch { /* fallback */ }
   }
   return {
-    defaultPanel: 'concept-graph',
-    panelOrder: ['concept-graph'],
+    defaultPanel: 'block-version',
+    panelOrder: ['block-version'],
     width: DEFAULT_WIDTH
   }
 }

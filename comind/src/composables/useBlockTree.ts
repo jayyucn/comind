@@ -13,7 +13,7 @@ import type { TreeNode, Block } from '../types/block'
  */
 export function buildTree(blocks: Block[], pageId: string, rootBlockId: string | null): TreeNode[] {
   const pageBlocks = blocks
-    .filter(b => b.pageId === pageId && b.id !== rootBlockId && b.type !== 'concept') // 排除根 Block 和 Concept Block（由 PageConceptBlock 单独渲染）
+    .filter(b => b.pageId === pageId && b.id !== rootBlockId) // 排除根 Block
     .sort((a, b) => a.pos - b.pos)
 
   const map = new Map<string, TreeNode>()
