@@ -15,6 +15,9 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
+    "android:dev": "tauri android dev",
+    "android:build": "tauri android build",
+    "android:build:apk": "tauri android build --apk",
     "wasm:build": "wasm-pack build crates/comind-wasm --target web --out-dir ../pkg -m no-install",
     "wasm:build:release": "wasm-pack build crates/comind-wasm --target web --out-dir ../pkg --release -m no-install"
   },
@@ -43,6 +46,7 @@
     "@tiptap/vue-3": "^3.22.3",
     "date-fns": "^4.1.0",
     "dexie": "^4.4.2",
+    "jsqr": "^1.4.0",
     "lucide-vue-next": "^1.0.0",
     "lunr": "^2.3.9",
     "nanoid": "^5.1.11",

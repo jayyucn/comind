@@ -209,3 +209,137 @@ pub fn get_db_path(workspace: &Path) -> PathBuf {
 pub fn get_markdown_path(workspace: &Path) -> PathBuf {
     workspace.join("markdown")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    struct TempDir {
+        path: PathBuf,
+    }
+
+    impl TempDir {
+        fn new(name: &str) -> Self {
+            let path = std::env::temp_dir().join(format!("comind-config-test-{}-{}", name, uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&path).unwrap();
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
+
+    #[test]
+    fn load_missing_file_returns_default() {
+        let dir = TempDir::new("missing");
+        let config = AppConfig::load(dir.path()).unwrap();
+        assert!(config.workspace_path.is_none());
+        assert!(!config.sync_enabled);
+        assert_eq!(config.sync_interval_secs, 300);
+        assert!(!config.client_id.is_empty());
+        assert!(!config.device_name.is_empty());
+    }
+
+    #[test]
+    fn load_new_format_parses_workspace_path() {
+        let dir = TempDir::new("new-format");
+        let content = r#"{
+            "workspace_path": "/home/user/comind-workspace",
+            "sync_enabled": true,
+            "sync_interval_secs": 60,
+            "client_id": "client-123",
+            "device_name": "TestDevice"
+        }"#;
+        std::fs::write(dir.path().join(AppConfig::config_filename()), content).unwrap();
+
+        let config = AppConfig::load(dir.path()).unwrap();
+        assert_eq!(config.workspace_path, Some("/home/user/comind-workspace".to_string()));
+        assert!(config.sync_enabled);
+        assert_eq!(config.sync_interval_secs, 60);
+        assert_eq!(config.client_id, "client-123");
+        assert_eq!(config.device_name, "TestDevice");
+    }
+
+    #[test]
+    fn load_old_format_migrates_database_path() {
+        let dir = TempDir::new("old-format");
+        let content = r#"{
+            "database_path": "/home/user/comind-data/comind.db",
+            "sync_enabled": true,
+            "sync_interval_secs": 120,
+            "client_id": "legacy-client",
+            "device_name": "LegacyDevice"
+        }"#;
+        std::fs::write(dir.path().join(AppConfig::config_filename()), content).unwrap();
+
+        let config = AppConfig::load(dir.path()).unwrap();
+        // workspace_path 应取 database_path 的父目录
+        assert_eq!(config.workspace_path, Some("/home/user/comind-data".to_string()));
+        assert!(config.sync_enabled);
+        assert_eq!(config.sync_interval_secs, 120);
+        assert_eq!(config.client_id, "legacy-client");
+        assert_eq!(config.device_name, "LegacyDevice");
+
+        // 迁移后应回写为新格式，旧字段被丢弃
+        let rewritten = std::fs::read_to_string(dir.path().join(AppConfig::config_filename())).unwrap();
+        assert!(rewritten.contains("workspace_path"));
+        assert!(!rewritten.contains("database_path"));
+    }
+
+    #[test]
+    fn load_old_format_empty_database_path() {
+        let dir = TempDir::new("old-empty");
+        let content = r#"{
+            "database_path": ""
+        }"#;
+        std::fs::write(dir.path().join(AppConfig::config_filename()), content).unwrap();
+
+        let config = AppConfig::load(dir.path()).unwrap();
+        assert!(config.workspace_path.is_none());
+    }
+
+    #[test]
+    fn save_and_load_roundtrip() {
+        let dir = TempDir::new("roundtrip");
+        let mut config = AppConfig::default();
+        config.workspace_path = Some("/tmp/comind-roundtrip".to_string());
+        config.sync_enabled = true;
+        config.sync_interval_secs = 42;
+        config.client_id = "roundtrip-client".to_string();
+        config.device_name = "RoundtripDevice".to_string();
+
+        config.save(dir.path()).unwrap();
+        let loaded = AppConfig::load(dir.path()).unwrap();
+
+        assert_eq!(loaded.workspace_path, config.workspace_path);
+        assert_eq!(loaded.sync_enabled, config.sync_enabled);
+        assert_eq!(loaded.sync_interval_secs, config.sync_interval_secs);
+        assert_eq!(loaded.client_id, config.client_id);
+        assert_eq!(loaded.device_name, config.device_name);
+    }
+
+    #[test]
+    fn path_derivation_from_workspace() {
+        let workspace = PathBuf::from("/home/user/comind-workspace");
+        assert_eq!(get_db_path(&workspace), PathBuf::from("/home/user/comind-workspace/sqlite/comind.db"));
+        assert_eq!(get_markdown_path(&workspace), PathBuf::from("/home/user/comind-workspace/markdown"));
+    }
+
+    #[test]
+    fn default_config_has_required_fields() {
+        let config = AppConfig::default();
+        assert!(config.workspace_path.is_none());
+        assert!(!config.sync_enabled);
+        assert_eq!(config.sync_interval_secs, 300);
+        assert!(!config.client_id.is_empty());
+        assert!(!config.device_name.is_empty());
+    }
+}

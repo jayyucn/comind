@@ -12,7 +12,7 @@ const embedHandler: BlockTypeHandler = {
   renderComponent: EmbedRender,
   setupBlock(ctx) {
     return {
-      onContentClick(e: MouseEvent) {
+      onContentClick(_e: MouseEvent) {
         const sourceBlockId = ctx.getProperty('sourceBlockId')
         if (!sourceBlockId) {
           // 让 EmbedRender placeholder 处理（点击打开 BlockSelector）

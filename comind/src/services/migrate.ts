@@ -16,7 +16,6 @@
  */
 import type { CoreClient } from '../wasm/client'
 import { serializeDateRef } from '../utils/date-ref'
-import type { Block, Property } from '../wasm/types'
 
 export interface MigrationResult {
   totalScanned: number

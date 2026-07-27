@@ -4,8 +4,9 @@ import { useSettingsModal } from '../../composables/useSettingsModal'
 import { pushModal, popModal } from '../../composables/useModalKeyboard'
 import { useTheme } from '../../composables/useTheme'
 import RelationshipTypesPanel from './RelationshipTypesPanel.vue'
+import QrScanner from './QrScanner.vue'
 import { getWorkspacePath, setWorkspacePath, resetWorkspacePath, exportToMarkdown, importFromMarkdown, getSyncConfig, setSyncConfig, syncNow, getSyncQr, getPairedDevices, unpairDevice, triggerFullSync } from '../../wasm/client'
-import { isTauriEnvironment, tauriPickDirectory, isAndroidPlatform, tauriConnectToServer, tauriDisconnectSync, tauriGetSyncStatus, tauriTriggerFullSyncMobile } from '../../wasm/tauri-client'
+import { isTauriEnvironment, tauriPickDirectory, isAndroidPlatform, isAndroidPlatformSync, tauriConnectToServer, tauriDisconnectSync, tauriGetSyncStatus, tauriTriggerFullSyncMobile } from '../../wasm/tauri-client'
 import type { SyncStatus } from '../../wasm/tauri-client'
 import { X, Sun, Moon, Monitor, Folder, RotateCcw, AlertCircle, Upload, Download, RefreshCw, ToggleLeft, ToggleRight, Smartphone, QrCode, Clock, Wifi } from 'lucide-vue-next'
 import { useNotificationStore } from '../../stores/notification'
@@ -31,7 +32,8 @@ const activeSection = ref<Section>('appearance')
 const workspacePath = ref('')
 const customWorkspacePath = ref('')
 const showWorkspacePathInput = ref(false)
-const isDesktop = isTauriEnvironment()
+// Android 也是 Tauri 环境，初始值需排除 Android（UA 同步检测）
+const isDesktop = ref(isTauriEnvironment() && !isAndroidPlatformSync())
 
 const syncEnabled = ref(false)
 const syncInterval = ref(5)
@@ -50,17 +52,21 @@ const isPaired = ref(false)
 // Android 端同步状态
 const androidSyncStatus = ref<SyncStatus | null>(null)
 const androidConnecting = ref(false)
+const showQrScanner = ref(false)
 const androidSyncing = ref(false)
 const androidIsAndroid = ref(false)
 
 onMounted(async () => {
   androidIsAndroid.value = await isAndroidPlatform()
+  if (androidIsAndroid.value) {
+    isDesktop.value = false
+  }
 })
 
 let qrTimer: ReturnType<typeof setInterval> | null = null
 
 async function loadWorkspacePath() {
-  if (!isDesktop) return
+  if (!isDesktop.value) return
   try {
     workspacePath.value = await getWorkspacePath()
   } catch (e) {
@@ -69,7 +75,7 @@ async function loadWorkspacePath() {
 }
 
 async function loadSyncConfig() {
-  if (!isDesktop) return
+  if (!isDesktop.value) return
   try {
     const config = await getSyncConfig()
     syncEnabled.value = config.sync_enabled
@@ -157,7 +163,7 @@ async function handleSyncNow() {
 }
 
 async function loadPairedDevices() {
-  if (!isDesktop) return
+  if (!isDesktop.value) return
   try {
     const devices = await getPairedDevices()
     pairedDevices.value = devices
@@ -225,15 +231,19 @@ async function loadAndroidSyncStatus() {
 }
 
 async function handleAndroidScan() {
+  showQrScanner.value = true
+}
+
+async function onQrScanned(content: string) {
+  showQrScanner.value = false
   try {
     androidConnecting.value = true
-    const { scan, Format } = await import('@tauri-apps/plugin-barcode-scanner')
-    const result = await scan({ windowed: true, formats: [Format.QRCode] })
-    if (!result?.content) return
-    await tauriConnectToServer(result.content)
+    console.log('Android scan: got QR content', content)
+    await tauriConnectToServer(content)
     await loadAndroidSyncStatus()
-  } catch (e) {
-    console.error('Android scan/connect failed:', e)
+  } catch (e: any) {
+    const msg = typeof e === 'string' ? e : (e?.message || e?.toString?.() || JSON.stringify(e))
+    console.error('Android scan/connect failed:', msg, e)
   } finally {
     androidConnecting.value = false
   }
@@ -735,6 +745,13 @@ onUnmounted(() => {
         </div>
       </div>
     </Transition>
+
+    <!-- Android QR Scanner -->
+    <QrScanner
+      v-if="showQrScanner"
+      @scanned="onQrScanned"
+      @cancel="showQrScanner = false"
+    />
   </Teleport>
 </template>
 
@@ -1276,21 +1293,44 @@ onUnmounted(() => {
 
 @media (max-width: 768px) {
   .settings-modal {
-    width: 95vw;
+    width: 100vw;
+    max-height: 100vh;
+    min-height: unset;
+    border-radius: 0;
     flex-direction: column;
   }
 
   .settings-modal-nav {
     width: 100%;
+    flex-shrink: 0;
     flex-direction: row;
     border-right: none;
     border-bottom: 1px solid var(--border);
-    padding: 12px;
+    padding: 8px 12px;
     overflow-x: auto;
+    gap: 4px;
+  }
+
+  .nav-item {
+    white-space: nowrap;
+    padding: 6px 12px;
+    font-size: 12px;
   }
 
   .nav-title {
     display: none;
+  }
+
+  .content-header {
+    padding: 12px 16px 8px;
+    flex-shrink: 0;
+  }
+
+  .content-body {
+    padding: 16px;
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 }
 

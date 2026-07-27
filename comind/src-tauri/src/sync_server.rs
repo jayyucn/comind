@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::{Arc, Mutex as StdMutex};
@@ -6,13 +6,15 @@ use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, RwLock};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{SinkExt, StreamExt, stream::{SplitSink, SplitStream}};
 use qrcode::QrCode;
 use image::{Rgba, ImageEncoder};
 
 use comind_core::sync::{message::SyncMessage, engine::SyncEngine, message::SyncTable};
 
 type Stream = WebSocketStream<tokio::net::TcpStream>;
+type WsSink = SplitSink<Stream, Message>;
+type WsSource = SplitStream<Stream>;
 
 pub struct SyncServer {
     inner: Arc<SyncServerInner>,
@@ -20,8 +22,9 @@ pub struct SyncServer {
 
 struct SyncServerInner {
     engine: Arc<SyncEngine>,
-    clients: Arc<RwLock<HashMap<String, Arc<Mutex<Stream>>>>>,
+    clients: Arc<RwLock<HashMap<String, Arc<Mutex<WsSink>>>>>,
     tokens: Arc<RwLock<HashMap<String, (Instant, String)>>>,
+    paired_devices: Arc<RwLock<HashSet<String>>>,
     addr: StdMutex<SocketAddr>,
     shutdown: Arc<Mutex<bool>>,
     device_name: String,
@@ -48,6 +51,7 @@ impl SyncServer {
                 engine,
                 clients: Arc::new(RwLock::new(HashMap::new())),
                 tokens: Arc::new(RwLock::new(HashMap::new())),
+                paired_devices: Arc::new(RwLock::new(HashSet::new())),
                 addr: StdMutex::new(SocketAddr::from(([0, 0, 0, 0], 0))),
                 shutdown: Arc::new(Mutex::new(false)),
                 device_name,
@@ -69,6 +73,7 @@ impl SyncServer {
         let clients = self.inner.clients.clone();
         let engine = self.inner.engine.clone();
         let tokens = self.inner.tokens.clone();
+        let paired_devices = self.inner.paired_devices.clone();
         let shutdown = self.inner.shutdown.clone();
         let server_client_id = self.inner.server_client_id.clone();
 
@@ -77,13 +82,15 @@ impl SyncServer {
                 match listener.accept().await {
                     Ok((stream, remote_addr)) => {
                         log::info!("New connection from {}", remote_addr);
+                        log::warn!("SyncServer: new connection from {}", remote_addr);
                         let clients_clone = clients.clone();
                         let engine_clone = engine.clone();
                         let tokens_clone = tokens.clone();
+                        let paired_devices_clone = paired_devices.clone();
                         let server_client_id_clone = server_client_id.clone();
 
                         tokio::spawn(async move {
-                            if let Err(e) = Self::handle_client(stream, clients_clone, engine_clone, tokens_clone, server_client_id_clone).await {
+                            if let Err(e) = Self::handle_client(stream, clients_clone, engine_clone, tokens_clone, paired_devices_clone, server_client_id_clone).await {
                                 log::error!("Client handler error: {}", e);
                             }
                         });
@@ -206,20 +213,34 @@ impl SyncServer {
 
                     if let Ok(messages) = engine.on_local_change(table, rows).await {
                         if messages.is_empty() {
+                            log::warn!("SyncServer: on_local_change returned 0 messages for {:?}", table);
                             continue;
                         }
 
                         let clients = clients.read().await;
+                        log::warn!("SyncServer: record_and_notify table={:?}, {} messages, {} clients", table, messages.len(), clients.len());
                         for msg in messages {
-                            if let Ok(msg_text) = serde_json::to_string(&msg) {
-                                for (_client_id, stream) in &*clients {
-                                    let mut ws = stream.lock().await;
-                                    if let Err(e) = ws.send(Message::Text(msg_text.clone())).await {
-                                        log::error!("Failed to send local change to client: {}", e);
+                            let msg_text = serde_json::to_string(&msg);
+                            match msg_text {
+                                Ok(text) => {
+                                    log::warn!("SyncServer: serialized RowChange, {} bytes, iterating clients", text.len());
+                                    for (client_id, stream) in &*clients {
+                                        log::warn!("SyncServer: sending to client {}", client_id);
+                                        let mut ws = stream.lock().await;
+                                        match tokio::time::timeout(Duration::from_secs(5), ws.send(Message::Text(text.clone()))).await {
+                                            Ok(Ok(())) => log::warn!("SyncServer: sent RowChange to client {} ({} bytes)", client_id, text.len()),
+                                            Ok(Err(e)) => log::error!("Failed to send local change to client {}: {}", client_id, e),
+                                            Err(_) => {
+                                                log::error!("SyncServer: send to client {} timed out (5s), connection may be dead", client_id);
+                                            }
+                                        }
                                     }
                                 }
+                                Err(e) => log::error!("SyncServer: serialize RowChange failed: {}", e),
                             }
                         }
+                    } else {
+                        log::error!("SyncServer: on_local_change failed for {:?}", table);
                     }
                 }
             }
@@ -241,66 +262,135 @@ impl SyncServer {
 
     async fn handle_client(
         stream: tokio::net::TcpStream,
-        clients: Arc<RwLock<HashMap<String, Arc<Mutex<Stream>>>>>,
+        clients: Arc<RwLock<HashMap<String, Arc<Mutex<WsSink>>>>>,
         engine: Arc<SyncEngine>,
         tokens: Arc<RwLock<HashMap<String, (Instant, String)>>>,
+        paired_devices: Arc<RwLock<HashSet<String>>>,
         server_client_id: String,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let ws_stream = tokio_tungstenite::accept_async(stream).await?;
+        log::warn!("SyncServer: WebSocket handshake succeeded");
         let client_id = uuid::Uuid::new_v4().to_string();
 
-        let client_stream = Arc::new(Mutex::new(ws_stream));
-        clients.write().await.insert(client_id.clone(), client_stream.clone());
+        let (sink, source) = ws_stream.split();
+        let client_sink = Arc::new(Mutex::new(sink));
+        clients.write().await.insert(client_id.clone(), client_sink.clone());
 
         tokio::spawn(async move {
-            let mut ws = client_stream.lock().await;
+            let mut ws = source;
+            log::warn!("SyncServer: recv loop started for client {}", client_id);
             loop {
                 match ws.next().await {
                     Some(Ok(msg)) => {
+                        log::warn!("SyncServer: recv msg type = {}", match msg {
+                            Message::Text(_) => "Text",
+                            Message::Binary(_) => "Binary",
+                            Message::Ping(_) => "Ping",
+                            Message::Pong(_) => "Pong",
+                            Message::Close(_) => "Close",
+                            Message::Frame(_) => "Frame",
+                        });
                         if let Message::Text(text) = msg {
+                            log::warn!("SyncServer: recv text len={}, preview={}", text.len(), &text[..text.len().min(200)]);
                             match serde_json::from_str::<SyncMessage>(&text) {
                                 Ok(sync_msg) => {
+                                    log::warn!("SyncServer: parsed msg variant = {}", match &sync_msg { SyncMessage::Pairing{..} => "Pairing", SyncMessage::PairingAck{..} => "PairingAck", SyncMessage::FullSyncRequest{..} => "FullSyncRequest", SyncMessage::FullSyncResponse{..} => "FullSyncResponse", SyncMessage::RowChange{..} => "RowChange", SyncMessage::PingPong{..} => "PingPong" });
                                     match sync_msg {
                                         SyncMessage::Pairing { token, client_id: remote_id, device_name: remote_name } => {
+                                            log::warn!("SyncServer: Pairing token={}, remote_id={}, remote_name={}", token, remote_id, remote_name);
                                             let mut tokens = tokens.write().await;
                                             if let Some((created_at, _)) = tokens.remove(&token) {
                                                 if created_at.elapsed() < Duration::from_secs(300) {
+                                                    paired_devices.write().await.insert(remote_id.clone());
                                                     let response = SyncMessage::PairingAck {
                                                         server_client_id: server_client_id.clone(),
                                                         paired: true,
                                                     };
                                                     let response_text = serde_json::to_string(&response).unwrap();
-                                                    if let Err(e) = ws.send(Message::Text(response_text)).await {
+                                                    let mut sink = client_sink.lock().await;
+                                                    if let Err(e) = sink.send(Message::Text(response_text)).await {
                                                         log::error!("Send error: {}", e);
                                                         break;
                                                     }
-                                                    log::info!("Paired with {} ({})", remote_name, remote_id);
+                                                    log::warn!("SyncServer: Paired with {} ({})", remote_name, remote_id);
                                                 } else {
                                                     log::warn!("Token expired");
                                                 }
                                             } else {
-                                                log::warn!("Invalid token");
-                                            }
-                                        }
-                                        SyncMessage::FullSyncRequest { .. } => {
-                                            if let Ok(responses) = engine.handle_message(sync_msg).await {
-                                                for response in responses {
+                                                // Token not found — check if this is a known paired device reconnecting
+                                                if paired_devices.read().await.contains(&remote_id) {
+                                                    log::warn!("SyncServer: Re-pairing known device {} ({}), allowing reconnect", remote_id, remote_name);
+                                                    let response = SyncMessage::PairingAck {
+                                                        server_client_id: server_client_id.clone(),
+                                                        paired: true,
+                                                    };
                                                     let response_text = serde_json::to_string(&response).unwrap();
-                                                    if let Err(e) = ws.send(Message::Text(response_text)).await {
+                                                    let mut sink = client_sink.lock().await;
+                                                    if let Err(e) = sink.send(Message::Text(response_text)).await {
                                                         log::error!("Send error: {}", e);
                                                         break;
                                                     }
+                                                    log::warn!("SyncServer: Re-paired with {} ({})", remote_name, remote_id);
+                                                } else {
+                                                    log::warn!("Invalid token (unknown device, not a reconnect)");
                                                 }
                                             }
                                         }
-                                        SyncMessage::RowChange { .. } => {
-                                            if let Ok(responses) = engine.handle_message(sync_msg).await {
-                                                for response in responses {
-                                                    let response_text = serde_json::to_string(&response).unwrap();
-                                                    if let Err(e) = ws.send(Message::Text(response_text)).await {
-                                                        log::error!("Send error: {}", e);
-                                                        break;
+                                        SyncMessage::FullSyncRequest { .. } => {
+                                            log::warn!("SyncServer: handling FullSyncRequest");
+                                            match engine.handle_message(sync_msg).await {
+                                                Ok(responses) => {
+                                                    log::warn!("SyncServer: FullSyncRequest -> {} responses", responses.len());
+                                                    let mut sink = client_sink.lock().await;
+                                                    for response in responses {
+                                                        let response_text = serde_json::to_string(&response).unwrap();
+                                                        if let Err(e) = sink.send(Message::Text(response_text)).await {
+                                                            log::error!("Send error: {}", e);
+                                                            break;
+                                                        }
                                                     }
+                                                }
+                                                Err(e) => {
+                                                    log::warn!("SyncServer: FullSyncRequest handle error: {}", e);
+                                                }
+                                            }
+                                        }
+                                        SyncMessage::FullSyncResponse { .. } => {
+                                            match engine.handle_message(sync_msg).await {
+                                                Ok(responses) => {
+                                                    let mut sink = client_sink.lock().await;
+                                                    for response in responses {
+                                                        let response_text = serde_json::to_string(&response).unwrap();
+                                                        if let Err(e) = sink.send(Message::Text(response_text)).await {
+                                                            log::error!("Send error: {}", e);
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    log::warn!("SyncServer: FullSyncResponse handle error: {}", e);
+                                                }
+                                            }
+                                            // 尝试提交全量同步
+                                            if let Err(e) = engine.commit_full_sync().await {
+                                                log::warn!("SyncServer: commit_full_sync: {}", e);
+                                            }
+                                        }
+                                        SyncMessage::RowChange { table, ref rows, .. } => {
+                                            log::warn!("SyncServer: recv RowChange table={:?}, {} rows", table, rows.len());
+                                            match engine.handle_message(sync_msg).await {
+                                                Ok(responses) => {
+                                                    let mut sink = client_sink.lock().await;
+                                                    for response in responses {
+                                                        let response_text = serde_json::to_string(&response).unwrap();
+                                                        if let Err(e) = sink.send(Message::Text(response_text)).await {
+                                                            log::error!("Send error: {}", e);
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    log::warn!("SyncServer: RowChange handle error: {}", e);
                                                 }
                                             }
                                         }

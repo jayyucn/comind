@@ -220,7 +220,7 @@ export class NotificationService {
     }
   }
 
-  private async fireNotification(block: Block, page: Page, dateRef: DateRef | DateRefRecord, eventTime: number, existingIn: Notification | null): Promise<Notification | null> {
+  private async fireNotification(block: Block, page: Page, dateRef: DateRef | DateRefRecord, _eventTime: number, existingIn: Notification | null): Promise<Notification | null> {
     // 用 dateRef.iso 字面量（用户写的）作为 eventIso：
     // - 写入 Notification.event_iso 字段（去重匹配用，与 syncPayloadForBlock 保持一致）
     // - 写入 payload.eventDisplay（前端 NotificationBell.formatEvent 用）

@@ -1,7 +1,7 @@
 import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
-import { DATE_REF_REGEX, formatDateRefDisplay, normalizeRecurrence } from '../utils/date-ref'
+import { DATE_REF_REGEX, normalizeRecurrence } from '../utils/date-ref'
 import type { DateRefKind, RecurrenceRule } from '../utils/date-ref'
 
 export const DATE_REF_CLICK_EVENT = 'dateRefClick'

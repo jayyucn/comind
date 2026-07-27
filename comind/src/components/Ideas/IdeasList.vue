@@ -24,7 +24,7 @@ const allIdeasPages = computed(() => {
   // 依赖refreshKey强制刷新
   refreshKey.value
   return pageStore.pages
-    .filter(p => p.type === 'ideas' || p.type === 'journal')
+    .filter(p => p.type === 'ideas')
     .sort((a, b) => b.title.localeCompare(a.title))
 })
 
@@ -40,7 +40,7 @@ onMounted(async () => {
 
   // 加载所有点滴 page 的 blocks 到 blockStore
   const ideasPageIds = pageStore.pages
-    .filter(p => p.type === 'ideas' || p.type === 'journal')
+    .filter(p => p.type === 'ideas')
     .map(p => p.id)
   if (ideasPageIds.length > 0) {
     await blockStore.loadMultiPageBlocks(ideasPageIds)

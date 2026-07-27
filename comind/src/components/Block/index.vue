@@ -186,7 +186,7 @@ const setupCtx: BlockSetupContext = {
 }
 
 const typeHooks = computed<BlockTypeHooks | undefined>(() => {
-  return handler.value?.setupBlock?.(setupCtx)
+  return handler.value?.setupBlock?.(setupCtx) ?? undefined
 })
 
 watch(() => block.value.type, (newType, oldType) => {
@@ -211,8 +211,8 @@ onMounted(() => {
 
   const el = document.querySelector(`[data-block-id="${blockId.value}"]`)
   if (el) {
-    el.addEventListener('dragover', onDragOver as EventListener)
-    el.addEventListener('drop', onDrop as EventListener)
+    el.addEventListener('dragover', onDragOver as unknown as EventListener)
+    el.addEventListener('drop', onDrop as unknown as EventListener)
     el.addEventListener('paste', onPaste as unknown as EventListener)
   }
 })
@@ -223,8 +223,8 @@ onBeforeUnmount(() => {
 
   const el = document.querySelector(`[data-block-id="${blockId.value}"]`)
   if (el) {
-    el.removeEventListener('dragover', onDragOver as EventListener)
-    el.removeEventListener('drop', onDrop as EventListener)
+    el.removeEventListener('dragover', onDragOver as unknown as EventListener)
+    el.removeEventListener('drop', onDrop as unknown as EventListener)
     el.removeEventListener('paste', onPaste as unknown as EventListener)
   }
 })
@@ -276,7 +276,7 @@ watch(
         // 优先级：点击坐标 > cursorPos > end
         const clickCoords = editorStore.consumeClickCoords()
         if (clickCoords) {
-          editorRef.value.focusAtCoords(clickCoords.x, clickCoords.y)
+          editorRef.value?.focusAtCoords?.(clickCoords.x, clickCoords.y)
         } else {
           const pendingPos = editorStore.consumeCursorPos()
           if (pendingPos !== null) {

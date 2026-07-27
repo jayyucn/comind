@@ -39,8 +39,8 @@ export interface BlockTypeHooks {
   /** return true 阻止默认 dragover 行为 */
   onDragOver?: (e: DragEvent) => boolean | void
   /** return true 阻止默认 drop 行为 */
-  onDrop?: (e: DragEvent) => boolean | void
-  onPaste?: (e: ClipboardEvent) => boolean | void
+  onDrop?: (e: DragEvent) => boolean | void | Promise<boolean | void>
+  onPaste?: (e: ClipboardEvent) => boolean | void | Promise<boolean | void>
 }
 
 export interface BlockTypeEditorExposed {
@@ -50,6 +50,7 @@ export interface BlockTypeEditorExposed {
   markSaved: () => void
   getEditor: () => any
   cancelDebouncedSave?: () => void
+  focusAtCoords?: (x: number, y: number) => void
 }
 
 export interface BlockTypeRenderExposed {

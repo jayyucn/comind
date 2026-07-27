@@ -2,7 +2,6 @@ import { getPredefinedRelationship } from '../types/relationship'
 import {
   DATE_REF_REGEX,
   formatDateRefDisplay,
-  parseDateRefs,
   normalizeRecurrence,
   serializeDateRef,
   type DateRef,
@@ -81,7 +80,7 @@ export function useContentRenderer() {
    * 可在 typed link 之后、wiki link 之前处理。
    */
   function renderDateRefs(text: string): string {
-    return text.replace(DATE_REF_REGEX, (full, kind, iso, rec, lead) => {
+    return text.replace(DATE_REF_REGEX, (_full, kind, iso, rec, lead) => {
       const leadMinutes = lead ? parseInt(lead, 10) || 0 : 0
       const ref: DateRef = {
         kind: kind as DateRef['kind'],

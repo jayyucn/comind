@@ -100,7 +100,7 @@ function recurrenceLabel(rec: RecurrenceRule): string {
 export function formatIsoDisplay(iso: string): string {
   const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2}))?/)
   if (!m) return iso
-  const [full, year, mm, dd, hh, min] = m
+  const [, year, mm, dd, hh, min] = m
   const time = hh !== undefined ? ` ${hh}:${min}` : ''
   const now = new Date()
   if (parseInt(year, 10) !== now.getFullYear()) {

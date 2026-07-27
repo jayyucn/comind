@@ -6,7 +6,6 @@ import { useEditorStore } from '../stores/editor'
 import { usePageStore } from '../stores/pages'
 import { useTemplateRegistry } from './useTemplateRegistry'
 import { TemplateRenderer } from '../services/template-renderer'
-import { formatDateRefDisplay } from '../utils/date-ref'
 
 /**
  * 格式化日期为 YYYY-MM-DD
@@ -31,31 +30,8 @@ function insertToday({ editor, range }: CommandProps) {
 }
 
 /**
- * 获取明天的日期链接
- */
-function insertTomorrow({ editor, range }: CommandProps) {
-  const tomorrow = new Date()
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  editor.chain()
-    .deleteRange(range)
-    .insertContent(`[[${formatDate(tomorrow)}]]`)
-    .focus()
-    .run()
-}
-
-/**
  * 获取昨天的日期链接
  */
-function insertYesterday({ editor, range }: CommandProps) {
-  const yesterday = new Date()
-  yesterday.setDate(yesterday.getDate() - 1)
-  editor.chain()
-    .deleteRange(range)
-    .insertContent(`[[${formatDate(yesterday)}]]`)
-    .focus()
-    .run()
-}
-
 /**
  * 插入当前时间
  */
@@ -74,7 +50,7 @@ function insertTime({ editor, range }: CommandProps) {
  * 确认后插入 {{kind:iso|recurrence}} 格式
  */
 function openDatePickerForKind(kind: 'schedule' | 'deadline') {
-  return ({ editor, range, blockId }: CommandProps) => {
+  return ({ editor: _editor, range, blockId }: CommandProps) => {
     const editorStore = useEditorStore()
     const today = formatDate(new Date())
     

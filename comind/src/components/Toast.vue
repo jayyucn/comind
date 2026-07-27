@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { Info, X } from 'lucide-vue-next'
 
 export interface ToastMessage {

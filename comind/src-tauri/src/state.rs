@@ -122,9 +122,11 @@ impl SyncServerHandle {
         #[cfg(target_os = "android")]
         {
             if let Some(client) = self.get_client().await {
-                if let Err(e) = client.record_and_notify(table, ids).await {
+                if let Err(e) = client.record_and_notify(table, ids.clone()).await {
                     log::error!("record_and_notify failed: {}", e);
                 }
+            } else {
+                log::warn!("record_and_notify: no sync client (not paired?), table={:?}, ids={:?}", table, ids);
             }
         }
     }

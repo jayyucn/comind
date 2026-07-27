@@ -1101,6 +1101,7 @@ pub async fn get_sync_qr(
     for i in 0..50 {
         if let Some(server) = sync_server.get_server().await {
             let token = server.generate_pairing_token().await;
+            log::warn!("QR URL: {}", server.build_qr_url(&token));
             return server.generate_qr_image(&token).map_err(|e| e.to_string());
         }
         if i == 0 {
@@ -1160,6 +1161,8 @@ pub async fn connect_to_server(
     sync_handle: State<'_, super::state::SyncServerHandle>,
     qr_payload: &str,
 ) -> Result<(), String> {
+    log::warn!("connect_to_server: CALLED with qr_payload={}", qr_payload);
+
     let device_name = {
         let config = config_manager.get_config()?;
         config.device_name.clone()
@@ -1167,10 +1170,21 @@ pub async fn connect_to_server(
 
     let db_path = db.get_db_path();
     let db_path = std::path::Path::new(&db_path);
+    log::info!("connect_to_server: db_path={:?}", db_path);
 
-    let client = crate::sync_client::SyncClient::from_qr(qr_payload, db_path, device_name)?;
+    let client = crate::sync_client::SyncClient::from_qr(qr_payload, db_path, device_name)
+        .map_err(|e| {
+            log::error!("connect_to_server: from_qr failed: {}", e);
+            e
+        })?;
 
-    client.connect_and_pair().await?;
+    client.connect_and_pair().await.map_err(|e| {
+        log::error!("connect_to_server: connect_and_pair failed: {}", e);
+        e
+    })?;
+
+    // 立即触发一次双向全量同步
+    client.trigger_bidirectional_full_sync().await;
 
     // 启动心跳和定时全量校验
     client.start_heartbeat();

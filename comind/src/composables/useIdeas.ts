@@ -8,7 +8,7 @@ import { parseToDate } from '../utils/journal-detect'
 // 判断 Page 是否为点滴
 // 兼容旧数据：'journal'（旧 type 值）与 'ideas' 均视为点滴
 function isIdeasPage(page: Page): boolean {
-  return page.type === 'ideas' || page.type === 'journal'
+  return page.type === 'ideas' || (page as any).type === 'journal'
 }
 
 export function useIdeas() {

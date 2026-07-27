@@ -224,7 +224,7 @@ async function buildGraphData() {
   const hiddenPageIds = new Set<string>()
   if (hideIdeas) {
     for (const p of allPages) {
-      if (p.type === 'ideas' || p.type === 'journal') hiddenPageIds.add(p.id)
+      if (p.type === 'ideas') hiddenPageIds.add(p.id)
     }
   }
 

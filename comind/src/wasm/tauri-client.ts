@@ -13,6 +13,13 @@ export function isTauriEnvironment(): boolean {
   return isTauri()
 }
 
+/** 是否运行在 Android 端（同步初步检测，基于 UA） */
+export function isAndroidPlatformSync(): boolean {
+  if (!isTauri()) return false
+  if (typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent)) return true
+  return false
+}
+
 /** 是否运行在 Android 端（基于 Tauri os 插件，可靠检测） */
 export async function isAndroidPlatform(): Promise<boolean> {
   if (!isTauri()) return false

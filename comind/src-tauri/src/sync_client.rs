@@ -6,12 +6,15 @@ use std::time::Duration;
 use tokio::sync::{Mutex, RwLock};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{SinkExt, StreamExt, stream::SplitSink, stream::SplitStream};
 use comind_core::sync::{message::SyncMessage, engine::SyncEngine, message::SyncTable};
 
 type Stream = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+type WsSink = SplitSink<Stream, Message>;
+type WsSource = SplitStream<Stream>;
 
 /// QR 码解析结果
+#[derive(Debug)]
 pub struct QrPayload {
     pub ws_url: String,
     pub token: String,
@@ -48,6 +51,57 @@ impl QrPayload {
     }
 }
 
+#[cfg(test)]
+mod qr_payload_tests {
+    use super::*;
+
+    #[test]
+    fn parse_valid_qr_payload() {
+        let qr = "comind://pair?ws=192.168.1.5:8080&token=abc123&name=MyPC";
+        let payload = QrPayload::parse(qr).unwrap();
+        assert_eq!(payload.ws_url, "192.168.1.5:8080");
+        assert_eq!(payload.token, "abc123");
+        assert_eq!(payload.server_name, "MyPC");
+    }
+
+    #[test]
+    fn parse_missing_prefix_fails() {
+        let result = QrPayload::parse("http://example.com?ws=1.2.3.4&token=abc");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("comind://pair?"));
+    }
+
+    #[test]
+    fn parse_missing_ws_fails() {
+        let result = QrPayload::parse("comind://pair?token=abc123&name=MyPC");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("ws or token"));
+    }
+
+    #[test]
+    fn parse_missing_token_fails() {
+        let result = QrPayload::parse("comind://pair?ws=192.168.1.5:8080&name=MyPC");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("ws or token"));
+    }
+
+    #[test]
+    fn parse_url_encoded_server_name() {
+        let qr = "comind://pair?ws=192.168.1.5:8080&token=abc123&name=My%20PC%21";
+        let payload = QrPayload::parse(qr).unwrap();
+        assert_eq!(payload.server_name, "My PC!");
+    }
+
+    #[test]
+    fn parse_ignores_unknown_parameters() {
+        let qr = "comind://pair?ws=192.168.1.5:8080&token=abc123&extra=ignore&name=PC";
+        let payload = QrPayload::parse(qr).unwrap();
+        assert_eq!(payload.ws_url, "192.168.1.5:8080");
+        assert_eq!(payload.token, "abc123");
+        assert_eq!(payload.server_name, "PC");
+    }
+}
+
 pub struct SyncClient {
     inner: Arc<SyncClientInner>,
 }
@@ -59,7 +113,8 @@ struct SyncClientInner {
     ws_url: String,
     pairing_token: String,
     server_name: String,
-    ws_stream: Arc<Mutex<Option<Stream>>>,
+    ws_sink: Arc<Mutex<Option<WsSink>>>,
+    ws_source: Arc<Mutex<Option<WsSource>>>,
     is_connected: Arc<RwLock<bool>>,
     is_paired: Arc<RwLock<bool>>,
     reconnect_count: Arc<Mutex<u32>>,
@@ -91,7 +146,8 @@ impl SyncClient {
                 ws_url,
                 pairing_token: parsed.token,
                 server_name: parsed.server_name,
-                ws_stream: Arc::new(Mutex::new(None)),
+                ws_sink: Arc::new(Mutex::new(None)),
+                ws_source: Arc::new(Mutex::new(None)),
                 is_connected: Arc::new(RwLock::new(false)),
                 is_paired: Arc::new(RwLock::new(false)),
                 reconnect_count: Arc::new(Mutex::new(0)),
@@ -105,15 +161,25 @@ impl SyncClient {
     pub async fn connect_and_pair(&self) -> Result<(), String> {
         log::info!("Connecting to {}...", self.inner.ws_url);
 
-        let (ws_stream, _) = tokio_tungstenite::connect_async(&self.inner.ws_url)
+        let connect_fut = tokio_tungstenite::connect_async(&self.inner.ws_url);
+        let (ws_stream, _) = tokio::time::timeout(Duration::from_secs(10), connect_fut)
             .await
-            .map_err(|e| format!("WebSocket connect failed: {}", e))?;
+            .map_err(|_| {
+                log::error!("WebSocket connect timeout (10s) to {}", self.inner.ws_url);
+                format!("连接超时：无法在 10 秒内连接到 PC ({}). 请检查：1) PC 和手机在同一 WiFi; 2) PC 防火墙允许 8080 端口; 3) QR 码中的 IP 地址正确", self.inner.ws_url)
+            })?
+            .map_err(|e| {
+                log::error!("WebSocket connect failed: {}", e);
+                format!("WebSocket 连接失败: {}. 请确认 PC 端已启动并检查网络.", e)
+            })?;
 
-        *self.inner.ws_stream.lock().await = Some(ws_stream);
+        let (sink, source) = ws_stream.split();
+        *self.inner.ws_sink.lock().await = Some(sink);
+        *self.inner.ws_source.lock().await = Some(source);
         *self.inner.is_connected.write().await = true;
         *self.inner.reconnect_count.lock().await = 0;
 
-        log::info!("WebSocket connected, sending pairing message...");
+        log::warn!("sync_client: WebSocket connected to {}, sending pairing...", self.inner.ws_url);
 
         // 发送配对消息
         let pairing_msg = SyncMessage::Pairing {
@@ -126,6 +192,7 @@ impl SyncClient {
 
         // 等待 PairingAck
         let paired = self.wait_for_pairing_ack(Duration::from_secs(10)).await?;
+        log::warn!("sync_client: wait_for_pairing_ack returned paired={}", paired);
 
         if paired {
             *self.inner.is_paired.write().await = true;
@@ -133,9 +200,11 @@ impl SyncClient {
 
             // 启动消息接收循环
             self.start_recv_loop().await;
+            log::warn!("sync_client: recv_loop started, triggering full sync...");
 
             // 触发双向全量同步
             self.trigger_bidirectional_full_sync().await;
+            log::warn!("sync_client: bidirectional full sync triggered, starting heartbeat...");
         } else {
             return Err("Pairing failed: no ack from server".to_string());
         }
@@ -146,7 +215,7 @@ impl SyncClient {
     /// 启动消息接收循环（独立 task）
     /// 返回 boxed future 以显式标注 Send，避免相互递归导致的 Send 推断失败
     fn start_recv_loop(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
-        let ws_stream = self.inner.ws_stream.clone();
+        let ws_source = self.inner.ws_source.clone();
         let engine = self.inner.engine.clone();
         let client_id = self.inner.client_id.clone();
         let is_connected = self.inner.is_connected.clone();
@@ -157,7 +226,7 @@ impl SyncClient {
             tokio::spawn(async move {
             loop {
                 let msg = {
-                    let mut ws_guard = ws_stream.lock().await;
+                    let mut ws_guard = ws_source.lock().await;
                     match ws_guard.as_mut() {
                         Some(stream) => stream.next().await,
                         None => break,
@@ -231,12 +300,12 @@ impl SyncClient {
                 for &table in SyncTable::all() {
                     match engine.export_full(table, 100).await {
                         Ok(responses) => {
-                            let ws_stream = inner.ws_stream.clone();
+                            let ws_sink = inner.ws_sink.clone();
                             for response in responses {
                                 if let Ok(text) = serde_json::to_string(&response) {
-                                    let mut ws_guard = ws_stream.lock().await;
-                                    if let Some(stream) = ws_guard.as_mut() {
-                                        if let Err(e) = stream.send(Message::Text(text)).await {
+                                    let mut ws_guard = ws_sink.lock().await;
+                                    if let Some(sink) = ws_guard.as_mut() {
+                                        if let Err(e) = sink.send(Message::Text(text)).await {
                                             log::error!("Send FullSyncResponse failed: {}", e);
                                         }
                                     }
@@ -253,11 +322,11 @@ impl SyncClient {
                     client_id: client_id.to_string(),
                     timestamp: chrono::Utc::now().timestamp_millis(),
                 };
-                let ws_stream = inner.ws_stream.clone();
-                let mut ws_guard = ws_stream.lock().await;
-                if let Some(stream) = ws_guard.as_mut() {
+                let ws_sink = inner.ws_sink.clone();
+                let mut ws_guard = ws_sink.lock().await;
+                if let Some(sink) = ws_guard.as_mut() {
                     if let Ok(text) = serde_json::to_string(&pong) {
-                        let _ = stream.send(Message::Text(text)).await;
+                        let _ = sink.send(Message::Text(text)).await;
                     }
                 }
             }
@@ -272,7 +341,7 @@ impl SyncClient {
 
     /// 等待 PairingAck
     async fn wait_for_pairing_ack(&self, timeout: Duration) -> Result<bool, String> {
-        let ws_stream = self.inner.ws_stream.clone();
+        let ws_source = self.inner.ws_source.clone();
         let deadline = tokio::time::Instant::now() + timeout;
 
         loop {
@@ -282,7 +351,7 @@ impl SyncClient {
 
             let remaining = deadline - tokio::time::Instant::now();
             let result = tokio::time::timeout(remaining, async {
-                let mut ws_guard = ws_stream.lock().await;
+                let mut ws_guard = ws_source.lock().await;
                 match ws_guard.as_mut() {
                     Some(stream) => stream.next().await,
                     None => None,
@@ -325,12 +394,17 @@ impl SyncClient {
     /// 发送消息
     async fn send_message(&self, msg: &SyncMessage) -> Result<(), String> {
         let text = serde_json::to_string(msg).map_err(|e| e.to_string())?;
-        let mut ws_guard = self.inner.ws_stream.lock().await;
+        let msg_preview = &text[..text.len().min(120)];
+        log::warn!("sync_client::send_message: sending {} bytes: {}...", text.len(), msg_preview);
+        let mut ws_guard = self.inner.ws_sink.lock().await;
         match ws_guard.as_mut() {
-            Some(stream) => {
-                stream
+            Some(sink) => {
+                sink
                     .send(Message::Text(text))
                     .await
+                    .map(|_| {
+                        log::warn!("sync_client::send_message: sent successfully");
+                    })
                     .map_err(|e| format!("Send failed: {}", e))
             }
             None => Err("WebSocket not connected".to_string()),
@@ -338,10 +412,10 @@ impl SyncClient {
     }
 
     /// 触发双向全量同步
-    async fn trigger_bidirectional_full_sync(&self) {
+    pub async fn trigger_bidirectional_full_sync(&self) {
         log::info!("Triggering bidirectional full sync...");
 
-        // ① Android 拉取 PC 全量
+        // ① Android 拉取 PC 全量数据
         let request = SyncMessage::FullSyncRequest {
             client_id: self.inner.client_id.clone(),
             last_sync_at: None,
@@ -350,10 +424,19 @@ impl SyncClient {
             log::error!("Send FullSyncRequest failed: {}", e);
         }
 
-        // ② PC 拉取 Android 全量（通过发送 FullSyncRequest 让 PC 回复）
-        // PC 端在收到 FullSyncRequest 后会回复 FullSyncResponse
-        // 同时 PC 端的 handle_message 也会发送 FullSyncRequest 给 Android
-        // 所以这里只需要发送一次 FullSyncRequest 即可触发双向
+        // ② Android 主动推送自己的全量数据给 PC
+        for &table in SyncTable::all() {
+            match self.inner.engine.export_full(table, 100).await {
+                Ok(responses) => {
+                    for response in responses {
+                        if let Err(e) = self.send_message(&response).await {
+                            log::error!("Send FullSyncResponse for {:?} failed: {}", table, e);
+                        }
+                    }
+                }
+                Err(e) => log::error!("Export full sync for {:?} failed: {}", table, e),
+            }
+        }
     }
 
     /// 启动重连流程（循环重试，避免递归）
@@ -393,11 +476,32 @@ impl SyncClient {
             let ws_url = self.inner.ws_url.clone();
             match tokio_tungstenite::connect_async(&ws_url).await {
                 Ok((ws_stream, _)) => {
-                    *self.inner.ws_stream.lock().await = Some(ws_stream);
+                    let (sink, source) = ws_stream.split();
+                    *self.inner.ws_sink.lock().await = Some(sink);
+                    *self.inner.ws_source.lock().await = Some(source);
                     *self.inner.is_connected.write().await = true;
                     *self.inner.reconnect_count.lock().await = 0;
                     *self.inner.last_pong.lock().await = tokio::time::Instant::now();
                     log::info!("Reconnected successfully!");
+
+                    // 重连后重新发送 Pairing 消息
+                    let pairing_msg = SyncMessage::Pairing {
+                        token: self.inner.pairing_token.clone(),
+                        client_id: self.inner.client_id.clone(),
+                        device_name: self.inner.device_name.clone(),
+                    };
+                    if let Err(e) = self.send_message(&pairing_msg).await {
+                        log::error!("Reconnect: send pairing failed: {}", e);
+                        continue;
+                    }
+                    let paired = self.wait_for_pairing_ack(Duration::from_secs(10)).await
+                        .unwrap_or(false);
+                    if !paired {
+                        log::error!("Reconnect: pairing failed, retrying...");
+                        continue;
+                    }
+                    *self.inner.is_paired.write().await = true;
+                    log::info!("Reconnected and re-paired successfully!");
 
                     // 重连成功后触发双向全量同步
                     self.trigger_bidirectional_full_sync().await;
@@ -417,14 +521,18 @@ impl SyncClient {
     /// 本地数据变更后推送
     pub async fn on_local_change(&self, table: SyncTable, rows: Vec<comind_core::sync::message::RowPayload>) {
         if !*self.inner.is_paired.read().await {
+            log::warn!("sync_client::on_local_change: not paired, skipping");
             return;
         }
 
         match self.inner.engine.on_local_change(table, rows).await {
             Ok(messages) => {
+                log::warn!("sync_client::on_local_change: engine returned {} messages", messages.len());
                 for msg in messages {
                     if let Err(e) = self.send_message(&msg).await {
                         log::error!("Send local change failed: {}", e);
+                    } else {
+                        log::warn!("sync_client::on_local_change: sent message successfully");
                     }
                 }
             }
@@ -434,12 +542,16 @@ impl SyncClient {
 
     /// 从 DB 读取变更行并推送（与 SyncServer.record_and_notify 对应）
     pub async fn record_and_notify(&self, table: SyncTable, ids: Vec<String>) -> Result<(), String> {
-        if !*self.inner.is_paired.read().await {
+        let paired = *self.inner.is_paired.read().await;
+        log::warn!("sync_client::record_and_notify table={:?}, ids={:?}, is_paired={}", table, ids, paired);
+        if !paired {
+            log::warn!("sync_client::record_and_notify: not paired, skipping");
             return Ok(());
         }
 
         let rows = self.inner.engine.fetch_row_payloads(table, ids).await
             .map_err(|e| e.to_string())?;
+        log::warn!("sync_client::record_and_notify: fetched {} rows", rows.len());
 
         if rows.is_empty() {
             return Ok(());
@@ -458,11 +570,12 @@ impl SyncClient {
     /// 断开连接
     pub async fn disconnect(&self) {
         *self.inner.shutdown.lock().await = true;
-        let mut ws_guard = self.inner.ws_stream.lock().await;
-        if let Some(stream) = ws_guard.as_mut() {
-            let _ = stream.close(None).await;
+        let mut sink_guard = self.inner.ws_sink.lock().await;
+        if let Some(sink) = sink_guard.as_mut() {
+            let _ = sink.close().await;
         }
-        *ws_guard = None;
+        *sink_guard = None;
+        *self.inner.ws_source.lock().await = None;
         *self.inner.is_connected.write().await = false;
         *self.inner.is_paired.write().await = false;
         log::info!("SyncClient disconnected");
@@ -487,7 +600,7 @@ impl SyncClient {
     /// 超时判定基于 inner.last_pong：由 recv_loop 在收到任何对端消息时刷新，
     /// 因此只有真正收到 Pong/数据才算连接存活。
     pub fn start_heartbeat(&self) {
-        let ws_stream = self.inner.ws_stream.clone();
+        let ws_sink = self.inner.ws_sink.clone();
         let client_id = self.inner.client_id.clone();
         let is_connected = self.inner.is_connected.clone();
         let inner = self.inner.clone();
@@ -509,10 +622,10 @@ impl SyncClient {
 
                 // 发送 Ping（仅用于探活，不重置 last_pong）
                 {
-                    let mut ws_guard = ws_stream.lock().await;
-                    if let Some(stream) = ws_guard.as_mut() {
+                    let mut ws_guard = ws_sink.lock().await;
+                    if let Some(sink) = ws_guard.as_mut() {
                         if let Ok(text) = serde_json::to_string(&ping) {
-                            if let Err(e) = stream.send(Message::Text(text)).await {
+                            if let Err(e) = sink.send(Message::Text(text)).await {
                                 log::warn!("Heartbeat ping send failed: {}", e);
                             }
                         }
