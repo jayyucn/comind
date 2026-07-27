@@ -170,6 +170,8 @@ pub fn run() {
             commands::unpair_device,
             #[cfg(not(target_os = "android"))]
             commands::trigger_full_sync,
+            #[cfg(not(target_os = "android"))]
+            commands::get_sync_status,
             #[cfg(target_os = "android")]
             commands::connect_to_server,
             #[cfg(target_os = "android")]

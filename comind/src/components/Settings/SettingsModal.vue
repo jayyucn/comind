@@ -5,9 +5,11 @@ import { pushModal, popModal } from '../../composables/useModalKeyboard'
 import { useTheme } from '../../composables/useTheme'
 import RelationshipTypesPanel from './RelationshipTypesPanel.vue'
 import QrScanner from './QrScanner.vue'
-import { getWorkspacePath, setWorkspacePath, resetWorkspacePath, exportToMarkdown, importFromMarkdown, getSyncConfig, setSyncConfig, syncNow, getSyncQr, getPairedDevices, unpairDevice, triggerFullSync } from '../../wasm/client'
+import { getWorkspacePath, setWorkspacePath, resetWorkspacePath, exportToMarkdown, importFromMarkdown, getSyncConfig, setSyncConfig, syncNow } from '../../wasm/client'
 import { isTauriEnvironment, tauriPickDirectory, isAndroidPlatform, isAndroidPlatformSync, tauriConnectToServer, tauriDisconnectSync, tauriGetSyncStatus, tauriTriggerFullSyncMobile } from '../../wasm/tauri-client'
 import type { SyncStatus } from '../../wasm/tauri-client'
+import DeviceSyncPanel from '../Sidebar/DeviceSyncPanel.vue'
+import { useEditorStore } from '../../stores/editor'
 import { X, Sun, Moon, Monitor, Folder, RotateCcw, AlertCircle, Upload, Download, RefreshCw, ToggleLeft, ToggleRight, Smartphone, QrCode, Clock, Wifi } from 'lucide-vue-next'
 import { useNotificationStore } from '../../stores/notification'
 
@@ -24,6 +26,11 @@ watch(isOpen, (visible) => {
 onUnmounted(() => popModal('settings-modal'))
 const { theme, setTheme } = useTheme()
 const notificationStore = useNotificationStore()
+const editorStore = useEditorStore()
+
+function onPcSyncToast(payload: { message: string; type?: 'info' | 'warning' | 'error' }) {
+  editorStore.showToast(payload.message, payload.type ?? 'info')
+}
 
 type Section = 'appearance' | 'editor' | 'data' | 'notifications' | 'about'
 
@@ -42,13 +49,6 @@ const exportLoading = ref(false)
 const importLoading = ref(false)
 const syncLoading = ref(false)
 
-const showDeviceSyncQr = ref(false)
-const qrUrl = ref('')
-const qrExpiryCountdown = ref(300)
-const pairedDevices = ref<{ client_id: string; peer_device_name: string; last_sync_at: number; paired_at: number | null }[]>([])
-const deviceSyncLoading = ref(false)
-const isPaired = ref(false)
-
 // Android 端同步状态
 const androidSyncStatus = ref<SyncStatus | null>(null)
 const androidConnecting = ref(false)
@@ -62,8 +62,6 @@ onMounted(async () => {
     isDesktop.value = false
   }
 })
-
-let qrTimer: ReturnType<typeof setInterval> | null = null
 
 async function loadWorkspacePath() {
   if (!isDesktop.value) return
@@ -162,63 +160,6 @@ async function handleSyncNow() {
   }
 }
 
-async function loadPairedDevices() {
-  if (!isDesktop.value) return
-  try {
-    const devices = await getPairedDevices()
-    pairedDevices.value = devices
-    isPaired.value = devices.length > 0
-  } catch (e) {
-    console.error('Failed to load paired devices:', e)
-  }
-}
-
-async function handleShowQr() {
-  try {
-    deviceSyncLoading.value = true
-    qrUrl.value = await getSyncQr()
-    qrExpiryCountdown.value = 300
-    showDeviceSyncQr.value = true
-    if (qrTimer) clearInterval(qrTimer)
-    qrTimer = setInterval(() => {
-      qrExpiryCountdown.value -= 1
-      if (qrExpiryCountdown.value <= 0) {
-        if (qrTimer) clearInterval(qrTimer)
-        showDeviceSyncQr.value = false
-      }
-    }, 1000)
-  } catch (e) {
-    console.error('Failed to get QR code:', e)
-  } finally {
-    deviceSyncLoading.value = false
-  }
-}
-
-function handleCloseQr() {
-  showDeviceSyncQr.value = false
-  if (qrTimer) clearInterval(qrTimer)
-}
-
-async function handleUnpair(deviceId: string) {
-  try {
-    await unpairDevice(deviceId)
-    await loadPairedDevices()
-  } catch (e) {
-    console.error('Failed to unpair device:', e)
-  }
-}
-
-async function handleTriggerFullSync() {
-  try {
-    deviceSyncLoading.value = true
-    await triggerFullSync()
-  } catch (e) {
-    console.error('Failed to trigger full sync:', e)
-  } finally {
-    deviceSyncLoading.value = false
-  }
-}
-
 // ===== Android 端同步 =====
 
 async function loadAndroidSyncStatus() {
@@ -269,17 +210,6 @@ async function handleAndroidFullSync() {
   }
 }
 
-function formatTimestamp(timestamp: number): string {
-  if (!timestamp) return '-'
-  const date = new Date(timestamp)
-  return date.toLocaleString('zh-CN', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
-}
-
 watch(isOpen, async (visible) => {
   if (visible) {
     pushModal('settings-modal')
@@ -289,7 +219,6 @@ watch(isOpen, async (visible) => {
     }
     await loadWorkspacePath()
     await loadSyncConfig()
-    await loadPairedDevices()
     await loadAndroidSyncStatus()
   } else {
     popModal('settings-modal')
@@ -331,33 +260,6 @@ onUnmounted(() => {
 
 <template>
   <Teleport to="body">
-    <Transition name="qr-modal">
-      <div v-if="showDeviceSyncQr" class="qr-modal-overlay" @click="handleCloseQr">
-        <div class="qr-modal" @click.stop>
-          <div class="qr-modal-header">
-            <span class="qr-modal-title">设备配对</span>
-            <button class="qr-modal-close" @click="handleCloseQr">
-              <X :size="16" :stroke-width="1.75" />
-            </button>
-          </div>
-          <div class="qr-modal-body">
-            <div class="qr-code-container">
-              <div class="qr-code">
-                <img :src="`data:image/png;base64,${qrUrl}`" alt="配对二维码" />
-              </div>
-              <div class="qr-code-expiry">
-                <Clock :size="12" :stroke-width="1.75" />
-                <span>二维码将在 {{ Math.floor(qrExpiryCountdown / 60) }}:{{ String(qrExpiryCountdown % 60).padStart(2, '0') }} 后过期</span>
-              </div>
-            </div>
-            <div class="qr-modal-info">
-              <Smartphone :size="16" :stroke-width="1.75" />
-              <span>在 Android 端打开扫码功能，扫描上方二维码完成配对</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Transition>
     <Transition name="settings-modal">
       <div v-if="isOpen" class="settings-modal-overlay" @click.self="handleOverlayClick">
         <div class="settings-modal">
@@ -524,70 +426,7 @@ onUnmounted(() => {
                   </button>
                 </div>
                 <div v-if="isDesktop" class="setting-item setting-item--column">
-                  <div class="setting-info">
-                    <span class="setting-label">设备同步</span>
-                    <span class="setting-desc">与 Android 设备通过局域网直连同步数据</span>
-                  </div>
-                  <div class="device-sync-container">
-                    <div v-if="!isPaired" class="device-sync-unpaired">
-                      <button 
-                        class="device-sync-qr-btn" 
-                        :disabled="deviceSyncLoading" 
-                        @click="handleShowQr"
-                      >
-                        <QrCode :size="14" :stroke-width="1.75" />
-                        {{ deviceSyncLoading ? '生成中...' : '显示配对二维码' }}
-                      </button>
-                      <div class="device-sync-note">
-                        <Smartphone :size="12" :stroke-width="1.75" />
-                        <span>在 Android 端打开扫码功能，扫描二维码完成配对</span>
-                      </div>
-                    </div>
-                    <div v-else class="device-sync-paired">
-                      <div class="paired-device-header">
-                        <div class="paired-device-status">
-                          <Wifi :size="14" :stroke-width="1.75" class="paired-status-icon" />
-                          <span>已配对</span>
-                        </div>
-                        <button 
-                          class="device-sync-resync-btn" 
-                          :disabled="deviceSyncLoading" 
-                          @click="handleTriggerFullSync"
-                        >
-                          <RefreshCw :size="12" :stroke-width="1.75" :class="{ spinning: deviceSyncLoading }" />
-                          重新同步
-                        </button>
-                      </div>
-                      <div class="paired-device-list">
-                        <div 
-                          v-for="device in pairedDevices" 
-                          :key="device.client_id" 
-                          class="paired-device-item"
-                        >
-                          <div class="paired-device-info">
-                            <Smartphone :size="14" :stroke-width="1.75" />
-                            <span class="paired-device-name">{{ device.peer_device_name }}</span>
-                          </div>
-                          <div class="paired-device-meta">
-                            <div class="paired-device-time">
-                              <Clock :size="10" :stroke-width="1.75" />
-                              <span>{{ formatTimestamp(device.last_sync_at) }}</span>
-                            </div>
-                            <button 
-                              class="paired-device-unpair-btn" 
-                              @click="handleUnpair(device.client_id)"
-                            >
-                              取消配对
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                      <div class="device-sync-paired-note">
-                        <AlertCircle :size="12" :stroke-width="1.75" />
-                        <span>MVP 版本仅支持配对一台设备</span>
-                      </div>
-                    </div>
-                  </div>
+                  <DeviceSyncPanel @toast="onPcSyncToast" />
                 </div>
                 <!-- Android 端：扫码连接 PC -->
                 <div v-if="androidIsAndroid" class="setting-item setting-item--column">

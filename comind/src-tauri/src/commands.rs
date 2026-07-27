@@ -1134,12 +1134,38 @@ pub async fn get_paired_devices(
 #[tauri::command]
 pub async fn unpair_device(
     db: State<'_, super::state::DatabaseConnection>,
+    sync_server: State<'_, super::state::SyncServerHandle>,
     client_id: &str,
 ) -> Result<(), String> {
+    // PC 端：同时关闭该设备活跃连接并清内存配对记录
+    #[cfg(not(target_os = "android"))]
+    {
+        if let Some(server) = sync_server.get_server().await {
+            server.revoke_device(client_id).await;
+        }
+    }
     let adapter = db.get_adapter()?;
     comind_core::sync::state::SyncStateRepository::delete(&adapter.conn, client_id)
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+pub async fn get_sync_status(
+    sync_server: State<'_, super::state::SyncServerHandle>,
+) -> Result<serde_json::Value, String> {
+    let server = sync_server.get_server().await.ok_or("SyncServer not started")?;
+    let status = server.get_status().await;
+    Ok(serde_json::json!({
+        "connected": status.connected,
+        "paired": status.paired,
+        "peers": status.peers.iter().map(|p| serde_json::json!({
+            "client_id": p.client_id,
+            "name": p.name,
+            "ip": p.ip,
+        })).collect::<Vec<_>>(),
+    }))
 }
 
 #[cfg(not(target_os = "android"))]
@@ -1218,12 +1244,14 @@ pub async fn get_sync_status(
             "connected": connected,
             "paired": paired,
             "server_name": server_name,
+            "peers": [],
         }))
     } else {
         Ok(serde_json::json!({
             "connected": false,
             "paired": false,
             "server_name": null,
+            "peers": [],
         }))
     }
 }

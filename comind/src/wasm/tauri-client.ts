@@ -310,9 +310,18 @@ export async function tauriTriggerFullSync(): Promise<void> {
 
 // ===== Android 端同步命令 =====
 
+export interface SyncPeer {
+  client_id: string
+  name: string
+  ip: string
+}
+
 export interface SyncStatus {
   connected: boolean
   paired: boolean
+  /** PC 端：已连接对端列表；Android 端：对端信息（可能为空） */
+  peers: SyncPeer[]
+  /** Android 端：已连接的 PC 名称；PC 端为 null */
   server_name: string | null
 }
 
@@ -328,6 +337,11 @@ export async function tauriDisconnectSync(): Promise<void> {
 
 /** 获取当前同步状态（Android 端） */
 export async function tauriGetSyncStatus(): Promise<SyncStatus> {
+  return invoke('get_sync_status')
+}
+
+/** PC 端：获取同步状态（服务端内存态，含已连接对端） */
+export async function tauriGetSyncStatusPC(): Promise<SyncStatus> {
   return invoke('get_sync_status')
 }
 

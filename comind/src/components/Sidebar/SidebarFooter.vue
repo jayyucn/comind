@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SyncStatusBar from './SyncStatusBar.vue'
 </script>
 
 <template>
@@ -7,11 +8,16 @@
       <kbd>Ctrl</kbd>+<kbd>K</kbd>
       <span class="hint-text">命令与搜索</span>
     </div>
+    <SyncStatusBar />
   </div>
 </template>
 
 <style scoped>
 .sidebar-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   padding: var(--space-3);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
@@ -20,7 +26,6 @@
 .shortcut-hint {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 4px;
   font-size: 11px;
   color: var(--text-tertiary);
