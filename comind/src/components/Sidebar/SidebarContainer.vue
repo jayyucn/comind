@@ -6,7 +6,6 @@ import SidebarGraphItem from './SidebarGraphItem.vue'
 import SidebarRecent from './SidebarRecent.vue'
 import SidebarFavorites from './SidebarFavorites.vue'
 import SidebarFooter from './SidebarFooter.vue'
-import SyncStatusBar from './SyncStatusBar.vue'
 
 const { isCollapsed } = useSidebar()
 

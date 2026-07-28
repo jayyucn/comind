@@ -10,7 +10,7 @@ import { isTauriEnvironment, tauriPickDirectory, isAndroidPlatform, isAndroidPla
 import type { SyncStatus } from '../../wasm/tauri-client'
 import DeviceSyncPanel from '../Sidebar/DeviceSyncPanel.vue'
 import { useEditorStore } from '../../stores/editor'
-import { X, Sun, Moon, Monitor, Folder, RotateCcw, AlertCircle, Upload, Download, RefreshCw, ToggleLeft, ToggleRight, Smartphone, QrCode, Clock, Wifi } from 'lucide-vue-next'
+import { X, Sun, Moon, Monitor, Folder, RotateCcw, AlertCircle, Upload, Download, RefreshCw, ToggleLeft, ToggleRight, QrCode, Wifi } from 'lucide-vue-next'
 import { useNotificationStore } from '../../stores/notification'
 
 const { isOpen, close } = useSettingsModal()

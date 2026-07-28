@@ -1,13 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, watch, computed, nextTick } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, nextTick } from 'vue'
 import { Graph } from '@antv/g6'
 import type { NodeData } from '@antv/g6'
 import { usePageStore } from '../../stores/pages'
 import { useBlockStore } from '../../stores/blocks'
-import { getRelationshipColor, getRelationshipLabel, getDirectionInGroup, getGroupByType, getRelationshipStrength, STRENGTH_TO_WIDTH } from '../../types/relationship'
+import { getRelationshipColor, getRelationshipLabel, getRelationshipStrength, STRENGTH_TO_WIDTH } from '../../types/relationship'
 import { useRouter } from 'vue-router'
-import FilterPanel from './FilterPanel.vue'
-import type { FilterState } from './FilterPanel.vue'
 
 const pageStore = usePageStore()
 const blockStore = useBlockStore()
@@ -17,102 +15,16 @@ const containerRef = ref<HTMLElement | null>(null)
 const graphRef = ref<Graph | null>(null)
 const currentLayout = ref<string>('force')
 const highlightedNodeId = ref<string | null>(null)
-const activeFilters = ref<string[]>([])
-const currentFilterState = ref<FilterState>({ conditions: [], expandedGroups: new Set() })
-const stats = ref({ normalNodes: 0, filteredNodes: 0, normalEdges: 0, filteredEdges: 0 })
 const isFirstLayoutDone = ref(false)
 
 const currentPageId = computed(() => pageStore.currentPageId)
 
 let refreshGeneration = 0
 
-function applyFilterConditions(pageId: string): boolean {
-  const page = pageStore.getPage(pageId)
-  if (!page) return false
-  
-  for (const condition of currentFilterState.value.conditions) {
-    let matches = true
-    
-    switch (condition.type) {
-      case 'ideas':
-        if (page.type === 'ideas') {
-          matches = !!condition.value
-        }
-        break
-        
-      case 'time':
-        const dateRange = condition.value as { start: number | null; end: number | null }
-        if (dateRange.start !== null || dateRange.end !== null) {
-          const pageTime = page.createdAt
-          if (dateRange.start !== null && pageTime < dateRange.start) matches = false
-          if (dateRange.end !== null && pageTime >= dateRange.end) matches = false
-        }
-        break
-        
-      case 'search':
-        const query = condition.value as string
-        if (query.trim()) {
-          const q = query.toLowerCase()
-          const titleMatches = page.title.toLowerCase().includes(q)
-          if (!titleMatches) {
-            matches = false
-          }
-        }
-        break
-    }
-    
-    if (!matches) {
-      if (condition.logic === 'NOT') return true
-      return false
-    }
-  }
-  
-  return true
-}
 
-function normalizeEdge(edge: { id: string; source: string; target: string; data: Record<string, unknown> }) {
-  const type = edge.data.relationshipType as string
-  const direction = getDirectionInGroup(type)
-  const group = getGroupByType(type)
-  
-  if (direction === 'inverse' && group) {
-    const forwardType = group.type
-    return {
-      id: edge.id,
-      source: edge.target,
-      target: edge.source,
-      data: {
-        ...edge.data,
-        relationshipType: forwardType,
-        label: getRelationshipLabel(forwardType),
-        color: getRelationshipColor(forwardType),
-      }
-    }
-  }
-  return edge
-}
 
-function getEdgeDedupeKey(edge: { source: string; target: string; data: Record<string, unknown> }): string {
-  const type = edge.data.relationshipType as string
-  const group = getGroupByType(type)
-  const groupKey = group ? group.type : type
-  
-  const [source, target] = [edge.source, edge.target].sort()
-  
-  return `${source}-${target}-${groupKey}`
-}
 
 /** 检查边的关系类型是否被选定。空选定 = 全不过滤 */
-function getRelationshipFilteredStatus(type: string): boolean {
-  const relCondition = currentFilterState.value.conditions.find(c => c.type === 'relationship')
-  if (relCondition) {
-    const selectedTypes = relCondition.value as string[]
-    if (selectedTypes.length > 0) {
-      return !selectedTypes.includes(type)
-    }
-  }
-  return false
-}
 
 async function loadPageNodeEdges(
   pageId: string,
@@ -120,8 +32,6 @@ async function loadPageNodeEdges(
   edges: { id: string; source: string; target: string; data: Record<string, unknown> }[],
   visitedEdges: Set<string>,
   blockCache: Map<string, { pageId: string }>,
-  isFilteredMap: Map<string, boolean>,
-  hiddenPageIds: Set<string>
 ) {
   await blockStore.loadMultiPageBlocks([pageId])
   const outLinks = await blockStore.getOutlinks(pageId)
@@ -130,7 +40,7 @@ async function loadPageNodeEdges(
   for (const link of outLinks) {
     if (visitedEdges.has(link.id)) continue
     const targetPage = pageStore.getPage(link.targetPageId)
-    if (!targetPage || hiddenPageIds.has(targetPage.id)) continue
+    if (!targetPage) continue
 
     if (!nodes.find(n => n.id === targetPage.id)) {
       nodes.push({
@@ -138,7 +48,6 @@ async function loadPageNodeEdges(
         data: {
           label: targetPage.title,
           isCurrent: targetPage.id === currentPageId.value,
-          isFiltered: isFilteredMap.get(targetPage.id) ?? false,
           isHighlighted: targetPage.id === highlightedNodeId.value,
         }
       })
@@ -147,8 +56,6 @@ async function loadPageNodeEdges(
     const type = link.relationshipType ?? 'related'
     const color = getRelationshipColor(type)
     const label = getRelationshipLabel(type)
-    const nodeFiltered = (isFilteredMap.get(pageId) ?? false) || (isFilteredMap.get(link.targetPageId) ?? false)
-    const typeFiltered = getRelationshipFilteredStatus(type)
     visitedEdges.add(link.id)
     edges.push({
       id: link.id,
@@ -158,7 +65,6 @@ async function loadPageNodeEdges(
         relationshipType: type,
         label,
         color,
-        isFiltered: nodeFiltered || typeFiltered,
       }
     })
   }
@@ -176,7 +82,7 @@ async function loadPageNodeEdges(
 
     const sourcePageId = block.pageId
     const sourcePage = pageStore.getPage(sourcePageId)
-    if (!sourcePage || hiddenPageIds.has(sourcePage.id)) continue
+    if (!sourcePage) continue
 
     if (!nodes.find(n => n.id === sourcePageId)) {
       nodes.push({
@@ -184,7 +90,6 @@ async function loadPageNodeEdges(
         data: {
           label: sourcePage.title,
           isCurrent: sourcePage.id === currentPageId.value,
-          isFiltered: isFilteredMap.get(sourcePageId) ?? false,
           isHighlighted: sourcePage.id === highlightedNodeId.value,
         }
       })
@@ -193,7 +98,6 @@ async function loadPageNodeEdges(
     const color = getRelationshipColor(link.relationshipType ?? 'related')
     const label = getRelationshipLabel(link.relationshipType ?? 'related')
     const type = link.relationshipType ?? 'related'
-    const isFiltered = (isFilteredMap.get(sourcePageId) ?? false) || (isFilteredMap.get(pageId) ?? false) || getRelationshipFilteredStatus(type)
     visitedEdges.add(link.id)
     edges.push({
       id: link.id,
@@ -203,7 +107,6 @@ async function loadPageNodeEdges(
         relationshipType: type,
         label,
         color,
-        isFiltered,
       }
     })
   }
@@ -217,112 +120,22 @@ async function buildGraphData() {
 
   const allPages = pageStore.pages.filter(p => !p.deleted)
 
-  // 1a. 日记隐藏：筛选激活时完全从图中移除（节点 + 边均不出现）
-  const hideIdeas = currentFilterState.value.conditions.some(
-    c => c.type === 'ideas' && c.value === false
-  )
-  const hiddenPageIds = new Set<string>()
-  if (hideIdeas) {
-    for (const p of allPages) {
-      if (p.type === 'ideas') hiddenPageIds.add(p.id)
-    }
-  }
-
-  // 1b. 计算每个 page 的过滤状态（不满足筛选 = true）
-  const isFilteredMap = new Map<string, boolean>()
   for (const page of allPages) {
-    if (hiddenPageIds.has(page.id)) continue
-    isFilteredMap.set(page.id, !applyFilterConditions(page.id))
-  }
-
-  // 2. 展示节点加入，置灰节点用 isFiltered 标记
-  for (const page of allPages) {
-    if (hiddenPageIds.has(page.id)) continue
     nodes.push({
       id: page.id,
       data: {
         label: page.title,
         isCurrent: page.id === currentPageId.value,
-        isFiltered: isFilteredMap.get(page.id) ?? false,
         isHighlighted: page.id === highlightedNodeId.value,
       }
     })
   }
 
-  // 3. 边：仅以“关系类型筛选”过滤，节点不过滤
   for (const page of allPages) {
-    if (hiddenPageIds.has(page.id)) continue
-    await loadPageNodeEdges(page.id, nodes, edges, visitedEdges, blockCache, isFilteredMap, hiddenPageIds)
+    await loadPageNodeEdges(page.id, nodes, edges, visitedEdges, blockCache)
   }
 
-  // 5. 边去重
-  const normalizedEdges = edges.map(e => normalizeEdge(e))
-  const seenKeys = new Set<string>()
-  const dedupedEdges: typeof edges = []
-  for (const edge of normalizedEdges) {
-    const key = getEdgeDedupeKey(edge)
-    if (seenKeys.has(key)) continue
-    seenKeys.add(key)
-    dedupedEdges.push(edge)
-  }
-
-  // 6. 平行边偏移
-  const edgeCountMap = new Map<string, number>()
-  const pairKey = (a: string, b: string) => [a, b].sort().join('-')
-  for (const edge of dedupedEdges) {
-    const key = pairKey(edge.source, edge.target)
-    const idx = edgeCountMap.get(key) ?? 0
-    edgeCountMap.set(key, idx + 1)
-    if (idx === 0) {
-      edge.data.curveOffset = 0
-      edge.data.endPointOffset = [0, 0]
-    } else {
-      const sign = idx % 2 === 1 ? 1 : -1
-      const magnitude = Math.ceil(idx / 2) * 20
-      edge.data.curveOffset = sign * magnitude
-      edge.data.endPointOffset = [0, sign * 8]
-    }
-  }
-
-  // 7. 关系类型后处理：无任何选中类型边的节点额外置灰
-  const relCondition = currentFilterState.value.conditions.find(c => c.type === 'relationship')
-  const selectedRelTypes = (relCondition?.value as string[]) ?? []
-  if (selectedRelTypes.length > 0) {
-    const nodeHasSelectedType = new Set<string>()
-    for (const edge of dedupedEdges) {
-      const type = edge.data.relationshipType as string
-      if (selectedRelTypes.includes(type)) {
-        nodeHasSelectedType.add(edge.source)
-        nodeHasSelectedType.add(edge.target)
-      }
-    }
-    for (const node of nodes) {
-      if (!nodeHasSelectedType.has(node.id)) {
-        ;(node.data as Record<string, unknown>).isFiltered = true
-      }
-    }
-  }
-
-  // 8. 统计
-  let normalNodes = 0
-  let filteredNodes = 0
-  for (const node of nodes) {
-    if (node.data?.isFiltered) filteredNodes++
-    else normalNodes++
-  }
-  stats.value.normalNodes = normalNodes
-  stats.value.filteredNodes = filteredNodes
-
-  let normalEdges = 0
-  let filteredEdges = 0
-  for (const edge of dedupedEdges) {
-    if (edge.data.isFiltered) filteredEdges++
-    else normalEdges++
-  }
-  stats.value.normalEdges = normalEdges
-  stats.value.filteredEdges = filteredEdges
-
-  return { nodes, edges: dedupedEdges }
+  return { nodes, edges }
 }
 
 function getNodeSize(d: NodeData): [number, number] {
@@ -597,33 +410,6 @@ function updateNodeHighlight() {
   g.draw()
 }
 
-function handleFilterChange(filters: FilterState) {
-  currentFilterState.value = filters
-  
-  const searchCondition = filters.conditions.find(c => c.type === 'search')
-  const query = (searchCondition?.value as string) ?? ''
-  if (!query) {
-    highlightedNodeId.value = null
-  } else {
-    // 从 pageStore 搜索匹配的节点，由 buildGraphData 统一处理 isHighlighted
-    const matched = pageStore.pages.find(p =>
-      !p.deleted && p.title.toLowerCase().includes(query.toLowerCase())
-    )
-    highlightedNodeId.value = matched?.id ?? null
-  }
-  
-  const relCondition = filters.conditions.find(c => c.type === 'relationship')
-  if (relCondition) {
-    activeFilters.value = relCondition.value as string[]
-  }
-  
-  refreshGraphData()
-}
-
-watch(currentFilterState, () => {
-  refreshGraphData()
-}, { deep: true })
-
 let resizeObserver: ResizeObserver | null = null
 
 onMounted(async () => {
@@ -650,7 +436,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="graph-view-page">
+  <div class="graph-view">
     <div class="graph-view-header">
       <h1 class="graph-view-title">图谱</h1>
       <div class="graph-view-controls">
@@ -670,18 +456,9 @@ onBeforeUnmount(() => {
           <button class="control-btn" title="刷新" @click="handleRefresh">↻</button>
           <button class="control-btn" title="导出 PNG" @click="handleExportPng">⤓</button>
         </div>
-        <div class="stats-group">
-          <span class="stat-item">
-            节点: <strong>正常({{ stats.normalNodes }})</strong> / 置灰({{ stats.filteredNodes }})
-          </span>
-          <span class="stat-item">
-            边: <strong>正常({{ stats.normalEdges }})</strong> / 置灰({{ stats.filteredEdges }})
-          </span>
-        </div>
       </div>
     </div>
     <div class="graph-view-body">
-      <FilterPanel @filter-change="handleFilterChange" />
       <div ref="containerRef" class="graph-view-canvas">
         <div v-if="!isFirstLayoutDone" class="graph-loading-overlay">
           <div class="loading-spinner"></div>
@@ -693,7 +470,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.graph-view-page {
+.graph-view {
   display: flex;
   flex-direction: column;
   height: 100vh;
@@ -791,18 +568,6 @@ onBeforeUnmount(() => {
   color: var(--text-primary);
   font-weight: 500;
   border-color: #1890ff;
-}
-
-.stats-group {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 11px;
-  color: var(--text-tertiary);
-}
-
-.stat-item strong {
-  color: var(--text-primary);
 }
 
 .graph-view-canvas {

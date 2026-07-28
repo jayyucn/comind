@@ -12,7 +12,6 @@ const status = ref<SyncStatus | null>(null)
 const pairedDevices = ref<{ client_id: string; peer_device_name: string; last_sync_at: number; paired_at: number | null }[]>([])
 const isAndroid = ref(false)
 const polling = ref(false)
-let pollTimer: ReturnType<typeof setInterval> | null = null
 let initialized = false
 
 const POLL_INTERVAL_MS = 3000
@@ -45,7 +44,7 @@ async function ensureStarted() {
     isAndroid.value = false
   }
   await Promise.all([refresh(), refreshPairedDevices()])
-  pollTimer = setInterval(async () => {
+  setInterval(async () => {
     await refresh()
     // 配对设备列表低频刷新（每 3 轮刷新一次）
     pollCount++

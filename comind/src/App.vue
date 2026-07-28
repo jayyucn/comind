@@ -22,6 +22,7 @@ import Icon from './components/Icons/Icon.vue'
 import RightSidebar from './components/RightSidebar/index.vue'
 import { registerPanel } from './components/RightSidebar/panels'
 import BlockVersionPanel from './components/RightSidebar/BlockVersionPanel.vue'
+import GraphPanel from './components/RightSidebar/GraphPanel.vue'
 import SearchPanel from './components/SearchPanel.vue'
 import { isTauriEnvironment, tauriMinimizeWindow, tauriToggleMaximizeWindow, tauriCloseWindow, tauriIsMaximized, tauriAutoReconnect } from './wasm/tauri-client'
 import { getCurrentWindow } from '@tauri-apps/api/window'
@@ -34,8 +35,29 @@ registerPanel({
   component: BlockVersionPanel
 })
 
+registerPanel({
+  id: 'graph',
+  label: '图谱',
+  icon: '🕸️',
+  component: GraphPanel
+})
+
 const { isCollapsed, toggle } = useSidebar()
 const rightSidebar = useRightSidebar()
+
+const isGraphPanelOpen = computed(() =>
+  rightSidebar.visible.value && rightSidebar.activePanelId.value === 'graph'
+)
+function handleGraphSidebarToggle() {
+  if (!rightSidebar.visible.value) {
+    rightSidebar.setVisible(true)
+    rightSidebar.setActivePanel('graph')
+  } else if (rightSidebar.activePanelId.value !== 'graph') {
+    rightSidebar.setActivePanel('graph')
+  } else {
+    rightSidebar.setVisible(false)
+  }
+}
 
 const editorStore = useEditorStore()
 const route = useRoute()
@@ -274,10 +296,10 @@ function handleMainClick(e: MouseEvent) {
           <button
             v-if="showRightSidebarToggle"
             class="right-sidebar-toggle"
-            :title="rightSidebar.visible.value ? '关闭右侧面板' : '打开概念图谱'"
-            @click="rightSidebar.toggleVisible()"
+            :title="isGraphPanelOpen ? '关闭概念图谱' : '打开概念图谱'"
+            @click="handleGraphSidebarToggle"
           >
-            <Icon :name="rightSidebar.visible.value ? 'icon-panel-right-close' : 'icon-panel-right-open'" :size="16"/>
+            <Icon :name="isGraphPanelOpen ? 'icon-panel-right-close' : 'icon-panel-right-open'" :size="16"/>
           </button>
           <div class="window-controls" v-if="isTauriEnvironment()">
             <button class="window-control-btn minimize-btn" title="最小化" @click="handleMinimize">

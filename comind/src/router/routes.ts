@@ -13,7 +13,7 @@ import './types'
  *     {
  *       path: '/graph',
  *       name: 'graph',
- *       component: () => import('../components/GraphView/index.vue'),
+ *       component: () => import('../components/GraphView/GraphPage.vue'),
  *       meta: { fullWidth: true, hideRightSidebarToggle: true }
  *     }
  */
@@ -48,7 +48,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/graph',
     name: 'graph',
-    component: () => import('../components/GraphView/index.vue'),
+    component: () => import('../components/GraphView/GraphPage.vue'),
     meta: { fullWidth: true, hideRightSidebarToggle: true },
   },
   // 404 兜底

@@ -3,7 +3,6 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { QrCode, Smartphone, Wifi, WifiOff, Clock, RefreshCw } from 'lucide-vue-next'
 import {
   getSyncQr,
-  getPairedDevices,
   unpairDevice,
   triggerFullSync,
 } from '../../wasm/client'

@@ -15,6 +15,9 @@
     "core:window:allow-maximize",
     "core:window:allow-unmaximize",
     "dialog:default",
-    "os:default"
+    "dialog:allow-save",
+    "os:default",
+    "fs:default",
+    "fs:allow-write-file"
   ]
 }
