@@ -1,4 +1,4 @@
-#[cfg(test)]
+#[cfg(all(test, target_arch = "wasm32"))]
 mod lib_test;
 
 #[cfg(target_arch = "wasm32")]

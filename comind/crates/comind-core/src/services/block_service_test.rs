@@ -78,8 +78,6 @@ mod tests {
         let page_id = create_test_page(&mut adapter, "Tree Test")?;
 
         let root1 = BlockService::create(&mut adapter, &page_id, None, "Root 1", "{}", "bullet", None)?;
-        let root2 = BlockService::create(&mut adapter, &page_id, None, "Root 2", "{}", "bullet", None)?;
-        let child1 = BlockService::create(&mut adapter, &page_id, Some(&root1.id), "Child 1", "{}", "bullet", None)?;
 
         let tree = BlockService::build_tree(&mut adapter, &page_id)?;
 
