@@ -372,28 +372,7 @@ async function refreshGraphData(graph?: Graph) {
 
   if (gen !== refreshGeneration) return
 
-  // 找到符合条件的节点（非置灰），居中到其包围盒
-  const allNodeData = g.getNodeData()
-  const normalNodeData = allNodeData.filter(n => !n.data?.isFiltered)
-  if (normalNodeData.length > 0) {
-    const xs: number[] = normalNodeData.map(n => n.x ?? 0) as number[]
-    const ys: number[] = normalNodeData.map(n => n.y ?? 0) as number[]
-    const minX = Math.min(...xs), maxX = Math.max(...xs)
-    const minY = Math.min(...ys), maxY = Math.max(...ys)
-    const cx = (minX + maxX) / 2
-    const cy = (minY + maxY) / 2
-    const bboxW = maxX - minX + 160
-    const bboxH = maxY - minY + 160
-    const el = containerRef.value as HTMLElement
-    const viewW = el.clientWidth || 800
-    const viewH = el.clientHeight || 600
-    const scale = Math.min(viewW / bboxW, viewH / bboxH, 1.5)
-    await g.zoomTo(scale * 0.85, false, [cx, cy])
-  } else {
-    await g.fitView()
-    const zoom = g.getZoom()
-    await g.zoomTo(zoom * 0.85)
-  }
+  await g.fitView({ when: 'always' }, false)
 }
 
 async function handleLayoutChange(layout: string) {
@@ -401,17 +380,13 @@ async function handleLayoutChange(layout: string) {
   if (graphRef.value) {
     graphRef.value.setLayout({ type: layout, preventOverlap: true, nodeSize: 100, animate: isFirstLayoutDone.value })
     await graphRef.value.layout()
-    await graphRef.value.fitView()
-    const zoom = graphRef.value.getZoom()
-    await graphRef.value.zoomTo(zoom * 0.85)
+    await graphRef.value.fitView({ when: 'always' }, false)
   }
 }
 
 async function handleFitView() {
   if (graphRef.value) {
-    await graphRef.value.fitView()
-    const zoom = graphRef.value.getZoom()
-    await graphRef.value.zoomTo(zoom * 0.85)
+    await graphRef.value.fitView({ when: 'always' }, false)
   }
 }
 
