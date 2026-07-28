@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed, nextTick } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, nextTick, watch } from 'vue'
 import { Graph } from '@antv/g6'
 import type { NodeData } from '@antv/g6'
 import { usePageStore } from '../../stores/pages'
@@ -11,22 +11,37 @@ const pageStore = usePageStore()
 const blockStore = useBlockStore()
 const router = useRouter()
 
+const props = defineProps<{
+  highlightedNodeId?: string | null
+  pageId?: string
+}>()
+
 const containerRef = ref<HTMLElement | null>(null)
 const graphRef = ref<Graph | null>(null)
 const currentLayout = ref<string>('force')
 const highlightedNodeId = ref<string | null>(null)
 const isFirstLayoutDone = ref(false)
 
-const currentPageId = computed(() => pageStore.currentPageId)
+const currentPageId = computed(() => props.pageId ?? pageStore.currentPageId)
+const maxDepth = ref(2)
+const isPageScoped = computed(() => !!props.pageId)
 
 let refreshGeneration = 0
 
+watch(() => props.highlightedNodeId, (val) => {
+  highlightedNodeId.value = val ?? null
+  if (graphRef.value) updateNodeHighlight()
+})
+
+watch(currentPageId, () => refreshGraphData())
+
+watch(maxDepth, () => {
+  if (isPageScoped.value) refreshGraphData()
+})
 
 
-
-/** 检查边的关系类型是否被选定。空选定 = 全不过滤 */
-
-async function loadPageNodeEdges(
+/** BFS 加载指定页面的直接关联节点和边 */
+async function loadNeighbors(
   pageId: string,
   nodes: NodeData[],
   edges: { id: string; source: string; target: string; data: Record<string, unknown> }[],
@@ -36,11 +51,12 @@ async function loadPageNodeEdges(
   await blockStore.loadMultiPageBlocks([pageId])
   const outLinks = await blockStore.getOutlinks(pageId)
   const inLinks = await blockStore.getBacklinks(pageId)
+  const neighbors: string[] = []
 
   for (const link of outLinks) {
     if (visitedEdges.has(link.id)) continue
     const targetPage = pageStore.getPage(link.targetPageId)
-    if (!targetPage) continue
+    if (!targetPage || targetPage.deleted) continue
 
     if (!nodes.find(n => n.id === targetPage.id)) {
       nodes.push({
@@ -52,10 +68,9 @@ async function loadPageNodeEdges(
         }
       })
     }
+    neighbors.push(targetPage.id)
 
     const type = link.relationshipType ?? 'related'
-    const color = getRelationshipColor(type)
-    const label = getRelationshipLabel(type)
     visitedEdges.add(link.id)
     edges.push({
       id: link.id,
@@ -63,8 +78,8 @@ async function loadPageNodeEdges(
       target: link.targetPageId,
       data: {
         relationshipType: type,
-        label,
-        color,
+        label: getRelationshipLabel(type),
+        color: getRelationshipColor(type),
       }
     })
   }
@@ -82,7 +97,7 @@ async function loadPageNodeEdges(
 
     const sourcePageId = block.pageId
     const sourcePage = pageStore.getPage(sourcePageId)
-    if (!sourcePage) continue
+    if (!sourcePage || sourcePage.deleted) continue
 
     if (!nodes.find(n => n.id === sourcePageId)) {
       nodes.push({
@@ -94,9 +109,8 @@ async function loadPageNodeEdges(
         }
       })
     }
+    neighbors.push(sourcePageId)
 
-    const color = getRelationshipColor(link.relationshipType ?? 'related')
-    const label = getRelationshipLabel(link.relationshipType ?? 'related')
     const type = link.relationshipType ?? 'related'
     visitedEdges.add(link.id)
     edges.push({
@@ -105,34 +119,73 @@ async function loadPageNodeEdges(
       target: pageId,
       data: {
         relationshipType: type,
-        label,
-        color,
+        label: getRelationshipLabel(type),
+        color: getRelationshipColor(type),
       }
     })
   }
+
+  return neighbors
 }
 
+/** 构建图数据：page-scoped 模式走 BFS（深度限制），否则全量 */
 async function buildGraphData() {
   const nodes: NodeData[] = []
   const edges: { id: string; source: string; target: string; data: Record<string, unknown> }[] = []
   const visitedEdges = new Set<string>()
   const blockCache = new Map<string, { pageId: string }>()
 
-  const allPages = pageStore.pages.filter(p => !p.deleted)
+  // 非 page-scoped：全量展示所有页面
+  if (!isPageScoped.value) {
+    const allPages = pageStore.pages.filter(p => !p.deleted)
+    for (const page of allPages) {
+      nodes.push({
+        id: page.id,
+        data: {
+          label: page.title,
+          isCurrent: page.id === currentPageId.value,
+          isHighlighted: page.id === highlightedNodeId.value,
+        }
+      })
+    }
+    for (const page of allPages) {
+      await loadNeighbors(page.id, nodes, edges, visitedEdges, blockCache)
+    }
+    return { nodes, edges }
+  }
 
-  for (const page of allPages) {
+  // page-scoped：BFS 从当前页面出发
+  const rootId = currentPageId.value
+  if (!rootId) return { nodes, edges }
+
+  const visitedPages = new Set<string>()
+  let frontier: string[] = [rootId]
+  visitedPages.add(rootId)
+  const rootPage = pageStore.getPage(rootId)
+  if (rootPage) {
     nodes.push({
-      id: page.id,
+      id: rootPage.id,
       data: {
-        label: page.title,
-        isCurrent: page.id === currentPageId.value,
-        isHighlighted: page.id === highlightedNodeId.value,
+        label: rootPage.title,
+        isCurrent: true,
+        isHighlighted: rootPage.id === highlightedNodeId.value,
       }
     })
   }
 
-  for (const page of allPages) {
-    await loadPageNodeEdges(page.id, nodes, edges, visitedEdges, blockCache)
+  for (let depth = 0; depth < maxDepth.value; depth++) {
+    const nextFrontier: string[] = []
+    for (const pageId of frontier) {
+      const neighbors = await loadNeighbors(pageId, nodes, edges, visitedEdges, blockCache)
+      for (const neighborId of neighbors) {
+        if (!visitedPages.has(neighborId)) {
+          visitedPages.add(neighborId)
+          nextFrontier.push(neighborId)
+        }
+      }
+    }
+    frontier = nextFrontier
+    if (frontier.length === 0) break
   }
 
   return { nodes, edges }
@@ -456,6 +509,18 @@ onBeforeUnmount(() => {
           <button class="control-btn" title="刷新" @click="handleRefresh">↻</button>
           <button class="control-btn" title="导出 PNG" @click="handleExportPng">⤓</button>
         </div>
+        <div v-if="isPageScoped" class="depth-control">
+          <span class="depth-label">层级</span>
+          <div class="depth-options">
+            <button
+              v-for="d in [1, 2, 3]"
+              :key="d"
+              class="depth-btn"
+              :class="{ active: maxDepth === d }"
+              @click="maxDepth = d"
+            >{{ d }}</button>
+          </div>
+        </div>
       </div>
     </div>
     <div class="graph-view-body">
@@ -491,6 +556,7 @@ onBeforeUnmount(() => {
   flex: 1;
   display: flex;
   min-height: 0;
+  position: relative;
 }
 
 .graph-view-title {
@@ -601,5 +667,51 @@ onBeforeUnmount(() => {
 .graph-loading-overlay span {
   font-size: var(--text-sm);
   color: var(--text-tertiary);
+}
+
+.depth-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.depth-label {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.depth-options {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.depth-btn {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border);
+  background: var(--bg-base);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-family: inherit;
+  transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
+}
+
+.depth-btn:hover {
+  background: var(--bg-hover);
+}
+
+.depth-btn.active {
+  background: #1890ff;
+  color: #fff;
+  border-color: #1890ff;
+  font-weight: 600;
 }
 </style>
