@@ -203,6 +203,7 @@ impl SQLiteAdapter {
         
         // SyncState table for WebSocket sync pairing state
         crate::sync::state::SyncStateRepository::create_table(conn)?;
+        crate::sync::state::SyncStateRepository::migrate_add_ws_url(conn)?;
         
         Self::migrate_add_page_title_unique(conn)?;
         Self::migrate_date_ref_event_ts(conn)?;

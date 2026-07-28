@@ -113,6 +113,8 @@ struct SyncClientInner {
     ws_url: String,
     pairing_token: String,
     server_name: String,
+    /// DB 路径（用于持久化配对信息）
+    db_path: std::path::PathBuf,
     ws_sink: Arc<Mutex<Option<WsSink>>>,
     ws_source: Arc<Mutex<Option<WsSource>>>,
     is_connected: Arc<RwLock<bool>>,
@@ -146,6 +148,7 @@ impl SyncClient {
                 ws_url,
                 pairing_token: parsed.token,
                 server_name: parsed.server_name,
+                db_path: db_path.to_path_buf(),
                 ws_sink: Arc::new(Mutex::new(None)),
                 ws_source: Arc::new(Mutex::new(None)),
                 is_connected: Arc::new(RwLock::new(false)),
@@ -155,6 +158,74 @@ impl SyncClient {
                 last_pong: Arc::new(Mutex::new(tokio::time::Instant::now())),
             }),
         })
+    }
+
+    /// 从 DB 中已保存的配对信息恢复 SyncClient（用于 App 重启后自动重连）
+    pub fn from_db(db_path: &Path, device_name: String) -> Result<Self, String> {
+        let conn = rusqlite::Connection::open(db_path)
+            .map_err(|e| format!("Failed to open DB: {}", e))?;
+        comind_core::sync::state::SyncStateRepository::migrate_add_ws_url(&conn)
+            .map_err(|e| format!("Migration failed: {}", e))?;
+        let states = comind_core::sync::state::SyncStateRepository::get_all(&conn)
+            .map_err(|e| format!("Failed to read SyncState: {}", e))?;
+        let state = states.into_iter().find(|s| s.is_paired)
+            .ok_or_else(|| "No paired device found in DB".to_string())?;
+        let ws_url = state.ws_url.clone()
+            .ok_or_else(|| "Paired device has no ws_url in DB".to_string())?;
+        let server_name = state.peer_device_name.clone();
+        let client_id = state.client_id.clone();
+        let engine = Arc::new(SyncEngine::new(client_id.clone(), db_path)
+            .map_err(|e| e.to_string())?);
+
+        log::info!("sync_client::from_db: restored pairing with {} (ws_url={})", server_name, ws_url);
+        Ok(Self {
+            inner: Arc::new(SyncClientInner {
+                engine,
+                client_id,
+                device_name,
+                ws_url,
+                // token 为空：重连时 PC 端通过 paired_devices 集合识别已知设备，不验证 token
+                pairing_token: String::new(),
+                server_name,
+                db_path: db_path.to_path_buf(),
+                ws_sink: Arc::new(Mutex::new(None)),
+                ws_source: Arc::new(Mutex::new(None)),
+                is_connected: Arc::new(RwLock::new(false)),
+                is_paired: Arc::new(RwLock::new(false)),
+                reconnect_count: Arc::new(Mutex::new(0)),
+                shutdown: Arc::new(Mutex::new(false)),
+                last_pong: Arc::new(Mutex::new(tokio::time::Instant::now())),
+            }),
+        })
+    }
+
+    /// 将配对信息持久化到 DB（配对成功后调用）
+    async fn persist_pairing_to_db(&self) {
+        let db_path = self.inner.db_path.clone();
+        let client_id = self.inner.client_id.clone();
+        let server_name = self.inner.server_name.clone();
+        let ws_url = self.inner.ws_url.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            let conn = rusqlite::Connection::open(&db_path)
+                .map_err(|e| e.to_string())?;
+            comind_core::sync::state::SyncStateRepository::insert_or_update(&conn,
+                &comind_core::sync::state::SyncState {
+                    client_id,
+                    peer_device_name: server_name,
+                    last_sync_at: 0,
+                    last_sync_type: None,
+                    paired_at: Some(chrono::Utc::now().timestamp_millis()),
+                    is_paired: true,
+                    last_seen_at: Some(chrono::Utc::now().timestamp_millis()),
+                    ws_url: Some(ws_url),
+                })
+                .map_err(|e| e.to_string())
+        }).await;
+        match result {
+            Ok(Ok(())) => log::info!("sync_client: pairing persisted to DB"),
+            Ok(Err(e)) => log::error!("sync_client: failed to persist pairing: {}", e),
+            Err(e) => log::error!("sync_client: persist task panicked: {}", e),
+        }
     }
 
     /// 连接 WebSocket 并完成配对
@@ -197,6 +268,9 @@ impl SyncClient {
         if paired {
             *self.inner.is_paired.write().await = true;
             log::info!("Paired with PC: {}", self.inner.server_name);
+
+            // 持久化配对信息到 DB（用于重启后自动重连）
+            self.persist_pairing_to_db().await;
 
             // 启动消息接收循环
             self.start_recv_loop().await;
@@ -440,6 +514,7 @@ impl SyncClient {
     }
 
     /// 启动重连流程（循环重试，避免递归）
+    /// 前 6 次快重试（指数退避 1s→30s），之后切换慢速模式（每 30s 无限重试）
     async fn start_reconnect(&self) {
         loop {
             let current_count = {
@@ -448,20 +523,23 @@ impl SyncClient {
                 *count
             };
 
-            if current_count > 6 {
-                log::warn!("Reconnect failed 6 times, stopping. Waiting for manual reconnect.");
-                return;
-            }
-
-            // NFR-4 指数退避：1s→2s→4s→8s→16s→30s
-            let backoff = match current_count {
-                1 => Duration::from_secs(1),
-                2 => Duration::from_secs(2),
-                3 => Duration::from_secs(4),
-                4 => Duration::from_secs(8),
-                5 => Duration::from_secs(16),
-                6 => Duration::from_secs(30),
-                _ => return,
+            // 前 6 次快重试：指数退避
+            // 之后切换慢速模式：每 30s 无限重试
+            let backoff = if current_count <= 6 {
+                match current_count {
+                    1 => Duration::from_secs(1),
+                    2 => Duration::from_secs(2),
+                    3 => Duration::from_secs(4),
+                    4 => Duration::from_secs(8),
+                    5 => Duration::from_secs(16),
+                    6 => Duration::from_secs(30),
+                    _ => Duration::from_secs(30),
+                }
+            } else {
+                if current_count == 7 {
+                    log::warn!("sync_client: fast reconnect exhausted, switching to slow mode (30s interval)");
+                }
+                Duration::from_secs(30)
             };
 
             log::info!("Reconnect attempt {} in {:?}...", current_count, backoff);
@@ -503,6 +581,9 @@ impl SyncClient {
                     *self.inner.is_paired.write().await = true;
                     log::info!("Reconnected and re-paired successfully!");
 
+                    // 持久化配对信息（确保 DB 中有最新 ws_url）
+                    self.persist_pairing_to_db().await;
+
                     // 重连成功后触发双向全量同步
                     self.trigger_bidirectional_full_sync().await;
 
@@ -511,11 +592,20 @@ impl SyncClient {
                     return;
                 }
                 Err(e) => {
-                    log::error!("Reconnect failed: {}", e);
+                    log::error!("Reconnect failed (attempt {}): {}", current_count, e);
                     // 继续循环重试
                 }
             }
         }
+    }
+
+    /// 启动后台重连循环（App 重启后初始连接失败时使用）
+    pub async fn start_background_reconnect(&self) {
+        let inner = self.inner.clone();
+        tokio::spawn(async move {
+            let client = SyncClient { inner };
+            client.start_reconnect().await;
+        });
     }
 
     /// 本地数据变更后推送

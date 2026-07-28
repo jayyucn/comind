@@ -330,6 +330,11 @@ export async function tauriConnectToServer(qrPayload: string): Promise<void> {
   return invoke('connect_to_server', { qrPayload })
 }
 
+/** Android: 从 DB 恢复已配对设备连接（App 启动时调用） */
+export async function tauriAutoReconnect(): Promise<boolean> {
+  return invoke('auto_reconnect')
+}
+
 /** Android 断开同步连接 */
 export async function tauriDisconnectSync(): Promise<void> {
   return invoke('disconnect_sync')

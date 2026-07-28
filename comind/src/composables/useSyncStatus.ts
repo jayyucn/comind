@@ -5,9 +5,11 @@ import {
   tauriGetSyncStatusPC,
 } from '../wasm/tauri-client'
 import type { SyncStatus } from '../wasm/tauri-client'
+import { getPairedDevices } from '../wasm/client'
 
 // 模块级单例：整个应用共享一份轮询状态
 const status = ref<SyncStatus | null>(null)
+const pairedDevices = ref<{ client_id: string; peer_device_name: string; last_sync_at: number; paired_at: number | null }[]>([])
 const isAndroid = ref(false)
 const polling = ref(false)
 let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -26,6 +28,14 @@ async function refresh() {
   }
 }
 
+async function refreshPairedDevices() {
+  try {
+    pairedDevices.value = await getPairedDevices()
+  } catch {
+    // 非 Tauri 环境静默忽略
+  }
+}
+
 async function ensureStarted() {
   if (initialized) return
   initialized = true
@@ -34,10 +44,17 @@ async function ensureStarted() {
   } catch {
     isAndroid.value = false
   }
-  await refresh()
-  pollTimer = setInterval(refresh, POLL_INTERVAL_MS)
+  await Promise.all([refresh(), refreshPairedDevices()])
+  pollTimer = setInterval(async () => {
+    await refresh()
+    // 配对设备列表低频刷新（每 3 轮刷新一次）
+    pollCount++
+    if (pollCount % 3 === 0) await refreshPairedDevices()
+  }, POLL_INTERVAL_MS)
   polling.value = true
 }
+
+let pollCount = 0
 
 export function useSyncStatus() {
   ensureStarted()
@@ -48,8 +65,8 @@ export function useSyncStatus() {
 
   /** 触发一次即时刷新（如取消配对后） */
   function refreshNow() {
-    return refresh()
+    return Promise.all([refresh(), refreshPairedDevices()])
   }
 
-  return { status, isAndroid, polling, refreshNow }
+  return { status, pairedDevices, isAndroid, polling, refreshNow }
 }

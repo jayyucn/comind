@@ -328,6 +328,7 @@ impl SyncServer {
             paired_at: Some(chrono::Utc::now().timestamp_millis()),
             is_paired: true,
             last_seen_at: Some(chrono::Utc::now().timestamp_millis()),
+            ws_url: None,
         })?;
         Ok(())
     }
@@ -371,8 +372,8 @@ impl SyncServer {
             let mut ws = source;
             log::warn!("SyncServer: recv loop started for client {}", client_id);
             loop {
-                match ws.next().await {
-                    Some(Ok(msg)) => {
+                match tokio::time::timeout(Duration::from_secs(30), ws.next()).await {
+                    Ok(Some(Ok(msg))) => {
                         log::warn!("SyncServer: recv msg type = {}", match msg {
                             Message::Text(_) => "Text",
                             Message::Binary(_) => "Binary",
@@ -506,12 +507,16 @@ impl SyncServer {
                             }
                         }
                     }
-                    Some(Err(e)) => {
+                    Ok(Some(Err(e))) => {
                         log::error!("WebSocket error: {}", e);
                         break;
                     }
-                    None => {
+                    Ok(None) => {
                         log::info!("Client disconnected: {}", client_id);
+                        break;
+                    }
+                    Err(_) => {
+                        log::warn!("Client {}: no message for 30s, treating as disconnected", client_id);
                         break;
                     }
                 }

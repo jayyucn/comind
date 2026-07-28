@@ -180,6 +180,8 @@ pub fn run() {
             commands::get_sync_status,
             #[cfg(target_os = "android")]
             commands::trigger_full_sync_mobile,
+            #[cfg(target_os = "android")]
+            commands::auto_reconnect,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

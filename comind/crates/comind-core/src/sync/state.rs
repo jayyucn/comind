@@ -9,6 +9,8 @@ pub struct SyncState {
     pub paired_at: Option<i64>,
     pub is_paired: bool,
     pub last_seen_at: Option<i64>,
+    /// 对端 WebSocket 地址（用于 Android 端重启后自动重连）
+    pub ws_url: Option<String>,
 }
 
 pub struct SyncStateRepository;
@@ -23,7 +25,8 @@ impl SyncStateRepository {
                 last_sync_type   TEXT,
                 paired_at        INTEGER,
                 is_paired         INTEGER NOT NULL DEFAULT 0,
-                last_seen_at     INTEGER
+                last_seen_at     INTEGER,
+                ws_url           TEXT
             )"#,
             [],
         )?;
@@ -42,8 +45,9 @@ impl SyncStateRepository {
                 last_sync_type,
                 paired_at,
                 is_paired,
-                last_seen_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)"#,
+                last_seen_at,
+                ws_url
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"#,
             params![
                 state.client_id,
                 state.peer_device_name,
@@ -51,7 +55,8 @@ impl SyncStateRepository {
                 state.last_sync_type.as_deref(),
                 state.paired_at,
                 state.is_paired as i32,
-                state.last_seen_at
+                state.last_seen_at,
+                state.ws_url.as_deref()
             ],
         )?;
         Ok(())
@@ -59,7 +64,7 @@ impl SyncStateRepository {
 
     pub fn get(conn: &Connection, client_id: &str) -> Result<Option<SyncState>, Box<dyn Error>> {
         let mut stmt = conn.prepare(
-            r#"SELECT client_id, peer_device_name, last_sync_at, last_sync_type, paired_at, is_paired, last_seen_at
+            r#"SELECT client_id, peer_device_name, last_sync_at, last_sync_type, paired_at, is_paired, last_seen_at, ws_url
                FROM SyncState WHERE client_id = ?"#,
         )?;
         let mut rows = stmt.query(params![client_id])?;
@@ -72,6 +77,7 @@ impl SyncStateRepository {
                 paired_at: row.get(4)?,
                 is_paired: row.get::<_, i32>(5)? != 0,
                 last_seen_at: row.get(6)?,
+                ws_url: row.get(7)?,
             }))
         } else {
             Ok(None)
@@ -80,7 +86,7 @@ impl SyncStateRepository {
 
     pub fn get_all(conn: &Connection) -> Result<Vec<SyncState>, Box<dyn Error>> {
         let mut stmt = conn.prepare(
-            r#"SELECT client_id, peer_device_name, last_sync_at, last_sync_type, paired_at, is_paired, last_seen_at
+            r#"SELECT client_id, peer_device_name, last_sync_at, last_sync_type, paired_at, is_paired, last_seen_at, ws_url
                FROM SyncState"#,
         )?;
         let mut rows = stmt.query([])?;
@@ -94,6 +100,7 @@ impl SyncStateRepository {
                 paired_at: row.get(4)?,
                 is_paired: row.get::<_, i32>(5)? != 0,
                 last_seen_at: row.get(6)?,
+                ws_url: row.get(7)?,
             });
         }
         Ok(results)
@@ -135,6 +142,19 @@ impl SyncStateRepository {
             "UPDATE SyncState SET last_seen_at = ? WHERE client_id = ?",
             params![last_seen_at, client_id],
         )?;
+        Ok(())
+    }
+
+    /// 幂等迁移：为旧库 SyncState 表添加 ws_url 列
+    pub fn migrate_add_ws_url(conn: &Connection) -> Result<(), Box<dyn Error>> {
+        let has_column: bool = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('SyncState') WHERE name = 'ws_url'",
+            [],
+            |row| row.get::<_, i64>(0),
+        ).map(|c| c > 0).unwrap_or(false);
+        if !has_column {
+            conn.execute("ALTER TABLE SyncState ADD COLUMN ws_url TEXT", [])?;
+        }
         Ok(())
     }
 }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
-import { QrCode, Smartphone, Wifi, Clock, RefreshCw, AlertCircle } from 'lucide-vue-next'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { QrCode, Smartphone, Wifi, WifiOff, Clock, RefreshCw } from 'lucide-vue-next'
 import {
   getSyncQr,
   getPairedDevices,
@@ -12,36 +12,38 @@ import { useSyncStatus } from '../../composables/useSyncStatus'
 
 const emit = defineEmits<{ (e: 'toast', payload: { message: string; type?: 'info' | 'warning' | 'error' }): void }>()
 
-const { status: pcSyncStatus, refreshNow: refreshPcSync } = useSyncStatus()
+const { status: pcSyncStatus, pairedDevices, refreshNow } = useSyncStatus()
 
 // 配对二维码
 const qrUrl = ref('')
 const qrExpiry = ref(300)
 const qrLoading = ref(false)
 
-// 已配对设备列表（DB 记录，含上次同步时间）
-const pairedDevices = ref<{ client_id: string; peer_device_name: string; last_sync_at: number; paired_at: number | null }[]>([])
 const resyncLoading = ref(false)
 
 let qrTimer: ReturnType<typeof setInterval> | null = null
 let qrPollTimer: ReturnType<typeof setInterval> | null = null
 
+// 派生状态
+const isPaired = computed(() => pairedDevices.value.length > 0)
+const isOnline = computed(() => !!pcSyncStatus.value?.connected)
+// 仅取第一台设备（MVP 只支持一台）
+const pairedDevice = computed(() => pairedDevices.value[0] ?? null)
+const peerName = computed(() => {
+  if (isOnline.value && pcSyncStatus.value?.peers?.[0]?.name) {
+    return pcSyncStatus.value.peers[0].name
+  }
+  return pairedDevice.value?.peer_device_name ?? '未知设备'
+})
+
 function formatTimestamp(t: number): string {
-  if (!t) return '-'
+  if (!t) return '从未同步'
   return new Date(t).toLocaleString('zh-CN', {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
   })
-}
-
-async function loadPairedDevices() {
-  try {
-    pairedDevices.value = await getPairedDevices()
-  } catch (e) {
-    console.error('Failed to load paired devices:', e)
-  }
 }
 
 async function refreshQr() {
@@ -61,7 +63,7 @@ async function refreshQr() {
   }
 }
 
-// 配对轮询：检测到已连接即自动切换为已配对视图 + Toast
+// 配对轮询：检测到已连接即自动切换 + Toast
 async function startPairPoll() {
   if (qrPollTimer) clearInterval(qrPollTimer)
   qrPollTimer = setInterval(async () => {
@@ -69,8 +71,7 @@ async function startPairPoll() {
       const s = await tauriGetSyncStatusPC()
       if (s.connected && s.peers.length > 0) {
         stopTimers()
-        await loadPairedDevices()
-        await refreshPcSync()
+        await refreshNow()
         emit('toast', { message: `已连接设备 · ${s.peers[0].name}`, type: 'info' })
       }
     } catch {
@@ -86,11 +87,14 @@ function stopTimers() {
   qrPollTimer = null
 }
 
-async function handleUnpair(id: string) {
+async function handleUnpair() {
+  if (!pairedDevice.value) return
   try {
-    await unpairDevice(id)
-    await loadPairedDevices()
-    await refreshPcSync()
+    await unpairDevice(pairedDevice.value.client_id)
+    await refreshNow()
+    // 取消配对后回到二维码视图
+    await refreshQr()
+    await startPairPoll()
   } catch (e) {
     console.error('Failed to unpair device:', e)
   }
@@ -100,43 +104,39 @@ async function handleResync() {
   try {
     resyncLoading.value = true
     await triggerFullSync()
+    emit('toast', { message: '已触发全量同步', type: 'info' })
   } catch (e) {
     console.error('Failed to trigger full sync:', e)
+    emit('toast', { message: '同步失败', type: 'error' })
   } finally {
     resyncLoading.value = false
   }
 }
 
-// 未连接时直接展示二维码（无需二次点击）；已连接时展示设备列表
 onMounted(async () => {
-  await loadPairedDevices()
-  if (!pcSyncStatus.value?.connected) {
+  if (!isPaired.value) {
     await refreshQr()
     await startPairPoll()
   }
 })
 
-// 跨状态切换时（如取消配对）重新拉起二维码
-watch(
-  () => pcSyncStatus.value?.connected,
-  async (connected) => {
-    if (connected) {
-      stopTimers()
-    } else {
-      await loadPairedDevices()
-      await refreshQr()
-      await startPairPoll()
-    }
-  },
-)
+// 配对状态变化时管理二维码轮询
+watch(isPaired, async (paired) => {
+  if (paired) {
+    stopTimers()
+  } else {
+    await refreshQr()
+    await startPairPoll()
+  }
+})
 
 onUnmounted(stopTimers)
 </script>
 
 <template>
   <div class="device-sync-panel">
-    <!-- 未连接：直接展示配对二维码 -->
-    <div v-if="!pcSyncStatus?.connected" class="device-sync-unpaired">
+    <!-- 状态 A：未配对 → 展示配对二维码 -->
+    <div v-if="!isPaired" class="device-sync-unpaired">
       <div class="qr-code-container">
         <div class="qr-code">
           <img v-if="qrUrl" :src="`data:image/png;base64,${qrUrl}`" alt="配对二维码" />
@@ -144,7 +144,7 @@ onUnmounted(stopTimers)
         </div>
         <div class="qr-code-expiry">
           <Clock :size="12" :stroke-width="1.75" />
-          <span>二维码将在 {{ Math.floor(qrExpiry / 60) }}:{{ String(qrExpiry % 60).padStart(2, '0') }} 后过期</span>
+          <span>{{ Math.floor(qrExpiry / 60) }}:{{ String(qrExpiry % 60).padStart(2, '0') }} 后过期</span>
         </div>
       </div>
       <button class="device-sync-regenerate" :disabled="qrLoading" @click="refreshQr">
@@ -157,38 +157,45 @@ onUnmounted(stopTimers)
       </div>
     </div>
 
-    <!-- 已连接：状态 + 设备列表 -->
+    <!-- 状态 B/C：已配对（在线 / 离线）→ 设备卡片 -->
     <div v-else class="device-sync-paired">
-      <div class="paired-device-header">
-        <div class="paired-device-status">
-          <Wifi :size="14" :stroke-width="1.75" class="paired-status-icon" />
-          <span>已配对{{ pcSyncStatus.peers[0]?.name ? ' · ' + pcSyncStatus.peers[0].name : '' }}</span>
-        </div>
-        <button class="device-sync-resync-btn" :disabled="resyncLoading" @click="handleResync">
-          <RefreshCw :size="12" :stroke-width="1.75" :class="{ spinning: resyncLoading }" />
-          重新同步
-        </button>
-      </div>
-      <div class="paired-device-list">
-        <div v-for="device in pairedDevices" :key="device.client_id" class="paired-device-item">
-          <div class="paired-device-info">
-            <Smartphone :size="14" :stroke-width="1.75" />
-            <span class="paired-device-name">{{ device.peer_device_name }}</span>
+      <!-- 设备卡片 -->
+      <div class="device-card" :class="{ online: isOnline, offline: !isOnline }">
+        <div class="device-card-header">
+          <div class="device-card-icon">
+            <Smartphone :size="18" :stroke-width="1.75" />
           </div>
-          <div class="paired-device-meta">
-            <div class="paired-device-time">
-              <Clock :size="10" :stroke-width="1.75" />
-              <span>{{ formatTimestamp(device.last_sync_at) }}</span>
+          <div class="device-card-info">
+            <span class="device-card-name">{{ peerName }}</span>
+            <div class="device-card-status">
+              <Wifi v-if="isOnline" :size="11" :stroke-width="2" class="status-icon-online" />
+              <WifiOff v-else :size="11" :stroke-width="2" class="status-icon-offline" />
+              <span :class="isOnline ? 'status-text-online' : 'status-text-offline'">
+                {{ isOnline ? '在线' : '离线' }}
+              </span>
             </div>
-            <button class="paired-device-unpair-btn" @click="handleUnpair(device.client_id)">
-              取消配对
-            </button>
           </div>
         </div>
+        <div class="device-card-meta">
+          <Clock :size="11" :stroke-width="1.75" />
+          <span>上次同步 · {{ formatTimestamp(pairedDevice?.last_sync_at ?? 0) }}</span>
+        </div>
       </div>
-      <div class="device-sync-paired-note">
-        <AlertCircle :size="12" :stroke-width="1.75" />
-        <span>MVP 版本仅支持配对一台设备</span>
+
+      <!-- 操作区 -->
+      <div class="device-actions">
+        <button
+          v-if="isOnline"
+          class="device-action-btn primary"
+          :disabled="resyncLoading"
+          @click="handleResync"
+        >
+          <RefreshCw :size="13" :stroke-width="1.75" :class="{ spinning: resyncLoading }" />
+          {{ resyncLoading ? '同步中…' : '重新同步' }}
+        </button>
+        <button class="device-action-btn danger" @click="handleUnpair">
+          取消配对
+        </button>
       </div>
     </div>
   </div>
@@ -199,6 +206,7 @@ onUnmounted(stopTimers)
   position: relative;
 }
 
+/* ===== 未配对：二维码 ===== */
 .device-sync-unpaired {
   display: flex;
   flex-direction: column;
@@ -278,117 +286,116 @@ onUnmounted(stopTimers)
   text-align: center;
 }
 
-.paired-device-header {
+/* ===== 已配对：设备卡片 ===== */
+.device-sync-paired {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.paired-device-status {
+.device-card {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--text-secondary);
-  min-width: 0;
-}
-
-.paired-status-icon {
-  color: #22c55e;
-}
-
-.device-sync-resync-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  border-radius: 6px;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
   border: 1px solid var(--border);
-  background: transparent;
+  background: var(--bg-hover);
+}
+
+.device-card.offline {
+  border-color: color-mix(in srgb, var(--warning) 25%, var(--border));
+}
+
+.device-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.device-card-icon {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
   color: var(--text-secondary);
-  font-size: 12px;
-  cursor: pointer;
   flex-shrink: 0;
 }
 
-.device-sync-resync-btn:hover:not(:disabled) {
-  border-color: var(--accent, #6366f1);
-}
-
-.device-sync-resync-btn:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-.paired-device-list {
+.device-card-info {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
+  min-width: 0;
 }
 
-.paired-device-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: var(--bg-hover);
-  border: 1px solid var(--border);
-
-  .paired-device-info {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-  }
-}
-
-.paired-device-name {
+.device-card-name {
   font-size: 13px;
-  color: var(--text-secondary);
+  font-weight: 600;
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.paired-device-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.paired-device-time {
+.device-card-status {
   display: flex;
   align-items: center;
   gap: 3px;
   font-size: 11px;
+}
+
+.status-icon-online { color: var(--success); }
+.status-icon-offline { color: var(--warning); }
+.status-text-online { color: var(--success); }
+.status-text-offline { color: var(--warning); }
+
+.device-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
   color: var(--text-tertiary);
 }
 
-.paired-device-unpair-btn {
-  font-size: 11px;
-  padding: 3px 8px;
-  border-radius: 6px;
+/* ===== 操作按钮 ===== */
+.device-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.device-action-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 7px 10px;
+  border-radius: 8px;
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text-secondary);
+  font-size: 12px;
   cursor: pointer;
-  white-space: nowrap;
+  transition: border-color 160ms ease, color 160ms ease, background 160ms ease;
 }
 
-.paired-device-unpair-btn:hover {
+.device-action-btn.primary:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.device-action-btn.danger:hover {
   border-color: var(--error);
   color: var(--error);
 }
 
-.device-sync-paired-note {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  color: var(--text-tertiary);
+.device-action-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 </style>

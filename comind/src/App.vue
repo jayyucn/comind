@@ -17,13 +17,15 @@ import { useRightSidebar } from './composables/useRightSidebar'
 import { useRelationshipTypes } from './composables/useRelationshipTypes'
 import { useIdeas } from './composables/useIdeas'
 import { useNotificationScheduler } from './composables/useNotificationScheduler'
+import { useSyncStatus } from './composables/useSyncStatus'
 import Icon from './components/Icons/Icon.vue'
 import RightSidebar from './components/RightSidebar/index.vue'
 import { registerPanel } from './components/RightSidebar/panels'
 import BlockVersionPanel from './components/RightSidebar/BlockVersionPanel.vue'
 import SearchPanel from './components/SearchPanel.vue'
-import { isTauriEnvironment, tauriMinimizeWindow, tauriToggleMaximizeWindow, tauriCloseWindow, tauriIsMaximized } from './wasm/tauri-client'
+import { isTauriEnvironment, tauriMinimizeWindow, tauriToggleMaximizeWindow, tauriCloseWindow, tauriIsMaximized, tauriAutoReconnect } from './wasm/tauri-client'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { isAndroidPlatformSync } from './wasm/tauri-client'
 
 registerPanel({
   id: 'block-version',
@@ -52,6 +54,16 @@ const {
 } = useDateTimePickerPanel()
 
 useNotificationScheduler()
+
+// PC 端：设备连入时显示 toast
+const { status: syncStatus } = useSyncStatus()
+const prevPeerCount = ref(0)
+watch(() => syncStatus.value?.peers.length, (newCount) => {
+  if (newCount !== undefined && newCount > prevPeerCount.value) {
+    editorStore.showToast('Android 设备已连接', 'info')
+  }
+  prevPeerCount.value = newCount ?? 0
+})
 
 const isFullWidthPage = computed(() => route.meta.fullWidth === true)
 const showRightSidebarToggle = computed(() => route.meta.hideRightSidebarToggle !== true)
@@ -120,6 +132,26 @@ onMounted(async () => {
     const window = getCurrentWindow()
     window.listen('tauri://resize', async () => {
       isMaximized.value = await tauriIsMaximized()
+    })
+
+    // Android: 启动时自动重连已配对的 PC
+    if (isAndroidPlatformSync()) {
+      tauriAutoReconnect().then((found) => {
+        if (found) console.log('[auto-reconnect] Paired device found, connecting...')
+        else console.log('[auto-reconnect] No paired device')
+      }).catch((e) => {
+        console.warn('[auto-reconnect] Failed:', e)
+      })
+    }
+
+    // 网络恢复时触发重连（Android + 桌面端）
+    globalThis.addEventListener('online', () => {
+      console.log('[network] Online event fired')
+      if (isAndroidPlatformSync()) {
+        tauriAutoReconnect().catch((e) => {
+          console.warn('[auto-reconnect] Online reconnect failed:', e)
+        })
+      }
     })
   }
 })

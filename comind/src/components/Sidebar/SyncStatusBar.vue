@@ -1,20 +1,33 @@
 <script setup lang="ts">
-import { ref, watch, onUnmounted } from 'vue'
-import { QrCode, Wifi, X } from 'lucide-vue-next'
+import { ref, computed, watch, onUnmounted } from 'vue'
+import { QrCode, Wifi, Smartphone, X } from 'lucide-vue-next'
 import { useSyncStatus } from '../../composables/useSyncStatus'
 import { useEditorStore } from '../../stores/editor'
 import { isTauriEnvironment } from '../../wasm/tauri-client'
 import DeviceSyncPanel from './DeviceSyncPanel.vue'
 
 const visible = isTauriEnvironment()
-const { status } = useSyncStatus()
+const { status, pairedDevices } = useSyncStatus()
 const editorStore = useEditorStore()
 
 const open = ref(false)
 const dockEl = ref<HTMLElement | null>(null)
 const popoverEl = ref<HTMLElement | null>(null)
 
-const connected = () => !!status.value?.connected
+const isPaired = computed(() => pairedDevices.value.length > 0)
+const isOnline = computed(() => !!status.value?.connected)
+const dockState = computed(() => {
+  if (!isPaired.value) return 'unpaired'
+  return isOnline.value ? 'online' : 'offline'
+})
+
+const dockTitle = computed(() => {
+  switch (dockState.value) {
+    case 'online': return '设备已连接 · 点击管理'
+    case 'offline': return '设备已配对（离线）· 点击管理'
+    default: return '未配对 · 点击扫码'
+  }
+})
 
 function onToast(payload: { message: string; type?: 'info' | 'warning' | 'error' }) {
   editorStore.showToast(payload.message, payload.type ?? 'info')
@@ -38,13 +51,14 @@ onUnmounted(() => document.removeEventListener('click', onDocClick, true))
   <div v-if="visible" ref="dockEl" class="sync-dock">
     <button
       class="sync-dock-btn"
-      :class="{ connected: connected() }"
-      :title="connected() ? '设备已连接 · 点击管理' : '未连接设备 · 点击配对'"
+      :class="dockState"
+      :title="dockTitle"
       @click="open = !open"
     >
-      <span class="sync-dock-dot" :class="{ on: connected() }" />
-      <QrCode v-if="!connected()" :size="16" :stroke-width="1.75" />
-      <Wifi v-else :size="16" :stroke-width="1.75" />
+      <span class="sync-dock-dot" :class="dockState" />
+      <QrCode v-if="dockState === 'unpaired'" :size="16" :stroke-width="1.75" />
+      <Wifi v-else-if="dockState === 'online'" :size="16" :stroke-width="1.75" />
+      <Smartphone v-else :size="16" :stroke-width="1.75" />
     </button>
 
     <Teleport to="body">
@@ -91,9 +105,14 @@ onUnmounted(() => document.removeEventListener('click', onDocClick, true))
   background: var(--bg-hover);
 }
 
-.sync-dock-btn.connected {
+.sync-dock-btn.online {
   color: var(--success);
   border-color: color-mix(in srgb, var(--success) 40%, transparent);
+}
+
+.sync-dock-btn.offline {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 40%, transparent);
 }
 
 .sync-dock-dot {
@@ -108,9 +127,13 @@ onUnmounted(() => document.removeEventListener('click', onDocClick, true))
   box-sizing: content-box;
 }
 
-.sync-dock-dot.on {
+.sync-dock-dot.online {
   background: var(--success);
   box-shadow: 0 0 6px color-mix(in srgb, var(--success) 60%, transparent);
+}
+
+.sync-dock-dot.offline {
+  background: var(--warning);
 }
 
 .sync-dock-popover {

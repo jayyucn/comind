@@ -1222,6 +1222,57 @@ pub async fn connect_to_server(
 
 #[cfg(target_os = "android")]
 #[tauri::command]
+pub async fn auto_reconnect(
+    sync_handle: State<'_, super::state::SyncServerHandle>,
+    db: State<'_, super::state::DatabaseConnection>,
+    config_manager: State<'_, super::state::ConfigManager>,
+) -> Result<bool, String> {
+    /// 尝试从 DB 恢复已配对设备的连接（App 启动时调用）
+    /// 返回 true 表示已找到配对记录并正在连接，false 表示无配对记录
+    if sync_handle.get_client().await.is_some() {
+        log::info!("auto_reconnect: SyncClient already running, skipping");
+        return Ok(true);
+    }
+
+    let device_name = {
+        let config = config_manager.get_config()?;
+        config.device_name.clone()
+    };
+
+    let db_path = db.get_db_path();
+    let db_path = std::path::Path::new(&db_path);
+
+    let client = crate::sync_client::SyncClient::from_db(db_path, device_name)
+        .map_err(|e| {
+            log::info!("auto_reconnect: no paired device found: {}", e);
+            e
+        })?;
+
+    log::info!("auto_reconnect: found paired device, attempting to connect...");
+
+    // 尝试连接，失败也启动后台重连循环
+    match client.connect_and_pair().await {
+        Ok(()) => {
+            client.start_heartbeat();
+            client.start_periodic_full_sync();
+            sync_handle.set_client(client).await;
+            log::info!("auto_reconnect: connected successfully!");
+            Ok(true)
+        }
+        Err(e) => {
+            log::warn!("auto_reconnect: initial connect failed ({}), starting background reconnect...", e);
+            // 启动心跳（心跳超时会触发重连）
+            client.start_heartbeat();
+            // 直接触发后台重连循环
+            client.start_background_reconnect().await;
+            sync_handle.set_client(client).await;
+            Ok(true) // 返回 true 表示有配对记录，正在重连中
+        }
+    }
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
 pub async fn disconnect_sync(
     sync_handle: State<'_, super::state::SyncServerHandle>,
 ) -> Result<(), String> {
