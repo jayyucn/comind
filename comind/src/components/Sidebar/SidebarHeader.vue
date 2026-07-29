@@ -59,7 +59,9 @@ async function handleMouseDown() {
   </div>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
+@import '../../styles/tokens/_primitives.scss';
+
 .sidebar-header {
   padding: 10px var(--space-3) 10px;
   border-bottom: 1px solid var(--border);
@@ -68,7 +70,7 @@ async function handleMouseDown() {
   gap: 4px;
   flex-shrink: 0;
   box-sizing: border-box;
-  height: 40px;
+  height: $nav-height;
 }
 
 .sidebar-logo-wrap {

@@ -349,7 +349,9 @@ function handleMainClick(e: MouseEvent) {
   </div>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
+@import './styles/tokens/_primitives.scss';
+
 .app-layout {
   display: flex;
   flex-direction: row;
@@ -401,7 +403,7 @@ function handleMainClick(e: MouseEvent) {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 12px 0;
+  height: $nav-height;
   z-index: 10;
   background: var(--bg-base);
 }

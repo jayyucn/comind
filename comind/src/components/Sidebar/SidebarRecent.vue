@@ -113,6 +113,7 @@ function handleCancelRename() {
 
 .section-content {
   padding: var(--space-1) var(--space-2);
+  text-align: left;
 }
 
 .empty-text {
