@@ -31,14 +31,14 @@ import { isAndroidPlatformSync } from './wasm/tauri-client'
 registerPanel({
   id: 'block-version',
   label: '版本历史',
-  icon: '📜',
+  icon: '??',
   component: BlockVersionPanel
 })
 
 registerPanel({
   id: 'graph',
   label: '图谱',
-  icon: '🕸️',
+  icon: '???',
   component: GraphPanel
 })
 
@@ -189,7 +189,7 @@ watch(() => route.fullPath, async (newPath) => {
     historyStack.value = historyStack.value.slice(0, historyIndex.value + 1)
   }
 
-  // 尝试获取当前页面ID
+  // 尝试获取当前页面 ID
   let pageId: string | undefined
   if (route.params.pageId || route.params.date) {
     const idOrTitle = (route.params.pageId || route.params.date) as string
@@ -248,7 +248,7 @@ function handleGoForward() {
 }
 
 function removePageFromHistory(pageId: string) {
-  // 过滤掉包含该页面ID的历史记录
+  // 过滤掉包含该页面 ID 的历史记录
   const newStack = historyStack.value.filter(item => item.pageId !== pageId)
 
   // 如果当前指向的页面被删除了，需要调整索引
@@ -256,7 +256,7 @@ function removePageFromHistory(pageId: string) {
     historyIndex.value = Math.max(0, newStack.length - 1)
   }
 
-  // 如果新栈长度为0，添加默认路径
+  // 如果新栈长度为 0，添加默认路径
   if (newStack.length === 0) {
     historyStack.value = [{ path: '' }]
     historyIndex.value = 0
@@ -286,7 +286,7 @@ function handleMainClick(e: MouseEvent) {
       <div class="sticky-header" @mousedown="handleHeaderMouseDown">
         <div class="nav-controls">
           <button class="collapse-btn" :title="isCollapsed ? '展开侧边栏' : '折叠侧边栏'" @click="toggle">
-            <Icon :name="isCollapsed ? 'icon-panel-left-open' : 'icon-panel-left-close'" :size="16" />
+            <Icon :name="isCollapsed ? 'icon-panel-left-open' : 'icon-panel-left-close'" />
           </button>
         </div>
 
@@ -400,7 +400,7 @@ function handleMainClick(e: MouseEvent) {
   top: 0;
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   padding: 12px 12px 0;
   z-index: 10;
   background: var(--bg-base);
@@ -410,6 +410,7 @@ function handleMainClick(e: MouseEvent) {
   display: flex;
   gap: 4px;
   width: fit-content;
+  align-items: center;
 }
 
 .page-scroll-wrapper::-webkit-scrollbar {

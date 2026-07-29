@@ -28,7 +28,8 @@ import {
   Square,
   X,
   Trash,
-  Droplet
+  Droplet,
+  Bell
 } from 'lucide-vue-next'
 
 const STATUS_ICONS: Record<string, any> = {
@@ -70,6 +71,7 @@ const GENERAL_ICONS: Record<string, any> = {
   'icon-maximize': Maximize2,
   'icon-close': X,
   'icon-droplet': Droplet,
+  'icon-bell': Bell,
 }
 
 const ALL_ICONS = { ...STATUS_ICONS, ...PRIORITY_ICONS, ...GENERAL_ICONS }
@@ -90,9 +92,9 @@ const isFilled = computed(() => props.name === 'icon-star-filled')
   <component
     :is="iconComponent"
     v-if="iconComponent"
-    :size="size || 16"
-    :color="color"
+    :size="size || 18"
+    :color="color || 'var(--text-primary)'"
     :stroke-width="strokeWidth ?? 2"
-    :style="isFilled ? { fill: color || 'currentColor' } : {}"
+    :style="isFilled ? { fill: color || 'var(--text-primary)' } : {}"
   />
 </template>

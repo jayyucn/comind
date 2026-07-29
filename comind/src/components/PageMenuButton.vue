@@ -223,13 +223,11 @@ onUnmounted(() => {
   width: 32px;
   height: 32px;
   border: none;
-  background: transparent;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-md);
-  color: var(--text-secondary);
   transition: background 120ms ease, color 120ms ease;
 }
 

@@ -4,6 +4,7 @@ import { Bell, Check, Clock, Trash2 } from 'lucide-vue-next'
 import { useNotificationStore } from '../stores/notification'
 import { useNavigateToPage } from '../composables/useNavigateToPage'
 import type { Notification } from '../wasm/types'
+import Icon from './Icons/Icon.vue'
 
 const notificationStore = useNotificationStore()
 const navigateToPage = useNavigateToPage()
@@ -116,7 +117,7 @@ function handleClickOutside(event: MouseEvent) {
       class="notification-bell-btn"
       @click="toggleDropdown"
     >
-      <Bell :size="18" :stroke-width="2" />
+      <Icon name="icon-bell" />
       <span
         v-if="notificationStore.unreadCount > 0"
         class="notification-badge"

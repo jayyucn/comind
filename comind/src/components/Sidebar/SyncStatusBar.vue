@@ -55,7 +55,7 @@ onUnmounted(() => document.removeEventListener('click', onDocClick, true))
       :title="dockTitle"
       @click="open = !open"
     >
-      <span class="sync-dock-dot" :class="dockState" />
+      <!-- <span class="sync-dock-dot" :class="dockState" /> -->
       <QrCode v-if="dockState === 'unpaired'" :size="16" :stroke-width="1.75" />
       <Wifi v-else-if="dockState === 'online'" :size="16" :stroke-width="1.75" />
       <Smartphone v-else :size="16" :stroke-width="1.75" />
