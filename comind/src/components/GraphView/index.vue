@@ -593,8 +593,8 @@ onBeforeUnmount(() => {
 }
 
 .control-btn {
-  width: 18px;
-  height: 18px;
+  width: var(--icon-size);
+  height: var(--icon-size);
   border: 1px solid var(--border);
   background: var(--bg-base);
   cursor: pointer;
