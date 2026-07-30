@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, computed, nextTick, watch } from 'vue'
 import { Graph } from '@antv/g6'
-import type { NodeData } from '@antv/g6'
+import type { EdgeData, NodeData } from '@antv/g6'
 import { usePageStore } from '../../stores/pages'
 import { useBlockStore } from '../../stores/blocks'
-import { getRelationshipColor, getRelationshipLabel, getRelationshipStrength, STRENGTH_TO_WIDTH } from '../../types/relationship'
+import { getRelationshipStrength, STRENGTH_TO_WIDTH } from '../../types/relationship'
 import { useRouter } from 'vue-router'
 import { Download, ExpandIcon, RefreshCw } from 'lucide-vue-next'
+import { getNodeStyle, getEdgeStyle } from './graphStyle'
+import { createAccumulator, traverseBFS, buildFullGraph, type RawLink } from './graphData'
 
 const pageStore = usePageStore()
 const blockStore = useBlockStore()
@@ -45,248 +47,31 @@ watch(maxDepth, () => {
   if (isPageScoped.value) refreshGraphData()
 })
 
-
-/** BFS 加载指定页面的直接关联节点和边 */
-async function loadNeighbors(
-  pageId: string,
-  nodes: NodeData[],
-  edges: { id: string; source: string; target: string; data: Record<string, unknown> }[],
-  visitedEdges: Set<string>,
-  blockCache: Map<string, { pageId: string }>,
-  hidden: Set<string>,
-) {
+/** I/O 层：加载指定页面的 outlinks 和 backlinks */
+async function fetchNeighbors(pageId: string): Promise<{ outLinks: RawLink[]; inLinks: RawLink[] }> {
   await blockStore.loadMultiPageBlocks([pageId])
   const outLinks = await blockStore.getOutlinks(pageId)
   const inLinks = await blockStore.getBacklinks(pageId)
-  const neighbors: string[] = []
-
-  for (const link of outLinks) {
-    if (visitedEdges.has(link.id)) continue
-    const targetPage = pageStore.getPage(link.targetPageId)
-    if (!targetPage || targetPage.deleted) continue
-    if (hidden.has(targetPage.id)) continue
-
-    if (!nodes.find(n => n.id === targetPage.id)) {
-      nodes.push({
-        id: targetPage.id,
-        data: {
-          label: targetPage.title,
-          isCurrent: targetPage.id === currentPageId.value,
-          isHighlighted: targetPage.id === highlightedNodeId.value,
-        }
-      })
-    }
-    neighbors.push(targetPage.id)
-
-    const type = link.relationshipType ?? 'related'
-    visitedEdges.add(link.id)
-    edges.push({
-      id: link.id,
-      source: pageId,
-      target: link.targetPageId,
-      data: {
-        relationshipType: type,
-        label: getRelationshipLabel(type),
-        color: getRelationshipColor(type),
-      }
-    })
-  }
-
-  for (const link of inLinks) {
-    if (visitedEdges.has(link.id)) continue
-
-    let block = blockCache.get(link.sourceBlockId)
-    if (!block) {
-      const record = blockStore.getBlock(link.sourceBlockId)
-      if (!record) continue
-      block = { pageId: record.pageId }
-      blockCache.set(link.sourceBlockId, block)
-    }
-
-    const sourcePageId = block.pageId
-    const sourcePage = pageStore.getPage(sourcePageId)
-    if (!sourcePage || sourcePage.deleted) continue
-    if (hidden.has(sourcePageId)) continue
-
-    if (!nodes.find(n => n.id === sourcePageId)) {
-      nodes.push({
-        id: sourcePage.id,
-        data: {
-          label: sourcePage.title,
-          isCurrent: sourcePage.id === currentPageId.value,
-          isHighlighted: sourcePage.id === highlightedNodeId.value,
-        }
-      })
-    }
-    neighbors.push(sourcePageId)
-
-    const type = link.relationshipType ?? 'related'
-    visitedEdges.add(link.id)
-    edges.push({
-      id: link.id,
-      source: sourcePageId,
-      target: pageId,
-      data: {
-        relationshipType: type,
-        label: getRelationshipLabel(type),
-        color: getRelationshipColor(type),
-      }
-    })
-  }
-
-  return neighbors
+  return { outLinks, inLinks }
 }
 
-/** 构建图数据：page-scoped 模式走 BFS（深度限制），否则全量 */
+/** 编排器：构建图数据 */
 async function buildGraphData() {
-  const nodes: NodeData[] = []
-  const edges: { id: string; source: string; target: string; data: Record<string, unknown> }[] = []
-  const visitedEdges = new Set<string>()
-  const blockCache = new Map<string, { pageId: string }>()
   const hidden = props.hiddenPageIds ?? new Set<string>()
+  const acc = createAccumulator()
+  const getPage = (id: string) => pageStore.getPage(id)
+  const getBlock = (id: string) => blockStore.getBlock(id)
 
-  // 非 page-scoped：全量展示所有页面
   if (!isPageScoped.value) {
-    const allPages = pageStore.pages.filter(p => !p.deleted && !hidden.has(p.id))
-    for (const page of allPages) {
-      nodes.push({
-        id: page.id,
-        data: {
-          label: page.title,
-          isCurrent: page.id === currentPageId.value,
-          isHighlighted: page.id === highlightedNodeId.value,
-        }
-      })
-    }
-    for (const page of allPages) {
-      await loadNeighbors(page.id, nodes, edges, visitedEdges, blockCache, hidden)
-    }
-    // 移除连接到隐藏节点的边
-    filterHiddenEdges(edges, hidden)
-    return { nodes, edges }
-  }
-
-  // page-scoped：BFS 从当前页面出发
-  const rootId = currentPageId.value
-  if (!rootId) return { nodes, edges }
-
-  const visitedPages = new Set<string>()
-  let frontier: string[] = [rootId]
-  visitedPages.add(rootId)
-  const rootPage = pageStore.getPage(rootId)
-  if (rootPage) {
-    nodes.push({
-      id: rootPage.id,
-      data: {
-        label: rootPage.title,
-        isCurrent: true,
-        isHighlighted: rootPage.id === highlightedNodeId.value,
-      }
-    })
-  }
-
-  for (let depth = 0; depth < maxDepth.value; depth++) {
-    const nextFrontier: string[] = []
-    for (const pageId of frontier) {
-      const neighbors = await loadNeighbors(pageId, nodes, edges, visitedEdges, blockCache, hidden)
-      for (const neighborId of neighbors) {
-        if (!visitedPages.has(neighborId)) {
-          visitedPages.add(neighborId)
-          nextFrontier.push(neighborId)
-        }
-      }
-    }
-    frontier = nextFrontier
-    if (frontier.length === 0) break
-  }
-
-  // 移除连接到隐藏节点的边
-  filterHiddenEdges(edges, hidden)
-  return { nodes, edges }
-}
-
-function filterHiddenEdges(
-  edges: { id: string; source: string; target: string; data: Record<string, unknown> }[],
-  hidden: Set<string>,
-) {
-  for (let i = edges.length - 1; i >= 0; i--) {
-    if (hidden.has(edges[i].source) || hidden.has(edges[i].target)) {
-      edges.splice(i, 1)
+    const allPages = pageStore.pages.filter(p => !p.deleted)
+    await buildFullGraph(allPages, acc, hidden, currentPageId.value, highlightedNodeId.value, getPage, fetchNeighbors, getBlock)
+  } else {
+    const rootId = currentPageId.value
+    if (rootId) {
+      await traverseBFS(rootId, maxDepth.value, acc, hidden, currentPageId.value, highlightedNodeId.value, getPage, fetchNeighbors, getBlock)
     }
   }
-}
-
-function getNodeSize(d: NodeData): [number, number] {
-  const isCurrent = !!d.data?.isCurrent
-  const isHighlighted = !!d.data?.isHighlighted && !isCurrent
-  if (isCurrent) return [120, 36]
-  if (isHighlighted) return [100, 32]
-  return [90, 28]
-}
-
-function getNodeFill(d: NodeData): string {
-  const isCurrent = !!d.data?.isCurrent
-  const isHighlighted = !!d.data?.isHighlighted && !isCurrent
-  if (isCurrent) return '#1890ff'
-  if (isHighlighted) return '#e6f7ff'
-  if (d.data?.isFiltered) return '#808080'
-  return '#ffffff'
-}
-
-function getNodeStroke(d: NodeData): string {
-  const isCurrent = !!d.data?.isCurrent
-  const isHighlighted = !!d.data?.isHighlighted && !isCurrent
-  if (isCurrent) return '#1890ff'
-  if (isHighlighted) return '#1890ff'
-  if (d.data?.isFiltered) return '#808080'
-  return '#e8e8e8'
-}
-
-function getNodeLineType(_d: NodeData): 'solid' | 'dashed' {
-  return 'solid'
-}
-
-function getNodeLabelFill(d: NodeData): string {
-  const isCurrent = !!d.data?.isCurrent
-  const isHighlighted = !!d.data?.isHighlighted && !isCurrent
-  if (isCurrent) return '#ffffff'
-  if (isHighlighted) return '#1890ff'
-  if (d.data?.isFiltered) return '#808080'
-  return '#333333'
-}
-
-function getNodeLineWidth(d: NodeData): number {
-  return (!!d.data?.isCurrent || !!d.data?.isHighlighted) ? 2 : 1
-}
-
-function getNodeFillOpacity(d: NodeData): number {
-  if (d.data?.isCurrent || d.data?.isHighlighted) return 1
-  if (d.data?.isFiltered) return 0.15
-  return 1
-}
-
-function getNodeStrokeOpacity(d: NodeData): number {
-  if (d.data?.isCurrent || d.data?.isHighlighted) return 1
-  if (d.data?.isFiltered) return 0.25
-  return 1
-}
-
-
-
-function getEdgeStroke(d: any): string {
-  if (d.data?.isFiltered) return '#808080'
-  return d.data?.color ?? '#8c8c8c'
-}
-
-function getEdgeStrokeOpacity(d: any): number {
-  if (d.data?.isFiltered) return 0.25
-  return 1
-}
-
-
-function getEdgeLabelFill(d: any): string {
-  if (d.data?.isFiltered) return '#808080'
-  return '#999999'
+  return { nodes: acc.nodes, edges: acc.edges }
 }
 
 async function initGraph() {
@@ -305,38 +90,39 @@ async function initGraph() {
     container,
     width,
     height,
+    padding: [100, 40, 20, 100],
     canvas: {
       enableMultiLayer: false,
     },
     node: {
       type: 'rect',
       style: {
-        size: (d: NodeData) => getNodeSize(d),
+        size: (d: NodeData) => getNodeStyle(d).size,
         radius: 6,
-        fill: (d: NodeData) => getNodeFill(d),
-        fillOpacity: (d: NodeData) => getNodeFillOpacity(d),
-        stroke: (d: NodeData) => getNodeStroke(d),
-        lineWidth: (d: NodeData) => getNodeLineWidth(d),
-        lineType: (d: NodeData) => getNodeLineType(d),
-        strokeOpacity: (d: NodeData) => getNodeStrokeOpacity(d),
+        fill: (d: NodeData) => getNodeStyle(d).fill,
+        fillOpacity: (d: NodeData) => getNodeStyle(d).fillOpacity,
+        stroke: (d: NodeData) => getNodeStyle(d).stroke,
+        lineWidth: (d: NodeData) => getNodeStyle(d).lineWidth,
+        lineType: (d: NodeData) => getNodeStyle(d).lineType,
+        strokeOpacity: (d: NodeData) => getNodeStyle(d).strokeOpacity,
         labelText: (d: NodeData) => (d.data?.label as string) ?? '',
         labelPlacement: 'center',
-        labelFill: (d: NodeData) => getNodeLabelFill(d),
+        labelFill: (d: NodeData) => getNodeStyle(d).labelFill,
         labelFontSize: 11,
-        labelFontWeight: (d: NodeData) => d.data?.isCurrent ? 600 : d.data?.isHighlighted ? 500 : 400,
+        labelFontWeight: (d: NodeData) => getNodeStyle(d).fontWeight,
       }
     },
     edge: {
       type: 'quadratic',
       style: {
-        stroke: (d: any) => getEdgeStroke(d),
-        strokeOpacity: (d: any) => getEdgeStrokeOpacity(d),
+        stroke: (d: any) => d.data?.isFiltered ? getEdgeStyle(d).stroke : (d.data?.color ?? getEdgeStyle(d).stroke),
+        strokeOpacity: (d: any) => getEdgeStyle(d).strokeOpacity,
         strokeWidth: (d: any) => STRENGTH_TO_WIDTH[getRelationshipStrength((d.data?.relationshipType as string) ?? 'related')],
         endArrow: true,
         curveOffset: (d: any) => d.data?.curveOffset ?? 0,
         labelText: (d: any) => d.data?.label ?? '',
         labelFontSize: 9,
-        labelFill: (d: any) => getEdgeLabelFill(d),
+        labelFill: (d: any) => getEdgeStyle(d).labelFill,
         labelBackground: true,
         labelBackgroundFill: '#ffffff',
         labelBackgroundOpacity: 1,
@@ -391,7 +177,7 @@ async function refreshGraphData(graph?: Graph) {
 
   if (gen !== refreshGeneration) return
 
-  g.setData({ nodes, edges })
+  g.setData({ nodes, edges: edges as EdgeData[] })
   await g.draw()
   await g.layout()
 
