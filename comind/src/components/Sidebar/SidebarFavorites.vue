@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useFavorites } from '../../composables/useFavorites'
 import { usePageStore } from '../../stores/pages'
 import { ChevronUp, ChevronDown } from 'lucide-vue-next'
@@ -8,6 +8,7 @@ import PageItemMenu from './PageItemMenu.vue'
 import { ref } from 'vue'
 
 const router = useRouter()
+const route = useRoute()
 const pageStore = usePageStore()
 const { favoritePages, isExpanded, toggleExpand } = useFavorites()
 
@@ -54,7 +55,7 @@ function handleCancelRename() {
         v-for="page in favoritePages"
         :key="page.id"
         :page="page"
-        :active="pageStore.currentPageId === page.id"
+        :active="(route.name === 'page' || route.name === 'ideas-page') && pageStore.currentPageId === page.id"
         :is-renaming="renamingPageId === page.id"
         @click="handleNavigate(page.id)"
         @rename="(newTitle) => handleRename(page.id, newTitle)"
@@ -77,48 +78,65 @@ function handleCancelRename() {
 
 <style scoped>
 .favorites-section {
-  padding: var(--space-1) 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
 }
 
 .section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-2) var(--space-3);
+  padding: 6px 10px;
   cursor: pointer;
   user-select: none;
-  border-radius: 6px;
-  margin: 0 var(--space-2);
-  transition: background 80ms ease;
+  flex-shrink: 0;
 }
 
-.section-header:hover {
-  background: var(--bg-hover);
+.section-header:hover .section-title {
+  color: var(--text-secondary);
 }
 
 .section-title {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--sidebar-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  color: var(--text-tertiary);
   line-height: 1.4;
+  transition: color 80ms ease;
 }
 
 .expand-icon {
   display: flex;
   align-items: center;
-  color: var(--sidebar-text-hint);
+  color: var(--text-tertiary);
 }
 
 .section-content {
-  padding: var(--space-1) var(--space-2);
-  text-align: left;
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.section-content::-webkit-scrollbar {
+  width: 4px;
+}
+
+.section-content::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+
+.section-content::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .empty-text {
-  padding: var(--space-2) var(--space-3);
+  padding: 6px 10px;
   font-size: 12px;
-  color: var(--sidebar-text-hint);
+  color: var(--text-tertiary);
 }
 </style>

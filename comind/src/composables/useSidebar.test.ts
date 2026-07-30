@@ -1,5 +1,14 @@
-import { describe, test, expect } from 'vitest'
+import { describe, test, expect, beforeEach } from 'vitest'
 import { useSidebar } from './useSidebar'
+
+beforeEach(() => {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('comind:sidebar-collapsed')
+  }
+  // 重置模块级状态
+  const { expand } = useSidebar()
+  expand()
+})
 
 describe('useSidebar', () => {
   test('初始状态下 isCollapsed 为 false', () => {

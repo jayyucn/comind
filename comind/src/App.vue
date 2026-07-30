@@ -94,6 +94,9 @@ function handleGlobalKeydown(e: KeyboardEvent) {
   if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
     e.preventDefault()
     showSearchPanel.value = !showSearchPanel.value
+  } else if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+    e.preventDefault()
+    toggle()
   }
 }
 
@@ -280,7 +283,7 @@ function handleMainClick(e: MouseEvent) {
 
 <template>
   <div class="app-layout">
-    <Sidebar :canGoBack="canGoBack" :canGoForward="canGoForward" @goBack="handleGoBack" @goForward="handleGoForward" />
+    <Sidebar :canGoBack="canGoBack" :canGoForward="canGoForward" @goBack="handleGoBack" @goForward="handleGoForward" @open-search="showSearchPanel = true" />
 
     <div class="page-scroll-wrapper" @click="handleMainClick">
       <div class="sticky-header" @mousedown="handleHeaderMouseDown">

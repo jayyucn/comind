@@ -138,15 +138,15 @@ onUnmounted(() => document.removeEventListener('click', onDocClick, true))
 
 .sync-dock-popover {
   position: fixed;
-  bottom: 14px;
-  left: 252px;
+  bottom: var(--space-1);
+  left: calc(var(--sidebar-width) + var(--space-1));
   width: 300px;
   max-height: calc(100vh - 28px);
   overflow-y: auto;
   background: var(--bg-base);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.22);
+  border-radius: 0  var(--radius-md) var(--radius-md) 0;
+  box-shadow: 0 12px 36px var(--shadow);
   z-index: 9999;
 }
 

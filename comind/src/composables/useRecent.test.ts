@@ -11,44 +11,28 @@ vi.mock('../stores/pages', () => ({
 beforeEach(() => {
   setActivePinia(createPinia())
   vi.clearAllMocks()
+  // 清除 localStorage
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('comind:sidebar-recent-collapsed')
+  }
 })
 
 describe('useRecent', () => {
-  test('初始状态下 isExpanded 为 false', () => {
+  test('初始状态下 isExpanded 为 true', () => {
     const { isExpanded } = useRecent()
-    expect(isExpanded.value).toBe(false)
+    expect(isExpanded.value).toBe(true)
   })
 
   test('toggleExpand 切换展开状态', () => {
     const { isExpanded, toggleExpand } = useRecent()
-    expect(isExpanded.value).toBe(false)
-    toggleExpand()
     expect(isExpanded.value).toBe(true)
     toggleExpand()
     expect(isExpanded.value).toBe(false)
+    toggleExpand()
+    expect(isExpanded.value).toBe(true)
   })
 
-  test('收起时显示最近 3 个页面', async () => {
-    const { usePageStore } = await import('../stores/pages')
-    const pages = [
-      { id: 'page-1', title: 'Page 1', updatedAt: new Date(Date.now() - 10000).toISOString() },
-      { id: 'page-2', title: 'Page 2', updatedAt: new Date(Date.now() - 20000).toISOString() },
-      { id: 'page-3', title: 'Page 3', updatedAt: new Date(Date.now() - 30000).toISOString() },
-      { id: 'page-4', title: 'Page 4', updatedAt: new Date(Date.now() - 40000).toISOString() }
-    ]
-
-    vi.mocked(usePageStore).mockReturnValue({
-      pages
-    } as any)
-
-    const { recentPages } = useRecent()
-    expect(recentPages.value.length).toBe(3)
-    expect(recentPages.value[0].id).toBe('page-1')
-    expect(recentPages.value[1].id).toBe('page-2')
-    expect(recentPages.value[2].id).toBe('page-3')
-  })
-
-  test('展开时显示最近 10 个页面', async () => {
+  test('最近列表最多显示 5 个页面', async () => {
     const { usePageStore } = await import('../stores/pages')
     const pages = Array.from({ length: 15 }, (_, i) => ({
       id: `page-${i + 1}`,
@@ -60,11 +44,10 @@ describe('useRecent', () => {
       pages
     } as any)
 
-    const { recentPages, toggleExpand } = useRecent()
-    toggleExpand()
-    expect(recentPages.value.length).toBe(10)
+    const { recentPages } = useRecent()
+    expect(recentPages.value.length).toBe(5)
     expect(recentPages.value[0].id).toBe('page-1')
-    expect(recentPages.value[9].id).toBe('page-10')
+    expect(recentPages.value[4].id).toBe('page-5')
   })
 
   test('recentPages 按 updatedAt 降序排列', async () => {
@@ -95,7 +78,7 @@ describe('useRecent', () => {
     expect(recentPages.value).toEqual([])
   })
 
-  test('少于 3 个页面时显示所有页面', async () => {
+  test('少于 5 个页面时显示所有页面', async () => {
     const { usePageStore } = await import('../stores/pages')
     const pages = [
       { id: 'page-1', title: 'Page 1', updatedAt: new Date().toISOString() },

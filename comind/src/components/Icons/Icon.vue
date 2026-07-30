@@ -29,7 +29,8 @@ import {
   X,
   Trash,
   Droplet,
-  Bell
+  Bell,
+  Search
 } from 'lucide-vue-next'
 
 const STATUS_ICONS: Record<string, any> = {
@@ -72,6 +73,7 @@ const GENERAL_ICONS: Record<string, any> = {
   'icon-close': X,
   'icon-droplet': Droplet,
   'icon-bell': Bell,
+  'icon-search': Search,
 }
 
 const ALL_ICONS = { ...STATUS_ICONS, ...PRIORITY_ICONS, ...GENERAL_ICONS }

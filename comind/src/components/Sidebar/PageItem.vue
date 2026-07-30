@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { FileText } from 'lucide-vue-next'
 
 const props = withDefaults(defineProps<{
   page: any
@@ -54,13 +53,13 @@ function formatTime(timestamp: number, format: 'relative' | 'absolute'): string 
   const day = 24 * hour
 
   if (diff < minute) return '刚刚'
-  if (diff < hour) return `${Math.floor(diff / minute)} min前`
-  if (diff < 2 * hour) return '1 h前'
-  if (diff < day) return `${Math.floor(diff / hour)} h前`
+  if (diff < hour) return `${Math.floor(diff / minute)}min`
+  if (diff < 2 * hour) return '1h'
+  if (diff < day) return `${Math.floor(diff / hour)}h`
   if (diff < 2 * day) return '昨天'
 
   const d = new Date(timestamp)
-  return `${d.getMonth() + 1}月${d.getDate()}日`
+  return `${d.getMonth() + 1}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 function handleConfirm() {
@@ -96,19 +95,16 @@ function handleKeydown(event: KeyboardEvent) {
     @click="!localRenaming && emit('click')"
     @keydown.enter="!localRenaming && emit('click')"
   >
-    <span class="page-icon">
-      <FileText :size="14" :stroke-width="1.75" />
-    </span>
     <input
       v-if="localRenaming"
       ref="inputRef"
       v-model="newTitle"
-      class="page-title-input"
+      class="page-item-input"
       @blur="handleConfirm"
       @keydown="handleKeydown"
     />
-    <span v-else class="page-title">{{ page.title }}</span>
-    <span v-if="showTime" class="page-time">{{ timeDisplay }}</span>
+    <span v-else class="page-item-title">{{ page.title }}</span>
+    <span v-if="showTime && !localRenaming" class="page-time">{{ timeDisplay }}</span>
     <slot name="suffix" />
   </div>
 </template>
@@ -120,9 +116,9 @@ function handleKeydown(event: KeyboardEvent) {
   gap: 6px;
   padding: 6px 10px;
   cursor: pointer;
-  border-radius: 8px;
+  border-radius: 6px;
   position: relative;
-  height: 32px;
+  height: 30px;
   box-sizing: border-box;
   transition: background 80ms ease;
 }
@@ -132,7 +128,7 @@ function handleKeydown(event: KeyboardEvent) {
 }
 
 .page-item.active {
-  background: var(--accent-bg);
+  background: var(--accent-bg, rgba(99, 102, 241, 0.08));
 }
 
 .page-item.active::before {
@@ -146,58 +142,40 @@ function handleKeydown(event: KeyboardEvent) {
   border-radius: 1px;
 }
 
-.page-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--sidebar-text-hint);
-  flex-shrink: 0;
-}
-
-.page-item.active .page-icon {
-  color: var(--accent);
-}
-
-.page-item:hover :deep(.menu-trigger),
-.page-item.active :deep(.menu-trigger) {
-  color: var(--sidebar-text-hint);
-  opacity: 1;
-}
-
-.page-title {
+.page-item-title {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
-  color: var(--sidebar-text-primary);
+  color: var(--text-primary);
   line-height: 1.4;
 }
 
 .page-time {
   font-size: 11px;
-  color: var(--sidebar-text-hint);
+  color: var(--text-tertiary);
   flex-shrink: 0;
   line-height: 1.4;
 }
 
-.page-title-input {
+.page-item-input {
   flex: 1;
   min-width: 0;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
-  color: var(--sidebar-text-primary);
+  color: var(--text-primary);
   background: transparent;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border);
   border-radius: 4px;
   padding: 2px 4px;
   outline: none;
   font-family: inherit;
 }
 
-.page-title-input:focus {
+.page-item-input:focus {
   border-color: var(--accent);
 }
 </style>

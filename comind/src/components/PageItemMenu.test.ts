@@ -1,9 +1,8 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import { mount, flushPromises } from '@vue/test-utils'
+import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import PageItemMenu from './Sidebar/PageItemMenu.vue'
-import ConfirmDialog from './ConfirmDialog.vue'
 import { useRouter } from 'vue-router'
 
 vi.mock('vue-router', () => ({
@@ -26,9 +25,13 @@ vi.mock('../stores/pages', () => ({
   }))
 }))
 
+const mockToggleFavorite = vi.fn()
+const mockIsFavorite = vi.fn(() => false)
+
 vi.mock('../composables/useFavorites', () => ({
   useFavorites: vi.fn(() => ({
-    removeFavorite: vi.fn()
+    isFavorite: mockIsFavorite,
+    toggleFavorite: mockToggleFavorite,
   }))
 }))
 
@@ -42,6 +45,7 @@ describe('PageItemMenu Component', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    mockIsFavorite.mockReturnValue(false)
   })
 
   afterEach(() => {
@@ -99,8 +103,8 @@ describe('PageItemMenu Component', () => {
     })
   })
 
-  describe('Rename Functionality', () => {
-    test('点击重命名按钮发出 rename 事件', async () => {
+  describe('Favorite Toggle', () => {
+    test('点击收藏按钮调用 toggleFavorite', async () => {
       const wrapper = mount(PageItemMenu, {
         props: { page: mockPage }
       })
@@ -108,14 +112,16 @@ describe('PageItemMenu Component', () => {
       await wrapper.find('.menu-trigger').trigger('click')
       await nextTick()
 
-      await wrapper.find('.menu-item').trigger('click')
+      const favItem = wrapper.findAll('.menu-item')[0]
+      await favItem.trigger('click')
       await nextTick()
 
-      expect(wrapper.emitted('rename')).toBeDefined()
-      expect(wrapper.emitted('rename')?.length).toBe(1)
+      expect(mockToggleFavorite).toHaveBeenCalledWith(mockPage.id)
     })
 
-    test('重命名后关闭菜单', async () => {
+    test('已收藏时显示"取消收藏"', async () => {
+      mockIsFavorite.mockReturnValue(true)
+
       const wrapper = mount(PageItemMenu, {
         props: { page: mockPage }
       })
@@ -123,15 +129,42 @@ describe('PageItemMenu Component', () => {
       await wrapper.find('.menu-trigger').trigger('click')
       await nextTick()
 
-      await wrapper.find('.menu-item').trigger('click')
+      const favItem = wrapper.findAll('.menu-item')[0]
+      expect(favItem.text()).toContain('取消收藏')
+    })
+
+    test('未收藏时显示"收藏"', async () => {
+      mockIsFavorite.mockReturnValue(false)
+
+      const wrapper = mount(PageItemMenu, {
+        props: { page: mockPage }
+      })
+
+      await wrapper.find('.menu-trigger').trigger('click')
+      await nextTick()
+
+      const favItem = wrapper.findAll('.menu-item')[0]
+      expect(favItem.text()).toContain('收藏')
+    })
+
+    test('收藏操作后关闭菜单', async () => {
+      const wrapper = mount(PageItemMenu, {
+        props: { page: mockPage }
+      })
+
+      await wrapper.find('.menu-trigger').trigger('click')
+      await nextTick()
+
+      const favItem = wrapper.findAll('.menu-item')[0]
+      await favItem.trigger('click')
       await nextTick()
 
       expect(wrapper.find('.menu-dropdown').exists()).toBe(false)
     })
   })
 
-  describe('Delete Submenu', () => {
-    test('点击删除项打开子菜单', async () => {
+  describe('Delete', () => {
+    test('点击删除显示确认对话框', async () => {
       const wrapper = mount(PageItemMenu, {
         props: { page: mockPage }
       })
@@ -143,107 +176,20 @@ describe('PageItemMenu Component', () => {
       await deleteItem.trigger('click')
       await nextTick()
 
-      expect(wrapper.find('.submenu').isVisible()).toBe(true)
-    })
-
-    test('再次点击删除项关闭子菜单', async () => {
-      const wrapper = mount(PageItemMenu, {
-        props: { page: mockPage }
-      })
-
-      await wrapper.find('.menu-trigger').trigger('click')
-      await nextTick()
-
-      const deleteItem = wrapper.findAll('.menu-item')[1]
-      await deleteItem.trigger('click')
-      await nextTick()
-      expect(wrapper.find('.submenu').isVisible()).toBe(true)
-
-      await deleteItem.trigger('click')
-      await nextTick()
-      expect(wrapper.find('.submenu').exists()).toBe(false)
-    })
-
-    test('子菜单箭头图标旋转动画', async () => {
-      const wrapper = mount(PageItemMenu, {
-        props: { page: mockPage }
-      })
-
-      await wrapper.find('.menu-trigger').trigger('click')
-      await nextTick()
-
-      const arrowIcon = wrapper.find('.arrow-icon')
-      expect(arrowIcon.classes()).not.toContain('rotated')
-
-      const deleteItem = wrapper.findAll('.menu-item')[1]
-      await deleteItem.trigger('click')
-      await nextTick()
-
-      const rotatedArrow = wrapper.find('.arrow-icon.rotated')
-      expect(rotatedArrow.exists()).toBe(true)
-    })
-  })
-
-  describe('Soft Delete', () => {
-    test('点击移至回收站显示确认对话框', async () => {
-      const wrapper = mount(PageItemMenu, {
-        props: { page: mockPage }
-      })
-
-      await wrapper.find('.menu-trigger').trigger('click')
-      await nextTick()
-
-      const deleteItem = wrapper.findAll('.menu-item')[1]
-      await deleteItem.trigger('click')
-      await nextTick()
-
-      const softDeleteItem = wrapper.find('.submenu-item')
-      await softDeleteItem.trigger('click')
-      await nextTick()
-
-      const dialog = wrapper.findComponent(ConfirmDialog)
+      const dialog = wrapper.findComponent({ name: 'ConfirmDialog' })
       expect(dialog.exists()).toBe(true)
       expect(dialog.props('visible')).toBe(true)
     })
   })
 
-  describe('Permanent Delete', () => {
-    test('点击永久删除显示确认对话框', async () => {
-      const wrapper = mount(PageItemMenu, {
-        props: { page: mockPage }
-      })
-
-      await wrapper.find('.menu-trigger').trigger('click')
-      await nextTick()
-
-      const deleteItem = wrapper.findAll('.menu-item')[1]
-      await deleteItem.trigger('click')
-      await nextTick()
-
-      const permanentDeleteItem = wrapper.findAll('.submenu-item')[1]
-      await permanentDeleteItem.trigger('click')
-      await nextTick()
-
-      const dialogs = wrapper.findAllComponents(ConfirmDialog)
-      expect(dialogs.length).toBe(2)
-      expect(dialogs[1].props('visible')).toBe(true)
-    })
-  })
-
   describe('Event Propagation', () => {
     test('点击菜单按钮阻止事件冒泡', async () => {
-      const clickOutsideSpy = vi.fn()
-      window.addEventListener('click', clickOutsideSpy)
-
       const wrapper = mount(PageItemMenu, {
         props: { page: mockPage }
       })
 
-      const event = new MouseEvent('click', { bubbles: true })
       await wrapper.find('.menu-trigger').trigger('click')
-
       await nextTick()
-      window.removeEventListener('click', clickOutsideSpy)
 
       expect(wrapper.find('.menu-dropdown').isVisible()).toBe(true)
     })

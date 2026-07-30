@@ -2,7 +2,8 @@
 import { ref, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePageStore } from '../../stores/pages'
-import { MoreVertical, Pencil, Trash2, ChevronRight } from 'lucide-vue-next'
+import { useFavorites } from '../../composables/useFavorites'
+import { MoreVertical, Star, Trash2 } from 'lucide-vue-next'
 import ConfirmDialog from '../ConfirmDialog.vue'
 
 const props = defineProps<{
@@ -15,59 +16,35 @@ const emit = defineEmits<{
 
 const router = useRouter()
 const pageStore = usePageStore()
+const { isFavorite, toggleFavorite } = useFavorites()
 
 const isMenuOpen = ref(false)
-const isDeleteSubmenuOpen = ref(false)
-const showSoftDeleteConfirm = ref(false)
-const showPermanentDeleteConfirm = ref(false)
+const showDeleteConfirm = ref(false)
 
 function toggleMenu(event: Event) {
   event.stopPropagation()
   isMenuOpen.value = !isMenuOpen.value
-  if (!isMenuOpen.value) {
-    isDeleteSubmenuOpen.value = false
-  }
 }
 
 function closeMenu() {
   isMenuOpen.value = false
-  isDeleteSubmenuOpen.value = false
 }
 
-function startRename(event: Event) {
+function handleToggleFavorite(event: Event) {
   event.stopPropagation()
+  toggleFavorite(props.page.id)
   closeMenu()
-  emit('rename')
-}
-
-function toggleDeleteSubmenu(event: Event) {
-  event.stopPropagation()
-  isDeleteSubmenuOpen.value = !isDeleteSubmenuOpen.value
 }
 
 function showSoftDeleteDialog(event: Event) {
   event.stopPropagation()
   closeMenu()
-  showSoftDeleteConfirm.value = true
+  showDeleteConfirm.value = true
 }
 
-async function handleSoftDelete() {
-  showSoftDeleteConfirm.value = false
+async function handleDelete() {
+  showDeleteConfirm.value = false
   await pageStore.softDeletePage(props.page.id)
-  if (router.currentRoute.value.params.pageId === props.page.id) {
-    router.push('/ideas')
-  }
-}
-
-function showPermanentDeleteDialog(event: Event) {
-  event.stopPropagation()
-  closeMenu()
-  showPermanentDeleteConfirm.value = true
-}
-
-async function handlePermanentDelete() {
-  showPermanentDeleteConfirm.value = false
-  await pageStore.permanentDeletePage(props.page.id)
   if (router.currentRoute.value.params.pageId === props.page.id) {
     router.push('/ideas')
   }
@@ -94,61 +71,36 @@ onUnmounted(() => {
 <template>
   <div class="page-item-menu">
     <button class="menu-trigger" @click="toggleMenu">
-      <MoreVertical :size="20" :stroke-width="1.75" />
+      <MoreVertical :size="16" :stroke-width="1.75" />
     </button>
 
     <Transition name="menu">
       <div v-if="isMenuOpen" class="menu-dropdown" @click.stop>
-        <button v-if="page.type !== 'ideas'" class="menu-item" @click="startRename">
-          <Pencil :size="16" />
-          <span>重命名</span>
+        <button class="menu-item" @click="handleToggleFavorite">
+          <Star :size="14" :stroke-width="1.75" />
+          <span>{{ isFavorite(page.id) ? '取消收藏' : '收藏' }}</span>
         </button>
 
-        <div class="menu-item has-submenu" @click="toggleDeleteSubmenu">
-          <Trash2 :size="16" />
+        <button class="menu-item danger" @click="showSoftDeleteDialog">
+          <Trash2 :size="14" :stroke-width="1.75" />
           <span>删除</span>
-          <ChevronRight class="arrow-icon" :class="{ rotated: isDeleteSubmenuOpen }" :size="16" />
-        </div>
-
-        <Transition name="submenu">
-          <div v-if="isDeleteSubmenuOpen" class="submenu">
-            <button class="menu-item submenu-item" @click="showSoftDeleteDialog">
-              <Trash2 :size="16" />
-              <span>移至回收站</span>
-            </button>
-            <button class="menu-item submenu-item danger" @click="showPermanentDeleteDialog">
-              <Trash2 :size="16" />
-              <span>永久删除</span>
-            </button>
-          </div>
-        </Transition>
+        </button>
       </div>
     </Transition>
 
     <ConfirmDialog
-      :visible="showSoftDeleteConfirm"
-      title="移至回收站"
+      :visible="showDeleteConfirm"
+      title="删除页面"
       :message="`确定要将页面「${page.title || ''}」移至回收站吗？`"
-      confirm-text="移至回收站"
+      confirm-text="删除"
       cancel-text="取消"
-      @confirm="handleSoftDelete"
-      @cancel="showSoftDeleteConfirm = false"
-    />
-
-    <ConfirmDialog
-      :visible="showPermanentDeleteConfirm"
-      title="永久删除"
-      :message="`确定要永久删除页面「${page.title || ''}」吗？此操作不可撤销。`"
-      confirm-text="永久删除"
-      cancel-text="取消"
-      danger
-      @confirm="handlePermanentDelete"
-      @cancel="showPermanentDeleteConfirm = false"
+      @confirm="handleDelete"
+      @cancel="showDeleteConfirm = false"
     />
   </div>
 </template>
 
-<style lang="scss" scoped>
+<style scoped>
 .page-item-menu {
   position: relative;
   flex-shrink: 0;
@@ -163,11 +115,20 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
-  color: transparent;
+  border-radius: 4px;
+  color: var(--text-tertiary);
+  opacity: 0;
   transition: all 80ms ease;
   flex-shrink: 0;
-  opacity: 0.1;
+}
+
+.page-item:hover .menu-trigger {
+  opacity: 1;
+}
+
+.menu-trigger:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
 }
 
 .menu-dropdown {
@@ -175,72 +136,43 @@ onUnmounted(() => {
   top: 100%;
   right: 0;
   margin-top: 4px;
-  min-width: 160px;
-  background: var(--color-paper);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-modal);
+  min-width: 140px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
   padding: 4px;
   z-index: 1000;
+}
 
-  .menu-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-    padding: 8px 12px;
-    border: none;
-    background: transparent;
-    cursor: pointer;
-    border-radius: var(--radius-md);
-    font-size: var(--text-sm);
-    color: var(--color-ink);
-    font-family: inherit;
-    text-align: left;
-    transition: background 80ms ease;
-    white-space: nowrap;
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text-primary);
+  font-family: inherit;
+  text-align: left;
+  transition: background 80ms ease;
+  white-space: nowrap;
+}
 
-    &:hover {
-      background: var(--color-hover);
-    }
+.menu-item:hover {
+  background: var(--bg-hover);
+}
 
-    &.danger {
-      color: var(--error);
+.menu-item.danger {
+  color: var(--error, #DC2626);
+}
 
-      &:hover {
-        background: #FEE2E2;
-      }
-    }
-
-    &.has-submenu {
-      justify-content: space-between;
-
-      span {
-        flex: 1;
-      }
-    }
-
-    &.submenu-item {
-      padding: 6px 10px;
-      font-size: var(--text-xs);
-    }
-  }
-
-  .arrow-icon {
-    transition: transform 150ms ease;
-
-    &.rotated {
-      transform: rotate(90deg);
-    }
-  }
-
-  .submenu {
-    padding-left: 8px;
-    border-left: 2px solid var(--color-border);
-    margin-left: 12px;
-    margin-top: 2px;
-    margin-bottom: 2px;
-  }
+.menu-item.danger:hover {
+  background: rgba(220, 38, 38, 0.08);
 }
 
 .menu-enter-active,
@@ -252,15 +184,5 @@ onUnmounted(() => {
 .menu-leave-to {
   opacity: 0;
   transform: translateY(-4px);
-}
-
-.submenu-enter-active,
-.submenu-leave-active {
-  transition: opacity 100ms ease, height 100ms ease;
-}
-
-.submenu-enter-from,
-.submenu-leave-to {
-  opacity: 0;
 }
 </style>

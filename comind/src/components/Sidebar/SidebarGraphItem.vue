@@ -13,110 +13,60 @@ function handleClick() {
 </script>
 
 <template>
-  <div
-    class="graph-entry"
-    :class="{ active: isActive() }"
-    @click="handleClick"
-  >
-    <div class="graph-content">
-      <div class="graph-icon-wrap">
-        <Network :size="18" :stroke-width="1.75" />
-      </div>
-      <div class="graph-body">
-        <span class="graph-title">图谱</span>
-        <span class="graph-meta">浏览概念网络</span>
-      </div>
-    </div>
-    <div class="graph-arrow">
-      <span class="arrow-icon">›</span>
-    </div>
+  <div class="nav-item graph-nav" :class="{ active: isActive() }" @click="handleClick">
+    <span class="nav-icon">
+      <Network :size="16" :stroke-width="1.75" />
+    </span>
+    <span class="nav-label">图谱</span>
+    <span class="nav-sub">浏览概念图谱</span>
   </div>
 </template>
 
 <style scoped>
-.graph-entry {
-  position: relative;
-  height: 48px;
-  margin: 0 var(--space-3) var(--space-2);
-  padding: 0 var(--space-4);
+.nav-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 6px;
   cursor: pointer;
-  border-radius: 10px;
-  background: var(--bg-base);
-  border: 1px solid var(--border);
-  overflow: hidden;
-  transition: border-color 120ms ease, background 120ms ease;
-}
-
-.graph-entry:hover {
-  border-color: var(--text-tertiary);
-  background: var(--bg-hover);
-}
-
-.graph-entry:active {
-  transform: scale(0.98);
-}
-
-.graph-entry.active {
-  border-color: var(--accent);
-  background: var(--accent-10);
-}
-
-.graph-content {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  position: relative;
-  z-index: 1;
-}
-
-.graph-icon-wrap {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  background: var(--bg-hover);
+  font-size: 13px;
+  font-weight: 500;
   color: var(--text-secondary);
-  flex-shrink: 0;
+  transition: background 80ms ease, color 80ms ease;
 }
 
-.graph-entry.active .graph-icon-wrap {
-  background: var(--accent-subtle);
+.nav-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.nav-item.active {
+  color: var(--text-primary);
+  font-weight: 600;
+  background: var(--accent-bg, rgba(99, 102, 241, 0.08));
+}
+
+.nav-item.active .nav-icon {
   color: var(--accent);
 }
 
-.graph-body {
+.nav-icon {
   display: flex;
-  flex-direction: column;
-  gap: 1px;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
 }
 
-.graph-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary);
-  line-height: 1.3;
+.nav-label {
+  flex: 1;
+  min-width: 0;
 }
 
-.graph-meta {
+.nav-sub {
   font-size: 11px;
   color: var(--text-tertiary);
-  line-height: 1.3;
-}
-
-.graph-arrow {
-  color: var(--text-tertiary);
-  font-size: 18px;
-  line-height: 1;
   flex-shrink: 0;
-}
-
-.arrow-icon {
-  display: inline-block;
-  transform: translateY(-1px);
 }
 </style>

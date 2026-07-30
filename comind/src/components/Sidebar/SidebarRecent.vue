@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useRecent } from '../../composables/useRecent'
 import { usePageStore } from '../../stores/pages'
 import { ChevronUp, ChevronDown } from 'lucide-vue-next'
@@ -8,6 +8,7 @@ import PageItemMenu from './PageItemMenu.vue'
 import { ref } from 'vue'
 
 const router = useRouter()
+const route = useRoute()
 const pageStore = usePageStore()
 const { recentPages, isExpanded, toggleExpand } = useRecent()
 
@@ -54,7 +55,7 @@ function handleCancelRename() {
         v-for="page in recentPages"
         :key="page.id"
         :page="page"
-        :active="pageStore.currentPageId === page.id"
+        :active="(route.name === 'page' || route.name === 'ideas-page') && pageStore.currentPageId === page.id"
         :is-renaming="renamingPageId === page.id"
         @click="handleNavigate(page.id)"
         @rename="(newTitle) => handleRename(page.id, newTitle)"
@@ -77,48 +78,43 @@ function handleCancelRename() {
 
 <style scoped>
 .recent-section {
-  padding: var(--space-1) 0;
+  padding: 0;
 }
 
 .section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-2) var(--space-3);
+  padding: 6px 10px;
   cursor: pointer;
   user-select: none;
-  border-radius: 6px;
-  margin: 0 var(--space-2);
-  transition: background 80ms ease;
 }
 
-.section-header:hover {
-  background: var(--bg-hover);
+.section-header:hover .section-title {
+  color: var(--text-secondary);
 }
 
 .section-title {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--sidebar-text-hint);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  color: var(--text-tertiary);
   line-height: 1.4;
+  transition: color 80ms ease;
 }
 
 .expand-icon {
   display: flex;
   align-items: center;
-  color: var(--sidebar-text-hint);
+  color: var(--text-tertiary);
 }
 
 .section-content {
-  padding: var(--space-1) var(--space-2);
-  text-align: left;
+  padding: 0 4px;
 }
 
 .empty-text {
-  padding: var(--space-2) var(--space-3);
+  padding: 6px 10px;
   font-size: 12px;
-  color: var(--sidebar-text-hint);
+  color: var(--text-tertiary);
 }
 </style>
