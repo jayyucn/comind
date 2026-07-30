@@ -74,6 +74,25 @@ async function buildGraphData() {
   return { nodes: acc.nodes, edges: acc.edges }
 }
 
+/**
+ * 安全的 fitView 包装：
+ * 1. nextTick 等 canvas 元素完成当前批次的绘制提交
+ * 2. 第一次 fitView 基于旧包围盒算出近似缩放/平移
+ * 3. 再 nextTick + 第二次 fitView，用已更新的 transform 拿到准确的 BBox
+ * 这解决了 G6 v5 中 layout() resolve 后 canvas render bounds 未即时更新导致的节点溢出问题
+ */
+async function safeFitView(
+  g: { fitView: Graph['fitView'] },
+  options: { when?: 'overflow' | 'always'; direction?: 'x' | 'y' | 'both' } = { when: 'always' },
+  animate = false,
+) {
+  if (!g) return
+  await nextTick()
+  await g.fitView(options, animate)
+  await nextTick()
+  await g.fitView(options, animate)
+}
+
 async function initGraph() {
   if (!containerRef.value) return
 
@@ -90,7 +109,7 @@ async function initGraph() {
     container,
     width,
     height,
-    padding: [100, 40, 20, 100],
+    padding: [50,0, 100, 0],
     canvas: {
       enableMultiLayer: false,
     },
@@ -183,7 +202,7 @@ async function refreshGraphData(graph?: Graph) {
 
   if (gen !== refreshGeneration) return
 
-  await g.fitView({ when: 'always' }, false)
+  await safeFitView(g, { when: 'always' }, false)
 }
 
 async function handleLayoutChange(layout: string) {
@@ -191,13 +210,13 @@ async function handleLayoutChange(layout: string) {
   if (graphRef.value) {
     graphRef.value.setLayout({ type: layout, preventOverlap: true, nodeSize: 100, animate: isFirstLayoutDone.value })
     await graphRef.value.layout()
-    await graphRef.value.fitView({ when: 'always' }, false)
+    await safeFitView(graphRef.value, { when: 'always' }, false)
   }
 }
 
 async function handleFitView() {
   if (graphRef.value) {
-    await graphRef.value.fitView({ when: 'always' }, false)
+    await safeFitView(graphRef.value, { when: 'always' }, false)
   }
 }
 
@@ -259,6 +278,7 @@ onMounted(async () => {
     resizeObserver = new ResizeObserver(() => {
       if (graphRef.value && containerRef.value) {
         graphRef.value.resize(containerRef.value.clientWidth, containerRef.value.clientHeight)
+        safeFitView(graphRef.value, { when: 'always' }, false)
       }
     })
     resizeObserver.observe(containerRef.value)
