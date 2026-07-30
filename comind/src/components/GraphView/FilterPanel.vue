@@ -17,7 +17,7 @@ const emit = defineEmits<{
 
 export interface FilterCondition {
   id: string
-  type: 'search' | 'relationship' | 'time' | 'journal'
+  type: 'search' | 'relationship' | 'time' | 'ideas'
   operator: FilterOperator
   value: string | string[] | boolean | DateRange | null
   logic: 'AND' | 'OR' | 'NOT'
@@ -42,7 +42,7 @@ const defaultConditions: FilterCondition[] = [
   { id: 'search-1', type: 'search', operator: 'contains', value: '', logic: 'AND' },
   { id: 'relationship-1', type: 'relationship', operator: 'contains', value: [], logic: 'AND' },
   { id: 'time-1', type: 'time', operator: 'between', value: { start: null, end: null }, logic: 'AND' },
-  { id: 'journal-1', type: 'journal', operator: 'is_not', value: false, logic: 'AND' },
+  { id: 'idea-1', type: 'ideas', operator: 'is_not', value: false, logic: 'AND' },
 ]
 
 const conditions = ref<FilterCondition[]>([...defaultConditions])
@@ -50,7 +50,7 @@ const expandedGroups = ref<Set<string>>(new Set(['search', 'relationship', 'time
 const searchResults = ref<{ id: string; title: string; contentMatch?: string }[]>([])
 const isSearching = ref(false)
 const collapsed = ref(false)
-const hideJournalCount = ref(0)
+const hideIdeasCount = ref(0)
 const highlightedNodeId = ref<string | null>(null)
 
 const groupedRelationshipTypes = computed(() => {
@@ -76,7 +76,7 @@ const groupLabels: Record<string, string> = {
 const searchCondition = computed(() => conditions.value.find(c => c.type === 'search'))
 const relationshipCondition = computed(() => conditions.value.find(c => c.type === 'relationship'))
 const timeCondition = computed(() => conditions.value.find(c => c.type === 'time'))
-const journalCondition = computed(() => conditions.value.find(c => c.type === 'journal'))
+const journalCondition = computed(() => conditions.value.find(c => c.type === 'ideas'))
 
 const selectedRelationshipTypes = computed(() => {
   return (relationshipCondition.value?.value as string[]) ?? []
@@ -281,11 +281,12 @@ function updateJournalFilter(value: boolean) {
     journalCondition.value.value = value
     
     if (value) {
-      hideJournalCount.value = 0
+      hideIdeasCount.value = 0
     } else {
-      hideJournalCount.value = pageStore.pages.filter(p => !p.deleted && p.type === 'ideas').length
+      hideIdeasCount.value = pageStore.pages.filter(p => !p.deleted && p.type === 'ideas').length
     }
     
+    saveFilterState()
     emit('filter-change', getFilterState())
   }
 }
@@ -305,7 +306,37 @@ function resetFilters() {
     journalCondition.value.value = false
   }
   searchResults.value = []
-  hideJournalCount.value = pageStore.pages.filter(p => !p.deleted && p.type === 'ideas').length
+  hideIdeasCount.value = pageStore.pages.filter(p => !p.deleted && p.type === 'ideas').length
+  saveFilterState()
+}
+
+function saveFilterState() {
+  const state = {
+    conditions: conditions.value.map(c => ({
+      ...c,
+      value: c.value instanceof Set ? Array.from(c.value) : c.value,
+    })),
+  }
+  try {
+    localStorage.setItem('graph-filter-state', JSON.stringify(state))
+  } catch { /* ignore quota */ }
+}
+
+function loadFilterState() {
+  try {
+    const raw = localStorage.getItem('graph-filter-state')
+    if (!raw) return false
+    const parsed = JSON.parse(raw)
+    if (parsed?.conditions && Array.isArray(parsed.conditions)) {
+      // 只恢复 journal 等简单条件，避免恢复过期的搜索状态
+      const journalCond = parsed.conditions.find((c: FilterCondition) => c.type === 'ideas')
+      if (journalCond && journalCondition.value) {
+        journalCondition.value.value = journalCond.value
+      }
+      return true
+    }
+  } catch { /* ignore */ }
+  return false
 }
 
 function toggleCollapse() {
@@ -332,8 +363,10 @@ function init() {
   const saved = localStorage.getItem('graph-filter-panel-collapsed')
   collapsed.value = saved === 'true'
   
-  const journalPages = pageStore.pages.filter(p => !p.deleted && p.type === 'ideas')
-  hideJournalCount.value = journalPages.length
+  loadFilterState()
+  
+  const ideaPages = pageStore.pages.filter(p => !p.deleted && p.type === 'ideas')
+  hideIdeasCount.value = ideaPages.length
 
   // 初始状态立即推送给父组件，确保首次渲染即应用默认筛选
   emit('filter-change', getFilterState())

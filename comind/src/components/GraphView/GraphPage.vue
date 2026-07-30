@@ -11,6 +11,7 @@ const blockStore = useBlockStore()
 
 const currentFilterState = ref<FilterState>({ conditions: [], expandedGroups: new Set() })
 const highlightedNodeId = ref<string | null>(null)
+const hiddenPageIds = ref<Set<string>>(new Set())
 const stats = ref({ normalNodes: 0, filteredNodes: 0, normalEdges: 0, filteredEdges: 0 })
 
 const graphViewRef = ref<InstanceType<typeof GraphView> | null>(null)
@@ -28,9 +29,10 @@ async function measureSidebarOffset() {
   }
 }
 
-// 透传给 GraphView 的高亮节点
+// 透传给 GraphView 的高亮节点和隐藏节点
 const graphProps = computed(() => ({
   highlightedNodeId: highlightedNodeId.value,
+  hiddenPageIds: hiddenPageIds.value,
 }))
 
 function applyFilterConditions(pageId: string): boolean {
@@ -41,7 +43,7 @@ function applyFilterConditions(pageId: string): boolean {
     let matches = true
 
     switch (condition.type) {
-      case 'journal':
+      case 'ideas':
         if (page.type === 'ideas') {
           matches = !!condition.value
         }
@@ -90,31 +92,34 @@ function handleFilterChange(filters: FilterState) {
     highlightedNodeId.value = matched?.id ?? null
   }
 
-  updateStats()
+  // updateStats 由 watch(currentFilterState) 触发，无需手动调
 }
 
 async function updateStats() {
   const allPages = pageStore.pages.filter(p => !p.deleted)
 
   const hideJournals = currentFilterState.value.conditions.some(
-    c => c.type === 'journal' && c.value === false
+    c => c.type === 'ideas' && c.value === false
   )
-  const hiddenPageIds = new Set<string>()
+  const newHiddenIds = new Set<string>()
   if (hideJournals) {
     for (const p of allPages) {
-      if (p.type === 'ideas') hiddenPageIds.add(p.id)
+      if (p.type === 'ideas') newHiddenIds.add(p.id)
     }
   }
 
+  // 先更新隐藏集合，让 GraphView 尽早拿到正确值
+  hiddenPageIds.value = newHiddenIds
+
   const isFilteredMap = new Map<string, boolean>()
   for (const page of allPages) {
-    if (hiddenPageIds.has(page.id)) continue
+    if (newHiddenIds.has(page.id)) continue
     isFilteredMap.set(page.id, !applyFilterConditions(page.id))
   }
 
   let normalNodes = 0, filteredNodes = 0
   for (const page of allPages) {
-    if (hiddenPageIds.has(page.id)) continue
+    if (newHiddenIds.has(page.id)) continue
     if (isFilteredMap.get(page.id) ?? false) filteredNodes++
     else normalNodes++
   }
@@ -126,7 +131,7 @@ async function updateStats() {
     // 简化：只统计节点数，边统计留给 GraphView 内部
     const nodeHasSelectedType = new Set<string>()
     for (const page of allPages) {
-      if (hiddenPageIds.has(page.id)) continue
+      if (newHiddenIds.has(page.id)) continue
       const outlinks = await blockStore.getOutlinks(page.id)
       for (const link of outlinks) {
         const type = link.relationshipType ?? 'related'
@@ -137,7 +142,7 @@ async function updateStats() {
       }
     }
     for (const page of allPages) {
-      if (hiddenPageIds.has(page.id)) continue
+      if (newHiddenIds.has(page.id)) continue
       if (!nodeHasSelectedType.has(page.id) && !(isFilteredMap.get(page.id) ?? false)) {
         filteredNodes++
         normalNodes--

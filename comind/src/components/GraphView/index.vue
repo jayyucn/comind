@@ -6,6 +6,7 @@ import { usePageStore } from '../../stores/pages'
 import { useBlockStore } from '../../stores/blocks'
 import { getRelationshipColor, getRelationshipLabel, getRelationshipStrength, STRENGTH_TO_WIDTH } from '../../types/relationship'
 import { useRouter } from 'vue-router'
+import { Download, ExpandIcon, RefreshCw } from 'lucide-vue-next'
 
 const pageStore = usePageStore()
 const blockStore = useBlockStore()
@@ -14,6 +15,7 @@ const router = useRouter()
 const props = defineProps<{
   highlightedNodeId?: string | null
   pageId?: string
+  hiddenPageIds?: Set<string>
 }>()
 
 const containerRef = ref<HTMLElement | null>(null)
@@ -33,6 +35,10 @@ watch(() => props.highlightedNodeId, (val) => {
   if (graphRef.value) updateNodeHighlight()
 })
 
+watch(() => props.hiddenPageIds, () => {
+  if (graphRef.value) refreshGraphData()
+}, { deep: true })
+
 watch(currentPageId, () => refreshGraphData())
 
 watch(maxDepth, () => {
@@ -47,6 +53,7 @@ async function loadNeighbors(
   edges: { id: string; source: string; target: string; data: Record<string, unknown> }[],
   visitedEdges: Set<string>,
   blockCache: Map<string, { pageId: string }>,
+  hidden: Set<string>,
 ) {
   await blockStore.loadMultiPageBlocks([pageId])
   const outLinks = await blockStore.getOutlinks(pageId)
@@ -57,6 +64,7 @@ async function loadNeighbors(
     if (visitedEdges.has(link.id)) continue
     const targetPage = pageStore.getPage(link.targetPageId)
     if (!targetPage || targetPage.deleted) continue
+    if (hidden.has(targetPage.id)) continue
 
     if (!nodes.find(n => n.id === targetPage.id)) {
       nodes.push({
@@ -98,6 +106,7 @@ async function loadNeighbors(
     const sourcePageId = block.pageId
     const sourcePage = pageStore.getPage(sourcePageId)
     if (!sourcePage || sourcePage.deleted) continue
+    if (hidden.has(sourcePageId)) continue
 
     if (!nodes.find(n => n.id === sourcePageId)) {
       nodes.push({
@@ -134,10 +143,11 @@ async function buildGraphData() {
   const edges: { id: string; source: string; target: string; data: Record<string, unknown> }[] = []
   const visitedEdges = new Set<string>()
   const blockCache = new Map<string, { pageId: string }>()
+  const hidden = props.hiddenPageIds ?? new Set<string>()
 
   // 非 page-scoped：全量展示所有页面
   if (!isPageScoped.value) {
-    const allPages = pageStore.pages.filter(p => !p.deleted)
+    const allPages = pageStore.pages.filter(p => !p.deleted && !hidden.has(p.id))
     for (const page of allPages) {
       nodes.push({
         id: page.id,
@@ -149,8 +159,10 @@ async function buildGraphData() {
       })
     }
     for (const page of allPages) {
-      await loadNeighbors(page.id, nodes, edges, visitedEdges, blockCache)
+      await loadNeighbors(page.id, nodes, edges, visitedEdges, blockCache, hidden)
     }
+    // 移除连接到隐藏节点的边
+    filterHiddenEdges(edges, hidden)
     return { nodes, edges }
   }
 
@@ -176,7 +188,7 @@ async function buildGraphData() {
   for (let depth = 0; depth < maxDepth.value; depth++) {
     const nextFrontier: string[] = []
     for (const pageId of frontier) {
-      const neighbors = await loadNeighbors(pageId, nodes, edges, visitedEdges, blockCache)
+      const neighbors = await loadNeighbors(pageId, nodes, edges, visitedEdges, blockCache, hidden)
       for (const neighborId of neighbors) {
         if (!visitedPages.has(neighborId)) {
           visitedPages.add(neighborId)
@@ -188,7 +200,20 @@ async function buildGraphData() {
     if (frontier.length === 0) break
   }
 
+  // 移除连接到隐藏节点的边
+  filterHiddenEdges(edges, hidden)
   return { nodes, edges }
+}
+
+function filterHiddenEdges(
+  edges: { id: string; source: string; target: string; data: Record<string, unknown> }[],
+  hidden: Set<string>,
+) {
+  for (let i = edges.length - 1; i >= 0; i--) {
+    if (hidden.has(edges[i].source) || hidden.has(edges[i].target)) {
+      edges.splice(i, 1)
+    }
+  }
 }
 
 function getNodeSize(d: NodeData): [number, number] {
@@ -480,9 +505,9 @@ onBeforeUnmount(() => {
           </button>
         </div>
         <div class="control-group">
-          <button class="control-btn" title="适应视图" @click="handleFitView">⊞</button>
-          <button class="control-btn" title="刷新" @click="handleRefresh">↻</button>
-          <button class="control-btn" title="导出 PNG" @click="handleExportPng">⤓</button>
+          <button class="control-btn" title="适应视图" @click="handleFitView"><ExpandIcon /></button>
+          <button class="control-btn" title="刷新" @click="handleRefresh"><RefreshCw /></button>
+          <button class="control-btn" title="导出 PNG" @click="handleExportPng"><Download /></button>
         </div>
         <div v-if="isPageScoped" class="depth-control">
           <span class="depth-label">层级</span>
@@ -568,8 +593,8 @@ onBeforeUnmount(() => {
 }
 
 .control-btn {
-  width: 24px;
-  height: 24px;
+  width: 18px;
+  height: 18px;
   border: 1px solid var(--border);
   background: var(--bg-base);
   cursor: pointer;
