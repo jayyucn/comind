@@ -632,4 +632,386 @@ mod tests {
             assert!(result.is_ok());
         }
     }
+
+    #[tokio::test]
+    async fn test_lww_incoming_newer_updates_existing() {
+        let engine = create_test_engine();
+
+        // 先插入 Page（Block 有外键约束）
+        let page_row = RowPayload {
+            id: "page-1".to_string(),
+            data: serde_json::json!({
+                "id": "page-1",
+                "title": "Test Page",
+                "version": 1,
+                "created_at": 1000i64,
+                "updated_at": 1000i64,
+                "deleted_at": serde_json::Value::Null,
+            }),
+            version: 1,
+            updated_at: 1000,
+            deleted_at: None,
+        };
+
+        let page_msg = SyncMessage::RowChange {
+            table: SyncTable::Page,
+            rows: vec![page_row],
+            client_id: "remote-client".to_string(),
+        };
+
+        engine.handle_message(page_msg).await.unwrap();
+
+        // 插入初始 block
+        let initial_row = RowPayload {
+            id: "block-1".to_string(),
+            data: serde_json::json!({
+                "id": "block-1",
+                "page_id": "page-1",
+                "content": "initial content",
+                "type": "text",
+                "version": 1,
+                "created_at": 1000i64,
+                "updated_at": 1000i64,
+                "deleted_at": serde_json::Value::Null,
+            }),
+            version: 1,
+            updated_at: 1000,
+            deleted_at: None,
+        };
+
+        let msg = SyncMessage::RowChange {
+            table: SyncTable::Block,
+            rows: vec![initial_row.clone()],
+            client_id: "remote-client".to_string(),
+        };
+
+        engine.handle_message(msg.clone()).await.unwrap();
+
+        // 发送更新（version 更高，updated_at 更新）
+        let updated_row = RowPayload {
+            id: "block-1".to_string(),
+            data: serde_json::json!({
+                "id": "block-1",
+                "page_id": "page-1",
+                "content": "updated content",
+                "type": "text",
+                "version": 2,
+                "created_at": 1000i64,
+                "updated_at": 2000i64,
+                "deleted_at": serde_json::Value::Null,
+            }),
+            version: 2,
+            updated_at: 2000,
+            deleted_at: None,
+        };
+
+        let update_msg = SyncMessage::RowChange {
+            table: SyncTable::Block,
+            rows: vec![updated_row],
+            client_id: "remote-client".to_string(),
+        };
+
+        engine.handle_message(update_msg).await.unwrap();
+
+        // 验证更新被应用
+        let fetched = engine.fetch_row_payloads(SyncTable::Block, vec!["block-1".to_string()]).await.unwrap();
+        assert_eq!(fetched.len(), 1);
+        assert_eq!(fetched[0].version, 2);
+        assert_eq!(fetched[0].updated_at, 2000);
+    }
+
+    #[tokio::test]
+    async fn test_lww_incoming_older_is_ignored() {
+        let engine = create_test_engine();
+
+        // 先插入 Page
+        let page_row = RowPayload {
+            id: "page-1".to_string(),
+            data: serde_json::json!({
+                "id": "page-1",
+                "title": "Test Page",
+                "version": 1,
+                "created_at": 1000i64,
+                "updated_at": 1000i64,
+                "deleted_at": serde_json::Value::Null,
+            }),
+            version: 1,
+            updated_at: 1000,
+            deleted_at: None,
+        };
+
+        let page_msg = SyncMessage::RowChange {
+            table: SyncTable::Page,
+            rows: vec![page_row],
+            client_id: "remote-client".to_string(),
+        };
+
+        engine.handle_message(page_msg).await.unwrap();
+
+        // 先插入较新的数据
+        let newer_row = RowPayload {
+            id: "block-2".to_string(),
+            data: serde_json::json!({
+                "id": "block-2",
+                "page_id": "page-1",
+                "content": "newer content",
+                "type": "text",
+                "version": 3,
+                "created_at": 1000i64,
+                "updated_at": 3000i64,
+                "deleted_at": serde_json::Value::Null,
+            }),
+            version: 3,
+            updated_at: 3000,
+            deleted_at: None,
+        };
+
+        let msg = SyncMessage::RowChange {
+            table: SyncTable::Block,
+            rows: vec![newer_row],
+            client_id: "remote-client".to_string(),
+        };
+
+        engine.handle_message(msg).await.unwrap();
+
+        // 尝试发送较旧的数据
+        let older_row = RowPayload {
+            id: "block-2".to_string(),
+            data: serde_json::json!({
+                "id": "block-2",
+                "page_id": "page-1",
+                "content": "older content - should be ignored",
+                "type": "text",
+                "version": 1,
+                "created_at": 500i64,
+                "updated_at": 500i64,
+                "deleted_at": serde_json::Value::Null,
+            }),
+            version: 1,
+            updated_at: 500,
+            deleted_at: None,
+        };
+
+        let old_msg = SyncMessage::RowChange {
+            table: SyncTable::Block,
+            rows: vec![older_row],
+            client_id: "remote-client".to_string(),
+        };
+
+        engine.handle_message(old_msg).await.unwrap();
+
+        // 验证旧数据未覆盖新数据
+        let fetched = engine.fetch_row_payloads(SyncTable::Block, vec!["block-2".to_string()]).await.unwrap();
+        assert_eq!(fetched.len(), 1);
+        assert_eq!(fetched[0].version, 3);
+        assert_eq!(fetched[0].updated_at, 3000);
+    }
+
+    #[tokio::test]
+    async fn test_lww_version_equal_timestamp_wins() {
+        let engine = create_test_engine();
+
+        // 先插入 Page
+        let page_row = RowPayload {
+            id: "page-1".to_string(),
+            data: serde_json::json!({
+                "id": "page-1",
+                "title": "Test Page",
+                "version": 1,
+                "created_at": 1000i64,
+                "updated_at": 1000i64,
+                "deleted_at": serde_json::Value::Null,
+            }),
+            version: 1,
+            updated_at: 1000,
+            deleted_at: None,
+        };
+
+        let page_msg = SyncMessage::RowChange {
+            table: SyncTable::Page,
+            rows: vec![page_row],
+            client_id: "remote-client".to_string(),
+        };
+
+        engine.handle_message(page_msg).await.unwrap();
+
+        // 插入初始数据
+        let row1 = RowPayload {
+            id: "block-3".to_string(),
+            data: serde_json::json!({
+                "id": "block-3",
+                "page_id": "page-1",
+                "content": "version 1",
+                "type": "text",
+                "version": 2,
+                "created_at": 1000i64,
+                "updated_at": 1000i64,
+                "deleted_at": serde_json::Value::Null,
+            }),
+            version: 2,
+            updated_at: 1000,
+            deleted_at: None,
+        };
+
+        let msg = SyncMessage::RowChange {
+            table: SyncTable::Block,
+            rows: vec![row1],
+            client_id: "remote-client".to_string(),
+        };
+
+        engine.handle_message(msg).await.unwrap();
+
+        // 发送相同 version 但更高 updated_at 的数据
+        let row2 = RowPayload {
+            id: "block-3".to_string(),
+            data: serde_json::json!({
+                "id": "block-3",
+                "page_id": "page-1",
+                "content": "version 2 with later timestamp",
+                "type": "text",
+                "version": 2,
+                "created_at": 1000i64,
+                "updated_at": 2000i64,
+                "deleted_at": serde_json::Value::Null,
+            }),
+            version: 2,
+            updated_at: 2000,
+            deleted_at: None,
+        };
+
+        let msg2 = SyncMessage::RowChange {
+            table: SyncTable::Block,
+            rows: vec![row2],
+            client_id: "remote-client".to_string(),
+        };
+
+        engine.handle_message(msg2).await.unwrap();
+
+        // 验证时间戳更高的数据被应用
+        let fetched = engine.fetch_row_payloads(SyncTable::Block, vec!["block-3".to_string()]).await.unwrap();
+        assert_eq!(fetched.len(), 1);
+        assert_eq!(fetched[0].updated_at, 2000);
+    }
+
+    #[tokio::test]
+    async fn test_debounce_buffer_aggregates_changes() {
+        let engine = create_test_engine();
+
+        // 记录本地变更
+        let row1 = RowPayload {
+            id: "block-4".to_string(),
+            data: serde_json::json!({"content": "change1"}),
+            version: 1,
+            updated_at: 1000,
+            deleted_at: None,
+        };
+
+        let row2 = RowPayload {
+            id: "block-5".to_string(),
+            data: serde_json::json!({"content": "change2"}),
+            version: 1,
+            updated_at: 1000,
+            deleted_at: None,
+        };
+
+        let messages = engine.on_local_change(SyncTable::Block, vec![row1, row2]).await.unwrap();
+
+        // 应该产生一条聚合消息
+        assert_eq!(messages.len(), 1);
+        match &messages[0] {
+            SyncMessage::RowChange { table, rows, client_id } => {
+                assert_eq!(*table, SyncTable::Block);
+                assert_eq!(rows.len(), 2);
+                assert_eq!(client_id, "test-client");
+            }
+            _ => panic!("Expected RowChange message"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_full_sync_buffer_completes_on_all_batches() {
+        let mut buffer = FullSyncBuffer {
+            data: HashMap::new(),
+            expected_batches: HashMap::new(),
+            received_batches: HashMap::new(),
+        };
+
+        // 模拟接收全量同步的批次
+        let row = RowPayload {
+            id: "block-6".to_string(),
+            data: serde_json::json!({"content": "sync"}),
+            version: 1,
+            updated_at: 1000,
+            deleted_at: None,
+        };
+
+        // 总共 3 批，已接收 3 批
+        buffer.add_batch(SyncTable::Block, vec![row.clone()], 0, 3).unwrap();
+        assert!(!buffer.is_complete());
+
+        buffer.add_batch(SyncTable::Block, vec![row.clone()], 1, 3).unwrap();
+        assert!(!buffer.is_complete());
+
+        buffer.add_batch(SyncTable::Block, vec![row], 2, 3).unwrap();
+        assert!(buffer.is_complete());
+    }
+
+    #[tokio::test]
+    async fn test_ignores_own_messages() {
+        let engine = create_test_engine();
+
+        // 先插入 Page
+        let page_row = RowPayload {
+            id: "page-1".to_string(),
+            data: serde_json::json!({
+                "id": "page-1",
+                "title": "Test Page",
+                "version": 1,
+                "created_at": 1000i64,
+                "updated_at": 1000i64,
+                "deleted_at": serde_json::Value::Null,
+            }),
+            version: 1,
+            updated_at: 1000,
+            deleted_at: None,
+        };
+
+        let page_msg = SyncMessage::RowChange {
+            table: SyncTable::Page,
+            rows: vec![page_row],
+            client_id: "remote-client".to_string(),
+        };
+
+        engine.handle_message(page_msg).await.unwrap();
+
+        let row = RowPayload {
+            id: "block-7".to_string(),
+            data: serde_json::json!({
+                "id": "block-7",
+                "page_id": "page-1",
+                "content": "should be ignored",
+                "type": "text",
+                "version": 1,
+                "created_at": 1000i64,
+                "updated_at": 1000i64,
+                "deleted_at": serde_json::Value::Null,
+            }),
+            version: 1,
+            updated_at: 1000,
+            deleted_at: None,
+        };
+
+        // 发送来自自己的消息（client_id 匹配 engine 的 client_id）
+        let msg = SyncMessage::RowChange {
+            table: SyncTable::Block,
+            rows: vec![row],
+            client_id: "test-client".to_string(), // 匹配 engine 的 client_id
+        };
+
+        engine.handle_message(msg).await.unwrap();
+
+        // 验证数据未被应用（因为来自自己）
+        let fetched = engine.fetch_row_payloads(SyncTable::Block, vec!["block-7".to_string()]).await.unwrap();
+        assert_eq!(fetched.len(), 0);
+    }
 }
