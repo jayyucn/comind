@@ -15,10 +15,19 @@ import {
   traverseBFS,
   buildFullGraph,
   type GraphAccumulator,
+  type VisibilityMap,
   type RawLink,
 } from '../graphData'
 
 // ---- helpers ----
+function emptyVisibility(): VisibilityMap {
+  return {
+    hiddenNodeIds: new Set(),
+    dimmedNodeIds: new Set(),
+    hiddenEdgeIds: new Set(),
+  }
+}
+
 function mockGetPage(id: string) {
   const pages: Record<string, { id: string; title: string; deleted: boolean }> = {
     'page-a': { id: 'page-a', title: 'Page A', deleted: false },
@@ -62,20 +71,20 @@ describe('graphData', () => {
   // createNodeData
   // =====================
   describe('createNodeData', () => {
-    it('creates node with correct fields', () => {
-      const node = createNodeData('page-1', 'Title', true, false)
+    it('creates node with correct fields including isFiltered=false', () => {
+      const node = createNodeData('page-1', 'Title', true, false, false)
       expect(node.id).toBe('page-1')
       expect(node.data).toEqual({
         label: 'Title',
         isCurrent: true,
         isHighlighted: false,
+        isFiltered: false,
       })
     })
 
-    it('creates node with both flags false', () => {
-      const node = createNodeData('page-2', 'Other', false, false)
-      expect(node.data?.isCurrent).toBe(false)
-      expect(node.data?.isHighlighted).toBe(false)
+    it('creates node with isFiltered=true when dimmed', () => {
+      const node = createNodeData('page-2', 'Other', false, false, true)
+      expect(node.data?.isFiltered).toBe(true)
     })
   })
 
@@ -83,14 +92,20 @@ describe('graphData', () => {
   // createEdgeData
   // =====================
   describe('createEdgeData', () => {
-    it('creates edge with relationship metadata', () => {
-      const edge = createEdgeData('link-1', 'src', 'tgt', 'related')
+    it('creates edge with relationship metadata and isFiltered=false', () => {
+      const edge = createEdgeData('link-1', 'src', 'tgt', 'related', false)
       expect(edge.id).toBe('link-1')
       expect(edge.source).toBe('src')
       expect(edge.target).toBe('tgt')
       expect(edge.data?.relationshipType).toBe('related')
       expect(edge.data?.label).toBe('label-related')
       expect(edge.data?.color).toBe('color-related')
+      expect(edge.data?.isFiltered).toBe(false)
+    })
+
+    it('creates edge with isFiltered=true when dimmed', () => {
+      const edge = createEdgeData('link-2', 'a', 'b', 'family', true)
+      expect(edge.data?.isFiltered).toBe(true)
     })
   })
 
@@ -109,7 +124,7 @@ describe('graphData', () => {
         { id: 'link-1', targetPageId: 'page-b', relationshipType: 'related' },
       ]
       const neighbors = processNeighbors(
-        'page-a', outLinks, [], acc, new Set(), 'page-a', null, mockGetPage, mockGetBlock
+        'page-a', outLinks, [], acc, emptyVisibility(), 'page-a', null, mockGetPage, mockGetBlock
       )
       expect(neighbors).toEqual(['page-b'])
       expect(acc.nodes).toHaveLength(1)
@@ -124,7 +139,7 @@ describe('graphData', () => {
         { id: 'link-2', sourceBlockId: 'block-1', targetPageId: 'page-a', relationshipType: 'related' },
       ]
       const neighbors = processNeighbors(
-        'page-a', [], inLinks, acc, new Set(), 'page-a', null, mockGetPage, mockGetBlock
+        'page-a', [], inLinks, acc, emptyVisibility(), 'page-a', null, mockGetPage, mockGetBlock
       )
       expect(neighbors).toEqual(['page-b'])
       expect(acc.nodes).toHaveLength(1)
@@ -140,7 +155,7 @@ describe('graphData', () => {
         { id: 'link-1', targetPageId: 'page-b', relationshipType: 'related' },
       ]
       const neighbors = processNeighbors(
-        'page-a', outLinks, [], acc, new Set(), 'page-a', null, mockGetPage, mockGetBlock
+        'page-a', outLinks, [], acc, emptyVisibility(), 'page-a', null, mockGetPage, mockGetBlock
       )
       expect(neighbors).toEqual([])
       expect(acc.nodes).toHaveLength(0)
@@ -153,26 +168,69 @@ describe('graphData', () => {
         { id: 'link-1', targetPageId: 'page-b', relationshipType: 'related' },
       ]
       const neighbors = processNeighbors(
-        'page-a', outLinks, [], acc, new Set(), 'page-a', null, mockGetPage, mockGetBlock
+        'page-a', outLinks, [], acc, emptyVisibility(), 'page-a', null, mockGetPage, mockGetBlock
       )
-      // neighbor still returned, but node not re-added
       expect(neighbors).toEqual(['page-b'])
       expect(acc.nodes).toHaveLength(0)
-      // edge is still added
       expect(acc.edges).toHaveLength(1)
     })
 
     it('skips hidden target pages', () => {
-      const hidden = new Set(['page-b'])
+      const vis = emptyVisibility()
+      vis.hiddenNodeIds.add('page-b')
       const outLinks: RawLink[] = [
         { id: 'link-1', targetPageId: 'page-b', relationshipType: 'related' },
       ]
       const neighbors = processNeighbors(
-        'page-a', outLinks, [], acc, hidden, 'page-a', null, mockGetPage, mockGetBlock
+        'page-a', outLinks, [], acc, vis, 'page-a', null, mockGetPage, mockGetBlock
       )
       expect(neighbors).toEqual([])
       expect(acc.nodes).toHaveLength(0)
       expect(acc.edges).toHaveLength(0)
+    })
+
+    it('skips hidden edges', () => {
+      const vis = emptyVisibility()
+      vis.hiddenEdgeIds.add('link-1')
+      const outLinks: RawLink[] = [
+        { id: 'link-1', targetPageId: 'page-b', relationshipType: 'related' },
+      ]
+      const neighbors = processNeighbors(
+        'page-a', outLinks, [], acc, vis, 'page-a', null, mockGetPage, mockGetBlock
+      )
+      expect(neighbors).toEqual([])
+      expect(acc.nodes).toHaveLength(0)
+      expect(acc.edges).toHaveLength(0)
+    })
+
+    it('marks dimmed nodes with isFiltered=true', () => {
+      const vis = emptyVisibility()
+      vis.dimmedNodeIds.add('page-b')
+      const outLinks: RawLink[] = [
+        { id: 'link-1', targetPageId: 'page-b', relationshipType: 'related' },
+      ]
+      processNeighbors('page-a', outLinks, [], acc, vis, 'page-a', null, mockGetPage, mockGetBlock)
+      expect(acc.nodes[0].data?.isFiltered).toBe(true)
+    })
+
+    it('marks edge as filtered when source node is dimmed', () => {
+      const vis = emptyVisibility()
+      vis.dimmedNodeIds.add('page-a')
+      const outLinks: RawLink[] = [
+        { id: 'link-1', targetPageId: 'page-b', relationshipType: 'related' },
+      ]
+      processNeighbors('page-a', outLinks, [], acc, vis, 'page-a', null, mockGetPage, mockGetBlock)
+      expect(acc.edges[0].data?.isFiltered).toBe(true)
+    })
+
+    it('marks edge as filtered when target node is dimmed', () => {
+      const vis = emptyVisibility()
+      vis.dimmedNodeIds.add('page-b')
+      const outLinks: RawLink[] = [
+        { id: 'link-1', targetPageId: 'page-b', relationshipType: 'related' },
+      ]
+      processNeighbors('page-a', outLinks, [], acc, vis, 'page-a', null, mockGetPage, mockGetBlock)
+      expect(acc.edges[0].data?.isFiltered).toBe(true)
     })
 
     it('blockCache hit: does not call getBlock on second use', () => {
@@ -181,9 +239,7 @@ describe('graphData', () => {
         { id: 'link-a', sourceBlockId: 'block-1', targetPageId: 'page-a', relationshipType: 'related' },
         { id: 'link-b', sourceBlockId: 'block-1', targetPageId: 'page-a', relationshipType: 'related' },
       ]
-      // First call caches block-1, second should use cache
-      processNeighbors('page-a', [], inLinks, acc, new Set(), 'page-a', null, mockGetPage, getBlockSpy)
-      // getBlock called only once for block-1 (first link), second link uses cache
+      processNeighbors('page-a', [], inLinks, acc, emptyVisibility(), 'page-a', null, mockGetPage, getBlockSpy)
       expect(getBlockSpy).toHaveBeenCalledTimes(1)
     })
 
@@ -191,7 +247,7 @@ describe('graphData', () => {
       const inLinks: RawLink[] = [
         { id: 'link-1', sourceBlockId: 'block-1', targetPageId: 'page-a', relationshipType: 'related' },
       ]
-      processNeighbors('page-a', [], inLinks, acc, new Set(), 'page-a', null, mockGetPage, mockGetBlock)
+      processNeighbors('page-a', [], inLinks, acc, emptyVisibility(), 'page-a', null, mockGetPage, mockGetBlock)
       expect(acc.blockCache.has('block-1')).toBe(true)
       expect(acc.blockCache.get('block-1')?.pageId).toBe('page-b')
     })
@@ -201,7 +257,7 @@ describe('graphData', () => {
         { id: 'link-1', targetPageId: 'page-deleted', relationshipType: 'related' },
       ]
       const neighbors = processNeighbors(
-        'page-a', outLinks, [], acc, new Set(), 'page-a', null, mockGetPage, mockGetBlock
+        'page-a', outLinks, [], acc, emptyVisibility(), 'page-a', null, mockGetPage, mockGetBlock
       )
       expect(neighbors).toEqual([])
       expect(acc.nodes).toHaveLength(0)
@@ -212,7 +268,7 @@ describe('graphData', () => {
       const outLinks: RawLink[] = [
         { id: 'link-1', targetPageId: 'page-b' },
       ]
-      processNeighbors('page-a', outLinks, [], acc, new Set(), 'page-a', null, mockGetPage, mockGetBlock)
+      processNeighbors('page-a', outLinks, [], acc, emptyVisibility(), 'page-a', null, mockGetPage, mockGetBlock)
       expect(acc.edges[0].data?.relationshipType).toBe('related')
     })
 
@@ -221,7 +277,7 @@ describe('graphData', () => {
         { id: 'link-x', sourceBlockId: 'unknown-block', targetPageId: 'page-a', relationshipType: 'related' },
       ]
       const neighbors = processNeighbors(
-        'page-a', [], inLinks, acc, new Set(), 'page-a', null, mockGetPage, mockGetBlock
+        'page-a', [], inLinks, acc, emptyVisibility(), 'page-a', null, mockGetPage, mockGetBlock
       )
       expect(neighbors).toEqual([])
       expect(acc.edges).toHaveLength(0)
@@ -236,7 +292,7 @@ describe('graphData', () => {
         { id: 'link-d', sourceBlockId: 'block-del', targetPageId: 'page-a', relationshipType: 'related' },
       ]
       const neighbors = processNeighbors(
-        'page-a', [], inLinks, acc, new Set(), 'page-a', null, mockGetPage, getBlockDeleted
+        'page-a', [], inLinks, acc, emptyVisibility(), 'page-a', null, mockGetPage, getBlockDeleted
       )
       expect(neighbors).toEqual([])
       expect(acc.nodes).toHaveLength(0)
@@ -246,7 +302,7 @@ describe('graphData', () => {
       const outLinks: RawLink[] = [
         { id: 'link-1', targetPageId: 'page-b', relationshipType: 'related' },
       ]
-      processNeighbors('page-a', outLinks, [], acc, new Set(), 'page-b', null, mockGetPage, mockGetBlock)
+      processNeighbors('page-a', outLinks, [], acc, emptyVisibility(), 'page-b', null, mockGetPage, mockGetBlock)
       expect(acc.nodes[0].data?.isCurrent).toBe(true)
     })
 
@@ -254,7 +310,7 @@ describe('graphData', () => {
       const outLinks: RawLink[] = [
         { id: 'link-1', targetPageId: 'page-b', relationshipType: 'related' },
       ]
-      processNeighbors('page-a', outLinks, [], acc, new Set(), null, 'page-b', mockGetPage, mockGetBlock)
+      processNeighbors('page-a', outLinks, [], acc, emptyVisibility(), null, 'page-b', mockGetPage, mockGetBlock)
       expect(acc.nodes[0].data?.isHighlighted).toBe(true)
     })
   })
@@ -307,7 +363,7 @@ describe('graphData', () => {
     it('depth=0: only root node exists', async () => {
       const acc = createAccumulator()
       const fetchNeighbors = vi.fn()
-      await traverseBFS('root', 0, acc, new Set(), 'root', null, mockGetPage, fetchNeighbors, mockGetBlock)
+      await traverseBFS('root', 0, acc, emptyVisibility(), 'root', null, mockGetPage, fetchNeighbors, mockGetBlock)
 
       expect(acc.nodes).toHaveLength(1)
       expect(acc.nodes[0].id).toBe('root')
@@ -327,7 +383,7 @@ describe('graphData', () => {
         return { outLinks: [], inLinks: [] }
       })
 
-      await traverseBFS('root', 1, acc, new Set(), 'root', null, mockGetPage, fetchNeighbors, mockGetBlock)
+      await traverseBFS('root', 1, acc, emptyVisibility(), 'root', null, mockGetPage, fetchNeighbors, mockGetBlock)
 
       expect(acc.nodes.map(n => n.id).sort()).toEqual(['neighbor1', 'root'])
       expect(acc.edges).toHaveLength(1)
@@ -353,7 +409,7 @@ describe('graphData', () => {
         return { outLinks: [], inLinks: [] }
       })
 
-      await traverseBFS('root', 2, acc, new Set(), 'root', null, mockGetPage, fetchNeighbors, mockGetBlock)
+      await traverseBFS('root', 2, acc, emptyVisibility(), 'root', null, mockGetPage, fetchNeighbors, mockGetBlock)
 
       expect(acc.nodes.map(n => n.id).sort()).toEqual(['deep1', 'neighbor1', 'root'])
       expect(acc.edges).toHaveLength(2)
@@ -363,9 +419,8 @@ describe('graphData', () => {
       const acc = createAccumulator()
       const fetchNeighbors = vi.fn(async () => ({ outLinks: [], inLinks: [] }))
 
-      await traverseBFS('root', 5, acc, new Set(), 'root', null, mockGetPage, fetchNeighbors, mockGetBlock)
+      await traverseBFS('root', 5, acc, emptyVisibility(), 'root', null, mockGetPage, fetchNeighbors, mockGetBlock)
 
-      // root has no neighbors, so fetchNeighbors is called once for root, then frontier is empty
       expect(acc.nodes).toHaveLength(1)
       expect(fetchNeighbors).toHaveBeenCalledTimes(1)
     })
@@ -374,7 +429,7 @@ describe('graphData', () => {
       const acc = createAccumulator()
       const fetchNeighbors = vi.fn()
 
-      await traverseBFS('nonexistent', 2, acc, new Set(), 'nonexistent', null, mockGetPage, fetchNeighbors, mockGetBlock)
+      await traverseBFS('nonexistent', 2, acc, emptyVisibility(), 'nonexistent', null, mockGetPage, fetchNeighbors, mockGetBlock)
 
       expect(acc.nodes).toHaveLength(0)
       expect(acc.edges).toHaveLength(0)
@@ -383,7 +438,6 @@ describe('graphData', () => {
 
     it('does not revisit already-visited pages', async () => {
       const acc = createAccumulator()
-      // root -> neighbor1, neighbor1 -> root (cycle)
       const fetchNeighbors = vi.fn(async (pageId: string) => {
         if (pageId === 'root') {
           return {
@@ -400,19 +454,18 @@ describe('graphData', () => {
         return { outLinks: [], inLinks: [] }
       })
 
-      await traverseBFS('root', 3, acc, new Set(), 'root', null, mockGetPage, fetchNeighbors, mockGetBlock)
+      await traverseBFS('root', 3, acc, emptyVisibility(), 'root', null, mockGetPage, fetchNeighbors, mockGetBlock)
 
-      // root should only appear once
       const rootNodes = acc.nodes.filter(n => n.id === 'root')
       expect(rootNodes).toHaveLength(1)
-      // neighbor1 should only appear once
       const neighborNodes = acc.nodes.filter(n => n.id === 'neighbor1')
       expect(neighborNodes).toHaveLength(1)
     })
 
-    it('filters hidden edges at the end', async () => {
+    it('filters hidden nodes', async () => {
       const acc = createAccumulator()
-      const hidden = new Set(['neighbor1'])
+      const vis = emptyVisibility()
+      vis.hiddenNodeIds.add('neighbor1')
       const fetchNeighbors = vi.fn(async (pageId: string) => {
         if (pageId === 'root') {
           return {
@@ -423,11 +476,21 @@ describe('graphData', () => {
         return { outLinks: [], inLinks: [] }
       })
 
-      await traverseBFS('root', 2, acc, hidden, 'root', null, mockGetPage, fetchNeighbors, mockGetBlock)
+      await traverseBFS('root', 2, acc, vis, 'root', null, mockGetPage, fetchNeighbors, mockGetBlock)
 
-      // neighbor1 is hidden, so no edges
       expect(acc.nodes.map(n => n.id)).toEqual(['root'])
       expect(acc.edges).toHaveLength(0)
+    })
+
+    it('marks root node as dimmed when in dimmedNodeIds', async () => {
+      const acc = createAccumulator()
+      const vis = emptyVisibility()
+      vis.dimmedNodeIds.add('root')
+      const fetchNeighbors = vi.fn(async () => ({ outLinks: [], inLinks: [] }))
+
+      await traverseBFS('root', 0, acc, vis, 'root', null, mockGetPage, fetchNeighbors, mockGetBlock)
+
+      expect(acc.nodes[0].data?.isFiltered).toBe(true)
     })
   })
 
@@ -444,7 +507,7 @@ describe('graphData', () => {
       ]
       const fetchNeighbors = vi.fn(async () => ({ outLinks: [], inLinks: [] }))
 
-      await buildFullGraph(allPages, acc, new Set(), null, null, mockGetPage, fetchNeighbors, mockGetBlock)
+      await buildFullGraph(allPages, acc, emptyVisibility(), null, null, mockGetPage, fetchNeighbors, mockGetBlock)
 
       expect(acc.nodes.map(n => n.id).sort()).toEqual(['page-a', 'page-b', 'page-c'])
     })
@@ -457,7 +520,7 @@ describe('graphData', () => {
       ]
       const fetchNeighbors = vi.fn(async () => ({ outLinks: [], inLinks: [] }))
 
-      await buildFullGraph(allPages, acc, new Set(), null, null, mockGetPage, fetchNeighbors, mockGetBlock)
+      await buildFullGraph(allPages, acc, emptyVisibility(), null, null, mockGetPage, fetchNeighbors, mockGetBlock)
 
       expect(acc.nodes).toHaveLength(2)
       expect(acc.edges).toHaveLength(0)
@@ -471,23 +534,42 @@ describe('graphData', () => {
       ]
       const fetchNeighbors = vi.fn(async () => ({ outLinks: [], inLinks: [] }))
 
-      await buildFullGraph(allPages, acc, new Set(), null, null, mockGetPage, fetchNeighbors, mockGetBlock)
+      await buildFullGraph(allPages, acc, emptyVisibility(), null, null, mockGetPage, fetchNeighbors, mockGetBlock)
 
       expect(acc.nodes.map(n => n.id)).toEqual(['page-a'])
     })
 
     it('skips hidden pages', async () => {
       const acc = createAccumulator()
+      const vis = emptyVisibility()
+      vis.hiddenNodeIds.add('page-b')
       const allPages = [
         { id: 'page-a', title: 'A', deleted: false },
         { id: 'page-b', title: 'B', deleted: false },
       ]
-      const hidden = new Set(['page-b'])
       const fetchNeighbors = vi.fn(async () => ({ outLinks: [], inLinks: [] }))
 
-      await buildFullGraph(allPages, acc, hidden, null, null, mockGetPage, fetchNeighbors, mockGetBlock)
+      await buildFullGraph(allPages, acc, vis, null, null, mockGetPage, fetchNeighbors, mockGetBlock)
 
       expect(acc.nodes.map(n => n.id)).toEqual(['page-a'])
+    })
+
+    it('marks dimmed nodes with isFiltered=true', async () => {
+      const acc = createAccumulator()
+      const vis = emptyVisibility()
+      vis.dimmedNodeIds.add('page-a')
+      const allPages = [
+        { id: 'page-a', title: 'A', deleted: false },
+        { id: 'page-b', title: 'B', deleted: false },
+      ]
+      const fetchNeighbors = vi.fn(async () => ({ outLinks: [], inLinks: [] }))
+
+      await buildFullGraph(allPages, acc, vis, null, null, mockGetPage, fetchNeighbors, mockGetBlock)
+
+      const nodeA = acc.nodes.find(n => n.id === 'page-a')
+      const nodeB = acc.nodes.find(n => n.id === 'page-b')
+      expect(nodeA?.data?.isFiltered).toBe(true)
+      expect(nodeB?.data?.isFiltered).toBe(false)
     })
 
     it('loads edges between pages', async () => {
@@ -506,11 +588,34 @@ describe('graphData', () => {
         return { outLinks: [], inLinks: [] }
       })
 
-      await buildFullGraph(allPages, acc, new Set(), null, null, mockGetPage, fetchNeighbors, mockGetBlock)
+      await buildFullGraph(allPages, acc, emptyVisibility(), null, null, mockGetPage, fetchNeighbors, mockGetBlock)
 
       expect(acc.edges).toHaveLength(1)
       expect(acc.edges[0].source).toBe('page-a')
       expect(acc.edges[0].target).toBe('page-b')
+    })
+
+    it('skips hidden edges', async () => {
+      const acc = createAccumulator()
+      const vis = emptyVisibility()
+      vis.hiddenEdgeIds.add('l1')
+      const allPages = [
+        { id: 'page-a', title: 'A', deleted: false },
+        { id: 'page-b', title: 'B', deleted: false },
+      ]
+      const fetchNeighbors = vi.fn(async (pageId: string) => {
+        if (pageId === 'page-a') {
+          return {
+            outLinks: [{ id: 'l1', targetPageId: 'page-b', relationshipType: 'related' }],
+            inLinks: [],
+          }
+        }
+        return { outLinks: [], inLinks: [] }
+      })
+
+      await buildFullGraph(allPages, acc, vis, null, null, mockGetPage, fetchNeighbors, mockGetBlock)
+
+      expect(acc.edges).toHaveLength(0)
     })
   })
 })

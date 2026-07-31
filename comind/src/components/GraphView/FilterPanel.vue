@@ -2,85 +2,23 @@
 import { ref, computed, watch } from 'vue'
 import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { useRelationshipTypes } from '../../composables/useRelationshipTypes'
-import { usePageStore } from '../../stores/pages'
-import { useBlockStore } from '../../stores/blocks'
-import { getRelationshipColor } from '../../types/relationship'
-import type { RelationshipType } from '../../types/relationship-type'
-
-const pageStore = usePageStore()
-const blockStore = useBlockStore()
-const types = useRelationshipTypes()
+import type { FilterState } from './graphSelectors'
+import { DEFAULT_FILTER_STATE } from './graphSelectors'
 
 const emit = defineEmits<{
   (e: 'filter-change', filters: FilterState): void
+  (e: 'collapsed-change', collapsed: boolean): void
 }>()
 
-export interface FilterCondition {
-  id: string
-  type: 'search' | 'relationship' | 'time' | 'ideas'
-  operator: FilterOperator
-  value: string | string[] | boolean | DateRange | null
-  logic: 'AND' | 'OR' | 'NOT'
-}
+const types = useRelationshipTypes()
 
-export type FilterOperator = 
-  | 'contains' | 'not_contains' | 'equals' | 'not_equals'
-  | 'before' | 'after' | 'between'
-  | 'is' | 'is_not'
-
-export interface DateRange {
-  start: number | null
-  end: number | null
-}
-
-export interface FilterState {
-  conditions: FilterCondition[]
-  expandedGroups: Set<string>
-}
-
-const defaultConditions: FilterCondition[] = [
-  { id: 'search-1', type: 'search', operator: 'contains', value: '', logic: 'AND' },
-  { id: 'relationship-1', type: 'relationship', operator: 'contains', value: [], logic: 'AND' },
-  { id: 'time-1', type: 'time', operator: 'between', value: { start: null, end: null }, logic: 'AND' },
-  { id: 'idea-1', type: 'ideas', operator: 'is_not', value: false, logic: 'AND' },
-]
-
-const conditions = ref<FilterCondition[]>([...defaultConditions])
-const expandedGroups = ref<Set<string>>(new Set(['search', 'relationship', 'time']))
-const searchResults = ref<{ id: string; title: string; contentMatch?: string }[]>([])
-const isSearching = ref(false)
 const collapsed = ref(false)
-const hideIdeasCount = ref(0)
-const highlightedNodeId = ref<string | null>(null)
 
-const groupedRelationshipTypes = computed(() => {
-  const groups: Record<string, RelationshipType[]> = {}
-  for (const type of types.items.value) {
-    const groupName = type.group || 'custom'
-    if (!groups[groupName]) {
-      groups[groupName] = []
-    }
-    groups[groupName].push(type)
-  }
-  return groups
-})
-
-const groupLabels: Record<string, string> = {
-  family: '家庭',
-  work: '工作',
-  concept: '概念',
-  action: '动作',
-  custom: '自定义',
-}
-
-const searchCondition = computed(() => conditions.value.find(c => c.type === 'search'))
-const relationshipCondition = computed(() => conditions.value.find(c => c.type === 'relationship'))
-const timeCondition = computed(() => conditions.value.find(c => c.type === 'time'))
-const journalCondition = computed(() => conditions.value.find(c => c.type === 'ideas'))
-
-const selectedRelationshipTypes = computed(() => {
-  return (relationshipCondition.value?.value as string[]) ?? []
-})
+const search = ref(DEFAULT_FILTER_STATE.search)
+const relationshipTypes = ref<string[]>([...DEFAULT_FILTER_STATE.relationshipTypes])
+const timeRange = ref({ ...DEFAULT_FILTER_STATE.timeRange })
+const showIdeas = ref(DEFAULT_FILTER_STATE.showIdeas)
+const dimIsolated = ref(DEFAULT_FILTER_STATE.dimIsolated)
 
 const quickTimeRanges = [
   { label: '全部', value: 'all' },
@@ -90,287 +28,171 @@ const quickTimeRanges = [
   { label: '今年', value: 'year' },
 ]
 
-const logicOptions = [
-  { value: 'AND', label: '与' },
-  { value: 'OR', label: '或' },
-  { value: 'NOT', label: '非' },
-]
-
 const activeTimeRange = computed((): string | null => {
-  if (!timeCondition.value) return null
-  const range = timeCondition.value.value as DateRange
-  if (range.start === null) return 'all'
+  if (timeRange.value.start === null) return 'all'
 
   const oneDay = 24 * 60 * 60 * 1000
   const oneWeek = 7 * oneDay
   const today = new Date()
   const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()
 
-  if (range.start === todayStart && range.end === todayStart + oneDay) return 'today'
+  if (timeRange.value.start === todayStart && timeRange.value.end === todayStart + oneDay) return 'today'
 
   const weekStart = new Date()
   weekStart.setDate(weekStart.getDate() - weekStart.getDay())
   const weekStartTs = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate()).getTime()
-  if (range.start === weekStartTs && range.end === weekStartTs + oneWeek) return 'week'
+  if (timeRange.value.start === weekStartTs && timeRange.value.end === weekStartTs + oneWeek) return 'week'
 
   const monthStart = new Date()
   monthStart.setDate(1)
   const monthStartTs = new Date(monthStart.getFullYear(), monthStart.getMonth(), monthStart.getDate()).getTime()
   const monthEndTs = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 1).getTime()
-  if (range.start === monthStartTs && range.end === monthEndTs) return 'month'
+  if (timeRange.value.start === monthStartTs && timeRange.value.end === monthEndTs) return 'month'
 
   const yearStartTs = new Date(today.getFullYear(), 0, 1).getTime()
   const yearEndTs = new Date(today.getFullYear() + 1, 0, 1).getTime()
-  if (range.start === yearStartTs && range.end === yearEndTs) return 'year'
+  if (timeRange.value.start === yearStartTs && timeRange.value.end === yearEndTs) return 'year'
 
   return null
 })
 
-function toggleGroup(group: string) {
-  if (expandedGroups.value.has(group)) {
-    expandedGroups.value.delete(group)
-  } else {
-    expandedGroups.value.add(group)
+function getFilterState(): FilterState {
+  return {
+    search: search.value,
+    relationshipTypes: [...relationshipTypes.value],
+    timeRange: { ...timeRange.value },
+    showIdeas: showIdeas.value,
+    dimIsolated: dimIsolated.value,
   }
 }
 
-function updateSearch(value: string) {
-  if (searchCondition.value) {
-    searchCondition.value.value = value
-    performSearch(value)
-  }
-}
-
-async function performSearch(query: string) {
-  if (!query.trim()) {
-    searchResults.value = []
-    return
-  }
-  
-  isSearching.value = true
-  try {
-    const results: { id: string; title: string; contentMatch?: string }[] = []
-    const q = query.toLowerCase()
-    
-    for (const page of pageStore.pages) {
-      if (page.deleted) continue
-      
-      let matched = false
-      
-      if (page.title.toLowerCase().includes(q)) {
-        matched = true
-      } else {
-        await blockStore.loadPageBlocks(page.id)
-        const blocks = blockStore.blocks.filter(b => b.pageId === page.id)
-        for (const block of blocks) {
-          if (block.content.toLowerCase().includes(q)) {
-            matched = true
-            break
-          }
-        }
-      }
-      
-      if (matched) {
-        results.push({ id: page.id, title: page.title })
-      }
-    }
-    
-    searchResults.value = results.slice(0, 20)
-  } finally {
-    isSearching.value = false
-  }
-}
-
-function selectSearchResult(pageId: string) {
-  highlightedNodeId.value = pageId
+function emitChange() {
   emit('filter-change', getFilterState())
 }
 
 function toggleRelationshipType(type: string) {
-  if (!relationshipCondition.value) return
-  
-  const currentValues = relationshipCondition.value.value as string[]
-  const idx = currentValues.indexOf(type)
-  
+  const idx = relationshipTypes.value.indexOf(type)
   if (idx === -1) {
-    currentValues.push(type)
+    relationshipTypes.value.push(type)
   } else {
-    currentValues.splice(idx, 1)
+    relationshipTypes.value.splice(idx, 1)
   }
-  
-  emit('filter-change', getFilterState())
-}
-
-function updateRelationshipLogic(logic: 'AND' | 'OR' | 'NOT') {
-  if (relationshipCondition.value) {
-    relationshipCondition.value.logic = logic
-    emit('filter-change', getFilterState())
-  }
+  emitChange()
 }
 
 function updateTimeRange(range: string) {
-  if (!timeCondition.value) return
-  
   const oneDay = 24 * 60 * 60 * 1000
   const oneWeek = 7 * oneDay
-  
+
   let start: number | null = null
   let end: number | null = null
-  
+
   switch (range) {
-    case 'today':
+    case 'today': {
       const today = new Date()
       start = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()
       end = start + oneDay
       break
-    case 'week':
+    }
+    case 'week': {
       const weekStart = new Date()
       weekStart.setDate(weekStart.getDate() - weekStart.getDay())
       start = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate()).getTime()
       end = start + oneWeek
       break
-    case 'month':
+    }
+    case 'month': {
       const monthStart = new Date()
       monthStart.setDate(1)
       start = new Date(monthStart.getFullYear(), monthStart.getMonth(), monthStart.getDate()).getTime()
       end = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 1).getTime()
       break
-    case 'year':
+    }
+    case 'year': {
       const yearStart = new Date()
       start = new Date(yearStart.getFullYear(), 0, 1).getTime()
       end = new Date(yearStart.getFullYear() + 1, 0, 1).getTime()
       break
+    }
     default:
       start = null
       end = null
   }
-  
-  timeCondition.value.value = { start, end }
-  emit('filter-change', getFilterState())
+
+  timeRange.value = { start, end }
+  emitChange()
 }
 
 function updateCustomDate(type: 'start' | 'end', value: string) {
-  if (!timeCondition.value) return
-  
-  const dateRange = timeCondition.value.value as DateRange
   if (value) {
-    dateRange[type] = new Date(value).getTime()
+    timeRange.value[type] = new Date(value).getTime()
   } else {
-    dateRange[type] = null
+    timeRange.value[type] = null
   }
-  
-  emit('filter-change', getFilterState())
+  emitChange()
 }
 
 function getTimeRangeStart(): string {
-  if (!timeCondition.value) return ''
-  const dateRange = timeCondition.value.value as DateRange
-  if (dateRange.start === null || dateRange.start === undefined) return ''
-  return new Date(dateRange.start).toISOString().split('T')[0]
+  if (timeRange.value.start === null) return ''
+  return new Date(timeRange.value.start).toISOString().split('T')[0]
 }
 
 function getTimeRangeEnd(): string {
-  if (!timeCondition.value) return ''
-  const dateRange = timeCondition.value.value as DateRange
-  if (dateRange.end === null || dateRange.end === undefined) return ''
-  return new Date(dateRange.end).toISOString().split('T')[0]
-}
-
-function updateJournalFilter(value: boolean) {
-  if (journalCondition.value) {
-    journalCondition.value.value = value
-    
-    if (value) {
-      hideIdeasCount.value = 0
-    } else {
-      hideIdeasCount.value = pageStore.pages.filter(p => !p.deleted && p.type === 'ideas').length
-    }
-    
-    saveFilterState()
-    emit('filter-change', getFilterState())
-  }
+  if (timeRange.value.end === null) return ''
+  return new Date(timeRange.value.end).toISOString().split('T')[0]
 }
 
 function resetFilters() {
-  // 逐个条件重置，确保 reactivity 正确触发
-  if (searchCondition.value) {
-    searchCondition.value.value = ''
-  }
-  if (relationshipCondition.value) {
-    relationshipCondition.value.value = []
-  }
-  if (timeCondition.value) {
-    timeCondition.value.value = { start: null, end: null }
-  }
-  if (journalCondition.value) {
-    journalCondition.value.value = false
-  }
-  searchResults.value = []
-  hideIdeasCount.value = pageStore.pages.filter(p => !p.deleted && p.type === 'ideas').length
-  saveFilterState()
-}
-
-function saveFilterState() {
-  const state = {
-    conditions: conditions.value.map(c => ({
-      ...c,
-      value: c.value instanceof Set ? Array.from(c.value) : c.value,
-    })),
-  }
-  try {
-    localStorage.setItem('graph-filter-state', JSON.stringify(state))
-  } catch { /* ignore quota */ }
-}
-
-function loadFilterState() {
-  try {
-    const raw = localStorage.getItem('graph-filter-state')
-    if (!raw) return false
-    const parsed = JSON.parse(raw)
-    if (parsed?.conditions && Array.isArray(parsed.conditions)) {
-      // 只恢复 journal 等简单条件，避免恢复过期的搜索状态
-      const journalCond = parsed.conditions.find((c: FilterCondition) => c.type === 'ideas')
-      if (journalCond && journalCondition.value) {
-        journalCondition.value.value = journalCond.value
-      }
-      return true
-    }
-  } catch { /* ignore */ }
-  return false
+  search.value = DEFAULT_FILTER_STATE.search
+  relationshipTypes.value = [...DEFAULT_FILTER_STATE.relationshipTypes]
+  timeRange.value = { ...DEFAULT_FILTER_STATE.timeRange }
+  showIdeas.value = DEFAULT_FILTER_STATE.showIdeas
+  dimIsolated.value = DEFAULT_FILTER_STATE.dimIsolated
+  emitChange()
 }
 
 function toggleCollapse() {
   collapsed.value = !collapsed.value
   localStorage.setItem('graph-filter-panel-collapsed', String(collapsed.value))
+  emit('collapsed-change', collapsed.value)
 }
 
-function getFilterState(): FilterState {
-  return {
-    conditions: conditions.value,
-    expandedGroups: expandedGroups.value,
+// ---- 持久化：只持久化偏好类条件 ----
+function savePreferences() {
+  const prefs = {
+    showIdeas: showIdeas.value,
+    dimIsolated: dimIsolated.value,
   }
+  try {
+    localStorage.setItem('graph-filter-prefs', JSON.stringify(prefs))
+  } catch { /* ignore quota */ }
 }
 
-watch(conditions, () => {
-  emit('filter-change', getFilterState())
-}, { deep: true })
+function loadPreferences() {
+  try {
+    const raw = localStorage.getItem('graph-filter-prefs')
+    if (!raw) return
+    const prefs = JSON.parse(raw)
+    if (typeof prefs.showIdeas === 'boolean') showIdeas.value = prefs.showIdeas
+    if (typeof prefs.dimIsolated === 'boolean') dimIsolated.value = prefs.dimIsolated
+  } catch { /* ignore */ }
+}
 
-watch(expandedGroups, () => {
-  emit('filter-change', getFilterState())
-}, { deep: true })
-
+// ---- 初始化 ----
 function init() {
-  const saved = localStorage.getItem('graph-filter-panel-collapsed')
-  collapsed.value = saved === 'true'
-  
-  loadFilterState()
-  
-  const ideaPages = pageStore.pages.filter(p => !p.deleted && p.type === 'ideas')
-  hideIdeasCount.value = ideaPages.length
+  const savedCollapsed = localStorage.getItem('graph-filter-panel-collapsed')
+  collapsed.value = savedCollapsed === 'true'
 
-  // 初始状态立即推送给父组件，确保首次渲染即应用默认筛选
-  emit('filter-change', getFilterState())
+  loadPreferences()
+
+  emitChange()
+  emit('collapsed-change', collapsed.value)
 }
+
+// 偏好类条件变更时保存
+watch([showIdeas, dimIsolated], () => {
+  savePreferences()
+})
 
 init()
 </script>
@@ -378,170 +200,105 @@ init()
 <template>
   <div class="filter-panel" :class="{ collapsed }">
     <div class="filter-panel-header">
-      <div class="filter-panel-title">筛选条件</div>
+      <div class="filter-panel-title">筛选</div>
       <button class="collapse-btn" @click="toggleCollapse" :title="collapsed ? '展开面板' : '折叠面板'">
         <ChevronRight v-if="collapsed" :size="16" />
         <ChevronLeft v-else :size="16" />
       </button>
     </div>
-    
+
     <div v-if="!collapsed" class="filter-panel-content">
-      <div class="filter-group">
-        <div class="filter-group-header" @click="toggleGroup('search')">
-          <span class="filter-group-title">🔍 搜索</span>
-          <span class="filter-group-arrow">{{ expandedGroups.has('search') ? '▼' : '▶' }}</span>
-        </div>
-        <div v-if="expandedGroups.has('search')" class="filter-group-body">
-          <div class="search-input-wrapper">
-            <input
-              type="text"
-              :value="searchCondition?.value as string"
-              placeholder="搜索标题或内容..."
-              class="search-input"
-              @input="updateSearch(($event.target as HTMLInputElement).value)"
-            />
-          </div>
-          <div v-if="searchResults.length > 0" class="search-results">
-            <div
-              v-for="result in searchResults"
-              :key="result.id"
-              class="search-result-item"
-              @click="selectSearchResult(result.id)"
-            >
-              {{ result.title }}
-            </div>
-          </div>
-          <div class="filter-logic">
-            <select
-              :value="searchCondition?.logic"
-              @change="searchCondition && (searchCondition.logic = ($event.target as HTMLSelectElement).value as 'AND' | 'OR' | 'NOT')"
-              class="logic-select"
-            >
-              <option v-for="opt in logicOptions" :key="opt.value" :value="opt.value">
-                {{ opt.label }}
-              </option>
-            </select>
-          </div>
+      <!-- 搜索 -->
+      <div class="filter-section">
+        <input
+          type="text"
+          v-model="search"
+          placeholder="搜索标题..."
+          class="search-input"
+          @input="emitChange"
+        />
+      </div>
+
+      <div class="filter-divider" />
+
+      <!-- 关系类型 -->
+      <div class="filter-section">
+        <div class="filter-section-label">关系类型</div>
+        <div class="relationship-chips">
+          <button
+            v-for="relType in types.items.value"
+            :key="relType.type"
+            class="rel-chip"
+            :class="{ active: relationshipTypes.includes(relType.type) }"
+            :style="relationshipTypes.includes(relType.type)
+              ? { backgroundColor: relType.color + '20', borderColor: relType.color, color: relType.color }
+              : {}"
+            @click="toggleRelationshipType(relType.type)"
+          >
+            {{ relType.label }}
+          </button>
+          <span v-if="types.items.value.length === 0" class="empty-hint">无关系类型</span>
         </div>
       </div>
 
-      <div class="filter-group">
-        <div class="filter-group-header" @click="toggleGroup('relationship')">
-          <span class="filter-group-title">🔗 关系类型</span>
-          <span class="filter-group-arrow">{{ expandedGroups.has('relationship') ? '▼' : '▶' }}</span>
+      <div class="filter-divider" />
+
+      <!-- 时间范围 -->
+      <div class="filter-section">
+        <div class="filter-section-label">时间</div>
+        <div class="quick-time-ranges">
+          <button
+            v-for="range in quickTimeRanges"
+            :key="range.value"
+            class="quick-range-btn"
+            :class="{ active: range.value === activeTimeRange }"
+            @click="updateTimeRange(range.value)"
+          >
+            {{ range.label }}
+          </button>
         </div>
-        <div v-if="expandedGroups.has('relationship')" class="filter-group-body">
-          <div class="selected-chips">
-            <span
-              v-for="type in selectedRelationshipTypes"
-              :key="type"
-              class="selected-chip"
-              :style="{ backgroundColor: getRelationshipColor(type) + '20', borderColor: getRelationshipColor(type), color: getRelationshipColor(type) }"
-            >
-              {{ types.items.value.find(t => t.type === type || t.inverse === type)?.label || type }}
-              <button class="chip-remove" @click.stop="toggleRelationshipType(type)">×</button>
-            </span>
-            <span v-if="selectedRelationshipTypes.length === 0" class="no-selection">未选择</span>
-          </div>
-          
-          <div v-for="(typesInGroup, groupName) in groupedRelationshipTypes" :key="groupName" class="relationship-subgroup">
-            <div class="relationship-subgroup-header">
-              {{ groupLabels[groupName] || groupName }}
-            </div>
-            <div class="relationship-type-list">
-              <label
-                v-for="relType in typesInGroup"
-                :key="relType.type"
-                class="relationship-type-item"
-              >
-                <input
-                  type="checkbox"
-                  :checked="selectedRelationshipTypes.includes(relType.type)"
-                  @change="toggleRelationshipType(relType.type)"
-                  class="relationship-checkbox"
-                />
-                <span class="relationship-color" :style="{ backgroundColor: relType.color }"></span>
-                <span class="relationship-label">{{ relType.label }}</span>
-              </label>
-            </div>
-          </div>
-          
-          <div class="filter-logic">
-            <select
-              :value="relationshipCondition?.logic"
-              @change="updateRelationshipLogic(($event.target as HTMLSelectElement).value as 'AND' | 'OR' | 'NOT')"
-              class="logic-select"
-            >
-              <option v-for="opt in logicOptions" :key="opt.value" :value="opt.value">
-                {{ opt.label }}
-              </option>
-            </select>
-          </div>
+        <div class="custom-date-range">
+          <input
+            type="date"
+            :value="getTimeRangeStart()"
+            class="date-input"
+            @change="updateCustomDate('start', ($event.target as HTMLInputElement).value)"
+          />
+          <span class="date-separator">→</span>
+          <input
+            type="date"
+            :value="getTimeRangeEnd()"
+            class="date-input"
+            @change="updateCustomDate('end', ($event.target as HTMLInputElement).value)"
+          />
         </div>
       </div>
 
-      <div class="filter-group">
-        <div class="filter-group-header" @click="toggleGroup('time')">
-          <span class="filter-group-title">📅 时间范围</span>
-          <span class="filter-group-arrow">{{ expandedGroups.has('time') ? '▼' : '▶' }}</span>
-        </div>
-        <div v-if="expandedGroups.has('time')" class="filter-group-body">
-          <div class="quick-time-ranges">
-            <button
-              v-for="range in quickTimeRanges"
-              :key="range.value"
-              class="quick-range-btn"
-              :class="{ active: range.value === activeTimeRange }"
-              @click="updateTimeRange(range.value)"
-            >
-              {{ range.label }}
-            </button>
-          </div>
-          <div class="custom-date-range">
-            <input
-              type="date"
-              :value="getTimeRangeStart()"
-              class="date-input"
-              @change="updateCustomDate('start', ($event.target as HTMLInputElement).value)"
-              placeholder="开始日期"
-            />
-            <span class="date-separator">→</span>
-            <input
-              type="date"
-              :value="getTimeRangeEnd()"
-              class="date-input"
-              @change="updateCustomDate('end', ($event.target as HTMLInputElement).value)"
-              placeholder="结束日期"
-            />
-          </div>
-          <div class="filter-logic">
-            <select
-              :value="timeCondition?.logic"
-              @change="timeCondition && (timeCondition.logic = ($event.target as HTMLSelectElement).value as 'AND' | 'OR' | 'NOT')"
-              class="logic-select"
-            >
-              <option v-for="opt in logicOptions" :key="opt.value" :value="opt.value">
-                {{ opt.label }}
-              </option>
-            </select>
-          </div>
-        </div>
-      </div>
+      <div class="filter-divider" />
 
-      <div class="filter-panel-footer">
-        <div class="journal-toggle-row">
+      <!-- 显示选项 -->
+      <div class="filter-section">
+        <div class="filter-section-label">显示选项</div>
+        <div class="toggle-row">
           <label class="toggle-switch">
-            <input
-              type="checkbox"
-              :checked="journalCondition?.value as boolean"
-              @change="updateJournalFilter(($event.target as HTMLInputElement).checked)"
-            />
+            <input type="checkbox" v-model="showIdeas" @change="emitChange" />
             <span class="toggle-slider"></span>
           </label>
           <span class="toggle-label">显示日记</span>
         </div>
-        <button class="reset-btn" @click="resetFilters">重置</button>
+        <div class="toggle-row">
+          <label class="toggle-switch">
+            <input type="checkbox" v-model="dimIsolated" @change="emitChange" />
+            <span class="toggle-slider"></span>
+          </label>
+          <span class="toggle-label">置灰孤立节点</span>
+        </div>
       </div>
+
+      <div class="filter-divider" />
+
+      <!-- 重置 -->
+      <button class="reset-btn" @click="resetFilters">重置筛选</button>
     </div>
   </div>
 </template>
@@ -612,48 +369,33 @@ init()
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-gutter: stable;
-  padding: 8px;
-}
-
-.filter-group {
-  margin-bottom: 8px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-hover);
-  overflow: hidden;
-}
-
-.filter-group-header {
+  padding: 8px 12px 16px;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  cursor: pointer;
-  user-select: none;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.filter-group-header:hover {
-  background: var(--bg-active);
+.filter-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.filter-group-title {
-  font-size: 12px;
+.filter-section-label {
+  font-size: 11px;
   font-weight: 500;
-  color: var(--text-primary);
-}
-
-.filter-group-arrow {
-  font-size: 10px;
   color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-.filter-group-body {
-  padding: 0 12px 12px;
+.filter-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
 }
 
-.search-input-wrapper {
-  position: relative;
-}
-
+/* 搜索 */
 .search-input {
   width: 100%;
   padding: 8px 12px;
@@ -670,114 +412,44 @@ init()
   color: var(--text-tertiary);
 }
 
-.search-results {
-  margin-top: 8px;
-  max-height: 150px;
-  overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-base);
+/* 关系类型 */
+.relationship-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
-.search-result-item {
-  padding: 8px 12px;
-  font-size: 12px;
+.rel-chip {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-base);
+  border-radius: 20px;
+  font-size: 11px;
   color: var(--text-secondary);
   cursor: pointer;
-  border-bottom: 1px solid var(--border);
+  font-family: inherit;
+  transition: all 80ms ease;
 }
 
-.search-result-item:last-child {
-  border-bottom: none;
-}
-
-.search-result-item:hover {
+.rel-chip:hover {
   background: var(--bg-hover);
 }
 
-.selected-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 8px;
+.rel-chip.active {
+  font-weight: 500;
 }
 
-.selected-chip {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
-  border: 1px solid;
-  border-radius: 12px;
-  font-size: 11px;
-}
-
-.chip-remove {
-  border: none;
-  background: transparent;
-  font-size: 12px;
-  cursor: pointer;
-  line-height: 1;
-}
-
-.no-selection {
+.empty-hint {
   font-size: 11px;
   color: var(--text-tertiary);
   font-style: italic;
 }
 
-.relationship-subgroup {
-  margin-bottom: 8px;
-}
-
-.relationship-subgroup-header {
-  font-size: 10px;
-  color: var(--text-tertiary);
-  padding: 4px 0;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.relationship-type-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.relationship-type-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 11px;
-}
-
-.relationship-type-item:hover {
-  background: var(--bg-active);
-}
-
-.relationship-checkbox {
-  width: 12px;
-  height: 12px;
-}
-
-.relationship-color {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-.relationship-label {
-  color: var(--text-secondary);
-}
-
+/* 时间 */
 .quick-time-ranges {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin-bottom: 8px;
 }
 
 .quick-range-btn {
@@ -827,7 +499,8 @@ init()
   color: var(--text-tertiary);
 }
 
-.toggle-switch-wrapper {
+/* Toggle */
+.toggle-row {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -838,6 +511,7 @@ init()
   display: inline-block;
   width: 40px;
   height: 20px;
+  flex-shrink: 0;
 }
 
 .toggle-switch input {
@@ -883,43 +557,7 @@ init()
   color: var(--text-secondary);
 }
 
-.toggle-count {
-  font-size: 11px;
-  color: var(--text-tertiary);
-}
-
-.filter-logic {
-  margin-top: 8px;
-  display: flex;
-  justify-content: flex-end;
-}
-
-.logic-select {
-  padding: 3px 6px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-size: 10px;
-  background: var(--bg-base);
-  color: var(--text-secondary);
-  font-family: inherit;
-}
-
-.filter-panel-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px;
-  border-top: 1px solid var(--border);
-  gap: 24px;
-}
-
-.journal-toggle-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
+/* 重置 */
 .reset-btn {
   padding: 6px 14px;
   border: 1px solid var(--border);
@@ -930,7 +568,7 @@ init()
   cursor: pointer;
   font-family: inherit;
   white-space: nowrap;
-  flex-shrink: 0;
+  align-self: stretch;
 }
 
 .reset-btn:hover {

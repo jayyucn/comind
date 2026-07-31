@@ -8,7 +8,7 @@ import { getRelationshipStrength, STRENGTH_TO_WIDTH } from '../../types/relation
 import { useRouter } from 'vue-router'
 import { Download, ExpandIcon, RefreshCw } from 'lucide-vue-next'
 import { getNodeStyle, getEdgeStyle } from './graphStyle'
-import { createAccumulator, traverseBFS, buildFullGraph, type RawLink } from './graphData'
+import { createAccumulator, traverseBFS, buildFullGraph, type RawLink, type VisibilityMap } from './graphData'
 
 const pageStore = usePageStore()
 const blockStore = useBlockStore()
@@ -17,7 +17,9 @@ const router = useRouter()
 const props = defineProps<{
   highlightedNodeId?: string | null
   pageId?: string
-  hiddenPageIds?: Set<string>
+  hiddenNodeIds?: Set<string>
+  dimmedNodeIds?: Set<string>
+  hiddenEdgeIds?: Set<string>
 }>()
 
 const containerRef = ref<HTMLElement | null>(null)
@@ -37,7 +39,7 @@ watch(() => props.highlightedNodeId, (val) => {
   if (graphRef.value) updateNodeHighlight()
 })
 
-watch(() => props.hiddenPageIds, () => {
+watch(() => [props.hiddenNodeIds, props.dimmedNodeIds, props.hiddenEdgeIds], () => {
   if (graphRef.value) refreshGraphData()
 }, { deep: true })
 
@@ -57,18 +59,22 @@ async function fetchNeighbors(pageId: string): Promise<{ outLinks: RawLink[]; in
 
 /** 编排器：构建图数据 */
 async function buildGraphData() {
-  const hidden = props.hiddenPageIds ?? new Set<string>()
+  const visibility: VisibilityMap = {
+    hiddenNodeIds: props.hiddenNodeIds ?? new Set<string>(),
+    dimmedNodeIds: props.dimmedNodeIds ?? new Set<string>(),
+    hiddenEdgeIds: props.hiddenEdgeIds ?? new Set<string>(),
+  }
   const acc = createAccumulator()
   const getPage = (id: string) => pageStore.getPage(id)
   const getBlock = (id: string) => blockStore.getBlock(id)
 
   if (!isPageScoped.value) {
     const allPages = pageStore.pages.filter(p => !p.deleted)
-    await buildFullGraph(allPages, acc, hidden, currentPageId.value, highlightedNodeId.value, getPage, fetchNeighbors, getBlock)
+    await buildFullGraph(allPages, acc, visibility, currentPageId.value, highlightedNodeId.value, getPage, fetchNeighbors, getBlock)
   } else {
     const rootId = currentPageId.value
     if (rootId) {
-      await traverseBFS(rootId, maxDepth.value, acc, hidden, currentPageId.value, highlightedNodeId.value, getPage, fetchNeighbors, getBlock)
+      await traverseBFS(rootId, maxDepth.value, acc, visibility, currentPageId.value, highlightedNodeId.value, getPage, fetchNeighbors, getBlock)
     }
   }
   return { nodes: acc.nodes, edges: acc.edges }
