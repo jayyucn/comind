@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NotificationService, getNotificationService } from './notification-service'
+import { DEFAULT_NOTIFICATION_SETTINGS } from '../types/notification'
 import type { CoreClient } from '../wasm/client'
 import type { Notification, Block, Page, DateRefRecord } from '../wasm/types'
 
@@ -85,6 +86,40 @@ function makeClient(refs: { due: DateRefRecord[]; recurring: DateRefRecord[] }, 
 describe('NotificationService.checkAndFire (性能优化方案 A)', () => {
   beforeEach(() => {
     // 共享单例基于 client 惰性创建，每用例用新 client 即可隔离
+    vi.useRealTimers()
+  })
+
+  it('settings.enabled=false 时直接返回空数组，不查询 DB', async () => {
+    const tracker: CallTracker = { createdNotifications: [], updatedPayloads: [] }
+    const client = makeClient({ due: [], recurring: [] }, tracker)
+    const svc = new NotificationService(client)
+
+    const fired = await svc.checkAndFire({ ...DEFAULT_NOTIFICATION_SETTINGS, enabled: false })
+
+    expect(fired).toEqual([])
+    expect(client.queryDueNonRecurringDateRefs).not.toHaveBeenCalled()
+    expect(client.queryAllRecurringDateRefs).not.toHaveBeenCalled()
+  })
+
+  it('静默时段内不触发任何通知', async () => {
+    vi.useFakeTimers()
+    // 固定为 2026-07-24 23:00，处于 22:00~08:00 跨天静默时段内
+    vi.setSystemTime(new Date(2026, 6, 24, 23, 0, 0, 0))
+
+    const tracker: CallTracker = { createdNotifications: [], updatedPayloads: [] }
+    const dueRef = makeDateRef({ id: 'due_qh', block_id: 'bq', event_ts: new Date(2026, 6, 24, 9, 0, 0, 0).getTime() })
+    const client = makeClient({ due: [dueRef], recurring: [] }, tracker)
+    const svc = new NotificationService(client)
+
+    const fired = await svc.checkAndFire({
+      ...DEFAULT_NOTIFICATION_SETTINGS,
+      quiet_hours_start: '22:00',
+      quiet_hours_end: '08:00',
+    })
+
+    expect(fired).toEqual([])
+    expect(client.createNotification).not.toHaveBeenCalled()
+    vi.useRealTimers()
   })
 
   it('只遍历到期非 recurring 的 dueRefs，不为全部 page/block 发起查询', async () => {
@@ -153,6 +188,77 @@ describe('NotificationService.checkAndFire (性能优化方案 A)', () => {
     // fireNotification 复用了 existing（dismissed）而跳过，不会再次 updateNotificationStatus 提升
     expect(client.updateNotificationStatus).not.toHaveBeenCalled()
   })
+
+  it('非 recurring dateRef 的 event_ts 缺失/为 0 时跳过 fireNotification，不创建通知', async () => {
+    const tracker: CallTracker = { createdNotifications: [], updatedPayloads: [] }
+    // makeDateRef 用 ?? 兜底默认值，显式传 0 模拟 event_ts 缺失/无效分支
+    const dueRef = { ...makeDateRef({ id: 'due_no_ts', block_id: 'bnt' }), event_ts: 0 }
+    const client = makeClient({ due: [dueRef], recurring: [] }, tracker)
+    const svc = new NotificationService(client)
+
+    const fired = await svc.checkAndFire()
+    expect(fired.length).toBe(0)
+    expect(client.createNotification).not.toHaveBeenCalled()
+  })
+
+  it('recurring dateRef 的下一周期 effectiveTime 在未来时不触发', async () => {
+    vi.useFakeTimers()
+    // 固定为 2026-07-20 12:00
+    vi.setSystemTime(new Date(2026, 6, 20, 12, 0, 0, 0))
+
+    const tracker: CallTracker = { createdNotifications: [], updatedPayloads: [] }
+    // 每天 9:00，无 lead → 下一周期为 2026-07-21 09:00，effectiveTime 在未来
+    const recurringRef = makeDateRef({
+      id: 'rec_future',
+      block_id: 'bf',
+      recurrence: 'daily',
+      iso: '2026-07-20T09:00',
+      lead_minutes: 0,
+      event_ts: new Date(2026, 6, 20, 9, 0, 0, 0).getTime(),
+    })
+    const client = makeClient({ due: [], recurring: [recurringRef] }, tracker)
+    const svc = new NotificationService(client)
+
+    const fired = await svc.checkAndFire()
+    expect(fired.length).toBe(0)
+    expect(client.createNotification).not.toHaveBeenCalled()
+    vi.useRealTimers()
+  })
+
+  it('pending 锚点在触发时应提升为 unread 状态', async () => {
+    const tracker: CallTracker = { createdNotifications: [], updatedPayloads: [] }
+    const dueRef = makeDateRef({ id: 'due_pending', block_id: 'bp', iso: '2026-07-20T09:00', event_ts: new Date(2026, 6, 20, 9, 0, 0, 0).getTime() })
+    const client = makeClient({ due: [dueRef], recurring: [] }, tracker) as CoreClient & {
+      getNotificationsByBlock: ReturnType<typeof vi.fn>
+    }
+    client.getNotificationsByBlock = vi.fn(async () => [
+      { id: 'n_pending', block_id: 'bp', page_id: 'page_1', kind: 'schedule', event_iso: eventIsoFromIso(dueRef.iso, dueRef.lead_minutes), fired_at: 0, status: 'pending', snooze_until: null, payload: '', created_at: 0, updated_at: 0 } as Notification,
+    ])
+    const svc = new NotificationService(client)
+
+    const fired = await svc.checkAndFire()
+    expect(fired.length).toBe(1)
+    expect(fired[0].status).toBe('unread')
+    expect(client.updateNotificationStatus).toHaveBeenCalledWith('n_pending', 'unread')
+    expect(client.createNotification).not.toHaveBeenCalled()
+  })
+
+  it('unread/read 锚点直接复用，不重复创建', async () => {
+    const tracker: CallTracker = { createdNotifications: [], updatedPayloads: [] }
+    const dueRef = makeDateRef({ id: 'due_unread', block_id: 'bu', iso: '2026-07-20T09:00', event_ts: new Date(2026, 6, 20, 9, 0, 0, 0).getTime() })
+    const existing = { id: 'n_unread', block_id: 'bu', page_id: 'page_1', kind: 'schedule', event_iso: eventIsoFromIso(dueRef.iso, dueRef.lead_minutes), fired_at: 0, status: 'unread', snooze_until: null, payload: '', created_at: 0, updated_at: 0 } as Notification
+    const client = makeClient({ due: [dueRef], recurring: [] }, tracker) as CoreClient & {
+      getNotificationsByBlock: ReturnType<typeof vi.fn>
+    }
+    client.getNotificationsByBlock = vi.fn(async () => [existing])
+    const svc = new NotificationService(client)
+
+    const fired = await svc.checkAndFire()
+    expect(fired.length).toBe(1)
+    expect(fired[0].id).toBe('n_unread')
+    expect(client.createNotification).not.toHaveBeenCalled()
+    expect(client.updateNotificationStatus).not.toHaveBeenCalled()
+  })
 })
 
 describe('NotificationService.syncPayloadForBlock (编辑路径事件驱动)', () => {
@@ -190,6 +296,114 @@ describe('NotificationService.syncPayloadForBlock (编辑路径事件驱动)', (
 
     await svc.syncPayloadForBlock('bx2')
     expect(client.updateNotificationPayload).not.toHaveBeenCalled()
+  })
+})
+
+describe('NotificationService 周期计算与 payload 构建', () => {
+  it('monthly recurrence 在下一周期 effectiveTime 到期时触发通知', async () => {
+    vi.useFakeTimers()
+    // 固定为 2026-07-16 12:00，base 2026-06-15 的 monthly 下一周期为 2026-08-15，
+    // lead=30 天使 effectiveTime = 2026-07-16 <= now
+    vi.setSystemTime(new Date(2026, 6, 16, 12, 0, 0, 0))
+
+    const tracker: CallTracker = { createdNotifications: [], updatedPayloads: [] }
+    const ref = makeDateRef({
+      id: 'rec_monthly',
+      block_id: 'bm',
+      kind: 'schedule',
+      recurrence: 'monthly',
+      iso: '2026-06-15T09:00',
+      lead_minutes: 30 * 24 * 60,
+      event_ts: new Date(2026, 5, 15, 9, 0, 0, 0).getTime(),
+    })
+    const client = makeClient({ due: [], recurring: [ref] }, tracker)
+    const svc = new NotificationService(client)
+
+    const fired = await svc.checkAndFire()
+    expect(fired.length).toBe(1)
+    expect(client.getBlock).toHaveBeenCalledWith('bm')
+    vi.useRealTimers()
+  })
+
+  it('yearly recurrence 在下一周期 effectiveTime 到期时触发通知', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 6, 21, 12, 0, 0, 0))
+
+    const tracker: CallTracker = { createdNotifications: [], updatedPayloads: [] }
+    const ref = makeDateRef({
+      id: 'rec_yearly',
+      block_id: 'by',
+      kind: 'deadline',
+      recurrence: 'yearly',
+      iso: '2025-07-20T09:00',
+      lead_minutes: 365 * 24 * 60,
+      event_ts: new Date(2025, 6, 20, 9, 0, 0, 0).getTime(),
+    })
+    const client = makeClient({ due: [], recurring: [ref] }, tracker)
+    const svc = new NotificationService(client)
+
+    const fired = await svc.checkAndFire()
+    expect(fired.length).toBe(1)
+    expect(client.getBlock).toHaveBeenCalledWith('by')
+    vi.useRealTimers()
+  })
+
+  it('weekly recurrence 在下一周期 effectiveTime 到期时触发通知', async () => {
+    vi.useFakeTimers()
+    // 2026-07-22 为周三，base 2026-07-15（上周三）下一周期为 2026-07-29，
+    // lead=7 天使 effectiveTime = 2026-07-22 <= now
+    vi.setSystemTime(new Date(2026, 6, 22, 12, 0, 0, 0))
+
+    const tracker: CallTracker = { createdNotifications: [], updatedPayloads: [] }
+    const ref = makeDateRef({
+      id: 'rec_weekly',
+      block_id: 'bw',
+      kind: 'schedule',
+      recurrence: 'weekly',
+      iso: '2026-07-15T09:00',
+      lead_minutes: 7 * 24 * 60,
+      event_ts: new Date(2026, 6, 15, 9, 0, 0, 0).getTime(),
+    })
+    const client = makeClient({ due: [], recurring: [ref] }, tracker)
+    const svc = new NotificationService(client)
+
+    const fired = await svc.checkAndFire()
+    expect(fired.length).toBe(1)
+    expect(client.getBlock).toHaveBeenCalledWith('bw')
+    vi.useRealTimers()
+  })
+
+  it('无效的 iso 导致 calculateEventTime 返回 null，不同步 payload', async () => {
+    const tracker: CallTracker = { createdNotifications: [], updatedPayloads: [] }
+    const ref = makeDateRef({ id: 'bad_iso', block_id: 'bbi', iso: 'not-a-date', event_ts: 0 })
+    const client = makeClient({ due: [ref], recurring: [] }, tracker) as CoreClient & {
+      getNotificationsByBlock: ReturnType<typeof vi.fn>
+    }
+    client.getNotificationsByBlock = vi.fn(async () => [
+      { id: 'n_bad', block_id: 'bbi', page_id: 'page_1', kind: 'schedule', event_iso: ref.iso, fired_at: 0, status: 'unread', snooze_until: null, payload: 'OLD', created_at: 0, updated_at: 0 } as Notification,
+    ])
+    const svc = new NotificationService(client)
+
+    await svc.syncPayloadForBlock('bbi')
+
+    expect(client.updateNotificationPayload).not.toHaveBeenCalled()
+  })
+
+  it('buildPayload 在 blockSnippet 为空时回退到 page.title', async () => {
+    const tracker: CallTracker = { createdNotifications: [], updatedPayloads: [] }
+    const dueRef = makeDateRef({ id: 'due_empty', block_id: 'be', iso: '2026-07-20T09:00', event_ts: new Date(2026, 6, 20, 9, 0, 0, 0).getTime() })
+    const client = makeClient({ due: [dueRef], recurring: [] }, tracker) as CoreClient & {
+      getBlock: ReturnType<typeof vi.fn>
+    }
+    client.getBlock = vi.fn(async (id: string) => ({ ...makeBlock(id), content: '{{schedule:2026-07-20T09:00}}' } as Block))
+    const svc = new NotificationService(client)
+
+    const fired = await svc.checkAndFire()
+
+    expect(fired.length).toBe(1)
+    const payload = JSON.parse(fired[0].payload)
+    expect(payload.body).toBe('Daily')
+    expect(payload.blockSnippet).toBe('')
   })
 })
 

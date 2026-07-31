@@ -33,7 +33,7 @@ describe('EmbedRender 逻辑测试', () => {
     if (depth > MAX_EMBED_DEPTH) return true
     const block = blocks.find(b => b.id === sourceBlockId)
     if (!block || block.type !== 'embed') return false
-    const nextId = ''
+    const nextId = (block.properties?.sourceBlockId as string) || ''
     if (!nextId) return false
     if (nextId === sourceBlockId) return true
     if (depth >= MAX_EMBED_DEPTH) return true

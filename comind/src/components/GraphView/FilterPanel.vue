@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import CalendarPopover from '../CalendarPopover.vue'
 import { useRelationshipTypes } from '../../composables/useRelationshipTypes'
 import type { FilterState } from './graphSelectors'
 import { DEFAULT_FILTER_STATE } from './graphSelectors'
@@ -19,6 +20,31 @@ const relationshipTypes = ref<string[]>([...DEFAULT_FILTER_STATE.relationshipTyp
 const timeRange = ref({ ...DEFAULT_FILTER_STATE.timeRange })
 const showIdeas = ref(DEFAULT_FILTER_STATE.showIdeas)
 const dimIsolated = ref(DEFAULT_FILTER_STATE.dimIsolated)
+
+// CalendarPopover 状态（Q11: 每框一个 popover）
+const startPickerVisible = ref(false)
+const endPickerVisible = ref(false)
+
+function getPopoverPosition(e: MouseEvent): { x: number; y: number } {
+  const target = e.currentTarget as HTMLElement
+  const rect = target.getBoundingClientRect()
+  return { x: rect.left, y: rect.bottom + 4 }
+}
+
+const startPickerPos = ref({ x: 0, y: 0 })
+const endPickerPos = ref({ x: 0, y: 0 })
+
+function openStartPicker(e: MouseEvent) {
+  startPickerPos.value = getPopoverPosition(e)
+  startPickerVisible.value = true
+  endPickerVisible.value = false
+}
+
+function openEndPicker(e: MouseEvent) {
+  endPickerPos.value = getPopoverPosition(e)
+  endPickerVisible.value = true
+  startPickerVisible.value = false
+}
 
 const quickTimeRanges = [
   { label: '全部', value: 'all' },
@@ -123,23 +149,29 @@ function updateTimeRange(range: string) {
   emitChange()
 }
 
-function updateCustomDate(type: 'start' | 'end', value: string) {
-  if (value) {
-    timeRange.value[type] = new Date(value).getTime()
-  } else {
-    timeRange.value[type] = null
-  }
+// Q12: 日期格式 YYYY-MM-DD
+function getStartDateStr(): string {
+  if (timeRange.value.start === null) return ''
+  const d = new Date(timeRange.value.start)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function getEndDateStr(): string {
+  if (timeRange.value.end === null) return ''
+  const d = new Date(timeRange.value.end)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function selectStartDate(date: string) {
+  timeRange.value.start = new Date(date).getTime()
+  startPickerVisible.value = false
   emitChange()
 }
 
-function getTimeRangeStart(): string {
-  if (timeRange.value.start === null) return ''
-  return new Date(timeRange.value.start).toISOString().split('T')[0]
-}
-
-function getTimeRangeEnd(): string {
-  if (timeRange.value.end === null) return ''
-  return new Date(timeRange.value.end).toISOString().split('T')[0]
+function selectEndDate(date: string) {
+  timeRange.value.end = new Date(date).getTime()
+  endPickerVisible.value = false
+  emitChange()
 }
 
 function resetFilters() {
@@ -157,7 +189,7 @@ function toggleCollapse() {
   emit('collapsed-change', collapsed.value)
 }
 
-// ---- 持久化：只持久化偏好类条件 ----
+// ---- 持久化：只持久化偏好类条件（Q11 决策） ----
 function savePreferences() {
   const prefs = {
     showIdeas: showIdeas.value,
@@ -189,7 +221,6 @@ function init() {
   emit('collapsed-change', collapsed.value)
 }
 
-// 偏好类条件变更时保存
 watch([showIdeas, dimIsolated], () => {
   savePreferences()
 })
@@ -230,9 +261,7 @@ init()
             :key="relType.type"
             class="rel-chip"
             :class="{ active: relationshipTypes.includes(relType.type) }"
-            :style="relationshipTypes.includes(relType.type)
-              ? { backgroundColor: relType.color + '20', borderColor: relType.color, color: relType.color }
-              : {}"
+            :style="{ '--chip-color': relType.color }"
             @click="toggleRelationshipType(relType.type)"
           >
             {{ relType.label }}
@@ -257,41 +286,44 @@ init()
             {{ range.label }}
           </button>
         </div>
+        <!-- Q19: 日期容器用输入框风格 -->
         <div class="custom-date-range">
-          <input
-            type="date"
-            :value="getTimeRangeStart()"
-            class="date-input"
-            @change="updateCustomDate('start', ($event.target as HTMLInputElement).value)"
-          />
+          <button class="date-field" @click="openStartPicker">
+            <span v-if="getStartDateStr()">{{ getStartDateStr() }}</span>
+            <span v-else class="date-placeholder">开始日期</span>
+          </button>
           <span class="date-separator">→</span>
-          <input
-            type="date"
-            :value="getTimeRangeEnd()"
-            class="date-input"
-            @change="updateCustomDate('end', ($event.target as HTMLInputElement).value)"
-          />
+          <button class="date-field" @click="openEndPicker">
+            <span v-if="getEndDateStr()">{{ getEndDateStr() }}</span>
+            <span v-else class="date-placeholder">结束日期</span>
+          </button>
         </div>
       </div>
 
       <div class="filter-divider" />
 
-      <!-- 显示选项 -->
+      <!-- 显示选项：Q28 chip 风格 toggle -->
       <div class="filter-section">
         <div class="filter-section-label">显示选项</div>
         <div class="toggle-row">
-          <label class="toggle-switch">
-            <input type="checkbox" v-model="showIdeas" @change="emitChange" />
-            <span class="toggle-slider"></span>
-          </label>
           <span class="toggle-label">显示日记</span>
+          <button
+            class="toggle-chip"
+            :class="{ active: showIdeas }"
+            @click="showIdeas = !showIdeas; emitChange()"
+          >
+            {{ showIdeas ? '开' : '关' }}
+          </button>
         </div>
         <div class="toggle-row">
-          <label class="toggle-switch">
-            <input type="checkbox" v-model="dimIsolated" @change="emitChange" />
-            <span class="toggle-slider"></span>
-          </label>
           <span class="toggle-label">置灰孤立节点</span>
+          <button
+            class="toggle-chip"
+            :class="{ active: dimIsolated }"
+            @click="dimIsolated = !dimIsolated; emitChange()"
+          >
+            {{ dimIsolated ? '开' : '关' }}
+          </button>
         </div>
       </div>
 
@@ -300,16 +332,34 @@ init()
       <!-- 重置 -->
       <button class="reset-btn" @click="resetFilters">重置筛选</button>
     </div>
+
+    <!-- CalendarPopover 弹出 -->
+    <CalendarPopover
+      :visible="startPickerVisible"
+      :position="startPickerPos"
+      :selected-date="getStartDateStr()"
+      @select="selectStartDate"
+      @close="startPickerVisible = false"
+    />
+    <CalendarPopover
+      :visible="endPickerVisible"
+      :position="endPickerPos"
+      :selected-date="getEndDateStr()"
+      @select="selectEndDate"
+      @close="endPickerVisible = false"
+    />
   </div>
 </template>
 
 <style scoped>
+@use '../../styles/mixins' as *;
+
 .filter-panel {
   width: 280px;
   background: var(--bg-sidebar);
   display: flex;
   flex-direction: column;
-  transition: background 120ms ease, border-color 120ms ease;
+  transition: background var(--transition-base), border-color var(--transition-base);
   flex-shrink: 0;
   flex: 1;
   min-height: 0;
@@ -322,15 +372,16 @@ init()
   border-right: none;
 }
 
+/* Header */
 .filter-panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px;
+  padding: var(--space-3);
 }
 
 .filter-panel-title {
-  font-size: 14px;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--text-primary);
 }
@@ -354,225 +405,282 @@ init()
   align-items: center;
   justify-content: center;
   color: var(--text-secondary);
-  transition: background 80ms ease, border-color 80ms ease, color 80ms ease;
+  transition: background var(--transition-base), border-color var(--transition-base), color var(--transition-base);
   flex-shrink: 0;
+
+  &:hover {
+    background: var(--bg-active);
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
 }
 
-.collapse-btn:hover {
-  background: var(--bg-active);
-  border-color: var(--text-tertiary);
-  color: var(--text-primary);
-}
-
+/* Content */
 .filter-panel-content {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-gutter: stable;
-  padding: 8px 12px 16px;
+  padding: var(--space-2) var(--space-3) var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .filter-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .filter-section-label {
-  font-size: 11px;
-  font-weight: 500;
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
   color: var(--text-tertiary);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.04em;
 }
 
 .filter-divider {
   height: 1px;
   background: var(--border);
-  margin: 4px 0;
+  margin: var(--space-1) 0;
 }
 
-/* 搜索 */
+/* 搜索框 */
 .search-input {
   width: 100%;
-  padding: 8px 12px;
+  padding: var(--space-1) var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  font-size: 12px;
   background: var(--bg-base);
   color: var(--text-primary);
-  font-family: inherit;
-  box-sizing: border-box;
+  font-size: var(--text-xs);
+  transition: all var(--transition-base);
+
+  &:hover:not(:disabled) {
+    border-color: var(--border-strong);
+  }
+
+  &:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: var(--shadow-focus);
+  }
+
+  &::placeholder {
+    color: var(--text-tertiary);
+  }
+
+  &:disabled {
+    background: var(--bg-hover);
+    cursor: not-allowed;
+  }
 }
 
-.search-input::placeholder {
-  color: var(--text-tertiary);
-}
-
-/* 关系类型 */
+/* 关系类型 chips（Q2: CSS 变量 + color-mix） */
 .relationship-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .rel-chip {
-  padding: 4px 10px;
+  padding: var(--space-1) var(--space-2);
   border: 1px solid var(--border);
   background: var(--bg-base);
-  border-radius: 20px;
-  font-size: 11px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
   color: var(--text-secondary);
   cursor: pointer;
   font-family: inherit;
-  transition: all 80ms ease;
-}
+  transition: all var(--transition-base);
 
-.rel-chip:hover {
-  background: var(--bg-hover);
+  &:hover {
+    background: var(--bg-hover);
+    border-color: var(--border-strong);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
 }
 
 .rel-chip.active {
-  font-weight: 500;
+  --chip-color: var(--accent);
+  background: color-mix(in srgb, var(--chip-color) 12%, transparent);
+  border-color: var(--chip-color);
+  color: var(--chip-color);
+  font-weight: var(--font-medium);
 }
 
 .empty-hint {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
   font-style: italic;
 }
 
-/* 时间 */
+/* 时间快捷按钮（Q3: subtle active） */
 .quick-time-ranges {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .quick-range-btn {
-  padding: 4px 8px;
+  padding: var(--space-1) var(--space-2);
   border: 1px solid var(--border);
   background: transparent;
   border-radius: var(--radius-sm);
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
   cursor: pointer;
   font-family: inherit;
-  transition: background 80ms ease, border-color 80ms ease, color 80ms ease;
-}
+  transition: all var(--transition-base);
 
-.quick-range-btn:hover {
-  background: var(--bg-hover);
-  border-color: var(--text-tertiary);
+  &:hover {
+    background: var(--bg-hover);
+    border-color: var(--border-strong);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
 }
 
 .quick-range-btn.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+  background: var(--accent-subtle);
+  color: var(--accent);
+  border-color: transparent;
+  font-weight: var(--font-medium);
 }
 
+/* 日期容器（Q19: 输入框风格） */
 .custom-date-range {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
-.date-input {
+.date-field {
   flex: 1;
-  padding: 6px 8px;
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  font-size: 11px;
   background: var(--bg-base);
   color: var(--text-primary);
+  font-size: var(--text-xs);
   font-family: inherit;
-  box-sizing: border-box;
-  min-width: 0;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color var(--transition-base), box-shadow var(--transition-base);
+
+  &:hover { border-color: var(--border-strong); }
+  &:focus { outline: none; border-color: var(--accent); box-shadow: var(--shadow-focus); }
 }
 
-.date-separator {
-  font-size: 12px;
+.date-placeholder {
   color: var(--text-tertiary);
 }
 
-/* Toggle */
-.toggle-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.toggle-switch {
-  position: relative;
-  display: inline-block;
-  width: 40px;
-  height: 20px;
+.date-separator {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
   flex-shrink: 0;
 }
 
-.toggle-switch input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
-.toggle-slider {
-  position: absolute;
-  cursor: pointer;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: var(--border);
-  transition: 0.2s;
-  border-radius: 20px;
-}
-
-.toggle-slider:before {
-  position: absolute;
-  content: '';
-  height: 16px;
-  width: 16px;
-  left: 2px;
-  bottom: 2px;
-  background-color: white;
-  transition: 0.2s;
-  border-radius: 50%;
-}
-
-.toggle-switch input:checked + .toggle-slider {
-  background-color: var(--accent);
-}
-
-.toggle-switch input:checked + .toggle-slider:before {
-  transform: translateX(20px);
+/* Toggle chips（Q28: chip 风格） */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
 }
 
 .toggle-label {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
 }
 
-/* 重置 */
-.reset-btn {
-  padding: 6px 14px;
+.toggle-chip {
+  padding: var(--space-1) var(--space-2);
   border: 1px solid var(--border);
-  background: var(--bg-base);
+  background: transparent;
   border-radius: var(--radius-sm);
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
   cursor: pointer;
   font-family: inherit;
-  white-space: nowrap;
-  align-self: stretch;
+  min-width: 36px;
+  transition: all var(--transition-base);
+
+  &:hover {
+    background: var(--bg-hover);
+    border-color: var(--border-strong);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
 }
 
-.reset-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+.toggle-chip.active {
+  background: var(--accent-subtle);
+  color: var(--accent);
+  border-color: transparent;
+  font-weight: var(--font-medium);
+}
+
+/* 重置按钮（Q29: 展开 button-base，避免 scoped + @use 兼容问题） */
+.reset-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background var(--transition-base), color var(--transition-base), border-color var(--transition-base), transform var(--transition-base);
+  width: 100%;
+
+  &:hover:not(:disabled) {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+  }
+
+  &:active:not(:disabled) {
+    background: var(--bg-active);
+    transform: scale(0.98);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 }
 </style>
