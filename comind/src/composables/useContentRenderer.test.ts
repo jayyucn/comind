@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useContentRenderer, parseHeading } from './useContentRenderer'
 import { useRelationshipTypes } from './useRelationshipTypes'
 import { cleanupRelationshipTypes } from '../../tests/core-client'
@@ -226,6 +226,43 @@ describe('dateRef 渲染', () => {
     // ISO 中无特殊字符，但显示文本理论上可能有，这里验证转义函数存在
     const html = renderContentToHtml('{{schedule:2026-07-15}}')
     expect(html).not.toContain('<script>') // 没有注入
+  })
+
+  it('未来 deadline 不标记 overdue', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 6, 15, 12, 0, 0, 0))
+
+    const html = renderContentToHtml('{{deadline:2026-07-16T14:00}}')
+    expect(html).toMatch(/class="date-ref deadline"/)
+    expect(html).not.toContain('overdue')
+
+    vi.useRealTimers()
+  })
+
+  it('昨天到期的全天 deadline 标记 overdue', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 6, 16, 12, 0, 0, 0))
+
+    const html = renderContentToHtml('{{deadline:2026-07-15}}')
+    expect(html).toMatch(/class="date-ref deadline overdue"/)
+
+    vi.useRealTimers()
+  })
+
+  it('schedule 类型永远不标记 overdue', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 6, 16, 12, 0, 0, 0))
+
+    const html = renderContentToHtml('{{schedule:2026-07-15}}')
+    expect(html).toMatch(/class="date-ref schedule"/)
+    expect(html).not.toContain('overdue')
+
+    vi.useRealTimers()
+  })
+
+  it('带 leadMinutes 的 dateRef 输出 data-lead-minutes 属性', () => {
+    const html = renderContentToHtml('{{schedule:2026-07-15T14:00|weekly|15}}')
+    expect(html).toContain('data-lead-minutes="15"')
   })
 })
 
