@@ -394,7 +394,36 @@ impl BlockRepository for SQLiteAdapter {
         
         Ok(blocks)
     }
-    
+
+
+    fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Block>, Box<dyn Error>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("?{}", i)).collect();
+        let sql = format!(
+            "SELECT id, page_id, parent_id, pos, content, format, type, created_at, updated_at, version, deleted_at FROM Block WHERE id IN ({}) AND deleted_at IS NULL",
+            placeholders.join(", ")
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let params: Vec<&dyn rusqlite::ToSql> = ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+        let blocks = stmt.query_map(params.as_slice(), |row| {
+            Ok(Block {
+                id: row.get(0)?,
+                page_id: row.get(1)?,
+                parent_id: row.get(2)?,
+                pos: row.get(3)?,
+                content: row.get(4)?,
+                format: row.get(5)?,
+                r#type: row.get(6)?,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
+                version: row.get(9)?,
+                deleted_at: row.get(10)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(blocks)
+    }
     fn create(&mut self, block: &Block) -> Result<Block, Box<dyn Error>> {
         self.conn.execute(
             "INSERT INTO Block (id, page_id, parent_id, pos, content, format, type, created_at, updated_at, version, deleted_at)
@@ -569,7 +598,40 @@ impl PageRepository for SQLiteAdapter {
         
         Ok(pages)
     }
-    
+
+
+    fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Page>, Box<dyn Error>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("?{}", i)).collect();
+        let sql = format!(
+            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at FROM Page WHERE id IN ({}) AND deleted_at IS NULL",
+            placeholders.join(", ")
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let params: Vec<&dyn rusqlite::ToSql> = ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+        let pages = stmt.query_map(params.as_slice(), |row| {
+            Ok(Page {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                title: row.get(2)?,
+                r#type: row.get(3)?,
+                icon: row.get(4)?,
+                cover: row.get(5)?,
+                aliases: row.get(6)?,
+                file_path: row.get(7)?,
+                children_count: row.get(8)?,
+                word_count: row.get(9)?,
+                deleted: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
+                version: row.get(13)?,
+                deleted_at: row.get(14)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(pages)
+    }
     fn create(&mut self, page: &Page) -> Result<Page, Box<dyn Error>> {
         self.conn.execute(
             "INSERT INTO Page (id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at)
@@ -1644,6 +1706,35 @@ impl NotificationRepository for SQLiteAdapter {
         Ok(result)
     }
 
+
+    fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<Notification>, Box<dyn Error>> {
+        if block_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders: Vec<String> = (1..=block_ids.len()).map(|i| format!("?{}", i)).collect();
+        let sql = format!(
+            "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE block_id IN ({}) ORDER BY fired_at DESC",
+            placeholders.join(", ")
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let params: Vec<&dyn rusqlite::ToSql> = block_ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+        let notifs = stmt.query_map(params.as_slice(), |row| {
+            Ok(Notification {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                page_id: row.get(2)?,
+                kind: row.get(3)?,
+                event_iso: row.get(4)?,
+                fired_at: row.get(5)?,
+                status: row.get(6)?,
+                snooze_until: row.get(7)?,
+                payload: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(notifs)
+    }
     fn find_by_event(&self, block_id: &str, kind: &str, event_iso: &str) -> Result<Option<Notification>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE block_id = ? AND kind = ? AND event_iso = ? LIMIT 1"
@@ -1940,6 +2031,37 @@ impl<'a> BlockRepository for SQLiteTransactionAdapter<'a> {
         
         Ok(blocks)
     }
+
+
+    fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Block>, Box<dyn Error>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("?{}", i)).collect();
+        let sql = format!(
+            "SELECT id, page_id, parent_id, pos, content, format, type, created_at, updated_at, version, deleted_at FROM Block WHERE id IN ({}) AND deleted_at IS NULL",
+            placeholders.join(", ")
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let params: Vec<&dyn rusqlite::ToSql> = ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+        let blocks = stmt.query_map(params.as_slice(), |row| {
+            Ok(Block {
+                id: row.get(0)?,
+                page_id: row.get(1)?,
+                parent_id: row.get(2)?,
+                pos: row.get(3)?,
+                content: row.get(4)?,
+                format: row.get(5)?,
+                r#type: row.get(6)?,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
+                version: row.get(9)?,
+                deleted_at: row.get(10)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(blocks)
+    }
+
     
     fn create(&mut self, block: &Block) -> Result<Block, Box<dyn Error>> {
         self.conn.execute(
@@ -2143,6 +2265,41 @@ impl<'a> PageRepository for SQLiteTransactionAdapter<'a> {
 
         Ok(pages)
     }
+
+
+    fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Page>, Box<dyn Error>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("?{}", i)).collect();
+        let sql = format!(
+            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at FROM Page WHERE id IN ({}) AND deleted_at IS NULL",
+            placeholders.join(", ")
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let params: Vec<&dyn rusqlite::ToSql> = ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+        let pages = stmt.query_map(params.as_slice(), |row| {
+            Ok(Page {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                title: row.get(2)?,
+                r#type: row.get(3)?,
+                icon: row.get(4)?,
+                cover: row.get(5)?,
+                aliases: row.get(6)?,
+                file_path: row.get(7)?,
+                children_count: row.get(8)?,
+                word_count: row.get(9)?,
+                deleted: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
+                version: row.get(13)?,
+                deleted_at: row.get(14)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(pages)
+    }
+
 
     fn create(&mut self, page: &Page) -> Result<Page, Box<dyn Error>> {
         self.conn.execute(
@@ -3186,6 +3343,37 @@ impl<'a> NotificationRepository for SQLiteTransactionAdapter<'a> {
         }
         Ok(result)
     }
+
+
+    fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<Notification>, Box<dyn Error>> {
+        if block_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders: Vec<String> = (1..=block_ids.len()).map(|i| format!("?{}", i)).collect();
+        let sql = format!(
+            "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE block_id IN ({}) ORDER BY fired_at DESC",
+            placeholders.join(", ")
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let params: Vec<&dyn rusqlite::ToSql> = block_ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+        let notifs = stmt.query_map(params.as_slice(), |row| {
+            Ok(Notification {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                page_id: row.get(2)?,
+                kind: row.get(3)?,
+                event_iso: row.get(4)?,
+                fired_at: row.get(5)?,
+                status: row.get(6)?,
+                snooze_until: row.get(7)?,
+                payload: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(notifs)
+    }
+
 
     fn find_by_event(&self, block_id: &str, kind: &str, event_iso: &str) -> Result<Option<Notification>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(

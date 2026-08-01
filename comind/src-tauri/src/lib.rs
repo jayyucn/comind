@@ -164,6 +164,7 @@ pub fn run() {
             commands::get_date_refs_by_block,
             commands::query_due_non_recurring_date_refs,
             commands::query_all_recurring_date_refs,
+            commands::batch_check_and_fire_data,
             commands::rebuild_date_refs,
             #[cfg(not(target_os = "android"))]
             commands::get_sync_qr,

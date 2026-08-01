@@ -283,6 +283,18 @@ export async function tauriQueryAllRecurringDateRefs(): Promise<DateRefRecord[]>
   return invoke('query_all_recurring_date_refs')
 }
 
+export interface TauriBatchCheckAndFireData {
+  recurring_refs: DateRefRecord[]
+  due_non_recurring: DateRefRecord[]
+  blocks: Block[]
+  pages: Page[]
+  notifications: Notification[]
+}
+
+export async function tauriBatchCheckAndFireData(nowMs: number): Promise<TauriBatchCheckAndFireData> {
+  return invoke('batch_check_and_fire_data', { nowMs })
+}
+
 export async function tauriRebuildDateRefs(): Promise<{ rebuilt: number }> {
   return invoke('rebuild_date_refs')
 }

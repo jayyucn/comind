@@ -179,6 +179,57 @@ pub async fn query_all_recurring_date_refs(
     })
 }
 
+/// Batch data for checkAndFire: returns all recurring dateRefs + their blocks + pages + existing notifications
+/// in a single IPC call, replacing N×4 sequential IPC calls.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchCheckAndFireData {
+    pub recurring_refs: Vec<DateRef>,
+    pub due_non_recurring: Vec<DateRef>,
+    pub blocks: Vec<Block>,
+    pub pages: Vec<Page>,
+    pub notifications: Vec<Notification>,
+}
+
+#[tauri::command]
+pub async fn batch_check_and_fire_data(
+    db: State<'_, super::state::DatabaseConnection>,
+    now_ms: i64,
+) -> Result<BatchCheckAndFireData, String> {
+    execute_with_adapter(db, |storage| {
+        let recurring_refs = DateRefService::query_all_recurring(storage)?;
+        let due_non_recurring = DateRefService::query_due_non_recurring(storage, now_ms)?;
+
+        // Collect all unique block_ids from dateRefs
+        let mut block_ids: Vec<String> = Vec::new();
+        for r in recurring_refs.iter().chain(due_non_recurring.iter()) {
+            if !block_ids.contains(&r.block_id) {
+                block_ids.push(r.block_id.clone());
+            }
+        }
+
+        // Batch fetch blocks and notifications by block_ids
+        let blocks = storage.blocks().get_by_ids(&block_ids)?;
+        let notifications = storage.notifications().get_by_block_ids(&block_ids)?;
+
+        // Extract page_ids from blocks, then batch fetch pages
+        let mut page_ids: Vec<String> = Vec::new();
+        for b in &blocks {
+            if !page_ids.contains(&b.page_id) {
+                page_ids.push(b.page_id.clone());
+            }
+        }
+        let pages = storage.pages().get_by_ids(&page_ids)?;
+
+        Ok(BatchCheckAndFireData {
+            recurring_refs,
+            due_non_recurring,
+            blocks,
+            pages,
+            notifications,
+        })
+    })
+}
+
 #[tauri::command]
 pub async fn rebuild_date_refs(
     db: State<'_, super::state::DatabaseConnection>,

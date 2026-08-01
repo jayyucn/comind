@@ -517,6 +517,20 @@ impl BlockRepository for SqlJsAdapter {
         Ok(result.into_iter().map(|r| row_to_block(&r)).collect())
     }
 
+    fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Block>, Box<dyn std::error::Error>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders: Vec<String> = ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
+        let sql = format!(
+            "SELECT id, page_id, parent_id, pos, content, format, type, version, deleted_at, created_at, updated_at FROM Block WHERE id IN ({}) AND deleted_at IS NULL",
+            placeholders.join(", ")
+        );
+        let params: Vec<&str> = ids.iter().map(|s| s.as_str()).collect();
+        let result = Self::query(&self.db, &sql, &params)?;
+        Ok(result.into_iter().map(|r| row_to_block(&r)).collect())
+    }
+
     fn create(&mut self, block: &Block) -> Result<Block, Box<dyn std::error::Error>> {
         let parent_id = block.parent_id.as_deref().unwrap_or("");
         Self::run_with_params(&self.db, "INSERT INTO Block (id, page_id, parent_id, pos, content, format, type, version, deleted_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)", &[
@@ -572,6 +586,20 @@ impl PageRepository for SqlJsAdapter {
 
     fn get_all(&self) -> Result<Vec<Page>, Box<dyn std::error::Error>> {
         let result = Self::query(&self.db, "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, version, deleted_at, created_at, updated_at FROM Page WHERE deleted = 0 AND deleted_at IS NULL ORDER BY updated_at DESC", &[])?;
+        Ok(result.into_iter().map(|r| row_to_page(&r)).collect())
+    }
+
+    fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Page>, Box<dyn std::error::Error>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders: Vec<String> = ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
+        let sql = format!(
+            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, version, deleted_at, created_at, updated_at FROM Page WHERE id IN ({}) AND deleted = 0 AND deleted_at IS NULL",
+            placeholders.join(", ")
+        );
+        let params: Vec<&str> = ids.iter().map(|s| s.as_str()).collect();
+        let result = Self::query(&self.db, &sql, &params)?;
         Ok(result.into_iter().map(|r| row_to_page(&r)).collect())
     }
 
@@ -698,6 +726,20 @@ impl NotificationRepository for SqlJsAdapter {
 
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<Notification>, Box<dyn std::error::Error>> {
         let result = Self::query(&self.db, "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE block_id = ? ORDER BY fired_at DESC", &[block_id])?;
+        Ok(result.into_iter().map(|r| row_to_notification(&r)).collect())
+    }
+
+    fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<Notification>, Box<dyn std::error::Error>> {
+        if block_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders: Vec<String> = block_ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
+        let sql = format!(
+            "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE block_id IN ({}) ORDER BY fired_at DESC",
+            placeholders.join(", ")
+        );
+        let params: Vec<&str> = block_ids.iter().map(|s| s.as_str()).collect();
+        let result = Self::query(&self.db, &sql, &params)?;
         Ok(result.into_iter().map(|r| row_to_notification(&r)).collect())
     }
 

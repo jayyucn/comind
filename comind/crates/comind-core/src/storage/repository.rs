@@ -5,6 +5,8 @@ pub trait BlockRepository {
     fn get_by_id(&self, id: &str) -> Result<Block, Box<dyn Error>>;
     fn get_by_page_id(&self, page_id: &str) -> Result<Vec<Block>, Box<dyn Error>>;
     fn get_children(&self, parent_id: &str) -> Result<Vec<Block>, Box<dyn Error>>;
+    /// 批量按 ID 查询 block（用于 checkAndFire 批量化，避免 N+1 IPC）
+    fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Block>, Box<dyn Error>>;
     fn create(&mut self, block: &Block) -> Result<Block, Box<dyn Error>>;
     fn update(&mut self, block: &Block) -> Result<Block, Box<dyn Error>>;
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
@@ -15,6 +17,8 @@ pub trait PageRepository {
     fn get_by_id(&self, id: &str) -> Result<Page, Box<dyn Error>>;
     fn get_by_title(&self, title: &str) -> Result<Option<Page>, Box<dyn Error>>;
     fn get_all(&self) -> Result<Vec<Page>, Box<dyn Error>>;
+    /// 批量按 ID 查询 page（用于 checkAndFire 批量化）
+    fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Page>, Box<dyn Error>>;
     fn create(&mut self, page: &Page) -> Result<Page, Box<dyn Error>>;
     fn update(&mut self, page: &Page) -> Result<Page, Box<dyn Error>>;
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
@@ -78,6 +82,8 @@ pub trait BlockVersionRepository {
 pub trait NotificationRepository {
     fn get_by_id(&self, id: &str) -> Result<Notification, Box<dyn Error>>;
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<Notification>, Box<dyn Error>>;
+    /// 批量按 block_id 查询通知（用于 checkAndFire 批量化，避免 N+1 IPC）
+    fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<Notification>, Box<dyn Error>>;
     fn find_by_event(&self, block_id: &str, kind: &str, event_iso: &str) -> Result<Option<Notification>, Box<dyn Error>>;
     fn query_unread(&self) -> Result<Vec<Notification>, Box<dyn Error>>;
     fn query_pending_due(&self, now_ms: i64) -> Result<Vec<Notification>, Box<dyn Error>>;

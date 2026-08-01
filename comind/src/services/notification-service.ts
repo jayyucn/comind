@@ -89,22 +89,40 @@ export class NotificationService {
     const now = Date.now()
     const firedNotifications: Notification[] = []
 
-    // 1) 到期且非 recurring：event_ts - lead_minutes*60000 <= now（DB 端已算好，O(log n)）
-    const dueRefs = await this.client.queryDueNonRecurringDateRefs(now)
-    for (const r of dueRefs) {
-      const block = await this.client.getBlock(r.block_id)
-      const page = await this.client.getPage(block.page_id)
+    // ===== Batch fetch all data in 1 IPC call =====
+    // Returns: recurring dateRefs + due non-recurring dateRefs + their blocks + pages + existing notifications
+    const batch = await this.client.batchCheckAndFireData(now)
+
+    // Build lookup maps to avoid N×4 IPC calls
+    const blockMap = new Map<string, Block>()
+    for (const b of batch.blocks) blockMap.set(b.id, b)
+    const pageMap = new Map<string, Page>()
+    for (const p of batch.pages) pageMap.set(p.id, p)
+    // Key: blockId|kind|eventIso → Notification
+    const notifMap = new Map<string, Notification>()
+    for (const n of batch.notifications) {
+      notifMap.set(`${n.block_id}|${n.kind}|${n.event_iso}`, n)
+    }
+
+    // 1) 到期且非 recurring
+    for (const r of batch.due_non_recurring) {
+      const block = blockMap.get(r.block_id)
+      if (!block) continue
+      const page = pageMap.get(block.page_id)
+      if (!page) continue
       const eventTime = r.event_ts
       if (!eventTime) continue
-      const notification = await this.fireNotification(block, page, r, eventTime, null)
+      const existing = notifMap.get(`${r.block_id}|${r.kind}|${r.iso}`) ?? null
+      const notification = await this.fireNotification(block, page, r, eventTime, existing)
       if (notification) {
         firedNotifications.push(notification)
+        // Update cache to reflect any status changes
+        notifMap.set(`${r.block_id}|${r.kind}|${r.iso}`, notification)
       }
     }
 
-    // 2) 全部 recurring（数量小，全量扫）：在 TS 侧算下一周期 eventTime
-    const recurringRefs = await this.client.queryAllRecurringDateRefs()
-    for (const r of recurringRefs) {
+    // 2) 全部 recurring：在 TS 侧算下一周期 eventTime
+    for (const r of batch.recurring_refs) {
       const dateRef: DateRef = {
         kind: r.kind as DateRefKind,
         iso: r.iso,
@@ -115,11 +133,15 @@ export class NotificationService {
       if (!eventTime) continue
       const effectiveTime = eventTime - (dateRef.leadMinutes || 0) * 60 * 1000
       if (effectiveTime > now) continue
-      const block = await this.client.getBlock(r.block_id)
-      const page = await this.client.getPage(block.page_id)
-      const notification = await this.fireNotification(block, page, r, eventTime, null)
+      const block = blockMap.get(r.block_id)
+      if (!block) continue
+      const page = pageMap.get(block.page_id)
+      if (!page) continue
+      const existing = notifMap.get(`${r.block_id}|${r.kind}|${r.iso}`) ?? null
+      const notification = await this.fireNotification(block, page, r, eventTime, existing)
       if (notification) {
         firedNotifications.push(notification)
+        notifMap.set(`${r.block_id}|${r.kind}|${r.iso}`, notification)
       }
     }
 

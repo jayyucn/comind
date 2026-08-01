@@ -89,6 +89,7 @@ export interface CoreClient {
   getDateRefsByBlock(blockId: string): Promise<DateRefRecord[]>
   queryDueNonRecurringDateRefs(nowMs: number): Promise<DateRefRecord[]>
   queryAllRecurringDateRefs(): Promise<DateRefRecord[]>
+  batchCheckAndFireData(nowMs: number): Promise<tauri.TauriBatchCheckAndFireData>
   rebuildDateRefs(): Promise<{ rebuilt: number }>
 }
 
@@ -251,6 +252,10 @@ class TauriClient implements CoreClient {
 
     async queryAllRecurringDateRefs(): Promise<DateRefRecord[]> {
       return parseJsonResult(await tauri.tauriQueryAllRecurringDateRefs())
+    }
+
+    async batchCheckAndFireData(nowMs: number): Promise<tauri.TauriBatchCheckAndFireData> {
+      return parseJsonResult(await tauri.tauriBatchCheckAndFireData(nowMs))
     }
 
     async rebuildDateRefs(): Promise<{ rebuilt: number }> {
@@ -455,6 +460,16 @@ class WasmClientAdapter implements CoreClient {
 
   async queryAllRecurringDateRefs(): Promise<DateRefRecord[]> {
     return this.wasm.query_all_recurring_date_refs()
+  }
+  async batchCheckAndFireData(_nowMs: number): Promise<tauri.TauriBatchCheckAndFireData> {
+    // WASM client doesn't support batch check-and-fire; return empty
+    return {
+      recurring_refs: [],
+      due_non_recurring: [],
+      blocks: [],
+      pages: [],
+      notifications: [],
+    }
   }
 
   async rebuildDateRefs(): Promise<{ rebuilt: number }> {
