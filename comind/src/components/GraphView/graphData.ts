@@ -1,5 +1,6 @@
 import type { EdgeData, NodeData } from '@antv/g6'
 import { getRelationshipColor, getRelationshipLabel } from '../../types/relationship'
+import pLimit from 'p-limit'
 
 export interface RawLink {
   id: string
@@ -190,11 +191,16 @@ export async function traverseBFS(
   acc.nodes.push(createNodeData(rootPage.id, rootPage.title, true, rootPage.id === highlightedNodeId, rootDimmed))
 
   let frontier: string[] = [rootId]
+  const limit = pLimit(6)
   for (let depth = 0; depth < maxDepth; depth++) {
+    const results = await Promise.all(frontier.map(pageId =>
+      limit(async () => {
+        const { outLinks, inLinks } = await fetchNeighbors(pageId)
+        return processNeighbors(pageId, outLinks, inLinks, acc, visibility, currentPageId, highlightedNodeId, getPage, getBlock)
+      })
+    ))
     const nextFrontier: string[] = []
-    for (const pageId of frontier) {
-      const { outLinks, inLinks } = await fetchNeighbors(pageId)
-      const neighbors = processNeighbors(pageId, outLinks, inLinks, acc, visibility, currentPageId, highlightedNodeId, getPage, getBlock)
+    for (const neighbors of results) {
       for (const neighborId of neighbors) {
         if (!visitedPages.has(neighborId)) {
           visitedPages.add(neighborId)
@@ -227,11 +233,14 @@ export async function buildFullGraph(
     acc.nodeIds.add(page.id)
     acc.nodes.push(createNodeData(page.id, page.title, page.id === currentPageId, page.id === highlightedNodeId, isDimmed))
   }
-  // 再加载边
-  for (const page of allPages) {
-    if (page.deleted || visibility.hiddenNodeIds.has(page.id)) continue
-    const { outLinks, inLinks } = await fetchNeighbors(page.id)
-    processNeighbors(page.id, outLinks, inLinks, acc, visibility, currentPageId, highlightedNodeId, getPage, getBlock)
-  }
+  // 再加载边（并发，最多 6 个同时进行）
+  const visiblePages = allPages.filter(p => !p.deleted && !visibility.hiddenNodeIds.has(p.id))
+  const limit = pLimit(6)
+  await Promise.all(visiblePages.map(page =>
+    limit(async () => {
+      const { outLinks, inLinks } = await fetchNeighbors(page.id)
+      processNeighbors(page.id, outLinks, inLinks, acc, visibility, currentPageId, highlightedNodeId, getPage, getBlock)
+    })
+  ))
   filterHiddenEdges(acc.edges, visibility.hiddenNodeIds)
 }
