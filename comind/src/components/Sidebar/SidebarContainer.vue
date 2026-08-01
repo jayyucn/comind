@@ -58,20 +58,8 @@ export default {
   flex-shrink: 0;
 }
 
-.sidebar {
-  width: 260px;
-  height: 100%;
-  background: var(--bg-sidebar);
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  transition: width 200ms ease, opacity 200ms ease, transform 200ms ease;
-}
-
 .sidebar-wrapper.collapsed .sidebar {
   width: 0;
-  border-right-color: transparent;
   opacity: 0;
   transform: translateX(-8px);
 }
