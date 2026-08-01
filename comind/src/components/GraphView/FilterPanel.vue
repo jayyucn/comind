@@ -352,24 +352,24 @@ init()
 </template>
 
 <style scoped>
-@use '../../styles/mixins' as *;
 
 .filter-panel {
-  width: 280px;
+  position: absolute;
+  top: var(--header-height);
+  left: 0;
+  z-index: 100;
+  width: var(--filter-panel-width);
   background: var(--bg-sidebar);
   display: flex;
   flex-direction: column;
-  transition: background var(--transition-base), border-color var(--transition-base);
   flex-shrink: 0;
   flex: 1;
-  min-height: 0;
-  border-radius: var(--radius-sm);
+  border-left: 1px solid var(--border);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
 }
 
 .filter-panel.collapsed {
-  width: 40px;
-  background: transparent;
-  border-right: none;
+  width: 0;
 }
 
 /* Header */

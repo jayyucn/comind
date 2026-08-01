@@ -19,7 +19,7 @@ const currentFilterState = ref<FilterState>({
 
 const visibility = ref(EMPTY_VISIBILITY)
 const filterPanelCollapsed = ref(true)
-const sidebarWidth = computed(() => filterPanelCollapsed.value ? '52px' : '292px')
+const sidebarWidth = computed(() => filterPanelCollapsed.value ? '0px' : '292px')
 
 const graphViewRef = ref<InstanceType<typeof GraphView> | null>(null)
 const sidebarTop = ref(0)
@@ -152,21 +152,4 @@ watch(graphViewRef, () => {
   transition: padding-left 200ms ease;
 }
 
-.graph-page-sidebar {
-  position: absolute;
-  top: v-bind(sidebarTop + 'px');
-  left: 0;
-  z-index: 100;
-  height: v-bind(sidebarHeight);
-  background: transparent;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  pointer-events: none;
-  overflow: hidden;
-}
-
-.graph-page-sidebar > * {
-  pointer-events: auto;
-}
 </style>

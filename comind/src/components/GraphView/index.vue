@@ -357,9 +357,9 @@ onBeforeUnmount(() => {
 
 .graph-view-header {
   display: flex;
+  height: var(--header-height);
   align-items: flex-end;
   justify-content: space-between;
-  padding: 0 16px 12px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
