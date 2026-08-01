@@ -131,6 +131,7 @@
   border-radius: $radius-sm;
   white-space: pre-wrap;
   word-break: break-word;
+  font-size: var(--editor-font-size);
 }
 
 .block-placeholder {

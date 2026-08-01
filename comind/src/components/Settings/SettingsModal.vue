@@ -3,6 +3,8 @@ import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useSettingsModal } from '../../composables/useSettingsModal'
 import { pushModal, popModal } from '../../composables/useModalKeyboard'
 import { useTheme } from '../../composables/useTheme'
+import { useEditorSettings } from '../../composables/useEditorSettings'
+import type { EditorFontSize } from '../../composables/useEditorSettings'
 import RelationshipTypesPanel from './RelationshipTypesPanel.vue'
 import QrScanner from './QrScanner.vue'
 import { getWorkspacePath, setWorkspacePath, resetWorkspacePath, exportToMarkdown, importFromMarkdown, getSyncConfig, setSyncConfig, syncNow } from '../../wasm/client'
@@ -25,6 +27,7 @@ watch(isOpen, (visible) => {
 
 onUnmounted(() => popModal('settings-modal'))
 const { theme, setTheme } = useTheme()
+const { editorFontSize, setEditorFontSize } = useEditorSettings()
 const notificationStore = useNotificationStore()
 const editorStore = useEditorStore()
 
@@ -239,6 +242,13 @@ const themeOptions: { value: 'light' | 'dark' | 'system'; label: string; icon: a
   { value: 'system', label: '跟随系统', icon: Monitor },
 ]
 
+const editorFontSizeOptions: { value: EditorFontSize; label: string }[] = [
+  { value: 'small', label: '较小' },
+  { value: 'default', label: '默认' },
+  { value: 'large', label: '较大' },
+  { value: 'x-large', label: '更大' },
+]
+
 function handleOverlayClick() {
   close()
 }
@@ -310,9 +320,19 @@ onUnmounted(() => {
                 <div class="setting-item">
                   <div class="setting-info">
                     <span class="setting-label">字体大小</span>
-                    <span class="setting-desc">调整编辑器字体大小（即将推出）</span>
+                    <span class="setting-desc">调整编辑器正文字体大小</span>
                   </div>
-                  <span class="setting-value">默认</span>
+                  <div class="theme-selector">
+                    <button
+                      v-for="option in editorFontSizeOptions"
+                      :key="option.value"
+                      class="theme-option"
+                      :class="{ active: editorFontSize === option.value }"
+                      @click="setEditorFontSize(option.value)"
+                    >
+                      {{ option.label }}
+                    </button>
+                  </div>
                 </div>
                 <div class="setting-item setting-item--column">
                   <div class="setting-info">

@@ -501,6 +501,7 @@ defineExpose({ syncContent, focus, focusAtCoords, getText: () => editor.value?.g
   flex: 1;
   outline: none;
   position: relative;
+  font-size: var(--editor-font-size);
 }
 
 .editor-placeholder {

@@ -70,6 +70,9 @@
   --text-3xl: #{$text-3xl};
   --text-4xl: #{$text-4xl};
 
+  // 编辑器正文字号（由 useEditorSettings 运行时覆盖）
+  --editor-font-size: #{$text-base};
+
   // 标题字号
   --heading-1: #{$heading-1};
   --heading-2: #{$heading-2};
