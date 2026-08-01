@@ -355,21 +355,22 @@ init()
 
 .filter-panel {
   position: absolute;
-  top: var(--header-height);
+  top: var(--graph-header-height);
+  bottom: 0;
   left: 0;
   z-index: 100;
-  width: var(--filter-panel-width);
+  width: var(--panel-width-md);
   background: var(--bg-sidebar);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
   flex: 1;
   border-left: 1px solid var(--border);
-  border-radius: 0 var(--radius-md) var(--radius-md) 0;
 }
 
 .filter-panel.collapsed {
   width: 0;
+
 }
 
 /* Header */

@@ -22,7 +22,7 @@ $date-ref-overdue-bg: rgba(220, 38, 38, 0.08);
   --block-transition-collapse: #{$transition-collapse};
 
   // Header
-  --header-height: 64px;
+  --graph-header-height: 48px;
 
   // Sidebar 组件
   --sidebar-item-height: 32px;
@@ -56,6 +56,12 @@ $date-ref-overdue-bg: rgba(220, 38, 38, 0.08);
 
   // 图标
   --icon-size: 18px;
+
+  // 面板宽度档位
+  --panel-width-sm: 280px;
+  --panel-width-md: 300px;
+  --panel-width-lg: 360px;
+  --panel-width-xl: 420px;
 
   // DateRef 专属色
   --date-ref-schedule-text: #{$date-ref-schedule-text};

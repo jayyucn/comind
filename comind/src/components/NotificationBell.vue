@@ -271,8 +271,8 @@ function handleClickOutside(event: MouseEvent) {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  min-width: 360px;
-  max-width: 420px;
+  min-width: var(--panel-width-lg);
+  max-width: var(--panel-width-xl);
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: 12px;

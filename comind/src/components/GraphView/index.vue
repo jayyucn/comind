@@ -387,8 +387,8 @@ onBeforeUnmount(() => {
 
 .graph-view-header {
   display: flex;
-  height: var(--header-height);
-  align-items: flex-end;
+  height: var(--graph-header-height);
+  align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
@@ -402,6 +402,7 @@ onBeforeUnmount(() => {
 }
 
 .graph-view-title {
+  margin-left: var(--space-3);
   font-size: 24px;
   font-weight: 600;
   color: var(--text-primary);
@@ -418,6 +419,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  margin-right: var(--space-4);
 }
 
 .control-label {

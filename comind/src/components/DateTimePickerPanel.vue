@@ -279,7 +279,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown, true))
 .dtp-panel {
   position: fixed;
   z-index: 1101;
-  width: 300px;
+  width: var(--panel-width-md);
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
