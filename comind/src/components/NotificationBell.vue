@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { Bell, Check, Clock, Trash2 } from 'lucide-vue-next'
+import { Check, Clock, Trash2 } from 'lucide-vue-next'
 import { useNotificationStore } from '../stores/notification'
 import { useNavigateToPage } from '../composables/useNavigateToPage'
 import type { Notification } from '../wasm/types'

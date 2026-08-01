@@ -8,13 +8,23 @@ import SidebarFavorites from './SidebarFavorites.vue'
 import SidebarFooter from './SidebarFooter.vue'
 import Icon from '../Icons/Icon.vue'
 
-const { isCollapsed } = useSidebar()
+const { isCollapsed, toggle } = useSidebar()
+
+defineProps<{
+  canGoBack: boolean
+  canGoForward: boolean
+}>()
 </script>
 
 <template>
   <div class="sidebar-wrapper" :class="{ collapsed: isCollapsed }">
+    <button class="sidebar-floating-toggle" :title="isCollapsed ? '展开侧边栏' : '折叠侧边栏'" :class="{ collapsed: isCollapsed }"
+      @click="toggle">
+      <Icon :name="isCollapsed ? 'icon-panel-left-open' : 'icon-panel-left-close'" :size="16" />
+    </button>
     <aside class="sidebar">
-      <SidebarHeader />
+      <SidebarHeader :can-go-back="canGoBack" :can-go-forward="canGoForward" @go-back="$emit('goBack')"
+        @go-forward="$emit('goForward')" />
 
       <div class="sidebar-content">
         <!-- 搜索触发 -->
@@ -27,10 +37,8 @@ const { isCollapsed } = useSidebar()
         </div>
 
         <!-- 导航区 -->
-        <div class="nav-section">
-          <SidebarIdeas />
-          <SidebarGraphItem />
-        </div>
+        <SidebarIdeas />
+        <SidebarGraphItem />
 
         <!-- 最近列表（固定高度，不滚动） -->
         <SidebarRecent />
@@ -46,13 +54,11 @@ const { isCollapsed } = useSidebar()
 
 <script lang="ts">
 export default {
-  emits: ['open-search'],
+  emits: ['open-search', 'goBack', 'goForward'],
 }
 </script>
 
 <style lang="scss" scoped>
-@use '../../styles/tokens/_primitives.scss' as *;
-
 .sidebar-wrapper {
   position: relative;
   flex-shrink: 0;
@@ -64,12 +70,40 @@ export default {
   transform: translateX(-8px);
 }
 
+.sidebar-floating-toggle {
+  position: fixed;
+  top: calc(var(--nav-height) / 2 - 13px);
+  left: var(--space-2);
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--text-tertiary);
+  transition: background 100ms ease, color 100ms ease, left 200ms ease;
+  z-index: 1000;
+}
+
+.sidebar-floating-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.sidebar-floating-toggle:active {
+  transform: scale(0.95);
+}
+
 .sidebar-content {
   flex: 1;
   overflow: hidden;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  gap: var(--space-2);
   padding: 8px 8px;
 }
 
@@ -79,7 +113,6 @@ export default {
   justify-content: space-between;
   height: 32px;
   padding: 0 10px;
-  margin-bottom: 8px;
   border-radius: 6px;
   background: var(--bg-hover);
   cursor: pointer;
@@ -96,7 +129,7 @@ export default {
 }
 
 .search-placeholder {
-  margin-left: $space-2;
+  margin-left: var(--space-2);
   font-size: var(--text-sm);
   color: var(--text-tertiary);
 }
@@ -108,10 +141,6 @@ export default {
   border-radius: 3px;
   background: var(--bg-base);
   border: 1px solid var(--border);
-}
-
-.nav-section {
-  margin-bottom: 4px;
 }
 
 /* 响应式：小屏 overlay */

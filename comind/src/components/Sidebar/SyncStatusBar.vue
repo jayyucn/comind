@@ -56,9 +56,9 @@ onUnmounted(() => document.removeEventListener('click', onDocClick, true))
       @click="open = !open"
     >
       <!-- <span class="sync-dock-dot" :class="dockState" /> -->
-      <QrCode v-if="dockState === 'unpaired'" :size="16" :stroke-width="1.75" />
-      <Wifi v-else-if="dockState === 'online'" :size="16" :stroke-width="1.75" />
-      <Smartphone v-else :size="16" :stroke-width="1.75" />
+      <QrCode v-if="dockState === 'unpaired'" :size="15" :stroke-width="1.75" />
+      <Wifi v-else-if="dockState === 'online'" :size="15" :stroke-width="1.75" />
+      <Smartphone v-else :size="15" :stroke-width="1.75" />
     </button>
 
     <Teleport to="body">
@@ -86,33 +86,34 @@ onUnmounted(() => document.removeEventListener('click', onDocClick, true))
 
 .sync-dock-btn {
   position: relative;
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: none;
+  border-radius: 6px;
   background: transparent;
   color: var(--text-tertiary);
   cursor: pointer;
-  transition: border-color 160ms ease, color 160ms ease, background 160ms ease;
+  transition: background 100ms ease, color 100ms ease;
 }
 
 .sync-dock-btn:hover {
-  border-color: var(--accent);
-  color: var(--text-secondary);
   background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.sync-dock-btn:active {
+  transform: scale(0.95);
 }
 
 .sync-dock-btn.online {
   color: var(--success);
-  border-color: color-mix(in srgb, var(--success) 40%, transparent);
 }
 
 .sync-dock-btn.offline {
   color: var(--warning);
-  border-color: color-mix(in srgb, var(--warning) 40%, transparent);
 }
 
 .sync-dock-dot {
@@ -140,7 +141,7 @@ onUnmounted(() => document.removeEventListener('click', onDocClick, true))
   position: fixed;
   bottom: var(--space-1);
   left: calc(var(--sidebar-width) + var(--space-1));
-  width: 300px;
+  width: var(--panel-width-lg);
   max-height: calc(100vh - 28px);
   overflow-y: auto;
   background: var(--bg-base);

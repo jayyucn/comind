@@ -42,7 +42,7 @@ registerPanel({
   component: GraphPanel
 })
 
-const { isCollapsed, toggle } = useSidebar()
+const { toggle } = useSidebar()
 const rightSidebar = useRightSidebar()
 
 const isGraphPanelOpen = computed(() =>
@@ -287,12 +287,6 @@ function handleMainClick(e: MouseEvent) {
 
     <div class="page-scroll-wrapper" @click="handleMainClick">
       <div class="sticky-header" @mousedown="handleHeaderMouseDown">
-        <div class="nav-controls">
-          <button class="collapse-btn" :title="isCollapsed ? '展开侧边栏' : '折叠侧边栏'" @click="toggle">
-            <Icon :name="isCollapsed ? 'icon-panel-left-open' : 'icon-panel-left-close'" />
-          </button>
-        </div>
-
         <div class="top-right-controls">
           <NotificationBell />
           <PageMenuButton />
@@ -380,42 +374,15 @@ function handleMainClick(e: MouseEvent) {
   min-width: 0;
 }
 
-.collapse-btn {
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-md);
-  color: var(--text-tertiary);
-  transition: all 100ms ease;
-}
-
-.collapse-btn:hover {
-  color: var(--text-secondary);
-}
-
-.collapse-btn:active {
-  transform: scale(0.95);
-}
-
 .sticky-header {
   position: sticky;
   top: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  height: $nav-height;
+  height: var(--nav-height);
   z-index: 10;
   background: var(--bg-base);
-}
-
-.nav-controls {
-  display: flex;
-  gap: 4px;
-  width: fit-content;
-  align-items: center;
 }
 
 .page-scroll-wrapper::-webkit-scrollbar {
@@ -439,6 +406,7 @@ function handleMainClick(e: MouseEvent) {
   align-items: center;
   gap: 2px;
   justify-content: flex-end;
+  margin-left: auto;
   pointer-events: none;
 }
 
