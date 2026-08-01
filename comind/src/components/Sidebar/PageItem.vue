@@ -149,7 +149,7 @@ function handleKeydown(event: KeyboardEvent) {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--text-sm);
-  font-weight: var(--font-medium);
+  font-weight: var(--font-normal);
   color: var(--text-primary);
   line-height: var(--leading-snug);
 }
@@ -165,7 +165,7 @@ function handleKeydown(event: KeyboardEvent) {
   flex: 1;
   min-width: 0;
   font-size: var(--text-sm);
-  font-weight: var(--font-medium);
+  font-weight: var(--font-normal);
   color: var(--text-primary);
   background: transparent;
   border: 1px solid var(--border);
