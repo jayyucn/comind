@@ -9,6 +9,7 @@ let isPrimary = ref(false)
 export function useNotificationScheduler() {
   const notificationStore = useNotificationStore()
   const isRunning = ref(false)
+  let isChecking = false
 
   async function requestLock(): Promise<boolean> {
     if (!('locks' in navigator)) {
@@ -33,17 +34,24 @@ export function useNotificationScheduler() {
   }
 
   async function checkAndFire() {
+    if (isChecking) {
+      console.log('[NotificationScheduler] Check and fire skipped (already running)')
+      return
+    }
     console.log('[NotificationScheduler] Check and fire')
     if (!isPrimary.value) {
       return
     }
     console.log('[NotificationScheduler] Check and fire (primary)')
     
+    isChecking = true
     try {
       await notificationStore.triggerCheckAndFire()
       console.log('[NotificationScheduler] Check and fire (primary) success')
     } catch (err) {
       console.error('[NotificationScheduler] Check and fire (primary) failed:', err)
+    } finally {
+      isChecking = false
     }
   }
 

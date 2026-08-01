@@ -75,55 +75,52 @@ pub fn start_sync_task(app_handle: AppHandle) {
                 .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
                 .is_ok();
 
-            match app_handle.state::<DatabaseConnection>().get_adapter() {
-                Ok(mut adapter) => {
-                    if is_first {
-                        log::info!("First sync detected, performing full export");
-                        match markdown::export_all(&mut *adapter, &sync_dir) {
-                            Ok(result) => {
+            let adapter_arc = app_handle.state::<DatabaseConnection>().adapter_arc();
+            let mut adapter = adapter_arc.lock().await;
+            {
+                if is_first {
+                    log::info!("First sync detected, performing full export");
+                    match markdown::export_all(&mut *adapter, &sync_dir) {
+                        Ok(result) => {
+                            log::info!(
+                                "Periodic sync (full) completed: {} pages, {} blocks",
+                                result.pages_exported,
+                                result.blocks_exported
+                            );
+                        }
+                        Err(e) => {
+                            log::error!("Full sync failed: {}", e);
+                        }
+                    }
+                } else {
+                    let result = markdown::export_changed(&mut *adapter, &sync_dir);
+                    match result {
+                        Ok(result) => {
+                            if result.last_sync_time > Utc::now().timestamp_millis() {
+                                log::warn!("last_sync_time ({}) is in the future, performing full export", result.last_sync_time);
+                                match markdown::export_all(&mut *adapter, &sync_dir)
+                                {
+                                    Ok(full_result) => {
+                                        log::info!("Periodic sync (full) completed: {} pages, {} blocks", full_result.pages_exported, full_result.blocks_exported);
+                                    }
+                                    Err(e) => {
+                                        log::error!("Full sync failed: {}", e);
+                                    }
+                                }
+                            } else {
                                 log::info!(
-                                    "Periodic sync (full) completed: {} pages, {} blocks",
+                                    "Periodic sync completed: {} pages, {} blocks",
                                     result.pages_exported,
                                     result.blocks_exported
                                 );
                             }
-                            Err(e) => {
-                                log::error!("Full sync failed: {}", e);
-                            }
                         }
-                    } else {
-                        let result = markdown::export_changed(&mut *adapter, &sync_dir);
-                        match result {
-                            Ok(result) => {
-                                if result.last_sync_time > Utc::now().timestamp_millis() {
-                                    log::warn!("last_sync_time ({}) is in the future, performing full export", result.last_sync_time);
-                                    match markdown::export_all(&mut *adapter, &sync_dir)
-                                    {
-                                        Ok(full_result) => {
-                                            log::info!("Periodic sync (full) completed: {} pages, {} blocks", full_result.pages_exported, full_result.blocks_exported);
-                                        }
-                                        Err(e) => {
-                                            log::error!("Full sync failed: {}", e);
-                                        }
-                                    }
-                                } else {
-                                    log::info!(
-                                        "Periodic sync completed: {} pages, {} blocks",
-                                        result.pages_exported,
-                                        result.blocks_exported
-                                    );
-                                }
-                            }
-                            Err(e) => {
-                                log::error!("Periodic sync failed: {}", e);
-                            }
+                        Err(e) => {
+                            log::error!("Periodic sync failed: {}", e);
                         }
                     }
                 }
-                Err(e) => {
-                    log::error!("Failed to get database adapter for sync: {}", e);
-                }
-            };
+            }
 
             SYNC_IN_PROGRESS.store(false, Ordering::SeqCst);
         }
@@ -154,14 +151,9 @@ pub fn sync_on_exit(app_handle: AppHandle) {
         }
 
         let _ = timeout(Duration::from_secs(3), async {
-            match app_handle.state::<DatabaseConnection>().get_adapter() {
-                Ok(mut adapter) => {
-                    let _ = markdown::export_all(&mut *adapter, &sync_dir);
-                }
-                Err(e) => {
-                    log::warn!("Failed to get database adapter for exit sync: {}", e);
-                }
-            };
+            let adapter_arc = app_handle.state::<DatabaseConnection>().adapter_arc();
+            let mut adapter = adapter_arc.lock().await;
+            let _ = markdown::export_all(&mut *adapter, &sync_dir);
         })
         .await;
 
@@ -192,14 +184,9 @@ pub fn sync_on_minimize(app_handle: AppHandle) {
             return;
         }
 
-        match app_handle.state::<DatabaseConnection>().get_adapter() {
-            Ok(mut adapter) => {
-                let _ = markdown::export_changed(&mut *adapter, &sync_dir);
-            }
-            Err(e) => {
-                log::warn!("Failed to get database adapter for sync: {}", e);
-            }
-        };
+        let adapter_arc = app_handle.state::<DatabaseConnection>().adapter_arc();
+            let mut adapter = adapter_arc.lock().await;
+        let _ = markdown::export_changed(&mut *adapter, &sync_dir);
 
         SYNC_IN_PROGRESS.store(false, Ordering::SeqCst);
     });
@@ -235,15 +222,10 @@ pub fn sync_on_focus(app_handle: AppHandle) {
             return;
         }
 
-        match app_handle.state::<DatabaseConnection>().get_adapter() {
-            Ok(mut adapter) => {
-                let _ = markdown::export_all(&mut *adapter, &sync_dir);
-                LAST_FULL_SYNC_TIME.store(Utc::now().timestamp_millis(), Ordering::SeqCst);
-            }
-            Err(e) => {
-                log::warn!("Failed to get database adapter for focus sync: {}", e);
-            }
-        };
+        let adapter_arc = app_handle.state::<DatabaseConnection>().adapter_arc();
+            let mut adapter = adapter_arc.lock().await;
+        let _ = markdown::export_all(&mut *adapter, &sync_dir);
+        LAST_FULL_SYNC_TIME.store(Utc::now().timestamp_millis(), Ordering::SeqCst);
 
         SYNC_IN_PROGRESS.store(false, Ordering::SeqCst);
     });

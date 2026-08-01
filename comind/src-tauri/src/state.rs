@@ -1,10 +1,11 @@
 use comind_core::storage::SQLiteAdapter;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
 use comind_core::sync::message::SyncTable;
 
 pub struct DatabaseConnection {
-    adapter: Mutex<SQLiteAdapter>,
+    adapter: Arc<tokio::sync::Mutex<SQLiteAdapter>>,
     db_path: String,
 }
 
@@ -15,15 +16,14 @@ impl DatabaseConnection {
         let adapter =
             SQLiteAdapter::open(&db_path).map_err(|e| format!("Failed to open database: {}", e))?;
         Ok(Self {
-            adapter: Mutex::new(adapter),
+            adapter: Arc::new(tokio::sync::Mutex::new(adapter)),
             db_path: db_path.to_string_lossy().to_string(),
         })
     }
 
-    pub fn get_adapter(&self) -> Result<std::sync::MutexGuard<'_, SQLiteAdapter>, String> {
-        self.adapter
-            .lock()
-            .map_err(|e| format!("Failed to lock database: {}", e))
+    /// 获取 adapter 的 Arc clone，用于 spawn_blocking
+    pub fn adapter_arc(&self) -> Arc<tokio::sync::Mutex<SQLiteAdapter>> {
+        self.adapter.clone()
     }
 
     pub fn get_db_path(&self) -> String {
@@ -32,13 +32,13 @@ impl DatabaseConnection {
 }
 
 pub struct ConfigManager {
-    config: Mutex<crate::config::AppConfig>,
+    config: StdMutex<crate::config::AppConfig>,
 }
 
 impl ConfigManager {
     pub fn new(config: crate::config::AppConfig) -> Self {
         Self {
-            config: Mutex::new(config),
+            config: StdMutex::new(config),
         }
     }
 

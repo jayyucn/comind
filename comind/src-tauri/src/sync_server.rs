@@ -71,9 +71,33 @@ impl Clone for SyncServer {
 }
 
 impl SyncServer {
+    #[allow(dead_code)]
     pub fn new(db_path: &Path, device_name: String) -> Result<Self, Box<dyn std::error::Error>> {
         let server_client_id = uuid::Uuid::new_v4().to_string();
         let engine = Arc::new(SyncEngine::new(server_client_id.clone(), db_path)?);
+
+        Ok(Self {
+            inner: Arc::new(SyncServerInner {
+                engine,
+                clients: Arc::new(RwLock::new(HashMap::new())),
+                tokens: Arc::new(RwLock::new(HashMap::new())),
+                paired_devices: Arc::new(RwLock::new(HashSet::new())),
+                connected_peers: Arc::new(RwLock::new(HashMap::new())),
+                db_path: db_path.to_path_buf(),
+                addr: StdMutex::new(SocketAddr::from(([0, 0, 0, 0], 0))),
+                shutdown: Arc::new(Mutex::new(false)),
+                device_name,
+                server_client_id,
+                debounce_timer: Arc::new(Mutex::new(None)),
+                debounce_changes: Arc::new(Mutex::new(HashMap::new())),
+            }),
+        })
+    }
+
+    /// 使用已有的数据库连接创建 SyncServer（避免多连接 WAL 锁竞争）
+    pub fn with_adapter(db_path: &Path, device_name: String, adapter: Arc<tokio::sync::Mutex<comind_core::storage::SQLiteAdapter>>) -> Result<Self, Box<dyn std::error::Error>> {
+        let server_client_id = uuid::Uuid::new_v4().to_string();
+        let engine = Arc::new(SyncEngine::with_adapter(server_client_id.clone(), adapter)?);
 
         Ok(Self {
             inner: Arc::new(SyncServerInner {

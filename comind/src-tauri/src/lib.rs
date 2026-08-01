@@ -44,6 +44,8 @@ pub fn run() {
 
             let db =
                 state::DatabaseConnection::new(&workspace).expect("Failed to initialize database");
+            #[cfg(not(target_os = "android"))]
+            let sync_adapter = db.adapter_arc();
             app.manage(db);
 
             let config_manager = state::ConfigManager::new(app_config);
@@ -61,7 +63,7 @@ pub fn run() {
 
                 tauri::async_runtime::spawn(async move {
                     log::info!("SyncServer: initializing with db_path={}", db_path_for_sync.display());
-                    let mut server = match sync_server::SyncServer::new(&db_path_for_sync, device_name) {
+                    let mut server = match sync_server::SyncServer::with_adapter(&db_path_for_sync, device_name, sync_adapter) {
                         Ok(s) => {
                             log::info!("SyncServer: created successfully");
                             s

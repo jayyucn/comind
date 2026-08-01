@@ -30,14 +30,15 @@ fn default_aliases() -> String {
     "[]".to_string()
 }
 
-fn execute_with_adapter<F, R>(
+async fn execute_with_adapter<F, R>(
     db: State<'_, super::state::DatabaseConnection>,
     f: F,
 ) -> Result<R, String>
 where
     F: FnOnce(&mut dyn StorageAdapter) -> Result<R, Box<dyn Error>>,
 {
-    let mut adapter = db.get_adapter()?;
+    let adapter_arc = db.adapter_arc();
+    let mut adapter = adapter_arc.lock().await;
     f(&mut *adapter).map_err(|e| e.to_string())
 }
 
@@ -46,7 +47,7 @@ pub async fn get_block(
     db: State<'_, super::state::DatabaseConnection>,
     block_id: &str,
 ) -> Result<Block, String> {
-    execute_with_adapter(db, |storage| BlockService::get_by_id(storage, block_id))
+    execute_with_adapter(db, |storage| BlockService::get_by_id(storage, block_id)).await
 }
 
 #[tauri::command]
@@ -54,7 +55,7 @@ pub async fn get_blocks_by_page(
     db: State<'_, super::state::DatabaseConnection>,
     page_id: &str,
 ) -> Result<Vec<Block>, String> {
-    execute_with_adapter(db, |storage| BlockService::get_by_page_id(storage, page_id))
+    execute_with_adapter(db, |storage| BlockService::get_by_page_id(storage, page_id)).await
 }
 
 #[tauri::command]
@@ -62,14 +63,14 @@ pub async fn get_page(
     db: State<'_, super::state::DatabaseConnection>,
     page_id: &str,
 ) -> Result<Page, String> {
-    execute_with_adapter(db, |storage| PageService::get_by_id(storage, page_id))
+    execute_with_adapter(db, |storage| PageService::get_by_id(storage, page_id)).await
 }
 
 #[tauri::command]
 pub async fn get_all_pages(
     db: State<'_, super::state::DatabaseConnection>,
 ) -> Result<Vec<Page>, String> {
-    execute_with_adapter(db, |storage| PageService::get_all(storage))
+    execute_with_adapter(db, |storage| PageService::get_all(storage)).await
 }
 
 #[tauri::command]
@@ -79,7 +80,7 @@ pub async fn get_backlinks(
 ) -> Result<Vec<Link>, String> {
     execute_with_adapter(db, |storage| {
         LinkService::get_by_target_page_id(storage, page_id)
-    })
+    }).await
 }
 
 #[tauri::command]
@@ -95,7 +96,7 @@ pub async fn get_outlinks(
             outlinks.extend(links);
         }
         Ok(outlinks)
-    })
+    }).await
 }
 
 #[tauri::command]
@@ -103,7 +104,7 @@ pub async fn search(
     db: State<'_, super::state::DatabaseConnection>,
     query: &str,
 ) -> Result<Vec<SearchResult>, String> {
-    execute_with_adapter(db, |storage| storage.search().search(query, 20))
+    execute_with_adapter(db, |storage| storage.search().search(query, 20)).await
 }
 
 #[tauri::command]
@@ -113,14 +114,14 @@ pub async fn get_properties(
 ) -> Result<Vec<Property>, String> {
     execute_with_adapter(db, |storage| {
         PropertyService::get_by_block_id(storage, block_id)
-    })
+    }).await
 }
 
 #[tauri::command]
 pub async fn get_relationship_types(
     db: State<'_, super::state::DatabaseConnection>,
 ) -> Result<Vec<RelationshipType>, String> {
-    execute_with_adapter(db, |storage| RelationshipTypeService::get_all(storage))
+    execute_with_adapter(db, |storage| RelationshipTypeService::get_all(storage)).await
 }
 
 #[tauri::command]
@@ -133,7 +134,7 @@ pub async fn query_date_refs(
     execute_with_adapter(db, |storage| {
         let refs = DateRefService::query_by_date_range(storage, &kind, &from, &to)?;
         Ok(refs)
-    })
+    }).await
 }
 
 #[tauri::command]
@@ -144,7 +145,7 @@ pub async fn query_overdue_date_refs(
     execute_with_adapter(db, |storage| {
         let refs = DateRefService::query_overdue(storage, &today)?;
         Ok(refs)
-    })
+    }).await
 }
 
 #[tauri::command]
@@ -155,7 +156,7 @@ pub async fn get_date_refs_by_block(
     execute_with_adapter(db, |storage| {
         let refs = DateRefService::get_by_block(storage, &block_id)?;
         Ok(refs)
-    })
+    }).await
 }
 
 #[tauri::command]
@@ -166,7 +167,7 @@ pub async fn query_due_non_recurring_date_refs(
     execute_with_adapter(db, |storage| {
         let refs = DateRefService::query_due_non_recurring(storage, now_ms)?;
         Ok(refs)
-    })
+    }).await
 }
 
 #[tauri::command]
@@ -176,7 +177,7 @@ pub async fn query_all_recurring_date_refs(
     execute_with_adapter(db, |storage| {
         let refs = DateRefService::query_all_recurring(storage)?;
         Ok(refs)
-    })
+    }).await
 }
 
 /// Batch data for checkAndFire: returns all recurring dateRefs + their blocks + pages + existing notifications
@@ -227,7 +228,7 @@ pub async fn batch_check_and_fire_data(
             pages,
             notifications,
         })
-    })
+    }).await
 }
 
 #[tauri::command]
@@ -241,7 +242,7 @@ pub async fn rebuild_date_refs(
         let refs = storage.date_refs().get_all()?;
         date_ref_ids = refs.into_iter().map(|r| r.id).collect();
         Ok(format!("{{\"rebuilt\":{}}}", count))
-    });
+    }).await;
     
     if result.is_ok() {
         let sync_server_clone = sync_server.inner().clone();
@@ -303,7 +304,7 @@ pub async fn save_block_tree(
         }
 
         Ok(results)
-    });
+    }).await;
     
     if result.is_ok() {
         let sync_server_clone = sync_server.inner().clone();
@@ -356,7 +357,7 @@ pub async fn delete_block(
             );
         }
         Ok(())
-    });
+    }).await;
     
     if result.is_ok() {
         let sync_server_clone = sync_server.inner().clone();
@@ -424,7 +425,7 @@ pub async fn save_page(
                 update.file_path.as_deref(),
             ),
         }
-    });
+    }).await;
     
     if result.is_ok() && page_id.is_some() {
         let sync_server_clone = sync_server.inner().clone();
@@ -479,7 +480,7 @@ pub async fn delete_page_cascade(
         BlockService::delete_by_page_id(storage, page_id)?;
         PageService::delete(storage, page_id)?;
         Ok(())
-    });
+    }).await;
     
     if result.is_ok() {
         let sync_server_clone = sync_server.inner().clone();
@@ -542,7 +543,7 @@ pub async fn set_property(
         }
 
         result
-    });
+    }).await;
     
     if result.is_ok() {
         let sync_server_clone = sync_server.inner().clone();
@@ -584,7 +585,7 @@ pub async fn delete_property(
         }
 
         Ok(())
-    });
+    }).await;
     
     if result.is_ok() {
         let sync_server_clone = sync_server.inner().clone();
@@ -609,7 +610,7 @@ pub async fn get_workspace_path(
     config_manager: State<'_, super::state::ConfigManager>,
     app_handle: AppHandle,
 ) -> Result<String, String> {
-    let config = config_manager.get_config()?;
+    let config = config_manager.get_config()?.clone();
     let workspace = super::config::get_workspace_path(&app_handle, &config);
     Ok(workspace.to_string_lossy().to_string())
 }
@@ -869,7 +870,7 @@ pub async fn execute_batch(
         }
 
         Ok(results)
-    });
+    }).await;
     
     if result.is_ok() {
         let sync_server_clone = sync_server.inner().clone();
@@ -889,12 +890,12 @@ pub async fn export_to_markdown(
     config_manager: State<'_, super::state::ConfigManager>,
     app_handle: AppHandle,
 ) -> Result<super::markdown::ExportResult, String> {
-    let config = config_manager.get_config()?;
+    let config = config_manager.get_config()?.clone();
     let workspace = super::config::get_workspace_path(&app_handle, &config);
     let dir = super::config::get_markdown_path(&workspace);
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("Failed to create markdown directory: {}", e))?;
-    execute_with_adapter(db, |storage| super::markdown::export_all(storage, &dir))
+    execute_with_adapter(db, |storage| super::markdown::export_all(storage, &dir)).await
 }
 
 #[tauri::command]
@@ -904,20 +905,20 @@ pub async fn import_from_markdown(
     app_handle: AppHandle,
     strategy: &str,
 ) -> Result<super::markdown::ImportResult, String> {
-    let config = config_manager.get_config()?;
+    let config = config_manager.get_config()?.clone();
     let workspace = super::config::get_workspace_path(&app_handle, &config);
     let dir = super::config::get_markdown_path(&workspace);
     execute_with_adapter(db, |storage| {
         super::markdown::import_all(storage, &dir, strategy)
-    })
+    }).await
 }
 
 #[tauri::command]
 pub async fn get_sync_config(
     config_manager: State<'_, super::state::ConfigManager>,
 ) -> Result<serde_json::Value, String> {
-    let config = config_manager.get_config()?;
-    serde_json::to_value(&*config).map_err(|e| e.to_string())
+    let config = config_manager.get_config()?.clone();
+    serde_json::to_value(&config).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -944,12 +945,12 @@ pub async fn sync_now(
     config_manager: State<'_, super::state::ConfigManager>,
     app_handle: AppHandle,
 ) -> Result<super::markdown::ExportResult, String> {
-    let config = config_manager.get_config()?;
+    let config = config_manager.get_config()?.clone();
     let workspace = super::config::get_workspace_path(&app_handle, &config);
     let dir = super::config::get_markdown_path(&workspace);
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("Failed to create markdown directory: {}", e))?;
-    execute_with_adapter(db, |storage| super::markdown::export_all(storage, &dir))
+    execute_with_adapter(db, |storage| super::markdown::export_all(storage, &dir)).await
 }
 
 #[tauri::command]
@@ -958,12 +959,12 @@ pub async fn trigger_sync(
     config_manager: State<'_, super::state::ConfigManager>,
     app_handle: AppHandle,
 ) -> Result<super::markdown::ExportResult, String> {
-    let config = config_manager.get_config()?;
+    let config = config_manager.get_config()?.clone();
     let workspace = super::config::get_workspace_path(&app_handle, &config);
     let dir = super::config::get_markdown_path(&workspace);
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("Failed to create markdown directory: {}", e))?;
-    execute_with_adapter(db, |storage| super::markdown::export_changed(storage, &dir))
+    execute_with_adapter(db, |storage| super::markdown::export_changed(storage, &dir)).await
 }
 
 #[tauri::command]
@@ -985,7 +986,7 @@ pub async fn create_block_version(
             checkpoint_name.as_deref(),
             None,
         )
-    })
+    }).await
 }
 
 #[tauri::command]
@@ -993,7 +994,7 @@ pub async fn get_block_versions(
     db: State<'_, super::state::DatabaseConnection>,
     block_id: &str,
 ) -> Result<Vec<BlockVersion>, String> {
-    execute_with_adapter(db, |storage| BlockVersionService::list(storage, block_id))
+    execute_with_adapter(db, |storage| BlockVersionService::list(storage, block_id)).await
 }
 
 #[tauri::command]
@@ -1001,7 +1002,7 @@ pub async fn get_block_version_by_id(
     db: State<'_, super::state::DatabaseConnection>,
     id: &str,
 ) -> Result<BlockVersion, String> {
-    execute_with_adapter(db, |storage| BlockVersionService::get_by_id(storage, id))
+    execute_with_adapter(db, |storage| BlockVersionService::get_by_id(storage, id)).await
 }
 
 #[tauri::command]
@@ -1009,7 +1010,8 @@ pub async fn restore_block_version(
     db: State<'_, super::state::DatabaseConnection>,
     version_id: &str,
 ) -> Result<BlockVersion, String> {
-    let mut adapter = db.get_adapter()?;
+    let adapter_arc = db.adapter_arc();
+    let mut adapter = adapter_arc.lock().await;
     BlockVersionService::restore(&mut *adapter, version_id).map_err(|e| e.to_string())
 }
 
@@ -1020,7 +1022,7 @@ pub async fn cleanup_block_versions(
 ) -> Result<(), String> {
     execute_with_adapter(db, |storage| {
         BlockVersionService::cleanup(storage, retention_days)
-    })
+    }).await
 }
 
 #[tauri::command]
@@ -1030,7 +1032,7 @@ pub async fn delete_block_version(
 ) -> Result<(), String> {
     execute_with_adapter(db, |storage| {
         BlockVersionService::delete(storage, version_id)
-    })
+    }).await
 }
 
 #[tauri::command]
@@ -1038,7 +1040,7 @@ pub async fn get_notification(
     db: State<'_, super::state::DatabaseConnection>,
     id: &str,
 ) -> Result<Notification, String> {
-    execute_with_adapter(db, |storage| storage.notifications().get_by_id(id))
+    execute_with_adapter(db, |storage| storage.notifications().get_by_id(id)).await
 }
 
 #[tauri::command]
@@ -1048,14 +1050,14 @@ pub async fn get_notifications_by_block(
 ) -> Result<Vec<Notification>, String> {
     execute_with_adapter(db, |storage| {
         storage.notifications().get_by_block_id(block_id)
-    })
+    }).await
 }
 
 #[tauri::command]
 pub async fn query_unread_notifications(
     db: State<'_, super::state::DatabaseConnection>,
 ) -> Result<Vec<Notification>, String> {
-    execute_with_adapter(db, |storage| storage.notifications().query_unread())
+    execute_with_adapter(db, |storage| storage.notifications().query_unread()).await
 }
 
 #[tauri::command]
@@ -1063,7 +1065,7 @@ pub async fn query_recent_notifications(
     db: State<'_, super::state::DatabaseConnection>,
     limit: usize,
 ) -> Result<Vec<Notification>, String> {
-    execute_with_adapter(db, |storage| storage.notifications().query_recent(limit))
+    execute_with_adapter(db, |storage| storage.notifications().query_recent(limit)).await
 }
 
 #[tauri::command]
@@ -1071,7 +1073,7 @@ pub async fn create_notification(
     db: State<'_, super::state::DatabaseConnection>,
     notification: Notification,
 ) -> Result<Notification, String> {
-    execute_with_adapter(db, |storage| storage.notifications().create(&notification))
+    execute_with_adapter(db, |storage| storage.notifications().create(&notification)).await
 }
 
 #[tauri::command]
@@ -1081,7 +1083,7 @@ pub async fn batch_create_notifications(
 ) -> Result<Vec<Notification>, String> {
     execute_with_adapter(db, |storage| {
         storage.notifications().batch_create(&notifications)
-    })
+    }).await
 }
 
 #[tauri::command]
@@ -1092,7 +1094,7 @@ pub async fn update_notification_status(
 ) -> Result<Notification, String> {
     execute_with_adapter(db, |storage| {
         storage.notifications().update_status(id, status)
-    })
+    }).await
 }
 
 #[tauri::command]
@@ -1103,7 +1105,7 @@ pub async fn update_notification_payload(
 ) -> Result<Notification, String> {
     execute_with_adapter(db, |storage| {
         storage.notifications().update_payload(id, payload)
-    })
+    }).await
 }
 
 #[tauri::command]
@@ -1115,7 +1117,7 @@ pub async fn set_notification_snooze(
 ) -> Result<Notification, String> {
     execute_with_adapter(db, |storage| {
         storage.notifications().set_snooze(id, snooze_until, status)
-    })
+    }).await
 }
 
 #[tauri::command]
@@ -1123,7 +1125,7 @@ pub async fn delete_notification(
     db: State<'_, super::state::DatabaseConnection>,
     id: &str,
 ) -> Result<(), String> {
-    execute_with_adapter(db, |storage| storage.notifications().delete(id))
+    execute_with_adapter(db, |storage| storage.notifications().delete(id)).await
 }
 
 #[tauri::command]
@@ -1133,14 +1135,14 @@ pub async fn cleanup_notifications(
 ) -> Result<(), String> {
     execute_with_adapter(db, |storage| {
         storage.notifications().delete_older_than(timestamp)
-    })
+    }).await
 }
 
 #[tauri::command]
 pub async fn mark_all_notifications_read(
     db: State<'_, super::state::DatabaseConnection>,
 ) -> Result<(), String> {
-    execute_with_adapter(db, |storage| storage.notifications().mark_all_read())
+    execute_with_adapter(db, |storage| storage.notifications().mark_all_read()).await
 }
 
 #[cfg(not(target_os = "android"))]
@@ -1167,7 +1169,8 @@ pub async fn get_sync_qr(
 pub async fn get_paired_devices(
     db: State<'_, super::state::DatabaseConnection>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let adapter = db.get_adapter()?;
+    let adapter_arc = db.adapter_arc();
+    let adapter = adapter_arc.lock().await;
     let states = comind_core::sync::state::SyncStateRepository::get_all(&adapter.conn)
         .map_err(|e| e.to_string())?;
     let mut result = Vec::new();
@@ -1195,7 +1198,8 @@ pub async fn unpair_device(
             server.revoke_device(client_id).await;
         }
     }
-    let adapter = db.get_adapter()?;
+    let adapter_arc = db.adapter_arc();
+    let adapter = adapter_arc.lock().await;
     comind_core::sync::state::SyncStateRepository::delete(&adapter.conn, client_id)
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -1241,7 +1245,7 @@ pub async fn connect_to_server(
     log::warn!("connect_to_server: CALLED with qr_payload={}", qr_payload);
 
     let device_name = {
-        let config = config_manager.get_config()?;
+        let config = config_manager.get_config()?.clone();
         config.device_name.clone()
     };
 
@@ -1286,7 +1290,7 @@ pub async fn auto_reconnect(
     }
 
     let device_name = {
-        let config = config_manager.get_config()?;
+        let config = config_manager.get_config()?.clone();
         config.device_name.clone()
     };
 

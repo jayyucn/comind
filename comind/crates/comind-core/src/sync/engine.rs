@@ -43,6 +43,22 @@ impl SyncEngine {
         })
     }
 
+    /// 使用已有的数据库连接创建 SyncEngine（避免多连接 WAL 锁竞争）
+    pub fn with_adapter(client_id: String, db: Arc<Mutex<super::super::storage::sqlite::SQLiteAdapter>>) -> SyncResult<Self> {
+        Ok(Self {
+            client_id,
+            db,
+            debounce_buffer: Arc::new(Mutex::new(DebounceBuffer {
+                buffers: HashMap::new(),
+            })),
+            full_sync_buffer: Arc::new(Mutex::new(FullSyncBuffer {
+                data: HashMap::new(),
+                expected_batches: HashMap::new(),
+                received_batches: HashMap::new(),
+            })),
+        })
+    }
+
     pub async fn handle_message(&self, msg: SyncMessage) -> SyncResult<Vec<SyncMessage>> {
         let db = self.db.clone();
         let client_id = self.client_id.clone();
