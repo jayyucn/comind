@@ -167,6 +167,7 @@ pub fn run() {
             commands::query_due_non_recurring_date_refs,
             commands::query_all_recurring_date_refs,
             commands::batch_check_and_fire_data,
+            commands::build_graph_snapshot,
             commands::rebuild_date_refs,
             #[cfg(not(target_os = "android"))]
             commands::get_sync_qr,

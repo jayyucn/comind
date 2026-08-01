@@ -231,6 +231,47 @@ pub async fn batch_check_and_fire_data(
     }).await
 }
 
+/// 图谱快照：一次 SQL JOIN 返回所有页面间边关系
+/// 前端无需 N×3 次 IPC，1 次调用即可构建完整图谱
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphEdgeRecord {
+    pub link_id: String,
+    pub source_page_id: String,
+    pub source_page_title: String,
+    pub target_page_id: String,
+    pub target_page_title: String,
+    pub relationship_type: Option<String>,
+}
+
+#[tauri::command]
+pub async fn build_graph_snapshot(
+    db: State<'_, super::state::DatabaseConnection>,
+) -> Result<Vec<GraphEdgeRecord>, String> {
+    let adapter_arc = db.adapter_arc();
+    let adapter = adapter_arc.lock().await;
+    let mut stmt = adapter.conn.prepare(
+        "SELECT l.id, b.page_id, p.title, l.target_page_id, p2.title, l.relationship_type
+         FROM Link l
+         JOIN Block b ON l.source_block_id = b.id
+         JOIN Page p ON b.page_id = p.id
+         JOIN Page p2 ON l.target_page_id = p2.id
+         WHERE l.deleted_at IS NULL
+           AND p.deleted = 0 AND p.deleted_at IS NULL
+           AND p2.deleted = 0 AND p2.deleted_at IS NULL"
+    ).map_err(|e| e.to_string())?;
+    let edges = stmt.query_map([], |row| {
+        Ok(GraphEdgeRecord {
+            link_id: row.get(0)?,
+            source_page_id: row.get(1)?,
+            source_page_title: row.get(2)?,
+            target_page_id: row.get(3)?,
+            target_page_title: row.get(4)?,
+            relationship_type: row.get(5)?,
+        })
+    }).map_err(|e| e.to_string())?.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+    Ok(edges)
+}
+
 #[tauri::command]
 pub async fn rebuild_date_refs(
     db: State<'_, super::state::DatabaseConnection>,

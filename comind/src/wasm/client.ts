@@ -91,6 +91,7 @@ export interface CoreClient {
   queryAllRecurringDateRefs(): Promise<DateRefRecord[]>
   batchCheckAndFireData(nowMs: number): Promise<tauri.TauriBatchCheckAndFireData>
   rebuildDateRefs(): Promise<{ rebuilt: number }>
+  buildGraphSnapshot(): Promise<tauri.TauriGraphEdgeRecord[]>
 }
 
 class TauriClient implements CoreClient {
@@ -260,6 +261,10 @@ class TauriClient implements CoreClient {
 
     async rebuildDateRefs(): Promise<{ rebuilt: number }> {
       return parseJsonResult(await tauri.tauriRebuildDateRefs())
+    }
+
+    async buildGraphSnapshot(): Promise<tauri.TauriGraphEdgeRecord[]> {
+      return tauri.tauriBuildGraphSnapshot()
     }
   }
 
@@ -470,6 +475,11 @@ class WasmClientAdapter implements CoreClient {
       pages: [],
       notifications: [],
     }
+  }
+
+  async buildGraphSnapshot(): Promise<tauri.TauriGraphEdgeRecord[]> {
+    // WASM client doesn't support graph snapshot; return empty
+    return []
   }
 
   async rebuildDateRefs(): Promise<{ rebuilt: number }> {

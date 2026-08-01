@@ -1,6 +1,12 @@
 import type { EdgeData, NodeData } from '@antv/g6'
 import { getRelationshipColor, getRelationshipLabel } from '../../types/relationship'
 import pLimit from 'p-limit'
+import type { TauriGraphEdgeRecord } from '../../wasm/tauri-client'
+
+// 一次性图谱快照数据（由 build_graph_snapshot 命令返回）
+export interface GraphSnapshot {
+  edges: TauriGraphEdgeRecord[]
+}
 
 export interface RawLink {
   id: string
@@ -215,7 +221,46 @@ export async function traverseBFS(
   filterHiddenEdges(acc.edges, visibility.hiddenNodeIds)
 }
 
-// ---- 全量构建（需要异步 I/O 回调） ----
+// ---- 纯函数：从图谱快照构建边数据（同步，无 I/O） ----
+export function processSnapshotEdges(
+  snapshot: GraphSnapshot,
+  acc: GraphAccumulator,
+  visibility: VisibilityMap,
+  currentPageId: string | null,
+  highlightedNodeId: string | null,
+  getPage: (id: string) => { id: string; title: string; deleted: boolean } | undefined,
+): void {
+  for (const edge of snapshot.edges) {
+    if (acc.visitedEdges.has(edge.link_id)) continue
+    if (visibility.hiddenEdgeIds.has(edge.link_id)) continue
+
+    const sourcePage = getPage(edge.source_page_id)
+    const targetPage = getPage(edge.target_page_id)
+    if (!sourcePage || sourcePage.deleted) continue
+    if (!targetPage || targetPage.deleted) continue
+    if (visibility.hiddenNodeIds.has(sourcePage.id)) continue
+    if (visibility.hiddenNodeIds.has(targetPage.id)) continue
+
+    // 确保两端节点都存在
+    const sourceDimmed = visibility.dimmedNodeIds.has(sourcePage.id)
+    const targetDimmed = visibility.dimmedNodeIds.has(targetPage.id)
+    if (!acc.nodeIds.has(sourcePage.id)) {
+      acc.nodeIds.add(sourcePage.id)
+      acc.nodes.push(createNodeData(sourcePage.id, sourcePage.title, sourcePage.id === currentPageId, sourcePage.id === highlightedNodeId, sourceDimmed))
+    }
+    if (!acc.nodeIds.has(targetPage.id)) {
+      acc.nodeIds.add(targetPage.id)
+      acc.nodes.push(createNodeData(targetPage.id, targetPage.title, targetPage.id === currentPageId, targetPage.id === highlightedNodeId, targetDimmed))
+    }
+
+    acc.visitedEdges.add(edge.link_id)
+    const type = edge.relationship_type ?? 'related'
+    acc.edges.push(createEdgeData(edge.link_id, sourcePage.id, targetPage.id, type, sourceDimmed || targetDimmed))
+  }
+  filterHiddenEdges(acc.edges, visibility.hiddenNodeIds)
+}
+
+// ---- 全量构建（使用一次性图谱快照，无 N 次 IPC） ----
 export async function buildFullGraph(
   allPages: { id: string; title: string; deleted: boolean }[],
   acc: GraphAccumulator,
@@ -223,8 +268,9 @@ export async function buildFullGraph(
   currentPageId: string | null,
   highlightedNodeId: string | null,
   getPage: (id: string) => { id: string; title: string; deleted: boolean } | undefined,
-  fetchNeighbors: (pageId: string) => Promise<{ outLinks: RawLink[]; inLinks: RawLink[] }>,
-  getBlock: (id: string) => { pageId: string } | undefined,
+  _fetchNeighbors: (pageId: string) => Promise<{ outLinks: RawLink[]; inLinks: RawLink[] }>,
+  _getBlock: (id: string) => { pageId: string } | undefined,
+  snapshot?: GraphSnapshot,
 ): Promise<void> {
   // 先收集所有可见页面节点
   for (const page of allPages) {
@@ -233,14 +279,20 @@ export async function buildFullGraph(
     acc.nodeIds.add(page.id)
     acc.nodes.push(createNodeData(page.id, page.title, page.id === currentPageId, page.id === highlightedNodeId, isDimmed))
   }
-  // 再加载边（并发，最多 6 个同时进行）
-  const visiblePages = allPages.filter(p => !p.deleted && !visibility.hiddenNodeIds.has(p.id))
-  const limit = pLimit(6)
-  await Promise.all(visiblePages.map(page =>
-    limit(async () => {
-      const { outLinks, inLinks } = await fetchNeighbors(page.id)
-      processNeighbors(page.id, outLinks, inLinks, acc, visibility, currentPageId, highlightedNodeId, getPage, getBlock)
-    })
-  ))
-  filterHiddenEdges(acc.edges, visibility.hiddenNodeIds)
+
+  if (snapshot) {
+    // 快照模式：1 次 IPC 已拿到所有边，本地构建
+    processSnapshotEdges(snapshot, acc, visibility, currentPageId, highlightedNodeId, getPage)
+  } else {
+    // 降级模式：并发 fetchNeighbors（向后兼容）
+    const visiblePages = allPages.filter(p => !p.deleted && !visibility.hiddenNodeIds.has(p.id))
+    const limit = pLimit(6)
+    await Promise.all(visiblePages.map(page =>
+      limit(async () => {
+        const { outLinks, inLinks } = await _fetchNeighbors(page.id)
+        processNeighbors(page.id, outLinks, inLinks, acc, visibility, currentPageId, highlightedNodeId, getPage, _getBlock)
+      })
+    ))
+    filterHiddenEdges(acc.edges, visibility.hiddenNodeIds)
+  }
 }

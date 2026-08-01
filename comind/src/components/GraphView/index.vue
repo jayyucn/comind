@@ -8,7 +8,22 @@ import { getRelationshipStrength, STRENGTH_TO_WIDTH } from '../../types/relation
 import { useRouter } from 'vue-router'
 import { Download, ExpandIcon, RefreshCw } from 'lucide-vue-next'
 import { getNodeStyle, getEdgeStyle } from './graphStyle'
-import { createAccumulator, traverseBFS, buildFullGraph, type RawLink, type VisibilityMap } from './graphData'
+import { createAccumulator, traverseBFS, buildFullGraph, type RawLink, type VisibilityMap, type GraphSnapshot } from './graphData'
+import { initCoreClient } from '../../wasm/client'
+import type { CoreClient } from '../../wasm/client'
+
+let coreClientPromise: Promise<CoreClient> | null = null
+
+async function getClient() {
+  if (!coreClientPromise) {
+    coreClientPromise = initCoreClient()
+  }
+  const client = await coreClientPromise
+  if (!client) {
+    throw new Error('Core client not initialized')
+  }
+  return client
+}
 
 const pageStore = usePageStore()
 const blockStore = useBlockStore()
@@ -70,7 +85,16 @@ async function buildGraphData() {
 
   if (!isPageScoped.value) {
     const allPages = pageStore.pages.filter(p => !p.deleted)
-    await buildFullGraph(allPages, acc, visibility, currentPageId.value, highlightedNodeId.value, getPage, fetchNeighbors, getBlock)
+    // 一次性图谱快照：1 次 IPC 取回所有边关系
+    let snapshot: GraphSnapshot | undefined
+    try {
+      const client = await getClient()
+      const edges = await client.buildGraphSnapshot()
+      if (edges.length > 0) snapshot = { edges }
+    } catch (e) {
+      console.warn('[GraphView] buildGraphSnapshot failed, falling back to fetchNeighbors', e)
+    }
+    await buildFullGraph(allPages, acc, visibility, currentPageId.value, highlightedNodeId.value, getPage, fetchNeighbors, getBlock, snapshot)
   } else {
     const rootId = currentPageId.value
     if (rootId) {

@@ -295,6 +295,19 @@ export async function tauriBatchCheckAndFireData(nowMs: number): Promise<TauriBa
   return invoke('batch_check_and_fire_data', { nowMs })
 }
 
+export interface TauriGraphEdgeRecord {
+  link_id: string
+  source_page_id: string
+  source_page_title: string
+  target_page_id: string
+  target_page_title: string
+  relationship_type: string | null
+}
+
+export async function tauriBuildGraphSnapshot(): Promise<TauriGraphEdgeRecord[]> {
+  return invoke('build_graph_snapshot')
+}
+
 export async function tauriRebuildDateRefs(): Promise<{ rebuilt: number }> {
   return invoke('rebuild_date_refs')
 }
