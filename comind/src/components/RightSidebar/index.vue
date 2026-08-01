@@ -138,7 +138,7 @@ function handleResizeStart(e: MouseEvent) {
   border: none;
   background: transparent;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
   font-family: inherit;
   transition: background 80ms ease, color 80ms ease, border-color 120ms ease;
@@ -154,16 +154,16 @@ function handleResizeStart(e: MouseEvent) {
 .tab-btn.active {
   background: var(--bg-active);
   color: var(--text-primary);
-  font-weight: 500;
+  font-weight: var(--font-medium);
   border-bottom-color: var(--accent);
 }
 
 .tab-icon {
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 .tab-label {
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .close-btn {

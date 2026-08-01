@@ -390,7 +390,7 @@ onMounted(async () => {
 .version-date {
   font-size: var(--text-xs);
   color: var(--text-secondary);
-  font-weight: 500;
+  font-weight: var(--font-medium);
 }
 
 .version-actions {
@@ -454,7 +454,7 @@ onMounted(async () => {
 
 .version-number {
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: var(--font-semibold);
   color: var(--text-primary);
 }
 
@@ -490,7 +490,7 @@ onMounted(async () => {
   align-items: flex-start;
   gap: 4px;
   min-height: 1.3em;
-  line-height: 1.5;
+  line-height: var(--leading-normal);
 }
 
 .block-bullet {
@@ -519,7 +519,7 @@ onMounted(async () => {
   word-break: break-word;
   color: var(--text-primary);
   font-size: var(--text-sm);
-  line-height: 1.5;
+  line-height: var(--leading-normal);
 }
 
 :deep(.block-link) {
@@ -575,7 +575,7 @@ onMounted(async () => {
 
 .property-value {
   color: var(--text-primary);
-  font-weight: 500;
+  font-weight: var(--font-medium);
 }
 
 .version-relationships {
@@ -628,7 +628,7 @@ onMounted(async () => {
 
 .delete-confirm-title {
   font-size: var(--text-base);
-  font-weight: 600;
+  font-weight: var(--font-semibold);
   color: var(--text-primary);
   margin-bottom: 8px;
 }
@@ -636,7 +636,7 @@ onMounted(async () => {
 .delete-confirm-message {
   font-size: var(--text-sm);
   color: var(--text-secondary);
-  line-height: 1.6;
+  line-height: var(--leading-normal);
   margin-bottom: 16px;
 }
 
@@ -649,7 +649,7 @@ onMounted(async () => {
 .delete-confirm-btn {
   padding: 6px 14px;
   font-size: var(--text-sm);
-  font-weight: 500;
+  font-weight: var(--font-medium);
   border: none;
   border-radius: var(--radius-sm);
   cursor: pointer;

@@ -165,7 +165,7 @@ defineExpose({ select, close })
 .rel-menu-item {
   display: flex;
   align-items: stretch;
-  font-size: 13px;
+  font-size: var(--text-sm);
   border-left: 3px solid transparent;
 }
 
@@ -208,13 +208,13 @@ defineExpose({ select, close })
   display: flex;
   align-items: center;
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: var(--text-xs);
   padding: 0 2px;
   user-select: none;
 }
 
 .rel-menu-type {
-  font-weight: 500;
+  font-weight: var(--font-medium);
   color: var(--rel-color);
   white-space: nowrap;
   overflow: hidden;
@@ -225,6 +225,6 @@ defineExpose({ select, close })
   padding: 12px;
   text-align: center;
   color: var(--text-tertiary);
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 </style>

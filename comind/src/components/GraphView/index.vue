@@ -403,8 +403,8 @@ onBeforeUnmount(() => {
 
 .graph-view-title {
   margin-left: var(--space-3);
-  font-size: 24px;
-  font-weight: 600;
+  font-size: var(--text-2xl);
+  font-weight: var(--font-semibold);
   color: var(--text-primary);
 }
 
@@ -423,15 +423,15 @@ onBeforeUnmount(() => {
 }
 
 .control-label {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
   margin-right: 4px;
 }
 
 .control-value {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-primary);
-  font-weight: 500;
+  font-weight: var(--font-medium);
   min-width: 18px;
   text-align: center;
 }
@@ -446,7 +446,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-sm);
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-secondary);
   font-family: inherit;
   transition: background 80ms ease;
@@ -462,7 +462,7 @@ onBeforeUnmount(() => {
   background: var(--bg-sidebar);
   cursor: pointer;
   border-radius: var(--radius-sm);
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
   font-family: inherit;
   transition: background 80ms ease, color 80ms ease;
@@ -476,7 +476,7 @@ onBeforeUnmount(() => {
 .layout-btn.active {
   background: var(--bg-active);
   color: var(--text-primary);
-  font-weight: 500;
+  font-weight: var(--font-medium);
   border-color: #1890ff;
 }
 
@@ -521,9 +521,9 @@ onBeforeUnmount(() => {
 }
 
 .depth-label {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
-  font-weight: 500;
+  font-weight: var(--font-medium);
 }
 
 .depth-options {
@@ -542,7 +542,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-sm);
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
   font-family: inherit;
   transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
@@ -556,6 +556,6 @@ onBeforeUnmount(() => {
   background: #1890ff;
   color: #fff;
   border-color: #1890ff;
-  font-weight: 600;
+  font-weight: var(--font-semibold);
 }
 </style>

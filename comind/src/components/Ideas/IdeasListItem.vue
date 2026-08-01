@@ -124,16 +124,16 @@ function openPage() {
 }
 
 .date-month-day {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
   color: var(--text-primary);
-  line-height: 1.3;
+  line-height: var(--leading-tight);
 }
 
 .date-weekday {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
-  line-height: 1.3;
+  line-height: var(--leading-tight);
 }
 
 .date-right {
@@ -144,13 +144,13 @@ function openPage() {
 }
 
 .today-tag {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
   padding: 2px 8px;
   border-radius: 6px;
   background: var(--accent);
   color: #fff;
-  line-height: 1.4;
+  line-height: var(--leading-snug);
 }
 
 

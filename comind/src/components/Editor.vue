@@ -517,15 +517,15 @@ defineExpose({ syncContent, focus, focusAtCoords, getText: () => editor.value?.g
 .editor-wrapper :deep(.tiptap) {
   outline: none;
   min-height: 1.3em;
-  line-height: var(--leading-tight, 1.25);
+  line-height: var(--leading-tight);
   padding: 0 4px;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 .editor-wrapper :deep(.heading-preview) {
-  font-weight: 600;
-  line-height: 1.4;
+  font-weight: var(--font-semibold);
+  line-height: var(--leading-snug);
   margin: 0;
   padding: 0;
   border: none;

@@ -40,10 +40,10 @@ async function handleMouseDown() {
 }
 
 .sidebar-logo {
-  font-size: 13px;
-  font-weight: 700;
+  font-size: var(--text-sm);
+  font-weight: var(--font-bold);
   color: var(--text-secondary);
-  letter-spacing: 0.08em;
+  letter-spacing: var(--letter-wide-3);
   text-transform: uppercase;
 }
 

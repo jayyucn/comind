@@ -370,7 +370,8 @@ init()
 
 .filter-panel.collapsed {
   width: 0;
-
+  transition: width var(--transition-base);
+  border-left: none;
 }
 
 /* Header */
@@ -383,7 +384,7 @@ init()
 
 .filter-panel-title {
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: var(--font-semibold);
   color: var(--text-primary);
 }
 
@@ -445,7 +446,7 @@ init()
   font-weight: var(--font-medium);
   color: var(--text-tertiary);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--letter-wide-1);
 }
 
 .filter-divider {

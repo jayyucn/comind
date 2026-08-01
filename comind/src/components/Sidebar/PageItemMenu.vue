@@ -155,7 +155,7 @@ onUnmounted(() => {
   background: transparent;
   cursor: pointer;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-primary);
   font-family: inherit;
   text-align: left;

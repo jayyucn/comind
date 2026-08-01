@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, ref } from 'vue'
 import { usePropertyStore } from '../../stores/property'
 import { useEditorStore } from '../../stores/editor'
@@ -158,7 +158,7 @@ function isSvgIcon(icon: string): boolean {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 13px;
+  font-size: var(--text-sm);
   cursor: pointer;
   padding: 2px 4px;
   padding-right: 20px;
@@ -173,7 +173,7 @@ function isSvgIcon(icon: string): boolean {
 
 .property-item.built-in .property-key {
   color: var(--primary-color, #007bff);
-  font-weight: 500;
+  font-weight: var(--font-medium);
 }
 
 .property-key {
@@ -192,8 +192,8 @@ function isSvgIcon(icon: string): boolean {
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 16px;
-  line-height: 1;
+  font-size: var(--heading-5);
+  line-height: var(--leading-none);
   color: #9ca3af;
   padding: 0 4px;
   border-radius: 4px;

@@ -351,7 +351,7 @@ function moveDown(id: string): void {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 .rel-label {
@@ -378,8 +378,8 @@ function moveDown(id: string): void {
   height: 18px;
   border: 1px solid var(--border);
   border-radius: 3px;
-  font-size: 10px;
-  font-weight: 500;
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
   color: var(--text-tertiary);
   flex-shrink: 0;
 }
@@ -387,7 +387,7 @@ function moveDown(id: string): void {
 .rel-strength-badge--strong {
   border-color: #262626;
   color: #262626;
-  font-weight: 600;
+  font-weight: var(--font-semibold);
 }
 
 .rel-strength-badge--medium {
@@ -417,7 +417,7 @@ function moveDown(id: string): void {
   border-radius: 4px;
   background: var(--bg-base);
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-family: inherit;
   /* 允许 grid 列收缩到内容以下，避免 1fr 列因 input 固有宽度溢出 row */
   min-width: 0;
@@ -429,7 +429,7 @@ function moveDown(id: string): void {
 }
 
 .rel-input--color {
-  font-family: monospace;
+  font-family: var(--font-mono);
 }
 
 .rel-input--strength {
@@ -452,7 +452,7 @@ function moveDown(id: string): void {
   border: 1px solid var(--border);
   border-radius: 4px;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
   font-family: inherit;
 }
@@ -474,7 +474,7 @@ function moveDown(id: string): void {
 
 .rel-error {
   margin-top: 4px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: #ff4d4f;
 }
 
@@ -487,7 +487,7 @@ function moveDown(id: string): void {
   border: 1px dashed var(--border);
   border-radius: 6px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
   font-family: inherit;
   align-self: flex-start;
@@ -511,7 +511,7 @@ function moveDown(id: string): void {
   background: transparent;
   border: none;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
   font-family: inherit;
 }
@@ -540,7 +540,7 @@ function moveDown(id: string): void {
   background: var(--bg-active);
   border: 1px solid var(--border);
   border-radius: 6px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-primary);
   align-self: flex-start;
 }
@@ -550,7 +550,7 @@ function moveDown(id: string): void {
   border: none;
   color: var(--accent);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-family: inherit;
   padding: 0;
   text-decoration: underline;

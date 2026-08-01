@@ -630,11 +630,11 @@ onUnmounted(() => {
 }
 
 .nav-title {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
   color: var(--text-tertiary);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--letter-wide-1);
   margin-bottom: 12px;
   padding: 0 10px;
 }
@@ -647,7 +647,7 @@ onUnmounted(() => {
   background: transparent;
   cursor: pointer;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-secondary);
   font-family: inherit;
   text-align: left;
@@ -660,7 +660,7 @@ onUnmounted(() => {
 
 .nav-item.active {
   background: var(--bg-active);
-  font-weight: 500;
+  font-weight: var(--font-medium);
   color: var(--text-primary);
 }
 
@@ -681,8 +681,8 @@ onUnmounted(() => {
 }
 
 .content-title {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
   color: var(--text-primary);
   margin: 0;
 }
@@ -738,18 +738,18 @@ onUnmounted(() => {
 }
 
 .setting-label {
-  font-size: 13px;
-  font-weight: 500;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
   color: var(--text-primary);
 }
 
 .setting-desc {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
 }
 
 .setting-value {
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-secondary);
 }
 
@@ -759,7 +759,7 @@ onUnmounted(() => {
   border: 1px solid var(--border);
   border-radius: 6px;
   cursor: not-allowed;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
   font-family: inherit;
 }
@@ -790,7 +790,7 @@ onUnmounted(() => {
   background: transparent;
   cursor: pointer;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
   font-family: inherit;
   transition: background 80ms ease, color 80ms ease;
@@ -803,7 +803,7 @@ onUnmounted(() => {
 .theme-option.active {
   background: var(--bg-base);
   color: var(--text-primary);
-  font-weight: 500;
+  font-weight: var(--font-medium);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
@@ -841,13 +841,13 @@ onUnmounted(() => {
   background: var(--bg-hover);
   border-radius: 6px;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--text-xs);
   word-break: break-all;
 }
 
 .db-path-text {
   flex: 1;
-  font-family: monospace;
+  font-family: var(--font-mono);
 }
 
 .db-path-actions {
@@ -866,8 +866,8 @@ onUnmounted(() => {
   background: var(--bg-hover);
   border: 1px solid var(--border);
   border-radius: 6px;
-  font-size: 12px;
-  font-family: monospace;
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
   color: var(--text-primary);
   outline: none;
 }
@@ -882,7 +882,7 @@ onUnmounted(() => {
   border: 1px solid var(--border);
   border-radius: 6px;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
   font-family: inherit;
   display: inline-flex;
@@ -909,7 +909,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
   padding-top: 4px;
 }
@@ -930,7 +930,7 @@ onUnmounted(() => {
   border: 1px solid var(--border);
   border-radius: 6px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
   font-family: inherit;
   align-self: flex-start;
@@ -962,7 +962,7 @@ onUnmounted(() => {
   padding: 6px 10px;
   background: var(--bg-hover);
   border-radius: 4px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
 }
 
@@ -973,7 +973,7 @@ onUnmounted(() => {
   border: 1px solid var(--border);
   border-radius: 4px;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
   font-family: inherit;
 }
@@ -994,8 +994,8 @@ onUnmounted(() => {
   background: var(--bg-hover);
   border: 1px solid var(--border);
   border-radius: 4px;
-  font-size: 11px;
-  font-family: monospace;
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
   color: var(--text-primary);
   outline: none;
 }
@@ -1010,7 +1010,7 @@ onUnmounted(() => {
   border: 1px solid var(--border);
   border-radius: 4px;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
   font-family: inherit;
   display: inline-flex;
@@ -1031,7 +1031,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
 }
 
@@ -1041,7 +1041,7 @@ onUnmounted(() => {
   background: var(--bg-hover);
   border: 1px solid var(--border);
   border-radius: 4px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-primary);
   text-align: center;
   outline: none;
@@ -1060,7 +1060,7 @@ onUnmounted(() => {
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: white;
   font-family: inherit;
   align-self: flex-start;
@@ -1079,7 +1079,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
   padding-top: 4px;
 }
@@ -1107,7 +1107,7 @@ onUnmounted(() => {
 }
 
 .quiet-hours-label {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
   width: 60px;
   flex-shrink: 0;
@@ -1118,7 +1118,7 @@ onUnmounted(() => {
   background: var(--bg-hover);
   border: 1px solid var(--border);
   border-radius: 4px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-primary);
   font-family: inherit;
   cursor: pointer;
@@ -1153,7 +1153,7 @@ onUnmounted(() => {
   .nav-item {
     white-space: nowrap;
     padding: 6px 12px;
-    font-size: 12px;
+    font-size: var(--text-xs);
   }
 
   .nav-title {
@@ -1195,7 +1195,7 @@ onUnmounted(() => {
   border: none;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: white;
   font-family: inherit;
   align-self: flex-start;
@@ -1215,7 +1215,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
 }
 
@@ -1238,9 +1238,9 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-primary);
-  font-weight: 500;
+  font-weight: var(--font-medium);
 }
 
 .paired-status-icon {
@@ -1256,7 +1256,7 @@ onUnmounted(() => {
   border: 1px solid var(--border);
   border-radius: 4px;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
   font-family: inherit;
   transition: background 80ms ease;
@@ -1294,7 +1294,7 @@ onUnmounted(() => {
 }
 
 .paired-device-name {
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-primary);
 }
 
@@ -1308,7 +1308,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
 }
 
@@ -1318,7 +1318,7 @@ onUnmounted(() => {
   border: 1px solid var(--border);
   border-radius: 4px;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
   font-family: inherit;
   transition: background 80ms ease, color 80ms ease;
@@ -1333,7 +1333,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
   padding-top: 4px;
 }
@@ -1367,8 +1367,8 @@ onUnmounted(() => {
 }
 
 .qr-modal-title {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
   color: var(--text-primary);
 }
 
@@ -1424,7 +1424,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
 }
 
@@ -1433,7 +1433,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
   padding-top: 8px;
 }

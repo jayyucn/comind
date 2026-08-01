@@ -200,7 +200,7 @@ function handleKeyDown(e: KeyboardEvent) {
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 6px 10px;
-  font-size: 14px;
+  font-size: var(--text-sm);
   outline: none;
   background: var(--bg-base);
 }
@@ -212,7 +212,7 @@ function handleKeyDown(e: KeyboardEvent) {
 .bs-close-btn {
   background: none;
   border: none;
-  font-size: 16px;
+  font-size: var(--heading-5);
   cursor: pointer;
   color: var(--text-tertiary);
   padding: 4px;
@@ -231,7 +231,7 @@ function handleKeyDown(e: KeyboardEvent) {
   padding: 8px 12px;
   cursor: pointer;
   border-radius: 4px;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .bs-block-item:hover,
@@ -263,7 +263,7 @@ function handleKeyDown(e: KeyboardEvent) {
 }
 
 .bs-block-page {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
   white-space: nowrap;
   overflow: hidden;

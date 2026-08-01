@@ -38,8 +38,8 @@ function handleClick() {
   padding: 0 10px;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
   color: var(--text-secondary);
   transition: background 80ms ease, color 80ms ease;
 }
@@ -51,7 +51,7 @@ function handleClick() {
 
 .nav-item.active {
   color: var(--text-primary);
-  font-weight: 600;
+  font-weight: var(--font-semibold);
   background: var(--accent-bg, rgba(99, 102, 241, 0.08));
 }
 
@@ -72,7 +72,7 @@ function handleClick() {
 }
 
 .nav-time {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
   flex-shrink: 0;
 }

@@ -95,10 +95,10 @@ function handleCancelRename() {
 }
 
 .section-title {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
   color: var(--text-tertiary);
-  line-height: 1.4;
+  line-height: var(--leading-snug);
   transition: color 80ms ease;
 }
 
@@ -114,7 +114,7 @@ function handleCancelRename() {
 
 .empty-text {
   padding: 6px 10px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
 }
 </style>

@@ -135,7 +135,7 @@ function formatDate(timestamp: number): string {
 .trash-title {
   font-family: var(--font-sans);
   font-size: var(--text-xl);
-  font-weight: 600;
+  font-weight: var(--font-semibold);
   color: var(--text-primary);
   margin: 0;
 }
@@ -177,7 +177,7 @@ function formatDate(timestamp: number): string {
 
 .trash-item-title {
   font-size: var(--text-sm);
-  font-weight: 500;
+  font-weight: var(--font-medium);
   color: var(--text-primary);
 }
 

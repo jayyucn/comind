@@ -300,7 +300,7 @@ onUnmounted(() => {
 }
 
 .theme-label {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
   padding-left: 4px;
   padding-right: 4px;

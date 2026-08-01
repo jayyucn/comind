@@ -67,6 +67,8 @@
   --text-lg: #{$text-lg};
   --text-xl: #{$text-xl};
   --text-2xl: #{$text-2xl};
+  --text-3xl: #{$text-3xl};
+  --text-4xl: #{$text-4xl};
 
   // 标题字号
   --heading-1: #{$heading-1};
@@ -92,10 +94,25 @@
   --font-sans: #{$font-sans};
   --font-mono: #{$font-mono};
 
+  // 字重
+  --font-normal: #{$font-normal};
+  --font-medium: #{$font-medium};
+  --font-semibold: #{$font-semibold};
+  --font-bold: #{$font-bold};
+
   // 行高
   --leading-tight: #{$leading-tight};
   --leading-normal: #{$leading-normal};
   --leading-relaxed: #{$leading-relaxed};
+  --leading-none: #{$leading-none};
+  --leading-snug: #{$leading-snug};
+
+  // 字间距
+  --letter-tight: #{$letter-tight};
+  --letter-normal: #{$letter-normal};
+  --letter-wide-1: #{$letter-wide-1};
+  --letter-wide-2: #{$letter-wide-2};
+  --letter-wide-3: #{$letter-wide-3};
 
   // 阴影
   --shadow-focus: #{$shadow-focus};

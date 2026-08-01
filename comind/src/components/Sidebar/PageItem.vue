@@ -148,24 +148,24 @@ function handleKeydown(event: KeyboardEvent) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
   color: var(--text-primary);
-  line-height: 1.4;
+  line-height: var(--leading-snug);
 }
 
 .page-time {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
   flex-shrink: 0;
-  line-height: 1.4;
+  line-height: var(--leading-snug);
 }
 
 .page-item-input {
   flex: 1;
   min-width: 0;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
   color: var(--text-primary);
   background: transparent;
   border: 1px solid var(--border);

@@ -221,8 +221,8 @@ const sortedVersions = computed(() => {
 }
 
 .drawer-title {
-  font-size: 18px;
-  font-weight: 600;
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
   margin: 0;
   color: #1f2937;
 }
@@ -282,7 +282,7 @@ const sortedVersions = computed(() => {
 }
 
 .empty-hint {
-  font-size: 14px;
+  font-size: var(--text-sm);
   margin-top: 4px;
 }
 
@@ -324,13 +324,13 @@ const sortedVersions = computed(() => {
 }
 
 .version-number {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
   color: #1f2937;
 }
 
 .version-source {
-  font-size: 12px;
+  font-size: var(--text-xs);
   padding: 2px 8px;
   border-radius: 4px;
   background-color: #f3f4f6;
@@ -341,7 +341,7 @@ const sortedVersions = computed(() => {
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: #9ca3af;
 }
 
@@ -356,8 +356,8 @@ const sortedVersions = computed(() => {
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
   color: #ffffff;
   background-color: #3b82f6;
   border: none;
@@ -381,7 +381,7 @@ const sortedVersions = computed(() => {
 
 .footer-close {
   padding: 8px 16px;
-  font-size: 14px;
+  font-size: var(--text-sm);
   color: #6b7280;
   background-color: #f3f4f6;
   border: none;

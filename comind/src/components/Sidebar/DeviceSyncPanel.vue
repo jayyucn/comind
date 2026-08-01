@@ -240,7 +240,7 @@ onUnmounted(stopTimers)
 }
 
 .qr-code-loading {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
 }
 
@@ -248,7 +248,7 @@ onUnmounted(stopTimers)
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
 }
 
@@ -261,7 +261,7 @@ onUnmounted(stopTimers)
   border: 1px solid var(--border);
   background: var(--bg-hover);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--text-xs);
   cursor: pointer;
   transition: border-color 160ms ease;
 }
@@ -279,9 +279,9 @@ onUnmounted(stopTimers)
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
-  line-height: 1.4;
+  line-height: var(--leading-snug);
   text-align: center;
 }
 
@@ -333,8 +333,8 @@ onUnmounted(stopTimers)
 }
 
 .device-card-name {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
@@ -345,7 +345,7 @@ onUnmounted(stopTimers)
   display: flex;
   align-items: center;
   gap: 3px;
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .status-icon-online { color: var(--success); }
@@ -357,7 +357,7 @@ onUnmounted(stopTimers)
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
 }
 
@@ -378,7 +378,7 @@ onUnmounted(stopTimers)
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--text-xs);
   cursor: pointer;
   transition: border-color 160ms ease, color 160ms ease, background 160ms ease;
 }

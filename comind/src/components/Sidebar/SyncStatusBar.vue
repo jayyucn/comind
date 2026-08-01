@@ -159,8 +159,8 @@ onUnmounted(() => document.removeEventListener('click', onDocClick, true))
 }
 
 .sync-dock-title {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
   color: var(--text-primary);
 }
 

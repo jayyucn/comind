@@ -143,7 +143,7 @@ function clearImage() {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--text-sm);
   transition: background 0.15s ease;
 }
 

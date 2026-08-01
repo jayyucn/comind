@@ -260,7 +260,7 @@ function getResultTypeLabel(result: SearchResult): string {
 .search-input {
   width: 100%;
   padding: 12px 16px;
-  font-size: 16px;
+  font-size: var(--heading-5);
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-sidebar);
@@ -276,7 +276,7 @@ function getResultTypeLabel(result: SearchResult): string {
 .search-hint {
   display: flex;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
 
   kbd {
@@ -284,7 +284,7 @@ function getResultTypeLabel(result: SearchResult): string {
     background: var(--bg-hover);
     border-radius: 4px;
     border: 1px solid var(--border);
-    font-family: monospace;
+    font-family: var(--font-mono);
   }
 }
 
@@ -307,11 +307,11 @@ function getResultTypeLabel(result: SearchResult): string {
 
 .search-group-title {
   padding: 8px 16px;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
   color: var(--text-tertiary);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: var(--letter-wide-1);
 }
 
 .search-item {
@@ -329,7 +329,7 @@ function getResultTypeLabel(result: SearchResult): string {
 }
 
 .search-item-icon {
-  font-size: 18px;
+  font-size: var(--text-lg);
   flex-shrink: 0;
 }
 
@@ -339,7 +339,7 @@ function getResultTypeLabel(result: SearchResult): string {
 }
 
 .search-item-title {
-  font-size: 14px;
+  font-size: var(--text-sm);
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
@@ -347,13 +347,13 @@ function getResultTypeLabel(result: SearchResult): string {
 }
 
 .search-item-type {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
   margin-top: 2px;
 }
 
 .search-item-match {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
   margin-top: 2px;
   white-space: nowrap;

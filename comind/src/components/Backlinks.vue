@@ -324,9 +324,9 @@ watch(
   align-items: center;
   gap: 6px;
   font-size: var(--text-xs);
-  font-weight: 500;
+  font-weight: var(--font-medium);
   color: var(--text-secondary);
-  letter-spacing: 0.05em;
+  letter-spacing: var(--letter-wide-2);
 }
 
 .backlinks-icon {
@@ -336,11 +336,11 @@ watch(
 .backlinks-count {
   font-size: var(--text-xs);
   color: var(--text-tertiary);
-  font-weight: 400;
+  font-weight: var(--font-normal);
 }
 
 .backlinks-toggle {
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
   padding: 2px var(--space-1);
   /* 展开 + 非 hover 时隐藏；hover 或折叠时可见 */
@@ -428,14 +428,14 @@ watch(
 
 .backlink-group-title {
   font-size: var(--text-sm);
-  font-weight: 500;
+  font-weight: var(--font-medium);
   color: var(--text-primary);
 }
 
 .backlink-group-count {
   font-size: var(--text-xs);
   color: var(--text-tertiary);
-  font-weight: 400;
+  font-weight: var(--font-normal);
 }
 
 /* 块列表：由外层 backlinks-body-wrapper 统一缩进 */
@@ -478,7 +478,7 @@ watch(
   min-width: 0;
   font-size: var(--text-sm);
   color: var(--text-primary);
-  line-height: 1.6;
+  line-height: var(--leading-normal);
 }
 
 /* fallback 纯文本（无 handler 时） */

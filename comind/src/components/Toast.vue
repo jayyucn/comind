@@ -62,7 +62,7 @@ function dismiss(id: string) {
   border: 1px solid var(--border, #E7E5E4);
   border-radius: 8px;
   box-shadow: 0 2px 12px rgba(28, 25, 23, 0.08);
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-primary);
   min-width: 240px;
   max-width: 360px;
@@ -82,7 +82,7 @@ function dismiss(id: string) {
 
 .toast-message {
   flex: 1;
-  line-height: 1.4;
+  line-height: var(--leading-snug);
 }
 
 .toast-close {

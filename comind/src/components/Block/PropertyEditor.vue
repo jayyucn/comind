@@ -216,15 +216,15 @@ watch(visible, (val) => {
 
 .dialog-header h3 {
   margin: 0;
-  font-size: 16px;
-  font-weight: 600;
+  font-size: var(--heading-5);
+  font-weight: var(--font-semibold);
   color: var(--color-ink);
 }
 
 .close-btn {
   background: none;
   border: none;
-  font-size: 24px;
+  font-size: var(--text-2xl);
   cursor: pointer;
   padding: 4px 8px;
   color: var(--color-ink-secondary);
@@ -242,8 +242,8 @@ watch(visible, (val) => {
 .form-group label {
   display: block;
   margin-bottom: 8px;
-  font-weight: 500;
-  font-size: 13px;
+  font-weight: var(--font-medium);
+  font-size: var(--text-sm);
   color: var(--color-ink);
 }
 
@@ -253,7 +253,7 @@ watch(visible, (val) => {
   padding: 8px 12px;
   border: 1px solid var(--color-border);
   border-radius: 6px;
-  font-size: 14px;
+  font-size: var(--text-sm);
   color: var(--color-ink);
   background: var(--bg-base);
   transition: border-color 150ms ease;
@@ -275,7 +275,7 @@ watch(visible, (val) => {
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--text-sm);
 }
 
 .array-items {
@@ -292,14 +292,14 @@ watch(visible, (val) => {
   padding: 4px 8px;
   background: var(--accent-subtle);
   border-radius: 4px;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .remove-btn {
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--text-sm);
   padding: 0 4px;
   color: var(--color-ink-secondary);
 }
@@ -316,8 +316,8 @@ watch(visible, (val) => {
   border-radius: 6px;
   border: none;
   cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
   transition: background 120ms ease;
 }
 

@@ -97,12 +97,12 @@ export default {
 
 .search-placeholder {
   margin-left: $space-2;
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-tertiary);
 }
 
 .search-shortcut {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
   padding: 1px 5px;
   border-radius: 3px;

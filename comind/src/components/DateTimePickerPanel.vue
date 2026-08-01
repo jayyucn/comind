@@ -311,7 +311,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown, true))
 
 .dtp-kind-icon {
   font-size: var(--text-sm);
-  line-height: 1;
+  line-height: var(--leading-none);
 }
 
 /* Select 统一样式（Q21） */
@@ -405,7 +405,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown, true))
   font-weight: var(--font-medium);
   color: var(--text-tertiary);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--letter-wide-1);
   white-space: nowrap;
 }
 
@@ -428,12 +428,12 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown, true))
 .dtp-preview--empty {
   color: var(--text-tertiary);
   font-style: italic;
-  font-weight: 400;
+  font-weight: var(--font-normal);
 }
 
 .dtp-preview-rec {
   color: var(--text-secondary);
-  font-weight: 400;
+  font-weight: var(--font-normal);
 }
 
 .dtp-actions {

@@ -197,7 +197,7 @@
 
 .wiki-bracket {
   color: var(--text-faint);
-  font-weight: normal;
+  font-weight: $font-normal;
 }
 
 .block-tag {
@@ -247,7 +247,7 @@
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 0.9em;
-  line-height: 1.4;
+  line-height: $leading-snug;
   transition: background 120ms ease;
 
   &:hover {
@@ -407,8 +407,6 @@
   z-index: 1;
 }
 
-$heading-line-height: 1.4;
-
 // Heading styles - 渲染态样式
 // 编辑态样式在 Editor.vue 的 scoped style 中定义（需要 :deep() 穿透）
 // 注意：全局 SCSS 中不能使用 ::deep()，会导致整个规则被浏览器丢弃
@@ -418,8 +416,8 @@ $heading-line-height: 1.4;
 .block-text h4,
 .block-text h5,
 .block-text h6 {
-  font-weight: 600;
-  line-height: $heading-line-height;
+  font-weight: $font-semibold;
+  line-height: $leading-snug;
   margin: 0;
   padding: 0;
   border: none;

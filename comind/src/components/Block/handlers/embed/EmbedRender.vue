@@ -211,7 +211,7 @@ function handleLanguageChange(lang: string) {
   padding: 4px 10px;
   background: var(--bg-sidebar);
   border-bottom: 1px solid var(--border);
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
 }
 
@@ -222,14 +222,14 @@ function handleLanguageChange(lang: string) {
 }
 
 .embed-same-page-tag {
-  font-size: 10px;
+  font-size: var(--text-xs);
   text-transform: uppercase;
   opacity: 0.5;
   flex-shrink: 0;
 }
 
 .embed-hint {
-  font-size: 10px;
+  font-size: var(--text-xs);
   opacity: 0;
   transition: opacity 0.15s ease;
   flex-shrink: 0;

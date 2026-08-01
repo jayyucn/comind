@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { ref, computed, watch, onUnmounted, nextTick } from 'vue'
 import { useEditorStore } from '../../stores/editor'
 import { usePropertyStore } from '../../stores/property'
@@ -266,7 +266,7 @@ function isSvgIcon(icon: string): boolean {
   justify-content: center;
   width: 16px;
   height: 16px;
-  font-size: 14px;
+  font-size: var(--text-sm);
 }
 
 .option-text {
@@ -276,12 +276,12 @@ function isSvgIcon(icon: string): boolean {
 }
 
 .option-label {
-  font-size: 14px;
+  font-size: var(--text-sm);
 }
 
 .option-description {
   margin-top: auto;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: #9ca3af;
 }
 
@@ -291,7 +291,7 @@ function isSvgIcon(icon: string): boolean {
   padding: 10px 12px;
   border: none;
   outline: none;
-  font-size: 14px;
+  font-size: var(--text-sm);
   box-sizing: border-box;
 }
 
@@ -313,14 +313,14 @@ function isSvgIcon(icon: string): boolean {
   padding: 4px 8px;
   background: var(--accent-subtle, rgba(59, 130, 246, 0.12));
   border-radius: 4px;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .tag-remove {
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--text-sm);
   padding: 0;
   color: #6b7280;
 }
@@ -334,7 +334,7 @@ function isSvgIcon(icon: string): boolean {
   padding: 6px 0;
   border: none;
   outline: none;
-  font-size: 14px;
+  font-size: var(--text-sm);
 }
 
 .fade-enter-active,

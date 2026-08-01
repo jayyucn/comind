@@ -188,7 +188,7 @@ defineExpose({ selectNext, selectPrev, confirmSelect, close });
   color: var(--text-tertiary);
   font-style: italic;
   text-align: center;
-  font-size: 14px;
+  font-size: var(--text-sm);
 }
 
 .wlm-item {
@@ -198,7 +198,7 @@ defineExpose({ selectNext, selectPrev, confirmSelect, close });
   padding: 8px 12px;
   cursor: pointer;
   border-radius: 4px;
-  font-size: 14px;
+  font-size: var(--text-sm);
   transition: background-color 0.15s;
 }
 
@@ -221,7 +221,7 @@ defineExpose({ selectNext, selectPrev, confirmSelect, close });
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: var(--text-sm);
 }
 
 .wlm-title {

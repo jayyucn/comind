@@ -532,11 +532,11 @@ watch(visible, (isVisible) => {
 
 .slash-command-group-title {
   padding: 6px 12px;
-  font-size: 11px;
-  font-weight: 500;
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
   color: var(--text-tertiary);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: var(--letter-wide-2);
 }
 
 .slash-command-item {
@@ -563,19 +563,19 @@ watch(visible, (isVisible) => {
 }
 
 .slash-command-icon {
-  font-size: 16px;
+  font-size: var(--heading-5);
   width: 20px;
   text-align: center;
 }
 
 .slash-command-name {
   flex: 1;
-  font-size: 14px;
+  font-size: var(--text-sm);
   color: var(--text-primary);
 }
 
 .slash-command-alias {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
 }
 
@@ -583,7 +583,7 @@ watch(visible, (isVisible) => {
   padding: 16px;
   text-align: center;
   color: var(--text-tertiary);
-  font-size: 14px;
+  font-size: var(--text-sm);
 }
 
 /* 动画 */
@@ -599,19 +599,19 @@ watch(visible, (isVisible) => {
 }
 
 .template-icon {
-  font-size: 16px;
+  font-size: var(--heading-5);
   width: 20px;
   text-align: center;
 }
 
 .template-name {
   flex: 1;
-  font-size: 14px;
+  font-size: var(--text-sm);
   color: var(--text-primary);
 }
 
 .template-source {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
 }
 
@@ -622,8 +622,8 @@ watch(visible, (isVisible) => {
   background: transparent;
   color: var(--text-tertiary);
   cursor: pointer;
-  font-size: 14px;
-  line-height: 1;
+  font-size: var(--text-sm);
+  line-height: var(--leading-none);
   padding: 0;
 }
 

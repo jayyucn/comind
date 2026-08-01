@@ -259,8 +259,8 @@ function handleClickOutside(event: MouseEvent) {
   padding: 0 4px;
   background: var(--accent);
   color: white;
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
   border-radius: 9px;
   display: inline-flex;
   align-items: center;
@@ -290,8 +290,8 @@ function handleClickOutside(event: MouseEvent) {
 }
 
 .dropdown-title {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
   color: var(--text-primary);
   margin: 0;
 }
@@ -304,7 +304,7 @@ function handleClickOutside(event: MouseEvent) {
   border: none;
   background: var(--accent);
   color: white;
-  font-size: 12px;
+  font-size: var(--text-xs);
   border-radius: 4px;
   cursor: pointer;
   transition: opacity 0.12s;
@@ -319,7 +319,7 @@ function handleClickOutside(event: MouseEvent) {
   padding: 32px 16px;
   text-align: center;
   color: var(--text-tertiary);
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .dropdown-content {
@@ -333,11 +333,11 @@ function handleClickOutside(event: MouseEvent) {
 
 .group-date {
   padding: 4px 16px;
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
   color: var(--text-tertiary);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: var(--letter-wide-1);
 }
 
 .notification-item {
@@ -358,7 +358,7 @@ function handleClickOutside(event: MouseEvent) {
 }
 
 .notification-status {
-  font-size: 10px;
+  font-size: var(--text-xs);
   flex-shrink: 0;
 }
 
@@ -368,8 +368,8 @@ function handleClickOutside(event: MouseEvent) {
 }
 
 .notification-title {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
   color: var(--text-primary);
   margin-bottom: 2px;
   overflow: hidden;
@@ -381,7 +381,7 @@ function handleClickOutside(event: MouseEvent) {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
 }
 
@@ -463,7 +463,7 @@ function handleClickOutside(event: MouseEvent) {
   border: none;
   background: transparent;
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--text-xs);
   text-align: left;
   cursor: pointer;
   border-radius: 4px;
@@ -480,7 +480,7 @@ function handleClickOutside(event: MouseEvent) {
 }
 
 .footer-hint {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
 }
 

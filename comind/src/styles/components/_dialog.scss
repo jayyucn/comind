@@ -26,7 +26,7 @@
 
 .dialog-icon {
   text-align: center;
-  font-size: 24px;
+  font-size: var(--text-2xl);
   margin-bottom: var(--space-3);
 }
 
@@ -34,7 +34,7 @@
   text-align: center;
   font-family: var(--font-sans);
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: var(--font-semibold);
   color: var(--color-ink);
   margin-bottom: var(--space-3);
 }
@@ -43,13 +43,13 @@
   text-align: center;
   font-size: var(--text-sm);
   color: var(--color-ink-secondary);
-  line-height: 1.6;
+  line-height: var(--leading-normal);
   margin-bottom: var(--space-6);
 }
 
 .dialog-highlight {
   color: var(--color-accent);
-  font-weight: 600;
+  font-weight: var(--font-semibold);
 }
 
 .dialog-actions {
@@ -81,7 +81,7 @@
   background: var(--color-accent);
   color: var(--color-white);
   border: none;
-  font-weight: 500;
+  font-weight: var(--font-medium);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 

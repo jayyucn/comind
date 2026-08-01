@@ -151,14 +151,14 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 15px;
-  font-weight: 600;
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
 }
 
 .qr-scanner-close {
   border: none;
   background: transparent;
-  font-size: 18px;
+  font-size: var(--text-lg);
   cursor: pointer;
   padding: 4px 8px;
   color: var(--text-secondary, #666);
@@ -189,13 +189,13 @@ onUnmounted(() => {
 }
 
 .qr-scanner-error {
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: #dc2626;
   text-align: center;
 }
 
 .qr-scanner-hint {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary, #999);
   text-align: center;
 }

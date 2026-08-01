@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, ref } from 'vue'
 import { usePropertyStore } from '../../stores/property'
 import { useEditorStore } from '../../stores/editor'
@@ -153,14 +153,14 @@ function isSvgIcon(icon: string): boolean {
   padding: 2px 6px;
   padding-right: 20px;
   transition: background 120ms ease;
-  font-size: 14px;
+  font-size: var(--text-sm);
   position: relative;
   /* 确保内部所有元素的基线对齐 */
-  line-height: 1.5;
+  line-height: var(--leading-normal);
 }
 
 .property-inline-item.built-in {
-  font-weight: 500;
+  font-weight: var(--font-medium);
 }
 
 .property-inline-item.icon-only {
@@ -170,7 +170,7 @@ function isSvgIcon(icon: string): boolean {
 
 .property-inline-item.icon-only .property-icon {
   margin-right: 0;
-  font-size: 18px;
+  font-size: var(--text-lg);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -186,7 +186,7 @@ function isSvgIcon(icon: string): boolean {
   align-items: center;
   justify-content: center;
   /* 确保 icon 和文本的垂直对齐 */
-  line-height: 1;
+  line-height: var(--leading-none);
 }
 
 .delete-button {
@@ -197,8 +197,8 @@ function isSvgIcon(icon: string): boolean {
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 16px;
-  line-height: 1;
+  font-size: var(--heading-5);
+  line-height: var(--leading-none);
   color: #9ca3af;
   padding: 0 4px;
   border-radius: 4px;

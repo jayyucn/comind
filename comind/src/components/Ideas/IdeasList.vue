@@ -103,11 +103,11 @@ function handleOpenPage(pageId: string) {
 }
 
 .empty-icon {
-  font-size: 48px;
+  font-size: var(--text-4xl);
   margin-bottom: var(--space-4);
 }
 
 .empty-text {
-  font-size: 14px;
+  font-size: var(--text-sm);
 }
 </style>

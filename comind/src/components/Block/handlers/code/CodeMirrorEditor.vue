@@ -480,8 +480,8 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 3px 10px;
-  font-size: 12px;
-  font-weight: 500;
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -496,7 +496,7 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 5px 6px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -511,7 +511,7 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
 }
 
 .dropdown-arrow {
-  font-size: 10px;
+  font-size: var(--text-xs);
   opacity: 0.7;
 }
 
@@ -538,7 +538,7 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
 
 .lang-item {
   padding: 8px 12px;
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-secondary);
   cursor: pointer;
   transition: background 0.2s;
@@ -550,7 +550,7 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
 
 .lang-item.active {
   background: var(--accent-subtle);
-  font-weight: 500;
+  font-weight: var(--font-medium);
   color: var(--accent);
   border-left: 2px solid var(--accent);
   padding-left: 10px;

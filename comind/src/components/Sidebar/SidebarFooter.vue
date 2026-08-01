@@ -23,7 +23,7 @@ import SyncStatusBar from './SyncStatusBar.vue'
 }
 
 .version-text {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
   font-family: inherit;
 }
