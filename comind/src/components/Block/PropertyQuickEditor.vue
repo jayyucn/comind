@@ -236,7 +236,7 @@ function isSvgIcon(icon: string): boolean {
 .quick-editor-dropdown {
   position: absolute;
   min-width: 100px;
-  background: var(--color-paper, #ffffff);
+  background: var(--color-paper);
   border: 1px solid var(--color-border, #e5e7eb);
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
@@ -291,7 +291,9 @@ function isSvgIcon(icon: string): boolean {
   padding: 10px 12px;
   border: none;
   outline: none;
+  background: transparent;
   font-size: var(--text-sm);
+  color: var(--text-primary);
   box-sizing: border-box;
 }
 
