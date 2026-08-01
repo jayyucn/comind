@@ -107,7 +107,7 @@ onUnmounted(() => {
 }
 
 .menu-trigger {
-  width: 20px;
+  width: 0;
   height: 20px;
   border: none;
   background: transparent;
@@ -118,11 +118,14 @@ onUnmounted(() => {
   border-radius: 4px;
   color: var(--text-tertiary);
   opacity: 0;
+  overflow: hidden;
   transition: all 80ms ease;
   flex-shrink: 0;
 }
 
-.page-item:hover .menu-trigger {
+.page-item:hover .menu-trigger,
+.page-item.active .menu-trigger {
+  width: 20px;
   opacity: 1;
 }
 
