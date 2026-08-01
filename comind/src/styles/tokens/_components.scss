@@ -21,6 +21,9 @@ $date-ref-overdue-bg: rgba(220, 38, 38, 0.08);
   --block-indent-width: 24px;
   --block-transition-collapse: #{$transition-collapse};
 
+  // Header
+  --header-height: 64px;
+
   // Sidebar 组件
   --sidebar-item-height: 32px;
   --sidebar-item-padding: 10px;

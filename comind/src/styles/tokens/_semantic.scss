@@ -5,8 +5,8 @@
 
 :root {
   // 背景层级
-  --bg-base: #FAFAF9;
-  --bg-sidebar: #F5F5F4;
+  --bg-base: #fff;
+  --bg-sidebar: #F5F5F7;
   --bg-hover: #{$color-stone-200};
   --bg-active: #{$color-stone-300};
 
@@ -121,7 +121,6 @@
   --color-border-strong: #{$color-stone-400};
   --color-hover: #{$color-stone-200};
   --color-surface: #{$color-stone-200};
-  --color-sidebar-bg: #F5F5F4;
   --color-highlight: #{$color-indigo-200};
   --color-white: #FFFFFF;
   --color-tag: #6366F1;
@@ -182,7 +181,6 @@
   --color-border-strong: #4A4A50;
   --color-hover: #2E2E32;
   --color-surface: #2E2E32;
-  --color-sidebar-bg: #222225;
   --color-highlight: rgba(129, 140, 248, 0.25);
   --color-white: #FFFFFF;
   --color-tag: #818CF8;
