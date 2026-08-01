@@ -224,13 +224,19 @@ async function refreshGraphData(graph?: Graph) {
 
   const { nodes, edges } = await buildGraphData()
 
+  // 守卫 1：await 期间图可能被 onBeforeUnmount / initGraph 重入销毁，
+  // 此时 g 仍指向已 destroy 的实例（context 已被清空），
+  // generation 守卫捕获不到这种情况。G6 destroy 后 this.context = {}，
+  // 再调用 setData 会抛 "Cannot read properties of undefined (reading 'setData')"。
   if (gen !== refreshGeneration) return
+  if (g.destroyed) return
 
   g.setData({ nodes, edges: edges as EdgeData[] })
   await g.draw()
   await g.layout()
 
   if (gen !== refreshGeneration) return
+  if (g.destroyed) return
 
   await safeFitView(g, { when: 'always' }, false)
 }
