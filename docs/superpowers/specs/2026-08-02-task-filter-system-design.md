@@ -1,9 +1,10 @@
 # 任务系统与筛选系统（通用 Block 筛选）设计文档
 
-> **日期**：2026-08-02
+> **日期**：2026-08-02（v2 — 审核修订版）
 > **状态**：已确认，待实施
 > **前置条件**：属性系统 `property`（已实现）、日期引用 `date_ref`（已实现）、任务生命周期 `ensureTodo` / `advanceDateRefInBlock`（已实现）
 > **关联**：本设计即 `docs/3-features/property-spec.md` §9.2「复杂查询（待实现）」的正式落地
+> **审核修订**：2026-08-02 审核后修复 3 高 + 5 中问题（task_views/saved_filters 关系、缓存失效方案、content_preview 定义、命名统一、路由定义、默认视图初始化、默认排序、SQL 策略）
 
 ---
 
@@ -55,7 +56,7 @@
 ### 2.1 分层
 
 - **数据层**：Rust core 新增 `get_blocks_projection()`（native + WASM 双绑定），返回 `BlockCard[]`。
-- **引擎层**：`src/composables/useTaskQuery.ts` 中的纯函数 `applyQuery`，零 Vue 依赖，可单测。
+- **引擎层**：`src/composables/useBlockQuery.ts` 中的纯函数 `applyQuery`，零 Vue 依赖，可单测。
 - **持久化层**：`saved_filters` + `task_views` 两张后端表，前端对应 store。
 - **视图层**：`TaskHub` 容器 + `TaskViewBar` / `TaskFilterBar` + `TableView` / `BoardView` / `CalendarView`。
 
@@ -72,6 +73,8 @@
 ---
 
 ## 3. 数据层：BlockCard 投影
+
+> **术语说明**：本设计使用 `BlockCard`（而非 `Block`）指代轻量投影，以区分完整 Block 模型（含 content 全文 / children / format）。Client 方法命名 `getBlockCards()`，Store 命名 `blockCard.ts`，均以 `BlockCard` 为统一术语。
 
 ### 3.1 Rust 类型
 
@@ -90,7 +93,7 @@ struct BlockCard {
     block_id: String,
     page_id: String,
     parent_id: String,
-    content_preview: String,              // 去掉 {{schedule:…}}/{{deadline:…}} 标记后的摘要
+    content_preview: String,              // 去掉 {{schedule:…}}/{{deadline:…}} 标记后的摘要（见 §3.2）
     properties: HashMap<String, Value>,  // 完整属性映射（含 status/priority/project/area + 用户自定义）
     date_refs: Vec<DateRefLite>,
     updated_at: i64,
@@ -102,15 +105,26 @@ struct BlockCard {
 ### 3.2 核心方法 `get_blocks_projection()`
 
 - 语义：跨所有页，查出每个 block 的轻量投影。
-- 实现（native + WASM）：一次 SQL 组装——`blocks` 全量（或按 `updated_at` 增量，见 §3.3）→ 关联该 block 的全部 `properties` → 关联 `date_refs` → 组装 `BlockCard`。
+- **SQL 策略**：分三次查询 + Rust 端内存组装（避免三表 JOIN 的性能与复杂度）：
+  1. `SELECT id, page_id, parent_id, content, updated_at FROM Block WHERE deleted_at IS NULL`（全部未删除 block）
+  2. `SELECT block_id, key, value, type FROM Property WHERE is_deleted = 0`（全部有效属性）
+  3. `SELECT block_id, kind, iso, date_day, recurrence, event_ts FROM DateRef WHERE deleted_at IS NULL`（全部有效日期引用）
+  4. Rust 端用 `HashMap<String, BlockCard>` 按 `block_id` 组装：properties → `HashMap<String, Value>`，date_refs → `Vec<DateRefLite>`
+- **`content_preview` 生成**：Rust 端在组装 `BlockCard` 时，对 `block.content` 做正则替换去掉 `{{schedule:…}}`/`{{deadline:…}}` 标记，截断 200 字符。不做 Markdown 解析，保留原始文本。
 - 前端：`src/wasm/client.ts` 新增 `getBlockCards(): Promise<BlockCard[]>`（解析 `properties` 的 JSON 值）。
 - 不在投影里包含 block 的 `content` 全文 / `children` / `format`，控制内存。
 
 ### 3.3 缓存与失效
 
 - 前端 `src/stores/blockCard.ts`（新增）持有 `cards: Ref<BlockCard[]>`，首次打开任务中心/筛选 UI 时加载一次。
-- 失效触发：订阅现有 `blockStore` / `propertyStore` / `dateRef` 的写操作（`updateBlockContent` / `setProperty` / date-ref 变更）→ 标记脏，下次进入重拉或增量更新对应 card。
-- 首版采用「进入即全量重拉 + 内存缓存」，增量更新留后续优化。
+- **失效方案（首版）**：`blockCard` store 暴露 `invalidate(blockId?: string)` 方法。在以下调用点显式触发：
+  - `blockStore.updateBlockContent(blockId, ...)` → `blockCardStore.invalidate(blockId)`
+  - `propertyStore.setProperty(blockId, ...)` → `blockCardStore.invalidate(blockId)`
+  - date-ref 变更（`syncDateRefsForBlock` 等）→ `blockCardStore.invalidate(blockId)`
+  - `invalidate()` 无参数时标记全量脏（如批量操作后）。
+- **脏标记策略**：`dirtyIds: Set<string>` + `isFullyDirty: boolean`。下次进入 TaskHub 或 `applyQuery` 执行前检查：若有脏标记，先重拉脏卡片（单 card 查询）或全量重拉（`isFullyDirty`），然后清标记。
+- **任务中心与源页面同时打开时的同步**：`blockCard` store 失效后重跑 `applyQuery` 刷新任务中心；源页面通过现有 `propertyStore` / `blockStore` 响应式更新（已实现），无需额外机制。
+- 增量更新（仅重拉脏 card）留后续优化，首版全量重拉即可。
 
 ---
 
@@ -168,8 +182,8 @@ function applyQuery(cards: BlockCard[], q: BlockQuery): BlockCard[]
 ```
 
 - **筛选**：所有 `filters` 以 **AND** 叠加；每条按 `op` 求值（见 §4.3）。
-- **排序**：按 `sort` 规则链式比较（属性按类型比较：number 数值、date/dateRef 时间序、其余字符串序）。
-- **分组**：分组不在 `applyQuery` 内做（保持纯筛选+排序），由视图层按需基于 `groupBy` 对结果分组。
+- **排序**：按 `sort` 规则链式比较（属性按类型比较：number 数值、date/dateRef 时间序、其余字符串序）。**默认排序**：无 `sort` 规则时按 `updated_at desc`。
+- **分组**：分组不在 `applyQuery` 内做（保持纯筛选+排序），由视图层按需基于 `groupBy` 对结果分组。表格视图忽略 `groupBy`（仅看板/日历使用）。
 - 无 Vue 依赖、无副作用，便于单测。
 
 ### 4.3 操作符支持
@@ -223,7 +237,7 @@ function applyQuery(cards: BlockCard[], q: BlockQuery): BlockCard[]
 ### 5.5 `BoardView`
 
 - 按 `status` 分列（Todo / Doing / Done / Canceled）。
-- 卡片可在列间拖拽 → `setProperty(status=目标列)`；完成列自动触发 `advanceDateRefInBlock`。
+- 卡片可在列间拖拽 → `setProperty(status=目标列)`；拖到 Done 列时，仅当 block 存在 `recurrence != 'none'` 的 dateRef 才触发 `advanceDateRefInBlock`（推进周期），否则仅 `setProperty(status=Done)`。
 - 卡片显示：内容摘要 + 优先级 + 截止。
 
 ### 5.6 `CalendarView`
@@ -236,7 +250,7 @@ function applyQuery(cards: BlockCard[], q: BlockQuery): BlockCard[]
 
 ## 6. 持久化：保存的筛选规则与命名视图
 
-### 6.1 `saved_filters` 表（通用）
+### 6.1 `saved_filters` 表（通用筛选规则模板）
 
 ```rust
 struct SavedFilterRow {
@@ -250,14 +264,15 @@ struct SavedFilterRow {
 
 - Core 方法：`get_saved_filters()` / `save_saved_filter(name, query_json)` / `update_saved_filter(id, ...)` / `delete_saved_filter(id)`。
 - 前端 `src/stores/savedFilter.ts`：加载、CRUD、应用。
+- **定位**：`saved_filters` 是可复用的筛选规则**模板库**。用户可从模板创建任务视图（复制规则到 `task_views.query_json`），但之后两者独立——修改 `saved_filters` 不影响已存的 `task_views`，删除 `saved_filters` 也不级联影响 `task_views`。
 
-### 6.2 `task_views` 表（任务中心）
+### 6.2 `task_views` 表（任务中心命名视图）
 
 ```rust
 struct TaskViewRow {
     id: String,
     name: String,
-    query_json: String,   // 序列化的 BlockQuery
+    query_json: String,   // 内联的完整 BlockQuery（非外键引用 saved_filters）
     view_type: String,    // table | board | calendar
     group_by: String,     // 见 GroupBy
     is_default: i64,      // 0 | 1
@@ -268,7 +283,8 @@ struct TaskViewRow {
 ```
 
 - Core 方法：`get_task_views()` / `save_task_view(...)` / `update_task_view(...)` / `delete_task_view(id)` / `set_default_task_view(id)`。
-- 默认视图「全部任务」：`query = { filters: [{ field:{kind:'property',key:'status'}, op:'hasAny', value:null }], sort:[], groupBy:null }`，`viewType: 'table'`。
+- **`task_views.query_json` 内联完整 `BlockQuery`**（非外键引用 `saved_filters.id`），避免级联删除问题。
+- **默认视图初始化**：首次进入任务中心时，`task_views` 表为空则自动插入「全部任务」默认视图：`query = { filters: [{ field:{kind:'property',key:'status'}, op:'hasAny', value:null }], sort:[], groupBy:null }`，`viewType: 'table'`，`is_default: 1`。默认视图不可删除（UI 隐藏删除按钮），但可修改其筛选规则。
 
 ### 6.3 前端 store
 
@@ -285,6 +301,16 @@ struct TaskViewRow {
 ## 7. 入口与导航
 
 - **入口**：左侧栏新增「✅ 任务」常驻项 + 命令面板 `> 打开任务中心`（不进 outline，不入图谱）。
+- **路由定义**：在 `src/router/routes.ts` 新增：
+  ```ts
+  {
+    path: '/tasks',
+    name: 'tasks',
+    component: () => import('../components/TaskHub/TaskHub.vue'),
+    meta: { fullWidth: true, hideRightSidebarToggle: true },
+  }
+  ```
+  与现有 `/graph`、`/trash` 等独立页面路由模式一致。
 - **跳回源 block**：点表格行 / 看板卡 / 日历事件 → 载入所属页（未载则拉取）→ 滚动并高亮原 block（复用现有 block 定位/滚动能力，实现时核实 `useBlockRegistry` / `useBlockTree` 具体 API）。
 - **在 hub 内编辑**：勾选完成 → `setProperty(status=Done)` → 自动触发周期推进；改优先级/状态 → `setProperty`，本地卡片即时刷新后重跑 `applyQuery`。
 
