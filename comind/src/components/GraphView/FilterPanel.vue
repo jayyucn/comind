@@ -229,13 +229,14 @@ init()
 </script>
 
 <template>
-  <div class="filter-panel" :class="{ collapsed }">
-    <div class="filter-panel-header">
-      <div class="filter-panel-title">筛选</div>
-      <button class="collapse-btn" @click="toggleCollapse" :title="collapsed ? '展开面板' : '折叠面板'">
+  <button class="collapse-btn" @click="toggleCollapse" :title="collapsed ? '展开面板' : '折叠面板'">
         <ChevronRight v-if="collapsed" :size="16" />
         <ChevronLeft v-else :size="16" />
       </button>
+  <div class="filter-panel" :class="{ collapsed }">
+    <div class="filter-panel-header">
+      <div class="filter-panel-title">筛选</div>
+      
     </div>
 
     <div v-if="!collapsed" class="filter-panel-content">
@@ -380,6 +381,7 @@ init()
   align-items: center;
   justify-content: space-between;
   padding: var(--space-3);
+  padding-left: calc(var(--space-3) + 28px);
 }
 
 .filter-panel-title {
@@ -397,11 +399,14 @@ init()
 }
 
 .collapse-btn {
+  position: absolute;
+  top: calc(var(--graph-header-height) + var(--space-3));
+  z-index: 1000;
   width: 24px;
   height: 24px;
   border: 1px solid var(--border);
   background: var(--bg-hover);
-  border-radius: var(--radius-sm);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -419,7 +424,7 @@ init()
   &:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
-    border-radius: var(--radius-sm);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   }
 }
 

@@ -46,7 +46,6 @@
 
 .page-title--display {
   cursor: default;
-  padding: 4px var(--space-2);
   border-radius: var(--radius-sm);
   border: 1px solid transparent;
   transition: border-color 150ms ease, background 150ms ease;
@@ -62,7 +61,6 @@
   background: transparent;
   border: 1px solid var(--accent);
   outline: none;
-  padding: 4px var(--space-2);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-focus);
   width: 100%;
