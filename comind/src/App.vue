@@ -300,13 +300,13 @@ function handleMainClick(e: MouseEvent) {
           </button>
           <div class="window-controls" v-if="isTauriEnvironment()">
             <button class="window-control-btn minimize-btn" title="最小化" @click="handleMinimize">
-              <Icon name="icon-minimize" :size="14" />
+              <Icon name="icon-minimize" :size="18" />
             </button>
             <button class="window-control-btn maximize-btn" :title="isMaximized ? '还原' : '最大化'" @click="handleMaximize">
-              <Icon :name="isMaximized ? 'icon-square' : 'icon-maximize'" :size="14"/>
+              <Icon :name="isMaximized ? 'icon-square' : 'icon-maximize'" :size="18"/>
             </button>
             <button class="window-control-btn close-btn" title="关闭" @click="handleClose">
-              <Icon name="icon-close" :size="14" />
+              <Icon name="icon-close" :size="18" />
             </button>
           </div>
         </div>
