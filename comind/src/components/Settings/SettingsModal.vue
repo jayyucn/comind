@@ -317,16 +317,16 @@ onUnmounted(() => {
               </template>
 
               <template v-if="activeSection === 'editor'">
-                <div class="setting-item">
+                <div class="setting-item setting-item--font-size">
                   <div class="setting-info">
                     <span class="setting-label">字体大小</span>
-                    <span class="setting-desc">调整编辑器正文字体大小</span>
+                    <span class="setting-desc setting-desc--font-preview">调整编辑器正文字体大小</span>
                   </div>
-                  <div class="theme-selector">
+                  <div class="font-size-selector">
                     <button
                       v-for="option in editorFontSizeOptions"
                       :key="option.value"
-                      class="theme-option"
+                      class="font-size-option"
                       :class="{ active: editorFontSize === option.value }"
                       @click="setEditorFontSize(option.value)"
                     >
@@ -745,6 +745,10 @@ onUnmounted(() => {
   border-radius: 8px;
 }
 
+.setting-item--font-size {
+  height: 70px;
+}
+
 .setting-item--column {
   flex-direction: column;
   align-items: stretch;
@@ -766,6 +770,10 @@ onUnmounted(() => {
 .setting-desc {
   font-size: var(--text-xs);
   color: var(--text-tertiary);
+}
+
+.setting-desc--font-preview {
+  font-size: var(--editor-font-size);
 }
 
 .setting-value {
@@ -793,7 +801,8 @@ onUnmounted(() => {
   background: var(--bg-active);
 }
 
-.theme-selector {
+.theme-selector,
+.font-size-selector {
   display: flex;
   gap: 4px;
   background: var(--bg-hover);
@@ -801,7 +810,8 @@ onUnmounted(() => {
   padding: 2px;
 }
 
-.theme-option {
+.theme-option,
+.font-size-option {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -816,11 +826,13 @@ onUnmounted(() => {
   transition: background 80ms ease, color 80ms ease;
 }
 
-.theme-option:hover {
+.theme-option:hover,
+.font-size-option:hover {
   color: var(--text-secondary);
 }
 
-.theme-option.active {
+.theme-option.active,
+.font-size-option.active {
   background: var(--bg-base);
   color: var(--text-primary);
   font-weight: var(--font-medium);
