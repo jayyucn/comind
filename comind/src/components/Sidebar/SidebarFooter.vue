@@ -1,22 +1,42 @@
 <script setup lang="ts">
-import { Settings } from 'lucide-vue-next'
+import { Settings, Trash } from 'lucide-vue-next'
+import { useRouter } from 'vue-router'
 import SyncStatusBar from './SyncStatusBar.vue'
 import { useSettingsModal } from '../../composables/useSettingsModal'
 
 const { open: openSettings } = useSettingsModal()
+const router = useRouter()
+
+function openTrash() {
+  router.push('/trash')
+}
 </script>
 
 <template>
   <div class="sidebar-footer">
-    <button
-      class="settings-btn"
-      title="设置"
-      @click="openSettings"
-    >
-      <Settings :size="15" :stroke-width="1.75" />
-    </button>
+    <div class="footer-section">
+      <button
+        class="settings-btn"
+        title="设置"
+        @click="openSettings"
+      >
+        <Settings :size="15" :stroke-width="1.75" />
+      </button>
+    </div>
     <div class="footer-divider"></div>
-    <SyncStatusBar />
+    <div class="footer-section">
+      <button
+        class="settings-btn"
+        title="回收站"
+        @click="openTrash"
+      >
+        <Trash :size="15" :stroke-width="1.75" />
+      </button>
+    </div>
+    <div class="footer-divider"></div>
+    <div class="footer-section">
+      <SyncStatusBar />
+    </div>
   </div>
 </template>
 
@@ -24,12 +44,19 @@ const { open: openSettings } = useSettingsModal()
 .sidebar-footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   padding: 8px 12px;
   border-top: 1px solid var(--border);
   flex-shrink: 0;
-  height: 36px;
+  height: var(--footer-height);
   box-sizing: border-box;
+}
+
+.footer-section {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
 }
 
 .settings-btn {

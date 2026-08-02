@@ -451,8 +451,8 @@ function handleMainClick(e: MouseEvent) {
 }
 
 .window-control-btn {
-  width: 36px;
-  height: 28px;
+  width: 46px;
+  height: var(--nav-height);
   border: none;
   background: transparent;
   cursor: pointer;
