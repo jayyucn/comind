@@ -18,7 +18,6 @@ function handleClick() {
       <Network :size="16" :stroke-width="1.75" />
     </span>
     <span class="nav-label">图谱</span>
-    <span class="nav-sub">浏览概念图谱</span>
   </div>
 </template>
 
@@ -62,11 +61,5 @@ function handleClick() {
 .nav-label {
   flex: 1;
   min-width: 0;
-}
-
-.nav-sub {
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-  flex-shrink: 0;
 }
 </style>
