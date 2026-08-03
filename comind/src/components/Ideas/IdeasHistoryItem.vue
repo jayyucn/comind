@@ -29,6 +29,8 @@ function getMonthDay(dateStr: string): { month: string; day: string } {
 <template>
   <div class="history-item" v-if="page">
     <div class="history-header">
+      <span class="timeline-line" aria-hidden="true"></span>
+      <span class="timeline-dot" aria-hidden="true"></span>
       <span class="history-date">{{ getMonthDay(page.title).month }}{{ getMonthDay(page.title).day }}日</span>
       <span class="history-weekday">{{ getWeekday(page.title) }}</span>
     </div>
@@ -40,22 +42,44 @@ function getMonthDay(dateStr: string): { month: string; day: string } {
 
 <style scoped>
 .history-item {
-  background: #fff;
-  border: 1px solid var(--border, #E7E5E4);
-  border-radius: 8px;
-  padding: 10px 12px;
-  margin-bottom: 10px;
+  background: transparent;
+  padding: 0 12px 0 20px;
+  /* margin-bottom: 10px; */
   display: flex;
+  border-left: 1px solid var(--border, #E7E5E4);
   flex-direction: column;
 }
 
 .history-header {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
   padding-bottom: 8px;
-  border-bottom: 1px solid var(--border, #E7E5E4);
   flex-shrink: 0;
+}
+
+.timeline-dot {
+  position: absolute;
+  left: -24px;
+  top: 12px;
+  transform: translateY(-50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent, #6366F1);
+  z-index: 1;
+}
+
+.timeline-line {
+  position: absolute;
+  left: -16px;
+  top: 12px;
+  bottom: 0;
+  width: 15px;
+  height: 1px;
+  background: var(--border, #E7E5E4);
+  z-index: 1;
 }
 
 .history-date {

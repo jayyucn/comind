@@ -28,11 +28,11 @@ function getMonthDay(dateStr: string): { month: string; day: string } {
 
 <template>
   <div class="today-panel">
+    <div class="today-header">
+      <span class="today-badge">今天</span>
+      <span class="today-date">{{ getMonthDay(page?.title || '').month }}{{ getMonthDay(page?.title || '').day }}日 {{ getWeekday(page?.title || '') }}</span>
+    </div>
     <div class="today-card" v-if="page">
-      <div class="today-header">
-        <span class="today-badge">今天</span>
-        <span class="today-date">{{ getMonthDay(page.title).month }}{{ getMonthDay(page.title).day }}日 {{ getWeekday(page.title) }}</span>
-      </div>
       <div class="today-body">
         <BlockList :page-id="pageId" />
       </div>
@@ -57,13 +57,12 @@ function getMonthDay(dateStr: string): { month: string; day: string } {
   flex: 0 0 60%;
   display: flex;
   flex-direction: column;
-  padding: 16px;
   overflow: hidden;
 }
 
 .today-card {
-  background: #fff;
-  padding: 16px;
+  background: transparent;
+  padding-left: var(--space-4);
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -74,8 +73,12 @@ function getMonthDay(dateStr: string): { month: string; day: string } {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding-bottom: 12px;
+  padding: 0 0 var(--space-4) var(--space-4);
+  padding-bottom: var(--space-4);
+  background: transparent;
   flex-shrink: 0;
+  border-bottom: 1px solid var(--border, #E7E5E4);
+  box-shadow: var(--shadow-border-bottom);
 }
 
 .today-badge {
@@ -103,6 +106,7 @@ function getMonthDay(dateStr: string): { month: string; day: string } {
 
 .today-body {
   flex: 1;
+  padding-top: var(--space-3);
   overflow-y: auto;
   scrollbar-width: none;
 }
