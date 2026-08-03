@@ -83,5 +83,6 @@ export function useIdeas() {
     todayIdeasExists,
     checkAndEnsureTodayIdeas,
     ensureTodayIdeasExists,
+    isTodayTitle,
   }
 }
