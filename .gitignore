@@ -14,3 +14,4 @@ comind/test-merge-children.spec.ts
 comind/temp_cargo.txt
 task.md
 comind/comind-android-mobile/
+.superpowers/
