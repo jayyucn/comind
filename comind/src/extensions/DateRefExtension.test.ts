@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { Editor } from '@tiptap/core'
 import Document from '@tiptap/extension-document'
 import Paragraph from '@tiptap/extension-paragraph'
@@ -51,24 +51,32 @@ describe('DateRefExtension decoration rendering', () => {
     handle.teardown()
   })
 
-  it('renders {{deadline:2026-07-15T14:00|weekly}} as date-ref span', () => {
-    handle = createEditor('{{deadline:2026-07-15T14:00|weekly}}')
+  it('renders @2026-07-15T14:00 ⏰|weekly as date-ref span', () => {
+    handle = createEditor('@2026-07-15T14:00 ⏰|weekly')
     const data = spanData(handle.element)
     expect(data).toEqual([
       { kind: 'deadline', iso: '2026-07-15T14:00', recurrence: 'weekly', text: expect.any(String) },
     ])
   })
 
-  it('renders {{schedule:2026-07-20}} (no recurrence) with recurrence=none', () => {
-    handle = createEditor('{{schedule:2026-07-20}}')
+  it('renders @2026-07-20 📅 (no recurrence) with recurrence=none', () => {
+    handle = createEditor('@2026-07-20 📅')
     const data = spanData(handle.element)
     expect(data).toEqual([
       { kind: 'schedule', iso: '2026-07-20', recurrence: 'none', text: expect.any(String) },
     ])
   })
 
+  it('renders @2026-08-03 as kind=ref', () => {
+    handle = createEditor('@2026-08-03')
+    const data = spanData(handle.element)
+    expect(data).toEqual([
+      { kind: 'ref', iso: '2026-08-03', recurrence: 'none', text: expect.any(String) },
+    ])
+  })
+
   it('renders multiple dateRefs in one block', () => {
-    handle = createEditor('{{schedule:2026-07-20}} 与 {{deadline:2026-07-17T18:00|daily}}')
+    handle = createEditor('@2026-07-20 📅 与 @2026-07-17T18:00 ⏰|daily')
     const data = spanData(handle.element)
     expect(data).toHaveLength(2)
     expect(data[0]).toMatchObject({ kind: 'schedule', iso: '2026-07-20' })
@@ -85,19 +93,13 @@ describe('DateRefExtension decoration rendering', () => {
     expect(decoratedSpans(handle.element)).toHaveLength(0)
   })
 
-  it('does not decorate {{unknownkind:2026-07-15}} (invalid kind)', () => {
-    handle = createEditor('{{unknown:2026-07-15}}')
-    expect(decoratedSpans(handle.element)).toHaveLength(0)
-  })
-
   it('renders both dateRef and wikilink independently (no class collision)', () => {
-    // 两个扩展各自独立渲染，不共享 class
     const el = document.createElement('div')
     document.body.appendChild(el)
     const ed = new Editor({
       element: el,
       extensions: [Document, Paragraph, Text, DateRefExtension, WikiLinkExtension],
-      content: '<p>{{deadline:2026-07-15}} and [[Some Page]]</p>',
+      content: '<p>@2026-07-15 ⏰ and [[Some Page]]</p>',
     })
     expect(spanData(el)).toHaveLength(1) // dateRef span
     expect(el.querySelector('span.wiki-link')).not.toBeNull() // wikilink span
@@ -107,14 +109,6 @@ describe('DateRefExtension decoration rendering', () => {
 })
 
 describe('DateRefExtension handleClick event', () => {
-  // handleClick 的业务逻辑是：
-  // 1. 检查 target 是否 .date-ref
-  // 2. 从 pluginState 查 decoration 区间（无则用 pos）
-  // 3. 构造 payload 并 dispatchEvent
-  //
-  // 由于 this.key.getState 依赖 ProseMirror 上下文，且 .call(mockPlugin) 在 jsdom 下
-  // handleClick 内部的 this 行为不符合预期，改用直接复制业务逻辑的测试函数。
-
   it('dispatches dateRefClick with correct payload', () => {
     const mockDispatch = vi.fn((e: Event) => true)
     const mockSpan = {
@@ -124,14 +118,12 @@ describe('DateRefExtension handleClick event', () => {
     } as unknown as HTMLElement
     const fakeEvent = { target: mockSpan } as unknown as MouseEvent
 
-    // 直接复制 handleClick 的业务逻辑（from handleClick props）
     const target = fakeEvent.target as HTMLElement
     if (!target.classList.contains('date-ref')) {
-      expect(true).toBe(false) // should not reach here
+      expect(true).toBe(false)
       return
     }
 
-    // 无 pluginState 时 from/to = pos
     const pos = 42
     const from = pos
     const to = pos
@@ -177,6 +169,6 @@ describe('DateRefExtension handleClick event', () => {
       expect(mockDispatch).not.toHaveBeenCalled()
       return
     }
-    expect(true).toBe(false) // should not reach here
+    expect(true).toBe(false)
   })
 })

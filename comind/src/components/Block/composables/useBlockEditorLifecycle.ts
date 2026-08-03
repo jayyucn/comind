@@ -7,7 +7,7 @@ import {
   useDateRefClickListener,
   computeDatePickerPosition
 } from '../../../composables/useDateTimePickerPanel'
-import { DATE_REF_REGEX, serializeDateRef, normalizeRecurrence } from '../../../utils/date-ref'
+import { DATE_REF_AT_REGEX, serializeDateRef, normalizeRecurrence } from '../../../utils/date-ref'
 import type { useBlockStore } from '../../../stores/blocks'
 import type { useEditorStore } from '../../../stores/editor'
 import type { usePageStore } from '../../../stores/pages'
@@ -274,12 +274,15 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
       const content = blockStore.blocks.find(b => b.id === blockId.value)?.content ?? ''
       let idx = -1
       let matchCount = 0
-      const searchPattern = new RegExp(DATE_REF_REGEX.source, 'g')
+      const searchPattern = new RegExp(DATE_REF_AT_REGEX.source, 'g')
       let m: RegExpExecArray | null
       while ((m = searchPattern.exec(content)) !== null) {
+        // DATE_REF_AT_REGEX groups: m[1]=iso, m[2]=emoji(📅/⏰), m[3]=recurrence, m[4]=leadMinutes
+        const emoji = m[2]
+        const kind = emoji === '📅' ? 'schedule' : emoji === '⏰' ? 'deadline' : 'ref'
         const matchedRaw = serializeDateRef({
-          kind: m[1] as any,
-          iso: m[2],
+          kind: kind as any,
+          iso: m[1],
           recurrence: normalizeRecurrence(m[3]),
           leadMinutes: m[4] ? parseInt(m[4], 10) || 0 : 0,
         })

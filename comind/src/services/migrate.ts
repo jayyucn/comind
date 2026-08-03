@@ -2,7 +2,7 @@
  * T15 · 存量数据迁移
  *
  * 将旧 property 格式的 deadline/scheduled/recurrence 迁移为
- * content 内联的 `{{...}}` 格式。
+ * content 内联的 `@ISO [emoji]|recurrence` 格式。
  *
  * 迁移前：
  *   properties: { deadline: '2026-07-15', recurrence: 'weekly' }
@@ -10,9 +10,9 @@
  *
  * 迁移后：
  *   properties: {}  // 已删除
- *   content: '{{deadline:2026-07-15|weekly}} 买牛奶'
+ *   content: '@2026-07-15 ⏰|weekly 买牛奶'
  *
- * 幂等可重跑：已迁移的 block 不会再处理（通过检查 content 是否已含 dateRef 前缀）。
+ * 幂等可重跑：已迁移的 block 不会再处理（通过检查 content 是否已含 dateRef）。
  */
 import type { CoreClient } from '../wasm/client'
 import { serializeDateRef } from '../utils/date-ref'
@@ -48,7 +48,7 @@ function parsePropertyDate(value: string): string {
  * 检查 block 中是否已含 dateRef
  */
 function hasDateRefInContent(content: string): boolean {
-  return /\{\{(?:schedule|deadline):\d{4}-\d{2}-\d{2}/.test(content)
+  return /@(?:\d{4}-\d{2}-\d{2})/.test(content)
 }
 
 /**

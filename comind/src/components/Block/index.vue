@@ -14,7 +14,7 @@
  *   拖拽结束 → onDragEnd → syncTreeToStore → store → structureVersion++
  *   → BlockList watch → syncTreeToStore → tree 重建
  */
-import { computed, ref, watch, nextTick, onMounted, onBeforeUnmount, inject } from 'vue'
+import { computed, ref, watch, nextTick, onMounted, onBeforeUnmount, inject, toRef } from 'vue'
 import { useEditorStore } from '../../stores/editor'
 import { useBlockStore } from '../../stores/blocks'
 import { usePropertyStore } from '../../stores/property'
@@ -34,6 +34,7 @@ import PropertyInline from './PropertyInline.vue'
 
 import { usePageStore } from '../../stores/pages'
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
+import { useIdeasFreeze } from '../../composables/useIdeasFreeze'
 import type { TreeNode } from '../../types/block'
 import type { BlockTypeEditorExposed, BlockSetupContext, BlockTypeHooks } from '../../types/block-type'
 import type { CrossBlockSelection } from '../../composables/useCrossBlockSelection'
@@ -55,6 +56,7 @@ const pageStore = usePageStore()
 const { getHandler } = useBlockRegistry()
 const relationshipCleanup = useBlockRelationshipCleanup()
 const { navigateToPage } = useNavigateToPage()
+const { isFrozen } = useIdeasFreeze(toRef(props, 'pageId'))
 
 // 注入拖拽结束回调（由 BlockList 提供）
 const onDragEnd = inject<() => void>('onDragEnd')
@@ -371,6 +373,7 @@ async function onPaste(e: ClipboardEvent) {
             :show-full-placeholder="isSingleEmptyBlock"
             :properties="getBlockPropertiesMap()"
             :language="getBlockProperty('language')"
+            :readonly="isFrozen"
             @save="handleSave"
             @split="handleSplit"
             @merge="handleMerge"

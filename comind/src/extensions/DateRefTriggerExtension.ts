@@ -4,12 +4,20 @@ import type { DateRefKind } from '../utils/date-ref'
 
 export interface DateRefTriggerEvent {
   view: any
-  /** 光标在 {{ 后的位置 */
+  /** 光标在触发符后的位置 */
   position: number
-  /** {{ 字符的完整范围（插入后文档坐标） */
+  /** 触发符的完整范围（插入后文档坐标） */
   range: { from: number; to: number }
   /** 推断的 kind */
   kind: DateRefKind
+}
+
+export interface DateRefKindSelectEvent {
+  view: any
+  /** @ 符号的位置 */
+  range: { from: number; to: number }
+  /** 屏幕坐标 */
+  coords: { left: number; top: number; bottom: number }
 }
 
 let menuIsOpen = false
@@ -19,8 +27,7 @@ export function closeDateRefMenu() {
 }
 
 /**
- * 检测光标前是否有 {{ 模式，并推断 kind
- * 用于 view.update() 清理：文档变化后重新验证
+ * 检测光标前是否有 @ 模式（新格式触发器）
  */
 function findDateRefTrigger(doc: any, pos: number): {
   found: boolean
@@ -28,7 +35,7 @@ function findDateRefTrigger(doc: any, pos: number): {
   to: number
   kind: DateRefKind
 } {
-  let result = { found: false, from: 0, to: 0, kind: 'schedule' as DateRefKind }
+  let result = { found: false, from: 0, to: 0, kind: 'ref' as DateRefKind }
 
   doc.descendants((node: any, nodePos: number) => {
     if (!node.isText) return
@@ -38,15 +45,16 @@ function findDateRefTrigger(doc: any, pos: number): {
 
     const searchStart = Math.max(0, localPos - 20)
     const searchText = text.slice(searchStart, localPos)
-    const triggerMatch = searchText.match(/\{\{(\w*)$/)
 
-    if (triggerMatch) {
-      const triggerStart = nodePos + searchStart + triggerMatch.index!
+    // @ 后跟日期数字
+    const atMatch = searchText.match(/@(\d{0,4}-?)$/)
+    if (atMatch) {
+      const triggerStart = nodePos + searchStart + atMatch.index!
       result = {
         found: true,
         from: triggerStart,
         to: pos,
-        kind: triggerMatch[1] === 'deadline' ? 'deadline' : 'schedule',
+        kind: 'ref',
       }
       return false
     }
@@ -64,33 +72,16 @@ export const DateRefTriggerExtension = Extension.create({
         key: new PluginKey('dateRefTrigger'),
         props: {
           handleKeyDown(view, event) {
-            if (event.key === '{') {
-              const { state } = view
-              const cursorPos = state.selection.from
-              const $pos = state.doc.resolve(cursorPos)
-              const textBefore = $pos.nodeBefore?.text || ''
-
-              if (textBefore.endsWith('{')) {
-                // {{ 已插入：from = cursorPos-1, to = cursorPos+1
-                const rangeFrom = cursorPos - 1
-                const rangeTo = cursorPos + 1
-                menuIsOpen = true
-
-                const triggerEvent = new CustomEvent<DateRefTriggerEvent>('dateRefTrigger', {
-                  bubbles: true,
-                  detail: {
-                    view,
-                    position: rangeTo,
-                    range: { from: rangeFrom, to: rangeTo },
-                    kind: 'schedule',
-                  },
-                })
-                view.dom.dispatchEvent(triggerEvent)
-              }
+            // 新格式触发器：输入 @
+            if (event.key === '@') {
+              // 延迟到 @ 插入后再检测，由 view.update 处理
+              menuIsOpen = true
             }
 
             if (event.key === 'Escape' && menuIsOpen) {
               menuIsOpen = false
+              view.dom.dispatchEvent(new CustomEvent('dateRefTriggerClose', { bubbles: true }))
+              view.dom.dispatchEvent(new CustomEvent('dateRefKindSelectClose', { bubbles: true }))
               return true
             }
 
@@ -107,6 +98,35 @@ export const DateRefTriggerExtension = Extension.create({
               if (!result.found) {
                 menuIsOpen = false
                 view.dom.dispatchEvent(new CustomEvent('dateRefTriggerClose', { bubbles: true }))
+                view.dom.dispatchEvent(new CustomEvent('dateRefKindSelectClose', { bubbles: true }))
+              } else {
+                // 输入 @ 后跟数字 → 显示 kind 选择下拉框
+                // 只在 @ 后刚开始输入数字时显示选择器
+                const text = view.state.doc.textBetween(result.from, result.to, ' ')
+                if (text === '@') {
+                  // 刚输入 @，还没有数字 — 显示 kind 选择器
+                  const coords = view.coordsAtPos(result.to)
+                  view.dom.dispatchEvent(new CustomEvent<DateRefKindSelectEvent>('dateRefKindSelect', {
+                    bubbles: true,
+                    detail: {
+                      view,
+                      range: { from: result.from, to: result.to },
+                      coords: { left: coords.left, top: coords.top, bottom: coords.bottom },
+                    },
+                  }))
+                } else {
+                  // @ 后已有数字 — 直接打开 dateRef 面板（kind=ref）
+                  const triggerEvent = new CustomEvent<DateRefTriggerEvent>('dateRefTrigger', {
+                    bubbles: true,
+                    detail: {
+                      view,
+                      position: result.to,
+                      range: { from: result.from, to: result.to },
+                      kind: result.kind,
+                    },
+                  })
+                  view.dom.dispatchEvent(triggerEvent)
+                }
               }
             },
             destroy() {

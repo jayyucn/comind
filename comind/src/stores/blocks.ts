@@ -525,10 +525,10 @@ export const useBlockStore = defineStore('blocks', () => {
         let after = block.content.slice(textOffset)
 
         // 检查是否在 date-ref 中间拆分，如果是，则调整拆分位置
-        // date-ref 格式：{{kind:ISO|recurrence|leadMinutes}}
-        const DATE_REF_REGEX = /\{\{(schedule|deadline):([^}|]+?)(?:\|([^}|]*))?(?:\|([^}]+?))?\}\}/g
+        // date-ref 格式：@ISO[emoji][|params]
+        const DATE_REF_RE = /(?<![\w@])@(\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2})?)(?:[ \u00A0]?(📅|⏰))?(?:\|([^|]*))?(?:\|([^|]*))?/g
         let match
-        while ((match = DATE_REF_REGEX.exec(block.content)) !== null) {
+        while ((match = DATE_REF_RE.exec(block.content)) !== null) {
           const refStart = match.index
           const refEnd = refStart + match[0].length
           // 如果拆分位置在 date-ref 内部，则将拆分位置调整到 date-ref 之后
@@ -998,10 +998,10 @@ export const useBlockStore = defineStore('blocks', () => {
 
     // 自动将带 schedule/deadline 的 block 标记为 Todo 任务。
     // 这是所有写入 content 路径的统一收口（/schedule、/deadline 命令、
-    // 输入 {{、粘贴等最终都会流经此处），因此无论用何种方式写入 dateRef，
+    // 输入 @、粘贴等最终都会流经此处），因此无论用何种方式写入 dateRef，
     // block 都会自动成为任务。仅当 block 尚无 status 时补 Todo；
     // 移除 dateRef 时不会反向清除 status（保持任务状态）。
-    if (/\{\{(?:schedule|deadline):/.test(content)) {
+    if (/@\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2})?\s*[📅⏰]/.test(content)) {
       const propertyStore = usePropertyStore()
       await propertyStore.ensureTodo(blockId)
     }

@@ -60,7 +60,7 @@ describe('updateBlockContent — 自动标记 Todo', () => {
     const blockStore = useBlockStore()
     const id = await seed('旧内容')
 
-    await blockStore.updateBlockContent(id, '买牛奶{{schedule:2026-07-20}}')
+    await blockStore.updateBlockContent(id, '买牛奶@2026-07-20 📅')
 
     expect(hoisted.ensureTodo).toHaveBeenCalledTimes(1)
     expect(hoisted.ensureTodo).toHaveBeenCalledWith(id)
@@ -70,7 +70,7 @@ describe('updateBlockContent — 自动标记 Todo', () => {
     const blockStore = useBlockStore()
     const id = await seed('旧内容')
 
-    await blockStore.updateBlockContent(id, '交报告{{deadline:2026-07-25}}')
+    await blockStore.updateBlockContent(id, '交报告@2026-07-25 ⏰')
 
     expect(hoisted.ensureTodo).toHaveBeenCalledWith(id)
   })
@@ -87,7 +87,7 @@ describe('updateBlockContent — 自动标记 Todo', () => {
   it('block 不存在 → 不调用 ensureTodo', async () => {
     const blockStore = useBlockStore()
 
-    await blockStore.updateBlockContent('nope', '{{schedule:2026-07-20}}')
+    await blockStore.updateBlockContent('nope', '@2026-07-20 📅')
 
     expect(hoisted.ensureTodo).not.toHaveBeenCalled()
   })
@@ -97,7 +97,7 @@ describe('updateBlockContent — 自动标记 Todo', () => {
     const id = await seed('旧内容')
 
     // 先写入带 dateRef 的内容（触发 ensureTodo）
-    await blockStore.updateBlockContent(id, '任务{{schedule:2026-07-20}}')
+    await blockStore.updateBlockContent(id, '任务@2026-07-20 📅')
     expect(hoisted.ensureTodo).toHaveBeenCalledTimes(1)
 
     // 再更新为不含 dateRef 的内容（移除命令）

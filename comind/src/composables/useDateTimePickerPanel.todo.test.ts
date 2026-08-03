@@ -117,7 +117,7 @@ describe('handleConfirm — 自动标记 Todo', () => {
 
     // dateRef 已写入 content
     expect(blockState.updateBlockContent).toHaveBeenCalledTimes(1)
-    expect(blockState.updateBlockContent).toHaveBeenCalledWith('b1', '买牛奶{{schedule:2026-07-20}}')
+    expect(blockState.updateBlockContent).toHaveBeenCalledWith('b1', '买牛奶@2026-07-20 📅')
 
     // 自动补 Todo
     const todoCall = hoisted.setProperty.mock.calls.find((c) => c[0] === 'b1' && c[1] === 'status')
@@ -143,7 +143,7 @@ describe('handleConfirm — 自动标记 Todo', () => {
 
     await panel.handleConfirm({ kind: 'deadline', iso: '2026-07-25', recurrence: 'none' })
 
-    expect(blockState.updateBlockContent).toHaveBeenCalledWith('b2', '交报告{{deadline:2026-07-25}}')
+    expect(blockState.updateBlockContent).toHaveBeenCalledWith('b2', '交报告@2026-07-25 ⏰')
     const todoCall = hoisted.setProperty.mock.calls.find((c) => c[0] === 'b2' && c[1] === 'status')
     expect(todoCall).toBeDefined()
     expect(todoCall![2]).toBe('Todo')
@@ -193,7 +193,7 @@ describe('handleConfirm — 自动标记 Todo', () => {
       state: {
         doc: {
           content: { size: 20 },
-          textBetween: () => '{{',
+          textBetween: () => '@',
           descendants: () => {},
         },
         selection: { from: 5 },

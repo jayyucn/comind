@@ -1,5 +1,5 @@
 // utils/journal-detect.ts
-import { parse, isValid, format } from 'date-fns'
+import { parse, isValid, format, isSameDay } from 'date-fns'
 
 /**
  * 预定义日记日期格式列表
@@ -61,4 +61,13 @@ export function normalizeJournalTitle(title: string): string | null {
  */
 export function inferPageType(title: string): 'normal' | 'journal' {
   return isJournalTitle(title) ? 'journal' : 'normal'
+}
+
+/**
+ * 判断规范化后的标题是否为今天
+ * 用于路由守卫中区分今日/非今日 ideas 页面
+ */
+export function isTodayTitle(normalizedTitle: string): boolean {
+  const parsed = parseToDate(normalizedTitle)
+  return parsed !== null && isSameDay(parsed, new Date())
 }

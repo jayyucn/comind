@@ -1577,7 +1577,7 @@ impl DateRefRepository for SQLiteAdapter {
 
     fn query_due_non_recurring(&self, now_ms: i64) -> Result<Vec<DateRef>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at, updated_at, version, deleted_at FROM DateRef WHERE recurrence = 'none' AND (event_ts - lead_minutes * 60000) <= ?1 AND deleted_at IS NULL"
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at, updated_at, version, deleted_at FROM DateRef WHERE recurrence = 'none' AND kind != 'ref' AND (event_ts - lead_minutes * 60000) <= ?1 AND deleted_at IS NULL"
         )?;
         let rows = stmt.query_map(params![now_ms], |row| {
             Ok(DateRef {
@@ -1602,7 +1602,7 @@ impl DateRefRepository for SQLiteAdapter {
 
     fn query_all_recurring(&self) -> Result<Vec<DateRef>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at, updated_at, version, deleted_at FROM DateRef WHERE recurrence != 'none' AND deleted_at IS NULL"
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at, updated_at, version, deleted_at FROM DateRef WHERE recurrence != 'none' AND kind != 'ref' AND deleted_at IS NULL"
         )?;
         let rows = stmt.query_map(params![], |row| {
             Ok(DateRef {
@@ -3215,7 +3215,7 @@ impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
 
     fn query_due_non_recurring(&self, now_ms: i64) -> Result<Vec<DateRef>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at, updated_at, version, deleted_at FROM DateRef WHERE recurrence = 'none' AND (event_ts - lead_minutes * 60000) <= ?1 AND deleted_at IS NULL"
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at, updated_at, version, deleted_at FROM DateRef WHERE recurrence = 'none' AND kind != 'ref' AND (event_ts - lead_minutes * 60000) <= ?1 AND deleted_at IS NULL"
         )?;
         let rows = stmt.query_map(params![now_ms], |row| {
             Ok(DateRef {
@@ -3240,7 +3240,7 @@ impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
 
     fn query_all_recurring(&self) -> Result<Vec<DateRef>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at, updated_at, version, deleted_at FROM DateRef WHERE recurrence != 'none' AND deleted_at IS NULL"
+            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at, updated_at, version, deleted_at FROM DateRef WHERE recurrence != 'none' AND kind != 'ref' AND deleted_at IS NULL"
         )?;
         let rows = stmt.query_map(params![], |row| {
             Ok(DateRef {

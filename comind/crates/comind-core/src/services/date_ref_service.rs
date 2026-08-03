@@ -8,25 +8,37 @@ pub struct DateRefService;
 
 impl DateRefService {
     /// 从 block.content 提取 dateRef。
-    /// 语法：{{kind:ISO|recurrence?|leadMinutes?}}，kind ∈ schedule|deadline。
+    /// 语法：@ISO[emoji][|recurrence|lead]
+    ///   - @2026-08-03         → kind=ref
+    ///   - @2026-08-03 📅      → kind=schedule
+    ///   - @2026-08-03 ⏰      → kind=deadline
     ///
     /// 这是提取的**唯一事实来源**（Rust 侧）。前端 `src/utils/date-ref.ts` 的 `parseDateRefs`
     /// 仅保留展示用格式化，提取逻辑请勿以 TS 为准，避免两端语法漂移。
     pub fn extract_date_refs(content: &str) -> Vec<DateRef> {
+        let mut out: Vec<DateRef> = Vec::new();
+
+        // 注意：原 pattern 用了 lookbehind `(?<![\w@])`，但当前 regex crate
+        // 不支持 look-around（编译期 Err），会导致整段提取静默返回空。
+        // 改用 `(?:^|[^\w@])` 消费前置非 word/非@ 字符，语义等价且无 lookbehind。
         let re = match Regex::new(
-            r"\{\{(schedule|deadline):([^}|]+?)(?:\|([^}|]*))?(?:\|([^}]+?))?\}\}",
+            r"(?:^|[^\w@])@(\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2})?)(?:[ \u00A0]?(📅|⏰))?(?:\|(daily|weekly|monthly|yearly|none)?)?(?:\|(\d+))?",
         ) {
             Ok(r) => r,
             Err(_) => return Vec::new(),
         };
 
-        let mut out: Vec<DateRef> = Vec::new();
         for cap in re.captures_iter(content) {
-            let kind = &cap[1];
-            let iso = cap[2].trim().to_string();
+            let iso = cap[1].trim().to_string();
             if iso.is_empty() {
                 continue;
             }
+            let emoji = cap.get(2).map(|m| m.as_str()).unwrap_or("");
+            let kind = match emoji {
+                "📅" => "schedule",
+                "⏰" => "deadline",
+                _ => "ref",
+            };
             let recurrence = cap
                 .get(3)
                 .map(|m| m.as_str().trim())
@@ -38,6 +50,7 @@ impl DateRefService {
                 .unwrap_or(0);
             out.push(DateRef::new("", kind, &iso, recurrence, lead));
         }
+
         out
     }
 
@@ -153,8 +166,11 @@ impl DateRefService {
     ) -> Result<(), Box<dyn Error>> {
         let old_refs = Self::extract_date_refs(old_content);
         let new_refs = Self::extract_date_refs(new_content);
+        // ref kind 不参与通知系统，过滤掉
+        let old_refs: Vec<_> = old_refs.iter().filter(|r| r.kind != "ref").collect();
+        let new_refs: Vec<_> = new_refs.iter().filter(|r| r.kind != "ref").collect();
         // 1) 删除场景：old 有某 kind 的 dateRef，new 已无 → 该 kind 通知变孤儿，硬删除。
-        //    （block 内容删掉 {{schedule/deadline}} 时的清理，保留仍存在的另一 kind。）
+        //    （block 内容删掉 @... 📅/⏰ 时的清理，保留仍存在的另一 kind。）
         for oref in &old_refs {
             let still_present = new_refs.iter().any(|n| n.kind == oref.kind);
             if !still_present {
@@ -184,6 +200,14 @@ impl DateRefService {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extract_date_refs_basic() {
+        let refs = DateRefService::extract_date_refs("task @2026-07-20T14:00 📅 @2026-07-25 ⏰");
+        assert_eq!(refs.len(), 2);
+        assert_eq!(refs[0].kind, "schedule");
+        assert_eq!(refs[1].kind, "deadline");
+    }
 
     #[test]
     fn compute_event_iso_matches_js_local_9am() {
@@ -249,12 +273,12 @@ mod tests {
     fn removing_one_kind_deletes_only_that_kinds_notification() {
         let mut storage = SQLiteAdapter::open_in_memory().unwrap();
         // old 内容同时有 schedule + deadline（建 block 时自动 sync dateRef）
-        let old = "task {{schedule:2026-07-20T14:00}} {{deadline:2026-07-25}}";
+        let old = "task @2026-07-20T14:00 📅 @2026-07-25 ⏰";
         let block_id = setup_block(&mut storage, old);
         seed_notification(&mut storage, &block_id, "schedule", "2026-07-20T14:00");
         seed_notification(&mut storage, &block_id, "deadline", "2026-07-25T09:00");
         // new 内容删掉 schedule，保留 deadline（走 BlockService::update，它会 sync + reschedule）
-        let new = "task {{deadline:2026-07-25}}";
+        let new = "task @2026-07-25 ⏰";
         BlockService::update(&mut storage, &block_id, Some(new), None, None, None, None).unwrap();
         // schedule 通知已删，deadline 通知仍在
         let remaining = NotificationRepository::get_by_block_id(&storage, &block_id).unwrap();
@@ -269,7 +293,7 @@ mod tests {
     #[test]
     fn deleting_block_removes_all_its_notifications() {
         let mut storage = SQLiteAdapter::open_in_memory().unwrap();
-        let content = "task {{schedule:2026-07-20T14:00}} {{deadline:2026-07-25}}";
+        let content = "task @2026-07-20T14:00 📅 @2026-07-25 ⏰";
         let block_id = setup_block(&mut storage, content);
         seed_notification(&mut storage, &block_id, "schedule", "2026-07-20T14:00");
         seed_notification(&mut storage, &block_id, "deadline", "2026-07-25T09:00");
@@ -284,11 +308,11 @@ mod tests {
     #[test]
     fn rescheduling_still_works_when_iso_changes() {
         let mut storage = SQLiteAdapter::open_in_memory().unwrap();
-        let old = "task {{schedule:2026-07-20T14:00}}";
+        let old = "task @2026-07-20T14:00 📅";
         let block_id = setup_block(&mut storage, old);
         seed_notification(&mut storage, &block_id, "schedule", "2026-07-20T14:00");
         // 改时间（非删除）：通知应保留并改期，不应被删
-        let new = "task {{schedule:2026-07-21T15:00}}";
+        let new = "task @2026-07-21T15:00 📅";
         BlockService::update(&mut storage, &block_id, Some(new), None, None, None, None).unwrap();
         let remaining = NotificationRepository::get_by_block_id(&storage, &block_id).unwrap();
         assert_eq!(remaining.len(), 1, "notification should be kept (rescheduled, not deleted)");

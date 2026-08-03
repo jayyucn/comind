@@ -395,7 +395,7 @@ describe('NotificationService 周期计算与 payload 构建', () => {
     const client = makeClient({ due: [dueRef], recurring: [] }, tracker) as CoreClient & {
       getBlock: ReturnType<typeof vi.fn>
     }
-    client.getBlock = vi.fn(async (id: string) => ({ ...makeBlock(id), content: '{{schedule:2026-07-20T09:00}}' } as Block))
+    client.getBlock = vi.fn(async (id: string) => ({ ...makeBlock(id), content: '@2026-07-20T09:00 📅' } as Block))
     const svc = new NotificationService(client)
 
     const fired = await svc.checkAndFire()

@@ -1,7 +1,7 @@
+
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useIdeas } from '../../composables/useIdeas'
 import { usePageStore } from '../../stores/pages'
 import { useBlockStore } from '../../stores/blocks'
 import IdeasListItem from './IdeasListItem.vue'
@@ -11,32 +11,20 @@ import PropertyEditor from '../Block/PropertyEditor.vue'
 import { Icon } from '../Icons'
 
 const router = useRouter()
-const ideas = useIdeas()
 const pageStore = usePageStore()
 const blockStore = useBlockStore()
 
-// 用于强制刷新的计数器
-const refreshKey = ref(0)
-
 // 所有点滴（按日期倒序）
-// 兼容旧数据：'journal' 与 'ideas' 均视为点滴
 const allIdeasPages = computed(() => {
-  // 依赖refreshKey强制刷新
-  refreshKey.value
   return pageStore.pages
     .filter(p => p.type === 'ideas')
     .sort((a, b) => b.title.localeCompare(a.title))
 })
 
-// 确保今天的点滴存在（先从 IDB 加载 pages，避免重复创建）
+// 确保今天的点滴存在（已由 App.vue 的 checkAndEnsureTodayIdeas 统一处理）
 // 然后加载所有 ideas page 的 blocks
 onMounted(async () => {
   await pageStore.loadAllPages()
-  if (!ideas.todayIdeasExists.value) {
-    await ideas.ensureTodayIdeasExists()
-    await nextTick()
-    refreshKey.value++
-  }
 
   // 加载所有点滴 page 的 blocks 到 blockStore
   const ideasPageIds = pageStore.pages

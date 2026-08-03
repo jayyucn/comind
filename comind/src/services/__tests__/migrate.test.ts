@@ -73,7 +73,7 @@ describe('migrateDateProperties', () => {
     expect(client.saveBlockTree).toHaveBeenCalledWith([
       expect.objectContaining({
         id: 'block-1',
-        content: '{{deadline:2026-07-20}} 买牛奶',
+        content: '@2026-07-20 ⏰ 买牛奶',
       }),
     ])
 
@@ -101,7 +101,7 @@ describe('migrateDateProperties', () => {
 
     expect(client.saveBlockTree).toHaveBeenCalledWith([
       expect.objectContaining({
-        content: '{{schedule:2026-07-15|weekly}} 周报',
+        content: '@2026-07-15 📅|weekly 周报',
       }),
     ])
 
@@ -115,7 +115,7 @@ describe('migrateDateProperties', () => {
         { id: 'page-1' },
       ]),
       getBlocksByPage: vi.fn().mockResolvedValue([
-        { id: 'block-1', page_id: 'page-1', parent_id: null, pos: 1000, content: '{{deadline:2026-07-20}} 买牛奶', format: '{}', type: 'bullet' },
+        { id: 'block-1', page_id: 'page-1', parent_id: null, pos: 1000, content: '@2026-07-20 ⏰ 买牛奶', format: '{}', type: 'bullet' },
       ]),
       getProperties: vi.fn().mockResolvedValue([
         { id: 'prop-1', block_id: 'block-1', key: 'deadline', value: '2026-07-20', type: 'date', sort_order: 0, is_hidden: 0, is_deleted: 0, schema_version: 0, created_at: 0, updated_at: 0 },
@@ -144,7 +144,7 @@ describe('migrateDateProperties', () => {
     const result = await migrateDateProperties(client)
     expect(result.migratedBlocks).toBe(1)
     expect(client.saveBlockTree).toHaveBeenCalledWith([
-      expect.objectContaining({ content: '{{deadline:2026-07-20}}' }),
+      expect.objectContaining({ content: '@2026-07-20 ⏰' }),
     ])
   })
 

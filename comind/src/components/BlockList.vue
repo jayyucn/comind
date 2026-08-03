@@ -13,11 +13,12 @@
  * - handleDragEnd 将 tree 变更同步回 store（parentId + pos）
  * - store 变更通过 structureVersion watch 触发 syncFromStore 重建树
  */
-import { ref, watch, onMounted, onBeforeUnmount, provide, computed } from 'vue'
+import { ref, watch, onMounted, onBeforeUnmount, provide, computed, toRef } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
 import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
 import { usePageStore } from '../stores/pages'
+import { useIdeasFreeze } from '../composables/useIdeasFreeze'
 import Block from './Block/index.vue'
 import BlockDropIndicator from './Block/components/BlockDropIndicator.vue'
 import { useSharedDropIndicator } from './Block/composables/useBlockDragDrop'
@@ -34,6 +35,7 @@ const props = defineProps<{
 const blockStore = useBlockStore()
 const editorStore = useEditorStore()
 const pageStore = usePageStore()
+const { isFrozen } = useIdeasFreeze(toRef(props, 'pageId'))
 
 /** 当前页面的根 Block ID */
 const rootBlockId = computed(() => pageStore.getPage(props.pageId)?.blockId ?? null)
@@ -48,6 +50,7 @@ function syncFromStore() {
 
 // ── 拖拽结束：tree 已被 vue-draggable-plus 修改，同步回 store ──
 function handleDragEnd() {
+  if (isFrozen.value) return
   const changed = syncTreeToStore(tree.value, rootBlockId.value, blockStore.blocks)
   for (const id of changed) {
     blockStore.scheduleSave(id)
@@ -57,6 +60,7 @@ function handleDragEnd() {
 
 // ── 双击底部留白区域创建新 block ──
 async function handleCreateBlock() {
+  if (isFrozen.value) return
   const newBlock = await blockStore.createBlock({
     pageId: props.pageId,
     parentId: rootBlockId.value,
@@ -115,6 +119,13 @@ function handleDocMouseUp(e: MouseEvent) {
 }
 
 function handleDocKeyDown(e: KeyboardEvent) {
+  if (isFrozen.value) {
+    // 冻结时只允许 Escape 清除选区
+    if (e.key === 'Escape') {
+      selection.clearSelection()
+    }
+    return
+  }
   if (e.key === 'Backspace') {
     const selected = [...selection.anchorIds]
     if (selected.length > 0) {
@@ -180,10 +191,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="block-list">
+  <div class="block-list" :class="{ 'is-frozen': isFrozen }">
     <VueDraggable
       v-model="tree"
       :group="{ name: 'blocks', pull: true, put: true }"
+      :disabled="isFrozen"
       handle=".block-bullet"
       :animation="150"
       ghost-class="block-ghost"
@@ -197,8 +209,8 @@ onBeforeUnmount(() => {
     >
       <Block v-for="node in tree" :key="node.id" :node="node" :page-id="pageId" :depth="0" />
     </VueDraggable>
-    <!-- 底部留白：确保拖拽到列表底部时目标容器被正确识别，双击创建新 block -->
-    <div class="block-list-padding" @dblclick="handleCreateBlock" />
+    <!-- 底部留白：冻结时不允许双击创建新 block -->
+    <div v-if="!isFrozen" class="block-list-padding" @dblclick="handleCreateBlock" />
 
     <!-- 拖放指示器：模块级共享状态，整个 BlockList 只渲染一次。
          由各 Block 的 useBlockDragDrop.handleDragMove 写入共享 ref。 -->
@@ -215,6 +227,14 @@ onBeforeUnmount(() => {
   padding-left: 0;
   padding-bottom: 40px;
   min-height: 100px;
+}
+
+.block-list.is-frozen {
+  /* 冻结状态：降低视觉权重，但保持可点击选择 */
+}
+
+.block-list.is-frozen :deep(.block-bullet) {
+  cursor: default;
 }
 
 .block-list-padding {

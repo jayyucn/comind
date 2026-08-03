@@ -11,7 +11,7 @@ import { useEditorStore } from '../stores/editor'
 import { useBlockStore } from '../stores/blocks'
 import { usePropertyStore } from '../stores/property'
 import { DATE_REF_CLICK_EVENT } from '../extensions/DateRefExtension'
-import { serializeDateRef, DATE_REF_REGEX } from '../utils/date-ref'
+import { serializeDateRef, DATE_REF_AT_REGEX } from '../utils/date-ref'
 import type { DateRefKind, RecurrenceRule } from '../utils/date-ref'
 import type { DateRefClickPayload } from '../extensions/DateRefExtension'
 import { closeDateRefMenu } from '../extensions/DateRefTriggerExtension'
@@ -40,13 +40,15 @@ export function computeDatePickerPosition(dateRefEl: HTMLElement): { x: number; 
 
 /** 去掉 content 中多余的 kind 类型 date-ref，仅保留第一个 */
 export function deduplicateDateRef(content: string, kind: string): string {
-  const re = new RegExp(DATE_REF_REGEX.source, 'g')
+  const re = new RegExp(DATE_REF_AT_REGEX.source, 'g')
   const parts: string[] = []
   let lastIndex = 0
   let count = 0
   let m: RegExpExecArray | null
   while ((m = re.exec(content)) !== null) {
-    if (m[1] === kind) {
+    const emoji = m[2]
+    const mKind = emoji ? (emoji === '📅' ? 'schedule' : emoji === '⏰' ? 'deadline' : 'ref') : 'ref'
+    if (mKind === kind) {
       count++
       if (count > 1) {
         parts.push(content.slice(lastIndex, m.index))
@@ -96,8 +98,8 @@ export function useDateTimePickerPanel() {
 
   /**
    * 确认回调：执行 T8 闭环
-   * 1. 用 editor.chain().insertContentAt 替换 PM 文档中的旧 dateRef（editor 模式）
-   *    或写入 block.content 字符串（content 模式）
+   * 1. editor 模式：删除 from..to 范围的旧文本，插入新 dateRef 文本
+   *    content 模式：替换 block.content 字符串中对应区间
    * 2. content 模式：切换 kind 时去重
    * 3. 关闭面板
    */
@@ -111,32 +113,11 @@ export function useDateTimePickerPanel() {
 
     const { from, to, source, blockId } = state
 
-    let effectiveLeadMinutes = value.leadMinutes
-
-    if (source === 'editor') {
-      const editor = editorStore.activeEditor
-      if (editor && editor.state?.doc) {
-        editor.state.doc.descendants((node: any, pos: number) => {
-          if (!node.isText) return
-          const text = node.text || ''
-          const re = new RegExp(DATE_REF_REGEX.source, 'g')
-          let m: RegExpExecArray | null
-          while ((m = re.exec(text)) !== null) {
-            const absFrom = pos + m.index
-            if (absFrom === from) {
-              effectiveLeadMinutes = m[4] ? parseInt(m[4], 10) || 0 : 0
-              return false
-            }
-          }
-        })
-      }
-    }
-
     const newText = serializeDateRef({
       kind: value.kind,
       iso: value.iso,
       recurrence: value.recurrence,
-      leadMinutes: effectiveLeadMinutes,
+      leadMinutes: value.leadMinutes,
     })
 
     let inserted = false
@@ -152,44 +133,23 @@ export function useDateTimePickerPanel() {
       const docSize = editor.state.doc.content.size
       const cursor = editor.state.selection.from
 
-      if (from >= 0 && from < docSize) {
-        const sliced = editor.state.doc.textBetween(from, to, ' ')
-
-        if (sliced === '{{') {
-          let found = false
-          let resolvedFrom = from
-          let resolvedTo = from
-
-          editor.state.doc.descendants((node: any, pos: number) => {
-            if (!node.isText || found) return
-            const text = node.text || ''
-            const re = new RegExp(DATE_REF_REGEX.source, 'g')
-            let m: RegExpExecArray | null
-            while ((m = re.exec(text)) !== null) {
-              const absFrom = pos + m.index
-              const absTo = pos + m.index + m[0].length
-              if (absFrom === from) {
-                resolvedFrom = absFrom
-                resolvedTo = absTo
-                found = true
-                return false
-              }
-            }
-          })
-
-          if (found) {
-            editor.chain().deleteRange({ from: resolvedFrom, to: resolvedTo }).insertContent(newText).run()
-            inserted = true
-          } else {
-            editor.chain().deleteRange({ from, to }).insertContent(newText).run()
-            inserted = true
-          }
-        } else if (DATE_REF_REGEX.test(sliced)) {
-          editor.chain().deleteRange({ from, to }).insertContent(newText).run()
-          inserted = true
+      // 主路径：from..to 是有效范围且在文档内
+      if (from >= 0 && to <= docSize && from < to) {
+        editor.chain().deleteRange({ from, to }).insertContent(newText).run()
+        inserted = true
+      } else if (from >= 0 && from < docSize) {
+        // from 有效但 to 无效（如触发器只记录了起始位置）
+        // 删除 from 到 cursor 的内容
+        const endPos = Math.min(cursor, docSize)
+        if (from < endPos) {
+          editor.chain().deleteRange({ from, to: endPos }).insertContent(newText).run()
+        } else {
+          editor.chain().insertContentAt(from, newText).run()
         }
+        inserted = true
       }
 
+      // Fallback：在 cursor 附近搜索 dateRef 并替换
       if (!inserted) {
         const searchWindow = 30
         let found = false
@@ -199,7 +159,7 @@ export function useDateTimePickerPanel() {
         editor.state.doc.descendants((node: any, pos: number) => {
           if (!node.isText || found) return
           const text = node.text || ''
-          const re = new RegExp(DATE_REF_REGEX.source, 'g')
+          const re = new RegExp(DATE_REF_AT_REGEX.source, 'g')
           let m: RegExpExecArray | null
           while ((m = re.exec(text)) !== null) {
             const absFrom = pos + m.index
@@ -238,7 +198,7 @@ export function useDateTimePickerPanel() {
     // 自动将 block 标记为 Todo 任务：
     // 添加 /schedule 或 /deadline（即插入 schedule/deadline 类型的 dateRef）时，
     // 若 block 尚未有任何 status（Todo/Doing/Done/Canceled），则补一个 Todo。
-    // 注意：删除 dateRef 时不会反向清除 status（保持任务状态），见需求约束。
+    // ref 类型不触发此行为（纯日期引用，不是任务标记）。
     if (inserted && blockId && (value.kind === 'schedule' || value.kind === 'deadline')) {
       const propertyStore = usePropertyStore()
       await propertyStore.ensureTodo(blockId)

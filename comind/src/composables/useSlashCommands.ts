@@ -18,21 +18,6 @@ function formatDate(date: Date): string {
 }
 
 /**
- * 获取今天的日期链接
- */
-function insertToday({ editor, range }: CommandProps) {
-  const today = formatDate(new Date())
-  editor.chain()
-    .deleteRange(range)
-    .insertContent(`[[${today}]]`)
-    .focus()
-    .run()
-}
-
-/**
- * 获取昨天的日期链接
- */
-/**
  * 插入当前时间
  */
 function insertTime({ editor, range }: CommandProps) {
@@ -46,10 +31,10 @@ function insertTime({ editor, range }: CommandProps) {
 }
 
 /**
- * 打开 DateTimePicker 面板，用于 /schedule 和 /deadline 命令
- * 确认后插入 {{kind:iso|recurrence}} 格式
+ * 打开 DateTimePicker 面板，用于 /schedule、/deadline 和 /date 命令
+ * 确认后插入 @ISO[emoji][|recurrence|lead] 格式
  */
-function openDatePickerForKind(kind: 'schedule' | 'deadline') {
+function openDatePickerForKind(kind: 'ref' | 'schedule' | 'deadline') {
   return ({ editor: _editor, range, blockId }: CommandProps) => {
     const editorStore = useEditorStore()
     const today = formatDate(new Date())
@@ -213,16 +198,16 @@ export const commands: Command[] = [
     icon: '⏰',
     action: insertTime
   },
-  // `/date` — 插入 WikiLink 格式的日期 [[YYYY-MM-DD]]
+  // `/date` — 打开 DateTimePicker 面板，插入 @YYYY-MM-DD（kind=ref，无 emoji）
   {
     id: 'date',
     name: 'Date',
     alias: ['日期', '日期选择', 'date-picker'],
     group: '日期时间',
     icon: '🗓️',
-    action: insertToday // 复用现有 insertToday（插入 [[...]]）
+    action: openDatePickerForKind('ref'),
   },
-  // `/schedule` — 打开 DateTimePicker 面板，插入 {{schedule:...}}
+  // `/schedule` — 打开 DateTimePicker 面板，插入 @ISO 📅
   {
     id: 'schedule',
     name: 'Schedule',
@@ -231,7 +216,7 @@ export const commands: Command[] = [
     icon: '📅',
     action: openDatePickerForKind('schedule'),
   },
-  // `/deadline` — 打开 DateTimePicker 面板，插入 {{deadline:...}}
+  // `/deadline` — 打开 DateTimePicker 面板，插入 @ISO ⏰
   {
     id: 'deadline',
     name: 'Deadline',

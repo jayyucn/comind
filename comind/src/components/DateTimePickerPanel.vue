@@ -90,7 +90,7 @@ watch(localKind, (newKind, oldKind) => {
 
   if (initializingKind) return
 
-  if (newKind === 'deadline') {
+  if (newKind === 'deadline' || newKind === 'ref') {
     localRecurrence.value = 'none'
   }
 
@@ -102,7 +102,7 @@ watch(localKind, (newKind, oldKind) => {
       if (block) {
         const refs = parseDateRefs(block.content)
         if (refs.some(r => r.kind === newKind)) {
-          const label = newKind === 'deadline' ? '截止时间' : '计划时间'
+          const label = newKind === 'deadline' ? '截止时间' : newKind === 'schedule' ? '计划时间' : '日期引用'
           editorStore.showToast(`该任务已有${label}`, 'warning')
           kindGuard = true
           localKind.value = oldKind
@@ -157,8 +157,9 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown, true))
           <!-- Kind 切换 -->
           <div class="dtp-section dtp-kind-row">
             <div class="dtp-kind-wrapper">
-              <span class="dtp-kind-icon">{{ localKind === 'schedule' ? '📅' : '⏰' }}</span>
+              <span class="dtp-kind-icon">{{ localKind === 'schedule' ? '📅' : localKind === 'deadline' ? '⏰' : '🗓️' }}</span>
               <select v-model="localKind" class="dtp-select dtp-select--kind">
+                <option value="ref">日期引用</option>
                 <option value="schedule">计划时间</option>
                 <option value="deadline">截止时间</option>
               </select>
@@ -213,7 +214,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown, true))
           </div>
 
           <!-- 重复（仅 schedule） -->
-          <div v-if="localKind !== 'deadline'" class="dtp-section dtp-field-row">
+          <div v-if="localKind === 'schedule'" class="dtp-section dtp-field-row">
             <label class="dtp-field-label">
               <Repeat :size="11" :stroke-width="2" /> 重复
             </label>
@@ -226,8 +227,8 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown, true))
             </select>
           </div>
 
-          <!-- 提前提醒 -->
-          <div class="dtp-section dtp-field-row">
+          <!-- 提前提醒（ref 不需要提醒） -->
+          <div v-if="localKind !== 'ref'" class="dtp-section dtp-field-row">
             <label class="dtp-field-label">
               <Clock :size="11" :stroke-width="2" /> 提前提醒
             </label>

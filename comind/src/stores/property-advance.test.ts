@@ -41,7 +41,7 @@ describe('T11 — 自动推进 dateRef（Done 语义）', () => {
   it('status=Done + content 含 weekly dateRef → 推进日期 + 重置 status=Todo', async () => {
     const mockBlocks = [{
       id: 'block-1',
-      content: '任务 {{deadline:2026-07-15|weekly}} 完成',
+      content: '任务 @2026-07-15 ⏰|weekly 完成',
       type: 'bullet',
       page: 'test-page',
       children: [],
@@ -66,14 +66,14 @@ describe('T11 — 自动推进 dateRef（Done 语义）', () => {
     // 验证 updateBlockContent 被调用（日期推进）
     expect(mockUpdateBlockContent).toHaveBeenCalledWith(
       'block-1',
-      '任务 {{deadline:2026-07-22|weekly}} 完成'
+      '任务 @2026-07-22 ⏰|weekly 完成'
     )
   })
 
   it('status=Done + content 含 daily dateRef → 推进日期 + 重置 status=Todo', async () => {
     const mockBlocks = [{
       id: 'block-2',
-      content: '{{schedule:2026-07-15|daily}}',
+      content: '@2026-07-15 📅|daily',
       type: 'bullet',
       page: 'test-page',
       children: [],
@@ -94,14 +94,14 @@ describe('T11 — 自动推进 dateRef（Done 语义）', () => {
 
     expect(mockUpdateBlockContent).toHaveBeenCalledWith(
       'block-2',
-      '{{schedule:2026-07-16|daily}}'
+      '@2026-07-16 📅|daily'
     )
   })
 
   it('status=Done + content 含 monthly dateRef → 推进日期', async () => {
     const mockBlocks = [{
       id: 'block-3',
-      content: '{{deadline:2026-01-31|monthly}}',
+      content: '@2026-01-31 ⏰|monthly',
       type: 'bullet',
       page: 'test-page',
       children: [],
@@ -123,14 +123,14 @@ describe('T11 — 自动推进 dateRef（Done 语义）', () => {
     // 2026-01-31 + 1 month = 2026-02-28（闰年）
     expect(mockUpdateBlockContent).toHaveBeenCalledWith(
       'block-3',
-      '{{deadline:2026-02-28|monthly}}'
+      '@2026-02-28 ⏰|monthly'
     )
   })
 
   it('status=Done + content 无 recurrence → 不推进', async () => {
     const mockBlocks = [{
       id: 'block-4',
-      content: '{{deadline:2026-07-15}}', // 无 recurrence
+      content: '@2026-07-15 ⏰', // 无 recurrence
       type: 'bullet',
       page: 'test-page',
       children: [],

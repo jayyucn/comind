@@ -45,7 +45,7 @@ router.beforeEach(async (to) => {
 
   if (to.name === 'ideas-page') {
     try {
-      const { normalizeJournalTitle } = await import('../utils/journal-detect')
+      const { normalizeJournalTitle, isTodayTitle } = await import('../utils/journal-detect')
 
       const rawParam = to.params.date as string
       const normalized = normalizeJournalTitle(rawParam)
@@ -57,7 +57,13 @@ router.beforeEach(async (to) => {
       let page = pageStore.getPageByTitle(normalized)
 
       if (!page) {
-        page = await pageStore.createPage(normalized, 'ideas')
+        // 今日页面：允许创建（作为 checkAndEnsureTodayIdeas 的 fallback）
+        // 非今日页面：redirect 到 ideas-list，不自动创建
+        if (isTodayTitle(normalized)) {
+          page = await pageStore.createPage(normalized, 'ideas')
+        } else {
+          return { name: 'ideas-list' }
+        }
       }
 
       if (page && page.type !== 'ideas') {

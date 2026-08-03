@@ -11,17 +11,20 @@ import BracketPairExtension from '../extensions/BracketPairExtension'
 import { SlashCommandExtension } from '../extensions/SlashCommandExtension'
 import { HeadingPreviewExtension } from '../extensions/HeadingPreviewExtension'
 import { DateRefExtension, DATE_REF_CLICK_EVENT, type DateRefClickPayload } from '../extensions/DateRefExtension'
-import { DateRefTriggerExtension } from '../extensions/DateRefTriggerExtension'
+import { DateRefTriggerExtension, type DateRefKindSelectEvent } from '../extensions/DateRefTriggerExtension'
 import { usePageStore } from '../stores/pages'
 import { useDateTimePickerPanel } from '../composables/useDateTimePickerPanel'
 import { useRelationshipMenu } from '../composables/useRelationshipMenu'
 import { debounce } from '../utils/debounce'
 import PageLinkMenu from './PageLinkMenu.vue'
+import DateRefKindSelector from './DateRefKindSelector.vue'
+import type { DateRefKind } from '../utils/date-ref'
 
 const props = defineProps<{
   blockId: string
   content: string
   showFullPlaceholder?: boolean
+  readonly?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -54,6 +57,12 @@ const menuPosition = ref({ x: 0, y: 0 })
 const menuRange = ref({ from: 0, to: 0 })
 const menuQuery = ref('')
 const menuRef = ref<InstanceType<typeof PageLinkMenu> | null>(null)
+
+// DateRef kind 选择器状态
+const kindSelectorVisible = ref(false)
+const kindSelectorPosition = ref({ left: 0, top: 0, bottom: 0 })
+const kindSelectorRange = ref({ from: 0, to: 0 })
+const kindSelectorView = ref<any>(null)
 
 const relMenu = useRelationshipMenu()
 
@@ -166,6 +175,42 @@ function handleDateRefClick(event: Event) {
     },
     'editor'
   )
+}
+
+function handleDateRefKindSelect(event: Event) {
+  const customEvent = event as CustomEvent<DateRefKindSelectEvent>
+  const { view, range, coords } = customEvent.detail
+  kindSelectorView.value = view
+  kindSelectorRange.value = range
+  kindSelectorPosition.value = { left: coords.left, top: coords.top, bottom: coords.bottom }
+  kindSelectorVisible.value = true
+}
+
+function handleKindSelect(kind: DateRefKind) {
+  kindSelectorVisible.value = false
+  const view = kindSelectorView.value
+  if (!view) return
+  const range = kindSelectorRange.value
+  const coords = view.coordsAtPos(range.to)
+
+  const { open: openDateRefPanel } = useDateTimePickerPanel()
+  openDateRefPanel(
+    {
+      blockId: props.blockId || '',
+      from: range.from,
+      to: range.to,
+      kind,
+      iso: new Date().toISOString().slice(0, 10),
+      recurrence: 'none',
+      leadMinutes: 0,
+      position: { x: coords.left, y: coords.bottom + 6 },
+    },
+    'editor'
+  )
+}
+
+function handleKindSelectCancel() {
+  kindSelectorVisible.value = false
 }
 
 function handleWikiLinkTrigger(event: Event) {
@@ -299,12 +344,14 @@ const editor = shallowRef(useEditor({
   ],
   content: textToHtml(props.content),
   autofocus: false,
+  editable: !props.readonly,
   onBlur: () => {
     if (syncing) return
     if (savedFromOutside) {
       savedFromOutside = false
       return
     }
+    if (props.readonly) return
     if (editor.value) {
       // wiki link 菜单仍打开时（用户未取消），失焦即创建对应页面
       if (menuVisible.value) {
@@ -328,6 +375,7 @@ const editor = shallowRef(useEditor({
     }
   },
   onUpdate: () => {
+    if (props.readonly) return
     if (editor.value && !settingContent) {
       hasContent.value = !!editor.value.getText()
       const { from } = editor.value.state.selection
@@ -339,6 +387,16 @@ const editor = shallowRef(useEditor({
 }))
 
 let settingContent = false
+
+// 响应 readonly 变化
+watch(
+  () => props.readonly,
+  (readonly) => {
+    if (editor.value) {
+      editor.value.setEditable(!readonly)
+    }
+  }
+)
 
 watch(
   () => props.content,
@@ -386,6 +444,8 @@ onBeforeUnmount(() => {
       view.dom.removeEventListener('relationship-close', handleRelationshipClose as EventListener)
       view.dom.removeEventListener('dateRefTrigger', handleDateRefTrigger as EventListener)
       view.dom.removeEventListener(DATE_REF_CLICK_EVENT, handleDateRefClick as EventListener)
+      view.dom.removeEventListener('dateRefKindSelect', handleDateRefKindSelect as EventListener)
+      view.dom.removeEventListener('dateRefKindSelectClose', (() => { kindSelectorVisible.value = false }) as EventListener)
     }
   } catch (err) {
     if (err instanceof Error && err.message.includes('editor view is not available')) {
@@ -415,6 +475,8 @@ onMounted(() => {
     editor.value.view.dom.addEventListener('relationship-close', handleRelationshipClose as EventListener)
     editor.value.view.dom.addEventListener('dateRefTrigger', handleDateRefTrigger as EventListener)
     editor.value.view.dom.addEventListener(DATE_REF_CLICK_EVENT, handleDateRefClick as EventListener)
+    editor.value.view.dom.addEventListener('dateRefKindSelect', handleDateRefKindSelect as EventListener)
+    editor.value.view.dom.addEventListener('dateRefKindSelectClose', (() => { kindSelectorVisible.value = false }) as EventListener)
   }
 })
 
@@ -492,6 +554,12 @@ defineExpose({ syncContent, focus, focusAtCoords, getText: () => editor.value?.g
       :query="menuQuery"
       @select="handleWikiLinkSelect"
       @close="handleWikiLinkClose as any"
+    />
+    <DateRefKindSelector
+      :visible="kindSelectorVisible"
+      :position="kindSelectorPosition"
+      @select="handleKindSelect"
+      @cancel="handleKindSelectCancel"
     />
   </div>
 </template>

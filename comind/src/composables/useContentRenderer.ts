@@ -1,10 +1,10 @@
 import { getPredefinedRelationship } from '../types/relationship'
 import {
-  DATE_REF_REGEX,
-  formatDateRefDisplay,
+  DATE_REF_AT_REGEX,
   normalizeRecurrence,
   serializeDateRef,
   type DateRef,
+  type DateRefKind,
 } from '../utils/date-ref'
 
 const CSS_CLASSES = {
@@ -75,31 +75,53 @@ export function useContentRenderer() {
   }
 
   /**
-   * 渲染 dateRef {{kind:ISO|recurrence}} 为可交互 span
-   * dateRef 使用 {{...}} 格式，与 typed link `((...))[[...]]` 不冲突，
-   * 可在 typed link 之后、wiki link 之前处理。
+   * 渲染 dateRef 为可交互 span
+   *
+   * 处理 @ISO[emoji][|params] 格式，在 typed link 之后、wiki link 之前处理。
    */
   function renderDateRefs(text: string): string {
-    return text.replace(DATE_REF_REGEX, (_full, kind, iso, rec, lead) => {
-      const leadMinutes = lead ? parseInt(lead, 10) || 0 : 0
+    // 收集所有匹配，按位置排序，一次性替换
+    const matches: { start: number; end: number; html: string }[] = []
+
+    const re = new RegExp(DATE_REF_AT_REGEX.source, 'g')
+    let m: RegExpExecArray | null
+    while ((m = re.exec(text)) !== null) {
+      const kind: DateRefKind = m[2]
+        ? (m[2] === '📅' ? 'schedule' : m[2] === '⏰' ? 'deadline' : 'ref')
+        : 'ref'
+      const leadMinutes = m[4] ? parseInt(m[4], 10) || 0 : 0
       const ref: DateRef = {
-        kind: kind as DateRef['kind'],
-        iso: iso.trim(),
-        recurrence: normalizeRecurrence(rec),
+        kind,
+        iso: m[1].trim(),
+        recurrence: normalizeRecurrence(m[3]),
         leadMinutes,
       }
-      const overdue = isOverdue(ref)
-      const display = formatDateRefDisplay(ref)
-      const serialized = serializeDateRef(ref)
-      const classes = [CSS_CLASSES.dateRef, ref.kind, overdue ? 'overdue' : ''].filter(Boolean).join(' ')
-      return `<span class="${classes}" ` +
-        `data-kind="${escapeHtmlEntities(kind)}" ` +
-        `data-iso="${escapeHtmlEntities(iso.trim())}" ` +
-        `data-recurrence="${escapeHtmlEntities(ref.recurrence)}" ` +
-        `data-lead-minutes="${leadMinutes}" ` +
-        `data-raw="${escapeHtmlEntities(serialized)}">` +
-        `${escapeHtmlEntities(display)}</span>`
-    })
+      matches.push({ start: m.index, end: m.index + m[0].length, html: buildDateRefSpan(ref) })
+    }
+
+    // 按位置排序，从后往前替换避免偏移
+    matches.sort((a, b) => b.start - a.start)
+    let result = text
+    for (const match of matches) {
+      result = result.slice(0, match.start) + match.html + result.slice(match.end)
+    }
+
+    return result
+  }
+
+  /** 构建单个 dateRef span HTML */
+  function buildDateRefSpan(ref: DateRef): string {
+    const overdue = isOverdue(ref)
+    // 渲染态显示与编辑态一致的原始文本（@ISO[emoji][|params]）
+    const display = serializeDateRef(ref)
+    const classes = [CSS_CLASSES.dateRef, ref.kind, overdue ? 'overdue' : ''].filter(Boolean).join(' ')
+    return `<span class="${classes}" ` +
+      `data-kind="${escapeHtmlEntities(ref.kind)}" ` +
+      `data-iso="${escapeHtmlEntities(ref.iso)}" ` +
+      `data-recurrence="${escapeHtmlEntities(ref.recurrence)}" ` +
+      `data-lead-minutes="${ref.leadMinutes}" ` +
+      `data-raw="${escapeHtmlEntities(display)}">` +
+      `${escapeHtmlEntities(display)}</span>`
   }
 
   /**
@@ -109,7 +131,7 @@ export function useContentRenderer() {
    * 1. 带类型链接 ((type))[[X]]：
    *    - 渲染为 `关系类型 [[X]]`
    *    - 段间 #tag 在原始 text 上处理，避免误匹配 style 里的 #xxxxxx 颜色值
-   * 2. dateRef {{...}}（在 wiki link 之前，防止 [[...]] 冲突）
+   * 2. dateRef @... （在 wiki link 之前，防止 [[...]] 冲突）
    * 3. 外部链接 [[https://...]]
    * 4. 普通链接 [[X]] 或 [[X|alias]] → .block-link
    */
@@ -117,7 +139,7 @@ export function useContentRenderer() {
     // 1. 带类型链接 + 段间 #tag（基于原始 text）
     const withTyped = renderTypedLinks(text, blockId)
 
-    // 2. dateRef（基于原始 text，{{...}} 格式与 typed link 不冲突）
+    // 2. dateRef（基于原始 text，@... 格式与 typed link 不冲突）
     const withDateRefs = renderDateRefs(withTyped)
 
     // 3. 外部链接（HTML 中无 [[，安全）

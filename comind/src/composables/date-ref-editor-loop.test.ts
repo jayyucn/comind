@@ -57,7 +57,7 @@ describe('T8 — 编辑态 insertContentAt 替换', () => {
 
     expect(chain.insertContentAt).toHaveBeenCalledWith(
       { from: 10, to: 30 },
-      '{{deadline:2026-07-15T14:00|weekly}}'
+      '@2026-07-15T14:00 ⏰|weekly'
     )
     expect(chain.run).toHaveBeenCalled()
   })
@@ -107,7 +107,7 @@ describe('T9 — 阅读态 string replace 替换', () => {
     // 添加一个 mock block
     blockStore.blocks.push({
       id: 'block-a',
-      content: '任务 {{deadline:2026-07-15}} 完成',
+      content: '任务 @2026-07-15 ⏰ 完成',
       type: 'bullet' as any,
       page: 'test-page',
       children: [],
@@ -119,7 +119,7 @@ describe('T9 — 阅读态 string replace 替换', () => {
     store.openDateRefEditor({
       blockId: 'block-a',
       from: 3,
-      to: 26,
+      to: 16,
       source: 'content',
       kind: 'deadline',
       iso: '2026-07-20',
@@ -140,7 +140,7 @@ describe('T9 — 阅读态 string replace 替换', () => {
     }
 
     const block = blockStore.blocks.find(b => b.id === 'block-a')
-    expect(block?.content).toBe('任务 {{deadline:2026-07-20|daily}} 完成')
+    expect(block?.content).toBe('任务 @2026-07-20 ⏰|daily 完成')
   })
 
   it('source:content — blockId 不存在时安全跳过', () => {
@@ -200,13 +200,13 @@ describe('T9 — 阅读态 string replace 替换', () => {
 
 // ── serializeDateRef ──────────────────────────────────────────────────────────
 describe('serializeDateRef', () => {
-  it('各种 recurrence 生成正确语法', () => {
+  it('各种 recurrence 生成正确语法（新 @ 格式）', () => {
     const cases: Array<[DateTimePickerConfirm, string]> = [
-      [{ kind: 'deadline', iso: '2026-07-15', recurrence: 'none' }, '{{deadline:2026-07-15}}'],
-      [{ kind: 'schedule', iso: '2026-07-20', recurrence: 'daily' }, '{{schedule:2026-07-20|daily}}'],
-      [{ kind: 'deadline', iso: '2026-08-01T09:00', recurrence: 'weekly' }, '{{deadline:2026-08-01T09:00|weekly}}'],
-      [{ kind: 'schedule', iso: '2026-09-10', recurrence: 'monthly' }, '{{schedule:2026-09-10|monthly}}'],
-      [{ kind: 'deadline', iso: '2027-01-01', recurrence: 'yearly' }, '{{deadline:2027-01-01|yearly}}'],
+      [{ kind: 'deadline', iso: '2026-07-15', recurrence: 'none' }, '@2026-07-15 ⏰'],
+      [{ kind: 'schedule', iso: '2026-07-20', recurrence: 'daily' }, '@2026-07-20 📅|daily'],
+      [{ kind: 'deadline', iso: '2026-08-01T09:00', recurrence: 'weekly' }, '@2026-08-01T09:00 ⏰|weekly'],
+      [{ kind: 'schedule', iso: '2026-09-10', recurrence: 'monthly' }, '@2026-09-10 📅|monthly'],
+      [{ kind: 'deadline', iso: '2027-01-01', recurrence: 'yearly' }, '@2027-01-01 ⏰|yearly'],
     ]
     for (const [value, expected] of cases) {
       expect(serializeDateRef(value)).toBe(expected)

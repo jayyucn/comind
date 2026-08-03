@@ -1,10 +1,13 @@
 /**
  * dateRef 语法单一事实来源
  *
- * 语法：{{kind:ISO本地时间|recurrence?}}
- *   kind       ∈ schedule | deadline
- *   ISO 本地时间 2026-07-15T14:00（不带时区后缀 Z）
- *   recurrence ∈ none | daily | weekly | monthly | yearly（缺省 none）
+ * 语法（@ 格式，统一入口）：
+ *    @ISO本地时间 [emoji][|recurrence?|leadMinutes?]
+ *    - @2026-08-03         → kind=ref（纯日期引用，无通知，无图谱）
+ *    - @2026-08-03 📅      → kind=schedule（计划日期）
+ *    - @2026-08-03 ⏰      → kind=deadline（截止日期）
+ *    - @2026-08-03 📅|weekly  → kind=schedule + recurrence
+ *    - @2026-08-03 ⏰||30     → kind=deadline + leadMinutes
  *
  * 所有层（DateRefExtension / useContentRenderer / 命令 / 自动推进）
  * 共用本文件的解析与序列化逻辑，禁止在各处重复编写正则。
@@ -17,7 +20,7 @@
  * property 等），请勿将其解析结果当作存储索引的唯一事实来源。
  */
 
-export type DateRefKind = 'schedule' | 'deadline'
+export type DateRefKind = 'ref' | 'schedule' | 'deadline'
 export type RecurrenceRule = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'
 
 export interface DateRef {
@@ -32,62 +35,80 @@ export interface DateRef {
 const RECURRENCE_RULES: RecurrenceRule[] = ['none', 'daily', 'weekly', 'monthly', 'yearly']
 
 /**
- * 匹配 {{schedule:2026-07-15T14:00|weekly}} 或 {{deadline:2026-07-15}} 或 {{schedule:2026-07-15|weekly|15}}
- * 注意：全局正则带 lastIndex 状态，调用方应每次 new RegExp 后使用，避免复用污染。
+ * 匹配 @ 语法：@2026-08-03 或 @2026-08-03T14:00 后跟可选 emoji 和参数
+ *   @2026-08-03           → kind=ref
+ *   @2026-08-03 📅        → kind=schedule
+ *   @2026-08-03 ⏰        → kind=deadline
+ *   @2026-08-03 📅|weekly → kind=schedule + recurrence
+ *   @2026-08-03 ⏰||30    → kind=deadline + leadMinutes
+ *
+ * 注意：@ 前不能是字母/数字/字幕（避免匹配 email 等）。
  */
-export const DATE_REF_REGEX = /\{\{(schedule|deadline):([^}|]+?)(?:\|([^}|]*))?(?:\|([^}]+?))?\}\}/g
+export const DATE_REF_AT_REGEX = /(?<![\w@])@(\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2})?)(?:[ \u00A0]?(📅|⏰))?(?:\|(daily|weekly|monthly|yearly|none)?)?(?:\|(\d+))?/g
+
+/** emoji → kind 映射 */
+const EMOJI_TO_KIND: Record<string, DateRefKind> = {
+  '📅': 'schedule',
+  '⏰': 'deadline',
+}
+
+/** kind → emoji 映射 */
+const KIND_TO_EMOJI: Record<string, string | undefined> = {
+  ref: undefined,
+  schedule: '📅',
+  deadline: '⏰',
+}
 
 export function normalizeRecurrence(rec: string | undefined): RecurrenceRule {
   return rec && (RECURRENCE_RULES as string[]).includes(rec) ? (rec as RecurrenceRule) : 'none'
 }
 
-/** 从文本中提取所有 dateRef（同 block 可含多个） */
+/**
+ * 从文本中提取所有 dateRef（同 block 可含多个）
+ * 解析 @ISO[emoji][|params] 格式
+ */
 export function parseDateRefs(text: string): DateRef[] {
-  const result: DateRef[] = []
-  if (!text) return result
-  const re = new RegExp(DATE_REF_REGEX.source, 'g')
+  const result: { ref: DateRef; pos: number }[] = []
+  if (!text) return []
+
+  const re = new RegExp(DATE_REF_AT_REGEX.source, 'g')
   let m: RegExpExecArray | null
   while ((m = re.exec(text)) !== null) {
-    result.push({
-      kind: m[1] as DateRefKind,
-      iso: m[2],
-      recurrence: normalizeRecurrence(m[3]),
-      leadMinutes: m[4] ? parseInt(m[4], 10) || 0 : 0,
-    })
+    const iso = m[1]
+    const emoji = m[2]
+    const kind: DateRefKind = emoji ? (EMOJI_TO_KIND[emoji] ?? 'ref') : 'ref'
+    const recurrence = normalizeRecurrence(m[3])
+    const leadMinutes = m[4] ? parseInt(m[4], 10) || 0 : 0
+    result.push({ ref: { kind, iso, recurrence, leadMinutes }, pos: m.index })
   }
-  return result
+
+  // 按文本位置排序，保持原始顺序
+  result.sort((a, b) => a.pos - b.pos)
+  return result.map((r) => r.ref)
 }
 
-/** 结构化 dateRef → 文本语法。recurrence 为 none 时省略 | 段；leadMinutes > 0 时追加第三段 */
+/**
+ * 结构化 dateRef → 文本语法。
+ *
+ * - kind=ref：`@ISO` 或 `@ISO|recurrence|lead`
+ * - kind=schedule/deadline：`@ISO 📅` 或 `@ISO ⏰`
+ */
 export function serializeDateRef(ref: DateRef): string {
   const lead = ref.leadMinutes && ref.leadMinutes > 0 ? ref.leadMinutes : 0
+  const emoji = KIND_TO_EMOJI[ref.kind]
+  const emojiPart = emoji ? ` ${emoji}` : ''
+
+  // 构建 | 参数段
+  let params = ''
   if (lead > 0 && ref.recurrence !== 'none') {
-    return `{{${ref.kind}:${ref.iso}|${ref.recurrence}|${lead}}}`
+    params = `|${ref.recurrence}|${lead}`
+  } else if (lead > 0 && ref.recurrence === 'none') {
+    params = `||${lead}`
+  } else if (ref.recurrence && ref.recurrence !== 'none') {
+    params = `|${ref.recurrence}`
   }
-  if (lead > 0 && ref.recurrence === 'none') {
-    return `{{${ref.kind}:${ref.iso}||${lead}}}`
-  }
-  const rec = ref.recurrence && ref.recurrence !== 'none' ? `|${ref.recurrence}` : ''
-  return `{{${ref.kind}:${ref.iso}${rec}}}`
-}
 
-/** 渲染展示文本（emoji 前缀 + 智能格式化 + 重复标记；逾期变红由 CSS 类处理） */
-export function formatDateRefDisplay(ref: DateRef): string {
-  const prefix = ref.kind === 'schedule' ? '📅' : '⏰'
-  const recPart = ref.recurrence !== 'none' ? ` · ${recurrenceLabel(ref.recurrence)}` : ''
-  return `${prefix} ${formatIsoDisplay(ref.iso)}${recPart}`
-}
-
-const REC_LABELS: Record<RecurrenceRule, string> = {
-  none: '',
-  daily: '每天',
-  weekly: '每周',
-  monthly: '每月',
-  yearly: '每年',
-}
-
-function recurrenceLabel(rec: RecurrenceRule): string {
-  return REC_LABELS[rec] || ''
+  return `@${ref.iso}${emojiPart}${params}`
 }
 
 /**
