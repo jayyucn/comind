@@ -67,9 +67,7 @@ export function useIdeas() {
   async function checkAndEnsureTodayIdeas() {
     if (createdTodayThisSession.value) return
     createdTodayThisSession.value = true
-
     await pageStore.loadAllPages()
-
     if (!todayIdeasExists.value) {
       await ensureTodayIdeasExists()
     }

@@ -192,7 +192,7 @@ export const useBlockStore = defineStore('blocks', () => {
   async function loadPageBlocks(pageId: string) {
     const client = await getClient()
     const rustBlocks = await client.getBlocksByPage(pageId)
-    
+
     blocks.value = rustBlocks.map(rustBlock => ({
       id: rustBlock.id,
       pageId: rustBlock.page_id,
@@ -233,12 +233,14 @@ export const useBlockStore = defineStore('blocks', () => {
       )
 
       const existingIds = new Set(blocks.value.map(b => b.id))
+      let added = 0
       for (const result of results) {
         if (result.status === 'fulfilled') {
           for (const block of result.value) {
             if (!existingIds.has(block.id)) {
               blocks.value.push(block)
               existingIds.add(block.id)
+              added++
             }
           }
         } else {
