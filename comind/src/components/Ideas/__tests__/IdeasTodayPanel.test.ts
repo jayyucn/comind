@@ -53,10 +53,12 @@ describe('IdeasTodayPanel', () => {
     expect(blockList.props('pageId')).toBe('page-1')
   })
 
-  test('renders nothing when page is not found', () => {
+  test('shows skeleton when page is not found', () => {
     const wrapper = mount(IdeasTodayPanel, {
       props: { pageId: 'nonexistent' },
     })
-    expect(wrapper.find('.today-panel').exists()).toBe(false)
+    expect(wrapper.find('.today-panel').exists()).toBe(true)
+    expect(wrapper.find('.today-card.is-loading').exists()).toBe(true)
+    expect(wrapper.find('.skeleton-badge').exists()).toBe(true)
   })
 })

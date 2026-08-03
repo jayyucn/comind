@@ -52,5 +52,11 @@ onMounted(async () => {
   display: flex;
   height: 100%;
   overflow: hidden;
+  animation: fadeIn 200ms ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 </style>
