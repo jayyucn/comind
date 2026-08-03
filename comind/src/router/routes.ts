@@ -26,6 +26,7 @@ const routes: RouteRecordRaw[] = [
     path: '/ideas',
     name: 'ideas-list',
     component: () => import('../components/Ideas/IdeasList.vue'),
+    meta: { fullWidth: true, hideRightSidebarToggle: true },
   },
   {
     path: '/ideas/:date',

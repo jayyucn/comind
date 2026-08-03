@@ -32,7 +32,6 @@ function getMonthDay(dateStr: string): { month: string; day: string } {
       <div class="today-header">
         <span class="today-badge">今天</span>
         <span class="today-date">{{ getMonthDay(page.title).month }}{{ getMonthDay(page.title).day }}日 {{ getWeekday(page.title) }}</span>
-        <span class="today-label">可编辑</span>
       </div>
       <div class="today-body">
         <BlockList :page-id="pageId" />
@@ -64,10 +63,7 @@ function getMonthDay(dateStr: string): { month: string; day: string } {
 
 .today-card {
   background: #fff;
-  border: 1px solid var(--accent-subtle, #C7D2FE);
-  border-radius: 12px;
   padding: 16px;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.12);
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -79,7 +75,6 @@ function getMonthDay(dateStr: string): { month: string; day: string } {
   align-items: center;
   gap: 12px;
   padding-bottom: 12px;
-  border-bottom: 1px solid var(--border, #E7E5E4);
   flex-shrink: 0;
 }
 

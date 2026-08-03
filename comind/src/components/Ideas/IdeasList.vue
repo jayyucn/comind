@@ -50,7 +50,7 @@ onMounted(async () => {
 <style scoped>
 .ideas-split-view {
   display: flex;
-  height: 100%;
+  height: calc(100vh - var(--nav-height));
   overflow: hidden;
   animation: fadeIn 200ms ease-out;
 }
