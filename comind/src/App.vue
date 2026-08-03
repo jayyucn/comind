@@ -24,6 +24,7 @@ import { registerPanel } from './components/RightSidebar/panels'
 import BlockVersionPanel from './components/RightSidebar/BlockVersionPanel.vue'
 import GraphPanel from './components/RightSidebar/GraphPanel.vue'
 import SearchPanel from './components/SearchPanel.vue'
+import BlockSelector from './components/BlockSelector.vue'
 import { isTauriEnvironment, tauriMinimizeWindow, tauriToggleMaximizeWindow, tauriCloseWindow, tauriIsMaximized, tauriAutoReconnect } from './wasm/tauri-client'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { isAndroidPlatformSync } from './wasm/tauri-client'
@@ -279,6 +280,15 @@ function handleMainClick(e: MouseEvent) {
   if (target.closest('.right-sidebar')) return
   editorStore.deactivateBlock()
 }
+
+/** 全局 BlockSelector 选择源 block 后：一次性转 embed 类型 + 写 sourceBlockId/sourcePageId 属性 */
+async function handleEmbedSelect(sourceBlockId: string, sourcePageId: string) {
+  const targetBlockId = editorStore.blockSelector?.blockId
+  editorStore.closeBlockSelector()
+  if (!targetBlockId) return
+  await blockStore.updateBlockType(targetBlockId, 'embed')
+  await blockStore.updateBlockProperties(targetBlockId, { sourceBlockId, sourcePageId })
+}
 </script>
 
 <template>
@@ -342,6 +352,13 @@ function handleMainClick(e: MouseEvent) {
       :initial-lead-minutes="dateRefPanelLeadMinutes"
       @confirm="handleDateRefConfirm"
       @cancel="closeDateRefPanel"
+    />
+
+    <BlockSelector
+      :visible="!!editorStore.blockSelector?.visible"
+      :exclude-block-id="editorStore.blockSelector?.blockId ?? undefined"
+      @select="handleEmbedSelect"
+      @close="editorStore.closeBlockSelector()"
     />
   </div>
 </template>

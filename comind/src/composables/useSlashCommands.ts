@@ -169,21 +169,6 @@ function insertImage({ editor, range, blockId }: CommandProps) {
 }
 
 /**
- * 插入 Embed Block
- */
-function insertEmbed({ editor, range, blockId }: CommandProps) {
-  editor.chain()
-    .deleteRange(range)
-    .focus()
-    .run()
-
-  const blockStore = useBlockStore()
-  if (blockId) {
-    blockStore.updateBlockType(blockId, 'embed')
-  }
-}
-
-/**
  * MVP 命令列表（18 个）
  */
 export const commands: Command[] = [
@@ -468,8 +453,9 @@ export const commands: Command[] = [
     alias: ['嵌入', '引用'],
     group: '文本格式',
     icon: '📌',
-    action: insertEmbed,
-    convertBlockType: 'embed'
+    action: () => {
+      // 由 SlashCommandMenu.vue 特殊处理：打开全局 BlockSelector
+    }
   },
 
 

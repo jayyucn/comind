@@ -75,6 +75,11 @@ export function useIdeas() {
 
   // 兼容旧名称
 
+  // 按月份从 Rust 端获取点滴页面（替代 loadAllPages + 前端过滤的旧模式）
+  async function getIdeasPagesByMonth(year: number, month: number): Promise<Page[]> {
+    return await pageStore.getIdeasPagesByMonth(year, month)
+  }
+
   return {
     today,
     ideasPages,
@@ -82,5 +87,6 @@ export function useIdeas() {
     checkAndEnsureTodayIdeas,
     ensureTodayIdeasExists,
     isTodayTitle,
+    getIdeasPagesByMonth,
   }
 }

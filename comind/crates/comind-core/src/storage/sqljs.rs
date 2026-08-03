@@ -603,6 +603,17 @@ impl PageRepository for SqlJsAdapter {
         Ok(result.into_iter().map(|r| row_to_page(&r)).collect())
     }
 
+    fn get_ideas_by_month(&self, year: i32, month: u32) -> Result<Vec<Page>, Box<dyn std::error::Error>> {
+        let start = format!("{}-{:02}-01", year, month);
+        let end = if month == 12 {
+            format!("{}-01-01", year + 1)
+        } else {
+            format!("{}-{:02}-01", year, month + 1)
+        };
+        let result = Self::query(&self.db, "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, version, deleted_at, created_at, updated_at FROM Page WHERE type IN ('ideas', 'journal') AND deleted = 0 AND deleted_at IS NULL AND title >= ? AND title < ? ORDER BY title DESC", &[start.as_str(), end.as_str()])?;
+        Ok(result.into_iter().map(|r| row_to_page(&r)).collect())
+    }
+
     fn create(&mut self, page: &Page) -> Result<Page, Box<dyn std::error::Error>> {
         let block_id = page.block_id.as_deref().unwrap_or("");
         let icon = page.icon.as_deref().unwrap_or("");

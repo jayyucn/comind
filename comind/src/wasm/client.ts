@@ -46,6 +46,7 @@ export interface CoreClient {
 
   getPage(pageId: string): Promise<Page>
   getAllPages(): Promise<Page[]>
+  getIdeasPagesByMonth(year: number, month: number): Promise<Page[]>
   savePage(page: PageUpdate): Promise<Page>
   deletePageCascade(pageId: string): Promise<void>
 
@@ -117,6 +118,10 @@ class TauriClient implements CoreClient {
 
   async getAllPages(): Promise<Page[]> {
     return tauri.tauriGetAllPages()
+  }
+
+  async getIdeasPagesByMonth(year: number, month: number): Promise<Page[]> {
+    return tauri.tauriGetIdeasPagesByMonth(year, month)
   }
 
   async savePage(page: PageUpdate): Promise<Page> {
@@ -304,6 +309,10 @@ class WasmClientAdapter implements CoreClient {
 
   async getAllPages(): Promise<Page[]> {
     return this.wasm.get_all_pages()
+  }
+
+  async getIdeasPagesByMonth(year: number, month: number): Promise<Page[]> {
+    return this.wasm.get_ideas_pages_by_month(year, month)
   }
 
   async savePage(page: PageUpdate): Promise<Page> {

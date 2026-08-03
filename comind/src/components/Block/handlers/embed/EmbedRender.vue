@@ -3,9 +3,9 @@ import { computed, ref, watch } from 'vue'
 import { useBlockStore } from '../../../../stores/blocks'
 import { usePageStore } from '../../../../stores/pages'
 import { usePropertyStore } from '../../../../stores/property'
+import { useEditorStore } from '../../../../stores/editor'
 import { useNavigateToPage } from '../../../../composables/useNavigateToPage'
 import SubtreeRenderer from './SubtreeRenderer'
-import BlockSelector from '../../../BlockSelector.vue'
 import type { SubtreeNode } from '../../../../types/block'
 import type { Block } from '../../../../types/block'
 
@@ -24,6 +24,7 @@ const emit = defineEmits<{
 const blockStore = useBlockStore()
 const pageStore = usePageStore()
 const propertyStore = usePropertyStore()
+const editorStore = useEditorStore()
 const { navigateToPage } = useNavigateToPage()
 
 const MAX_EMBED_DEPTH = 3
@@ -49,7 +50,8 @@ async function loadSourceBlock() {
   try {
     const pageId = sourcePageId.value
     if (pageId) {
-      await blockStore.loadPageBlocks(pageId)
+      // 使用追加式的 loadMultiPageBlocks，避免覆盖当前页面的 blocks
+      await blockStore.loadMultiPageBlocks([pageId])
       remoteBlocks.value = blockStore.blocks.filter(b => b.pageId === pageId)
       remoteBlock.value = remoteBlocks.value.find(b => b.id === id) ?? null
     } else {
@@ -63,14 +65,6 @@ async function loadSourceBlock() {
 }
 
 watch(sourceBlockId, loadSourceBlock, { immediate: true })
-
-// ── BlockSelector 状态（点击 placeholder 打开）──
-const showBlockSelector = ref(false)
-
-async function handleEmbedSelect(sourceBlockId: string, sourcePageId: string) {
-  await blockStore.updateBlockProperties(props.blockId, { sourceBlockId, sourcePageId })
-  showBlockSelector.value = false
-}
 
 const sourceBlock = computed(() => remoteBlock.value)
 const sourcePage = computed(() => sourceBlock.value ? pageStore.getPage(sourceBlock.value.pageId) : null)
@@ -139,15 +133,9 @@ function handleLanguageChange(lang: string) {
 <template>
   <div class="embed-block" @mousedown.stop @click="emit('content-click', $event)">
     <template v-if="!sourceBlockId">
-      <div class="embed-placeholder" @click="showBlockSelector = true">
+      <div class="embed-placeholder" @click="editorStore.openBlockSelector(blockId)">
         Select a block to embed...
       </div>
-      <BlockSelector
-        :visible="showBlockSelector"
-        :exclude-block-id="blockId"
-        @select="handleEmbedSelect"
-        @close="showBlockSelector = false"
-      />
     </template>
     <template v-else-if="!sourceBlock">
       <div class="embed-error">Source block not found</div>

@@ -190,6 +190,22 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
+  /** 全局 BlockSelector 状态（供 /embed 命令与 EmbedRender placeholder 共用） */
+  const blockSelector = ref<{
+    visible: boolean
+    blockId: string | null
+  } | null>(null)
+
+  function openBlockSelector(blockId: string) {
+    blockSelector.value = { visible: true, blockId }
+  }
+
+  function closeBlockSelector() {
+    if (blockSelector.value) {
+      blockSelector.value.visible = false
+    }
+  }
+
   /** 快捷属性编辑器状态 */
   const quickPropertyEditor = ref<{
     visible: boolean
@@ -246,5 +262,8 @@ export const useEditorStore = defineStore('editor', () => {
     toasts,
     showToast,
     removeToast,
+    blockSelector,
+    openBlockSelector,
+    closeBlockSelector,
   }
 })

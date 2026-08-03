@@ -46,3 +46,17 @@
 清晰的验收标准可自主循环推进任务，模糊标准（如“实现可用即可”）则需要反复沟通确认。
 ***
 **准则生效判定**：代码差异中无效改动减少、因设计过度复杂导致的返工变少、疑惑询问均在编码前提出，而非出错后补救。
+
+## Agent skills
+
+### Issue tracker
+
+Issues live as GitHub issues in `jayyucn/comind` (uses `gh` CLI). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five canonical labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`) used as-is. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.

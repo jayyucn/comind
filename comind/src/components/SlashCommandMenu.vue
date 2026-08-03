@@ -246,6 +246,12 @@ async function executeCommand(command: Command) {
     return
   }
 
+  // 处理 /embed — 打开全局 BlockSelector，选完源 block 后再一次性转类型 + 写属性
+  if (command.id === 'embed' && blockId) {
+    editorStore.openBlockSelector(blockId)
+    return
+  }
+
   // 处理 convertBlockType（如 /image 转为 image 类型）
   if (command.convertBlockType && blockId) {
     command.action({

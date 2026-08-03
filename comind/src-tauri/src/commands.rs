@@ -74,6 +74,17 @@ pub async fn get_all_pages(
 }
 
 #[tauri::command]
+pub async fn get_ideas_pages_by_month(
+    db: State<'_, super::state::DatabaseConnection>,
+    year: i32,
+    month: u32,
+) -> Result<Vec<Page>, String> {
+    execute_with_adapter(db, |storage| {
+        PageService::get_ideas_by_month(storage, year, month)
+    }).await
+}
+
+#[tauri::command]
 pub async fn get_backlinks(
     db: State<'_, super::state::DatabaseConnection>,
     page_id: &str,

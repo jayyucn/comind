@@ -28,6 +28,14 @@ impl PageService {
         repository::PageRepository::get_all(storage.pages())
     }
 
+    pub fn get_ideas_by_month(
+        storage: &mut dyn StorageAdapter,
+        year: i32,
+        month: u32,
+    ) -> Result<Vec<Page>, Box<dyn Error>> {
+        repository::PageRepository::get_ideas_by_month(storage.pages(), year, month)
+    }
+
     pub fn create(
         storage: &mut dyn StorageAdapter,
         block_id: &str,

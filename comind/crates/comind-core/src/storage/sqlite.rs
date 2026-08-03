@@ -632,6 +632,40 @@ impl PageRepository for SQLiteAdapter {
         })?.collect::<Result<Vec<_>, _>>()?;
         Ok(pages)
     }
+
+    fn get_ideas_by_month(&self, year: i32, month: u32) -> Result<Vec<Page>, Box<dyn Error>> {
+        let start = format!("{}-{:02}-01", year, month);
+        let end = if month == 12 {
+            format!("{}-01-01", year + 1)
+        } else {
+            format!("{}-{:02}-01", year, month + 1)
+        };
+        let mut stmt = self.conn.prepare(
+            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at
+             FROM Page WHERE type IN ('ideas', 'journal') AND deleted = 0 AND deleted_at IS NULL AND title >= ?1 AND title < ?2 ORDER BY title DESC"
+        )?;
+        let pages = stmt.query_map(params![start, end], |row| {
+            Ok(Page {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                title: row.get(2)?,
+                r#type: row.get(3)?,
+                icon: row.get(4)?,
+                cover: row.get(5)?,
+                aliases: row.get(6)?,
+                file_path: row.get(7)?,
+                children_count: row.get(8)?,
+                word_count: row.get(9)?,
+                deleted: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
+                version: row.get(13)?,
+                deleted_at: row.get(14)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(pages)
+    }
+
     fn create(&mut self, page: &Page) -> Result<Page, Box<dyn Error>> {
         self.conn.execute(
             "INSERT INTO Page (id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at)
@@ -2300,6 +2334,38 @@ impl<'a> PageRepository for SQLiteTransactionAdapter<'a> {
         Ok(pages)
     }
 
+    fn get_ideas_by_month(&self, year: i32, month: u32) -> Result<Vec<Page>, Box<dyn Error>> {
+        let start = format!("{}-{:02}-01", year, month);
+        let end = if month == 12 {
+            format!("{}-01-01", year + 1)
+        } else {
+            format!("{}-{:02}-01", year, month + 1)
+        };
+        let mut stmt = self.conn.prepare(
+            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at
+             FROM Page WHERE type IN ('ideas', 'journal') AND deleted = 0 AND deleted_at IS NULL AND title >= ?1 AND title < ?2 ORDER BY title DESC"
+        )?;
+        let pages = stmt.query_map(params![start, end], |row| {
+            Ok(Page {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                title: row.get(2)?,
+                r#type: row.get(3)?,
+                icon: row.get(4)?,
+                cover: row.get(5)?,
+                aliases: row.get(6)?,
+                file_path: row.get(7)?,
+                children_count: row.get(8)?,
+                word_count: row.get(9)?,
+                deleted: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
+                version: row.get(13)?,
+                deleted_at: row.get(14)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(pages)
+    }
 
     fn create(&mut self, page: &Page) -> Result<Page, Box<dyn Error>> {
         self.conn.execute(

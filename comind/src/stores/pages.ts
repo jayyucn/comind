@@ -37,7 +37,7 @@ export const usePageStore = defineStore('pages', () => {
     try {
       const client = await getClient()
       const rustPages = await client.getAllPages()
-      
+
       pages.value = rustPages.map(rustPage => ({
         id: rustPage.id,
         blockId: rustPage.block_id,
@@ -57,6 +57,38 @@ export const usePageStore = defineStore('pages', () => {
     } finally {
       loading.value = false
     }
+  }
+
+  async function getIdeasPagesByMonth(year: number, month: number): Promise<Page[]> {
+    const client = await getClient()
+    const rustPages = await client.getIdeasPagesByMonth(year, month)
+
+    const fetched = rustPages.map(rustPage => ({
+      id: rustPage.id,
+      blockId: rustPage.block_id,
+      title: rustPage.title,
+      type: rustPage.type as Page['type'],
+      icon: rustPage.icon,
+      cover: rustPage.cover,
+      aliases: JSON.parse(rustPage.aliases || '[]') as string[],
+      filePath: rustPage.file_path,
+      childrenCount: rustPage.children_count,
+      wordCount: rustPage.word_count,
+      createdAt: rustPage.created_at,
+      updatedAt: rustPage.updated_at,
+      deleted: rustPage.deleted === 1,
+      deletedAt: null
+    }))
+
+    // 合并到 pages.value（仅新增，不替换 —— 避免丢失其他来源的页面）
+    const existingIds = new Set(pages.value.map(p => p.id))
+    for (const page of fetched) {
+      if (!existingIds.has(page.id)) {
+        pages.value.push(page)
+      }
+    }
+
+    return fetched
   }
 
   async function openPage(pageId: string) {
@@ -265,5 +297,5 @@ export const usePageStore = defineStore('pages', () => {
     }
   }
 
-  return { pages, currentPageId, loading, trashPages, loadAllPages, openPage, createPage, getPage, getPageByTitle, getOrCreatePageByTitle, renamePage, mergePage, deletePage, loadTrashPages, softDeletePage, restorePage, permanentDeletePage, onRemovePageFromHistory }
+  return { pages, currentPageId, loading, trashPages, loadAllPages, getIdeasPagesByMonth, openPage, createPage, getPage, getPageByTitle, getOrCreatePageByTitle, renamePage, mergePage, deletePage, loadTrashPages, softDeletePage, restorePage, permanentDeletePage, onRemovePageFromHistory }
 })
