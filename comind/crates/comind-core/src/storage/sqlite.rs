@@ -666,6 +666,19 @@ impl PageRepository for SQLiteAdapter {
         Ok(pages)
     }
 
+    fn get_ideas_months(&self) -> Result<Vec<String>, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT substr(title, 1, 7) AS month
+             FROM Page
+             WHERE type IN ('ideas', 'journal') AND deleted = 0 AND deleted_at IS NULL
+             ORDER BY month DESC"
+        )?;
+        let months = stmt.query_map([], |row| {
+            Ok(row.get::<_, String>(0)?)
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(months)
+    }
+
     fn create(&mut self, page: &Page) -> Result<Page, Box<dyn Error>> {
         self.conn.execute(
             "INSERT INTO Page (id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at)
@@ -2365,6 +2378,19 @@ impl<'a> PageRepository for SQLiteTransactionAdapter<'a> {
             })
         })?.collect::<Result<Vec<_>, _>>()?;
         Ok(pages)
+    }
+
+    fn get_ideas_months(&self) -> Result<Vec<String>, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT substr(title, 1, 7) AS month
+             FROM Page
+             WHERE type IN ('ideas', 'journal') AND deleted = 0 AND deleted_at IS NULL
+             ORDER BY month DESC"
+        )?;
+        let months = stmt.query_map([], |row| {
+            Ok(row.get::<_, String>(0)?)
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(months)
     }
 
     fn create(&mut self, page: &Page) -> Result<Page, Box<dyn Error>> {

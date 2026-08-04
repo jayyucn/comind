@@ -47,6 +47,10 @@ export interface CoreClient {
   getPage(pageId: string): Promise<Page>
   getAllPages(): Promise<Page[]>
   getIdeasPagesByMonth(year: number, month: number): Promise<Page[]>
+  /** 获取所有有 ideas 页面的月份列表（yyyy-MM 格式，倒序） */
+  getIdeasMonths(): Promise<string[]>
+  /** 幂等地获取或创建今日 Ideas 页面（Rust 端为单一事实来源） */
+  ensureTodayIdeasPage(): Promise<Page>
   savePage(page: PageUpdate): Promise<Page>
   deletePageCascade(pageId: string): Promise<void>
 
@@ -122,6 +126,14 @@ class TauriClient implements CoreClient {
 
   async getIdeasPagesByMonth(year: number, month: number): Promise<Page[]> {
     return tauri.tauriGetIdeasPagesByMonth(year, month)
+  }
+
+  async getIdeasMonths(): Promise<string[]> {
+    return tauri.tauriGetIdeasMonths()
+  }
+
+  async ensureTodayIdeasPage(): Promise<Page> {
+    return tauri.tauriEnsureTodayIdeasPage()
   }
 
   async savePage(page: PageUpdate): Promise<Page> {
@@ -313,6 +325,34 @@ class WasmClientAdapter implements CoreClient {
 
   async getIdeasPagesByMonth(year: number, month: number): Promise<Page[]> {
     return this.wasm.get_ideas_pages_by_month(year, month)
+  }
+
+  async getIdeasMonths(): Promise<string[]> {
+    // WASM fallback: 从 get_all_pages 结果中提取月份
+    const allPages = await this.wasm.get_all_pages()
+    const months = Array.from(new Set(
+      allPages
+        .filter(p => (p.type === 'ideas' || p.type === 'journal') && p.deleted === 0)
+        .map(p => p.title.slice(0, 7))
+    ))
+    months.sort((a, b) => b.localeCompare(a))
+    return months
+  }
+
+  async ensureTodayIdeasPage(): Promise<Page> {
+    // WASM fallback: TS 端逻辑实现幂等获取或创建
+    // (Rust WASM 端 chrono::Local 有时区 bug，见 ADR 0001；此处用浏览器本地时区)
+    const d = new Date()
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const allPages = await this.wasm.get_all_pages()
+    const existing = allPages.find(
+      p => p.title === today && (p.type === 'ideas' || p.type === 'journal')
+    )
+    if (existing) return existing
+    // 不存在则创建
+    const pageJson = JSON.stringify({ title: today, type: 'ideas' })
+    const result = await this.wasm.save_page(pageJson)
+    return parseJsonResult<Page>(result)
   }
 
   async savePage(page: PageUpdate): Promise<Page> {

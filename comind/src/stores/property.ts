@@ -71,7 +71,7 @@ export const usePropertyStore = defineStore('property', () => {
         updatedAt: rustProp.updated_at
       }))
       
-      propertiesByBlock.value.set(blockId, props)
+      propertiesByBlock.value = new Map(propertiesByBlock.value.set(blockId, props))
       return props
     } finally {
       loading.value = false
@@ -99,6 +99,7 @@ export const usePropertyStore = defineStore('property', () => {
         }))
         propertiesByBlock.value.set(blockId, props)
       }
+      propertiesByBlock.value = new Map(propertiesByBlock.value)
     } finally {
       loading.value = false
     }

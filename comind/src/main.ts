@@ -30,7 +30,7 @@ async function bootstrap() {
   // 等待初始导航完成（router.beforeEach 守卫执行完毕）后再挂载，
   // 确保 App.vue onMounted 中的 checkAndEnsureTodayIdeas 不会与守卫并发执行，
   // 避免重复创建页面及 loadPageBlocks 覆盖内存中尚未持久化的 block。
-  await router.isReady()
+  // await router.isReady()
   app.mount('#app')
 }
 

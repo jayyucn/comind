@@ -36,6 +36,55 @@ impl PageService {
         repository::PageRepository::get_ideas_by_month(storage.pages(), year, month)
     }
 
+    pub fn get_ideas_months(
+        storage: &mut dyn StorageAdapter,
+    ) -> Result<Vec<String>, Box<dyn Error>> {
+        repository::PageRepository::get_ideas_months(storage.pages())
+    }
+
+    /// 幂等地获取或创建今日 Ideas 页面
+    ///
+    /// - title 为本地时区的 `yyyy-MM-dd`
+    /// - type 为 `ideas`
+    /// - 若已存在同名页面则直接返回（幂等），否则创建新页面
+    ///
+    /// 这是前端 `IdeasTodayPanel` 显示问题的单一事实来源：
+    /// 创建逻辑集中在 Rust 端，避免 TS 端缓存 stale 导致的状态不一致。
+    pub fn ensure_today_ideas_page(
+        storage: &mut dyn StorageAdapter,
+    ) -> Result<Page, Box<dyn Error>> {
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+
+        // 幂等检查：若今日页面已存在则直接返回
+        if let Some(existing) =
+            repository::PageRepository::get_by_title(storage.pages(), &today)?
+        {
+            return Ok(existing);
+        }
+
+        // 不存在则创建：直接构造 Page 并调用仓库层 create，跳过 create 内部的重复 exists_by_title 检查
+        let now = chrono::Utc::now().timestamp_millis();
+        let page = Page {
+            id: Self::generate_id(),
+            block_id: None,
+            title: today,
+            r#type: "ideas".to_string(),
+            icon: None,
+            cover: None,
+            aliases: "[]".to_string(),
+            file_path: None,
+            children_count: 0,
+            word_count: 0,
+            deleted: 0,
+            created_at: now,
+            updated_at: now,
+            version: 0,
+            deleted_at: None,
+        };
+
+        repository::PageRepository::create(storage.pages(), &page)
+    }
+
     pub fn create(
         storage: &mut dyn StorageAdapter,
         block_id: &str,

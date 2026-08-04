@@ -58,6 +58,16 @@ export async function tauriGetIdeasPagesByMonth(year: number, month: number): Pr
   return invoke('get_ideas_pages_by_month', { year, month })
 }
 
+/** 获取所有有 ideas 页面的月份列表（yyyy-MM 格式，倒序） */
+export async function tauriGetIdeasMonths(): Promise<string[]> {
+  return invoke('get_ideas_months')
+}
+
+/** 幂等地获取或创建今日 Ideas 页面（Rust 端为单一事实来源） */
+export async function tauriEnsureTodayIdeasPage(): Promise<Page> {
+  return invoke('ensure_today_ideas_page')
+}
+
 export async function tauriSavePage(page: PageUpdate): Promise<Page> {
   return invoke('save_page', { page })
 }

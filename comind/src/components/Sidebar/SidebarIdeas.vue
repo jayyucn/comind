@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { useRouter, useRoute } from 'vue-router'
 import { Droplets } from 'lucide-vue-next'
-import { useIdeas } from '../../composables/useIdeas'
+import { computed } from 'vue'
+import { format } from 'date-fns/format'
 
 const router = useRouter()
 const route = useRoute()
-const { today } = useIdeas()
+// 今天的日期字符串（yyyy-MM-dd，本地时区）
+const today = computed(() => {
+  return format(new Date(), 'yyyy-MM-dd')
+})
 const weekday = new Date(today.value).toLocaleDateString('zh-CN', { weekday: 'short' })
-
 const isActive = () => route.name === 'ideas-list'
 
 function handleClick() {
@@ -16,11 +19,7 @@ function handleClick() {
 </script>
 
 <template>
-  <div
-    class="nav-item drip-nav"
-    :class="{ active: isActive() }"
-    @click="handleClick"
-  >
+  <div class="nav-item drip-nav" :class="{ active: isActive() }" @click="handleClick">
     <span class="nav-icon">
       <Droplets :size="16" :stroke-width="1.75" />
     </span>

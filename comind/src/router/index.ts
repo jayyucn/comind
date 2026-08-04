@@ -7,14 +7,13 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to) => {
+  // ideas-list 和 trash 路由由组件自身 onMounted 处理页面加载
   if (to.name === 'ideas-list' || to.name === 'trash') {
     return
   }
 
   const { usePageStore } = await import('../stores/pages')
   const pageStore = usePageStore()
-
-  await pageStore.loadAllPages()
 
   if (to.name === 'page') {
     try {
@@ -57,11 +56,12 @@ router.beforeEach(async (to) => {
       let page = pageStore.getPageByTitle(normalized)
 
       if (!page) {
-        // 今日页面：允许创建（作为 checkAndEnsureTodayIdeas 的 fallback）
-        // 非今日页面：redirect 到 ideas-list，不自动创建
         if (isTodayTitle(normalized)) {
-          page = await pageStore.createPage(normalized, 'ideas')
+          // 今日页面：调用 Rust 端 ensureTodayIdeasPage 幂等获取或创建
+          // （单一事实来源：避免 TS 端缓存 stale 导致的状态不一致）
+          page = await pageStore.ensureTodayIdeasPage()
         } else {
+          // 非今日历史页面：redirect 到 ideas-list，不自动创建
           return { name: 'ideas-list' }
         }
       }

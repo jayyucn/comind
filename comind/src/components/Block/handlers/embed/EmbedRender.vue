@@ -29,8 +29,15 @@ const { navigateToPage } = useNavigateToPage()
 
 const MAX_EMBED_DEPTH = 3
 
-const sourceBlockId = computed(() => props.properties?.sourceBlockId as string || '')
-const sourcePageId = computed(() => props.properties?.sourcePageId as string || '')
+// 直接从 propertyStore 响应式读取，确保 setProperty 后能立即更新（不依赖 props.properties 传递链）
+const sourceBlockId = computed(() => {
+  const p = propertyStore.getBlockProperty(props.blockId, 'sourceBlockId')
+  return (p?.value as string) || ''
+})
+const sourcePageId = computed(() => {
+  const p = propertyStore.getBlockProperty(props.blockId, 'sourcePageId')
+  return (p?.value as string) || ''
+})
 const remoteBlock = ref<Block | null>(null)
 const remoteBlocks = ref<Block[]>([])
 

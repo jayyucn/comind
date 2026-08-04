@@ -1028,6 +1028,7 @@ export const useBlockStore = defineStore('blocks', () => {
     block.type = type
     block.updatedAt = Date.now()
     _scheduleSave(block)
+    structureVersion.value++
   }
 
   /** 更新 Block 属性（使用独立的 properties 表） */

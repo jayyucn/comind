@@ -85,6 +85,42 @@ pub async fn get_ideas_pages_by_month(
 }
 
 #[tauri::command]
+pub async fn get_ideas_months(
+    db: State<'_, super::state::DatabaseConnection>,
+) -> Result<Vec<String>, String> {
+    execute_with_adapter(db, |storage| {
+        PageService::get_ideas_months(storage)
+    }).await
+}
+
+/// 幂等地获取或创建今日 Ideas 页面（单一事实来源：Rust 端）
+///
+/// - 多次调用效果一致：已存在则返回现有页面，不存在则创建
+/// - 创建后会异步通知 SyncServer（sync 本身幂等，已存在时通知也无副作用）
+#[tauri::command]
+pub async fn ensure_today_ideas_page(
+    db: State<'_, super::state::DatabaseConnection>,
+    sync_server: State<'_, super::state::SyncServerHandle>,
+) -> Result<Page, String> {
+    let result = execute_with_adapter(db, |storage| {
+        PageService::ensure_today_ideas_page(storage)
+    })
+    .await;
+
+    if let Ok(ref page) = result {
+        let sync_server_clone = sync_server.inner().clone();
+        let page_id = page.id.clone();
+        tokio::spawn(async move {
+            sync_server_clone
+                .record_and_notify(SyncTable::Page, vec![page_id])
+                .await;
+        });
+    }
+
+    result
+}
+
+#[tauri::command]
 pub async fn get_backlinks(
     db: State<'_, super::state::DatabaseConnection>,
     page_id: &str,

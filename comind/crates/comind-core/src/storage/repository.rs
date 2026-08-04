@@ -21,6 +21,8 @@ pub trait PageRepository {
     fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Page>, Box<dyn Error>>;
     /// 按月份查询 ideas 类型的页面（title 格式为 yyyy-MM-dd）
     fn get_ideas_by_month(&self, year: i32, month: u32) -> Result<Vec<Page>, Box<dyn Error>>;
+    /// 获取所有有 ideas 页面的月份列表（yyyy-MM 格式，倒序）
+    fn get_ideas_months(&self) -> Result<Vec<String>, Box<dyn Error>>;
     fn create(&mut self, page: &Page) -> Result<Page, Box<dyn Error>>;
     fn update(&mut self, page: &Page) -> Result<Page, Box<dyn Error>>;
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;

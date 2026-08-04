@@ -91,6 +91,49 @@ export const usePageStore = defineStore('pages', () => {
     return fetched
   }
 
+  async function getIdeasMonths(): Promise<string[]> {
+    const client = await getClient()
+    return await client.getIdeasMonths()
+  }
+
+  /**
+   *
+   * - 调用 Rust 命令 `ensure_today_ideas_page`：已存在则返回，不存在则创建
+   * - 返回的页面会合并到 pages.value（已存在则原地更新，否则新增）
+   * - 解决 IdeasTodayPanel 因 TS 端缓存 stale 导致的不显示问题
+   */
+  async function ensureTodayIdeasPage(): Promise<Page> {
+    const client = await getClient()
+    const rustPage = await client.ensureTodayIdeasPage()
+
+    const page: Page = {
+      id: rustPage.id,
+      blockId: rustPage.block_id,
+      title: rustPage.title,
+      type: rustPage.type as Page['type'],
+      icon: rustPage.icon,
+      cover: rustPage.cover,
+      aliases: JSON.parse(rustPage.aliases || '[]') as string[],
+      filePath: rustPage.file_path,
+      childrenCount: rustPage.children_count,
+      wordCount: rustPage.word_count,
+      createdAt: rustPage.created_at,
+      updatedAt: rustPage.updated_at,
+      deleted: rustPage.deleted === 1,
+      deletedAt: null
+    }
+
+    // 合并到 pages.value：已存在则原地更新（避免响应式丢失），否则新增
+    const existingIdx = pages.value.findIndex(p => p.id === page.id)
+    if (existingIdx >= 0) {
+      pages.value[existingIdx] = page
+    } else {
+      pages.value.push(page)
+    }
+
+    return page
+  }
+
   async function openPage(pageId: string) {
     currentPageId.value = pageId
     const blockStore = useBlockStore()
@@ -297,5 +340,5 @@ export const usePageStore = defineStore('pages', () => {
     }
   }
 
-  return { pages, currentPageId, loading, trashPages, loadAllPages, getIdeasPagesByMonth, openPage, createPage, getPage, getPageByTitle, getOrCreatePageByTitle, renamePage, mergePage, deletePage, loadTrashPages, softDeletePage, restorePage, permanentDeletePage, onRemovePageFromHistory }
+  return { pages, currentPageId, loading, trashPages, loadAllPages, getIdeasPagesByMonth, getIdeasMonths, ensureTodayIdeasPage, openPage, createPage, getPage, getPageByTitle, getOrCreatePageByTitle, renamePage, mergePage, deletePage, loadTrashPages, softDeletePage, restorePage, permanentDeletePage, onRemovePageFromHistory }
 })

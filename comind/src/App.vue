@@ -15,7 +15,6 @@ import { usePageStore } from './stores/pages'
 import { useSidebar } from './composables/useSidebar'
 import { useRightSidebar } from './composables/useRightSidebar'
 import { useRelationshipTypes } from './composables/useRelationshipTypes'
-import { useIdeas } from './composables/useIdeas'
 import { useNotificationScheduler } from './composables/useNotificationScheduler'
 import { useSyncStatus } from './composables/useSyncStatus'
 import Icon from './components/Icons/Icon.vue'
@@ -150,7 +149,8 @@ async function updateMaximizedState() {
 onMounted(async () => {
   await useRelationshipTypes().load()
   await pageStore.loadAllPages()
-  await useIdeas().checkAndEnsureTodayIdeas()
+  // checkAndEnsureTodayIdeas 已由 IdeasList.vue 的 onMounted 接管
+  // 此处不再调用，避免 openPage → loadPageBlocks 替换语义覆盖历史列表 blocks
   document.addEventListener('keydown', handleGlobalKeydown)
   await updateMaximizedState()
 
