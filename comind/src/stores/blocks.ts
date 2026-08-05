@@ -205,8 +205,30 @@ export const useBlockStore = defineStore('blocks', () => {
       createdAt: rustBlock.created_at,
       updatedAt: rustBlock.updated_at
     }))
-    structureVersion.value++
     return blocks
+  }
+
+  /**
+ * 加载页面 Block；若页面无任何 Block，自动创建一个空的根级 Block，
+ * 保证页面始终可编辑。等价于 openPage 原有的「空则建 block」逻辑。
+ */
+  async function ensurePageBlocks(pageId: string) {
+    await loadPageBlocks(pageId)
+    if (blocks.value.length === 0) {
+      await createBlock({ pageId, content: '', parentId: null })
+    }
+  }
+
+  async function restoreBlock(blockId: string) {
+    const block = getBlock(blockId)
+    if (block) {
+      try {
+        await loadBlock(block.pageId)
+        structureVersion.value++
+      } catch (error) {
+        console.error('[restoreBlock] Failed to load block:', error)
+      }
+    }
   }
 
   /** 批量加载多个 Page 的 Block 树 */
@@ -317,7 +339,7 @@ export const useBlockStore = defineStore('blocks', () => {
 
     try {
       const [savedBlock] = await client.saveBlockTree([blockUpdate])
-      
+
       // 若服务端生成了新 ID（新 block），同步本地 state 与后续引用的 ID
       if (savedBlock.id !== currentBlock.id) {
         const idx = blocks.value.findIndex(b => b.id === currentBlock.id)
@@ -1059,6 +1081,8 @@ export const useBlockStore = defineStore('blocks', () => {
     getOutlinks,
     getBacklinks,
     loadPageBlocks,
+    ensurePageBlocks,
+    restoreBlock,
     loadMultiPageBlocks,
     loadBlock,
     createBlock,

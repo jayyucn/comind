@@ -98,7 +98,7 @@ const editContent = computed(() => {
 
 /** 页面是否仅有一个空 Block（唯一场景显示 placeholder） */
 const isSingleEmptyBlock = computed(() => {
-  const contentBlocks = blockStore.getBlocksByPage(pageStore.currentPageId)
+  const contentBlocks = blockStore.getBlocksByPage(props.pageId)
   return contentBlocks.length === 1 && contentBlocks[0].content === '' && contentBlocks[0].id === blockId.value
 })
 

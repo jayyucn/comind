@@ -62,10 +62,7 @@ async function handleRestore(versionId: string) {
   try {
     await versionStore.restoreVersion(versionId)
 
-    const block = blockStore.getBlock(activeBlockId.value)
-    if (block) {
-      await blockStore.loadPageBlocks(block.pageId)
-    }
+    await blockStore.restoreBlock(activeBlockId.value)
 
     await loadVersions()
   } catch (error) {

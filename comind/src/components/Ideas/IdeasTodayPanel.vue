@@ -9,7 +9,9 @@ const props = defineProps<{
 
 const pageStore = usePageStore()
 
-const page = computed(() => pageStore.getPage(props.pageId))
+const page = computed(() =>
+  pageStore.getPage(props.pageId)
+)
 
 function getWeekday(dateStr: string): string {
   const date = new Date(dateStr)
@@ -30,9 +32,10 @@ function getMonthDay(dateStr: string): { month: string; day: string } {
   <div class="today-panel">
     <div class="today-header">
       <span class="today-badge">今天</span>
-      <span class="today-date">{{ getMonthDay(page?.title || '').month }}{{ getMonthDay(page?.title || '').day }}日 {{ getWeekday(page?.title || '') }}</span>
+      <span class="today-date">{{ getMonthDay(page?.title || '').month }}{{ getMonthDay(page?.title || '').day }}日 {{
+        getWeekday(page?.title || '') }}</span>
     </div>
-    <div class="today-card" v-if="page">
+    <div class="today-card" v-if="pageId">
       <div class="today-body">
         <BlockList :page-id="pageId" />
       </div>
@@ -165,7 +168,12 @@ function getMonthDay(dateStr: string): { month: string; day: string } {
 }
 
 @keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
 }
 </style>

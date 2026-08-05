@@ -17,8 +17,7 @@ const loadingToday = ref(true)
 onMounted(async () => {
   try {
     todayPage.value = await pageStore.ensureTodayIdeasPage()
-    const blockStore = useBlockStore()
-    await blockStore.loadPageBlocks(todayPage.value.id)
+    await useBlockStore().ensurePageBlocks(todayPage.value.id)
   } finally {
     loadingToday.value = false
   }
