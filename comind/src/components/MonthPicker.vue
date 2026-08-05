@@ -201,13 +201,14 @@ function selectMonth(index: number) {
 
 .mp-grid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 2px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-3);
+  padding-bottom: var(--space-4);
 }
 
 .mp-cell {
   position: relative;
-  height: 28px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -216,8 +217,8 @@ function selectMonth(index: number) {
   color: var(--text-primary);
   cursor: pointer;
   border-radius: var(--radius-sm);
-  font-size: 10px;
-  font-weight: 500;
+  font-size: var(--text-xs);
+  font-weight: var(--font-normal);
   padding: 0;
   font-family: inherit;
   transition: background var(--transition-base), color var(--transition-base);

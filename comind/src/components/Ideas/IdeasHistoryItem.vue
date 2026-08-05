@@ -43,7 +43,7 @@ function getMonthDay(dateStr: string): { month: string; day: string } {
 <style scoped>
 .history-item {
   background: transparent;
-  padding: 0 12px 0 20px;
+  padding: 12px 12px 0 20px;
   /* margin-bottom: 10px; */
   display: flex;
   border-left: 1px solid var(--border, #E7E5E4);

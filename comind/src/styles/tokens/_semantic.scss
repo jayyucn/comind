@@ -6,6 +6,7 @@
 :root {
   // 背景层级
   --bg-base: #fff;
+  --bg-base2: #fdfdfd;
   --bg-sidebar: #F5F5F7;
   --bg-hover: #{$color-stone-200};
   --bg-active: #{$color-stone-300};
@@ -152,6 +153,7 @@
 
 [data-theme="dark"] {
   --bg-base: #1A1A1E;
+  --bg-base2: #1A1b1f;
   --bg-sidebar: #222225;
   --bg-hover: #2E2E32;
   --bg-active: #3A3A3F;

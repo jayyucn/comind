@@ -173,10 +173,15 @@ const isEmpty = computed(() => currentPages.value.length === 0)
 
 <style lang="scss" scoped>
 .history-list {
-  flex: 0 0 40%;
+  flex: 0 0 360px;
+  margin-left: auto;
   display: flex;
+  background: var(--bg-base2);// #1A1b1f;//var(#0c39ac, transparent);
   flex-direction: column;
   overflow: hidden;
+  margin-top: 2px;
+  border-left: 1px solid var(--border, #E7E5E4);
+  box-shadow: -4px -2px 5px  rgba($color: #000000, $alpha: 0.0);
 }
 
 .history-sticky-header {
@@ -185,7 +190,7 @@ const isEmpty = computed(() => currentPages.value.length === 0)
   gap: 4px;
   position: sticky;
   top: 0;
-  background: var(--bg-base, #F5F5F7);
+  background: transparent;
   padding: 8px 12px;
   z-index: 2;
   border-bottom: 1px solid var(--border, #E7E5E4);
@@ -195,7 +200,7 @@ const isEmpty = computed(() => currentPages.value.length === 0)
 .history-scroller {
   flex: 1;
   overflow-y: auto;
-  background: var(--bg-base, #F5F5F7);
+  background: transparent;//var(--bg-base, #F5F5F7);
   padding: 0 12px 0 20px;
   position: relative;
 }

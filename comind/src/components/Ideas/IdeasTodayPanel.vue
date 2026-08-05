@@ -31,7 +31,6 @@ function getMonthDay(dateStr: string): { month: string; day: string } {
 <template>
   <div class="today-panel">
     <div class="today-header">
-      <span class="today-badge">今天</span>
       <span class="today-date">{{ getMonthDay(page?.title || '').month }}{{ getMonthDay(page?.title || '').day }}日 {{
         getWeekday(page?.title || '') }}</span>
     </div>
@@ -57,7 +56,7 @@ function getMonthDay(dateStr: string): { month: string; day: string } {
 
 <style scoped>
 .today-panel {
-  flex: 0 0 60%;
+  flex:auto;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -77,26 +76,16 @@ function getMonthDay(dateStr: string): { month: string; day: string } {
   align-items: center;
   gap: 12px;
   padding: 0 0 var(--space-4) var(--space-4);
-  padding-bottom: var(--space-4);
   background: transparent;
   flex-shrink: 0;
   border-bottom: 1px solid var(--border, #E7E5E4);
   box-shadow: var(--shadow-border-bottom);
 }
 
-.today-badge {
-  font-size: 11px;
-  font-weight: 700;
-  color: #fff;
-  background: var(--accent, #6366F1);
-  padding: 3px 10px;
-  border-radius: 6px;
-  letter-spacing: 0.03em;
-}
 
 .today-date {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--text-3xl);
+  font-weight: var(--font-bold);
   color: var(--text-primary, #1C1917);
 }
 
