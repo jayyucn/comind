@@ -1,238 +1,1616 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>comind 风格重设计 - Indigo vs Amber 对比</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-      background: #f5f5f5;
-      padding: 20px;
-    }
-    .container { max-width: 1400px; margin: 0 auto; }
-    h1 { text-align: center; font-size: 28px; font-weight: 700; color: #1C1917; margin-bottom: 10px; }
-    .subtitle { text-align: center; color: #78716C; font-size: 14px; margin-bottom: 40px; }
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>comind — design preview</title>
+<style>
+/* ============================================================
+   comind · high-fidelity HTML preview
+   single-file · no framework · 8pt grid · CSS variables
+   ============================================================ */
 
-    .comparison-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 32px; }
-    .panel { background: white; border-radius: 12px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
-    .panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid; }
-    .panel-title { font-size: 18px; font-weight: 600; }
-    .version-badge { padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; }
+:root{
+  /* Surfaces */
+  --bg:        #17181C;
+  --surface:   #1D1F24;
+  --panel:     #1A1C21;
+  --card:      #20242B;
+  --hover:     #262A33;
+  --active:    #2C3140;
+  --input:     #23262D;
 
-    .amber-panel .panel-header { border-color: #B45309; }
-    .amber-panel .panel-title { color: #B45309; }
-    .amber-panel .version-badge { background: #FEF3C7; color: #92400E; }
+  /* Borders & dividers */
+  --border:        rgba(255,255,255,.06);
+  --border-strong: rgba(255,255,255,.10);
+  --hairline:      rgba(255,255,255,.04);
 
-    .indigo-panel .panel-header { border-color: #6366F1; }
-    .indigo-panel .panel-title { color: #6366F1; }
-    .indigo-panel .version-badge { background: #EEF2FF; color: #4338CA; }
+  /* Text */
+  --text:   #F5F7FA;
+  --text2:  #A9AFBE;
+  --text3:  #73798A;
+  --text4:  #4F5563;
 
-    .color-section { margin-bottom: 24px; }
-    .section-label { font-size: 13px; font-weight: 600; color: #78716C; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
-    .color-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-    .color-swatch { border-radius: 8px; height: 60px; display: flex; flex-direction: column; justify-content: flex-end; padding: 8px; position: relative; overflow: hidden; }
-    .color-swatch::before { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(135deg, rgba(255,255,255,0.2), transparent); }
-    .color-name { font-size: 11px; font-weight: 600; color: inherit; position: relative; z-index: 1; text-shadow: 0 1px 2px rgba(0,0,0,0.3); }
-    .color-value { font-size: 9px; opacity: 0.9; position: relative; z-index: 1; font-family: 'JetBrains Mono', monospace; }
+  /* Brand & semantic */
+  --primary:        #6D8CFF;
+  --primary-soft:   rgba(109,140,255,.18);
+  --primary-glow:   rgba(109,140,255,.32);
+  --primary-text:   #8FA6FF;
+  --success:        #52C41A;
+  --warning:        #F5A524;
+  --danger:         #E35D6A;
+  --info:           #4FB3F7;
 
-    .amber-accent { background: #B45309; color: white; }
-    .amber-accent-hover { background: #92400E; color: white; }
-    .amber-accent-subtle { background: #FEF3C7; color: #92400E; }
-    .amber-tag { background: #047857; color: white; }
+  /* Shadow */
+  --shadow-sm: 0 2px 8px rgba(0,0,0,.20);
+  --shadow-md: 0 6px 18px rgba(0,0,0,.25);
+  --shadow-lg: 0 10px 30px rgba(0,0,0,.30);
+  --shadow-pop:0 18px 48px rgba(0,0,0,.45);
 
-    .indigo-accent { background: #6366F1; color: white; }
-    .indigo-accent-hover { background: #4F46E5; color: white; }
-    .indigo-accent-subtle { background: #EEF2FF; color: #4338CA; }
-    .indigo-tag { background: #6366F1; color: white; }
+  /* Radius (8pt scale) */
+  --r-sm:  8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 20px;
+  --r-pill:999px;
 
-    .component-section { margin-bottom: 24px; }
-    .component-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  /* Motion */
+  --ease: cubic-bezier(.2,.8,.2,1);
+  --t-fast: 140ms;
+  --t-base: 200ms;
+  --t-slow: 320ms;
 
-    .btn { padding: var(--btn-padding-y, 6px) var(--btn-padding-x, 14px); border: 1px solid var(--border-color, #E5E4DF); border-radius: var(--btn-radius, 6px); background: var(--bg-color, white); color: var(--text-color, #78716C); font-size: 14px; cursor: pointer; transition: all 150ms ease; font-weight: 500; }
-    .btn:hover { background: var(--hover-bg, #EEEDE9); border-color: var(--border-strong, #C9C8C3); }
-    .btn-primary { background: var(--accent-color); color: white; border-color: var(--accent-color); }
-    .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+  /* Spacing */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 20px;
+  --s6: 24px;
+  --s7: 32px;
+  --s8: 40px;
+  --s9: 48px;
+  --s10:64px;
 
-    .amber-panel .btn { --accent-color: #B45309; --accent-hover: #92400E; --btn-padding-x: 8px; --btn-padding-y: 4px; --btn-radius: 4px; }
-    .amber-panel .btn-icon { width: 32px; height: 32px; padding: 0; }
-    .indigo-panel .btn { --accent-color: #6366F1; --accent-hover: #4F46E5; --btn-padding-x: 12px; --btn-padding-y: 6px; --btn-radius: 6px; }
-    .indigo-panel .btn-icon { width: 30px; height: 30px; padding: 0; }
+  /* Type */
+  --font-sans: "Inter", "HarmonyOS Sans", "SF Pro Display", "MiSans", "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+}
 
-    .input { width: 100%; padding: var(--input-padding, 8px); border: 1px solid var(--border-color, #E5E4DF); border-radius: var(--input-radius, 6px); background: var(--bg-color, white); color: var(--text-color, #1C1917); font-size: 14px; }
-    .input:focus { outline: none; border-color: var(--focus-border, #B45309); box-shadow: 0 0 0 3px var(--focus-shadow, rgba(180,83,9,0.10)); }
-    .amber-panel .input { --input-padding: 8px; --input-radius: 4px; --focus-border: #B45309; --focus-shadow: rgba(180,83,9,0.10); }
-    .indigo-panel .input { --input-padding: 6px 10px; --input-radius: 6px; --focus-border: #6366F1; --focus-shadow: rgba(99,102,241,0.12); }
+*,
+*::before,
+*::after{ box-sizing:border-box; }
 
-    .tag { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; }
-    .amber-panel .tag { background: #ECFDF5; color: #047857; }
-    .indigo-panel .tag { background: #EEF2FF; color: #6366F1; }
+html, body{
+  margin:0; padding:0;
+  height:100%;
+  background:var(--bg);
+  color:var(--text);
+  font-family: var(--font-sans);
+  font-size:14px;
+  line-height:1.7;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "cv11", "ss01", "ss03";
+  text-rendering: optimizeLegibility;
+  overflow:hidden;
+}
 
-    .radius-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 12px; }
-    .radius-table th, .radius-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #f0f0f0; }
-    .radius-table th { font-weight: 600; color: #78716C; background: #fafafa; }
-    .radius-demo { display: inline-block; background: currentColor; opacity: 0.15; vertical-align: middle; }
-    .old-value { text-decoration: line-through; color: #DC2626; opacity: 0.7; }
-    .new-value { color: #059669; font-weight: 600; }
+button{
+  font: inherit; color: inherit;
+  background: none; border: 0; padding:0; cursor:pointer;
+}
+input{ font: inherit; color: inherit; }
+a{ color: var(--primary-text); text-decoration: none; }
+a:hover{ text-decoration: underline; }
 
-    .sidebar-preview { background: var(--sidebar-bg, #F3F2EE); border-radius: 8px; overflow: hidden; border: 1px solid var(--border-color, #E5E4DF); }
-    .amber-panel .sidebar-preview { --sidebar-bg: #F3F2EE; }
-    .indigo-panel .sidebar-preview { --sidebar-bg: #F3F4F8; }
-    .sidebar-header { padding: 14px 16px; border-bottom: 1px solid var(--border-color, #E5E4DF); font-weight: 700; font-size: 13px; letter-spacing: 0.18em; color: var(--sidebar-logo-color, #78716C); }
-    .sidebar-section { padding: 12px; }
-    .section-title { font-size: 11px; font-weight: 600; color: #A8A29E; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
-    .journal-card { padding: 12px; border-radius: var(--journal-radius, 8px); background: var(--journal-bg, #FEF3C7); margin-bottom: 8px; }
-    .amber-panel .journal-card { --journal-radius: 8px; --journal-bg: #FEF3C7; }
-    .indigo-panel .journal-card { --journal-radius: 10px; --journal-bg: #EEF2FF; }
-    .page-item { display: flex; align-items: center; gap: 8px; padding: 6px var(--page-item-padding, 8px); border-radius: var(--page-item-radius, 5px); font-size: 13px; color: #1C1917; margin-bottom: 2px; }
-    .page-item:hover { background: rgba(0,0,0,0.04); }
-    .amber-panel .page-item { --page-item-padding: 8px; --page-item-radius: 5px; }
-    .indigo-panel .page-item { --page-item-padding: 10px; --page-item-radius: 6px; }
-    .page-item.active { background: var(--active-bg, #E8E7E3); border-left: 2px solid var(--accent-active, #B45309); }
-    .amber-panel .page-item.active { --active-bg: #E8E7E3; --accent-active: #B45309; }
-    .indigo-panel .page-item.active { --active-bg: #E0E7FF; --accent-active: #6366F1; }
-    .page-time { margin-left: auto; font-size: 11px; color: #A8A29E; font-family: 'JetBrains Mono', monospace; }
+/* ===== Scrollbar (custom) ===== */
+::-webkit-scrollbar{ width:8px; height:8px; }
+::-webkit-scrollbar-track{ background: transparent; }
+::-webkit-scrollbar-thumb{
+  background: rgba(255,255,255,.12);
+  border-radius: 8px;
+  transition: background var(--t-base) var(--ease);
+}
+::-webkit-scrollbar-thumb:hover{ background: rgba(255,255,255,.22); }
+*{
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,.12) transparent;
+}
 
-    .footer-note { text-align: center; margin-top: 32px; padding: 16px; background: white; border-radius: 8px; color: #78716C; font-size: 13px; }
-    .footer-note strong { color: #1C1917; }
-  </style>
+/* ===== Selection ===== */
+::selection{ background: var(--primary-soft); color: var(--text); }
+
+/* ===== App grid layout (3 columns) ===== */
+.app{
+  display:grid;
+  grid-template-columns: 240px 1fr 360px;
+  height:100vh;
+  background: var(--bg);
+}
+
+/* ============================================================
+   TopBar  (64px, glass)
+   ============================================================ */
+.topbar{
+  grid-column: 1 / -1;
+  height: 64px;
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  padding: 0 var(--s5);
+  background: rgba(23,24,28,.72);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border-bottom: 1px solid var(--border);
+  position: relative;
+  z-index: 50;
+}
+.topbar::after{
+  content:""; position:absolute; left:0; right:0; bottom:-1px; height:1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.04), transparent);
+  pointer-events:none;
+}
+.topbar-left,
+.topbar-right{ display:flex; align-items:center; gap: var(--s2); }
+
+.brand{
+  display:flex; align-items:center; gap: var(--s2);
+  padding-right: var(--s4);
+  margin-right: var(--s3);
+  border-right: 1px solid var(--border);
+  height: 32px;
+  user-select:none;
+}
+.brand-mark{
+  width:24px; height:24px;
+  border-radius: 7px;
+  background: linear-gradient(135deg, #6D8CFF 0%, #4F6BFF 100%);
+  display:grid; place-items:center;
+  font-size: 13px; font-weight: 800;
+  color:#fff;
+  letter-spacing: -.02em;
+  box-shadow: 0 4px 12px rgba(109,140,255,.35);
+}
+.brand-name{
+  font-size: 14px; font-weight: 600;
+  letter-spacing: .12em;
+  color: var(--text);
+}
+
+.tb-btn{
+  width: 32px; height: 32px;
+  display:inline-grid; place-items:center;
+  border-radius: var(--r-sm);
+  color: var(--text2);
+  transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease), transform var(--t-fast) var(--ease);
+  position:relative;
+}
+.tb-btn:hover{ background: var(--hover); color: var(--text); }
+.tb-btn:active{ transform: scale(.96); }
+.tb-btn svg{ width:16px; height:16px; }
+.tb-btn .dot{
+  position:absolute; top:7px; right:7px;
+  width:6px; height:6px; border-radius:50%;
+  background: var(--danger);
+  box-shadow: 0 0 0 2px var(--bg);
+}
+.tb-btn.icon-only{ font-size: 13px; font-weight: 500; }
+
+.tb-divider{
+  width:1px; height:16px;
+  background: var(--border);
+  margin: 0 var(--s2);
+}
+
+/* ============================================================
+   Sidebar
+   ============================================================ */
+.sidebar{
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  display:flex; flex-direction:column;
+  overflow: hidden;
+  position: relative;
+}
+.sidebar-head{
+  padding: var(--s4) var(--s4) var(--s3);
+  border-bottom: 1px solid var(--border);
+}
+
+.search{
+  position: relative;
+  display:flex; align-items:center;
+  height: 40px;
+  background: var(--input);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 0 var(--s3) 0 36px;
+  transition: border-color var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease), background var(--t-base) var(--ease);
+}
+.search:focus-within{
+  border-color: var(--primary);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+.search svg.icon-search{
+  position:absolute; left:12px; top:50%; transform: translateY(-50%);
+  width:14px; height:14px; color: var(--text3);
+}
+.search input{
+  flex:1; background:transparent; border:0; outline:0;
+  color: var(--text); font-size: 13px;
+}
+.search input::placeholder{ color: var(--text3); }
+.kbd{
+  display:inline-flex; align-items:center; justify-content:center;
+  height: 20px; padding: 0 6px;
+  font-size: 11px; color: var(--text3);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  letter-spacing: .04em;
+}
+
+.sb-tabs{
+  display:grid; grid-template-columns: 1fr 1fr;
+  gap: 4px; margin-top: var(--s3);
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.sb-tab{
+  height: 32px;
+  display:flex; align-items:center; justify-content:center; gap:6px;
+  font-size: 13px; color: var(--text2);
+  border-radius: 8px;
+  transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease);
+}
+.sb-tab:hover{ color: var(--text); }
+.sb-tab.active{
+  background: var(--hover);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+.sb-tab svg{ width:14px; height:14px; }
+.sb-tab .count{
+  font-size:11px; color:var(--text3);
+  background: var(--bg);
+  padding: 1px 6px; border-radius: 6px;
+  margin-left: 2px;
+}
+.sb-tab.active .count{ color: var(--text2); background: transparent; }
+
+.sb-scroll{
+  flex:1; overflow-y:auto; overflow-x:hidden;
+  padding: var(--s3) var(--s2) var(--s6);
+}
+
+.sb-group{ margin-top: var(--s4); }
+.sb-group:first-child{ margin-top: var(--s2); }
+
+.sb-group-head{
+  display:flex; align-items:center; justify-content:space-between;
+  height: 28px;
+  padding: 0 var(--s3);
+  color: var(--text3);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  user-select:none;
+}
+.sb-group-head .caret{
+  width:14px; height:14px; opacity:.6;
+  transition: transform var(--t-base) var(--ease);
+}
+.sb-group.collapsed .sb-group-head .caret{ transform: rotate(-90deg); }
+
+.sb-list{ list-style:none; margin:0; padding:0; }
+.sb-item{
+  position: relative;
+  display:flex; align-items:center; gap: var(--s2);
+  height: 40px;
+  padding: 0 var(--s3);
+  border-radius: var(--r-md);
+  color: var(--text2);
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease), transform var(--t-fast) var(--ease);
+}
+.sb-item .dot-marker{
+  width:6px; height:6px; border-radius:50%;
+  background: var(--text4);
+  flex-shrink:0;
+  transition: background var(--t-base) var(--ease);
+}
+.sb-item .sb-title{
+  flex:1; min-width:0;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.sb-item .sb-meta{
+  font-size: 11px; color: var(--text3);
+  flex-shrink:0;
+  font-variant-numeric: tabular-nums;
+}
+.sb-item:hover{ background: var(--hover); color: var(--text); }
+.sb-item:hover .dot-marker{ background: var(--text2); }
+.sb-item:active{ transform: scale(.99); }
+.sb-item.active{
+  background: var(--active);
+  color: var(--text);
+}
+.sb-item.active::before{
+  content:"";
+  position:absolute; left:-2px; top:8px; bottom:8px;
+  width:3px;
+  background: var(--primary);
+  border-radius: 0 3px 3px 0;
+  box-shadow: 0 0 8px var(--primary-glow);
+}
+.sb-item.active .dot-marker{ background: var(--primary); box-shadow: 0 0 6px var(--primary-glow); }
+
+.sb-item .icon-emoji{
+  width:18px; height:18px; display:inline-grid; place-items:center;
+  font-size: 13px; line-height: 1;
+}
+.sb-item .icon-pin{
+  width:14px; height:14px; color: var(--warning);
+}
+
+.sb-divider{
+  height:1px;
+  background: var(--border);
+  margin: var(--s2) var(--s3);
+  opacity:.6;
+}
+
+.sb-foot{
+  border-top: 1px solid var(--border);
+  padding: var(--s3) var(--s4);
+  display:flex; align-items:center; gap: var(--s3);
+  background: var(--panel);
+}
+.sb-foot .icon-btn{
+  width: 28px; height: 28px;
+  display:inline-grid; place-items:center;
+  border-radius: 8px;
+  color: var(--text3);
+  transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease);
+}
+.sb-foot .icon-btn:hover{ background: var(--hover); color: var(--text); }
+.sb-foot .icon-btn svg{ width:14px; height:14px; }
+.sb-foot .foot-sep{ width:1px; height:14px; background: var(--border); }
+
+/* ============================================================
+   Editor (center)
+   ============================================================ */
+.editor{
+  display:flex; flex-direction:column;
+  overflow:hidden;
+  position:relative;
+}
+.editor-scroll{
+  flex:1; overflow-y:auto;
+  display:flex; justify-content:center;
+  padding: var(--s7) var(--s7) var(--s9);
+}
+.editor-inner{
+  width:100%;
+  max-width: 820px;
+  display:flex; flex-direction:column;
+  gap: var(--s4);
+}
+
+.editor-day-pill{
+  display:inline-flex; align-items:center; gap: var(--s2);
+  height: 28px;
+  padding: 0 var(--s3);
+  background: var(--primary-soft);
+  color: var(--primary-text);
+  border: 1px solid rgba(109,140,255,.32);
+  border-radius: var(--r-pill);
+  font-size: 12px; font-weight: 500;
+  width: max-content;
+  user-select:none;
+}
+.editor-day-pill .pill-dot{
+  width:6px; height:6px; border-radius:50%;
+  background: var(--primary);
+  box-shadow: 0 0 6px var(--primary-glow);
+}
+
+.editor-title-row{
+  display:flex; align-items:baseline; gap: var(--s3);
+  padding-top: var(--s2);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: var(--s5);
+  margin-bottom: var(--s3);
+}
+.editor-title{
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  line-height: 1.3;
+  color: var(--text);
+}
+.editor-subtitle{
+  font-size: 14px;
+  color: var(--text3);
+  letter-spacing: .04em;
+}
+
+.editor-body{
+  display:flex; flex-direction:column;
+  gap: var(--s2);
+}
+
+.bullet{
+  display:flex; align-items:flex-start; gap: var(--s3);
+  padding: 6px var(--s2);
+  border-radius: var(--r-sm);
+  color: var(--text2);
+  font-size: 16px;
+  line-height: 1.7;
+  position: relative;
+  transition: background var(--t-base) var(--ease);
+}
+.bullet:hover{ background: rgba(255,255,255,.02); }
+.bullet:hover .bullet-marker{ opacity:1; }
+
+.bullet-marker{
+  width: 14px; height: 22px;
+  display:inline-grid; place-items:center;
+  flex-shrink: 0;
+  color: var(--text3);
+  opacity: .55;
+  transition: opacity var(--t-base) var(--ease);
+}
+.bullet-marker::before{
+  content:""; width:5px; height:5px; border-radius:50%;
+  background: currentColor;
+}
+
+.bullet-content{
+  flex:1; min-width:0;
+  display:flex; flex-wrap:wrap; align-items:baseline; gap:6px;
+}
+.bullet-content .text{ color: var(--text); }
+
+.placeholder-line{
+  display:flex; align-items:center; gap: var(--s3);
+  color: var(--text3);
+  font-size: 15px;
+  padding: 6px var(--s2);
+  border-radius: var(--r-sm);
+  cursor: text;
+  transition: color var(--t-base) var(--ease), background var(--t-base) var(--ease);
+}
+.placeholder-line:hover{ color: var(--text2); background: rgba(255,255,255,.02); }
+.placeholder-line .ph-marker{ color: var(--text3); opacity:.7; }
+.placeholder-line .ph-marker::before{
+  content:""; width:5px; height:5px; border-radius:50%; background: currentColor; display:inline-block;
+}
+.placeholder-line .ph-text{ font-style: normal; }
+
+/* Editor inline tokens */
+.tag-link{
+  display:inline-flex; align-items:center; gap: 2px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  color: var(--primary-text);
+  background: rgba(109,140,255,.10);
+  font-size: 14px;
+  font-weight: 500;
+  transition: background var(--t-base) var(--ease);
+}
+.tag-link:hover{ background: rgba(109,140,255,.18); text-decoration:none; }
+.tag-link.date{
+  color: var(--info);
+  background: rgba(79,179,247,.10);
+}
+.tag-link.date:hover{ background: rgba(79,179,247,.18); }
+.tag-link.page-ref{
+  color: var(--primary-text);
+  background: rgba(109,140,255,.10);
+}
+.tag-link.tag{
+  color: var(--text2);
+  background: var(--hover);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: .02em;
+}
+
+.heading-1{
+  font-size: 32px; font-weight: 700;
+  letter-spacing: -.02em;
+  line-height: 1.3;
+  color: var(--text);
+}
+.heading-2{
+  font-size: 24px; font-weight: 700;
+  letter-spacing: -.01em;
+  line-height: 1.3;
+  color: var(--text);
+}
+.heading-3{
+  font-size: 20px; font-weight: 600;
+  letter-spacing: -.01em;
+  color: var(--text);
+}
+
+.editor-empty-hint{
+  margin-top: var(--s7);
+  display:flex; flex-direction:column; align-items:center;
+  gap: var(--s3);
+  color: var(--text3);
+  font-size: 13px;
+  text-align:center;
+  padding: var(--s7) var(--s4);
+  border: 1px dashed var(--border);
+  border-radius: var(--r-lg);
+  background: linear-gradient(180deg, transparent, rgba(255,255,255,.012));
+}
+.editor-empty-hint .hint-keys{
+  display:flex; gap: var(--s2); align-items:center;
+  font-size: 12px; color: var(--text3);
+}
+.editor-empty-hint .hint-keys kbd{
+  display:inline-flex; align-items:center; justify-content:center;
+  height: 22px; min-width: 22px; padding: 0 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px; color: var(--text2);
+}
+
+/* ============================================================
+   Right Panel
+   ============================================================ */
+.rightpanel{
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  display:flex; flex-direction:column;
+  overflow:hidden;
+}
+
+.rp-section{
+  display:flex; flex-direction:column;
+}
+.rp-divider{
+  height: 1px;
+  background: var(--border);
+  margin: 0;
+}
+
+.rp-head{
+  display:flex; align-items:center; justify-content:space-between;
+  padding: var(--s4) var(--s5) var(--s3);
+}
+.rp-year{
+  font-size: 13px; font-weight: 600;
+  color: var(--text);
+  letter-spacing: .02em;
+  font-variant-numeric: tabular-nums;
+}
+.rp-head .rp-nav{ display:flex; align-items:center; gap: 4px; }
+.rp-head .rp-nav .tb-btn{ width: 24px; height: 24px; }
+.rp-head .rp-nav .tb-btn svg{ width:12px; height:12px; }
+
+/* Month grid */
+.months{
+  display:grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+  padding: 0 var(--s5) var(--s4);
+}
+.month{
+  height: 40px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  border-radius: var(--r-sm);
+  color: var(--text2);
+  font-size: 13px;
+  cursor:pointer;
+  position:relative;
+  transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease), transform var(--t-fast) var(--ease);
+}
+.month .m-num{ font-weight: 500; letter-spacing: .01em; }
+.month .m-label{
+  font-size: 10px; color: var(--text3);
+  margin-top: 1px; letter-spacing: .04em;
+}
+.month:hover{ background: var(--hover); color: var(--text); }
+.month:active{ transform: scale(.97); }
+.month.active{
+  background: var(--primary-soft);
+  color: var(--primary-text);
+  box-shadow: inset 0 0 0 1px rgba(109,140,255,.32);
+}
+.month.active .m-label{ color: var(--primary-text); opacity:.75; }
+.month .m-dot{
+  position:absolute; bottom: 6px; left:50%; transform: translateX(-50%);
+  width: 3px; height: 3px; border-radius: 50%;
+  background: var(--primary);
+  opacity: 0;
+}
+.month.has-events .m-dot{ opacity: 1; }
+.month.active .m-dot{ background: var(--primary-text); }
+
+/* Timeline */
+.timeline{
+  flex:1;
+  overflow-y:auto;
+  padding: var(--s3) var(--s5) var(--s7);
+  position: relative;
+}
+.timeline::before{
+  content:"";
+  position:absolute;
+  left: calc(var(--s5) + 8px);
+  top: var(--s3);
+  bottom: var(--s7);
+  width: 1px;
+  background: linear-gradient(180deg, transparent, var(--border) 12%, var(--border) 88%, transparent);
+  pointer-events:none;
+}
+
+.tl-day{
+  position:relative;
+  display:flex; flex-direction:column;
+  padding-left: 24px;
+  margin-bottom: var(--s5);
+}
+.tl-day::before{
+  content:"";
+  position:absolute;
+  left: 2px; top: 6px;
+  width: 13px; height: 13px;
+  border-radius:50%;
+  background: var(--bg);
+  border: 2px solid var(--primary);
+  box-shadow: 0 0 0 3px var(--panel), 0 0 12px var(--primary-glow);
+}
+
+.tl-day-head{
+  display:flex; align-items:baseline; gap: var(--s2);
+  margin-bottom: var(--s2);
+  padding-top: 1px;
+}
+.tl-day-title{
+  font-size: 13px; font-weight: 600;
+  color: var(--text);
+}
+.tl-day-week{
+  font-size: 11px; color: var(--text3);
+  font-weight: 500;
+}
+
+.tl-blocks{
+  list-style:none; margin:0; padding:0;
+  display:flex; flex-direction:column;
+  gap: 4px;
+}
+
+.tl-block{
+  display:flex; align-items:flex-start; gap: var(--s2);
+  padding: 6px var(--s3);
+  border-radius: var(--r-sm);
+  color: var(--text2);
+  font-size: 13px;
+  line-height: 1.5;
+  cursor: pointer;
+  position:relative;
+  transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease), transform var(--t-fast) var(--ease);
+}
+.tl-block:hover{
+  background: var(--hover);
+  color: var(--text);
+}
+.tl-block:active{ transform: scale(.995); }
+.tl-block.is-active{
+  background: var(--active);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+.tl-block .block-marker{
+  width: 14px; height: 16px;
+  flex-shrink: 0;
+  display:inline-grid; place-items:center;
+  color: var(--text3);
+  font-size: 10px;
+  margin-top: 1px;
+}
+.tl-block .block-marker::before{
+  content:""; width: 4px; height: 4px; border-radius:50%; background: currentColor;
+  opacity:.7;
+}
+.tl-block .block-text{
+  flex:1; min-width:0;
+  display:flex; flex-wrap:wrap; align-items:baseline; gap: 4px;
+  word-break: break-word;
+}
+.tl-block .block-text .l1{ color: var(--text); font-weight: 600; }
+.tl-block .block-text .l2{ color: var(--text2); }
+.tl-block .block-text .l3{ color: var(--text3); font-size: 12px; font-style: italic; }
+
+/* Things3 style checkbox */
+.check{
+  width: 16px; height: 16px;
+  border-radius: 5px;
+  border: 1.5px solid var(--text3);
+  background: transparent;
+  display:inline-grid; place-items:center;
+  flex-shrink: 0;
+  margin-top: 2px;
+  cursor:pointer;
+  transition: background var(--t-base) var(--ease), border-color var(--t-base) var(--ease), transform var(--t-fast) var(--ease);
+  position: relative;
+}
+.check:hover{ border-color: var(--primary); }
+.check:active{ transform: scale(.92); }
+.check.checked{
+  background: var(--primary);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+.check.checked::after{
+  content:"";
+  width: 9px; height: 5px;
+  border-left: 1.5px solid #fff;
+  border-bottom: 1.5px solid #fff;
+  transform: rotate(-45deg) translate(1px,-1px);
+}
+.check.radio{ border-radius:50%; }
+.check.radio.checked{ background: transparent; }
+.check.radio.checked::after{
+  content:""; width: 7px; height: 7px; border-radius:50%;
+  background: var(--primary);
+  border: 0;
+  transform: none;
+  box-shadow: 0 0 8px var(--primary-glow);
+}
+
+/* nested */
+.tl-block.nested{ padding-left: 18px; }
+
+/* Backlinks */
+.backlinks{
+  padding: var(--s4) var(--s5) var(--s6);
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+}
+.backlinks-title{
+  font-size: 11px; font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: var(--s3);
+}
+.backlinks-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap: 6px; }
+.backlink{
+  display:flex; align-items:flex-start; gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-size: 12px; line-height: 1.55;
+  color: var(--text2);
+  transition: transform var(--t-base) var(--ease), background var(--t-base) var(--ease), border-color var(--t-base) var(--ease);
+}
+.backlink:hover{
+  background: var(--hover);
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+.backlink .bl-marker{
+  width:6px; height:6px; border-radius:50%;
+  background: var(--primary);
+  margin-top: 7px; flex-shrink:0;
+  box-shadow: 0 0 6px var(--primary-glow);
+}
+.backlink .bl-content{ flex:1; min-width:0; }
+.backlink .bl-source{ color: var(--text3); font-size: 11px; margin-top: 2px; }
+
+/* ============================================================
+   Card (used for KPI / groups if needed)
+   ============================================================ */
+.card{
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: var(--s5);
+  box-shadow: var(--shadow-md);
+  transition: transform var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease);
+}
+.card:hover{
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-lg);
+}
+
+/* ============================================================
+   Buttons
+   ============================================================ */
+.btn{
+  height: 40px;
+  display:inline-flex; align-items:center; justify-content:center; gap: var(--s2);
+  padding: 0 var(--s4);
+  border-radius: var(--r-md);
+  font-size: 13px; font-weight: 500;
+  letter-spacing: .01em;
+  cursor: pointer;
+  transition: background var(--t-base) var(--ease), border-color var(--t-base) var(--ease), color var(--t-base) var(--ease), transform var(--t-fast) var(--ease), box-shadow var(--t-base) var(--ease);
+  border: 1px solid transparent;
+  white-space: nowrap;
+  user-select: none;
+}
+.btn:active{ transform: scale(.98); }
+
+.btn-primary{
+  background: var(--primary);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(109,140,255,.25);
+}
+.btn-primary:hover{
+  background: #5C7BFF;
+  box-shadow: 0 6px 18px rgba(109,140,255,.35);
+}
+.btn-primary:focus-visible{
+  box-shadow: 0 0 0 3px var(--primary-soft);
+  outline: 0;
+}
+
+.btn-secondary{
+  background: var(--hover);
+  color: var(--text);
+  border-color: var(--border);
+}
+.btn-secondary:hover{
+  background: var(--active);
+  border-color: var(--border-strong);
+}
+
+.btn-danger{
+  background: transparent;
+  color: var(--danger);
+  border-color: rgba(227,93,106,.32);
+}
+.btn-danger:hover{
+  background: rgba(227,93,106,.10);
+  border-color: var(--danger);
+}
+
+.btn-ghost{
+  background: transparent;
+  color: var(--text2);
+}
+.btn-ghost:hover{ background: var(--hover); color: var(--text); }
+
+.btn-sm{ height: 32px; padding: 0 var(--s3); font-size: 12px; border-radius: var(--r-sm); }
+
+/* ============================================================
+   Inputs
+   ============================================================ */
+.input{
+  height: 40px;
+  width:100%;
+  background: var(--input);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 0 var(--s3);
+  color: var(--text);
+  font-size: 13px;
+  transition: border-color var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease), background var(--t-base) var(--ease);
+  outline: 0;
+}
+.input:focus{
+  border-color: var(--primary);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+.input::placeholder{ color: var(--text3); }
+
+/* ============================================================
+   Focus visible (a11y)
+   ============================================================ */
+:focus-visible{
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* ============================================================
+   Ripple
+   ============================================================ */
+.ripple-host{ position: relative; overflow: hidden; }
+.ripple{
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255,255,255,.18);
+  transform: scale(0);
+  animation: ripple-anim 600ms var(--ease) forwards;
+  pointer-events: none;
+}
+@keyframes ripple-anim{
+  to{ transform: scale(2.4); opacity: 0; }
+}
+
+/* ============================================================
+   Utility
+   ============================================================ */
+.hairline{ height:1px; background: var(--border); border:0; margin: 0; }
+.spacer-2{ height: var(--s2); }
+.spacer-4{ height: var(--s4); }
+.spacer-6{ height: var(--s6); }
+
+.muted{ color: var(--text3); }
+.text-2{ color: var(--text2); }
+.fw-6{ font-weight: 600; }
+.mono{ font-family: var(--font-mono); font-size: 12px; }
+
+/* hide scrollbar arrow on webkit if any */
+::-webkit-scrollbar-button{ display:none; }
+
+/* reduce motion */
+@media (prefers-reduced-motion: reduce){
+  *{ transition: none !important; animation: none !important; }
+}
+</style>
 </head>
 <body>
-  <div class="container">
-    <h1>🎨 comind 风格重设计对比</h1>
-    <p class="subtitle">Amber (琥珀暖色) → Indigo (薰衣草紫冷色) · v0.6 → v0.7 · 2026-05-28</p>
 
-    <div class="comparison-grid">
-      <!-- AMBER (旧) -->
-      <div class="panel amber-panel">
-        <div class="panel-header">
-          <span class="panel-title">🔶 Amber 主题（旧版）</span>
-          <span class="version-badge">v0.6</span>
-        </div>
-        <div class="color-section">
-          <div class="section-label">色彩系统</div>
-          <div class="color-grid">
-            <div class="color-swatch amber-accent"><span class="color-name">Accent</span><span class="color-value">#B45309</span></div>
-            <div class="color-swatch amber-accent-hover"><span class="color-name">Hover</span><span class="color-value">#92400E</span></div>
-            <div class="color-swatch amber-accent-subtle"><span class="color-name">Subtle</span><span class="color-value">#FEF3C7</span></div>
-            <div class="color-swatch amber-tag"><span class="color-name">Tag</span><span class="color-value">#047857</span></div>
-          </div>
-        </div>
-        <div class="component-section">
-          <div class="section-label">圆角体系</div>
-          <table class="radius-table">
-            <tr><th>Token</th><th>旧值</th><th>预览</th></tr>
-            <tr><td>$radius-sm</td><td><span class="old-value">4px</span></td><td><span class="radius-demo" style="width:40px;height:40px;border-radius:4px;background:#B45309;"></span></td></tr>
-            <tr><td>$radius-md</td><td><span class="old-value">6px</span></td><td><span class="radius-demo" style="width:50px;height:50px;border-radius:6px;background:#B45309;"></span></td></tr>
-            <tr><td>$radius-lg</td><td><span class="old-value">8px</span></td><td><span class="radius-demo" style="width:60px;height:60px;border-radius:8px;background:#B45309;"></span></td></tr>
-          </table>
-        </div>
-        <div class="component-section">
-          <div class="section-label">组件示例</div>
-          <div class="component-row" style="margin-bottom:12px;">
-            <button class="btn btn-primary">主要按钮</button>
-            <button class="btn">次要按钮</button>
-          </div>
-          <div class="component-row" style="margin-bottom:12px;">
-            <input type="text" class="input" placeholder="输入框 (padding: 8px)" style="flex:1;">
-          </div>
-          <div class="component-row">
-            <span class="tag">#标签</span>
-            <button class="btn btn-icon">★</button>
-          </div>
-        </div>
-        <div class="component-section">
-          <div class="section-label">Sidebar 预览</div>
-          <div class="sidebar-preview">
-            <div class="sidebar-header">COMIND</div>
-            <div class="sidebar-section">
-              <div class="section-title">日记</div>
-              <div class="journal-card"><strong>今天</strong><div style="font-size:12px;color:#78716C;margin-top:4px;">2026-05-28 · 周四</div></div>
-              <div class="section-title" style="margin-top:12px;">页面</div>
-              <div class="page-item active">📄 数据模型设计<span class="page-time">3分钟前</span></div>
-              <div class="page-item">📄 Phase 1 技术选型<span class="page-time">昨天</span></div>
-              <div class="page-item">📄 UI/UX 规范<span class="page-time">4月14日</span></div>
-            </div>
-          </div>
-        </div>
+<div class="app" id="app">
+
+  <!-- =================== TopBar =================== -->
+  <header class="topbar" id="topbar">
+    <div class="topbar-left">
+      <div class="brand">
+        <div class="brand-mark">C</div>
+        <div class="brand-name">COMIND</div>
       </div>
+      <button class="tb-btn" data-tip="后退" aria-label="后退">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <button class="tb-btn" data-tip="前进" aria-label="前进">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+    </div>
+    <div class="topbar-right">
+      <button class="tb-btn" data-tip="通知" aria-label="通知">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+        <span class="dot" aria-hidden="true"></span>
+      </button>
+      <button class="tb-btn" data-tip="菜单" aria-label="菜单">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <span class="tb-divider"></span>
+      <button class="tb-btn" data-tip="最小化" aria-label="最小化">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+      <button class="tb-btn" data-tip="最大化" aria-label="最大化">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+      </button>
+      <button class="tb-btn" data-tip="关闭" aria-label="关闭" style="color:var(--danger)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="6" y1="18" x2="18" y2="6"/></svg>
+      </button>
+    </div>
+  </header>
 
-      <!-- INDIGO (新) -->
-      <div class="panel indigo-panel">
-        <div class="panel-header">
-          <span class="panel-title">💜 Indigo 主题（新版）</span>
-          <span class="version-badge">v0.7</span>
-        </div>
-        <div class="color-section">
-          <div class="section-label">色彩系统</div>
-          <div class="color-grid">
-            <div class="color-swatch indigo-accent"><span class="color-name">Accent</span><span class="color-value">#6366F1</span></div>
-            <div class="color-swatch indigo-accent-hover"><span class="color-name">Hover</span><span class="color-value">#4F46E5</span></div>
-            <div class="color-swatch indigo-accent-subtle"><span class="color-name">Subtle</span><span class="color-value">#EEF2FF</span></div>
-            <div class="color-swatch indigo-tag"><span class="color-name">Tag</span><span class="color-value">#6366F1</span></div>
-          </div>
-        </div>
-        <div class="component-section">
-          <div class="section-label">圆角体系</div>
-          <table class="radius-table">
-            <tr><th>Token</th><th>新值</th><th>预览</th></tr>
-            <tr><td>$radius-sm</td><td><span class="new-value">6px</span> (+2)</td><td><span class="radius-demo" style="width:40px;height:40px;border-radius:6px;background:#6366F1;"></span></td></tr>
-            <tr><td>$radius-md</td><td><span class="new-value">10px</span> (+4)</td><td><span class="radius-demo" style="width:50px;height:50px;border-radius:10px;background:#6366F1;"></span></td></tr>
-            <tr><td>$radius-lg</td><td><span class="new-value">14px</span> (+6)</td><td><span class="radius-demo" style="width:60px;height:60px;border-radius:14px;background:#6366F1;"></span></td></tr>
-          </table>
-        </div>
-        <div class="component-section">
-          <div class="section-label">组件示例</div>
-          <div class="component-row" style="margin-bottom:12px;">
-            <button class="btn btn-primary">主要按钮</button>
-            <button class="btn">次要按钮</button>
-          </div>
-          <div class="component-row" style="margin-bottom:12px;">
-            <input type="text" class="input" placeholder="输入框 (padding: 6px 10px)" style="flex:1;">
-          </div>
-          <div class="component-row">
-            <span class="tag">#标签</span>
-            <button class="btn btn-icon">★</button>
-          </div>
-        </div>
-        <div class="component-section">
-          <div class="section-label">Sidebar 预览</div>
-          <div class="sidebar-preview">
-            <div class="sidebar-header">COMIND</div>
-            <div class="sidebar-section">
-              <div class="section-title">日记</div>
-              <div class="journal-card"><strong>今天</strong><div style="font-size:12px;color:#78716C;margin-top:4px;">2026-05-28 · 周四</div></div>
-              <div class="section-title" style="margin-top:12px;">页面</div>
-              <div class="page-item active">📄 数据模型设计<span class="page-time">3分钟前</span></div>
-              <div class="page-item">📄 Phase 1 技术选型<span class="page-time">昨天</span></div>
-              <div class="page-item">📄 UI/UX 规范<span class="page-time">4月14日</span></div>
-            </div>
-          </div>
-        </div>
+  <!-- =================== Sidebar =================== -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      <div class="search" role="search">
+        <svg class="icon-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>
+        <input type="text" placeholder="搜索" aria-label="搜索"/>
+        <span class="kbd">Ctrl K</span>
+      </div>
+      <div class="sb-tabs" role="tablist">
+        <button class="sb-tab active" role="tab" aria-selected="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5C8 6 6 9 6 12a6 6 0 0 0 12 0c0-3-2-6-6-9.5z"/></svg>
+          点滴
+          <span class="count">128</span>
+        </button>
+        <button class="sb-tab" role="tab" aria-selected="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="6" r="2.4"/><circle cx="6" cy="18" r="2.4"/><circle cx="18" cy="18" r="2.4"/><circle cx="12" cy="12" r="2.4"/><line x1="8" y1="7" x2="16" y2="17"/><line x1="16" y1="7" x2="8" y2="17"/></svg>
+          图谱
+        </button>
       </div>
     </div>
 
-    <div class="panel" style="max-width:900px;margin:0 auto;">
-      <div class="section-label" style="font-size:15px;margin-bottom:16px;">📋 核心变更摘要</div>
-      <table style="width:100%;border-collapse:collapse;font-size:13px;">
-        <thead><tr style="background:#fafafa;"><th style="padding:10px;text-align:left;border-bottom:2px solid #e5e5e5;">维度</th><th style="padding:10px;text-align:left;border-bottom:2px solid #e5e5e5;">旧值 (Amber)</th><th style="padding:10px;text-align:left;border-bottom:2px solid #e5e5e5;">新值 (Indigo)</th></tr></thead>
-        <tbody>
-          <tr><td style="padding:10px;border-bottom:1px solid #f0f0f0;"><strong>强调色</strong></td><td style="padding:10px;border-bottom:1px solid #f0f0f0;color:#B45309;font-weight:600;">#B45309 琥珀橙</td><td style="padding:10px;border-bottom:1px solid #f0f0f0;color:#6366F1;font-weight:600;">#6366F1 薰衣草紫</td></tr>
-          <tr><td style="padding:10px;border-bottom:1px solid #f0f0f0;"><strong>圆角 SM/MD/LG</strong></td><td style="padding:10px;border-bottom:1px solid #f0f0f0;"><span style="color:#DC2626;">4 / 6 / 8 px</span></td><td style="padding:10px;border-bottom:1px solid #f0f0f0;"><span style="color:#059669;">6 / 10 / 14 px</span></td></tr>
-          <tr><td style="padding:10px;border-bottom:1px solid #f0f0f0;"><strong>按钮 Padding</strong></td><td style="padding:10px;border-bottom:1px solid #f0f0f0;">4px 8px (紧凑)</td><td style="padding:10px;border-bottom:1px solid #f0f0f0;">6px 12px (宽敞)</td></tr>
-          <tr><td style="padding:10px;border-bottom:1px solid #f0f0f0;"><strong>图标方案</strong></td><td style="padding:10px;border-bottom:1px solid #f0f0f0;">SVG Sprite (26 icons)</td><td style="padding:10px;border-bottom:1px solid #f0f0f0;">lucide-vue-next (动态)</td></tr>
-          <tr><td style="padding:10px;border-bottom:1px solid #f0f0f0;"><strong>背景色调</strong></td><td style="padding:10px;border-bottom:1px solid #f0f0f0;">#FAFAF8 (暖白)</td><td style="padding:10px;border-bottom:1px solid #f0f0f0;">#FAFAFE (冷白)</td></tr>
-          <tr><td style="padding:10px;border-bottom:1px solid #f0f0f0;"><strong>阴影色调</strong></td><td style="padding:10px;border-bottom:1px solid #f0f0f0;">rgba(28,25,23, x) 暖灰</td><td style="padding:10px;border-bottom:1px solid #f0f0f0;">rgba(30,27,57, x) 冷灰</td></tr>
-          <tr><td style="padding:10px;border-bottom:1px solid #f0f0f0;"><strong>标签色</strong></td><td style="padding:10px;border-bottom:1px solid #f0f0f0;color:#047857;">#047857 墨绿</td><td style="padding:10px;border-bottom:1px solid #f0f0f0;color:#6366F1;">#6366F1 Indigo</td></tr>
-        </tbody>
-      </table>
+    <div class="sb-scroll" id="sbScroll">
+
+      <div class="sb-group" data-group="recent">
+        <div class="sb-group-head">
+          <span>最近</span>
+          <svg class="caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+        <ul class="sb-list">
+          <li class="sb-item" data-id="2026-08-05">
+            <span class="dot-marker"></span>
+            <span class="sb-title">2026-08-05</span>
+            <span class="sb-meta">2h</span>
+          </li>
+          <li class="sb-item" data-id="2026-08-04">
+            <span class="dot-marker"></span>
+            <span class="sb-title">2026-08-04</span>
+            <span class="sb-meta">11h</span>
+          </li>
+          <li class="sb-item" data-id="BEST">
+            <span class="dot-marker"></span>
+            <span class="sb-title">BEST</span>
+            <span class="sb-meta">12h</span>
+          </li>
+          <li class="sb-item" data-id="bbs">
+            <span class="dot-marker"></span>
+            <span class="sb-title">bbs</span>
+            <span class="sb-meta">昨天</span>
+          </li>
+          <li class="sb-item active" data-id="2026-08-03">
+            <span class="dot-marker"></span>
+            <span class="sb-title">2026-08-03</span>
+            <span class="sb-meta">昨天</span>
+          </li>
+        </ul>
+      </div>
+
+      <div class="sb-divider"></div>
+
+      <div class="sb-group" data-group="fav">
+        <div class="sb-group-head">
+          <span>收藏</span>
+          <svg class="caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+        <ul class="sb-list">
+          <li class="sb-item" data-id="c">
+            <span class="dot-marker"></span>
+            <span class="sb-title">c</span>
+            <span class="sb-meta">7-30</span>
+          </li>
+        </ul>
+      </div>
+
     </div>
 
-    <div class="footer-note">
-      <strong>设计理念：</strong>从「墨水与纸张」的温暖书卷气 → 「柔和清新」的现代感<br>
-      更大的圆角 + 冷色调强调色 + Lucide 图标库 = 更现代、更友好的视觉体验
+    <div class="sb-foot">
+      <button class="icon-btn" data-tip="设置" aria-label="设置">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+      <span class="foot-sep"></span>
+      <button class="icon-btn" data-tip="回收站" aria-label="回收站">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+      </button>
+      <span class="foot-sep"></span>
+      <button class="icon-btn" data-tip="应用" aria-label="应用">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      </button>
     </div>
-  </div>
+  </aside>
+
+  <!-- =================== Editor =================== -->
+  <main class="editor" id="editor">
+    <div class="editor-scroll" id="editorScroll">
+      <div class="editor-inner">
+
+        <div class="editor-day-pill">
+          <span class="pill-dot"></span>
+          今天
+        </div>
+
+        <div class="editor-title-row">
+          <h1 class="editor-title">8月5日 周三</h1>
+          <span class="editor-subtitle">2026 · Wednesday</span>
+        </div>
+
+        <div class="editor-body">
+
+          <div class="placeholder-line" tabindex="0" role="textbox" aria-label="开始书写">
+            <span class="ph-marker">•</span>
+            <span class="ph-text">写点什么…</span>
+          </div>
+
+          <div class="bullet">
+            <span class="bullet-marker"></span>
+            <div class="bullet-content">
+              <span class="text">记录今日的想法、链接与任务，保持思考的网络化</span>
+            </div>
+          </div>
+
+          <div class="bullet">
+            <span class="bullet-marker"></span>
+            <div class="bullet-content">
+              <span class="text">引用：</span>
+              <a class="tag-link page-ref" href="#">[[2026-08-02]]</a>
+              <span class="text">作为对照</span>
+            </div>
+          </div>
+
+          <div class="bullet">
+            <span class="bullet-marker"></span>
+            <div class="bullet-content">
+              <span class="text">标签：</span>
+              <span class="tag-link tag">#daily</span>
+              <span class="tag-link tag">#logseq-like</span>
+            </div>
+          </div>
+
+          <div class="bullet">
+            <span class="bullet-marker"></span>
+            <div class="bullet-content">
+              <span class="text">本日目标 · 与昨日</span>
+              <a class="tag-link date" href="#">📅 2026-08-04</a>
+              <span class="text">形成时间线</span>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="editor-empty-hint" aria-hidden="false">
+          <div>今天还没有更多 block — 按 <kbd>Enter</kbd> 创建新行，<kbd>Tab</kbd> 缩进，<kbd>Shift+Tab</kbd> 提升层级</div>
+          <div class="hint-keys">
+            <span>支持</span>
+            <kbd>/</kbd>
+            <span>斜杠命令</span>
+            <span>·</span>
+            <kbd>[[</kbd>
+            <span>页面引用</span>
+            <span>·</span>
+            <kbd>{{</kbd>
+            <span>日期引用</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+
+  <!-- =================== Right Panel =================== -->
+  <aside class="rightpanel" id="rightpanel">
+
+    <section class="rp-section">
+      <div class="rp-head">
+        <button class="tb-btn" aria-label="上一年">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <div class="rp-year">2026年</div>
+        <div class="rp-nav">
+          <button class="tb-btn" aria-label="今天">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9" stroke-dasharray="2 3"/></svg>
+          </button>
+          <button class="tb-btn" aria-label="下一年">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="months" id="months">
+        <div class="month" data-m="1"><span class="m-num">1月</span><span class="m-label">Jan</span></div>
+        <div class="month" data-m="2"><span class="m-num">2月</span><span class="m-label">Feb</span></div>
+        <div class="month" data-m="3"><span class="m-num">3月</span><span class="m-label">Mar</span></div>
+        <div class="month" data-m="4"><span class="m-num">4月</span><span class="m-label">Apr</span></div>
+        <div class="month has-events" data-m="5"><span class="m-num">5月</span><span class="m-label">May</span><span class="m-dot"></span></div>
+        <div class="month has-events" data-m="6"><span class="m-num">6月</span><span class="m-label">Jun</span><span class="m-dot"></span></div>
+        <div class="month has-events" data-m="7"><span class="m-num">7月</span><span class="m-label">Jul</span><span class="m-dot"></span></div>
+        <div class="month active has-events" data-m="8"><span class="m-num">8月</span><span class="m-label">Aug</span><span class="m-dot"></span></div>
+        <div class="month" data-m="9"><span class="m-num">9月</span><span class="m-label">Sep</span></div>
+        <div class="month" data-m="10"><span class="m-num">10月</span><span class="m-label">Oct</span></div>
+        <div class="month" data-m="11"><span class="m-num">11月</span><span class="m-label">Nov</span></div>
+        <div class="month" data-m="12"><span class="m-num">12月</span><span class="m-label">Dec</span></div>
+      </div>
+    </section>
+
+    <div class="rp-divider"></div>
+
+    <section class="rp-section" style="flex:1; min-height:0;">
+      <div class="timeline" id="timeline">
+
+        <!-- Day 1 -->
+        <div class="tl-day" data-day="2026-08-03">
+          <div class="tl-day-head">
+            <span class="tl-day-title">8月3日</span>
+            <span class="tl-day-week">周一</span>
+          </div>
+          <ul class="tl-blocks">
+            <li class="tl-block is-active" data-block="b1">
+              <span class="block-marker"></span>
+              <div class="block-text">
+                <span class="l1">sdfas</span>
+              </div>
+            </li>
+            <li class="tl-block" data-block="b2">
+              <span class="block-marker"></span>
+              <div class="block-text">
+                <span class="l3">Enter image…</span>
+              </div>
+            </li>
+            <li class="tl-block" data-block="b3">
+              <span class="block-marker"></span>
+              <div class="block-text">
+                <a class="tag-link page-ref" href="#">[[2026-08-02]]</a>
+              </div>
+            </li>
+            <li class="tl-block" data-block="b4">
+              <span class="block-marker"></span>
+              <div class="block-text">
+                <span class="l3">@2022-08-02</span>
+              </div>
+            </li>
+            <li class="tl-block" data-block="b5">
+              <span class="check radio" role="checkbox" aria-checked="true" tabindex="0"></span>
+              <div class="block-text">
+                <a class="tag-link date" href="#">@2026-08-02</a>
+                <span class="l2" aria-hidden="true">📅</span>
+              </div>
+            </li>
+            <li class="tl-block" data-block="b6">
+              <span class="block-marker"></span>
+              <div class="block-text">
+                <a class="tag-link" href="#">bbs</a>
+                <span class="l2">||</span>
+                <a class="tag-link" href="#">rst</a>
+              </div>
+            </li>
+            <li class="tl-block" data-block="b7">
+              <span class="check" role="checkbox" aria-checked="false" tabindex="0"></span>
+              <div class="block-text">
+                <a class="tag-link date" href="#">@2026-08-06</a>
+                <span aria-hidden="true">🧍</span>
+              </div>
+            </li>
+            <li class="tl-block" data-block="b8">
+              <span class="block-marker"></span>
+              <div class="block-text"><span class="l2">·</span></div>
+            </li>
+            <li class="tl-block" data-block="b9">
+              <span class="block-marker"></span>
+              <div class="block-text"><span class="l2">·</span></div>
+            </li>
+          </ul>
+        </div>
+
+        <!-- Day 2 -->
+        <div class="tl-day" data-day="2026-08-02">
+          <div class="tl-day-head">
+            <span class="tl-day-title">8月2日</span>
+            <span class="tl-day-week">周日</span>
+          </div>
+          <ul class="tl-blocks">
+            <li class="tl-block" data-block="b10">
+              <span class="block-marker"></span>
+              <div class="block-text"><span class="l2">·</span></div>
+            </li>
+            <li class="tl-block" data-block="b11">
+              <span class="block-marker"></span>
+              <div class="block-text">
+                <span class="l1">「</span>
+                <a class="tag-link page-ref" href="#">{{{</a>
+              </div>
+            </li>
+            <li class="tl-block nested" data-block="b12">
+              <span class="block-marker"></span>
+              <div class="block-text"><span class="l2">页面内任务视图了</span></div>
+            </li>
+            <li class="tl-block" data-block="b13">
+              <span class="block-marker"></span>
+              <div class="block-text"><span class="l2">·</span></div>
+            </li>
+            <li class="tl-block" data-block="b14">
+              <span class="block-marker"></span>
+              <div class="block-text"><span class="l2">·</span></div>
+            </li>
+            <li class="tl-block" data-block="b15">
+              <span class="block-marker"></span>
+              <div class="block-text"><span class="l2">·</span></div>
+            </li>
+            <li class="tl-block" data-block="b16">
+              <span class="block-marker"></span>
+              <div class="block-text"><span class="l2">·</span></div>
+            </li>
+          </ul>
+        </div>
+
+        <!-- Day 3 -->
+        <div class="tl-day" data-day="2026-08-01">
+          <div class="tl-day-head">
+            <span class="tl-day-title">8月1日</span>
+            <span class="tl-day-week">周六</span>
+          </div>
+          <ul class="tl-blocks">
+            <li class="tl-block" data-block="b17">
+              <span class="block-marker"></span>
+              <div class="block-text"><span class="l2">·</span></div>
+            </li>
+            <li class="tl-block" data-block="b18">
+              <span class="block-marker"></span>
+              <div class="block-text">
+                <a class="tag-link" href="#">孤镖踏川</a>
+                <span class="l2">》》</span>
+              </div>
+            </li>
+            <li class="tl-block" data-block="b19">
+              <span class="block-marker"></span>
+              <div class="block-text">
+                <a class="tag-link" href="#">青观种道</a>
+                <span class="l2">》》</span>
+              </div>
+            </li>
+            <li class="tl-block" data-block="b20">
+              <span class="block-marker"></span>
+              <div class="block-text">
+                <a class="tag-link" href="#">旧道重归</a>
+                <span class="l2">》》</span>
+              </div>
+            </li>
+            <li class="tl-block" data-block="b21">
+              <span class="block-marker"></span>
+              <div class="block-text"><span class="l2">这是一个什么字体</span></div>
+            </li>
+            <li class="tl-block" data-block="b22">
+              <span class="block-marker"></span>
+              <div class="block-text">
+                <span class="heading-2" style="font-size:20px;line-height:1.4">标题</span>
+              </div>
+            </li>
+          </ul>
+        </div>
+
+      </div>
+    </section>
+
+    <div class="rp-divider"></div>
+
+    <section class="backlinks">
+      <div class="backlinks-title">反向链接 · Backlinks</div>
+      <ul class="backlinks-list">
+        <li class="backlink">
+          <span class="bl-marker"></span>
+          <div class="bl-content">
+            <div>在 8月3日 引用了 <a class="tag-link page-ref" href="#">[[8月5日 周三]]</a> 的思路</div>
+            <div class="bl-source">2026-08-03 · sdfas</div>
+          </div>
+        </li>
+        <li class="backlink">
+          <span class="bl-marker"></span>
+          <div class="bl-content">
+            <div>讨论 <a class="tag-link" href="#">页面内任务视图</a> 的设计取舍</div>
+            <div class="bl-source">2026-08-02 · {{{</div>
+          </div>
+        </li>
+        <li class="backlink">
+          <span class="bl-marker"></span>
+          <div class="bl-content">
+            <div>关于「标题」样式的视觉一致性</div>
+            <div class="bl-source">2026-08-01 · 标题</div>
+          </div>
+        </li>
+      </ul>
+    </section>
+
+  </aside>
+
+</div>
+
+<script>
+/* ============================================================
+   comind · interactions
+   - Sidebar active
+   - Month picker
+   - Timeline block active
+   - Checkbox toggle
+   - Search filter (static, in-memory)
+   - Ripple (lightweight)
+   - Keyboard focus / a11y
+   - Theme token reservation
+   ============================================================ */
+(function(){
+  'use strict';
+
+  // ---------- theme token reservation ----------
+  const THEME_KEY = 'comind.theme';
+  const root = document.documentElement;
+  const savedTheme = (function(){
+    try{ return localStorage.getItem(THEME_KEY); }catch(e){ return null; }
+  })();
+  if(savedTheme){
+    root.setAttribute('data-theme', savedTheme);
+  }
+  // expose for future theming (light / dark / custom)
+  window.comindTheme = {
+    set(name){ root.setAttribute('data-theme', name); try{ localStorage.setItem(THEME_KEY, name); }catch(e){} },
+    current(){ return root.getAttribute('data-theme') || 'dark'; }
+  };
+
+  // ---------- sidebar active ----------
+  const sbItems = document.querySelectorAll('.sb-item');
+  sbItems.forEach(function(it){
+    it.addEventListener('click', function(){
+      sbItems.forEach(function(x){ x.classList.remove('active'); });
+      it.classList.add('active');
+      // mark editor "active" for visual feedback
+      const title = it.querySelector('.sb-title')?.textContent || '';
+      const editorTitle = document.querySelector('.editor-title');
+      if(editorTitle && /^\d{4}-\d{2}-\d{2}$/.test(title.trim())){
+        const parts = title.trim().split('-');
+        editorTitle.textContent = parseInt(parts[1],10) + '月' + parseInt(parts[2],10) + '日';
+      }
+    });
+    it.addEventListener('keydown', function(e){
+      if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); it.click(); }
+    });
+    it.setAttribute('tabindex', '0');
+    it.setAttribute('role', 'button');
+  });
+
+  // ---------- sidebar tabs ----------
+  const sbTabs = document.querySelectorAll('.sb-tab');
+  sbTabs.forEach(function(t){
+    t.addEventListener('click', function(){
+      sbTabs.forEach(function(x){ x.classList.remove('active'); x.setAttribute('aria-selected','false'); });
+      t.classList.add('active');
+      t.setAttribute('aria-selected','true');
+    });
+  });
+
+  // ---------- sidebar group collapse ----------
+  document.querySelectorAll('.sb-group-head').forEach(function(h){
+    h.addEventListener('click', function(){
+      h.parentElement.classList.toggle('collapsed');
+    });
+  });
+
+  // ---------- month picker ----------
+  const months = document.querySelectorAll('.month');
+  months.forEach(function(m){
+    m.addEventListener('click', function(){
+      months.forEach(function(x){ x.classList.remove('active'); });
+      m.classList.add('active');
+      // smooth scroll timeline to top
+      const tl = document.getElementById('timeline');
+      if(tl) tl.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+    m.addEventListener('keydown', function(e){
+      if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); m.click(); }
+    });
+    m.setAttribute('tabindex', '0');
+    m.setAttribute('role', 'button');
+  });
+
+  // ---------- timeline block active ----------
+  const tlBlocks = document.querySelectorAll('.tl-block');
+  tlBlocks.forEach(function(b){
+    b.addEventListener('click', function(e){
+      // ignore clicks on inner links / inputs
+      if(e.target.closest('a, .check, .tag-link')) return;
+      tlBlocks.forEach(function(x){ x.classList.remove('is-active'); });
+      b.classList.add('is-active');
+    });
+  });
+
+  // ---------- checkbox toggle (Things3 style) ----------
+  document.querySelectorAll('.check').forEach(function(c){
+    function toggle(){
+      const isChecked = c.classList.toggle('checked');
+      c.setAttribute('aria-checked', isChecked ? 'true' : 'false');
+      // light pulse
+      c.animate(
+        [{ transform: 'scale(1)' }, { transform: 'scale(1.18)' }, { transform: 'scale(1)' }],
+        { duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)' }
+      );
+    }
+    c.addEventListener('click', function(e){
+      e.stopPropagation();
+      toggle();
+    });
+    c.addEventListener('keydown', function(e){
+      if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); e.stopPropagation(); toggle(); }
+    });
+  });
+
+  // ---------- search filter (static) ----------
+  const searchInput = document.querySelector('.search input');
+  if(searchInput){
+    let timer = null;
+    searchInput.addEventListener('input', function(){
+      const q = searchInput.value.trim().toLowerCase();
+      clearTimeout(timer);
+      timer = setTimeout(function(){
+        const items = document.querySelectorAll('.sb-item');
+        items.forEach(function(it){
+          const t = (it.querySelector('.sb-title')?.textContent || '').toLowerCase();
+          if(!q || t.includes(q)){
+            it.style.display = '';
+          }else{
+            it.style.display = 'none';
+          }
+        });
+      }, 90);
+    });
+    // ctrl/cmd + k focus
+    window.addEventListener('keydown', function(e){
+      if((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k'){
+        e.preventDefault();
+        searchInput.focus();
+        searchInput.select();
+      }
+      if(e.key === 'Escape' && document.activeElement === searchInput){
+        searchInput.value = '';
+        searchInput.dispatchEvent(new Event('input'));
+        searchInput.blur();
+      }
+    });
+  }
+
+  // ---------- ripple (lightweight) ----------
+  function attachRipple(el){
+    if(!el || el.dataset.ripple === 'off') return;
+    el.classList.add('ripple-host');
+    el.addEventListener('pointerdown', function(e){
+      if(e.button !== 0) return;
+      const rect = el.getBoundingClientRect();
+      const size = Math.max(rect.width, rect.height);
+      const x = e.clientX - rect.left - size / 2;
+      const y = e.clientY - rect.top  - size / 2;
+      const r = document.createElement('span');
+      r.className = 'ripple';
+      r.style.width  = size + 'px';
+      r.style.height = size + 'px';
+      r.style.left   = x + 'px';
+      r.style.top    = y + 'px';
+      el.appendChild(r);
+      setTimeout(function(){ r.remove(); }, 650);
+    });
+  }
+  document.querySelectorAll('.tb-btn, .sb-tab, .sb-item, .month, .tl-block, .btn, .icon-btn').forEach(attachRipple);
+
+  // ---------- topbar buttons: keyboard shortcuts (mock) ----------
+  document.querySelectorAll('.tb-btn[data-tip]').forEach(function(b){
+    b.addEventListener('keydown', function(e){
+      if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); b.click(); }
+    });
+  });
+
+  // ---------- placeholder line: focus to start writing ----------
+  const ph = document.querySelector('.placeholder-line');
+  if(ph){
+    ph.addEventListener('click', function(){
+      ph.style.borderColor = 'var(--primary)';
+      ph.style.boxShadow = '0 0 0 3px var(--primary-soft)';
+      ph.style.background = 'var(--surface)';
+    });
+    ph.addEventListener('blur', function(){
+      ph.style.boxShadow = '';
+      ph.style.background = '';
+    });
+  }
+
+  // ---------- year nav: cycle years ----------
+  const yearLabel = document.querySelector('.rp-year');
+  const rpNavBtns = document.querySelectorAll('.rp-head .rp-nav .tb-btn');
+  let year = 2026;
+  function setYear(y){
+    year = y;
+    if(yearLabel) yearLabel.textContent = y + '年';
+  }
+  rpNavBtns.forEach(function(b, idx){
+    b.addEventListener('click', function(){
+      if(idx === 0) setYear(year - 1);
+      else if(idx === 2) setYear(year + 1);
+      else { setYear(new Date().getFullYear()); }
+    });
+  });
+
+  // ---------- prevent links from triggering parent clicks ----------
+  document.querySelectorAll('.tl-block .tag-link, .tl-block a').forEach(function(a){
+    a.addEventListener('click', function(e){ e.stopPropagation(); });
+  });
+
+  // ---------- expose for debugging ----------
+  window.comind = { version: 'preview-0.1', year: function(){ return year; } };
+
+  console.log('%ccomind preview loaded', 'color:#6D8CFF;font-weight:600;');
+})();
+</script>
 </body>
 </html>

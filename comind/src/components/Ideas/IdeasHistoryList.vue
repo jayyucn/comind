@@ -173,7 +173,7 @@ const isEmpty = computed(() => currentPages.value.length === 0)
 
 <style lang="scss" scoped>
 .history-list {
-  flex: 0 0 360px;
+  flex: 0 0 480px;
   margin-left: auto;
   display: flex;
   background: var(--bg-base2);// #1A1b1f;//var(#0c39ac, transparent);

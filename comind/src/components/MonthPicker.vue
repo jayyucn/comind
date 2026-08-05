@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, CircleDot } from 'lucide-vue-next'
 
 const props = withDefaults(defineProps<{
   modelValue: string // yyyy-MM
@@ -73,6 +73,12 @@ function selectMonth(index: number) {
 <template>
   <div class="month-picker">
     <div class="mp-header">
+      <button
+        class="mp-today"
+        type="button"
+        :disabled="isTodayActive"
+        @click="goToday"
+      ><CircleDot /></button>
       <button class="mp-nav" type="button" aria-label="上一年" @click="prevYear">
         <ChevronLeft :size="14" :stroke-width="2" />
       </button>
@@ -84,14 +90,9 @@ function selectMonth(index: number) {
         :disabled="viewYear >= currentYear"
         @click="nextYear"
       >
-        <ChevronRight :size="14" :stroke-width="2" />
+        <ChevronRight :size="18" :stroke-width="2" />
       </button>
-      <button
-        class="mp-today"
-        type="button"
-        :disabled="isTodayActive"
-        @click="goToday"
-      >今</button>
+      
     </div>
     <div class="mp-grid">
       <button
@@ -160,7 +161,7 @@ function selectMonth(index: number) {
 .mp-year-label {
   flex: 1;
   text-align: center;
-  font-size: 11px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--text-primary);
   letter-spacing: 0.02em;
@@ -201,7 +202,7 @@ function selectMonth(index: number) {
 
 .mp-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: var(--space-3);
   padding-bottom: var(--space-4);
 }

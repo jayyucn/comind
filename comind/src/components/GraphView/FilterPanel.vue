@@ -307,7 +307,7 @@ init()
       <div class="filter-section">
         <div class="filter-section-label">显示选项</div>
         <div class="toggle-row">
-          <span class="toggle-label">显示日记</span>
+          <span class="toggle-label">显示点滴</span>
           <button
             class="toggle-chip"
             :class="{ active: showIdeas }"
