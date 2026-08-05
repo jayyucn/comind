@@ -229,7 +229,7 @@ const isEmpty = computed(() => currentPages.value.length === 0)
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background: var(--linear-gradient);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
 }
@@ -237,7 +237,7 @@ const isEmpty = computed(() => currentPages.value.length === 0)
 .skeleton-date {
   width: 60px;
   height: 12px;
-  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background: var(--linear-gradient);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
   border-radius: 3px;
@@ -246,7 +246,7 @@ const isEmpty = computed(() => currentPages.value.length === 0)
 .skeleton-weekday {
   width: 30px;
   height: 10px;
-  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background: var(--linear-gradient);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
   border-radius: 3px;
@@ -261,7 +261,7 @@ const isEmpty = computed(() => currentPages.value.length === 0)
 
 .skeleton-line {
   height: 10px;
-  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background: var(--linear-gradient);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
   border-radius: 3px;

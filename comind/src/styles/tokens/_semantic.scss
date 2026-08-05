@@ -34,6 +34,9 @@
   --accent-subtle: #{$color-indigo-50};
   --accent-bg: #{$color-indigo-100};
 
+  //渐变色
+  --linear-gradient: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+
   // 透明度变体
   --accent-03: #{$accent-03};
   --accent-06: #{$accent-06};
@@ -162,6 +165,9 @@
   --text-secondary: #A1A1AA;
   --text-tertiary: #71717A;
   --text-disabled: #52525B;
+
+  //渐变色
+  --linear-gradient: linear-gradient(90deg, #1A1b1c 25%, #2A2A2E 50%, #1A1b1c 75%);
 
   --sidebar-text-primary: #D4D4D8;
   --sidebar-text-secondary: #A1A1AA;
