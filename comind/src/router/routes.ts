@@ -50,7 +50,7 @@ const routes: RouteRecordRaw[] = [
     path: '/graph',
     name: 'graph',
     component: () => import('../components/GraphView/GraphPage.vue'),
-    meta: { fullWidth: true, hideRightSidebarToggle: true },
+    meta: { fullWidth: true, hideRightSidebarToggle: true, absolute: true },
   },
   // 404 兜底
   {

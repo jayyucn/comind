@@ -30,11 +30,11 @@ function getMonthDay(dateStr: string): { month: string; day: string } {
 
 <template>
   <div class="today-panel">
-    <div class="today-header">
-      <span class="today-date">{{ getMonthDay(page?.title || '').month }}{{ getMonthDay(page?.title || '').day }}日 {{
-        getWeekday(page?.title || '') }}</span>
-    </div>
     <div class="today-card" v-if="pageId">
+      <div class="today-header">
+        <span class="today-date">{{ getMonthDay(page?.title || '').month }}{{ getMonthDay(page?.title || '').day }}日 {{
+          getWeekday(page?.title || '') }}</span>
+      </div>
       <div class="today-body">
         <BlockList :page-id="pageId" />
       </div>
@@ -54,12 +54,14 @@ function getMonthDay(dateStr: string): { month: string; day: string } {
   </div>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
 .today-panel {
   flex:auto;
   display: flex;
   flex-direction: column;
+  padding: 0 var(--space-8);
   overflow: hidden;
+  padding-right: var(--space-8);
 }
 
 .today-card {
@@ -67,19 +69,22 @@ function getMonthDay(dateStr: string): { month: string; day: string } {
   padding-left: var(--space-4);
   display: flex;
   flex-direction: column;
-  height: 100%;
-  overflow: hidden;
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.today-card::-webkit-scrollbar {
+  display: none;
 }
 
 .today-header {
+  top: 0;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0 0 var(--space-4) var(--space-4);
+  padding-top: var(--nav-height);
   background: transparent;
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--border, #E7E5E4);
-  box-shadow: var(--shadow-border-bottom);
 }
 
 
@@ -97,14 +102,7 @@ function getMonthDay(dateStr: string): { month: string; day: string } {
 }
 
 .today-body {
-  flex: 1;
   padding-top: var(--space-3);
-  overflow-y: auto;
-  scrollbar-width: none;
-}
-
-.today-body::-webkit-scrollbar {
-  display: none;
 }
 
 .today-card.is-loading {

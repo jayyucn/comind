@@ -88,6 +88,7 @@ watch(() => syncStatus.value?.peers.length, (newCount) => {
 })
 
 const isFullWidthPage = computed(() => route.meta.fullWidth === true)
+const absolute = computed(() => route.meta.absolute === true)
 const showRightSidebarToggle = computed(() => route.meta.hideRightSidebarToggle !== true)
 
 function handleGlobalKeydown(e: KeyboardEvent) {
@@ -296,7 +297,7 @@ async function handleEmbedSelect(sourceBlockId: string, sourcePageId: string) {
     <Sidebar :canGoBack="canGoBack" :canGoForward="canGoForward" @goBack="handleGoBack" @goForward="handleGoForward" @open-search="showSearchPanel = true" />
 
     <div class="page-scroll-wrapper" @click="handleMainClick">
-      <div class="sticky-header" @mousedown="handleHeaderMouseDown">
+      <header class="sticky-header" @mousedown="handleHeaderMouseDown" :class="{'absolute':absolute}">
         <div class="top-right-controls">
           <NotificationBell />
           <PageMenuButton />
@@ -320,7 +321,7 @@ async function handleEmbedSelect(sourceBlockId: string, sourcePageId: string) {
             </button>
           </div>
         </div>
-      </div>
+      </header>
 
       <div class="page-content-wrapper">
         <div class="content-body">
@@ -389,17 +390,28 @@ async function handleEmbedSelect(sourceBlockId: string, sourcePageId: string) {
   display: flex;
   overflow: hidden;
   min-width: 0;
+  position: relative;
 }
 
 .sticky-header {
-  position: sticky;
+  position: absolute;
   top: 0;
+  left: 0;
+  right: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
   height: var(--nav-height);
+  flex-shrink: 0;
   z-index: 10;
-  background: var(--bg-base);
+  background: color-mix(in srgb, var(--bg-base) 50%, transparent);
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  // pointer-events: none;
+}
+
+.sticky-header.absolute {
+  position: sticky;
 }
 
 .page-scroll-wrapper::-webkit-scrollbar {
@@ -411,6 +423,7 @@ async function handleEmbedSelect(sourceBlockId: string, sourcePageId: string) {
   overflow-y: auto;
   overflow-x: hidden;
   min-width: 0;
+  min-height: 0;
   scrollbar-width: none;
 }
 
@@ -455,6 +468,9 @@ async function handleEmbedSelect(sourceBlockId: string, sourcePageId: string) {
   max-width: none;
   margin: 0;
   padding: 0;
+  // min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
 .window-controls {
