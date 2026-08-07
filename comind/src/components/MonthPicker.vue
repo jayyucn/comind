@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { ChevronLeft, ChevronRight, CircleDot } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, CircleDot, MapPinHouse, MapPinHouseIcon } from 'lucide-vue-next'
 
 const props = withDefaults(defineProps<{
   modelValue: string // yyyy-MM
@@ -73,42 +73,25 @@ function selectMonth(index: number) {
 <template>
   <div class="month-picker">
     <div class="mp-header">
-      <button
-        class="mp-today"
-        type="button"
-        :disabled="isTodayActive"
-        @click="goToday"
-      ><CircleDot /></button>
+      <button class="mp-today" type="button" :disabled="isTodayActive" @click="goToday">
+        <MapPinHouse />
+      </button>
       <button class="mp-nav" type="button" aria-label="上一年" @click="prevYear">
         <ChevronLeft :size="14" :stroke-width="2" />
       </button>
       <span class="mp-year-label">{{ viewYear }}年</span>
-      <button
-        class="mp-nav"
-        type="button"
-        aria-label="下一年"
-        :disabled="viewYear >= currentYear"
-        @click="nextYear"
-      >
+      <button class="mp-nav" type="button" aria-label="下一年" :disabled="viewYear >= currentYear" @click="nextYear">
         <ChevronRight :size="18" :stroke-width="2" />
       </button>
-      
+
     </div>
     <div class="mp-grid">
-      <button
-        v-for="m in months"
-        :key="m.index"
-        type="button"
-        class="mp-cell"
-        :class="{
-          'is-selected': m.isSelected,
-          'is-current': m.isCurrent,
-          'is-future': m.isFuture,
-          'has-data': m.hasData,
-        }"
-        :disabled="m.isFuture"
-        @click="selectMonth(m.index)"
-      >{{ m.label }}</button>
+      <button v-for="m in months" :key="m.index" type="button" class="mp-cell" :class="{
+        'is-selected': m.isSelected,
+        'is-current': m.isCurrent,
+        'is-future': m.isFuture,
+        'has-data': m.hasData,
+      }" :disabled="m.isFuture" @click="selectMonth(m.index)">{{ m.label }}</button>
     </div>
   </div>
 </template>
@@ -173,30 +156,26 @@ function selectMonth(index: number) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--border);
+  /* border: 1px solid var(--border); */
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  border-radius: var(--radius-sm);
+  /* border-radius: var(--radius-sm); */
   font-size: 10px;
   font-weight: 600;
   padding: 0;
   font-family: inherit;
-  transition: background var(--transition-base), border-color var(--transition-base);
+  /* transition: background var(--transition-base), border-color var(--transition-base); */
 
   &:hover:not(:disabled) {
-    background: var(--bg-hover);
-    border-color: var(--border-strong);
+    /* background: var(--bg-hover); */
+    /* border-color: var(--border-strong); */
+    scale: 1.1;
   }
 
   &:disabled {
     opacity: 0.35;
     cursor: not-allowed;
-  }
-
-  &:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
   }
 }
 

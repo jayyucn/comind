@@ -180,9 +180,10 @@ const isEmpty = computed(() => currentPages.value.length === 0)
   flex-direction: column;
   margin-top: var(--nav-height);
   overflow: hidden;
+  border-radius: var(--radius-lg) 0 0 0 ;
   border-left: 1px solid var(--border, #E7E5E4);
   border-top: 1px solid var(--border, #E7E5E4);
-  box-shadow: -4px -2px 5px rgba($color: #000000, $alpha: 0.0);
+  box-shadow: -4px -2px 5px rgba($color: #000000, $alpha: 0.08);
 }
 
 .history-sticky-header {
