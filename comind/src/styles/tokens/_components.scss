@@ -43,6 +43,9 @@ $date-ref-overdue-bg: rgba(220, 38, 38, 0.08);
   --error: #{$color-error};
   --info: #{$color-link};
 
+  //字号
+  --font-size-page-title: 2rem;
+
   // 优先级背景色
   --priority-low-bg: rgba(148, 163, 184, 0.12);
   --priority-medium-bg: rgba(234, 179, 8, 0.14);

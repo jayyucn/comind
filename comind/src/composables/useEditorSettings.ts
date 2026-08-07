@@ -6,7 +6,7 @@ const STORAGE_KEY = 'comind-editor-font-size'
 
 const FONT_SIZE_VALUES: Record<EditorFontSize, string> = {
   small: '0.8125rem',
-  default: '0.9375rem',
+  default: '1rem',
   large: '1.0625rem',
   'x-large': '1.1875rem',
 }

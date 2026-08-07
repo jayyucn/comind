@@ -89,7 +89,7 @@ function getMonthDay(dateStr: string): { month: string; day: string } {
 
 
 .today-date {
-  font-size: var(--text-3xl);
+  font-size: var(--font-size-page-title);
   font-weight: var(--font-bold);
   color: var(--text-primary, #1C1917);
 }

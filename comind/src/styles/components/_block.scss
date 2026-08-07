@@ -18,9 +18,9 @@
 
 .block-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   min-height: 1.3em;
-  line-height: $leading-tight;
+  line-height: $leading-snug;
 }
 
 .block-indent {
@@ -66,7 +66,6 @@
   border-radius: 50%;
   background: var(--block-bullet-color);
   opacity: var(--block-bullet-opacity);
-  transform: translateY(1px);
   transition: opacity 150ms ease-out, transform 150ms ease-out, box-shadow 150ms ease-out;
   flex-shrink: 0;
 }
@@ -91,7 +90,7 @@
 .block-bullet:hover {
   .bullet-dot {
     opacity: 0.7;
-    transform: scale(1.4) translateY(1px);
+    transform: scale(1.4);
     box-shadow: 0 0 0 3px var(--accent-08);
   }
 
@@ -126,7 +125,7 @@
 .block-text {
   outline: none;
   min-height: 1.3em;
-  line-height: $leading-tight;
+  line-height: $leading-snug;
   padding: 0 $space-1;
   border-radius: $radius-sm;
   white-space: pre-wrap;
@@ -300,7 +299,7 @@
 
 .block-inner {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   flex: 1;
 }
 
