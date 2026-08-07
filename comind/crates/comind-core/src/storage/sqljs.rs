@@ -945,6 +945,25 @@ impl PropertyRepository for SqlJsAdapter {
         }
     }
 
+    fn query_block_ids_by_key_value(&self, key: &str, values: &[String]) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        if values.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders = values.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT DISTINCT block_id FROM Property WHERE key = ? AND value IN ({}) AND is_deleted = 0 AND deleted_at IS NULL",
+            placeholders
+        );
+        let mut params: Vec<&str> = Vec::new();
+        params.push(key);
+        for v in values {
+            params.push(v.as_str());
+        }
+        let rows = Self::query(&self.db, &sql, &params)?;
+        let ids: Vec<String> = rows.into_iter().filter_map(|r| r.get("block_id").and_then(|v| v.as_str()).map(|s| s.to_string())).collect();
+        Ok(ids)
+    }
+
     fn create(&mut self, property: &Property) -> Result<Property, Box<dyn std::error::Error>> {
         Self::run_with_params(&self.db, "INSERT INTO Property (id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, version, deleted_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)", &[
             &property.id, &property.block_id, &property.key, &property.value, &property.r#type,

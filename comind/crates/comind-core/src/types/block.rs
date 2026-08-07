@@ -63,6 +63,26 @@ impl Block {
     }
 }
 
+/// 查询结果：未完成任务（block + page_title）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IncompleteTask {
+    pub id: String,
+    pub page_id: String,
+    pub parent_id: Option<String>,
+    pub pos: i64,
+    pub content: String,
+    pub r#format: String,
+    pub r#type: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+    #[serde(default)]
+    pub version: i64,
+    #[serde(default)]
+    pub deleted_at: Option<i64>,
+    pub page_title: String,
+    pub page_type: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct BlockTree {
     pub block_map: HashMap<String, Block>,

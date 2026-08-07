@@ -227,6 +227,49 @@ pub async fn query_all_recurring_date_refs(
     }).await
 }
 
+#[tauri::command]
+pub async fn query_incomplete_tasks(
+    db: State<'_, super::state::DatabaseConnection>,
+) -> Result<Vec<IncompleteTask>, String> {
+    execute_with_adapter(db, |storage| {
+        // 1. 查 status=Todo/Doing 的 block_ids
+        let statuses = vec!["Todo".to_string(), "Doing".to_string()];
+        let block_ids = PropertyService::query_block_ids_by_key_value(storage, "status", &statuses)?;
+        if block_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        // 2. 批量获取 blocks
+        let blocks = comind_core::storage::repository::BlockRepository::get_by_ids(storage.blocks(), &block_ids)?;
+        // 3. 对每个 block 查 page，过滤 type=ideas
+        let mut tasks: Vec<IncompleteTask> = Vec::new();
+        for block in blocks {
+            let page = match PageService::get_by_id(storage, &block.page_id) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            if page.r#type != "ideas" {
+                continue;
+            }
+            tasks.push(IncompleteTask {
+                id: block.id,
+                page_id: block.page_id,
+                parent_id: block.parent_id,
+                pos: block.pos,
+                content: block.content,
+                r#format: block.r#format,
+                r#type: block.r#type,
+                created_at: block.created_at,
+                updated_at: block.updated_at,
+                version: block.version,
+                deleted_at: block.deleted_at,
+                page_title: page.title,
+                page_type: page.r#type,
+            });
+        }
+        Ok(tasks)
+    }).await
+}
+
 /// Batch data for checkAndFire: returns all recurring dateRefs + their blocks + pages + existing notifications
 /// in a single IPC call, replacing N×4 sequential IPC calls.
 #[derive(Debug, Clone, Serialize, Deserialize)]

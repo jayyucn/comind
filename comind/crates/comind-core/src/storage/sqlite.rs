@@ -959,7 +959,29 @@ impl PropertyRepository for SQLiteAdapter {
             Err(e) => Err(Box::new(e)),
         }
     }
-    
+
+    fn query_block_ids_by_key_value(&self, key: &str, values: &[String]) -> Result<Vec<String>, Box<dyn Error>> {
+        if values.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders = values.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT DISTINCT block_id FROM Property WHERE key = ? AND value IN ({}) AND is_deleted = 0 AND deleted_at IS NULL",
+            placeholders
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        params_vec.push(Box::new(key.to_string()));
+        for v in values {
+            params_vec.push(Box::new(v.clone()));
+        }
+        let param_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+        let ids = stmt.query_map(param_refs.as_slice(), |row| {
+            row.get::<_, String>(0)
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(ids)
+    }
+
     fn create(&mut self, property: &Property) -> Result<Property, Box<dyn Error>> {
         self.conn.execute(
             "INSERT INTO Property (id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at)
@@ -2669,6 +2691,28 @@ impl<'a> PropertyRepository for SQLiteTransactionAdapter<'a> {
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(Box::new(e)),
         }
+    }
+
+    fn query_block_ids_by_key_value(&self, key: &str, values: &[String]) -> Result<Vec<String>, Box<dyn Error>> {
+        if values.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders = values.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT DISTINCT block_id FROM Property WHERE key = ? AND value IN ({}) AND is_deleted = 0 AND deleted_at IS NULL",
+            placeholders
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        params_vec.push(Box::new(key.to_string()));
+        for v in values {
+            params_vec.push(Box::new(v.clone()));
+        }
+        let param_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+        let ids = stmt.query_map(param_refs.as_slice(), |row| {
+            row.get::<_, String>(0)
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(ids)
     }
 
     fn create(&mut self, property: &Property) -> Result<Property, Box<dyn Error>> {

@@ -35,7 +35,7 @@ import type {
   Block, Page, Property, Link, RelationshipType,
   UserTemplate, SearchResult, BlockUpdate, PageUpdate,
   BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig, BlockVersion,
-  Notification, DateRefRecord
+  Notification, DateRefRecord, IncompleteTask
 } from './types'
 
 export interface CoreClient {
@@ -94,6 +94,7 @@ export interface CoreClient {
   getDateRefsByBlock(blockId: string): Promise<DateRefRecord[]>
   queryDueNonRecurringDateRefs(nowMs: number): Promise<DateRefRecord[]>
   queryAllRecurringDateRefs(): Promise<DateRefRecord[]>
+  queryIncompleteTasks(): Promise<IncompleteTask[]>
   batchCheckAndFireData(nowMs: number): Promise<tauri.TauriBatchCheckAndFireData>
   rebuildDateRefs(): Promise<{ rebuilt: number }>
   buildGraphSnapshot(): Promise<tauri.TauriGraphEdgeRecord[]>
@@ -270,6 +271,10 @@ class TauriClient implements CoreClient {
 
     async queryAllRecurringDateRefs(): Promise<DateRefRecord[]> {
       return parseJsonResult(await tauri.tauriQueryAllRecurringDateRefs())
+    }
+
+    async queryIncompleteTasks(): Promise<IncompleteTask[]> {
+      return parseJsonResult(await tauri.tauriQueryIncompleteTasks())
     }
 
     async batchCheckAndFireData(nowMs: number): Promise<tauri.TauriBatchCheckAndFireData> {
@@ -514,6 +519,10 @@ class WasmClientAdapter implements CoreClient {
 
   async queryAllRecurringDateRefs(): Promise<DateRefRecord[]> {
     return this.wasm.query_all_recurring_date_refs()
+  }
+  async queryIncompleteTasks(): Promise<IncompleteTask[]> {
+    // WASM 端暂不支持，返回空数组
+    return []
   }
   async batchCheckAndFireData(_nowMs: number): Promise<tauri.TauriBatchCheckAndFireData> {
     // WASM client doesn't support batch check-and-fire; return empty

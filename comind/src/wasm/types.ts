@@ -196,3 +196,20 @@ export interface NotificationSettings {
   /** Web 浏览器通知授权状态（仅 Web 用） */
   web_browser_notifications_enabled: boolean
 }
+
+/** 未完成任务：block 数据 + page_title + page_type */
+export interface IncompleteTask {
+  id: string
+  page_id: string
+  parent_id: string | null
+  pos: number
+  content: string
+  format: string
+  type: string
+  created_at: number
+  updated_at: number
+  version: number
+  deleted_at: number | null
+  page_title: string
+  page_type: string
+}

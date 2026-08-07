@@ -13,6 +13,7 @@ const pageStore = usePageStore()
 
 const todayPage = ref<Page | null>(null)
 const loadingToday = ref(true)
+const targetPageId = ref<string | undefined>(undefined)
 
 onMounted(async () => {
   try {
@@ -22,15 +23,19 @@ onMounted(async () => {
     loadingToday.value = false
   }
 })
+
+function handleTaskNavigate(pageId: string, _pageTitle: string) {
+  targetPageId.value = pageId
+}
 </script>
 
 <template>
   <div class="ideas-split-view">
     <!-- 今日面板：Rust 端幂等创建，保证一定存在；loading 期间显示加载态 -->
-    <IdeasTodayPanel v-if="todayPage" :page-id="todayPage.id" />
+    <IdeasTodayPanel v-if="todayPage" :page-id="todayPage.id" @navigate="handleTaskNavigate" />
     <div v-else-if="loadingToday" class="today-panel-placeholder"></div>
 
-    <IdeasHistoryList />
+    <IdeasHistoryList :target-page-id="targetPageId" />
   </div>
 
   <SlashCommandMenu />

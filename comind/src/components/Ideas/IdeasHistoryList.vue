@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { format } from 'date-fns'
 import { usePageStore } from '../../stores/pages'
 import { useBlockStore } from '../../stores/blocks'
@@ -9,6 +9,10 @@ import MonthPicker from '../MonthPicker.vue'
 
 const pageStore = usePageStore()
 const blockStore = useBlockStore()
+
+const props = defineProps<{
+  targetPageId?: string
+}>()
 
 const MAX_LENGTH = 31
 const currentMonth = format(new Date(), 'yyyy-MM')
@@ -124,6 +128,45 @@ watch(selectedMonth, (newMonth) => {
   handleMonthChange(newMonth)
 })
 
+// 跳转到目标页面（来自 BlockTaskList 的 navigate）
+watch(() => props.targetPageId, async (targetId) => {
+  if (!targetId || !initialized) return
+  // 找到目标页面
+  const targetPage = currentPages.value.find(p => p.id === targetId)
+  if (!targetPage) {
+    // 可能不在当前月份，从 page title 解析月份 (yyyy-MM-dd)
+    // 先查找所有缓存
+    for (const [month, pages] of monthPagesCache) {
+      const found = pages.find(p => p.id === targetId)
+      if (found) {
+        if (selectedMonth.value !== month) {
+          selectedMonth.value = month
+          handleMonthChange(month)
+        }
+        break
+      }
+    }
+    // 仍然没找到，尝试从 pageStore 获取
+    const page = pageStore.getPage(targetId)
+    if (page) {
+      const month = page.title.substring(0, 7) // yyyy-MM
+      if (selectedMonth.value !== month) {
+        selectedMonth.value = month
+        handleMonthChange(month)
+      }
+    }
+  }
+  // 等待 DOM 更新后滚动到目标项
+  await nextTick()
+  await nextTick() // 双 nextTick 确保数据加载完成
+  const el = document.querySelector(`[data-page-id="${targetId}"]`)
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el.classList.add('task-highlight')
+    setTimeout(() => el.classList.remove('task-highlight'), 2000)
+  }
+})
+
 // ===== 计算属性 =====
 const isEmpty = computed(() => currentPages.value.length === 0)
 </script>
@@ -166,6 +209,7 @@ const isEmpty = computed(() => currentPages.value.length === 0)
         v-for="page in currentPages.slice(0, MAX_LENGTH)"
         :key="page.id"
         :page-id="page.id"
+        :data-page-id="page.id"
       />
     </div>
   </div>
@@ -344,5 +388,14 @@ const isEmpty = computed(() => currentPages.value.length === 0)
 .empty-text {
   font-size: 12px;
   color: var(--text-tertiary, #A8A29E);
+}
+
+:deep(.task-highlight) {
+  animation: task-highlight-fade 2s ease-out;
+}
+
+@keyframes task-highlight-fade {
+  0% { background-color: rgba(59, 130, 246, 0.2); }
+  100% { background-color: transparent; }
 }
 </style>

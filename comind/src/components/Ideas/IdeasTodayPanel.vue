@@ -2,9 +2,14 @@
 import { computed } from 'vue'
 import { usePageStore } from '../../stores/pages'
 import BlockList from '../BlockList.vue'
+import BlockTaskList from './BlockTaskList.vue'
 
 const props = defineProps<{
   pageId: string
+}>()
+
+const emit = defineEmits<{
+  navigate: [pageId: string, pageTitle: string]
 }>()
 
 const pageStore = usePageStore()
@@ -26,6 +31,10 @@ function getMonthDay(dateStr: string): { month: string; day: string } {
     day: `${date.getDate()}`,
   }
 }
+
+function handleNavigate(pageId: string, pageTitle: string) {
+  emit('navigate', pageId, pageTitle)
+}
 </script>
 
 <template>
@@ -38,6 +47,7 @@ function getMonthDay(dateStr: string): { month: string; day: string } {
       <div class="today-body">
         <BlockList :page-id="pageId" />
       </div>
+      <BlockTaskList @navigate="handleNavigate" />
     </div>
 
     <div class="today-card is-loading" v-else>

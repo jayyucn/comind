@@ -6,7 +6,7 @@ import type {
   Block, Page, Property, Link, RelationshipType,
   UserTemplate, SearchResult, BlockUpdate, PageUpdate,
   BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig, BlockVersion,
-  Notification, DateRefRecord
+  Notification, DateRefRecord, IncompleteTask
 } from './types'
 
 export function isTauriEnvironment(): boolean {
@@ -295,6 +295,10 @@ export async function tauriQueryDueNonRecurringDateRefs(nowMs: number): Promise<
 
 export async function tauriQueryAllRecurringDateRefs(): Promise<DateRefRecord[]> {
   return invoke('query_all_recurring_date_refs')
+}
+
+export async function tauriQueryIncompleteTasks(): Promise<IncompleteTask[]> {
+  return invoke('query_incomplete_tasks')
 }
 
 export interface TauriBatchCheckAndFireData {

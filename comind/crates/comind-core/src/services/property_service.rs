@@ -102,6 +102,15 @@ impl PropertyService {
         repository::PropertyRepository::delete_by_block_id(storage.properties(), block_id)
     }
 
+    /// 按 key + values 反查匹配的 block_id 列表（如 status=Todo/Doing 的 block）
+    pub fn query_block_ids_by_key_value(
+        storage: &mut dyn StorageAdapter,
+        key: &str,
+        values: &[String],
+    ) -> Result<Vec<String>, Box<dyn Error>> {
+        repository::PropertyRepository::query_block_ids_by_key_value(storage.properties(), key, values)
+    }
+
     fn generate_id() -> String {
         let mut rng = rand::thread_rng();
         let bytes: Vec<u8> = (0..16).map(|_| rng.gen()).collect();
