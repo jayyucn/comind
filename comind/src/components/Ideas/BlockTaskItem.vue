@@ -20,7 +20,6 @@ const propertyStore = usePropertyStore()
 const { renderContentToHtml } = useContentRenderer()
 
 const isEditing = ref(false)
-const editContent = ref('')
 const editRef = ref<HTMLElement | null>(null)
 
 // 加载 property（status 等）
@@ -39,7 +38,13 @@ const status = computed(() => {
   return propertyStore.getBlockProperty(props.task.id, 'status')?.value as string | undefined
 })
 
-const dateRefs = computed(() => parseDateRefs(props.task.content))
+// 优先从 blockStore 取最新内容（编辑后实时同步），fallback 到 props
+const displayContent = computed(() => {
+  const block = blockStore.getBlock(props.task.id)
+  return block?.content ?? props.task.content
+})
+
+const dateRefs = computed(() => parseDateRefs(displayContent.value))
 const deadlineRef = computed(() => dateRefs.value.find(r => r.kind === 'deadline'))
 const scheduleRef = computed(() => dateRefs.value.find(r => r.kind === 'schedule'))
 
@@ -50,30 +55,33 @@ const isOverdue = computed(() => {
   return deadlineRef.value.iso < todayStr
 })
 
-const renderedContent = computed(() => renderContentToHtml(props.task.content, props.task.id))
+const renderedContent = computed(() => renderContentToHtml(displayContent.value, props.task.id))
 
 async function startEdit() {
   await ensureBlockInStore()
-  editContent.value = props.task.content
   isEditing.value = true
   await nextTick()
-  editRef.value?.focus()
-  // 将光标放到末尾
-  const range = document.createRange()
-  const sel = window.getSelection()
-  if (editRef.value && sel) {
-    range.selectNodeContents(editRef.value)
-    range.collapse(false)
-    sel.removeAllRanges()
-    sel.addRange(range)
+  // 初始设置 content，之后让 contenteditable 自管理（不用 v-text 绑定响应式）
+  if (editRef.value) {
+    editRef.value.textContent = displayContent.value
+    editRef.value.focus()
+    // 将光标放到末尾
+    const range = document.createRange()
+    const sel = window.getSelection()
+    if (sel) {
+      range.selectNodeContents(editRef.value)
+      range.collapse(false)
+      sel.removeAllRanges()
+      sel.addRange(range)
+    }
   }
 }
 
 async function saveEdit() {
   if (!isEditing.value) return
   isEditing.value = false
-  const newContent = editContent.value
-  if (newContent !== props.task.content) {
+  const newContent = editRef.value?.textContent || ''
+  if (newContent !== displayContent.value) {
     await blockStore.updateBlockContent(props.task.id, newContent)
   }
 }
@@ -98,12 +106,6 @@ function handleKeydown(e: KeyboardEvent) {
       // 退出编辑态（block 会从列表消失）
       isEditing.value = false
     }
-  }
-}
-
-function handleInput() {
-  if (editRef.value) {
-    editContent.value = editRef.value.textContent || ''
   }
 }
 
@@ -135,7 +137,7 @@ function handleContentClick() {
 
     <!-- 内容区 -->
     <div class="task-content" @click="handleContentClick">
-      <!-- 编辑态 -->
+      <!-- 编辑态：不绑定响应式内容，由 contenteditable 自管理 -->
       <div
         v-if="isEditing"
         ref="editRef"
@@ -143,8 +145,6 @@ function handleContentClick() {
         contenteditable="true"
         @blur="handleBlur"
         @keydown="handleKeydown"
-        @input="handleInput"
-        v-text="editContent"
       />
 
       <!-- 渲染态 -->

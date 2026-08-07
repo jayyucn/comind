@@ -93,7 +93,7 @@ function handleNavigate(pageId: string, pageTitle: string) {
 .block-task-list {
   margin-top: 16px;
   padding-top: 12px;
-  border-top: 1px solid var(--app-border, #e5e7eb);
+  border-top: 1px solid var(--border, #e5e7eb);
 }
 
 .task-list-header {
