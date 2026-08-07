@@ -96,6 +96,33 @@ const editContent = computed(() => {
   return block.value.content
 })
 
+/** 空 block：无内容且非标题（如 '# ' 开头） */
+const isEmptyBlock = computed(() => {
+  const c = block.value.content ?? ''
+  return !/^#{1,6}\s+/.test(c) && c.trim() === ''
+})
+
+/** 同级兄弟节点（按 pos 排序） */
+const siblings = computed(() => {
+  return blockStore
+    .getBlocksByPage(props.pageId)
+    .filter(b => b.parentId === block.value.parentId)
+    .sort((a, b) => a.pos - b.pos)
+})
+
+/** 是否为首行或尾行（同级） */
+const isEdgeInLevel = computed(() => {
+  if (siblings.value.length <= 1) return true
+  const first = siblings.value[0]?.id === blockId.value
+  const last = siblings.value[siblings.value.length - 1]?.id === blockId.value
+  return first || last
+})
+
+/** 空 block 且非首行/尾行：未激活且未 hover 时隐藏 bullet */
+const hideBulletForEmpty = computed(() => {
+  return isEmptyBlock.value && !isEdgeInLevel.value
+})
+
 /** 页面是否仅有一个空 Block（唯一场景显示 placeholder） */
 const isSingleEmptyBlock = computed(() => {
   const contentBlocks = blockStore.getBlocksByPage(props.pageId)
@@ -353,7 +380,7 @@ async function onPaste(e: ClipboardEvent) {
       <!-- 内容区域（bullet + content）- 选中时边框只应用到此容器 -->
       <div class="block-inner">
         <!-- Bullet -->
-        <span class="block-bullet" :class="{ collapsed }"
+        <span class="block-bullet" :class="{ collapsed, 'hide-empty-bullet': hideBulletForEmpty }"
           @click.stop="toggleCollapse">
           <span v-if="node.children.length > 0" class="bullet-chevron" :class="{ 'is-collapsed': collapsed }"></span>
           <span v-else class="bullet-dot"></span>

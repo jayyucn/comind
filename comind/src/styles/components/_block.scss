@@ -70,6 +70,16 @@
   flex-shrink: 0;
 }
 
+// 空 block 且非首行/尾行：未激活且未 hover 时隐藏圆点（保留布局空间）
+.block-bullet.hide-empty-bullet .bullet-dot {
+  visibility: hidden;
+}
+
+.block-bullet.hide-empty-bullet:hover .bullet-dot,
+.block.active .block-bullet.hide-empty-bullet .bullet-dot {
+  visibility: visible;
+}
+
 // Chevron 箭头（父节点）
 .bullet-chevron {
   width: var(--block-chevron-size);
