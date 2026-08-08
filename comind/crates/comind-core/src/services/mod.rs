@@ -9,6 +9,8 @@ pub mod block_version_service;
 pub mod date_ref_service;
 pub mod block_projection_service;
 pub mod filter_service;
+pub mod content_parse_service;
+pub mod notification_service;
 
 #[cfg(test)]
 pub mod block_service_test;
@@ -33,3 +35,7 @@ pub use block_version_service::BlockVersionService;
 pub use date_ref_service::DateRefService;
 pub use block_projection_service::*;
 pub use filter_service::FilterService;
+pub use content_parse_service::*;
+pub use notification_service::NotificationService;
+pub mod render_segment_service;
+pub use render_segment_service::build_page_with_blocks;

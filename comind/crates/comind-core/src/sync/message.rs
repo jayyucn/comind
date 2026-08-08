@@ -52,6 +52,7 @@ pub enum SyncTable {
     DateRef,
     RelationshipType,
     Template,
+    NotificationConfig,
 }
 
 impl SyncTable {
@@ -64,6 +65,7 @@ impl SyncTable {
             SyncTable::DateRef => "DateRef",
             SyncTable::RelationshipType => "RelationshipType",
             SyncTable::Template => "UserTemplate",
+            SyncTable::NotificationConfig => "NotificationConfig",
         }
     }
 

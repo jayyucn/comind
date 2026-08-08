@@ -441,3 +441,42 @@ export async function tauriGetSyncStatusPC(): Promise<SyncStatus> {
 export async function tauriTriggerFullSyncMobile(): Promise<void> {
   return invoke('trigger_full_sync_mobile')
 }
+
+// ---- Notification Settings (migrated to Rust) ----
+
+export async function tauriGetNotificationSettings(): Promise<NotificationSettings> {
+  return invoke('get_notification_settings')
+}
+
+export async function tauriSaveNotificationSettings(config: NotificationSettings): Promise<void> {
+  return invoke('save_notification_settings', { config })
+}
+
+export async function tauriCheckAndFire(): Promise<Notification[]> {
+  return invoke('check_and_fire')
+}
+
+export async function tauriSyncPayloadForBlock(blockId: string): Promise<void> {
+  return invoke('sync_payload_for_block', { blockId })
+}
+
+// ---- Content parse helpers (S3: migrated from TS parser to Rust) ----
+
+export async function tauriApplyRelationshipTypeToBlockContent(
+  content: string,
+  targetTitle: string,
+  newRelationshipType: string | null
+): Promise<string> {
+  return invoke('apply_relationship_type_to_block_content', { content, targetTitle, newRelationshipType })
+}
+
+export async function tauriCheckHasTypedLinkToTarget(
+  content: string,
+  targetTitle: string
+): Promise<{ has_typed_link: boolean }> {
+  return invoke('check_has_typed_link_to_target', { content, targetTitle })
+}
+// ---- S10: Render segments (get_page_with_blocks) ----
+export async function tauriGetPageWithBlocks(pageId: string): Promise<any> {
+  return invoke('get_page_with_blocks', { pageId })
+}

@@ -1326,6 +1326,23 @@ impl StorageAdapter for SqlJsAdapter {
     fn task_views(&mut self) -> &mut dyn TaskViewRepository {
         self
     }
+
+    fn notification_config(&mut self) -> &mut dyn NotificationConfigRepository {
+        self
+    }
+}
+
+impl NotificationConfigRepository for SqlJsAdapter {
+    fn get(&self) -> Result<NotificationConfig, Box<dyn Error>> {
+        // WASM: NotificationConfig stored in localStorage by TS layer.
+        // Return default; TS layer handles actual persistence.
+        Ok(NotificationConfig::default())
+    }
+
+    fn save(&mut self, _config: &NotificationConfig) -> Result<(), Box<dyn Error>> {
+        // WASM: persisted by TS via localStorage.
+        Ok(())
+    }
 }
 
 #[cfg(target_arch = "wasm32")]

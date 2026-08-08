@@ -55,7 +55,12 @@ const isOverdue = computed(() => {
   return deadlineRef.value.iso < todayStr
 })
 
-const renderedContent = computed(() => renderContentToHtml(displayContent.value, props.task.id))
+const taskSegments = computed(() => blockStore.getBlock(props.task.id)?.renderSegments)
+const renderedContent = computed(() => {
+  const segs = taskSegments.value
+  return segs ? renderContentToHtml(segs, displayContent.value, props.task.id)
+              : renderContentToHtml([], displayContent.value, props.task.id)
+})
 
 async function startEdit() {
   await ensureBlockInStore()

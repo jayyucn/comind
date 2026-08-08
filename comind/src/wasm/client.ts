@@ -33,15 +33,16 @@ function parseJsonResult<T>(result: any): T {
 }
 import type {
   Block, Page, Property, Link, RelationshipType,
-  UserTemplate, SearchResult, BlockUpdate, PageUpdate,
+  UserTemplate, SearchResult, BlockUpdate, BlockSaveResult, PageUpdate,
   BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig, BlockVersion,
-  Notification, DateRefRecord, IncompleteTask, BlockCard, SavedFilterRust, TaskViewRust
+  Notification, DateRefRecord, IncompleteTask, BlockCard, SavedFilterRust, TaskViewRust,
+  NotificationSettings, PageWithBlocks, BlockRenderData, RenderSegment
 } from './types'
 
 export interface CoreClient {
   getBlock(blockId: string): Promise<Block>
   getBlocksByPage(pageId: string): Promise<Block[]>
-  saveBlockTree(blocks: BlockUpdate[]): Promise<Block[]>
+  saveBlockTree(blocks: BlockUpdate[]): Promise<BlockSaveResult[]>
   deleteBlock(blockId: string): Promise<void>
 
   getPage(pageId: string): Promise<Page>
@@ -88,6 +89,15 @@ export interface CoreClient {
   deleteNotification(id: string): Promise<void>
   cleanupNotifications(timestamp: number): Promise<void>
   markAllNotificationsRead(): Promise<void>
+
+  // S10: Render segments
+  getPageWithBlocks(pageId: string): Promise<PageWithBlocks>
+
+  // Notification Settings (migrated to Rust)
+  getNotificationSettings(): Promise<NotificationSettings>
+  saveNotificationSettings(config: NotificationSettings): Promise<void>
+  checkAndFire(): Promise<Notification[]>
+  syncPayloadForBlock(blockId: string): Promise<void>
 
   queryDateRefs(kind: string, from: string, to: string): Promise<DateRefRecord[]>
   queryOverdueDateRefs(today: string): Promise<DateRefRecord[]>
@@ -166,7 +176,7 @@ class TauriClient implements CoreClient {
     return tauri.tauriSetDefaultTaskView(id)
   }
 
-  async saveBlockTree(blocks: BlockUpdate[]): Promise<Block[]> {
+  async saveBlockTree(blocks: BlockUpdate[]): Promise<BlockSaveResult[]> {
     return tauri.tauriSaveBlockTree(blocks)
   }
 
@@ -310,6 +320,26 @@ class TauriClient implements CoreClient {
       return tauri.tauriMarkAllNotificationsRead()
     }
 
+    async getNotificationSettings(): Promise<NotificationSettings> {
+      return tauri.tauriGetNotificationSettings()
+    }
+
+    async saveNotificationSettings(config: NotificationSettings): Promise<void> {
+      return tauri.tauriSaveNotificationSettings(config)
+    }
+
+    async checkAndFire(): Promise<Notification[]> {
+      return tauri.tauriCheckAndFire()
+    }
+
+    async syncPayloadForBlock(blockId: string): Promise<void> {
+      return tauri.tauriSyncPayloadForBlock(blockId)
+    }
+
+    async getPageWithBlocks(pageId: string): Promise<PageWithBlocks> {
+      return tauri.tauriGetPageWithBlocks(pageId)
+    }
+
     async queryDateRefs(kind: string, from: string, to: string): Promise<DateRefRecord[]> {
       return parseJsonResult(await tauri.tauriQueryDateRefs(kind, from, to))
     }
@@ -405,7 +435,7 @@ class WasmClientAdapter implements CoreClient {
     throw new Error('WASM: task views not supported')
   }
 
-  async saveBlockTree(blocks: BlockUpdate[]): Promise<Block[]> {
+  async saveBlockTree(blocks: BlockUpdate[]): Promise<BlockSaveResult[]> {
     const blocksJson = JSON.stringify(blocks)
     const result = await this.wasm.save_block_tree(blocksJson)
     return parseJsonResult(result)
@@ -599,6 +629,27 @@ class WasmClientAdapter implements CoreClient {
 
   async markAllNotificationsRead(): Promise<void> {
     return markAllWebNotificationsRead()
+  }
+
+  async getNotificationSettings(): Promise<NotificationSettings> {
+    throw new Error('NotificationSettings not available on web')
+  }
+
+  async saveNotificationSettings(config: NotificationSettings): Promise<void> {
+    throw new Error('NotificationSettings not available on web')
+  }
+
+  async checkAndFire(): Promise<Notification[]> {
+    // Web: notification engine requires Rust backend, return empty
+    return []
+  }
+
+  async syncPayloadForBlock(blockId: string): Promise<void> {
+    // Web: notification engine requires Rust backend, no-op
+  }
+
+  async getPageWithBlocks(_pageId: string): Promise<PageWithBlocks> {
+    throw new Error('getPageWithBlocks not available on web')
   }
 
   async queryDateRefs(kind: string, from: string, to: string): Promise<DateRefRecord[]> {

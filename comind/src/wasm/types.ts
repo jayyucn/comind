@@ -93,6 +93,11 @@ export interface SearchResult {
   score: number
 }
 
+export interface BlockSaveResult {
+  block: Block
+  snapshot: string
+}
+
 export interface BlockUpdate {
   id: string
   page_id: string
@@ -251,3 +256,23 @@ export interface IncompleteTask {
   page_title: string
   page_type: string
 }
+
+// ─── S10: Render segments (get_page_with_blocks response) ───
+
+export interface PageWithBlocks {
+  page: Page
+  blocks: BlockRenderData[]
+}
+
+export interface BlockRenderData {
+  block: Block
+  children: string[]
+  render_segments: RenderSegment[]
+}
+
+export type RenderSegment =
+  | { type: 'text'; start: number; end: number }
+  | { type: 'link'; start: number; end: number; target_page_title: string; display_text: string }
+  | { type: 'typed_link'; start: number; end: number; target_page_title: string; display_text: string; relationship_type: string; rel_label: string; rel_color: string }
+  | { type: 'external_link'; start: number; end: number; url: string }
+  | { type: 'date_ref'; start: number; end: number; kind: string; iso: string; recurrence: string; lead_minutes: number; is_overdue: boolean }

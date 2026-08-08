@@ -44,9 +44,27 @@ pub fn run() {
 
             let db =
                 state::DatabaseConnection::new(&workspace).expect("Failed to initialize database");
+            // Get adapter before db is moved into manage
+            let notif_adapter = db.adapter_arc();
             #[cfg(not(target_os = "android"))]
             let sync_adapter = db.adapter_arc();
             app.manage(db);
+
+            // Seed + load notification settings (synchronous, runs at startup)
+            {
+                use comind_core::StorageAdapter;
+                let mut adapter = notif_adapter.blocking_lock();
+                if let Err(e) = comind_core::SQLiteAdapter::seed_notification_config(&adapter.conn) {
+                    log::error!("Failed to seed notification config: {}", e);
+                }
+                let config = adapter
+                    .notification_config()
+                    .get()
+                    .unwrap_or_default();
+                drop(adapter);
+                let notif_mgr = state::NotificationSettingsManager::new(config);
+                app.manage(notif_mgr);
+            }
 
             let config_manager = state::ConfigManager::new(app_config);
             app.manage(config_manager);
@@ -183,6 +201,15 @@ pub fn run() {
             commands::batch_check_and_fire_data,
             commands::build_graph_snapshot,
             commands::rebuild_date_refs,
+            commands::get_notification_settings,
+            commands::save_notification_settings,
+            commands::check_and_fire,
+            commands::sync_payload_for_block,
+            commands::apply_relationship_type_to_block_content,
+            commands::check_has_typed_link_to_target,
+            commands::renumber_blocks,
+            commands::build_document_order,
+            commands::get_page_with_blocks,
             #[cfg(not(target_os = "android"))]
             commands::get_sync_qr,
             commands::get_paired_devices,

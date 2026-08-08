@@ -206,6 +206,17 @@ impl SQLiteAdapter {
                 created_at  INTEGER NOT NULL,
                 updated_at  INTEGER NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS notification_config (
+                id                          INTEGER PRIMARY KEY DEFAULT 1,
+                enabled                     INTEGER NOT NULL DEFAULT 1,
+                schedule_enabled            INTEGER NOT NULL DEFAULT 1,
+                deadline_enabled            INTEGER NOT NULL DEFAULT 1,
+                overdue_enabled             INTEGER NOT NULL DEFAULT 1,
+                quiet_hours_start           TEXT,
+                quiet_hours_end             TEXT,
+                web_browser_notifications_enabled INTEGER NOT NULL DEFAULT 0
+            );
             
             CREATE INDEX IF NOT EXISTS idx_page_blockId        ON Page(block_id);
             CREATE INDEX IF NOT EXISTS idx_page_type           ON Page(type);
@@ -228,6 +239,7 @@ impl SQLiteAdapter {
         Self::migrate_add_page_title_unique(conn)?;
         Self::migrate_date_ref_event_ts(conn)?;
         Self::migrate_add_version_and_deleted_at(conn)?;
+        Self::seed_notification_config(conn)?;
         
         Ok(())
     }
@@ -335,6 +347,16 @@ impl SQLiteAdapter {
         if !has("UserTemplate", "deleted_at") {
             conn.execute("ALTER TABLE UserTemplate ADD COLUMN deleted_at INTEGER", [])?;
         }
+        Ok(())
+    }
+
+pub fn seed_notification_config(conn: &rusqlite::Connection) -> Result<(), Box<dyn Error>> {
+        conn.execute(
+            "INSERT INTO notification_config (id, enabled, schedule_enabled, deadline_enabled, overdue_enabled, quiet_hours_start, quiet_hours_end, web_browser_notifications_enabled)
+             SELECT 1, 1, 1, 1, 1, '22:00', '08:00', 0
+             WHERE NOT EXISTS (SELECT 1 FROM notification_config)",
+            [],
+        )?;
         Ok(())
     }
 }
@@ -1737,6 +1759,41 @@ impl StorageAdapter for SQLiteAdapter {
 
     fn task_views(&mut self) -> &mut dyn TaskViewRepository {
         self
+    }
+
+    fn notification_config(&mut self) -> &mut dyn NotificationConfigRepository {
+        self
+    }
+}
+
+impl NotificationConfigRepository for SQLiteAdapter {
+    fn get(&self) -> Result<NotificationConfig, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, enabled, schedule_enabled, deadline_enabled, overdue_enabled, quiet_hours_start, quiet_hours_end, web_browser_notifications_enabled FROM notification_config WHERE id = 1"
+        )?;
+        let config = stmt.query_row([], |row| {
+            Ok(NotificationConfig {
+                id: row.get(0)?,
+                enabled: row.get::<_, i64>(1)? != 0,
+                schedule_enabled: row.get::<_, i64>(2)? != 0,
+                deadline_enabled: row.get::<_, i64>(3)? != 0,
+                overdue_enabled: row.get::<_, i64>(4)? != 0,
+                quiet_hours_start: row.get(5)?,
+                quiet_hours_end: row.get(6)?,
+                web_browser_notifications_enabled: row.get::<_, i64>(7)? != 0,
+            })
+        })?;
+        Ok(config)
+    }
+
+    fn save(&mut self, config: &NotificationConfig) -> Result<(), Box<dyn Error>> {
+        self.conn.execute(
+            "INSERT INTO notification_config (id, enabled, schedule_enabled, deadline_enabled, overdue_enabled, quiet_hours_start, quiet_hours_end, web_browser_notifications_enabled)
+             VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled, schedule_enabled=excluded.schedule_enabled, deadline_enabled=excluded.deadline_enabled, overdue_enabled=excluded.overdue_enabled, quiet_hours_start=excluded.quiet_hours_start, quiet_hours_end=excluded.quiet_hours_end, web_browser_notifications_enabled=excluded.web_browser_notifications_enabled",
+            params![config.enabled as i64, config.schedule_enabled as i64, config.deadline_enabled as i64, config.overdue_enabled as i64, config.quiet_hours_start, config.quiet_hours_end, config.web_browser_notifications_enabled as i64],
+        )?;
+        Ok(())
     }
 }
 
@@ -3497,6 +3554,10 @@ impl<'a> StorageAdapter for SQLiteTransactionAdapter<'a> {
     fn task_views(&mut self) -> &mut dyn TaskViewRepository {
         self
     }
+
+    fn notification_config(&mut self) -> &mut dyn NotificationConfigRepository {
+        self
+    }
 }
 
 impl<'a> SavedFilterRepository for SQLiteTransactionAdapter<'a> {
@@ -4137,4 +4198,35 @@ impl<'a> NotificationRepository for SQLiteTransactionAdapter<'a> {
         Ok(())
     }
 
+}
+
+impl<'a> NotificationConfigRepository for SQLiteTransactionAdapter<'a> {
+    fn get(&self) -> Result<NotificationConfig, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, enabled, schedule_enabled, deadline_enabled, overdue_enabled, quiet_hours_start, quiet_hours_end, web_browser_notifications_enabled FROM notification_config WHERE id = 1"
+        )?;
+        let config = stmt.query_row([], |row| {
+            Ok(NotificationConfig {
+                id: row.get(0)?,
+                enabled: row.get::<_, i64>(1)? != 0,
+                schedule_enabled: row.get::<_, i64>(2)? != 0,
+                deadline_enabled: row.get::<_, i64>(3)? != 0,
+                overdue_enabled: row.get::<_, i64>(4)? != 0,
+                quiet_hours_start: row.get(5)?,
+                quiet_hours_end: row.get(6)?,
+                web_browser_notifications_enabled: row.get::<_, i64>(7)? != 0,
+            })
+        })?;
+        Ok(config)
+    }
+
+    fn save(&mut self, config: &NotificationConfig) -> Result<(), Box<dyn Error>> {
+        self.conn.execute(
+            "INSERT INTO notification_config (id, enabled, schedule_enabled, deadline_enabled, overdue_enabled, quiet_hours_start, quiet_hours_end, web_browser_notifications_enabled)
+             VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled, schedule_enabled=excluded.schedule_enabled, deadline_enabled=excluded.deadline_enabled, overdue_enabled=excluded.overdue_enabled, quiet_hours_start=excluded.quiet_hours_start, quiet_hours_end=excluded.quiet_hours_end, web_browser_notifications_enabled=excluded.web_browser_notifications_enabled",
+            params![config.enabled as i64, config.schedule_enabled as i64, config.deadline_enabled as i64, config.overdue_enabled as i64, config.quiet_hours_start, config.quiet_hours_end, config.web_browser_notifications_enabled as i64],
+        )?;
+        Ok(())
+    }
 }
