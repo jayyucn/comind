@@ -172,6 +172,10 @@ impl SqlJsAdapter {
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_property_blockId ON Property(block_id);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_property_key ON Property(key);")?;
 
+        Self::exec(db, "CREATE TABLE IF NOT EXISTS SavedFilter (id TEXT PRIMARY KEY, name TEXT NOT NULL, query_json TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
+
+        Self::exec(db, "CREATE TABLE IF NOT EXISTS TaskView (id TEXT PRIMARY KEY, name TEXT NOT NULL, query_json TEXT NOT NULL, view_type TEXT NOT NULL DEFAULT 'table', group_by TEXT NOT NULL DEFAULT '', is_default INTEGER NOT NULL DEFAULT 0, sort_order INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
+
         Self::migrate_date_ref_event_ts(db)?;
         Self::migrate_add_version_and_deleted_at(db)?;
 
@@ -499,6 +503,11 @@ fn row_to_block_version(row: &HashMap<String, String>) -> BlockVersion {
 
 #[cfg(target_arch = "wasm32")]
 impl BlockRepository for SqlJsAdapter {
+    fn get_all(&self) -> Result<Vec<Block>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, page_id, parent_id, pos, content, format, type, version, deleted_at, created_at, updated_at FROM Block WHERE deleted_at IS NULL", &[])?;
+        Ok(result.into_iter().map(|r| row_to_block(&r)).collect())
+    }
+
     fn get_by_id(&self, id: &str) -> Result<Block, Box<dyn std::error::Error>> {
         let result = Self::query(&self.db, "SELECT id, page_id, parent_id, pos, content, format, type, version, deleted_at, created_at, updated_at FROM Block WHERE id = ? AND deleted_at IS NULL", &[id])?;
         if result.is_empty() {
@@ -923,6 +932,11 @@ impl DateRefRepository for SqlJsAdapter {
 }
 
 impl PropertyRepository for SqlJsAdapter {
+    fn get_all(&self) -> Result<Vec<Property>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, version, deleted_at, created_at, updated_at FROM Property WHERE is_deleted = 0 AND deleted_at IS NULL", &[])?;
+        Ok(result.into_iter().map(|r| row_to_property(&r)).collect())
+    }
+
     fn get_by_id(&self, id: &str) -> Result<Property, Box<dyn std::error::Error>> {
         let result = Self::query(&self.db, "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, version, deleted_at, created_at, updated_at FROM Property WHERE id = ? AND deleted_at IS NULL", &[id])?;
         if result.is_empty() {
@@ -1094,6 +1108,110 @@ impl TemplateRepository for SqlJsAdapter {
 }
 
 #[cfg(target_arch = "wasm32")]
+impl SavedFilterRepository for SqlJsAdapter {
+    fn get_all(&self) -> Result<Vec<SavedFilter>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, name, query_json, created_at, updated_at FROM SavedFilter ORDER BY created_at DESC", &[])?;
+        Ok(result.into_iter().map(|r| SavedFilter {
+            id: r.get("id").cloned().unwrap_or_default(),
+            name: r.get("name").cloned().unwrap_or_default(),
+            query_json: r.get("query_json").cloned().unwrap_or_default(),
+            created_at: r.get("created_at").and_then(|v| v.parse().ok()).unwrap_or(0),
+            updated_at: r.get("updated_at").and_then(|v| v.parse().ok()).unwrap_or(0),
+        }).collect())
+    }
+
+    fn get_by_id(&self, id: &str) -> Result<SavedFilter, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, name, query_json, created_at, updated_at FROM SavedFilter WHERE id = ?", &[id])?;
+        if result.is_empty() {
+            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "SavedFilter not found")));
+        }
+        let r = &result[0];
+        Ok(SavedFilter {
+            id: r.get("id").cloned().unwrap_or_default(),
+            name: r.get("name").cloned().unwrap_or_default(),
+            query_json: r.get("query_json").cloned().unwrap_or_default(),
+            created_at: r.get("created_at").and_then(|v| v.parse().ok()).unwrap_or(0),
+            updated_at: r.get("updated_at").and_then(|v| v.parse().ok()).unwrap_or(0),
+        })
+    }
+
+    fn create(&mut self, filter: &SavedFilter) -> Result<SavedFilter, Box<dyn std::error::Error>> {
+        Self::run_with_params(&self.db, "INSERT INTO SavedFilter (id, name, query_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", &[
+            &filter.id, &filter.name, &filter.query_json, &filter.created_at.to_string(), &filter.updated_at.to_string()
+        ])?;
+        Ok(filter.clone())
+    }
+
+    fn update(&mut self, filter: &SavedFilter) -> Result<SavedFilter, Box<dyn std::error::Error>> {
+        Self::run_with_params(&self.db, "UPDATE SavedFilter SET name = ?, query_json = ?, updated_at = ? WHERE id = ?", &[
+            &filter.name, &filter.query_json, &filter.updated_at.to_string(), &filter.id
+        ])?;
+        Ok(filter.clone())
+    }
+
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn std::error::Error>> {
+        Self::run_with_params(&self.db, "DELETE FROM SavedFilter WHERE id = ?", &[id])?;
+        Ok(())
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl TaskViewRepository for SqlJsAdapter {
+    fn get_all(&self) -> Result<Vec<TaskView>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, created_at, updated_at FROM TaskView ORDER BY sort_order ASC, created_at DESC", &[])?;
+        Ok(result.into_iter().map(|r| TaskView {
+            id: r.get("id").cloned().unwrap_or_default(),
+            name: r.get("name").cloned().unwrap_or_default(),
+            query_json: r.get("query_json").cloned().unwrap_or_default(),
+            view_type: r.get("view_type").cloned().unwrap_or_default(),
+            group_by: r.get("group_by").cloned().unwrap_or_default(),
+            is_default: r.get("is_default").and_then(|v| v.parse().ok()).unwrap_or(0),
+            sort_order: r.get("sort_order").and_then(|v| v.parse().ok()).unwrap_or(0),
+            created_at: r.get("created_at").and_then(|v| v.parse().ok()).unwrap_or(0),
+            updated_at: r.get("updated_at").and_then(|v| v.parse().ok()).unwrap_or(0),
+        }).collect())
+    }
+
+    fn get_by_id(&self, id: &str) -> Result<TaskView, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, created_at, updated_at FROM TaskView WHERE id = ?", &[id])?;
+        if result.is_empty() {
+            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "TaskView not found")));
+        }
+        let r = &result[0];
+        Ok(TaskView {
+            id: r.get("id").cloned().unwrap_or_default(),
+            name: r.get("name").cloned().unwrap_or_default(),
+            query_json: r.get("query_json").cloned().unwrap_or_default(),
+            view_type: r.get("view_type").cloned().unwrap_or_default(),
+            group_by: r.get("group_by").cloned().unwrap_or_default(),
+            is_default: r.get("is_default").and_then(|v| v.parse().ok()).unwrap_or(0),
+            sort_order: r.get("sort_order").and_then(|v| v.parse().ok()).unwrap_or(0),
+            created_at: r.get("created_at").and_then(|v| v.parse().ok()).unwrap_or(0),
+            updated_at: r.get("updated_at").and_then(|v| v.parse().ok()).unwrap_or(0),
+        })
+    }
+
+    fn create(&mut self, view: &TaskView) -> Result<TaskView, Box<dyn std::error::Error>> {
+        Self::run_with_params(&self.db, "INSERT INTO TaskView (id, name, query_json, view_type, group_by, is_default, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", &[
+            &view.id, &view.name, &view.query_json, &view.view_type, &view.group_by, &view.is_default.to_string(), &view.sort_order.to_string(), &view.created_at.to_string(), &view.updated_at.to_string()
+        ])?;
+        Ok(view.clone())
+    }
+
+    fn update(&mut self, view: &TaskView) -> Result<TaskView, Box<dyn std::error::Error>> {
+        Self::run_with_params(&self.db, "UPDATE TaskView SET name = ?, query_json = ?, view_type = ?, group_by = ?, is_default = ?, sort_order = ?, updated_at = ? WHERE id = ?", &[
+            &view.name, &view.query_json, &view.view_type, &view.group_by, &view.is_default.to_string(), &view.sort_order.to_string(), &view.updated_at.to_string(), &view.id
+        ])?;
+        Ok(view.clone())
+    }
+
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn std::error::Error>> {
+        Self::run_with_params(&self.db, "DELETE FROM TaskView WHERE id = ?", &[id])?;
+        Ok(())
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
 impl SearchRepository for SqlJsAdapter {
     fn search(&self, _query: &str, _limit: usize) -> Result<Vec<SearchResult>, Box<dyn std::error::Error>> {
         Ok(Vec::new())
@@ -1198,6 +1316,14 @@ impl StorageAdapter for SqlJsAdapter {
     }
 
     fn notifications(&mut self) -> &mut dyn NotificationRepository {
+        self
+    }
+
+    fn saved_filters(&mut self) -> &mut dyn SavedFilterRepository {
+        self
+    }
+
+    fn task_views(&mut self) -> &mut dyn TaskViewRepository {
         self
     }
 }

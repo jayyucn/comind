@@ -1,6 +1,6 @@
 use comind_core::{
     services::{
-        BlockService, BlockVersionService, DateRefService, LinkService, PageService,
+        BlockService, BlockVersionService, DateRefService, FilterService, LinkService, PageService,
         PropertyService, RelationshipTypeService,
     },
     storage::StorageAdapter,
@@ -56,6 +56,101 @@ pub async fn get_blocks_by_page(
     page_id: &str,
 ) -> Result<Vec<Block>, String> {
     execute_with_adapter(db, |storage| BlockService::get_by_page_id(storage, page_id)).await
+}
+
+#[tauri::command]
+pub async fn get_block_cards(
+    db: State<'_, super::state::DatabaseConnection>,
+) -> Result<Vec<BlockCard>, String> {
+    execute_with_adapter(db, |storage| {
+        comind_core::services::block_projection_service::get_blocks_projection(storage)
+    }).await
+}
+
+// ---- Saved Filters ----
+
+#[tauri::command]
+pub async fn get_saved_filters(
+    db: State<'_, super::state::DatabaseConnection>,
+) -> Result<Vec<SavedFilter>, String> {
+    execute_with_adapter(db, |storage| FilterService::get_saved_filters(storage)).await
+}
+
+#[tauri::command]
+pub async fn save_saved_filter(
+    db: State<'_, super::state::DatabaseConnection>,
+    name: &str,
+    query_json: &str,
+) -> Result<SavedFilter, String> {
+    execute_with_adapter(db, |storage| FilterService::save_saved_filter(storage, name, query_json)).await
+}
+
+#[tauri::command]
+pub async fn update_saved_filter(
+    db: State<'_, super::state::DatabaseConnection>,
+    id: &str,
+    name: &str,
+    query_json: &str,
+) -> Result<SavedFilter, String> {
+    execute_with_adapter(db, |storage| FilterService::update_saved_filter(storage, id, name, query_json)).await
+}
+
+#[tauri::command]
+pub async fn delete_saved_filter(
+    db: State<'_, super::state::DatabaseConnection>,
+    id: &str,
+) -> Result<(), String> {
+    execute_with_adapter(db, |storage| FilterService::delete_saved_filter(storage, id)).await
+}
+
+// ---- Task Views ----
+
+#[tauri::command]
+pub async fn get_task_views(
+    db: State<'_, super::state::DatabaseConnection>,
+) -> Result<Vec<TaskView>, String> {
+    execute_with_adapter(db, |storage| FilterService::get_task_views(storage)).await
+}
+
+#[tauri::command]
+pub async fn save_task_view(
+    db: State<'_, super::state::DatabaseConnection>,
+    name: &str,
+    query_json: &str,
+    view_type: &str,
+    group_by: &str,
+) -> Result<TaskView, String> {
+    execute_with_adapter(db, |storage| FilterService::save_task_view(storage, name, query_json, view_type, group_by, false, 0)).await
+}
+
+#[tauri::command]
+pub async fn update_task_view(
+    db: State<'_, super::state::DatabaseConnection>,
+    id: &str,
+    name: &str,
+    query_json: &str,
+    view_type: &str,
+    group_by: &str,
+    is_default: bool,
+    sort_order: i64,
+) -> Result<TaskView, String> {
+    execute_with_adapter(db, |storage| FilterService::update_task_view(storage, id, name, query_json, view_type, group_by, is_default, sort_order)).await
+}
+
+#[tauri::command]
+pub async fn delete_task_view(
+    db: State<'_, super::state::DatabaseConnection>,
+    id: &str,
+) -> Result<(), String> {
+    execute_with_adapter(db, |storage| FilterService::delete_task_view(storage, id)).await
+}
+
+#[tauri::command]
+pub async fn set_default_task_view(
+    db: State<'_, super::state::DatabaseConnection>,
+    id: &str,
+) -> Result<TaskView, String> {
+    execute_with_adapter(db, |storage| FilterService::set_default_task_view(storage, id)).await
 }
 
 #[tauri::command]

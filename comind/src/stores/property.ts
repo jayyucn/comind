@@ -4,6 +4,7 @@ import { initCoreClient } from '../wasm/client'
 import type { Property, PropertyDefinition, PropertyValue, PropertyType } from '../types/property'
 import { getAllPropertyDefinitions, getPropertyDefinition } from '../types/property'
 import { useBlockStore } from './blocks'
+import { useBlockCardStore } from './blockCard'
 import { parseDateRefs, serializeDateRef } from '../utils/date-ref'
 import { calculateNextRecurrence } from '../utils/recurrence'
 
@@ -145,6 +146,9 @@ export const usePropertyStore = defineStore('property', () => {
     if (key === 'status' && value === 'Done') {
       await advanceDateRefInBlock(blockId)
     }
+    
+    const blockCardStore = useBlockCardStore()
+    blockCardStore.invalidate(blockId)
     
     return prop
   }

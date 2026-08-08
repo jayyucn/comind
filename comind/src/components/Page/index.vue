@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onBeforeUnmount, nextTick } from 'vue'
+import { computed, ref, onBeforeUnmount, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import BlockList from '../BlockList.vue'
 import Backlinks from '../Backlinks.vue'
@@ -51,9 +51,29 @@ const mergeTarget = ref<Page | null>(null)
 const showRenameDialog = ref(false)
 const pendingNewTitle = ref('')
 
+onMounted(() => {
+  // TaskHub navigate-to-block: scroll to target block after route change
+  window.addEventListener('navigate-to-block' as any, handleNavigateToBlockEvent)
+})
+
 onBeforeUnmount(() => {
   editorStore.deactivateBlock()
+  window.removeEventListener('navigate-to-block' as any, handleNavigateToBlockEvent)
 })
+
+function handleNavigateToBlockEvent(e: Event) {
+  const { blockId } = (e as CustomEvent).detail as { blockId: string }
+  if (!blockId) return
+  nextTick(() => {
+    const el = document.querySelector(`[data-block-id="${blockId}"]`)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      // Brief highlight
+      el.classList.add('navigate-highlight')
+      setTimeout(() => el.classList.remove('navigate-highlight'), 2000)
+    }
+  })
+}
 
 async function startEditTitle() {
   if (!isTitleEditable.value) return
@@ -190,5 +210,16 @@ function handleCancelMerge() {
     </Teleport>
   </div>
 </template>
+
+<style lang="scss" scoped>
+:deep(.navigate-highlight) {
+  animation: navigate-pulse 2s ease-out;
+}
+
+@keyframes navigate-pulse {
+  0%   { background: rgba(99, 102, 241, 0.12); }
+  100% { background: transparent; }
+}
+</style>
 
 

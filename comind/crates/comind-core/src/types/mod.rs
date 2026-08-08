@@ -9,8 +9,12 @@ pub mod search;
 pub mod block_version;
 pub mod notification;
 pub mod date_ref;
+pub mod block_card;
+pub mod saved_filter;
+pub mod task_view;
 
 pub use block::*;
+pub use block_card::*;
 pub use page::*;
 pub use link::*;
 pub use property::*;
@@ -21,3 +25,5 @@ pub use search::*;
 pub use block_version::*;
 pub use notification::*;
 pub use date_ref::*;
+pub use saved_filter::*;
+pub use task_view::*;

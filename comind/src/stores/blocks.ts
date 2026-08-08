@@ -8,6 +8,7 @@ import { parseBlockLinks } from '../utils/parser'
 import { usePageStore } from './pages'
 import { useBlockVersionStore } from './blockVersion'
 import { usePropertyStore } from './property'
+import { useBlockCardStore } from './blockCard'
 import type { BlockSnapshot } from '../types/blockVersion'
 
 import {
@@ -981,9 +982,11 @@ export const useBlockStore = defineStore('blocks', () => {
     }
 
     // 2. 立即从 reactive 数组移除（同步，触发 tree rebuild）
+    const blockCardStore = useBlockCardStore()
     for (const id of toDelete) {
       pendingSaves.get(id)?.cancel()
       pendingSaves.delete(id)
+      blockCardStore.invalidate(id)
     }
     blocks.value = blocks.value.filter(b => !toDelete.has(b.id))
 
@@ -1019,6 +1022,9 @@ export const useBlockStore = defineStore('blocks', () => {
     block.content = content
     block.updatedAt = Date.now()
     _scheduleSave(block)
+
+    const blockCardStore = useBlockCardStore()
+    blockCardStore.invalidate(blockId)
 
     // 自动将带 schedule/deadline 的 block 标记为 Todo 任务。
     // 这是所有写入 content 路径的统一收口（/schedule、/deadline 命令、

@@ -6,7 +6,7 @@ import type {
   Block, Page, Property, Link, RelationshipType,
   UserTemplate, SearchResult, BlockUpdate, PageUpdate,
   BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig, BlockVersion,
-  Notification, DateRefRecord, IncompleteTask
+  Notification, DateRefRecord, IncompleteTask, BlockCard, SavedFilterRust, TaskViewRust
 } from './types'
 
 export function isTauriEnvironment(): boolean {
@@ -36,6 +36,50 @@ export async function tauriGetBlock(blockId: string): Promise<Block> {
 
 export async function tauriGetBlocksByPage(pageId: string): Promise<Block[]> {
   return invoke('get_blocks_by_page', { pageId })
+}
+
+export async function tauriGetBlockCards(): Promise<BlockCard[]> {
+  return invoke('get_block_cards')
+}
+
+// ---- Saved Filters ----
+
+export async function tauriGetSavedFilters(): Promise<SavedFilterRust[]> {
+  return invoke('get_saved_filters')
+}
+
+export async function tauriSaveSavedFilter(name: string, queryJson: string): Promise<SavedFilterRust> {
+  return invoke('save_saved_filter', { name, queryJson })
+}
+
+export async function tauriUpdateSavedFilter(id: string, name: string, queryJson: string): Promise<SavedFilterRust> {
+  return invoke('update_saved_filter', { id, name, queryJson })
+}
+
+export async function tauriDeleteSavedFilter(id: string): Promise<void> {
+  return invoke('delete_saved_filter', { id })
+}
+
+// ---- Task Views ----
+
+export async function tauriGetTaskViews(): Promise<TaskViewRust[]> {
+  return invoke('get_task_views')
+}
+
+export async function tauriSaveTaskView(name: string, queryJson: string, viewType: string, groupBy: string): Promise<TaskViewRust> {
+  return invoke('save_task_view', { name, queryJson, viewType, groupBy })
+}
+
+export async function tauriUpdateTaskView(id: string, name: string, queryJson: string, viewType: string, groupBy: string, isDefault: boolean, sortOrder: number): Promise<TaskViewRust> {
+  return invoke('update_task_view', { id, name, queryJson, viewType, groupBy, isDefault, sortOrder })
+}
+
+export async function tauriDeleteTaskView(id: string): Promise<void> {
+  return invoke('delete_task_view', { id })
+}
+
+export async function tauriSetDefaultTaskView(id: string): Promise<TaskViewRust> {
+  return invoke('set_default_task_view', { id })
 }
 
 export async function tauriSaveBlockTree(blocks: BlockUpdate[]): Promise<Block[]> {

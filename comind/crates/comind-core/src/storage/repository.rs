@@ -2,6 +2,7 @@ use std::error::Error;
 use super::super::types::*;
 
 pub trait BlockRepository {
+    fn get_all(&self) -> Result<Vec<Block>, Box<dyn Error>>;
     fn get_by_id(&self, id: &str) -> Result<Block, Box<dyn Error>>;
     fn get_by_page_id(&self, page_id: &str) -> Result<Vec<Block>, Box<dyn Error>>;
     fn get_children(&self, parent_id: &str) -> Result<Vec<Block>, Box<dyn Error>>;
@@ -40,6 +41,7 @@ pub trait LinkRepository {
 }
 
 pub trait PropertyRepository {
+    fn get_all(&self) -> Result<Vec<Property>, Box<dyn Error>>;
     fn get_by_id(&self, id: &str) -> Result<Property, Box<dyn Error>>;
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<Property>, Box<dyn Error>>;
     fn get_by_block_id_and_key(&self, block_id: &str, key: &str) -> Result<Option<Property>, Box<dyn Error>>;
@@ -134,6 +136,22 @@ pub trait DateRefRepository {
     fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>>;
 }
 
+pub trait SavedFilterRepository {
+    fn get_all(&self) -> Result<Vec<SavedFilter>, Box<dyn Error>>;
+    fn get_by_id(&self, id: &str) -> Result<SavedFilter, Box<dyn Error>>;
+    fn create(&mut self, filter: &SavedFilter) -> Result<SavedFilter, Box<dyn Error>>;
+    fn update(&mut self, filter: &SavedFilter) -> Result<SavedFilter, Box<dyn Error>>;
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
+}
+
+pub trait TaskViewRepository {
+    fn get_all(&self) -> Result<Vec<TaskView>, Box<dyn Error>>;
+    fn get_by_id(&self, id: &str) -> Result<TaskView, Box<dyn Error>>;
+    fn create(&mut self, view: &TaskView) -> Result<TaskView, Box<dyn Error>>;
+    fn update(&mut self, view: &TaskView) -> Result<TaskView, Box<dyn Error>>;
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
+}
+
 pub trait StorageAdapter {
     fn blocks(&mut self) -> &mut dyn BlockRepository;
     fn pages(&mut self) -> &mut dyn PageRepository;
@@ -145,6 +163,8 @@ pub trait StorageAdapter {
     fn block_versions(&mut self) -> &mut dyn BlockVersionRepository;
     fn notifications(&mut self) -> &mut dyn NotificationRepository;
     fn date_refs(&mut self) -> &mut dyn DateRefRepository;
+    fn saved_filters(&mut self) -> &mut dyn SavedFilterRepository;
+    fn task_views(&mut self) -> &mut dyn TaskViewRepository;
 }
 
 pub trait TransactionalStorageAdapter: StorageAdapter {

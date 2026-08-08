@@ -186,6 +186,26 @@ impl SQLiteAdapter {
             CREATE INDEX IF NOT EXISTS idx_dateref_kind_date ON DateRef(kind, date_day);
             CREATE INDEX IF NOT EXISTS idx_dateref_block_id ON DateRef(block_id);
             CREATE INDEX IF NOT EXISTS idx_dateref_event_ts ON DateRef(event_ts);
+
+            CREATE TABLE IF NOT EXISTS SavedFilter (
+                id          TEXT PRIMARY KEY,
+                name        TEXT NOT NULL,
+                query_json  TEXT NOT NULL,
+                created_at  INTEGER NOT NULL,
+                updated_at  INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS TaskView (
+                id          TEXT PRIMARY KEY,
+                name        TEXT NOT NULL,
+                query_json  TEXT NOT NULL,
+                view_type   TEXT NOT NULL DEFAULT 'table',
+                group_by    TEXT NOT NULL DEFAULT '',
+                is_default  INTEGER NOT NULL DEFAULT 0,
+                sort_order  INTEGER NOT NULL DEFAULT 0,
+                created_at  INTEGER NOT NULL,
+                updated_at  INTEGER NOT NULL
+            );
             
             CREATE INDEX IF NOT EXISTS idx_page_blockId        ON Page(block_id);
             CREATE INDEX IF NOT EXISTS idx_page_type           ON Page(type);
@@ -320,6 +340,28 @@ impl SQLiteAdapter {
 }
 
 impl BlockRepository for SQLiteAdapter {
+    fn get_all(&self) -> Result<Vec<Block>, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, page_id, parent_id, pos, content, format, type, created_at, updated_at, version, deleted_at FROM Block WHERE deleted_at IS NULL"
+        )?;
+        let blocks = stmt.query_map([], |row| {
+            Ok(Block {
+                id: row.get(0)?,
+                page_id: row.get(1)?,
+                parent_id: row.get(2)?,
+                pos: row.get(3)?,
+                content: row.get(4)?,
+                format: row.get(5)?,
+                r#type: row.get(6)?,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
+                version: row.get(9)?,
+                deleted_at: row.get(10)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(blocks)
+    }
+
     fn get_by_id(&self, id: &str) -> Result<Block, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, page_id, parent_id, pos, content, format, type, created_at, updated_at, version, deleted_at 
@@ -875,6 +917,30 @@ impl LinkRepository for SQLiteAdapter {
 }
 
 impl PropertyRepository for SQLiteAdapter {
+    fn get_all(&self) -> Result<Vec<Property>, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at FROM Property WHERE is_deleted = 0 AND deleted_at IS NULL"
+        )?;
+        let properties = stmt.query_map([], |row| {
+            Ok(Property {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                key: row.get(2)?,
+                value: row.get(3)?,
+                r#type: row.get(4)?,
+                sort_order: row.get(5)?,
+                is_hidden: row.get(6)?,
+                is_deleted: row.get(7)?,
+                schema_version: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+                version: row.get(11)?,
+                deleted_at: row.get(12)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(properties)
+    }
+
     fn get_by_id(&self, id: &str) -> Result<Property, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at 
@@ -1476,6 +1542,154 @@ impl BlockVersionRepository for SQLiteAdapter {
     }
 }
 
+impl SavedFilterRepository for SQLiteAdapter {
+    fn get_all(&self) -> Result<Vec<SavedFilter>, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, query_json, created_at, updated_at FROM SavedFilter ORDER BY created_at DESC"
+        )?;
+        let filters = stmt.query_map([], |row| {
+            Ok(SavedFilter {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                query_json: row.get(2)?,
+                created_at: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(filters)
+    }
+
+    fn get_by_id(&self, id: &str) -> Result<SavedFilter, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, query_json, created_at, updated_at FROM SavedFilter WHERE id = ?1"
+        )?;
+        let filter = stmt.query_row(params![id], |row| {
+            Ok(SavedFilter {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                query_json: row.get(2)?,
+                created_at: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        })?;
+        Ok(filter)
+    }
+
+    fn create(&mut self, filter: &SavedFilter) -> Result<SavedFilter, Box<dyn Error>> {
+        self.conn.execute(
+            "INSERT INTO SavedFilter (id, name, query_json, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                filter.id,
+                filter.name,
+                filter.query_json,
+                filter.created_at,
+                filter.updated_at
+            ]
+        )?;
+        Ok(filter.clone())
+    }
+
+    fn update(&mut self, filter: &SavedFilter) -> Result<SavedFilter, Box<dyn Error>> {
+        self.conn.execute(
+            "UPDATE SavedFilter SET name = ?2, query_json = ?3, updated_at = ?4 WHERE id = ?1",
+            params![
+                filter.id,
+                filter.name,
+                filter.query_json,
+                filter.updated_at
+            ]
+        )?;
+        Ok(filter.clone())
+    }
+
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
+        self.conn.execute("DELETE FROM SavedFilter WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+}
+
+impl TaskViewRepository for SQLiteAdapter {
+    fn get_all(&self) -> Result<Vec<TaskView>, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, created_at, updated_at FROM TaskView ORDER BY sort_order ASC, created_at DESC"
+        )?;
+        let views = stmt.query_map([], |row| {
+            Ok(TaskView {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                query_json: row.get(2)?,
+                view_type: row.get(3)?,
+                group_by: row.get(4)?,
+                is_default: row.get(5)?,
+                sort_order: row.get(6)?,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(views)
+    }
+
+    fn get_by_id(&self, id: &str) -> Result<TaskView, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, created_at, updated_at FROM TaskView WHERE id = ?1"
+        )?;
+        let view = stmt.query_row(params![id], |row| {
+            Ok(TaskView {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                query_json: row.get(2)?,
+                view_type: row.get(3)?,
+                group_by: row.get(4)?,
+                is_default: row.get(5)?,
+                sort_order: row.get(6)?,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
+            })
+        })?;
+        Ok(view)
+    }
+
+    fn create(&mut self, view: &TaskView) -> Result<TaskView, Box<dyn Error>> {
+        self.conn.execute(
+            "INSERT INTO TaskView (id, name, query_json, view_type, group_by, is_default, sort_order, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                view.id,
+                view.name,
+                view.query_json,
+                view.view_type,
+                view.group_by,
+                view.is_default,
+                view.sort_order,
+                view.created_at,
+                view.updated_at
+            ]
+        )?;
+        Ok(view.clone())
+    }
+
+    fn update(&mut self, view: &TaskView) -> Result<TaskView, Box<dyn Error>> {
+        self.conn.execute(
+            "UPDATE TaskView SET name = ?2, query_json = ?3, view_type = ?4, group_by = ?5, is_default = ?6, sort_order = ?7, updated_at = ?8 WHERE id = ?1",
+            params![
+                view.id,
+                view.name,
+                view.query_json,
+                view.view_type,
+                view.group_by,
+                view.is_default,
+                view.sort_order,
+                view.updated_at
+            ]
+        )?;
+        Ok(view.clone())
+    }
+
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
+        self.conn.execute("DELETE FROM TaskView WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+}
+
 impl StorageAdapter for SQLiteAdapter {
     fn blocks(&mut self) -> &mut dyn BlockRepository {
         self
@@ -1514,6 +1728,14 @@ impl StorageAdapter for SQLiteAdapter {
     }
 
     fn date_refs(&mut self) -> &mut dyn DateRefRepository {
+        self
+    }
+
+    fn saved_filters(&mut self) -> &mut dyn SavedFilterRepository {
+        self
+    }
+
+    fn task_views(&mut self) -> &mut dyn TaskViewRepository {
         self
     }
 }
@@ -2026,6 +2248,28 @@ struct SQLiteTransactionAdapter<'a> {
 }
 
 impl<'a> BlockRepository for SQLiteTransactionAdapter<'a> {
+    fn get_all(&self) -> Result<Vec<Block>, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, page_id, parent_id, pos, content, format, type, created_at, updated_at, version, deleted_at FROM Block WHERE deleted_at IS NULL"
+        )?;
+        let blocks = stmt.query_map([], |row| {
+            Ok(Block {
+                id: row.get(0)?,
+                page_id: row.get(1)?,
+                parent_id: row.get(2)?,
+                pos: row.get(3)?,
+                content: row.get(4)?,
+                format: row.get(5)?,
+                r#type: row.get(6)?,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
+                version: row.get(9)?,
+                deleted_at: row.get(10)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(blocks)
+    }
+
     fn get_by_id(&self, id: &str) -> Result<Block, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, page_id, parent_id, pos, content, format, type, created_at, updated_at, version, deleted_at 
@@ -2608,6 +2852,30 @@ impl<'a> LinkRepository for SQLiteTransactionAdapter<'a> {
 }
 
 impl<'a> PropertyRepository for SQLiteTransactionAdapter<'a> {
+    fn get_all(&self) -> Result<Vec<Property>, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at FROM Property WHERE is_deleted = 0 AND deleted_at IS NULL"
+        )?;
+        let properties = stmt.query_map([], |row| {
+            Ok(Property {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                key: row.get(2)?,
+                value: row.get(3)?,
+                r#type: row.get(4)?,
+                sort_order: row.get(5)?,
+                is_hidden: row.get(6)?,
+                is_deleted: row.get(7)?,
+                schema_version: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+                version: row.get(11)?,
+                deleted_at: row.get(12)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(properties)
+    }
+
     fn get_by_id(&self, id: &str) -> Result<Property, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at
@@ -3220,6 +3488,162 @@ impl<'a> StorageAdapter for SQLiteTransactionAdapter<'a> {
 
     fn date_refs(&mut self) -> &mut dyn DateRefRepository {
         self
+    }
+
+    fn saved_filters(&mut self) -> &mut dyn SavedFilterRepository {
+        self
+    }
+
+    fn task_views(&mut self) -> &mut dyn TaskViewRepository {
+        self
+    }
+}
+
+impl<'a> SavedFilterRepository for SQLiteTransactionAdapter<'a> {
+    fn get_all(&self) -> Result<Vec<SavedFilter>, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, query_json, created_at, updated_at FROM SavedFilter ORDER BY created_at DESC"
+        )?;
+        let filters = stmt.query_map([], |row| {
+            Ok(SavedFilter {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                query_json: row.get(2)?,
+                created_at: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(filters)
+    }
+
+    fn get_by_id(&self, id: &str) -> Result<SavedFilter, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, query_json, created_at, updated_at FROM SavedFilter WHERE id = ?1"
+        )?;
+        let filter = stmt.query_row(params![id], |row| {
+            Ok(SavedFilter {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                query_json: row.get(2)?,
+                created_at: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        })?;
+        Ok(filter)
+    }
+
+    fn create(&mut self, filter: &SavedFilter) -> Result<SavedFilter, Box<dyn Error>> {
+        self.conn.execute(
+            "INSERT INTO SavedFilter (id, name, query_json, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                filter.id,
+                filter.name,
+                filter.query_json,
+                filter.created_at,
+                filter.updated_at
+            ]
+        )?;
+        Ok(filter.clone())
+    }
+
+    fn update(&mut self, filter: &SavedFilter) -> Result<SavedFilter, Box<dyn Error>> {
+        self.conn.execute(
+            "UPDATE SavedFilter SET name = ?2, query_json = ?3, updated_at = ?4 WHERE id = ?1",
+            params![
+                filter.id,
+                filter.name,
+                filter.query_json,
+                filter.updated_at
+            ]
+        )?;
+        Ok(filter.clone())
+    }
+
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
+        self.conn.execute("DELETE FROM SavedFilter WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+}
+
+impl<'a> TaskViewRepository for SQLiteTransactionAdapter<'a> {
+    fn get_all(&self) -> Result<Vec<TaskView>, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, created_at, updated_at FROM TaskView ORDER BY sort_order ASC, created_at DESC"
+        )?;
+        let views = stmt.query_map([], |row| {
+            Ok(TaskView {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                query_json: row.get(2)?,
+                view_type: row.get(3)?,
+                group_by: row.get(4)?,
+                is_default: row.get(5)?,
+                sort_order: row.get(6)?,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(views)
+    }
+
+    fn get_by_id(&self, id: &str) -> Result<TaskView, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, created_at, updated_at FROM TaskView WHERE id = ?1"
+        )?;
+        let view = stmt.query_row(params![id], |row| {
+            Ok(TaskView {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                query_json: row.get(2)?,
+                view_type: row.get(3)?,
+                group_by: row.get(4)?,
+                is_default: row.get(5)?,
+                sort_order: row.get(6)?,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
+            })
+        })?;
+        Ok(view)
+    }
+
+    fn create(&mut self, view: &TaskView) -> Result<TaskView, Box<dyn Error>> {
+        self.conn.execute(
+            "INSERT INTO TaskView (id, name, query_json, view_type, group_by, is_default, sort_order, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                view.id,
+                view.name,
+                view.query_json,
+                view.view_type,
+                view.group_by,
+                view.is_default,
+                view.sort_order,
+                view.created_at,
+                view.updated_at
+            ]
+        )?;
+        Ok(view.clone())
+    }
+
+    fn update(&mut self, view: &TaskView) -> Result<TaskView, Box<dyn Error>> {
+        self.conn.execute(
+            "UPDATE TaskView SET name = ?2, query_json = ?3, view_type = ?4, group_by = ?5, is_default = ?6, sort_order = ?7, updated_at = ?8 WHERE id = ?1",
+            params![
+                view.id,
+                view.name,
+                view.query_json,
+                view.view_type,
+                view.group_by,
+                view.is_default,
+                view.sort_order,
+                view.updated_at
+            ]
+        )?;
+        Ok(view.clone())
+    }
+
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
+        self.conn.execute("DELETE FROM TaskView WHERE id = ?1", params![id])?;
+        Ok(())
     }
 }
 

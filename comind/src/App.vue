@@ -98,6 +98,9 @@ function handleGlobalKeydown(e: KeyboardEvent) {
   } else if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
     e.preventDefault()
     toggle()
+  } else if ((e.ctrlKey || e.metaKey) && e.key === 't') {
+    e.preventDefault()
+    router.push('/tasks')
   }
 }
 

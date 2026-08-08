@@ -35,7 +35,7 @@ import type {
   Block, Page, Property, Link, RelationshipType,
   UserTemplate, SearchResult, BlockUpdate, PageUpdate,
   BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig, BlockVersion,
-  Notification, DateRefRecord, IncompleteTask
+  Notification, DateRefRecord, IncompleteTask, BlockCard, SavedFilterRust, TaskViewRust
 } from './types'
 
 export interface CoreClient {
@@ -98,6 +98,21 @@ export interface CoreClient {
   batchCheckAndFireData(nowMs: number): Promise<tauri.TauriBatchCheckAndFireData>
   rebuildDateRefs(): Promise<{ rebuilt: number }>
   buildGraphSnapshot(): Promise<tauri.TauriGraphEdgeRecord[]>
+
+  getBlockCards(): Promise<BlockCard[]>
+
+  // Saved Filters
+  getSavedFilters(): Promise<SavedFilterRust[]>
+  saveSavedFilter(name: string, queryJson: string): Promise<SavedFilterRust>
+  updateSavedFilter(id: string, name: string, queryJson: string): Promise<SavedFilterRust>
+  deleteSavedFilter(id: string): Promise<void>
+
+  // Task Views
+  getTaskViews(): Promise<TaskViewRust[]>
+  saveTaskView(name: string, queryJson: string, viewType: string, groupBy: string): Promise<TaskViewRust>
+  updateTaskView(id: string, name: string, queryJson: string, viewType: string, groupBy: string, isDefault: boolean, sortOrder: number): Promise<TaskViewRust>
+  deleteTaskView(id: string): Promise<void>
+  setDefaultTaskView(id: string): Promise<TaskViewRust>
 }
 
 class TauriClient implements CoreClient {
@@ -107,6 +122,48 @@ class TauriClient implements CoreClient {
 
   async getBlocksByPage(pageId: string): Promise<Block[]> {
     return tauri.tauriGetBlocksByPage(pageId)
+  }
+
+  async getBlockCards(): Promise<BlockCard[]> {
+    return tauri.tauriGetBlockCards()
+  }
+
+  // ---- Saved Filters ----
+  async getSavedFilters(): Promise<SavedFilterRust[]> {
+    return tauri.tauriGetSavedFilters()
+  }
+
+  async saveSavedFilter(name: string, queryJson: string): Promise<SavedFilterRust> {
+    return tauri.tauriSaveSavedFilter(name, queryJson)
+  }
+
+  async updateSavedFilter(id: string, name: string, queryJson: string): Promise<SavedFilterRust> {
+    return tauri.tauriUpdateSavedFilter(id, name, queryJson)
+  }
+
+  async deleteSavedFilter(id: string): Promise<void> {
+    return tauri.tauriDeleteSavedFilter(id)
+  }
+
+  // ---- Task Views ----
+  async getTaskViews(): Promise<TaskViewRust[]> {
+    return tauri.tauriGetTaskViews()
+  }
+
+  async saveTaskView(name: string, queryJson: string, viewType: string, groupBy: string): Promise<TaskViewRust> {
+    return tauri.tauriSaveTaskView(name, queryJson, viewType, groupBy)
+  }
+
+  async updateTaskView(id: string, name: string, queryJson: string, viewType: string, groupBy: string, isDefault: boolean, sortOrder: number): Promise<TaskViewRust> {
+    return tauri.tauriUpdateTaskView(id, name, queryJson, viewType, groupBy, isDefault, sortOrder)
+  }
+
+  async deleteTaskView(id: string): Promise<void> {
+    return tauri.tauriDeleteTaskView(id)
+  }
+
+  async setDefaultTaskView(id: string): Promise<TaskViewRust> {
+    return tauri.tauriSetDefaultTaskView(id)
   }
 
   async saveBlockTree(blocks: BlockUpdate[]): Promise<Block[]> {
@@ -303,6 +360,49 @@ class WasmClientAdapter implements CoreClient {
 
   async getBlocksByPage(pageId: string): Promise<Block[]> {
     return this.wasm.get_blocks_by_page(pageId)
+  }
+
+  async getBlockCards(): Promise<BlockCard[]> {
+    // WASM 端暂不支持全量投影，返回空数组
+    return []
+  }
+
+  // ---- Saved Filters ----
+  async getSavedFilters(): Promise<SavedFilterRust[]> {
+    return []
+  }
+
+  async saveSavedFilter(_name: string, _queryJson: string): Promise<SavedFilterRust> {
+    throw new Error('WASM: saved filters not supported')
+  }
+
+  async updateSavedFilter(_id: string, _name: string, _queryJson: string): Promise<SavedFilterRust> {
+    throw new Error('WASM: saved filters not supported')
+  }
+
+  async deleteSavedFilter(_id: string): Promise<void> {
+    throw new Error('WASM: saved filters not supported')
+  }
+
+  // ---- Task Views ----
+  async getTaskViews(): Promise<TaskViewRust[]> {
+    return []
+  }
+
+  async saveTaskView(_name: string, _queryJson: string, _viewType: string, _groupBy: string): Promise<TaskViewRust> {
+    throw new Error('WASM: task views not supported')
+  }
+
+  async updateTaskView(_id: string, _name: string, _queryJson: string, _viewType: string, _groupBy: string, _isDefault: boolean, _sortOrder: number): Promise<TaskViewRust> {
+    throw new Error('WASM: task views not supported')
+  }
+
+  async deleteTaskView(_id: string): Promise<void> {
+    throw new Error('WASM: task views not supported')
+  }
+
+  async setDefaultTaskView(_id: string): Promise<TaskViewRust> {
+    throw new Error('WASM: task views not supported')
   }
 
   async saveBlockTree(blocks: BlockUpdate[]): Promise<Block[]> {

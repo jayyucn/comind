@@ -197,6 +197,44 @@ export interface NotificationSettings {
   web_browser_notifications_enabled: boolean
 }
 
+export interface DateRefLite {
+  kind: string          // "deadline" | "schedule"
+  iso: string
+  date_day: string      // YYYY-MM-DD
+  recurrence: string
+  event_ts: number
+}
+
+export interface BlockCard {
+  block_id: string
+  page_id: string
+  parent_id: string
+  content_preview: string
+  properties: Record<string, any>   // HashMap<String, Value> → Record
+  date_refs: DateRefLite[]
+  updated_at: number
+}
+
+export interface SavedFilterRust {
+  id: string
+  name: string
+  query_json: string
+  created_at: number
+  updated_at: number
+}
+
+export interface TaskViewRust {
+  id: string
+  name: string
+  query_json: string
+  view_type: string
+  group_by: string
+  is_default: number
+  sort_order: number
+  created_at: number
+  updated_at: number
+}
+
 /** 未完成任务：block 数据 + page_title + page_type */
 export interface IncompleteTask {
   id: string

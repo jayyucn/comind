@@ -3,6 +3,7 @@ import { useSidebar } from '../../composables/useSidebar'
 import SidebarHeader from './SidebarHeader.vue'
 import SidebarIdeas from './SidebarIdeas.vue'
 import SidebarGraphItem from './SidebarGraphItem.vue'
+import SidebarTaskItem from './SidebarTaskItem.vue'
 import SidebarRecent from './SidebarRecent.vue'
 import SidebarFavorites from './SidebarFavorites.vue'
 import SidebarFooter from './SidebarFooter.vue'
@@ -39,6 +40,7 @@ defineProps<{
         <!-- 导航区 -->
         <SidebarIdeas />
         <SidebarGraphItem />
+        <SidebarTaskItem />
 
         <!-- 最近列表（固定高度，不滚动） -->
         <SidebarRecent />

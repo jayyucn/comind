@@ -52,6 +52,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import('../components/GraphView/GraphPage.vue'),
     meta: { fullWidth: true, hideRightSidebarToggle: true, absolute: true },
   },
+  {
+    path: '/tasks',
+    name: 'tasks',
+    component: () => import('../components/TaskHub/TaskHub.vue'),
+    meta: { fullWidth: true, hideRightSidebarToggle: true, absolute: true },
+  },
   // 404 兜底
   {
     path: '/:pathMatch(.*)*',
