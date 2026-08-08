@@ -36,7 +36,7 @@ import type {
   UserTemplate, SearchResult, BlockUpdate, BlockSaveResult, PageUpdate,
   BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig, BlockVersion,
   Notification, DateRefRecord, IncompleteTask, BlockCard, SavedFilterRust, TaskViewRust,
-  NotificationSettings
+  NotificationSettings, PageWithBlocks, BlockRenderData, RenderSegment
 } from './types'
 
 export interface CoreClient {
@@ -89,6 +89,9 @@ export interface CoreClient {
   deleteNotification(id: string): Promise<void>
   cleanupNotifications(timestamp: number): Promise<void>
   markAllNotificationsRead(): Promise<void>
+
+  // S10: Render segments
+  getPageWithBlocks(pageId: string): Promise<PageWithBlocks>
 
   // Notification Settings (migrated to Rust)
   getNotificationSettings(): Promise<NotificationSettings>
@@ -331,6 +334,10 @@ class TauriClient implements CoreClient {
 
     async syncPayloadForBlock(blockId: string): Promise<void> {
       return tauri.tauriSyncPayloadForBlock(blockId)
+    }
+
+    async getPageWithBlocks(pageId: string): Promise<PageWithBlocks> {
+      return tauri.tauriGetPageWithBlocks(pageId)
     }
 
     async queryDateRefs(kind: string, from: string, to: string): Promise<DateRefRecord[]> {
@@ -639,6 +646,10 @@ class WasmClientAdapter implements CoreClient {
 
   async syncPayloadForBlock(blockId: string): Promise<void> {
     // Web: notification engine requires Rust backend, no-op
+  }
+
+  async getPageWithBlocks(_pageId: string): Promise<PageWithBlocks> {
+    throw new Error('getPageWithBlocks not available on web')
   }
 
   async queryDateRefs(kind: string, from: string, to: string): Promise<DateRefRecord[]> {

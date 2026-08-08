@@ -6,6 +6,9 @@ export interface Block {
   content: string
   format: Record<string, any>
   type: 'bullet' | 'property' | 'query' | 'embed' | 'code' | 'image'
+  /** Pre-computed render segments from Rust (S10). Array of structured instructions
+   *  for rendering content. Empty for code/image/embed/query types. */
+  renderSegments?: import('../wasm/types').RenderSegment[]
   createdAt: number
   updatedAt: number
 }

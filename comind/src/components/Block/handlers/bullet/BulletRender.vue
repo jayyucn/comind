@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useContentRenderer, parseHeading } from '../../../../composables/useContentRenderer'
+import { useBlockStore } from '../../../../stores/blocks'
 
 const props = defineProps<{
   content: string
@@ -13,6 +14,7 @@ const emit = defineEmits<{
 }>()
 
 const { renderContentToHtml } = useContentRenderer()
+const blockStore = useBlockStore()
 
 const heading = computed(() => parseHeading(props.content))
 
@@ -21,14 +23,24 @@ const headingTag = computed(() => {
   return `h${heading.value.level}` as const
 })
 
+/** Get render segments from the block store (pre-computed by Rust via getPageWithBlocks) */
+const segments = computed(() => {
+  if (!props.blockId) return undefined
+  return blockStore.getBlock(props.blockId)?.renderSegments
+})
+
 const headingContent = computed(() => {
   if (!heading.value) return ''
-  return renderContentToHtml(heading.value.title, props.blockId ?? '')
+  const segs = segments.value
+  return segs ? renderContentToHtml(segs, heading.value.title, props.blockId ?? '')
+              : renderContentToHtml([], heading.value.title, props.blockId ?? '')
 })
 
 const normalContent = computed(() => {
   if (heading.value) return ''
-  return renderContentToHtml(props.content, props.blockId ?? '')
+  const segs = segments.value
+  return segs ? renderContentToHtml(segs, props.content, props.blockId ?? '')
+              : renderContentToHtml([], props.content, props.blockId ?? '')
 })
 
 function handleClick(e: MouseEvent) {

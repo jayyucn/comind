@@ -37,3 +37,5 @@ pub use block_projection_service::*;
 pub use filter_service::FilterService;
 pub use content_parse_service::*;
 pub use notification_service::NotificationService;
+pub mod render_segment_service;
+pub use render_segment_service::build_page_with_blocks;

@@ -1,7 +1,7 @@
 use comind_core::{
     services::{
         BlockService, BlockVersionService, DateRefService, FilterService, LinkService, PageService,
-        PropertyService, RelationshipTypeService,
+        PropertyService, RelationshipTypeService, build_page_with_blocks,
     },
     storage::{StorageAdapter, TransactionalStorageAdapter},
     types::*,
@@ -1771,5 +1771,19 @@ pub async fn build_document_order(
 ) -> Result<std::collections::HashMap<String, usize>, String> {
     execute_with_adapter(db, move |storage| {
         BlockService::build_document_order(storage, &page_id)
+    }).await
+}
+
+
+/// S10: Get page with pre-computed render segments for all blocks.
+/// Calls uild_page_with_blocks which resolves link titles, relationship type labels/colors,
+/// and dateRef overdue status — TS renderer consumes segments directly, zero extra IPC.
+#[tauri::command]
+pub async fn get_page_with_blocks(
+    db: State<'_, super::state::DatabaseConnection>,
+    page_id: String,
+) -> Result<PageWithBlocks, String> {
+    execute_with_adapter(db, move |storage| {
+        build_page_with_blocks(storage, &page_id)
     }).await
 }

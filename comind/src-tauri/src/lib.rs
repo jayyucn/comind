@@ -209,6 +209,7 @@ pub fn run() {
             commands::check_has_typed_link_to_target,
             commands::renumber_blocks,
             commands::build_document_order,
+            commands::get_page_with_blocks,
             #[cfg(not(target_os = "android"))]
             commands::get_sync_qr,
             commands::get_paired_devices,

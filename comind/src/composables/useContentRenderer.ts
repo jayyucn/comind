@@ -1,11 +1,4 @@
-import { getPredefinedRelationship } from '../types/relationship'
-import {
-  DATE_REF_AT_REGEX,
-  normalizeRecurrence,
-  serializeDateRef,
-  type DateRef,
-  type DateRefKind,
-} from '../utils/date-ref'
+import type { RenderSegment } from '../wasm/types'
 
 const CSS_CLASSES = {
   blockLink: 'block-link',
@@ -15,11 +8,6 @@ const CSS_CLASSES = {
 }
 
 const TAG_PATTERN = '([\\p{L}_][\\p{L}\\p{N}_]*(?:\\/[\\p{L}_][\\p{L}\\p{N}_]*)*)'
-// 新格式：((type))[[target]] 或 ((type))[[target|alias]]
-const TYPED_LINK_REGEX = /\(\(([^)]+)\)\)\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g
-const EXTERNAL_LINK_REGEX = /\[\[(https?:\/\/[^\]]+)\]\]/g
-// 普通 wiki link：不能匹配已被 typed link 匹配的部分
-const WIKI_LINK_REGEX = /\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g
 const TAG_TRIGGER_REGEX = new RegExp(`(?<![\\/|>|@])#${TAG_PATTERN}`, 'gu')
 
 function escapeHtmlEntities(text: string): string {
@@ -43,170 +31,109 @@ export function parseHeading(text: string): HeadingParseResult | null {
   return null
 }
 
-export function useContentRenderer() {
-  /**
-   * 转义 + 处理 #tag。用于 typed link 之间的纯文本段，
-   * 不在最终 HTML 上跑 #tag 正则（避免误匹配 color 值的 #xxxxxx）。
-   */
-  function renderSegmentWithTags(text: string): string {
-    return escapeHtmlEntities(text).replace(TAG_TRIGGER_REGEX, (_, tag) => {
-      if (tag.includes('.')) return `#${tag}`
-      return `<span class="${CSS_CLASSES.blockLink} ${CSS_CLASSES.blockTag}" data-page="${escapeHtmlEntities(tag)}">#${escapeHtmlEntities(tag)}</span>`
-    })
+/**
+ * Escape HTML entities and render #tag patterns within a plain-text segment.
+ * Applied only on the original text slice, not on already-rendered HTML,
+ * so color hex values won't be accidentally matched.
+ */
+function renderTextSegmentWithTags(text: string): string {
+  return escapeHtmlEntities(text).replace(TAG_TRIGGER_REGEX, (_, tag) => {
+    if (tag.includes('.')) return `#${tag}`
+    return `<span class="${CSS_CLASSES.blockLink} ${CSS_CLASSES.blockTag}" data-page="${escapeHtmlEntities(tag)}">#${escapeHtmlEntities(tag)}</span>`
+  })
+}
+
+/**
+ * Render block content to HTML using structured `RenderSegment[]` from Rust.
+ *
+ * The segments cover `content[start..end]` for every character,
+ * with no gaps. We iterate in order: text segments get HTML-escaped
+ * (with #tag rendering), typed segments get appropriate `<span>` wrappers.
+ *
+ * @param segments  Pre-computed render instructions from Rust (via `getPageWithBlocks`)
+ * @param content   The raw block.content string
+ * @param blockId   Optional block ID for data attributes (used by TypedLink)
+ */
+function renderContentToHtml(segments: RenderSegment[], content: string, blockId: string = ''): string {
+  if (!segments || segments.length === 0) {
+    // Fallback: no structured data available — use plain escaped text
+    return renderTextSegmentWithTags(content)
   }
 
-  /**
-   * 判断 dateRef 是否已逾期
-   * 仅 deadline 需要判断逾期，schedule 逾期无意义（过去的时间点依然是计划）
-   */
-  function isOverdue(ref: DateRef): boolean {
-    if (ref.kind !== 'deadline') return false
-    const iso = ref.iso.trim()
-    // 提取 date/datetime 部分，构造本地时间
-    const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/)
-    if (!m) return false
-    const [, y, mo, d, h, mi] = m
-    const hour = h !== undefined ? parseInt(h, 10) : 23
-    const minute = mi !== undefined ? parseInt(mi, 10) : 59
-    const target = new Date(parseInt(y), parseInt(mo) - 1, parseInt(d), hour, minute)
-    const now = new Date()
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    return target < today
-  }
-
-  /**
-   * 渲染 dateRef 为可交互 span
-   *
-   * 处理 @ISO[emoji][|params] 格式，在 typed link 之后、wiki link 之前处理。
-   */
-  function renderDateRefs(text: string): string {
-    // 收集所有匹配，按位置排序，一次性替换
-    const matches: { start: number; end: number; html: string }[] = []
-
-    const re = new RegExp(DATE_REF_AT_REGEX.source, 'g')
-    let m: RegExpExecArray | null
-    while ((m = re.exec(text)) !== null) {
-      const kind: DateRefKind = m[2]
-        ? (m[2] === '📅' ? 'schedule' : m[2] === '⏰' ? 'deadline' : 'ref')
-        : 'ref'
-      const leadMinutes = m[4] ? parseInt(m[4], 10) || 0 : 0
-      const ref: DateRef = {
-        kind,
-        iso: m[1].trim(),
-        recurrence: normalizeRecurrence(m[3]),
-        leadMinutes,
+  const parts: string[] = []
+  for (const seg of segments) {
+    switch (seg.type) {
+      case 'text': {
+        const slice = content.slice(seg.start, seg.end)
+        parts.push(renderTextSegmentWithTags(slice))
+        break
       }
-      matches.push({ start: m.index, end: m.index + m[0].length, html: buildDateRefSpan(ref) })
+
+      case 'link': {
+        const target = escapeHtmlEntities(seg.target_page_title)
+        const display = escapeHtmlEntities(seg.display_text)
+        parts.push(
+          `<span class="${CSS_CLASSES.blockLink}" data-page="${target}">` +
+          `<span class="wiki-bracket">[[</span>${display}<span class="wiki-bracket">]]</span>` +
+          `</span>`
+        )
+        break
+      }
+
+      case 'typed_link': {
+        const relType = escapeHtmlEntities(seg.relationship_type)
+        const label = escapeHtmlEntities(seg.rel_label)
+        const color = seg.rel_color
+        const target = escapeHtmlEntities(seg.target_page_title)
+        const display = escapeHtmlEntities(seg.display_text)
+        const safeBlockId = escapeHtmlEntities(blockId)
+
+        parts.push(
+          `<span class="${CSS_CLASSES.relTypeLabel}" ` +
+          `data-rel-type="${relType}" ` +
+          `data-block-id="${safeBlockId}" ` +
+          `data-typed-from="${seg.start}" ` +
+          `data-typed-to="${seg.end}" ` +
+          `style="--rel-color:${color}">${label}</span>` +
+          `<span class="${CSS_CLASSES.blockLink}" data-page="${target}">${display}</span>`
+        )
+        break
+      }
+
+      case 'external_link': {
+        const url = escapeHtmlEntities(seg.url)
+        parts.push(
+          `<span class="${CSS_CLASSES.blockLink} external" data-external="${url}">${url}</span>`
+        )
+        break
+      }
+
+      case 'date_ref': {
+        const kind = escapeHtmlEntities(seg.kind)
+        const iso = escapeHtmlEntities(seg.iso)
+        const recurrence = escapeHtmlEntities(seg.recurrence)
+        // display the original raw syntax
+        const rawDisplay = content.slice(seg.start, seg.end)
+        const display = escapeHtmlEntities(rawDisplay)
+        const overdue = seg.is_overdue ? 'overdue' : ''
+        const classes = [CSS_CLASSES.dateRef, kind, overdue].filter(Boolean).join(' ')
+
+        parts.push(
+          `<span class="${classes}" ` +
+          `data-kind="${kind}" ` +
+          `data-iso="${iso}" ` +
+          `data-recurrence="${recurrence}" ` +
+          `data-lead-minutes="${seg.lead_minutes}" ` +
+          `data-raw="${display}">${display}</span>`
+        )
+        break
+      }
     }
-
-    // 按位置排序，从后往前替换避免偏移
-    matches.sort((a, b) => b.start - a.start)
-    let result = text
-    for (const match of matches) {
-      result = result.slice(0, match.start) + match.html + result.slice(match.end)
-    }
-
-    return result
   }
 
-  /** 构建单个 dateRef span HTML */
-  function buildDateRefSpan(ref: DateRef): string {
-    const overdue = isOverdue(ref)
-    // 渲染态显示与编辑态一致的原始文本（@ISO[emoji][|params]）
-    const display = serializeDateRef(ref)
-    const classes = [CSS_CLASSES.dateRef, ref.kind, overdue ? 'overdue' : ''].filter(Boolean).join(' ')
-    return `<span class="${classes}" ` +
-      `data-kind="${escapeHtmlEntities(ref.kind)}" ` +
-      `data-iso="${escapeHtmlEntities(ref.iso)}" ` +
-      `data-recurrence="${escapeHtmlEntities(ref.recurrence)}" ` +
-      `data-lead-minutes="${ref.leadMinutes}" ` +
-      `data-raw="${escapeHtmlEntities(display)}">` +
-      `${escapeHtmlEntities(display)}</span>`
-  }
+  return parts.join('')
+}
 
-  /**
-   * 将 Block 内容渲染为 HTML
-   *
-   * 处理（按顺序）：
-   * 1. 带类型链接 ((type))[[X]]：
-   *    - 渲染为 `关系类型 [[X]]`
-   *    - 段间 #tag 在原始 text 上处理，避免误匹配 style 里的 #xxxxxx 颜色值
-   * 2. dateRef @... （在 wiki link 之前，防止 [[...]] 冲突）
-   * 3. 外部链接 [[https://...]]
-   * 4. 普通链接 [[X]] 或 [[X|alias]] → .block-link
-   */
-  function renderContentToHtml(text: string, blockId: string = ''): string {
-    // 1. 带类型链接 + 段间 #tag（基于原始 text）
-    const withTyped = renderTypedLinks(text, blockId)
-
-    // 2. dateRef（基于原始 text，@... 格式与 typed link 不冲突）
-    const withDateRefs = renderDateRefs(withTyped)
-
-    // 3. 外部链接（HTML 中无 [[，安全）
-    const withExternal = withDateRefs.replace(EXTERNAL_LINK_REGEX, (_, url) => {
-      return `<span class="${CSS_CLASSES.blockLink} external" data-external="${escapeHtmlEntities(url)}">${url}</span>`
-    })
-
-    // 4. 普通 wiki link（HTML 中无 [[，安全）
-    const withWikiLinks = withExternal.replace(WIKI_LINK_REGEX, (_, target, alias) => {
-      const display = alias || target
-      return `<span class="${CSS_CLASSES.blockLink}" data-page="${escapeHtmlEntities(target)}"><span class="wiki-bracket">[[</span>${display}<span class="wiki-bracket">]]</span></span>`
-    })
-
-    return withWikiLinks
-  }
-
-  /**
-   * 渲染带类型的链接 ((type))[[target]]
-   * 新格式：((type))[[target]] 或 ((type))[[target|alias]]
-   * 渲染为：关系类型 [[target]]
-   *
-   * @param text 原始文本内容
-   * @param blockId 当前 block 的 ID
-   */
-  function renderTypedLinks(text: string, blockId: string): string {
-    let result = ''
-    let lastIndex = 0
-
-    let m: RegExpExecArray | null
-    TYPED_LINK_REGEX.lastIndex = 0
-    while ((m = TYPED_LINK_REGEX.exec(text)) !== null) {
-      const typedStart = m.index
-      const typedEnd = m.index + m[0].length
-      // 新格式：match[1] = type, match[2] = target, match[3] = alias (可选)
-      const relType = m[1]
-      const target = m[2]
-      const alias = m[3]
-      const display = alias || target
-
-      result += renderSegmentWithTags(text.slice(lastIndex, typedStart))
-
-      const rel = getPredefinedRelationship(relType)
-      const color = rel?.color ?? '#9CA3AF'
-      const chineseLabel = rel?.label ?? relType
-      const safeRelType = escapeHtmlEntities(relType)
-      const safePage = escapeHtmlEntities(target)
-      const safeDisplay = escapeHtmlEntities(display)
-      const safeBlockId = escapeHtmlEntities(blockId)
-      const safeLabel = escapeHtmlEntities(chineseLabel)
-
-      // 渲染格式：关系类型 [[target]]
-      // 直接输出完整的 block-link HTML，避免后续 WIKI_LINK_REGEX 重复处理
-      result += `<span class="${CSS_CLASSES.relTypeLabel}" ` +
-                `data-rel-type="${safeRelType}" ` +
-                `data-block-id="${safeBlockId}" ` +
-                `data-typed-from="${typedStart}" ` +
-                `data-typed-to="${typedEnd}" ` +
-                `data-label-from="${typedStart + 2}" ` +
-                `data-label-to="${typedStart + 2 + relType.length}" ` +
-                `style="--rel-color:${color}">${safeLabel}</span>` +
-                `<span class="${CSS_CLASSES.blockLink}" data-page="${safePage}">${safeDisplay}</span>`
-
-      lastIndex = typedEnd
-    }
-    result += renderSegmentWithTags(text.slice(lastIndex))
-    return result
-  }
-
+export function useContentRenderer() {
   return { renderContentToHtml }
 }

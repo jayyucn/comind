@@ -476,3 +476,7 @@ export async function tauriCheckHasTypedLinkToTarget(
 ): Promise<{ has_typed_link: boolean }> {
   return invoke('check_has_typed_link_to_target', { content, targetTitle })
 }
+// ---- S10: Render segments (get_page_with_blocks) ----
+export async function tauriGetPageWithBlocks(pageId: string): Promise<any> {
+  return invoke('get_page_with_blocks', { pageId })
+}

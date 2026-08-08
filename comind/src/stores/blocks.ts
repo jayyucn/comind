@@ -187,9 +187,20 @@ export const useBlockStore = defineStore('blocks', () => {
     }))
   }
 
-  /** 加载指定 Page 的 Block 树 */
+  /** 加载指定 Page 的 Block 树（含 Rust 预计算的渲染段） */
   async function loadPageBlocks(pageId: string) {
     const client = await getClient()
+    // S10: Use getPageWithBlocks for render segments (zero extra IPC)
+    let renderSegmentsMap: Map<string, import('../wasm/types').RenderSegment[]> = new Map()
+    try {
+      const pw = await client.getPageWithBlocks(pageId)
+      for (const brd of pw.blocks) {
+        renderSegmentsMap.set(brd.block.id, brd.render_segments || [])
+      }
+    } catch {
+      // Fallback: if getPageWithBlocks fails (e.g. old binary), load blocks directly
+    }
+
     const rustBlocks = await client.getBlocksByPage(pageId)
 
     blocks.value = rustBlocks.map(rustBlock => ({
@@ -200,6 +211,7 @@ export const useBlockStore = defineStore('blocks', () => {
       content: rustBlock.content,
       format: JSON.parse(rustBlock.format || '{}'),
       type: rustBlock.type as Block['type'],
+      renderSegments: renderSegmentsMap.get(rustBlock.id),
       properties: {},
       createdAt: rustBlock.created_at,
       updatedAt: rustBlock.updated_at
