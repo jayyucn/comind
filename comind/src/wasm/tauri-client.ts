@@ -441,3 +441,21 @@ export async function tauriGetSyncStatusPC(): Promise<SyncStatus> {
 export async function tauriTriggerFullSyncMobile(): Promise<void> {
   return invoke('trigger_full_sync_mobile')
 }
+
+// ---- Notification Settings (migrated to Rust) ----
+
+export async function tauriGetNotificationSettings(): Promise<NotificationSettings> {
+  return invoke('get_notification_settings')
+}
+
+export async function tauriSaveNotificationSettings(config: NotificationSettings): Promise<void> {
+  return invoke('save_notification_settings', { config })
+}
+
+export async function tauriCheckAndFire(): Promise<Notification[]> {
+  return invoke('check_and_fire')
+}
+
+export async function tauriSyncPayloadForBlock(blockId: string): Promise<void> {
+  return invoke('sync_payload_for_block', { blockId })
+}

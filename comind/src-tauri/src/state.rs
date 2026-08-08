@@ -1,4 +1,5 @@
 use comind_core::storage::SQLiteAdapter;
+use comind_core::types::NotificationConfig;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
@@ -140,5 +141,26 @@ impl Clone for SyncServerHandle {
             #[cfg(target_os = "android")]
             client: self.client.clone(),
         }
+    }
+}
+
+// Notification settings loaded from DB at startup, cached in memory.
+pub struct NotificationSettingsManager {
+    config: Arc<tokio::sync::RwLock<NotificationConfig>>,
+}
+
+impl NotificationSettingsManager {
+    pub fn new(config: NotificationConfig) -> Self {
+        Self {
+            config: Arc::new(tokio::sync::RwLock::new(config)),
+        }
+    }
+
+    pub async fn get(&self) -> NotificationConfig {
+        self.config.read().await.clone()
+    }
+
+    pub async fn update(&self, config: NotificationConfig) {
+        *self.config.write().await = config;
     }
 }

@@ -3,7 +3,7 @@ use comind_core::{
         BlockService, BlockVersionService, DateRefService, FilterService, LinkService, PageService,
         PropertyService, RelationshipTypeService,
     },
-    storage::StorageAdapter,
+    storage::{StorageAdapter, TransactionalStorageAdapter},
     types::*,
     sync::message::SyncTable,
 };
@@ -40,6 +40,24 @@ where
     let adapter_arc = db.adapter_arc();
     let mut adapter = adapter_arc.lock().await;
     f(&mut *adapter).map_err(|e| e.to_string())
+}
+
+/// 写路径专用：在事务内执行闭包。
+/// 内部通过 `SQLiteAdapter::transaction()` 获取事务适配器，闭包内所有
+/// service 层方法（`BlockService::update`、`LinkService::sync_links_for_block` 等）
+/// 共用同一事务，任一子步骤失败则整体回滚。
+async fn execute_with_transaction_adapter<F, R>(
+    db: State<'_, super::state::DatabaseConnection>,
+    f: F,
+) -> Result<R, String>
+where
+    F: FnOnce(&mut dyn StorageAdapter) -> Result<R, Box<dyn Error>>,
+{
+    let adapter_arc = db.adapter_arc();
+    let mut adapter = adapter_arc.lock().await;
+    adapter
+        .transaction(|tx| f(tx))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -486,12 +504,10 @@ pub async fn save_block_tree(
     sync_server: State<'_, super::state::SyncServerHandle>,
     blocks: Vec<serde_json::Value>,
 ) -> Result<Vec<Block>, String> {
-    let block_ids: Vec<String> = blocks.iter()
-        .filter_map(|b| b.get("id").and_then(|v| v.as_str()))
-        .map(|s| s.to_string())
-        .collect();
-    
-    let result = execute_with_adapter(db, |storage| {
+    let mut sync_changes: std::collections::HashMap<SyncTable, Vec<String>> =
+        std::collections::HashMap::new();
+
+    let result = execute_with_transaction_adapter(db, |storage| {
         let mut results = Vec::new();
         let mut page_ids = std::collections::HashSet::new();
 
@@ -499,6 +515,10 @@ pub async fn save_block_tree(
             let block: Block = serde_json::from_value(block_json)
                 .map_err(|e| format!("Failed to parse block: {}", e))?;
             page_ids.insert(block.page_id.clone());
+            sync_changes
+                .entry(SyncTable::Block)
+                .or_insert_with(Vec::new)
+                .push(block.id.clone());
             let existing = BlockService::get_by_id(storage, &block.id);
             let result = match existing {
                 Ok(_) => BlockService::update(
@@ -531,14 +551,16 @@ pub async fn save_block_tree(
 
         Ok(results)
     }).await;
-    
+
     if result.is_ok() {
         let sync_server_clone = sync_server.inner().clone();
         tokio::spawn(async move {
-            sync_server_clone.record_and_notify(SyncTable::Block, block_ids).await;
+            for (table, ids) in sync_changes {
+                sync_server_clone.record_and_notify(table, ids).await;
+            }
         });
     }
-    
+
     result
 }
 
@@ -548,56 +570,60 @@ pub async fn delete_block(
     sync_server: State<'_, super::state::SyncServerHandle>,
     block_id: &str,
 ) -> Result<(), String> {
-    let block_id_clone = block_id.to_string();
-    
-    // Collect cascade-deleted IDs for sync notification
-    let mut cascade_link_ids: Vec<String> = Vec::new();
-    let mut cascade_prop_ids: Vec<String> = Vec::new();
-    
-    let result = execute_with_adapter(db, |storage| {
-        if let Ok(block) = storage.blocks().get_by_id(block_id) {
-            // Collect cascade-deleted link IDs before deleting
-            let links = storage.links().get_by_source_block_id(block_id)?;
-            cascade_link_ids = links.into_iter().map(|l| l.id).collect();
-            storage.links().delete_by_source_block_id(block_id)?;
-            
-            // Collect cascade-deleted property IDs before deleting
-            let props = storage.properties().get_by_block_id(block_id)?;
-            cascade_prop_ids = props.into_iter().map(|p| p.id).collect();
-            storage.properties().delete_by_block_id(block_id)?;
-            
-            // BlockVersion has FK (block_id) RESTRICT — must delete before Block
-            storage.block_versions().delete_by_block_id(block_id)?;
-            storage.blocks().delete(block_id)?;
-            let _ = PageService::update(
-                storage,
-                &block.page_id,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            );
-        }
+    let mut sync_changes: std::collections::HashMap<SyncTable, Vec<String>> =
+        std::collections::HashMap::new();
+
+    let result = execute_with_transaction_adapter(db, |storage| {
+        let block = BlockService::get_by_id(storage, block_id)?;
+
+        // Collect cascade-deleted IDs before deleting
+        let links = LinkService::get_by_source_block_id(storage, block_id)?;
+        sync_changes
+            .entry(SyncTable::Link)
+            .or_insert_with(Vec::new)
+            .extend(links.iter().map(|l| l.id.clone()));
+        let props = PropertyService::get_by_block_id(storage, block_id)?;
+        sync_changes
+            .entry(SyncTable::Property)
+            .or_insert_with(Vec::new)
+            .extend(props.iter().map(|p| p.id.clone()));
+
+        // BlockVersion has FK (block_id) RESTRICT — must delete before Block
+        storage.block_versions().delete_by_block_id(block_id)?;
+        LinkService::delete_by_source_block_id(storage, block_id)?;
+        PropertyService::delete_by_block_id(storage, block_id)?;
+        // BlockService::delete handles dateRef + notification cleanup
+        BlockService::delete(storage, block_id)?;
+
+        sync_changes
+            .entry(SyncTable::Block)
+            .or_insert_with(Vec::new)
+            .push(block_id.to_string());
+
+        let _ = PageService::update(
+            storage,
+            &block.page_id,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
         Ok(())
     }).await;
-    
+
     if result.is_ok() {
         let sync_server_clone = sync_server.inner().clone();
         tokio::spawn(async move {
-            sync_server_clone.record_and_notify(SyncTable::Block, vec![block_id_clone]).await;
-            if !cascade_link_ids.is_empty() {
-                sync_server_clone.record_and_notify(SyncTable::Link, cascade_link_ids).await;
-            }
-            if !cascade_prop_ids.is_empty() {
-                sync_server_clone.record_and_notify(SyncTable::Property, cascade_prop_ids).await;
+            for (table, ids) in sync_changes {
+                sync_server_clone.record_and_notify(table, ids).await;
             }
         });
     }
-    
+
     result
 }
 
@@ -670,63 +696,62 @@ pub async fn delete_page_cascade(
     sync_server: State<'_, super::state::SyncServerHandle>,
     page_id: &str,
 ) -> Result<(), String> {
-    let page_id_clone = page_id.to_string();
-    
-    // Collect cascade-deleted IDs for sync notification
-    let mut cascade_block_ids: Vec<String> = Vec::new();
-    let mut cascade_link_ids: Vec<String> = Vec::new();
-    let mut cascade_prop_ids: Vec<String> = Vec::new();
-    let mut cascade_target_link_ids: Vec<String> = Vec::new();
-    
-    let result = execute_with_adapter(db, |storage| {
+    let mut sync_changes: std::collections::HashMap<SyncTable, Vec<String>> =
+        std::collections::HashMap::new();
+
+    let result = execute_with_transaction_adapter(db, |storage| {
         let blocks = BlockService::get_by_page_id(storage, page_id)?;
         for block in &blocks {
-            // Collect block ID
-            cascade_block_ids.push(block.id.clone());
-            
-            // Collect cascade-deleted link IDs
-            let links = storage.links().get_by_source_block_id(&block.id)?;
-            cascade_link_ids.extend(links.into_iter().map(|l| l.id));
-            
-            // Collect cascade-deleted property IDs
-            let props = storage.properties().get_by_block_id(&block.id)?;
-            cascade_prop_ids.extend(props.into_iter().map(|p| p.id));
-            
-            storage.properties().delete_by_block_id(&block.id)?;
-            storage.links().delete_by_source_block_id(&block.id)?;
+            // Collect cascade-deleted IDs before deleting
+            let links = LinkService::get_by_source_block_id(storage, &block.id)?;
+            sync_changes
+                .entry(SyncTable::Link)
+                .or_insert_with(Vec::new)
+                .extend(links.into_iter().map(|l| l.id));
+            let props = PropertyService::get_by_block_id(storage, &block.id)?;
+            sync_changes
+                .entry(SyncTable::Property)
+                .or_insert_with(Vec::new)
+                .extend(props.into_iter().map(|p| p.id));
+
             // BlockVersion has FK (block_id) RESTRICT — must delete before Block
             storage.block_versions().delete_by_block_id(&block.id)?;
+            LinkService::delete_by_source_block_id(storage, &block.id)?;
+            PropertyService::delete_by_block_id(storage, &block.id)?;
+            // BlockService::delete handles dateRef + notification cleanup
+            BlockService::delete(storage, &block.id)?;
+
+            sync_changes
+                .entry(SyncTable::Block)
+                .or_insert_with(Vec::new)
+                .push(block.id.clone());
         }
-        
-        // Collect target links deleted
-        let target_links = storage.links().get_by_target_page_id(page_id)?;
-        cascade_target_link_ids = target_links.into_iter().map(|l| l.id).collect();
-        
+
+        // Collect and delete target-side links
+        let target_links = LinkService::get_by_target_page_id(storage, page_id)?;
+        sync_changes
+            .entry(SyncTable::Link)
+            .or_insert_with(Vec::new)
+            .extend(target_links.into_iter().map(|l| l.id));
         LinkService::delete_by_target_page_id(storage, page_id)?;
-        BlockService::delete_by_page_id(storage, page_id)?;
+
         PageService::delete(storage, page_id)?;
+        sync_changes
+            .entry(SyncTable::Page)
+            .or_insert_with(Vec::new)
+            .push(page_id.to_string());
         Ok(())
     }).await;
-    
+
     if result.is_ok() {
         let sync_server_clone = sync_server.inner().clone();
         tokio::spawn(async move {
-            sync_server_clone.record_and_notify(SyncTable::Page, vec![page_id_clone]).await;
-            if !cascade_block_ids.is_empty() {
-                sync_server_clone.record_and_notify(SyncTable::Block, cascade_block_ids).await;
-            }
-            // Merge source + target link IDs
-            let mut all_link_ids = cascade_link_ids;
-            all_link_ids.extend(cascade_target_link_ids);
-            if !all_link_ids.is_empty() {
-                sync_server_clone.record_and_notify(SyncTable::Link, all_link_ids).await;
-            }
-            if !cascade_prop_ids.is_empty() {
-                sync_server_clone.record_and_notify(SyncTable::Property, cascade_prop_ids).await;
+            for (table, ids) in sync_changes {
+                sync_server_clone.record_and_notify(table, ids).await;
             }
         });
     }
-    
+
     result
 }
 
@@ -886,7 +911,7 @@ pub async fn execute_batch(
 ) -> Result<Vec<serde_json::Value>, String> {
     let mut sync_changes: std::collections::HashMap<SyncTable, Vec<String>> = std::collections::HashMap::new();
     
-    let result = execute_with_adapter(db, |storage| {
+    let result = execute_with_transaction_adapter(db, |storage| {
         let mut results = Vec::new();
         let mut page_ids = std::collections::HashSet::new();
 
@@ -1595,4 +1620,51 @@ pub async fn trigger_full_sync_mobile(
 ) -> Result<(), String> {
     let client = sync_handle.get_client().await.ok_or("SyncClient not started")?;
     client.trigger_full_sync().await
+}
+
+#[tauri::command]
+pub async fn get_notification_settings(
+    settings_mgr: State<'_, super::state::NotificationSettingsManager>,
+) -> Result<NotificationConfig, String> {
+    Ok(settings_mgr.get().await)
+}
+
+#[tauri::command]
+pub async fn save_notification_settings(
+    db: State<'_, super::state::DatabaseConnection>,
+    settings_mgr: State<'_, super::state::NotificationSettingsManager>,
+    config: NotificationConfig,
+) -> Result<(), String> {
+    let save_config = config.clone();
+    execute_with_adapter(db, move |storage| {
+        storage.notification_config().save(&save_config)?;
+        Ok(())
+    }).await?;
+    settings_mgr.update(config).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn check_and_fire(
+    db: State<'_, super::state::DatabaseConnection>,
+    settings_mgr: State<'_, super::state::NotificationSettingsManager>,
+) -> Result<Vec<Notification>, String> {
+    let settings = settings_mgr.get().await;
+    execute_with_adapter(db, move |storage| {
+        use comind_core::services::NotificationService;
+        NotificationService::check_and_fire(storage, &settings)
+    }).await
+}
+
+#[tauri::command]
+pub async fn sync_payload_for_block(
+    db: State<'_, super::state::DatabaseConnection>,
+    block_id: String,
+) -> Result<(), String> {
+    execute_with_adapter(db, move |storage| {
+        let block = storage.blocks().get_by_id(&block_id)?;
+        let page = storage.pages().get_by_id(&block.page_id)?;
+        use comind_core::services::NotificationService;
+        NotificationService::sync_payload_for_block(storage, &block, &page)
+    }).await
 }

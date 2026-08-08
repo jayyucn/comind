@@ -81,21 +81,17 @@ impl LinkService {
         repository::LinkRepository::delete_by_target_page_id(storage.links(), target_page_id)
     }
 
-    pub fn sync_links_for_block<S>(
-        storage: &mut S,
+    /// 同步 block 的链接关系：先删后建。
+    /// 签名使用 `&mut dyn StorageAdapter`（不再自行开启事务），
+    /// 事务管理责任上移到调用方（命令层 `execute_with_transaction_adapter`）。
+    pub fn sync_links_for_block(
+        storage: &mut dyn StorageAdapter,
         block_id: &str,
         new_links: &[Link],
-    ) -> Result<Vec<Link>, Box<dyn Error>>
-    where
-        S: repository::TransactionalStorageAdapter,
-    {
-        storage.transaction(|tx| {
-            repository::LinkRepository::delete_by_source_block_id(tx.links(), block_id)?;
-
-            let created_links = repository::LinkRepository::create_many(tx.links(), new_links)?;
-
-            Ok(created_links)
-        })
+    ) -> Result<Vec<Link>, Box<dyn Error>> {
+        repository::LinkRepository::delete_by_source_block_id(storage.links(), block_id)?;
+        let created_links = repository::LinkRepository::create_many(storage.links(), new_links)?;
+        Ok(created_links)
     }
 
     fn generate_id() -> String {

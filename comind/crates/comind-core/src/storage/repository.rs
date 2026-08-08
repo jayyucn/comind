@@ -152,6 +152,11 @@ pub trait TaskViewRepository {
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
 }
 
+pub trait NotificationConfigRepository {
+    fn get(&self) -> Result<NotificationConfig, Box<dyn Error>>;
+    fn save(&mut self, config: &NotificationConfig) -> Result<(), Box<dyn Error>>;
+}
+
 pub trait StorageAdapter {
     fn blocks(&mut self) -> &mut dyn BlockRepository;
     fn pages(&mut self) -> &mut dyn PageRepository;
@@ -165,6 +170,7 @@ pub trait StorageAdapter {
     fn date_refs(&mut self) -> &mut dyn DateRefRepository;
     fn saved_filters(&mut self) -> &mut dyn SavedFilterRepository;
     fn task_views(&mut self) -> &mut dyn TaskViewRepository;
+    fn notification_config(&mut self) -> &mut dyn NotificationConfigRepository;
 }
 
 pub trait TransactionalStorageAdapter: StorageAdapter {
