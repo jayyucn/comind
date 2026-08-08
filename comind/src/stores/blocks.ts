@@ -4,8 +4,6 @@ import type { Block } from '../types/block'
 import { initCoreClient, triggerSync, isTauriEnvironment } from '../wasm/client'
 import { generateUUID } from '../utils/id'
 import { debounce } from '../utils/debounce'
-import { parseBlockLinks } from '../utils/parser'
-import { usePageStore } from './pages'
 import { useBlockVersionStore } from './blockVersion'
 import { usePropertyStore } from './property'
 import { useBlockCardStore } from './blockCard'
@@ -339,7 +337,8 @@ export const useBlockStore = defineStore('blocks', () => {
     }
 
     try {
-      const [savedBlock] = await client.saveBlockTree([blockUpdate])
+      const [saveResult] = await client.saveBlockTree([blockUpdate])
+      const savedBlock = saveResult.block
 
       // 若服务端生成了新 ID（新 block），同步本地 state 与后续引用的 ID
       if (savedBlock.id !== currentBlock.id) {
@@ -353,9 +352,17 @@ export const useBlockStore = defineStore('blocks', () => {
         ? { ...currentBlock, id: savedBlock.id }
         : currentBlock
 
-      await _syncBlockLinks(saved, client)
       _triggerSyncDebounced()
-      await _createBlockVersion(saved, client)
+
+      // S4: snapshot pre-built by Rust inside the save transaction — zero extra IPC.
+      if (saveResult.snapshot) {
+        try {
+          const versionStore = useBlockVersionStore()
+          versionStore.scheduleVersion(savedBlock.id, JSON.parse(saveResult.snapshot), 'auto')
+        } catch (e) {
+          console.error('[BlockStore] Failed to schedule version from save result:', e)
+        }
+      }
 
       // 事件驱动同步该 block 下未 dismissed 通知的 payload。
       // 去掉 content 变化 guard（_doSave 内无法可靠捕获前值），
@@ -372,68 +379,6 @@ export const useBlockStore = defineStore('blocks', () => {
     } finally {
       pendingSaves.delete(block.id)
     }
-  }
-
-  async function _createBlockVersion(block: Block, client: CoreClient): Promise<void> {
-    try {
-      const properties = await client.getProperties(block.id)
-      const outlinks = await client.getOutlinks(block.pageId)
-
-      const blockLinks = outlinks.filter(link => link.source_block_id === block.id)
-
-      // Rust 端 Block.format 是 String 类型，需要序列化为 JSON 字符串以匹配 Rust 结构
-      const blockRecord = {
-        id: block.id,
-        page_id: block.pageId,
-        parent_id: block.parentId,
-        pos: block.pos,
-        content: block.content,
-        format: JSON.stringify(block.format || {}),
-        type: block.type,
-        created_at: block.createdAt,
-        updated_at: block.updatedAt
-      }
-
-      const snapshot: BlockSnapshot = {
-        block: blockRecord as unknown as BlockSnapshot['block'],
-        properties: properties as unknown as BlockSnapshot['properties'],
-        relationships: blockLinks as unknown as BlockSnapshot['relationships']
-      }
-
-      const versionStore = useBlockVersionStore()
-      versionStore.scheduleVersion(block.id, snapshot, 'auto')
-    } catch (error) {
-      console.error('[BlockStore] Failed to create block version:', error)
-    }
-  }
-
-  async function _syncBlockLinks(block: Block, client: CoreClient): Promise<void> {
-    const parsedLinks = parseBlockLinks(block.content)
-    const pageStore = usePageStore()
-    const internalLinks = parsedLinks.filter(l => !l.isExternal)
-
-    // 仅同步目标页面已存在的链接；不在此处自动创建页面。
-    // 页面创建由用户交互（菜单选择/回车/失焦）显式触发，避免输入过程中产生中间页面。
-    const links: Array<{ source_block_id: string; target_page_id: string; display_text: string; relationship_type: string | null }> = []
-    for (const l of internalLinks) {
-      const targetPage = pageStore.getPageByTitle(l.targetTitle)
-      if (!targetPage) continue
-      links.push({
-        source_block_id: block.id,
-        target_page_id: targetPage.id,
-        display_text: l.displayText,
-        relationship_type: l.relationshipType
-      })
-    }
-
-    await client.executeBatch([{
-      entity: 'link',
-      action: 'sync_by_block',
-      params: {
-        block_id: block.id,
-        links
-      }
-    }])
   }
 
   function _scheduleSave(block: Block): void {

@@ -205,6 +205,10 @@ pub fn run() {
             commands::save_notification_settings,
             commands::check_and_fire,
             commands::sync_payload_for_block,
+            commands::apply_relationship_type_to_block_content,
+            commands::check_has_typed_link_to_target,
+            commands::renumber_blocks,
+            commands::build_document_order,
             #[cfg(not(target_os = "android"))]
             commands::get_sync_qr,
             commands::get_paired_devices,

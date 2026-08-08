@@ -1,7 +1,7 @@
 use crate::{
     types::{Block, BlockTree},
     storage::{repository, StorageAdapter},
-    services::DateRefService,
+    services::{DateRefService, ContentParseService},
 };
 use rand::Rng;
 use std::collections::HashMap;
@@ -62,6 +62,9 @@ impl BlockService {
 
         let block = repository::BlockRepository::create(storage.blocks(), &block)?;
         DateRefService::sync_date_refs_for_block(storage, &block.id, &block.content)?;
+        // S3: synchronise derived links & properties from content
+        let _ = ContentParseService::sync_links_for_block(storage, &block.id, &block.content);
+        let _ = ContentParseService::sync_properties_for_block(storage, &block.id, &block.content);
         Ok(block)
     }
 
@@ -105,6 +108,9 @@ impl BlockService {
                 &block.content,
             )?;
         }
+        // S3: synchronise derived links & properties from content
+        let _ = ContentParseService::sync_links_for_block(storage, &block.id, &block.content);
+        let _ = ContentParseService::sync_properties_for_block(storage, &block.id, &block.content);
         Ok(block)
     }
 
@@ -115,6 +121,9 @@ impl BlockService {
         DateRefService::sync_date_refs_for_block(storage, id, "")?;
         // 整块删除：连同该 block 的所有通知一起硬删除，避免 block 没了但通知残留（孤儿通知、点击跳转 404）。
         storage.notifications().delete_by_block_id(id)?;
+        // Clean up derived links & properties
+        let _ = ContentParseService::sync_links_for_block(storage, id, "");
+        let _ = ContentParseService::sync_properties_for_block(storage, id, "");
         repository::BlockRepository::delete(storage.blocks(), id)
     }
 
@@ -137,6 +146,10 @@ impl BlockService {
         parent_id: &str,
         target_pos: i64,
     ) -> Result<Block, Box<dyn Error>> {
+        // Cycle detection: prevent moving under own descendant
+        if Self::is_descendant_of(storage, block_id, parent_id)? {
+            return Err("Cannot move a block under its own descendant".into());
+        }
         let mut block = repository::BlockRepository::get_by_id(storage.blocks(), block_id)?;
         block.parent_id = Some(parent_id.to_string());
         block.pos = target_pos;
@@ -189,6 +202,105 @@ impl BlockService {
             root_blocks,
             children_map,
         })
+    }
+
+    /// Check whether `descendant_id` is a descendant of `ancestor_id`.
+    /// Walks the parent chain; stops at root or cycle.
+    pub fn is_descendant_of(
+        storage: &mut dyn StorageAdapter,
+        descendant_id: &str,
+        ancestor_id: &str,
+    ) -> Result<bool, Box<dyn Error>> {
+        let mut visited = std::collections::HashSet::new();
+        let mut current = descendant_id.to_string();
+        visited.insert(current.clone());
+        loop {
+            let block = match repository::BlockRepository::get_by_id(storage.blocks(), &current) {
+                Ok(b) => b,
+                Err(_) => return Ok(false),
+            };
+            match block.parent_id {
+                None => return Ok(false),
+                Some(ref pid) if pid == ancestor_id => return Ok(true),
+                Some(ref pid) => {
+                    if !visited.insert(pid.clone()) {
+                        return Ok(false); // cycle detected — not our descendant
+                    }
+                    current = pid.clone();
+                }
+            }
+        }
+    }
+
+    /// Re-number all blocks on a page so that `pos` values are evenly spaced
+    /// (GAP_SIZE = 1000, starting from 1000).  No-op when the page has 0 blocks.
+    pub fn renumber_blocks(
+        storage: &mut dyn StorageAdapter,
+        page_id: &str,
+    ) -> Result<(), Box<dyn Error>> {
+        let blocks = repository::BlockRepository::get_by_page_id(storage.blocks(), page_id)?;
+        if blocks.is_empty() {
+            return Ok(());
+        }
+        // Sort in document order before renumbering so sibling groups stay contiguous
+        let order = Self::build_document_order_lite(&blocks);
+        let mut sorted: Vec<&Block> = blocks.iter().collect();
+        sorted.sort_by_key(|b| order.get(&b.id).copied().unwrap_or(usize::MAX));
+        let gap: i64 = 1000;
+        for (i, b) in sorted.iter().enumerate() {
+            let new_pos = ((i as i64) + 1) * gap;
+            if b.pos != new_pos {
+                let mut block = (*b).clone();
+                block.pos = new_pos;
+                block.updated_at = chrono::Utc::now().timestamp_millis();
+                repository::BlockRepository::update(storage.blocks(), &block)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Pre-order DFS document-order map (block_id → index).
+    /// Used by backlinks to sort by document order; mirrors TS `buildDocumentOrder`.
+    pub fn build_document_order(
+        storage: &mut dyn StorageAdapter,
+        page_id: &str,
+    ) -> Result<std::collections::HashMap<String, usize>, Box<dyn Error>> {
+        let blocks = repository::BlockRepository::get_by_page_id(storage.blocks(), page_id)?;
+        Ok(Self::build_document_order_lite(&blocks))
+    }
+
+    /// Build document-order map from an already-loaded block slice (no I/O).
+    fn build_document_order_lite(
+        blocks: &[Block],
+    ) -> std::collections::HashMap<String, usize> {
+        let mut children_map: HashMap<&str, Vec<&Block>> = HashMap::new();
+        for b in blocks {
+            children_map
+                .entry(b.parent_id.as_deref().unwrap_or(""))
+                .or_default()
+                .push(b);
+        }
+        for (_, v) in children_map.iter_mut() {
+            v.sort_by_key(|b| b.pos);
+        }
+        let mut order = std::collections::HashMap::new();
+        let mut idx: usize = 0;
+        fn dfs<'a>(
+            parent_id: &str,
+            children_map: &HashMap<&str, Vec<&'a Block>>,
+            order: &mut std::collections::HashMap<String, usize>,
+            idx: &mut usize,
+        ) {
+            if let Some(children) = children_map.get(parent_id) {
+                for child in children {
+                    order.insert(child.id.clone(), *idx);
+                    *idx += 1;
+                    dfs(&child.id, children_map, order, idx);
+                }
+            }
+        }
+        dfs("", &children_map, &mut order, &mut idx);
+        order
     }
 
     pub fn get_next_pos(

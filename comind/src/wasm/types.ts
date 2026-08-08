@@ -93,6 +93,11 @@ export interface SearchResult {
   score: number
 }
 
+export interface BlockSaveResult {
+  block: Block
+  snapshot: string
+}
+
 export interface BlockUpdate {
   id: string
   page_id: string

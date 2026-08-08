@@ -459,3 +459,20 @@ export async function tauriCheckAndFire(): Promise<Notification[]> {
 export async function tauriSyncPayloadForBlock(blockId: string): Promise<void> {
   return invoke('sync_payload_for_block', { blockId })
 }
+
+// ---- Content parse helpers (S3: migrated from TS parser to Rust) ----
+
+export async function tauriApplyRelationshipTypeToBlockContent(
+  content: string,
+  targetTitle: string,
+  newRelationshipType: string | null
+): Promise<string> {
+  return invoke('apply_relationship_type_to_block_content', { content, targetTitle, newRelationshipType })
+}
+
+export async function tauriCheckHasTypedLinkToTarget(
+  content: string,
+  targetTitle: string
+): Promise<{ has_typed_link: boolean }> {
+  return invoke('check_has_typed_link_to_target', { content, targetTitle })
+}

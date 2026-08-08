@@ -373,7 +373,11 @@ mod tests {
 
     #[test]
     fn test_quiet_hours_disabled() {
-        let config = NotificationConfig::default();
+        let config = NotificationConfig {
+            quiet_hours_start: None,
+            quiet_hours_end: None,
+            ..Default::default()
+        };
         assert!(!is_quiet_hours(&config));
     }
 

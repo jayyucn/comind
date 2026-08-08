@@ -33,7 +33,7 @@ function parseJsonResult<T>(result: any): T {
 }
 import type {
   Block, Page, Property, Link, RelationshipType,
-  UserTemplate, SearchResult, BlockUpdate, PageUpdate,
+  UserTemplate, SearchResult, BlockUpdate, BlockSaveResult, PageUpdate,
   BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig, BlockVersion,
   Notification, DateRefRecord, IncompleteTask, BlockCard, SavedFilterRust, TaskViewRust,
   NotificationSettings
@@ -42,7 +42,7 @@ import type {
 export interface CoreClient {
   getBlock(blockId: string): Promise<Block>
   getBlocksByPage(pageId: string): Promise<Block[]>
-  saveBlockTree(blocks: BlockUpdate[]): Promise<Block[]>
+  saveBlockTree(blocks: BlockUpdate[]): Promise<BlockSaveResult[]>
   deleteBlock(blockId: string): Promise<void>
 
   getPage(pageId: string): Promise<Page>
@@ -173,7 +173,7 @@ class TauriClient implements CoreClient {
     return tauri.tauriSetDefaultTaskView(id)
   }
 
-  async saveBlockTree(blocks: BlockUpdate[]): Promise<Block[]> {
+  async saveBlockTree(blocks: BlockUpdate[]): Promise<BlockSaveResult[]> {
     return tauri.tauriSaveBlockTree(blocks)
   }
 
@@ -428,7 +428,7 @@ class WasmClientAdapter implements CoreClient {
     throw new Error('WASM: task views not supported')
   }
 
-  async saveBlockTree(blocks: BlockUpdate[]): Promise<Block[]> {
+  async saveBlockTree(blocks: BlockUpdate[]): Promise<BlockSaveResult[]> {
     const blocksJson = JSON.stringify(blocks)
     const result = await this.wasm.save_block_tree(blocksJson)
     return parseJsonResult(result)
