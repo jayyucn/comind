@@ -80,6 +80,8 @@ impl SyncTable {
             SyncTable::Link,
             SyncTable::Property,
             SyncTable::DateRef,
+            SyncTable::Notification,
+            SyncTable::NotificationConfig,
         ]
     }
 }
