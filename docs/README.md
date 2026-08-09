@@ -1,7 +1,70 @@
 # comind 文档索引
 
-&gt; 更新日期：2026-07-24
-&gt; 本文档是 docs/ 目录的唯一入口点。Agent 只需加载 `active/` 目录即可获得完整项目上下文。
+> 更新日期：2026-08-09\
+> 覆盖变更：2026-08-08 ~ 2026-08-09\
+> 本文档是 docs/ 目录的唯一入口点。Agent 只需加载 `active/` 目录即可获得完整项目上下文。
+
+---
+
+## Phase 3.5 TS→Rust 迁移 + TaskHub 新增（2026-08-09 更新摘要）
+
+**文档版本：** 本次同步更新 docs/ 下 6 个子目录 README 及根目录 README.md，共 7 处文档变更。
+
+### 一、TaskHub 任务中心（新增功能域）
+
+| 项 | 说明 |
+| --- | --- |
+| **路由** | `/taskhub` 新增页面（TaskHub.vue） |
+| **三视图** | TableView / BoardView / CalendarView，分别见对应组件 |
+| **数据模型** | BlockCard（块投影）、TaskView（视图方案）、SavedFilter（过滤器预设） |
+| **查询引擎** | `applyQuery(cards, query)` 纯函数 — 7 操作符 + 链式排序 + groupBy 声明式 |
+| **新增 Store** | `useBlockCardStore` / `useTaskViewStore` / `useSavedFilterStore` |
+| **Ideas 集成** | BlockTaskItem / BlockTaskList 组件嵌入 IdeasTodayPanel |
+
+### 二、通知系统 Rust 端重构
+
+- `notification_config` 表（单行 id=1）新增：enabled / schedule_enabled / deadline_enabled / overdue_enabled / quiet_hours_start / quiet_hours_end / web_browser_notifications_enabled
+- `notification_service.rs` 承担三类提醒触发 + 静默时间判断
+- TS 端 `notification-service.ts` 已删除（~253 行），逻辑迁入 Rust
+- 同步表扩展至 Notification 数据
+
+### 三、Core Layer TS→Rust 迁移进度（本时段完成 8 项）
+
+| 模块 | Rust 文件 | 说明 |
+| --- | --- | --- |
+| 内容解析 | `services/content_parse_service.rs` (531 行新增) | WikiLink / 外部链接 / TypedLink / Property Draft 统一解析出口 |
+| 渲染段 | `services/render_segment_service.rs` (241 行) | content → text/link/property 结构化段 |
+| Block 投影 | `services/block_projection_service.rs` (133 行) | Block + Property + DateRef + Page → BlockCard |
+| 过滤 | `services/filter_service.rs` (71 行) | Property/DateRef 条件过滤 |
+| 通知引擎 | `services/notification_service.rs` (391 行) | 见上 |
+| 块写入 | `services/block_service.rs` (+114 行变更) | BlockVersion 快照内联、排序/树操作统一入口 |
+| 日期解析 | `utils/date_parser.rs` (332 行) | 替换 TS `date-ref.ts` 主逻辑 |
+| 日记检测 | `utils/journal_detect.rs` (139 行) | 替换 TS `journal-detect.ts` |
+| 重复规则 | `utils/recurrence.rs` (155 行) | 替换 TS `recurrence.ts` |
+
+**已删除 TS 文件：** `utils/parser.ts`（213 行）、`utils/quiet-hours.ts`（45 行）及对应测试。
+
+### 四、块组件优化
+
+- **保存失败红点提示**：Block 左边缘 🔴 小圆点 + error-subtle 背景，悬停 Tooltip，点击触发重试
+- **BulletRender 组件**：重构配合 render_segment_service 结构化输出
+
+### 五、测试变更
+
+- **新增 Vitest 约 325 用例**：blockCard / taskView / useBlockQuery / edit-render-timing / BoardView / TableView / BulletRender 等
+- **删除约 55 用例**：parser.test.ts、quiet-hours.test.ts
+- **Playwright 待补**：TaskHub 三视图 + 保存失败红点 spec
+
+### 六、文档索引更新
+
+| 文档 | 变更类型 |
+| --- | --- |
+| [3-features/README.md](3-features/README.md) | 新增「任务与视图系统」「通知系统（重构）」两节 |
+| [2-architecture/README.md](2-architecture/README.md) | 新增 Rust Core Layer 9 模块速览 + TS→Rust 迁移清单 |
+| [4-ui/README.md](4-ui/README.md) | 新增 TaskHub 组件交互表 + 块保存失败状态机 |
+| [5-development/README.md](5-development/README.md) | 新增 Rust 开发规范 / CoreClient API / BlockQuery DSL / Store 表 |
+| [6-reports/README.md](6-reports/README.md) | 新增测试覆盖表（Vitest 新增/删除项） |
+| [../README.md](../README.md) | 项目结构、技术栈、核心功能、TS→Rust 迁移表全面更新 |
 
 ---
 
