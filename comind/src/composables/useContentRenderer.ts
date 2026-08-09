@@ -112,7 +112,9 @@ function renderContentToHtml(input: RenderInput): string {
         const iso = escapeHtmlEntities(seg.iso)
         const recurrence = escapeHtmlEntities(seg.recurrence)
         // display the original raw syntax
-        const rawDisplay = content.slice(seg.start, seg.end)
+        const chars = Array.from(content);
+        // seg.start、seg.end 这里注意：这里的seg.start/end是【字符索引】，不是原码元索引！
+        const rawDisplay = chars.slice(seg.start, seg.end).join('');
         const display = escapeHtmlEntities(rawDisplay)
         const overdue = seg.is_overdue ? 'overdue' : ''
         const classes = [CSS_CLASSES.dateRef, kind, overdue].filter(Boolean).join(' ')

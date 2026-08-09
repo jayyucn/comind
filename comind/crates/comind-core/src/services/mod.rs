@@ -38,4 +38,7 @@ pub use filter_service::FilterService;
 pub use content_parse_service::*;
 pub use notification_service::NotificationService;
 pub mod render_segment_service;
-pub use render_segment_service::build_page_with_blocks;
+pub use render_segment_service::{build_page_with_blocks, build_segments_for_block};
+
+#[cfg(test)]
+pub mod render_segment_service_test;

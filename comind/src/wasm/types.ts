@@ -96,6 +96,10 @@ export interface SearchResult {
 export interface BlockSaveResult {
   block: Block
   snapshot: string
+  /** Structured render instructions for block.content.
+   *  Built during save to close the edit→render-transition gap.
+   *  Absent on old binaries (serde default). */
+  render_segments?: RenderSegment[]
 }
 
 export interface BlockUpdate {

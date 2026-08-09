@@ -409,6 +409,16 @@ export const useBlockStore = defineStore('blocks', () => {
         saveErrors.value = { ...saveErrors.value }
       }
 
+      // Restore renderSegments from save result (Rust pre-built during save_block_tree).
+      // Closes the edit→render-transition gap: editing clears segments to undefined,
+      // and without this, link/dateRef rendering stays degraded until next loadPageBlocks.
+      // Content guard prevents stale segments from overwriting faster subsequent edits.
+      if (saveResult.render_segments && saveResult.render_segments.length > 0) {
+        if (currentBlock.content === saveResult.block.content) {
+          currentBlock.renderSegments = saveResult.render_segments
+        }
+      }
+
       // S4: snapshot pre-built by Rust inside the save transaction — zero extra IPC.
       if (saveResult.snapshot) {
         try {
@@ -1049,10 +1059,11 @@ export const useBlockStore = defineStore('blocks', () => {
 
     block.content = content
     block.updatedAt = Date.now()
-    // renderSegments 是由 Rust 在 loadPageBlocks 时预计算的，
-    // 内容变更后 segments 的 start/end 索引已过时，必须清除。
-    // BulletRender 检测到 segments 为 undefined 时回退到纯文本渲染（含 #tag 高亮），
-    // 完整的 link/dateRef 渲染将在下次 loadPageBlocks 时恢复。
+    // renderSegments 是由 Rust 在 save_block_tree 时重新构建并随返回结果返回的。
+    // 内容变更后 segments 的 start/end 索引已过时，先清空避免渲染错误。
+    // 新的 segments 将在 _doSave 成功返回后写入（_doSave 内 content 校验防竞态）。
+    // 如果 save 返回旧格式（无 render_segments 字段），BulletRender 回退到纯文本渲染
+    // （含 #tag 高亮），完整渲染在下一次 loadPageBlocks 时恢复。
     block.renderSegments = undefined
     _scheduleSave(block)
 

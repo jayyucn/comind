@@ -6,6 +6,33 @@ use crate::{
 use std::collections::HashMap;
 use std::error::Error;
 
+/// Build RenderSegment[] for a single block (for save-block-tree hot path).
+/// Queries links + pages + relationship_types — all already in cache after BlockService::update/create.
+pub fn build_segments_for_block(
+    storage: &mut dyn repository::StorageAdapter,
+    block: &Block,
+) -> Result<Vec<RenderSegment>, Box<dyn Error>> {
+    if block.r#type != "bullet" && block.r#type != "property" {
+        return Ok(Vec::new());
+    }
+
+    let links = repository::LinkRepository::get_by_source_block_id(storage.links(), &block.id)?;
+    let mut id_to_title: HashMap<String, String> = HashMap::new();
+    for l in &links {
+        if let Ok(p) = repository::PageRepository::get_by_id(storage.pages(), &l.target_page_id) {
+            id_to_title.insert(l.target_page_id.clone(), p.title);
+        }
+    }
+
+    let all_rel = repository::RelationshipTypeRepository::get_all(storage.relationship_types())?;
+    let mut rel_cache: HashMap<String, (String, String)> = HashMap::new();
+    for rt in &all_rel {
+        rel_cache.insert(rt.r#type.clone(), (rt.label.clone(), rt.color.clone()));
+    }
+
+    build_segments(storage, block, &id_to_title, &rel_cache)
+}
+
 /// Builds a `PageWithBlocks` response for `get_page_with_blocks`.
 pub fn build_page_with_blocks(
     storage: &mut dyn repository::StorageAdapter,
@@ -82,6 +109,11 @@ pub fn build_page_with_blocks(
     Ok(PageWithBlocks { page, blocks: result })
 }
 
+/// Convert byte offset to Unicode scalar value (char) index.
+fn byte_to_char_idx(content: &str, byte_idx: usize) -> usize {
+    content[..byte_idx.min(content.len())].chars().count()
+}
+
 fn build_segments(
     storage: &mut dyn repository::StorageAdapter,
     block: &Block,
@@ -133,8 +165,12 @@ fn build_segments(
             let recurrence = if dr.recurrence.is_empty() { "none" } else { &dr.recurrence };
             let is_overdue = kind == "deadline" && is_date_past(&dr.iso);
 
-            anchors.push((start, RenderSegment::DateRef {
-                start, end,
+            // Convert byte offsets to char offsets for JS compatibility
+            let char_start = byte_to_char_idx(content, start);
+            let char_end = byte_to_char_idx(content, end);
+
+            anchors.push((char_start, RenderSegment::DateRef {
+                start: char_start, end: char_end,
                 kind: kind.clone(),
                 iso: dr.iso.clone(),
                 recurrence: recurrence.to_string(),
@@ -161,12 +197,16 @@ fn build_segments(
         };
 
         if let (Some(s), Some(e)) = (start, end) {
+            // Convert byte offsets to char offsets for JS compatibility
+            let char_start = byte_to_char_idx(content, s);
+            let char_end = byte_to_char_idx(content, e);
+
             if let Some(rt) = &link.relationship_type {
                 let (label, color) = rel_cache.get(rt.as_str())
                     .cloned()
                     .unwrap_or_else(|| (rt.clone(), "#9CA3AF".to_string()));
-                anchors.push((s, RenderSegment::TypedLink {
-                    start: s, end: e,
+                anchors.push((char_start, RenderSegment::TypedLink {
+                    start: char_start, end: char_end,
                     target_page_title: target_title.clone(),
                     display_text: display.clone(),
                     relationship_type: rt.clone(),
@@ -174,8 +214,8 @@ fn build_segments(
                     rel_color: color,
                 }));
             } else {
-                anchors.push((s, RenderSegment::Link {
-                    start: s, end: e,
+                anchors.push((char_start, RenderSegment::Link {
+                    start: char_start, end: char_end,
                     target_page_title: target_title.clone(),
                     display_text: display.clone(),
                 }));
@@ -201,8 +241,10 @@ fn build_segments(
         };
         segments.push(seg);
     }
-    if cursor < content.len() {
-        segments.push(RenderSegment::Text { start: cursor, end: content.len() });
+    // content.len() is byte length; convert to char count for consistency
+    let char_len = content.chars().count();
+    if cursor < char_len {
+        segments.push(RenderSegment::Text { start: cursor, end: char_len });
     }
     Ok(segments)
 }

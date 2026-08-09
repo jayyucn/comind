@@ -2,6 +2,7 @@ use comind_core::{
     services::{
         BlockService, BlockVersionService, DateRefService, FilterService, LinkService, PageService,
         PropertyService, RelationshipTypeService, build_page_with_blocks,
+        build_segments_for_block,
     },
     storage::{StorageAdapter, TransactionalStorageAdapter},
     types::*,
@@ -570,9 +571,16 @@ pub async fn save_block_tree(
             let snapshot = BlockVersionService::build_snapshot(storage, &saved_block.id)
                 .unwrap_or_default();
 
+            // Build render segments during save so TS can restore link/dateRef
+            // rendering after edit→render transition without waiting for loadPageBlocks.
+            // Links + dateRefs were just synced by BlockService::update/create.
+            let render_segments =
+                build_segments_for_block(storage, &saved_block).unwrap_or_default();
+
             results.push(BlockSaveResult {
                 block: saved_block,
                 snapshot,
+                render_segments,
             });
         }
 
