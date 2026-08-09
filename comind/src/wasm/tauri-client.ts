@@ -487,6 +487,32 @@ export async function tauriCheckHasTypedLinkToTarget(
 ): Promise<{ has_typed_link: boolean }> {
   return invoke('check_has_typed_link_to_target', { content, targetTitle })
 }
+
+// ---- S6: date-parser / recurrence / journal-detect ----
+export async function tauriParseDateInput(input: string): Promise<string | null> {
+  return invoke('parse_date_input', { input })
+}
+
+export async function tauriParseDateTimeInput(input: string): Promise<{ date: string; time?: string } | null> {
+  return invoke('parse_date_time_input', { input })
+}
+
+export async function tauriCalculateNextRecurrence(iso: string, rule: string): Promise<string> {
+  return invoke('calculate_next_recurrence', { iso, rule })
+}
+
+export async function tauriIsJournalTitle(title: string): Promise<boolean> {
+  return invoke('is_journal_title', { title })
+}
+
+export async function tauriNormalizeJournalTitle(title: string): Promise<string | null> {
+  return invoke('normalize_journal_title', { title })
+}
+
+export async function tauriIsTodayTitle(normalizedTitle: string): Promise<boolean> {
+  return invoke('is_today_title', { normalizedTitle })
+}
+
 // ---- S10: Render segments (get_page_with_blocks) ----
 export async function tauriGetPageWithBlocks(pageId: string): Promise<any> {
   return invoke('get_page_with_blocks', { pageId })

@@ -7,7 +7,8 @@ import { useBlockStore } from './blocks'
 import { useBlockCardStore } from './blockCard'
 import { serializeDateRef } from '../utils/date-ref'
 import type { RecurrenceRule } from '../utils/date-ref'
-import { calculateNextRecurrence } from '../utils/recurrence'
+// 4.2 / S6: calculateNextRecurrence migrated to Rust
+import { tauriCalculateNextRecurrence } from '../wasm/tauri-client'
 
 import type { CoreClient } from '../wasm/client'
 
@@ -173,7 +174,7 @@ export const usePropertyStore = defineStore('property', () => {
     let newContent = block.content
     for (const ref of refsToAdvance) {
       const rule: RecurrenceRule = (ref.recurrence && ref.recurrence !== 'none') ? ref.recurrence! as RecurrenceRule : 'none'
-      const nextIso = calculateNextRecurrence(ref.iso, rule)
+      const nextIso = await tauriCalculateNextRecurrence(ref.iso, rule)
       const oldText = serializeDateRef({ kind: ref.kind as any, iso: ref.iso, recurrence: rule, leadMinutes: ref.lead_minutes })
       const newText = serializeDateRef({ kind: ref.kind as any, iso: nextIso, recurrence: rule, leadMinutes: ref.lead_minutes })
       newContent = newContent.replace(oldText, newText)

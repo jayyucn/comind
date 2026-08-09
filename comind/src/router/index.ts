@@ -44,10 +44,10 @@ router.beforeEach(async (to) => {
 
   if (to.name === 'ideas-page') {
     try {
-      const { normalizeJournalTitle, isTodayTitle } = await import('../utils/journal-detect')
+      const { tauriNormalizeJournalTitle, tauriIsTodayTitle } = await import('../wasm/tauri-client')
 
       const rawParam = to.params.date as string
-      const normalized = normalizeJournalTitle(rawParam)
+      const normalized = await tauriNormalizeJournalTitle(rawParam)
 
       if (!normalized) {
         return { name: 'page', params: { pageId: rawParam } }
@@ -56,7 +56,7 @@ router.beforeEach(async (to) => {
       let page = pageStore.getPageByTitle(normalized)
 
       if (!page) {
-        if (isTodayTitle(normalized)) {
+        if (await tauriIsTodayTitle(normalized)) {
           // 今日页面：调用 Rust 端 ensureTodayIdeasPage 幂等获取或创建
           // （单一事实来源：避免 TS 端缓存 stale 导致的状态不一致）
           page = await pageStore.ensureTodayIdeasPage()

@@ -209,6 +209,13 @@ pub fn run() {
             commands::apply_relationship_type_to_block_content,
             commands::extract_links_from_content,
             commands::check_has_typed_link_to_target,
+            // S6: date-parser / recurrence / journal-detect
+            commands::parse_date_input,
+            commands::parse_date_time_input,
+            commands::calculate_next_recurrence,
+            commands::is_journal_title,
+            commands::normalize_journal_title,
+            commands::is_today_title,
             commands::renumber_blocks,
             commands::build_document_order,
             commands::get_page_with_blocks,

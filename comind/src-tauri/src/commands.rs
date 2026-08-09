@@ -576,7 +576,7 @@ pub async fn save_block_tree(
             });
         }
 
-        // Collect link & property changes for sync notification (S3)
+        // Collect link, property & notification changes for sync notification (S3/S8)
         for res in &results {
             let links = LinkService::get_by_source_block_id(storage, &res.block.id).unwrap_or_default();
             sync_changes
@@ -588,6 +588,11 @@ pub async fn save_block_tree(
                 .entry(SyncTable::Property)
                 .or_insert_with(Vec::new)
                 .extend(props.iter().map(|p| p.id.clone()));
+            let notifs = storage.notifications().get_by_block_id(&res.block.id).unwrap_or_default();
+            sync_changes
+                .entry(SyncTable::Notification)
+                .or_insert_with(Vec::new)
+                .extend(notifs.iter().map(|n| n.id.clone()));
         }
 
         for page_id in page_ids {
@@ -995,6 +1000,8 @@ pub async fn execute_batch(
                     sync_changes.entry(SyncTable::Link).or_insert_with(Vec::new).extend(links.iter().map(|l| l.id.clone()));
                     let props = PropertyService::get_by_block_id(storage, &result.id).unwrap_or_default();
                     sync_changes.entry(SyncTable::Property).or_insert_with(Vec::new).extend(props.iter().map(|p| p.id.clone()));
+                    let notifs = storage.notifications().get_by_block_id(&result.id).unwrap_or_default();
+                    sync_changes.entry(SyncTable::Notification).or_insert_with(Vec::new).extend(notifs.iter().map(|n| n.id.clone()));
                     serde_json::to_value(result)?
                 }
                 ("block", "update") => {
@@ -1015,6 +1022,8 @@ pub async fn execute_batch(
                     sync_changes.entry(SyncTable::Link).or_insert_with(Vec::new).extend(links.iter().map(|l| l.id.clone()));
                     let props = PropertyService::get_by_block_id(storage, &result.id).unwrap_or_default();
                     sync_changes.entry(SyncTable::Property).or_insert_with(Vec::new).extend(props.iter().map(|p| p.id.clone()));
+                    let notifs = storage.notifications().get_by_block_id(&result.id).unwrap_or_default();
+                    sync_changes.entry(SyncTable::Notification).or_insert_with(Vec::new).extend(notifs.iter().map(|n| n.id.clone()));
                     serde_json::to_value(result)?
                 }
                 ("block", "delete") => {
@@ -1027,11 +1036,13 @@ pub async fn execute_batch(
                     if let Ok(block) = storage.blocks().get_by_id(&id) {
                         page_ids.insert(block.page_id);
                     }
-                    // Collect cascade-deleted link/property IDs before BlockService::delete
+                    // Collect cascade-deleted link/property/notification IDs before BlockService::delete
                     let links = storage.links().get_by_source_block_id(&id).unwrap_or_default();
                     sync_changes.entry(SyncTable::Link).or_insert_with(Vec::new).extend(links.iter().map(|l| l.id.clone()));
                     let props = storage.properties().get_by_block_id(&id).unwrap_or_default();
                     sync_changes.entry(SyncTable::Property).or_insert_with(Vec::new).extend(props.iter().map(|p| p.id.clone()));
+                    let notifs = storage.notifications().get_by_block_id(&id).unwrap_or_default();
+                    sync_changes.entry(SyncTable::Notification).or_insert_with(Vec::new).extend(notifs.iter().map(|n| n.id.clone()));
                     // S8: BlockService::delete handles dateRef cleanup + notification hard-delete + link/property cleanup
                     BlockService::delete(storage, &id)?;
                     serde_json::to_value("OK")?
@@ -1039,13 +1050,33 @@ pub async fn execute_batch(
                 ("page", "create") => {
                     let page: Page = serde_json::from_value(params)?;
                     sync_changes.entry(SyncTable::Page).or_insert_with(Vec::new).push(page.id.clone());
-                    let result = storage.pages().create(&page)?;
+                    let result = PageService::create(
+                        storage,
+                        page.block_id.as_deref().unwrap_or(""),
+                        &page.title,
+                        Some(&page.r#type),
+                        page.icon.as_deref(),
+                        page.cover.as_deref(),
+                        Some(&page.aliases),
+                        page.file_path.as_deref(),
+                    )?;
                     serde_json::to_value(result)?
                 }
                 ("page", "update") => {
                     let page: Page = serde_json::from_value(params)?;
                     sync_changes.entry(SyncTable::Page).or_insert_with(Vec::new).push(page.id.clone());
-                    let result = storage.pages().update(&page)?;
+                    let result = PageService::update(
+                        storage,
+                        &page.id,
+                        Some(&page.title),
+                        Some(&page.r#type),
+                        page.icon.as_deref(),
+                        page.cover.as_deref(),
+                        Some(&page.aliases),
+                        page.file_path.as_deref(),
+                        Some(page.children_count),
+                        Some(page.word_count),
+                    )?;
                     serde_json::to_value(result)?
                 }
                 ("page", "delete") => {
@@ -1055,13 +1086,19 @@ pub async fn execute_batch(
                         .unwrap_or_default()
                         .to_string();
                     sync_changes.entry(SyncTable::Page).or_insert_with(Vec::new).push(id.clone());
-                    storage.pages().delete(&id)?;
+                    PageService::delete(storage, &id)?;
                     serde_json::to_value("OK")?
                 }
                 ("link", "create") => {
                     let link: Link = serde_json::from_value(params)?;
                     sync_changes.entry(SyncTable::Link).or_insert_with(Vec::new).push(link.id.clone());
-                    let result = storage.links().create(&link)?;
+                    let result = LinkService::create(
+                        storage,
+                        &link.source_block_id,
+                        &link.target_page_id,
+                        &link.display_text,
+                        link.relationship_type.as_deref(),
+                    )?;
                     serde_json::to_value(result)?
                 }
                 ("link", "delete") => {
@@ -1071,7 +1108,7 @@ pub async fn execute_batch(
                         .unwrap_or_default()
                         .to_string();
                     sync_changes.entry(SyncTable::Link).or_insert_with(Vec::new).push(id.clone());
-                    storage.links().delete(&id)?;
+                    LinkService::delete(storage, &id)?;
                     serde_json::to_value("OK")?
                 }
                 ("link", "sync_by_block") => {
@@ -1778,6 +1815,47 @@ pub async fn check_has_typed_link_to_target(
         !l.is_external && l.target_title == target_title && l.relationship_type.is_some()
     });
     Ok(serde_json::json!({"has_typed_link": has}))
+}
+
+// ── S6: date-parser / recurrence / journal-detect (pure computation) ──
+
+/// S6: Parse date input string → YYYY-MM-DD or null.
+/// Supports: today/tomorrow/yesterday/+Nd/-Nd, MM-DD, YYYY-MM-DD, Chinese weekdays.
+#[tauri::command]
+pub async fn parse_date_input(input: String) -> Result<Option<String>, String> {
+    Ok(comind_core::utils::date_parser::parse_date_input(&input))
+}
+
+/// S6: Parse date+time input → { date, time? }.
+/// Supports Chinese time: 下午2点 / 早上9点半 etc.
+#[tauri::command]
+pub async fn parse_date_time_input(input: String) -> Result<Option<comind_core::utils::date_parser::DateTimeResult>, String> {
+    Ok(comind_core::utils::date_parser::parse_date_time_input(&input))
+}
+
+/// S6: Calculate next recurrence ISO from an ISO string + recurrence rule.
+#[tauri::command]
+pub async fn calculate_next_recurrence(iso: String, rule: String) -> Result<String, String> {
+    Ok(comind_core::utils::recurrence::calculate_next_recurrence(&iso, &rule))
+}
+
+/// S6: Check if a page title matches a journal date format.
+#[tauri::command]
+pub async fn is_journal_title(title: String) -> Result<bool, String> {
+    Ok(comind_core::utils::journal_detect::is_journal_title(&title))
+}
+
+/// S6: Normalize journal title to canonical YYYY-MM-DD form.
+/// Returns null if not a recognized journal date.
+#[tauri::command]
+pub async fn normalize_journal_title(title: String) -> Result<Option<String>, String> {
+    Ok(comind_core::utils::journal_detect::normalize_journal_title(&title))
+}
+
+/// S6: Check if a normalized title is today.
+#[tauri::command]
+pub async fn is_today_title(normalized_title: String) -> Result<bool, String> {
+    Ok(comind_core::utils::journal_detect::is_today_title(&normalized_title))
 }
 
 
