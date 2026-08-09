@@ -1,8 +1,37 @@
 // composables/useIdeasFreeze.ts
 import { computed, type Ref } from 'vue'
 import { usePageStore } from '../stores/pages'
-import { parseToDate } from '../utils/journal-detect'
-import { isSameDay } from 'date-fns'
+import { parse, isValid, isSameDay} from 'date-fns'
+
+/**
+ * 预定义日记日期格式列表
+ * 仅用于检测（isJournalTitle / parseToDate / normalizeJournalTitle），
+ * 不用于创建——创建时统一用 yyyy-MM-dd 规范格式
+ */
+const JOURNAL_FORMATS = [
+  'yyyy-MM-dd',       // 2026-04-26（最常见，也是存储规范格式）
+  'yyyy/MM/dd',       // 2026/04/26
+  'yyyy_MM_dd',       // 2026_04_26
+  'MMM do, yyyy',     // Apr 26th, 2026
+  'EEEE, MMMM do, yyyy', // Saturday, April 26th, 2026
+  'MM/dd/yyyy',       // 04/26/2026
+  'dd.MM.yyyy',       // 26.04.2026
+  'yyyy年M月d日',      // 2026年4月26日
+] as const
+
+/**
+ * 尝试将标题解析为 Date（返回 null 表示不是有效日期）
+ * 用 format 列表逐个尝试解析
+ */
+function parseToDate(title: string): Date | null {
+  const trimmed = title.trim()
+  if (!trimmed) return null
+  for (const fmt of JOURNAL_FORMATS) {
+    const parsed = parse(trimmed, fmt, new Date())
+    if (isValid(parsed)) return parsed
+  }
+  return null
+}
 
 /**
  * 判断指定页面是否为冻结状态（非今日的 ideas 页面只读）
