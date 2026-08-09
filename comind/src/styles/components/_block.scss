@@ -149,6 +149,33 @@
   pointer-events: none;
 }
 
+// S9: save error dot (rendered state, after last char, click to retry)
+.save-error-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-error, #DC2626);
+  margin-left: 2px;
+  vertical-align: middle;
+  cursor: pointer;
+  flex-shrink: 0;
+
+  &:hover {
+    transform: scale(1.3);
+    box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.15);
+  }
+
+  &--retrying {
+    animation: save-error-spin 0.6s linear infinite;
+    cursor: wait;
+  }
+}
+
+@keyframes save-error-spin {
+  to { transform: rotate(360deg); }
+}
+
 .block.active .block-text {
   background: var(--selection-bg);
   border-radius: $radius-sm;

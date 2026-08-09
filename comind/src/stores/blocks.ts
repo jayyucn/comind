@@ -352,6 +352,9 @@ export const useBlockStore = defineStore('blocks', () => {
   /** 每个 Block 独立的防抖保存 */
   const pendingSaves = new Map<string, ReturnType<typeof debounce<typeof _doSave>>>()
 
+  /** S9: blockId → save failure flag. UI shows red dot in rendered state. */
+  const saveErrors = ref<Record<string, boolean>>({})
+
   let syncDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
   function _triggerSyncDebounced() {
@@ -400,6 +403,12 @@ export const useBlockStore = defineStore('blocks', () => {
 
       _triggerSyncDebounced()
 
+      // S9: clear save error on successful save
+      if (saveErrors.value[block.id]) {
+        delete saveErrors.value[block.id]
+        saveErrors.value = { ...saveErrors.value }
+      }
+
       // S4: snapshot pre-built by Rust inside the save transaction — zero extra IPC.
       if (saveResult.snapshot) {
         try {
@@ -421,9 +430,23 @@ export const useBlockStore = defineStore('blocks', () => {
       }
     } catch (error) {
       console.error('[BlockStore] Failed to save block:', error)
+      saveErrors.value = { ...saveErrors.value, [block.id]: true }
       throw error
     } finally {
       pendingSaves.delete(block.id)
+    }
+  }
+
+  /** S9: retry saving a block that previously failed */
+  async function retrySave(blockId: string): Promise<void> {
+    delete saveErrors.value[blockId]
+    saveErrors.value = { ...saveErrors.value }
+    const block = blocks.value.find(b => b.id === blockId)
+    if (!block) return
+    try {
+      await _doSave(block)
+    } catch {
+      // saveErrors re-set in _doSave catch
     }
   }
 
@@ -976,7 +999,10 @@ export const useBlockStore = defineStore('blocks', () => {
       }
     }
 
-    // 2. 立即从 reactive 数组移除（同步，触发 tree rebuild）
+    // 2. 保存快照（深拷贝当前状态，用于 RPC 失败时回滚）
+    const snapshot = blocks.value.map(b => ({ ...b }))
+
+    // 3. 立即从 reactive 数组移除（同步，触发 tree rebuild）
     const blockCardStore = useBlockCardStore()
     for (const id of toDelete) {
       pendingSaves.get(id)?.cancel()
@@ -985,10 +1011,10 @@ export const useBlockStore = defineStore('blocks', () => {
     }
     blocks.value = blocks.value.filter(b => !toDelete.has(b.id))
 
-    // 3. 触发 tree rebuild
+    // 4. 触发 tree rebuild
     structureVersion.value++
 
-    // 4. RPC fire-and-forget（paint 之后才发出）
+    // 5. RPC（paint 之后才发出）
     const operations: BatchOperation[] = [...toDelete].map(id => ({
       entity: 'block',
       action: 'delete',
@@ -1000,6 +1026,13 @@ export const useBlockStore = defineStore('blocks', () => {
         await client.executeBatch(operations)
       } catch (error) {
         console.error('[deleteBlocks] execute_batch failed:', error)
+        // S9: rollback to snapshot
+        blocks.value = snapshot
+        structureVersion.value++
+        for (const b of snapshot) {
+          blockCardStore.invalidate(b.id)
+        }
+        console.warn('[deleteBlocks] rolled back to snapshot')
       }
     }, 0)
   }
@@ -1106,6 +1139,8 @@ export const useBlockStore = defineStore('blocks', () => {
     moveBlock,
     deleteBlock,
     deleteBlocks,
+    saveErrors,
+    retrySave,
     updateBlockContent,
     updateBlockFormat,
     updateBlockType,

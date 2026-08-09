@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useContentRenderer, parseHeading } from '../../../../composables/useContentRenderer'
 import { useBlockStore } from '../../../../stores/blocks'
 
@@ -15,6 +15,24 @@ const emit = defineEmits<{
 
 const { renderContentToHtml } = useContentRenderer()
 const blockStore = useBlockStore()
+
+/** S9: retry-saving state — true while retrySave is in-flight */
+const isRetrying = ref(false)
+
+const hasSaveError = computed(() => {
+  if (!props.blockId) return false
+  return !!blockStore.saveErrors[props.blockId]
+})
+
+async function handleRetrySave() {
+  if (!props.blockId || isRetrying.value) return
+  isRetrying.value = true
+  try {
+    await blockStore.retrySave(props.blockId)
+  } finally {
+    isRetrying.value = false
+  }
+}
 
 const heading = computed(() => parseHeading(props.content))
 
@@ -58,5 +76,13 @@ function handleClick(e: MouseEvent) {
       v-html="headingContent"
     ></component>
     <span v-else v-html="normalContent"></span>
+    <!-- S9: save error indicator (rendered state only) -->
+    <span
+      v-if="hasSaveError"
+      class="save-error-dot"
+      :class="{ 'save-error-dot--retrying': isRetrying }"
+      @click.stop="handleRetrySave"
+      title="保存失败，点击重试"
+    ></span>
   </div>
 </template>
