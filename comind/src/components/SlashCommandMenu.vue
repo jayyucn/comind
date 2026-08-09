@@ -8,7 +8,8 @@ import { useModalKeyboardRef } from '../composables/useModalKeyboard'
 import { useTemplateRegistry } from '../composables/useTemplateRegistry'
 import { useUserTemplatesStore } from '../stores/user-templates'
 import { parseDateInput } from '../utils/date-parser'
-import { parseDateRefs } from '../utils/date-ref'
+// 4.2: Use Rust DateRefService instead of TS parseDateRefs
+import { getCoreClient } from '../wasm/client'
 import { Icon } from '../components/Icons'
 import type { Command } from '../types/command'
 
@@ -269,7 +270,10 @@ async function executeCommand(command: Command) {
     if (blockId) {
       const block = blockStore.blocks.find(b => b.id === blockId)
       if (block) {
-        const existingRefs = parseDateRefs(block.content)
+        // 4.2: Use Rust DateRefService instead of TS parseDateRefs
+        const client = getCoreClient()
+        if (!client) return
+        const existingRefs = await client.getDateRefsByBlock(block.id)
         const hasSameKind = existingRefs.some(r => r.kind === kind)
         if (hasSameKind) {
           const kindLabel = kind === 'schedule' ? '计划时间' : '截止时间'

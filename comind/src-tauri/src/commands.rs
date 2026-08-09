@@ -319,6 +319,26 @@ pub async fn get_date_refs_by_block(
     }).await
 }
 
+/// 批量获取整页所有 block 的 dateRef。一次 IPC 代替 N×get_date_refs_by_block。
+/// 返回 `Vec<(block_id, Vec<DateRef>)>`，TS 直接消费。
+#[tauri::command]
+pub async fn get_date_refs_by_page(
+    db: State<'_, super::state::DatabaseConnection>,
+    page_id: String,
+) -> Result<Vec<(String, Vec<DateRef>)>, String> {
+    execute_with_adapter(db, |storage| {
+        let blocks = BlockService::get_by_page_id(storage, &page_id)?;
+        let mut result = Vec::new();
+        for b in blocks {
+            let refs = DateRefService::get_by_block(storage, &b.id)?;
+            if !refs.is_empty() {
+                result.push((b.id, refs));
+            }
+        }
+        Ok(result)
+    }).await
+}
+
 #[tauri::command]
 pub async fn query_due_non_recurring_date_refs(
     db: State<'_, super::state::DatabaseConnection>,
@@ -353,7 +373,7 @@ pub async fn query_incomplete_tasks(
         }
         // 2. 批量获取 blocks
         let blocks = comind_core::storage::repository::BlockRepository::get_by_ids(storage.blocks(), &block_ids)?;
-        // 3. 对每个 block 查 page，过滤 type=ideas
+        // 3. 对每个 block 查 page + dateRefs，过滤 type=ideas
         let mut tasks: Vec<IncompleteTask> = Vec::new();
         for block in blocks {
             let page = match PageService::get_by_id(storage, &block.page_id) {
@@ -363,6 +383,8 @@ pub async fn query_incomplete_tasks(
             if page.r#type != "ideas" {
                 continue;
             }
+            // Pre-join date_refs so TS doesn't need parseDateRefs or extra IPC per task
+            let date_refs = DateRefService::get_by_block(storage, &block.id).unwrap_or_default();
             tasks.push(IncompleteTask {
                 id: block.id,
                 page_id: block.page_id,
@@ -377,6 +399,7 @@ pub async fn query_incomplete_tasks(
                 deleted_at: block.deleted_at,
                 page_title: page.title,
                 page_type: page.r#type,
+                date_refs,
             });
         }
         Ok(tasks)
@@ -1715,6 +1738,16 @@ pub async fn sync_payload_for_block(
         use comind_core::services::NotificationService;
         NotificationService::sync_payload_for_block(storage, &block, &page)
     }).await
+}
+
+/// S3: Extract all links from block content (typed, plain, external).
+/// Returns `Vec<LinkDraft>` with position, target_title, relationship_type, etc.
+/// Pure computation — no DB access needed.
+#[tauri::command]
+pub async fn extract_links_from_content(
+    content: String,
+) -> Result<Vec<comind_core::services::content_parse_service::LinkDraft>, String> {
+    Ok(comind_core::services::content_parse_service::extract_links_from_content(&content))
 }
 
 /// S3: Apply (or remove) a relationship type to all links pointing at `target_title`

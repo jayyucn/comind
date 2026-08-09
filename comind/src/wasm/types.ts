@@ -240,7 +240,7 @@ export interface TaskViewRust {
   updated_at: number
 }
 
-/** 未完成任务：block 数据 + page_title + page_type */
+/** 未完成任务：block 数据 + page_title + page_type + date_refs (from Rust pre-join) */
 export interface IncompleteTask {
   id: string
   page_id: string
@@ -255,9 +255,11 @@ export interface IncompleteTask {
   deleted_at: number | null
   page_title: string
   page_type: string
+  /** DateRefs pre-joined by Rust query_incomplete_tasks. Empty array if none. */
+  date_refs: DateRefRecord[]
 }
 
-// ─── S10: Render segments (get_page_with_blocks response) ───
+// ─── S10: Render segments + properties (get_page_with_blocks response) ───
 
 export interface PageWithBlocks {
   page: Page
@@ -268,6 +270,8 @@ export interface BlockRenderData {
   block: Block
   children: string[]
   render_segments: RenderSegment[]
+  /** Block properties resolved from Property table by Rust (zero extra IPC). */
+  properties: Property[]
 }
 
 export type RenderSegment =
@@ -276,3 +280,20 @@ export type RenderSegment =
   | { type: 'typed_link'; start: number; end: number; target_page_title: string; display_text: string; relationship_type: string; rel_label: string; rel_color: string }
   | { type: 'external_link'; start: number; end: number; url: string }
   | { type: 'date_ref'; start: number; end: number; kind: string; iso: string; recurrence: string; lead_minutes: number; is_overdue: boolean }
+
+/** Input to the content renderer: block content + pre-computed render segments */
+export interface RenderInput {
+  content: string
+  segments: RenderSegment[]
+  blockId: string
+}
+
+/** 4.3: Link draft parsed from block content by Rust ContentParseService */
+export interface LinkDraft {
+  target_title: string
+  display_text: string
+  position: number
+  is_external: boolean
+  relationship_type: string | null
+  inverse_relationship_type: string | null
+}

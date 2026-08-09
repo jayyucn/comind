@@ -1,7 +1,7 @@
 use crate::{
     types::{Block, BlockRenderData, PageWithBlocks, RenderSegment},
     storage::repository,
-    services::DateRefService,
+    services::{DateRefService, PropertyService},
 };
 use std::collections::HashMap;
 use std::error::Error;
@@ -68,10 +68,14 @@ pub fn build_page_with_blocks(
             Vec::new()
         };
 
+        // Resolve block properties from Property table (zero extra queries — already in cache)
+        let properties = PropertyService::get_by_block_id(storage, &block.id).unwrap_or_default();
+
         result.push(BlockRenderData {
             block: block.clone(),
             children,
             render_segments: segments,
+            properties,
         });
     }
 

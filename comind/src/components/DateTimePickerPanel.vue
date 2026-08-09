@@ -4,7 +4,7 @@ import { Clock, Repeat, Check } from 'lucide-vue-next'
 import CalendarPopover from './CalendarPopover.vue'
 import { useEditorStore } from '../stores/editor'
 import { useBlockStore } from '../stores/blocks'
-import { parseDateRefs } from '../utils/date-ref'
+import { getCoreClient } from '../wasm/client'
 import type { DateRefKind, RecurrenceRule } from '../utils/date-ref'
 
 export interface DateTimePickerConfirm {
@@ -85,7 +85,7 @@ watch(
 
 let kindGuard = false
 
-watch(localKind, (newKind, oldKind) => {
+watch(localKind, async (newKind, oldKind) => {
   if (kindGuard) { kindGuard = false; return }
 
   if (initializingKind) return
@@ -100,8 +100,11 @@ watch(localKind, (newKind, oldKind) => {
       const blockStore = useBlockStore()
       const block = blockStore.blocks.find(b => b.id === state.blockId)
       if (block) {
-        const refs = parseDateRefs(block.content)
-        if (refs.some(r => r.kind === newKind)) {
+        // 4.2: Use Rust DateRefService instead of TS parseDateRefs
+        const client = getCoreClient()
+        if (!client) return
+        const dateRefs = await client.getDateRefsByBlock(state.blockId)
+        if (dateRefs.some((r: any) => r.kind === newKind)) {
           const label = newKind === 'deadline' ? '截止时间' : newKind === 'schedule' ? '计划时间' : '日期引用'
           editorStore.showToast(`该任务已有${label}`, 'warning')
           kindGuard = true

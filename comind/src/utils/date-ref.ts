@@ -10,14 +10,12 @@
  *    - @2026-08-03 ⏰||30     → kind=deadline + leadMinutes
  *
  * 所有层（DateRefExtension / useContentRenderer / 命令 / 自动推进）
- * 共用本文件的解析与序列化逻辑，禁止在各处重复编写正则。
+ * 共用本文件的序列化逻辑，禁止在各处重复编写正则。
  *
- * ⚠️ 存储层提取已迁 Rust（comind-core::services::DateRefService）。DateRef 表是
- * date-ref 的派生存储事实来源，由 BlockService 在 block 写入路径中维护，并通过
- * core.queryDateRefs / queryOverdueDateRefs / getDateRefsByBlock 查询。
- * 本文件的 parseDateRefs 仅保留给「渲染/展示期解析」使用
- * （DateTimePickerPanel、SlashCommandMenu、useContentRenderer、notification-service、
- * property 等），请勿将其解析结果当作存储索引的唯一事实来源。
+ * ⚠️ 解析/提取已全面迁 Rust（comind-core::services::DateRefService）。
+ * TS 侧不再自行解析 dateRef；全部通过 client.getDateRefsByBlock / getDateRefsByPage 查询。
+ * 本文件保留 `DATE_REF_AT_REGEX` / `serializeDateRef` / `formatIsoDisplay` / `normalizeRecurrence`
+ * 供 Tiptap Extension 和编辑器 render 使用。
  */
 
 export type DateRefKind = 'ref' | 'schedule' | 'deadline'
@@ -46,12 +44,6 @@ const RECURRENCE_RULES: RecurrenceRule[] = ['none', 'daily', 'weekly', 'monthly'
  */
 export const DATE_REF_AT_REGEX = /(?<![\w@])@(\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2})?)(?:[ \u00A0]?(📅|⏰))?(?:\|(daily|weekly|monthly|yearly|none)?)?(?:\|(\d+))?/g
 
-/** emoji → kind 映射 */
-const EMOJI_TO_KIND: Record<string, DateRefKind> = {
-  '📅': 'schedule',
-  '⏰': 'deadline',
-}
-
 /** kind → emoji 映射 */
 const KIND_TO_EMOJI: Record<string, string | undefined> = {
   ref: undefined,
@@ -61,30 +53,6 @@ const KIND_TO_EMOJI: Record<string, string | undefined> = {
 
 export function normalizeRecurrence(rec: string | undefined): RecurrenceRule {
   return rec && (RECURRENCE_RULES as string[]).includes(rec) ? (rec as RecurrenceRule) : 'none'
-}
-
-/**
- * 从文本中提取所有 dateRef（同 block 可含多个）
- * 解析 @ISO[emoji][|params] 格式
- */
-export function parseDateRefs(text: string): DateRef[] {
-  const result: { ref: DateRef; pos: number }[] = []
-  if (!text) return []
-
-  const re = new RegExp(DATE_REF_AT_REGEX.source, 'g')
-  let m: RegExpExecArray | null
-  while ((m = re.exec(text)) !== null) {
-    const iso = m[1]
-    const emoji = m[2]
-    const kind: DateRefKind = emoji ? (EMOJI_TO_KIND[emoji] ?? 'ref') : 'ref'
-    const recurrence = normalizeRecurrence(m[3])
-    const leadMinutes = m[4] ? parseInt(m[4], 10) || 0 : 0
-    result.push({ ref: { kind, iso, recurrence, leadMinutes }, pos: m.index })
-  }
-
-  // 按文本位置排序，保持原始顺序
-  result.sort((a, b) => a.pos - b.pos)
-  return result.map((r) => r.ref)
 }
 
 /**

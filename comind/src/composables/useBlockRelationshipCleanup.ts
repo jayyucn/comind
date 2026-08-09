@@ -1,7 +1,8 @@
 import { useBlockStore } from '../stores/blocks'
 import { usePageStore } from '../stores/pages'
-import { parseBlockLinks } from '../utils/parser'
+import { tauriExtractLinksFromContent } from '../wasm/tauri-client'
 import { applyRelationshipTypeToBlockContent } from './useRelationshipSync'
+import type { LinkDraft } from '../wasm/types'
 
 export interface OrphanedTarget {
   targetTitle: string
@@ -16,7 +17,7 @@ export interface CleanupResult {
 }
 
 /**
- * Block 删除后的语义关系整理 composable
+ * Block 删除后的语义关系整理 composable (4.3: migrated from TS parser to Rust)
  *
  * 职责：在一组 Block 被删除后，处理它们涉及到的反向 typed-link，
  * 避免出现"源端已删、目标端还挂着 typed 类型"的悬空引用。
@@ -28,9 +29,9 @@ export interface CleanupResult {
  * 4. 对每个目标：若本页 SURVIVING blocks 已无 typed-link 维持，跨页降级反向引用
  *
  * 边界：
- * - 仅处理带 inverseRelationshipType 的 link（单向 ^(depends-on) 不参与）
+ * - 仅处理带 inverseRelationshipType 的 link（单向 ((depends-on)) 不参与）
  * - 同页其他 block 仍含 typed-link 到目标 → 跳过
- * - 跨页降级保留 [[link]] 本身，只移除 ^(...) 部分
+ * - 跨页降级保留 [[link]] 本身，只移除 ((...)) 部分
  */
 export function useBlockRelationshipCleanup() {
   const blockStore = useBlockStore()
@@ -63,12 +64,12 @@ export function useBlockRelationshipCleanup() {
     for (const id of deletedBlockIds) {
       const block = blocks.find(b => b.id === id)
       if (!block) continue
-      const links = parseBlockLinks(block.content)
+      const links: LinkDraft[] = await tauriExtractLinksFromContent(block.content)
       for (const link of links) {
-        if (link.isExternal) continue
-        if (link.relationshipType === null) continue
-        if (link.inverseRelationshipType === null) continue
-        targetSet.set(link.targetTitle, link.inverseRelationshipType)
+        if (link.is_external) continue
+        if (link.relationship_type === null) continue
+        if (link.inverse_relationship_type === null) continue
+        targetSet.set(link.target_title, link.inverse_relationship_type)
       }
     }
 
@@ -76,20 +77,23 @@ export function useBlockRelationshipCleanup() {
     const ourPageTitle = pageStore.pages.find(p => p.id === pageId)?.title ?? null
 
     // 3. 检查本页 SURVIVING blocks 是否仍含 typed-link 维持（关键：在删除之前！）
-    // 这是关键修复点！如果我们先删除再检查，检查逻辑会错误地判断所有 blocks 都是 surviving
     const survivingTypedLinks = new Set<string>()
     if (ourPageTitle) {
       for (const [targetTitle] of targetSet) {
-        const stillHasTypedLink = blocks.some(b => {
-          if (b.pageId !== pageId) return false
-          if (deletedBlockIds.includes(b.id)) return false
-          const links = parseBlockLinks(b.content)
-          return links.some(l =>
-            !l.isExternal &&
-            l.targetTitle === targetTitle &&
-            l.relationshipType !== null
-          )
-        })
+        let stillHasTypedLink = false
+        for (const b of blocks) {
+          if (b.pageId !== pageId) continue
+          if (deletedBlockIds.includes(b.id)) continue
+          const links: LinkDraft[] = await tauriExtractLinksFromContent(b.content)
+          if (links.some(l =>
+            !l.is_external &&
+            l.target_title === targetTitle &&
+            l.relationship_type !== null
+          )) {
+            stillHasTypedLink = true
+            break
+          }
+        }
         if (stillHasTypedLink) {
           survivingTypedLinks.add(targetTitle)
         }
@@ -108,7 +112,7 @@ export function useBlockRelationshipCleanup() {
     for (const [targetTitle, inverseType] of targetSet) {
       if (survivingTypedLinks.has(targetTitle)) continue
 
-      // 跨页降级：扫描目标页面所有 blocks，移除 [[ourPageTitle]]^(...) 类型后缀
+      // 跨页降级：扫描目标页面所有 blocks，移除 [[ourPageTitle]]((...)) 类型后缀
       result.orphanedTargets.push({ targetTitle, inverseType })
 
       const targetPageId = pageStore.pages.find(p => p.title === targetTitle)?.id
@@ -116,7 +120,7 @@ export function useBlockRelationshipCleanup() {
 
       const targetBlocks = blockStore.blocks.filter(b => b.pageId === targetPageId)
       for (const tb of targetBlocks) {
-        const newContent = applyRelationshipTypeToBlockContent(tb.content, ourPageTitle, null)
+        const newContent = await applyRelationshipTypeToBlockContent(tb.content, ourPageTitle, null)
         if (newContent !== tb.content) {
           await blockStore.updateBlockContent(tb.id, newContent)
           result.modifiedCrossPageBlocks.push({ id: tb.id, pageId: tb.pageId, content: newContent })

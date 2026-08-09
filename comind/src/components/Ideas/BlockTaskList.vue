@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { getCoreClient } from '../../wasm/client'
-import { parseDateRefs } from '../../utils/date-ref'
 import { usePropertyStore } from '../../stores/property'
 import type { IncompleteTask } from '../../wasm/types'
 import BlockTaskItem from './BlockTaskItem.vue'
@@ -36,8 +35,9 @@ function todayStr(): string {
 const sortedTasks = computed(() => {
   const today = todayStr()
   return [...tasks.value].sort((a, b) => {
-    const aRefs = parseDateRefs(a.content)
-    const bRefs = parseDateRefs(b.content)
+    // 4.2: Use Rust-computed date_refs from IncompleteTask, no TS parsing
+    const aRefs = a.date_refs ?? []
+    const bRefs = b.date_refs ?? []
     const aDeadline = aRefs.find(r => r.kind === 'deadline')
     const bDeadline = bRefs.find(r => r.kind === 'deadline')
     const aSchedule = aRefs.find(r => r.kind === 'schedule')

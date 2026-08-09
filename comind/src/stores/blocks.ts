@@ -187,35 +187,68 @@ export const useBlockStore = defineStore('blocks', () => {
     }))
   }
 
-  /** 加载指定 Page 的 Block 树（含 Rust 预计算的渲染段） */
+  // Ref: Map<parentId, Vec<childId>> pre-sorted by Rust in document order.
+  // Built from BlockRenderData.children in loadPageBlocks, replaces getSortedChildren().
+  const childrenMap = ref<Map<string, string[]>>(new Map())
+
+  /** 加载指定 Page 的 Block 树（含 Rust 预计算的渲染段 + 属性 + children） 
+   * 4.2: pw.blocks 是唯一数据源（删除 getBlocksByPage 二次 IPC）。
+   * childrenMap 由 brd.children 直接构建，替代 getSortedChildren。
+   */
   async function loadPageBlocks(pageId: string) {
     const client = await getClient()
-    // S10: Use getPageWithBlocks for render segments (zero extra IPC)
-    let renderSegmentsMap: Map<string, import('../wasm/types').RenderSegment[]> = new Map()
+    let pw: import('../wasm/types').PageWithBlocks | null = null
     try {
-      const pw = await client.getPageWithBlocks(pageId)
-      for (const brd of pw.blocks) {
-        renderSegmentsMap.set(brd.block.id, brd.render_segments || [])
-      }
+      pw = await client.getPageWithBlocks(pageId)
     } catch {
       // Fallback: if getPageWithBlocks fails (e.g. old binary), load blocks directly
     }
 
-    const rustBlocks = await client.getBlocksByPage(pageId)
+    // Build childrenMap from brd.children (Rust pre-sorted by pos)
+    const newChildrenMap = new Map<string, string[]>()
+    if (pw) {
+      for (const brd of pw.blocks) {
+        const parentId = brd.block.parent_id ?? '__root__'
+        if (brd.children.length > 0) {
+          newChildrenMap.set(parentId, brd.children)
+        }
+      }
+    }
+    childrenMap.value = newChildrenMap
 
-    blocks.value = rustBlocks.map(rustBlock => ({
-      id: rustBlock.id,
-      pageId: rustBlock.page_id,
-      parentId: rustBlock.parent_id,
-      pos: rustBlock.pos,
-      content: rustBlock.content,
-      format: JSON.parse(rustBlock.format || '{}'),
-      type: rustBlock.type as Block['type'],
-      renderSegments: renderSegmentsMap.get(rustBlock.id),
-      properties: {},
-      createdAt: rustBlock.created_at,
-      updatedAt: rustBlock.updated_at
-    }))
+    if (pw) {
+      // 4.2: pw.blocks is the sole data source — no extra getBlocksByPage IPC
+      blocks.value = pw.blocks.map(brd => ({
+        id: brd.block.id,
+        pageId: brd.block.page_id,
+        parentId: brd.block.parent_id,
+        pos: brd.block.pos,
+        content: brd.block.content,
+        format: JSON.parse(brd.block.format || '{}'),
+        type: brd.block.type as Block['type'],
+        renderSegments: brd.render_segments || [],
+        properties: brd.properties ?? {},
+        createdAt: brd.block.created_at,
+        updatedAt: brd.block.updated_at
+      }))
+    } else {
+      // Fallback path (old binary): use getBlocksByPage
+      const rustBlocks = await client.getBlocksByPage(pageId)
+      blocks.value = rustBlocks.map(rustBlock => ({
+        id: rustBlock.id,
+        pageId: rustBlock.page_id,
+        parentId: rustBlock.parent_id,
+        pos: rustBlock.pos,
+        content: rustBlock.content,
+        format: JSON.parse(rustBlock.format || '{}'),
+        type: rustBlock.type as Block['type'],
+        renderSegments: undefined,
+        properties: [],
+        createdAt: rustBlock.created_at,
+        updatedAt: rustBlock.updated_at
+      }))
+    }
+    
     return blocks
   }
 
@@ -224,10 +257,11 @@ export const useBlockStore = defineStore('blocks', () => {
  * 保证页面始终可编辑。等价于 openPage 原有的「空则建 block」逻辑。
  */
   async function ensurePageBlocks(pageId: string) {
-    await loadPageBlocks(pageId)
-    if (blocks.value.length === 0) {
+    const pageBlocks = await loadPageBlocks(pageId)
+    if (pageBlocks.value.length === 0) {
       await createBlock({ pageId, content: '', parentId: null })
     }
+    structureVersion.value++
   }
 
   async function restoreBlock(blockId: string) {
@@ -258,7 +292,7 @@ export const useBlockStore = defineStore('blocks', () => {
             content: rustBlock.content,
             format: JSON.parse(rustBlock.format || '{}'),
             type: rustBlock.type as Block['type'],
-            properties: {},
+            properties: [],
             createdAt: rustBlock.created_at,
             updatedAt: rustBlock.updated_at
           }))
@@ -525,6 +559,8 @@ export const useBlockStore = defineStore('blocks', () => {
         // 更新当前节点的内容（前半部分）
         block.content = before
         block.updatedAt = Date.now()
+        // 内容变更后清除过时的 renderSegments（同 updateBlockContent 逻辑）
+        block.renderSegments = undefined
         _scheduleSave(block)
 
         // 在指定位置插入新节点（后半部分）
@@ -791,6 +827,8 @@ export const useBlockStore = defineStore('blocks', () => {
 
     const cursorPos = targetContentLen + 1
     mergeTarget.updatedAt = Date.now()
+    // 内容变更后清除过时的 renderSegments（同 updateBlockContent 逻辑）
+    mergeTarget.renderSegments = undefined
     _scheduleSave(mergeTarget)
 
     const childrenToMove: Block[] = []
@@ -978,6 +1016,11 @@ export const useBlockStore = defineStore('blocks', () => {
 
     block.content = content
     block.updatedAt = Date.now()
+    // renderSegments 是由 Rust 在 loadPageBlocks 时预计算的，
+    // 内容变更后 segments 的 start/end 索引已过时，必须清除。
+    // BulletRender 检测到 segments 为 undefined 时回退到纯文本渲染（含 #tag 高亮），
+    // 完整的 link/dateRef 渲染将在下次 loadPageBlocks 时恢复。
+    block.renderSegments = undefined
     _scheduleSave(block)
 
     const blockCardStore = useBlockCardStore()
@@ -1038,6 +1081,7 @@ export const useBlockStore = defineStore('blocks', () => {
     blockTree,
     loading,
     structureVersion,
+    childrenMap,
     getChildren,
     getBlocksByPage,
     getBlock,

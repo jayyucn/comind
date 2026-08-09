@@ -128,7 +128,7 @@ function parseSnapshot(snapshot: string): SnapshotData | null {
 function renderBlockContent(snapshot: string, blockId: string): string {
   const data = parseSnapshot(snapshot)
   if (!data?.block?.content) return ''
-  return renderContentToHtml(data.block.content, blockId)
+  return renderContentToHtml({ segments: [], content: data.block.content, blockId })
 }
 
 function getProperties(snapshot: string): Array<{ key: string; value: string; type: string }> {

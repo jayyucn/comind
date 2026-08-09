@@ -32,15 +32,15 @@ const segments = computed(() => {
 const headingContent = computed(() => {
   if (!heading.value) return ''
   const segs = segments.value
-  return segs ? renderContentToHtml(segs, heading.value.title, props.blockId ?? '')
-              : renderContentToHtml([], heading.value.title, props.blockId ?? '')
+  return segs ? renderContentToHtml({ segments: segs, content: heading.value.title, blockId: props.blockId ?? '' })
+              : renderContentToHtml({ segments: [], content: heading.value.title, blockId: props.blockId ?? '' })
 })
 
 const normalContent = computed(() => {
   if (heading.value) return ''
   const segs = segments.value
-  return segs ? renderContentToHtml(segs, props.content, props.blockId ?? '')
-              : renderContentToHtml([], props.content, props.blockId ?? '')
+  return segs ? renderContentToHtml({ segments: segs, content: props.content, blockId: props.blockId ?? '' })
+              : renderContentToHtml({ segments: [], content: props.content, blockId: props.blockId ?? '' })
 })
 
 function handleClick(e: MouseEvent) {

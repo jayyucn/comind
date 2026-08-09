@@ -1,4 +1,4 @@
-import type { RenderSegment } from '../wasm/types'
+import type { RenderInput } from '../wasm/types'
 
 const CSS_CLASSES = {
   blockLink: 'block-link',
@@ -50,11 +50,10 @@ function renderTextSegmentWithTags(text: string): string {
  * with no gaps. We iterate in order: text segments get HTML-escaped
  * (with #tag rendering), typed segments get appropriate `<span>` wrappers.
  *
- * @param segments  Pre-computed render instructions from Rust (via `getPageWithBlocks`)
- * @param content   The raw block.content string
- * @param blockId   Optional block ID for data attributes (used by TypedLink)
+ * @param input   RenderInput { content, segments, blockId } — single object interface
  */
-function renderContentToHtml(segments: RenderSegment[], content: string, blockId: string = ''): string {
+function renderContentToHtml(input: RenderInput): string {
+  const { content, segments, blockId = '' } = input
   if (!segments || segments.length === 0) {
     // Fallback: no structured data available — use plain escaped text
     return renderTextSegmentWithTags(content)

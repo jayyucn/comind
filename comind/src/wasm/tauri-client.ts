@@ -3,10 +3,11 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open } from '@tauri-apps/plugin-dialog'
 import { platform } from '@tauri-apps/plugin-os'
 import type {
-  Block, Page, Property, Link, RelationshipType,
+  Block, BlockSaveResult, Page, Property, Link, RelationshipType,
   UserTemplate, SearchResult, BlockUpdate, PageUpdate,
   BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig, BlockVersion,
-  Notification, DateRefRecord, IncompleteTask, BlockCard, SavedFilterRust, TaskViewRust
+  Notification, DateRefRecord, IncompleteTask, BlockCard, SavedFilterRust, TaskViewRust,
+  NotificationSettings
 } from './types'
 
 export function isTauriEnvironment(): boolean {
@@ -82,7 +83,7 @@ export async function tauriSetDefaultTaskView(id: string): Promise<TaskViewRust>
   return invoke('set_default_task_view', { id })
 }
 
-export async function tauriSaveBlockTree(blocks: BlockUpdate[]): Promise<Block[]> {
+export async function tauriSaveBlockTree(blocks: BlockUpdate[]): Promise<BlockSaveResult[]> {
   return invoke('save_block_tree', { blocks })
 }
 
@@ -333,6 +334,10 @@ export async function tauriGetDateRefsByBlock(blockId: string): Promise<DateRefR
   return invoke('get_date_refs_by_block', { blockId })
 }
 
+export async function tauriGetDateRefsByPage(pageId: string): Promise<[string, DateRefRecord[]][]> {
+  return invoke('get_date_refs_by_page', { pageId })
+}
+
 export async function tauriQueryDueNonRecurringDateRefs(nowMs: number): Promise<DateRefRecord[]> {
   return invoke('query_due_non_recurring_date_refs', { nowMs })
 }
@@ -461,6 +466,12 @@ export async function tauriSyncPayloadForBlock(blockId: string): Promise<void> {
 }
 
 // ---- Content parse helpers (S3: migrated from TS parser to Rust) ----
+
+export async function tauriExtractLinksFromContent(
+  content: string
+): Promise<any[]> {
+  return invoke('extract_links_from_content', { content })
+}
 
 export async function tauriApplyRelationshipTypeToBlockContent(
   content: string,

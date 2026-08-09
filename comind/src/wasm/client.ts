@@ -36,7 +36,7 @@ import type {
   UserTemplate, SearchResult, BlockUpdate, BlockSaveResult, PageUpdate,
   BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig, BlockVersion,
   Notification, DateRefRecord, IncompleteTask, BlockCard, SavedFilterRust, TaskViewRust,
-  NotificationSettings, PageWithBlocks, BlockRenderData, RenderSegment
+  NotificationSettings, PageWithBlocks
 } from './types'
 
 export interface CoreClient {
@@ -102,6 +102,7 @@ export interface CoreClient {
   queryDateRefs(kind: string, from: string, to: string): Promise<DateRefRecord[]>
   queryOverdueDateRefs(today: string): Promise<DateRefRecord[]>
   getDateRefsByBlock(blockId: string): Promise<DateRefRecord[]>
+  getDateRefsByPage(pageId: string): Promise<[string, DateRefRecord[]][]>
   queryDueNonRecurringDateRefs(nowMs: number): Promise<DateRefRecord[]>
   queryAllRecurringDateRefs(): Promise<DateRefRecord[]>
   queryIncompleteTasks(): Promise<IncompleteTask[]>
@@ -336,10 +337,6 @@ class TauriClient implements CoreClient {
       return tauri.tauriSyncPayloadForBlock(blockId)
     }
 
-    async getPageWithBlocks(pageId: string): Promise<PageWithBlocks> {
-      return tauri.tauriGetPageWithBlocks(pageId)
-    }
-
     async queryDateRefs(kind: string, from: string, to: string): Promise<DateRefRecord[]> {
       return parseJsonResult(await tauri.tauriQueryDateRefs(kind, from, to))
     }
@@ -350,6 +347,14 @@ class TauriClient implements CoreClient {
 
     async getDateRefsByBlock(blockId: string): Promise<DateRefRecord[]> {
       return parseJsonResult(await tauri.tauriGetDateRefsByBlock(blockId))
+    }
+
+    async getDateRefsByPage(pageId: string): Promise<[string, DateRefRecord[]][]> {
+      return parseJsonResult(await tauri.tauriGetDateRefsByPage(pageId))
+    }
+
+    async getPageWithBlocks(pageId: string): Promise<PageWithBlocks> {
+      return parseJsonResult(await tauri.tauriGetPageWithBlocks(pageId))
     }
 
     async queryDueNonRecurringDateRefs(nowMs: number): Promise<DateRefRecord[]> {
@@ -467,7 +472,7 @@ class WasmClientAdapter implements CoreClient {
     const allPages = await this.wasm.get_all_pages()
     const months = Array.from(new Set(
       allPages
-        .filter(p => (p.type === 'ideas' || p.type === 'journal') && p.deleted === 0)
+        .filter(p => (p.type === 'ideas') && p.deleted === 0)
         .map(p => p.title.slice(0, 7))
     ))
     months.sort((a, b) => b.localeCompare(a))
@@ -481,7 +486,7 @@ class WasmClientAdapter implements CoreClient {
     const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
     const allPages = await this.wasm.get_all_pages()
     const existing = allPages.find(
-      p => p.title === today && (p.type === 'ideas' || p.type === 'journal')
+      p => p.title === today && (p.type === 'ideas')
     )
     if (existing) return existing
     // 不存在则创建
@@ -649,7 +654,8 @@ class WasmClientAdapter implements CoreClient {
   }
 
   async getPageWithBlocks(_pageId: string): Promise<PageWithBlocks> {
-    throw new Error('getPageWithBlocks not available on web')
+    // WASM 端暂不支持
+    return { page: {} as Page, blocks: [] }
   }
 
   async queryDateRefs(kind: string, from: string, to: string): Promise<DateRefRecord[]> {
@@ -662,6 +668,11 @@ class WasmClientAdapter implements CoreClient {
 
   async getDateRefsByBlock(blockId: string): Promise<DateRefRecord[]> {
     return this.wasm.get_date_refs_by_block(blockId)
+  }
+
+  async getDateRefsByPage(_pageId: string): Promise<[string, DateRefRecord[]][]> {
+    // WASM 端暂不支持，返回空数组
+    return []
   }
 
   async queryDueNonRecurringDateRefs(nowMs: number): Promise<DateRefRecord[]> {

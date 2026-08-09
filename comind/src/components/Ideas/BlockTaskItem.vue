@@ -3,7 +3,7 @@ import { ref, computed, onMounted, nextTick } from 'vue'
 import { useBlockStore } from '../../stores/blocks'
 import { usePropertyStore } from '../../stores/property'
 import { useContentRenderer } from '../../composables/useContentRenderer'
-import { parseDateRefs, formatIsoDisplay } from '../../utils/date-ref'
+import { formatIsoDisplay } from '../../utils/date-ref'
 import type { IncompleteTask } from '../../wasm/types'
 import PropertyInline from '../Block/PropertyInline.vue'
 
@@ -44,7 +44,7 @@ const displayContent = computed(() => {
   return block?.content ?? props.task.content
 })
 
-const dateRefs = computed(() => parseDateRefs(displayContent.value))
+const dateRefs = computed(() => props.task.date_refs ?? [])
 const deadlineRef = computed(() => dateRefs.value.find(r => r.kind === 'deadline'))
 const scheduleRef = computed(() => dateRefs.value.find(r => r.kind === 'schedule'))
 
@@ -58,8 +58,8 @@ const isOverdue = computed(() => {
 const taskSegments = computed(() => blockStore.getBlock(props.task.id)?.renderSegments)
 const renderedContent = computed(() => {
   const segs = taskSegments.value
-  return segs ? renderContentToHtml(segs, displayContent.value, props.task.id)
-              : renderContentToHtml([], displayContent.value, props.task.id)
+  return segs ? renderContentToHtml({ segments: segs, content: displayContent.value, blockId: props.task.id })
+              : renderContentToHtml({ segments: [], content: displayContent.value, blockId: props.task.id })
 })
 
 async function startEdit() {

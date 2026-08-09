@@ -1,4 +1,5 @@
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::error::Error;
 
@@ -7,7 +8,7 @@ use crate::services::LinkService;
 use crate::services::PropertyService;
 
 /// 从 content 解析出的链接草稿（尚未查 Page 表获取 target_page_id）
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LinkDraft {
     pub target_title: String,
     pub display_text: String,
@@ -18,7 +19,7 @@ pub struct LinkDraft {
 }
 
 /// 从 content 解析出的属性草稿
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PropertyDraft {
     pub key: String,
     pub value: String,

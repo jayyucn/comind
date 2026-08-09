@@ -9,6 +9,8 @@ export interface Block {
   /** Pre-computed render segments from Rust (S10). Array of structured instructions
    *  for rendering content. Empty for code/image/embed/query types. */
   renderSegments?: import('../wasm/types').RenderSegment[]
+  /** Block properties resolved from Property table by Rust (4.2). Stored as raw Rust Property[]. */
+  properties?: import('../wasm/types').Property[]
   createdAt: number
   updatedAt: number
 }

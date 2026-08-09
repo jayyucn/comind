@@ -290,7 +290,7 @@ async function handleDeleteBetweenProperty(e: Event) {
 
 watch(
   isActive,
-  async (active) => {
+  async (active, oldActive) => {
     if (active) {
       selection?.clearSelection()
       await nextTick()
