@@ -1,17 +1,8 @@
-import { describe, test, expect, beforeEach, vi } from 'vitest'
+import { describe, test, expect, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import BulletRender from './BulletRender.vue'
 import { useBlockStore } from '../../../../stores/blocks'
-
-vi.mock('../../../../storage/indexedDB', () => ({
-  storage: {
-    saveBlock: vi.fn(),
-    deleteBlock: vi.fn(),
-    deleteBlockCascade: vi.fn(),
-    getBlockTree: vi.fn().mockResolvedValue([])
-  }
-}))
 
 beforeEach(() => {
   setActivePinia(createPinia())

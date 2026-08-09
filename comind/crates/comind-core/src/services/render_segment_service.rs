@@ -97,23 +97,33 @@ fn build_segments(
     for dr in &date_refs {
         let pattern = format!("@{}", dr.iso);
         if let Some(start) = content.find(&pattern) {
-            // Extend to include emoji + |params
+            // Extend to cover optional whitespace + emoji (📅/⏰) + |params
+            let bytes = content.as_bytes();
             let mut end = start + pattern.len();
-            let rest = content[end..].chars();
-            for ch in rest {
-                if ch == '\u{1F4C5}' || ch == '\u{23F0}' {
-                    end += ch.len_utf8();
-                } else if ch == '|' {
-                    break;
-                } else {
-                    break;
+
+            // Step 1: optional whitespace + emoji
+            if end < bytes.len() {
+                let rest = &content[end..];
+                let first_char = rest.chars().next().unwrap();
+                if first_char == ' ' || first_char == '\u{00A0}' {
+                    end += first_char.len_utf8();
+                    if end < bytes.len() {
+                        let next = content[end..].chars().next().unwrap();
+                        if next == '📅' || next == '⏰' {
+                            end += next.len_utf8();
+                        }
+                    }
+                } else if first_char == '📅' || first_char == '⏰' {
+                    end += first_char.len_utf8();
                 }
             }
-            if end < content.len() && content.as_bytes()[end] == b'|' {
+
+            // Step 2: |recurrence|leadMinutes (consumed until whitespace, }, or another emoji)
+            if end < bytes.len() && bytes[end] == b'|' {
                 end += 1;
-                let rest_bytes = &content[end..];
-                if let Some(space) = rest_bytes.find(|ch: char| ch.is_whitespace() || ch == '}' || ch == '\u{1F4C5}' || ch == '\u{23F0}') {
-                    end += space;
+                let rest = &content[end..];
+                if let Some(term) = rest.find(|ch: char| ch.is_whitespace() || ch == '}' || ch == '📅' || ch == '⏰') {
+                    end += term;
                 } else {
                     end = content.len();
                 }

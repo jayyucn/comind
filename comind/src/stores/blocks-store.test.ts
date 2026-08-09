@@ -1,15 +1,6 @@
-import { describe, test, expect, beforeEach, vi } from 'vitest'
+import { describe, test, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useBlockStore } from './blocks'
-
-vi.mock('../storage/indexedDB', () => ({
-  storage: {
-    saveBlock: vi.fn(),
-    deleteBlock: vi.fn(),
-    deleteBlockCascade: vi.fn(),
-    getBlockTree: vi.fn().mockResolvedValue([])
-  }
-}))
 
 beforeEach(() => {
   setActivePinia(createPinia())

@@ -5,12 +5,18 @@ import type { Property, PropertyDefinition, PropertyValue, PropertyType } from '
 import { getAllPropertyDefinitions, getPropertyDefinition } from '../types/property'
 import { useBlockStore } from './blocks'
 import { useBlockCardStore } from './blockCard'
-import { serializeDateRef } from '../utils/date-ref'
+import { serializeDateRef, type DateRefKind } from '../utils/date-ref'
 import type { RecurrenceRule } from '../utils/date-ref'
 // 4.2 / S6: calculateNextRecurrence migrated to Rust
 import { tauriCalculateNextRecurrence } from '../wasm/tauri-client'
 
 import type { CoreClient } from '../wasm/client'
+
+/** 把 Rust 返回的 string kind 收窄为 DateRefKind，未知值 fallback 'ref' */
+function normalizeKind(kind: string): DateRefKind {
+  if (kind === 'schedule' || kind === 'deadline' || kind === 'ref') return kind
+  return 'ref'
+}
 
 let coreClientPromise: Promise<CoreClient> | null = null
 
@@ -175,8 +181,9 @@ export const usePropertyStore = defineStore('property', () => {
     for (const ref of refsToAdvance) {
       const rule: RecurrenceRule = (ref.recurrence && ref.recurrence !== 'none') ? ref.recurrence! as RecurrenceRule : 'none'
       const nextIso = await tauriCalculateNextRecurrence(ref.iso, rule)
-      const oldText = serializeDateRef({ kind: ref.kind as any, iso: ref.iso, recurrence: rule, leadMinutes: ref.lead_minutes })
-      const newText = serializeDateRef({ kind: ref.kind as any, iso: nextIso, recurrence: rule, leadMinutes: ref.lead_minutes })
+      const kind = normalizeKind(ref.kind)
+      const oldText = serializeDateRef({ kind, iso: ref.iso, recurrence: rule, leadMinutes: ref.lead_minutes })
+      const newText = serializeDateRef({ kind, iso: nextIso, recurrence: rule, leadMinutes: ref.lead_minutes })
       newContent = newContent.replace(oldText, newText)
     }
     

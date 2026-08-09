@@ -1,18 +1,9 @@
-import { describe, test, expect, beforeEach, vi } from 'vitest'
+import { describe, test, expect, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import { defineComponent, h, computed, ref, nextTick } from 'vue'
+import { defineComponent, h, computed, nextTick } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import { useBlockStore } from './blocks'
 import { useEditorStore } from './editor'
-
-vi.mock('./storage/indexedDB', () => ({
-  storage: {
-    saveBlock: vi.fn(),
-    deleteBlock: vi.fn(),
-    deleteBlockCascade: vi.fn(),
-    getBlockTree: vi.fn().mockResolvedValue([])
-  }
-}))
 
 beforeEach(() => {
   setActivePinia(createPinia())

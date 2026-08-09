@@ -7,7 +7,8 @@ import type {
   UserTemplate, SearchResult, BlockUpdate, PageUpdate,
   BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig, BlockVersion,
   Notification, DateRefRecord, IncompleteTask, BlockCard, SavedFilterRust, TaskViewRust,
-  NotificationSettings
+  NotificationSettings,
+  LinkDraft
 } from './types'
 
 export function isTauriEnvironment(): boolean {
@@ -469,7 +470,7 @@ export async function tauriSyncPayloadForBlock(blockId: string): Promise<void> {
 
 export async function tauriExtractLinksFromContent(
   content: string
-): Promise<any[]> {
+): Promise<LinkDraft[]> {
   return invoke('extract_links_from_content', { content })
 }
 

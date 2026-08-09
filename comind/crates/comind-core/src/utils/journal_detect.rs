@@ -12,8 +12,7 @@ static JOURNAL_FORMAT_ITEMS: &[&str] = &[
     "%Y-%m-%d",       // 2026-04-26 (canonical)
     "%Y/%m/%d",       // 2026/04/26
     "%Y_%m_%d",       // 2026_04_26
-    "%b %e, %Y",      // Apr 26, 2026 (date-fns: MMM do -> Apr 26th)
-    "%b %e, %Y",      // Apr 26th → handled by chrono's lenient parse
+    "%b %e, %Y",      // Apr 26, 2026
     "%A, %B %e, %Y",  // Saturday, April 26, 2026
     "%m/%d/%Y",       // 04/26/2026
     "%d.%m.%Y",       // 26.04.2026

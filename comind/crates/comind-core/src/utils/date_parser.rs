@@ -4,6 +4,8 @@
 //! Supports: relative (today/tomorrow/yesterday/+Nd), partial (MM-DD/YYYY-MM-DD),
 //! Chinese weekday (周一/下周三), and Chinese time (下午2点/早上9点半).
 
+use std::sync::LazyLock;
+
 use chrono::{NaiveDate, Datelike, Local, Weekday};
 use serde::{Serialize, Deserialize};
 
@@ -52,10 +54,6 @@ pub fn combine_date_time(result: &DateTimeResult) -> String {
 
 // ── internal helpers ──
 
-fn format_date(d: NaiveDate) -> String {
-    format!("{}", d.format("%Y-%m-%d"))
-}
-
 fn today_local() -> NaiveDate {
     Local::now().date_naive()
 }
@@ -64,6 +62,36 @@ struct TimeInfo {
     time: String,
     rest: String,
 }
+
+/// Pre-compiled regex for relative date: +N / -N / +Nd / +N days
+static RE_RELATIVE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"^([+-]?\d+)\s*(d|day|days)?$").unwrap()
+});
+
+/// Pre-compiled regex for MM-DD
+static RE_MMDD: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"^(\d{1,2})-(\d{1,2})$").unwrap()
+});
+
+/// Pre-compiled regex for YYYY-MM-DD
+static RE_YYYYMMDD: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"^(\d{4})-(\d{1,2})-(\d{1,2})$").unwrap()
+});
+
+/// Pre-compiled regex for Chinese weekday: 下周一 / 周三
+static RE_WEEKDAY: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"^(下?周|下?星期)([日天一二三四五六])$").unwrap()
+});
+
+/// Pre-compiled regex for numeric time: HH:MM / HH：MM
+static RE_NUM_TIME: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(\d{1,2})[:：](\d{2})").unwrap()
+});
+
+/// Pre-compiled regex for Chinese time: 下午2点 / 早上9点半 / 中午12点
+static RE_CN_TIME: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(早上|上午|中午|下午|晚上|凌晨)?\s*(\d{1,2})\s*点\s*(半|(\d{1,2})\s*分?)?").unwrap()
+});
 
 fn resolve_date(input: &str) -> Option<NaiveDate> {
     parse_relative_date(input)
@@ -85,8 +113,7 @@ fn parse_relative_date(input: &str) -> Option<NaiveDate> {
     }
 
     // +N / -N / +Nd / +N days
-    let re = regex::Regex::new(r"^([+-]?\d+)\s*(d|day|days)?$").unwrap();
-    if let Some(caps) = re.captures(input) {
+    if let Some(caps) = RE_RELATIVE.captures(input) {
         let days: i64 = caps.get(1)?.as_str().parse().ok()?;
         return Some(today + chrono::Duration::days(days));
     }
@@ -98,8 +125,7 @@ fn parse_partial_date(input: &str) -> Option<NaiveDate> {
     let today = today_local();
 
     // MM-DD
-    let mmdd = regex::Regex::new(r"^(\d{1,2})-(\d{1,2})$").unwrap();
-    if let Some(caps) = mmdd.captures(input) {
+    if let Some(caps) = RE_MMDD.captures(input) {
         let month: u32 = caps.get(1)?.as_str().parse().ok()?;
         let day: u32 = caps.get(2)?.as_str().parse().ok()?;
         if month == 0 || month > 12 || day == 0 || day > 31 { return None; }
@@ -112,8 +138,7 @@ fn parse_partial_date(input: &str) -> Option<NaiveDate> {
     }
 
     // YYYY-MM-DD
-    let yyyymmdd = regex::Regex::new(r"^(\d{4})-(\d{1,2})-(\d{1,2})$").unwrap();
-    if let Some(caps) = yyyymmdd.captures(input) {
+    if let Some(caps) = RE_YYYYMMDD.captures(input) {
         let year: i32 = caps.get(1)?.as_str().parse().ok()?;
         let month: u32 = caps.get(2)?.as_str().parse().ok()?;
         let day: u32 = caps.get(3)?.as_str().parse().ok()?;
@@ -152,8 +177,7 @@ fn weekday_from_num(n: u32) -> Weekday {
 }
 
 fn parse_weekday(input: &str) -> Option<NaiveDate> {
-    let re = regex::Regex::new(r"^(下?周|下?星期)([日天一二三四五六])$").unwrap();
-    let caps = re.captures(input)?;
+    let caps = RE_WEEKDAY.captures(input)?;
     let target = weekday_index(caps.get(2)?.as_str())?;
     let is_next_week = caps.get(1)?.as_str().starts_with('下');
     let today = today_local();
@@ -179,8 +203,7 @@ fn extract_time(input: &str) -> Option<TimeInfo> {
     let clamp = |n: u32, max: u32| n.min(max);
 
     // HH:MM or HH:MM
-    let num_re = regex::Regex::new(r"(\d{1,2})[:：](\d{2})").unwrap();
-    if let Some(caps) = num_re.captures(input) {
+    if let Some(caps) = RE_NUM_TIME.captures(input) {
         let h: u32 = caps.get(1)?.as_str().parse().ok()?;
         let min: u32 = caps.get(2)?.as_str().parse().ok()?;
         let h = clamp(h, 23);
@@ -190,10 +213,7 @@ fn extract_time(input: &str) -> Option<TimeInfo> {
     }
 
     // 中文时间: 下午2点 / 早上9点半 / 中午12点 / 凌晨1点
-    let cn_re = regex::Regex::new(
-        r"(早上|上午|中午|下午|晚上|凌晨)?\s*(\d{1,2})\s*点\s*(半|(\d{1,2})\s*分?)?"
-    ).unwrap();
-    if let Some(caps) = cn_re.captures(input) {
+    if let Some(caps) = RE_CN_TIME.captures(input) {
         let mut h: u32 = caps.get(2)?.as_str().parse().ok()?;
         let period = caps.get(1).map(|m| m.as_str()).unwrap_or("");
         match period {
