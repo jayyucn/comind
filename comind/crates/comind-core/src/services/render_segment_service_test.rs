@@ -175,4 +175,217 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_property_block_type_produces_segments() -> Result<(), Box<dyn Error>> {
+        let mut adapter = SQLiteAdapter::open_in_memory()?;
+        let page = PageService::create(&mut adapter, "", "Test", None, None, None, None, None)?;
+        let target = PageService::create(&mut adapter, "", "Target", None, None, None, None, None)?;
+
+        RelationshipTypeService::create(
+            &mut adapter, None, "relates", None,
+            "相关", "被相关", "#3B82F6", 0, "medium", 0,
+        )?;
+
+        let block = BlockService::create(
+            &mut adapter, &page.id, None,
+            "((relates))[[Target]] @2026-08-15",
+            "{}", "property", None,
+        )?;
+
+        LinkService::create(
+            &mut adapter, &block.id, &target.id, "Target",
+            Some("relates"),
+        )?;
+
+        let segments = build_segments_for_block(&mut adapter, &block)?;
+        assert!(!segments.is_empty(), "property block should produce segments");
+
+        let has_typed = segments.iter().any(|s| matches!(s, RenderSegment::TypedLink { .. }));
+        let has_date = segments.iter().any(|s| matches!(s, RenderSegment::DateRef { .. }));
+        assert!(has_typed, "property block should have TypedLink segment");
+        assert!(has_date, "property block should have DateRef segment");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_date_ref_with_recurrence_and_lead_minutes() -> Result<(), Box<dyn Error>> {
+        let mut adapter = SQLiteAdapter::open_in_memory()?;
+        let page = PageService::create(&mut adapter, "", "Test", None, None, None, None, None)?;
+
+        let block = BlockService::create(
+            &mut adapter, &page.id, None,
+            "任务 @2026-08-15T14:00 ⏰|weekly|15",
+            "{}", "bullet", None,
+        )?;
+
+        let segments = build_segments_for_block(&mut adapter, &block)?;
+
+        let date_ref = segments.iter().find_map(|s| match s {
+            RenderSegment::DateRef { iso, recurrence, lead_minutes, kind, .. } => {
+                Some((iso, recurrence, lead_minutes, kind))
+            }
+            _ => None,
+        }).expect("should have DateRef segment");
+
+        assert_eq!(date_ref.0, "2026-08-15T14:00");
+        assert_eq!(date_ref.1, "weekly");
+        assert_eq!(*date_ref.2, 15);
+        assert_eq!(date_ref.3, "deadline");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_date_ref_overdue_future_not_overdue() -> Result<(), Box<dyn Error>> {
+        let mut adapter = SQLiteAdapter::open_in_memory()?;
+        let page = PageService::create(&mut adapter, "", "Test", None, None, None, None, None)?;
+
+        // Future date (year 2099) — should NOT be overdue
+        let block = BlockService::create(
+            &mut adapter, &page.id, None,
+            "截止日期 @2099-12-31 ⏰",
+            "{}", "bullet", None,
+        )?;
+
+        let segments = build_segments_for_block(&mut adapter, &block)?;
+        let date_ref = segments.iter().find_map(|s| match s {
+            RenderSegment::DateRef { is_overdue, .. } => Some(is_overdue),
+            _ => None,
+        }).expect("should have DateRef segment");
+
+        assert!(!date_ref, "future deadline should not be overdue");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_date_ref_overdue_past_deadline_is_overdue() -> Result<(), Box<dyn Error>> {
+        let mut adapter = SQLiteAdapter::open_in_memory()?;
+        let page = PageService::create(&mut adapter, "", "Test", None, None, None, None)?;
+
+        // Past date (year 2000) — should be overdue
+        let block = BlockService::create(
+            &mut adapter, &page.id, None,
+            "过期任务 @2000-01-01 ⏰",
+            "{}", "bullet", None,
+        )?;
+
+        let segments = build_segments_for_block(&mut adapter, &block)?;
+        let date_ref = segments.iter().find_map(|s| match s {
+            RenderSegment::DateRef { is_overdue, .. } => Some(is_overdue),
+            _ => None,
+        }).expect("should have DateRef segment");
+
+        assert!(date_ref, "past deadline should be overdue");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_date_ref_schedule_never_overdue() -> Result<(), Box<dyn Error>> {
+        let mut adapter = SQLiteAdapter::open_in_memory()?;
+        let page = PageService::create(&mut adapter, "", "Test", None, None, None, None, None)?;
+
+        // Schedule with past date — should still NOT be overdue
+        let block = BlockService::create(
+            &mut adapter, &page.id, None,
+            "过去的日程 @2000-01-01 📅",
+            "{}", "bullet", None,
+        )?;
+
+        let segments = build_segments_for_block(&mut adapter, &block)?;
+        let date_ref = segments.iter().find_map(|s| match s {
+            RenderSegment::DateRef { is_overdue, kind, .. } => Some((is_overdue, kind.clone())),
+            _ => None,
+        }).expect("should have DateRef segment");
+
+        assert_eq!(date_ref.1, "schedule");
+        assert!(!date_ref.0, "schedule type should never be overdue, even in the past");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_link_to_nonexistent_page_skipped() -> Result<(), Box<dyn Error>> {
+        let mut adapter = SQLiteAdapter::open_in_memory()?;
+        let page = PageService::create(&mut adapter, "", "Test", None, None, None, None, None)?;
+
+        let block = BlockService::create(
+            &mut adapter, &page.id, None,
+            "这里有个 [[不存在的页面]] 链接",
+            "{}", "bullet", None,
+        )?;
+
+        // Create a link to a non-existent page ID
+        LinkService::create(
+            &mut adapter, &block.id, "nonexistent-page-id", "不存在的页面", None,
+        )?;
+
+        let segments = build_segments_for_block(&mut adapter, &block)?;
+
+        // Should only have text segment, no Link segment (target page not found)
+        let has_link = segments.iter().any(|s| matches!(s, RenderSegment::Link { .. }));
+        assert!(!has_link, "link to non-existent page should be skipped");
+
+        assert_eq!(segments.len(), 1);
+        assert!(matches!(segments[0], RenderSegment::Text { .. }));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_empty_content_block_produces_empty_segments() -> Result<(), Box<dyn Error>> {
+        let mut adapter = SQLiteAdapter::open_in_memory()?;
+        let page = PageService::create(&mut adapter, "", "Test", None, None, None, None, None)?;
+
+        let block = BlockService::create(
+            &mut adapter, &page.id, None,
+            "",
+            "{}", "bullet", None,
+        )?;
+
+        let segments = build_segments_for_block(&mut adapter, &block)?;
+        assert!(segments.is_empty(), "empty content should produce empty segments");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_segments_cover_full_content_range() -> Result<(), Box<dyn Error>> {
+        let mut adapter = SQLiteAdapter::open_in_memory()?;
+        let page = PageService::create(&mut adapter, "", "Test", None, None, None, None, None)?;
+        let target = PageService::create(&mut adapter, "", "T", None, None, None, None, None)?;
+
+        let content = "A [[T]] B @2026-01-01 C";
+        let block = BlockService::create(
+            &mut adapter, &page.id, None,
+            content,
+            "{}", "bullet", None,
+        )?;
+
+        LinkService::create(
+            &mut adapter, &block.id, &target.id, "T", None,
+        )?;
+
+        let segments = build_segments_for_block(&mut adapter, &block)?;
+
+        let char_len = content.chars().count();
+        let mut covered_end = 0usize;
+        for seg in &segments {
+            let (s, e) = match seg {
+                RenderSegment::Text { start, end } => (*start, *end),
+                RenderSegment::Link { start, end, .. } => (*start, *end),
+                RenderSegment::TypedLink { start, end, .. } => (*start, *end),
+                RenderSegment::DateRef { start, end, .. } => (*start, *end),
+                _ => continue,
+            };
+            assert_eq!(s, covered_end, "segments should be contiguous: gap at {}", s);
+            covered_end = e;
+        }
+        assert_eq!(covered_end, char_len, "segments must cover all {} chars, got {}", char_len, covered_end);
+
+        Ok(())
+    }
 }

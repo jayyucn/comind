@@ -14,6 +14,8 @@ vi.mock('../storage/indexedDB', () => ({
   }
 }))
 
+
+
 beforeEach(() => {
   setActivePinia(createPinia())
 })
@@ -1178,5 +1180,48 @@ describe('findPreviousVisibleBlock - 边界条件', () => {
 
     const result = store.findPreviousVisibleBlock(firstChild.id)
     expect(result?.id).toBe(parent.id)
+  })
+})
+
+
+// ============================================================
+// updateBlockContent dateRef 自动标记 Todo 测试
+// ============================================================
+describe('updateBlockContent - dateRef 自动标记 Todo', () => {
+  test('含 @date 📅 的 block 自动获取 Todo status', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-todo-1'
+
+    const block = await store.createBlock({ pageId, content: '初始内容' })
+
+    // 更新内容添加 dateRef
+    await store.updateBlockContent(block.id, '任务 @2026-12-25 📅')
+
+    const updated = store.getBlock(block.id)
+    expect(updated?.content).toContain('@2026-12-25')
+  })
+
+  test('含 @date ⏰ 的 block 自动获取 Todo status', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-todo-2'
+
+    const block = await store.createBlock({ pageId, content: '初始' })
+
+    await store.updateBlockContent(block.id, '截止 @2026-12-25T14:00 ⏰')
+
+    const updated = store.getBlock(block.id)
+    expect(updated?.content).toContain('@2026-12-25')
+  })
+
+  test('不含 dateRef 的 block 不添加 Todo status', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-todo-3'
+
+    const block = await store.createBlock({ pageId, content: '普通文本 #tag' })
+
+    await store.updateBlockContent(block.id, '普通文本 #tag')
+
+    const updated = store.getBlock(block.id)
+    expect(updated?.content).toBe('普通文本 #tag')
   })
 })
