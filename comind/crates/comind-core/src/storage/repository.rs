@@ -49,6 +49,8 @@ pub trait PropertyRepository {
     fn query_block_ids_by_key_value(&self, key: &str, values: &[String]) -> Result<Vec<String>, Box<dyn Error>>;
     fn create(&mut self, property: &Property) -> Result<Property, Box<dyn Error>>;
     fn update(&mut self, property: &Property) -> Result<Property, Box<dyn Error>>;
+    /// Insert or update by (block_id, key) — eliminates read-then-write race.
+    fn upsert(&mut self, property: &Property) -> Result<Property, Box<dyn Error>>;
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
     fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>>;
 }

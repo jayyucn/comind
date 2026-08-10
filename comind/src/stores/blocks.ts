@@ -387,7 +387,17 @@ export const useBlockStore = defineStore('blocks', () => {
 
     try {
       const [saveResult] = await client.saveBlockTree([blockUpdate])
+      if (!saveResult) {
+        console.warn('[BlockStore] saveBlockTree returned null result')
+        pendingSaves.delete(currentBlock.id)
+        return
+      }
       const savedBlock = saveResult.block
+      if (!savedBlock) {
+        console.warn('[BlockStore] saveBlockTree result has no block')
+        pendingSaves.delete(currentBlock.id)
+        return
+      }
 
       // 若服务端生成了新 ID（新 block），同步本地 state 与后续引用的 ID
       if (savedBlock.id !== currentBlock.id) {
@@ -465,6 +475,24 @@ export const useBlockStore = defineStore('blocks', () => {
     const d = debounce(_doSave, SAVE_DEBOUNCE_MS)
     pendingSaves.set(block.id, d)
     d(block)
+  }
+
+  /**
+   * 方案 A: 强制 flush 待保存的 block（取消防抖 + 立即执行 _doSave）。
+   * 用于「编辑态 → 渲染态」切换前，确保 renderSegments 已写回，
+   * 避免切换时因 renderSegments=undefined 而闪现纯文本。
+   */
+  async function flushSave(blockId: string): Promise<void> {
+    const pending = pendingSaves.get(blockId)
+    if (pending) {
+      pending.cancel()
+      pendingSaves.delete(blockId)
+    }
+    // 即使没有 pending（guard 只防多余 save），仍要检查 block 存在
+    const block = blocks.value.find(b => b.id === blockId)
+    if (block) {
+      await _doSave(block)
+    }
   }
 
   /**
@@ -1157,6 +1185,7 @@ export const useBlockStore = defineStore('blocks', () => {
     updateBlockType,
     updateBlockProperties,
     scheduleSave,
+    flushSave,
     trashedPageWarnings,
     clearTrashedPageWarnings
   }

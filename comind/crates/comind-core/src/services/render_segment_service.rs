@@ -114,6 +114,15 @@ fn byte_to_char_idx(content: &str, byte_idx: usize) -> usize {
     content[..byte_idx.min(content.len())].chars().count()
 }
 
+/// Convert Unicode scalar value (char) index back to byte offset.
+fn char_idx_to_byte_idx(content: &str, char_idx: usize) -> usize {
+    content
+        .char_indices()
+        .nth(char_idx)
+        .map(|(b, _)| b)
+        .unwrap_or(content.len())
+}
+
 fn build_segments(
     storage: &mut dyn repository::StorageAdapter,
     block: &Block,
@@ -225,6 +234,7 @@ fn build_segments(
 
     // Sort, fill gaps
     anchors.sort_by_key(|(s, _)| *s);
+    let char_len = content.chars().count();
     let mut segments = Vec::new();
     let mut cursor: usize = 0;
     for (pos, seg) in anchors {
@@ -237,12 +247,25 @@ fn build_segments(
             RenderSegment::Link { end, .. } => *end,
             RenderSegment::TypedLink { end, .. } => *end,
             RenderSegment::ExternalLink { end, .. } => *end,
-            RenderSegment::DateRef { end, .. } => *end,
+            RenderSegment::DateRef { end, .. } => {
+                // dateRef 语法（`@ISO [emoji] [|params]`）之后的空白是分隔符，
+                // 不属于任何文本段：跳过它们，避免后续 Text 段带前导空格。
+                // 例："@2026-08-09 ⏰ 2026" → DateRef=[0,13)，Text=[14,18) 而非 [13,18)。
+                let mut byte = char_idx_to_byte_idx(content, *end);
+                let bytes = content.as_bytes();
+                while byte < bytes.len() {
+                    let ch = content[byte..].chars().next().unwrap();
+                    if !ch.is_whitespace() {
+                        break;
+                    }
+                    byte += ch.len_utf8();
+                }
+                byte_to_char_idx(content, byte)
+            }
         };
         segments.push(seg);
     }
     // content.len() is byte length; convert to char count for consistency
-    let char_len = content.chars().count();
     if cursor < char_len {
         segments.push(RenderSegment::Text { start: cursor, end: char_len });
     }

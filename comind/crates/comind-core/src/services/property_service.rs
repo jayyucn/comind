@@ -61,6 +61,37 @@ impl PropertyService {
         repository::PropertyRepository::create(storage.properties(), &property)
     }
 
+    pub fn upsert(
+        storage: &mut dyn StorageAdapter,
+        block_id: &str,
+        key: &str,
+        value: &str,
+        r#type: &str,
+        sort_order: i64,
+        is_hidden: i64,
+        schema_version: i64,
+    ) -> Result<Property, Box<dyn Error>> {
+        let now = chrono::Utc::now().timestamp_millis();
+
+        let property = Property {
+            id: Self::generate_id(),
+            block_id: block_id.to_string(),
+            key: key.to_string(),
+            value: value.to_string(),
+            r#type: r#type.to_string(),
+            sort_order,
+            is_hidden,
+            is_deleted: 0,
+            schema_version,
+            created_at: now,
+            updated_at: now,
+            version: 0,
+            deleted_at: None,
+        };
+
+        repository::PropertyRepository::upsert(storage.properties(), &property)
+    }
+
     pub fn update(
         storage: &mut dyn StorageAdapter,
         id: &str,

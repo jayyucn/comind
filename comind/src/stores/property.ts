@@ -43,6 +43,8 @@ export const usePropertyStore = defineStore('property', () => {
   // State
   const propertiesByBlock = ref<Map<string, Property[]>>(new Map())
   const loading = ref(false)
+  // Prevent concurrent ensureTodo calls for the same block
+  const ensureTodoInFlight = new Set<string>()
 
   // Getters
   const builtInProperties = computed<PropertyDefinition[]>(() => getAllPropertyDefinitions())
@@ -212,9 +214,15 @@ export const usePropertyStore = defineStore('property', () => {
    * 注意：不会因移除 dateRef 而清除 status（保持任务状态，见需求约束）。
    */
   async function ensureTodo(blockId: string): Promise<void> {
+    if (ensureTodoInFlight.has(blockId)) return
     const existing = getBlockProperty(blockId, 'status')
     if (existing) return
-    await setProperty(blockId, 'status', 'Todo', 'string')
+    ensureTodoInFlight.add(blockId)
+    try {
+      await setProperty(blockId, 'status', 'Todo', 'string')
+    } finally {
+      ensureTodoInFlight.delete(blockId)
+    }
   }
 
   async function deleteProperty(id: string, blockId: string): Promise<void> {

@@ -285,7 +285,11 @@ impl ContentParseService {
 
     /// 同步一个 block 的 properties 到存储层。
     /// 解析 content 中的 `key:: value` 行 → upsert Property 行。
-    /// 已有的 property 按 key 更新；不再出现在 content 中的删除。
+    ///
+    /// 注意：此函数只 upsert content 中派生的属性（`key:: value` 格式）。
+    /// 它不删除「不在 content 中」的属性——因为 UI 独立设置的属性（如 status/priority）
+    /// 本就不在 content 中，误删会导致刷新后图标消失（#property-icon-disappear）。
+    /// 删除操作由 BlockService::delete 统一显式调用。
     pub fn sync_properties_for_block(
         storage: &mut dyn StorageAdapter,
         block_id: &str,
@@ -293,18 +297,8 @@ impl ContentParseService {
     ) -> Result<Vec<crate::types::Property>, Box<dyn Error>> {
         let drafts = extract_properties_from_content(content);
 
-        // Collect keys that should exist
-        let draft_keys: HashSet<&str> = drafts.iter().map(|d| d.key.as_str()).collect();
-
-        // Get existing properties
+        // Get existing properties (only active ones: deleted_at IS NULL)
         let existing = PropertyService::get_by_block_id(storage, block_id)?;
-
-        // Delete properties whose keys are no longer in content
-        for prop in &existing {
-            if !draft_keys.contains(prop.key.as_str()) {
-                PropertyService::delete(storage, &prop.id)?;
-            }
-        }
 
         let mut results = Vec::new();
         for draft in &drafts {

@@ -1093,6 +1093,38 @@ impl PropertyRepository for SQLiteAdapter {
         
         Ok(property.clone())
     }
+    fn upsert(&mut self, property: &Property) -> Result<Property, Box<dyn Error>> {
+        self.conn.execute(
+            "INSERT INTO Property (id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+             ON CONFLICT(block_id, key) DO UPDATE SET
+                value = excluded.value,
+                type = excluded.type,
+                updated_at = excluded.updated_at,
+                sort_order = excluded.sort_order,
+                is_hidden = excluded.is_hidden,
+                schema_version = excluded.schema_version,
+                is_deleted = 0,
+                deleted_at = NULL",
+            params![
+                property.id,
+                property.block_id,
+                property.key,
+                property.value,
+                property.r#type,
+                property.sort_order,
+                property.is_hidden,
+                property.is_deleted,
+                property.schema_version,
+                property.created_at,
+                property.updated_at,
+                property.version,
+                property.deleted_at
+            ]
+        )?;
+        Ok(property.clone())
+    }
+
     
     fn update(&mut self, property: &Property) -> Result<Property, Box<dyn Error>> {
         self.conn.execute(
@@ -3063,6 +3095,38 @@ impl<'a> PropertyRepository for SQLiteTransactionAdapter<'a> {
 
         Ok(property.clone())
     }
+    fn upsert(&mut self, property: &Property) -> Result<Property, Box<dyn Error>> {
+        self.conn.execute(
+            "INSERT INTO Property (id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+             ON CONFLICT(block_id, key) DO UPDATE SET
+                value = excluded.value,
+                type = excluded.type,
+                updated_at = excluded.updated_at,
+                sort_order = excluded.sort_order,
+                is_hidden = excluded.is_hidden,
+                schema_version = excluded.schema_version,
+                is_deleted = 0,
+                deleted_at = NULL",
+            params![
+                property.id,
+                property.block_id,
+                property.key,
+                property.value,
+                property.r#type,
+                property.sort_order,
+                property.is_hidden,
+                property.is_deleted,
+                property.schema_version,
+                property.created_at,
+                property.updated_at,
+                property.version,
+                property.deleted_at
+            ]
+        )?;
+        Ok(property.clone())
+    }
+
 
     fn update(&mut self, property: &Property) -> Result<Property, Box<dyn Error>> {
         self.conn.execute(

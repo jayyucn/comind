@@ -237,6 +237,53 @@ mod tests {
         Ok(())
     }
 
+    /// Regression: dateRef 后紧跟空格 + 文本时，空格是语法分隔符，
+    /// 不应包含在后续 Text 段中。
+    /// 内容 "@2026-08-09 ⏰ 2026"（18 chars）:
+    ///   @(0)2(1)0(2)2(3)6(4)-(5)0(6)8(7)-(8)0(9)9(10) (11)⏰(12) (13)2(14)0(15)2(16)6(17)
+    ///   预期: DateRef=[0,13)，Text=[14,18)（跳过 emoji 后空格 char[13]）
+    #[test]
+    fn test_date_ref_trailing_space_is_skipped_from_text() -> Result<(), Box<dyn Error>> {
+        let mut adapter = SQLiteAdapter::open_in_memory()?;
+        let page = PageService::create(&mut adapter, "", "Test", None, None, None, None, None)?;
+
+        let block = BlockService::create(
+            &mut adapter, &page.id, None,
+            "@2026-08-09 ⏰ 2026",
+            "{}", "bullet", None,
+        )?;
+
+        let segments = build_segments_for_block(&mut adapter, &block)?;
+
+        assert_eq!(segments.len(), 2, "should have DateRef + Text segments");
+
+        // 第一部分：DateRef 覆盖 "@2026-08-09 ⏰"（不含 emoji 后空格）
+        if let RenderSegment::DateRef { start, end, kind, .. } = &segments[0] {
+            assert_eq!(*start, 0, "DateRef should start at char 0");
+            assert_eq!(*end, 13, "DateRef should end at char 13 (after ⏰, before space)");
+            assert_eq!(kind, "deadline");
+        } else {
+            panic!("first segment should be DateRef");
+        }
+
+        // 第二部分：Text 从 char 14 开始（跳过 emoji 后空格 char[13]），到末尾 char 18
+        if let RenderSegment::Text { start, end } = &segments[1] {
+            assert_eq!(*start, 14, "Text should start at char 14 (after trailing space)");
+            assert_eq!(*end, 18, "Text should end at char 18 (content length)");
+        } else {
+            panic!("second segment should be Text");
+        }
+
+        // 验证切片内容
+        let chars: Vec<char> = block.content.chars().collect();
+        let date_ref_slice: String = chars[0..13].iter().collect();
+        let text_slice: String = chars[14..18].iter().collect();
+        assert_eq!(date_ref_slice, "@2026-08-09 ⏰");
+        assert_eq!(text_slice, "2026");
+
+        Ok(())
+    }
+
     #[test]
     fn test_date_ref_overdue_future_not_overdue() -> Result<(), Box<dyn Error>> {
         let mut adapter = SQLiteAdapter::open_in_memory()?;
@@ -263,7 +310,7 @@ mod tests {
     #[test]
     fn test_date_ref_overdue_past_deadline_is_overdue() -> Result<(), Box<dyn Error>> {
         let mut adapter = SQLiteAdapter::open_in_memory()?;
-        let page = PageService::create(&mut adapter, "", "Test", None, None, None, None)?;
+        let page = PageService::create(&mut adapter, "", "Test", None, None, None, None, None)?;
 
         // Past date (year 2000) — should be overdue
         let block = BlockService::create(
@@ -385,6 +432,75 @@ mod tests {
             covered_end = e;
         }
         assert_eq!(covered_end, char_len, "segments must cover all {} chars, got {}", char_len, covered_end);
+
+        Ok(())
+    }
+
+    /// Edge: dateRef 后跟多个空格时，所有空格都应被跳过，Text 从首个非空白开始。
+    /// "@2026-08-09 ⏰   2026" → DateRef=[0,13)，Text=[16,20)（跳过 3 个空格）
+    #[test]
+    fn test_date_ref_multiple_trailing_spaces_skipped() -> Result<(), Box<dyn Error>> {
+        let mut adapter = SQLiteAdapter::open_in_memory()?;
+        let page = PageService::create(&mut adapter, "", "Test", None, None, None, None, None)?;
+
+        let block = BlockService::create(
+            &mut adapter, &page.id, None,
+            "@2026-08-09 ⏰   2026",
+            "{}", "bullet", None,
+        )?;
+
+        let segments = build_segments_for_block(&mut adapter, &block)?;
+
+        assert_eq!(segments.len(), 2, "should have DateRef + Text segments");
+        if let RenderSegment::DateRef { start, end, .. } = &segments[0] {
+            assert_eq!(*start, 0);
+            assert_eq!(*end, 13, "DateRef ends after ⏰ (char 13)");
+        } else {
+            panic!("first segment should be DateRef");
+        }
+        if let RenderSegment::Text { start, end } = &segments[1] {
+            assert_eq!(*start, 16, "Text starts after all 3 spaces (chars 13-15)");
+            assert_eq!(*end, 20, "Text ends at content end");
+        } else {
+            panic!("second segment should be Text");
+        }
+
+        Ok(())
+    }
+
+    /// Edge: dateRef 后跟链接时，跳过空格后 Link 段紧随其后，无空洞。
+    /// "@2026-08-09 ⏰ [[T]]" → DateRef=[0,13)，Link=[15,20)
+    #[test]
+    fn test_date_ref_then_link_no_gap() -> Result<(), Box<dyn Error>> {
+        let mut adapter = SQLiteAdapter::open_in_memory()?;
+        let page = PageService::create(&mut adapter, "", "Test", None, None, None, None, None)?;
+        let target = PageService::create(&mut adapter, "", "T", None, None, None, None, None)?;
+
+        let block = BlockService::create(
+            &mut adapter, &page.id, None,
+            "@2026-08-09 ⏰ [[T]]",
+            "{}", "bullet", None,
+        )?;
+
+        LinkService::create(
+            &mut adapter, &block.id, &target.id, "T", None,
+        )?;
+
+        let segments = build_segments_for_block(&mut adapter, &block)?;
+
+        assert_eq!(segments.len(), 2, "should have DateRef + Link segments");
+        if let RenderSegment::DateRef { start, end, .. } = &segments[0] {
+            assert_eq!(*start, 0);
+            assert_eq!(*end, 13);
+        } else {
+            panic!("first segment should be DateRef");
+        }
+        if let RenderSegment::Link { start, end, .. } = &segments[1] {
+            assert_eq!(*start, 14, "Link starts at [[ (char 14), after skipped space (char 13)");
+            assert_eq!(*end, 19, "Link ends at content end (char 19)");
+        } else {
+            panic!("second segment should be Link");
+        }
 
         Ok(())
     }

@@ -1,7 +1,7 @@
 use crate::{
     types::{Block, BlockTree},
     storage::{repository, StorageAdapter},
-    services::{DateRefService, ContentParseService},
+    services::{DateRefService, ContentParseService, PropertyService},
 };
 use rand::Rng;
 use std::collections::HashMap;
@@ -121,9 +121,10 @@ impl BlockService {
         DateRefService::sync_date_refs_for_block(storage, id, "")?;
         // 整块删除：连同该 block 的所有通知一起硬删除，避免 block 没了但通知残留（孤儿通知、点击跳转 404）。
         storage.notifications().delete_by_block_id(id)?;
-        // Clean up derived links & properties
+        // Clean up derived links; properties are explicitly deleted below (NOT via
+        // sync_properties_for_block, which now only upserts content-derived props).
         let _ = ContentParseService::sync_links_for_block(storage, id, "");
-        let _ = ContentParseService::sync_properties_for_block(storage, id, "");
+        PropertyService::delete_by_block_id(storage, id)?;
         repository::BlockRepository::delete(storage.blocks(), id)
     }
 

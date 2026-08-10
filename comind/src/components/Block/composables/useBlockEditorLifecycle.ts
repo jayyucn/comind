@@ -80,8 +80,12 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
   )
 
   // ── 保存 / 同步 ──
+  /** 保存内容到 store 并立即 flush 到后端，确保 renderSegments 已写回 */
   async function handleSave(content: string) {
-    return await blockStore.updateBlockContent(blockId.value, content)
+    await blockStore.updateBlockContent(blockId.value, content)
+    // 方案 A: 立即 flush，确保 renderSegments 已写回，
+    // 避免后续 deactivateBlock 时渲染组件因 renderSegments=undefined 闪现纯文本。
+    await blockStore.flushSave(blockId.value)
   }
 
   async function handleLanguageChange(lang: string) {

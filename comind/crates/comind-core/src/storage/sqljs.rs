@@ -987,6 +987,16 @@ impl PropertyRepository for SqlJsAdapter {
         ])?;
         Ok(property.clone())
     }
+    fn upsert(&mut self, property: &Property) -> Result<Property, Box<dyn std::error::Error>> {
+        Self::run_with_params(&self.db, "INSERT INTO Property (id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, version, deleted_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?) ON CONFLICT(block_id, key) DO UPDATE SET value = excluded.value, type = excluded.type, updated_at = excluded.updated_at, sort_order = excluded.sort_order, is_hidden = excluded.is_hidden, schema_version = excluded.schema_version, is_deleted = 0, deleted_at = NULL", &[
+            &property.id, &property.block_id, &property.key, &property.value, &property.r#type,
+            &property.sort_order.to_string(), &property.is_hidden.to_string(), &property.is_deleted.to_string(),
+            &property.schema_version.to_string(), &property.version.to_string(),
+            &property.created_at.to_string(), &property.updated_at.to_string()
+        ])?;
+        Ok(property.clone())
+    }
+
 
     fn update(&mut self, property: &Property) -> Result<Property, Box<dyn std::error::Error>> {
         Self::run_with_params(&self.db, "UPDATE Property SET value = ?, type = ?, sort_order = ?, is_hidden = ?, is_deleted = ?, version = version + 1, updated_at = ? WHERE id = ?", &[

@@ -827,16 +827,9 @@ pub async fn set_property(
     let block_id_clone = block_id.to_string();
     
     let result = execute_with_adapter(db, |storage| {
-        let existing = PropertyService::get_by_block_id_and_key(storage, block_id, key)?;
-        let result = match existing {
-            Some(mut prop) => {
-                prop.value = value.to_string();
-                prop.r#type = type_.to_string();
-                prop.updated_at = chrono::Utc::now().timestamp_millis();
-                storage.properties().update(&prop)
-            }
-            None => PropertyService::create(storage, block_id, key, value, type_, 0, 0, 1),
-        };
+        // Use upsert to eliminate read-then-write race condition
+        // (two concurrent setProperty calls both seeing existing=None → double INSERT → UNIQUE constraint failure)
+        let result = PropertyService::upsert(storage, block_id, key, value, type_, 0, 0, 1);
 
         if let Ok(block) = storage.blocks().get_by_id(block_id) {
             let _ = PageService::update(
