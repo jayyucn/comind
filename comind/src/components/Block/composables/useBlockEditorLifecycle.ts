@@ -225,8 +225,8 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     if (relLabel) {
       const relType = relLabel.dataset.relType
       const targetBlockId = relLabel.dataset.blockId
-      const labelFrom = Number(relLabel.dataset.labelFrom)
-      const labelTo = Number(relLabel.dataset.labelTo)
+      const labelFrom = Number(relLabel.dataset.typedFrom)
+      const labelTo = Number(relLabel.dataset.typedTo)
       if (!relType || !targetBlockId || Number.isNaN(labelFrom) || Number.isNaN(labelTo)) return
 
       if (!blockStore.blocks.find(b => b.id === targetBlockId)) return
@@ -243,7 +243,8 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
         onSelect: (newType) => {
           const latest = blockStore.blocks.find(b => b.id === targetBlockId)
           if (!latest) return
-          const newContent = latest.content.slice(0, labelFrom) + newType + latest.content.slice(labelTo)
+          const content = latest.content
+          const newContent = content.replace(new RegExp(`\\(${relType}\\)`), `(${newType})`)
           blockStore.updateBlockContent(targetBlockId, newContent)
         }
       })

@@ -3,6 +3,11 @@ import { computed } from 'vue'
 import { usePageStore } from '../../stores/pages'
 import BlockList from '../BlockList.vue'
 import BlockTaskList from './BlockTaskList.vue'
+import RelationshipMenu from '../RelationshipMenu.vue'
+import { useRelationshipMenu } from '@/composables/useRelationshipMenu'
+
+const relMenu = useRelationshipMenu()
+
 
 const props = defineProps<{
   pageId: string
@@ -48,6 +53,8 @@ function handleNavigate(pageId: string, pageTitle: string) {
         <BlockList :page-id="pageId" />
       </div>
       <BlockTaskList @navigate="handleNavigate" />
+      <RelationshipMenu :menu="relMenu" />
+
     </div>
 
     <div class="today-card is-loading" v-else>
@@ -66,7 +73,7 @@ function handleNavigate(pageId: string, pageTitle: string) {
 
 <style lang="scss" scoped>
 .today-panel {
-  flex:auto;
+  flex: auto;
   display: flex;
   flex-direction: column;
   padding: 0 var(--space-8);
