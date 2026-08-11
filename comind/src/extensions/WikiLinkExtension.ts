@@ -44,13 +44,15 @@ export const WikiLinkExtension = Extension.create({
                 if (typedRanges.some(([s, e]) => start >= s && end <= e)) continue
                 const display = match[2] || match[1]
 
-                // 创建装饰：将 [[page]] 文本包裹在带有样式的 span 中
+                // 创建装饰：外层 .wiki-link + 首尾 .wiki-bracket，与渲染态结构一致
                 decorations.push(
                   Decoration.inline(start, end, {
-                    class: 'wiki-link',
+                    class: 'block-link',
                     'data-page': match[1],
                     'data-display': display
-                  })
+                  }),
+                  Decoration.inline(start, start + 2, { class: 'wiki-bracket' }),
+                  Decoration.inline(end - 2, end, { class: 'wiki-bracket' })
                 )
               }
             })
