@@ -27,6 +27,7 @@ import BlockSelector from './components/BlockSelector.vue'
 import { isTauriEnvironment, tauriMinimizeWindow, tauriToggleMaximizeWindow, tauriCloseWindow, tauriIsMaximized, tauriAutoReconnect } from './wasm/tauri-client'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { isAndroidPlatformSync } from './wasm/tauri-client'
+import router from './router'
 
 registerPanel({
   id: 'block-version',
@@ -95,7 +96,13 @@ function handleGlobalKeydown(e: KeyboardEvent) {
   if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
     e.preventDefault()
     showSearchPanel.value = !showSearchPanel.value
-  } else if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+  }  else if ((e.ctrlKey || e.metaKey) && e.key === 'g') {
+    e.preventDefault()
+    router.push('/graph')
+  } else if ((e.ctrlKey || e.metaKey) && e.key === 'i') {
+    e.preventDefault()
+    router.push('/ideas')
+  }else if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
     e.preventDefault()
     toggle()
   } else if ((e.ctrlKey || e.metaKey) && e.key === 't') {
