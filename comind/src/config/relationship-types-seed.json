@@ -1,0 +1,82 @@
+[
+  {
+    "type": "is-a",
+    "inverse": "has-instance",
+    "label": "is-a",
+    "inverseLabel": "has-instance",
+    "description": null,
+    "color": "#1890ff",
+    "group": "concept",
+    "strength": "strong"
+  },
+  {
+    "type": "part-of",
+    "inverse": "has-part",
+    "label": "part-of",
+    "inverseLabel": "has-part",
+    "description": null,
+    "color": "#13c2c2",
+    "group": "concept",
+    "strength": "strong"
+  },
+  {
+    "type": "depends-on",
+    "inverse": "required-by",
+    "label": "depends-on",
+    "inverseLabel": "required-by",
+    "description": null,
+    "color": "#f5222d",
+    "group": "concept",
+    "strength": "strong"
+  },
+  {
+    "type": "uses",
+    "inverse": "used-by",
+    "label": "uses",
+    "inverseLabel": "used-by",
+    "description": null,
+    "color": "#eb2f96",
+    "group": "action",
+    "strength": "medium"
+  },
+  {
+    "type": "causes",
+    "inverse": "caused-by",
+    "label": "causes",
+    "inverseLabel": "caused-by",
+    "description": null,
+    "color": "#fa8c16",
+    "group": "action",
+    "strength": "strong"
+  },
+  {
+    "type": "supports",
+    "inverse": "supported-by",
+    "label": "supports",
+    "inverseLabel": "supported-by",
+    "description": null,
+    "color": "#52c41a",
+    "group": "work",
+    "strength": "medium"
+  },
+  {
+    "type": "contradicts",
+    "inverse": "contradicted-by",
+    "label": "contradicts",
+    "inverseLabel": "contradicted-by",
+    "description": null,
+    "color": "#722ed1",
+    "group": "work",
+    "strength": "medium"
+  },
+  {
+    "type": "related",
+    "inverse": null,
+    "label": "related",
+    "inverseLabel": "related",
+    "description": null,
+    "color": "#8c8c8c",
+    "group": "custom",
+    "strength": "weak"
+  }
+]

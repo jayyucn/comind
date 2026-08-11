@@ -232,6 +232,7 @@
   }
 }
 
+.relationship-bracket,
 .wiki-bracket {
   color: var(--text-faint);
   font-weight: $font-normal;
@@ -255,7 +256,7 @@
 .rel-type-label {
   color: var(--rel-color, currentColor);
   font-size: var(--text-md);
-  font-style: italic;
+  // font-style: italic;
   // vertical-align: 6px;
   // margin-left: 2px;
   // padding: 0 4px;

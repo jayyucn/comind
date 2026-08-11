@@ -83,15 +83,63 @@ export function useRelationshipTypes() {
     async load(): Promise<void> {
       const client = await getClient()
       const coreTypes = await client.getRelationshipTypes()
-      const existing = coreTypes.map(convertCoreToFrontend)
-      const existingIds = new Set(existing.map(r => r.id))
+      let existing = coreTypes.map(convertCoreToFrontend)
 
       let order = existing.length > 0
         ? Math.max(...existing.map(r => r.order), -1) + 1
         : 0
       for (const seed of RELATIONSHIP_TYPES_SEED) {
         const id = makeId(seed.type)
-        if (!existingIds.has(id)) {
+        const record = existing.find(r => r.id === id)
+        if (record) {
+          // 种子已存在：以 JSON 为准同步（方案 B：JSON 是唯一数据源）
+          const changed =
+            record.label !== seed.label ||
+            record.inverseLabel !== seed.inverseLabel ||
+            record.inverse !== seed.inverse ||
+            record.color !== seed.color ||
+            record.group !== seed.group ||
+            record.strength !== seed.strength
+          if (changed) {
+            await client.executeBatch([{
+              entity: 'relationship_type',
+              action: 'update',
+              params: {
+                id,
+                type: seed.type,
+                inverse: seed.inverse,
+                label: seed.label,
+                inverse_label: seed.inverseLabel,
+                description: seed.description ?? null,
+                color: seed.color,
+                group: seed.group,
+                strength: seed.strength,
+                order: record.order,
+                deleted: record.deleted ? 1 : 0,
+                builtin: 1,
+                created_at: record.createdAt,
+                updated_at: Date.now(),
+              }
+            }])
+            existing = existing.map(r =>
+              r.id === id
+                ? {
+                    ...r,
+                    type: seed.type,
+                    inverse: seed.inverse,
+                    label: seed.label,
+                    inverseLabel: seed.inverseLabel,
+                    description: seed.description ?? null,
+                    color: seed.color,
+                    group: seed.group,
+                    strength: seed.strength,
+                    builtin: true,
+                    updatedAt: Date.now()
+                  }
+                : r
+            )
+          }
+        } else {
           await client.executeBatch([{
             entity: 'relationship_type',
             action: 'create',

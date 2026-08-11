@@ -88,12 +88,13 @@ function renderContentToHtml(input: RenderInput): string {
         const safeBlockId = escapeHtmlEntities(blockId)
 
         parts.push(
-          `<span class="${CSS_CLASSES.relTypeLabel}" ` +
+          `<span class="relationship-bracket">((<span class="${CSS_CLASSES.relTypeLabel}" ` +
           `data-rel-type="${relType}" ` +
           `data-block-id="${safeBlockId}" ` +
           `data-typed-from="${seg.start}" ` +
           `data-typed-to="${seg.end}" ` +
-          `style="--rel-color:${color}">${label}</span>` +
+          `style="--rel-color:${color}">${label}</span>))</span>`
+          +
           `<span class="${CSS_CLASSES.blockLink}" data-page="${target}"><span class="wiki-bracket">[[</span>${display}<span class="wiki-bracket">]]</span></span>`
         )
         break

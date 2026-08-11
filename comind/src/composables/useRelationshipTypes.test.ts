@@ -29,13 +29,26 @@ describe('useRelationshipTypes', () => {
       expect(all.value.find(r => r.type === 'uses')?.strength).toBe('medium')
     })
 
-    it('非空时不覆盖已有记录', async () => {
+    it('非空时以 JSON 为准同步内置记录', async () => {
       const { load, all } = useRelationshipTypes()
       await load()
-      await load()
+      // 首次 load 后 label 已是 JSON 值
       const isA = all.value.find(r => r.type === 'is-a')
-      expect(isA?.label).toBe('是一个')
+      expect(isA?.label).toBe('is-a')
       expect(all.value).toHaveLength(8)
+      // 再次 load 不产生重复记录
+      await load()
+      expect(all.value).toHaveLength(8)
+    })
+
+    it('内置记录被手动修改后，重新 load 会同步回 JSON 值', async () => {
+      const { load, update, all } = useRelationshipTypes()
+      await load()
+      const isA = all.value.find(r => r.type === 'is-a')!
+      await update(isA.id, { label: '手动修改' })
+      expect(all.value.find(r => r.id === isA.id)?.label).toBe('手动修改')
+      await load()
+      expect(all.value.find(r => r.id === isA.id)?.label).toBe('is-a')
     })
 
     it('load 后 loaded 变为 true', async () => {
