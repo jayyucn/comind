@@ -35,19 +35,14 @@ export function useNotificationScheduler() {
 
   async function checkAndFire() {
     if (isChecking) {
-      console.log('[NotificationScheduler] Check and fire skipped (already running)')
       return
     }
-    console.log('[NotificationScheduler] Check and fire')
     if (!isPrimary.value) {
       return
     }
-    console.log('[NotificationScheduler] Check and fire (primary)')
-    
     isChecking = true
     try {
       await notificationStore.triggerCheckAndFire()
-      console.log('[NotificationScheduler] Check and fire (primary) success')
     } catch (err) {
       console.error('[NotificationScheduler] Check and fire (primary) failed:', err)
     } finally {
@@ -67,7 +62,6 @@ export function useNotificationScheduler() {
 
       intervalId = setInterval(checkAndFire, SCHEDULER_INTERVAL_MS)
       isRunning.value = true
-      console.info('[NotificationScheduler] Started (primary)')
     } else {
       console.info('[NotificationScheduler] Started (secondary, waiting)')
     }
@@ -81,7 +75,6 @@ export function useNotificationScheduler() {
     releaseLock()
     isRunning.value = false
     isPrimary.value = false
-    console.info('[NotificationScheduler] Stopped')
   }
 
   function refresh() {
