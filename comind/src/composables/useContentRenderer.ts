@@ -94,7 +94,7 @@ function renderContentToHtml(input: RenderInput): string {
           `data-typed-from="${seg.start}" ` +
           `data-typed-to="${seg.end}" ` +
           `style="--rel-color:${color}">${label}</span>` +
-          `<span class="${CSS_CLASSES.blockLink}" data-page="${target}">${display}</span>`
+          `<span class="${CSS_CLASSES.blockLink}" data-page="${target}"><span class="wiki-bracket">[[</span>${display}<span class="wiki-bracket">]]</span></span>`
         )
         break
       }

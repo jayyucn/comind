@@ -896,15 +896,17 @@ impl LinkRepository for SQLiteAdapter {
         
         for link in links {
             tx.execute(
-                "INSERT INTO Link (id, source_block_id, target_page_id, display_text, relationship_type, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO Link (id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL)",
                 params![
                     link.id,
                     link.source_block_id,
                     link.target_page_id,
                     link.display_text,
                     link.relationship_type,
-                    link.created_at
+                    link.created_at,
+                    link.updated_at,
+                    link.version
                 ]
             )?;
         }
@@ -2899,15 +2901,17 @@ impl<'a> LinkRepository for SQLiteTransactionAdapter<'a> {
     fn create_many(&mut self, links: &[Link]) -> Result<Vec<Link>, Box<dyn Error>> {
         for link in links {
             self.conn.execute(
-                "INSERT INTO Link (id, source_block_id, target_page_id, display_text, relationship_type, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO Link (id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL)",
                 params![
                     link.id,
                     link.source_block_id,
                     link.target_page_id,
                     link.display_text,
                     link.relationship_type,
-                    link.created_at
+                    link.created_at,
+                    link.updated_at,
+                    link.version
                 ]
             )?;
         }
