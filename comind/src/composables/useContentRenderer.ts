@@ -1,4 +1,6 @@
 import type { RenderInput } from '../wasm/types'
+import { getRelationshipLabel } from '../types/relationship'
+import { parseRelationshipSegment } from '../utils/relationship-content'
 
 const CSS_CLASSES = {
   blockLink: 'block-link',
@@ -16,6 +18,32 @@ function escapeHtmlEntities(text: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
+}
+
+/**
+ * 从 relationship_type（可能含 <-> / ! 修饰符）解析出中文 label。
+ * 兼容三种语法：
+ *   ((type))            → getRelationshipLabel(type)
+ *   ((type<->inverse))  → label<->inverseLabel
+ *   ((type!))           → label!
+ * 未知类型回退显示原文（与 Rust rel_cache 行为一致）。
+ */
+function resolveRelationshipLabel(relType: string): string {
+  const parts = parseRelationshipSegment(relType)
+  const label = getRelationshipLabel(parts.type)
+  if (parts.inverse !== undefined) {
+    const invLabel = getRelationshipLabel(parts.inverse)
+    // 未知反向类型时回退原文，避免半转换
+    if (invLabel === parts.inverse) return relType
+    return `${label}<->${invLabel}`
+  }
+  if (parts.autoInverse) {
+    // 未知正向类型时回退原文
+    if (label === parts.type) return relType
+    return `${label}!`
+  }
+  // 未知类型回退原文
+  return label === parts.type ? relType : label
 }
 
 export interface HeadingParseResult {
@@ -81,7 +109,8 @@ function renderContentToHtml(input: RenderInput): string {
 
       case 'typed_link': {
         const relType = escapeHtmlEntities(seg.relationship_type)
-        const label = escapeHtmlEntities(seg.rel_label)
+        // 前端转换：type → 中文 label（支持 <-> 双向与 ! auto-inverse）
+        const label = escapeHtmlEntities(resolveRelationshipLabel(seg.relationship_type))
         const color = seg.rel_color
         const target = escapeHtmlEntities(seg.target_page_title)
         const display = escapeHtmlEntities(seg.display_text)

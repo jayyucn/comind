@@ -1,7 +1,23 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { useContentRenderer, parseHeading } from './useContentRenderer'
+import { useRelationshipTypes } from './useRelationshipTypes'
+import { cleanupRelationshipTypes } from '../../tests/core-client'
 
 const { renderContentToHtml } = useContentRenderer()
+
+beforeEach(async () => {
+  await cleanupRelationshipTypes()
+  const { _resetForTest } = useRelationshipTypes()
+  _resetForTest()
+  const { load } = useRelationshipTypes()
+  await load()
+})
+
+afterEach(async () => {
+  await cleanupRelationshipTypes()
+  const { _resetForTest } = useRelationshipTypes()
+  _resetForTest()
+})
 
 describe('useContentRenderer — 回退路径（无 segments）', () => {
   it('HTML 实体被转义', () => {
@@ -188,6 +204,61 @@ describe('结构化渲染片段（pre-computed segments）', () => {
       })
       expect(html).toContain('data-typed-from="10"')
       expect(html).toContain('data-typed-to="35"')
+    })
+
+    it('前端转换：双向 type<->inverse 显示中文双向 label', () => {
+      const html = renderContentToHtml({
+        segments: [{
+          type: 'typed_link', start: 0, end: 38,
+          target_page_title: 'X', display_text: 'X',
+          relationship_type: 'depends-on<->required-by', rel_color: '#f5222d',
+        }],
+        content: '((depends-on<->required-by))[[X]]',
+        blockId: 'b4',
+      })
+      // label 中的 <-> 会被 HTML 转义为 &lt;-&gt;（避免破坏 HTML 结构）
+      expect(html).toContain('>依赖&lt;-&gt;被依赖<')
+      expect(html).toContain('data-rel-type="depends-on&lt;-&gt;required-by"')
+    })
+
+    it('前端转换：auto-inverse type! 显示中文 label!', () => {
+      const html = renderContentToHtml({
+        segments: [{
+          type: 'typed_link', start: 0, end: 25,
+          target_page_title: 'X', display_text: 'X',
+          relationship_type: 'depends-on!', rel_color: '#f5222d',
+        }],
+        content: '((depends-on!))[[X]]',
+        blockId: 'b5',
+      })
+      expect(html).toContain('>依赖!<')
+    })
+
+    it('前端转换：未知类型回退显示原文', () => {
+      const html = renderContentToHtml({
+        segments: [{
+          type: 'typed_link', start: 0, end: 30,
+          target_page_title: 'X', display_text: 'X',
+          relationship_type: 'custom-unknown', rel_color: '#888888',
+        }],
+        content: '((custom-unknown))[[X]]',
+        blockId: 'b6',
+      })
+      expect(html).toContain('>custom-unknown<')
+    })
+
+    it('前端转换：双向中反向未知时回退原文', () => {
+      const html = renderContentToHtml({
+        segments: [{
+          type: 'typed_link', start: 0, end: 40,
+          target_page_title: 'X', display_text: 'X',
+          relationship_type: 'depends-on<->unknown-side', rel_color: '#f5222d',
+        }],
+        content: '((depends-on<->unknown-side))[[X]]',
+        blockId: 'b7',
+      })
+      // 反向未知 → 整体回退原文，避免半转换
+      expect(html).toContain('>depends-on&lt;-&gt;unknown-side<')
     })
   })
 

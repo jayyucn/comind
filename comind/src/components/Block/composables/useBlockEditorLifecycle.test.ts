@@ -134,18 +134,70 @@ describe('useBlockEditorLifecycle', () => {
   })
 
   describe('handleSplit', () => {
-    it('deactivates current block and inserts new block at cursor', async () => {
+    it('flushes pending save before splitting so store has encoded content', async () => {
       const { lifecycle, blockStore, editorStore } = setup()
       const deactivateSpy = vi.spyOn(editorStore, 'deactivateBlock').mockImplementation(() => {})
+      const flushSpy = vi.spyOn(blockStore, 'flushSave').mockResolvedValue(undefined)
       vi.spyOn(blockStore, 'insertBlockAtCursor').mockResolvedValue({
         id: 'b2', pageId: 'p1', parentId: null, pos: 1,
         content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
       } as any)
       const activateSpy = vi.spyOn(editorStore, 'activateBlock').mockImplementation(() => {})
       await lifecycle.handleSplit(5)
+      expect(flushSpy).toHaveBeenCalledWith('b1')
       expect(deactivateSpy).toHaveBeenCalled()
       expect(blockStore.insertBlockAtCursor).toHaveBeenCalledWith('b1', 5, false)
       expect(activateSpy).toHaveBeenCalledWith('b2', 1)
+    })
+
+    it('converts decoded cursor offset to encoded offset for typed links with different type/label lengths', async () => {
+      const { blockStore, editorStore } = setup()
+      vi.spyOn(editorStore, 'deactivateBlock').mockImplementation(() => {})
+      vi.spyOn(blockStore, 'flushSave').mockResolvedValue(undefined)
+      const insertSpy = vi.spyOn(blockStore, 'insertBlockAtCursor').mockResolvedValue({
+        id: 'b2', pageId: 'p1', parentId: null, pos: 1,
+        content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
+      } as any)
+      vi.spyOn(editorStore, 'activateBlock').mockImplementation(() => {})
+
+      // 模拟 typed link 行尾场景：
+      // block.content (encoded) = '((part-of))[[D]]sd'  (18 chars)
+      // editor.getText() (decoded) = '((属于))[[D]]sd'     (13 chars)
+      // 光标在 decoded 文本的行尾 (decodedOffset=13, pmPos=14)
+      // 修复后：行尾时 effectivePos = encodedContent.length + 1 = 19
+      // insertBlockAtCursor: textOffset = 18, contentLen = 18, isAtLineEnd = true ✅
+      blockStore.blocks = [{
+        id: 'b1', pageId: 'p1', parentId: null, pos: 0,
+        content: '((part-of))[[D]]sd', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
+      }]
+      vi.spyOn(blockStore, 'getBlock').mockReturnValue(blockStore.blocks[0] as any)
+
+      // 设置 editorRef mock
+      const editorRef = ref({
+        getText: () => '((属于))[[D]]sd',
+        markSaved: () => {},
+        cancelDebouncedSave: () => {},
+      } as any)
+      const blockId = ref('b1')
+      const cursorPos = ref(0)
+      const collapsed = ref(false)
+      const relationshipCleanup = useBlockRelationshipCleanup()
+      const lifecycle2 = useBlockEditorLifecycle({
+        blockId, pageId: 'p1',
+        editorRef,
+        cursorPos, collapsed,
+        blockStore, editorStore, pageStore: usePageStore(),
+        relationshipCleanup
+      })
+
+      // 光标在 decoded 文本行尾：pmPos = 14 (13 chars + 1)
+      await lifecycle2.handleSplit(14)
+
+      // 验证传给 insertBlockAtCursor 的 effectivePos 使 textOffset >= contentLen
+      const calledPos = insertSpy.mock.calls[0][1]
+      const calledTextOffset = calledPos > 0 ? calledPos - 1 : 0
+      const calledContentLen = blockStore.blocks[0].content.length
+      expect(calledTextOffset).toBeGreaterThanOrEqual(calledContentLen)
     })
   })
 

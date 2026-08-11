@@ -8,6 +8,11 @@ import {
   computeDatePickerPosition
 } from '../../../composables/useDateTimePickerPanel'
 import { DATE_REF_AT_REGEX, serializeDateRef, normalizeRecurrence } from '../../../utils/date-ref'
+import {
+  encodeRelationshipContent,
+  decodeRelationshipContent,
+  takeRelationshipSnapshot,
+} from '../../../utils/relationship-content'
 import type { useBlockStore } from '../../../stores/blocks'
 import type { useEditorStore } from '../../../stores/editor'
 import type { usePageStore } from '../../../stores/pages'
@@ -82,7 +87,11 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
   // ── 保存 / 同步 ──
   /** 保存内容到 store 并立即 flush 到后端，确保 renderSegments 已写回 */
   async function handleSave(content: string) {
-    await blockStore.updateBlockContent(blockId.value, content)
+    // 编辑态显示中文 label → 存储英文 type（encode）
+    // 快照保证改名后未编辑的 label 也能还原为原始 type
+    const snapshot = takeRelationshipSnapshot(blockId.value)
+    const stored = encodeRelationshipContent(content, snapshot)
+    await blockStore.updateBlockContent(blockId.value, stored)
     // 方案 A: 立即 flush，确保 renderSegments 已写回，
     // 避免后续 deactivateBlock 时渲染组件因 renderSegments=undefined 闪现纯文本。
     await blockStore.flushSave(blockId.value)
@@ -114,8 +123,38 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
 
   // ── 编辑操作 ──
   const handleSplit = withContentSync(async (cursorPosArg: number) => {
+    // 必须先 flush：withContentSync 里的 handleSave 只更新了内存 state 并 debounce 保存，
+    // insertBlockAtCursor 拆分时读的是 store 里的 content。若 store 仍是 decode 后的中文 label
+    // （如 ((是一个))），拆分后的后半段会携带未 encode 的 label 入库，导致 "((是一个))[[D]]s" + "d"
+    // 的拆坏问题（typed link 场景）。flush 确保 store 与持久层都是 encode 后的 type 文本。
+    await blockStore.flushSave(blockId.value)
+
+    // ── 坐标转换：ProseMirror 坐标基于编辑器显示的 decoded 文本，
+    //    但 block.content 是 encoded 文本。type/label 长度不同时偏移不匹配。
+    //    将 decoded 偏移转换为 encoded 偏移，确保拆分位置正确。
+    let effectivePos = cursorPosArg
+    if (editorRef.value) {
+      const decodedText = editorRef.value.getText()
+      const decodedOffset = cursorPosArg > 0 ? cursorPosArg - 1 : 0  // pmPosToTextOffset
+      const encodedContent = blockStore.getBlock(blockId.value)?.content ?? ''
+      if (decodedOffset >= decodedText.length) {
+        // 行尾：直接设为 encoded content 的行尾
+        effectivePos = encodedContent.length + 1
+      } else if (decodedOffset === 0) {
+        // 行首：无需转换
+        effectivePos = 1
+      } else {
+        // 中间：将 decoded 偏移转换为 encoded 偏移
+        const decodedBefore = decodedText.slice(0, decodedOffset)
+        // 重新 build snapshot：block.content 此时已是 encoded，decode 后得到新 snapshot
+        const { snapshot: freshSnapshot } = decodeRelationshipContent(encodedContent)
+        const encodedBefore = encodeRelationshipContent(decodedBefore, freshSnapshot)
+        effectivePos = encodedBefore.length + 1  // 转回 ProseMirror 坐标
+      }
+    }
+
     editorStore.deactivateBlock()
-    const newBlock = await blockStore.insertBlockAtCursor(blockId.value, cursorPosArg, collapsed.value)
+    const newBlock = await blockStore.insertBlockAtCursor(blockId.value, effectivePos, collapsed.value)
     if (newBlock) {
       editorStore.activateBlock(newBlock.id, 1)
     }
