@@ -110,17 +110,37 @@ pub fn build_page_with_blocks(
 }
 
 /// Convert byte offset to Unicode scalar value (char) index.
-fn byte_to_char_idx(content: &str, byte_idx: usize) -> usize {
-    content[..byte_idx.min(content.len())].chars().count()
+/// Convert byte offset to UTF-16 code unit index (for JS compatibility).
+/// JS strings use UTF-16 encoding; BMP chars (U+0000..U+FFFF) = 1 unit,
+/// supplementary chars (e.g. emoji U+1F4C5) = 2 units (surrogate pair).
+/// Rust's `chars().count()` counts Unicode scalar values (1 per emoji),
+/// which mismatches JS `String.prototype.slice()` indexing.
+fn byte_to_utf16_idx(content: &str, byte_idx: usize) -> usize {
+    let mut utf16_len = 0;
+    for (byte_pos, ch) in content.char_indices() {
+        if byte_pos >= byte_idx {
+            break;
+        }
+        utf16_len += ch.len_utf16();
+    }
+    utf16_len
 }
 
-/// Convert Unicode scalar value (char) index back to byte offset.
-fn char_idx_to_byte_idx(content: &str, char_idx: usize) -> usize {
-    content
-        .char_indices()
-        .nth(char_idx)
-        .map(|(b, _)| b)
-        .unwrap_or(content.len())
+/// Convert UTF-16 code unit index back to byte offset.
+fn utf16_idx_to_byte_idx(content: &str, utf16_idx: usize) -> usize {
+    let mut utf16_count = 0;
+    for (byte_pos, ch) in content.char_indices() {
+        if utf16_count >= utf16_idx {
+            return byte_pos;
+        }
+        utf16_count += ch.len_utf16();
+    }
+    content.len()
+}
+
+/// Total UTF-16 code unit length of the string (matches JS `.length`).
+fn utf16_len(content: &str) -> usize {
+    content.chars().map(|c| c.len_utf16()).sum()
 }
 
 fn build_segments(
@@ -174,9 +194,9 @@ fn build_segments(
             let recurrence = if dr.recurrence.is_empty() { "none" } else { &dr.recurrence };
             let is_overdue = kind == "deadline" && is_date_past(&dr.iso);
 
-            // Convert byte offsets to char offsets for JS compatibility
-            let char_start = byte_to_char_idx(content, start);
-            let char_end = byte_to_char_idx(content, end);
+            // Convert byte offsets to UTF-16 indices for JS compatibility
+            let char_start = byte_to_utf16_idx(content, start);
+            let char_end = byte_to_utf16_idx(content, end);
 
             anchors.push((char_start, RenderSegment::DateRef {
                 start: char_start, end: char_end,
@@ -206,9 +226,9 @@ fn build_segments(
         };
 
         if let (Some(s), Some(e)) = (start, end) {
-            // Convert byte offsets to char offsets for JS compatibility
-            let char_start = byte_to_char_idx(content, s);
-            let char_end = byte_to_char_idx(content, e);
+            // Convert byte offsets to UTF-16 indices for JS compatibility
+            let char_start = byte_to_utf16_idx(content, s);
+            let char_end = byte_to_utf16_idx(content, e);
 
             if let Some(rt) = &link.relationship_type {
                 let (label, color) = rel_cache.get(rt.as_str())
@@ -234,7 +254,7 @@ fn build_segments(
 
     // Sort, fill gaps
     anchors.sort_by_key(|(s, _)| *s);
-    let char_len = content.chars().count();
+    let char_len = utf16_len(content);
     let mut segments = Vec::new();
     let mut cursor: usize = 0;
     for (pos, seg) in anchors {
@@ -251,7 +271,7 @@ fn build_segments(
                 // dateRef 语法（`@ISO [emoji] [|params]`）之后的空白是分隔符，
                 // 不属于任何文本段：跳过它们，避免后续 Text 段带前导空格。
                 // 例："@2026-08-09 ⏰ 2026" → DateRef=[0,13)，Text=[14,18) 而非 [13,18)。
-                let mut byte = char_idx_to_byte_idx(content, *end);
+                let mut byte = utf16_idx_to_byte_idx(content, *end);
                 let bytes = content.as_bytes();
                 while byte < bytes.len() {
                     let ch = content[byte..].chars().next().unwrap();
@@ -260,7 +280,7 @@ fn build_segments(
                     }
                     byte += ch.len_utf8();
                 }
-                byte_to_char_idx(content, byte)
+                byte_to_utf16_idx(content, byte)
             }
         };
         segments.push(seg);
