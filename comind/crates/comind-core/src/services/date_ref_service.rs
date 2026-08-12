@@ -3,6 +3,20 @@ use crate::types::DateRef;
 use chrono::Utc;
 use regex::Regex;
 use std::error::Error;
+use std::sync::OnceLock;
+
+/// 复用的 date-ref 正则，进程内只编译一次。
+/// `extract_date_refs` 在 `build_segments` 中按 block 调用，若每次都 `Regex::new`
+/// 会因该复杂 pattern 的编译成本（~10ms/次）把月度加载拖到 1.5s+。
+fn date_ref_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(
+            r"(?:^|[^\w@])@(\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2})?)(?:[ \u00A0]?(📅|⏰))?(?:\|(daily|weekly|monthly|yearly|none)?)?(?:\|(\d+))?",
+        )
+        .expect("date-ref regex must compile")
+    })
+}
 
 pub struct DateRefService;
 
@@ -21,12 +35,9 @@ impl DateRefService {
         // 注意：原 pattern 用了 lookbehind `(?<![\w@])`，但当前 regex crate
         // 不支持 look-around（编译期 Err），会导致整段提取静默返回空。
         // 改用 `(?:^|[^\w@])` 消费前置非 word/非@ 字符，语义等价且无 lookbehind。
-        let re = match Regex::new(
-            r"(?:^|[^\w@])@(\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2})?)(?:[ \u00A0]?(📅|⏰))?(?:\|(daily|weekly|monthly|yearly|none)?)?(?:\|(\d+))?",
-        ) {
-            Ok(r) => r,
-            Err(_) => return Vec::new(),
-        };
+        // 该正则较复杂（Unicode 类 + 多选 + 可选组），单次编译约 10ms；
+        // 月度加载 160+ 个 block 时逐次编译会累积到 1.5s+，故用 OnceLock 只编一次。
+        let re = date_ref_regex();
 
         for cap in re.captures_iter(content) {
             let iso = cap[1].trim().to_string();
