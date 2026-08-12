@@ -518,3 +518,7 @@ export async function tauriIsTodayTitle(normalizedTitle: string): Promise<boolea
 export async function tauriGetPageWithBlocks(pageId: string): Promise<any> {
   return invoke('get_page_with_blocks', { pageId })
 }
+
+export async function tauriGetPagesWithBlocks(pageIds: string[]): Promise<any> {
+  return invoke('get_pages_with_blocks', { pageIds })
+}

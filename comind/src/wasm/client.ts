@@ -92,6 +92,8 @@ export interface CoreClient {
 
   // S10: Render segments
   getPageWithBlocks(pageId: string): Promise<PageWithBlocks>
+  /** Batch variant of getPageWithBlocks — single IPC for multiple pages. */
+  getPagesWithBlocks(pageIds: string[]): Promise<PageWithBlocks[]>
 
   // Notification Settings (migrated to Rust)
   getNotificationSettings(): Promise<NotificationSettings>
@@ -355,6 +357,10 @@ class TauriClient implements CoreClient {
 
     async getPageWithBlocks(pageId: string): Promise<PageWithBlocks> {
       return parseJsonResult(await tauri.tauriGetPageWithBlocks(pageId))
+    }
+
+    async getPagesWithBlocks(pageIds: string[]): Promise<PageWithBlocks[]> {
+      return parseJsonResult(await tauri.tauriGetPagesWithBlocks(pageIds))
     }
 
     async queryDueNonRecurringDateRefs(nowMs: number): Promise<DateRefRecord[]> {
@@ -656,6 +662,11 @@ class WasmClientAdapter implements CoreClient {
   async getPageWithBlocks(_pageId: string): Promise<PageWithBlocks> {
     // WASM 端暂不支持
     return { page: {} as Page, blocks: [] }
+  }
+
+  async getPagesWithBlocks(_pageIds: string[]): Promise<PageWithBlocks[]> {
+    // Web 模式历史面板依赖 Rust 后端，返回空数组（无数据则历史列表为空状态）
+    return []
   }
 
   async queryDateRefs(kind: string, from: string, to: string): Promise<DateRefRecord[]> {

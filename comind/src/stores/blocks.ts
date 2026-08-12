@@ -281,37 +281,34 @@ export const useBlockStore = defineStore('blocks', () => {
     loading.value = true
     const client = await getClient()
     try {
-      const results = await Promise.allSettled(
-        pageIds.map(async id => {
-          const rustBlocks = await client.getBlocksByPage(id)
-          return rustBlocks.map(rustBlock => ({
-            id: rustBlock.id,
-            pageId: rustBlock.page_id,
-            parentId: rustBlock.parent_id,
-            pos: rustBlock.pos,
-            content: rustBlock.content,
-            format: JSON.parse(rustBlock.format || '{}'),
-            type: rustBlock.type as Block['type'],
-            properties: [],
-            createdAt: rustBlock.created_at,
-            updatedAt: rustBlock.updated_at
-          }))
-        })
-      )
+      // B 方案：单次 IPC 获取多页（含 render_segments + properties），
+      // 与今日面板 loadPageBlocks 走同一 Rust 渲染路径，历史面板样式一致。
+      const pagesWithBlocks = await client.getPagesWithBlocks(pageIds)
 
       const existingIds = new Set(blocks.value.map(b => b.id))
       let added = 0
-      for (const result of results) {
-        if (result.status === 'fulfilled') {
-          for (const block of result.value) {
-            if (!existingIds.has(block.id)) {
-              blocks.value.push(block)
-              existingIds.add(block.id)
-              added++
-            }
+      for (const pwb of pagesWithBlocks) {
+        if (!pwb) continue
+        for (const brd of pwb.blocks) {
+          const b = brd.block
+          const newBlock: Block = {
+            id: b.id,
+            pageId: b.page_id,
+            parentId: b.parent_id,
+            pos: b.pos,
+            content: b.content,
+            format: JSON.parse(b.format || '{}'),
+            type: b.type as Block['type'],
+            renderSegments: brd.render_segments || [],
+            properties: brd.properties ?? {},
+            createdAt: b.created_at,
+            updatedAt: b.updated_at
           }
-        } else {
-          console.error('[loadMultiPageBlocks] Failed to load blocks:', result.reason)
+          if (!existingIds.has(newBlock.id)) {
+            blocks.value.push(newBlock)
+            existingIds.add(newBlock.id)
+            added++
+          }
         }
       }
       structureVersion.value++

@@ -1899,3 +1899,23 @@ pub async fn get_page_with_blocks(
         build_page_with_blocks(storage, &page_id)
     }).await
 }
+
+/// S10: Batch variant of `get_page_with_blocks` — returns pre-computed render
+/// segments (links / relationship labels / dateRefs) for multiple pages in a
+/// single IPC call. Tolerates missing pages (e.g. a deleted month page) by
+/// skipping them instead of failing the whole batch.
+#[tauri::command]
+pub async fn get_pages_with_blocks(
+    db: State<'_, super::state::DatabaseConnection>,
+    page_ids: Vec<String>,
+) -> Result<Vec<PageWithBlocks>, String> {
+    execute_with_adapter(db, move |storage| {
+        let mut result: Vec<PageWithBlocks> = Vec::new();
+        for pid in &page_ids {
+            if let Ok(pwb) = build_page_with_blocks(storage, pid) {
+                result.push(pwb);
+            }
+        }
+        Ok(result)
+    }).await
+}

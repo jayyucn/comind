@@ -6,12 +6,14 @@ const {
   mockInitCoreClient,
   mockSaveBlockTree,
   mockGetPageWithBlocks,
+  mockGetPagesWithBlocks,
   mockGetBlocksByPage,
   mockGetPage,
 } = vi.hoisted(() => ({
   mockInitCoreClient: vi.fn(),
   mockSaveBlockTree: vi.fn(),
   mockGetPageWithBlocks: vi.fn(),
+  mockGetPagesWithBlocks: vi.fn(),
   mockGetBlocksByPage: vi.fn(),
   mockGetPage: vi.fn(),
 }))
@@ -23,6 +25,8 @@ const {
 vi.mock('../wasm/client', () => ({
   initCoreClient: mockInitCoreClient,
   getCoreClient: vi.fn(),
+  // 测试聚焦 renderSegments，禁用 sync 副作用（避免触发未 mock 的 triggerSync）
+  isTauriEnvironment: vi.fn(() => false),
 }))
 
 function makeSaveResult(blockId: string, content: string, renderSegments: any[] = []) {
@@ -212,5 +216,93 @@ describe('loadPageBlocks（mock WASM）', () => {
 
     const blocks = await store.loadPageBlocks(pageId)
     expect(blocks.value.length).toBe(0)
+  })
+})
+
+describe('loadMultiPageBlocks（S10 批量 getPagesWithBlocks 携带 renderSegments）', () => {
+  let useBlockStore: typeof import('./blocks').useBlockStore
+
+  beforeEach(async () => {
+    vi.resetModules()
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+
+    const mockClient = {
+      saveBlockTree: mockSaveBlockTree,
+      getPageWithBlocks: mockGetPageWithBlocks,
+      getPagesWithBlocks: mockGetPagesWithBlocks,
+      getBlocksByPage: mockGetBlocksByPage,
+      getPage: mockGetPage,
+    }
+
+    mockSaveBlockTree.mockResolvedValue([])
+    mockGetPagesWithBlocks.mockResolvedValue([])
+
+    mockInitCoreClient.mockResolvedValue(mockClient)
+
+    useBlockStore = (await import('./blocks')).useBlockStore
+  })
+
+  test('历史多页加载携带 renderSegments（与今日面板一致）', async () => {
+    const store = useBlockStore()
+    const pageIds = ['hist-1', 'hist-2']
+
+    mockGetPagesWithBlocks.mockResolvedValue([
+      makePageWithBlocks('hist-1', [
+        {
+          block: { id: 'h1b1', page_id: 'hist-1', parent_id: null, pos: 100, content: '((proj))[[页面]] 内容', format: '{}', type: 'bullet', created_at: 0, updated_at: 0 },
+          children: [],
+          render_segments: [{ type: 'typed_link', start: 0, end: 13 }],
+          properties: [],
+        },
+      ]),
+      makePageWithBlocks('hist-2', [
+        {
+          block: { id: 'h2b1', page_id: 'hist-2', parent_id: null, pos: 100, content: '@2026-08-11 📅', format: '{}', type: 'bullet', created_at: 0, updated_at: 0 },
+          children: [],
+          render_segments: [{ type: 'date_ref', start: 0, end: 11 }],
+          properties: [],
+        },
+      ]),
+    ])
+
+    await store.loadMultiPageBlocks(pageIds)
+
+    const h1b1 = store.getBlock('h1b1')
+    const h2b1 = store.getBlock('h2b1')
+    expect(h1b1).toBeDefined()
+    expect(h1b1!.renderSegments).toBeDefined()
+    expect(h1b1!.renderSegments!.length).toBeGreaterThan(0)
+    expect(h1b1!.renderSegments![0].type).toBe('typed_link')
+
+    expect(h2b1).toBeDefined()
+    expect(h2b1!.renderSegments).toBeDefined()
+    expect(h2b1!.renderSegments![0].type).toBe('date_ref')
+
+    // 去重：重复加载不重复 push
+    await store.loadMultiPageBlocks(pageIds)
+    const ids = store.blocks.map(b => b.id)
+    expect(ids.filter(id => id === 'h1b1').length).toBe(1)
+  })
+
+  test('缺失页面被跳过，不整体失败', async () => {
+    const store = useBlockStore()
+    const pageIds = ['hist-ok', 'hist-missing']
+
+    mockGetPagesWithBlocks.mockResolvedValue([
+      makePageWithBlocks('hist-ok', [
+        {
+          block: { id: 'ok1', page_id: 'hist-ok', parent_id: null, pos: 100, content: 'OK', format: '{}', type: 'bullet', created_at: 0, updated_at: 0 },
+          children: [],
+          render_segments: [{ type: 'text', start: 0, end: 2 }],
+          properties: [],
+        },
+      ]),
+      // hist-missing 不返回
+    ])
+
+    await store.loadMultiPageBlocks(pageIds)
+    expect(store.getBlock('ok1')).toBeDefined()
+    expect(store.getBlock('ok1')!.renderSegments!.length).toBeGreaterThan(0)
   })
 })

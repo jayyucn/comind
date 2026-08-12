@@ -399,7 +399,7 @@ async function onPaste(e: ClipboardEvent) {
         <!-- 内容区 -->
         <div class="block-content" @mousedown="onContentMousedown">
           <component
-            v-if="isActive && handler"
+            v-if="isActive && handler && !isFrozen"
             :is="handler.editorComponent"
             ref="editorRef"
             :block-id="blockId"
