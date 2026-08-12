@@ -59,11 +59,6 @@ async function loadBacklinks() {
 
   loading.value = true
   try {
-    // 1. 当前页块：Page 组件已 loadPageBlocks 时跳过
-    if (blockStore.getBlocksByPage(currentId).length === 0) {
-      await blockStore.loadMultiPageBlocks([currentId])
-    }
-
     // 2. 获取指向当前页的所有反链
     const links = await blockStore.getBacklinks(currentId)
 

@@ -674,6 +674,14 @@ impl LinkRepository for SqlJsAdapter {
         Ok(result.into_iter().map(|r| row_to_link(&r)).collect())
     }
 
+    fn get_by_source_block_ids(&self, source_block_ids: &[String]) -> Result<Vec<Link>, Box<dyn std::error::Error>> {
+        let mut links = Vec::new();
+        for id in source_block_ids {
+            links.extend(LinkRepository::get_by_source_block_id(self, id)?);
+        }
+        Ok(links)
+    }
+
     fn get_by_target_page_id(&self, target_page_id: &str) -> Result<Vec<Link>, Box<dyn std::error::Error>> {
         let result = Self::query(&self.db, "SELECT id, source_block_id, target_page_id, display_text, relationship_type, updated_at, version, deleted_at, created_at FROM Link WHERE target_page_id = ? AND deleted_at IS NULL", &[target_page_id])?;
         Ok(result.into_iter().map(|r| row_to_link(&r)).collect())
@@ -948,6 +956,14 @@ impl PropertyRepository for SqlJsAdapter {
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<Property>, Box<dyn std::error::Error>> {
         let result = Self::query(&self.db, "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, version, deleted_at, created_at, updated_at FROM Property WHERE block_id = ? AND is_deleted = 0 AND deleted_at IS NULL ORDER BY sort_order", &[block_id])?;
         Ok(result.into_iter().map(|r| row_to_property(&r)).collect())
+    }
+
+    fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<Property>, Box<dyn std::error::Error>> {
+        let mut properties = Vec::new();
+        for id in block_ids {
+            properties.extend(PropertyRepository::get_by_block_id(self, id)?);
+        }
+        Ok(properties)
     }
 
     fn get_by_block_id_and_key(&self, block_id: &str, key: &str) -> Result<Option<Property>, Box<dyn std::error::Error>> {

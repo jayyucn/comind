@@ -1,7 +1,7 @@
 use crate::{
-    types::{Block, BlockRenderData, PageWithBlocks, RenderSegment},
+    types::{Block, BlockRenderData, Link, PageWithBlocks, RenderSegment},
     storage::repository,
-    services::{DateRefService, PropertyService},
+    services::DateRefService,
 };
 use std::collections::HashMap;
 use std::error::Error;
@@ -30,7 +30,7 @@ pub fn build_segments_for_block(
         rel_cache.insert(rt.r#type.clone(), (rt.label.clone(), rt.color.clone()));
     }
 
-    build_segments(storage, block, &id_to_title, &rel_cache)
+    build_segments(block, &links, &id_to_title, &rel_cache)
 }
 
 /// Builds a `PageWithBlocks` response for `get_page_with_blocks`.
@@ -57,46 +57,64 @@ pub fn build_page_with_blocks(
     }
     root_ids.sort_by_key(|id| block_pos.get(id.as_str()).copied().unwrap_or(0));
 
-    // --- Collect target_page_ids for batch title resolution ---
-    let mut target_page_ids: Vec<String> = Vec::new();
-    for b in &blocks {
-        if b.r#type != "bullet" && b.r#type != "property" {
-            continue;
-        }
-        let links = repository::LinkRepository::get_by_source_block_id(storage.links(), &b.id)?;
-        for l in &links {
-            target_page_ids.push(l.target_page_id.clone());
-        }
+    let block_ids: Vec<String> = blocks.iter().map(|b| b.id.clone()).collect();
+    let segment_block_ids: Vec<String> = blocks
+        .iter()
+        .filter(|b| b.r#type == "bullet" || b.r#type == "property")
+        .map(|b| b.id.clone())
+        .collect();
+
+    let all_links =
+        repository::LinkRepository::get_by_source_block_ids(storage.links(), &segment_block_ids)?;
+    let mut links_by_block: HashMap<String, Vec<Link>> = HashMap::new();
+    for link in all_links {
+        links_by_block
+            .entry(link.source_block_id.clone())
+            .or_default()
+            .push(link);
     }
 
-    // Batch resolve titles & relationship types
-    let mut id_to_title: HashMap<String, String> = HashMap::new();
-    for id in &target_page_ids {
-        if let Ok(p) = repository::PageRepository::get_by_id(storage.pages(), id) {
-            id_to_title.insert(id.clone(), p.title);
-        }
-    }
+    let mut target_page_ids: Vec<String> = links_by_block
+        .values()
+        .flat_map(|links| links.iter().map(|l| l.target_page_id.clone()))
+        .collect();
+    target_page_ids.sort();
+    target_page_ids.dedup();
+
+    let pages = repository::PageRepository::get_by_ids(storage.pages(), &target_page_ids)?;
+    let id_to_title: HashMap<String, String> = pages
+        .into_iter()
+        .map(|p| (p.id.clone(), p.title))
+        .collect();
 
     let all_rel = repository::RelationshipTypeRepository::get_all(storage.relationship_types())?;
-    // Cache: type → (label, color)
     let mut rel_cache: HashMap<String, (String, String)> = HashMap::new();
     for rt in &all_rel {
         rel_cache.insert(rt.r#type.clone(), (rt.label.clone(), rt.color.clone()));
     }
 
-    // --- Build render data for each block ---
+    let all_properties =
+        repository::PropertyRepository::get_by_block_ids(storage.properties(), &block_ids)?;
+    let mut props_by_block: HashMap<String, Vec<_>> = HashMap::new();
+    for prop in all_properties {
+        props_by_block
+            .entry(prop.block_id.clone())
+            .or_default()
+            .push(prop);
+    }
+
     let mut result: Vec<BlockRenderData> = Vec::new();
     for block in &blocks {
         let children = children_map.get(&block.id).cloned().unwrap_or_default();
 
         let segments = if block.r#type == "bullet" || block.r#type == "property" {
-            build_segments(storage, block, &id_to_title, &rel_cache)?
+            let links = links_by_block.get(&block.id).map(|v| v.as_slice()).unwrap_or(&[]);
+            build_segments(block, links, &id_to_title, &rel_cache)?
         } else {
             Vec::new()
         };
 
-        // Resolve block properties from Property table (zero extra queries — already in cache)
-        let properties = PropertyService::get_by_block_id(storage, &block.id).unwrap_or_default();
+        let properties = props_by_block.remove(&block.id).unwrap_or_default();
 
         result.push(BlockRenderData {
             block: block.clone(),
@@ -144,13 +162,12 @@ fn utf16_len(content: &str) -> usize {
 }
 
 fn build_segments(
-    storage: &mut dyn repository::StorageAdapter,
     block: &Block,
+    links: &[Link],
     id_to_title: &HashMap<String, String>,
     rel_cache: &HashMap<String, (String, String)>,
 ) -> Result<Vec<RenderSegment>, Box<dyn Error>> {
     let content = &block.content;
-    let links = repository::LinkRepository::get_by_source_block_id(storage.links(), &block.id)?;
     let mut anchors: Vec<(usize, RenderSegment)> = Vec::new();
 
     // --- 1. Date refs ---
@@ -210,7 +227,7 @@ fn build_segments(
     }
 
     // --- 2. Links (search by resolved title, not UUID) ---
-    for link in &links {
+    for link in links {
         let target_title = id_to_title.get(&link.target_page_id)
             .cloned()
             .unwrap_or_default();

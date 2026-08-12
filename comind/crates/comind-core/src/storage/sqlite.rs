@@ -847,6 +847,34 @@ impl LinkRepository for SQLiteAdapter {
         
         Ok(links)
     }
+
+    fn get_by_source_block_ids(&self, source_block_ids: &[String]) -> Result<Vec<Link>, Box<dyn Error>> {
+        if source_block_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders: Vec<String> = (1..=source_block_ids.len()).map(|i| format!("?{}", i)).collect();
+        let sql = format!(
+            "SELECT id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at
+             FROM Link WHERE source_block_id IN ({}) AND deleted_at IS NULL",
+            placeholders.join(", ")
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let params: Vec<&dyn rusqlite::ToSql> = source_block_ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+        let links = stmt.query_map(params.as_slice(), |row| {
+            Ok(Link {
+                id: row.get(0)?,
+                source_block_id: row.get(1)?,
+                target_page_id: row.get(2)?,
+                display_text: row.get(3)?,
+                relationship_type: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+                version: row.get(7)?,
+                deleted_at: row.get(8)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(links)
+    }
     
     fn get_by_target_page_id(&self, target_page_id: &str) -> Result<Vec<Link>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
@@ -1016,6 +1044,38 @@ impl PropertyRepository for SQLiteAdapter {
             })
         })?.collect::<Result<Vec<_>, _>>()?;
         
+        Ok(properties)
+    }
+
+    fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<Property>, Box<dyn Error>> {
+        if block_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders: Vec<String> = (1..=block_ids.len()).map(|i| format!("?{}", i)).collect();
+        let sql = format!(
+            "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at
+             FROM Property WHERE block_id IN ({}) AND is_deleted = 0 AND deleted_at IS NULL ORDER BY sort_order",
+            placeholders.join(", ")
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let params: Vec<&dyn rusqlite::ToSql> = block_ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+        let properties = stmt.query_map(params.as_slice(), |row| {
+            Ok(Property {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                key: row.get(2)?,
+                value: row.get(3)?,
+                r#type: row.get(4)?,
+                sort_order: row.get(5)?,
+                is_hidden: row.get(6)?,
+                is_deleted: row.get(7)?,
+                schema_version: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+                version: row.get(11)?,
+                deleted_at: row.get(12)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
         Ok(properties)
     }
     
@@ -2854,6 +2914,34 @@ impl<'a> LinkRepository for SQLiteTransactionAdapter<'a> {
 
         Ok(links)
     }
+
+    fn get_by_source_block_ids(&self, source_block_ids: &[String]) -> Result<Vec<Link>, Box<dyn Error>> {
+        if source_block_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders: Vec<String> = (1..=source_block_ids.len()).map(|i| format!("?{}", i)).collect();
+        let sql = format!(
+            "SELECT id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at
+             FROM Link WHERE source_block_id IN ({}) AND deleted_at IS NULL",
+            placeholders.join(", ")
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let params: Vec<&dyn rusqlite::ToSql> = source_block_ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+        let links = stmt.query_map(params.as_slice(), |row| {
+            Ok(Link {
+                id: row.get(0)?,
+                source_block_id: row.get(1)?,
+                target_page_id: row.get(2)?,
+                display_text: row.get(3)?,
+                relationship_type: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+                version: row.get(7)?,
+                deleted_at: row.get(8)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(links)
+    }
     
     fn get_by_target_page_id(&self, target_page_id: &str) -> Result<Vec<Link>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
@@ -2877,7 +2965,7 @@ impl<'a> LinkRepository for SQLiteTransactionAdapter<'a> {
 
         Ok(links)
     }
-
+    
     fn create(&mut self, link: &Link) -> Result<Link, Box<dyn Error>> {
         self.conn.execute(
             "INSERT INTO Link (id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at)
@@ -3020,6 +3108,38 @@ impl<'a> PropertyRepository for SQLiteTransactionAdapter<'a> {
             })
         })?.collect::<Result<Vec<_>, _>>()?;
 
+        Ok(properties)
+    }
+
+    fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<Property>, Box<dyn Error>> {
+        if block_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders: Vec<String> = (1..=block_ids.len()).map(|i| format!("?{}", i)).collect();
+        let sql = format!(
+            "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at
+             FROM Property WHERE block_id IN ({}) AND is_deleted = 0 AND deleted_at IS NULL ORDER BY sort_order",
+            placeholders.join(", ")
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let params: Vec<&dyn rusqlite::ToSql> = block_ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+        let properties = stmt.query_map(params.as_slice(), |row| {
+            Ok(Property {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                key: row.get(2)?,
+                value: row.get(3)?,
+                r#type: row.get(4)?,
+                sort_order: row.get(5)?,
+                is_hidden: row.get(6)?,
+                is_deleted: row.get(7)?,
+                schema_version: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+                version: row.get(11)?,
+                deleted_at: row.get(12)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
         Ok(properties)
     }
 
