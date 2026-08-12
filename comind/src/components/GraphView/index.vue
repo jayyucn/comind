@@ -9,21 +9,6 @@ import { useRouter } from 'vue-router'
 import { Download, ExpandIcon, RefreshCw } from 'lucide-vue-next'
 import { getNodeStyle, getEdgeStyle } from './graphStyle'
 import { createAccumulator, traverseBFS, buildFullGraph, type RawLink, type VisibilityMap, type GraphSnapshot } from './graphData'
-import { initCoreClient } from '../../wasm/client'
-import type { CoreClient } from '../../wasm/client'
-
-let coreClientPromise: Promise<CoreClient> | null = null
-
-async function getClient() {
-  if (!coreClientPromise) {
-    coreClientPromise = initCoreClient()
-  }
-  const client = await coreClientPromise
-  if (!client) {
-    throw new Error('Core client not initialized')
-  }
-  return client
-}
 
 const pageStore = usePageStore()
 const blockStore = useBlockStore()
@@ -35,7 +20,25 @@ const props = defineProps<{
   hiddenNodeIds?: Set<string>
   dimmedNodeIds?: Set<string>
   hiddenEdgeIds?: Set<string>
+  /** 全量图谱快照：由父级 GraphPage 通过 1 次 IPC 拉取后传入，子组件不再独立发起 IPC */
+  graphSnapshot?: GraphSnapshot | null
 }>()
+
+const emit = defineEmits<{
+  /** 全量图谱刷新请求：冒泡给父级 GraphPage 重新拉取快照（避免子组件双数据源） */
+  (e: 'request-refresh'): void
+}>()
+
+// 硬性超时包装：防止任何下游 Promise（G6 布局/绘制等）永久挂起导致整页卡死且无日志。
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    p.then(
+      (v) => { clearTimeout(timer); resolve(v) },
+      (e) => { clearTimeout(timer); reject(e) },
+    )
+  })
+}
 
 const containerRef = ref<HTMLElement | null>(null)
 const graphRef = ref<Graph | null>(null)
@@ -57,6 +60,13 @@ watch(() => props.highlightedNodeId, (val) => {
 watch(() => [props.hiddenNodeIds, props.dimmedNodeIds, props.hiddenEdgeIds], () => {
   if (graphRef.value) refreshGraphData()
 }, { deep: true })
+
+// 父级重新拉取快照后（prop 变更），重建全量图谱（避免子组件自行发起 IPC）。
+watch(() => props.graphSnapshot, () => {
+  const n = props.graphSnapshot?.edges.length ?? 0
+  console.info(`[GraphView] graphSnapshot prop changed (${n} edges) — triggering rebuild`)
+  if (graphRef.value) refreshGraphData()
+})
 
 watch(currentPageId, () => refreshGraphData())
 
@@ -85,15 +95,9 @@ async function buildGraphData() {
 
   if (!isPageScoped.value) {
     const allPages = pageStore.pages.filter(p => !p.deleted)
-    // 一次性图谱快照：1 次 IPC 取回所有边关系
-    let snapshot: GraphSnapshot | undefined
-    try {
-      const client = await getClient()
-      const edges = await client.buildGraphSnapshot()
-      if (edges.length > 0) snapshot = { edges }
-    } catch (e) {
-      console.warn('[GraphView] buildGraphSnapshot failed, falling back to fetchNeighbors', e)
-    }
+    // 全量图谱：快照由父级（GraphPage）通过 graphSnapshot prop 传入，
+    // 不再独立发起第二份 IPC（见 handoff 6.A / Pitfall #2）。
+    const snapshot = props.graphSnapshot ?? undefined
     await buildFullGraph(allPages, acc, visibility, currentPageId.value, highlightedNodeId.value, getPage, fetchNeighbors, getBlock, snapshot)
   } else {
     const rootId = currentPageId.value
@@ -125,6 +129,7 @@ async function safeFitView(
 
 async function initGraph() {
   if (!containerRef.value) return
+  console.info('[GraphView] initGraph: creating G6 Graph instance...')
 
   if (graphRef.value) {
     graphRef.value.destroy()
@@ -196,6 +201,7 @@ async function initGraph() {
   graph.on('afterlayout', () => {
     if (!isFirstLayoutDone.value) {
       isFirstLayoutDone.value = true
+      console.info('[GraphView] afterlayout fired — overlay will hide, canvas interactive')
     }
   })
 
@@ -220,7 +226,17 @@ async function refreshGraphData(graph?: Graph) {
   const g = graph ?? graphRef.value
   if (!g) return
 
+  // 全量图谱：快照由父级拥有，未就绪前不构建——否则会得到空图，
+  // 且违背「子组件不独立发起 IPC」的约束。快照通过 graphSnapshot prop 传入，
+  // 对应的 watcher 会在快照到达时触发本函数重建。
+  if (!isPageScoped.value && !props.graphSnapshot) {
+    console.warn('[GraphView] refreshGraphData skipped: full-graph snapshot not ready yet (parent still loading)')
+    return
+  }
+
   const gen = ++refreshGeneration
+  const startedAt = performance.now()
+  console.info('[GraphView] refreshGraphData: building graph data...')
 
   const { nodes, edges } = await buildGraphData()
 
@@ -228,17 +244,32 @@ async function refreshGraphData(graph?: Graph) {
   // 此时 g 仍指向已 destroy 的实例（context 已被清空），
   // generation 守卫捕获不到这种情况。G6 destroy 后 this.context = {}，
   // 再调用 setData 会抛 "Cannot read properties of undefined (reading 'setData')"。
-  if (gen !== refreshGeneration) return
+  if (gen !== refreshGeneration) {
+    console.info('[GraphView] refreshGraphData: superseded during build (generation changed)')
+    return
+  }
   if (g.destroyed) return
+
+  console.info(`[GraphView] refreshGraphData: built ${nodes.length} nodes / ${edges.length} edges in ${Math.round(performance.now() - startedAt)}ms; applying to canvas...`)
+  if (nodes.length > 2000) {
+    console.warn(`[GraphView] Large graph (${nodes.length} nodes) — force layout may be slow; consider filtering or a lighter layout.`)
+  }
 
   g.setData({ nodes, edges: edges as EdgeData[] })
   await g.draw()
-  await g.layout()
+  console.info('[GraphView] refreshGraphData: draw done; starting layout (guarded by 15s timeout)...')
+  try {
+    await withTimeout(g.layout(), 15000, 'g.layout()')
+  } catch (e) {
+    // 布局挂起/失败不应阻塞页面：记录后继续，遮罩由 onMounted 安全网兜底解除。
+    console.error('[GraphView] g.layout() timed out or failed — continuing without fitView:', e)
+  }
 
   if (gen !== refreshGeneration) return
   if (g.destroyed) return
 
   await safeFitView(g, { when: 'always' }, false)
+  console.info('[GraphView] refreshGraphData: complete')
 }
 
 async function handleLayoutChange(layout: string) {
@@ -257,6 +288,12 @@ async function handleFitView() {
 }
 
 async function handleRefresh() {
+  // 全量图谱：快照由父级（GraphPage）拥有，刷新应冒泡到父级重新拉取，
+  // 不自行发起第二份 IPC（见 handoff Pitfall #2）。
+  if (!isPageScoped.value) {
+    emit('request-refresh')
+    return
+  }
   await refreshGraphData()
 }
 
@@ -307,8 +344,21 @@ function updateNodeHighlight() {
 let resizeObserver: ResizeObserver | null = null
 
 onMounted(async () => {
+  const startedAt = performance.now()
+  console.info('[GraphView] onMounted: initializing graph canvas...')
   await nextTick()
   await initGraph()
+  console.info(`[GraphView] onMounted: initGraph done in ${Math.round(performance.now() - startedAt)}ms`)
+
+  // 安全网：若布局/afterlayout 因任何原因（G6 布局挂起、快照迟迟未到等）未触发，
+  // 强制解除加载遮罩，避免画布被 overlay 永久阻塞导致“卡死/无法交互”。
+  // 即使主线程被 force 布局短暂占用，超时后用户也能恢复交互。
+  setTimeout(() => {
+    if (!isFirstLayoutDone.value) {
+      console.warn('[GraphView] layout did not complete within 12s; forcing overlay dismissal to restore interactivity (graph may still be settling).')
+      isFirstLayoutDone.value = true
+    }
+  }, 12000)
 
   if (containerRef.value) {
     resizeObserver = new ResizeObserver(() => {

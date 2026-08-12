@@ -14,6 +14,7 @@ import {
   filterHiddenEdges,
   traverseBFS,
   buildFullGraph,
+  snapshotToSelectorEdges,
   type GraphAccumulator,
   type VisibilityMap,
   type RawLink,
@@ -491,6 +492,55 @@ describe('graphData', () => {
       await traverseBFS('root', 0, acc, vis, 'root', null, mockGetPage, fetchNeighbors, mockGetBlock)
 
       expect(acc.nodes[0].data?.isFiltered).toBe(true)
+    })
+  })
+
+  // =====================
+  // snapshotToSelectorEdges
+  // =====================
+  describe('snapshotToSelectorEdges', () => {
+    it('maps TauriGraphEdgeRecord[] to SelectorEdge[] with correct field names', () => {
+      const records = [
+        {
+          link_id: 'link-1',
+          source_page_id: 'page-a',
+          source_page_title: 'Page A',
+          target_page_id: 'page-b',
+          target_page_title: 'Page B',
+          relationship_type: 'family',
+        },
+        {
+          link_id: 'link-2',
+          source_page_id: 'page-c',
+          source_page_title: 'Page C',
+          target_page_id: 'page-d',
+          target_page_title: 'Page D',
+          relationship_type: null,
+        },
+      ]
+      const result = snapshotToSelectorEdges(records)
+      expect(result).toEqual([
+        { id: 'link-1', sourcePageId: 'page-a', targetPageId: 'page-b', relationshipType: 'family' },
+        { id: 'link-2', sourcePageId: 'page-c', targetPageId: 'page-d', relationshipType: null },
+      ])
+    })
+
+    it('returns empty array for empty input', () => {
+      expect(snapshotToSelectorEdges([])).toEqual([])
+    })
+
+    it('preserves field order independent of title fields', () => {
+      const records = [{
+        link_id: 'l',
+        source_page_id: 's',
+        source_page_title: 'S',
+        target_page_id: 't',
+        target_page_title: 'T',
+        relationship_type: 'related',
+      }]
+      const [edge] = snapshotToSelectorEdges(records)
+      // title 字段不应泄露进 SelectorEdge
+      expect(Object.keys(edge).sort()).toEqual(['id', 'relationshipType', 'sourcePageId', 'targetPageId'])
     })
   })
 

@@ -481,8 +481,11 @@ pub struct GraphEdgeRecord {
 pub async fn build_graph_snapshot(
     db: State<'_, super::state::DatabaseConnection>,
 ) -> Result<Vec<GraphEdgeRecord>, String> {
+    eprintln!("[build_graph_snapshot] invoked");
     let adapter_arc = db.adapter_arc();
+    eprintln!("[build_graph_snapshot] waiting for adapter lock...");
     let adapter = adapter_arc.lock().await;
+    eprintln!("[build_graph_snapshot] adapter lock acquired; running query...");
     let mut stmt = adapter.conn.prepare(
         "SELECT l.id, b.page_id, p.title, l.target_page_id, p2.title, l.relationship_type
          FROM Link l
@@ -503,6 +506,7 @@ pub async fn build_graph_snapshot(
             relationship_type: row.get(5)?,
         })
     }).map_err(|e| e.to_string())?.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+    eprintln!("[build_graph_snapshot] done; {} edges", edges.len());
     Ok(edges)
 }
 
