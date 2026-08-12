@@ -93,6 +93,7 @@ function handleNavigate(pageId: string, pageTitle: string) {
 .block-task-list {
   margin-top: 16px;
   padding-top: 12px;
+  padding-bottom: 60px;
   border-top: 1px solid var(--border, #e5e7eb);
 }
 
@@ -106,6 +107,5 @@ function handleNavigate(pageId: string, pageTitle: string) {
 
 .task-list-body {
   max-height: 400px;
-  overflow-y: auto;
 }
 </style>

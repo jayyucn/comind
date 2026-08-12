@@ -100,6 +100,10 @@ export async function tauriGetAllPages(): Promise<Page[]> {
   return invoke('get_all_pages')
 }
 
+export async function tauriGetTrashPages(): Promise<Page[]> {
+  return invoke('get_trash_pages')
+}
+
 export async function tauriGetIdeasPagesByMonth(year: number, month: number): Promise<Page[]> {
   return invoke('get_ideas_pages_by_month', { year, month })
 }

@@ -78,6 +78,14 @@ mod wasm_impl {
     }
 
     #[wasm_bindgen]
+    pub fn get_trash_pages() -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            let pages = PageService::get_trash(adapter)?;
+            Ok(to_js_value(pages))
+        })
+    }
+
+    #[wasm_bindgen]
     pub fn get_ideas_pages_by_month(year: i32, month: u32) -> Result<JsValue, JsValue> {
         with_adapter(|adapter| {
             let pages = PageService::get_ideas_by_month(adapter, year, month)?;

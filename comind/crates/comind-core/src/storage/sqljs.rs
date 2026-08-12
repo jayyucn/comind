@@ -598,6 +598,11 @@ impl PageRepository for SqlJsAdapter {
         Ok(result.into_iter().map(|r| row_to_page(&r)).collect())
     }
 
+    fn get_trash(&self) -> Result<Vec<Page>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, version, deleted_at, created_at, updated_at FROM Page WHERE deleted = 1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC", &[])?;
+        Ok(result.into_iter().map(|r| row_to_page(&r)).collect())
+    }
+
     fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Page>, Box<dyn std::error::Error>> {
         if ids.is_empty() {
             return Ok(Vec::new());

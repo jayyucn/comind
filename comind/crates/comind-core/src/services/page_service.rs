@@ -28,6 +28,12 @@ impl PageService {
         repository::PageRepository::get_all(storage.pages())
     }
 
+    pub fn get_trash(
+        storage: &mut dyn StorageAdapter,
+    ) -> Result<Vec<Page>, Box<dyn Error>> {
+        repository::PageRepository::get_trash(storage.pages())
+    }
+
     pub fn get_ideas_by_month(
         storage: &mut dyn StorageAdapter,
         year: i32,

@@ -149,6 +149,7 @@ pub fn run() {
             commands::set_default_task_view,
             commands::get_page,
             commands::get_all_pages,
+            commands::get_trash_pages,
             commands::get_ideas_pages_by_month,
             commands::get_ideas_months,
             commands::ensure_today_ideas_page,

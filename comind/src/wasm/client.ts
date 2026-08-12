@@ -47,6 +47,7 @@ export interface CoreClient {
 
   getPage(pageId: string): Promise<Page>
   getAllPages(): Promise<Page[]>
+  getTrashPages(): Promise<Page[]>
   getIdeasPagesByMonth(year: number, month: number): Promise<Page[]>
   /** 获取所有有 ideas 页面的月份列表（yyyy-MM 格式，倒序） */
   getIdeasMonths(): Promise<string[]>
@@ -193,6 +194,10 @@ class TauriClient implements CoreClient {
 
   async getAllPages(): Promise<Page[]> {
     return tauri.tauriGetAllPages()
+  }
+
+  async getTrashPages(): Promise<Page[]> {
+    return tauri.tauriGetTrashPages()
   }
 
   async getIdeasPagesByMonth(year: number, month: number): Promise<Page[]> {
@@ -467,6 +472,10 @@ class WasmClientAdapter implements CoreClient {
 
   async getAllPages(): Promise<Page[]> {
     return this.wasm.get_all_pages()
+  }
+
+  async getTrashPages(): Promise<Page[]> {
+    return this.wasm.get_trash_pages()
   }
 
   async getIdeasPagesByMonth(year: number, month: number): Promise<Page[]> {

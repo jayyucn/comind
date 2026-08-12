@@ -18,6 +18,7 @@ pub trait PageRepository {
     fn get_by_id(&self, id: &str) -> Result<Page, Box<dyn Error>>;
     fn get_by_title(&self, title: &str) -> Result<Option<Page>, Box<dyn Error>>;
     fn get_all(&self) -> Result<Vec<Page>, Box<dyn Error>>;
+    fn get_trash(&self) -> Result<Vec<Page>, Box<dyn Error>>;
     /// 批量按 ID 查询 page（用于 checkAndFire 批量化）
     fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Page>, Box<dyn Error>>;
     /// 按月份查询 ideas 类型的页面（title 格式为 yyyy-MM-dd）
