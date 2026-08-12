@@ -315,11 +315,11 @@
 
   // Ref - 纯日期引用，中性灰色，无边框
   &[data-kind="ref"] {
-    color: var(--text-tertiary);
+    color: var(--color-ink-muted);
     background: transparent;
     border-bottom: 1px dashed var(--border);
-    font-size: 0.85em;
-    padding: 0 2px;
+    // font-size: 0.85em;
+    // padding: 0 2px;
   }
 
   // 逾期态（可由 JS 动态添加 .overdue 类）
