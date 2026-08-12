@@ -215,7 +215,36 @@ describe('loadPageBlocks（mock WASM）', () => {
     mockGetPageWithBlocks.mockResolvedValue(makePageWithBlocks(pageId, []))
 
     const blocks = await store.loadPageBlocks(pageId)
-    expect(blocks.value.length).toBe(0)
+    expect(blocks.value.filter(b => b.pageId === pageId).length).toBe(0)
+  })
+
+  test('loadPageBlocks 按 pageId 合并，保留其他页 blocks', async () => {
+    const store = useBlockStore()
+    store.blocks.push({
+      id: 'hist-1',
+      pageId: 'hist-page',
+      parentId: null,
+      pos: 100,
+      content: 'history',
+      format: {},
+      type: 'bullet',
+      createdAt: 0,
+      updatedAt: 0,
+    })
+
+    mockGetPageWithBlocks.mockResolvedValue(makePageWithBlocks('page-a', [
+      {
+        block: { id: 'a1', page_id: 'page-a', parent_id: null, pos: 100, content: 'A', format: '{}', type: 'bullet', created_at: 0, updated_at: 0 },
+        children: [],
+        render_segments: [],
+        properties: [],
+      },
+    ]))
+
+    await store.loadPageBlocks('page-a')
+
+    expect(store.getBlock('hist-1')).toBeDefined()
+    expect(store.getBlock('a1')).toBeDefined()
   })
 })
 
@@ -304,5 +333,34 @@ describe('loadMultiPageBlocks（S10 批量 getPagesWithBlocks 携带 renderSegme
     await store.loadMultiPageBlocks(pageIds)
     expect(store.getBlock('ok1')).toBeDefined()
     expect(store.getBlock('ok1')!.renderSegments!.length).toBeGreaterThan(0)
+  })
+
+  test('abortMultiPageLoad 丢弃进行中的 IPC 结果', async () => {
+    const store = useBlockStore()
+    let resolveIpc!: (value: unknown) => void
+    mockGetPagesWithBlocks.mockReturnValue(
+      new Promise(resolve => { resolveIpc = resolve })
+    )
+
+    const loadPromise = store.loadMultiPageBlocks(['hist-abort'])
+    expect(store.loading).toBe(true)
+
+    store.abortMultiPageLoad()
+    expect(store.loading).toBe(false)
+
+    resolveIpc([
+      makePageWithBlocks('hist-abort', [
+        {
+          block: { id: 'ab1', page_id: 'hist-abort', parent_id: null, pos: 100, content: 'aborted', format: '{}', type: 'bullet', created_at: 0, updated_at: 0 },
+          children: [],
+          render_segments: [{ type: 'text', start: 0, end: 7 }],
+          properties: [],
+        },
+      ]),
+    ])
+    await loadPromise
+
+    expect(store.getBlock('ab1')).toBeUndefined()
+    expect(store.blocks.length).toBe(0)
   })
 })

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onBeforeUnmount, onMounted, nextTick } from 'vue'
+import { computed, ref, onBeforeUnmount, onMounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import BlockList from '../BlockList.vue'
 import Backlinks from '../Backlinks.vue'
@@ -9,6 +9,7 @@ import PropertyQuickEditor from '../Block/PropertyQuickEditor.vue'
 import PropertyEditor from '../Block/PropertyEditor.vue'
 import RelationshipMenu from '../RelationshipMenu.vue'
 import { usePageStore } from '../../stores/pages'
+import { useBlockStore } from '../../stores/blocks'
 import { useEditorStore } from '../../stores/editor'
 import { useRelationshipMenu } from '../../composables/useRelationshipMenu'
 import type { Page } from '../../types/page'
@@ -19,8 +20,18 @@ const props = defineProps<{
 
 const router = useRouter()
 const pageStore = usePageStore()
+const blockStore = useBlockStore()
 const editorStore = useEditorStore()
 const relMenu = useRelationshipMenu()
+
+/** 页面 block 加载代数，快速切换路由时丢弃过期结果 */
+let pageLoadGeneration = 0
+
+async function loadBlocksForPage(pageId: string) {
+  const myGen = ++pageLoadGeneration
+  await blockStore.ensurePageBlocks(pageId)
+  if (myGen !== pageLoadGeneration) return
+}
 
 /** 解析实际的 pageId：props 可能是 UUID 或 date title（ideas-page 路由） */
 const resolvedPageId = computed(() => {
@@ -30,6 +41,10 @@ const resolvedPageId = computed(() => {
   if (byTitle) return byTitle.id
   return props.pageId
 })
+
+watch(resolvedPageId, (pageId) => {
+  if (pageId) loadBlocksForPage(pageId)
+}, { immediate: true })
 
 const currentPageTitle = computed(() => {
   const page = pageStore.getPage(resolvedPageId.value)
@@ -57,6 +72,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  pageLoadGeneration++
   editorStore.deactivateBlock()
   window.removeEventListener('navigate-to-block' as any, handleNavigateToBlockEvent)
 })

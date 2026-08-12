@@ -128,6 +128,14 @@ export const useBlockStore = defineStore('blocks', () => {
   /** 结构版本号 - 用于触发 Sortable 实例重建 */
   const structureVersion = ref(0)
 
+  /** 批量历史加载代数；abortMultiPageLoad 递增以丢弃进行中的 IPC 结果 */
+  let multiPageLoadGeneration = 0
+
+  function abortMultiPageLoad() {
+    multiPageLoadGeneration++
+    loading.value = false
+  }
+
   /** 按 pos 排序的扁平 Block 列表 */
   const sortedBlocks = computed(() => sortByPos([...blocks.value]))
 
@@ -194,12 +202,39 @@ export const useBlockStore = defineStore('blocks', () => {
   /** 加载指定 Page 的 Block 树（含 Rust 预计算的渲染段 + 属性 + children） 
    * 4.2: pw.blocks 是唯一数据源（删除 getBlocksByPage 二次 IPC）。
    * childrenMap 由 brd.children 直接构建，替代 getSortedChildren。
+   * 按 pageId 合并写入，保留其他页面的 blocks（避免切换路由时清掉历史面板缓存）。
    */
+  function replaceBlocksForPage(pageId: string, newBlocks: Block[], pageChildrenMap: Map<string, string[]>) {
+    const oldPageBlockIds = new Set(
+      blocks.value.filter(b => b.pageId === pageId).map(b => b.id)
+    )
+    blocks.value = [
+      ...blocks.value.filter(b => b.pageId !== pageId),
+      ...newBlocks,
+    ]
+    const mergedChildrenMap = new Map(childrenMap.value)
+    for (const id of oldPageBlockIds) {
+      mergedChildrenMap.delete(id)
+    }
+    for (const [key, value] of pageChildrenMap) {
+      mergedChildrenMap.set(key, value)
+    }
+    childrenMap.value = mergedChildrenMap
+  }
+
   async function loadPageBlocks(pageId: string) {
     const client = await getClient()
     let pw: import('../wasm/types').PageWithBlocks | null = null
     try {
+      const ipcT0 = import.meta.env.DEV ? performance.now() : 0
       pw = await client.getPageWithBlocks(pageId)
+      if (import.meta.env.DEV) {
+        console.debug('[ipc-timing] getPageWithBlocks', {
+          ms: +(performance.now() - ipcT0).toFixed(1),
+          pageId,
+          blockCount: pw?.blocks.length ?? 0,
+        })
+      }
     } catch {
       // Fallback: if getPageWithBlocks fails (e.g. old binary), load blocks directly
     }
@@ -214,39 +249,45 @@ export const useBlockStore = defineStore('blocks', () => {
         }
       }
     }
-    childrenMap.value = newChildrenMap
-
     if (pw) {
       // 4.2: pw.blocks is the sole data source — no extra getBlocksByPage IPC
-      blocks.value = pw.blocks.map(brd => ({
-        id: brd.block.id,
-        pageId: brd.block.page_id,
-        parentId: brd.block.parent_id,
-        pos: brd.block.pos,
-        content: brd.block.content,
-        format: JSON.parse(brd.block.format || '{}'),
-        type: brd.block.type as Block['type'],
-        renderSegments: brd.render_segments || [],
-        properties: brd.properties ?? {},
-        createdAt: brd.block.created_at,
-        updatedAt: brd.block.updated_at
-      }))
+      replaceBlocksForPage(
+        pageId,
+        pw.blocks.map(brd => ({
+          id: brd.block.id,
+          pageId: brd.block.page_id,
+          parentId: brd.block.parent_id,
+          pos: brd.block.pos,
+          content: brd.block.content,
+          format: JSON.parse(brd.block.format || '{}'),
+          type: brd.block.type as Block['type'],
+          renderSegments: brd.render_segments || [],
+          properties: brd.properties ?? {},
+          createdAt: brd.block.created_at,
+          updatedAt: brd.block.updated_at
+        })),
+        newChildrenMap
+      )
     } else {
       // Fallback path (old binary): use getBlocksByPage
       const rustBlocks = await client.getBlocksByPage(pageId)
-      blocks.value = rustBlocks.map(rustBlock => ({
-        id: rustBlock.id,
-        pageId: rustBlock.page_id,
-        parentId: rustBlock.parent_id,
-        pos: rustBlock.pos,
-        content: rustBlock.content,
-        format: JSON.parse(rustBlock.format || '{}'),
-        type: rustBlock.type as Block['type'],
-        renderSegments: undefined,
-        properties: [],
-        createdAt: rustBlock.created_at,
-        updatedAt: rustBlock.updated_at
-      }))
+      replaceBlocksForPage(
+        pageId,
+        rustBlocks.map(rustBlock => ({
+          id: rustBlock.id,
+          pageId: rustBlock.page_id,
+          parentId: rustBlock.parent_id,
+          pos: rustBlock.pos,
+          content: rustBlock.content,
+          format: JSON.parse(rustBlock.format || '{}'),
+          type: rustBlock.type as Block['type'],
+          renderSegments: undefined,
+          properties: [],
+          createdAt: rustBlock.created_at,
+          updatedAt: rustBlock.updated_at
+        })),
+        new Map()
+      )
     }
     
     return blocks
@@ -257,11 +298,16 @@ export const useBlockStore = defineStore('blocks', () => {
  * 保证页面始终可编辑。等价于 openPage 原有的「空则建 block」逻辑。
  */
   async function ensurePageBlocks(pageId: string) {
+    if (blocks.value.some(b => b.pageId === pageId)) {
+      structureVersion.value++
+      return blocks
+    }
     const pageBlocks = await loadPageBlocks(pageId)
-    if (pageBlocks.value.length === 0) {
+    if (pageBlocks.value.filter(b => b.pageId === pageId).length === 0) {
       await createBlock({ pageId, content: '', parentId: null })
     }
     structureVersion.value++
+    return blocks
   }
 
   async function restoreBlock(blockId: string) {
@@ -278,12 +324,36 @@ export const useBlockStore = defineStore('blocks', () => {
 
   /** 批量加载多个 Page 的 Block 树 */
   async function loadMultiPageBlocks(pageIds: string[]) {
+    const uncachedPageIds = pageIds.filter(
+      id => !blocks.value.some(b => b.pageId === id)
+    )
+    if (uncachedPageIds.length === 0) {
+      if (import.meta.env.DEV) {
+        console.debug('[ipc-timing] getPagesWithBlocks skipped (all cached)', {
+          pageCount: pageIds.length,
+        })
+      }
+      return
+    }
+
+    const myGeneration = multiPageLoadGeneration
     loading.value = true
     const client = await getClient()
     try {
       // B 方案：单次 IPC 获取多页（含 render_segments + properties），
       // 与今日面板 loadPageBlocks 走同一 Rust 渲染路径，历史面板样式一致。
-      const pagesWithBlocks = await client.getPagesWithBlocks(pageIds)
+      const ipcT0 = import.meta.env.DEV ? performance.now() : 0
+      const pagesWithBlocks = await client.getPagesWithBlocks(uncachedPageIds)
+      if (import.meta.env.DEV) {
+        console.debug('[ipc-timing] getPagesWithBlocks', {
+          ms: +(performance.now() - ipcT0).toFixed(1),
+          pageCount: uncachedPageIds.length,
+          requestedPages: pageIds.length,
+          returnedPages: pagesWithBlocks.length,
+          aborted: myGeneration !== multiPageLoadGeneration,
+        })
+      }
+      if (myGeneration !== multiPageLoadGeneration) return
 
       const existingIds = new Set(blocks.value.map(b => b.id))
       let added = 0
@@ -311,11 +381,14 @@ export const useBlockStore = defineStore('blocks', () => {
           }
         }
       }
+      if (myGeneration !== multiPageLoadGeneration) return
       structureVersion.value++
     } catch (error) {
       console.error('[loadMultiPageBlocks] Unexpected error:', error)
     } finally {
-      loading.value = false
+      if (myGeneration === multiPageLoadGeneration) {
+        loading.value = false
+      }
     }
   }
 
@@ -1160,6 +1233,7 @@ export const useBlockStore = defineStore('blocks', () => {
     ensurePageBlocks,
     restoreBlock,
     loadMultiPageBlocks,
+    abortMultiPageLoad,
     loadBlock,
     createBlock,
     insertBlockAtCursor,

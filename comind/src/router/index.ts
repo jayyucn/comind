@@ -6,7 +6,18 @@ const router = createRouter({
   routes,
 })
 
-router.beforeEach(async (to) => {
+router.beforeEach(async (to, from) => {
+  // 离开点滴列表去普通页面时 abort 历史批量 IPC，避免占用 Mutex
+  // ideas-list ↔ ideas-page 不 abort，让后台 IPC 完成以填充缓存
+  if (
+    from.name === 'ideas-list'
+    && to.name !== 'ideas-list'
+    && to.name !== 'ideas-page'
+  ) {
+    const { useBlockStore } = await import('../stores/blocks')
+    useBlockStore().abortMultiPageLoad()
+  }
+
   // ideas-list 和 trash 路由由组件自身 onMounted 处理页面加载
   if (to.name === 'ideas-list' || to.name === 'trash') {
     return
@@ -35,7 +46,14 @@ router.beforeEach(async (to) => {
         return { name: 'page', params: { pageId: page.id }, replace: true }
       }
 
-      await pageStore.openPage(page.id)
+      pageStore.setCurrentPage(page.id)
+      if (import.meta.env.DEV) {
+        console.debug('[nav-timing] setCurrentPage', {
+          from: String(from.name ?? from.path),
+          to: String(to.name ?? to.path),
+          pageId: page.id,
+        })
+      }
     } catch (error) {
       console.error('[beforeEach /page] Failed to load page:', error)
       return { name: 'ideas-list' }
@@ -70,7 +88,14 @@ router.beforeEach(async (to) => {
         return { name: 'page', params: { pageId: normalized } }
       }
 
-      await pageStore.openPage(page.id)
+      pageStore.setCurrentPage(page.id)
+      if (import.meta.env.DEV) {
+        console.debug('[nav-timing] setCurrentPage', {
+          from: String(from.name ?? from.path),
+          to: String(to.name ?? to.path),
+          pageId: page.id,
+        })
+      }
     } catch (error) {
       console.error('[beforeEach /ideas] Failed to load page:', error)
       return { name: 'ideas-list' }

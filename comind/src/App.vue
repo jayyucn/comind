@@ -336,7 +336,14 @@ async function handleEmbedSelect(sourceBlockId: string, sourcePageId: string) {
       <div class="page-content-wrapper">
         <div class="content-body">
           <main class="main-content" :class="{ 'is-fullwidth-content': isFullWidthPage }">
-            <RouterView />
+            <RouterView v-slot="{ Component, route }">
+              <KeepAlive include="IdeasList">
+                <component
+                  :is="Component"
+                  :key="route.name === 'ideas-list' ? 'ideas-list' : route.fullPath"
+                />
+              </KeepAlive>
+            </RouterView>
           </main>
         </div>
 

@@ -314,6 +314,17 @@ describe('usePageStore', () => {
     })
   })
 
+  describe('setCurrentPage', () => {
+    test('仅设置 currentPageId', async () => {
+      const store = usePageStore()
+      const page = await store.createPage('Test')
+
+      store.setCurrentPage(page.id)
+
+      expect(store.currentPageId).toBe(page.id)
+    })
+  })
+
   describe('loadTrashPages', () => {
     test('加载回收站页面', async () => {
       const store = usePageStore()

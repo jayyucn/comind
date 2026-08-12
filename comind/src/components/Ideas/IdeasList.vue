@@ -9,6 +9,8 @@ import PropertyEditor from '../Block/PropertyEditor.vue'
 import type { Page } from '../../types/page'
 import { useBlockStore } from '@/stores/blocks'
 
+defineOptions({ name: 'IdeasList' })
+
 const pageStore = usePageStore()
 
 const todayPage = ref<Page | null>(null)

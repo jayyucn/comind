@@ -134,8 +134,12 @@ export const usePageStore = defineStore('pages', () => {
     return page
   }
 
-  async function openPage(pageId: string) {
+  function setCurrentPage(pageId: string) {
     currentPageId.value = pageId
+  }
+
+  async function openPage(pageId: string) {
+    setCurrentPage(pageId)
     const blockStore = useBlockStore()
     await blockStore.ensurePageBlocks(pageId)
   }
@@ -331,5 +335,5 @@ export const usePageStore = defineStore('pages', () => {
     }
   }
 
-  return { pages, currentPageId, loading, trashPages, loadAllPages, getIdeasPagesByMonth, getIdeasMonths, ensureTodayIdeasPage, openPage, createPage, getPage, getPageByTitle, getOrCreatePageByTitle, renamePage, mergePage, deletePage, loadTrashPages, softDeletePage, restorePage, permanentDeletePage, onRemovePageFromHistory }
+  return { pages, currentPageId, loading, trashPages, loadAllPages, getIdeasPagesByMonth, getIdeasMonths, ensureTodayIdeasPage, setCurrentPage, openPage, createPage, getPage, getPageByTitle, getOrCreatePageByTitle, renamePage, mergePage, deletePage, loadTrashPages, softDeletePage, restorePage, permanentDeletePage, onRemovePageFromHistory }
 })

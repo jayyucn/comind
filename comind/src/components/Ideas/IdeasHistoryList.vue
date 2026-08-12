@@ -1,11 +1,17 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, onDeactivated, onActivated, nextTick } from 'vue'
 import { format } from 'date-fns'
 import { usePageStore } from '../../stores/pages'
 import { useBlockStore } from '../../stores/blocks'
 import type { Page } from '../../types/page'
 import IdeasHistoryItem from './IdeasHistoryItem.vue'
 import MonthPicker from '../MonthPicker.vue'
+
+/** 跨 remount 保留：避免 ideas-list ↔ ideas-page 来回切换重复批量 IPC */
+const loadedMonthsGlobal = new Set<string>()
+const monthPagesCacheGlobal = new Map<string, Page[]>()
+/** 同月并发/重入 loadMonthData 去重，避免 remount 叠加多次批量 IPC */
+const inflightMonthLoads = new Map<string, Promise<void>>()
 
 const pageStore = usePageStore()
 const blockStore = useBlockStore()
@@ -26,13 +32,15 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 
 // 已加载过的月份缓存（页面元数据 + blocks 都已加载）
-const loadedMonths = new Set<string>()
+const loadedMonths = loadedMonthsGlobal
 
 // 已加载月份的页面数据缓存
-const monthPagesCache = new Map<string, Page[]>()
+const monthPagesCache = monthPagesCacheGlobal
 
 // 竞态保护：generation counter
 let requestId = 0
+let idleLoadHandle: ReturnType<typeof requestIdleCallback> | null = null
+let idleLoadTimeout: ReturnType<typeof setTimeout> | null = null
 
 // ===== 数据加载 =====
 
@@ -41,25 +49,100 @@ function parseMonth(monthKey: string): [number, number] {
   return [year, mon]
 }
 
-async function loadMonthData(month: string) {
+function cancelDeferredLoad() {
+  if (idleLoadHandle !== null) {
+    cancelIdleCallback(idleLoadHandle)
+    idleLoadHandle = null
+  }
+  if (idleLoadTimeout !== null) {
+    clearTimeout(idleLoadTimeout)
+    idleLoadTimeout = null
+  }
+}
+
+function scheduleLoadMonthData(month: string) {
+  cancelDeferredLoad()
+  const run = () => {
+    idleLoadHandle = null
+    idleLoadTimeout = null
+    loadMonthData(month)
+  }
+  if (typeof requestIdleCallback !== 'undefined') {
+    idleLoadHandle = requestIdleCallback(run, { timeout: 1500 })
+  } else {
+    idleLoadTimeout = setTimeout(run, 50)
+  }
+}
+
+function historyPageIdsFrom(pages: Page[]): string[] {
+  return pages.filter(p => p.title !== todayKey).map(p => p.id)
+}
+
+function isMonthReady(month: string): boolean {
+  if (!loadedMonths.has(month)) return false
+  const pages = monthPagesCache.get(month) ?? []
+  const ids = historyPageIdsFrom(pages)
+  return ids.length === 0 || ids.every(id => blockStore.getBlocksByPage(id).length > 0)
+}
+
+function applyMonthUi(month: string) {
+  if (isMonthReady(month)) {
+    currentPages.value = monthPagesCache.get(month) ?? []
+    loading.value = false
+    error.value = null
+  }
+}
+
+async function loadMonthDataImpl(month: string) {
   const myId = ++requestId
   loading.value = true
   error.value = null
+  const loadT0 = import.meta.env.DEV ? performance.now() : 0
 
   try {
     const [year, mon] = parseMonth(month)
+    let metaT0 = 0
+    if (import.meta.env.DEV) metaT0 = performance.now()
     const pages = await pageStore.getIdeasPagesByMonth(year, mon)
+    if (import.meta.env.DEV) {
+      console.debug('[ipc-timing] getIdeasPagesByMonth', {
+        ms: +(performance.now() - metaT0).toFixed(1),
+        month,
+        pageCount: pages.length,
+      })
+    }
 
     // 竞态检查：被后续请求取代则丢弃
     if (myId !== requestId) return
 
     const pageIds = pages.map(p => p.id)
-    if (pageIds.length > 0) {
-      await blockStore.loadMultiPageBlocks(pageIds)
+    const uncachedPageIds = pageIds.filter(
+      id => !blockStore.getBlocksByPage(id).length
+    )
+    if (uncachedPageIds.length > 0) {
+      await blockStore.loadMultiPageBlocks(uncachedPageIds)
+    } else if (import.meta.env.DEV) {
+      console.debug('[ipc-timing] loadMonthData blocks already cached', { month, pageCount: pageIds.length })
+    }
+    if (import.meta.env.DEV) {
+      console.debug('[ipc-timing] loadMonthData total', {
+        ms: +(performance.now() - loadT0).toFixed(1),
+        month,
+        pageCount: pageIds.length,
+      })
     }
 
     // 再次检查竞态
     if (myId !== requestId) return
+
+    const historyIds = historyPageIdsFrom(pages)
+    if (historyIds.some(id => blockStore.getBlocksByPage(id).length === 0)) {
+      // abort 或 IPC 失败：不标记 loadedMonths，避免下次误判为已缓存
+      const filtered = pages.filter(p => p.title !== todayKey)
+      currentPages.value = filtered.sort((a, b) => b.title.localeCompare(a.title))
+      loading.value = false
+      return
+    }
 
     // 排除今日页面（今日由左侧面板负责），保留当月其他日期
     const filtered = pages.filter(p => p.title !== todayKey)
@@ -76,16 +159,32 @@ async function loadMonthData(month: string) {
   }
 }
 
-function handleMonthChange(month: string) {
-  // 缓存命中：直接使用缓存数据
-  if (loadedMonths.has(month)) {
-    currentPages.value = monthPagesCache.get(month) ?? []
-    loading.value = false
-    error.value = null
+async function loadMonthData(month: string) {
+  if (isMonthReady(month)) {
+    applyMonthUi(month)
     return
   }
-  // 未命中：加载数据
-  loadMonthData(month)
+  const inflight = inflightMonthLoads.get(month)
+  if (inflight) {
+    await inflight
+    applyMonthUi(month)
+    return
+  }
+  const task = loadMonthDataImpl(month)
+  inflightMonthLoads.set(month, task)
+  try {
+    await task
+  } finally {
+    inflightMonthLoads.delete(month)
+  }
+}
+
+function handleMonthChange(month: string) {
+  if (isMonthReady(month)) {
+    applyMonthUi(month)
+    return
+  }
+  scheduleLoadMonthData(month)
 }
 
 function retry() {
@@ -97,22 +196,49 @@ function retry() {
 // 标记 onMounted 首次加载完成，避免 watch 重复触发
 let initialized = false
 
+onBeforeUnmount(() => {
+  cancelDeferredLoad()
+  blockStore.abortMultiPageLoad()
+})
+
+onDeactivated(() => {
+  // 仅取消尚未开始的 idle 加载；进行中的 IPC 让它跑完以写入 blocks 缓存
+  cancelDeferredLoad()
+})
+
+onActivated(async () => {
+  if (!initialized) return
+  if (isMonthReady(selectedMonth.value)) {
+    applyMonthUi(selectedMonth.value)
+    return
+  }
+  const inflight = inflightMonthLoads.get(selectedMonth.value)
+  if (inflight) {
+    loading.value = true
+    await inflight
+    applyMonthUi(selectedMonth.value)
+    if (isMonthReady(selectedMonth.value)) return
+  }
+  scheduleLoadMonthData(selectedMonth.value)
+})
+
 onMounted(async () => {
   try {
     const months = await pageStore.getIdeasMonths()
     monthsWithData.value = months
 
     if (months.length === 0) {
-      // 没有历史数据，显示空状态
       loading.value = false
       initialized = true
       return
     }
 
-    // 选中最近的月份（列表已是倒序，第一项是最近的）
-    // 直接加载数据，不触发 watch
     selectedMonth.value = months[0]
-    await loadMonthData(selectedMonth.value)
+    if (isMonthReady(selectedMonth.value)) {
+      applyMonthUi(selectedMonth.value)
+    } else {
+      scheduleLoadMonthData(selectedMonth.value)
+    }
     initialized = true
   } catch (e) {
     console.error('[IdeasHistoryList] getIdeasMonths failed:', e)
