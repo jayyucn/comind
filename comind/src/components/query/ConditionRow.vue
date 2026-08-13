@@ -108,10 +108,10 @@ function onOpChange(e: Event) {
 
 .qb-select {
   padding: 4px 8px;
-  border: 1px solid var(--border-color, var(--app-split, #ddd));
+  border: 1px solid var(--border);
   border-radius: 4px;
-  background: var(--bg-primary, #fff);
-  color: var(--text-primary, #111);
+  background: var(--bg-base);
+  color: var(--text-primary);
   font-size: var(--text-sm, 13px);
   outline: none;
 

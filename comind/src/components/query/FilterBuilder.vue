@@ -114,6 +114,8 @@ watch(
   flex-direction: column;
   gap: 14px;
   width: 100%;
+  // 让原生 select/date 控件跟随主题渲染（浏览器原生弹层在暗色下也变暗）
+  color-scheme: light dark;
 }
 
 .qb-section {
@@ -143,10 +145,10 @@ watch(
 
 .qb-select {
   padding: 4px 8px;
-  border: 1px solid var(--border-color, var(--app-split, #ddd));
+  border: 1px solid var(--border);
   border-radius: 4px;
-  background: var(--bg-primary, #fff);
-  color: var(--text-primary, #111);
+  background: var(--bg-base);
+  color: var(--text-primary);
   font-size: var(--text-sm, 13px);
   outline: none;
 

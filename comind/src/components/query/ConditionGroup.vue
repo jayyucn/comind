@@ -133,14 +133,14 @@ function setCombinator(c: 'and' | 'or') {
 
 <style lang="scss" scoped>
 .qb-group {
-  border: 1px solid var(--border-color, var(--app-split, #ddd));
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 8px;
-  background: var(--bg-secondary, rgba(0, 0, 0, 0.02));
+  background: var(--bg-base2);
 }
 
 .qb-group-nested {
-  background: var(--bg-tertiary, rgba(0, 0, 0, 0.04));
+  background: var(--bg-hover);
 }
 
 .qb-group-header {
@@ -152,7 +152,7 @@ function setCombinator(c: 'and' | 'or') {
 
 .qb-combinator {
   display: inline-flex;
-  border: 1px solid var(--border-color, var(--app-split, #ddd));
+  border: 1px solid var(--border);
   border-radius: 4px;
   overflow: hidden;
 
