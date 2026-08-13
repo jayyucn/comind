@@ -28,6 +28,7 @@ import { isTauriEnvironment, tauriMinimizeWindow, tauriToggleMaximizeWindow, tau
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { isAndroidPlatformSync } from './wasm/tauri-client'
 import router from './router'
+import { prefetchGraphSnapshot } from './components/GraphView/graphSnapshotCache'
 
 registerPanel({
   id: 'block-version',
@@ -158,6 +159,9 @@ async function updateMaximizedState() {
 }
 
 onMounted(async () => {
+  // 预取图谱全量边快照（进程级缓存），使导航到 /graph 时画布即时填充，
+  // 避免「导航时才发 IPC」撞上并发 G6 渲染占用的主线程、导致数据晚 ~1~2.8s 才出现。
+  prefetchGraphSnapshot()
   await useRelationshipTypes().load()
   await pageStore.loadAllPages()
   // checkAndEnsureTodayIdeas 已由 IdeasList.vue 的 onMounted 接管

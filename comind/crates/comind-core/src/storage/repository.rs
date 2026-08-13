@@ -17,6 +17,8 @@ pub trait BlockRepository {
 pub trait PageRepository {
     fn get_by_id(&self, id: &str) -> Result<Page, Box<dyn Error>>;
     fn get_by_title(&self, title: &str) -> Result<Option<Page>, Box<dyn Error>>;
+    /// 按标题查询页面，不过滤软删除（用于 create 幂等判断，避免全局 UNIQUE(title) 约束冲突）
+    fn get_by_title_including_deleted(&self, title: &str) -> Result<Option<Page>, Box<dyn Error>>;
     fn get_all(&self) -> Result<Vec<Page>, Box<dyn Error>>;
     fn get_trash(&self) -> Result<Vec<Page>, Box<dyn Error>>;
     /// 批量按 ID 查询 page（用于 checkAndFire 批量化）

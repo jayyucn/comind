@@ -1,20 +1,27 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import routes from './routes'
+import { useBlockStore } from '../stores/blocks'
+import { usePageStore } from '../stores/pages'
+import { tauriNormalizeJournalTitle, tauriIsTodayTitle } from '../wasm/tauri-client'
 
 const router = createRouter({
   history: createWebHistory(),
   routes,
 })
 
+router.afterEach(() => {})
+
 router.beforeEach(async (to, from) => {
   // 离开点滴列表去普通页面时 abort 历史批量 IPC，避免占用 Mutex
   // ideas-list ↔ ideas-page 不 abort，让后台 IPC 完成以填充缓存
+  // 注：stores 走顶部静态 import（它们已被 App.vue 静态引入、就在 bundle 里），
+  // 不做动态 import——否则刷新后立即导航时，动态 import 会被 dev server 初次
+  // 喂模块的 backlog 排队，实测在守卫里干等 ~2.8s 拖慢整个导航。
   if (
     from.name === 'ideas-list'
     && to.name !== 'ideas-list'
     && to.name !== 'ideas-page'
   ) {
-    const { useBlockStore } = await import('../stores/blocks')
     useBlockStore().abortMultiPageLoad()
   }
 
@@ -23,12 +30,15 @@ router.beforeEach(async (to, from) => {
     return
   }
 
-  const { usePageStore } = await import('../stores/pages')
   const pageStore = usePageStore()
 
   if (to.name === 'page') {
     try {
       const rawParam = to.params.pageId as string
+
+      // 刷新时内存缓存可能尚未加载，先确保已加载，避免 getPage/getPageByTitle
+      // 双 miss 而误建垃圾 Page（与 Rust 端 create 幂等互为兜底）
+      await pageStore.ensurePagesLoaded()
 
       let page = pageStore.getPage(rawParam) ?? pageStore.getPageByTitle(rawParam)
 
@@ -47,13 +57,6 @@ router.beforeEach(async (to, from) => {
       }
 
       pageStore.setCurrentPage(page.id)
-      if (import.meta.env.DEV) {
-        console.debug('[nav-timing] setCurrentPage', {
-          from: String(from.name ?? from.path),
-          to: String(to.name ?? to.path),
-          pageId: page.id,
-        })
-      }
     } catch (error) {
       console.error('[beforeEach /page] Failed to load page:', error)
       return { name: 'ideas-list' }
@@ -62,8 +65,7 @@ router.beforeEach(async (to, from) => {
 
   if (to.name === 'ideas-page') {
     try {
-      const { tauriNormalizeJournalTitle, tauriIsTodayTitle } = await import('../wasm/tauri-client')
-
+      // tauri-client 走顶部静态 import（理由同上：避免守卫内动态 import 被 backlog 排队）
       const rawParam = to.params.date as string
       const normalized = await tauriNormalizeJournalTitle(rawParam)
 
@@ -89,13 +91,6 @@ router.beforeEach(async (to, from) => {
       }
 
       pageStore.setCurrentPage(page.id)
-      if (import.meta.env.DEV) {
-        console.debug('[nav-timing] setCurrentPage', {
-          from: String(from.name ?? from.path),
-          to: String(to.name ?? to.path),
-          pageId: page.id,
-        })
-      }
     } catch (error) {
       console.error('[beforeEach /ideas] Failed to load page:', error)
       return { name: 'ideas-list' }

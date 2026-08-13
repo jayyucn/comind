@@ -40,11 +40,32 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   })
 }
 
+// 让出主线程给浏览器完成首帧绘制：先渲染外壳（header + 占位 canvas），
+// 再异步初始化 G6（可能较重），避免首帧卡顿 / 白屏，加载期间页面保持可交互。
+function nextFrame(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => resolve())
+    } else {
+      setTimeout(resolve, 0)
+    }
+  })
+}
+
+// 大图阈值：全量图选中 force 且节点超过此值，初始布局改用快速布局，
+// 避免 force 模拟在数百帧里反复全量重绘、把主线程占满数秒（表现为“卡路由”）。
+const LARGE_GRAPH_NODES = 250
+// 全量图节点安全上限：极端规模下截断，防止一次性渲染/布局阻塞主线程数秒。
+// 正常笔记库远不会触发；仅作为最坏情况的兜底，避免任何规模下都“卡死”。
+const MAX_FULL_GRAPH_NODES = 3000
+
 const containerRef = ref<HTMLElement | null>(null)
 const graphRef = ref<Graph | null>(null)
 const currentLayout = ref<string>('force')
 const highlightedNodeId = ref<string | null>(null)
 const isFirstLayoutDone = ref(false)
+// 全量图因规模过大被截断时置位，用于在 header 显示提示（同时有 console.warn）
+const fullGraphTruncated = ref(false)
 
 const currentPageId = computed(() => props.pageId ?? pageStore.currentPageId)
 const maxDepth = ref(2)
@@ -63,8 +84,6 @@ watch(() => [props.hiddenNodeIds, props.dimmedNodeIds, props.hiddenEdgeIds], () 
 
 // 父级重新拉取快照后（prop 变更），重建全量图谱（避免子组件自行发起 IPC）。
 watch(() => props.graphSnapshot, () => {
-  const n = props.graphSnapshot?.edges.length ?? 0
-  console.info(`[GraphView] graphSnapshot prop changed (${n} edges) — triggering rebuild`)
   if (graphRef.value) refreshGraphData()
 })
 
@@ -94,9 +113,11 @@ async function buildGraphData() {
   const getBlock = (id: string) => blockStore.getBlock(id)
 
   if (!isPageScoped.value) {
-    const allPages = pageStore.pages.filter(p => !p.deleted)
     // 全量图谱：快照由父级（GraphPage）通过 graphSnapshot prop 传入，
     // 不再独立发起第二份 IPC（见 handoff 6.A / Pitfall #2）。
+    // 按 updatedAt 降序排列：命中安全上限截断时，优先保留最近的页面。
+    const allPages = [...pageStore.pages.filter(p => !p.deleted)]
+      .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
     const snapshot = props.graphSnapshot ?? undefined
     await buildFullGraph(allPages, acc, visibility, currentPageId.value, highlightedNodeId.value, getPage, fetchNeighbors, getBlock, snapshot)
   } else {
@@ -129,7 +150,6 @@ async function safeFitView(
 
 async function initGraph() {
   if (!containerRef.value) return
-  console.info('[GraphView] initGraph: creating G6 Graph instance...')
 
   if (graphRef.value) {
     graphRef.value.destroy()
@@ -201,7 +221,6 @@ async function initGraph() {
   graph.on('afterlayout', () => {
     if (!isFirstLayoutDone.value) {
       isFirstLayoutDone.value = true
-      console.info('[GraphView] afterlayout fired — overlay will hide, canvas interactive')
     }
   })
 
@@ -235,8 +254,6 @@ async function refreshGraphData(graph?: Graph) {
   }
 
   const gen = ++refreshGeneration
-  const startedAt = performance.now()
-  console.info('[GraphView] refreshGraphData: building graph data...')
 
   const { nodes, edges } = await buildGraphData()
 
@@ -245,19 +262,33 @@ async function refreshGraphData(graph?: Graph) {
   // generation 守卫捕获不到这种情况。G6 destroy 后 this.context = {}，
   // 再调用 setData 会抛 "Cannot read properties of undefined (reading 'setData')"。
   if (gen !== refreshGeneration) {
-    console.info('[GraphView] refreshGraphData: superseded during build (generation changed)')
     return
   }
   if (g.destroyed) return
 
-  console.info(`[GraphView] refreshGraphData: built ${nodes.length} nodes / ${edges.length} edges in ${Math.round(performance.now() - startedAt)}ms; applying to canvas...`)
-  if (nodes.length > 2000) {
-    console.warn(`[GraphView] Large graph (${nodes.length} nodes) — force layout may be slow; consider filtering or a lighter layout.`)
+  // 全量图安全上限：极端规模下截断节点（及相关边），避免一次性渲染/布局阻塞主线程数秒。
+  // 正常笔记库远不会触发；截断时按 recency 保留最近的页面（见 buildGraphData 的排序）。
+  let renderNodes = nodes
+  let renderEdges = edges
+  if (!isPageScoped.value && nodes.length > MAX_FULL_GRAPH_NODES) {
+    fullGraphTruncated.value = true
+    renderNodes = nodes.slice(0, MAX_FULL_GRAPH_NODES)
+    const keep = new Set(renderNodes.map(n => n.id))
+    renderEdges = edges.filter(e => keep.has((e as EdgeData).source as string) && keep.has((e as EdgeData).target as string))
+    console.warn(`[GraphView] Full graph truncated to ${MAX_FULL_GRAPH_NODES} of ${nodes.length} nodes to avoid a main-thread freeze on open. Use filters to narrow the view.`)
+  } else {
+    fullGraphTruncated.value = false
   }
 
-  g.setData({ nodes, edges: edges as EdgeData[] })
+  // 初始布局选择：大图（全量 + 选中 force）改用快速布局 grid，
+  // 避免 force 模拟在数百帧里反复全量重绘、把主线程占满数秒（即“卡路由”现象）。
+  // force / radial / dagre 仍可通过布局按钮按需切换；小图与页面作用域保持 force 不变。
+  const effectiveLayout = (!isPageScoped.value && currentLayout.value === 'force' && renderNodes.length > LARGE_GRAPH_NODES)
+    ? 'grid'
+    : currentLayout.value
+  g.setLayout({ type: effectiveLayout, preventOverlap: true, nodeSize: 100 })
+  g.setData({ nodes: renderNodes, edges: renderEdges as EdgeData[] })
   await g.draw()
-  console.info('[GraphView] refreshGraphData: draw done; starting layout (guarded by 15s timeout)...')
   try {
     await withTimeout(g.layout(), 15000, 'g.layout()')
   } catch (e) {
@@ -269,7 +300,6 @@ async function refreshGraphData(graph?: Graph) {
   if (g.destroyed) return
 
   await safeFitView(g, { when: 'always' }, false)
-  console.info('[GraphView] refreshGraphData: complete')
 }
 
 async function handleLayoutChange(layout: string) {
@@ -343,12 +373,16 @@ function updateNodeHighlight() {
 
 let resizeObserver: ResizeObserver | null = null
 
+let disposed = false
+onBeforeUnmount(() => { disposed = true })
+
 onMounted(async () => {
-  const startedAt = performance.now()
-  console.info('[GraphView] onMounted: initializing graph canvas...')
   await nextTick()
+  // 让浏览器先绘制外壳（header + 占位 canvas + 加载提示），再初始化 G6，
+  // 确保首次 paint 不被重量级初始化阻塞，导航到 /graph 时无白屏、立即可交互。
+  await nextFrame()
+  if (disposed) return
   await initGraph()
-  console.info(`[GraphView] onMounted: initGraph done in ${Math.round(performance.now() - startedAt)}ms`)
 
   // 安全网：若布局/afterlayout 因任何原因（G6 布局挂起、快照迟迟未到等）未触发，
   // 强制解除加载遮罩，避免画布被 overlay 永久阻塞导致“卡死/无法交互”。
@@ -384,6 +418,9 @@ onBeforeUnmount(() => {
   <div class="graph-view">
     <div class="graph-view-header">
       <h1 class="graph-view-title">图谱</h1>
+      <span v-if="fullGraphTruncated" class="graph-truncated-note" title="节点数超过安全上限，已优先显示最近的页面；可用筛选缩小范围">
+        已显示部分节点
+      </span>
       <div class="graph-view-controls">
         <div class="control-group">
           <button
@@ -419,7 +456,7 @@ onBeforeUnmount(() => {
       <div ref="containerRef" class="graph-view-canvas">
         <div v-if="!isFirstLayoutDone" class="graph-loading-overlay">
           <div class="loading-spinner"></div>
-          <span>加载中...</span>
+          <span>正在加载图谱数据…</span>
         </div>
       </div>
     </div>
@@ -456,6 +493,17 @@ onBeforeUnmount(() => {
   font-size: var(--text-2xl);
   font-weight: var(--font-semibold);
   color: var(--text-primary);
+}
+
+.graph-truncated-note {
+  margin-left: var(--space-2);
+  padding: 2px 8px;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
 }
 
 .graph-view-controls {
@@ -547,6 +595,8 @@ onBeforeUnmount(() => {
   background: var(--bg-base);
   z-index: 10;
   gap: 8px;
+  /* 纯视觉占位：不拦截任何指针事件，加载期间画布区域之外（header 控件 / 侧栏筛选）始终可交互 */
+  pointer-events: none;
 }
 
 .graph-loading-overlay .loading-spinner {

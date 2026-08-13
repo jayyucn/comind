@@ -138,6 +138,18 @@ export const usePageStore = defineStore('pages', () => {
     currentPageId.value = pageId
   }
 
+  // 保证 loadAllPages 在守卫 get-or-create 前完成一次，
+  // 避免刷新时内存缓存未加载导致 getPage/getPageByTitle 双 miss 而误建垃圾 Page。
+  let pagesReady: Promise<void> | null = null
+  function ensurePagesLoaded(): Promise<void> {
+    if (!pagesReady) {
+      pagesReady = loadAllPages().catch((err) => {
+        console.warn('[pages] ensurePagesLoaded failed:', err)
+      })
+    }
+    return pagesReady
+  }
+
   async function openPage(pageId: string) {
     setCurrentPage(pageId)
     const blockStore = useBlockStore()
@@ -337,5 +349,5 @@ export const usePageStore = defineStore('pages', () => {
     }
   }
 
-  return { pages, currentPageId, loading, trashPages, loadAllPages, getIdeasPagesByMonth, getIdeasMonths, ensureTodayIdeasPage, setCurrentPage, openPage, createPage, getPage, getPageByTitle, getOrCreatePageByTitle, renamePage, mergePage, deletePage, loadTrashPages, softDeletePage, restorePage, permanentDeletePage, onRemovePageFromHistory }
+  return { pages, currentPageId, loading, trashPages, loadAllPages, ensurePagesLoaded, getIdeasPagesByMonth, getIdeasMonths, ensureTodayIdeasPage, setCurrentPage, openPage, createPage, getPage, getPageByTitle, getOrCreatePageByTitle, renamePage, mergePage, deletePage, loadTrashPages, softDeletePage, restorePage, permanentDeletePage, onRemovePageFromHistory }
 })

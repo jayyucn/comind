@@ -4,7 +4,7 @@ use comind_core::{
         PropertyService, RelationshipTypeService, build_page_with_blocks,
         build_segments_for_block,
     },
-    storage::{StorageAdapter, TransactionalStorageAdapter},
+    storage::{SQLiteAdapter, StorageAdapter, TransactionalStorageAdapter},
     types::*,
     sync::message::SyncTable,
 };
@@ -477,15 +477,19 @@ pub struct GraphEdgeRecord {
     pub relationship_type: Option<String>,
 }
 
+/// 图谱快照：一次 SQL JOIN 返回所有页面间边关系
+/// 前端无需 N×3 次 IPC，1 次调用即可构建完整图谱。
 #[tauri::command]
 pub async fn build_graph_snapshot(
     db: State<'_, super::state::DatabaseConnection>,
 ) -> Result<Vec<GraphEdgeRecord>, String> {
-    eprintln!("[build_graph_snapshot] invoked");
-    let adapter_arc = db.adapter_arc();
-    eprintln!("[build_graph_snapshot] waiting for adapter lock...");
-    let adapter = adapter_arc.lock().await;
-    eprintln!("[build_graph_snapshot] adapter lock acquired; running query...");
+    // 用独立只读连接读取：WAL 下读不阻塞写、也不被写锁饿死。
+    // 注意：不能用 SQLiteAdapter::open —— 它会顺带跑 init_schema（CREATE TABLE IF NOT EXISTS
+    // 是 DDL，需要写锁），在 ideas 后台写入期间会与写者抢锁、触发 busy_timeout 干等。
+    // 这里用 open_readonly 只开裸连接 + 设 PRAGMA（跳过 init_schema，schema 已由主连接建好）。
+    let db_path = db.get_db_path();
+    let adapter = SQLiteAdapter::open_readonly(std::path::Path::new(&db_path))
+        .map_err(|e| format!("[build_graph_snapshot] open read conn failed: {}", e))?;
     let mut stmt = adapter.conn.prepare(
         "SELECT l.id, b.page_id, p.title, l.target_page_id, p2.title, l.relationship_type
          FROM Link l
@@ -506,7 +510,6 @@ pub async fn build_graph_snapshot(
             relationship_type: row.get(5)?,
         })
     }).map_err(|e| e.to_string())?.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
-    eprintln!("[build_graph_snapshot] done; {} edges", edges.len());
     Ok(edges)
 }
 

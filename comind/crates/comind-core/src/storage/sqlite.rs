@@ -22,7 +22,22 @@ impl SQLiteAdapter {
         
         Ok(Self { conn })
     }
-    
+
+    /// 只读连接：跳过 `init_schema`（CREATE TABLE 是 DDL，需要写锁；
+    /// 在并发写入者存在时会触发 busy_timeout 干等）。用于「读已存在表」的旁路查询，
+    /// 配合 WAL 可与写入者并发，不被写锁饿死。
+    pub fn open_readonly(path: &Path) -> Result<Self, Box<dyn Error>> {
+        let conn = Connection::open(path)?;
+
+        conn.execute_batch(
+            "PRAGMA journal_mode = WAL;
+             PRAGMA busy_timeout = 5000;
+             PRAGMA foreign_keys = ON;"
+        )?;
+
+        Ok(Self { conn })
+    }
+
     pub fn open_in_memory() -> Result<Self, Box<dyn Error>> {
         let conn = Connection::open_in_memory()?;
         
@@ -601,6 +616,37 @@ impl PageRepository for SQLiteAdapter {
         Ok(page)
     }
     
+    fn get_by_title_including_deleted(&self, title: &str) -> Result<Option<Page>, Box<dyn Error>> {
+        let sql = "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at FROM Page WHERE title = ?1";
+        let mut stmt = self.conn.prepare(sql)?;
+
+        let result = stmt.query_row(params![title], |row| {
+            Ok(Page {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                title: row.get(2)?,
+                r#type: row.get(3)?,
+                icon: row.get(4)?,
+                cover: row.get(5)?,
+                aliases: row.get(6)?,
+                file_path: row.get(7)?,
+                children_count: row.get(8)?,
+                word_count: row.get(9)?,
+                deleted: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
+                version: row.get(13)?,
+                deleted_at: row.get(14)?,
+            })
+        });
+
+        match result {
+            Ok(page) => Ok(Some(page)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(Box::new(e)),
+        }
+    }
+
     fn get_by_title(&self, title: &str) -> Result<Option<Page>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at 
@@ -2695,6 +2741,37 @@ impl<'a> PageRepository for SQLiteTransactionAdapter<'a> {
         })?;
 
         Ok(page)
+    }
+
+    fn get_by_title_including_deleted(&self, title: &str) -> Result<Option<Page>, Box<dyn Error>> {
+        let sql = "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at FROM Page WHERE title = ?1";
+        let mut stmt = self.conn.prepare(sql)?;
+
+        let result = stmt.query_row(params![title], |row| {
+            Ok(Page {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                title: row.get(2)?,
+                r#type: row.get(3)?,
+                icon: row.get(4)?,
+                cover: row.get(5)?,
+                aliases: row.get(6)?,
+                file_path: row.get(7)?,
+                children_count: row.get(8)?,
+                word_count: row.get(9)?,
+                deleted: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
+                version: row.get(13)?,
+                deleted_at: row.get(14)?,
+            })
+        });
+
+        match result {
+            Ok(page) => Ok(Some(page)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(Box::new(e)),
+        }
     }
 
     fn get_by_title(&self, title: &str) -> Result<Option<Page>, Box<dyn Error>> {
