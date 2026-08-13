@@ -5,10 +5,18 @@ import type { Property, PropertyDefinition, PropertyValue, PropertyType } from '
 import { getAllPropertyDefinitions, getPropertyDefinition } from '../types/property'
 import { useBlockStore } from './blocks'
 import { useBlockCardStore } from './blockCard'
-import { parseDateRefs, serializeDateRef } from '../utils/date-ref'
-import { calculateNextRecurrence } from '../utils/recurrence'
+import { serializeDateRef, type DateRefKind } from '../utils/date-ref'
+import type { RecurrenceRule } from '../utils/date-ref'
+// 4.2 / S6: calculateNextRecurrence migrated to Rust
+import { tauriCalculateNextRecurrence } from '../wasm/tauri-client'
 
 import type { CoreClient } from '../wasm/client'
+
+/** 把 Rust 返回的 string kind 收窄为 DateRefKind，未知值 fallback 'ref' */
+function normalizeKind(kind: string): DateRefKind {
+  if (kind === 'schedule' || kind === 'deadline' || kind === 'ref') return kind
+  return 'ref'
+}
 
 let coreClientPromise: Promise<CoreClient> | null = null
 
@@ -35,6 +43,8 @@ export const usePropertyStore = defineStore('property', () => {
   // State
   const propertiesByBlock = ref<Map<string, Property[]>>(new Map())
   const loading = ref(false)
+  // Prevent concurrent ensureTodo calls for the same block
+  const ensureTodoInFlight = new Set<string>()
 
   // Getters
   const builtInProperties = computed<PropertyDefinition[]>(() => getAllPropertyDefinitions())
@@ -162,16 +172,20 @@ export const usePropertyStore = defineStore('property', () => {
     const block = blockStore.blocks.find(b => b.id === blockId)
     if (!block || !block.content) return
     
-    const refs = parseDateRefs(block.content)
-    const refsToAdvance = refs.filter(ref => ref.recurrence && ref.recurrence !== 'none')
+    // 4.2: Use Rust DateRefService
+    const client = await getClient()
+    const dateRefs = await client.getDateRefsByBlock(blockId)
+    const refsToAdvance = dateRefs.filter(ref => ref.recurrence && ref.recurrence !== 'none')
     if (refsToAdvance.length === 0) return
     
     // 推进日期
     let newContent = block.content
     for (const ref of refsToAdvance) {
-      const nextIso = calculateNextRecurrence(ref.iso, ref.recurrence!)
-      const oldText = serializeDateRef(ref)
-      const newText = serializeDateRef({ kind: ref.kind, iso: nextIso, recurrence: ref.recurrence, leadMinutes: ref.leadMinutes })
+      const rule: RecurrenceRule = (ref.recurrence && ref.recurrence !== 'none') ? ref.recurrence! as RecurrenceRule : 'none'
+      const nextIso = await tauriCalculateNextRecurrence(ref.iso, rule)
+      const kind = normalizeKind(ref.kind)
+      const oldText = serializeDateRef({ kind, iso: ref.iso, recurrence: rule, leadMinutes: ref.lead_minutes })
+      const newText = serializeDateRef({ kind, iso: nextIso, recurrence: rule, leadMinutes: ref.lead_minutes })
       newContent = newContent.replace(oldText, newText)
     }
     
@@ -200,9 +214,15 @@ export const usePropertyStore = defineStore('property', () => {
    * 注意：不会因移除 dateRef 而清除 status（保持任务状态，见需求约束）。
    */
   async function ensureTodo(blockId: string): Promise<void> {
+    if (ensureTodoInFlight.has(blockId)) return
     const existing = getBlockProperty(blockId, 'status')
     if (existing) return
-    await setProperty(blockId, 'status', 'Todo', 'string')
+    ensureTodoInFlight.add(blockId)
+    try {
+      await setProperty(blockId, 'status', 'Todo', 'string')
+    } finally {
+      ensureTodoInFlight.delete(blockId)
+    }
   }
 
   async function deleteProperty(id: string, blockId: string): Promise<void> {

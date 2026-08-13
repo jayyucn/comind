@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use crate::{Block, Page};
+use crate::{Block, Page, Property};
 
 /// Data returned by `get_page_with_blocks` — page metadata + sorted blocks with render instructions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,6 +18,10 @@ pub struct BlockRenderData {
     /// without gaps. Use `block.content[start..end]` to extract the raw text for each segment.
     /// Empty for non-text block types (code, image, embed, query).
     pub render_segments: Vec<RenderSegment>,
+    /// Block properties (status, etc.). Resolved from Property table by Rust,
+    /// so TS doesn't need extra IPC to get properties for each block.
+    #[serde(default)]
+    pub properties: Vec<Property>,
 }
 
 /// A contiguous region of `block.content` mapped to a semantic category.

@@ -6,6 +6,75 @@ import { useBlockRelationshipCleanup } from './useBlockRelationshipCleanup'
 import { useRelationshipTypes } from './useRelationshipTypes'
 import { cleanupRelationshipTypes } from '../../tests/core-client'
 
+// 4.3: Mock tauri-client so cleanupAfterDelete works in Vitest (no Tauri runtime).
+// These lightweight re-implementations match Rust ContentParseService behaviour.
+vi.mock('../wasm/tauri-client', () => {
+  function extractLinks(content: string) {
+    const results: any[] = []
+    const covered = new Set<number>()
+    // external
+    for (const m of content.matchAll(/\[\[(https?:\/\/|ftp:\/\/|mailto:)([^\]]*)\]\]/g)) {
+      results.push({
+        target_title: (m[1] + (m[2] || '')).trim(), display_text: (m[1] + (m[2] || '')).trim(),
+        position: m.index!, is_external: true, relationship_type: null, inverse_relationship_type: null
+      })
+      if (m.index !== undefined) for (let i = m.index; i < m.index + m[0].length; i++) covered.add(i)
+    }
+    // typed
+    for (const m of content.matchAll(/\(\(([^)]+)\)\)\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g)) {
+      const target = m[2].trim()
+      if (/^https?:\/\/|ftp:\/\/|mailto:/.test(target)) continue
+      let relType: string | null = null, invType: string | null = null
+      const part = m[1].trim()
+      const bi = part.match(/^(.+)<->(.+)$/)
+      if (bi) { relType = bi[1].trim(); invType = bi[2].trim() }
+      else if (part.endsWith('!')) { relType = part.slice(0, -1).trim() }
+      else { relType = part }
+      results.push({
+        target_title: target, display_text: (m[3] || target).trim(), position: m.index!,
+        is_external: false, relationship_type: relType, inverse_relationship_type: invType
+      })
+      if (m.index !== undefined) for (let i = m.index; i < m.index + m[0].length; i++) covered.add(i)
+    }
+    // plain internal
+    for (const m of content.matchAll(/\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g)) {
+      const target = m[1].trim()
+      if (/^https?:\/\/|ftp:\/\/|mailto:/.test(target)) continue
+      if (m.index !== undefined && covered.has(m.index)) continue
+      results.push({
+        target_title: target, display_text: (m[2] || target).trim(), position: m.index!,
+        is_external: false, relationship_type: null, inverse_relationship_type: null
+      })
+    }
+    results.sort((a, b) => a.position - b.position)
+    return results
+  }
+  function applyRel(content: string, targetTitle: string, newType: string | null) {
+    const esc = targetTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    let r = content.replace(
+      new RegExp(`\\(\\(([^)]+)\\)\\)\\[\\[(${esc})(?:\\|[^\\]]+?)?\\]\\]`, 'g'),
+      (_, __, title) => newType === null ? `[[${title}]]` : `((${newType}))[[${title}]]`
+    )
+    if (newType !== null) {
+      r = r.replace(
+        new RegExp(`(?<!\\(\\([^)]+\\)\\))\\[\\[(${esc})(?:\\|[^\\]]+?)?\\]\\]`, 'g'),
+        (_, title) => `((${newType}))[[${title}]]`
+      )
+    }
+    return r
+  }
+  return {
+    tauriExtractLinksFromContent: (c: string) => Promise.resolve(extractLinks(c)),
+    tauriApplyRelationshipTypeToBlockContent: (c: string, t: string, r: string | null) => Promise.resolve(applyRel(c, t, r)),
+    tauriGetDateRefsByPage: () => Promise.resolve([]),
+    tauriGetDateRefsByBlock: () => Promise.resolve([]),
+    tauriGetPageWithBlocks: () => Promise.resolve({ page: null, blocks: [] }),
+    tauriCheckHasTypedLinkToTarget: () => Promise.resolve({ has_typed_link: false }),
+    tauriGetBacklinks: () => Promise.resolve([]),
+    tauriGetOutlinks: () => Promise.resolve([]),
+  }
+})
+
 vi.mock('../storage/indexedDB', () => ({
   storage: {
     saveBlock: vi.fn(),

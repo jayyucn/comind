@@ -28,6 +28,12 @@ impl PageService {
         repository::PageRepository::get_all(storage.pages())
     }
 
+    pub fn get_trash(
+        storage: &mut dyn StorageAdapter,
+    ) -> Result<Vec<Page>, Box<dyn Error>> {
+        repository::PageRepository::get_trash(storage.pages())
+    }
+
     pub fn get_ideas_by_month(
         storage: &mut dyn StorageAdapter,
         year: i32,
@@ -95,8 +101,18 @@ impl PageService {
         aliases: Option<&str>,
         file_path: Option<&str>,
     ) -> Result<Page, Box<dyn Error>> {
-        if Self::exists_by_title(storage, title)? {
-            return Err(format!("Page with title '{}' already exists", title).into());
+        // 幂等：标题若已存在（含软删除页），复用 / 复活，避免触发全局 UNIQUE(title) 约束
+        if let Some(existing) =
+            repository::PageRepository::get_by_title_including_deleted(storage.pages(), title)?
+        {
+            if existing.deleted == 1 {
+                let mut reactivated = existing.clone();
+                reactivated.deleted = 0;
+                reactivated.deleted_at = None;
+                reactivated.updated_at = chrono::Utc::now().timestamp_millis();
+                return repository::PageRepository::update(storage.pages(), &reactivated);
+            }
+            return Ok(existing);
         }
 
         let now = chrono::Utc::now().timestamp_millis();

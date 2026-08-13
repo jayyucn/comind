@@ -2,8 +2,9 @@ use comind_core::{
     services::{
         BlockService, BlockVersionService, DateRefService, FilterService, LinkService, PageService,
         PropertyService, RelationshipTypeService, build_page_with_blocks,
+        build_segments_for_block,
     },
-    storage::{StorageAdapter, TransactionalStorageAdapter},
+    storage::{SQLiteAdapter, StorageAdapter, TransactionalStorageAdapter},
     types::*,
     sync::message::SyncTable,
 };
@@ -187,6 +188,13 @@ pub async fn get_all_pages(
 }
 
 #[tauri::command]
+pub async fn get_trash_pages(
+    db: State<'_, super::state::DatabaseConnection>,
+) -> Result<Vec<Page>, String> {
+    execute_with_adapter(db, |storage| PageService::get_trash(storage)).await
+}
+
+#[tauri::command]
 pub async fn get_ideas_pages_by_month(
     db: State<'_, super::state::DatabaseConnection>,
     year: i32,
@@ -319,6 +327,26 @@ pub async fn get_date_refs_by_block(
     }).await
 }
 
+/// 批量获取整页所有 block 的 dateRef。一次 IPC 代替 N×get_date_refs_by_block。
+/// 返回 `Vec<(block_id, Vec<DateRef>)>`，TS 直接消费。
+#[tauri::command]
+pub async fn get_date_refs_by_page(
+    db: State<'_, super::state::DatabaseConnection>,
+    page_id: String,
+) -> Result<Vec<(String, Vec<DateRef>)>, String> {
+    execute_with_adapter(db, |storage| {
+        let blocks = BlockService::get_by_page_id(storage, &page_id)?;
+        let mut result = Vec::new();
+        for b in blocks {
+            let refs = DateRefService::get_by_block(storage, &b.id)?;
+            if !refs.is_empty() {
+                result.push((b.id, refs));
+            }
+        }
+        Ok(result)
+    }).await
+}
+
 #[tauri::command]
 pub async fn query_due_non_recurring_date_refs(
     db: State<'_, super::state::DatabaseConnection>,
@@ -353,7 +381,7 @@ pub async fn query_incomplete_tasks(
         }
         // 2. 批量获取 blocks
         let blocks = comind_core::storage::repository::BlockRepository::get_by_ids(storage.blocks(), &block_ids)?;
-        // 3. 对每个 block 查 page，过滤 type=ideas
+        // 3. 对每个 block 查 page + dateRefs，过滤 type=ideas
         let mut tasks: Vec<IncompleteTask> = Vec::new();
         for block in blocks {
             let page = match PageService::get_by_id(storage, &block.page_id) {
@@ -363,6 +391,8 @@ pub async fn query_incomplete_tasks(
             if page.r#type != "ideas" {
                 continue;
             }
+            // Pre-join date_refs so TS doesn't need parseDateRefs or extra IPC per task
+            let date_refs = DateRefService::get_by_block(storage, &block.id).unwrap_or_default();
             tasks.push(IncompleteTask {
                 id: block.id,
                 page_id: block.page_id,
@@ -377,6 +407,7 @@ pub async fn query_incomplete_tasks(
                 deleted_at: block.deleted_at,
                 page_title: page.title,
                 page_type: page.r#type,
+                date_refs,
             });
         }
         Ok(tasks)
@@ -446,12 +477,19 @@ pub struct GraphEdgeRecord {
     pub relationship_type: Option<String>,
 }
 
+/// 图谱快照：一次 SQL JOIN 返回所有页面间边关系
+/// 前端无需 N×3 次 IPC，1 次调用即可构建完整图谱。
 #[tauri::command]
 pub async fn build_graph_snapshot(
     db: State<'_, super::state::DatabaseConnection>,
 ) -> Result<Vec<GraphEdgeRecord>, String> {
-    let adapter_arc = db.adapter_arc();
-    let adapter = adapter_arc.lock().await;
+    // 用独立只读连接读取：WAL 下读不阻塞写、也不被写锁饿死。
+    // 注意：不能用 SQLiteAdapter::open —— 它会顺带跑 init_schema（CREATE TABLE IF NOT EXISTS
+    // 是 DDL，需要写锁），在 ideas 后台写入期间会与写者抢锁、触发 busy_timeout 干等。
+    // 这里用 open_readonly 只开裸连接 + 设 PRAGMA（跳过 init_schema，schema 已由主连接建好）。
+    let db_path = db.get_db_path();
+    let adapter = SQLiteAdapter::open_readonly(std::path::Path::new(&db_path))
+        .map_err(|e| format!("[build_graph_snapshot] open read conn failed: {}", e))?;
     let mut stmt = adapter.conn.prepare(
         "SELECT l.id, b.page_id, p.title, l.target_page_id, p2.title, l.relationship_type
          FROM Link l
@@ -547,13 +585,20 @@ pub async fn save_block_tree(
             let snapshot = BlockVersionService::build_snapshot(storage, &saved_block.id)
                 .unwrap_or_default();
 
+            // Build render segments during save so TS can restore link/dateRef
+            // rendering after edit→render transition without waiting for loadPageBlocks.
+            // Links + dateRefs were just synced by BlockService::update/create.
+            let render_segments =
+                build_segments_for_block(storage, &saved_block).unwrap_or_default();
+
             results.push(BlockSaveResult {
                 block: saved_block,
                 snapshot,
+                render_segments,
             });
         }
 
-        // Collect link & property changes for sync notification (S3)
+        // Collect link, property & notification changes for sync notification (S3/S8)
         for res in &results {
             let links = LinkService::get_by_source_block_id(storage, &res.block.id).unwrap_or_default();
             sync_changes
@@ -565,6 +610,11 @@ pub async fn save_block_tree(
                 .entry(SyncTable::Property)
                 .or_insert_with(Vec::new)
                 .extend(props.iter().map(|p| p.id.clone()));
+            let notifs = storage.notifications().get_by_block_id(&res.block.id).unwrap_or_default();
+            sync_changes
+                .entry(SyncTable::Notification)
+                .or_insert_with(Vec::new)
+                .extend(notifs.iter().map(|n| n.id.clone()));
         }
 
         for page_id in page_ids {
@@ -791,16 +841,9 @@ pub async fn set_property(
     let block_id_clone = block_id.to_string();
     
     let result = execute_with_adapter(db, |storage| {
-        let existing = PropertyService::get_by_block_id_and_key(storage, block_id, key)?;
-        let result = match existing {
-            Some(mut prop) => {
-                prop.value = value.to_string();
-                prop.r#type = type_.to_string();
-                prop.updated_at = chrono::Utc::now().timestamp_millis();
-                storage.properties().update(&prop)
-            }
-            None => PropertyService::create(storage, block_id, key, value, type_, 0, 0, 1),
-        };
+        // Use upsert to eliminate read-then-write race condition
+        // (two concurrent setProperty calls both seeing existing=None → double INSERT → UNIQUE constraint failure)
+        let result = PropertyService::upsert(storage, block_id, key, value, type_, 0, 0, 1);
 
         if let Ok(block) = storage.blocks().get_by_id(block_id) {
             let _ = PageService::update(
@@ -972,6 +1015,8 @@ pub async fn execute_batch(
                     sync_changes.entry(SyncTable::Link).or_insert_with(Vec::new).extend(links.iter().map(|l| l.id.clone()));
                     let props = PropertyService::get_by_block_id(storage, &result.id).unwrap_or_default();
                     sync_changes.entry(SyncTable::Property).or_insert_with(Vec::new).extend(props.iter().map(|p| p.id.clone()));
+                    let notifs = storage.notifications().get_by_block_id(&result.id).unwrap_or_default();
+                    sync_changes.entry(SyncTable::Notification).or_insert_with(Vec::new).extend(notifs.iter().map(|n| n.id.clone()));
                     serde_json::to_value(result)?
                 }
                 ("block", "update") => {
@@ -992,6 +1037,8 @@ pub async fn execute_batch(
                     sync_changes.entry(SyncTable::Link).or_insert_with(Vec::new).extend(links.iter().map(|l| l.id.clone()));
                     let props = PropertyService::get_by_block_id(storage, &result.id).unwrap_or_default();
                     sync_changes.entry(SyncTable::Property).or_insert_with(Vec::new).extend(props.iter().map(|p| p.id.clone()));
+                    let notifs = storage.notifications().get_by_block_id(&result.id).unwrap_or_default();
+                    sync_changes.entry(SyncTable::Notification).or_insert_with(Vec::new).extend(notifs.iter().map(|n| n.id.clone()));
                     serde_json::to_value(result)?
                 }
                 ("block", "delete") => {
@@ -1004,11 +1051,13 @@ pub async fn execute_batch(
                     if let Ok(block) = storage.blocks().get_by_id(&id) {
                         page_ids.insert(block.page_id);
                     }
-                    // Collect cascade-deleted link/property IDs before BlockService::delete
+                    // Collect cascade-deleted link/property/notification IDs before BlockService::delete
                     let links = storage.links().get_by_source_block_id(&id).unwrap_or_default();
                     sync_changes.entry(SyncTable::Link).or_insert_with(Vec::new).extend(links.iter().map(|l| l.id.clone()));
                     let props = storage.properties().get_by_block_id(&id).unwrap_or_default();
                     sync_changes.entry(SyncTable::Property).or_insert_with(Vec::new).extend(props.iter().map(|p| p.id.clone()));
+                    let notifs = storage.notifications().get_by_block_id(&id).unwrap_or_default();
+                    sync_changes.entry(SyncTable::Notification).or_insert_with(Vec::new).extend(notifs.iter().map(|n| n.id.clone()));
                     // S8: BlockService::delete handles dateRef cleanup + notification hard-delete + link/property cleanup
                     BlockService::delete(storage, &id)?;
                     serde_json::to_value("OK")?
@@ -1016,13 +1065,33 @@ pub async fn execute_batch(
                 ("page", "create") => {
                     let page: Page = serde_json::from_value(params)?;
                     sync_changes.entry(SyncTable::Page).or_insert_with(Vec::new).push(page.id.clone());
-                    let result = storage.pages().create(&page)?;
+                    let result = PageService::create(
+                        storage,
+                        page.block_id.as_deref().unwrap_or(""),
+                        &page.title,
+                        Some(&page.r#type),
+                        page.icon.as_deref(),
+                        page.cover.as_deref(),
+                        Some(&page.aliases),
+                        page.file_path.as_deref(),
+                    )?;
                     serde_json::to_value(result)?
                 }
                 ("page", "update") => {
                     let page: Page = serde_json::from_value(params)?;
                     sync_changes.entry(SyncTable::Page).or_insert_with(Vec::new).push(page.id.clone());
-                    let result = storage.pages().update(&page)?;
+                    let result = PageService::update(
+                        storage,
+                        &page.id,
+                        Some(&page.title),
+                        Some(&page.r#type),
+                        page.icon.as_deref(),
+                        page.cover.as_deref(),
+                        Some(&page.aliases),
+                        page.file_path.as_deref(),
+                        Some(page.children_count),
+                        Some(page.word_count),
+                    )?;
                     serde_json::to_value(result)?
                 }
                 ("page", "delete") => {
@@ -1032,13 +1101,19 @@ pub async fn execute_batch(
                         .unwrap_or_default()
                         .to_string();
                     sync_changes.entry(SyncTable::Page).or_insert_with(Vec::new).push(id.clone());
-                    storage.pages().delete(&id)?;
+                    PageService::delete(storage, &id)?;
                     serde_json::to_value("OK")?
                 }
                 ("link", "create") => {
                     let link: Link = serde_json::from_value(params)?;
                     sync_changes.entry(SyncTable::Link).or_insert_with(Vec::new).push(link.id.clone());
-                    let result = storage.links().create(&link)?;
+                    let result = LinkService::create(
+                        storage,
+                        &link.source_block_id,
+                        &link.target_page_id,
+                        &link.display_text,
+                        link.relationship_type.as_deref(),
+                    )?;
                     serde_json::to_value(result)?
                 }
                 ("link", "delete") => {
@@ -1048,7 +1123,7 @@ pub async fn execute_batch(
                         .unwrap_or_default()
                         .to_string();
                     sync_changes.entry(SyncTable::Link).or_insert_with(Vec::new).push(id.clone());
-                    storage.links().delete(&id)?;
+                    LinkService::delete(storage, &id)?;
                     serde_json::to_value("OK")?
                 }
                 ("link", "sync_by_block") => {
@@ -1717,6 +1792,16 @@ pub async fn sync_payload_for_block(
     }).await
 }
 
+/// S3: Extract all links from block content (typed, plain, external).
+/// Returns `Vec<LinkDraft>` with position, target_title, relationship_type, etc.
+/// Pure computation — no DB access needed.
+#[tauri::command]
+pub async fn extract_links_from_content(
+    content: String,
+) -> Result<Vec<comind_core::services::content_parse_service::LinkDraft>, String> {
+    Ok(comind_core::services::content_parse_service::extract_links_from_content(&content))
+}
+
 /// S3: Apply (or remove) a relationship type to all links pointing at `target_title`
 /// inside the given block's content. Returns the new content string.
 /// This is a pure content transform — the caller is responsible for saving.
@@ -1745,6 +1830,47 @@ pub async fn check_has_typed_link_to_target(
         !l.is_external && l.target_title == target_title && l.relationship_type.is_some()
     });
     Ok(serde_json::json!({"has_typed_link": has}))
+}
+
+// ── S6: date-parser / recurrence / journal-detect (pure computation) ──
+
+/// S6: Parse date input string → YYYY-MM-DD or null.
+/// Supports: today/tomorrow/yesterday/+Nd/-Nd, MM-DD, YYYY-MM-DD, Chinese weekdays.
+#[tauri::command]
+pub async fn parse_date_input(input: String) -> Result<Option<String>, String> {
+    Ok(comind_core::utils::date_parser::parse_date_input(&input))
+}
+
+/// S6: Parse date+time input → { date, time? }.
+/// Supports Chinese time: 下午2点 / 早上9点半 etc.
+#[tauri::command]
+pub async fn parse_date_time_input(input: String) -> Result<Option<comind_core::utils::date_parser::DateTimeResult>, String> {
+    Ok(comind_core::utils::date_parser::parse_date_time_input(&input))
+}
+
+/// S6: Calculate next recurrence ISO from an ISO string + recurrence rule.
+#[tauri::command]
+pub async fn calculate_next_recurrence(iso: String, rule: String) -> Result<String, String> {
+    Ok(comind_core::utils::recurrence::calculate_next_recurrence(&iso, &rule))
+}
+
+/// S6: Check if a page title matches a journal date format.
+#[tauri::command]
+pub async fn is_journal_title(title: String) -> Result<bool, String> {
+    Ok(comind_core::utils::journal_detect::is_journal_title(&title))
+}
+
+/// S6: Normalize journal title to canonical YYYY-MM-DD form.
+/// Returns null if not a recognized journal date.
+#[tauri::command]
+pub async fn normalize_journal_title(title: String) -> Result<Option<String>, String> {
+    Ok(comind_core::utils::journal_detect::normalize_journal_title(&title))
+}
+
+/// S6: Check if a normalized title is today.
+#[tauri::command]
+pub async fn is_today_title(normalized_title: String) -> Result<bool, String> {
+    Ok(comind_core::utils::journal_detect::is_today_title(&normalized_title))
 }
 
 
@@ -1785,5 +1911,25 @@ pub async fn get_page_with_blocks(
 ) -> Result<PageWithBlocks, String> {
     execute_with_adapter(db, move |storage| {
         build_page_with_blocks(storage, &page_id)
+    }).await
+}
+
+/// S10: Batch variant of `get_page_with_blocks` — returns pre-computed render
+/// segments (links / relationship labels / dateRefs) for multiple pages in a
+/// single IPC call. Tolerates missing pages (e.g. a deleted month page) by
+/// skipping them instead of failing the whole batch.
+#[tauri::command]
+pub async fn get_pages_with_blocks(
+    db: State<'_, super::state::DatabaseConnection>,
+    page_ids: Vec<String>,
+) -> Result<Vec<PageWithBlocks>, String> {
+    execute_with_adapter(db, move |storage| {
+        let mut result: Vec<PageWithBlocks> = Vec::new();
+        for pid in &page_ids {
+            if let Ok(pwb) = build_page_with_blocks(storage, pid) {
+                result.push(pwb);
+            }
+        }
+        Ok(result)
     }).await
 }

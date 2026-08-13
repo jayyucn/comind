@@ -63,7 +63,7 @@ impl Block {
     }
 }
 
-/// 查询结果：未完成任务（block + page_title）
+/// 查询结果：未完成任务（block + page_title + date_refs）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IncompleteTask {
     pub id: String,
@@ -81,6 +81,10 @@ pub struct IncompleteTask {
     pub deleted_at: Option<i64>,
     pub page_title: String,
     pub page_type: String,
+    /// DateRefs on this block (schedule/deadline). Pre-joined from DateRef table
+    /// so TS side doesn't need to call parseDateRefs or extra IPC per task.
+    #[serde(default)]
+    pub date_refs: Vec<crate::DateRef>,
 }
 
 #[derive(Debug, Clone)]

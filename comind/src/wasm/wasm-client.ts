@@ -10,6 +10,7 @@ export interface WasmClient {
 
   get_page(pageId: string): Promise<Page>
   get_all_pages(): Promise<Page[]>
+  get_trash_pages(): Promise<Page[]>
   get_ideas_pages_by_month(year: number, month: number): Promise<Page[]>
   save_page(page: string): Promise<Page>
   delete_page_cascade(pageId: string): Promise<void>
@@ -118,6 +119,11 @@ export async function initWasmClient(): Promise<WasmClient> {
 
     async get_all_pages(): Promise<Page[]> {
       const result = await wasmModule.get_all_pages()
+      return parseJsonResult<Page[]>(result)
+    },
+
+    async get_trash_pages(): Promise<Page[]> {
+      const result = await wasmModule.get_trash_pages()
       return parseJsonResult<Page[]>(result)
     },
 

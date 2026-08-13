@@ -4,6 +4,7 @@ use crate::{
 };
 use regex::Regex;
 use serde_json::Value;
+use std::sync::OnceLock;
 use std::collections::HashMap;
 use std::error::Error;
 
@@ -74,11 +75,13 @@ pub fn get_blocks_projection(
 /// Strip `{{schedule:...}}` and `{{deadline:...}}` patterns, truncate to 200 chars.
 fn make_content_preview(content: &str) -> String {
     // Remove {{schedule:...}} and {{deadline:...}} patterns (lazy match to avoid over-grabbing)
-    let re = Regex::new(r"\{\{(?:schedule|deadline):.+?\}\}").unwrap();
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| Regex::new(r"\{\{(?:schedule|deadline):.+?\}\}").unwrap());
     let cleaned = re.replace_all(content, "").into_owned();
 
     // Collapse multiple whitespace to single space
-    let re_ws = Regex::new(r"\s+").unwrap();
+    static RE_WS: OnceLock<Regex> = OnceLock::new();
+    let re_ws = RE_WS.get_or_init(|| Regex::new(r"\s+").unwrap());
     let normalized = re_ws.replace_all(cleaned.trim(), " ").into_owned();
 
     // Truncate to 200 chars (grapheme-aware would be ideal, but char-boundary truncation is fine)

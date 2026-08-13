@@ -1,7 +1,7 @@
 use crate::{
     types::{Block, BlockTree},
     storage::{repository, StorageAdapter},
-    services::{DateRefService, ContentParseService},
+    services::{DateRefService, ContentParseService, PropertyService},
 };
 use rand::Rng;
 use std::collections::HashMap;
@@ -63,8 +63,12 @@ impl BlockService {
         let block = repository::BlockRepository::create(storage.blocks(), &block)?;
         DateRefService::sync_date_refs_for_block(storage, &block.id, &block.content)?;
         // S3: synchronise derived links & properties from content
-        let _ = ContentParseService::sync_links_for_block(storage, &block.id, &block.content);
-        let _ = ContentParseService::sync_properties_for_block(storage, &block.id, &block.content);
+        if let Err(e) = ContentParseService::sync_links_for_block(storage, &block.id, &block.content) {
+            eprintln!("[BlockService::create] sync_links_for_block failed for block {}: {}", block.id, e);
+        }
+        if let Err(e) = ContentParseService::sync_properties_for_block(storage, &block.id, &block.content) {
+            eprintln!("[BlockService::create] sync_properties_for_block failed for block {}: {}", block.id, e);
+        }
         Ok(block)
     }
 
@@ -109,8 +113,12 @@ impl BlockService {
             )?;
         }
         // S3: synchronise derived links & properties from content
-        let _ = ContentParseService::sync_links_for_block(storage, &block.id, &block.content);
-        let _ = ContentParseService::sync_properties_for_block(storage, &block.id, &block.content);
+        if let Err(e) = ContentParseService::sync_links_for_block(storage, &block.id, &block.content) {
+            eprintln!("[BlockService::update] sync_links_for_block failed for block {}: {}", block.id, e);
+        }
+        if let Err(e) = ContentParseService::sync_properties_for_block(storage, &block.id, &block.content) {
+            eprintln!("[BlockService::update] sync_properties_for_block failed for block {}: {}", block.id, e);
+        }
         Ok(block)
     }
 
@@ -121,9 +129,12 @@ impl BlockService {
         DateRefService::sync_date_refs_for_block(storage, id, "")?;
         // 整块删除：连同该 block 的所有通知一起硬删除，避免 block 没了但通知残留（孤儿通知、点击跳转 404）。
         storage.notifications().delete_by_block_id(id)?;
-        // Clean up derived links & properties
-        let _ = ContentParseService::sync_links_for_block(storage, id, "");
-        let _ = ContentParseService::sync_properties_for_block(storage, id, "");
+        // Clean up derived links; properties are explicitly deleted below (NOT via
+        // sync_properties_for_block, which now only upserts content-derived props).
+        if let Err(e) = ContentParseService::sync_links_for_block(storage, id, "") {
+            eprintln!("[BlockService::delete] sync_links_for_block failed for block {}: {}", id, e);
+        }
+        PropertyService::delete_by_block_id(storage, id)?;
         repository::BlockRepository::delete(storage.blocks(), id)
     }
 

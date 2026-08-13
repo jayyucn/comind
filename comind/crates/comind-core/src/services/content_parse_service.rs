@@ -1,13 +1,15 @@
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::error::Error;
+use std::sync::OnceLock;
 
 use crate::storage::StorageAdapter;
 use crate::services::LinkService;
 use crate::services::PropertyService;
 
 /// 从 content 解析出的链接草稿（尚未查 Page 表获取 target_page_id）
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LinkDraft {
     pub target_title: String,
     pub display_text: String,
@@ -18,7 +20,7 @@ pub struct LinkDraft {
 }
 
 /// 从 content 解析出的属性草稿
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PropertyDraft {
     pub key: String,
     pub value: String,
@@ -30,7 +32,11 @@ fn parse_relationship_part(part: &str) -> (Option<String>, Option<String>) {
     let trimmed = part.trim();
 
     // 格式 1: "type<->inverse"
-    if let Some(caps) = Regex::new(r"^(.+)<->(.+)$").unwrap().captures(trimmed) {
+    static RE_PAIR: OnceLock<Regex> = OnceLock::new();
+    if let Some(caps) = RE_PAIR
+        .get_or_init(|| Regex::new(r"^(.+)<->(.+)$").unwrap())
+        .captures(trimmed)
+    {
         return (
             Some(caps[1].trim().to_string()),
             Some(caps[2].trim().to_string()),
@@ -38,7 +44,10 @@ fn parse_relationship_part(part: &str) -> (Option<String>, Option<String>) {
     }
 
     // 格式 2: "type!" (auto-inverse)
-    if let Some(caps) = Regex::new(r"^(.+)!$").unwrap().captures(trimmed) {
+    static RE_BANG: OnceLock<Regex> = OnceLock::new();
+    if let Some(caps) = RE_BANG
+        .get_or_init(|| Regex::new(r"^(.+)!$").unwrap())
+        .captures(trimmed) {
         return (Some(caps[1].trim().to_string()), None);
         // Note: resolving actual inverse requires RelationshipType lookup.
         // Caller (useRelationshipSync TS) handles this; we just return None for auto.
@@ -55,7 +64,9 @@ pub fn extract_links_from_content(content: &str) -> Vec<LinkDraft> {
     let mut covered_positions: HashSet<usize> = HashSet::new();
 
     // 1) External links: [[http(s)://...]], [[ftp://...]], [[mailto:...]]
-    let external_re = Regex::new(r"\[\[(https?://|ftp://|mailto:)([^\]]*)\]\]").unwrap();
+    static RE_EXTERNAL: OnceLock<Regex> = OnceLock::new();
+    let external_re = RE_EXTERNAL
+        .get_or_init(|| Regex::new(r"\[\[(https?://|ftp://|mailto:)([^\]]*)\]\]").unwrap());
     for caps in external_re.captures_iter(content) {
         let m = caps.get(0).unwrap();
         let protocol = caps.get(1).unwrap().as_str();
@@ -75,8 +86,9 @@ pub fn extract_links_from_content(content: &str) -> Vec<LinkDraft> {
     }
 
     // 2) Typed internal links: ((type))[[target|alias]] or ((type))[[target]]
-    let typed_re =
-        Regex::new(r"\(\(([^)]+)\)\)\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]").unwrap();
+    static RE_TYPED: OnceLock<Regex> = OnceLock::new();
+    let typed_re = RE_TYPED
+        .get_or_init(|| Regex::new(r"\(\(([^)]+)\)\)\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]").unwrap());
     for caps in typed_re.captures_iter(content) {
         let m = caps.get(0).unwrap();
         let target = caps.get(2).unwrap().as_str().trim();
@@ -101,7 +113,9 @@ pub fn extract_links_from_content(content: &str) -> Vec<LinkDraft> {
     }
 
     // 3) Plain internal links: [[target|alias]] or [[target]]
-    let internal_re = Regex::new(r"\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]").unwrap();
+    static RE_INTERNAL: OnceLock<Regex> = OnceLock::new();
+    let internal_re = RE_INTERNAL
+        .get_or_init(|| Regex::new(r"\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]").unwrap());
     for caps in internal_re.captures_iter(content) {
         let m = caps.get(0).unwrap();
         let target = caps.get(1).unwrap().as_str().trim();
@@ -135,7 +149,9 @@ pub fn extract_links_from_content(content: &str) -> Vec<LinkDraft> {
 
 /// 提取 content 中的属性（`key:: value` 格式，key 以 Unicode 字母或 _ 开头）
 pub fn extract_properties_from_content(content: &str) -> Vec<PropertyDraft> {
-    let prop_re = Regex::new(r"(?m)^([\p{L}_][\p{L}\p{N}_]*)::\s*(.+)$").unwrap();
+    static RE_PROP: OnceLock<Regex> = OnceLock::new();
+    let prop_re = RE_PROP
+        .get_or_init(|| Regex::new(r"(?m)^([\p{L}_][\p{L}\p{N}_]*)::\s*(.+)$").unwrap());
     let mut results = Vec::new();
     for caps in prop_re.captures_iter(content) {
         let key = caps.get(1).unwrap().as_str().to_string();
@@ -158,19 +174,28 @@ fn infer_property_value(raw: &str) -> (&'static str, String) {
         return ("boolean", trimmed.to_string());
     }
 
-    if Regex::new(r"^\d{4}-\d{2}-\d{2}$").unwrap().is_match(trimmed) {
+    static RE_DATE: OnceLock<Regex> = OnceLock::new();
+    if RE_DATE
+        .get_or_init(|| Regex::new(r"^\d{4}-\d{2}-\d{2}$").unwrap())
+        .is_match(trimmed)
+    {
         return ("date", trimmed.to_string());
     }
 
     // page reference: [[page]]
-    if let Some(caps) = Regex::new(r"^\[\[([^\]]+)\]\]$")
-        .unwrap()
+    static RE_PAGEREF: OnceLock<Regex> = OnceLock::new();
+    if let Some(caps) = RE_PAGEREF
+        .get_or_init(|| Regex::new(r"^\[\[([^\]]+)\]\]$").unwrap())
         .captures(trimmed)
     {
         return ("page_ref", caps[1].to_string());
     }
 
-    if Regex::new(r"^\d+\.?\d*$").unwrap().is_match(trimmed) {
+    static RE_NUM: OnceLock<Regex> = OnceLock::new();
+    if RE_NUM
+        .get_or_init(|| Regex::new(r"^\d+\.?\d*$").unwrap())
+        .is_match(trimmed)
+    {
         return ("number", trimmed.to_string());
     }
 
@@ -284,7 +309,11 @@ impl ContentParseService {
 
     /// 同步一个 block 的 properties 到存储层。
     /// 解析 content 中的 `key:: value` 行 → upsert Property 行。
-    /// 已有的 property 按 key 更新；不再出现在 content 中的删除。
+    ///
+    /// 注意：此函数只 upsert content 中派生的属性（`key:: value` 格式）。
+    /// 它不删除「不在 content 中」的属性——因为 UI 独立设置的属性（如 status/priority）
+    /// 本就不在 content 中，误删会导致刷新后图标消失（#property-icon-disappear）。
+    /// 删除操作由 BlockService::delete 统一显式调用。
     pub fn sync_properties_for_block(
         storage: &mut dyn StorageAdapter,
         block_id: &str,
@@ -292,18 +321,8 @@ impl ContentParseService {
     ) -> Result<Vec<crate::types::Property>, Box<dyn Error>> {
         let drafts = extract_properties_from_content(content);
 
-        // Collect keys that should exist
-        let draft_keys: HashSet<&str> = drafts.iter().map(|d| d.key.as_str()).collect();
-
-        // Get existing properties
+        // Get existing properties (only active ones: deleted_at IS NULL)
         let existing = PropertyService::get_by_block_id(storage, block_id)?;
-
-        // Delete properties whose keys are no longer in content
-        for prop in &existing {
-            if !draft_keys.contains(prop.key.as_str()) {
-                PropertyService::delete(storage, &prop.id)?;
-            }
-        }
 
         let mut results = Vec::new();
         for draft in &drafts {

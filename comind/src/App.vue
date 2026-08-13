@@ -27,6 +27,8 @@ import BlockSelector from './components/BlockSelector.vue'
 import { isTauriEnvironment, tauriMinimizeWindow, tauriToggleMaximizeWindow, tauriCloseWindow, tauriIsMaximized, tauriAutoReconnect } from './wasm/tauri-client'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { isAndroidPlatformSync } from './wasm/tauri-client'
+import router from './router'
+import { prefetchGraphSnapshot } from './components/GraphView/graphSnapshotCache'
 
 registerPanel({
   id: 'block-version',
@@ -95,7 +97,13 @@ function handleGlobalKeydown(e: KeyboardEvent) {
   if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
     e.preventDefault()
     showSearchPanel.value = !showSearchPanel.value
-  } else if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+  }  else if ((e.ctrlKey || e.metaKey) && e.key === 'g') {
+    e.preventDefault()
+    router.push('/graph')
+  } else if ((e.ctrlKey || e.metaKey) && e.key === 'i') {
+    e.preventDefault()
+    router.push('/ideas')
+  }else if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
     e.preventDefault()
     toggle()
   } else if ((e.ctrlKey || e.metaKey) && e.key === 't') {
@@ -151,6 +159,9 @@ async function updateMaximizedState() {
 }
 
 onMounted(async () => {
+  // 预取图谱全量边快照（进程级缓存），使导航到 /graph 时画布即时填充，
+  // 避免「导航时才发 IPC」撞上并发 G6 渲染占用的主线程、导致数据晚 ~1~2.8s 才出现。
+  prefetchGraphSnapshot()
   await useRelationshipTypes().load()
   await pageStore.loadAllPages()
   // checkAndEnsureTodayIdeas 已由 IdeasList.vue 的 onMounted 接管
@@ -329,7 +340,14 @@ async function handleEmbedSelect(sourceBlockId: string, sourcePageId: string) {
       <div class="page-content-wrapper">
         <div class="content-body">
           <main class="main-content" :class="{ 'is-fullwidth-content': isFullWidthPage }">
-            <RouterView />
+            <RouterView v-slot="{ Component, route }">
+              <KeepAlive include="IdeasList">
+                <component
+                  :is="Component"
+                  :key="route.name === 'ideas-list' ? 'ideas-list' : route.fullPath"
+                />
+              </KeepAlive>
+            </RouterView>
           </main>
         </div>
 

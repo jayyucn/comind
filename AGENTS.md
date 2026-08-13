@@ -60,3 +60,16 @@ Five canonical labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-f
 ### Domain docs
 
 Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+When a question is about THIS codebase, the graphify skill should be auto-loaded; if it isn't, load it explicitly before answering. The skill is installed at user level (`~/.workbuddy/skills/graphify`).
+
+Rules:
+- DEFAULT FOR CODEBASE QUESTIONS: whenever the user asks how something works, what calls/uses what, where something is defined, or about architecture / file relationships in THIS repo, you MUST load the graphify skill and run `graphify query "<question>"` (or `graphify path "<A>" "<B>"` / `graphify explain "<concept>"`) BEFORE any grep, Explore, or source read — and only fall back to those if graphify returns nothing. Requires `graphify-out/graph.json` to exist.
+- Dirty graphify-out/ files are expected after hooks or incremental updates; dirty graph files are not a reason to skip graphify. Only skip graphify if the task is about stale or incorrect graph output, or the user explicitly says not to use it.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

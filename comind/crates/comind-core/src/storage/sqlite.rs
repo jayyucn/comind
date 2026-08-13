@@ -22,7 +22,22 @@ impl SQLiteAdapter {
         
         Ok(Self { conn })
     }
-    
+
+    /// 只读连接：跳过 `init_schema`（CREATE TABLE 是 DDL，需要写锁；
+    /// 在并发写入者存在时会触发 busy_timeout 干等）。用于「读已存在表」的旁路查询，
+    /// 配合 WAL 可与写入者并发，不被写锁饿死。
+    pub fn open_readonly(path: &Path) -> Result<Self, Box<dyn Error>> {
+        let conn = Connection::open(path)?;
+
+        conn.execute_batch(
+            "PRAGMA journal_mode = WAL;
+             PRAGMA busy_timeout = 5000;
+             PRAGMA foreign_keys = ON;"
+        )?;
+
+        Ok(Self { conn })
+    }
+
     pub fn open_in_memory() -> Result<Self, Box<dyn Error>> {
         let conn = Connection::open_in_memory()?;
         
@@ -601,6 +616,37 @@ impl PageRepository for SQLiteAdapter {
         Ok(page)
     }
     
+    fn get_by_title_including_deleted(&self, title: &str) -> Result<Option<Page>, Box<dyn Error>> {
+        let sql = "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at FROM Page WHERE title = ?1";
+        let mut stmt = self.conn.prepare(sql)?;
+
+        let result = stmt.query_row(params![title], |row| {
+            Ok(Page {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                title: row.get(2)?,
+                r#type: row.get(3)?,
+                icon: row.get(4)?,
+                cover: row.get(5)?,
+                aliases: row.get(6)?,
+                file_path: row.get(7)?,
+                children_count: row.get(8)?,
+                word_count: row.get(9)?,
+                deleted: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
+                version: row.get(13)?,
+                deleted_at: row.get(14)?,
+            })
+        });
+
+        match result {
+            Ok(page) => Ok(Some(page)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(Box::new(e)),
+        }
+    }
+
     fn get_by_title(&self, title: &str) -> Result<Option<Page>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at 
@@ -660,6 +706,35 @@ impl PageRepository for SQLiteAdapter {
             })
         })?.collect::<Result<Vec<_>, _>>()?;
         
+        Ok(pages)
+    }
+
+    fn get_trash(&self) -> Result<Vec<Page>, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at
+             FROM Page WHERE deleted = 1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC"
+        )?;
+
+        let pages = stmt.query_map([], |row| {
+            Ok(Page {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                title: row.get(2)?,
+                r#type: row.get(3)?,
+                icon: row.get(4)?,
+                cover: row.get(5)?,
+                aliases: row.get(6)?,
+                file_path: row.get(7)?,
+                children_count: row.get(8)?,
+                word_count: row.get(9)?,
+                deleted: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
+                version: row.get(13)?,
+                deleted_at: row.get(14)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+
         Ok(pages)
     }
 
@@ -847,6 +922,34 @@ impl LinkRepository for SQLiteAdapter {
         
         Ok(links)
     }
+
+    fn get_by_source_block_ids(&self, source_block_ids: &[String]) -> Result<Vec<Link>, Box<dyn Error>> {
+        if source_block_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders: Vec<String> = (1..=source_block_ids.len()).map(|i| format!("?{}", i)).collect();
+        let sql = format!(
+            "SELECT id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at
+             FROM Link WHERE source_block_id IN ({}) AND deleted_at IS NULL",
+            placeholders.join(", ")
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let params: Vec<&dyn rusqlite::ToSql> = source_block_ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+        let links = stmt.query_map(params.as_slice(), |row| {
+            Ok(Link {
+                id: row.get(0)?,
+                source_block_id: row.get(1)?,
+                target_page_id: row.get(2)?,
+                display_text: row.get(3)?,
+                relationship_type: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+                version: row.get(7)?,
+                deleted_at: row.get(8)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(links)
+    }
     
     fn get_by_target_page_id(&self, target_page_id: &str) -> Result<Vec<Link>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
@@ -896,15 +999,17 @@ impl LinkRepository for SQLiteAdapter {
         
         for link in links {
             tx.execute(
-                "INSERT INTO Link (id, source_block_id, target_page_id, display_text, relationship_type, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO Link (id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL)",
                 params![
                     link.id,
                     link.source_block_id,
                     link.target_page_id,
                     link.display_text,
                     link.relationship_type,
-                    link.created_at
+                    link.created_at,
+                    link.updated_at,
+                    link.version
                 ]
             )?;
         }
@@ -1016,6 +1121,38 @@ impl PropertyRepository for SQLiteAdapter {
         
         Ok(properties)
     }
+
+    fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<Property>, Box<dyn Error>> {
+        if block_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders: Vec<String> = (1..=block_ids.len()).map(|i| format!("?{}", i)).collect();
+        let sql = format!(
+            "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at
+             FROM Property WHERE block_id IN ({}) AND is_deleted = 0 AND deleted_at IS NULL ORDER BY sort_order",
+            placeholders.join(", ")
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let params: Vec<&dyn rusqlite::ToSql> = block_ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+        let properties = stmt.query_map(params.as_slice(), |row| {
+            Ok(Property {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                key: row.get(2)?,
+                value: row.get(3)?,
+                r#type: row.get(4)?,
+                sort_order: row.get(5)?,
+                is_hidden: row.get(6)?,
+                is_deleted: row.get(7)?,
+                schema_version: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+                version: row.get(11)?,
+                deleted_at: row.get(12)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(properties)
+    }
     
     fn get_by_block_id_and_key(&self, block_id: &str, key: &str) -> Result<Option<Property>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
@@ -1093,6 +1230,38 @@ impl PropertyRepository for SQLiteAdapter {
         
         Ok(property.clone())
     }
+    fn upsert(&mut self, property: &Property) -> Result<Property, Box<dyn Error>> {
+        self.conn.execute(
+            "INSERT INTO Property (id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+             ON CONFLICT(block_id, key) DO UPDATE SET
+                value = excluded.value,
+                type = excluded.type,
+                updated_at = excluded.updated_at,
+                sort_order = excluded.sort_order,
+                is_hidden = excluded.is_hidden,
+                schema_version = excluded.schema_version,
+                is_deleted = 0,
+                deleted_at = NULL",
+            params![
+                property.id,
+                property.block_id,
+                property.key,
+                property.value,
+                property.r#type,
+                property.sort_order,
+                property.is_hidden,
+                property.is_deleted,
+                property.schema_version,
+                property.created_at,
+                property.updated_at,
+                property.version,
+                property.deleted_at
+            ]
+        )?;
+        Ok(property.clone())
+    }
+
     
     fn update(&mut self, property: &Property) -> Result<Property, Box<dyn Error>> {
         self.conn.execute(
@@ -2574,6 +2743,37 @@ impl<'a> PageRepository for SQLiteTransactionAdapter<'a> {
         Ok(page)
     }
 
+    fn get_by_title_including_deleted(&self, title: &str) -> Result<Option<Page>, Box<dyn Error>> {
+        let sql = "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at FROM Page WHERE title = ?1";
+        let mut stmt = self.conn.prepare(sql)?;
+
+        let result = stmt.query_row(params![title], |row| {
+            Ok(Page {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                title: row.get(2)?,
+                r#type: row.get(3)?,
+                icon: row.get(4)?,
+                cover: row.get(5)?,
+                aliases: row.get(6)?,
+                file_path: row.get(7)?,
+                children_count: row.get(8)?,
+                word_count: row.get(9)?,
+                deleted: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
+                version: row.get(13)?,
+                deleted_at: row.get(14)?,
+            })
+        });
+
+        match result {
+            Ok(page) => Ok(Some(page)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(Box::new(e)),
+        }
+    }
+
     fn get_by_title(&self, title: &str) -> Result<Option<Page>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at
@@ -2611,6 +2811,35 @@ impl<'a> PageRepository for SQLiteTransactionAdapter<'a> {
         let mut stmt = self.conn.prepare(
             "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at
              FROM Page WHERE deleted = 0 AND deleted_at IS NULL ORDER BY updated_at DESC"
+        )?;
+
+        let pages = stmt.query_map([], |row| {
+            Ok(Page {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                title: row.get(2)?,
+                r#type: row.get(3)?,
+                icon: row.get(4)?,
+                cover: row.get(5)?,
+                aliases: row.get(6)?,
+                file_path: row.get(7)?,
+                children_count: row.get(8)?,
+                word_count: row.get(9)?,
+                deleted: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
+                version: row.get(13)?,
+                deleted_at: row.get(14)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+
+        Ok(pages)
+    }
+
+    fn get_trash(&self) -> Result<Vec<Page>, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at
+             FROM Page WHERE deleted = 1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC"
         )?;
 
         let pages = stmt.query_map([], |row| {
@@ -2820,6 +3049,34 @@ impl<'a> LinkRepository for SQLiteTransactionAdapter<'a> {
 
         Ok(links)
     }
+
+    fn get_by_source_block_ids(&self, source_block_ids: &[String]) -> Result<Vec<Link>, Box<dyn Error>> {
+        if source_block_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders: Vec<String> = (1..=source_block_ids.len()).map(|i| format!("?{}", i)).collect();
+        let sql = format!(
+            "SELECT id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at
+             FROM Link WHERE source_block_id IN ({}) AND deleted_at IS NULL",
+            placeholders.join(", ")
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let params: Vec<&dyn rusqlite::ToSql> = source_block_ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+        let links = stmt.query_map(params.as_slice(), |row| {
+            Ok(Link {
+                id: row.get(0)?,
+                source_block_id: row.get(1)?,
+                target_page_id: row.get(2)?,
+                display_text: row.get(3)?,
+                relationship_type: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+                version: row.get(7)?,
+                deleted_at: row.get(8)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(links)
+    }
     
     fn get_by_target_page_id(&self, target_page_id: &str) -> Result<Vec<Link>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
@@ -2843,7 +3100,7 @@ impl<'a> LinkRepository for SQLiteTransactionAdapter<'a> {
 
         Ok(links)
     }
-
+    
     fn create(&mut self, link: &Link) -> Result<Link, Box<dyn Error>> {
         self.conn.execute(
             "INSERT INTO Link (id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at)
@@ -2867,15 +3124,17 @@ impl<'a> LinkRepository for SQLiteTransactionAdapter<'a> {
     fn create_many(&mut self, links: &[Link]) -> Result<Vec<Link>, Box<dyn Error>> {
         for link in links {
             self.conn.execute(
-                "INSERT INTO Link (id, source_block_id, target_page_id, display_text, relationship_type, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO Link (id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL)",
                 params![
                     link.id,
                     link.source_block_id,
                     link.target_page_id,
                     link.display_text,
                     link.relationship_type,
-                    link.created_at
+                    link.created_at,
+                    link.updated_at,
+                    link.version
                 ]
             )?;
         }
@@ -2987,6 +3246,38 @@ impl<'a> PropertyRepository for SQLiteTransactionAdapter<'a> {
         Ok(properties)
     }
 
+    fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<Property>, Box<dyn Error>> {
+        if block_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders: Vec<String> = (1..=block_ids.len()).map(|i| format!("?{}", i)).collect();
+        let sql = format!(
+            "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at
+             FROM Property WHERE block_id IN ({}) AND is_deleted = 0 AND deleted_at IS NULL ORDER BY sort_order",
+            placeholders.join(", ")
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let params: Vec<&dyn rusqlite::ToSql> = block_ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+        let properties = stmt.query_map(params.as_slice(), |row| {
+            Ok(Property {
+                id: row.get(0)?,
+                block_id: row.get(1)?,
+                key: row.get(2)?,
+                value: row.get(3)?,
+                r#type: row.get(4)?,
+                sort_order: row.get(5)?,
+                is_hidden: row.get(6)?,
+                is_deleted: row.get(7)?,
+                schema_version: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+                version: row.get(11)?,
+                deleted_at: row.get(12)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+        Ok(properties)
+    }
+
     fn get_by_block_id_and_key(&self, block_id: &str, key: &str) -> Result<Option<Property>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at
@@ -3063,6 +3354,38 @@ impl<'a> PropertyRepository for SQLiteTransactionAdapter<'a> {
 
         Ok(property.clone())
     }
+    fn upsert(&mut self, property: &Property) -> Result<Property, Box<dyn Error>> {
+        self.conn.execute(
+            "INSERT INTO Property (id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+             ON CONFLICT(block_id, key) DO UPDATE SET
+                value = excluded.value,
+                type = excluded.type,
+                updated_at = excluded.updated_at,
+                sort_order = excluded.sort_order,
+                is_hidden = excluded.is_hidden,
+                schema_version = excluded.schema_version,
+                is_deleted = 0,
+                deleted_at = NULL",
+            params![
+                property.id,
+                property.block_id,
+                property.key,
+                property.value,
+                property.r#type,
+                property.sort_order,
+                property.is_hidden,
+                property.is_deleted,
+                property.schema_version,
+                property.created_at,
+                property.updated_at,
+                property.version,
+                property.deleted_at
+            ]
+        )?;
+        Ok(property.clone())
+    }
+
 
     fn update(&mut self, property: &Property) -> Result<Property, Box<dyn Error>> {
         self.conn.execute(

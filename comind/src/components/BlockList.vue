@@ -114,7 +114,9 @@ function handleDocMouseUp(e: MouseEvent) {
   } else {
     const blockId = selection.dragStartBlockId.value
     selection.clearTracking()
-    editorStore.activateBlock(blockId)
+    if (!isFrozen.value) {
+      editorStore.activateBlock(blockId)
+    }
   }
 }
 

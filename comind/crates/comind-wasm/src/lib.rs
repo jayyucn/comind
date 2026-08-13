@@ -78,6 +78,14 @@ mod wasm_impl {
     }
 
     #[wasm_bindgen]
+    pub fn get_trash_pages() -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            let pages = PageService::get_trash(adapter)?;
+            Ok(to_js_value(pages))
+        })
+    }
+
+    #[wasm_bindgen]
     pub fn get_ideas_pages_by_month(year: i32, month: u32) -> Result<JsValue, JsValue> {
         with_adapter(|adapter| {
             let pages = PageService::get_ideas_by_month(adapter, year, month)?;
@@ -122,38 +130,42 @@ mod wasm_impl {
         }
 
         with_adapter(|adapter| {
-            let mut results: Vec<Block> = Vec::with_capacity(updates.len());
+            let mut results: Vec<BlockSaveResult> = Vec::with_capacity(updates.len());
             for update in &updates {
                 let existing = comind_core::storage::repository::BlockRepository::get_by_id(
                     adapter.blocks(),
                     &update.id,
                 );
-                match existing {
-                    Ok(_) => {
-                        let block = BlockService::update(
-                            adapter,
-                            &update.id,
-                            Some(&update.content),
-                            Some(&update.format),
-                            Some(&update.r#type),
-                            update.parent_id.as_deref(),
-                            Some(update.pos),
-                        )?;
-                        results.push(block);
-                    }
-                    Err(_) => {
-                        let block = BlockService::create(
-                            adapter,
-                            &update.page_id,
-                            update.parent_id.as_deref(),
-                            &update.content,
-                            &update.format,
-                            &update.r#type,
-                            Some(&update.id),
-                        )?;
-                        results.push(block);
-                    }
-                }
+                let block = match existing {
+                    Ok(_) => BlockService::update(
+                        adapter,
+                        &update.id,
+                        Some(&update.content),
+                        Some(&update.format),
+                        Some(&update.r#type),
+                        update.parent_id.as_deref(),
+                        Some(update.pos),
+                    )?,
+                    Err(_) => BlockService::create(
+                        adapter,
+                        &update.page_id,
+                        update.parent_id.as_deref(),
+                        &update.content,
+                        &update.format,
+                        &update.r#type,
+                        Some(&update.id),
+                    )?,
+                };
+
+                // Build render segments during save to close edit→render gap.
+                let render_segments =
+                    build_segments_for_block(adapter, &block).unwrap_or_default();
+
+                results.push(BlockSaveResult {
+                    block,
+                    snapshot: String::new(), // WASM: no version snapshot (Tauri only)
+                    render_segments,
+                });
             }
             Ok(serde_json::to_string(&results).unwrap_or_else(|_| "[]".to_string()))
         })

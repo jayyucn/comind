@@ -100,11 +100,11 @@ describe('useRelationshipMenu', () => {
   it('items 按 query 过滤（匹配正反 type 和 label）', () => {
     menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: vi.fn() })
     menu.setQuery('is-a')
-    // is-a/has-instance 组有 label "是一个"，但 type 字段是 forward 的 'is-a'
+    // is-a 组 type 字段是 forward 的 'is-a'，英文 query 直接匹配
     expect(menu.items.value.some(g => g.type === 'is-a')).toBe(true)
 
-    menu.setQuery('依赖')
-    // 依赖 组同时有 label "依赖" 和 inverseLabel "被依赖"，匹配中文 query
+    menu.setQuery('depends')
+    // depends-on 组 label 是 'depends-on'，匹配英文 query
     expect(menu.items.value.some(g => g.type === 'depends-on')).toBe(true)
     // 正反 type 都参与英文匹配
     menu.setQuery('supported')

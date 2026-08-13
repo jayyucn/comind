@@ -1,5 +1,10 @@
 import type { RouteRecordRaw } from 'vue-router'
 import './types'
+// 图谱页静态引入（非懒加载）：刷新后立刻点图谱时，若用懒 import() 拉取该 chunk
+// （内含 G6 大依赖），请求会被 dev server 初次喂模块的 backlog 排队，导致路由解析
+// （afterEach）干等 ~2.7s 才打开图谱界面。GraphPage 本身体积很小，静态引入对首屏
+// 几乎无影响；真正重的 G6 仍在 GraphPage 内部按需加载（defineAsyncComponent），不进首屏。
+import GraphPage from '../components/GraphView/GraphPage.vue'
 
 /**
  * 路由配置
@@ -13,7 +18,7 @@ import './types'
  *     {
  *       path: '/graph',
  *       name: 'graph',
- *       component: () => import('../components/GraphView/GraphPage.vue'),
+ *       component: GraphPage, // 静态引入，避免 dev 模式懒 chunk 被模块 backlog 排队拖慢导航
  *       meta: { fullWidth: true, hideRightSidebarToggle: true }
  *     }
  */
@@ -44,12 +49,12 @@ const routes: RouteRecordRaw[] = [
     path: '/trash',
     name: 'trash',
     component: () => import('../components/Trash/TrashList.vue'),
-    meta: { fullWidth: true, hideRightSidebarToggle: true },
+    meta: { fullWidth: true, hideRightSidebarToggle: true, absolute: true },
   },
   {
     path: '/graph',
     name: 'graph',
-    component: () => import('../components/GraphView/GraphPage.vue'),
+    component: GraphPage,
     meta: { fullWidth: true, hideRightSidebarToggle: true, absolute: true },
   },
   {

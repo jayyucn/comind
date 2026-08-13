@@ -3,10 +3,12 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open } from '@tauri-apps/plugin-dialog'
 import { platform } from '@tauri-apps/plugin-os'
 import type {
-  Block, Page, Property, Link, RelationshipType,
+  Block, BlockSaveResult, Page, Property, Link, RelationshipType,
   UserTemplate, SearchResult, BlockUpdate, PageUpdate,
   BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig, BlockVersion,
-  Notification, DateRefRecord, IncompleteTask, BlockCard, SavedFilterRust, TaskViewRust
+  Notification, DateRefRecord, IncompleteTask, BlockCard, SavedFilterRust, TaskViewRust,
+  NotificationSettings,
+  LinkDraft
 } from './types'
 
 export function isTauriEnvironment(): boolean {
@@ -82,7 +84,7 @@ export async function tauriSetDefaultTaskView(id: string): Promise<TaskViewRust>
   return invoke('set_default_task_view', { id })
 }
 
-export async function tauriSaveBlockTree(blocks: BlockUpdate[]): Promise<Block[]> {
+export async function tauriSaveBlockTree(blocks: BlockUpdate[]): Promise<BlockSaveResult[]> {
   return invoke('save_block_tree', { blocks })
 }
 
@@ -96,6 +98,10 @@ export async function tauriGetPage(pageId: string): Promise<Page> {
 
 export async function tauriGetAllPages(): Promise<Page[]> {
   return invoke('get_all_pages')
+}
+
+export async function tauriGetTrashPages(): Promise<Page[]> {
+  return invoke('get_trash_pages')
 }
 
 export async function tauriGetIdeasPagesByMonth(year: number, month: number): Promise<Page[]> {
@@ -333,6 +339,10 @@ export async function tauriGetDateRefsByBlock(blockId: string): Promise<DateRefR
   return invoke('get_date_refs_by_block', { blockId })
 }
 
+export async function tauriGetDateRefsByPage(pageId: string): Promise<[string, DateRefRecord[]][]> {
+  return invoke('get_date_refs_by_page', { pageId })
+}
+
 export async function tauriQueryDueNonRecurringDateRefs(nowMs: number): Promise<DateRefRecord[]> {
   return invoke('query_due_non_recurring_date_refs', { nowMs })
 }
@@ -462,6 +472,12 @@ export async function tauriSyncPayloadForBlock(blockId: string): Promise<void> {
 
 // ---- Content parse helpers (S3: migrated from TS parser to Rust) ----
 
+export async function tauriExtractLinksFromContent(
+  content: string
+): Promise<LinkDraft[]> {
+  return invoke('extract_links_from_content', { content })
+}
+
 export async function tauriApplyRelationshipTypeToBlockContent(
   content: string,
   targetTitle: string,
@@ -476,7 +492,37 @@ export async function tauriCheckHasTypedLinkToTarget(
 ): Promise<{ has_typed_link: boolean }> {
   return invoke('check_has_typed_link_to_target', { content, targetTitle })
 }
+
+// ---- S6: date-parser / recurrence / journal-detect ----
+export async function tauriParseDateInput(input: string): Promise<string | null> {
+  return invoke('parse_date_input', { input })
+}
+
+export async function tauriParseDateTimeInput(input: string): Promise<{ date: string; time?: string } | null> {
+  return invoke('parse_date_time_input', { input })
+}
+
+export async function tauriCalculateNextRecurrence(iso: string, rule: string): Promise<string> {
+  return invoke('calculate_next_recurrence', { iso, rule })
+}
+
+export async function tauriIsJournalTitle(title: string): Promise<boolean> {
+  return invoke('is_journal_title', { title })
+}
+
+export async function tauriNormalizeJournalTitle(title: string): Promise<string | null> {
+  return invoke('normalize_journal_title', { title })
+}
+
+export async function tauriIsTodayTitle(normalizedTitle: string): Promise<boolean> {
+  return invoke('is_today_title', { normalizedTitle })
+}
+
 // ---- S10: Render segments (get_page_with_blocks) ----
 export async function tauriGetPageWithBlocks(pageId: string): Promise<any> {
   return invoke('get_page_with_blocks', { pageId })
+}
+
+export async function tauriGetPagesWithBlocks(pageIds: string[]): Promise<any> {
+  return invoke('get_pages_with_blocks', { pageIds })
 }

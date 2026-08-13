@@ -1,8 +1,9 @@
 import { ref, watch, type Ref } from 'vue'
-import { parseBlockLinks, type LinkParse } from '../utils/parser'
+import { tauriExtractLinksFromContent, tauriApplyRelationshipTypeToBlockContent } from '../wasm/tauri-client'
+import type { LinkDraft } from '../wasm/types'
 
 /**
- * 关系类型同步 composable
+ * 关系类型同步 composable (4.3: migrated from TS parser to Rust ContentParseService)
  *
  * 职责：
  * 1. 跟踪当前正在编辑的 Block（编辑中的内容不应被自动覆盖）
@@ -25,6 +26,18 @@ export interface RelationshipLinkSnapshot {
   relationshipType: string | null
 }
 
+/**
+ * Apply (or remove) a relationship type to all links pointing at targetTitle
+ * inside the given block content. Delegates to Rust ContentParseService.
+ */
+async function applyRelationshipTypeToBlockContent(
+  content: string,
+  targetTitle: string,
+  newRelationshipType: string | null
+): Promise<string> {
+  return tauriApplyRelationshipTypeToBlockContent(content, targetTitle, newRelationshipType)
+}
+
 export function useRelationshipSync(
   pageId: Ref<string | null>,
   blocks: Ref<Array<{ id: string; content: string }>>
@@ -39,7 +52,7 @@ export function useRelationshipSync(
    * 解析当前所有 Block 中的关系类型链接，建立快照。
    * 注意：跳过正在编辑的 Block。
    */
-  function refreshSnapshot() {
+  async function refreshSnapshot() {
     const newSnapshot = new Map<string, Map<string, string | null>>()
     const pageBlocks = blocks.value
 
@@ -47,14 +60,14 @@ export function useRelationshipSync(
       // 跳过正在编辑的 Block
       if (editingBlockId.value === block.id) continue
 
-      const links: LinkParse[] = parseBlockLinks(block.content)
+      const links = await tauriExtractLinksFromContent(block.content)
       const blockLinks = new Map<string, string | null>()
 
       for (const link of links) {
-        if (link.isExternal) continue
-        // 仅记录有显式关系类型（或曾经有过）的链接
-        if (link.relationshipType !== null) {
-          blockLinks.set(link.targetTitle, link.relationshipType)
+        if (link.is_external) continue
+        // 仅记录有显式关系类型的链接
+        if (link.relationship_type !== null) {
+          blockLinks.set(link.target_title, link.relationship_type)
         }
       }
 
@@ -90,11 +103,11 @@ export function useRelationshipSync(
    * @param newRelationshipType - 新的关系类型，null 表示移除
    * @returns 需要更新内容的 Block 列表
    */
-  function syncRelationshipType(
+  async function syncRelationshipType(
     sourceBlockId: string,
     targetTitle: string,
     newRelationshipType: string | null
-  ): Array<{ id: string; content: string }> {
+  ): Promise<Array<{ id: string; content: string }>> {
     const updated: Array<{ id: string; content: string }> = []
 
     for (const block of blocks.value) {
@@ -106,11 +119,13 @@ export function useRelationshipSync(
       if (previous === newRelationshipType) continue
 
       // 检查该 Block 是否包含指向 targetTitle 的链接
-      const links = parseBlockLinks(block.content)
-      const hasLinkToTarget = links.some(l => !l.isExternal && l.targetTitle === targetTitle)
+      const links: LinkDraft[] = await tauriExtractLinksFromContent(block.content)
+      const hasLinkToTarget = links.some(
+        l => !l.is_external && l.target_title === targetTitle
+      )
       if (!hasLinkToTarget) continue
 
-      const newContent = applyRelationshipTypeToBlockContent(
+      const newContent = await applyRelationshipTypeToBlockContent(
         block.content,
         targetTitle,
         newRelationshipType
@@ -142,11 +157,11 @@ export function useRelationshipSync(
 
   /**
    * 移除页面内所有（非编辑中的）Block 中对 targetTitle 的关系类型
-   * 仅移除 ^(...) 部分，保留 [[link]] 本身。
+   * 仅移除 ((...)) 部分，保留 [[link]] 本身。
    */
-  function removeRelationshipType(
+  async function removeRelationshipType(
     targetTitle: string
-  ): Array<{ id: string; content: string }> {
+  ): Promise<Array<{ id: string; content: string }>> {
     return syncRelationshipType('__remove__', targetTitle, null)
   }
 
@@ -172,42 +187,7 @@ export function useRelationshipSync(
 
 /**
  * 在 Block 内容中，对所有指向 targetTitle 的链接应用新的关系类型。
- * - 若 newRelationshipType 为 null：移除 ((type)) 部分
- * - 若 newRelationshipType 不为 null：若链接已有关系类型则替换，否则追加
- *
- * 处理两种形式：
- * - ((existingType))[[target|alias]] → 替换或移除 ((existingType))
- * - [[target|alias]] → 追加 ((newType))
+ * Delegates to Rust ContentParseService via Tauri command.
+ * (kept as a standalone export for cleanup composable and tests)
  */
-export function applyRelationshipTypeToBlockContent(
-  content: string,
-  targetTitle: string,
-  newRelationshipType: string | null
-): string {
-  const escapedTitle = targetTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  // 匹配 ((type))[[target]] 或 ((type))[[target|alias]]
-  const withTypeRegex = new RegExp(
-    `\\(\\(([^)]+)\\)\\)\\[\\[(${escapedTitle})(?:\\|[^\\]]+?)?\\]\\]`,
-    'g'
-  )
-  // 匹配纯 [[target]] 或 [[target|alias]]（前面没有 ((type))）
-  const plainLinkRegex = new RegExp(
-    `(?<!\\(\\([^)]+\\)\\))\\[\\[(${escapedTitle})(?:\\|[^\\]]+?)?\\]\\]`,
-    'g'
-  )
-
-  // 第一步：替换已带关系类型的链接
-  let result = content.replace(withTypeRegex, (_, __, title) => {
-    if (newRelationshipType === null) return `[[${title}]]`
-    return `((${newRelationshipType}))[[${title}]]`
-  })
-
-  // 第二步：仅当需要添加新类型时，处理不带关系类型的链接
-  if (newRelationshipType !== null) {
-    result = result.replace(plainLinkRegex, (_, title) => {
-      return `((${newRelationshipType}))[[${title}]]`
-    })
-  }
-
-  return result
-}
+export { applyRelationshipTypeToBlockContent }

@@ -59,9 +59,6 @@ async function loadBacklinks() {
 
   loading.value = true
   try {
-    // 1. 加载当前页块（保留现有行为）
-    await blockStore.loadMultiPageBlocks([currentId])
-
     // 2. 获取指向当前页的所有反链
     const links = await blockStore.getBacklinks(currentId)
 
@@ -95,7 +92,12 @@ async function loadBacklinks() {
       [...itemMap.values()].map(item => item.block.pageId)
     )]
     if (sourcePageIds.length > 0) {
-      await blockStore.loadMultiPageBlocks(sourcePageIds)
+      const uncachedSourceIds = sourcePageIds.filter(
+        id => blockStore.getBlocksByPage(id).length === 0
+      )
+      if (uncachedSourceIds.length > 0) {
+        await blockStore.loadMultiPageBlocks(uncachedSourceIds)
+      }
     }
 
     // 5. 过滤 orphan-page + 按 sourcePageId 分组

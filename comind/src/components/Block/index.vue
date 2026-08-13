@@ -35,6 +35,10 @@ import PropertyInline from './PropertyInline.vue'
 import { usePageStore } from '../../stores/pages'
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import { useIdeasFreeze } from '../../composables/useIdeasFreeze'
+import {
+  decodeRelationshipContent,
+  setRelationshipSnapshot,
+} from '../../utils/relationship-content'
 import type { TreeNode } from '../../types/block'
 import type { BlockTypeEditorExposed, BlockSetupContext, BlockTypeHooks } from '../../types/block-type'
 import type { CrossBlockSelection } from '../../composables/useCrossBlockSelection'
@@ -93,7 +97,10 @@ const isSelected = computed(() => {
 const handler = computed(() => getHandler(block.value.type))
 
 const editContent = computed(() => {
-  return block.value.content
+  // 编辑态显示中文 label：存储 type → 显示 label（decode）
+  const { text, snapshot } = decodeRelationshipContent(block.value.content ?? '')
+  setRelationshipSnapshot(blockId.value, snapshot)
+  return text
 })
 
 /** 空 block：无内容且非标题（如 '# ' 开头） */
@@ -290,7 +297,7 @@ async function handleDeleteBetweenProperty(e: Event) {
 
 watch(
   isActive,
-  async (active) => {
+  async (active, oldActive) => {
     if (active) {
       selection?.clearSelection()
       await nextTick()
@@ -392,7 +399,7 @@ async function onPaste(e: ClipboardEvent) {
         <!-- 内容区 -->
         <div class="block-content" @mousedown="onContentMousedown">
           <component
-            v-if="isActive && handler"
+            v-if="isActive && handler && !isFrozen"
             :is="handler.editorComponent"
             ref="editorRef"
             :block-id="blockId"

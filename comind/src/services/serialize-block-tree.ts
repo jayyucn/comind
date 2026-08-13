@@ -120,7 +120,7 @@ export function deserializeBlockTree(
       pos,
       content: '',
       format: {} as Record<string, any>,
-      properties: {} as Record<string, any>,
+      properties: [] as import('../wasm/types').Property[],
       createdAt: now2,
       updatedAt: now2,
     }

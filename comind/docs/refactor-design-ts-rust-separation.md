@@ -1,14 +1,14 @@
 # comind 架构重构设计文档：TS/Rust 严格职责分离
 
-| 字段 | 值 |
-|------|----|
-| 文档版本 | 0.4 (Draft) |
-| 创建日期 | 2026-08-08 |
-| 状态 | 待评审 |
+| 字段   | 值                                              |
+| ---- | ---------------------------------------------- |
+| 文档版本 | 0.4 (Draft)                                    |
+| 创建日期 | 2026-08-08                                     |
+| 状态   | 待评审                                            |
 | 适用范围 | comind 桌面端（Tauri）及 Android 端；WASM（浏览器）端见第 11 节 |
-| 关联项目 | D:\comind\comind |
+| 关联项目 | D:\comind\comind                               |
 
----
+***
 
 ## 1. 背景
 
@@ -29,6 +29,7 @@ comind 是一个 Tauri 2 应用，前端使用 Vue 3 + TypeScript，后端使用
 ### 1.1 范围说明
 
 **纳入范围**：
+
 - `src/services/notification-service.ts` 的全部业务逻辑
 - `src/utils/parser.ts`、`src/utils/date-parser.ts`、`src/utils/recurrence.ts`、`src/utils/journal-detect.ts`、`src/utils/quiet-hours.ts`、`src/utils/date-ref.ts` 中的解析与判定逻辑
 - `src/utils/block-helpers.ts` 中的排序与位置计算逻辑
@@ -37,6 +38,7 @@ comind 是一个 Tauri 2 应用，前端使用 Vue 3 + TypeScript，后端使用
 - 渲染层数据消费改造（新增 `getPageWithBlocks` 接口，TS 渲染路径切换为消费结构化数据）
 
 **排除范围**（需显式标注，避免遗漏）：
+
 - `src/services/migrate.ts`：存量数据迁移脚本（`T15`），属一次性运维工具，非持续业务逻辑。其引用的 `serializeDateRef` 可在迁移完成后改为调用 Rust 命令，但迁移逻辑本身不纳入重构。
 - `src/services/serialize-block-tree.ts`：Block 树 ↔ TemplateBlock 树的序列化，服务于模板系统。模板的创建/渲染由 `template-renderer.ts` 与 `TemplateService`（Rust 已有）承担，不迁移 TS 侧的序列化逻辑。
 - `src/services/template-renderer.ts`：模板变量展开（`{{date}}`、`{{page_title}}` 等）属 UI 层文本变换，保留 TS。
@@ -44,7 +46,7 @@ comind 是一个 Tauri 2 应用，前端使用 Vue 3 + TypeScript，后端使用
 - `src/config/relationship-types-seed.ts`：内置关系类型种子数据（`is-a`、`part-of`、`depends-on` 等 8 种），属数据配置而非业务逻辑。Rust 侧 `RelationshipTypeService` 已有种子写入能力，但种子内容定义保留 TS（与 UI 展示的 `label`/`color`/`group` 字段紧耦合）。
 - WASM（浏览器）端适配，见第 11 节。
 
----
+***
 
 ## 2. 重构原则
 
@@ -55,7 +57,7 @@ comind 是一个 Tauri 2 应用，前端使用 Vue 3 + TypeScript，后端使用
 5. **功能等价**：重构前后用户可见行为不变；现有测试全部保留并随迁移适配。
 6. **可测试性**：Rust 层业务逻辑以纯函数 + 服务层的形式存在，不依赖 Tauri runtime 即可单元测试；TS 层 UI 逻辑以组件 + composable 测试覆盖。
 
----
+***
 
 ## 3. 分层架构目标态
 
@@ -83,7 +85,7 @@ comind 是一个 Tauri 2 应用，前端使用 Vue 3 + TypeScript，后端使用
 └─────────────────────────────────────────────────────────┘
 ```
 
----
+***
 
 ## 4. 职责迁移清单
 
@@ -92,6 +94,7 @@ comind 是一个 Tauri 2 应用，前端使用 Vue 3 + TypeScript，后端使用
 **当前位置**：`src/services/notification-service.ts`
 
 **迁移内容**：
+
 - `checkAndFire` 整体（含 recurring 周期计算、到期判定、通知创建/复用/去重、软删除锚点维护）。
 - `calculateEventTime`（recurrence 推进算法，复用 `comind-core` 的 `chrono`）。
 - `fireNotification` 状态机（pending → unread → dismissed）。
@@ -99,11 +102,12 @@ comind 是一个 Tauri 2 应用，前端使用 Vue 3 + TypeScript，后端使用
 - `loadNotificationSettingsSync` / `saveNotificationSettings`（设置读写，从 localStorage 迁移至 Rust 内存 + 持久化，见 5.5 节）。
 
 **Rust 侧落地**：
+
 - 新增 `comind-core/services/notification_service.rs`。
 - 新增 Tauri 命令 `check_and_fire`、`sync_payload_for_block`、`get_notification_settings`、`save_notification_settings`。
 - `BlockService::update` 内部在 `reschedule_notifications_on_change` 之后追加 `NotificationService::sync_payload_for_block` 调用，使编辑路径的通知同步在写入事务内完成，零额外 IPC。
 
-**当前 IPC 链路**：`checkAndFire` 在 TS 侧调用 `batchCheckAndFireData(now)`（1 次 IPC 获取 recurring_refs + due_non_recurring + blocks + pages + notifications），然后在 TS 侧完成计算与判定后，对需创建/更新的通知逐条调用 `updateNotification`（N×M 次 IPC）。
+**当前 IPC 链路**：`checkAndFire` 在 TS 侧调用 `batchCheckAndFireData(now)`（1 次 IPC 获取 recurring\_refs + due\_non\_recurring + blocks + pages + notifications），然后在 TS 侧完成计算与判定后，对需创建/更新的通知逐条调用 `updateNotification`（N×M 次 IPC）。
 
 **重构后**：`check_and_fire` 命令在 Rust 内部完成上述全部步骤（查询 + 计算 + 通知写入），`batchCheckAndFireData` 命令的查询逻辑被 `check_and_fire` 内部复用。`batchCheckAndFireData` 命令本身保留（供调试与 WASM 端 fallback），但 TS 侧不再直接调用。
 
@@ -114,10 +118,12 @@ comind 是一个 Tauri 2 应用，前端使用 Vue 3 + TypeScript，后端使用
 **当前位置**：`src/utils/parser.ts`（`parseBlockLinks`、`parseContent`、`parsePropertyValue`）
 
 **迁移边界决策**：
+
 - **存储路径**：Block 保存时由 Rust 负责从 `block.content` 解析出 links 与 properties，并维护 Link 表与 Property 表。TS 不再调用 `parseBlockLinks` 后自行构造 link 数组传给 Rust。
 - **渲染路径**：`useContentRenderer` 不再对 `block.content` 做正则解析生成 HTML。改为接收 Rust 一并返回的结构化数据（links、dateRefs），TS 仅做 HTML 转义与 span 拼装。具体接口设计见第 7 节。
 
 **Rust 侧落地**：
+
 - 新增 `comind-core/services/content_parse_service.rs`（或扩展 `LinkService`），提供 `extract_links_from_content(content) -> Vec<LinkDraft>` 与 `extract_properties_from_content(content) -> Vec<PropertyDraft>`。
 - `BlockService::update` / `create` 内部调用上述解析，随后经 `LinkService::sync_links_for_block` 与 `PropertyService` 维护派生数据。Page 查找（link 目标页面匹配）直接在 Rust 内对 Page 表查询，准确性优于当前 TS 依赖内存缓存的方案。
 - `parsePropertyValue` 的类型推断（boolean / date / page-reference / number / list / string）在 Rust 侧以 `PropertyValue` 枚举实现。
@@ -133,8 +139,9 @@ comind 是一个 Tauri 2 应用，前端使用 Vue 3 + TypeScript，后端使用
 **业务逻辑**：当用户在一个 block 中设置 `((type))[[target]]` 关系类型后，需将该关系类型同步到同页面内其他 block 中对同一 `target` 的链接上。`editingBlockId` 标记当前正在编辑的 block，同步时跳过（避免覆盖编辑中的内容）。
 
 **迁移决策**：
+
 - **编排逻辑保留 TS**：遍历同页面 block、跳过 `editingBlockId`、决定哪些 block 需要更新——这些逻辑依赖 UI 状态（`editingBlockId`），属交互编排，保留 TS。
-- **解析逻辑下沉 Rust**：`parseBlockLinks`（从 content 提取链接与关系类型）与 `applyRelationshipTypeToBlockContent`（对 content 做关系类型的字符串替换/追加/移除）迁移至 Rust。TS 侧通过新增的 Rust 命令 `apply_relationship_sync`（输入：block_id + target_title + relationship_type，输出：更新后的 content）获取结果，再做编排。
+- **解析逻辑下沉 Rust**：`parseBlockLinks`（从 content 提取链接与关系类型）与 `applyRelationshipTypeToBlockContent`（对 content 做关系类型的字符串替换/追加/移除）迁移至 Rust。TS 侧通过新增的 Rust 命令 `apply_relationship_sync`（输入：block\_id + target\_title + relationship\_type，输出：更新后的 content）获取结果，再做编排。
 
 **理由**：`applyRelationshipTypeToBlockContent` 的核心是正则替换（`((old))[[target]]` → `((new))[[target]]`），属业务规则；但决定"哪些 block 需要同步"依赖 UI 状态，属交互逻辑。
 
@@ -145,11 +152,13 @@ comind 是一个 Tauri 2 应用，前端使用 Vue 3 + TypeScript，后端使用
 **迁移决策**：Rust 在读写时保证数据已排序且结构合法，TS 仅消费已排序数据，不再做任何排序或位置计算。
 
 **Rust 侧现状（已具备）**：
+
 - `BlockService::calculate_gap_sort_pos` / `calculate_gap_sort_pos_for_root`：插入位置计算（空列表返回 1000，否则按 gap > 1 取中间值或末尾 +1000）。
 - `BlockService::build_tree`：返回 `BlockTree`（含 `block_map`、`root_blocks`、`children_map`，`root_blocks` 与各 `children_map` 子列表均按 `pos` 升序排列）。
 - `BlockRepository::get_by_page_id`：查询指定页面的所有 block（需确认 SQL 是否 `ORDER BY pos`，若否则需追加）。
 
 **待补充**：
+
 - `BlockService::reorder`：当前实现为直接设置 `parent_id` 与 `pos` 后 `update`，**无循环引用检测**。需增加 `is_descendant_of` 检查：若目标 `parent_id` 是当前 block 的后代，返回 `Err`，由 TS 捕捉后回滚（见 5.4 节）。
 - `getBlocksByPage` 查询返回结果保证按 `pos` 升序（SQL `ORDER BY pos`），TS 不再调用 `sortByPos`。
 
@@ -175,6 +184,7 @@ struct BlockSaveResult {
 ### 4.6 日期、期刊检测与静默时段（纯计算迁移至 Rust）
 
 **迁移内容**：
+
 - `utils/date-parser.ts`（`parseDateInput`、`parseDateTimeInput`、`resolveDate`）：相对日期、中文星期、中文时间解析。
 - `utils/recurrence.ts`（`calculateNextRecurrence`）：recurrence 推进。
 - `utils/journal-detect.ts`（`isJournalTitle`、`normalizeJournalTitle`、`inferPageType`）：8 种日期格式检测与规范化。
@@ -184,7 +194,7 @@ struct BlockSaveResult {
 
 **Rust 侧落地**：上述纯函数迁移至 `comind-core/utils/`（或各 service 内的 `parse` 模块），以纯函数形式实现并附单元测试。TS 侧如渲染需要（如 `formatIsoDisplay` 仅用于展示格式化），保留展示层薄封装，但解析判定逻辑以 Rust 返回的结构化字段为准。
 
----
+***
 
 ## 5. 关键设计决策
 
@@ -200,14 +210,11 @@ struct BlockSaveResult {
 
 **决策**：
 
-1. **`execute_with_adapter` 区分读写路径**：
+1. **`execute_with_adapter`** **区分读写路径**：
    - 读路径：继续使用 `&mut dyn StorageAdapter`（非事务型，避免无谓的事务开销）。
    - 写路径：新增 `execute_with_transaction_adapter`，在命令层开启一个事务，返回处于事务内的 `&mut dyn StorageAdapter` 给闭包。闭包内所有 service 层调用（`BlockService::update`、`LinkService::sync_links_for_block`、`DateRefService::sync_date_refs_for_block` 等）都操作这个已处于事务内的 adapter。
-
 2. **Service 层签名不改动**：`BlockService::create` / `update` / `delete` 与 `LinkService::sync_links_for_block` 统一使用 `&mut dyn StorageAdapter`。事务管理责任上移到命令层（`execute_with_transaction_adapter`），service 层不关心是否在事务内——调用方负责保证。方案 B（决策 4）已将 `sync_links_for_block` 的 `S: TransactionalStorageAdapter` 约束去掉，trait bound 不匹配问题消除。
-
 3. **事务边界**：`save_block_tree`、`delete_block`、`execute_batch` 等写入命令的整个操作体（block 变更 + dateRef 同步 + link 同步 + property 同步 + notification reschedule / sync payload + blockVersion 快照写入）包在一个事务内。任一子步骤失败，整个事务回滚，Rust 命令返回 `Err(String)`，TS 侧据此回滚内存状态（见 5.4 节）。
-
 4. **嵌套事务安全**：采用方案 B —— `LinkService::sync_links_for_block` 签名从 `S: TransactionalStorageAdapter` 改为 `&mut dyn StorageAdapter`，不再自行调用 `storage.transaction()`。由调用方（`BlockService::update` / `create` / `delete`）负责开启一个事务，内部所有子操作（block 写入、dateRef 同步、link 同步、notification reschedule / sync payload、blockVersion 快照写入）都在同一事务内完成。事务边界清晰：一次写入一个事务，无嵌套。
 
 ### 5.2 同步通知范围扩展
@@ -217,12 +224,13 @@ struct BlockSaveResult {
 `execute_batch` 已有 `sync_changes: HashMap<SyncTable, Vec<String>>` 收集机制（`commands.rs:887`），但 `save_block_tree` 未采用，仅硬编码 `SyncTable::Block`。
 
 **决策**：`save_block_tree` 也采用 `SyncChanges` 收集机制，事务闭包返回 `(Vec<BlockSaveResult>, SyncChanges)`，命令在事务提交后遍历 `SyncChanges` 批量调用 `record_and_notify`。具体扩展：
+
 - block 变更 → `SyncTable::Block`（已有）。
 - link 同步产生的增删 → `SyncTable::Link`。
 - notification payload 同步产生的变更 → `SyncTable::Notification`。
 - property 同步产生的增删 → `SyncTable::Property`。
 
-### 5.3 execute_batch 统一写入路径
+### 5.3 execute\_batch 统一写入路径
 
 **现状问题**：`execute_batch` 中的 block 操作直接调用 repository 层（`storage.blocks().create()` 等），绕过 `BlockService`，因此不触发 dateRef 同步、link 同步、notification reschedule。而 `save_block_tree` 走 `BlockService`，两者行为不一致。经 `execute_batch` 删除的 block 可能遗留 dateRef 与 notification 孤儿记录。
 
@@ -233,6 +241,7 @@ struct BlockSaveResult {
 **现状问题**：TS 层当前采用乐观更新——`deleteBlocks` 先从 `blocks.value` 移除（同步触发 UI 重渲染），再 `setTimeout(0)` fire-and-forget 调 `execute_batch`；`createBlock` / `updateBlockContent` 先改内存再 debounce 保存。若 Rust 事务失败，TS 侧无回滚机制，UI 展示与数据库不一致。重构后单次事务涵盖更多实体，失败影响面更大。
 
 **行业实践参照**：
+
 - **Linear**：前端乐观更新，发起请求前保存内存状态快照，请求失败时回滚到快照并弹出错误提示。
 - **Logseq**：前端持有 Datascript 内存数据库，所有变更以事务形式提交，事务原子性保证 UI 与内存 DB 始终一致；持久化通过 IPC 发给 Rust 后端，失败时事务整体不生效，UI 自然反映回滚态。
 - **Obsidian**：无乐观更新层，直接写本地文件。
@@ -241,15 +250,14 @@ struct BlockSaveResult {
 
 **决策（Linear 风格：请求前快照 + 失败回滚）**：
 
-1. **单 block 编辑保存失败（`_doSave` 抛错）**：
+1. **单 block 编辑保存失败（`_doSave`** **抛错）**：
    - 保持当前乐观更新——不回滚内容，用户刚输入的文字必须保留。
    - 在 `blocks.ts` store 新增 `saveErrors: ReactiveMap<string, boolean>`（blockId → 是否保存失败）。
    - `_doSave` 的 catch 块中 `saveErrors.set(block.id, true)`；成功后 `saveErrors.delete(block.id)`。
    - **UI 交互**：BulletRender 渲染态在 block 文本末尾右侧显示 8×8px 红色圆点，`cursor: pointer`，hover 显示 tooltip "保存失败，点击重试"。点击红点 → 红点变为旋转 loading 图标 → 调用 `blockStore.retrySave(blockId)` 重新执行 `_doSave` → 成功后消失 / 失败后恢复红点。
    - 仅在 block 处于渲染态（非编辑态）时显示红点。编辑态不显示——编辑态还在输入，下次 debounce save 会自动重试。
    - 编辑器仍可继续编辑，不被阻塞。
-
-2. **批量结构性操作失败（`deleteBlocks` / `moveBlock` / `indent` / `outdent` / `reorder`）**：
+2. **批量结构性操作失败（`deleteBlocks`** **/** **`moveBlock`** **/** **`indent`** **/** **`outdent`** **/** **`reorder`）**：
    - 在发起 RPC 前对受影响的 `blocks.value` 子数组保存深拷贝快照。
    - RPC 失败时：
      - 用快照恢复 `blocks.value`；
@@ -257,9 +265,7 @@ struct BlockSaveResult {
      - 调用 `blockCardStore.invalidate` 清除相关缓存；
      - 弹出 toast **"操作失败，已撤销"**（非阻塞，3 秒自动消失）。
    - 不提供重试按钮——结构性操作失败通常是事务冲突或数据问题，重试不一定成功；用户可重新操作。
-
 3. **Rust 侧保证**：写入命令在事务失败时返回明确错误字符串（含失败实体与原因），TS 侧据此区分"可重试"（如 Gap 耗尽、循环引用）与"不可重试"（如 FK 约束、磁盘错误）错误，分别给出不同提示。
-
 4. **事务原子性是回滚策略的基础**：`save_block_tree` 的事务原子性（5.1）保证 Rust 侧要么全成功要么全回滚，TS 侧快照回滚才能与数据库最终态对齐。若 Rust 侧非原子，TS 侧回滚后数据库仍可能有部分写入，造成新不一致。
 
 ### 5.5 通知设置存储迁移
@@ -269,6 +275,7 @@ struct BlockSaveResult {
 **决策**：通知设置独立为 `NotificationConfig`，存 SQLite 表 `notification_config`（单行表，id=1），不混入 AppConfig JSON 文件。
 
 **理由**：
+
 1. **语义不同**：AppConfig 是设备环境配置（workspace 路径、同步网络参数），NotificationSettings 是用户业务偏好（要不要提醒、几点静默），混入 AppConfig 会让其膨胀。
 2. **访问模式不同**：AppConfig 启动时一次性加载、运行时几乎不变；NotificationSettings 每次调用 `checkAndFire` 时读内存、设置页面随时改。独立配置 + 内存缓存更清晰。
 3. **多设备同步**：AppConfig 是每设备一份（不同设备 workspace 路径不同），不应跨设备同步。NotificationSettings 是用户偏好，应跨设备一致——放数据库可通过 `SyncTable::NotificationConfig`（新增枚举值）传播。
@@ -296,7 +303,7 @@ pub struct NotificationConfig {
 - 新增 `SyncTable::NotificationConfig` 枚举值，支持多设备同步。
 - TS 侧在 `App.vue` 初始化时阻塞等待一次 `client.getNotificationSettings()`，写入 `notificationStore` 后再渲染通知相关 UI，消除默认值闪现。
 
----
+***
 
 ## 6. TS/Rust 通信接口规范
 
@@ -309,6 +316,7 @@ pub struct NotificationConfig {
 ### 6.2 批量接口优先
 
 为遵循最小 IPC 原则，优先设计批量 / 聚合接口：
+
 - `saveBlockTree`：单次调用完成 block 保存 + 全部派生数据同步（dateRef、link、property、notification）+ 快照返回（替代原 7–10 次 IPC）。
 - `build_graph_snapshot`：单次 SQL JOIN 返回所有页面边关系（已有，保留）。
 - `batchCheckAndFireData`：单次返回 recurring refs + due non-recurring + blocks + pages + notifications（已有，保留；重构后 `check_and_fire` 命令在 Rust 内部直接消费其查询逻辑，TS 不再直接调用）。
@@ -407,6 +415,7 @@ export type RenderSegment =
 ```
 
 **设计要点**：
+
 - `render_segments` 仅对 `bullet` 和 `property` 类型的 block 有意义（这两种类型的 content 含 `[[links]]`、`@dateRef`、`((type))[[links]]` 等内联语法）。对其他 block 类型（`code`、`image`、`embed`），`render_segments` 返回空数组 `[]`，TS 侧组件（CodeMirrorEditor / ImageRender / EmbedRender）直接消费 `block.content` 与 `block.format`，不走 `useContentRenderer`。
 - `render_segments` 覆盖 content 的全部区间（无间隙），TS 侧只需遍历段数组、按 start/end 截取原文、对 text 段做 HTML 转义、对其他段生成对应 span HTML 即可。
 - 段类型用 `#[serde(tag = "type")]` 标签枚举，TS 侧用 discriminated union 对应。
@@ -447,11 +456,11 @@ function renderContentToHtml(segments: RenderSegment[], content: string): string
 
 该函数纯展示逻辑，不含任何正则解析或业务判定。
 
-### 6.3 已知技术债：build_graph_snapshot 绕过 service 层
+### 6.3 已知技术债：build\_graph\_snapshot 绕过 service 层
 
 `build_graph_snapshot` 命令（`commands.rs:432`）直接使用 `adapter.conn.prepare(SQL)` 执行原始 SQL JOIN，绕过 service 与 repository 层。这是性能优化手段（单次 JOIN 替代 N×3 次 IPC），功能等价于全量遍历 Link 表 + JOIN Block/Page 表。本期不做重构（读取路径不影响事务原子性），但标记为已知技术债：若未来 schema 变更，需同步更新此处 SQL。
 
----
+***
 
 ## 7. 渲染层数据消费改造
 
@@ -470,7 +479,7 @@ function renderContentToHtml(input: RenderInput): string
 
 此改造与存储路径解析迁移（4.2 节）一并在本次重构中完成。存储路径迁移后，Rust 侧已有 `extract_links_from_content` 与 `extract_date_refs` 的解析能力；`getPageWithBlocks` 在查询时复用这些能力，将结构化数据随 block 一并返回给 TS 渲染层。这样 TS 侧不再保留任何对 `block.content` 的正则解析逻辑，彻底消除双份逻辑风险。
 
----
+***
 
 ## 8. 测试策略
 
@@ -498,55 +507,56 @@ function renderContentToHtml(input: RenderInput): string
 - 高频编辑场景：模拟快速连续输入（每 50ms 一次，共 20 次），验证最终数据库状态与 UI 一致、无孤儿记录、无 IPC 堆积。
 - 跨设备同步：桌面端编辑触发 link / notification 变更后，验证 Android 端能收到对应增量同步。
 
----
+***
 
 ## 9. 实施路线图
 
 全部迁移内容一次性完成交付。以下为内部工作顺序（非分期交付，仅为实施时的依赖排序）：
 
-| 步骤 | 内容 | 关键交付 | 风险 | 前置依赖 |
-|------|------|----------|------|----------|
-| S1 | 基础设施：`execute_with_transaction_adapter`、`LinkService::sync_links_for_block` 签名改为 `&mut dyn StorageAdapter`（方案 B）、`SyncChanges` 收集机制接入 `save_block_tree` | 写路径原子性基座 | 中（影响所有写入路径） | 无 |
-| S2 | 通知调度引擎迁移至 Rust（4.1）+ 通知设置迁移（5.5） | `notification_service.rs` + 命令 + 设置存储 + 测试 | 中（recurrence 时区） | S1 |
-| S3 | 内容解析器迁移（4.2）：存储路径 + 渲染路径 | `content_parse_service.rs` / `LinkService` 解析 + `BlockService::update` 内联 link 同步 | 中 | S1 |
-| S4 | BlockVersion 快照内联（4.5） | `saveBlockTree` 返回 `BlockSaveResult` | 低 | S1, S3 |
-| S5 | Block 排序与树操作收口（4.4） | `reorder` 循环检测 + 排序保证 | 低 | S1 |
-| S6 | 日期 / 期刊 / recurrence / quiet-hours 迁移（4.6） | `comind-core/utils` 纯函数 + 测试 | 低 | S2（`isQuietHours` 依赖通知设置） |
-| S7 | 跨 block 关系类型同步：解析下沉 Rust（4.3） | `apply_relationship_sync` 命令 + 测试 | 中 | S3 |
-| S8 | 统一写入路径（5.3）+ 同步通知扩展（5.2） | `execute_batch` 走 Service 层 + `SyncChanges` 全覆盖 | 中 | S1–S3 |
-| S9 | 回滚策略落地（5.4） | 快照回滚 + 错误提示 + 重试 UI | 中 | S1, S8 |
-| S10 | 渲染层结构化数据改造（第 7 节） | `getPageWithBlocks` + `RenderSegment` 结构 + `useContentRenderer` 改造 | 中 | S3 |
+| 步骤  | 内容                                                                                                                                                      | 关键交付                                                                              | 风险               | 前置依赖                      |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------- | ------------------------- |
+| S1  | 基础设施：`execute_with_transaction_adapter`、`LinkService::sync_links_for_block` 签名改为 `&mut dyn StorageAdapter`（方案 B）、`SyncChanges` 收集机制接入 `save_block_tree` | 写路径原子性基座                                                                          | 中（影响所有写入路径）      | 无                         |
+| S2  | 通知调度引擎迁移至 Rust（4.1）+ 通知设置迁移（5.5）                                                                                                                        | `notification_service.rs` + 命令 + 设置存储 + 测试                                        | 中（recurrence 时区） | S1                        |
+| S3  | 内容解析器迁移（4.2）：存储路径 + 渲染路径                                                                                                                                | `content_parse_service.rs` / `LinkService` 解析 + `BlockService::update` 内联 link 同步 | 中                | S1                        |
+| S4  | BlockVersion 快照内联（4.5）                                                                                                                                  | `saveBlockTree` 返回 `BlockSaveResult`                                              | 低                | S1, S3                    |
+| S5  | Block 排序与树操作收口（4.4）                                                                                                                                     | `reorder` 循环检测 + 排序保证                                                             | 低                | S1                        |
+| S6  | 日期 / 期刊 / recurrence / quiet-hours 迁移（4.6）                                                                                                              | `comind-core/utils` 纯函数 + 测试                                                      | 低                | S2（`isQuietHours` 依赖通知设置） |
+| S7  | 跨 block 关系类型同步：解析下沉 Rust（4.3）                                                                                                                           | `apply_relationship_sync` 命令 + 测试                                                 | 中                | S3                        |
+| S8  | 统一写入路径（5.3）+ 同步通知扩展（5.2）                                                                                                                                | `execute_batch` 走 Service 层 + `SyncChanges` 全覆盖                                   | 中                | S1–S3                     |
+| S9  | 回滚策略落地（5.4）                                                                                                                                             | 快照回滚 + 错误提示 + 重试 UI                                                               | 中                | S1, S8                    |
+| S10 | 渲染层结构化数据改造（第 7 节）                                                                                                                                       | `getPageWithBlocks` + `RenderSegment` 结构 + `useContentRenderer` 改造                | 中                | S3                        |
 
 **关键依赖链**：S1 是所有写路径改造的前置；S2 是 S6 中 `isQuietHours` 迁移的前置；S3 是 S4、S7、S8、S10 的前置；S8 是 S9 的前置（回滚策略依赖统一写入路径保证事务原子性）。所有步骤在同一个交付周期内完成。
 
----
+***
 
 ## 10. 风险与缓解
 
-| 风险 | 影响 | 缓解 |
-|------|------|------|
-| recurrence 推进时区偏差（WASM `chrono::Local` bug） | 通知时间错误 | WASM 端不在本期范围；桌面/Android 使用 `chrono::Local` 已验证；新增 Rust 测试锁定本地 9:00 语义 |
-| 事务锁持有时间增长（~1.5ms → ~4–5ms） | 快速切换 block 编辑时排队 | 锁持有远低于 300ms debounce 间隔，实测排队概率 < 1.5%；必要时拆分大事务 |
-| 回滚快照内存占用（批量删除大量 block） | 短时内存峰值 | 仅对结构性操作保存受影响子数组快照，非全量 |
-| TS/Rust 类型漂移 | 运行时结构不匹配 | 关键结构体变更在 PR 描述显式列出；集成测试覆盖 |
-| `execute_with_transaction_adapter` 新增影响所有写入命令 | 写入路径行为变更 | 全量排查写入命令（`save_block_tree`、`delete_block`、`execute_batch` 等），统一切换到 `execute_with_transaction_adapter`，每步完成后运行全量测试 |
-| 嵌套事务（`BlockService::update` 内调 `LinkService::sync_links_for_block` 又开事务） | 嵌套事务语义不明确 | 采用方案 B：`sync_links_for_block` 不自行开事务，改为接受 `&mut dyn StorageAdapter`，由调用方统一管理事务边界 |
-| 一次性交付工作量大、回归风险高 | 中间状态不稳定导致全量功能不可用 | 按内部依赖顺序（S1→S10）逐步合并到特性分支，每步完成后运行全量测试，确保中间状态可编译可运行；最终一次性合并到主分支 |
+| 风险                                                                       | 影响               | 缓解                                                                                                                |
+| ------------------------------------------------------------------------ | ---------------- | ----------------------------------------------------------------------------------------------------------------- |
+| recurrence 推进时区偏差（WASM `chrono::Local` bug）                              | 通知时间错误           | WASM 端不在本期范围；桌面/Android 使用 `chrono::Local` 已验证；新增 Rust 测试锁定本地 9:00 语义                                             |
+| 事务锁持有时间增长（\~1.5ms → \~4–5ms）                                             | 快速切换 block 编辑时排队 | 锁持有远低于 300ms debounce 间隔，实测排队概率 < 1.5%；必要时拆分大事务                                                                   |
+| 回滚快照内存占用（批量删除大量 block）                                                   | 短时内存峰值           | 仅对结构性操作保存受影响子数组快照，非全量                                                                                             |
+| TS/Rust 类型漂移                                                             | 运行时结构不匹配         | 关键结构体变更在 PR 描述显式列出；集成测试覆盖                                                                                         |
+| `execute_with_transaction_adapter` 新增影响所有写入命令                            | 写入路径行为变更         | 全量排查写入命令（`save_block_tree`、`delete_block`、`execute_batch` 等），统一切换到 `execute_with_transaction_adapter`，每步完成后运行全量测试 |
+| 嵌套事务（`BlockService::update` 内调 `LinkService::sync_links_for_block` 又开事务） | 嵌套事务语义不明确        | 采用方案 B：`sync_links_for_block` 不自行开事务，改为接受 `&mut dyn StorageAdapter`，由调用方统一管理事务边界                                  |
+| 一次性交付工作量大、回归风险高                                                          | 中间状态不稳定导致全量功能不可用 | 按内部依赖顺序（S1→S10）逐步合并到特性分支，每步完成后运行全量测试，确保中间状态可编译可运行；最终一次性合并到主分支                                                     |
 
----
+***
 
 ## 11. WASM（浏览器）端说明
 
 重构范围限定 Tauri 桌面端与 Android 端。WASM 端（`WasmClientAdapter`）当前以下能力受限或缺失：SavedFilter / TaskView / BlockCard 返回空或抛错；blockVersion / notification 走 localStorage；`ensureTodayIdeasPage` 用 `getAllPages` fallback；`chrono::Local` 存在时区 bug（ADR 0001）。
 
 迁移至 Rust 的通知调度引擎、内容解析在 WASM 端的行为需单独评估：
+
 - 若 WASM 端需保留通知能力，需先解决 `chrono::Local` 时区问题或显式使用 UTC + 偏移。
 - `useRelationshipSync` 的跨 block 关系同步（依赖 `editingBlockId` UI 状态）保留在 TS 层，其调用的解析逻辑从 Rust 获取（见 4.3 边界决策）。
 - 新增的 Rust 命令在 `WasmClientAdapter` 中应显式标注 `unsupported` 并抛出明确错误，避免静默 fallback 导致行为不一致。
 
 WASM 端完整适配列为后续迭代，不在本次交付物内。
 
----
+***
 
 ## 12. 参考
 
@@ -564,13 +574,14 @@ WASM 端完整适配列为后续迭代，不在本次交付物内。
 - Tauri 官方命令模式：`#[tauri::command]` 返回 `Result<T, String>`。
 - CRDT 方案（Yjs / Automerge）：本地操作不可失败，冲突自动合并（对照参考，不采用）。
 
----
+***
 
 ## 13. 附录：迁移前后 IPC 次数对比
 
-| 操作 | 迁移前 IPC 次数 | 迁移后 IPC 次数 | 变化 |
-|------|---------------|---------------|------|
-| 单 block debounce 保存 | 7–10（saveBlockTree + _syncBlockLinks + _createBlockVersion×4 + syncPayloadForBlock×3-4） | 1–2（saveBlockTree 含快照返回 + 版本消费） | −70% ~ −80% |
-| 批量删除 block | 1（fire-and-forget execute_batch） | 1（事务内完成级联清理） | 持平，但一致性增强 |
-| 通知调度（每 60s） | 1（batchCheckAndFireData）+ N×M 写（updateNotification） | 1（check_and_fire 内部完成查询 + 计算 + 写入） | 大幅减少 |
-| 页面加载渲染 | 0 次 IPC（内存正则解析） | 1 次 IPC（getPageWithBlocks 一并返回结构化数据） | 消除 TS 侧二次正则解析 |
+| 操作                  | 迁移前 IPC 次数                                                                                | 迁移后 IPC 次数                           | 变化            |
+| ------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------ | ------------- |
+| 单 block debounce 保存 | 7–10（saveBlockTree + \_syncBlockLinks + \_createBlockVersion×4 + syncPayloadForBlock×3-4） | 1–2（saveBlockTree 含快照返回 + 版本消费）      | −70% \~ −80%  |
+| 批量删除 block          | 1（fire-and-forget execute\_batch）                                                         | 1（事务内完成级联清理）                         | 持平，但一致性增强     |
+| 通知调度（每 60s）         | 1（batchCheckAndFireData）+ N×M 写（updateNotification）                                       | 1（check\_and\_fire 内部完成查询 + 计算 + 写入） | 大幅减少          |
+| 页面加载渲染              | 0 次 IPC（内存正则解析）                                                                           | 1 次 IPC（getPageWithBlocks 一并返回结构化数据） | 消除 TS 侧二次正则解析 |
+

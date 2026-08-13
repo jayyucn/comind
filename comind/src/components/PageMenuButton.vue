@@ -50,6 +50,12 @@ const currentPage = computed(() => {
   return pageStore.getPage(currentPageId.value) ?? pageStore.getPageByTitle(currentPageId.value)
 })
 
+const shouldDelete = computed(() => {
+  if (!currentPage.value) return false
+  if(currentPage.value.type == 'ideas') return false
+  return currentPage.value.deleted ?? false
+})
+
 const favorited = computed(() => currentPage.value ? isFavorite(currentPage.value.id) : false)
 
 function toggleMenu() {
@@ -151,7 +157,7 @@ onUnmounted(() => {
             <span>{{ favorited ? '取消收藏' : '添加收藏' }}</span>
           </button>
 
-          <div class="menu-item has-submenu" @click="toggleDeleteSubmenu">
+          <div v-if="shouldDelete" class="menu-item has-submenu" @click="toggleDeleteSubmenu">
             <Icon name="icon-trash2" :size="16" />
             <span>删除本页</span>
             <Icon class="arrow-icon" :class="{ rotated: isDeleteSubmenuOpen }" name="icon-arrow-right" :size="16" />

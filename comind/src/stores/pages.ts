@@ -134,8 +134,24 @@ export const usePageStore = defineStore('pages', () => {
     return page
   }
 
-  async function openPage(pageId: string) {
+  function setCurrentPage(pageId: string) {
     currentPageId.value = pageId
+  }
+
+  // 保证 loadAllPages 在守卫 get-or-create 前完成一次，
+  // 避免刷新时内存缓存未加载导致 getPage/getPageByTitle 双 miss 而误建垃圾 Page。
+  let pagesReady: Promise<void> | null = null
+  function ensurePagesLoaded(): Promise<void> {
+    if (!pagesReady) {
+      pagesReady = loadAllPages().catch((err) => {
+        console.warn('[pages] ensurePagesLoaded failed:', err)
+      })
+    }
+    return pagesReady
+  }
+
+  async function openPage(pageId: string) {
+    setCurrentPage(pageId)
     const blockStore = useBlockStore()
     await blockStore.ensurePageBlocks(pageId)
   }
@@ -257,25 +273,23 @@ export const usePageStore = defineStore('pages', () => {
   /** 加载回收站页面 */
   async function loadTrashPages() {
     const client = await getClient()
-    const rustPages = await client.getAllPages()
-    trashPages.value = rustPages
-      .filter(rustPage => rustPage.deleted === 1)
-      .map(rustPage => ({
-        id: rustPage.id,
-        blockId: rustPage.block_id,
-        title: rustPage.title,
-        type: rustPage.type as Page['type'],
-        icon: rustPage.icon,
-        cover: rustPage.cover,
-        aliases: JSON.parse(rustPage.aliases || '[]') as string[],
-        filePath: rustPage.file_path,
-        childrenCount: rustPage.children_count,
-        wordCount: rustPage.word_count,
-        createdAt: rustPage.created_at,
-        updatedAt: rustPage.updated_at,
-        deleted: true,
-        deletedAt: null
-      }))
+    const rustPages = await client.getTrashPages()
+    trashPages.value = rustPages.map(rustPage => ({
+      id: rustPage.id,
+      blockId: rustPage.block_id,
+      title: rustPage.title,
+      type: rustPage.type as Page['type'],
+      icon: rustPage.icon,
+      cover: rustPage.cover,
+      aliases: JSON.parse(rustPage.aliases || '[]') as string[],
+      filePath: rustPage.file_path,
+      childrenCount: rustPage.children_count,
+      wordCount: rustPage.word_count,
+      createdAt: rustPage.created_at,
+      updatedAt: rustPage.updated_at,
+      deleted: true,
+      deletedAt: rustPage.deleted_at ?? rustPage.updated_at,
+    }))
   }
 
   /** 软删除页面（移至回收站） */
@@ -283,11 +297,15 @@ export const usePageStore = defineStore('pages', () => {
     const client = await getClient()
     const page = getPage(pageId)
     if (page) {
-      await client.savePage({ 
-        id: pageId, 
-        title: page.title, 
-        type: page.type 
-      })
+      await client.executeBatch([{
+        entity: 'page',
+        action: 'delete',
+        params: { id: pageId },
+      }])
+      trashPages.value = [
+        { ...page, deleted: true, deletedAt: Date.now() },
+        ...trashPages.value.filter(p => p.id !== pageId),
+      ]
     }
     pages.value = pages.value.filter(p => p.id !== pageId)
     if (currentPageId.value === pageId) {
@@ -331,5 +349,5 @@ export const usePageStore = defineStore('pages', () => {
     }
   }
 
-  return { pages, currentPageId, loading, trashPages, loadAllPages, getIdeasPagesByMonth, getIdeasMonths, ensureTodayIdeasPage, openPage, createPage, getPage, getPageByTitle, getOrCreatePageByTitle, renamePage, mergePage, deletePage, loadTrashPages, softDeletePage, restorePage, permanentDeletePage, onRemovePageFromHistory }
+  return { pages, currentPageId, loading, trashPages, loadAllPages, ensurePagesLoaded, getIdeasPagesByMonth, getIdeasMonths, ensureTodayIdeasPage, setCurrentPage, openPage, createPage, getPage, getPageByTitle, getOrCreatePageByTitle, renamePage, mergePage, deletePage, loadTrashPages, softDeletePage, restorePage, permanentDeletePage, onRemovePageFromHistory }
 })

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { ChevronLeft, ChevronRight, CircleDot, MapPinHouse, MapPinHouseIcon } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsLeftIcon, ChevronsRight, CircleDot, MapPinHouse, MapPinHouseIcon } from 'lucide-vue-next'
 
 const props = withDefaults(defineProps<{
   modelValue: string // yyyy-MM
@@ -76,12 +76,13 @@ function selectMonth(index: number) {
       <button class="mp-today" type="button" :disabled="isTodayActive" @click="goToday">
         <MapPinHouse />
       </button>
-      <button class="mp-nav" type="button" aria-label="上一年" @click="prevYear">
-        <ChevronLeft :size="14" :stroke-width="2" />
-      </button>
+     
       <span class="mp-year-label">{{ viewYear }}年</span>
+       <button class="mp-nav" type="button" aria-label="上一年" @click="prevYear">
+        <ChevronsLeft :size="18" :stroke-width="2" />
+      </button>
       <button class="mp-nav" type="button" aria-label="下一年" :disabled="viewYear >= currentYear" @click="nextYear">
-        <ChevronRight :size="18" :stroke-width="2" />
+        <ChevronsRight :size="18" :stroke-width="2" />
       </button>
 
     </div>
@@ -100,6 +101,7 @@ function selectMonth(index: number) {
 .month-picker {
   display: flex;
   flex-direction: column;
+  padding: 0 var(--space-4);
   gap: 4px;
   font-family: inherit;
 }
@@ -108,7 +110,7 @@ function selectMonth(index: number) {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 0 2px;
+  padding: 0 var(--space-8);
 }
 
 .mp-nav {

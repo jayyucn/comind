@@ -1,0 +1,10 @@
+{
+    "files.exclude": {
+        "**/*.py": true,
+        "memory/**": true
+    },
+    "explorer.fileNesting.enabled": true,
+    "explorer.fileNesting.patterns": {
+        "*.ts": "${capture}.test.ts, ${capture}.spec.ts"
+    }
+}

@@ -1,4 +1,6 @@
-import type { RenderSegment } from '../wasm/types'
+import type { RenderInput } from '../wasm/types'
+import { getRelationshipLabel } from '../types/relationship'
+import { parseRelationshipSegment } from '../utils/relationship-content'
 
 const CSS_CLASSES = {
   blockLink: 'block-link',
@@ -16,6 +18,32 @@ function escapeHtmlEntities(text: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
+}
+
+/**
+ * 从 relationship_type（可能含 <-> / ! 修饰符）解析出中文 label。
+ * 兼容三种语法：
+ *   ((type))            → getRelationshipLabel(type)
+ *   ((type<->inverse))  → label<->inverseLabel
+ *   ((type!))           → label!
+ * 未知类型回退显示原文（与 Rust rel_cache 行为一致）。
+ */
+function resolveRelationshipLabel(relType: string): string {
+  const parts = parseRelationshipSegment(relType)
+  const label = getRelationshipLabel(parts.type)
+  if (parts.inverse !== undefined) {
+    const invLabel = getRelationshipLabel(parts.inverse)
+    // 未知反向类型时回退原文，避免半转换
+    if (invLabel === parts.inverse) return relType
+    return `${label}<->${invLabel}`
+  }
+  if (parts.autoInverse) {
+    // 未知正向类型时回退原文
+    if (label === parts.type) return relType
+    return `${label}!`
+  }
+  // 未知类型回退原文
+  return label === parts.type ? relType : label
 }
 
 export interface HeadingParseResult {
@@ -50,11 +78,10 @@ function renderTextSegmentWithTags(text: string): string {
  * with no gaps. We iterate in order: text segments get HTML-escaped
  * (with #tag rendering), typed segments get appropriate `<span>` wrappers.
  *
- * @param segments  Pre-computed render instructions from Rust (via `getPageWithBlocks`)
- * @param content   The raw block.content string
- * @param blockId   Optional block ID for data attributes (used by TypedLink)
+ * @param input   RenderInput { content, segments, blockId } — single object interface
  */
-function renderContentToHtml(segments: RenderSegment[], content: string, blockId: string = ''): string {
+function renderContentToHtml(input: RenderInput): string {
+  const { content, segments, blockId = '' } = input
   if (!segments || segments.length === 0) {
     // Fallback: no structured data available — use plain escaped text
     return renderTextSegmentWithTags(content)
@@ -82,20 +109,22 @@ function renderContentToHtml(segments: RenderSegment[], content: string, blockId
 
       case 'typed_link': {
         const relType = escapeHtmlEntities(seg.relationship_type)
-        const label = escapeHtmlEntities(seg.rel_label)
+        // 前端转换：type → 中文 label（支持 <-> 双向与 ! auto-inverse）
+        const label = escapeHtmlEntities(resolveRelationshipLabel(seg.relationship_type))
         const color = seg.rel_color
         const target = escapeHtmlEntities(seg.target_page_title)
         const display = escapeHtmlEntities(seg.display_text)
         const safeBlockId = escapeHtmlEntities(blockId)
 
         parts.push(
-          `<span class="${CSS_CLASSES.relTypeLabel}" ` +
+          `<span class="relationship-bracket">((<span class="${CSS_CLASSES.relTypeLabel}" ` +
           `data-rel-type="${relType}" ` +
           `data-block-id="${safeBlockId}" ` +
           `data-typed-from="${seg.start}" ` +
           `data-typed-to="${seg.end}" ` +
-          `style="--rel-color:${color}">${label}</span>` +
-          `<span class="${CSS_CLASSES.blockLink}" data-page="${target}">${display}</span>`
+          `style="--rel-color:${color}">${label}</span>))</span>`
+          +
+          `<span class="${CSS_CLASSES.blockLink}" data-page="${target}"><span class="wiki-bracket">[[</span>${display}<span class="wiki-bracket">]]</span></span>`
         )
         break
       }
@@ -113,7 +142,9 @@ function renderContentToHtml(segments: RenderSegment[], content: string, blockId
         const iso = escapeHtmlEntities(seg.iso)
         const recurrence = escapeHtmlEntities(seg.recurrence)
         // display the original raw syntax
-        const rawDisplay = content.slice(seg.start, seg.end)
+        const chars = Array.from(content);
+        // seg.start、seg.end 这里注意：这里的seg.start/end是【字符索引】，不是原码元索引！
+        const rawDisplay = chars.slice(seg.start, seg.end).join('');
         const display = escapeHtmlEntities(rawDisplay)
         const overdue = seg.is_overdue ? 'overdue' : ''
         const classes = [CSS_CLASSES.dateRef, kind, overdue].filter(Boolean).join(' ')

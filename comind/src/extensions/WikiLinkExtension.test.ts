@@ -1,9 +1,11 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { Editor } from '@tiptap/core'
 import Document from '@tiptap/extension-document'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
 import { WikiLinkExtension } from './WikiLinkExtension'
+import { useRelationshipTypes } from '../composables/useRelationshipTypes'
+import { cleanupRelationshipTypes } from '../../tests/core-client'
 
 interface DecoratedEditor {
   editor: Editor
@@ -28,12 +30,12 @@ function destroyDecoratedEditor(handle: DecoratedEditor): void {
 }
 
 /**
- * Collect data-page of all spans that have class="wiki-link".
+ * Collect data-page of all spans that have class="block-link".
  * The plugin sets `class` and `data-page` together on a single span,
  * so this gives the pages that are decorated as wiki-links.
  */
 function decoratedPages(handle: DecoratedEditor): string[] {
-  const spans = handle.element.querySelectorAll('span.wiki-link')
+  const spans = handle.element.querySelectorAll('span.block-link')
   return Array.from(spans).map(s => s.getAttribute('data-page') ?? '')
 }
 
@@ -209,35 +211,53 @@ describe('WikiLinkExtension utilities', () => {
   })
 
   describe('WikiLinkExtension decoration behavior', () => {
+    beforeEach(async () => {
+      await cleanupRelationshipTypes()
+      const { _resetForTest } = useRelationshipTypes()
+      _resetForTest()
+      const { load } = useRelationshipTypes()
+      await load()
+    })
+
+    afterEach(async () => {
+      await cleanupRelationshipTypes()
+      const { _resetForTest } = useRelationshipTypes()
+      _resetForTest()
+    })
+
     it('普通 [[X]] 应渲染 wiki-link 装饰', () => {
       const handle = createDecoratedEditor('See [[X]] for details')
       const pages = decoratedPages(handle)
       expect(pages).toContain('X')
-      expect(handle.renderedHTML).toContain('class="wiki-link"')
+      expect(handle.renderedHTML).toContain('block-link')
       expect(handle.renderedHTML).toContain('data-page="X"')
       destroyDecoratedEditor(handle)
     })
 
-    it('带类型的 [[X]]^(type) 不应渲染 wiki-link 装饰', () => {
-      const handle = createDecoratedEditor('See [[X]]^(depends-on) for details')
-      const pages = decoratedPages(handle)
-      expect(pages).not.toContain('X')
+    it('编辑态 ((label))[[X]]：类型段有 relationship-bracket + rel-type-label 装饰，[[X]] 有 block-link 装饰', () => {
+      const handle = createDecoratedEditor('前置 ((是一个))[[项目A]] 后置')
+      const html = handle.renderedHTML
+      // (( 和 )) 段：relationship-bracket 浅色
+      expect(html).toContain('relationship-bracket')
+      // label 段：rel-type-label + --rel-color 内联色（is-a 的 #1890ff）
+      expect(html).toContain('rel-type-label')
+      expect(html).toContain('--rel-color')
+      // [[X]] 走普通 wiki-link 装饰：有 block-link + data-page
+      expect(html).toContain('block-link')
+      expect(html).toContain('data-page="项目A"')
       destroyDecoratedEditor(handle)
     })
 
-    it('普通 [[X]] 与 typed [[Y]]^(type) 共存时，[[X]] 有装饰而 [[Y]] 没有', () => {
-      const handle = createDecoratedEditor('See [[X]] and [[Y]]^(depends-on)')
-      const pages = decoratedPages(handle)
-      expect(pages).toContain('X')
-      expect(pages).not.toContain('Y')
-      destroyDecoratedEditor(handle)
-    })
+    it('编辑态 ((label!)) auto-inverse 与 ((label<->inverseLabel)) 双向都能装饰', () => {
+      const h1 = createDecoratedEditor('((依赖!))[[A]]')
+      expect(h1.renderedHTML).toContain('rel-type-label')
+      expect(h1.renderedHTML).toContain('--rel-color')
+      destroyDecoratedEditor(h1)
 
-    it('[[X|alias]]^(type) 不应渲染装饰', () => {
-      const handle = createDecoratedEditor('See [[Y|Y-alias]]^(related) more')
-      const pages = decoratedPages(handle)
-      expect(pages).not.toContain('Y')
-      destroyDecoratedEditor(handle)
+      const h2 = createDecoratedEditor('((依赖<->被依赖))[[B]]')
+      expect(h2.renderedHTML).toContain('rel-type-label')
+      expect(h2.renderedHTML).toContain('--rel-color')
+      destroyDecoratedEditor(h2)
     })
   })
 })

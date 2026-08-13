@@ -15,6 +15,7 @@ import { DateRefTriggerExtension, type DateRefKindSelectEvent } from '../extensi
 import { usePageStore } from '../stores/pages'
 import { useDateTimePickerPanel } from '../composables/useDateTimePickerPanel'
 import { useRelationshipMenu } from '../composables/useRelationshipMenu'
+import { getRelationshipLabel } from '../types/relationship'
 import { debounce } from '../utils/debounce'
 import PageLinkMenu from './PageLinkMenu.vue'
 import DateRefKindSelector from './DateRefKindSelector.vue'
@@ -96,11 +97,12 @@ function handleRelationshipTrigger(event: Event) {
         }
       }
 
-      // 替换从 range.from 到 endPos 的内容为 ((newType))
-      tr.insertText(`((${newType}))`, range.from, endPos)
+      // 替换从 range.from 到 endPos 的内容为 ((label))（编辑态显示中文；保存时 encode 转回 type）
+      const label = getRelationshipLabel(newType)
+      tr.insertText(`((${label}))`, range.from, endPos)
 
       // 设置光标到末尾
-      const newCursorPos = range.from + newType.length + 4 // (( + type + ))
+      const newCursorPos = range.from + label.length + 4 // (( + label + ))
       tr.setSelection(TextSelection.create(tr.doc, newCursorPos))
 
       edView.dispatch(tr)

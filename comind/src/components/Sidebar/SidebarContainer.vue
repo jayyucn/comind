@@ -84,7 +84,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--text-tertiary);
   transition: background 100ms ease, color 100ms ease, left 200ms ease;
   z-index: 1000;
@@ -115,7 +115,7 @@ export default {
   justify-content: space-between;
   height: 32px;
   padding: 0 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--bg-hover);
   cursor: pointer;
   transition: background 80ms ease;
@@ -140,8 +140,8 @@ export default {
   font-size: var(--text-xs);
   color: var(--text-tertiary);
   padding: 1px 5px;
-  border-radius: 3px;
-  background: var(--bg-base);
+  border-radius: var(--radius-sm);
+  background: var(--bg-active);
   border: 1px solid var(--border);
 }
 

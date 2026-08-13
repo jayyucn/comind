@@ -1,15 +1,6 @@
-import { describe, test, expect, beforeEach, vi } from 'vitest'
+import { describe, test, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useBlockStore } from './blocks'
-
-vi.mock('../storage/indexedDB', () => ({
-  storage: {
-    saveBlock: vi.fn(),
-    deleteBlock: vi.fn(),
-    deleteBlockCascade: vi.fn(),
-    getBlockTree: vi.fn().mockResolvedValue([])
-  }
-}))
 
 beforeEach(() => {
   setActivePinia(createPinia())
@@ -355,5 +346,61 @@ describe('getChildren', () => {
 
     const children = store.getChildren(block.id)
     expect(children).toHaveLength(0)
+  })
+})
+
+describe('updateBlockContent clears renderSegments', () => {
+  test('clears renderSegments after content update (fixes content-disappear bug)', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    // Simulate a block loaded from Rust with pre-computed renderSegments
+    const block = await store.createBlock({ pageId, content: 'Hello world' })
+    // Manually set renderSegments as if loaded from loadPageBlocks
+    const blockInStore = store.blocks.find(b => b.id === block.id)!
+    blockInStore.renderSegments = [
+      { type: 'text', start: 0, end: 11 } // matches "Hello world".length
+    ]
+
+    // Update content — new content is longer than old
+    await store.updateBlockContent(block.id, 'Hello world, this is longer now')
+
+    const updated = store.blocks.find(b => b.id === block.id)
+    expect(updated?.content).toBe('Hello world, this is longer now')
+    // renderSegments must be cleared — old segments have stale start/end indices
+    expect(updated?.renderSegments).toBeUndefined()
+  })
+
+  test('clears renderSegments when content is set to empty', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const block = await store.createBlock({ pageId, content: 'Some content here' })
+    const blockInStore = store.blocks.find(b => b.id === block.id)!
+    blockInStore.renderSegments = [{ type: 'text', start: 0, end: 17 }]
+
+    await store.updateBlockContent(block.id, '')
+
+    const updated = store.blocks.find(b => b.id === block.id)
+    expect(updated?.content).toBe('')
+    expect(updated?.renderSegments).toBeUndefined()
+  })
+
+  test('clears renderSegments on mergeWithPrevious', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-1'
+
+    const block1 = await store.createBlock({ pageId, content: 'First' })
+    const block2 = await store.createBlock({ pageId, content: 'Second' })
+
+    // Simulate Rust-computed renderSegments
+    const b1 = store.blocks.find(b => b.id === block1.id)!
+    b1.renderSegments = [{ type: 'text', start: 0, end: 5 }]
+
+    await store.mergeWithPrevious(block2.id)
+
+    const merged = store.blocks.find(b => b.id === block1.id)
+    expect(merged?.content).toBe('FirstSecond')
+    expect(merged?.renderSegments).toBeUndefined()
   })
 })

@@ -7,6 +7,7 @@ import { usePageStore } from './pages'
 const { mockClient } = vi.hoisted(() => {
   const mockClient = {
     getAllPages: vi.fn(() => Promise.resolve([])),
+    getTrashPages: vi.fn(() => Promise.resolve([])),
     savePage: vi.fn(async (page: any) => ({
       id: page.id || `page-${page.title}`,
       block_id: null,
@@ -23,6 +24,14 @@ const { mockClient } = vi.hoisted(() => {
       deleted: 0,
     })),
     deletePageCascade: vi.fn(() => Promise.resolve()),
+    executeBatch: vi.fn(async (ops: Array<{ entity: string; action: string; params: Record<string, unknown> }>) =>
+      ops.map(op => ({
+        success: true,
+        entity: op.entity,
+        action: op.action,
+        id: typeof op.params.id === 'string' ? op.params.id : undefined,
+      }))
+    ),
     getBlocksByPage: vi.fn(() => Promise.resolve([])),
     saveBlockTree: vi.fn(() => Promise.resolve([])),
     getIdeasPagesByMonth: vi.fn(() => Promise.resolve([])),
@@ -314,14 +323,30 @@ describe('usePageStore', () => {
     })
   })
 
+  describe('setCurrentPage', () => {
+    test('仅设置 currentPageId', async () => {
+      const store = usePageStore()
+      const page = await store.createPage('Test')
+
+      store.setCurrentPage(page.id)
+
+      expect(store.currentPageId).toBe(page.id)
+    })
+  })
+
   describe('loadTrashPages', () => {
     test('加载回收站页面', async () => {
       const store = usePageStore()
+      mockClient.getTrashPages.mockResolvedValueOnce([
+        makeRustPage({ id: 'trash-1', title: 'Deleted Page', deleted: 1, updated_at: 1000 }),
+      ])
       
       await store.loadTrashPages()
       
-      expect(store.trashPages).toBeDefined()
-      expect(Array.isArray(store.trashPages)).toBe(true)
+      expect(mockClient.getTrashPages).toHaveBeenCalled()
+      expect(store.trashPages).toHaveLength(1)
+      expect(store.trashPages[0].id).toBe('trash-1')
+      expect(store.trashPages[0].deleted).toBe(true)
     })
   })
 
@@ -335,6 +360,22 @@ describe('usePageStore', () => {
       await store.softDeletePage(page.id)
       
       expect(store.pages.length).toBe(0)
+    })
+
+    test('软删除调用后端 page delete 持久化', async () => {
+      const store = usePageStore()
+      const page = await store.createPage('Persist Soft Delete')
+      vi.clearAllMocks()
+
+      await store.softDeletePage(page.id)
+
+      expect(mockClient.executeBatch).toHaveBeenCalledWith([{
+        entity: 'page',
+        action: 'delete',
+        params: { id: page.id },
+      }])
+      expect(mockClient.savePage).not.toHaveBeenCalled()
+      expect(store.trashPages.some(p => p.id === page.id)).toBe(true)
     })
 
     test('软删除当前页面时 currentPageId 为空', async () => {

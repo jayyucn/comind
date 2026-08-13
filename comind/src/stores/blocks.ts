@@ -128,6 +128,14 @@ export const useBlockStore = defineStore('blocks', () => {
   /** 结构版本号 - 用于触发 Sortable 实例重建 */
   const structureVersion = ref(0)
 
+  /** 批量历史加载代数；abortMultiPageLoad 递增以丢弃进行中的 IPC 结果 */
+  let multiPageLoadGeneration = 0
+
+  function abortMultiPageLoad() {
+    multiPageLoadGeneration++
+    loading.value = false
+  }
+
   /** 按 pos 排序的扁平 Block 列表 */
   const sortedBlocks = computed(() => sortByPos([...blocks.value]))
 
@@ -187,35 +195,93 @@ export const useBlockStore = defineStore('blocks', () => {
     }))
   }
 
-  /** 加载指定 Page 的 Block 树（含 Rust 预计算的渲染段） */
+  // Ref: Map<parentId, Vec<childId>> pre-sorted by Rust in document order.
+  // Built from BlockRenderData.children in loadPageBlocks, replaces getSortedChildren().
+  const childrenMap = ref<Map<string, string[]>>(new Map())
+
+  /** 加载指定 Page 的 Block 树（含 Rust 预计算的渲染段 + 属性 + children） 
+   * 4.2: pw.blocks 是唯一数据源（删除 getBlocksByPage 二次 IPC）。
+   * childrenMap 由 brd.children 直接构建，替代 getSortedChildren。
+   * 按 pageId 合并写入，保留其他页面的 blocks（避免切换路由时清掉历史面板缓存）。
+   */
+  function replaceBlocksForPage(pageId: string, newBlocks: Block[], pageChildrenMap: Map<string, string[]>) {
+    const oldPageBlockIds = new Set(
+      blocks.value.filter(b => b.pageId === pageId).map(b => b.id)
+    )
+    blocks.value = [
+      ...blocks.value.filter(b => b.pageId !== pageId),
+      ...newBlocks,
+    ]
+    const mergedChildrenMap = new Map(childrenMap.value)
+    for (const id of oldPageBlockIds) {
+      mergedChildrenMap.delete(id)
+    }
+    for (const [key, value] of pageChildrenMap) {
+      mergedChildrenMap.set(key, value)
+    }
+    childrenMap.value = mergedChildrenMap
+  }
+
   async function loadPageBlocks(pageId: string) {
     const client = await getClient()
-    // S10: Use getPageWithBlocks for render segments (zero extra IPC)
-    let renderSegmentsMap: Map<string, import('../wasm/types').RenderSegment[]> = new Map()
+    let pw: import('../wasm/types').PageWithBlocks | null = null
     try {
-      const pw = await client.getPageWithBlocks(pageId)
-      for (const brd of pw.blocks) {
-        renderSegmentsMap.set(brd.block.id, brd.render_segments || [])
-      }
+      pw = await client.getPageWithBlocks(pageId)
     } catch {
       // Fallback: if getPageWithBlocks fails (e.g. old binary), load blocks directly
     }
 
-    const rustBlocks = await client.getBlocksByPage(pageId)
-
-    blocks.value = rustBlocks.map(rustBlock => ({
-      id: rustBlock.id,
-      pageId: rustBlock.page_id,
-      parentId: rustBlock.parent_id,
-      pos: rustBlock.pos,
-      content: rustBlock.content,
-      format: JSON.parse(rustBlock.format || '{}'),
-      type: rustBlock.type as Block['type'],
-      renderSegments: renderSegmentsMap.get(rustBlock.id),
-      properties: {},
-      createdAt: rustBlock.created_at,
-      updatedAt: rustBlock.updated_at
-    }))
+    // Build childrenMap from brd.children (Rust pre-sorted by pos)
+    const newChildrenMap = new Map<string, string[]>()
+    if (pw) {
+      for (const brd of pw.blocks) {
+        const parentId = brd.block.parent_id ?? '__root__'
+        if (brd.children.length > 0) {
+          newChildrenMap.set(parentId, brd.children)
+        }
+      }
+    }
+    if (pw) {
+      // 4.2: pw.blocks is the sole data source — no extra getBlocksByPage IPC
+      replaceBlocksForPage(
+        pageId,
+        pw.blocks.map(brd => ({
+          id: brd.block.id,
+          pageId: brd.block.page_id,
+          parentId: brd.block.parent_id,
+          pos: brd.block.pos,
+          content: brd.block.content,
+          format: JSON.parse(brd.block.format || '{}'),
+          type: brd.block.type as Block['type'],
+          renderSegments: brd.render_segments || [],
+          properties: brd.properties ?? {},
+          createdAt: brd.block.created_at,
+          updatedAt: brd.block.updated_at
+        })),
+        newChildrenMap
+      )
+    } else {
+      // Fallback path (old binary): use getBlocksByPage
+      const rustBlocks = await client.getBlocksByPage(pageId)
+      replaceBlocksForPage(
+        pageId,
+        rustBlocks.map(rustBlock => ({
+          id: rustBlock.id,
+          pageId: rustBlock.page_id,
+          parentId: rustBlock.parent_id,
+          pos: rustBlock.pos,
+          content: rustBlock.content,
+          format: JSON.parse(rustBlock.format || '{}'),
+          type: rustBlock.type as Block['type'],
+          renderSegments: undefined,
+          properties: [],
+          createdAt: rustBlock.created_at,
+          updatedAt: rustBlock.updated_at
+        })),
+        new Map()
+      )
+    }
+    
     return blocks
   }
 
@@ -224,10 +290,16 @@ export const useBlockStore = defineStore('blocks', () => {
  * 保证页面始终可编辑。等价于 openPage 原有的「空则建 block」逻辑。
  */
   async function ensurePageBlocks(pageId: string) {
-    await loadPageBlocks(pageId)
-    if (blocks.value.length === 0) {
+    if (blocks.value.some(b => b.pageId === pageId)) {
+      structureVersion.value++
+      return blocks
+    }
+    const pageBlocks = await loadPageBlocks(pageId)
+    if (pageBlocks.value.filter(b => b.pageId === pageId).length === 0) {
       await createBlock({ pageId, content: '', parentId: null })
     }
+    structureVersion.value++
+    return blocks
   }
 
   async function restoreBlock(blockId: string) {
@@ -244,47 +316,56 @@ export const useBlockStore = defineStore('blocks', () => {
 
   /** 批量加载多个 Page 的 Block 树 */
   async function loadMultiPageBlocks(pageIds: string[]) {
+    const uncachedPageIds = pageIds.filter(
+      id => !blocks.value.some(b => b.pageId === id)
+    )
+    if (uncachedPageIds.length === 0) {
+      return
+    }
+
+    const myGeneration = multiPageLoadGeneration
     loading.value = true
     const client = await getClient()
     try {
-      const results = await Promise.allSettled(
-        pageIds.map(async id => {
-          const rustBlocks = await client.getBlocksByPage(id)
-          return rustBlocks.map(rustBlock => ({
-            id: rustBlock.id,
-            pageId: rustBlock.page_id,
-            parentId: rustBlock.parent_id,
-            pos: rustBlock.pos,
-            content: rustBlock.content,
-            format: JSON.parse(rustBlock.format || '{}'),
-            type: rustBlock.type as Block['type'],
-            properties: {},
-            createdAt: rustBlock.created_at,
-            updatedAt: rustBlock.updated_at
-          }))
-        })
-      )
+      // B 方案：单次 IPC 获取多页（含 render_segments + properties），
+      // 与今日面板 loadPageBlocks 走同一 Rust 渲染路径，历史面板样式一致。
+      const pagesWithBlocks = await client.getPagesWithBlocks(uncachedPageIds)
+      if (myGeneration !== multiPageLoadGeneration) return
 
       const existingIds = new Set(blocks.value.map(b => b.id))
       let added = 0
-      for (const result of results) {
-        if (result.status === 'fulfilled') {
-          for (const block of result.value) {
-            if (!existingIds.has(block.id)) {
-              blocks.value.push(block)
-              existingIds.add(block.id)
-              added++
-            }
+      for (const pwb of pagesWithBlocks) {
+        if (!pwb) continue
+        for (const brd of pwb.blocks) {
+          const b = brd.block
+          const newBlock: Block = {
+            id: b.id,
+            pageId: b.page_id,
+            parentId: b.parent_id,
+            pos: b.pos,
+            content: b.content,
+            format: JSON.parse(b.format || '{}'),
+            type: b.type as Block['type'],
+            renderSegments: brd.render_segments || [],
+            properties: brd.properties ?? {},
+            createdAt: b.created_at,
+            updatedAt: b.updated_at
           }
-        } else {
-          console.error('[loadMultiPageBlocks] Failed to load blocks:', result.reason)
+          if (!existingIds.has(newBlock.id)) {
+            blocks.value.push(newBlock)
+            existingIds.add(newBlock.id)
+            added++
+          }
         }
       }
+      if (myGeneration !== multiPageLoadGeneration) return
       structureVersion.value++
     } catch (error) {
       console.error('[loadMultiPageBlocks] Unexpected error:', error)
     } finally {
-      loading.value = false
+      if (myGeneration === multiPageLoadGeneration) {
+        loading.value = false
+      }
     }
   }
 
@@ -318,6 +399,9 @@ export const useBlockStore = defineStore('blocks', () => {
   /** 每个 Block 独立的防抖保存 */
   const pendingSaves = new Map<string, ReturnType<typeof debounce<typeof _doSave>>>()
 
+  /** S9: blockId → save failure flag. UI shows red dot in rendered state. */
+  const saveErrors = ref<Record<string, boolean>>({})
+
   let syncDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
   function _triggerSyncDebounced() {
@@ -350,7 +434,17 @@ export const useBlockStore = defineStore('blocks', () => {
 
     try {
       const [saveResult] = await client.saveBlockTree([blockUpdate])
+      if (!saveResult) {
+        console.warn('[BlockStore] saveBlockTree returned null result')
+        pendingSaves.delete(currentBlock.id)
+        return
+      }
       const savedBlock = saveResult.block
+      if (!savedBlock) {
+        console.warn('[BlockStore] saveBlockTree result has no block')
+        pendingSaves.delete(currentBlock.id)
+        return
+      }
 
       // 若服务端生成了新 ID（新 block），同步本地 state 与后续引用的 ID
       if (savedBlock.id !== currentBlock.id) {
@@ -365,6 +459,22 @@ export const useBlockStore = defineStore('blocks', () => {
         : currentBlock
 
       _triggerSyncDebounced()
+
+      // S9: clear save error on successful save
+      if (saveErrors.value[block.id]) {
+        delete saveErrors.value[block.id]
+        saveErrors.value = { ...saveErrors.value }
+      }
+
+      // Restore renderSegments from save result (Rust pre-built during save_block_tree).
+      // Closes the edit→render-transition gap: editing clears segments to undefined,
+      // and without this, link/dateRef rendering stays degraded until next loadPageBlocks.
+      // Content guard prevents stale segments from overwriting faster subsequent edits.
+      if (saveResult.render_segments && saveResult.render_segments.length > 0) {
+        if (currentBlock.content === saveResult.block.content) {
+          currentBlock.renderSegments = saveResult.render_segments
+        }
+      }
 
       // S4: snapshot pre-built by Rust inside the save transaction — zero extra IPC.
       if (saveResult.snapshot) {
@@ -387,9 +497,23 @@ export const useBlockStore = defineStore('blocks', () => {
       }
     } catch (error) {
       console.error('[BlockStore] Failed to save block:', error)
+      saveErrors.value = { ...saveErrors.value, [block.id]: true }
       throw error
     } finally {
       pendingSaves.delete(block.id)
+    }
+  }
+
+  /** S9: retry saving a block that previously failed */
+  async function retrySave(blockId: string): Promise<void> {
+    delete saveErrors.value[blockId]
+    saveErrors.value = { ...saveErrors.value }
+    const block = blocks.value.find(b => b.id === blockId)
+    if (!block) return
+    try {
+      await _doSave(block)
+    } catch {
+      // saveErrors re-set in _doSave catch
     }
   }
 
@@ -398,6 +522,24 @@ export const useBlockStore = defineStore('blocks', () => {
     const d = debounce(_doSave, SAVE_DEBOUNCE_MS)
     pendingSaves.set(block.id, d)
     d(block)
+  }
+
+  /**
+   * 方案 A: 强制 flush 待保存的 block（取消防抖 + 立即执行 _doSave）。
+   * 用于「编辑态 → 渲染态」切换前，确保 renderSegments 已写回，
+   * 避免切换时因 renderSegments=undefined 而闪现纯文本。
+   */
+  async function flushSave(blockId: string): Promise<void> {
+    const pending = pendingSaves.get(blockId)
+    if (pending) {
+      pending.cancel()
+      pendingSaves.delete(blockId)
+    }
+    // 即使没有 pending（guard 只防多余 save），仍要检查 block 存在
+    const block = blocks.value.find(b => b.id === blockId)
+    if (block) {
+      await _doSave(block)
+    }
   }
 
   /**
@@ -525,6 +667,8 @@ export const useBlockStore = defineStore('blocks', () => {
         // 更新当前节点的内容（前半部分）
         block.content = before
         block.updatedAt = Date.now()
+        // 内容变更后清除过时的 renderSegments（同 updateBlockContent 逻辑）
+        block.renderSegments = undefined
         _scheduleSave(block)
 
         // 在指定位置插入新节点（后半部分）
@@ -791,6 +935,8 @@ export const useBlockStore = defineStore('blocks', () => {
 
     const cursorPos = targetContentLen + 1
     mergeTarget.updatedAt = Date.now()
+    // 内容变更后清除过时的 renderSegments（同 updateBlockContent 逻辑）
+    mergeTarget.renderSegments = undefined
     _scheduleSave(mergeTarget)
 
     const childrenToMove: Block[] = []
@@ -938,7 +1084,10 @@ export const useBlockStore = defineStore('blocks', () => {
       }
     }
 
-    // 2. 立即从 reactive 数组移除（同步，触发 tree rebuild）
+    // 2. 保存快照（深拷贝当前状态，用于 RPC 失败时回滚）
+    const snapshot = blocks.value.map(b => ({ ...b }))
+
+    // 3. 立即从 reactive 数组移除（同步，触发 tree rebuild）
     const blockCardStore = useBlockCardStore()
     for (const id of toDelete) {
       pendingSaves.get(id)?.cancel()
@@ -947,10 +1096,10 @@ export const useBlockStore = defineStore('blocks', () => {
     }
     blocks.value = blocks.value.filter(b => !toDelete.has(b.id))
 
-    // 3. 触发 tree rebuild
+    // 4. 触发 tree rebuild
     structureVersion.value++
 
-    // 4. RPC fire-and-forget（paint 之后才发出）
+    // 5. RPC（paint 之后才发出）
     const operations: BatchOperation[] = [...toDelete].map(id => ({
       entity: 'block',
       action: 'delete',
@@ -962,6 +1111,13 @@ export const useBlockStore = defineStore('blocks', () => {
         await client.executeBatch(operations)
       } catch (error) {
         console.error('[deleteBlocks] execute_batch failed:', error)
+        // S9: rollback to snapshot
+        blocks.value = snapshot
+        structureVersion.value++
+        for (const b of snapshot) {
+          blockCardStore.invalidate(b.id)
+        }
+        console.warn('[deleteBlocks] rolled back to snapshot')
       }
     }, 0)
   }
@@ -978,6 +1134,12 @@ export const useBlockStore = defineStore('blocks', () => {
 
     block.content = content
     block.updatedAt = Date.now()
+    // renderSegments 是由 Rust 在 save_block_tree 时重新构建并随返回结果返回的。
+    // 内容变更后 segments 的 start/end 索引已过时，先清空避免渲染错误。
+    // 新的 segments 将在 _doSave 成功返回后写入（_doSave 内 content 校验防竞态）。
+    // 如果 save 返回旧格式（无 render_segments 字段），BulletRender 回退到纯文本渲染
+    // （含 #tag 高亮），完整渲染在下一次 loadPageBlocks 时恢复。
+    block.renderSegments = undefined
     _scheduleSave(block)
 
     const blockCardStore = useBlockCardStore()
@@ -1038,6 +1200,7 @@ export const useBlockStore = defineStore('blocks', () => {
     blockTree,
     loading,
     structureVersion,
+    childrenMap,
     getChildren,
     getBlocksByPage,
     getBlock,
@@ -1047,6 +1210,7 @@ export const useBlockStore = defineStore('blocks', () => {
     ensurePageBlocks,
     restoreBlock,
     loadMultiPageBlocks,
+    abortMultiPageLoad,
     loadBlock,
     createBlock,
     insertBlockAtCursor,
@@ -1062,11 +1226,14 @@ export const useBlockStore = defineStore('blocks', () => {
     moveBlock,
     deleteBlock,
     deleteBlocks,
+    saveErrors,
+    retrySave,
     updateBlockContent,
     updateBlockFormat,
     updateBlockType,
     updateBlockProperties,
     scheduleSave,
+    flushSave,
     trashedPageWarnings,
     clearTrashedPageWarnings
   }

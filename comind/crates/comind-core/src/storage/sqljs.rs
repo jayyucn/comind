@@ -598,6 +598,11 @@ impl PageRepository for SqlJsAdapter {
         Ok(result.into_iter().map(|r| row_to_page(&r)).collect())
     }
 
+    fn get_trash(&self) -> Result<Vec<Page>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, version, deleted_at, created_at, updated_at FROM Page WHERE deleted = 1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC", &[])?;
+        Ok(result.into_iter().map(|r| row_to_page(&r)).collect())
+    }
+
     fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Page>, Box<dyn std::error::Error>> {
         if ids.is_empty() {
             return Ok(Vec::new());
@@ -672,6 +677,14 @@ impl LinkRepository for SqlJsAdapter {
     fn get_by_source_block_id(&self, source_block_id: &str) -> Result<Vec<Link>, Box<dyn std::error::Error>> {
         let result = Self::query(&self.db, "SELECT id, source_block_id, target_page_id, display_text, relationship_type, updated_at, version, deleted_at, created_at FROM Link WHERE source_block_id = ? AND deleted_at IS NULL", &[source_block_id])?;
         Ok(result.into_iter().map(|r| row_to_link(&r)).collect())
+    }
+
+    fn get_by_source_block_ids(&self, source_block_ids: &[String]) -> Result<Vec<Link>, Box<dyn std::error::Error>> {
+        let mut links = Vec::new();
+        for id in source_block_ids {
+            links.extend(LinkRepository::get_by_source_block_id(self, id)?);
+        }
+        Ok(links)
     }
 
     fn get_by_target_page_id(&self, target_page_id: &str) -> Result<Vec<Link>, Box<dyn std::error::Error>> {
@@ -950,6 +963,14 @@ impl PropertyRepository for SqlJsAdapter {
         Ok(result.into_iter().map(|r| row_to_property(&r)).collect())
     }
 
+    fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<Property>, Box<dyn std::error::Error>> {
+        let mut properties = Vec::new();
+        for id in block_ids {
+            properties.extend(PropertyRepository::get_by_block_id(self, id)?);
+        }
+        Ok(properties)
+    }
+
     fn get_by_block_id_and_key(&self, block_id: &str, key: &str) -> Result<Option<Property>, Box<dyn std::error::Error>> {
         let result = Self::query(&self.db, "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, version, deleted_at, created_at, updated_at FROM Property WHERE block_id = ? AND key = ? AND is_deleted = 0 AND deleted_at IS NULL", &[block_id, key])?;
         if result.is_empty() {
@@ -987,6 +1008,16 @@ impl PropertyRepository for SqlJsAdapter {
         ])?;
         Ok(property.clone())
     }
+    fn upsert(&mut self, property: &Property) -> Result<Property, Box<dyn std::error::Error>> {
+        Self::run_with_params(&self.db, "INSERT INTO Property (id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, version, deleted_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?) ON CONFLICT(block_id, key) DO UPDATE SET value = excluded.value, type = excluded.type, updated_at = excluded.updated_at, sort_order = excluded.sort_order, is_hidden = excluded.is_hidden, schema_version = excluded.schema_version, is_deleted = 0, deleted_at = NULL", &[
+            &property.id, &property.block_id, &property.key, &property.value, &property.r#type,
+            &property.sort_order.to_string(), &property.is_hidden.to_string(), &property.is_deleted.to_string(),
+            &property.schema_version.to_string(), &property.version.to_string(),
+            &property.created_at.to_string(), &property.updated_at.to_string()
+        ])?;
+        Ok(property.clone())
+    }
+
 
     fn update(&mut self, property: &Property) -> Result<Property, Box<dyn std::error::Error>> {
         Self::run_with_params(&self.db, "UPDATE Property SET value = ?, type = ?, sort_order = ?, is_hidden = ?, is_deleted = ?, version = version + 1, updated_at = ? WHERE id = ?", &[

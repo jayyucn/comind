@@ -17,7 +17,10 @@ pub trait BlockRepository {
 pub trait PageRepository {
     fn get_by_id(&self, id: &str) -> Result<Page, Box<dyn Error>>;
     fn get_by_title(&self, title: &str) -> Result<Option<Page>, Box<dyn Error>>;
+    /// 按标题查询页面，不过滤软删除（用于 create 幂等判断，避免全局 UNIQUE(title) 约束冲突）
+    fn get_by_title_including_deleted(&self, title: &str) -> Result<Option<Page>, Box<dyn Error>>;
     fn get_all(&self) -> Result<Vec<Page>, Box<dyn Error>>;
+    fn get_trash(&self) -> Result<Vec<Page>, Box<dyn Error>>;
     /// 批量按 ID 查询 page（用于 checkAndFire 批量化）
     fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Page>, Box<dyn Error>>;
     /// 按月份查询 ideas 类型的页面（title 格式为 yyyy-MM-dd）
@@ -32,6 +35,8 @@ pub trait PageRepository {
 pub trait LinkRepository {
     fn get_by_id(&self, id: &str) -> Result<Link, Box<dyn Error>>;
     fn get_by_source_block_id(&self, source_block_id: &str) -> Result<Vec<Link>, Box<dyn Error>>;
+    /// Batch variant — one query for all blocks on a page (avoids N+1 in render path).
+    fn get_by_source_block_ids(&self, source_block_ids: &[String]) -> Result<Vec<Link>, Box<dyn Error>>;
     fn get_by_target_page_id(&self, target_page_id: &str) -> Result<Vec<Link>, Box<dyn Error>>;
     fn create(&mut self, link: &Link) -> Result<Link, Box<dyn Error>>;
     fn create_many(&mut self, links: &[Link]) -> Result<Vec<Link>, Box<dyn Error>>;
@@ -44,11 +49,15 @@ pub trait PropertyRepository {
     fn get_all(&self) -> Result<Vec<Property>, Box<dyn Error>>;
     fn get_by_id(&self, id: &str) -> Result<Property, Box<dyn Error>>;
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<Property>, Box<dyn Error>>;
+    /// Batch variant — one query for all blocks on a page (avoids N+1 in render path).
+    fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<Property>, Box<dyn Error>>;
     fn get_by_block_id_and_key(&self, block_id: &str, key: &str) -> Result<Option<Property>, Box<dyn Error>>;
     /// 反查：按 key + values 查询匹配的 block_id 列表（用于查询未完成任务）
     fn query_block_ids_by_key_value(&self, key: &str, values: &[String]) -> Result<Vec<String>, Box<dyn Error>>;
     fn create(&mut self, property: &Property) -> Result<Property, Box<dyn Error>>;
     fn update(&mut self, property: &Property) -> Result<Property, Box<dyn Error>>;
+    /// Insert or update by (block_id, key) — eliminates read-then-write race.
+    fn upsert(&mut self, property: &Property) -> Result<Property, Box<dyn Error>>;
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
     fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>>;
 }

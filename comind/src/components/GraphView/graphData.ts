@@ -2,6 +2,7 @@ import type { EdgeData, NodeData } from '@antv/g6'
 import { getRelationshipColor, getRelationshipLabel } from '../../types/relationship'
 import pLimit from 'p-limit'
 import type { TauriGraphEdgeRecord } from '../../wasm/tauri-client'
+import type { SelectorEdge } from './graphSelectors'
 
 // 一次性图谱快照数据（由 build_graph_snapshot 命令返回）
 export interface GraphSnapshot {
@@ -41,6 +42,19 @@ export function createAccumulator(): GraphAccumulator {
     nodeIds: new Set(),
     blockCache: new Map(),
   }
+}
+
+// ---- 快照映射：TauriGraphEdgeRecord[] → SelectorEdge[] ----
+// GraphPage 通过 1 次 buildGraphSnapshot() IPC 取回全部边关系后，
+// 用此助手映射为 graphSelectors.computeVisibility 所需的 SelectorEdge 结构，
+// 供筛选可见性计算复用，避免子组件 GraphView 再独立发起一次 IPC（见 handoff 6.A）。
+export function snapshotToSelectorEdges(edges: TauriGraphEdgeRecord[]): SelectorEdge[] {
+  return edges.map(e => ({
+    id: e.link_id,
+    sourcePageId: e.source_page_id,
+    targetPageId: e.target_page_id,
+    relationshipType: e.relationship_type,
+  }))
 }
 
 // ---- 纯函数：节点数据构建 ----

@@ -4,7 +4,7 @@
 @use '../mixins' as *;
 
 // VueDraggable wrapper div - 必须有宽度才能让子元素伸展
-.block-list > div[data-parent-id] {
+.block-list>div[data-parent-id] {
   width: 100%;
 }
 
@@ -149,6 +149,35 @@
   pointer-events: none;
 }
 
+// S9: save error dot (rendered state, after last char, click to retry)
+.save-error-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-error, #DC2626);
+  margin-left: 2px;
+  vertical-align: middle;
+  cursor: pointer;
+  flex-shrink: 0;
+
+  &:hover {
+    transform: scale(1.3);
+    box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.15);
+  }
+
+  &--retrying {
+    animation: save-error-spin 0.6s linear infinite;
+    cursor: wait;
+  }
+}
+
+@keyframes save-error-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .block.active .block-text {
   background: var(--selection-bg);
   border-radius: $radius-sm;
@@ -181,7 +210,7 @@
 }
 
 // 子块项的进入/退出动画
-.block-children > .block {
+.block-children>.block {
   opacity: 1;
   transform: translateX(0);
   margin-top: 2px;
@@ -189,7 +218,7 @@
     opacity 200ms ease-out,
     transform 200ms ease-out;
 
-  .block-children.is-collapsed > & {
+  .block-children.is-collapsed>& {
     opacity: 0;
     transform: translateX(-8px);
   }
@@ -199,12 +228,18 @@
 .block-link {
   color: var(--color-accent);
   cursor: pointer;
+  transition: color 0.15s;
+
+  &:hover {
+    color: var(--accent-hover);
+  }
 
   &.external {
     color: var(--color-external);
   }
 }
 
+.relationship-bracket,
 .wiki-bracket {
   color: var(--text-faint);
   font-weight: $font-normal;
@@ -227,11 +262,11 @@
 // 颜色由内联 style="--rel-color:..." 注入
 .rel-type-label {
   color: var(--rel-color, currentColor);
-  font-size: var(--text-xs);
-  font-style: italic;
-  vertical-align: 6px;
-  margin-left: 2px;
-  padding: 0 4px;
+  font-size: var(--text-md);
+  // font-style: italic;
+  // vertical-align: 6px;
+  // margin-left: 2px;
+  // padding: 0 4px;
   border-radius: var(--radius-sm);
   cursor: pointer;
   user-select: none;
@@ -280,11 +315,11 @@
 
   // Ref - 纯日期引用，中性灰色，无边框
   &[data-kind="ref"] {
-    color: var(--text-tertiary);
+    color: var(--color-ink-muted);
     background: transparent;
     border-bottom: 1px dashed var(--border);
-    font-size: 0.85em;
-    padding: 0 2px;
+    // font-size: 0.85em;
+    // padding: 0 2px;
   }
 
   // 逾期态（可由 JS 动态添加 .overdue 类）
@@ -422,7 +457,7 @@
   inset: 0;
   background: var(--selection-bg);
   pointer-events: none;
-  border-radius:  0;
+  border-radius: 0;
   z-index: 1;
 }
 
