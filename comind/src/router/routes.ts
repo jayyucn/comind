@@ -58,6 +58,12 @@ const routes: RouteRecordRaw[] = [
     meta: { fullWidth: true, hideRightSidebarToggle: true, absolute: true },
   },
   {
+    path: '/pages',
+    name: 'pages-library',
+    component: () => import('../components/PagesLibrary/PagesLibrary.vue'),
+    meta: { fullWidth: true, hideRightSidebarToggle: true },
+  },
+  {
     path: '/tasks',
     name: 'tasks',
     component: () => import('../components/TaskHub/TaskHub.vue'),
