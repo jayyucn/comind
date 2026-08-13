@@ -2,6 +2,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::error::Error;
+use std::sync::OnceLock;
 
 use crate::storage::StorageAdapter;
 use crate::services::LinkService;
@@ -31,7 +32,11 @@ fn parse_relationship_part(part: &str) -> (Option<String>, Option<String>) {
     let trimmed = part.trim();
 
     // 格式 1: "type<->inverse"
-    if let Some(caps) = Regex::new(r"^(.+)<->(.+)$").unwrap().captures(trimmed) {
+    static RE_PAIR: OnceLock<Regex> = OnceLock::new();
+    if let Some(caps) = RE_PAIR
+        .get_or_init(|| Regex::new(r"^(.+)<->(.+)$").unwrap())
+        .captures(trimmed)
+    {
         return (
             Some(caps[1].trim().to_string()),
             Some(caps[2].trim().to_string()),
@@ -39,7 +44,10 @@ fn parse_relationship_part(part: &str) -> (Option<String>, Option<String>) {
     }
 
     // 格式 2: "type!" (auto-inverse)
-    if let Some(caps) = Regex::new(r"^(.+)!$").unwrap().captures(trimmed) {
+    static RE_BANG: OnceLock<Regex> = OnceLock::new();
+    if let Some(caps) = RE_BANG
+        .get_or_init(|| Regex::new(r"^(.+)!$").unwrap())
+        .captures(trimmed) {
         return (Some(caps[1].trim().to_string()), None);
         // Note: resolving actual inverse requires RelationshipType lookup.
         // Caller (useRelationshipSync TS) handles this; we just return None for auto.
@@ -56,7 +64,9 @@ pub fn extract_links_from_content(content: &str) -> Vec<LinkDraft> {
     let mut covered_positions: HashSet<usize> = HashSet::new();
 
     // 1) External links: [[http(s)://...]], [[ftp://...]], [[mailto:...]]
-    let external_re = Regex::new(r"\[\[(https?://|ftp://|mailto:)([^\]]*)\]\]").unwrap();
+    static RE_EXTERNAL: OnceLock<Regex> = OnceLock::new();
+    let external_re = RE_EXTERNAL
+        .get_or_init(|| Regex::new(r"\[\[(https?://|ftp://|mailto:)([^\]]*)\]\]").unwrap());
     for caps in external_re.captures_iter(content) {
         let m = caps.get(0).unwrap();
         let protocol = caps.get(1).unwrap().as_str();
@@ -76,8 +86,9 @@ pub fn extract_links_from_content(content: &str) -> Vec<LinkDraft> {
     }
 
     // 2) Typed internal links: ((type))[[target|alias]] or ((type))[[target]]
-    let typed_re =
-        Regex::new(r"\(\(([^)]+)\)\)\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]").unwrap();
+    static RE_TYPED: OnceLock<Regex> = OnceLock::new();
+    let typed_re = RE_TYPED
+        .get_or_init(|| Regex::new(r"\(\(([^)]+)\)\)\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]").unwrap());
     for caps in typed_re.captures_iter(content) {
         let m = caps.get(0).unwrap();
         let target = caps.get(2).unwrap().as_str().trim();
@@ -102,7 +113,9 @@ pub fn extract_links_from_content(content: &str) -> Vec<LinkDraft> {
     }
 
     // 3) Plain internal links: [[target|alias]] or [[target]]
-    let internal_re = Regex::new(r"\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]").unwrap();
+    static RE_INTERNAL: OnceLock<Regex> = OnceLock::new();
+    let internal_re = RE_INTERNAL
+        .get_or_init(|| Regex::new(r"\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]").unwrap());
     for caps in internal_re.captures_iter(content) {
         let m = caps.get(0).unwrap();
         let target = caps.get(1).unwrap().as_str().trim();
@@ -136,7 +149,9 @@ pub fn extract_links_from_content(content: &str) -> Vec<LinkDraft> {
 
 /// 提取 content 中的属性（`key:: value` 格式，key 以 Unicode 字母或 _ 开头）
 pub fn extract_properties_from_content(content: &str) -> Vec<PropertyDraft> {
-    let prop_re = Regex::new(r"(?m)^([\p{L}_][\p{L}\p{N}_]*)::\s*(.+)$").unwrap();
+    static RE_PROP: OnceLock<Regex> = OnceLock::new();
+    let prop_re = RE_PROP
+        .get_or_init(|| Regex::new(r"(?m)^([\p{L}_][\p{L}\p{N}_]*)::\s*(.+)$").unwrap());
     let mut results = Vec::new();
     for caps in prop_re.captures_iter(content) {
         let key = caps.get(1).unwrap().as_str().to_string();
@@ -159,19 +174,28 @@ fn infer_property_value(raw: &str) -> (&'static str, String) {
         return ("boolean", trimmed.to_string());
     }
 
-    if Regex::new(r"^\d{4}-\d{2}-\d{2}$").unwrap().is_match(trimmed) {
+    static RE_DATE: OnceLock<Regex> = OnceLock::new();
+    if RE_DATE
+        .get_or_init(|| Regex::new(r"^\d{4}-\d{2}-\d{2}$").unwrap())
+        .is_match(trimmed)
+    {
         return ("date", trimmed.to_string());
     }
 
     // page reference: [[page]]
-    if let Some(caps) = Regex::new(r"^\[\[([^\]]+)\]\]$")
-        .unwrap()
+    static RE_PAGEREF: OnceLock<Regex> = OnceLock::new();
+    if let Some(caps) = RE_PAGEREF
+        .get_or_init(|| Regex::new(r"^\[\[([^\]]+)\]\]$").unwrap())
         .captures(trimmed)
     {
         return ("page_ref", caps[1].to_string());
     }
 
-    if Regex::new(r"^\d+\.?\d*$").unwrap().is_match(trimmed) {
+    static RE_NUM: OnceLock<Regex> = OnceLock::new();
+    if RE_NUM
+        .get_or_init(|| Regex::new(r"^\d+\.?\d*$").unwrap())
+        .is_match(trimmed)
+    {
         return ("number", trimmed.to_string());
     }
 

@@ -1,6 +1,7 @@
 use crate::storage::StorageAdapter;
 use crate::types::{DateRef, Notification, NotificationConfig, Block, Page};
 use std::error::Error;
+use std::sync::OnceLock;
 
 /// Notification engine migrated from TS notification-service.ts.
 /// All recurrence/quiet-hours/batching logic now lives in Rust.
@@ -333,7 +334,8 @@ fn is_quiet_hours(settings: &NotificationConfig) -> bool {
 
 /// Strip dateRef syntax from content for snippet display.
 fn strip_date_refs(content: &str) -> String {
-    let re = regex::Regex::new(r"\{\{[^}]+\}\}").unwrap();
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| regex::Regex::new(r"\{\{[^}]+\}\}").unwrap());
     re.replace_all(content, "").to_string()
 }
 

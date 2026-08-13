@@ -226,15 +226,7 @@ export const useBlockStore = defineStore('blocks', () => {
     const client = await getClient()
     let pw: import('../wasm/types').PageWithBlocks | null = null
     try {
-      const ipcT0 = import.meta.env.DEV ? performance.now() : 0
       pw = await client.getPageWithBlocks(pageId)
-      if (import.meta.env.DEV) {
-        console.debug('[ipc-timing] getPageWithBlocks', {
-          ms: +(performance.now() - ipcT0).toFixed(1),
-          pageId,
-          blockCount: pw?.blocks.length ?? 0,
-        })
-      }
     } catch {
       // Fallback: if getPageWithBlocks fails (e.g. old binary), load blocks directly
     }
@@ -328,11 +320,6 @@ export const useBlockStore = defineStore('blocks', () => {
       id => !blocks.value.some(b => b.pageId === id)
     )
     if (uncachedPageIds.length === 0) {
-      if (import.meta.env.DEV) {
-        console.debug('[ipc-timing] getPagesWithBlocks skipped (all cached)', {
-          pageCount: pageIds.length,
-        })
-      }
       return
     }
 
@@ -342,17 +329,7 @@ export const useBlockStore = defineStore('blocks', () => {
     try {
       // B 方案：单次 IPC 获取多页（含 render_segments + properties），
       // 与今日面板 loadPageBlocks 走同一 Rust 渲染路径，历史面板样式一致。
-      const ipcT0 = import.meta.env.DEV ? performance.now() : 0
       const pagesWithBlocks = await client.getPagesWithBlocks(uncachedPageIds)
-      if (import.meta.env.DEV) {
-        console.debug('[ipc-timing] getPagesWithBlocks', {
-          ms: +(performance.now() - ipcT0).toFixed(1),
-          pageCount: uncachedPageIds.length,
-          requestedPages: pageIds.length,
-          returnedPages: pagesWithBlocks.length,
-          aborted: myGeneration !== multiPageLoadGeneration,
-        })
-      }
       if (myGeneration !== multiPageLoadGeneration) return
 
       const existingIds = new Set(blocks.value.map(b => b.id))

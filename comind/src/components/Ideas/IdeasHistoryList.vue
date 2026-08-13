@@ -97,20 +97,10 @@ async function loadMonthDataImpl(month: string) {
   const myId = ++requestId
   loading.value = true
   error.value = null
-  const loadT0 = import.meta.env.DEV ? performance.now() : 0
 
   try {
     const [year, mon] = parseMonth(month)
-    let metaT0 = 0
-    if (import.meta.env.DEV) metaT0 = performance.now()
     const pages = await pageStore.getIdeasPagesByMonth(year, mon)
-    if (import.meta.env.DEV) {
-      console.debug('[ipc-timing] getIdeasPagesByMonth', {
-        ms: +(performance.now() - metaT0).toFixed(1),
-        month,
-        pageCount: pages.length,
-      })
-    }
 
     // 竞态检查：被后续请求取代则丢弃
     if (myId !== requestId) return
@@ -121,15 +111,6 @@ async function loadMonthDataImpl(month: string) {
     )
     if (uncachedPageIds.length > 0) {
       await blockStore.loadMultiPageBlocks(uncachedPageIds)
-    } else if (import.meta.env.DEV) {
-      console.debug('[ipc-timing] loadMonthData blocks already cached', { month, pageCount: pageIds.length })
-    }
-    if (import.meta.env.DEV) {
-      console.debug('[ipc-timing] loadMonthData total', {
-        ms: +(performance.now() - loadT0).toFixed(1),
-        month,
-        pageCount: pageIds.length,
-      })
     }
 
     // 再次检查竞态
