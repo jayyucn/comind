@@ -8,8 +8,8 @@
  * - 只有 isEmpty / isNotEmpty 关心空值
  * - select 引用已删除选项 id 时，条件降级为非匹配
  *
- * 本工单（#17）范围：单组（children 视为 Condition 叶子）+ AND/OR + text/select。
- * 嵌套条件组与组级 negate 由 #18 扩展 evalGroup；其余字段类型由 #19；排序/分组由 #20。
+ * 本文件覆盖：单/嵌套条件组递归求值（#17 单组 + #18 嵌套/negate）、text 与 select 操作符（#17）、
+ * 空值语义（#17）。其余字段类型由 #19 补齐；排序/分组由 #20 扩展 evaluate。
  */
 import type { Condition, ConditionGroup, FieldDescriptor, ViewQuery } from './types'
 import type { Registry } from './registry'
@@ -32,7 +32,7 @@ function eqScalars(a: unknown, b: unknown): boolean {
   return String(a) === String(b)
 }
 
-/** 单条件匹配。调用方（evalGroup）保证传入的是 Condition 叶子，而非嵌套组。 */
+/** 单条件匹配。仅处理 Condition 叶子；嵌套组由 evalGroup 递归求值。 */
 export function matchCondition(
   cond: Condition,
   item: unknown,
@@ -77,7 +77,12 @@ export function matchCondition(
   }
 }
 
-/** 单个条件组求值：空组 = 无筛选（全部通过）；and/or 组合子结果。组级 negate 由 #18 加入。 */
+/**
+ * 条件组求值：递归支持任意嵌套的 AND/OR 组合树。
+ * - 空 children 的组 = 无筛选（全部通过），与 ViewQuery.filter 空组语义一致。
+ * - children 中的 Condition 走 matchCondition；ConditionGroup 递归本函数。
+ * - 组级 negate 对整个子结果取反（默认 false）。
+ */
 export function evalGroup(
   group: ConditionGroup,
   item: unknown,
@@ -85,12 +90,13 @@ export function evalGroup(
   entityType: string,
 ): boolean {
   if (group.children.length === 0) return true
-  const results = group.children.map((child) => {
-    // v1：嵌套组（含 children）按非匹配处理，由 #18 扩展为递归求值
-    if ('children' in child) return false
-    return matchCondition(child, item, registry, entityType)
-  })
-  return group.combinator === 'and' ? results.every(Boolean) : results.some(Boolean)
+  const results = group.children.map((child) =>
+    'children' in child
+      ? evalGroup(child, item, registry, entityType)
+      : matchCondition(child, item, registry, entityType),
+  )
+  const combined = group.combinator === 'and' ? results.every(Boolean) : results.some(Boolean)
+  return group.negate ? !combined : combined
 }
 
 /**
