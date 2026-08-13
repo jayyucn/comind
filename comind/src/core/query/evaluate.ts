@@ -71,8 +71,41 @@ export function matchCondition(
       return !String(value)
         .toLowerCase()
         .includes(String(cond.value ?? '').toLowerCase())
+    // number
+    case 'eq':
+      return Number(value) === Number(cond.value)
+    case 'neq':
+      return Number(value) !== Number(cond.value)
+    case 'gt':
+      return Number(value) > Number(cond.value)
+    case 'lt':
+      return Number(value) < Number(cond.value)
+    // date：日粒度，yyyy-MM-dd 字符串比较即可正确排序
+    case 'before':
+      return String(value) < String(cond.value)
+    case 'after':
+      return String(value) > String(cond.value)
+    case 'between': {
+      const [from, to] = Array.isArray(cond.value) ? cond.value : [cond.value, cond.value]
+      const s = String(value)
+      return s >= String(from) && s <= String(to)
+    }
+    // multiSelect：item 值为已选 id 数组
+    case 'hasAny':
+    case 'hasAll': {
+      const selected = Array.isArray(value) ? (value as unknown[]) : []
+      let targets = Array.isArray(cond.value) ? (cond.value as unknown[]) : [cond.value]
+      // 删除选项降级：引用的 id 已不在字段当前选项集合 → 过滤掉；全部被删则非匹配
+      if (ids) {
+        targets = targets.filter((t) => ids.has(String(t)))
+        if (targets.length === 0) return false
+      }
+      const selectedSet = new Set(selected.map(String))
+      return op === 'hasAny'
+        ? targets.some((t) => selectedSet.has(String(t)))
+        : targets.every((t) => selectedSet.has(String(t)))
+    }
     default:
-      // v1 仅实现 text/select；其余操作符（number/date/multiSelect）由 #19 补齐
       return false
   }
 }
