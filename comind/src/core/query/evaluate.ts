@@ -8,10 +8,11 @@
  * - 只有 isEmpty / isNotEmpty 关心空值
  * - select 引用已删除选项 id 时，条件降级为非匹配
  *
- * 本文件覆盖：单/嵌套条件组递归求值（#17 单组 + #18 嵌套/negate）、text 与 select 操作符（#17）、
- * 空值语义（#17）。其余字段类型由 #19 补齐；排序/分组由 #20 扩展 evaluate。
+ * 本文件覆盖：单/嵌套条件组递归求值（#17 单组 + #18 嵌套/negate）、六种内置类型全部操作符
+ * （#17 text/select + #19 number/date/multiSelect/boolean）、空值语义（#17）、多键排序与单字段分组
+ *（#20，sortItems / groupItems 与求值解耦、可独立单测）。
  */
-import type { Condition, ConditionGroup, FieldDescriptor, ViewQuery } from './types'
+import type { Condition, ConditionGroup, FieldDescriptor, SortRule, ViewQuery } from './types'
 import type { Registry } from './registry'
 
 /** 归一化空值：undefined / null 一律折叠为 undefined。 */
@@ -132,10 +133,111 @@ export function evalGroup(
   return group.negate ? !combined : combined
 }
 
+/** 排序/分组结果桶。 */
+export interface Group<T> {
+  /** 桶键：select 为选项 id，date 为分桶键，其余为值字符串，空值为 ''。 */
+  key: string
+  /** 桶展示标签。 */
+  label: string
+  items: T[]
+}
+
+/** 比较两个排序键值：空值（undefined）始终排在末尾，与 asc/desc 无关。 */
+function compareValues(a: unknown, b: unknown): number {
+  if (a === undefined && b === undefined) return 0
+  if (a === undefined) return 1
+  if (b === undefined) return -1
+  if (typeof a === 'number' && typeof b === 'number') return a - b
+  return String(a).localeCompare(String(b))
+}
+
 /**
- * 求值入口：对 items 全量过滤，返回原集合的子集（不修改入参）。
- * v1 仅应用筛选；排序/分组由 #20 扩展本函数。纯函数，重算交给调用方缓存。
+ * 多键稳定排序：sort 数组按序逐级回退；空值恒排末尾（asc/desc 皆然）。
+ * 纯函数，返回新数组，不修改入参。
+ */
+export function sortItems<T>(items: T[], sort: SortRule[], registry: Registry, entityType: string): T[] {
+  if (sort.length === 0) return items
+  const keyed = items.map((item) => ({
+    item,
+    keys: sort.map((rule) => {
+      const descriptor = registry.get(entityType, rule.field)
+      return descriptor ? normalize(descriptor.get(item)) : undefined
+    }),
+  }))
+  return keyed
+    .sort((x, y) => {
+      for (let i = 0; i < sort.length; i++) {
+        const cmp = compareValues(x.keys[i], y.keys[i])
+        if (cmp !== 0) return sort[i].dir === 'desc' ? -cmp : cmp
+      }
+      return 0
+    })
+    .map((k) => k.item)
+}
+
+/** date 按 day / week / month 分桶键（week 取周一）。 */
+function dateBucketKey(dateStr: string, gran: 'day' | 'week' | 'month'): string {
+  if (!dateStr) return ''
+  const d = new Date(`${dateStr}T00:00:00`)
+  if (isNaN(d.getTime())) return dateStr
+  if (gran === 'day') return dateStr
+  if (gran === 'month') return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  const diff = (d.getDay() + 6) % 7
+  const monday = new Date(d)
+  monday.setDate(d.getDate() - diff)
+  return `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, '0')}-${String(monday.getDate()).padStart(2, '0')}`
+}
+
+/** select / multiSelect 选项 id → label（找不到回退 id）。 */
+function optionLabel(descriptor: FieldDescriptor<unknown>, id: string): string {
+  const opts = typeof descriptor.options === 'function' ? descriptor.options() : descriptor.options ?? []
+  return opts.find((o) => o.id === id)?.label ?? id
+}
+
+/**
+ * 单字段分组：把已求值列表划分为桶。
+ * - groupBy 为 null：返回单一全量桶。
+ * - select：按选项 id 分桶，label 取自选项。
+ * - date + dateBucket：按 day/week/month 分桶。
+ * - multiSelect：按已选 id 组合分桶（label 为各选项 label 拼接）。
+ * - 其余类型：按值字符串分桶。空值落入 '' 桶，label 为「（空）」。
+ * 仅产出桶划分，不含聚合（计数等由 UI 现算）。
+ */
+export function groupItems<T>(items: T[], groupBy: string | null, registry: Registry, entityType: string): Group<T>[] {
+  if (!groupBy) return [{ key: '', label: '', items }]
+  const descriptor = registry.get(entityType, groupBy) as FieldDescriptor<unknown> | undefined
+  if (!descriptor) return [{ key: '', label: '', items }]
+
+  const buckets = new Map<string, Group<T>>()
+  for (const item of items) {
+    const value = normalize(descriptor.get(item))
+    let key: string
+    let label: string
+    if (descriptor.type === 'date' && descriptor.dateBucket) {
+      key = dateBucketKey(String(value ?? ''), descriptor.dateBucket)
+      label = key || '（空）'
+    } else if (descriptor.type === 'multiSelect') {
+      const ids = Array.isArray(value) ? (value as unknown[]).map(String) : value === undefined ? [] : [String(value)]
+      key = ids.join(',')
+      label = ids.length ? ids.map((id) => optionLabel(descriptor, id)).join(', ') : '（空）'
+    } else if (descriptor.type === 'select') {
+      key = value === undefined ? '' : String(value)
+      label = value === undefined ? '（空）' : optionLabel(descriptor, key)
+    } else {
+      key = value === undefined ? '' : String(value)
+      label = value === undefined ? '（空）' : key
+    }
+    if (!buckets.has(key)) buckets.set(key, { key, label, items: [] })
+    buckets.get(key)!.items.push(item)
+  }
+  return [...buckets.values()]
+}
+
+/**
+ * 求值入口：对 items 全量过滤 + 排序，返回原集合的子集（不修改入参）。
+ * 纯函数，重算交给调用方缓存。分组由调用方按需对返回结果调用 groupItems（与求值解耦）。
  */
 export function evaluate<T>(query: ViewQuery, items: T[], registry: Registry, entityType: string): T[] {
-  return items.filter((item) => evalGroup(query.filter, item, registry, entityType))
+  const filtered = items.filter((item) => evalGroup(query.filter, item, registry, entityType))
+  return sortItems(filtered, query.sort, registry, entityType)
 }
