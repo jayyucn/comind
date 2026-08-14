@@ -5,8 +5,10 @@
  * - filterSortBlockCards：evaluate 全量过滤 + 多键排序
  * - groupBlockCards：对过滤后列表单字段分组（groupItems）
  * - runBlockQuery：过滤 + 排序 + 分组一步到位，返回分组桶（视图层按需 flatten 或按桶渲染）
+ *
+ * context 透传至 evaluate，用于解析跨记录字段引用（pageField）；不传则 pageField 一律非匹配。
  */
-import { evaluate, groupItems, type Group, type Registry, type ViewQuery } from '../core/query'
+import { evaluate, groupItems, type Group, type QueryContext, type Registry, type ViewQuery } from '../core/query'
 import type { BlockCard } from '../wasm/types'
 import { BLOCK_ENTITY } from './useBlockQueryRegistry'
 
@@ -16,8 +18,9 @@ export function filterSortBlockCards(
   query: ViewQuery,
   registry: Registry,
   entityType: string = BLOCK_ENTITY,
+  context?: QueryContext,
 ): BlockCard[] {
-  return evaluate(query, cards, registry, entityType)
+  return evaluate(query, cards, registry, entityType, context)
 }
 
 /** 对过滤后列表按单字段分组，返回分组桶。 */
@@ -26,6 +29,7 @@ export function groupBlockCards(
   groupBy: string | null,
   registry: Registry,
   entityType: string = BLOCK_ENTITY,
+  context?: QueryContext,
 ): Group<BlockCard>[] {
   return groupItems(items, groupBy, registry, entityType)
 }
@@ -36,7 +40,8 @@ export function runBlockQuery(
   query: ViewQuery,
   registry: Registry,
   entityType: string = BLOCK_ENTITY,
+  context?: QueryContext,
 ): Group<BlockCard>[] {
-  const sorted = evaluate(query, cards, registry, entityType)
+  const sorted = evaluate(query, cards, registry, entityType, context)
   return groupItems(sorted, query.groupBy, registry, entityType)
 }

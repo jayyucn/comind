@@ -12,7 +12,7 @@
  * （#17 text/select + #19 number/date/multiSelect/boolean）、空值语义（#17）、多键排序与单字段分组
  *（#20，sortItems / groupItems 与求值解耦、可独立单测）。
  */
-import type { Condition, ConditionGroup, FieldDescriptor, SortRule, ViewQuery } from './types'
+import type { Condition, ConditionGroup, ConditionValue, FieldDescriptor, QueryContext, SortRule, ViewQuery } from './types'
 import type { Registry } from './registry'
 
 /** 归一化空值：undefined / null 一律折叠为 undefined。 */
@@ -33,12 +33,46 @@ function eqScalars(a: unknown, b: unknown): boolean {
   return String(a) === String(b)
 }
 
+/**
+ * 把 {@link ConditionValue} 解析为「比较目标值」。
+ *
+ * - literal：原值。
+ * - field：取同记录另一字段的值（字段间比较）。
+ * - pageField：经 context.getById 取出目标 Page，再取其字段值；取不到目标或字段则 undefined（非匹配）。
+ */
+function resolveTarget(
+  cv: ConditionValue | undefined,
+  item: unknown,
+  registry: Registry,
+  entityType: string,
+  context?: QueryContext,
+): unknown {
+  if (!cv) return undefined
+  switch (cv.kind) {
+    case 'literal':
+      return cv.value
+    case 'field': {
+      const d = registry.get(entityType, cv.field)
+      return d ? d.get(item) : undefined
+    }
+    case 'pageField': {
+      const targetItem = context?.getById?.('page', cv.pageId)
+      if (targetItem === undefined) return undefined
+      const d = registry.get('page', cv.field)
+      return d ? d.get(targetItem) : undefined
+    }
+    default:
+      return undefined
+  }
+}
+
 /** 单条件匹配。仅处理 Condition 叶子；嵌套组由 evalGroup 递归求值。 */
 export function matchCondition(
   cond: Condition,
   item: unknown,
   registry: Registry,
   entityType: string,
+  context?: QueryContext,
 ): boolean {
   const descriptor = registry.get(entityType, cond.field) as FieldDescriptor<unknown> | undefined
   if (!descriptor) return false
@@ -53,41 +87,51 @@ export function matchCondition(
   // 比较类操作符遇空即 false
   if (value === undefined) return false
 
-  // select / multiSelect：条件引用的选项 id 已不在字段当前选项集合 → 降级为非匹配
+  const cv = cond.value
+  if (!cv) return false
+
+  // 解析比较目标值（字面量 / 同记录字段 / 跨记录 Page 字段）
+  const targetRaw = resolveTarget(cv, item, registry, entityType, context)
+  const target = normalize(targetRaw)
+  // 目标为空（含字面量空值、字段为空、Page 未取到）→ 无法比较，非匹配
+  if (target === undefined) return false
+
+  // select / multiSelect：仅「字面量」引用的选项 id 已不在字段当前选项集合 → 降级为非匹配。
+  // 字段引用（field / pageField）为动态值，不降级。
   const ids = optionIds(descriptor)
-  if (ids && (op === 'is' || op === 'isNot') && !ids.has(String(cond.value))) {
+  if (ids && cv.kind === 'literal' && (op === 'is' || op === 'isNot') && !ids.has(String(target))) {
     return false
   }
 
   switch (op) {
     case 'is':
-      return eqScalars(value, cond.value)
+      return eqScalars(value, target)
     case 'isNot':
-      return !eqScalars(value, cond.value)
+      return !eqScalars(value, target)
     case 'contains':
       return String(value)
         .toLowerCase()
-        .includes(String(cond.value ?? '').toLowerCase())
+        .includes(String(target ?? '').toLowerCase())
     case 'notContains':
       return !String(value)
         .toLowerCase()
-        .includes(String(cond.value ?? '').toLowerCase())
+        .includes(String(target ?? '').toLowerCase())
     // number
     case 'eq':
-      return Number(value) === Number(cond.value)
+      return Number(value) === Number(target)
     case 'neq':
-      return Number(value) !== Number(cond.value)
+      return Number(value) !== Number(target)
     case 'gt':
-      return Number(value) > Number(cond.value)
+      return Number(value) > Number(target)
     case 'lt':
-      return Number(value) < Number(cond.value)
+      return Number(value) < Number(target)
     // date：日粒度，yyyy-MM-dd 字符串比较即可正确排序
     case 'before':
-      return String(value) < String(cond.value)
+      return String(value) < String(target)
     case 'after':
-      return String(value) > String(cond.value)
+      return String(value) > String(target)
     case 'between': {
-      const [from, to] = Array.isArray(cond.value) ? cond.value : [cond.value, cond.value]
+      const [from, to] = Array.isArray(targetRaw) ? (targetRaw as [unknown, unknown]) : [targetRaw, targetRaw]
       const s = String(value)
       return s >= String(from) && s <= String(to)
     }
@@ -95,7 +139,7 @@ export function matchCondition(
     case 'hasAny':
     case 'hasAll': {
       const selected = Array.isArray(value) ? (value as unknown[]) : []
-      let targets = Array.isArray(cond.value) ? (cond.value as unknown[]) : [cond.value]
+      let targets = Array.isArray(targetRaw) ? (targetRaw as unknown[]) : [targetRaw]
       // 删除选项降级：引用的 id 已不在字段当前选项集合 → 过滤掉；全部被删则非匹配
       if (ids) {
         targets = targets.filter((t) => ids.has(String(t)))
@@ -122,12 +166,13 @@ export function evalGroup(
   item: unknown,
   registry: Registry,
   entityType: string,
+  context?: QueryContext,
 ): boolean {
   if (group.children.length === 0) return true
   const results = group.children.map((child) =>
     'children' in child
-      ? evalGroup(child, item, registry, entityType)
-      : matchCondition(child, item, registry, entityType),
+      ? evalGroup(child, item, registry, entityType, context)
+      : matchCondition(child, item, registry, entityType, context),
   )
   const combined = group.combinator === 'and' ? results.every(Boolean) : results.some(Boolean)
   return group.negate ? !combined : combined
@@ -237,7 +282,7 @@ export function groupItems<T>(items: T[], groupBy: string | null, registry: Regi
  * 求值入口：对 items 全量过滤 + 排序，返回原集合的子集（不修改入参）。
  * 纯函数，重算交给调用方缓存。分组由调用方按需对返回结果调用 groupItems（与求值解耦）。
  */
-export function evaluate<T>(query: ViewQuery, items: T[], registry: Registry, entityType: string): T[] {
-  const filtered = items.filter((item) => evalGroup(query.filter, item, registry, entityType))
+export function evaluate<T>(query: ViewQuery, items: T[], registry: Registry, entityType: string, context?: QueryContext): T[] {
+  const filtered = items.filter((item) => evalGroup(query.filter, item, registry, entityType, context))
   return sortItems(filtered, query.sort, registry, entityType)
 }

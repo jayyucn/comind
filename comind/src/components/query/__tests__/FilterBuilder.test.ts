@@ -205,6 +205,89 @@ describe('FilterBuilder 产出合法 ViewQuery', () => {
     expect(emitted.groupBy).toBe('due')
     // 条件被实际写入
     const firstCond = emitted.filter.children[0] as { field: string; op: string; value: unknown }
-    expect(firstCond).toMatchObject({ field: 'status', op: 'is', value: 'open' })
+    expect(firstCond).toMatchObject({ field: 'status', op: 'is', value: { kind: 'literal', value: 'open' } })
+  })
+})
+
+// —— 字段引用值（field / pageField）UI 测试 ——
+// 注册两个同类型 number 字段（count / score），使「字段」开关与跨记录字段列表非空；
+// 并注入 availablePages 以触发「其他页面…」入口。
+interface RefTask {
+  count?: number
+  score?: number
+}
+function makeRefRegistry(): Registry {
+  const reg = createRegistry()
+  const fields: FieldDescriptor<RefTask>[] = [
+    { key: 'count', label: '数量', type: 'number', get: (i) => i.count },
+    { key: 'score', label: '分值', type: 'number', get: (i) => i.score },
+  ]
+  for (const f of fields) reg.register('task', f)
+  return reg
+}
+const refAvailablePages = [
+  { id: 'p1', title: '产品规划' },
+  { id: 'p2', title: '周报' },
+]
+
+describe('FilterBuilder 字段引用值（field / pageField）', () => {
+  let refWrapper: ReturnType<typeof mount>
+
+  beforeEach(() => {
+    refWrapper = mount(FilterBuilder, {
+      props: { registry: makeRefRegistry(), entityType: 'task', modelValue: baseQuery(), availablePages: refAvailablePages },
+    })
+  })
+
+  function refEmitted(): ViewQuery {
+    const events = refWrapper.emitted('update:modelValue')
+    expect(events).toBeTruthy()
+    const last = events[events.length - 1] as unknown[]
+    return last[0] as ViewQuery
+  }
+
+  it('顶部「字段」开关：切到字段后值序列化为 field 引用', async () => {
+    await addCondition(refWrapper)
+    await refWrapper.find('.qb-row .qb-select').setValue('count')
+    // 顶部出现 固定值 / 字段 切换
+    const modeBtns = refWrapper.findAll('.qb-vmode button')
+    expect(modeBtns.length).toBe(2)
+    await modeBtns[1].trigger('click') // 「字段」
+    const cond = (refEmitted().filter.children[0] as { field: string; op: string; value: unknown })
+    expect(cond.value).toEqual({ kind: 'field', field: 'score' }) // 同类型首个非自身字段
+  })
+
+  it('「+」菜单 → 其他页面 → 选页 + 选字段：序列化为 pageField 引用', async () => {
+    await addCondition(refWrapper)
+    await refWrapper.find('.qb-row .qb-select').setValue('count')
+    // 打开 + 菜单
+    await refWrapper.find('.qb-ref-btn').trigger('click')
+    const rootItems = refWrapper.findAll('.qb-pop-item')
+    const otherPageItem = rootItems.find((b) => b.text().includes('其他页面'))!
+    expect(otherPageItem).toBeTruthy()
+    await otherPageItem.trigger('click')
+    // PageFieldRefPicker：选页
+    const pages = refWrapper.findAll('.pf-page')
+    expect(pages.length).toBe(2)
+    await pages[0].trigger('click') // 产品规划 (p1)
+    // 选同类型字段（分值）
+    const fields = refWrapper.findAll('.pf-field')
+    expect(fields.length).toBe(1) // 仅 score 同类型
+    await fields[0].trigger('click')
+    const cond = (refEmitted().filter.children[0] as { field: string; op: string; value: unknown })
+    expect(cond.value).toEqual({ kind: 'pageField', pageId: 'p1', field: 'score' })
+  })
+
+  it('未注入 availablePages 时隐藏「其他页面」入口', async () => {
+    // 重新挂载一个无 availablePages 的实例
+    const bare = mount(FilterBuilder, {
+      props: { registry: makeRefRegistry(), entityType: 'task', modelValue: baseQuery() },
+    })
+    await addCondition(bare)
+    await bare.find('.qb-row .qb-select').setValue('count')
+    await bare.find('.qb-ref-btn').trigger('click')
+    const rootItems = bare.findAll('.qb-pop-item')
+    expect(rootItems.some((b) => b.text().includes('其他页面'))).toBe(false)
+    expect(rootItems.some((b) => b.text().includes('当前记录字段'))).toBe(true)
   })
 })

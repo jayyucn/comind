@@ -18,6 +18,8 @@ const props = withDefaults(
     entityType: string
     /** 嵌套深度，根组为 1。 */
     depth?: number
+    /** 跨记录引用可选页面列表（id + 标题），由 FilterBuilder 注入。 */
+    availablePages?: { id: string; title: string }[]
   }>(),
   { depth: 1 },
 )
@@ -105,6 +107,7 @@ function setCombinator(c: 'and' | 'or') {
           :registry="registry"
           :entityType="entityType"
           :depth="depth + 1"
+          :available-pages="availablePages"
           :model-value="child"
           @update:model-value="replaceChild(i, $event)"
           @remove="removeChild(i)"
@@ -113,6 +116,7 @@ function setCombinator(c: 'and' | 'or') {
           v-else
           :registry="registry"
           :entityType="entityType"
+          :available-pages="availablePages"
           :model-value="child"
           @update:model-value="replaceChild(i, $event)"
           @remove="removeChild(i)"

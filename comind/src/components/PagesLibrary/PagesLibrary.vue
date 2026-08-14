@@ -3,12 +3,12 @@ import { ref, computed, onMounted } from 'vue'
 import { usePageStore } from '../../stores/pages'
 import { getPageRegistry, PAGE_ENTITY } from '../../composables/usePageQueryRegistry'
 import { runPageQuery, filterSortPages } from '../../composables/usePageQueryEngine'
-import type { ViewQuery } from '../../core/query'
+import type { QueryContext, ViewQuery } from '../../core/query'
 import type { Page } from '../../types/page'
 import PageTableView from './PageTableView.vue'
 import PageCalendarView from './PageCalendarView.vue'
 import FilterBuilder from '../query/FilterBuilder.vue'
-import { SlidersHorizontal, X, Search, LayoutGrid, CalendarDays } from 'lucide-vue-next'
+import { SlidersHorizontal, X, Search, LayoutGrid, CalendarDays, ListFilter } from 'lucide-vue-next'
 
 defineOptions({ name: 'PagesLibrary' })
 
@@ -29,6 +29,17 @@ const viewQuery = ref<ViewQuery>({
 const showFilterPanel = ref(false)
 const searchQuery = ref('')
 
+// 跨记录字段引用所需的求值上下文：按 id 取 Page（用全量 store，不受搜索过滤影响）。
+// 不提供时 pageField 引用一律非匹配。
+const queryContext = computed<QueryContext>(() => ({
+  getById: (entityType, id) => (entityType === PAGE_ENTITY ? pageStore.getPage(id) : undefined),
+}))
+
+// 跨记录引用可选页面列表（id + 标题），供 FilterBuilder 的「其他页面」入口搜索选择。
+const availablePages = computed<{ id: string; title: string }[]>(() =>
+  pageStore.pages.map((p) => ({ id: p.id, title: p.title || '(无标题)' })),
+)
+
 // 数据
 const allPages = computed<Page[]>(() => {
   let pages = [...pageStore.pages]
@@ -40,11 +51,11 @@ const allPages = computed<Page[]>(() => {
 })
 
 const filteredPages = computed(() => {
-  return filterSortPages(allPages.value, viewQuery.value, registry, PAGE_ENTITY)
+  return filterSortPages(allPages.value, viewQuery.value, registry, PAGE_ENTITY, queryContext.value)
 })
 
 const pageGroups = computed(() => {
-  return runPageQuery(allPages.value, viewQuery.value, registry, PAGE_ENTITY)
+  return runPageQuery(allPages.value, viewQuery.value, registry, PAGE_ENTITY, queryContext.value)
 })
 
 onMounted(async () => {
@@ -98,7 +109,7 @@ onMounted(async () => {
           title="筛选与排序"
           @click="showFilterPanel = !showFilterPanel"
         >
-          <SlidersHorizontal :size="15" />
+          <ListFilter :size="15" />
         </button>
       </div>
     </header>
@@ -115,6 +126,7 @@ onMounted(async () => {
         <FilterBuilder
           :registry="registry"
           :entity-type="PAGE_ENTITY"
+          :available-pages="availablePages"
           v-model="viewQuery"
         />
       </div>

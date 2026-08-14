@@ -5,11 +5,25 @@
  * 补默认值（空 filter 组、空 sort、groupBy 为 null），保证旧数据或残缺数据不崩溃。
  * 迁移链机制暂缓——仅保留 version 位，首个 v2 出现时再实现 migrate() 分支。
  */
-import type { Condition, ConditionGroup, FilterOp, SortRule, ViewQuery } from './types'
+import type { Condition, ConditionGroup, ConditionValue, FilterOp, SortRule, ViewQuery } from './types'
 
 /** 把 ViewQuery 序列化为带 version 的 JSON 字符串。 */
 export function serializeQuery(query: ViewQuery): string {
   return JSON.stringify({ ...query, version: 1 })
+}
+
+/**
+ * 归一化条件值：保证产出合法 {@link ConditionValue}。
+ * - 已是判别联合（含 kind 字段）→ 原样保留。
+ * - 旧版裸字面量（string/number/boolean/null/array）→ 包裹为 { kind:'literal', value }。
+ * - 其余（undefined 等）→ undefined（isEmpty/isNotEmpty 无 value）。
+ */
+function normalizeValue(raw: unknown): ConditionValue | undefined {
+  if (raw === undefined) return undefined
+  if (raw && typeof raw === 'object' && typeof (raw as { kind?: unknown }).kind === 'string') {
+    return raw as ConditionValue
+  }
+  return { kind: 'literal', value: raw }
 }
 
 /** 归一化单个条件：保证 field/op 存在，value 缺失则省略（isEmpty/isNotEmpty 无 value）。 */
@@ -19,7 +33,7 @@ function normalizeCondition(raw: unknown): Condition {
     field: typeof o.field === 'string' ? o.field : '',
     op: (typeof o.op === 'string' ? o.op : 'is') as FilterOp,
   }
-  if (o.value !== undefined) cond.value = o.value
+  if (o.value !== undefined) cond.value = normalizeValue(o.value)
   return cond
 }
 

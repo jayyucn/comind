@@ -60,13 +60,38 @@ export interface FieldDescriptor<T = unknown> {
   path?: string
 }
 
+/**
+ * 条件值的判别联合（字段引用值特性）。
+ *
+ * - `literal`：字面量值（与旧版 `value` 等价，JSON 直接存）。
+ * - `field`：同记录字段引用——求值时取 `registry.get(entityType, field).get(item)`，
+ *   实现「字段间比较」（如「字数 > 子页面数」）。
+ * - `pageField`：跨记录字段引用——取指定 Page（pageId）的某字段值作比较目标。
+ *   求值需 {@link QueryContext.getById} 提供按 id 取 Page 的能力；不提供时一律非匹配。
+ *
+ * 序列化：三者皆为纯 JSON 对象，随 ViewQuery 直接 JSON 往返；旧版裸字面量由
+ * `parseQuery` 自动包裹为 `literal`（向前兼容）。
+ */
+export type ConditionValue =
+  | { kind: 'literal'; value: unknown }
+  | { kind: 'field'; field: string }
+  | { kind: 'pageField'; pageId: string; field: string }
+
 /** 单个筛选条件。 */
 export interface Condition {
-  /** FieldDescriptor.key */
+  /** FieldDescriptor.key（被比较的字段）。 */
   field: string
   op: FilterOp
-  /** isEmpty / isNotEmpty 无 value。 */
-  value?: unknown
+  /** 比较目标值；isEmpty / isNotEmpty 无 value。 */
+  value?: ConditionValue
+}
+
+/**
+ * 求值上下文：跨记录字段引用（pageField）解析所需的可选能力。
+ * getById 按 entityType + id 取实体对象；不提供时 pageField 一律非匹配。
+ */
+export interface QueryContext {
+  getById?: (entityType: string, id: string) => unknown | undefined
 }
 
 /** 条件组：可嵌套，构成 AND/OR 组合树。扁平条件列表是其退化形态（单 and 根组，children 全为 Condition）。 */

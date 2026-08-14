@@ -20,7 +20,7 @@ function vq(filter: ConditionGroup, sort: ViewQuery['sort'] = [], groupBy: strin
 }
 
 function cond(field: string, op: string, value: unknown): ConditionGroup['children'][number] {
-  return { field, op, value } as ConditionGroup['children'][number]
+  return { field, op, value: { kind: 'literal', value } } as ConditionGroup['children'][number]
 }
 
 const DAY = 86_400_000

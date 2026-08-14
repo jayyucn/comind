@@ -5,8 +5,11 @@
  * - filterSortPages：evaluate 全量过滤 + 多键排序
  * - groupPages：对过滤后列表单字段分组（groupItems）
  * - runPageQuery：过滤 + 排序 + 分组一步到位，返回分组桶（视图层按需 flatten 或按桶渲染）
+ *
+ * context 透传至 evaluate，用于解析跨记录字段引用（pageField）：跨记录引用需要按 id 取 Page 的能力，
+ * 由消费方（如 PagesLibrary）从页面 store 注入 getById；不传则 pageField 一律非匹配。
  */
-import { evaluate, groupItems, type Group, type Registry, type ViewQuery } from '../core/query'
+import { evaluate, groupItems, type Group, type QueryContext, type Registry, type ViewQuery } from '../core/query'
 import type { Page } from '../types/page'
 import { PAGE_ENTITY } from './usePageQueryRegistry'
 
@@ -16,8 +19,9 @@ export function filterSortPages(
   query: ViewQuery,
   registry: Registry,
   entityType: string = PAGE_ENTITY,
+  context?: QueryContext,
 ): Page[] {
-  return evaluate(query, pages, registry, entityType)
+  return evaluate(query, pages, registry, entityType, context)
 }
 
 /** 对过滤后列表按单字段分组，返回分组桶。 */
@@ -26,6 +30,7 @@ export function groupPages(
   groupBy: string | null,
   registry: Registry,
   entityType: string = PAGE_ENTITY,
+  context?: QueryContext,
 ): Group<Page>[] {
   return groupItems(items, groupBy, registry, entityType)
 }
@@ -36,7 +41,8 @@ export function runPageQuery(
   query: ViewQuery,
   registry: Registry,
   entityType: string = PAGE_ENTITY,
+  context?: QueryContext,
 ): Group<Page>[] {
-  const sorted = evaluate(query, pages, registry, entityType)
+  const sorted = evaluate(query, pages, registry, entityType, context)
   return groupItems(sorted, query.groupBy, registry, entityType)
 }

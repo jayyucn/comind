@@ -44,10 +44,10 @@ describe('嵌套条件组递归', () => {
   it('AND 内含 OR：(name contains a) AND (name contains task OR name contains gamma)', () => {
     const q = query(
       grp('and', [
-        { field: 'name', op: 'contains', value: 'a' },
+        { field: 'name', op: 'contains', value: { kind: 'literal', value: 'a' } },
         grp('or', [
-          { field: 'name', op: 'contains', value: 'task' },
-          { field: 'name', op: 'contains', value: 'gamma' },
+          { field: 'name', op: 'contains', value: { kind: 'literal', value: 'task' } },
+          { field: 'name', op: 'contains', value: { kind: 'literal', value: 'gamma' } },
         ]),
       ]),
     )
@@ -58,10 +58,10 @@ describe('嵌套条件组递归', () => {
   it('深层嵌套：OR > AND > (status is done AND name contains note)', () => {
     const q = query(
       grp('or', [
-        { field: 'status', op: 'is', value: 'open' },
+        { field: 'status', op: 'is', value: { kind: 'literal', value: 'open' } },
         grp('and', [
-          { field: 'status', op: 'is', value: 'done' },
-          { field: 'name', op: 'contains', value: 'note' },
+          { field: 'status', op: 'is', value: { kind: 'literal', value: 'done' } },
+          { field: 'name', op: 'contains', value: { kind: 'literal', value: 'note' } },
         ]),
       ]),
     )
@@ -72,7 +72,7 @@ describe('嵌套条件组递归', () => {
 
 describe('组级 negate', () => {
   it('negate: true 对子结果整体取反', () => {
-    const q = query(grp('and', [{ field: 'status', op: 'is', value: 'done' }], true))
+    const q = query(grp('and', [{ field: 'status', op: 'is', value: { kind: 'literal', value: 'done' } }], true))
     const out = evaluate(q, rows, reg, 'row')
     expect(out.map((r) => r.name).sort()).toEqual(['Alpha Task', 'Gamma'])
   })
@@ -82,8 +82,8 @@ describe('组级 negate', () => {
       grp(
         'and',
         [
-          { field: 'status', op: 'is', value: 'done' },
-          { field: 'name', op: 'contains', value: 'note' },
+          { field: 'status', op: 'is', value: { kind: 'literal', value: 'done' } },
+          { field: 'name', op: 'contains', value: { kind: 'literal', value: 'note' } },
         ],
         true,
       ),
@@ -93,8 +93,8 @@ describe('组级 negate', () => {
   })
 
   it('negate 缺省为 false，不影响既有行为', () => {
-    const plain = grp('and', [{ field: 'status', op: 'is', value: 'done' }])
-    const withFalse = grp('and', [{ field: 'status', op: 'is', value: 'done' }], false)
+    const plain = grp('and', [{ field: 'status', op: 'is', value: { kind: 'literal', value: 'done' } }])
+    const withFalse = grp('and', [{ field: 'status', op: 'is', value: { kind: 'literal', value: 'done' } }], false)
     expect(evalGroup(plain, rows[1], reg, 'row')).toBe(evalGroup(withFalse, rows[1], reg, 'row'))
   })
 })
@@ -107,7 +107,7 @@ describe('空 children 组语义', () => {
 
   it('AND 组内含一个空 OR 子组：子组为 true，整体退化为其余条件', () => {
     const q = query(
-      grp('and', [{ field: 'status', op: 'is', value: 'open' }, grp('or', [])]),
+      grp('and', [{ field: 'status', op: 'is', value: { kind: 'literal', value: 'open' } }, grp('or', [])]),
     )
     const out = evaluate(q, rows, reg, 'row')
     expect(out.map((r) => r.name)).toEqual(['Alpha Task'])

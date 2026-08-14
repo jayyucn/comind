@@ -8,12 +8,12 @@ const sample: ViewQuery = {
     combinator: 'and',
     negate: false,
     children: [
-      { field: 'status', op: 'is', value: 'open' },
+      { field: 'status', op: 'is', value: { kind: 'literal', value: 'open' } },
       {
         combinator: 'or',
         children: [
-          { field: 'name', op: 'contains', value: 'task' },
-          { field: 'score', op: 'gt', value: 5 },
+          { field: 'name', op: 'contains', value: { kind: 'literal', value: 'task' } },
+          { field: 'score', op: 'gt', value: { kind: 'literal', value: 5 } },
         ],
       },
     ],
@@ -68,8 +68,8 @@ describe('残缺 / 未知字段不抛错', () => {
         filter: {
           combinator: 'or',
           children: [
-            { field: 'a', op: 'is', value: 1 },
-            { combinator: 'and', children: [{ field: 'b', op: 'is', value: 2 }] },
+            { field: 'a', op: 'is', value: { kind: 'literal', value: 1 } },
+            { combinator: 'and', children: [{ field: 'b', op: 'is', value: { kind: 'literal', value: 2 } }] },
           ],
         },
       }),

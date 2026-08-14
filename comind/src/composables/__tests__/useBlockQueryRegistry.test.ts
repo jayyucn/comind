@@ -36,7 +36,7 @@ const cards: BlockCard[] = [
 ]
 
 function cond(field: string, op: Condition['op'], value?: unknown): Condition {
-  return value === undefined ? { field, op } : { field, op, value }
+  return value === undefined ? { field, op } : { field, op, value: { kind: 'literal', value } }
 }
 function vq(filter: ConditionGroup, sort: ViewQuery['sort'] = [], groupBy: string | null = null): ViewQuery {
   return { version: 1, filter, sort, groupBy }

@@ -9,12 +9,20 @@
 import { computed } from 'vue'
 import { X } from 'lucide-vue-next'
 import { deriveOps } from '../../core/query'
-import type { Condition, FieldDescriptor, FilterOp, Registry } from '../../core/query'
+import type {
+  Condition,
+  ConditionValue,
+  FieldDescriptor,
+  FilterOp,
+  Registry,
+} from '../../core/query'
 import ValueEditor from './ValueEditor.vue'
 
 const props = defineProps<{
   registry: Registry
   entityType: string
+  /** 跨记录引用可选页面列表（id + 标题），由 FilterBuilder 注入。 */
+  availablePages?: { id: string; title: string }[]
 }>()
 
 const emit = defineEmits<{ remove: [] }>()
@@ -30,13 +38,10 @@ const needsValue = computed(
   () => !!model.value && model.value.op !== 'isEmpty' && model.value.op !== 'isNotEmpty',
 )
 
-// 把 ValueEditor 的 v-model 桥接到 Condition.value（自身状态，避免 mutating props）
-const valueProxy = computed<unknown>({
-  get: () => model.value?.value,
-  set: (v) => {
-    if (model.value) model.value = { ...model.value, value: v }
-  },
-})
+// 把 ValueEditor 交出的 ConditionValue 不可变地写回 Condition.value（避免 mutating props）
+function onValue(v: ConditionValue | undefined) {
+  if (model.value) model.value = { ...model.value, value: v }
+}
 
 const opLabels: Record<string, string> = {
   is: '是',
@@ -90,7 +95,12 @@ function onOpChange(e: Event) {
       class="qb-value-wrap"
       :descriptor="currentDescriptor"
       :op="model?.op"
-      v-model="valueProxy"
+      :entity-type="entityType"
+      :registry="registry"
+      :condition-field="model?.field"
+      :available-pages="availablePages"
+      :model-value="model?.value"
+      @update:model-value="onValue"
     />
 
     <button class="qb-icon" type="button" title="删除条件" @click="emit('remove')">

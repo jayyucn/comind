@@ -16,6 +16,8 @@ const props = defineProps<{
   registry: Registry
   entityType: string
   modelValue: ViewQuery
+  /** 跨记录引用可选页面列表（id + 标题），从页面 store 注入。 */
+  availablePages?: { id: string; title: string }[]
 }>()
 
 const emit = defineEmits<{ 'update:modelValue': [ViewQuery] }>()
@@ -66,7 +68,13 @@ watch(
     <!-- 条件区 -->
     <section class="qb-section">
       <h4 class="qb-section-title">筛选条件</h4>
-      <ConditionGroup v-model="query.filter" :registry="registry" :entity-type="entityType" :depth="1" />
+      <ConditionGroup
+        v-model="query.filter"
+        :registry="registry"
+        :entity-type="entityType"
+        :available-pages="availablePages"
+        :depth="1"
+      />
     </section>
 
     <!-- 排序区（多键） -->

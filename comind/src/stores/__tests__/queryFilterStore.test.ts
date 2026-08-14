@@ -62,7 +62,7 @@ function sampleQuery(): ViewQuery {
     version: 1,
     filter: {
       combinator: 'and',
-      children: [{ field: 'status', op: 'is', value: 'done' }],
+      children: [{ field: 'status', op: 'is', value: { kind: 'literal', value: 'done' } }],
     },
     sort: [],
     groupBy: null,
@@ -133,7 +133,7 @@ describe('queryFilterStore', () => {
 
     const updatedQuery: ViewQuery = {
       version: 1,
-      filter: { combinator: 'or', children: [{ field: 'status', op: 'isNot', value: 'todo' }] },
+      filter: { combinator: 'or', children: [{ field: 'status', op: 'isNot', value: { kind: 'literal', value: 'todo' } }] },
       sort: [],
       groupBy: null,
     }
