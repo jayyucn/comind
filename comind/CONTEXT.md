@@ -1,7 +1,7 @@
 # CONTEXT.md — comind 领域术语表
 
 > 持续演进的领域语言。新增概念、修改语义时同步更新。
-> 最后更新：2026-08-13
+> 最后更新：2026-08-14
 
 ---
 
@@ -169,7 +169,25 @@ PC ↔ Android 设备间同步。
 | **evaluate** | 求值入口：对 items 全量过滤 + 多键排序，返回子集（不修改入参）；`context?` 透传解析引用。 |
 | **matchCondition / evalGroup** | 单条件匹配 / 条件组递归求值；均透传 `context`。 |
 | **normalizeValue** | 反序列化边界的向前兼容处理：把旧版裸字面量包裹为 `{ kind:'literal' }`。 |
-| **FilterBuilder** | 引擎唯一的 UI 交付物。注册表驱动：字段下拉 + 类型派生操作符 + 类型分派值编辑器；`ValueEditor` 支持「固定值 / 字段」分段与 `+` 引用菜单。 |
+| **FilterBuilder** | 引擎唯一的通用 UI 交付物。注册表驱动：字段下拉 + 类型派生操作符 + 类型分派值编辑器；`ValueEditor` 支持「固定值 / 字段」分段与 `+` 引用菜单。**在页面库筛选芯片 UX（ADR-0009）中作为「高级筛选」逃逸舱**，经 "Add advanced filter" 进入，承载嵌套条件组与字段引用值。 |
+
+### 页面库筛选芯片 UX（filter chip UX，ADR-0009）
+
+复刻 Notion 表格视图的「芯片 + 弹出层」轻模式，是 `ViewQuery` 在页面库交互层的**投影**（不改引擎类型）。详见 `docs/adr/0009-notion-filter-chip-ux.md`。
+
+| 术语 | 定义 |
+|------|------|
+| **Filter Chip Bar（芯片行）** | Header 与 Table 之间的横条，承载筛选/排序/分组 chip + `all/any` 切换。出现条件 = 筛选条件>0 OR 排序键>0 OR 已分组。 |
+| **Filter Chip（筛选芯片）** | 芯片行中代表单个 `Condition` 的可点击元素，点开 `ConditionPopover` 编辑 `[字段][操作符][值]`。 |
+| **Sort Chip（排序芯片）** | 每个排序键一个 chip（`↑ 标题` / `↓ 更新时间`），多键并列；点开 `SortMenu` 改字段/方向。 |
+| **Group Chip（分组芯片）** | 单字段分组 chip（`分组：类型`）；`groupBy=null` 时不渲染。 |
+| **Condition Popover（条件弹出层）** | 编辑单个 `Condition` 的浮层：`[字段名▾] [操作符▾] [ChipValueEditor]`。 |
+| **Field Select Menu（字段选择菜单）** | `+ Filter` 触发的下拉：搜索框 + 字段列表 + 底部 "Add advanced filter"。 |
+| **all/any toggle** | 顶层 AND/OR 切换，投影到根 `ConditionGroup.combinator`（`'and'`/`'or'`）；仅绑筛选，不绑排序/分组。 |
+| **BasePopover** | 通用弹层原语（新增）。封装 Teleport+overlay+`position:{x,y}`+Escape+`@click.self` 关闭，复用 `--bg-base`/`--border`/`--shadow-modal` 令牌；所有新弹层包一层它。 |
+| **ChipValueEditor** | 芯片内 literal 值编辑器（新增，仅 literal）：按 `FieldType` 分派——text/number/date/select/multiSelect/boolean 各自 UI；`isEmpty`/`isNotEmpty` 无值区。跨记录引用仍走 `FilterBuilder`/`ValueEditor`。 |
+| **Advanced Filter（高级筛选）** | 经 "Add advanced filter" 进入的 `FilterBuilder` 面板，支持嵌套条件组与字段引用值；在芯片行退化为单个不可内联编辑的「N rules」聚合 chip。 |
+| **聚合 chip（aggregated chip）** | 当根 `ConditionGroup` 含嵌套子组（非纯 `Condition` 列表）时，芯片行只渲染此 chip 提示存在高级筛选，点它重开面板。 |
 
 ---
 
