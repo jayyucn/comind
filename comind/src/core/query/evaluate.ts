@@ -38,7 +38,7 @@ function eqScalars(a: unknown, b: unknown): boolean {
  *
  * - literal：原值。
  * - field：取同记录另一字段的值（字段间比较）。
- * - pageField：经 context.getById 取出目标 Page，再取其字段值；取不到目标或字段则 undefined（非匹配）。
+ * - recordRef：经 context.getById 取出目标实体（cv.entityType + cv.recordId），再取其字段值；取不到目标或字段则 undefined（非匹配）。
  */
 function resolveTarget(
   cv: ConditionValue | undefined,
@@ -55,10 +55,10 @@ function resolveTarget(
       const d = registry.get(entityType, cv.field)
       return d ? d.get(item) : undefined
     }
-    case 'pageField': {
-      const targetItem = context?.getById?.('page', cv.pageId)
+    case 'recordRef': {
+      const targetItem = context?.getById?.(cv.entityType, cv.recordId)
       if (targetItem === undefined) return undefined
-      const d = registry.get('page', cv.field)
+      const d = registry.get(cv.entityType, cv.field)
       return d ? d.get(targetItem) : undefined
     }
     default:
@@ -90,14 +90,14 @@ export function matchCondition(
   const cv = cond.value
   if (!cv) return false
 
-  // 解析比较目标值（字面量 / 同记录字段 / 跨记录 Page 字段）
+  // 解析比较目标值（字面量 / 同记录字段 / 跨记录引用字段）
   const targetRaw = resolveTarget(cv, item, registry, entityType, context)
   const target = normalize(targetRaw)
   // 目标为空（含字面量空值、字段为空、Page 未取到）→ 无法比较，非匹配
   if (target === undefined) return false
 
   // select / multiSelect：仅「字面量」引用的选项 id 已不在字段当前选项集合 → 降级为非匹配。
-  // 字段引用（field / pageField）为动态值，不降级。
+  // 字段引用（field / recordRef）为动态值，不降级。
   const ids = optionIds(descriptor)
   if (ids && cv.kind === 'literal' && (op === 'is' || op === 'isNot') && !ids.has(String(target))) {
     return false

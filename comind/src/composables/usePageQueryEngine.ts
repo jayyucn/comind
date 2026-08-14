@@ -6,8 +6,8 @@
  * - groupPages：对过滤后列表单字段分组（groupItems）
  * - runPageQuery：过滤 + 排序 + 分组一步到位，返回分组桶（视图层按需 flatten 或按桶渲染）
  *
- * context 透传至 evaluate，用于解析跨记录字段引用（pageField）：跨记录引用需要按 id 取 Page 的能力，
- * 由消费方（如 PagesLibrary）从页面 store 注入 getById；不传则 pageField 一律非匹配。
+ * context 透传至 evaluate，用于解析跨记录字段引用（recordRef）：跨记录引用需要按 entityType+id 取实体的能力，
+ * 由消费方（如 PagesLibrary）从页面 store 注入 getById；不传则 recordRef 一律非匹配。
  */
 import { evaluate, groupItems, type Group, type QueryContext, type Registry, type ViewQuery } from '../core/query'
 import type { Page } from '../types/page'

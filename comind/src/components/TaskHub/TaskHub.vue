@@ -161,7 +161,7 @@ function handleRefresh() {
   align-items: center;
   padding: 6px 16px;
   border-bottom: 1px solid var(--border-color, var(--app-split, #ddd));
-  background: var(--bg-secondary, rgba(0, 0, 0, 0.02));
+  background: var(--bg-base2);
 }
 
 .engine-toggle {
@@ -176,7 +176,7 @@ function handleRefresh() {
 .task-hub-newfilter {
   padding: 12px 16px;
   border-bottom: 1px solid var(--border-color, var(--app-split, #ddd));
-  background: var(--bg-secondary, rgba(0, 0, 0, 0.02));
+  background: var(--bg-base2);
 }
 
 .task-hub-empty {

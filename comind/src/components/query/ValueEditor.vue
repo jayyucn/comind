@@ -2,21 +2,31 @@
 /**
  * 值编辑器 —— 通用 FilterBuilder 的子组件，按字段类型分派输入控件。
  *
- * 不依赖任何业务模型；完全由传入的 {@link FieldDescriptor} 与当前操作符 `op` 决定渲染形态。
+ * 设计契约：**不依赖任何业务模型**。完全由传入的 {@link FieldDescriptor} 与当前操作符 `op` 决定渲染形态，
+ * 以及由调用方注入的通用数据（同类型字段来自 registry、跨记录候选来自 `crossRecordSources`）。
+ * 跨记录引用所需的「目标记录字段清单」由 `crossRecordSources` 随记录一并带来，编辑器本身不查询任何业务注册表。
  *
- * 值形态（v 字段引用值特性，与求值器保持一致）：ConditionValue 判别联合
+ * 值形态（字段引用值特性，与求值器保持一致）：ConditionValue 判别联合
  * - 字面量 `{ kind:'literal', value }`：原值（text/number 字符串、date yyyy-MM-dd 或 [from,to]、select id、multiSelect id[]、boolean）
  * - 同记录字段引用 `{ kind:'field', field }`：顶部「字段」开关切换，下拉选同类型字段
- * - 跨记录页面字段引用 `{ kind:'pageField', pageId, field }`：「固定值」模式下点输入框内 `+` → 引用值 → 其他页面
+ * - 跨记录字段引用 `{ kind:'recordRef', entityType, recordId, field }`：「固定值」模式下点输入框内 `+` → 引用值 → 其他记录
  *
  * isEmpty / isNotEmpty：无值编辑器（由 ConditionRow 隐藏本组件）。
- * between：仅支持字面量区间，不开放字段/页面引用（v1 范围）。
+ * between：仅支持字面量区间，不开放字段/记录引用（v1 范围）。切到 between 时丢弃已有的引用值，避免静默退化为 equals。
  * 通过 defineModel 以不可变方式向上交出新 ConditionValue（符合 vue/no-mutating-props）。
  */
 import { computed, ref } from 'vue'
-import { FileText, Plus, Tag, X } from 'lucide-vue-next'
-import type { ConditionValue, FieldDescriptor, FilterOp, Option, Registry } from '../../core/query'
-import PageFieldRefPicker from './PageFieldRefPicker.vue'
+import { File, Plus, Tag, X } from 'lucide-vue-next'
+import type {
+  ConditionValue,
+  FieldDescriptor,
+  FieldType,
+  FilterOp,
+  Option,
+  ReferenceableRecord,
+  Registry,
+} from '../../core/query'
+import CrossRecordRefPicker from './CrossRecordRefPicker.vue'
 
 const props = defineProps<{
   descriptor: FieldDescriptor
@@ -27,8 +37,11 @@ const props = defineProps<{
   registry: Registry
   /** 当前条件字段 key，用于从同类型候选中排除自身。 */
   conditionField?: string
-  /** 跨记录引用可选页面列表（按标题搜索选页）。不传则隐藏「其他页面」入口。 */
-  availablePages?: { id: string; title: string }[]
+  /**
+   * 跨记录引用候选记录列表（通用，业务无关）：每条自带 id / title / entityType / fields。
+   * 不传则隐藏「其他记录…」入口。业务方（如 PagesLibrary）负责把自身模型翻译为这个通用结构。
+   */
+  crossRecordSources?: ReferenceableRecord[]
 }>()
 
 const model = defineModel<ConditionValue | undefined>()
@@ -46,8 +59,8 @@ const showRefControls = computed(() => !isEmptyOp.value && !isRange.value)
 
 const kind = computed(() => model.value?.kind)
 const isFieldRef = computed(() => kind.value === 'field')
-const isPageRef = computed(() => kind.value === 'pageField')
-/** 顶部开关形态：字段引用 → 字段；其余（字面量 / 页面引用）→ 固定值。 */
+const isRecordRef = computed(() => kind.value === 'recordRef')
+/** 顶部开关形态：字段引用 → 字段；其余（字面量 / 记录引用）→ 固定值。 */
 const mode = computed<'literal' | 'field'>(() => (isFieldRef.value ? 'field' : 'literal'))
 
 // 同类型候选字段（排除当前字段），供「字段」开关与「引用当前记录字段」使用
@@ -75,8 +88,9 @@ function rangeValue(i: 0 | 1): string {
   return Array.isArray(v) ? (v[i] ?? '') : ''
 }
 function setRange(i: 0 | 1, v: string) {
-  const arr: [string, string] = Array.isArray(getLiteral())
-    ? [getLiteral()![0] ?? '', getLiteral()![1] ?? '']
+  const cur = getLiteral()
+  const arr: [string, string] = Array.isArray(cur)
+    ? [cur[0] ?? '', cur[1] ?? '']
     : ['', '']
   arr[i] = v
   setLiteral(arr)
@@ -87,7 +101,8 @@ function isChecked(id: string): boolean {
   return Array.isArray(v) && v.map(String).includes(id)
 }
 function toggleMulti(id: string) {
-  const arr = Array.isArray(getLiteral()) ? [...getLiteral()!.map(String)] : []
+  const cur = getLiteral()
+  const arr = Array.isArray(cur) ? [...cur.map(String)] : []
   const idx = arr.indexOf(id)
   if (idx >= 0) arr.splice(idx, 1)
   else arr.push(id)
@@ -116,18 +131,34 @@ function setMode(m: 'literal' | 'field') {
   }
 }
 
-// —— 跨记录页面引用预览 ——
-const refPreview = computed<{ icon: 'page' | 'field'; text: string } | null>(() => {
+// —— 字段标签解析（统一入口）——
+// 同记录字段（field）与跨记录字段（recordRef）的「字段标签」统一到一处解析：
+// 优先从注入的跨记录候选（业务无关）取同实体字段，回退到引擎 Registry。
+// 编辑器不再区分两条解析路径，且不查询任何业务注册表。
+function resolveFieldLabel(entityType: string, fieldKey: string, preferSourceId?: string): string {
+  const byId = preferSourceId ? props.crossRecordSources?.find((s) => s.id === preferSourceId) : undefined
+  const byEntity = props.crossRecordSources?.find((s) => s.entityType === entityType)
+  const src = byId ?? byEntity
+  return (
+    src?.fields.find((f) => f.key === fieldKey)?.label ??
+    props.registry.get(entityType, fieldKey)?.label ??
+    fieldKey
+  )
+}
+
+// —— 跨记录引用预览 ——
+// 标签完全来自 crossRecordSources（与编辑器注入的候选同源），不再查任何业务注册表。
+const refPreview = computed<{ target: 'record' | 'field'; text: string } | null>(() => {
   const v = model.value
   if (!v) return null
   if (v.kind === 'field') {
-    const label = props.registry.get(props.entityType, v.field)?.label ?? v.field
-    return { icon: 'field', text: label }
+    return { target: 'field', text: resolveFieldLabel(props.entityType, v.field) }
   }
-  if (v.kind === 'pageField') {
-    const pageTitle = props.availablePages?.find((p) => p.id === v.pageId)?.title ?? v.pageId
-    const fieldLabel = props.registry.get(props.entityType, v.field)?.label ?? v.field
-    return { icon: 'page', text: `${pageTitle} · ${fieldLabel}` }
+  if (v.kind === 'recordRef') {
+    const src = props.crossRecordSources?.find((s) => s.id === v.recordId)
+    const title = src?.title ?? v.recordId
+    const fieldLabel = resolveFieldLabel(v.entityType, v.field, v.recordId)
+    return { target: 'record', text: `${title} · ${fieldLabel}` }
   }
   return null
 })
@@ -136,7 +167,7 @@ function clearRef() {
 }
 
 // —— + 菜单（引用值）——
-type MenuView = 'root' | 'recordField' | 'pageField'
+type MenuView = 'root' | 'recordField' | 'recordRef'
 const menuOpen = ref(false)
 const menuView = ref<MenuView>('root')
 
@@ -151,8 +182,8 @@ function chooseRecordField(key: string) {
   model.value = { kind: 'field', field: key }
   closeMenu()
 }
-function choosePageField(pageId: string, field: string) {
-  model.value = { kind: 'pageField', pageId, field }
+function chooseRecordRef(sourceId: string, entityType: string, field: string) {
+  model.value = { kind: 'recordRef', entityType, recordId: sourceId, field }
   closeMenu()
 }
 </script>
@@ -172,9 +203,9 @@ function choosePageField(pageId: string, field: string) {
       </button>
     </div>
 
-    <!-- 跨记录页面引用：芯片预览（不可编辑，× 清除） -->
-    <div v-if="isPageRef && refPreview" class="qb-ref-chip">
-      <FileText :size="13" class="qb-ref-ico" />
+    <!-- 跨记录引用：芯片预览（不可编辑，× 清除） -->
+    <div v-if="isRecordRef && refPreview && !isRange" class="qb-ref-chip">
+      <component :is="refPreview.target === 'record' ? File : Tag" :size="13" class="qb-ref-ico" />
       <span class="qb-ref-text">{{ refPreview.text }}</span>
       <button type="button" class="qb-icon" title="清除引用" @click="clearRef">
         <X :size="13" />
@@ -262,7 +293,7 @@ function choosePageField(pageId: string, field: string) {
         placeholder="值…"
       />
 
-      <!-- + 菜单入口：引用值（当前记录字段 / 其他页面） -->
+      <!-- + 菜单入口：引用值（当前记录字段 / 其他记录） -->
       <button
         v-if="showRefControls"
         type="button"
@@ -289,14 +320,14 @@ function choosePageField(pageId: string, field: string) {
             <Tag :size="13" /> 当前记录字段
           </button>
           <button
-            v-if="availablePages && availablePages.length > 0"
+            v-if="crossRecordSources && crossRecordSources.length > 0"
             type="button"
             class="qb-pop-item"
-            @click="menuView = 'pageField'"
+            @click="menuView = 'recordRef'"
           >
-            <FileText :size="13" /> 其他页面…
+            <File :size="13" /> 其他记录…
           </button>
-          <p v-if="sameTypeFields.length === 0 && (!availablePages || availablePages.length === 0)" class="qb-pop-empty">
+          <p v-if="sameTypeFields.length === 0 && (!crossRecordSources || crossRecordSources.length === 0)" class="qb-pop-empty">
             无可引用来源
           </p>
         </template>
@@ -314,11 +345,11 @@ function choosePageField(pageId: string, field: string) {
           </button>
         </template>
 
-        <template v-else-if="menuView === 'pageField'">
-          <PageFieldRefPicker
-            :pages="availablePages ?? []"
-            :fields="sameTypeFields"
-            @select="choosePageField"
+        <template v-else-if="menuView === 'recordRef'">
+          <CrossRecordRefPicker
+            :sources="crossRecordSources ?? []"
+            :descriptor-type="descriptor.type"
+            @select="chooseRecordRef"
             @cancel="closeMenu"
           />
         </template>

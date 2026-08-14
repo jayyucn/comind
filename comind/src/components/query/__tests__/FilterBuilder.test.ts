@@ -209,9 +209,9 @@ describe('FilterBuilder 产出合法 ViewQuery', () => {
   })
 })
 
-// —— 字段引用值（field / pageField）UI 测试 ——
+// —— 字段引用值（field / recordRef）UI 测试 ——
 // 注册两个同类型 number 字段（count / score），使「字段」开关与跨记录字段列表非空；
-// 并注入 availablePages 以触发「其他页面…」入口。
+// 并注入 crossRecordSources（通用记录承载，业务无关）以触发「其他记录…」入口。
 interface RefTask {
   count?: number
   score?: number
@@ -225,17 +225,17 @@ function makeRefRegistry(): Registry {
   for (const f of fields) reg.register('task', f)
   return reg
 }
-const refAvailablePages = [
-  { id: 'p1', title: '产品规划' },
-  { id: 'p2', title: '周报' },
+const refCrossRecordSources = [
+  { id: 'p1', title: '产品规划', entityType: 'task', fields: [{ key: 'score', label: '分值', type: 'number', get: () => undefined }] },
+  { id: 'p2', title: '周报', entityType: 'task', fields: [{ key: 'score', label: '分值', type: 'number', get: () => undefined }] },
 ]
 
-describe('FilterBuilder 字段引用值（field / pageField）', () => {
+describe('FilterBuilder 字段引用值（field / recordRef）', () => {
   let refWrapper: ReturnType<typeof mount>
 
   beforeEach(() => {
     refWrapper = mount(FilterBuilder, {
-      props: { registry: makeRefRegistry(), entityType: 'task', modelValue: baseQuery(), availablePages: refAvailablePages },
+      props: { registry: makeRefRegistry(), entityType: 'task', modelValue: baseQuery(), crossRecordSources: refCrossRecordSources },
     })
   })
 
@@ -257,29 +257,29 @@ describe('FilterBuilder 字段引用值（field / pageField）', () => {
     expect(cond.value).toEqual({ kind: 'field', field: 'score' }) // 同类型首个非自身字段
   })
 
-  it('「+」菜单 → 其他页面 → 选页 + 选字段：序列化为 pageField 引用', async () => {
+  it('「+」菜单 → 其他记录 → 选记录 + 选字段：序列化为 recordRef 引用', async () => {
     await addCondition(refWrapper)
     await refWrapper.find('.qb-row .qb-select').setValue('count')
     // 打开 + 菜单
     await refWrapper.find('.qb-ref-btn').trigger('click')
     const rootItems = refWrapper.findAll('.qb-pop-item')
-    const otherPageItem = rootItems.find((b) => b.text().includes('其他页面'))!
-    expect(otherPageItem).toBeTruthy()
-    await otherPageItem.trigger('click')
-    // PageFieldRefPicker：选页
-    const pages = refWrapper.findAll('.pf-page')
-    expect(pages.length).toBe(2)
-    await pages[0].trigger('click') // 产品规划 (p1)
+    const otherRecordItem = rootItems.find((b) => b.text().includes('其他记录'))!
+    expect(otherRecordItem).toBeTruthy()
+    await otherRecordItem.trigger('click')
+    // CrossRecordRefPicker：选记录
+    const sources = refWrapper.findAll('.pf-source')
+    expect(sources.length).toBe(2)
+    await sources[0].trigger('click') // 产品规划 (p1)
     // 选同类型字段（分值）
     const fields = refWrapper.findAll('.pf-field')
     expect(fields.length).toBe(1) // 仅 score 同类型
     await fields[0].trigger('click')
     const cond = (refEmitted().filter.children[0] as { field: string; op: string; value: unknown })
-    expect(cond.value).toEqual({ kind: 'pageField', pageId: 'p1', field: 'score' })
+    expect(cond.value).toEqual({ kind: 'recordRef', entityType: 'task', recordId: 'p1', field: 'score' })
   })
 
-  it('未注入 availablePages 时隐藏「其他页面」入口', async () => {
-    // 重新挂载一个无 availablePages 的实例
+  it('未注入 crossRecordSources 时隐藏「其他记录」入口', async () => {
+    // 重新挂载一个无 crossRecordSources 的实例
     const bare = mount(FilterBuilder, {
       props: { registry: makeRefRegistry(), entityType: 'task', modelValue: baseQuery() },
     })
@@ -287,7 +287,50 @@ describe('FilterBuilder 字段引用值（field / pageField）', () => {
     await bare.find('.qb-row .qb-select').setValue('count')
     await bare.find('.qb-ref-btn').trigger('click')
     const rootItems = bare.findAll('.qb-pop-item')
-    expect(rootItems.some((b) => b.text().includes('其他页面'))).toBe(false)
+    expect(rootItems.some((b) => b.text().includes('其他记录'))).toBe(false)
     expect(rootItems.some((b) => b.text().includes('当前记录字段'))).toBe(true)
+  })
+})
+
+// between 不变式：between 只允许字面量区间。用户切换 op 已在 ConditionRow.onOpChange 处掉落引用值，
+// 但反序列化/外部直写可能得到 between + 引用值的非法组合，挂载即归一化清空 value。
+describe('FilterBuilder between 不变式（引用值守卫）', () => {
+  it('反序列化得到 between + recordRef 非法组合时，挂载即清空 value 且隐藏引用芯片', async () => {
+    const badQuery: ViewQuery = {
+      version: 1,
+      filter: {
+        combinator: 'and',
+        children: [
+          { field: 'count', op: 'between', value: { kind: 'recordRef', entityType: 'task', recordId: 'p1', field: 'score' } },
+        ],
+      },
+      sort: [],
+      groupBy: null,
+    }
+    const w = mount(FilterBuilder, {
+      props: { registry: makeRefRegistry(), entityType: 'task', modelValue: badQuery, crossRecordSources: refCrossRecordSources },
+    })
+    const events = w.emitted('update:modelValue')
+    expect(events).toBeTruthy()
+    const last = (events[events.length - 1] as unknown[])[0] as ViewQuery
+    const cond = last.filter.children[0] as { field: string; op: string; value: unknown }
+    expect(cond.op).toBe('between')
+    expect(cond.value).toBeUndefined()
+    // UI 上不应出现跨记录引用芯片（range 模式已隐藏）
+    expect(w.find('.qb-ref-chip').exists()).toBe(false)
+  })
+
+  it('between + 合法字面量区间保持不变（不触发归一化 emit）', async () => {
+    const q: ViewQuery = {
+      version: 1,
+      filter: { combinator: 'and', children: [{ field: 'count', op: 'between', value: { kind: 'literal', value: ['1', '10'] } }] },
+      sort: [],
+      groupBy: null,
+    }
+    const w = mount(FilterBuilder, {
+      props: { registry: makeRefRegistry(), entityType: 'task', modelValue: q },
+    })
+    // 合法组合不应触发归一化 emit
+    expect(w.emitted('update:modelValue')).toBeFalsy()
   })
 })

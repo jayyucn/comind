@@ -6,7 +6,7 @@
  * 字段切换时把操作符重置为该类型默认首操作符、清空 value；op 为 isEmpty/isNotEmpty 时隐藏值编辑器。
  * 通过 defineModel 以不可变方式交出新 Condition；删除交由父级（ConditionGroup）处理，故 emit('remove')。
  */
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { X } from 'lucide-vue-next'
 import { deriveOps } from '../../core/query'
 import type {
@@ -14,6 +14,7 @@ import type {
   ConditionValue,
   FieldDescriptor,
   FilterOp,
+  ReferenceableRecord,
   Registry,
 } from '../../core/query'
 import ValueEditor from './ValueEditor.vue'
@@ -21,8 +22,8 @@ import ValueEditor from './ValueEditor.vue'
 const props = defineProps<{
   registry: Registry
   entityType: string
-  /** 跨记录引用可选页面列表（id + 标题），由 FilterBuilder 注入。 */
-  availablePages?: { id: string; title: string }[]
+  /** 跨记录引用候选记录列表（通用，业务无关），由 FilterBuilder 透传注入。 */
+  crossRecordSources?: ReferenceableRecord[]
 }>()
 
 const emit = defineEmits<{ remove: [] }>()
@@ -71,8 +72,24 @@ function onFieldChange(e: Event) {
 function onOpChange(e: Event) {
   const op = (e.target as HTMLSelectElement).value as FilterOp
   const keepValue = op !== 'isEmpty' && op !== 'isNotEmpty'
-  model.value = { ...model.value!, op, value: keepValue ? model.value!.value : undefined }
+  let value = keepValue ? model.value!.value : undefined
+  // between 仅支持字面量区间：切到 between 时丢弃已有的字段/记录引用值，避免静默退化为 equals
+  if (op === 'between' && value && value.kind !== 'literal') value = undefined
+  model.value = { ...model.value!, op, value }
 }
+
+// 不变式：between 只允许字面量区间。用户切换 op 已在 onOpChange 处掉落引用值，
+// 但反序列化或外部直接写入可能得到 `op:'between'` + 引用值（field/recordRef）这种非法组合，
+// 故挂载即归一化清空 value，避免 UI 静默退化为 equals 或残留引用芯片。
+watch(
+  model,
+  (c) => {
+    if (c && c.op === 'between' && c.value && c.value.kind !== 'literal') {
+      model.value = { ...c, value: undefined }
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -98,7 +115,7 @@ function onOpChange(e: Event) {
       :entity-type="entityType"
       :registry="registry"
       :condition-field="model?.field"
-      :available-pages="availablePages"
+      :cross-record-sources="crossRecordSources"
       :model-value="model?.value"
       @update:model-value="onValue"
     />

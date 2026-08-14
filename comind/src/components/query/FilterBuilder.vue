@@ -9,15 +9,15 @@
  */
 import { reactive, ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { Plus, X } from 'lucide-vue-next'
-import type { FieldDescriptor, Registry, SortRule, ViewQuery } from '../../core/query'
+import type { FieldDescriptor, ReferenceableRecord, Registry, SortRule, ViewQuery } from '../../core/query'
 import ConditionGroup from './ConditionGroup.vue'
 
 const props = defineProps<{
   registry: Registry
   entityType: string
   modelValue: ViewQuery
-  /** 跨记录引用可选页面列表（id + 标题），从页面 store 注入。 */
-  availablePages?: { id: string; title: string }[]
+  /** 跨记录引用候选记录列表（通用，业务无关），从业务层注入。 */
+  crossRecordSources?: ReferenceableRecord[]
 }>()
 
 const emit = defineEmits<{ 'update:modelValue': [ViewQuery] }>()
@@ -72,7 +72,7 @@ watch(
         v-model="query.filter"
         :registry="registry"
         :entity-type="entityType"
-        :available-pages="availablePages"
+        :cross-record-sources="crossRecordSources"
         :depth="1"
       />
     </section>

@@ -162,10 +162,10 @@ PC ↔ Android 设备间同步。
 | **ViewQuery** | 可序列化视图查询：`version:1` + `filter`(根条件组) + `sort[]`(多键) + `groupBy`(单字段)。 |
 | **Condition** | 单个筛选条件：`field` + `op` + `value?`(`ConditionValue`)。 |
 | **ConditionGroup** | 条件组：可嵌套的 AND/OR 组合树；空 children = 无筛选。含 `negate?`(组级取反，v1 通用 UI 不暴露)。 |
-| **ConditionValue** | 条件值的判别联合：`literal`(字面量) / `field`(同记录字段引用) / `pageField`(跨记录页面字段引用)。取代旧版裸 `value`。 |
+| **ConditionValue** | 条件值的判别联合：`literal`(字面量) / `field`(同记录字段引用) / `recordRef`(跨记录字段引用，业务无关)。取代旧版裸 `value`。 |
 | **field（字段引用）** | 同记录字段引用 `{ kind:'field', field }`：求值时取当前记录另一字段值，实现字段间比较（如「字数 > 子页面数」）。 |
-| **pageField（页面字段引用）** | 跨记录页面字段引用 `{ kind:'pageField', pageId, field }`：经 `QueryContext.getById` 取目标 Page 再取其字段值。 |
-| **QueryContext.getById** | 按 `entityType + id` 取实体对象的可选能力；跨记录引用解析的唯一把手。不提供时 `pageField` 一律非匹配。 |
+| **recordRef（记录字段引用）** | 跨记录字段引用（业务无关）`{ kind:'recordRef', entityType, recordId, field }`：经 `QueryContext.getById` 取目标实体再取其字段值。 |
+| **QueryContext.getById** | 按 `entityType + id` 取实体对象的可选能力；跨记录引用解析的唯一把手。不提供时 `recordRef` 一律非匹配。 |
 | **evaluate** | 求值入口：对 items 全量过滤 + 多键排序，返回子集（不修改入参）；`context?` 透传解析引用。 |
 | **matchCondition / evalGroup** | 单条件匹配 / 条件组递归求值；均透传 `context`。 |
 | **normalizeValue** | 反序列化边界的向前兼容处理：把旧版裸字面量包裹为 `{ kind:'literal' }`。 |

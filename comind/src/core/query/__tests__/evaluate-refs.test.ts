@@ -36,7 +36,7 @@ function statusField(): FieldDescriptor<Row> {
     ],
   }
 }
-// page 命名空间：供 pageField 引用解析（resolveTarget 用 registry.get('page', field).get(page)）
+// page 命名空间：供 recordRef 引用解析（resolveTarget 按 cv.entityType + cv.recordId 取记录，再用其 fields 解析）
 function pageWordCountField(): FieldDescriptor<RefPage> {
   return { key: 'wordCount', label: '字数', type: 'number', get: (p) => p.wordCount }
 }
@@ -112,39 +112,39 @@ describe('同记录字段引用（field）', () => {
   })
 })
 
-describe('跨记录页面字段引用（pageField）', () => {
+describe('跨记录字段引用（recordRef）', () => {
   const reg = makeRegistry()
 
   it('比较字段 > 其他 Page 字段：命中与未命中', () => {
-    const cond = { field: 'wordCount', op: 'gt' as const, value: { kind: 'pageField' as const, pageId: 'p1', field: 'wordCount' } }
+    const cond = { field: 'wordCount', op: 'gt' as const, value: { kind: 'recordRef' as const, entityType: 'page', recordId: 'p1', field: 'wordCount' } }
     expect(matchCondition(cond, rows[0], reg, 'row', context)).toBe(true) // 100 > 80
     expect(matchCondition(cond, rows[1], reg, 'row', context)).toBe(false) // 5 > 80 否
   })
 
   it('引用不同目标页面：0 > 3 否', () => {
-    const cond = { field: 'wordCount', op: 'gt' as const, value: { kind: 'pageField' as const, pageId: 'p2', field: 'wordCount' } }
+    const cond = { field: 'wordCount', op: 'gt' as const, value: { kind: 'recordRef' as const, entityType: 'page', recordId: 'p2', field: 'wordCount' } }
     expect(matchCondition(cond, rows[2], reg, 'row', context)).toBe(false) // 0 > 3 否
   })
 
-  it('未提供 context 时 pageField 一律非匹配（不抛错）', () => {
-    const cond = { field: 'wordCount', op: 'gt' as const, value: { kind: 'pageField' as const, pageId: 'p1', field: 'wordCount' } }
+  it('未提供 context 时 recordRef 一律非匹配（不抛错）', () => {
+    const cond = { field: 'wordCount', op: 'gt' as const, value: { kind: 'recordRef' as const, entityType: 'page', recordId: 'p1', field: 'wordCount' } }
     expect(matchCondition(cond, rows[0], reg, 'row')).toBe(false)
     expect(evalGroup(group('and', [cond]), rows[0], reg, 'row')).toBe(false)
   })
 
   it('引用的目标页面不存在时非匹配', () => {
-    const cond = { field: 'wordCount', op: 'gt' as const, value: { kind: 'pageField' as const, pageId: 'missing', field: 'wordCount' } }
+    const cond = { field: 'wordCount', op: 'gt' as const, value: { kind: 'recordRef' as const, entityType: 'page', recordId: 'missing', field: 'wordCount' } }
     expect(matchCondition(cond, rows[0], reg, 'row', context)).toBe(false)
   })
 
-  it('evaluate 端到端：pageField 引用参与过滤', () => {
-    const q = query(group('and', [{ field: 'wordCount', op: 'gt', value: { kind: 'pageField', pageId: 'p1', field: 'wordCount' } }]))
+  it('evaluate 端到端：recordRef 引用参与过滤', () => {
+    const q = query(group('and', [{ field: 'wordCount', op: 'gt', value: { kind: 'recordRef', entityType: 'page', recordId: 'p1', field: 'wordCount' } }]))
     const out = evaluate(q, rows, reg, 'row', context)
     expect(out.map((r) => r.name)).toEqual(['A']) // 仅 100>80 命中
   })
 
   it('context.getById 仅响应 page 命名空间，其他 entityType 返回 undefined', () => {
-    const cond = { field: 'wordCount', op: 'gt' as const, value: { kind: 'pageField' as const, pageId: 'p1', field: 'wordCount' } }
+    const cond = { field: 'wordCount', op: 'gt' as const, value: { kind: 'recordRef' as const, entityType: 'page', recordId: 'p1', field: 'wordCount' } }
     const wrongCtx: QueryContext = { getById: (et, id) => (et === 'block' && id === 'p1' ? pages.p1 : undefined) }
     expect(matchCondition(cond, rows[0], reg, 'row', wrongCtx)).toBe(false)
   })

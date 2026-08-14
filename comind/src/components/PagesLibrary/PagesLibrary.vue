@@ -30,14 +30,23 @@ const showFilterPanel = ref(false)
 const searchQuery = ref('')
 
 // 跨记录字段引用所需的求值上下文：按 id 取 Page（用全量 store，不受搜索过滤影响）。
-// 不提供时 pageField 引用一律非匹配。
+// 不提供时 recordRef 引用一律非匹配。
 const queryContext = computed<QueryContext>(() => ({
   getById: (entityType, id) => (entityType === PAGE_ENTITY ? pageStore.getPage(id) : undefined),
 }))
 
-// 跨记录引用可选页面列表（id + 标题），供 FilterBuilder 的「其他页面」入口搜索选择。
-const availablePages = computed<{ id: string; title: string }[]>(() =>
-  pageStore.pages.map((p) => ({ id: p.id, title: p.title || '(无标题)' })),
+// 跨记录引用候选记录：把 Page 模型翻译为通用的 ReferenceableRecord（业务 → 引擎契约的唯一转换点）。
+// 每条记录自带该实体（PAGE_ENTITY）的全部字段，供 ValueEditor 的「其他记录…」入口直接列出同类型字段，
+// 编辑器本身不再查询任何业务注册表。
+// 实体级字段 schema 只需取一次（同实体所有记录共用），避免逐记录重复 registry.list。
+const pageRefFields = registry.list(PAGE_ENTITY)
+const crossRecordSources = computed(() =>
+  pageStore.pages.map((p) => ({
+    id: p.id,
+    title: p.title || '(无标题)',
+    entityType: PAGE_ENTITY,
+    fields: pageRefFields,
+  })),
 )
 
 // 数据
@@ -126,7 +135,7 @@ onMounted(async () => {
         <FilterBuilder
           :registry="registry"
           :entity-type="PAGE_ENTITY"
-          :available-pages="availablePages"
+          :cross-record-sources="crossRecordSources"
           v-model="viewQuery"
         />
       </div>

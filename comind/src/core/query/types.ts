@@ -66,8 +66,8 @@ export interface FieldDescriptor<T = unknown> {
  * - `literal`：字面量值（与旧版 `value` 等价，JSON 直接存）。
  * - `field`：同记录字段引用——求值时取 `registry.get(entityType, field).get(item)`，
  *   实现「字段间比较」（如「字数 > 子页面数」）。
- * - `pageField`：跨记录字段引用——取指定 Page（pageId）的某字段值作比较目标。
- *   求值需 {@link QueryContext.getById} 提供按 id 取 Page 的能力；不提供时一律非匹配。
+ * - `recordRef`：跨记录字段引用（业务无关）——取另一实体（entityType + recordId）的某字段值作比较目标。
+ *   求值需 {@link QueryContext.getById} 提供按 entityType+id 取实体的能力；不提供时一律非匹配。
  *
  * 序列化：三者皆为纯 JSON 对象，随 ViewQuery 直接 JSON 往返；旧版裸字面量由
  * `parseQuery` 自动包裹为 `literal`（向前兼容）。
@@ -75,7 +75,24 @@ export interface FieldDescriptor<T = unknown> {
 export type ConditionValue =
   | { kind: 'literal'; value: unknown }
   | { kind: 'field'; field: string }
-  | { kind: 'pageField'; pageId: string; field: string }
+  | { kind: 'recordRef'; entityType: string; recordId: string; field: string }
+
+/**
+ * 可被引用为「另一条记录」的通用载体（业务无关）。
+ *
+ * ValueEditor 据此列出候选记录及其同类型字段，无需耦合具体业务模型（如 Page）。
+ * 字段清单由注入方预取并随记录一同提供，编辑器不再查询目标实体的注册表。
+ */
+export interface ReferenceableRecord {
+  /** 记录唯一标识（目标实体命名空间内）。 */
+  id: string
+  /** UI 展示用标题。 */
+  title: string
+  /** 目标记录的实体命名空间，用于求值端 {@link QueryContext.getById} 解析。 */
+  entityType: string
+  /** 该记录上可供引用的字段（注入方按需要预取）。 */
+  fields: FieldDescriptor[]
+}
 
 /** 单个筛选条件。 */
 export interface Condition {
@@ -87,8 +104,8 @@ export interface Condition {
 }
 
 /**
- * 求值上下文：跨记录字段引用（pageField）解析所需的可选能力。
- * getById 按 entityType + id 取实体对象；不提供时 pageField 一律非匹配。
+ * 求值上下文：跨记录字段引用（recordRef）解析所需的可选能力。
+ * getById 按 entityType + id 取实体对象；不提供时 recordRef 一律非匹配。
  */
 export interface QueryContext {
   getById?: (entityType: string, id: string) => unknown | undefined

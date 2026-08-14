@@ -9,7 +9,7 @@
  */
 import { computed } from 'vue'
 import { Plus, X } from 'lucide-vue-next'
-import type { Condition, ConditionGroup as GroupNode, Registry } from '../../core/query'
+import type { Condition, ConditionGroup as GroupNode, ReferenceableRecord, Registry } from '../../core/query'
 import ConditionRow from './ConditionRow.vue'
 
 const props = withDefaults(
@@ -18,8 +18,8 @@ const props = withDefaults(
     entityType: string
     /** 嵌套深度，根组为 1。 */
     depth?: number
-    /** 跨记录引用可选页面列表（id + 标题），由 FilterBuilder 注入。 */
-    availablePages?: { id: string; title: string }[]
+    /** 跨记录引用候选记录列表（通用，业务无关），由 FilterBuilder 注入。 */
+    crossRecordSources?: ReferenceableRecord[]
   }>(),
   { depth: 1 },
 )
@@ -107,7 +107,7 @@ function setCombinator(c: 'and' | 'or') {
           :registry="registry"
           :entityType="entityType"
           :depth="depth + 1"
-          :available-pages="availablePages"
+          :cross-record-sources="crossRecordSources"
           :model-value="child"
           @update:model-value="replaceChild(i, $event)"
           @remove="removeChild(i)"
@@ -116,7 +116,7 @@ function setCombinator(c: 'and' | 'or') {
           v-else
           :registry="registry"
           :entityType="entityType"
-          :available-pages="availablePages"
+          :cross-record-sources="crossRecordSources"
           :model-value="child"
           @update:model-value="replaceChild(i, $event)"
           @remove="removeChild(i)"

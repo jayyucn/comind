@@ -1,87 +1,96 @@
 <script setup lang="ts">
 /**
- * 跨记录字段引用选择器 —— 在 ValueEditor 的「引用值 / 其他页面」面板中使用的子组件。
+ * 跨记录字段引用选择器 —— 在 ValueEditor 的「引用值 / 其他记录」面板中使用的子组件。
  *
- * 两步选择：① 在可选页面列表中按标题搜索并选中一个目标 Page；② 列出该 Page 上与当前条件
- * 同类型的字段，点选即确定引用。本组件只负责「选页 + 选字段」的交互，不涉及求值。
+ * 两步选择：① 在候选记录列表中按标题搜索并选中一个目标记录；② 列出该记录上**与当前条件同类型**的字段，
+ * 点选即确定引用。每个候选记录自带 `fields`（由注入方预取），本组件不查询任何业务注册表。
+ * 本组件只负责「选记录 + 选字段」的交互，不涉及求值。
  */
 import { computed, ref } from 'vue'
 import { ArrowLeft, Search } from 'lucide-vue-next'
-import type { FieldDescriptor } from '../../core/query'
+import type { FieldDescriptor, FieldType, ReferenceableRecord } from '../../core/query'
 
 const props = defineProps<{
-  /** 可选页面列表（id + 标题），由消费方（如 PagesLibrary）从页面 store 注入。 */
-  pages: { id: string; title: string }[]
-  /** 与目标同类型的候选字段（已排除当前条件字段）。 */
-  fields: FieldDescriptor[]
+  /** 候选记录列表（已含各自 fields）。业务无关。 */
+  sources: ReferenceableRecord[]
+  /** 当前条件字段类型，用于过滤每个记录上同类型的候选字段。 */
+  descriptorType: FieldType
 }>()
 
 const emit = defineEmits<{
-  /** 确认选择：目标 pageId + 字段 key。 */
-  select: [pageId: string, field: string]
+  /** 确认选择：目标 recordId + entityType + 字段 key。 */
+  select: [recordId: string, entityType: string, field: string]
   /** 取消 / 关闭面板。 */
   cancel: []
 }>()
 
 const query = ref('')
-const selectedPageId = ref<string | null>(null)
+const selectedSourceId = ref<string | null>(null)
 
-const filteredPages = computed(() =>
-  props.pages.filter((p) => p.title.toLowerCase().includes(query.value.trim().toLowerCase())),
+const filteredSources = computed(() =>
+  props.sources.filter((s) => s.title.toLowerCase().includes(query.value.trim().toLowerCase())),
 )
 
-const selectedPage = computed(() => props.pages.find((p) => p.id === selectedPageId.value) ?? null)
+const selectedSource = computed(() => props.sources.find((s) => s.id === selectedSourceId.value) ?? null)
 
-function choosePage(id: string) {
-  selectedPageId.value = id
+// 该记录上与当前条件同类型的字段（注入方已带来，无需查注册表）
+const availableFields = computed<FieldDescriptor[]>(() => {
+  if (!selectedSource.value) return []
+  return selectedSource.value.fields.filter((f) => f.type === props.descriptorType)
+})
+
+function chooseSource(id: string) {
+  selectedSourceId.value = id
 }
 function back() {
-  selectedPageId.value = null
+  selectedSourceId.value = null
 }
-function pickField(key: string) {
-  if (selectedPageId.value) emit('select', selectedPageId.value, key)
+function pickField(field: FieldDescriptor) {
+  const src = selectedSource.value
+  if (!src) return
+  emit('select', src.id, src.entityType, field.key)
 }
 </script>
 
 <template>
   <div class="pf-picker">
-    <template v-if="!selectedPage">
+    <template v-if="!selectedSource">
       <div class="pf-search">
         <Search :size="13" />
-        <input v-model="query" type="text" placeholder="搜索页面标题…" />
+        <input v-model="query" type="text" placeholder="搜索记录标题…" />
       </div>
-      <div class="pf-page-list">
+      <div class="pf-source-list">
         <button
-          v-for="p in filteredPages"
-          :key="p.id"
+          v-for="s in filteredSources"
+          :key="s.id"
           type="button"
-          class="pf-page"
-          @click="choosePage(p.id)"
+          class="pf-source"
+          @click="chooseSource(s.id)"
         >
-          {{ p.title || '(无标题)' }}
+          {{ s.title || '(无标题)' }}
         </button>
-        <p v-if="filteredPages.length === 0" class="pf-empty">无匹配页面</p>
+        <p v-if="filteredSources.length === 0" class="pf-empty">无匹配记录</p>
       </div>
     </template>
 
     <template v-else>
-      <div class="pf-page-head">
+      <div class="pf-source-head">
         <button type="button" class="qb-icon" title="返回" @click="back">
           <ArrowLeft :size="14" />
         </button>
-        <span class="pf-page-title">{{ selectedPage.title || '(无标题)' }}</span>
+        <span class="pf-source-title">{{ selectedSource.title || '(无标题)' }}</span>
       </div>
       <div class="pf-field-list">
         <button
-          v-for="f in fields"
+          v-for="f in availableFields"
           :key="f.key"
           type="button"
           class="pf-field"
-          @click="pickField(f.key)"
+          @click="pickField(f)"
         >
           {{ f.label }}
         </button>
-        <p v-if="fields.length === 0" class="pf-empty">无同类型字段可引用</p>
+        <p v-if="availableFields.length === 0" class="pf-empty">无同类型字段可引用</p>
       </div>
     </template>
 
@@ -119,7 +128,7 @@ function pickField(key: string) {
   }
 }
 
-.pf-page-list,
+.pf-source-list,
 .pf-field-list {
   display: flex;
   flex-direction: column;
@@ -128,7 +137,7 @@ function pickField(key: string) {
   max-height: 180px;
 }
 
-.pf-page,
+.pf-source,
 .pf-field {
   text-align: left;
   padding: 5px 8px;
@@ -145,13 +154,13 @@ function pickField(key: string) {
   }
 }
 
-.pf-page-head {
+.pf-source-head {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.pf-page-title {
+.pf-source-title {
   font-size: var(--text-sm, 13px);
   color: var(--text-secondary, #444);
   font-weight: var(--font-semibold, 600);
