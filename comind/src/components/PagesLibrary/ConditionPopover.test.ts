@@ -1,0 +1,89 @@
+import { describe, it, expect } from 'vitest'
+import { mount } from '@vue/test-utils'
+import ConditionPopover from './ConditionPopover.vue'
+import type { Condition, FieldDescriptor } from '../../core/query'
+
+const BasePopoverStub = {
+  props: ['visible', 'position', 'closeOnOverlay'],
+  emits: ['close'],
+  template: `<div class="bp" @click.self="$emit('close')"><slot /></div>`,
+}
+
+const FIELDS: FieldDescriptor[] = [
+  { key: 'title', label: '标题', type: 'text', get: () => '' },
+  {
+    key: 'type', label: '类型', type: 'select',
+    options: [{ id: 'normal', label: '普通' }, { id: 'ideas', label: '灵感' }],
+    get: () => '',
+  },
+  { key: 'createdAt', label: '创建日期', type: 'date', get: () => '' },
+]
+
+function lastCond(wrapper: ReturnType<typeof mount>): Condition {
+  const e = wrapper.emitted('update:condition')
+  return e![e!.length - 1][0] as Condition
+}
+
+describe('ConditionPopover', () => {
+  it('shows field + op + value editors', () => {
+    const cond: Condition = { field: 'title', op: 'contains', value: { kind: 'literal', value: 'abc' } }
+    const w = mount(ConditionPopover, {
+      props: { field: FIELDS[0], condition: cond, fields: FIELDS },
+      global: { stubs: { BasePopover: BasePopoverStub } },
+    })
+    expect(w.find('[data-testid="cond-field"]').exists()).toBe(true)
+    expect(w.find('[data-testid="cond-op"]').exists()).toBe(true)
+    expect(w.find('[data-testid="cve-text"]').exists()).toBe(true)
+  })
+
+  it('changing field resets op to default and clears value', async () => {
+    const cond: Condition = { field: 'title', op: 'contains', value: { kind: 'literal', value: 'abc' } }
+    const w = mount(ConditionPopover, {
+      props: { field: FIELDS[0], condition: cond, fields: FIELDS },
+      global: { stubs: { BasePopover: BasePopoverStub } },
+    })
+    const sel = w.find('[data-testid="cond-field"]').element as HTMLSelectElement
+    sel.value = 'type'
+    await w.find('[data-testid="cond-field"]').trigger('change')
+    const out = lastCond(w)
+    expect(out.field).toBe('type')
+    expect(out.op).toBe('is') // select default op
+    expect(out.value).toBeUndefined()
+  })
+
+  it('changing op to isEmpty clears value', async () => {
+    const cond: Condition = { field: 'title', op: 'contains', value: { kind: 'literal', value: 'abc' } }
+    const w = mount(ConditionPopover, {
+      props: { field: FIELDS[0], condition: cond, fields: FIELDS },
+      global: { stubs: { BasePopover: BasePopoverStub } },
+    })
+    const sel = w.find('[data-testid="cond-op"]').element as HTMLSelectElement
+    sel.value = 'isEmpty'
+    await w.find('[data-testid="cond-op"]').trigger('change')
+    const out = lastCond(w)
+    expect(out.op).toBe('isEmpty')
+    expect(out.value).toBeUndefined()
+  })
+
+  it('editing value emits condition with wrapped literal', async () => {
+    const cond: Condition = { field: 'title', op: 'contains', value: undefined }
+    const w = mount(ConditionPopover, {
+      props: { field: FIELDS[0], condition: cond, fields: FIELDS },
+      global: { stubs: { BasePopover: BasePopoverStub } },
+    })
+    const input = w.find('[data-testid="cve-text"]')
+    await input.setValue('hello')
+    const out = lastCond(w)
+    expect(out.value).toEqual({ kind: 'literal', value: 'hello' })
+  })
+
+  it('remove emits remove', async () => {
+    const cond: Condition = { field: 'title', op: 'contains', value: undefined }
+    const w = mount(ConditionPopover, {
+      props: { field: FIELDS[0], condition: cond, fields: FIELDS },
+      global: { stubs: { BasePopover: BasePopoverStub } },
+    })
+    await w.find('[data-testid="cond-remove"]').trigger('click')
+    expect(w.emitted('remove')).toBeTruthy()
+  })
+})
