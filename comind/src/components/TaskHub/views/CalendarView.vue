@@ -270,7 +270,7 @@ function getRefColor(ref: DateRefLite, dateStr: string): string {
   color: var(--text-tertiary);
   border-right: 1px solid var(--border-color, var(--app-split));
   border-bottom: 1px solid var(--border-color, var(--app-split));
-  background: var(--bg-secondary, rgba(0,0,0,0.02));
+  background: var(--bg-base2);
 }
 
 .cal-cell {

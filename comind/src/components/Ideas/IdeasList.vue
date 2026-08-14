@@ -26,18 +26,20 @@ onMounted(async () => {
   }
 })
 
-function handleTaskNavigate(pageId: string, _pageTitle: string) {
+function handleTaskNavigate(pageId: string) {
   targetPageId.value = pageId
 }
 </script>
 
 <template>
-  <div class="ideas-split-view">
-    <!-- 今日面板：Rust 端幂等创建，保证一定存在；loading 期间显示加载态 -->
-    <IdeasTodayPanel v-if="todayPage" :page-id="todayPage.id" @navigate="handleTaskNavigate" />
-    <div v-else-if="loadingToday" class="today-panel-placeholder"></div>
+  <div class="ideas-page-root">
+    <div class="ideas-split-view">
+      <!-- 今日面板：Rust 端幂等创建，保证一定存在；loading 期间显示加载态 -->
+      <IdeasTodayPanel v-if="todayPage" :page-id="todayPage.id" @navigate="handleTaskNavigate" />
+      <div v-else-if="loadingToday" class="today-panel-placeholder"></div>
 
-    <IdeasHistoryList :target-page-id="targetPageId" />
+      <IdeasHistoryList :target-page-id="targetPageId" />
+    </div>
   </div>
 
   <SlashCommandMenu />
@@ -46,9 +48,17 @@ function handleTaskNavigate(pageId: string, _pageTitle: string) {
 </template>
 
 <style scoped>
+.ideas-page-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .ideas-split-view {
   display: flex;
-  height: 100%;
+  flex: 1;
   min-height: 0;
   overflow: hidden;
   animation: fadeIn 200ms ease-out;

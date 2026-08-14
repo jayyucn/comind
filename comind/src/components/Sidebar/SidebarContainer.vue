@@ -2,6 +2,7 @@
 import { useSidebar } from '../../composables/useSidebar'
 import SidebarHeader from './SidebarHeader.vue'
 import SidebarIdeas from './SidebarIdeas.vue'
+import SidebarPages from './SidebarPages.vue'
 import SidebarGraphItem from './SidebarGraphItem.vue'
 import SidebarTaskItem from './SidebarTaskItem.vue'
 import SidebarRecent from './SidebarRecent.vue'
@@ -39,6 +40,7 @@ defineProps<{
 
         <!-- 导航区 -->
         <SidebarIdeas />
+        <SidebarPages />
         <SidebarGraphItem />
         <SidebarTaskItem />
 

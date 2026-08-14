@@ -346,7 +346,7 @@ async function handleFilterApplied(query: BlockQuery) {
   display: flex;
   align-items: center;
   gap: 2px;
-  background: var(--bg-secondary, rgba(0,0,0,0.04));
+  background: var(--bg-base2);
   border-radius: 6px;
   padding: 2px;
 }

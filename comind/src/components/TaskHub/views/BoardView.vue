@@ -184,7 +184,7 @@ function onDragEnd() {
 .column-count {
   font-size: var(--text-xs);
   color: var(--text-tertiary);
-  background: var(--bg-secondary, rgba(0,0,0,0.04));
+  background: var(--bg-base2);
   padding: 1px 6px;
   border-radius: 10px;
 }

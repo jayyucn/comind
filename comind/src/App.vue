@@ -16,6 +16,8 @@ import { useSidebar } from './composables/useSidebar'
 import { useRightSidebar } from './composables/useRightSidebar'
 import { useRelationshipTypes } from './composables/useRelationshipTypes'
 import { useNotificationScheduler } from './composables/useNotificationScheduler'
+import { useBlockQueryRegistry } from './composables/useBlockQueryRegistry'
+import { usePageQueryRegistry } from './composables/usePageQueryRegistry'
 import { useSyncStatus } from './composables/useSyncStatus'
 import Icon from './components/Icons/Icon.vue'
 import RightSidebar from './components/RightSidebar/index.vue'
@@ -78,6 +80,11 @@ const {
 } = useDateTimePickerPanel()
 
 useNotificationScheduler()
+
+// 组合根注册：Block 字段描述符接入通用查询引擎，并随自定义 property 变化响应式同步
+useBlockQueryRegistry()
+// 组合根注册：Page 字段描述符接入通用查询引擎（静态注册表，无运行时增删）
+usePageQueryRegistry()
 
 // PC 端：设备连入时显示 toast
 const { status: syncStatus } = useSyncStatus()

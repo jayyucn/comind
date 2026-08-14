@@ -263,7 +263,7 @@ const sortFieldOptions = [
 .filter-bar {
   width: 100%;
   border-top: 1px solid var(--border-color, var(--app-split));
-  background: var(--bg-secondary, rgba(0,0,0,0.02));
+  background: var(--bg-base2);
   padding: 12px 16px;
 }
 

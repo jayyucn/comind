@@ -1,7 +1,7 @@
 # CONTEXT.md — comind 领域术语表
 
 > 持续演进的领域语言。新增概念、修改语义时同步更新。
-> 最后更新：2026-08-09
+> 最后更新：2026-08-13
 
 ---
 
@@ -150,6 +150,26 @@ PC ↔ Android 设备间同步。
 | **纯计算命令** | 不访问 DB 的 Tauri 命令。如 `parse_date_input`、`calculate_next_recurrence`、`apply_relationship_type_to_block_content` |
 | **IPC** | 前端 ↔ Rust 通信。Tauri 用 `invoke()`，WASM 用 wasm-bindgen |
 | **CoreClient** | 前端抽象接口。TauriClient(桌面) 和 WasmClient(浏览器) 双实现 |
+
+### 通用查询引擎（generic query system）
+
+业务无关的无头筛选/排序/分组引擎。实体通过声明 `FieldDescriptor` 接入，引擎对实体本身一无所知。详见 `docs/adr/0008-field-reference-value.md`。
+
+| 术语 | 定义 |
+|------|------|
+| **FieldDescriptor** | 字段描述符。实体接入引擎的唯一契约：`key` / `label` / `type` / `get(item)`（同步取值器，支持派生字段）/ `ops?` / `options?`。 |
+| **Registry** | 字段注册表。按 `entityType` 命名空间登记 `FieldDescriptor`，`get` / `list` / `subscribe` 驱动 UI 与求值。 |
+| **ViewQuery** | 可序列化视图查询：`version:1` + `filter`(根条件组) + `sort[]`(多键) + `groupBy`(单字段)。 |
+| **Condition** | 单个筛选条件：`field` + `op` + `value?`(`ConditionValue`)。 |
+| **ConditionGroup** | 条件组：可嵌套的 AND/OR 组合树；空 children = 无筛选。含 `negate?`(组级取反，v1 通用 UI 不暴露)。 |
+| **ConditionValue** | 条件值的判别联合：`literal`(字面量) / `field`(同记录字段引用) / `recordRef`(跨记录字段引用，业务无关)。取代旧版裸 `value`。 |
+| **field（字段引用）** | 同记录字段引用 `{ kind:'field', field }`：求值时取当前记录另一字段值，实现字段间比较（如「字数 > 子页面数」）。 |
+| **recordRef（记录字段引用）** | 跨记录字段引用（业务无关）`{ kind:'recordRef', entityType, recordId, field }`：经 `QueryContext.getById` 取目标实体再取其字段值。 |
+| **QueryContext.getById** | 按 `entityType + id` 取实体对象的可选能力；跨记录引用解析的唯一把手。不提供时 `recordRef` 一律非匹配。 |
+| **evaluate** | 求值入口：对 items 全量过滤 + 多键排序，返回子集（不修改入参）；`context?` 透传解析引用。 |
+| **matchCondition / evalGroup** | 单条件匹配 / 条件组递归求值；均透传 `context`。 |
+| **normalizeValue** | 反序列化边界的向前兼容处理：把旧版裸字面量包裹为 `{ kind:'literal' }`。 |
+| **FilterBuilder** | 引擎唯一的 UI 交付物。注册表驱动：字段下拉 + 类型派生操作符 + 类型分派值编辑器；`ValueEditor` 支持「固定值 / 字段」分段与 `+` 引用菜单。 |
 
 ---
 

@@ -25,6 +25,7 @@
 
   // 边框层级
   --border: #{$color-stone-200};
+  --border-color: #{$color-stone-200};
   --border-light: #{$color-stone-300};
   --border-strong: #{$color-stone-400};
 
@@ -175,6 +176,7 @@
   --sidebar-text-hint: #8B8B8E;
 
   --border: #2E2E32;
+  --border-color: #2E2E32;
   --border-light: #3A3A3F;
   --border-strong: #4A4A50;
 
