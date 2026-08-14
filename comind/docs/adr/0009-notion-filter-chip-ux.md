@@ -4,17 +4,11 @@
 - 日期：2026-08-14
 - 范围：页面库（`PagesLibrary`）的筛选/排序/分组交互层——新增芯片行 + 弹出层组件，复用不改动无头查询引擎（`src/core/query`）与既有 `FilterBuilder`（高级面板）。
 - 关联代码：
-  - `src/components/PagesLibrary/PagesLibrary.vue`（编排：Header 三按钮 + 芯片行 + 表格）
+  - `src/components/PagesLibrary/PagesLibrary.vue`（**仅集成调用点**：Header 三按钮 + `<FilterChipBar>` + 搜索/视图切换/本地 `viewQuery` 引用；不含查询 UI 组件本体）
   - `src/core/query/types.ts`（`ViewQuery` / `ConditionGroup` / `Condition` / `SortRule` / `FieldDescriptor` —— 本 ADR 不改动）
   - `src/components/query/FilterBuilder.vue`（复用为「高级筛选」逃逸舱，经 "Add advanced filter" 进入）
-  - 【新增】`src/components/PagesLibrary/FilterChipBar.vue`
-  - 【新增】`src/components/PagesLibrary/FilterChip.vue`
-  - 【新增】`src/components/PagesLibrary/ConditionPopover.vue`
-  - 【新增】`src/components/PagesLibrary/FieldSelectMenu.vue`
-  - 【新增】`src/components/PagesLibrary/SortMenu.vue`
-  - 【新增】`src/components/PagesLibrary/GroupMenu.vue`
-  - 【新增】`src/components/PagesLibrary/ChipValueEditor.vue`
-  - 【新增】`src/components/common/BasePopover.vue`（通用弹层原语，封装现有 Teleport+overlay 样板）
+  - 【新增，统归 `src/components/query/`，引擎邻接通用原语】`FilterChipBar.vue` `FilterChip.vue` `ConditionPopover.vue` `FieldSelectMenu.vue` `SortMenu.vue` `SortChip.vue` `GroupMenu.vue` `GroupChip.vue` `FilterCombinatorToggle.vue` `ChipValueEditor.vue` `filterMeta.ts`
+  - 【新增】`src/components/common/BasePopover.vue`（通用弹层原语，封装现有 Teleport+overlay 样板；因是万物共享基座，居 `common/` 而非 `query/`）
 
 ---
 
@@ -86,9 +80,16 @@ Notion 的筛选 UX 特征（来自用户提供的 5 张截图）：
 
 `FieldSelectMenu` 底部加一行 `Add advanced filter`（与 Notion 截图一致），点击打开 `FilterBuilder`（作为页面库下方的可折叠面板或 modal）。之后芯片行出现聚合 chip（D6）。本轮**不做持久化**（Q6=A：交互 UX 优先，SavedFilter / URL 参数 / 命名视图留待独立迭代）。
 
----
+## 决策 10（D10）：查询 UI 组件归属 `components/query/`，非 `PagesLibrary/`（2026-08-15 增补）
 
-## 被否决的方案
+实施到 #32 时重新审视目录归属，结论如下：
+
+- **事实核查**：`ChipValueEditor` / `filterMeta` / `FilterChip` / `ConditionPopover` / `FieldSelectMenu` / `FilterCombinatorToggle` / `SortMenu` / `SortChip` / `GroupMenu` / `GroupChip` 这 10 个组件，**无一 import 任何 `PagesLibrary` 专属业务**——它们只依赖 `core/query`（通用引擎）+ `common/BasePopover` + `common/CalendarPopover`。`FilterChipBar` 的契约是 `v-model: ViewQuery` + `:fields: FieldDescriptor[]` + 若干 emit，渲染的是通用芯片与通用「高级筛选」逃逸舱（`FilterBuilder` 本身已在 `components/query/`），同样零业务耦合。
+- **决策**：所有查询 UI 原语（含 `FilterChipBar`）统一置于 `src/components/query/`，与 `FilterBuilder.vue` 同目录，形成 `core/query`（引擎）↔ `components/query`（引擎 UI）的镜像分层。`BasePopover` 因是万物共享的弹层基座（不独属查询），仍居 `src/components/common/`。
+- **page 侧仅留集成**：`PagesLibrary.vue` 只保留调用点（`<FilterChipBar v-model="viewQuery" :fields="...">`）、Header 三按钮、搜索/视图切换、本地 `viewQuery` 引用。查询 UI 组件本体不进 page 目录。
+- **搬迁代价为零**：`PagesLibrary/` 与 `components/query/` 同为 `src/components/<X>/` 二级目录，组件内部所有相对 import（`../../core/query`、`../common/BasePopover.vue`、`../CalendarPopover.vue`、`./sibling`）路径完全一致，故 `git mv` 无需改任何文件内容，仅 `PagesLibrary.vue` 的引用路径随 #34 改为 `../query/...`。
+
+---
 
 - **保留现有「按钮→展开全面板」模式**（Q1=B/C）：视觉重量与信息密度无法对标 Notion。
 - **禁用嵌套、强制扁平**（Q12=B）：丢失引擎顶层的嵌套 OR 能力。

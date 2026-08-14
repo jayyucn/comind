@@ -189,6 +189,8 @@ PC ↔ Android 设备间同步。
 | **Advanced Filter（高级筛选）** | 经 "Add advanced filter" 进入的 `FilterBuilder` 面板，支持嵌套条件组与字段引用值；在芯片行退化为单个不可内联编辑的「N rules」聚合 chip。 |
 | **聚合 chip（aggregated chip）** | 当根 `ConditionGroup` 含嵌套子组（非纯 `Condition` 列表）时，芯片行只渲染此 chip 提示存在高级筛选，点它重开面板。 |
 
+**分层归属（ADR-0009 D10）**：上述查询 UI 组件均为**引擎邻接的通用原语**，只依赖 `core/query` 与 `common/BasePopover`，不耦合任何实体业务，故统一置于 `src/components/query/`（与 `FilterBuilder.vue` 同目录，镜像 `core/query` 引擎），而非 `PagesLibrary/`。`PagesLibrary.vue` 仅保留**集成调用点**（`<FilterChipBar v-model="viewQuery" :fields="...">` + Header 三按钮 + 搜索/视图切换/本地 `viewQuery` 引用）。`BasePopover` 因是万物共享弹层基座，仍居 `src/components/common/`。
+
 ---
 
 ## 三、数据流术语
