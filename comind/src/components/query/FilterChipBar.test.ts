@@ -157,4 +157,28 @@ describe('FilterChipBar', () => {
     expect(w.find('[data-testid="stub-group"]').exists()).toBe(true)
     expect(w.emitted('update:modelValue')).toBeUndefined()
   })
+
+  it('FieldSelectMenu "Add advanced filter" emits open-advanced', async () => {
+    const w = mountBar()
+    await w.find('[data-testid="bar-add-filter"]').trigger('click')
+    await w.findComponent({ name: 'FieldSelectMenu' }).vm.$emit('advanced')
+    await w.vm.$nextTick()
+    expect(w.emitted('open-advanced')).toBeDefined()
+  })
+
+  it('aggregated chip emits open-advanced (escape hatch to FilterBuilder)', async () => {
+    const nested: ViewQuery = {
+      version: 1,
+      filter: {
+        combinator: 'and',
+        children: [{ combinator: 'or', children: [{ field: 'title', op: 'contains' }] }],
+      },
+      sort: [],
+      groupBy: null,
+    }
+    const w = mountBar({ modelValue: nested })
+    await w.find('[data-testid="bar-agg"]').trigger('click')
+    await w.vm.$nextTick()
+    expect(w.emitted('open-advanced')).toBeDefined()
+  })
 })
