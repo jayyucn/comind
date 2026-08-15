@@ -156,6 +156,30 @@ function onAdvancedFromMenu() {
   close()
   emit('open-advanced')
 }
+
+// ── 供 Header 按钮直接唤起菜单（锚定到按钮自身）──
+function anchorTo(el?: HTMLElement | null) {
+  if (!el) return
+  const r = el.getBoundingClientRect()
+  anchor.value = { x: r.left, y: r.bottom + 4 }
+}
+function openSortMenu(el?: HTMLElement | null) {
+  anchorTo(el)
+  if (props.modelValue.sort.length === 0) {
+    const f = props.fields[0]
+    if (!f) return
+    patch({ sort: [{ field: f.key, dir: 'asc' }] })
+    active.value = { kind: 'sortEdit', index: 0 }
+  } else {
+    active.value = { kind: 'sortEdit', index: props.modelValue.sort.length - 1 }
+  }
+}
+function openGroupMenu(el?: HTMLElement | null) {
+  anchorTo(el)
+  active.value = { kind: 'group' }
+}
+
+defineExpose({ openSortMenu, openGroupMenu })
 </script>
 
 <template>

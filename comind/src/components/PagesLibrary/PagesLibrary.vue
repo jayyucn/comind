@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { usePageStore } from '../../stores/pages'
 import { getPageRegistry, PAGE_ENTITY } from '../../composables/usePageQueryRegistry'
 import { runPageQuery, filterSortPages } from '../../composables/usePageQueryEngine'
@@ -8,7 +8,8 @@ import type { Page } from '../../types/page'
 import PageTableView from './PageTableView.vue'
 import PageCalendarView from './PageCalendarView.vue'
 import FilterBuilder from '../query/FilterBuilder.vue'
-import { SlidersHorizontal, X, Search, LayoutGrid, CalendarDays, ListFilter } from 'lucide-vue-next'
+import FilterChipBar from '../query/FilterChipBar.vue'
+import { X, Search, LayoutGrid, CalendarDays, Filter, ArrowUpDown, Group } from 'lucide-vue-next'
 
 defineOptions({ name: 'PagesLibrary' })
 
@@ -28,6 +29,28 @@ const viewQuery = ref<ViewQuery>({
 })
 const showFilterPanel = ref(false)
 const searchQuery = ref('')
+
+// 芯片行显隐（Filter 按钮切换展开/收起）
+const chipBarVisible = ref(false)
+const chipBarRef = ref<InstanceType<typeof FilterChipBar> | null>(null)
+
+// Header 三按钮激活态
+const hasFilter = computed(() => viewQuery.value.filter.children.length > 0)
+const hasSort = computed(() => viewQuery.value.sort.length > 0)
+const hasGroup = computed(() => viewQuery.value.groupBy !== null)
+
+// Header 按钮处理
+function onFilterClick() {
+  chipBarVisible.value = !chipBarVisible.value
+}
+function openChipMenu(kind: 'sort' | 'group', e: MouseEvent) {
+  const el = e.currentTarget as HTMLElement
+  chipBarVisible.value = true
+  nextTick(() => {
+    if (kind === 'sort') chipBarRef.value?.openSortMenu(el)
+    else chipBarRef.value?.openGroupMenu(el)
+  })
+}
 
 // 跨记录字段引用所需的求值上下文：按 id 取 Page（用全量 store，不受搜索过滤影响）。
 // 不提供时 recordRef 引用一律非匹配。
@@ -111,19 +134,46 @@ onMounted(async () => {
           </button>
         </div>
 
-        <!-- 筛选按钮 -->
+        <!-- 筛选 / 排序 / 分组 三按钮 -->
         <button
-          class="filter-btn"
-          :class="{ active: showFilterPanel || viewQuery.filter.children.length > 0 }"
-          title="筛选与排序"
-          @click="showFilterPanel = !showFilterPanel"
+          class="hdr-btn"
+          :class="{ active: hasFilter, collapsed: hasFilter && !chipBarVisible }"
+          title="筛选"
+          @click="onFilterClick"
         >
-          <ListFilter :size="15" />
+          <Filter :size="15" />
+        </button>
+        <button
+          class="hdr-btn"
+          :class="{ active: hasSort }"
+          title="排序"
+          @click="openChipMenu('sort', $event)"
+        >
+          <ArrowUpDown :size="15" />
+        </button>
+        <button
+          class="hdr-btn"
+          :class="{ active: hasGroup }"
+          title="分组"
+          @click="openChipMenu('group', $event)"
+        >
+          <Group :size="15" />
         </button>
       </div>
     </header>
 
-    <!-- 筛选面板（可折叠） -->
+    <!-- 筛选芯片行（Header 与 主内容之间） -->
+    <Transition name="slide">
+      <FilterChipBar
+        v-if="chipBarVisible"
+        ref="chipBarRef"
+        v-model="viewQuery"
+        :fields="pageRefFields"
+        @open-advanced="showFilterPanel = true"
+      />
+    </Transition>
+
+    <!-- 高级筛选面板（可折叠，经「高级筛选」进入） -->
     <Transition name="slide">
       <div v-if="showFilterPanel" class="filter-panel">
         <div class="filter-panel-header">
@@ -266,8 +316,8 @@ onMounted(async () => {
   color: var(--accent, #6366f1);
 }
 
-/* 筛选按钮 */
-.filter-btn {
+/* 筛选 / 排序 / 分组 三按钮 */
+.hdr-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -281,15 +331,23 @@ onMounted(async () => {
   transition: background 80ms ease, color 80ms ease, border-color 120ms ease;
 }
 
-.filter-btn:hover {
+.hdr-btn:hover {
   background: var(--bg-hover);
   color: var(--text-secondary);
 }
 
-.filter-btn.active {
+/* 有筛选/排序/分组时的激活态（filled） */
+.hdr-btn.active {
   border-color: var(--accent, #6366f1);
   color: var(--accent, #6366f1);
   background: var(--accent-bg, rgba(99, 102, 241, 0.08));
+}
+
+/* 有筛选但芯片行被收起（仅描边，提示「有筛选但隐藏」） */
+.hdr-btn.collapsed {
+  border-color: var(--accent, #6366f1);
+  color: var(--accent, #6366f1);
+  background: transparent;
 }
 
 /* ── 筛选面板 ── */

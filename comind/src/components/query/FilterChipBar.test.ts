@@ -139,4 +139,22 @@ describe('FilterChipBar', () => {
     expect(w.find('[data-testid="bar-agg"]').exists()).toBe(true)
     expect(w.find('[data-testid="bar-filter-chip"]').exists()).toBe(false)
   })
+
+  it('openSortMenu (no sorts) adds a sort and opens SortMenu', async () => {
+    const w = mountBar({ modelValue: { ...INITIAL, sort: [] } })
+    ;(w.vm as unknown as { openSortMenu: (el?: HTMLElement) => void }).openSortMenu(undefined)
+    await w.vm.$nextTick()
+    const m = w.emitted('update:modelValue')!.at(-1)![0] as ViewQuery
+    expect(m.sort).toHaveLength(1)
+    await w.setProps({ modelValue: m })
+    expect(w.find('[data-testid="stub-sort"]').exists()).toBe(true)
+  })
+
+  it('openGroupMenu opens GroupMenu without mutating modelValue', async () => {
+    const w = mountBar({ modelValue: { ...INITIAL, groupBy: null } })
+    ;(w.vm as unknown as { openGroupMenu: (el?: HTMLElement) => void }).openGroupMenu(undefined)
+    await w.vm.$nextTick()
+    expect(w.find('[data-testid="stub-group"]').exists()).toBe(true)
+    expect(w.emitted('update:modelValue')).toBeUndefined()
+  })
 })
