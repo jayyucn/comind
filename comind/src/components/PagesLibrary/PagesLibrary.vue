@@ -9,7 +9,8 @@ import PageTableView from './PageTableView.vue'
 import PageCalendarView from './PageCalendarView.vue'
 import FilterBuilder from '../query/FilterBuilder.vue'
 import FilterChipBar from '../query/FilterChipBar.vue'
-import { X, Search, LayoutGrid, CalendarDays, Filter, ArrowUpDown, Group } from 'lucide-vue-next'
+import QueryToolbar from '../query/QueryToolbar.vue'
+import { X, LayoutGrid, CalendarDays } from 'lucide-vue-next'
 
 defineOptions({ name: 'PagesLibrary' })
 
@@ -105,72 +106,34 @@ onMounted(async () => {
       </div>
 
       <div class="header-actions">
-        <!-- 搜索 -->
-        <div class="search-box">
-          <Search :size="14" :stroke-width="1.5" class="search-icon" />
-          <input
-            v-model="searchQuery"
-            type="text"
-            placeholder="搜索标题..."
-            class="search-input"
-          />
-        </div>
-
         <!-- 视图切换 -->
         <div class="view-switcher">
-          <button
-            :class="{ active: viewMode === 'table' }"
-            title="表格视图"
-            @click="viewMode = 'table'"
-          >
+          <button :class="{ active: viewMode === 'table' }" title="表格视图" @click="viewMode = 'table'">
             <LayoutGrid :size="15" />
           </button>
-          <button
-            :class="{ active: viewMode === 'calendar' }"
-            title="日历视图"
-            @click="viewMode = 'calendar'"
-          >
+          <button :class="{ active: viewMode === 'calendar' }" title="日历视图" @click="viewMode = 'calendar'">
             <CalendarDays :size="15" />
           </button>
         </div>
 
-        <!-- 筛选 / 排序 / 分组 三按钮 -->
-        <button
-          class="hdr-btn"
-          :class="{ active: hasFilter, collapsed: hasFilter && !chipBarVisible }"
-          title="筛选"
-          @click="onFilterClick"
-        >
-          <Filter :size="15" />
-        </button>
-        <button
-          class="hdr-btn"
-          :class="{ active: hasSort }"
-          title="排序"
-          @click="openChipMenu('sort', $event)"
-        >
-          <ArrowUpDown :size="15" />
-        </button>
-        <button
-          class="hdr-btn"
-          :class="{ active: hasGroup }"
-          title="分组"
-          @click="openChipMenu('group', $event)"
-        >
-          <Group :size="15" />
-        </button>
+        <!-- 查询工具条：筛选 / 排序 / 分组 三按钮 + 搜索（提取到 QueryToolbar） -->
+        <QueryToolbar
+          v-model="searchQuery"
+          :has-filter="hasFilter"
+          :has-sort="hasSort"
+          :has-group="hasGroup"
+          :chip-bar-visible="chipBarVisible"
+          @filter="onFilterClick"
+          @sort="openChipMenu('sort', $event)"
+          @group="openChipMenu('group', $event)"
+        />
       </div>
     </header>
 
     <!-- 筛选芯片行（Header 与 主内容之间） -->
     <Transition name="slide">
-      <FilterChipBar
-        v-if="chipBarVisible"
-        ref="chipBarRef"
-        v-model="viewQuery"
-        :fields="pageRefFields"
-        @open-advanced="showFilterPanel = true"
-      />
+      <FilterChipBar v-if="chipBarVisible" ref="chipBarRef" v-model="viewQuery" :fields="pageRefFields"
+        @open-advanced="showFilterPanel = true" />
     </Transition>
 
     <!-- 高级筛选面板（可折叠，经「高级筛选」进入） -->
@@ -182,12 +145,8 @@ onMounted(async () => {
             <X :size="14" />
           </button>
         </div>
-        <FilterBuilder
-          :registry="registry"
-          :entity-type="PAGE_ENTITY"
-          :cross-record-sources="crossRecordSources"
-          v-model="viewQuery"
-        />
+        <FilterBuilder :registry="registry" :entity-type="PAGE_ENTITY" :cross-record-sources="crossRecordSources"
+          v-model="viewQuery" />
       </div>
     </Transition>
 
@@ -248,42 +207,7 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 
-/* 搜索 */
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-base2);
-  width: 200px;
-  transition: border-color 120ms ease, background 120ms ease;
-}
-
-.search-box:focus-within {
-  border-color: var(--accent, #6366f1);
-  background: var(--bg-base);
-}
-
-.search-icon {
-  color: var(--text-tertiary);
-  flex-shrink: 0;
-}
-
-.search-input {
-  border: none;
-  outline: none;
-  background: transparent;
-  font-size: var(--text-sm);
-  color: var(--text-primary);
-  width: 100%;
-  min-width: 0;
-}
-
-.search-input::placeholder {
-  color: var(--text-tertiary);
-}
+/* 搜索框 / 三按钮样式已迁移至 src/components/query/QueryToolbar.vue */
 
 /* 视图切换器 */
 .view-switcher {
@@ -316,39 +240,7 @@ onMounted(async () => {
   color: var(--accent, #6366f1);
 }
 
-/* 筛选 / 排序 / 分组 三按钮 */
-.hdr-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 30px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-base);
-  color: var(--text-tertiary);
-  cursor: pointer;
-  transition: background 80ms ease, color 80ms ease, border-color 120ms ease;
-}
-
-.hdr-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-}
-
-/* 有筛选/排序/分组时的激活态（filled） */
-.hdr-btn.active {
-  border-color: var(--accent, #6366f1);
-  color: var(--accent, #6366f1);
-  background: var(--accent-bg, rgba(99, 102, 241, 0.08));
-}
-
-/* 有筛选但芯片行被收起（仅描边，提示「有筛选但隐藏」） */
-.hdr-btn.collapsed {
-  border-color: var(--accent, #6366f1);
-  color: var(--accent, #6366f1);
-  background: transparent;
-}
+/* 筛选 / 排序 / 分组 三按钮样式已迁移至 src/components/query/QueryToolbar.vue */
 
 /* ── 筛选面板 ── */
 .filter-panel {

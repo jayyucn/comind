@@ -1,7 +1,7 @@
 # CONTEXT.md — comind 领域术语表
 
 > 持续演进的领域语言。新增概念、修改语义时同步更新。
-> 最后更新：2026-08-14
+> 最后更新：2026-08-15
 
 ---
 
@@ -188,8 +188,9 @@ PC ↔ Android 设备间同步。
 | **ChipValueEditor** | 芯片内 literal 值编辑器（新增，仅 literal）：按 `FieldType` 分派——text/number/date/select/multiSelect/boolean 各自 UI；`isEmpty`/`isNotEmpty` 无值区。跨记录引用仍走 `FilterBuilder`/`ValueEditor`。 |
 | **Advanced Filter（高级筛选）** | 经 "Add advanced filter" 进入的 `FilterBuilder` 面板，支持嵌套条件组与字段引用值；在芯片行退化为单个不可内联编辑的「N rules」聚合 chip。 |
 | **聚合 chip（aggregated chip）** | 当根 `ConditionGroup` 含嵌套子组（非纯 `Condition` 列表）时，芯片行只渲染此 chip 提示存在高级筛选，点它重开面板。 |
+| **QueryToolbar（查询工具条）** | `src/components/query/QueryToolbar.vue` 中的**纯展示壳**：搜索（**可收起开关**——默认仅 🔍 图标按钮，点击后输入框从右向左展开并自动聚焦；再次点击搜索或其他按钮收起，`searchQuery` 保留）+ 筛选/排序/分组 三按钮（`emit('filter'\|'sort'\|'group')` 并透传原生事件锚定菜单）。激活/收起态（`hasFilter`/`hasSort`/`hasGroup`/`chipBarVisible`）由父组件以 prop 注入；搜索展开态为组件**本地展示状态**，不含任何芯片编排逻辑。三按钮图标随按钮态 currentColor（常态 text-tertiary / hover text-secondary / 激活 accent）。详见 `docs/adr/0010-extract-query-toolbar.md`、搜索开关见 `docs/adr/0011-query-toolbar-collapsible-search.md`。 |
 
-**分层归属（ADR-0009 D10）**：上述查询 UI 组件均为**引擎邻接的通用原语**，只依赖 `core/query` 与 `common/BasePopover`，不耦合任何实体业务，故统一置于 `src/components/query/`（与 `FilterBuilder.vue` 同目录，镜像 `core/query` 引擎），而非 `PagesLibrary/`。`PagesLibrary.vue` 仅保留**集成调用点**（`<FilterChipBar v-model="viewQuery" :fields="...">` + Header 三按钮 + 搜索/视图切换/本地 `viewQuery` 引用）。`BasePopover` 因是万物共享弹层基座，仍居 `src/components/common/`。
+**分层归属（ADR-0009 D10）**：上述查询 UI 组件均为**引擎邻接的通用原语**，只依赖 `core/query` 与 `common/BasePopover`，不耦合任何实体业务，故统一置于 `src/components/query/`（与 `FilterBuilder.vue` 同目录，镜像 `core/query` 引擎），而非 `PagesLibrary/`。`PagesLibrary.vue` 仅保留**集成调用点**：`<QueryToolbar v-model="searchQuery" :has-filter :has-sort :has-group :chip-bar-visible @filter @sort @group>`（封装 Header 三按钮 + 搜索；搜索为可收起开关，组件本体在 `query/QueryToolbar.vue`，纯展示、不持芯片编排）+ `<FilterChipBar v-model="viewQuery" :fields="...">` + 视图切换（表格/日历，留在 `PagesLibrary` 本地）+ 本地 `viewQuery`/`searchQuery` 引用 + 芯片编排（`chipBarVisible`/`chipBarRef`/`onFilterClick`/`openChipMenu`）。`BasePopover` 因是万物共享弹层基座，仍居 `src/components/common/`。
 
 ---
 
