@@ -15,6 +15,7 @@ import TaskViewBar from './TaskViewBar.vue'
 import TableView from './views/TableView.vue'
 import BoardView from './views/BoardView.vue'
 import CalendarView from './views/CalendarView.vue'
+import PageTitle from '../common/PageTitle.vue'
 
 const router = useRouter()
 const blockCardStore = useBlockCardStore()
@@ -96,6 +97,7 @@ function handleRefresh() {
 
 <template>
   <div class="task-hub">
+    <PageTitle title="任务中心" />
     <TaskViewBar
       :current-view-type="currentViewType"
       :views="taskViewStore.views"
@@ -149,6 +151,7 @@ function handleRefresh() {
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+  padding: 0 var(--space-8);
 }
 
 .task-hub-view {

@@ -1,10 +1,11 @@
 <script setup lang="ts">
+import { useRelationshipMenu } from '@/composables/useRelationshipMenu'
 import { computed } from 'vue'
 import { usePageStore } from '../../stores/pages'
 import BlockList from '../BlockList.vue'
-import BlockTaskList from './BlockTaskList.vue'
 import RelationshipMenu from '../RelationshipMenu.vue'
-import { useRelationshipMenu } from '@/composables/useRelationshipMenu'
+import BlockTaskList from './BlockTaskList.vue'
+import PageTitle from '../common/PageTitle.vue'
 
 const relMenu = useRelationshipMenu()
 
@@ -46,8 +47,7 @@ function handleNavigate(pageId: string, pageTitle: string) {
   <div class="today-panel">
     <div class="today-card" v-if="pageId">
       <div class="today-header">
-        <span class="today-date">{{ getMonthDay(page?.title || '').month }}{{ getMonthDay(page?.title || '').day }}日 {{
-          getWeekday(page?.title || '') }}</span>
+        <PageTitle :title="`${getMonthDay(page?.title || '').month}${getMonthDay(page?.title || '').day}日 ${getWeekday(page?.title || '')}`" />
       </div>
       <div class="today-body">
         <BlockList :page-id="pageId" />
@@ -83,7 +83,6 @@ function handleNavigate(pageId: string, pageTitle: string) {
 
 .today-card {
   background: transparent;
-  padding-left: var(--space-4);
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -99,23 +98,7 @@ function handleNavigate(pageId: string, pageTitle: string) {
   top: 0;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding-top: var(--nav-height);
   background: transparent;
-}
-
-
-.today-date {
-  font-size: var(--font-size-page-title);
-  font-weight: var(--font-bold);
-  color: var(--text-primary, #1C1917);
-}
-
-.today-label {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--text-tertiary, #A8A29E);
-  letter-spacing: 0.04em;
 }
 
 .today-body {

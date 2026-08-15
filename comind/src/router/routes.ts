@@ -55,19 +55,19 @@ const routes: RouteRecordRaw[] = [
     path: '/graph',
     name: 'graph',
     component: GraphPage,
-    meta: { fullWidth: true, hideRightSidebarToggle: true, absolute: true },
+    meta: { fullWidth: true, hideRightSidebarToggle: true },
   },
   {
     path: '/pages',
     name: 'pages-library',
     component: () => import('../components/PagesLibrary/PagesLibrary.vue'),
-    meta: { fullWidth: true, hideRightSidebarToggle: true, absolute: true },
+    meta: { fullWidth: true, hideRightSidebarToggle: true},
   },
   {
     path: '/tasks',
     name: 'tasks',
     component: () => import('../components/TaskHub/TaskHub.vue'),
-    meta: { fullWidth: true, hideRightSidebarToggle: true, absolute: true },
+    meta: { fullWidth: true, hideRightSidebarToggle: true },
   },
   // 404 兜底
   {

@@ -185,6 +185,7 @@ PC ↔ Android 设备间同步。
 | **Field Select Menu（字段选择菜单）** | `+ Filter` 触发的下拉：搜索框 + 字段列表 + 底部 "Add advanced filter"。 |
 | **all/any toggle** | 顶层 AND/OR 切换，投影到根 `ConditionGroup.combinator`（`'and'`/`'or'`）；仅绑筛选，不绑排序/分组。 |
 | **BasePopover** | 通用弹层原语（新增）。封装 Teleport+overlay+`position:{x,y}`+Escape+`@click.self` 关闭，复用 `--bg-base`/`--border`/`--shadow-modal` 令牌；所有新弹层包一层它。 |
+| **PageTitle（页面标题）** | `src/components/common/PageTitle.vue` 中的**通用标题原语**：统一各页面顶部标题样式。props `title`(string,必须) + `subtitle`(string,可选副标题，渲染在标题**同行右侧**)；具名插槽 `actions`(右侧操作区，`margin-left:auto` 推到最右，默认空)。规范字号/字重 = 页面标题令牌 `--font-size-page-title` / `--font-bold`，副标题用三级文字色 `--text-tertiary`。已接入：PagesLibrary（参考页）/ Trash / GraphView / IdeasTodayPanel（迁移），TaskHub 新增标题（见 `docs/adr/0012-page-title-component.md` 更新段）。 |
 | **ChipValueEditor** | 芯片内 literal 值编辑器（新增，仅 literal）：按 `FieldType` 分派——text/number/date/select/multiSelect/boolean 各自 UI；`isEmpty`/`isNotEmpty` 无值区。跨记录引用仍走 `FilterBuilder`/`ValueEditor`。 |
 | **Advanced Filter（高级筛选）** | 经 "Add advanced filter" 进入的 `FilterBuilder` 面板，支持嵌套条件组与字段引用值；在芯片行退化为单个不可内联编辑的「N rules」聚合 chip。 |
 | **聚合 chip（aggregated chip）** | 当根 `ConditionGroup` 含嵌套子组（非纯 `Condition` 列表）时，芯片行只渲染此 chip 提示存在高级筛选，点它重开面板。 |

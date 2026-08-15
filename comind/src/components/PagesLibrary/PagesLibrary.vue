@@ -1,16 +1,17 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue'
-import { usePageStore } from '../../stores/pages'
+import { CalendarDays, LayoutGrid, X } from 'lucide-vue-next'
+import { computed, nextTick, onMounted, ref } from 'vue'
+import { filterSortPages, runPageQuery } from '../../composables/usePageQueryEngine'
 import { getPageRegistry, PAGE_ENTITY } from '../../composables/usePageQueryRegistry'
-import { runPageQuery, filterSortPages } from '../../composables/usePageQueryEngine'
 import type { QueryContext, ViewQuery } from '../../core/query'
+import { usePageStore } from '../../stores/pages'
 import type { Page } from '../../types/page'
-import PageTableView from './PageTableView.vue'
-import PageCalendarView from './PageCalendarView.vue'
+import PageTitle from '../common/PageTitle.vue'
 import FilterBuilder from '../query/FilterBuilder.vue'
 import FilterChipBar from '../query/FilterChipBar.vue'
 import QueryToolbar from '../query/QueryToolbar.vue'
-import { X, LayoutGrid, CalendarDays } from 'lucide-vue-next'
+import PageCalendarView from './PageCalendarView.vue'
+import PageTableView from './PageTableView.vue'
 
 defineOptions({ name: 'PagesLibrary' })
 
@@ -98,14 +99,10 @@ onMounted(async () => {
 
 <template>
   <div class="pages-library">
+    <PageTitle title="页面库" :subtitle="`${filteredPages.length} 个页面`" />
     <!-- 顶栏 -->
     <header class="lib-header">
       <div class="header-left">
-        <h1 class="lib-title">页面库</h1>
-        <span class="lib-count">{{ filteredPages.length }} 个页面</span>
-      </div>
-
-      <div class="header-actions">
         <!-- 视图切换 -->
         <div class="view-switcher">
           <button :class="{ active: viewMode === 'table' }" title="表格视图" @click="viewMode = 'table'">
@@ -115,6 +112,10 @@ onMounted(async () => {
             <CalendarDays :size="15" />
           </button>
         </div>
+      </div>
+
+      <div class="header-actions">
+        
 
         <!-- 查询工具条：筛选 / 排序 / 分组 三按钮 + 搜索（提取到 QueryToolbar） -->
         <QueryToolbar
@@ -163,6 +164,7 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   height: 100%;
+  padding: 0 var(--space-8);
   min-height: 0;
   overflow: hidden;
   background: var(--bg-base);
@@ -173,7 +175,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 20px;
+  padding: 12px 20px 4px;
   border-bottom: 1px solid var(--border);
   gap: 16px;
   flex-shrink: 0;
@@ -184,20 +186,6 @@ onMounted(async () => {
   align-items: center;
   gap: 10px;
   min-width: 0;
-}
-
-.lib-title {
-  font-size: var(--text-lg);
-  font-weight: var(--font-bold);
-  color: var(--text-primary);
-  margin: 0;
-  white-space: nowrap;
-}
-
-.lib-count {
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-  white-space: nowrap;
 }
 
 .header-actions {

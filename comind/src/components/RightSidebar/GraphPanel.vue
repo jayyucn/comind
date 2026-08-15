@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, defineAsyncComponent } from 'vue'
+import { defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 import { usePageStore } from '../../stores/pages'
 const pageStore = usePageStore()
 const GraphView = defineAsyncComponent(() => import('../GraphView/index.vue'))
@@ -37,17 +37,10 @@ onBeforeUnmount(() => {
   height: 100%;
 }
 
-/* 隐藏全屏版标题（窄屏空间有限），保留布局与操作控件 */
-.graph-panel :deep(.graph-view-title) {
-  display: none;
-}
-
 .graph-panel :deep(.graph-view-header) {
   padding: 8px 12px;
   align-items: center;
 }
 
-.graph-panel :deep(.graph-view-controls) {
-  gap: 8px;
-}
+
 </style>
