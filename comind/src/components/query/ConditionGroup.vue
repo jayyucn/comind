@@ -73,22 +73,14 @@ function setCombinator(c: 'and' | 'or') {
 <template>
   <div class="qb-group" :class="{ 'qb-group-nested': depth > 1 }">
     <div class="qb-group-header">
-      <div class="qb-combinator">
-        <button
-          type="button"
-          :class="{ active: model?.combinator === 'and' }"
-          @click="setCombinator('and')"
-        >
-          且
-        </button>
-        <button
-          type="button"
-          :class="{ active: model?.combinator === 'or' }"
-          @click="setCombinator('or')"
-        >
-          或
-        </button>
-      </div>
+      <select
+        class="qb-combinator-select"
+        :value="model?.combinator"
+        @change="setCombinator(($event.target as HTMLSelectElement).value as 'and' | 'or')"
+      >
+        <option value="and">且</option>
+        <option value="or">或</option>
+      </select>
       <button
         v-if="depth > 1"
         class="qb-icon"
@@ -154,24 +146,18 @@ function setCombinator(c: 'and' | 'or') {
   margin-bottom: 6px;
 }
 
-.qb-combinator {
-  display: inline-flex;
+.qb-combinator-select {
+  padding: 2px 8px;
   border: 1px solid var(--border);
   border-radius: 4px;
-  overflow: hidden;
+  background: var(--bg-base);
+  color: var(--text-secondary, #444);
+  font-size: var(--text-xs, 12px);
+  cursor: pointer;
+  outline: none;
 
-  button {
-    padding: 2px 10px;
-    border: none;
-    background: transparent;
-    color: var(--text-secondary, #444);
-    font-size: var(--text-xs, 12px);
-    cursor: pointer;
-
-    &.active {
-      background: var(--accent, #6366f1);
-      color: #fff;
-    }
+  &:focus {
+    border-color: var(--accent, #6366f1);
   }
 }
 

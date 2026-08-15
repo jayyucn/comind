@@ -4,17 +4,18 @@ import type {
   Condition,
   ConditionGroup,
   FieldDescriptor,
+  ReferenceableRecord,
+  Registry,
   SortRule,
   ViewQuery,
 } from '../../core/query'
-import FilterCombinatorToggle from './FilterCombinatorToggle.vue'
+import BasePopover from '../common/BasePopover.vue'
 import FilterChip from './FilterChip.vue'
 import ConditionPopover from './ConditionPopover.vue'
 import FieldSelectMenu from './FieldSelectMenu.vue'
-import SortChip from './SortChip.vue'
 import SortMenu from './SortMenu.vue'
-import GroupChip from './GroupChip.vue'
 import GroupMenu from './GroupMenu.vue'
+import FilterBuilder from './FilterBuilder.vue'
 import { defaultOpFor, summarizeCondition } from './filterMeta'
 
 const props = defineProps<{
@@ -22,13 +23,17 @@ const props = defineProps<{
   modelValue: ViewQuery
   /** 可筛选/排序/分组的字段清单。 */
   fields: FieldDescriptor[]
+  /** 字段注册表（高级筛选 popover 内 ConditionGroup/ConditionRow 需要）。 */
+  registry: Registry
+  /** 实体命名空间。 */
+  entityType: string
+  /** 跨记录引用候选记录列表（通用，业务无关），从业务层注入。 */
+  crossRecordSources?: ReferenceableRecord[]
 }>()
 
 const emit = defineEmits<{
   /** 任意筛选/排序/分组变更，emit 完整的新 ViewQuery（父级持有真相）。 */
   'update:modelValue': [q: ViewQuery]
-  /** 点「高级筛选」/ 聚合 chip → 由父级决定如何打开 FilterBuilder。 */
-  'open-advanced': []
 }>()
 
 function isCondition(c: Condition | ConditionGroup): c is Condition {
@@ -50,14 +55,22 @@ type Active =
   | { kind: 'cond'; index: number }
   | { kind: 'sortEdit'; index: number }
   | { kind: 'group' }
+  | { kind: 'advanced' }
   | null
 const active = ref<Active>(null)
+
+const addFilterBtn = ref<HTMLButtonElement | null>(null)
 
 function openAt(kind: Exclude<Active, null>, e: Event) {
   const el = e.currentTarget as HTMLElement
   const r = el.getBoundingClientRect()
   anchor.value = { x: r.left, y: r.bottom + 4 }
   active.value = kind
+}
+function anchorTo(el?: HTMLElement | null) {
+  if (!el) return
+  const r = el.getBoundingClientRect()
+  anchor.value = { x: r.left, y: r.bottom + 4 }
 }
 function close() {
   active.value = null
@@ -70,14 +83,30 @@ function patch(p: Partial<ViewQuery>) {
 // ── 筛选 ──
 const flatConds = computed(() => props.modelValue.filter.children.filter(isCondition))
 const hasNested = computed(() => props.modelValue.filter.children.some((c) => !isCondition(c)))
-const condCount = computed(() => countConditions(props.modelValue.filter))
-const combinator = computed(() => props.modelValue.filter.combinator)
+/** 仅嵌套/高级子组内的条件总数（用于聚合 chip 标签）。 */
+const nestedCount = computed(() =>
+  props.modelValue.filter.children
+    .filter((c) => !isCondition(c))
+    .reduce((sum, g) => sum + countConditions(g as ConditionGroup), 0),
+)
+const nestedLabel = computed(() => `${nestedCount.value} rule${nestedCount.value > 1 ? 's' : ''}`)
+
+// 高级/嵌套子组 = 聚合 chip 的编辑范围（仅嵌套组，扁平条件不入面板）
+const advancedGroup = computed<ConditionGroup>(() => {
+  const nested = props.modelValue.filter.children.filter((c) => !isCondition(c)) as ConditionGroup[]
+  if (nested.length === 1) return nested[0]
+  if (nested.length === 0) return { combinator: 'and', children: [] }
+  return { combinator: props.modelValue.filter.combinator, children: nested }
+})
+const advancedModel = computed<ViewQuery>(() => ({
+  version: 1,
+  filter: advancedGroup.value,
+  sort: [],
+  groupBy: null,
+}))
 
 function fieldOf(key: string): FieldDescriptor | undefined {
   return props.fields.find((f) => f.key === key)
-}
-function setCombinator(v: 'and' | 'or') {
-  patch({ filter: { ...props.modelValue.filter, combinator: v } })
 }
 function onCondUpdate(index: number, cond: Condition) {
   const children = [...props.modelValue.filter.children]
@@ -99,11 +128,36 @@ function addFilter(key: string) {
   active.value = { kind: 'cond', index: children.length - 1 }
 }
 
+// 打开高级筛选 popover：由聚合 chip 或 + Filter 菜单触发（ADR-0013 D5）
+function openAdvanced(e: Event) {
+  openAt({ kind: 'advanced' }, e)
+}
+function openAdvancedFromMenu() {
+  close()
+  active.value = { kind: 'advanced' }
+  anchorTo(addFilterBtn.value)
+}
+// 聚合 chip 面板只编辑嵌套子组；扁平条件保持栏上独立 chip，不入面板（ADR-0013 D2 修订）
+function onAdvancedUpdate(q: ViewQuery) {
+  const children = [...props.modelValue.filter.children]
+  const nestedIdxs = children
+    .map((c, i) => (isCondition(c) ? -1 : i))
+    .filter((i) => i >= 0)
+  const advanced = q.filter
+  if (countConditions(advanced) === 0) {
+    // 高级组被清空 → 移除所有嵌套组（扁平条件保留）
+    for (const i of nestedIdxs.slice().reverse()) children.splice(i, 1)
+  } else if (nestedIdxs.length === 0) {
+    children.push(advanced) // 此前无高级组 → 追加
+  } else {
+    children[nestedIdxs[0]] = advanced // 替换首个嵌套组
+    for (const i of nestedIdxs.slice(1).reverse()) children.splice(i, 1) // 删除其余（并入首组）
+  }
+  patch({ filter: { ...props.modelValue.filter, children } })
+}
+
 // ── 排序 ──
 const sorts = computed(() => props.modelValue.sort)
-function sortLabel(key: string): string {
-  return fieldOf(key)?.label ?? key
-}
 /** 条件摘要；字段缺失（如指向已删除/未加载字段的脏数据）时降级为原始 key。 */
 function condLabel(c: Condition): string {
   const f = fieldOf(c.field)
@@ -119,13 +173,6 @@ function onSortRemove(index: number) {
   sort.splice(index, 1)
   patch({ sort })
 }
-function addSort() {
-  const f = props.fields[0]
-  if (!f) return
-  const ni = props.modelValue.sort.length
-  patch({ sort: [...props.modelValue.sort, { field: f.key, dir: 'asc' }] })
-  active.value = { kind: 'sortEdit', index: ni }
-}
 function onSortAdd() {
   const f = props.fields[0]
   if (!f || active.value?.kind !== 'sortEdit') return
@@ -138,6 +185,11 @@ function onSortAdd() {
 
 // ── 分组 ──
 const groupBy = computed(() => props.modelValue.groupBy)
+const groupLabel = computed(() => {
+  const k = props.modelValue.groupBy
+  if (!k) return ''
+  return fieldOf(k)?.label ?? k
+})
 function onGroupUpdate(key: string | null) {
   patch({ groupBy: key })
 }
@@ -157,17 +209,7 @@ const sortTarget = computed<SortRule | null>(() =>
   sortIndex.value >= 0 ? (props.modelValue.sort[sortIndex.value] ?? null) : null,
 )
 
-function onAdvancedFromMenu() {
-  close()
-  emit('open-advanced')
-}
-
 // ── 供 Header 按钮直接唤起菜单（锚定到按钮自身）──
-function anchorTo(el?: HTMLElement | null) {
-  if (!el) return
-  const r = el.getBoundingClientRect()
-  anchor.value = { x: r.left, y: r.bottom + 4 }
-}
 function openSortMenu(el?: HTMLElement | null) {
   anchorTo(el)
   if (props.modelValue.sort.length === 0) {
@@ -189,56 +231,57 @@ defineExpose({ openSortMenu, openGroupMenu })
 
 <template>
   <div class="chip-bar" data-testid="chip-bar">
-    <FilterCombinatorToggle :model-value="combinator" @update:model-value="setCombinator" />
-
-    <template v-if="!hasNested">
-      <FilterChip
-        v-for="(c, i) in flatConds"
-        :key="'c' + i"
-        :label="condLabel(c)"
-        data-testid="bar-filter-chip"
-        @click="openAt({ kind: 'cond', index: i }, $event)"
-        @remove="onCondRemove(i)"
-      />
-    </template>
-    <button v-else class="agg-chip" data-testid="bar-agg" @click="emit('open-advanced')">
-      {{ condCount }} rules
+    <!-- 排序：始终聚合成单个 chip（ADR-0013 D3），最左 -->
+    <button
+      v-if="sorts.length"
+      class="agg-chip"
+      data-testid="bar-sort-agg"
+      @click="openSortMenu($event.currentTarget as HTMLElement)"
+    >
+      ↓ {{ sorts.length }} sorts ▾
     </button>
 
-    <button class="add-btn" data-testid="bar-add-filter" @click="openAt({ kind: 'fieldMenu' }, $event)">
+    <!-- 分组：激活时显示单个 chip（groupBy 经 GroupMenu 编辑） -->
+    <button
+      v-if="groupBy"
+      class="agg-chip"
+      data-testid="bar-group-chip"
+      @click="openGroupMenu($event.currentTarget as HTMLElement)"
+    >
+      分组：{{ groupLabel }} ▾
+    </button>
+
+    <!-- 嵌套/高级条件：聚合成单个 chip，始终在扁平 chip 左侧（ADR-0013 D2 修订） -->
+    <button
+      v-if="hasNested"
+      class="agg-chip"
+      data-testid="bar-agg"
+      :title="`${nestedCount} 条高级/嵌套筛选规则`"
+      @click="openAdvanced($event)"
+    >
+      <span class="agg-ico">≡</span> {{ nestedLabel }} ▾
+    </button>
+
+    <!-- 扁平条件：始终以独立 chip 展示，按创建顺序从左到右（ADR-0013 D2 修订） -->
+    <FilterChip
+      v-for="(c, i) in flatConds"
+      :key="'c' + i"
+      :label="condLabel(c)"
+      data-testid="bar-filter-chip"
+      @click="openAt({ kind: 'cond', index: i }, $event)"
+      @remove="onCondRemove(i)"
+    />
+
+    <button ref="addFilterBtn" class="add-btn" data-testid="bar-add-filter" @click="openAt({ kind: 'fieldMenu' }, $event)">
       + Filter
     </button>
-
-    <SortChip
-      v-for="(s, i) in sorts"
-      :key="'s' + i"
-      :rule="s"
-      :label="sortLabel(s.field)"
-      data-testid="bar-sort-chip"
-      @open="openAt({ kind: 'sortEdit', index: i }, $event)"
-      @remove="onSortRemove(i)"
-    />
-    <button class="add-btn" data-testid="bar-add-sort" @click="addSort()">+ Sort</button>
-
-    <GroupChip
-      v-if="groupBy"
-      :label="sortLabel(groupBy)"
-      data-testid="bar-group-chip"
-      @open="openAt({ kind: 'group' }, $event)"
-      @remove="onGroupUpdate(null)"
-    />
-    <button v-else class="add-btn" data-testid="bar-add-group" @click="openAt({ kind: 'group' }, $event)">
-      + Group
-    </button>
-
-    <button class="adv-btn" data-testid="bar-advanced" @click="emit('open-advanced')">高级筛选</button>
 
     <FieldSelectMenu
       v-if="active?.kind === 'fieldMenu'"
       :fields="fields"
       :position="anchor"
       @select="addFilter"
-      @advanced="onAdvancedFromMenu"
+      @advanced="openAdvancedFromMenu"
       @close="close"
     />
     <ConditionPopover
@@ -269,6 +312,23 @@ defineExpose({ openSortMenu, openGroupMenu })
       @update:group-by="onGroupUpdate"
       @close="close"
     />
+
+    <!-- 高级筛选 = 聚合 chip（或 + Filter 菜单）触发的 popover，仅筛选条件（ADR-0013 D5） -->
+    <BasePopover
+      v-if="active?.kind === 'advanced'"
+      :visible="true"
+      :position="anchor"
+      @close="close"
+    >
+      <FilterBuilder
+        :registry="registry"
+        :entity-type="entityType"
+        :cross-record-sources="crossRecordSources"
+        :model-value="advancedModel"
+        :show-sort-group="false"
+        @update:model-value="onAdvancedUpdate"
+      />
+    </BasePopover>
   </div>
 </template>
 
@@ -282,8 +342,7 @@ defineExpose({ openSortMenu, openGroupMenu })
   border-bottom: 1px solid var(--border);
   background: var(--bg-base2);
 }
-.add-btn,
-.adv-btn {
+.add-btn {
   border: 1px dashed var(--border);
   background: transparent;
   color: var(--text-secondary);
@@ -293,16 +352,14 @@ defineExpose({ openSortMenu, openGroupMenu })
   font-family: inherit;
   cursor: pointer;
 }
-.add-btn:hover,
-.adv-btn:hover {
+.add-btn:hover {
   border-color: var(--accent, #6366f1);
   color: var(--accent, #6366f1);
 }
-.adv-btn {
-  margin-left: auto;
-  border-style: solid;
-}
 .agg-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   border: 1px solid var(--border);
   background: var(--bg-base);
   color: var(--text-secondary);
@@ -315,5 +372,9 @@ defineExpose({ openSortMenu, openGroupMenu })
 .agg-chip:hover {
   border-color: var(--accent, #6366f1);
   color: var(--accent, #6366f1);
+}
+.agg-ico {
+  font-size: var(--text-sm);
+  line-height: 1;
 }
 </style>

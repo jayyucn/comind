@@ -20,7 +20,6 @@ import { File, Plus, Tag, X } from 'lucide-vue-next'
 import type {
   ConditionValue,
   FieldDescriptor,
-  FieldType,
   FilterOp,
   Option,
   ReferenceableRecord,
@@ -53,7 +52,7 @@ const options = computed<Option[]>(() => {
 })
 
 const isEmptyOp = computed(() => props.op === 'isEmpty' || props.op === 'isNotEmpty')
-const isRange = computed(() => props.op === 'between')
+const isRange = computed(() => props.op === 'between' || props.op === 'within')
 /** 是否展示引用控件（字段开关 / + 菜单）：仅比较类 op，且非 between。 */
 const showRefControls = computed(() => !isEmptyOp.value && !isRange.value)
 

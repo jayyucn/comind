@@ -26,7 +26,7 @@ export type FilterOp =
   // text
   | 'is' | 'isNot' | 'contains' | 'notContains'
   // date
-  | 'before' | 'after' | 'between'
+  | 'before' | 'after' | 'between' | 'within'
   // number
   | 'eq' | 'neq' | 'gt' | 'lt'
   // multiSelect

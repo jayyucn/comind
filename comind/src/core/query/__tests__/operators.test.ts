@@ -25,16 +25,16 @@ describe('DEFAULT_OPS 默认映射', () => {
     expect(DEFAULT_OPS.number).toEqual(['eq', 'neq', 'gt', 'lt', 'isEmpty', 'isNotEmpty'])
   })
 
-  it('date → before/after/between/isEmpty/isNotEmpty', () => {
-    expect(DEFAULT_OPS.date).toEqual(['before', 'after', 'between', 'isEmpty', 'isNotEmpty'])
+  it('date → before/after/between/within/isEmpty/isNotEmpty', () => {
+    expect(DEFAULT_OPS.date).toEqual(['before', 'after', 'between', 'within', 'isEmpty', 'isNotEmpty'])
   })
 
   it('select → is/isNot/isEmpty/isNotEmpty', () => {
     expect(DEFAULT_OPS.select).toEqual(['is', 'isNot', 'isEmpty', 'isNotEmpty'])
   })
 
-  it('multiSelect → hasAny/hasAll/isEmpty/isNotEmpty', () => {
-    expect(DEFAULT_OPS.multiSelect).toEqual(['hasAny', 'hasAll', 'isEmpty', 'isNotEmpty'])
+  it('multiSelect → contains/notContains/hasAll/isEmpty/isNotEmpty', () => {
+    expect(DEFAULT_OPS.multiSelect).toEqual(['contains', 'notContains', 'hasAll', 'isEmpty', 'isNotEmpty'])
   })
 
   it('boolean → is', () => {

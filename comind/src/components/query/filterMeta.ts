@@ -17,6 +17,7 @@ export const OP_LABELS: Record<FilterOp, string> = {
   before: '早于',
   after: '晚于',
   between: '介于',
+  within: '在范围内',
   eq: '等于',
   neq: '不等于',
   gt: '大于',

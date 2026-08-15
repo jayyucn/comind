@@ -177,18 +177,18 @@ PC ↔ Android 设备间同步。
 
 | 术语 | 定义 |
 |------|------|
-| **Filter Chip Bar（芯片行）** | Header 与 Table 之间的横条，承载筛选/排序/分组 chip + `all/any` 切换。出现条件 = 筛选条件>0 OR 排序键>0 OR 已分组。 |
+| **Filter Chip Bar（芯片行）** | Header 与 Table 之间的横条，承载筛选/排序 chip + `+ Filter`。**空态只渲染 `+ Filter`**（无常驻且/或开关，见 ADR-0013 D1）。出现条件 = 筛选条件>0 OR 排序键>0（分组标签在栏**上方**独立显示，不在栏内）。形态：扁平筛选→逐个属性芯片；含嵌套/高级→折叠为 `≡ N rule(s) ▾` 聚合 chip；排序→`↓ N sorts ▾` 聚合 chip。 |
 | **Filter Chip（筛选芯片）** | 芯片行中代表单个 `Condition` 的可点击元素，点开 `ConditionPopover` 编辑 `[字段][操作符][值]`。 |
-| **Sort Chip（排序芯片）** | 每个排序键一个 chip（`↑ 标题` / `↓ 更新时间`），多键并列；点开 `SortMenu` 改字段/方向。 |
-| **Group Chip（分组芯片）** | 单字段分组 chip（`分组：类型`）；`groupBy=null` 时不渲染。 |
+| **Sort Chip（排序芯片）** | **已聚合**：排序键不再逐个展开，统一折叠为单个 `↓ N sorts ▾` 聚合 chip，点开编辑/删除/添加（ADR-0013 D3）。原独立多键并列形态已弃用。 |
+| **Group Chip（分组芯片）** | ~~不再渲染于芯片栏内~~（ADR-0013 D4）：`+ Group` 按钮与独立分组 chip 均移除，与 QueryToolbar 分组按钮重复。分组标签改为在芯片栏**上方**独立显示（"Grouped by 类型"），由 `PagesLibrary` 现有分组呈现负责。 |
 | **Condition Popover（条件弹出层）** | 编辑单个 `Condition` 的浮层：`[字段名▾] [操作符▾] [ChipValueEditor]`。 |
 | **Field Select Menu（字段选择菜单）** | `+ Filter` 触发的下拉：搜索框 + 字段列表 + 底部 "Add advanced filter"。 |
-| **all/any toggle** | 顶层 AND/OR 切换，投影到根 `ConditionGroup.combinator`（`'and'`/`'or'`）；仅绑筛选，不绑排序/分组。 |
+| **all/any toggle** | ~~已移除~~（ADR-0013 D1）：原芯片行左侧常驻的 `全部满足/任一满足` 切换（`FilterCombinatorToggle`）不再出现在栏上。And/Or 逻辑收进高级筛选 popover 的面板内（每组级下拉，根组默认 `and`）。 |
 | **BasePopover** | 通用弹层原语（新增）。封装 Teleport+overlay+`position:{x,y}`+Escape+`@click.self` 关闭，复用 `--bg-base`/`--border`/`--shadow-modal` 令牌；所有新弹层包一层它。 |
 | **PageTitle（页面标题）** | `src/components/common/PageTitle.vue` 中的**通用标题原语**：统一各页面顶部标题样式。props `title`(string,必须) + `subtitle`(string,可选副标题，渲染在标题**同行右侧**)；具名插槽 `actions`(右侧操作区，`margin-left:auto` 推到最右，默认空)。规范字号/字重 = 页面标题令牌 `--font-size-page-title` / `--font-bold`，副标题用三级文字色 `--text-tertiary`。已接入：PagesLibrary（参考页）/ Trash / GraphView / IdeasTodayPanel（迁移），TaskHub 新增标题（见 `docs/adr/0012-page-title-component.md` 更新段）。 |
 | **ChipValueEditor** | 芯片内 literal 值编辑器（新增，仅 literal）：按 `FieldType` 分派——text/number/date/select/multiSelect/boolean 各自 UI；`isEmpty`/`isNotEmpty` 无值区。跨记录引用仍走 `FilterBuilder`/`ValueEditor`。 |
-| **Advanced Filter（高级筛选）** | 经 "Add advanced filter" 进入的 `FilterBuilder` 面板，支持嵌套条件组与字段引用值；在芯片行退化为单个不可内联编辑的「N rules」聚合 chip。 |
-| **聚合 chip（aggregated chip）** | 当根 `ConditionGroup` 含嵌套子组（非纯 `Condition` 列表）时，芯片行只渲染此 chip 提示存在高级筛选，点它重开面板。 |
+| **Advanced Filter（高级筛选）** | 经两个触发点进入的 **Popover**（ADR-0013 D5）：(a) `≡ N rule(s) ▾` 聚合 chip（带已有规则）；(b) `+ Filter` 菜单底部 "Add advanced filter"（从空开始）。**只含筛选条件**——排序/分组区域已删。`FilterBuilder` 由大面板降级为此 popover 内容；组内 And/Or 为下拉选择器，根组默认 `and`。支持嵌套条件组与字段引用值。 |
+| **聚合 chip（aggregated chip）** | 当根 `ConditionGroup` 含嵌套子组（非纯 `Condition` 列表）时，芯片行只渲染此 `≡ N rule(s) ▾` chip（Notion 措辞：单数 `1 rule` / 复数 `N rules`），点它重开高级筛选 popover。排序侧对应 `↓ N sorts ▾` 聚合 chip（排序永远聚合，不展开）。 |
 | **QueryToolbar（查询工具条）** | `src/components/query/QueryToolbar.vue` 中的**纯展示壳**：搜索（**可收起开关**——默认仅 🔍 图标按钮，点击后输入框从右向左展开并自动聚焦；再次点击搜索或其他按钮收起，`searchQuery` 保留）+ 筛选/排序/分组 三按钮（`emit('filter'\|'sort'\|'group')` 并透传原生事件锚定菜单）。激活/收起态（`hasFilter`/`hasSort`/`hasGroup`/`chipBarVisible`）由父组件以 prop 注入；搜索展开态为组件**本地展示状态**，不含任何芯片编排逻辑。三按钮图标随按钮态 currentColor（常态 text-tertiary / hover text-secondary / 激活 accent）。详见 `docs/adr/0010-extract-query-toolbar.md`、搜索开关见 `docs/adr/0011-query-toolbar-collapsible-search.md`。 |
 
 **分层归属（ADR-0009 D10）**：上述查询 UI 组件均为**引擎邻接的通用原语**，只依赖 `core/query` 与 `common/BasePopover`，不耦合任何实体业务，故统一置于 `src/components/query/`（与 `FilterBuilder.vue` 同目录，镜像 `core/query` 引擎），而非 `PagesLibrary/`。`PagesLibrary.vue` 仅保留**集成调用点**：`<QueryToolbar v-model="searchQuery" :has-filter :has-sort :has-group :chip-bar-visible @filter @sort @group>`（封装 Header 三按钮 + 搜索；搜索为可收起开关，组件本体在 `query/QueryToolbar.vue`，纯展示、不持芯片编排）+ `<FilterChipBar v-model="viewQuery" :fields="...">` + 视图切换（表格/日历，留在 `PagesLibrary` 本地）+ 本地 `viewQuery`/`searchQuery` 引用 + 芯片编排（`chipBarVisible`/`chipBarRef`/`onFilterClick`/`openChipMenu`）。`BasePopover` 因是万物共享弹层基座，仍居 `src/components/common/`。

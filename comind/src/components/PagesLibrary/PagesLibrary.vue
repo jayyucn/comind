@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CalendarDays, LayoutGrid, X } from 'lucide-vue-next'
+import { CalendarDays, LayoutGrid } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { filterSortPages, runPageQuery } from '../../composables/usePageQueryEngine'
 import { getPageRegistry, PAGE_ENTITY } from '../../composables/usePageQueryRegistry'
@@ -7,7 +7,6 @@ import type { QueryContext, ViewQuery } from '../../core/query'
 import { usePageStore } from '../../stores/pages'
 import type { Page } from '../../types/page'
 import PageTitle from '../common/PageTitle.vue'
-import FilterBuilder from '../query/FilterBuilder.vue'
 import FilterChipBar from '../query/FilterChipBar.vue'
 import QueryToolbar from '../query/QueryToolbar.vue'
 import PageCalendarView from './PageCalendarView.vue'
@@ -29,7 +28,6 @@ const viewQuery = ref<ViewQuery>({
   sort: [],
   groupBy: null,
 })
-const showFilterPanel = ref(false)
 const searchQuery = ref('')
 
 // 芯片行显隐（Filter 按钮切换展开/收起）
@@ -133,22 +131,15 @@ onMounted(async () => {
 
     <!-- 筛选芯片行（Header 与 主内容之间） -->
     <Transition name="slide">
-      <FilterChipBar v-if="chipBarVisible" ref="chipBarRef" v-model="viewQuery" :fields="pageRefFields"
-        @open-advanced="showFilterPanel = true" />
-    </Transition>
-
-    <!-- 高级筛选面板（可折叠，经「高级筛选」进入） -->
-    <Transition name="slide">
-      <div v-if="showFilterPanel" class="filter-panel">
-        <div class="filter-panel-header">
-          <span class="filter-panel-title">筛选条件</span>
-          <button class="filter-close" @click="showFilterPanel = false">
-            <X :size="14" />
-          </button>
-        </div>
-        <FilterBuilder :registry="registry" :entity-type="PAGE_ENTITY" :cross-record-sources="crossRecordSources"
-          v-model="viewQuery" />
-      </div>
+      <FilterChipBar
+        v-if="chipBarVisible"
+        ref="chipBarRef"
+        v-model="viewQuery"
+        :fields="pageRefFields"
+        :registry="registry"
+        :entity-type="PAGE_ENTITY"
+        :cross-record-sources="crossRecordSources"
+      />
     </Transition>
 
     <!-- 主内容区 -->
@@ -229,48 +220,6 @@ onMounted(async () => {
 }
 
 /* 筛选 / 排序 / 分组 三按钮样式已迁移至 src/components/query/QueryToolbar.vue */
-
-/* ── 筛选面板 ── */
-.filter-panel {
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-base2);
-  padding: 12px 20px;
-  flex-shrink: 0;
-  max-height: 400px;
-  overflow-y: auto;
-}
-
-.filter-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.filter-panel-title {
-  font-size: var(--text-sm);
-  font-weight: var(--font-semibold);
-  color: var(--text-secondary);
-}
-
-.filter-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-tertiary);
-  cursor: pointer;
-  transition: background 80ms ease;
-}
-
-.filter-close:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
 
 /* ── 主内容 ── */
 .lib-body {

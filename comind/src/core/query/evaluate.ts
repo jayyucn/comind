@@ -108,14 +108,29 @@ export function matchCondition(
       return eqScalars(value, target)
     case 'isNot':
       return !eqScalars(value, target)
-    case 'contains':
-      return String(value)
-        .toLowerCase()
-        .includes(String(target ?? '').toLowerCase())
-    case 'notContains':
-      return !String(value)
-        .toLowerCase()
-        .includes(String(target ?? '').toLowerCase())
+    case 'contains': {
+      // multiSelect：选中集合含任一目标即匹配；text：子串包含
+      const selected = Array.isArray(value) ? (value as unknown[]) : null
+      if (selected) {
+        let targets = Array.isArray(targetRaw) ? (targetRaw as unknown[]) : [targetRaw]
+        if (ids) targets = targets.filter((t) => ids.has(String(t)))
+        const set = new Set(selected.map(String))
+        return targets.some((t) => set.has(String(t)))
+      }
+      const tgt = String(target ?? '').toLowerCase()
+      return String(value).toLowerCase().includes(tgt)
+    }
+    case 'notContains': {
+      const selected = Array.isArray(value) ? (value as unknown[]) : null
+      if (selected) {
+        let targets = Array.isArray(targetRaw) ? (targetRaw as unknown[]) : [targetRaw]
+        if (ids) targets = targets.filter((t) => ids.has(String(t)))
+        const set = new Set(selected.map(String))
+        return !targets.some((t) => set.has(String(t)))
+      }
+      const tgt = String(target ?? '').toLowerCase()
+      return !String(value).toLowerCase().includes(tgt)
+    }
     // number
     case 'eq':
       return Number(value) === Number(target)
@@ -131,6 +146,12 @@ export function matchCondition(
     case 'after':
       return String(value) > String(target)
     case 'between': {
+      const [from, to] = Array.isArray(targetRaw) ? (targetRaw as [unknown, unknown]) : [targetRaw, targetRaw]
+      const s = String(value)
+      return s >= String(from) && s <= String(to)
+    }
+    // date：相对范围（本周内/本月内等），值形态同 between 的 [from, to] 闭区间
+    case 'within': {
       const [from, to] = Array.isArray(targetRaw) ? (targetRaw as [unknown, unknown]) : [targetRaw, targetRaw]
       const s = String(value)
       return s >= String(from) && s <= String(to)

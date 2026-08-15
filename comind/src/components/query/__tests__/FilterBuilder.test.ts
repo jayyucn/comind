@@ -334,3 +334,26 @@ describe('FilterBuilder between 不变式（引用值守卫）', () => {
     expect(w.emitted('update:modelValue')).toBeFalsy()
   })
 })
+
+// ADR-0013 D5：页面库高级筛选 popover 仅含筛选条件（showSortGroup=false）
+describe('FilterBuilder 高级筛选 popover（ADR-0013 D5）', () => {
+  it('showSortGroup=false 时隐藏排序/分组区，仅保留筛选条件', async () => {
+    const w = mount(FilterBuilder, {
+      props: { registry: makeRefRegistry(), entityType: 'task', modelValue: baseQuery(), showSortGroup: false },
+    })
+    expect(w.text()).not.toContain('排序')
+    expect(w.text()).not.toContain('分组')
+    expect(w.text()).toContain('筛选条件')
+    // 仍可编辑筛选条件
+    await addCondition(w)
+    expect(w.findAll('.qb-row').length).toBeGreaterThan(0)
+  })
+
+  it('默认 showSortGroup=true 仍渲染排序/分组区（TaskHub 不受影响）', () => {
+    const w = mount(FilterBuilder, {
+      props: { registry: makeRefRegistry(), entityType: 'task', modelValue: baseQuery() },
+    })
+    expect(w.text()).toContain('排序')
+    expect(w.text()).toContain('分组')
+  })
+})

@@ -52,6 +52,7 @@ const opLabels: Record<string, string> = {
   before: '早于',
   after: '晚于',
   between: '介于',
+  within: '在范围内',
   eq: '=',
   neq: '≠',
   gt: '>',
