@@ -10,7 +10,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   /** 点击芯片主体 → 打开对应的 SortMenu。 */
-  open: []
+  open: [e: MouseEvent]
   /** 点击 × → 移除该排序。 */
   remove: []
 }>()
@@ -19,7 +19,7 @@ const arrow = props.rule.dir === 'asc' ? '↑' : '↓'
 </script>
 
 <template>
-  <span class="sort-chip" data-testid="sort-chip" @click="emit('open')">
+  <span class="sort-chip" data-testid="sort-chip" @click="emit('open', $event)">
     <span class="sort-chip-label" data-testid="sort-chip-label">{{ arrow }} {{ label }}</span>
     <button
       type="button"

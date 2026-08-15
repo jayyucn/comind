@@ -1,6 +1,6 @@
 <script setup lang="ts">
 defineProps<{ label: string; active?: boolean }>()
-const emit = defineEmits<{ click: []; remove: [] }>()
+const emit = defineEmits<{ click: [e: MouseEvent]; remove: [] }>()
 </script>
 
 <template>
@@ -8,7 +8,7 @@ const emit = defineEmits<{ click: []; remove: [] }>()
     class="filter-chip"
     :class="{ active }"
     data-testid="filter-chip"
-    @click="emit('click')"
+    @click="emit('click', $event)"
   >
     <span class="chip-label">{{ label }}</span>
     <button

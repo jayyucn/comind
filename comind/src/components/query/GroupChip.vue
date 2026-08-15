@@ -1,19 +1,19 @@
 <script setup lang="ts">
-const props = defineProps<{
+defineProps<{
   /** 分组字段显示名。 */
   label: string
 }>()
 
 const emit = defineEmits<{
   /** 点击芯片主体 → 打开对应的 GroupMenu。 */
-  open: []
+  open: [e: MouseEvent]
   /** 点击 × → 取消分组。 */
   remove: []
 }>()
 </script>
 
 <template>
-  <span class="group-chip" data-testid="group-chip" @click="emit('open')">
+  <span class="group-chip" data-testid="group-chip" @click="emit('open', $event)">
     <span class="group-chip-label" data-testid="group-chip-label">分组：{{ label }}</span>
     <button
       type="button"
