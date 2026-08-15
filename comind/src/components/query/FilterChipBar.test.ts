@@ -79,6 +79,24 @@ describe('FilterChipBar', () => {
     expect(w.find('[data-testid="stub-cond"]').exists()).toBe(true)
   })
 
+  it('degrades to raw field key when a condition references a missing field', () => {
+    const dirty: ViewQuery = {
+      version: 1,
+      filter: {
+        combinator: 'and',
+        children: [{ field: 'ghostField', op: 'contains', value: { kind: 'literal', value: 'x' } }],
+      },
+      sort: [],
+      groupBy: null,
+    }
+    // 此前会因为 fieldOf(...) 返回 undefined 而被 `!` 断言掩盖，触发
+    // "Cannot read properties of undefined (reading 'label')"。
+    expect(() => mountBar({ modelValue: dirty })).not.toThrow()
+    const w = mountBar({ modelValue: dirty })
+    expect(w.findAll('[data-testid="bar-filter-chip"]')).toHaveLength(1)
+    expect(w.find('[data-testid="bar-filter-chip"]').text()).toContain('ghostField')
+  })
+
   it('+ Filter → select field adds a condition and opens editor', async () => {
     const w = mountBar()
     await w.find('[data-testid="bar-add-filter"]').trigger('click')

@@ -104,6 +104,11 @@ const sorts = computed(() => props.modelValue.sort)
 function sortLabel(key: string): string {
   return fieldOf(key)?.label ?? key
 }
+/** 条件摘要；字段缺失（如指向已删除/未加载字段的脏数据）时降级为原始 key。 */
+function condLabel(c: Condition): string {
+  const f = fieldOf(c.field)
+  return f ? summarizeCondition(f, c) : c.field
+}
 function onSortUpdate(index: number, rule: SortRule) {
   const sort = [...props.modelValue.sort]
   sort[index] = rule
@@ -190,7 +195,7 @@ defineExpose({ openSortMenu, openGroupMenu })
       <FilterChip
         v-for="(c, i) in flatConds"
         :key="'c' + i"
-        :label="summarizeCondition(fieldOf(c.field)!, c)"
+        :label="condLabel(c)"
         data-testid="bar-filter-chip"
         @click="openAt({ kind: 'cond', index: i }, $event)"
         @remove="onCondRemove(i)"
