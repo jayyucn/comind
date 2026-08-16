@@ -235,26 +235,26 @@ describe('QueryChipBar (ADR-0013)', () => {
 
   it('REGRESSION: 选中字段后显示 chipbar（visible 内聚，无需父级事件）', async () => {
     const w = mountBar()
-    expect((w.vm as unknown as { isVisible: () => boolean }).isVisible()).toBe(false)
+    expect(w.find('[data-testid="chipbar-wrap"]').classes()).not.toContain('is-open')
     await w.find('[data-testid="bar-add-filter"]').trigger('click')
     await w.findComponent({ name: 'FieldSelectMenu' }).vm.$emit('select', 'createdAt')
     await w.vm.$nextTick()
-    expect((w.vm as unknown as { isVisible: () => boolean }).isVisible()).toBe(true)
+    expect(w.find('[data-testid="chipbar-wrap"]').classes()).toContain('is-open')
   })
 
   it('REGRESSION: 空态选中分组字段后显示 chipbar', async () => {
     const w = mountBar({ modelValue: { ...INITIAL, groupBy: null } })
-    expect((w.vm as unknown as { isVisible: () => boolean }).isVisible()).toBe(false)
-    ;(w.vm as unknown as { openGroupMenu: (el?: HTMLElement) => void }).openGroupMenu(undefined)
+    expect(w.find('[data-testid="chipbar-wrap"]').classes()).not.toContain('is-open')
+    ;(w.vm as unknown as { openToolbarMenu: (kind: string, el?: HTMLElement) => void }).openToolbarMenu('group', undefined)
     await w.vm.$nextTick()
     await w.findComponent({ name: 'GroupMenu' }).vm.$emit('update:groupBy', 'type')
     await w.vm.$nextTick()
-    expect((w.vm as unknown as { isVisible: () => boolean }).isVisible()).toBe(true)
+    expect(w.find('[data-testid="chipbar-wrap"]').classes()).toContain('is-open')
   })
 
-  it('openSortMenu (no sorts) adds a sort and opens SortMenu', async () => {
+  it('openToolbarMenu sort (no sorts) adds a sort and opens SortMenu', async () => {
     const w = mountBar({ modelValue: { ...INITIAL, sort: [] } })
-    ;(w.vm as unknown as { openSortMenu: (el?: HTMLElement) => void }).openSortMenu(undefined)
+    ;(w.vm as unknown as { openToolbarMenu: (kind: string, el?: HTMLElement) => void }).openToolbarMenu('sort', undefined)
     await w.vm.$nextTick()
     const m = w.emitted('update:modelValue')!.at(-1)![0] as ViewQuery
     expect(m.sort).toHaveLength(1)
@@ -262,9 +262,9 @@ describe('QueryChipBar (ADR-0013)', () => {
     expect(w.find('[data-testid="stub-sort"]').exists()).toBe(true)
   })
 
-  it('openGroupMenu opens GroupMenu without mutating modelValue', async () => {
+  it('openToolbarMenu group opens GroupMenu without mutating modelValue', async () => {
     const w = mountBar({ modelValue: { ...INITIAL, groupBy: null } })
-    ;(w.vm as unknown as { openGroupMenu: (el?: HTMLElement) => void }).openGroupMenu(undefined)
+    ;(w.vm as unknown as { openToolbarMenu: (kind: string, el?: HTMLElement) => void }).openToolbarMenu('group', undefined)
     await w.vm.$nextTick()
     expect(w.find('[data-testid="stub-group"]').exists()).toBe(true)
     expect(w.emitted('update:modelValue')).toBeUndefined()

@@ -141,6 +141,10 @@ const flatItems = computed(() => {
 const hasNested = computed(() => props.modelValue.filter.children.some((c) => !isCondition(c)))
 /** 筛选区是否确有 chip（高级聚合或扁平条件）—用于决定 group→filters 分割线是否出现。 */
 const hasFilterChips = computed(() => hasNested.value || flatConds.value.length > 0)
+// 三按钮「是否有内容」判定（供 openToolbarMenu 分态；与 PagesLibrary 给 QueryToolbar 的描边态同源）
+const hasFilter = computed(() => props.modelValue.filter.children.length > 0)
+const hasSort = computed(() => props.modelValue.sort.length > 0)
+const hasGroup = computed(() => props.modelValue.groupBy !== null)
 /** sort 之后有 group 或 filters 才画分割线（sort | group / sort | filters）。 */
 const divAfterSort = computed(
   () => props.modelValue.sort.length > 0 && (!!props.modelValue.groupBy || hasFilterChips.value),
@@ -327,12 +331,42 @@ function openGroupMenu(el?: HTMLElement | null) {
   active.value = { kind: 'group' }
 }
 
+/**
+ * Header 三按钮（筛选/排序/分组）的统一入口——把「toolbar 请求如何处理」的策略内聚于此，
+ * 而不是让父级去读 isVisible()/toggleVisible()/openFieldMenu() 等原语再拼分支。
+ * 规则（以 chipbar 当前显隐为准，不被「该类型是否有内容」绑架）：
+ *  - 筛选：已展开→收起；已收起+有内容→展开（不弹菜单）；已收起+无内容→只弹字段菜单
+ *  - 排序/分组：无内容→只弹菜单（选中字段后 chipbar 自行显示）；有内容→切换 chipbar + 额外展开菜单
+ */
+function openToolbarMenu(kind: 'filter' | 'sort' | 'group', el?: HTMLElement | null) {
+  const barVisible = visible.value
+  const has = kind === 'filter' ? hasFilter.value : kind === 'sort' ? hasSort.value : hasGroup.value
+  if (kind === 'filter') {
+    if (barVisible) {
+      visible.value = false // 已展开 → 收起（即便筛选 chip 为空也折叠）
+      return
+    }
+    if (has) {
+      visible.value = true // 已收起且有内容 → 展开（不弹菜单）
+      return
+    }
+    openFieldMenu(el) // 已收起且无内容 → 只弹字段菜单
+    return
+  }
+  // 排序 / 分组
+  if (!has) {
+    if (kind === 'sort') openSortMenu(el)
+    else openGroupMenu(el)
+    return
+  }
+  visible.value = !visible.value
+  if (!visible.value) return
+  if (kind === 'sort') openSortMenu(el)
+  else openGroupMenu(el)
+}
+
 defineExpose({
-  openFieldMenu,
-  openSortMenu,
-  openGroupMenu,
-  toggleVisible: () => (visible.value = !visible.value),
-  isVisible: () => visible.value,
+  openToolbarMenu,
 })
 </script>
 

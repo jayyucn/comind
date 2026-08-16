@@ -39,32 +39,13 @@ const hasFilter = computed(() => viewQuery.value.filter.children.length > 0)
 const hasSort = computed(() => viewQuery.value.sort.length > 0)
 const hasGroup = computed(() => viewQuery.value.groupBy !== null)
 
-// Header 三按钮处理（筛选/排序/分组共用，按 kind 分态）
-// chipbar 的显隐现已内聚到 QueryChipBar（选中字段后由它自行显示并锚定 popover），
-// 父级只通过 chipBarRef 暴露的 toggleVisible / isVisible 控制展开收起，
-// 并通过 visible-change 同步 chipBarVisible 给 QueryToolbar 的描边态。
-// 规则：
-//  - 空态（该类型无内容）：只弹出对应菜单（选中字段后 QueryChipBar 会自行显示）
-//  - 非空态：筛选只切换 chipbar；排序/分组切换 chipbar + 额外展开菜单
+// Header 三按钮处理（筛选/排序/分组共用）
+// chipbar 的显隐与「toolbar 请求如何处理」的策略均已内聚到 QueryChipBar
+// （openToolbarMenu：选中字段后由它自行显示并锚定 popover；toolbar 点击的 toggle/开菜单分支也由它决定）。
+// 父级只把按钮点击转发给 chipBarRef.openToolbarMenu，并通过 visible-change 同步 chipBarVisible
+// 给 QueryToolbar 的描边态。hasFilter/hasSort/hasGroup 仍留此处，仅用于 QueryToolbar 的按钮描边态。
 function openChipMenu(kind: 'filter' | 'sort' | 'group', e: MouseEvent) {
-  const ref = chipBarRef.value
-  if (!ref) return
-  const el = e.currentTarget as HTMLElement
-  const hasContent =
-    kind === 'filter' ? hasFilter.value : kind === 'sort' ? hasSort.value : hasGroup.value
-  if (!hasContent) {
-    // 空态：只弹出菜单（chipbar 由 QueryChipBar 在选中字段后自行显示）
-    if (kind === 'filter') ref.openFieldMenu(el)
-    else if (kind === 'sort') ref.openSortMenu(el)
-    else ref.openGroupMenu(el)
-    return
-  }
-  // 非空态：先切换 chipbar 显隐
-  ref.toggleVisible()
-  if (kind === 'filter') return // 筛选只切换，不弹菜单
-  if (!ref.isVisible()) return // 收起态不展开菜单
-  if (kind === 'sort') ref.openSortMenu(el)
-  else ref.openGroupMenu(el)
+  chipBarRef.value?.openToolbarMenu(kind, e.currentTarget as HTMLElement)
 }
 
 // 跨记录字段引用所需的求值上下文：按 id 取 Page（用全量 store，不受搜索过滤影响）。
