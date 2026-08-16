@@ -4,6 +4,7 @@ import router from './router'
 import './styles/main.scss'
 import App from './App.vue'
 import { initCoreClient, getCoreClient } from './wasm/client'
+import { initOverlayScrollbars } from './utils/overlayScrollbar'
 
 async function bootstrap() {
   try {
@@ -27,6 +28,8 @@ async function bootstrap() {
   const app = createApp(App)
   app.use(createPinia())
   app.use(router)
+  // 全局浮层滚动条：隐藏原生滚动条，改为滚动/悬停时浮现的浮层指示条（Chromium）。
+  initOverlayScrollbars()
   // 等待初始导航完成（router.beforeEach 守卫执行完毕）后再挂载，
   // 确保 App.vue onMounted 中的 checkAndEnsureTodayIdeas 不会与守卫并发执行，
   // 避免重复创建页面及 loadPageBlocks 覆盖内存中尚未持久化的 block。

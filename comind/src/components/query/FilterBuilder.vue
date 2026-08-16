@@ -12,13 +12,18 @@ import { Plus, X } from 'lucide-vue-next'
 import type { FieldDescriptor, ReferenceableRecord, Registry, SortRule, ViewQuery } from '../../core/query'
 import ConditionGroup from './ConditionGroup.vue'
 
-const props = defineProps<{
-  registry: Registry
-  entityType: string
-  modelValue: ViewQuery
-  /** 跨记录引用候选记录列表（通用，业务无关），从业务层注入。 */
-  crossRecordSources?: ReferenceableRecord[]
-}>()
+const props = withDefaults(
+  defineProps<{
+    registry: Registry
+    entityType: string
+    modelValue: ViewQuery
+    /** 跨记录引用候选记录列表（通用，业务无关），从业务层注入。 */
+    crossRecordSources?: ReferenceableRecord[]
+    /** 是否渲染排序/分组区。页面库高级筛选（popover）置 false 仅保留筛选条件（ADR-0013 D5）；TaskHub 保持默认 true。 */
+    showSortGroup?: boolean
+  }>(),
+  { showSortGroup: true },
+)
 
 const emit = defineEmits<{ 'update:modelValue': [ViewQuery] }>()
 
@@ -67,7 +72,6 @@ watch(
   <div class="qb-builder">
     <!-- 条件区 -->
     <section class="qb-section">
-      <h4 class="qb-section-title">筛选条件</h4>
       <ConditionGroup
         v-model="query.filter"
         :registry="registry"
@@ -78,7 +82,7 @@ watch(
     </section>
 
     <!-- 排序区（多键） -->
-    <section class="qb-section">
+    <section v-if="showSortGroup" class="qb-section">
       <h4 class="qb-section-title">排序</h4>
       <div class="qb-sort-list">
         <div v-for="(rule, i) in query.sort" :key="i" class="qb-sort-row">
@@ -106,7 +110,7 @@ watch(
     </section>
 
     <!-- 分组区（单字段） -->
-    <section class="qb-section">
+    <section v-if="showSortGroup" class="qb-section">
       <h4 class="qb-section-title">分组</h4>
       <select class="qb-select" :value="query.groupBy" @change="query.groupBy = ($event.target as HTMLSelectElement).value || null">
         <option :value="null">不分组</option>

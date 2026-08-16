@@ -117,21 +117,6 @@ function handleCancelRename() {
   flex: 1;
   overflow-y: auto;
   padding: 0 4px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
-}
-
-.section-content::-webkit-scrollbar {
-  width: 4px;
-}
-
-.section-content::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 2px;
-}
-
-.section-content::-webkit-scrollbar-track {
-  background: transparent;
 }
 
 .empty-text {

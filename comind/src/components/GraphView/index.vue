@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed, nextTick, watch } from 'vue'
-import { Graph } from '@antv/g6'
 import type { EdgeData, NodeData } from '@antv/g6'
-import { usePageStore } from '../../stores/pages'
-import { useBlockStore } from '../../stores/blocks'
-import { getRelationshipStrength, STRENGTH_TO_WIDTH } from '../../types/relationship'
-import { useRouter } from 'vue-router'
+import { Graph } from '@antv/g6'
 import { Download, ExpandIcon, RefreshCw } from 'lucide-vue-next'
-import { getNodeStyle, getEdgeStyle } from './graphStyle'
-import { createAccumulator, traverseBFS, buildFullGraph, type RawLink, type VisibilityMap, type GraphSnapshot } from './graphData'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { useBlockStore } from '../../stores/blocks'
+import { usePageStore } from '../../stores/pages'
+import { getRelationshipStrength, STRENGTH_TO_WIDTH } from '../../types/relationship'
+import { buildFullGraph, createAccumulator, traverseBFS, type GraphSnapshot, type RawLink, type VisibilityMap } from './graphData'
+import { getEdgeStyle, getNodeStyle } from './graphStyle'
 
 const pageStore = usePageStore()
 const blockStore = useBlockStore()
@@ -164,7 +164,7 @@ async function initGraph() {
     container,
     width,
     height,
-    padding: [50,0, 100, 0],
+    padding: [50, 0, 100, 0],
     canvas: {
       enableMultiLayer: false,
     },
@@ -417,37 +417,29 @@ onBeforeUnmount(() => {
 <template>
   <div class="graph-view">
     <div class="graph-view-header">
-      <h1 class="graph-view-title">图谱</h1>
-      <span v-if="fullGraphTruncated" class="graph-truncated-note" title="节点数超过安全上限，已优先显示最近的页面；可用筛选缩小范围">
-        已显示部分节点
-      </span>
       <div class="graph-view-controls">
         <div class="control-group">
-          <button
-            v-for="layout in ['force', 'radial', 'dagre']"
-            :key="layout"
-            class="layout-btn"
-            :class="{ active: currentLayout === layout }"
-            @click="handleLayoutChange(layout)"
-          >
+          <button v-for="layout in ['force', 'radial', 'dagre']" :key="layout" class="layout-btn"
+            :class="{ active: currentLayout === layout }" @click="handleLayoutChange(layout)">
             {{ layout === 'force' ? '力导向' : layout === 'radial' ? '径向' : '层级' }}
           </button>
         </div>
         <div class="control-group">
-          <button class="control-btn" title="适应视图" @click="handleFitView"><ExpandIcon /></button>
-          <button class="control-btn" title="刷新" @click="handleRefresh"><RefreshCw /></button>
-          <button class="control-btn" title="导出 PNG" @click="handleExportPng"><Download /></button>
+          <button class="control-btn" title="适应视图" @click="handleFitView">
+            <ExpandIcon />
+          </button>
+          <button class="control-btn" title="刷新" @click="handleRefresh">
+            <RefreshCw />
+          </button>
+          <button class="control-btn" title="导出 PNG" @click="handleExportPng">
+            <Download />
+          </button>
         </div>
         <div v-if="isPageScoped" class="depth-control">
           <span class="depth-label">层级</span>
           <div class="depth-options">
-            <button
-              v-for="d in [1, 2, 3]"
-              :key="d"
-              class="depth-btn"
-              :class="{ active: maxDepth === d }"
-              @click="maxDepth = d"
-            >{{ d }}</button>
+            <button v-for="d in [1, 2, 3]" :key="d" class="depth-btn" :class="{ active: maxDepth === d }"
+              @click="maxDepth = d">{{ d }}</button>
           </div>
         </div>
       </div>
@@ -488,27 +480,19 @@ onBeforeUnmount(() => {
   position: relative;
 }
 
-.graph-view-title {
-  margin-left: var(--space-3);
-  font-size: var(--text-2xl);
-  font-weight: var(--font-semibold);
-  color: var(--text-primary);
-}
-
-.graph-truncated-note {
-  margin-left: var(--space-2);
-  padding: 2px 8px;
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-  background: var(--bg-hover);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  white-space: nowrap;
+/* 让 PageTitle 占据整行，actions（控件）推到最右 */
+.graph-view-header .page-title-container {
+  flex: 1;
+  min-width: 0;
 }
 
 .graph-view-controls {
   display: flex;
   align-items: center;
+  width: 100%;
+  justify-content: space-between;
+  padding-left: var(--space-12);
+  padding-right: var(--space-4);
   gap: var(--space-4);
   flex-wrap: wrap;
 }
@@ -517,7 +501,9 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  margin-right: var(--space-4);
+}
+.control-group-left {
+  padding-left: var(--space-8);
 }
 
 .control-label {

@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { usePageStore } from '../../stores/pages'
 import FilterPanel from './FilterPanel.vue'
-import { computeVisibility, EMPTY_VISIBILITY, type FilterState, type SelectorNode, type SelectorEdge } from './graphSelectors'
 import { snapshotToSelectorEdges, type GraphSnapshot } from './graphData'
-import { getOrFetchGraphEdges, refreshGraphSnapshotCache, getCachedGraphEdges } from './graphSnapshotCache'
+import { computeVisibility, EMPTY_VISIBILITY, type FilterState, type SelectorEdge, type SelectorNode } from './graphSelectors'
+import { getCachedGraphEdges, getOrFetchGraphEdges, refreshGraphSnapshotCache } from './graphSnapshotCache'
 
 // 静态引入（非懒加载）：GraphPage 已被 routes.ts 静态引入（在首屏 entry 内），
 // 故 G6 这一重依赖也一并随首屏加载，避免刷新后点图谱时该懒 chunk 的 import() 被
 // dev server 模块 backlog 排队、导致画布又卡 ~2.7s 才出现。代价是首屏体积略增（桌面端可接受）。
+import PageTitle from '../common/PageTitle.vue'
 import GraphView from './index.vue'
 const pageStore = usePageStore()
 
@@ -184,15 +185,24 @@ watch(graphViewRef, () => {
 </script>
 
 <template>
+  <div class="graph-page-header">
+    <PageTitle title="图谱" subtitle="已显示部分节点" />
+  </div>
   <div class="graph-page">
     <div class="graph-page-sidebar">
       <FilterPanel @filter-change="handleFilterChange" @collapsed-change="handleCollapsedChange" />
     </div>
-    <GraphView ref="graphViewRef" v-bind="graphProps" :graph-snapshot="graphSnapshot" @request-refresh="handleRequestRefresh" />
+    <GraphView ref="graphViewRef" v-bind="graphProps" :graph-snapshot="graphSnapshot"
+      @request-refresh="handleRequestRefresh" />
   </div>
 </template>
 
 <style scoped>
+/* 标题与其它页面统一左边距（space-8 页面留白 + PageTitle 自身 space-4 内缩） */
+.graph-page-header {
+  padding: 0 var(--space-8);
+}
+
 .graph-page {
   position: relative;
   display: flex;
@@ -211,5 +221,6 @@ watch(graphViewRef, () => {
   padding-left: v-bind(sidebarWidth);
   transition: padding-left 200ms ease;
 }
-
+.graph-page :deep(.graph-view-body) {
+}
 </style>

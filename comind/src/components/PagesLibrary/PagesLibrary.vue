@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { usePageStore } from '../../stores/pages'
+import { CalendarDays, LayoutGrid } from 'lucide-vue-next'
+import { computed, onMounted, ref } from 'vue'
+import { filterSortPages, runPageQuery } from '../../composables/usePageQueryEngine'
 import { getPageRegistry, PAGE_ENTITY } from '../../composables/usePageQueryRegistry'
-import { runPageQuery, filterSortPages } from '../../composables/usePageQueryEngine'
 import type { QueryContext, ViewQuery } from '../../core/query'
+import { usePageStore } from '../../stores/pages'
 import type { Page } from '../../types/page'
-import PageTableView from './PageTableView.vue'
+import PageTitle from '../common/PageTitle.vue'
+import QueryChipBar from '../query/QueryChipBar.vue'
+import QueryToolbar from '../query/QueryToolbar.vue'
 import PageCalendarView from './PageCalendarView.vue'
-import FilterBuilder from '../query/FilterBuilder.vue'
-import { SlidersHorizontal, X, Search, LayoutGrid, CalendarDays, ListFilter } from 'lucide-vue-next'
+import PageTableView from './PageTableView.vue'
 
 defineOptions({ name: 'PagesLibrary' })
 
@@ -26,8 +28,25 @@ const viewQuery = ref<ViewQuery>({
   sort: [],
   groupBy: null,
 })
-const showFilterPanel = ref(false)
 const searchQuery = ref('')
+
+// 芯片行显隐（Filter 按钮切换展开/收起）
+const chipBarVisible = ref(false)
+const chipBarRef = ref<InstanceType<typeof QueryChipBar> | null>(null)
+
+// Header 三按钮激活态
+const hasFilter = computed(() => viewQuery.value.filter.children.length > 0)
+const hasSort = computed(() => viewQuery.value.sort.length > 0)
+const hasGroup = computed(() => viewQuery.value.groupBy !== null)
+
+// Header 三按钮处理（筛选/排序/分组共用）
+// chipbar 的显隐与「toolbar 请求如何处理」的策略均已内聚到 QueryChipBar
+// （openToolbarMenu：选中字段后由它自行显示并锚定 popover；toolbar 点击的 toggle/开菜单分支也由它决定）。
+// 父级只把按钮点击转发给 chipBarRef.openToolbarMenu，并通过 visible-change 同步 chipBarVisible
+// 给 QueryToolbar 的描边态。hasFilter/hasSort/hasGroup 仍留此处，仅用于 QueryToolbar 的按钮描边态。
+function openChipMenu(kind: 'filter' | 'sort' | 'group', e: MouseEvent) {
+  chipBarRef.value?.openToolbarMenu(kind, e.currentTarget as HTMLElement)
+}
 
 // 跨记录字段引用所需的求值上下文：按 id 取 Page（用全量 store，不受搜索过滤影响）。
 // 不提供时 recordRef 引用一律非匹配。
@@ -74,72 +93,37 @@ onMounted(async () => {
 
 <template>
   <div class="pages-library">
+    <PageTitle title="页面库" :subtitle="`${filteredPages.length} 个页面`" />
     <!-- 顶栏 -->
     <header class="lib-header">
       <div class="header-left">
-        <h1 class="lib-title">页面库</h1>
-        <span class="lib-count">{{ filteredPages.length }} 个页面</span>
-      </div>
-
-      <div class="header-actions">
-        <!-- 搜索 -->
-        <div class="search-box">
-          <Search :size="14" :stroke-width="1.5" class="search-icon" />
-          <input
-            v-model="searchQuery"
-            type="text"
-            placeholder="搜索标题..."
-            class="search-input"
-          />
-        </div>
-
         <!-- 视图切换 -->
         <div class="view-switcher">
-          <button
-            :class="{ active: viewMode === 'table' }"
-            title="表格视图"
-            @click="viewMode = 'table'"
-          >
+          <button :class="{ active: viewMode === 'table' }" title="表格视图" @click="viewMode = 'table'">
             <LayoutGrid :size="15" />
           </button>
-          <button
-            :class="{ active: viewMode === 'calendar' }"
-            title="日历视图"
-            @click="viewMode = 'calendar'"
-          >
+          <button :class="{ active: viewMode === 'calendar' }" title="日历视图" @click="viewMode = 'calendar'">
             <CalendarDays :size="15" />
           </button>
         </div>
+      </div>
 
-        <!-- 筛选按钮 -->
-        <button
-          class="filter-btn"
-          :class="{ active: showFilterPanel || viewQuery.filter.children.length > 0 }"
-          title="筛选与排序"
-          @click="showFilterPanel = !showFilterPanel"
-        >
-          <ListFilter :size="15" />
-        </button>
+      <div class="header-actions">
+
+
+        <!-- 查询工具条：筛选 / 排序 / 分组 三按钮 + 搜索（提取到 QueryToolbar） -->
+        <QueryToolbar v-model="searchQuery" :has-filter="hasFilter" :has-sort="hasSort" :has-group="hasGroup"
+          :chip-bar-visible="chipBarVisible" @filter="openChipMenu('filter', $event)"
+          @sort="openChipMenu('sort', $event)" @group="openChipMenu('group', $event)" />
       </div>
     </header>
 
-    <!-- 筛选面板（可折叠） -->
-    <Transition name="slide">
-      <div v-if="showFilterPanel" class="filter-panel">
-        <div class="filter-panel-header">
-          <span class="filter-panel-title">筛选条件</span>
-          <button class="filter-close" @click="showFilterPanel = false">
-            <X :size="14" />
-          </button>
-        </div>
-        <FilterBuilder
-          :registry="registry"
-          :entity-type="PAGE_ENTITY"
-          :cross-record-sources="crossRecordSources"
-          v-model="viewQuery"
-        />
-      </div>
-    </Transition>
+    <!-- 筛选芯片行（Header 与 主内容之间）。
+         chipbar 的显隐现已内聚到 QueryChipBar 自身（选中字段后自行显示 + 锚定 popover），
+         父级不再用 v-if/v-show 控制挂载，仅经 visible-change 同步描边态。 -->
+    <QueryChipBar ref="chipBarRef" v-model="viewQuery" :fields="pageRefFields"
+      :registry="registry" :entity-type="PAGE_ENTITY" :cross-record-sources="crossRecordSources"
+      @visible-change="chipBarVisible = $event" />
 
     <!-- 主内容区 -->
     <main class="lib-body">
@@ -154,6 +138,7 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   height: 100%;
+  padding: 0 var(--space-8);
   min-height: 0;
   overflow: hidden;
   background: var(--bg-base);
@@ -164,7 +149,8 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 20px;
+  padding: 12px 0 4px;
+  margin: 0 var(--space-4);
   border-bottom: 1px solid var(--border);
   gap: 16px;
   flex-shrink: 0;
@@ -177,20 +163,6 @@ onMounted(async () => {
   min-width: 0;
 }
 
-.lib-title {
-  font-size: var(--text-lg);
-  font-weight: var(--font-bold);
-  color: var(--text-primary);
-  margin: 0;
-  white-space: nowrap;
-}
-
-.lib-count {
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-  white-space: nowrap;
-}
-
 .header-actions {
   display: flex;
   align-items: center;
@@ -198,42 +170,7 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 
-/* 搜索 */
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-base2);
-  width: 200px;
-  transition: border-color 120ms ease, background 120ms ease;
-}
-
-.search-box:focus-within {
-  border-color: var(--accent, #6366f1);
-  background: var(--bg-base);
-}
-
-.search-icon {
-  color: var(--text-tertiary);
-  flex-shrink: 0;
-}
-
-.search-input {
-  border: none;
-  outline: none;
-  background: transparent;
-  font-size: var(--text-sm);
-  color: var(--text-primary);
-  width: 100%;
-  min-width: 0;
-}
-
-.search-input::placeholder {
-  color: var(--text-tertiary);
-}
+/* 搜索框 / 三按钮样式已迁移至 src/components/query/QueryToolbar.vue */
 
 /* 视图切换器 */
 .view-switcher {
@@ -266,73 +203,7 @@ onMounted(async () => {
   color: var(--accent, #6366f1);
 }
 
-/* 筛选按钮 */
-.filter-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 30px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-base);
-  color: var(--text-tertiary);
-  cursor: pointer;
-  transition: background 80ms ease, color 80ms ease, border-color 120ms ease;
-}
-
-.filter-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-}
-
-.filter-btn.active {
-  border-color: var(--accent, #6366f1);
-  color: var(--accent, #6366f1);
-  background: var(--accent-bg, rgba(99, 102, 241, 0.08));
-}
-
-/* ── 筛选面板 ── */
-.filter-panel {
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-base2);
-  padding: 12px 20px;
-  flex-shrink: 0;
-  max-height: 400px;
-  overflow-y: auto;
-}
-
-.filter-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.filter-panel-title {
-  font-size: var(--text-sm);
-  font-weight: var(--font-semibold);
-  color: var(--text-secondary);
-}
-
-.filter-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-tertiary);
-  cursor: pointer;
-  transition: background 80ms ease;
-}
-
-.filter-close:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
+/* 筛选 / 排序 / 分组 三按钮样式已迁移至 src/components/query/QueryToolbar.vue */
 
 /* ── 主内容 ── */
 .lib-body {
@@ -340,26 +211,5 @@ onMounted(async () => {
   min-height: 0;
   overflow: auto;
   padding: 16px 20px;
-}
-
-/* ── 过渡动画 ── */
-.slide-enter-active,
-.slide-leave-active {
-  transition: all 200ms ease;
-  overflow: hidden;
-}
-
-.slide-enter-from,
-.slide-leave-to {
-  opacity: 0;
-  max-height: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-}
-
-.slide-enter-to,
-.slide-leave-from {
-  opacity: 1;
-  max-height: 400px;
 }
 </style>

@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { usePageStore } from '../../stores/pages'
 import ConfirmDialog from '../ConfirmDialog.vue'
 import { Icon } from '../Icons'
+import PageTitle from '../common/PageTitle.vue'
 
 const router = useRouter()
 const pageStore = usePageStore()
@@ -60,8 +61,7 @@ function formatDate(timestamp: number): string {
 <template>
   <div class="trash-list-view">
     <div class="trash-header">
-      <h1 class="trash-title">回收站</h1>
-      <span class="trash-count">{{ pageStore.trashPages.length }} 个页面</span>
+      <PageTitle title="回收站" :subtitle="`${pageStore.trashPages.length} 个页面`" />
     </div>
 
     <div class="trash-list">
@@ -121,28 +121,13 @@ function formatDate(timestamp: number): string {
   width: 100%;
   margin: 0 auto;
   box-sizing: border-box;
+  padding: 0 var(--space-8);
 }
 
 .trash-header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
   margin-bottom: var(--space-6);
   padding-bottom: var(--space-4);
   border-bottom: 1px solid var(--border);
-}
-
-.trash-title {
-  font-family: var(--font-sans);
-  font-size: var(--text-xl);
-  font-weight: var(--font-semibold);
-  color: var(--text-primary);
-  margin: 0;
-}
-
-.trash-count {
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
 }
 
 .trash-list {

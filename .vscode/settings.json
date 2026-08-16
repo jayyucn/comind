@@ -6,5 +6,8 @@
     "explorer.fileNesting.enabled": true,
     "explorer.fileNesting.patterns": {
         "*.ts": "${capture}.test.ts, ${capture}.spec.ts"
+    },
+    "editor.codeActionsOnSave": {
+        "source.organizeImports": "explicit"
     }
 }

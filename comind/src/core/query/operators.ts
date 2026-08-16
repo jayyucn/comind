@@ -11,9 +11,9 @@ import type { FieldDescriptor, FilterOp } from './types'
 export const DEFAULT_OPS: Record<string, FilterOp[]> = {
   text: ['is', 'isNot', 'contains', 'notContains', 'isEmpty', 'isNotEmpty'],
   number: ['eq', 'neq', 'gt', 'lt', 'isEmpty', 'isNotEmpty'],
-  date: ['before', 'after', 'between', 'isEmpty', 'isNotEmpty'],
+  date: ['before', 'after', 'between', 'within', 'isEmpty', 'isNotEmpty'],
   select: ['is', 'isNot', 'isEmpty', 'isNotEmpty'],
-  multiSelect: ['hasAny', 'hasAll', 'isEmpty', 'isNotEmpty'],
+  multiSelect: ['contains', 'notContains', 'hasAll', 'isEmpty', 'isNotEmpty'],
   boolean: ['is'],
 }
 

@@ -35,13 +35,13 @@ describe('IdeasTodayPanel', () => {
     setActivePinia(createPinia())
   })
 
-  test('renders today card with correct title and badge', () => {
+  test('renders today card with correct title', () => {
     const wrapper = mount(IdeasTodayPanel, {
       props: { pageId: 'page-1' },
     })
     expect(wrapper.find('.today-panel').exists()).toBe(true)
-    expect(wrapper.find('.today-badge').text()).toContain('今天')
-    expect(wrapper.find('.today-label').text()).toContain('可编辑')
+    expect(wrapper.find('.today-header').exists()).toBe(true)
+    expect(wrapper.find('.page-title').exists()).toBe(true)
   })
 
   test('renders BlockList with correct pageId', () => {

@@ -1,36 +1,35 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { getCurrentWindow } from '@tauri-apps/api/window'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import Sidebar from './components/Sidebar/index.vue'
-import PageMenuButton from './components/PageMenuButton.vue'
+import BlockSelector from './components/BlockSelector.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
-import SettingsModal from './components/Settings/SettingsModal.vue'
-import Toast from './components/Toast.vue'
 import DateTimePickerPanel from './components/DateTimePickerPanel.vue'
-import NotificationBell from './components/NotificationBell.vue'
-import { useEditorStore } from './stores/editor'
-import { useDateTimePickerPanel } from './composables/useDateTimePickerPanel'
-import { useBlockStore } from './stores/blocks'
-import { usePageStore } from './stores/pages'
-import { useSidebar } from './composables/useSidebar'
-import { useRightSidebar } from './composables/useRightSidebar'
-import { useRelationshipTypes } from './composables/useRelationshipTypes'
-import { useNotificationScheduler } from './composables/useNotificationScheduler'
-import { useBlockQueryRegistry } from './composables/useBlockQueryRegistry'
-import { usePageQueryRegistry } from './composables/usePageQueryRegistry'
-import { useSyncStatus } from './composables/useSyncStatus'
+import { prefetchGraphSnapshot } from './components/GraphView/graphSnapshotCache'
 import Icon from './components/Icons/Icon.vue'
-import RightSidebar from './components/RightSidebar/index.vue'
-import { registerPanel } from './components/RightSidebar/panels'
+import NotificationBell from './components/NotificationBell.vue'
+import PageMenuButton from './components/PageMenuButton.vue'
 import BlockVersionPanel from './components/RightSidebar/BlockVersionPanel.vue'
 import GraphPanel from './components/RightSidebar/GraphPanel.vue'
+import RightSidebar from './components/RightSidebar/index.vue'
+import { registerPanel } from './components/RightSidebar/panels'
 import SearchPanel from './components/SearchPanel.vue'
-import BlockSelector from './components/BlockSelector.vue'
-import { isTauriEnvironment, tauriMinimizeWindow, tauriToggleMaximizeWindow, tauriCloseWindow, tauriIsMaximized, tauriAutoReconnect } from './wasm/tauri-client'
-import { getCurrentWindow } from '@tauri-apps/api/window'
-import { isAndroidPlatformSync } from './wasm/tauri-client'
+import SettingsModal from './components/Settings/SettingsModal.vue'
+import Sidebar from './components/Sidebar/index.vue'
+import Toast from './components/Toast.vue'
+import { useBlockQueryRegistry } from './composables/useBlockQueryRegistry'
+import { useDateTimePickerPanel } from './composables/useDateTimePickerPanel'
+import { useNotificationScheduler } from './composables/useNotificationScheduler'
+import { usePageQueryRegistry } from './composables/usePageQueryRegistry'
+import { useRelationshipTypes } from './composables/useRelationshipTypes'
+import { useRightSidebar } from './composables/useRightSidebar'
+import { useSidebar } from './composables/useSidebar'
+import { useSyncStatus } from './composables/useSyncStatus'
 import router from './router'
-import { prefetchGraphSnapshot } from './components/GraphView/graphSnapshotCache'
+import { useBlockStore } from './stores/blocks'
+import { useEditorStore } from './stores/editor'
+import { usePageStore } from './stores/pages'
+import { isAndroidPlatformSync, isTauriEnvironment, tauriAutoReconnect, tauriCloseWindow, tauriIsMaximized, tauriMinimizeWindow, tauriToggleMaximizeWindow } from './wasm/tauri-client'
 
 registerPanel({
   id: 'block-version',
@@ -432,18 +431,14 @@ async function handleEmbedSelect(sourceBlockId: string, sourcePageId: string) {
   height: var(--nav-height);
   flex-shrink: 0;
   z-index: 10;
-  background: color-mix(in srgb, var(--bg-base) 50%, transparent);
-  backdrop-filter: blur(12px) saturate(1.2);
-  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  background: transparent;// color-mix(in srgb, var(--bg-base) 50%, transparent);
+  // backdrop-filter: blur(12px) saturate(1.2);
+  // -webkit-backdrop-filter: blur(12px) saturate(1.2);
   // pointer-events: none;
 }
 
 .sticky-header.absolute {
   position: sticky;
-}
-
-.page-scroll-wrapper::-webkit-scrollbar {
-  display: none;
 }
 
 .content-body {
@@ -452,11 +447,6 @@ async function handleEmbedSelect(sourceBlockId: string, sourcePageId: string) {
   overflow-x: hidden;
   min-width: 0;
   min-height: 0;
-  scrollbar-width: none;
-}
-
-.content-body::-webkit-scrollbar {
-  display: none;
 }
 
 .top-right-controls {
