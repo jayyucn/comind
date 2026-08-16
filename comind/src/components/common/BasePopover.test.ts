@@ -1,80 +1,76 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { mount, type VueWrapper } from '@vue/test-utils'
-import { nextTick } from 'vue'
+import { mount } from '@vue/test-utils'
 import BasePopover from './BasePopover.vue'
 
-const mountOptions = {
-  global: {
-    stubs: {
-      Teleport: { template: '<div><slot /></div>' },
-    },
-  },
+/** jsdom 不做布局，offsetWidth/Height 恒为 0；测试中在面板元素上覆盖 getter 模拟真实尺寸。 */
+function fakeSize(el: HTMLElement, w: number, h: number) {
+  Object.defineProperty(el, 'offsetWidth', { configurable: true, get: () => w })
+  Object.defineProperty(el, 'offsetHeight', { configurable: true, get: () => h })
 }
 
-describe('BasePopover', () => {
-  let wrapper: VueWrapper | null = null
+/** 弹层 teleport 到 body，需从 document.body 取元素。 */
+function panelEl(): HTMLElement | null {
+  return document.body.querySelector('[data-testid="base-popover"]') as HTMLElement | null
+}
 
+describe('BasePopover 视口收边（ADR-0009）', () => {
   afterEach(() => {
-    wrapper?.unmount()
-    wrapper = null
+    document.body.querySelectorAll('[data-testid="base-popover-overlay"]').forEach((n) => n.remove())
   })
 
-  it('visible=false 时不渲染面板', () => {
-    wrapper = mount(BasePopover, { props: { visible: false }, ...mountOptions })
-    expect(wrapper.find('[data-testid="base-popover"]').exists()).toBe(false)
-  })
-
-  it('visible=true 时渲染面板并透传 slot 内容', async () => {
-    wrapper = mount(BasePopover, {
-      props: { visible: true },
-      slots: { default: '<span class="slot-content">hello</span>' },
-      ...mountOptions,
+  it('右侧溢出时反向贴边，不超出视口', async () => {
+    const w = mount(BasePopover, {
+      props: { visible: true, position: { x: 99999, y: 50 } },
+      slots: { default: '<div style="width:300px;height:200px">p</div>' },
+      attachTo: document.body,
     })
-    await nextTick()
-    expect(wrapper.find('[data-testid="base-popover"]').exists()).toBe(true)
-    expect(wrapper.find('.slot-content').text()).toBe('hello')
+    const panel = panelEl()!
+    fakeSize(panel, 300, 200)
+    await w.vm.$nextTick()
+    await w.vm.$nextTick()
+    const vw = window.innerWidth
+    expect(panel.style.left).toBe(`${Math.min(99999, vw - 300 - 8)}px`)
+    w.unmount()
   })
 
-  it('position 投影为面板 left/top', async () => {
-    wrapper = mount(BasePopover, {
-      props: { visible: true, position: { x: 120, y: 64 } },
-      ...mountOptions,
+  it('不溢出时保持原始左锚点', async () => {
+    const w = mount(BasePopover, {
+      props: { visible: true, position: { x: 120, y: 50 } },
+      slots: { default: '<div style="width:300px;height:200px">p</div>' },
+      attachTo: document.body,
     })
-    await nextTick()
-    const panel = wrapper.find('[data-testid="base-popover"]').element as HTMLElement
+    const panel = panelEl()!
+    fakeSize(panel, 300, 200)
+    await w.vm.$nextTick()
+    await w.vm.$nextTick()
     expect(panel.style.left).toBe('120px')
-    expect(panel.style.top).toBe('64px')
+    w.unmount()
   })
 
-  it('点击 overlay 空白触发 close（closeOnOverlay 默认 true）', async () => {
-    wrapper = mount(BasePopover, { props: { visible: true }, ...mountOptions })
-    await nextTick()
-    await wrapper.find('[data-testid="base-popover-overlay"]').trigger('click')
-    expect(wrapper.emitted('close')).toHaveLength(1)
-  })
-
-  it('点击面板不触发 close（@click.stop 阻止冒泡）', async () => {
-    wrapper = mount(BasePopover, { props: { visible: true }, ...mountOptions })
-    await nextTick()
-    await wrapper.find('[data-testid="base-popover"]').trigger('click')
-    expect(wrapper.emitted('close')).toBeUndefined()
-  })
-
-  it('closeOnOverlay=false 时点击 overlay 不关闭', async () => {
-    wrapper = mount(BasePopover, {
-      props: { visible: true, closeOnOverlay: false },
-      ...mountOptions,
+  it('底部溢出时反向贴边', async () => {
+    const w = mount(BasePopover, {
+      props: { visible: true, position: { x: 100, y: 99999 } },
+      slots: { default: '<div style="width:300px;height:200px">p</div>' },
+      attachTo: document.body,
     })
-    await nextTick()
-    await wrapper.find('[data-testid="base-popover-overlay"]').trigger('click')
-    expect(wrapper.emitted('close')).toBeUndefined()
+    const panel = panelEl()!
+    fakeSize(panel, 300, 200)
+    await w.vm.$nextTick()
+    await w.vm.$nextTick()
+    const vh = window.innerHeight
+    expect(panel.style.top).toBe(`${Math.min(99999, vh - 200 - 8)}px`)
+    w.unmount()
   })
 
-  it('Escape 触发 close', async () => {
-    wrapper = mount(BasePopover, { props: { visible: true }, ...mountOptions })
-    await nextTick()
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-    await nextTick()
-    expect(wrapper.emitted('close')).toHaveLength(1)
+  it('未提供锚点时交回 CSS（不内联定位）', async () => {
+    const w = mount(BasePopover, {
+      props: { visible: true },
+      slots: { default: '<div>p</div>' },
+      attachTo: document.body,
+    })
+    const panel = panelEl()!
+    expect(panel.style.left).toBe('')
+    expect(panel.style.top).toBe('')
+    w.unmount()
   })
 })

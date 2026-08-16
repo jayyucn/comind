@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 /** 通用弹层原语（ADR-0009 D8）。
  *
@@ -28,12 +28,44 @@ const emit = defineEmits<{
   close: []
 }>()
 
-/** 仅当调用方提供锚点时，才以内联 fixed 定位面板；否则交回 CSS（如相对包裹元素定位）。 */
-const panelStyle = computed(() =>
-  props.position
-    ? { left: `${props.position.x}px`, top: `${props.position.y}px` }
-    : undefined,
+const panelEl = ref<HTMLElement | null>(null)
+const panelW = ref(0)
+const panelH = ref(0)
+const EDGE_MARGIN = 8
+
+function measure() {
+  const el = panelEl.value
+  if (!el) return
+  panelW.value = el.offsetWidth
+  panelH.value = el.offsetHeight
+}
+
+// 显示或锚点变化后重新测量弹层尺寸，用于视口收边（避免超出右侧/底部）
+watch(
+  () => [props.visible, props.position],
+  () => {
+    if (props.visible) nextTick(measure)
+  },
+  { deep: true, immediate: true },
 )
+
+/** 仅当调用方提供锚点时，才以内联 fixed 定位面板；否则交回 CSS（如相对包裹元素定位）。
+ *  同时按测量到的弹层尺寸收边，确保完整落在视口内（默认左/上对齐，溢出时反向贴边）。 */
+const panelStyle = computed(() => {
+  if (!props.position) return undefined
+  const vw = typeof window !== 'undefined' ? window.innerWidth : Number.MAX_SAFE_INTEGER
+  const vh = typeof window !== 'undefined' ? window.innerHeight : Number.MAX_SAFE_INTEGER
+  const rawX = props.position.x
+  const rawY = props.position.y
+  // 收边：弹层右/下溢出视口时反向贴边，至少留 EDGE_MARGIN
+  const x = panelW.value
+    ? Math.min(rawX, Math.max(EDGE_MARGIN, vw - panelW.value - EDGE_MARGIN))
+    : rawX
+  const y = panelH.value
+    ? Math.min(rawY, Math.max(EDGE_MARGIN, vh - panelH.value - EDGE_MARGIN))
+    : rawY
+  return { left: `${x}px`, top: `${y}px` }
+})
 
 function onOverlayClick() {
   if (props.closeOnOverlay) emit('close')
@@ -61,6 +93,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown, true))
       >
         <div
           class="base-popover"
+          ref="panelEl"
           role="dialog"
           data-testid="base-popover"
           :style="panelStyle"
