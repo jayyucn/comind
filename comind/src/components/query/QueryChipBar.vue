@@ -224,11 +224,13 @@ function openAdvanced(e: Event) {
 function openAdvancedFromMenu() {
   close()
   active.value = { kind: 'advanced' }
-  // chipbar 收起时不重置锚点（沿用 +Filter 菜单的 header 按钮锚点），避免高级面板飞到 (0,0)。
-  if (visible.value) {
+  // 展开 chipbar 并锚定到 + Filter 按钮，使高级筛选面板出现在 chipbar 区域内
+  // （而非沿用工具栏按钮的旧坐标导致面板飞到页面顶部）
+  visible.value = true
+  nextTick(() => {
     const btn = addFilterBtn.value
     if (btn) anchorTo(btn)
-  }
+  })
 }
 // 聚合 chip 面板只编辑嵌套子组；扁平条件保持栏上独立 chip，不入面板（ADR-0013 D2 修订）
 function onAdvancedUpdate(q: ViewQuery) {
