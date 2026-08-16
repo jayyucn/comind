@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { ref, nextTick, onMounted, onBeforeUnmount } from 'vue'
-import { Search, ArrowUpDown, ListFilter, Layers, X } from 'lucide-vue-next'
+import { ArrowUpDown, Layers, ListFilter, Search, X } from 'lucide-vue-next';
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 
 defineOptions({ name: 'QueryToolbar' })
 
 /**
  * 页面库顶栏的「查询工具条」展示壳：搜索（可收起开关）+ 筛选/排序/分组 三按钮。
  * 纯展示——不持有任何芯片编排逻辑（芯片行显隐/菜单由父组件经事件回调处理），
- * 故可复用于任意含「搜索 + 筛选/排序/分组」的视图。与 FilterBuilder / FilterChipBar 同目录，
+ * 故可复用于任意含「搜索 + 筛选/排序/分组」的视图。与 FilterBuilder / QueryChipBar 同目录，
  * 仅依赖通用 UI 令牌，不耦合任何实体业务。
  */
 const props = defineProps<{
@@ -26,8 +26,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   /** 搜索词变更，emit 完整新值（父级经 v-model 落库）。 */
   'update:modelValue': [value: string]
-  /** 点筛选按钮——父级负责切换芯片行显隐。 */
-  filter: []
+  /** 点筛选按钮——空态时携带原生事件用于锚定菜单；非空态时父级切换芯片行显隐。 */
+  filter: [e: MouseEvent]
   /** 点排序按钮，携带原生事件用于锚定菜单。 */
   sort: [e: MouseEvent]
   /** 点分组按钮，携带原生事件用于锚定菜单。 */
@@ -82,7 +82,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick, true))
       class="hdr-btn"
       :class="{ active: hasFilter, collapsed: hasFilter && !chipBarVisible }"
       title="筛选"
-      @click="emit('filter')"
+      @click="emit('filter', $event)"
     >
       <ListFilter :size="15" />
     </button>

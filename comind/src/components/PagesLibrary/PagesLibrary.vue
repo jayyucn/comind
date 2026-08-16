@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { CalendarDays, LayoutGrid } from 'lucide-vue-next'
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { filterSortPages, runPageQuery } from '../../composables/usePageQueryEngine'
 import { getPageRegistry, PAGE_ENTITY } from '../../composables/usePageQueryRegistry'
 import type { QueryContext, ViewQuery } from '../../core/query'
 import { usePageStore } from '../../stores/pages'
 import type { Page } from '../../types/page'
 import PageTitle from '../common/PageTitle.vue'
-import FilterChipBar from '../query/FilterChipBar.vue'
+import QueryChipBar from '../query/QueryChipBar.vue'
 import QueryToolbar from '../query/QueryToolbar.vue'
 import PageCalendarView from './PageCalendarView.vue'
 import PageTableView from './PageTableView.vue'
@@ -32,24 +32,39 @@ const searchQuery = ref('')
 
 // 芯片行显隐（Filter 按钮切换展开/收起）
 const chipBarVisible = ref(false)
-const chipBarRef = ref<InstanceType<typeof FilterChipBar> | null>(null)
+const chipBarRef = ref<InstanceType<typeof QueryChipBar> | null>(null)
 
 // Header 三按钮激活态
 const hasFilter = computed(() => viewQuery.value.filter.children.length > 0)
 const hasSort = computed(() => viewQuery.value.sort.length > 0)
 const hasGroup = computed(() => viewQuery.value.groupBy !== null)
 
-// Header 按钮处理
-function onFilterClick() {
-  chipBarVisible.value = !chipBarVisible.value
-}
-function openChipMenu(kind: 'sort' | 'group', e: MouseEvent) {
+// Header 三按钮处理（筛选/排序/分组共用，按 kind 分态）
+// chipbar 的显隐现已内聚到 QueryChipBar（选中字段后由它自行显示并锚定 popover），
+// 父级只通过 chipBarRef 暴露的 toggleVisible / isVisible 控制展开收起，
+// 并通过 visible-change 同步 chipBarVisible 给 QueryToolbar 的描边态。
+// 规则：
+//  - 空态（该类型无内容）：只弹出对应菜单（选中字段后 QueryChipBar 会自行显示）
+//  - 非空态：筛选只切换 chipbar；排序/分组切换 chipbar + 额外展开菜单
+function openChipMenu(kind: 'filter' | 'sort' | 'group', e: MouseEvent) {
+  const ref = chipBarRef.value
+  if (!ref) return
   const el = e.currentTarget as HTMLElement
-  chipBarVisible.value = true
-  nextTick(() => {
-    if (kind === 'sort') chipBarRef.value?.openSortMenu(el)
-    else chipBarRef.value?.openGroupMenu(el)
-  })
+  const hasContent =
+    kind === 'filter' ? hasFilter.value : kind === 'sort' ? hasSort.value : hasGroup.value
+  if (!hasContent) {
+    // 空态：只弹出菜单（chipbar 由 QueryChipBar 在选中字段后自行显示）
+    if (kind === 'filter') ref.openFieldMenu(el)
+    else if (kind === 'sort') ref.openSortMenu(el)
+    else ref.openGroupMenu(el)
+    return
+  }
+  // 非空态：先切换 chipbar 显隐
+  ref.toggleVisible()
+  if (kind === 'filter') return // 筛选只切换，不弹菜单
+  if (!ref.isVisible()) return // 收起态不展开菜单
+  if (kind === 'sort') ref.openSortMenu(el)
+  else ref.openGroupMenu(el)
 }
 
 // 跨记录字段引用所需的求值上下文：按 id 取 Page（用全量 store，不受搜索过滤影响）。
@@ -113,34 +128,21 @@ onMounted(async () => {
       </div>
 
       <div class="header-actions">
-        
+
 
         <!-- 查询工具条：筛选 / 排序 / 分组 三按钮 + 搜索（提取到 QueryToolbar） -->
-        <QueryToolbar
-          v-model="searchQuery"
-          :has-filter="hasFilter"
-          :has-sort="hasSort"
-          :has-group="hasGroup"
-          :chip-bar-visible="chipBarVisible"
-          @filter="onFilterClick"
-          @sort="openChipMenu('sort', $event)"
-          @group="openChipMenu('group', $event)"
-        />
+        <QueryToolbar v-model="searchQuery" :has-filter="hasFilter" :has-sort="hasSort" :has-group="hasGroup"
+          :chip-bar-visible="chipBarVisible" @filter="openChipMenu('filter', $event)"
+          @sort="openChipMenu('sort', $event)" @group="openChipMenu('group', $event)" />
       </div>
     </header>
 
-    <!-- 筛选芯片行（Header 与 主内容之间） -->
-    <Transition name="slide">
-      <FilterChipBar
-        v-if="chipBarVisible"
-        ref="chipBarRef"
-        v-model="viewQuery"
-        :fields="pageRefFields"
-        :registry="registry"
-        :entity-type="PAGE_ENTITY"
-        :cross-record-sources="crossRecordSources"
-      />
-    </Transition>
+    <!-- 筛选芯片行（Header 与 主内容之间）。
+         chipbar 的显隐现已内聚到 QueryChipBar 自身（选中字段后自行显示 + 锚定 popover），
+         父级不再用 v-if/v-show 控制挂载，仅经 visible-change 同步描边态。 -->
+    <QueryChipBar ref="chipBarRef" v-model="viewQuery" :fields="pageRefFields"
+      :registry="registry" :entity-type="PAGE_ENTITY" :cross-record-sources="crossRecordSources"
+      @visible-change="chipBarVisible = $event" />
 
     <!-- 主内容区 -->
     <main class="lib-body">
@@ -228,26 +230,5 @@ onMounted(async () => {
   min-height: 0;
   overflow: auto;
   padding: 16px 20px;
-}
-
-/* ── 过渡动画 ── */
-.slide-enter-active,
-.slide-leave-active {
-  transition: all 200ms ease;
-  overflow: hidden;
-}
-
-.slide-enter-from,
-.slide-leave-to {
-  opacity: 0;
-  max-height: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-}
-
-.slide-enter-to,
-.slide-leave-from {
-  opacity: 1;
-  max-height: 400px;
 }
 </style>

@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import FilterChipBar from './FilterChipBar.vue'
+import QueryChipBar from './QueryChipBar.vue'
 import type { FieldDescriptor, Registry, ViewQuery } from '../../core/query'
 
 // 弹层子组件各自已有单测；此处用 vi.mock 替掉，避免拖入
 // ConditionPopover→ChipValueEditor→CalendarPopover(WASM) 的繁重依赖图，
-// 只聚焦 FilterChipBar 的编排接线（沙箱资源限制下的必要隔离）。
+// 只聚焦 QueryChipBar 的编排接线（沙箱资源限制下的必要隔离）。
 vi.mock('./ConditionPopover.vue', () => ({
   default: {
     name: 'ConditionPopover',
@@ -85,12 +85,12 @@ const EMPTY: ViewQuery = {
 }
 
 function mountBar(props: Record<string, unknown> = {}) {
-  return mount(FilterChipBar, {
+  return mount(QueryChipBar, {
     props: { modelValue: INITIAL, fields: FIELDS, registry: FAKE_REGISTRY, entityType: 'page', ...props },
   })
 }
 
-describe('FilterChipBar (ADR-0013)', () => {
+describe('QueryChipBar (ADR-0013)', () => {
   it('baseline: only + Filter, no resident AND/OR, no + Sort/+ Group, no advanced button', () => {
     const w = mountBar({ modelValue: EMPTY })
     expect(w.find('[data-testid="bar-add-filter"]').exists()).toBe(true)
@@ -231,6 +231,25 @@ describe('FilterChipBar (ADR-0013)', () => {
     await w.setProps({ modelValue: m })
     expect(w.findAll('[data-testid="bar-filter-chip"]')).toHaveLength(2)
     expect(w.find('[data-testid="stub-cond"]').exists()).toBe(true)
+  })
+
+  it('REGRESSION: 选中字段后显示 chipbar（visible 内聚，无需父级事件）', async () => {
+    const w = mountBar()
+    expect((w.vm as unknown as { isVisible: () => boolean }).isVisible()).toBe(false)
+    await w.find('[data-testid="bar-add-filter"]').trigger('click')
+    await w.findComponent({ name: 'FieldSelectMenu' }).vm.$emit('select', 'createdAt')
+    await w.vm.$nextTick()
+    expect((w.vm as unknown as { isVisible: () => boolean }).isVisible()).toBe(true)
+  })
+
+  it('REGRESSION: 空态选中分组字段后显示 chipbar', async () => {
+    const w = mountBar({ modelValue: { ...INITIAL, groupBy: null } })
+    expect((w.vm as unknown as { isVisible: () => boolean }).isVisible()).toBe(false)
+    ;(w.vm as unknown as { openGroupMenu: (el?: HTMLElement) => void }).openGroupMenu(undefined)
+    await w.vm.$nextTick()
+    await w.findComponent({ name: 'GroupMenu' }).vm.$emit('update:groupBy', 'type')
+    await w.vm.$nextTick()
+    expect((w.vm as unknown as { isVisible: () => boolean }).isVisible()).toBe(true)
   })
 
   it('openSortMenu (no sorts) adds a sort and opens SortMenu', async () => {

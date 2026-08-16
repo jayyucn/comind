@@ -4,7 +4,7 @@
 - 日期：2026-08-16
 - 范围：页面库（`PagesLibrary`）芯片行（`FilterChipBar`）及高级筛选面板的**形态与触发**——纯交互层调整，不改无头查询引擎（`src/core/query`）类型。本 ADR 是 ADR-0009 的**修订件**，明确取代其中 D4、D5、D6、D9 的部分结论。
 - 关联代码：
-  - `src/components/query/FilterChipBar.vue`（移除 `FilterCombinatorToggle`；聚合 chip 触发逻辑）
+  - `src/components/query/QueryChipBar.vue`（原名 `FilterChipBar.vue`；移除 `FilterCombinatorToggle`；聚合 chip 触发逻辑）
   - `src/components/query/FilterCombinatorToggle.vue`（**移除**，逻辑移入 popover 面板内）
   - `src/components/query/FilterBuilder.vue`（由大面板降级为 popover 内容；删除排序/分组区域）
   - `src/components/query/SortChip.vue` / `GroupChip.vue`（**移除**独立排序 chip 与 `+ Sort`/`+ Group`）

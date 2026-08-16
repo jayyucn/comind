@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ArrowUpDown, Layers } from 'lucide-vue-next'
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import type {
   Condition,
   ConditionGroup,
@@ -35,6 +35,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   /** 任意筛选/排序/分组变更，emit 完整的新 ViewQuery（父级持有真相）。 */
   'update:modelValue': [q: ViewQuery]
+  /** chipbar 显隐变化（父级用于 QueryToolbar 的描边态）。 */
+  'visible-change': [visible: boolean]
 }>()
 
 function isCondition(c: Condition | ConditionGroup): c is Condition {
@@ -61,6 +63,46 @@ type Active =
 const active = ref<Active>(null)
 
 const addFilterBtn = ref<HTMLButtonElement | null>(null)
+
+// ── chipbar 显隐（内聚于此：选中字段后由本组件自行显示，无需父级事件乒乓）──
+const visible = ref(false)
+watch(visible, (v) => emit('visible-change', v))
+
+// 聚合 chip / 扁平 chip 的 DOM 引用，供「把 popover 重新锚定到对应 chip 下方」使用
+const sortChipEl = ref<HTMLElement | null>(null)
+const groupChipEl = ref<HTMLElement | null>(null)
+const chipEls = new Map<number, HTMLElement>()
+function setChipEl(idx: number, el: unknown) {
+  if (el) chipEls.set(idx, el as HTMLElement)
+  else chipEls.delete(idx)
+}
+// chipbar 显隐容器（grid 高度动画的包裹层），restingBottom 以它为定位基准
+const wrapEl = ref<HTMLElement | null>(null)
+/**
+ * 返回芯片「静止高度」下的底边 Y（不受 grid 高度动画中间帧影响）。
+ * 显隐用 grid-template-rows 0fr↔1fr 真实收展高度：动画过程中 chip 的 getBoundingClientRect
+ * 会随帧变化，但芯片在 wrap 内的纵向偏移与自身高度恒定，故用 offsetTop 链 + wrap 顶部
+ * 直接算出最终静止位置，避免 popover 锚到动画中途的（缩起）坐标而漂移。
+ */
+function restingBottom(el: HTMLElement): number {
+  const wrap = wrapEl.value
+  if (!wrap) return el.getBoundingClientRect().bottom
+  let top = 0
+  let node: HTMLElement | null = el
+  while (node && node !== wrap) {
+    top += node.offsetTop
+    node = node.offsetParent as HTMLElement | null
+  }
+  return wrap.getBoundingClientRect().top + top + el.offsetHeight
+}
+/** 把锚点设到指定芯片元素下方（用静止高度，动画中也不漂移）。 */
+function anchorToEl(el?: HTMLElement | null) {
+  if (el) anchor.value = { x: el.getBoundingClientRect().left, y: restingBottom(el) + 4 }
+}
+/** 扁平条件芯片按其在 children 中的真实索引取 DOM 并重定位。 */
+function anchorToChip(idx: number) {
+  anchorToEl(chipEls.get(idx))
+}
 
 function openAt(kind: Exclude<Active, null>, e: Event) {
   const el = e.currentTarget as HTMLElement
@@ -164,8 +206,11 @@ function addFilter(key: string) {
   const cond: Condition = { field: key, op: defaultOpFor(f) }
   const children = [...props.modelValue.filter.children, cond]
   patch({ filter: { ...props.modelValue.filter, children } })
-  // 复用 fieldMenu 的锚点，直接切到新条件的编辑器
-  active.value = { kind: 'cond', index: children.length - 1 }
+  const newIndex = children.length - 1
+  // 选中字段后显示 chipbar，并在新扁平 chip 渲染后把编辑器重新锚定到该 chip 下方
+  visible.value = true
+  active.value = { kind: 'cond', index: newIndex }
+  nextTick(() => anchorToChip(newIndex))
 }
 
 // 打开高级筛选 popover：由聚合 chip 或 + Filter 菜单触发（ADR-0013 D5）
@@ -175,7 +220,11 @@ function openAdvanced(e: Event) {
 function openAdvancedFromMenu() {
   close()
   active.value = { kind: 'advanced' }
-  anchorTo(addFilterBtn.value)
+  // chipbar 收起时不重置锚点（沿用 +Filter 菜单的 header 按钮锚点），避免高级面板飞到 (0,0)。
+  if (visible.value) {
+    const btn = addFilterBtn.value
+    if (btn) anchorTo(btn)
+  }
 }
 // 聚合 chip 面板只编辑嵌套子组；扁平条件保持栏上独立 chip，不入面板（ADR-0013 D2 修订）
 function onAdvancedUpdate(q: ViewQuery) {
@@ -232,6 +281,9 @@ const groupLabel = computed(() => {
 })
 function onGroupUpdate(key: string | null) {
   patch({ groupBy: key })
+  // 选中分组字段后显示 chipbar（取消分组不强制显示）
+  if (key !== null) visible.value = true
+  nextTick(() => anchorToEl(groupChipEl.value))
 }
 
 // ── 当前激活目标（供模板类型安全访问）──
@@ -250,30 +302,48 @@ const sortTarget = computed<SortRule | null>(() =>
 )
 
 // ── 供 Header 按钮直接唤起菜单（锚定到按钮自身）──
+function openFieldMenu(el?: HTMLElement | null) {
+  anchorTo(el)
+  active.value = { kind: 'fieldMenu' }
+  //
+}
 function openSortMenu(el?: HTMLElement | null) {
   anchorTo(el)
   if (props.modelValue.sort.length === 0) {
     const f = props.fields[0]
     if (!f) return
     patch({ sort: [{ field: f.key, dir: 'asc' }] })
+    // 空态选中字段后显示 chipbar
+    visible.value = true
     active.value = { kind: 'sortEdit', index: 0 }
   } else {
     active.value = { kind: 'sortEdit', index: props.modelValue.sort.length - 1 }
   }
+  // 排序 chip 渲染后，把菜单重新锚定到该 chip 下方
+  nextTick(() => anchorToEl(sortChipEl.value))
 }
 function openGroupMenu(el?: HTMLElement | null) {
   anchorTo(el)
   active.value = { kind: 'group' }
 }
 
-defineExpose({ openSortMenu, openGroupMenu })
+defineExpose({
+  openFieldMenu,
+  openSortMenu,
+  openGroupMenu,
+  toggleVisible: () => (visible.value = !visible.value),
+  isVisible: () => visible.value,
+})
 </script>
 
 <template>
-  <div class="chip-bar" data-testid="chip-bar">
+  <div class="chipbar-wrap" :class="{ 'is-open': visible }" data-testid="chipbar-wrap" ref="wrapEl">
+    <div class="chipbar-inner">
+      <div class="chip-bar" data-testid="chip-bar">
     <!-- 排序：始终聚合成单个 chip（ADR-0013 D3），最左 -->
     <button
       v-if="sorts.length"
+      ref="sortChipEl"
       class="agg-chip"
       data-testid="bar-sort-agg"
       @click="openSortMenu($event.currentTarget as HTMLElement)"
@@ -286,6 +356,7 @@ defineExpose({ openSortMenu, openGroupMenu })
     <!-- 分组：激活时显示单个 chip（groupBy 经 GroupMenu 编辑） -->
     <button
       v-if="groupBy"
+      ref="groupChipEl"
       class="agg-chip"
       data-testid="bar-group-chip"
       @click="openGroupMenu($event.currentTarget as HTMLElement)"
@@ -307,15 +378,21 @@ defineExpose({ openSortMenu, openGroupMenu })
     </button>
 
     <!-- 扁平条件：始终以独立 chip 展示，按创建顺序从左到右（ADR-0013 D2 修订）。
-         使用 flatItems 携带的 children 真实索引，避免与嵌套组并列时错位。 -->
-    <FilterChip
+         使用 flatItems 携带的 children 真实索引，避免与嵌套组并列时错位。
+         包裹 span 仅用于测量芯片 DOM 矩形，以便把 popover 锚定到其下方。 -->
+    <span
       v-for="item in flatItems"
       :key="'c' + item.idx"
-      :label="condLabel(item.cond)"
-      data-testid="bar-filter-chip"
-      @click="openAt({ kind: 'cond', index: item.idx }, $event)"
-      @remove="onCondRemove(item.idx)"
-    />
+      :ref="(el: unknown) => setChipEl(item.idx, el)"
+      class="chip-slot"
+    >
+      <FilterChip
+        :label="condLabel(item.cond)"
+        data-testid="bar-filter-chip"
+        @click="openAt({ kind: 'cond', index: item.idx }, $event)"
+        @remove="onCondRemove(item.idx)"
+      />
+    </span>
 
     <button ref="addFilterBtn" class="add-btn" data-testid="bar-add-filter" @click="openAt({ kind: 'fieldMenu' }, $event)">
       + Filter
@@ -375,6 +452,8 @@ defineExpose({ openSortMenu, openGroupMenu })
         @update:model-value="onAdvancedUpdate"
       />
     </BasePopover>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -387,6 +466,11 @@ defineExpose({ openSortMenu, openGroupMenu })
   padding: 8px 20px;
   /* border-bottom: 1px solid var(--border); */
   background: var(--bg-base2);
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+.chipbar-wrap.is-open .chip-bar {
+  opacity: 1;
 }
 .add-btn {
   border: 1px dashed var(--border);
@@ -429,5 +513,26 @@ defineExpose({ openSortMenu, openGroupMenu })
 .agg-ico {
   font-size: var(--text-sm);
   line-height: 1;
+}
+/* 扁平芯片包裹层：仅用于测量 DOM 矩形，不影响 flex 布局 */
+.chip-slot {
+  display: inline-flex;
+}
+
+/* ── 显隐过渡：用 grid-template-rows 0fr↔1fr 收展「真实高度」，
+   使 flex 兄弟 lib-body 随 chipbar 平滑上下移动（不只是淡入淡出）。
+   配合 restingBottom()（见脚本）：popover 锚到芯片静止高度，动画中不错位。 */
+.chipbar-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 220ms ease;
+  position: relative;
+}
+.chipbar-wrap.is-open {
+  grid-template-rows: 1fr;
+}
+.chipbar-inner {
+  overflow: hidden;
+  min-height: 0;
 }
 </style>
