@@ -15,8 +15,8 @@
  * between：仅支持字面量区间，不开放字段/记录引用（v1 范围）。切到 between 时丢弃已有的引用值，避免静默退化为 equals。
  * 通过 defineModel 以不可变方式向上交出新 ConditionValue（符合 vue/no-mutating-props）。
  */
+import { EllipsisVertical, File, Tag, X } from 'lucide-vue-next'
 import { computed, nextTick, ref } from 'vue'
-import { File, Plus, Tag, X } from 'lucide-vue-next'
 import type {
   ConditionValue,
   FieldDescriptor,
@@ -25,6 +25,7 @@ import type {
   ReferenceableRecord,
   Registry,
 } from '../../core/query'
+import DatePicker from '../common/DatePicker.vue'
 import CrossRecordRefPicker from './CrossRecordRefPicker.vue'
 
 const props = defineProps<{
@@ -81,19 +82,6 @@ const numberText = computed<string>({
   get: () => (getLiteral() === undefined || getLiteral() === null ? '' : String(getLiteral())),
   set: (v) => setLiteral(v === '' ? null : Number(v)),
 })
-
-function rangeValue(i: 0 | 1): string {
-  const v = getLiteral()
-  return Array.isArray(v) ? (v[i] ?? '') : ''
-}
-function setRange(i: 0 | 1, v: string) {
-  const cur = getLiteral()
-  const arr: [string, string] = Array.isArray(cur)
-    ? [cur[0] ?? '', cur[1] ?? '']
-    : ['', '']
-  arr[i] = v
-  setLiteral(arr)
-}
 
 function isChecked(id: string): boolean {
   const v = getLiteral()
@@ -211,19 +199,6 @@ function chooseRecordRef(sourceId: string, entityType: string, field: string) {
 
 <template>
   <div class="qb-value-wrap">
-    <!-- 顶部：固定值 / 字段 切换（仅比较类 op 且非 between） -->
-    <div v-if="showRefControls" class="qb-vmode">
-      <button type="button" :class="{ active: mode === 'literal' }" @click="setMode('literal')">固定值</button>
-      <button
-        type="button"
-        :class="{ active: mode === 'field', disabled: sameTypeFields.length === 0 }"
-        :disabled="sameTypeFields.length === 0"
-        @click="setMode('field')"
-      >
-        字段
-      </button>
-    </div>
-
     <!-- 跨记录引用：芯片预览（不可编辑，× 清除） -->
     <div v-if="isRecordRef && refPreview && !isRange" class="qb-ref-chip">
       <component :is="refPreview.target === 'record' ? File : Tag" :size="13" class="qb-ref-ico" />
@@ -233,18 +208,35 @@ function chooseRecordRef(sourceId: string, entityType: string, field: string) {
       </button>
     </div>
 
-    <!-- 同记录字段引用：字段下拉 -->
-    <select
-      v-else-if="mode === 'field' && showRefControls && sameTypeFields.length > 0"
-      class="qb-value"
-      :value="fieldSelectValue"
-      @change="onFieldRefChange"
-    >
-      <option v-for="f in sameTypeFields" :key="f.key" :value="f.key">{{ f.label }}</option>
-    </select>
+    <!-- 同记录字段引用：字段下拉 + 清除按钮回到字面量（mode==='field' 始终渲染，不因无同类型字段而跌落到字面量分支） -->
+    <div v-else-if="mode === 'field' && showRefControls" class="qb-field-row">
+      <select
+        class="qb-value"
+        :value="fieldSelectValue"
+        @change="onFieldRefChange"
+      >
+        <option v-for="f in sameTypeFields" :key="f.key" :value="f.key">{{ f.label }}</option>
+      </select>
+      <button type="button" class="qb-icon" title="清除引用" @click="setMode('literal')">
+        <X :size="14" />
+      </button>
+    </div>
 
-    <!-- 字面量输入 -->
-    <template v-else>
+    <!-- 字面量输入：仅当非「字段引用」且非「记录引用」时渲染（v-else 承接上方两条分支）。
+         + 引用入口按钮置于输入框前面（左侧）。 -->
+    <div v-else class="qb-input-row">
+      <!-- + 菜单入口：引用值（当前记录字段 / 其他记录），放在输入框前面 -->
+      <button
+        v-if="showRefControls"
+        ref="refBtn"
+        type="button"
+        class="qb-ref-btn"
+        title="引用值"
+        @click="openMenu"
+      >
+        <EllipsisVertical :size="14" />
+      </button>
+
       <span v-if="isEmptyOp" class="qb-value qb-value-empty">无需值</span>
 
       <input
@@ -265,18 +257,11 @@ function chooseRecordRef(sourceId: string, entityType: string, field: string) {
       />
 
       <template v-else-if="descriptor.type === 'date'">
-        <input
-          class="qb-value"
-          type="date"
-          :value="rangeValue(0)"
-          @input="setRange(0, ($event.target as HTMLInputElement).value)"
-        />
-        <input
-          v-if="isRange"
-          class="qb-value"
-          type="date"
-          :value="rangeValue(1)"
-          @input="setRange(1, ($event.target as HTMLInputElement).value)"
+        <DatePicker
+          :mode="isRange ? 'range' : 'single'"
+          :model-value="(getLiteral() as string | [string, string] | undefined)"
+          data-testid="qb-date"
+          @update:model-value="setLiteral($event)"
         />
       </template>
 
@@ -313,19 +298,7 @@ function chooseRecordRef(sourceId: string, entityType: string, field: string) {
         @input="setLiteral(($event.target as HTMLInputElement).value)"
         placeholder="值…"
       />
-
-      <!-- + 菜单入口：引用值（当前记录字段 / 其他记录） -->
-      <button
-        v-if="showRefControls"
-        ref="refBtn"
-        type="button"
-        class="qb-ref-btn"
-        title="引用值"
-        @click="openMenu"
-      >
-        <Plus :size="14" />
-      </button>
-    </template>
+    </div>
 
     <!-- 引用值弹出层：teleport 到 body，fixed 定位，避免被 FilterBuilder 面板 overflow 裁切 -->
     <Teleport to="body">
@@ -397,31 +370,20 @@ function chooseRecordRef(sourceId: string, entityType: string, field: string) {
   gap: 6px;
 }
 
-.qb-vmode {
-  display: inline-flex;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  overflow: hidden;
-  flex: 0 0 auto;
+// 字面量输入行：+ 引用按钮置于输入框前面（左侧），输入框占满剩余空间
+.qb-input-row {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
 
-  button {
-    padding: 3px 10px;
-    border: none;
-    background: transparent;
-    color: var(--text-secondary, #444);
-    font-size: var(--text-xs, 12px);
-    cursor: pointer;
-
-    &.active {
-      background: var(--accent, #6366f1);
-      color: #fff;
-    }
-    &.disabled,
-    &:disabled {
-      opacity: 0.45;
-      cursor: not-allowed;
-    }
-  }
+// 同记录字段引用行：下拉 + 清除按钮
+.qb-field-row {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
 }
 
 .qb-value {
@@ -462,15 +424,16 @@ function chooseRecordRef(sourceId: string, entityType: string, field: string) {
   cursor: pointer;
 }
 
+// 引用值 + 按钮：置于输入框前面（左侧），普通按钮
 .qb-ref-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
+  // width: 26px;
   height: 26px;
   flex: 0 0 auto;
-  border: 1px dashed var(--border);
-  border-radius: 4px;
+  // border: 1px dashed var(--border);
+  // border-radius: 4px;
   background: transparent;
   color: var(--text-tertiary, #999);
   cursor: pointer;

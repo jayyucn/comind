@@ -6,9 +6,8 @@
  * 字段切换时把操作符重置为该类型默认首操作符、清空 value；op 为 isEmpty/isNotEmpty 时隐藏值编辑器。
  * 通过 defineModel 以不可变方式交出新 Condition；删除交由父级（ConditionGroup）处理，故 emit('remove')。
  */
-import { computed, watch } from 'vue'
 import { X } from 'lucide-vue-next'
-import { deriveOps } from '../../core/query'
+import { computed, watch } from 'vue'
 import type {
   Condition,
   ConditionValue,
@@ -17,6 +16,7 @@ import type {
   ReferenceableRecord,
   Registry,
 } from '../../core/query'
+import { deriveOps } from '../../core/query'
 import ValueEditor from './ValueEditor.vue'
 
 const props = defineProps<{
@@ -121,7 +121,7 @@ watch(
       @update:model-value="onValue"
     />
 
-    <button class="qb-icon" type="button" title="删除条件" @click="emit('remove')">
+    <button class="qb-icon qb-row-remove" type="button" title="删除条件" @click="emit('remove')">
       <X :size="14" />
     </button>
   </div>
@@ -131,6 +131,7 @@ watch(
 .qb-row {
   display: flex;
   align-items: center;
+  width: 100%;
   gap: 6px;
 }
 
@@ -175,5 +176,10 @@ watch(
     background: var(--bg-hover, rgba(0, 0, 0, 0.05));
     color: var(--error, #dc2626);
   }
+}
+
+// 条件行删除按钮：推到最右侧，与组 × 垂直对齐
+.qb-row-remove {
+  margin-right: auto;
 }
 </style>

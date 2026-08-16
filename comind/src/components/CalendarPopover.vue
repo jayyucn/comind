@@ -7,8 +7,14 @@ const props = withDefaults(defineProps<{
   position?: { x: number; y: number }
   selectedDate: string // 'YYYY-MM-DD' | ''
   inline?: boolean
+  /** 区间模式：起点（含），用于高亮整段。仅起止都存在时生效。 */
+  rangeStart?: string
+  /** 区间模式：终点（含），用于高亮整段。 */
+  rangeEnd?: string
 }>(), {
   inline: false,
+  rangeStart: '',
+  rangeEnd: '',
 })
 
 const emit = defineEmits<{
@@ -35,12 +41,23 @@ const yearOptions = computed(() => {
   return Array.from({ length: 21 }, (_, i) => y - 10 + i)
 })
 
+// 区间高亮辅助：起点/终点（含）与中间段
+const rStart = computed(() => props.rangeStart)
+const rEnd = computed(() => props.rangeEnd)
+function rangeFlags(iso: string) {
+  return {
+    isRangeStart: !!rStart.value && iso === rStart.value,
+    isRangeEnd: !!rEnd.value && iso === rEnd.value,
+    inRange: !!rStart.value && !!rEnd.value && iso > rStart.value && iso < rEnd.value,
+  }
+}
+
 const calendarDays = computed(() => {
   const year = calendarYear.value
   const month = calendarMonth.value
   const firstDay = new Date(year, month, 1)
   const lastDay = new Date(year, month + 1, 0)
-  const days: { date: number; currentMonth: boolean; today: boolean; selected: boolean; iso: string }[] = []
+  const days: { date: number; currentMonth: boolean; today: boolean; selected: boolean; iso: string; isRangeStart: boolean; isRangeEnd: boolean; inRange: boolean }[] = []
 
   const startPadding = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1
   const prevMonthLastDay = new Date(year, month, 0).getDate()
@@ -49,12 +66,12 @@ const calendarDays = computed(() => {
     const prevMonth = month === 0 ? 11 : month - 1
     const prevYear = month === 0 ? year - 1 : year
     const iso = `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`
-    days.push({ date: dayNum, currentMonth: false, today: iso === today.value, selected: iso === props.selectedDate, iso })
+    days.push({ date: dayNum, currentMonth: false, today: iso === today.value, selected: iso === props.selectedDate, iso, ...rangeFlags(iso) })
   }
 
   for (let i = 1; i <= lastDay.getDate(); i++) {
     const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`
-    days.push({ date: i, currentMonth: true, today: iso === today.value, selected: iso === props.selectedDate, iso })
+    days.push({ date: i, currentMonth: true, today: iso === today.value, selected: iso === props.selectedDate, iso, ...rangeFlags(iso) })
   }
 
   const remaining = 42 - days.length
@@ -62,7 +79,7 @@ const calendarDays = computed(() => {
     const nextMonth = month === 11 ? 0 : month + 1
     const nextYear = month === 11 ? year + 1 : year
     const iso = `${nextYear}-${String(nextMonth + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`
-    days.push({ date: i, currentMonth: false, today: iso === today.value, selected: iso === props.selectedDate, iso })
+    days.push({ date: i, currentMonth: false, today: iso === today.value, selected: iso === props.selectedDate, iso, ...rangeFlags(iso) })
   }
 
   return days
@@ -180,7 +197,10 @@ watch(
         :class="{
           'cal-day--other': !day.currentMonth,
           'cal-day--today': day.today,
-          'cal-day--selected': day.selected,
+          'cal-day--selected': day.selected || day.isRangeStart || day.isRangeEnd,
+          'cal-day--in-range': day.inRange,
+          'cal-day--range-start': day.isRangeStart,
+          'cal-day--range-end': day.isRangeEnd,
         }"
         @click="selectDay(day)"
       >
@@ -225,7 +245,10 @@ watch(
               :class="{
                 'cal-day--other': !day.currentMonth,
                 'cal-day--today': day.today,
-                'cal-day--selected': day.selected,
+                'cal-day--selected': day.selected || day.isRangeStart || day.isRangeEnd,
+                'cal-day--in-range': day.inRange,
+                'cal-day--range-start': day.isRangeStart,
+                'cal-day--range-end': day.isRangeEnd,
               }"
               @click="selectDay(day)"
             >
@@ -403,6 +426,26 @@ watch(
   background: var(--accent-subtle);
   color: var(--accent);
   box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+/* 区间：起点→终点 之间的整段浅色底 */
+.cal-day--in-range {
+  background: var(--accent-subtle);
+  border-radius: 0;
+}
+
+/* 区间端点：与 selected 同款强调，保证起/止可见 */
+.cal-day--range-start,
+.cal-day--range-end {
+  background: var(--accent);
+  color: #fff;
+
+  &:hover { background: var(--accent); color: #fff; }
+}
+
+.cal-day--today.cal-day--range-start,
+.cal-day--today.cal-day--range-end {
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.7);
 }
 
 /* Transition */

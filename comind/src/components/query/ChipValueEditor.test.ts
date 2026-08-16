@@ -74,11 +74,11 @@ describe('ChipValueEditor', () => {
     expect(lastEmitted(w)).toBe(false)
   })
 
-  it('date 单日期: 点触发器展开日历，选日期 emit yyyy-MM-dd', async () => {
+  it('date 单日期: 点 DatePicker 触发器展开日历，选日期 emit yyyy-MM-dd', async () => {
     const w = mount(ChipValueEditor, {
       props: { fieldType: 'date', op: 'after', modelValue: '' },
     })
-    await w.find('.cve-date-trigger').trigger('click')
+    await w.find('[data-testid="cve-date"] [data-testid="dp-trigger"]').trigger('click')
     const cal = w.findComponent(CalendarPopover)
     expect(cal.exists()).toBe(true)
     await cal.vm.$emit('select', '2026-01-15')
@@ -86,17 +86,17 @@ describe('ChipValueEditor', () => {
     expect(lastEmitted(w)).toBe('2026-01-15')
   })
 
-  it('date between: 两段各选一次 emit [from,to]', async () => {
+  it('date between: 用通用 DatePicker 区间两击 emit [from,to]', async () => {
     const w = mount(ChipValueEditor, {
       props: { fieldType: 'date', op: 'between', modelValue: undefined },
     })
-    const triggers = w.findAll('.cve-date-trigger')
-    await triggers[0].trigger('click') // from
-    await w.findComponent(CalendarPopover).vm.$emit('select', '2026-01-10')
+    await w.find('[data-testid="cve-date"] [data-testid="dp-trigger"]').trigger('click')
     await nextTick()
+    await w.findComponent(CalendarPopover).vm.$emit('select', '2026-01-10') // from
     await w.setProps({ modelValue: ['2026-01-10', ''] })
-    await triggers[1].trigger('click') // to
-    await w.findComponent(CalendarPopover).vm.$emit('select', '2026-01-20')
+    await nextTick()
+    await w.findComponent(CalendarPopover).vm.$emit('select', '2026-01-20') // to
+    await w.setProps({ modelValue: ['2026-01-10', '2026-01-20'] })
     await nextTick()
     expect(lastEmitted(w)).toEqual(['2026-01-10', '2026-01-20'])
   })

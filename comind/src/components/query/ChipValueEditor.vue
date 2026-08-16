@@ -15,7 +15,7 @@
  * 业务无关：字段类型、操作符、选项全部由 prop 注入，不查询任何业务注册表。
  */
 import { computed, ref } from 'vue'
-import CalendarPopover from '../CalendarPopover.vue'
+import DatePicker from '../common/DatePicker.vue'
 import type { FieldType, FilterOp, Option } from '../../core/query'
 
 const props = withDefaults(
@@ -36,7 +36,8 @@ const emit = defineEmits<{ 'update:modelValue': [value: unknown] }>()
 
 const NO_VALUE_OPS: FilterOp[] = ['isEmpty', 'isNotEmpty']
 const needsValue = computed(() => !NO_VALUE_OPS.includes(props.op))
-const isBetween = computed(() => props.op === 'between')
+/** 区间类日期操作符（between / within 均用 [from, to] 区间值）。 */
+const isRangeOp = computed(() => props.op === 'between' || props.op === 'within')
 
 function setVal(v: unknown) {
   emit('update:modelValue', v)
@@ -78,39 +79,6 @@ const boolVal = computed<boolean>(() => props.modelValue === true)
 function setBool(v: boolean) {
   setVal(v)
 }
-
-/* ---------- date ---------- */
-const calOpen = ref<'single' | 'from' | 'to' | null>(null)
-
-const singleDate = computed<string>({
-  get: () => (typeof props.modelValue === 'string' ? props.modelValue : ''),
-  set: (v) => setVal(v || undefined),
-})
-const range = computed<[string, string]>({
-  get: (): [string, string] =>
-    Array.isArray(props.modelValue)
-      ? [String(props.modelValue[0] ?? ''), String(props.modelValue[1] ?? '')]
-      : ['', ''],
-  set: (v) => setVal(v[0] || v[1] ? v : undefined),
-})
-function openCal(which: 'single' | 'from' | 'to') {
-  calOpen.value = calOpen.value === which ? null : which
-}
-function onDateSelect(date: string) {
-  if (calOpen.value === 'single') {
-    singleDate.value = date
-  } else if (calOpen.value === 'from') {
-    range.value = [date, range.value[1]]
-  } else if (calOpen.value === 'to') {
-    range.value = [range.value[0], date]
-  }
-  calOpen.value = null
-}
-const calSelected = computed(() => {
-  if (calOpen.value === 'from') return range.value[0]
-  if (calOpen.value === 'to') return range.value[1]
-  return singleDate.value
-})
 </script>
 
 <template>
@@ -195,30 +163,14 @@ const calSelected = computed(() => {
     </ul>
   </div>
 
-  <!-- date（单日期 / 双日期） -->
-  <div v-else-if="fieldType === 'date'" class="cve-date" data-testid="cve-date">
-    <template v-if="isBetween">
-      <button class="cve-date-trigger" :class="{ open: calOpen === 'from' }" type="button" @click.stop="openCal('from')">
-        {{ range[0] || '开始日期' }}
-      </button>
-      <span class="cve-date-sep">→</span>
-      <button class="cve-date-trigger" :class="{ open: calOpen === 'to' }" type="button" @click.stop="openCal('to')">
-        {{ range[1] || '结束日期' }}
-      </button>
-    </template>
-    <button v-else class="cve-date-trigger" :class="{ open: calOpen === 'single' }" type="button" @click.stop="openCal('single')">
-      {{ singleDate || '选择日期' }}
-    </button>
-
-    <CalendarPopover
-      v-if="calOpen"
-      inline
-      :visible="true"
-      :selected-date="calSelected"
-      data-testid="cve-calendar"
-      @select="onDateSelect"
-    />
-  </div>
+  <!-- date（单日期 / 区间，统一走通用 DatePicker） -->
+  <DatePicker
+    v-else-if="fieldType === 'date'"
+    :mode="isRangeOp ? 'range' : 'single'"
+    :model-value="(modelValue as string | [string, string] | undefined)"
+    data-testid="cve-date"
+    @update:model-value="setVal"
+  />
 
   <!-- 未知类型兜底：文本输入 -->
   <input
@@ -318,29 +270,5 @@ const calSelected = computed(() => {
   color: var(--text-tertiary);
   font-size: var(--text-sm);
   cursor: default;
-}
-
-.cve-date {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.cve-date-trigger {
-  border: 1px solid var(--border);
-  background: var(--bg-base);
-  color: var(--text-primary);
-  border-radius: var(--radius-sm);
-  padding: 5px 10px;
-  font-size: var(--text-sm);
-  font-family: inherit;
-  cursor: pointer;
-}
-.cve-date-trigger.open,
-.cve-date-trigger:hover {
-  border-color: var(--accent);
-}
-.cve-date-sep {
-  color: var(--text-tertiary);
 }
 </style>

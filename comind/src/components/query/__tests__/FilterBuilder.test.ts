@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { createRegistry } from '../../../core/query'
 import type { FieldDescriptor, Registry, ViewQuery } from '../../../core/query'
 import FilterBuilder from '../FilterBuilder.vue'
@@ -18,6 +19,7 @@ function makeRegistry(): Registry {
   const fields: FieldDescriptor<Task>[] = [
     { key: 'title', label: '标题', type: 'text', get: (i) => i.title },
     { key: 'count', label: '数量', type: 'number', get: (i) => i.count },
+    { key: 'score', label: '分值', type: 'number', get: (i) => i.count },
     { key: 'due', label: '截止', type: 'date', get: (i) => i.due, dateBucket: 'day' },
     {
       key: 'status',
@@ -85,7 +87,7 @@ describe('FilterBuilder 字段选择器', () => {
     await addCondition(wrapper)
     const fieldSelect = wrapper.find('.qb-row .qb-select')
     expect(fieldSelect.exists()).toBe(true)
-    expect(fieldSelect.findAll('option').length).toBe(6)
+    expect(fieldSelect.findAll('option').length).toBe(7)
   })
 })
 
@@ -246,13 +248,23 @@ describe('FilterBuilder 字段引用值（field / recordRef）', () => {
     return last[0] as ViewQuery
   }
 
-  it('顶部「字段」开关：切到字段后值序列化为 field 引用', async () => {
+  it('「+」菜单 → 当前记录字段 → 选字段：序列化为 field 引用', async () => {
     await addCondition(refWrapper)
     await refWrapper.find('.qb-row .qb-select').setValue('count')
-    // 顶部出现 固定值 / 字段 切换
-    const modeBtns = refWrapper.findAll('.qb-vmode button')
-    expect(modeBtns.length).toBe(2)
-    await modeBtns[1].trigger('click') // 「字段」
+    // 打开 + 菜单（弹层 teleport 到 body，需从 document.body 查询）
+    await refWrapper.find('.qb-ref-btn').trigger('click')
+    await nextTick()
+    // 根菜单点「当前记录字段」
+    const rootItems = Array.from(document.body.querySelectorAll<HTMLElement>('.qb-pop-item'))
+    const fieldItem = rootItems.find((b) => b.textContent?.includes('当前记录字段'))!
+    expect(fieldItem).toBeTruthy()
+    fieldItem.click()
+    await nextTick()
+    // recordField 视图：列同类型字段，选首个非自身字段（score）
+    const fields = Array.from(document.body.querySelectorAll<HTMLElement>('.qb-pop-item'))
+    expect(fields.length).toBe(1)
+    fields[0].click()
+    await nextTick()
     const cond = (refEmitted().filter.children[0] as { field: string; op: string; value: unknown })
     expect(cond.value).toEqual({ kind: 'field', field: 'score' }) // 同类型首个非自身字段
   })
@@ -260,35 +272,43 @@ describe('FilterBuilder 字段引用值（field / recordRef）', () => {
   it('「+」菜单 → 其他记录 → 选记录 + 选字段：序列化为 recordRef 引用', async () => {
     await addCondition(refWrapper)
     await refWrapper.find('.qb-row .qb-select').setValue('count')
-    // 打开 + 菜单
+    // 打开 + 菜单（弹层 teleport 到 body，需从 document.body 查询）
     await refWrapper.find('.qb-ref-btn').trigger('click')
-    const rootItems = refWrapper.findAll('.qb-pop-item')
-    const otherRecordItem = rootItems.find((b) => b.text().includes('其他记录'))!
+    await nextTick()
+    const rootItems = Array.from(document.body.querySelectorAll<HTMLElement>('.qb-pop-item'))
+    const otherRecordItem = rootItems.find((b) => b.textContent?.includes('其他记录'))!
     expect(otherRecordItem).toBeTruthy()
-    await otherRecordItem.trigger('click')
+    otherRecordItem.click()
+    await nextTick()
     // CrossRecordRefPicker：选记录
-    const sources = refWrapper.findAll('.pf-source')
+    const sources = Array.from(document.body.querySelectorAll<HTMLElement>('.pf-source'))
     expect(sources.length).toBe(2)
-    await sources[0].trigger('click') // 产品规划 (p1)
+    sources[0].click() // 产品规划 (p1)
+    await nextTick()
     // 选同类型字段（分值）
-    const fields = refWrapper.findAll('.pf-field')
+    const fields = Array.from(document.body.querySelectorAll<HTMLElement>('.pf-field'))
     expect(fields.length).toBe(1) // 仅 score 同类型
-    await fields[0].trigger('click')
+    fields[0].click()
+    await nextTick()
     const cond = (refEmitted().filter.children[0] as { field: string; op: string; value: unknown })
     expect(cond.value).toEqual({ kind: 'recordRef', entityType: 'task', recordId: 'p1', field: 'score' })
+    refWrapper.unmount()
   })
 
   it('未注入 crossRecordSources 时隐藏「其他记录」入口', async () => {
     // 重新挂载一个无 crossRecordSources 的实例
     const bare = mount(FilterBuilder, {
       props: { registry: makeRefRegistry(), entityType: 'task', modelValue: baseQuery() },
+      attachTo: document.body,
     })
     await addCondition(bare)
     await bare.find('.qb-row .qb-select').setValue('count')
     await bare.find('.qb-ref-btn').trigger('click')
-    const rootItems = bare.findAll('.qb-pop-item')
-    expect(rootItems.some((b) => b.text().includes('其他记录'))).toBe(false)
-    expect(rootItems.some((b) => b.text().includes('当前记录字段'))).toBe(true)
+    await nextTick()
+    const rootItems = Array.from(document.body.querySelectorAll<HTMLElement>('.qb-pop-item'))
+    expect(rootItems.some((b) => b.textContent?.includes('其他记录'))).toBe(false)
+    expect(rootItems.some((b) => b.textContent?.includes('当前记录字段'))).toBe(true)
+    bare.unmount()
   })
 })
 
@@ -343,7 +363,8 @@ describe('FilterBuilder 高级筛选 popover（ADR-0013 D5）', () => {
     })
     expect(w.text()).not.toContain('排序')
     expect(w.text()).not.toContain('分组')
-    expect(w.text()).toContain('筛选条件')
+    // 筛选条件区仍可正常渲染和编辑（无「筛选条件」标题，直接展示条件组）
+    expect(w.find('.qb-group').exists()).toBe(true)
     // 仍可编辑筛选条件
     await addCondition(w)
     expect(w.findAll('.qb-row').length).toBeGreaterThan(0)

@@ -72,7 +72,6 @@ watch(
   <div class="qb-builder">
     <!-- 条件区 -->
     <section class="qb-section">
-      <h4 class="qb-section-title">筛选条件</h4>
       <ConditionGroup
         v-model="query.filter"
         :registry="registry"
