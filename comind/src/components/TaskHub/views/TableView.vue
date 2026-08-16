@@ -2,17 +2,28 @@
 import { computed } from 'vue'
 import { Square, CheckSquare, MapPin } from 'lucide-vue-next'
 import type { BlockCard } from '../../../wasm/types'
-import type { BlockQuery, SortRule } from '../../../types/blockQuery'
+import type { Group, SortRule } from '../../../core/query'
 
 const props = defineProps<{
+  /** 已过滤+排序的扁平列表（非分组时直接渲染）。 */
   cards: BlockCard[]
-  query: BlockQuery
+  /** 分组桶（groupBy 设了时按桶渲染）。 */
+  groups: Group<BlockCard>[]
+  /** 是否按 groupBy 渲染分组区块（仿 PageTableView）。 */
+  grouped: boolean
+  /** 当前排序规则（驱动表头方向图标）。 */
+  sort: SortRule[]
 }>()
 
 const emit = defineEmits<{
   statusChange: [blockId: string, newStatus: string]
   navigateToBlock: [blockId: string]
 }>()
+
+/** 渲染分区：分组时取分组桶；平铺时合成单一全量分区。 */
+const sections = computed<Group<BlockCard>[]>(() =>
+  props.grouped ? props.groups : [{ key: '', label: '', items: props.cards }],
+)
 
 const STATUS_OPTIONS = ['Todo', 'Doing', 'Done', 'Canceled']
 
@@ -64,11 +75,7 @@ function handleStatusChange(card: BlockCard, event: Event) {
 }
 
 function getSortDir(fieldKey: string): string | null {
-  const rule = props.query.sort.find(s => {
-    if (s.field.kind === 'property' && s.field.key === fieldKey) return true
-    if (fieldKey === 'content' && s.field.kind === 'content') return true
-    return false
-  })
+  const rule = props.sort.find((s) => s.field === fieldKey)
   return rule?.dir ?? null
 }
 
@@ -88,91 +95,99 @@ const DONE_COUNT = computed(() => props.cards.filter(c => isDone(c)).length)
       <span class="empty-hint">尝试修改筛选条件</span>
     </div>
 
-    <table v-else class="task-table">
-      <thead>
-        <tr>
-          <th class="col-check">
-            <span class="done-count">{{ DONE_COUNT }}/{{ cards.length }}</span>
-          </th>
-          <th class="col-content">内容{{ renderSortIcon('content') }}</th>
-          <th class="col-status">状态{{ renderSortIcon('status') }}</th>
-          <th class="col-priority">优先级{{ renderSortIcon('priority') }}</th>
-          <th class="col-project">项目</th>
-          <th class="col-deadline">截止</th>
-          <th class="col-page">页面</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr
-          v-for="card in cards"
-          :key="card.block_id"
-          class="task-row"
-          :class="{ 'is-done': isDone(card) }"
-          @click="emit('navigateToBlock', card.block_id)"
-        >
-          <!-- Checkbox -->
-          <td class="col-check" @click.stop>
-            <button class="check-btn" @click="toggleDone(card, $event)" :title="isDone(card) ? '标记未完成' : '标记完成'">
-              <CheckSquare v-if="isDone(card)" :size="16" :stroke-width="1.75" class="text-success" />
-              <Square v-else :size="16" :stroke-width="1.75" class="text-tertiary" />
-            </button>
-          </td>
-
-          <!-- Content -->
-          <td class="col-content">
-            <span class="content-text" :title="card.content_preview">
-              {{ card.content_preview }}
-            </span>
-          </td>
-
-          <!-- Status -->
-          <td class="col-status" @click.stop>
-            <select
-              class="status-select"
-              :value="getStatus(card)"
-              @change="handleStatusChange(card, $event)"
+    <template v-else>
+      <div v-for="section in sections" :key="section.key" class="table-section">
+        <div v-if="grouped" class="group-header">
+          <span class="group-label">{{ section.label || '全部' }}</span>
+          <span class="group-count">{{ section.items.length }}</span>
+        </div>
+        <table class="task-table">
+          <thead>
+            <tr>
+              <th class="col-check">
+                <span class="done-count">{{ DONE_COUNT }}/{{ cards.length }}</span>
+              </th>
+              <th class="col-content">内容{{ renderSortIcon('content') }}</th>
+              <th class="col-status">状态{{ renderSortIcon('status') }}</th>
+              <th class="col-priority">优先级{{ renderSortIcon('priority') }}</th>
+              <th class="col-project">项目</th>
+              <th class="col-deadline">截止</th>
+              <th class="col-page">页面</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="card in section.items"
+              :key="card.block_id"
+              class="task-row"
+              :class="{ 'is-done': isDone(card) }"
+              @click="emit('navigateToBlock', card.block_id)"
             >
-              <option v-for="s in STATUS_OPTIONS" :key="s" :value="s">{{ s }}</option>
-            </select>
-          </td>
+              <!-- Checkbox -->
+              <td class="col-check" @click.stop>
+                <button class="check-btn" @click="toggleDone(card, $event)" :title="isDone(card) ? '标记未完成' : '标记完成'">
+                  <CheckSquare v-if="isDone(card)" :size="16" :stroke-width="1.75" class="text-success" />
+                  <Square v-else :size="16" :stroke-width="1.75" class="text-tertiary" />
+                </button>
+              </td>
 
-          <!-- Priority -->
-          <td class="col-priority">
-            <span
-              v-if="getPriority(card)"
-              class="priority-badge"
-              :style="{ color: PRIORITY_CONFIG[getPriority(card)]?.color, borderColor: PRIORITY_CONFIG[getPriority(card)]?.color }"
-            >
-              {{ PRIORITY_CONFIG[getPriority(card)]?.label ?? getPriority(card) }}
-            </span>
-          </td>
+              <!-- Content -->
+              <td class="col-content">
+                <span class="content-text" :title="card.content_preview">
+                  {{ card.content_preview }}
+                </span>
+              </td>
 
-          <!-- Project -->
-          <td class="col-project">
-            <span class="text-secondary">{{ getProject(card) }}</span>
-          </td>
+              <!-- Status -->
+              <td class="col-status" @click.stop>
+                <select
+                  class="status-select"
+                  :value="getStatus(card)"
+                  @change="handleStatusChange(card, $event)"
+                >
+                  <option v-for="s in STATUS_OPTIONS" :key="s" :value="s">{{ s }}</option>
+                </select>
+              </td>
 
-          <!-- Deadline -->
-          <td class="col-deadline">
-            <template v-if="getDeadline(card)">
-              <span
-                class="deadline-text"
-                :class="{ overdue: getDeadline(card)!.isOverdue, schedule: getDeadline(card)!.kind === 'schedule' }"
-              >
-                ⏰ {{ getDeadline(card)!.text }}
-              </span>
-            </template>
-          </td>
+              <!-- Priority -->
+              <td class="col-priority">
+                <span
+                  v-if="getPriority(card)"
+                  class="priority-badge"
+                  :style="{ color: PRIORITY_CONFIG[getPriority(card)]?.color, borderColor: PRIORITY_CONFIG[getPriority(card)]?.color }"
+                >
+                  {{ PRIORITY_CONFIG[getPriority(card)]?.label ?? getPriority(card) }}
+                </span>
+              </td>
 
-          <!-- Page -->
-          <td class="col-page">
-            <button class="page-link-btn" @click.stop="emit('navigateToBlock', card.block_id)" :title="card.page_id">
-              <MapPin :size="12" />
-            </button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+              <!-- Project -->
+              <td class="col-project">
+                <span class="text-secondary">{{ getProject(card) }}</span>
+              </td>
+
+              <!-- Deadline -->
+              <td class="col-deadline">
+                <template v-if="getDeadline(card)">
+                  <span
+                    class="deadline-text"
+                    :class="{ overdue: getDeadline(card)!.isOverdue, schedule: getDeadline(card)!.kind === 'schedule' }"
+                  >
+                    ⏰ {{ getDeadline(card)!.text }}
+                  </span>
+                </template>
+              </td>
+
+              <!-- Page -->
+              <td class="col-page">
+                <button class="page-link-btn" @click.stop="emit('navigateToBlock', card.block_id)" :title="card.page_id">
+                  <MapPin :size="12" />
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </template>
   </div>
 </template>
 
@@ -180,6 +195,27 @@ const DONE_COUNT = computed(() => props.cards.filter(c => isDone(c)).length)
 .table-view {
   height: 100%;
   overflow: auto;
+}
+
+.table-section {
+  margin-bottom: 16px;
+}
+
+.group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+  border-radius: var(--radius-sm);
+  margin-bottom: 4px;
+}
+
+.group-count {
+  color: var(--text-tertiary);
 }
 
 .empty-state {

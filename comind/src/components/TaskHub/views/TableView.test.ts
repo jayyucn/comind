@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import TableView from '../views/TableView.vue'
 import type { BlockCard } from '../../../wasm/types'
-import type { BlockQuery } from '../../../types/blockQuery'
+import type { Group, SortRule } from '../../../core/query'
 
 function makeCard(overrides: Partial<BlockCard> = {}): BlockCard {
   const base: BlockCard = {
@@ -18,17 +18,14 @@ function makeCard(overrides: Partial<BlockCard> = {}): BlockCard {
   return JSON.parse(JSON.stringify(base))
 }
 
-const emptyQuery: BlockQuery = {
-  filters: [],
-  sort: [],
-  groupBy: null,
-}
+const noSort: SortRule[] = []
+const noGroups: Group<BlockCard>[] = []
 
 describe('TableView', () => {
   // ── Empty state ──
   it('renders empty state when no cards', () => {
     const wrapper = mount(TableView, {
-      props: { cards: [], query: emptyQuery },
+      props: { cards: [], groups: noGroups, grouped: false, sort: noSort },
     })
     expect(wrapper.text()).toContain('没有匹配的任务')
     expect(wrapper.find('table').exists()).toBe(false)
@@ -37,7 +34,7 @@ describe('TableView', () => {
   // ── Table header ──
   it('renders table with header columns', () => {
     const wrapper = mount(TableView, {
-      props: { cards: [makeCard()], query: emptyQuery },
+      props: { cards: [makeCard()], groups: noGroups, grouped: false, sort: noSort },
     })
     const ths = wrapper.findAll('th')
     const headers = ths.map(th => th.text().trim())
@@ -50,27 +47,17 @@ describe('TableView', () => {
   })
 
   // ── Sort icon in header ──
-  it('shows sort direction indicator when query has sort on property', () => {
-    const query: BlockQuery = {
-      filters: [],
-      sort: [{ field: { kind: 'property', key: 'priority' }, dir: 'asc' }],
-      groupBy: null,
-    }
+  it('shows sort direction indicator when sort has property field', () => {
     const wrapper = mount(TableView, {
-      props: { cards: [makeCard()], query },
+      props: { cards: [makeCard()], groups: noGroups, grouped: false, sort: [{ field: 'priority', dir: 'asc' }] },
     })
     const headerText = wrapper.find('thead').text()
     expect(headerText).toContain('↑')
   })
 
   it('shows sort dir for content field', () => {
-    const query: BlockQuery = {
-      filters: [],
-      sort: [{ field: { kind: 'content' }, dir: 'desc' }],
-      groupBy: null,
-    }
     const wrapper = mount(TableView, {
-      props: { cards: [makeCard()], query },
+      props: { cards: [makeCard()], groups: noGroups, grouped: false, sort: [{ field: 'content', dir: 'desc' }] },
     })
     const headerText = wrapper.find('thead').text()
     expect(headerText).toContain('↓')
@@ -81,7 +68,9 @@ describe('TableView', () => {
     const wrapper = mount(TableView, {
       props: {
         cards: [makeCard({ content_preview: 'Buy groceries' })],
-        query: emptyQuery,
+        groups: noGroups,
+        grouped: false,
+        sort: noSort,
       },
     })
     expect(wrapper.text()).toContain('Buy groceries')
@@ -91,11 +80,10 @@ describe('TableView', () => {
   it('applies done style and shows CheckSquare for Done cards', () => {
     const wrapper = mount(TableView, {
       props: {
-        cards: [makeCard({
-          content_preview: 'Completed task',
-          properties: { status: 'Done' },
-        })],
-        query: emptyQuery,
+        cards: [makeCard({ content_preview: 'Completed task', properties: { status: 'Done' } })],
+        groups: noGroups,
+        grouped: false,
+        sort: noSort,
       },
     })
     expect(wrapper.find('.is-done').exists()).toBe(true)
@@ -106,7 +94,9 @@ describe('TableView', () => {
     const wrapper = mount(TableView, {
       props: {
         cards: [makeCard({ properties: { status: 'Doing' } })],
-        query: emptyQuery,
+        groups: noGroups,
+        grouped: false,
+        sort: noSort,
       },
     })
     const select = wrapper.find('select')
@@ -123,7 +113,9 @@ describe('TableView', () => {
     const wrapper = mount(TableView, {
       props: {
         cards: [makeCard({ properties: {} })],
-        query: emptyQuery,
+        groups: noGroups,
+        grouped: false,
+        sort: noSort,
       },
     })
     const select = wrapper.find('select')
@@ -135,7 +127,9 @@ describe('TableView', () => {
     const wrapper = mount(TableView, {
       props: {
         cards: [makeCard({ properties: { priority: 'P0' } })],
-        query: emptyQuery,
+        groups: noGroups,
+        grouped: false,
+        sort: noSort,
       },
     })
     expect(wrapper.find('.priority-badge').exists()).toBe(true)
@@ -146,7 +140,9 @@ describe('TableView', () => {
     const wrapper = mount(TableView, {
       props: {
         cards: [makeCard({ properties: {} })],
-        query: emptyQuery,
+        groups: noGroups,
+        grouped: false,
+        sort: noSort,
       },
     })
     expect(wrapper.find('.priority-badge').exists()).toBe(false)
@@ -157,7 +153,9 @@ describe('TableView', () => {
     const wrapper = mount(TableView, {
       props: {
         cards: [makeCard({ properties: { project: 'comind' } })],
-        query: emptyQuery,
+        groups: noGroups,
+        grouped: false,
+        sort: noSort,
       },
     })
     expect(wrapper.text()).toContain('comind')
@@ -174,7 +172,9 @@ describe('TableView', () => {
         cards: [makeCard({
           date_refs: [{ kind: 'deadline', iso: dateStr, date_day: dateStr, recurrence: 'none', event_ts: 0 }],
         })],
-        query: emptyQuery,
+        groups: noGroups,
+        grouped: false,
+        sort: noSort,
       },
     })
     expect(wrapper.find('.deadline-text').exists()).toBe(true)
@@ -188,7 +188,9 @@ describe('TableView', () => {
         cards: [makeCard({
           date_refs: [{ kind: 'deadline', iso: pastDate, date_day: pastDate, recurrence: 'none', event_ts: 0 }],
         })],
-        query: emptyQuery,
+        groups: noGroups,
+        grouped: false,
+        sort: noSort,
       },
     })
     expect(wrapper.find('.deadline-text.overdue').exists()).toBe(true)
@@ -204,10 +206,11 @@ describe('TableView', () => {
         cards: [makeCard({
           date_refs: [{ kind: 'deadline', iso: dateStr, date_day: dateStr, recurrence: 'none', event_ts: 0 }],
         })],
-        query: emptyQuery,
+        groups: noGroups,
+        grouped: false,
+        sort: noSort,
       },
     })
-    // Future deadline: has .deadline-text but not .overdue
     expect(wrapper.find('.deadline-text').exists()).toBe(true)
     expect(wrapper.find('.deadline-text.overdue').exists()).toBe(false)
   })
@@ -216,7 +219,9 @@ describe('TableView', () => {
     const wrapper = mount(TableView, {
       props: {
         cards: [makeCard({ date_refs: [] })],
-        query: emptyQuery,
+        groups: noGroups,
+        grouped: false,
+        sort: noSort,
       },
     })
     expect(wrapper.find('.deadline-text').exists()).toBe(false)
@@ -231,7 +236,9 @@ describe('TableView', () => {
           makeCard({ block_id: 'b2', properties: { status: 'Todo' } }),
           makeCard({ block_id: 'b3', properties: { status: 'Doing' } }),
         ],
-        query: emptyQuery,
+        groups: noGroups,
+        grouped: false,
+        sort: noSort,
       },
     })
     expect(wrapper.find('.done-count').text()).toBe('1/3')
@@ -241,7 +248,9 @@ describe('TableView', () => {
     const wrapper = mount(TableView, {
       props: {
         cards: [makeCard({ properties: { status: 'Todo' } })],
-        query: emptyQuery,
+        groups: noGroups,
+        grouped: false,
+        sort: noSort,
       },
     })
     expect(wrapper.find('.done-count').text()).toBe('0/1')
@@ -250,7 +259,7 @@ describe('TableView', () => {
   // ── Emits ──
   it('emits navigateToBlock when row clicked', async () => {
     const wrapper = mount(TableView, {
-      props: { cards: [makeCard({ block_id: 'b1' })], query: emptyQuery },
+      props: { cards: [makeCard({ block_id: 'b1' })], groups: noGroups, grouped: false, sort: noSort },
     })
     await wrapper.find('.task-row').trigger('click')
     expect(wrapper.emitted('navigateToBlock')).toBeTruthy()
@@ -260,7 +269,7 @@ describe('TableView', () => {
   it('emits statusChange when checkbox clicked (toggle Done↔Todo)', async () => {
     const card = makeCard({ block_id: 'b1', properties: { status: 'Todo' } })
     const wrapper = mount(TableView, {
-      props: { cards: [card], query: emptyQuery },
+      props: { cards: [card], groups: noGroups, grouped: false, sort: noSort },
     })
     await wrapper.find('.check-btn').trigger('click')
     expect(wrapper.emitted('statusChange')).toBeTruthy()
@@ -270,7 +279,7 @@ describe('TableView', () => {
   it('toggles from Done to Todo', async () => {
     const card = makeCard({ block_id: 'b2', properties: { status: 'Done' } })
     const wrapper = mount(TableView, {
-      props: { cards: [card], query: emptyQuery },
+      props: { cards: [card], groups: noGroups, grouped: false, sort: noSort },
     })
     await wrapper.find('.check-btn').trigger('click')
     expect(wrapper.emitted('statusChange')![0]).toEqual(['b2', 'Todo'])
@@ -279,10 +288,25 @@ describe('TableView', () => {
   it('emits statusChange when dropdown changed', async () => {
     const card = makeCard({ block_id: 'b3', properties: { status: 'Doing' } })
     const wrapper = mount(TableView, {
-      props: { cards: [card], query: emptyQuery },
+      props: { cards: [card], groups: noGroups, grouped: false, sort: noSort },
     })
     const select = wrapper.find('select')
     await select.setValue('Canceled')
     expect(wrapper.emitted('statusChange')![0]).toEqual(['b3', 'Canceled'])
+  })
+
+  // ── Grouped rendering ──
+  it('renders group headers when grouped', () => {
+    const groups: Group<BlockCard>[] = [
+      { key: 'Todo', label: '待办', items: [makeCard({ block_id: 'b1', properties: { status: 'Todo' } })] },
+      { key: 'Done', label: '已完成', items: [makeCard({ block_id: 'b2', properties: { status: 'Done' } })] },
+    ]
+    const wrapper = mount(TableView, {
+      props: { cards: groups.flatMap(g => g.items), groups, grouped: true, sort: noSort },
+    })
+    const headers = wrapper.findAll('.group-header')
+    expect(headers).toHaveLength(2)
+    expect(headers[0].text()).toContain('待办')
+    expect(headers[1].text()).toContain('已完成')
   })
 })

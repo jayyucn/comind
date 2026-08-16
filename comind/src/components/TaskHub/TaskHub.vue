@@ -1,21 +1,20 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useBlockCardStore } from '../../stores/blockCard'
-import { useTaskViewStore } from '../../stores/taskView'
+import { useTaskViewStore, parseViewQuery } from '../../stores/taskView'
 import { usePropertyStore } from '../../stores/property'
-import { applyQuery } from '../../composables/useBlockQuery'
-import { getBlockRegistry, BLOCK_ENTITY } from '../../composables/useBlockQueryRegistry'
 import { runBlockQuery } from '../../composables/useBlockQueryEngine'
+import { getBlockRegistry, BLOCK_ENTITY } from '../../composables/useBlockQueryRegistry'
 import type { ViewQuery } from '../../core/query'
 import type { BlockCard } from '../../wasm/types'
-import type { BlockQuery } from '../../types/blockQuery'
-import FilterBuilder from '../query/FilterBuilder.vue'
+import PageTitle from '../common/PageTitle.vue'
+import QueryToolbar from '../query/QueryToolbar.vue'
+import QueryChipBar from '../query/QueryChipBar.vue'
 import TaskViewBar from './TaskViewBar.vue'
 import TableView from './views/TableView.vue'
 import BoardView from './views/BoardView.vue'
 import CalendarView from './views/CalendarView.vue'
-import PageTitle from '../common/PageTitle.vue'
 
 const router = useRouter()
 const blockCardStore = useBlockCardStore()
@@ -24,55 +23,92 @@ const propertyStore = usePropertyStore()
 
 // 通用查询引擎注册表（组合根单例，内置字段 + 自定义 property 已注册）
 const registry = getBlockRegistry()
+// 实体级字段 schema 只需取一次（同实体所有记录共用）
+const blockRefFields = registry.list(BLOCK_ENTITY)
 
-// 新引擎开关：默认关闭 → 旧 applyQuery 行为完全保留（并存期）
-const useNewEngine = ref(false)
+// 当前激活视图的查询（ViewQuery）。芯片变更即写回 taskViewStore（命名视图持久化）。
 const viewQuery = ref<ViewQuery>({
   version: 1,
   filter: { combinator: 'and', children: [] },
   sort: [],
   groupBy: null,
 })
+const searchQuery = ref('')
 
-const currentViewQuery = computed<BlockQuery>(() => {
-  const view = taskViewStore.views.find(v => v.id === taskViewStore.currentViewId)
-  if (!view) return { filters: [], sort: [], groupBy: null }
-  try {
-    return JSON.parse(view.query_json)
-  } catch {
-    return { filters: [], sort: [], groupBy: null }
-  }
-})
+// 芯片行显隐（Filter 按钮切换展开/收起）
+const chipBarVisible = ref(false)
+const chipBarRef = ref<InstanceType<typeof QueryChipBar> | null>(null)
 
 const currentViewType = computed(() => {
-  const view = taskViewStore.views.find(v => v.id === taskViewStore.currentViewId)
+  const view = taskViewStore.views.find((v) => v.id === taskViewStore.currentViewId)
   return view?.view_type ?? 'table'
 })
 
-// 显示列表：新引擎开启时经 runBlockQuery（evaluate + groupItems）完成筛选/排序/分组；
-// 关闭时沿用旧 applyQuery（BlockQuery），行为不变。两者共享 blockCardStore.cards 数据源。
-const filteredCards = computed<BlockCard[]>(() => {
-  const cards = blockCardStore.cards
-  if (useNewEngine.value) {
-    return runBlockQuery(cards, viewQuery.value, registry, BLOCK_ENTITY).flatMap((g) => g.items)
+// Header 三按钮激活态（供 QueryToolbar 描边；与 PagesLibrary 同源）
+const hasFilter = computed(() => viewQuery.value.filter.children.length > 0)
+const hasSort = computed(() => viewQuery.value.sort.length > 0)
+const hasGroup = computed(() => viewQuery.value.groupBy !== null)
+
+// Header 三按钮处理：统一转发给 QueryChipBar.openToolbarMenu（芯片行显隐/菜单策略内聚其中）
+function openChipMenu(kind: 'filter' | 'sort' | 'group', e: MouseEvent) {
+  chipBarRef.value?.openToolbarMenu(kind, e.currentTarget as HTMLElement)
+}
+
+// 加载当前激活视图的查询（兼容存量旧 BlockQuery → ViewQuery 迁移）
+function loadActiveView() {
+  const view = taskViewStore.views.find((v) => v.id === taskViewStore.currentViewId)
+  viewQuery.value = view ? parseViewQuery(view.query_json) : {
+    version: 1,
+    filter: { combinator: 'and', children: [] },
+    sort: [],
+    groupBy: null,
   }
-  return applyQuery(cards, currentViewQuery.value)
+  searchQuery.value = ''
+}
+
+// 芯片/搜索变更：更新本地 viewQuery 并持久化到当前激活视图
+function onQueryUpdate(q: ViewQuery) {
+  viewQuery.value = q
+  const view = taskViewStore.views.find((v) => v.id === taskViewStore.currentViewId)
+  if (!view) return
+  void taskViewStore.update(
+    view.id,
+    view.name,
+    JSON.stringify(q),
+    view.view_type,
+    '',
+    view.is_default === 1,
+    view.sort_order,
+  )
+}
+
+// 搜索（父侧子串过滤，与 PagesLibrary 对 title 过滤同构）
+const searchedCards = computed<BlockCard[]>(() => {
+  const cards = blockCardStore.cards
+  const q = searchQuery.value.trim().toLowerCase()
+  if (!q) return cards
+  return cards.filter((c) => (c.content_preview ?? '').toLowerCase().includes(q))
 })
 
+// 统一引擎：过滤 + 排序 + 分组一步到位
+const groups = computed(() =>
+  runBlockQuery(searchedCards.value, viewQuery.value, registry, BLOCK_ENTITY),
+)
+const flatCards = computed<BlockCard[]>(() => groups.value.flatMap((g) => g.items))
+const grouped = computed(() => viewQuery.value.groupBy !== null)
+
 async function refresh() {
-  // 仅确保卡片已加载；显示结果由 filteredCards computed 派生
   await blockCardStore.getCards()
 }
 
 onMounted(async () => {
   await taskViewStore.load()
   await refresh()
+  loadActiveView()
 })
 
-// Re-run query when view changes
-watch(() => taskViewStore.currentViewId, async () => {
-  await refresh()
-})
+// 切换视图：重新加载该视图的查询
+watch(() => taskViewStore.currentViewId, () => loadActiveView())
 
 // Handle status change from child views
 async function handleStatusChange(blockId: string, newStatus: string) {
@@ -82,11 +118,9 @@ async function handleStatusChange(blockId: string, newStatus: string) {
 
 // Navigate to source block
 async function handleNavigateToBlock(blockId: string) {
-  const card = blockCardStore.cards.find(c => c.block_id === blockId)
+  const card = blockCardStore.cards.find((c) => c.block_id === blockId)
   if (!card) return
-  // Navigate to page containing this block — beforeEnter handles data loading
   router.push(`/page/${card.page_id}`)
-  // Emit event for page to scroll to block after mount
   window.dispatchEvent(new CustomEvent('navigate-to-block', { detail: { blockId } }))
 }
 
@@ -97,51 +131,69 @@ function handleRefresh() {
 
 <template>
   <div class="task-hub">
-    <PageTitle title="任务中心" />
+    <PageTitle title="任务中心" :subtitle="`${flatCards.length} 个任务`" />
+
+    <!-- 视图管理：命名视图切换 / 类型切换 / 保存 / 重命名 / 删除 / 设为默认 -->
     <TaskViewBar
       :current-view-type="currentViewType"
       :views="taskViewStore.views"
       :current-view-id="taskViewStore.currentViewId ?? undefined"
       @refresh="handleRefresh"
     />
-    <div class="task-hub-engine-bar">
-      <label class="engine-toggle">
-        <input
-          type="checkbox"
-          :checked="useNewEngine"
-          @change="useNewEngine = ($event.target as HTMLInputElement).checked"
+
+    <!-- 查询工具条：筛选 / 排序 / 分组 三按钮 + 搜索（与 PagesLibrary 一致） -->
+    <header class="lib-header">
+      <div class="header-actions">
+        <QueryToolbar
+          v-model="searchQuery"
+          :has-filter="hasFilter"
+          :has-sort="hasSort"
+          :has-group="hasGroup"
+          :chip-bar-visible="chipBarVisible"
+          @filter="openChipMenu('filter', $event)"
+          @sort="openChipMenu('sort', $event)"
+          @group="openChipMenu('group', $event)"
         />
-        新筛选引擎（通用查询）
-      </label>
-    </div>
-    <div v-if="useNewEngine" class="task-hub-newfilter">
-      <FilterBuilder :registry="registry" :entity-type="BLOCK_ENTITY" v-model="viewQuery" />
-    </div>
-    <div class="task-hub-view">
+      </div>
+    </header>
+
+    <!-- 筛选芯片行（QueryToolbar 三按钮唤起；显隐/菜单策略内聚于 QueryChipBar） -->
+    <QueryChipBar
+      ref="chipBarRef"
+      v-model="viewQuery"
+      :fields="blockRefFields"
+      :registry="registry"
+      :entity-type="BLOCK_ENTITY"
+      @visible-change="chipBarVisible = $event"
+      @update:model-value="onQueryUpdate"
+    />
+
+    <!-- 主内容区 -->
+    <main class="lib-body">
       <TableView
         v-if="currentViewType === 'table'"
-        :cards="filteredCards"
-        :query="currentViewQuery"
+        :cards="flatCards"
+        :groups="groups"
+        :grouped="grouped"
+        :sort="viewQuery.sort"
         @status-change="handleStatusChange"
         @navigate-to-block="handleNavigateToBlock"
       />
       <BoardView
         v-else-if="currentViewType === 'board'"
-        :cards="filteredCards"
-        :query="currentViewQuery"
+        :cards="flatCards"
         @status-change="handleStatusChange"
         @navigate-to-block="handleNavigateToBlock"
       />
       <CalendarView
         v-else-if="currentViewType === 'calendar'"
-        :cards="filteredCards"
-        :query="currentViewQuery"
+        :cards="flatCards"
         @navigate-to-block="handleNavigateToBlock"
       />
       <div v-else class="task-hub-empty">
         <p>暂无可用的视图</p>
       </div>
-    </div>
+    </main>
   </div>
 </template>
 
@@ -154,32 +206,29 @@ function handleRefresh() {
   padding: 0 var(--space-8);
 }
 
-.task-hub-view {
-  flex: 1;
-  overflow: auto;
-}
-
-.task-hub-engine-bar {
+.lib-header {
   display: flex;
   align-items: center;
-  padding: 6px 16px;
-  border-bottom: 1px solid var(--border-color, var(--app-split, #ddd));
-  background: var(--bg-base2);
+  justify-content: flex-end;
+  padding: 10px 0 4px;
+  margin: 0 var(--space-4);
+  border-bottom: 1px solid var(--border);
+  gap: 16px;
+  flex-shrink: 0;
 }
 
-.engine-toggle {
-  display: inline-flex;
+.header-actions {
+  display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: var(--text-xs, 12px);
-  color: var(--text-secondary, #444);
-  cursor: pointer;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
-.task-hub-newfilter {
+.lib-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--border-color, var(--app-split, #ddd));
-  background: var(--bg-base2);
 }
 
 .task-hub-empty {

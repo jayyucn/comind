@@ -2,11 +2,9 @@
 import { ref, computed } from 'vue'
 import { ChevronLeft, ChevronRight, Circle } from 'lucide-vue-next'
 import type { BlockCard, DateRefLite } from '../../../wasm/types'
-import type { BlockQuery } from '../../../types/blockQuery'
 
 const props = defineProps<{
   cards: BlockCard[]
-  query: BlockQuery
 }>()
 
 const emit = defineEmits<{

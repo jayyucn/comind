@@ -1,13 +1,10 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useTaskViewStore } from '../../stores/taskView'
-import { useSavedFilterStore } from '../../stores/savedFilter'
+import { useTaskViewStore, parseViewQuery } from '../../stores/taskView'
 import {
-  List, Columns, CalendarDays, Plus, Trash2, Star, StarOff, Filter,
+  List, Columns, CalendarDays, Plus, Trash2, Star,
   ChevronDown, Pencil, Check
 } from 'lucide-vue-next'
-import type { BlockQuery } from '../../types/blockQuery'
-import TaskFilterBar from './TaskFilterBar.vue'
 
 const props = defineProps<{
   currentViewType: string
@@ -20,10 +17,8 @@ const emit = defineEmits<{
 }>()
 
 const taskViewStore = useTaskViewStore()
-const savedFilterStore = useSavedFilterStore()
 
 const showViewDropdown = ref(false)
-const showFilterBar = ref(false)
 const isEditingName = ref(false)
 const editName = ref('')
 
@@ -58,9 +53,9 @@ async function selectView(viewId: string) {
 }
 
 async function saveNewView() {
-  const currentQuery: BlockQuery = currentView.value
-    ? JSON.parse(currentView.value.query_json)
-    : { filters: [], sort: [], groupBy: null }
+  const currentQuery = currentView.value
+    ? parseViewQuery(currentView.value.query_json)
+    : { version: 1, filter: { combinator: 'and', children: [] }, sort: [], groupBy: null }
   const nextIdx = taskViewStore.views.length + 1
   const saved = await taskViewStore.save(
     `新视图 ${nextIdx}`,
@@ -118,21 +113,6 @@ const canDelete = computed(() => {
 })
 
 const isDefaultView = computed(() => currentView.value?.is_default === 1)
-
-async function handleFilterApplied(query: BlockQuery) {
-  const view = currentView.value
-  if (!view) return
-  await taskViewStore.update(
-    view.id,
-    view.name,
-    JSON.stringify(query),
-    view.view_type,
-    view.group_by,
-    view.is_default === 1,
-    view.sort_order
-  )
-  emit('refresh')
-}
 </script>
 
 <template>
@@ -194,17 +174,6 @@ async function handleFilterApplied(query: BlockQuery) {
     </div>
 
     <div class="bar-right">
-      <!-- Filter toggle -->
-      <button
-        class="bar-btn"
-        :class="{ active: showFilterBar }"
-        @click="showFilterBar = !showFilterBar"
-        title="筛选"
-      >
-        <Filter :size="16" :stroke-width="1.75" />
-        筛选
-      </button>
-
       <!-- Set as default -->
       <button
         v-if="!isDefaultView"
@@ -236,14 +205,6 @@ async function handleFilterApplied(query: BlockQuery) {
         <Trash2 :size="16" :stroke-width="1.75" />
       </button>
     </div>
-
-    <!-- Filter panel (togglable) -->
-    <TaskFilterBar
-      v-if="showFilterBar"
-      :query="currentView ? JSON.parse(currentView.query_json) : { filters: [], sort: [], groupBy: null }"
-      @apply="handleFilterApplied"
-      @close="showFilterBar = false"
-    />
   </div>
 </template>
 
