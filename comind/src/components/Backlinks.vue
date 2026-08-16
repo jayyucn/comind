@@ -382,21 +382,6 @@ watch(
   overflow: hidden;
   /* padding 放在 inner 层，这样折叠时 padding 也被裁剪 */
   padding-bottom: var(--space-4);
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
-}
-
-.backlinks-body::-webkit-scrollbar {
-  width: 4px;
-}
-
-.backlinks-body::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 2px;
-}
-
-.backlinks-body::-webkit-scrollbar-thumb:hover {
-  background: var(--text-tertiary);
 }
 
 .backlinks-loading {

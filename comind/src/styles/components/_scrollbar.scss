@@ -1,0 +1,45 @@
+// 全局浮层滚动条（Overlay Scrollbar）
+//
+// 设计目标：
+//   1. 所有可滚动容器默认隐藏原生滚动条，释放滚动槽占位 —— 内容永不被滚动条挤压（零布局偏移）。
+//   2. 改为在「滚动 / 悬停」时浮现于内容之上的浮层指示条（macOS 浮层风），停滞后自动淡出。
+//   3. 作为全局默认行为，覆盖整个应用的所有可滚动容器，无需逐个元素挂载。
+//
+// 适用范围：Chromium 系（WebView2 / Chrome / Edge）。Firefox 经 scrollbar-width:none 优雅降级为「无可见滚动条」。
+// 浮层本体由 src/utils/overlayScrollbar.ts 动态创建并负责定位、显隐与拖拽。
+
+// —— 1) 全局隐藏原生滚动条（关键：display:none 同时移除其占位，故无布局偏移）——
+* {
+  scrollbar-width: none; // Firefox：隐藏原生滚动条（仅降级，无浮层）
+  -ms-overflow-style: none; // 旧版 Edge/IE（无害）
+}
+
+::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none; // 彻底移除 WebKit 原生滚动条及其占位
+}
+
+// —— 2) 浮层指示条本体（单例，由 overlayScrollbar.ts 动态创建并定位）——
+// 几何尺寸由 JS 按容器实时计算并写入 style；此处只负责外观与过渡。
+.cm-overlay-scrollbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: var(--scrollbar-size);
+  border-radius: var(--scrollbar-radius);
+  background: var(--color-scrollbar);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: none; // 闲置时不可点，避免遮挡内容
+  z-index: 9999;
+
+  &.is-visible {
+    opacity: 0.55;
+    pointer-events: auto;
+  }
+
+  &.is-dragging {
+    opacity: 0.85;
+  }
+}

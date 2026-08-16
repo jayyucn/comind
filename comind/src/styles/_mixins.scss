@@ -35,27 +35,6 @@
   transition: all var(--transition-slow);
 }
 
-// 滚动条
-@mixin custom-scrollbar {
-  &::-webkit-scrollbar {
-    width: var(--scrollbar-size);
-    height: var(--scrollbar-size);
-  }
-
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  &::-webkit-scrollbar-thumb {
-    background: var(--color-scrollbar);
-    border-radius: var(--scrollbar-radius);
-  }
-
-  &::-webkit-scrollbar-thumb:hover {
-    background: var(--text-tertiary);
-  }
-}
-
 // 文本截断
 @mixin text-ellipsis {
   overflow: hidden;

@@ -441,21 +441,12 @@ async function handleEmbedSelect(sourceBlockId: string, sourcePageId: string) {
   position: sticky;
 }
 
-.page-scroll-wrapper::-webkit-scrollbar {
-  display: none;
-}
-
 .content-body {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
   min-width: 0;
   min-height: 0;
-  scrollbar-width: none;
-}
-
-.content-body::-webkit-scrollbar {
-  display: none;
 }
 
 .top-right-controls {

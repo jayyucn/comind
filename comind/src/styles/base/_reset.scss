@@ -61,25 +61,6 @@ body {
   border-radius: var(--radius-sm);
 }
 
-// 滚动条样式
-::-webkit-scrollbar {
-  width: var(--scrollbar-size);
-  height: var(--scrollbar-size);
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--color-scrollbar);
-  border-radius: var(--scrollbar-radius);
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-tertiary);
-}
-
 // Sortable.js 拖拽占位符样式
 .sortable-ghost,
 .sortable-chosen,

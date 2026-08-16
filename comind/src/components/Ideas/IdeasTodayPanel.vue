@@ -87,11 +87,6 @@ function handleNavigate(pageId: string, pageTitle: string) {
   flex-direction: column;
   flex: 1;
   overflow-y: auto;
-  scrollbar-width: none;
-}
-
-.today-card::-webkit-scrollbar {
-  display: none;
 }
 
 .today-header {

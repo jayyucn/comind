@@ -8,9 +8,9 @@ import {
   Trash2,
   Type,
   X,
-} from 'lucide-vue-next'
-import { ref, watch } from 'vue'
-import type { FieldDescriptor, FieldType, SortRule } from '../../core/query'
+} from 'lucide-vue-next';
+import { ref, watch } from 'vue';
+import type { FieldDescriptor, FieldType, SortRule } from '../../core/query';
 
 const props = defineProps<{
   /** 当前全部排序规则。 */
@@ -132,8 +132,8 @@ function deleteAll() {
           :value="rule.dir"
           @change="update(idx, { dir: ($event.target as HTMLSelectElement).value as 'asc' | 'desc' })"
         >
-          <option value="asc">Sort {{ dirMeta(rule).asc }}</option>
-          <option value="desc">Sort {{ dirMeta(rule).desc }}</option>
+          <option value="asc"> {{ dirMeta(rule).asc }}</option>
+          <option value="desc"> {{ dirMeta(rule).desc }}</option>
         </select>
         <span class="select-caret">▾</span>
       </div>
@@ -239,7 +239,7 @@ function deleteAll() {
 }
 
 .sort-dir {
-  min-width: 130px;
+  min-width: 80px;
 }
 
 .row-remove {

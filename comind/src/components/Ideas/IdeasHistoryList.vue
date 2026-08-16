@@ -355,29 +355,6 @@ const isEmpty = computed(() => currentPages.value.length === 0)
   background: transparent;
   padding: 0 12px 0 20px;
   position: relative;
-  scrollbar-width: thin; // Firefox: 保留细条但默认半透明
-  scrollbar-color: transparent transparent;
-  transition: scrollbar-color 0.3s ease;
-
-  &:hover {
-    scrollbar-color: var(--border, #C7C7CC) transparent;
-  }
-
-  // WebKit (Chrome/Edge/Tauri WebView)
-  &::-webkit-scrollbar {
-    width: 6px;
-  }
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  &::-webkit-scrollbar-thumb {
-    background-color: transparent;
-    border-radius: 3px;
-    transition: background-color 0.3s ease;
-  }
-  &:hover::-webkit-scrollbar-thumb {
-    background-color: var(--border, #C7C7CC);
-  }
 }
 
 // 骨架屏
