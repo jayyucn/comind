@@ -9,7 +9,7 @@ import {
   Type,
   X,
 } from 'lucide-vue-next';
-import { ref, watch } from 'vue';
+import { ref, watch, type Component } from 'vue';
 import type { FieldDescriptor, FieldType, SortRule } from '../../core/query';
 
 const props = defineProps<{
@@ -39,40 +39,22 @@ function fieldOf(key: string): FieldDescriptor | undefined {
   return props.fields.find((f) => f.key === key)
 }
 
+const FIELD_META: Record<FieldType, { icon: Component; dirs: { asc: string; desc: string } }> = {
+  text: { icon: Type, dirs: { asc: 'A → Z', desc: 'Z → A' } },
+  number: { icon: Hash, dirs: { asc: '1 → 9', desc: '9 → 1' } },
+  date: { icon: CalendarDays, dirs: { asc: '旧 → 新', desc: '新 → 旧' } },
+  select: { icon: List, dirs: { asc: 'A → Z', desc: 'Z → A' } },
+  multiSelect: { icon: List, dirs: { asc: 'A → Z', desc: 'Z → A' } },
+  boolean: { icon: CheckSquare, dirs: { asc: '假 → 真', desc: '真 → 假' } },
+}
+
 function fieldIcon(type: FieldType) {
-  switch (type) {
-    case 'text':
-      return Type
-    case 'number':
-      return Hash
-    case 'date':
-      return CalendarDays
-    case 'select':
-    case 'multiSelect':
-      return List
-    case 'boolean':
-      return CheckSquare
-    default:
-      return Type
-  }
+  return FIELD_META[type].icon
 }
 
 function dirMeta(rule: SortRule): { asc: string; desc: string } {
   const type = fieldOf(rule.field)?.type ?? 'text'
-  switch (type) {
-    case 'number':
-      return { asc: '1 → 9', desc: '9 → 1' }
-    case 'date':
-      return { asc: '旧 → 新', desc: '新 → 旧' }
-    case 'boolean':
-      return { asc: '假 → 真', desc: '真 → 假' }
-    case 'select':
-    case 'multiSelect':
-      return { asc: 'A → Z', desc: 'Z → A' }
-    case 'text':
-    default:
-      return { asc: 'A → Z', desc: 'Z → A' }
-  }
+  return FIELD_META[type].dirs
 }
 
 function update(index: number, patch: Partial<SortRule>) {

@@ -74,6 +74,16 @@ function toggleMulti(id: string) {
   setVal(arr.length ? arr : undefined)
 }
 
+/* ---------- 勾选列表（select / multiSelect 共用渲染） ---------- */
+const isMulti = computed(() => props.fieldType === 'multiSelect')
+function isOptionSelected(id: string): boolean {
+  return isMulti.value ? selectedIds.value.includes(id) : selectedId.value === id
+}
+function onOptionClick(id: string) {
+  if (isMulti.value) toggleMulti(id)
+  else setVal(id)
+}
+
 /* ---------- boolean ---------- */
 const boolVal = computed<boolean>(() => props.modelValue === true)
 function setBool(v: boolean) {
@@ -113,8 +123,12 @@ function setBool(v: boolean) {
     <button :class="{ active: !boolVal }" type="button" @click="setBool(false)">否</button>
   </div>
 
-  <!-- select（单选） -->
-  <div v-else-if="fieldType === 'select'" class="cve-list" data-testid="cve-select">
+  <!-- select / multiSelect 勾选列表（单选 is、多选 string[] 共用同一渲染） -->
+  <div
+    v-else-if="fieldType === 'select' || fieldType === 'multiSelect'"
+    class="cve-list"
+    :data-testid="fieldType === 'select' ? 'cve-select' : 'cve-multiselect'"
+  >
     <input
       v-if="(options ?? []).length > 4"
       class="cve-search"
@@ -126,37 +140,12 @@ function setBool(v: boolean) {
       <li
         v-for="o in filteredOptions"
         :key="o.id"
-        :class="{ selected: selectedId === o.id }"
+        :class="{ selected: isOptionSelected(o.id) }"
         data-testid="cve-option"
         tabindex="-1"
-        @click.stop="setVal(o.id)"
+        @click.stop="onOptionClick(o.id)"
       >
-        <span class="cve-check">{{ selectedId === o.id ? '✓' : '' }}</span>
-        <span class="cve-label">{{ o.label }}</span>
-      </li>
-      <li v-if="filteredOptions.length === 0" class="cve-empty-item">无匹配选项</li>
-    </ul>
-  </div>
-
-  <!-- multiSelect（多选） -->
-  <div v-else-if="fieldType === 'multiSelect'" class="cve-list" data-testid="cve-multiselect">
-    <input
-      v-if="(options ?? []).length > 4"
-      class="cve-search"
-      type="text"
-      v-model="search"
-      placeholder="搜索…"
-    />
-    <ul class="cve-options">
-      <li
-        v-for="o in filteredOptions"
-        :key="o.id"
-        :class="{ selected: selectedIds.includes(o.id) }"
-        data-testid="cve-option"
-        tabindex="-1"
-        @click.stop="toggleMulti(o.id)"
-      >
-        <span class="cve-check">{{ selectedIds.includes(o.id) ? '✓' : '' }}</span>
+        <span class="cve-check">{{ isOptionSelected(o.id) ? '✓' : '' }}</span>
         <span class="cve-label">{{ o.label }}</span>
       </li>
       <li v-if="filteredOptions.length === 0" class="cve-empty-item">无匹配选项</li>
@@ -170,17 +159,6 @@ function setBool(v: boolean) {
     :model-value="(modelValue as string | [string, string] | undefined)"
     data-testid="cve-date"
     @update:model-value="setVal"
-  />
-
-  <!-- 未知类型兜底：文本输入 -->
-  <input
-    v-else
-    class="cve-input"
-    type="text"
-    :value="textVal"
-    placeholder="输入值…"
-    data-testid="cve-text"
-    @input="textVal = ($event.target as HTMLInputElement).value"
   />
 </template>
 
