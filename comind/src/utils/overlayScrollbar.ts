@@ -16,15 +16,15 @@ let dragging = false
 let dragStartY = 0
 let dragStartScrollTop = 0
 
-/** 向上查找最近的可滚动祖先（需真实存在溢出内容）。 */
+/** 向上查找最近的可滚动祖先（仅纵向、且确有纵向溢出才计入）。 */
 function findScrollable(node: EventTarget | null): HTMLElement | null {
   let el = node as HTMLElement | null
   while (el && el !== document.body) {
     const cs = getComputedStyle(el)
-    const scrollable =
-      /(auto|scroll|overlay)/.test(cs.overflowY) ||
-      /(auto|scroll|overlay)/.test(cs.overflowX)
-    if (scrollable && (el.scrollHeight > el.clientHeight || el.scrollWidth > el.clientWidth)) {
+    // 浮层只渲染纵向指示条，故只认「纵向可滚动 + 确有纵向溢出」的容器。
+    // 仅横向溢出（如表宽超出视口）不画纵向指示条，避免误判。
+    const verticalScrollable = /(auto|scroll|overlay)/.test(cs.overflowY)
+    if (verticalScrollable && el.scrollHeight > el.clientHeight) {
       return el
     }
     el = el.parentElement
@@ -127,12 +127,12 @@ export function initOverlayScrollbars(): void {
   ;(window as any).__cm_overlay_scrollbar = true
 
   // scroll 不冒泡，用捕获阶段在 document 上统一截获任何元素的滚动。
+  // 同样走 findScrollable 校验纵向溢出，避免非溢出容器被误判。
   document.addEventListener(
     'scroll',
     (e: Event) => {
-      const target = e.target
-      if (!target || target === document || target === document.documentElement) return
-      showFor(target as HTMLElement)
+      const el = findScrollable(e.target)
+      if (el) showFor(el)
     },
     true
   )
