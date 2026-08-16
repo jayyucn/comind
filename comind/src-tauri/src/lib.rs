@@ -169,6 +169,7 @@ pub fn run() {
             commands::get_workspace_path,
             commands::set_workspace_path,
             commands::reset_workspace_path,
+            commands::open_workspace_path,
             commands::export_to_markdown,
             commands::import_from_markdown,
             commands::get_sync_config,

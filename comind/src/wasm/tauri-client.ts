@@ -210,6 +210,10 @@ export async function tauriResetWorkspacePath(): Promise<string> {
   return invoke('reset_workspace_path')
 }
 
+export async function tauriOpenWorkspacePath(): Promise<void> {
+  return invoke('open_workspace_path')
+}
+
 export async function tauriPickDirectory(): Promise<string | null> {
   const selected = await open({
     directory: true,

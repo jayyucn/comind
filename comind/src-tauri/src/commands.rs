@@ -10,6 +10,7 @@ use comind_core::{
 };
 use serde::{Deserialize, Serialize};
 use std::error::Error;
+use std::process::Command;
 use tauri::{AppHandle, State};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -968,6 +969,46 @@ pub async fn reset_workspace_path(
 
     config_manager.update_config(config)?;
     Ok("default".to_string())
+}
+
+#[tauri::command]
+pub async fn open_workspace_path(
+    config_manager: State<'_, super::state::ConfigManager>,
+    app_handle: AppHandle,
+) -> Result<(), String> {
+    let config = config_manager.get_config()?.clone();
+    let workspace = super::config::get_workspace_path(&app_handle, &config);
+    // 目录不存在则先创建，避免系统打开命令因路径缺失而报错
+    if !workspace.exists() {
+        std::fs::create_dir_all(&workspace)
+            .map_err(|e| format!("创建工作空间目录失败: {}", e))?;
+    }
+    open_path_in_explorer(&workspace)
+}
+
+/// 用系统文件管理器打开指定目录（Windows 资源管理器 / macOS Finder / Linux 文件管理器）
+fn open_path_in_explorer(path: &std::path::Path) -> Result<(), String> {
+    #[cfg(target_os = "android")]
+    {
+        return Err("Android 不支持打开系统文件管理器".to_string());
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let mut program = "xdg-open";
+        #[cfg(target_os = "windows")]
+        {
+            program = "explorer";
+        }
+        #[cfg(target_os = "macos")]
+        {
+            program = "open";
+        }
+        Command::new(program)
+            .arg(path)
+            .status()
+            .map_err(|e| format!("打开文件夹失败: {}", e))?;
+        Ok(())
+    }
 }
 
 #[tauri::command]
