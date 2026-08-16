@@ -29,10 +29,16 @@ ADR-0009 落地后，页面库芯片栏已基本是 Notion 风格，但用户在
 | 空 | `[+ Filter]`（仅此） |
 | 简单筛选（扁平） | `[属性▾] [属性▾] … [+ Filter]`（逐个属性芯片） |
 | 纯嵌套/高级（无扁平条件） | `[≡ N rule(s) ▾] [+ Filter]` |
-| **混合（扁平 + 嵌套）** | **`[属性▾] [属性▾] … [≡ N rule(s) ▾] [+ Filter]`** |
+| **混合（扁平 + 嵌套）** | **`[属性▾] [属性▾] … [≡ N rule(s) ▾] [+ Filter]`**（高级 chip 始终在扁平 chip 左侧） |
 | 含排序 | `[↓ N sorts ▾] [+ Filter]`（排序永远折叠） |
-| 筛选 + 排序 | `[属性▾] … [≡ N rule(s) ▾] [↓ N sorts ▾] [+ Filter]` |
-| 分组 | 在芯片栏**上方**独立显示（如 "Grouped by status"），不在栏内 |
+| 筛选 + 排序 | `[↓ N sorts ▾] [属性▾] … [≡ N rule(s) ▾] [+ Filter]` |
+
+**整体从左到右顺序（sorts | group | filters | +Filter）**：
+
+`[↓ N sorts ▾] [分组：字段 ▾] [≡ N rule(s) ▾] [属性▾] … [+ Filter]`
+
+- 排序 chip 永远最左；分组 chip（激活时）次之；筛选区内部：高级聚合 chip 在扁平 chip 左侧，扁平 chip 按创建顺序从左到右；`+ Filter` 收尾。
+- 分组从「芯片栏上方独立指示」改为**芯片栏内聚合 chip**（点开经 `GroupMenu` 编辑；选「不分组」即取消分组）。 |
 
 ---
 
@@ -54,9 +60,9 @@ ADR-0009 落地后，页面库芯片栏已基本是 Notion 风格，但用户在
 
 **删除**独立排序 chip（`SortChip.vue` 多键并列形态）。排序键在芯片栏统一折叠为单个 `↓ N sorts ▾` 聚合 chip，点开编辑/删除/添加排序条件。排序的添加入口仅保留 QueryToolbar 排序按钮 + 聚合 chip 内编辑。
 
-## 决策 4（D4，F4）：移除芯片栏内 `+ Sort` / `+ Group`
+## 决策 4（D4，F4）：移除芯片栏内 `+ Sort` / `+ Group`，分组改为栏内聚合 chip
 
-芯片栏内不再渲染 `+ Sort` 和 `+ Group` 按钮——QueryToolbar 上方已有常驻的排序/分组按钮，属重复入口。分组标签按 Notion 在芯片栏**上方**独立显示（由父组件 `PagesLibrary` 现有分组呈现负责，不在 `FilterChipBar` 内）。
+芯片栏内不再渲染 `+ Sort` 和 `+ Group` 按钮——QueryToolbar 上方已有常驻的排序/分组按钮，属重复入口。分组不再以「芯片栏上方独立指示」呈现，而是**激活时作为芯片栏内的聚合 chip**（标签 `分组：字段 ▾`），位于排序 chip 之后、筛选 chip 之前（见上方状态表整体顺序）；点开经 `GroupMenu` 编辑，选「不分组」即取消分组。`FilterChipBar` 直接从 `modelValue.groupBy` 派生该 chip，父组件 `PagesLibrary` 不再单独渲染分组指示。
 
 ## 决策 5（D5，修订 D9/F6+F7）：高级筛选 = Popover，且只含筛选
 

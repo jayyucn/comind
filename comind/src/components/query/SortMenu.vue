@@ -35,11 +35,13 @@ watch(
 function onFieldChange(e: Event) {
   local.value.field = (e.target as HTMLSelectElement).value
   emit('update:rule', { ...local.value })
+  emit('close')
 }
 
 function setDir(dir: 'asc' | 'desc') {
   local.value.dir = dir
   emit('update:rule', { ...local.value })
+  emit('close')
 }
 
 function fieldLabel(key: string): string {

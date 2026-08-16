@@ -166,7 +166,8 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 20px 4px;
+  padding: 12px 0 4px;
+  margin: 0 var(--space-4);
   border-bottom: 1px solid var(--border);
   gap: 16px;
   flex-shrink: 0;

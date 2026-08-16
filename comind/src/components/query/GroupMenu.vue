@@ -18,8 +18,9 @@ defineProps<{
   position?: { x: number; y: number }
 }>()
 
-function select(key: string) {
+function select(key: string | null) {
   emit('update:groupBy', key)
+  emit('close')
 }
 </script>
 
@@ -33,7 +34,7 @@ function select(key: string) {
         class="group-none"
         data-testid="group-none"
         :class="{ active: groupBy === null }"
-        @click="emit('update:groupBy', null)"
+        @click="select(null)"
       >
         不分组
       </button>

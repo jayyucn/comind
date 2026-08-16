@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ArrowUpDown, Layers } from 'lucide-vue-next'
+import { computed, ref } from 'vue'
 import type {
   Condition,
   ConditionGroup,
@@ -10,13 +11,13 @@ import type {
   ViewQuery,
 } from '../../core/query'
 import BasePopover from '../common/BasePopover.vue'
-import FilterChip from './FilterChip.vue'
 import ConditionPopover from './ConditionPopover.vue'
 import FieldSelectMenu from './FieldSelectMenu.vue'
-import SortMenu from './SortMenu.vue'
-import GroupMenu from './GroupMenu.vue'
 import FilterBuilder from './FilterBuilder.vue'
+import FilterChip from './FilterChip.vue'
 import { defaultOpFor, summarizeCondition } from './filterMeta'
+import GroupMenu from './GroupMenu.vue'
+import SortMenu from './SortMenu.vue'
 
 const props = defineProps<{
   /** 当前视图查询（投影源：筛选/排序/分组均派生自此）。 */
@@ -83,6 +84,14 @@ function patch(p: Partial<ViewQuery>) {
 // ── 筛选 ──
 const flatConds = computed(() => props.modelValue.filter.children.filter(isCondition))
 const hasNested = computed(() => props.modelValue.filter.children.some((c) => !isCondition(c)))
+/** 筛选区是否确有 chip（高级聚合或扁平条件）—用于决定 group→filters 分割线是否出现。 */
+const hasFilterChips = computed(() => hasNested.value || flatConds.value.length > 0)
+/** sort 之后有 group 或 filters 才画分割线（sort | group / sort | filters）。 */
+const divAfterSort = computed(
+  () => props.modelValue.sort.length > 0 && (!!props.modelValue.groupBy || hasFilterChips.value),
+)
+/** group 之后有 filters 才画分割线（group | filters）。 */
+const divAfterGroup = computed(() => !!props.modelValue.groupBy && hasFilterChips.value)
 /** 仅嵌套/高级子组内的条件总数（用于聚合 chip 标签）。 */
 const nestedCount = computed(() =>
   props.modelValue.filter.children
@@ -238,8 +247,10 @@ defineExpose({ openSortMenu, openGroupMenu })
       data-testid="bar-sort-agg"
       @click="openSortMenu($event.currentTarget as HTMLElement)"
     >
-      ↓ {{ sorts.length }} sorts ▾
+      <ArrowUpDown :size="14" />{{ sorts.length }} sorts ▾
     </button>
+    <!-- sort | (group|filters) 分割线 -->
+    <span v-if="divAfterSort" class="bar-divider" aria-hidden="true"></span>
 
     <!-- 分组：激活时显示单个 chip（groupBy 经 GroupMenu 编辑） -->
     <button
@@ -248,8 +259,10 @@ defineExpose({ openSortMenu, openGroupMenu })
       data-testid="bar-group-chip"
       @click="openGroupMenu($event.currentTarget as HTMLElement)"
     >
-      分组：{{ groupLabel }} ▾
+    <Layers :size="14" />{{ groupLabel }} ▾
     </button>
+    <!-- group | filters 分割线 -->
+    <span v-if="divAfterGroup" class="bar-divider" aria-hidden="true"></span>
 
     <!-- 嵌套/高级条件：聚合成单个 chip，始终在扁平 chip 左侧（ADR-0013 D2 修订） -->
     <button
@@ -339,7 +352,7 @@ defineExpose({ openSortMenu, openGroupMenu })
   flex-wrap: wrap;
   gap: 6px;
   padding: 8px 20px;
-  border-bottom: 1px solid var(--border);
+  /* border-bottom: 1px solid var(--border); */
   background: var(--bg-base2);
 }
 .add-btn {
@@ -355,6 +368,13 @@ defineExpose({ openSortMenu, openGroupMenu })
 .add-btn:hover {
   border-color: var(--accent, #6366f1);
   color: var(--accent, #6366f1);
+}
+.bar-divider {
+  width: 1px;
+  height: 18px;
+  flex: 0 0 1px;
+  background: var(--border);
+  margin: 0 2px;
 }
 .agg-chip {
   display: inline-flex;

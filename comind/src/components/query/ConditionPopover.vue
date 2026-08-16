@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import BasePopover from '../common/BasePopover.vue'
 import ChipValueEditor from './ChipValueEditor.vue'
 import { deriveOps } from '../../core/query'
@@ -26,6 +27,19 @@ const emit = defineEmits<{
 }>()
 
 const ops = deriveOps(props.field)
+
+/**
+ * 选完值是否立即关闭面板。
+ * 仅对「一次交互即完成取值」的离散类型关闭：select（单选）、boolean、date 单日期（before/after）。
+ * text / number 每次按键都 emit（不可关），multiSelect / date 区间需多次点选（也不可关，
+ * 由点击面板外 / Escape 兜底关闭）。
+ */
+const closeOnValue = computed(() => {
+  const t = props.field.type
+  if (t === 'select' || t === 'boolean') return true
+  if (t === 'date') return props.condition.op === 'before' || props.condition.op === 'after'
+  return false
+})
 
 const literal = (): unknown =>
   props.condition.value?.kind === 'literal' ? props.condition.value.value : undefined
@@ -57,6 +71,7 @@ function onValueChange(v: unknown) {
   const value: ConditionValue | undefined =
     v === undefined ? undefined : { kind: 'literal', value: v }
   emitUpdate({ value })
+  if (closeOnValue.value) emit('close')
 }
 
 function optionList(): Option[] {
