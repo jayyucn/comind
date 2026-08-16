@@ -15,7 +15,7 @@
  * between：仅支持字面量区间，不开放字段/记录引用（v1 范围）。切到 between 时丢弃已有的引用值，避免静默退化为 equals。
  * 通过 defineModel 以不可变方式向上交出新 ConditionValue（符合 vue/no-mutating-props）。
  */
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { File, Plus, Tag, X } from 'lucide-vue-next'
 import type {
   ConditionValue,
@@ -169,10 +169,32 @@ function clearRef() {
 type MenuView = 'root' | 'recordField' | 'recordRef'
 const menuOpen = ref(false)
 const menuView = ref<MenuView>('root')
+/** 触发按钮与弹层 DOM，用于把弹层 teleport 到 body 并以 fixed 定位（避免被 FilterBuilder 面板的 overflow 裁切）。 */
+const refBtn = ref<HTMLButtonElement | null>(null)
+const menuEl = ref<HTMLElement | null>(null)
+const anchor = ref<{ x: number; y: number }>({ x: 0, y: 0 })
+
+function placeMenu() {
+  const btn = refBtn.value
+  if (!btn) return
+  const r = btn.getBoundingClientRect()
+  let x = r.left
+  let y = r.bottom + 4
+  const el = menuEl.value
+  if (el && typeof window !== 'undefined') {
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    // 右/下溢出视口时收边；下方空间不足则向上翻
+    if (x + el.offsetWidth > vw - 8) x = Math.max(8, vw - el.offsetWidth - 8)
+    if (y + el.offsetHeight > vh - 8) y = Math.max(8, r.top - el.offsetHeight - 4)
+  }
+  anchor.value = { x, y }
+}
 
 function openMenu() {
   menuView.value = 'root'
   menuOpen.value = true
+  nextTick(placeMenu)
 }
 function closeMenu() {
   menuOpen.value = false
@@ -295,6 +317,7 @@ function chooseRecordRef(sourceId: string, entityType: string, field: string) {
       <!-- + 菜单入口：引用值（当前记录字段 / 其他记录） -->
       <button
         v-if="showRefControls"
+        ref="refBtn"
         type="button"
         class="qb-ref-btn"
         title="引用值"
@@ -304,10 +327,16 @@ function chooseRecordRef(sourceId: string, entityType: string, field: string) {
       </button>
     </template>
 
-    <!-- 引用值弹出层 -->
-    <div v-if="menuOpen" class="qb-popover-root">
-      <div class="qb-popover-backdrop" @click="closeMenu"></div>
-      <div class="qb-popover">
+    <!-- 引用值弹出层：teleport 到 body，fixed 定位，避免被 FilterBuilder 面板 overflow 裁切 -->
+    <Teleport to="body">
+      <div
+        v-if="menuOpen"
+        ref="menuEl"
+        class="qb-popover-root"
+        :style="{ left: anchor.x + 'px', top: anchor.y + 'px' }"
+      >
+        <div class="qb-popover-backdrop" @click="closeMenu"></div>
+        <div class="qb-popover">
         <template v-if="menuView === 'root'">
           <p class="qb-pop-title">引用值</p>
           <button
@@ -354,6 +383,7 @@ function chooseRecordRef(sourceId: string, entityType: string, field: string) {
         </template>
       </div>
     </div>
+    </Teleport>
   </div>
 </template>
 
@@ -477,10 +507,8 @@ function chooseRecordRef(sourceId: string, entityType: string, field: string) {
 }
 
 .qb-popover-root {
-  position: absolute;
-  z-index: 50;
-  top: calc(100% + 4px);
-  left: 0;
+  position: fixed;
+  z-index: 1200;
 }
 
 .qb-popover-backdrop {

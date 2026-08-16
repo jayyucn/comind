@@ -160,6 +160,7 @@ const calSelected = computed(() => {
         :key="o.id"
         :class="{ selected: selectedId === o.id }"
         data-testid="cve-option"
+        tabindex="-1"
         @click.stop="setVal(o.id)"
       >
         <span class="cve-check">{{ selectedId === o.id ? '✓' : '' }}</span>
@@ -184,6 +185,7 @@ const calSelected = computed(() => {
         :key="o.id"
         :class="{ selected: selectedIds.includes(o.id) }"
         data-testid="cve-option"
+        tabindex="-1"
         @click.stop="toggleMulti(o.id)"
       >
         <span class="cve-check">{{ selectedIds.includes(o.id) ? '✓' : '' }}</span>

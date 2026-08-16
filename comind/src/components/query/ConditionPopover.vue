@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import type { Condition, ConditionValue, FieldDescriptor, FilterOp, Option } from '../../core/query'
 import { deriveOps } from '../../core/query'
 import BasePopover from '../common/BasePopover.vue'
@@ -96,11 +96,32 @@ function onAdvanced() {
   moreOpen.value = false
   emit('advanced')
 }
+
+// 面板弹出后自动聚焦值输入区，提升录入效率：
+// 输入框（text/number/select 搜索框）优先，其次首个可交互控件（boolean/date 按钮），
+// 再其次短下拉列表的首个可聚焦选项（li[tabindex]）。
+// 在 onMounted 同步聚焦：此时值输入区已渲染入 DOM，无需 nextTick（避免焦点延迟一拍）。
+const popoverEl = ref<HTMLElement | null>(null)
+onMounted(() => {
+  const valueRow = popoverEl.value?.querySelector<HTMLElement>('.cond-value-row')
+  if (!valueRow) return
+  const input = valueRow.querySelector<HTMLElement>('input')
+  if (input) {
+    input.focus()
+    return
+  }
+  const btn = valueRow.querySelector<HTMLElement>('button')
+  if (btn) {
+    btn.focus()
+    return
+  }
+  valueRow.querySelector<HTMLElement>('li[tabindex]')?.focus()
+})
 </script>
 
 <template>
   <BasePopover :visible="true" :position="position" @close="emit('close')">
-    <div class="cond-popover" data-testid="cond-popover">
+    <div class="cond-popover" data-testid="cond-popover" ref="popoverEl">
       <!-- Row 1: 字段下拉 + 操作符下拉 + ⋯ 更多 -->
       <div class="cond-top-row">
         <div class="cond-field-op">

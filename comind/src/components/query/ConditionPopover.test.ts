@@ -144,4 +144,28 @@ describe('ConditionPopover', () => {
     // 不应再有旧的 .cond-remove 样式（红色按钮）
     expect(remove.classes()).not.toContain('cond-remove')
   })
+
+  it('auto-focuses the value text input on open', () => {
+    const cond: Condition = { field: 'title', op: 'contains', value: undefined }
+    const w = mount(ConditionPopover, {
+      props: { field: FIELDS[0], condition: cond, fields: FIELDS },
+      attachTo: document.body,
+      global: { stubs: { BasePopover: BasePopoverStub } },
+    })
+    // 弹出后焦点应落在值输入区（text 输入框）
+    expect(document.activeElement).toBe(w.find('[data-testid="cve-text"]').element)
+    w.unmount()
+  })
+
+  it('auto-focuses the first option for a short select list (no input)', () => {
+    const cond: Condition = { field: 'type', op: 'is', value: undefined }
+    const w = mount(ConditionPopover, {
+      props: { field: FIELDS[1], condition: cond, fields: FIELDS },
+      attachTo: document.body,
+      global: { stubs: { BasePopover: BasePopoverStub } },
+    })
+    // 短下拉无搜索框：焦点应落在首个可聚焦选项
+    expect(document.activeElement).toBe(w.find('[data-testid="cve-option"]').element)
+    w.unmount()
+  })
 })
