@@ -7,12 +7,12 @@ import { useEditorSettings } from '../../composables/useEditorSettings'
 import type { EditorFontSize } from '../../composables/useEditorSettings'
 import RelationshipTypesPanel from './RelationshipTypesPanel.vue'
 import QrScanner from './QrScanner.vue'
-import { getWorkspacePath, setWorkspacePath, resetWorkspacePath, exportToMarkdown, importFromMarkdown, getSyncConfig, setSyncConfig, syncNow } from '../../wasm/client'
+import { getWorkspacePath, setWorkspacePath, resetWorkspacePath, openWorkspacePath, exportToMarkdown, importFromMarkdown, getSyncConfig, setSyncConfig, syncNow } from '../../wasm/client'
 import { isTauriEnvironment, tauriPickDirectory, isAndroidPlatform, isAndroidPlatformSync, tauriConnectToServer, tauriDisconnectSync, tauriGetSyncStatus, tauriTriggerFullSyncMobile } from '../../wasm/tauri-client'
 import type { SyncStatus } from '../../wasm/tauri-client'
 import DeviceSyncPanel from '../Sidebar/DeviceSyncPanel.vue'
 import { useEditorStore } from '../../stores/editor'
-import { X, Sun, Moon, Monitor, Folder, RotateCcw, AlertCircle, Upload, Download, RefreshCw, ToggleLeft, ToggleRight, QrCode, Wifi } from 'lucide-vue-next'
+import { X, Sun, Moon, Monitor, Folder, FolderOpen, RotateCcw, AlertCircle, Upload, Download, RefreshCw, ToggleLeft, ToggleRight, QrCode, Wifi } from 'lucide-vue-next'
 import { useNotificationStore } from '../../stores/notification'
 
 const { isOpen, close } = useSettingsModal()
@@ -117,6 +117,15 @@ async function handlePickDirectory() {
     }
   } catch (e) {
     console.error('Failed to pick directory:', e)
+  }
+}
+
+async function handleOpenWorkspacePath() {
+  if (!workspacePath.value) return
+  try {
+    await openWorkspacePath()
+  } catch (e) {
+    console.error('Failed to open workspace path:', e)
   }
 }
 
@@ -361,6 +370,14 @@ onUnmounted(() => {
                       <button class="db-path-btn db-path-btn--secondary" @click="handleResetWorkspacePath">
                         <RotateCcw :size="12" :stroke-width="1.75" />
                         恢复默认
+                      </button>
+                      <button
+                        class="db-path-btn db-path-btn--secondary"
+                        :disabled="!workspacePath"
+                        @click="handleOpenWorkspacePath"
+                      >
+                        <FolderOpen :size="12" :stroke-width="1.75" />
+                        打开目录
                       </button>
                     </div>
                     <div v-else class="db-path-input-container">

@@ -776,6 +776,13 @@ export async function resetWorkspacePath(): Promise<string> {
   throw new Error('Workspace path setting is only available in desktop app')
 }
 
+export async function openWorkspacePath(): Promise<void> {
+  if (isTauriEnvironment()) {
+    return tauri.tauriOpenWorkspacePath()
+  }
+  throw new Error('Opening workspace path is only available in desktop app')
+}
+
 export async function exportToMarkdown(): Promise<ExportResult> {
   if (isTauriEnvironment()) {
     return tauri.tauriExportToMarkdown()

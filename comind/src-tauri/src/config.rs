@@ -167,9 +167,16 @@ impl AppConfig {
 }
 
 /// 默认 workspace 路径
-/// - debug: exe_dir/workspace-dev（移动端回退到 app_data_dir/workspace-dev）
-/// - release: app_data_dir
+/// - Windows release: D:/workspace
+/// - 其他平台 / debug: exe_dir/workspace-dev（移动端回退到 app_data_dir/workspace-dev）
+/// - release（非 Windows）: app_data_dir
 pub fn get_default_workspace_path(app_handle: &tauri::AppHandle) -> PathBuf {
+    // Windows 正式版默认工作空间为 D:/workspace（仅新安装、未显式设置时生效）
+    #[cfg(all(target_os = "windows", not(debug_assertions)))]
+    {
+        return PathBuf::from("D:/workspace");
+    }
+
     #[cfg(not(target_os = "android"))]
     #[cfg(debug_assertions)]
     if let Ok(exe_dir) = app_handle.path().executable_dir() {
