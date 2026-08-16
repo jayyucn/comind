@@ -82,7 +82,20 @@ function patch(p: Partial<ViewQuery>) {
 }
 
 // ── 筛选 ──
+/** 扁平条件（与嵌套组并列的兄弟节点）。 */
 const flatConds = computed(() => props.modelValue.filter.children.filter(isCondition))
+/**
+ * 扁平条件 + 其在 `children` 中的真实索引。
+ * 关键：模板里必须用真实索引（而非 flatConds 的过滤后序号）去取/删，
+ * 否则嵌套组排在前时，扁平 chip 的 index 会错位（错删聚合 chip / 弹不出菜单）。
+ */
+const flatItems = computed(() => {
+  const items: { cond: Condition; idx: number }[] = []
+  props.modelValue.filter.children.forEach((c, idx) => {
+    if (isCondition(c)) items.push({ cond: c, idx })
+  })
+  return items
+})
 const hasNested = computed(() => props.modelValue.filter.children.some((c) => !isCondition(c)))
 /** 筛选区是否确有 chip（高级聚合或扁平条件）—用于决定 group→filters 分割线是否出现。 */
 const hasFilterChips = computed(() => hasNested.value || flatConds.value.length > 0)
@@ -127,6 +140,24 @@ function onCondRemove(index: number) {
   children.splice(index, 1)
   patch({ filter: { ...props.modelValue.filter, children } })
 }
+
+/** 将指定位置的扁平条件提升为嵌套组（高级筛选）。index 为 children 真实索引。 */
+function onCondAdvanced(index: number) {
+  const cond = props.modelValue.filter.children[index]
+  if (!cond || !isCondition(cond)) return
+  const nested: ConditionGroup = {
+    combinator: 'and',
+    children: [cond],
+  }
+  const children = [...props.modelValue.filter.children]
+  // 从真实索引原位移除扁平条件，再追加嵌套组
+  children.splice(index, 1)
+  children.push(nested)
+  patch({ filter: { ...props.modelValue.filter, children } })
+  // 关闭当前 popover（条件已不在扁平列表中）
+  active.value = null
+}
+
 function addFilter(key: string) {
   const f = fieldOf(key)
   if (!f) return
@@ -275,14 +306,15 @@ defineExpose({ openSortMenu, openGroupMenu })
       <span class="agg-ico">≡</span> {{ nestedLabel }} ▾
     </button>
 
-    <!-- 扁平条件：始终以独立 chip 展示，按创建顺序从左到右（ADR-0013 D2 修订） -->
+    <!-- 扁平条件：始终以独立 chip 展示，按创建顺序从左到右（ADR-0013 D2 修订）。
+         使用 flatItems 携带的 children 真实索引，避免与嵌套组并列时错位。 -->
     <FilterChip
-      v-for="(c, i) in flatConds"
-      :key="'c' + i"
-      :label="condLabel(c)"
+      v-for="item in flatItems"
+      :key="'c' + item.idx"
+      :label="condLabel(item.cond)"
       data-testid="bar-filter-chip"
-      @click="openAt({ kind: 'cond', index: i }, $event)"
-      @remove="onCondRemove(i)"
+      @click="openAt({ kind: 'cond', index: item.idx }, $event)"
+      @remove="onCondRemove(item.idx)"
     />
 
     <button ref="addFilterBtn" class="add-btn" data-testid="bar-add-filter" @click="openAt({ kind: 'fieldMenu' }, $event)">
@@ -305,6 +337,7 @@ defineExpose({ openSortMenu, openGroupMenu })
       :position="anchor"
       @update:condition="onCondUpdate(condIndex, $event)"
       @remove="onCondRemove(condIndex)"
+      @advanced="onCondAdvanced(condIndex)"
       @close="close"
     />
     <SortMenu

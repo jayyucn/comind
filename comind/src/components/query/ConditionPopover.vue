@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import type { Condition, ConditionValue, FieldDescriptor, FilterOp, Option } from '../../core/query'
+import { deriveOps } from '../../core/query'
 import BasePopover from '../common/BasePopover.vue'
 import ChipValueEditor from './ChipValueEditor.vue'
-import { deriveOps } from '../../core/query'
-import type { Condition, ConditionValue, FieldDescriptor, FilterOp, Option } from '../../core/query'
-import { opLabel, defaultOpFor } from './filterMeta'
+import { defaultOpFor, opLabel } from './filterMeta'
 
 const props = defineProps<{
   /** 当前条件所属字段的描述符（由父级按 condition.field 推导）。 */
@@ -22,6 +22,8 @@ const emit = defineEmits<{
   'update:condition': [cond: Condition]
   /** 删除该条件。 */
   remove: []
+  /** 提升为高级（嵌套）筛选。 */
+  advanced: []
   /** overlay 点击 / Escape 请求关闭。 */
   close: []
 }>()
@@ -78,32 +80,56 @@ function optionList(): Option[] {
   const o = props.field.options
   return typeof o === 'function' ? o() : (o ?? [])
 }
+
+/** ⋯ 二级面板展开状态。 */
+const moreOpen = ref(false)
+function toggleMore(e: Event) {
+  e.stopPropagation()
+  moreOpen.value = !moreOpen.value
+}
+/** 操作后关闭二级面板再 emit。 */
+function onRemove() {
+  moreOpen.value = false
+  emit('remove')
+}
+function onAdvanced() {
+  moreOpen.value = false
+  emit('advanced')
+}
 </script>
 
 <template>
   <BasePopover :visible="true" :position="position" @close="emit('close')">
     <div class="cond-popover" data-testid="cond-popover">
-      <div class="cond-row">
-        <select
-          class="cond-field"
-          data-testid="cond-field"
-          :value="props.condition.field"
-          @change="onFieldChange"
-        >
-          <option v-for="f in props.fields" :key="f.key" :value="f.key">{{ f.label }}</option>
-        </select>
+      <!-- Row 1: 字段下拉 + 操作符下拉 + ⋯ 更多 -->
+      <div class="cond-top-row">
+        <div class="cond-field-op">
+          <!-- 字段：带类型图标前缀的下拉 -->
+          <select
+            class="cond-field"
+            data-testid="cond-field"
+            :value="props.condition.field"
+            @change="onFieldChange"
+          >
+            <option v-for="f in props.fields" :key="f.key" :value="f.key">
+              {{ f.label }}
+            </option>
+          </select>
+          <!-- 操作符：与字段同行内联 -->
+          <select
+            class="cond-op"
+            data-testid="cond-op"
+            :value="props.condition.op"
+            @change="onOpChange"
+          >
+            <option v-for="op in ops" :key="op" :value="op">{{ opLabel(op) }}</option>
+          </select>
+        </div>
+        <button class="cond-more" type="button" data-testid="cond-more" title="更多操作" @click="toggleMore">⋯</button>
       </div>
-      <div class="cond-row">
-        <select
-          class="cond-op"
-          data-testid="cond-op"
-          :value="props.condition.op"
-          @change="onOpChange"
-        >
-          <option v-for="op in ops" :key="op" :value="op">{{ opLabel(op) }}</option>
-        </select>
-      </div>
-      <div class="cond-row">
+
+      <!-- Row 2: 值输入 -->
+      <div class="cond-value-row">
         <ChipValueEditor
           :field-type="props.field.type"
           :op="props.condition.op"
@@ -112,9 +138,14 @@ function optionList(): Option[] {
           @update:model-value="onValueChange"
         />
       </div>
-      <div class="cond-actions">
-        <button class="cond-remove" type="button" data-testid="cond-remove" @click="emit('remove')">
-          删除
+
+      <!-- Row 3: ⋯ 二级面板（默认折叠，点击 ⋯ 展开） -->
+      <div v-if="moreOpen" class="cond-more-panel" data-testid="cond-more-panel">
+        <button class="cond-action-link" type="button" data-testid="cond-remove" @click="onRemove">
+          🗑 Delete filter
+        </button>
+        <button class="cond-action-link" type="button" data-testid="cond-advanced" @click="onAdvanced">
+          ➕ Add to advanced filter
         </button>
       </div>
     </div>
@@ -125,45 +156,108 @@ function optionList(): Option[] {
 .cond-popover {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   padding: 10px;
-  min-width: 240px;
+  min-width: 260px;
   box-sizing: border-box;
 }
-.cond-row {
+
+/* ── Row 1: field + op 同行 + ⋯ ── */
+.cond-top-row {
   display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.cond-field-op {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
 }
 .cond-field,
 .cond-op {
-  width: 100%;
-  box-sizing: border-box;
-  background: var(--bg-base);
+  background: transparent;
   color: var(--text-primary);
-  border: 1px solid var(--border);
+  border: none;
   border-radius: var(--radius-sm);
-  padding: 6px 8px;
+  padding: 5px 6px;
   font-size: var(--text-sm);
   font-family: inherit;
   outline: none;
+  cursor: pointer;
+  width: auto;
+  color-scheme: light dark;
+}
+/* 字段 select：加粗 + 类型图标前缀（通过 CSS ::before 模拟） */
+.cond-field {
+  font-weight: 500;
+  color: var(--text-primary);
+  padding-right: 4px;
+  min-width: 0;
+}
+.cond-field option {
+  font-weight: normal;
+}
+/* 操作符 select */
+.cond-op {
+  color: var(--text-secondary);
+  border-bottom: 1px solid transparent;
+}
+.cond-field:hover,
+.cond-op:hover {
+  background: var(--bg-hover);
 }
 .cond-field:focus,
 .cond-op:focus {
-  border-color: var(--accent);
+  background: var(--bg-hover);
+  box-shadow: none;
 }
-.cond-actions {
-  display: flex;
-  justify-content: flex-end;
-}
-.cond-remove {
+
+/* ⋯ 更多按钮 */
+.cond-more {
+  flex-shrink: 0;
   border: none;
   background: transparent;
-  color: var(--error, #d9534f);
+  color: var(--text-tertiary);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 2px;
+  border-radius: var(--radius-sm);
+}
+.cond-more:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+/* ── Row 2: 值输入 ── */
+.cond-value-row {
+  width: 100%;
+}
+
+/* ── Row 3: ⋯ 二级面板 ── */
+.cond-more-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0;
+  border-top: 1px solid var(--border);
+  margin-top: 2px;
+}
+.cond-action-link {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
   font-size: var(--text-sm);
   font-family: inherit;
   cursor: pointer;
-  padding: 2px 4px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  text-align: left;
 }
-.cond-remove:hover {
-  text-decoration: underline;
+.cond-action-link:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 </style>

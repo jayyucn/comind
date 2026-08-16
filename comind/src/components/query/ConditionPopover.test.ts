@@ -77,13 +77,71 @@ describe('ConditionPopover', () => {
     expect(out.value).toEqual({ kind: 'literal', value: 'hello' })
   })
 
-  it('remove emits remove', async () => {
+  it('remove emits remove after opening ⋯ panel', async () => {
     const cond: Condition = { field: 'title', op: 'contains', value: undefined }
     const w = mount(ConditionPopover, {
       props: { field: FIELDS[0], condition: cond, fields: FIELDS },
       global: { stubs: { BasePopover: BasePopoverStub } },
     })
+    // 默认面板折叠
+    expect(w.find('[data-testid="cond-remove"]').exists()).toBe(false)
+    // 点击 ⋯ 展开
+    await w.find('[data-testid="cond-more"]').trigger('click')
+    expect(w.find('[data-testid="cond-remove"]').exists()).toBe(true)
     await w.find('[data-testid="cond-remove"]').trigger('click')
     expect(w.emitted('remove')).toBeTruthy()
+  })
+
+  it('advanced emits advanced after opening ⋯ panel', async () => {
+    const cond: Condition = { field: 'title', op: 'contains', value: undefined }
+    const w = mount(ConditionPopover, {
+      props: { field: FIELDS[0], condition: cond, fields: FIELDS },
+      global: { stubs: { BasePopover: BasePopoverStub } },
+    })
+    expect(w.find('[data-testid="cond-advanced"]').exists()).toBe(false)
+    await w.find('[data-testid="cond-more"]').trigger('click')
+    expect(w.find('[data-testid="cond-advanced"]').exists()).toBe(true)
+    await w.find('[data-testid="cond-advanced"]').trigger('click')
+    expect(w.emitted('advanced')).toBeTruthy()
+  })
+
+  it('⋯ toggles the secondary panel open/closed', async () => {
+    const cond: Condition = { field: 'title', op: 'contains', value: undefined }
+    const w = mount(ConditionPopover, {
+      props: { field: FIELDS[0], condition: cond, fields: FIELDS },
+      global: { stubs: { BasePopover: BasePopoverStub } },
+    })
+    expect(w.find('[data-testid="cond-more-panel"]').exists()).toBe(false)
+    await w.find('[data-testid="cond-more"]').trigger('click')
+    expect(w.find('[data-testid="cond-more-panel"]').exists()).toBe(true)
+    await w.find('[data-testid="cond-more"]').trigger('click')
+    expect(w.find('[data-testid="cond-more-panel"]').exists()).toBe(false)
+  })
+
+  it('renders field + op on same row with more button', () => {
+    const cond: Condition = { field: 'title', op: 'contains', value: undefined }
+    const w = mount(ConditionPopover, {
+      props: { field: FIELDS[0], condition: cond, fields: FIELDS },
+      global: { stubs: { BasePopover: BasePopoverStub } },
+    })
+    // 字段和操作符在同一行（cond-top-row 内）
+    const topRow = w.find('.cond-top-row')
+    expect(topRow.exists()).toBe(true)
+    expect(topRow.find('[data-testid="cond-field"]').exists()).toBe(true)
+    expect(topRow.find('[data-testid="cond-op"]').exists()).toBe(true)
+    expect(topRow.find('[data-testid="cond-more"]').exists()).toBe(true)
+  })
+
+  it('delete filter is a text link not a red button', async () => {
+    const cond: Condition = { field: 'title', op: 'contains', value: undefined }
+    const w = mount(ConditionPopover, {
+      props: { field: FIELDS[0], condition: cond, fields: FIELDS },
+      global: { stubs: { BasePopover: BasePopoverStub } },
+    })
+    await w.find('[data-testid="cond-more"]').trigger('click')
+    const remove = w.find('[data-testid="cond-remove"]')
+    expect(remove.classes()).toContain('cond-action-link')
+    // 不应再有旧的 .cond-remove 样式（红色按钮）
+    expect(remove.classes()).not.toContain('cond-remove')
   })
 })

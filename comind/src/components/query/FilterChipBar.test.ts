@@ -10,7 +10,7 @@ vi.mock('./ConditionPopover.vue', () => ({
   default: {
     name: 'ConditionPopover',
     props: ['field', 'condition', 'fields', 'position'],
-    emits: ['update:condition', 'remove', 'close'],
+    emits: ['update:condition', 'remove', 'advanced', 'close'],
     template: '<div data-testid="stub-cond"></div>',
   },
 }))
@@ -346,5 +346,42 @@ describe('FilterChipBar (ADR-0013)', () => {
     await w.setProps({ modelValue: m })
     await w.vm.$nextTick()
     expect(w.find('[data-testid="bar-agg"]').exists()).toBe(false)
+  })
+
+  it('REGRESSION: flat chip index must be real children index (nested group precedes it)', async () => {
+    // 复现 bug：children[0]=嵌套组(聚合 chip)，children[1]=扁平条件
+    const mixed: ViewQuery = {
+      version: 1,
+      filter: {
+        combinator: 'and',
+        children: [
+          { combinator: 'or', children: [{ field: 'title', op: 'isEmpty' }] }, // 聚合 chip
+          { field: 'type', op: 'is', value: { kind: 'literal', value: 'normal' } }, // 扁平 chip
+        ],
+      },
+      sort: [],
+      groupBy: null,
+    }
+    const w = mountBar({ modelValue: mixed })
+    // 应有聚合 chip + 1 个扁平 chip
+    expect(w.find('[data-testid="bar-agg"]').exists()).toBe(true)
+    const flatChips = w.findAll('[data-testid="bar-filter-chip"]')
+    expect(flatChips).toHaveLength(1)
+
+    // ① 点击扁平 chip → 应弹出 ConditionPopover（修复前：condTarget 指向 children[0] 嵌套组 → 弹不出）
+    await flatChips[0].trigger('click')
+    await w.vm.$nextTick()
+    expect(w.find('[data-testid="stub-cond"]').exists()).toBe(true)
+
+    // ② 点扁平 chip 的 × → 应删 children[1]（扁平条件），聚合 chip 保留（修复前误删 children[0]）
+    await flatChips[0].find('[data-testid="chip-remove"]').trigger('click')
+    await w.vm.$nextTick()
+    const m = w.emitted('update:modelValue')!.at(-1)![0] as ViewQuery
+    expect(m.filter.children).toHaveLength(1)
+    expect(m.filter.children[0]).toMatchObject({ combinator: 'or' }) // 聚合 chip 仍在
+    await w.setProps({ modelValue: m })
+    await w.vm.$nextTick()
+    expect(w.find('[data-testid="bar-filter-chip"]').exists()).toBe(false)
+    expect(w.find('[data-testid="bar-agg"]').exists()).toBe(true)
   })
 })
