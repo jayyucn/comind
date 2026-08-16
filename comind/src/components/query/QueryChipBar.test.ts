@@ -25,8 +25,8 @@ vi.mock('./FieldSelectMenu.vue', () => ({
 vi.mock('./SortMenu.vue', () => ({
   default: {
     name: 'SortMenu',
-    props: ['rule', 'fields', 'position'],
-    emits: ['update:rule', 'add', 'remove', 'close'],
+    props: ['sort', 'fields'],
+    emits: ['update:sort', 'close'],
     template: '<div data-testid="stub-sort"></div>',
   },
 }))

@@ -1,178 +1,303 @@
 <script setup lang="ts">
+import {
+  CalendarDays,
+  CheckSquare,
+  GripVertical,
+  Hash,
+  List,
+  Trash2,
+  Type,
+  X,
+} from 'lucide-vue-next'
 import { ref, watch } from 'vue'
-import BasePopover from '../common/BasePopover.vue'
-import type { FieldDescriptor, SortRule } from '../../core/query'
+import type { FieldDescriptor, FieldType, SortRule } from '../../core/query'
 
 const props = defineProps<{
-  /** 正在编辑的排序规则。 */
-  rule: SortRule
-  /** 可排序的字段清单。 */
+  /** 当前全部排序规则。 */
+  sort: SortRule[]
+  /** 可排序字段清单。 */
   fields: FieldDescriptor[]
-  /** 面板锚点。 */
-  position?: { x: number; y: number }
 }>()
 
 const emit = defineEmits<{
-  /** 规则变更（字段/方向），emit 完整的新 SortRule。 */
-  'update:rule': [rule: SortRule]
-  /** 在该规则之后追加一条新排序。 */
-  add: []
-  /** 删除该规则。 */
-  remove: []
-  /** overlay 点击 / Escape 请求关闭。 */
+  /** 排序规则数组整体变更。 */
+  'update:sort': [sort: SortRule[]]
+  /** 请求关闭编辑器。 */
   close: []
 }>()
 
-const local = ref<SortRule>({ ...props.rule })
+const local = ref<SortRule[]>([...props.sort])
 watch(
-  () => props.rule,
-  (r) => {
-    local.value = { ...r }
+  () => props.sort,
+  (s) => {
+    local.value = [...s]
   },
   { deep: true },
 )
 
-function onFieldChange(e: Event) {
-  local.value.field = (e.target as HTMLSelectElement).value
-  emit('update:rule', { ...local.value })
-  emit('close')
+function fieldOf(key: string): FieldDescriptor | undefined {
+  return props.fields.find((f) => f.key === key)
 }
 
-function setDir(dir: 'asc' | 'desc') {
-  local.value.dir = dir
-  emit('update:rule', { ...local.value })
-  emit('close')
+function fieldIcon(type: FieldType) {
+  switch (type) {
+    case 'text':
+      return Type
+    case 'number':
+      return Hash
+    case 'date':
+      return CalendarDays
+    case 'select':
+    case 'multiSelect':
+      return List
+    case 'boolean':
+      return CheckSquare
+    default:
+      return Type
+  }
 }
 
-function fieldLabel(key: string): string {
-  return props.fields.find((f) => f.key === key)?.label ?? key
+function dirMeta(rule: SortRule): { asc: string; desc: string } {
+  const type = fieldOf(rule.field)?.type ?? 'text'
+  switch (type) {
+    case 'number':
+      return { asc: '1 → 9', desc: '9 → 1' }
+    case 'date':
+      return { asc: '旧 → 新', desc: '新 → 旧' }
+    case 'boolean':
+      return { asc: '假 → 真', desc: '真 → 假' }
+    case 'select':
+    case 'multiSelect':
+      return { asc: 'A → Z', desc: 'Z → A' }
+    case 'text':
+    default:
+      return { asc: 'A → Z', desc: 'Z → A' }
+  }
+}
+
+function update(index: number, patch: Partial<SortRule>) {
+  const next = [...local.value]
+  next[index] = { ...next[index], ...patch }
+  local.value = next
+  emit('update:sort', next)
+}
+
+function remove(index: number) {
+  const next = [...local.value]
+  next.splice(index, 1)
+  local.value = next
+  emit('update:sort', next)
+  if (next.length === 0) emit('close')
+}
+
+function addSort() {
+  const f = props.fields[0]
+  if (!f) return
+  const next = [...local.value, { field: f.key, dir: 'asc' as const }]
+  local.value = next
+  emit('update:sort', next)
+}
+
+function deleteAll() {
+  local.value = []
+  emit('update:sort', [])
+  emit('close')
 }
 </script>
 
 <template>
-  <BasePopover :visible="true" :position="position" @close="emit('close')">
-    <div class="sort-menu" data-testid="sort-menu">
-      <div class="sort-head">排序</div>
+  <div class="sort-editor" data-testid="sort-editor">
+    <div v-for="(rule, idx) in local" :key="idx" class="sort-row" data-testid="sort-row">
+      <span class="drag-handle" aria-hidden="true">
+        <GripVertical :size="14" />
+      </span>
 
-      <select
-        class="sort-field"
-        data-testid="sort-field"
-        :value="local.field"
-        @change="onFieldChange"
+      <div class="select-wrap field-select-wrap">
+        <component :is="fieldIcon(fieldOf(rule.field)?.type ?? 'text')" :size="14" class="select-icon" />
+        <select
+          class="sort-select sort-field"
+          data-testid="sort-field"
+          :value="rule.field"
+          @change="update(idx, { field: ($event.target as HTMLSelectElement).value })"
+        >
+          <option v-for="f in fields" :key="f.key" :value="f.key">{{ f.label }}</option>
+        </select>
+        <span class="select-caret">▾</span>
+      </div>
+
+      <div class="select-wrap dir-select-wrap">
+        <select
+          class="sort-select sort-dir"
+          data-testid="sort-dir"
+          :value="rule.dir"
+          @change="update(idx, { dir: ($event.target as HTMLSelectElement).value as 'asc' | 'desc' })"
+        >
+          <option value="asc">Sort {{ dirMeta(rule).asc }}</option>
+          <option value="desc">Sort {{ dirMeta(rule).desc }}</option>
+        </select>
+        <span class="select-caret">▾</span>
+      </div>
+
+      <button
+        type="button"
+        class="row-remove"
+        data-testid="sort-row-remove"
+        aria-label="移除排序"
+        @click="remove(idx)"
       >
-        <option v-for="f in props.fields" :key="f.key" :value="f.key">{{ f.label }}</option>
-      </select>
-
-      <div class="sort-dir">
-        <button
-          type="button"
-          data-testid="sort-asc"
-          :class="{ active: local.dir === 'asc' }"
-          @click="setDir('asc')"
-        >
-          A → Z
-        </button>
-        <button
-          type="button"
-          data-testid="sort-desc"
-          :class="{ active: local.dir === 'desc' }"
-          @click="setDir('desc')"
-        >
-          Z → A
-        </button>
-      </div>
-
-      <div class="sort-foot">
-        <button type="button" class="sort-add" data-testid="sort-add" @click="emit('add')">
-          添加排序
-        </button>
-        <button type="button" class="sort-del" data-testid="sort-del" @click="emit('remove')">
-          删除
-        </button>
-      </div>
-
-      <div class="sort-current" data-testid="sort-current">
-        {{ fieldLabel(local.field) }} · {{ local.dir === 'asc' ? '升序' : '降序' }}
-      </div>
+        <X :size="14" />
+      </button>
     </div>
-  </BasePopover>
+
+    <div class="sort-foot">
+      <button type="button" class="sort-add" data-testid="sort-add" @click="addSort">
+        + Add sort
+      </button>
+      <button v-if="local.length" type="button" class="sort-del-all" data-testid="sort-del-all" @click="deleteAll">
+        <Trash2 :size="14" />
+        Delete sort
+      </button>
+    </div>
+  </div>
 </template>
 
 <style scoped>
-.sort-menu {
+.sort-editor {
   display: flex;
   flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  box-sizing: border-box;
+  min-width: 360px;
+}
+
+.sort-row {
+  display: flex;
+  align-items: center;
   gap: 8px;
-  padding: 10px;
-  min-width: 220px;
-  box-sizing: border-box;
+  padding: 4px;
+  border-radius: var(--radius-sm);
 }
-.sort-head {
-  font-size: var(--text-sm);
-  font-weight: var(--font-semibold);
-  color: var(--text-secondary);
+
+.sort-row:hover {
+  background: var(--bg-hover);
 }
-.sort-field {
-  width: 100%;
-  box-sizing: border-box;
+
+.drag-handle {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-tertiary);
+  cursor: grab;
+  padding: 2px;
+}
+
+.select-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.select-icon {
+  position: absolute;
+  left: 8px;
+  color: var(--text-tertiary);
+  pointer-events: none;
+  flex-shrink: 0;
+}
+
+.select-caret {
+  position: absolute;
+  right: 8px;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+.sort-select {
+  appearance: none;
+  -webkit-appearance: none;
   background: var(--bg-base);
   color: var(--text-primary);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 6px 8px;
+  padding: 5px 22px 5px 8px;
   font-size: var(--text-sm);
   font-family: inherit;
   outline: none;
+  cursor: pointer;
+  min-width: 0;
 }
-.sort-field:focus {
+
+.sort-select:focus {
   border-color: var(--accent);
 }
+
+.sort-field {
+  padding-left: 30px;
+  min-width: 110px;
+}
+
 .sort-dir {
-  display: flex;
-  gap: 6px;
+  min-width: 130px;
 }
-.sort-dir button {
-  flex: 1;
-  border: 1px solid var(--border);
-  background: var(--bg-base);
-  color: var(--text-secondary);
-  border-radius: var(--radius-sm);
-  padding: 6px 8px;
-  font-size: var(--text-sm);
-  font-family: inherit;
+
+.row-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
   cursor: pointer;
+  border-radius: var(--radius-sm);
+  margin-left: auto;
+  flex-shrink: 0;
 }
-.sort-dir button.active {
-  border-color: var(--accent, #6366f1);
-  color: var(--accent, #6366f1);
-  background: var(--accent-bg, rgba(99, 102, 241, 0.08));
+
+.row-remove:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
 }
+
 .sort-foot {
   display: flex;
-  justify-content: space-between;
-  gap: 8px;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0 0;
 }
+
 .sort-add,
-.sort-del {
+.sort-del-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   border: none;
   background: transparent;
   font-size: var(--text-sm);
   font-family: inherit;
   cursor: pointer;
-  padding: 2px 4px;
+  padding: 4px;
+  border-radius: var(--radius-sm);
 }
+
 .sort-add {
-  color: var(--accent, #6366f1);
+  color: var(--text-secondary);
 }
-.sort-del {
-  color: var(--error, #d9534f);
+
+.sort-add:hover {
+  color: var(--accent);
+  background: var(--bg-hover);
 }
-.sort-add:hover,
-.sort-del:hover {
-  text-decoration: underline;
+
+.sort-del-all {
+  color: var(--text-secondary);
 }
-.sort-current {
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
+
+.sort-del-all:hover {
+  color: var(--error);
+  background: var(--bg-hover);
 }
 </style>

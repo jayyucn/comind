@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowUpDown, Layers } from 'lucide-vue-next'
+import { ArrowUp, Layers } from 'lucide-vue-next'
 import { computed, nextTick, ref, watch } from 'vue'
 import type {
   Condition,
@@ -56,7 +56,7 @@ const anchor = ref<{ x: number; y: number }>({ x: 0, y: 0 })
 type Active =
   | { kind: 'fieldMenu' }
   | { kind: 'cond'; index: number }
-  | { kind: 'sortEdit'; index: number }
+  | { kind: 'sortEdit' }
   | { kind: 'group' }
   | { kind: 'advanced' }
   | null
@@ -69,8 +69,8 @@ const visible = ref(false)
 watch(visible, (v) => emit('visible-change', v))
 
 // 聚合 chip / 扁平 chip 的 DOM 引用，供「把 popover 重新锚定到对应 chip 下方」使用
-const sortChipEl = ref<HTMLElement | null>(null)
 const groupChipEl = ref<HTMLElement | null>(null)
+const sortChipEl = ref<HTMLElement | null>(null)
 const chipEls = new Map<number, HTMLElement>()
 function setChipEl(idx: number, el: unknown) {
   if (el) chipEls.set(idx, el as HTMLElement)
@@ -258,24 +258,8 @@ function condLabel(c: Condition): string {
   const f = fieldOf(c.field)
   return f ? summarizeCondition(f, c) : c.field
 }
-function onSortUpdate(index: number, rule: SortRule) {
-  const sort = [...props.modelValue.sort]
-  sort[index] = rule
+function onSortUpdate(sort: SortRule[]) {
   patch({ sort })
-}
-function onSortRemove(index: number) {
-  const sort = [...props.modelValue.sort]
-  sort.splice(index, 1)
-  patch({ sort })
-}
-function onSortAdd() {
-  const f = props.fields[0]
-  if (!f || active.value?.kind !== 'sortEdit') return
-  const idx = active.value.index
-  const sort = [...props.modelValue.sort]
-  sort.splice(idx + 1, 0, { field: f.key, dir: 'asc' })
-  patch({ sort })
-  active.value = { kind: 'sortEdit', index: idx + 1 }
 }
 
 // ── 分组 ──
@@ -302,10 +286,6 @@ const condTarget = computed<Condition | null>(() => {
 const condTargetField = computed<FieldDescriptor | undefined>(() =>
   condTarget.value ? fieldOf(condTarget.value.field) : undefined,
 )
-const sortIndex = computed(() => (active.value?.kind === 'sortEdit' ? active.value.index : -1))
-const sortTarget = computed<SortRule | null>(() =>
-  sortIndex.value >= 0 ? (props.modelValue.sort[sortIndex.value] ?? null) : null,
-)
 
 // ── 供 Header 按钮直接唤起菜单（锚定到按钮自身）──
 function openFieldMenu(el?: HTMLElement | null) {
@@ -314,19 +294,20 @@ function openFieldMenu(el?: HTMLElement | null) {
   //
 }
 function openSortMenu(el?: HTMLElement | null) {
-  anchorTo(el)
   if (props.modelValue.sort.length === 0) {
     const f = props.fields[0]
     if (!f) return
     patch({ sort: [{ field: f.key, dir: 'asc' }] })
     // 空态选中字段后显示 chipbar
     visible.value = true
-    active.value = { kind: 'sortEdit', index: 0 }
-  } else {
-    active.value = { kind: 'sortEdit', index: props.modelValue.sort.length - 1 }
   }
-  // 排序 chip 渲染后，把菜单重新锚定到该 chip 下方
-  nextTick(() => anchorToEl(sortChipEl.value))
+  active.value = { kind: 'sortEdit' }
+  if (el) {
+    anchorTo(el)
+  } else {
+    // Header 按钮等无触发元素时，待排序 chip 渲染后锚定到它下方
+    nextTick(() => anchorToEl(sortChipEl.value))
+  }
 }
 function openGroupMenu(el?: HTMLElement | null) {
   anchorTo(el)
@@ -357,13 +338,13 @@ function openToolbarMenu(kind: 'filter' | 'sort' | 'group', el?: HTMLElement | n
   }
   // 排序 / 分组
   if (!has) {
-    if (kind === 'sort') openSortMenu(el)
+    if (kind === 'sort') openSortMenu()
     else openGroupMenu(el)
     return
   }
   visible.value = !visible.value
   if (!visible.value) return
-  if (kind === 'sort') openSortMenu(el)
+  if (kind === 'sort') openSortMenu()
   else openGroupMenu(el)
 }
 
@@ -380,11 +361,12 @@ defineExpose({
     <button
       v-if="sorts.length"
       ref="sortChipEl"
-      class="agg-chip"
+      class="agg-chip is-sort"
+      :class="{ active: active?.kind === 'sortEdit' }"
       data-testid="bar-sort-agg"
       @click="openSortMenu($event.currentTarget as HTMLElement)"
     >
-      <ArrowUpDown :size="14" />{{ sorts.length }} sorts ▾
+      <ArrowUp :size="14" />{{ sorts.length }} sorts ▾
     </button>
     <!-- sort | (group|filters) 分割线 -->
     <span v-if="divAfterSort" class="bar-divider" aria-hidden="true"></span>
@@ -453,16 +435,6 @@ defineExpose({
       @advanced="onCondAdvanced(condIndex)"
       @close="close"
     />
-    <SortMenu
-      v-if="sortTarget"
-      :rule="sortTarget"
-      :fields="fields"
-      :position="anchor"
-      @update:rule="onSortUpdate(sortIndex, $event)"
-      @add="onSortAdd"
-      @remove="onSortRemove(sortIndex)"
-      @close="close"
-    />
     <GroupMenu
       v-if="active?.kind === 'group'"
       :group-by="groupBy"
@@ -489,6 +461,21 @@ defineExpose({
       />
     </BasePopover>
       </div>
+
+    <!-- 排序编辑器：弹窗形式（与 FilterBuilder 高级筛选一致，包一层 BasePopover） -->
+    <BasePopover
+      v-if="active?.kind === 'sortEdit'"
+      :visible="true"
+      :position="anchor"
+      @close="close"
+    >
+      <SortMenu
+        :sort="sorts"
+        :fields="fields"
+        @update:sort="onSortUpdate"
+        @close="close"
+      />
+    </BasePopover>
     </div>
   </div>
 </template>
@@ -509,18 +496,18 @@ defineExpose({
   opacity: 1;
 }
 .add-btn {
-  border: 1px dashed var(--border);
+  border: none;
   background: transparent;
   color: var(--text-secondary);
   border-radius: var(--radius-sm);
   padding: 3px 8px;
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   font-family: inherit;
   cursor: pointer;
 }
 .add-btn:hover {
-  border-color: var(--accent, #6366f1);
   color: var(--accent, #6366f1);
+  background: var(--bg-hover);
 }
 .bar-divider {
   width: 1px;
@@ -545,6 +532,18 @@ defineExpose({
 .agg-chip:hover {
   border-color: var(--accent, #6366f1);
   color: var(--accent, #6366f1);
+}
+.agg-chip.is-sort {
+  background: var(--accent-bg, rgba(99, 102, 241, 0.12));
+  border-color: transparent;
+  color: var(--accent, #6366f1);
+}
+.agg-chip.is-sort:hover {
+  background: var(--accent-bg, rgba(99, 102, 241, 0.18));
+}
+.agg-chip.is-sort.active {
+  background: var(--accent, #6366f1);
+  color: var(--text-on-accent, #fff);
 }
 .agg-ico {
   font-size: var(--text-sm);

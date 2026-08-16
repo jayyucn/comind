@@ -3,69 +3,86 @@ import { mount } from '@vue/test-utils'
 import SortMenu from './SortMenu.vue'
 import type { FieldDescriptor, SortRule } from '../../core/query'
 
-const BasePopoverStub = {
-  props: ['visible', 'position', 'closeOnOverlay'],
-  emits: ['close'],
-  template: `<div class="bp" @click.self="$emit('close')"><slot /></div>`,
-}
-
 const FIELDS: FieldDescriptor[] = [
   { key: 'title', label: '标题', type: 'text', get: () => '' },
   { key: 'createdAt', label: '创建日期', type: 'date', get: () => '' },
   { key: 'wordCount', label: '字数', type: 'number', get: () => 0 },
 ]
 
-function lastRule(wrapper: ReturnType<typeof mount>): SortRule {
-  const e = wrapper.emitted('update:rule')
-  return e![e!.length - 1][0] as SortRule
+const SORTS: SortRule[] = [
+  { field: 'title', dir: 'asc' },
+  { field: 'createdAt', dir: 'desc' },
+]
+
+function lastSort(wrapper: ReturnType<typeof mount>): SortRule[] {
+  const e = wrapper.emitted('update:sort')
+  return e![e!.length - 1][0] as SortRule[]
 }
 
 describe('SortMenu', () => {
-  it('renders field select + direction toggle', () => {
+  it('renders one row per sort rule', () => {
     const w = mount(SortMenu, {
-      props: { rule: { field: 'title', dir: 'asc' }, fields: FIELDS },
-      global: { stubs: { BasePopover: BasePopoverStub } },
+      props: { sort: SORTS, fields: FIELDS },
     })
-    expect(w.find('[data-testid="sort-field"]').exists()).toBe(true)
-    expect(w.find('[data-testid="sort-asc"]').exists()).toBe(true)
-    expect(w.find('[data-testid="sort-desc"]').exists()).toBe(true)
+    expect(w.findAll('[data-testid="sort-row"]')).toHaveLength(2)
     expect(w.find('[data-testid="sort-add"]').exists()).toBe(true)
-    expect(w.find('[data-testid="sort-del"]').exists()).toBe(true)
+    expect(w.find('[data-testid="sort-del-all"]').exists()).toBe(true)
   })
 
-  it('changing field emits updated rule', async () => {
+  it('changing field emits updated sort array', async () => {
     const w = mount(SortMenu, {
-      props: { rule: { field: 'title', dir: 'asc' }, fields: FIELDS },
-      global: { stubs: { BasePopover: BasePopoverStub } },
+      props: { sort: SORTS, fields: FIELDS },
     })
-    const sel = w.find('[data-testid="sort-field"]').element as HTMLSelectElement
-    sel.value = 'createdAt'
-    await w.find('[data-testid="sort-field"]').trigger('change')
-    const out = lastRule(w)
-    expect(out.field).toBe('createdAt')
-    expect(out.dir).toBe('asc')
+    const selects = w.findAll('[data-testid="sort-field"]')
+    const sel = selects[0].element as HTMLSelectElement
+    sel.value = 'wordCount'
+    await selects[0].trigger('change')
+    const out = lastSort(w)
+    expect(out[0].field).toBe('wordCount')
+    expect(out[1].field).toBe('createdAt')
   })
 
-  it('clicking Z→A emits desc', async () => {
+  it('changing direction emits updated sort array', async () => {
     const w = mount(SortMenu, {
-      props: { rule: { field: 'title', dir: 'asc' }, fields: FIELDS },
-      global: { stubs: { BasePopover: BasePopoverStub } },
+      props: { sort: SORTS, fields: FIELDS },
     })
-    await w.find('[data-testid="sort-desc"]').trigger('click')
-    expect(lastRule(w).dir).toBe('desc')
+    const selects = w.findAll('[data-testid="sort-dir"]')
+    const sel = selects[0].element as HTMLSelectElement
+    sel.value = 'desc'
+    await selects[0].trigger('change')
+    const out = lastSort(w)
+    expect(out[0].dir).toBe('desc')
+    expect(out[1].dir).toBe('desc')
   })
 
-  it('add / remove / close emit their events', async () => {
+  it('clicking row × removes that rule', async () => {
     const w = mount(SortMenu, {
-      props: { rule: { field: 'title', dir: 'asc' }, fields: FIELDS },
-      global: { stubs: { BasePopover: BasePopoverStub } },
+      props: { sort: SORTS, fields: FIELDS },
+    })
+    await w.findAll('[data-testid="sort-row-remove"]')[0].trigger('click')
+    const out = lastSort(w)
+    expect(out).toHaveLength(1)
+    expect(out[0].field).toBe('createdAt')
+  })
+
+  it('+ Add sort appends a default asc rule', async () => {
+    const w = mount(SortMenu, {
+      props: { sort: [SORTS[0]], fields: FIELDS },
     })
     await w.find('[data-testid="sort-add"]').trigger('click')
-    await w.find('[data-testid="sort-del"]').trigger('click')
-    await w.find('[data-testid="sort-menu"]').trigger('click')
-    expect(w.emitted('add')).toBeTruthy()
-    expect(w.emitted('remove')).toBeTruthy()
-    // sort-menu 自身点击不应触发 close（冒泡到 overlay 才关）
-    expect(w.emitted('close')).toBeFalsy()
+    const out = lastSort(w)
+    expect(out).toHaveLength(2)
+    expect(out[1].field).toBe(FIELDS[0].key)
+    expect(out[1].dir).toBe('asc')
+  })
+
+  it('Delete sort clears all rules and closes', async () => {
+    const w = mount(SortMenu, {
+      props: { sort: SORTS, fields: FIELDS },
+    })
+    await w.find('[data-testid="sort-del-all"]').trigger('click')
+    const out = w.emitted('update:sort')!.at(-1)![0] as SortRule[]
+    expect(out).toHaveLength(0)
+    expect(w.emitted('close')).toBeTruthy()
   })
 })
