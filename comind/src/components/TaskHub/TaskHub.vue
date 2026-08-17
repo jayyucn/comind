@@ -1,24 +1,28 @@
 <script setup lang="ts">
-import type { PropertyValue } from '@/types/property'
+import { CalendarDays, Columns, Table } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { runBlockQuery } from '../../composables/useBlockQueryEngine'
 import { BLOCK_ENTITY, getBlockRegistry } from '../../composables/useBlockQueryRegistry'
 import type { ViewQuery } from '../../core/query'
-import { defaultLayoutConfig, parseLayoutConfig, type TableConfig, type BoardConfig, type CalendarConfig } from '../../core/view'
+import { defaultLayoutConfig, parseLayoutConfig, type BoardConfig, type CalendarConfig, type TableConfig } from '../../core/view'
+import type { ViewTypeOption } from '../../core/view/management'
+import type { PropertyValue } from '@/types/property'
 import { useBlockCardStore } from '../../stores/blockCard'
 import { usePropertyStore } from '../../stores/property'
 import { useScreenViewStore } from '../../stores/screenView'
 import type { BlockCard } from '../../wasm/types'
 import PageTitle from '../common/PageTitle.vue'
-import TaskViewBar from './TaskViewBar.vue'
+import NamedViewBar from '../common/NamedViewBar.vue'
+import QueryChipBar from '../query/QueryChipBar.vue'
+import QueryToolbar from '../query/QueryToolbar.vue'
 import BoardView from '../views/BoardView.vue'
 import CalendarView from '../views/CalendarView.vue'
 import TableView from '../views/TableView.vue'
 
 const router = useRouter()
 const blockCardStore = useBlockCardStore()
-const screenViewStore = useScreenViewStore()
+const screenViewStore = useScreenViewStore('block')
 const propertyStore = usePropertyStore()
 
 // 通用查询引擎注册表（组合根单例，内置字段 + 自定义 property 已注册）
@@ -26,38 +30,35 @@ const registry = getBlockRegistry()
 // 实体级字段 schema 只需取一次（同实体所有记录共用）
 const blockRefFields = registry.list(BLOCK_ENTITY)
 
-// 当前激活视图的查询（ViewQuery）。芯片变更即写回 screenViewStore（命名视图持久化）。
-const viewQuery = ref<ViewQuery>({
-  version: 1,
-  filter: { combinator: 'and', children: [] },
-  sort: [],
-  groupBy: null,
-})
+// block 实体可选的视图类型（注入 NamedViewBar）
+const blockViewTypes: ViewTypeOption[] = [
+  { key: 'table', label: '表格', icon: Table },
+  { key: 'board', label: '看板', icon: Columns },
+  { key: 'calendar', label: '日历', icon: CalendarDays },
+]
+
+// 当前激活 tab 的可编辑查询（单一数据源：NamedViewBar 的保存/清除/切换均作用于它）。
+const viewQuery = computed<ViewQuery>(() => screenViewStore.workingQuery)
 const searchQuery = ref('')
 
-const currentViewType = computed(() => {
-  const view = screenViewStore.views.find((v) => v.id === screenViewStore.currentViewId)
-  return view?.view_type ?? 'table'
-})
+const currentViewType = computed(() => screenViewStore.currentViewType)
 
-const currentView = computed(() =>
-  screenViewStore.views.find((v) => v.id === screenViewStore.currentViewId),
-)
+const currentTab = computed(() => screenViewStore.currentTab)
 
 // 视图布局配置（列序/列宽/卡片徽章/日历落格字段）。
 // 优先读持久化的 ScreenViewRust.config（解析校验 viewKind 一致），否则回退内建默认。
 const tableConfig = computed<TableConfig | undefined>(() => {
   if (currentViewType.value !== 'table') return undefined
-  return (parseLayoutConfig(currentView.value?.config, 'table') as TableConfig | null) ?? (defaultLayoutConfig('table') as TableConfig)
+  return (parseLayoutConfig(currentTab.value?.config, 'table') as TableConfig | null) ?? (defaultLayoutConfig('table') as TableConfig)
 })
 
 const boardConfig = computed<BoardConfig | undefined>(() => {
   if (currentViewType.value !== 'board') return undefined
-  return (parseLayoutConfig(currentView.value?.config, 'board') as BoardConfig | null) ?? (defaultLayoutConfig('board') as BoardConfig)
+  return (parseLayoutConfig(currentTab.value?.config, 'board') as BoardConfig | null) ?? (defaultLayoutConfig('board') as BoardConfig)
 })
 
 const calendarConfig = computed<CalendarConfig>(() =>
-  (parseLayoutConfig(currentView.value?.config, 'calendar') as CalendarConfig | null) ?? (defaultLayoutConfig('calendar') as CalendarConfig),
+  (parseLayoutConfig(currentTab.value?.config, 'calendar') as CalendarConfig | null) ?? (defaultLayoutConfig('calendar') as CalendarConfig),
 )
 
 // 搜索（父侧子串过滤，与 PagesLibrary 对 title 过滤同构）
@@ -68,7 +69,7 @@ const searchedCards = computed<BlockCard[]>(() => {
   return cards.filter((c) => (c.content_preview ?? '').toLowerCase().includes(q))
 })
 
-// 统一引擎：过滤 + 排序 + 分组一步到位
+// 统一引擎：过滤 + 排序 + 分组一步到位（基于 store.workingQuery，未保存即实时预览）
 const groups = computed(() =>
   runBlockQuery(searchedCards.value, viewQuery.value, registry, BLOCK_ENTITY),
 )
@@ -112,16 +113,15 @@ async function handleNavigateToBlock(blockId: string) {
   window.dispatchEvent(new CustomEvent('navigate-to-block', { detail: { blockId } }))
 }
 
-function handleRefresh() {
-  refresh()
-}
+// ── 查询工具条（筛选/排序/分组三按钮 + 搜索）与芯片行协同 ──
+const chipBarVisible = ref(false)
+const chipBarRef = ref<InstanceType<typeof QueryChipBar> | null>(null)
+const hasFilter = computed(() => viewQuery.value.filter.children.length > 0)
+const hasSort = computed(() => viewQuery.value.sort.length > 0)
+const hasGroup = computed(() => viewQuery.value.groupBy !== null)
 
-// 查询状态已整体迁入 TaskViewBar（参考 PagesLibrary 本地持有范式），此处镜像用于卡片过滤/分组计算
-function onSearchQueryUpdate(q: string) {
-  searchQuery.value = q
-}
-function onViewQueryUpdate(q: ViewQuery) {
-  viewQuery.value = q
+function openChipMenu(kind: 'filter' | 'sort' | 'group', e: MouseEvent) {
+  chipBarRef.value?.openToolbarMenu(kind, e.currentTarget as HTMLElement)
 }
 </script>
 
@@ -129,14 +129,29 @@ function onViewQueryUpdate(q: ViewQuery) {
   <div class="task-hub">
     <PageTitle title="任务中心" :subtitle="`${flatCards.length} 个任务`" />
 
-    <!-- 视图管理 + 查询工具条（筛选/排序/分组 + 搜索）+ 筛选芯片行：已整体迁入 TaskViewBar -->
-    <TaskViewBar
-      :current-view-type="currentViewType"
-      :views="screenViewStore.views"
-      :current-view-id="screenViewStore.currentViewId ?? undefined"
-      @refresh="handleRefresh"
-      @update:search-query="onSearchQueryUpdate"
-      @update:view-query="onViewQueryUpdate"
+    <!-- 视图管理（Screen→Tab 两级 + 查询工具条 + 未保存提示均内聚于 NamedViewBar） -->
+    <NamedViewBar entity-key="block" :view-types="blockViewTypes">
+      <QueryToolbar
+        v-model="searchQuery"
+        :has-filter="hasFilter"
+        :has-sort="hasSort"
+        :has-group="hasGroup"
+        :chip-bar-visible="chipBarVisible"
+        @filter="openChipMenu('filter', $event)"
+        @sort="openChipMenu('sort', $event)"
+        @group="openChipMenu('group', $event)"
+      />
+    </NamedViewBar>
+
+    <!-- 筛选芯片行（QueryToolbar 三按钮唤起；显隐/菜单策略内聚于 QueryChipBar；绑定 store.workingQuery） -->
+    <QueryChipBar
+      ref="chipBarRef"
+      :model-value="screenViewStore.workingQuery"
+      :fields="blockRefFields"
+      :registry="registry"
+      :entity-type="BLOCK_ENTITY"
+      @update:model-value="screenViewStore.setWorkingQuery"
+      @visible-change="chipBarVisible = $event"
     />
 
     <!-- 主内容区 -->

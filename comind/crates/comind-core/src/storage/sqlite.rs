@@ -212,6 +212,8 @@ impl SQLiteAdapter {
 
             CREATE TABLE IF NOT EXISTS screen_view (
                 id          TEXT PRIMARY KEY,
+                entity      TEXT NOT NULL DEFAULT 'block',
+                parent_id   TEXT,
                 name        TEXT NOT NULL,
                 query_json  TEXT NOT NULL,
                 view_type   TEXT NOT NULL DEFAULT 'table',
@@ -258,6 +260,7 @@ impl SQLiteAdapter {
         Self::seed_notification_config(conn)?;
         Self::migrate_rename_task_view_to_screen_view(conn)?;
         Self::migrate_add_screen_view_config(conn)?;
+        Self::migrate_add_screen_view_entity(conn)?;
 
         Ok(())
     }
@@ -290,6 +293,19 @@ impl SQLiteAdapter {
         ).map(|c| c > 0).unwrap_or(false);
         if !has_column {
             conn.execute("ALTER TABLE screen_view ADD COLUMN config TEXT", [])?;
+        }
+        Ok(())
+    }
+
+    fn migrate_add_screen_view_entity(conn: &rusqlite::Connection) -> Result<(), Box<dyn Error>> {
+        // 加 entity 列（所属实体键，用于按实体隔离命名视图）。幂等：列不存在才 ALTER ADD，默认 'block' 兼容存量视图。
+        let has_column: bool = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('screen_view') WHERE name = 'entity'",
+            [],
+            |row| row.get::<_, i64>(0),
+        ).map(|c| c > 0).unwrap_or(false);
+        if !has_column {
+            conn.execute("ALTER TABLE screen_view ADD COLUMN entity TEXT NOT NULL DEFAULT 'block'", [])?;
         }
         Ok(())
     }
@@ -1835,13 +1851,15 @@ impl SavedFilterRepository for SQLiteAdapter {
 }
 
 impl ScreenViewRepository for SQLiteAdapter {
-    fn get_all(&self) -> Result<Vec<ScreenView>, Box<dyn Error>> {
+    fn get_all_by_entity(&self, entity: &str) -> Result<Vec<ScreenView>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, COALESCE(config, '') AS config, created_at, updated_at FROM screen_view ORDER BY sort_order ASC, created_at DESC"
+            "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, COALESCE(config, '') AS config, entity, parent_id, created_at, updated_at FROM screen_view WHERE entity = ?1 ORDER BY sort_order ASC, created_at DESC"
         )?;
-        let views = stmt.query_map([], |row| {
+        let views = stmt.query_map(params![entity], |row| {
             Ok(ScreenView {
                 id: row.get(0)?,
+                entity: row.get(8).unwrap_or_else(|_| "block".to_string()),
+                parent_id: row.get(9).unwrap_or_default(),
                 name: row.get(1)?,
                 query_json: row.get(2)?,
                 view_type: row.get(3)?,
@@ -1849,8 +1867,8 @@ impl ScreenViewRepository for SQLiteAdapter {
                 is_default: row.get(5)?,
                 sort_order: row.get(6)?,
                 config: row.get(7)?,
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
+                created_at: row.get(10)?,
+                updated_at: row.get(11)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
         Ok(views)
@@ -1858,11 +1876,13 @@ impl ScreenViewRepository for SQLiteAdapter {
 
     fn get_by_id(&self, id: &str) -> Result<ScreenView, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, COALESCE(config, '') AS config, created_at, updated_at FROM screen_view WHERE id = ?1"
+            "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, COALESCE(config, '') AS config, entity, parent_id, created_at, updated_at FROM screen_view WHERE id = ?1"
         )?;
         let view = stmt.query_row(params![id], |row| {
             Ok(ScreenView {
                 id: row.get(0)?,
+                entity: row.get(8).unwrap_or_else(|_| "block".to_string()),
+                parent_id: row.get(9).unwrap_or_default(),
                 name: row.get(1)?,
                 query_json: row.get(2)?,
                 view_type: row.get(3)?,
@@ -1870,8 +1890,8 @@ impl ScreenViewRepository for SQLiteAdapter {
                 is_default: row.get(5)?,
                 sort_order: row.get(6)?,
                 config: row.get(7)?,
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
+                created_at: row.get(10)?,
+                updated_at: row.get(11)?,
             })
         })?;
         Ok(view)
@@ -1879,9 +1899,11 @@ impl ScreenViewRepository for SQLiteAdapter {
 
     fn create(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn Error>> {
         self.conn.execute(
-            "INSERT INTO screen_view (id, name, query_json, view_type, group_by, is_default, sort_order, config, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT INTO screen_view (id, entity, parent_id, name, query_json, view_type, group_by, is_default, sort_order, config, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 view.id,
+                view.entity,
+                view.parent_id,
                 view.name,
                 view.query_json,
                 view.view_type,
@@ -1898,9 +1920,10 @@ impl ScreenViewRepository for SQLiteAdapter {
 
     fn update(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn Error>> {
         self.conn.execute(
-            "UPDATE screen_view SET name = ?2, query_json = ?3, view_type = ?4, group_by = ?5, is_default = ?6, sort_order = ?7, config = ?8, updated_at = ?9 WHERE id = ?1",
+            "UPDATE screen_view SET parent_id = ?2, name = ?3, query_json = ?4, view_type = ?5, group_by = ?6, is_default = ?7, sort_order = ?8, config = ?9, updated_at = ?10 WHERE id = ?1",
             params![
                 view.id,
+                view.parent_id,
                 view.name,
                 view.query_json,
                 view.view_type,
@@ -3989,13 +4012,15 @@ impl<'a> SavedFilterRepository for SQLiteTransactionAdapter<'a> {
 }
 
 impl<'a> ScreenViewRepository for SQLiteTransactionAdapter<'a> {
-    fn get_all(&self) -> Result<Vec<ScreenView>, Box<dyn Error>> {
+    fn get_all_by_entity(&self, entity: &str) -> Result<Vec<ScreenView>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, COALESCE(config, '') AS config, created_at, updated_at FROM screen_view ORDER BY sort_order ASC, created_at DESC"
+            "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, COALESCE(config, '') AS config, entity, parent_id, created_at, updated_at FROM screen_view WHERE entity = ?1 ORDER BY sort_order ASC, created_at DESC"
         )?;
-        let views = stmt.query_map([], |row| {
+        let views = stmt.query_map(params![entity], |row| {
             Ok(ScreenView {
                 id: row.get(0)?,
+                entity: row.get(8).unwrap_or_else(|_| "block".to_string()),
+                parent_id: row.get(9).unwrap_or_default(),
                 name: row.get(1)?,
                 query_json: row.get(2)?,
                 view_type: row.get(3)?,
@@ -4003,8 +4028,8 @@ impl<'a> ScreenViewRepository for SQLiteTransactionAdapter<'a> {
                 is_default: row.get(5)?,
                 sort_order: row.get(6)?,
                 config: row.get(7)?,
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
+                created_at: row.get(10)?,
+                updated_at: row.get(11)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
         Ok(views)
@@ -4012,11 +4037,13 @@ impl<'a> ScreenViewRepository for SQLiteTransactionAdapter<'a> {
 
     fn get_by_id(&self, id: &str) -> Result<ScreenView, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, COALESCE(config, '') AS config, created_at, updated_at FROM screen_view WHERE id = ?1"
+            "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, COALESCE(config, '') AS config, entity, parent_id, created_at, updated_at FROM screen_view WHERE id = ?1"
         )?;
         let view = stmt.query_row(params![id], |row| {
             Ok(ScreenView {
                 id: row.get(0)?,
+                entity: row.get(8).unwrap_or_else(|_| "block".to_string()),
+                parent_id: row.get(9).unwrap_or_default(),
                 name: row.get(1)?,
                 query_json: row.get(2)?,
                 view_type: row.get(3)?,
@@ -4024,8 +4051,8 @@ impl<'a> ScreenViewRepository for SQLiteTransactionAdapter<'a> {
                 is_default: row.get(5)?,
                 sort_order: row.get(6)?,
                 config: row.get(7)?,
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
+                created_at: row.get(10)?,
+                updated_at: row.get(11)?,
             })
         })?;
         Ok(view)
@@ -4033,9 +4060,11 @@ impl<'a> ScreenViewRepository for SQLiteTransactionAdapter<'a> {
 
     fn create(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn Error>> {
         self.conn.execute(
-            "INSERT INTO screen_view (id, name, query_json, view_type, group_by, is_default, sort_order, config, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT INTO screen_view (id, entity, parent_id, name, query_json, view_type, group_by, is_default, sort_order, config, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 view.id,
+                view.entity,
+                view.parent_id,
                 view.name,
                 view.query_json,
                 view.view_type,
@@ -4052,9 +4081,10 @@ impl<'a> ScreenViewRepository for SQLiteTransactionAdapter<'a> {
 
     fn update(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn Error>> {
         self.conn.execute(
-            "UPDATE screen_view SET name = ?2, query_json = ?3, view_type = ?4, group_by = ?5, is_default = ?6, sort_order = ?7, config = ?8, updated_at = ?9 WHERE id = ?1",
+            "UPDATE screen_view SET parent_id = ?2, name = ?3, query_json = ?4, view_type = ?5, group_by = ?6, is_default = ?7, sort_order = ?8, config = ?9, updated_at = ?10 WHERE id = ?1",
             params![
                 view.id,
+                view.parent_id,
                 view.name,
                 view.query_json,
                 view.view_type,

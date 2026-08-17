@@ -174,12 +174,14 @@ impl SqlJsAdapter {
 
         Self::exec(db, "CREATE TABLE IF NOT EXISTS SavedFilter (id TEXT PRIMARY KEY, name TEXT NOT NULL, query_json TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
 
-        Self::exec(db, "CREATE TABLE IF NOT EXISTS screen_view (id TEXT PRIMARY KEY, name TEXT NOT NULL, query_json TEXT NOT NULL, view_type TEXT NOT NULL DEFAULT 'table', group_by TEXT NOT NULL DEFAULT '', is_default INTEGER NOT NULL DEFAULT 0, sort_order INTEGER NOT NULL DEFAULT 0, config TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
+        Self::exec(db, "CREATE TABLE IF NOT EXISTS screen_view (id TEXT PRIMARY KEY, entity TEXT NOT NULL DEFAULT 'block', parent_id TEXT, name TEXT NOT NULL, query_json TEXT NOT NULL, view_type TEXT NOT NULL DEFAULT 'table', group_by TEXT NOT NULL DEFAULT '', is_default INTEGER NOT NULL DEFAULT 0, sort_order INTEGER NOT NULL DEFAULT 0, config TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
 
         Self::migrate_date_ref_event_ts(db)?;
         Self::migrate_add_version_and_deleted_at(db)?;
         Self::migrate_rename_task_view_to_screen_view(db)?;
         Self::migrate_add_screen_view_config(db)?;
+        Self::migrate_add_screen_view_entity(db)?;
+        Self::migrate_add_screen_view_parent_id(db)?;
 
         Ok(())
     }
@@ -278,6 +280,27 @@ impl SqlJsAdapter {
         let has_column = rows.iter().any(|r| r.get("name").map(|s| s.as_str() == "config").unwrap_or(false));
         if !has_column {
             Self::exec(db, "ALTER TABLE screen_view ADD COLUMN config TEXT")?;
+        }
+        Ok(())
+    }
+
+    fn migrate_add_screen_view_entity(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        // 加 entity 列（所属实体键，用于按实体隔离命名视图）。幂等：列不存在才 ALTER ADD，默认 'block' 兼容存量视图。
+        let rows = Self::query(db, "PRAGMA table_info(screen_view);", &[])?;
+        let has_column = rows.iter().any(|r| r.get("name").map(|s| s.as_str() == "entity").unwrap_or(false));
+        if !has_column {
+            Self::exec(db, "ALTER TABLE screen_view ADD COLUMN entity TEXT NOT NULL DEFAULT 'block'")?;
+        }
+        Ok(())
+    }
+
+    fn migrate_add_screen_view_parent_id(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        // 加 parent_id 列（两级层级：空串 = Screen，非空 = Tab 所属 Screen id）。
+        // 幂等：列不存在才 ALTER ADD；存量单级视图（parent_id 为 NULL）读取时回退空串，视作 Screen。
+        let rows = Self::query(db, "PRAGMA table_info(screen_view);", &[])?;
+        let has_column = rows.iter().any(|r| r.get("name").map(|s| s.as_str() == "parent_id").unwrap_or(false));
+        if !has_column {
+            Self::exec(db, "ALTER TABLE screen_view ADD COLUMN parent_id TEXT")?;
         }
         Ok(())
     }
@@ -1211,10 +1234,12 @@ impl SavedFilterRepository for SqlJsAdapter {
 
 #[cfg(target_arch = "wasm32")]
 impl ScreenViewRepository for SqlJsAdapter {
-    fn get_all(&self) -> Result<Vec<ScreenView>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, config, created_at, updated_at FROM screen_view ORDER BY sort_order ASC, created_at DESC", &[])?;
+    fn get_all_by_entity(&self, entity: &str) -> Result<Vec<ScreenView>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, entity, parent_id, name, query_json, view_type, group_by, is_default, sort_order, config, created_at, updated_at FROM screen_view WHERE entity = ?1 ORDER BY sort_order ASC, created_at DESC", &[entity])?;
         Ok(result.into_iter().map(|r| ScreenView {
             id: r.get("id").cloned().unwrap_or_default(),
+            entity: r.get("entity").cloned().unwrap_or_else(|| "block".to_string()),
+            parent_id: r.get("parent_id").cloned().unwrap_or_default(),
             name: r.get("name").cloned().unwrap_or_default(),
             query_json: r.get("query_json").cloned().unwrap_or_default(),
             view_type: r.get("view_type").cloned().unwrap_or_default(),
@@ -1228,13 +1253,15 @@ impl ScreenViewRepository for SqlJsAdapter {
     }
 
     fn get_by_id(&self, id: &str) -> Result<ScreenView, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, config, created_at, updated_at FROM screen_view WHERE id = ?", &[id])?;
+        let result = Self::query(&self.db, "SELECT id, entity, parent_id, name, query_json, view_type, group_by, is_default, sort_order, config, created_at, updated_at FROM screen_view WHERE id = ?", &[id])?;
         if result.is_empty() {
             return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "ScreenView not found")));
         }
         let r = &result[0];
         Ok(ScreenView {
             id: r.get("id").cloned().unwrap_or_default(),
+            entity: r.get("entity").cloned().unwrap_or_else(|| "block".to_string()),
+            parent_id: r.get("parent_id").cloned().unwrap_or_default(),
             name: r.get("name").cloned().unwrap_or_default(),
             query_json: r.get("query_json").cloned().unwrap_or_default(),
             view_type: r.get("view_type").cloned().unwrap_or_default(),
@@ -1248,15 +1275,15 @@ impl ScreenViewRepository for SqlJsAdapter {
     }
 
     fn create(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn std::error::Error>> {
-        Self::run_with_params(&self.db, "INSERT INTO screen_view (id, name, query_json, view_type, group_by, is_default, sort_order, config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", &[
-            &view.id, &view.name, &view.query_json, &view.view_type, &view.group_by, &view.is_default.to_string(), &view.sort_order.to_string(), &view.config, &view.created_at.to_string(), &view.updated_at.to_string()
+        Self::run_with_params(&self.db, "INSERT INTO screen_view (id, entity, parent_id, name, query_json, view_type, group_by, is_default, sort_order, config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", &[
+            &view.id, &view.entity, &view.parent_id, &view.name, &view.query_json, &view.view_type, &view.group_by, &view.is_default.to_string(), &view.sort_order.to_string(), &view.config, &view.created_at.to_string(), &view.updated_at.to_string()
         ])?;
         Ok(view.clone())
     }
 
     fn update(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn std::error::Error>> {
-        Self::run_with_params(&self.db, "UPDATE screen_view SET name = ?, query_json = ?, view_type = ?, group_by = ?, is_default = ?, sort_order = ?, config = ?, updated_at = ? WHERE id = ?", &[
-            &view.name, &view.query_json, &view.view_type, &view.group_by, &view.is_default.to_string(), &view.sort_order.to_string(), &view.config, &view.updated_at.to_string(), &view.id
+        Self::run_with_params(&self.db, "UPDATE screen_view SET parent_id = ?, name = ?, query_json = ?, view_type = ?, group_by = ?, is_default = ?, sort_order = ?, config = ?, updated_at = ? WHERE id = ?", &[
+            &view.parent_id, &view.name, &view.query_json, &view.view_type, &view.group_by, &view.is_default.to_string(), &view.sort_order.to_string(), &view.config, &view.updated_at.to_string(), &view.id
         ])?;
         Ok(view.clone())
     }

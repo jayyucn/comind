@@ -123,40 +123,71 @@ pub async fn delete_saved_filter(
     execute_with_adapter(db, |storage| FilterService::delete_saved_filter(storage, id)).await
 }
 
-// ---- Task Views ----
+// ---- Screens & Tabs（两级层级） ----
 
 #[tauri::command]
 pub async fn get_screen_views(
     db: State<'_, super::state::DatabaseConnection>,
+    entity: String,
 ) -> Result<Vec<ScreenView>, String> {
-    execute_with_adapter(db, |storage| FilterService::get_screen_views(storage)).await
+    execute_with_adapter(db, |storage| FilterService::get_screen_views(storage, &entity)).await
 }
 
 #[tauri::command]
-pub async fn save_screen_view(
+pub async fn create_screen(
     db: State<'_, super::state::DatabaseConnection>,
-    name: &str,
-    query_json: &str,
-    view_type: &str,
-    group_by: &str,
-    config: &str,
-) -> Result<ScreenView, String> {
-    execute_with_adapter(db, |storage| FilterService::save_screen_view(storage, name, query_json, view_type, group_by, false, 0, config)).await
-}
-
-#[tauri::command]
-pub async fn update_screen_view(
-    db: State<'_, super::state::DatabaseConnection>,
-    id: &str,
-    name: &str,
-    query_json: &str,
-    view_type: &str,
-    group_by: &str,
-    is_default: bool,
+    entity: String,
+    name: String,
+    view_type: String,
     sort_order: i64,
-    config: &str,
+    config: String,
 ) -> Result<ScreenView, String> {
-    execute_with_adapter(db, |storage| FilterService::update_screen_view(storage, id, name, query_json, view_type, group_by, is_default, sort_order, config)).await
+    execute_with_adapter(db, |storage| FilterService::create_screen(storage, &entity, &name, &view_type, sort_order, &config)).await
+}
+
+#[tauri::command]
+pub async fn create_tab(
+    db: State<'_, super::state::DatabaseConnection>,
+    entity: String,
+    parent_id: String,
+    name: String,
+    view_type: String,
+    query_json: String,
+    sort_order: i64,
+    config: String,
+) -> Result<ScreenView, String> {
+    execute_with_adapter(db, |storage| FilterService::create_tab(storage, &entity, &parent_id, &name, &view_type, &query_json, sort_order, &config)).await
+}
+
+#[tauri::command]
+pub async fn update_screen(
+    db: State<'_, super::state::DatabaseConnection>,
+    id: String,
+    name: String,
+    view_type: String,
+    config: String,
+) -> Result<ScreenView, String> {
+    execute_with_adapter(db, |storage| FilterService::update_screen(storage, &id, &name, &view_type, &config)).await
+}
+
+#[tauri::command]
+pub async fn update_tab(
+    db: State<'_, super::state::DatabaseConnection>,
+    id: String,
+    name: String,
+    view_type: String,
+    query_json: String,
+    config: String,
+) -> Result<ScreenView, String> {
+    execute_with_adapter(db, |storage| FilterService::update_tab(storage, &id, &name, &view_type, &query_json, &config)).await
+}
+
+#[tauri::command]
+pub async fn delete_screen(
+    db: State<'_, super::state::DatabaseConnection>,
+    id: String,
+) -> Result<(), String> {
+    execute_with_adapter(db, |storage| FilterService::delete_screen(storage, &id)).await
 }
 
 #[tauri::command]
@@ -168,11 +199,11 @@ pub async fn delete_screen_view(
 }
 
 #[tauri::command]
-pub async fn set_default_screen_view(
+pub async fn set_default_screen(
     db: State<'_, super::state::DatabaseConnection>,
-    id: &str,
+    id: String,
 ) -> Result<ScreenView, String> {
-    execute_with_adapter(db, |storage| FilterService::set_default_screen_view(storage, id)).await
+    execute_with_adapter(db, |storage| FilterService::set_default_screen(storage, &id)).await
 }
 
 #[tauri::command]

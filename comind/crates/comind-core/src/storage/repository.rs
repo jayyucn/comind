@@ -154,7 +154,7 @@ pub trait SavedFilterRepository {
 }
 
 pub trait ScreenViewRepository {
-    fn get_all(&self) -> Result<Vec<ScreenView>, Box<dyn Error>>;
+    fn get_all_by_entity(&self, entity: &str) -> Result<Vec<ScreenView>, Box<dyn Error>>;
     fn get_by_id(&self, id: &str) -> Result<ScreenView, Box<dyn Error>>;
     fn create(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn Error>>;
     fn update(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn Error>>;

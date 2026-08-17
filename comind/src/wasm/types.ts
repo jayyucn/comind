@@ -235,6 +235,9 @@ export interface SavedFilterRust {
 
 export interface ScreenViewRust {
   id: string
+  entity: string
+  /** 两级层级：空串 = Screen（命名容器）；非空 = Tab，值为所属 Screen 的 id */
+  parent_id: string
   name: string
   query_json: string
   view_type: string

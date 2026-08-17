@@ -121,12 +121,15 @@ export interface CoreClient {
   updateSavedFilter(id: string, name: string, queryJson: string): Promise<SavedFilterRust>
   deleteSavedFilter(id: string): Promise<void>
 
-  // Task Views
-  getScreenViews(): Promise<ScreenViewRust[]>
-  saveScreenView(name: string, queryJson: string, viewType: string, groupBy: string, config: string): Promise<ScreenViewRust>
-  updateScreenView(id: string, name: string, queryJson: string, viewType: string, groupBy: string, isDefault: boolean, sortOrder: number, config: string): Promise<ScreenViewRust>
+  // Screens & Tabs (两级层级)
+  getScreenViews(entity: string): Promise<ScreenViewRust[]>
+  createScreen(entity: string, name: string, viewType: string, sortOrder: number, config: string): Promise<ScreenViewRust>
+  createTab(entity: string, parentId: string, name: string, viewType: string, queryJson: string, sortOrder: number, config: string): Promise<ScreenViewRust>
+  updateScreen(id: string, name: string, viewType: string, config: string): Promise<ScreenViewRust>
+  updateTab(id: string, name: string, viewType: string, queryJson: string, config: string): Promise<ScreenViewRust>
+  deleteScreen(id: string): Promise<void>
   deleteScreenView(id: string): Promise<void>
-  setDefaultScreenView(id: string): Promise<ScreenViewRust>
+  setDefaultScreen(id: string): Promise<ScreenViewRust>
 }
 
 class TauriClient implements CoreClient {
@@ -159,25 +162,37 @@ class TauriClient implements CoreClient {
     return tauri.tauriDeleteSavedFilter(id)
   }
 
-  // ---- Task Views ----
-  async getScreenViews(): Promise<ScreenViewRust[]> {
-    return tauri.tauriGetScreenViews()
+  // ---- Screens & Tabs（两级层级） ----
+  async getScreenViews(entity: string): Promise<ScreenViewRust[]> {
+    return tauri.tauriGetScreenViews(entity)
   }
 
-  async saveScreenView(name: string, queryJson: string, viewType: string, groupBy: string, config: string): Promise<ScreenViewRust> {
-    return tauri.tauriSaveScreenView(name, queryJson, viewType, groupBy, config)
+  async createScreen(entity: string, name: string, viewType: string, sortOrder: number, config: string): Promise<ScreenViewRust> {
+    return tauri.tauriCreateScreen(entity, name, viewType, sortOrder, config)
   }
 
-  async updateScreenView(id: string, name: string, queryJson: string, viewType: string, groupBy: string, isDefault: boolean, sortOrder: number, config: string): Promise<ScreenViewRust> {
-    return tauri.tauriUpdateScreenView(id, name, queryJson, viewType, groupBy, isDefault, sortOrder, config)
+  async createTab(entity: string, parentId: string, name: string, viewType: string, queryJson: string, sortOrder: number, config: string): Promise<ScreenViewRust> {
+    return tauri.tauriCreateTab(entity, parentId, name, viewType, queryJson, sortOrder, config)
+  }
+
+  async updateScreen(id: string, name: string, viewType: string, config: string): Promise<ScreenViewRust> {
+    return tauri.tauriUpdateScreen(id, name, viewType, config)
+  }
+
+  async updateTab(id: string, name: string, viewType: string, queryJson: string, config: string): Promise<ScreenViewRust> {
+    return tauri.tauriUpdateTab(id, name, viewType, queryJson, config)
+  }
+
+  async deleteScreen(id: string): Promise<void> {
+    return tauri.tauriDeleteScreen(id)
   }
 
   async deleteScreenView(id: string): Promise<void> {
     return tauri.tauriDeleteScreenView(id)
   }
 
-  async setDefaultScreenView(id: string): Promise<ScreenViewRust> {
-    return tauri.tauriSetDefaultScreenView(id)
+  async setDefaultScreen(id: string): Promise<ScreenViewRust> {
+    return tauri.tauriSetDefaultScreen(id)
   }
 
   async saveBlockTree(blocks: BlockUpdate[]): Promise<BlockSaveResult[]> {
@@ -430,25 +445,37 @@ class WasmClientAdapter implements CoreClient {
     throw new Error('WASM: saved filters not supported')
   }
 
-  // ---- Task Views ----
-  async getScreenViews(): Promise<ScreenViewRust[]> {
+  // ---- Screens & Tabs（两级层级，WASM 暂不支持） ----
+  async getScreenViews(_entity: string): Promise<ScreenViewRust[]> {
     return []
   }
 
-  async saveScreenView(_name: string, _queryJson: string, _viewType: string, _groupBy: string, _config: string): Promise<ScreenViewRust> {
-    throw new Error('WASM: task views not supported')
+  async createScreen(_entity: string, _name: string, _viewType: string, _sortOrder: number, _config: string): Promise<ScreenViewRust> {
+    throw new Error('WASM: screens not supported')
   }
 
-  async updateScreenView(_id: string, _name: string, _queryJson: string, _viewType: string, _groupBy: string, _isDefault: boolean, _sortOrder: number, _config: string): Promise<ScreenViewRust> {
-    throw new Error('WASM: task views not supported')
+  async createTab(_entity: string, _parentId: string, _name: string, _viewType: string, _queryJson: string, _sortOrder: number, _config: string): Promise<ScreenViewRust> {
+    throw new Error('WASM: tabs not supported')
+  }
+
+  async updateScreen(_id: string, _name: string, _viewType: string, _config: string): Promise<ScreenViewRust> {
+    throw new Error('WASM: screens not supported')
+  }
+
+  async updateTab(_id: string, _name: string, _viewType: string, _queryJson: string, _config: string): Promise<ScreenViewRust> {
+    throw new Error('WASM: tabs not supported')
+  }
+
+  async deleteScreen(_id: string): Promise<void> {
+    throw new Error('WASM: screens not supported')
   }
 
   async deleteScreenView(_id: string): Promise<void> {
-    throw new Error('WASM: task views not supported')
+    throw new Error('WASM: screens not supported')
   }
 
-  async setDefaultScreenView(_id: string): Promise<ScreenViewRust> {
-    throw new Error('WASM: task views not supported')
+  async setDefaultScreen(_id: string): Promise<ScreenViewRust> {
+    throw new Error('WASM: screens not supported')
   }
 
   async saveBlockTree(blocks: BlockUpdate[]): Promise<BlockSaveResult[]> {

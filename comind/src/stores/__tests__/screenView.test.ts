@@ -1,20 +1,27 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
+import type { ScreenViewRust } from '../../wasm/types'
 
 const {
   mockGetScreenViews,
-  mockSaveScreenView,
-  mockUpdateScreenView,
+  mockCreateScreen,
+  mockCreateTab,
+  mockUpdateScreen,
+  mockUpdateTab,
+  mockDeleteScreen,
   mockDeleteScreenView,
-  mockSetDefaultScreenView,
+  mockSetDefaultScreen,
   mockInitCoreClient,
 } = vi.hoisted(() => {
   return {
     mockGetScreenViews: vi.fn(),
-    mockSaveScreenView: vi.fn(),
-    mockUpdateScreenView: vi.fn(),
+    mockCreateScreen: vi.fn(),
+    mockCreateTab: vi.fn(),
+    mockUpdateScreen: vi.fn(),
+    mockUpdateTab: vi.fn(),
+    mockDeleteScreen: vi.fn(),
     mockDeleteScreenView: vi.fn(),
-    mockSetDefaultScreenView: vi.fn(),
+    mockSetDefaultScreen: vi.fn(),
     mockInitCoreClient: vi.fn(),
   }
 })
@@ -26,36 +33,60 @@ vi.mock('../../wasm/client', () => {
   }
 })
 
-function makeView(overrides: Partial<import('../../wasm/types').ScreenViewRust> = {}) {
+const EMPTY_QUERY = { version: 1, filter: { combinator: 'and', children: [] }, sort: [], groupBy: null }
+const DIRTY_QUERY = { version: 1, filter: { combinator: 'and', children: [{ field: 'status', op: 'eq', value: 'Done' }] }, sort: [], groupBy: null }
+
+function makeScreen(overrides: Partial<ScreenViewRust> = {}): ScreenViewRust {
   return {
-    id: 'view-1',
-    user_id: 'user-1',
-    name: '测试视图',
-    status: 1,
-    sort_order: 0,
-    filters: '',
+    id: 'screen-1',
+    entity: 'block',
+    parent_id: '',
+    name: 'Screen',
+    query_json: '{}',
+    view_type: 'table',
     group_by: '',
-    sorting: '',
-    layout: 0,
     is_default: 0,
-    updated_at: 1000,
+    sort_order: 0,
+    config: '{}',
     created_at: 1000,
+    updated_at: 1000,
     ...overrides,
   }
 }
 
-function createMockClient(overrides: Record<string, any> = {}) {
+function makeTab(overrides: Partial<ScreenViewRust> = {}): ScreenViewRust {
+  return {
+    id: 'tab-1',
+    entity: 'block',
+    parent_id: 'screen-1',
+    name: '',
+    query_json: JSON.stringify(EMPTY_QUERY),
+    view_type: 'table',
+    group_by: '',
+    is_default: 0,
+    sort_order: 1,
+    config: '{}',
+    created_at: 1000,
+    updated_at: 1000,
+    ...overrides,
+  }
+}
+
+function createMockClient(overrides: Record<string, unknown> = {}) {
   return {
     getScreenViews: mockGetScreenViews,
-    saveScreenView: mockSaveScreenView,
-    updateScreenView: mockUpdateScreenView,
+    createScreen: mockCreateScreen,
+    createTab: mockCreateTab,
+    updateScreen: mockUpdateScreen,
+    updateTab: mockUpdateTab,
+    deleteScreen: mockDeleteScreen,
     deleteScreenView: mockDeleteScreenView,
-    setDefaultScreenView: mockSetDefaultScreenView,
+    setDefaultScreen: mockSetDefaultScreen,
     ...overrides,
   }
 }
 
-describe('screenView store', () => {
+describe('screenView store (two-level Screen→Tab)', () => {
   let useScreenViewStore: typeof import('../screenView').useScreenViewStore
 
   beforeEach(async () => {
@@ -71,83 +102,68 @@ describe('screenView store', () => {
     useScreenViewStore = (await import('../screenView')).useScreenViewStore
 
     mockGetScreenViews.mockResolvedValue([])
-    mockSaveScreenView.mockImplementation(async (name: string) => makeView({
-      id: 'saved-' + Date.now(),
-      name,
-      is_default: 1,
-    }))
-    mockUpdateScreenView.mockImplementation(async (id: string, name: string) => makeView({
-      id,
-      name,
-    }))
+    mockCreateScreen.mockImplementation(async (_entity: string, name: string, viewType: string, _sort: number, config: string) =>
+      makeScreen({ id: 'seed-screen', name, view_type: viewType, is_default: 1, config }),
+    )
+    mockCreateTab.mockImplementation(async (_entity: string, parentId: string, name: string, viewType: string, queryJson: string, _sort: number, config: string) =>
+      makeTab({ id: 'seed-tab', parent_id: parentId, name, view_type: viewType, query_json: queryJson, config }),
+    )
+    mockUpdateScreen.mockImplementation(async (id: string, name: string, viewType: string, config: string) =>
+      makeScreen({ id, name, view_type: viewType, config }),
+    )
+    mockUpdateTab.mockImplementation(async (id: string, name: string, viewType: string, queryJson: string, config: string) =>
+      makeTab({ id, name, view_type: viewType, query_json: queryJson, config, parent_id: 's1' }),
+    )
+    mockDeleteScreen.mockResolvedValue()
     mockDeleteScreenView.mockResolvedValue()
-    mockSetDefaultScreenView.mockImplementation(async (id: string) => makeView({
-      id,
-      is_default: 1,
-    }))
+    mockSetDefaultScreen.mockImplementation(async (id: string) => makeScreen({ id, is_default: 1 }))
     mockInitCoreClient.mockResolvedValue(createMockClient())
   })
 
   // ── load ──
 
   describe('load', () => {
-    it('无视图时自动创建默认"全部任务"视图', async () => {
+    it('无视图时自动 seed 默认 Screen + 一个 Tab', async () => {
       const store = useScreenViewStore()
       await store.load()
 
-      expect(mockSaveScreenView).toHaveBeenCalledTimes(1)
-      expect(store.views.length).toBeGreaterThanOrEqual(1)
-      expect(store.views[0].is_default).toBe(1)
+      expect(mockCreateScreen).toHaveBeenCalledTimes(1)
+      expect(mockCreateTab).toHaveBeenCalledTimes(1)
+      expect(store.screens.length).toBe(1)
+      expect(store.screens[0].is_default).toBe(1)
+      expect(store.currentTabs.length).toBe(1)
+      expect(store.currentScreenId).toBe('seed-screen')
+      expect(store.currentTabId).toBe('seed-tab')
     })
 
-    it('已有视图时不创建默认视图', async () => {
-      const existing = makeView({ id: 'existing', is_default: 0 })
-      mockGetScreenViews.mockResolvedValue([existing])
+    it('已有视图时不 seed，并选中默认 Screen 的首个 Tab', async () => {
+      const screen = makeScreen({ id: 's1', is_default: 1, name: '全部任务' })
+      const tab = makeTab({ id: 't1', parent_id: 's1' })
+      mockGetScreenViews.mockResolvedValue([screen, tab])
 
       const store = useScreenViewStore()
       await store.load()
 
-      expect(mockSaveScreenView).not.toHaveBeenCalled()
-      expect(store.views.length).toBe(1)
-      expect(store.views[0].id).toBe('existing')
+      expect(mockCreateScreen).not.toHaveBeenCalled()
+      expect(store.screens.length).toBe(1)
+      expect(store.currentScreenId).toBe('s1')
+      expect(store.currentTabId).toBe('t1')
     })
 
-    it('加载后自动设置 currentViewId 为默认视图', async () => {
-      const existing = makeView({ id: 'default-1', is_default: 1 })
-      mockGetScreenViews.mockResolvedValue([existing])
+    it('无默认视图时使用第一个 Screen', async () => {
+      const s1 = makeScreen({ id: 's1', is_default: 0 })
+      const s2 = makeScreen({ id: 's2', is_default: 0 })
+      mockGetScreenViews.mockResolvedValue([s1, s2, makeTab({ id: 't1', parent_id: 's1' })])
 
       const store = useScreenViewStore()
       await store.load()
 
-      expect(store.currentViewId).toBe('default-1')
-    })
-
-    it('无默认视图时使用第一个视图作为 currentViewId', async () => {
-      const v1 = makeView({ id: 'v1', is_default: 0 })
-      const v2 = makeView({ id: 'v2', is_default: 0 })
-      mockGetScreenViews.mockResolvedValue([v1, v2])
-
-      const store = useScreenViewStore()
-      await store.load()
-
-      expect(store.currentViewId).toBe('v1')
-    })
-
-    it('setDefault 失败不影响加载流程', async () => {
-      mockSetDefaultScreenView.mockRejectedValue(new Error('setDefault failed'))
-
-      const store = useScreenViewStore()
-      await store.load()
-
-      expect(mockSetDefaultScreenView).toHaveBeenCalled()
-      expect(store.views.length).toBeGreaterThanOrEqual(0)
+      expect(store.currentScreenId).toBe('s1')
     })
 
     it('loading 状态正确管理', async () => {
-      let resolveClient: ((value: any) => void) | null = null
-      mockInitCoreClient.mockImplementation(
-        () => new Promise(resolve => { resolveClient = resolve })
-      )
+      let resolveClient: ((value: unknown) => void) | null = null
+      mockInitCoreClient.mockImplementation(() => new Promise(resolve => { resolveClient = resolve }))
 
       const store = useScreenViewStore()
       const loadPromise = store.load()
@@ -161,130 +177,258 @@ describe('screenView store', () => {
     })
   })
 
-  // ── save ──
+  // ── 选择 / 脏点 ──
 
-  describe('save', () => {
-    it('保存新视图并追加到列表', async () => {
-      mockSaveScreenView.mockResolvedValue(makeView({ id: 'new', name: '新视图' }))
-
+  describe('selection & dirty', () => {
+    it('selectTab 载入已提交查询并清脏点', async () => {
       const store = useScreenViewStore()
-      const result = await store.save('新视图', '{}', 'table', '', '')
+      store.views = [makeScreen({ id: 's1' }), makeTab({ id: 't1', parent_id: 's1' })]
+      store.currentScreenId = 's1'
 
-      expect(mockSaveScreenView).toHaveBeenCalledWith('新视图', '{}', 'table', '', '')
-      expect(result.id).toBe('new')
-      expect(store.views.length).toBe(1)
-      expect(store.views[0].id).toBe('new')
+      await store.selectTab('t1')
+
+      expect(store.currentTabId).toBe('t1')
+      expect(store.dirty).toBe(false)
+      expect(JSON.stringify(store.workingQuery)).toBe(JSON.stringify(EMPTY_QUERY))
+    })
+
+    it('setWorkingQuery 与已提交不一致时标记脏点', async () => {
+      const store = useScreenViewStore()
+      store.views = [makeScreen({ id: 's1' }), makeTab({ id: 't1', parent_id: 's1' })]
+      store.currentScreenId = 's1'
+      await store.selectTab('t1')
+
+      store.setWorkingQuery(DIRTY_QUERY as never)
+
+      expect(store.dirty).toBe(true)
+      expect(store.dirtyByTab.has('t1')).toBe(true)
+    })
+
+    it('saveActiveTab 持久化并清脏点', async () => {
+      const store = useScreenViewStore()
+      store.views = [makeScreen({ id: 's1' }), makeTab({ id: 't1', parent_id: 's1' })]
+      store.currentScreenId = 's1'
+      await store.selectTab('t1')
+      store.setWorkingQuery(DIRTY_QUERY as never)
+
+      await store.saveActiveTab()
+
+      expect(mockUpdateTab).toHaveBeenCalledWith('t1', '', 'table', JSON.stringify(DIRTY_QUERY), '{}')
+      expect(store.dirty).toBe(false)
+    })
+
+    it('discardActiveTab 回退到已提交查询并清脏点', async () => {
+      const store = useScreenViewStore()
+      store.views = [makeScreen({ id: 's1' }), makeTab({ id: 't1', parent_id: 's1' })]
+      store.currentScreenId = 's1'
+      await store.selectTab('t1')
+      store.setWorkingQuery(DIRTY_QUERY as never)
+
+      await store.discardActiveTab()
+
+      expect(store.dirty).toBe(false)
+      expect(JSON.stringify(store.workingQuery)).toBe(JSON.stringify(EMPTY_QUERY))
+    })
+
+    it('切换 tab 暂存草稿，切回恢复', async () => {
+      const store = useScreenViewStore()
+      const t1 = makeTab({ id: 't1', parent_id: 's1' })
+      const t2 = makeTab({ id: 't2', parent_id: 's1' })
+      store.views = [makeScreen({ id: 's1' }), t1, t2]
+      store.currentScreenId = 's1'
+      await store.selectTab('t1')
+      store.setWorkingQuery(DIRTY_QUERY as never)
+
+      await store.selectTab('t2')
+      expect(store.dirty).toBe(false)
+
+      await store.selectTab('t1')
+      expect(store.dirty).toBe(true)
+      expect(JSON.stringify(store.workingQuery)).toBe(JSON.stringify(DIRTY_QUERY))
+    })
+
+    it('切换 Screen 同样暂存/恢复当前 tab 草稿', async () => {
+      const store = useScreenViewStore()
+      const tabA = makeTab({ id: 'ta', parent_id: 'sa' })
+      const tabB = makeTab({ id: 'tb', parent_id: 'sb' })
+      store.views = [makeScreen({ id: 'sa', name: 'A' }), makeScreen({ id: 'sb', name: 'B' }), tabA, tabB]
+      store.currentScreenId = 'sa'
+      await store.selectTab('ta')
+      store.setWorkingQuery(DIRTY_QUERY as never)
+
+      await store.selectScreen('sb')
+      expect(store.currentScreenId).toBe('sb')
+      expect(store.dirty).toBe(false)
+
+      await store.selectScreen('sa')
+      expect(store.dirty).toBe(true)
+      expect(JSON.stringify(store.workingQuery)).toBe(JSON.stringify(DIRTY_QUERY))
     })
   })
 
-  // ── update ──
+  // ── 创建 ──
 
-  describe('update', () => {
-    it('更新已有视图并替换内存中的数据', async () => {
-      const v1 = makeView({ id: 'v1', name: 'old' })
-      const v2 = makeView({ id: 'v2' })
-      mockUpdateScreenView.mockResolvedValue(makeView({ id: 'v1', name: 'new' }))
-
+  describe('create', () => {
+    it('createScreen 创建 Screen + 默认 Tab 并选中', async () => {
       const store = useScreenViewStore()
-      store.views = [v1, v2]
+      store.views = [makeScreen({ id: 's1' })]
 
-      await store.update('v1', 'new', '{}', 'table', '', false, 0, '')
+      await store.createScreen('我的 Screen')
 
-      expect(mockUpdateScreenView).toHaveBeenCalledWith('v1', 'new', '{}', 'table', '', false, 0, '')
-      const updated = store.views.find(v => v.id === 'v1')
-      expect(updated?.name).toBe('new')
+      expect(mockCreateScreen).toHaveBeenCalledWith('block', '我的 Screen', 'table', expect.any(Number), expect.any(String))
+      expect(mockCreateTab).toHaveBeenCalled()
+      expect(store.screens.length).toBe(2)
+      expect(store.currentScreenId).toBe('seed-screen')
     })
 
-    it('更新不存在的 ID 时仍然调用后端', async () => {
-      mockUpdateScreenView.mockResolvedValue(makeView({ id: 'ghost' }))
-
+    it('createTab 在当前 Screen 下创建 Tab 并选中', async () => {
       const store = useScreenViewStore()
-      store.views = [makeView({ id: 'existing' })]
+      store.views = [makeScreen({ id: 's1' }), makeTab({ id: 't1', parent_id: 's1' })]
+      store.currentScreenId = 's1'
+      await store.selectTab('t1')
 
-      await store.update('ghost', 'name', '{}', 'table', '', false, 0, '')
+      await store.createTab('新看板', 'board')
 
-      expect(mockUpdateScreenView).toHaveBeenCalled()
-    })
-  })
-
-  // ── remove ──
-
-  describe('remove', () => {
-    it('删除视图并从列表移除', async () => {
-      const v1 = makeView({ id: 'v1' })
-      const v2 = makeView({ id: 'v2' })
-
-      const store = useScreenViewStore()
-      store.views = [v1, v2]
-      store.currentViewId = 'v1'
-
-      await store.remove('v2')
-
-      expect(mockDeleteScreenView).toHaveBeenCalledWith('v2')
-      expect(store.views.length).toBe(1)
-      expect(store.views[0].id).toBe('v1')
+      expect(mockCreateTab).toHaveBeenCalledWith('block', 's1', '新看板', 'board', expect.any(String), expect.any(Number), expect.any(String))
+      const created = store.views.find(v => v.id === 'seed-tab')
+      expect(created?.view_type).toBe('board')
+      expect(store.currentTabId).toBe('seed-tab')
     })
 
-    it('删除当前视图时回退到第一个视图', async () => {
-      const v1 = makeView({ id: 'v1' })
-      const v2 = makeView({ id: 'v2' })
-
+    it('createTab 不传名时默认用类型名', async () => {
       const store = useScreenViewStore()
-      store.views = [v1, v2]
-      store.currentViewId = 'v1'
+      store.views = [makeScreen({ id: 's1' }), makeTab({ id: 't1', parent_id: 's1' })]
+      store.currentScreenId = 's1'
+      await store.selectTab('t1')
 
-      await store.remove('v1')
+      await store.createTab(undefined, 'calendar')
 
-      expect(store.currentViewId).toBe('v2')
-    })
-
-    it('删除最后一个视图时 currentViewId 为 null', async () => {
-      const v1 = makeView({ id: 'v1' })
-
-      const store = useScreenViewStore()
-      store.views = [v1]
-      store.currentViewId = 'v1'
-
-      await store.remove('v1')
-
-      expect(store.currentViewId).toBeNull()
+      expect(mockCreateTab).toHaveBeenCalledWith('block', 's1', '', 'calendar', expect.any(String), expect.any(Number), expect.any(String))
     })
   })
 
-  // ── setDefault ──
+  // ── 重命名 ──
 
-  describe('setDefault', () => {
-    it('设置默认视图后，其他视图的 is_default 变为 0', async () => {
-      const v1 = makeView({ id: 'v1', is_default: 1 })
-      const v2 = makeView({ id: 'v2', is_default: 0 })
-      mockSetDefaultScreenView.mockResolvedValue(makeView({ id: 'v2', is_default: 1 }))
-
+  describe('rename', () => {
+    it('renameScreen 更新 Screen 名', async () => {
       const store = useScreenViewStore()
-      store.views = [v1, v2]
+      store.views = [makeScreen({ id: 's1', name: '旧' }), makeTab({ id: 't1', parent_id: 's1' })]
 
-      await store.setDefault('v2')
+      await store.renameScreen('s1', '新名')
 
-      expect(mockSetDefaultScreenView).toHaveBeenCalledWith('v2')
-      const v2After = store.views.find(v => v.id === 'v2')
-      expect(v2After?.is_default).toBe(1)
-      const v1After = store.views.find(v => v.id === 'v1')
-      expect(v1After?.is_default).toBe(0)
+      expect(mockUpdateScreen).toHaveBeenCalledWith('s1', '新名', 'table', '{}')
+      expect(store.screens.find(v => v.id === 's1')?.name).toBe('新名')
     })
 
-    it('设置默认视图时只有一个视图的 is_default 为 1', async () => {
-      const v1 = makeView({ id: 'v1' })
-      const v2 = makeView({ id: 'v2' })
-      const v3 = makeView({ id: 'v3' })
-      mockSetDefaultScreenView.mockResolvedValue(makeView({ id: 'v2', is_default: 1 }))
-
+    it('renameTab 更新 Tab 名', async () => {
       const store = useScreenViewStore()
-      store.views = [v1, v2, v3]
+      store.views = [makeScreen({ id: 's1' }), makeTab({ id: 't1', parent_id: 's1', name: '' })]
+      store.currentScreenId = 's1'
+      store.currentTabId = 't1'
 
-      await store.setDefault('v2')
+      await store.renameTab('t1', '重命名 Tab')
 
-      const defaults = store.views.filter(v => v.is_default === 1)
-      expect(defaults.length).toBe(1)
-      expect(defaults[0].id).toBe('v2')
+      expect(mockUpdateTab).toHaveBeenCalledWith('t1', '重命名 Tab', 'table', JSON.stringify(EMPTY_QUERY), '{}')
+      expect(store.currentTab?.name).toBe('重命名 Tab')
+    })
+  })
+
+  // ── 默认 ──
+
+  describe('setDefaultScreen', () => {
+    it('设默认后该 Screen is_default=1，其余为 0', async () => {
+      const store = useScreenViewStore()
+      store.views = [
+        makeScreen({ id: 's1', is_default: 1 }),
+        makeScreen({ id: 's2', is_default: 0 }),
+        makeTab({ id: 't1', parent_id: 's1' }),
+      ]
+
+      await store.setDefaultScreen('s2')
+
+      expect(mockSetDefaultScreen).toHaveBeenCalledWith('s2')
+      expect(store.screens.find(v => v.id === 's2')?.is_default).toBe(1)
+      expect(store.screens.find(v => v.id === 's1')?.is_default).toBe(0)
+    })
+  })
+
+  // ── 删除 ──
+
+  describe('delete', () => {
+    it('deleteScreen 级联移除其下所有 Tab', async () => {
+      const store = useScreenViewStore()
+      store.views = [
+        makeScreen({ id: 's1' }),
+        makeScreen({ id: 's2' }),
+        makeTab({ id: 't1', parent_id: 's1' }),
+        makeTab({ id: 't2', parent_id: 's1' }),
+      ]
+      store.currentScreenId = 's1'
+
+      await store.deleteScreen('s1')
+
+      expect(mockDeleteScreen).toHaveBeenCalledWith('s1')
+      expect(store.views.find(v => v.id === 's1')).toBeUndefined()
+      expect(store.views.find(v => v.id === 't1')).toBeUndefined()
+      expect(store.views.find(v => v.id === 't2')).toBeUndefined()
+      expect(store.screens.length).toBe(1)
+    })
+
+    it('仅剩一个 Screen 时禁止删除', async () => {
+      const store = useScreenViewStore()
+      store.views = [makeScreen({ id: 's1' }), makeTab({ id: 't1', parent_id: 's1' })]
+      store.currentScreenId = 's1'
+
+      await store.deleteScreen('s1')
+
+      expect(mockDeleteScreen).not.toHaveBeenCalled()
+      expect(store.screens.length).toBe(1)
+    })
+
+    it('deleteTab 移除 Tab 并回退到同 Screen 首个 Tab', async () => {
+      const store = useScreenViewStore()
+      store.views = [
+        makeScreen({ id: 's1' }),
+        makeTab({ id: 't1', parent_id: 's1' }),
+        makeTab({ id: 't2', parent_id: 's1' }),
+      ]
+      store.currentScreenId = 's1'
+      store.currentTabId = 't1'
+
+      await store.deleteTab('t1')
+
+      expect(mockDeleteScreenView).toHaveBeenCalledWith('t1')
+      expect(store.views.find(v => v.id === 't1')).toBeUndefined()
+      expect(store.currentTabId).toBe('t2')
+    })
+
+    it('仅剩一个 Tab 时禁止删除', async () => {
+      const store = useScreenViewStore()
+      store.views = [makeScreen({ id: 's1' }), makeTab({ id: 't1', parent_id: 's1' })]
+      store.currentScreenId = 's1'
+      store.currentTabId = 't1'
+
+      await store.deleteTab('t1')
+
+      expect(mockDeleteScreenView).not.toHaveBeenCalled()
+      expect(store.views.length).toBe(2)
+    })
+  })
+
+  // ── 复制 ──
+
+  describe('duplicateTab', () => {
+    it('复制 Tab 继承类型/查询/配置并以副本命名', async () => {
+      const store = useScreenViewStore()
+      const src = makeTab({ id: 't1', parent_id: 's1', view_type: 'board', query_json: JSON.stringify(DIRTY_QUERY), config: 'cfg' })
+      store.views = [makeScreen({ id: 's1' }), src]
+      store.currentScreenId = 's1'
+      store.currentTabId = 't1'
+
+      await store.duplicateTab('t1', 't1 副本')
+
+      expect(mockCreateTab).toHaveBeenCalledWith('block', 's1', 't1 副本', 'board', JSON.stringify(DIRTY_QUERY), expect.any(Number), 'cfg')
+      expect(store.currentTabId).toBe('seed-tab')
     })
   })
 })

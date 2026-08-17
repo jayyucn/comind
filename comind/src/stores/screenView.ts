@@ -1,7 +1,9 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import type { Condition, ConditionValue, SortRule, ViewQuery } from '../core/query'
 import { defaultLayoutConfig } from '../core/view'
+import type { ViewKind } from '../core/view'
+import { defaultViewNameForEntity } from '../core/view/management'
 import type { CoreClient } from '../wasm/client'
 import { initCoreClient } from '../wasm/client'
 import type { ScreenViewRust } from '../wasm/types'
@@ -37,7 +39,7 @@ function blockFieldToKey(f: LegacyBlockField): string {
 
 /** 存量旧 BlockQuery → 新 ViewQuery（字段形状重映射；op 均被新引擎支持，无需丢弃）。 */
 export function blockQueryToViewQuery(bq: LegacyBlockQuery): ViewQuery {
-  const children: Condition[] = bq.filters 
+  const children: Condition[] = bq.filters
     .map((c) => ({ field: blockFieldToKey(c.field), op: c.op as Condition['op'], value: c.value as ConditionValue }))
     .filter((c) => c.field)
   const sort: SortRule[] = bq.sort.map((s) => ({ field: blockFieldToKey(s.field), dir: s.dir }))
@@ -78,109 +80,309 @@ async function getClient(): Promise<CoreClient> {
   return client
 }
 
-export const useScreenViewStore = defineStore('screenView', () => {
-  const views = ref<ScreenViewRust[]>([])
-  const currentViewId = ref<string | null>(null)
-  const loading = ref(false)
+export interface ScreenViewStoreOptions {
+  /** 首次加载且无视图时 seed 的默认 Screen 名；缺省按实体键推导（block→全部任务 / page→全部页面）。 */
+  defaultViewName?: string
+  /** seed 的默认 Tab/Screen 类型；缺省 'table'。 */
+  defaultViewType?: string
+}
 
-  async function load(): Promise<ScreenViewRust[]> {
-    loading.value = true
-    try {
-      const client = await getClient()
-      views.value = await client.getScreenViews()
+/**
+ * 两级（Screen→Tab）命名视图 store 构建函数。封装 defineStore，使 registry 类型能从实际
+ * 返回值推导，避免 Pinia 泛型被 Map 抹除导致 store.screens 等退化为 any（见 ADR-0009）。
+ * 同一 entityKey 多次调用返回同一实例；不同实体互不干扰。
+ */
+function makeScreenViewStore(id: string, entityKey: string, defaultViewName: string, defaultViewType: string) {
+  return defineStore(id, () => {
+      // 扁平存储：Screen（parent_id 空串）+ Tab（parent_id = 所属 Screen 的 id）
+      const views = ref<ScreenViewRust[]>([])
+      const currentScreenId = ref<string | null>(null)
+      const currentTabId = ref<string | null>(null)
+      const loading = ref(false)
+      // 每 Screen 记住上次激活的 tab（内存态；刷新后重置）
+      const lastTabByScreen = reactive<Record<string, string>>({})
+      // 当前激活 tab 的可编辑查询（ViewQuery），与草稿互转
+      const workingQuery = ref<ViewQuery>({ version: 1, filter: { combinator: 'and', children: [] }, sort: [], groupBy: null })
+      // 各 tab 是否有未保存更改（用于跨 tab / 跨 Screen 的脏点）
+      const dirtyByTab = ref<Set<string>>(new Set())
+      // 切走时暂存的草稿（tabId → ViewQuery）
+      const drafts = ref<Record<string, ViewQuery>>({})
 
-      // Auto-create default "全部任务" view if none exist
-      if (views.value.length === 0) {
-        const defaultQuery: ViewQuery = {
-          version: 1,
-          filter: { combinator: 'and', children: [] },
-          sort: [],
-          groupBy: null,
-        }
-        const view = await client.saveScreenView(
-          '全部任务',
-          JSON.stringify(defaultQuery),
-          'table',
-          '',
-          JSON.stringify(defaultLayoutConfig('table'))
-        )
-        views.value.push(view)
+      // ── 派生 ──
+      const screens = computed(() => views.value.filter((v) => !v.parent_id))
+      const currentScreen = computed(() => screens.value.find((s) => s.id === currentScreenId.value) ?? null)
+      const currentTabs = computed(() =>
+        views.value
+          .filter((v) => v.parent_id === currentScreenId.value)
+          .slice()
+          .sort((a, b) => a.sort_order - b.sort_order || a.created_at - b.created_at),
+      )
+      const currentTab = computed(() => currentTabs.value.find((t) => t.id === currentTabId.value) ?? null)
+      const dirty = computed(() => (currentTabId.value ? dirtyByTab.value.has(currentTabId.value) : false))
+      const currentViewType = computed(() => currentTab.value?.view_type ?? defaultViewType)
+
+      function committedQueryOf(tabId: string | null): ViewQuery {
+        if (!tabId) return EMPTY_VIEW_QUERY
+        const t = views.value.find((v) => v.id === tabId)
+        return t ? parseViewQuery(t.query_json) : EMPTY_VIEW_QUERY
+      }
+
+      function nextScreenSort(): number {
+        return screens.value.reduce((m, s) => Math.max(m, s.sort_order), -1) + 1
+      }
+      function nextTabSort(screenId: string): number {
+        return views.value.filter((v) => v.parent_id === screenId).reduce((m, t) => Math.max(m, t.sort_order), -1) + 1
+      }
+
+      async function load(): Promise<ScreenViewRust[]> {
+        loading.value = true
         try {
-          const updated = await client.setDefaultScreenView(view.id)
-          const idx = views.value.findIndex(v => v.id === view.id)
-          if (idx !== -1) {
-            views.value[idx] = updated
+          const client = await getClient()
+          views.value = await client.getScreenViews(entityKey)
+          // 该实体无视图时 seed 默认 Screen + 一个默认 Tab
+          if (views.value.length === 0) {
+            const screen = await client.createScreen(
+              entityKey,
+              defaultViewName,
+              defaultViewType,
+              0,
+              JSON.stringify(defaultLayoutConfig(defaultViewType as ViewKind)),
+            )
+            const tab = await client.createTab(
+              entityKey,
+              screen.id,
+              '',
+              defaultViewType,
+              JSON.stringify(EMPTY_VIEW_QUERY),
+              1,
+              JSON.stringify(defaultLayoutConfig(defaultViewType as ViewKind)),
+            )
+            views.value = [screen, tab]
           }
-        } catch {
-          // setDefault may fail silently in WASM
+          const defScreen = screens.value.find((s) => s.is_default === 1) ?? screens.value[0] ?? null
+          if (defScreen) {
+            currentScreenId.value = defScreen.id
+            const tabId = lastTabByScreen[defScreen.id] ?? currentTabs.value[0]?.id ?? null
+            if (tabId) await selectTab(tabId, true)
+          }
+          return views.value
+        } finally {
+          loading.value = false
         }
       }
 
-      // Set initial currentViewId to default view
-      if (!currentViewId.value) {
-        const defaultView = views.value.find(v => v.is_default === 1)
-        if (defaultView) {
-          currentViewId.value = defaultView.id
-        } else if (views.value.length > 0) {
-          currentViewId.value = views.value[0].id
+      function stashCurrentIfDirty() {
+        if (currentTabId.value && dirtyByTab.value.has(currentTabId.value)) {
+          drafts.value[currentTabId.value] = JSON.parse(JSON.stringify(workingQuery.value))
         }
       }
 
-      return views.value
-    } finally {
-      loading.value = false
-    }
-  }
+      async function selectScreen(id: string) {
+        if (id === currentScreenId.value) return
+        stashCurrentIfDirty()
+        currentScreenId.value = id
+        const tabId = lastTabByScreen[id] ?? currentTabs.value[0]?.id ?? null
+        if (tabId) await selectTab(tabId)
+        else {
+          currentTabId.value = null
+          workingQuery.value = { ...EMPTY_VIEW_QUERY }
+        }
+      }
 
-  async function save(name: string, queryJson: string, viewType: string, groupBy: string, config: string): Promise<ScreenViewRust> {
-    const client = await getClient()
-    const view = await client.saveScreenView(name, queryJson, viewType, groupBy, config)
-    views.value.push(view)
-    return view
-  }
+      async function selectTab(id: string, skipStash = false) {
+        if (!skipStash && id === currentTabId.value) return
+        if (!skipStash) stashCurrentIfDirty()
+        currentTabId.value = id
+        if (currentScreenId.value) lastTabByScreen[currentScreenId.value] = id
+        const draft = drafts.value[id]
+        if (draft) {
+          workingQuery.value = JSON.parse(JSON.stringify(draft))
+          dirtyByTab.value.add(id)
+        } else {
+          workingQuery.value = committedQueryOf(id)
+          dirtyByTab.value.delete(id)
+        }
+      }
 
-  async function update(id: string, name: string, queryJson: string, viewType: string, groupBy: string, isDefault: boolean, sortOrder: number, config: string): Promise<ScreenViewRust> {
-    const client = await getClient()
-    const view = await client.updateScreenView(id, name, queryJson, viewType, groupBy, isDefault, sortOrder, config)
-    const idx = views.value.findIndex(v => v.id === id)
-    if (idx !== -1) {
-      views.value[idx] = view
-    }
-    return view
-  }
+      function setWorkingQuery(q: ViewQuery) {
+        workingQuery.value = q
+        if (!currentTabId.value) return
+        const committed = committedQueryOf(currentTabId.value)
+        if (JSON.stringify(q) !== JSON.stringify(committed)) dirtyByTab.value.add(currentTabId.value)
+        else dirtyByTab.value.delete(currentTabId.value)
+      }
 
-  async function remove(id: string): Promise<void> {
-    const client = await getClient()
-    await client.deleteScreenView(id)
-    views.value = views.value.filter(v => v.id !== id)
-    if (currentViewId.value === id) {
-      currentViewId.value = views.value.length > 0 ? views.value[0].id : null
-    }
-  }
+      async function saveActiveTab() {
+        const tab = currentTab.value
+        if (!tab) return
+        const client = await getClient()
+        const updated = await client.updateTab(tab.id, tab.name, tab.view_type, JSON.stringify(workingQuery.value), tab.config)
+        const idx = views.value.findIndex((v) => v.id === tab.id)
+        if (idx !== -1) views.value[idx] = updated
+        dirtyByTab.value.delete(tab.id)
+        delete drafts.value[tab.id]
+      }
 
-  async function setDefault(id: string): Promise<ScreenViewRust> {
-    const client = await getClient()
-    const view = await client.setDefaultScreenView(id)
-    // Update all views — only one should be default
-    views.value = views.value.map(v => ({
-      ...v,
-      is_default: v.id === id ? 1 : 0,
-    }))
-    const idx = views.value.findIndex(v => v.id === id)
-    if (idx !== -1) {
-      views.value[idx] = view
-    }
-    return view
-  }
+      async function discardActiveTab() {
+        const tab = currentTab.value
+        if (!tab) return
+        workingQuery.value = committedQueryOf(tab.id)
+        dirtyByTab.value.delete(tab.id)
+        delete drafts.value[tab.id]
+      }
 
-  return {
-    views,
-    currentViewId,
-    loading,
-    load,
-    save,
-    update,
-    remove,
-    setDefault,
-  }
-})
+      async function createScreen(name?: string) {
+        const client = await getClient()
+        const screenName = name?.trim() || '未命名 Screen'
+        const screen = await client.createScreen(
+          entityKey,
+          screenName,
+          defaultViewType,
+          nextScreenSort(),
+          JSON.stringify(defaultLayoutConfig(defaultViewType as ViewKind)),
+        )
+        const tab = await client.createTab(
+          entityKey,
+          screen.id,
+          '',
+          defaultViewType,
+          JSON.stringify(EMPTY_VIEW_QUERY),
+          1,
+          JSON.stringify(defaultLayoutConfig(defaultViewType as ViewKind)),
+        )
+        views.value.push(screen, tab)
+        await selectScreen(screen.id)
+      }
+
+      async function createTab(name?: string, type?: string) {
+        if (!currentScreenId.value) return
+        const client = await getClient()
+        const vt = type || currentViewType.value
+        const tab = await client.createTab(
+          entityKey,
+          currentScreenId.value,
+          name?.trim() ?? '',
+          vt,
+          JSON.stringify(workingQuery.value),
+          nextTabSort(currentScreenId.value),
+          JSON.stringify(defaultLayoutConfig(vt as ViewKind)),
+        )
+        views.value.push(tab)
+        await selectTab(tab.id)
+      }
+
+      async function renameScreen(id: string, name: string) {
+        const s = screens.value.find((x) => x.id === id)
+        if (!s || !name.trim()) return
+        const client = await getClient()
+        const updated = await client.updateScreen(id, name.trim(), s.view_type, s.config)
+        const idx = views.value.findIndex((v) => v.id === id)
+        if (idx !== -1) views.value[idx] = updated
+      }
+
+      async function renameTab(id: string, name: string) {
+        const t = views.value.find((v) => v.id === id)
+        if (!t) return
+        const client = await getClient()
+        const updated = await client.updateTab(id, name, t.view_type, t.query_json, t.config)
+        const idx = views.value.findIndex((v) => v.id === id)
+        if (idx !== -1) views.value[idx] = updated
+      }
+
+      async function setDefaultScreen(id: string) {
+        const client = await getClient()
+        const updated = await client.setDefaultScreen(id)
+        views.value = views.value.map((v) => (v.parent_id ? v : { ...v, is_default: v.id === id ? 1 : 0 }))
+        const idx = views.value.findIndex((v) => v.id === id)
+        if (idx !== -1) views.value[idx] = updated
+      }
+
+      async function deleteScreen(id: string) {
+        if (screens.value.length <= 1) return
+        const client = await getClient()
+        await client.deleteScreen(id)
+        const removed = new Set<string>([id, ...views.value.filter((v) => v.parent_id === id).map((v) => v.id)])
+        views.value = views.value.filter((v) => !removed.has(v.id))
+        delete lastTabByScreen[id]
+        if (currentScreenId.value === id) {
+          const next = screens.value[0]
+          if (next) await selectScreen(next.id)
+        }
+      }
+
+      async function deleteTab(id: string) {
+        const s = currentScreen.value
+        if (!s || currentTabs.value.length <= 1) return
+        const client = await getClient()
+        await client.deleteScreenView(id)
+        views.value = views.value.filter((v) => v.id !== id)
+        delete drafts.value[id]
+        dirtyByTab.value.delete(id)
+        if (currentTabId.value === id) {
+          const next = currentTabs.value[0]
+          if (next) await selectTab(next.id)
+        }
+      }
+
+      async function duplicateTab(id: string, name: string) {
+        const src = views.value.find((v) => v.id === id)
+        if (!src || !currentScreenId.value) return
+        const client = await getClient()
+        const tab = await client.createTab(
+          entityKey,
+          currentScreenId.value,
+          name,
+          src.view_type,
+          src.query_json,
+          nextTabSort(currentScreenId.value),
+          src.config,
+        )
+        views.value.push(tab)
+        await selectTab(tab.id)
+      }
+
+      return {
+        views,
+        screens,
+        currentScreen,
+        currentTabs,
+        currentTab,
+        currentScreenId,
+        currentTabId,
+        currentViewType,
+        dirty,
+        dirtyByTab,
+        workingQuery,
+        loading,
+        load,
+        selectScreen,
+        selectTab,
+        setWorkingQuery,
+        saveActiveTab,
+        discardActiveTab,
+        createScreen,
+        createTab,
+        renameScreen,
+        renameTab,
+        setDefaultScreen,
+        deleteScreen,
+        deleteTab,
+        duplicateTab,
+      }
+    })
+}
+
+type ScreenViewStore = ReturnType<typeof makeScreenViewStore>
+
+const storeRegistry = new Map<string, ScreenViewStore>()
+
+export function useScreenViewStore(entityKey: string = 'block', options: ScreenViewStoreOptions = {}) {
+  const id = `screenView:${entityKey}`
+  const existing = storeRegistry.get(id)
+  if (existing) return existing()
+  const defaultViewName = options.defaultViewName ?? defaultViewNameForEntity(entityKey)
+  const defaultViewType = options.defaultViewType ?? 'table'
+  const def = makeScreenViewStore(id, entityKey, defaultViewName, defaultViewType)
+  storeRegistry.set(id, def)
+  return def()
+}
