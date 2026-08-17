@@ -9,7 +9,7 @@
  * Page 无自定义属性系统，注册表为静态（全部内置），无运行时增删。
  * 本模块是「引擎与业务解耦」主张的实证：不修改引擎一行，仅通过注册即获得筛选/排序/分组能力。
  */
-import { createRegistry, type Registry, type Option } from '../core/query'
+import { createRegistry, type Option, type Registry } from '../core/query'
 import type { Page } from '../types/page'
 
 /** 引擎命名空间：所有 Page 字段注册于此。 */
