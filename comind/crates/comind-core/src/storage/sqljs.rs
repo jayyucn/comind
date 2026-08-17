@@ -708,6 +708,20 @@ impl PageRepository for SqlJsAdapter {
         Self::run_with_params(&self.db, "UPDATE Page SET deleted = 1, deleted_at = ?, version = version + 1, updated_at = ? WHERE id = ?", &[&now.to_string(), &now.to_string(), id])?;
         Ok(())
     }
+
+    fn get_by_title_including_deleted(&self, title: &str) -> Result<Option<Page>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, version, deleted_at, created_at, updated_at FROM Page WHERE title = ?", &[title])?;
+        if result.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(row_to_page(&result[0])))
+        }
+    }
+
+    fn get_ideas_months(&self) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT DISTINCT substr(title, 1, 7) AS month FROM Page WHERE type IN ('ideas', 'journal') AND deleted = 0 AND deleted_at IS NULL ORDER BY month DESC", &[])?;
+        Ok(result.into_iter().map(|r| r.get("month").cloned().unwrap_or_default()).collect())
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -1041,7 +1055,7 @@ impl PropertyRepository for SqlJsAdapter {
             params.push(v.as_str());
         }
         let rows = Self::query(&self.db, &sql, &params)?;
-        let ids: Vec<String> = rows.into_iter().filter_map(|r| r.get("block_id").and_then(|v| v.as_str()).map(|s| s.to_string())).collect();
+        let ids: Vec<String> = rows.into_iter().filter_map(|r| r.get("block_id").map(|v| v.as_str()).map(|s| s.to_string())).collect();
         Ok(ids)
     }
 
@@ -1416,13 +1430,13 @@ impl StorageAdapter for SqlJsAdapter {
 }
 
 impl NotificationConfigRepository for SqlJsAdapter {
-    fn get(&self) -> Result<NotificationConfig, Box<dyn Error>> {
+    fn get(&self) -> Result<NotificationConfig, Box<dyn std::error::Error>> {
         // WASM: NotificationConfig stored in localStorage by TS layer.
         // Return default; TS layer handles actual persistence.
         Ok(NotificationConfig::default())
     }
 
-    fn save(&mut self, _config: &NotificationConfig) -> Result<(), Box<dyn Error>> {
+    fn save(&mut self, _config: &NotificationConfig) -> Result<(), Box<dyn std::error::Error>> {
         // WASM: persisted by TS via localStorage.
         Ok(())
     }

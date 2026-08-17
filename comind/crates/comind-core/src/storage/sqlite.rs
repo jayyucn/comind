@@ -261,6 +261,7 @@ impl SQLiteAdapter {
         Self::migrate_rename_task_view_to_screen_view(conn)?;
         Self::migrate_add_screen_view_config(conn)?;
         Self::migrate_add_screen_view_entity(conn)?;
+        Self::migrate_add_screen_view_parent_id(conn)?;
 
         Ok(())
     }
@@ -306,6 +307,20 @@ impl SQLiteAdapter {
         ).map(|c| c > 0).unwrap_or(false);
         if !has_column {
             conn.execute("ALTER TABLE screen_view ADD COLUMN entity TEXT NOT NULL DEFAULT 'block'", [])?;
+        }
+        Ok(())
+    }
+
+    fn migrate_add_screen_view_parent_id(conn: &rusqlite::Connection) -> Result<(), Box<dyn Error>> {
+        // 加 parent_id 列（两级层级：空串 = Screen，非空 = Tab 所属 Screen id）。
+        // 幂等：列不存在才 ALTER ADD；存量单级视图（parent_id 为 NULL）读取时回退空串，视作 Screen。
+        let has_column: bool = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('screen_view') WHERE name = 'parent_id'",
+            [],
+            |row| row.get::<_, i64>(0),
+        ).map(|c| c > 0).unwrap_or(false);
+        if !has_column {
+            conn.execute("ALTER TABLE screen_view ADD COLUMN parent_id TEXT", [])?;
         }
         Ok(())
     }
