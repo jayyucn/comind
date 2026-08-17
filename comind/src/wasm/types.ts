@@ -233,7 +233,7 @@ export interface SavedFilterRust {
   updated_at: number
 }
 
-export interface TaskViewRust {
+export interface ScreenViewRust {
   id: string
   name: string
   query_json: string
@@ -241,6 +241,7 @@ export interface TaskViewRust {
   group_by: string
   is_default: number
   sort_order: number
+  config: string
   created_at: number
   updated_at: number
 }

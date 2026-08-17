@@ -210,7 +210,7 @@ impl SQLiteAdapter {
                 updated_at  INTEGER NOT NULL
             );
 
-            CREATE TABLE IF NOT EXISTS TaskView (
+            CREATE TABLE IF NOT EXISTS screen_view (
                 id          TEXT PRIMARY KEY,
                 name        TEXT NOT NULL,
                 query_json  TEXT NOT NULL,
@@ -218,6 +218,7 @@ impl SQLiteAdapter {
                 group_by    TEXT NOT NULL DEFAULT '',
                 is_default  INTEGER NOT NULL DEFAULT 0,
                 sort_order  INTEGER NOT NULL DEFAULT 0,
+                config      TEXT,
                 created_at  INTEGER NOT NULL,
                 updated_at  INTEGER NOT NULL
             );
@@ -255,10 +256,44 @@ impl SQLiteAdapter {
         Self::migrate_date_ref_event_ts(conn)?;
         Self::migrate_add_version_and_deleted_at(conn)?;
         Self::seed_notification_config(conn)?;
-        
+        Self::migrate_rename_task_view_to_screen_view(conn)?;
+        Self::migrate_add_screen_view_config(conn)?;
+
         Ok(())
     }
-    
+
+    fn migrate_rename_task_view_to_screen_view(conn: &rusqlite::Connection) -> Result<(), Box<dyn Error>> {
+        // 实体改名：旧表 TaskView → screen_view（去除 task 模块耦合，见 ADR-0005）。
+        // 幂等：仅当旧表存在且新表不存在时 ALTER RENAME，保留现有测试视图行。
+        let has_old: bool = conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='TaskView'",
+            [],
+            |row| row.get::<_, i64>(0),
+        ).map(|c| c > 0).unwrap_or(false);
+        let has_new: bool = conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='screen_view'",
+            [],
+            |row| row.get::<_, i64>(0),
+        ).map(|c| c > 0).unwrap_or(false);
+        if has_old && !has_new {
+            conn.execute("ALTER TABLE TaskView RENAME TO screen_view", [])?;
+        }
+        Ok(())
+    }
+
+    fn migrate_add_screen_view_config(conn: &rusqlite::Connection) -> Result<(), Box<dyn Error>> {
+        // 加 config 列（JSON blob，可空）。幂等：列不存在才 ALTER ADD。
+        let has_column: bool = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('screen_view') WHERE name = 'config'",
+            [],
+            |row| row.get::<_, i64>(0),
+        ).map(|c| c > 0).unwrap_or(false);
+        if !has_column {
+            conn.execute("ALTER TABLE screen_view ADD COLUMN config TEXT", [])?;
+        }
+        Ok(())
+    }
+
     fn migrate_date_ref_event_ts(conn: &rusqlite::Connection) -> Result<(), Box<dyn Error>> {
         // 旧库 DateRef 表可能无 event_ts 列（CREATE TABLE IF NOT EXISTS 对已存在表是 no-op）。
         // 幂等迁移：列不存在才 ALTER ADD，避免老库升级时报 "no such column"。
@@ -1799,13 +1834,13 @@ impl SavedFilterRepository for SQLiteAdapter {
     }
 }
 
-impl TaskViewRepository for SQLiteAdapter {
-    fn get_all(&self) -> Result<Vec<TaskView>, Box<dyn Error>> {
+impl ScreenViewRepository for SQLiteAdapter {
+    fn get_all(&self) -> Result<Vec<ScreenView>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, created_at, updated_at FROM TaskView ORDER BY sort_order ASC, created_at DESC"
+            "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, COALESCE(config, '') AS config, created_at, updated_at FROM screen_view ORDER BY sort_order ASC, created_at DESC"
         )?;
         let views = stmt.query_map([], |row| {
-            Ok(TaskView {
+            Ok(ScreenView {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 query_json: row.get(2)?,
@@ -1813,19 +1848,20 @@ impl TaskViewRepository for SQLiteAdapter {
                 group_by: row.get(4)?,
                 is_default: row.get(5)?,
                 sort_order: row.get(6)?,
-                created_at: row.get(7)?,
-                updated_at: row.get(8)?,
+                config: row.get(7)?,
+                created_at: row.get(8)?,
+                updated_at: row.get(9)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
         Ok(views)
     }
 
-    fn get_by_id(&self, id: &str) -> Result<TaskView, Box<dyn Error>> {
+    fn get_by_id(&self, id: &str) -> Result<ScreenView, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, created_at, updated_at FROM TaskView WHERE id = ?1"
+            "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, COALESCE(config, '') AS config, created_at, updated_at FROM screen_view WHERE id = ?1"
         )?;
         let view = stmt.query_row(params![id], |row| {
-            Ok(TaskView {
+            Ok(ScreenView {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 query_json: row.get(2)?,
@@ -1833,16 +1869,17 @@ impl TaskViewRepository for SQLiteAdapter {
                 group_by: row.get(4)?,
                 is_default: row.get(5)?,
                 sort_order: row.get(6)?,
-                created_at: row.get(7)?,
-                updated_at: row.get(8)?,
+                config: row.get(7)?,
+                created_at: row.get(8)?,
+                updated_at: row.get(9)?,
             })
         })?;
         Ok(view)
     }
 
-    fn create(&mut self, view: &TaskView) -> Result<TaskView, Box<dyn Error>> {
+    fn create(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn Error>> {
         self.conn.execute(
-            "INSERT INTO TaskView (id, name, query_json, view_type, group_by, is_default, sort_order, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            "INSERT INTO screen_view (id, name, query_json, view_type, group_by, is_default, sort_order, config, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 view.id,
                 view.name,
@@ -1851,6 +1888,7 @@ impl TaskViewRepository for SQLiteAdapter {
                 view.group_by,
                 view.is_default,
                 view.sort_order,
+                view.config,
                 view.created_at,
                 view.updated_at
             ]
@@ -1858,9 +1896,9 @@ impl TaskViewRepository for SQLiteAdapter {
         Ok(view.clone())
     }
 
-    fn update(&mut self, view: &TaskView) -> Result<TaskView, Box<dyn Error>> {
+    fn update(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn Error>> {
         self.conn.execute(
-            "UPDATE TaskView SET name = ?2, query_json = ?3, view_type = ?4, group_by = ?5, is_default = ?6, sort_order = ?7, updated_at = ?8 WHERE id = ?1",
+            "UPDATE screen_view SET name = ?2, query_json = ?3, view_type = ?4, group_by = ?5, is_default = ?6, sort_order = ?7, config = ?8, updated_at = ?9 WHERE id = ?1",
             params![
                 view.id,
                 view.name,
@@ -1869,6 +1907,7 @@ impl TaskViewRepository for SQLiteAdapter {
                 view.group_by,
                 view.is_default,
                 view.sort_order,
+                view.config,
                 view.updated_at
             ]
         )?;
@@ -1876,7 +1915,7 @@ impl TaskViewRepository for SQLiteAdapter {
     }
 
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM TaskView WHERE id = ?1", params![id])?;
+        self.conn.execute("DELETE FROM screen_view WHERE id = ?1", params![id])?;
         Ok(())
     }
 }
@@ -1926,7 +1965,7 @@ impl StorageAdapter for SQLiteAdapter {
         self
     }
 
-    fn task_views(&mut self) -> &mut dyn TaskViewRepository {
+    fn screen_views(&mut self) -> &mut dyn ScreenViewRepository {
         self
     }
 
@@ -3874,7 +3913,7 @@ impl<'a> StorageAdapter for SQLiteTransactionAdapter<'a> {
         self
     }
 
-    fn task_views(&mut self) -> &mut dyn TaskViewRepository {
+    fn screen_views(&mut self) -> &mut dyn ScreenViewRepository {
         self
     }
 
@@ -3949,13 +3988,13 @@ impl<'a> SavedFilterRepository for SQLiteTransactionAdapter<'a> {
     }
 }
 
-impl<'a> TaskViewRepository for SQLiteTransactionAdapter<'a> {
-    fn get_all(&self) -> Result<Vec<TaskView>, Box<dyn Error>> {
+impl<'a> ScreenViewRepository for SQLiteTransactionAdapter<'a> {
+    fn get_all(&self) -> Result<Vec<ScreenView>, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, created_at, updated_at FROM TaskView ORDER BY sort_order ASC, created_at DESC"
+            "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, COALESCE(config, '') AS config, created_at, updated_at FROM screen_view ORDER BY sort_order ASC, created_at DESC"
         )?;
         let views = stmt.query_map([], |row| {
-            Ok(TaskView {
+            Ok(ScreenView {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 query_json: row.get(2)?,
@@ -3963,19 +4002,20 @@ impl<'a> TaskViewRepository for SQLiteTransactionAdapter<'a> {
                 group_by: row.get(4)?,
                 is_default: row.get(5)?,
                 sort_order: row.get(6)?,
-                created_at: row.get(7)?,
-                updated_at: row.get(8)?,
+                config: row.get(7)?,
+                created_at: row.get(8)?,
+                updated_at: row.get(9)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
         Ok(views)
     }
 
-    fn get_by_id(&self, id: &str) -> Result<TaskView, Box<dyn Error>> {
+    fn get_by_id(&self, id: &str) -> Result<ScreenView, Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, created_at, updated_at FROM TaskView WHERE id = ?1"
+            "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, COALESCE(config, '') AS config, created_at, updated_at FROM screen_view WHERE id = ?1"
         )?;
         let view = stmt.query_row(params![id], |row| {
-            Ok(TaskView {
+            Ok(ScreenView {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 query_json: row.get(2)?,
@@ -3983,16 +4023,17 @@ impl<'a> TaskViewRepository for SQLiteTransactionAdapter<'a> {
                 group_by: row.get(4)?,
                 is_default: row.get(5)?,
                 sort_order: row.get(6)?,
-                created_at: row.get(7)?,
-                updated_at: row.get(8)?,
+                config: row.get(7)?,
+                created_at: row.get(8)?,
+                updated_at: row.get(9)?,
             })
         })?;
         Ok(view)
     }
 
-    fn create(&mut self, view: &TaskView) -> Result<TaskView, Box<dyn Error>> {
+    fn create(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn Error>> {
         self.conn.execute(
-            "INSERT INTO TaskView (id, name, query_json, view_type, group_by, is_default, sort_order, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            "INSERT INTO screen_view (id, name, query_json, view_type, group_by, is_default, sort_order, config, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 view.id,
                 view.name,
@@ -4001,6 +4042,7 @@ impl<'a> TaskViewRepository for SQLiteTransactionAdapter<'a> {
                 view.group_by,
                 view.is_default,
                 view.sort_order,
+                view.config,
                 view.created_at,
                 view.updated_at
             ]
@@ -4008,9 +4050,9 @@ impl<'a> TaskViewRepository for SQLiteTransactionAdapter<'a> {
         Ok(view.clone())
     }
 
-    fn update(&mut self, view: &TaskView) -> Result<TaskView, Box<dyn Error>> {
+    fn update(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn Error>> {
         self.conn.execute(
-            "UPDATE TaskView SET name = ?2, query_json = ?3, view_type = ?4, group_by = ?5, is_default = ?6, sort_order = ?7, updated_at = ?8 WHERE id = ?1",
+            "UPDATE screen_view SET name = ?2, query_json = ?3, view_type = ?4, group_by = ?5, is_default = ?6, sort_order = ?7, config = ?8, updated_at = ?9 WHERE id = ?1",
             params![
                 view.id,
                 view.name,
@@ -4019,6 +4061,7 @@ impl<'a> TaskViewRepository for SQLiteTransactionAdapter<'a> {
                 view.group_by,
                 view.is_default,
                 view.sort_order,
+                view.config,
                 view.updated_at
             ]
         )?;
@@ -4026,7 +4069,7 @@ impl<'a> TaskViewRepository for SQLiteTransactionAdapter<'a> {
     }
 
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM TaskView WHERE id = ?1", params![id])?;
+        self.conn.execute("DELETE FROM screen_view WHERE id = ?1", params![id])?;
         Ok(())
     }
 }

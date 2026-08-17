@@ -126,25 +126,26 @@ pub async fn delete_saved_filter(
 // ---- Task Views ----
 
 #[tauri::command]
-pub async fn get_task_views(
+pub async fn get_screen_views(
     db: State<'_, super::state::DatabaseConnection>,
-) -> Result<Vec<TaskView>, String> {
-    execute_with_adapter(db, |storage| FilterService::get_task_views(storage)).await
+) -> Result<Vec<ScreenView>, String> {
+    execute_with_adapter(db, |storage| FilterService::get_screen_views(storage)).await
 }
 
 #[tauri::command]
-pub async fn save_task_view(
+pub async fn save_screen_view(
     db: State<'_, super::state::DatabaseConnection>,
     name: &str,
     query_json: &str,
     view_type: &str,
     group_by: &str,
-) -> Result<TaskView, String> {
-    execute_with_adapter(db, |storage| FilterService::save_task_view(storage, name, query_json, view_type, group_by, false, 0)).await
+    config: &str,
+) -> Result<ScreenView, String> {
+    execute_with_adapter(db, |storage| FilterService::save_screen_view(storage, name, query_json, view_type, group_by, false, 0, config)).await
 }
 
 #[tauri::command]
-pub async fn update_task_view(
+pub async fn update_screen_view(
     db: State<'_, super::state::DatabaseConnection>,
     id: &str,
     name: &str,
@@ -153,24 +154,25 @@ pub async fn update_task_view(
     group_by: &str,
     is_default: bool,
     sort_order: i64,
-) -> Result<TaskView, String> {
-    execute_with_adapter(db, |storage| FilterService::update_task_view(storage, id, name, query_json, view_type, group_by, is_default, sort_order)).await
+    config: &str,
+) -> Result<ScreenView, String> {
+    execute_with_adapter(db, |storage| FilterService::update_screen_view(storage, id, name, query_json, view_type, group_by, is_default, sort_order, config)).await
 }
 
 #[tauri::command]
-pub async fn delete_task_view(
+pub async fn delete_screen_view(
     db: State<'_, super::state::DatabaseConnection>,
     id: &str,
 ) -> Result<(), String> {
-    execute_with_adapter(db, |storage| FilterService::delete_task_view(storage, id)).await
+    execute_with_adapter(db, |storage| FilterService::delete_screen_view(storage, id)).await
 }
 
 #[tauri::command]
-pub async fn set_default_task_view(
+pub async fn set_default_screen_view(
     db: State<'_, super::state::DatabaseConnection>,
     id: &str,
-) -> Result<TaskView, String> {
-    execute_with_adapter(db, |storage| FilterService::set_default_task_view(storage, id)).await
+) -> Result<ScreenView, String> {
+    execute_with_adapter(db, |storage| FilterService::set_default_screen_view(storage, id)).await
 }
 
 #[tauri::command]

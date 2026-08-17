@@ -14,7 +14,7 @@ pub mod notification_config;
 pub mod date_ref;
 pub mod block_card;
 pub mod saved_filter;
-pub mod task_view;
+pub mod screen_view;
 
 pub use block::*;
 pub use block_card::*;
@@ -32,4 +32,4 @@ pub use notification::*;
 pub use notification_config::*;
 pub use date_ref::*;
 pub use saved_filter::*;
-pub use task_view::*;
+pub use screen_view::*;

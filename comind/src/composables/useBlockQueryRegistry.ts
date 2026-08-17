@@ -18,7 +18,10 @@ import { useBlockCardStore } from '../stores/blockCard'
 export const BLOCK_ENTITY = 'block'
 
 /** 内置字段 key 集合，用于区分「内置」与「自定义」字段。 */
-const BUILTIN_KEYS = new Set<string>(['status', 'priority', 'project', 'area', 'dateRefKind', 'dateRefDate'])
+const BUILTIN_KEYS = new Set<string>([
+  'status', 'priority', 'project', 'area', 'dateRefKind', 'dateRefDate',
+  'content', 'page', 'done', 'deadline', 'schedule',
+])
 
 /** dateRef.kind 的合法取值（与 property.ts normalizeKind 对齐）。 */
 const DATE_REF_KINDS: Option[] = [
@@ -26,6 +29,14 @@ const DATE_REF_KINDS: Option[] = [
   { id: 'deadline', label: '截止' },
   { id: 'ref', label: '参考' },
 ]
+
+/** 优先级选项配色（上提为字段元数据，使通用表格无需写死 P0–P3 颜色；ADR-0007）。 */
+const PRIORITY_COLORS: Record<string, string> = {
+  Low: '#9CA3AF',
+  Medium: '#3B82F6',
+  High: '#F59E0B',
+  Urgent: '#DC2626',
+}
 
 function asCard(item: unknown): BlockCard {
   return item as BlockCard
@@ -48,7 +59,11 @@ export function registerBlockBuiltinFields(registry: Registry): void {
     key: 'priority',
     label: '优先级',
     type: 'select',
-    options: (priorityDef?.closedValues ?? []).map((c) => ({ id: String(c.value), label: c.label })),
+    options: (priorityDef?.closedValues ?? []).map((c) => ({
+      id: String(c.value),
+      label: c.label,
+      color: PRIORITY_COLORS[String(c.value)],
+    })),
     get: (item) => asCard(item).properties?.['priority'],
   })
 
@@ -86,6 +101,57 @@ export function registerBlockBuiltinFields(registry: Registry): void {
       if (!refs || refs.length === 0) return undefined
       const days = refs.map((dr) => dr.date_day).filter((d): d is string => !!d).sort()
       return days[0]
+    },
+  })
+
+  // ── 视图渲染专用字段（供通用 TableView 按字段类型渲染，组件零任务代码；ADR-0007） ──
+
+  // 内容主文本（primary 角色：加粗省略号）
+  registry.register(BLOCK_ENTITY, {
+    key: 'content',
+    label: '内容',
+    type: 'text',
+    get: (item) => asCard(item).content_preview,
+  })
+
+  // 所属页面（link 角色：导航按钮）
+  registry.register(BLOCK_ENTITY, {
+    key: 'page',
+    label: '页面',
+    type: 'text',
+    get: (item) => asCard(item).page_id,
+  })
+
+  // 完成态（boolean 字段；done 角色驱动行置灰 + 可编辑勾选）
+  registry.register(BLOCK_ENTITY, {
+    key: 'done',
+    label: '完成',
+    type: 'boolean',
+    get: (item) => asCard(item).properties?.['status'] === 'Done',
+  })
+
+  // 截止日（date 字段，取 date_refs 中 deadline kind；无 deadline 时回退 schedule，避免仅含计划日期的卡片在表格/看板丢失日期；overdue-date 角色：过去标红）
+  registry.register(BLOCK_ENTITY, {
+    key: 'deadline',
+    label: '截止',
+    type: 'date',
+    dateBucket: 'day',
+    get: (item) => {
+      const refs = asCard(item).date_refs ?? []
+      const ref = refs.find((dr) => dr.kind === 'deadline') ?? refs.find((dr) => dr.kind === 'schedule')
+      return ref?.date_day ?? undefined
+    },
+  })
+
+  // 计划日（date 字段，取 date_refs 中 schedule kind；供 CalendarView 按 dateRefKind='schedule' 入桶）
+  registry.register(BLOCK_ENTITY, {
+    key: 'schedule',
+    label: '计划',
+    type: 'date',
+    dateBucket: 'day',
+    get: (item) => {
+      const ref = asCard(item).date_refs?.find((dr) => dr.kind === 'schedule')
+      return ref?.date_day ?? undefined
     },
   })
 }

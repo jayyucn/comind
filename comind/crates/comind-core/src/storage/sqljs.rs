@@ -174,10 +174,12 @@ impl SqlJsAdapter {
 
         Self::exec(db, "CREATE TABLE IF NOT EXISTS SavedFilter (id TEXT PRIMARY KEY, name TEXT NOT NULL, query_json TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
 
-        Self::exec(db, "CREATE TABLE IF NOT EXISTS TaskView (id TEXT PRIMARY KEY, name TEXT NOT NULL, query_json TEXT NOT NULL, view_type TEXT NOT NULL DEFAULT 'table', group_by TEXT NOT NULL DEFAULT '', is_default INTEGER NOT NULL DEFAULT 0, sort_order INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
+        Self::exec(db, "CREATE TABLE IF NOT EXISTS screen_view (id TEXT PRIMARY KEY, name TEXT NOT NULL, query_json TEXT NOT NULL, view_type TEXT NOT NULL DEFAULT 'table', group_by TEXT NOT NULL DEFAULT '', is_default INTEGER NOT NULL DEFAULT 0, sort_order INTEGER NOT NULL DEFAULT 0, config TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
 
         Self::migrate_date_ref_event_ts(db)?;
         Self::migrate_add_version_and_deleted_at(db)?;
+        Self::migrate_rename_task_view_to_screen_view(db)?;
+        Self::migrate_add_screen_view_config(db)?;
 
         Ok(())
     }
@@ -255,6 +257,27 @@ impl SqlJsAdapter {
                 Self::exec(db, "DELETE FROM Page WHERE id NOT IN (SELECT MIN(id) FROM Page WHERE deleted = 0 GROUP BY title);")?;
                 Self::exec(db, "CREATE UNIQUE INDEX idx_page_title ON Page(title);")?;
             }
+        }
+        Ok(())
+    }
+
+    fn migrate_rename_task_view_to_screen_view(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        // 实体改名：旧表 TaskView → screen_view（去除 task 模块耦合，见 ADR-0005）。
+        // 幂等：仅当旧表存在且新表不存在时 ALTER RENAME，保留现有测试视图行。
+        let old_exists = !Self::query(db, "SELECT name FROM sqlite_master WHERE type='table' AND name='TaskView'", &[])?.is_empty();
+        let new_exists = !Self::query(db, "SELECT name FROM sqlite_master WHERE type='table' AND name='screen_view'", &[])?.is_empty();
+        if old_exists && !new_exists {
+            Self::exec(db, "ALTER TABLE TaskView RENAME TO screen_view")?;
+        }
+        Ok(())
+    }
+
+    fn migrate_add_screen_view_config(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        // 加 config 列（JSON blob，可空）。幂等：列不存在才 ALTER ADD。
+        let rows = Self::query(db, "PRAGMA table_info(screen_view);", &[])?;
+        let has_column = rows.iter().any(|r| r.get("name").map(|s| s.as_str() == "config").unwrap_or(false));
+        if !has_column {
+            Self::exec(db, "ALTER TABLE screen_view ADD COLUMN config TEXT")?;
         }
         Ok(())
     }
@@ -1187,10 +1210,10 @@ impl SavedFilterRepository for SqlJsAdapter {
 }
 
 #[cfg(target_arch = "wasm32")]
-impl TaskViewRepository for SqlJsAdapter {
-    fn get_all(&self) -> Result<Vec<TaskView>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, created_at, updated_at FROM TaskView ORDER BY sort_order ASC, created_at DESC", &[])?;
-        Ok(result.into_iter().map(|r| TaskView {
+impl ScreenViewRepository for SqlJsAdapter {
+    fn get_all(&self) -> Result<Vec<ScreenView>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, config, created_at, updated_at FROM screen_view ORDER BY sort_order ASC, created_at DESC", &[])?;
+        Ok(result.into_iter().map(|r| ScreenView {
             id: r.get("id").cloned().unwrap_or_default(),
             name: r.get("name").cloned().unwrap_or_default(),
             query_json: r.get("query_json").cloned().unwrap_or_default(),
@@ -1198,18 +1221,19 @@ impl TaskViewRepository for SqlJsAdapter {
             group_by: r.get("group_by").cloned().unwrap_or_default(),
             is_default: r.get("is_default").and_then(|v| v.parse().ok()).unwrap_or(0),
             sort_order: r.get("sort_order").and_then(|v| v.parse().ok()).unwrap_or(0),
+            config: r.get("config").cloned().unwrap_or_default(),
             created_at: r.get("created_at").and_then(|v| v.parse().ok()).unwrap_or(0),
             updated_at: r.get("updated_at").and_then(|v| v.parse().ok()).unwrap_or(0),
         }).collect())
     }
 
-    fn get_by_id(&self, id: &str) -> Result<TaskView, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, created_at, updated_at FROM TaskView WHERE id = ?", &[id])?;
+    fn get_by_id(&self, id: &str) -> Result<ScreenView, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, config, created_at, updated_at FROM screen_view WHERE id = ?", &[id])?;
         if result.is_empty() {
-            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "TaskView not found")));
+            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "ScreenView not found")));
         }
         let r = &result[0];
-        Ok(TaskView {
+        Ok(ScreenView {
             id: r.get("id").cloned().unwrap_or_default(),
             name: r.get("name").cloned().unwrap_or_default(),
             query_json: r.get("query_json").cloned().unwrap_or_default(),
@@ -1217,27 +1241,28 @@ impl TaskViewRepository for SqlJsAdapter {
             group_by: r.get("group_by").cloned().unwrap_or_default(),
             is_default: r.get("is_default").and_then(|v| v.parse().ok()).unwrap_or(0),
             sort_order: r.get("sort_order").and_then(|v| v.parse().ok()).unwrap_or(0),
+            config: r.get("config").cloned().unwrap_or_default(),
             created_at: r.get("created_at").and_then(|v| v.parse().ok()).unwrap_or(0),
             updated_at: r.get("updated_at").and_then(|v| v.parse().ok()).unwrap_or(0),
         })
     }
 
-    fn create(&mut self, view: &TaskView) -> Result<TaskView, Box<dyn std::error::Error>> {
-        Self::run_with_params(&self.db, "INSERT INTO TaskView (id, name, query_json, view_type, group_by, is_default, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", &[
-            &view.id, &view.name, &view.query_json, &view.view_type, &view.group_by, &view.is_default.to_string(), &view.sort_order.to_string(), &view.created_at.to_string(), &view.updated_at.to_string()
+    fn create(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn std::error::Error>> {
+        Self::run_with_params(&self.db, "INSERT INTO screen_view (id, name, query_json, view_type, group_by, is_default, sort_order, config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", &[
+            &view.id, &view.name, &view.query_json, &view.view_type, &view.group_by, &view.is_default.to_string(), &view.sort_order.to_string(), &view.config, &view.created_at.to_string(), &view.updated_at.to_string()
         ])?;
         Ok(view.clone())
     }
 
-    fn update(&mut self, view: &TaskView) -> Result<TaskView, Box<dyn std::error::Error>> {
-        Self::run_with_params(&self.db, "UPDATE TaskView SET name = ?, query_json = ?, view_type = ?, group_by = ?, is_default = ?, sort_order = ?, updated_at = ? WHERE id = ?", &[
-            &view.name, &view.query_json, &view.view_type, &view.group_by, &view.is_default.to_string(), &view.sort_order.to_string(), &view.updated_at.to_string(), &view.id
+    fn update(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn std::error::Error>> {
+        Self::run_with_params(&self.db, "UPDATE screen_view SET name = ?, query_json = ?, view_type = ?, group_by = ?, is_default = ?, sort_order = ?, config = ?, updated_at = ? WHERE id = ?", &[
+            &view.name, &view.query_json, &view.view_type, &view.group_by, &view.is_default.to_string(), &view.sort_order.to_string(), &view.config, &view.updated_at.to_string(), &view.id
         ])?;
         Ok(view.clone())
     }
 
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn std::error::Error>> {
-        Self::run_with_params(&self.db, "DELETE FROM TaskView WHERE id = ?", &[id])?;
+        Self::run_with_params(&self.db, "DELETE FROM screen_view WHERE id = ?", &[id])?;
         Ok(())
     }
 }
@@ -1354,7 +1379,7 @@ impl StorageAdapter for SqlJsAdapter {
         self
     }
 
-    fn task_views(&mut self) -> &mut dyn TaskViewRepository {
+    fn screen_views(&mut self) -> &mut dyn ScreenViewRepository {
         self
     }
 

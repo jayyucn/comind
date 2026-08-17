@@ -22,7 +22,7 @@ A unit of content within a Page. Has a parent-child relationship (tree structure
 Get-or-create pattern. Returns the existing entity if present; creates and returns it if absent. Must be idempotent — calling it multiple times has the same effect as calling it once.
 
 ### Field Descriptor (字段描述符)
-The unit through which a business entity exposes a filterable field to the query system. Carries a key, label, data type, and a way to read the field's value from an item. Business code registers Field Descriptors; the query engine knows entities only through them.
+The unit through which a business entity exposes a filterable field to the query system. Carries a key, label, data type, and a way to read the field's value from an item. Business code registers Field Descriptors; the query engine knows entities only through them. An `Option` may carry a `color` for rendering (e.g. select option labels); the evaluator ignores it.
 
 ### Condition (条件)
 A single predicate in a query: field + operator + value.
@@ -30,8 +30,23 @@ A single predicate in a query: field + operator + value.
 ### Condition Group (条件组)
 A node in a query tree that combines Conditions and nested Condition Groups with an AND/OR combinator. A flat condition list is the degenerate case of a Condition Group.
 
+### Screen (屏 / 业务页面)
+A business surface in the app (e.g. Task Hub, Pages Library). Distinct from **Page** (document entity). Views belong to a Screen. See ADR-0005.
+
+### View (视图)
+A concrete rendering interface for a Screen: a specific layout plus its own query and layout config. A Screen has at least one View; by default a Task Hub screen co-exists with Table, Board, and Calendar Views as tabs. A View is `{ name, viewKind, query, isDefault, config }`. See ADR-0005.
+
+### viewKind (视图类型)
+The layout kind of a View: `table` | `board` | `calendar`. Not a render flag on a query — it is what makes a View a distinct interface.
+
+### View Config (视图配置)
+Per-kind rendering metadata carried by a View, as a `LayoutConfig` discriminated union keyed by `viewKind` (see ADR-0006). Members: `TableConfig { columns: {key, width?, role?}[] }`, `BoardConfig { cardFields?: string[] }` (grouping column reuses `ViewQuery.groupBy`; `cardFields` lists card badge fields), `CalendarConfig { dateRefKind: 'deadline' | 'schedule' }`. Each member carries `version: 1`. `TableConfig.columns[].role` (`'primary' | 'link' | 'overdue-date' | 'done'`) is render-only decoration kept here — off the headless Field Descriptor. Keeps rendering concerns off `ViewQuery`.
+
+### Generic Views (通用视图)
+Entity-agnostic view renderers driven by `FieldDescriptor[]` + `LayoutConfig`, located at `src/components/views/` (see ADR-0008). `TableView` / `BoardView` / `CalendarView` are all `generic="T"`, no hardcoded task semantics, no `BlockCard` import; task UX is lifted to field metadata (option `color`, `done`/`deadline`/`content`/`page` builtin fields). A Screen wires them by injecting its registry fields + a `config` seam.
+
 ### View Query (视图查询)
-The complete query model: a Condition Group tree plus sort and grouping rules. Excludes rendering concerns such as view type, which remain in the business layer.
+The complete query model: a Condition Group tree plus sort and grouping rules. Excludes rendering concerns such as view type, which remain in the business layer. A ViewQuery is owned (composed) by exactly one View — it is headless data, never aware of the interface that renders it. See ADR-0005.
 
 ### Query Engine (查询引擎)
 The headless core of the filtering system: a registry of Field Descriptors plus an evaluator over Condition Group trees. Contains no UI dependencies and no knowledge of concrete business entities.
