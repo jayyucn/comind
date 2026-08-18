@@ -4,9 +4,12 @@ import { computed, onMounted, ref } from 'vue'
 import { filterSortPages, runPageQuery } from '../../composables/usePageQueryEngine'
 import { getPageRegistry, PAGE_ENTITY } from '../../composables/usePageQueryRegistry'
 import type { QueryContext, ViewQuery } from '../../core/query'
+import type { ViewTypeOption } from '../../core/view/management'
 import { usePageStore } from '../../stores/pages'
+import { useScreenViewStore } from '../../stores/screenView'
 import type { Page } from '../../types/page'
 import PageTitle from '../common/PageTitle.vue'
+import NamedViewBar from '../common/NamedViewBar.vue'
 import QueryChipBar from '../query/QueryChipBar.vue'
 import QueryToolbar from '../query/QueryToolbar.vue'
 import PageCalendarView from './PageCalendarView.vue'
@@ -15,19 +18,18 @@ import PageTableView from './PageTableView.vue'
 defineOptions({ name: 'PagesLibrary' })
 
 const pageStore = usePageStore()
+const screenViewStore = useScreenViewStore('page')
 const registry = getPageRegistry()
 
-// 视图模式
-type ViewMode = 'table' | 'calendar'
-const viewMode = ref<ViewMode>('table')
+// page 实体可选的视图类型（注入 NamedViewBar；类型创建后固定）
+const pageViewTypes: ViewTypeOption[] = [
+  { key: 'table', label: '表格', icon: LayoutGrid },
+  { key: 'calendar', label: '日历', icon: CalendarDays },
+]
 
-// 筛选状态
-const viewQuery = ref<ViewQuery>({
-  version: 1,
-  filter: { combinator: 'and', children: [] },
-  sort: [],
-  groupBy: null,
-})
+// 当前激活 tab 的可编辑查询（单一数据源：NamedViewBar 的保存/清除/切换均作用于它）
+const viewQuery = computed<ViewQuery>(() => screenViewStore.workingQuery)
+const viewMode = computed(() => screenViewStore.currentViewType as 'table' | 'calendar')
 const searchQuery = ref('')
 
 // 芯片行显隐（Filter 按钮切换展开/收起）
@@ -87,6 +89,7 @@ const pageGroups = computed(() => {
 })
 
 onMounted(async () => {
+  await screenViewStore.load()
   await pageStore.loadAllPages()
 })
 </script>
@@ -94,36 +97,32 @@ onMounted(async () => {
 <template>
   <div class="pages-library">
     <PageTitle title="页面库" :subtitle="`${filteredPages.length} 个页面`" />
-    <!-- 顶栏 -->
-    <header class="lib-header">
-      <div class="header-left">
-        <!-- 视图切换 -->
-        <div class="view-switcher">
-          <button :class="{ active: viewMode === 'table' }" title="表格视图" @click="viewMode = 'table'">
-            <LayoutGrid :size="15" />
-          </button>
-          <button :class="{ active: viewMode === 'calendar' }" title="日历视图" @click="viewMode = 'calendar'">
-            <CalendarDays :size="15" />
-          </button>
-        </div>
-      </div>
 
-      <div class="header-actions">
+    <!-- 视图管理（Screen→Tab 两级 + 查询工具条 + 未保存提示均内聚于 NamedViewBar） -->
+    <NamedViewBar entity-key="page" :view-types="pageViewTypes" default-view-name="全部页面" default-view-type="table">
+      <QueryToolbar
+        v-model="searchQuery"
+        :has-filter="hasFilter"
+        :has-sort="hasSort"
+        :has-group="hasGroup"
+        :chip-bar-visible="chipBarVisible"
+        @filter="openChipMenu('filter', $event)"
+        @sort="openChipMenu('sort', $event)"
+        @group="openChipMenu('group', $event)"
+      />
+    </NamedViewBar>
 
-
-        <!-- 查询工具条：筛选 / 排序 / 分组 三按钮 + 搜索（提取到 QueryToolbar） -->
-        <QueryToolbar v-model="searchQuery" :has-filter="hasFilter" :has-sort="hasSort" :has-group="hasGroup"
-          :chip-bar-visible="chipBarVisible" @filter="openChipMenu('filter', $event)"
-          @sort="openChipMenu('sort', $event)" @group="openChipMenu('group', $event)" />
-      </div>
-    </header>
-
-    <!-- 筛选芯片行（Header 与 主内容之间）。
-         chipbar 的显隐现已内聚到 QueryChipBar 自身（选中字段后自行显示 + 锚定 popover），
-         父级不再用 v-if/v-show 控制挂载，仅经 visible-change 同步描边态。 -->
-    <QueryChipBar ref="chipBarRef" v-model="viewQuery" :fields="pageRefFields"
-      :registry="registry" :entity-type="PAGE_ENTITY" :cross-record-sources="crossRecordSources"
-      @visible-change="chipBarVisible = $event" />
+    <!-- 筛选芯片行（QueryToolbar 三按钮唤起；绑定 store.workingQuery） -->
+    <QueryChipBar
+      ref="chipBarRef"
+      :model-value="screenViewStore.workingQuery"
+      :fields="pageRefFields"
+      :registry="registry"
+      :entity-type="PAGE_ENTITY"
+      :cross-record-sources="crossRecordSources"
+      @update:model-value="screenViewStore.setWorkingQuery"
+      @visible-change="chipBarVisible = $event"
+    />
 
     <!-- 主内容区 -->
     <main class="lib-body">
@@ -144,68 +143,7 @@ onMounted(async () => {
   background: var(--bg-base);
 }
 
-/* ── 顶栏 ── */
-.lib-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 0 4px;
-  margin: 0 var(--space-4);
-  border-bottom: 1px solid var(--border);
-  gap: 16px;
-  flex-shrink: 0;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-/* 搜索框 / 三按钮样式已迁移至 src/components/query/QueryToolbar.vue */
-
-/* 视图切换器 */
-.view-switcher {
-  display: flex;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-}
-
-.view-switcher button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 30px;
-  border: none;
-  background: var(--bg-base);
-  color: var(--text-tertiary);
-  cursor: pointer;
-  transition: background 80ms ease, color 80ms ease;
-}
-
-.view-switcher button:hover {
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-}
-
-.view-switcher button.active {
-  background: var(--accent-bg, rgba(99, 102, 241, 0.1));
-  color: var(--accent, #6366f1);
-}
-
-/* 筛选 / 排序 / 分组 三按钮样式已迁移至 src/components/query/QueryToolbar.vue */
-
-/* ── 主内容 ── */
+/* 主内容 */
 .lib-body {
   flex: 1;
   min-height: 0;

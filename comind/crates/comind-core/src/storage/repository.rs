@@ -153,11 +153,11 @@ pub trait SavedFilterRepository {
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
 }
 
-pub trait TaskViewRepository {
-    fn get_all(&self) -> Result<Vec<TaskView>, Box<dyn Error>>;
-    fn get_by_id(&self, id: &str) -> Result<TaskView, Box<dyn Error>>;
-    fn create(&mut self, view: &TaskView) -> Result<TaskView, Box<dyn Error>>;
-    fn update(&mut self, view: &TaskView) -> Result<TaskView, Box<dyn Error>>;
+pub trait ScreenViewRepository {
+    fn get_all_by_entity(&self, entity: &str) -> Result<Vec<ScreenView>, Box<dyn Error>>;
+    fn get_by_id(&self, id: &str) -> Result<ScreenView, Box<dyn Error>>;
+    fn create(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn Error>>;
+    fn update(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn Error>>;
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
 }
 
@@ -178,7 +178,7 @@ pub trait StorageAdapter {
     fn notifications(&mut self) -> &mut dyn NotificationRepository;
     fn date_refs(&mut self) -> &mut dyn DateRefRepository;
     fn saved_filters(&mut self) -> &mut dyn SavedFilterRepository;
-    fn task_views(&mut self) -> &mut dyn TaskViewRepository;
+    fn screen_views(&mut self) -> &mut dyn ScreenViewRepository;
     fn notification_config(&mut self) -> &mut dyn NotificationConfigRepository;
 }
 

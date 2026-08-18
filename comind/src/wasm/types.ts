@@ -233,14 +233,18 @@ export interface SavedFilterRust {
   updated_at: number
 }
 
-export interface TaskViewRust {
+export interface ScreenViewRust {
   id: string
+  entity: string
+  /** 两级层级：空串 = Screen（命名容器）；非空 = Tab，值为所属 Screen 的 id */
+  parent_id: string
   name: string
   query_json: string
   view_type: string
   group_by: string
   is_default: number
   sort_order: number
+  config: string
   created_at: number
   updated_at: number
 }

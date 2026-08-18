@@ -19,6 +19,8 @@ export type FieldType =
 export interface Option {
   id: string
   label: string
+  /** 可选：渲染用配色（如 select 选项的标签色/圆点）。无头求值器忽略此字段。 */
+  color?: string
 }
 
 /** 可筛选字段支持的操作符。具体可用集由类型派生，字段可用 ops 覆盖。boolean 复用 `is`。 */

@@ -174,10 +174,14 @@ impl SqlJsAdapter {
 
         Self::exec(db, "CREATE TABLE IF NOT EXISTS SavedFilter (id TEXT PRIMARY KEY, name TEXT NOT NULL, query_json TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
 
-        Self::exec(db, "CREATE TABLE IF NOT EXISTS TaskView (id TEXT PRIMARY KEY, name TEXT NOT NULL, query_json TEXT NOT NULL, view_type TEXT NOT NULL DEFAULT 'table', group_by TEXT NOT NULL DEFAULT '', is_default INTEGER NOT NULL DEFAULT 0, sort_order INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
+        Self::exec(db, "CREATE TABLE IF NOT EXISTS screen_view (id TEXT PRIMARY KEY, entity TEXT NOT NULL DEFAULT 'block', parent_id TEXT, name TEXT NOT NULL, query_json TEXT NOT NULL, view_type TEXT NOT NULL DEFAULT 'table', group_by TEXT NOT NULL DEFAULT '', is_default INTEGER NOT NULL DEFAULT 0, sort_order INTEGER NOT NULL DEFAULT 0, config TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
 
         Self::migrate_date_ref_event_ts(db)?;
         Self::migrate_add_version_and_deleted_at(db)?;
+        Self::migrate_rename_task_view_to_screen_view(db)?;
+        Self::migrate_add_screen_view_config(db)?;
+        Self::migrate_add_screen_view_entity(db)?;
+        Self::migrate_add_screen_view_parent_id(db)?;
 
         Ok(())
     }
@@ -255,6 +259,48 @@ impl SqlJsAdapter {
                 Self::exec(db, "DELETE FROM Page WHERE id NOT IN (SELECT MIN(id) FROM Page WHERE deleted = 0 GROUP BY title);")?;
                 Self::exec(db, "CREATE UNIQUE INDEX idx_page_title ON Page(title);")?;
             }
+        }
+        Ok(())
+    }
+
+    fn migrate_rename_task_view_to_screen_view(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        // 实体改名：旧表 TaskView → screen_view（去除 task 模块耦合，见 ADR-0005）。
+        // 幂等：仅当旧表存在且新表不存在时 ALTER RENAME，保留现有测试视图行。
+        let old_exists = !Self::query(db, "SELECT name FROM sqlite_master WHERE type='table' AND name='TaskView'", &[])?.is_empty();
+        let new_exists = !Self::query(db, "SELECT name FROM sqlite_master WHERE type='table' AND name='screen_view'", &[])?.is_empty();
+        if old_exists && !new_exists {
+            Self::exec(db, "ALTER TABLE TaskView RENAME TO screen_view")?;
+        }
+        Ok(())
+    }
+
+    fn migrate_add_screen_view_config(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        // 加 config 列（JSON blob，可空）。幂等：列不存在才 ALTER ADD。
+        let rows = Self::query(db, "PRAGMA table_info(screen_view);", &[])?;
+        let has_column = rows.iter().any(|r| r.get("name").map(|s| s.as_str() == "config").unwrap_or(false));
+        if !has_column {
+            Self::exec(db, "ALTER TABLE screen_view ADD COLUMN config TEXT")?;
+        }
+        Ok(())
+    }
+
+    fn migrate_add_screen_view_entity(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        // 加 entity 列（所属实体键，用于按实体隔离命名视图）。幂等：列不存在才 ALTER ADD，默认 'block' 兼容存量视图。
+        let rows = Self::query(db, "PRAGMA table_info(screen_view);", &[])?;
+        let has_column = rows.iter().any(|r| r.get("name").map(|s| s.as_str() == "entity").unwrap_or(false));
+        if !has_column {
+            Self::exec(db, "ALTER TABLE screen_view ADD COLUMN entity TEXT NOT NULL DEFAULT 'block'")?;
+        }
+        Ok(())
+    }
+
+    fn migrate_add_screen_view_parent_id(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        // 加 parent_id 列（两级层级：空串 = Screen，非空 = Tab 所属 Screen id）。
+        // 幂等：列不存在才 ALTER ADD；存量单级视图（parent_id 为 NULL）读取时回退空串，视作 Screen。
+        let rows = Self::query(db, "PRAGMA table_info(screen_view);", &[])?;
+        let has_column = rows.iter().any(|r| r.get("name").map(|s| s.as_str() == "parent_id").unwrap_or(false));
+        if !has_column {
+            Self::exec(db, "ALTER TABLE screen_view ADD COLUMN parent_id TEXT")?;
         }
         Ok(())
     }
@@ -662,6 +708,20 @@ impl PageRepository for SqlJsAdapter {
         Self::run_with_params(&self.db, "UPDATE Page SET deleted = 1, deleted_at = ?, version = version + 1, updated_at = ? WHERE id = ?", &[&now.to_string(), &now.to_string(), id])?;
         Ok(())
     }
+
+    fn get_by_title_including_deleted(&self, title: &str) -> Result<Option<Page>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, version, deleted_at, created_at, updated_at FROM Page WHERE title = ?", &[title])?;
+        if result.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(row_to_page(&result[0])))
+        }
+    }
+
+    fn get_ideas_months(&self) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT DISTINCT substr(title, 1, 7) AS month FROM Page WHERE type IN ('ideas', 'journal') AND deleted = 0 AND deleted_at IS NULL ORDER BY month DESC", &[])?;
+        Ok(result.into_iter().map(|r| r.get("month").cloned().unwrap_or_default()).collect())
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -995,7 +1055,7 @@ impl PropertyRepository for SqlJsAdapter {
             params.push(v.as_str());
         }
         let rows = Self::query(&self.db, &sql, &params)?;
-        let ids: Vec<String> = rows.into_iter().filter_map(|r| r.get("block_id").and_then(|v| v.as_str()).map(|s| s.to_string())).collect();
+        let ids: Vec<String> = rows.into_iter().filter_map(|r| r.get("block_id").map(|v| v.as_str()).map(|s| s.to_string())).collect();
         Ok(ids)
     }
 
@@ -1187,57 +1247,63 @@ impl SavedFilterRepository for SqlJsAdapter {
 }
 
 #[cfg(target_arch = "wasm32")]
-impl TaskViewRepository for SqlJsAdapter {
-    fn get_all(&self) -> Result<Vec<TaskView>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, created_at, updated_at FROM TaskView ORDER BY sort_order ASC, created_at DESC", &[])?;
-        Ok(result.into_iter().map(|r| TaskView {
+impl ScreenViewRepository for SqlJsAdapter {
+    fn get_all_by_entity(&self, entity: &str) -> Result<Vec<ScreenView>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, entity, parent_id, name, query_json, view_type, group_by, is_default, sort_order, config, created_at, updated_at FROM screen_view WHERE entity = ?1 ORDER BY sort_order ASC, created_at DESC", &[entity])?;
+        Ok(result.into_iter().map(|r| ScreenView {
             id: r.get("id").cloned().unwrap_or_default(),
+            entity: r.get("entity").cloned().unwrap_or_else(|| "block".to_string()),
+            parent_id: r.get("parent_id").cloned().unwrap_or_default(),
             name: r.get("name").cloned().unwrap_or_default(),
             query_json: r.get("query_json").cloned().unwrap_or_default(),
             view_type: r.get("view_type").cloned().unwrap_or_default(),
             group_by: r.get("group_by").cloned().unwrap_or_default(),
             is_default: r.get("is_default").and_then(|v| v.parse().ok()).unwrap_or(0),
             sort_order: r.get("sort_order").and_then(|v| v.parse().ok()).unwrap_or(0),
+            config: r.get("config").cloned().unwrap_or_default(),
             created_at: r.get("created_at").and_then(|v| v.parse().ok()).unwrap_or(0),
             updated_at: r.get("updated_at").and_then(|v| v.parse().ok()).unwrap_or(0),
         }).collect())
     }
 
-    fn get_by_id(&self, id: &str) -> Result<TaskView, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, created_at, updated_at FROM TaskView WHERE id = ?", &[id])?;
+    fn get_by_id(&self, id: &str) -> Result<ScreenView, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, "SELECT id, entity, parent_id, name, query_json, view_type, group_by, is_default, sort_order, config, created_at, updated_at FROM screen_view WHERE id = ?", &[id])?;
         if result.is_empty() {
-            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "TaskView not found")));
+            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "ScreenView not found")));
         }
         let r = &result[0];
-        Ok(TaskView {
+        Ok(ScreenView {
             id: r.get("id").cloned().unwrap_or_default(),
+            entity: r.get("entity").cloned().unwrap_or_else(|| "block".to_string()),
+            parent_id: r.get("parent_id").cloned().unwrap_or_default(),
             name: r.get("name").cloned().unwrap_or_default(),
             query_json: r.get("query_json").cloned().unwrap_or_default(),
             view_type: r.get("view_type").cloned().unwrap_or_default(),
             group_by: r.get("group_by").cloned().unwrap_or_default(),
             is_default: r.get("is_default").and_then(|v| v.parse().ok()).unwrap_or(0),
             sort_order: r.get("sort_order").and_then(|v| v.parse().ok()).unwrap_or(0),
+            config: r.get("config").cloned().unwrap_or_default(),
             created_at: r.get("created_at").and_then(|v| v.parse().ok()).unwrap_or(0),
             updated_at: r.get("updated_at").and_then(|v| v.parse().ok()).unwrap_or(0),
         })
     }
 
-    fn create(&mut self, view: &TaskView) -> Result<TaskView, Box<dyn std::error::Error>> {
-        Self::run_with_params(&self.db, "INSERT INTO TaskView (id, name, query_json, view_type, group_by, is_default, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", &[
-            &view.id, &view.name, &view.query_json, &view.view_type, &view.group_by, &view.is_default.to_string(), &view.sort_order.to_string(), &view.created_at.to_string(), &view.updated_at.to_string()
+    fn create(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn std::error::Error>> {
+        Self::run_with_params(&self.db, "INSERT INTO screen_view (id, entity, parent_id, name, query_json, view_type, group_by, is_default, sort_order, config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", &[
+            &view.id, &view.entity, &view.parent_id, &view.name, &view.query_json, &view.view_type, &view.group_by, &view.is_default.to_string(), &view.sort_order.to_string(), &view.config, &view.created_at.to_string(), &view.updated_at.to_string()
         ])?;
         Ok(view.clone())
     }
 
-    fn update(&mut self, view: &TaskView) -> Result<TaskView, Box<dyn std::error::Error>> {
-        Self::run_with_params(&self.db, "UPDATE TaskView SET name = ?, query_json = ?, view_type = ?, group_by = ?, is_default = ?, sort_order = ?, updated_at = ? WHERE id = ?", &[
-            &view.name, &view.query_json, &view.view_type, &view.group_by, &view.is_default.to_string(), &view.sort_order.to_string(), &view.updated_at.to_string(), &view.id
+    fn update(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn std::error::Error>> {
+        Self::run_with_params(&self.db, "UPDATE screen_view SET parent_id = ?, name = ?, query_json = ?, view_type = ?, group_by = ?, is_default = ?, sort_order = ?, config = ?, updated_at = ? WHERE id = ?", &[
+            &view.parent_id, &view.name, &view.query_json, &view.view_type, &view.group_by, &view.is_default.to_string(), &view.sort_order.to_string(), &view.config, &view.updated_at.to_string(), &view.id
         ])?;
         Ok(view.clone())
     }
 
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn std::error::Error>> {
-        Self::run_with_params(&self.db, "DELETE FROM TaskView WHERE id = ?", &[id])?;
+        Self::run_with_params(&self.db, "DELETE FROM screen_view WHERE id = ?", &[id])?;
         Ok(())
     }
 }
@@ -1354,7 +1420,7 @@ impl StorageAdapter for SqlJsAdapter {
         self
     }
 
-    fn task_views(&mut self) -> &mut dyn TaskViewRepository {
+    fn screen_views(&mut self) -> &mut dyn ScreenViewRepository {
         self
     }
 
@@ -1364,13 +1430,13 @@ impl StorageAdapter for SqlJsAdapter {
 }
 
 impl NotificationConfigRepository for SqlJsAdapter {
-    fn get(&self) -> Result<NotificationConfig, Box<dyn Error>> {
+    fn get(&self) -> Result<NotificationConfig, Box<dyn std::error::Error>> {
         // WASM: NotificationConfig stored in localStorage by TS layer.
         // Return default; TS layer handles actual persistence.
         Ok(NotificationConfig::default())
     }
 
-    fn save(&mut self, _config: &NotificationConfig) -> Result<(), Box<dyn Error>> {
+    fn save(&mut self, _config: &NotificationConfig) -> Result<(), Box<dyn std::error::Error>> {
         // WASM: persisted by TS via localStorage.
         Ok(())
     }

@@ -52,7 +52,10 @@ describe('Block 字段描述符注册表', () => {
     const registry = createRegistry()
     registerBlockBuiltinFields(registry)
     const keys = registry.list(BLOCK_ENTITY).map((f) => f.key).sort()
-    expect(keys).toEqual(['area', 'dateRefDate', 'dateRefKind', 'priority', 'project', 'status'])
+    expect(keys).toEqual([
+      'area', 'content', 'dateRefDate', 'dateRefKind', 'deadline', 'done',
+      'page', 'priority', 'project', 'schedule', 'status',
+    ])
 
     const status = registry.get(BLOCK_ENTITY, 'status')!
     expect(status.type).toBe('select')

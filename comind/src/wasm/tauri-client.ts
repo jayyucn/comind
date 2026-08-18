@@ -6,7 +6,7 @@ import type {
   Block, BlockSaveResult, Page, Property, Link, RelationshipType,
   UserTemplate, SearchResult, BlockUpdate, PageUpdate,
   BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig, BlockVersion,
-  Notification, DateRefRecord, IncompleteTask, BlockCard, SavedFilterRust, TaskViewRust,
+  Notification, DateRefRecord, IncompleteTask, BlockCard, SavedFilterRust, ScreenViewRust,
   NotificationSettings,
   LinkDraft
 } from './types'
@@ -62,26 +62,38 @@ export async function tauriDeleteSavedFilter(id: string): Promise<void> {
   return invoke('delete_saved_filter', { id })
 }
 
-// ---- Task Views ----
+// ---- Screens & Tabs（两级层级） ----
 
-export async function tauriGetTaskViews(): Promise<TaskViewRust[]> {
-  return invoke('get_task_views')
+export async function tauriGetScreenViews(entity: string): Promise<ScreenViewRust[]> {
+  return invoke('get_screen_views', { entity })
 }
 
-export async function tauriSaveTaskView(name: string, queryJson: string, viewType: string, groupBy: string): Promise<TaskViewRust> {
-  return invoke('save_task_view', { name, queryJson, viewType, groupBy })
+export async function tauriCreateScreen(entity: string, name: string, viewType: string, sortOrder: number, config: string): Promise<ScreenViewRust> {
+  return invoke('create_screen', { entity, name, viewType, sortOrder, config })
 }
 
-export async function tauriUpdateTaskView(id: string, name: string, queryJson: string, viewType: string, groupBy: string, isDefault: boolean, sortOrder: number): Promise<TaskViewRust> {
-  return invoke('update_task_view', { id, name, queryJson, viewType, groupBy, isDefault, sortOrder })
+export async function tauriCreateTab(entity: string, parentId: string, name: string, viewType: string, queryJson: string, sortOrder: number, config: string): Promise<ScreenViewRust> {
+  return invoke('create_tab', { entity, parentId, name, viewType, queryJson, sortOrder, config })
 }
 
-export async function tauriDeleteTaskView(id: string): Promise<void> {
-  return invoke('delete_task_view', { id })
+export async function tauriUpdateScreen(id: string, name: string, viewType: string, config: string): Promise<ScreenViewRust> {
+  return invoke('update_screen', { id, name, viewType, config })
 }
 
-export async function tauriSetDefaultTaskView(id: string): Promise<TaskViewRust> {
-  return invoke('set_default_task_view', { id })
+export async function tauriUpdateTab(id: string, name: string, viewType: string, queryJson: string, config: string): Promise<ScreenViewRust> {
+  return invoke('update_tab', { id, name, viewType, queryJson, config })
+}
+
+export async function tauriDeleteScreen(id: string): Promise<void> {
+  return invoke('delete_screen', { id })
+}
+
+export async function tauriDeleteScreenView(id: string): Promise<void> {
+  return invoke('delete_screen_view', { id })
+}
+
+export async function tauriSetDefaultScreen(id: string): Promise<ScreenViewRust> {
+  return invoke('set_default_screen', { id })
 }
 
 export async function tauriSaveBlockTree(blocks: BlockUpdate[]): Promise<BlockSaveResult[]> {
