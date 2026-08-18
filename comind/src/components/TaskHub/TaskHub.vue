@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { PropertyValue } from '@/types/property'
 import { CalendarDays, Columns, Table } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -7,13 +8,12 @@ import { BLOCK_ENTITY, getBlockRegistry } from '../../composables/useBlockQueryR
 import type { ViewQuery } from '../../core/query'
 import { defaultLayoutConfig, parseLayoutConfig, type BoardConfig, type CalendarConfig, type TableConfig } from '../../core/view'
 import type { ViewTypeOption } from '../../core/view/management'
-import type { PropertyValue } from '@/types/property'
 import { useBlockCardStore } from '../../stores/blockCard'
 import { usePropertyStore } from '../../stores/property'
 import { useScreenViewStore } from '../../stores/screenView'
 import type { BlockCard } from '../../wasm/types'
-import PageTitle from '../common/PageTitle.vue'
 import NamedViewBar from '../common/NamedViewBar.vue'
+import PageTitle from '../common/PageTitle.vue'
 import QueryChipBar from '../query/QueryChipBar.vue'
 import QueryToolbar from '../query/QueryToolbar.vue'
 import BoardView from '../views/BoardView.vue'
@@ -197,6 +197,7 @@ function openChipMenu(kind: 'filter' | 'sort' | 'group', e: MouseEvent) {
 .task-hub {
   display: flex;
   flex-direction: column;
+  // align-items: center;
   height: 100%;
   overflow: hidden;
   padding: 0 var(--space-8);
@@ -206,7 +207,13 @@ function openChipMenu(kind: 'filter' | 'sort' | 'group', e: MouseEvent) {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   padding: 12px 16px;
+  margin-bottom: var(--space-4);
+  border-bottom-left-radius: var(--radius-md);
+  border-bottom-right-radius: var(--radius-md);
 }
 
 .task-hub-empty {

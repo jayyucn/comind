@@ -3,15 +3,15 @@ import {
   ChevronDown,
   Copy,
   Filter,
-  MoreHorizontal,
+  MoreVertical,
   Pencil,
   Plus,
   Star,
   Table,
-  Trash2,
+  Trash2
 } from 'lucide-vue-next'
-import { computed, nextTick, ref } from 'vue'
 import type { Component } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import {
   canDeleteScreen,
   canDeleteTab,
@@ -235,7 +235,7 @@ const dirty = computed(() => store.dirty)
               :class="{ on: t.id === store.currentTabId }"
               @click.stop="openTabMenu(t.id, $event)"
             >
-              <MoreHorizontal :size="13" />
+              <MoreVertical :size="14" />
             </span>
           </template>
         </template>
@@ -325,7 +325,7 @@ const dirty = computed(() => store.dirty)
           <Pencil :size="13" /> 重命名
         </button>
         <button class="pop-item" @click="tabMenuId && (onDuplicateTab(tabMenuId), showTabMenu = false)">
-          <Copy :size="13" /> 复制 tab
+          <Copy :size="13" /> 复制 视图
         </button>
         <div class="sep"></div>
         <button
@@ -378,7 +378,10 @@ const dirty = computed(() => store.dirty)
   gap: 4px;
   height: 42px;
   padding: 0 10px;
-  border-bottom: 1px solid var(--border);
+  margin-top: var(--space-4);
+  border: 1px solid var(--border);
+  border-top-left-radius: var(--radius-md);
+  border-top-right-radius: var(--radius-md);
   background: var(--bg-base);
   flex-shrink: 0;
 }
@@ -420,22 +423,17 @@ const dirty = computed(() => store.dirty)
 .tab-row {
   display: flex;
   align-items: center;
-  gap: 2px;
   flex: none;
   max-width: 55%;
   overflow-x: auto;
-  scrollbar-width: none;
   align-self: stretch;
-
-  &::-webkit-scrollbar {
-    display: none;
-  }
+  overflow-y: hidden;
 }
 
 .tab {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   white-space: nowrap;
   padding: 0 10px;
   height: 100%;
@@ -519,7 +517,7 @@ const dirty = computed(() => store.dirty)
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
+  width: 14px;
   height: 18px;
   border-radius: 4px;
   color: var(--text-tertiary);

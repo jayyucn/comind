@@ -1,8 +1,8 @@
 <script setup lang="ts" generic="T">
-import { computed } from 'vue'
-import { MapPin } from 'lucide-vue-next'
-import type { FieldDescriptor, Group, Option, SortRule } from '../../core/query'
-import type { TableColumnConfig, TableConfig } from '../../core/view'
+import { MapPin } from 'lucide-vue-next';
+import { computed } from 'vue';
+import type { FieldDescriptor, Group, Option, SortRule } from '../../core/query';
+import type { TableColumnConfig, TableConfig } from '../../core/view';
 
 const props = defineProps<{
   /** 已过滤+排序的扁平列表（非分组时直接渲染）。实体无关，任意记录类型皆可。 */
@@ -305,7 +305,7 @@ function selectedColor(options: Option[], value: unknown): string | undefined {
     position: sticky;
     top: 0;
     z-index: 2;
-    background: var(--bg-primary);
+    background: var(--bg-base);
 
     th {
       padding: 8px 10px;
