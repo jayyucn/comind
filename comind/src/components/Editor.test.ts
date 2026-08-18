@@ -19,7 +19,9 @@ vi.mock('../extensions/WikiLinkExtension', () => ({
 vi.mock('../extensions/WikiLinkTriggerExtension', () => ({
   WikiLinkTriggerExtension: {
     create: vi.fn(() => ({ name: 'wikiLinkTrigger' })),
-    notifyWikiLinkMenuSelect: vi.fn()
+    notifyWikiLinkMenuSelect: vi.fn(),
+    closeWikiLinkMenuByEditor: vi.fn(),
+    findWikiLinkAtCursor: vi.fn(() => ({ found: false, range: null, query: '' }))
   }
 }))
 

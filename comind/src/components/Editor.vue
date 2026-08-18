@@ -1,25 +1,25 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, watch, shallowRef, ref } from 'vue'
+import { onBeforeUnmount, watch, shallowRef, ref } from 'vue'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
-import { TextSelection } from '@tiptap/pm/state'
 import { WikiLinkExtension } from '../extensions/WikiLinkExtension'
 import { WikiLinkTriggerExtension, notifyWikiLinkMenuSelect, closeWikiLinkMenuByEditor, findWikiLinkAtCursor } from '../extensions/WikiLinkTriggerExtension'
-import { RelationshipTriggerExtension, notifyRelationshipMenuSelect, closeRelationshipMenuByEditor } from '../extensions/RelationshipTriggerExtension'
+import { RelationshipTriggerExtension } from '../extensions/RelationshipTriggerExtension'
 import EnterAsBlockExtension from '../extensions/EnterAsBlockExtension'
 import BracketPairExtension from '../extensions/BracketPairExtension'
 import { SlashCommandExtension } from '../extensions/SlashCommandExtension'
 import { HeadingPreviewExtension } from '../extensions/HeadingPreviewExtension'
-import { DateRefExtension, DATE_REF_CLICK_EVENT, type DateRefClickPayload } from '../extensions/DateRefExtension'
-import { DateRefTriggerExtension, type DateRefKindSelectEvent } from '../extensions/DateRefTriggerExtension'
+import { DateRefExtension } from '../extensions/DateRefExtension'
+import { DateRefTriggerExtension } from '../extensions/DateRefTriggerExtension'
 import { usePageStore } from '../stores/pages'
 import { useDateTimePickerPanel } from '../composables/useDateTimePickerPanel'
 import { useRelationshipMenu } from '../composables/useRelationshipMenu'
-import { getRelationshipLabel } from '../types/relationship'
 import { debounce } from '../utils/debounce'
 import PageLinkMenu from './PageLinkMenu.vue'
 import DateRefKindSelector from './DateRefKindSelector.vue'
 import type { DateRefKind } from '../utils/date-ref'
+import { createEditorEvents } from './Block/editorEvents'
+import { useDomEvents } from '../composables/useDomEvents'
 
 const props = defineProps<{
   blockId: string
@@ -66,270 +66,7 @@ const kindSelectorRange = ref({ from: 0, to: 0 })
 const kindSelectorView = ref<any>(null)
 
 const relMenu = useRelationshipMenu()
-
-function handleRelationshipTrigger(event: Event) {
-  const customEvent = event as CustomEvent<{
-    view: any
-    position: number
-    range: { from: number; to: number }
-    relationshipType: string
-  }>
-  const { view, position, range } = customEvent.detail
-  const coords = view.coordsAtPos(position)
-
-  relMenu.open({
-    view,
-    position: { x: coords.left, y: coords.bottom + 6 },
-    range,
-    initialQuery: '',
-    onSelect: (newType) => {
-      if (!editor.value) return
-      const { state, view: edView } = editor.value
-      const tr = state.tr
-
-      // 检查光标后面是否有自动补全的 ))
-      const docSize = state.doc.content.size
-      let endPos = range.to
-      if (endPos + 2 <= docSize) {
-        const afterText = state.doc.textBetween(endPos, endPos + 2)
-        if (afterText === '))' || afterText === '））') {
-          endPos += 2
-        }
-      }
-
-      // 替换从 range.from 到 endPos 的内容为 ((label))（编辑态显示中文；保存时 encode 转回 type）
-      const label = getRelationshipLabel(newType)
-      tr.insertText(`((${label}))`, range.from, endPos)
-
-      // 设置光标到末尾
-      const newCursorPos = range.from + label.length + 4 // (( + label + ))
-      tr.setSelection(TextSelection.create(tr.doc, newCursorPos))
-
-      edView.dispatch(tr)
-      notifyRelationshipMenuSelect()
-      closeRelationshipMenuByEditor()
-    }
-  })
-}
-
-function handleRelationshipClose(_event: Event) {
-  // 扩展在 '(( ' 模式被破坏时（Backspace / 输入字符 / 转义）
-  // 派发此事件，关闭关系菜单 UI。
-  relMenu.close()
-}
-
-function handleDateRefTrigger(event: Event) {
-  const customEvent = event as CustomEvent<{
-    view: any
-    position: number
-    range: { from: number; to: number }
-    kind: 'schedule' | 'deadline'
-  }>
-  const { view, position, range, kind } = customEvent.detail
-  const coords = view.coordsAtPos(position)
-
-  // PM 节点不携带 blockId，需借助 .block[data-block-id] 包裹层从 DOM 解析
-  let blockId: string | null = null
-  try {
-    const domAt = view.domAtPos(position)
-    let domEl: any = domAt.node
-    if (domEl && domEl.nodeType === 3) domEl = domEl.parentElement
-    const blockEl = domEl?.closest?.('[data-block-id]') as HTMLElement | null
-    blockId = blockEl?.dataset?.blockId ?? null
-  } catch {
-    blockId = null
-  }
-
-  const { open: openDateRefPanel } = useDateTimePickerPanel()
-  openDateRefPanel(
-    {
-      blockId: blockId || '',
-      from: range.from,
-      to: range.to,
-      kind,
-      iso: new Date().toISOString().slice(0, 10),
-      recurrence: 'none',
-      leadMinutes: 0,
-      position: { x: coords.left, y: coords.bottom + 6 },
-    },
-    'editor'
-  )
-}
-
-function handleDateRefClick(event: Event) {
-  const customEvent = event as CustomEvent<DateRefClickPayload>
-  const { from, to, kind, iso, recurrence, leadMinutes } = customEvent.detail
-
-  const target = event.target as HTMLElement
-  const rect = target.getBoundingClientRect()
-
-  const { open: openDateRefPanel } = useDateTimePickerPanel()
-  openDateRefPanel(
-    {
-      blockId: props.blockId || '',
-      from,
-      to,
-      kind,
-      iso,
-      recurrence,
-      leadMinutes,
-      position: { x: rect.left, y: rect.bottom + 6 },
-    },
-    'editor'
-  )
-}
-
-function handleDateRefKindSelect(event: Event) {
-  const customEvent = event as CustomEvent<DateRefKindSelectEvent>
-  const { view, range, coords } = customEvent.detail
-  kindSelectorView.value = view
-  kindSelectorRange.value = range
-  kindSelectorPosition.value = { left: coords.left, top: coords.top, bottom: coords.bottom }
-  kindSelectorVisible.value = true
-}
-
-function handleKindSelect(kind: DateRefKind) {
-  kindSelectorVisible.value = false
-  const view = kindSelectorView.value
-  if (!view) return
-  const range = kindSelectorRange.value
-  const coords = view.coordsAtPos(range.to)
-
-  const { open: openDateRefPanel } = useDateTimePickerPanel()
-  openDateRefPanel(
-    {
-      blockId: props.blockId || '',
-      from: range.from,
-      to: range.to,
-      kind,
-      iso: new Date().toISOString().slice(0, 10),
-      recurrence: 'none',
-      leadMinutes: 0,
-      position: { x: coords.left, y: coords.bottom + 6 },
-    },
-    'editor'
-  )
-}
-
-function handleKindSelectCancel() {
-  kindSelectorVisible.value = false
-}
-
-function handleWikiLinkTrigger(event: Event) {
-  const customEvent = event as CustomEvent<{
-    view: any
-    position: number
-    range: { from: number; to: number }
-    query: string
-  }>
-
-  const { view, position, range, query } = customEvent.detail
-  const coords = view.coordsAtPos(position)
-
-  menuPosition.value = { x: coords.left, y: coords.bottom + 8 }
-  menuRange.value = range
-  menuQuery.value = query
-  menuVisible.value = true
-}
-
-function handleWikiLinkUpdate(event: Event) {
-  const customEvent = event as CustomEvent<{
-    query: string
-  }>
-
-  menuQuery.value = customEvent.detail.query
-}
-
-function handleWikiLinkClose() {
-  menuVisible.value = false
-  closeWikiLinkMenuByEditor()
-}
-
-function handleWikiLinkMenuEnter() {
-  menuRef.value?.confirmSelect()
-}
-
-function handleWikiLinkMenuEscape() {
-  menuRef.value?.close()
-}
-
-function handleWikiLinkMenuArrowDown() {
-  menuRef.value?.selectNext()
-}
-
-function handleWikiLinkMenuArrowUp() {
-  menuRef.value?.selectPrev()
-}
-
-async function handleWikiLinkSelect(pageName: string) {
-  if (!editor.value) return
-
-  notifyWikiLinkMenuSelect()
-
-  const { state } = editor.value
-  const cursorPos = state.selection.from
-  const result = findWikiLinkAtCursor(state.doc, cursorPos)
-  const from = result.range?.from ?? cursorPos
-  const to = result.range?.to ?? cursorPos
-
-  editor.value.chain()
-    .deleteRange({ from, to })
-    .insertContent(`[[${pageName}]]`)
-    .setTextSelection(from + pageName.length + 4)
-    .focus()
-    .run()
-
-  menuVisible.value = false
-  closeWikiLinkMenuByEditor()
-
-  const pageStore = usePageStore()
-  if (!pageStore.getPageByTitle(pageName)) {
-    await pageStore.createPage(pageName)
-  }
-}
-
-function handleEnterAsBlock(event: Event) {
-  const customEvent = event as CustomEvent<{ type: string; pos?: number }>
-  switch (customEvent.detail.type) {
-    case 'split':
-      emit('split', customEvent.detail.pos ?? 0)
-      break
-    case 'delete':
-      emit('delete')
-      break
-    case 'merge':
-      emit('merge')
-      break
-    case 'indent':
-      emit('indent')
-      break
-    case 'outdent':
-      emit('outdent')
-      break
-    case 'moveUp':
-      emit('moveUp')
-      break
-    case 'moveDown':
-      emit('moveDown')
-      break
-    case 'exitEdit':
-      emit('exitEdit')
-      break
-    case 'save':
-      if (editor.value) {
-        emit('save', editor.value.getText())
-      }
-      break
-  }
-}
-
-function textToHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\n/g, '<br>')
-}
+const { open: openDateRefPanel } = useDateTimePickerPanel()
 
 const editor = shallowRef(useEditor({
   extensions: [
@@ -390,6 +127,90 @@ const editor = shallowRef(useEditor({
 
 let settingContent = false
 
+// 模板驱动的 wiki link 选择（保留为组件方法，由 PageLinkMenu @select 触发）
+async function handleWikiLinkSelect(pageName: string) {
+  if (!editor.value) return
+
+  notifyWikiLinkMenuSelect()
+
+  const { state } = editor.value
+  const cursorPos = state.selection.from
+  const result = findWikiLinkAtCursor(state.doc, cursorPos)
+  const from = result.range?.from ?? cursorPos
+  const to = result.range?.to ?? cursorPos
+
+  editor.value.chain()
+    .deleteRange({ from, to })
+    .insertContent(`[[${pageName}]]`)
+    .setTextSelection(from + pageName.length + 4)
+    .focus()
+    .run()
+
+  menuVisible.value = false
+  closeWikiLinkMenuByEditor()
+
+  const pageStore = usePageStore()
+  if (!pageStore.getPageByTitle(pageName)) {
+    await pageStore.createPage(pageName)
+  }
+}
+
+function handleKindSelect(kind: DateRefKind) {
+  kindSelectorVisible.value = false
+  const view = kindSelectorView.value
+  if (!view) return
+  const range = kindSelectorRange.value
+  const coords = view.coordsAtPos(range.to)
+
+  openDateRefPanel(
+    {
+      blockId: props.blockId || '',
+      from: range.from,
+      to: range.to,
+      kind,
+      iso: new Date().toISOString().slice(0, 10),
+      recurrence: 'none',
+      leadMinutes: 0,
+      position: { x: coords.left, y: coords.bottom + 6 },
+    },
+    'editor'
+  )
+}
+
+function handleKindSelectCancel() {
+  kindSelectorVisible.value = false
+}
+
+// PageLinkMenu 的 @close 语义与 DOM 'wiki-link-close' 一致
+function closeWikiLinkMenu() {
+  menuVisible.value = false
+  closeWikiLinkMenuByEditor()
+}
+
+// 把分散的 DOM CustomEvent handler 收敛进声明式事件表（./Block/editorEvents.ts），
+// 由 useDomEvents 在挂载时统一注册、卸载时自动清理（不再手写镜像 add/remove）。
+// 保留 DOM CustomEvent 传输通道（见 docs/adr/0016-editor-dom-event-transport.md）。
+const events = createEditorEvents({
+  // Vue 的 emit / openDateRefPanel 类型比 EditorEventCtx 严格（字面量事件名 / 窄 source 联合），
+  // 在此边界处适配，工厂内部仍保持 (event:string,...args:unknown[]) 的安全签名。
+  emit: emit as unknown as (event: string, ...args: unknown[]) => void,
+  getEditor: () => editor.value,
+  props: { blockId: props.blockId },
+  menuVisible,
+  menuPosition,
+  menuRange,
+  menuQuery,
+  menuRef,
+  kindSelectorVisible,
+  kindSelectorPosition,
+  kindSelectorRange,
+  kindSelectorView,
+  relMenu,
+  openDateRefPanel: openDateRefPanel as unknown as (cfg: any, source: string) => void,
+  closeWikiLinkMenuByEditor,
+})
+useDomEvents(() => editor.value?.view?.dom ?? null, () => events)
+
 // 响应 readonly 变化
 watch(
   () => props.readonly,
@@ -432,55 +253,19 @@ onBeforeUnmount(() => {
   savedFromOutside = true
 
   try {
-    const view = editor.value?.view
-    if (view) {
-      view.dom.removeEventListener('wiki-link-trigger', handleWikiLinkTrigger as EventListener)
-      view.dom.removeEventListener('wiki-link-update', handleWikiLinkUpdate as EventListener)
-      view.dom.removeEventListener('wiki-link-close', handleWikiLinkClose as EventListener)
-      view.dom.removeEventListener('wiki-link-menu-enter', handleWikiLinkMenuEnter as EventListener)
-      view.dom.removeEventListener('wiki-link-menu-escape', handleWikiLinkMenuEscape as EventListener)
-      view.dom.removeEventListener('wiki-link-menu-arrowdown', handleWikiLinkMenuArrowDown as EventListener)
-      view.dom.removeEventListener('wiki-link-menu-arrowup', handleWikiLinkMenuArrowUp as EventListener)
-      view.dom.removeEventListener('enter-as-block', handleEnterAsBlock as EventListener)
-      view.dom.removeEventListener('relationship-trigger', handleRelationshipTrigger as EventListener)
-      view.dom.removeEventListener('relationship-close', handleRelationshipClose as EventListener)
-      view.dom.removeEventListener('dateRefTrigger', handleDateRefTrigger as EventListener)
-      view.dom.removeEventListener(DATE_REF_CLICK_EVENT, handleDateRefClick as EventListener)
-      view.dom.removeEventListener('dateRefKindSelect', handleDateRefKindSelect as EventListener)
-      view.dom.removeEventListener('dateRefKindSelectClose', (() => { kindSelectorVisible.value = false }) as EventListener)
-    }
-  } catch (err) {
-    if (err instanceof Error && err.message.includes('editor view is not available')) {
-      return
-    }
-    console.warn('移除事件监听器失败:', err)
-  }
-  try {
     editor.value?.destroy()
   } catch (err) {
     console.warn('销毁编辑器失败:', err)
   }
 })
 
-onMounted(() => {
-  // 同步注册事件监听器（不使用 nextTick），防止 Editor 刚挂载时 Enter 等事件无人处理（Bug: Enter 无法换行）
-  if (editor.value?.view) {
-    editor.value.view.dom.addEventListener('wiki-link-trigger', handleWikiLinkTrigger as EventListener)
-    editor.value.view.dom.addEventListener('wiki-link-update', handleWikiLinkUpdate as EventListener)
-    editor.value.view.dom.addEventListener('wiki-link-close', handleWikiLinkClose as EventListener)
-    editor.value.view.dom.addEventListener('wiki-link-menu-enter', handleWikiLinkMenuEnter as EventListener)
-    editor.value.view.dom.addEventListener('wiki-link-menu-escape', handleWikiLinkMenuEscape as EventListener)
-    editor.value.view.dom.addEventListener('wiki-link-menu-arrowdown', handleWikiLinkMenuArrowDown as EventListener)
-    editor.value.view.dom.addEventListener('wiki-link-menu-arrowup', handleWikiLinkMenuArrowUp as EventListener)
-    editor.value.view.dom.addEventListener('enter-as-block', handleEnterAsBlock as EventListener)
-    editor.value.view.dom.addEventListener('relationship-trigger', handleRelationshipTrigger as EventListener)
-    editor.value.view.dom.addEventListener('relationship-close', handleRelationshipClose as EventListener)
-    editor.value.view.dom.addEventListener('dateRefTrigger', handleDateRefTrigger as EventListener)
-    editor.value.view.dom.addEventListener(DATE_REF_CLICK_EVENT, handleDateRefClick as EventListener)
-    editor.value.view.dom.addEventListener('dateRefKindSelect', handleDateRefKindSelect as EventListener)
-    editor.value.view.dom.addEventListener('dateRefKindSelectClose', (() => { kindSelectorVisible.value = false }) as EventListener)
-  }
-})
+function textToHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\n/g, '<br>')
+}
 
 function syncContent(content: string, cursorPos?: number) {
   if (editor.value) {
@@ -555,7 +340,7 @@ defineExpose({ syncContent, focus, focusAtCoords, getText: () => editor.value?.g
       :range="menuRange"
       :query="menuQuery"
       @select="handleWikiLinkSelect"
-      @close="handleWikiLinkClose as any"
+      @close="closeWikiLinkMenu"
     />
     <DateRefKindSelector
       :visible="kindSelectorVisible"
