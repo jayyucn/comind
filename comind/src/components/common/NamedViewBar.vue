@@ -2,7 +2,6 @@
 import {
   ChevronDown,
   Copy,
-  Filter,
   MoreVertical,
   Pencil,
   Plus,
@@ -15,10 +14,12 @@ import { computed, nextTick, ref } from 'vue'
 import {
   canDeleteScreen,
   canDeleteTab,
+  diffQueryParts,
   isDefaultScreen,
+  type QueryPart,
   type ViewTypeOption,
 } from '../../core/view/management'
-import { useScreenViewStore } from '../../stores/screenView'
+import { parseViewQuery, useScreenViewStore } from '../../stores/screenView'
 import type { ScreenViewRust } from '../../wasm/types'
 import BasePopover from './BasePopover.vue'
 
@@ -188,7 +189,15 @@ function createTab() {
 
 const currentScreen = computed(() => store.currentScreen)
 const currentTabs = computed(() => store.currentTabs)
-const dirty = computed(() => store.dirty)
+// 当前 tab 实际改动了哪几部分（筛选/排序/分组），按 筛选>排序>分组 优先级
+const PART_LABEL: Record<QueryPart, string> = { filter: '筛选', sort: '排序', group: '分组' }
+const dirtyParts = computed<QueryPart[]>(() => {
+  const tabId = store.currentTabId
+  if (!tabId) return []
+  const t = store.views.find((v) => v.id === tabId)
+  return diffQueryParts(parseViewQuery(t?.query_json), store.workingQuery)
+})
+const dirtyHint = computed(() => dirtyParts.value.map((p) => PART_LABEL[p]).join('、'))
 </script>
 
 <template>
@@ -222,8 +231,8 @@ const dirty = computed(() => store.dirty)
         />
         <template v-else>
           <span class="name">{{ tabName(t) }}</span>
-          <template v-if="t.id === store.currentTabId && dirty && !renamingTabId">
-            <span class="tab-hint"><Filter :size="12" />你调整了筛选</span>
+          <template v-if="t.id === store.currentTabId && dirtyHint && !renamingTabId">
+            <span class="tab-hint">你调整了{{ dirtyHint }}</span>
             <button class="action" @click.stop="store.discardActiveTab()">清除</button>
             <button class="action" @click.stop="store.saveActiveTab()">保存</button>
           </template>

@@ -58,7 +58,7 @@ This avoids a second table and the migration/join cost, while the `entity` colum
 - The active Tab's query is edited live in `workingQuery`; filtering/preview is driven by it, so changes preview immediately but are **not** persisted until explicit save.
 - `setWorkingQuery(q)` recomputes the dirty marker by comparing `JSON.stringify(q)` against the committed `query_json`.
 - Switching away from a dirty Tab **stashes** `workingQuery` into `drafts[tabId]`; switching back **restores** it (across both Tabs and Screens). `saveActiveTab()` persists via `updateTab` and clears the marker; `discardActiveTab()` reverts to committed.
-- This replaces ADR-0005's implicit auto-persist-on-change behavior with an intentional "你调整了筛选 → 清除/保存" UX.
+- This replaces ADR-0005's implicit auto-persist-on-change behavior with an intentional "你调整了{筛选|排序|分组} → 清除/保存" UX. The inline hint lists which query parts (`filter` / `sort` / `groupBy`) actually changed, ordered by 筛选>排序>分组 priority (computed by `diffQueryParts` in `src/core/view/management.ts`).
 
 ### Reusable `NamedViewBar` (decoupled)
 

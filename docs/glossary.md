@@ -20,7 +20,7 @@
 ## N
 
 **NamedViewBar**
-可复用的两级（Screen→Tab）命名视图管理组件（`src/components/common/NamedViewBar.vue`），按 `entityKey` 隔离。负责 Screen 下拉（新建/重命名/设为默认/删除/计数）、Tabs 条（类型图标 + 名称 + 激活下划线 + 内联脏点「你调整了筛选 清除 保存」+ `…` 菜单的 重命名/复制/删除）、新建 Tab 弹窗。查询工具条（`QueryToolbar`+`QueryChipBar`）由消费方经 `<slot/>` 注入，消费方自己持有搜索/查询状态。取代原单级、与 Block 强耦合的 `TaskViewBar`。
+可复用的两级（Screen→Tab）命名视图管理组件（`src/components/common/NamedViewBar.vue`），按 `entityKey` 隔离。负责 Screen 下拉（新建/重命名/设为默认/删除/计数）、Tabs 条（类型图标 + 名称 + 激活下划线 + 内联脏点「你调整了{筛选|排序|分组} 清除 保存」+ `…` 菜单的 重命名/复制/删除）、新建 Tab 弹窗。查询工具条（`QueryToolbar`+`QueryChipBar`）由消费方经 `<slot/>` 注入，消费方自己持有搜索/查询状态。取代原单级、与 Block 强耦合的 `TaskViewBar`。脏提示文案由 `diffQueryParts`（`src/core/view/management.ts`）按实际改动的查询部分生成，多者按 筛选>排序>分组 优先级排列。
 
 ## S
 

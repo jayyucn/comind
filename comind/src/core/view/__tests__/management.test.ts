@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { canDeleteScreen, canDeleteTab, isDefaultScreen, defaultViewNameForEntity } from '../management'
+import { canDeleteScreen, canDeleteTab, diffQueryParts, isDefaultScreen, defaultViewNameForEntity } from '../management'
+import type { ViewQuery } from '../../query'
 import type { ScreenViewRust } from '../../wasm/types'
 
 function screen(id: string, isDefault = 0): ScreenViewRust {
@@ -83,6 +84,41 @@ describe('view management rules', () => {
     it('其他实体默认名为「全部任务」', () => {
       expect(defaultViewNameForEntity('block')).toBe('全部任务')
       expect(defaultViewNameForEntity('note')).toBe('全部任务')
+    })
+  })
+
+  describe('diffQueryParts', () => {
+    const base: ViewQuery = { version: 1, filter: { combinator: 'and', children: [] }, sort: [], groupBy: null }
+    const withFilter: ViewQuery = {
+      ...base,
+      filter: { combinator: 'and', children: [{ field: 'status', op: 'eq', value: { kind: 'literal', value: 'done' } }] },
+    }
+    const withSort: ViewQuery = { ...base, sort: [{ field: 'due', dir: 'asc' }] }
+    const withGroup: ViewQuery = { ...base, groupBy: 'status' }
+
+    it('无改动 → 空数组', () => {
+      expect(diffQueryParts(base, { ...base })).toEqual([])
+    })
+    it('仅筛选改动 → [filter]', () => {
+      expect(diffQueryParts(base, withFilter)).toEqual(['filter'])
+    })
+    it('仅排序改动 → [sort]', () => {
+      expect(diffQueryParts(base, withSort)).toEqual(['sort'])
+    })
+    it('仅分组改动 → [group]', () => {
+      expect(diffQueryParts(base, withGroup)).toEqual(['group'])
+    })
+    it('筛选+分组 → 按优先级 [filter, group]', () => {
+      expect(diffQueryParts(base, { ...withFilter, groupBy: 'status' })).toEqual(['filter', 'group'])
+    })
+    it('三者全变 → 按优先级 [filter, sort, group]', () => {
+      expect(diffQueryParts(base, { version: 1, filter: withFilter.filter, sort: withSort.sort, groupBy: 'status' })).toEqual(['filter', 'sort', 'group'])
+    })
+    it('排序+分组 → [sort, group]', () => {
+      expect(diffQueryParts(base, { ...withSort, groupBy: 'status' })).toEqual(['sort', 'group'])
+    })
+    it('groupBy null 与 undefined 等价 → 不算改动', () => {
+      expect(diffQueryParts(base, { ...base, groupBy: undefined })).toEqual([])
     })
   })
 })
