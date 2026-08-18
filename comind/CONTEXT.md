@@ -195,6 +195,19 @@ PC ↔ Android 设备间同步。
 
 ---
 
+### 编辑器事件表（Editor event table，ADR-0016）
+
+Editor 与 TipTap 扩展之间的 DOM CustomEvent 通信，在本次重构（2026-08-18）坍缩为声明式事件表。`src/components/Block/editorEvents.ts` 的 `createEditorEvents(ctx)` 工厂返回恰好 14 个 handler 的映射；`src/composables/useDomEvents.ts` 统一注册并在卸载时自动清理，替代 `Editor.vue` 原有的两块手抄镜像。传输层仍走 DOM CustomEvent（扩展够不到父 Vue 实例、载荷为 ProseMirror 运行时引用需按引用直达，详见 `docs/adr/0016-editor-dom-event-transport.md`）。
+
+| 术语 | 定义 |
+|------|------|
+| **editorEvents** | Editor 声明式事件表模块（`src/components/Block/editorEvents.ts`） |
+| **createEditorEvents(ctx)** | 工厂函数，返回 14 个 DOM CustomEvent handler 映射；不依赖 Vue 组件实例，可 stub 单测 |
+| **EditorEventCtx** | 事件表所需上下文接口：emit / getEditor / props / 菜单与选择器 ref / relMenu / openDateRefPanel / closeWikiLinkMenuByEditor |
+| **useDomEvents** | 自动注册/清理 DOM 监听的 composable，替代 Editor.vue 手抄镜像，防泄漏 |
+
+---
+
 ## 三、数据流术语
 
 | 术语 | 定义 |

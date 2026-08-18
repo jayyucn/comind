@@ -80,7 +80,7 @@ export const DateRefTriggerExtension = Extension.create({
 
             if (event.key === 'Escape' && menuIsOpen) {
               menuIsOpen = false
-              view.dom.dispatchEvent(new CustomEvent('dateRefTriggerClose', { bubbles: true }))
+              // 仅关闭 kind 选择器；dateRefTriggerClose 为死事件（全库无监听），已在重构中删除
               view.dom.dispatchEvent(new CustomEvent('dateRefKindSelectClose', { bubbles: true }))
               return true
             }
@@ -97,7 +97,7 @@ export const DateRefTriggerExtension = Extension.create({
               const result = findDateRefTrigger(view.state.doc, view.state.selection.from)
               if (!result.found) {
                 menuIsOpen = false
-                view.dom.dispatchEvent(new CustomEvent('dateRefTriggerClose', { bubbles: true }))
+                // 仅关闭 kind 选择器；dateRefTriggerClose 为死事件（全库无监听），已在重构中删除
                 view.dom.dispatchEvent(new CustomEvent('dateRefKindSelectClose', { bubbles: true }))
               } else {
                 // 输入 @ 后跟数字 → 显示 kind 选择下拉框
