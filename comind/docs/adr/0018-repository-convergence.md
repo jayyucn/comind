@@ -75,6 +75,10 @@ Implemented on branch `refactor-repository-convergence`.
 - `crates/comind-core/src/storage/sqlite.rs` — `SQLiteAdapter` and `SQLiteTransactionAdapter` `DateRefRepository` impls now delegate to the shared free functions; import added.
 - `crates/comind-core/src/storage/sqljs.rs` — `SqlJsAdapter::DateRefRepository` now SELECTs via `date_ref_select_cols()` and maps via `row_to_date_ref_js`; the dead `row_to_date_ref` fn removed.
 
+**Transparency notes (added post-review 2026-08-19).**
+- **wasm INSERT rewrite.** The sql.js `create` INSERT text was rewritten to derive its column list from `date_ref_select_cols()` (canonical `DATE_REF_COLS` order). This also fixes a latent pre-pilot mismatch: the old text supplied **10 bind params against only 9 `?` placeholders** (12-column INSERT, values `9×?, 0, NULL`), which would fail at runtime in wasm. Inserted values are identical (same 10 bound values, literal `0` version, literal NULL `deleted_at`) — no observable behavior change. This is the one case where the "keep wasm INSERT/UPDATE/DELETE text as-is" rule was not followed; the new form is kept because the old was broken.
+- **`get_all` error semantics.** Pre-pilot native `get_all` used `rows.filter_map(Result::ok).collect()` (row errors silently dropped); the shared `date_ref_get_all` propagates row errors (`query_map(...).map_err(bx)`). Accepted as intentional hardening — no silent data loss.
+
 **Q4b confirmation (column-order drift fixed).** Measured pre-pilot drift: native `get_all` SELECT order was `…created_at, event_ts…` while sql.js emitted `…event_ts, updated_at, version, deleted_at, created_at` (created_at LAST). Both now derive SELECT columns from the single `DATE_REF_COLS` (`…created_at, event_ts, updated_at, version, deleted_at`), so the two engines are positionally aligned under one ordering. Drift is structurally impossible.
 
 ## Pilot landing record — Block (2026-08-19)
