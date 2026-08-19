@@ -11,6 +11,8 @@ use crate::storage::entity::block::{block_get_all, block_get_by_id, block_get_by
 use crate::storage::entity::page::{page_get_by_id, page_get_by_title_including_deleted, page_get_by_title, page_get_all, page_get_trash, page_get_by_ids, page_get_ideas_by_month, page_get_ideas_months, page_create, page_update, page_delete};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::link::{link_get_by_id, link_get_by_source_block_id, link_get_by_source_block_ids, link_get_by_target_page_id, link_insert, link_create_many, link_delete, link_delete_by_source_block_id, link_delete_by_target_page_id};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::storage::entity::property::{property_create, property_delete, property_delete_by_block_id, property_get_all, property_get_by_block_id, property_get_by_block_id_and_key, property_get_by_block_ids, property_get_by_id, property_query_block_ids_by_key_value, property_update, property_upsert};
 
 pub struct SQLiteAdapter {
     pub conn: Connection,
@@ -589,256 +591,50 @@ impl LinkRepository for SQLiteAdapter   {
 
 impl PropertyRepository for SQLiteAdapter {
     fn get_all(&self) -> Result<Vec<Property>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at FROM Property WHERE is_deleted = 0 AND deleted_at IS NULL"
-        )?;
-        let properties = stmt.query_map([], |row| {
-            Ok(Property {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                key: row.get(2)?,
-                value: row.get(3)?,
-                r#type: row.get(4)?,
-                sort_order: row.get(5)?,
-                is_hidden: row.get(6)?,
-                is_deleted: row.get(7)?,
-                schema_version: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-                version: row.get(11)?,
-                deleted_at: row.get(12)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        Ok(properties)
+        property_get_all(&self.conn)
     }
 
     fn get_by_id(&self, id: &str) -> Result<Property, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at 
-             FROM Property WHERE id = ?1 AND deleted_at IS NULL"
-        )?;
-        
-        let property = stmt.query_row(params![id], |row| {
-            Ok(Property {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                key: row.get(2)?,
-                value: row.get(3)?,
-                r#type: row.get(4)?,
-                sort_order: row.get(5)?,
-                is_hidden: row.get(6)?,
-                is_deleted: row.get(7)?,
-                schema_version: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-                version: row.get(11)?,
-                deleted_at: row.get(12)?,
-            })
-        })?;
-        
-        Ok(property)
+        property_get_by_id(&self.conn, id)
     }
-    
+
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<Property>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at 
-             FROM Property WHERE block_id = ?1 AND is_deleted = 0 AND deleted_at IS NULL ORDER BY sort_order"
-        )?;
-        
-        let properties = stmt.query_map(params![block_id], |row| {
-            Ok(Property {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                key: row.get(2)?,
-                value: row.get(3)?,
-                r#type: row.get(4)?,
-                sort_order: row.get(5)?,
-                is_hidden: row.get(6)?,
-                is_deleted: row.get(7)?,
-                schema_version: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-                version: row.get(11)?,
-                deleted_at: row.get(12)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        
-        Ok(properties)
+        property_get_by_block_id(&self.conn, block_id)
     }
 
     fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<Property>, Box<dyn Error>> {
-        if block_ids.is_empty() {
-            return Ok(Vec::new());
-        }
-        let placeholders: Vec<String> = (1..=block_ids.len()).map(|i| format!("?{}", i)).collect();
-        let sql = format!(
-            "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at
-             FROM Property WHERE block_id IN ({}) AND is_deleted = 0 AND deleted_at IS NULL ORDER BY sort_order",
-            placeholders.join(", ")
-        );
-        let mut stmt = self.conn.prepare(&sql)?;
-        let params: Vec<&dyn rusqlite::ToSql> = block_ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
-        let properties = stmt.query_map(params.as_slice(), |row| {
-            Ok(Property {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                key: row.get(2)?,
-                value: row.get(3)?,
-                r#type: row.get(4)?,
-                sort_order: row.get(5)?,
-                is_hidden: row.get(6)?,
-                is_deleted: row.get(7)?,
-                schema_version: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-                version: row.get(11)?,
-                deleted_at: row.get(12)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        Ok(properties)
+        property_get_by_block_ids(&self.conn, block_ids)
     }
-    
+
     fn get_by_block_id_and_key(&self, block_id: &str, key: &str) -> Result<Option<Property>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at 
-             FROM Property WHERE block_id = ?1 AND key = ?2 AND is_deleted = 0 AND deleted_at IS NULL"
-        )?;
-        
-        let result = stmt.query_row(params![block_id, key], |row| {
-            Ok(Property {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                key: row.get(2)?,
-                value: row.get(3)?,
-                r#type: row.get(4)?,
-                sort_order: row.get(5)?,
-                is_hidden: row.get(6)?,
-                is_deleted: row.get(7)?,
-                schema_version: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-                version: row.get(11)?,
-                deleted_at: row.get(12)?,
-            })
-        });
-        
-        match result {
-            Ok(property) => Ok(Some(property)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(Box::new(e)),
-        }
+        property_get_by_block_id_and_key(&self.conn, block_id, key)
     }
 
     fn query_block_ids_by_key_value(&self, key: &str, values: &[String]) -> Result<Vec<String>, Box<dyn Error>> {
-        if values.is_empty() {
-            return Ok(Vec::new());
-        }
-        let placeholders = values.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        let sql = format!(
-            "SELECT DISTINCT block_id FROM Property WHERE key = ? AND value IN ({}) AND is_deleted = 0 AND deleted_at IS NULL",
-            placeholders
-        );
-        let mut stmt = self.conn.prepare(&sql)?;
-        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-        params_vec.push(Box::new(key.to_string()));
-        for v in values {
-            params_vec.push(Box::new(v.clone()));
-        }
-        let param_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
-        let ids = stmt.query_map(param_refs.as_slice(), |row| {
-            row.get::<_, String>(0)
-        })?.collect::<Result<Vec<_>, _>>()?;
-        Ok(ids)
+        property_query_block_ids_by_key_value(&self.conn, key, values)
     }
 
     fn create(&mut self, property: &Property) -> Result<Property, Box<dyn Error>> {
-        self.conn.execute(
-            "INSERT INTO Property (id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
-            params![
-                property.id,
-                property.block_id,
-                property.key,
-                property.value,
-                property.r#type,
-                property.sort_order,
-                property.is_hidden,
-                property.is_deleted,
-                property.schema_version,
-                property.created_at,
-                property.updated_at,
-                property.version,
-                property.deleted_at
-            ]
-        )?;
-        
-        Ok(property.clone())
-    }
-    fn upsert(&mut self, property: &Property) -> Result<Property, Box<dyn Error>> {
-        self.conn.execute(
-            "INSERT INTO Property (id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
-             ON CONFLICT(block_id, key) DO UPDATE SET
-                value = excluded.value,
-                type = excluded.type,
-                updated_at = excluded.updated_at,
-                sort_order = excluded.sort_order,
-                is_hidden = excluded.is_hidden,
-                schema_version = excluded.schema_version,
-                is_deleted = 0,
-                deleted_at = NULL",
-            params![
-                property.id,
-                property.block_id,
-                property.key,
-                property.value,
-                property.r#type,
-                property.sort_order,
-                property.is_hidden,
-                property.is_deleted,
-                property.schema_version,
-                property.created_at,
-                property.updated_at,
-                property.version,
-                property.deleted_at
-            ]
-        )?;
+        property_create(&self.conn, property)?;
         Ok(property.clone())
     }
 
-    
-    fn update(&mut self, property: &Property) -> Result<Property, Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE Property SET value = ?2, type = ?3, sort_order = ?4, is_hidden = ?5, is_deleted = ?6, updated_at = ?7, version = version + 1
-             WHERE id = ?1",
-            params![
-                property.id,
-                property.value,
-                property.r#type,
-                property.sort_order,
-                property.is_hidden,
-                property.is_deleted,
-                property.updated_at
-            ]
-        )?;
-        
+    fn upsert(&mut self, property: &Property) -> Result<Property, Box<dyn Error>> {
+        property_upsert(&self.conn, property)?;
         Ok(property.clone())
     }
-    
-    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE Property SET deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE id = ?1",
-            params![id, chrono::Utc::now().timestamp_millis()]
-        )?;
-        Ok(())
+
+    fn update(&mut self, property: &Property) -> Result<Property, Box<dyn Error>> {
+        property_update(&self.conn, property)?;
+        Ok(property.clone())
     }
-    
+
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
+        property_delete(&self.conn, id)
+    }
+
     fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE Property SET deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE block_id = ?1",
-            params![block_id, chrono::Utc::now().timestamp_millis()]
-        )?;
-        Ok(())
+        property_delete_by_block_id(&self.conn, block_id)
     }
 }
 
@@ -2033,256 +1829,50 @@ impl<'a> LinkRepository for SQLiteTransactionAdapter<'a>  {
 
 impl<'a> PropertyRepository for SQLiteTransactionAdapter<'a> {
     fn get_all(&self) -> Result<Vec<Property>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at FROM Property WHERE is_deleted = 0 AND deleted_at IS NULL"
-        )?;
-        let properties = stmt.query_map([], |row| {
-            Ok(Property {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                key: row.get(2)?,
-                value: row.get(3)?,
-                r#type: row.get(4)?,
-                sort_order: row.get(5)?,
-                is_hidden: row.get(6)?,
-                is_deleted: row.get(7)?,
-                schema_version: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-                version: row.get(11)?,
-                deleted_at: row.get(12)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        Ok(properties)
+        property_get_all(&self.conn)
     }
 
     fn get_by_id(&self, id: &str) -> Result<Property, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at
-             FROM Property WHERE id = ?1 AND deleted_at IS NULL"
-        )?;
-
-        let property = stmt.query_row(params![id], |row| {
-            Ok(Property {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                key: row.get(2)?,
-                value: row.get(3)?,
-                r#type: row.get(4)?,
-                sort_order: row.get(5)?,
-                is_hidden: row.get(6)?,
-                is_deleted: row.get(7)?,
-                schema_version: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-                version: row.get(11)?,
-                deleted_at: row.get(12)?,
-            })
-        })?;
-
-        Ok(property)
+        property_get_by_id(&self.conn, id)
     }
 
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<Property>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at
-             FROM Property WHERE block_id = ?1 AND is_deleted = 0 AND deleted_at IS NULL ORDER BY sort_order"
-        )?;
-
-        let properties = stmt.query_map(params![block_id], |row| {
-            Ok(Property {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                key: row.get(2)?,
-                value: row.get(3)?,
-                r#type: row.get(4)?,
-                sort_order: row.get(5)?,
-                is_hidden: row.get(6)?,
-                is_deleted: row.get(7)?,
-                schema_version: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-                version: row.get(11)?,
-                deleted_at: row.get(12)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-
-        Ok(properties)
+        property_get_by_block_id(&self.conn, block_id)
     }
 
     fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<Property>, Box<dyn Error>> {
-        if block_ids.is_empty() {
-            return Ok(Vec::new());
-        }
-        let placeholders: Vec<String> = (1..=block_ids.len()).map(|i| format!("?{}", i)).collect();
-        let sql = format!(
-            "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at
-             FROM Property WHERE block_id IN ({}) AND is_deleted = 0 AND deleted_at IS NULL ORDER BY sort_order",
-            placeholders.join(", ")
-        );
-        let mut stmt = self.conn.prepare(&sql)?;
-        let params: Vec<&dyn rusqlite::ToSql> = block_ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
-        let properties = stmt.query_map(params.as_slice(), |row| {
-            Ok(Property {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                key: row.get(2)?,
-                value: row.get(3)?,
-                r#type: row.get(4)?,
-                sort_order: row.get(5)?,
-                is_hidden: row.get(6)?,
-                is_deleted: row.get(7)?,
-                schema_version: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-                version: row.get(11)?,
-                deleted_at: row.get(12)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        Ok(properties)
+        property_get_by_block_ids(&self.conn, block_ids)
     }
 
     fn get_by_block_id_and_key(&self, block_id: &str, key: &str) -> Result<Option<Property>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at
-             FROM Property WHERE block_id = ?1 AND key = ?2 AND is_deleted = 0 AND deleted_at IS NULL"
-        )?;
-
-        let result = stmt.query_row(params![block_id, key], |row| {
-            Ok(Property {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                key: row.get(2)?,
-                value: row.get(3)?,
-                r#type: row.get(4)?,
-                sort_order: row.get(5)?,
-                is_hidden: row.get(6)?,
-                is_deleted: row.get(7)?,
-                schema_version: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-                version: row.get(11)?,
-                deleted_at: row.get(12)?,
-            })
-        });
-
-        match result {
-            Ok(property) => Ok(Some(property)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(Box::new(e)),
-        }
+        property_get_by_block_id_and_key(&self.conn, block_id, key)
     }
 
     fn query_block_ids_by_key_value(&self, key: &str, values: &[String]) -> Result<Vec<String>, Box<dyn Error>> {
-        if values.is_empty() {
-            return Ok(Vec::new());
-        }
-        let placeholders = values.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        let sql = format!(
-            "SELECT DISTINCT block_id FROM Property WHERE key = ? AND value IN ({}) AND is_deleted = 0 AND deleted_at IS NULL",
-            placeholders
-        );
-        let mut stmt = self.conn.prepare(&sql)?;
-        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-        params_vec.push(Box::new(key.to_string()));
-        for v in values {
-            params_vec.push(Box::new(v.clone()));
-        }
-        let param_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
-        let ids = stmt.query_map(param_refs.as_slice(), |row| {
-            row.get::<_, String>(0)
-        })?.collect::<Result<Vec<_>, _>>()?;
-        Ok(ids)
+        property_query_block_ids_by_key_value(&self.conn, key, values)
     }
 
     fn create(&mut self, property: &Property) -> Result<Property, Box<dyn Error>> {
-        self.conn.execute(
-            "INSERT INTO Property (id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
-            params![
-                property.id,
-                property.block_id,
-                property.key,
-                property.value,
-                property.r#type,
-                property.sort_order,
-                property.is_hidden,
-                property.is_deleted,
-                property.schema_version,
-                property.created_at,
-                property.updated_at,
-                property.version,
-                property.deleted_at
-            ]
-        )?;
-
+        property_create(&self.conn, property)?;
         Ok(property.clone())
     }
+
     fn upsert(&mut self, property: &Property) -> Result<Property, Box<dyn Error>> {
-        self.conn.execute(
-            "INSERT INTO Property (id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, created_at, updated_at, version, deleted_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
-             ON CONFLICT(block_id, key) DO UPDATE SET
-                value = excluded.value,
-                type = excluded.type,
-                updated_at = excluded.updated_at,
-                sort_order = excluded.sort_order,
-                is_hidden = excluded.is_hidden,
-                schema_version = excluded.schema_version,
-                is_deleted = 0,
-                deleted_at = NULL",
-            params![
-                property.id,
-                property.block_id,
-                property.key,
-                property.value,
-                property.r#type,
-                property.sort_order,
-                property.is_hidden,
-                property.is_deleted,
-                property.schema_version,
-                property.created_at,
-                property.updated_at,
-                property.version,
-                property.deleted_at
-            ]
-        )?;
+        property_upsert(&self.conn, property)?;
         Ok(property.clone())
     }
-
 
     fn update(&mut self, property: &Property) -> Result<Property, Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE Property SET value = ?2, type = ?3, sort_order = ?4, is_hidden = ?5, is_deleted = ?6, updated_at = ?7, version = version + 1
-             WHERE id = ?1",
-            params![
-                property.id,
-                property.value,
-                property.r#type,
-                property.sort_order,
-                property.is_hidden,
-                property.is_deleted,
-                property.updated_at
-            ]
-        )?;
-
+        property_update(&self.conn, property)?;
         Ok(property.clone())
     }
 
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE Property SET deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE id = ?1",
-            params![id, chrono::Utc::now().timestamp_millis()]
-        )?;
-        Ok(())
+        property_delete(&self.conn, id)
     }
 
     fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE Property SET deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE block_id = ?1",
-            params![block_id, chrono::Utc::now().timestamp_millis()]
-        )?;
-        Ok(())
+        property_delete_by_block_id(&self.conn, block_id)
     }
 }
 

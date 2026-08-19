@@ -15,6 +15,7 @@ use crate::storage::entity::block::{block_select_cols, row_to_block_js};
 use crate::storage::entity::page::{page_select_cols, row_to_page_js};
 #[cfg(target_arch = "wasm32")]
 use crate::storage::entity::link::{link_select_cols, row_to_link_js};
+use crate::storage::entity::property::{property_select_cols, row_to_property_js};
 
 #[cfg(target_arch = "wasm32")]
 pub struct SqlJsAdapter {
@@ -390,28 +391,6 @@ impl SqlJsAdapter {
         js_sys::Function::from(run_fn).apply(db, &args)
             .map_err(|e| format!("SQL run failed: {:?}", e))?;
         Ok(())
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-
-#[cfg(target_arch = "wasm32")]
-#[cfg(target_arch = "wasm32")]
-fn row_to_property(row: &HashMap<String, String>) -> Property {
-    Property {
-        id: row.get("id").cloned().unwrap_or_default(),
-        block_id: row.get("block_id").cloned().unwrap_or_default(),
-        key: row.get("key").cloned().unwrap_or_default(),
-        value: row.get("value").cloned().unwrap_or_default(),
-        r#type: row.get("type").cloned().unwrap_or_default(),
-        sort_order: row.get("sort_order").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        is_hidden: row.get("is_hidden").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        is_deleted: row.get("is_deleted").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        schema_version: row.get("schema_version").cloned().unwrap_or_else(|| "1".to_string()).parse::<i64>().unwrap_or(1),
-        version: row.get("version").map(|s| s.parse::<i64>().unwrap_or(0)).unwrap_or(0),
-        deleted_at: row.get("deleted_at").map(|s| s.parse::<i64>().ok()).unwrap_or(None),
-        created_at: row.get("created_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        updated_at: row.get("updated_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
     }
 }
 
@@ -940,37 +919,44 @@ impl DateRefRepository for SqlJsAdapter {
 
 impl PropertyRepository for SqlJsAdapter {
     fn get_all(&self) -> Result<Vec<Property>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, version, deleted_at, created_at, updated_at FROM Property WHERE is_deleted = 0 AND deleted_at IS NULL", &[])?;
-        Ok(result.into_iter().map(|r| row_to_property(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Property WHERE is_deleted = 0 AND deleted_at IS NULL", property_select_cols()), &[])?;
+        Ok(result.into_iter().map(|r| row_to_property_js(&r)).collect())
     }
 
     fn get_by_id(&self, id: &str) -> Result<Property, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, version, deleted_at, created_at, updated_at FROM Property WHERE id = ? AND deleted_at IS NULL", &[id])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Property WHERE id = ? AND deleted_at IS NULL", property_select_cols()), &[id])?;
         if result.is_empty() {
             return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Property not found")));
         }
-        Ok(row_to_property(&result[0]))
+        Ok(row_to_property_js(&result[0]))
     }
 
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<Property>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, version, deleted_at, created_at, updated_at FROM Property WHERE block_id = ? AND is_deleted = 0 AND deleted_at IS NULL ORDER BY sort_order", &[block_id])?;
-        Ok(result.into_iter().map(|r| row_to_property(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Property WHERE block_id = ? AND is_deleted = 0 AND deleted_at IS NULL ORDER BY sort_order", property_select_cols()), &[block_id])?;
+        Ok(result.into_iter().map(|r| row_to_property_js(&r)).collect())
     }
 
     fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<Property>, Box<dyn std::error::Error>> {
-        let mut properties = Vec::new();
-        for id in block_ids {
-            properties.extend(PropertyRepository::get_by_block_id(self, id)?);
+        if block_ids.is_empty() {
+            return Ok(Vec::new());
         }
-        Ok(properties)
+        let placeholders: Vec<String> = (1..=block_ids.len()).map(|i| format!("?{}", i)).collect();
+        let sql = format!(
+            "SELECT {} FROM Property WHERE block_id IN ({}) AND is_deleted = 0 AND deleted_at IS NULL ORDER BY sort_order",
+            property_select_cols(),
+            placeholders.join(", ")
+        );
+        let params: Vec<&str> = block_ids.iter().map(|s| s.as_str()).collect();
+        let result = Self::query(&self.db, &sql, &params)?;
+        Ok(result.into_iter().map(|r| row_to_property_js(&r)).collect())
     }
 
     fn get_by_block_id_and_key(&self, block_id: &str, key: &str) -> Result<Option<Property>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, version, deleted_at, created_at, updated_at FROM Property WHERE block_id = ? AND key = ? AND is_deleted = 0 AND deleted_at IS NULL", &[block_id, key])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Property WHERE block_id = ? AND key = ? AND is_deleted = 0 AND deleted_at IS NULL", property_select_cols()), &[block_id, key])?;
         if result.is_empty() {
             Ok(None)
         } else {
-            Ok(Some(row_to_property(&result[0])))
+            Ok(Some(row_to_property_js(&result[0])))
         }
     }
 
@@ -1011,7 +997,6 @@ impl PropertyRepository for SqlJsAdapter {
         ])?;
         Ok(property.clone())
     }
-
 
     fn update(&mut self, property: &Property) -> Result<Property, Box<dyn std::error::Error>> {
         Self::run_with_params(&self.db, "UPDATE Property SET value = ?, type = ?, sort_order = ?, is_hidden = ?, is_deleted = ?, version = version + 1, updated_at = ? WHERE id = ?", &[
