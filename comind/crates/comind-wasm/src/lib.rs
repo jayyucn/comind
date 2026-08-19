@@ -642,4 +642,177 @@ mod wasm_impl {
             Ok(serde_json::to_string(&results).unwrap_or_else(|_| "[]".to_string()))
         })
     }
+
+    // ---- ensure_today_ideas_page（共享幂等逻辑；chrono `wasmbind` → 浏览器本地时区） ----
+    #[wasm_bindgen]
+    pub fn ensure_today_ideas_page() -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            let page = PageService::ensure_today_ideas_page(adapter)?;
+            Ok(to_js_value(page))
+        })
+    }
+
+    // ---- Block versions（共享 BlockVersionService，与 Tauri commands.rs 同构薄转发） ----
+    #[wasm_bindgen]
+    pub fn create_block_version(
+        block_id: &str,
+        snapshot: &str,
+        hash: &str,
+        reason: &str,
+        checkpoint_name: Option<String>,
+    ) -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            let version = BlockVersionService::create(
+                adapter,
+                block_id,
+                snapshot,
+                hash,
+                reason,
+                checkpoint_name.as_deref(),
+                None,
+            )?;
+            Ok(to_js_value(version))
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn get_block_versions(block_id: &str) -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            let versions = BlockVersionService::list(adapter, block_id)?;
+            Ok(to_js_value(versions))
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn get_block_version_by_id(id: &str) -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            let version = BlockVersionService::get_by_id(adapter, id)?;
+            Ok(to_js_value(version))
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn restore_block_version(version_id: &str) -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            let version = BlockVersionService::restore(adapter, version_id)?;
+            Ok(to_js_value(version))
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn cleanup_block_versions(retention_days: i64) -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            BlockVersionService::cleanup(adapter, retention_days)?;
+            Ok(to_js_value(json!({"success": true})))
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn delete_block_version(version_id: &str) -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            BlockVersionService::delete(adapter, version_id)?;
+            Ok(to_js_value(json!({"success": true})))
+        })
+    }
+
+    // ---- Notifications（storage.notifications() 直调，与 Tauri commands.rs 同构） ----
+    #[wasm_bindgen]
+    pub fn get_notification(id: &str) -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            let notification = adapter.notifications().get_by_id(id)?;
+            Ok(to_js_value(notification))
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn get_notifications_by_block(block_id: &str) -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            let notifications = adapter.notifications().get_by_block_id(block_id)?;
+            Ok(to_js_value(notifications))
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn query_unread_notifications() -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            let notifications = adapter.notifications().query_unread()?;
+            Ok(to_js_value(notifications))
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn query_recent_notifications(limit: i64) -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            let notifications = adapter.notifications().query_recent(limit as usize)?;
+            Ok(to_js_value(notifications))
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn create_notification(notification: &str) -> Result<JsValue, JsValue> {
+        let notification: Notification = serde_json::from_str(notification)
+            .map_err(|e| JsValue::from_str(&format!("Failed to parse notification: {}", e)))?;
+        with_adapter(|adapter| {
+            let created = adapter.notifications().create(&notification)?;
+            Ok(to_js_value(created))
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn batch_create_notifications(notifications: &str) -> Result<JsValue, JsValue> {
+        let notifications: Vec<Notification> = serde_json::from_str(notifications)
+            .map_err(|e| JsValue::from_str(&format!("Failed to parse notifications: {}", e)))?;
+        with_adapter(|adapter| {
+            let created = adapter.notifications().batch_create(&notifications)?;
+            Ok(to_js_value(created))
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn update_notification_status(id: &str, status: &str) -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            let notification = adapter.notifications().update_status(id, status)?;
+            Ok(to_js_value(notification))
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn update_notification_payload(id: &str, payload: &str) -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            let notification = adapter.notifications().update_payload(id, payload)?;
+            Ok(to_js_value(notification))
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn set_notification_snooze(id: &str, snooze_until: i64, status: &str) -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            let notification = adapter.notifications().set_snooze(id, snooze_until, status)?;
+            Ok(to_js_value(notification))
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn delete_notification(id: &str) -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            adapter.notifications().delete(id)?;
+            Ok(to_js_value(json!({"success": true})))
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn cleanup_notifications(timestamp: i64) -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            adapter.notifications().delete_older_than(timestamp)?;
+            Ok(to_js_value(json!({"success": true})))
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn mark_all_notifications_read() -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            adapter.notifications().mark_all_read()?;
+            Ok(to_js_value(json!({"success": true})))
+        })
+    }
 }

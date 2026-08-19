@@ -2,28 +2,6 @@ import { isTauriEnvironment } from './tauri-client'
 export { isTauriEnvironment } from './tauri-client'
 import { initWasmClient, type WasmClient } from './wasm-client'
 import * as tauri from './tauri-client'
-import {
-  createWebBlockVersion,
-  getWebBlockVersions,
-  getWebBlockVersionById,
-  restoreWebBlockVersion,
-  deleteWebBlockVersion,
-  cleanupWebBlockVersions
-} from './web-version-storage'
-import {
-  getWebNotification,
-  getWebNotificationsByBlock,
-  queryWebUnreadNotifications,
-  queryWebRecentNotifications,
-  createWebNotification,
-  batchCreateWebNotifications,
-  updateWebNotificationStatus,
-  updateWebNotificationPayload,
-  setWebNotificationSnooze,
-  deleteWebNotification,
-  cleanupWebNotifications,
-  markAllWebNotificationsRead
-} from './web-notification-storage'
 
 function parseJsonResult<T>(result: any): T {
   if (typeof result === 'string') {
@@ -522,19 +500,9 @@ class WasmClientAdapter implements CoreClient {
   }
 
   async ensureTodayIdeasPage(): Promise<Page> {
-    // WASM fallback: TS 端逻辑实现幂等获取或创建
-    // (Rust WASM 端 chrono::Local 有时区 bug，见 ADR 0001；此处用浏览器本地时区)
-    const d = new Date()
-    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-    const allPages = await this.wasm.get_all_pages()
-    const existing = allPages.find(
-      p => p.title === today && (p.type === 'ideas')
-    )
-    if (existing) return existing
-    // 不存在则创建
-    const pageJson = JSON.stringify({ title: today, type: 'ideas' })
-    const result = await this.wasm.save_page(pageJson)
-    return parseJsonResult<Page>(result)
+    // 共享幂等逻辑在 Rust（PageService::ensure_today_ideas_page）；
+    // chrono `wasmbind` feature 下 Local 使用浏览器本地时区（ADR-0021）。
+    return this.wasm.ensure_today_ideas_page()
   }
 
   async savePage(page: PageUpdate): Promise<Page> {
@@ -552,11 +520,7 @@ class WasmClientAdapter implements CoreClient {
   }
 
   async getOutlinks(pageId: string): Promise<Link[]> {
-    const wasm = this.wasm as any
-    if (typeof wasm.get_outlinks === 'function') {
-      return wasm.get_outlinks(pageId)
-    }
-    return []
+    return this.wasm.get_outlinks(pageId)
   }
 
   async getProperties(blockId: string): Promise<Property[]> {
@@ -599,83 +563,75 @@ class WasmClientAdapter implements CoreClient {
   }
 
   async createBlockVersion(blockId: string, snapshot: string, hash: string, reason: string, checkpointName?: string): Promise<BlockVersion> {
-    return createWebBlockVersion(blockId, snapshot, hash, reason, checkpointName)
+    return this.wasm.create_block_version(blockId, snapshot, hash, reason, checkpointName)
   }
 
   async getBlockVersions(blockId: string): Promise<BlockVersion[]> {
-    return getWebBlockVersions(blockId)
+    return this.wasm.get_block_versions(blockId)
   }
 
   async getBlockVersionById(id: string): Promise<BlockVersion> {
-    const version = await getWebBlockVersionById(id)
-    if (!version) {
-      throw new Error(`Block version not found: ${id}`)
-    }
-    return version
+    return this.wasm.get_block_version_by_id(id)
   }
 
   async restoreBlockVersion(versionId: string): Promise<BlockVersion> {
-    const version = await restoreWebBlockVersion(versionId)
-    if (!version) {
-      throw new Error(`Block version not found: ${versionId}`)
-    }
-    return version
+    return this.wasm.restore_block_version(versionId)
   }
 
   async deleteBlockVersion(versionId: string): Promise<void> {
-    await deleteWebBlockVersion(versionId)
+    await this.wasm.delete_block_version(versionId)
   }
 
   async cleanupBlockVersions(retentionDays: number): Promise<void> {
-    return cleanupWebBlockVersions(retentionDays)
+    await this.wasm.cleanup_block_versions(retentionDays)
   }
 
   async getNotification(id: string): Promise<Notification> {
-    return getWebNotification(id)
+    return this.wasm.get_notification(id)
   }
 
   async getNotificationsByBlock(blockId: string): Promise<Notification[]> {
-    return getWebNotificationsByBlock(blockId)
+    return this.wasm.get_notifications_by_block(blockId)
   }
 
   async queryUnreadNotifications(): Promise<Notification[]> {
-    return queryWebUnreadNotifications()
+    return this.wasm.query_unread_notifications()
   }
 
   async queryRecentNotifications(limit: number): Promise<Notification[]> {
-    return queryWebRecentNotifications(limit)
+    return this.wasm.query_recent_notifications(limit)
   }
 
   async createNotification(notification: Notification): Promise<Notification> {
-    return createWebNotification(notification)
+    return this.wasm.create_notification(JSON.stringify(notification))
   }
 
   async batchCreateNotifications(notifications: Notification[]): Promise<Notification[]> {
-    return batchCreateWebNotifications(notifications)
+    return this.wasm.batch_create_notifications(JSON.stringify(notifications))
   }
 
   async updateNotificationStatus(id: string, status: string): Promise<Notification> {
-    return updateWebNotificationStatus(id, status)
+    return this.wasm.update_notification_status(id, status)
   }
 
   async updateNotificationPayload(id: string, payload: string): Promise<Notification> {
-    return updateWebNotificationPayload(id, payload)
+    return this.wasm.update_notification_payload(id, payload)
   }
 
   async setNotificationSnooze(id: string, snoozeUntil: number, status: string): Promise<Notification> {
-    return setWebNotificationSnooze(id, snoozeUntil, status)
+    return this.wasm.set_notification_snooze(id, snoozeUntil, status)
   }
 
   async deleteNotification(id: string): Promise<void> {
-    return deleteWebNotification(id)
+    await this.wasm.delete_notification(id)
   }
 
   async cleanupNotifications(timestamp: number): Promise<void> {
-    return cleanupWebNotifications(timestamp)
+    await this.wasm.cleanup_notifications(timestamp)
   }
 
   async markAllNotificationsRead(): Promise<void> {
-    return markAllWebNotificationsRead()
+    await this.wasm.mark_all_notifications_read()
   }
 
   async getNotificationSettings(): Promise<NotificationSettings> {

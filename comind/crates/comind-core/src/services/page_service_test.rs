@@ -148,4 +148,24 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_ensure_today_ideas_page_is_idempotent() -> Result<(), Box<dyn Error>> {
+        let mut adapter = create_test_adapter()?;
+
+        let first = PageService::ensure_today_ideas_page(&mut adapter)?;
+
+        // 标题为 YYYY-MM-DD 格式（断言与时区无关：只查形状，不查具体日期）
+        assert_eq!(first.r#type, "ideas");
+        assert_eq!(first.title.len(), 10);
+        assert_eq!(&first.title[4..5], "-");
+        assert_eq!(&first.title[7..8], "-");
+
+        // 幂等：再次调用返回同一页面（同一 id / 标题），不重复创建
+        let second = PageService::ensure_today_ideas_page(&mut adapter)?;
+        assert_eq!(second.id, first.id);
+        assert_eq!(second.title, first.title);
+
+        Ok(())
+    }
 }
