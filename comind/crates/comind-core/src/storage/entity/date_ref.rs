@@ -208,4 +208,20 @@ mod tests {
         assert_eq!(dr.version, 2);
         assert_eq!(dr.deleted_at, None);
     }
+
+    #[test]
+    fn row_to_date_ref_js_defaults() {
+        // A map missing all keys coerces to defaults: numeric 0, empty strings, None deleted_at.
+        let dr = row_to_date_ref_js(&HashMap::new());
+        assert_eq!(dr.id, "");
+        assert_eq!(dr.block_id, "");
+        assert_eq!(dr.kind, "");
+        assert_eq!(dr.recurrence, "");
+        assert_eq!(dr.lead_minutes, 0);
+        assert_eq!(dr.event_ts, 0);
+        assert_eq!(dr.created_at, 0);
+        assert_eq!(dr.updated_at, 0);
+        assert_eq!(dr.version, 0);
+        assert_eq!(dr.deleted_at, None);
+    }
 }
