@@ -14,6 +14,7 @@ use crate::storage::entity::link::{link_get_by_id, link_get_by_source_block_id, 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::property::{property_create, property_delete, property_delete_by_block_id, property_get_all, property_get_by_block_id, property_get_by_block_id_and_key, property_get_by_block_ids, property_get_by_id, property_query_block_ids_by_key_value, property_update, property_upsert};
 use crate::storage::entity::relationship_type::{relationship_type_create, relationship_type_delete, relationship_type_get_all, relationship_type_get_by_id, relationship_type_get_by_type, relationship_type_update};
+use crate::storage::entity::template::{template_create, template_delete, template_get_all, template_get_by_id, template_get_by_name, template_update};
 
 pub struct SQLiteAdapter {
     pub conn: Connection,
@@ -669,105 +670,29 @@ impl RelationshipTypeRepository for SQLiteAdapter {
 
 impl TemplateRepository for SQLiteAdapter {
     fn get_by_id(&self, id: &str) -> Result<UserTemplate, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name, category, content, created_at, updated_at 
-             FROM UserTemplate WHERE id = ?1"
-        )?;
-        
-        let template = stmt.query_row(params![id], |row| {
-            Ok(UserTemplate {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                category: row.get(2)?,
-                content: row.get(3)?,
-                created_at: row.get(4)?,
-                updated_at: row.get(5)?,
-            })
-        })?;
-        
-        Ok(template)
+        template_get_by_id(&self.conn, id)
     }
-    
+
     fn get_by_name(&self, name: &str) -> Result<Option<UserTemplate>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name, category, content, created_at, updated_at 
-             FROM UserTemplate WHERE name = ?1"
-        )?;
-        
-        let result = stmt.query_row(params![name], |row| {
-            Ok(UserTemplate {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                category: row.get(2)?,
-                content: row.get(3)?,
-                created_at: row.get(4)?,
-                updated_at: row.get(5)?,
-            })
-        });
-        
-        match result {
-            Ok(template) => Ok(Some(template)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(Box::new(e)),
-        }
+        template_get_by_name(&self.conn, name)
     }
-    
+
     fn get_all(&self) -> Result<Vec<UserTemplate>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name, category, content, created_at, updated_at 
-             FROM UserTemplate ORDER BY name"
-        )?;
-        
-        let templates = stmt.query_map([], |row| {
-            Ok(UserTemplate {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                category: row.get(2)?,
-                content: row.get(3)?,
-                created_at: row.get(4)?,
-                updated_at: row.get(5)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        
-        Ok(templates)
+        template_get_all(&self.conn)
     }
-    
+
     fn create(&mut self, template: &UserTemplate) -> Result<UserTemplate, Box<dyn Error>> {
-        self.conn.execute(
-            "INSERT INTO UserTemplate (id, name, category, content, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![
-                template.id,
-                template.name,
-                template.category,
-                template.content,
-                template.created_at,
-                template.updated_at
-            ]
-        )?;
-        
+        template_create(&self.conn, template)?;
         Ok(template.clone())
     }
-    
+
     fn update(&mut self, template: &UserTemplate) -> Result<UserTemplate, Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE UserTemplate SET name = ?2, category = ?3, content = ?4, updated_at = ?5
-             WHERE id = ?1",
-            params![
-                template.id,
-                template.name,
-                template.category,
-                template.content,
-                template.updated_at
-            ]
-        )?;
-        
+        template_update(&self.conn, template)?;
         Ok(template.clone())
     }
-    
+
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM UserTemplate WHERE id = ?1", params![id])?;
-        Ok(())
+        template_delete(&self.conn, id)
     }
 }
 
@@ -1799,105 +1724,29 @@ impl<'a> RelationshipTypeRepository for SQLiteTransactionAdapter<'a> {
 
 impl<'a> TemplateRepository for SQLiteTransactionAdapter<'a> {
     fn get_by_id(&self, id: &str) -> Result<UserTemplate, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name, category, content, created_at, updated_at
-             FROM UserTemplate WHERE id = ?1"
-        )?;
-
-        let template = stmt.query_row(params![id], |row| {
-            Ok(UserTemplate {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                category: row.get(2)?,
-                content: row.get(3)?,
-                created_at: row.get(4)?,
-                updated_at: row.get(5)?,
-            })
-        })?;
-
-        Ok(template)
+        template_get_by_id(&self.conn, id)
     }
 
     fn get_by_name(&self, name: &str) -> Result<Option<UserTemplate>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name, category, content, created_at, updated_at
-             FROM UserTemplate WHERE name = ?1"
-        )?;
-
-        let result = stmt.query_row(params![name], |row| {
-            Ok(UserTemplate {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                category: row.get(2)?,
-                content: row.get(3)?,
-                created_at: row.get(4)?,
-                updated_at: row.get(5)?,
-            })
-        });
-
-        match result {
-            Ok(template) => Ok(Some(template)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(Box::new(e)),
-        }
+        template_get_by_name(&self.conn, name)
     }
 
     fn get_all(&self) -> Result<Vec<UserTemplate>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name, category, content, created_at, updated_at
-             FROM UserTemplate ORDER BY name"
-        )?;
-
-        let templates = stmt.query_map([], |row| {
-            Ok(UserTemplate {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                category: row.get(2)?,
-                content: row.get(3)?,
-                created_at: row.get(4)?,
-                updated_at: row.get(5)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-
-        Ok(templates)
+        template_get_all(&self.conn)
     }
 
     fn create(&mut self, template: &UserTemplate) -> Result<UserTemplate, Box<dyn Error>> {
-        self.conn.execute(
-            "INSERT INTO UserTemplate (id, name, category, content, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![
-                template.id,
-                template.name,
-                template.category,
-                template.content,
-                template.created_at,
-                template.updated_at
-            ]
-        )?;
-
+        template_create(&self.conn, template)?;
         Ok(template.clone())
     }
 
     fn update(&mut self, template: &UserTemplate) -> Result<UserTemplate, Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE UserTemplate SET name = ?2, category = ?3, content = ?4, updated_at = ?5
-             WHERE id = ?1",
-            params![
-                template.id,
-                template.name,
-                template.category,
-                template.content,
-                template.updated_at
-            ]
-        )?;
-
+        template_update(&self.conn, template)?;
         Ok(template.clone())
     }
 
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM UserTemplate WHERE id = ?1", params![id])?;
-        Ok(())
+        template_delete(&self.conn, id)
     }
 }
 

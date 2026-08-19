@@ -17,6 +17,7 @@ use crate::storage::entity::page::{page_select_cols, row_to_page_js};
 use crate::storage::entity::link::{link_select_cols, row_to_link_js};
 use crate::storage::entity::property::{property_select_cols, row_to_property_js};
 use crate::storage::entity::relationship_type::{relationship_type_select_cols, row_to_relationship_type_js};
+use crate::storage::entity::template::{template_select_cols, row_to_template_js};
 
 #[cfg(target_arch = "wasm32")]
 pub struct SqlJsAdapter {
@@ -392,18 +393,6 @@ impl SqlJsAdapter {
         js_sys::Function::from(run_fn).apply(db, &args)
             .map_err(|e| format!("SQL run failed: {:?}", e))?;
         Ok(())
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-fn row_to_template(row: &HashMap<String, String>) -> UserTemplate {
-    UserTemplate {
-        id: row.get("id").cloned().unwrap_or_default(),
-        name: row.get("name").cloned().unwrap_or_default(),
-        category: row.get("category").cloned().unwrap_or_default(),
-        content: row.get("content").cloned().unwrap_or_default(),
-        created_at: row.get("created_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        updated_at: row.get("updated_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
     }
 }
 
@@ -1054,25 +1043,25 @@ impl RelationshipTypeRepository for SqlJsAdapter {
 #[cfg(target_arch = "wasm32")]
 impl TemplateRepository for SqlJsAdapter {
     fn get_by_id(&self, id: &str) -> Result<UserTemplate, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, name, category, content, created_at, updated_at FROM UserTemplate WHERE id = ?", &[id])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM UserTemplate WHERE id = ?", template_select_cols()), &[id])?;
         if result.is_empty() {
-            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Template not found")));
+            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "UserTemplate not found")));
         }
-        Ok(row_to_template(&result[0]))
+        Ok(row_to_template_js(&result[0]))
     }
 
     fn get_by_name(&self, name: &str) -> Result<Option<UserTemplate>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, name, category, content, created_at, updated_at FROM UserTemplate WHERE name = ?", &[name])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM UserTemplate WHERE name = ?", template_select_cols()), &[name])?;
         if result.is_empty() {
             Ok(None)
         } else {
-            Ok(Some(row_to_template(&result[0])))
+            Ok(Some(row_to_template_js(&result[0])))
         }
     }
 
     fn get_all(&self) -> Result<Vec<UserTemplate>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, name, category, content, created_at, updated_at FROM UserTemplate ORDER BY name", &[])?;
-        Ok(result.into_iter().map(|r| row_to_template(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM UserTemplate ORDER BY name", template_select_cols()), &[])?;
+        Ok(result.into_iter().map(|r| row_to_template_js(&r)).collect())
     }
 
     fn create(&mut self, template: &UserTemplate) -> Result<UserTemplate, Box<dyn std::error::Error>> {
