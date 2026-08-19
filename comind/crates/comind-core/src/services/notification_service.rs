@@ -8,6 +8,14 @@ use std::sync::OnceLock;
 pub struct NotificationService;
 
 impl NotificationService {
+    /// Get notifications by block id. Thin forward for sync-changes collection in the write path.
+    pub fn get_by_block_id(
+        storage: &mut dyn StorageAdapter,
+        block_id: &str,
+    ) -> Result<Vec<Notification>, Box<dyn Error>> {
+        storage.notifications().get_by_block_id(block_id)
+    }
+
     /// Check for due notifications and fire them. Returns newly created/activated notifications.
     /// This replaces the TS `NotificationService.checkAndFire()` with zero TS-side business logic.
     pub fn check_and_fire(

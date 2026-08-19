@@ -15,6 +15,7 @@ pub mod date_ref;
 pub mod block_card;
 pub mod saved_filter;
 pub mod screen_view;
+pub mod sync_table;
 
 pub use block::*;
 pub use block_card::*;
@@ -33,3 +34,4 @@ pub use notification_config::*;
 pub use date_ref::*;
 pub use saved_filter::*;
 pub use screen_view::*;
+pub use sync_table::*;
