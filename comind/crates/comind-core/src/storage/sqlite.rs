@@ -18,6 +18,8 @@ use crate::storage::entity::template::{template_create, template_delete, templat
 use crate::storage::entity::search::{search_index_delete, search_index_search, search_index_upsert};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::block_version::{block_version_create, block_version_delete, block_version_delete_by_block_id, block_version_delete_older_than, block_version_get_by_block_id, block_version_get_by_id, block_version_get_latest_version};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::storage::entity::notification::{notification_batch_create, notification_create, notification_delete, notification_delete_by_block_and_kind, notification_delete_by_block_id, notification_delete_older_than, notification_find_by_event, notification_get_by_block_id, notification_get_by_block_ids, notification_get_by_id, notification_mark_all_read, notification_query_pending_due, notification_query_recent, notification_query_unread, notification_reschedule, notification_set_snooze, notification_update_payload, notification_update_status};
 
 pub struct SQLiteAdapter {
     pub conn: Connection,
@@ -1064,284 +1066,81 @@ impl DateRefRepository for SQLiteAdapter {
 
 impl NotificationRepository for SQLiteAdapter {
     fn get_by_id(&self, id: &str) -> Result<Notification, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE id = ?"
-        )?;
-        let notif = stmt.query_row(params![id], |row| {
-            Ok(Notification {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                page_id: row.get(2)?,
-                kind: row.get(3)?,
-                event_iso: row.get(4)?,
-                fired_at: row.get(5)?,
-                status: row.get(6)?,
-                snooze_until: row.get(7)?,
-                payload: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-            })
-        })?;
-        Ok(notif)
+        notification_get_by_id(&self.conn, id)
     }
 
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<Notification>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE block_id = ? ORDER BY fired_at DESC"
-        )?;
-        let notifs = stmt.query_map(params![block_id], |row| {
-            Ok(Notification {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                page_id: row.get(2)?,
-                kind: row.get(3)?,
-                event_iso: row.get(4)?,
-                fired_at: row.get(5)?,
-                status: row.get(6)?,
-                snooze_until: row.get(7)?,
-                payload: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-            })
-        })?;
-        let mut result = Vec::new();
-        for n in notifs {
-            result.push(n?);
-        }
-        Ok(result)
+        notification_get_by_block_id(&self.conn, block_id)
     }
-
 
     fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<Notification>, Box<dyn Error>> {
-        if block_ids.is_empty() {
-            return Ok(Vec::new());
-        }
-        let placeholders: Vec<String> = (1..=block_ids.len()).map(|i| format!("?{}", i)).collect();
-        let sql = format!(
-            "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE block_id IN ({}) ORDER BY fired_at DESC",
-            placeholders.join(", ")
-        );
-        let mut stmt = self.conn.prepare(&sql)?;
-        let params: Vec<&dyn rusqlite::ToSql> = block_ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
-        let notifs = stmt.query_map(params.as_slice(), |row| {
-            Ok(Notification {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                page_id: row.get(2)?,
-                kind: row.get(3)?,
-                event_iso: row.get(4)?,
-                fired_at: row.get(5)?,
-                status: row.get(6)?,
-                snooze_until: row.get(7)?,
-                payload: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        Ok(notifs)
+        notification_get_by_block_ids(&self.conn, block_ids)
     }
+
     fn find_by_event(&self, block_id: &str, kind: &str, event_iso: &str) -> Result<Option<Notification>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE block_id = ? AND kind = ? AND event_iso = ? LIMIT 1"
-        )?;
-        let result = stmt.query_row(params![block_id, kind, event_iso], |row| {
-            Ok(Notification {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                page_id: row.get(2)?,
-                kind: row.get(3)?,
-                event_iso: row.get(4)?,
-                fired_at: row.get(5)?,
-                status: row.get(6)?,
-                snooze_until: row.get(7)?,
-                payload: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-            })
-        });
-        match result {
-            Ok(n) => Ok(Some(n)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(Box::new(e)),
-        }
+        notification_find_by_event(&self.conn, block_id, kind, event_iso)
     }
 
     fn query_unread(&self) -> Result<Vec<Notification>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE status = 'unread' ORDER BY fired_at DESC"
-        )?;
-        let notifs = stmt.query_map([], |row| {
-            Ok(Notification {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                page_id: row.get(2)?,
-                kind: row.get(3)?,
-                event_iso: row.get(4)?,
-                fired_at: row.get(5)?,
-                status: row.get(6)?,
-                snooze_until: row.get(7)?,
-                payload: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-            })
-        })?;
-        let mut result = Vec::new();
-        for n in notifs {
-            result.push(n?);
-        }
-        Ok(result)
+        notification_query_unread(&self.conn)
     }
 
     fn query_pending_due(&self, now_ms: i64) -> Result<Vec<Notification>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE status = 'pending' AND snooze_until IS NOT NULL AND snooze_until <= ? ORDER BY snooze_until ASC"
-        )?;
-        let notifs = stmt.query_map(params![now_ms], |row| {
-            Ok(Notification {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                page_id: row.get(2)?,
-                kind: row.get(3)?,
-                event_iso: row.get(4)?,
-                fired_at: row.get(5)?,
-                status: row.get(6)?,
-                snooze_until: row.get(7)?,
-                payload: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-            })
-        })?;
-        let mut result = Vec::new();
-        for n in notifs {
-            result.push(n?);
-        }
-        Ok(result)
+        notification_query_pending_due(&self.conn, now_ms)
     }
 
     fn query_recent(&self, limit: usize) -> Result<Vec<Notification>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE status IN ('unread', 'read') ORDER BY fired_at DESC LIMIT ?"
-        )?;
-        let notifs = stmt.query_map(params![limit as i64], |row| {
-            Ok(Notification {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                page_id: row.get(2)?,
-                kind: row.get(3)?,
-                event_iso: row.get(4)?,
-                fired_at: row.get(5)?,
-                status: row.get(6)?,
-                snooze_until: row.get(7)?,
-                payload: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-            })
-        })?;
-        let mut result = Vec::new();
-        for n in notifs {
-            result.push(n?);
-        }
-        Ok(result)
+        notification_query_recent(&self.conn, limit)
     }
 
     fn create(&mut self, notification: &Notification) -> Result<Notification, Box<dyn Error>> {
-        self.conn.execute(
-            "INSERT INTO Notification (id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            params![
-                notification.id,
-                notification.block_id,
-                notification.page_id,
-                notification.kind,
-                notification.event_iso,
-                notification.fired_at,
-                notification.status,
-                notification.snooze_until,
-                notification.payload,
-                notification.created_at,
-                notification.updated_at,
-            ],
-        )?;
+        notification_create(&self.conn, notification)?;
         Ok(notification.clone())
     }
 
     fn batch_create(&mut self, notifications: &[Notification]) -> Result<Vec<Notification>, Box<dyn Error>> {
-        for n in notifications {
-            self.conn.execute(
-                "INSERT INTO Notification (id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                params![
-                    n.id, n.block_id, n.page_id, n.kind, n.event_iso, n.fired_at,
-                    n.status, n.snooze_until, n.payload, n.created_at, n.updated_at,
-                ],
-            )?;
-        }
+        notification_batch_create(&self.conn, notifications)?;
         Ok(notifications.to_vec())
     }
 
     fn update_status(&mut self, id: &str, status: &str) -> Result<Notification, Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE Notification SET status = ?, updated_at = ? WHERE id = ?",
-            params![status, chrono::Utc::now().timestamp_millis(), id],
-        )?;
-        crate::NotificationRepository::get_by_id(self, id)
+        notification_update_status(&self.conn, id, status)?;
+        notification_get_by_id(&self.conn, id)
     }
 
     fn set_snooze(&mut self, id: &str, snooze_until: i64, status: &str) -> Result<Notification, Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE Notification SET snooze_until = ?, status = ?, updated_at = ? WHERE id = ?",
-            params![snooze_until, status, chrono::Utc::now().timestamp_millis(), id],
-        )?;
-        crate::NotificationRepository::get_by_id(self, id)
+        notification_set_snooze(&self.conn, id, snooze_until, status)?;
+        notification_get_by_id(&self.conn, id)
     }
 
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM Notification WHERE id = ?", params![id])?;
-        Ok(())
+        notification_delete(&self.conn, id)
     }
 
     fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM Notification WHERE block_id = ?", params![block_id])?;
-        Ok(())
+        notification_delete_by_block_id(&self.conn, block_id)
     }
 
     fn delete_by_block_and_kind(&mut self, block_id: &str, kind: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM Notification WHERE block_id = ? AND kind = ?", params![block_id, kind])?;
-        Ok(())
+        notification_delete_by_block_and_kind(&self.conn, block_id, kind)
     }
 
     fn delete_older_than(&mut self, timestamp: i64) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "DELETE FROM Notification WHERE status = 'read' AND updated_at < ?",
-            params![timestamp],
-        )?;
-        Ok(())
+        notification_delete_older_than(&self.conn, timestamp)
     }
 
     fn mark_all_read(&mut self) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE Notification SET status = 'read', updated_at = ? WHERE status = 'unread'",
-            params![chrono::Utc::now().timestamp_millis()],
-        )?;
-        Ok(())
+        notification_mark_all_read(&self.conn)
     }
 
     fn update_payload(&mut self, id: &str, payload: &str) -> Result<Notification, Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE Notification SET payload = ?, updated_at = ? WHERE id = ?",
-            params![payload, chrono::Utc::now().timestamp_millis(), id],
-        )?;
-        crate::NotificationRepository::get_by_id(self, id)
+        notification_update_payload(&self.conn, id, payload)?;
+        notification_get_by_id(&self.conn, id)
     }
 
     fn reschedule(&mut self, block_id: &str, kind: &str, new_event_iso: &str) -> Result<(), Box<dyn Error>> {
-        // 非 recurring 通知原地改期：把匹配 (block_id, kind) 的通知 event_iso 改掉，
-        // 状态重置为 unread、清 snooze。event_iso 计算见 DateRefService::compute_event_iso（与 TS 一致）。
-        self.conn.execute(
-            "UPDATE Notification SET event_iso = ?, status = 'unread', snooze_until = NULL, updated_at = ? WHERE block_id = ? AND kind = ? AND status IN ('unread','read','dismissed')",
-            params![new_event_iso, chrono::Utc::now().timestamp_millis(), block_id, kind],
-        )?;
-        Ok(())
+        notification_reschedule(&self.conn, block_id, kind, new_event_iso)
     }
-
 }
 
 impl TransactionalStorageAdapter for SQLiteAdapter {

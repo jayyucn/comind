@@ -19,6 +19,7 @@ use crate::storage::entity::property::{property_select_cols, row_to_property_js}
 use crate::storage::entity::relationship_type::{relationship_type_select_cols, row_to_relationship_type_js};
 use crate::storage::entity::template::{template_select_cols, row_to_template_js};
 use crate::storage::entity::block_version::{block_version_select_cols, row_to_block_version_js};
+use crate::storage::entity::notification::{notification_select_cols, row_to_notification_js};
 
 #[cfg(target_arch = "wasm32")]
 pub struct SqlJsAdapter {
@@ -649,38 +650,19 @@ impl LinkRepository for SqlJsAdapter {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn row_to_notification(row: &HashMap<String, String>) -> Notification {
-    Notification {
-        id: row.get("id").cloned().unwrap_or_default(),
-        block_id: row.get("block_id").cloned().unwrap_or_default(),
-        page_id: row.get("page_id").cloned().unwrap_or_default(),
-        kind: row.get("kind").cloned().unwrap_or_default(),
-        event_iso: row.get("event_iso").cloned().unwrap_or_default(),
-        fired_at: row.get("fired_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        status: row.get("status").cloned().unwrap_or_else(|| "unread".to_string()),
-        snooze_until: {
-            let s = row.get("snooze_until").cloned().unwrap_or_default();
-            if s.is_empty() { None } else { s.parse::<i64>().ok() }
-        },
-        payload: row.get("payload").cloned().unwrap_or_default(),
-        created_at: row.get("created_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        updated_at: row.get("updated_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-    }
-}
-
 #[cfg(target_arch = "wasm32")]
 impl NotificationRepository for SqlJsAdapter {
     fn get_by_id(&self, id: &str) -> Result<Notification, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE id = ?", &[id])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Notification WHERE id = ?", notification_select_cols()), &[id])?;
         if result.is_empty() {
             return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Notification not found")));
         }
-        Ok(row_to_notification(&result[0]))
+        Ok(row_to_notification_js(&result[0]))
     }
 
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<Notification>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE block_id = ? ORDER BY fired_at DESC", &[block_id])?;
-        Ok(result.into_iter().map(|r| row_to_notification(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Notification WHERE block_id = ? ORDER BY fired_at DESC", notification_select_cols()), &[block_id])?;
+        Ok(result.into_iter().map(|r| row_to_notification_js(&r)).collect())
     }
 
     fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<Notification>, Box<dyn std::error::Error>> {
@@ -688,37 +670,34 @@ impl NotificationRepository for SqlJsAdapter {
             return Ok(Vec::new());
         }
         let placeholders: Vec<String> = block_ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
-        let sql = format!(
-            "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE block_id IN ({}) ORDER BY fired_at DESC",
-            placeholders.join(", ")
-        );
+        let sql = format!("SELECT {} FROM Notification WHERE block_id IN ({}) ORDER BY fired_at DESC", notification_select_cols(), placeholders.join(", "));
         let params: Vec<&str> = block_ids.iter().map(|s| s.as_str()).collect();
         let result = Self::query(&self.db, &sql, &params)?;
-        Ok(result.into_iter().map(|r| row_to_notification(&r)).collect())
+        Ok(result.into_iter().map(|r| row_to_notification_js(&r)).collect())
     }
 
     fn find_by_event(&self, block_id: &str, kind: &str, event_iso: &str) -> Result<Option<Notification>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE block_id = ? AND kind = ? AND event_iso = ? LIMIT 1", &[block_id, kind, event_iso])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Notification WHERE block_id = ? AND kind = ? AND event_iso = ? LIMIT 1", notification_select_cols()), &[block_id, kind, event_iso])?;
         if result.is_empty() {
             Ok(None)
         } else {
-            Ok(Some(row_to_notification(&result[0])))
+            Ok(Some(row_to_notification_js(&result[0])))
         }
     }
 
     fn query_unread(&self) -> Result<Vec<Notification>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE status = 'unread' ORDER BY fired_at DESC", &[])?;
-        Ok(result.into_iter().map(|r| row_to_notification(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Notification WHERE status = 'unread' ORDER BY fired_at DESC", notification_select_cols()), &[])?;
+        Ok(result.into_iter().map(|r| row_to_notification_js(&r)).collect())
     }
 
     fn query_pending_due(&self, now_ms: i64) -> Result<Vec<Notification>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE status = 'pending' AND snooze_until IS NOT NULL AND snooze_until <= ? ORDER BY snooze_until ASC", &[&now_ms.to_string()])?;
-        Ok(result.into_iter().map(|r| row_to_notification(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Notification WHERE status = 'pending' AND snooze_until IS NOT NULL AND snooze_until <= ? ORDER BY snooze_until ASC", notification_select_cols()), &[&now_ms.to_string()])?;
+        Ok(result.into_iter().map(|r| row_to_notification_js(&r)).collect())
     }
 
     fn query_recent(&self, limit: usize) -> Result<Vec<Notification>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE status IN ('unread', 'read') ORDER BY fired_at DESC LIMIT ?", &[&limit.to_string()])?;
-        Ok(result.into_iter().map(|r| row_to_notification(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Notification WHERE status IN ('unread', 'read') ORDER BY fired_at DESC LIMIT ?", notification_select_cols()), &[&limit.to_string()])?;
+        Ok(result.into_iter().map(|r| row_to_notification_js(&r)).collect())
     }
 
     fn create(&mut self, notification: &Notification) -> Result<Notification, Box<dyn std::error::Error>> {
