@@ -24,6 +24,8 @@ use crate::storage::entity::notification::{notification_batch_create, notificati
 use crate::storage::entity::saved_filter::{saved_filter_create, saved_filter_delete, saved_filter_get_all, saved_filter_get_by_id, saved_filter_update};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::screen_view::{screen_view_create, screen_view_delete, screen_view_get_all_by_entity, screen_view_get_by_id, screen_view_update};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::storage::entity::notification_config::{notification_config_get, notification_config_save};
 
 pub struct SQLiteAdapter {
     pub conn: Connection,
@@ -882,32 +884,11 @@ impl StorageAdapter for SQLiteAdapter {
 
 impl NotificationConfigRepository for SQLiteAdapter {
     fn get(&self) -> Result<NotificationConfig, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, enabled, schedule_enabled, deadline_enabled, overdue_enabled, quiet_hours_start, quiet_hours_end, web_browser_notifications_enabled FROM notification_config WHERE id = 1"
-        )?;
-        let config = stmt.query_row([], |row| {
-            Ok(NotificationConfig {
-                id: row.get(0)?,
-                enabled: row.get::<_, i64>(1)? != 0,
-                schedule_enabled: row.get::<_, i64>(2)? != 0,
-                deadline_enabled: row.get::<_, i64>(3)? != 0,
-                overdue_enabled: row.get::<_, i64>(4)? != 0,
-                quiet_hours_start: row.get(5)?,
-                quiet_hours_end: row.get(6)?,
-                web_browser_notifications_enabled: row.get::<_, i64>(7)? != 0,
-            })
-        })?;
-        Ok(config)
+        notification_config_get(&self.conn)
     }
 
     fn save(&mut self, config: &NotificationConfig) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "INSERT INTO notification_config (id, enabled, schedule_enabled, deadline_enabled, overdue_enabled, quiet_hours_start, quiet_hours_end, web_browser_notifications_enabled)
-             VALUES (1, ?, ?, ?, ?, ?, ?, ?)
-             ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled, schedule_enabled=excluded.schedule_enabled, deadline_enabled=excluded.deadline_enabled, overdue_enabled=excluded.overdue_enabled, quiet_hours_start=excluded.quiet_hours_start, quiet_hours_end=excluded.quiet_hours_end, web_browser_notifications_enabled=excluded.web_browser_notifications_enabled",
-            params![config.enabled as i64, config.schedule_enabled as i64, config.deadline_enabled as i64, config.overdue_enabled as i64, config.quiet_hours_start, config.quiet_hours_end, config.web_browser_notifications_enabled as i64],
-        )?;
-        Ok(())
+        notification_config_save(&self.conn, config)
     }
 }
 
