@@ -11,6 +11,7 @@ pub mod block_projection_service;
 pub mod filter_service;
 pub mod content_parse_service;
 pub mod notification_service;
+pub mod block_write;
 
 #[cfg(test)]
 pub mod block_service_test;
@@ -37,6 +38,7 @@ pub use block_projection_service::*;
 pub use filter_service::FilterService;
 pub use content_parse_service::*;
 pub use notification_service::NotificationService;
+pub use block_write::BlockWriteService;
 pub mod render_segment_service;
 pub use render_segment_service::{build_page_with_blocks, build_segments_for_block};
 

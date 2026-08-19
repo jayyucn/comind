@@ -82,7 +82,7 @@ pub fn delete_page_cascade(
 
 **Negative / Risk**
 - **Regression risk on the hottest path**: save is the most frequent write; moving the orchestration must preserve upsert semantics, page-touch, tolerance, and notification timing. Mitigated by the new chain tests + the existing acceptance gates.
-- **Behavior change on wasm only**: wasm now also page-touches (`updated_at` changes) and builds real snapshots/segments — intended alignment (Q3/Q5), but a change from today's wasm behavior.
+- **Behavior change on wasm only**: wasm now also page-touches (`updated_at` changes) and builds real snapshots/segments — intended alignment (Q3/Q5), but a change from today's wasm behavior. Likewise wasm `delete_page_cascade` gains the full native cascade (BlockVersion deletion, `BlockService::delete` per block with dateRef + notification cleanup) instead of its previous lean property/link deletion — intended alignment (Q8), but beyond the touch/snapshot changes listed above.
 - `NotificationService::get_by_block_id` and `BlockVersionService::delete_by_block_id` need to be added as thin forwards.
 - wasm transaction stays a no-op — a known, documented gap (follow-up).
 
@@ -98,3 +98,19 @@ pub fn delete_page_cascade(
 - Native `cargo check -p comind-core --tests` — 0 warnings.
 - wasm `cargo check --target wasm32-unknown-unknown -p comind-core` — clean.
 - `cargo test -p comind-core --lib` — 137 existing + new orchestration tests pass; the 4 pre-existing failures (`services::block_service_test::test_build_tree`, `services::render_segment_service_test::test_chinese_content_char_offsets`, `services::render_segment_service_test::test_link_to_nonexistent_page_skipped`, `sync::engine::tests::test_full_sync_export_empty`) unchanged & unrelated.
+
+## Landing record (2026-08-19)
+
+Implemented on branch `refactor-block-write-orchestration` (commit to follow), on top of the ADR-0019 grill commit.
+
+**Files**
+- `crates/comind-core/src/services/block_write.rs` (new) — `BlockWriteService` with `save_blocks` / `delete_block_cascade` / `delete_page_cascade` (all generic over `S: TransactionalStorageAdapter`, owning their transaction) + a private `delete_block_cascade_inner` shared skeleton (Q8/Q14). `SaveOutcome { results, sync_changes }` returned; sync_changes never spawned in core (Q6). 5 tests: save full-chain, save rollback (soft-deleted dup id → create UNIQUE conflict → whole batch rolled back), single-block delete, missing-id delete (no side effects), page-cascade delete.
+- `crates/comind-core/src/types/sync_table.rs` (new) — `SyncTable` moved out of the native-only `sync` module so wasm builds can report sync changes (wasm compile required it; behavior-identical). `sync/message.rs` re-exports it, keeping the historical path.
+- `crates/comind-core/src/services/notification_service.rs`, `block_version_service.rs` — thin forwards `get_by_block_id` / `delete_by_block_id` (Q12).
+- `crates/comind-core/src/services/mod.rs`, `types/mod.rs` — module registration.
+- `src-tauri/src/commands.rs` — `save_block_tree` / `delete_block` / `delete_page_cascade` collapse to thin adapters (parse → `BlockWriteService::*` → spawn `record_and_notify` after commit). `execute_with_transaction_adapter` retained for `execute_batch`. Net −244 lines.
+- `crates/comind-wasm/src/lib.rs` — `save_block_tree` / `delete_page_cascade` call the shared orchestration; real snapshot + render segments + page touch (Q3); sync_changes dropped (web no-op); wasm transaction stays the pass-through no-op (Q7).
+
+**Verification.** native `cargo check -p comind-core --tests` ✅ 0 warnings; wasm `cargo check --target wasm32-unknown-unknown -p comind-core` + `-p comind-wasm` ✅; `cargo test -p comind-core --lib` = **143 passed** (incl. 5 new block_write tests), **4 pre-existing failures unchanged & unrelated** — identical set to the ADR-0018 baselines. `cargo test -p comind --lib` (src-tauri) = 13 passed.
+
+**Code review (2026-08-19).** Two-axis review found one real gap: `delete_page_cascade` initially inlined the single-block cascade instead of sharing it (Q8). Fixed by extracting `delete_block_cascade_inner`; both public functions now delegate to it. Remaining findings accepted: thin forwards are deliberate (Q12); the SyncTable move is a required enabler for wasm; wasm delete-page behavior alignment is intended (Q8).

@@ -180,6 +180,15 @@ impl BlockVersionService {
     ) -> Result<(), Box<dyn Error>> {
         repository::BlockVersionRepository::delete(storage.block_versions(), version_id)
     }
+
+    /// Delete all versions of a block. Thin forward for the delete cascade in the write path
+    /// (BlockVersion has FK RESTRICT on block_id, so versions must be deleted before the block).
+    pub fn delete_by_block_id(
+        storage: &mut dyn repository::StorageAdapter,
+        block_id: &str,
+    ) -> Result<(), Box<dyn Error>> {
+        repository::BlockVersionRepository::delete_by_block_id(storage.block_versions(), block_id)
+    }
     
     pub fn build_snapshot(
         storage: &mut dyn repository::StorageAdapter,
