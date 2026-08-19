@@ -20,6 +20,8 @@ use crate::storage::entity::search::{search_index_delete, search_index_search, s
 use crate::storage::entity::block_version::{block_version_create, block_version_delete, block_version_delete_by_block_id, block_version_delete_older_than, block_version_get_by_block_id, block_version_get_by_id, block_version_get_latest_version};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::notification::{notification_batch_create, notification_create, notification_delete, notification_delete_by_block_and_kind, notification_delete_by_block_id, notification_delete_older_than, notification_find_by_event, notification_get_by_block_id, notification_get_by_block_ids, notification_get_by_id, notification_mark_all_read, notification_query_pending_due, notification_query_recent, notification_query_unread, notification_reschedule, notification_set_snooze, notification_update_payload, notification_update_status};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::storage::entity::saved_filter::{saved_filter_create, saved_filter_delete, saved_filter_get_all, saved_filter_get_by_id, saved_filter_update};
 
 pub struct SQLiteAdapter {
     pub conn: Connection,
@@ -776,67 +778,25 @@ impl BlockVersionRepository for SQLiteAdapter {
 
 impl SavedFilterRepository for SQLiteAdapter {
     fn get_all(&self) -> Result<Vec<SavedFilter>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name, query_json, created_at, updated_at FROM SavedFilter ORDER BY created_at DESC"
-        )?;
-        let filters = stmt.query_map([], |row| {
-            Ok(SavedFilter {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                query_json: row.get(2)?,
-                created_at: row.get(3)?,
-                updated_at: row.get(4)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        Ok(filters)
+        saved_filter_get_all(&self.conn)
     }
 
     fn get_by_id(&self, id: &str) -> Result<SavedFilter, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name, query_json, created_at, updated_at FROM SavedFilter WHERE id = ?1"
-        )?;
-        let filter = stmt.query_row(params![id], |row| {
-            Ok(SavedFilter {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                query_json: row.get(2)?,
-                created_at: row.get(3)?,
-                updated_at: row.get(4)?,
-            })
-        })?;
-        Ok(filter)
+        saved_filter_get_by_id(&self.conn, id)
     }
 
     fn create(&mut self, filter: &SavedFilter) -> Result<SavedFilter, Box<dyn Error>> {
-        self.conn.execute(
-            "INSERT INTO SavedFilter (id, name, query_json, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![
-                filter.id,
-                filter.name,
-                filter.query_json,
-                filter.created_at,
-                filter.updated_at
-            ]
-        )?;
+        saved_filter_create(&self.conn, filter)?;
         Ok(filter.clone())
     }
 
     fn update(&mut self, filter: &SavedFilter) -> Result<SavedFilter, Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE SavedFilter SET name = ?2, query_json = ?3, updated_at = ?4 WHERE id = ?1",
-            params![
-                filter.id,
-                filter.name,
-                filter.query_json,
-                filter.updated_at
-            ]
-        )?;
+        saved_filter_update(&self.conn, filter)?;
         Ok(filter.clone())
     }
 
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM SavedFilter WHERE id = ?1", params![id])?;
-        Ok(())
+        saved_filter_delete(&self.conn, id)
     }
 }
 

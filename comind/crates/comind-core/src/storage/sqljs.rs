@@ -20,6 +20,7 @@ use crate::storage::entity::relationship_type::{relationship_type_select_cols, r
 use crate::storage::entity::template::{template_select_cols, row_to_template_js};
 use crate::storage::entity::block_version::{block_version_select_cols, row_to_block_version_js};
 use crate::storage::entity::notification::{notification_select_cols, row_to_notification_js};
+use crate::storage::entity::saved_filter::{saved_filter_select_cols, row_to_saved_filter_js};
 
 #[cfg(target_arch = "wasm32")]
 pub struct SqlJsAdapter {
@@ -1049,29 +1050,16 @@ impl TemplateRepository for SqlJsAdapter {
 #[cfg(target_arch = "wasm32")]
 impl SavedFilterRepository for SqlJsAdapter {
     fn get_all(&self) -> Result<Vec<SavedFilter>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, name, query_json, created_at, updated_at FROM SavedFilter ORDER BY created_at DESC", &[])?;
-        Ok(result.into_iter().map(|r| SavedFilter {
-            id: r.get("id").cloned().unwrap_or_default(),
-            name: r.get("name").cloned().unwrap_or_default(),
-            query_json: r.get("query_json").cloned().unwrap_or_default(),
-            created_at: r.get("created_at").and_then(|v| v.parse().ok()).unwrap_or(0),
-            updated_at: r.get("updated_at").and_then(|v| v.parse().ok()).unwrap_or(0),
-        }).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM SavedFilter ORDER BY created_at DESC", saved_filter_select_cols()), &[])?;
+        Ok(result.into_iter().map(|r| row_to_saved_filter_js(&r)).collect())
     }
 
     fn get_by_id(&self, id: &str) -> Result<SavedFilter, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, name, query_json, created_at, updated_at FROM SavedFilter WHERE id = ?", &[id])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM SavedFilter WHERE id = ?", saved_filter_select_cols()), &[id])?;
         if result.is_empty() {
             return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "SavedFilter not found")));
         }
-        let r = &result[0];
-        Ok(SavedFilter {
-            id: r.get("id").cloned().unwrap_or_default(),
-            name: r.get("name").cloned().unwrap_or_default(),
-            query_json: r.get("query_json").cloned().unwrap_or_default(),
-            created_at: r.get("created_at").and_then(|v| v.parse().ok()).unwrap_or(0),
-            updated_at: r.get("updated_at").and_then(|v| v.parse().ok()).unwrap_or(0),
-        })
+        Ok(row_to_saved_filter_js(&result[0]))
     }
 
     fn create(&mut self, filter: &SavedFilter) -> Result<SavedFilter, Box<dyn std::error::Error>> {

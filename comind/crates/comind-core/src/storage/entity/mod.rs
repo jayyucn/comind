@@ -3,6 +3,7 @@ pub mod block_version;
 pub mod date_ref;
 pub mod link;
 pub mod notification;
+pub mod saved_filter;
 pub mod page;
 pub mod property;
 pub mod relationship_type;
