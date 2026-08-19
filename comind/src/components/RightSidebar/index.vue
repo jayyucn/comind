@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import { X } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import { useRightSidebar } from '../../composables/useRightSidebar'
+import Icon from '../Icons/Icon.vue'
 import { getRegisteredPanels } from './panels'
-import { X } from 'lucide-vue-next'
 
 const { visible, activePanelId, settings, setActivePanel, setVisible, setWidth, persistSettings } = useRightSidebar()
 
@@ -70,7 +71,7 @@ function handleResizeStart(e: MouseEvent) {
             :class="{ active: activePanelId === panel.id }"
             @click="setActivePanel(panel.id)"
           >
-            <span class="tab-icon">{{ panel.icon }}</span>
+            <span class="tab-icon"><Icon :name="panel.icon" /></span>
             <span class="tab-label">{{ panel.label }}</span>
           </button>
         </div>

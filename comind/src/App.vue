@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { useEmbedSelector } from './app/useEmbedSelector'
+import { useGlobalHotkeys } from './app/useGlobalHotkeys'
+import { useGraphSidebarToggle } from './app/useGraphSidebarToggle'
+import { useNavigationHistory } from './app/useNavigationHistory'
+import { useSyncPeerToast } from './app/useSyncPeerToast'
+import { useTrashedPageRestore } from './app/useTrashedPageRestore'
+import { useWindowControls } from './app/useWindowControls'
 import BlockSelector from './components/BlockSelector.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import DateTimePickerPanel from './components/DateTimePickerPanel.vue'
@@ -21,28 +28,21 @@ import { useDateTimePickerPanel } from './composables/useDateTimePickerPanel'
 import { useNotificationScheduler } from './composables/useNotificationScheduler'
 import { usePageQueryRegistry } from './composables/usePageQueryRegistry'
 import { useRelationshipTypes } from './composables/useRelationshipTypes'
-import { isTauriEnvironment } from './wasm/tauri-client'
 import { useEditorStore } from './stores/editor'
 import { usePageStore } from './stores/pages'
-import { useNavigationHistory } from './app/useNavigationHistory'
-import { useWindowControls } from './app/useWindowControls'
-import { useGlobalHotkeys } from './app/useGlobalHotkeys'
-import { useTrashedPageRestore } from './app/useTrashedPageRestore'
-import { useGraphSidebarToggle } from './app/useGraphSidebarToggle'
-import { useEmbedSelector } from './app/useEmbedSelector'
-import { useSyncPeerToast } from './app/useSyncPeerToast'
+import { isTauriEnvironment } from './wasm/tauri-client'
 
 registerPanel({
   id: 'block-version',
   label: '版本历史',
-  icon: '??',
+  icon: 'icon-history',
   component: BlockVersionPanel
 })
 
 registerPanel({
   id: 'graph',
   label: '图谱',
-  icon: '???',
+  icon: 'icon-network',
   component: GraphPanel
 })
 
