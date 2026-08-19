@@ -9,7 +9,7 @@
 | # | 标题 | 评级 | 状态 | 依赖 |
 |---|------|------|------|------|
 | 1 | Collapse the triple-written Repository implementations | Strong | ✅ **已完成** | 地基（2/4 依赖它，已解锁） |
-| 2 | Move write-path orchestration behind the Service seam | Strong | 🟡 **已 grill（待 /implement）** | 依赖 1 ✅ |
+| 2 | Move write-path orchestration behind the Service seam | Strong | ✅ **已完成** | 依赖 1 ✅ |
 | 3 | Collapse the six-layer frontend IPC chain | Strong | 🔲 待启动 | 无（前端） |
 | 4 | Converge the WASM adapter with the Tauri adapter | Worth exploring | 🔲 待启动 | 依赖 2 |
 | 5 | Extract App.vue's nine cross-cutting responsibilities | Worth exploring | 🟡 **已 grill（待 /implement）** | 无（前端） |
@@ -29,9 +29,9 @@
 ## 推荐推进序（来自评审 Top recommendation）
 
 > **候选 1 已完成**（ADR-0018，2026-08-19）：deletion test 兑现——≈2,000 行纯复制删除、列序 drift 结构性消除；候选 2 与候选 4 的地基已就绪。
-> **候选 2 已 grill**（ADR-0019，2026-08-19）：写路径编排收进 `BlockWriteService` 的 14 项决策已定，待 /implement。
+> **候选 2 已完成**（ADR-0019，2026-08-19）：写路径编排收进 `BlockWriteService`，Tauri/wasm 共享同一编排（+533/−298，10 文件，含 5 个编排测试）。
 
-- **地基链**：1 ✅ → 2 🟡（已 grill，待 /implement）→ 4（4 显式依赖 2 落地先行）
+- **地基链**：1 ✅ → 2 ✅ → **4**（候选 4 的地基 1/2 均已就绪）
 - **前端独立链**：3（IPC 链）、5（App.vue 拆分）可并行，互不阻塞
 - **查询/视图链**：7（值编辑器 + chip-bar 合一，半依赖 6 已铺垫）→ 8（通用视图 leverage，speculative，优先级最低）
 
@@ -61,7 +61,7 @@
 ## 候选 2 · Move write-path orchestration behind the Service seam
 
 - **评级**：Strong · in-process
-- **状态**：✅ **已 grill（2026-08-19）**——共识见 `docs/adr/0019-block-write-orchestration.md`。
+- **状态**：✅ **已完成（2026-08-19）**——见 ADR-0019（含 Landing record）。
 - **涉及文件**
   - `src-tauri/src/commands.rs`（`save_block_tree` L573–673；`delete_block` L675–736；**44 处**绕过 Service 直调仓储；事务包装仅 4 个调用点）
   - `crates/comind-wasm/src/lib.rs`（`save_block_tree` L116–172 逐行复制，且静默丢弃 snapshot）
@@ -195,6 +195,6 @@
 ## 下一步
 
 登记册就绪后，逐个候选走 `/grilling` 决策树 → 产出该候选的 ADR + 重构方案文档（参照候选 1 的 `0018-repository-convergence.md`、候选 6 的 `0016-editor-dom-event-transport.md` + `refactor-editor-event-table.md`）。
-- **候选 1 已完成**；**候选 2 已 grill（ADR-0019）**，待 `/implement`（下一步）。
+- **候选 1、2 已完成**；地基链下一候选 = **候选 4**（Converge the WASM adapter with the Tauri adapter，依赖 1/2 ✅ 均已就绪）。
 - 前端独立链：候选 3 可并行；候选 5 已 grill，可直接 `/implement`（方案见 `docs/refactor-app-composition.md`）。
 - 查询/视图链：候选 7（半依赖 6 已铺垫）→ 候选 8（speculative，最低优先级）。
