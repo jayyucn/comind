@@ -562,7 +562,7 @@ impl PageRepository for SQLiteAdapter {
     }
 }
 
-impl LinkRepository for SQLiteAdapter   {
+impl LinkRepository for SQLiteAdapter {
     fn get_by_id(&self, id: &str) -> Result<Link, Box<dyn Error>> {
         link_get_by_id(&self.conn, id)
     }
@@ -1161,7 +1161,7 @@ impl<'a> PageRepository for TxContext<'a> {
     }
 }
 
-impl<'a> LinkRepository for TxContext<'a>  {
+impl<'a> LinkRepository for TxContext<'a> {
     fn get_by_id(&self, id: &str) -> Result<Link, Box<dyn Error>> {
         link_get_by_id(&self.conn, id)
     }
