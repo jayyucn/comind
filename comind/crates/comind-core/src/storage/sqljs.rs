@@ -7,6 +7,8 @@ use std::collections::HashMap;
 
 use super::super::types::*;
 use super::repository::*;
+#[cfg(target_arch = "wasm32")]
+use crate::storage::entity::date_ref::{date_ref_select_cols, row_to_date_ref_js};
 
 #[cfg(target_arch = "wasm32")]
 pub struct SqlJsAdapter {
@@ -456,23 +458,6 @@ fn row_to_link(row: &HashMap<String, String>) -> Link {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
-fn row_to_date_ref(row: &HashMap<String, String>) -> DateRef {
-    DateRef {
-        id: row.get("id").cloned().unwrap_or_default(),
-        block_id: row.get("block_id").cloned().unwrap_or_default(),
-        kind: row.get("kind").cloned().unwrap_or_default(),
-        iso: row.get("iso").cloned().unwrap_or_default(),
-        date_day: row.get("date_day").cloned().unwrap_or_default(),
-        recurrence: row.get("recurrence").cloned().unwrap_or_default(),
-        lead_minutes: row.get("lead_minutes").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        event_ts: row.get("event_ts").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        created_at: row.get("created_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        updated_at: row.get("updated_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        version: row.get("version").map(|s| s.parse::<i64>().unwrap_or(0)).unwrap_or(0),
-        deleted_at: row.get("deleted_at").map(|s| s.parse::<i64>().ok()).unwrap_or(None),
-    }
-}
 
 #[cfg(target_arch = "wasm32")]
 fn row_to_property(row: &HashMap<String, String>) -> Property {
@@ -931,55 +916,57 @@ impl NotificationRepository for SqlJsAdapter {
 #[cfg(target_arch = "wasm32")]
 impl DateRefRepository for SqlJsAdapter {
     fn get_all(&self) -> Result<Vec<DateRef>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, updated_at, version, deleted_at, created_at FROM DateRef WHERE deleted_at IS NULL", &[])?;
-        Ok(result.into_iter().map(|r| row_to_date_ref(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM DateRef WHERE deleted_at IS NULL", date_ref_select_cols()), &[])?;
+        Ok(result.into_iter().map(|r| row_to_date_ref_js(&r)).collect())
     }
 
     fn get_by_id(&self, id: &str) -> Result<DateRef, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, updated_at, version, deleted_at, created_at FROM DateRef WHERE id = ? AND deleted_at IS NULL", &[id])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM DateRef WHERE id = ? AND deleted_at IS NULL", date_ref_select_cols()), &[id])?;
         if result.is_empty() {
             return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "DateRef not found")));
         }
-        Ok(row_to_date_ref(&result[0]))
+        Ok(row_to_date_ref_js(&result[0]))
     }
 
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<DateRef>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, updated_at, version, deleted_at, created_at FROM DateRef WHERE block_id = ? AND deleted_at IS NULL", &[block_id])?;
-        Ok(result.into_iter().map(|r| row_to_date_ref(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM DateRef WHERE block_id = ? AND deleted_at IS NULL", date_ref_select_cols()), &[block_id])?;
+        Ok(result.into_iter().map(|r| row_to_date_ref_js(&r)).collect())
     }
 
     fn query_by_date_range(&self, kind: &str, from: &str, to: &str) -> Result<Vec<DateRef>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, updated_at, version, deleted_at, created_at FROM DateRef WHERE (kind = ? OR ? = '*') AND date_day BETWEEN ? AND ? AND deleted_at IS NULL ORDER BY date_day, block_id", &[kind, kind, from, to])?;
-        Ok(result.into_iter().map(|r| row_to_date_ref(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM DateRef WHERE (kind = ? OR ? = '*') AND date_day BETWEEN ? AND ? AND deleted_at IS NULL ORDER BY date_day, block_id", date_ref_select_cols()), &[kind, kind, from, to])?;
+        Ok(result.into_iter().map(|r| row_to_date_ref_js(&r)).collect())
     }
 
     fn query_overdue(&self, today: &str) -> Result<Vec<DateRef>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, updated_at, version, deleted_at, created_at FROM DateRef WHERE kind = 'deadline' AND date_day < ? AND deleted_at IS NULL ORDER BY date_day", &[today])?;
-        Ok(result.into_iter().map(|r| row_to_date_ref(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM DateRef WHERE kind = 'deadline' AND date_day < ? AND deleted_at IS NULL ORDER BY date_day", date_ref_select_cols()), &[today])?;
+        Ok(result.into_iter().map(|r| row_to_date_ref_js(&r)).collect())
     }
 
     fn query_due_non_recurring(&self, now_ms: i64) -> Result<Vec<DateRef>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, updated_at, version, deleted_at, created_at FROM DateRef WHERE recurrence = 'none' AND (event_ts - lead_minutes * 60000) <= ? AND deleted_at IS NULL", &[&now_ms.to_string()])?;
-        Ok(result.into_iter().map(|r| row_to_date_ref(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM DateRef WHERE recurrence = 'none' AND (event_ts - lead_minutes * 60000) <= ? AND deleted_at IS NULL", date_ref_select_cols()), &[&now_ms.to_string()])?;
+        Ok(result.into_iter().map(|r| row_to_date_ref_js(&r)).collect())
     }
 
     fn query_all_recurring(&self) -> Result<Vec<DateRef>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, updated_at, version, deleted_at, created_at FROM DateRef WHERE recurrence != 'none' AND deleted_at IS NULL", &[])?;
-        Ok(result.into_iter().map(|r| row_to_date_ref(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM DateRef WHERE recurrence != 'none' AND deleted_at IS NULL", date_ref_select_cols()), &[])?;
+        Ok(result.into_iter().map(|r| row_to_date_ref_js(&r)).collect())
     }
 
     fn create(&mut self, date_ref: &DateRef) -> Result<DateRef, Box<dyn std::error::Error>> {
-        Self::run_with_params(&self.db, "INSERT INTO DateRef (id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, updated_at, version, deleted_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)", &[
-            &date_ref.id,
-            &date_ref.block_id,
-            &date_ref.kind,
-            &date_ref.iso,
-            &date_ref.date_day,
-            &date_ref.recurrence,
+        let cols = date_ref_select_cols();
+        let sql = format!("INSERT INTO DateRef ({}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)", cols);
+        Self::run_with_params(&self.db, &sql, &[
+            date_ref.id.as_str(),
+            date_ref.block_id.as_str(),
+            date_ref.kind.as_str(),
+            date_ref.iso.as_str(),
+            date_ref.date_day.as_str(),
+            date_ref.recurrence.as_str(),
             &date_ref.lead_minutes.to_string(),
             &date_ref.event_ts.to_string(),
-            &date_ref.updated_at.to_string(),
             &date_ref.created_at.to_string(),
+            &date_ref.updated_at.to_string(),
         ])?;
         Ok(date_ref.clone())
     }

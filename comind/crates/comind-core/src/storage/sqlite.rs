@@ -3,6 +3,8 @@ use std::path::Path;
 use rusqlite::{Connection, params};
 use super::super::types::*;
 use super::repository::*;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::storage::entity::date_ref::{date_ref_create, date_ref_create_many, date_ref_delete, date_ref_delete_by_block_id, date_ref_get_all, date_ref_get_by_block_id, date_ref_get_by_id, date_ref_query_all_recurring, date_ref_query_by_date_range, date_ref_query_due_non_recurring, date_ref_query_overdue};
 
 pub struct SQLiteAdapter {
     pub conn: Connection,
@@ -2045,209 +2047,47 @@ impl NotificationConfigRepository for SQLiteAdapter {
 
 impl DateRefRepository for SQLiteAdapter {
     fn get_all(&self) -> Result<Vec<DateRef>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts, updated_at, version, deleted_at FROM DateRef WHERE deleted_at IS NULL"
-        )?;
-        let rows = stmt.query_map([], |row| {
-            Ok(DateRef {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                kind: row.get(2)?,
-                iso: row.get(3)?,
-                date_day: row.get(4)?,
-                recurrence: row.get(5)?,
-                lead_minutes: row.get(6)?,
-                event_ts: row.get(7)?,
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
-                version: row.get(10)?,
-                deleted_at: row.get(11)?,
-            })
-        })?;
-        Ok(rows.filter_map(Result::ok).collect())
+        date_ref_get_all(&self.conn)
     }
 
     fn get_by_id(&self, id: &str) -> Result<DateRef, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts, updated_at, version, deleted_at FROM DateRef WHERE id = ? AND deleted_at IS NULL"
-        )?;
-        let dr = stmt.query_row(params![id], |row| {
-            Ok(DateRef {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                kind: row.get(2)?,
-                iso: row.get(3)?,
-                date_day: row.get(4)?,
-                recurrence: row.get(5)?,
-                lead_minutes: row.get(6)?,
-                event_ts: row.get(7)?,
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
-                version: row.get(10)?,
-                deleted_at: row.get(11)?,
-})
-        });
-        match dr {
-            Ok(d) => Ok(d),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "DateRef not found"))),
-            Err(e) => Err(Box::new(e)),
-        }
+        date_ref_get_by_id(&self.conn, id)
     }
 
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<DateRef>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts, updated_at, version, deleted_at FROM DateRef WHERE block_id = ? AND deleted_at IS NULL"
-        )?;
-        let rows = stmt.query_map(params![block_id], |row| {
-            Ok(DateRef {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                kind: row.get(2)?,
-                iso: row.get(3)?,
-                date_day: row.get(4)?,
-                recurrence: row.get(5)?,
-                lead_minutes: row.get(6)?,
-                event_ts: row.get(7)?,
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
-                version: row.get(10)?,
-                deleted_at: row.get(11)?,
-})
-        })?;
-        let mut result = Vec::new();
-        for r in rows { result.push(r?); }
-        Ok(result)
+        date_ref_get_by_block_id(&self.conn, block_id)
     }
 
     fn query_by_date_range(&self, kind: &str, from: &str, to: &str) -> Result<Vec<DateRef>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts, updated_at, version, deleted_at FROM DateRef WHERE (kind = ?1 OR ?1 = '*') AND date_day BETWEEN ?2 AND ?3 AND deleted_at IS NULL ORDER BY date_day, block_id"
-        )?;
-        let rows = stmt.query_map(params![kind, from, to], |row| {
-            Ok(DateRef {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                kind: row.get(2)?,
-                iso: row.get(3)?,
-                date_day: row.get(4)?,
-                recurrence: row.get(5)?,
-                lead_minutes: row.get(6)?,
-                event_ts: row.get(7)?,
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
-                version: row.get(10)?,
-                deleted_at: row.get(11)?,
-})
-        })?;
-        let mut result = Vec::new();
-        for r in rows { result.push(r?); }
-        Ok(result)
+        date_ref_query_by_date_range(&self.conn, kind, from, to)
     }
 
     fn query_overdue(&self, today: &str) -> Result<Vec<DateRef>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts, updated_at, version, deleted_at FROM DateRef WHERE kind = 'deadline' AND date_day < ? AND deleted_at IS NULL ORDER BY date_day"
-        )?;
-        let rows = stmt.query_map(params![today], |row| {
-            Ok(DateRef {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                kind: row.get(2)?,
-                iso: row.get(3)?,
-                date_day: row.get(4)?,
-                recurrence: row.get(5)?,
-                lead_minutes: row.get(6)?,
-                event_ts: row.get(7)?,
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
-                version: row.get(10)?,
-                deleted_at: row.get(11)?,
-})
-        })?;
-        let mut result = Vec::new();
-        for r in rows { result.push(r?); }
-        Ok(result)
+        date_ref_query_overdue(&self.conn, today)
     }
 
     fn query_due_non_recurring(&self, now_ms: i64) -> Result<Vec<DateRef>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at, updated_at, version, deleted_at FROM DateRef WHERE recurrence = 'none' AND kind != 'ref' AND (event_ts - lead_minutes * 60000) <= ?1 AND deleted_at IS NULL"
-        )?;
-        let rows = stmt.query_map(params![now_ms], |row| {
-            Ok(DateRef {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                kind: row.get(2)?,
-                iso: row.get(3)?,
-                date_day: row.get(4)?,
-                recurrence: row.get(5)?,
-                lead_minutes: row.get(6)?,
-                event_ts: row.get(7)?,
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
-                version: row.get(10)?,
-                deleted_at: row.get(11)?,
-            })
-        })?;
-        let mut result = Vec::new();
-        for r in rows { result.push(r?); }
-        Ok(result)
+        date_ref_query_due_non_recurring(&self.conn, now_ms)
     }
 
     fn query_all_recurring(&self) -> Result<Vec<DateRef>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at, updated_at, version, deleted_at FROM DateRef WHERE recurrence != 'none' AND kind != 'ref' AND deleted_at IS NULL"
-        )?;
-        let rows = stmt.query_map(params![], |row| {
-            Ok(DateRef {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                kind: row.get(2)?,
-                iso: row.get(3)?,
-                date_day: row.get(4)?,
-                recurrence: row.get(5)?,
-                lead_minutes: row.get(6)?,
-                event_ts: row.get(7)?,
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
-                version: row.get(10)?,
-                deleted_at: row.get(11)?,
-            })
-        })?;
-        let mut result = Vec::new();
-        for r in rows { result.push(r?); }
-        Ok(result)
+        date_ref_query_all_recurring(&self.conn)
     }
 
     fn create(&mut self, date_ref: &DateRef) -> Result<DateRef, Box<dyn Error>> {
-        self.conn.execute(
-            "INSERT INTO DateRef (id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at, updated_at, version, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            params![date_ref.id, date_ref.block_id, date_ref.kind, date_ref.iso, date_ref.date_day, date_ref.recurrence, date_ref.lead_minutes, date_ref.event_ts, date_ref.created_at, date_ref.updated_at, date_ref.version, date_ref.deleted_at],
-        )?;
-        Ok(date_ref.clone())
+        date_ref_create(&self.conn, date_ref)
     }
 
     fn create_many(&mut self, date_refs: &[DateRef]) -> Result<Vec<DateRef>, Box<dyn Error>> {
-        for dr in date_refs {
-            DateRefRepository::create(self, dr)?;
-        }
-        Ok(date_refs.to_vec())
+        date_ref_create_many(&self.conn, date_refs)
     }
 
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE DateRef SET deleted_at = ?1, version = version + 1, updated_at = ?1 WHERE id = ?2",
-            params![chrono::Utc::now().timestamp_millis(), id]
-        )?;
-        Ok(())
+        date_ref_delete(&self.conn, id)
     }
 
     fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE DateRef SET deleted_at = ?1, version = version + 1, updated_at = ?1 WHERE block_id = ?2",
-            params![chrono::Utc::now().timestamp_millis(), block_id]
-        )?;
-        Ok(())
+        date_ref_delete_by_block_id(&self.conn, block_id)
     }
 }
 
@@ -4121,209 +3961,47 @@ impl<'a> ScreenViewRepository for SQLiteTransactionAdapter<'a> {
 
 impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
     fn get_all(&self) -> Result<Vec<DateRef>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts, updated_at, version, deleted_at FROM DateRef WHERE deleted_at IS NULL"
-        )?;
-        let rows = stmt.query_map([], |row| {
-            Ok(DateRef {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                kind: row.get(2)?,
-                iso: row.get(3)?,
-                date_day: row.get(4)?,
-                recurrence: row.get(5)?,
-                lead_minutes: row.get(6)?,
-                event_ts: row.get(7)?,
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
-                version: row.get(10)?,
-                deleted_at: row.get(11)?,
-            })
-        })?;
-        Ok(rows.filter_map(Result::ok).collect())
+        date_ref_get_all(&self.conn)
     }
 
     fn get_by_id(&self, id: &str) -> Result<DateRef, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts, updated_at, version, deleted_at FROM DateRef WHERE id = ? AND deleted_at IS NULL"
-        )?;
-        let dr = stmt.query_row(params![id], |row| {
-            Ok(DateRef {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                kind: row.get(2)?,
-                iso: row.get(3)?,
-                date_day: row.get(4)?,
-                recurrence: row.get(5)?,
-                lead_minutes: row.get(6)?,
-                event_ts: row.get(7)?,
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
-                version: row.get(10)?,
-                deleted_at: row.get(11)?,
-})
-        });
-        match dr {
-            Ok(d) => Ok(d),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "DateRef not found"))),
-            Err(e) => Err(Box::new(e)),
-        }
+        date_ref_get_by_id(&self.conn, id)
     }
 
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<DateRef>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts, updated_at, version, deleted_at FROM DateRef WHERE block_id = ? AND deleted_at IS NULL"
-        )?;
-        let rows = stmt.query_map(params![block_id], |row| {
-            Ok(DateRef {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                kind: row.get(2)?,
-                iso: row.get(3)?,
-                date_day: row.get(4)?,
-                recurrence: row.get(5)?,
-                lead_minutes: row.get(6)?,
-                event_ts: row.get(7)?,
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
-                version: row.get(10)?,
-                deleted_at: row.get(11)?,
-})
-        })?;
-        let mut result = Vec::new();
-        for r in rows { result.push(r?); }
-        Ok(result)
+        date_ref_get_by_block_id(&self.conn, block_id)
     }
 
     fn query_by_date_range(&self, kind: &str, from: &str, to: &str) -> Result<Vec<DateRef>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts, updated_at, version, deleted_at FROM DateRef WHERE (kind = ?1 OR ?1 = '*') AND date_day BETWEEN ?2 AND ?3 AND deleted_at IS NULL ORDER BY date_day, block_id"
-        )?;
-        let rows = stmt.query_map(params![kind, from, to], |row| {
-            Ok(DateRef {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                kind: row.get(2)?,
-                iso: row.get(3)?,
-                date_day: row.get(4)?,
-                recurrence: row.get(5)?,
-                lead_minutes: row.get(6)?,
-                event_ts: row.get(7)?,
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
-                version: row.get(10)?,
-                deleted_at: row.get(11)?,
-})
-        })?;
-        let mut result = Vec::new();
-        for r in rows { result.push(r?); }
-        Ok(result)
+        date_ref_query_by_date_range(&self.conn, kind, from, to)
     }
 
     fn query_overdue(&self, today: &str) -> Result<Vec<DateRef>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, created_at, event_ts, updated_at, version, deleted_at FROM DateRef WHERE kind = 'deadline' AND date_day < ? AND deleted_at IS NULL ORDER BY date_day"
-        )?;
-        let rows = stmt.query_map(params![today], |row| {
-            Ok(DateRef {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                kind: row.get(2)?,
-                iso: row.get(3)?,
-                date_day: row.get(4)?,
-                recurrence: row.get(5)?,
-                lead_minutes: row.get(6)?,
-                event_ts: row.get(7)?,
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
-                version: row.get(10)?,
-                deleted_at: row.get(11)?,
-})
-        })?;
-        let mut result = Vec::new();
-        for r in rows { result.push(r?); }
-        Ok(result)
+        date_ref_query_overdue(&self.conn, today)
     }
 
     fn query_due_non_recurring(&self, now_ms: i64) -> Result<Vec<DateRef>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at, updated_at, version, deleted_at FROM DateRef WHERE recurrence = 'none' AND kind != 'ref' AND (event_ts - lead_minutes * 60000) <= ?1 AND deleted_at IS NULL"
-        )?;
-        let rows = stmt.query_map(params![now_ms], |row| {
-            Ok(DateRef {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                kind: row.get(2)?,
-                iso: row.get(3)?,
-                date_day: row.get(4)?,
-                recurrence: row.get(5)?,
-                lead_minutes: row.get(6)?,
-                event_ts: row.get(7)?,
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
-                version: row.get(10)?,
-                deleted_at: row.get(11)?,
-            })
-        })?;
-        let mut result = Vec::new();
-        for r in rows { result.push(r?); }
-        Ok(result)
+        date_ref_query_due_non_recurring(&self.conn, now_ms)
     }
 
     fn query_all_recurring(&self) -> Result<Vec<DateRef>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at, updated_at, version, deleted_at FROM DateRef WHERE recurrence != 'none' AND kind != 'ref' AND deleted_at IS NULL"
-        )?;
-        let rows = stmt.query_map(params![], |row| {
-            Ok(DateRef {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                kind: row.get(2)?,
-                iso: row.get(3)?,
-                date_day: row.get(4)?,
-                recurrence: row.get(5)?,
-                lead_minutes: row.get(6)?,
-                event_ts: row.get(7)?,
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
-                version: row.get(10)?,
-                deleted_at: row.get(11)?,
-            })
-        })?;
-        let mut result = Vec::new();
-        for r in rows { result.push(r?); }
-        Ok(result)
+        date_ref_query_all_recurring(&self.conn)
     }
 
     fn create(&mut self, date_ref: &DateRef) -> Result<DateRef, Box<dyn Error>> {
-        self.conn.execute(
-            "INSERT INTO DateRef (id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, created_at, updated_at, version, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            params![date_ref.id, date_ref.block_id, date_ref.kind, date_ref.iso, date_ref.date_day, date_ref.recurrence, date_ref.lead_minutes, date_ref.event_ts, date_ref.created_at, date_ref.updated_at, date_ref.version, date_ref.deleted_at],
-        )?;
-        Ok(date_ref.clone())
+        date_ref_create(&self.conn, date_ref)
     }
 
     fn create_many(&mut self, date_refs: &[DateRef]) -> Result<Vec<DateRef>, Box<dyn Error>> {
-        for dr in date_refs {
-            DateRefRepository::create(self, dr)?;
-        }
-        Ok(date_refs.to_vec())
+        date_ref_create_many(&self.conn, date_refs)
     }
 
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE DateRef SET deleted_at = ?1, version = version + 1, updated_at = ?1 WHERE id = ?2",
-            params![chrono::Utc::now().timestamp_millis(), id]
-        )?;
-        Ok(())
+        date_ref_delete(&self.conn, id)
     }
 
     fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE DateRef SET deleted_at = ?1, version = version + 1, updated_at = ?1 WHERE block_id = ?2",
-            params![chrono::Utc::now().timestamp_millis(), block_id]
-        )?;
-        Ok(())
+        date_ref_delete_by_block_id(&self.conn, block_id)
     }
 }
 
