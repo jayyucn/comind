@@ -11,6 +11,8 @@ use super::repository::*;
 use crate::storage::entity::date_ref::{date_ref_select_cols, row_to_date_ref_js};
 #[cfg(target_arch = "wasm32")]
 use crate::storage::entity::block::{block_select_cols, row_to_block_js};
+#[cfg(target_arch = "wasm32")]
+use crate::storage::entity::page::{page_select_cols, row_to_page_js};
 
 #[cfg(target_arch = "wasm32")]
 pub struct SqlJsAdapter {
@@ -392,39 +394,6 @@ impl SqlJsAdapter {
 #[cfg(target_arch = "wasm32")]
 
 #[cfg(target_arch = "wasm32")]
-fn row_to_page(row: &HashMap<String, String>) -> Page {
-    Page {
-        id: row.get("id").cloned().unwrap_or_default(),
-        block_id: {
-            let p = row.get("block_id").cloned().unwrap_or_default();
-            if p.is_empty() { None } else { Some(p) }
-        },
-        title: row.get("title").cloned().unwrap_or_default(),
-        r#type: row.get("type").cloned().unwrap_or_else(|| "normal".to_string()),
-        icon: {
-            let p = row.get("icon").cloned().unwrap_or_default();
-            if p.is_empty() { None } else { Some(p) }
-        },
-        cover: {
-            let p = row.get("cover").cloned().unwrap_or_default();
-            if p.is_empty() { None } else { Some(p) }
-        },
-        aliases: row.get("aliases").cloned().unwrap_or_else(|| "[]".to_string()),
-        file_path: {
-            let p = row.get("file_path").cloned().unwrap_or_default();
-            if p.is_empty() { None } else { Some(p) }
-        },
-        children_count: row.get("children_count").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        word_count: row.get("word_count").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        deleted: row.get("deleted").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        version: row.get("version").map(|s| s.parse::<i64>().unwrap_or(0)).unwrap_or(0),
-        deleted_at: row.get("deleted_at").map(|s| s.parse::<i64>().ok()).unwrap_or(None),
-        created_at: row.get("created_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        updated_at: row.get("updated_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
 fn row_to_link(row: &HashMap<String, String>) -> Link {
     Link {
         id: row.get("id").cloned().unwrap_or_default(),
@@ -594,30 +563,30 @@ impl BlockRepository for SqlJsAdapter {
 #[cfg(target_arch = "wasm32")]
 impl PageRepository for SqlJsAdapter {
     fn get_by_id(&self, id: &str) -> Result<Page, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, version, deleted_at, created_at, updated_at FROM Page WHERE id = ? AND deleted = 0 AND deleted_at IS NULL", &[id])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Page WHERE id = ? AND deleted = 0 AND deleted_at IS NULL", page_select_cols()), &[id])?;
         if result.is_empty() {
             return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Page not found")));
         }
-        Ok(row_to_page(&result[0]))
+        Ok(row_to_page_js(&result[0]))
     }
 
     fn get_by_title(&self, title: &str) -> Result<Option<Page>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, version, deleted_at, created_at, updated_at FROM Page WHERE title = ? AND deleted = 0 AND deleted_at IS NULL", &[title])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Page WHERE title = ? AND deleted = 0 AND deleted_at IS NULL", page_select_cols()), &[title])?;
         if result.is_empty() {
             Ok(None)
         } else {
-            Ok(Some(row_to_page(&result[0])))
+            Ok(Some(row_to_page_js(&result[0])))
         }
     }
 
     fn get_all(&self) -> Result<Vec<Page>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, version, deleted_at, created_at, updated_at FROM Page WHERE deleted = 0 AND deleted_at IS NULL ORDER BY updated_at DESC", &[])?;
-        Ok(result.into_iter().map(|r| row_to_page(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Page WHERE deleted = 0 AND deleted_at IS NULL ORDER BY updated_at DESC", page_select_cols()), &[])?;
+        Ok(result.into_iter().map(|r| row_to_page_js(&r)).collect())
     }
 
     fn get_trash(&self) -> Result<Vec<Page>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, version, deleted_at, created_at, updated_at FROM Page WHERE deleted = 1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC", &[])?;
-        Ok(result.into_iter().map(|r| row_to_page(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Page WHERE deleted = 1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC", page_select_cols()), &[])?;
+        Ok(result.into_iter().map(|r| row_to_page_js(&r)).collect())
     }
 
     fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Page>, Box<dyn std::error::Error>> {
@@ -626,12 +595,13 @@ impl PageRepository for SqlJsAdapter {
         }
         let placeholders: Vec<String> = ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
         let sql = format!(
-            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, version, deleted_at, created_at, updated_at FROM Page WHERE id IN ({}) AND deleted = 0 AND deleted_at IS NULL",
+            "SELECT {} FROM Page WHERE id IN ({}) AND deleted = 0 AND deleted_at IS NULL",
+            page_select_cols(),
             placeholders.join(", ")
         );
         let params: Vec<&str> = ids.iter().map(|s| s.as_str()).collect();
         let result = Self::query(&self.db, &sql, &params)?;
-        Ok(result.into_iter().map(|r| row_to_page(&r)).collect())
+        Ok(result.into_iter().map(|r| row_to_page_js(&r)).collect())
     }
 
     fn get_ideas_by_month(&self, year: i32, month: u32) -> Result<Vec<Page>, Box<dyn std::error::Error>> {
@@ -641,8 +611,8 @@ impl PageRepository for SqlJsAdapter {
         } else {
             format!("{}-{:02}-01", year, month + 1)
         };
-        let result = Self::query(&self.db, "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, version, deleted_at, created_at, updated_at FROM Page WHERE type IN ('ideas', 'journal') AND deleted = 0 AND deleted_at IS NULL AND title >= ? AND title < ? ORDER BY title DESC", &[start.as_str(), end.as_str()])?;
-        Ok(result.into_iter().map(|r| row_to_page(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Page WHERE type IN ('ideas', 'journal') AND deleted = 0 AND deleted_at IS NULL AND title >= ? AND title < ? ORDER BY title DESC", page_select_cols()), &[start.as_str(), end.as_str()])?;
+        Ok(result.into_iter().map(|r| row_to_page_js(&r)).collect())
     }
 
     fn create(&mut self, page: &Page) -> Result<Page, Box<dyn std::error::Error>> {
@@ -681,11 +651,11 @@ impl PageRepository for SqlJsAdapter {
     }
 
     fn get_by_title_including_deleted(&self, title: &str) -> Result<Option<Page>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, version, deleted_at, created_at, updated_at FROM Page WHERE title = ?", &[title])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Page WHERE title = ?", page_select_cols()), &[title])?;
         if result.is_empty() {
             Ok(None)
         } else {
-            Ok(Some(row_to_page(&result[0])))
+            Ok(Some(row_to_page_js(&result[0])))
         }
     }
 

@@ -7,6 +7,8 @@ use super::repository::*;
 use crate::storage::entity::date_ref::{date_ref_create, date_ref_create_many, date_ref_delete, date_ref_delete_by_block_id, date_ref_get_all, date_ref_get_by_block_id, date_ref_get_by_id, date_ref_query_all_recurring, date_ref_query_by_date_range, date_ref_query_due_non_recurring, date_ref_query_overdue};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::block::{block_get_all, block_get_by_id, block_get_by_page_id, block_get_children, block_get_by_ids, block_insert, block_update, block_soft_delete_by_id, block_ids_by_page_id, block_soft_delete_by_page_id};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::storage::entity::page::{page_get_by_id, page_get_by_title_including_deleted, page_get_by_title, page_get_all, page_get_trash, page_get_by_ids, page_get_ideas_by_month, page_get_ideas_months, page_create, page_update, page_delete};
 
 pub struct SQLiteAdapter {
     pub conn: Connection,
@@ -498,291 +500,48 @@ impl BlockRepository for SQLiteAdapter {
 
 impl PageRepository for SQLiteAdapter {
     fn get_by_id(&self, id: &str) -> Result<Page, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at 
-             FROM Page WHERE id = ?1 AND deleted_at IS NULL"
-        )?;
-        
-        let page = stmt.query_row(params![id], |row| {
-            Ok(Page {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                title: row.get(2)?,
-                r#type: row.get(3)?,
-                icon: row.get(4)?,
-                cover: row.get(5)?,
-                aliases: row.get(6)?,
-                file_path: row.get(7)?,
-                children_count: row.get(8)?,
-                word_count: row.get(9)?,
-                deleted: row.get(10)?,
-                created_at: row.get(11)?,
-                updated_at: row.get(12)?,
-                version: row.get(13)?,
-                deleted_at: row.get(14)?,
-            })
-        })?;
-        
-        Ok(page)
+        page_get_by_id(&self.conn, id)
     }
     
     fn get_by_title_including_deleted(&self, title: &str) -> Result<Option<Page>, Box<dyn Error>> {
-        let sql = "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at FROM Page WHERE title = ?1";
-        let mut stmt = self.conn.prepare(sql)?;
-
-        let result = stmt.query_row(params![title], |row| {
-            Ok(Page {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                title: row.get(2)?,
-                r#type: row.get(3)?,
-                icon: row.get(4)?,
-                cover: row.get(5)?,
-                aliases: row.get(6)?,
-                file_path: row.get(7)?,
-                children_count: row.get(8)?,
-                word_count: row.get(9)?,
-                deleted: row.get(10)?,
-                created_at: row.get(11)?,
-                updated_at: row.get(12)?,
-                version: row.get(13)?,
-                deleted_at: row.get(14)?,
-            })
-        });
-
-        match result {
-            Ok(page) => Ok(Some(page)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(Box::new(e)),
-        }
+        page_get_by_title_including_deleted(&self.conn, title)
     }
 
     fn get_by_title(&self, title: &str) -> Result<Option<Page>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at 
-             FROM Page WHERE title = ?1 AND deleted = 0 AND deleted_at IS NULL"
-        )?;
-        
-        let result = stmt.query_row(params![title], |row| {
-            Ok(Page {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                title: row.get(2)?,
-                r#type: row.get(3)?,
-                icon: row.get(4)?,
-                cover: row.get(5)?,
-                aliases: row.get(6)?,
-                file_path: row.get(7)?,
-                children_count: row.get(8)?,
-                word_count: row.get(9)?,
-                deleted: row.get(10)?,
-                created_at: row.get(11)?,
-                updated_at: row.get(12)?,
-                version: row.get(13)?,
-                deleted_at: row.get(14)?,
-            })
-        });
-        
-        match result {
-            Ok(page) => Ok(Some(page)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(Box::new(e)),
-        }
+        page_get_by_title(&self.conn, title)
     }
     
     fn get_all(&self) -> Result<Vec<Page>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at 
-             FROM Page WHERE deleted = 0 AND deleted_at IS NULL ORDER BY updated_at DESC"
-        )?;
-        
-        let pages = stmt.query_map([], |row| {
-            Ok(Page {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                title: row.get(2)?,
-                r#type: row.get(3)?,
-                icon: row.get(4)?,
-                cover: row.get(5)?,
-                aliases: row.get(6)?,
-                file_path: row.get(7)?,
-                children_count: row.get(8)?,
-                word_count: row.get(9)?,
-                deleted: row.get(10)?,
-                created_at: row.get(11)?,
-                updated_at: row.get(12)?,
-                version: row.get(13)?,
-                deleted_at: row.get(14)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        
-        Ok(pages)
+        page_get_all(&self.conn)
     }
 
     fn get_trash(&self) -> Result<Vec<Page>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at
-             FROM Page WHERE deleted = 1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC"
-        )?;
-
-        let pages = stmt.query_map([], |row| {
-            Ok(Page {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                title: row.get(2)?,
-                r#type: row.get(3)?,
-                icon: row.get(4)?,
-                cover: row.get(5)?,
-                aliases: row.get(6)?,
-                file_path: row.get(7)?,
-                children_count: row.get(8)?,
-                word_count: row.get(9)?,
-                deleted: row.get(10)?,
-                created_at: row.get(11)?,
-                updated_at: row.get(12)?,
-                version: row.get(13)?,
-                deleted_at: row.get(14)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-
-        Ok(pages)
+        page_get_trash(&self.conn)
     }
 
 
     fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Page>, Box<dyn Error>> {
-        if ids.is_empty() {
-            return Ok(Vec::new());
-        }
-        let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("?{}", i)).collect();
-        let sql = format!(
-            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at FROM Page WHERE id IN ({}) AND deleted_at IS NULL",
-            placeholders.join(", ")
-        );
-        let mut stmt = self.conn.prepare(&sql)?;
-        let params: Vec<&dyn rusqlite::ToSql> = ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
-        let pages = stmt.query_map(params.as_slice(), |row| {
-            Ok(Page {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                title: row.get(2)?,
-                r#type: row.get(3)?,
-                icon: row.get(4)?,
-                cover: row.get(5)?,
-                aliases: row.get(6)?,
-                file_path: row.get(7)?,
-                children_count: row.get(8)?,
-                word_count: row.get(9)?,
-                deleted: row.get(10)?,
-                created_at: row.get(11)?,
-                updated_at: row.get(12)?,
-                version: row.get(13)?,
-                deleted_at: row.get(14)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        Ok(pages)
+        page_get_by_ids(&self.conn, ids)
     }
 
     fn get_ideas_by_month(&self, year: i32, month: u32) -> Result<Vec<Page>, Box<dyn Error>> {
-        let start = format!("{}-{:02}-01", year, month);
-        let end = if month == 12 {
-            format!("{}-01-01", year + 1)
-        } else {
-            format!("{}-{:02}-01", year, month + 1)
-        };
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at
-             FROM Page WHERE type IN ('ideas', 'journal') AND deleted = 0 AND deleted_at IS NULL AND title >= ?1 AND title < ?2 ORDER BY title DESC"
-        )?;
-        let pages = stmt.query_map(params![start, end], |row| {
-            Ok(Page {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                title: row.get(2)?,
-                r#type: row.get(3)?,
-                icon: row.get(4)?,
-                cover: row.get(5)?,
-                aliases: row.get(6)?,
-                file_path: row.get(7)?,
-                children_count: row.get(8)?,
-                word_count: row.get(9)?,
-                deleted: row.get(10)?,
-                created_at: row.get(11)?,
-                updated_at: row.get(12)?,
-                version: row.get(13)?,
-                deleted_at: row.get(14)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        Ok(pages)
+        page_get_ideas_by_month(&self.conn, year, month)
     }
 
     fn get_ideas_months(&self) -> Result<Vec<String>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT DISTINCT substr(title, 1, 7) AS month
-             FROM Page
-             WHERE type IN ('ideas', 'journal') AND deleted = 0 AND deleted_at IS NULL
-             ORDER BY month DESC"
-        )?;
-        let months = stmt.query_map([], |row| {
-            Ok(row.get::<_, String>(0)?)
-        })?.collect::<Result<Vec<_>, _>>()?;
-        Ok(months)
+        page_get_ideas_months(&self.conn)
     }
 
     fn create(&mut self, page: &Page) -> Result<Page, Box<dyn Error>> {
-        self.conn.execute(
-            "INSERT INTO Page (id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
-            params![
-                page.id,
-                page.block_id,
-                page.title,
-                page.r#type,
-                page.icon,
-                page.cover,
-                page.aliases,
-                page.file_path,
-                page.children_count,
-                page.word_count,
-                page.deleted,
-                page.created_at,
-                page.updated_at,
-                page.version,
-                page.deleted_at
-            ]
-        )?;
-        
-        Ok(page.clone())
+        page_create(&self.conn, page)
     }
     
     fn update(&mut self, page: &Page) -> Result<Page, Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE Page SET block_id = ?2, title = ?3, type = ?4, icon = ?5, cover = ?6, aliases = ?7, file_path = ?8, children_count = ?9, word_count = ?10, deleted = ?11, updated_at = ?12, version = version + 1
-             WHERE id = ?1",
-            params![
-                page.id,
-                page.block_id,
-                page.title,
-                page.r#type,
-                page.icon,
-                page.cover,
-                page.aliases,
-                page.file_path,
-                page.children_count,
-                page.word_count,
-                page.deleted,
-                page.updated_at
-            ]
-        )?;
-        
-        Ok(page.clone())
+        page_update(&self.conn, page)
     }
     
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE Page SET deleted = 1, deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE id = ?1",
-            params![id, chrono::Utc::now().timestamp_millis()]
-        )?;
-        Ok(())
+        page_delete(&self.conn, id)
     }
 }
 
@@ -2312,291 +2071,48 @@ impl<'a> SQLiteTransactionAdapter<'a> {
 
 impl<'a> PageRepository for SQLiteTransactionAdapter<'a> {
     fn get_by_id(&self, id: &str) -> Result<Page, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at
-             FROM Page WHERE id = ?1 AND deleted_at IS NULL"
-        )?;
-
-        let page = stmt.query_row(params![id], |row| {
-            Ok(Page {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                title: row.get(2)?,
-                r#type: row.get(3)?,
-                icon: row.get(4)?,
-                cover: row.get(5)?,
-                aliases: row.get(6)?,
-                file_path: row.get(7)?,
-                children_count: row.get(8)?,
-                word_count: row.get(9)?,
-                deleted: row.get(10)?,
-                created_at: row.get(11)?,
-                updated_at: row.get(12)?,
-                version: row.get(13)?,
-                deleted_at: row.get(14)?,
-            })
-        })?;
-
-        Ok(page)
+        page_get_by_id(&self.conn, id)
     }
 
     fn get_by_title_including_deleted(&self, title: &str) -> Result<Option<Page>, Box<dyn Error>> {
-        let sql = "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at FROM Page WHERE title = ?1";
-        let mut stmt = self.conn.prepare(sql)?;
-
-        let result = stmt.query_row(params![title], |row| {
-            Ok(Page {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                title: row.get(2)?,
-                r#type: row.get(3)?,
-                icon: row.get(4)?,
-                cover: row.get(5)?,
-                aliases: row.get(6)?,
-                file_path: row.get(7)?,
-                children_count: row.get(8)?,
-                word_count: row.get(9)?,
-                deleted: row.get(10)?,
-                created_at: row.get(11)?,
-                updated_at: row.get(12)?,
-                version: row.get(13)?,
-                deleted_at: row.get(14)?,
-            })
-        });
-
-        match result {
-            Ok(page) => Ok(Some(page)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(Box::new(e)),
-        }
+        page_get_by_title_including_deleted(&self.conn, title)
     }
 
     fn get_by_title(&self, title: &str) -> Result<Option<Page>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at
-             FROM Page WHERE title = ?1 AND deleted = 0 AND deleted_at IS NULL"
-        )?;
-
-        let result = stmt.query_row(params![title], |row| {
-            Ok(Page {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                title: row.get(2)?,
-                r#type: row.get(3)?,
-                icon: row.get(4)?,
-                cover: row.get(5)?,
-                aliases: row.get(6)?,
-                file_path: row.get(7)?,
-                children_count: row.get(8)?,
-                word_count: row.get(9)?,
-                deleted: row.get(10)?,
-                created_at: row.get(11)?,
-                updated_at: row.get(12)?,
-                version: row.get(13)?,
-                deleted_at: row.get(14)?,
-            })
-        });
-
-        match result {
-            Ok(page) => Ok(Some(page)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(Box::new(e)),
-        }
+        page_get_by_title(&self.conn, title)
     }
 
     fn get_all(&self) -> Result<Vec<Page>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at
-             FROM Page WHERE deleted = 0 AND deleted_at IS NULL ORDER BY updated_at DESC"
-        )?;
-
-        let pages = stmt.query_map([], |row| {
-            Ok(Page {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                title: row.get(2)?,
-                r#type: row.get(3)?,
-                icon: row.get(4)?,
-                cover: row.get(5)?,
-                aliases: row.get(6)?,
-                file_path: row.get(7)?,
-                children_count: row.get(8)?,
-                word_count: row.get(9)?,
-                deleted: row.get(10)?,
-                created_at: row.get(11)?,
-                updated_at: row.get(12)?,
-                version: row.get(13)?,
-                deleted_at: row.get(14)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-
-        Ok(pages)
+        page_get_all(&self.conn)
     }
 
     fn get_trash(&self) -> Result<Vec<Page>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at
-             FROM Page WHERE deleted = 1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC"
-        )?;
-
-        let pages = stmt.query_map([], |row| {
-            Ok(Page {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                title: row.get(2)?,
-                r#type: row.get(3)?,
-                icon: row.get(4)?,
-                cover: row.get(5)?,
-                aliases: row.get(6)?,
-                file_path: row.get(7)?,
-                children_count: row.get(8)?,
-                word_count: row.get(9)?,
-                deleted: row.get(10)?,
-                created_at: row.get(11)?,
-                updated_at: row.get(12)?,
-                version: row.get(13)?,
-                deleted_at: row.get(14)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-
-        Ok(pages)
+        page_get_trash(&self.conn)
     }
 
 
     fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Page>, Box<dyn Error>> {
-        if ids.is_empty() {
-            return Ok(Vec::new());
-        }
-        let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("?{}", i)).collect();
-        let sql = format!(
-            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at FROM Page WHERE id IN ({}) AND deleted_at IS NULL",
-            placeholders.join(", ")
-        );
-        let mut stmt = self.conn.prepare(&sql)?;
-        let params: Vec<&dyn rusqlite::ToSql> = ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
-        let pages = stmt.query_map(params.as_slice(), |row| {
-            Ok(Page {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                title: row.get(2)?,
-                r#type: row.get(3)?,
-                icon: row.get(4)?,
-                cover: row.get(5)?,
-                aliases: row.get(6)?,
-                file_path: row.get(7)?,
-                children_count: row.get(8)?,
-                word_count: row.get(9)?,
-                deleted: row.get(10)?,
-                created_at: row.get(11)?,
-                updated_at: row.get(12)?,
-                version: row.get(13)?,
-                deleted_at: row.get(14)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        Ok(pages)
+        page_get_by_ids(&self.conn, ids)
     }
 
     fn get_ideas_by_month(&self, year: i32, month: u32) -> Result<Vec<Page>, Box<dyn Error>> {
-        let start = format!("{}-{:02}-01", year, month);
-        let end = if month == 12 {
-            format!("{}-01-01", year + 1)
-        } else {
-            format!("{}-{:02}-01", year, month + 1)
-        };
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at
-             FROM Page WHERE type IN ('ideas', 'journal') AND deleted = 0 AND deleted_at IS NULL AND title >= ?1 AND title < ?2 ORDER BY title DESC"
-        )?;
-        let pages = stmt.query_map(params![start, end], |row| {
-            Ok(Page {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                title: row.get(2)?,
-                r#type: row.get(3)?,
-                icon: row.get(4)?,
-                cover: row.get(5)?,
-                aliases: row.get(6)?,
-                file_path: row.get(7)?,
-                children_count: row.get(8)?,
-                word_count: row.get(9)?,
-                deleted: row.get(10)?,
-                created_at: row.get(11)?,
-                updated_at: row.get(12)?,
-                version: row.get(13)?,
-                deleted_at: row.get(14)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        Ok(pages)
+        page_get_ideas_by_month(&self.conn, year, month)
     }
 
     fn get_ideas_months(&self) -> Result<Vec<String>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT DISTINCT substr(title, 1, 7) AS month
-             FROM Page
-             WHERE type IN ('ideas', 'journal') AND deleted = 0 AND deleted_at IS NULL
-             ORDER BY month DESC"
-        )?;
-        let months = stmt.query_map([], |row| {
-            Ok(row.get::<_, String>(0)?)
-        })?.collect::<Result<Vec<_>, _>>()?;
-        Ok(months)
+        page_get_ideas_months(&self.conn)
     }
 
     fn create(&mut self, page: &Page) -> Result<Page, Box<dyn Error>> {
-        self.conn.execute(
-            "INSERT INTO Page (id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, created_at, updated_at, version, deleted_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
-            params![
-                page.id,
-                page.block_id,
-                page.title,
-                page.r#type,
-                page.icon,
-                page.cover,
-                page.aliases,
-                page.file_path,
-                page.children_count,
-                page.word_count,
-                page.deleted,
-                page.created_at,
-                page.updated_at,
-                page.version,
-                page.deleted_at
-            ]
-        )?;
-
-        Ok(page.clone())
+        page_create(&self.conn, page)
     }
 
     fn update(&mut self, page: &Page) -> Result<Page, Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE Page SET block_id = ?2, title = ?3, type = ?4, icon = ?5, cover = ?6, aliases = ?7, file_path = ?8, children_count = ?9, word_count = ?10, deleted = ?11, updated_at = ?12, version = version + 1
-             WHERE id = ?1",
-            params![
-                page.id,
-                page.block_id,
-                page.title,
-                page.r#type,
-                page.icon,
-                page.cover,
-                page.aliases,
-                page.file_path,
-                page.children_count,
-                page.word_count,
-                page.deleted,
-                page.updated_at
-            ]
-        )?;
-
-        Ok(page.clone())
+        page_update(&self.conn, page)
     }
 
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE Page SET deleted = 1, deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE id = ?1",
-            params![id, chrono::Utc::now().timestamp_millis()]
-        )?;
-        Ok(())
+        page_delete(&self.conn, id)
     }
 }
 
