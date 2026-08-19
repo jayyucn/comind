@@ -129,45 +129,30 @@ mod wasm_impl {
             )));
         }
 
+        let blocks: Vec<Block> = updates
+            .into_iter()
+            .map(|u| Block {
+                id: u.id,
+                page_id: u.page_id,
+                parent_id: u.parent_id,
+                pos: u.pos,
+                content: u.content,
+                format: u.format,
+                r#type: u.r#type,
+                created_at: u.created_at,
+                updated_at: u.updated_at,
+                version: 0,
+                deleted_at: None,
+            })
+            .collect();
+
         with_adapter(|adapter| {
-            let mut results: Vec<BlockSaveResult> = Vec::with_capacity(updates.len());
-            for update in &updates {
-                let existing = comind_core::storage::repository::BlockRepository::get_by_id(
-                    adapter.blocks(),
-                    &update.id,
-                );
-                let block = match existing {
-                    Ok(_) => BlockService::update(
-                        adapter,
-                        &update.id,
-                        Some(&update.content),
-                        Some(&update.format),
-                        Some(&update.r#type),
-                        update.parent_id.as_deref(),
-                        Some(update.pos),
-                    )?,
-                    Err(_) => BlockService::create(
-                        adapter,
-                        &update.page_id,
-                        update.parent_id.as_deref(),
-                        &update.content,
-                        &update.format,
-                        &update.r#type,
-                        Some(&update.id),
-                    )?,
-                };
-
-                // Build render segments during save to close edit→render gap.
-                let render_segments =
-                    build_segments_for_block(adapter, &block).unwrap_or_default();
-
-                results.push(BlockSaveResult {
-                    block,
-                    snapshot: String::new(), // WASM: no version snapshot (Tauri only)
-                    render_segments,
-                });
-            }
-            Ok(serde_json::to_string(&results).unwrap_or_else(|_| "[]".to_string()))
+            // Shared orchestration (ADR-0019 Q3): real snapshot + render segments
+            // + page touch, aligned with the Tauri path. Transaction is the
+            // pass-through no-op (Q7). Sync has no peer on web — sync_changes
+            // are dropped here.
+            let outcome = BlockWriteService::save_blocks(adapter, blocks)?;
+            Ok(serde_json::to_string(&outcome.results).unwrap_or_else(|_| "[]".to_string()))
         })
     }
 
@@ -253,20 +238,10 @@ mod wasm_impl {
     #[wasm_bindgen]
     pub fn delete_page_cascade(page_id: &str) -> Result<JsValue, JsValue> {
         with_adapter(|adapter| {
-            let blocks = BlockService::get_by_page_id(adapter, page_id)?;
-            for block in &blocks {
-                comind_core::storage::repository::PropertyRepository::delete_by_block_id(
-                    adapter.properties(),
-                    &block.id,
-                )?;
-                comind_core::storage::repository::LinkRepository::delete_by_source_block_id(
-                    adapter.links(),
-                    &block.id,
-                )?;
-            }
-            LinkService::delete_by_target_page_id(adapter, page_id)?;
-            BlockService::delete_by_page_id(adapter, page_id)?;
-            PageService::delete(adapter, page_id)?;
+            // Shared orchestration (ADR-0019 Q8/Q14): per-block cascade + target
+            // links + page delete, aligned with the Tauri path. Sync has no peer
+            // on web — the returned sync_changes are dropped.
+            let _sync_changes = BlockWriteService::delete_page_cascade(adapter, page_id)?;
             Ok(to_js_value(json!({"success": true})))
         })
     }

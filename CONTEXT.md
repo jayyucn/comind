@@ -50,3 +50,6 @@ The complete query model: a Condition Group tree plus sort and grouping rules. E
 
 ### Query Engine (查询引擎)
 The headless core of the filtering system: a registry of Field Descriptors plus an evaluator over Condition Group trees. Contains no UI dependencies and no knowledge of concrete business entities.
+
+### Sync (同步)
+The cross-device consistency mechanism: after a write path commits, the affected records are reported to the sync layer so the paired remote can converge. Desktop (Tauri) has a sync peer; the web build has none, so sync is a no-op there. See ADR-0019.

@@ -1,8 +1,7 @@
 use comind_core::{
     services::{
-        BlockService, BlockVersionService, DateRefService, FilterService, LinkService, PageService,
-        PropertyService, RelationshipTypeService, build_page_with_blocks,
-        build_segments_for_block,
+        BlockService, BlockVersionService, BlockWriteService, DateRefService, FilterService,
+        LinkService, PageService, PropertyService, RelationshipTypeService, build_page_with_blocks,
     },
     storage::{SQLiteAdapter, StorageAdapter, TransactionalStorageAdapter},
     types::*,
@@ -576,100 +575,29 @@ pub async fn save_block_tree(
     sync_server: State<'_, super::state::SyncServerHandle>,
     blocks: Vec<serde_json::Value>,
 ) -> Result<Vec<BlockSaveResult>, String> {
-    let mut sync_changes: std::collections::HashMap<SyncTable, Vec<String>> =
-        std::collections::HashMap::new();
+    // Thin adapter (ADR-0019): parse input, delegate to the shared orchestration
+    // (which owns its transaction), then spawn the async sync notification.
+    let blocks: Vec<Block> = blocks
+        .into_iter()
+        .map(|block_json| {
+            serde_json::from_value(block_json)
+                .map_err(|e| format!("Failed to parse block: {}", e))
+        })
+        .collect::<Result<_, _>>()?;
 
-    let result = execute_with_transaction_adapter(db, |storage| {
-        let mut results = Vec::new();
-        let mut page_ids = std::collections::HashSet::new();
+    let adapter_arc = db.adapter_arc();
+    let mut adapter = adapter_arc.lock().await;
+    let outcome = BlockWriteService::save_blocks(&mut *adapter, blocks).map_err(|e| e.to_string())?;
+    drop(adapter);
 
-        for block_json in blocks {
-            let block: Block = serde_json::from_value(block_json)
-                .map_err(|e| format!("Failed to parse block: {}", e))?;
-            page_ids.insert(block.page_id.clone());
-            sync_changes
-                .entry(SyncTable::Block)
-                .or_insert_with(Vec::new)
-                .push(block.id.clone());
-            let existing = BlockService::get_by_id(storage, &block.id);
-            let result = match existing {
-                Ok(_) => BlockService::update(
-                    storage,
-                    &block.id,
-                    Some(&block.content),
-                    Some(&block.format),
-                    Some(&block.r#type),
-                    block.parent_id.as_deref(),
-                    Some(block.pos),
-                ),
-                Err(_) => BlockService::create(
-                    storage,
-                    &block.page_id,
-                    block.parent_id.as_deref(),
-                    &block.content,
-                    &block.format,
-                    &block.r#type,
-                    Some(&block.id),
-                ),
-            };
-            let saved_block = result?;
-
-            // S4: build snapshot inside the transaction (zero extra queries —
-            // block/properties/links are already in cache or just-written).
-            let snapshot = BlockVersionService::build_snapshot(storage, &saved_block.id)
-                .unwrap_or_default();
-
-            // Build render segments during save so TS can restore link/dateRef
-            // rendering after edit→render transition without waiting for loadPageBlocks.
-            // Links + dateRefs were just synced by BlockService::update/create.
-            let render_segments =
-                build_segments_for_block(storage, &saved_block).unwrap_or_default();
-
-            results.push(BlockSaveResult {
-                block: saved_block,
-                snapshot,
-                render_segments,
-            });
+    let sync_server_clone = sync_server.inner().clone();
+    tokio::spawn(async move {
+        for (table, ids) in outcome.sync_changes {
+            sync_server_clone.record_and_notify(table, ids).await;
         }
+    });
 
-        // Collect link, property & notification changes for sync notification (S3/S8)
-        for res in &results {
-            let links = LinkService::get_by_source_block_id(storage, &res.block.id).unwrap_or_default();
-            sync_changes
-                .entry(SyncTable::Link)
-                .or_insert_with(Vec::new)
-                .extend(links.iter().map(|l| l.id.clone()));
-            let props = PropertyService::get_by_block_id(storage, &res.block.id).unwrap_or_default();
-            sync_changes
-                .entry(SyncTable::Property)
-                .or_insert_with(Vec::new)
-                .extend(props.iter().map(|p| p.id.clone()));
-            let notifs = storage.notifications().get_by_block_id(&res.block.id).unwrap_or_default();
-            sync_changes
-                .entry(SyncTable::Notification)
-                .or_insert_with(Vec::new)
-                .extend(notifs.iter().map(|n| n.id.clone()));
-        }
-
-        for page_id in page_ids {
-            let _ = PageService::update(
-                storage, &page_id, None, None, None, None, None, None, None, None,
-            );
-        }
-
-        Ok(results)
-    }).await;
-
-    if result.is_ok() {
-        let sync_server_clone = sync_server.inner().clone();
-        tokio::spawn(async move {
-            for (table, ids) in sync_changes {
-                sync_server_clone.record_and_notify(table, ids).await;
-            }
-        });
-    }
-
-    result
+    Ok(outcome.results)
 }
 
 #[tauri::command]
@@ -678,61 +606,20 @@ pub async fn delete_block(
     sync_server: State<'_, super::state::SyncServerHandle>,
     block_id: &str,
 ) -> Result<(), String> {
-    let mut sync_changes: std::collections::HashMap<SyncTable, Vec<String>> =
-        std::collections::HashMap::new();
+    let adapter_arc = db.adapter_arc();
+    let mut adapter = adapter_arc.lock().await;
+    let sync_changes = BlockWriteService::delete_block_cascade(&mut *adapter, block_id)
+        .map_err(|e| e.to_string())?;
+    drop(adapter);
 
-    let result = execute_with_transaction_adapter(db, |storage| {
-        let block = BlockService::get_by_id(storage, block_id)?;
+    let sync_server_clone = sync_server.inner().clone();
+    tokio::spawn(async move {
+        for (table, ids) in sync_changes {
+            sync_server_clone.record_and_notify(table, ids).await;
+        }
+    });
 
-        // Collect cascade-deleted IDs before deleting
-        let links = LinkService::get_by_source_block_id(storage, block_id)?;
-        sync_changes
-            .entry(SyncTable::Link)
-            .or_insert_with(Vec::new)
-            .extend(links.iter().map(|l| l.id.clone()));
-        let props = PropertyService::get_by_block_id(storage, block_id)?;
-        sync_changes
-            .entry(SyncTable::Property)
-            .or_insert_with(Vec::new)
-            .extend(props.iter().map(|p| p.id.clone()));
-
-        // BlockVersion has FK (block_id) RESTRICT — must delete before Block
-        storage.block_versions().delete_by_block_id(block_id)?;
-        LinkService::delete_by_source_block_id(storage, block_id)?;
-        PropertyService::delete_by_block_id(storage, block_id)?;
-        // BlockService::delete handles dateRef + notification cleanup
-        BlockService::delete(storage, block_id)?;
-
-        sync_changes
-            .entry(SyncTable::Block)
-            .or_insert_with(Vec::new)
-            .push(block_id.to_string());
-
-        let _ = PageService::update(
-            storage,
-            &block.page_id,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
-        Ok(())
-    }).await;
-
-    if result.is_ok() {
-        let sync_server_clone = sync_server.inner().clone();
-        tokio::spawn(async move {
-            for (table, ids) in sync_changes {
-                sync_server_clone.record_and_notify(table, ids).await;
-            }
-        });
-    }
-
-    result
+    Ok(())
 }
 
 #[tauri::command]
@@ -804,63 +691,20 @@ pub async fn delete_page_cascade(
     sync_server: State<'_, super::state::SyncServerHandle>,
     page_id: &str,
 ) -> Result<(), String> {
-    let mut sync_changes: std::collections::HashMap<SyncTable, Vec<String>> =
-        std::collections::HashMap::new();
+    let adapter_arc = db.adapter_arc();
+    let mut adapter = adapter_arc.lock().await;
+    let sync_changes = BlockWriteService::delete_page_cascade(&mut *adapter, page_id)
+        .map_err(|e| e.to_string())?;
+    drop(adapter);
 
-    let result = execute_with_transaction_adapter(db, |storage| {
-        let blocks = BlockService::get_by_page_id(storage, page_id)?;
-        for block in &blocks {
-            // Collect cascade-deleted IDs before deleting
-            let links = LinkService::get_by_source_block_id(storage, &block.id)?;
-            sync_changes
-                .entry(SyncTable::Link)
-                .or_insert_with(Vec::new)
-                .extend(links.into_iter().map(|l| l.id));
-            let props = PropertyService::get_by_block_id(storage, &block.id)?;
-            sync_changes
-                .entry(SyncTable::Property)
-                .or_insert_with(Vec::new)
-                .extend(props.into_iter().map(|p| p.id));
-
-            // BlockVersion has FK (block_id) RESTRICT — must delete before Block
-            storage.block_versions().delete_by_block_id(&block.id)?;
-            LinkService::delete_by_source_block_id(storage, &block.id)?;
-            PropertyService::delete_by_block_id(storage, &block.id)?;
-            // BlockService::delete handles dateRef + notification cleanup
-            BlockService::delete(storage, &block.id)?;
-
-            sync_changes
-                .entry(SyncTable::Block)
-                .or_insert_with(Vec::new)
-                .push(block.id.clone());
+    let sync_server_clone = sync_server.inner().clone();
+    tokio::spawn(async move {
+        for (table, ids) in sync_changes {
+            sync_server_clone.record_and_notify(table, ids).await;
         }
+    });
 
-        // Collect and delete target-side links
-        let target_links = LinkService::get_by_target_page_id(storage, page_id)?;
-        sync_changes
-            .entry(SyncTable::Link)
-            .or_insert_with(Vec::new)
-            .extend(target_links.into_iter().map(|l| l.id));
-        LinkService::delete_by_target_page_id(storage, page_id)?;
-
-        PageService::delete(storage, page_id)?;
-        sync_changes
-            .entry(SyncTable::Page)
-            .or_insert_with(Vec::new)
-            .push(page_id.to_string());
-        Ok(())
-    }).await;
-
-    if result.is_ok() {
-        let sync_server_clone = sync_server.inner().clone();
-        tokio::spawn(async move {
-            for (table, ids) in sync_changes {
-                sync_server_clone.record_and_notify(table, ids).await;
-            }
-        });
-    }
-
-    result
+    Ok(())
 }
 
 #[tauri::command]

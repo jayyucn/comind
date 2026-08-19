@@ -1,4 +1,8 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+
+// SyncTable lives in `types` (ungated) so the wasm build can report sync
+// changes; re-exported here to keep the historical path stable.
+pub use crate::types::SyncTable;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type")]
@@ -41,49 +45,6 @@ pub struct RowPayload {
     pub version: i64,
     pub updated_at: i64,
     pub deleted_at: Option<i64>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SyncTable {
-    Block,
-    Page,
-    Link,
-    Property,
-    DateRef,
-    RelationshipType,
-    Template,
-    Notification,
-    NotificationConfig,
-}
-
-impl SyncTable {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            SyncTable::Block => "Block",
-            SyncTable::Page => "Page",
-            SyncTable::Link => "Link",
-            SyncTable::Property => "Property",
-            SyncTable::DateRef => "DateRef",
-            SyncTable::RelationshipType => "RelationshipType",
-            SyncTable::Template => "UserTemplate",
-            SyncTable::Notification => "Notification",
-            SyncTable::NotificationConfig => "NotificationConfig",
-        }
-    }
-
-    pub fn all() -> &'static [SyncTable] {
-        &[
-            SyncTable::RelationshipType,
-            SyncTable::Template,
-            SyncTable::Page,
-            SyncTable::Block,
-            SyncTable::Link,
-            SyncTable::Property,
-            SyncTable::DateRef,
-            SyncTable::Notification,
-            SyncTable::NotificationConfig,
-        ]
-    }
 }
 
 #[derive(thiserror::Error, Debug)]
