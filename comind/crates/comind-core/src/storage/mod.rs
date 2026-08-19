@@ -3,6 +3,9 @@ pub mod repository;
 pub mod sqlite;
 #[cfg(target_arch = "wasm32")]
 pub mod sqljs;
+pub mod entity;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod executor;
 
 pub use repository::*;
 #[cfg(not(target_arch = "wasm32"))]

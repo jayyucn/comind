@@ -7,6 +7,21 @@ use std::collections::HashMap;
 
 use super::super::types::*;
 use super::repository::*;
+#[cfg(target_arch = "wasm32")]
+use crate::storage::entity::date_ref::{date_ref_select_cols, row_to_date_ref_js};
+#[cfg(target_arch = "wasm32")]
+use crate::storage::entity::block::{block_select_cols, row_to_block_js};
+#[cfg(target_arch = "wasm32")]
+use crate::storage::entity::page::{page_select_cols, row_to_page_js};
+#[cfg(target_arch = "wasm32")]
+use crate::storage::entity::link::{link_select_cols, row_to_link_js};
+use crate::storage::entity::property::{property_select_cols, row_to_property_js};
+use crate::storage::entity::relationship_type::{relationship_type_select_cols, row_to_relationship_type_js};
+use crate::storage::entity::template::{template_select_cols, row_to_template_js};
+use crate::storage::entity::block_version::{block_version_select_cols, row_to_block_version_js};
+use crate::storage::entity::notification::{notification_select_cols, row_to_notification_js};
+use crate::storage::entity::saved_filter::{saved_filter_select_cols, row_to_saved_filter_js};
+use crate::storage::entity::screen_view::{screen_view_select_cols, row_to_screen_view_js};
 
 #[cfg(target_arch = "wasm32")]
 pub struct SqlJsAdapter {
@@ -386,190 +401,29 @@ impl SqlJsAdapter {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn row_to_block(row: &HashMap<String, String>) -> Block {
-    Block {
-        id: row.get("id").cloned().unwrap_or_default(),
-        page_id: row.get("page_id").cloned().unwrap_or_default(),
-        parent_id: {
-            let p = row.get("parent_id").cloned().unwrap_or_default();
-            if p.is_empty() { None } else { Some(p) }
-        },
-        pos: row.get("pos").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        content: row.get("content").cloned().unwrap_or_default(),
-        format: row.get("format").cloned().unwrap_or_else(|| "{}".to_string()),
-        r#type: row.get("type").cloned().unwrap_or_else(|| "bullet".to_string()),
-        created_at: row.get("created_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        updated_at: row.get("updated_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        version: row.get("version").map(|s| s.parse::<i64>().unwrap_or(0)).unwrap_or(0),
-        deleted_at: row.get("deleted_at").map(|s| s.parse::<i64>().ok()).unwrap_or(None),
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-fn row_to_page(row: &HashMap<String, String>) -> Page {
-    Page {
-        id: row.get("id").cloned().unwrap_or_default(),
-        block_id: {
-            let p = row.get("block_id").cloned().unwrap_or_default();
-            if p.is_empty() { None } else { Some(p) }
-        },
-        title: row.get("title").cloned().unwrap_or_default(),
-        r#type: row.get("type").cloned().unwrap_or_else(|| "normal".to_string()),
-        icon: {
-            let p = row.get("icon").cloned().unwrap_or_default();
-            if p.is_empty() { None } else { Some(p) }
-        },
-        cover: {
-            let p = row.get("cover").cloned().unwrap_or_default();
-            if p.is_empty() { None } else { Some(p) }
-        },
-        aliases: row.get("aliases").cloned().unwrap_or_else(|| "[]".to_string()),
-        file_path: {
-            let p = row.get("file_path").cloned().unwrap_or_default();
-            if p.is_empty() { None } else { Some(p) }
-        },
-        children_count: row.get("children_count").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        word_count: row.get("word_count").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        deleted: row.get("deleted").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        version: row.get("version").map(|s| s.parse::<i64>().unwrap_or(0)).unwrap_or(0),
-        deleted_at: row.get("deleted_at").map(|s| s.parse::<i64>().ok()).unwrap_or(None),
-        created_at: row.get("created_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        updated_at: row.get("updated_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-fn row_to_link(row: &HashMap<String, String>) -> Link {
-    Link {
-        id: row.get("id").cloned().unwrap_or_default(),
-        source_block_id: row.get("source_block_id").cloned().unwrap_or_default(),
-        target_page_id: row.get("target_page_id").cloned().unwrap_or_default(),
-        display_text: row.get("display_text").cloned().unwrap_or_default(),
-        relationship_type: {
-            let p = row.get("relationship_type").cloned().unwrap_or_default();
-            if p.is_empty() { None } else { Some(p) }
-        },
-        created_at: row.get("created_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        updated_at: row.get("updated_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        version: row.get("version").map(|s| s.parse::<i64>().unwrap_or(0)).unwrap_or(0),
-        deleted_at: row.get("deleted_at").map(|s| s.parse::<i64>().ok()).unwrap_or(None),
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-fn row_to_date_ref(row: &HashMap<String, String>) -> DateRef {
-    DateRef {
-        id: row.get("id").cloned().unwrap_or_default(),
-        block_id: row.get("block_id").cloned().unwrap_or_default(),
-        kind: row.get("kind").cloned().unwrap_or_default(),
-        iso: row.get("iso").cloned().unwrap_or_default(),
-        date_day: row.get("date_day").cloned().unwrap_or_default(),
-        recurrence: row.get("recurrence").cloned().unwrap_or_default(),
-        lead_minutes: row.get("lead_minutes").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        event_ts: row.get("event_ts").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        created_at: row.get("created_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        updated_at: row.get("updated_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        version: row.get("version").map(|s| s.parse::<i64>().unwrap_or(0)).unwrap_or(0),
-        deleted_at: row.get("deleted_at").map(|s| s.parse::<i64>().ok()).unwrap_or(None),
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-fn row_to_property(row: &HashMap<String, String>) -> Property {
-    Property {
-        id: row.get("id").cloned().unwrap_or_default(),
-        block_id: row.get("block_id").cloned().unwrap_or_default(),
-        key: row.get("key").cloned().unwrap_or_default(),
-        value: row.get("value").cloned().unwrap_or_default(),
-        r#type: row.get("type").cloned().unwrap_or_default(),
-        sort_order: row.get("sort_order").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        is_hidden: row.get("is_hidden").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        is_deleted: row.get("is_deleted").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        schema_version: row.get("schema_version").cloned().unwrap_or_else(|| "1".to_string()).parse::<i64>().unwrap_or(1),
-        version: row.get("version").map(|s| s.parse::<i64>().unwrap_or(0)).unwrap_or(0),
-        deleted_at: row.get("deleted_at").map(|s| s.parse::<i64>().ok()).unwrap_or(None),
-        created_at: row.get("created_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        updated_at: row.get("updated_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-fn row_to_relationship_type(row: &HashMap<String, String>) -> RelationshipType {
-    RelationshipType {
-        id: row.get("id").cloned().unwrap_or_default(),
-        r#type: row.get("type").cloned().unwrap_or_default(),
-        inverse: {
-            let p = row.get("inverse").cloned().unwrap_or_default();
-            if p.is_empty() { None } else { Some(p) }
-        },
-        label: row.get("label").cloned().unwrap_or_default(),
-        inverse_label: row.get("inverse_label").cloned().unwrap_or_default(),
-        color: row.get("color").cloned().unwrap_or_default(),
-        order: row.get("order").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        strength: row.get("strength").cloned().unwrap_or_else(|| "medium".to_string()),
-        deleted: row.get("deleted").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        builtin: row.get("builtin").cloned().unwrap_or_else(|| "1".to_string()).parse::<i64>().unwrap_or(1),
-        created_at: row.get("created_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        updated_at: row.get("updated_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-fn row_to_template(row: &HashMap<String, String>) -> UserTemplate {
-    UserTemplate {
-        id: row.get("id").cloned().unwrap_or_default(),
-        name: row.get("name").cloned().unwrap_or_default(),
-        category: row.get("category").cloned().unwrap_or_default(),
-        content: row.get("content").cloned().unwrap_or_default(),
-        created_at: row.get("created_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        updated_at: row.get("updated_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-fn row_to_block_version(row: &HashMap<String, String>) -> BlockVersion {
-    BlockVersion {
-        id: row.get("id").cloned().unwrap_or_default(),
-        block_id: row.get("block_id").cloned().unwrap_or_default(),
-        version: row.get("version").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        snapshot: row.get("snapshot").cloned().unwrap_or_default(),
-        hash: row.get("hash").cloned().unwrap_or_default(),
-        message: {
-            let p = row.get("message").cloned().unwrap_or_default();
-            if p.is_empty() { None } else { Some(p) }
-        },
-        source: row.get("source").cloned().unwrap_or_default(),
-        restored_from_version_id: {
-            let p = row.get("restored_from_version_id").cloned().unwrap_or_default();
-            if p.is_empty() { None } else { Some(p) }
-        },
-        created_at: row.get("created_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-    }
-}
-
 #[cfg(target_arch = "wasm32")]
 impl BlockRepository for SqlJsAdapter {
     fn get_all(&self) -> Result<Vec<Block>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, page_id, parent_id, pos, content, format, type, version, deleted_at, created_at, updated_at FROM Block WHERE deleted_at IS NULL", &[])?;
-        Ok(result.into_iter().map(|r| row_to_block(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Block WHERE deleted_at IS NULL", block_select_cols()), &[])?;
+        Ok(result.into_iter().map(|r| row_to_block_js(&r)).collect())
     }
 
     fn get_by_id(&self, id: &str) -> Result<Block, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, page_id, parent_id, pos, content, format, type, version, deleted_at, created_at, updated_at FROM Block WHERE id = ? AND deleted_at IS NULL", &[id])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Block WHERE id = ? AND deleted_at IS NULL", block_select_cols()), &[id])?;
         if result.is_empty() {
             return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Block not found")));
         }
-        Ok(row_to_block(&result[0]))
+        Ok(row_to_block_js(&result[0]))
     }
 
     fn get_by_page_id(&self, page_id: &str) -> Result<Vec<Block>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, page_id, parent_id, pos, content, format, type, version, deleted_at, created_at, updated_at FROM Block WHERE page_id = ? AND deleted_at IS NULL ORDER BY pos", &[page_id])?;
-        Ok(result.into_iter().map(|r| row_to_block(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Block WHERE page_id = ? AND deleted_at IS NULL ORDER BY pos", block_select_cols()), &[page_id])?;
+        Ok(result.into_iter().map(|r| row_to_block_js(&r)).collect())
     }
 
     fn get_children(&self, parent_id: &str) -> Result<Vec<Block>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, page_id, parent_id, pos, content, format, type, version, deleted_at, created_at, updated_at FROM Block WHERE parent_id = ? AND deleted_at IS NULL ORDER BY pos", &[parent_id])?;
-        Ok(result.into_iter().map(|r| row_to_block(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Block WHERE parent_id = ? AND deleted_at IS NULL ORDER BY pos", block_select_cols()), &[parent_id])?;
+        Ok(result.into_iter().map(|r| row_to_block_js(&r)).collect())
     }
 
     fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Block>, Box<dyn std::error::Error>> {
@@ -578,12 +432,13 @@ impl BlockRepository for SqlJsAdapter {
         }
         let placeholders: Vec<String> = ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
         let sql = format!(
-            "SELECT id, page_id, parent_id, pos, content, format, type, version, deleted_at, created_at, updated_at FROM Block WHERE id IN ({}) AND deleted_at IS NULL",
+            "SELECT {} FROM Block WHERE id IN ({}) AND deleted_at IS NULL",
+            block_select_cols(),
             placeholders.join(", ")
         );
         let params: Vec<&str> = ids.iter().map(|s| s.as_str()).collect();
         let result = Self::query(&self.db, &sql, &params)?;
-        Ok(result.into_iter().map(|r| row_to_block(&r)).collect())
+        Ok(result.into_iter().map(|r| row_to_block_js(&r)).collect())
     }
 
     fn create(&mut self, block: &Block) -> Result<Block, Box<dyn std::error::Error>> {
@@ -620,33 +475,34 @@ impl BlockRepository for SqlJsAdapter {
     }
 }
 
+
 #[cfg(target_arch = "wasm32")]
 impl PageRepository for SqlJsAdapter {
     fn get_by_id(&self, id: &str) -> Result<Page, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, version, deleted_at, created_at, updated_at FROM Page WHERE id = ? AND deleted = 0 AND deleted_at IS NULL", &[id])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Page WHERE id = ? AND deleted = 0 AND deleted_at IS NULL", page_select_cols()), &[id])?;
         if result.is_empty() {
             return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Page not found")));
         }
-        Ok(row_to_page(&result[0]))
+        Ok(row_to_page_js(&result[0]))
     }
 
     fn get_by_title(&self, title: &str) -> Result<Option<Page>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, version, deleted_at, created_at, updated_at FROM Page WHERE title = ? AND deleted = 0 AND deleted_at IS NULL", &[title])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Page WHERE title = ? AND deleted = 0 AND deleted_at IS NULL", page_select_cols()), &[title])?;
         if result.is_empty() {
             Ok(None)
         } else {
-            Ok(Some(row_to_page(&result[0])))
+            Ok(Some(row_to_page_js(&result[0])))
         }
     }
 
     fn get_all(&self) -> Result<Vec<Page>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, version, deleted_at, created_at, updated_at FROM Page WHERE deleted = 0 AND deleted_at IS NULL ORDER BY updated_at DESC", &[])?;
-        Ok(result.into_iter().map(|r| row_to_page(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Page WHERE deleted = 0 AND deleted_at IS NULL ORDER BY updated_at DESC", page_select_cols()), &[])?;
+        Ok(result.into_iter().map(|r| row_to_page_js(&r)).collect())
     }
 
     fn get_trash(&self) -> Result<Vec<Page>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, version, deleted_at, created_at, updated_at FROM Page WHERE deleted = 1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC", &[])?;
-        Ok(result.into_iter().map(|r| row_to_page(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Page WHERE deleted = 1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC", page_select_cols()), &[])?;
+        Ok(result.into_iter().map(|r| row_to_page_js(&r)).collect())
     }
 
     fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Page>, Box<dyn std::error::Error>> {
@@ -655,12 +511,13 @@ impl PageRepository for SqlJsAdapter {
         }
         let placeholders: Vec<String> = ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
         let sql = format!(
-            "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, version, deleted_at, created_at, updated_at FROM Page WHERE id IN ({}) AND deleted = 0 AND deleted_at IS NULL",
+            "SELECT {} FROM Page WHERE id IN ({}) AND deleted = 0 AND deleted_at IS NULL",
+            page_select_cols(),
             placeholders.join(", ")
         );
         let params: Vec<&str> = ids.iter().map(|s| s.as_str()).collect();
         let result = Self::query(&self.db, &sql, &params)?;
-        Ok(result.into_iter().map(|r| row_to_page(&r)).collect())
+        Ok(result.into_iter().map(|r| row_to_page_js(&r)).collect())
     }
 
     fn get_ideas_by_month(&self, year: i32, month: u32) -> Result<Vec<Page>, Box<dyn std::error::Error>> {
@@ -670,8 +527,8 @@ impl PageRepository for SqlJsAdapter {
         } else {
             format!("{}-{:02}-01", year, month + 1)
         };
-        let result = Self::query(&self.db, "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, version, deleted_at, created_at, updated_at FROM Page WHERE type IN ('ideas', 'journal') AND deleted = 0 AND deleted_at IS NULL AND title >= ? AND title < ? ORDER BY title DESC", &[start.as_str(), end.as_str()])?;
-        Ok(result.into_iter().map(|r| row_to_page(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Page WHERE type IN ('ideas', 'journal') AND deleted = 0 AND deleted_at IS NULL AND title >= ? AND title < ? ORDER BY title DESC", page_select_cols()), &[start.as_str(), end.as_str()])?;
+        Ok(result.into_iter().map(|r| row_to_page_js(&r)).collect())
     }
 
     fn create(&mut self, page: &Page) -> Result<Page, Box<dyn std::error::Error>> {
@@ -710,11 +567,11 @@ impl PageRepository for SqlJsAdapter {
     }
 
     fn get_by_title_including_deleted(&self, title: &str) -> Result<Option<Page>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, title, type, icon, cover, aliases, file_path, children_count, word_count, deleted, version, deleted_at, created_at, updated_at FROM Page WHERE title = ?", &[title])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Page WHERE title = ?", page_select_cols()), &[title])?;
         if result.is_empty() {
             Ok(None)
         } else {
-            Ok(Some(row_to_page(&result[0])))
+            Ok(Some(row_to_page_js(&result[0])))
         }
     }
 
@@ -727,29 +584,36 @@ impl PageRepository for SqlJsAdapter {
 #[cfg(target_arch = "wasm32")]
 impl LinkRepository for SqlJsAdapter {
     fn get_by_id(&self, id: &str) -> Result<Link, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, source_block_id, target_page_id, display_text, relationship_type, updated_at, version, deleted_at, created_at FROM Link WHERE id = ? AND deleted_at IS NULL", &[id])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Link WHERE id = ? AND deleted_at IS NULL", link_select_cols()), &[id])?;
         if result.is_empty() {
             return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Link not found")));
         }
-        Ok(row_to_link(&result[0]))
+        Ok(row_to_link_js(&result[0]))
     }
 
     fn get_by_source_block_id(&self, source_block_id: &str) -> Result<Vec<Link>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, source_block_id, target_page_id, display_text, relationship_type, updated_at, version, deleted_at, created_at FROM Link WHERE source_block_id = ? AND deleted_at IS NULL", &[source_block_id])?;
-        Ok(result.into_iter().map(|r| row_to_link(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Link WHERE source_block_id = ? AND deleted_at IS NULL", link_select_cols()), &[source_block_id])?;
+        Ok(result.into_iter().map(|r| row_to_link_js(&r)).collect())
     }
 
     fn get_by_source_block_ids(&self, source_block_ids: &[String]) -> Result<Vec<Link>, Box<dyn std::error::Error>> {
-        let mut links = Vec::new();
-        for id in source_block_ids {
-            links.extend(LinkRepository::get_by_source_block_id(self, id)?);
+        if source_block_ids.is_empty() {
+            return Ok(Vec::new());
         }
-        Ok(links)
+        let placeholders: Vec<String> = source_block_ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
+        let sql = format!(
+            "SELECT {} FROM Link WHERE source_block_id IN ({}) AND deleted_at IS NULL",
+            link_select_cols(),
+            placeholders.join(", ")
+        );
+        let params: Vec<&str> = source_block_ids.iter().map(|s| s.as_str()).collect();
+        let result = Self::query(&self.db, &sql, &params)?;
+        Ok(result.into_iter().map(|r| row_to_link_js(&r)).collect())
     }
 
     fn get_by_target_page_id(&self, target_page_id: &str) -> Result<Vec<Link>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, source_block_id, target_page_id, display_text, relationship_type, updated_at, version, deleted_at, created_at FROM Link WHERE target_page_id = ? AND deleted_at IS NULL", &[target_page_id])?;
-        Ok(result.into_iter().map(|r| row_to_link(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Link WHERE target_page_id = ? AND deleted_at IS NULL", link_select_cols()), &[target_page_id])?;
+        Ok(result.into_iter().map(|r| row_to_link_js(&r)).collect())
     }
 
     fn create(&mut self, link: &Link) -> Result<Link, Box<dyn std::error::Error>> {
@@ -788,38 +652,19 @@ impl LinkRepository for SqlJsAdapter {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn row_to_notification(row: &HashMap<String, String>) -> Notification {
-    Notification {
-        id: row.get("id").cloned().unwrap_or_default(),
-        block_id: row.get("block_id").cloned().unwrap_or_default(),
-        page_id: row.get("page_id").cloned().unwrap_or_default(),
-        kind: row.get("kind").cloned().unwrap_or_default(),
-        event_iso: row.get("event_iso").cloned().unwrap_or_default(),
-        fired_at: row.get("fired_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        status: row.get("status").cloned().unwrap_or_else(|| "unread".to_string()),
-        snooze_until: {
-            let s = row.get("snooze_until").cloned().unwrap_or_default();
-            if s.is_empty() { None } else { s.parse::<i64>().ok() }
-        },
-        payload: row.get("payload").cloned().unwrap_or_default(),
-        created_at: row.get("created_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        updated_at: row.get("updated_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-    }
-}
-
 #[cfg(target_arch = "wasm32")]
 impl NotificationRepository for SqlJsAdapter {
     fn get_by_id(&self, id: &str) -> Result<Notification, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE id = ?", &[id])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Notification WHERE id = ?", notification_select_cols()), &[id])?;
         if result.is_empty() {
             return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Notification not found")));
         }
-        Ok(row_to_notification(&result[0]))
+        Ok(row_to_notification_js(&result[0]))
     }
 
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<Notification>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE block_id = ? ORDER BY fired_at DESC", &[block_id])?;
-        Ok(result.into_iter().map(|r| row_to_notification(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Notification WHERE block_id = ? ORDER BY fired_at DESC", notification_select_cols()), &[block_id])?;
+        Ok(result.into_iter().map(|r| row_to_notification_js(&r)).collect())
     }
 
     fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<Notification>, Box<dyn std::error::Error>> {
@@ -827,37 +672,34 @@ impl NotificationRepository for SqlJsAdapter {
             return Ok(Vec::new());
         }
         let placeholders: Vec<String> = block_ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
-        let sql = format!(
-            "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE block_id IN ({}) ORDER BY fired_at DESC",
-            placeholders.join(", ")
-        );
+        let sql = format!("SELECT {} FROM Notification WHERE block_id IN ({}) ORDER BY fired_at DESC", notification_select_cols(), placeholders.join(", "));
         let params: Vec<&str> = block_ids.iter().map(|s| s.as_str()).collect();
         let result = Self::query(&self.db, &sql, &params)?;
-        Ok(result.into_iter().map(|r| row_to_notification(&r)).collect())
+        Ok(result.into_iter().map(|r| row_to_notification_js(&r)).collect())
     }
 
     fn find_by_event(&self, block_id: &str, kind: &str, event_iso: &str) -> Result<Option<Notification>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE block_id = ? AND kind = ? AND event_iso = ? LIMIT 1", &[block_id, kind, event_iso])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Notification WHERE block_id = ? AND kind = ? AND event_iso = ? LIMIT 1", notification_select_cols()), &[block_id, kind, event_iso])?;
         if result.is_empty() {
             Ok(None)
         } else {
-            Ok(Some(row_to_notification(&result[0])))
+            Ok(Some(row_to_notification_js(&result[0])))
         }
     }
 
     fn query_unread(&self) -> Result<Vec<Notification>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE status = 'unread' ORDER BY fired_at DESC", &[])?;
-        Ok(result.into_iter().map(|r| row_to_notification(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Notification WHERE status = 'unread' ORDER BY fired_at DESC", notification_select_cols()), &[])?;
+        Ok(result.into_iter().map(|r| row_to_notification_js(&r)).collect())
     }
 
     fn query_pending_due(&self, now_ms: i64) -> Result<Vec<Notification>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE status = 'pending' AND snooze_until IS NOT NULL AND snooze_until <= ? ORDER BY snooze_until ASC", &[&now_ms.to_string()])?;
-        Ok(result.into_iter().map(|r| row_to_notification(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Notification WHERE status = 'pending' AND snooze_until IS NOT NULL AND snooze_until <= ? ORDER BY snooze_until ASC", notification_select_cols()), &[&now_ms.to_string()])?;
+        Ok(result.into_iter().map(|r| row_to_notification_js(&r)).collect())
     }
 
     fn query_recent(&self, limit: usize) -> Result<Vec<Notification>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE status IN ('unread', 'read') ORDER BY fired_at DESC LIMIT ?", &[&limit.to_string()])?;
-        Ok(result.into_iter().map(|r| row_to_notification(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Notification WHERE status IN ('unread', 'read') ORDER BY fired_at DESC LIMIT ?", notification_select_cols()), &[&limit.to_string()])?;
+        Ok(result.into_iter().map(|r| row_to_notification_js(&r)).collect())
     }
 
     fn create(&mut self, notification: &Notification) -> Result<Notification, Box<dyn std::error::Error>> {
@@ -931,55 +773,57 @@ impl NotificationRepository for SqlJsAdapter {
 #[cfg(target_arch = "wasm32")]
 impl DateRefRepository for SqlJsAdapter {
     fn get_all(&self) -> Result<Vec<DateRef>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, updated_at, version, deleted_at, created_at FROM DateRef WHERE deleted_at IS NULL", &[])?;
-        Ok(result.into_iter().map(|r| row_to_date_ref(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM DateRef WHERE deleted_at IS NULL", date_ref_select_cols()), &[])?;
+        Ok(result.into_iter().map(|r| row_to_date_ref_js(&r)).collect())
     }
 
     fn get_by_id(&self, id: &str) -> Result<DateRef, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, updated_at, version, deleted_at, created_at FROM DateRef WHERE id = ? AND deleted_at IS NULL", &[id])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM DateRef WHERE id = ? AND deleted_at IS NULL", date_ref_select_cols()), &[id])?;
         if result.is_empty() {
             return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "DateRef not found")));
         }
-        Ok(row_to_date_ref(&result[0]))
+        Ok(row_to_date_ref_js(&result[0]))
     }
 
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<DateRef>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, updated_at, version, deleted_at, created_at FROM DateRef WHERE block_id = ? AND deleted_at IS NULL", &[block_id])?;
-        Ok(result.into_iter().map(|r| row_to_date_ref(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM DateRef WHERE block_id = ? AND deleted_at IS NULL", date_ref_select_cols()), &[block_id])?;
+        Ok(result.into_iter().map(|r| row_to_date_ref_js(&r)).collect())
     }
 
     fn query_by_date_range(&self, kind: &str, from: &str, to: &str) -> Result<Vec<DateRef>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, updated_at, version, deleted_at, created_at FROM DateRef WHERE (kind = ? OR ? = '*') AND date_day BETWEEN ? AND ? AND deleted_at IS NULL ORDER BY date_day, block_id", &[kind, kind, from, to])?;
-        Ok(result.into_iter().map(|r| row_to_date_ref(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM DateRef WHERE (kind = ? OR ? = '*') AND date_day BETWEEN ? AND ? AND deleted_at IS NULL ORDER BY date_day, block_id", date_ref_select_cols()), &[kind, kind, from, to])?;
+        Ok(result.into_iter().map(|r| row_to_date_ref_js(&r)).collect())
     }
 
     fn query_overdue(&self, today: &str) -> Result<Vec<DateRef>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, updated_at, version, deleted_at, created_at FROM DateRef WHERE kind = 'deadline' AND date_day < ? AND deleted_at IS NULL ORDER BY date_day", &[today])?;
-        Ok(result.into_iter().map(|r| row_to_date_ref(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM DateRef WHERE kind = 'deadline' AND date_day < ? AND deleted_at IS NULL ORDER BY date_day", date_ref_select_cols()), &[today])?;
+        Ok(result.into_iter().map(|r| row_to_date_ref_js(&r)).collect())
     }
 
     fn query_due_non_recurring(&self, now_ms: i64) -> Result<Vec<DateRef>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, updated_at, version, deleted_at, created_at FROM DateRef WHERE recurrence = 'none' AND (event_ts - lead_minutes * 60000) <= ? AND deleted_at IS NULL", &[&now_ms.to_string()])?;
-        Ok(result.into_iter().map(|r| row_to_date_ref(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM DateRef WHERE recurrence = 'none' AND (event_ts - lead_minutes * 60000) <= ? AND deleted_at IS NULL", date_ref_select_cols()), &[&now_ms.to_string()])?;
+        Ok(result.into_iter().map(|r| row_to_date_ref_js(&r)).collect())
     }
 
     fn query_all_recurring(&self) -> Result<Vec<DateRef>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, updated_at, version, deleted_at, created_at FROM DateRef WHERE recurrence != 'none' AND deleted_at IS NULL", &[])?;
-        Ok(result.into_iter().map(|r| row_to_date_ref(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM DateRef WHERE recurrence != 'none' AND deleted_at IS NULL", date_ref_select_cols()), &[])?;
+        Ok(result.into_iter().map(|r| row_to_date_ref_js(&r)).collect())
     }
 
     fn create(&mut self, date_ref: &DateRef) -> Result<DateRef, Box<dyn std::error::Error>> {
-        Self::run_with_params(&self.db, "INSERT INTO DateRef (id, block_id, kind, iso, date_day, recurrence, lead_minutes, event_ts, updated_at, version, deleted_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)", &[
-            &date_ref.id,
-            &date_ref.block_id,
-            &date_ref.kind,
-            &date_ref.iso,
-            &date_ref.date_day,
-            &date_ref.recurrence,
+        let cols = date_ref_select_cols();
+        let sql = format!("INSERT INTO DateRef ({}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)", cols);
+        Self::run_with_params(&self.db, &sql, &[
+            date_ref.id.as_str(),
+            date_ref.block_id.as_str(),
+            date_ref.kind.as_str(),
+            date_ref.iso.as_str(),
+            date_ref.date_day.as_str(),
+            date_ref.recurrence.as_str(),
             &date_ref.lead_minutes.to_string(),
+            &date_ref.created_at.to_string(),
             &date_ref.event_ts.to_string(),
             &date_ref.updated_at.to_string(),
-            &date_ref.created_at.to_string(),
         ])?;
         Ok(date_ref.clone())
     }
@@ -1006,37 +850,44 @@ impl DateRefRepository for SqlJsAdapter {
 
 impl PropertyRepository for SqlJsAdapter {
     fn get_all(&self) -> Result<Vec<Property>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, version, deleted_at, created_at, updated_at FROM Property WHERE is_deleted = 0 AND deleted_at IS NULL", &[])?;
-        Ok(result.into_iter().map(|r| row_to_property(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Property WHERE is_deleted = 0 AND deleted_at IS NULL", property_select_cols()), &[])?;
+        Ok(result.into_iter().map(|r| row_to_property_js(&r)).collect())
     }
 
     fn get_by_id(&self, id: &str) -> Result<Property, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, version, deleted_at, created_at, updated_at FROM Property WHERE id = ? AND deleted_at IS NULL", &[id])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Property WHERE id = ? AND deleted_at IS NULL", property_select_cols()), &[id])?;
         if result.is_empty() {
             return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Property not found")));
         }
-        Ok(row_to_property(&result[0]))
+        Ok(row_to_property_js(&result[0]))
     }
 
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<Property>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, version, deleted_at, created_at, updated_at FROM Property WHERE block_id = ? AND is_deleted = 0 AND deleted_at IS NULL ORDER BY sort_order", &[block_id])?;
-        Ok(result.into_iter().map(|r| row_to_property(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Property WHERE block_id = ? AND is_deleted = 0 AND deleted_at IS NULL ORDER BY sort_order", property_select_cols()), &[block_id])?;
+        Ok(result.into_iter().map(|r| row_to_property_js(&r)).collect())
     }
 
     fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<Property>, Box<dyn std::error::Error>> {
-        let mut properties = Vec::new();
-        for id in block_ids {
-            properties.extend(PropertyRepository::get_by_block_id(self, id)?);
+        if block_ids.is_empty() {
+            return Ok(Vec::new());
         }
-        Ok(properties)
+        let placeholders: Vec<String> = (1..=block_ids.len()).map(|i| format!("?{}", i)).collect();
+        let sql = format!(
+            "SELECT {} FROM Property WHERE block_id IN ({}) AND is_deleted = 0 AND deleted_at IS NULL ORDER BY sort_order",
+            property_select_cols(),
+            placeholders.join(", ")
+        );
+        let params: Vec<&str> = block_ids.iter().map(|s| s.as_str()).collect();
+        let result = Self::query(&self.db, &sql, &params)?;
+        Ok(result.into_iter().map(|r| row_to_property_js(&r)).collect())
     }
 
     fn get_by_block_id_and_key(&self, block_id: &str, key: &str) -> Result<Option<Property>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, version, deleted_at, created_at, updated_at FROM Property WHERE block_id = ? AND key = ? AND is_deleted = 0 AND deleted_at IS NULL", &[block_id, key])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Property WHERE block_id = ? AND key = ? AND is_deleted = 0 AND deleted_at IS NULL", property_select_cols()), &[block_id, key])?;
         if result.is_empty() {
             Ok(None)
         } else {
-            Ok(Some(row_to_property(&result[0])))
+            Ok(Some(row_to_property_js(&result[0])))
         }
     }
 
@@ -1078,7 +929,6 @@ impl PropertyRepository for SqlJsAdapter {
         Ok(property.clone())
     }
 
-
     fn update(&mut self, property: &Property) -> Result<Property, Box<dyn std::error::Error>> {
         Self::run_with_params(&self.db, "UPDATE Property SET value = ?, type = ?, sort_order = ?, is_hidden = ?, is_deleted = ?, version = version + 1, updated_at = ? WHERE id = ?", &[
             &property.value, &property.r#type, &property.sort_order.to_string(),
@@ -1104,25 +954,25 @@ impl PropertyRepository for SqlJsAdapter {
 #[cfg(target_arch = "wasm32")]
 impl RelationshipTypeRepository for SqlJsAdapter {
     fn get_by_id(&self, id: &str) -> Result<RelationshipType, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, type, inverse, label, inverse_label, color, `order`, strength, deleted, builtin, created_at, updated_at FROM RelationshipType WHERE id = ?", &[id])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM RelationshipType WHERE id = ?", relationship_type_select_cols()), &[id])?;
         if result.is_empty() {
             return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "RelationshipType not found")));
         }
-        Ok(row_to_relationship_type(&result[0]))
+        Ok(row_to_relationship_type_js(&result[0]))
     }
 
     fn get_by_type(&self, r#type: &str) -> Result<Option<RelationshipType>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, type, inverse, label, inverse_label, color, `order`, strength, deleted, builtin, created_at, updated_at FROM RelationshipType WHERE type = ? AND deleted = 0", &[r#type])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM RelationshipType WHERE type = ? AND deleted = 0", relationship_type_select_cols()), &[r#type])?;
         if result.is_empty() {
             Ok(None)
         } else {
-            Ok(Some(row_to_relationship_type(&result[0])))
+            Ok(Some(row_to_relationship_type_js(&result[0])))
         }
     }
 
     fn get_all(&self) -> Result<Vec<RelationshipType>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, type, inverse, label, inverse_label, color, `order`, strength, deleted, builtin, created_at, updated_at FROM RelationshipType WHERE deleted = 0 ORDER BY `order`", &[])?;
-        Ok(result.into_iter().map(|r| row_to_relationship_type(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM RelationshipType WHERE deleted = 0 ORDER BY `order`", relationship_type_select_cols()), &[])?;
+        Ok(result.into_iter().map(|r| row_to_relationship_type_js(&r)).collect())
     }
 
     fn create(&mut self, rt: &RelationshipType) -> Result<RelationshipType, Box<dyn std::error::Error>> {
@@ -1155,25 +1005,25 @@ impl RelationshipTypeRepository for SqlJsAdapter {
 #[cfg(target_arch = "wasm32")]
 impl TemplateRepository for SqlJsAdapter {
     fn get_by_id(&self, id: &str) -> Result<UserTemplate, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, name, category, content, created_at, updated_at FROM UserTemplate WHERE id = ?", &[id])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM UserTemplate WHERE id = ?", template_select_cols()), &[id])?;
         if result.is_empty() {
-            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Template not found")));
+            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "UserTemplate not found")));
         }
-        Ok(row_to_template(&result[0]))
+        Ok(row_to_template_js(&result[0]))
     }
 
     fn get_by_name(&self, name: &str) -> Result<Option<UserTemplate>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, name, category, content, created_at, updated_at FROM UserTemplate WHERE name = ?", &[name])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM UserTemplate WHERE name = ?", template_select_cols()), &[name])?;
         if result.is_empty() {
             Ok(None)
         } else {
-            Ok(Some(row_to_template(&result[0])))
+            Ok(Some(row_to_template_js(&result[0])))
         }
     }
 
     fn get_all(&self) -> Result<Vec<UserTemplate>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, name, category, content, created_at, updated_at FROM UserTemplate ORDER BY name", &[])?;
-        Ok(result.into_iter().map(|r| row_to_template(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM UserTemplate ORDER BY name", template_select_cols()), &[])?;
+        Ok(result.into_iter().map(|r| row_to_template_js(&r)).collect())
     }
 
     fn create(&mut self, template: &UserTemplate) -> Result<UserTemplate, Box<dyn std::error::Error>> {
@@ -1201,29 +1051,16 @@ impl TemplateRepository for SqlJsAdapter {
 #[cfg(target_arch = "wasm32")]
 impl SavedFilterRepository for SqlJsAdapter {
     fn get_all(&self) -> Result<Vec<SavedFilter>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, name, query_json, created_at, updated_at FROM SavedFilter ORDER BY created_at DESC", &[])?;
-        Ok(result.into_iter().map(|r| SavedFilter {
-            id: r.get("id").cloned().unwrap_or_default(),
-            name: r.get("name").cloned().unwrap_or_default(),
-            query_json: r.get("query_json").cloned().unwrap_or_default(),
-            created_at: r.get("created_at").and_then(|v| v.parse().ok()).unwrap_or(0),
-            updated_at: r.get("updated_at").and_then(|v| v.parse().ok()).unwrap_or(0),
-        }).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM SavedFilter ORDER BY created_at DESC", saved_filter_select_cols()), &[])?;
+        Ok(result.into_iter().map(|r| row_to_saved_filter_js(&r)).collect())
     }
 
     fn get_by_id(&self, id: &str) -> Result<SavedFilter, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, name, query_json, created_at, updated_at FROM SavedFilter WHERE id = ?", &[id])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM SavedFilter WHERE id = ?", saved_filter_select_cols()), &[id])?;
         if result.is_empty() {
             return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "SavedFilter not found")));
         }
-        let r = &result[0];
-        Ok(SavedFilter {
-            id: r.get("id").cloned().unwrap_or_default(),
-            name: r.get("name").cloned().unwrap_or_default(),
-            query_json: r.get("query_json").cloned().unwrap_or_default(),
-            created_at: r.get("created_at").and_then(|v| v.parse().ok()).unwrap_or(0),
-            updated_at: r.get("updated_at").and_then(|v| v.parse().ok()).unwrap_or(0),
-        })
+        Ok(row_to_saved_filter_js(&result[0]))
     }
 
     fn create(&mut self, filter: &SavedFilter) -> Result<SavedFilter, Box<dyn std::error::Error>> {
@@ -1249,48 +1086,22 @@ impl SavedFilterRepository for SqlJsAdapter {
 #[cfg(target_arch = "wasm32")]
 impl ScreenViewRepository for SqlJsAdapter {
     fn get_all_by_entity(&self, entity: &str) -> Result<Vec<ScreenView>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, entity, parent_id, name, query_json, view_type, group_by, is_default, sort_order, config, created_at, updated_at FROM screen_view WHERE entity = ?1 ORDER BY sort_order ASC, created_at DESC", &[entity])?;
-        Ok(result.into_iter().map(|r| ScreenView {
-            id: r.get("id").cloned().unwrap_or_default(),
-            entity: r.get("entity").cloned().unwrap_or_else(|| "block".to_string()),
-            parent_id: r.get("parent_id").cloned().unwrap_or_default(),
-            name: r.get("name").cloned().unwrap_or_default(),
-            query_json: r.get("query_json").cloned().unwrap_or_default(),
-            view_type: r.get("view_type").cloned().unwrap_or_default(),
-            group_by: r.get("group_by").cloned().unwrap_or_default(),
-            is_default: r.get("is_default").and_then(|v| v.parse().ok()).unwrap_or(0),
-            sort_order: r.get("sort_order").and_then(|v| v.parse().ok()).unwrap_or(0),
-            config: r.get("config").cloned().unwrap_or_default(),
-            created_at: r.get("created_at").and_then(|v| v.parse().ok()).unwrap_or(0),
-            updated_at: r.get("updated_at").and_then(|v| v.parse().ok()).unwrap_or(0),
-        }).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM screen_view WHERE entity = ?1 ORDER BY sort_order ASC, created_at DESC", screen_view_select_cols()), &[entity])?;
+        Ok(result.into_iter().map(|r| row_to_screen_view_js(&r)).collect())
     }
 
     fn get_by_id(&self, id: &str) -> Result<ScreenView, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, entity, parent_id, name, query_json, view_type, group_by, is_default, sort_order, config, created_at, updated_at FROM screen_view WHERE id = ?", &[id])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM screen_view WHERE id = ?", screen_view_select_cols()), &[id])?;
         if result.is_empty() {
             return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "ScreenView not found")));
         }
-        let r = &result[0];
-        Ok(ScreenView {
-            id: r.get("id").cloned().unwrap_or_default(),
-            entity: r.get("entity").cloned().unwrap_or_else(|| "block".to_string()),
-            parent_id: r.get("parent_id").cloned().unwrap_or_default(),
-            name: r.get("name").cloned().unwrap_or_default(),
-            query_json: r.get("query_json").cloned().unwrap_or_default(),
-            view_type: r.get("view_type").cloned().unwrap_or_default(),
-            group_by: r.get("group_by").cloned().unwrap_or_default(),
-            is_default: r.get("is_default").and_then(|v| v.parse().ok()).unwrap_or(0),
-            sort_order: r.get("sort_order").and_then(|v| v.parse().ok()).unwrap_or(0),
-            config: r.get("config").cloned().unwrap_or_default(),
-            created_at: r.get("created_at").and_then(|v| v.parse().ok()).unwrap_or(0),
-            updated_at: r.get("updated_at").and_then(|v| v.parse().ok()).unwrap_or(0),
-        })
+        Ok(row_to_screen_view_js(&result[0]))
     }
 
     fn create(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn std::error::Error>> {
         Self::run_with_params(&self.db, "INSERT INTO screen_view (id, entity, parent_id, name, query_json, view_type, group_by, is_default, sort_order, config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", &[
-            &view.id, &view.entity, &view.parent_id, &view.name, &view.query_json, &view.view_type, &view.group_by, &view.is_default.to_string(), &view.sort_order.to_string(), &view.config, &view.created_at.to_string(), &view.updated_at.to_string()
+            &view.id, &view.entity, &view.parent_id, &view.name, &view.query_json, &view.view_type, &view.group_by,
+            &view.is_default.to_string(), &view.sort_order.to_string(), &view.config, &view.created_at.to_string(), &view.updated_at.to_string()
         ])?;
         Ok(view.clone())
     }
@@ -1326,24 +1137,24 @@ impl SearchRepository for SqlJsAdapter {
 #[cfg(target_arch = "wasm32")]
 impl BlockVersionRepository for SqlJsAdapter {
     fn get_by_id(&self, id: &str) -> Result<BlockVersion, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, version, snapshot, hash, message, source, restored_from_version_id, created_at FROM BlockVersion WHERE id = ?", &[id])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM BlockVersion WHERE id = ?", block_version_select_cols()), &[id])?;
         if result.is_empty() {
             return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "BlockVersion not found")));
         }
-        Ok(row_to_block_version(&result[0]))
+        Ok(row_to_block_version_js(&result[0]))
     }
 
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<BlockVersion>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, version, snapshot, hash, message, source, restored_from_version_id, created_at FROM BlockVersion WHERE block_id = ? ORDER BY version DESC", &[block_id])?;
-        Ok(result.into_iter().map(|r| row_to_block_version(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM BlockVersion WHERE block_id = ? ORDER BY version DESC", block_version_select_cols()), &[block_id])?;
+        Ok(result.into_iter().map(|r| row_to_block_version_js(&r)).collect())
     }
 
     fn get_latest_version(&self, block_id: &str) -> Result<Option<BlockVersion>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, version, snapshot, hash, message, source, restored_from_version_id, created_at FROM BlockVersion WHERE block_id = ? ORDER BY version DESC LIMIT 1", &[block_id])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM BlockVersion WHERE block_id = ? ORDER BY version DESC LIMIT 1", block_version_select_cols()), &[block_id])?;
         if result.is_empty() {
             Ok(None)
         } else {
-            Ok(Some(row_to_block_version(&result[0])))
+            Ok(Some(row_to_block_version_js(&result[0])))
         }
     }
 
