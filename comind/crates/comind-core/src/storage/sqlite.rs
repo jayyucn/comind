@@ -15,6 +15,7 @@ use crate::storage::entity::link::{link_get_by_id, link_get_by_source_block_id, 
 use crate::storage::entity::property::{property_create, property_delete, property_delete_by_block_id, property_get_all, property_get_by_block_id, property_get_by_block_id_and_key, property_get_by_block_ids, property_get_by_id, property_query_block_ids_by_key_value, property_update, property_upsert};
 use crate::storage::entity::relationship_type::{relationship_type_create, relationship_type_delete, relationship_type_get_all, relationship_type_get_by_id, relationship_type_get_by_type, relationship_type_update};
 use crate::storage::entity::template::{template_create, template_delete, template_get_all, template_get_by_id, template_get_by_name, template_update};
+use crate::storage::entity::search::{search_index_delete, search_index_search, search_index_upsert};
 
 pub struct SQLiteAdapter {
     pub conn: Connection,
@@ -698,55 +699,15 @@ impl TemplateRepository for SQLiteAdapter {
 
 impl SearchRepository for SQLiteAdapter {
     fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchResult>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT block_id, content, title, bm25(SearchIndex) as score
-             FROM SearchIndex 
-             WHERE SearchIndex MATCH ?1 
-             ORDER BY bm25(SearchIndex)
-             LIMIT ?2"
-        )?;
-        
-        let fts_query = query.replace(" ", "* ");
-        let fts_query = format!("{}*", fts_query);
-        
-        let results = stmt.query_map(params![fts_query, limit as i64], |row| {
-            let block_id: String = row.get(0)?;
-            let content: String = row.get(1)?;
-            let title: String = row.get(2)?;
-            let score: f64 = row.get(3)?;
-            
-            Ok(SearchResult::new(
-                &block_id,
-                "",
-                &title,
-                &content,
-                score
-            ))
-        })?.collect::<Result<Vec<_>, _>>()?;
-        
-        Ok(results)
+        search_index_search(&self.conn, query, limit)
     }
-    
+
     fn update_index(&mut self, block_id: &str, content: &str, title: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "DELETE FROM SearchIndex WHERE block_id = ?1",
-            params![block_id]
-        )?;
-        
-        self.conn.execute(
-            "INSERT INTO SearchIndex (block_id, content, title) VALUES (?1, ?2, ?3)",
-            params![block_id, content, title]
-        )?;
-        
-        Ok(())
+        search_index_upsert(&self.conn, block_id, content, title)
     }
-    
+
     fn delete_from_index(&mut self, block_id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "DELETE FROM SearchIndex WHERE block_id = ?1",
-            params![block_id]
-        )?;
-        Ok(())
+        search_index_delete(&self.conn, block_id)
     }
 }
 
@@ -1752,55 +1713,15 @@ impl<'a> TemplateRepository for SQLiteTransactionAdapter<'a> {
 
 impl<'a> SearchRepository for SQLiteTransactionAdapter<'a> {
     fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchResult>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT block_id, content, title, bm25(SearchIndex) as score
-             FROM SearchIndex
-             WHERE SearchIndex MATCH ?1
-             ORDER BY bm25(SearchIndex)
-             LIMIT ?2"
-        )?;
-
-        let fts_query = query.replace(" ", "* ");
-        let fts_query = format!("{}*", fts_query);
-
-        let results = stmt.query_map(params![fts_query, limit as i64], |row| {
-            let block_id: String = row.get(0)?;
-            let content: String = row.get(1)?;
-            let title: String = row.get(2)?;
-            let score: f64 = row.get(3)?;
-
-            Ok(SearchResult::new(
-                &block_id,
-                "",
-                &title,
-                &content,
-                score
-            ))
-        })?.collect::<Result<Vec<_>, _>>()?;
-
-        Ok(results)
+        search_index_search(&self.conn, query, limit)
     }
 
     fn update_index(&mut self, block_id: &str, content: &str, title: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "DELETE FROM SearchIndex WHERE block_id = ?1",
-            params![block_id]
-        )?;
-
-        self.conn.execute(
-            "INSERT INTO SearchIndex (block_id, content, title) VALUES (?1, ?2, ?3)",
-            params![block_id, content, title]
-        )?;
-
-        Ok(())
+        search_index_upsert(&self.conn, block_id, content, title)
     }
 
     fn delete_from_index(&mut self, block_id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "DELETE FROM SearchIndex WHERE block_id = ?1",
-            params![block_id]
-        )?;
-        Ok(())
+        search_index_delete(&self.conn, block_id)
     }
 }
 
