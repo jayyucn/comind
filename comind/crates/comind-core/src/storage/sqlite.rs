@@ -5,6 +5,8 @@ use super::super::types::*;
 use super::repository::*;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::date_ref::{date_ref_create, date_ref_create_many, date_ref_delete, date_ref_delete_by_block_id, date_ref_get_all, date_ref_get_by_block_id, date_ref_get_by_id, date_ref_query_all_recurring, date_ref_query_by_date_range, date_ref_query_due_non_recurring, date_ref_query_overdue};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::storage::entity::block::{block_get_all, block_get_by_id, block_get_by_page_id, block_get_children, block_get_by_ids, block_insert, block_update, block_soft_delete_by_id, block_ids_by_page_id, block_soft_delete_by_page_id};
 
 pub struct SQLiteAdapter {
     pub conn: Connection,
@@ -446,213 +448,53 @@ pub fn seed_notification_config(conn: &rusqlite::Connection) -> Result<(), Box<d
 
 impl BlockRepository for SQLiteAdapter {
     fn get_all(&self) -> Result<Vec<Block>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, page_id, parent_id, pos, content, format, type, created_at, updated_at, version, deleted_at FROM Block WHERE deleted_at IS NULL"
-        )?;
-        let blocks = stmt.query_map([], |row| {
-            Ok(Block {
-                id: row.get(0)?,
-                page_id: row.get(1)?,
-                parent_id: row.get(2)?,
-                pos: row.get(3)?,
-                content: row.get(4)?,
-                format: row.get(5)?,
-                r#type: row.get(6)?,
-                created_at: row.get(7)?,
-                updated_at: row.get(8)?,
-                version: row.get(9)?,
-                deleted_at: row.get(10)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        Ok(blocks)
+        block_get_all(&self.conn)
     }
 
     fn get_by_id(&self, id: &str) -> Result<Block, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, page_id, parent_id, pos, content, format, type, created_at, updated_at, version, deleted_at 
-             FROM Block WHERE id = ?1 AND deleted_at IS NULL"
-        )?;
-        
-        let block = stmt.query_row(params![id], |row| {
-            Ok(Block {
-                id: row.get(0)?,
-                page_id: row.get(1)?,
-                parent_id: row.get(2)?,
-                pos: row.get(3)?,
-                content: row.get(4)?,
-                format: row.get(5)?,
-                r#type: row.get(6)?,
-                created_at: row.get(7)?,
-                updated_at: row.get(8)?,
-                version: row.get(9)?,
-                deleted_at: row.get(10)?,
-            })
-        })?;
-        
-        Ok(block)
-    }
-    
-    fn get_by_page_id(&self, page_id: &str) -> Result<Vec<Block>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, page_id, parent_id, pos, content, format, type, created_at, updated_at, version, deleted_at 
-             FROM Block WHERE page_id = ?1 AND deleted_at IS NULL ORDER BY pos"
-        )?;
-        
-        let blocks = stmt.query_map(params![page_id], |row| {
-            Ok(Block {
-                id: row.get(0)?,
-                page_id: row.get(1)?,
-                parent_id: row.get(2)?,
-                pos: row.get(3)?,
-                content: row.get(4)?,
-                format: row.get(5)?,
-                r#type: row.get(6)?,
-                created_at: row.get(7)?,
-                updated_at: row.get(8)?,
-                version: row.get(9)?,
-                deleted_at: row.get(10)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        
-        Ok(blocks)
-    }
-    
-    fn get_children(&self, parent_id: &str) -> Result<Vec<Block>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, page_id, parent_id, pos, content, format, type, created_at, updated_at, version, deleted_at 
-             FROM Block WHERE parent_id = ?1 AND deleted_at IS NULL ORDER BY pos"
-        )?;
-        
-        let blocks = stmt.query_map(params![parent_id], |row| {
-            Ok(Block {
-                id: row.get(0)?,
-                page_id: row.get(1)?,
-                parent_id: row.get(2)?,
-                pos: row.get(3)?,
-                content: row.get(4)?,
-                format: row.get(5)?,
-                r#type: row.get(6)?,
-                created_at: row.get(7)?,
-                updated_at: row.get(8)?,
-                version: row.get(9)?,
-                deleted_at: row.get(10)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        
-        Ok(blocks)
+        block_get_by_id(&self.conn, id)
     }
 
+    fn get_by_page_id(&self, page_id: &str) -> Result<Vec<Block>, Box<dyn Error>> {
+        block_get_by_page_id(&self.conn, page_id)
+    }
+
+    fn get_children(&self, parent_id: &str) -> Result<Vec<Block>, Box<dyn Error>> {
+        block_get_children(&self.conn, parent_id)
+    }
 
     fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Block>, Box<dyn Error>> {
-        if ids.is_empty() {
-            return Ok(Vec::new());
-        }
-        let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("?{}", i)).collect();
-        let sql = format!(
-            "SELECT id, page_id, parent_id, pos, content, format, type, created_at, updated_at, version, deleted_at FROM Block WHERE id IN ({}) AND deleted_at IS NULL",
-            placeholders.join(", ")
-        );
-        let mut stmt = self.conn.prepare(&sql)?;
-        let params: Vec<&dyn rusqlite::ToSql> = ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
-        let blocks = stmt.query_map(params.as_slice(), |row| {
-            Ok(Block {
-                id: row.get(0)?,
-                page_id: row.get(1)?,
-                parent_id: row.get(2)?,
-                pos: row.get(3)?,
-                content: row.get(4)?,
-                format: row.get(5)?,
-                r#type: row.get(6)?,
-                created_at: row.get(7)?,
-                updated_at: row.get(8)?,
-                version: row.get(9)?,
-                deleted_at: row.get(10)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        Ok(blocks)
+        block_get_by_ids(&self.conn, ids)
     }
+
     fn create(&mut self, block: &Block) -> Result<Block, Box<dyn Error>> {
-        self.conn.execute(
-            "INSERT INTO Block (id, page_id, parent_id, pos, content, format, type, created_at, updated_at, version, deleted_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-            params![
-                block.id,
-                block.page_id,
-                block.parent_id,
-                block.pos,
-                block.content,
-                block.format,
-                block.r#type,
-                block.created_at,
-                block.updated_at,
-                block.version,
-                block.deleted_at
-            ]
-        )?;
-        
+        block_insert(&self.conn, block)?;
         self.update_search_index(block)?;
-        
         Ok(block.clone())
     }
-    
+
     fn update(&mut self, block: &Block) -> Result<Block, Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE Block SET page_id = ?2, parent_id = ?3, pos = ?4, content = ?5, format = ?6, type = ?7, updated_at = ?8, version = version + 1
-             WHERE id = ?1",
-            params![
-                block.id,
-                block.page_id,
-                block.parent_id,
-                block.pos,
-                block.content,
-                block.format,
-                block.r#type,
-                block.updated_at
-            ]
-        )?;
-        
+        block_update(&self.conn, block)?;
         self.update_search_index(block)?;
-        
         Ok(block.clone())
     }
-    
+
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE Block SET deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE id = ?1",
-            params![id, chrono::Utc::now().timestamp_millis()]
-        )?;
-        
-        self.conn.execute(
-            "DELETE FROM SearchIndex WHERE block_id = ?1",
-            params![id]
-        )?;
-        
+        block_soft_delete_by_id(&self.conn, id)?;
+        self.conn.execute("DELETE FROM SearchIndex WHERE block_id = ?1", params![id])?;
         Ok(())
     }
-    
+
     fn delete_by_page_id(&mut self, page_id: &str) -> Result<(), Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id FROM Block WHERE page_id = ?1 AND deleted_at IS NULL"
-        )?;
-        let block_ids: Vec<String> = stmt.query_map(params![page_id], |row| {
-            row.get(0)
-        })?.collect::<Result<_, _>>()?;
-        
-        self.conn.execute(
-            "UPDATE Block SET deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE page_id = ?1",
-            params![page_id, chrono::Utc::now().timestamp_millis()]
-        )?;
-        
+        let block_ids = block_ids_by_page_id(&self.conn, page_id)?;
+        block_soft_delete_by_page_id(&self.conn, page_id)?;
         for block_id in block_ids {
-            self.conn.execute(
-                "DELETE FROM SearchIndex WHERE block_id = ?1",
-                params![block_id]
-            )?;
+            self.conn.execute("DELETE FROM SearchIndex WHERE block_id = ?1", params![block_id])?;
         }
-        
         Ok(())
     }
 }
+
 
 impl PageRepository for SQLiteAdapter {
     fn get_by_id(&self, id: &str) -> Result<Page, Box<dyn Error>> {
@@ -2392,215 +2234,53 @@ struct SQLiteTransactionAdapter<'a> {
 
 impl<'a> BlockRepository for SQLiteTransactionAdapter<'a> {
     fn get_all(&self) -> Result<Vec<Block>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, page_id, parent_id, pos, content, format, type, created_at, updated_at, version, deleted_at FROM Block WHERE deleted_at IS NULL"
-        )?;
-        let blocks = stmt.query_map([], |row| {
-            Ok(Block {
-                id: row.get(0)?,
-                page_id: row.get(1)?,
-                parent_id: row.get(2)?,
-                pos: row.get(3)?,
-                content: row.get(4)?,
-                format: row.get(5)?,
-                r#type: row.get(6)?,
-                created_at: row.get(7)?,
-                updated_at: row.get(8)?,
-                version: row.get(9)?,
-                deleted_at: row.get(10)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        Ok(blocks)
+        block_get_all(&self.conn)
     }
 
     fn get_by_id(&self, id: &str) -> Result<Block, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, page_id, parent_id, pos, content, format, type, created_at, updated_at, version, deleted_at 
-             FROM Block WHERE id = ?1 AND deleted_at IS NULL"
-        )?;
-        
-        let block = stmt.query_row(params![id], |row| {
-            Ok(Block {
-                id: row.get(0)?,
-                page_id: row.get(1)?,
-                parent_id: row.get(2)?,
-                pos: row.get(3)?,
-                content: row.get(4)?,
-                format: row.get(5)?,
-                r#type: row.get(6)?,
-                created_at: row.get(7)?,
-                updated_at: row.get(8)?,
-                version: row.get(9)?,
-                deleted_at: row.get(10)?,
-            })
-        })?;
-        
-        Ok(block)
-    }
-    
-    fn get_by_page_id(&self, page_id: &str) -> Result<Vec<Block>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, page_id, parent_id, pos, content, format, type, created_at, updated_at, version, deleted_at 
-             FROM Block WHERE page_id = ?1 AND deleted_at IS NULL ORDER BY pos"
-        )?;
-        
-        let blocks = stmt.query_map(params![page_id], |row| {
-            Ok(Block {
-                id: row.get(0)?,
-                page_id: row.get(1)?,
-                parent_id: row.get(2)?,
-                pos: row.get(3)?,
-                content: row.get(4)?,
-                format: row.get(5)?,
-                r#type: row.get(6)?,
-                created_at: row.get(7)?,
-                updated_at: row.get(8)?,
-                version: row.get(9)?,
-                deleted_at: row.get(10)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        
-        Ok(blocks)
-    }
-    
-    fn get_children(&self, parent_id: &str) -> Result<Vec<Block>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, page_id, parent_id, pos, content, format, type, created_at, updated_at, version, deleted_at 
-             FROM Block WHERE parent_id = ?1 AND deleted_at IS NULL ORDER BY pos"
-        )?;
-        
-        let blocks = stmt.query_map(params![parent_id], |row| {
-            Ok(Block {
-                id: row.get(0)?,
-                page_id: row.get(1)?,
-                parent_id: row.get(2)?,
-                pos: row.get(3)?,
-                content: row.get(4)?,
-                format: row.get(5)?,
-                r#type: row.get(6)?,
-                created_at: row.get(7)?,
-                updated_at: row.get(8)?,
-                version: row.get(9)?,
-                deleted_at: row.get(10)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        
-        Ok(blocks)
+        block_get_by_id(&self.conn, id)
     }
 
+    fn get_by_page_id(&self, page_id: &str) -> Result<Vec<Block>, Box<dyn Error>> {
+        block_get_by_page_id(&self.conn, page_id)
+    }
+
+    fn get_children(&self, parent_id: &str) -> Result<Vec<Block>, Box<dyn Error>> {
+        block_get_children(&self.conn, parent_id)
+    }
 
     fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Block>, Box<dyn Error>> {
-        if ids.is_empty() {
-            return Ok(Vec::new());
-        }
-        let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("?{}", i)).collect();
-        let sql = format!(
-            "SELECT id, page_id, parent_id, pos, content, format, type, created_at, updated_at, version, deleted_at FROM Block WHERE id IN ({}) AND deleted_at IS NULL",
-            placeholders.join(", ")
-        );
-        let mut stmt = self.conn.prepare(&sql)?;
-        let params: Vec<&dyn rusqlite::ToSql> = ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
-        let blocks = stmt.query_map(params.as_slice(), |row| {
-            Ok(Block {
-                id: row.get(0)?,
-                page_id: row.get(1)?,
-                parent_id: row.get(2)?,
-                pos: row.get(3)?,
-                content: row.get(4)?,
-                format: row.get(5)?,
-                r#type: row.get(6)?,
-                created_at: row.get(7)?,
-                updated_at: row.get(8)?,
-                version: row.get(9)?,
-                deleted_at: row.get(10)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        Ok(blocks)
+        block_get_by_ids(&self.conn, ids)
     }
 
-    
     fn create(&mut self, block: &Block) -> Result<Block, Box<dyn Error>> {
-        self.conn.execute(
-            "INSERT INTO Block (id, page_id, parent_id, pos, content, format, type, created_at, updated_at, version, deleted_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-            params![
-                block.id,
-                block.page_id,
-                block.parent_id,
-                block.pos,
-                block.content,
-                block.format,
-                block.r#type,
-                block.created_at,
-                block.updated_at,
-                block.version,
-                block.deleted_at
-            ]
-        )?;
-        
+        block_insert(&self.conn, block)?;
         self.update_search_index(block)?;
-        
         Ok(block.clone())
     }
-    
+
     fn update(&mut self, block: &Block) -> Result<Block, Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE Block SET page_id = ?2, parent_id = ?3, pos = ?4, content = ?5, format = ?6, type = ?7, updated_at = ?8, version = version + 1
-             WHERE id = ?1",
-            params![
-                block.id,
-                block.page_id,
-                block.parent_id,
-                block.pos,
-                block.content,
-                block.format,
-                block.r#type,
-                block.updated_at
-            ]
-        )?;
-        
+        block_update(&self.conn, block)?;
         self.update_search_index(block)?;
-        
         Ok(block.clone())
     }
-    
+
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE Block SET deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE id = ?1",
-            params![id, chrono::Utc::now().timestamp_millis()]
-        )?;
-        
-        self.conn.execute(
-            "DELETE FROM SearchIndex WHERE block_id = ?1",
-            params![id]
-        )?;
-        
+        block_soft_delete_by_id(&self.conn, id)?;
+        self.conn.execute("DELETE FROM SearchIndex WHERE block_id = ?1", params![id])?;
         Ok(())
     }
-    
+
     fn delete_by_page_id(&mut self, page_id: &str) -> Result<(), Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id FROM Block WHERE page_id = ?1 AND deleted_at IS NULL"
-        )?;
-        let block_ids: Vec<String> = stmt.query_map(params![page_id], |row| {
-            row.get(0)
-        })?.collect::<Result<_, _>>()?;
-        
-        self.conn.execute(
-            "UPDATE Block SET deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE page_id = ?1",
-            params![page_id, chrono::Utc::now().timestamp_millis()]
-        )?;
-        
+        let block_ids = block_ids_by_page_id(&self.conn, page_id)?;
+        block_soft_delete_by_page_id(&self.conn, page_id)?;
         for block_id in block_ids {
-            self.conn.execute(
-                "DELETE FROM SearchIndex WHERE block_id = ?1",
-                params![block_id]
-            )?;
+            self.conn.execute("DELETE FROM SearchIndex WHERE block_id = ?1", params![block_id])?;
         }
-        
         Ok(())
     }
 }
+
 
 impl<'a> SQLiteTransactionAdapter<'a> {
     fn update_search_index(&mut self, block: &Block) -> Result<(), Box<dyn Error>> {

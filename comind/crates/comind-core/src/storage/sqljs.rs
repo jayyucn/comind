@@ -9,6 +9,8 @@ use super::super::types::*;
 use super::repository::*;
 #[cfg(target_arch = "wasm32")]
 use crate::storage::entity::date_ref::{date_ref_select_cols, row_to_date_ref_js};
+#[cfg(target_arch = "wasm32")]
+use crate::storage::entity::block::{block_select_cols, row_to_block_js};
 
 #[cfg(target_arch = "wasm32")]
 pub struct SqlJsAdapter {
@@ -388,24 +390,6 @@ impl SqlJsAdapter {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn row_to_block(row: &HashMap<String, String>) -> Block {
-    Block {
-        id: row.get("id").cloned().unwrap_or_default(),
-        page_id: row.get("page_id").cloned().unwrap_or_default(),
-        parent_id: {
-            let p = row.get("parent_id").cloned().unwrap_or_default();
-            if p.is_empty() { None } else { Some(p) }
-        },
-        pos: row.get("pos").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        content: row.get("content").cloned().unwrap_or_default(),
-        format: row.get("format").cloned().unwrap_or_else(|| "{}".to_string()),
-        r#type: row.get("type").cloned().unwrap_or_else(|| "bullet".to_string()),
-        created_at: row.get("created_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        updated_at: row.get("updated_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        version: row.get("version").map(|s| s.parse::<i64>().unwrap_or(0)).unwrap_or(0),
-        deleted_at: row.get("deleted_at").map(|s| s.parse::<i64>().ok()).unwrap_or(None),
-    }
-}
 
 #[cfg(target_arch = "wasm32")]
 fn row_to_page(row: &HashMap<String, String>) -> Page {
@@ -535,26 +519,26 @@ fn row_to_block_version(row: &HashMap<String, String>) -> BlockVersion {
 #[cfg(target_arch = "wasm32")]
 impl BlockRepository for SqlJsAdapter {
     fn get_all(&self) -> Result<Vec<Block>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, page_id, parent_id, pos, content, format, type, version, deleted_at, created_at, updated_at FROM Block WHERE deleted_at IS NULL", &[])?;
-        Ok(result.into_iter().map(|r| row_to_block(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Block WHERE deleted_at IS NULL", block_select_cols()), &[])?;
+        Ok(result.into_iter().map(|r| row_to_block_js(&r)).collect())
     }
 
     fn get_by_id(&self, id: &str) -> Result<Block, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, page_id, parent_id, pos, content, format, type, version, deleted_at, created_at, updated_at FROM Block WHERE id = ? AND deleted_at IS NULL", &[id])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Block WHERE id = ? AND deleted_at IS NULL", block_select_cols()), &[id])?;
         if result.is_empty() {
             return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Block not found")));
         }
-        Ok(row_to_block(&result[0]))
+        Ok(row_to_block_js(&result[0]))
     }
 
     fn get_by_page_id(&self, page_id: &str) -> Result<Vec<Block>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, page_id, parent_id, pos, content, format, type, version, deleted_at, created_at, updated_at FROM Block WHERE page_id = ? AND deleted_at IS NULL ORDER BY pos", &[page_id])?;
-        Ok(result.into_iter().map(|r| row_to_block(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Block WHERE page_id = ? AND deleted_at IS NULL ORDER BY pos", block_select_cols()), &[page_id])?;
+        Ok(result.into_iter().map(|r| row_to_block_js(&r)).collect())
     }
 
     fn get_children(&self, parent_id: &str) -> Result<Vec<Block>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, page_id, parent_id, pos, content, format, type, version, deleted_at, created_at, updated_at FROM Block WHERE parent_id = ? AND deleted_at IS NULL ORDER BY pos", &[parent_id])?;
-        Ok(result.into_iter().map(|r| row_to_block(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Block WHERE parent_id = ? AND deleted_at IS NULL ORDER BY pos", block_select_cols()), &[parent_id])?;
+        Ok(result.into_iter().map(|r| row_to_block_js(&r)).collect())
     }
 
     fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Block>, Box<dyn std::error::Error>> {
@@ -563,12 +547,13 @@ impl BlockRepository for SqlJsAdapter {
         }
         let placeholders: Vec<String> = ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
         let sql = format!(
-            "SELECT id, page_id, parent_id, pos, content, format, type, version, deleted_at, created_at, updated_at FROM Block WHERE id IN ({}) AND deleted_at IS NULL",
+            "SELECT {} FROM Block WHERE id IN ({}) AND deleted_at IS NULL",
+            block_select_cols(),
             placeholders.join(", ")
         );
         let params: Vec<&str> = ids.iter().map(|s| s.as_str()).collect();
         let result = Self::query(&self.db, &sql, &params)?;
-        Ok(result.into_iter().map(|r| row_to_block(&r)).collect())
+        Ok(result.into_iter().map(|r| row_to_block_js(&r)).collect())
     }
 
     fn create(&mut self, block: &Block) -> Result<Block, Box<dyn std::error::Error>> {
@@ -604,6 +589,7 @@ impl BlockRepository for SqlJsAdapter {
         Ok(())
     }
 }
+
 
 #[cfg(target_arch = "wasm32")]
 impl PageRepository for SqlJsAdapter {
