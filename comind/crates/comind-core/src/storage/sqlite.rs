@@ -1023,18 +1023,18 @@ impl TransactionalStorageAdapter for SQLiteAdapter {
         F: FnOnce(&mut dyn StorageAdapter) -> Result<R, Box<dyn Error>>,
     {
         let tx = self.conn.transaction()?;
-        let mut tx_adapter = SQLiteTransactionAdapter { conn: tx };
+        let mut tx_adapter = TxContext { conn: tx };
         let result = f(&mut tx_adapter)?;
         tx_adapter.conn.commit()?;
         Ok(result)
     }
 }
 
-struct SQLiteTransactionAdapter<'a> {
+struct TxContext<'a> {
     conn: rusqlite::Transaction<'a>,
 }
 
-impl<'a> BlockRepository for SQLiteTransactionAdapter<'a> {
+impl<'a> BlockRepository for TxContext<'a> {
     fn get_all(&self) -> Result<Vec<Block>, Box<dyn Error>> {
         block_get_all(&self.conn)
     }
@@ -1084,7 +1084,7 @@ impl<'a> BlockRepository for SQLiteTransactionAdapter<'a> {
 }
 
 
-impl<'a> SQLiteTransactionAdapter<'a> {
+impl<'a> TxContext<'a> {
     fn update_search_index(&mut self, block: &Block) -> Result<(), Box<dyn Error>> {
         let mut stmt = self.conn.prepare(
             "SELECT title FROM Page WHERE id = ?1 AND deleted = 0"
@@ -1112,7 +1112,7 @@ impl<'a> SQLiteTransactionAdapter<'a> {
     }
 }
 
-impl<'a> PageRepository for SQLiteTransactionAdapter<'a> {
+impl<'a> PageRepository for TxContext<'a> {
     fn get_by_id(&self, id: &str) -> Result<Page, Box<dyn Error>> {
         page_get_by_id(&self.conn, id)
     }
@@ -1159,7 +1159,7 @@ impl<'a> PageRepository for SQLiteTransactionAdapter<'a> {
     }
 }
 
-impl<'a> LinkRepository for SQLiteTransactionAdapter<'a>  {
+impl<'a> LinkRepository for TxContext<'a>  {
     fn get_by_id(&self, id: &str) -> Result<Link, Box<dyn Error>> {
         link_get_by_id(&self.conn, id)
     }
@@ -1199,7 +1199,7 @@ impl<'a> LinkRepository for SQLiteTransactionAdapter<'a>  {
     }
 }
 
-impl<'a> PropertyRepository for SQLiteTransactionAdapter<'a> {
+impl<'a> PropertyRepository for TxContext<'a> {
     fn get_all(&self) -> Result<Vec<Property>, Box<dyn Error>> {
         property_get_all(&self.conn)
     }
@@ -1248,7 +1248,7 @@ impl<'a> PropertyRepository for SQLiteTransactionAdapter<'a> {
     }
 }
 
-impl<'a> RelationshipTypeRepository for SQLiteTransactionAdapter<'a> {
+impl<'a> RelationshipTypeRepository for TxContext<'a> {
     fn get_by_id(&self, id: &str) -> Result<RelationshipType, Box<dyn Error>> {
         relationship_type_get_by_id(&self.conn, id)
     }
@@ -1276,7 +1276,7 @@ impl<'a> RelationshipTypeRepository for SQLiteTransactionAdapter<'a> {
     }
 }
 
-impl<'a> TemplateRepository for SQLiteTransactionAdapter<'a> {
+impl<'a> TemplateRepository for TxContext<'a> {
     fn get_by_id(&self, id: &str) -> Result<UserTemplate, Box<dyn Error>> {
         template_get_by_id(&self.conn, id)
     }
@@ -1304,7 +1304,7 @@ impl<'a> TemplateRepository for SQLiteTransactionAdapter<'a> {
     }
 }
 
-impl<'a> SearchRepository for SQLiteTransactionAdapter<'a> {
+impl<'a> SearchRepository for TxContext<'a> {
     fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchResult>, Box<dyn Error>> {
         search_index_search(&self.conn, query, limit)
     }
@@ -1318,120 +1318,38 @@ impl<'a> SearchRepository for SQLiteTransactionAdapter<'a> {
     }
 }
 
-impl<'a> BlockVersionRepository for SQLiteTransactionAdapter<'a> {
+impl<'a> BlockVersionRepository for TxContext<'a> {
     fn get_by_id(&self, id: &str) -> Result<BlockVersion, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, version, snapshot, hash, message, source, restored_from_version_id, created_at 
-             FROM BlockVersion WHERE id = ?1"
-        )?;
-        
-        let version = stmt.query_row(params![id], |row| {
-            Ok(BlockVersion {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                version: row.get(2)?,
-                snapshot: row.get(3)?,
-                hash: row.get(4)?,
-                message: row.get(5)?,
-                source: row.get(6)?,
-                restored_from_version_id: row.get(7)?,
-                created_at: row.get(8)?,
-            })
-        })?;
-        
-        Ok(version)
+        block_version_get_by_id(&self.conn, id)
     }
-    
+
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<BlockVersion>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, version, snapshot, hash, message, source, restored_from_version_id, created_at 
-             FROM BlockVersion WHERE block_id = ?1 ORDER BY version DESC"
-        )?;
-        
-        let versions = stmt.query_map(params![block_id], |row| {
-            Ok(BlockVersion {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                version: row.get(2)?,
-                snapshot: row.get(3)?,
-                hash: row.get(4)?,
-                message: row.get(5)?,
-                source: row.get(6)?,
-                restored_from_version_id: row.get(7)?,
-                created_at: row.get(8)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        
-        Ok(versions)
+        block_version_get_by_block_id(&self.conn, block_id)
     }
-    
+
     fn get_latest_version(&self, block_id: &str) -> Result<Option<BlockVersion>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, version, snapshot, hash, message, source, restored_from_version_id, created_at 
-             FROM BlockVersion WHERE block_id = ?1 ORDER BY version DESC LIMIT 1"
-        )?;
-        
-        let result = stmt.query_row(params![block_id], |row| {
-            Ok(BlockVersion {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                version: row.get(2)?,
-                snapshot: row.get(3)?,
-                hash: row.get(4)?,
-                message: row.get(5)?,
-                source: row.get(6)?,
-                restored_from_version_id: row.get(7)?,
-                created_at: row.get(8)?,
-            })
-        });
-        
-        match result {
-            Ok(version) => Ok(Some(version)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(Box::new(e)),
-        }
+        block_version_get_latest_version(&self.conn, block_id)
     }
-    
+
     fn create(&mut self, version: &BlockVersion) -> Result<BlockVersion, Box<dyn Error>> {
-        self.conn.execute(
-            "INSERT INTO BlockVersion (id, block_id, version, snapshot, hash, message, source, restored_from_version_id, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            params![
-                version.id,
-                version.block_id,
-                version.version,
-                version.snapshot,
-                version.hash,
-                version.message,
-                version.source,
-                version.restored_from_version_id,
-                version.created_at
-            ]
-        )?;
-        
+        block_version_create(&self.conn, version)?;
         Ok(version.clone())
     }
-    
+
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM BlockVersion WHERE id = ?1", params![id])?;
-        Ok(())
+        block_version_delete(&self.conn, id)
     }
-    
+
     fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM BlockVersion WHERE block_id = ?1", params![block_id])?;
-        Ok(())
+        block_version_delete_by_block_id(&self.conn, block_id)
     }
-    
+
     fn delete_older_than(&mut self, block_id: &str, timestamp: i64) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "DELETE FROM BlockVersion WHERE block_id = ?1 AND created_at < ?2",
-            params![block_id, timestamp]
-        )?;
-        Ok(())
+        block_version_delete_older_than(&self.conn, block_id, timestamp)
     }
 }
 
-impl<'a> StorageAdapter for SQLiteTransactionAdapter<'a> {
+impl<'a> StorageAdapter for TxContext<'a> {
     fn blocks(&mut self) -> &mut dyn BlockRepository {
         self
     }
@@ -1485,166 +1403,55 @@ impl<'a> StorageAdapter for SQLiteTransactionAdapter<'a> {
     }
 }
 
-impl<'a> SavedFilterRepository for SQLiteTransactionAdapter<'a> {
+impl<'a> SavedFilterRepository for TxContext<'a> {
     fn get_all(&self) -> Result<Vec<SavedFilter>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name, query_json, created_at, updated_at FROM SavedFilter ORDER BY created_at DESC"
-        )?;
-        let filters = stmt.query_map([], |row| {
-            Ok(SavedFilter {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                query_json: row.get(2)?,
-                created_at: row.get(3)?,
-                updated_at: row.get(4)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        Ok(filters)
+        saved_filter_get_all(&self.conn)
     }
 
     fn get_by_id(&self, id: &str) -> Result<SavedFilter, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name, query_json, created_at, updated_at FROM SavedFilter WHERE id = ?1"
-        )?;
-        let filter = stmt.query_row(params![id], |row| {
-            Ok(SavedFilter {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                query_json: row.get(2)?,
-                created_at: row.get(3)?,
-                updated_at: row.get(4)?,
-            })
-        })?;
-        Ok(filter)
+        saved_filter_get_by_id(&self.conn, id)
     }
 
     fn create(&mut self, filter: &SavedFilter) -> Result<SavedFilter, Box<dyn Error>> {
-        self.conn.execute(
-            "INSERT INTO SavedFilter (id, name, query_json, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![
-                filter.id,
-                filter.name,
-                filter.query_json,
-                filter.created_at,
-                filter.updated_at
-            ]
-        )?;
+        saved_filter_create(&self.conn, filter)?;
         Ok(filter.clone())
     }
 
     fn update(&mut self, filter: &SavedFilter) -> Result<SavedFilter, Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE SavedFilter SET name = ?2, query_json = ?3, updated_at = ?4 WHERE id = ?1",
-            params![
-                filter.id,
-                filter.name,
-                filter.query_json,
-                filter.updated_at
-            ]
-        )?;
+        saved_filter_update(&self.conn, filter)?;
         Ok(filter.clone())
     }
 
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM SavedFilter WHERE id = ?1", params![id])?;
-        Ok(())
+        saved_filter_delete(&self.conn, id)
     }
 }
 
-impl<'a> ScreenViewRepository for SQLiteTransactionAdapter<'a> {
+impl<'a> ScreenViewRepository for TxContext<'a> {
     fn get_all_by_entity(&self, entity: &str) -> Result<Vec<ScreenView>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, COALESCE(config, '') AS config, entity, parent_id, created_at, updated_at FROM screen_view WHERE entity = ?1 ORDER BY sort_order ASC, created_at DESC"
-        )?;
-        let views = stmt.query_map(params![entity], |row| {
-            Ok(ScreenView {
-                id: row.get(0)?,
-                entity: row.get(8).unwrap_or_else(|_| "block".to_string()),
-                parent_id: row.get(9).unwrap_or_default(),
-                name: row.get(1)?,
-                query_json: row.get(2)?,
-                view_type: row.get(3)?,
-                group_by: row.get(4)?,
-                is_default: row.get(5)?,
-                sort_order: row.get(6)?,
-                config: row.get(7)?,
-                created_at: row.get(10)?,
-                updated_at: row.get(11)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        Ok(views)
+        screen_view_get_all_by_entity(&self.conn, entity)
     }
 
     fn get_by_id(&self, id: &str) -> Result<ScreenView, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, COALESCE(config, '') AS config, entity, parent_id, created_at, updated_at FROM screen_view WHERE id = ?1"
-        )?;
-        let view = stmt.query_row(params![id], |row| {
-            Ok(ScreenView {
-                id: row.get(0)?,
-                entity: row.get(8).unwrap_or_else(|_| "block".to_string()),
-                parent_id: row.get(9).unwrap_or_default(),
-                name: row.get(1)?,
-                query_json: row.get(2)?,
-                view_type: row.get(3)?,
-                group_by: row.get(4)?,
-                is_default: row.get(5)?,
-                sort_order: row.get(6)?,
-                config: row.get(7)?,
-                created_at: row.get(10)?,
-                updated_at: row.get(11)?,
-            })
-        })?;
-        Ok(view)
+        screen_view_get_by_id(&self.conn, id)
     }
 
     fn create(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn Error>> {
-        self.conn.execute(
-            "INSERT INTO screen_view (id, entity, parent_id, name, query_json, view_type, group_by, is_default, sort_order, config, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
-            params![
-                view.id,
-                view.entity,
-                view.parent_id,
-                view.name,
-                view.query_json,
-                view.view_type,
-                view.group_by,
-                view.is_default,
-                view.sort_order,
-                view.config,
-                view.created_at,
-                view.updated_at
-            ]
-        )?;
+        screen_view_create(&self.conn, view)?;
         Ok(view.clone())
     }
 
     fn update(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE screen_view SET parent_id = ?2, name = ?3, query_json = ?4, view_type = ?5, group_by = ?6, is_default = ?7, sort_order = ?8, config = ?9, updated_at = ?10 WHERE id = ?1",
-            params![
-                view.id,
-                view.parent_id,
-                view.name,
-                view.query_json,
-                view.view_type,
-                view.group_by,
-                view.is_default,
-                view.sort_order,
-                view.config,
-                view.updated_at
-            ]
-        )?;
+        screen_view_update(&self.conn, view)?;
         Ok(view.clone())
     }
 
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM screen_view WHERE id = ?1", params![id])?;
-        Ok(())
+        screen_view_delete(&self.conn, id)
     }
 }
 
-impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
+impl<'a> DateRefRepository for TxContext<'a> {
     fn get_all(&self) -> Result<Vec<DateRef>, Box<dyn Error>> {
         date_ref_get_all(&self.conn)
     }
@@ -1690,317 +1497,91 @@ impl<'a> DateRefRepository for SQLiteTransactionAdapter<'a> {
     }
 }
 
-impl<'a> NotificationRepository for SQLiteTransactionAdapter<'a> {
+impl<'a> NotificationRepository for TxContext<'a> {
     fn get_by_id(&self, id: &str) -> Result<Notification, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE id = ?"
-        )?;
-        let notif = stmt.query_row(params![id], |row| {
-            Ok(Notification {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                page_id: row.get(2)?,
-                kind: row.get(3)?,
-                event_iso: row.get(4)?,
-                fired_at: row.get(5)?,
-                status: row.get(6)?,
-                snooze_until: row.get(7)?,
-                payload: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-            })
-        })?;
-        Ok(notif)
+        notification_get_by_id(&self.conn, id)
     }
 
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<Notification>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE block_id = ? ORDER BY fired_at DESC"
-        )?;
-        let notifs = stmt.query_map(params![block_id], |row| {
-            Ok(Notification {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                page_id: row.get(2)?,
-                kind: row.get(3)?,
-                event_iso: row.get(4)?,
-                fired_at: row.get(5)?,
-                status: row.get(6)?,
-                snooze_until: row.get(7)?,
-                payload: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-            })
-        })?;
-        let mut result = Vec::new();
-        for n in notifs {
-            result.push(n?);
-        }
-        Ok(result)
+        notification_get_by_block_id(&self.conn, block_id)
     }
-
 
     fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<Notification>, Box<dyn Error>> {
-        if block_ids.is_empty() {
-            return Ok(Vec::new());
-        }
-        let placeholders: Vec<String> = (1..=block_ids.len()).map(|i| format!("?{}", i)).collect();
-        let sql = format!(
-            "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE block_id IN ({}) ORDER BY fired_at DESC",
-            placeholders.join(", ")
-        );
-        let mut stmt = self.conn.prepare(&sql)?;
-        let params: Vec<&dyn rusqlite::ToSql> = block_ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
-        let notifs = stmt.query_map(params.as_slice(), |row| {
-            Ok(Notification {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                page_id: row.get(2)?,
-                kind: row.get(3)?,
-                event_iso: row.get(4)?,
-                fired_at: row.get(5)?,
-                status: row.get(6)?,
-                snooze_until: row.get(7)?,
-                payload: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        Ok(notifs)
+        notification_get_by_block_ids(&self.conn, block_ids)
     }
 
-
     fn find_by_event(&self, block_id: &str, kind: &str, event_iso: &str) -> Result<Option<Notification>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE block_id = ? AND kind = ? AND event_iso = ? LIMIT 1"
-        )?;
-        let result = stmt.query_row(params![block_id, kind, event_iso], |row| {
-            Ok(Notification {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                page_id: row.get(2)?,
-                kind: row.get(3)?,
-                event_iso: row.get(4)?,
-                fired_at: row.get(5)?,
-                status: row.get(6)?,
-                snooze_until: row.get(7)?,
-                payload: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-            })
-        });
-        match result {
-            Ok(n) => Ok(Some(n)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(Box::new(e)),
-        }
+        notification_find_by_event(&self.conn, block_id, kind, event_iso)
     }
 
     fn query_unread(&self) -> Result<Vec<Notification>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE status = 'unread' ORDER BY fired_at DESC"
-        )?;
-        let notifs = stmt.query_map([], |row| {
-            Ok(Notification {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                page_id: row.get(2)?,
-                kind: row.get(3)?,
-                event_iso: row.get(4)?,
-                fired_at: row.get(5)?,
-                status: row.get(6)?,
-                snooze_until: row.get(7)?,
-                payload: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-            })
-        })?;
-        let mut result = Vec::new();
-        for n in notifs {
-            result.push(n?);
-        }
-        Ok(result)
+        notification_query_unread(&self.conn)
     }
 
     fn query_pending_due(&self, now_ms: i64) -> Result<Vec<Notification>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE status = 'pending' AND snooze_until IS NOT NULL AND snooze_until <= ? ORDER BY snooze_until ASC"
-        )?;
-        let notifs = stmt.query_map(params![now_ms], |row| {
-            Ok(Notification {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                page_id: row.get(2)?,
-                kind: row.get(3)?,
-                event_iso: row.get(4)?,
-                fired_at: row.get(5)?,
-                status: row.get(6)?,
-                snooze_until: row.get(7)?,
-                payload: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-            })
-        })?;
-        let mut result = Vec::new();
-        for n in notifs {
-            result.push(n?);
-        }
-        Ok(result)
+        notification_query_pending_due(&self.conn, now_ms)
     }
 
     fn query_recent(&self, limit: usize) -> Result<Vec<Notification>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at FROM Notification WHERE status IN ('unread', 'read') ORDER BY fired_at DESC LIMIT ?"
-        )?;
-        let notifs = stmt.query_map(params![limit as i64], |row| {
-            Ok(Notification {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                page_id: row.get(2)?,
-                kind: row.get(3)?,
-                event_iso: row.get(4)?,
-                fired_at: row.get(5)?,
-                status: row.get(6)?,
-                snooze_until: row.get(7)?,
-                payload: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-            })
-        })?;
-        let mut result = Vec::new();
-        for n in notifs {
-            result.push(n?);
-        }
-        Ok(result)
+        notification_query_recent(&self.conn, limit)
     }
 
     fn create(&mut self, notification: &Notification) -> Result<Notification, Box<dyn Error>> {
-        self.conn.execute(
-            "INSERT INTO Notification (id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            params![
-                notification.id,
-                notification.block_id,
-                notification.page_id,
-                notification.kind,
-                notification.event_iso,
-                notification.fired_at,
-                notification.status,
-                notification.snooze_until,
-                notification.payload,
-                notification.created_at,
-                notification.updated_at,
-            ],
-        )?;
+        notification_create(&self.conn, notification)?;
         Ok(notification.clone())
     }
 
     fn batch_create(&mut self, notifications: &[Notification]) -> Result<Vec<Notification>, Box<dyn Error>> {
-        for n in notifications {
-            self.conn.execute(
-                "INSERT INTO Notification (id, block_id, page_id, kind, event_iso, fired_at, status, snooze_until, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                params![
-                    n.id, n.block_id, n.page_id, n.kind, n.event_iso, n.fired_at,
-                    n.status, n.snooze_until, n.payload, n.created_at, n.updated_at,
-                ],
-            )?;
-        }
+        notification_batch_create(&self.conn, notifications)?;
         Ok(notifications.to_vec())
     }
 
     fn update_status(&mut self, id: &str, status: &str) -> Result<Notification, Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE Notification SET status = ?, updated_at = ? WHERE id = ?",
-            params![status, chrono::Utc::now().timestamp_millis(), id],
-        )?;
+        notification_update_status(&self.conn, id, status)?;
         crate::NotificationRepository::get_by_id(self, id)
     }
 
     fn set_snooze(&mut self, id: &str, snooze_until: i64, status: &str) -> Result<Notification, Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE Notification SET snooze_until = ?, status = ?, updated_at = ? WHERE id = ?",
-            params![snooze_until, status, chrono::Utc::now().timestamp_millis(), id],
-        )?;
+        notification_set_snooze(&self.conn, id, snooze_until, status)?;
         crate::NotificationRepository::get_by_id(self, id)
     }
 
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM Notification WHERE id = ?", params![id])?;
-        Ok(())
+        notification_delete(&self.conn, id)
     }
 
     fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM Notification WHERE block_id = ?", params![block_id])?;
-        Ok(())
+        notification_delete_by_block_id(&self.conn, block_id)
     }
 
     fn delete_by_block_and_kind(&mut self, block_id: &str, kind: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM Notification WHERE block_id = ? AND kind = ?", params![block_id, kind])?;
-        Ok(())
+        notification_delete_by_block_and_kind(&self.conn, block_id, kind)
     }
 
     fn delete_older_than(&mut self, timestamp: i64) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "DELETE FROM Notification WHERE status = 'read' AND updated_at < ?",
-            params![timestamp],
-        )?;
-        Ok(())
+        notification_delete_older_than(&self.conn, timestamp)
     }
 
     fn mark_all_read(&mut self) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE Notification SET status = 'read', updated_at = ? WHERE status = 'unread'",
-            params![chrono::Utc::now().timestamp_millis()],
-        )?;
-        Ok(())
+        notification_mark_all_read(&self.conn)
     }
 
     fn update_payload(&mut self, id: &str, payload: &str) -> Result<Notification, Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE Notification SET payload = ?, updated_at = ? WHERE id = ?",
-            params![payload, chrono::Utc::now().timestamp_millis(), id],
-        )?;
+        notification_update_payload(&self.conn, id, payload)?;
         crate::NotificationRepository::get_by_id(self, id)
     }
 
     fn reschedule(&mut self, block_id: &str, kind: &str, new_event_iso: &str) -> Result<(), Box<dyn Error>> {
-        // 非 recurring 通知原地改期：把匹配 (block_id, kind) 的通知 event_iso 改掉，
-        // 状态重置为 unread、清 snooze。event_iso 计算见 DateRefService::compute_event_iso（与 TS 一致）。
-        self.conn.execute(
-            "UPDATE Notification SET event_iso = ?, status = 'unread', snooze_until = NULL, updated_at = ? WHERE block_id = ? AND kind = ? AND status IN ('unread','read','dismissed')",
-            params![new_event_iso, chrono::Utc::now().timestamp_millis(), block_id, kind],
-        )?;
-        Ok(())
+        notification_reschedule(&self.conn, block_id, kind, new_event_iso)
     }
-
 }
 
-impl<'a> NotificationConfigRepository for SQLiteTransactionAdapter<'a> {
+impl<'a> NotificationConfigRepository for TxContext<'a> {
     fn get(&self) -> Result<NotificationConfig, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, enabled, schedule_enabled, deadline_enabled, overdue_enabled, quiet_hours_start, quiet_hours_end, web_browser_notifications_enabled FROM notification_config WHERE id = 1"
-        )?;
-        let config = stmt.query_row([], |row| {
-            Ok(NotificationConfig {
-                id: row.get(0)?,
-                enabled: row.get::<_, i64>(1)? != 0,
-                schedule_enabled: row.get::<_, i64>(2)? != 0,
-                deadline_enabled: row.get::<_, i64>(3)? != 0,
-                overdue_enabled: row.get::<_, i64>(4)? != 0,
-                quiet_hours_start: row.get(5)?,
-                quiet_hours_end: row.get(6)?,
-                web_browser_notifications_enabled: row.get::<_, i64>(7)? != 0,
-            })
-        })?;
-        Ok(config)
+        notification_config_get(&self.conn)
     }
 
     fn save(&mut self, config: &NotificationConfig) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "INSERT INTO notification_config (id, enabled, schedule_enabled, deadline_enabled, overdue_enabled, quiet_hours_start, quiet_hours_end, web_browser_notifications_enabled)
-             VALUES (1, ?, ?, ?, ?, ?, ?, ?)
-             ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled, schedule_enabled=excluded.schedule_enabled, deadline_enabled=excluded.deadline_enabled, overdue_enabled=excluded.overdue_enabled, quiet_hours_start=excluded.quiet_hours_start, quiet_hours_end=excluded.quiet_hours_end, web_browser_notifications_enabled=excluded.web_browser_notifications_enabled",
-            params![config.enabled as i64, config.schedule_enabled as i64, config.deadline_enabled as i64, config.overdue_enabled as i64, config.quiet_hours_start, config.quiet_hours_end, config.web_browser_notifications_enabled as i64],
-        )?;
-        Ok(())
+        notification_config_save(&self.conn, config)
     }
 }

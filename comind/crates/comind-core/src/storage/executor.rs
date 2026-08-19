@@ -2,7 +2,7 @@
 use rusqlite::{Connection, Transaction, ToSql, params_from_iter};
 
 /// 抽象「能执行 SQL 的东西」：原生连接与事务连接共用同一套 repo 自由函数，
-/// 从而消除 `SQLiteAdapter` 与 `SQLiteTransactionAdapter` 之间约 2000 行逐字复制。
+/// 从而消除 `SQLiteAdapter` 与事务路径 `TxContext` 之间约 2000 行逐字复制。
 ///
 /// 详见 `docs/adr/0018-repository-convergence.md`。
 ///
