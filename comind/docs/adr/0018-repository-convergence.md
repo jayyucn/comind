@@ -137,3 +137,145 @@ Implemented on branch `refactor-repository-convergence`, on top of DateRef (`08e
 **Net change.** `link.rs` +241 (new, incl. tests); `sqlite.rs` net ≈ −260 (both Link impls collapsed from ~166→~39 lines each); `sqljs.rs` net ≈ −19. Overall net reduction ≈ **−34 lines** of pure duplication while adding the same convergence guarantee as DateRef/Block/Page.
 
 **Next:** continue Link → Property → RelationshipType → Template → Search → BlockVersion → Notification → SavedFilter → ScreenView → NotificationConfig, each behind the same shared-module + `Executor` pattern. After the last entity lands, delete `SQLiteTransactionAdapter` entirely (Q3a). The convergence PR stays open and accumulates these entity commits for one review.
+
+## Landing record — Property (2026-08-19)
+
+Implemented on branch `refactor-repository-convergence` (commit `e18559f`), on top of DateRef/Block/Page/Link. Review gate (Q10a) intentionally skipped per jay's go-ahead.
+
+**Files**
+- `crates/comind-core/src/storage/entity/property.rs` (new) — `PROPERTY_COLS` const (13 cols, canonical order = native positional = struct field order), `property_select_cols()`, `property_insert_sql()`, `property_update_sql()`, `row_to_property_native()` (by-position), `row_to_property_js()` (by-name; preserves sql.js semantics: empty `block_id`→`None`, numeric defaults `0`, `is_deleted` default `0`), `property_params()` + `property_update_params()`, and 11 free functions (`property_get_all / get_by_id / get_by_block_id / get_by_block_ids / get_by_block_id_and_key / query_block_ids_by_key_value / create / upsert / update / delete / delete_by_block_id`) generic over `E: Executor`. Unit tests `row_to_property_js_roundtrip` + `row_to_property_js_block_id_some`.
+- `crates/comind-core/src/storage/entity/mod.rs` — added `pub mod property;`
+- `crates/comind-core/src/storage/sqlite.rs` — native + transaction `TxContext` `PropertyRepository` impls delegate to the shared free functions.
+- `crates/comind-core/src/storage/sqljs.rs` — `SqlJsAdapter::PropertyRepository` SELECTs via `property_select_cols()` and maps via `row_to_property_js` (Q4b). Dead `row_to_property` removed.
+
+**Q4b confirmation (Property).** Native and wasm `Property` tables share the same 13 physical columns; both derive SELECT/INSERT column lists from `PROPERTY_COLS`. `row_to_property_js` reads by name, so positional differences are inert and drift is structurally impossible.
+
+**Verification.** `cargo check -p comind-core --tests` (native) ✅ 0 warnings; `cargo check --target wasm32-unknown-unknown -p comind-core` (sql.js path) ✅. `cargo test -p comind-core --lib`: **124 passed**, **4 pre-existing failures unchanged & unrelated** — identical set to the DateRef/Block/Page/Link baselines. Zero new failures introduced.
+
+## Landing record — RelationshipType (2026-08-19)
+
+Implemented on branch `refactor-repository-convergence` (commit `260fe73`).
+
+**Files**
+- `crates/comind-core/src/storage/entity/relationship_type.rs` (new) — `RELATIONSHIP_TYPE_COLS` const (12 cols; `order` is a SQL reserved word, so `relationship_type_select_cols()` / `*_insert_sql()` backtick-wrap it), `row_to_relationship_type_native()` / `row_to_relationship_type_js()`, and 6 free functions (`relationship_type_get_by_id / get_by_type / get_all / create / update / delete`) generic over `E: Executor`. Unit tests `row_to_relationship_type_js_roundtrip` + `row_to_relationship_type_js_defaults`.
+- `crates/comind-core/src/storage/entity/mod.rs` — added `pub mod relationship_type;`
+- `crates/comind-core/src/storage/sqlite.rs` — native + tx `RelationshipTypeRepository` impls delegate to shared free functions.
+- `crates/comind-core/src/storage/sqljs.rs` — `SqlJsAdapter::RelationshipTypeRepository` SELECTs via `relationship_type_select_cols()` (backtick `order`) and maps via `row_to_relationship_type_js` (Q4b). Dead `row_to_relationship_type` removed.
+
+**Q4b confirmation (RelationshipType).** The `order` reserved word is handled once in `relationship_type_select_cols()` (backtick-wrapped) and reused by both engines, so the 12-column list is single-sourced; `row_to_relationship_type_js` reads by name. Drift structurally impossible.
+
+**Verification.** native + wasm check ✅ 0 warnings; `cargo test --lib`: **126 passed**, 4 pre-existing failures unchanged & unrelated. Zero new failures.
+
+## Landing record — Template (2026-08-19)
+
+Implemented on branch `refactor-repository-convergence` (commit `6368fce`).
+
+**Files**
+- `crates/comind-core/src/storage/entity/template.rs` (new) — `TEMPLATE_COLS` const (6 cols), `template_select_cols()`, `template_insert_sql()`, `row_to_template_native()` / `row_to_template_js()`, and 6 free functions (`template_get_by_id / get_by_name / get_all / create / update / delete`) generic over `E: Executor` (returns `UserTemplate`). Unit tests `row_to_template_js_roundtrip` + `row_to_template_js_defaults`.
+- `crates/comind-core/src/storage/entity/mod.rs` — added `pub mod template;`
+- `crates/comind-core/src/storage/sqlite.rs` — native + tx `TemplateRepository` impls delegate to shared free functions.
+- `crates/comind-core/src/storage/sqljs.rs` — `SqlJsAdapter::TemplateRepository` SELECTs via `template_select_cols()` and maps via `row_to_template_js` (Q4b). Dead `row_to_template` removed.
+
+**Q4b confirmation (Template).** Both engines derive the 6-column SELECT/INSERT lists from `TEMPLATE_COLS`; `row_to_template_js` reads by name. Drift structurally impossible.
+
+**Verification.** native + wasm check ✅ 0 warnings; `cargo test --lib`: **128 passed**, 4 pre-existing failures unchanged & unrelated. Zero new failures.
+
+## Landing record — Search (2026-08-19)
+
+Implemented on branch `refactor-repository-convergence` (commit `f1c06b7`).
+
+**Files**
+- `crates/comind-core/src/storage/entity/search.rs` (new) — `SEARCH_INDEX_COLS` const (3 cols: `block_id, content, title`; FTS5 virtual table), `search_index_insert_sql()`, and 3 free functions (`search_index_search / upsert / delete`) generic over `E: Executor`. `search_index_search` builds an FTS5 `MATCH` query and returns `Vec<SearchResult>` (score via `bm25`). `use crate::types::SearchResult;` gated `#[cfg(not(wasm32))]`. Native round-trip test `search_index_roundtrip` on an in-memory `Connection`. `row_to_*` is intentionally absent (search returns a computed `SearchResult`, not a stored row).
+- `crates/comind-core/src/storage/entity/mod.rs` — added `pub mod search;`
+- `crates/comind-core/src/storage/sqlite.rs` — native + tx `SearchRepository` impls delegate to `search_index_*` free functions; the Block `create`/`update` path still calls `search_index_upsert`/`delete` via the adapter (SearchIndex side-effect lives in the adapter, not the shared fn).
+- `crates/comind-core/src/storage/sqljs.rs` — `SqlJsAdapter::SearchRepository` left as a no-op stub (no FTS in wasm); native + wasm share the `SearchIndex` write/delete SQL.
+
+**Q4b confirmation (Search).** `SearchIndex` has no by-position row mapping (it is a computed FTS result), so column-order drift is N/A; the 3-column `SEARCH_INDEX_COLS` is the single source for the write/delete SQL used by both native and tx paths.
+
+**Verification.** native + wasm check ✅ 0 warnings; `cargo test --lib`: **129 passed**, 4 pre-existing failures unchanged & unrelated. Zero new failures.
+
+## Landing record — BlockVersion (2026-08-19)
+
+Implemented on branch `refactor-repository-convergence` (commit `690278e`).
+
+**Files**
+- `crates/comind-core/src/storage/entity/block_version.rs` (new) — `BLOCK_VERSION_COLS` const (9 cols), `block_version_select_cols()`, `block_version_insert_sql()`, `row_to_block_version_native()` / `row_to_block_version_js()` (preserves sql.js: `message`/`restored_from_version_id` empty→`None`, numeric default `0`), `block_version_params()`, and 7 free functions (`block_version_get_by_id / get_by_block_id / get_latest_version / create / delete / delete_by_block_id / delete_older_than`) generic over `E: Executor`. Unit tests `row_to_block_version_js_roundtrip` + `row_to_block_version_js_option_none`.
+- `crates/comind-core/src/storage/entity/mod.rs` — added `pub mod block_version;`
+- `crates/comind-core/src/storage/sqlite.rs` — native + tx `BlockVersionRepository` impls delegate to shared free functions (removes the last inline `BlockVersion` SQL from the tx path).
+- `crates/comind-core/src/storage/sqljs.rs` — `SqlJsAdapter::BlockVersionRepository` SELECTs via `block_version_select_cols()` and maps via `row_to_block_version_js` (Q4b). Dead `row_to_block_version` removed.
+
+**Q4b confirmation (BlockVersion).** Both engines derive the 9-column SELECT/INSERT lists from `BLOCK_VERSION_COLS`; `row_to_block_version_js` reads by name. Drift structurally impossible.
+
+**Verification.** native + wasm check ✅ 0 warnings; `cargo test --lib`: **131 passed**, 4 pre-existing failures unchanged & unrelated. Zero new failures.
+
+## Landing record — Notification (2026-08-19)
+
+Implemented on branch `refactor-repository-convergence` (commit `0e9c61d`).
+
+**Files**
+- `crates/comind-core/src/storage/entity/notification.rs` (new) — `NOTIFICATION_COLS` const (11 cols), `notification_select_cols()`, `notification_insert_sql()`, `row_to_notification_native()` / `row_to_notification_js()` (preserves sql.js: `status` default `"unread"`, `snooze_until` empty→`None`, numeric default `0`), `notification_params()`, and 18 free functions (`notification_get_by_id / get_by_block_id / get_by_block_ids / find_by_event / query_unread / query_pending_due / query_recent / create / batch_create / update_status / set_snooze / delete / delete_by_block_id / delete_by_block_and_kind / delete_older_than / mark_all_read / update_payload / reschedule`) generic over `E: Executor`. `update_status`/`set_snooze`/`update_payload` re-fetch via `notification_get_by_id` after the write. Unit tests `row_to_notification_js_roundtrip` + `row_to_notification_js_defaults`.
+- `crates/comind-core/src/storage/entity/mod.rs` — added `pub mod notification;`
+- `crates/comind-core/src/storage/sqlite.rs` — native + tx `NotificationRepository` impls delegate to shared free functions (removes the last inline `Notification` SQL, including the `IN (...)` batch query, from the tx path).
+- `crates/comind-core/src/storage/sqljs.rs` — `SqlJsAdapter::NotificationRepository` SELECTs via `notification_select_cols()` and maps via `row_to_notification_js` (Q4b). Dead `row_to_notification` removed.
+
+**Q4b confirmation (Notification).** Both engines derive the 11-column SELECT list from `NOTIFICATION_COLS`; `row_to_notification_js` reads by name. Drift structurally impossible.
+
+**Verification.** native + wasm check ✅ 0 warnings; `cargo test --lib`: **133 passed**, 4 pre-existing failures unchanged & unrelated. Zero new failures.
+
+## Landing record — SavedFilter (2026-08-19)
+
+Implemented on branch `refactor-repository-convergence` (commit `ff60f83`).
+
+**Files**
+- `crates/comind-core/src/storage/entity/saved_filter.rs` (new) — `SAVED_FILTER_COLS` const (5 cols), `saved_filter_select_cols()`, `saved_filter_insert_sql()`, `row_to_saved_filter_native()` / `row_to_saved_filter_js()` (preserves sql.js: `created_at`/`updated_at` parse-fail→`0`), `saved_filter_params()`, and 5 free functions (`saved_filter_get_all / get_by_id / create / update / delete`) generic over `E: Executor`. Unit tests `row_to_saved_filter_js_roundtrip` + `row_to_saved_filter_js_defaults`.
+- `crates/comind-core/src/storage/entity/mod.rs` — added `pub mod saved_filter;`
+- `crates/comind-core/src/storage/sqlite.rs` — native + tx `SavedFilterRepository` impls delegate to shared free functions (removes the last inline `SavedFilter` SQL from the tx path).
+- `crates/comind-core/src/storage/sqljs.rs` — `SqlJsAdapter::SavedFilterRepository` SELECTs via `saved_filter_select_cols()` and maps via `row_to_saved_filter_js` (Q4b); sql.js previously inlined the struct and now uses the shared `row_to_saved_filter_js`.
+
+**Q4b confirmation (SavedFilter).** Both engines derive the 5-column SELECT/INSERT lists from `SAVED_FILTER_COLS`; `row_to_saved_filter_js` reads by name. Drift structurally impossible.
+
+**Verification.** native + wasm check ✅ 0 warnings; `cargo test --lib`: **135 passed**, 4 pre-existing failures unchanged & unrelated. Zero new failures.
+
+## Landing record — ScreenView (2026-08-19)
+
+Implemented on branch `refactor-repository-convergence` (commit `f244dbf`).
+
+**Files**
+- `crates/comind-core/src/storage/entity/screen_view.rs` (new) — `SCREEN_VIEW_COLS` const (12 cols; INSERT order) and `screen_view_select_cols()` which returns a **reordered** SELECT (`id, name, query_json, view_type, group_by, is_default, sort_order, COALESCE(config, '') AS config, entity, parent_id, created_at, updated_at`) — `config` is `COALESCE`'d to `""` and `entity`/`parent_id` appear after `config` so the native positional read matches the struct. `screen_view_insert_sql()`, `row_to_screen_view_native()` (by that SELECT positional order) / `row_to_screen_view_js()` (by-name; `entity` default `"block"`, numeric parse-fail→`0`, `config` default `""`), create/update params, and 5 free functions (`screen_view_get_all_by_entity / get_by_id / create / update / delete`) generic over `E: Executor`. Unit tests `row_to_screen_view_js_roundtrip` + `row_to_screen_view_js_defaults`.
+- `crates/comind-core/src/storage/entity/mod.rs` — added `pub mod screen_view;`
+- `crates/comind-core/src/storage/sqlite.rs` — native + tx `ScreenViewRepository` impls delegate to shared free functions (removes the last inline `ScreenView` SQL, including the `COALESCE(config, '')` SELECT, from the tx path).
+- `crates/comind-core/src/storage/sqljs.rs` — `SqlJsAdapter::ScreenViewRepository` SELECTs via `screen_view_select_cols()` and maps via `row_to_screen_view_js` (Q4b).
+
+**Q4b confirmation (ScreenView).** SELECT column order now comes from the single `screen_view_select_cols()` (with the `COALESCE(config, '')` and reordering) used by both native and tx; sql.js reads by name. Drift structurally impossible.
+
+**Verification.** native + wasm check ✅ 0 warnings; `cargo test --lib`: **137 passed**, 4 pre-existing failures unchanged & unrelated. Zero new failures.
+
+## Landing record — NotificationConfig (2026-08-19)
+
+Implemented on branch `refactor-repository-convergence` (commit `ca896be`).
+
+**Files**
+- `crates/comind-core/src/storage/entity/notification_config.rs` (new) — `NOTIFICATION_CONFIG_COLS` const (8 cols; single-row table `notification_config`, `id = 1`), `notification_config_select_cols()`, `row_to_notification_config_native()` (booleans read as `row.get::<_, i64>(n)? != 0`), and 2 free functions (`notification_config_get` WHERE id=1 / `notification_config_save` INSERT … ON CONFLICT(id) DO UPDATE SET …) generic over `E: Executor`. Booleans bound as `as i64`. `use crate::types::NotificationConfig;` gated `#[cfg(not(wasm32))]`. No separate test module (mapping covered by the shared module's type-level coercion).
+- `crates/comind-core/src/storage/entity/mod.rs` — added `pub mod notification_config;`
+- `crates/comind-core/src/storage/sqlite.rs` — native + tx `NotificationConfigRepository` impls delegate to shared free functions (removes the last inline `NotificationConfig` SQL from the tx path).
+- `crates/comind-core/src/storage/sqljs.rs` — `SqlJsAdapter::NotificationConfigRepository` left as a no-op stub (wasm persists config via `localStorage`); native + tx share the single-row upsert.
+
+**Q4b confirmation (NotificationConfig).** Single-row table; booleans encoded as `i64(0/1)` in one place. Column-order drift N/A.
+
+**Verification.** native + wasm check ✅ 0 warnings; `cargo test --lib`: **137 passed**, 4 pre-existing failures unchanged & unrelated. Zero new failures.
+
+## Q3a landing record — delete `SQLiteTransactionAdapter`, introduce `TxContext` (2026-08-19)
+
+Implemented on branch `refactor-repository-convergence` (commit `4ef5c2a`), after all 13 entities landed.
+
+**What changed**
+- The standalone `SQLiteTransactionAdapter<'a>` struct is **deleted** (Q3). In its place, `TxContext<'a> { conn: rusqlite::Transaction<'a> }` implements all 13 repo sub-traits + `StorageAdapter`; every method calls the **same** shared free functions on `&self.conn` (`&Transaction`) that `SQLiteAdapter` calls on `&self.conn` (`&Connection`).
+- The 5 entities that still carried inline SQL in the tx path (BlockVersion, SavedFilter, ScreenView, Notification, NotificationConfig) now delegate to the shared modules — eliminating the last ≈ 480 lines of rusqlite duplication.
+- `SQLiteAdapter::transaction()` spins `BEGIN`, builds `TxContext { conn: tx }`, runs the closure against `&mut TxContext`, then `COMMIT`; on closure error the `Transaction` is dropped → `ROLLBACK` (behavior-preserving).
+- `executor.rs` doc comment updated (`SQLiteTransactionAdapter` → `TxContext`).
+
+**Net change.** `sqlite.rs` net ≈ **−480 lines** (the whole tx inline-impl block replaced by free-fn delegates + a thin `TxContext`); `executor.rs` +1 line (comment). This completes the ≈ 2,000-line duplication removal projected by ADR-0018.
+
+**Verification.** `cargo check -p comind-core --tests` (native) ✅ 0 warnings; `cargo check --target wasm32-unknown-unknown -p comind-core` (sql.js path) ✅; `cargo test -p comind-core --lib`: **137 passed**, **4 pre-existing failures unchanged & unrelated** (`services::block_service_test::test_build_tree`, `services::render_segment_service_test::test_chinese_content_char_offsets`, `services::render_segment_service_test::test_link_to_nonexistent_page_skipped`, `sync::engine::tests::test_full_sync_export_empty`) — identical set to every per-entity baseline, so the Q3a change introduced zero new failures.
+
+**Status.** All 13 entities converged; `SQLiteTransactionAdapter` removed; the convergence PR stays open and accumulates these commits for one review.
