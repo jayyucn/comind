@@ -30,9 +30,10 @@
 
 > **候选 1 已完成**（ADR-0018，2026-08-19）：deletion test 兑现——≈2,000 行纯复制删除、列序 drift 结构性消除；候选 2 与候选 4 的地基已就绪。
 > **候选 2 已完成**（ADR-0019，2026-08-19）：写路径编排收进 `BlockWriteService`，Tauri/wasm 共享同一编排（+533/−298，10 文件，含 5 个编排测试）。
+> **候选 3 已 grill**（ADR-0020，2026-08-19）：IPC 六层链收敛决策已定，待 /implement。
 
 - **地基链**：1 ✅ → 2 ✅ → **4**（候选 4 的地基 1/2 均已就绪）
-- **前端独立链**：3（IPC 链）、5（App.vue 拆分）可并行，互不阻塞
+- **前端独立链**：3 🟡（已 grill，待 /implement）、5（App.vue 拆分）可并行，互不阻塞
 - **查询/视图链**：7（值编辑器 + chip-bar 合一，半依赖 6 已铺垫）→ 8（通用视图 leverage，speculative，优先级最低）
 
 ---
@@ -91,16 +92,28 @@
 ## 候选 3 · Collapse the six-layer frontend IPC chain
 
 - **评级**：Strong · ports & adapters
-- **涉及文件**
-  - `src/wasm/client.ts`（`CoreClient` interface 66 方法 L42–133；`TauriClient` class L135–410 纯转发）
-  - `src/wasm/tauri-client.ts`（544 行：103 个 `tauri*` 函数、98 次 `invoke`）
+- **状态**：✅ **已 grill（2026-08-19）**——共识见 `docs/adr/0020-ipc-client-convergence.md`。
+- **涉及文件**（实测修正）
+  - `src/wasm/client.ts`（893 行：`CoreClient` interface **68** 方法 L42–133；`TauriClient` class L135–409 纯转发；`WasmClientAdapter` L411–755，22 个 stub）
+  - `src/wasm/tauri-client.ts`（544 行：103 个 `tauri*` 函数 = 95 纯 invoke 转发 + 8 非转发；98 次 `invoke`）
 - **Problem**：新增一个命令要改 5 个文件；`TauriClient` class 与 `tauri*` 函数是逐方法直通，interface 与 implementation 一样宽。
 - **Solution**：`Tauri` adapter 直接实现 `CoreClient`（每个方法体即一次 `invoke`）；删除 class 转发层与 103 个 `tauri*` 函数。
-- **Wins**：删除约 800 行直通代码；新命令只碰 2 个模块；leverage：66 方法一处实现。
+- **Wins**：删除约 800 行直通代码；新命令只碰 2 个模块；leverage：75 方法一处实现。
 - **依赖**：无（前端）。与候选 2/4 共享「adapter 即 seam」理念。
-- **🔸 待 grill / 开放决策**
-  1. `CoreClient` 是否应同时服务 WASM adapter（与候选 4 合并考量）？
-  2. 66 方法是否真需全保留（是否有已死的桥接方法可顺手删）？
+- **grill 共识速览**（决策细节见 ADR-0020，Q1–Q10 共 10 项）
+  - 范围：**只收敛 Tauri 侧**；`WasmClientAdapter` 原样保留（stub 归候选 4，Q1=A）。
+  - TauriClient：方法体**直 `invoke`**，8 个 JSON 包装方法保持（Q2=A）；删除 `tauri-client.ts` 全部 103 函数。
+  - 平台能力独立：**新建 `src/wasm/tauri-platform.ts`**（窗口 4 + 平台检测 3 + 目录 1 + 同步/连接 6 ≈ 14 函数 + `SyncStatus` 等类型；Q3/Q6=A）。
+  - 数据命令收编：S3/S6 解析 7 个进 `CoreClient`（68→75 方法，wasm 补 stub；Q4/Q9=A）。
+  - **死函数删除**：17 个零消费方 `tauri*` 函数直接删除（Q10=A）；CoreClient 68 方法全保留（死方法审计登记 follow-up，Q8=A）。
+  - **顺修 bug**：后端补 `get_templates` 薄命令（前端调、后端无 → Tauri 模板加载 IPC 报错；Q5=A）。
+  - 测试：5 个 `vi.mock('../wasm/tauri-client')` 改写 mock 目标，不新增单测（Q7=A）。
+- **✅ 开放决策已定（ADR-0020）**：backlog 原 2 问（CoreClient 是否服务 WASM / 66 方法是否全保留）均已收敛（分别为"否，归候选 4"与"全保留，审计登记 follow-up"）。
+- **🔸 待 /implement / 开放 follow-up**
+  1. 后端死命令清理（`renumber_blocks` / `build_document_order` 及 17 个被删包装对应的命令）。
+  2. CoreClient 68 方法死方法审计。
+  3. 候选 4：`WasmClientAdapter` 与 `TauriClient` 收敛（stub → 0）。
+  4. 可选：TauriClient 统一错误处理（私有 `invoke` helper）。
 
 ---
 
@@ -195,6 +208,6 @@
 ## 下一步
 
 登记册就绪后，逐个候选走 `/grilling` 决策树 → 产出该候选的 ADR + 重构方案文档（参照候选 1 的 `0018-repository-convergence.md`、候选 6 的 `0016-editor-dom-event-transport.md` + `refactor-editor-event-table.md`）。
-- **候选 1、2 已完成**；地基链下一候选 = **候选 4**（Converge the WASM adapter with the Tauri adapter，依赖 1/2 ✅ 均已就绪）。
-- 前端独立链：候选 3 可并行；候选 5 已 grill，可直接 `/implement`（方案见 `docs/refactor-app-composition.md`）。
+- **候选 1、2 已完成；候选 3 已 grill（ADR-0020）待 /implement**。地基链下一候选 = **候选 4**（Converge the WASM adapter with the Tauri adapter，依赖 1/2 ✅ 均已就绪）。
+- 前端独立链：候选 3（已 grill）、候选 5（已 grill）均可 `/implement`（方案见 `docs/refactor-app-composition.md`）。
 - 查询/视图链：候选 7（半依赖 6 已铺垫）→ 候选 8（speculative，最低优先级）。
