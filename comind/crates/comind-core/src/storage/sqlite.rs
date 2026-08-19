@@ -585,7 +585,9 @@ impl LinkRepository for SQLiteAdapter   {
     }
 
     fn create_many(&mut self, links: &[Link]) -> Result<Vec<Link>, Box<dyn Error>> {
-        link_create_many(&self.conn, links)?;
+        let tx = self.conn.transaction()?;
+        link_create_many(&tx, links)?;
+        tx.commit()?;
         Ok(links.to_vec())
     }
 
