@@ -18,6 +18,7 @@ use crate::storage::entity::link::{link_select_cols, row_to_link_js};
 use crate::storage::entity::property::{property_select_cols, row_to_property_js};
 use crate::storage::entity::relationship_type::{relationship_type_select_cols, row_to_relationship_type_js};
 use crate::storage::entity::template::{template_select_cols, row_to_template_js};
+use crate::storage::entity::block_version::{block_version_select_cols, row_to_block_version_js};
 
 #[cfg(target_arch = "wasm32")]
 pub struct SqlJsAdapter {
@@ -397,26 +398,6 @@ impl SqlJsAdapter {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn row_to_block_version(row: &HashMap<String, String>) -> BlockVersion {
-    BlockVersion {
-        id: row.get("id").cloned().unwrap_or_default(),
-        block_id: row.get("block_id").cloned().unwrap_or_default(),
-        version: row.get("version").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        snapshot: row.get("snapshot").cloned().unwrap_or_default(),
-        hash: row.get("hash").cloned().unwrap_or_default(),
-        message: {
-            let p = row.get("message").cloned().unwrap_or_default();
-            if p.is_empty() { None } else { Some(p) }
-        },
-        source: row.get("source").cloned().unwrap_or_default(),
-        restored_from_version_id: {
-            let p = row.get("restored_from_version_id").cloned().unwrap_or_default();
-            if p.is_empty() { None } else { Some(p) }
-        },
-        created_at: row.get("created_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-    }
-}
-
 #[cfg(target_arch = "wasm32")]
 impl BlockRepository for SqlJsAdapter {
     fn get_all(&self) -> Result<Vec<Block>, Box<dyn std::error::Error>> {
@@ -1214,24 +1195,24 @@ impl SearchRepository for SqlJsAdapter {
 #[cfg(target_arch = "wasm32")]
 impl BlockVersionRepository for SqlJsAdapter {
     fn get_by_id(&self, id: &str) -> Result<BlockVersion, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, version, snapshot, hash, message, source, restored_from_version_id, created_at FROM BlockVersion WHERE id = ?", &[id])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM BlockVersion WHERE id = ?", block_version_select_cols()), &[id])?;
         if result.is_empty() {
             return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "BlockVersion not found")));
         }
-        Ok(row_to_block_version(&result[0]))
+        Ok(row_to_block_version_js(&result[0]))
     }
 
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<BlockVersion>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, version, snapshot, hash, message, source, restored_from_version_id, created_at FROM BlockVersion WHERE block_id = ? ORDER BY version DESC", &[block_id])?;
-        Ok(result.into_iter().map(|r| row_to_block_version(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM BlockVersion WHERE block_id = ? ORDER BY version DESC", block_version_select_cols()), &[block_id])?;
+        Ok(result.into_iter().map(|r| row_to_block_version_js(&r)).collect())
     }
 
     fn get_latest_version(&self, block_id: &str) -> Result<Option<BlockVersion>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, block_id, version, snapshot, hash, message, source, restored_from_version_id, created_at FROM BlockVersion WHERE block_id = ? ORDER BY version DESC LIMIT 1", &[block_id])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM BlockVersion WHERE block_id = ? ORDER BY version DESC LIMIT 1", block_version_select_cols()), &[block_id])?;
         if result.is_empty() {
             Ok(None)
         } else {
-            Ok(Some(row_to_block_version(&result[0])))
+            Ok(Some(row_to_block_version_js(&result[0])))
         }
     }
 

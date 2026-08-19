@@ -1,4 +1,5 @@
 pub mod block;
+pub mod block_version;
 pub mod date_ref;
 pub mod link;
 pub mod page;

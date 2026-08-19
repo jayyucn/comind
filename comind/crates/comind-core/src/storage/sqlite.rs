@@ -16,6 +16,8 @@ use crate::storage::entity::property::{property_create, property_delete, propert
 use crate::storage::entity::relationship_type::{relationship_type_create, relationship_type_delete, relationship_type_get_all, relationship_type_get_by_id, relationship_type_get_by_type, relationship_type_update};
 use crate::storage::entity::template::{template_create, template_delete, template_get_all, template_get_by_id, template_get_by_name, template_update};
 use crate::storage::entity::search::{search_index_delete, search_index_search, search_index_upsert};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::storage::entity::block_version::{block_version_create, block_version_delete, block_version_delete_by_block_id, block_version_delete_older_than, block_version_get_by_block_id, block_version_get_by_id, block_version_get_latest_version};
 
 pub struct SQLiteAdapter {
     pub conn: Connection,
@@ -741,114 +743,32 @@ impl SQLiteAdapter {
 
 impl BlockVersionRepository for SQLiteAdapter {
     fn get_by_id(&self, id: &str) -> Result<BlockVersion, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, version, snapshot, hash, message, source, restored_from_version_id, created_at 
-             FROM BlockVersion WHERE id = ?1"
-        )?;
-        
-        let version = stmt.query_row(params![id], |row| {
-            Ok(BlockVersion {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                version: row.get(2)?,
-                snapshot: row.get(3)?,
-                hash: row.get(4)?,
-                message: row.get(5)?,
-                source: row.get(6)?,
-                restored_from_version_id: row.get(7)?,
-                created_at: row.get(8)?,
-            })
-        })?;
-        
-        Ok(version)
+        block_version_get_by_id(&self.conn, id)
     }
-    
+
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<BlockVersion>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, version, snapshot, hash, message, source, restored_from_version_id, created_at 
-             FROM BlockVersion WHERE block_id = ?1 ORDER BY version DESC"
-        )?;
-        
-        let versions = stmt.query_map(params![block_id], |row| {
-            Ok(BlockVersion {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                version: row.get(2)?,
-                snapshot: row.get(3)?,
-                hash: row.get(4)?,
-                message: row.get(5)?,
-                source: row.get(6)?,
-                restored_from_version_id: row.get(7)?,
-                created_at: row.get(8)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        
-        Ok(versions)
+        block_version_get_by_block_id(&self.conn, block_id)
     }
-    
+
     fn get_latest_version(&self, block_id: &str) -> Result<Option<BlockVersion>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, block_id, version, snapshot, hash, message, source, restored_from_version_id, created_at 
-             FROM BlockVersion WHERE block_id = ?1 ORDER BY version DESC LIMIT 1"
-        )?;
-        
-        let result = stmt.query_row(params![block_id], |row| {
-            Ok(BlockVersion {
-                id: row.get(0)?,
-                block_id: row.get(1)?,
-                version: row.get(2)?,
-                snapshot: row.get(3)?,
-                hash: row.get(4)?,
-                message: row.get(5)?,
-                source: row.get(6)?,
-                restored_from_version_id: row.get(7)?,
-                created_at: row.get(8)?,
-            })
-        });
-        
-        match result {
-            Ok(version) => Ok(Some(version)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(Box::new(e)),
-        }
+        block_version_get_latest_version(&self.conn, block_id)
     }
-    
+
     fn create(&mut self, version: &BlockVersion) -> Result<BlockVersion, Box<dyn Error>> {
-        self.conn.execute(
-            "INSERT INTO BlockVersion (id, block_id, version, snapshot, hash, message, source, restored_from_version_id, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            params![
-                version.id,
-                version.block_id,
-                version.version,
-                version.snapshot,
-                version.hash,
-                version.message,
-                version.source,
-                version.restored_from_version_id,
-                version.created_at
-            ]
-        )?;
-        
+        block_version_create(&self.conn, version)?;
         Ok(version.clone())
     }
-    
+
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM BlockVersion WHERE id = ?1", params![id])?;
-        Ok(())
+        block_version_delete(&self.conn, id)
     }
-    
+
     fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM BlockVersion WHERE block_id = ?1", params![block_id])?;
-        Ok(())
+        block_version_delete_by_block_id(&self.conn, block_id)
     }
-    
+
     fn delete_older_than(&mut self, block_id: &str, timestamp: i64) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "DELETE FROM BlockVersion WHERE block_id = ?1 AND created_at < ?2",
-            params![block_id, timestamp]
-        )?;
-        Ok(())
+        block_version_delete_older_than(&self.conn, block_id, timestamp)
     }
 }
 
