@@ -21,6 +21,7 @@ use crate::storage::entity::template::{template_select_cols, row_to_template_js}
 use crate::storage::entity::block_version::{block_version_select_cols, row_to_block_version_js};
 use crate::storage::entity::notification::{notification_select_cols, row_to_notification_js};
 use crate::storage::entity::saved_filter::{saved_filter_select_cols, row_to_saved_filter_js};
+use crate::storage::entity::screen_view::{screen_view_select_cols, row_to_screen_view_js};
 
 #[cfg(target_arch = "wasm32")]
 pub struct SqlJsAdapter {
@@ -1085,48 +1086,22 @@ impl SavedFilterRepository for SqlJsAdapter {
 #[cfg(target_arch = "wasm32")]
 impl ScreenViewRepository for SqlJsAdapter {
     fn get_all_by_entity(&self, entity: &str) -> Result<Vec<ScreenView>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, entity, parent_id, name, query_json, view_type, group_by, is_default, sort_order, config, created_at, updated_at FROM screen_view WHERE entity = ?1 ORDER BY sort_order ASC, created_at DESC", &[entity])?;
-        Ok(result.into_iter().map(|r| ScreenView {
-            id: r.get("id").cloned().unwrap_or_default(),
-            entity: r.get("entity").cloned().unwrap_or_else(|| "block".to_string()),
-            parent_id: r.get("parent_id").cloned().unwrap_or_default(),
-            name: r.get("name").cloned().unwrap_or_default(),
-            query_json: r.get("query_json").cloned().unwrap_or_default(),
-            view_type: r.get("view_type").cloned().unwrap_or_default(),
-            group_by: r.get("group_by").cloned().unwrap_or_default(),
-            is_default: r.get("is_default").and_then(|v| v.parse().ok()).unwrap_or(0),
-            sort_order: r.get("sort_order").and_then(|v| v.parse().ok()).unwrap_or(0),
-            config: r.get("config").cloned().unwrap_or_default(),
-            created_at: r.get("created_at").and_then(|v| v.parse().ok()).unwrap_or(0),
-            updated_at: r.get("updated_at").and_then(|v| v.parse().ok()).unwrap_or(0),
-        }).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM screen_view WHERE entity = ?1 ORDER BY sort_order ASC, created_at DESC", screen_view_select_cols()), &[entity])?;
+        Ok(result.into_iter().map(|r| row_to_screen_view_js(&r)).collect())
     }
 
     fn get_by_id(&self, id: &str) -> Result<ScreenView, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, entity, parent_id, name, query_json, view_type, group_by, is_default, sort_order, config, created_at, updated_at FROM screen_view WHERE id = ?", &[id])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM screen_view WHERE id = ?", screen_view_select_cols()), &[id])?;
         if result.is_empty() {
             return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "ScreenView not found")));
         }
-        let r = &result[0];
-        Ok(ScreenView {
-            id: r.get("id").cloned().unwrap_or_default(),
-            entity: r.get("entity").cloned().unwrap_or_else(|| "block".to_string()),
-            parent_id: r.get("parent_id").cloned().unwrap_or_default(),
-            name: r.get("name").cloned().unwrap_or_default(),
-            query_json: r.get("query_json").cloned().unwrap_or_default(),
-            view_type: r.get("view_type").cloned().unwrap_or_default(),
-            group_by: r.get("group_by").cloned().unwrap_or_default(),
-            is_default: r.get("is_default").and_then(|v| v.parse().ok()).unwrap_or(0),
-            sort_order: r.get("sort_order").and_then(|v| v.parse().ok()).unwrap_or(0),
-            config: r.get("config").cloned().unwrap_or_default(),
-            created_at: r.get("created_at").and_then(|v| v.parse().ok()).unwrap_or(0),
-            updated_at: r.get("updated_at").and_then(|v| v.parse().ok()).unwrap_or(0),
-        })
+        Ok(row_to_screen_view_js(&result[0]))
     }
 
     fn create(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn std::error::Error>> {
         Self::run_with_params(&self.db, "INSERT INTO screen_view (id, entity, parent_id, name, query_json, view_type, group_by, is_default, sort_order, config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", &[
-            &view.id, &view.entity, &view.parent_id, &view.name, &view.query_json, &view.view_type, &view.group_by, &view.is_default.to_string(), &view.sort_order.to_string(), &view.config, &view.created_at.to_string(), &view.updated_at.to_string()
+            &view.id, &view.entity, &view.parent_id, &view.name, &view.query_json, &view.view_type, &view.group_by,
+            &view.is_default.to_string(), &view.sort_order.to_string(), &view.config, &view.created_at.to_string(), &view.updated_at.to_string()
         ])?;
         Ok(view.clone())
     }

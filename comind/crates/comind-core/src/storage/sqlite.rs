@@ -22,6 +22,8 @@ use crate::storage::entity::block_version::{block_version_create, block_version_
 use crate::storage::entity::notification::{notification_batch_create, notification_create, notification_delete, notification_delete_by_block_and_kind, notification_delete_by_block_id, notification_delete_older_than, notification_find_by_event, notification_get_by_block_id, notification_get_by_block_ids, notification_get_by_id, notification_mark_all_read, notification_query_pending_due, notification_query_recent, notification_query_unread, notification_reschedule, notification_set_snooze, notification_update_payload, notification_update_status};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::saved_filter::{saved_filter_create, saved_filter_delete, saved_filter_get_all, saved_filter_get_by_id, saved_filter_update};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::storage::entity::screen_view::{screen_view_create, screen_view_delete, screen_view_get_all_by_entity, screen_view_get_by_id, screen_view_update};
 
 pub struct SQLiteAdapter {
     pub conn: Connection,
@@ -802,94 +804,25 @@ impl SavedFilterRepository for SQLiteAdapter {
 
 impl ScreenViewRepository for SQLiteAdapter {
     fn get_all_by_entity(&self, entity: &str) -> Result<Vec<ScreenView>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, COALESCE(config, '') AS config, entity, parent_id, created_at, updated_at FROM screen_view WHERE entity = ?1 ORDER BY sort_order ASC, created_at DESC"
-        )?;
-        let views = stmt.query_map(params![entity], |row| {
-            Ok(ScreenView {
-                id: row.get(0)?,
-                entity: row.get(8).unwrap_or_else(|_| "block".to_string()),
-                parent_id: row.get(9).unwrap_or_default(),
-                name: row.get(1)?,
-                query_json: row.get(2)?,
-                view_type: row.get(3)?,
-                group_by: row.get(4)?,
-                is_default: row.get(5)?,
-                sort_order: row.get(6)?,
-                config: row.get(7)?,
-                created_at: row.get(10)?,
-                updated_at: row.get(11)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        Ok(views)
+        screen_view_get_all_by_entity(&self.conn, entity)
     }
 
     fn get_by_id(&self, id: &str) -> Result<ScreenView, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name, query_json, view_type, group_by, is_default, sort_order, COALESCE(config, '') AS config, entity, parent_id, created_at, updated_at FROM screen_view WHERE id = ?1"
-        )?;
-        let view = stmt.query_row(params![id], |row| {
-            Ok(ScreenView {
-                id: row.get(0)?,
-                entity: row.get(8).unwrap_or_else(|_| "block".to_string()),
-                parent_id: row.get(9).unwrap_or_default(),
-                name: row.get(1)?,
-                query_json: row.get(2)?,
-                view_type: row.get(3)?,
-                group_by: row.get(4)?,
-                is_default: row.get(5)?,
-                sort_order: row.get(6)?,
-                config: row.get(7)?,
-                created_at: row.get(10)?,
-                updated_at: row.get(11)?,
-            })
-        })?;
-        Ok(view)
+        screen_view_get_by_id(&self.conn, id)
     }
 
     fn create(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn Error>> {
-        self.conn.execute(
-            "INSERT INTO screen_view (id, entity, parent_id, name, query_json, view_type, group_by, is_default, sort_order, config, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
-            params![
-                view.id,
-                view.entity,
-                view.parent_id,
-                view.name,
-                view.query_json,
-                view.view_type,
-                view.group_by,
-                view.is_default,
-                view.sort_order,
-                view.config,
-                view.created_at,
-                view.updated_at
-            ]
-        )?;
+        screen_view_create(&self.conn, view)?;
         Ok(view.clone())
     }
 
     fn update(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE screen_view SET parent_id = ?2, name = ?3, query_json = ?4, view_type = ?5, group_by = ?6, is_default = ?7, sort_order = ?8, config = ?9, updated_at = ?10 WHERE id = ?1",
-            params![
-                view.id,
-                view.parent_id,
-                view.name,
-                view.query_json,
-                view.view_type,
-                view.group_by,
-                view.is_default,
-                view.sort_order,
-                view.config,
-                view.updated_at
-            ]
-        )?;
+        screen_view_update(&self.conn, view)?;
         Ok(view.clone())
     }
 
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute("DELETE FROM screen_view WHERE id = ?1", params![id])?;
-        Ok(())
+        screen_view_delete(&self.conn, id)
     }
 }
 
