@@ -9,6 +9,8 @@ use crate::storage::entity::date_ref::{date_ref_create, date_ref_create_many, da
 use crate::storage::entity::block::{block_get_all, block_get_by_id, block_get_by_page_id, block_get_children, block_get_by_ids, block_insert, block_update, block_soft_delete_by_id, block_ids_by_page_id, block_soft_delete_by_page_id};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::page::{page_get_by_id, page_get_by_title_including_deleted, page_get_by_title, page_get_all, page_get_trash, page_get_by_ids, page_get_ideas_by_month, page_get_ideas_months, page_create, page_update, page_delete};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::storage::entity::link::{link_get_by_id, link_get_by_source_block_id, link_get_by_source_block_ids, link_get_by_target_page_id, link_insert, link_create_many, link_delete, link_delete_by_source_block_id, link_delete_by_target_page_id};
 
 pub struct SQLiteAdapter {
     pub conn: Connection,
@@ -545,170 +547,43 @@ impl PageRepository for SQLiteAdapter {
     }
 }
 
-impl LinkRepository for SQLiteAdapter {
+impl LinkRepository for SQLiteAdapter   {
     fn get_by_id(&self, id: &str) -> Result<Link, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at 
-             FROM Link WHERE id = ?1 AND deleted_at IS NULL"
-        )?;
-        
-        let link = stmt.query_row(params![id], |row| {
-            Ok(Link {
-                id: row.get(0)?,
-                source_block_id: row.get(1)?,
-                target_page_id: row.get(2)?,
-                display_text: row.get(3)?,
-                relationship_type: row.get(4)?,
-                created_at: row.get(5)?,
-                updated_at: row.get(6)?,
-                version: row.get(7)?,
-                deleted_at: row.get(8)?,
-            })
-        })?;
-        
-        Ok(link)
+        link_get_by_id(&self.conn, id)
     }
-    
+
     fn get_by_source_block_id(&self, source_block_id: &str) -> Result<Vec<Link>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at 
-             FROM Link WHERE source_block_id = ?1 AND deleted_at IS NULL"
-        )?;
-        
-        let links = stmt.query_map(params![source_block_id], |row| {
-            Ok(Link {
-                id: row.get(0)?,
-                source_block_id: row.get(1)?,
-                target_page_id: row.get(2)?,
-                display_text: row.get(3)?,
-                relationship_type: row.get(4)?,
-                created_at: row.get(5)?,
-                updated_at: row.get(6)?,
-                version: row.get(7)?,
-                deleted_at: row.get(8)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        
-        Ok(links)
+        link_get_by_source_block_id(&self.conn, source_block_id)
     }
 
     fn get_by_source_block_ids(&self, source_block_ids: &[String]) -> Result<Vec<Link>, Box<dyn Error>> {
-        if source_block_ids.is_empty() {
-            return Ok(Vec::new());
-        }
-        let placeholders: Vec<String> = (1..=source_block_ids.len()).map(|i| format!("?{}", i)).collect();
-        let sql = format!(
-            "SELECT id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at
-             FROM Link WHERE source_block_id IN ({}) AND deleted_at IS NULL",
-            placeholders.join(", ")
-        );
-        let mut stmt = self.conn.prepare(&sql)?;
-        let params: Vec<&dyn rusqlite::ToSql> = source_block_ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
-        let links = stmt.query_map(params.as_slice(), |row| {
-            Ok(Link {
-                id: row.get(0)?,
-                source_block_id: row.get(1)?,
-                target_page_id: row.get(2)?,
-                display_text: row.get(3)?,
-                relationship_type: row.get(4)?,
-                created_at: row.get(5)?,
-                updated_at: row.get(6)?,
-                version: row.get(7)?,
-                deleted_at: row.get(8)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        Ok(links)
+        link_get_by_source_block_ids(&self.conn, source_block_ids)
     }
-    
+
     fn get_by_target_page_id(&self, target_page_id: &str) -> Result<Vec<Link>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at 
-             FROM Link WHERE target_page_id = ?1 AND deleted_at IS NULL"
-        )?;
-        
-        let links = stmt.query_map(params![target_page_id], |row| {
-            Ok(Link {
-                id: row.get(0)?,
-                source_block_id: row.get(1)?,
-                target_page_id: row.get(2)?,
-                display_text: row.get(3)?,
-                relationship_type: row.get(4)?,
-                created_at: row.get(5)?,
-                updated_at: row.get(6)?,
-                version: row.get(7)?,
-                deleted_at: row.get(8)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        
-        Ok(links)
+        link_get_by_target_page_id(&self.conn, target_page_id)
     }
-    
+
     fn create(&mut self, link: &Link) -> Result<Link, Box<dyn Error>> {
-        self.conn.execute(
-            "INSERT INTO Link (id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            params![
-                link.id,
-                link.source_block_id,
-                link.target_page_id,
-                link.display_text,
-                link.relationship_type,
-                link.created_at,
-                link.updated_at,
-                link.version,
-                link.deleted_at
-            ]
-        )?;
-        
+        link_insert(&self.conn, link)?;
         Ok(link.clone())
     }
-    
+
     fn create_many(&mut self, links: &[Link]) -> Result<Vec<Link>, Box<dyn Error>> {
-        let tx = self.conn.transaction()?;
-        
-        for link in links {
-            tx.execute(
-                "INSERT INTO Link (id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL)",
-                params![
-                    link.id,
-                    link.source_block_id,
-                    link.target_page_id,
-                    link.display_text,
-                    link.relationship_type,
-                    link.created_at,
-                    link.updated_at,
-                    link.version
-                ]
-            )?;
-        }
-        
-        tx.commit()?;
+        link_create_many(&self.conn, links)?;
         Ok(links.to_vec())
     }
-    
+
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE Link SET deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE id = ?1",
-            params![id, chrono::Utc::now().timestamp_millis()]
-        )?;
-        Ok(())
+        link_delete(&self.conn, id)
     }
-    
+
     fn delete_by_source_block_id(&mut self, source_block_id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE Link SET deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE source_block_id = ?1",
-            params![source_block_id, chrono::Utc::now().timestamp_millis()]
-        )?;
-        Ok(())
+        link_delete_by_source_block_id(&self.conn, source_block_id)
     }
 
     fn delete_by_target_page_id(&mut self, target_page_id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE Link SET deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE target_page_id = ?1",
-            params![target_page_id, chrono::Utc::now().timestamp_millis()]
-        )?;
-        Ok(())
+        link_delete_by_target_page_id(&self.conn, target_page_id)
     }
 }
 
@@ -2116,167 +1991,43 @@ impl<'a> PageRepository for SQLiteTransactionAdapter<'a> {
     }
 }
 
-impl<'a> LinkRepository for SQLiteTransactionAdapter<'a> {
+impl<'a> LinkRepository for SQLiteTransactionAdapter<'a>  {
     fn get_by_id(&self, id: &str) -> Result<Link, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at
-             FROM Link WHERE id = ?1 AND deleted_at IS NULL"
-        )?;
-
-        let link = stmt.query_row(params![id], |row| {
-            Ok(Link {
-                id: row.get(0)?,
-                source_block_id: row.get(1)?,
-                target_page_id: row.get(2)?,
-                display_text: row.get(3)?,
-                relationship_type: row.get(4)?,
-                created_at: row.get(5)?,
-                updated_at: row.get(6)?,
-                version: row.get(7)?,
-                deleted_at: row.get(8)?,
-            })
-        })?;
-        
-        Ok(link)
+        link_get_by_id(&self.conn, id)
     }
-    
+
     fn get_by_source_block_id(&self, source_block_id: &str) -> Result<Vec<Link>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at
-             FROM Link WHERE source_block_id = ?1 AND deleted_at IS NULL"
-        )?;
-
-        let links = stmt.query_map(params![source_block_id], |row| {
-            Ok(Link {
-                id: row.get(0)?,
-                source_block_id: row.get(1)?,
-                target_page_id: row.get(2)?,
-                display_text: row.get(3)?,
-                relationship_type: row.get(4)?,
-                created_at: row.get(5)?,
-                updated_at: row.get(6)?,
-                version: row.get(7)?,
-                deleted_at: row.get(8)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-
-        Ok(links)
+        link_get_by_source_block_id(&self.conn, source_block_id)
     }
 
     fn get_by_source_block_ids(&self, source_block_ids: &[String]) -> Result<Vec<Link>, Box<dyn Error>> {
-        if source_block_ids.is_empty() {
-            return Ok(Vec::new());
-        }
-        let placeholders: Vec<String> = (1..=source_block_ids.len()).map(|i| format!("?{}", i)).collect();
-        let sql = format!(
-            "SELECT id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at
-             FROM Link WHERE source_block_id IN ({}) AND deleted_at IS NULL",
-            placeholders.join(", ")
-        );
-        let mut stmt = self.conn.prepare(&sql)?;
-        let params: Vec<&dyn rusqlite::ToSql> = source_block_ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
-        let links = stmt.query_map(params.as_slice(), |row| {
-            Ok(Link {
-                id: row.get(0)?,
-                source_block_id: row.get(1)?,
-                target_page_id: row.get(2)?,
-                display_text: row.get(3)?,
-                relationship_type: row.get(4)?,
-                created_at: row.get(5)?,
-                updated_at: row.get(6)?,
-                version: row.get(7)?,
-                deleted_at: row.get(8)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        Ok(links)
+        link_get_by_source_block_ids(&self.conn, source_block_ids)
     }
-    
+
     fn get_by_target_page_id(&self, target_page_id: &str) -> Result<Vec<Link>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at
-             FROM Link WHERE target_page_id = ?1 AND deleted_at IS NULL"
-        )?;
-
-        let links = stmt.query_map(params![target_page_id], |row| {
-            Ok(Link {
-                id: row.get(0)?,
-                source_block_id: row.get(1)?,
-                target_page_id: row.get(2)?,
-                display_text: row.get(3)?,
-                relationship_type: row.get(4)?,
-                created_at: row.get(5)?,
-                updated_at: row.get(6)?,
-                version: row.get(7)?,
-                deleted_at: row.get(8)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-
-        Ok(links)
+        link_get_by_target_page_id(&self.conn, target_page_id)
     }
-    
-    fn create(&mut self, link: &Link) -> Result<Link, Box<dyn Error>> {
-        self.conn.execute(
-            "INSERT INTO Link (id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            params![
-                link.id,
-                link.source_block_id,
-                link.target_page_id,
-                link.display_text,
-                link.relationship_type,
-                link.created_at,
-                link.updated_at,
-                link.version,
-                link.deleted_at
-            ]
-        )?;
 
+    fn create(&mut self, link: &Link) -> Result<Link, Box<dyn Error>> {
+        link_insert(&self.conn, link)?;
         Ok(link.clone())
     }
 
     fn create_many(&mut self, links: &[Link]) -> Result<Vec<Link>, Box<dyn Error>> {
-        for link in links {
-            self.conn.execute(
-                "INSERT INTO Link (id, source_block_id, target_page_id, display_text, relationship_type, created_at, updated_at, version, deleted_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL)",
-                params![
-                    link.id,
-                    link.source_block_id,
-                    link.target_page_id,
-                    link.display_text,
-                    link.relationship_type,
-                    link.created_at,
-                    link.updated_at,
-                    link.version
-                ]
-            )?;
-        }
-
+        link_create_many(&self.conn, links)?;
         Ok(links.to_vec())
     }
 
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE Link SET deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE id = ?1",
-            params![id, chrono::Utc::now().timestamp_millis()]
-        )?;
-        Ok(())
+        link_delete(&self.conn, id)
     }
 
     fn delete_by_source_block_id(&mut self, source_block_id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE Link SET deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE source_block_id = ?1",
-            params![source_block_id, chrono::Utc::now().timestamp_millis()]
-        )?;
-        Ok(())
+        link_delete_by_source_block_id(&self.conn, source_block_id)
     }
 
     fn delete_by_target_page_id(&mut self, target_page_id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE Link SET deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE target_page_id = ?1",
-            params![target_page_id, chrono::Utc::now().timestamp_millis()]
-        )?;
-        Ok(())
+        link_delete_by_target_page_id(&self.conn, target_page_id)
     }
 }
 

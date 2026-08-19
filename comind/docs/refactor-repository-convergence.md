@@ -88,6 +88,6 @@ All green + code review before merge. No behavior change for non-DateRef entitie
 
 ## Rollout order (post-pilot)
 
-- **Done (committed on `refactor-repository-convergence`):** DateRef, Block, Page — each via the same shared-module + `Executor` pattern; the Q10 review gate is skipped per jay's go-ahead, so entities accumulate in one open convergence PR.
-- **Remaining:** Link → Property → RelationshipType → Template → Search → BlockVersion → Notification → SavedFilter → ScreenView → NotificationConfig.
+- **Done (committed on `refactor-repository-convergence`):** DateRef, Block, Page, Link — each via the same shared-module + `Executor` pattern; the Q10 review gate is skipped per jay's go-ahead, so entities accumulate in one open convergence PR.
+- **Remaining:** Property → RelationshipType → Template → Search → BlockVersion → Notification → SavedFilter → ScreenView → NotificationConfig.
 - When the last entity lands, delete `SQLiteTransactionAdapter` entirely (Q3a).

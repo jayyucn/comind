@@ -13,6 +13,8 @@ use crate::storage::entity::date_ref::{date_ref_select_cols, row_to_date_ref_js}
 use crate::storage::entity::block::{block_select_cols, row_to_block_js};
 #[cfg(target_arch = "wasm32")]
 use crate::storage::entity::page::{page_select_cols, row_to_page_js};
+#[cfg(target_arch = "wasm32")]
+use crate::storage::entity::link::{link_select_cols, row_to_link_js};
 
 #[cfg(target_arch = "wasm32")]
 pub struct SqlJsAdapter {
@@ -394,24 +396,6 @@ impl SqlJsAdapter {
 #[cfg(target_arch = "wasm32")]
 
 #[cfg(target_arch = "wasm32")]
-fn row_to_link(row: &HashMap<String, String>) -> Link {
-    Link {
-        id: row.get("id").cloned().unwrap_or_default(),
-        source_block_id: row.get("source_block_id").cloned().unwrap_or_default(),
-        target_page_id: row.get("target_page_id").cloned().unwrap_or_default(),
-        display_text: row.get("display_text").cloned().unwrap_or_default(),
-        relationship_type: {
-            let p = row.get("relationship_type").cloned().unwrap_or_default();
-            if p.is_empty() { None } else { Some(p) }
-        },
-        created_at: row.get("created_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        updated_at: row.get("updated_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        version: row.get("version").map(|s| s.parse::<i64>().unwrap_or(0)).unwrap_or(0),
-        deleted_at: row.get("deleted_at").map(|s| s.parse::<i64>().ok()).unwrap_or(None),
-    }
-}
-
-
 #[cfg(target_arch = "wasm32")]
 fn row_to_property(row: &HashMap<String, String>) -> Property {
     Property {
@@ -668,29 +652,36 @@ impl PageRepository for SqlJsAdapter {
 #[cfg(target_arch = "wasm32")]
 impl LinkRepository for SqlJsAdapter {
     fn get_by_id(&self, id: &str) -> Result<Link, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, source_block_id, target_page_id, display_text, relationship_type, updated_at, version, deleted_at, created_at FROM Link WHERE id = ? AND deleted_at IS NULL", &[id])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Link WHERE id = ? AND deleted_at IS NULL", link_select_cols()), &[id])?;
         if result.is_empty() {
             return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Link not found")));
         }
-        Ok(row_to_link(&result[0]))
+        Ok(row_to_link_js(&result[0]))
     }
 
     fn get_by_source_block_id(&self, source_block_id: &str) -> Result<Vec<Link>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, source_block_id, target_page_id, display_text, relationship_type, updated_at, version, deleted_at, created_at FROM Link WHERE source_block_id = ? AND deleted_at IS NULL", &[source_block_id])?;
-        Ok(result.into_iter().map(|r| row_to_link(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Link WHERE source_block_id = ? AND deleted_at IS NULL", link_select_cols()), &[source_block_id])?;
+        Ok(result.into_iter().map(|r| row_to_link_js(&r)).collect())
     }
 
     fn get_by_source_block_ids(&self, source_block_ids: &[String]) -> Result<Vec<Link>, Box<dyn std::error::Error>> {
-        let mut links = Vec::new();
-        for id in source_block_ids {
-            links.extend(LinkRepository::get_by_source_block_id(self, id)?);
+        if source_block_ids.is_empty() {
+            return Ok(Vec::new());
         }
-        Ok(links)
+        let placeholders: Vec<String> = source_block_ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
+        let sql = format!(
+            "SELECT {} FROM Link WHERE source_block_id IN ({}) AND deleted_at IS NULL",
+            link_select_cols(),
+            placeholders.join(", ")
+        );
+        let params: Vec<&str> = source_block_ids.iter().map(|s| s.as_str()).collect();
+        let result = Self::query(&self.db, &sql, &params)?;
+        Ok(result.into_iter().map(|r| row_to_link_js(&r)).collect())
     }
 
     fn get_by_target_page_id(&self, target_page_id: &str) -> Result<Vec<Link>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, source_block_id, target_page_id, display_text, relationship_type, updated_at, version, deleted_at, created_at FROM Link WHERE target_page_id = ? AND deleted_at IS NULL", &[target_page_id])?;
-        Ok(result.into_iter().map(|r| row_to_link(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Link WHERE target_page_id = ? AND deleted_at IS NULL", link_select_cols()), &[target_page_id])?;
+        Ok(result.into_iter().map(|r| row_to_link_js(&r)).collect())
     }
 
     fn create(&mut self, link: &Link) -> Result<Link, Box<dyn std::error::Error>> {
