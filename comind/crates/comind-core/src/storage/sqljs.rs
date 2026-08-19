@@ -16,6 +16,7 @@ use crate::storage::entity::page::{page_select_cols, row_to_page_js};
 #[cfg(target_arch = "wasm32")]
 use crate::storage::entity::link::{link_select_cols, row_to_link_js};
 use crate::storage::entity::property::{property_select_cols, row_to_property_js};
+use crate::storage::entity::relationship_type::{relationship_type_select_cols, row_to_relationship_type_js};
 
 #[cfg(target_arch = "wasm32")]
 pub struct SqlJsAdapter {
@@ -391,27 +392,6 @@ impl SqlJsAdapter {
         js_sys::Function::from(run_fn).apply(db, &args)
             .map_err(|e| format!("SQL run failed: {:?}", e))?;
         Ok(())
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-fn row_to_relationship_type(row: &HashMap<String, String>) -> RelationshipType {
-    RelationshipType {
-        id: row.get("id").cloned().unwrap_or_default(),
-        r#type: row.get("type").cloned().unwrap_or_default(),
-        inverse: {
-            let p = row.get("inverse").cloned().unwrap_or_default();
-            if p.is_empty() { None } else { Some(p) }
-        },
-        label: row.get("label").cloned().unwrap_or_default(),
-        inverse_label: row.get("inverse_label").cloned().unwrap_or_default(),
-        color: row.get("color").cloned().unwrap_or_default(),
-        order: row.get("order").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        strength: row.get("strength").cloned().unwrap_or_else(|| "medium".to_string()),
-        deleted: row.get("deleted").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        builtin: row.get("builtin").cloned().unwrap_or_else(|| "1".to_string()).parse::<i64>().unwrap_or(1),
-        created_at: row.get("created_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
-        updated_at: row.get("updated_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
     }
 }
 
@@ -1023,25 +1003,25 @@ impl PropertyRepository for SqlJsAdapter {
 #[cfg(target_arch = "wasm32")]
 impl RelationshipTypeRepository for SqlJsAdapter {
     fn get_by_id(&self, id: &str) -> Result<RelationshipType, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, type, inverse, label, inverse_label, color, `order`, strength, deleted, builtin, created_at, updated_at FROM RelationshipType WHERE id = ?", &[id])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM RelationshipType WHERE id = ?", relationship_type_select_cols()), &[id])?;
         if result.is_empty() {
             return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "RelationshipType not found")));
         }
-        Ok(row_to_relationship_type(&result[0]))
+        Ok(row_to_relationship_type_js(&result[0]))
     }
 
     fn get_by_type(&self, r#type: &str) -> Result<Option<RelationshipType>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, type, inverse, label, inverse_label, color, `order`, strength, deleted, builtin, created_at, updated_at FROM RelationshipType WHERE type = ? AND deleted = 0", &[r#type])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM RelationshipType WHERE type = ? AND deleted = 0", relationship_type_select_cols()), &[r#type])?;
         if result.is_empty() {
             Ok(None)
         } else {
-            Ok(Some(row_to_relationship_type(&result[0])))
+            Ok(Some(row_to_relationship_type_js(&result[0])))
         }
     }
 
     fn get_all(&self) -> Result<Vec<RelationshipType>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT id, type, inverse, label, inverse_label, color, `order`, strength, deleted, builtin, created_at, updated_at FROM RelationshipType WHERE deleted = 0 ORDER BY `order`", &[])?;
-        Ok(result.into_iter().map(|r| row_to_relationship_type(&r)).collect())
+        let result = Self::query(&self.db, &format!("SELECT {} FROM RelationshipType WHERE deleted = 0 ORDER BY `order`", relationship_type_select_cols()), &[])?;
+        Ok(result.into_iter().map(|r| row_to_relationship_type_js(&r)).collect())
     }
 
     fn create(&mut self, rt: &RelationshipType) -> Result<RelationshipType, Box<dyn std::error::Error>> {

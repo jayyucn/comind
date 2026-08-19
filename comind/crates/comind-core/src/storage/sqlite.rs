@@ -13,6 +13,7 @@ use crate::storage::entity::page::{page_get_by_id, page_get_by_title_including_d
 use crate::storage::entity::link::{link_get_by_id, link_get_by_source_block_id, link_get_by_source_block_ids, link_get_by_target_page_id, link_insert, link_create_many, link_delete, link_delete_by_source_block_id, link_delete_by_target_page_id};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::property::{property_create, property_delete, property_delete_by_block_id, property_get_all, property_get_by_block_id, property_get_by_block_id_and_key, property_get_by_block_ids, property_get_by_id, property_query_block_ids_by_key_value, property_update, property_upsert};
+use crate::storage::entity::relationship_type::{relationship_type_create, relationship_type_delete, relationship_type_get_all, relationship_type_get_by_id, relationship_type_get_by_type, relationship_type_update};
 
 pub struct SQLiteAdapter {
     pub conn: Connection,
@@ -640,137 +641,29 @@ impl PropertyRepository for SQLiteAdapter {
 
 impl RelationshipTypeRepository for SQLiteAdapter {
     fn get_by_id(&self, id: &str) -> Result<RelationshipType, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, type, inverse, label, inverse_label, color, `order`, strength, deleted, builtin, created_at, updated_at 
-             FROM RelationshipType WHERE id = ?1"
-        )?;
-        
-        let rt = stmt.query_row(params![id], |row| {
-            Ok(RelationshipType {
-                id: row.get(0)?,
-                r#type: row.get(1)?,
-                inverse: row.get(2)?,
-                label: row.get(3)?,
-                inverse_label: row.get(4)?,
-                color: row.get(5)?,
-                order: row.get(6)?,
-                strength: row.get(7)?,
-                deleted: row.get(8)?,
-                builtin: row.get(9)?,
-                created_at: row.get(10)?,
-                updated_at: row.get(11)?,
-            })
-        })?;
-        
-        Ok(rt)
+        relationship_type_get_by_id(&self.conn, id)
     }
-    
+
     fn get_by_type(&self, r#type: &str) -> Result<Option<RelationshipType>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, type, inverse, label, inverse_label, color, `order`, strength, deleted, builtin, created_at, updated_at 
-             FROM RelationshipType WHERE type = ?1 AND deleted = 0"
-        )?;
-        
-        let result = stmt.query_row(params![r#type], |row| {
-            Ok(RelationshipType {
-                id: row.get(0)?,
-                r#type: row.get(1)?,
-                inverse: row.get(2)?,
-                label: row.get(3)?,
-                inverse_label: row.get(4)?,
-                color: row.get(5)?,
-                order: row.get(6)?,
-                strength: row.get(7)?,
-                deleted: row.get(8)?,
-                builtin: row.get(9)?,
-                created_at: row.get(10)?,
-                updated_at: row.get(11)?,
-            })
-        });
-        
-        match result {
-            Ok(rt) => Ok(Some(rt)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(Box::new(e)),
-        }
+        relationship_type_get_by_type(&self.conn, r#type)
     }
-    
+
     fn get_all(&self) -> Result<Vec<RelationshipType>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, type, inverse, label, inverse_label, color, `order`, strength, deleted, builtin, created_at, updated_at 
-             FROM RelationshipType WHERE deleted = 0 ORDER BY `order`"
-        )?;
-        
-        let rts = stmt.query_map([], |row| {
-            Ok(RelationshipType {
-                id: row.get(0)?,
-                r#type: row.get(1)?,
-                inverse: row.get(2)?,
-                label: row.get(3)?,
-                inverse_label: row.get(4)?,
-                color: row.get(5)?,
-                order: row.get(6)?,
-                strength: row.get(7)?,
-                deleted: row.get(8)?,
-                builtin: row.get(9)?,
-                created_at: row.get(10)?,
-                updated_at: row.get(11)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-        
-        Ok(rts)
+        relationship_type_get_all(&self.conn)
     }
-    
+
     fn create(&mut self, rt: &RelationshipType) -> Result<RelationshipType, Box<dyn Error>> {
-        self.conn.execute(
-            "INSERT INTO RelationshipType (id, type, inverse, label, inverse_label, color, `order`, strength, deleted, builtin, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
-            params![
-                rt.id,
-                rt.r#type,
-                rt.inverse,
-                rt.label,
-                rt.inverse_label,
-                rt.color,
-                rt.order,
-                rt.strength,
-                rt.deleted,
-                rt.builtin,
-                rt.created_at,
-                rt.updated_at
-            ]
-        )?;
-        
+        relationship_type_create(&self.conn, rt)?;
         Ok(rt.clone())
     }
-    
+
     fn update(&mut self, rt: &RelationshipType) -> Result<RelationshipType, Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE RelationshipType SET type = ?2, inverse = ?3, label = ?4, inverse_label = ?5, color = ?6, `order` = ?7, strength = ?8, deleted = ?9, updated_at = ?10, version = version + 1
-             WHERE id = ?1",
-            params![
-                rt.id,
-                rt.r#type,
-                rt.inverse,
-                rt.label,
-                rt.inverse_label,
-                rt.color,
-                rt.order,
-                rt.strength,
-                rt.deleted,
-                rt.updated_at
-            ]
-        )?;
-        
+        relationship_type_update(&self.conn, rt)?;
         Ok(rt.clone())
     }
-    
+
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE RelationshipType SET deleted = 1, deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE id = ?1",
-            params![id, chrono::Utc::now().timestamp_millis()]
-        )?;
-        Ok(())
+        relationship_type_delete(&self.conn, id)
     }
 }
 
@@ -1878,137 +1771,29 @@ impl<'a> PropertyRepository for SQLiteTransactionAdapter<'a> {
 
 impl<'a> RelationshipTypeRepository for SQLiteTransactionAdapter<'a> {
     fn get_by_id(&self, id: &str) -> Result<RelationshipType, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, type, inverse, label, inverse_label, color, `order`, strength, deleted, builtin, created_at, updated_at
-             FROM RelationshipType WHERE id = ?1"
-        )?;
-
-        let rt = stmt.query_row(params![id], |row| {
-            Ok(RelationshipType {
-                id: row.get(0)?,
-                r#type: row.get(1)?,
-                inverse: row.get(2)?,
-                label: row.get(3)?,
-                inverse_label: row.get(4)?,
-                color: row.get(5)?,
-                order: row.get(6)?,
-                strength: row.get(7)?,
-                deleted: row.get(8)?,
-                builtin: row.get(9)?,
-                created_at: row.get(10)?,
-                updated_at: row.get(11)?,
-            })
-        })?;
-
-        Ok(rt)
+        relationship_type_get_by_id(&self.conn, id)
     }
 
     fn get_by_type(&self, r#type: &str) -> Result<Option<RelationshipType>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, type, inverse, label, inverse_label, color, `order`, strength, deleted, builtin, created_at, updated_at
-             FROM RelationshipType WHERE type = ?1 AND deleted = 0"
-        )?;
-
-        let result = stmt.query_row(params![r#type], |row| {
-            Ok(RelationshipType {
-                id: row.get(0)?,
-                r#type: row.get(1)?,
-                inverse: row.get(2)?,
-                label: row.get(3)?,
-                inverse_label: row.get(4)?,
-                color: row.get(5)?,
-                order: row.get(6)?,
-                strength: row.get(7)?,
-                deleted: row.get(8)?,
-                builtin: row.get(9)?,
-                created_at: row.get(10)?,
-                updated_at: row.get(11)?,
-            })
-        });
-
-        match result {
-            Ok(rt) => Ok(Some(rt)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(Box::new(e)),
-        }
+        relationship_type_get_by_type(&self.conn, r#type)
     }
 
     fn get_all(&self) -> Result<Vec<RelationshipType>, Box<dyn Error>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, type, inverse, label, inverse_label, color, `order`, strength, deleted, builtin, created_at, updated_at
-             FROM RelationshipType WHERE deleted = 0 ORDER BY `order`"
-        )?;
-
-        let rts = stmt.query_map([], |row| {
-            Ok(RelationshipType {
-                id: row.get(0)?,
-                r#type: row.get(1)?,
-                inverse: row.get(2)?,
-                label: row.get(3)?,
-                inverse_label: row.get(4)?,
-                color: row.get(5)?,
-                order: row.get(6)?,
-                strength: row.get(7)?,
-                deleted: row.get(8)?,
-                builtin: row.get(9)?,
-                created_at: row.get(10)?,
-                updated_at: row.get(11)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
-
-        Ok(rts)
+        relationship_type_get_all(&self.conn)
     }
 
     fn create(&mut self, rt: &RelationshipType) -> Result<RelationshipType, Box<dyn Error>> {
-        self.conn.execute(
-            "INSERT INTO RelationshipType (id, type, inverse, label, inverse_label, color, `order`, strength, deleted, builtin, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
-            params![
-                rt.id,
-                rt.r#type,
-                rt.inverse,
-                rt.label,
-                rt.inverse_label,
-                rt.color,
-                rt.order,
-                rt.strength,
-                rt.deleted,
-                rt.builtin,
-                rt.created_at,
-                rt.updated_at
-            ]
-        )?;
-
+        relationship_type_create(&self.conn, rt)?;
         Ok(rt.clone())
     }
 
     fn update(&mut self, rt: &RelationshipType) -> Result<RelationshipType, Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE RelationshipType SET type = ?2, inverse = ?3, label = ?4, inverse_label = ?5, color = ?6, `order` = ?7, strength = ?8, deleted = ?9, updated_at = ?10, version = version + 1
-             WHERE id = ?1",
-            params![
-                rt.id,
-                rt.r#type,
-                rt.inverse,
-                rt.label,
-                rt.inverse_label,
-                rt.color,
-                rt.order,
-                rt.strength,
-                rt.deleted,
-                rt.updated_at
-            ]
-        )?;
-
+        relationship_type_update(&self.conn, rt)?;
         Ok(rt.clone())
     }
 
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        self.conn.execute(
-            "UPDATE RelationshipType SET deleted = 1, deleted_at = ?2, version = version + 1, updated_at = ?2 WHERE id = ?1",
-            params![id, chrono::Utc::now().timestamp_millis()]
-        )?;
-        Ok(())
+        relationship_type_delete(&self.conn, id)
     }
 }
 
