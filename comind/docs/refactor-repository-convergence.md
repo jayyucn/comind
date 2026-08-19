@@ -53,15 +53,15 @@ pub fn date_ref_delete_by_block_id(exec: &dyn Executor, block_id:&str) -> Result
 
 ```rust
 pub trait Executor {
-    fn execute(&self, sql:&str, params:&[&dyn ToSql]) -> Result<usize, Box<dyn Error>>;
-    fn query_map<T, F>(&self, sql:&str, params:&[&dyn ToSql], f:F)
-        -> Result<Vec<T>, Box<dyn Error>>
-        where F: FnMut(&rusqlite::Row) -> Result<T, Box<dyn Error>>;
-    fn last_insert_rowid(&self) -> i64;
+    fn execute(&self, sql: &str, params: &[&dyn ToSql]) -> Result<usize, rusqlite::Error>;
+    fn query_map<T, F>(&self, sql: &str, params: &[&dyn ToSql], f: F) -> Result<Vec<T>, rusqlite::Error>
+    where
+        F: FnMut(&rusqlite::Row) -> Result<T, rusqlite::Error>;
 }
 impl Executor for rusqlite::Connection { … }
 impl Executor for rusqlite::Transaction<'_> { … }
 ```
+*(Updated 2026-08-19 to match the landed trait: no `last_insert_rowid`; both methods return `rusqlite::Error`, not `Box<dyn Error>`.)*
 
 ### Rewire (three sites)
 
@@ -73,8 +73,8 @@ impl Executor for rusqlite::Transaction<'_> { … }
 
 `TransactionalStorageAdapter::transaction` wraps the closure: `BEGIN` on `&mut self.conn`, build a
 `TxContext { tx: &Transaction }` whose `StorageAdapter` methods forward to free fns on the tx, run closure,
-`COMMIT` or `ROLLBACK` on error. During pilot only DateRef is wired through `TxContext`; other traits still use
-the legacy `SQLiteTransactionAdapter` until migrated.
+`COMMIT` or `ROLLBACK` on error. *(Updated 2026-08-19: `TxContext` now implements all 13 repo traits +
+`StorageAdapter`; the standalone `SQLiteTransactionAdapter` was deleted in Q3a.)*
 
 ### Tests
 
@@ -88,6 +88,5 @@ All green + code review before merge. No behavior change for non-DateRef entitie
 
 ## Rollout order (post-pilot)
 
-- **Done (committed on `refactor-repository-convergence`):** DateRef, Block, Page, Link — each via the same shared-module + `Executor` pattern; the Q10 review gate is skipped per jay's go-ahead, so entities accumulate in one open convergence PR.
-- **Remaining:** Property → RelationshipType → Template → Search → BlockVersion → Notification → SavedFilter → ScreenView → NotificationConfig.
-- When the last entity lands, delete `SQLiteTransactionAdapter` entirely (Q3a).
+- **Done (committed on `refactor-repository-convergence`):** all 13 entities — DateRef, Block, Page, Link, Property, RelationshipType, Template, Search, BlockVersion, Notification, SavedFilter, ScreenView, NotificationConfig — each via the same shared-module + `Executor` pattern; then **Q3a**: the standalone `SQLiteTransactionAdapter` is deleted and replaced by `TxContext<'a>` (implements all 13 repo traits + `StorageAdapter`). Per-entity landing records in `docs/adr/0018-repository-convergence.md`.
+- The Q10 review gate is skipped per jay's go-ahead; entities accumulated in one open convergence PR (#43), reviewed in full at the end.
