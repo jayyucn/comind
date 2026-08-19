@@ -821,8 +821,8 @@ impl DateRefRepository for SqlJsAdapter {
             date_ref.date_day.as_str(),
             date_ref.recurrence.as_str(),
             &date_ref.lead_minutes.to_string(),
-            &date_ref.event_ts.to_string(),
             &date_ref.created_at.to_string(),
+            &date_ref.event_ts.to_string(),
             &date_ref.updated_at.to_string(),
         ])?;
         Ok(date_ref.clone())
