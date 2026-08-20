@@ -30,9 +30,12 @@
 
 > **候选 1 已完成**（ADR-0018，2026-08-19）：deletion test 兑现——≈2,000 行纯复制删除、列序 drift 结构性消除；候选 2 与候选 4 的地基已就绪。
 > **候选 2 已完成**（ADR-0019，2026-08-19）：写路径编排收进 `BlockWriteService`，Tauri/wasm 共享同一编排（+533/−298，10 文件，含 5 个编排测试）。
+> **候选 3 已 grill**（ADR-0020，2026-08-19）：IPC 六层链收敛决策已定，待 /implement（文档已归位 main 链，代码未实现）。
+> **候选 4 已 grill**（ADR-0021，2026-08-20）：WASM adapter 收敛决策已定——Dexie 245 行删除、wasm 补 19 薄命令、`ensureTodayIdeasPage` 复用共享 service，待 /implement。
+> **候选 5 已完成**（ADR-0017，#41/#42 已合入 main）：App.vue 9 类横切职责抽为 7 个 app composable。
 
-- **地基链**：1 ✅ → 2 ✅ → **4**（候选 4 的地基 1/2 均已就绪）
-- **前端独立链**：3（IPC 链）、5（App.vue 拆分）可并行，互不阻塞
+- **地基链**：1 ✅ → 2 ✅ → **4 🟡**（已 grill，待 /implement——地基 1/2 ✅ 已就绪）
+- **前端独立链**：3 🟡（已 grill，待 /implement）、5 ✅（已完成，合入 main）可并行，互不阻塞
 - **查询/视图链**：7（值编辑器 + chip-bar 合一，半依赖 6 已铺垫）→ 8（通用视图 leverage，speculative，优先级最低）
 
 ---
@@ -91,33 +94,53 @@
 ## 候选 3 · Collapse the six-layer frontend IPC chain
 
 - **评级**：Strong · ports & adapters
-- **涉及文件**
-  - `src/wasm/client.ts`（`CoreClient` interface 66 方法 L42–133；`TauriClient` class L135–410 纯转发）
-  - `src/wasm/tauri-client.ts`（544 行：103 个 `tauri*` 函数、98 次 `invoke`）
+- **状态**：✅ **已 grill（2026-08-19）**——共识见 `docs/adr/0020-ipc-client-convergence.md`。
+- **涉及文件**（实测修正）
+  - `src/wasm/client.ts`（893 行：`CoreClient` interface **68** 方法 L42–133；`TauriClient` class L135–409 纯转发；`WasmClientAdapter` L411–755，22 个 stub）
+  - `src/wasm/tauri-client.ts`（544 行：103 个 `tauri*` 函数 = 95 纯 invoke 转发 + 8 非转发；98 次 `invoke`）
 - **Problem**：新增一个命令要改 5 个文件；`TauriClient` class 与 `tauri*` 函数是逐方法直通，interface 与 implementation 一样宽。
 - **Solution**：`Tauri` adapter 直接实现 `CoreClient`（每个方法体即一次 `invoke`）；删除 class 转发层与 103 个 `tauri*` 函数。
-- **Wins**：删除约 800 行直通代码；新命令只碰 2 个模块；leverage：66 方法一处实现。
+- **Wins**：删除约 800 行直通代码；新命令只碰 2 个模块；leverage：75 方法一处实现。
 - **依赖**：无（前端）。与候选 2/4 共享「adapter 即 seam」理念。
-- **🔸 待 grill / 开放决策**
-  1. `CoreClient` 是否应同时服务 WASM adapter（与候选 4 合并考量）？
-  2. 66 方法是否真需全保留（是否有已死的桥接方法可顺手删）？
+- **grill 共识速览**（决策细节见 ADR-0020，Q1–Q10 共 10 项）
+  - 范围：**只收敛 Tauri 侧**；`WasmClientAdapter` 原样保留（stub 归候选 4，Q1=A）。
+  - TauriClient：方法体**直 `invoke`**，8 个 JSON 包装方法保持（Q2=A）；删除 `tauri-client.ts` 全部 103 函数。
+  - 平台能力独立：**新建 `src/wasm/tauri-platform.ts`**（窗口 4 + 平台检测 3 + 目录 1 + 同步/连接 6 ≈ 14 函数 + `SyncStatus` 等类型；Q3/Q6=A）。
+  - 数据命令收编：S3/S6 解析 7 个进 `CoreClient`（68→75 方法，wasm 补 stub；Q4/Q9=A）。
+  - **死函数删除**：17 个零消费方 `tauri*` 函数直接删除（Q10=A）；CoreClient 68 方法全保留（死方法审计登记 follow-up，Q8=A）。
+  - **顺修 bug**：后端补 `get_templates` 薄命令（前端调、后端无 → Tauri 模板加载 IPC 报错；Q5=A）。
+  - 测试：5 个 `vi.mock('../wasm/tauri-client')` 改写 mock 目标，不新增单测（Q7=A）。
+- **✅ 开放决策已定（ADR-0020）**：backlog 原 2 问（CoreClient 是否服务 WASM / 66 方法是否全保留）均已收敛（分别为"否，归候选 4"与"全保留，审计登记 follow-up"）。
+- **🔸 待 /implement / 开放 follow-up**
+  1. 后端死命令清理（`renumber_blocks` / `build_document_order` 及 17 个被删包装对应的命令）。
+  2. CoreClient 68 方法死方法审计。
+  3. 候选 4：`WasmClientAdapter` 与 `TauriClient` 收敛（stub → 0）。
+  4. 可选：TauriClient 统一错误处理（私有 `invoke` helper）。
 
 ---
 
 ## 候选 4 · Converge the WASM adapter with the Tauri adapter
 
 - **评级**：Worth exploring · ports & adapters
-- **涉及文件**
-  - `src/wasm/client.ts`（`WASM adapter` L411–767：约 20 个 stub；`ensureTodayIdeasPage` L524–538 用 TS 重实现 Rust 幂等逻辑；`getOutlinks` L554–560 用 `as any` 运行时探测）
-  - `src/wasm/web-version-storage.ts` · `src/wasm/web-notification-storage.ts`（IndexedDB 平行实现，Rust 侧已有对应 Repository）
+- **状态**：🟡 **已 grill（2026-08-20）**——共识见 `docs/adr/0021-wasm-adapter-convergence.md`。
+- **涉及文件**（实测修正，基线 42e66c2）
+  - `src/wasm/client.ts`（`WasmClientAdapter` L411–755：BlockVersion 6 方法走 Dexie、Notification 12 方法走 Dexie、`ensureTodayIdeasPage` L524–538 TS 重实现、`getOutlinks` L554–560 `as any` 探测）
+  - `src/wasm/web-version-storage.ts`（106 行）· `src/wasm/web-notification-storage.ts`（139 行）——Dexie/IndexedDB 平行实现
+  - Rust 侧已就绪：`storage/sqljs.rs` 完整实现 13 repo trait（`NotificationRepository` L656 / `BlockVersionRepository` L1138）；`BlockVersionService` 全套泛型 API；`PageService::ensure_today_ideas_page`（L59）；`comind-wasm` lib.rs 仅 24 命令（缺 19 个）
 - **Problem**：两个 adapter 不仅机制不同，行为也不同：stub、`as any` 探测、以及 Rust 已有之物的 IndexedDB 平行实现。
 - **Solution**：`BlockVersion` / `Notification` 的 WASM 路径改走 `comind-core` repository（sqljs 实现）；删除 TS 重实现。
-- **Wins**：幂等逻辑只剩一份；删除时区 bug 现场；seam 变诚实——adapter 只差传输。
-- **依赖**：候选 1 ✅ 已完成；候选 2（Service seam）先行。
-- **🔸 待 grill / 开放决策**
-  1. WASM 路径是否需要离线 IndexedDB（网络缺失场景）？
-  2. `ensureTodayIdeasPage` 幂等逻辑能否在 sqljs 层复用？
-  3. web 版通知存储是否要一并迁？
+- **Wins**：幂等逻辑只剩一份；删除时区 bug 现场（`chrono` `wasmbind` 已启用，注释过时）；seam 变诚实——adapter 只差传输。
+- **依赖**：候选 1 ✅ / 候选 2 ✅（地基就绪）。
+- **grill 共识速览**（决策细节见 ADR-0021，Q1–Q7 共 7 项）
+  - **删除 Dexie**：BlockVersion/Notification 的 WASM 路径改走 sqljs（`comind-wasm` 补 19 个薄命令：ensure_today 1 + block_version 6 + notification 12）；`web-version-storage.ts`/`web-notification-storage.ts` 共 245 行删除（Q1/Q3=A）。离线 IndexedDB 不需要——sqljs 已 localStorage 持久化。
+  - **`ensureTodayIdeasPage` 复用共享 `PageService`**（`chrono` `wasmbind` 时区正确，TS 重实现删除；Q2=A）。
+  - **Dexie 历史数据不迁移**（仅 web 开发数据，接受丢失，ADR 记录；Q4=A）；`getOutlinks` `as any` 探测删除直调（Q5=A）。
+  - **测试**：native 补 `ensure_today_ideas_page` 幂等用例；wasm 不新增（薄命令无逻辑）；`lib_test.rs` 缺失登记 follow-up（Q6=A）。
+- **🔸 待 /implement / 开放 follow-up**
+  1. wasm 测试基建修复（`lib_test.rs` 声明但缺失，`wasm-bindgen-test` 从未运行）。
+  2. 候选 3 代码实现（ADR-0020 已归位本分支，代码未 implement——见顶部推进序）。
+  3. wasm `getTemplates` 仍走 `execute_batch` op hack（可随候选 3 实现补薄命令）。
+  4. `localStorage` 容量上限（sqljs 全库 base64 持久化，BlockVersion/Notification 入表后 blob 增长）。
 
 ---
 
@@ -195,6 +218,6 @@
 ## 下一步
 
 登记册就绪后，逐个候选走 `/grilling` 决策树 → 产出该候选的 ADR + 重构方案文档（参照候选 1 的 `0018-repository-convergence.md`、候选 6 的 `0016-editor-dom-event-transport.md` + `refactor-editor-event-table.md`）。
-- **候选 1、2 已完成**；地基链下一候选 = **候选 4**（Converge the WASM adapter with the Tauri adapter，依赖 1/2 ✅ 均已就绪）。
-- 前端独立链：候选 3 可并行；候选 5 已 grill，可直接 `/implement`（方案见 `docs/refactor-app-composition.md`）。
+- **候选 1、2、5 已完成；候选 3、4 已 grill（ADR-0020/0021）待 /implement**。地基链候选 4 的地基（1/2 ✅）已就绪。
+- 前端独立链：候选 3（已 grill）、候选 5（✅ 已完成）——候选 3 代码实现待做（ADR-0020 文档已随候选 4 分支归位 main 链）。
 - 查询/视图链：候选 7（半依赖 6 已铺垫）→ 候选 8（speculative，最低优先级）。

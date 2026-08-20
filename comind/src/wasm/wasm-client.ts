@@ -1,6 +1,6 @@
 import type {
   Block, Page, Property, Link, RelationshipType,
-  SearchResult, BatchResult, DateRefRecord
+  SearchResult, BatchResult, DateRefRecord, BlockVersion, Notification
 } from './types'
 
 export interface WasmClient {
@@ -34,6 +34,28 @@ export interface WasmClient {
   query_due_non_recurring_date_refs(now_ms: number): Promise<DateRefRecord[]>
   query_all_recurring_date_refs(): Promise<DateRefRecord[]>
   rebuild_date_refs(): Promise<{ rebuilt: number }>
+
+  ensure_today_ideas_page(): Promise<Page>
+
+  create_block_version(blockId: string, snapshot: string, hash: string, reason: string, checkpointName?: string): Promise<BlockVersion>
+  get_block_versions(blockId: string): Promise<BlockVersion[]>
+  get_block_version_by_id(id: string): Promise<BlockVersion>
+  restore_block_version(versionId: string): Promise<BlockVersion>
+  cleanup_block_versions(retentionDays: number): Promise<void>
+  delete_block_version(versionId: string): Promise<void>
+
+  get_notification(id: string): Promise<Notification>
+  get_notifications_by_block(blockId: string): Promise<Notification[]>
+  query_unread_notifications(): Promise<Notification[]>
+  query_recent_notifications(limit: number): Promise<Notification[]>
+  create_notification(notification: string): Promise<Notification>
+  batch_create_notifications(notifications: string): Promise<Notification[]>
+  update_notification_status(id: string, status: string): Promise<Notification>
+  update_notification_payload(id: string, payload: string): Promise<Notification>
+  set_notification_snooze(id: string, snoozeUntil: number, status: string): Promise<Notification>
+  delete_notification(id: string): Promise<void>
+  cleanup_notifications(timestamp: number): Promise<void>
+  mark_all_notifications_read(): Promise<void>
 }
 
 let wasmClient: WasmClient | null = null
@@ -208,6 +230,96 @@ export async function initWasmClient(): Promise<WasmClient> {
     async rebuild_date_refs(): Promise<{ rebuilt: number }> {
       const result = await wasmModule.rebuild_date_refs()
       return parseJsonResult<{ rebuilt: number }>(result)
+    },
+
+    async ensure_today_ideas_page(): Promise<Page> {
+      const result = await wasmModule.ensure_today_ideas_page()
+      return parseJsonResult<Page>(result)
+    },
+
+    async create_block_version(blockId: string, snapshot: string, hash: string, reason: string, checkpointName?: string): Promise<BlockVersion> {
+      const result = await wasmModule.create_block_version(blockId, snapshot, hash, reason, checkpointName ?? undefined)
+      return parseJsonResult<BlockVersion>(result)
+    },
+
+    async get_block_versions(blockId: string): Promise<BlockVersion[]> {
+      const result = await wasmModule.get_block_versions(blockId)
+      return parseJsonResult<BlockVersion[]>(result)
+    },
+
+    async get_block_version_by_id(id: string): Promise<BlockVersion> {
+      const result = await wasmModule.get_block_version_by_id(id)
+      return parseJsonResult<BlockVersion>(result)
+    },
+
+    async restore_block_version(versionId: string): Promise<BlockVersion> {
+      const result = await wasmModule.restore_block_version(versionId)
+      return parseJsonResult<BlockVersion>(result)
+    },
+
+    async cleanup_block_versions(retentionDays: number): Promise<void> {
+      await wasmModule.cleanup_block_versions(BigInt(retentionDays))
+    },
+
+    async delete_block_version(versionId: string): Promise<void> {
+      await wasmModule.delete_block_version(versionId)
+    },
+
+    async get_notification(id: string): Promise<Notification> {
+      const result = await wasmModule.get_notification(id)
+      return parseJsonResult<Notification>(result)
+    },
+
+    async get_notifications_by_block(blockId: string): Promise<Notification[]> {
+      const result = await wasmModule.get_notifications_by_block(blockId)
+      return parseJsonResult<Notification[]>(result)
+    },
+
+    async query_unread_notifications(): Promise<Notification[]> {
+      const result = await wasmModule.query_unread_notifications()
+      return parseJsonResult<Notification[]>(result)
+    },
+
+    async query_recent_notifications(limit: number): Promise<Notification[]> {
+      const result = await wasmModule.query_recent_notifications(BigInt(limit))
+      return parseJsonResult<Notification[]>(result)
+    },
+
+    async create_notification(notification: string): Promise<Notification> {
+      const result = await wasmModule.create_notification(notification)
+      return parseJsonResult<Notification>(result)
+    },
+
+    async batch_create_notifications(notifications: string): Promise<Notification[]> {
+      const result = await wasmModule.batch_create_notifications(notifications)
+      return parseJsonResult<Notification[]>(result)
+    },
+
+    async update_notification_status(id: string, status: string): Promise<Notification> {
+      const result = await wasmModule.update_notification_status(id, status)
+      return parseJsonResult<Notification>(result)
+    },
+
+    async update_notification_payload(id: string, payload: string): Promise<Notification> {
+      const result = await wasmModule.update_notification_payload(id, payload)
+      return parseJsonResult<Notification>(result)
+    },
+
+    async set_notification_snooze(id: string, snoozeUntil: number, status: string): Promise<Notification> {
+      const result = await wasmModule.set_notification_snooze(id, BigInt(snoozeUntil), status)
+      return parseJsonResult<Notification>(result)
+    },
+
+    async delete_notification(id: string): Promise<void> {
+      await wasmModule.delete_notification(id)
+    },
+
+    async cleanup_notifications(timestamp: number): Promise<void> {
+      await wasmModule.cleanup_notifications(BigInt(timestamp))
+    },
+
+    async mark_all_notifications_read(): Promise<void> {
+      await wasmModule.mark_all_notifications_read()
     }
   }
 
