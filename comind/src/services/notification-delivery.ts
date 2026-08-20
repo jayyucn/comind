@@ -1,5 +1,5 @@
 import type { NotificationPayload } from '../types/notification'
-import { isTauriEnvironment } from '../wasm/tauri-client'
+import { isTauriEnvironment } from '../wasm/tauri-platform'
 
 export interface NotificationDelivery {
   notify(payload: NotificationPayload): Promise<void>

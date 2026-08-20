@@ -1,7 +1,7 @@
-import { isTauriEnvironment } from './tauri-client'
-export { isTauriEnvironment } from './tauri-client'
+import { invoke } from '@tauri-apps/api/core'
+import { isTauriEnvironment, type TauriBatchCheckAndFireData, type TauriGraphEdgeRecord } from './tauri-platform'
+export { isTauriEnvironment } from './tauri-platform'
 import { initWasmClient, type WasmClient } from './wasm-client'
-import * as tauri from './tauri-client'
 
 function parseJsonResult<T>(result: any): T {
   if (typeof result === 'string') {
@@ -10,7 +10,7 @@ function parseJsonResult<T>(result: any): T {
   return result as T
 }
 import type {
-  Block, Page, Property, Link, RelationshipType,
+  Block, Page, Property, Link, RelationshipType, LinkDraft,
   UserTemplate, SearchResult, BlockUpdate, BlockSaveResult, PageUpdate,
   BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig, BlockVersion,
   Notification, DateRefRecord, IncompleteTask, BlockCard, SavedFilterRust, ScreenViewRust,
@@ -87,9 +87,9 @@ export interface CoreClient {
   queryDueNonRecurringDateRefs(nowMs: number): Promise<DateRefRecord[]>
   queryAllRecurringDateRefs(): Promise<DateRefRecord[]>
   queryIncompleteTasks(): Promise<IncompleteTask[]>
-  batchCheckAndFireData(nowMs: number): Promise<tauri.TauriBatchCheckAndFireData>
+  batchCheckAndFireData(nowMs: number): Promise<TauriBatchCheckAndFireData>
   rebuildDateRefs(): Promise<{ rebuilt: number }>
-  buildGraphSnapshot(): Promise<tauri.TauriGraphEdgeRecord[]>
+  buildGraphSnapshot(): Promise<TauriGraphEdgeRecord[]>
 
   getBlockCards(): Promise<BlockCard[]>
 
@@ -108,281 +108,319 @@ export interface CoreClient {
   deleteScreen(id: string): Promise<void>
   deleteScreenView(id: string): Promise<void>
   setDefaultScreen(id: string): Promise<ScreenViewRust>
+
+  // S3/S6 Rust content-parser commands（web 无实现，Tauri 直通）
+  parseDateInput(input: string): Promise<string | null>
+  normalizeJournalTitle(title: string): Promise<string | null>
+  isTodayTitle(normalizedTitle: string): Promise<boolean>
+  extractLinksFromContent(content: string): Promise<LinkDraft[]>
+  applyRelationshipTypeToBlockContent(content: string, targetTitle: string, newRelationshipType: string | null): Promise<string>
+  calculateNextRecurrence(iso: string, rule: string): Promise<string>
+  checkHasTypedLinkToTarget(content: string, targetTitle: string): Promise<{ has_typed_link: boolean }>
 }
 
 class TauriClient implements CoreClient {
   async getBlock(blockId: string): Promise<Block> {
-    return tauri.tauriGetBlock(blockId)
+    return invoke('get_block', { blockId })
   }
 
   async getBlocksByPage(pageId: string): Promise<Block[]> {
-    return tauri.tauriGetBlocksByPage(pageId)
+    return invoke('get_blocks_by_page', { pageId })
   }
 
   async getBlockCards(): Promise<BlockCard[]> {
-    return tauri.tauriGetBlockCards()
+    return invoke('get_block_cards')
   }
 
   // ---- Saved Filters ----
   async getSavedFilters(): Promise<SavedFilterRust[]> {
-    return tauri.tauriGetSavedFilters()
+    return invoke('get_saved_filters')
   }
 
   async saveSavedFilter(name: string, queryJson: string): Promise<SavedFilterRust> {
-    return tauri.tauriSaveSavedFilter(name, queryJson)
+    return invoke('save_saved_filter', { name, queryJson })
   }
 
   async updateSavedFilter(id: string, name: string, queryJson: string): Promise<SavedFilterRust> {
-    return tauri.tauriUpdateSavedFilter(id, name, queryJson)
+    return invoke('update_saved_filter', { id, name, queryJson })
   }
 
   async deleteSavedFilter(id: string): Promise<void> {
-    return tauri.tauriDeleteSavedFilter(id)
+    return invoke('delete_saved_filter', { id })
   }
 
   // ---- Screens & Tabs（两级层级） ----
   async getScreenViews(entity: string): Promise<ScreenViewRust[]> {
-    return tauri.tauriGetScreenViews(entity)
+    return invoke('get_screen_views', { entity })
   }
 
   async createScreen(entity: string, name: string, viewType: string, sortOrder: number, config: string): Promise<ScreenViewRust> {
-    return tauri.tauriCreateScreen(entity, name, viewType, sortOrder, config)
+    return invoke('create_screen', { entity, name, viewType, sortOrder, config })
   }
 
   async createTab(entity: string, parentId: string, name: string, viewType: string, queryJson: string, sortOrder: number, config: string): Promise<ScreenViewRust> {
-    return tauri.tauriCreateTab(entity, parentId, name, viewType, queryJson, sortOrder, config)
+    return invoke('create_tab', { entity, parentId, name, viewType, queryJson, sortOrder, config })
   }
 
   async updateScreen(id: string, name: string, viewType: string, config: string): Promise<ScreenViewRust> {
-    return tauri.tauriUpdateScreen(id, name, viewType, config)
+    return invoke('update_screen', { id, name, viewType, config })
   }
 
   async updateTab(id: string, name: string, viewType: string, queryJson: string, config: string): Promise<ScreenViewRust> {
-    return tauri.tauriUpdateTab(id, name, viewType, queryJson, config)
+    return invoke('update_tab', { id, name, viewType, queryJson, config })
   }
 
   async deleteScreen(id: string): Promise<void> {
-    return tauri.tauriDeleteScreen(id)
+    return invoke('delete_screen', { id })
   }
 
   async deleteScreenView(id: string): Promise<void> {
-    return tauri.tauriDeleteScreenView(id)
+    return invoke('delete_screen_view', { id })
   }
 
   async setDefaultScreen(id: string): Promise<ScreenViewRust> {
-    return tauri.tauriSetDefaultScreen(id)
+    return invoke('set_default_screen', { id })
   }
 
   async saveBlockTree(blocks: BlockUpdate[]): Promise<BlockSaveResult[]> {
-    return tauri.tauriSaveBlockTree(blocks)
+    return invoke('save_block_tree', { blocks })
   }
 
   async deleteBlock(blockId: string): Promise<void> {
-    return tauri.tauriDeleteBlock(blockId)
+    return invoke('delete_block', { blockId })
   }
 
   async getPage(pageId: string): Promise<Page> {
-    return tauri.tauriGetPage(pageId)
+    return invoke('get_page', { pageId })
   }
 
   async getAllPages(): Promise<Page[]> {
-    return tauri.tauriGetAllPages()
+    return invoke('get_all_pages')
   }
 
   async getTrashPages(): Promise<Page[]> {
-    return tauri.tauriGetTrashPages()
+    return invoke('get_trash_pages')
   }
 
   async getIdeasPagesByMonth(year: number, month: number): Promise<Page[]> {
-    return tauri.tauriGetIdeasPagesByMonth(year, month)
+    return invoke('get_ideas_pages_by_month', { year, month })
   }
 
   async getIdeasMonths(): Promise<string[]> {
-    return tauri.tauriGetIdeasMonths()
+    return invoke('get_ideas_months')
   }
 
   async ensureTodayIdeasPage(): Promise<Page> {
-    return tauri.tauriEnsureTodayIdeasPage()
+    return invoke('ensure_today_ideas_page')
   }
 
   async savePage(page: PageUpdate): Promise<Page> {
-    return tauri.tauriSavePage(page)
+    return invoke('save_page', { page })
   }
 
   async deletePageCascade(pageId: string): Promise<void> {
-    return tauri.tauriDeletePageCascade(pageId)
+    return invoke('delete_page_cascade', { pageId })
   }
 
   async getBacklinks(pageId: string): Promise<Link[]> {
-    return tauri.tauriGetBacklinks(pageId)
+    return invoke('get_backlinks', { pageId })
   }
 
   async getOutlinks(pageId: string): Promise<Link[]> {
-    return tauri.tauriGetOutlinks(pageId)
+    return invoke('get_outlinks', { pageId })
   }
 
   async getProperties(blockId: string): Promise<Property[]> {
-    return tauri.tauriGetProperties(blockId)
+    return invoke('get_properties', { blockId })
   }
 
   async setProperty(blockId: string, key: string, value: string, type: string): Promise<Property> {
-    return tauri.tauriSetProperty(blockId, key, value, type)
+    return invoke('set_property', { blockId, key, value, type })
   }
 
   async deleteProperty(blockId: string, key: string): Promise<void> {
-    return tauri.tauriDeleteProperty(blockId, key)
+    return invoke('delete_property', { blockId, key })
   }
 
   async getRelationshipTypes(): Promise<RelationshipType[]> {
-    return tauri.tauriGetRelationshipTypes()
+    return invoke('get_relationship_types')
   }
 
   async getTemplates(): Promise<UserTemplate[]> {
-    return tauri.tauriGetTemplates()
+    return invoke('get_templates')
   }
 
   async search(query: string): Promise<SearchResult[]> {
-    return tauri.tauriSearch(query)
+    return invoke('search', { query })
   }
 
   async executeBatch(operations: BatchOperation[]): Promise<BatchResult[]> {
-    return tauri.tauriExecuteBatch(operations)
+    return invoke('execute_batch', { operations })
   }
 
   async createBlockVersion(blockId: string, snapshot: string, hash: string, reason: string, checkpointName?: string): Promise<BlockVersion> {
-    return tauri.tauriCreateBlockVersion(blockId, snapshot, hash, reason, checkpointName)
+    return invoke('create_block_version', { blockId, snapshot, hash, reason, checkpointName })
   }
 
   async getBlockVersions(blockId: string): Promise<BlockVersion[]> {
-    return tauri.tauriGetBlockVersions(blockId)
+    return invoke('get_block_versions', { blockId })
   }
 
   async getBlockVersionById(id: string): Promise<BlockVersion> {
-    return tauri.tauriGetBlockVersionById(id)
+    return invoke('get_block_version_by_id', { id })
   }
 
   async restoreBlockVersion(versionId: string): Promise<BlockVersion> {
-    return tauri.tauriRestoreBlockVersion(versionId)
+    return invoke('restore_block_version', { versionId })
   }
 
   async deleteBlockVersion(versionId: string): Promise<void> {
-      return tauri.tauriDeleteBlockVersion(versionId)
+      return invoke('delete_block_version', { versionId })
     }
 
     async cleanupBlockVersions(retentionDays: number): Promise<void> {
-      return tauri.tauriCleanupBlockVersions(retentionDays)
+      return invoke('cleanup_block_versions', { retentionDays })
     }
 
     async getNotification(id: string): Promise<Notification> {
-      return tauri.tauriGetNotification(id)
+      return invoke('get_notification', { id })
     }
 
     async getNotificationsByBlock(blockId: string): Promise<Notification[]> {
-      return tauri.tauriGetNotificationsByBlock(blockId)
+      return invoke('get_notifications_by_block', { blockId })
     }
 
     async queryUnreadNotifications(): Promise<Notification[]> {
-      return tauri.tauriQueryUnreadNotifications()
+      return invoke('query_unread_notifications')
     }
 
     async queryRecentNotifications(limit: number): Promise<Notification[]> {
-      return tauri.tauriQueryRecentNotifications(limit)
+      return invoke('query_recent_notifications', { limit })
     }
 
     async createNotification(notification: Notification): Promise<Notification> {
-      return tauri.tauriCreateNotification(notification)
+      return invoke('create_notification', { notification })
     }
 
     async batchCreateNotifications(notifications: Notification[]): Promise<Notification[]> {
-      return tauri.tauriBatchCreateNotifications(notifications)
+      return invoke('batch_create_notifications', { notifications })
     }
 
     async updateNotificationStatus(id: string, status: string): Promise<Notification> {
-      return tauri.tauriUpdateNotificationStatus(id, status)
+      return invoke('update_notification_status', { id, status })
     }
 
     async updateNotificationPayload(id: string, payload: string): Promise<Notification> {
-      return tauri.tauriUpdateNotificationPayload(id, payload)
+      return invoke('update_notification_payload', { id, payload })
     }
 
     async setNotificationSnooze(id: string, snoozeUntil: number, status: string): Promise<Notification> {
-      return tauri.tauriSetNotificationSnooze(id, snoozeUntil, status)
+      return invoke('set_notification_snooze', { id, snoozeUntil, status })
     }
 
     async deleteNotification(id: string): Promise<void> {
-      return tauri.tauriDeleteNotification(id)
+      return invoke('delete_notification', { id })
     }
 
     async cleanupNotifications(timestamp: number): Promise<void> {
-      return tauri.tauriCleanupNotifications(timestamp)
+      return invoke('cleanup_notifications', { timestamp })
     }
 
     async markAllNotificationsRead(): Promise<void> {
-      return tauri.tauriMarkAllNotificationsRead()
+      return invoke('mark_all_notifications_read')
     }
 
     async getNotificationSettings(): Promise<NotificationSettings> {
-      return tauri.tauriGetNotificationSettings()
+      return invoke('get_notification_settings')
     }
 
     async saveNotificationSettings(config: NotificationSettings): Promise<void> {
-      return tauri.tauriSaveNotificationSettings(config)
+      return invoke('save_notification_settings', { config })
     }
 
     async checkAndFire(): Promise<Notification[]> {
-      return tauri.tauriCheckAndFire()
+      return invoke('check_and_fire')
     }
 
     async syncPayloadForBlock(blockId: string): Promise<void> {
-      return tauri.tauriSyncPayloadForBlock(blockId)
+      return invoke('sync_payload_for_block', { blockId })
     }
 
     async queryDateRefs(kind: string, from: string, to: string): Promise<DateRefRecord[]> {
-      return parseJsonResult(await tauri.tauriQueryDateRefs(kind, from, to))
+      return parseJsonResult(await invoke('query_date_refs', { kind, from, to }))
     }
 
     async queryOverdueDateRefs(today: string): Promise<DateRefRecord[]> {
-      return parseJsonResult(await tauri.tauriQueryOverdueDateRefs(today))
+      return parseJsonResult(await invoke('query_overdue_date_refs', { today }))
     }
 
     async getDateRefsByBlock(blockId: string): Promise<DateRefRecord[]> {
-      return parseJsonResult(await tauri.tauriGetDateRefsByBlock(blockId))
+      return parseJsonResult(await invoke('get_date_refs_by_block', { blockId }))
     }
 
     async getDateRefsByPage(pageId: string): Promise<[string, DateRefRecord[]][]> {
-      return parseJsonResult(await tauri.tauriGetDateRefsByPage(pageId))
+      return parseJsonResult(await invoke('get_date_refs_by_page', { pageId }))
     }
 
     async getPageWithBlocks(pageId: string): Promise<PageWithBlocks> {
-      return parseJsonResult(await tauri.tauriGetPageWithBlocks(pageId))
+      return parseJsonResult(await invoke('get_page_with_blocks', { pageId }))
     }
 
     async getPagesWithBlocks(pageIds: string[]): Promise<PageWithBlocks[]> {
-      return parseJsonResult(await tauri.tauriGetPagesWithBlocks(pageIds))
+      return parseJsonResult(await invoke('get_pages_with_blocks', { pageIds }))
     }
 
     async queryDueNonRecurringDateRefs(nowMs: number): Promise<DateRefRecord[]> {
-      return parseJsonResult(await tauri.tauriQueryDueNonRecurringDateRefs(nowMs))
+      return parseJsonResult(await invoke('query_due_non_recurring_date_refs', { nowMs }))
     }
 
     async queryAllRecurringDateRefs(): Promise<DateRefRecord[]> {
-      return parseJsonResult(await tauri.tauriQueryAllRecurringDateRefs())
+      return parseJsonResult(await invoke('query_all_recurring_date_refs'))
     }
 
     async queryIncompleteTasks(): Promise<IncompleteTask[]> {
-      return parseJsonResult(await tauri.tauriQueryIncompleteTasks())
+      return parseJsonResult(await invoke('query_incomplete_tasks'))
     }
 
-    async batchCheckAndFireData(nowMs: number): Promise<tauri.TauriBatchCheckAndFireData> {
-      return parseJsonResult(await tauri.tauriBatchCheckAndFireData(nowMs))
+    async batchCheckAndFireData(nowMs: number): Promise<TauriBatchCheckAndFireData> {
+      return parseJsonResult(await invoke('batch_check_and_fire_data', { nowMs }))
     }
 
     async rebuildDateRefs(): Promise<{ rebuilt: number }> {
-      return parseJsonResult(await tauri.tauriRebuildDateRefs())
+      return parseJsonResult(await invoke('rebuild_date_refs'))
     }
 
-    async buildGraphSnapshot(): Promise<tauri.TauriGraphEdgeRecord[]> {
-      return tauri.tauriBuildGraphSnapshot()
+    async buildGraphSnapshot(): Promise<TauriGraphEdgeRecord[]> {
+      return invoke('build_graph_snapshot')
+    }
+
+    // ---- S3/S6 Rust content-parser commands（直通） ----
+    async parseDateInput(input: string): Promise<string | null> {
+      return invoke('parse_date_input', { input })
+    }
+
+    async normalizeJournalTitle(title: string): Promise<string | null> {
+      return invoke('normalize_journal_title', { title })
+    }
+
+    async isTodayTitle(normalizedTitle: string): Promise<boolean> {
+      return invoke('is_today_title', { normalizedTitle })
+    }
+
+    async extractLinksFromContent(content: string): Promise<LinkDraft[]> {
+      return invoke('extract_links_from_content', { content })
+    }
+
+    async applyRelationshipTypeToBlockContent(content: string, targetTitle: string, newRelationshipType: string | null): Promise<string> {
+      return invoke('apply_relationship_type_to_block_content', { content, targetTitle, newRelationshipType })
+    }
+
+    async calculateNextRecurrence(iso: string, rule: string): Promise<string> {
+      return invoke('calculate_next_recurrence', { iso, rule })
+    }
+
+    async checkHasTypedLinkToTarget(content: string, targetTitle: string): Promise<{ has_typed_link: boolean }> {
+      return invoke('check_has_typed_link_to_target', { content, targetTitle })
     }
   }
 
@@ -689,7 +727,7 @@ class WasmClientAdapter implements CoreClient {
     // WASM 端暂不支持，返回空数组
     return []
   }
-  async batchCheckAndFireData(_nowMs: number): Promise<tauri.TauriBatchCheckAndFireData> {
+  async batchCheckAndFireData(_nowMs: number): Promise<TauriBatchCheckAndFireData> {
     // WASM client doesn't support batch check-and-fire; return empty
     return {
       recurring_refs: [],
@@ -700,13 +738,42 @@ class WasmClientAdapter implements CoreClient {
     }
   }
 
-  async buildGraphSnapshot(): Promise<tauri.TauriGraphEdgeRecord[]> {
+  async buildGraphSnapshot(): Promise<TauriGraphEdgeRecord[]> {
     // WASM client doesn't support graph snapshot; return empty
     return []
   }
 
   async rebuildDateRefs(): Promise<{ rebuilt: number }> {
     return this.wasm.rebuild_date_refs()
+  }
+
+  // ---- S3/S6 Rust content-parser commands（WASM 无对应命令，web 不可用） ----
+  async parseDateInput(_input: string): Promise<string | null> {
+    throw new Error('WASM: parse_date_input not supported')
+  }
+
+  async normalizeJournalTitle(_title: string): Promise<string | null> {
+    throw new Error('WASM: normalize_journal_title not supported')
+  }
+
+  async isTodayTitle(_normalizedTitle: string): Promise<boolean> {
+    throw new Error('WASM: is_today_title not supported')
+  }
+
+  async extractLinksFromContent(_content: string): Promise<LinkDraft[]> {
+    throw new Error('WASM: extract_links_from_content not supported')
+  }
+
+  async applyRelationshipTypeToBlockContent(_content: string, _targetTitle: string, _newRelationshipType: string | null): Promise<string> {
+    throw new Error('WASM: apply_relationship_type_to_block_content not supported')
+  }
+
+  async calculateNextRecurrence(_iso: string, _rule: string): Promise<string> {
+    throw new Error('WASM: calculate_next_recurrence not supported')
+  }
+
+  async checkHasTypedLinkToTarget(_content: string, _targetTitle: string): Promise<{ has_typed_link: boolean }> {
+    throw new Error('WASM: check_has_typed_link_to_target not supported')
   }
 }
 
@@ -731,58 +798,51 @@ export function getCoreClient(): CoreClient | null {
   return coreClient
 }
 
-export async function getDbPath(): Promise<string> {
-  if (isTauriEnvironment()) {
-    return tauri.tauriGetDbPath()
-  }
-  return Promise.resolve('Web: IndexedDB')
-}
-
 export async function getWorkspacePath(): Promise<string> {
   if (isTauriEnvironment()) {
-    return tauri.tauriGetWorkspacePath()
+    return invoke('get_workspace_path')
   }
   return Promise.resolve('Web: IndexedDB')
 }
 
 export async function setWorkspacePath(path: string): Promise<string> {
   if (isTauriEnvironment()) {
-    return tauri.tauriSetWorkspacePath(path)
+    return invoke('set_workspace_path', { path })
   }
   throw new Error('Workspace path setting is only available in desktop app')
 }
 
 export async function resetWorkspacePath(): Promise<string> {
   if (isTauriEnvironment()) {
-    return tauri.tauriResetWorkspacePath()
+    return invoke('reset_workspace_path')
   }
   throw new Error('Workspace path setting is only available in desktop app')
 }
 
 export async function openWorkspacePath(): Promise<void> {
   if (isTauriEnvironment()) {
-    return tauri.tauriOpenWorkspacePath()
+    return invoke('open_workspace_path')
   }
   throw new Error('Opening workspace path is only available in desktop app')
 }
 
 export async function exportToMarkdown(): Promise<ExportResult> {
   if (isTauriEnvironment()) {
-    return tauri.tauriExportToMarkdown()
+    return invoke('export_to_markdown')
   }
   throw new Error('Markdown export is only available in desktop app')
 }
 
 export async function importFromMarkdown(strategy: string): Promise<ImportResult> {
   if (isTauriEnvironment()) {
-    return tauri.tauriImportFromMarkdown(strategy)
+    return invoke('import_from_markdown', { strategy })
   }
   throw new Error('Markdown import is only available in desktop app')
 }
 
 export async function getSyncConfig(): Promise<SyncConfig> {
   if (isTauriEnvironment()) {
-    return tauri.tauriGetSyncConfig()
+    return invoke('get_sync_config')
   }
   return Promise.resolve({
     sync_enabled: false,
@@ -795,28 +855,28 @@ export async function setSyncConfig(
   intervalSecs?: number
 ): Promise<void> {
   if (isTauriEnvironment()) {
-    return tauri.tauriSetSyncConfig(enabled, intervalSecs)
+    return invoke('set_sync_config', { enabled, intervalSecs })
   }
   throw new Error('Sync config is only available in desktop app')
 }
 
 export async function syncNow(): Promise<ExportResult> {
   if (isTauriEnvironment()) {
-    return tauri.tauriSyncNow()
+    return invoke('sync_now')
   }
   throw new Error('Sync is only available in desktop app')
 }
 
 export async function triggerSync(): Promise<ExportResult> {
   if (isTauriEnvironment()) {
-    return tauri.tauriTriggerSync()
+    return invoke('trigger_sync')
   }
   throw new Error('Sync is only available in desktop app')
 }
 
 export async function getSyncQr(): Promise<string> {
   if (isTauriEnvironment()) {
-    return tauri.tauriGetSyncQr()
+    return invoke('get_sync_qr')
   }
   throw new Error('Device sync is only available in desktop app')
 }
@@ -830,21 +890,21 @@ export interface PairedDevice {
 
 export async function getPairedDevices(): Promise<PairedDevice[]> {
   if (isTauriEnvironment()) {
-    return tauri.tauriGetPairedDevices()
+    return invoke('get_paired_devices')
   }
   return Promise.resolve([])
 }
 
 export async function unpairDevice(clientId: string): Promise<void> {
   if (isTauriEnvironment()) {
-    return tauri.tauriUnpairDevice(clientId)
+    return invoke('unpair_device', { clientId })
   }
   throw new Error('Device sync is only available in desktop app')
 }
 
 export async function triggerFullSync(): Promise<void> {
   if (isTauriEnvironment()) {
-    return tauri.tauriTriggerFullSync()
+    return invoke('trigger_full_sync')
   }
   throw new Error('Device sync is only available in desktop app')
 }

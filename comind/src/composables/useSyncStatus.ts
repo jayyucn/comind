@@ -3,8 +3,8 @@ import {
   isAndroidPlatform,
   tauriGetSyncStatus,
   tauriGetSyncStatusPC,
-} from '../wasm/tauri-client'
-import type { SyncStatus } from '../wasm/tauri-client'
+} from '../wasm/tauri-platform'
+import type { SyncStatus } from '../wasm/tauri-platform'
 import { getPairedDevices } from '../wasm/client'
 
 // 模块级单例：整个应用共享一份轮询状态

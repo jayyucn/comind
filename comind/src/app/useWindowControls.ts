@@ -8,7 +8,7 @@ import {
   tauriIsMaximized,
   tauriMinimizeWindow,
   tauriToggleMaximizeWindow,
-} from '../wasm/tauri-client'
+} from '../wasm/tauri-platform'
 
 /**
  * 窗口控制 + 连接生命周期（窗口按钮/拖拽/resize + Android 自动重连 + online 监听）。

@@ -30,7 +30,7 @@ import { usePageQueryRegistry } from './composables/usePageQueryRegistry'
 import { useRelationshipTypes } from './composables/useRelationshipTypes'
 import { useEditorStore } from './stores/editor'
 import { usePageStore } from './stores/pages'
-import { isTauriEnvironment } from './wasm/tauri-client'
+import { isTauriEnvironment } from './wasm/tauri-platform'
 
 registerPanel({
   id: 'block-version',

@@ -1,6 +1,6 @@
 import { useBlockStore } from '../stores/blocks'
 import { usePageStore } from '../stores/pages'
-import { tauriExtractLinksFromContent } from '../wasm/tauri-client'
+import { getCoreClient } from '../wasm/client'
 import { applyRelationshipTypeToBlockContent } from './useRelationshipSync'
 import type { LinkDraft } from '../wasm/types'
 
@@ -64,7 +64,7 @@ export function useBlockRelationshipCleanup() {
     for (const id of deletedBlockIds) {
       const block = blocks.find(b => b.id === id)
       if (!block) continue
-      const links: LinkDraft[] = await tauriExtractLinksFromContent(block.content)
+      const links: LinkDraft[] = await getCoreClient()!.extractLinksFromContent(block.content)
       for (const link of links) {
         if (link.is_external) continue
         if (link.relationship_type === null) continue
@@ -84,7 +84,7 @@ export function useBlockRelationshipCleanup() {
         for (const b of blocks) {
           if (b.pageId !== pageId) continue
           if (deletedBlockIds.includes(b.id)) continue
-          const links: LinkDraft[] = await tauriExtractLinksFromContent(b.content)
+          const links: LinkDraft[] = await getCoreClient()!.extractLinksFromContent(b.content)
           if (links.some(l =>
             !l.is_external &&
             l.target_title === targetTitle &&

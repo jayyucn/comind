@@ -9,7 +9,7 @@ import type { NotificationPayload } from '../types/notification'
 
 const isTauriMock = vi.hoisted(() => vi.fn<() => boolean>(() => false))
 
-vi.mock('../wasm/tauri-client', () => ({
+vi.mock('../wasm/tauri-platform', () => ({
   isTauriEnvironment: isTauriMock,
 }))
 

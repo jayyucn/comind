@@ -9,7 +9,7 @@ const { isAndroidPlatform, tauriGetSyncStatus, tauriGetSyncStatusPC } = vi.hoist
 }))
 const { getPairedDevices } = vi.hoisted(() => ({ getPairedDevices: vi.fn() }))
 
-vi.mock('../wasm/tauri-client', () => ({
+vi.mock('../wasm/tauri-platform', () => ({
   isAndroidPlatform,
   tauriGetSyncStatus,
   tauriGetSyncStatusPC,

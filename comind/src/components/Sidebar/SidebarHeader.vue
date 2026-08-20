@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { isTauriEnvironment } from '../../wasm/tauri-client'
+import { isTauriEnvironment } from '../../wasm/tauri-platform'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import Icon from '../Icons/Icon.vue'
 

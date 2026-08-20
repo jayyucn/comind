@@ -5,9 +5,9 @@ import {
   applyRelationshipTypeToBlockContent
 } from './useRelationshipSync'
 
-// 4.3: Mock tauri-client for Vitest (no Tauri runtime).
+// 4.3: Mock wasm/client (getCoreClient) for Vitest (no Tauri runtime).
 // Lightweight re-implementation matching Rust ContentParseService behaviour.
-vi.mock('../wasm/tauri-client', () => {
+vi.mock('../wasm/client', () => {
   function extractLinks(content: string) {
     const results: any[] = []
     const covered = new Set<number>()
@@ -53,8 +53,11 @@ vi.mock('../wasm/tauri-client', () => {
     return r
   }
   return {
-    tauriExtractLinksFromContent: (c: string) => Promise.resolve(extractLinks(c)),
-    tauriApplyRelationshipTypeToBlockContent: (c: string, t: string, r: string | null) => Promise.resolve(applyRel(c, t, r)),
+    initCoreClient: vi.fn(async () => ({}) as never),
+    getCoreClient: () => ({
+        extractLinksFromContent: (c: string) => Promise.resolve(extractLinks(c)),
+        applyRelationshipTypeToBlockContent: (c: string, t: string, r: string | null) => Promise.resolve(applyRel(c, t, r)),
+  }),
   }
 })
 

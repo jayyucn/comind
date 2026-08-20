@@ -3,7 +3,7 @@ import { ref, computed, watch, onUnmounted } from 'vue'
 import { QrCode, Wifi, Smartphone, X } from 'lucide-vue-next'
 import { useSyncStatus } from '../../composables/useSyncStatus'
 import { useEditorStore } from '../../stores/editor'
-import { isTauriEnvironment } from '../../wasm/tauri-client'
+import { isTauriEnvironment } from '../../wasm/tauri-platform'
 import DeviceSyncPanel from './DeviceSyncPanel.vue'
 
 const visible = isTauriEnvironment()

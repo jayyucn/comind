@@ -13,7 +13,7 @@ const { tauri, getCurrentWindow } = vi.hoisted(() => ({
   getCurrentWindow: vi.fn(() => ({ startDragging: vi.fn(), listen: vi.fn() })),
 }))
 
-vi.mock('../wasm/tauri-client', () => ({ ...tauri }))
+vi.mock('../wasm/tauri-platform', () => ({ ...tauri }))
 vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow }))
 
 import { useWindowControls } from './useWindowControls'

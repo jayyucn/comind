@@ -1,6 +1,6 @@
 import { useRouter } from 'vue-router'
 // S6: normalizeJournalTitle migrated to Rust
-import { tauriNormalizeJournalTitle } from '../wasm/tauri-client'
+import { getCoreClient } from '../wasm/client'
 
 /**
  * 页面导航工具函数
@@ -28,7 +28,7 @@ export function useNavigateToPage() {
    * 3. beforeEnter 守卫自动处理：查找/创建页面、加载数据
    */
   async function navigateToPage(pageName: string): Promise<void> {
-    const normalized = await tauriNormalizeJournalTitle(pageName)
+    const normalized = await getCoreClient()!.normalizeJournalTitle(pageName)
     const lookupTitle = normalized ?? pageName
     const isIdeas = normalized !== null
 
