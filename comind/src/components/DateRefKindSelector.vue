@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import type { DateRefKind } from '../utils/date-ref'
+import BasePopover from './common/BasePopover.vue'
 
 const props = defineProps<{
   visible: boolean
@@ -21,10 +22,7 @@ const items: { kind: DateRefKind; label: string; icon: string }[] = [
 
 function onKeyDown(e: KeyboardEvent) {
   if (!props.visible) return
-  if (e.key === 'Escape') {
-    e.preventDefault()
-    emit('cancel')
-  } else if (e.key === 'ArrowDown') {
+  if (e.key === 'ArrowDown') {
     e.preventDefault()
     selectedIndex.value = (selectedIndex.value + 1) % items.length
   } else if (e.key === 'ArrowUp') {
@@ -41,46 +39,29 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown, true))
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="kind-fade">
-      <div
-        v-if="visible"
-        class="kind-overlay"
-        @click.self="emit('cancel')"
+  <BasePopover
+    :visible="visible"
+    :position="{ x: position.left, y: position.bottom + 4 }"
+    @close="emit('cancel')"
+  >
+    <div class="kind-menu">
+      <button
+        v-for="(item, i) in items"
+        :key="item.kind"
+        class="kind-item"
+        :class="{ 'kind-item--active': i === selectedIndex }"
+        @click="emit('select', item.kind)"
+        @mouseenter="selectedIndex = i"
       >
-        <div
-          class="kind-menu"
-          :style="{ left: `${position.left}px`, top: `${position.bottom + 4}px` }"
-          @click.stop
-        >
-          <button
-            v-for="(item, i) in items"
-            :key="item.kind"
-            class="kind-item"
-            :class="{ 'kind-item--active': i === selectedIndex }"
-            @click="emit('select', item.kind)"
-            @mouseenter="selectedIndex = i"
-          >
-            <span class="kind-icon">{{ item.icon }}</span>
-            <span class="kind-label">{{ item.label }}</span>
-          </button>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
+        <span class="kind-icon">{{ item.icon }}</span>
+        <span class="kind-label">{{ item.label }}</span>
+      </button>
+    </div>
+  </BasePopover>
 </template>
 
 <style scoped>
-.kind-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1099;
-  background: transparent;
-}
-
 .kind-menu {
-  position: fixed;
-  z-index: 1100;
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -121,14 +102,5 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown, true))
   font-weight: var(--font-normal);
 }
 
-.kind-fade-enter-active,
-.kind-fade-leave-active {
-  transition: opacity var(--transition-fast), transform var(--transition-fast);
-}
-
-.kind-fade-enter-from,
-.kind-fade-leave-to {
-  opacity: 0;
-  transform: translateY(-4px);
-}
+/* 过渡由 BasePopover 的 base-popover-fade 提供 */
 </style>

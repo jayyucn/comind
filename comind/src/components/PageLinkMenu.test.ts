@@ -266,7 +266,7 @@ describe('PageLinkMenu', () => {
 
       await flushPromises()
 
-      const overlay = wrapper.find('.wiki-link-menu-overlay')
+      const overlay = wrapper.find('.base-popover-overlay')
       await overlay.trigger('click.self')
 
       expect(wrapper.emitted('close')).toBeTruthy()
@@ -291,10 +291,10 @@ describe('PageLinkMenu', () => {
 
       await flushPromises()
 
-      const menu = wrapper.find('.wiki-link-menu')
-      expect(menu.exists()).toBe(true)
-      expect(menu.attributes('style')).toContain('left: 100px')
-      expect(menu.attributes('style')).toContain('top: 200px')
+      const panel = wrapper.find('.base-popover')
+      expect(panel.exists()).toBe(true)
+      expect(panel.attributes('style')).toContain('left: 100px')
+      expect(panel.attributes('style')).toContain('top: 200px')
     })
   })
 

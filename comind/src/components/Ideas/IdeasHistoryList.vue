@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount, onDeactivated, onActivated, nextTick } from 'vue'
 import { format } from 'date-fns'
-import { usePageStore } from '../../stores/pages'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { useBlockStore } from '../../stores/blocks'
+import { usePageStore } from '../../stores/pages'
 import type { Page } from '../../types/page'
-import IdeasHistoryItem from './IdeasHistoryItem.vue'
 import MonthPicker from '../MonthPicker.vue'
+import IdeasHistoryItem from './IdeasHistoryItem.vue'
 
 /** 跨 remount 保留：避免 ideas-list ↔ ideas-page 来回切换重复批量 IPC */
 const loadedMonthsGlobal = new Set<string>()
@@ -344,7 +344,7 @@ const isEmpty = computed(() => currentPages.value.length === 0)
   position: sticky;
   top: 0;
   background: transparent;
-  padding: 8px 12px;
+  padding: 8px 36px;
   border-bottom: 1px solid var(--border, #E7E5E4);
   backdrop-filter: blur(4px);
 }

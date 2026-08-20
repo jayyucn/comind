@@ -2,6 +2,7 @@
 import { ref, computed, watch, onUnmounted } from 'vue';
 import { usePageStore } from '../stores/pages';
 import { pushModal, popModal } from '../composables/useModalKeyboard';
+import BasePopover from './common/BasePopover.vue';
 
 const props = defineProps<{
   visible: boolean;
@@ -126,13 +127,13 @@ defineExpose({ selectNext, selectPrev, confirmSelect, close });
 </script>
 
 <template>
-  <Teleport to="body">
-    <div v-if="visible" class="wiki-link-menu-overlay" @click.self="emit('close')">
-      <div 
-        class="wiki-link-menu"
-        :style="{ left: `${position.x}px`, top: `${position.y}px` }"
-      >
-        <div class="wlm-body">
+  <BasePopover
+    :visible="visible"
+    :position="position"
+    @close="emit('close')"
+  >
+    <div class="wiki-link-menu">
+      <div class="wlm-body">
           <div v-if="menuItems.length === 0" class="wlm-empty">
             <span v-if="!query">No pages yet</span>
             <span v-else>No pages found</span>
@@ -153,19 +154,11 @@ defineExpose({ selectNext, selectPrev, confirmSelect, close });
           </div>
         </div>
       </div>
-    </div>
-  </Teleport>
+  </BasePopover>
 </template>
 
 <style scoped>
-.wiki-link-menu-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-}
-
 .wiki-link-menu {
-  position: absolute;
   width: 320px;
   max-height: 360px;
   background: var(--bg-base);

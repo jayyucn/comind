@@ -3,9 +3,9 @@ import { useRelationshipMenu } from '@/composables/useRelationshipMenu'
 import { computed } from 'vue'
 import { usePageStore } from '../../stores/pages'
 import BlockList from '../BlockList.vue'
+import PageTitle from '../common/PageTitle.vue'
 import RelationshipMenu from '../RelationshipMenu.vue'
 import BlockTaskList from './BlockTaskList.vue'
-import PageTitle from '../common/PageTitle.vue'
 
 const relMenu = useRelationshipMenu()
 
@@ -98,6 +98,7 @@ function handleNavigate(pageId: string, pageTitle: string) {
 
 .today-body {
   padding-top: var(--space-3);
+  min-height: 40%;
 }
 
 .today-card.is-loading {
