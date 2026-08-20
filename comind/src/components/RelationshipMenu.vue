@@ -3,6 +3,7 @@ import { onMounted, onBeforeUnmount, watch, nextTick, ref, computed } from 'vue'
 import type { useRelationshipMenu } from '../composables/useRelationshipMenu'
 import { attachKeyboardListener, detachKeyboardListener } from '../composables/useRelationshipMenu'
 import { useModalKeyboardRef } from '../composables/useModalKeyboard'
+import BasePopover from './common/BasePopover.vue'
 
 const props = defineProps<{
   menu: ReturnType<typeof useRelationshipMenu>
@@ -62,18 +63,12 @@ defineExpose({ select, close })
 </script>
 
 <template>
-  <Teleport to="body">
-    <div
-      v-if="state.visible"
-      class="rel-menu-overlay"
-      @click.self="close"
-      @contextmenu.prevent
-    >
-      <div
-        class="rel-menu"
-        :style="{ left: (state.position?.x ?? 0) + 'px', top: (state.position?.y ?? 0) + 'px' }"
-        @mousedown.stop
-      >
+  <BasePopover
+    :visible="state.visible"
+    :position="state.position"
+    @close="close"
+  >
+    <div class="rel-menu" @mousedown.stop>
         <ul
           v-if="items.length > 0"
           ref="listRef"
@@ -133,19 +128,11 @@ defineExpose({ select, close })
           No matches
         </div>
       </div>
-    </div>
-  </Teleport>
+  </BasePopover>
 </template>
 
 <style scoped>
-.rel-menu-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-}
-
 .rel-menu {
-  position: absolute;
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: 6px;

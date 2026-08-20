@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { Clock, Repeat, Check } from 'lucide-vue-next'
 import CalendarPopover from './CalendarPopover.vue'
+import BasePopover from './common/BasePopover.vue'
 import { useEditorStore } from '../stores/editor'
 import { useBlockStore } from '../stores/blocks'
 import { getCoreClient } from '../wasm/client'
@@ -131,10 +132,7 @@ function handleCancel() {
 
 function onKeyDown(e: KeyboardEvent) {
   if (!props.visible) return
-  if (e.key === 'Escape') {
-    e.preventDefault()
-    handleCancel()
-  } else if (e.key === 'Enter') {
+  if (e.key === 'Enter') {
     e.preventDefault()
     handleConfirm()
   }
@@ -145,18 +143,12 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown, true))
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="dtp-fade">
-      <div
-        v-if="visible"
-        class="dtp-overlay"
-        @click.self="handleCancel"
-      >
-        <div
-          class="dtp-panel"
-          :style="{ left: `${position.x}px`, top: `${position.y}px` }"
-          @click.stop
-        >
+  <BasePopover
+    :visible="visible"
+    :position="position"
+    @close="handleCancel"
+  >
+    <div class="dtp-panel">
           <!-- Kind 切换 -->
           <div class="dtp-section dtp-kind-row">
             <div class="dtp-kind-wrapper">
@@ -265,29 +257,14 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown, true))
             </div>
           </div>
         </div>
-      </div>
-    </Transition>
-  </Teleport>
+  </BasePopover>
 </template>
 
 <style scoped>
 @use '../styles/mixins' as *;
 
-.dtp-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1100;
-  background: var(--overlay);
-}
-
 .dtp-panel {
-  position: fixed;
-  z-index: 1101;
   width: var(--panel-width-md);
-  background: var(--bg-base);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-modal);
   padding: var(--space-3);
   display: flex;
   flex-direction: column;
@@ -510,15 +487,5 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown, true))
   }
 }
 
-/* Transition */
-.dtp-fade-enter-active,
-.dtp-fade-leave-active {
-  transition: opacity var(--transition-base), transform var(--transition-base);
-}
-
-.dtp-fade-enter-from,
-.dtp-fade-leave-to {
-  opacity: 0;
-  transform: translateY(-6px);
-}
+/* 过渡由 BasePopover 的 base-popover-fade 提供 */
 </style>

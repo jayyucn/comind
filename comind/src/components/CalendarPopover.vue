@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import BasePopover from './common/BasePopover.vue'
 
 const props = withDefaults(defineProps<{
   visible: boolean
@@ -118,26 +119,6 @@ function handleOverlayClick() {
   if (!props.inline) emit('close')
 }
 
-function onKeyDown(e: KeyboardEvent) {
-  if (!props.visible || props.inline) return
-  if (e.key === 'Escape') {
-    e.preventDefault()
-    emit('close')
-  }
-}
-
-onMounted(() => {
-  if (!props.inline) {
-    document.addEventListener('keydown', onKeyDown, true)
-  }
-})
-
-onBeforeUnmount(() => {
-  if (!props.inline) {
-    document.removeEventListener('keydown', onKeyDown, true)
-  }
-})
-
 // visible 变 true 时从 selectedDate 恢复月份
 watch(
   () => props.visible,
@@ -209,15 +190,14 @@ watch(
     </div>
   </div>
 
-  <!-- 弹出模式：Teleport + overlay -->
-  <Teleport v-else to="body">
-    <Transition name="cal-fade">
-      <div v-if="visible" class="cal-overlay" @click.self="handleOverlayClick">
-        <div
-          class="cal-popover cal-popover--floating"
-          :style="{ left: `${position?.x ?? 0}px`, top: `${position?.y ?? 0}px` }"
-          @click.stop
-        >
+  <!-- 弹出模式 -->
+  <BasePopover
+    v-else
+    :visible="visible"
+    :position="position"
+    @close="handleOverlayClick"
+  >
+    <div class="cal-popover">
           <div class="cal-header">
             <select v-model="calendarYear" class="cal-year-select">
               <option v-for="y in yearOptions" :key="y" :value="y">{{ y }}年</option>
@@ -254,23 +234,13 @@ watch(
             >
               {{ day.date }}
             </button>
-          </div>
-        </div>
       </div>
-    </Transition>
-  </Teleport>
+    </div>
+  </BasePopover>
 </template>
 
 <style scoped>
 @use '../styles/mixins' as *;
-
-/* Overlay */
-.cal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1100;
-  background: var(--overlay);
-}
 
 /* Popover 容器 */
 .cal-popover {
@@ -283,12 +253,6 @@ watch(
   flex-direction: column;
   gap: var(--space-1);
   font-family: inherit;
-}
-
-.cal-popover--floating {
-  position: fixed;
-  z-index: 1101;
-  width: auto;
 }
 
 .cal-popover--inline {
@@ -448,15 +412,5 @@ watch(
   box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.7);
 }
 
-/* Transition */
-.cal-fade-enter-active,
-.cal-fade-leave-active {
-  transition: opacity var(--transition-base), transform var(--transition-base);
-}
-
-.cal-fade-enter-from,
-.cal-fade-leave-to {
-  opacity: 0;
-  transform: translateY(-6px);
-}
+/* 过渡由 BasePopover 的 base-popover-fade 提供 */
 </style>

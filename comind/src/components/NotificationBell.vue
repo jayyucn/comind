@@ -1,18 +1,26 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { Check, Clock, Trash2 } from 'lucide-vue-next'
 import { useNotificationStore } from '../stores/notification'
 import { useNavigateToPage } from '../composables/useNavigateToPage'
 import type { Notification } from '../wasm/types'
 import Icon from './Icons/Icon.vue'
+import BasePopover from './common/BasePopover.vue'
 
 const notificationStore = useNotificationStore()
 const navigateToPage = useNavigateToPage()
 
 const isOpen = ref(false)
 const selectedSnooze = ref<Record<string, number>>({})
+const bellRef = ref<HTMLButtonElement | null>(null)
+const bellPos = ref<{ x: number; y: number }>({ x: 0, y: 0 })
 
 function toggleDropdown() {
+  const el = bellRef.value
+  if (el) {
+    const r = el.getBoundingClientRect()
+    bellPos.value = { x: r.right, y: r.bottom + 8 }
+  }
   isOpen.value = !isOpen.value
   if (isOpen.value) {
     notificationStore.loadNotifications()
@@ -96,24 +104,13 @@ function formatEvent(iso: string | undefined): string {
 onMounted(() => {
   notificationStore.loadNotifications()
   notificationStore.loadSettings()
-  document.addEventListener('click', handleClickOutside)
 })
-
-onUnmounted(() => {
-  document.removeEventListener('click', handleClickOutside)
-})
-
-function handleClickOutside(event: MouseEvent) {
-  const target = event.target as HTMLElement
-  if (!target.closest('.notification-bell')) {
-    closeDropdown()
-  }
-}
 </script>
 
 <template>
   <div v-if="notificationStore.settings.enabled" class="notification-bell relative">
     <button
+      ref="bellRef"
       class="notification-bell-btn"
       @click="toggleDropdown"
     >
@@ -126,11 +123,12 @@ function handleClickOutside(event: MouseEvent) {
       </span>
     </button>
 
-    <Transition name="dropdown">
-      <div
-        v-if="isOpen"
-        class="notification-dropdown"
-      >
+    <BasePopover
+      :visible="isOpen"
+      :position="bellPos"
+      @close="closeDropdown"
+    >
+      <div class="notification-dropdown">
         <div class="dropdown-header">
           <h3 class="dropdown-title">通知</h3>
           <button
@@ -221,7 +219,7 @@ function handleClickOutside(event: MouseEvent) {
           <span class="footer-hint">点击通知跳转到对应内容</span>
         </div>
       </div>
-    </Transition>
+    </BasePopover>
   </div>
 </template>
 
@@ -268,17 +266,8 @@ function handleClickOutside(event: MouseEvent) {
 }
 
 .notification-dropdown {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
   min-width: var(--panel-width-lg);
   max-width: var(--panel-width-xl);
-  background: var(--bg-base);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(28, 25, 23, 0.12);
-  z-index: 1000;
-  overflow: hidden;
 }
 
 .dropdown-header {
@@ -484,14 +473,5 @@ function handleClickOutside(event: MouseEvent) {
   color: var(--text-tertiary);
 }
 
-.dropdown-enter-active,
-.dropdown-leave-active {
-  transition: all 0.15s ease;
-}
-
-.dropdown-enter-from,
-.dropdown-leave-to {
-  opacity: 0;
-  transform: translateY(-8px);
-}
+/* 过渡由 BasePopover 的 base-popover-fade 提供 */
 </style>

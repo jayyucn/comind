@@ -33,6 +33,8 @@ const panelW = ref(0)
 const panelH = ref(0)
 const EDGE_MARGIN = 8
 
+let resizeObserver: ResizeObserver | null = null
+
 function measure() {
   const el = panelEl.value
   if (!el) return
@@ -40,11 +42,32 @@ function measure() {
   panelH.value = el.offsetHeight
 }
 
-// 显示或锚点变化后重新测量弹层尺寸，用于视口收边（避免超出右侧/底部）
+function disconnectRO() {
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
+}
+
+// 内容异步加载（如通知列表）会改变弹层实际尺寸。仅按初次展开的尺寸收边，
+// 内容变宽后会溢出视口被裁切。用 ResizeObserver 持续同步测量，保证收边始终生效。
+function observe() {
+  const el = panelEl.value
+  if (!el) return
+  measure()
+  if (typeof ResizeObserver !== 'undefined') {
+    disconnectRO()
+    resizeObserver = new ResizeObserver(() => measure())
+    resizeObserver.observe(el)
+  }
+}
+
+// 显示或锚点变化后（重新）测量并挂接 ResizeObserver，用于视口收边（避免超出右侧/底部）
 watch(
   () => [props.visible, props.position],
   () => {
-    if (props.visible) nextTick(measure)
+    if (props.visible) nextTick(observe)
+    else disconnectRO()
   },
   { deep: true, immediate: true },
 )
@@ -79,7 +102,10 @@ function onKeyDown(e: KeyboardEvent) {
 }
 
 onMounted(() => document.addEventListener('keydown', onKeyDown, true))
-onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown, true))
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onKeyDown, true)
+  disconnectRO()
+})
 </script>
 
 <template>
