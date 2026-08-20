@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { CalendarDays, LayoutGrid } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
-import { filterSortPages, runPageQuery } from '../../composables/usePageQueryEngine'
+import { createQueryEngine } from '../../core/query'
+import { useChipBarOrchestration } from '../../composables/useChipBarOrchestration'
 import { getPageRegistry, PAGE_ENTITY } from '../../composables/usePageQueryRegistry'
 import type { QueryContext, ViewQuery } from '../../core/query'
 import type { ViewTypeOption } from '../../core/view/management'
@@ -20,6 +21,8 @@ defineOptions({ name: 'PagesLibrary' })
 const pageStore = usePageStore()
 const screenViewStore = useScreenViewStore('page')
 const registry = getPageRegistry()
+// 统一引擎：实体类型在工厂创建时绑定（ADR-0022 Q7）
+const pageEngine = createQueryEngine<Page>(PAGE_ENTITY)
 
 // page 实体可选的视图类型（注入 NamedViewBar；类型创建后固定）
 const pageViewTypes: ViewTypeOption[] = [
@@ -32,23 +35,8 @@ const viewQuery = computed<ViewQuery>(() => screenViewStore.workingQuery)
 const viewMode = computed(() => screenViewStore.currentViewType as 'table' | 'calendar')
 const searchQuery = ref('')
 
-// 芯片行显隐（Filter 按钮切换展开/收起）
-const chipBarVisible = ref(false)
-const chipBarRef = ref<InstanceType<typeof QueryChipBar> | null>(null)
-
-// Header 三按钮激活态
-const hasFilter = computed(() => viewQuery.value.filter.children.length > 0)
-const hasSort = computed(() => viewQuery.value.sort.length > 0)
-const hasGroup = computed(() => viewQuery.value.groupBy !== null)
-
-// Header 三按钮处理（筛选/排序/分组共用）
-// chipbar 的显隐与「toolbar 请求如何处理」的策略均已内聚到 QueryChipBar
-// （openToolbarMenu：选中字段后由它自行显示并锚定 popover；toolbar 点击的 toggle/开菜单分支也由它决定）。
-// 父级只把按钮点击转发给 chipBarRef.openToolbarMenu，并通过 visible-change 同步 chipBarVisible
-// 给 QueryToolbar 的描边态。hasFilter/hasSort/hasGroup 仍留此处，仅用于 QueryToolbar 的按钮描边态。
-function openChipMenu(kind: 'filter' | 'sort' | 'group', e: MouseEvent) {
-  chipBarRef.value?.openToolbarMenu(kind, e.currentTarget as HTMLElement)
-}
+// 芯片行编排（显隐/激活态/按钮转发）收进共享 composable（ADR-0022 Q6）
+const { chipBarVisible, hasFilter, hasSort, hasGroup, openChipMenu } = useChipBarOrchestration(viewQuery)
 
 // 跨记录字段引用所需的求值上下文：按 id 取 Page（用全量 store，不受搜索过滤影响）。
 // 不提供时 recordRef 引用一律非匹配。
@@ -81,11 +69,11 @@ const allPages = computed<Page[]>(() => {
 })
 
 const filteredPages = computed(() => {
-  return filterSortPages(allPages.value, viewQuery.value, registry, PAGE_ENTITY, queryContext.value)
+  return pageEngine.filterSort(allPages.value, viewQuery.value, registry, queryContext.value)
 })
 
 const pageGroups = computed(() => {
-  return runPageQuery(allPages.value, viewQuery.value, registry, PAGE_ENTITY, queryContext.value)
+  return pageEngine.run(allPages.value, viewQuery.value, registry, queryContext.value)
 })
 
 onMounted(async () => {

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import type { Condition, ConditionValue, FieldDescriptor, FilterOp, Option } from '../../core/query'
+import type { Condition, ConditionValue, FieldDescriptor, FilterOp, Registry } from '../../core/query'
 import { deriveOps } from '../../core/query'
 import BasePopover from '../common/BasePopover.vue'
-import ChipValueEditor from './ChipValueEditor.vue'
+import ValueEditor from './ValueEditor.vue'
 import { defaultOpFor, opLabel } from './filterMeta'
 
 const props = defineProps<{
@@ -15,6 +15,10 @@ const props = defineProps<{
   fields: FieldDescriptor[]
   /** 面板锚点。 */
   position?: { x: number; y: number }
+  /** 实体命名空间（渲染 ValueEditor 所需，由 QueryChipBar 下传）。 */
+  entityType: string
+  /** 字段注册表（渲染 ValueEditor 所需，由 QueryChipBar 下传）。 */
+  registry: Registry
 }>()
 
 const emit = defineEmits<{
@@ -43,9 +47,6 @@ const closeOnValue = computed(() => {
   return false
 })
 
-const literal = (): unknown =>
-  props.condition.value?.kind === 'literal' ? props.condition.value.value : undefined
-
 function emitUpdate(next: Partial<Condition>) {
   emit('update:condition', {
     field: props.condition.field,
@@ -69,16 +70,9 @@ function onOpChange(e: Event) {
   emitUpdate({ op, value })
 }
 
-function onValueChange(v: unknown) {
-  const value: ConditionValue | undefined =
-    v === undefined ? undefined : { kind: 'literal', value: v }
-  emitUpdate({ value })
+function onValueChange(v: ConditionValue | undefined) {
+  emitUpdate({ value: v })
   if (closeOnValue.value) emit('close')
-}
-
-function optionList(): Option[] {
-  const o = props.field.options
-  return typeof o === 'function' ? o() : (o ?? [])
 }
 
 /** ⋯ 二级面板展开状态。 */
@@ -98,24 +92,14 @@ function onAdvanced() {
 }
 
 // 面板弹出后自动聚焦值输入区，提升录入效率：
-// 输入框（text/number/select 搜索框）优先，其次首个可交互控件（boolean/date 按钮），
-// 再其次短下拉列表的首个可聚焦选项（li[tabindex]）。
+// 优先聚焦 .cond-value-row 内首个可聚焦控件（input：text/number；select：select/boolean；
+// button：date/记录引用「+」；li[tabindex]：自定义下拉选项）。
 // 在 onMounted 同步聚焦：此时值输入区已渲染入 DOM，无需 nextTick（避免焦点延迟一拍）。
 const popoverEl = ref<HTMLElement | null>(null)
 onMounted(() => {
   const valueRow = popoverEl.value?.querySelector<HTMLElement>('.cond-value-row')
   if (!valueRow) return
-  const input = valueRow.querySelector<HTMLElement>('input')
-  if (input) {
-    input.focus()
-    return
-  }
-  const btn = valueRow.querySelector<HTMLElement>('button')
-  if (btn) {
-    btn.focus()
-    return
-  }
-  valueRow.querySelector<HTMLElement>('li[tabindex]')?.focus()
+  valueRow.querySelector<HTMLElement>('input, select, button, [tabindex]')?.focus()
 })
 </script>
 
@@ -151,11 +135,13 @@ onMounted(() => {
 
       <!-- Row 2: 值输入 -->
       <div class="cond-value-row">
-        <ChipValueEditor
-          :field-type="props.field.type"
+        <ValueEditor
+          :descriptor="props.field"
           :op="props.condition.op"
-          :options="optionList()"
-          :model-value="literal()"
+          :entity-type="entityType"
+          :registry="registry"
+          :allow-refs="false"
+          :model-value="props.condition.value"
           @update:model-value="onValueChange"
         />
       </div>

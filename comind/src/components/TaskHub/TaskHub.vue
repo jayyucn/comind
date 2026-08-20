@@ -3,7 +3,8 @@ import type { PropertyValue } from '@/types/property'
 import { CalendarDays, Columns, Table } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { runBlockQuery } from '../../composables/useBlockQueryEngine'
+import { createQueryEngine } from '../../core/query'
+import { useChipBarOrchestration } from '../../composables/useChipBarOrchestration'
 import { BLOCK_ENTITY, getBlockRegistry } from '../../composables/useBlockQueryRegistry'
 import type { ViewQuery } from '../../core/query'
 import { defaultLayoutConfig, parseLayoutConfig, type BoardConfig, type CalendarConfig, type TableConfig } from '../../core/view'
@@ -27,6 +28,8 @@ const propertyStore = usePropertyStore()
 
 // 通用查询引擎注册表（组合根单例，内置字段 + 自定义 property 已注册）
 const registry = getBlockRegistry()
+// 统一引擎：实体类型在工厂创建时绑定（ADR-0022 Q7）
+const blockEngine = createQueryEngine<BlockCard>(BLOCK_ENTITY)
 // 实体级字段 schema 只需取一次（同实体所有记录共用）
 const blockRefFields = registry.list(BLOCK_ENTITY)
 
@@ -71,7 +74,7 @@ const searchedCards = computed<BlockCard[]>(() => {
 
 // 统一引擎：过滤 + 排序 + 分组一步到位（基于 store.workingQuery，未保存即实时预览）
 const groups = computed(() =>
-  runBlockQuery(searchedCards.value, viewQuery.value, registry, BLOCK_ENTITY),
+  blockEngine.run(searchedCards.value, viewQuery.value, registry),
 )
 const flatCards = computed<BlockCard[]>(() => groups.value.flatMap((g) => g.items))
 const grouped = computed(() => viewQuery.value.groupBy !== null)
@@ -113,16 +116,8 @@ async function handleNavigateToBlock(blockId: string) {
   window.dispatchEvent(new CustomEvent('navigate-to-block', { detail: { blockId } }))
 }
 
-// ── 查询工具条（筛选/排序/分组三按钮 + 搜索）与芯片行协同 ──
-const chipBarVisible = ref(false)
-const chipBarRef = ref<InstanceType<typeof QueryChipBar> | null>(null)
-const hasFilter = computed(() => viewQuery.value.filter.children.length > 0)
-const hasSort = computed(() => viewQuery.value.sort.length > 0)
-const hasGroup = computed(() => viewQuery.value.groupBy !== null)
-
-function openChipMenu(kind: 'filter' | 'sort' | 'group', e: MouseEvent) {
-  chipBarRef.value?.openToolbarMenu(kind, e.currentTarget as HTMLElement)
-}
+// ── 查询工具条编排（显隐/激活态/按钮转发）收进共享 composable（ADR-0022 Q6） ──
+const { chipBarVisible, hasFilter, hasSort, hasGroup, openChipMenu } = useChipBarOrchestration(viewQuery)
 </script>
 
 <template>

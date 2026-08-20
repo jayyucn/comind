@@ -33,7 +33,8 @@ describe('ConditionPopover', () => {
     })
     expect(w.find('[data-testid="cond-field"]').exists()).toBe(true)
     expect(w.find('[data-testid="cond-op"]').exists()).toBe(true)
-    expect(w.find('[data-testid="cve-text"]').exists()).toBe(true)
+    // 值编辑区现由通用 ValueEditor 渲染（替代已删除的 ChipValueEditor），text 字段渲染为 input.qb-value
+    expect(w.find('input.qb-value').exists()).toBe(true)
   })
 
   it('changing field resets op to default and clears value', async () => {
@@ -71,7 +72,7 @@ describe('ConditionPopover', () => {
       props: { field: FIELDS[0], condition: cond, fields: FIELDS },
       global: { stubs: { BasePopover: BasePopoverStub } },
     })
-    const input = w.find('[data-testid="cve-text"]')
+    const input = w.find('input.qb-value')
     await input.setValue('hello')
     const out = lastCond(w)
     expect(out.value).toEqual({ kind: 'literal', value: 'hello' })
@@ -153,7 +154,7 @@ describe('ConditionPopover', () => {
       global: { stubs: { BasePopover: BasePopoverStub } },
     })
     // 弹出后焦点应落在值输入区（text 输入框）
-    expect(document.activeElement).toBe(w.find('[data-testid="cve-text"]').element)
+    expect(document.activeElement).toBe(w.find('input.qb-value').element)
     w.unmount()
   })
 
@@ -164,8 +165,8 @@ describe('ConditionPopover', () => {
       attachTo: document.body,
       global: { stubs: { BasePopover: BasePopoverStub } },
     })
-    // 短下拉无搜索框：焦点应落在首个可聚焦选项
-    expect(document.activeElement).toBe(w.find('[data-testid="cve-option"]').element)
+    // 短下拉（select/boolean）无搜索框：焦点应落在值控件（原生 select）
+    expect(document.activeElement).toBe(w.find('select.qb-value').element)
     w.unmount()
   })
 })

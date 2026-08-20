@@ -46,3 +46,37 @@ describe('ValueEditor 引用值弹层', () => {
     w.unmount()
   })
 })
+
+describe('allowRefs=false（chip 快捷编辑路径，ADR-0022 Q5）', () => {
+  it('隐藏引用控件，仅字面量输入', async () => {
+    const reg = makeRegistry()
+    const descriptor = reg.get('task', 'title')!
+    const w = mount(ValueEditor, {
+      props: {
+        descriptor,
+        op: 'contains',
+        entityType: 'task',
+        registry: reg,
+        allowRefs: false,
+      },
+    })
+    // 无「+」引用入口（引用控件整体隐藏）
+    expect(w.find('.qb-ref-btn').exists()).toBe(false)
+    // 输入字面量 → emit { kind:'literal', value }
+    await w.find('input.qb-value').setValue('hello')
+    const emitted = w.emitted('update:modelValue')!
+    expect(emitted[emitted.length - 1][0]).toEqual({ kind: 'literal', value: 'hello' })
+    w.unmount()
+  })
+
+  it('布尔字段渲染为 select（Q4 收敛：Chip 分段按钮语义并入）', async () => {
+    const reg = createRegistry()
+    reg.register('task', { key: 'done', label: '完成', type: 'boolean', get: () => false })
+    const descriptor = reg.get('task', 'done')!
+    const w = mount(ValueEditor, {
+      props: { descriptor, op: 'equals', entityType: 'task', registry: reg, allowRefs: false },
+    })
+    expect(w.find('select.qb-value').exists()).toBe(true)
+    w.unmount()
+  })
+})
