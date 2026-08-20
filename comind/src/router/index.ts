@@ -65,7 +65,7 @@ router.beforeEach(async (to, from) => {
 
   if (to.name === 'ideas-page') {
     try {
-      // tauri-client 走顶部静态 import（理由同上：避免守卫内动态 import 被 backlog 排队）
+      // 解析命令走 CoreClient（getCoreClient 静态 import，避免守卫内动态 import 被 backlog 排队）
       const rawParam = to.params.date as string
       const normalized = await getCoreClient()!.normalizeJournalTitle(rawParam)
 

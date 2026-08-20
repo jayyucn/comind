@@ -6,7 +6,7 @@ import { useBlockRelationshipCleanup } from './useBlockRelationshipCleanup'
 import { useRelationshipTypes } from './useRelationshipTypes'
 import { cleanupRelationshipTypes } from '../../tests/core-client'
 
-// 4.3: Mock tauri-client so cleanupAfterDelete works in Vitest (no Tauri runtime).
+// 4.3: Mock wasm/client (getCoreClient) so cleanupAfterDelete works in Vitest (no Tauri runtime).
 // These lightweight re-implementations match Rust ContentParseService behaviour.
 vi.mock('../wasm/client', () => {
   function extractLinks(content: string) {
@@ -66,11 +66,11 @@ vi.mock('../wasm/client', () => {
   return {
     initCoreClient: vi.fn(async () => ({}) as never),
     getCoreClient: () => ({
-    extractLinksFromContent: (c: string) => Promise.resolve(extractLinks(c)),
-    applyRelationshipTypeToBlockContent: (c: string, t: string, r: string | null) => Promise.resolve(applyRel(c, t, r)),
-    getDateRefsByPage: () => Promise.resolve([]),
-    getDateRefsByBlock: () => Promise.resolve([]),
-    getPageWithBlocks: () => Promise.resolve({ page: null, blocks: [] }),
+        extractLinksFromContent: (c: string) => Promise.resolve(extractLinks(c)),
+        applyRelationshipTypeToBlockContent: (c: string, t: string, r: string | null) => Promise.resolve(applyRel(c, t, r)),
+        getDateRefsByPage: () => Promise.resolve([]),
+        getDateRefsByBlock: () => Promise.resolve([]),
+        getPageWithBlocks: () => Promise.resolve({ page: null, blocks: [] }),
     checkHasTypedLinkToTarget: () => Promise.resolve({ has_typed_link: false }),
     getBacklinks: () => Promise.resolve([]),
     getOutlinks: () => Promise.resolve([]),
