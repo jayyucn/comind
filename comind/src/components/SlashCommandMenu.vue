@@ -8,7 +8,6 @@ import { useModalKeyboardRef } from '../composables/useModalKeyboard'
 import { useTemplateRegistry } from '../composables/useTemplateRegistry'
 import { useUserTemplatesStore } from '../stores/user-templates'
 // S6: parseDateInput migrated to Rust
-import { tauriParseDateInput } from '../wasm/tauri-client'
 // 4.2: Use Rust DateRefService instead of TS parseDateRefs
 import { getCoreClient } from '../wasm/client'
 import { Icon } from '../components/Icons'
@@ -219,7 +218,7 @@ async function executeCommand(command: Command) {
 
       // 对于日期类型进行特殊处理
       if (command.propertyKey === 'deadline' || command.propertyKey === 'scheduled') {
-        const parsedDate = await tauriParseDateInput(argument)
+        const parsedDate = await getCoreClient()!.parseDateInput(argument)
         if (parsedDate) {
           value = parsedDate
         }

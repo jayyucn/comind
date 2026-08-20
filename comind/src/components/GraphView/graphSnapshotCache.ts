@@ -1,5 +1,5 @@
-import type { TauriGraphEdgeRecord } from '../../wasm/tauri-client'
-import { tauriBuildGraphSnapshot } from '../../wasm/tauri-client'
+import type { TauriGraphEdgeRecord } from '../../wasm/tauri-platform'
+import { getCoreClient } from '../../wasm/client'
 
 // 图谱全量边快照的进程级缓存。
 //
@@ -18,7 +18,7 @@ export function getCachedGraphEdges(): TauriGraphEdgeRecord[] | null {
 }
 
 async function fetchEdges(): Promise<TauriGraphEdgeRecord[]> {
-  return tauriBuildGraphSnapshot()
+  return getCoreClient()!.buildGraphSnapshot()
 }
 
 /** app 启动时调用：提前取好快照，fire-and-forget。 */

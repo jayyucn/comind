@@ -1,7 +1,7 @@
 import type { EdgeData, NodeData } from '@antv/g6'
 import { getRelationshipColor, getRelationshipLabel } from '../../types/relationship'
 import pLimit from 'p-limit'
-import type { TauriGraphEdgeRecord } from '../../wasm/tauri-client'
+import type { TauriGraphEdgeRecord } from '../../wasm/tauri-platform'
 import type { SelectorEdge } from './graphSelectors'
 
 // 一次性图谱快照数据（由 build_graph_snapshot 命令返回）

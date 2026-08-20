@@ -8,7 +8,7 @@ import { cleanupRelationshipTypes } from '../../tests/core-client'
 
 // 4.3: Mock tauri-client so cleanupAfterDelete works in Vitest (no Tauri runtime).
 // These lightweight re-implementations match Rust ContentParseService behaviour.
-vi.mock('../wasm/tauri-client', () => {
+vi.mock('../wasm/client', () => {
   function extractLinks(content: string) {
     const results: any[] = []
     const covered = new Set<number>()
@@ -64,14 +64,17 @@ vi.mock('../wasm/tauri-client', () => {
     return r
   }
   return {
-    tauriExtractLinksFromContent: (c: string) => Promise.resolve(extractLinks(c)),
-    tauriApplyRelationshipTypeToBlockContent: (c: string, t: string, r: string | null) => Promise.resolve(applyRel(c, t, r)),
-    tauriGetDateRefsByPage: () => Promise.resolve([]),
-    tauriGetDateRefsByBlock: () => Promise.resolve([]),
-    tauriGetPageWithBlocks: () => Promise.resolve({ page: null, blocks: [] }),
-    tauriCheckHasTypedLinkToTarget: () => Promise.resolve({ has_typed_link: false }),
-    tauriGetBacklinks: () => Promise.resolve([]),
-    tauriGetOutlinks: () => Promise.resolve([]),
+    initCoreClient: vi.fn(async () => ({}) as never),
+    getCoreClient: () => ({
+    extractLinksFromContent: (c: string) => Promise.resolve(extractLinks(c)),
+    applyRelationshipTypeToBlockContent: (c: string, t: string, r: string | null) => Promise.resolve(applyRel(c, t, r)),
+    getDateRefsByPage: () => Promise.resolve([]),
+    getDateRefsByBlock: () => Promise.resolve([]),
+    getPageWithBlocks: () => Promise.resolve({ page: null, blocks: [] }),
+    checkHasTypedLinkToTarget: () => Promise.resolve({ has_typed_link: false }),
+    getBacklinks: () => Promise.resolve([]),
+    getOutlinks: () => Promise.resolve([]),
+  }),
   }
 })
 

@@ -6,7 +6,7 @@ import {
   unpairDevice,
   triggerFullSync,
 } from '../../wasm/client'
-import { tauriGetSyncStatusPC } from '../../wasm/tauri-client'
+import { tauriGetSyncStatusPC } from '../../wasm/tauri-platform'
 import { useSyncStatus } from '../../composables/useSyncStatus'
 
 const emit = defineEmits<{ (e: 'toast', payload: { message: string; type?: 'info' | 'warning' | 'error' }): void }>()

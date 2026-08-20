@@ -1,7 +1,7 @@
 use comind_core::{
     services::{
         BlockService, BlockVersionService, BlockWriteService, DateRefService, FilterService,
-        LinkService, PageService, PropertyService, RelationshipTypeService, build_page_with_blocks,
+        LinkService, PageService, PropertyService, RelationshipTypeService, TemplateService, build_page_with_blocks,
     },
     storage::{SQLiteAdapter, StorageAdapter, TransactionalStorageAdapter},
     types::*,
@@ -323,6 +323,15 @@ pub async fn get_relationship_types(
     db: State<'_, super::state::DatabaseConnection>,
 ) -> Result<Vec<RelationshipType>, String> {
     execute_with_adapter(db, |storage| RelationshipTypeService::get_all(storage)).await
+}
+
+/// 获取全部用户模板（薄转发）。此前前端调用它而后端缺失，导致 Tauri 构建下
+/// 模板加载 IPC 报错（ADR-0020 Q5）。
+#[tauri::command]
+pub async fn get_templates(
+    db: State<'_, super::state::DatabaseConnection>,
+) -> Result<Vec<UserTemplate>, String> {
+    execute_with_adapter(db, |storage| TemplateService::get_all(storage)).await
 }
 
 #[tauri::command]

@@ -2,7 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import routes from './routes'
 import { useBlockStore } from '../stores/blocks'
 import { usePageStore } from '../stores/pages'
-import { tauriNormalizeJournalTitle, tauriIsTodayTitle } from '../wasm/tauri-client'
+import { getCoreClient } from '../wasm/client'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -67,7 +67,7 @@ router.beforeEach(async (to, from) => {
     try {
       // tauri-client 走顶部静态 import（理由同上：避免守卫内动态 import 被 backlog 排队）
       const rawParam = to.params.date as string
-      const normalized = await tauriNormalizeJournalTitle(rawParam)
+      const normalized = await getCoreClient()!.normalizeJournalTitle(rawParam)
 
       if (!normalized) {
         return { name: 'page', params: { pageId: rawParam } }
@@ -76,7 +76,7 @@ router.beforeEach(async (to, from) => {
       let page = pageStore.getPageByTitle(normalized)
 
       if (!page) {
-        if (await tauriIsTodayTitle(normalized)) {
+        if (await getCoreClient()!.isTodayTitle(normalized)) {
           // 今日页面：调用 Rust 端 ensureTodayIdeasPage 幂等获取或创建
           // （单一事实来源：避免 TS 端缓存 stale 导致的状态不一致）
           page = await pageStore.ensureTodayIdeasPage()

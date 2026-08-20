@@ -161,6 +161,7 @@ pub fn run() {
             commands::search,
             commands::get_properties,
             commands::get_relationship_types,
+            commands::get_templates,
             commands::save_block_tree,
             commands::delete_block,
             commands::save_page,

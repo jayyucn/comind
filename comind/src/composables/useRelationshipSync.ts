@@ -1,5 +1,5 @@
 import { ref, watch, type Ref } from 'vue'
-import { tauriExtractLinksFromContent, tauriApplyRelationshipTypeToBlockContent } from '../wasm/tauri-client'
+import { getCoreClient } from '../wasm/client'
 import type { LinkDraft } from '../wasm/types'
 
 /**
@@ -35,7 +35,7 @@ async function applyRelationshipTypeToBlockContent(
   targetTitle: string,
   newRelationshipType: string | null
 ): Promise<string> {
-  return tauriApplyRelationshipTypeToBlockContent(content, targetTitle, newRelationshipType)
+  return getCoreClient()!.applyRelationshipTypeToBlockContent(content, targetTitle, newRelationshipType)
 }
 
 export function useRelationshipSync(
@@ -60,7 +60,7 @@ export function useRelationshipSync(
       // 跳过正在编辑的 Block
       if (editingBlockId.value === block.id) continue
 
-      const links = await tauriExtractLinksFromContent(block.content)
+      const links = await getCoreClient()!.extractLinksFromContent(block.content)
       const blockLinks = new Map<string, string | null>()
 
       for (const link of links) {
@@ -119,7 +119,7 @@ export function useRelationshipSync(
       if (previous === newRelationshipType) continue
 
       // 检查该 Block 是否包含指向 targetTitle 的链接
-      const links: LinkDraft[] = await tauriExtractLinksFromContent(block.content)
+      const links: LinkDraft[] = await getCoreClient()!.extractLinksFromContent(block.content)
       const hasLinkToTarget = links.some(
         l => !l.is_external && l.target_title === targetTitle
       )
