@@ -4,7 +4,7 @@ import QueryChipBar from './QueryChipBar.vue'
 import type { FieldDescriptor, Registry, ViewQuery } from '../../core/query'
 
 // 弹层子组件各自已有单测；此处用 vi.mock 替掉，避免拖入
-// ConditionPopover→ChipValueEditor→CalendarPopover(WASM) 的繁重依赖图，
+// ConditionPopover→ValueEditor→CalendarPopover(WASM) 的繁重依赖图，
 // 只聚焦 QueryChipBar 的编排接线（沙箱资源限制下的必要隔离）。
 vi.mock('./ConditionPopover.vue', () => ({
   default: {

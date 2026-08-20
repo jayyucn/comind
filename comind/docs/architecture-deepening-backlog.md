@@ -30,13 +30,14 @@
 
 > **候选 1 已完成**（ADR-0018，2026-08-19）：deletion test 兑现——≈2,000 行纯复制删除、列序 drift 结构性消除；候选 2 与候选 4 的地基已就绪。
 > **候选 2 已完成**（ADR-0019，2026-08-19）：写路径编排收进 `BlockWriteService`，Tauri/wasm 共享同一编排（+533/−298，10 文件，含 5 个编排测试）。
-> **候选 3 已 grill**（ADR-0020，2026-08-19）：IPC 六层链收敛决策已定，待 /implement（文档已归位 main 链，代码未实现）。
-> **候选 4 已 grill**（ADR-0021，2026-08-20）：WASM adapter 收敛决策已定——Dexie 245 行删除、wasm 补 19 薄命令、`ensureTodayIdeasPage` 复用共享 service，待 /implement。
+> **候选 3 已完成**（ADR-0020，PR #48 合入）：六层 IPC 链收敛——`tauri-client.ts` 544 行删除、`tauri-platform.ts` 新建、TauriClient 直 invoke、后端补 `get_templates`（实施时修正死函数清单：17 → 3 真死，14 个兼容层函数改直调保留）。
+> **候选 4 已完成**（ADR-0021，PR #47 合入）：WASM adapter 收敛——Dexie 245 行删除、wasm 补 19 薄命令、`ensureTodayIdeasPage` 复用共享 service。
 > **候选 5 已完成**（ADR-0017，#41/#42 已合入 main）：App.vue 9 类横切职责抽为 7 个 app composable。
+> **候选 7 已 grill**（ADR-0022，2026-08-20）：查询 UI 三对平行模块合一决策已定——值编辑器（Chip 弃用走 ValueEditor + `allowRefs`）、chip-bar 编排 composable、引擎桥工厂，待 /implement。
 
-- **地基链**：1 ✅ → 2 ✅ → **4 🟡**（已 grill，待 /implement——地基 1/2 ✅ 已就绪）
-- **前端独立链**：3 🟡（已 grill，待 /implement）、5 ✅（已完成，合入 main）可并行，互不阻塞
-- **查询/视图链**：7（值编辑器 + chip-bar 合一，半依赖 6 已铺垫）→ 8（通用视图 leverage，speculative，优先级最低）
+- **地基链**：1 ✅ → 2 ✅ → 4 ✅（已完成，合入 main）
+- **前端独立链**：3 ✅ → 5 ✅（均已完成，合入 main）
+- **查询/视图链**：**7 🟡**（已 grill，待 /implement）→ 8（通用视图 leverage，speculative，依赖 7）
 
 ---
 
@@ -172,17 +173,28 @@
 ## 候选 7 · Deduplicate the query-UI value editors and screen wiring
 
 - **评级**：Worth exploring · in-process
-- **涉及文件**
-  - `src/components/query/ChipValueEditor.vue`（252 行）↔ `ValueEditor.vue`（541 行）：类型分派 / `NO_VALUE_OPS` / `isRangeOp` / `DatePicker` 接线全部重复
-  - `PagesLibrary.vue` L36–51 ↔ `TaskHub.vue` L117–125：chip-bar 编排近乎逐行相同，另有约 25 行相同模板
-  - `useBlockQueryEngine.ts` ↔ `usePageQueryEngine.ts`：各约 45 行，仅类型名不同
+- **状态**：🟡 **已 grill（2026-08-20）**——共识见 `docs/adr/0022-query-ui-value-editor-convergence.md`。
+- **涉及文件**（实测修正，基线 68a5a19）
+  - `src/components/query/ChipValueEditor.vue`（252 行，仅 literal）↔ `ValueEditor.vue`（541 行）：`NO_VALUE_OPS`/`isRangeOp`/DatePicker 接线/类型分派重复；差异=布尔 UI（分段 vs select）、空值（undefined vs null）、select 搜索、引用能力
+  - `PagesLibrary.vue` L36–51 ↔ `TaskHub.vue` L117–125：**9 行逐字相同** + 约 25 行模板（仅 fields/entity-type/cross-record-sources 差异）
+  - `useBlockQueryEngine.ts`（47）↔ `usePageQueryEngine.ts`（48）：函数体逐字、仅 `BlockCard ↔ Page` 类型名
+  - 消费方（实测）：ChipValueEditor 唯一消费 = `ConditionPopover`（已持 FieldDescriptor、缺 entityType）；ValueEditor 唯一消费 = `ConditionRow`；引擎桥 = TaskHub/PagesLibrary + 2 测试
 - **Problem**：三对近平行模块；ADR-0009/0010 的 leverage 被逐屏复制的编排代码稀释。
-- **Solution**：值编辑器合一（literal / 引用为 prop 分派）；chip-bar 编排抽为一个 composable；引擎桥接合一。
-- **Wins**：删除三对平行模块；新 Screen 接入成本趋零；deletion test 通过——复杂度消失而非平移。
-- **依赖**：候选 6（ValueEditor 解耦，`crossRecordSources` 注入点已在 ADR-0008 固定）已部分铺垫；ADR-0008/0009/0010 已定义 leverage。
-- **🔸 待 grill / 开放决策**
-  1. `ValueEditor` 与 `ChipValueEditor` 的语义差异是否仅 literal/引用（确认 prop 分派无遗漏）？
-  2. 合一后 `crossRecordSources` 注入点是否改动（ADR-0008 已固定，需验证）？
+- **Solution**：值编辑器合一（Chip 弃用走 ValueEditor + `allowRefs` 开关）；chip-bar 编排抽 `useChipBarOrchestration`；引擎桥 `createQueryEngine(entityType)` 工厂。
+- **Wins**：删除约 395 行（252 编辑器 + 95 桥 + 测试）；新 Screen 接入成本趋零；deletion test 通过——复杂度消失而非平移。
+- **依赖**：候选 6（ValueEditor 解耦）✅ 已铺垫；ADR-0008 注入点验证不变 ✅。
+- **grill 共识速览**（决策细节见 ADR-0022，Q1–Q8 共 8 项）
+  - **ChipValueEditor 删除**（Q1）：ConditionPopover 改渲染 ValueEditor（descriptor + entityType 从 QueryChipBar 下传）。
+  - **三合一全做**（Q2）：编辑器 + 编排 + 引擎桥一次兑现。
+  - **行为收敛**（Q3/Q4）：空值统一 `null`；布尔字段统一 `select`。
+  - **`allowRefs` 开关**（Q5）：ValueEditor 加 `allowRefs?: boolean = true`；ConditionPopover 传 `false` 保持 chip 仅字面量。
+  - **编排 composable**（Q6）：9 行 JS 收 `useChipBarOrchestration`；模板两处保留。
+  - **引擎桥工厂**（Q7）：`createQueryEngine(entityType)` → {filterSort, group, run}；两引擎文件删除。
+  - **测试**（Q8）：Chip 测试随组件删除；ValueEditor.test 补 `allowRefs=false` literal-only 用例。
+  - **不变项（验证）**：`crossRecordSources` 注入点（ADR-0008 固定，PagesLibrary 翻译注入）。
+- **🔸 待 /implement / 开放 follow-up**
+  1. 候选 8（通用视图 leverage）依赖本候选的 FieldDescriptor/编辑器合一。
+  2. ValueEditor 的 select 搜索框（Chip 有、VE 无）——select 选项增多时可移植。
 
 ---
 
@@ -196,7 +208,7 @@
 - **Problem**：ADR 目标是「实体无关、一处实现多处复用」，实际通用视图目前只为 1 个实体服务，另有两套平行体系在系统之外。
 - **Solution**：把 `'content'` 回退与 `dateRefKind` 语义收进 `FieldDescriptor` 元数据；PagesLibrary 迁上通用视图（删除 519 行）；评估 GraphView 筛选接入 `core/query`。
 - **Wins**：leverage：一处实现三处复用；删除约 1,600 行平行体系；一个筛选心智模型。
-- **依赖**：候选 7（`FieldDescriptor` / 值编辑器合一）的部分基础；ADR-0008 缺口重开。
+- **依赖**：候选 7（`FieldDescriptor` / 值编辑器合一）🟡 已 grill 待 /implement；ADR-0008 缺口重开。
 - **🔸 待 grill / 开放决策**
   1. 是否现在做（speculative，优先级最低）？
   2. GraphView 筛选接入 `core/query` 的 ROI 如何？
@@ -218,6 +230,5 @@
 ## 下一步
 
 登记册就绪后，逐个候选走 `/grilling` 决策树 → 产出该候选的 ADR + 重构方案文档（参照候选 1 的 `0018-repository-convergence.md`、候选 6 的 `0016-editor-dom-event-transport.md` + `refactor-editor-event-table.md`）。
-- **候选 1、2、5 已完成；候选 3、4 已 grill（ADR-0020/0021）待 /implement**。地基链候选 4 的地基（1/2 ✅）已就绪。
-- 前端独立链：候选 3（已 grill）、候选 5（✅ 已完成）——候选 3 代码实现待做（ADR-0020 文档已随候选 4 分支归位 main 链）。
-- 查询/视图链：候选 7（半依赖 6 已铺垫）→ 候选 8（speculative，最低优先级）。
+- **候选 1、2、3、4、5 均已完成**（ADR-0018/0019/0020/0021/0017，PR #41–48 合入）；**候选 7 已 grill（ADR-0022）待 /implement**。
+- 查询/视图链：**候选 7（已 grill）** → 候选 8（通用视图 leverage，speculative，依赖候选 7 的编辑器合一落地后评估 ROI）。

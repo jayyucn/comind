@@ -5,8 +5,10 @@ import {
   registerBlockBuiltinFields,
   syncBlockCustomProperties,
 } from '../useBlockQueryRegistry'
-import { runBlockQuery, filterSortBlockCards, groupBlockCards } from '../useBlockQueryEngine'
+import { createQueryEngine } from '../../core/query'
 import type { BlockCard } from '../../wasm/types'
+
+const blockEngine = createQueryEngine<BlockCard>(BLOCK_ENTITY)
 
 function dr(kind: string, dateDay: string) {
   return { kind, iso: `${dateDay}T09:00:00`, date_day: dateDay, recurrence: 'none', event_ts: 0 }
@@ -91,25 +93,25 @@ describe('Block 列表按 ViewQuery 过滤（经 evaluate）', () => {
   it('按 select 字段 status = Done 过滤', () => {
     const registry = setup()
     const q = vq({ combinator: 'and', children: [cond('status', 'is', 'Done')] })
-    expect(ids(filterSortBlockCards(cards, q, registry))).toEqual(['a', 'd'])
+    expect(ids(blockEngine.filterSort(cards, q, registry))).toEqual(['a', 'd'])
   })
 
   it('按 text 字段 project 包含 P1', () => {
     const registry = setup()
     const q = vq({ combinator: 'and', children: [cond('project', 'is', 'P1')] })
-    expect(ids(filterSortBlockCards(cards, q, registry)).sort()).toEqual(['a', 'b'])
+    expect(ids(blockEngine.filterSort(cards, q, registry)).sort()).toEqual(['a', 'b'])
   })
 
   it('按 dateRefDate before 过滤', () => {
     const registry = setup()
     const q = vq({ combinator: 'and', children: [cond('dateRefDate', 'before', '2026-02-01')] })
-    expect(ids(filterSortBlockCards(cards, q, registry))).toEqual(['a'])
+    expect(ids(blockEngine.filterSort(cards, q, registry))).toEqual(['a'])
   })
 
   it('按 dateRefKind hasAny schedule 过滤（multiSelect）', () => {
     const registry = setup()
     const q = vq({ combinator: 'and', children: [cond('dateRefKind', 'hasAny', 'schedule')] })
-    expect(ids(filterSortBlockCards(cards, q, registry))).toEqual(['c'])
+    expect(ids(blockEngine.filterSort(cards, q, registry))).toEqual(['c'])
   })
 
   it('and 组合多条件', () => {
@@ -118,7 +120,7 @@ describe('Block 列表按 ViewQuery 过滤（经 evaluate）', () => {
       combinator: 'and',
       children: [cond('status', 'is', 'Done'), cond('project', 'is', 'P2')],
     })
-    expect(ids(filterSortBlockCards(cards, q, registry))).toEqual(['d'])
+    expect(ids(blockEngine.filterSort(cards, q, registry))).toEqual(['d'])
   })
 
   it('or 组合多条件', () => {
@@ -127,32 +129,32 @@ describe('Block 列表按 ViewQuery 过滤（经 evaluate）', () => {
       combinator: 'or',
       children: [cond('status', 'is', 'Todo'), cond('status', 'is', 'Doing')],
     })
-    expect(ids(filterSortBlockCards(cards, q, registry)).sort()).toEqual(['b', 'c'])
+    expect(ids(blockEngine.filterSort(cards, q, registry)).sort()).toEqual(['b', 'c'])
   })
 
   it('isEmpty / isNotEmpty 空值语义', () => {
     const registry = setup()
     const qEmpty = vq({ combinator: 'and', children: [cond('dateRefDate', 'isEmpty')] })
-    expect(ids(filterSortBlockCards(cards, qEmpty, registry)).sort()).toEqual(['b', 'd'])
+    expect(ids(blockEngine.filterSort(cards, qEmpty, registry)).sort()).toEqual(['b', 'd'])
     const qNotEmpty = vq({ combinator: 'and', children: [cond('dateRefDate', 'isNotEmpty')] })
-    expect(ids(filterSortBlockCards(cards, qNotEmpty, registry)).sort()).toEqual(['a', 'c'])
+    expect(ids(blockEngine.filterSort(cards, qNotEmpty, registry)).sort()).toEqual(['a', 'c'])
   })
 
   it('按自定义数值字段 estimate gt 过滤', () => {
     const registry = setup()
     syncBlockCustomProperties(registry, [{ key: 'estimate', title: '估算', type: 'number' }])
     const q = vq({ combinator: 'and', children: [cond('estimate', 'gt', 4)] })
-    expect(ids(filterSortBlockCards(cards, q, registry)).sort()).toEqual(['a', 'd'])
+    expect(ids(blockEngine.filterSort(cards, q, registry)).sort()).toEqual(['a', 'd'])
   })
 
   it('自定义 property 注销后条件不再匹配', () => {
     const registry = setup()
     syncBlockCustomProperties(registry, [{ key: 'estimate', title: '估算', type: 'number' }])
     let q = vq({ combinator: 'and', children: [cond('estimate', 'gt', 4)] })
-    expect(ids(filterSortBlockCards(cards, q, registry)).sort()).toEqual(['a', 'd'])
+    expect(ids(blockEngine.filterSort(cards, q, registry)).sort()).toEqual(['a', 'd'])
     syncBlockCustomProperties(registry, []) // 全部注销
     q = vq({ combinator: 'and', children: [cond('estimate', 'gt', 4)] })
-    expect(ids(filterSortBlockCards(cards, q, registry))).toEqual([])
+    expect(ids(blockEngine.filterSort(cards, q, registry))).toEqual([])
   })
 
   it('多键排序（按 estimate 升序，空值恒末位）', () => {
@@ -160,13 +162,13 @@ describe('Block 列表按 ViewQuery 过滤（经 evaluate）', () => {
     syncBlockCustomProperties(registry, [{ key: 'estimate', title: '估算', type: 'number' }])
     const q = vq(emptyFilter, [{ field: 'estimate', dir: 'asc' }])
     // c(2) < b(3) < a(5) < d(8)；全部有 estimate 值
-    expect(ids(filterSortBlockCards(cards, q, registry))).toEqual(['c', 'b', 'a', 'd'])
+    expect(ids(blockEngine.filterSort(cards, q, registry))).toEqual(['c', 'b', 'a', 'd'])
   })
 
   it('按 status 分组（groupItems）', () => {
     const registry = setup()
-    const sorted = filterSortBlockCards(cards, vq(emptyFilter), registry)
-    const groups = groupBlockCards(sorted, 'status', registry)
+    const sorted = blockEngine.filterSort(cards, vq(emptyFilter), registry)
+    const groups = blockEngine.group(sorted, 'status', registry)
     const byKey = Object.fromEntries(groups.map((g) => [g.key, ids(g.items).sort()]))
     expect(byKey['Done'].sort()).toEqual(['a', 'd'])
     expect(byKey['Todo']).toEqual(['b'])
@@ -175,7 +177,7 @@ describe('Block 列表按 ViewQuery 过滤（经 evaluate）', () => {
 
   it('runBlockQuery 端到端返回分组桶', () => {
     const registry = setup()
-    const groups = runBlockQuery(cards, vq(emptyFilter, [], 'status'), registry)
+    const groups = blockEngine.run(cards, vq(emptyFilter, [], 'status'), registry)
     expect(groups.length).toBe(3)
     const total = groups.reduce((n, g) => n + g.items.length, 0)
     expect(total).toBe(4)
@@ -190,6 +192,6 @@ describe('Block 列表按 ViewQuery 过滤（经 evaluate）', () => {
         { combinator: 'or', children: [cond('priority', 'is', 'High'), cond('priority', 'is', 'Urgent')] },
       ],
     })
-    expect(ids(filterSortBlockCards(cards, q, registry)).sort()).toEqual(['a', 'd'])
+    expect(ids(blockEngine.filterSort(cards, q, registry)).sort()).toEqual(['a', 'd'])
   })
 })

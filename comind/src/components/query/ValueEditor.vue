@@ -28,21 +28,31 @@ import type {
 import DatePicker from '../common/DatePicker.vue'
 import CrossRecordRefPicker from './CrossRecordRefPicker.vue'
 
-const props = defineProps<{
-  descriptor: FieldDescriptor
-  /** 当前操作符；date 的 between 需要双日期输入且不开放引用。 */
-  op?: FilterOp
-  /** 实体命名空间，用于列举同类型字段。 */
-  entityType: string
-  registry: Registry
-  /** 当前条件字段 key，用于从同类型候选中排除自身。 */
-  conditionField?: string
-  /**
-   * 跨记录引用候选记录列表（通用，业务无关）：每条自带 id / title / entityType / fields。
-   * 不传则隐藏「其他记录…」入口。业务方（如 PagesLibrary）负责把自身模型翻译为这个通用结构。
-   */
-  crossRecordSources?: ReferenceableRecord[]
-}>()
+const props = withDefaults(
+  defineProps<{
+    descriptor: FieldDescriptor
+    /** 当前操作符；date 的 between 需要双日期输入且不开放引用。 */
+    op?: FilterOp
+    /** 实体命名空间，用于列举同类型字段。 */
+    entityType: string
+    registry: Registry
+    /** 当前条件字段 key，用于从同类型候选中排除自身。 */
+    conditionField?: string
+    /**
+     * 跨记录引用候选记录列表（通用，业务无关）：每条自带 id / title / entityType / fields。
+     * 不传则隐藏「其他记录…」入口。业务方（如 PagesLibrary）负责把自身模型翻译为这个通用结构。
+     */
+    crossRecordSources?: ReferenceableRecord[]
+    /**
+     * 是否开放引用控件（字段引用下拉 / 「+」引用菜单）。chip 快捷编辑路径（ConditionPopover）
+     * 传 false 保持仅字面量输入（ADR-0022 Q5）；默认 true。
+     */
+    allowRefs?: boolean
+  }>(),
+  // 注意：type-only defineProps 会把「未传的可选布尔 prop」在运行时默认成 false（而非 undefined），
+  // 必须用 withDefaults 显式给定 true，否则默认关闭会误伤 FilterBuilder 等需要引用控件的调用方。
+  { allowRefs: true },
+)
 
 const model = defineModel<ConditionValue | undefined>()
 
@@ -54,8 +64,8 @@ const options = computed<Option[]>(() => {
 
 const isEmptyOp = computed(() => props.op === 'isEmpty' || props.op === 'isNotEmpty')
 const isRange = computed(() => props.op === 'between' || props.op === 'within')
-/** 是否展示引用控件（字段开关 / + 菜单）：仅比较类 op，且非 between。 */
-const showRefControls = computed(() => !isEmptyOp.value && !isRange.value)
+/** 是否展示引用控件（字段开关 / + 菜单）：仅比较类 op、非 between，且未用 allowRefs 关闭。 */
+const showRefControls = computed(() => props.allowRefs !== false && !isEmptyOp.value && !isRange.value)
 
 const kind = computed(() => model.value?.kind)
 const isFieldRef = computed(() => kind.value === 'field')

@@ -11,10 +11,12 @@ import {
   getPageRegistry,
   PAGE_ENTITY,
 } from '../usePageQueryRegistry'
-import { filterSortPages, runPageQuery } from '../usePageQueryEngine'
+import { createQueryEngine } from '../../core/query'
 import type { Page } from '../../types/page'
 
 /** 构造最小 ViewQuery。 */
+const pageEngine = createQueryEngine<Page>(PAGE_ENTITY)
+
 function vq(filter: ConditionGroup, sort: ViewQuery['sort'] = [], groupBy: string | null = null): ViewQuery {
   return { version: 1, filter, sort, groupBy }
 }
@@ -75,14 +77,14 @@ describe('Page 列表按 ViewQuery 过滤（不改动引擎核心）', () => {
   it('按 type 过滤：仅 ideas', () => {
     const registry = setup()
     const q = vq({ combinator: 'and', children: [cond('type', 'is', 'ideas')] })
-    const result = filterSortPages(pages, q, registry, PAGE_ENTITY)
+    const result = pageEngine.filterSort(pages, q, registry)
     expect(ids(result).sort()).toEqual(['p2', 'p4'])
   })
 
   it('按 title 包含文字过滤', () => {
     const registry = setup()
     const q = vq({ combinator: 'and', children: [cond('title', 'contains', '项目')] })
-    const result = filterSortPages(pages, q, registry, PAGE_ENTITY)
+    const result = pageEngine.filterSort(pages, q, registry)
     expect(ids(result).sort()).toEqual(['p1', 'p3'])
   })
 
@@ -92,14 +94,14 @@ describe('Page 列表按 ViewQuery 过滤（不改动引擎核心）', () => {
       combinator: 'and',
       children: [cond('createdAt', 'between', ['2026-02-01', '2026-03-31'])],
     })
-    const result = filterSortPages(pages, q, registry, PAGE_ENTITY)
+    const result = pageEngine.filterSort(pages, q, registry)
     expect(ids(result).sort()).toEqual(['p2', 'p4'])
   })
 
   it('按 updatedAt after 过滤', () => {
     const registry = setup()
     const q = vq({ combinator: 'and', children: [cond('updatedAt', 'after', '2026-03-31')] })
-    const result = filterSortPages(pages, q, registry, PAGE_ENTITY)
+    const result = pageEngine.filterSort(pages, q, registry)
     // p1(2026-03-01)、p2(2026-02-15)、p3(2026-04-10)、p4(2026-03-20) → 仅 p3 晚于 3-31
     expect(ids(result)).toEqual(['p3'])
   })
@@ -111,33 +113,33 @@ describe('Page 列表按 ViewQuery 过滤（不改动引擎核心）', () => {
       combinator: 'and',
       children: [cond('type', 'is', 'ideas'), cond('wordCount', 'gt', 200)],
     })
-    expect(ids(filterSortPages(pages, andQ, registry, PAGE_ENTITY))).toEqual(['p4'])
+    expect(ids(pageEngine.filterSort(pages, andQ, registry))).toEqual(['p4'])
 
     // (type is ideas) OR (wordCount gt 700) → p2,p3,p4
     const orQ = vq({
       combinator: 'or',
       children: [cond('type', 'is', 'ideas'), cond('wordCount', 'gt', 700)],
     })
-    expect(ids(filterSortPages(pages, orQ, registry, PAGE_ENTITY)).sort()).toEqual(['p2', 'p3', 'p4'])
+    expect(ids(pageEngine.filterSort(pages, orQ, registry)).sort()).toEqual(['p2', 'p3', 'p4'])
   })
 
   it('按 aliases 多值 hasAny 过滤', () => {
     const registry = setup()
     const q = vq({ combinator: 'and', children: [cond('aliases', 'hasAny', ['pa'])] })
     // p1(['alpha','pa']) 与 p4(['delta','pa']) 含 'pa'
-    expect(ids(filterSortPages(pages, q, registry, PAGE_ENTITY)).sort()).toEqual(['p1', 'p4'])
+    expect(ids(pageEngine.filterSort(pages, q, registry)).sort()).toEqual(['p1', 'p4'])
   })
 
   it('排序：按 wordCount 降序', () => {
     const registry = setup()
     const q = vq({ combinator: 'and', children: [] }, [{ field: 'wordCount', dir: 'desc' }])
-    expect(ids(filterSortPages(pages, q, registry, PAGE_ENTITY))).toEqual(['p3', 'p1', 'p4', 'p2'])
+    expect(ids(pageEngine.filterSort(pages, q, registry))).toEqual(['p3', 'p1', 'p4', 'p2'])
   })
 
   it('按 type 分组：返回 ideas / normal 两个桶', () => {
     const registry = setup()
     const q = vq({ combinator: 'and', children: [] }, [], 'type')
-    const groups = runPageQuery(pages, q, registry, PAGE_ENTITY)
+    const groups = pageEngine.run(pages, q, registry)
     const labels = groups.map((g) => g.label).sort()
     expect(labels).toEqual(['普通', '灵感'])
     const total = groups.reduce((n, g) => n + g.items.length, 0)
@@ -151,7 +153,7 @@ describe('Page 列表按 ViewQuery 过滤（不改动引擎核心）', () => {
       [{ field: 'wordCount', dir: 'asc' }],
       null,
     )
-    const groups = runPageQuery(pages, q, registry, PAGE_ENTITY)
+    const groups = pageEngine.run(pages, q, registry)
     // 单一全量桶（groupBy null），内部按字数升序：p1(500) < p3(800)
     expect(groups).toHaveLength(1)
     expect(ids(groups[0].items)).toEqual(['p1', 'p3'])

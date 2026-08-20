@@ -430,6 +430,8 @@ defineExpose({
       :condition="condTarget"
       :fields="fields"
       :position="anchor"
+      :entity-type="entityType"
+      :registry="registry"
       @update:condition="onCondUpdate(condIndex, $event)"
       @remove="onCondRemove(condIndex)"
       @advanced="onCondAdvanced(condIndex)"
@@ -494,6 +496,7 @@ defineExpose({
 }
 .chipbar-wrap.is-open .chip-bar {
   opacity: 1;
+  border: 1px solid var(--border);
 }
 .add-btn {
   border: none;
