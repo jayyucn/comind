@@ -191,11 +191,28 @@ describe('TableView (generic, field-driven)', () => {
   })
 
   // ── Emits ──
-  it('emits navigate when row clicked', async () => {
+  it('emits cellClick with primary role when title cell clicked', async () => {
     const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
-    await wrapper.find('.data-row').trigger('click')
-    expect(wrapper.emitted('navigate')).toBeTruthy()
-    expect(wrapper.emitted('navigate')![0]).toEqual(['b1'])
+    await wrapper.find('tbody .col-content').trigger('click')
+    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'content', 'primary'])
+  })
+
+  it('emits cellClick with empty role for plain cells', async () => {
+    const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
+    await wrapper.find('tbody .col-project').trigger('click')
+    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'project', ''])
+  })
+
+  it('emits cellClick with link role when link button clicked (bubbles to td)', async () => {
+    const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
+    await wrapper.find('.link-btn').trigger('click')
+    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'page', 'link'])
+  })
+
+  it('does not emit cellClick when editable control (checkbox) clicked', async () => {
+    const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
+    await wrapper.find('.bool-check').trigger('click')
+    expect(wrapper.emitted('cellClick')).toBeFalsy()
   })
 
   it('emits cellChange(done) when checkbox toggled', async () => {
@@ -276,5 +293,127 @@ describe('TableView (generic, field-driven)', () => {
     expect(wrapper.text()).toContain('测试页面')
     expect(wrapper.text()).toContain('123') // wordCount
     expect(wrapper.text()).toContain('2') // childrenCount
+  })
+
+  // ── 渲染层分页（ADR-0024） ──
+
+  // 造 N 条卡片（内容唯一便于断言当前页切片）
+  function makeMany(n: number): BlockCard[] {
+    return Array.from({ length: n }, (_, i) => makeCard({ block_id: `block-${i}`, content_preview: `Task ${i}` }))
+  }
+
+  it('slices large list to first page by default page size (50)', () => {
+    const wrapper = mountTable({ items: makeMany(160) })
+    expect(wrapper.findAll('.data-row')).toHaveLength(50)
+    expect(wrapper.text()).toContain('Task 0')
+    expect(wrapper.text()).not.toContain('Task 50')
+    expect(wrapper.text()).toContain('共 160 条')
+    expect(wrapper.text()).toContain('第 1/4 页')
+  })
+
+  it('does not show pagination bar when under page size', () => {
+    const wrapper = mountTable({ items: makeMany(20) })
+    expect(wrapper.find('[data-testid="pagination-bar"]').exists()).toBe(false)
+  })
+
+  it('renders full list when pagination disabled (pageSize <= 0)', () => {
+    const wrapper = mountTable({ items: makeMany(120), pageSize: 0 })
+    expect(wrapper.findAll('.data-row')).toHaveLength(120)
+    expect(wrapper.find('[data-testid="pagination-bar"]').exists()).toBe(false)
+  })
+
+  it('navigates pages with prev/next and clamps at bounds', async () => {
+    const wrapper = mountTable({ items: makeMany(120) })
+    const next = wrapper.find('[data-testid="page-next"]')
+    const prev = wrapper.find('[data-testid="page-prev"]')
+    expect(prev.attributes('disabled')).toBeDefined()
+
+    await next.trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('第 2/3 页')
+    expect(wrapper.text()).toContain('Task 50')
+    expect(wrapper.text()).not.toContain('Task 0')
+
+    // 翻到末页后 next 禁用
+    await next.trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('第 3/3 页')
+    expect(next.attributes('disabled')).toBeDefined()
+
+    // prev 回到第 2 页
+    await prev.trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('第 2/3 页')
+  })
+
+  it('respects custom pageSize prop', () => {
+    const wrapper = mountTable({ items: makeMany(100), pageSize: 20 })
+    expect(wrapper.findAll('.data-row')).toHaveLength(20)
+    expect(wrapper.text()).toContain('第 1/5 页')
+  })
+
+  it('changes page size via dropdown and clamps current page', async () => {
+    const wrapper = mountTable({ items: makeMany(100) }) // 默认 50 → 2 页
+    await wrapper.find('[data-testid="page-next"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('第 2/2 页')
+    // 切到 100 条/页 → 单页，clamp 回第 1 页
+    await wrapper.find('[data-testid="page-size-select"]').setValue('100')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('第 1/1 页')
+    expect(wrapper.findAll('.data-row')).toHaveLength(100)
+  })
+
+  it('resets to first page when sort changes', async () => {
+    const wrapper = mountTable({ items: makeMany(120) })
+    await wrapper.find('[data-testid="page-next"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('第 2/3 页')
+    await wrapper.setProps({ sort: [{ field: 'priority', dir: 'desc' }] })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('第 1/3 页')
+  })
+
+  it('resets to first page when items shrink (query change, ADR-0024 D3)', async () => {
+    const wrapper = mountTable({ items: makeMany(120) }) // 3 页
+    await wrapper.find('[data-testid="page-next"]').trigger('click')
+    await wrapper.find('[data-testid="page-next"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('第 3/3 页')
+    // 筛选/搜索导致结果集缩小（items 长度变化）→ 回第 1 页
+    await wrapper.setProps({ items: makeMany(60) })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('第 1/2 页')
+    expect(wrapper.text()).toContain('Task 0')
+  })
+
+  it('paginates across groups by flat record sequence (ADR-0024 D2)', () => {
+    // 两组：A 组 30 条 + B 组 30 条，pageSize 20 → 第 2 页跨组
+    const groupA: Group<BlockCard> = { key: 'A', label: 'A 组', items: makeMany(30).map((c) => ({ ...c, block_id: `a-${c.block_id}` })) }
+    const groupB: Group<BlockCard> = { key: 'B', label: 'B 组', items: makeMany(30).map((c) => ({ ...c, block_id: `b-${c.block_id}` })) }
+    const wrapper = mount(TableView, {
+      props: {
+        items: makeMany(60),
+        fields,
+        groups: [groupA, groupB],
+        grouped: true,
+        sort: noSort,
+        config,
+        idKey: 'block_id',
+        pageSize: 20,
+      },
+    })
+    // 第 1 页：A 组前 20 条（组头显示全量 30）
+    expect(wrapper.findAll('.data-row')).toHaveLength(20)
+    expect(wrapper.text()).toContain('A 组')
+    expect(wrapper.text()).not.toContain('B 组')
+    // 翻到第 2 页：A 组余 10 条 + B 组前 10 条（跨组连续）
+    const next = wrapper.find('[data-testid="page-next"]')
+    return next.trigger('click').then(() => {
+      expect(wrapper.text()).toContain('A 组')
+      expect(wrapper.text()).toContain('B 组')
+      expect(wrapper.findAll('.data-row')).toHaveLength(20)
+      expect(wrapper.text()).toContain('共 60 条')
+    })
   })
 })

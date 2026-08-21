@@ -56,7 +56,7 @@ TableView 新增可选 prop `pageSize?: number`（缺省 **50**），当前页�
 
 - 行数下拉切换即时生效（改 pageSize 后 clamp 当前页），不做受控 prop——页大小是渲染偏好，组件内 state 即可（可后续上移为 config 若出现跨会话持久化需求）；
 - 不做数字页码串（1 2 3 … N）：32 页数字串过长；上一页/下一页 + 页码指示满足定位需求，后续需要再加；
-- 控件在 `.table-view` 滚动容器内（表尾），不 fixed——表头 sticky 逻辑不受影响。
+- **分页条抽为独立组件 `views/PaginationFooter.vue` 并固定底部（修订）**：受控组件（`page/totalPages/pageSize/total` props + `update:page`/`update:pageSize` emits，页码 clamp 由父组件负责）；`TableView` 根容器改 flex column——内容滚动区 `.table-scroll`（flex:1 + overflow:auto，表头 sticky 逻辑不变），footer 置于滚动容器外固定底部，**内容滚动时分页条保持可见**。分页状态（currentPage/pageSize）仍在 TableView 内，组件不含业务逻辑、不感知实体（与 ADR-0008/0023 分层一致）。
 
 ---
 

@@ -63,9 +63,17 @@ const emit = defineEmits<{
   'update:search': [value: string]
   /** 单元格编辑（boolean/select 可编辑列触发；由消费方处理）。 */
   cellChange: [itemId: string, fieldKey: string, value: unknown]
-  /** 点击行/卡片导航到源记录（由消费方处理）。 */
+  /** 导航到源记录（TableView 点击标题/link 列触发；由消费方处理）。 */
   navigate: [itemId: string]
 }>()
+
+/**
+ * TableView 单元格点击 → navigate 裁决（跳转行为收敛在消费方，视图零业务逻辑）：
+ * 仅标题列（primary）与链接列（link）可导航，其余列点击不跳转。
+ */
+function onTableCellClick(itemId: string, _fieldKey: string, role: string) {
+  if (role === 'primary' || role === 'link') emit('navigate', itemId)
+}
 
 // 命名视图 store（按 entityKey 隔离；NamedViewBar 内部同 key 单例复用）
 const store = useScreenViewStore(props.entityKey, {
@@ -138,7 +146,7 @@ const { chipBarVisible, hasFilter, hasSort, hasGroup, openChipMenu } =
         :config="tableConfig"
         :id-key="idKey"
         @cell-change="(itemId, fieldKey, value) => emit('cellChange', itemId, fieldKey, value)"
-        @navigate="(itemId) => emit('navigate', itemId)"
+        @cell-click="onTableCellClick"
       />
       <BoardView
         v-else-if="currentViewType === 'board'"
