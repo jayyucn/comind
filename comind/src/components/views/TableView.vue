@@ -1,6 +1,7 @@
 <script setup lang="ts" generic="T">
 import { MapPin } from 'lucide-vue-next';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
+import BasePopover from '../common/BasePopover.vue';
 import type { FieldDescriptor, Group, Option, SortRule } from '../../core/query';
 import type { TableColumnConfig, TableConfig } from '../../core/view';
 
@@ -36,7 +37,7 @@ const sections = computed<Group<T>[]>(
 /**
  * 列序：config 优先；否则安全兜底为仅主文本列（content）。
  * 不回退到全部注册字段——否则忘记传 config 的通用消费方会渲染一张含内部字段（dateRefKind 等）的不可用例表。
- * TaskHub 永远传 DEFAULT_TABLE_CONFIG，故块实体仍见 7 列（ADR-0007 D8 修复）。
+ * TaskHub 永远传 BLOCK_DEFAULT_TABLE_CONFIG，故块实体仍见 7 列（ADR-0007 D8 修复）。
  */
 const columns = computed<TableColumnConfig[]>(
   () => props.config?.columns ?? [{ key: 'content' }],
@@ -85,9 +86,31 @@ function onBoolChange(item: T, col: TableColumnConfig, e: Event) {
   emit('cellChange', idOf(item), col.key, checked)
 }
 
-function onSelectChange(item: T, col: TableColumnConfig, e: Event) {
-  const value = (e.target as HTMLSelectElement).value
-  emit('cellChange', idOf(item), col.key, value)
+// ── select 单元格选项菜单（BasePopover 弹层，替代原生 <select>） ──
+const selectMenu = ref<{
+  itemId: string
+  fieldKey: string
+  options: Option[]
+  value: unknown
+} | null>(null)
+const selectMenuPos = ref<{ x: number; y: number }>({ x: 0, y: 0 })
+
+function openSelectMenu(item: T, col: TableColumnConfig, e: MouseEvent) {
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  selectMenuPos.value = { x: r.left, y: r.bottom + 4 }
+  selectMenu.value = {
+    itemId: idOf(item),
+    fieldKey: col.key,
+    options: resolveOptions(fieldOf(col.key)),
+    value: valueOf(item, col),
+  }
+}
+
+function pickSelectOption(id: string) {
+  if (!selectMenu.value) return
+  const { itemId, fieldKey } = selectMenu.value
+  emit('cellChange', itemId, fieldKey, id)
+  selectMenu.value = null
 }
 
 function onRowClick(item: T) {
@@ -188,24 +211,22 @@ function selectedColor(options: Option[], value: unknown): string | undefined {
                   />
                 </template>
 
-                <!-- select：带色下拉（可编辑） -->
+                <!-- select：带色下拉（可编辑，BasePopover 菜单） -->
                 <template v-else-if="fieldOf(col.key)?.type === 'select'">
-                  <span class="cell-select">
+                  <button
+                    type="button"
+                    class="cell-select"
+                    :class="{ open: selectMenu?.itemId === idOf(item) && selectMenu?.fieldKey === col.key }"
+                    :title="optionLabel(resolveOptions(fieldOf(col.key)), valueOf(item, col))"
+                    @click.stop="openSelectMenu(item, col, $event)"
+                  >
                     <span
                       v-if="selectedColor(resolveOptions(fieldOf(col.key)), valueOf(item, col))"
                       class="color-dot"
                       :style="{ background: selectedColor(resolveOptions(fieldOf(col.key)), valueOf(item, col)) }"
                     />
-                    <select
-                      class="select-input"
-                      :value="valueOf(item, col) as string"
-                      @change="onSelectChange(item, col, $event)"
-                    >
-                      <option v-for="opt in resolveOptions(fieldOf(col.key))" :key="opt.id" :value="opt.id">
-                        {{ opt.label }}
-                      </option>
-                    </select>
-                  </span>
+                    <span class="cell-select-label">{{ optionLabel(resolveOptions(fieldOf(col.key)), valueOf(item, col)) }}</span>
+                  </button>
                 </template>
 
                 <!-- multiSelect：彩色徽章（只读） -->
@@ -246,6 +267,22 @@ function selectedColor(options: Option[], value: unknown): string | undefined {
           </tbody>
         </table>
       </div>
+
+      <!-- select 单元格选项菜单 -->
+      <BasePopover :visible="selectMenu !== null" :position="selectMenuPos" @close="selectMenu = null">
+        <ul class="select-menu" data-testid="select-menu">
+          <li
+            v-for="opt in selectMenu?.options ?? []"
+            :key="opt.id"
+            class="select-option"
+            :class="{ selected: opt.id === selectMenu?.value }"
+            @click="pickSelectOption(opt.id)"
+          >
+            <span v-if="opt.color" class="color-dot" :style="{ background: opt.color }" />
+            <span class="select-option-label">{{ opt.label }}</span>
+          </li>
+        </ul>
+      </BasePopover>
     </template>
   </div>
 </template>
@@ -389,6 +426,23 @@ function selectedColor(options: Option[], value: unknown): string | undefined {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  max-width: 160px;
+  padding: 2px 6px;
+  border: 1px solid var(--border-color, var(--app-split));
+  border-radius: 4px;
+  font-size: var(--text-xs);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: inherit;
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--accent);
+  }
+
+  &.open {
+    border-color: var(--accent);
+  }
 }
 
 .color-dot {
@@ -398,19 +452,46 @@ function selectedColor(options: Option[], value: unknown): string | undefined {
   flex-shrink: 0;
 }
 
-.select-input {
-  padding: 2px 6px;
-  border: 1px solid var(--border-color, var(--app-split));
-  border-radius: 4px;
-  font-size: var(--text-xs);
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  outline: none;
-  cursor: pointer;
+.cell-select-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
-  &:focus {
-    border-color: var(--accent);
+.select-menu {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  min-width: 140px;
+  max-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.select-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+
+  &:hover {
+    background: var(--bg-hover);
   }
+
+  &.selected {
+    font-weight: var(--font-semibold);
+  }
+}
+
+.select-option-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .cell-badge {

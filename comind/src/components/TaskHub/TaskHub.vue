@@ -4,26 +4,21 @@ import { CalendarDays, Columns, Table } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { createQueryEngine } from '../../core/query'
-import { useChipBarOrchestration } from '../../composables/useChipBarOrchestration'
-import { BLOCK_ENTITY, getBlockRegistry } from '../../composables/useBlockQueryRegistry'
+import { blockDefaultConfig, BLOCK_ENTITY, getBlockRegistry } from '../../composables/useBlockQueryRegistry'
 import type { ViewQuery } from '../../core/query'
-import { defaultLayoutConfig, parseLayoutConfig, type BoardConfig, type CalendarConfig, type TableConfig } from '../../core/view'
+import { parseLayoutConfig, type BoardConfig, type CalendarConfig, type TableConfig } from '../../core/view'
 import type { ViewTypeOption } from '../../core/view/management'
 import { useBlockCardStore } from '../../stores/blockCard'
 import { usePropertyStore } from '../../stores/property'
 import { useScreenViewStore } from '../../stores/screenView'
 import type { BlockCard } from '../../wasm/types'
-import NamedViewBar from '../common/NamedViewBar.vue'
-import PageTitle from '../common/PageTitle.vue'
-import QueryChipBar from '../query/QueryChipBar.vue'
-import QueryToolbar from '../query/QueryToolbar.vue'
-import BoardView from '../views/BoardView.vue'
-import CalendarView from '../views/CalendarView.vue'
-import TableView from '../views/TableView.vue'
+import QueryPageFrame from '../common/QueryPageFrame.vue'
 
 const router = useRouter()
 const blockCardStore = useBlockCardStore()
-const screenViewStore = useScreenViewStore('block')
+// 命名视图 store（与 QueryPageFrame 内部同 key 单例共享；此处仅读取 currentViewType/currentTab）。
+// 首建注入实体默认布局（blockDefaultConfig）——seed/create 时写入 Block 正确的 config（ADR-0023 上游修复）。
+const screenViewStore = useScreenViewStore('block', { defaultConfig: blockDefaultConfig })
 const propertyStore = usePropertyStore()
 
 // 通用查询引擎注册表（组合根单例，内置字段 + 自定义 property 已注册）
@@ -33,35 +28,38 @@ const blockEngine = createQueryEngine<BlockCard>(BLOCK_ENTITY)
 // 实体级字段 schema 只需取一次（同实体所有记录共用）
 const blockRefFields = registry.list(BLOCK_ENTITY)
 
-// block 实体可选的视图类型（注入 NamedViewBar）
+// block 实体可选的视图类型（注入 QueryPageFrame → NamedViewBar）
 const blockViewTypes: ViewTypeOption[] = [
   { key: 'table', label: '表格', icon: Table },
   { key: 'board', label: '看板', icon: Columns },
   { key: 'calendar', label: '日历', icon: CalendarDays },
 ]
 
-// 当前激活 tab 的可编辑查询（单一数据源：NamedViewBar 的保存/清除/切换均作用于它）。
-const viewQuery = computed<ViewQuery>(() => screenViewStore.workingQuery)
+// 搜索词（外壳 v-model:search 持有；父侧子串过滤，与 PagesLibrary 对 title 过滤同构）
 const searchQuery = ref('')
+
+// 当前激活 tab 的可编辑查询（单一数据源：NamedViewBar 的保存/清除/切换均作用于它）。
+// 与外壳内部 viewQuery 同源（store.workingQuery），此处供引擎计算消费。
+const viewQuery = computed<ViewQuery>(() => screenViewStore.workingQuery)
 
 const currentViewType = computed(() => screenViewStore.currentViewType)
 
 const currentTab = computed(() => screenViewStore.currentTab)
 
 // 视图布局配置（列序/列宽/卡片徽章/日历落格字段）。
-// 优先读持久化的 ScreenViewRust.config（解析校验 viewKind 一致），否则回退内建默认。
+// 优先读持久化的 ScreenViewRust.config（解析校验 viewKind 一致），否则回退实体注册点默认（BLOCK_DEFAULT_*）。
 const tableConfig = computed<TableConfig | undefined>(() => {
   if (currentViewType.value !== 'table') return undefined
-  return (parseLayoutConfig(currentTab.value?.config, 'table') as TableConfig | null) ?? (defaultLayoutConfig('table') as TableConfig)
+  return (parseLayoutConfig(currentTab.value?.config, 'table') as TableConfig | null) ?? (blockDefaultConfig('table') as TableConfig)
 })
 
 const boardConfig = computed<BoardConfig | undefined>(() => {
   if (currentViewType.value !== 'board') return undefined
-  return (parseLayoutConfig(currentTab.value?.config, 'board') as BoardConfig | null) ?? (defaultLayoutConfig('board') as BoardConfig)
+  return (parseLayoutConfig(currentTab.value?.config, 'board') as BoardConfig | null) ?? (blockDefaultConfig('board') as BoardConfig)
 })
 
 const calendarConfig = computed<CalendarConfig>(() =>
-  (parseLayoutConfig(currentTab.value?.config, 'calendar') as CalendarConfig | null) ?? (defaultLayoutConfig('calendar') as CalendarConfig),
+  (parseLayoutConfig(currentTab.value?.config, 'calendar') as CalendarConfig | null) ?? (blockDefaultConfig('calendar') as CalendarConfig),
 )
 
 // 搜索（父侧子串过滤，与 PagesLibrary 对 title 过滤同构）
@@ -115,108 +113,27 @@ async function handleNavigateToBlock(blockId: string) {
   router.push(`/page/${card.page_id}`)
   window.dispatchEvent(new CustomEvent('navigate-to-block', { detail: { blockId } }))
 }
-
-// ── 查询工具条编排（显隐/激活态/按钮转发）收进共享 composable（ADR-0022 Q6） ──
-const { chipBarVisible, hasFilter, hasSort, hasGroup, openChipMenu } = useChipBarOrchestration(viewQuery)
 </script>
 
 <template>
-  <div class="task-hub">
-    <PageTitle title="任务中心" :subtitle="`${flatCards.length} 个任务`" />
-
-    <!-- 视图管理（Screen→Tab 两级 + 查询工具条 + 未保存提示均内聚于 NamedViewBar） -->
-    <NamedViewBar entity-key="block" :view-types="blockViewTypes">
-      <QueryToolbar
-        v-model="searchQuery"
-        :has-filter="hasFilter"
-        :has-sort="hasSort"
-        :has-group="hasGroup"
-        :chip-bar-visible="chipBarVisible"
-        @filter="openChipMenu('filter', $event)"
-        @sort="openChipMenu('sort', $event)"
-        @group="openChipMenu('group', $event)"
-      />
-    </NamedViewBar>
-
-    <!-- 筛选芯片行（QueryToolbar 三按钮唤起；显隐/菜单策略内聚于 QueryChipBar；绑定 store.workingQuery） -->
-    <QueryChipBar
-      ref="chipBarRef"
-      :model-value="screenViewStore.workingQuery"
-      :fields="blockRefFields"
-      :registry="registry"
-      :entity-type="BLOCK_ENTITY"
-      @update:model-value="screenViewStore.setWorkingQuery"
-      @visible-change="chipBarVisible = $event"
-    />
-
-    <!-- 主内容区 -->
-    <main class="lib-body">
-      <TableView
-        v-if="currentViewType === 'table'"
-        :items="flatCards"
-        :fields="blockRefFields"
-        :groups="groups"
-        :grouped="grouped"
-        :sort="viewQuery.sort"
-        :config="tableConfig"
-        id-key="block_id"
-        @cell-change="onCellChange"
-        @navigate="handleNavigateToBlock"
-      />
-      <BoardView
-        v-else-if="currentViewType === 'board'"
-        :items="flatCards"
-        :fields="blockRefFields"
-        :group-by="viewQuery.groupBy ?? 'status'"
-        :config="boardConfig"
-        id-key="block_id"
-        @cell-change="onCellChange"
-        @navigate="handleNavigateToBlock"
-      />
-      <CalendarView
-        v-else-if="currentViewType === 'calendar'"
-        :items="flatCards"
-        :fields="blockRefFields"
-        :config="calendarConfig"
-        id-key="block_id"
-        @navigate="handleNavigateToBlock"
-      />
-      <div v-else class="task-hub-empty">
-        <p>暂无可用的视图</p>
-      </div>
-    </main>
-  </div>
+  <QueryPageFrame
+    title="任务中心"
+    :subtitle="`${flatCards.length} 个任务`"
+    entity-key="block"
+    :view-types="blockViewTypes"
+    v-model:search="searchQuery"
+    :fields="blockRefFields"
+    :registry="registry"
+    :items="flatCards"
+    :groups="groups"
+    :grouped="grouped"
+    :sort="viewQuery.sort"
+    :group-by="viewQuery.groupBy ?? 'status'"
+    :table-config="tableConfig"
+    :board-config="boardConfig"
+    :calendar-config="calendarConfig"
+    id-key="block_id"
+    @cell-change="onCellChange"
+    @navigate="handleNavigateToBlock"
+  />
 </template>
-
-<style lang="scss" scoped>
-.task-hub {
-  display: flex;
-  flex-direction: column;
-  // align-items: center;
-  height: 100%;
-  overflow: hidden;
-  padding: 0 var(--space-8);
-}
-
-.lib-body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  border-left: 1px solid var(--border);
-  border-right: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  padding: 12px 16px;
-  margin-bottom: var(--space-4);
-  border-bottom-left-radius: var(--radius-md);
-  border-bottom-right-radius: var(--radius-md);
-}
-
-.task-hub-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  color: var(--text-tertiary);
-  font-size: var(--text-sm);
-}
-</style>

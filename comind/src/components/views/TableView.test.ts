@@ -1,9 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import TableView from './TableView.vue'
-import { DEFAULT_TABLE_CONFIG, type TableColumnConfig, type TableConfig } from '../../core/view'
+import type { TableColumnConfig, TableConfig } from '../../core/view'
 import type { BlockCard } from '../../wasm/types'
 import type { FieldDescriptor, Group, SortRule } from '../../core/query'
+import { createRegistry } from '../../core/query'
+import { BLOCK_DEFAULT_TABLE_CONFIG } from '../../composables/useBlockQueryRegistry'
+import { PAGE_DEFAULT_TABLE_CONFIG, PAGE_ENTITY, registerPageBuiltinFields } from '../../composables/usePageQueryRegistry'
+import type { Page } from '../../types/page'
 
 function makeCard(overrides: Partial<BlockCard> = {}): BlockCard {
   const base: BlockCard = {
@@ -56,10 +60,10 @@ function makeFields(): FieldDescriptor[] {
 
 const noSort: SortRule[] = []
 const noGroups: Group<BlockCard>[] = []
-const config: TableConfig = DEFAULT_TABLE_CONFIG
+const config: TableConfig = BLOCK_DEFAULT_TABLE_CONFIG
 const fields = makeFields()
 
-function mountTable(props: Record<string, unknown> = {}) {
+function mountTable(props: Record<string, unknown> = {}, attach = false) {
   return mount(TableView, {
     props: {
       items: [makeCard()],
@@ -71,8 +75,14 @@ function mountTable(props: Record<string, unknown> = {}) {
       idKey: 'block_id',
       ...props,
     },
+    attachTo: attach ? document.body : undefined,
   })
 }
+
+// select 菜单 teleport 到 body，测试后清理，避免残留影响其他用例
+afterEach(() => {
+  document.body.querySelectorAll('[data-testid="select-menu"]').forEach((n) => n.remove())
+})
 
 describe('TableView (generic, field-driven)', () => {
   // ── Empty state ──
@@ -117,16 +127,17 @@ describe('TableView (generic, field-driven)', () => {
     expect(wrapper.find('.is-done').exists()).toBe(true)
   })
 
-  // ── Status select (editable, emits cellChange) ──
-  it('renders status select with all options', () => {
-    const wrapper = mountTable({ items: [makeCard({ properties: { status: 'Doing' } })] })
-    const select = wrapper.find('select')
-    expect(select.exists()).toBe(true)
-    const opts = select.findAll('option').map((o) => o.text())
-    expect(opts).toContain('待办')
-    expect(opts).toContain('进行中')
-    expect(opts).toContain('已完成')
-    expect(opts).toContain('已取消')
+  // ── Status select（BasePopover 菜单，点击触发后 teleport 到 body） ──
+  it('opens select menu with all options when triggered', async () => {
+    const wrapper = mountTable({ items: [makeCard({ properties: { status: 'Doing' } })] }, true)
+    await wrapper.find('.cell-select').trigger('click')
+    const menu = document.body.querySelector('[data-testid="select-menu"]')
+    expect(menu).not.toBeNull()
+    const labels = Array.from(menu!.querySelectorAll('.select-option')).map((el) => el.textContent?.trim())
+    expect(labels).toContain('待办')
+    expect(labels).toContain('进行中')
+    expect(labels).toContain('已完成')
+    expect(labels).toContain('已取消')
   })
 
   // ── Priority colored dot (Option.color lifted to metadata) ──
@@ -193,11 +204,15 @@ describe('TableView (generic, field-driven)', () => {
     expect(wrapper.emitted('cellChange')![0]).toEqual(['b1', 'done', true])
   })
 
-  it('emits cellChange(status) when select changed', async () => {
-    const wrapper = mountTable({ items: [makeCard({ block_id: 'b3', properties: { status: 'Doing' } })] })
-    const select = wrapper.find('select')
-    ;(select.element as HTMLSelectElement).value = 'Canceled'
-    await select.trigger('change')
+  it('emits cellChange(status) when select option picked', async () => {
+    const wrapper = mountTable({ items: [makeCard({ block_id: 'b3', properties: { status: 'Doing' } })] }, true)
+    await wrapper.find('.cell-select').trigger('click')
+    const menu = document.body.querySelector('[data-testid="select-menu"]') as HTMLElement
+    const option = Array.from(menu.querySelectorAll('.select-option')).find(
+      (el) => el.textContent?.includes('已取消'),
+    ) as HTMLElement
+    option.click()
+    await wrapper.vm.$nextTick()
     expect(wrapper.emitted('cellChange')![0]).toEqual(['b3', 'status', 'Canceled'])
   })
 
@@ -232,5 +247,34 @@ describe('TableView (generic, field-driven)', () => {
     const headers = wrapper.findAll('th').map((th) => th.text().trim())
     expect(headers).toHaveLength(1)
     expect(headers[0]).toContain('内容')
+  })
+
+  // ── ADR-0023 D6 回归：Page 实体用 PAGE_DEFAULT_TABLE_CONFIG 渲染（列 key 全部为已注册字段）。
+  //    曾因 store seed 写入 Block 默认列 config（done/status/deadline…）导致 Page 表格全列空值 ──
+  it('renders Page rows with PAGE_DEFAULT_TABLE_CONFIG columns', () => {
+    const reg = createRegistry()
+    registerPageBuiltinFields(reg)
+    const pageFields = reg.list(PAGE_ENTITY)
+    const page: Page = {
+      id: 'p1', blockId: null, title: '测试页面', type: 'normal', icon: null, cover: null,
+      aliases: [], filePath: null, childrenCount: 2, wordCount: 123,
+      createdAt: 1723000000000, updatedAt: 1723200000000, deleted: false, deletedAt: null,
+    }
+    const wrapper = mount(TableView, {
+      props: {
+        items: [page],
+        fields: pageFields,
+        groups: [],
+        grouped: false,
+        sort: [],
+        config: PAGE_DEFAULT_TABLE_CONFIG,
+        idKey: 'id',
+      },
+    })
+    const headers = wrapper.findAll('th').map((th) => th.text().trim())
+    expect(headers[0]).toContain('标题')
+    expect(wrapper.text()).toContain('测试页面')
+    expect(wrapper.text()).toContain('123') // wordCount
+    expect(wrapper.text()).toContain('2') // childrenCount
   })
 })

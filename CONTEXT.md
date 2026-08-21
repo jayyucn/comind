@@ -51,5 +51,11 @@ The complete query model: a Condition Group tree plus sort and grouping rules. E
 ### Query Engine (查询引擎)
 The headless core of the filtering system: a registry of Field Descriptors plus an evaluator over Condition Group trees. Contains no UI dependencies and no knowledge of concrete business entities.
 
+### Query Page Frame (查询页外壳)
+The page-level shell that assembles a Screen's standard query interface — title, named-view bar (Screen→Tab two-level), query toolbar, and chip bar — above a body region it renders by hardcoding the generic views (TableView/BoardView/CalendarView). It owns the chip-bar orchestration, the named-view store binding, and the view switching; business Screens (Task Hub, Pages Library) inject only their entity key, view types, fields, view data (items/groups/sort/configs), and event handlers. See ADR-0023.
+
+### Entity Default Layout (实体默认布局)
+The built-in default `LayoutConfig` of a business entity for each view kind (table/board/calendar), owned by the entity's registration point (`useBlockQueryRegistry` / `usePageQueryRegistry`) and injected into the named-view store via its options so seed/create writes an entity-correct config. The generic protocol layer (`core/view`) holds only the `LayoutConfig` types and parsing, never entity-specific defaults. See ADR-0023 D7.
+
 ### Sync (同步)
 The cross-device consistency mechanism: after a write path commits, the affected records are reported to the sync layer so the paired remote can converge. Desktop (Tauri) has a sync peer; the web build has none, so sync is a no-op there. See ADR-0019.

@@ -1,42 +1,55 @@
 <script setup lang="ts">
 import { CalendarDays, LayoutGrid } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { createQueryEngine } from '../../core/query'
-import { useChipBarOrchestration } from '../../composables/useChipBarOrchestration'
-import { getPageRegistry, PAGE_ENTITY } from '../../composables/usePageQueryRegistry'
+import {
+  getPageRegistry,
+  PAGE_DEFAULT_CALENDAR_CONFIG,
+  PAGE_DEFAULT_TABLE_CONFIG,
+  PAGE_ENTITY,
+  pageDefaultConfig,
+} from '../../composables/usePageQueryRegistry'
 import type { QueryContext, ViewQuery } from '../../core/query'
+import { parseLayoutConfig, type CalendarConfig, type TableConfig } from '../../core/view'
 import type { ViewTypeOption } from '../../core/view/management'
 import { usePageStore } from '../../stores/pages'
 import { useScreenViewStore } from '../../stores/screenView'
 import type { Page } from '../../types/page'
-import PageTitle from '../common/PageTitle.vue'
-import NamedViewBar from '../common/NamedViewBar.vue'
-import QueryChipBar from '../query/QueryChipBar.vue'
-import QueryToolbar from '../query/QueryToolbar.vue'
-import PageCalendarView from './PageCalendarView.vue'
-import PageTableView from './PageTableView.vue'
+import QueryPageFrame from '../common/QueryPageFrame.vue'
 
 defineOptions({ name: 'PagesLibrary' })
 
+const router = useRouter()
 const pageStore = usePageStore()
-const screenViewStore = useScreenViewStore('page')
+// 命名视图 store（与 QueryPageFrame 内部同 key 单例共享；此处读取 currentTab/workingQuery）。
+// 首建注入实体默认布局（pageDefaultConfig）——seed/create 时写入 Page 正确的 config（ADR-0023 上游修复）。
+const screenViewStore = useScreenViewStore('page', { defaultConfig: pageDefaultConfig })
 const registry = getPageRegistry()
 // 统一引擎：实体类型在工厂创建时绑定（ADR-0022 Q7）
 const pageEngine = createQueryEngine<Page>(PAGE_ENTITY)
 
-// page 实体可选的视图类型（注入 NamedViewBar；类型创建后固定）
+// page 实体可选的视图类型（注入 QueryPageFrame → NamedViewBar；类型创建后固定。
+// 同时决定外壳渲染哪几个视图——table/calendar，不含 board）
 const pageViewTypes: ViewTypeOption[] = [
   { key: 'table', label: '表格', icon: LayoutGrid },
   { key: 'calendar', label: '日历', icon: CalendarDays },
 ]
 
-// 当前激活 tab 的可编辑查询（单一数据源：NamedViewBar 的保存/清除/切换均作用于它）
-const viewQuery = computed<ViewQuery>(() => screenViewStore.workingQuery)
-const viewMode = computed(() => screenViewStore.currentViewType as 'table' | 'calendar')
 const searchQuery = ref('')
+// 当前激活 tab 的可编辑查询（单一数据源：NamedViewBar 的保存/清除/切换均作用于它）。
+// 与外壳内部 viewQuery 同源（store.workingQuery），此处供引擎计算消费。
+const viewQuery = computed<ViewQuery>(() => screenViewStore.workingQuery)
+const grouped = computed(() => viewQuery.value.groupBy !== null)
 
-// 芯片行编排（显隐/激活态/按钮转发）收进共享 composable（ADR-0022 Q6）
-const { chipBarVisible, hasFilter, hasSort, hasGroup, openChipMenu } = useChipBarOrchestration(viewQuery)
+// 视图布局配置：优先读持久化的 ScreenViewRust.config（解析校验 viewKind 一致），否则回退 Page 内建默认。
+// 上游修复（ADR-0023）后 seed 写入的即是 Page 正确默认；存量错误 config（旧 seed 的 Block 列）经数据迁移清空。
+const tableConfig = computed<TableConfig>(() =>
+  (parseLayoutConfig(screenViewStore.currentTab?.config, 'table') as TableConfig | null) ?? PAGE_DEFAULT_TABLE_CONFIG,
+)
+const calendarConfig = computed<CalendarConfig>(() =>
+  (parseLayoutConfig(screenViewStore.currentTab?.config, 'calendar') as CalendarConfig | null) ?? PAGE_DEFAULT_CALENDAR_CONFIG,
+)
 
 // 跨记录字段引用所需的求值上下文：按 id 取 Page（用全量 store，不受搜索过滤影响）。
 // 不提供时 recordRef 引用一律非匹配。
@@ -76,6 +89,11 @@ const pageGroups = computed(() => {
   return pageEngine.run(allPages.value, viewQuery.value, registry, queryContext.value)
 })
 
+// Navigate to source page（通用 TableView/CalendarView 的 navigate 事件）
+function handleNavigateToPage(pageId: string) {
+  router.push(`/page/${pageId}`)
+}
+
 onMounted(async () => {
   await screenViewStore.load()
   await pageStore.loadAllPages()
@@ -83,59 +101,24 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="pages-library">
-    <PageTitle title="页面库" :subtitle="`${filteredPages.length} 个页面`" />
-
-    <!-- 视图管理（Screen→Tab 两级 + 查询工具条 + 未保存提示均内聚于 NamedViewBar） -->
-    <NamedViewBar entity-key="page" :view-types="pageViewTypes" default-view-name="全部页面" default-view-type="table">
-      <QueryToolbar
-        v-model="searchQuery"
-        :has-filter="hasFilter"
-        :has-sort="hasSort"
-        :has-group="hasGroup"
-        :chip-bar-visible="chipBarVisible"
-        @filter="openChipMenu('filter', $event)"
-        @sort="openChipMenu('sort', $event)"
-        @group="openChipMenu('group', $event)"
-      />
-    </NamedViewBar>
-
-    <!-- 筛选芯片行（QueryToolbar 三按钮唤起；绑定 store.workingQuery） -->
-    <QueryChipBar
-      ref="chipBarRef"
-      :model-value="screenViewStore.workingQuery"
-      :fields="pageRefFields"
-      :registry="registry"
-      :entity-type="PAGE_ENTITY"
-      :cross-record-sources="crossRecordSources"
-      @update:model-value="screenViewStore.setWorkingQuery"
-      @visible-change="chipBarVisible = $event"
-    />
-
-    <!-- 主内容区 -->
-    <main class="lib-body">
-      <PageTableView v-if="viewMode === 'table'" :pages="filteredPages" :groups="pageGroups" />
-      <PageCalendarView v-else :pages="filteredPages" />
-    </main>
-  </div>
+  <QueryPageFrame
+    title="页面库"
+    :subtitle="`${filteredPages.length} 个页面`"
+    entity-key="page"
+    :view-types="pageViewTypes"
+    default-view-name="全部页面"
+    default-view-type="table"
+    v-model:search="searchQuery"
+    :fields="pageRefFields"
+    :registry="registry"
+    :cross-record-sources="crossRecordSources"
+    :items="filteredPages"
+    :groups="pageGroups"
+    :grouped="grouped"
+    :sort="viewQuery.sort"
+    :group-by="null"
+    :table-config="tableConfig"
+    :calendar-config="calendarConfig"
+    @navigate="handleNavigateToPage"
+  />
 </template>
-
-<style scoped>
-.pages-library {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  padding: 0 var(--space-8);
-  min-height: 0;
-  overflow: hidden;
-  background: var(--bg-base);
-}
-
-/* 主内容 */
-.lib-body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 16px 20px;
-}
-</style>
