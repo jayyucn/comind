@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { PropertyValue } from '@/types/property'
 import { CalendarDays, Columns, Table } from 'lucide-vue-next'
-import { computed, onMounted, ref } from 'vue'
+import { computed, markRaw, onMounted, ref } from 'vue'
 import { createQueryEngine } from '../../core/query'
 import { blockDefaultConfig, BLOCK_ENTITY, getBlockRegistry } from '../../composables/useBlockQueryRegistry'
 import type { ViewQuery } from '../../core/query'
@@ -13,6 +13,8 @@ import { useScreenViewStore } from '../../stores/screenView'
 import type { BlockCard } from '../../wasm/types'
 import QueryPageFrame from '../common/QueryPageFrame.vue'
 import PageDrawer from '../Page/PageDrawer.vue'
+import BlockContentCell from '../views/BlockContentCell.vue'
+import type { CellRegistry } from '../views/types'
 
 const blockCardStore = useBlockCardStore()
 // 命名视图 store（与 QueryPageFrame 内部同 key 单例共享；此处仅读取 currentViewType/currentTab）。
@@ -33,6 +35,9 @@ const blockViewTypes: ViewTypeOption[] = [
   { key: 'board', label: '看板', icon: Columns },
   { key: 'calendar', label: '日历', icon: CalendarDays },
 ]
+
+// 自定义单元格注册表（ADR-0010）：content 列用富预览组件接管渲染。组件须 markRaw 避免被 Vue 误设为响应式。
+const blockCellRegistry: CellRegistry = { 'block-content': markRaw(BlockContentCell) }
 
 // 搜索词（外壳 v-model:search 持有；父侧子串过滤，与 PagesLibrary 对 title 过滤同构）
 const searchQuery = ref('')
@@ -61,12 +66,16 @@ const calendarConfig = computed<CalendarConfig>(() =>
   (parseLayoutConfig(currentTab.value?.config, 'calendar') as CalendarConfig | null) ?? (blockDefaultConfig('calendar') as CalendarConfig),
 )
 
-// 搜索（父侧子串过滤，与 PagesLibrary 对 title 过滤同构）
+// 数据源：排除 status 为空的 blocks（普通非任务段落），再做搜索子串过滤
+// （与 PagesLibrary 对 title 过滤同构；status 以 property 存于 card.properties['status']）
 const searchedCards = computed<BlockCard[]>(() => {
-  const cards = blockCardStore.cards
   const q = searchQuery.value.trim().toLowerCase()
-  if (!q) return cards
-  return cards.filter((c) => (c.content_preview ?? '').toLowerCase().includes(q))
+  return blockCardStore.cards.filter((c) => {
+    const status = c.properties?.['status']
+    if (status === undefined || status === null || status === '') return false
+    if (!q) return true
+    return (c.content_preview ?? '').toLowerCase().includes(q)
+  })
 })
 
 // 统一引擎：过滤 + 排序 + 分组一步到位（基于 store.workingQuery，未保存即实时预览）
@@ -150,6 +159,7 @@ function handleCellClick(blockId: string, fieldKey: string) {
     :board-config="boardConfig"
     :calendar-config="calendarConfig"
     id-key="block_id"
+    :cell-registry="blockCellRegistry"
     @cell-change="onCellChange"
     @navigate="handleNavigateToBlock"
     @cell-click="handleCellClick"

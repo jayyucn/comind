@@ -18,6 +18,8 @@ export interface TableColumnConfig {
   width?: number
   /** 渲染装饰：primary=主文本(加粗省略号) / link=导航按钮 / overdue-date=过去日期标红 / done=布尔完成列(驱动行置灰)。 */
   role?: TableColumnRole
+  /** 自定义单元格渲染器 key：命中注入的 cellRegistry 时接管整格渲染；缺省走内置 type/role 链。可持久化（ADR-0010）。 */
+  cell?: string
 }
 
 /** 表格视图布局配置。 */

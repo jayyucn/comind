@@ -28,7 +28,7 @@ export const BLOCK_DEFAULT_TABLE_CONFIG: TableConfig = {
   version: 1,
   columns: [
     { key: 'done', role: 'done' },
-    { key: 'content', role: 'primary' },
+    { key: 'content', role: 'primary', cell: 'block-content' },
     { key: 'status' },
     { key: 'priority' },
     { key: 'project' },

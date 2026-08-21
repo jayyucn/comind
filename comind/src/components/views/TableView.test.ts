@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { defineComponent, h, markRaw } from 'vue'
 import { mount } from '@vue/test-utils'
 import TableView from './TableView.vue'
 import type { TableColumnConfig, TableConfig } from '../../core/view'
@@ -456,5 +457,76 @@ describe('TableView (generic, field-driven)', () => {
     // 现有 status/priority 字段未声明 editable → 仍渲染可编辑下拉按钮（向后兼容）
     const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
     expect(wrapper.find('tbody .cell-select').exists()).toBe(true)
+  })
+})
+
+describe('TableView custom cell (ADR-0010)', () => {
+  // 桩组件：渲染 value + data-testid，纯展示
+  const StubCell = markRaw(defineComponent({
+    props: ['item', 'value', 'field', 'col', 'editable'],
+    setup(props) {
+      return () => h('span', { 'data-testid': 'custom-cell' }, String(props.value))
+    },
+  }))
+  // 桩组件：内部按钮 emit change('X')
+  const StubCellEmit = markRaw(defineComponent({
+    props: ['item', 'value', 'field', 'col', 'editable'],
+    emits: ['change'],
+    setup(_, { emit }) {
+      return () => h('button', { 'data-testid': 'custom-emit', onClick: () => emit('change', 'X') }, 'emit')
+    },
+  }))
+  // 桩组件：内部按钮 @click.stop 阻止冒泡（不 emit change）
+  const StubCellStop = markRaw(defineComponent({
+    props: ['item', 'value', 'field', 'col', 'editable'],
+    setup() {
+      return () => h('button', { 'data-testid': 'custom-stop', onClick: (e: Event) => e.stopPropagation() }, 'stop')
+    },
+  }))
+
+  it('renders registered custom cell when column has cell key', () => {
+    const wrapper = mountTable({
+      items: [makeCard({ block_id: 'b1', content_preview: 'Custom!' })],
+      cellRegistry: { 'block-content': StubCell },
+    })
+    expect(wrapper.find('[data-testid="custom-cell"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="custom-cell"]').text()).toBe('Custom!')
+  })
+
+  it('forwards custom cell change to cellChange with id/key/value', async () => {
+    const wrapper = mountTable({
+      items: [makeCard({ block_id: 'b1' })],
+      cellRegistry: { 'block-content': StubCellEmit },
+    })
+    await wrapper.find('[data-testid="custom-emit"]').trigger('click')
+    expect(wrapper.emitted('cellChange')![0]).toEqual(['b1', 'content', 'X'])
+  })
+
+  it('falls back to default rendering when cell key not in registry', () => {
+    const wrapper = mountTable({
+      items: [makeCard({ block_id: 'b1', content_preview: 'Fallback' })],
+      cellRegistry: {},
+    })
+    expect(wrapper.find('[data-testid="custom-cell"]').exists()).toBe(false)
+    expect(wrapper.find('tbody .col-content .cell-primary').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Fallback')
+  })
+
+  it('does not emit cellClick when internal interactive element stops propagation', async () => {
+    const wrapper = mountTable({
+      items: [makeCard({ block_id: 'b1' })],
+      cellRegistry: { 'block-content': StubCellStop },
+    })
+    await wrapper.find('[data-testid="custom-stop"]').trigger('click')
+    expect(wrapper.emitted('cellClick')).toBeFalsy()
+  })
+
+  it('emits cellClick when clicking custom cell surface (outside stopped element)', async () => {
+    const wrapper = mountTable({
+      items: [makeCard({ block_id: 'b1' })],
+      cellRegistry: { 'block-content': StubCell },
+    })
+    await wrapper.find('tbody .col-content').trigger('click')
+    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'content'])
   })
 })

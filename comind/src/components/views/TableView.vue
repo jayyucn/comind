@@ -1,6 +1,8 @@
 <script setup lang="ts" generic="T">
 import { MapPin } from 'lucide-vue-next';
 import { computed, ref, watch } from 'vue';
+import type { Component } from 'vue';
+import type { CellRegistry } from './types';
 import BasePopover from '../common/BasePopover.vue';
 import PaginationFooter from './PaginationFooter.vue';
 import type { FieldDescriptor, Group, Option, SortRule } from '../../core/query';
@@ -26,6 +28,8 @@ const props = defineProps<{
   idKey?: string
   /** 每页行数（ADR-0024 渲染层分页：仅切片渲染，数据源仍全量，查询引擎契约不变）。缺省 50；组件内可经下拉切换。 */
   pageSize?: number
+  /** 自定义单元格渲染器注册表：cell key → Vue 组件。opt-in：仅当列配置含 cell 且命中时才委派（ADR-0010）。 */
+  cellRegistry?: CellRegistry
 }>()
 
 const emit = defineEmits<{
@@ -125,6 +129,18 @@ function idOf(item: T): string {
 
 function fieldOf(key: string): FieldDescriptor | undefined {
   return props.fields.find((f) => f.key === key)
+}
+
+/** 自定义单元格：列配置含 cell 且注册表命中 → 接管整格渲染（opt-in，ADR-0010）。否则回退内置 type/role 链。 */
+function hasCell(col: TableColumnConfig): boolean {
+  return !!col.cell && !!props.cellRegistry?.[col.cell]
+}
+function resolveCell(col: TableColumnConfig): Component {
+  return props.cellRegistry![col.cell!]
+}
+/** 自定义单元格回传变更：包成既有 cellChange 契约，业务层零改动（ADR-0010）。 */
+function onCustomChange(col: TableColumnConfig, item: T, value: unknown) {
+  emit('cellChange', idOf(item), col.key, value)
 }
 
 /** 字段单元格交互是否可编辑（FieldDescriptor.editable，缺省可编辑；Page.type 等显式 false 为只读）。 */
@@ -277,8 +293,21 @@ function groupTotal(key: string): number {
                 :style="{ width: columnWidth(col) }"
                 @click="onCellClick(item, col)"
               >
+                <!-- 自定义单元格：命中注册表才委派，否则回退内置链（含 role 兜底） -->
+                <template v-if="hasCell(col)">
+                  <component
+                    :is="resolveCell(col)"
+                    :item="item"
+                    :value="valueOf(item, col)"
+                    :field="fieldOf(col.key)"
+                    :col="col"
+                    :editable="isFieldEditable(col)"
+                    @change="(v: unknown) => onCustomChange(col, item, v)"
+                  />
+                </template>
+
                 <!-- boolean：可编辑勾选；editable=false 时只读勾选态 -->
-                <template v-if="fieldOf(col.key)?.type === 'boolean'">
+                <template v-else-if="fieldOf(col.key)?.type === 'boolean'">
                   <input
                     v-if="isFieldEditable(col)"
                     type="checkbox"
