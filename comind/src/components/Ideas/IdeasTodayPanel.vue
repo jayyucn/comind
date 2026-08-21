@@ -47,7 +47,8 @@ function handleNavigate(pageId: string, pageTitle: string) {
   <div class="today-panel">
     <div class="today-card" v-if="pageId">
       <div class="today-header">
-        <PageTitle :title="`${getMonthDay(page?.title || '').month}${getMonthDay(page?.title || '').day}日 ${getWeekday(page?.title || '')}`" />
+        <PageTitle
+          :title="`${getMonthDay(page?.title || '').month}${getMonthDay(page?.title || '').day}日 ${getWeekday(page?.title || '')}`" />
       </div>
       <div class="today-body">
         <BlockList :page-id="pageId" />
@@ -76,9 +77,9 @@ function handleNavigate(pageId: string, pageTitle: string) {
   flex: auto;
   display: flex;
   flex-direction: column;
-  padding: 0 var(--space-8);
+  padding: 0 0 0 var(--space-8);
   overflow: hidden;
-  padding-right: var(--space-8);
+  overflow-y: auto;
 }
 
 .today-card {
@@ -86,7 +87,8 @@ function handleNavigate(pageId: string, pageTitle: string) {
   display: flex;
   flex-direction: column;
   flex: 1;
-  overflow-y: auto;
+  overflow-y: visible;
+  margin-right: var(--space-8);
 }
 
 .today-header {
@@ -98,7 +100,9 @@ function handleNavigate(pageId: string, pageTitle: string) {
 
 .today-body {
   padding-top: var(--space-3);
-  min-height: 40%;
+  min-height: 40vh;
+  /* 禁止 flex-shrink 压缩：高度随 BlockList 内容自动撑开，由 .today-card 负责滚动 */
+  flex-shrink: 0;
 }
 
 .today-card.is-loading {

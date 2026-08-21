@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, watch, nextTick, ref, computed } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useModalKeyboardRef } from '../composables/useModalKeyboard'
 import type { useRelationshipMenu } from '../composables/useRelationshipMenu'
 import { attachKeyboardListener, detachKeyboardListener } from '../composables/useRelationshipMenu'
-import { useModalKeyboardRef } from '../composables/useModalKeyboard'
 import BasePopover from './common/BasePopover.vue'
 
 const props = defineProps<{
@@ -65,7 +65,7 @@ defineExpose({ select, close })
 <template>
   <BasePopover
     :visible="state.visible"
-    :position="state.position"
+    :position="state.position || {x: 0, y: 0}"
     @close="close"
   >
     <div class="rel-menu" @mousedown.stop>
