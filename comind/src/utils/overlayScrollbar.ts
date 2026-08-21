@@ -43,6 +43,28 @@ function ensureOverlay(): HTMLElement {
   return overlay
 }
 
+/**
+ * 立即隐藏浮层并清空活动容器（含未决的隐藏定时器）。
+ * 容器被路由卸载 / KeepAlive 缓存隐藏后调用，避免浮层残影钉在旧位置。
+ */
+function hideOverlay(): void {
+  if (hideTimer) {
+    window.clearTimeout(hideTimer)
+    hideTimer = null
+  }
+  activeEl = null
+  if (overlay) {
+    overlay.classList.remove('is-visible')
+    overlay.classList.remove('is-dragging')
+    overlay.style.pointerEvents = 'none'
+  }
+}
+
+/** 浮层当前定位的容器是否仍实际渲染（未卸载、未 display:none 隐藏）。 */
+function isActiveRendered(): boolean {
+  return !!activeEl && activeEl.isConnected && activeEl.getClientRects().length > 0
+}
+
 /** 按容器当前滚动位置计算并写入浮层几何（仅纵向）。 */
 function updateGeometry(el: HTMLElement): void {
   const ov = ensureOverlay()
@@ -66,7 +88,13 @@ function getSbSize(): string {
 function scheduleHide(): void {
   if (hideTimer) window.clearTimeout(hideTimer)
   hideTimer = window.setTimeout(() => {
-    if (!dragging && overlay) {
+    if (dragging) return
+    if (overlay && !isActiveRendered()) {
+      // 活动容器已被卸载或隐藏（如路由切换）：立即隐藏，不留残影。
+      hideOverlay()
+      return
+    }
+    if (overlay) {
       overlay.classList.remove('is-visible')
       overlay.style.pointerEvents = 'none'
     }
@@ -96,6 +124,13 @@ function bindDrag(ov: HTMLElement): void {
 
   ov.addEventListener('pointermove', (e: PointerEvent) => {
     if (!dragging || !activeEl) return
+    if (!isActiveRendered()) {
+      // 拖拽期间活动容器被路由卸载/隐藏：终止拖拽并隐藏浮层。
+      dragging = false
+      ov.classList.remove('is-dragging')
+      hideOverlay()
+      return
+    }
     const trackH = activeEl.clientHeight
     const thumbH = ov.offsetHeight
     const maxScroll = activeEl.scrollHeight - activeEl.clientHeight
@@ -131,6 +166,7 @@ export function initOverlayScrollbars(): void {
   document.addEventListener(
     'scroll',
     (e: Event) => {
+      if (activeEl && !isActiveRendered()) hideOverlay()
       const el = findScrollable(e.target)
       if (el) showFor(el)
     },
@@ -139,6 +175,7 @@ export function initOverlayScrollbars(): void {
 
   // 鼠标移入可滚动容器即浮现；移出后由隐藏定时器淡出。
   document.addEventListener('mousemove', (e: MouseEvent) => {
+    if (activeEl && !isActiveRendered()) hideOverlay()
     const el = findScrollable(e.target)
     if (el) {
       if (el !== activeEl || !overlay?.classList.contains('is-visible')) showFor(el)
@@ -150,6 +187,18 @@ export function initOverlayScrollbars(): void {
 
   // 容器尺寸变化时重算几何（如窗口缩放、侧栏折叠）。
   window.addEventListener('resize', () => {
-    if (activeEl && overlay?.classList.contains('is-visible')) updateGeometry(activeEl)
+    if (activeEl && !isActiveRendered()) {
+      hideOverlay()
+    } else if (activeEl && overlay?.classList.contains('is-visible')) {
+      updateGeometry(activeEl)
+    }
   })
+
+  // 主动兜底：任何 DOM 卸载（路由切换、KeepAlive 缓存、组件销毁）都会触发子节点
+  // 变化，在微任务内立即收走浮层——不必等 hideTimer(300ms) 或下一次鼠标/滚动事件，
+  // 消除「路由到新页面后短暂残留滚动条」。
+  const observer = new MutationObserver(() => {
+    if (activeEl && !isActiveRendered()) hideOverlay()
+  })
+  observer.observe(document.body, { childList: true, subtree: true })
 }
