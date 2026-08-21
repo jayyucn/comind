@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { CalendarDays, LayoutGrid } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { createQueryEngine } from '../../core/query'
 import {
   getPageRegistry,
@@ -17,10 +16,10 @@ import { usePageStore } from '../../stores/pages'
 import { useScreenViewStore } from '../../stores/screenView'
 import type { Page } from '../../types/page'
 import QueryPageFrame from '../common/QueryPageFrame.vue'
+import PageDrawer from '../Page/PageDrawer.vue'
 
 defineOptions({ name: 'PagesLibrary' })
 
-const router = useRouter()
 const pageStore = usePageStore()
 // 命名视图 store（与 QueryPageFrame 内部同 key 单例共享；此处读取 currentTab/workingQuery）。
 // 首建注入实体默认布局（pageDefaultConfig）——seed/create 时写入 Page 正确的 config（ADR-0023 上游修复）。
@@ -89,9 +88,16 @@ const pageGroups = computed(() => {
   return pageEngine.run(allPages.value, viewQuery.value, registry, queryContext.value)
 })
 
-// Navigate to source page（通用 TableView/CalendarView 的 navigate 事件）
+// Navigate to source page：改为右侧弹层（PageDrawer），不整页跳路由
+const drawerPageId = ref<string | null>(null)
 function handleNavigateToPage(pageId: string) {
-  router.push(`/page/${pageId}`)
+  drawerPageId.value = pageId
+}
+
+// 表格单元格点击：仅标题（title 字段）跳转到源页面——跳转语义属业务层，TableView 只上报事实
+function handleCellClick(pageId: string, fieldKey: string) {
+  if (fieldKey !== 'title') return
+  handleNavigateToPage(pageId)
 }
 
 onMounted(async () => {
@@ -120,5 +126,9 @@ onMounted(async () => {
     :table-config="tableConfig"
     :calendar-config="calendarConfig"
     @navigate="handleNavigateToPage"
+    @cell-click="handleCellClick"
   />
+
+  <!-- 页面详情右侧弹层（替代整页路由跳转） -->
+  <PageDrawer :page-id="drawerPageId" @close="drawerPageId = null" />
 </template>

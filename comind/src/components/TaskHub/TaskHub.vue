@@ -2,7 +2,6 @@
 import type { PropertyValue } from '@/types/property'
 import { CalendarDays, Columns, Table } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { createQueryEngine } from '../../core/query'
 import { blockDefaultConfig, BLOCK_ENTITY, getBlockRegistry } from '../../composables/useBlockQueryRegistry'
 import type { ViewQuery } from '../../core/query'
@@ -13,8 +12,8 @@ import { usePropertyStore } from '../../stores/property'
 import { useScreenViewStore } from '../../stores/screenView'
 import type { BlockCard } from '../../wasm/types'
 import QueryPageFrame from '../common/QueryPageFrame.vue'
+import PageDrawer from '../Page/PageDrawer.vue'
 
-const router = useRouter()
 const blockCardStore = useBlockCardStore()
 // 命名视图 store（与 QueryPageFrame 内部同 key 单例共享；此处仅读取 currentViewType/currentTab）。
 // 首建注入实体默认布局（blockDefaultConfig）——seed/create 时写入 Block 正确的 config（ADR-0023 上游修复）。
@@ -106,12 +105,30 @@ async function onCellChange(blockId: string, key: string, value: unknown) {
   await refresh()
 }
 
-// Navigate to source block
+// 页面详情右侧弹层（替代整页路由跳转）；pendingFocusBlock 记录待定位的 block（抽屉挂载后转发）
+const drawerPageId = ref<string | null>(null)
+const pendingFocusBlock = ref<string | null>(null)
+
+// Navigate to source block：打开抽屉 + 记录定位目标
 async function handleNavigateToBlock(blockId: string) {
   const card = blockCardStore.cards.find((c) => c.block_id === blockId)
   if (!card) return
-  router.push(`/page/${card.page_id}`)
-  window.dispatchEvent(new CustomEvent('navigate-to-block', { detail: { blockId } }))
+  pendingFocusBlock.value = blockId
+  drawerPageId.value = card.page_id
+}
+
+// 抽屉内 Page 组件挂载完成后转发定位事件（此时监听器已注册，事件不会丢失）
+function onDrawerOpened() {
+  if (pendingFocusBlock.value) {
+    window.dispatchEvent(new CustomEvent('navigate-to-block', { detail: { blockId: pendingFocusBlock.value } }))
+    pendingFocusBlock.value = null
+  }
+}
+
+// 表格单元格点击：仅标题（content 字段）跳转到源 block——跳转语义属业务层，TableView 只上报事实
+function handleCellClick(blockId: string, fieldKey: string) {
+  if (fieldKey !== 'content') return
+  void handleNavigateToBlock(blockId)
 }
 </script>
 
@@ -135,5 +152,9 @@ async function handleNavigateToBlock(blockId: string) {
     id-key="block_id"
     @cell-change="onCellChange"
     @navigate="handleNavigateToBlock"
+    @cell-click="handleCellClick"
   />
+
+  <!-- 页面详情右侧弹层（替代整页路由跳转；打开后定位到来源 block） -->
+  <PageDrawer :page-id="drawerPageId" @close="drawerPageId = null" @opened="onDrawerOpened" />
 </template>

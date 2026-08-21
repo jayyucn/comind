@@ -56,6 +56,12 @@ export interface FieldDescriptor<T = unknown> {
   ops?: FilterOp[]
   /** select / multiSelect 专用：静态数组或同步 provider。 */
   options?: Option[] | (() => Option[])
+  /**
+   * 单元格交互可配置：缺省 true（select 弹下拉编辑、boolean 勾选）。
+   * 设 false 时 TableView 渲染为只读展示（如 Page.type 只读标签）——与筛选交互无关，
+   * 筛选值编辑器仍按 type 正常工作。
+   */
+  editable?: boolean
   /** date 字段参与分组时的分桶粒度。 */
   dateBucket?: 'day' | 'week' | 'month'
   /** 可选：为未来 SQL 下推预留的属性路径。 */

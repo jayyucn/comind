@@ -191,22 +191,22 @@ describe('TableView (generic, field-driven)', () => {
   })
 
   // ── Emits ──
-  it('emits cellClick with primary role when title cell clicked', async () => {
+  it('emits cellClick with field key when title cell clicked', async () => {
     const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
     await wrapper.find('tbody .col-content').trigger('click')
-    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'content', 'primary'])
+    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'content'])
   })
 
-  it('emits cellClick with empty role for plain cells', async () => {
+  it('emits cellClick with field key for plain cells', async () => {
     const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
     await wrapper.find('tbody .col-project').trigger('click')
-    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'project', ''])
+    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'project'])
   })
 
-  it('emits cellClick with link role when link button clicked (bubbles to td)', async () => {
+  it('emits cellClick with field key when link button clicked (bubbles to td)', async () => {
     const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
     await wrapper.find('.link-btn').trigger('click')
-    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'page', 'link'])
+    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'page'])
   })
 
   it('does not emit cellClick when editable control (checkbox) clicked', async () => {
@@ -415,5 +415,46 @@ describe('TableView (generic, field-driven)', () => {
       expect(wrapper.findAll('.data-row')).toHaveLength(20)
       expect(wrapper.text()).toContain('共 60 条')
     })
+  })
+
+  // ── Field interaction configurability (FieldDescriptor.editable) ──
+  it('renders select as read-only label when editable=false and does not open menu', async () => {
+    const readonlyFields: FieldDescriptor[] = [
+      ...fields,
+      {
+        key: 'stage', label: '阶段', type: 'select',
+        options: [{ id: 'A', label: 'A阶段' }, { id: 'B', label: 'B阶段' }],
+        editable: false,
+        get: () => 'A',
+      },
+    ]
+    const cfg: TableConfig = { viewKind: 'table', version: 1, columns: [...config.columns, { key: 'stage' }] }
+    const wrapper = mountTable({ fields: readonlyFields, config: cfg, items: [makeCard({ block_id: 'b1' })] })
+    // 限定在 stage 列：只读标签而非可编辑按钮（status 列仍是可编辑按钮，不影响本断言）
+    const stageTd = wrapper.find('tbody .col-stage')
+    expect(stageTd.find('.cell-select').exists()).toBe(false)
+    expect(stageTd.find('.cell-select-readonly').exists()).toBe(true)
+    expect(stageTd.text()).toContain('A阶段')
+    // 点击只读标签不弹下拉菜单
+    await stageTd.find('.cell-select-readonly').trigger('click')
+    expect(document.body.querySelector('[data-testid="select-menu"]')).toBeFalsy()
+  })
+
+  it('renders boolean as read-only check when editable=false', () => {
+    const readonlyFields: FieldDescriptor[] = [
+      ...fields,
+      { key: 'flag', label: '标记', type: 'boolean', editable: false, get: () => true },
+    ]
+    const cfg: TableConfig = { viewKind: 'table', version: 1, columns: [...config.columns, { key: 'flag' }] }
+    const wrapper = mountTable({ fields: readonlyFields, config: cfg, items: [makeCard({ block_id: 'b1' })] })
+    const flagTd = wrapper.find('tbody .col-flag')
+    expect(flagTd.find('.bool-check').exists()).toBe(false)
+    expect(flagTd.find('.cell-bool-readonly').text()).toContain('✓')
+  })
+
+  it('keeps select editable by default (editable undefined)', () => {
+    // 现有 status/priority 字段未声明 editable → 仍渲染可编辑下拉按钮（向后兼容）
+    const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
+    expect(wrapper.find('tbody .cell-select').exists()).toBe(true)
   })
 })

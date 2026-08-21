@@ -32,10 +32,10 @@ const emit = defineEmits<{
   /** 单元格编辑（boolean/select 可编辑列触发）。 */
   cellChange: [itemId: string, fieldKey: string, value: unknown]
   /**
-   * 单元格点击（含 primary/link 列）：上报「点了哪个 cell」的事实，不表达任何业务意图。
-   * 是否跳转/如何处理由消费方按 role 裁决（见 QueryPageFrame）——组件本身零业务逻辑。
+   * 单元格点击：上报「点了哪个记录的哪个字段」的事实（itemId + fieldKey）。
+   * 组件不表达任何业务意图、不判断列角色；是否跳转/如何处理由业务方按字段 key 裁决。
    */
-  cellClick: [itemId: string, fieldKey: string, role: string]
+  cellClick: [itemId: string, fieldKey: string]
 }>()
 
 /** 渲染分区：分组时取分组桶；平铺时合成单一全量分区。 */
@@ -127,6 +127,11 @@ function fieldOf(key: string): FieldDescriptor | undefined {
   return props.fields.find((f) => f.key === key)
 }
 
+/** 字段单元格交互是否可编辑（FieldDescriptor.editable，缺省可编辑；Page.type 等显式 false 为只读）。 */
+function isFieldEditable(col: TableColumnConfig): boolean {
+  return fieldOf(col.key)?.editable !== false
+}
+
 /** 单元格原始值：优先字段取值器，缺字段时回退读取记录同名属性。 */
 function valueOf(item: T, col: TableColumnConfig): unknown {
   const field = fieldOf(col.key)
@@ -151,9 +156,9 @@ function isDoneRow(item: T): boolean {
 }
 
 function onCellClick(item: T, col: TableColumnConfig) {
-  // 只上报「点了哪个 cell」的事实（itemId + 字段 + 列角色）；可编辑控件（checkbox/select）
-  // 已在控件上 stopPropagation，不会误报。跳转与否由消费方按 role 裁决。
-  emit('cellClick', idOf(item), col.key, col.role ?? '')
+  // 只上报「点了哪个记录的哪个字段」的事实（itemId + fieldKey）；可编辑控件（checkbox/select）
+  // 已在控件上 stopPropagation，不会误报。跳转与否由业务方按字段 key 裁决。
+  emit('cellClick', idOf(item), col.key)
 }
 
 function onBoolChange(item: T, col: TableColumnConfig, e: Event) {
@@ -272,20 +277,23 @@ function groupTotal(key: string): number {
                 :style="{ width: columnWidth(col) }"
                 @click="onCellClick(item, col)"
               >
-                <!-- boolean：可编辑勾选 -->
+                <!-- boolean：可编辑勾选；editable=false 时只读勾选态 -->
                 <template v-if="fieldOf(col.key)?.type === 'boolean'">
                   <input
+                    v-if="isFieldEditable(col)"
                     type="checkbox"
                     class="bool-check"
                     :checked="Boolean(valueOf(item, col))"
                     @click.stop
                     @change="onBoolChange(item, col, $event)"
                   />
+                  <span v-else class="cell-bool-readonly">{{ Boolean(valueOf(item, col)) ? '✓' : '' }}</span>
                 </template>
 
-                <!-- select：带色下拉（可编辑，BasePopover 菜单） -->
+                <!-- select：可编辑时弹下拉（BasePopover 菜单）；editable=false 时只读标签 -->
                 <template v-else-if="fieldOf(col.key)?.type === 'select'">
                   <button
+                    v-if="isFieldEditable(col)"
                     type="button"
                     class="cell-select"
                     :class="{ open: selectMenu?.itemId === idOf(item) && selectMenu?.fieldKey === col.key }"
@@ -299,6 +307,18 @@ function groupTotal(key: string): number {
                     />
                     <span class="cell-select-label">{{ optionLabel(resolveOptions(fieldOf(col.key)), valueOf(item, col)) }}</span>
                   </button>
+                  <span
+                    v-else
+                    class="cell-select-readonly"
+                    :title="optionLabel(resolveOptions(fieldOf(col.key)), valueOf(item, col))"
+                  >
+                    <span
+                      v-if="selectedColor(resolveOptions(fieldOf(col.key)), valueOf(item, col))"
+                      class="color-dot"
+                      :style="{ background: selectedColor(resolveOptions(fieldOf(col.key)), valueOf(item, col)) }"
+                    />
+                    <span class="cell-select-label">{{ optionLabel(resolveOptions(fieldOf(col.key)), valueOf(item, col)) }}</span>
+                  </span>
                 </template>
 
                 <!-- multiSelect：彩色徽章（只读） -->
@@ -535,6 +555,27 @@ function groupTotal(key: string): number {
   &.open {
     border-color: var(--accent);
   }
+}
+
+/* select 只读态（FieldDescriptor.editable=false）：同布局但不带边框/指针 */
+.cell-select-readonly {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 160px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+}
+
+/* boolean 只读态：勾选符号占位 */
+.cell-bool-readonly {
+  display: inline-block;
+  min-width: 14px;
+  font-size: var(--text-xs);
+  color: var(--accent);
+  text-align: center;
 }
 
 .color-dot {

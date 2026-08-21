@@ -91,6 +91,8 @@ export function registerPageBuiltinFields(registry: Registry): void {
     label: '类型',
     type: 'select',
     options: TYPE_OPTIONS,
+    // 页面类型只读：不弹下拉编辑（交互行为可配置，FieldDescriptor.editable）
+    editable: false,
     get: (item) => asPage(item).type,
   })
 
