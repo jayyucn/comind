@@ -1,14 +1,16 @@
 <script setup lang="ts" generic="T">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { CellRegistry } from '../../components/views/types'
 import type { FieldDescriptor, Group, ReferenceableRecord, Registry, SortRule, ViewQuery } from '../../core/query'
 import type { ViewTypeOption } from '../../core/view/management'
-import type { BoardConfig, CalendarConfig, TableConfig } from '../../core/view'
+import type { BoardConfig, CalendarConfig, TableColumnConfig, TableConfig } from '../../core/view'
 import { useChipBarOrchestration } from '../../composables/useChipBarOrchestration'
 import { useScreenViewStore } from '../../stores/screenView'
+import BasePopover from './BasePopover.vue'
 import NamedViewBar from './NamedViewBar.vue'
 import PageTitle from './PageTitle.vue'
 import QueryChipBar from '../query/QueryChipBar.vue'
+import FieldManagerPanel from '../query/FieldManagerPanel.vue'
 import QueryToolbar from '../query/QueryToolbar.vue'
 import BoardView from '../views/BoardView.vue'
 import CalendarView from '../views/CalendarView.vue'
@@ -92,6 +94,43 @@ const searchQuery = computed({
 // chipBarRef 由 composable 内部 useTemplateRef 声明式绑定，模板 ref="chipBarRef" 关联即可。
 const { chipBarVisible, hasFilter, hasSort, hasGroup, openChipMenu } =
   useChipBarOrchestration(viewQuery)
+
+// ── 字段管理面板（ADR-0011） ──
+// 触发入口在 QueryToolbar 最右侧（emit 'fields'）；面板经 BasePopover 渲染，零业务耦合，仅 emit 意图。
+// per-tab 显示/隐藏与排序改当前激活 tab；全局增/删改当前 Screen 下所有 table tab。
+const fieldsPanelOpen = ref(false)
+const fieldsPanelPos = ref<{ x: number; y: number }>({ x: 0, y: 0 })
+
+function openFieldsPanel(e: MouseEvent) {
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  fieldsPanelPos.value = { x: r.right, y: r.bottom + 4 }
+  fieldsPanelOpen.value = true
+}
+
+function onToggleVisibility(key: string, visible: boolean) {
+  store.patchActiveTabConfig((cfg) => ({
+    ...cfg,
+    columns: cfg.columns.map((c) => (c.key === key ? { ...c, visible } : c)),
+  }))
+}
+
+function onReorder(keys: string[]) {
+  store.patchActiveTabConfig((cfg) => {
+    const map = new Map(cfg.columns.map((c) => [c.key, c]))
+    return { ...cfg, columns: keys.map((k) => map.get(k)).filter((c): c is TableColumnConfig => !!c) }
+  })
+}
+
+function onAddGlobal(key: string) {
+  store.patchAllTabConfigs((cfg) => {
+    if (cfg.columns.some((c) => c.key === key)) return cfg
+    return { ...cfg, columns: [...cfg.columns, { key, visible: true }] }
+  })
+}
+
+function onRemoveGlobal(key: string) {
+  store.patchAllTabConfigs((cfg) => ({ ...cfg, columns: cfg.columns.filter((c) => c.key !== key) }))
+}
 </script>
 
 <template>
@@ -114,8 +153,21 @@ const { chipBarVisible, hasFilter, hasSort, hasGroup, openChipMenu } =
         @filter="openChipMenu('filter', $event)"
         @sort="openChipMenu('sort', $event)"
         @group="openChipMenu('group', $event)"
+        @fields="openFieldsPanel"
       />
     </NamedViewBar>
+
+    <!-- 字段管理弹层（ADR-0011）：经 BasePopover 渲染，仅 emit 意图由外壳转 store 持久化 -->
+    <BasePopover :visible="fieldsPanelOpen" :position="fieldsPanelPos" @close="fieldsPanelOpen = false">
+      <FieldManagerPanel
+        :fields="fields"
+        :columns="store.activeTabColumns"
+        @toggle-visibility="onToggleVisibility"
+        @reorder="onReorder"
+        @add-global="onAddGlobal"
+        @remove-global="onRemoveGlobal"
+      />
+    </BasePopover>
 
     <!-- 筛选芯片行（QueryToolbar 三按钮唤起；显隐/菜单策略内聚于 QueryChipBar；绑定 store.workingQuery） -->
     <QueryChipBar

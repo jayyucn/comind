@@ -119,8 +119,9 @@ function onPageSizeChange(size: number) {
  * 不回退到全部注册字段——否则忘记传 config 的通用消费方会渲染一张含内部字段（dateRefKind 等）的不可用例表。
  * TaskHub 永远传 BLOCK_DEFAULT_TABLE_CONFIG，故块实体仍见 7 列（ADR-0007 D8 修复）。
  */
+/** 渲染列：config 优先；过滤 per-tab 隐藏列（visible===false，ADR-0011）。缺省兜底为仅主文本列。 */
 const columns = computed<TableColumnConfig[]>(
-  () => props.config?.columns ?? [{ key: 'content' }],
+  () => (props.config?.columns ?? [{ key: 'content' }]).filter((c) => c.visible !== false),
 )
 
 function idOf(item: T): string {

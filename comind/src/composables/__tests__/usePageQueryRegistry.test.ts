@@ -10,9 +10,14 @@ import {
   registerPageBuiltinFields,
   getPageRegistry,
   PAGE_ENTITY,
+  pageDefaultConfig,
+  PAGE_DEFAULT_TABLE_CONFIG,
+  PAGE_DEFAULT_BOARD_CONFIG,
+  PAGE_DEFAULT_CALENDAR_CONFIG,
 } from '../usePageQueryRegistry'
 import { createQueryEngine } from '../../core/query'
 import type { Page } from '../../types/page'
+import type { TableConfig, CalendarConfig } from '../../core/view'
 
 /** 构造最小 ViewQuery。 */
 const pageEngine = createQueryEngine<Page>(PAGE_ENTITY)
@@ -162,5 +167,36 @@ describe('Page 列表按 ViewQuery 过滤（不改动引擎核心）', () => {
   it('单例 getPageRegistry 已注册内置字段（与 compose 根一致）', () => {
     const registry = getPageRegistry()
     expect(registry.list(PAGE_ENTITY).length).toBe(7)
+  })
+})
+
+/**
+ * pageDefaultConfig(kind) —— f14a4d45 新增的「视图 kind → 实体默认布局」映射。
+ * 视图未携带持久化 config 或解析失败时回退此值（store seed/create 经 options 注入），
+ * 直接决定用户看到的列/落格字段。switch 各分支必须映射到正确的默认配置对象，
+ * 一旦错配（如 table 误用 board 配置）无任何现有测试能发现，故在此集中断言。
+ */
+describe('pageDefaultConfig (视图 kind → 实体默认布局回退, f14a4d45)', () => {
+  it('table → PAGE_DEFAULT_TABLE_CONFIG（6 列，标题为 primary）', () => {
+    const cfg = pageDefaultConfig('table') as TableConfig
+    expect(cfg).toBe(PAGE_DEFAULT_TABLE_CONFIG)
+    expect(cfg.viewKind).toBe('table')
+    expect(cfg.columns.map((c) => c.key)).toEqual([
+      'title', 'type', 'createdAt', 'updatedAt', 'wordCount', 'childrenCount',
+    ])
+    expect(cfg.columns.find((c) => c.key === 'title')?.role).toBe('primary')
+  })
+
+  it('board → PAGE_DEFAULT_BOARD_CONFIG（viewKind 为 board）', () => {
+    const cfg = pageDefaultConfig('board')
+    expect(cfg).toBe(PAGE_DEFAULT_BOARD_CONFIG)
+    expect(cfg.viewKind).toBe('board')
+  })
+
+  it('calendar → PAGE_DEFAULT_CALENDAR_CONFIG（按 updatedAt 落格）', () => {
+    const cfg = pageDefaultConfig('calendar') as CalendarConfig
+    expect(cfg).toBe(PAGE_DEFAULT_CALENDAR_CONFIG)
+    expect(cfg.viewKind).toBe('calendar')
+    expect(cfg.dateRefKind).toBe('updatedAt')
   })
 })

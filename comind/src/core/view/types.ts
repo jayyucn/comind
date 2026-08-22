@@ -20,6 +20,11 @@ export interface TableColumnConfig {
   role?: TableColumnRole
   /** 自定义单元格渲染器 key：命中注入的 cellRegistry 时接管整格渲染；缺省走内置 type/role 链。可持久化（ADR-0010）。 */
   cell?: string
+  /**
+   * per-tab 显示/隐藏标记（ADR-0011）：false = 该字段仍属本表（Group1），但当前 tab 暂时不渲染；
+   * 缺省/true = 显示。列条目始终保留在 TableConfig.columns 中，故隐藏不丢失字段。
+   */
+  visible?: boolean
 }
 
 /** 表格视图布局配置。 */

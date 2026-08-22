@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowUpDown, Layers, ListFilter, Search, X } from 'lucide-vue-next';
+import { ArrowUpDown, Columns3Cog, Layers, ListFilter, Search, X } from 'lucide-vue-next';
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 
 defineOptions({ name: 'QueryToolbar' })
@@ -32,6 +32,8 @@ const emit = defineEmits<{
   sort: [e: MouseEvent]
   /** 点分组按钮，携带原生事件用于锚定菜单。 */
   group: [e: MouseEvent]
+  /** 点字段管理按钮，携带原生事件用于锚定弹层。 */
+  fields: [e: MouseEvent]
 }>()
 
 function onInput(e: Event) {
@@ -132,6 +134,15 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick, true))
         <X :size="14" />
       </button>
     </div>
+
+    <!-- 字段管理：最右侧入口（ADR-0011），emit 由父级经事件回调开弹层 -->
+    <button
+      class="hdr-btn"
+      title="字段管理"
+      @click="emit('fields', $event)"
+    >
+      <Columns3Cog :size="15" />
+    </button>
   </div>
 </template>
 

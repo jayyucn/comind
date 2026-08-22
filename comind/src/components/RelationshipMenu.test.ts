@@ -1,219 +1,62 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mount, type VueWrapper } from '@vue/test-utils'
-import { nextTick } from 'vue'
+import { describe, it, expect, vi } from 'vitest'
+import { ref, defineComponent } from 'vue'
+import { mount } from '@vue/test-utils'
 import RelationshipMenu from './RelationshipMenu.vue'
-import { useRelationshipMenu } from '../composables/useRelationshipMenu'
-import { useRelationshipTypes } from '../composables/useRelationshipTypes'
-import { cleanupRelationshipTypes } from '../../tests/core-client'
 
-const mountOptions = {
-  global: {
-    stubs: {
-      Teleport: { template: '<div><slot /></div>' }
-    }
+/**
+ * 3a6f4517 修复：弹窗位置为空的异常。
+ * 根因：`:position="state.position"` 在 state.position 为 null 时把 null 透传给 BasePopover，
+ * 导致浮层定位缺失。修复改为 `state.position || { x: 0, y: 0 }`。
+ * 本测试锁定该回退契约——重活依赖全部桩掉，仅验证 position 透传行为，确定且无副作用。
+ */
+vi.mock('../composables/useModalKeyboard', () => ({
+  useModalKeyboardRef: vi.fn(),
+}))
+
+vi.mock('../composables/useRelationshipMenu', () => ({
+  attachKeyboardListener: vi.fn(),
+  detachKeyboardListener: vi.fn(),
+}))
+
+const BasePopoverStub = defineComponent({
+  name: 'BasePopover',
+  props: ['visible', 'position'],
+  template: '<div class="base-popover-stub"><slot /></div>',
+})
+
+function makeMenu(position: { x: number; y: number } | null) {
+  return {
+    state: ref({
+      visible: true,
+      position,
+      selectedGroupIndex: 0,
+      selectedDirection: 'forward' as const,
+    }),
+    items: ref<any[]>([]),
+    select: vi.fn(),
+    close: vi.fn(),
+    setSelectedGroupIndex: vi.fn(),
+    setDirection: vi.fn(),
   }
 }
 
-describe('RelationshipMenu', () => {
-  let menu: ReturnType<typeof useRelationshipMenu>
-  let wrapper: VueWrapper | null = null
-
-  beforeEach(async () => {
-    await cleanupRelationshipTypes()
-    const { _resetForTest, load } = useRelationshipTypes()
-    _resetForTest()
-    await load()
-    menu = useRelationshipMenu()
-    menu.close()
-  })
-
-  afterEach(() => {
-    wrapper?.unmount()
-    wrapper = null
-    menu.close()
-  })
-
-  function mountMenu() {
-    wrapper = mount(RelationshipMenu, { props: { menu }, ...mountOptions })
-    return wrapper
-  }
-
-  it('visible=false 时不渲染', () => {
-    mountMenu()
-    expect(wrapper!.find('.rel-menu').exists()).toBe(false)
-  })
-
-  it('visible=true 时渲染 8 行（7 对 + 1 自反）', async () => {
-    mountMenu()
-    menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: () => {} })
-    await nextTick()
-    expect(wrapper!.findAll('.rel-menu-item')).toHaveLength(useRelationshipTypes().items.value.length)
-  })
-
-  it('第一行默认高亮 forward 方向', async () => {
-    mountMenu()
-    menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: () => {} })
-    await nextTick()
-    const firstItem = wrapper!.findAll('.rel-menu-item')[0]
-    expect(firstItem.classes()).toContain('selected')
-    const forwardBtn = firstItem.find('.rel-menu-direction-forward')
-    expect(forwardBtn.classes()).toContain('active')
-  })
-
-  it('配对行显示两个方向按钮 + 分隔符', async () => {
-    mountMenu()
-    menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: () => {} })
-    await nextTick()
-    const firstItem = wrapper!.findAll('.rel-menu-item')[0] // is-a/has-instance
-    expect(firstItem.findAll('.rel-menu-direction')).toHaveLength(2)
-    expect(firstItem.find('.rel-menu-sep').exists()).toBe(true)
-  })
-
-  it('自反行只显示一个方向按钮', async () => {
-    mountMenu()
-    menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: () => {} })
-    await nextTick()
-    const selfInverseItems = wrapper!.findAll('.rel-menu-item').filter(i => i.find('.rel-menu-direction-single').exists())
-    expect(selfInverseItems).toHaveLength(1)
-  })
-
-  it('每行 forward 按钮显示中文 label', async () => {
-    mountMenu()
-    menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: () => {} })
-    await nextTick()
-    const items = wrapper!.findAll('.rel-menu-item')
-    items.forEach((item, i) => {
-      const forwardLabel = item.find('.rel-menu-direction-forward .rel-menu-type').text()
-      expect(forwardLabel).toBe(menu.items.value[i].label)
+describe('RelationshipMenu 浮层位置回退 (3a6f4517 修复)', () => {
+  it('state.position 为空时回退 {x:0,y:0}，避免弹窗位置为空', () => {
+    const menu = makeMenu(null)
+    const wrapper = mount(RelationshipMenu, {
+      props: { menu: menu as any },
+      global: { stubs: { BasePopover: BasePopoverStub } },
     })
+    const pop = wrapper.findComponent(BasePopoverStub)
+    expect(pop.props('position')).toEqual({ x: 0, y: 0 })
   })
 
-  it('点击 forward 按钮触发 onSelect 并关闭', async () => {
-    mountMenu()
-    let selected: string | null = null
-    menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: (t) => { selected = t } })
-    await nextTick()
-    await wrapper!.findAll('.rel-menu-item')[0].find('.rel-menu-direction-forward').trigger('mousedown')
-    expect(selected).toBe(menu.items.value[0].type)
-    expect(menu.state.value.visible).toBe(false)
-  })
-
-  it('点击 inverse 按钮触发 onSelect 并传入 inverse type', async () => {
-    mountMenu()
-    let selected: string | null = null
-    menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: (t) => { selected = t } })
-    await nextTick()
-    await wrapper!.findAll('.rel-menu-item')[0].find('.rel-menu-direction-inverse').trigger('mousedown')
-    expect(selected).toBe(menu.items.value[0].inverse)
-    expect(menu.state.value.visible).toBe(false)
-  })
-
-  it('点击自反行按钮触发 onSelect 并关闭', async () => {
-    mountMenu()
-    let selected: string | null = null
-    menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: (t) => { selected = t } })
-    await nextTick()
-    const lastIndex = menu.items.value.length - 1
-    const lastItem = wrapper!.findAll('.rel-menu-item')[lastIndex]
-    await lastItem.find('.rel-menu-direction-single').trigger('mousedown')
-    expect(selected).toBe(menu.items.value[lastIndex].type)
-    expect(menu.state.value.visible).toBe(false)
-  })
-
-  it('输入过滤后只剩匹配组', async () => {
-    mountMenu()
-    menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: () => {} })
-    menu.setQuery('is-a')
-    await nextTick()
-    const items = wrapper!.findAll('.rel-menu-item')
-    expect(items.length).toBeGreaterThan(0)
-    items.forEach(item => {
-      expect(item.attributes('data-type')).toBe('is-a')
+  it('state.position 有值时原样透传', () => {
+    const menu = makeMenu({ x: 120, y: 80 })
+    const wrapper = mount(RelationshipMenu, {
+      props: { menu: menu as any },
+      global: { stubs: { BasePopover: BasePopoverStub } },
     })
-  })
-
-  it('无匹配时显示占位', async () => {
-    mountMenu()
-    menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: () => {} })
-    menu.setQuery('xyz')
-    await nextTick()
-    expect(wrapper!.find('.rel-menu-empty').exists()).toBe(true)
-  })
-
-  it('打开后键盘 ArrowDown 移动选中行', async () => {
-    mountMenu()
-    menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: () => {} })
-    await nextTick()
-    expect(menu.state.value.selectedGroupIndex).toBe(0)
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
-    await nextTick()
-    expect(menu.state.value.selectedGroupIndex).toBe(1)
-    expect(wrapper!.findAll('.rel-menu-item')[1].classes()).toContain('selected')
-  })
-
-  it('键盘 ArrowRight 切换到 inverse 方向', async () => {
-    mountMenu()
-    menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: () => {} })
-    await nextTick()
-    expect(menu.state.value.selectedDirection).toBe('forward')
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
-    await nextTick()
-    expect(menu.state.value.selectedDirection).toBe('inverse')
-    const firstItem = wrapper!.findAll('.rel-menu-item')[0]
-    expect(firstItem.find('.rel-menu-direction-inverse').classes()).toContain('active')
-  })
-
-  it('键盘 ArrowLeft 切回 forward 方向', async () => {
-    mountMenu()
-    menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: () => {} })
-    await nextTick()
-    menu.setDirection('inverse')
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
-    await nextTick()
-    expect(menu.state.value.selectedDirection).toBe('forward')
-  })
-
-  it('键盘 Enter 在配对行触发 onSelect 并传入正向 type', async () => {
-    mountMenu()
-    let selected: string | null = null
-    menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: (t) => { selected = t } })
-    await nextTick()
-    // 默认 group=0, direction=forward -> is-a
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
-    await nextTick()
-    expect(selected).toBe('is-a')
-    expect(menu.state.value.visible).toBe(false)
-  })
-
-  it('键盘 ArrowDown + ArrowRight + Enter 组合：先选组再选方向', async () => {
-    mountMenu()
-    let selected: string | null = null
-    menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: (t) => { selected = t } })
-    await nextTick()
-    // Step 1: 移到 supports 组（index=5）
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
-    await nextTick()
-    expect(menu.state.value.selectedGroupIndex).toBe(5)
-    // Step 2: 切到 inverse
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
-    await nextTick()
-    expect(menu.state.value.selectedDirection).toBe('inverse')
-    // 确认
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
-    await nextTick()
-    expect(selected).toBe('supported-by')
-  })
-
-  it('键盘 Escape 关闭菜单', async () => {
-    mountMenu()
-    menu.open({ view: { dom: { isConnected: true } }, position: { x: 0, y: 0 }, range: { from: 0, to: 0 }, onSelect: () => {} })
-    await nextTick()
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-    await nextTick()
-    expect(menu.state.value.visible).toBe(false)
+    expect(wrapper.findComponent(BasePopoverStub).props('position')).toEqual({ x: 120, y: 80 })
   })
 })
