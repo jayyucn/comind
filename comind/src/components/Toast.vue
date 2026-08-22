@@ -47,7 +47,7 @@ function dismiss(id: string) {
   position: fixed;
   top: 60px;
   right: 20px;
-  z-index: 2000;
+  z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   gap: 8px;

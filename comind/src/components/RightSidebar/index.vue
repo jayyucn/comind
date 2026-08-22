@@ -106,7 +106,7 @@ function handleResizeStart(e: MouseEvent) {
   width: 4px;
   height: 100%;
   cursor: col-resize;
-  z-index: 10;
+  z-index: var(--z-sticky);
 }
 
 .resize-handle:hover,

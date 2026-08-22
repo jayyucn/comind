@@ -154,6 +154,20 @@
   --color-external: #{$color-external};
   --color-scrollbar: #{$color-stone-400};
   --color-error: #{$color-error};
+
+  // Z-index 层级（对应 primitives 的 $z-*，供组件 scoped 样式使用；禁止组件内硬编码 z-index）
+  --z-base: #{$z-base};
+  --z-sticky: #{$z-sticky};
+  --z-scrollbar: #{$z-scrollbar};
+  --z-sidebar: #{$z-sidebar};
+  --z-dropdown: #{$z-dropdown};
+  --z-drawer: #{$z-drawer};
+  --z-dialog: #{$z-dialog};
+  --z-popover: #{$z-popover};
+  --z-popover-nested: #{$z-popover-nested};
+  --z-popover-deep: #{$z-popover-deep};
+  --z-overlay: #{$z-overlay};
+  --z-toast: #{$z-toast};
 }
 
 [data-theme="dark"] {

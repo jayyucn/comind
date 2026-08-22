@@ -89,7 +89,7 @@ export default {
   border-radius: var(--radius-sm);
   color: var(--text-tertiary);
   transition: background 100ms ease, color 100ms ease, left 200ms ease;
-  z-index: 1000;
+  z-index: var(--z-dropdown);
 }
 
 .sidebar-floating-toggle:hover {
@@ -151,7 +151,7 @@ export default {
 @media (max-width: 900px) {
   .sidebar-wrapper:not(.collapsed) .sidebar {
     position: absolute;
-    z-index: 100;
+    z-index: var(--z-sidebar);
     height: 100%;
     box-shadow: 4px 0 16px rgba(0, 0, 0, 0.08);
   }
