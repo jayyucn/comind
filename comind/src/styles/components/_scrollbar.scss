@@ -8,6 +8,8 @@
 // 适用范围：Chromium 系（WebView2 / Chrome / Edge）。Firefox 经 scrollbar-width:none 优雅降级为「无可见滚动条」。
 // 浮层本体由 src/utils/overlayScrollbar.ts 动态创建并负责定位、显隐与拖拽。
 
+@use '../tokens/primitives' as *;
+
 // —— 1) 全局隐藏原生滚动条（关键：display:none 同时移除其占位，故无布局偏移）——
 * {
   scrollbar-width: none; // Firefox：隐藏原生滚动条（仅降级，无浮层）
@@ -32,7 +34,7 @@
   opacity: 0;
   transition: opacity 0.25s ease;
   pointer-events: none; // 闲置时不可点，避免遮挡内容
-  z-index: 9999;
+  z-index: $z-scrollbar;
 
   &.is-visible {
     opacity: 0.55;

@@ -240,7 +240,7 @@ function clearValue() {
 /* 浮动面板：Teleport 到 body，fixed 定位（避免被 FilterBuilder 面板 overflow 裁切） */
 .dp-root {
   position: fixed;
-  z-index: 1300;
+  z-index: var(--z-popover-deep);
 }
 
 .dp-backdrop {

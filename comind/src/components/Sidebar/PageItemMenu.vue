@@ -145,7 +145,7 @@ onUnmounted(() => {
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
   padding: 4px;
-  z-index: 1000;
+  z-index: var(--z-dropdown);
 }
 
 .menu-item {

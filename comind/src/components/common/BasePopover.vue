@@ -136,12 +136,12 @@ onBeforeUnmount(() => {
 .base-popover-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1100;
+  z-index: var(--z-popover);
 }
 
 .base-popover {
   position: fixed;
-  z-index: 1101;
+  z-index: calc(var(--z-popover) + 1);
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);

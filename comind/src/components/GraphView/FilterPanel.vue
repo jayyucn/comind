@@ -359,7 +359,7 @@ init()
   top: var(--graph-header-height);
   bottom: 0;
   left: 0;
-  z-index: 100;
+  z-index: var(--z-sidebar);
   width: var(--panel-width-md);
   background: var(--bg-sidebar);
   display: flex;
@@ -401,7 +401,7 @@ init()
 .collapse-btn {
   position: absolute;
   top: calc(var(--graph-header-height) + var(--space-3));
-  z-index: 1000;
+  z-index: var(--z-dropdown);
   width: 24px;
   height: 24px;
   border: 1px solid var(--border);

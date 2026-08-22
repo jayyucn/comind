@@ -234,7 +234,7 @@ function getResultTypeLabel(result: SearchResult): string {
   align-items: flex-start;
   justify-content: center;
   padding-top: 120px;
-  z-index: 1000;
+  z-index: var(--z-dialog);
 }
 
 .search-panel {

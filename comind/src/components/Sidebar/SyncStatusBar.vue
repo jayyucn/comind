@@ -148,7 +148,7 @@ onUnmounted(() => document.removeEventListener('click', onDocClick, true))
   border: 1px solid var(--border);
   border-radius: 0  var(--radius-md) var(--radius-md) 0;
   box-shadow: 0 12px 36px var(--shadow);
-  z-index: 9999;
+  z-index: var(--z-dropdown);
 }
 
 .sync-dock-popover-head {

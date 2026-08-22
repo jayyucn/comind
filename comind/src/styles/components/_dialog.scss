@@ -1,10 +1,12 @@
 // 共享弹窗样式
 // 所有弹窗（MergeDialog / ConfirmDialog / RenameDialog）共用
 
+@use '../tokens/primitives' as *;
+
 .dialog-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: $z-dialog;
   display: flex;
   align-items: center;
   justify-content: center;

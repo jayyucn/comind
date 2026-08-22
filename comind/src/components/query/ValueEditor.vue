@@ -481,7 +481,7 @@ function chooseRecordRef(sourceId: string, entityType: string, field: string) {
 
 .qb-popover-root {
   position: fixed;
-  z-index: 1200;
+  z-index: var(--z-popover-nested);
 }
 
 .qb-popover-backdrop {

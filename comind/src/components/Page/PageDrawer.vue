@@ -49,7 +49,7 @@ onMounted(() => {
   position: fixed;
   inset: 0;
   background-color: rgba(0, 0, 0, 0.5);
-  z-index: 1000;
+  z-index: var(--z-drawer);
   display: flex;
   justify-content: flex-end;
 }

@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { Monitor, Moon, Sun } from 'lucide-vue-next'
+import { computed, onUnmounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useFavorites } from '../composables/useFavorites'
-import { usePageStore } from '../stores/pages'
 import { useSettingsModal } from '../composables/useSettingsModal'
 import { useTheme } from '../composables/useTheme'
+import { usePageStore } from '../stores/pages'
 import ConfirmDialog from './ConfirmDialog.vue'
 import { Icon } from './Icons'
-import { Sun, Moon, Monitor } from 'lucide-vue-next'
 
 const router = useRouter()
 const route = useRoute()
@@ -220,7 +220,7 @@ onUnmounted(() => {
   </div>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
 .page-menu-button {
   position: relative;
 }
@@ -254,7 +254,8 @@ onUnmounted(() => {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-modal);
   padding: 4px;
-  z-index: 1001;
+  // 局部语义：菜单困于 .sticky-header(z:10) 堆叠上下文内，此值只在本组件内部竞争，不参与全局量表（见 ADR-0012）
+  z-index: var(--z-dropdown);
 }
 
 .menu-item {

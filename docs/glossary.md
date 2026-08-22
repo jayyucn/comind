@@ -60,3 +60,23 @@
 
 **全局增/删字段 (Global Add/Remove Field)**
 字段管理面板在「编辑开关开」后暴露的能力：「增」=`+`、「删」=🗑，二者均作用于**所有 Tab** 的 `TableConfig.columns`（ADR-0011 的 M1 模型：直接改每个 Tab 的 columns，纯视觉层，不新建自定义属性、不触碰字段底层数据）。删仅把字段移入候选字段池（`+` 可恢复），故不做删除确认。
+
+## Z
+
+**弹层 (Popover)**
+Teleport 到 body 的浮动面板族（`BasePopover`、`ValueEditor` qb-popover、`DatePicker`），区别于下拉菜单：可承载复杂内容、可嵌套（嵌套深度经 `$z-popover-nested / $z-popover-deep` 派生 token 表达）。注意：「弹层」与「浮层」不同——「浮层」已被滚动条系统占用（见上「浮层滚动条」）。见 ADR-0012。
+
+**抽屉 (Drawer)**
+从视口边缘滑入的全高面板（`PageDrawer`），带 backdrop，承载页面级次级内容。层级低于对话框（`$z-drawer: 600 < $z-dialog: 700`），故抽屉内打开的对话框/弹层可浮于其上。见 ADR-0012。
+
+**对话框 (Dialog)**
+模态弹窗（共享 `.dialog-overlay`、`SettingsModal`、`BlockSelector`、`SearchPanel` 等），带遮罩、阻断背景交互。位于 `$z-dialog: 700`，高于抽屉、低于弹层。见 ADR-0012。
+
+**下拉菜单 (Dropdown)**
+小尺寸浮动菜单（SlashCommand、PageItemMenu、通知、lang-menu、SyncStatusBar），锚定于触发元素附近，`$z-dropdown: 300`。侧栏折叠按钮、FilterPanel 折叠按钮等"需浮于侧栏之上"的小型控件也允许落于此层。见 ADR-0012。
+
+**系统装饰层 (System Decoration Layer)**
+非交互的全局装饰（浮层滚动条），`$z-scrollbar: 50`——高于吸附元素、**低于一切浮层表面**，故弹层打开时滚动条被 backdrop 盖住，不再浮现于弹层上方。见 ADR-0012。
+
+**z-index 铁律 (z-index Rules)**
+① 组件内禁止硬编码 z-index，一律用 `var(--z-*)`（scoped 样式）或 `$z-*`（全局 SCSS）；② 浮层必须 Teleport 到 body，否则 z-index 会困于祖先堆叠上下文而失效（已知陷阱：`.block-children` 的 `translateY(0)`）。见 ADR-0012。
