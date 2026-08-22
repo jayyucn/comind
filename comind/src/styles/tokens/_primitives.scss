@@ -133,7 +133,16 @@ $transition-base: 150ms ease;
 $transition-slow: 200ms ease-out;
 $transition-collapse: 300ms cubic-bezier(0.4, 0, 0.2, 1);
 
-// Z-index 层级
-$z-dropdown: 100;
-$z-modal: 200;
-$z-toast: 300;
+// Z-index 层级（自底向上，设计依据见 docs/adr/0012-z-index-layering.md）
+$z-base:       0;                    // 内容层（0-2 微叠层豁免 token 化）
+$z-sticky:     10;                   // 吸附 chrome：导航栏、拖拽柄、代码按钮、表头
+$z-scrollbar:  50;                   // 系统装饰：浮层滚动条（高于 sticky、低于一切浮层表面）
+$z-sidebar:    100;                  // 侧栏浮层：移动端侧栏、FilterPanel、drop-indicator
+$z-dropdown:   300;                  // 下拉菜单：SlashCommand、通知、lang-menu、SyncStatusBar
+$z-drawer:     600;                  // 抽屉：PageDrawer（低于 dialog，供抽屉内弹窗浮上）
+$z-dialog:     700;                  // 对话框：共享弹窗、Settings、Selector、SearchPanel 等
+$z-popover:    900;                  // 弹层：BasePopover（overlay 900 / 面板 901）
+$z-popover-nested: $z-popover + 20;  // 弹层嵌套层：ValueEditor qb-popover
+$z-popover-deep:   $z-popover + 40;  // 弹层深层：DatePicker
+$z-overlay:    1100;                 // 顶级覆盖：QrScanner、扫码层
+$z-toast:      1300;                 // 瞬时提示：Toast、工具提示

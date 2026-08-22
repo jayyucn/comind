@@ -254,7 +254,8 @@ onUnmounted(() => {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-modal);
   padding: 4px;
-  z-index: 1001;
+  // 局部语义：菜单困于 .sticky-header(z:10) 堆叠上下文内，此值只在本组件内部竞争，不参与全局量表（见 ADR-0012）
+  z-index: var(--z-dropdown);
 }
 
 .menu-item {

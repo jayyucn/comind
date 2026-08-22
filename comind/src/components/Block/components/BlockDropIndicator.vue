@@ -7,7 +7,7 @@
  *
  * 数据来源：useBlockDragDrop 的 indicatorStyle / indicatorClass / indicatorVisible。
  * 样式约定：
- * - 基础样式（position:fixed; pointer-events:none; z-index:1000）保持与原
+ * - 基础样式（position:fixed; pointer-events:none; z-index:var(--z-sidebar)）保持与原
  *   getOrCreateIndicator 内联 cssText 一致，确保替换前后视觉等价。
  * - .visible 类控制透明度切换（与原逻辑一致）。
  * - sort / nest / promote 类由 useBlockDragDrop 通过 cssClass prop 透传，
@@ -33,7 +33,7 @@ const props = defineProps<{
 .drop-indicator {
   position: fixed;
   pointer-events: none;
-  z-index: 1000;
+  z-index: var(--z-sidebar);
   opacity: 0;
   transition: opacity 0ms;
 }

@@ -34,7 +34,7 @@
   left: $space-3;
   display: flex;
   gap: $space-1;
-  z-index: 10;
+  z-index: $z-sticky;
   width: fit-content;
 }
 
@@ -109,7 +109,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: $z-modal;
+  z-index: $z-dialog;
 }
 
 .dialog {
@@ -138,59 +138,6 @@
   display: flex;
   gap: var(--space-2);
   justify-content: flex-end;
-}
-
-// 菜单
-.menu {
-  position: fixed;
-  background: var(--bg-base);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-elevation-2);
-  padding: var(--space-1);
-  min-width: 180px;
-  z-index: $z-dropdown;
-}
-
-.menu-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-sm);
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-  cursor: pointer;
-  @include transition-base;
-
-  &:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-  }
-
-  &.active {
-    background: var(--accent-subtle);
-    color: var(--accent);
-  }
-}
-
-.menu-separator {
-  height: 1px;
-  background: var(--border);
-  margin: var(--space-1) 0;
-}
-
-// 工具提示
-.tooltip {
-  position: absolute;
-  background: var(--color-ink);
-  color: white;
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-sm);
-  font-size: var(--text-xs);
-  white-space: nowrap;
-  pointer-events: none;
-  z-index: $z-toast;
 }
 
 // 空状态

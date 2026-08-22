@@ -521,7 +521,7 @@ watch(visible, (isVisible) => {
 <style scoped>
 .slash-command-menu {
   position: fixed;
-  z-index: 1000;
+  z-index: var(--z-dropdown);
   width: var(--panel-width-sm);
   max-height: 640px;
   background: var(--bg-base, #FAFAF8);

@@ -438,7 +438,7 @@ onMounted(() => {
   box-shadow: 0 4px 12px rgba(28, 25, 23, 0.1);
   padding: 4px;
   min-width: 100px;
-  z-index: 1001;
+  z-index: var(--z-dropdown);
   display: none;
 }
 

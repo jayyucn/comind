@@ -452,7 +452,7 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
   position: absolute;
   top: 8px;
   left: 8px;
-  z-index: 10;
+  z-index: var(--z-sticky);
   opacity: 0;
   transition: opacity 0.2s;
 }
@@ -465,7 +465,7 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
   position: absolute;
   top: 8px;
   right: 8px;
-  z-index: 10;
+  z-index: var(--z-sticky);
   opacity: 0;
   transition: opacity 0.2s;
 }
@@ -532,7 +532,7 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
   margin-top: 4px;
   min-width: 140px;
   box-shadow: var(--shadow-elevation-2);
-  z-index: 1000;
+  z-index: var(--z-dropdown);
   overflow: hidden;
 }
 

@@ -579,7 +579,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   background: var(--bg-base);
-  z-index: 10;
+  z-index: var(--z-sticky);
   gap: 8px;
   /* 纯视觉占位：不拦截任何指针事件，加载期间画布区域之外（header 控件 / 侧栏筛选）始终可交互 */
   pointer-events: none;

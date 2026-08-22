@@ -225,7 +225,7 @@ function handleMainClick(e: MouseEvent) {
   align-items: center;
   height: var(--nav-height);
   flex-shrink: 0;
-  z-index: 10;
+  z-index: var(--z-sticky);
   background: transparent; // color-mix(in srgb, var(--bg-base) 50%, transparent);
   // backdrop-filter: blur(12px) saturate(1.2);
   // -webkit-backdrop-filter: blur(12px) saturate(1.2);
