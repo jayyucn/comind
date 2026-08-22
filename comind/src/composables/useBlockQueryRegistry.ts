@@ -10,12 +10,55 @@
  */
 import { computed, watch } from 'vue'
 import { createRegistry, type Registry, type FieldDescriptor, type FieldType, type Option } from '../core/query'
+import type { BoardConfig, CalendarConfig, LayoutConfig, TableConfig, ViewKind } from '../core/view'
 import type { BlockCard } from '../wasm/types'
 import { BUILT_IN_PROPERTIES, type PropertyDefinition, type PropertyType } from '../types/property'
 import { useBlockCardStore } from '../stores/blockCard'
 
 /** 引擎命名空间：所有 Block 字段注册于此。 */
 export const BLOCK_ENTITY = 'block'
+
+/**
+ * Block 实体内建默认表格列（与迁移前硬编码的 7 列一致：check→done、其余同名）。
+ * 视图未携带持久化 config（或解析失败）时回退此值；列 key 对应 registerBlockBuiltinFields 注册的字段。
+ * 由 core/view 上收至此（ADR-0023 上游修复）：默认布局归实体注册点，core/view 只留协议。
+ */
+export const BLOCK_DEFAULT_TABLE_CONFIG: TableConfig = {
+  viewKind: 'table',
+  version: 1,
+  columns: [
+    { key: 'done', role: 'done' },
+    { key: 'content', role: 'primary', cell: 'block-content' },
+    { key: 'status' },
+    { key: 'priority' },
+    { key: 'project' },
+    { key: 'deadline', role: 'overdue-date' },
+    { key: 'page', role: 'link' },
+  ],
+}
+
+/** Block 实体内建默认看板布局：卡片徽章为优先级 + 截止。 */
+export const BLOCK_DEFAULT_BOARD_CONFIG: BoardConfig = {
+  viewKind: 'board',
+  version: 1,
+  cardFields: ['priority', 'deadline'],
+}
+
+/** Block 实体内建默认日历布局：按 deadline 落格（date_refs 的 kind）。 */
+export const BLOCK_DEFAULT_CALENDAR_CONFIG: CalendarConfig = {
+  viewKind: 'calendar',
+  version: 1,
+  dateRefKind: 'deadline',
+}
+
+/** Block 实体默认布局统一入口（store seed/create 经 options 注入）。 */
+export function blockDefaultConfig(kind: ViewKind): LayoutConfig {
+  switch (kind) {
+    case 'table': return BLOCK_DEFAULT_TABLE_CONFIG
+    case 'board': return BLOCK_DEFAULT_BOARD_CONFIG
+    case 'calendar': return BLOCK_DEFAULT_CALENDAR_CONFIG
+  }
+}
 
 /** 内置字段 key 集合，用于区分「内置」与「自定义」字段。 */
 const BUILTIN_KEYS = new Set<string>([

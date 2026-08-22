@@ -18,6 +18,13 @@ export interface TableColumnConfig {
   width?: number
   /** 渲染装饰：primary=主文本(加粗省略号) / link=导航按钮 / overdue-date=过去日期标红 / done=布尔完成列(驱动行置灰)。 */
   role?: TableColumnRole
+  /** 自定义单元格渲染器 key：命中注入的 cellRegistry 时接管整格渲染；缺省走内置 type/role 链。可持久化（ADR-0010）。 */
+  cell?: string
+  /**
+   * per-tab 显示/隐藏标记（ADR-0011）：false = 该字段仍属本表（Group1），但当前 tab 暂时不渲染；
+   * 缺省/true = 显示。列条目始终保留在 TableConfig.columns 中，故隐藏不丢失字段。
+   */
+  visible?: boolean
 }
 
 /** 表格视图布局配置。 */
@@ -41,12 +48,14 @@ export interface BoardConfig {
 
 /**
  * 日历视图布局配置。
- * 按卡片 date_refs 的某一 kind 落格（与卡片数据模型一致），默认 'deadline'。
+ * 按已注册的 date 类型字段 key 落格（CalendarView 动态查找该字段取值入桶）。
+ * Block 内置 'deadline' | 'schedule'（date_refs 的 kind）；Page 等实体可用自己的 date 字段
+ * （如 'updatedAt'），dateRefKind 不再限死字面量（ADR-0023 D6 修订）。
  */
 export interface CalendarConfig {
   viewKind: 'calendar'
   version: 1
-  dateRefKind: 'deadline' | 'schedule'
+  dateRefKind: string
 }
 
 /** 视图布局配置判别联合。 */
@@ -56,43 +65,8 @@ export type LayoutConfig = TableConfig | BoardConfig | CalendarConfig
 export type ConfigOf<K extends ViewKind> = Extract<LayoutConfig, { viewKind: K }>
 
 /**
- * 表格视图的内建默认列配置，与迁移前硬编码的 7 列布局一致（check→done、其余同名）。
- * 视图未携带 config（持久化层尚未写入 config 字段）时，TableView 回退到此默认。
- * 列 key 对应 Block 字段描述符；role 承载渲染装饰（主文本/链接/截止高亮/完成），
- * 保持组件零任务代码（见 ADR-0005/0006/0007）。
- */
-export const DEFAULT_TABLE_CONFIG: TableConfig = {
-  viewKind: 'table',
-  version: 1,
-  columns: [
-    { key: 'done', role: 'done' },
-    { key: 'content', role: 'primary' },
-    { key: 'status' },
-    { key: 'priority' },
-    { key: 'project' },
-    { key: 'deadline', role: 'overdue-date' },
-    { key: 'page', role: 'link' },
-  ],
-}
-
-/**
- * 某 viewKind 的内建默认布局配置。
- * 视图尚未持久化 config（或解析失败回退）时，由 store / 组件取此值。
- */
-export function defaultLayoutConfig(kind: ViewKind): LayoutConfig {
-  switch (kind) {
-    case 'table':
-      return DEFAULT_TABLE_CONFIG
-    case 'board':
-      return { viewKind: 'board', version: 1, cardFields: ['priority', 'deadline'] }
-    case 'calendar':
-      return { viewKind: 'calendar', version: 1, dateRefKind: 'deadline' }
-  }
-}
-
-/**
  * 解析视图存储的 config（JSON LayoutConfig）：
- * - 空 / 损坏 → null（调用方回退 defaultLayoutConfig）；
+ * - 空 / 损坏 → null（调用方回退实体注册点提供的默认布局，如 BLOCK_DEFAULT_* 或 PAGE_DEFAULT_*，见 ADR-0023）；
  * - 解析成功但 viewKind 与期望不符 → null（避免错位渲染）。
  */
 export function parseLayoutConfig(

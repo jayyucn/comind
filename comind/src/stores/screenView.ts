@@ -1,8 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, reactive, ref } from 'vue'
 import type { Condition, ConditionValue, SortRule, ViewQuery } from '../core/query'
-import { defaultLayoutConfig } from '../core/view'
-import type { ViewKind } from '../core/view'
+import { parseLayoutConfig, type LayoutConfig, type TableColumnConfig, type TableConfig, type ViewKind } from '../core/view'
 import { defaultViewNameForEntity } from '../core/view/management'
 import type { CoreClient } from '../wasm/client'
 import { initCoreClient } from '../wasm/client'
@@ -85,6 +84,12 @@ export interface ScreenViewStoreOptions {
   defaultViewName?: string
   /** seed 的默认 Tab/Screen 类型；缺省 'table'。 */
   defaultViewType?: string
+  /**
+   * 该实体各视图类型的内建默认布局（seed/create 时写入 config）。
+   * 由实体注册点提供（如 blockDefaultConfig / pageDefaultConfig）——store 不持有任何实体专属默认；
+   * 缺省时 config 写入空串，渲染层按「无 config → 回退消费方默认」处理（ADR-0023 上游修复）。
+   */
+  defaultConfig?: (kind: ViewKind) => LayoutConfig
 }
 
 /**
@@ -92,7 +97,13 @@ export interface ScreenViewStoreOptions {
  * 返回值推导，避免 Pinia 泛型被 Map 抹除导致 store.screens 等退化为 any（见 ADR-0009）。
  * 同一 entityKey 多次调用返回同一实例；不同实体互不干扰。
  */
-function makeScreenViewStore(id: string, entityKey: string, defaultViewName: string, defaultViewType: string) {
+function makeScreenViewStore(
+  id: string,
+  entityKey: string,
+  defaultViewName: string,
+  defaultViewType: string,
+  defaultConfig?: (kind: ViewKind) => LayoutConfig,
+) {
   return defineStore(id, () => {
       // 扁平存储：Screen（parent_id 空串）+ Tab（parent_id = 所属 Screen 的 id）
       const views = ref<ScreenViewRust[]>([])
@@ -134,6 +145,11 @@ function makeScreenViewStore(id: string, entityKey: string, defaultViewName: str
         return views.value.filter((v) => v.parent_id === screenId).reduce((m, t) => Math.max(m, t.sort_order), -1) + 1
       }
 
+      // 实体默认布局 → config JSON（seed/create 写入）；未注入 defaultConfig 时写空串，渲染层回退消费方默认
+      function configJson(kind: string): string {
+        return defaultConfig ? JSON.stringify(defaultConfig(kind as ViewKind)) : ''
+      }
+
       async function load(): Promise<ScreenViewRust[]> {
         loading.value = true
         try {
@@ -146,7 +162,7 @@ function makeScreenViewStore(id: string, entityKey: string, defaultViewName: str
               defaultViewName,
               defaultViewType,
               0,
-              JSON.stringify(defaultLayoutConfig(defaultViewType as ViewKind)),
+              configJson(defaultViewType),
             )
             const tab = await client.createTab(
               entityKey,
@@ -155,7 +171,7 @@ function makeScreenViewStore(id: string, entityKey: string, defaultViewName: str
               defaultViewType,
               JSON.stringify(EMPTY_VIEW_QUERY),
               1,
-              JSON.stringify(defaultLayoutConfig(defaultViewType as ViewKind)),
+              configJson(defaultViewType),
             )
             views.value = [screen, tab]
           }
@@ -231,6 +247,48 @@ function makeScreenViewStore(id: string, entityKey: string, defaultViewName: str
         delete drafts.value[tab.id]
       }
 
+      /** 解析某 tab 的表格布局配置；空/损坏时回退 seed 默认（与 store 初始化一致），再不行用空列集。 */
+      function resolveTableConfig(tab: ScreenViewRust): TableConfig {
+        const parsed = parseLayoutConfig(tab.config, 'table') as TableConfig | null
+        if (parsed) return parsed
+        if (defaultConfig) return defaultConfig('table') as TableConfig
+        return { viewKind: 'table', version: 1, columns: [] }
+      }
+
+      /**
+       * 仅改当前激活 tab 的 TableConfig（per-tab 显示/隐藏 + 排序，ADR-0011）。
+       * transform 接收当前生效配置，返回新配置；持久化并经 updateTab 回流本地。
+       */
+      async function patchActiveTabConfig(transform: (cfg: TableConfig) => TableConfig) {
+        const tab = currentTab.value
+        if (!tab) return
+        const next = transform(resolveTableConfig(tab))
+        const client = await getClient()
+        const updated = await client.updateTab(tab.id, tab.name, tab.view_type, tab.query_json, JSON.stringify(next))
+        const idx = views.value.findIndex((v) => v.id === tab.id)
+        if (idx !== -1) views.value[idx] = updated
+      }
+
+      /**
+       * 改当前 Screen 下所有 table 类型 tab 的 TableConfig（全局增/删字段，ADR-0011）。
+       * 非 table tab（board/calendar 无 columns）跳过；持久化并回流本地。
+       */
+      async function patchAllTabConfigs(transform: (cfg: TableConfig) => TableConfig) {
+        const client = await getClient()
+        for (const tab of currentTabs.value) {
+          if (tab.view_type !== 'table') continue
+          const next = transform(resolveTableConfig(tab))
+          const updated = await client.updateTab(tab.id, tab.name, tab.view_type, tab.query_json, JSON.stringify(next))
+          const idx = views.value.findIndex((v) => v.id === tab.id)
+          if (idx !== -1) views.value[idx] = updated
+        }
+      }
+
+      /** 当前激活 tab 的表格列配置（经 resolveTableConfig 回退 seed 默认，与 patch 写入一致，ADR-0011）。 */
+      const activeTabColumns = computed<TableColumnConfig[]>(() =>
+        currentTab.value ? resolveTableConfig(currentTab.value).columns : [],
+      )
+
       async function createScreen(name?: string) {
         const client = await getClient()
         const screenName = name?.trim() || '未命名 Screen'
@@ -239,7 +297,7 @@ function makeScreenViewStore(id: string, entityKey: string, defaultViewName: str
           screenName,
           defaultViewType,
           nextScreenSort(),
-          JSON.stringify(defaultLayoutConfig(defaultViewType as ViewKind)),
+          configJson(defaultViewType),
         )
         const tab = await client.createTab(
           entityKey,
@@ -248,7 +306,7 @@ function makeScreenViewStore(id: string, entityKey: string, defaultViewName: str
           defaultViewType,
           JSON.stringify(EMPTY_VIEW_QUERY),
           1,
-          JSON.stringify(defaultLayoutConfig(defaultViewType as ViewKind)),
+          configJson(defaultViewType),
         )
         views.value.push(screen, tab)
         await selectScreen(screen.id)
@@ -265,7 +323,7 @@ function makeScreenViewStore(id: string, entityKey: string, defaultViewName: str
           vt,
           JSON.stringify(workingQuery.value),
           nextTabSort(currentScreenId.value),
-          JSON.stringify(defaultLayoutConfig(vt as ViewKind)),
+          configJson(vt),
         )
         views.value.push(tab)
         await selectTab(tab.id)
@@ -368,6 +426,9 @@ function makeScreenViewStore(id: string, entityKey: string, defaultViewName: str
         deleteScreen,
         deleteTab,
         duplicateTab,
+        patchActiveTabConfig,
+        patchAllTabConfigs,
+        activeTabColumns,
       }
     })
 }
@@ -382,7 +443,7 @@ export function useScreenViewStore(entityKey: string = 'block', options: ScreenV
   if (existing) return existing()
   const defaultViewName = options.defaultViewName ?? defaultViewNameForEntity(entityKey)
   const defaultViewType = options.defaultViewType ?? 'table'
-  const def = makeScreenViewStore(id, entityKey, defaultViewName, defaultViewType)
+  const def = makeScreenViewStore(id, entityKey, defaultViewName, defaultViewType, options.defaultConfig)
   storeRegistry.set(id, def)
   return def()
 }

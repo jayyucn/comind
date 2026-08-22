@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
+import type { LayoutConfig } from '../../core/view'
 import type { ScreenViewRust } from '../../wasm/types'
 
 const {
@@ -134,6 +135,25 @@ describe('screenView store (two-level Screen→Tab)', () => {
       expect(store.currentTabs.length).toBe(1)
       expect(store.currentScreenId).toBe('seed-screen')
       expect(store.currentTabId).toBe('seed-tab')
+    })
+
+    it('注入 defaultConfig 时 seed 写入实体默认布局；未注入时写空串（ADR-0023 上游修复）', async () => {
+      // 注入：seed 的 Screen/Tab config = 实体默认布局 JSON
+      const injected = useScreenViewStore('block', {
+        defaultConfig: (kind) => ({ viewKind: kind, version: 1, columns: [{ key: 'content', role: 'primary' }] }) as LayoutConfig,
+      })
+      await injected.load()
+      expect(mockCreateScreen).toHaveBeenLastCalledWith('block', expect.any(String), 'table', 0, JSON.stringify({ viewKind: 'table', version: 1, columns: [{ key: 'content', role: 'primary' }] }))
+      expect(mockCreateTab).toHaveBeenLastCalledWith('block', 'seed-screen', '', 'table', expect.any(String), 1, JSON.stringify({ viewKind: 'table', version: 1, columns: [{ key: 'content', role: 'primary' }] }))
+
+      // 未注入：config 写空串，渲染层回退消费方默认
+      vi.resetModules()
+      setActivePinia(createPinia())
+      useScreenViewStore = (await import('../screenView')).useScreenViewStore
+      const plain = useScreenViewStore('page')
+      await plain.load()
+      expect(mockCreateScreen).toHaveBeenLastCalledWith('page', expect.any(String), 'table', 0, '')
+      expect(mockCreateTab).toHaveBeenLastCalledWith('page', 'seed-screen', '', 'table', expect.any(String), 1, '')
     })
 
     it('已有视图时不 seed，并选中默认 Screen 的首个 Tab', async () => {

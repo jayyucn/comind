@@ -5,6 +5,10 @@ import './types'
 // （afterEach）干等 ~2.7s 才打开图谱界面。GraphPage 本身体积很小，静态引入对首屏
 // 几乎无影响；真正重的 G6 仍在 GraphPage 内部按需加载（defineAsyncComponent），不进首屏。
 import GraphPage from '../components/GraphView/GraphPage.vue'
+// 页面库页同样静态引入：懒 chunk 在 dev 模式首次导航时会被 dev server 的模块
+// backlog 排队（与 GraphPage 同一根因），实测从点滴首次切到页面库卡 ~2.7s。
+// PagesLibrary 不含重依赖，静态引入对首屏无影响。
+import PagesLibrary from '../components/PagesLibrary/PagesLibrary.vue'
 
 /**
  * 路由配置
@@ -60,7 +64,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/pages',
     name: 'pages-library',
-    component: () => import('../components/PagesLibrary/PagesLibrary.vue'),
+    component: PagesLibrary,
     meta: { fullWidth: true, hideRightSidebarToggle: true},
   },
   {

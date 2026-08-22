@@ -1,9 +1,14 @@
 import { describe, it, expect } from 'vitest'
+import { defineComponent, h, markRaw } from 'vue'
 import { mount } from '@vue/test-utils'
 import TableView from './TableView.vue'
-import { DEFAULT_TABLE_CONFIG, type TableColumnConfig, type TableConfig } from '../../core/view'
+import type { TableColumnConfig, TableConfig } from '../../core/view'
 import type { BlockCard } from '../../wasm/types'
 import type { FieldDescriptor, Group, SortRule } from '../../core/query'
+import { createRegistry } from '../../core/query'
+import { BLOCK_DEFAULT_TABLE_CONFIG } from '../../composables/useBlockQueryRegistry'
+import { PAGE_DEFAULT_TABLE_CONFIG, PAGE_ENTITY, registerPageBuiltinFields } from '../../composables/usePageQueryRegistry'
+import type { Page } from '../../types/page'
 
 function makeCard(overrides: Partial<BlockCard> = {}): BlockCard {
   const base: BlockCard = {
@@ -56,10 +61,10 @@ function makeFields(): FieldDescriptor[] {
 
 const noSort: SortRule[] = []
 const noGroups: Group<BlockCard>[] = []
-const config: TableConfig = DEFAULT_TABLE_CONFIG
+const config: TableConfig = BLOCK_DEFAULT_TABLE_CONFIG
 const fields = makeFields()
 
-function mountTable(props: Record<string, unknown> = {}) {
+function mountTable(props: Record<string, unknown> = {}, attach = false) {
   return mount(TableView, {
     props: {
       items: [makeCard()],
@@ -71,8 +76,14 @@ function mountTable(props: Record<string, unknown> = {}) {
       idKey: 'block_id',
       ...props,
     },
+    attachTo: attach ? document.body : undefined,
   })
 }
+
+// select 菜单 teleport 到 body，测试后清理，避免残留影响其他用例
+afterEach(() => {
+  document.body.querySelectorAll('[data-testid="select-menu"]').forEach((n) => n.remove())
+})
 
 describe('TableView (generic, field-driven)', () => {
   // ── Empty state ──
@@ -117,16 +128,17 @@ describe('TableView (generic, field-driven)', () => {
     expect(wrapper.find('.is-done').exists()).toBe(true)
   })
 
-  // ── Status select (editable, emits cellChange) ──
-  it('renders status select with all options', () => {
-    const wrapper = mountTable({ items: [makeCard({ properties: { status: 'Doing' } })] })
-    const select = wrapper.find('select')
-    expect(select.exists()).toBe(true)
-    const opts = select.findAll('option').map((o) => o.text())
-    expect(opts).toContain('待办')
-    expect(opts).toContain('进行中')
-    expect(opts).toContain('已完成')
-    expect(opts).toContain('已取消')
+  // ── Status select（BasePopover 菜单，点击触发后 teleport 到 body） ──
+  it('opens select menu with all options when triggered', async () => {
+    const wrapper = mountTable({ items: [makeCard({ properties: { status: 'Doing' } })] }, true)
+    await wrapper.find('.cell-select').trigger('click')
+    const menu = document.body.querySelector('[data-testid="select-menu"]')
+    expect(menu).not.toBeNull()
+    const labels = Array.from(menu!.querySelectorAll('.select-option')).map((el) => el.textContent?.trim())
+    expect(labels).toContain('待办')
+    expect(labels).toContain('进行中')
+    expect(labels).toContain('已完成')
+    expect(labels).toContain('已取消')
   })
 
   // ── Priority colored dot (Option.color lifted to metadata) ──
@@ -180,11 +192,28 @@ describe('TableView (generic, field-driven)', () => {
   })
 
   // ── Emits ──
-  it('emits navigate when row clicked', async () => {
+  it('emits cellClick with field key when title cell clicked', async () => {
     const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
-    await wrapper.find('.data-row').trigger('click')
-    expect(wrapper.emitted('navigate')).toBeTruthy()
-    expect(wrapper.emitted('navigate')![0]).toEqual(['b1'])
+    await wrapper.find('tbody .col-content').trigger('click')
+    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'content'])
+  })
+
+  it('emits cellClick with field key for plain cells', async () => {
+    const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
+    await wrapper.find('tbody .col-project').trigger('click')
+    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'project'])
+  })
+
+  it('emits cellClick with field key when link button clicked (bubbles to td)', async () => {
+    const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
+    await wrapper.find('.link-btn').trigger('click')
+    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'page'])
+  })
+
+  it('does not emit cellClick when editable control (checkbox) clicked', async () => {
+    const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
+    await wrapper.find('.bool-check').trigger('click')
+    expect(wrapper.emitted('cellClick')).toBeFalsy()
   })
 
   it('emits cellChange(done) when checkbox toggled', async () => {
@@ -193,11 +222,15 @@ describe('TableView (generic, field-driven)', () => {
     expect(wrapper.emitted('cellChange')![0]).toEqual(['b1', 'done', true])
   })
 
-  it('emits cellChange(status) when select changed', async () => {
-    const wrapper = mountTable({ items: [makeCard({ block_id: 'b3', properties: { status: 'Doing' } })] })
-    const select = wrapper.find('select')
-    ;(select.element as HTMLSelectElement).value = 'Canceled'
-    await select.trigger('change')
+  it('emits cellChange(status) when select option picked', async () => {
+    const wrapper = mountTable({ items: [makeCard({ block_id: 'b3', properties: { status: 'Doing' } })] }, true)
+    await wrapper.find('.cell-select').trigger('click')
+    const menu = document.body.querySelector('[data-testid="select-menu"]') as HTMLElement
+    const option = Array.from(menu.querySelectorAll('.select-option')).find(
+      (el) => el.textContent?.includes('已取消'),
+    ) as HTMLElement
+    option.click()
+    await wrapper.vm.$nextTick()
     expect(wrapper.emitted('cellChange')![0]).toEqual(['b3', 'status', 'Canceled'])
   })
 
@@ -232,5 +265,268 @@ describe('TableView (generic, field-driven)', () => {
     const headers = wrapper.findAll('th').map((th) => th.text().trim())
     expect(headers).toHaveLength(1)
     expect(headers[0]).toContain('内容')
+  })
+
+  // ── ADR-0023 D6 回归：Page 实体用 PAGE_DEFAULT_TABLE_CONFIG 渲染（列 key 全部为已注册字段）。
+  //    曾因 store seed 写入 Block 默认列 config（done/status/deadline…）导致 Page 表格全列空值 ──
+  it('renders Page rows with PAGE_DEFAULT_TABLE_CONFIG columns', () => {
+    const reg = createRegistry()
+    registerPageBuiltinFields(reg)
+    const pageFields = reg.list(PAGE_ENTITY)
+    const page: Page = {
+      id: 'p1', blockId: null, title: '测试页面', type: 'normal', icon: null, cover: null,
+      aliases: [], filePath: null, childrenCount: 2, wordCount: 123,
+      createdAt: 1723000000000, updatedAt: 1723200000000, deleted: false, deletedAt: null,
+    }
+    const wrapper = mount(TableView, {
+      props: {
+        items: [page],
+        fields: pageFields,
+        groups: [],
+        grouped: false,
+        sort: [],
+        config: PAGE_DEFAULT_TABLE_CONFIG,
+        idKey: 'id',
+      },
+    })
+    const headers = wrapper.findAll('th').map((th) => th.text().trim())
+    expect(headers[0]).toContain('标题')
+    expect(wrapper.text()).toContain('测试页面')
+    expect(wrapper.text()).toContain('123') // wordCount
+    expect(wrapper.text()).toContain('2') // childrenCount
+  })
+
+  // ── 渲染层分页（ADR-0024） ──
+
+  // 造 N 条卡片（内容唯一便于断言当前页切片）
+  function makeMany(n: number): BlockCard[] {
+    return Array.from({ length: n }, (_, i) => makeCard({ block_id: `block-${i}`, content_preview: `Task ${i}` }))
+  }
+
+  it('slices large list to first page by default page size (50)', () => {
+    const wrapper = mountTable({ items: makeMany(160) })
+    expect(wrapper.findAll('.data-row')).toHaveLength(50)
+    expect(wrapper.text()).toContain('Task 0')
+    expect(wrapper.text()).not.toContain('Task 50')
+    expect(wrapper.text()).toContain('共 160 条')
+    expect(wrapper.text()).toContain('第 1/4 页')
+  })
+
+  it('does not show pagination bar when under page size', () => {
+    const wrapper = mountTable({ items: makeMany(20) })
+    expect(wrapper.find('[data-testid="pagination-bar"]').exists()).toBe(false)
+  })
+
+  it('renders full list when pagination disabled (pageSize <= 0)', () => {
+    const wrapper = mountTable({ items: makeMany(120), pageSize: 0 })
+    expect(wrapper.findAll('.data-row')).toHaveLength(120)
+    expect(wrapper.find('[data-testid="pagination-bar"]').exists()).toBe(false)
+  })
+
+  it('navigates pages with prev/next and clamps at bounds', async () => {
+    const wrapper = mountTable({ items: makeMany(120) })
+    const next = wrapper.find('[data-testid="page-next"]')
+    const prev = wrapper.find('[data-testid="page-prev"]')
+    expect(prev.attributes('disabled')).toBeDefined()
+
+    await next.trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('第 2/3 页')
+    expect(wrapper.text()).toContain('Task 50')
+    expect(wrapper.text()).not.toContain('Task 0')
+
+    // 翻到末页后 next 禁用
+    await next.trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('第 3/3 页')
+    expect(next.attributes('disabled')).toBeDefined()
+
+    // prev 回到第 2 页
+    await prev.trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('第 2/3 页')
+  })
+
+  it('respects custom pageSize prop', () => {
+    const wrapper = mountTable({ items: makeMany(100), pageSize: 20 })
+    expect(wrapper.findAll('.data-row')).toHaveLength(20)
+    expect(wrapper.text()).toContain('第 1/5 页')
+  })
+
+  it('changes page size via dropdown and clamps current page', async () => {
+    const wrapper = mountTable({ items: makeMany(100) }) // 默认 50 → 2 页
+    await wrapper.find('[data-testid="page-next"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('第 2/2 页')
+    // 切到 100 条/页 → 单页，clamp 回第 1 页
+    await wrapper.find('[data-testid="page-size-select"]').setValue('100')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('第 1/1 页')
+    expect(wrapper.findAll('.data-row')).toHaveLength(100)
+  })
+
+  it('resets to first page when sort changes', async () => {
+    const wrapper = mountTable({ items: makeMany(120) })
+    await wrapper.find('[data-testid="page-next"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('第 2/3 页')
+    await wrapper.setProps({ sort: [{ field: 'priority', dir: 'desc' }] })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('第 1/3 页')
+  })
+
+  it('resets to first page when items shrink (query change, ADR-0024 D3)', async () => {
+    const wrapper = mountTable({ items: makeMany(120) }) // 3 页
+    await wrapper.find('[data-testid="page-next"]').trigger('click')
+    await wrapper.find('[data-testid="page-next"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('第 3/3 页')
+    // 筛选/搜索导致结果集缩小（items 长度变化）→ 回第 1 页
+    await wrapper.setProps({ items: makeMany(60) })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('第 1/2 页')
+    expect(wrapper.text()).toContain('Task 0')
+  })
+
+  it('paginates across groups by flat record sequence (ADR-0024 D2)', () => {
+    // 两组：A 组 30 条 + B 组 30 条，pageSize 20 → 第 2 页跨组
+    const groupA: Group<BlockCard> = { key: 'A', label: 'A 组', items: makeMany(30).map((c) => ({ ...c, block_id: `a-${c.block_id}` })) }
+    const groupB: Group<BlockCard> = { key: 'B', label: 'B 组', items: makeMany(30).map((c) => ({ ...c, block_id: `b-${c.block_id}` })) }
+    const wrapper = mount(TableView, {
+      props: {
+        items: makeMany(60),
+        fields,
+        groups: [groupA, groupB],
+        grouped: true,
+        sort: noSort,
+        config,
+        idKey: 'block_id',
+        pageSize: 20,
+      },
+    })
+    // 第 1 页：A 组前 20 条（组头显示全量 30）
+    expect(wrapper.findAll('.data-row')).toHaveLength(20)
+    expect(wrapper.text()).toContain('A 组')
+    expect(wrapper.text()).not.toContain('B 组')
+    // 翻到第 2 页：A 组余 10 条 + B 组前 10 条（跨组连续）
+    const next = wrapper.find('[data-testid="page-next"]')
+    return next.trigger('click').then(() => {
+      expect(wrapper.text()).toContain('A 组')
+      expect(wrapper.text()).toContain('B 组')
+      expect(wrapper.findAll('.data-row')).toHaveLength(20)
+      expect(wrapper.text()).toContain('共 60 条')
+    })
+  })
+
+  // ── Field interaction configurability (FieldDescriptor.editable) ──
+  it('renders select as read-only label when editable=false and does not open menu', async () => {
+    const readonlyFields: FieldDescriptor[] = [
+      ...fields,
+      {
+        key: 'stage', label: '阶段', type: 'select',
+        options: [{ id: 'A', label: 'A阶段' }, { id: 'B', label: 'B阶段' }],
+        editable: false,
+        get: () => 'A',
+      },
+    ]
+    const cfg: TableConfig = { viewKind: 'table', version: 1, columns: [...config.columns, { key: 'stage' }] }
+    const wrapper = mountTable({ fields: readonlyFields, config: cfg, items: [makeCard({ block_id: 'b1' })] })
+    // 限定在 stage 列：只读标签而非可编辑按钮（status 列仍是可编辑按钮，不影响本断言）
+    const stageTd = wrapper.find('tbody .col-stage')
+    expect(stageTd.find('.cell-select').exists()).toBe(false)
+    expect(stageTd.find('.cell-select-readonly').exists()).toBe(true)
+    expect(stageTd.text()).toContain('A阶段')
+    // 点击只读标签不弹下拉菜单
+    await stageTd.find('.cell-select-readonly').trigger('click')
+    expect(document.body.querySelector('[data-testid="select-menu"]')).toBeFalsy()
+  })
+
+  it('renders boolean as read-only check when editable=false', () => {
+    const readonlyFields: FieldDescriptor[] = [
+      ...fields,
+      { key: 'flag', label: '标记', type: 'boolean', editable: false, get: () => true },
+    ]
+    const cfg: TableConfig = { viewKind: 'table', version: 1, columns: [...config.columns, { key: 'flag' }] }
+    const wrapper = mountTable({ fields: readonlyFields, config: cfg, items: [makeCard({ block_id: 'b1' })] })
+    const flagTd = wrapper.find('tbody .col-flag')
+    expect(flagTd.find('.bool-check').exists()).toBe(false)
+    expect(flagTd.find('.cell-bool-readonly').text()).toContain('✓')
+  })
+
+  it('keeps select editable by default (editable undefined)', () => {
+    // 现有 status/priority 字段未声明 editable → 仍渲染可编辑下拉按钮（向后兼容）
+    const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
+    expect(wrapper.find('tbody .cell-select').exists()).toBe(true)
+  })
+})
+
+describe('TableView custom cell (ADR-0010)', () => {
+  // 桩组件：渲染 value + data-testid，纯展示
+  const StubCell = markRaw(defineComponent({
+    props: ['item', 'value', 'field', 'col', 'editable'],
+    setup(props) {
+      return () => h('span', { 'data-testid': 'custom-cell' }, String(props.value))
+    },
+  }))
+  // 桩组件：内部按钮 emit change('X')
+  const StubCellEmit = markRaw(defineComponent({
+    props: ['item', 'value', 'field', 'col', 'editable'],
+    emits: ['change'],
+    setup(_, { emit }) {
+      return () => h('button', { 'data-testid': 'custom-emit', onClick: () => emit('change', 'X') }, 'emit')
+    },
+  }))
+  // 桩组件：内部按钮 @click.stop 阻止冒泡（不 emit change）
+  const StubCellStop = markRaw(defineComponent({
+    props: ['item', 'value', 'field', 'col', 'editable'],
+    setup() {
+      return () => h('button', { 'data-testid': 'custom-stop', onClick: (e: Event) => e.stopPropagation() }, 'stop')
+    },
+  }))
+
+  it('renders registered custom cell when column has cell key', () => {
+    const wrapper = mountTable({
+      items: [makeCard({ block_id: 'b1', content_preview: 'Custom!' })],
+      cellRegistry: { 'block-content': StubCell },
+    })
+    expect(wrapper.find('[data-testid="custom-cell"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="custom-cell"]').text()).toBe('Custom!')
+  })
+
+  it('forwards custom cell change to cellChange with id/key/value', async () => {
+    const wrapper = mountTable({
+      items: [makeCard({ block_id: 'b1' })],
+      cellRegistry: { 'block-content': StubCellEmit },
+    })
+    await wrapper.find('[data-testid="custom-emit"]').trigger('click')
+    expect(wrapper.emitted('cellChange')![0]).toEqual(['b1', 'content', 'X'])
+  })
+
+  it('falls back to default rendering when cell key not in registry', () => {
+    const wrapper = mountTable({
+      items: [makeCard({ block_id: 'b1', content_preview: 'Fallback' })],
+      cellRegistry: {},
+    })
+    expect(wrapper.find('[data-testid="custom-cell"]').exists()).toBe(false)
+    expect(wrapper.find('tbody .col-content .cell-primary').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Fallback')
+  })
+
+  it('does not emit cellClick when internal interactive element stops propagation', async () => {
+    const wrapper = mountTable({
+      items: [makeCard({ block_id: 'b1' })],
+      cellRegistry: { 'block-content': StubCellStop },
+    })
+    await wrapper.find('[data-testid="custom-stop"]').trigger('click')
+    expect(wrapper.emitted('cellClick')).toBeFalsy()
+  })
+
+  it('emits cellClick when clicking custom cell surface (outside stopped element)', async () => {
+    const wrapper = mountTable({
+      items: [makeCard({ block_id: 'b1' })],
+      cellRegistry: { 'block-content': StubCell },
+    })
+    await wrapper.find('tbody .col-content').trigger('click')
+    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'content'])
   })
 })
