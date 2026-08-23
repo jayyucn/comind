@@ -15,6 +15,7 @@ import { syntaxHighlighting, HighlightStyle } from '@codemirror/language'
 import { tags } from '@lezer/highlight'
 import { oneDark, oneDarkHighlightStyle } from '@codemirror/theme-one-dark'
 import { useTheme } from '../../../../composables/useTheme'
+import BasePopover from '../../../common/BasePopover.vue'
 
 const props = withDefaults(defineProps<{
   blockId: string
@@ -43,7 +44,7 @@ const editorRef = ref<HTMLDivElement | null>(null)
 const view = shallowRef<EditorView | null>(null)
 const langButtonRef = ref<HTMLButtonElement | null>(null)
 const showLangMenu = ref(false)
-const menuPosition = ref({ top: 0, left: 0 })
+const menuPosition = ref({ x: 0, y: 0 })
 const currentLang = ref(props.language || 'plain')
 const showCopied = ref(false)
 const { resolvedTheme } = useTheme()
@@ -327,8 +328,8 @@ function updateMenuPosition() {
   if (langButtonRef.value) {
     const rect = langButtonRef.value.getBoundingClientRect()
     menuPosition.value = {
-      top: rect.bottom + window.scrollY,
-      left: rect.left + window.scrollX
+      x: rect.left,
+      y: rect.bottom + 4,
     }
   }
 }
@@ -400,25 +401,22 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
         {{ currentLangLabel }}
         <span class="dropdown-arrow">▾</span>
       </button>
-      <Teleport to="body">
-        <Transition name="fade">
+      <BasePopover
+        :visible="showLangMenu"
+        :position="menuPosition"
+        @close="showLangMenu = false"
+      >
+        <div class="lang-menu">
           <div
-            v-if="showLangMenu"
-            class="lang-menu"
-            :style="{ top: menuPosition.top + 'px', left: menuPosition.left + 'px' }"
-            @click.stop
+            v-for="lang in languages"
+            :key="lang.id"
+            :class="['lang-item', { active: lang.id === currentLang }]"
+            @click="selectLanguage(lang.id)"
           >
-            <div
-              v-for="lang in languages"
-              :key="lang.id"
-              :class="['lang-item', { active: lang.id === currentLang }]"
-              @click="selectLanguage(lang.id)"
-            >
-              {{ lang.label }}
-            </div>
+            {{ lang.label }}
           </div>
-        </Transition>
-      </Teleport>
+        </div>
+      </BasePopover>
     </div>
     <div class="code-copy-button-container">
       <button
@@ -525,14 +523,7 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
 }
 
 .lang-menu {
-  position: fixed;
-  background: var(--bg-base);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  margin-top: 4px;
   min-width: 140px;
-  box-shadow: var(--shadow-elevation-2);
-  z-index: var(--z-dropdown);
   overflow: hidden;
 }
 
@@ -554,15 +545,5 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
   color: var(--accent);
   border-left: 2px solid var(--accent);
   padding-left: 10px;
-}
-
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.15s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
 }
 </style>
