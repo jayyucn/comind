@@ -102,4 +102,23 @@ describe('FieldManagerPanel', () => {
     // title 拖到 status 之前：emit 新顺序 [status, title, createdAt]
     expect(w.emitted('reorder')?.[0]).toEqual([['status', 'title', 'createdAt']])
   })
+
+  it('候选组无剩余字段时显示「无候选字段」空态', async () => {
+    // 所有字段均已作为列 → 候选组为空，应渲染空态文案
+    const allCols = FIELDS.map((f) => ({ key: f.key }))
+    const w = mountPanel({ columns: allCols })
+    await w.find('[data-testid="fm-edit"]').setValue(true)
+    expect(w.findAll('[data-testid="fm-candidate-row"]')).toHaveLength(0)
+    expect(w.text()).toContain('无候选字段')
+  })
+
+  it('搜索按列 key 回退匹配（无对应字段描述符的自定义属性）', async () => {
+    // 列 key 在 props.fields 中无对应描述符 → matchesSearch 回退到 column.key（此前未覆盖分支）
+    const w = mountPanel({ columns: [{ key: 'customProp' }] })
+    await w.find('[data-testid="fm-search"]').setValue('custom')
+    const active = w.findAll('[data-testid="fm-active-row"]')
+    expect(active).toHaveLength(1)
+    expect(active[0].isVisible()).toBe(true)
+    expect(active[0].text()).toContain('customProp')
+  })
 })

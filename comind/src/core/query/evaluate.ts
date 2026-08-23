@@ -7,6 +7,8 @@
  * - 比较类操作符遇空一律返回 false
  * - 只有 isEmpty / isNotEmpty 关心空值
  * - select 引用已删除选项 id 时，条件降级为非匹配
+ * - 未配置完整的条件（字段未选 field=''，或需要值但 value 未填）不参与过滤，视为通过
+ *   （UI 添加条件但未配完的占位态；语义同「空组 = 无筛选」）
  *
  * 本文件覆盖：单/嵌套条件组递归求值（#17 单组 + #18 嵌套/negate）、六种内置类型全部操作符
  * （#17 text/select + #19 number/date/multiSelect/boolean）、空值语义（#17）、多键排序与单字段分组
@@ -74,6 +76,9 @@ export function matchCondition(
   entityType: string,
   context?: QueryContext,
 ): boolean {
+  // 未配置的占位条件（UI 添加条件但未选字段，field 为空字符串）：不参与过滤，视为通过。
+  // 与 evalGroup「空 children 组 = 无筛选」语义一致；已指定字段但注册表缺失仍降级为非匹配。
+  if (!cond.field) return true
   const descriptor = registry.get(entityType, cond.field) as FieldDescriptor<unknown> | undefined
   if (!descriptor) return false
 
@@ -88,7 +93,8 @@ export function matchCondition(
   if (value === undefined) return false
 
   const cv = cond.value
-  if (!cv) return false
+  // 需要值但未填值（UI 选了字段后未输入值）：条件未配置完整，不参与过滤，视为通过。
+  if (!cv) return true
 
   // 解析比较目标值（字面量 / 同记录字段 / 跨记录引用字段）
   const targetRaw = resolveTarget(cv, item, registry, entityType, context)
@@ -176,9 +182,17 @@ export function matchCondition(
   }
 }
 
+/** 条件是否已配置完整：字段已选，且（空值操作符无需值 / 值已填）。未配完的占位条件不参与过滤。 */
+function isConfigured(cond: Condition): boolean {
+  if (!cond.field) return false
+  return cond.op === 'isEmpty' || cond.op === 'isNotEmpty' || cond.value != null
+}
+
 /**
  * 条件组求值：递归支持任意嵌套的 AND/OR 组合树。
  * - 空 children 的组 = 无筛选（全部通过），与 ViewQuery.filter 空组语义一致。
+ * - 未配置完整的占位条件（字段未选 / 需要值但值未填）在求值前被过滤：
+ *   「不参与」而非「匹配失败」——AND 组不会被拖成全 false，OR 组也不会被拖成全 true。
  * - children 中的 Condition 走 matchCondition；ConditionGroup 递归本函数。
  * - 组级 negate 对整个子结果取反（默认 false）。
  */
@@ -190,7 +204,9 @@ export function evalGroup(
   context?: QueryContext,
 ): boolean {
   if (group.children.length === 0) return true
-  const results = group.children.map((child) =>
+  const effective = group.children.filter((child) => ('children' in child ? true : isConfigured(child)))
+  if (effective.length === 0) return true
+  const results = effective.map((child) =>
     'children' in child
       ? evalGroup(child, item, registry, entityType, context)
       : matchCondition(child, item, registry, entityType, context),

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import type { LayoutConfig } from '../../core/view'
+import type { LayoutConfig, ViewKind } from '../../core/view'
 import type { ScreenViewRust } from '../../wasm/types'
 
 const {
@@ -449,6 +449,106 @@ describe('screenView store (two-level Screen→Tab)', () => {
 
       expect(mockCreateTab).toHaveBeenCalledWith('block', 's1', 't1 副本', 'board', JSON.stringify(DIRTY_QUERY), expect.any(Number), 'cfg')
       expect(store.currentTabId).toBe('seed-tab')
+    })
+  })
+
+  // ── 字段管理 (ADR-0011) ──
+
+  describe('field management (ADR-0011 patch methods)', () => {
+    /** 当前 tab 的表格布局：title / status(隐藏) / createdAt。 */
+    const TABLE_CFG = {
+      viewKind: 'table' as const,
+      version: 1 as const,
+      columns: [
+        { key: 'title' },
+        { key: 'status', visible: false },
+        { key: 'createdAt' },
+      ],
+    }
+
+    /**
+     * 不调用 load：直接注入扁平 views 并选中 currentScreen/currentTab，专测 patch 逻辑。
+     * s1 下挂 t1/t2(table) 与 t3(board)/t4(calendar)，用于验证「全局增删仅作用于 table tab」。
+     */
+    function setupStore() {
+      const store = useScreenViewStore()
+      store.views = [
+        makeScreen({ id: 's1' }),
+        makeTab({ id: 't1', parent_id: 's1', view_type: 'table', config: JSON.stringify(TABLE_CFG) }),
+        makeTab({ id: 't2', parent_id: 's1', view_type: 'table', config: JSON.stringify(TABLE_CFG) }),
+        makeTab({ id: 't3', parent_id: 's1', view_type: 'board', config: '{}' }),
+        makeTab({ id: 't4', parent_id: 's1', view_type: 'calendar', config: '{}' }),
+      ]
+      store.currentScreenId = 's1'
+      store.currentTabId = 't1'
+      return store
+    }
+
+    it('patchActiveTabConfig 仅持久化当前激活 tab 的 transform 结果', async () => {
+      const store = setupStore()
+      await store.patchActiveTabConfig((cfg) => ({
+        ...cfg,
+        columns: cfg.columns.map((c) => (c.key === 'status' ? { ...c, visible: true } : c)),
+      }))
+
+      // 仅当前 tab（t1）被写入
+      expect(mockUpdateTab).toHaveBeenCalledTimes(1)
+      const [id, , , , cfgJson] = mockUpdateTab.mock.calls[0]
+      expect(id).toBe('t1')
+      const written = JSON.parse(cfgJson)
+      expect(written.viewKind).toBe('table')
+      expect(written.columns.find((c: { key: string }) => c.key === 'status').visible).toBe(true)
+      // 回流后 activeTabColumns 反映变更：status 现为可见
+      expect(store.activeTabColumns.find((c) => c.key === 'status')?.visible).toBe(true)
+    })
+
+    it('patchActiveTabConfig 无当前 tab 时为安全 no-op（不写库）', async () => {
+      const store = setupStore()
+      store.currentTabId = null
+      await store.patchActiveTabConfig((cfg) => cfg)
+      expect(mockUpdateTab).not.toHaveBeenCalled()
+    })
+
+    it('patchAllTabConfigs 改所有 table tab，跳过 board/calendar（其无 columns，避免崩溃）', async () => {
+      const store = setupStore()
+      await store.patchAllTabConfigs((cfg) => ({
+        ...cfg,
+        columns: [...cfg.columns, { key: 'newField', visible: true }],
+      }))
+
+      const patched = mockUpdateTab.mock.calls.map((c) => c[0])
+      // t3(board)/t4(calendar) 被跳过；仅 t1/t2(table) 被写入——这是防崩溃的关键边界
+      expect(patched).toEqual(['t1', 't2'])
+      for (const call of mockUpdateTab.mock.calls) {
+        const cols = JSON.parse(call[4]).columns as { key: string }[]
+        expect(cols.some((c) => c.key === 'newField')).toBe(true)
+      }
+    })
+
+    it('resolveTableConfig 回退链：破损 config → 注入的 defaultConfig', () => {
+      const store = useScreenViewStore('block', {
+        defaultConfig: (kind: ViewKind) =>
+          ({ viewKind: kind, version: 1, columns: [{ key: 'content', role: 'primary' }] }) as LayoutConfig,
+      })
+      store.views = [
+        makeScreen({ id: 's1' }),
+        makeTab({ id: 't1', parent_id: 's1', view_type: 'table', config: '{}' }),
+      ]
+      store.currentScreenId = 's1'
+      store.currentTabId = 't1'
+      // config '{}' 解析失败（viewKind 不符）→ 回退 defaultConfig('table')
+      expect(store.activeTabColumns.map((c) => c.key)).toEqual(['content'])
+    })
+
+    it('resolveTableConfig 回退链：无 defaultConfig 且破损 config → 空列集', () => {
+      const store = useScreenViewStore()
+      store.views = [
+        makeScreen({ id: 's1' }),
+        makeTab({ id: 't1', parent_id: 's1', view_type: 'table', config: '{}' }),
+      ]
+      store.currentScreenId = 's1'
+      store.currentTabId = 't1'
+      expect(store.activeTabColumns).toEqual([])
     })
   })
 })

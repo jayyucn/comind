@@ -27,6 +27,8 @@ export interface Command {
   immediate?: boolean
   openEditor?: boolean
   acceptArgument?: boolean
+  /** 清除 propertyKey 对应的属性（如 /clear-priority 删除 priority） */
+  clearProperty?: boolean
   convertBlockType?: Block['type']
 }
 

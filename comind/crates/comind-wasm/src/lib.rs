@@ -196,7 +196,9 @@ mod wasm_impl {
                                 Some(&update.aliases),
                                 update.file_path.as_deref(),
                                 update.children_count.or(Some(0)),
-                                update.word_count.or(Some(0)),
+                                // word_count 由 block 保存路径（save_blocks 重算）维护，
+                                // 页元数据更新不得清零——传 None 保持原值
+                                None,
                             )?;
                             serde_json::to_string(&updated).unwrap_or_else(|_| "{}".to_string())
                         }

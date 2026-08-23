@@ -31,7 +31,8 @@ impl BlockWriteService {
     /// Behavior preserved from the previous IPC-layer orchestration:
     /// - upsert by existence check (existing → update, missing → create);
     /// - snapshot and render segments are best-effort (`unwrap_or_default`);
-    /// - page touch (`PageService::update`) is best-effort and in-transaction;
+    /// - page touch + word_count recount (`PageService::recount_word_count`) is
+    ///   best-effort and in-transaction;
     /// - per-block id is reported under `SyncTable::Block`.
     pub fn save_blocks<S: TransactionalStorageAdapter>(
         adapter: &mut S,
@@ -111,9 +112,8 @@ impl BlockWriteService {
             }
 
             for page_id in page_ids {
-                let _ = PageService::update(
-                    storage, &page_id, None, None, None, None, None, None, None, None,
-                );
+                // Page touch + word_count 重算（该页所有 block 内容字数之和，best-effort）
+                let _ = PageService::recount_word_count(storage, &page_id);
             }
 
             Ok(SaveOutcome {
@@ -132,18 +132,8 @@ impl BlockWriteService {
         adapter.transaction(|storage| {
             let mut sync_changes: HashMap<SyncTable, Vec<String>> = HashMap::new();
             let page_id = Self::delete_block_cascade_inner(storage, block_id, &mut sync_changes)?;
-            let _ = PageService::update(
-                storage,
-                &page_id,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            );
+            // Page touch + word_count 重算（block 删除后字数减少，best-effort）
+            let _ = PageService::recount_word_count(storage, &page_id);
             Ok(sync_changes)
         })
     }
@@ -240,6 +230,18 @@ mod tests {
             version: 0,
             deleted_at: None,
         }
+    }
+
+    fn block_with_content(
+        id: &str,
+        page_id: &str,
+        parent_id: Option<&str>,
+        pos: i64,
+        content: &str,
+    ) -> Block {
+        let mut b = block(id, page_id, parent_id, pos);
+        b.content = content.to_string();
+        b
     }
 
     /// Create a page by title and return its real (generated) id — blocks must
@@ -367,5 +369,43 @@ mod tests {
         assert_eq!(blocks_sync.len(), 2);
         assert!(blocks_sync.contains(&"b1".to_string()));
         assert!(blocks_sync.contains(&"b2".to_string()));
+    }
+
+    #[test]
+    fn save_blocks_recounts_page_word_count() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let p1 = seed_page(&mut adapter, "p1");
+
+        BlockWriteService::save_blocks(
+            &mut adapter,
+            vec![
+                block_with_content("b1", &p1, None, 1000, "你好 hello"),
+                block_with_content("b2", &p1, Some("b1"), 1000, "世界"),
+            ],
+        )
+        .unwrap();
+
+        // 你好(2) + hello(1) + 世界(2) = 5
+        let page = PageService::get_by_id(&mut adapter, &p1).unwrap();
+        assert_eq!(page.word_count, 5);
+    }
+
+    #[test]
+    fn delete_block_cascade_recounts_page_word_count() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let p1 = seed_page(&mut adapter, "p1");
+        BlockWriteService::save_blocks(
+            &mut adapter,
+            vec![
+                block_with_content("b1", &p1, None, 1000, "你好 hello"),
+                block_with_content("b2", &p1, Some("b1"), 1000, "世界"),
+            ],
+        )
+        .unwrap();
+
+        BlockWriteService::delete_block_cascade(&mut adapter, "b2").unwrap();
+        // 只剩 b1：你好(2) + hello(1) = 3
+        let page = PageService::get_by_id(&mut adapter, &p1).unwrap();
+        assert_eq!(page.word_count, 3);
     }
 }

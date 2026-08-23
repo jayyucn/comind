@@ -18,6 +18,8 @@ const properties = computed<Property[]>(() => {
   const all = propertyStore.getBlockProperties(props.blockId)
   return all.filter(prop => {
     if (prop.isHidden) return false
+    // priority 不再显示在 content 右侧（删除入口已移至斜杠命令面板）
+    if (props.position === 'right-of-content' && prop.key === 'priority') return false
     const def = propertyStore.getPropertyDef(prop.key)
     return def?.displayPosition === props.position
   })

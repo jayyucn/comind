@@ -1,5 +1,6 @@
 use crate::{
     types::Page,
+    services::BlockService,
     storage::{repository, StorageAdapter},
 };
 use rand::Rng;
@@ -199,9 +200,80 @@ impl PageService {
         Ok(page.is_some())
     }
 
+    /// 统计文本「字数」（用户口径：汉字按字 + 英文按词）：
+    /// - CJK 表意字符每个计 1；
+    /// - 连续英文/数字段（`is_alphanumeric`）每个计 1；
+    /// - 空白与标点不计（标点会断开英文词）。
+    pub fn count_words(content: &str) -> i64 {
+        fn is_cjk(c: char) -> bool {
+            matches!(c,
+                '\u{4E00}'..='\u{9FFF}'    // CJK 统一表意文字（基本区）
+                | '\u{3400}'..='\u{4DBF}'  // 扩展 A
+                | '\u{20000}'..='\u{2A6DF}' // 扩展 B
+                | '\u{F900}'..='\u{FAFF}'  // 兼容表意
+            )
+        }
+        let mut count = 0i64;
+        let mut in_word = false;
+        for ch in content.chars() {
+            if is_cjk(ch) {
+                count += 1;
+                in_word = false;
+            } else if ch.is_whitespace() {
+                in_word = false;
+            } else if ch.is_alphanumeric() {
+                if !in_word {
+                    count += 1;
+                    in_word = true;
+                }
+            } else {
+                in_word = false; // 标点/符号：不计数，但断开英文词
+            }
+        }
+        count
+    }
+
+    /// 重算某页 `word_count` = 该页所有未删除 block 的 content 字数之和，并回写。
+    /// best-effort：保存/删除 block 后由写路径调用，失败不影响主流程（沿用 page touch 的 `let _ =` 模式）。
+    pub fn recount_word_count(
+        storage: &mut dyn StorageAdapter,
+        page_id: &str,
+    ) -> Result<(), Box<dyn Error>> {
+        let blocks = BlockService::get_by_page_id(storage, page_id)?;
+        let wc: i64 = blocks.iter().map(|b| Self::count_words(&b.content)).sum();
+        Self::update(storage, page_id, None, None, None, None, None, None, None, Some(wc))?;
+        Ok(())
+    }
+
     fn generate_id() -> String {
         let mut rng = rand::thread_rng();
         let bytes: Vec<u8> = (0..16).map(|_| rng.gen()).collect();
         hex::encode(bytes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn count_words_counts_cjk_chars_and_latin_words() {
+        // 纯中文：按字计
+        assert_eq!(PageService::count_words("你好世界"), 4);
+        // 纯英文：按空白分词
+        assert_eq!(PageService::count_words("hello world"), 2);
+        // 混合：汉字按字 + 英文按词
+        assert_eq!(PageService::count_words("你好 hello world"), 4);
+        assert_eq!(PageService::count_words("hello 世界"), 3);
+        // 标点不计，且断开英文词
+        assert_eq!(PageService::count_words("你好，世界！"), 4);
+        assert_eq!(PageService::count_words("hello, world"), 2);
+        // 数字段按 1 词
+        assert_eq!(PageService::count_words("abc 123"), 2);
+        // 空白与空串
+        assert_eq!(PageService::count_words("   "), 0);
+        assert_eq!(PageService::count_words(""), 0);
+        // 连写中英混排：hello(1) + 你好(2) + world(1) = 4
+        assert_eq!(PageService::count_words("hello你好world"), 4);
     }
 }

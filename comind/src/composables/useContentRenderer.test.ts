@@ -49,11 +49,39 @@ describe('useContentRenderer — 回退路径（无 segments）', () => {
     expect(renderContentToHtml({ segments: [], content: '这是纯文本' })).toBe('这是纯文本')
   })
 
-  it('wiki link 在回退路径不渲染（由结构化 segments 处理）', () => {
+  it('wiki link 在回退路径兜底渲染为 block-link（links 表缺记录时避免显示纯文本）', () => {
     const html = renderContentToHtml({ segments: [], content: '查看 [[项目A]]' })
+    expect(html).toContain('block-link')
+    expect(html).toContain('data-page="项目A"')
+    expect(html).toContain('wiki-bracket')
+    expect(html).toContain('项目A')
+  })
+
+  it('回退路径 [[target|display]] 别名语法：data-page 用 target，显示用 display', () => {
+    const html = renderContentToHtml({ segments: [], content: '见 [[项目A|A项目]]' })
+    expect(html).toContain('data-page="项目A"')
+    expect(html).toContain('>A项目<')
+    expect(html).not.toContain('>项目A<')
+  })
+
+  it('回退路径 wiki link 的 target 被 HTML 转义', () => {
+    const html = renderContentToHtml({ segments: [], content: '[[A&B]]' })
+    expect(html).toContain('data-page="A&amp;B"')
+    expect(html).toContain('A&amp;B')
+  })
+
+  it('不成对的 [ 不被误识别为 wiki link', () => {
+    const html = renderContentToHtml({ segments: [], content: '文本 [ 单独括号' })
     expect(html).not.toContain('block-link')
-    expect(html).not.toContain('data-page')
-    expect(html).toContain('[[项目A]]')
+    expect(html).toContain('[ 单独括号')
+  })
+
+  it('链接目标含 # 时不与 #tag 互相嵌套污染', () => {
+    const html = renderContentToHtml({ segments: [], content: '[[#测试]]' })
+    // 应为干净的 block-link（data-page="#测试"），不产生嵌套 block-tag span
+    expect(html).toContain('data-page="#测试"')
+    expect(html).not.toContain('block-tag')
+    expect(html).not.toContain('<span class="block-tag" data-page=')
   })
 
   it('dateRef 语法在回退路径不渲染（由结构化 segments 处理）', () => {
@@ -106,6 +134,18 @@ describe('结构化渲染片段（pre-computed segments）', () => {
         blockId: 'b1',
       })
       expect(html).toBe('')
+    })
+
+    it('text 片段含 [[...]] 时兜底渲染（Rust links 表缺记录场景）', () => {
+      const html = renderContentToHtml({
+        segments: [{ type: 'text', start: 0, end: 11 }],
+        content: '[[人的行为]]',
+        blockId: 'b1',
+      })
+      // content.slice(0, 11) = '[[人的行为]]'
+      expect(html).toContain('block-link')
+      expect(html).toContain('data-page="人的行为"')
+      expect(html).toContain('wiki-bracket')
     })
 
     it('text 片段含 # 数字颜色值不被误识别为标签', () => {
@@ -371,16 +411,16 @@ describe('结构化渲染片段（pre-computed segments）', () => {
     it('text + link 连续片段正确渲染', () => {
       const html = renderContentToHtml({
         segments: [
-          { type: 'text', start: 0, end: 6 },
-          { type: 'link', start: 6, end: 21, target_page_title: '项目A', display_text: '项目A' },
-          { type: 'text', start: 21, end: 27 },
+          { type: 'text', start: 0, end: 3 },
+          { type: 'link', start: 3, end: 10, target_page_title: '项目A', display_text: '项目A' },
+          { type: 'text', start: 10, end: 13 },
         ],
         content: '查看 [[项目A]] 详情',
         blockId: 'b1',
       })
       expect(html).toContain('查看 ')
       expect(html).toContain('data-page="项目A"')
-      expect(html).toContain(']] 详情')
+      expect(html).toContain(']]</span></span> 详情')
     })
 
     it('text + typed_link + date_ref 混合渲染', () => {
@@ -409,14 +449,14 @@ describe('结构化渲染片段（pre-computed segments）', () => {
       expect(html).toContain('data-iso="2026-08-01T10:00"')
     })
 
-    it('无 segments 时回退到纯文本转义 + tag 渲染', () => {
+    it('无 segments 时回退到纯文本转义 + tag + wiki link 渲染', () => {
       const html = renderContentToHtml({
         segments: [],
         content: '纯文本 [[项目A]] #tag',
         blockId: 'b1',
       })
-      // 回退路径：wiki link 不渲染，tag 渲染
-      expect(html).not.toContain('data-page="项目A"')
+      // 回退路径：wiki link 兜底渲染，tag 渲染
+      expect(html).toContain('data-page="项目A"')
       expect(html).toContain('data-page="tag"')
     })
 

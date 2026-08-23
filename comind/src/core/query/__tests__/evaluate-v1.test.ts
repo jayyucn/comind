@@ -146,3 +146,39 @@ describe('防御性', () => {
     expect(evalGroup(group('and', [{ field: 'ghost', op: 'is', value: { kind: 'literal', value: 'x' } }]), rows[0], reg, 'row')).toBe(false)
   })
 })
+
+describe('未配置完整的条件（占位态）', () => {
+  const reg = makeRegistry()
+  it('字段未选（field 为空字符串）：不参与过滤，全部通过', () => {
+    const out = evaluate(query(group('and', [{ field: '', op: 'is', value: undefined }])), rows, reg, 'row')
+    expect(out).toHaveLength(4)
+  })
+  it('字段已选但值未填（value 为 undefined）：该条件被忽略，其余条件照常生效', () => {
+    const out = evaluate(
+      query(group('and', [
+        { field: 'status', op: 'is', value: undefined },
+        { field: 'name', op: 'contains', value: { kind: 'literal', value: 'alpha' } },
+      ])),
+      rows,
+      reg,
+      'row',
+    )
+    expect(out.map((r) => r.name)).toEqual(['Alpha Task', 'alpha lowercase'])
+  })
+  it('or 组内混入未配置条件同样被忽略', () => {
+    const out = evaluate(
+      query(group('or', [
+        { field: '', op: 'is', value: undefined },
+        { field: 'status', op: 'is', value: { kind: 'literal', value: 'done' } },
+      ])),
+      rows,
+      reg,
+      'row',
+    )
+    expect(out.map((r) => r.name)).toEqual(['Beta Note'])
+  })
+  it('占位条件不影响 isEmpty / isNotEmpty 的空值语义', () => {
+    expect(matchCondition({ field: '', op: 'isEmpty' }, rows[0], reg, 'row')).toBe(true)
+    expect(matchCondition({ field: 'status', op: 'isEmpty' }, rows[2], reg, 'row')).toBe(true)
+  })
+})

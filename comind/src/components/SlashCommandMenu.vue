@@ -202,6 +202,17 @@ async function executeCommand(command: Command) {
 
   // 处理属性命令
   if (command.propertyKey && blockId) {
+    // 清除属性（如 /clear-priority 删除 priority）
+    if (command.clearProperty) {
+      const target = propertyStore
+        .getBlockProperties(blockId)
+        .find(p => p.key === command.propertyKey)
+      if (target) {
+        await propertyStore.deleteProperty(target.id, blockId)
+      }
+      return
+    }
+
     // 立即执行设置属性（如 /todo, /done, /low 等）
     if (command.immediate && command.propertyValue) {
       await propertyStore.setProperty(

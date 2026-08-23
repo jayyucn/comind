@@ -10,7 +10,15 @@ const CSS_CLASSES = {
 }
 
 const TAG_PATTERN = '([\\p{L}_][\\p{L}\\p{N}_]*(?:\\/[\\p{L}_][\\p{L}\\p{N}_]*)*)'
-const TAG_TRIGGER_REGEX = new RegExp(`(?<![\\/|>|@])#${TAG_PATTERN}`, 'gu')
+// 排除 `"`（data-page 属性值内）与 `[`（[[...]] 内），避免 #tag 与 wiki link 互相污染
+const TAG_TRIGGER_REGEX = new RegExp(`(?<![\\/|>|@"[])#${TAG_PATTERN}`, 'gu')
+
+/**
+ * Wiki link 语法：[[target]] 或 [[target|display]]。
+ * 在文本段（fallback / Rust 未生成 link 段）中兜底渲染，
+ * 输出与结构化 Link segment 相同的 .block-link 结构，保证样式与点击行为一致。
+ */
+const WIKI_LINK_REGEX = /\[\[([^\[\]]+?)(?:\|([^\[\]]+?))?\]\]/g
 
 function escapeHtmlEntities(text: string): string {
   return text
@@ -60,15 +68,29 @@ export function parseHeading(text: string): HeadingParseResult | null {
 }
 
 /**
- * Escape HTML entities and render #tag patterns within a plain-text segment.
+ * Escape HTML entities and render #tag patterns + [[wiki links]] within a plain-text segment.
  * Applied only on the original text slice, not on already-rendered HTML,
  * so color hex values won't be accidentally matched.
+ *
+ * [[...]] 兜底：Rust 的 render_segments 基于 DB links 表构建，当 links 表缺少记录时
+ * （旧数据/导入数据），[[target]] 会落入 text 段。此处按结构化 Link segment
+ * 的同一 HTML 结构渲染，保证链接样式与点击跳转一致。
  */
 function renderTextSegmentWithTags(text: string): string {
-  return escapeHtmlEntities(text).replace(TAG_TRIGGER_REGEX, (_, tag) => {
-    if (tag.includes('.')) return `#${tag}`
-    return `<span class="${CSS_CLASSES.blockLink} ${CSS_CLASSES.blockTag}" data-page="${escapeHtmlEntities(tag)}">#${escapeHtmlEntities(tag)}</span>`
-  })
+  return escapeHtmlEntities(text)
+    // 先解析 wiki link：生成的 span 含 `#tag` 时由后续 tag 正则的排除集（`"`/`>`）保护，
+    // 避免嵌套替换损坏 HTML
+    .replace(WIKI_LINK_REGEX, (_, target: string, display?: string) => {
+      // 输入已是 escapeHtmlEntities 后的文本，捕获的 target/display 无需再次转义
+      const page = target
+      const shown = display ?? target
+      return `<span class="${CSS_CLASSES.blockLink}" data-page="${page}">` +
+        `<span class="wiki-bracket">[[</span>${shown}<span class="wiki-bracket">]]</span></span>`
+    })
+    .replace(TAG_TRIGGER_REGEX, (_, tag) => {
+      if (tag.includes('.')) return `#${tag}`
+      return `<span class="${CSS_CLASSES.blockLink} ${CSS_CLASSES.blockTag}" data-page="${escapeHtmlEntities(tag)}">#${escapeHtmlEntities(tag)}</span>`
+    })
 }
 
 /**

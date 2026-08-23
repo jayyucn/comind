@@ -312,6 +312,17 @@ export const commands: Command[] = [
     propertyKey: 'priority',
     openEditor: true
   },
+  // 清除优先级（删除 priority 属性，由 SlashCommandMenu.vue 处理）
+  {
+    id: 'clear-priority',
+    name: 'Clear priority',
+    alias: ['清除优先级', '删除优先级', '无优先级', 'no-priority', 'remove-priority'],
+    group: '属性',
+    icon: '🚫',
+    action: () => {},
+    propertyKey: 'priority',
+    clearProperty: true
+  },
   // deadline 和 scheduled 已移至"日期时间"分组，作为 dateRef 插入命令
   // 不再作为属性命令（属性面板仍可设置 deadline/scheduled 属性）
   {

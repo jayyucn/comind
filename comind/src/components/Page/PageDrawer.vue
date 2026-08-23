@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import { X } from 'lucide-vue-next'
+import { useRouter } from 'vue-router'
+import { ExternalLink, X } from 'lucide-vue-next'
 import PageIndex from './index.vue'
 
 /**
@@ -20,6 +21,14 @@ const emit = defineEmits<{
   opened: []
 }>()
 
+const router = useRouter()
+
+function openInPage() {
+  if (!props.pageId) return
+  emit('close')
+  router.push({ name: 'page', params: { pageId: props.pageId } })
+}
+
 onMounted(() => {
   if (props.pageId) emit('opened')
 })
@@ -31,6 +40,14 @@ onMounted(() => {
       <div v-if="pageId" class="page-drawer-backdrop" @click.self="emit('close')">
         <aside class="page-drawer">
           <header class="drawer-header">
+            <button
+              class="drawer-open"
+              title="前往独立页面"
+              data-testid="page-drawer-open"
+              @click="openInPage"
+            >
+              <ExternalLink :size="18" />
+            </button>
             <button class="drawer-close" title="关闭" data-testid="page-drawer-close" @click="emit('close')">
               <X :size="18" />
             </button>
@@ -68,12 +85,14 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  gap: 4px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--border-color, var(--app-split));
   flex-shrink: 0;
 }
 
-.drawer-close {
+.drawer-close,
+.drawer-open {
   background: none;
   border: none;
   cursor: pointer;
