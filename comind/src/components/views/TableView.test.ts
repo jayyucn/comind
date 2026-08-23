@@ -83,6 +83,7 @@ function mountTable(props: Record<string, unknown> = {}, attach = false) {
 // select 菜单 teleport 到 body，测试后清理，避免残留影响其他用例
 afterEach(() => {
   document.body.querySelectorAll('[data-testid="select-menu"]').forEach((n) => n.remove())
+  document.body.querySelectorAll('[data-testid="col-menu"]').forEach((n) => n.remove())
 })
 
 describe('TableView (generic, field-driven)', () => {
@@ -103,6 +104,17 @@ describe('TableView (generic, field-driven)', () => {
     expect(headers.some((h) => h.includes('项目'))).toBe(true)
     expect(headers.some((h) => h.includes('截止'))).toBe(true)
     expect(headers.some((h) => h.includes('页面'))).toBe(true)
+  })
+
+  // ── Header icons (lucide type icons) ──
+  it('renders a type icon in each column header (Link2 for link role)', () => {
+    const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
+    // 数据列（boolean/text/select/date）表头都有 svg 图标
+    for (const key of ['done', 'content', 'status', 'deadline']) {
+      expect(wrapper.find(`thead .col-${key} svg`).exists()).toBe(true)
+    }
+    // link 角色列（page）也有图标
+    expect(wrapper.find('thead .col-page svg').exists()).toBe(true)
   })
 
   // ── Sort icon ──
@@ -222,16 +234,34 @@ describe('TableView (generic, field-driven)', () => {
     expect(wrapper.emitted('cellChange')![0]).toEqual(['b1', 'done', true])
   })
 
-  it('emits cellChange(status) when select option picked', async () => {
+  // select 菜单现由整个 cell 点击触发（td @click → onCellMaybeOpenSelect）。
+  it('opens select menu when clicking anywhere on the td, then emits cellChange on pick', async () => {
     const wrapper = mountTable({ items: [makeCard({ block_id: 'b3', properties: { status: 'Doing' } })] }, true)
-    await wrapper.find('.cell-select').trigger('click')
+    // 点 cell 任意位置（这里点 td 上 padding 区域，不是 .cell-select span 内）
+    await wrapper.find('tbody .col-status').trigger('click')
     const menu = document.body.querySelector('[data-testid="select-menu"]') as HTMLElement
+    expect(menu).toBeTruthy()
     const option = Array.from(menu.querySelectorAll('.select-option')).find(
       (el) => el.textContent?.includes('已取消'),
     ) as HTMLElement
     option.click()
     await wrapper.vm.$nextTick()
     expect(wrapper.emitted('cellChange')![0]).toEqual(['b3', 'status', 'Canceled'])
+  })
+
+  // ChevronDown 常驻渲染：hover/选中（.open）/空态（.empty）时显示（CSS 控制 opacity），靠右。
+  it('renders ChevronDown in every select cell, marked .empty when value unset', () => {
+    const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
+    // 空态：.empty 类 + chevron 存在，无 label
+    expect(wrapper.find('tbody .col-status .cell-select.empty').exists()).toBe(true)
+    expect(wrapper.find('tbody .col-priority .cell-select.empty').exists()).toBe(true)
+    expect(wrapper.find('tbody .col-status .cell-select-chevron').exists()).toBe(true)
+    expect(wrapper.find('tbody .col-status .cell-select-label').exists()).toBe(false)
+    // 有值：无 .empty 类、label 显示选项，chevron 仍在 DOM（hover/open 时显示）
+    const set = mountTable({ items: [makeCard({ block_id: 'b2', properties: { status: 'Todo' } })] })
+    expect(set.find('tbody .col-status .cell-select.empty').exists()).toBe(false)
+    expect(set.find('tbody .col-status .cell-select-chevron').exists()).toBe(true)
+    expect(set.find('tbody .col-status .cell-select-label').text()).toBe('待办')
   })
 
   // ── Grouped rendering ──
@@ -419,7 +449,7 @@ describe('TableView (generic, field-driven)', () => {
   })
 
   // ── Field interaction configurability (FieldDescriptor.editable) ──
-  it('renders select as read-only label when editable=false and does not open menu', async () => {
+  it('renders select as read-only when editable=false and does not open menu', async () => {
     const readonlyFields: FieldDescriptor[] = [
       ...fields,
       {
@@ -431,14 +461,16 @@ describe('TableView (generic, field-driven)', () => {
     ]
     const cfg: TableConfig = { viewKind: 'table', version: 1, columns: [...config.columns, { key: 'stage' }] }
     const wrapper = mountTable({ fields: readonlyFields, config: cfg, items: [makeCard({ block_id: 'b1' })] })
-    // 限定在 stage 列：只读标签而非可编辑按钮（status 列仍是可编辑按钮，不影响本断言）
+    // stage 列渲染为 .cell-select.readonly（无 .cell-select-readonly 单独类）
     const stageTd = wrapper.find('tbody .col-stage')
-    expect(stageTd.find('.cell-select').exists()).toBe(false)
-    expect(stageTd.find('.cell-select-readonly').exists()).toBe(true)
+    expect(stageTd.find('.cell-select').exists()).toBe(true)
+    expect(stageTd.find('.cell-select.readonly').exists()).toBe(true)
+    expect(stageTd.find('.cell-select-readonly').exists()).toBe(false)
     expect(stageTd.text()).toContain('A阶段')
-    // 点击只读标签不弹下拉菜单
-    await stageTd.find('.cell-select-readonly').trigger('click')
+    // 点击只读 cell 不弹下拉菜单（业务方仍可通过 cellClick 事件处理跳转/预览）
+    await stageTd.trigger('click')
     expect(document.body.querySelector('[data-testid="select-menu"]')).toBeFalsy()
+    expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'stage'])
   })
 
   it('renders boolean as read-only check when editable=false', () => {
@@ -528,5 +560,192 @@ describe('TableView custom cell (ADR-0010)', () => {
     })
     await wrapper.find('tbody .col-content').trigger('click')
     expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'content'])
+  })
+})
+
+describe('TableView column resize (ADR-0013)', () => {
+  function linkKeysOf(): string[] {
+    return config.columns.filter((c) => c.role === 'link').map((c) => c.key)
+  }
+
+  // 手柄只渲染在「两列之间」的分隔线上：非 link、非最末列才有；link 列与末列右缘（即表格右缘）无
+  it('renders a resize handle on every non-link column header except the last', () => {
+    const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
+    const linkKeys = linkKeysOf()
+    const lastKey = config.columns.filter((c) => c.visible !== false).slice(-1)[0]?.key
+    for (const th of wrapper.findAll('th')) {
+      const key = th.classes().find((c) => c.startsWith('col-'))!.slice(4)
+      const expectHandle = !linkKeys.includes(key) && key !== lastKey
+      expect(th.find('[data-testid="col-resizer"]').exists()).toBe(expectHandle)
+    }
+  })
+
+  // link 列无手柄；每列都渲染像素宽（jsdom 无布局：容器宽 0 → 全列退化为 40px 下限）
+  it('omits the resize handle on link columns and renders a pixel width', () => {
+    const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
+    const linkKeys = linkKeysOf()
+    expect(linkKeys.length).toBeGreaterThan(0)
+    for (const key of linkKeys) {
+      const th = wrapper.find(`thead .col-${key}`)
+      expect(th.exists()).toBe(true)
+      expect(th.find('[data-testid="col-resizer"]').exists()).toBe(false)
+      expect(th.attributes('style')).toMatch(/\d+px/)
+    }
+  })
+
+  // ── 比例模式（ADR-0013）──
+  // jsdom 无布局（容器宽 0）→ 退化为各列下限 40px；权重分配逻辑由 tableWidths.test.ts 单测。
+  it('renders a pixel width on every column header', () => {
+    const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
+    for (const th of wrapper.findAll('thead th')) {
+      expect(th.attributes('style')).toMatch(/\d+px/)
+    }
+  })
+
+  // 边界联动（ADR-0013）：用显式宽度的 config 保证 jsdom 下起点宽确定（jsdom getBoundingClientRect 为 0）。
+  const resizeConfig: TableConfig = {
+    viewKind: 'table',
+    version: 1,
+    columns: [
+      { key: 'content', width: 100 },
+      { key: 'status', width: 100 },
+      { key: 'priority', width: 100 },
+    ],
+  }
+
+  // 拖宽本列：content 期望 +100→200，但下一列 status 有 40px 下限 → content 封顶 160、status 40
+  it('emits linked widths for both columns when dragging wider', async () => {
+    const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })], config: resizeConfig })
+    const resizer = wrapper.find('thead .col-content [data-testid="col-resizer"]')
+    expect(resizer.exists()).toBe(true)
+    resizer.element.dispatchEvent(new MouseEvent('pointerdown', { clientX: 100, bubbles: true }))
+    window.dispatchEvent(new MouseEvent('pointermove', { clientX: 200 }))
+    void window.dispatchEvent(new MouseEvent('pointerup', { clientX: 200 }))
+    expect(wrapper.emitted('columnResize')).toBeTruthy()
+    expect(wrapper.emitted('columnResize')![0][0]).toEqual([
+      { key: 'content', width: 160 },
+      { key: 'status', width: 40 },
+    ])
+  })
+
+  // 拖窄本列到下限：content 夹到 40px，差额 -60 推给下一列 status → 160（总宽恒定 200）
+  it('clamps the dragged column to 40px and pushes the delta onto the next column', async () => {
+    const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })], config: resizeConfig })
+    const resizer = wrapper.find('thead .col-content [data-testid="col-resizer"]')
+    resizer.element.dispatchEvent(new MouseEvent('pointerdown', { clientX: 100, bubbles: true }))
+    window.dispatchEvent(new MouseEvent('pointermove', { clientX: 20 })) // delta -80
+    void window.dispatchEvent(new MouseEvent('pointerup', { clientX: 20 }))
+    expect(wrapper.emitted('columnResize')![0][0]).toEqual([
+      { key: 'content', width: 40 },
+      { key: 'status', width: 160 },
+    ])
+  })
+
+  // 末列无独立手柄（其右缘即表格右缘、无下一列可联动）；通过它左侧的分隔线（status 手柄）联动改变：
+  // status +100 受「priority ≥ 40」约束封顶到 160，priority 40（总宽恒定 200）
+  it('resizes the last column via the divider to its left', async () => {
+    const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })], config: resizeConfig })
+    expect(wrapper.find('thead .col-priority [data-testid="col-resizer"]').exists()).toBe(false)
+    const resizer = wrapper.find('thead .col-status [data-testid="col-resizer"]')
+    expect(resizer.exists()).toBe(true)
+    resizer.element.dispatchEvent(new MouseEvent('pointerdown', { clientX: 100, bubbles: true }))
+    window.dispatchEvent(new MouseEvent('pointermove', { clientX: 200 }))
+    void window.dispatchEvent(new MouseEvent('pointerup', { clientX: 200 }))
+    expect(wrapper.emitted('columnResize')![0][0]).toEqual([
+      { key: 'status', width: 160 },
+      { key: 'priority', width: 40 },
+    ])
+  })
+
+  // link 末列作为 next 参与联动（用户场景：拖"截止"右缘 → "页面(link)"列变宽）。
+  // status 起始 100、page(link) 起始 40；拖 status −60 → status 夹到 40，差额推给 page 40+60=100。
+  it('links the trailing link column as the resize partner (its width changes)', async () => {
+    const linkCfg: TableConfig = {
+      viewKind: 'table',
+      version: 1,
+      columns: [
+        { key: 'content', width: 100 },
+        { key: 'status', width: 100 },
+        { key: 'page', role: 'link' },
+      ],
+    }
+    const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })], config: linkCfg })
+    // page 是末列 + link → 无手柄
+    expect(wrapper.find('thead .col-page [data-testid="col-resizer"]').exists()).toBe(false)
+    const resizer = wrapper.find('thead .col-status [data-testid="col-resizer"]')
+    expect(resizer.exists()).toBe(true)
+    resizer.element.dispatchEvent(new MouseEvent('pointerdown', { clientX: 100, bubbles: true }))
+    window.dispatchEvent(new MouseEvent('pointermove', { clientX: 40 })) // -60
+    void window.dispatchEvent(new MouseEvent('pointerup', { clientX: 40 }))
+    expect(wrapper.emitted('columnResize')![0][0]).toEqual([
+      { key: 'status', width: 40 },
+      { key: 'page', width: 100 },
+    ])
+  })
+
+  // ── 表头菜单（列对齐 / 隐藏字段 / 重置列宽）──
+  it('opens a column menu on header title click', async () => {
+    const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
+    await wrapper.find('thead .col-content .th-label').trigger('click')
+    const menu = document.body.querySelector('[data-testid="col-menu"]')
+    expect(menu).toBeTruthy()
+    expect(menu!.textContent).toContain('对齐方式')
+    expect(menu!.textContent).toContain('隐藏此字段')
+    expect(menu!.textContent).toContain('重置列宽')
+    // 未显式设置对齐时默认左激活（数据单元格默认左对齐）
+    expect(menu!.querySelector('.col-menu-align-btn.active')?.textContent).toBe('左')
+  })
+
+  it('emits columnAlign when picking an alignment', async () => {
+    const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
+    await wrapper.find('thead .col-content .th-label').trigger('click')
+    const menu = document.body.querySelector('[data-testid="col-menu"]') as HTMLElement
+    const btn = Array.from(menu.querySelectorAll('.col-menu-align-btn')).find(
+      (b) => b.textContent === '中',
+    ) as HTMLElement
+    btn.click()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('columnAlign')![0]).toEqual(['content', 'center'])
+  })
+
+  it('emits columnVisibility(false) when hiding a field', async () => {
+    const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
+    await wrapper.find('thead .col-content .th-label').trigger('click')
+    const menu = document.body.querySelector('[data-testid="col-menu"]') as HTMLElement
+    const item = Array.from(menu.querySelectorAll('.col-menu-item')).find(
+      (b) => b.textContent === '隐藏此字段',
+    ) as HTMLElement
+    item.click()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('columnVisibility')![0]).toEqual(['content', false])
+  })
+
+  it('emits columnReset when resetting width', async () => {
+    const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
+    await wrapper.find('thead .col-content .th-label').trigger('click')
+    const menu = document.body.querySelector('[data-testid="col-menu"]') as HTMLElement
+    const item = Array.from(menu.querySelectorAll('.col-menu-item')).find(
+      (b) => b.textContent === '重置列宽',
+    ) as HTMLElement
+    item.click()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('columnReset')![0]).toEqual(['content'])
+  })
+
+  // 对齐渲染：config 显式 align → th/td 内联 text-align；未设置列保持默认（无内联覆盖）
+  it('renders column align on th and td when set', () => {
+    const alignCfg: TableConfig = {
+      viewKind: 'table',
+      version: 1,
+      columns: [
+        { key: 'content', align: 'center' },
+        { key: 'status' },
+      ],
+    }
+    const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })], config: alignCfg })
+    expect(wrapper.find('thead .col-content').attributes('style')).toContain('text-align: center')
+    expect(wrapper.find('tbody .col-content').attributes('style')).toContain('text-align: center')
+    expect(wrapper.find('thead .col-status').attributes('style')).not.toContain('text-align')
+    expect(wrapper.find('tbody .col-status').attributes('style')).not.toContain('text-align')
   })
 })

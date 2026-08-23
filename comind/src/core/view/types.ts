@@ -12,10 +12,15 @@ export type ViewKind = 'table' | 'board' | 'calendar'
 /** 表格列装饰角色（渲染专属，属 LayoutConfig 而非无头 FieldDescriptor）。 */
 export type TableColumnRole = 'primary' | 'link' | 'overdue-date' | 'done'
 
+/** 列对齐方式（表头 + 数据单元格统一生效；缺省表头 center、数据 left，见 TableView）。 */
+export type TableColumnAlign = 'left' | 'center' | 'right'
+
 /** 表格列配置：顺序由数组顺序决定；width 为像素，缺省时组件用自身默认列宽。 */
 export interface TableColumnConfig {
   key: string
   width?: number
+  /** 列对齐：设置后表头与数据单元格内联 text-align 覆盖各自默认（表头 center / 数据 left）。可持久化（ADR-0013 菜单扩展）。 */
+  align?: TableColumnAlign
   /** 渲染装饰：primary=主文本(加粗省略号) / link=导航按钮 / overdue-date=过去日期标红 / done=布尔完成列(驱动行置灰)。 */
   role?: TableColumnRole
   /** 自定义单元格渲染器 key：命中注入的 cellRegistry 时接管整格渲染；缺省走内置 type/role 链。可持久化（ADR-0010）。 */

@@ -121,6 +121,33 @@ function onReorder(keys: string[]) {
   })
 }
 
+// 列宽拖拽缩放（ADR-0013 边界联动）：一次性写回本列与相邻下一列的变更，保持总宽恒定。
+function onColumnResize(changes: { key: string; width: number }[]) {
+  store.patchActiveTabConfig((cfg) => {
+    const widths = new Map(changes.map((c) => [c.key, c.width]))
+    return {
+      ...cfg,
+      columns: cfg.columns.map((c) => (widths.has(c.key) ? { ...c, width: widths.get(c.key)! } : c)),
+    }
+  })
+}
+
+// 表头菜单：列对齐（左/中/右）→ 写回 TableColumnConfig.align
+function onColumnAlign(key: string, align: 'left' | 'center' | 'right') {
+  store.patchActiveTabConfig((cfg) => ({
+    ...cfg,
+    columns: cfg.columns.map((c) => (c.key === key ? { ...c, align } : c)),
+  }))
+}
+
+// 表头菜单：重置列宽 → 清除该列 width（undefined 在序列化时被丢弃，回落到组件默认列宽）
+function onColumnReset(key: string) {
+  store.patchActiveTabConfig((cfg) => ({
+    ...cfg,
+    columns: cfg.columns.map((c) => (c.key === key ? { ...c, width: undefined } : c)),
+  }))
+}
+
 function onAddGlobal(key: string) {
   store.patchAllTabConfigs((cfg) => {
     if (cfg.columns.some((c) => c.key === key)) return cfg
@@ -195,6 +222,10 @@ function onRemoveGlobal(key: string) {
         :config="tableConfig"
         :id-key="idKey"
         :cell-registry="cellRegistry"
+        @column-resize="onColumnResize"
+        @column-align="onColumnAlign"
+        @column-visibility="onToggleVisibility"
+        @column-reset="onColumnReset"
         @cell-change="(itemId, fieldKey, value) => emit('cellChange', itemId, fieldKey, value)"
         @cell-click="(itemId, fieldKey) => emit('cellClick', itemId, fieldKey)"
       />

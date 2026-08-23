@@ -105,7 +105,7 @@ export const BUILT_IN_PROPERTIES: PropertyDefinition[] = [
     type: 'string',
     isBuiltIn: true,
     displayPosition: 'right-of-content',
-    displayStyle: 'icon-text',
+    displayStyle: 'icon',
     closedValues: [
       { value: 'Low', label: '低', description: '不紧急不重要', icon: TASK_PRIORITY_ICONS.Low },
       { value: 'Medium', label: '中', description: '重要不紧急', icon: TASK_PRIORITY_ICONS.Medium },
