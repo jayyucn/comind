@@ -1,19 +1,47 @@
-test.md
-comind/playwright-report/
-comind/test-results/
-test_screenshots/
-*.py
-comind/test-results/
-.omx/
-comind/test-e2e/
+# ===== 前端构建产物（原内层 comind/.gitignore） =====
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# e2e / 测试缓存
 e2e/
-comind/target/
+tests/e2e/
+playwright-report/
 test-results/
-comind/test-gap-exhausted.spec.ts
-comind/test-merge-children.spec.ts
-comind/temp_cargo.txt
+test_screenshots/
+
+# Rust 构建产物
+target/
+
+# ===== 仓库管理类忽略（原外层 .gitignore，扁平化后去除 comind/ 前缀） =====
+test.md
+test-gap-exhausted.spec.ts
+test-merge-children.spec.ts
+temp_cargo.txt
 task.md
-comind/comind-android-mobile/
+
+*.py
 .superpowers/
 graphify-out/
 memory/
@@ -27,4 +55,4 @@ DREAMS.md
 .scratch/
 .workbuddy/
 outputs/
-comind/tests/
+comind-android-mobile/

@@ -5,25 +5,28 @@
 
 ## 项目结构
 
+> 扁平化后（见 `docs/adr/0034-flatten-directory-layout.md`），应用代码已上移至仓库根，与管理工作文件（AGENTS.md / docs / memory / outputs 等）共存于同一层。
+
 ```
-comind/
-├── comind/                      # 主应用根目录
-│   ├── src/                     # Vue 3 前端
-│   │   ├── components/         # Vue 组件（Block / TaskHub / Ideas / Sidebar ...）
-│   │   ├── composables/        # Vue 组合函数（useBlockQuery / useContentRenderer ...）
-│   │   ├── stores/             # Pinia 状态（blocks / blockCard / taskView / savedFilter ...）
-│   │   ├── wasm/               # WASM / Tauri CoreClient 封装（client.ts / tauri-client.ts）
-│   │   ├── types/              # TS 类型定义（新增 blockQuery.ts）
-│   │   └── utils/              # 工具函数（逐步迁移至 Rust）
-│   ├── crates/                 # Rust Core（comind-core / comind-wasm）
-│   │   └── comind-core/src/
-│   │       ├── services/       # 6 个 Rust Service（content_parse / render_segment / block_projection / filter / notification / block）
-│   │       ├── utils/          # 3 个工具模块（date_parser / journal_detect / recurrence）
-│   │       ├── types/          # Rust 类型（新增 notification_config / block_card / task_view / saved_filter ...）
-│   │       └── storage/        # SQLite / SQL.js 双实现
-│   ├── src-tauri/              # Tauri 桌面壳（commands.rs 命令入口）
-│   └── package.json
-└── docs/                       # 项目文档
+comind/                          # 仓库根 = 应用根
+├── src/                         # Vue 3 前端
+│   ├── components/              # Vue 组件（Block / TaskHub / Ideas / Sidebar ...）
+│   ├── composables/             # Vue 组合函数（useBlockQuery / useContentRenderer ...）
+│   ├── stores/                  # Pinia 状态（blocks / blockCard / taskView / savedFilter ...）
+│   ├── wasm/                    # WASM / Tauri CoreClient 封装（client.ts / tauri-client.ts）
+│   ├── types/                   # TS 类型定义（新增 blockQuery.ts）
+│   └── utils/                   # 工具函数（逐步迁移至 Rust）
+├── crates/                      # Rust Core（comind-core / comind-wasm）
+│   └── comind-core/src/
+│       ├── services/            # 6 个 Rust Service（content_parse / render_segment / block_projection / filter / notification / block）
+│       ├── utils/               # 3 个工具模块（date_parser / journal_detect / recurrence）
+│       ├── types/               # Rust 类型（新增 notification_config / block_card / task_view / saved_filter ...）
+│       └── storage/             # SQLite / SQL.js 双实现
+├── src-tauri/                   # Tauri 桌面壳（commands.rs 命令入口）
+├── docs/                        # 项目文档（规格 / 架构 / 功能 / UI / 开发指南 + adr/ + agents/ + plans/）
+├── AGENTS.md                    # 编码行为准则
+├── CONTEXT.md                   # 领域术语表（单一事实源）
+└── package.json
 ```
 
 ## 技术栈
@@ -51,7 +54,6 @@ comind/
 ### 安装依赖
 
 ```bash
-cd comind
 npm install
 ```
 
@@ -88,7 +90,7 @@ npm run test:coverage      # 测试覆盖率
 
 - **块编辑**: 支持块的创建、编辑、拆分、合并、删除
 - **块树结构**: 支持块的嵌套、缩进、Gap-based 拖拽排序
-- **块保存失败提示**: 🔴 红点 + 点击重试（[Block/index.vue](file:///D:/comind/comind/src/components/Block/index.vue)）
+- **块保存失败提示**: 🔴 红点 + 点击重试（[Block/index.vue](file:///D:/comind/src/components/Block/index.vue)）
 - **日记系统**: 自动创建每日日记，按日期管理（日记日期检测已迁移 Rust）
 - **Wiki 链接**: 支持 `[[Page]]`、`((type))[[Page|别名]]` 带类型链接（解析已迁移 Rust `content_parse_service.rs`）
 - **属性系统**: 支持 `key:: value` 语法（解析已迁移 Rust）
@@ -142,7 +144,33 @@ npm run test:coverage      # 测试覆盖率
 
 ## 开发指南
 
-详见 [comind/README.md](comind/README.md)
+前端应用文档（目录结构、核心概念、开发命令、架构说明、质量门禁）原位于内层 `comind/README.md`，扁平化后已并入本文件。常用命令：
+
+```bash
+# 前端开发模式
+npm run dev
+
+# 前端生产构建（vue-tsc 类型检查 + vite build）
+npm run build
+
+# 前端单元/集成测试（Vitest）
+npm test
+
+# 前端 ESLint 检查
+npm run lint
+
+# Tauri 桌面开发模式（前端 + Rust 热重载）
+npm run tauri dev
+
+# Tauri 仅 Rust 编译检查
+cd src-tauri && cargo check
+```
+
+**质量门禁**（提交前确保通过）：
+1. `npm run build` 构建通过
+2. `npm test` 测试通过
+3. `npm run lint` 无错误
+4. `cd src-tauri && cargo check` Rust 编译检查通过
 
 ## License
 
