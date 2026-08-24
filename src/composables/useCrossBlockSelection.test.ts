@@ -103,6 +103,52 @@ describe('useCrossBlockSelection', () => {
     })
   })
 
+  describe('trackingFromProperty', () => {
+    test('startTracking 默认 fromProperty=false', async () => {
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+      const block = await blockStore.createBlock({ pageId, content: 'Block' })
+
+      selection.startTracking(block.id)
+
+      expect(selection.trackingFromProperty.value).toBe(false)
+    })
+
+    test('startTracking(blockId, true) 标记属性区起点', async () => {
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+      const block = await blockStore.createBlock({ pageId, content: 'Block' })
+
+      selection.startTracking(block.id, true)
+
+      expect(selection.trackingFromProperty.value).toBe(true)
+    })
+
+    test('clearTracking 重置 trackingFromProperty', async () => {
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+      const block = await blockStore.createBlock({ pageId, content: 'Block' })
+
+      selection.startTracking(block.id, true)
+      selection.clearTracking()
+
+      expect(selection.trackingFromProperty.value).toBe(false)
+    })
+
+    test('finalizeSelection 重置 trackingFromProperty', async () => {
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+      const block = await blockStore.createBlock({ pageId, content: 'Block' })
+
+      selection.startTracking(block.id, true)
+      selection.selectedIds.add(block.id)
+      selection.isDragging.value = true
+      selection.finalizeSelection()
+
+      expect(selection.trackingFromProperty.value).toBe(false)
+    })
+  })
+
   describe('computeRange', () => {
     test('无起始块ID时返回空集合', async () => {
       const selection = useCrossBlockSelection()

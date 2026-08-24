@@ -24,6 +24,8 @@ export function useCrossBlockSelection() {
 
   const dragStartBlockId = ref<string | null>(null)
   const isDragging = ref(false)
+  /** 本次追踪是否起始于属性区（ADR-0035 D6）：属性区起点仅做块选区、不激活编辑器 */
+  const trackingFromProperty = ref(false)
   const selectedIds = reactive(new Set<string>())
   const anchorIds = reactive(new Set<string>())
 
@@ -35,14 +37,16 @@ export function useCrossBlockSelection() {
   function clearTracking() {
     dragStartBlockId.value = null
     isDragging.value = false
+    trackingFromProperty.value = false
     selectedIds.clear()
   }
 
-  function startTracking(blockId: string) {
+  function startTracking(blockId: string, fromProperty = false) {
     if (anchorIds.size > 0) {
       clearSelection()
     }
     dragStartBlockId.value = blockId
+    trackingFromProperty.value = fromProperty
   }
 
   function computeRange(targetBlockId: string, pageId: string): Set<string> {
@@ -109,6 +113,7 @@ export function useCrossBlockSelection() {
     }
     isDragging.value = false
     dragStartBlockId.value = null
+    trackingFromProperty.value = false
     selectedIds.clear()
   }
 
@@ -290,6 +295,7 @@ export function useCrossBlockSelection() {
   return {
     dragStartBlockId,
     isDragging,
+    trackingFromProperty,
     selectedIds,
     anchorIds,
     clearSelection,
