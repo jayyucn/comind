@@ -363,13 +363,15 @@ onBeforeUnmount(() => {
       :visible="indicatorVisible"
     />
 
-    <!-- 文本选区覆盖层高亮（ADR-0035 D4）：按视口矩形逐行绘制 -->
-    <div
-      v-for="(rect, i) in highlightRects"
-      :key="i"
-      class="text-selection-rect"
-      :style="{ top: `${rect.top}px`, left: `${rect.left}px`, width: `${rect.width}px`, height: `${rect.height}px` }"
-    />
+    <!-- 文本选区覆盖层高亮（ADR-0035 D4）：Teleport 到 body，避免 transform 祖先困住 fixed 定位（ADR-0012 铁律 2） -->
+    <Teleport to="body">
+      <div
+        v-for="(rect, i) in highlightRects"
+        :key="i"
+        class="text-selection-rect"
+        :style="{ top: `${rect.top}px`, left: `${rect.left}px`, width: `${rect.width}px`, height: `${rect.height}px` }"
+      />
+    </Teleport>
   </div>
 </template>
 
