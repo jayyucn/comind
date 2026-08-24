@@ -44,3 +44,28 @@ export interface SubtreeNode {
   block: Block
   children: SubtreeNode[]
 }
+
+/**
+ * 复制 block 时随行的剪贴板载荷节点（ADR-0025 D4）。
+ *
+ * - 携带：content / type / format / properties / children（子树，递归）
+ * - 重生成（不携带语义）：id / parentId / pos / pageId / 时间戳 —— 粘贴时一律新建
+ * - id 仅为「子树内部自引用重映射」而随行（ADR-0025 D6），
+ *   粘贴时基于「旧 id → 新 id」映射重写 content 内部引用，绝不复用旧 id
+ */
+export interface BlockClipPayload {
+  /** 源 block id，仅用于粘贴时重映射子树内部自引用 */
+  id?: string
+  content: string
+  type: Block['type']
+  format: Record<string, unknown> | null
+  properties: Record<string, { value: string; type: string }> | null
+  children: BlockClipPayload[]
+}
+
+/** 剪贴板顶层载荷（ADR-0025 D5），序列化为自定义 MIME `application/x-comind-block` 的 JSON */
+export interface BlockClipboardPayload {
+  version: 1
+  kind: 'blocks'
+  blocks: BlockClipPayload[]
+}

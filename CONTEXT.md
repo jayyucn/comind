@@ -62,3 +62,27 @@ The built-in default `LayoutConfig` of a business entity for each view kind (tab
 
 ### Sync (同步)
 The cross-device consistency mechanism: after a write path commits, the affected records are reported to the sync layer so the paired remote can converge. Desktop (Tauri) has a sync peer; the web build has none, so sync is a no-op there. See ADR-0019.
+
+### Block Clipboard Payload (剪贴板载荷)
+The structured data carried when a Block is copied: `{ version, kind: 'blocks', blocks: BlockClipPayload[] }`, each item carrying `content`, `type`, `format`, `properties`, and recursive `children`. `parentId`/`pos`/`pageId`/timestamps are NOT carried — they are regenerated on paste. Exception: the source `id` IS carried on each item solely so subtree-internal self-references in `content` can be remapped to the new ids on paste (ADR-0025 D6); the id itself is never reused. Serialized to the OS clipboard as custom MIME `application/x-comind-block` plus a `text/plain` fallback. See ADR-0025. _Avoid_: clipboard text, copied string.
+
+### Paste as Blocks (粘贴为 block)
+Restoring an internal clipboard payload into one or more new Block trees inserted into the target page, rather than dropping the text into a single TipTap block. The missing half of copy today — copy existed but paste-as-blocks did not. See ADR-0025. _Avoid_: paste, paste text.
+
+### Internal Clipboard Format (内部剪贴板格式)
+The custom MIME type `application/x-comind-block` carrying the `BlockClipboardPayload` JSON on the OS clipboard, with a `text/plain` fallback. Distinguishes an internal block-paste from an external paste (plain text / HTML from another app). See ADR-0025. _Avoid_: clipboard store, in-memory clipboard.
+
+### Paste as Plain Text (粘贴为纯文本)
+`Ctrl/Cmd+Shift+V` — ignores the custom MIME and pastes the `text/plain` fallback as plain text into the current single block via TipTap's default behavior. Introduced by ADR-0025. _Avoid_: paste without formatting, paste as text.
+
+### External Paste Splitting (外部粘贴拆分)
+Parsing external clipboard content (`text/html` / `text/plain` from another app) into multiple comind blocks — preserving paragraphs, list nesting, and heading levels — instead of collapsing into a single block. Active only in a block-level paste context (selected/focused block); an inline-caret paste still falls through to TipTap's single-block behavior. Introduced by ADR-0026. _Avoid_: paste from clipboard, import external text.
+
+### Block-level Paste Context (block 级粘贴上下文)
+A paste scenario where a block is selected or focused (not editing inline text). Both internal block-paste (ADR-0025) and external paste-splitting (ADR-0026) trigger here; an inline-caret paste does not. See ADR-0026 D1/D8.
+
+### External Paste Parser (外部粘贴解析器)
+`src/services/external-paste-parse.ts` — parses `text/html` via the native `DOMParser` + a strict allowlist sanitizer into a `BlockClipPayload` forest, and splits `text/plain` on `\n` (trim, skip blank lines). New in ADR-0026. _Avoid_: innerHTML, DOMPurify (v1).
+
+### Clipboard Source Priority (剪贴板源优先级)
+For external paste, `text/html` takes precedence over `text/plain` (richer structure: paragraphs / lists / headings). See ADR-0026 D2.

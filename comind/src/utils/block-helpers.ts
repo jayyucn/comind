@@ -30,6 +30,41 @@ export function sortByPos<T extends { pos: number }>(items: T[]): T[] {
 }
 
 /**
+ * 预序（文档序）遍历所有 block，返回 id 序列。
+ *
+ * 各兄弟组内按 pos 升序；从 parentId 为 null 的根（页面根块）开始递归。
+ * 用于复制时对选中锚点排序（ADR-0025 D8：森林顶层按原 DFS 顺序）。
+ */
+export function documentOrderIds(blocks: Block[]): string[] {
+  const byParent = new Map<string | null, Block[]>()
+  for (const b of blocks) {
+    const list = byParent.get(b.parentId) ?? []
+    list.push(b)
+    byParent.set(b.parentId, list)
+  }
+  for (const list of byParent.values()) {
+    list.sort((a, b) => a.pos - b.pos)
+  }
+  const out: string[] = []
+  const walk = (parentId: string | null) => {
+    for (const b of byParent.get(parentId) ?? []) {
+      out.push(b.id)
+      walk(b.id)
+    }
+  }
+  walk(null)
+  return out
+}
+
+/** 按文档序（预序遍历）对一组 id 排序；未知 id 被过滤。用于复制/粘贴的锚点排序 */
+export function sortByDocumentOrderIds(ids: Iterable<string>, blocks: Block[]): string[] {
+  const order = new Map(documentOrderIds(blocks).map((id, i) => [id, i]))
+  return [...ids]
+    .filter(id => order.has(id))
+    .sort((a, b) => order.get(a)! - order.get(b)!)
+}
+
+/**
  * 获取指定父节点下的排序后的子节点
  */
 export function getSortedChildren(

@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { Block } from '../types/block'
+import type { Block, BlockClipPayload } from '../types/block'
+import type { PropertyValue, PropertyType } from '../types/property'
 import { initCoreClient, triggerSync, isTauriEnvironment } from '../wasm/client'
 import { generateUUID } from '../utils/id'
 import { debounce } from '../utils/debounce'
@@ -567,7 +568,7 @@ export const useBlockStore = defineStore('blocks', () => {
     }
 
     const block: Block = {
-      id: generateUUID(),
+      id: opts.id ?? generateUUID(),
       content: opts.content,
       parentId,
       pageId: opts.pageId,
@@ -1178,6 +1179,124 @@ export const useBlockStore = defineStore('blocks', () => {
     structureVersion.value++
   }
 
+  /**
+   * 粘贴 block 森林（ADR-0025 D6/D7/D8/D11）
+   *
+   * - id：一律重生成；content 中指向子树内部的自引用按「旧 id → 新 id」重映射，
+   *   子树外部引用保持原样
+   * - 层级：完全由 payload.children 决定；顶层根按源顺序作为一组 sibling 依次插入
+   * - 落点：有锚点 block → 插在其后；无 → 追加到 fallbackParentId 末尾
+   * - properties：逐条 setProperty 重建（跨页同语义）；先 flushSave 落库再写属性
+   *   （Property 表有 block 外键约束）
+   */
+  async function pasteBlocks(
+    forest: BlockClipPayload[],
+    opts: { pageId: string; anchorBlockId?: string | null; fallbackParentId?: string | null }
+  ): Promise<Block[]> {
+    if (!forest || forest.length === 0) return []
+
+    const anchor = opts.anchorBlockId
+      ? blocks.value.find(b => b.id === opts.anchorBlockId && b.pageId === opts.pageId)
+      : undefined
+    const parentId = anchor ? anchor.parentId : (opts.fallbackParentId ?? null)
+
+    // 插入点：锚点之后（nextSiblingId 为锚点的后继，重编号后动态取 pos）
+    let nextSiblingId: string | null = null
+    let prevPos: number | null = null
+    {
+      const siblings = getSortedChildren(blocks.value, parentId, opts.pageId)
+      if (anchor) {
+        const idx = siblings.findIndex(b => b.id === anchor.id)
+        nextSiblingId = idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1].id : null
+        prevPos = anchor.pos
+      } else {
+        prevPos = siblings.length > 0 ? siblings[siblings.length - 1].pos : null
+      }
+    }
+
+    // 1. 为整棵森林预生成新 id（旧→新映射，D6）
+    const idMap = new Map<string, string>()
+    const assignIds = (nodes: BlockClipPayload[]) => {
+      for (const n of nodes) {
+        if (n.id) idMap.set(n.id, generateUUID())
+        assignIds(n.children)
+      }
+    }
+    assignIds(forest)
+
+    const remapContent = (content: string): string => {
+      let out = content
+      for (const [oldId, newId] of idMap) {
+        out = out.split(oldId).join(newId)
+      }
+      return out
+    }
+
+    const created: Block[] = []
+    const propertyJobs: { blockId: string; properties: NonNullable<BlockClipPayload['properties']> }[] = []
+
+    const insertTree = async (node: BlockClipPayload, parent: string | null, pos: number): Promise<void> => {
+      const block = await createBlock({
+        id: node.id ? idMap.get(node.id) : undefined,
+        pageId: opts.pageId,
+        parentId: parent,
+        pos,
+        content: remapContent(node.content),
+        type: node.type,
+        format: node.format ?? {},
+      })
+      created.push(block)
+      if (node.properties) propertyJobs.push({ blockId: block.id, properties: node.properties })
+      // 子节点：父为新建块（无既有子节点），直接顺序编号
+      for (let i = 0; i < node.children.length; i++) {
+        await insertTree(node.children[i], block.id, (i + 1) * 1000)
+      }
+    }
+
+    // 2. 顶层根依次插入插入点之后（D7/D8）
+    for (const root of forest) {
+      const calcPositions = () => ({
+        prevPos,
+        nextPos: nextSiblingId
+          ? (blocks.value.find(b => b.id === nextSiblingId)?.pos ?? null)
+          : null,
+      })
+      const pos = await safeCalcInsertPos(prevPos, calcPositions().nextPos, blocks.value, calcPositions)
+      await insertTree(root, parentId, pos)
+      prevPos = pos
+    }
+
+    // 3. 先落库再建属性（FK：Property 表引用已存在的 block）
+    for (const b of created) {
+      await flushSave(b.id)
+    }
+    if (propertyJobs.length > 0) {
+      const propertyStore = usePropertyStore()
+      for (const job of propertyJobs) {
+        for (const [key, prop] of Object.entries(job.properties)) {
+          await propertyStore.setProperty(
+            job.blockId,
+            key,
+            revivePropValue(prop.value, prop.type) as PropertyValue,
+            prop.type as PropertyType,
+          )
+        }
+      }
+    }
+
+    return created
+  }
+
+  /** 把剪贴板载荷中的属性字符串值还原为原始类型（string/page 直通，其余尝试 JSON.parse） */
+  function revivePropValue(value: string, type: string): unknown {
+    if (type === 'string' || type === 'page') return value
+    try {
+      return JSON.parse(value)
+    } catch {
+      return value
+    }
+  }
+
   /** 更新 Block 属性（使用独立的 properties 表） */
   async function updateBlockProperties(blockId: string, properties: Record<string, any>) {
     const client = await getClient()
@@ -1226,6 +1345,7 @@ export const useBlockStore = defineStore('blocks', () => {
     moveBlock,
     deleteBlock,
     deleteBlocks,
+    pasteBlocks,
     saveErrors,
     retrySave,
     updateBlockContent,

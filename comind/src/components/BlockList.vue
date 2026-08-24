@@ -26,6 +26,8 @@ import { buildTree, syncTreeToStore } from '../composables/useBlockTree'
 import type { TreeNode } from '../types/block'
 import { useCrossBlockSelection } from '../composables/useCrossBlockSelection'
 import type { CrossBlockSelection } from '../composables/useCrossBlockSelection'
+import { resolveClipboardForest, COMIND_BLOCK_MIME } from '../services/external-paste-parse'
+import { sortByDocumentOrderIds } from '../utils/block-helpers'
 
 const props = defineProps<{
   /** 页面 ID，用于过滤 Block */
@@ -128,6 +130,12 @@ function handleDocKeyDown(e: KeyboardEvent) {
     }
     return
   }
+  // 非 Ctrl/Cmd+V 键击一律清 Shift+V 标志，避免 keydown 后 paste 未触发导致残留污染
+  if ((e.key === 'v' || e.key === 'V') && (e.ctrlKey || e.metaKey)) {
+    pasteShiftHeld = e.shiftKey
+  } else {
+    pasteShiftHeld = false
+  }
   if (e.key === 'Backspace') {
     const selected = [...selection.anchorIds]
     if (selected.length > 0) {
@@ -146,7 +154,74 @@ function handleDocKeyDown(e: KeyboardEvent) {
   if ((e.key === 'c' || e.key === 'C') && (e.ctrlKey || e.metaKey)) {
     if (selection.anchorIds.size > 0) {
       e.preventDefault()
-      selection.copyToClipboard(props.pageId)
+      selection.copyToClipboard()
+    }
+  }
+}
+
+// ── 粘贴分发控制器（ADR-0025 D13 + ADR-0026 D8） ──
+// 捕获阶段拦截 document paste，集中决策：
+// ① Ctrl/Cmd+Shift+V → 放行（TipTap 单 block 纯文本，D9）
+// ② 内部 MIME → 一律 pasteBlocks（复制与粘贴两端均为 block 语义，D1/D13）
+// ③ 外部源 + block 级上下文（有选区 / 非行内 / 空 block）→ external-paste-parse 拆分
+// ④ 外部源 + 行内光标（块内有文本、无选区）→ 放行（TipTap 单 block，image 钩子先消费）
+/** Shift+V 标志：由 keydown 记录，paste 事件消费后复位 */
+let pasteShiftHeld = false
+/** 行内光标上下文：目标在 contenteditable 内且该编辑区有文本（空块视为 block 级上下文） */
+function isInlineCaretContext(e: ClipboardEvent): boolean {
+  const target = e.target as HTMLElement | null
+  if (!target || typeof target.closest !== 'function') return false
+  const editable = target.closest('[contenteditable="true"]') as HTMLElement | null
+  if (!editable) return false
+  return (editable.textContent ?? '').trim().length > 0
+}
+
+/** 粘贴锚点：文档序最后一个选中块；无选区时取聚焦块；皆无 → 页尾追加 */
+function resolvePasteAnchor(): string | null {
+  if (selection.anchorIds.size > 0) {
+    const anchors = sortByDocumentOrderIds(selection.anchorIds, blockStore.blocks)
+    return anchors[anchors.length - 1] ?? null
+  }
+  return editorStore.activeBlockId
+}
+
+async function handleDocPaste(e: ClipboardEvent) {
+  // 先消费 Shift+V 标志（无论冻结与否），避免残留污染下一次普通粘贴
+  const wasShiftPaste = pasteShiftHeld
+  pasteShiftHeld = false
+  if (isFrozen.value) return
+  // D9：Shift+V 纯文本粘贴，交还默认行为（单 block 落文本）
+  if (wasShiftPaste) return
+
+  const data = e.clipboardData
+  if (!data) return
+
+  const forest = resolveClipboardForest(mime => data.getData(mime))
+  // 无结构化内容（如纯图片）→ 放行默认行为（image 钩子在编辑态先消费）
+  if (!forest || forest.length === 0) return
+
+  const hasInternal = !!data.getData(COMIND_BLOCK_MIME)
+  // 外部内容 + 行内光标（块内有文本、无选区）→ TipTap 默认行内粘贴（ADR-0026 D1）
+  if (!hasInternal && selection.anchorIds.size === 0 && isInlineCaretContext(e)) return
+
+  e.preventDefault()
+  const anchorBlockId = resolvePasteAnchor()
+  await blockStore.pasteBlocks(forest, {
+    pageId: props.pageId,
+    anchorBlockId,
+    fallbackParentId: rootBlockId.value,
+  })
+  // 粘贴目标为空活动块（无选区）：插入后清掉空壳，避免残留空行（仅限本页块）
+  if (!selection.anchorIds.size && anchorBlockId) {
+    const anchorBlock = blockStore.getBlock(anchorBlockId)
+    if (
+      anchorBlock
+      && anchorBlock.pageId === props.pageId
+      && anchorBlock.content.trim() === ''
+      && anchorBlock.type === 'bullet'
+    ) {
+      editorStore.deactivateBlock()
+      await blockStore.deleteBlock(anchorBlockId)
     }
   }
 }
@@ -183,12 +258,14 @@ onMounted(() => {
   document.addEventListener('mousemove', handleDocMouseMove)
   document.addEventListener('mouseup', handleDocMouseUp)
   document.addEventListener('keydown', handleDocKeyDown)
+  document.addEventListener('paste', handleDocPaste, true)
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('mousemove', handleDocMouseMove)
   document.removeEventListener('mouseup', handleDocMouseUp)
   document.removeEventListener('keydown', handleDocKeyDown)
+  document.removeEventListener('paste', handleDocPaste, true)
 })
 </script>
 

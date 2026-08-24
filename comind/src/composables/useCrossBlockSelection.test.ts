@@ -1,8 +1,8 @@
-import { describe, test, expect, beforeEach, vi } from 'vitest'
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useBlockStore } from '../stores/blocks'
-import { usePageStore } from '../stores/pages'
-import { useCrossBlockSelection } from './useCrossBlockSelection'
+import { usePropertyStore } from '../stores/property'
+import { useCrossBlockSelection, COMIND_BLOCK_MIME } from './useCrossBlockSelection'
 
 vi.mock('../storage/indexedDB', () => ({
   storage: {
@@ -324,134 +324,197 @@ describe('useCrossBlockSelection', () => {
     })
   })
 
-  describe('copyToClipboard', () => {
+  describe('copyToClipboard（ADR-0025 结构化载荷）', () => {
+    let writeMock: ReturnType<typeof vi.fn>
+    let writeTextMock: ReturnType<typeof vi.fn>
+
     beforeEach(() => {
+      writeMock = vi.fn().mockResolvedValue(undefined)
+      writeTextMock = vi.fn().mockResolvedValue(undefined)
       vi.stubGlobal('navigator', {
-        clipboard: {
-          writeText: vi.fn().mockResolvedValue(undefined)
-        }
+        clipboard: { write: writeMock, writeText: writeTextMock }
       })
-      vi.stubGlobal('document', {
-        createElement: vi.fn().mockReturnValue({
-          value: '',
-          style: {},
-          select: vi.fn()
-        }),
-        body: {
-          appendChild: vi.fn(),
-          removeChild: vi.fn()
-        },
-        execCommand: vi.fn()
+      vi.stubGlobal('ClipboardItem', class {
+        items: Record<string, Blob>
+        constructor(items: Record<string, Blob>) {
+          this.items = items
+        }
       })
     })
 
-    test('应复制选中块的内容', async () => {
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
+    async function writtenPayload() {
+      const item = writeMock.mock.calls[0][0][0] as { items: Record<string, Blob> }
+      return JSON.parse(await item.items[COMIND_BLOCK_MIME].text())
+    }
+
+    async function writtenPlainText() {
+      const item = writeMock.mock.calls[0][0][0] as { items: Record<string, Blob> }
+      return item.items['text/plain'].text()
+    }
+
+    test('写入结构化载荷（自定义 MIME JSON + text/plain 兜底）', async () => {
       const selection = useCrossBlockSelection()
       const pageId = 'page-1'
 
-      const block1 = await blockStore.createBlock({ pageId, content: 'Content 1' })
-      const block2 = await blockStore.createBlock({ pageId, content: 'Content 2' })
+      const block1 = await blockStore.createBlock({ pageId, content: '内容一', type: 'code' })
+      const block2 = await blockStore.createBlock({ pageId, content: '内容二' })
 
       selection.anchorIds.add(block1.id)
       selection.anchorIds.add(block2.id)
 
       await selection.copyToClipboard()
 
-      expect(navigator.clipboard.writeText).toHaveBeenCalled()
-      const writtenText = (navigator.clipboard.writeText as any).mock.calls[0][0]
-      expect(writtenText).toContain('Content 1')
-      expect(writtenText).toContain('Content 2')
+      expect(writeMock).toHaveBeenCalledTimes(1)
+      const payload = await writtenPayload()
+      expect(payload.version).toBe(1)
+      expect(payload.kind).toBe('blocks')
+      expect(payload.blocks).toHaveLength(2)
+      expect(payload.blocks[0].content).toBe('内容一')
+      expect(payload.blocks[0].type).toBe('code')
+      expect(payload.blocks[1].content).toBe('内容二')
+      expect((await writtenPlainText()).split('\n')).toEqual(['内容一', '内容二'])
     })
 
-    test('选中块包含子块时应同时选中子块才能复制', async () => {
+    test('子树完整递归（后代未选中也随行，D10）', async () => {
       const selection = useCrossBlockSelection()
       const pageId = 'page-1'
 
-      const parent = await blockStore.createBlock({ pageId, content: 'Parent' })
-      const child = await blockStore.createBlock({ pageId, content: 'Child', parentId: parent.id })
+      const parent = await blockStore.createBlock({ pageId, content: '父' })
+      await blockStore.createBlock({ pageId, content: '子', parentId: parent.id })
+
+      selection.anchorIds.add(parent.id)
+
+      await selection.copyToClipboard()
+
+      const payload = await writtenPayload()
+      expect(payload.blocks).toHaveLength(1)
+      expect(payload.blocks[0].children).toHaveLength(1)
+      expect(payload.blocks[0].children[0].content).toBe('子')
+      // text/plain 保持缩进
+      const lines = (await writtenPlainText()).split('\n')
+      expect(lines[0]).toBe('父')
+      expect(lines[1]).toMatch(/^\s+子/)
+    })
+
+    test('折叠块的后代同样被复制（折叠只是视图状态）', async () => {
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+
+      const parent = await blockStore.createBlock({ pageId, content: '折叠父', format: { collapsed: true } })
+      await blockStore.createBlock({ pageId, content: '隐藏子', parentId: parent.id })
+
+      selection.anchorIds.add(parent.id)
+
+      await selection.copyToClipboard()
+
+      const payload = await writtenPayload()
+      const children = (payload.blocks[0].children as Array<{ content: string }>).map(c => c.content)
+      expect(children).toEqual(['隐藏子'])
+    })
+
+    test('同时选中父子时森林根不重复（子并入父的 children）', async () => {
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+
+      const parent = await blockStore.createBlock({ pageId, content: '父' })
+      const child = await blockStore.createBlock({ pageId, content: '子', parentId: parent.id })
 
       selection.anchorIds.add(parent.id)
       selection.anchorIds.add(child.id)
 
       await selection.copyToClipboard()
 
-      const writtenText = (navigator.clipboard.writeText as any).mock.calls[0][0]
-      expect(writtenText).toContain('Parent')
-      expect(writtenText).toContain('Child')
+      const payload = await writtenPayload()
+      expect(payload.blocks).toHaveLength(1)
+      expect(payload.blocks[0].content).toBe('父')
+      expect(payload.blocks[0].children).toHaveLength(1)
+      expect(payload.blocks[0].children[0].id).toBe(child.id)
     })
 
-    test('折叠块不应复制子块内容', async () => {
+    test('属性随行：propertyStore 实时缓存为权威（D11）', async () => {
       const selection = useCrossBlockSelection()
       const pageId = 'page-1'
 
-      const parent = await blockStore.createBlock({ pageId, content: 'Parent', format: { collapsed: true } })
-      await blockStore.createBlock({ pageId, content: 'Hidden Child', parentId: parent.id })
+      const block = await blockStore.createBlock({ pageId, content: '带属性' })
+      const propertyStore = usePropertyStore()
+      propertyStore.propertiesByBlock.set(block.id, [{
+        id: 'p1', blockId: block.id, key: 'status', value: 'Todo', type: 'string',
+        sortOrder: 0, isHidden: false, isDeleted: false, schemaVersion: 1, createdAt: 0, updatedAt: 0
+      }])
 
-      selection.anchorIds.add(parent.id)
-
-      await selection.copyToClipboard()
-
-      const writtenText = (navigator.clipboard.writeText as any).mock.calls[0][0]
-      expect(writtenText).toContain('Parent')
-      expect(writtenText).not.toContain('Hidden Child')
-    })
-
-    test('应保持树形缩进', async () => {
-      const selection = useCrossBlockSelection()
-      const pageId = 'page-1'
-
-      const root = await blockStore.createBlock({ pageId, content: 'Root' })
-      const child = await blockStore.createBlock({ pageId, content: 'Child', parentId: root.id })
-
-      selection.anchorIds.add(root.id)
-      selection.anchorIds.add(child.id)
-
-      await selection.copyToClipboard()
-
-      const writtenText = (navigator.clipboard.writeText as any).mock.calls[0][0]
-      const lines = writtenText.split('\n')
-      expect(lines[0]).toBe('Root')
-      expect(lines[1]).toMatch(/^\s+Child/)
-    })
-
-    test('使用 pageId 参数时应只复制指定页面的块', async () => {
-      const selection = useCrossBlockSelection()
-      const page1Id = 'page-1'
-      const page2Id = 'page-2'
-
-      const block1Page1 = await blockStore.createBlock({ pageId: page1Id, content: 'Page 1 - Block 1' })
-      const block2Page1 = await blockStore.createBlock({ pageId: page1Id, content: 'Page 1 - Block 2' })
-      const block1Page2 = await blockStore.createBlock({ pageId: page2Id, content: 'Page 2 - Block 1' })
-
-      selection.anchorIds.add(block1Page1.id)
-      selection.anchorIds.add(block2Page1.id)
-      selection.anchorIds.add(block1Page2.id)
-
-      await selection.copyToClipboard(page1Id)
-
-      expect(navigator.clipboard.writeText).toHaveBeenCalled()
-      const writtenText = (navigator.clipboard.writeText as any).mock.calls[0][0]
-      expect(writtenText).toContain('Page 1 - Block 1')
-      expect(writtenText).toContain('Page 1 - Block 2')
-      expect(writtenText).not.toContain('Page 2 - Block 1')
-    })
-
-    test('剪贴板 API 失败时应使用 fallback 方法', async () => {
-      const selection = useCrossBlockSelection()
-      const pageId = 'page-1'
-
-      const block = await blockStore.createBlock({ pageId, content: 'Fallback Test' })
       selection.anchorIds.add(block.id)
+      await selection.copyToClipboard()
 
-      vi.stubGlobal('navigator', {
-        clipboard: {
-          writeText: vi.fn().mockRejectedValue(new Error('Clipboard failed'))
-        }
+      const payload = await writtenPayload()
+      expect(payload.blocks[0].properties).toEqual({ status: { value: 'Todo', type: 'string' } })
+    })
+
+    test('store 缓存为空时回退 on-block 载入快照', async () => {
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+
+      const block = await blockStore.createBlock({ pageId, content: '快照属性' })
+      const b = blockStore.blocks.find(x => x.id === block.id)!
+      b.properties = [{
+        id: 'p2', block_id: block.id, key: 'priority', value: 'high', type: 'string',
+        sort_order: 0, is_hidden: 0, is_deleted: 0, schema_version: 1, created_at: 0, updated_at: 0
+      }]
+
+      selection.anchorIds.add(block.id)
+      await selection.copyToClipboard()
+
+      const payload = await writtenPayload()
+      expect(payload.blocks[0].properties).toEqual({ priority: { value: 'high', type: 'string' } })
+    })
+
+    test('空选区写入空森林与空文本', async () => {
+      const selection = useCrossBlockSelection()
+
+      await selection.copyToClipboard()
+
+      expect(writeMock).toHaveBeenCalledTimes(1)
+      const payload = await writtenPayload()
+      expect(payload.blocks).toEqual([])
+      expect(await writtenPlainText()).toBe('')
+    })
+
+    test('clipboard.write 失败时降级为 writeText（仅纯文本）', async () => {
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+
+      const block = await blockStore.createBlock({ pageId, content: '降级' })
+      selection.anchorIds.add(block.id)
+      writeMock.mockRejectedValue(new Error('write failed'))
+
+      await selection.copyToClipboard()
+
+      expect(writeTextMock).toHaveBeenCalled()
+      expect(writeTextMock.mock.calls[0][0]).toContain('降级')
+    })
+
+    test('write 与 writeText 均失败时 execCommand 兜底', async () => {
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+
+      const block = await blockStore.createBlock({ pageId, content: '兜底' })
+      selection.anchorIds.add(block.id)
+      writeMock.mockRejectedValue(new Error('write failed'))
+      writeTextMock.mockRejectedValue(new Error('writeText failed'))
+
+      const execCommand = vi.fn()
+      vi.stubGlobal('document', {
+        createElement: vi.fn().mockReturnValue({ value: '', style: {}, select: vi.fn() }),
+        body: { appendChild: vi.fn(), removeChild: vi.fn() },
+        execCommand
       })
 
       await selection.copyToClipboard()
 
-      expect(document.execCommand).toHaveBeenCalledWith('copy')
+      expect(execCommand).toHaveBeenCalledWith('copy')
     })
   })
 
@@ -566,14 +629,6 @@ describe('useCrossBlockSelection', () => {
       expect(selection.anchorIds.size).toBe(1)
       expect(selection.anchorIds.has(block1.id)).toBe(true)
       expect(selection.anchorIds.has(block2.id)).toBe(false)
-    })
-
-    test('copyToClipboard 空选区时写入空字符串', async () => {
-      const selection = useCrossBlockSelection()
-
-      await selection.copyToClipboard()
-
-      expect(navigator.clipboard.writeText).toHaveBeenCalledWith('')
     })
 
     test('选中不存在的块 ID 应安全处理', async () => {
