@@ -149,4 +149,12 @@ describe('normalizeTextRange', () => {
     expect(norm.end).toEqual({ blockId: 'b', offset: 0 })
     expect(norm.middleBlockIds).toEqual([])
   })
+
+  test('同块内 offset 颠倒时 normalizeTextRange 也归一化 start<=end', () => {
+    const bs = blocks([{ id: 'a', content: 'abcdef' }])
+    const norm = normalizeTextRange(bs, range(offset('a', 5), offset('a', 1)))
+    expect(norm.start).toEqual({ blockId: 'a', offset: 1 })
+    expect(norm.end).toEqual({ blockId: 'a', offset: 5 })
+    expect(norm.middleBlockIds).toEqual([])
+  })
 })

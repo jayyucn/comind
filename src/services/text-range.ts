@@ -79,9 +79,24 @@ export function normalizeTextRange(blocks: Block[], range: TextRange): Normalize
     return { start: range.anchor, end: range.head, middleBlockIds: [] }
   }
 
-  const [start, end] = anchorIdx <= headIdx
-    ? [range.anchor, range.head]
-    : [range.head, range.anchor]
+  let start: BlockOffset
+  let end: BlockOffset
+  if (anchorIdx < headIdx) {
+    start = range.anchor
+    end = range.head
+  } else if (anchorIdx > headIdx) {
+    start = range.head
+    end = range.anchor
+  } else {
+    // 同一 block：按 offset 归一化，保证 start.offset <= end.offset
+    if (range.anchor.offset <= range.head.offset) {
+      start = range.anchor
+      end = range.head
+    } else {
+      start = range.head
+      end = range.anchor
+    }
+  }
 
   const lo = Math.min(anchorIdx, headIdx)
   const hi = Math.max(anchorIdx, headIdx)
@@ -106,8 +121,9 @@ export function textRangeToText(blocks: Block[], range: TextRange): string {
   if (!startBlock || !endBlock) return ''
 
   if (start.blockId === end.blockId) {
-    const lo = clampOffset(Math.min(start.offset, end.offset), startBlock.content.length)
-    const hi = clampOffset(Math.max(start.offset, end.offset), startBlock.content.length)
+    // normalizeTextRange 已保证 start.offset <= end.offset
+    const lo = clampOffset(start.offset, startBlock.content.length)
+    const hi = clampOffset(end.offset, startBlock.content.length)
     return startBlock.content.slice(lo, hi)
   }
 
