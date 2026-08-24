@@ -1,6 +1,6 @@
 use crate::types::Block;
+#[cfg(any(target_arch = "wasm32", test))]
 use std::collections::HashMap;
-
 #[cfg(not(target_arch = "wasm32"))]
 use rusqlite::ToSql;
 #[cfg(not(target_arch = "wasm32"))]
