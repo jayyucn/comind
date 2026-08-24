@@ -112,7 +112,8 @@ function isSvgIcon(icon: string): boolean {
         @mouseleave="hoveredPropertyId = null"
         @click.stop="editProperty(prop, $event)"
       >
-        <span class="property-key">{{ getPropertyTitle(prop.key) }}:</span>
+        <!-- project/area 直接以图标+名称展示，不渲染标签 -->
+        <span v-if="prop.key !== 'project' && prop.key !== 'area'" class="property-key">{{ getPropertyTitle(prop.key) }}:</span>
         <span class="property-value">
           <template v-if="getIcon(prop.key, prop.value)">
             <Icon 
