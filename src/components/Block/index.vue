@@ -355,7 +355,8 @@ function onContentClick(e: MouseEvent) {
 }
 
 /** 属性区 mousedown：作为块选区起点（ADR-0035 D6），只做块选区、不激活编辑器 */
-function onPropertyMousedown() {
+function onPropertyMousedown(e: MouseEvent) {
+  if (e.button !== 0) return
   selection?.startTracking(blockId.value, true)
 }
 
