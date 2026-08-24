@@ -8,6 +8,7 @@ import {
   computeDatePickerPosition
 } from '../../../composables/useDateTimePickerPanel'
 import { DATE_REF_AT_REGEX, serializeDateRef, normalizeRecurrence } from '../../../utils/date-ref'
+import { blockOffsetFromPoint } from '../../../services/selection-geometry'
 import {
   encodeRelationshipContent,
   decodeRelationshipContent,
@@ -231,6 +232,8 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
   /** mousedown：捕获点击坐标，在 tiptap 挂载前通知 editor store */
   function handleContentMousedown(e: MouseEvent) {
     const target = e.target as HTMLElement
+    // 仅响应左键（右键/中键留给上下文菜单等，避免误启动选区/激活）
+    if (e.button !== 0) return
     // .block-link 与 .rel-type-label 与 .date-ref 都由 handleContentClick 处理点击，
     // 不要让 mousedown 触发激活导致 BulletRender 被替换、
     // 进而让后续 click 事件落在新挂载的 Editor 上。
@@ -253,7 +256,11 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     editorStore.setClickCoords(e.clientX, e.clientY)
 
     if (selection) {
-      selection.startTracking(blockId.value)
+      // 内容区 mousedown 启动文本选区拖拽（ADR-0035 D1）：定位起始字符偏移
+      const anchor = blockOffsetFromPoint(e.clientX, e.clientY)
+      if (anchor) {
+        selection.startTextTracking(anchor, { x: e.clientX, y: e.clientY })
+      }
     }
   }
 

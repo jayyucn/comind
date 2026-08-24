@@ -28,6 +28,7 @@ import { useCrossBlockSelection } from '../composables/useCrossBlockSelection'
 import type { CrossBlockSelection } from '../composables/useCrossBlockSelection'
 import { resolveClipboardForest, COMIND_BLOCK_MIME } from '../services/external-paste-parse'
 import { sortByDocumentOrderIds } from '../utils/block-helpers'
+import { blockOffsetFromPoint, selectionClientRects } from '../services/selection-geometry'
 
 const props = defineProps<{
   /** 页面 ID，用于过滤 Block */
@@ -77,7 +78,26 @@ async function handleCreateBlock() {
 }
 
 // ── 跨 Block 选区事件处理 ──
+const TEXT_DRAG_THRESHOLD_PX = 4
+
 function handleDocMouseMove(e: MouseEvent) {
+  // 文本选区拖拽（内容区起点，ADR-0035 D1）
+  if (selection.textDragAnchor.value) {
+    if (!selection.isTextDragging.value) {
+      const sp = selection.textDragStartPoint.value
+      if (sp && Math.hypot(e.clientX - sp.x, e.clientY - sp.y) < TEXT_DRAG_THRESHOLD_PX) {
+        return // 未超过最小位移，仍视为单击
+      }
+      editorStore.deactivateBlock()
+    }
+    const head = blockOffsetFromPoint(e.clientX, e.clientY)
+    if (head) {
+      selection.updateTextDrag(head)
+    }
+    return
+  }
+
+  // 块选区拖拽（属性区起点，ADR-0035 D6）
   if (!selection.dragStartBlockId.value) return
 
   const el = document.elementFromPoint(e.clientX, e.clientY)
@@ -101,12 +121,28 @@ function handleDocMouseMove(e: MouseEvent) {
 }
 
 function handleDocMouseUp(e: MouseEvent) {
+  // 文本选区拖拽结束：固化选区
+  if (selection.isTextDragging.value) {
+    selection.finalizeTextDrag()
+    return
+  }
+
+  // 内容区单击（未拖）：激活编辑器
+  if (selection.textDragAnchor.value) {
+    const blockId = selection.textDragAnchor.value.blockId
+    selection.clearTextTracking()
+    if (!isFrozen.value) {
+      editorStore.activateBlock(blockId)
+    }
+    return
+  }
+
+  // 块选区（属性区起点）
   if (!selection.dragStartBlockId.value) {
-    if (selection.anchorIds.size > 0) {
-      const target = e.target as HTMLElement
-      if (!target.closest('.block') && !target.closest('.block-list')) {
-        selection.clearSelection()
-      }
+    const target = e.target as HTMLElement
+    if (!target.closest('.block') && !target.closest('.block-list')) {
+      if (selection.anchorIds.size > 0) selection.clearSelection()
+      if (selection.textRange.value) selection.clearTextSelection()
     }
     return
   }
@@ -129,6 +165,7 @@ function handleDocKeyDown(e: KeyboardEvent) {
     // 冻结时只允许 Escape 清除选区
     if (e.key === 'Escape') {
       selection.clearSelection()
+      selection.clearTextSelection()
     }
     return
   }
@@ -151,10 +188,15 @@ function handleDocKeyDown(e: KeyboardEvent) {
   }
   if (e.key === 'Escape') {
     selection.clearSelection()
+    selection.clearTextSelection()
     return
   }
   if ((e.key === 'c' || e.key === 'C') && (e.ctrlKey || e.metaKey)) {
-    if (selection.anchorIds.size > 0) {
+    // 文本选区优先于块选区（互斥，只会命中其一）
+    if (selection.textRange.value) {
+      e.preventDefault()
+      selection.copyTextToClipboard(props.pageId)
+    } else if (selection.anchorIds.size > 0) {
       e.preventDefault()
       selection.copyToClipboard()
     }
@@ -233,6 +275,20 @@ const selection = useCrossBlockSelection()
 provide<CrossBlockSelection>('crossBlockSelection', selection)
 provide('onDragEnd', handleDragEnd)
 
+// ── 文本选区覆盖层高亮（ADR-0035 D4）──
+const highlightRects = ref<DOMRect[]>([])
+
+function refreshTextHighlight() {
+  const tr = selection.textRange.value
+  highlightRects.value = tr ? selectionClientRects(tr.anchor, tr.head) : []
+}
+
+function handleViewportChange() {
+  refreshTextHighlight()
+}
+
+watch(() => selection.textRange.value, () => refreshTextHighlight())
+
 // ── 拖放指示器（模块级共享状态，渲染一次） ──
 // 所有 Block 的 useBlockDragDrop 写入同一组 ref，这里统一渲染单个 <BlockDropIndicator>，
 // 复现原全局 .drop-indicator DOM 元素行为，避免跨容器拖拽时残留指示器。
@@ -251,6 +307,7 @@ watch(() => blockStore.structureVersion, () => {
 watch(() => props.pageId, (newId, oldId) => {
   if (newId !== oldId) {
     selection.clearSelection()
+    selection.clearTextSelection()
     syncFromStore()
   }
 })
@@ -261,6 +318,9 @@ onMounted(() => {
   document.addEventListener('mouseup', handleDocMouseUp)
   document.addEventListener('keydown', handleDocKeyDown)
   document.addEventListener('paste', handleDocPaste, true)
+  // 文本选区覆盖层高亮需随滚动/缩放重绘（视口矩形会失效）
+  document.addEventListener('scroll', handleViewportChange, true)
+  window.addEventListener('resize', handleViewportChange)
 })
 
 onBeforeUnmount(() => {
@@ -268,6 +328,8 @@ onBeforeUnmount(() => {
   document.removeEventListener('mouseup', handleDocMouseUp)
   document.removeEventListener('keydown', handleDocKeyDown)
   document.removeEventListener('paste', handleDocPaste, true)
+  document.removeEventListener('scroll', handleViewportChange, true)
+  window.removeEventListener('resize', handleViewportChange)
 })
 </script>
 
@@ -300,6 +362,14 @@ onBeforeUnmount(() => {
       :css-class="indicatorClass"
       :visible="indicatorVisible"
     />
+
+    <!-- 文本选区覆盖层高亮（ADR-0035 D4）：按视口矩形逐行绘制 -->
+    <div
+      v-for="(rect, i) in highlightRects"
+      :key="i"
+      class="text-selection-rect"
+      :style="{ top: `${rect.top}px`, left: `${rect.left}px`, width: `${rect.width}px`, height: `${rect.height}px` }"
+    />
   </div>
 </template>
 
@@ -323,5 +393,14 @@ onBeforeUnmount(() => {
   user-select: none;
   -webkit-user-select: none;
   cursor: default;
+}
+
+/* 文本选区覆盖层高亮：position:fixed + 视口矩形，pointer-events 穿透 */
+.text-selection-rect {
+  position: fixed;
+  pointer-events: none;
+  background: rgba(66, 133, 244, 0.15);
+  border-radius: 2px;
+  z-index: var(--z-sticky);
 }
 </style>

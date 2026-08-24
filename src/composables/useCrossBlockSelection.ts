@@ -17,6 +17,8 @@ import type { Property, PropertyType } from '../types/property'
 import { COMIND_BLOCK_MIME } from '../services/external-paste-parse'
 // 内部剪贴板格式 MIME 单一来源（ADR-0025 D5）；此处仅转发供既有导入方使用
 export { COMIND_BLOCK_MIME }
+import { textRangeToText } from '../services/text-range'
+import type { BlockOffset, TextRange } from '../services/text-range'
 
 export function useCrossBlockSelection() {
   const blockStore = useBlockStore()
@@ -28,6 +30,13 @@ export function useCrossBlockSelection() {
   const trackingFromProperty = ref(false)
   const selectedIds = reactive(new Set<string>())
   const anchorIds = reactive(new Set<string>())
+  /** 文本选区拖拽状态（ADR-0035 D1）：内容区起点 */
+  const textDragAnchor = ref<BlockOffset | null>(null)
+  /** 文本拖拽起始屏幕坐标（用于与单击区分的最小位移阈值） */
+  const textDragStartPoint = ref<{ x: number; y: number } | null>(null)
+  const isTextDragging = ref(false)
+  /** 固化后的文本选区（mouseup 后用于复制/高亮） */
+  const textRange = ref<TextRange | null>(null)
 
   function clearSelection() {
     anchorIds.clear()
@@ -45,6 +54,8 @@ export function useCrossBlockSelection() {
     if (anchorIds.size > 0) {
       clearSelection()
     }
+    // 块选区手势开始即清文本选区（互斥）
+    if (textRange.value) textRange.value = null
     dragStartBlockId.value = blockId
     trackingFromProperty.value = fromProperty
   }
@@ -115,9 +126,13 @@ export function useCrossBlockSelection() {
     dragStartBlockId.value = null
     trackingFromProperty.value = false
     selectedIds.clear()
+    // 块选区固化即清文本选区（互斥）
+    if (textRange.value) textRange.value = null
   }
 
   function toggleBlock(blockId: string, pageId: string) {
+    // Ctrl+Click 切换块选区即清文本选区（互斥）
+    if (textRange.value) textRange.value = null
     const toToggle = new Set<string>()
     const visited = new Set<string>()
 
@@ -150,6 +165,62 @@ export function useCrossBlockSelection() {
     return anchorIds.size > 0
       ? anchorIds.has(blockId)
       : selectedIds.has(blockId)
+  }
+
+  // ── 文本选区（ADR-0035 D1/D3）──
+
+  /** 内容区 mousedown 开始文本拖拽：记录锚点，清旧选区（文本+块） */
+  function startTextTracking(anchor: BlockOffset, startPoint: { x: number; y: number }) {
+    if (textRange.value) textRange.value = null
+    if (anchorIds.size > 0 || selectedIds.size > 0) clearSelection()
+    textDragAnchor.value = anchor
+    textDragStartPoint.value = startPoint
+    isTextDragging.value = false
+  }
+
+  /** 拖拽中更新头部，实时设置文本选区 */
+  function updateTextDrag(head: BlockOffset) {
+    if (!textDragAnchor.value) return
+    isTextDragging.value = true
+    textRange.value = { anchor: textDragAnchor.value, head }
+  }
+
+  /** mouseup 固化文本选区：保留 textRange，清拖拽态 */
+  function finalizeTextDrag() {
+    isTextDragging.value = false
+    textDragAnchor.value = null
+    textDragStartPoint.value = null
+  }
+
+  /** 单击（未拖）时清拖拽态，不产生选区 */
+  function clearTextTracking() {
+    textDragAnchor.value = null
+    textDragStartPoint.value = null
+    isTextDragging.value = false
+  }
+
+  function clearTextSelection() {
+    textRange.value = null
+  }
+
+  /** 复制文本选区：内容切片拼接（委托纯模块 textRangeToText） */
+  async function copyTextToClipboard(pageId: string) {
+    if (!textRange.value) return
+    const text = textRangeToText(blockStore.getBlocksByPage(pageId), textRange.value)
+    if (!text) return
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      // 降级：execCommand 兜底
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
   }
 
   /**
@@ -298,6 +369,10 @@ export function useCrossBlockSelection() {
     trackingFromProperty,
     selectedIds,
     anchorIds,
+    textDragAnchor,
+    textDragStartPoint,
+    isTextDragging,
+    textRange,
     clearSelection,
     clearTracking,
     startTracking,
@@ -306,7 +381,13 @@ export function useCrossBlockSelection() {
     toggleBlock,
     isBlockSelected,
     copyToClipboard,
-    deleteSelected
+    deleteSelected,
+    startTextTracking,
+    updateTextDrag,
+    finalizeTextDrag,
+    clearTextTracking,
+    clearTextSelection,
+    copyTextToClipboard
   }
 }
 
