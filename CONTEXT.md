@@ -86,3 +86,12 @@ A paste scenario where a block is selected or focused (not editing inline text).
 
 ### Clipboard Source Priority (剪贴板源优先级)
 For external paste, `text/html` takes precedence over `text/plain` (richer structure: paragraphs / lists / headings). See ADR-0026 D2.
+
+### Selection (选区)
+The user's currently active selected state. At any moment it is exactly one of **Block Selection** or **Text Range** — the two are mutually exclusive. See ADR-0035. _Avoid_: 选中集, highlight.
+
+### Block Selection (块选区)
+A set of Block ids selected as whole units, toggled via Ctrl/Cmd+Click or by dragging from a block's property region. Powers block-level copy/paste/delete (ADR-0025/0026). Distinct from **Text Range**. See ADR-0035. _Avoid_: 多块选择, multi-select, 整块选择.
+
+### Text Range (文本选区)
+A contiguous text range spanning multiple Blocks, bounded by two char positions — each a `{ blockId, offset }` into that block's raw content — with everything between them in document order selected, like a word processor. Created by dragging across block content. Powers text copy. Distinct from **Block Selection**; the two are mutually exclusive. See ADR-0035. _Avoid_: 文字选择, selection range, 文本选择.
