@@ -354,6 +354,12 @@ function onContentClick(e: MouseEvent) {
   handleContentClick(e)
 }
 
+/** 属性区 mousedown：作为块选区起点（ADR-0035 D6），只做块选区、不激活编辑器 */
+function onPropertyMousedown(e: MouseEvent) {
+  if (e.button !== 0) return
+  selection?.startTracking(blockId.value, true)
+}
+
 async function onLanguageChange(lang: string) {
   if (typeHooks.value?.onLanguageChange) {
     await typeHooks.value.onLanguageChange(lang)
@@ -446,7 +452,7 @@ async function onPaste(e: ClipboardEvent) {
     </div>
 
     <!-- 属区显示区 -->
-    <div class="block-properties">
+    <div class="block-properties" @mousedown="onPropertyMousedown">
       <PropertyDisplay :block-id="blockId" />
     </div>
 

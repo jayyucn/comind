@@ -88,21 +88,24 @@ describe('blockCard store', () => {
   // ── invalidate + refreshIfDirty 行为组合 ──
 
   describe('invalidate + refreshIfDirty', () => {
-    it('invalidate(blockId) 后刷新会移除该卡片', async () => {
-      const cards = [
-        makeCard({ block_id: 'a', content_preview: 'Keep' }),
-        makeCard({ block_id: 'b', content_preview: 'Remove' }),
+    it('invalidate(blockId) 后刷新会重新拉取最新卡片', async () => {
+      const fresh = [
+        makeCard({ block_id: 'a', content_preview: 'Fresh A' }),
+        makeCard({ block_id: 'b', content_preview: 'Fresh B' }),
       ]
-      mockGetBlockCards.mockResolvedValue([])
+      mockGetBlockCards.mockResolvedValue(fresh)
 
       const store = useBlockCardStore()
-      store.cards = cards
+      store.cards = [
+        makeCard({ block_id: 'a', content_preview: 'Stale A' }),
+        makeCard({ block_id: 'b', content_preview: 'Stale B' }),
+      ]
       store.invalidate('b')
 
       await store.refreshIfDirty()
 
-      expect(store.cards.length).toBe(1)
-      expect(store.cards[0].block_id).toBe('a')
+      expect(mockGetBlockCards).toHaveBeenCalledTimes(1)
+      expect(store.cards).toEqual(fresh)
     })
 
     it('invalidate() 全脏时 load 刷新全部', async () => {
@@ -182,8 +185,9 @@ describe('blockCard store', () => {
 
   // ── 边界条件 ──
 
-  it('多次 invalidate 同一 ID 不重复添加', async () => {
-    mockGetBlockCards.mockResolvedValue([])
+  it('多次 invalidate 同一 ID 合并为一次刷新', async () => {
+    const fresh = [makeCard({ block_id: 'a' }), makeCard({ block_id: 'b' })]
+    mockGetBlockCards.mockResolvedValue(fresh)
     const store = useBlockCardStore()
     store.cards = [
       makeCard({ block_id: 'a' }),
@@ -196,8 +200,8 @@ describe('blockCard store', () => {
 
     await store.refreshIfDirty()
 
-    expect(store.cards.length).toBe(1)
-    expect(store.cards[0].block_id).toBe('b')
+    expect(mockGetBlockCards).toHaveBeenCalledTimes(1)
+    expect(store.cards).toEqual(fresh)
   })
 
   it('invalidate 混合：先全脏后指定', async () => {

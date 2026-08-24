@@ -1,11 +1,12 @@
 use comind_core::{
     services::{
-        BlockService, BlockVersionService, BlockWriteService, DateRefService, FilterService,
-        LinkService, PageService, PropertyService, RelationshipTypeService, TemplateService, build_page_with_blocks,
+        build_page_with_blocks, BlockService, BlockVersionService, BlockWriteService,
+        DateRefService, FilterService, LinkService, PageService, PropertyService,
+        RelationshipTypeService, TemplateService,
     },
     storage::{SQLiteAdapter, StorageAdapter, TransactionalStorageAdapter},
-    types::*,
     sync::message::SyncTable,
+    types::*,
 };
 use serde::{Deserialize, Serialize};
 use std::error::Error;
@@ -56,9 +57,7 @@ where
 {
     let adapter_arc = db.adapter_arc();
     let mut adapter = adapter_arc.lock().await;
-    adapter
-        .transaction(|tx| f(tx))
-        .map_err(|e| e.to_string())
+    adapter.transaction(|tx| f(tx)).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -83,7 +82,8 @@ pub async fn get_block_cards(
 ) -> Result<Vec<BlockCard>, String> {
     execute_with_adapter(db, |storage| {
         comind_core::services::block_projection_service::get_blocks_projection(storage)
-    }).await
+    })
+    .await
 }
 
 // ---- Saved Filters ----
@@ -101,7 +101,10 @@ pub async fn save_saved_filter(
     name: &str,
     query_json: &str,
 ) -> Result<SavedFilter, String> {
-    execute_with_adapter(db, |storage| FilterService::save_saved_filter(storage, name, query_json)).await
+    execute_with_adapter(db, |storage| {
+        FilterService::save_saved_filter(storage, name, query_json)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -111,7 +114,10 @@ pub async fn update_saved_filter(
     name: &str,
     query_json: &str,
 ) -> Result<SavedFilter, String> {
-    execute_with_adapter(db, |storage| FilterService::update_saved_filter(storage, id, name, query_json)).await
+    execute_with_adapter(db, |storage| {
+        FilterService::update_saved_filter(storage, id, name, query_json)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -119,7 +125,10 @@ pub async fn delete_saved_filter(
     db: State<'_, super::state::DatabaseConnection>,
     id: &str,
 ) -> Result<(), String> {
-    execute_with_adapter(db, |storage| FilterService::delete_saved_filter(storage, id)).await
+    execute_with_adapter(db, |storage| {
+        FilterService::delete_saved_filter(storage, id)
+    })
+    .await
 }
 
 // ---- Screens & Tabs（两级层级） ----
@@ -129,7 +138,10 @@ pub async fn get_screen_views(
     db: State<'_, super::state::DatabaseConnection>,
     entity: String,
 ) -> Result<Vec<ScreenView>, String> {
-    execute_with_adapter(db, |storage| FilterService::get_screen_views(storage, &entity)).await
+    execute_with_adapter(db, |storage| {
+        FilterService::get_screen_views(storage, &entity)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -141,7 +153,10 @@ pub async fn create_screen(
     sort_order: i64,
     config: String,
 ) -> Result<ScreenView, String> {
-    execute_with_adapter(db, |storage| FilterService::create_screen(storage, &entity, &name, &view_type, sort_order, &config)).await
+    execute_with_adapter(db, |storage| {
+        FilterService::create_screen(storage, &entity, &name, &view_type, sort_order, &config)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -155,7 +170,19 @@ pub async fn create_tab(
     sort_order: i64,
     config: String,
 ) -> Result<ScreenView, String> {
-    execute_with_adapter(db, |storage| FilterService::create_tab(storage, &entity, &parent_id, &name, &view_type, &query_json, sort_order, &config)).await
+    execute_with_adapter(db, |storage| {
+        FilterService::create_tab(
+            storage,
+            &entity,
+            &parent_id,
+            &name,
+            &view_type,
+            &query_json,
+            sort_order,
+            &config,
+        )
+    })
+    .await
 }
 
 #[tauri::command]
@@ -166,7 +193,10 @@ pub async fn update_screen(
     view_type: String,
     config: String,
 ) -> Result<ScreenView, String> {
-    execute_with_adapter(db, |storage| FilterService::update_screen(storage, &id, &name, &view_type, &config)).await
+    execute_with_adapter(db, |storage| {
+        FilterService::update_screen(storage, &id, &name, &view_type, &config)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -178,7 +208,10 @@ pub async fn update_tab(
     query_json: String,
     config: String,
 ) -> Result<ScreenView, String> {
-    execute_with_adapter(db, |storage| FilterService::update_tab(storage, &id, &name, &view_type, &query_json, &config)).await
+    execute_with_adapter(db, |storage| {
+        FilterService::update_tab(storage, &id, &name, &view_type, &query_json, &config)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -202,7 +235,10 @@ pub async fn set_default_screen(
     db: State<'_, super::state::DatabaseConnection>,
     id: String,
 ) -> Result<ScreenView, String> {
-    execute_with_adapter(db, |storage| FilterService::set_default_screen(storage, &id)).await
+    execute_with_adapter(db, |storage| {
+        FilterService::set_default_screen(storage, &id)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -235,16 +271,15 @@ pub async fn get_ideas_pages_by_month(
 ) -> Result<Vec<Page>, String> {
     execute_with_adapter(db, |storage| {
         PageService::get_ideas_by_month(storage, year, month)
-    }).await
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn get_ideas_months(
     db: State<'_, super::state::DatabaseConnection>,
 ) -> Result<Vec<String>, String> {
-    execute_with_adapter(db, |storage| {
-        PageService::get_ideas_months(storage)
-    }).await
+    execute_with_adapter(db, |storage| PageService::get_ideas_months(storage)).await
 }
 
 /// 幂等地获取或创建今日 Ideas 页面（单一事实来源：Rust 端）
@@ -256,10 +291,8 @@ pub async fn ensure_today_ideas_page(
     db: State<'_, super::state::DatabaseConnection>,
     sync_server: State<'_, super::state::SyncServerHandle>,
 ) -> Result<Page, String> {
-    let result = execute_with_adapter(db, |storage| {
-        PageService::ensure_today_ideas_page(storage)
-    })
-    .await;
+    let result =
+        execute_with_adapter(db, |storage| PageService::ensure_today_ideas_page(storage)).await;
 
     if let Ok(ref page) = result {
         let sync_server_clone = sync_server.inner().clone();
@@ -281,7 +314,8 @@ pub async fn get_backlinks(
 ) -> Result<Vec<Link>, String> {
     execute_with_adapter(db, |storage| {
         LinkService::get_by_target_page_id(storage, page_id)
-    }).await
+    })
+    .await
 }
 
 #[tauri::command]
@@ -297,7 +331,8 @@ pub async fn get_outlinks(
             outlinks.extend(links);
         }
         Ok(outlinks)
-    }).await
+    })
+    .await
 }
 
 #[tauri::command]
@@ -315,7 +350,8 @@ pub async fn get_properties(
 ) -> Result<Vec<Property>, String> {
     execute_with_adapter(db, |storage| {
         PropertyService::get_by_block_id(storage, block_id)
-    }).await
+    })
+    .await
 }
 
 #[tauri::command]
@@ -344,7 +380,8 @@ pub async fn query_date_refs(
     execute_with_adapter(db, |storage| {
         let refs = DateRefService::query_by_date_range(storage, &kind, &from, &to)?;
         Ok(refs)
-    }).await
+    })
+    .await
 }
 
 #[tauri::command]
@@ -355,7 +392,8 @@ pub async fn query_overdue_date_refs(
     execute_with_adapter(db, |storage| {
         let refs = DateRefService::query_overdue(storage, &today)?;
         Ok(refs)
-    }).await
+    })
+    .await
 }
 
 #[tauri::command]
@@ -366,7 +404,8 @@ pub async fn get_date_refs_by_block(
     execute_with_adapter(db, |storage| {
         let refs = DateRefService::get_by_block(storage, &block_id)?;
         Ok(refs)
-    }).await
+    })
+    .await
 }
 
 /// 批量获取整页所有 block 的 dateRef。一次 IPC 代替 N×get_date_refs_by_block。
@@ -386,7 +425,8 @@ pub async fn get_date_refs_by_page(
             }
         }
         Ok(result)
-    }).await
+    })
+    .await
 }
 
 #[tauri::command]
@@ -397,7 +437,8 @@ pub async fn query_due_non_recurring_date_refs(
     execute_with_adapter(db, |storage| {
         let refs = DateRefService::query_due_non_recurring(storage, now_ms)?;
         Ok(refs)
-    }).await
+    })
+    .await
 }
 
 #[tauri::command]
@@ -407,7 +448,8 @@ pub async fn query_all_recurring_date_refs(
     execute_with_adapter(db, |storage| {
         let refs = DateRefService::query_all_recurring(storage)?;
         Ok(refs)
-    }).await
+    })
+    .await
 }
 
 #[tauri::command]
@@ -417,12 +459,16 @@ pub async fn query_incomplete_tasks(
     execute_with_adapter(db, |storage| {
         // 1. 查 status=Todo/Doing 的 block_ids
         let statuses = vec!["Todo".to_string(), "Doing".to_string()];
-        let block_ids = PropertyService::query_block_ids_by_key_value(storage, "status", &statuses)?;
+        let block_ids =
+            PropertyService::query_block_ids_by_key_value(storage, "status", &statuses)?;
         if block_ids.is_empty() {
             return Ok(Vec::new());
         }
         // 2. 批量获取 blocks
-        let blocks = comind_core::storage::repository::BlockRepository::get_by_ids(storage.blocks(), &block_ids)?;
+        let blocks = comind_core::storage::repository::BlockRepository::get_by_ids(
+            storage.blocks(),
+            &block_ids,
+        )?;
         // 3. 对每个 block 查 page + dateRefs，过滤 type=ideas
         let mut tasks: Vec<IncompleteTask> = Vec::new();
         for block in blocks {
@@ -453,7 +499,8 @@ pub async fn query_incomplete_tasks(
             });
         }
         Ok(tasks)
-    }).await
+    })
+    .await
 }
 
 /// Batch data for checkAndFire: returns all recurring dateRefs + their blocks + pages + existing notifications
@@ -504,7 +551,8 @@ pub async fn batch_check_and_fire_data(
             pages,
             notifications,
         })
-    }).await
+    })
+    .await
 }
 
 /// 图谱快照：一次 SQL JOIN 返回所有页面间边关系
@@ -532,26 +580,33 @@ pub async fn build_graph_snapshot(
     let db_path = db.get_db_path();
     let adapter = SQLiteAdapter::open_readonly(std::path::Path::new(&db_path))
         .map_err(|e| format!("[build_graph_snapshot] open read conn failed: {}", e))?;
-    let mut stmt = adapter.conn.prepare(
-        "SELECT l.id, b.page_id, p.title, l.target_page_id, p2.title, l.relationship_type
+    let mut stmt = adapter
+        .conn
+        .prepare(
+            "SELECT l.id, b.page_id, p.title, l.target_page_id, p2.title, l.relationship_type
          FROM Link l
          JOIN Block b ON l.source_block_id = b.id
          JOIN Page p ON b.page_id = p.id
          JOIN Page p2 ON l.target_page_id = p2.id
          WHERE l.deleted_at IS NULL
            AND p.deleted = 0 AND p.deleted_at IS NULL
-           AND p2.deleted = 0 AND p2.deleted_at IS NULL"
-    ).map_err(|e| e.to_string())?;
-    let edges = stmt.query_map([], |row| {
-        Ok(GraphEdgeRecord {
-            link_id: row.get(0)?,
-            source_page_id: row.get(1)?,
-            source_page_title: row.get(2)?,
-            target_page_id: row.get(3)?,
-            target_page_title: row.get(4)?,
-            relationship_type: row.get(5)?,
+           AND p2.deleted = 0 AND p2.deleted_at IS NULL",
+        )
+        .map_err(|e| e.to_string())?;
+    let edges = stmt
+        .query_map([], |row| {
+            Ok(GraphEdgeRecord {
+                link_id: row.get(0)?,
+                source_page_id: row.get(1)?,
+                source_page_title: row.get(2)?,
+                target_page_id: row.get(3)?,
+                target_page_title: row.get(4)?,
+                relationship_type: row.get(5)?,
+            })
         })
-    }).map_err(|e| e.to_string())?.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
     Ok(edges)
 }
 
@@ -566,15 +621,18 @@ pub async fn rebuild_date_refs(
         let refs = storage.date_refs().get_all()?;
         date_ref_ids = refs.into_iter().map(|r| r.id).collect();
         Ok(format!("{{\"rebuilt\":{}}}", count))
-    }).await;
-    
+    })
+    .await;
+
     if result.is_ok() {
         let sync_server_clone = sync_server.inner().clone();
         tokio::spawn(async move {
-            sync_server_clone.record_and_notify(SyncTable::DateRef, date_ref_ids).await;
+            sync_server_clone
+                .record_and_notify(SyncTable::DateRef, date_ref_ids)
+                .await;
         });
     }
-    
+
     result
 }
 
@@ -589,14 +647,14 @@ pub async fn save_block_tree(
     let blocks: Vec<Block> = blocks
         .into_iter()
         .map(|block_json| {
-            serde_json::from_value(block_json)
-                .map_err(|e| format!("Failed to parse block: {}", e))
+            serde_json::from_value(block_json).map_err(|e| format!("Failed to parse block: {}", e))
         })
         .collect::<Result<_, _>>()?;
 
     let adapter_arc = db.adapter_arc();
     let mut adapter = adapter_arc.lock().await;
-    let outcome = BlockWriteService::save_blocks(&mut *adapter, blocks).map_err(|e| e.to_string())?;
+    let outcome =
+        BlockWriteService::save_blocks(&mut *adapter, blocks).map_err(|e| e.to_string())?;
     drop(adapter);
 
     let sync_server_clone = sync_server.inner().clone();
@@ -637,8 +695,11 @@ pub async fn save_page(
     sync_server: State<'_, super::state::SyncServerHandle>,
     page: serde_json::Value,
 ) -> Result<Page, String> {
-    let page_id: Option<String> = page.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
-    
+    let page_id: Option<String> = page
+        .get("id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
     let result = execute_with_adapter(db, |storage| {
         let update: PageUpdate =
             serde_json::from_value(page).map_err(|e| format!("Failed to parse page: {}", e))?;
@@ -681,16 +742,19 @@ pub async fn save_page(
                 update.file_path.as_deref(),
             ),
         }
-    }).await;
-    
+    })
+    .await;
+
     if result.is_ok() && page_id.is_some() {
         let sync_server_clone = sync_server.inner().clone();
         let page_id_value = page_id.unwrap();
         tokio::spawn(async move {
-            sync_server_clone.record_and_notify(SyncTable::Page, vec![page_id_value]).await;
+            sync_server_clone
+                .record_and_notify(SyncTable::Page, vec![page_id_value])
+                .await;
         });
     }
-    
+
     result
 }
 
@@ -726,7 +790,7 @@ pub async fn set_property(
     type_: &str,
 ) -> Result<Property, String> {
     let block_id_clone = block_id.to_string();
-    
+
     let result = execute_with_adapter(db, |storage| {
         // Use upsert to eliminate read-then-write race condition
         // (two concurrent setProperty calls both seeing existing=None → double INSERT → UNIQUE constraint failure)
@@ -748,15 +812,18 @@ pub async fn set_property(
         }
 
         result
-    }).await;
-    
+    })
+    .await;
+
     if result.is_ok() {
         let sync_server_clone = sync_server.inner().clone();
         tokio::spawn(async move {
-            sync_server_clone.record_and_notify(SyncTable::Property, vec![block_id_clone]).await;
+            sync_server_clone
+                .record_and_notify(SyncTable::Property, vec![block_id_clone])
+                .await;
         });
     }
-    
+
     result
 }
 
@@ -768,7 +835,7 @@ pub async fn delete_property(
     key: &str,
 ) -> Result<(), String> {
     let block_id_clone = block_id.to_string();
-    
+
     let result = execute_with_adapter(db, |storage| {
         if let Some(prop) = PropertyService::get_by_block_id_and_key(storage, block_id, key)? {
             storage.properties().delete(&prop.id)?;
@@ -790,15 +857,18 @@ pub async fn delete_property(
         }
 
         Ok(())
-    }).await;
-    
+    })
+    .await;
+
     if result.is_ok() {
         let sync_server_clone = sync_server.inner().clone();
         tokio::spawn(async move {
-            sync_server_clone.record_and_notify(SyncTable::Property, vec![block_id_clone]).await;
+            sync_server_clone
+                .record_and_notify(SyncTable::Property, vec![block_id_clone])
+                .await;
         });
     }
-    
+
     result
 }
 
@@ -866,8 +936,7 @@ pub async fn open_workspace_path(
     let workspace = super::config::get_workspace_path(&app_handle, &config);
     // 目录不存在则先创建，避免系统打开命令因路径缺失而报错
     if !workspace.exists() {
-        std::fs::create_dir_all(&workspace)
-            .map_err(|e| format!("创建工作空间目录失败: {}", e))?;
+        std::fs::create_dir_all(&workspace).map_err(|e| format!("创建工作空间目录失败: {}", e))?;
     }
     open_path_in_explorer(&workspace)
 }
@@ -880,7 +949,7 @@ fn open_path_in_explorer(path: &std::path::Path) -> Result<(), String> {
     }
     #[cfg(not(target_os = "android"))]
     {
-        let mut program = "xdg-open";
+        let program;
         #[cfg(target_os = "windows")]
         {
             program = "explorer";
@@ -903,8 +972,9 @@ pub async fn execute_batch(
     sync_server: State<'_, super::state::SyncServerHandle>,
     operations: Vec<serde_json::Value>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let mut sync_changes: std::collections::HashMap<SyncTable, Vec<String>> = std::collections::HashMap::new();
-    
+    let mut sync_changes: std::collections::HashMap<SyncTable, Vec<String>> =
+        std::collections::HashMap::new();
+
     let result = execute_with_transaction_adapter(db, |storage| {
         let mut results = Vec::new();
         let mut page_ids = std::collections::HashSet::new();
@@ -926,7 +996,10 @@ pub async fn execute_batch(
                 ("block", "create") => {
                     let block: Block = serde_json::from_value(params)?;
                     page_ids.insert(block.page_id.clone());
-                    sync_changes.entry(SyncTable::Block).or_insert_with(Vec::new).push(block.id.clone());
+                    sync_changes
+                        .entry(SyncTable::Block)
+                        .or_insert_with(Vec::new)
+                        .push(block.id.clone());
                     // S8: route through BlockService for dateRef/link/property sync
                     let result = BlockService::create(
                         storage,
@@ -938,18 +1011,35 @@ pub async fn execute_batch(
                         Some(&block.id),
                     )?;
                     // Collect link & property changes (generated by BlockService::create)
-                    let links = LinkService::get_by_source_block_id(storage, &result.id).unwrap_or_default();
-                    sync_changes.entry(SyncTable::Link).or_insert_with(Vec::new).extend(links.iter().map(|l| l.id.clone()));
-                    let props = PropertyService::get_by_block_id(storage, &result.id).unwrap_or_default();
-                    sync_changes.entry(SyncTable::Property).or_insert_with(Vec::new).extend(props.iter().map(|p| p.id.clone()));
-                    let notifs = storage.notifications().get_by_block_id(&result.id).unwrap_or_default();
-                    sync_changes.entry(SyncTable::Notification).or_insert_with(Vec::new).extend(notifs.iter().map(|n| n.id.clone()));
+                    let links = LinkService::get_by_source_block_id(storage, &result.id)
+                        .unwrap_or_default();
+                    sync_changes
+                        .entry(SyncTable::Link)
+                        .or_insert_with(Vec::new)
+                        .extend(links.iter().map(|l| l.id.clone()));
+                    let props =
+                        PropertyService::get_by_block_id(storage, &result.id).unwrap_or_default();
+                    sync_changes
+                        .entry(SyncTable::Property)
+                        .or_insert_with(Vec::new)
+                        .extend(props.iter().map(|p| p.id.clone()));
+                    let notifs = storage
+                        .notifications()
+                        .get_by_block_id(&result.id)
+                        .unwrap_or_default();
+                    sync_changes
+                        .entry(SyncTable::Notification)
+                        .or_insert_with(Vec::new)
+                        .extend(notifs.iter().map(|n| n.id.clone()));
                     serde_json::to_value(result)?
                 }
                 ("block", "update") => {
                     let block: Block = serde_json::from_value(params)?;
                     page_ids.insert(block.page_id.clone());
-                    sync_changes.entry(SyncTable::Block).or_insert_with(Vec::new).push(block.id.clone());
+                    sync_changes
+                        .entry(SyncTable::Block)
+                        .or_insert_with(Vec::new)
+                        .push(block.id.clone());
                     // S8: route through BlockService for dateRef/link/property/notification sync
                     let result = BlockService::update(
                         storage,
@@ -960,12 +1050,26 @@ pub async fn execute_batch(
                         block.parent_id.as_deref(),
                         Some(block.pos),
                     )?;
-                    let links = LinkService::get_by_source_block_id(storage, &result.id).unwrap_or_default();
-                    sync_changes.entry(SyncTable::Link).or_insert_with(Vec::new).extend(links.iter().map(|l| l.id.clone()));
-                    let props = PropertyService::get_by_block_id(storage, &result.id).unwrap_or_default();
-                    sync_changes.entry(SyncTable::Property).or_insert_with(Vec::new).extend(props.iter().map(|p| p.id.clone()));
-                    let notifs = storage.notifications().get_by_block_id(&result.id).unwrap_or_default();
-                    sync_changes.entry(SyncTable::Notification).or_insert_with(Vec::new).extend(notifs.iter().map(|n| n.id.clone()));
+                    let links = LinkService::get_by_source_block_id(storage, &result.id)
+                        .unwrap_or_default();
+                    sync_changes
+                        .entry(SyncTable::Link)
+                        .or_insert_with(Vec::new)
+                        .extend(links.iter().map(|l| l.id.clone()));
+                    let props =
+                        PropertyService::get_by_block_id(storage, &result.id).unwrap_or_default();
+                    sync_changes
+                        .entry(SyncTable::Property)
+                        .or_insert_with(Vec::new)
+                        .extend(props.iter().map(|p| p.id.clone()));
+                    let notifs = storage
+                        .notifications()
+                        .get_by_block_id(&result.id)
+                        .unwrap_or_default();
+                    sync_changes
+                        .entry(SyncTable::Notification)
+                        .or_insert_with(Vec::new)
+                        .extend(notifs.iter().map(|n| n.id.clone()));
                     serde_json::to_value(result)?
                 }
                 ("block", "delete") => {
@@ -974,24 +1078,48 @@ pub async fn execute_batch(
                         .and_then(|v| v.as_str())
                         .unwrap_or_default()
                         .to_string();
-                    sync_changes.entry(SyncTable::Block).or_insert_with(Vec::new).push(id.clone());
+                    sync_changes
+                        .entry(SyncTable::Block)
+                        .or_insert_with(Vec::new)
+                        .push(id.clone());
                     if let Ok(block) = storage.blocks().get_by_id(&id) {
                         page_ids.insert(block.page_id);
                     }
                     // Collect cascade-deleted link/property/notification IDs before BlockService::delete
-                    let links = storage.links().get_by_source_block_id(&id).unwrap_or_default();
-                    sync_changes.entry(SyncTable::Link).or_insert_with(Vec::new).extend(links.iter().map(|l| l.id.clone()));
-                    let props = storage.properties().get_by_block_id(&id).unwrap_or_default();
-                    sync_changes.entry(SyncTable::Property).or_insert_with(Vec::new).extend(props.iter().map(|p| p.id.clone()));
-                    let notifs = storage.notifications().get_by_block_id(&id).unwrap_or_default();
-                    sync_changes.entry(SyncTable::Notification).or_insert_with(Vec::new).extend(notifs.iter().map(|n| n.id.clone()));
+                    let links = storage
+                        .links()
+                        .get_by_source_block_id(&id)
+                        .unwrap_or_default();
+                    sync_changes
+                        .entry(SyncTable::Link)
+                        .or_insert_with(Vec::new)
+                        .extend(links.iter().map(|l| l.id.clone()));
+                    let props = storage
+                        .properties()
+                        .get_by_block_id(&id)
+                        .unwrap_or_default();
+                    sync_changes
+                        .entry(SyncTable::Property)
+                        .or_insert_with(Vec::new)
+                        .extend(props.iter().map(|p| p.id.clone()));
+                    let notifs = storage
+                        .notifications()
+                        .get_by_block_id(&id)
+                        .unwrap_or_default();
+                    sync_changes
+                        .entry(SyncTable::Notification)
+                        .or_insert_with(Vec::new)
+                        .extend(notifs.iter().map(|n| n.id.clone()));
                     // S8: BlockService::delete handles dateRef cleanup + notification hard-delete + link/property cleanup
                     BlockService::delete(storage, &id)?;
                     serde_json::to_value("OK")?
                 }
                 ("page", "create") => {
                     let page: Page = serde_json::from_value(params)?;
-                    sync_changes.entry(SyncTable::Page).or_insert_with(Vec::new).push(page.id.clone());
+                    sync_changes
+                        .entry(SyncTable::Page)
+                        .or_insert_with(Vec::new)
+                        .push(page.id.clone());
                     let result = PageService::create(
                         storage,
                         page.block_id.as_deref().unwrap_or(""),
@@ -1006,7 +1134,10 @@ pub async fn execute_batch(
                 }
                 ("page", "update") => {
                     let page: Page = serde_json::from_value(params)?;
-                    sync_changes.entry(SyncTable::Page).or_insert_with(Vec::new).push(page.id.clone());
+                    sync_changes
+                        .entry(SyncTable::Page)
+                        .or_insert_with(Vec::new)
+                        .push(page.id.clone());
                     let result = PageService::update(
                         storage,
                         &page.id,
@@ -1027,13 +1158,19 @@ pub async fn execute_batch(
                         .and_then(|v| v.as_str())
                         .unwrap_or_default()
                         .to_string();
-                    sync_changes.entry(SyncTable::Page).or_insert_with(Vec::new).push(id.clone());
+                    sync_changes
+                        .entry(SyncTable::Page)
+                        .or_insert_with(Vec::new)
+                        .push(id.clone());
                     PageService::delete(storage, &id)?;
                     serde_json::to_value("OK")?
                 }
                 ("link", "create") => {
                     let link: Link = serde_json::from_value(params)?;
-                    sync_changes.entry(SyncTable::Link).or_insert_with(Vec::new).push(link.id.clone());
+                    sync_changes
+                        .entry(SyncTable::Link)
+                        .or_insert_with(Vec::new)
+                        .push(link.id.clone());
                     let result = LinkService::create(
                         storage,
                         &link.source_block_id,
@@ -1049,7 +1186,10 @@ pub async fn execute_batch(
                         .and_then(|v| v.as_str())
                         .unwrap_or_default()
                         .to_string();
-                    sync_changes.entry(SyncTable::Link).or_insert_with(Vec::new).push(id.clone());
+                    sync_changes
+                        .entry(SyncTable::Link)
+                        .or_insert_with(Vec::new)
+                        .push(id.clone());
                     LinkService::delete(storage, &id)?;
                     serde_json::to_value("OK")?
                 }
@@ -1088,20 +1228,29 @@ pub async fn execute_batch(
                             display_text,
                             relationship_type,
                         )?;
-                        sync_changes.entry(SyncTable::Link).or_insert_with(Vec::new).push(new_link.id.clone());
+                        sync_changes
+                            .entry(SyncTable::Link)
+                            .or_insert_with(Vec::new)
+                            .push(new_link.id.clone());
                         created.push(new_link);
                     }
                     serde_json::to_value(created)?
                 }
                 ("property", "create") => {
                     let prop: Property = serde_json::from_value(params)?;
-                    sync_changes.entry(SyncTable::Property).or_insert_with(Vec::new).push(prop.id.clone());
+                    sync_changes
+                        .entry(SyncTable::Property)
+                        .or_insert_with(Vec::new)
+                        .push(prop.id.clone());
                     let result = storage.properties().create(&prop)?;
                     serde_json::to_value(result)?
                 }
                 ("property", "update") => {
                     let prop: Property = serde_json::from_value(params)?;
-                    sync_changes.entry(SyncTable::Property).or_insert_with(Vec::new).push(prop.id.clone());
+                    sync_changes
+                        .entry(SyncTable::Property)
+                        .or_insert_with(Vec::new)
+                        .push(prop.id.clone());
                     let result = storage.properties().update(&prop)?;
                     serde_json::to_value(result)?
                 }
@@ -1111,19 +1260,28 @@ pub async fn execute_batch(
                         .and_then(|v| v.as_str())
                         .unwrap_or_default()
                         .to_string();
-                    sync_changes.entry(SyncTable::Property).or_insert_with(Vec::new).push(id.clone());
+                    sync_changes
+                        .entry(SyncTable::Property)
+                        .or_insert_with(Vec::new)
+                        .push(id.clone());
                     storage.properties().delete(&id)?;
                     serde_json::to_value("OK")?
                 }
                 ("relationship_type", "create") => {
                     let rt: RelationshipType = serde_json::from_value(params)?;
-                    sync_changes.entry(SyncTable::RelationshipType).or_insert_with(Vec::new).push(rt.id.clone());
+                    sync_changes
+                        .entry(SyncTable::RelationshipType)
+                        .or_insert_with(Vec::new)
+                        .push(rt.id.clone());
                     let result = storage.relationship_types().create(&rt)?;
                     serde_json::to_value(result)?
                 }
                 ("relationship_type", "update") => {
                     let rt: RelationshipType = serde_json::from_value(params)?;
-                    sync_changes.entry(SyncTable::RelationshipType).or_insert_with(Vec::new).push(rt.id.clone());
+                    sync_changes
+                        .entry(SyncTable::RelationshipType)
+                        .or_insert_with(Vec::new)
+                        .push(rt.id.clone());
                     let result = storage.relationship_types().update(&rt)?;
                     serde_json::to_value(result)?
                 }
@@ -1133,19 +1291,28 @@ pub async fn execute_batch(
                         .and_then(|v| v.as_str())
                         .unwrap_or_default()
                         .to_string();
-                    sync_changes.entry(SyncTable::RelationshipType).or_insert_with(Vec::new).push(id.clone());
+                    sync_changes
+                        .entry(SyncTable::RelationshipType)
+                        .or_insert_with(Vec::new)
+                        .push(id.clone());
                     storage.relationship_types().delete(&id)?;
                     serde_json::to_value("OK")?
                 }
                 ("template", "create") => {
                     let template: UserTemplate = serde_json::from_value(params)?;
-                    sync_changes.entry(SyncTable::Template).or_insert_with(Vec::new).push(template.id.clone());
+                    sync_changes
+                        .entry(SyncTable::Template)
+                        .or_insert_with(Vec::new)
+                        .push(template.id.clone());
                     let result = storage.templates().create(&template)?;
                     serde_json::to_value(result)?
                 }
                 ("template", "update") => {
                     let template: UserTemplate = serde_json::from_value(params)?;
-                    sync_changes.entry(SyncTable::Template).or_insert_with(Vec::new).push(template.id.clone());
+                    sync_changes
+                        .entry(SyncTable::Template)
+                        .or_insert_with(Vec::new)
+                        .push(template.id.clone());
                     let result = storage.templates().update(&template)?;
                     serde_json::to_value(result)?
                 }
@@ -1155,7 +1322,10 @@ pub async fn execute_batch(
                         .and_then(|v| v.as_str())
                         .unwrap_or_default()
                         .to_string();
-                    sync_changes.entry(SyncTable::Template).or_insert_with(Vec::new).push(id.clone());
+                    sync_changes
+                        .entry(SyncTable::Template)
+                        .or_insert_with(Vec::new)
+                        .push(id.clone());
                     storage.templates().delete(&id)?;
                     serde_json::to_value("OK")?
                 }
@@ -1171,8 +1341,9 @@ pub async fn execute_batch(
         }
 
         Ok(results)
-    }).await;
-    
+    })
+    .await;
+
     if result.is_ok() {
         let sync_server_clone = sync_server.inner().clone();
         tokio::spawn(async move {
@@ -1181,7 +1352,7 @@ pub async fn execute_batch(
             }
         });
     }
-    
+
     result
 }
 
@@ -1211,7 +1382,8 @@ pub async fn import_from_markdown(
     let dir = super::config::get_markdown_path(&workspace);
     execute_with_adapter(db, |storage| {
         super::markdown::import_all(storage, &dir, strategy)
-    }).await
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1287,7 +1459,8 @@ pub async fn create_block_version(
             checkpoint_name.as_deref(),
             None,
         )
-    }).await
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1323,7 +1496,8 @@ pub async fn cleanup_block_versions(
 ) -> Result<(), String> {
     execute_with_adapter(db, |storage| {
         BlockVersionService::cleanup(storage, retention_days)
-    }).await
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1333,7 +1507,8 @@ pub async fn delete_block_version(
 ) -> Result<(), String> {
     execute_with_adapter(db, |storage| {
         BlockVersionService::delete(storage, version_id)
-    }).await
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1351,7 +1526,8 @@ pub async fn get_notifications_by_block(
 ) -> Result<Vec<Notification>, String> {
     execute_with_adapter(db, |storage| {
         storage.notifications().get_by_block_id(block_id)
-    }).await
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1384,7 +1560,8 @@ pub async fn batch_create_notifications(
 ) -> Result<Vec<Notification>, String> {
     execute_with_adapter(db, |storage| {
         storage.notifications().batch_create(&notifications)
-    }).await
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1395,7 +1572,8 @@ pub async fn update_notification_status(
 ) -> Result<Notification, String> {
     execute_with_adapter(db, |storage| {
         storage.notifications().update_status(id, status)
-    }).await
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1406,7 +1584,8 @@ pub async fn update_notification_payload(
 ) -> Result<Notification, String> {
     execute_with_adapter(db, |storage| {
         storage.notifications().update_payload(id, payload)
-    }).await
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1418,7 +1597,8 @@ pub async fn set_notification_snooze(
 ) -> Result<Notification, String> {
     execute_with_adapter(db, |storage| {
         storage.notifications().set_snooze(id, snooze_until, status)
-    }).await
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1436,7 +1616,8 @@ pub async fn cleanup_notifications(
 ) -> Result<(), String> {
     execute_with_adapter(db, |storage| {
         storage.notifications().delete_older_than(timestamp)
-    }).await
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1463,7 +1644,10 @@ pub async fn get_sync_qr(
         }
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
     }
-    Err("SyncServer not started after 5s — check if port 8080 is available or see console logs".to_string())
+    Err(
+        "SyncServer not started after 5s — check if port 8080 is available or see console logs"
+            .to_string(),
+    )
 }
 
 #[tauri::command]
@@ -1511,7 +1695,10 @@ pub async fn unpair_device(
 pub async fn get_sync_status(
     sync_server: State<'_, super::state::SyncServerHandle>,
 ) -> Result<serde_json::Value, String> {
-    let server = sync_server.get_server().await.ok_or("SyncServer not started")?;
+    let server = sync_server
+        .get_server()
+        .await
+        .ok_or("SyncServer not started")?;
     let status = server.get_status().await;
     Ok(serde_json::json!({
         "connected": status.connected,
@@ -1529,7 +1716,10 @@ pub async fn get_sync_status(
 pub async fn trigger_full_sync(
     sync_server: State<'_, super::state::SyncServerHandle>,
 ) -> Result<(), String> {
-    let server = sync_server.get_server().await.ok_or("SyncServer not started")?;
+    let server = sync_server
+        .get_server()
+        .await
+        .ok_or("SyncServer not started")?;
     server.trigger_full_sync().await.map_err(|e| e.to_string())
 }
 
@@ -1598,11 +1788,10 @@ pub async fn auto_reconnect(
     let db_path = db.get_db_path();
     let db_path = std::path::Path::new(&db_path);
 
-    let client = crate::sync_client::SyncClient::from_db(db_path, device_name)
-        .map_err(|e| {
-            log::info!("auto_reconnect: no paired device found: {}", e);
-            e
-        })?;
+    let client = crate::sync_client::SyncClient::from_db(db_path, device_name).map_err(|e| {
+        log::info!("auto_reconnect: no paired device found: {}", e);
+        e
+    })?;
 
     log::info!("auto_reconnect: found paired device, attempting to connect...");
 
@@ -1616,7 +1805,10 @@ pub async fn auto_reconnect(
             Ok(true)
         }
         Err(e) => {
-            log::warn!("auto_reconnect: initial connect failed ({}), starting background reconnect...", e);
+            log::warn!(
+                "auto_reconnect: initial connect failed ({}), starting background reconnect...",
+                e
+            );
             // 启动心跳（心跳超时会触发重连）
             client.start_heartbeat();
             // 直接触发后台重连循环
@@ -1668,7 +1860,10 @@ pub async fn get_sync_status(
 pub async fn trigger_full_sync_mobile(
     sync_handle: State<'_, super::state::SyncServerHandle>,
 ) -> Result<(), String> {
-    let client = sync_handle.get_client().await.ok_or("SyncClient not started")?;
+    let client = sync_handle
+        .get_client()
+        .await
+        .ok_or("SyncClient not started")?;
     client.trigger_full_sync().await
 }
 
@@ -1689,7 +1884,8 @@ pub async fn save_notification_settings(
     execute_with_adapter(db, move |storage| {
         storage.notification_config().save(&save_config)?;
         Ok(())
-    }).await?;
+    })
+    .await?;
     settings_mgr.update(config).await;
     Ok(())
 }
@@ -1703,7 +1899,8 @@ pub async fn check_and_fire(
     execute_with_adapter(db, move |storage| {
         use comind_core::services::NotificationService;
         NotificationService::check_and_fire(storage, &settings)
-    }).await
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1716,7 +1913,8 @@ pub async fn sync_payload_for_block(
         let page = storage.pages().get_by_id(&block.page_id)?;
         use comind_core::services::NotificationService;
         NotificationService::sync_payload_for_block(storage, &block, &page)
-    }).await
+    })
+    .await
 }
 
 /// S3: Extract all links from block content (typed, plain, external).
@@ -1738,11 +1936,13 @@ pub async fn apply_relationship_type_to_block_content(
     target_title: String,
     new_relationship_type: Option<String>,
 ) -> Result<String, String> {
-    Ok(comind_core::services::content_parse_service::apply_relationship_type_to_block_content(
-        &content,
-        &target_title,
-        new_relationship_type.as_deref(),
-    ))
+    Ok(
+        comind_core::services::content_parse_service::apply_relationship_type_to_block_content(
+            &content,
+            &target_title,
+            new_relationship_type.as_deref(),
+        ),
+    )
 }
 
 /// S3: Check whether content contains a typed link pointing at `target_title`.
@@ -1753,9 +1953,9 @@ pub async fn check_has_typed_link_to_target(
     target_title: String,
 ) -> Result<serde_json::Value, String> {
     let drafts = comind_core::services::content_parse_service::extract_links_from_content(&content);
-    let has = drafts.iter().any(|l| {
-        !l.is_external && l.target_title == target_title && l.relationship_type.is_some()
-    });
+    let has = drafts
+        .iter()
+        .any(|l| !l.is_external && l.target_title == target_title && l.relationship_type.is_some());
     Ok(serde_json::json!({"has_typed_link": has}))
 }
 
@@ -1771,14 +1971,20 @@ pub async fn parse_date_input(input: String) -> Result<Option<String>, String> {
 /// S6: Parse date+time input → { date, time? }.
 /// Supports Chinese time: 下午2点 / 早上9点半 etc.
 #[tauri::command]
-pub async fn parse_date_time_input(input: String) -> Result<Option<comind_core::utils::date_parser::DateTimeResult>, String> {
-    Ok(comind_core::utils::date_parser::parse_date_time_input(&input))
+pub async fn parse_date_time_input(
+    input: String,
+) -> Result<Option<comind_core::utils::date_parser::DateTimeResult>, String> {
+    Ok(comind_core::utils::date_parser::parse_date_time_input(
+        &input,
+    ))
 }
 
 /// S6: Calculate next recurrence ISO from an ISO string + recurrence rule.
 #[tauri::command]
 pub async fn calculate_next_recurrence(iso: String, rule: String) -> Result<String, String> {
-    Ok(comind_core::utils::recurrence::calculate_next_recurrence(&iso, &rule))
+    Ok(comind_core::utils::recurrence::calculate_next_recurrence(
+        &iso, &rule,
+    ))
 }
 
 /// S6: Check if a page title matches a journal date format.
@@ -1791,15 +1997,18 @@ pub async fn is_journal_title(title: String) -> Result<bool, String> {
 /// Returns null if not a recognized journal date.
 #[tauri::command]
 pub async fn normalize_journal_title(title: String) -> Result<Option<String>, String> {
-    Ok(comind_core::utils::journal_detect::normalize_journal_title(&title))
+    Ok(comind_core::utils::journal_detect::normalize_journal_title(
+        &title,
+    ))
 }
 
 /// S6: Check if a normalized title is today.
 #[tauri::command]
 pub async fn is_today_title(normalized_title: String) -> Result<bool, String> {
-    Ok(comind_core::utils::journal_detect::is_today_title(&normalized_title))
+    Ok(comind_core::utils::journal_detect::is_today_title(
+        &normalized_title,
+    ))
 }
-
 
 /// S5: Re-number all blocks on a page so pos values are evenly spaced (GAP_SIZE=1000).
 /// Returns the number of blocks renumbered.
@@ -1812,7 +2021,8 @@ pub async fn renumber_blocks(
         BlockService::renumber_blocks(storage, &page_id)?;
         let all = storage.blocks().get_by_page_id(&page_id)?;
         Ok(all.len() as i64)
-    }).await
+    })
+    .await
 }
 
 /// S5: Build document-order map for a page (block_id → index).
@@ -1824,9 +2034,9 @@ pub async fn build_document_order(
 ) -> Result<std::collections::HashMap<String, usize>, String> {
     execute_with_adapter(db, move |storage| {
         BlockService::build_document_order(storage, &page_id)
-    }).await
+    })
+    .await
 }
-
 
 /// S10: Get page with pre-computed render segments for all blocks.
 /// Calls uild_page_with_blocks which resolves link titles, relationship type labels/colors,
@@ -1836,9 +2046,7 @@ pub async fn get_page_with_blocks(
     db: State<'_, super::state::DatabaseConnection>,
     page_id: String,
 ) -> Result<PageWithBlocks, String> {
-    execute_with_adapter(db, move |storage| {
-        build_page_with_blocks(storage, &page_id)
-    }).await
+    execute_with_adapter(db, move |storage| build_page_with_blocks(storage, &page_id)).await
 }
 
 /// S10: Batch variant of `get_page_with_blocks` — returns pre-computed render
@@ -1858,5 +2066,6 @@ pub async fn get_pages_with_blocks(
             }
         }
         Ok(result)
-    }).await
+    })
+    .await
 }

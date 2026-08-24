@@ -48,9 +48,12 @@ describe('PropertyDisplay', () => {
       props: { blockId: 'block-1' }
     })
 
-    expect(wrapper.text()).toContain('领域')
+    expect(wrapper.text()).not.toContain('领域')
     expect(wrapper.text()).toContain('个人')
-    expect(wrapper.text()).toContain('项目')
+    expect(wrapper.text()).toContain('🌐')
+    // project 不再渲染"项目:"标签，仅显示图标+名称
+    expect(wrapper.text()).not.toContain('项目')
+    expect(wrapper.text()).toContain('📁')
     expect(wrapper.text()).toContain('Test Project')
   })
 
@@ -72,7 +75,9 @@ describe('PropertyDisplay', () => {
       props: { blockId: 'block-1' }
     })
 
-    expect(wrapper.text()).toContain('领域')
+    expect(wrapper.text()).not.toContain('领域')
+    expect(wrapper.text()).toContain('个人')
+    expect(wrapper.text()).toContain('🌐')
     expect(wrapper.text()).not.toContain('项目')
     expect(wrapper.text()).not.toContain('Test Project')
   })

@@ -1,4 +1,5 @@
 use crate::types::DateRef;
+#[cfg(any(target_arch = "wasm32", test))]
 use std::collections::HashMap;
 
 #[cfg(not(target_arch = "wasm32"))]

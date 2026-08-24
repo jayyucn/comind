@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, RwLock};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
-use futures_util::{SinkExt, StreamExt, stream::{SplitSink, SplitStream}};
+use futures_util::{SinkExt, StreamExt, stream::{SplitSink}};
 use qrcode::QrCode;
 use image::{Rgba, ImageEncoder};
 use rusqlite::Connection;
@@ -16,8 +16,6 @@ use comind_core::sync::state::SyncState;
 
 type Stream = WebSocketStream<tokio::net::TcpStream>;
 type WsSink = SplitSink<Stream, Message>;
-type WsSource = SplitStream<Stream>;
-
 /// 当前活跃对端连接的信息（内存态，不持久化）
 #[derive(Clone)]
 struct PeerInfo {

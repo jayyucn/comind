@@ -2,6 +2,7 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { useEditorStore } from '../../stores/editor'
 import { usePropertyStore } from '../../stores/property'
+import { useBlockCardStore } from '../../stores/blockCard'
 import type { PropertyValue } from '../../types/property'
 import { getAllPropertyDefinitions } from '../../types/property'
 import { Icon } from '../Icons'
@@ -9,6 +10,7 @@ import BasePopover from '@/components/common/BasePopover.vue'
 
 const editorStore = useEditorStore()
 const propertyStore = usePropertyStore()
+const blockCardStore = useBlockCardStore()
 
 const builtInProperties = getAllPropertyDefinitions()
 
@@ -68,6 +70,82 @@ function handleTextSave() {
   saveValue(textValue.value)
 }
 
+/** 以"搜索框+已有值列表"弹层交互的内置属性（project / area） */
+const pickerKey = computed<string | null>(() => {
+  const k = currentDef.value?.key
+  return k === 'project' || k === 'area' ? k : null
+})
+
+const pickerTitle = computed(() => currentDef.value?.title ?? '')
+const pickerIcon = computed(() => (pickerKey.value === 'project' ? '📁' : '🌐'))
+const pickerPlaceholder = computed(() => `搜索${pickerTitle.value}或输入新${pickerTitle.value}名`)
+const pickerEmptyHint = computed(() =>
+  refUsage.value.length === 0
+    ? `暂无${pickerTitle.value}，输入名称回车创建`
+    : `无匹配${pickerTitle.value}，回车创建「${textValue.value.trim()}」`
+)
+
+interface RefUsage {
+  name: string
+  count: number
+}
+
+/** 从全量块快照派生已有值：去重 + 计数，次数降序、同频按名称 */
+const refUsage = computed<RefUsage[]>(() => {
+  const key = pickerKey.value
+  if (!key) return []
+  const usage = new Map<string, number>()
+  for (const card of blockCardStore.cards) {
+    const val = (card.properties ?? {})[key]
+    if (typeof val === 'string' && val.trim()) {
+      usage.set(val, (usage.get(val) ?? 0) + 1)
+    }
+  }
+  return [...usage.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+})
+
+const filteredRefs = computed<RefUsage[]>(() => {
+  const q = textValue.value.trim().toLowerCase()
+  if (!q) return refUsage.value
+  return refUsage.value.filter(p => p.name.toLowerCase().includes(q))
+})
+
+const highlightIndex = ref(-1)
+
+function moveHighlight(delta: number) {
+  const len = filteredRefs.value.length
+  if (len === 0) return
+  const base = highlightIndex.value === -1 ? (delta > 0 ? -1 : 0) : highlightIndex.value
+  highlightIndex.value = ((base + delta) % len + len) % len
+}
+
+function onPickerInput(e: Event) {
+  handleTextChange(e)
+  highlightIndex.value = -1
+}
+
+function handlePickerKeydown(e: KeyboardEvent) {
+  const k = e.key
+  if (k === 'ArrowDown' || k === 'ArrowUp') {
+    e.preventDefault()
+    e.stopPropagation()
+    moveHighlight(k === 'ArrowDown' ? 1 : -1)
+    return
+  }
+  if (k === 'Enter') {
+    e.preventDefault()
+    e.stopPropagation()
+    const highlighted = highlightIndex.value >= 0 ? filteredRefs.value[highlightIndex.value] : undefined
+    if (highlighted) {
+      saveValue(highlighted.name)
+    } else if (textValue.value.trim()) {
+      saveValue(textValue.value.trim())
+    }
+  }
+}
+
 async function saveValue(value: PropertyValue) {
   await propertyStore.setProperty(blockId.value, key.value, value, currentDef.value?.type)
   editorStore.hideQuickPropertyEditor()
@@ -80,7 +158,15 @@ const popoverPosition = computed(() => {
 
 watch(visible, async (v) => {
   if (!v) return
-  if (currentDef.value?.type === 'string' && !currentDef.value?.closedValues) {
+  if (pickerKey.value) {
+    textValue.value = (currentValue.value as string) || ''
+    highlightIndex.value = -1
+    // 保证"已有值"来自全量快照（懒加载/脏刷新由 blockCardStore 负责）
+    blockCardStore.getCards()
+    await nextTick()
+    textInputRef.value?.focus()
+    textInputRef.value?.select()
+  } else if (currentDef.value?.type === 'string' && !currentDef.value?.closedValues) {
     textValue.value = (currentValue.value as string) || ''
     await nextTick()
     textInputRef.value?.focus()
@@ -163,7 +249,40 @@ function isSvgIcon(icon: string): boolean {
         </div>
       </template>
 
-      <!-- Text Input (project, area) -->
+      <!-- Ref-List Picker (project/area：搜索已有值 / 回车新建) -->
+      <template v-else-if="pickerKey">
+        <input
+          ref="textInputRef"
+          type="text"
+          :value="textValue"
+          :placeholder="pickerPlaceholder"
+          @input="onPickerInput"
+          @keydown="handlePickerKeydown"
+          @click.stop
+          class="text-input project-search"
+        />
+        <div class="project-list">
+          <div
+            v-for="(p, idx) in filteredRefs"
+            :key="p.name"
+            class="quick-option project-option"
+            :class="{ selected: p.name === currentValue, highlighted: idx === highlightIndex }"
+            @mousedown.prevent
+            @click.stop="saveValue(p.name)"
+            @mouseenter="highlightIndex = idx"
+          >
+            <span class="option-icon">{{ pickerIcon }}</span>
+            <div class="option-text">
+              <span class="option-label">{{ p.name }}</span>
+            </div>
+          </div>
+          <div v-if="filteredRefs.length === 0" class="project-empty">
+            {{ pickerEmptyHint }}
+          </div>
+        </div>
+      </template>
+
+      <!-- Text Input (其他 string 属性) -->
       <template v-else>
         <input
           ref="textInputRef"
@@ -275,5 +394,21 @@ function isSvgIcon(icon: string): boolean {
   border: none;
   outline: none;
   font-size: var(--text-sm);
+}
+
+.project-list {
+  max-height: 208px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+}
+
+.project-option.highlighted {
+  background: var(--accent-subtle, rgba(59, 130, 246, 0.08));
+}
+
+.project-empty {
+  padding: 10px 12px;
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
 }
 </style>

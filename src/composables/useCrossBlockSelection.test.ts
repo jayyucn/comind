@@ -103,6 +103,126 @@ describe('useCrossBlockSelection', () => {
     })
   })
 
+  describe('trackingFromProperty', () => {
+    test('startTracking 默认 fromProperty=false', async () => {
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+      const block = await blockStore.createBlock({ pageId, content: 'Block' })
+
+      selection.startTracking(block.id)
+
+      expect(selection.trackingFromProperty.value).toBe(false)
+    })
+
+    test('startTracking(blockId, true) 标记属性区起点', async () => {
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+      const block = await blockStore.createBlock({ pageId, content: 'Block' })
+
+      selection.startTracking(block.id, true)
+
+      expect(selection.trackingFromProperty.value).toBe(true)
+    })
+
+    test('clearTracking 重置 trackingFromProperty', async () => {
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+      const block = await blockStore.createBlock({ pageId, content: 'Block' })
+
+      selection.startTracking(block.id, true)
+      selection.clearTracking()
+
+      expect(selection.trackingFromProperty.value).toBe(false)
+    })
+
+    test('finalizeSelection 重置 trackingFromProperty', async () => {
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+      const block = await blockStore.createBlock({ pageId, content: 'Block' })
+
+      selection.startTracking(block.id, true)
+      selection.selectedIds.add(block.id)
+      selection.isDragging.value = true
+      selection.finalizeSelection()
+
+      expect(selection.trackingFromProperty.value).toBe(false)
+    })
+  })
+
+  describe('文本选区（text selection）', () => {
+    test('startTextTracking 记录锚点与起点', async () => {
+      const selection = useCrossBlockSelection()
+      const anchor = { blockId: 'a', offset: 3 }
+
+      selection.startTextTracking(anchor, { x: 10, y: 20 })
+
+      expect(selection.textDragAnchor.value).toEqual(anchor)
+      expect(selection.textDragStartPoint.value).toEqual({ x: 10, y: 20 })
+      expect(selection.isTextDragging.value).toBe(false)
+    })
+
+    test('updateTextDrag 设置 textRange 并标记拖拽', async () => {
+      const selection = useCrossBlockSelection()
+      selection.startTextTracking({ blockId: 'a', offset: 1 }, { x: 0, y: 0 })
+
+      selection.updateTextDrag({ blockId: 'c', offset: 2 })
+
+      expect(selection.isTextDragging.value).toBe(true)
+      expect(selection.textRange.value).toEqual({
+        anchor: { blockId: 'a', offset: 1 },
+        head: { blockId: 'c', offset: 2 },
+      })
+    })
+
+    test('finalizeTextDrag 清拖拽态但保留 textRange', async () => {
+      const selection = useCrossBlockSelection()
+      selection.startTextTracking({ blockId: 'a', offset: 1 }, { x: 0, y: 0 })
+      selection.updateTextDrag({ blockId: 'c', offset: 2 })
+
+      selection.finalizeTextDrag()
+
+      expect(selection.isTextDragging.value).toBe(false)
+      expect(selection.textDragAnchor.value).toBeNull()
+      expect(selection.textRange.value).not.toBeNull()
+    })
+
+    test('clearTextSelection 清空 textRange', async () => {
+      const selection = useCrossBlockSelection()
+      selection.startTextTracking({ blockId: 'a', offset: 1 }, { x: 0, y: 0 })
+      selection.updateTextDrag({ blockId: 'c', offset: 2 })
+
+      selection.clearTextSelection()
+
+      expect(selection.textRange.value).toBeNull()
+    })
+
+    test('块选区手势（toggleBlock）清文本选区（互斥）', async () => {
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+      const block = await blockStore.createBlock({ pageId, content: 'Block' })
+
+      selection.startTextTracking({ blockId: block.id, offset: 1 }, { x: 0, y: 0 })
+      selection.updateTextDrag({ blockId: block.id, offset: 2 })
+      expect(selection.textRange.value).not.toBeNull()
+
+      selection.toggleBlock(block.id, pageId)
+
+      expect(selection.textRange.value).toBeNull()
+    })
+
+    test('开始新文本拖拽会清旧文本选区', async () => {
+      const selection = useCrossBlockSelection()
+      selection.startTextTracking({ blockId: 'a', offset: 1 }, { x: 0, y: 0 })
+      selection.updateTextDrag({ blockId: 'c', offset: 2 })
+      expect(selection.textRange.value).not.toBeNull()
+
+      selection.startTextTracking({ blockId: 'b', offset: 0 }, { x: 5, y: 5 })
+
+      expect(selection.textRange.value).toBeNull()
+      expect(selection.textDragAnchor.value).toEqual({ blockId: 'b', offset: 0 })
+    })
+  })
+
   describe('computeRange', () => {
     test('无起始块ID时返回空集合', async () => {
       const selection = useCrossBlockSelection()

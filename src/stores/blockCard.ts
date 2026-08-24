@@ -46,16 +46,11 @@ export const useBlockCardStore = defineStore('blockCard', () => {
 
   /** Refresh dirty cards before querying */
   async function refreshIfDirty(): Promise<void> {
-    if (isFullyDirty.value) {
+    // 全脏或局部脏都全量重拉：脏卡片数据已过期，不能只剔除——
+    // 剔除会让下游拿到残缺数据（如 project/area 已有值列表缺失刚保存的值）
+    if (isFullyDirty.value || dirtyIds.value.size > 0) {
       await load()
-      return
     }
-    if (dirtyIds.value.size === 0) return
-
-    // Remove dirty cards from local array (they'll be re-fetched or gone)
-    const dirtySet = dirtyIds.value
-    cards.value = cards.value.filter(c => !dirtySet.has(c.block_id))
-    dirtyIds.value = new Set()
   }
 
   /** Get cards, refreshing if needed */
