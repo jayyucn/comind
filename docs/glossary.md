@@ -28,7 +28,7 @@
 两级层级中的上层，对应一个业务界面（如任务中心、页面库）。`screen_view` 表中以 `parent_id` 为空串表示。携带 `name` 与全局唯一的 `is_default` 默认标记，本身不含查询；其子级 Tabs 各持一份 `ViewQuery`。记住每个 Screen 上次打开的 Tab。
 
 **Screen→Tab 两级层级 (Two-Level Screen→Tab Hierarchy)**
-视图管理模型：Screen（命名容器）一对多拥有 Tabs；Tab 即 ADR-0005 的「View」——一个固定 `view_type`（table/board/calendar，创建后不可改）的渲染界面，独占一份 headless `ViewQuery`。单一 `screen_view` 表以 `parent_id` 区分布局（空串=Screen，非空=Tab 所属 Screen 的 id）。见 ADR-0009。
+视图管理模型：Screen（命名容器）一对多拥有 Tabs；Tab 即 ADR-0005 的「View」——一个固定 `view_type`（table/board/calendar，创建后不可改）的渲染界面，独占一份 headless `ViewQuery`。单一 `screen_view` 表以 `parent_id` 区分布局（空串=Screen，非空=Tab 所属 Screen 的 id）。见 ADR-0029。
 
 ## T
 
@@ -47,7 +47,7 @@
 ## F
 
 **字段管理面板 (Field Management Panel)**
-`QueryToolbar.vue` 最右侧「字段」按钮（`emit('fields')`）触发的 popover 内容，由消费方（`QueryToolbar` 上层、持有 `config` 的那层）经由 `BasePopover` 持有并渲染。面板本身是通用组件 `FieldManagerPanel.vue`（接收 `fields`/`activeFields`/`candidateFields`/`currentTabVisibleKeys`，emit `toggleVisibility`/`reorder`/`addGlobal`/`removeGlobal` 意图），不持有任何持久化逻辑；跨 Tab 的「全局」语义由消费方实现。分两段：编辑开关关时仅显示第一组（per-tab 显示/隐藏 + 拖拽排序）；开关开时出现第二组的 `+` 与每行的删除，对应全局增/删。见 ADR-0011。
+`QueryToolbar.vue` 最右侧「字段」按钮（`emit('fields')`）触发的 popover 内容，由消费方（`QueryToolbar` 上层、持有 `config` 的那层）经由 `BasePopover` 持有并渲染。面板本身是通用组件 `FieldManagerPanel.vue`（接收 `fields`/`activeFields`/`candidateFields`/`currentTabVisibleKeys`，emit `toggleVisibility`/`reorder`/`addGlobal`/`removeGlobal` 意图），不持有任何持久化逻辑；跨 Tab 的「全局」语义由消费方实现。分两段：编辑开关关时仅显示第一组（per-tab 显示/隐藏 + 拖拽排序）；开关开时出现第二组的 `+` 与每行的删除，对应全局增/删。见 ADR-0031。
 
 **在用字段集 (Active Field Set)**
 字段管理面板的第一组：当前属于本表的字段（出现在 ≥1 个 Tab 的 `TableConfig.columns` 中，全局操作后各 Tab 一致）。每行 `⋮⋮`(per-tab 拖拽排序) + 字段图标 + 字段名 + 👁(per-tab 显示/隐藏)；编辑开关开时 👁 右侧追加 🗑(全局移除)。👁 关的字段仍保留在第一组（全局仍在用），仅当前 Tab 暂不渲染。
@@ -59,24 +59,24 @@
 字段管理面板中 👁 开关的语义：仅影响**当前 Tab** 的 `TableConfig.columns` 是否包含该字段，不改变全局在用集（区别于全局增/删）。关时整行置灰、眼睛图标呈斜杠态，字段可一键重新打开。
 
 **全局增/删字段 (Global Add/Remove Field)**
-字段管理面板在「编辑开关开」后暴露的能力：「增」=`+`、「删」=🗑，二者均作用于**所有 Tab** 的 `TableConfig.columns`（ADR-0011 的 M1 模型：直接改每个 Tab 的 columns，纯视觉层，不新建自定义属性、不触碰字段底层数据）。删仅把字段移入候选字段池（`+` 可恢复），故不做删除确认。
+字段管理面板在「编辑开关开」后暴露的能力：「增」=`+`、「删」=🗑，二者均作用于**所有 Tab** 的 `TableConfig.columns`（ADR-0031 的 M1 模型：直接改每个 Tab 的 columns，纯视觉层，不新建自定义属性、不触碰字段底层数据）。删仅把字段移入候选字段池（`+` 可恢复），故不做删除确认。
 
 ## Z
 
 **弹层 (Popover)**
-Teleport 到 body 的浮动面板族（`BasePopover`、`ValueEditor` qb-popover、`DatePicker`），区别于下拉菜单：可承载复杂内容、可嵌套（嵌套深度经 `$z-popover-nested / $z-popover-deep` 派生 token 表达）。注意：「弹层」与「浮层」不同——「浮层」已被滚动条系统占用（见上「浮层滚动条」）。见 ADR-0012。
+Teleport 到 body 的浮动面板族（`BasePopover`、`ValueEditor` qb-popover、`DatePicker`），区别于下拉菜单：可承载复杂内容、可嵌套（嵌套深度经 `$z-popover-nested / $z-popover-deep` 派生 token 表达）。注意：「弹层」与「浮层」不同——「浮层」已被滚动条系统占用（见上「浮层滚动条」）。见 ADR-0032。
 
 **抽屉 (Drawer)**
-从视口边缘滑入的全高面板（`PageDrawer`），带 backdrop，承载页面级次级内容。层级低于对话框（`$z-drawer: 600 < $z-dialog: 700`），故抽屉内打开的对话框/弹层可浮于其上。见 ADR-0012。
+从视口边缘滑入的全高面板（`PageDrawer`），带 backdrop，承载页面级次级内容。层级低于对话框（`$z-drawer: 600 < $z-dialog: 700`），故抽屉内打开的对话框/弹层可浮于其上。见 ADR-0032。
 
 **对话框 (Dialog)**
-模态弹窗（共享 `.dialog-overlay`、`SettingsModal`、`BlockSelector`、`SearchPanel` 等），带遮罩、阻断背景交互。位于 `$z-dialog: 700`，高于抽屉、低于弹层。见 ADR-0012。
+模态弹窗（共享 `.dialog-overlay`、`SettingsModal`、`BlockSelector`、`SearchPanel` 等），带遮罩、阻断背景交互。位于 `$z-dialog: 700`，高于抽屉、低于弹层。见 ADR-0032。
 
 **下拉菜单 (Dropdown)**
-小尺寸浮动菜单（SlashCommand、PageItemMenu、通知、lang-menu、SyncStatusBar），锚定于触发元素附近，`$z-dropdown: 300`。侧栏折叠按钮、FilterPanel 折叠按钮等"需浮于侧栏之上"的小型控件也允许落于此层。见 ADR-0012。
+小尺寸浮动菜单（SlashCommand、PageItemMenu、通知、lang-menu、SyncStatusBar），锚定于触发元素附近，`$z-dropdown: 300`。侧栏折叠按钮、FilterPanel 折叠按钮等"需浮于侧栏之上"的小型控件也允许落于此层。见 ADR-0032。
 
 **系统装饰层 (System Decoration Layer)**
-非交互的全局装饰（浮层滚动条），`$z-scrollbar: 50`——高于吸附元素、**低于一切浮层表面**，故弹层打开时滚动条被 backdrop 盖住，不再浮现于弹层上方。见 ADR-0012。
+非交互的全局装饰（浮层滚动条），`$z-scrollbar: 50`——高于吸附元素、**低于一切浮层表面**，故弹层打开时滚动条被 backdrop 盖住，不再浮现于弹层上方。见 ADR-0032。
 
 **z-index 铁律 (z-index Rules)**
-① 组件内禁止硬编码 z-index，一律用 `var(--z-*)`（scoped 样式）或 `$z-*`（全局 SCSS）；② 浮层必须 Teleport 到 body，否则 z-index 会困于祖先堆叠上下文而失效（已知陷阱：`.block-children` 的 `translateY(0)`）。见 ADR-0012。
+① 组件内禁止硬编码 z-index，一律用 `var(--z-*)`（scoped 样式）或 `$z-*`（全局 SCSS）；② 浮层必须 Teleport 到 body，否则 z-index 会困于祖先堆叠上下文而失效（已知陷阱：`.block-children` 的 `translateY(0)`）。见 ADR-0032。
