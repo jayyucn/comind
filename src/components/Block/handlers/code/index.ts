@@ -5,7 +5,7 @@ const { register } = useBlockRegistry()
 
 register({
   type: 'code',
-  label: 'Code',
+  label: '代码块',
   editorComponent: CodeMirrorEditor,
   renderComponent: CodeMirrorEditor,
 })
