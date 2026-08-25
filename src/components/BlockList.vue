@@ -120,7 +120,47 @@ function handleDocMouseMove(e: MouseEvent) {
   }
 }
 
+/**
+ * 最近一次点击交互的 block 及是否位于属性区。
+ * 属性区/bullet 等不可聚焦元素点击后焦点落回 body，keydown 的 e.target 不再是
+ * BlockList 内元素——Ctrl+A 等接管需回退到该状态判断 BlockList 上下文。
+ */
+let lastClickedBlockId: string | null = null
+let lastClickedInPropertyArea = false
+
+/**
+ * 点击位置是否在当前块选区（anchorIds，含选中块的后代子树）内。
+ * 选中区域外任意位置（页面空白、sidebar、未选中 block、留白等）点击 → 取消选中。
+ */
+function isInSelectedArea(target: HTMLElement): boolean {
+  if (selection.anchorIds.size === 0) return false
+  const blockEl = target.closest('[data-block-id]') as HTMLElement | null
+  if (!blockEl) return false
+  // 自身或祖先在选区中（子块属于选中块子树，视觉同高亮）
+  let cur: HTMLElement | null = blockEl
+  while (cur) {
+    const id = cur.dataset.blockId
+    if (id && selection.anchorIds.has(id)) return true
+    cur = cur.parentElement?.closest('[data-block-id]') ?? null
+  }
+  return false
+}
+
 function handleDocMouseUp(e: MouseEvent) {
+  // 记录最近点击交互（供 Ctrl+A 焦点丢失到 body 时回退判断上下文）
+  const mouseTarget = e.target as HTMLElement | null
+  if (mouseTarget && typeof mouseTarget.closest === 'function') {
+    const blockEl = mouseTarget.closest('[data-block-id]') as HTMLElement | null
+    const bid = blockEl?.dataset.blockId ?? null
+    if (bid && blockStore.getBlock(bid)?.pageId === props.pageId) {
+      lastClickedBlockId = bid
+      lastClickedInPropertyArea = !!mouseTarget.closest('.block-properties')
+    } else {
+      // 点击非本页区域（sidebar、弹层、留白等）→ 清标记，避免误判
+      lastClickedBlockId = null
+      lastClickedInPropertyArea = false
+    }
+  }
   // 文本选区拖拽结束：固化选区
   if (selection.isTextDragging.value) {
     selection.finalizeTextDrag()
@@ -140,7 +180,8 @@ function handleDocMouseUp(e: MouseEvent) {
   // 块选区（属性区起点）
   if (!selection.dragStartBlockId.value) {
     const target = e.target as HTMLElement
-    if (!target.closest('.block') && !target.closest('.block-list')) {
+    // 点击选中区域外任意位置 → 取消选中（页面空白、sidebar、未选中 block、留白等）
+    if (!isInSelectedArea(target)) {
       if (selection.anchorIds.size > 0) selection.clearSelection()
       if (selection.textRange.value) selection.clearTextSelection()
     }
@@ -160,7 +201,30 @@ function handleDocMouseUp(e: MouseEvent) {
   }
 }
 
+/** 事件目标是否在侧边栏内（sidebar 是导航区，BlockList 的全局键盘/粘贴接管均不生效） */
+function isInSidebar(e: { target: EventTarget | null }): boolean {
+  const target = e.target as HTMLElement | null
+  return !!target && typeof target.closest === 'function' && !!target.closest('.sidebar-wrapper')
+}
+
+/**
+ * 事件目标是否在可编辑输入区（input/textarea/非 TipTap contenteditable）内。
+ * 这些区域保留控件自身的键盘/粘贴默认行为（全选文本、删字符、粘贴文本），
+ * 不被 BlockList 的主文档接管劫持（如 SearchPanel 搜索框、BlockTaskItem 编辑、PageItem 重命名）。
+ * TipTap 编辑区（.ProseMirror）不豁免——Ctrl+A/Backspace 等由 BlockList 接管。
+ */
+function isInEditableInput(e: { target: EventTarget | null }): boolean {
+  const target = e.target as HTMLElement | null
+  if (!target || typeof target.closest !== 'function') return false
+  if (target.closest('input, textarea')) return true
+  const editable = target.closest('[contenteditable="true"]') as HTMLElement | null
+  return !!editable && !editable.closest('.ProseMirror')
+}
+
 function handleDocKeyDown(e: KeyboardEvent) {
+  if (isInSidebar(e)) return
+  // 输入框内 Backspace/Ctrl+C 保留控件自身行为（如搜索框、重命名输入）
+  if (isInEditableInput(e)) return
   if (isFrozen.value) {
     // 冻结时只允许 Escape 清除选区
     if (e.key === 'Escape') {
@@ -203,6 +267,47 @@ function handleDocKeyDown(e: KeyboardEvent) {
   }
 }
 
+/**
+ * 捕获阶段拦截 Ctrl+A：在 ProseMirror（TipTap）处理之前屏蔽单 block 内容全选
+ * （ProseMirror 的 Mod-a → selectAll 在目标阶段执行，冒泡阶段拦截已晚于它）。
+ * 仅处理 BlockList 区域：激活块 / 块选区 / 本页属性区（含空白）→ 全选 Blocklist；
+ * 冻结态与其余情况仅屏蔽浏览器默认（整页文本全选）。非 BlockList 区域交由 App.vue 全局兜底。
+ *
+ * 注意：keydown 的 e.target 是焦点元素。点击属性区/bullet 等不可聚焦元素后焦点落回 body，
+ * 此时回退用 lastClickedBlockId 判断 BlockList 上下文。
+ */
+function handleDocKeyDownCapture(e: KeyboardEvent) {
+  if ((e.key !== 'a' && e.key !== 'A') || !(e.ctrlKey || e.metaKey)) return
+  if (isInSidebar(e)) return
+  const target = e.target as HTMLElement | null
+  // 焦点丢失到 body/document（点击不可聚焦元素后）：回退到最近一次点击的 block 判断上下文
+  const isBodyOrDocument = !target || target === document.body || target === document.documentElement
+  const fallbackBlockId = isBodyOrDocument ? lastClickedBlockId : null
+  const ctxBlockId = fallbackBlockId ?? (
+    target && typeof target.closest === 'function'
+      ? (target.closest('[data-block-id]') as HTMLElement | null)?.dataset.blockId ?? null
+      : null
+  )
+  if (!ctxBlockId) return // 非 BlockList 区域交由 App.vue 全局兜底
+  const ctxBlock = blockStore.getBlock(ctxBlockId)
+  if (!ctxBlock || ctxBlock.pageId !== props.pageId) return
+  // 输入框/非 TipTap contenteditable（含 CodeMirror 编辑区）保留控件自身 Ctrl+A
+  if (isInEditableInput(e)) return
+  e.preventDefault()
+  e.stopPropagation()
+  // 冻结态（只读视图）：仅屏蔽浏览器默认，不全选
+  if (isFrozen.value) return
+  const activeId = editorStore.activeBlockId
+  const activeInPage = !!activeId
+    && blockStore.getBlock(activeId)?.pageId === props.pageId
+  const inPropertyArea = fallbackBlockId
+    ? lastClickedInPropertyArea
+    : !!target?.closest('.block-properties')
+  if (activeInPage || selection.anchorIds.size > 0 || inPropertyArea) {
+    selection.selectAll(props.pageId, rootBlockId.value)
+  }
+}
+
 // ── 粘贴分发控制器（ADR-0025 D13 + ADR-0026 D8） ──
 // 捕获阶段拦截 document paste，集中决策：
 // ① Ctrl/Cmd+Shift+V → 放行（TipTap 单 block 纯文本，D9）
@@ -230,6 +335,18 @@ function resolvePasteAnchor(): string | null {
 }
 
 async function handleDocPaste(e: ClipboardEvent) {
+  // 侧边栏粘贴不进入主文档分发（无编辑上下文，避免误粘到主文档）
+  if (isInSidebar(e)) return
+  // 焦点丢失到 body/document（点击 sidebar/空白等不可聚焦区域后）：回退最近点击上下文，
+  // 最近一次点击不在本页（lastClickedBlockId 已被清空）→ 不分发，避免误粘到主文档
+  const target = e.target as HTMLElement | null
+  const isBodyOrDocument = !target || target === document.body || target === document.documentElement
+  if (isBodyOrDocument) {
+    const ctx = lastClickedBlockId ? blockStore.getBlock(lastClickedBlockId) : null
+    if (!ctx || ctx.pageId !== props.pageId) return
+  }
+  // 输入框/非 TipTap contenteditable 内粘贴走浏览器默认（文本进输入框）
+  if (isInEditableInput(e)) return
   // 先消费 Shift+V 标志（无论冻结与否），避免残留污染下一次普通粘贴
   const wasShiftPaste = pasteShiftHeld
   pasteShiftHeld = false
@@ -317,6 +434,7 @@ onMounted(() => {
   document.addEventListener('mousemove', handleDocMouseMove)
   document.addEventListener('mouseup', handleDocMouseUp)
   document.addEventListener('keydown', handleDocKeyDown)
+  document.addEventListener('keydown', handleDocKeyDownCapture, true)
   document.addEventListener('paste', handleDocPaste, true)
   // 文本选区覆盖层高亮需随滚动/缩放重绘（视口矩形会失效）
   document.addEventListener('scroll', handleViewportChange, true)
@@ -327,6 +445,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('mousemove', handleDocMouseMove)
   document.removeEventListener('mouseup', handleDocMouseUp)
   document.removeEventListener('keydown', handleDocKeyDown)
+  document.removeEventListener('keydown', handleDocKeyDownCapture, true)
   document.removeEventListener('paste', handleDocPaste, true)
   document.removeEventListener('scroll', handleViewportChange, true)
   window.removeEventListener('resize', handleViewportChange)

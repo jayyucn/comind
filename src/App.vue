@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useEmbedSelector } from './app/useEmbedSelector'
 import { useGlobalHotkeys } from './app/useGlobalHotkeys'
@@ -89,7 +89,31 @@ onMounted(async () => {
   prefetchGraphSnapshot()
   await useRelationshipTypes().load()
   await pageStore.loadAllPages()
+  // 全局 Ctrl+A 兜底：BlockList 区域由 BlockList 的捕获监听处理，
+  // 可编辑输入区保留控件自身全选，其余区域一律屏蔽浏览器整页文本全选。
+  document.addEventListener('keydown', handleGlobalKeydownCapture, true)
 })
+
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', handleGlobalKeydownCapture, true)
+})
+
+/**
+ * 全局 Ctrl+A 兜底（document 捕获阶段，晚于 BlockList 的监听注册顺序执行）。
+ * - 目标在 input/textarea/contenteditable（含 CodeMirror 编辑区）→ 放行，保留控件自身全选
+ * - 目标在 .block-list 内 → 放行，由 BlockList 捕获监听决定全选/仅屏蔽
+ * - 其余区域（页面空白、侧边栏、弹层、图谱画布等）→ 屏蔽浏览器默认，无操作
+ */
+function handleGlobalKeydownCapture(e: KeyboardEvent) {
+  if ((e.key !== 'a' && e.key !== 'A') || !(e.ctrlKey || e.metaKey)) return
+  const target = e.target as HTMLElement | null
+  if (target && typeof target.closest === 'function') {
+    if (target.closest('input, textarea, [contenteditable="true"]')) return
+    if (target.closest('.block-list')) return
+  }
+  e.preventDefault()
+  e.stopPropagation()
+}
 
 function handleMainClick(e: MouseEvent) {
   const target = e.target as HTMLElement
