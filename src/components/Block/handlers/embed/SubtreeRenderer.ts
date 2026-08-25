@@ -15,7 +15,8 @@ const SubtreeRenderer = defineComponent({
     const propertyStore = usePropertyStore()
 
     function handleContentClick(e: MouseEvent) {
-      e.stopPropagation()
+      // 不 stopPropagation：让 click 继续 DOM 冒泡到外层 .embed-card，
+      // 否则嵌入卡片的跳转/选中态无法触发（Fix: Bug 2 click to jump）。
       emit('content-click', e)
     }
 
