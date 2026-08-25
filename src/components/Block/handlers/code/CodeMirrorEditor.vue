@@ -1,21 +1,21 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onBeforeUnmount, shallowRef, computed, nextTick } from 'vue'
-import { EditorState } from '@codemirror/state'
-import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
-import { javascript } from '@codemirror/lang-javascript'
-import { python } from '@codemirror/lang-python'
-import { json } from '@codemirror/lang-json'
-import { html } from '@codemirror/lang-html'
 import { css } from '@codemirror/lang-css'
-import { sql } from '@codemirror/lang-sql'
-import { rust } from '@codemirror/lang-rust'
 import { go } from '@codemirror/lang-go'
-import { syntaxHighlighting, HighlightStyle } from '@codemirror/language'
-import { tags } from '@lezer/highlight'
+import { html } from '@codemirror/lang-html'
+import { javascript } from '@codemirror/lang-javascript'
+import { json } from '@codemirror/lang-json'
+import { python } from '@codemirror/lang-python'
+import { rust } from '@codemirror/lang-rust'
+import { sql } from '@codemirror/lang-sql'
+import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
+import { EditorState } from '@codemirror/state'
 import { oneDark, oneDarkHighlightStyle } from '@codemirror/theme-one-dark'
-import { useTheme } from '../../../../composables/useTheme'
+import { EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from '@codemirror/view'
+import { tags } from '@lezer/highlight'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useBlockRegistry } from '../../../../composables/useBlockRegistry'
+import { useTheme } from '../../../../composables/useTheme'
 import BasePopover from '../../../common/BasePopover.vue'
 
 const props = withDefaults(defineProps<{
@@ -139,28 +139,34 @@ const githubTheme = EditorView.theme({
   },
   '.cm-content': {
     fontFamily: "'SFMono-Regular', 'Consolas', 'Liberation Mono', 'Menlo', monospace",
-    padding: '32px 12px 12px 12px',
+    padding: '12px 12px 12px 12px',
     minHeight: '60px',
     caretColor: '#0969da',
+    backgroundColor: 'transparent',
   },
   '.cm-gutters': {
-    backgroundColor: '#f6f8fa',
+    backgroundColor: 'var(--bg-base)',
     color: '#6a737d',
     border: 'none',
+    paddingLeft: '8px',
     paddingRight: '8px',
     borderRight: '1px solid #d0d7de',
   },
   '.cm-activeLineGutter': {
-    backgroundColor: '#eff1f3',
+    // backgroundColor: '#eff1f3',
+    backgroundColor: 'transparent',
   },
   '.cm-activeLine': {
-    backgroundColor: '#eff1f3',
+    // backgroundColor: '#eff1f3',
+    backgroundColor: 'transparent',
+
   },
   '.cm-cursor': {
     borderLeftColor: '#0969da',
   },
   '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
-    backgroundColor: '#b6d5f5',
+    // backgroundColor: '#b6d5f5',
+    backgroundColor: 'transparent',
   },
   '.cm-scroller': {
     overflow: 'auto',
@@ -411,7 +417,7 @@ function getText() {
   return view.value?.state.doc.toString() ?? ''
 }
 
-function markSaved() {}
+function markSaved() { }
 
 function getEditor() {
   return view.value
@@ -423,64 +429,41 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
 <template>
   <div class="code-editor-wrapper" :class="{ 'is-collapsed': collapsed }">
     <header class="code-header">
-      <button
-        type="button"
-        class="code-toggle"
-        :aria-expanded="!collapsed"
-        aria-label="折叠代码块"
-        @click.stop="collapsed = !collapsed"
-      >
+      <button type="button" class="code-toggle" :aria-expanded="!collapsed" aria-label="折叠代码块"
+        @click.stop="collapsed = !collapsed">
         <span class="code-toggle-chevron" :class="{ 'is-collapsed': collapsed }">▾</span>
         <span class="code-toggle-label">{{ headerLabel }}</span>
       </button>
       <div class="code-toolbar">
-        <button
-          ref="langButtonRef"
-          type="button"
-          class="code-toolbar-btn"
-          @click.stop="toggleMenu"
-        >
+        <button ref="langButtonRef" type="button" class="code-toolbar-btn" @click.stop="toggleMenu">
           <span>{{ currentLangLabel }}</span>
           <span class="code-toolbar-arrow">▾</span>
         </button>
         <span class="code-toolbar-divider" aria-hidden="true"></span>
-        <button
-          type="button"
-          class="code-toolbar-btn"
-          :class="{ active: wrap }"
-          :aria-pressed="wrap"
-          @click.stop="wrap = !wrap"
-        >
+        <button type="button" class="code-toolbar-btn" :class="{ active: wrap }" :aria-pressed="wrap"
+          @click.stop="wrap = !wrap">
           自动换行
         </button>
         <span class="code-toolbar-divider" aria-hidden="true"></span>
-        <button
-          type="button"
-          class="code-toolbar-btn"
-          :title="showCopied ? '已复制' : '复制'"
-          @click.stop="copyCode"
-        >
-          <svg v-if="showCopied" class="copy-icon" viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
-            <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"/>
+        <button type="button" class="code-toolbar-btn" :title="showCopied ? '已复制' : '复制'" @click.stop="copyCode">
+          <svg v-if="showCopied" class="copy-icon" viewBox="0 0 16 16" width="14" height="14" fill="currentColor"
+            aria-hidden="true">
+            <path
+              d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z" />
           </svg>
-          <svg v-else class="copy-icon" viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
-            <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/>
-            <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/>
+          <svg v-else class="copy-icon" viewBox="0 0 16 16" width="14" height="14" fill="currentColor"
+            aria-hidden="true">
+            <path
+              d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z" />
+            <path
+              d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z" />
           </svg>
           <span class="code-toolbar-text">复制</span>
         </button>
-        <BasePopover
-          :visible="showLangMenu"
-          :position="menuPosition"
-          @close="showLangMenu = false"
-        >
+        <BasePopover :visible="showLangMenu" :position="menuPosition" @close="showLangMenu = false">
           <div class="lang-menu">
-            <div
-              v-for="lang in languages"
-              :key="lang.id"
-              :class="['lang-item', { active: lang.id === currentLang }]"
-              @click="selectLanguage(lang.id)"
-            >
+            <div v-for="lang in languages" :key="lang.id" :class="['lang-item', { active: lang.id === currentLang }]"
+              @click="selectLanguage(lang.id)">
               {{ lang.label }}
             </div>
           </div>
@@ -496,13 +479,9 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
 <style scoped>
 .code-editor-wrapper {
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm, 6px);
   overflow: hidden;
   /* 头部透明（不设背景），仅正文代码区有底色 */
-}
-
-.code-editor-wrapper.is-collapsed {
-  border-radius: 6px;
 }
 
 /* ── Header（透明，无底色）── */
@@ -510,7 +489,7 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2, 8px);
   padding: 4px 6px 4px 4px;
   background: transparent;
   font-size: var(--text-xs);
@@ -525,7 +504,7 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
 .code-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1, 4px);
   padding: 2px 6px;
   background: transparent;
   border: none;
@@ -552,23 +531,26 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
   transform: rotate(-90deg);
 }
 
-/* 右侧工具栏：hover 才显示（与原来 hover 浮层一致） */
+/* 右侧工具栏：hover 才显示（与原来 hover 浮层一致）。
+ * visibility 随 opacity 一起隐藏，否则 opacity:0 的按钮仍可 Tab 聚焦。 */
 .code-toolbar {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1, 4px);
   opacity: 0;
-  transition: opacity 0.2s;
+  visibility: hidden;
+  transition: opacity 0.2s, visibility 0.2s;
 }
 
 .code-editor-wrapper:hover .code-toolbar {
   opacity: 1;
+  visibility: visible;
 }
 
 .code-toolbar-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1, 4px);
   padding: 3px 8px;
   background: transparent;
   border: none;
@@ -617,7 +599,20 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
 
 /* ── Editor body ── */
 .code-editor-body {
-  background: var(--bg-base2);
+  background: var(--bg-base);
+}
+
+/* 行号（num）区域：两个主题统一用 --bg-base（githubTheme 的 .cm-gutters 只在浅色生效，oneDark 自带背景需覆盖） */
+.code-editor-body :deep(.cm-gutters) {
+  background-color: var(--bg-base);
+}
+
+.code-editor-body :deep(.cm-activeLineGutter) {
+  background: transparent;
+}
+
+.code-editor-body :deep(.cm-editor) {
+  background: transparent;
 }
 
 .code-editor-container {
@@ -626,8 +621,7 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
 
 /* 代码内容左右边距：统一覆盖浅色/深色主题（githubTheme 与 oneDark 的 .cm-content padding 不一致） */
 .code-editor-body :deep(.cm-editor .cm-content) {
-  padding-left: 20px;
-  padding-right: 20px;
+  padding-right: var(--space-5, 20px);
 }
 
 /* ── Language menu ── */
