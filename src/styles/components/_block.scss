@@ -76,7 +76,7 @@
 }
 
 .block-bullet.hide-empty-bullet:hover .bullet-dot,
-.block.active .block-bullet.hide-empty-bullet .bullet-dot {
+.block.active > .block-row .block-bullet.hide-empty-bullet .bullet-dot {
   visibility: visible;
 }
 
@@ -116,7 +116,7 @@
 }
 
 // Active Block
-.block.active {
+.block.active > .block-row {
   .bullet-dot {
     opacity: 0.55;
   }
@@ -178,7 +178,7 @@
   }
 }
 
-.block.active .block-text {
+.block.active > .block-row .block-text {
   background: var(--selection-bg);
   border-radius: $radius-sm;
 }
@@ -437,10 +437,10 @@
   border-radius: $radius-md;
 }
 
-.block.active.priority-low .block-inner,
-.block.active.priority-medium .block-inner,
-.block.active.priority-high .block-inner,
-.block.active.priority-urgent .block-inner {
+.block.active.priority-low > .block-row > .block-inner,
+.block.active.priority-medium > .block-row > .block-inner,
+.block.active.priority-high > .block-row > .block-inner,
+.block.active.priority-urgent > .block-row > .block-inner {
   filter: brightness(1.02);
 }
 
