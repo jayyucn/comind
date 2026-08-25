@@ -17,6 +17,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch 
 import { useBlockRegistry } from '../../../../composables/useBlockRegistry'
 import { useTheme } from '../../../../composables/useTheme'
 import BasePopover from '../../../common/BasePopover.vue'
+import { codeCollapseState } from './code-collapse-state'
 
 const props = withDefaults(defineProps<{
   blockId: string
@@ -50,8 +51,9 @@ const currentLang = ref(props.language || 'plain')
 const showCopied = ref(false)
 const { resolvedTheme } = useTheme()
 
-/** 折叠（chevron 切换）：仅本地状态，刷新块即重置，符合代码块常见用法 */
-const collapsed = ref(false)
+/** 折叠（chevron 切换）：按 blockId 持久化到模块级 Map，本页面内组件重挂载后状态不丢失 */
+const collapsed = ref(codeCollapseState.get(props.blockId) ?? false)
+watch(collapsed, (v) => codeCollapseState.set(props.blockId, v))
 /** 自动换行：仅本地状态，刷新块即重置 */
 const wrap = ref(false)
 
@@ -430,7 +432,7 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
   <div class="code-editor-wrapper" :class="{ 'is-collapsed': collapsed }">
     <header class="code-header">
       <button type="button" class="code-toggle" :aria-expanded="!collapsed" aria-label="折叠代码块"
-        @click.stop="collapsed = !collapsed">
+        @mousedown.stop @click.stop="collapsed = !collapsed">
         <span class="code-toggle-chevron" :class="{ 'is-collapsed': collapsed }">▾</span>
         <span class="code-toggle-label">{{ headerLabel }}</span>
       </button>
@@ -622,6 +624,12 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
 /* 代码内容左右边距：统一覆盖浅色/深色主题（githubTheme 与 oneDark 的 .cm-content padding 不一致） */
 .code-editor-body :deep(.cm-editor .cm-content) {
   padding-right: var(--space-5, 20px);
+}
+
+/* 隐藏 .cm-editor 浏览器默认 focus outline（激活态会在 header 下边缘显示为异常虚线） */
+.code-editor-body :deep(.cm-editor) {
+  outline: none;
+  border: none;
 }
 
 /* ── Language menu ── */

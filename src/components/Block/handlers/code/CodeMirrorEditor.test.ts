@@ -32,10 +32,13 @@ Object.defineProperty(navigator, 'clipboard', {
   configurable: true,
 })
 
+// 折叠状态按 blockId 持久化到模块级 Map，测试需用唯一 blockId 隔离各用例
+let blockIdCounter = 0
+
 function mountEditor(props: Record<string, any> = {}) {
   return mount(CodeMirrorEditor, {
     props: {
-      blockId: 'test-block',
+      blockId: `test-block-${++blockIdCounter}`,
       content: 'const x = 1;',
       language: 'javascript',
       readonly: true,
@@ -326,6 +329,66 @@ describe('CodeMirrorEditor — 折叠（chevron 切换正文显隐）', () => {
     // header 仍渲染，且工具栏按钮仍可用——用户可继续复制等
     expect(wrapper.find('.code-header').exists()).toBe(true)
     expect(getToolbarButtons(wrapper).length).toBe(3)
+  })
+
+  it('折叠状态按 blockId 持久化：组件重挂载后仍保持折叠', async () => {
+    const blockId = 'persist-block'
+    const wrapper = mountEditor({ blockId })
+    await flushPromises()
+    await nextTick()
+
+    await wrapper.find('.code-toggle').trigger('click')
+    await flushPromises()
+    await nextTick()
+    expect(wrapper.find('.code-editor-body').attributes('style') ?? '').toContain('display: none')
+
+    // 模拟 block 激活/失活导致的组件重挂载（v-if 分支切换，实例销毁重建）
+    wrapper.unmount()
+    const remounted = mountEditor({ blockId })
+    await flushPromises()
+    await nextTick()
+
+    expect(remounted.find('.code-editor-body').attributes('style') ?? '').toContain('display: none')
+    expect(remounted.find('.code-toggle-chevron').classes()).toContain('is-collapsed')
+    remounted.unmount()
+  })
+
+  it('不同 blockId 的折叠状态互不影响', async () => {
+    const a = mountEditor({ blockId: 'fold-a' })
+    const b = mountEditor({ blockId: 'fold-b' })
+    await flushPromises()
+    await nextTick()
+
+    await a.find('.code-toggle').trigger('click')
+    await flushPromises()
+    await nextTick()
+
+    expect(a.find('.code-editor-body').attributes('style') ?? '').toContain('display: none')
+    expect(b.find('.code-editor-body').attributes('style') ?? '').not.toContain('display: none')
+    a.unmount()
+    b.unmount()
+  })
+
+  it('折叠按钮 mousedown 不冒泡：不触发 block 激活，点击一次即可折叠', async () => {
+    const wrapper = mountEditor()
+    await flushPromises()
+    await nextTick()
+
+    // 原生监听根元素 mousedown，模拟 .block-content 的 onContentMousedown 冒泡路径
+    const bubbleSpy = vi.fn()
+    wrapper.element.addEventListener('mousedown', bubbleSpy)
+
+    // 折叠按钮：mousedown 被 @mousedown.stop 拦截，不冒泡
+    await wrapper.find('.code-toggle').trigger('mousedown')
+    await nextTick()
+    expect(bubbleSpy).not.toHaveBeenCalled()
+
+    // 对照组：editor body 的 mousedown 正常冒泡（证明监听与 trigger 冒泡有效）
+    await wrapper.find('.code-editor-body').trigger('mousedown')
+    await nextTick()
+    expect(bubbleSpy).toHaveBeenCalled()
+
+    wrapper.element.removeEventListener('mousedown', bubbleSpy)
   })
 })
 
