@@ -624,6 +624,12 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
   padding-right: var(--space-5, 20px);
 }
 
+/* 隐藏 .cm-editor 浏览器默认 focus outline（激活态会在 header 下边缘显示为异常虚线） */
+.code-editor-body :deep(.cm-editor) {
+  outline: none;
+  border: none;
+}
+
 /* ── Language menu ── */
 .lang-menu {
   min-width: 140px;
