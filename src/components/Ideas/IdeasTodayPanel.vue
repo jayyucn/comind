@@ -101,8 +101,15 @@ function handleNavigate(pageId: string, pageTitle: string) {
 .today-body {
   padding-top: var(--space-3);
   min-height: 40vh;
-  /* 禁止 flex-shrink 压缩：高度随 BlockList 内容自动撑开，由 .today-card 负责滚动 */
-  flex-shrink: 0;
+  /* 填满 today-card 剩余高度：BlockList 撑满整个 body（内容少时留白区可双击建块） */
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* BlockList 填满 today-body */
+.today-body :deep(.block-list) {
+  flex: 1;
 }
 
 .today-card.is-loading {

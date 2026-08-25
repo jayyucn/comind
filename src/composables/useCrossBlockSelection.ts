@@ -161,6 +161,24 @@ export function useCrossBlockSelection() {
     }
   }
 
+  /**
+   * Ctrl+A 全选页面所有 Block（含后代子树），固化到 anchorIds。
+   * excludeRootId：页面根 Block 不参与渲染/选区（与 buildTree 一致）。
+   * 块选区手势开始即清文本选区（互斥）。
+   */
+  function selectAll(pageId: string, excludeRootId: string | null = null) {
+    // 中断进行中的拖拽/文本拖拽态，避免随后的 mouseup finalizeSelection 用空 selectedIds 覆盖新选区
+    clearTracking()
+    clearTextTracking()
+    if (textRange.value) textRange.value = null
+    anchorIds.clear()
+    selectedIds.clear()
+    for (const block of blockStore.getBlocksByPage(pageId)) {
+      if (block.id === excludeRootId) continue
+      anchorIds.add(block.id)
+    }
+  }
+
   function isBlockSelected(blockId: string): boolean {
     return anchorIds.size > 0
       ? anchorIds.has(blockId)
@@ -379,6 +397,7 @@ export function useCrossBlockSelection() {
     computeRange,
     finalizeSelection,
     toggleBlock,
+    selectAll,
     isBlockSelected,
     copyToClipboard,
     deleteSelected,

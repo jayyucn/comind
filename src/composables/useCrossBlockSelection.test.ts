@@ -762,4 +762,80 @@ describe('useCrossBlockSelection', () => {
       expect(selection.isBlockSelected('non-existent-id')).toBe(false)
     })
   })
+
+  describe('selectAll', () => {
+    test('全选应把页面所有 Block（含子块）固化到 anchorIds', async () => {
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+
+      const block1 = await blockStore.createBlock({ pageId, content: 'Block 1' })
+      const block2 = await blockStore.createBlock({ pageId, content: 'Block 2' })
+      const block3 = await blockStore.createBlock({ pageId, content: 'Block 3', parentId: block1.id })
+
+      selection.selectAll(pageId)
+
+      expect(selection.anchorIds.size).toBe(3)
+      expect(selection.anchorIds.has(block1.id)).toBe(true)
+      expect(selection.anchorIds.has(block2.id)).toBe(true)
+      expect(selection.anchorIds.has(block3.id)).toBe(true)
+    })
+
+    test('全选应排除页面根 Block（excludeRootId）', async () => {
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+
+      const root = await blockStore.createBlock({ pageId, content: 'root' })
+      const child = await blockStore.createBlock({ pageId, content: 'child', parentId: root.id })
+
+      selection.selectAll(pageId, root.id)
+
+      expect(selection.anchorIds.has(root.id)).toBe(false)
+      expect(selection.anchorIds.has(child.id)).toBe(true)
+    })
+
+    test('全选应清文本选区（互斥）', async () => {
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+
+      const block = await blockStore.createBlock({ pageId, content: 'Block' })
+      selection.startTextTracking({ blockId: block.id, offset: 0 }, { x: 0, y: 0 })
+      selection.updateTextDrag({ blockId: block.id, offset: 3 })
+
+      selection.selectAll(pageId)
+
+      expect(selection.textRange.value).toBeNull()
+    })
+
+    test('全选应中断进行中的拖拽态', async () => {
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+
+      const block = await blockStore.createBlock({ pageId, content: 'Block' })
+      selection.startTracking(block.id)
+      selection.isDragging.value = true
+      selection.textDragAnchor.value = { blockId: block.id, offset: 0 }
+
+      selection.selectAll(pageId)
+
+      expect(selection.dragStartBlockId.value).toBeNull()
+      expect(selection.isDragging.value).toBe(false)
+      expect(selection.trackingFromProperty.value).toBe(false)
+      expect(selection.textDragAnchor.value).toBeNull()
+      expect(selection.anchorIds.has(block.id)).toBe(true)
+    })
+
+    test('全选应重置既有选区后再固化', async () => {
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+
+      const block1 = await blockStore.createBlock({ pageId, content: 'Block 1' })
+      const block2 = await blockStore.createBlock({ pageId, content: 'Block 2' })
+      selection.anchorIds.add(block1.id)
+
+      selection.selectAll(pageId)
+
+      expect(selection.anchorIds.has(block1.id)).toBe(true)
+      expect(selection.anchorIds.has(block2.id)).toBe(true)
+    })
+  })
 })
