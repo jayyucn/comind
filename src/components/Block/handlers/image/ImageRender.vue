@@ -8,13 +8,13 @@
  * 能力：
  * - 解析 content（![alt](asset://id) | ![alt](url)）渲染图片
  * - 对齐（block.format.align）+ 行内尺寸（block.format.width/height）
- * - hover 工具栏：放大查看 / 复制图片 / 裁剪 / 替换 / 删除 / 左中右对齐
+ * - hover 工具栏：放大查看 / 复制图片 / 添加描述 / 裁剪 / 替换 / 删除 / 左中右对齐
  * - 选中（块选区）后显示包围边框 + 四角圆点，可拖拽缩放行内尺寸
  * - 放大查看打开 ImageLightbox（全屏，临时视图变换）
  * - 裁剪：图片上直接出现裁剪框（拖拽移动 / 四角缩放），工具栏换成 取消 / 确认
  */
-import { AlignCenter, AlignLeft, AlignRight, Check, Copy, Crop, Fullscreen, Images, Trash, X } from 'lucide-vue-next'
-import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
+import { AlignCenter, AlignLeft, AlignRight, Check, Copy, Crop, Fullscreen, Images, SquarePen, Trash, X } from 'lucide-vue-next'
+import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import type { CrossBlockSelection } from '../../../../composables/useCrossBlockSelection'
 import { useIdeasFreeze } from '../../../../composables/useIdeasFreeze'
 import { useBlockStore } from '../../../../stores/blocks'
@@ -130,6 +130,33 @@ const imgStyle = computed(() => {
 })
 
 const showToolbar = computed(() => hovered.value)
+
+// ── 图片描述（底部居中，存于 block.format.description）──
+const description = computed(() => blockStore.getBlock(props.blockId)?.format?.description ?? '')
+const editingDesc = ref(false)
+const descDraft = ref('')
+const descInput = ref<HTMLInputElement | null>(null)
+async function startEditDesc() {
+  if (isFrozen.value) return
+  // 描述编辑态与图片选中态互斥：进入编辑即取消图片选区（隐藏框选边框与缩放手柄）
+  selection?.clearSelection()
+  descDraft.value = description.value
+  editingDesc.value = true
+  await nextTick()
+  descInput.value?.focus()
+}
+// 选中图片即退出描述编辑（互斥的另一方向）
+watch(isSelected, (sel) => {
+  if (sel && editingDesc.value) editingDesc.value = false
+})
+async function saveDesc() {
+  if (!editingDesc.value) return
+  await blockStore.updateBlockFormat(props.blockId, { description: descDraft.value.trim() })
+  editingDesc.value = false
+}
+function cancelDesc() {
+  editingDesc.value = false
+}
 
 // ── 短暂提示 ──
 let flashTimer: number | undefined
@@ -398,6 +425,7 @@ defineExpose({
       <div v-else-if="showToolbar && imgSrc" class="image-toolbar" @click.stop>
         <button class="tb-btn" title="放大查看" @click.stop="openLightbox"><Fullscreen :size="14" /></button>
         <button v-if="!isFrozen" class="tb-btn" title="复制图片" @click.stop="copyImage"><Copy :size="14" /></button>
+        <button v-if="!isFrozen" class="tb-btn" :title="description ? '编辑描述' : '添加描述'" @click.stop="startEditDesc"><SquarePen :size="14" /></button>
         <button v-if="!isFrozen" class="tb-btn" title="裁剪" @click.stop="cropImage"><Crop :size="14" /></button>
         <button v-if="!isFrozen" class="tb-btn" title="替换图片" @click.stop="replaceImage"><Images :size="14" /></button>
         <button v-if="!isFrozen" class="tb-btn danger" title="删除图片" @click.stop="deleteImage"><Trash :size="14" /></button>
@@ -426,6 +454,26 @@ defineExpose({
         <div class="image-empty-text">{{ parsed ? '图片加载失败' : '图片已清空' }}</div>
         <button v-if="!isFrozen" class="image-empty-btn" @click.stop="replaceImage">替换图片</button>
       </div>
+
+      <!-- 图片描述：底部居中，点击可编辑（冻结态只读） -->
+      <div v-if="editingDesc" class="image-desc-edit" @click.stop @mousedown.stop>
+        <input
+          ref="descInput"
+          v-model="descDraft"
+          type="text"
+          class="image-desc-input"
+          placeholder="输入图片描述…"
+          @keydown.enter.exact.prevent="saveDesc"
+          @keydown.esc.prevent="cancelDesc"
+          @blur="saveDesc"
+        />
+      </div>
+      <div
+        v-else-if="description && !cropOpen"
+        class="image-desc"
+        :class="{ editable: !isFrozen }"
+        @click.stop="startEditDesc"
+      >{{ description }}</div>
 
       <!-- 行内裁剪框：直接覆盖在图片上（裁剪态） -->
       <div v-if="cropOpen && cropRect" class="crop-layer" @mousedown.stop="cropStart('move', $event)" @click.stop>
@@ -651,4 +699,40 @@ defineExpose({
 .resize-handle.ne { top: -6px; right: -6px; cursor: nesw-resize; }
 .resize-handle.sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
 .resize-handle.se { bottom: -6px; right: -6px; cursor: nwse-resize; }
+
+/* ── 图片描述（底部居中）── */
+.image-desc {
+  margin-top: 6px;
+  padding: 2px 4px;
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.4;
+  word-break: break-word;
+  white-space: normal;
+}
+.image-desc.editable {
+  cursor: text;
+}
+.image-desc-edit {
+  margin-top: 6px;
+}
+.image-desc-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  height: 32px;
+  padding: 4px 8px;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  color: var(--text-primary);
+  background: var(--bg-base);
+  border: none;
+  border-radius: var(--radius-sm, 6px);
+  text-align: center;
+}
+.image-desc-input:focus {
+  outline: none;
+}
 </style>
