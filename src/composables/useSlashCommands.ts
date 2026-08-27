@@ -6,6 +6,8 @@ import { useEditorStore } from '../stores/editor'
 import { usePageStore } from '../stores/pages'
 import { useTemplateRegistry } from './useTemplateRegistry'
 import { TemplateRenderer } from '../services/template-renderer'
+import { openImageFileDialog } from '../utils/imagePicker'
+import { assetStorage } from '../utils/asset'
 
 /**
  * 格式化日期为 YYYY-MM-DD
@@ -153,19 +155,33 @@ function insertTag({ editor, range }: CommandProps) {
 }
 
 /**
- * 插入 Image Block
+ * 插入 Image Block（ADR-0037 D2）
+ *
+ * 选中命令（回车）后立即打开系统文件选择器：
+ * - 确认：保存 asset → 写 content → 切 image 类型 → 取消激活（始终渲染态）
+ * - 取消：仅删去 /image 文本，块保持为空文本块
  */
-function insertImage({ editor, range, blockId }: CommandProps) {
+async function insertImage({ editor, range, blockId }: CommandProps) {
+  // 先删去 /image 文本；取消后块即保持为空文本块
   editor.chain()
     .deleteRange(range)
     .focus()
     .run()
 
+  if (!blockId) return
+
+  // 必须在同步手势栈内调用，函数体内无 await（见 imagePicker 注释）
+  const file = await openImageFileDialog()
+  if (!file) return // 取消：不转换类型，块保持空文本块
+
+  const asset = await assetStorage.save(file)
+  const content = `![${asset.name}](asset://${asset.id})`
+
   const blockStore = useBlockStore()
-  if (blockId) {
-    blockStore.updateBlockType(blockId, 'image')
-    blockStore.updateBlockContent(blockId, '![]()')
-  }
+  const editorStore = useEditorStore()
+  await blockStore.updateBlockType(blockId, 'image')
+  await blockStore.updateBlockContent(blockId, content)
+  editorStore.deactivateBlock()
 }
 
 /**

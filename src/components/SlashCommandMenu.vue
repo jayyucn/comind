@@ -115,6 +115,10 @@ function handleKeyDown(event: KeyboardEvent) {
           void useTemplateFromList(t.id)
         }
       } else {
+        // 强制从当前编辑器同步 query：避免依赖 editor.on('update') 的绑定时机，
+        // 万一 query 滞后为空，flatCommands 会退化成全部命令，selectedIndex=0 选中
+        // 第一个命令 time 并插入当前时间 "HH:MM"。见下方对 activeEditor 的 watch。
+        updateQuery()
         const cmd = flatCommands.value[selectedIndex.value]
         if (cmd) {
           void executeCommand(cmd)
@@ -368,6 +372,11 @@ async function deleteTemplateFromList(templateId: string) {
 let editorUpdateListener: (() => void) | null = null
 
 function bindEditorUpdate() {
+  // 先解绑旧监听，避免 activeEditor 变更后重复绑定导致泄漏
+  if (editorUpdateListener) {
+    unbindEditorUpdate()
+  }
+
   const editor = editorStore.activeEditor
   if (!editor) return
 
@@ -440,6 +449,17 @@ watch(visible, (isVisible) => {
     editorStore.hideSlashCommand()
   }
 })
+
+// 触发瞬间 activeEditor 可能尚未就绪（如新建空块后立即输入 '/'，
+// setActiveEditor 晚一拍才执行），导致 bindEditorUpdate 拿不到 editor、
+// 未能绑定 update 监听，query 永远为空 → 回车选中第一个命令 time 并插入当前时间。
+// activeEditor 就绪后重新绑定监听器，使菜单在输入时正常过滤。
+watch(
+  () => editorStore.activeEditor,
+  () => {
+    if (visible.value) bindEditorUpdate()
+  }
+)
 </script>
 
 <template>

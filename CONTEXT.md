@@ -18,6 +18,10 @@ The Ideas Page whose title matches today's local date. At most one exists per da
 ### Block
 A unit of content within a Page. Has a parent-child relationship (tree structure). A Page with no Blocks has an auto-created empty root Block.
 
+### Image Block
+
+A Block whose `type` is `image`. Stores its image reference in `content` as `![alt](asset://id)` or `![alt](url)`. Has no edit state; insertion is via the `/image` slash command, and operations such as zoom, copy, replace, delete, and alignment are exposed through a hover toolbar. When selected, it shows a bounding border with four corner handles for inline resizing (display size is persisted in `block.format.width/height`). Display alignment is controlled by `block.format.align`. See ADR-0037.
+
 ### Ensure (确保存在)
 Get-or-create pattern. Returns the existing entity if present; creates and returns it if absent. Must be idempotent — calling it multiple times has the same effect as calling it once.
 

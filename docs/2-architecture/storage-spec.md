@@ -1,94 +1,36 @@
 # 存储格式规范
 
-> 版本：v0.9
-> 日期：2026-07-24
-> 状态：✅ 已实现（Phase 1 IndexedDB 部分）
-> 变更：v0.9 新增 version 和 deleted_at 字段，支持 LWW 同步和软删除；v0.8 新增 Dexie v9 支持 templates 表、v8 新增 relationshipTypes 表
+> 版本：v0.10
+> 日期：2026-08-27
+> 状态：✅ 已实现（comind-core SQLite 核心；Web 落 IndexedDB / Desktop 落原生 SQLite）
+> 变更：v0.10 校正存储架构——结构化数据已由 comind-core（SQLite）统一管理，Dexie 仅保留 assets 表；v0.9 新增 version 和 deleted_at 字段，支持 LWW 同步和软删除
 
 ***
 
 ## 0. Phase 适用说明
 
-| Phase       | 存储方案                        | 适用文档                          |
-| ----------- | --------------------------- | ----------------------------- |
-| **Phase 1** | IndexedDB（Dexie.js）          | 本文档 §0.1（已实现）               |
-| **Phase 2** | Markdown + SQLite（Core 层抽离） | 本文档 §1-§8（待实现）              |
-| **Phase 3** | Markdown + SQLite（Tauri 原生） | 本文档 §1-§8（待实现）              |
+| 构建目标 | 存储引擎 | 物理位置 | 说明 |
+| ------- | ------- | ------- | ---- |
+| **Web** | SQLite（`@wasm/comind_wasm` / sql.js WASM） | IndexedDB（整个 `.sqlite` 文件） | 主存储；`getWorkspacePath()` 在非 Tauri 环境返回 `'Web: IndexedDB'` |
+| **Desktop（Tauri）** | SQLite（`comind-core` 原生） | 磁盘 SQLite 文件 | 主存储；经 Tauri 命令访问，不走 IndexedDB |
+| **资产（两端）** | IndexedDB（Dexie） | IndexedDB（`comind-assets` 库 `assets` 表） | 仅二进制 blob，见 `src/utils/asset.ts` |
 
-### 0.1 Phase 1 IndexedDB 实现
+> 逻辑表结构（Block / Page / Link / Property / …）统一见本文档 §4 的 SQLite schema，由 `comind-core` 同时服务 Web 与 Desktop，保证两端 schema 一致。Markdown 文件（§3）目前仅作为 Desktop 端的导出/导入边车通道（`export_to_markdown` / `import_from_markdown` Tauri 命令），并非主存储。
 
-**当前存储方案为 IndexedDB + Dexie.js，已完成实现。**
+### 0.1 当前实现：comind-core（SQLite）— 已实现
 
-```typescript
-// comind/src/storage/db.ts
-import Dexie, { type Table } from 'dexie'
+**结构化数据（blocks / pages / links / properties / templates / relationshipTypes / notifications / dateRefs / savedFilters / screenViews 等）统一由 Rust/WASM 核心 `comind-core` 管理，存储引擎为 SQLite。** 前端不直接接触数据库，所有读写经 `src/wasm/client.ts` 的 `CoreClient` 接口，按运行环境分流：
 
-// RelationshipType 记录
-export interface RelationshipTypeRecord {
-  id: string           // 主键；种子用 `rt_seed_<type>`，用户新建用 `rt_user_<nanoid>`
-  type: string         // 正向英文标识
-  inverse: string | null  // 反向英文标识；自反为 null
-  label: string       // 正向中文标签
-  inverseLabel: string  // 反向中文标签
-  color: string       // 颜色，hex 格式
-  order: number       // 排序权重，越小越靠前
-  deleted: boolean    // 软删除标记
-  builtin: boolean    // 是否内置默认
-}
+- **Web 构建**：`WasmClientAdapter` → `@wasm/comind_wasm`（由 `crates/comind-core` 编译）→ **sql.js（WASM 版 SQLite）**，持久化后端为 **IndexedDB**（整个 `.sqlite` 数据库文件落盘）。`getWorkspacePath()` 在非 Tauri 环境返回 `'Web: IndexedDB'`。
+- **桌面构建（Tauri）**：`TauriClient` → Tauri 命令（`invoke('save_page')` 等）→ 原生 **SQLite 文件**（磁盘），不走 IndexedDB。
 
-// UserTemplate 记录
-export interface UserTemplate {
-  id: string
-  name: string
-  category: string
-  content: string     // 模板内容（Block 树 JSON）
-  createdAt: number
-  updatedAt: number
-}
+逻辑表结构即本文档 §4 的 SQLite schema（`Block.format` 等 `TEXT` 列以 JSON 字符串存储，详见 §4.1），由 `comind-core` 同时服务 Web / Desktop 两端，保证 schema 一致。
 
-export class ComindDB extends Dexie {
-  blocks!: Table<BlockRecord, string>
-  links!: Table<LinkRecord, string>
-  pages!: Table<PageRecord, string>
-  properties!: Table<PropertyRecord, string>
-  assets!: Table<Asset, string>
-  relationshipTypes!: Table<RelationshipTypeRecord, string>
-  templates!: Table<UserTemplate, string>
+> ⚠️ 旧实现 `ComindDB`（Dexie，`blocks/pages/links/...` 表）已无活跃引用，属历史代码。新的结构化数据读写请勿再依赖 Dexie。
 
-  constructor() {
-    super('comind')
-    // v7 兼容版本
-    this.version(7).stores({
-      blocks: 'id, pageId, parentId, pos, createdAt, updatedAt',
-      links: 'id, sourceBlockId, targetPageId, displayText, relationshipType, createdAt',
-      pages: 'id, blockId, title, type, deleted, createdAt, updatedAt',
-      properties: 'id, blockId, [blockId+key]',
-      assets: 'id'
-    })
-    // v8 新增 relationshipTypes 表
-    this.version(8).stores({
-      blocks: 'id, pageId, parentId, pos, createdAt, updatedAt',
-      links: 'id, sourceBlockId, targetPageId, displayText, relationshipType, createdAt',
-      pages: 'id, blockId, title, type, deleted, createdAt, updatedAt',
-      properties: 'id, blockId, [blockId+key]',
-      assets: 'id',
-      relationshipTypes: 'id, type, deleted, builtin, order'
-    })
-    // v9 新增 templates 表
-    this.version(9).stores({
-      blocks: 'id, pageId, parentId, pos, createdAt, updatedAt',
-      links: 'id, sourceBlockId, targetPageId, displayText, relationshipType, createdAt',
-      pages: 'id, blockId, title, type, deleted, createdAt, updatedAt',
-      properties: 'id, blockId, [blockId+key]',
-      assets: 'id',
-      relationshipTypes: 'id, type, deleted, builtin, order',
-      templates: 'id, category, updatedAt, name'
-    })
-  }
-}
+**Dexie 仅残留用于资产存储**：`src/utils/asset.ts` 仍用 Dexie（`comind-assets` 库）的 `assets` 表存图片等二进制 blob，与结构化数据解耦。
 
-export const db = new ComindDB()
-```
+以下 Record 类型即对应 §4 SQLite 表的逻辑结构（运行时对象，由 comind-core 持久化为数据库行）：
 
 **Record 类型定义：**
 
@@ -119,7 +61,6 @@ export interface BlockRecord {
   content: string
   format: string             // JSON 字符串
   type: string               // 'bullet' | 'property' | 'query' | 'embed'
-  properties: string         // JSON 字符串
   createdAt: number
   updatedAt: number
 }
@@ -150,28 +91,31 @@ export interface PropertyRecord {
 }
 ```
 
-**与 v0.7 的主要差异：**
+**架构修正（v0.10）：**
 
-| 变更项 | v0.7 | v0.8（当前实现） |
+本文档早期版本将「IndexedDB + Dexie」描述为当前主存储（Phase 1）。**该描述已过时**：结构化数据现由 `comind-core`（SQLite）统一托管，Dexie 仅用于 `assets` 表。下表中的「Dexie 版本」对比不再适用于主存储，仅作历史参考：
+
+| 变更项 | 旧（Dexie / IndexedDB 时代） | 当前（comind-core / SQLite） |
 |--------|------|-------------|
-| Dexie 版本 | version(4) | version(9) |
-| relationshipTypes 表 | 不存在 | 已实现（v8） |
-| templates 表 | 不存在 | 已实现（v9） |
-| Page.deleted 字段 | 不存在 | 已实现 |
-| Link.relationshipType 字段 | 已存在 | 继续保留 |
+| 主存储引擎 | Dexie（IndexedDB） | SQLite（Web: sql.js / Desktop: 原生） |
+| relationshipTypes 表 | — | 已实现（见 §4） |
+| templates 表 | — | 已实现（见 §4） |
+| Page.deleted 字段 | — | 已实现（见 §4） |
+| Link.relationshipType 字段 | 已存在 | 继续保留（见 §4） |
+| assets 存储 | Dexie `assets` 表 | Dexie `assets` 表（**唯一仍用 Dexie 之处**） |
 
-**Phase 1 → Phase 2 迁移路径：**
+**存储演进路径（历史 + 当前）：**
 
-1. Phase 1 实现 `IndexedDBAdapter`（基于 Dexie）✅
-2. Phase 2 抽象 `StorageAdapter` 接口（定义统一的 CRUD 契约）
-3. Phase 2 实现 `SQLiteAdapter`（本规范 §4 SQLite 表结构）
-4. 提供迁移工具：IndexedDB → Markdown + SQLite
+1. （历史）早期实现 `IndexedDBAdapter`（基于 Dexie），结构化数据直接存 IndexedDB。
+2. （当前✅）`comind-core` 统一以 SQLite 为存储引擎：Web 用 sql.js（WASM）持久化到 IndexedDB，Desktop 用 Tauri 原生 SQLite；前端经 `src/wasm/client.ts` 的 `CoreClient` 接口访问。
+3. （当前✅）Dexie 仅保留 `assets` 表（`src/utils/asset.ts`）存二进制 blob。
+4. （规划）Markdown 文件作为可移植边车通道：Desktop 端 `export_to_markdown` / `import_from_markdown`，与 §4 SQLite 主存储双向同步。
 
 ***
 
 ## 1. 概述
 
-采用 **Markdown 文件 + SQLite 索引** 的混合存储模式（Phase 2/3）。
+采用 **SQLite 为唯一真相源（comind-core）** 的存储模式，Markdown 文件目前仅作为 Desktop 端的导出/导入边车通道（见 §0.1）。
 
 ```
 工作区/
@@ -349,7 +293,9 @@ tags:: [设计, 数据]
 
 ***
 
-## 4. SQLite 数据库结构（Phase 2/3）
+## 4. SQLite 数据库结构（comind-core 当前实现）
+
+> 本节 schema 即 `comind-core`（`crates/comind-core/src/storage/sqlite.rs` 与 `sqljs.rs`）实际使用的逻辑表结构，同时服务 Web（sql.js）与 Desktop（原生 SQLite）。`Block.format` 等 `TEXT` 列以 JSON 字符串存储（运行时为对象，写入时 `JSON.stringify`、读取时 `JSON.parse`，见 `src/stores/blocks.ts`）。
 
 ### 4.1 表结构
 
@@ -357,14 +303,15 @@ tags:: [设计, 数据]
 CREATE TABLE Page (
     id              TEXT PRIMARY KEY,     -- UUID v4
     blockId         TEXT,                 -- 根 Block ID
-    title           TEXT NOT NULL,
-    type            TEXT NOT NULL DEFAULT 'normal',  -- 'normal' | 'journal'
+    title           TEXT NOT NULL UNIQUE, -- 唯一（comind-core 强制 UNIQUE）
+    type            TEXT NOT NULL DEFAULT 'normal',  -- 'normal' | 'journal' | 'ideas'
     icon            TEXT,
     cover           TEXT,
     aliases         TEXT NOT NULL DEFAULT '[]',  -- JSON 数组字符串
     filePath        TEXT,
     childrenCount   INTEGER NOT NULL DEFAULT 0,
     wordCount       INTEGER NOT NULL DEFAULT 0,
+    deleted         INTEGER NOT NULL DEFAULT 0,  -- 软删除标记（0 | 1）
     createdAt       INTEGER NOT NULL,     -- 毫秒时间戳
     updatedAt       INTEGER NOT NULL,     -- 毫秒时间戳
     version         INTEGER NOT NULL DEFAULT 0,  -- 单调递增版本号，用于 LWW 同步
@@ -378,22 +325,24 @@ CREATE TABLE Block (
     parentId        TEXT,                 -- 父 Block ID
     pos             INTEGER NOT NULL DEFAULT 1000,  -- Gap 排序位置
     content         TEXT NOT NULL DEFAULT '',
-    format          TEXT NOT NULL DEFAULT '{}',  -- JSON 字符串
-    type            TEXT NOT NULL DEFAULT 'bullet',  -- 'bullet' | 'property' | 'query' | 'embed'
-    properties      TEXT NOT NULL DEFAULT '{}',  -- JSON 字符串
+    format          TEXT NOT NULL DEFAULT '{}',  -- JSON 字符串（运行时为 Record<string, any>）
+    type            TEXT NOT NULL DEFAULT 'bullet',  -- 'bullet' | 'property' | 'query' | 'embed' | 'code' | 'image'
     createdAt       INTEGER NOT NULL,     -- 毫秒时间戳
     updatedAt       INTEGER NOT NULL,     -- 毫秒时间戳
     version         INTEGER NOT NULL DEFAULT 0,  -- 单调递增版本号，用于 LWW 同步
     deleted_at      INTEGER,              -- 软删除时间戳（毫秒），NULL = 未删除
     FOREIGN KEY (pageId) REFERENCES Page(id)
 );
+-- 注：Block 的「属性」不存于 Block 表，而存于独立的 Property 表（见下）。
 
 CREATE TABLE Link (
     id              TEXT PRIMARY KEY,     -- UUID v4
     sourceBlockId   TEXT NOT NULL,        -- 链接来源 Block
     targetPageId    TEXT NOT NULL,        -- 链接目标 Page
     displayText     TEXT NOT NULL,
+    relationship_type TEXT,               -- 关系类型（v0.6+ 新增）
     createdAt       INTEGER NOT NULL,     -- 毫秒时间戳
+    updatedAt       INTEGER NOT NULL,     -- 毫秒时间戳
     version         INTEGER NOT NULL DEFAULT 0,  -- 单调递增版本号，用于 LWW 同步
     deleted_at      INTEGER,              -- 软删除时间戳（毫秒），NULL = 未删除
     FOREIGN KEY (sourceBlockId) REFERENCES Block(id),

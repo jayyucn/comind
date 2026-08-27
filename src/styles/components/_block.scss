@@ -460,6 +460,11 @@
   border-radius: 0;
   z-index: 1;
 }
+// 图片块选中时不改变整块背景色，仅保留 .image-frame 的描边提示
+// （避免选区色遮罩盖在图片上把整块染色）
+.block.cb-selected:has(.image-block)::after {
+  background: transparent;
+}
 
 // Heading styles - 渲染态样式
 // 编辑态样式在 Editor.vue 的 scoped style 中定义（需要 :deep() 穿透）

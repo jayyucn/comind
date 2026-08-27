@@ -1,5 +1,4 @@
 import { useBlockRegistry } from '../../../../composables/useBlockRegistry'
-import Editor from '../../../Editor.vue'
 import ImageRender from './ImageRender.vue'
 import type { BlockTypeHandler } from '../../../../types/block-type'
 
@@ -8,10 +7,18 @@ const { register } = useBlockRegistry()
 const imageHandler: BlockTypeHandler = {
   type: 'image',
   label: 'Image',
-  editorComponent: Editor,
+  // Image Block 无编辑态：editorComponent 与 renderComponent 共用 ImageRender
+  editorComponent: ImageRender,
   renderComponent: ImageRender,
   setupBlock(ctx) {
     return {
+      // 点击图片不激活编辑器，只做块选区（由 ImageRender 内部 toggleBlock 处理）
+      onContentMousedown() {
+        return true
+      },
+      onContentClick() {
+        return true
+      },
       onDragOver(e: DragEvent) {
         if (!e.dataTransfer?.types.includes('Files')) return false
         const file = e.dataTransfer.items[0]
@@ -48,9 +55,9 @@ const imageHandler: BlockTypeHandler = {
           }
         }
         return false
-      }
+      },
     }
-  }
+  },
 }
 
 register(imageHandler)

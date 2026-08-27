@@ -3,6 +3,7 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open } from '@tauri-apps/plugin-dialog'
+import { readFile } from '@tauri-apps/plugin-fs'
 import { platform } from '@tauri-apps/plugin-os'
 import type { Block, Page, Notification, DateRefRecord } from './types'
 
@@ -98,6 +99,40 @@ export async function tauriPickDirectory(): Promise<string | null> {
     return selected
   }
   return null
+}
+
+// ---- 图片文件选择 ----
+// Tauri webview 的 <input type=file> 经常不弹窗且不触发 change 事件，
+// 因此图片插入统一走原生 dialog + fs 读字节，再构造浏览器 File。
+const IMAGE_EXT_MIME: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  bmp: 'image/bmp',
+  svg: 'image/svg+xml',
+}
+
+export async function tauriPickImageFile(): Promise<File | null> {
+  try {
+    const selected = await open({
+      multiple: false,
+      title: '选择图片',
+      filters: [
+        { name: '图片', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'] },
+      ],
+    })
+    if (typeof selected !== 'string') return null
+    const bytes = await readFile(selected)
+    const name = selected.split(/[\\/]/).pop() || 'image'
+    const ext = name.includes('.') ? name.split('.').pop()!.toLowerCase() : ''
+    const mime = IMAGE_EXT_MIME[ext] || 'application/octet-stream'
+    return new File([bytes], name, { type: mime })
+  } catch (e) {
+    console.error('[tauriPickImageFile] 读取图片失败:', e)
+    return null
+  }
 }
 
 // ---- 同步 / 连接（Tauri 特有；web 无同步对端） ----
