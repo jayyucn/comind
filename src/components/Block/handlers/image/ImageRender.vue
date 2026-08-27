@@ -13,7 +13,7 @@
  * - 放大查看打开 ImageLightbox（全屏，临时视图变换）
  * - 裁剪：图片上直接出现裁剪框（拖拽移动 / 四角缩放），工具栏换成 取消 / 确认
  */
-import { AlignCenter, AlignLeft, AlignRight, Check, Copy, Crop, Fullscreen, SquarePen, Trash, X } from 'lucide-vue-next'
+import { AlignCenter, AlignLeft, AlignRight, Check, Copy, Crop, Fullscreen, Images, Trash, X } from 'lucide-vue-next'
 import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
 import type { CrossBlockSelection } from '../../../../composables/useCrossBlockSelection'
 import { useIdeasFreeze } from '../../../../composables/useIdeasFreeze'
@@ -129,7 +129,7 @@ const imgStyle = computed(() => {
   return { maxWidth: '100%', maxHeight: '400px', width: 'auto', height: 'auto' }
 })
 
-const showToolbar = computed(() => hovered.value || isSelected.value)
+const showToolbar = computed(() => hovered.value)
 
 // ── 短暂提示 ──
 let flashTimer: number | undefined
@@ -254,7 +254,7 @@ function openLightbox() {
 // 工具栏在裁剪态切换为 取消 / 确认。
 const CROP_MIN = 40
 let cropDrag:
-  | { mode: 'move' | 'nw' | 'ne' | 'sw' | 'se'; startX: number; startY: number; rect: { x: number; y: number; w: number; h: number } }
+  | { mode: 'move' | 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'w' | 'e'; startX: number; startY: number; rect: { x: number; y: number; w: number; h: number } }
   | null = null
 
 function cropImage() {
@@ -268,7 +268,7 @@ function cropImage() {
   cropOpen.value = true
 }
 
-function cropStart(mode: 'move' | 'nw' | 'ne' | 'sw' | 'se', e: MouseEvent) {
+function cropStart(mode: 'move' | 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'w' | 'e', e: MouseEvent) {
   if (!cropRect.value || !imgEl.value) return
   e.preventDefault()
   e.stopPropagation()
@@ -399,7 +399,7 @@ defineExpose({
         <button class="tb-btn" title="放大查看" @click.stop="openLightbox"><Fullscreen :size="14" /></button>
         <button v-if="!isFrozen" class="tb-btn" title="复制图片" @click.stop="copyImage"><Copy :size="14" /></button>
         <button v-if="!isFrozen" class="tb-btn" title="裁剪" @click.stop="cropImage"><Crop :size="14" /></button>
-        <button v-if="!isFrozen" class="tb-btn" title="替换图片" @click.stop="replaceImage"><SquarePen :size="14" /></button>
+        <button v-if="!isFrozen" class="tb-btn" title="替换图片" @click.stop="replaceImage"><Images :size="14" /></button>
         <button v-if="!isFrozen" class="tb-btn danger" title="删除图片" @click.stop="deleteImage"><Trash :size="14" /></button>
         <span class="tb-sep"></span>
         <button class="tb-btn align" :class="{ active: align === 'left' }" title="左对齐" @click.stop="setAlign('left')">
@@ -434,6 +434,10 @@ defineExpose({
           <span class="crop-handle ne" @mousedown.stop="cropStart('ne', $event)"></span>
           <span class="crop-handle sw" @mousedown.stop="cropStart('sw', $event)"></span>
           <span class="crop-handle se" @mousedown.stop="cropStart('se', $event)"></span>
+          <span class="crop-handle n" @mousedown.stop="cropStart('n', $event)"></span>
+          <span class="crop-handle s" @mousedown.stop="cropStart('s', $event)"></span>
+          <span class="crop-handle w" @mousedown.stop="cropStart('w', $event)"></span>
+          <span class="crop-handle e" @mousedown.stop="cropStart('e', $event)"></span>
         </div>
       </div>
 
@@ -589,6 +593,27 @@ defineExpose({
 .crop-handle.ne { top: -6px; right: -6px; cursor: nesw-resize; }
 .crop-handle.sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
 .crop-handle.se { bottom: -6px; right: -6px; cursor: nwse-resize; }
+/* 边中点手柄：矩形更扁，便于在细边上点中；四角仍为圆点 */
+.crop-handle.n,
+.crop-handle.s {
+  left: 50%;
+  margin-left: -6px;
+  width: 12px;
+  height: 8px;
+  border-radius: 3px;
+}
+.crop-handle.w,
+.crop-handle.e {
+  top: 50%;
+  margin-top: -6px;
+  width: 8px;
+  height: 12px;
+  border-radius: 3px;
+}
+.crop-handle.n { top: -4px; cursor: ns-resize; }
+.crop-handle.s { bottom: -4px; cursor: ns-resize; }
+.crop-handle.w { left: -4px; cursor: ew-resize; }
+.crop-handle.e { right: -4px; cursor: ew-resize; }
 .tb-sep {
   width: 1px;
   height: 18px;
