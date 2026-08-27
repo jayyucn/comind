@@ -7,6 +7,7 @@
   - `src/composables/useSlashCommands.ts`（`/image` 命令行为）
   - 新增/复用的 lightbox 组件（全屏放大查看层）
   - 图片块选中态的 bounding box + 角点手柄（需与 ADR-0035 块选区模型协调）
+  - `src/components/BlockList.vue`（`handleDocKeyDown` 兜底无编辑态块的 Tab / 上方插入空块行为）
 - 关联 ADR：
   - **ADR-0035**（跨 Block 文本选区）——图片块点击/选中行为需与块选区模型协调
   - **ADR-0012**（z-index 分层）——lightbox 浮层必须 Teleport 到 body 并用 `var(--z-*)`
@@ -133,9 +134,33 @@
 「裁剪」不在 initial 范围内（见原 D3），2026-08-27 经用户确认追加。设计为**图片上直接裁剪**，不使用独立弹层。
 
 - **进入**：点工具栏「裁剪」，`cropOpen=true`；在图片上覆盖一层裁剪框（`.crop-layer`，覆盖 `.image-frame` 且 `overflow:hidden`），框外区域以 `box-shadow` 变暗、被裁切在图片范围内；初始框居中、占图 80%。
-- **交互**：拖拽框体移动选区；框四角手柄缩放选区；边界 clamp（`CROP_MIN=40`）不允许拖出图片。
+- **交互**：拖拽框体移动选区；框**四角 + 四边共 8 个手柄**缩放选区（边手柄只动对应轴：`n/s` 改 y/h、`w/e` 改 x/w），复用 `mode.includes(...)` 驱动；边界 clamp（`CROP_MIN=40`）不允许拖出图片。
 - **工具栏切换**：裁剪态下工具栏仅显示 **取消（X）/ 确认（Check）**；确认裁剪把选区按 `naturalWidth/clientWidth` 比例画到 canvas，`toBlob('image/png')` → `assetStorage.save` → `updateBlockContent('![name](asset://id)')` 替换原图。
 - **比例保持**：确认后 `updateBlockFormat({ width: null, height: null })` 清空既有行内尺寸（D11），使裁剪结果按**其自身比例**自然显示，不被旧 `width/height` 拉伸；跨域图无 CORS 头时 canvas 被污染、`toBlob` 失败，提示「裁剪失败：图片受限」。
+
+### D14：图片描述（单行，底部居中）
+
+2026-08-27 经用户确认追加。工具栏加「添加描述」按钮（`Captions` 图标），描述文本显示在图片**正下方、居中对齐**。
+
+- **存储**：描述存于 `block.format.description`（`format` 为 `Record<string, any>`，读取 `format?.description ?? ''`）。
+- **单行**：编辑态为 `<input type="text">`（非多行 textarea），Enter 保存 / Esc 取消 / 失焦自动保存；占位提示「输入图片描述…」。
+- **显示**：已填描述时图片下方常显 `.image-desc` 居中文案（主题 token：`var(--text-secondary)`）；点击该文案可重新编辑（冻结态只读、不进入编辑）；裁剪态（`cropOpen`）下隐藏描述显示，避免被裁剪遮罩盖住。
+- **无边框**：`.image-desc-input` 不绘制边框（保留 `var(--bg-base)` 背景作为输入框底），`:focus` 不显示 outline。
+
+### D15：Tab / Shift-Tab 与文本 block 一致（缩进 / 反缩进）
+
+image block 无编辑器，`EnterAsBlockExtension` 不生效；Tab 落到文档级 `handleDocKeyDown`，须与文本 block 行为对齐：
+
+- **Tab** → `blockStore.indent(选中块)`；**Shift-Tab** → `blockStore.outdent(选中块)`；
+- 触发条件：存在块选区（`selection.anchorIds` 非空）且**无激活编辑器**（`!editorStore.activeBlockId`）——即 image/embed 等无编辑态块被选中时。
+- 文本块编辑中 `activeBlockId` 非空 → 跳过，仍走编辑器自身 indent/outdent；编辑描述输入框时 `isInEditableInput` 早退 → Tab 正常移焦，不缩进；冻结页早退。
+- `indent/outdent` 自带「无前兄弟 / 无父」guard，安全 no-op。
+
+### D16：描述编辑态与图片选中态互斥
+
+- 进入描述编辑（`startEditDesc`）先 `selection.clearSelection()`，使图片取消选中（隐藏框选边框与 D11 四角手柄）；
+- 反向：`watch(isSelected)`——图片一旦被选中即 `editingDesc=false`，退出描述编辑；
+- 防回归：`.image-desc-edit` 容器加 `@click.stop @mousedown.stop`，避免点击输入框冒泡到 `.image-frame` 的 `onImageClick` 触发选中、再被 watch 立即关掉编辑。
 
 ---
 
@@ -143,6 +168,7 @@
 
 - 插入图片心智模型简化：`/image` 即选即用；
 - 三类「缩放」语义清晰分离：**行内缩放**（D11，持久化尺寸）／**对齐**（D4，布局锚点）／**lightbox 缩放**（D5，临时视图）；
-- `format.align` 与 `format.width/height` 引入新块级展示字段，导出/序列化需透传 `format`；
+- `format.align`、`format.width/height` 与 `format.description` 引入新块级展示字段，导出/序列化需透传 `format`；
 - lightbox 为新的全局浮层组件，须遵循 ADR-0012 的 z-index 与 Teleport 约定；
+- Tab / Shift-Tab 缩进行为由 `BlockList.handleDocKeyDown` 统一兜底（覆盖无编辑态块），须与文本 block 的 `EnterAsBlockExtension` 语义保持一致（D15）；
 - 四角手柄的拖拽手势需与块选区拖拽（ADR-0035）区分，避免误触发块移动。

@@ -189,7 +189,9 @@
   position: relative;
   padding-left: 20px;
   padding-top: 2px;
-  overflow: hidden;
+  // 默认不裁剪：缩进后的子块（如 image block 的 hover 工具栏，绝对定位在图片上方）
+  // 会溢出容器顶部，若此处 overflow:hidden 会将其切掉导致工具栏不显示。
+  // 裁剪仅用于折叠动画/折叠态，见 .is-collapsed / .is-animating。
   max-height: 2000px;
   opacity: 1;
   transform: translateY(0);
@@ -202,6 +204,7 @@
   &.is-collapsed {
     max-height: 0;
     opacity: 0.6;
+    overflow: hidden;
     transform: translateY(-8px);
   }
 
