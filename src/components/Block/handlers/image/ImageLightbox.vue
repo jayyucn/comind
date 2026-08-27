@@ -183,9 +183,9 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
-  background: rgba(28, 25, 23, 0.78);
+  background: var(--bg-base2);
+  border: 1px solid var(--border);
   border-radius: 10px;
-  backdrop-filter: blur(6px);
 }
 
 .lb-btn {
@@ -194,24 +194,27 @@ onBeforeUnmount(() => {
   padding: 0 8px;
   border: none;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
+  background: var(--bg-hover);
+  color: var(--text-primary);
   font-size: 14px;
   cursor: pointer;
   transition: background 0.15s ease;
 }
 .lb-btn:hover {
-  background: rgba(255, 255, 255, 0.24);
+  background: var(--bg-hover);
+  filter: brightness(1.25);
 }
 .lb-close {
-  background: rgba(255, 80, 80, 0.5);
+  background: var(--error);
+  color: #fff;
 }
 .lb-close:hover {
-  background: rgba(255, 80, 80, 0.75);
+  background: var(--error);
+  filter: brightness(1.15);
 }
 
 .lb-zoom {
-  color: #fff;
+  color: var(--text-primary);
   font-size: 12px;
   min-width: 44px;
   text-align: center;

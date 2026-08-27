@@ -51,14 +51,16 @@
 
 类型转换失败不应留下 `![]()` 占位。
 
-### D3：Hover 工具栏为横向图标菜单（6 项）
+### D3：Hover 工具栏为横向图标菜单
 
 菜单项（Notion 式横向图标，分组排列）：
 
-- **操作**：放大查看、复制图片、复制链接、替换图片、删除图片；
+- **操作**：放大查看、复制图片、裁剪、替换图片、删除图片；
 - **布局**：左对齐 / 居中对齐 / 右对齐。
 
-**不含** crop（裁剪）、caption（图注）、comment（评论）——超出本轮范围，截图仅作布局参考。
+- **裁剪**：工具栏点「裁剪」进入行内裁剪态（见 D13），确认后原图被裁剪结果替换。
+- 「复制链接」**未实现**：ADR 早期版本列出的该项当时被排除（见 H3 修复记录），菜单当前不含该按钮；如后续需要再补。
+- **不含** caption（图注）、comment（评论）——超出范围。
 
 ### D4：对齐信息存在 `block.format.align`
 
@@ -78,9 +80,15 @@
 - 关闭：点击遮罩 / `Esc` / 关闭按钮；
 - **仅视图变换，不持久化**。
 
-### D6：「删除图片」只清空内容，不删除块
+### D6：「删除图片」= 转为 bullet 空块并插入光标
 
-删除后 `content` 置空，块类型保持 `image` 但显示「图片丢失/空图片」占位；用户可继续用「替换图片」重新选择。整块删除仍走既有 Block 级操作（如 Backspace 清空后删块）。
+> 注：本条为 2026-08-27 修订，取代原「只清空内容、保持 image 类型」的写法。原设计被新需求推翻——用户确认删除图片应把该块**转为 `bullet` 类型的空块**并将光标插入其中，而非保留 image 空占位。
+
+- `updateBlockType(id, 'bullet')`（`updateBlockType` 只改 `type`、不动 content）；
+- `updateBlockContent(id, '')` 清空旧 `![alt](url)`，否则 bullet 文本块会把图片语法当字面文本渲染；
+- `editorStore.deactivateBlock()` + `activateBlock(id, 1)` 把光标插入新空块。
+
+整块删除仍走既有 Block 级操作（如 Backspace 清空后删块）。
 
 ### D7：拖拽 / 粘贴保留，统一走 assetStorage
 
@@ -119,6 +127,15 @@
 - `left`：以左缘为锚，向右生长；
 - `right`：以右缘为锚，向左生长；
 - `center`：以中线为锚，双向对称。
+
+### D13：行内裁剪（crop）
+
+「裁剪」不在 initial 范围内（见原 D3），2026-08-27 经用户确认追加。设计为**图片上直接裁剪**，不使用独立弹层。
+
+- **进入**：点工具栏「裁剪」，`cropOpen=true`；在图片上覆盖一层裁剪框（`.crop-layer`，覆盖 `.image-frame` 且 `overflow:hidden`），框外区域以 `box-shadow` 变暗、被裁切在图片范围内；初始框居中、占图 80%。
+- **交互**：拖拽框体移动选区；框四角手柄缩放选区；边界 clamp（`CROP_MIN=40`）不允许拖出图片。
+- **工具栏切换**：裁剪态下工具栏仅显示 **取消（X）/ 确认（Check）**；确认裁剪把选区按 `naturalWidth/clientWidth` 比例画到 canvas，`toBlob('image/png')` → `assetStorage.save` → `updateBlockContent('![name](asset://id)')` 替换原图。
+- **比例保持**：确认后 `updateBlockFormat({ width: null, height: null })` 清空既有行内尺寸（D11），使裁剪结果按**其自身比例**自然显示，不被旧 `width/height` 拉伸；跨域图无 CORS 头时 canvas 被污染、`toBlob` 失败，提示「裁剪失败：图片受限」。
 
 ---
 

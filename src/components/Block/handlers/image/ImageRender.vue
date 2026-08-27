@@ -8,11 +8,12 @@
  * 能力：
  * - 解析 content（![alt](asset://id) | ![alt](url)）渲染图片
  * - 对齐（block.format.align）+ 行内尺寸（block.format.width/height）
- * - hover 工具栏：放大查看 / 复制图片 / 复制链接 / 替换 / 删除 / 左中右对齐
+ * - hover 工具栏：放大查看 / 复制图片 / 裁剪 / 替换 / 删除 / 左中右对齐
  * - 选中（块选区）后显示包围边框 + 四角圆点，可拖拽缩放行内尺寸
  * - 放大查看打开 ImageLightbox（全屏，临时视图变换）
+ * - 裁剪：图片上直接出现裁剪框（拖拽移动 / 四角缩放），工具栏换成 取消 / 确认
  */
-import { AlignCenter, AlignLeft, AlignRight, Copy, Fullscreen, SquarePen, Trash } from 'lucide-vue-next'
+import { AlignCenter, AlignLeft, AlignRight, Check, Copy, Crop, Fullscreen, SquarePen, Trash, X } from 'lucide-vue-next'
 import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
 import type { CrossBlockSelection } from '../../../../composables/useCrossBlockSelection'
 import { useIdeasFreeze } from '../../../../composables/useIdeasFreeze'
@@ -56,7 +57,28 @@ const parsed = ref<{ alt: string; url: string } | null>(null)
 const imgSrc = ref('')
 const imgEl = ref<HTMLImageElement | null>(null)
 const hovered = ref(false)
+// 隐藏延迟：鼠标离开图片/工具栏后不立即收起，留 200ms 宽限期，
+// 彻底消除「图片与浮层之间的死区」——即使光标在穿越间隙的瞬间触发 mouseleave，
+// 只要在宽限期内回到块内即可取消隐藏。进入时立即清除计时器并显示。
+const TOOLBAR_HIDE_DELAY = 200
+let hideTimer: number | undefined
+function onEnter() {
+  if (hideTimer) {
+    clearTimeout(hideTimer)
+    hideTimer = undefined
+  }
+  hovered.value = true
+}
+function onLeave() {
+  if (hideTimer) clearTimeout(hideTimer)
+  hideTimer = window.setTimeout(() => (hovered.value = false), TOOLBAR_HIDE_DELAY)
+}
+onBeforeUnmount(() => {
+  if (hideTimer) clearTimeout(hideTimer)
+})
 const lightboxOpen = ref(false)
+const cropOpen = ref(false)
+const cropRect = ref<{ x: number; y: number; w: number; h: number } | null>(null)
 const flashMsg = ref('')
 
 watch(
@@ -133,26 +155,6 @@ async function copyImage() {
       await navigator.clipboard.write([new ClipboardItem({ [blob.type || 'image/png']: blob })])
     }
     flash('已复制图片')
-  } catch {
-    flash('复制失败')
-  }
-}
-
-async function copyLink() {
-  if (!parsed.value) return
-  const url = parsed.value.url
-  let text = url
-  if (url.startsWith('asset://')) {
-    const id = url.slice(8)
-    try {
-      text = await assetStorage.loadUrl(id)
-    } catch {
-      text = url
-    }
-  }
-  try {
-    await navigator.clipboard.writeText(text)
-    flash('已复制链接')
   } catch {
     flash('复制失败')
   }
@@ -241,9 +243,128 @@ function onResizeUp() {
 }
 
 onBeforeUnmount(onResizeUp)
+onBeforeUnmount(cropUp)
 
 function openLightbox() {
   if (imgSrc.value) lightboxOpen.value = true
+}
+
+// ── 行内裁剪 ──
+// 裁剪框直接覆盖在图片上（display px，相对 .image-frame 左上角 = 图片左上角）。
+// 工具栏在裁剪态切换为 取消 / 确认。
+const CROP_MIN = 40
+let cropDrag:
+  | { mode: 'move' | 'nw' | 'ne' | 'sw' | 'se'; startX: number; startY: number; rect: { x: number; y: number; w: number; h: number } }
+  | null = null
+
+function cropImage() {
+  if (isFrozen.value || !imgSrc.value || !imgEl.value) return
+  const w = imgEl.value.clientWidth
+  const h = imgEl.value.clientHeight
+  if (!w || !h) return
+  const cw = Math.round(w * 0.8)
+  const ch = Math.round(h * 0.8)
+  cropRect.value = { x: Math.round((w - cw) / 2), y: Math.round((h - ch) / 2), w: cw, h: ch }
+  cropOpen.value = true
+}
+
+function cropStart(mode: 'move' | 'nw' | 'ne' | 'sw' | 'se', e: MouseEvent) {
+  if (!cropRect.value || !imgEl.value) return
+  e.preventDefault()
+  e.stopPropagation()
+  cropDrag = { mode, startX: e.clientX, startY: e.clientY, rect: { ...cropRect.value } }
+  window.addEventListener('mousemove', cropMove)
+  window.addEventListener('mouseup', cropUp)
+}
+
+function cropMove(e: MouseEvent) {
+  if (!cropDrag || !cropRect.value || !imgEl.value) return
+  const dx = e.clientX - cropDrag.startX
+  const dy = e.clientY - cropDrag.startY
+  const maxW = imgEl.value.clientWidth
+  const maxH = imgEl.value.clientHeight
+  const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
+  if (cropDrag.mode === 'move') {
+    cropRect.value = {
+      x: clamp(cropDrag.rect.x + dx, 0, maxW - cropDrag.rect.w),
+      y: clamp(cropDrag.rect.y + dy, 0, maxH - cropDrag.rect.h),
+      w: cropDrag.rect.w,
+      h: cropDrag.rect.h,
+    }
+    return
+  }
+  const r = cropDrag.rect
+  let x = r.x
+  let y = r.y
+  let w = r.w
+  let h = r.h
+  const right = r.x + r.w
+  const bottom = r.y + r.h
+  if (cropDrag.mode.includes('w')) {
+    x = clamp(r.x + dx, 0, right - CROP_MIN)
+    w = right - x
+  } else if (cropDrag.mode.includes('e')) {
+    w = clamp(r.w + dx, CROP_MIN, maxW - r.x)
+  }
+  if (cropDrag.mode.includes('n')) {
+    y = clamp(r.y + dy, 0, bottom - CROP_MIN)
+    h = bottom - y
+  } else if (cropDrag.mode.includes('s')) {
+    h = clamp(r.h + dy, CROP_MIN, maxH - r.y)
+  }
+  cropRect.value = { x, y, w, h }
+}
+
+function cropUp() {
+  cropDrag = null
+  window.removeEventListener('mousemove', cropMove)
+  window.removeEventListener('mouseup', cropUp)
+}
+
+function cancelCrop() {
+  cropOpen.value = false
+  cropRect.value = null
+}
+
+const cropBoxStyle = computed(() =>
+  cropRect.value
+    ? { left: `${cropRect.value.x}px`, top: `${cropRect.value.y}px`, width: `${cropRect.value.w}px`, height: `${cropRect.value.h}px` }
+    : null,
+)
+
+async function confirmCrop() {
+  if (!cropRect.value || !imgEl.value) return
+  const img = imgEl.value
+  const dispW = img.clientWidth
+  const dispH = img.clientHeight
+  if (!dispW || !dispH) return
+  const sx = Math.round((cropRect.value.x * img.naturalWidth) / dispW)
+  const sy = Math.round((cropRect.value.y * img.naturalHeight) / dispH)
+  const sw = Math.round((cropRect.value.w * img.naturalWidth) / dispW)
+  const sh = Math.round((cropRect.value.h * img.naturalHeight) / dispH)
+  const canvas = document.createElement('canvas')
+  canvas.width = sw
+  canvas.height = sh
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  try {
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh)
+    const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'))
+    if (!blob) {
+      flash('裁剪失败')
+      return
+    }
+    const name = `${parsed.value?.alt || 'image'}-cropped`
+    const asset = await assetStorage.save(new File([blob], name, { type: 'image/png' }))
+    await blockStore.updateBlockContent(props.blockId, `![${asset.name}](asset://${asset.id})`)
+    // 清空既有行内尺寸（D11），使裁剪结果按其自身比例自然显示，不被旧 width/height 拉伸
+    await blockStore.updateBlockFormat(props.blockId, { width: null, height: null })
+    cancelCrop()
+    flash('已裁剪')
+  } catch {
+    // 跨域图片无 CORS 头时 canvas 被污染，toBlob 抛 SecurityError
+    flash('裁剪失败：图片受限')
+  }
 }
 
 // 作为 editorComponent 时，满足 BlockTypeEditorExposed 契约（image 无编辑态，均为 no-op）
@@ -263,17 +384,21 @@ defineExpose({
     class="image-block"
     :class="{ 'is-selected': isSelected, 'is-readonly': isFrozen }"
     :style="{ justifyContent: justify }"
-    @mouseenter="hovered = true"
-    @mouseleave="hovered = false"
+    @mouseenter="onEnter"
+    @mouseleave="onLeave"
   >
     <div class="image-flash" v-if="flashMsg">{{ flashMsg }}</div>
 
     <div class="image-frame" :class="{ selected: isSelected }" @click.stop="onImageClick">
       <!-- hover / 选中 工具栏：置于 frame 内，使其水平位置始终跟随图片（左/中/右对齐均居中于图片） -->
-      <div v-if="showToolbar && imgSrc" class="image-toolbar" @click.stop>
+      <div v-if="cropOpen" class="image-toolbar crop-toolbar" @click.stop>
+        <button class="tb-btn" title="取消" @click.stop="cancelCrop"><X :size="14" /></button>
+        <button class="tb-btn confirm" title="确认裁剪" @click.stop="confirmCrop"><Check :size="14" /></button>
+      </div>
+      <div v-else-if="showToolbar && imgSrc" class="image-toolbar" @click.stop>
         <button class="tb-btn" title="放大查看" @click.stop="openLightbox"><Fullscreen :size="14" /></button>
         <button v-if="!isFrozen" class="tb-btn" title="复制图片" @click.stop="copyImage"><Copy :size="14" /></button>
-        <!-- <button v-if="!isFrozen" class="tb-btn" title="复制链接" @click.stop="copyLink">🔗</button> -->
+        <button v-if="!isFrozen" class="tb-btn" title="裁剪" @click.stop="cropImage"><Crop :size="14" /></button>
         <button v-if="!isFrozen" class="tb-btn" title="替换图片" @click.stop="replaceImage"><SquarePen :size="14" /></button>
         <button v-if="!isFrozen" class="tb-btn danger" title="删除图片" @click.stop="deleteImage"><Trash :size="14" /></button>
         <span class="tb-sep"></span>
@@ -302,8 +427,18 @@ defineExpose({
         <button v-if="!isFrozen" class="image-empty-btn" @click.stop="replaceImage">替换图片</button>
       </div>
 
+      <!-- 行内裁剪框：直接覆盖在图片上（裁剪态） -->
+      <div v-if="cropOpen && cropRect" class="crop-layer" @mousedown.stop="cropStart('move', $event)" @click.stop>
+        <div class="crop-box" :style="cropBoxStyle" @mousedown.stop>
+          <span class="crop-handle nw" @mousedown.stop="cropStart('nw', $event)"></span>
+          <span class="crop-handle ne" @mousedown.stop="cropStart('ne', $event)"></span>
+          <span class="crop-handle sw" @mousedown.stop="cropStart('sw', $event)"></span>
+          <span class="crop-handle se" @mousedown.stop="cropStart('se', $event)"></span>
+        </div>
+      </div>
+
       <!-- 选中态：四角圆点手柄 -->
-      <template v-if="isSelected && !isFrozen">
+      <template v-if="isSelected && !isFrozen && !cropOpen">
         <span class="resize-handle nw" @mousedown.stop.prevent="startResize('nw', $event)" @click.stop></span>
         <span class="resize-handle ne" @mousedown.stop.prevent="startResize('ne', $event)" @click.stop></span>
         <span class="resize-handle sw" @mousedown.stop.prevent="startResize('sw', $event)" @click.stop></span>
@@ -382,7 +517,7 @@ defineExpose({
   border: 1px solid var(--border);
   border-radius: var(--radius-sm, 6px);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
-  z-index: 2;
+  z-index: var(--z-popover);
 }
 /* 透明桥接：填补工具栏与图片之间的 6px 间隙，避免光标从图片移向菜单的瞬间
    经过死区触发 .image-block 的 mouseleave 令菜单消失。::before 属本组件子树，
@@ -418,9 +553,42 @@ defineExpose({
   color: var(--accent);
 }
 .tb-btn.danger:hover {
-  background: var(--error, #c0392b);
+  background: var(--error);
   color: #fff;
 }
+.tb-btn.confirm {
+  background: var(--accent-bg, var(--bg-hover));
+  color: var(--accent);
+}
+
+/* ── 行内裁剪框 ── */
+.crop-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  cursor: move;
+  z-index: 1;
+}
+.crop-box {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid var(--accent);
+  /* 框外区域变暗：巨大 box-shadow 被 .crop-layer 的 overflow:hidden 裁切在图片范围内 */
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.5);
+  cursor: move;
+}
+.crop-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: var(--bg-base);
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+}
+.crop-handle.nw { top: -6px; left: -6px; cursor: nwse-resize; }
+.crop-handle.ne { top: -6px; right: -6px; cursor: nesw-resize; }
+.crop-handle.sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
+.crop-handle.se { bottom: -6px; right: -6px; cursor: nwse-resize; }
 .tb-sep {
   width: 1px;
   height: 18px;
@@ -435,11 +603,12 @@ defineExpose({
   margin-bottom: 38px;
   padding: 3px 8px;
   border-radius: 4px;
-  background: rgba(28, 25, 23, 0.82);
-  color: #fff;
+  background: var(--bg-base2);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
   font-size: var(--text-xs, 11px);
   white-space: nowrap;
-  z-index: 3;
+  z-index: var(--z-popover);
   pointer-events: none;
 }
 
@@ -451,7 +620,7 @@ defineExpose({
   background: var(--bg-base);
   border: 2px solid var(--accent);
   border-radius: 50%;
-  z-index: 4;
+  z-index: var(--z-popover);
 }
 .resize-handle.nw { top: -6px; left: -6px; cursor: nwse-resize; }
 .resize-handle.ne { top: -6px; right: -6px; cursor: nesw-resize; }
