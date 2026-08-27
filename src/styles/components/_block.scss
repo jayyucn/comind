@@ -145,7 +145,8 @@
 
 .block-placeholder {
   color: var(--color-ink-faint);
-  font-style: italic;
+  font-size: var(--editor-font-size);
+  // font-style: italic;
   pointer-events: none;
 }
 

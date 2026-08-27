@@ -221,7 +221,7 @@ function isInEditableInput(e: { target: EventTarget | null }): boolean {
   return !!editable && !editable.closest('.ProseMirror')
 }
 
-function handleDocKeyDown(e: KeyboardEvent) {
+async function handleDocKeyDown(e: KeyboardEvent) {
   if (isInSidebar(e)) return
   // 输入框内 Backspace/Ctrl+C 保留控件自身行为（如搜索框、重命名输入）
   if (isInEditableInput(e)) return
@@ -254,6 +254,22 @@ function handleDocKeyDown(e: KeyboardEvent) {
     selection.clearSelection()
     selection.clearTextSelection()
     return
+  }
+  if (e.key === 'Enter') {
+    // 跨块选区态下按 Enter：在当前选中块【上方】插入空文本块并聚焦。
+    // image/embed 等无编辑态块无法用行内 Enter 建块，此分支补齐该路径
+    // （首块为 image 时也能在其上方新建 block）。
+    const ordered = sortByDocumentOrderIds([...selection.anchorIds], blockStore.blocks)
+    if (ordered.length > 0 && !editorStore.activeBlockId) {
+      e.preventDefault()
+      const newBlock = await blockStore.insertBlockAtCursor(ordered[0], 1, false)
+      if (newBlock) {
+        selection.clearSelection()
+        selection.clearTextSelection()
+        editorStore.activateBlock(newBlock.id, 1)
+      }
+      return
+    }
   }
   if ((e.key === 'c' || e.key === 'C') && (e.ctrlKey || e.metaKey)) {
     // 文本选区优先于块选区（互斥，只会命中其一）
