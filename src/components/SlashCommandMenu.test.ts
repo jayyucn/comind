@@ -52,10 +52,6 @@ vi.mock('./Icons', () => ({
   }
 }))
 
-// Mock window.alert and window.confirm
-vi.spyOn(window, 'alert').mockImplementation(() => {})
-vi.spyOn(window, 'confirm').mockImplementation(() => true)
-
 function createMockCommands(count: number) {
   return Array.from({ length: count }, (_, i) => ({
     id: `cmd-${i}`,
@@ -575,7 +571,7 @@ describe('SlashCommandMenu - Template List Subview', () => {
     )
   })
 
-  it('deletes user template when delete button is clicked', async () => {
+  it('opens delete confirm dialog when user template delete is clicked', async () => {
     const mockCommands = createMockCommands(3)
     vi.mocked(useSlashCommands).mockReturnValue({
       commands: mockCommands,
@@ -608,15 +604,26 @@ describe('SlashCommandMenu - Template List Subview', () => {
     vm.isTemplateListView = true
     await flushPromises()
 
-    // 直接调用删除方法而不是点击 DOM
+    // 点击删除应弹出确认弹窗，而不是直接删除（原生 window.confirm 已移除）
     await vm.deleteTemplateFromList('user:my-template')
-    
+    await flushPromises()
+
+    expect(vm.pendingDeleteTemplateId).toBe('user:my-template')
+    // 菜单已关闭，确认弹窗才能正常置顶
+    expect(vm.visible).toBe(false)
+
     const userTemplatesStore = useUserTemplatesStore()
+    expect(userTemplatesStore.remove).not.toHaveBeenCalled()
+
+    // 确认删除
+    await vm.confirmDeleteTemplate()
+    await flushPromises()
+
     expect(userTemplatesStore.remove).toHaveBeenCalledWith('my-template')
-    expect(window.confirm).toHaveBeenCalled()
+    expect(vm.pendingDeleteTemplateId).toBeNull()
   })
 
-  it('prevents deleting builtin templates', async () => {
+  it('shows info dialog instead of deleting builtin templates', async () => {
     const mockCommands = createMockCommands(3)
     vi.mocked(useSlashCommands).mockReturnValue({
       commands: mockCommands,
@@ -644,11 +651,12 @@ describe('SlashCommandMenu - Template List Subview', () => {
 
     await flushPromises()
 
-    // 直接调用删除函数测试内置模板的情况
+    // 内置模板（非 user: 前缀）应弹出信息提示弹窗，且不执行删除
     const vm = wrapper.vm as any
-    await vm.deleteTemplateFromList('meeting-notes') // 不是 user: 前缀
-    
-    expect(window.alert).toHaveBeenCalledWith('内置模板不可删除')
+    await vm.deleteTemplateFromList('meeting-notes')
+
+    expect(vm.showBuiltinDeleteAlert).toBe(true)
+    expect(vm.visible).toBe(false)
     const userTemplatesStore = useUserTemplatesStore()
     expect(userTemplatesStore.remove).not.toHaveBeenCalled()
   })

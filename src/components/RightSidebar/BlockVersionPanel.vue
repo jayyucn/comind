@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
-import { RotateCcw, Clock, MessageSquare, AlertCircle, Trash2 } from 'lucide-vue-next'
+import { format } from 'date-fns'
+import { AlertCircle, Clock, MessageSquare, RotateCcw, Trash2 } from 'lucide-vue-next'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useContentRenderer } from '../../composables/useContentRenderer'
+import { useBlockStore } from '../../stores/blocks'
 import { useBlockVersionStore } from '../../stores/blockVersion'
 import { useEditorStore } from '../../stores/editor'
-import { useBlockStore } from '../../stores/blocks'
-import { useContentRenderer } from '../../composables/useContentRenderer'
 import type { BlockVersion } from '../../wasm/types'
-import { format } from 'date-fns'
+import ConfirmDialog from '../ConfirmDialog.vue'
 
 interface SnapshotData {
   block: {
@@ -188,29 +189,16 @@ onMounted(async () => {
         <span class="version-count">共 {{ versions.length }} 个版本</span>
       </div>
 
-      <div
-        v-for="version in sortedVersions"
-        :key="version.id"
-        class="version-item"
-        :class="{ selected: selectedVersion?.id === version.id }"
-        @click="selectedVersion = version"
-      >
+      <div v-for="version in sortedVersions" :key="version.id" class="version-item"
+        :class="{ selected: selectedVersion?.id === version.id }" @click="selectedVersion = version">
         <div class="version-header">
           <span class="version-date">{{ formatDate(version.created_at) }}</span>
           <div class="version-actions">
-            <button
-              v-if="selectedVersion?.id === version.id"
-              class="action-btn restore-btn"
-              @click.stop="handleRestore(version.id)"
-              title="恢复此版本"
-            >
+            <button v-if="selectedVersion?.id === version.id" class="action-btn restore-btn"
+              @click.stop="handleRestore(version.id)" title="恢复此版本">
               <RotateCcw :size="14" />
             </button>
-            <button
-              class="action-btn delete-btn"
-              @click.stop="handleDelete(version)"
-              title="删除此版本"
-            >
+            <button class="action-btn delete-btn" @click.stop="handleDelete(version)" title="删除此版本">
               <Trash2 :size="14" />
             </button>
           </div>
@@ -235,22 +223,15 @@ onMounted(async () => {
             </div>
 
             <div v-if="getProperties(version.snapshot).length > 0" class="version-properties">
-              <div
-                v-for="prop in getProperties(version.snapshot)"
-                :key="prop.key"
-                class="property-item"
-              >
+              <div v-for="prop in getProperties(version.snapshot)" :key="prop.key" class="property-item">
                 <span class="property-key">{{ prop.key }}</span>
                 <span class="property-value">{{ prop.value }}</span>
               </div>
             </div>
 
             <div v-if="getRelationships(version.snapshot).length > 0" class="version-relationships">
-              <div
-                v-for="rel in getRelationships(version.snapshot)"
-                :key="rel.target_page_id"
-                class="relationship-item"
-              >
+              <div v-for="rel in getRelationships(version.snapshot)" :key="rel.target_page_id"
+                class="relationship-item">
                 <span class="rel-arrow">→</span>
                 <span class="rel-target">{{ rel.display_text }}</span>
               </div>
@@ -261,20 +242,8 @@ onMounted(async () => {
     </div>
   </div>
 
-  <Teleport to="body">
-    <div v-if="deleteConfirmVersion" class="delete-confirm-modal" @click.self="cancelDelete">
-      <div class="delete-confirm-dialog">
-        <div class="delete-confirm-title">确认删除</div>
-        <div class="delete-confirm-message">
-          确定要删除此版本吗？此操作不可撤销。
-        </div>
-        <div class="delete-confirm-actions">
-          <button class="delete-confirm-btn cancel-btn" @click="cancelDelete">取消</button>
-          <button class="delete-confirm-btn confirm-btn" @click="confirmDelete">删除</button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
+  <ConfirmDialog :visible="!!deleteConfirmVersion" title="确认删除" message="确定要删除此版本吗？此操作不可撤销。" confirm-text="删除" danger
+    :showDontRemindToday=true @confirm="confirmDelete" @cancel="cancelDelete" />
 </template>
 
 <style scoped lang="scss">
@@ -338,7 +307,9 @@ onMounted(async () => {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .version-list-header {
@@ -600,74 +571,5 @@ onMounted(async () => {
 
 .rel-target {
   color: var(--accent);
-}
-
-.delete-confirm-modal {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.5);
-  z-index: var(--z-dialog);
-  backdrop-filter: blur(2px);
-}
-
-.delete-confirm-dialog {
-  background: var(--bg-base);
-  border-radius: var(--radius-md);
-  padding: 20px;
-  min-width: 320px;
-  max-width: 90vw;
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-modal);
-}
-
-.delete-confirm-title {
-  font-size: var(--text-base);
-  font-weight: var(--font-semibold);
-  color: var(--text-primary);
-  margin-bottom: 8px;
-}
-
-.delete-confirm-message {
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-  line-height: var(--leading-normal);
-  margin-bottom: 16px;
-}
-
-.delete-confirm-actions {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-}
-
-.delete-confirm-btn {
-  padding: 6px 14px;
-  font-size: var(--text-sm);
-  font-weight: var(--font-medium);
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: background-color 0.15s ease;
-}
-
-.cancel-btn {
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-
-  &:hover {
-    background: var(--bg-active);
-  }
-}
-
-.confirm-btn {
-  background: var(--color-error);
-  color: var(--color-white);
-
-  &:hover {
-    background: #dc2626;
-  }
 }
 </style>

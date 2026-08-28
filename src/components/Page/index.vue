@@ -3,7 +3,7 @@ import { computed, ref, onBeforeUnmount, onMounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import BlockList from '../BlockList.vue'
 import Backlinks from '../Backlinks.vue'
-import MergeDialog from '../MergeDialog.vue'
+import ConfirmDialog from '../ConfirmDialog.vue'
 import SlashCommandMenu from '../SlashCommandMenu.vue'
 import PropertyQuickEditor from '../Block/PropertyQuickEditor.vue'
 import PropertyEditor from '../Block/PropertyEditor.vue'
@@ -189,13 +189,16 @@ function handleCancelMerge() {
       <Backlinks />
     </div>
 
-    <MergeDialog
+    <ConfirmDialog
       :visible="showMergeDialog"
-      :source-title="editingTitle"
-      :target-title="mergeTarget?.title ?? ''"
-      @merge="handleMerge"
+      title="合并页面"
+      confirm-text="合并"
+      @confirm="handleMerge"
       @cancel="handleCancelMerge"
-    />
+    >
+      <template #icon>⚡</template>
+      页面「<strong class="dialog-highlight">{{ editingTitle }}</strong>」已存在，合并后将把所有内容移入已有页面。
+    </ConfirmDialog>
 
     <SlashCommandMenu />
     <PropertyQuickEditor />
@@ -203,27 +206,16 @@ function handleCancelMerge() {
     <RelationshipMenu :menu="relMenu" />
 
     <!-- 重命名确认弹窗 -->
-    <Teleport to="body">
-      <Transition name="fade">
-        <div
-          v-if="showRenameDialog"
-          class="dialog-overlay"
-          @click.self="handleCancelRename"
-        >
-          <div class="dialog-card">
-            <div class="dialog-title">修改页面标题</div>
-            <div class="dialog-body">
-              将页面标题从「<strong class="dialog-highlight">{{ currentPageTitle }}</strong>」
-              修改为「<strong class="dialog-highlight">{{ pendingNewTitle }}</strong>」？
-            </div>
-            <div class="dialog-actions">
-              <button class="btn btn-cancel" @click="handleCancelRename">取消</button>
-              <button class="btn btn-confirm" @click="handleConfirmRename">确认修改</button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
+    <ConfirmDialog
+      :visible="showRenameDialog"
+      title="修改页面标题"
+      confirm-text="确认修改"
+      @confirm="handleConfirmRename"
+      @cancel="handleCancelRename"
+    >
+      将页面标题从「<strong class="dialog-highlight">{{ currentPageTitle }}</strong>」
+      修改为「<strong class="dialog-highlight">{{ pendingNewTitle }}</strong>」？
+    </ConfirmDialog>
   </div>
 </template>
 
