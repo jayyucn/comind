@@ -1297,12 +1297,14 @@ export const useBlockStore = defineStore('blocks', () => {
     }
   }
 
-  /** 更新 Block 属性（使用独立的 properties 表） */
+  /** 更新 Block 属性（使用独立的 properties 表）。
+   *  必须走 propertyStore.setProperty 完整路径：写完数据库后刷新
+   *  propertyStore 内存缓存 + 失效 blockCard，否则 UI 立即重渲染时
+   *  仍读到旧值（如语言切换后退出编辑态"变回去"，刷新才生效）。 */
   async function updateBlockProperties(blockId: string, properties: Record<string, any>) {
-    const client = await getClient()
+    const propertyStore = usePropertyStore()
     for (const [key, value] of Object.entries(properties)) {
-      const valueStr = typeof value === 'string' ? value : JSON.stringify(value)
-      await client.setProperty(blockId, key, valueStr, typeof value === 'string' ? 'string' : 'object')
+      await propertyStore.setProperty(blockId, key, value)
     }
     structureVersion.value++
   }

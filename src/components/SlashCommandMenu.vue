@@ -1,17 +1,19 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useModalKeyboardRef } from '../composables/useModalKeyboard'
+import { buildTemplateCommands, executeTemplateCommand, filterCommands, groupCommands, parseCommandInput, useSlashCommands } from '../composables/useSlashCommands'
+import { useTemplateRegistry } from '../composables/useTemplateRegistry'
+import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
 import { usePropertyStore } from '../stores/property'
-import { useBlockStore } from '../stores/blocks'
-import { useSlashCommands, filterCommands, groupCommands, parseCommandInput, buildTemplateCommands, executeTemplateCommand } from '../composables/useSlashCommands'
-import { useModalKeyboardRef } from '../composables/useModalKeyboard'
-import { useTemplateRegistry } from '../composables/useTemplateRegistry'
 import { useUserTemplatesStore } from '../stores/user-templates'
+import BasePopover from './common/BasePopover.vue'
+import ConfirmDialog from './ConfirmDialog.vue'
 // S6: parseDateInput migrated to Rust
 // 4.2: Use Rust DateRefService instead of TS parseDateRefs
-import { getCoreClient } from '../wasm/client'
 import { Icon } from '../components/Icons'
 import type { Command } from '../types/command'
+import { getCoreClient } from '../wasm/client'
 
 const editorStore = useEditorStore()
 const propertyStore = usePropertyStore()
@@ -33,6 +35,16 @@ const selectedIndex = ref(0)
 const position = ref({ x: 0, y: 0 })
 const range = ref<{ from: number; to: number } | null>(null)
 const listRef = ref<HTMLElement | null>(null)
+
+// 锚点（ADR-0038）：斜杠面板跟随光标。光标是 ProseMirror 文本位置，没有稳定 DOM
+// 引用，故在触发瞬间记录 view+pos，由 anchorElProp getter 实时反查光标所在元素——
+// 滚动/布局变动时 BasePopover 会重新测算，面板始终贴着输入框而不会遮住光标。
+const anchorView = ref<any>(null)
+const anchorPos = ref(0)
+
+// 删除模板确认弹窗状态（原生 window.confirm/alert 已替换为 Vue 弹窗）
+const pendingDeleteTemplateId = ref<string | null>(null)
+const showBuiltinDeleteAlert = ref(false)
 
 // 子视图状态
 const isTemplateListView = ref(false)
@@ -80,10 +92,30 @@ function handleSlashCommandTrigger(event: Event) {
 
   visible.value = true
   position.value = { x: coords.left, y: coords.bottom + 8 }
+  anchorView.value = view
+  anchorPos.value = pos
   range.value = r
   query.value = ''
   selectedIndex.value = 0
 }
+
+// 由 ProseMirror 文本位置反查光标所在 DOM 元素，作为 BasePopover 的避让锚点。
+// 文本节点取其父元素；元素节点直接用。失败（如 view 无 domAtPos）则回退到 position 模式。
+function anchorFromView(view: any, pos: number): HTMLElement | null {
+  try {
+    const { node } = view.domAtPos(pos)
+    const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : (node as HTMLElement)
+    return el ?? null
+  } catch {
+    return null
+  }
+}
+
+// 锚点 getter（ADR-0038）：未触发时返回 undefined，BasePopover 走 position 兜底；
+// 触发后返回一个每次重新反查光标的 getter，使滚动时面板实时跟随而不遮挡输入框。
+const anchorElProp = computed<HTMLElement | (() => HTMLElement | null) | undefined>(() =>
+  anchorView.value ? () => anchorFromView(anchorView.value, anchorPos.value) : undefined,
+)
 
 // 监听键盘事件
 function handleKeyDown(event: KeyboardEvent) {
@@ -115,6 +147,10 @@ function handleKeyDown(event: KeyboardEvent) {
           void useTemplateFromList(t.id)
         }
       } else {
+        // 强制从当前编辑器同步 query：避免依赖 editor.on('update') 的绑定时机，
+        // 万一 query 滞后为空，flatCommands 会退化成全部命令，selectedIndex=0 选中
+        // 第一个命令 time 并插入当前时间 "HH:MM"。见下方对 activeEditor 的 watch。
+        updateQuery()
         const cmd = flatCommands.value[selectedIndex.value]
         if (cmd) {
           void executeCommand(cmd)
@@ -329,13 +365,7 @@ function close() {
   isTemplateListView.value = false
 }
 
-// 点击外部关闭
-function handleClickOutside(event: MouseEvent) {
-  const target = event.target as HTMLElement
-  if (!target.closest('.slash-command-menu')) {
-    close()
-  }
-}
+// 点击外部关闭：BasePopover 已提供 overlay 点击 + Escape 关闭，无需自行处理
 
 function isSvgIcon(icon: string): boolean {
   return icon.startsWith('status-') || icon.startsWith('priority-') || icon.startsWith('icon-')
@@ -351,23 +381,42 @@ async function useTemplateFromList(templateId: string) {
   close()
 }
 
-// 从子视图删除用户模板
-async function deleteTemplateFromList(templateId: string) {
+// 从子视图删除用户模板（改为 Vue 弹窗，原生 window.confirm/alert 已移除）
+function deleteTemplateFromList(templateId: string) {
   if (!templateId.startsWith('user:')) {
-    window.alert('内置模板不可删除')
+    // 内置模板：信息提示。先关闭菜单，让提示弹窗能正常置顶显示。
+    showBuiltinDeleteAlert.value = true
+    close()
     return
   }
+  // 用户模板：弹出 danger 确认框。先关闭菜单，让确认弹窗能正常置顶显示。
+  pendingDeleteTemplateId.value = templateId
+  close()
+}
+
+async function confirmDeleteTemplate() {
+  const templateId = pendingDeleteTemplateId.value
+  if (!templateId) return
   const id = templateId.slice('user:'.length)
-  if (!window.confirm('确定删除该模板？')) return
   await userTemplatesStore.remove(id)
   await templateRegistry.loadAll()
   templateCommands.value = buildTemplateCommands()
+  pendingDeleteTemplateId.value = null
+}
+
+function cancelDeleteTemplate() {
+  pendingDeleteTemplateId.value = null
 }
 
 // 监听编辑器更新（用于实时更新查询）
 let editorUpdateListener: (() => void) | null = null
 
 function bindEditorUpdate() {
+  // 先解绑旧监听，避免 activeEditor 变更后重复绑定导致泄漏
+  if (editorUpdateListener) {
+    unbindEditorUpdate()
+  }
+
   const editor = editorStore.activeEditor
   if (!editor) return
 
@@ -392,15 +441,11 @@ onMounted(() => {
 
   // 监听键盘事件
   document.addEventListener('keydown', handleKeyDown)
-
-  // 监听点击外部
-  document.addEventListener('click', handleClickOutside)
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('slash-command-trigger', handleSlashCommandTrigger as EventListener)
   document.removeEventListener('keydown', handleKeyDown)
-  document.removeEventListener('click', handleClickOutside)
 
   unbindEditorUpdate()
 })
@@ -440,105 +485,132 @@ watch(visible, (isVisible) => {
     editorStore.hideSlashCommand()
   }
 })
+
+// 触发瞬间 activeEditor 可能尚未就绪（如新建空块后立即输入 '/'，
+// setActiveEditor 晚一拍才执行），导致 bindEditorUpdate 拿不到 editor、
+// 未能绑定 update 监听，query 永远为空 → 回车选中第一个命令 time 并插入当前时间。
+// activeEditor 就绪后重新绑定监听器，使菜单在输入时正常过滤。
+watch(
+  () => editorStore.activeEditor,
+  () => {
+    if (visible.value) bindEditorUpdate()
+  }
+)
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="fade-slide">
+  <BasePopover
+    :visible="visible"
+    :position="position"
+    :anchor-el="anchorElProp || null"
+    placement="bottom"
+    @close="close"
+  >
+    <div class="slash-command-menu">
       <div
-        v-if="visible"
-        class="slash-command-menu"
-        :style="{ left: `${position.x}px`, top: `${position.y}px` }"
+        ref="listRef"
+        class="slash-command-list"
       >
-        <div
-          ref="listRef"
-          class="slash-command-list"
-        >
-          <template v-if="isTemplateListView">
+        <template v-if="isTemplateListView">
+          <div class="slash-command-group">
+            <div class="slash-command-group-title">
+              我的模板（点击使用）
+            </div>
+            <div
+              v-for="(t, idx) in templateListData"
+              :key="t.id"
+              class="slash-command-item template-item"
+              :class="{ selected: idx === selectedIndex }"
+              @click="useTemplateFromList(t.id)"
+              @mouseenter="selectedIndex = idx"
+            >
+              <span class="template-icon">{{ t.icon }}</span>
+              <span class="template-name">{{ t.name }}</span>
+              <span class="template-source">[{{ t.source === 'builtin' ? '内置' : '我的' }}]</span>
+              <button
+                v-if="t.source === 'user'"
+                class="template-delete"
+                @click.stop="deleteTemplateFromList(t.id)"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        </template>
+        <template v-else>
+          <template
+            v-for="[group, cmds] in groupedCommands"
+            :key="group"
+          >
             <div class="slash-command-group">
               <div class="slash-command-group-title">
-                我的模板（点击使用）
+                {{ group }}
               </div>
               <div
-                v-for="(t, idx) in templateListData"
-                :key="t.id"
-                class="slash-command-item template-item"
-                :class="{ selected: idx === selectedIndex }"
-                @click="useTemplateFromList(t.id)"
-                @mouseenter="selectedIndex = idx"
+                v-for="cmd in cmds"
+                :key="cmd.id"
+                class="slash-command-item"
+                :class="{ selected: flatCommands.indexOf(cmd) === selectedIndex }"
+                @click="executeCommand(cmd)"
+                @mouseenter="selectedIndex = flatCommands.indexOf(cmd)"
               >
-                <span class="template-icon">{{ t.icon }}</span>
-                <span class="template-name">{{ t.name }}</span>
-                <span class="template-source">[{{ t.source === 'builtin' ? '内置' : '我的' }}]</span>
-                <button
-                  v-if="t.source === 'user'"
-                  class="template-delete"
-                  @click.stop="deleteTemplateFromList(t.id)"
+                <span class="slash-command-icon">
+                  <Icon
+                    v-if="isSvgIcon(cmd.icon)"
+                    :name="cmd.icon"
+                    :size="16"
+                  />
+                  <span v-else>{{ cmd.icon }}</span>
+                </span>
+                <span class="slash-command-name">{{ cmd.name }}</span>
+                <span
+                  v-if="cmd.alias && cmd.alias.length > 0"
+                  class="slash-command-alias"
                 >
-                  ×
-                </button>
+                  {{ cmd.alias[0] }}
+                </span>
               </div>
             </div>
           </template>
-          <template v-else>
-            <template
-              v-for="[group, cmds] in groupedCommands"
-              :key="group"
-            >
-              <div class="slash-command-group">
-                <div class="slash-command-group-title">
-                  {{ group }}
-                </div>
-                <div
-                  v-for="cmd in cmds"
-                  :key="cmd.id"
-                  class="slash-command-item"
-                  :class="{ selected: flatCommands.indexOf(cmd) === selectedIndex }"
-                  @click="executeCommand(cmd)"
-                  @mouseenter="selectedIndex = flatCommands.indexOf(cmd)"
-                >
-                  <span class="slash-command-icon">
-                    <Icon
-                      v-if="isSvgIcon(cmd.icon)"
-                      :name="cmd.icon"
-                      :size="16"
-                    />
-                    <span v-else>{{ cmd.icon }}</span>
-                  </span>
-                  <span class="slash-command-name">{{ cmd.name }}</span>
-                  <span
-                    v-if="cmd.alias && cmd.alias.length > 0"
-                    class="slash-command-alias"
-                  >
-                    {{ cmd.alias[0] }}
-                  </span>
-                </div>
-              </div>
-            </template>
-          </template>
+        </template>
 
-          <div
-            v-if="flatCommands.length === 0 && !isTemplateListView"
-            class="slash-command-empty"
-          >
-            无匹配命令
-          </div>
+        <div
+          v-if="flatCommands.length === 0 && !isTemplateListView"
+          class="slash-command-empty"
+        >
+          无匹配命令
         </div>
       </div>
-    </Transition>
-  </Teleport>
+    </div>
+  </BasePopover>
+
+  <!-- 内置模板不可删除：信息提示型弹窗（hideCancel 单按钮） -->
+  <ConfirmDialog
+    :visible="showBuiltinDeleteAlert"
+    title="提示"
+    message="内置模板不可删除"
+    confirm-text="我知道了"
+    :hide-cancel="true"
+    @confirm="showBuiltinDeleteAlert = false"
+    @cancel="showBuiltinDeleteAlert = false"
+  />
+
+  <!-- 删除用户模板确认 -->
+  <ConfirmDialog
+    :visible="!!pendingDeleteTemplateId"
+    title="删除模板"
+    message="确定要删除该模板吗？此操作不可撤销。"
+    confirm-text="删除"
+    danger
+    @confirm="confirmDeleteTemplate"
+    @cancel="cancelDeleteTemplate"
+  />
 </template>
 
 <style scoped>
 .slash-command-menu {
-  position: fixed;
-  z-index: var(--z-dropdown);
   width: var(--panel-width-sm);
   max-height: 640px;
-  background: var(--bg-base, #FAFAF8);
-  border: 1px solid var(--border, #E7E5E4);
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(28, 25, 23, 0.08);
   overflow: hidden;
 }
 
@@ -605,18 +677,6 @@ watch(visible, (isVisible) => {
   text-align: center;
   color: var(--text-tertiary);
   font-size: var(--text-sm);
-}
-
-/* 动画 */
-.fade-slide-enter-active,
-.fade-slide-leave-active {
-  transition: opacity 0.18s ease, transform 0.18s ease;
-}
-
-.fade-slide-enter-from,
-.fade-slide-leave-to {
-  opacity: 0;
-  transform: translateY(-8px);
 }
 
 .template-icon {

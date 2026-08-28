@@ -35,6 +35,7 @@ import PropertyInline from './PropertyInline.vue'
 import { usePageStore } from '../../stores/pages'
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import { useIdeasFreeze } from '../../composables/useIdeasFreeze'
+import { useRightSidebar } from '../../composables/useRightSidebar'
 import {
   decodeRelationshipContent,
   setRelationshipSnapshot,
@@ -54,6 +55,7 @@ const props = defineProps<{
 }>()
 
 const editorStore = useEditorStore()
+const rightSidebar = useRightSidebar()
 const blockStore = useBlockStore()
 const propertyStore = usePropertyStore()
 const pageStore = usePageStore()
@@ -382,6 +384,16 @@ async function onPaste(e: ClipboardEvent) {
   // onPaste 钩子为 async，需 await 拿到布尔结果；e.preventDefault() 已在钩子内同步调用
   if (await typeHooks.value?.onPaste?.(e) === true) return
 }
+
+/** 选中（激活）Block 时：锁定 activeBlockId，并在右侧栏已展开时切到「版本历史」标签。
+ * 入口即「选中状态」，无需在每个 Block 内嵌按钮。 */
+watch(isActive, (active) => {
+  if (!active) return
+  editorStore.activateBlock(blockId.value)
+  if (rightSidebar.visible.value) {
+    rightSidebar.setActivePanel('block-version')
+  }
+})
 </script>
 
 <template>

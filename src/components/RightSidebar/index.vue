@@ -87,7 +87,7 @@ function handleResizeStart(e: MouseEvent) {
   </Transition>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
 .right-sidebar {
   height: 100%;
   background: var(--bg-sidebar);
@@ -97,6 +97,9 @@ function handleResizeStart(e: MouseEvent) {
   flex-shrink: 0;
   overflow: hidden;
   position: relative;
+  // 右侧栏是浮层侧栏，按 ADR-0032 应高于吸附 chrome（$z-sticky=10），
+  // 否则顶部 tab 按钮会被 App.vue 的 sticky-header 盖住、无法点击。
+  z-index: var(--z-sidebar);
 }
 
 .resize-handle {

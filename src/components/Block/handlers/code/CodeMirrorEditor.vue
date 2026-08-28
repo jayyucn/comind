@@ -1,21 +1,23 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onBeforeUnmount, shallowRef, computed, nextTick } from 'vue'
-import { EditorState } from '@codemirror/state'
-import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
-import { javascript } from '@codemirror/lang-javascript'
-import { python } from '@codemirror/lang-python'
-import { json } from '@codemirror/lang-json'
-import { html } from '@codemirror/lang-html'
 import { css } from '@codemirror/lang-css'
-import { sql } from '@codemirror/lang-sql'
-import { rust } from '@codemirror/lang-rust'
 import { go } from '@codemirror/lang-go'
-import { syntaxHighlighting, HighlightStyle } from '@codemirror/language'
-import { tags } from '@lezer/highlight'
+import { html } from '@codemirror/lang-html'
+import { javascript } from '@codemirror/lang-javascript'
+import { json } from '@codemirror/lang-json'
+import { python } from '@codemirror/lang-python'
+import { rust } from '@codemirror/lang-rust'
+import { sql } from '@codemirror/lang-sql'
+import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
+import { EditorState } from '@codemirror/state'
 import { oneDark, oneDarkHighlightStyle } from '@codemirror/theme-one-dark'
+import { EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from '@codemirror/view'
+import { tags } from '@lezer/highlight'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { useBlockRegistry } from '../../../../composables/useBlockRegistry'
 import { useTheme } from '../../../../composables/useTheme'
 import BasePopover from '../../../common/BasePopover.vue'
+import { codeCollapseState } from './code-collapse-state'
 
 const props = withDefaults(defineProps<{
   blockId: string
@@ -48,6 +50,16 @@ const menuPosition = ref({ x: 0, y: 0 })
 const currentLang = ref(props.language || 'plain')
 const showCopied = ref(false)
 const { resolvedTheme } = useTheme()
+
+/** 折叠（chevron 切换）：按 blockId 持久化到模块级 Map，本页面内组件重挂载后状态不丢失 */
+const collapsed = ref(codeCollapseState.get(props.blockId) ?? false)
+watch(collapsed, (v) => codeCollapseState.set(props.blockId, v))
+/** 自动换行：仅本地状态，刷新块即重置 */
+const wrap = ref(false)
+
+// header 左侧的代码块类型标签，从 registry 取；fallback 是为了应付未注册等异常路径
+const { getHandler } = useBlockRegistry()
+const headerLabel = computed(() => getHandler('code')?.label ?? '代码块')
 
 const languages = [
   { id: 'plain', label: 'Plain Text' },
@@ -129,28 +141,34 @@ const githubTheme = EditorView.theme({
   },
   '.cm-content': {
     fontFamily: "'SFMono-Regular', 'Consolas', 'Liberation Mono', 'Menlo', monospace",
-    padding: '32px 12px 12px 12px',
+    padding: '12px 12px 12px 12px',
     minHeight: '60px',
     caretColor: '#0969da',
+    backgroundColor: 'transparent',
   },
   '.cm-gutters': {
-    backgroundColor: '#f6f8fa',
+    backgroundColor: 'var(--bg-base)',
     color: '#6a737d',
     border: 'none',
+    paddingLeft: '8px',
     paddingRight: '8px',
     borderRight: '1px solid #d0d7de',
   },
   '.cm-activeLineGutter': {
-    backgroundColor: '#eff1f3',
+    // backgroundColor: '#eff1f3',
+    backgroundColor: 'transparent',
   },
   '.cm-activeLine': {
-    backgroundColor: '#eff1f3',
+    // backgroundColor: '#eff1f3',
+    backgroundColor: 'transparent',
+
   },
   '.cm-cursor': {
     borderLeftColor: '#0969da',
   },
   '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
-    backgroundColor: '#b6d5f5',
+    // backgroundColor: '#b6d5f5',
+    backgroundColor: 'transparent',
   },
   '.cm-scroller': {
     overflow: 'auto',
@@ -173,6 +191,7 @@ function createEditor() {
     highlightActiveLineGutter(),
     history(),
     EditorView.editable.of(!props.readonly),
+    ...(wrap.value ? [EditorView.lineWrapping] : []),
     keymap.of([
       ...defaultKeymap,
       ...historyKeymap,
@@ -302,6 +321,25 @@ watch(resolvedTheme, () => {
   })
 })
 
+/** wrap 切换：lineWrapping extension 不可热插拔，所以重建编辑器；
+ *  注意 readonly 模式下没有 watch(readonly) 之后的 nextTick focus，但 wrap
+ *  仅影响视觉，不应抢焦点，所以在 nextTick 里把焦点放回。 */
+watch(wrap, () => {
+  if (!editorRef.value) return
+  const hadFocus = view.value?.hasFocus === true
+  createEditor()
+  if (hadFocus) {
+    nextTick(() => view.value?.focus())
+  }
+})
+
+/** chevron 展开时把焦点放回编辑器，让用户能继续在原位编辑 */
+watch(collapsed, (isCollapsed) => {
+  if (!isCollapsed) {
+    nextTick(() => view.value?.focus())
+  }
+})
+
 onMounted(() => {
   createEditor()
   if (view.value) {
@@ -381,7 +419,7 @@ function getText() {
   return view.value?.state.doc.toString() ?? ''
 }
 
-function markSaved() {}
+function markSaved() { }
 
 function getEditor() {
   return view.value
@@ -391,137 +429,216 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
 </script>
 
 <template>
-  <div class="code-editor-wrapper">
-    <div class="code-lang-button-container">
-      <button
-        ref="langButtonRef"
-        class="code-lang-button"
-        @click.stop="toggleMenu"
-      >
-        {{ currentLangLabel }}
-        <span class="dropdown-arrow">▾</span>
+  <div class="code-editor-wrapper" :class="{ 'is-collapsed': collapsed }">
+    <header class="code-header">
+      <button type="button" class="code-toggle" :aria-expanded="!collapsed" aria-label="折叠代码块"
+        @mousedown.stop @click.stop="collapsed = !collapsed">
+        <span class="code-toggle-chevron" :class="{ 'is-collapsed': collapsed }">▾</span>
+        <span class="code-toggle-label">{{ headerLabel }}</span>
       </button>
-      <BasePopover
-        :visible="showLangMenu"
-        :position="menuPosition"
-        @close="showLangMenu = false"
-      >
-        <div class="lang-menu">
-          <div
-            v-for="lang in languages"
-            :key="lang.id"
-            :class="['lang-item', { active: lang.id === currentLang }]"
-            @click="selectLanguage(lang.id)"
-          >
-            {{ lang.label }}
+      <div class="code-toolbar">
+        <button ref="langButtonRef" type="button" class="code-toolbar-btn" @click.stop="toggleMenu">
+          <span>{{ currentLangLabel }}</span>
+          <span class="code-toolbar-arrow">▾</span>
+        </button>
+        <span class="code-toolbar-divider" aria-hidden="true"></span>
+        <button type="button" class="code-toolbar-btn" :class="{ active: wrap }" :aria-pressed="wrap"
+          @click.stop="wrap = !wrap">
+          自动换行
+        </button>
+        <span class="code-toolbar-divider" aria-hidden="true"></span>
+        <button type="button" class="code-toolbar-btn" :title="showCopied ? '已复制' : '复制'" @click.stop="copyCode">
+          <svg v-if="showCopied" class="copy-icon" viewBox="0 0 16 16" width="14" height="14" fill="currentColor"
+            aria-hidden="true">
+            <path
+              d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z" />
+          </svg>
+          <svg v-else class="copy-icon" viewBox="0 0 16 16" width="14" height="14" fill="currentColor"
+            aria-hidden="true">
+            <path
+              d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z" />
+            <path
+              d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z" />
+          </svg>
+          <span class="code-toolbar-text">复制</span>
+        </button>
+        <BasePopover
+          :visible="showLangMenu"
+          :position="menuPosition"
+          :anchor-el="langButtonRef"
+          placement="bottom"
+          @close="showLangMenu = false"
+        >
+          <div class="lang-menu">
+            <div v-for="lang in languages" :key="lang.id" :class="['lang-item', { active: lang.id === currentLang }]"
+              @click="selectLanguage(lang.id)">
+              {{ lang.label }}
+            </div>
           </div>
-        </div>
-      </BasePopover>
+        </BasePopover>
+      </div>
+    </header>
+    <div v-show="!collapsed" class="code-editor-body">
+      <div ref="editorRef" class="code-editor-container"></div>
     </div>
-    <div class="code-copy-button-container">
-      <button
-        class="code-copy-button"
-        @click.stop="copyCode"
-        :title="showCopied ? 'Copied!' : 'Copy'"
-      >
-        <svg v-if="showCopied" class="copy-icon" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
-          <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"/>
-        </svg>
-        <svg v-else class="copy-icon" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
-          <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/>
-          <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/>
-        </svg>
-      </button>
-    </div>
-    <div ref="editorRef" class="code-editor-container"></div>
   </div>
 </template>
 
 <style scoped>
 .code-editor-wrapper {
-  position: relative;
-  background: var(--bg-hover);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm, 6px);
   overflow: hidden;
+  /* 头部透明（不设背景），仅正文代码区有底色 */
 }
 
-.code-lang-button-container {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  z-index: var(--z-sticky);
-  opacity: 0;
-  transition: opacity 0.2s;
+/* ── Header（透明，无底色）── */
+.code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2, 8px);
+  padding: 4px 6px 4px 4px;
+  background: transparent;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
 }
 
-.code-editor-wrapper:hover .code-lang-button-container {
-  opacity: 1;
+.code-editor-wrapper:not(.is-collapsed) .code-header {
+  border-bottom: 1px solid var(--border);
 }
 
-.code-copy-button-container {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: var(--z-sticky);
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
-.code-editor-wrapper:hover .code-copy-button-container {
-  opacity: 1;
-}
-
-.code-lang-button {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 3px 10px;
+/* 左侧折叠按钮 */
+.code-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1, 4px);
+  padding: 2px 6px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-secondary);
   font-size: var(--text-xs);
   font-weight: var(--font-medium);
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  transition: all 0.2s;
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
+  user-select: none;
 }
 
-.code-copy-button {
-  background: var(--bg-hover);
+.code-toggle:hover {
+  background: var(--bg-active);
   color: var(--text-primary);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 5px 6px;
+}
+
+.code-toggle-chevron {
+  display: inline-block;
+  font-size: 10px;
+  transition: transform 0.18s ease;
+}
+
+.code-toggle-chevron.is-collapsed {
+  transform: rotate(-90deg);
+}
+
+/* 右侧工具栏：hover 才显示（与原来 hover 浮层一致）。
+ * visibility 随 opacity 一起隐藏，否则 opacity:0 的按钮仍可 Tab 聚焦。 */
+.code-toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1, 4px);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s, visibility 0.2s;
+}
+
+.code-editor-wrapper:hover .code-toolbar {
+  opacity: 1;
+  visibility: visible;
+}
+
+.code-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1, 4px);
+  padding: 3px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-secondary);
   font-size: var(--text-xs);
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
+  transition: background 0.15s, color 0.15s;
 }
 
-.code-lang-button:hover, .code-copy-button:hover {
-  background-color: var(--bg-active);
-  border-color: var(--border-strong);
+.code-toolbar-btn:hover {
+  background: var(--bg-active);
+  color: var(--text-primary);
 }
 
-.dropdown-arrow {
-  font-size: var(--text-xs);
+.code-toolbar-btn.active {
+  color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+.code-toolbar-btn.active:hover {
+  background: var(--accent-bg);
+  color: var(--accent-hover);
+}
+
+.code-toolbar-arrow {
+  font-size: 9px;
   opacity: 0.7;
 }
 
+.code-toolbar-divider {
+  width: 1px;
+  height: 14px;
+  background: var(--border);
+  margin: 0 2px;
+}
+
+.code-toolbar-text {
+  margin-left: 2px;
+}
+
 .copy-icon {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
+}
+
+/* ── Editor body ── */
+.code-editor-body {
+  background: var(--bg-base);
+}
+
+/* 行号（num）区域：两个主题统一用 --bg-base（githubTheme 的 .cm-gutters 只在浅色生效，oneDark 自带背景需覆盖） */
+.code-editor-body :deep(.cm-gutters) {
+  background-color: var(--bg-base);
+}
+
+.code-editor-body :deep(.cm-activeLineGutter) {
+  background: transparent;
+}
+
+.code-editor-body :deep(.cm-editor) {
+  background: transparent;
 }
 
 .code-editor-container {
   min-height: 60px;
 }
 
+/* 代码内容左右边距：统一覆盖浅色/深色主题（githubTheme 与 oneDark 的 .cm-content padding 不一致） */
+.code-editor-body :deep(.cm-editor .cm-content) {
+  padding-right: var(--space-5, 20px);
+}
+
+/* 隐藏 .cm-editor 浏览器默认 focus outline（激活态会在 header 下边缘显示为异常虚线） */
+.code-editor-body :deep(.cm-editor) {
+  outline: none;
+  border: none;
+}
+
+/* ── Language menu ── */
 .lang-menu {
   min-width: 140px;
   overflow: hidden;

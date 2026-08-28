@@ -52,10 +52,6 @@ vi.mock('./Icons', () => ({
   }
 }))
 
-// Mock window.alert and window.confirm
-vi.spyOn(window, 'alert').mockImplementation(() => {})
-vi.spyOn(window, 'confirm').mockImplementation(() => true)
-
 function createMockCommands(count: number) {
   return Array.from({ length: count }, (_, i) => ({
     id: `cmd-${i}`,
@@ -156,6 +152,45 @@ describe('SlashCommandMenu', () => {
 
     await flushPromises()
 
+    expect(wrapper.find('.slash-command-menu').exists()).toBe(true)
+  })
+
+  it('engages BasePopover anchor mode (ADR-0038) via cursor getter', async () => {
+    // 验证迁移：触发后 anchorView/anchorPos 被记录，且 anchorElProp getter 能反查到光标元素。
+    const anchorEl = document.createElement('div')
+    const mockCommands = createMockCommands(3)
+    vi.mocked(useSlashCommands).mockReturnValue({
+      commands: mockCommands,
+      filterCommands: vi.fn((query: string) => mockCommands),
+      groupCommands: vi.fn(() => new Map([['Test Group', mockCommands]])),
+      parseCommandInput: vi.fn(() => ({ command: null, argument: null }))
+    } as any)
+
+    const wrapper = mount(SlashCommandMenu, {
+      global: { stubs: { Teleport: { template: '<div><slot /></div>' } } }
+    })
+
+    document.dispatchEvent(new CustomEvent('slash-command-trigger', {
+      detail: {
+        view: {
+          coordsAtPos: () => ({ left: 100, bottom: 200 }),
+          domAtPos: () => ({ node: anchorEl, offset: 0 })
+        },
+        position: 5,
+        range: { from: 0, to: 1 }
+      }
+    }))
+
+    await flushPromises()
+
+    const vm = wrapper.vm as any
+    expect(vm.anchorView).toBeTruthy()
+    expect(vm.anchorPos).toBe(5)
+    // anchorElProp 在触发后应是一个 getter，调用它返回光标元素
+    expect(typeof vm.anchorElProp).toBe('function')
+    expect(vm.anchorElProp()).toBe(anchorEl)
+
+    // 菜单仍正常渲染
     expect(wrapper.find('.slash-command-menu').exists()).toBe(true)
   })
 
@@ -575,7 +610,7 @@ describe('SlashCommandMenu - Template List Subview', () => {
     )
   })
 
-  it('deletes user template when delete button is clicked', async () => {
+  it('opens delete confirm dialog when user template delete is clicked', async () => {
     const mockCommands = createMockCommands(3)
     vi.mocked(useSlashCommands).mockReturnValue({
       commands: mockCommands,
@@ -608,15 +643,26 @@ describe('SlashCommandMenu - Template List Subview', () => {
     vm.isTemplateListView = true
     await flushPromises()
 
-    // 直接调用删除方法而不是点击 DOM
+    // 点击删除应弹出确认弹窗，而不是直接删除（原生 window.confirm 已移除）
     await vm.deleteTemplateFromList('user:my-template')
-    
+    await flushPromises()
+
+    expect(vm.pendingDeleteTemplateId).toBe('user:my-template')
+    // 菜单已关闭，确认弹窗才能正常置顶
+    expect(vm.visible).toBe(false)
+
     const userTemplatesStore = useUserTemplatesStore()
+    expect(userTemplatesStore.remove).not.toHaveBeenCalled()
+
+    // 确认删除
+    await vm.confirmDeleteTemplate()
+    await flushPromises()
+
     expect(userTemplatesStore.remove).toHaveBeenCalledWith('my-template')
-    expect(window.confirm).toHaveBeenCalled()
+    expect(vm.pendingDeleteTemplateId).toBeNull()
   })
 
-  it('prevents deleting builtin templates', async () => {
+  it('shows info dialog instead of deleting builtin templates', async () => {
     const mockCommands = createMockCommands(3)
     vi.mocked(useSlashCommands).mockReturnValue({
       commands: mockCommands,
@@ -644,11 +690,12 @@ describe('SlashCommandMenu - Template List Subview', () => {
 
     await flushPromises()
 
-    // 直接调用删除函数测试内置模板的情况
+    // 内置模板（非 user: 前缀）应弹出信息提示弹窗，且不执行删除
     const vm = wrapper.vm as any
-    await vm.deleteTemplateFromList('meeting-notes') // 不是 user: 前缀
-    
-    expect(window.alert).toHaveBeenCalledWith('内置模板不可删除')
+    await vm.deleteTemplateFromList('meeting-notes')
+
+    expect(vm.showBuiltinDeleteAlert).toBe(true)
+    expect(vm.visible).toBe(false)
     const userTemplatesStore = useUserTemplatesStore()
     expect(userTemplatesStore.remove).not.toHaveBeenCalled()
   })

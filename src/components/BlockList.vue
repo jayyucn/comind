@@ -221,7 +221,15 @@ function isInEditableInput(e: { target: EventTarget | null }): boolean {
   return !!editable && !editable.closest('.ProseMirror')
 }
 
-function handleDocKeyDown(e: KeyboardEvent) {
+/** 选中的块是否为「无编辑态块」（当前仅 image）。
+ * 这类块被选中时会走 activateBlock，但无真实编辑器，
+ * 其 Enter/Tab 不会被编辑器 keymap 拦截，需在文档级兜底处理。 */
+function isNoEditTextBlock(id: string): boolean {
+  const b = blockStore.blocks.find((x) => x.id === id)
+  return !!b && b.type === 'image'
+}
+
+async function handleDocKeyDown(e: KeyboardEvent) {
   if (isInSidebar(e)) return
   // 输入框内 Backspace/Ctrl+C 保留控件自身行为（如搜索框、重命名输入）
   if (isInEditableInput(e)) return
@@ -254,6 +262,37 @@ function handleDocKeyDown(e: KeyboardEvent) {
     selection.clearSelection()
     selection.clearTextSelection()
     return
+  }
+  if (e.key === 'Enter') {
+    // 跨块选区态下按 Enter：在当前选中块【上方】插入空文本块并聚焦。
+    // image/embed 等无编辑态块无法用行内 Enter 建块，此分支补齐该路径
+    // （首块为 image 时也能在其上方新建 block）。
+    const ordered = sortByDocumentOrderIds([...selection.anchorIds], blockStore.blocks)
+    if (ordered.length > 0 && isNoEditTextBlock(ordered[0])) {
+      e.preventDefault()
+      const newBlock = await blockStore.insertBlockAtCursor(ordered[0], 1, false)
+      if (newBlock) {
+        selection.clearSelection()
+        selection.clearTextSelection()
+        editorStore.activateBlock(newBlock.id, 1)
+      }
+      return
+    }
+  }
+  if (e.key === 'Tab') {
+    // 与普通文本 block 一致：Tab=缩进，Shift-Tab=反缩进。
+    // 文本块在编辑器内由 EnterAsBlockExtension 处理；无编辑态块（image/embed 等）
+    // 选中后无激活编辑器，Tab 落到此处，按选中的块缩进/反缩进。
+    const ordered = sortByDocumentOrderIds([...selection.anchorIds], blockStore.blocks)
+    if (ordered.length > 0 && isNoEditTextBlock(ordered[0])) {
+      e.preventDefault()
+      if (e.shiftKey) {
+        await blockStore.outdent(ordered[0])
+      } else {
+        await blockStore.indent(ordered[0])
+      }
+      return
+    }
   }
   if ((e.key === 'c' || e.key === 'C') && (e.ctrlKey || e.metaKey)) {
     // 文本选区优先于块选区（互斥，只会命中其一）

@@ -29,6 +29,8 @@ export interface EditorEventCtx {
   menuRange: Ref<{ from: number; to: number }>
   menuQuery: Ref<string>
   menuRef: Ref<any>
+  /** wiki-link 菜单锚点（光标所在 DOM 元素），供 PageLinkMenu 内的 BasePopover 避让/翻转（ADR-0038）。 */
+  menuAnchorEl: Ref<HTMLElement | null>
   kindSelectorVisible: Ref<boolean>
   kindSelectorPosition: Ref<{ left: number; top: number; bottom: number }>
   kindSelectorRange: Ref<{ from: number; to: number }>
@@ -181,6 +183,16 @@ export function createEditorEvents(ctx: EditorEventCtx): Record<string, (e: Even
 
     const { view, position, range, query } = customEvent.detail
     const coords = view.coordsAtPos(position)
+
+    // 由 ProseMirror 文本位置反查光标所在 DOM 元素作为 BasePopover 避让锚点（ADR-0038）。
+    // 文本节点取其父元素；反查失败则置 null，PageLinkMenu 回退到 position 模式。
+    try {
+      const node = view.domAtPos(position).node
+      ctx.menuAnchorEl.value =
+        node.nodeType === Node.TEXT_NODE ? node.parentElement : (node as HTMLElement)
+    } catch {
+      ctx.menuAnchorEl.value = null
+    }
 
     ctx.menuPosition.value = { x: coords.left, y: coords.bottom + 8 }
     ctx.menuRange.value = range

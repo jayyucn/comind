@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, watch, onUnmounted } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
+import { popModal, pushModal } from '../composables/useModalKeyboard';
 import { usePageStore } from '../stores/pages';
-import { pushModal, popModal } from '../composables/useModalKeyboard';
 import BasePopover from './common/BasePopover.vue';
 
 const props = defineProps<{
@@ -10,6 +10,8 @@ const props = defineProps<{
     x: number;
     y: number;
   };
+  /** 锚点元素（光标所在 DOM 节点），由父级经 editorEvents 反查得到；提供后进入 BasePopover 避让模式（ADR-0038）。 */
+  anchorEl?: HTMLElement | null;
   range: {
     from: number;
     to: number;
@@ -130,6 +132,8 @@ defineExpose({ selectNext, selectPrev, confirmSelect, close });
   <BasePopover
     :visible="visible"
     :position="position"
+    :anchor-el="anchorEl || null"
+    placement="bottom"
     @close="emit('close')"
   >
     <div class="wiki-link-menu">

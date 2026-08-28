@@ -154,9 +154,12 @@ function confirmTabRename() {
 const showTabMenu = ref(false)
 const tabMenuPos = ref<{ x: number; y: number }>({ x: 0, y: 0 })
 const tabMenuId = ref<string | null>(null)
+// 锚点元素（点击的 ⋯ 按钮），供 BasePopover 避让/翻转，根治"翻到顶部遮住 tab"的 bug
+const tabMenuAnchor = ref<HTMLElement | null>(null)
 function openTabMenu(id: string, e: MouseEvent) {
   const el = e.currentTarget as HTMLElement
   const r = el.getBoundingClientRect()
+  tabMenuAnchor.value = el
   tabMenuPos.value = { x: r.left, y: r.bottom + 4 }
   tabMenuId.value = id
   showTabMenu.value = true
@@ -262,7 +265,13 @@ const dirtyHint = computed(() => dirtyParts.value.map((p) => PART_LABEL[p]).join
     </div>
 
     <!-- Screen 下拉 -->
-    <BasePopover :visible="showScreenPop" :position="screenPopPos" @close="showScreenPop = false">
+    <BasePopover
+      :visible="showScreenPop"
+      :position="screenPopPos"
+      :anchor-el="screenTriggerRef"
+      placement="bottom"
+      @close="showScreenPop = false"
+    >
       <div class="screen-pop">
         <div class="hd">SCREENS</div>
         <input
@@ -328,7 +337,13 @@ const dirtyHint = computed(() => dirtyParts.value.map((p) => PART_LABEL[p]).join
     </BasePopover>
 
     <!-- Tab ⋯ 菜单 -->
-    <BasePopover :visible="showTabMenu" :position="tabMenuPos" @close="showTabMenu = false">
+    <BasePopover
+      :visible="showTabMenu"
+      :position="tabMenuPos"
+      :anchor-el="tabMenuAnchor"
+      placement="bottom"
+      @close="showTabMenu = false"
+    >
       <div class="pop-menu">
         <button class="pop-item" @click="tabMenuId && startRenameTab(tabMenuId); showTabMenu = false">
           <Pencil :size="13" /> 重命名

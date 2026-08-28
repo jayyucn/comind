@@ -100,4 +100,28 @@ describe('PropertyDisplay', () => {
     const propertyItem = wrapper.find('.property-item')
     expect(propertyItem.classes('built-in')).toBe(true)
   })
+
+  it('系统属性（内置但无 displayPosition，如 language）默认不显示，也不出现在属性列表', () => {
+    const mockStore = {
+      getBlockProperties: vi.fn().mockReturnValue([
+        { id: 'p1', key: 'language', value: 'typescript', type: 'string' },
+        { id: 'p2', key: 'custom-key', value: 'foo', type: 'string' }
+      ]),
+      getPropertyDef: vi.fn((key: string) => {
+        if (key === 'language') return { key: 'language', title: '语言', isBuiltIn: true }
+        return undefined
+      })
+    }
+    vi.mocked(usePropertyStore).mockReturnValue(mockStore as any)
+
+    const wrapper = mount(PropertyDisplay, {
+      props: { blockId: 'block-1' }
+    })
+
+    // language 不显示；自定义属性（无定义）仍显示
+    expect(wrapper.text()).not.toContain('语言')
+    expect(wrapper.text()).not.toContain('typescript')
+    expect(wrapper.text()).toContain('custom-key')
+    expect(wrapper.text()).toContain('foo')
+  })
 })

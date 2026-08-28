@@ -26,7 +26,7 @@ export interface PropertyDefinition {
   closedValues?: ClosedValue[]
   isBuiltIn?: boolean
   description?: string
-  
+
   // 新增配置字段
   displayPosition?: 'between-bullet-content' | 'right-of-content' | 'bottom-of-block'
   displayStyle?: 'icon-text' | 'icon' | 'text'
@@ -128,6 +128,24 @@ export const BUILT_IN_PROPERTIES: PropertyDefinition[] = [
     isBuiltIn: true,
     displayPosition: 'bottom-of-block',
     displayStyle: 'icon-text',
+  },
+  {
+    key: 'sourceBlockId',
+    title: '来源块 ID',
+    type: 'string',
+    isBuiltIn: true,
+  }, {
+    key: 'sourcePageId',
+    title: '来源页面 ID',
+    type: 'string',
+    isBuiltIn: true,
+  },
+  {
+    key: 'language',
+    title: '语言',
+    type: 'string',
+    isBuiltIn: true,
+    // 系统属性：不设 displayPosition → 默认不显示，也不出现在属性列表（PropertyDisplay 过滤）
   },
 ]
 
