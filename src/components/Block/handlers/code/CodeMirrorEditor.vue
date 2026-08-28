@@ -462,7 +462,13 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
           </svg>
           <span class="code-toolbar-text">复制</span>
         </button>
-        <BasePopover :visible="showLangMenu" :position="menuPosition" @close="showLangMenu = false">
+        <BasePopover
+          :visible="showLangMenu"
+          :position="menuPosition"
+          :anchor-el="langButtonRef"
+          placement="bottom"
+          @close="showLangMenu = false"
+        >
           <div class="lang-menu">
             <div v-for="lang in languages" :key="lang.id" :class="['lang-item', { active: lang.id === currentLang }]"
               @click="selectLanguage(lang.id)">

@@ -1,19 +1,19 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useModalKeyboardRef } from '../composables/useModalKeyboard'
+import { buildTemplateCommands, executeTemplateCommand, filterCommands, groupCommands, parseCommandInput, useSlashCommands } from '../composables/useSlashCommands'
+import { useTemplateRegistry } from '../composables/useTemplateRegistry'
+import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
 import { usePropertyStore } from '../stores/property'
-import { useBlockStore } from '../stores/blocks'
-import { useSlashCommands, filterCommands, groupCommands, parseCommandInput, buildTemplateCommands, executeTemplateCommand } from '../composables/useSlashCommands'
-import { useModalKeyboardRef } from '../composables/useModalKeyboard'
-import { useTemplateRegistry } from '../composables/useTemplateRegistry'
 import { useUserTemplatesStore } from '../stores/user-templates'
 import BasePopover from './common/BasePopover.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 // S6: parseDateInput migrated to Rust
 // 4.2: Use Rust DateRefService instead of TS parseDateRefs
-import { getCoreClient } from '../wasm/client'
 import { Icon } from '../components/Icons'
 import type { Command } from '../types/command'
+import { getCoreClient } from '../wasm/client'
 
 const editorStore = useEditorStore()
 const propertyStore = usePropertyStore()
@@ -35,6 +35,12 @@ const selectedIndex = ref(0)
 const position = ref({ x: 0, y: 0 })
 const range = ref<{ from: number; to: number } | null>(null)
 const listRef = ref<HTMLElement | null>(null)
+
+// 锚点（ADR-0038）：斜杠面板跟随光标。光标是 ProseMirror 文本位置，没有稳定 DOM
+// 引用，故在触发瞬间记录 view+pos，由 anchorElProp getter 实时反查光标所在元素——
+// 滚动/布局变动时 BasePopover 会重新测算，面板始终贴着输入框而不会遮住光标。
+const anchorView = ref<any>(null)
+const anchorPos = ref(0)
 
 // 删除模板确认弹窗状态（原生 window.confirm/alert 已替换为 Vue 弹窗）
 const pendingDeleteTemplateId = ref<string | null>(null)
@@ -86,10 +92,30 @@ function handleSlashCommandTrigger(event: Event) {
 
   visible.value = true
   position.value = { x: coords.left, y: coords.bottom + 8 }
+  anchorView.value = view
+  anchorPos.value = pos
   range.value = r
   query.value = ''
   selectedIndex.value = 0
 }
+
+// 由 ProseMirror 文本位置反查光标所在 DOM 元素，作为 BasePopover 的避让锚点。
+// 文本节点取其父元素；元素节点直接用。失败（如 view 无 domAtPos）则回退到 position 模式。
+function anchorFromView(view: any, pos: number): HTMLElement | null {
+  try {
+    const { node } = view.domAtPos(pos)
+    const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : (node as HTMLElement)
+    return el ?? null
+  } catch {
+    return null
+  }
+}
+
+// 锚点 getter（ADR-0038）：未触发时返回 undefined，BasePopover 走 position 兜底；
+// 触发后返回一个每次重新反查光标的 getter，使滚动时面板实时跟随而不遮挡输入框。
+const anchorElProp = computed<HTMLElement | (() => HTMLElement | null) | undefined>(() =>
+  anchorView.value ? () => anchorFromView(anchorView.value, anchorPos.value) : undefined,
+)
 
 // 监听键盘事件
 function handleKeyDown(event: KeyboardEvent) {
@@ -476,6 +502,8 @@ watch(
   <BasePopover
     :visible="visible"
     :position="position"
+    :anchor-el="anchorElProp || null"
+    placement="bottom"
     @close="close"
   >
     <div class="slash-command-menu">

@@ -56,6 +56,8 @@ const hasContent = ref(!!props.content)
 const menuVisible = ref(false)
 const menuPosition = ref({ x: 0, y: 0 })
 const menuRange = ref({ from: 0, to: 0 })
+// wiki-link 菜单锚点（光标所在 DOM 元素），供 PageLinkMenu 内的 BasePopover 避让/翻转（ADR-0038）
+const menuAnchorEl = ref<HTMLElement | null>(null)
 const menuQuery = ref('')
 const menuRef = ref<InstanceType<typeof PageLinkMenu> | null>(null)
 
@@ -201,6 +203,7 @@ const events = createEditorEvents({
   menuRange,
   menuQuery,
   menuRef,
+  menuAnchorEl,
   kindSelectorVisible,
   kindSelectorPosition,
   kindSelectorRange,
@@ -337,6 +340,7 @@ defineExpose({ syncContent, focus, focusAtCoords, getText: () => editor.value?.g
       ref="menuRef"
       :visible="menuVisible"
       :position="menuPosition"
+      :anchor-el="menuAnchorEl"
       :range="menuRange"
       :query="menuQuery"
       @select="handleWikiLinkSelect"

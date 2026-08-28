@@ -155,6 +155,45 @@ describe('SlashCommandMenu', () => {
     expect(wrapper.find('.slash-command-menu').exists()).toBe(true)
   })
 
+  it('engages BasePopover anchor mode (ADR-0038) via cursor getter', async () => {
+    // 验证迁移：触发后 anchorView/anchorPos 被记录，且 anchorElProp getter 能反查到光标元素。
+    const anchorEl = document.createElement('div')
+    const mockCommands = createMockCommands(3)
+    vi.mocked(useSlashCommands).mockReturnValue({
+      commands: mockCommands,
+      filterCommands: vi.fn((query: string) => mockCommands),
+      groupCommands: vi.fn(() => new Map([['Test Group', mockCommands]])),
+      parseCommandInput: vi.fn(() => ({ command: null, argument: null }))
+    } as any)
+
+    const wrapper = mount(SlashCommandMenu, {
+      global: { stubs: { Teleport: { template: '<div><slot /></div>' } } }
+    })
+
+    document.dispatchEvent(new CustomEvent('slash-command-trigger', {
+      detail: {
+        view: {
+          coordsAtPos: () => ({ left: 100, bottom: 200 }),
+          domAtPos: () => ({ node: anchorEl, offset: 0 })
+        },
+        position: 5,
+        range: { from: 0, to: 1 }
+      }
+    }))
+
+    await flushPromises()
+
+    const vm = wrapper.vm as any
+    expect(vm.anchorView).toBeTruthy()
+    expect(vm.anchorPos).toBe(5)
+    // anchorElProp 在触发后应是一个 getter，调用它返回光标元素
+    expect(typeof vm.anchorElProp).toBe('function')
+    expect(vm.anchorElProp()).toBe(anchorEl)
+
+    // 菜单仍正常渲染
+    expect(wrapper.find('.slash-command-menu').exists()).toBe(true)
+  })
+
   it('auto-scrolls when selected item is out of viewport', async () => {
     // 创建足够多的命令，确保列表会超出可视范围
     const mockCommands = createMockCommands(20)

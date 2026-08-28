@@ -12,6 +12,7 @@ function makeCtx(overrides: Partial<EditorEventCtx> = {}): EditorEventCtx {
     menuRange: ref({ from: 0, to: 0 }),
     menuQuery: ref(''),
     menuRef: ref({ confirmSelect: vi.fn(), close: vi.fn(), selectNext: vi.fn(), selectPrev: vi.fn() }),
+    menuAnchorEl: ref(null),
     kindSelectorVisible: ref(false),
     kindSelectorPosition: ref({ left: 0, top: 0, bottom: 0 }),
     kindSelectorRange: ref({ from: 0, to: 0 }),

@@ -381,9 +381,13 @@ const selectMenu = ref<{
   value: unknown
 } | null>(null)
 const selectMenuPos = ref<{ x: number; y: number }>({ x: 0, y: 0 })
+// 锚点元素（点击的单元格），供 BasePopover 避让/翻转，避免菜单翻到顶部遮住单元格（ADR-0038）
+const selectMenuAnchor = ref<HTMLElement | null>(null)
 
 function openSelectMenu(item: T, col: TableColumnConfig, e: MouseEvent) {
-  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  const el = e.currentTarget as HTMLElement
+  const r = el.getBoundingClientRect()
+  selectMenuAnchor.value = el
   selectMenuPos.value = { x: r.left, y: r.bottom + 4 }
   selectMenu.value = {
     itemId: idOf(item),
@@ -404,9 +408,13 @@ function pickSelectOption(id: string) {
 // 点击表头标题唤起；仅 emit 意图，由外壳经 patchActiveTabConfig 持久化（与列宽/显隐同通道）。
 const headerMenu = ref<{ col: TableColumnConfig } | null>(null)
 const headerMenuPos = ref<{ x: number; y: number }>({ x: 0, y: 0 })
+// 锚点元素（点击的表头），供 BasePopover 避让/翻转，避免菜单翻到顶部遮住表头（ADR-0038）
+const headerMenuAnchor = ref<HTMLElement | null>(null)
 
 function openHeaderMenu(col: TableColumnConfig, e: MouseEvent) {
-  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  const el = e.currentTarget as HTMLElement
+  const r = el.getBoundingClientRect()
+  headerMenuAnchor.value = el
   headerMenuPos.value = { x: r.left, y: r.bottom + 4 }
   headerMenu.value = { col }
 }
@@ -631,7 +639,13 @@ function groupTotal(key: string): number {
       </div>
 
       <!-- select 单元格选项菜单 -->
-        <BasePopover :visible="selectMenu !== null" :position="selectMenuPos" @close="selectMenu = null">
+        <BasePopover
+          :visible="selectMenu !== null"
+          :position="selectMenuPos"
+          :anchor-el="selectMenuAnchor"
+          placement="bottom"
+          @close="selectMenu = null"
+        >
           <ul class="select-menu" data-testid="select-menu">
             <li
               v-for="opt in selectMenu?.options ?? []"
@@ -647,7 +661,13 @@ function groupTotal(key: string): number {
         </BasePopover>
 
         <!-- 表头菜单：列对齐 / 隐藏字段 / 重置列宽 -->
-        <BasePopover :visible="headerMenu !== null" :position="headerMenuPos" @close="headerMenu = null">
+        <BasePopover
+          :visible="headerMenu !== null"
+          :position="headerMenuPos"
+          :anchor-el="headerMenuAnchor"
+          placement="bottom"
+          @close="headerMenu = null"
+        >
           <div class="col-menu" data-testid="col-menu">
             <div class="col-menu-label">对齐方式</div>
             <div class="col-menu-align">

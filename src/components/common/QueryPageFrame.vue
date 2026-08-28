@@ -100,9 +100,13 @@ const { chipBarVisible, hasFilter, hasSort, hasGroup, openChipMenu } =
 // per-tab 显示/隐藏与排序改当前激活 tab；全局增/删改当前 Screen 下所有 table tab。
 const fieldsPanelOpen = ref(false)
 const fieldsPanelPos = ref<{ x: number; y: number }>({ x: 0, y: 0 })
+// 锚点元素（点击的按钮），供 BasePopover 避让/翻转；原 position 用 x=r.right（面板在按钮右侧），故用 placement="right"（ADR-0038）
+const fieldsPanelAnchor = ref<HTMLElement | null>(null)
 
 function openFieldsPanel(e: MouseEvent) {
-  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  const el = e.currentTarget as HTMLElement
+  const r = el.getBoundingClientRect()
+  fieldsPanelAnchor.value = el
   fieldsPanelPos.value = { x: r.right, y: r.bottom + 4 }
   fieldsPanelOpen.value = true
 }
@@ -185,7 +189,13 @@ function onRemoveGlobal(key: string) {
     </NamedViewBar>
 
     <!-- 字段管理弹层（ADR-0011）：经 BasePopover 渲染，仅 emit 意图由外壳转 store 持久化 -->
-    <BasePopover :visible="fieldsPanelOpen" :position="fieldsPanelPos" @close="fieldsPanelOpen = false">
+    <BasePopover
+      :visible="fieldsPanelOpen"
+      :position="fieldsPanelPos"
+      :anchor-el="fieldsPanelAnchor"
+      placement="right"
+      @close="fieldsPanelOpen = false"
+    >
       <FieldManagerPanel
         :fields="fields"
         :columns="store.activeTabColumns"
