@@ -78,6 +78,7 @@ const {
   getPropertiesMap: getBlockPropertiesMap,
   setProperty,
   priorityClass,
+  statusClass,
 } = useBlockPropertySync(blockId)
 
 const hasSelectedAncestor = computed(() => {
@@ -397,7 +398,7 @@ watch(isActive, (active) => {
 </script>
 
 <template>
-  <div class="block" :class="[priorityClass, { active: isActive, 'cb-selected': isSelected && !hasSelectedAncestor }]" :data-block-id="blockId">
+  <div class="block" :class="[priorityClass, statusClass, { active: isActive, 'cb-selected': isSelected && !hasSelectedAncestor }]" :data-block-id="blockId">
     <div class="block-row">
       <!-- 缩进占位 -->
       <div class="block-indent" :style="{ width: indentWidth }"></div>

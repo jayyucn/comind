@@ -448,6 +448,18 @@
   filter: brightness(1.02);
 }
 
+// 已完成（Done）block 文本加删除线并弱化
+.block.status-done .block-text {
+  text-decoration: line-through;
+  color: var(--text-tertiary);
+}
+
+// 已取消（Canceled）block 文本加删除线，浅红弱化、贴近状态图标 18% 徽章底色
+.block.status-canceled .block-text {
+  text-decoration: line-through;
+  color: color-mix(in srgb, var(--color-error)30%, var(--bg-base));
+}
+
 // 属性显示区域
 .block-properties {
   margin-left: calc(var(--indent-depth, 0) * var(--block-indent-width) + 20px);

@@ -39,8 +39,9 @@ describe('任务状态图标家族（V2 实心徽章）', () => {
   it('填充与描边同色，填充 18% 且不描边', () => {
     const wrapper = mount(Icon, { props: { name: 'status-done' } })
     const container = wrapper.find('rect')
-    expect(wrapper.find('svg').attributes('stroke')).toBe('var(--text-primary)')
-    expect(container.attributes('fill')).toBe('var(--text-primary)')
+    // status-done 的默认语义色为 --success（形状仍为主、颜色为辅）
+    expect(wrapper.find('svg').attributes('stroke')).toBe('var(--success)')
+    expect(container.attributes('fill')).toBe('var(--success)')
     expect(container.attributes('fill-opacity')).toBe('0.18')
     expect(container.attributes('stroke')).toBe('none')
   })
@@ -53,13 +54,20 @@ describe('任务状态图标家族（V2 实心徽章）', () => {
     expect(viaIcon.find('svg').attributes('width')).toBe('24')
   })
 
-  it('5 个组件的默认值保持一致（防止单个文件漂移）', () => {
-    // 默认值分散在 5 个文件里，曾出现过 18/24、round/square 混杂的漂移
+  it('5 个状态的默认语义色与查表一致（防止 STATUS_DEFAULT_COLORS 漂移）', () => {
+    // 默认语义色集中维护在 Icon.vue 的 STATUS_DEFAULT_COLORS，组件文件零改动
+    const EXPECTED: Record<string, string> = {
+      'status-todo': 'var(--text-tertiary)',
+      'status-doing': 'var(--accent)',
+      'status-done': 'var(--success)',
+      'status-canceled': 'var(--error)',
+      'status-archived': 'var(--text-secondary)',
+    }
     for (const name of STATUS_NAMES) {
       const svg = mount(Icon, { props: { name } }).find('svg')
       expect(svg.attributes('width'), `${name} 尺寸不一致`).toBe('24')
       expect(svg.attributes('stroke-width'), `${name} 描边不一致`).toBe('2')
-      expect(svg.attributes('stroke'), `${name} 颜色不一致`).toBe('var(--text-primary)')
+      expect(svg.attributes('stroke'), `${name} 颜色不一致`).toBe(EXPECTED[name])
     }
   })
 

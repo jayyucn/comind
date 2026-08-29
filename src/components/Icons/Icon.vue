@@ -44,6 +44,19 @@ const STATUS_ICONS: Record<string, any> = {
   'status-archived': StatusArchived,
 }
 
+/**
+ * 状态图标默认语义色：形状为主、颜色为辅。
+ * 复用项目既有 token（零新增变量），CSS 变量自动跟随明暗主题。
+ * 调用处若显式传 `color` 则覆盖此默认值。
+ */
+const STATUS_DEFAULT_COLORS: Record<string, string> = {
+  'status-todo': 'var(--text-tertiary)',
+  'status-doing': 'var(--accent)',
+  'status-done': 'var(--success)',
+  'status-canceled': 'var(--error)',
+  'status-archived': 'var(--text-secondary)',
+}
+
 const PRIORITY_ICONS: Record<string, any> = {
   'priority-low': ArrowDown,
   'priority-medium': Minus,
@@ -99,6 +112,13 @@ const isFilled = computed(() => props.name === 'icon-star-filled')
 
 // shape 仅状态图标消费，不透传给 lucide 组件以免落到多余 DOM 属性上
 const isStatusIcon = computed(() => props.name in STATUS_ICONS)
+
+/** status 图标未显式传 color 时，按 name 注入语义色；其余图标回退到文本主色 */
+const resolvedColor = computed(() => {
+  if (props.color) return props.color
+  if (isStatusIcon.value) return STATUS_DEFAULT_COLORS[props.name] ?? 'var(--text-primary)'
+  return 'var(--text-primary)'
+})
 </script>
 
 <template>
@@ -106,9 +126,9 @@ const isStatusIcon = computed(() => props.name in STATUS_ICONS)
     :is="iconComponent"
     v-if="iconComponent"
     :size="size || 24"
-    :color="color || 'var(--text-primary)'"
+    :color="resolvedColor"
     :stroke-width="strokeWidth ?? 2"
     v-bind="isStatusIcon ? { shape } : {}"
-    :style="isFilled ? { fill: color || 'var(--text-primary)' } : {}"
+    :style="isFilled ? { fill: resolvedColor } : {}"
   />
 </template>
