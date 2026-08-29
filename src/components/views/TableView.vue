@@ -198,7 +198,7 @@ function resolveOptions(field: FieldDescriptor | undefined): Option[] {
 }
 
 /** 列宽缩放：本地映射做拖拽实时反馈；link 列默认 40px 且无手柄、可被左分隔线联动改写（ADR-0013）。 */
-const MIN_COL_WIDTH = 40
+const MIN_COL_WIDTH = 60
 /** 缺省列宽兜底（未设宽列/新增字段的比例基准；jsdom 快照失败兜底；不写入存储）。 */
 const DEFAULT_COL_WIDTH = 160
 
