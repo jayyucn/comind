@@ -110,7 +110,7 @@ describe('TableView (generic, field-driven)', () => {
   it('renders a type icon in each column header (Link2 for link role)', () => {
     const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
     // 数据列（boolean/text/select/date）表头都有 svg 图标
-    for (const key of ['done', 'content', 'status', 'deadline']) {
+    for (const key of ['status', 'content', 'priority', 'deadline']) {
       expect(wrapper.find(`thead .col-${key} svg`).exists()).toBe(true)
     }
     // link 角色列（page）也有图标
@@ -140,17 +140,17 @@ describe('TableView (generic, field-driven)', () => {
     expect(wrapper.find('.is-done').exists()).toBe(true)
   })
 
-  // ── Status select（BasePopover 菜单，点击触发后 teleport 到 body） ──
+  // ── select 菜单（BasePopover，点击触发后 teleport 到 body；status 现为图标列，改用 priority 验证） ──
   it('opens select menu with all options when triggered', async () => {
-    const wrapper = mountTable({ items: [makeCard({ properties: { status: 'Doing' } })] }, true)
-    await wrapper.find('.cell-select').trigger('click')
+    const wrapper = mountTable({ items: [makeCard({ properties: { priority: 'High' } })] }, true)
+    await wrapper.find('tbody .col-priority .cell-select').trigger('click')
     const menu = document.body.querySelector('[data-testid="select-menu"]')
     expect(menu).not.toBeNull()
     const labels = Array.from(menu!.querySelectorAll('.select-option')).map((el) => el.textContent?.trim())
-    expect(labels).toContain('待办')
-    expect(labels).toContain('进行中')
-    expect(labels).toContain('已完成')
-    expect(labels).toContain('已取消')
+    expect(labels).toContain('低')
+    expect(labels).toContain('中')
+    expect(labels).toContain('高')
+    expect(labels).toContain('急')
   })
 
   // ── Priority colored dot (Option.color lifted to metadata) ──
@@ -222,46 +222,50 @@ describe('TableView (generic, field-driven)', () => {
     expect(wrapper.emitted('cellClick')![0]).toEqual(['b1', 'page'])
   })
 
-  it('does not emit cellClick when editable control (checkbox) clicked', async () => {
-    const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
-    await wrapper.find('.bool-check').trigger('click')
+  it('does not emit cellClick when status icon clicked (cycles instead)', async () => {
+    const wrapper = mountTable({ items: [makeCard({ block_id: 'b1', properties: { status: 'Todo' } })] })
+    await wrapper.find('tbody .col-status .status-icon-btn').trigger('click')
     expect(wrapper.emitted('cellClick')).toBeFalsy()
   })
 
-  it('emits cellChange(done) when checkbox toggled', async () => {
+  it('cycles status and emits cellChange(status, next) when icon clicked', async () => {
     const wrapper = mountTable({ items: [makeCard({ block_id: 'b1', properties: { status: 'Todo' } })] })
-    await wrapper.find('.bool-check').setValue(true)
-    expect(wrapper.emitted('cellChange')![0]).toEqual(['b1', 'done', true])
+    await wrapper.find('tbody .col-status .status-icon-btn').trigger('click')
+    expect(wrapper.emitted('cellChange')![0]).toEqual(['b1', 'status', 'Doing'])
   })
 
   // select 菜单现由整个 cell 点击触发（td @click → onCellMaybeOpenSelect）。
+  // status 现为首列图标列（点击循环），改用 priority 验证「点 td 任意处弹菜单」行为。
   it('opens select menu when clicking anywhere on the td, then emits cellChange on pick', async () => {
-    const wrapper = mountTable({ items: [makeCard({ block_id: 'b3', properties: { status: 'Doing' } })] }, true)
+    const wrapper = mountTable({ items: [makeCard({ block_id: 'b3', properties: { priority: 'Medium' } })] }, true)
     // 点 cell 任意位置（这里点 td 上 padding 区域，不是 .cell-select span 内）
-    await wrapper.find('tbody .col-status').trigger('click')
+    await wrapper.find('tbody .col-priority').trigger('click')
     const menu = document.body.querySelector('[data-testid="select-menu"]') as HTMLElement
     expect(menu).toBeTruthy()
     const option = Array.from(menu.querySelectorAll('.select-option')).find(
-      (el) => el.textContent?.includes('已取消'),
+      (el) => el.textContent?.includes('急'),
     ) as HTMLElement
     option.click()
     await wrapper.vm.$nextTick()
-    expect(wrapper.emitted('cellChange')![0]).toEqual(['b3', 'status', 'Canceled'])
+    expect(wrapper.emitted('cellChange')![0]).toEqual(['b3', 'priority', 'Urgent'])
   })
 
-  // ChevronDown 常驻渲染：hover/选中（.open）/空态（.empty）时显示（CSS 控制 opacity），靠右。
-  it('renders ChevronDown in every select cell, marked .empty when value unset', () => {
+  // status 首列为图标列（.status-icon-btn），不再渲染 .cell-select；其余 select 列（priority）行为不变。
+  it('renders status icon in the status column and ChevronDown in select cells', () => {
     const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
-    // 空态：.empty 类 + chevron 存在，无 label
-    expect(wrapper.find('tbody .col-status .cell-select.empty').exists()).toBe(true)
+    // status 图标列：渲染图标按钮，不渲染 select 容器/chevron
+    expect(wrapper.find('tbody .col-status .status-icon-btn').exists()).toBe(true)
+    expect(wrapper.find('tbody .col-status .cell-select').exists()).toBe(false)
+    expect(wrapper.find('tbody .col-status .cell-select-chevron').exists()).toBe(false)
+    // 空态 select 列（priority）：.empty 类 + chevron 存在，无 label
     expect(wrapper.find('tbody .col-priority .cell-select.empty').exists()).toBe(true)
-    expect(wrapper.find('tbody .col-status .cell-select-chevron').exists()).toBe(true)
-    expect(wrapper.find('tbody .col-status .cell-select-label').exists()).toBe(false)
-    // 有值：无 .empty 类、label 显示选项，chevron 仍在 DOM（hover/open 时显示）
-    const set = mountTable({ items: [makeCard({ block_id: 'b2', properties: { status: 'Todo' } })] })
-    expect(set.find('tbody .col-status .cell-select.empty').exists()).toBe(false)
-    expect(set.find('tbody .col-status .cell-select-chevron').exists()).toBe(true)
-    expect(set.find('tbody .col-status .cell-select-label').text()).toBe('待办')
+    expect(wrapper.find('tbody .col-priority .cell-select-chevron').exists()).toBe(true)
+    expect(wrapper.find('tbody .col-priority .cell-select-label').exists()).toBe(false)
+    // 有值 select 列：无 .empty 类、label 显示选项，chevron 仍在 DOM（hover/open 时显示）
+    const set = mountTable({ items: [makeCard({ block_id: 'b2', properties: { priority: 'High' } })] })
+    expect(set.find('tbody .col-priority .cell-select.empty').exists()).toBe(false)
+    expect(set.find('tbody .col-priority .cell-select-chevron').exists()).toBe(true)
+    expect(set.find('tbody .col-priority .cell-select-label').text()).toBe('高')
   })
 
   // ── Grouped rendering ──
@@ -778,7 +782,10 @@ describe('TableView column resize (ADR-0013)', () => {
   it('defaults select cell td to align-left class when no align set', () => {
     const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
     const statusTd = wrapper.find('tbody .col-status')
+    const priorityTd = wrapper.find('tbody .col-priority')
     expect(statusTd.classes()).toContain('align-left')
-    expect(statusTd.find('.cell-select').exists()).toBe(true)
+    expect(priorityTd.classes()).toContain('align-left')
+    // status 现为图标列（无 .cell-select），select 列（priority）仍渲染 .cell-select
+    expect(priorityTd.find('.cell-select').exists()).toBe(true)
   })
 })

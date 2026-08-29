@@ -16,6 +16,7 @@ import type { FieldDescriptor, Group, Option, SortRule } from '../../core/query'
 import type { TableColumnConfig, TableConfig } from '../../core/view';
 import BasePopover from '../common/BasePopover.vue';
 import PaginationFooter from './PaginationFooter.vue';
+import Icon from '../Icons/Icon.vue';
 import type { CellRegistry } from './types';
 import { distributeColumnWidths } from './tableWidths';
 
@@ -140,7 +141,7 @@ function onPageSizeChange(size: number) {
 /**
  * 列序：config 优先；否则安全兜底为仅主文本列（content）。
  * 不回退到全部注册字段——否则忘记传 config 的通用消费方会渲染一张含内部字段（dateRefKind 等）的不可用例表。
- * TaskHub 永远传 BLOCK_DEFAULT_TABLE_CONFIG，故块实体仍见 7 列（ADR-0007 D8 修复）。
+ * TaskHub 永远传 BLOCK_DEFAULT_TABLE_CONFIG，故块实体仍见 6 列（首列为 status 图标列，ADR-0007 D8 修复）。
  */
 /** 渲染列：config 优先；过滤 per-tab 隐藏列（visible===false，ADR-0011）。缺省兜底为仅主文本列。 */
 const columns = computed<TableColumnConfig[]>(
@@ -340,11 +341,11 @@ onUnmounted(() => {
   window.removeEventListener('pointerup', onResizeEnd)
 })
 
-/** 行置灰：存在 role='done' 列且该字段为真时（通用完成态表现）。 */
+/** 行置灰：存在 role='status' 列且状态为 Done 时（完成态表现，与旧 done 角色一致）。 */
 function isDoneRow(item: T): boolean {
-  const doneCol = columns.value.find((c) => c.role === 'done')
-  if (!doneCol) return false
-  return Boolean(valueOf(item, doneCol))
+  const statusCol = columns.value.find((c) => c.role === 'status')
+  if (!statusCol) return false
+  return valueOf(item, statusCol) === 'Done'
 }
 
 function onCellClick(item: T, col: TableColumnConfig) {
@@ -353,9 +354,14 @@ function onCellClick(item: T, col: TableColumnConfig) {
   emit('cellClick', idOf(item), col.key)
 }
 
-/** td 整体点击：根据字段类型分发——select + editable 直接唤起菜单；其余走 onCellClick。
+/** td 整体点击：根据字段类型分发——status 角色列循环切换、select + editable 直接唤起菜单；其余走 onCellClick。
  *  整个 cell 都是点击区域（边框已去掉，padding 内空白处同样响应）。 */
 function onCellMaybeOpenSelect(item: T, col: TableColumnConfig, e: MouseEvent) {
+  // status 图标列：点击循环切换状态（与 PropertyInline 一致），不弹菜单、不导航
+  if (col.role === 'status') {
+    if (isFieldEditable(col)) cycleStatus(item, col)
+    return
+  }
   if (fieldOf(col.key)?.type === 'select' && isFieldEditable(col)) {
     openSelectMenu(item, col, e)
     return
@@ -371,6 +377,29 @@ function isSelectMenuOpen(item: T, col: TableColumnConfig): boolean {
 function onBoolChange(item: T, col: TableColumnConfig, e: Event) {
   const checked = (e.target as HTMLInputElement).checked
   emit('cellChange', idOf(item), col.key, checked)
+}
+
+// ── status 角色列：任务状态图标（StatusTodo/Doing/Done/Canceled/Archived） ──
+// 点击循环切换（与 PropertyInline 的 Todo→Doing→Done→Todo 一致；环外值回到首个）。
+const STATUS_ICON_NAME: Record<string, string> = {
+  Todo: 'status-todo',
+  Doing: 'status-doing',
+  Done: 'status-done',
+  Canceled: 'status-canceled',
+  Archived: 'status-archived',
+}
+const STATUS_CYCLE = ['Todo', 'Doing', 'Done'] as const
+
+/** status 原始值 → Icon name；未知/缺值回退待办图标。 */
+function statusIconName(value: unknown): string {
+  return STATUS_ICON_NAME[String(value)] ?? 'status-todo'
+}
+
+function cycleStatus(item: T, col: TableColumnConfig) {
+  const cur = String(valueOf(item, col))
+  const idx = (STATUS_CYCLE as readonly string[]).indexOf(cur)
+  const next = idx === -1 ? STATUS_CYCLE[0] : STATUS_CYCLE[(idx + 1) % STATUS_CYCLE.length]
+  emit('cellChange', idOf(item), col.key, next)
 }
 
 // ── select 单元格选项菜单（BasePopover 弹层，替代原生 <select>） ──
@@ -559,6 +588,18 @@ function groupTotal(key: string): number {
                     :editable="isFieldEditable(col)"
                     @change="(v: unknown) => onCustomChange(col, item, v)"
                   />
+                </template>
+
+                <!-- status 角色：任务状态图标（StatusTodo/Doing/Done/Canceled/Archived），整格点击循环切换 -->
+                <template v-else-if="col.role === 'status'">
+                  <button
+                    type="button"
+                    class="status-icon-btn"
+                    :class="{ readonly: !isFieldEditable(col) }"
+                    :title="optionLabel(resolveOptions(fieldOf(col.key)), valueOf(item, col)) || '待办'"
+                  >
+                    <Icon :name="statusIconName(valueOf(item, col))" :size="18" />
+                  </button>
                 </template>
 
                 <!-- boolean：可编辑勾选；editable=false 时只读勾选态 -->
@@ -909,6 +950,25 @@ function groupTotal(key: string): number {
   width: 16px;
   height: 16px;
   cursor: pointer;
+}
+
+/* status 角色列：任务状态图标按钮（语义色由 Icon 的 status-* 默认色自动跟随明暗） */
+.status-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  line-height: 0;
+  border-radius: 4px;
+  cursor: pointer;
+
+  /* 只读态：去掉指针暗示 */
+  &.readonly {
+    cursor: default;
+  }
 }
 
 .cell-select {
