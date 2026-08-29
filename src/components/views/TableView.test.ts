@@ -613,7 +613,7 @@ describe('TableView column resize (ADR-0013)', () => {
     ],
   }
 
-  // 拖宽本列：content 期望 +100→200，但下一列 status 有 40px 下限 → content 封顶 160、status 40
+  // 拖宽本列：content 期望 +100→200，但下一列 status 有 60px 下限（MIN_COL_WIDTH）→ content 封顶 140、status 60
   it('emits linked widths for both columns when dragging wider', async () => {
     const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })], config: resizeConfig })
     const resizer = wrapper.find('thead .col-content [data-testid="col-resizer"]')
@@ -623,26 +623,26 @@ describe('TableView column resize (ADR-0013)', () => {
     void window.dispatchEvent(new MouseEvent('pointerup', { clientX: 200 }))
     expect(wrapper.emitted('columnResize')).toBeTruthy()
     expect(wrapper.emitted('columnResize')![0][0]).toEqual([
-      { key: 'content', width: 160 },
-      { key: 'status', width: 40 },
+      { key: 'content', width: 140 },
+      { key: 'status', width: 60 },
     ])
   })
 
-  // 拖窄本列到下限：content 夹到 40px，差额 -60 推给下一列 status → 160（总宽恒定 200）
-  it('clamps the dragged column to 40px and pushes the delta onto the next column', async () => {
+  // 拖窄本列到下限：content 夹到 60px（MIN_COL_WIDTH），差额 -40 推给下一列 status → 140（总宽恒定 200）
+  it('clamps the dragged column to 60px and pushes the delta onto the next column', async () => {
     const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })], config: resizeConfig })
     const resizer = wrapper.find('thead .col-content [data-testid="col-resizer"]')
     resizer.element.dispatchEvent(new MouseEvent('pointerdown', { clientX: 100, bubbles: true }))
     window.dispatchEvent(new MouseEvent('pointermove', { clientX: 20 })) // delta -80
     void window.dispatchEvent(new MouseEvent('pointerup', { clientX: 20 }))
     expect(wrapper.emitted('columnResize')![0][0]).toEqual([
-      { key: 'content', width: 40 },
-      { key: 'status', width: 160 },
+      { key: 'content', width: 60 },
+      { key: 'status', width: 140 },
     ])
   })
 
   // 末列无独立手柄（其右缘即表格右缘、无下一列可联动）；通过它左侧的分隔线（status 手柄）联动改变：
-  // status +100 受「priority ≥ 40」约束封顶到 160，priority 40（总宽恒定 200）
+  // status +100 受「priority ≥ 60」（MIN_COL_WIDTH）约束封顶到 140，priority 60（总宽恒定 200）
   it('resizes the last column via the divider to its left', async () => {
     const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })], config: resizeConfig })
     expect(wrapper.find('thead .col-priority [data-testid="col-resizer"]').exists()).toBe(false)
@@ -652,13 +652,14 @@ describe('TableView column resize (ADR-0013)', () => {
     window.dispatchEvent(new MouseEvent('pointermove', { clientX: 200 }))
     void window.dispatchEvent(new MouseEvent('pointerup', { clientX: 200 }))
     expect(wrapper.emitted('columnResize')![0][0]).toEqual([
-      { key: 'status', width: 160 },
-      { key: 'priority', width: 40 },
+      { key: 'status', width: 140 },
+      { key: 'priority', width: 60 },
     ])
   })
 
   // link 末列作为 next 参与联动（用户场景：拖"截止"右缘 → "页面(link)"列变宽）。
-  // status 起始 100、page(link) 起始 40；拖 status −60 → status 夹到 40，差额推给 page 40+60=100。
+  // status 起始 100、page(link) 起始 40（link 默认宽，非下限）；拖 status −60 → status 夹到 60（MIN_COL_WIDTH），
+  // 差额 -40 推给 page 40+40=80。
   it('links the trailing link column as the resize partner (its width changes)', async () => {
     const linkCfg: TableConfig = {
       viewKind: 'table',
@@ -678,8 +679,8 @@ describe('TableView column resize (ADR-0013)', () => {
     window.dispatchEvent(new MouseEvent('pointermove', { clientX: 40 })) // -60
     void window.dispatchEvent(new MouseEvent('pointerup', { clientX: 40 }))
     expect(wrapper.emitted('columnResize')![0][0]).toEqual([
-      { key: 'status', width: 40 },
-      { key: 'page', width: 100 },
+      { key: 'status', width: 60 },
+      { key: 'page', width: 80 },
     ])
   })
 
@@ -747,5 +748,37 @@ describe('TableView column resize (ADR-0013)', () => {
     expect(wrapper.find('tbody .col-content').attributes('style')).toContain('text-align: center')
     expect(wrapper.find('thead .col-status').attributes('style')).not.toContain('text-align')
     expect(wrapper.find('tbody .col-status').attributes('style')).not.toContain('text-align')
+  })
+
+  // select 单元格对齐修复回归：td 的 text-align 对 flex 容器无效，
+  // 故须给 td 加 align-* 类驱动 .cell-select 的 justify-content。
+  it('adds align class to select cell td so flex content can honor alignment', () => {
+    const selectAlignCfg: TableConfig = {
+      viewKind: 'table',
+      version: 1,
+      columns: [
+        { key: 'status', align: 'center' },
+        { key: 'priority', align: 'right' },
+      ],
+    }
+    const wrapper = mountTable({
+      items: [makeCard({ block_id: 'b1', properties: { status: 'Doing', priority: 'High' } })],
+      config: selectAlignCfg,
+    })
+    const statusTd = wrapper.find('tbody .col-status')
+    const priorityTd = wrapper.find('tbody .col-priority')
+    // 对齐类落到 td，select 容器据此设 justify-content（CSS 修复核心）
+    expect(statusTd.classes()).toContain('align-center')
+    expect(priorityTd.classes()).toContain('align-right')
+    // select 容器仍存在且未被破坏
+    expect(statusTd.find('.cell-select').exists()).toBe(true)
+    expect(priorityTd.find('.cell-select').exists()).toBe(true)
+  })
+
+  it('defaults select cell td to align-left class when no align set', () => {
+    const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
+    const statusTd = wrapper.find('tbody .col-status')
+    expect(statusTd.classes()).toContain('align-left')
+    expect(statusTd.find('.cell-select').exists()).toBe(true)
   })
 })

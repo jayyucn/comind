@@ -544,7 +544,7 @@ function groupTotal(key: string): number {
               <td
                 v-for="col in columns"
                 :key="col.key"
-                :class="[`col-${col.key}`, { 'cell-link': col.role === 'link' }]"
+                :class="[`col-${col.key}`, { 'cell-link': col.role === 'link' }, `align-${col.align ?? 'left'}`]"
                 :style="{ width: columnWidth(col), textAlign: col.align }"
                 @click="onCellMaybeOpenSelect(item, col, $event)"
               >
@@ -952,6 +952,22 @@ function groupTotal(key: string): number {
   .cell-select.readonly & {
     opacity: 0;
   }
+}
+
+/* select 单元格对齐（ADR 修复）：td 的 text-align 对 flex 容器无效，
+   须由列对齐类驱动 .cell-select 的 justify-content。左对齐沿用默认（label 左上、chevron 靠右），
+   居中/右对齐时整体居中/右靠，并取消 chevron 的 margin-left:auto 以免其脱离分组被推到最右。 */
+.data-table td.align-center .cell-select {
+  justify-content: center;
+}
+
+.data-table td.align-right .cell-select {
+  justify-content: flex-end;
+}
+
+.data-table td.align-center .cell-select .cell-select-chevron,
+.data-table td.align-right .cell-select .cell-select-chevron {
+  margin-left: 4px;
 }
 
 /* boolean 只读态：勾选符号占位 */
