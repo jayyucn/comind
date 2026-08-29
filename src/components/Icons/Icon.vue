@@ -7,13 +7,10 @@ import {
   ArrowUp,
   Bell,
   Calendar,
-  CheckCircle2,
-  Circle,
   Droplet,
   Folder,
   History,
   Link,
-  Loader,
   Maximize2,
   Menu,
   Minus,
@@ -30,16 +27,21 @@ import {
   Trash,
   Trash2,
   Undo2,
-  X,
-  XCircle
+  X
 } from 'lucide-vue-next'
 import { computed } from 'vue'
+import StatusArchived from './StatusIcons/StatusArchived.vue'
+import StatusCanceled from './StatusIcons/StatusCanceled.vue'
+import StatusDoing from './StatusIcons/StatusDoing.vue'
+import StatusDone from './StatusIcons/StatusDone.vue'
+import StatusTodo from './StatusIcons/StatusTodo.vue'
 
 const STATUS_ICONS: Record<string, any> = {
-  'status-todo': Circle,
-  'status-doing': Loader,
-  'status-done': CheckCircle2,
-  'status-canceled': XCircle,
+  'status-todo': StatusTodo,
+  'status-doing': StatusDoing,
+  'status-done': StatusDone,
+  'status-canceled': StatusCanceled,
+  'status-archived': StatusArchived,
 }
 
 const PRIORITY_ICONS: Record<string, any> = {
@@ -87,20 +89,26 @@ const props = defineProps<{
   size?: number
   color?: string
   strokeWidth?: number
+  /** 状态图标的容器形状，默认方（由 StatusIcons 组件的默认值决定）；传 'round' 切圆形 */
+  shape?: 'round' | 'square'
 }>()
 
 const iconComponent = computed(() => ALL_ICONS[props.name])
 
 const isFilled = computed(() => props.name === 'icon-star-filled')
+
+// shape 仅状态图标消费，不透传给 lucide 组件以免落到多余 DOM 属性上
+const isStatusIcon = computed(() => props.name in STATUS_ICONS)
 </script>
 
 <template>
   <component
     :is="iconComponent"
     v-if="iconComponent"
-    :size="size || 18"
+    :size="size || 24"
     :color="color || 'var(--text-primary)'"
     :stroke-width="strokeWidth ?? 2"
+    v-bind="isStatusIcon ? { shape } : {}"
     :style="isFilled ? { fill: color || 'var(--text-primary)' } : {}"
   />
 </template>

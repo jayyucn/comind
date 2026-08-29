@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import type { PropertyValue } from '@/types/property'
-import { CalendarDays, Columns, Table } from 'lucide-vue-next'
+import { CalendarDays, Columns, LayoutGrid, Table } from 'lucide-vue-next'
 import { computed, markRaw, onMounted, ref } from 'vue'
 import { createQueryEngine } from '../../core/query'
 import { blockDefaultConfig, BLOCK_ENTITY, getBlockRegistry } from '../../composables/useBlockQueryRegistry'
 import type { ViewQuery } from '../../core/query'
-import { parseLayoutConfig, type BoardConfig, type CalendarConfig, type TableConfig } from '../../core/view'
+import { parseLayoutConfig, type BoardConfig, type CalendarConfig, type QuadrantConfig, type TableConfig } from '../../core/view'
 import type { ViewTypeOption } from '../../core/view/management'
 import { useBlockCardStore } from '../../stores/blockCard'
 import { usePropertyStore } from '../../stores/property'
@@ -34,6 +34,7 @@ const blockViewTypes: ViewTypeOption[] = [
   { key: 'table', label: '表格', icon: Table },
   { key: 'board', label: '看板', icon: Columns },
   { key: 'calendar', label: '日历', icon: CalendarDays },
+  { key: 'quadrant', label: '四象限', icon: LayoutGrid },
 ]
 
 // 自定义单元格注册表（ADR-0010）：content 列用富预览组件接管渲染。组件须 markRaw 避免被 Vue 误设为响应式。
@@ -65,6 +66,11 @@ const boardConfig = computed<BoardConfig | undefined>(() => {
 const calendarConfig = computed<CalendarConfig>(() =>
   (parseLayoutConfig(currentTab.value?.config, 'calendar') as CalendarConfig | null) ?? (blockDefaultConfig('calendar') as CalendarConfig),
 )
+
+const quadrantConfig = computed<QuadrantConfig | undefined>(() => {
+  if (currentViewType.value !== 'quadrant') return undefined
+  return (parseLayoutConfig(currentTab.value?.config, 'quadrant') as QuadrantConfig | null) ?? (blockDefaultConfig('quadrant') as QuadrantConfig)
+})
 
 // 数据源：排除 status 为空的 blocks（普通非任务段落），再做搜索子串过滤
 // （与 PagesLibrary 对 title 过滤同构；status 以 property 存于 card.properties['status']）
@@ -158,6 +164,7 @@ function handleCellClick(blockId: string, fieldKey: string) {
     :table-config="tableConfig"
     :board-config="boardConfig"
     :calendar-config="calendarConfig"
+    :quadrant-config="quadrantConfig"
     id-key="block_id"
     :cell-registry="blockCellRegistry"
     @cell-change="onCellChange"

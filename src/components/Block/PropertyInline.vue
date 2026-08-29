@@ -27,6 +27,20 @@ const properties = computed<Property[]>(() => {
 
 const hoveredPropertyId = ref<string | null>(null)
 
+/** status 单击循环顺序；环外值（Canceled / Archived 等）一律回到首个 */
+const STATUS_CYCLE = ['Todo', 'Doing', 'Done'] as const
+const LONG_PRESS_MS = 500
+
+let longPressTimer: ReturnType<typeof setTimeout> | null = null
+let longPressHandled = false
+
+function clearLongPress() {
+  if (longPressTimer !== null) {
+    clearTimeout(longPressTimer)
+    longPressTimer = null
+  }
+}
+
 function isBuiltIn(key: string): boolean {
   const def = propertyStore.getPropertyDef(key)
   return def?.isBuiltIn ?? false
@@ -71,17 +85,50 @@ function getLabel(key: string, value: Property['value']): string {
   }
 }
 
-function editProperty(prop: Property, event: MouseEvent) {
+/** 打开属性编辑菜单：内置属性走快捷菜单，自定义属性走完整属性编辑器 */
+function openMenu(prop: Property, rect: DOMRect) {
   if (isBuiltIn(prop.key)) {
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-    editorStore.showQuickPropertyEditor(
-      props.blockId,
-      prop.key,
-      { x: rect.left, y: rect.bottom + 4 }
-    )
+    editorStore.showQuickPropertyEditor(props.blockId, prop.key, {
+      x: rect.left,
+      y: rect.bottom + 4
+    })
   } else {
     editorStore.showPropertyEditor(props.blockId, prop.key)
   }
+}
+
+/** status 专用：Todo → Doing → Done → Todo 循环，直接落库，不弹菜单 */
+function cycleStatus(prop: Property) {
+  const idx = STATUS_CYCLE.indexOf(prop.value as (typeof STATUS_CYCLE)[number])
+  const next = idx === -1 ? STATUS_CYCLE[0] : STATUS_CYCLE[(idx + 1) % STATUS_CYCLE.length]
+  void propertyStore.setProperty(props.blockId, prop.key, next, 'string')
+}
+
+function onPointerDown(prop: Property, event: PointerEvent) {
+  clearLongPress()
+  longPressHandled = false
+  if (event.button !== 0) return
+  // currentTarget 在 setTimeout 回调里已被置空，必须同步取 rect
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  longPressTimer = setTimeout(() => {
+    longPressTimer = null
+    longPressHandled = true
+    openMenu(prop, rect)
+  }, LONG_PRESS_MS)
+}
+
+function onClick(prop: Property, event: MouseEvent) {
+  clearLongPress()
+  // 长按已弹过菜单，吞掉随后的 click
+  if (longPressHandled) {
+    longPressHandled = false
+    return
+  }
+  if (prop.key === 'status') {
+    cycleStatus(prop)
+    return
+  }
+  openMenu(prop, (event.currentTarget as HTMLElement).getBoundingClientRect())
 }
 
 function deleteProperty(prop: Property, event: MouseEvent) {
@@ -106,14 +153,17 @@ function isSvgIcon(icon: string): boolean {
       }"
       @mouseenter="hoveredPropertyId = prop.id"
       @mouseleave="hoveredPropertyId = null"
-      @click.stop="editProperty(prop, $event)"
+      @pointerdown="onPointerDown(prop, $event)"
+      @pointerup="clearLongPress"
+      @pointerleave="clearLongPress"
+      @pointercancel="clearLongPress"
+      @click.stop="onClick(prop, $event)"
     >
       <template v-if="getIcon(prop.key, prop.value) as string">
         <span class="property-icon">
-          <Icon 
+          <Icon
             v-if="isSvgIcon(getIcon(prop.key, prop.value) as string)"
             :name="getIcon(prop.key, prop.value) as string"
-            :size="18"
           />
           <span v-else>{{ getIcon(prop.key, prop.value) as string }}</span>
         </span>

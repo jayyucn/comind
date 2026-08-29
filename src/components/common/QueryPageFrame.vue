@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import type { CellRegistry } from '../../components/views/types'
 import type { FieldDescriptor, Group, ReferenceableRecord, Registry, SortRule, ViewQuery } from '../../core/query'
 import type { ViewTypeOption } from '../../core/view/management'
-import type { BoardConfig, CalendarConfig, TableColumnConfig, TableConfig } from '../../core/view'
+import type { BoardConfig, CalendarConfig, QuadrantConfig, TableColumnConfig, TableConfig } from '../../core/view'
 import { useChipBarOrchestration } from '../../composables/useChipBarOrchestration'
 import { useScreenViewStore } from '../../stores/screenView'
 import BasePopover from './BasePopover.vue'
@@ -14,6 +14,7 @@ import FieldManagerPanel from '../query/FieldManagerPanel.vue'
 import QueryToolbar from '../query/QueryToolbar.vue'
 import BoardView from '../views/BoardView.vue'
 import CalendarView from '../views/CalendarView.vue'
+import QuadrantView from '../views/QuadrantView.vue'
 import TableView from '../views/TableView.vue'
 
 defineOptions({ name: 'QueryPageFrame' })
@@ -58,6 +59,8 @@ const props = defineProps<{
   tableConfig?: TableConfig
   boardConfig?: BoardConfig
   calendarConfig: CalendarConfig
+  /** 四象限布局配置（艾森豪威尔矩阵；当前无附加元数据）。 */
+  quadrantConfig?: QuadrantConfig
   /** 取记录 id 的字段名（默认 'id'；BlockCard 用 'block_id'）。 */
   idKey?: string
   /** 自定义单元格渲染器注册表（透传 TableView；ADR-0010）。缺省时列配置中的 cell 自动回退内置渲染。 */
@@ -255,6 +258,14 @@ function onRemoveGlobal(key: string) {
         :fields="fields"
         :config="calendarConfig"
         :id-key="idKey"
+        @navigate="(itemId) => emit('navigate', itemId)"
+      />
+      <QuadrantView
+        v-else-if="currentViewType === 'quadrant'"
+        :items="items"
+        :id-key="idKey"
+        :config="quadrantConfig"
+        @cell-change="(itemId, fieldKey, value) => emit('cellChange', itemId, fieldKey, value)"
         @navigate="(itemId) => emit('navigate', itemId)"
       />
       <div v-else class="view-empty">

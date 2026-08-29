@@ -10,7 +10,7 @@
  */
 import { computed, watch } from 'vue'
 import { createRegistry, type Registry, type FieldDescriptor, type FieldType, type Option } from '../core/query'
-import type { BoardConfig, CalendarConfig, LayoutConfig, TableConfig, ViewKind } from '../core/view'
+import type { BoardConfig, CalendarConfig, LayoutConfig, QuadrantConfig, TableConfig, ViewKind } from '../core/view'
 import type { BlockCard } from '../wasm/types'
 import { BUILT_IN_PROPERTIES, type PropertyDefinition, type PropertyType } from '../types/property'
 import { useBlockCardStore } from '../stores/blockCard'
@@ -51,12 +51,19 @@ export const BLOCK_DEFAULT_CALENDAR_CONFIG: CalendarConfig = {
   dateRefKind: 'deadline',
 }
 
+/** Block 实体内建默认四象限布局（艾森豪威尔矩阵，priority 四值驱动；无附加元数据）。 */
+export const BLOCK_DEFAULT_QUADRANT_CONFIG: QuadrantConfig = {
+  viewKind: 'quadrant',
+  version: 1,
+}
+
 /** Block 实体默认布局统一入口（store seed/create 经 options 注入）。 */
 export function blockDefaultConfig(kind: ViewKind): LayoutConfig {
   switch (kind) {
     case 'table': return BLOCK_DEFAULT_TABLE_CONFIG
     case 'board': return BLOCK_DEFAULT_BOARD_CONFIG
     case 'calendar': return BLOCK_DEFAULT_CALENDAR_CONFIG
+    case 'quadrant': return BLOCK_DEFAULT_QUADRANT_CONFIG
   }
 }
 

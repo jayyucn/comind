@@ -7,7 +7,7 @@
  */
 
 /** 视图布局类型。与 View.viewKind 同源。 */
-export type ViewKind = 'table' | 'board' | 'calendar'
+export type ViewKind = 'table' | 'board' | 'calendar' | 'quadrant'
 
 /** 表格列装饰角色（渲染专属，属 LayoutConfig 而非无头 FieldDescriptor）。 */
 export type TableColumnRole = 'primary' | 'link' | 'overdue-date' | 'done'
@@ -63,8 +63,17 @@ export interface CalendarConfig {
   dateRefKind: string
 }
 
+/**
+ * 四象限视图布局配置（艾森豪威尔矩阵）。
+ * 卡片按 priority 四值（Urgent/High/Medium/Low）落格，无额外列/分组元数据，故配置为空壳。
+ */
+export interface QuadrantConfig {
+  viewKind: 'quadrant'
+  version: 1
+}
+
 /** 视图布局配置判别联合。 */
-export type LayoutConfig = TableConfig | BoardConfig | CalendarConfig
+export type LayoutConfig = TableConfig | BoardConfig | CalendarConfig | QuadrantConfig
 
 /** 按 viewKind 取对应配置类型（辅助，便于 store / 组件按需收窄）。 */
 export type ConfigOf<K extends ViewKind> = Extract<LayoutConfig, { viewKind: K }>
