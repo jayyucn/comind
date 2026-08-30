@@ -15,7 +15,12 @@ import { useScreenViewStore } from '../../stores/screenView'
 import type { BlockCard } from '../../wasm/types'
 import QueryPageFrame from '../common/QueryPageFrame.vue'
 import PageDrawer from '../Page/PageDrawer.vue'
+import BlockDrawer from '../Page/BlockDrawer.vue'
 import BlockContentCell from '../views/BlockContentCell.vue'
+import TableView from '../views/TableView.vue'
+import BoardView from '../views/BoardView.vue'
+import CalendarView from '../views/CalendarView.vue'
+import QuadrantView from '../views/QuadrantView.vue'
 import type { CellRegistry } from '../views/types'
 
 const blockCardStore = useBlockCardStore()
@@ -143,6 +148,8 @@ async function onCellChange(blockId: string, key: string, value: unknown) {
 // 页面详情右侧弹层（替代整页路由跳转）；pendingFocusBlock 记录待定位的 block（抽屉挂载后转发）
 const drawerPageId = ref<string | null>(null)
 const pendingFocusBlock = ref<string | null>(null)
+// 单 block 编辑抽屉（四象限卡片点击；聚焦编辑单个任务，不整页跳转）
+const drawerBlockId = ref<string | null>(null)
 
 // Navigate to source block：打开抽屉 + 记录定位目标
 async function handleNavigateToBlock(blockId: string) {
@@ -150,6 +157,11 @@ async function handleNavigateToBlock(blockId: string) {
   if (!card) return
   pendingFocusBlock.value = blockId
   drawerPageId.value = card.page_id
+}
+
+// 四象限卡片点击：打开单 block 编辑抽屉（聚焦编辑该任务，不整页跳转）
+function handleOpenBlock(blockId: string) {
+  drawerBlockId.value = blockId
 }
 
 // 抽屉内 Page 组件挂载完成后转发定位事件（此时监听器已注册，事件不会丢失）
@@ -187,13 +199,60 @@ function handleCellClick(blockId: string, fieldKey: string) {
     :quadrant-config="quadrantConfig"
     id-key="block_id"
     :cell-registry="blockCellRegistry"
-    @cell-change="onCellChange"
-    @navigate="handleNavigateToBlock"
-    @cell-click="handleCellClick"
-    @add-item="handleQuadrantAdd"
-    @content-change="refresh()"
-  />
+  >
+    <template #table="{ context }">
+      <TableView
+        :items="context.items"
+        :fields="context.fields"
+        :groups="context.groups"
+        :grouped="context.grouped"
+        :sort="context.sort"
+        :config="context.tableConfig"
+        :id-key="context.idKey"
+        :cell-registry="context.cellRegistry"
+        @column-resize="context.onColumnResize"
+        @column-align="context.onColumnAlign"
+        @column-visibility="context.onColumnVisibility"
+        @column-reset="context.onColumnReset"
+        @cell-change="onCellChange"
+        @cell-click="handleCellClick"
+      />
+    </template>
+    <template #board="{ context }">
+      <BoardView
+        :items="context.items"
+        :fields="context.fields"
+        :group-by="context.groupBy ?? ''"
+        :config="context.boardConfig"
+        :id-key="context.idKey"
+        @cell-change="onCellChange"
+        @navigate="handleNavigateToBlock"
+      />
+    </template>
+    <template #calendar="{ context }">
+      <CalendarView
+        :items="context.items"
+        :fields="context.fields"
+        :config="context.calendarConfig"
+        :id-key="context.idKey"
+        @navigate="handleNavigateToBlock"
+      />
+    </template>
+    <template #quadrant="{ context }">
+      <QuadrantView
+        :items="context.items"
+        :id-key="context.idKey"
+        :config="context.quadrantConfig"
+        @cell-change="onCellChange"
+        @open-block="handleOpenBlock"
+        @add-item="handleQuadrantAdd"
+      />
+    </template>
+  </QueryPageFrame>
 
   <!-- 页面详情右侧弹层（替代整页路由跳转；打开后定位到来源 block） -->
   <PageDrawer :page-id="drawerPageId" @close="drawerPageId = null" @opened="onDrawerOpened" />
+
+  <!-- 单 block 编辑抽屉（四象限卡片点击；聚焦编辑单个任务） -->
+  <BlockDrawer :block-id="drawerBlockId" @close="drawerBlockId = null" />
 </template>

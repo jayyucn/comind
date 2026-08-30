@@ -84,7 +84,7 @@ describe('QuadrantView 拖拽（Pointer Events）', () => {
     w.unmount()
   })
 
-  it('未拖动（仅点击）仍触发 navigate', async () => {
+  it('未拖动（仅点击）触发 openBlock', async () => {
     const w = mountView({ items: makeItems(), idKey: 'block_id' })
     const cardA = cardWithText(w, '任务A')
 
@@ -92,10 +92,10 @@ describe('QuadrantView 拖拽（Pointer Events）', () => {
     await fire(cardA, 'pointerup', { button: 0, clientX: 0, clientY: 0 })
     await fire(cardA, 'click')
 
-    const nav = w.emitted('navigate')
-    expect(nav).toBeTruthy()
-    expect(nav!.length).toBe(1)
-    expect(nav![0]).toEqual(['b1'])
+    const opened = w.emitted('openBlock')
+    expect(opened).toBeTruthy()
+    expect(opened!.length).toBe(1)
+    expect(opened![0]).toEqual(['b1'])
     w.unmount()
   })
 
@@ -109,7 +109,7 @@ describe('QuadrantView 拖拽（Pointer Events）', () => {
     await fire(urgent, 'pointerup', { clientX: 100, clientY: 100 })
     await fire(cardA, 'click')
 
-    expect(w.emitted('navigate')).toBeUndefined()
+    expect(w.emitted('openBlock')).toBeUndefined()
     expect(w.emitted('cellChange')!.length).toBe(1)
     w.unmount()
   })

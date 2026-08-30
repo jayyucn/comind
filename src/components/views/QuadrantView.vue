@@ -1,7 +1,6 @@
 <script setup lang="ts" generic="T">
 import { computed, nextTick, ref } from 'vue'
 import type { QuadrantConfig } from '../../core/view'
-import { useBlockStore } from '../../stores/blocks'
 import type { BlockCard } from '../../wasm/types'
 import BulletRender from '../Block/handlers/bullet/BulletRender.vue'
 import Icon from '../Icons/Icon.vue'
@@ -24,19 +23,15 @@ const props = defineProps<{
   config?: QuadrantConfig
   /** 取记录 id 的字段名（默认 'id'；BlockCard 用 'block_id'）。 */
   idKey?: string
-  /** 是否可编辑：true 时点击卡片原位进入编辑（BulletRender→input 接管，失焦/Esc 收起自动保存）。 */
-  editable?: boolean
 }>()
 
 const emit = defineEmits<{
   /** 拖拽改象限：把记录 priority 改为目标象限对应值。 */
   cellChange: [itemId: string, fieldKey: string, value: unknown]
-  /** 点击卡片导航到源记录（仅 editable=false 时触发）。 */
-  navigate: [itemId: string]
+  /** 点击卡片打开单 block 编辑抽屉（由消费方渲染 BlockDrawer）。 */
+  openBlock: [itemId: string]
   /** 新增任务：priority 为目标象限值，title 为输入标题（由消费方创建 block）。 */
   addItem: [priority: string, title: string]
-  /** 卡片内容编辑保存完成（消费方刷新投影）。 */
-  contentChange: [itemId: string, content: string]
 }>()
 
 type Card = T & Partial<BlockCard>
@@ -142,43 +137,6 @@ const buckets = computed<Record<string, T[]>>(() => {
   for (const k of QUADRANT_KEYS) map[k] = sortByDeadline(map[k])
   return map
 })
-// ── 卡片原位编辑（editable 时）──
-// content_preview 是 Rust 截断/清洗过的投影（≤200 字、剥 {{schedule}}、折行），不能直接回写，
-// 必须先 loadBlock 取真实 content 再编辑，保存走 blockStore 既有 _scheduleSave/flushSave 通路。
-const blockStore = useBlockStore()
-const editingId = ref<string | null>(null)
-const editDraft = ref('')
-
-async function startEdit(item: T) {
-  if (editingId.value === idOf(item)) return
-  const block = await blockStore.loadBlock(idOf(item))
-  if (!block) return // 加载失败（无真实内容）不进入编辑，避免误存投影
-  editDraft.value = block.content
-  editingId.value = idOf(item)
-}
-
-async function commitEdit() {
-  const id = editingId.value
-  if (!id) return
-  editingId.value = null
-  const next = editDraft.value.trim()
-  if (!next) return // 清空视为取消，不落库
-  const block = blockStore.getBlock(id)
-  if (!block || block.content === next) return
-  blockStore.updateBlockContent(id, next)
-  await blockStore.flushSave(id)
-  emit('contentChange', id, next)
-}
-
-function cancelEdit() {
-  editingId.value = null
-}
-
-/** 函数 ref：编辑 input 挂载即聚焦（已聚焦则跳过，避免 v-model 重渲染抢焦点）。 */
-function focusEdit(el: unknown) {
-  if (el instanceof HTMLInputElement && document.activeElement !== el) el.focus()
-}
-
 // ── 象限内新增任务（ghost 行 / 空态主角按钮 → 内联输入行，连续录入）──
 const addingFor = ref<string | null>(null)
 const addDraft = ref('')
@@ -287,11 +245,7 @@ function onCardClick(item: T) {
     suppressClick.value = false
     return
   }
-  if (props.editable) {
-    void startEdit(item)
-    return
-  }
-  emit('navigate', idOf(item))
+  emit('openBlock', idOf(item))
 }
 </script>
 
@@ -328,7 +282,7 @@ function onCardClick(item: T) {
         </header>
         <div class="q-cards">
           <div v-if="addingFor === q.priority" class="q-add-box">
-            <Icon name="status-todo" :size="14" />
+            <Icon name="status-todo"/>
             <input
               :ref="setAddInputRef"
               v-model="addDraft"
@@ -344,28 +298,18 @@ function onCardClick(item: T) {
             v-for="card in buckets[q.priority]"
             :key="idOf(card)"
             class="q-card"
-            :class="{ dragging: dragId === idOf(card), done: isDone(card), editing: editingId === idOf(card) }"
+            :class="{ dragging: dragId === idOf(card), done: isDone(card) }"
             @pointerdown="onPointerDown(card, $event)"
             @click="onCardClick(card)"
           >
-            <Icon class="q-status" :name="statusKey(card)" :size="14" />
+            <Icon class="q-status" :name="statusKey(card)" />
             <BulletRender
-              v-if="editingId !== idOf(card)"
               class="q-content"
               :content="asCard(card).content_preview || idOf(card)"
               :block-id="idOf(card)"
             />
-            <input
-              v-else
-              :ref="focusEdit"
-              v-model="editDraft"
-              class="q-edit-input"
-              @keydown.enter.prevent="commitEdit()"
-              @keydown.esc.prevent="cancelEdit()"
-              @blur="commitEdit()"
-            />
             <span
-              v-if="formatDate(cardDeadline(card)) && editingId !== idOf(card)"
+              v-if="formatDate(cardDeadline(card))"
               class="q-deadline"
               :class="{ overdue: isOverdue(cardDeadline(card)) }"
             >{{ formatDate(cardDeadline(card)) }}</span>
@@ -569,11 +513,6 @@ function onCardClick(item: T) {
     cursor: grabbing;
   }
 
-  &.editing {
-    border-color: var(--accent);
-    cursor: text;
-  }
-
   &.done {
     opacity: 0.6;
 
@@ -615,18 +554,6 @@ function onCardClick(item: T) {
   :deep(.block-placeholder) {
     color: var(--text-tertiary);
   }
-}
-
-.q-edit-input {
-  flex: 1;
-  min-width: 0;
-  padding: 0;
-  background: transparent;
-  border: none;
-  outline: none;
-  font-size: var(--text-sm);
-  font-family: inherit;
-  color: var(--text-primary);
 }
 
 .q-deadline {
