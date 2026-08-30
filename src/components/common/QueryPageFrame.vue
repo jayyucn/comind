@@ -75,6 +75,10 @@ const emit = defineEmits<{
   cellClick: [itemId: string, fieldKey: string]
   /** 卡片点击导航到源记录（BoardView/CalendarView 触发；由业务方处理）。 */
   navigate: [itemId: string]
+  /** 四象限新增任务（QuadrantView 内联输入；由业务方创建 block）。 */
+  addItem: [priority: string, title: string]
+  /** 四象限卡片内容编辑保存完成（业务方刷新投影）。 */
+  contentChange: [itemId: string, content: string]
 }>()
 
 // 命名视图 store（按 entityKey 隔离；NamedViewBar 内部同 key 单例复用）
@@ -265,8 +269,11 @@ function onRemoveGlobal(key: string) {
         :items="items"
         :id-key="idKey"
         :config="quadrantConfig"
+        editable
         @cell-change="(itemId, fieldKey, value) => emit('cellChange', itemId, fieldKey, value)"
         @navigate="(itemId) => emit('navigate', itemId)"
+        @add-item="(priority, title) => emit('addItem', priority, title)"
+        @content-change="(itemId, content) => emit('contentChange', itemId, content)"
       />
       <div v-else class="view-empty">
         <p>暂无可用的视图</p>

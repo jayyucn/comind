@@ -1,7 +1,10 @@
 <script setup lang="ts" generic="T">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import type { QuadrantConfig } from '../../core/view'
+import { useBlockStore } from '../../stores/blocks'
 import type { BlockCard } from '../../wasm/types'
+import BulletRender from '../Block/handlers/bullet/BulletRender.vue'
+import Icon from '../Icons/Icon.vue'
 
 /**
  * 任务四象限视图（艾森豪威尔矩阵）。
@@ -21,13 +24,19 @@ const props = defineProps<{
   config?: QuadrantConfig
   /** 取记录 id 的字段名（默认 'id'；BlockCard 用 'block_id'）。 */
   idKey?: string
+  /** 是否可编辑：true 时点击卡片原位进入编辑（BulletRender→input 接管，失焦/Esc 收起自动保存）。 */
+  editable?: boolean
 }>()
 
 const emit = defineEmits<{
   /** 拖拽改象限：把记录 priority 改为目标象限对应值。 */
   cellChange: [itemId: string, fieldKey: string, value: unknown]
-  /** 点击卡片导航到源记录。 */
+  /** 点击卡片导航到源记录（仅 editable=false 时触发）。 */
   navigate: [itemId: string]
+  /** 新增任务：priority 为目标象限值，title 为输入标题（由消费方创建 block）。 */
+  addItem: [priority: string, title: string]
+  /** 卡片内容编辑保存完成（消费方刷新投影）。 */
+  contentChange: [itemId: string, content: string]
 }>()
 
 type Card = T & Partial<BlockCard>
@@ -105,14 +114,20 @@ function isDone(item: T): boolean {
   return String(asCard(item).properties?.['status']) === 'Done'
 }
 
-// 象限内按 deadline 升序（无日期沉底）
+/** 卡片状态 → 状态图标名（status-todo/doing/done），复用项目 StatusIcons 家族 */
+function statusKey(item: T): string {
+  const s = String(asCard(item).properties?.['status'] ?? '')
+  return 'status-' + s.toLowerCase()
+}
+
+// 象限内按 deadline 升序；新建任务默认无截止日，置顶（放在首位）
 function sortByDeadline(list: T[]): T[] {
   return [...list].sort((a, b) => {
     const da = cardDeadline(a)
     const db = cardDeadline(b)
     if (!da && !db) return 0
-    if (!da) return 1
-    if (!db) return -1
+    if (!da) return -1 // 无日期（多为新建任务）置顶
+    if (!db) return 1
     return da < db ? -1 : da > db ? 1 : 0
   })
 }
@@ -127,6 +142,72 @@ const buckets = computed<Record<string, T[]>>(() => {
   for (const k of QUADRANT_KEYS) map[k] = sortByDeadline(map[k])
   return map
 })
+// ── 卡片原位编辑（editable 时）──
+// content_preview 是 Rust 截断/清洗过的投影（≤200 字、剥 {{schedule}}、折行），不能直接回写，
+// 必须先 loadBlock 取真实 content 再编辑，保存走 blockStore 既有 _scheduleSave/flushSave 通路。
+const blockStore = useBlockStore()
+const editingId = ref<string | null>(null)
+const editDraft = ref('')
+
+async function startEdit(item: T) {
+  if (editingId.value === idOf(item)) return
+  const block = await blockStore.loadBlock(idOf(item))
+  if (!block) return // 加载失败（无真实内容）不进入编辑，避免误存投影
+  editDraft.value = block.content
+  editingId.value = idOf(item)
+}
+
+async function commitEdit() {
+  const id = editingId.value
+  if (!id) return
+  editingId.value = null
+  const next = editDraft.value.trim()
+  if (!next) return // 清空视为取消，不落库
+  const block = blockStore.getBlock(id)
+  if (!block || block.content === next) return
+  blockStore.updateBlockContent(id, next)
+  await blockStore.flushSave(id)
+  emit('contentChange', id, next)
+}
+
+function cancelEdit() {
+  editingId.value = null
+}
+
+/** 函数 ref：编辑 input 挂载即聚焦（已聚焦则跳过，避免 v-model 重渲染抢焦点）。 */
+function focusEdit(el: unknown) {
+  if (el instanceof HTMLInputElement && document.activeElement !== el) el.focus()
+}
+
+// ── 象限内新增任务（ghost 行 / 空态主角按钮 → 内联输入行，连续录入）──
+const addingFor = ref<string | null>(null)
+const addDraft = ref('')
+// 模板 ref 处于 v-for（四象限循环）内会被 Vue 收集为数组，故用函数 ref 直接捕获元素
+const addInputRef = ref<HTMLInputElement | null>(null)
+
+function setAddInputRef(el: unknown) {
+  if (el instanceof HTMLInputElement) addInputRef.value = el
+}
+
+function startAdd(priority: string) {
+  addingFor.value = priority
+  addDraft.value = ''
+  nextTick(() => addInputRef.value?.focus())
+}
+
+async function commitAdd() {
+  const priority = addingFor.value
+  const title = addDraft.value.trim()
+  if (!priority || !title) return
+  emit('addItem', priority, title)
+  addDraft.value = '' // 连续录入：保留输入行
+}
+
+function cancelAdd() {
+  addingFor.value = null
+  addDraft.value = ''
+}
+
 // ── 拖拽（Pointer Events，兼容 Tauri webview / 触屏）──
 // 原生 HTML5 DnD 在 Tauri 桌面端 webview 下经常不触发 dragstart，故改用 Pointer Events：
 // 鼠标 / 触控笔 / 触摸统一走 pointerdown→pointermove→pointerup，drop 时改写 priority。
@@ -206,12 +287,22 @@ function onCardClick(item: T) {
     suppressClick.value = false
     return
   }
+  if (props.editable) {
+    void startEdit(item)
+    return
+  }
   emit('navigate', idOf(item))
 }
 </script>
 
 <template>
   <div class="quadrant-view">
+    <div class="q-axis q-axis-y" aria-hidden="true">
+      <span class="q-axis-label">重要</span>
+      <span class="q-axis-line" />
+      <span class="q-axis-label">不重要</span>
+    </div>
+
     <div class="q-grid">
       <section
         v-for="q in QUADRANTS"
@@ -225,42 +316,123 @@ function onCardClick(item: T) {
           <span class="q-title">{{ q.title }}</span>
           <span class="q-action">{{ q.action }}</span>
           <span class="q-count">{{ buckets[q.priority].length }}</span>
+          <button
+            type="button"
+            class="q-add-head"
+            :class="{ active: addingFor === q.priority }"
+            @click="startAdd(q.priority)"
+          >
+            <svg class="q-add-plus" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2.5V11.5M2.5 7H11.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
+            <span>新建任务</span>
+          </button>
         </header>
         <div class="q-cards">
-          <div v-if="buckets[q.priority].length === 0" class="q-empty">暂无任务</div>
+          <div v-if="addingFor === q.priority" class="q-add-box">
+            <Icon name="status-todo" :size="14" />
+            <input
+              :ref="setAddInputRef"
+              v-model="addDraft"
+              class="q-add-input"
+              placeholder="输入任务标题"
+              @keydown.enter.prevent="commitAdd()"
+              @keydown.esc.prevent="cancelAdd()"
+              @blur="cancelAdd()"
+            />
+          </div>
+          <div v-if="addingFor === q.priority" class="q-add-hint">回车添加 · Esc 收起 · 可连续录入</div>
           <article
             v-for="card in buckets[q.priority]"
             :key="idOf(card)"
             class="q-card"
-            :class="{ dragging: dragId === idOf(card), done: isDone(card) }"
+            :class="{ dragging: dragId === idOf(card), done: isDone(card), editing: editingId === idOf(card) }"
             @pointerdown="onPointerDown(card, $event)"
             @click="onCardClick(card)"
           >
-            <p class="q-content">{{ asCard(card).content_preview || idOf(card) }}</p>
+            <Icon class="q-status" :name="statusKey(card)" :size="14" />
+            <BulletRender
+              v-if="editingId !== idOf(card)"
+              class="q-content"
+              :content="asCard(card).content_preview || idOf(card)"
+              :block-id="idOf(card)"
+            />
+            <input
+              v-else
+              :ref="focusEdit"
+              v-model="editDraft"
+              class="q-edit-input"
+              @keydown.enter.prevent="commitEdit()"
+              @keydown.esc.prevent="cancelEdit()"
+              @blur="commitEdit()"
+            />
             <span
-              v-if="formatDate(cardDeadline(card))"
+              v-if="formatDate(cardDeadline(card)) && editingId !== idOf(card)"
               class="q-deadline"
               :class="{ overdue: isOverdue(cardDeadline(card)) }"
-            >⏰ {{ formatDate(cardDeadline(card)) }}</span>
+            >{{ formatDate(cardDeadline(card)) }}</span>
           </article>
         </div>
       </section>
+    </div>
+
+    <div class="q-axis q-axis-x" aria-hidden="true">
+      <span class="q-axis-label">不紧急</span>
+      <span class="q-axis-line" />
+      <span class="q-axis-label">紧急</span>
     </div>
   </div>
 </template>
 
 <style lang="scss" scoped>
 .quadrant-view {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  grid-template-rows: 1fr 22px;
+  gap: 8px;
   height: 100%;
+  padding: 4px;
   background: var(--bg-base);
+}
+
+/* 显式坐标轴：Y=重要/不重要（上→下），X=不紧急/紧急（左→右） */
+.q-axis {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.q-axis-y {
+  grid-column: 1;
+  grid-row: 1;
+  flex-direction: column;
+  padding: 4px 0;
+}
+
+.q-axis-y .q-axis-line {
+  flex: 1;
+  width: 1px;
+  background: var(--border);
+}
+
+.q-axis-x {
+  grid-column: 2;
+  grid-row: 2;
+  padding: 0 4px;
+}
+
+.q-axis-x .q-axis-line {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
 }
 
 /* 2×2 网格：行=重要/不重要（上→下），列=不紧急/紧急（左→右） */
 .q-grid {
-  flex: 1;
+  grid-column: 2;
+  grid-row: 1;
   min-height: 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -276,26 +448,56 @@ function onCardClick(item: T) {
   border-radius: var(--radius-md, 10px);
   background: var(--bg-base);
   overflow: hidden;
+  transition: box-shadow 120ms ease, background 120ms ease;
 }
 
-/* 四象限柔染背景 + 同色顶边强调；color-mix 跟随明暗主题，文字始终可读 */
+/* 四象限柔染背景 + 同色顶边强调；改用 rgba 叠色（不依赖 color-mix），
+   明暗主题通用、跨 webview 稳定。tint 已烘焙为带透明度实色，盖在主题底色上。 */
 .q-quadrant {
-  background: color-mix(in srgb, var(--q-tint) 8%, var(--bg-base));
-  border-top: 3px solid var(--q-tint);
-
-  .q-head {
-    background: color-mix(in srgb, var(--q-tint) 14%, var(--bg-base2));
-  }
+  border-top: 4px solid var(--q-tint);
 
   .q-action {
     color: var(--q-tint);
-    background: color-mix(in srgb, var(--q-tint) 16%, transparent);
+    background: rgba(59, 130, 246, 0.16); // 默认 Medium 蓝，下方按象限覆盖
   }
 
   .q-count {
     color: var(--q-tint);
-    background: color-mix(in srgb, var(--q-tint) 12%, var(--bg-base));
+    background: rgba(59, 130, 246, 0.12);
   }
+}
+
+/* 优先级视觉梯度：立即做(Urgent) 最突出，减少(Low) 最弱 */
+.q-quadrant[data-priority='Medium'] {
+  background:
+    linear-gradient(rgba(59, 130, 246, 0.11), rgba(59, 130, 246, 0.11)),
+    var(--bg-base);
+  .q-head { background: linear-gradient(rgba(59, 130, 246, 0.15), rgba(59, 130, 246, 0.15)), var(--bg-base2); }
+}
+.q-quadrant[data-priority='Urgent'] {
+  background:
+    linear-gradient(rgba(220, 38, 38, 0.16), rgba(220, 38, 38, 0.16)),
+    var(--bg-base);
+  box-shadow: inset 0 1px 0 rgba(220, 38, 38, 0.35);
+  .q-head { background: linear-gradient(rgba(220, 38, 38, 0.22), rgba(220, 38, 38, 0.22)), var(--bg-base2); }
+  .q-action { background: rgba(220, 38, 38, 0.22); }
+  .q-count { background: rgba(220, 38, 38, 0.14); }
+}
+.q-quadrant[data-priority='High'] {
+  background:
+    linear-gradient(rgba(245, 158, 11, 0.12), rgba(245, 158, 11, 0.12)),
+    var(--bg-base);
+  .q-head { background: linear-gradient(rgba(245, 158, 11, 0.14), rgba(245, 158, 11, 0.14)), var(--bg-base2); }
+  .q-action { background: rgba(245, 158, 11, 0.18); }
+  .q-count { background: rgba(245, 158, 11, 0.12); }
+}
+.q-quadrant[data-priority='Low'] {
+  background:
+    linear-gradient(rgba(156, 163, 175, 0.09), rgba(156, 163, 175, 0.09)),
+    var(--bg-base);
+  .q-head { background: linear-gradient(rgba(156, 163, 175, 0.11), rgba(156, 163, 175, 0.11)), var(--bg-base2); }
+  .q-action { background: rgba(156, 163, 175, 0.18); }
+  .q-count { background: rgba(156, 163, 175, 0.12); }
 }
 
 .q-head {
@@ -340,18 +542,11 @@ function onCardClick(item: T) {
   gap: 6px;
 }
 
-.q-empty {
-  padding: 20px 12px;
-  text-align: center;
-  color: var(--text-tertiary);
-  font-size: var(--text-xs);
-}
-
 .q-card {
   display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding: 9px 10px;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
   min-width: 160px;
   background: var(--bg-base2);
   border: 1px solid var(--border);
@@ -359,7 +554,7 @@ function onCardClick(item: T) {
   cursor: grab;
   // 触屏下让 Pointer Events 接管手势（禁用浏览器原生滚动/缩放抢占），鼠标无影响
   touch-action: none;
-  transition: box-shadow 100ms ease, border-color 100ms ease, opacity 100ms ease;
+  transition: box-shadow 120ms ease, border-color 120ms ease, opacity 120ms ease, transform 120ms ease;
 
   &:hover {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
@@ -367,7 +562,16 @@ function onCardClick(item: T) {
   }
 
   &.dragging {
-    opacity: 0.4;
+    opacity: 0.55;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
+    border-color: var(--accent);
+    cursor: grabbing;
+  }
+
+  &.editing {
+    border-color: var(--accent);
+    cursor: text;
   }
 
   &.done {
@@ -379,13 +583,13 @@ function onCardClick(item: T) {
   }
 }
 
-// 拖拽悬停的放置目标高亮（inset 以避免被 .q-cell 的 overflow:hidden 裁掉）
-.q-cell.drop-hover {
-  box-shadow: inset 0 0 0 2px var(--q-tint);
+.q-status {
+  flex-shrink: 0;
 }
 
 .q-content {
-  margin: 0;
+  flex: 1;
+  min-width: 0;
   font-size: var(--text-sm);
   color: var(--text-primary);
   line-height: 1.4;
@@ -393,10 +597,40 @@ function onCardClick(item: T) {
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+
+  // BulletRender 富渲染：标题块（# 开头）在卡片内降级为正文字号，保持信息密度
+  :deep(h1),
+  :deep(h2),
+  :deep(h3),
+  :deep(h4),
+  :deep(h5),
+  :deep(h6) {
+    margin: 0;
+    font-size: var(--text-sm);
+    font-weight: 400;
+    line-height: 1.4;
+    color: var(--text-primary);
+  }
+
+  :deep(.block-placeholder) {
+    color: var(--text-tertiary);
+  }
+}
+
+.q-edit-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: var(--text-sm);
+  font-family: inherit;
+  color: var(--text-primary);
 }
 
 .q-deadline {
-  align-self: flex-start;
+  flex-shrink: 0;
   font-size: 11px;
   font-weight: 600;
   padding: 1px 5px;
@@ -408,5 +642,66 @@ function onCardClick(item: T) {
     color: var(--error, #dc2626);
     border-color: var(--error, #dc2626);
   }
+}
+
+/* 新增入口：header 内「新建任务」按钮（置于 q-count 右侧）+ 内联输入行 */
+.q-add-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
+
+  &:hover,
+  &.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(99, 102, 241, 0.1);
+  }
+}
+
+.q-add-box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--bg-base2);
+}
+
+.q-add-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: var(--text-sm);
+  font-family: inherit;
+  color: var(--text-primary);
+
+  &::placeholder {
+    color: var(--text-tertiary);
+  }
+}
+
+.q-add-hint {
+  padding: 0 2px;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
+// 拖拽悬停的放置目标高亮（inset 以避免被 .q-cell 的 overflow:hidden 裁掉）
+.q-cell.drop-hover {
+  box-shadow: inset 0 0 0 2px var(--q-tint);
 }
 </style>

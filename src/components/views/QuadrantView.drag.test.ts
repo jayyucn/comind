@@ -1,7 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import { nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import QuadrantView from './QuadrantView.vue'
+
+// 卡片渲染接入 BulletRender（内部 useBlockStore），挂载需注入 pinia
+function mountView(props: Record<string, unknown>) {
+  return mount(QuadrantView, { attachTo: document.body, global: { plugins: [createPinia()] }, props })
+}
 
 function makeItems() {
   return [
@@ -40,7 +46,7 @@ function cardWithText(w: ReturnType<typeof mount>, text: string) {
 
 describe('QuadrantView 拖拽（Pointer Events）', () => {
   it('卡片按 priority 落入对应象限', () => {
-    const w = mount(QuadrantView, { attachTo: document.body, props: { items: makeItems(), idKey: 'block_id' } })
+    const w = mountView({ items: makeItems(), idKey: 'block_id' })
     expect(w.findAll('.q-card').length).toBe(2)
     expect(w.text()).toContain('任务A')
     expect(w.text()).toContain('任务B')
@@ -50,7 +56,7 @@ describe('QuadrantView 拖拽（Pointer Events）', () => {
   })
 
   it('指针拖拽到目标象限 emit cellChange(priority)', async () => {
-    const w = mount(QuadrantView, { attachTo: document.body, props: { items: makeItems(), idKey: 'block_id' } })
+    const w = mountView({ items: makeItems(), idKey: 'block_id' })
     const cardA = cardWithText(w, '任务A')
     const urgent = sectionWithPriority(w, 'Urgent')
 
@@ -66,7 +72,7 @@ describe('QuadrantView 拖拽（Pointer Events）', () => {
   })
 
   it('拖到同一象限不写库（无 cellChange）', async () => {
-    const w = mount(QuadrantView, { attachTo: document.body, props: { items: makeItems(), idKey: 'block_id' } })
+    const w = mountView({ items: makeItems(), idKey: 'block_id' })
     const cardA = cardWithText(w, '任务A')
     const medium = sectionWithPriority(w, 'Medium')
 
@@ -79,7 +85,7 @@ describe('QuadrantView 拖拽（Pointer Events）', () => {
   })
 
   it('未拖动（仅点击）仍触发 navigate', async () => {
-    const w = mount(QuadrantView, { attachTo: document.body, props: { items: makeItems(), idKey: 'block_id' } })
+    const w = mountView({ items: makeItems(), idKey: 'block_id' })
     const cardA = cardWithText(w, '任务A')
 
     await fire(cardA, 'pointerdown', { button: 0, clientX: 0, clientY: 0 })
@@ -94,7 +100,7 @@ describe('QuadrantView 拖拽（Pointer Events）', () => {
   })
 
   it('拖拽后松手不误触 navigate', async () => {
-    const w = mount(QuadrantView, { attachTo: document.body, props: { items: makeItems(), idKey: 'block_id' } })
+    const w = mountView({ items: makeItems(), idKey: 'block_id' })
     const cardA = cardWithText(w, '任务A')
     const urgent = sectionWithPriority(w, 'Urgent')
 

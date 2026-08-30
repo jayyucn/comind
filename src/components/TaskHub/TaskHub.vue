@@ -8,6 +8,8 @@ import type { ViewQuery } from '../../core/query'
 import { parseLayoutConfig, type BoardConfig, type CalendarConfig, type QuadrantConfig, type TableConfig } from '../../core/view'
 import type { ViewTypeOption } from '../../core/view/management'
 import { useBlockCardStore } from '../../stores/blockCard'
+import { useBlockStore } from '../../stores/blocks'
+import { usePageStore } from '../../stores/pages'
 import { usePropertyStore } from '../../stores/property'
 import { useScreenViewStore } from '../../stores/screenView'
 import type { BlockCard } from '../../wasm/types'
@@ -21,6 +23,9 @@ const blockCardStore = useBlockCardStore()
 // 首建注入实体默认布局（blockDefaultConfig）——seed/create 时写入 Block 正确的 config（ADR-0023 上游修复）。
 const screenViewStore = useScreenViewStore('block', { defaultConfig: blockDefaultConfig })
 const propertyStore = usePropertyStore()
+// 四象限新增任务：block 经编辑器 store 创建（走既有 _scheduleSave 通路），页面自动建/复用
+const blockStore = useBlockStore()
+const pageStore = usePageStore()
 
 // 通用查询引擎注册表（组合根单例，内置字段 + 自定义 property 已注册）
 const registry = getBlockRegistry()
@@ -106,6 +111,21 @@ async function handleStatusChange(blockId: string, newStatus: string) {
   await refresh()
 }
 
+// 四象限新增任务：落到自动建/复用的「任务收集」页，status=Todo、priority=目标象限值。
+// 标题即 block content；创建后刷新卡片投影让新任务立即入格。
+const TASK_INBOX_PAGE_TITLE = '任务收集'
+
+async function handleQuadrantAdd(priority: string, title: string) {
+  const page = await pageStore.getOrCreatePageByTitle(TASK_INBOX_PAGE_TITLE)
+  const block = await blockStore.createBlock({ pageId: page.id, content: title })
+  // createBlock 落库是防抖的；block_properties.block_id 外键依赖 block 行先存在，
+  // 必须先 flushSave 强制持久化，否则紧跟的 setProperty 触发 FOREIGN KEY constraint failed
+  await blockStore.flushSave(block.id)
+  await propertyStore.setProperty(block.id, 'status', 'Todo')
+  await propertyStore.setProperty(block.id, 'priority', priority)
+  await refresh()
+}
+
 // 通用表格单元格编辑：done/status 走状态更新，其余走属性更新（TableView 零任务代码，由字段元数据驱动；ADR-0007）
 async function onCellChange(blockId: string, key: string, value: unknown) {
   if (key === 'done') {
@@ -170,6 +190,8 @@ function handleCellClick(blockId: string, fieldKey: string) {
     @cell-change="onCellChange"
     @navigate="handleNavigateToBlock"
     @cell-click="handleCellClick"
+    @add-item="handleQuadrantAdd"
+    @content-change="refresh()"
   />
 
   <!-- 页面详情右侧弹层（替代整页路由跳转；打开后定位到来源 block） -->

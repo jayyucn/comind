@@ -22,14 +22,16 @@ const props = withDefaults(
     position?: { x: number; y: number }
     /** 点击 overlay 空白是否关闭，默认 true。 */
     closeOnOverlay?: boolean
-    /** 锚点元素或返回元素的 getter；提供后进入锚点避让模式（ADR-0038）。 */
-    anchorEl: HTMLElement | (() => HTMLElement | null) | null
+    /** 锚点元素或返回元素的 getter；提供后进入锚点避让模式（ADR-0038）。
+     *  不传（默认 null）则退化为遗留点模式，仅按 position 做视口收边（与 ADR-0009 一致）。 */
+    anchorEl?: HTMLElement | (() => HTMLElement | null) | null
     /** 首选放置侧，默认 'bottom'；空间不足时自动翻到对侧。仅 anchorEl 模式生效。 */
     placement?: 'bottom' | 'top' | 'left' | 'right'
   }>(),
   {
     closeOnOverlay: true,
     placement: 'bottom',
+    anchorEl: null,
   },
 )
 
