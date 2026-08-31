@@ -49,6 +49,7 @@
 
 // Bullet 区域
 .block-bullet {
+  position: relative;
   flex-shrink: 0;
   width: 20px;
   height: 1.8em;
@@ -80,14 +81,17 @@
   visibility: visible;
 }
 
-// Chevron 箭头（父节点）
+// Chevron 箭头（父节点）：默认隐藏，仅 hover / 激活时显现（ADR-0039：折叠手势改由 chevron 承担）
 .bullet-chevron {
+  position: absolute;
+  left: -12px;
+  top: 8px;
   width: var(--block-chevron-size);
   height: var(--block-chevron-size);
   border-right: 1.5px solid var(--block-bullet-color);
   border-bottom: 1.5px solid var(--block-bullet-color);
   transform: rotate(45deg) translateY(1px);
-  opacity: var(--block-chevron-opacity);
+  opacity: 0;
   transition: transform 180ms ease-out, opacity 150ms ease-out;
   flex-shrink: 0;
 
@@ -96,22 +100,26 @@
   }
 }
 
-// Hover 效果
+// Hover 效果：圆点点 hover 放大（仅 bullet 区域）
 .block-bullet:hover {
   .bullet-dot {
     opacity: 0.7;
     transform: scale(1.4);
     box-shadow: 0 0 0 3px var(--accent-08);
   }
+}
 
-  .bullet-chevron {
-    opacity: 0.75;
-    transform: rotate(45deg) scale(1.2) translateY(1px);
-    box-shadow: 0 0 0 3px var(--accent-06);
+// Hover 效果：chevron 仅当 hover 整个 block（含内容、不含子 block）时显现。
+// 用 .block-row:hover 而非 .block:hover —— 后者会随子块 hover 向上冒泡，
+// 导致父块 chevron 在 hover 子块时也亮起（ADR-0039 折叠手势语义）。
+// .block-row 是 .block-children 的兄弟，并非子块的祖先，故 hover 子块不触发。
+.block-row:hover .bullet-chevron {
+  opacity: 0.75;
+  transform: rotate(45deg) scale(1.2) translateY(1px);
+  box-shadow: 0 0 0 3px var(--accent-06);
 
-    &.is-collapsed {
-      transform: rotate(-45deg) scale(1.2) translateY(1px);
-    }
+  &.is-collapsed {
+    transform: rotate(-45deg) scale(1.2) translateY(1px);
   }
 }
 
@@ -352,6 +360,14 @@
   flex: 1;
 }
 
+// 内容主体（不含 bullet）：优先级背景只覆盖此区域，bullet 圆点保持透明
+.block-body {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+
 .block-chosen .block-inner {
   background: var(--accent-04);
   border-radius: var(--radius-md);
@@ -420,31 +436,31 @@
   }
 }
 
-// 优先级背景色
-.block.priority-low .block-inner {
+// 优先级背景色（只覆盖文本区域，不含 bullet 圆点与 status 图标）
+.block.priority-low .block-content {
   background: linear-gradient(90deg, var(--priority-low-bg) 0%, rgba(148, 163, 184, 0.02) 100%);
   border-radius: $radius-md;
 }
 
-.block.priority-medium .block-inner {
+.block.priority-medium .block-content {
   background: linear-gradient(90deg, var(--priority-medium-bg) 0%, rgba(59, 130, 246, 0.02) 100%);
   border-radius: $radius-md;
 }
 
-.block.priority-high .block-inner {
+.block.priority-high .block-content {
   background: linear-gradient(90deg, var(--priority-high-bg) 0%, rgba(249, 115, 22, 0.02) 100%);
   border-radius: $radius-md;
 }
 
-.block.priority-urgent .block-inner {
+.block.priority-urgent .block-content {
   background: linear-gradient(90deg, var(--priority-urgent-bg) 0%, rgba(239, 68, 68, 0.02) 100%);
   border-radius: $radius-md;
 }
 
-.block.active.priority-low > .block-row > .block-inner,
-.block.active.priority-medium > .block-row > .block-inner,
-.block.active.priority-high > .block-row > .block-inner,
-.block.active.priority-urgent > .block-row > .block-inner {
+.block.active.priority-low .block-content,
+.block.active.priority-medium .block-content,
+.block.active.priority-high .block-content,
+.block.active.priority-urgent .block-content {
   filter: brightness(1.02);
 }
 

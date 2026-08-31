@@ -87,6 +87,9 @@ const viewContext = computed(() => ({
   grouped: props.grouped,
   sort: props.sort,
   groupBy: props.groupBy,
+  // registry / entityType 透传给视图，供需要按 sort 规则二次排序的视图（如四象限分桶后按规则排）复用引擎 sortItems
+  registry: props.registry,
+  entityType: props.entityKey,
   tableConfig: props.tableConfig,
   boardConfig: props.boardConfig,
   calendarConfig: props.calendarConfig,

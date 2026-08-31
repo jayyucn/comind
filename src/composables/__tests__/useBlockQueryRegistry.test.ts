@@ -18,22 +18,22 @@ const cards: BlockCard[] = [
   {
     block_id: 'a', page_id: 'p1', parent_id: null, content_preview: 'A',
     properties: { status: 'Done', priority: 'High', project: 'P1', area: 'A1', estimate: 5 },
-    date_refs: [dr('deadline', '2026-01-10')], updated_at: 1,
+    date_refs: [dr('deadline', '2026-01-10')], updated_at: 1, created_at: 1,
   },
   {
     block_id: 'b', page_id: 'p1', parent_id: null, content_preview: 'B',
     properties: { status: 'Todo', priority: 'Low', project: 'P1', area: 'A2', estimate: 3 },
-    date_refs: [], updated_at: 2,
+    date_refs: [], updated_at: 2, created_at: 2,
   },
   {
     block_id: 'c', page_id: 'p2', parent_id: null, content_preview: 'C',
     properties: { status: 'Doing', priority: 'Medium', project: 'P2', area: 'A1', estimate: 2 },
-    date_refs: [dr('schedule', '2026-03-01')], updated_at: 3,
+    date_refs: [dr('schedule', '2026-03-01')], updated_at: 3, created_at: 3,
   },
   {
     block_id: 'd', page_id: 'p2', parent_id: null, content_preview: 'D',
     properties: { status: 'Done', priority: 'Urgent', project: 'P2', area: 'A2', estimate: 8 },
-    date_refs: [], updated_at: 4,
+    date_refs: [], updated_at: 4, created_at: 4,
   },
 ]
 

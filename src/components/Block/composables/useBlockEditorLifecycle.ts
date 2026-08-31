@@ -1,4 +1,4 @@
-import { computed } from 'vue'
+import { computed, inject } from 'vue'
 import type { Ref, ComputedRef } from 'vue'
 import { useNavigateToPage } from '../../../composables/useNavigateToPage'
 import { useRelationshipMenu } from '../../../composables/useRelationshipMenu'
@@ -69,6 +69,10 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     relationshipCleanup,
     selection = null,
   } = options
+
+  // 子树编辑器根块标记（仅 BlockModal 通过 provide 下发；主编辑器无此注入）。
+  // 用于约束：根块 Enter 建 child 而非页面级兄弟、根块 Outdent 不逃出子树（ADR-0039）。
+  const blockModalRootId = inject<Ref<string | null>>('blockModalRootId', null)
 
   // ── 内部依赖的 composables ──
   const { navigateToPage } = useNavigateToPage()
@@ -155,7 +159,15 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     }
 
     editorStore.deactivateBlock()
-    const newBlock = await blockStore.insertBlockAtCursor(blockId.value, effectivePos, collapsed.value)
+    // 子树根块：强制新块成为根的子块，避免 Enter 在页面级建兄弟而逃出可见子树（ADR-0039）
+    const isSubtreeRoot = blockModalRootId?.value === blockId.value
+    const newBlock = await blockStore.insertBlockAtCursor(
+      blockId.value,
+      effectivePos,
+      collapsed.value,
+      undefined,
+      isSubtreeRoot ? { forceParentId: blockId.value } : undefined
+    )
     if (newBlock) {
       editorStore.activateBlock(newBlock.id, 1)
     }
@@ -194,6 +206,8 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
   })
 
   const handleOutdent = withContentSync(async () => {
+    // 子树根块不可 outdent：outdent 会使其成为页面级兄弟，逃出弹窗可见子树（ADR-0039）
+    if (blockModalRootId?.value === blockId.value) return
     editorStore.deactivateBlock()
     await blockStore.outdent(blockId.value)
     editorStore.activateBlock(blockId.value)

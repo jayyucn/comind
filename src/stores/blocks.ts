@@ -604,7 +604,8 @@ export const useBlockStore = defineStore('blocks', () => {
     blockId: string,
     cursorPos: number,
     isCollapsed: boolean,
-    blockFormat?: Record<string, any>
+    blockFormat?: Record<string, any>,
+    opts?: { forceParentId?: string | null }
   ): Promise<Block | null> {
     const block = blocks.value.find(b => b.id === blockId)
     if (!block) return null
@@ -642,7 +643,14 @@ export const useBlockStore = defineStore('blocks', () => {
       // 确定新节点的 parentId
       // - 有展开的子节点 → 作为第一个子节点（parentId = block.id）
       // - 其他情况 → 作为下方兄弟节点（parentId = block.parentId）
-      const newParentId = hasExpandedChildren ? block.id : block.parentId
+      // - 子树编辑器（BlockModal）注入 forceParentId 时强制以该块为父，
+      //   使根块 Enter 建 child 而非页面级兄弟，留在可见子树内（ADR-0039）
+      const newParentId =
+        opts?.forceParentId != null
+          ? opts.forceParentId
+          : hasExpandedChildren
+            ? block.id
+            : block.parentId
 
       if (isInMiddle) {
         // ── 文本中间：拆分内容 ───────────────────────────────────────────

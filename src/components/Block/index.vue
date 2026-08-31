@@ -67,6 +67,8 @@ const { isFrozen } = useIdeasFreeze(toRef(props, 'pageId'))
 // 注入拖拽结束回调（由 BlockList 提供）
 const onDragEnd = inject<() => void>('onDragEnd')
 const selection = inject<CrossBlockSelection>('crossBlockSelection')
+// 是否处于 BlockModal 子树编辑器内（由 BlockModal provide）。弹窗内 dot 点击为 no-op，避免递归开弹窗。
+const inBlockModal = inject<boolean>('inBlockModal', false)
 
 // ── 便捷访问 ──
 const blockId = computed(() => props.node.id)
@@ -254,6 +256,13 @@ onMounted(() => {
     el.addEventListener('drop', onDrop as unknown as EventListener)
     el.addEventListener('paste', onPaste as unknown as EventListener)
   }
+
+  // 挂载时若已是激活态（新建块在 activateBlock 之后才渲染、或懒加载后才挂载的根块），
+  // isActive 在挂载瞬间即为 true，watch(isActive) 不会因「变化」触发，需在此主动聚焦，
+  // 否则新块停在只读渲染态 / 光标未落位（Issue 2：弹窗内 Enter 新建节点未激活）。
+  if (isActive.value) {
+    focusActiveEditor()
+  }
 })
 
 onBeforeUnmount(() => {
@@ -298,33 +307,41 @@ async function handleDeleteBetweenProperty(e: Event) {
   }
 }
 
+/**
+ * 激活后聚焦编辑器。
+ * 优先级：点击坐标 > cursorPos > end。
+ * 等待浏览器 layout 完成，确保 ProseMirror 的 view.dom 已渲染（posAtCoords 依赖布局信息）。
+ */
+async function focusActiveEditor() {
+  if (!isActive.value) return
+  selection?.clearSelection()
+  await nextTick()
+  await new Promise(resolve => requestAnimationFrame(resolve))
+  if (!editorRef.value) return
+  const editor = editorRef.value.getEditor()
+  if (editor) {
+    editorStore.setActiveEditor(editor)
+  }
+
+  // 优先级：点击坐标 > cursorPos > end
+  const clickCoords = editorStore.consumeClickCoords()
+  if (clickCoords) {
+    editorRef.value?.focusAtCoords?.(clickCoords.x, clickCoords.y)
+  } else {
+    const pendingPos = editorStore.consumeCursorPos()
+    if (pendingPos !== null) {
+      editorRef.value.focus(pendingPos)
+    } else {
+      editorRef.value.focus('end')
+    }
+  }
+}
+
 watch(
   isActive,
-  async (active, oldActive) => {
+  (active) => {
     if (active) {
-      selection?.clearSelection()
-      await nextTick()
-      // 等待浏览器完成 layout，确保 ProseMirror 的 view.dom 已渲染（posAtCoords 依赖布局信息）
-      await new Promise(resolve => requestAnimationFrame(resolve))
-      if (editorRef.value) {
-        const editor = editorRef.value.getEditor()
-        if (editor) {
-          editorStore.setActiveEditor(editor)
-        }
-
-        // 优先级：点击坐标 > cursorPos > end
-        const clickCoords = editorStore.consumeClickCoords()
-        if (clickCoords) {
-          editorRef.value?.focusAtCoords?.(clickCoords.x, clickCoords.y)
-        } else {
-          const pendingPos = editorStore.consumeCursorPos()
-          if (pendingPos !== null) {
-            editorRef.value.focus(pendingPos)
-          } else {
-            editorRef.value.focus('end')
-          }
-        }
-      }
+      focusActiveEditor()
     } else {
       editorStore.setActiveEditor(null)
     }
@@ -371,6 +388,12 @@ async function onLanguageChange(lang: string) {
   }
 }
 
+/** bullet dot 点击：打开单块子树编辑弹窗；弹窗内（inBlockModal）为 no-op（ADR-0039） */
+function onBulletClick() {
+  if (inBlockModal) return
+  editorStore.openBlockModal(blockId.value)
+}
+
 function onDragOver(e: DragEvent) {
   if (typeHooks.value?.onDragOver?.(e) === true) return
   // 默认无行为
@@ -405,13 +428,20 @@ watch(isActive, (active) => {
 
       <!-- 内容区域（bullet + content）- 选中时边框只应用到此容器 -->
       <div class="block-inner">
-        <!-- Bullet -->
-        <span class="block-bullet" :class="{ collapsed, 'hide-empty-bullet': hideBulletForEmpty }"
-          @click.stop="toggleCollapse">
-          <span v-if="node.children.length > 0" class="bullet-chevron" :class="{ 'is-collapsed': collapsed }"></span>
-          <span v-else class="bullet-dot"></span>
+        <!-- Bullet：dot 常显，点击打开单块子树编辑弹窗（BlockModal）；
+             chevron 仅在有子块且 hover 时显现，点击负责折叠/展开（ADR-0039） -->
+        <span class="block-bullet" :class="{ collapsed, 'hide-empty-bullet': hideBulletForEmpty }">
+          <span
+            v-if="node.children.length > 0"
+            class="bullet-chevron"
+            :class="{ 'is-collapsed': collapsed }"
+            title="折叠 / 展开"
+            @click.stop="toggleCollapse"
+          ></span>
+          <span class="bullet-dot" title="打开块详情" @click.stop="onBulletClick"></span>
         </span>
 
+        <div class="block-body">
         <!-- Between 属性显示 -->
         <PropertyInline :block-id="blockId" position="between-bullet-content" />
 
@@ -459,8 +489,7 @@ watch(isActive, (active) => {
 
         <!-- Right 属性显示 -->
         <PropertyInline :block-id="blockId" position="right-of-content" />
-
-        
+        </div>
       </div>
     </div>
 

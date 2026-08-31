@@ -1,6 +1,8 @@
 <script setup lang="ts" generic="T">
 import { computed, nextTick, ref } from 'vue'
 import type { QuadrantConfig } from '../../core/view'
+import { sortItems } from '../../core/query'
+import type { SortRule, Registry } from '../../core/query'
 import type { BlockCard } from '../../wasm/types'
 import BulletRender from '../Block/handlers/bullet/BulletRender.vue'
 import Icon from '../Icons/Icon.vue'
@@ -23,12 +25,18 @@ const props = defineProps<{
   config?: QuadrantConfig
   /** 取记录 id 的字段名（默认 'id'；BlockCard 用 'block_id'）。 */
   idKey?: string
+  /** 排序规则（来自工具栏；非空时按规则排序，与表格/看板共用引擎逻辑；空时回落 created_at 降序）。 */
+  sort?: SortRule[]
+  /** 字段注册表：按 sort 规则解析字段值（与引擎同套）。 */
+  registry?: Registry
+  /** 实体类型（注册表命名空间 key，如 'block'）。 */
+  entityType?: string
 }>()
 
 const emit = defineEmits<{
   /** 拖拽改象限：把记录 priority 改为目标象限对应值。 */
   cellChange: [itemId: string, fieldKey: string, value: unknown]
-  /** 点击卡片打开单 block 编辑抽屉（由消费方渲染 BlockDrawer）。 */
+  /** 点击卡片打开单 block 编辑弹窗（由消费方渲染 BlockModal）。 */
   openBlock: [itemId: string]
   /** 新增任务：priority 为目标象限值，title 为输入标题（由消费方创建 block）。 */
   addItem: [priority: string, title: string]
@@ -46,18 +54,40 @@ function asCard(item: T): Card {
 // 仅纳入活跃/已完成任务（排除已取消）且含 priority 的卡片：
 // 四象限需同时具备 status 与 priority，无 priority 的卡片不显示。
 const ACTIVE_STATUSES = new Set(['Todo', 'Doing', 'Done'])
+
+/** 落格资格：status 活跃（Todo/Doing/Done）且 priority 为合法象限值。 */
+function qualifies(item: T): boolean {
+  const card = asCard(item)
+  const st = card.properties?.['status']
+  const pr = card.properties?.['priority']
+  return (
+    st != null &&
+    ACTIVE_STATUSES.has(String(st)) &&
+    pr != null &&
+    pr !== '' &&
+    QUADRANT_KEYS.includes(String(pr))
+  )
+}
+
+/** 全部记录 id → item（供父级可见性判断）。 */
+const itemById = computed(() => {
+  const m = new Map<string, T>()
+  for (const i of props.items) m.set(idOf(i), i)
+  return m
+})
+
+/** 父级 block id（BlockCard.parent_id；泛型下经 Partial<BlockCard> 读取）。 */
+function parentIdOf(item: T): string {
+  return String((item as Partial<BlockCard>).parent_id ?? '')
+}
+
+// 顶层卡片：有落格资格，且其父级不落格（父级落格时本卡作为嵌套子任务显示，避免重复落格）
 const visibleItems = computed<T[]>(() =>
   props.items.filter((i) => {
-    const card = asCard(i)
-    const st = card.properties?.['status']
-    const pr = card.properties?.['priority']
-    return (
-      st != null &&
-      ACTIVE_STATUSES.has(String(st)) &&
-      pr != null &&
-      pr !== '' &&
-      QUADRANT_KEYS.includes(String(pr))
-    )
+    if (!qualifies(i)) return false
+    const pid = parentIdOf(i)
+    const parent = itemById.value.get(pid)
+    return !pid || parent === undefined || !qualifies(parent)
   }),
 )
 
@@ -115,16 +145,9 @@ function statusKey(item: T): string {
   return 'status-' + s.toLowerCase()
 }
 
-// 象限内按 deadline 升序；新建任务默认无截止日，置顶（放在首位）
-function sortByDeadline(list: T[]): T[] {
-  return [...list].sort((a, b) => {
-    const da = cardDeadline(a)
-    const db = cardDeadline(b)
-    if (!da && !db) return 0
-    if (!da) return -1 // 无日期（多为新建任务）置顶
-    if (!db) return 1
-    return da < db ? -1 : da > db ? 1 : 0
-  })
+// 象限内默认按 block 创建时间降序：新任务在前（沿用「新任务置顶」体感）
+function sortByCreatedAt(list: T[]): T[] {
+  return [...list].sort((a, b) => (asCard(b).created_at ?? 0) - (asCard(a).created_at ?? 0))
 }
 
 // 预先分桶（单次遍历 + 每桶排序），避免模板内重复计算
@@ -134,9 +157,79 @@ const buckets = computed<Record<string, T[]>>(() => {
     const p = priorityOf(i)
     if (p && map[p]) map[p].push(i)
   }
-  for (const k of QUADRANT_KEYS) map[k] = sortByDeadline(map[k])
+  // 象限内排序：工具栏设了排序规则则按规则（复用引擎 sortItems，与表格/看板一致，保证工具栏排序在象限生效）；
+  // 否则回落「按创建时间降序」（新任务在前，象限默认序）。两路径都基于已分桶结果独立排序。
+  const rules = props.sort && props.sort.length > 0 ? props.sort : null
+  for (const k of QUADRANT_KEYS) {
+    map[k] = rules && props.registry
+      ? sortItems(map[k], rules, props.registry, props.entityType ?? 'block')
+      : sortByCreatedAt(map[k])
+  }
   return map
 })
+// ── 子任务树（最多 3 层：卡片 1 层 → 子任务 2 层 → 孙任务 3 层）──
+// 数据源为扁平 BlockCard（含 parent_id）；子任务 = 活跃任务且其父级同为活跃任务。
+// 子任务不要求 priority（不落格），仅在父卡片内嵌套展示；有 priority 的子任务不再重复落格。
+const MAX_DEPTH = 3
+
+/** 活跃任务（status ∈ Todo/Doing/Done）id → item，建树用。 */
+const activeById = computed(() => {
+  const m = new Map<string, T>()
+  for (const i of props.items) {
+    const st = asCard(i).properties?.['status']
+    if (st != null && ACTIVE_STATUSES.has(String(st))) m.set(idOf(i), i)
+  }
+  return m
+})
+
+/** parent_id → 直接子任务（父级须活跃，整枝才可见；列表已按 sort 规则或创建时间排序）。 */
+const childrenMap = computed(() => {
+  const rules = props.sort && props.sort.length > 0 ? props.sort : null
+  const m = new Map<string, T[]>()
+  for (const i of props.items) {
+    const st = asCard(i).properties?.['status']
+    if (st == null || !ACTIVE_STATUSES.has(String(st))) continue
+    const pid = parentIdOf(i)
+    if (pid && activeById.value.has(pid)) {
+      const arr = m.get(pid) ?? []
+      arr.push(i)
+      m.set(pid, arr)
+    }
+  }
+  // 与顶层卡片同引擎排序：有规则按规则，无规则回退创建时间降序
+  for (const [pid, list] of m) {
+    m.set(pid, rules && props.registry
+      ? sortItems(list, rules, props.registry, props.entityType ?? 'block')
+      : sortByCreatedAt(list))
+  }
+  return m
+})
+
+function childrenOf(item: T): T[] {
+  return childrenMap.value.get(idOf(item)) ?? []
+}
+
+interface SubtaskNode {
+  item: T
+  depth: number
+}
+
+/** 卡片子任务先序展平（depth 2=子任务、3=孙任务）；超过 MAX_DEPTH 的层级不再展开。 */
+function subtasksOf(card: T): SubtaskNode[] {
+  const out: SubtaskNode[] = []
+  const walk = (item: T, depth: number) => {
+    out.push({ item, depth })
+    if (depth < MAX_DEPTH) for (const c of childrenOf(item)) walk(c, depth + 1)
+  }
+  for (const c of childrenOf(card)) walk(c, 2)
+  return out
+}
+
+/** 点击子任务行：打开该子任务的 block 编辑弹窗（与卡片点击同通道）。 */
+function onOpenSub(item: T) {
+  emit('openBlock', idOf(item))
+}
+
 // ── 象限内新增任务（ghost 行 / 空态主角按钮 → 内联输入行，连续录入）──
 const addingFor = ref<string | null>(null)
 const addDraft = ref('')
@@ -173,14 +266,37 @@ function cancelAdd() {
 const dragId = ref<string | null>(null)
 const hoveredPriority = ref<string | null>(null)
 const suppressClick = ref(false)
+// 拖拽中跟随指针的悬浮 ghost（Pointer Events 无浏览器原生拖影，补一个可视载体让拖拽「有形」）
+const dragPos = ref<{ x: number; y: number } | null>(null)
+const dragCard = ref<T | null>(null)
+// 源卡片真实宽度（拖拽开始时抓取 offsetWidth），让 ghost 与实际任务项等宽
+const dragWidth = ref<number | null>(null)
+// ghost 渲染数据快照（非泛型结构，规避模板内 T | null 解包的类型收窄问题）
+const ghost = computed<{ id: string; content: string; status: string; x: number; y: number; w: number } | null>(() => {
+  if (!dragId.value || !dragPos.value || !dragCard.value) return null
+  const c = dragCard.value
+  return {
+    id: idOf(c),
+    content: asCard(c).content_preview || idOf(c),
+    status: statusKey(c),
+    x: dragPos.value.x,
+    y: dragPos.value.y,
+    w: dragWidth.value ?? 0,
+  }
+})
 
 let pointerStart: { x: number; y: number; id: string } | null = null
+let pointerItem: T | null = null
 let dragging = false
 
 function onPointerDown(item: T, e: PointerEvent) {
   // 仅响应主键（鼠标左键 / 触摸 / 触控笔接触）；右键等忽略，避免误触
   if (e.button != null && e.button !== 0) return
+  pointerItem = item
   pointerStart = { x: e.clientX, y: e.clientY, id: idOf(item) }
+  // 抓取源卡片真实宽度（可能为子元素触发，向上找到 .q-card），ghost 等宽
+  const cardEl = (e.target as HTMLElement | null)?.closest?.('.q-card') as HTMLElement | null
+  dragWidth.value = cardEl?.offsetWidth ?? null
   dragging = false
   window.addEventListener('pointermove', onPointerMove)
   window.addEventListener('pointerup', onPointerUp)
@@ -200,9 +316,11 @@ function onPointerMove(e: PointerEvent) {
     if (Math.hypot(e.clientX - pointerStart.x, e.clientY - pointerStart.y) < 6) return
     dragging = true
     dragId.value = pointerStart.id
+    dragCard.value = pointerItem
     document.body.style.userSelect = 'none'
   }
   hoveredPriority.value = resolvePriority(e.target)
+  dragPos.value = { x: e.clientX, y: e.clientY }
   e.preventDefault()
 }
 
@@ -213,6 +331,10 @@ function finishDrag() {
   document.body.style.userSelect = ''
   dragId.value = null
   hoveredPriority.value = null
+  dragPos.value = null
+  dragCard.value = null
+  dragWidth.value = null
+  pointerItem = null
   const wasDragging = dragging
   dragging = false
   pointerStart = null
@@ -302,17 +424,42 @@ function onCardClick(item: T) {
             @pointerdown="onPointerDown(card, $event)"
             @click="onCardClick(card)"
           >
-            <Icon class="q-status" :name="statusKey(card)" />
-            <BulletRender
-              class="q-content"
-              :content="asCard(card).content_preview || idOf(card)"
-              :block-id="idOf(card)"
-            />
-            <span
-              v-if="formatDate(cardDeadline(card))"
-              class="q-deadline"
-              :class="{ overdue: isOverdue(cardDeadline(card)) }"
-            >{{ formatDate(cardDeadline(card)) }}</span>
+            <div class="q-card-main">
+              <Icon class="q-status" :name="statusKey(card)" />
+              <BulletRender
+                class="q-content"
+                :content="asCard(card).content_preview || idOf(card)"
+                :block-id="idOf(card)"
+              />
+              <span
+                v-if="formatDate(cardDeadline(card))"
+                class="q-deadline"
+                :class="{ overdue: isOverdue(cardDeadline(card)) }"
+              >{{ formatDate(cardDeadline(card)) }}</span>
+            </div>
+            <!-- 子任务：按 depth 缩进（2=子任务、3=孙任务），最多 3 层；行内点击打开子任务，不参与拖拽 -->
+            <div v-if="subtasksOf(card).length" class="q-subtasks">
+              <div
+                v-for="node in subtasksOf(card)"
+                :key="idOf(node.item)"
+                class="q-subtask"
+                :class="['l' + node.depth, { done: isDone(node.item) }]"
+                @pointerdown.stop
+                @click.stop="onOpenSub(node.item)"
+              >
+                <Icon class="q-status" :name="statusKey(node.item)" />
+                <BulletRender
+                  class="q-content"
+                  :content="asCard(node.item).content_preview || idOf(node.item)"
+                  :block-id="idOf(node.item)"
+                />
+                <span
+                  v-if="formatDate(cardDeadline(node.item))"
+                  class="q-deadline"
+                  :class="{ overdue: isOverdue(cardDeadline(node.item)) }"
+                >{{ formatDate(cardDeadline(node.item)) }}</span>
+              </div>
+            </div>
           </article>
         </div>
       </section>
@@ -322,6 +469,20 @@ function onCardClick(item: T) {
       <span class="q-axis-label">不紧急</span>
       <span class="q-axis-line" />
       <span class="q-axis-label">紧急</span>
+    </div>
+
+    <!-- 拖拽 ghost：跟随指针的悬浮卡片，给 Pointer Events 拖拽一个可见载体 -->
+    <div
+      v-if="ghost"
+      class="q-drag-ghost"
+      :style="{ left: ghost.x + 'px', top: ghost.y + 'px', width: ghost.w ? ghost.w + 'px' : undefined }"
+    >
+      <Icon class="q-status" :name="ghost.status" />
+      <BulletRender
+        class="q-content"
+        :content="ghost.content"
+        :block-id="ghost.id"
+      />
     </div>
   </div>
 </template>
@@ -488,7 +649,7 @@ function onCardClick(item: T) {
 
 .q-card {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 6px;
   padding: 8px 10px;
   min-width: 160px;
@@ -506,9 +667,9 @@ function onCardClick(item: T) {
   }
 
   &.dragging {
-    opacity: 0.55;
-    transform: translateY(-2px);
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
+    opacity: 0.4;
+    background: transparent;
+    border-style: dashed;
     border-color: var(--accent);
     cursor: grabbing;
   }
@@ -516,9 +677,56 @@ function onCardClick(item: T) {
   &.done {
     opacity: 0.6;
 
-    .q-content {
+    .q-card-main .q-content {
       text-decoration: line-through;
     }
+  }
+}
+
+// 卡片主体行（原整卡的行式布局；子任务区独立于拖拽热区）
+.q-card-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+// 子任务区：左侧竖线营造树形缩进；行内点击打开子任务、不参与拖拽
+.q-subtasks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 2px 0 0 4px;
+  padding: 6px 0 2px 8px;
+  border-left: 2px solid var(--border);
+}
+
+.q-subtask {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--bg-hover);
+  }
+
+  .q-content {
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+  }
+
+  &.done .q-content {
+    text-decoration: line-through;
+  }
+
+  // 第 3 层相对第 2 层再缩进
+  &.l3 {
+    margin-left: 14px;
   }
 }
 
@@ -630,5 +838,31 @@ function onCardClick(item: T) {
 // 拖拽悬停的放置目标高亮（inset 以避免被 .q-cell 的 overflow:hidden 裁掉）
 .q-cell.drop-hover {
   box-shadow: inset 0 0 0 2px var(--q-tint);
+}
+
+// 拖拽 ghost：固定定位跟随指针、不拦截事件；轻微旋转营造「被拎起」的层次感
+.q-drag-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: var(--z-toast);
+  pointer-events: none;
+  transform: translate(12px, 12px) rotate(-1.5deg);
+  // 宽度由内联 style 取源卡片真实 offsetWidth 锁定，保证与实际任务项等宽
+  min-width: 160px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--bg-base2);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.32);
+  opacity: 0.96;
+
+  .q-content {
+    -webkit-line-clamp: 2;
+  }
 }
 </style>

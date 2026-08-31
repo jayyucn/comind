@@ -621,10 +621,58 @@ describe('characterization: collapse', () => {
       }
     })
     await flushPromises()
-    const bullet = wrapper.find('.block-bullet')
-    await bullet.trigger('click')
+    const chevron = wrapper.find('.bullet-chevron')
+    await chevron.trigger('click')
     await flushPromises()
     expect(updateFormatSpy).toHaveBeenCalledWith('b1', { collapsed: true })
+    wrapper.unmount()
+  })
+})
+
+describe('bullet dot opens BlockModal (ADR-0039)', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  it('clicking bullet-dot opens BlockModal for the block', async () => {
+    const blockStore = useBlockStore()
+    const editorStore = useEditorStore()
+    const openSpy = vi.spyOn(editorStore, 'openBlockModal')
+    blockStore.blocks = [
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 },
+    ]
+    const node: TreeNode = { id: 'b1', block: blockStore.blocks[0], children: [] }
+    const wrapper = mount(Block, {
+      props: { node, pageId: 'p1', depth: 0 },
+      global: { stubs: { BulletRender: StubBulletRender, VueDraggable: StubVueDraggable } },
+    })
+    await flushPromises()
+    await wrapper.find('.bullet-dot').trigger('click')
+    await flushPromises()
+    expect(openSpy).toHaveBeenCalledWith('b1')
+    wrapper.unmount()
+  })
+
+  it('bullet-dot is a no-op inside BlockModal (inBlockModal inject)', async () => {
+    const blockStore = useBlockStore()
+    const editorStore = useEditorStore()
+    const openSpy = vi.spyOn(editorStore, 'openBlockModal')
+    blockStore.blocks = [
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 },
+    ]
+    const node: TreeNode = { id: 'b1', block: blockStore.blocks[0], children: [] }
+    const wrapper = mount(Block, {
+      props: { node, pageId: 'p1', depth: 0 },
+      global: {
+        stubs: { BulletRender: StubBulletRender, VueDraggable: StubVueDraggable },
+        provide: { inBlockModal: true },
+      },
+    })
+    await flushPromises()
+    await wrapper.find('.bullet-dot').trigger('click')
+    await flushPromises()
+    expect(openSpy).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 })

@@ -40,6 +40,44 @@ export function buildTree(blocks: Block[], pageId: string, rootBlockId: string |
 }
 
 /**
+ * 以指定 block 为根，构建包含其完整后代子树的单 TreeNode。
+ *
+ * 与 `buildTree` 不同：后者以页面根 Block 为界、返回其直接子块作为可见一级节点；
+ * 本函数以任意 block 为可见根，递归挂载其所有后代（parentId 指向子树内节点的块）。
+ * 子树外的块（如根块的页面级兄弟）不渲染，供 BlockModal 这种「单块子树编辑器」使用（ADR-0039）。
+ *
+ * @param blocks - 当前页面的所有 Block（扁平数组）
+ * @param rootId - 子树根 Block ID
+ * @returns 以 rootId 为根的 TreeNode（含嵌套 children）；rootId 不存在时返回 null
+ */
+export function buildSubtree(blocks: Block[], rootId: string): TreeNode | null {
+  const root = blocks.find(b => b.id === rootId)
+  if (!root) return null
+
+  const map = new Map<string, TreeNode>()
+  for (const block of blocks) {
+    map.set(block.id, { id: block.id, block, children: [] })
+  }
+
+  // 按 parentId 组装：仅挂载 parent 也在 blocks 集合内的节点（即 root 的后代）
+  const childrenByParent = new Map<string, TreeNode[]>()
+  for (const block of blocks) {
+    if (block.id === rootId) continue
+    const pid = block.parentId
+    if (!pid || !map.has(pid)) continue
+    if (!childrenByParent.has(pid)) childrenByParent.set(pid, [])
+    childrenByParent.get(pid)!.push(map.get(block.id)!)
+  }
+
+  for (const [pid, kids] of childrenByParent) {
+    kids.sort((a, b) => a.block.pos - b.block.pos)
+    map.get(pid)!.children = kids
+  }
+
+  return map.get(rootId) ?? null
+}
+
+/**
  * 将树形结构同步回 store
  *
  * 递归遍历树，对每个节点：

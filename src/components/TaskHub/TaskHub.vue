@@ -9,13 +9,13 @@ import { parseLayoutConfig, type BoardConfig, type CalendarConfig, type Quadrant
 import type { ViewTypeOption } from '../../core/view/management'
 import { useBlockCardStore } from '../../stores/blockCard'
 import { useBlockStore } from '../../stores/blocks'
+import { useEditorStore } from '../../stores/editor'
 import { usePageStore } from '../../stores/pages'
 import { usePropertyStore } from '../../stores/property'
 import { useScreenViewStore } from '../../stores/screenView'
 import type { BlockCard } from '../../wasm/types'
 import QueryPageFrame from '../common/QueryPageFrame.vue'
 import PageDrawer from '../Page/PageDrawer.vue'
-import BlockDrawer from '../Page/BlockDrawer.vue'
 import BlockContentCell from '../views/BlockContentCell.vue'
 import TableView from '../views/TableView.vue'
 import BoardView from '../views/BoardView.vue'
@@ -31,6 +31,7 @@ const propertyStore = usePropertyStore()
 // 四象限新增任务：block 经编辑器 store 创建（走既有 _scheduleSave 通路），页面自动建/复用
 const blockStore = useBlockStore()
 const pageStore = usePageStore()
+const editorStore = useEditorStore()
 
 // 通用查询引擎注册表（组合根单例，内置字段 + 自定义 property 已注册）
 const registry = getBlockRegistry()
@@ -148,8 +149,8 @@ async function onCellChange(blockId: string, key: string, value: unknown) {
 // 页面详情右侧弹层（替代整页路由跳转）；pendingFocusBlock 记录待定位的 block（抽屉挂载后转发）
 const drawerPageId = ref<string | null>(null)
 const pendingFocusBlock = ref<string | null>(null)
-// 单 block 编辑抽屉（四象限卡片点击；聚焦编辑单个任务，不整页跳转）
-const drawerBlockId = ref<string | null>(null)
+// 单 block 子树编辑弹窗由全局 BlockModal（App.vue 内）响应 editorStore.blockModalBlockId，
+// 此处不再维护局部实例；四象限卡片 / 看板 / 日历卡片通过 editorStore.openBlockModal 打开。
 
 // Navigate to source block：打开抽屉 + 记录定位目标
 async function handleNavigateToBlock(blockId: string) {
@@ -159,9 +160,9 @@ async function handleNavigateToBlock(blockId: string) {
   drawerPageId.value = card.page_id
 }
 
-// 四象限卡片点击：打开单 block 编辑抽屉（聚焦编辑该任务，不整页跳转）
+// 四象限卡片点击：打开单 block 子树编辑弹窗（聚焦编辑该任务，不整页跳转）
 function handleOpenBlock(blockId: string) {
-  drawerBlockId.value = blockId
+  editorStore.openBlockModal(blockId)
 }
 
 // 抽屉内 Page 组件挂载完成后转发定位事件（此时监听器已注册，事件不会丢失）
@@ -226,7 +227,7 @@ function handleCellClick(blockId: string, fieldKey: string) {
         :config="context.boardConfig"
         :id-key="context.idKey"
         @cell-change="onCellChange"
-        @navigate="handleNavigateToBlock"
+        @navigate="handleOpenBlock"
       />
     </template>
     <template #calendar="{ context }">
@@ -235,7 +236,7 @@ function handleCellClick(blockId: string, fieldKey: string) {
         :fields="context.fields"
         :config="context.calendarConfig"
         :id-key="context.idKey"
-        @navigate="handleNavigateToBlock"
+        @navigate="handleOpenBlock"
       />
     </template>
     <template #quadrant="{ context }">
@@ -243,6 +244,9 @@ function handleCellClick(blockId: string, fieldKey: string) {
         :items="context.items"
         :id-key="context.idKey"
         :config="context.quadrantConfig"
+        :sort="context.sort"
+        :registry="context.registry"
+        :entity-type="context.entityType"
         @cell-change="onCellChange"
         @open-block="handleOpenBlock"
         @add-item="handleQuadrantAdd"
@@ -253,6 +257,5 @@ function handleCellClick(blockId: string, fieldKey: string) {
   <!-- 页面详情右侧弹层（替代整页路由跳转；打开后定位到来源 block） -->
   <PageDrawer :page-id="drawerPageId" @close="drawerPageId = null" @opened="onDrawerOpened" />
 
-  <!-- 单 block 编辑抽屉（四象限卡片点击；聚焦编辑单个任务） -->
-  <BlockDrawer :block-id="drawerBlockId" @close="drawerBlockId = null" />
+  <!-- 单 block 子树编辑弹窗由全局 BlockModal（App.vue）响应 editorStore.blockModalBlockId，此处不再渲染 -->
 </template>

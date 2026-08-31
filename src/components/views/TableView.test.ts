@@ -19,6 +19,7 @@ function makeCard(overrides: Partial<BlockCard> = {}): BlockCard {
     properties: {},
     date_refs: [],
     updated_at: 1723000000000,
+    created_at: 1723000000000,
     ...overrides,
   }
   return JSON.parse(JSON.stringify(base))

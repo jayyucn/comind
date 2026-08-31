@@ -119,6 +119,8 @@ function metaChips(item: T): { text: string; color?: string; overdue?: boolean }
 
 // ── 拖拽 ──
 const draggedCardId = ref<string | null>(null)
+// 当前拖拽悬停的列（高亮放置目标，弥补原生 HTML5 DnD 无列级反馈的缺失）
+const dragOverCol = ref<string | null>(null)
 
 function onDragStart(blockId: string, event: DragEvent) {
   draggedCardId.value = blockId
@@ -128,9 +130,19 @@ function onDragStart(blockId: string, event: DragEvent) {
   }
 }
 
-function onDragOver(event: DragEvent) {
+function onDragOver(colKey: string, event: DragEvent) {
   event.preventDefault()
   if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  dragOverCol.value = colKey
+}
+
+function onColumnLeave(colKey: string, event: DragEvent) {
+  // 仅当指针真正移出本列（而非进入子卡片）才清除，避免子元素间移动造成高亮闪烁
+  const related = event.relatedTarget as Node | null
+  const current = event.currentTarget as HTMLElement | null
+  if (current && (!related || !current.contains(related)) && dragOverCol.value === colKey) {
+    dragOverCol.value = null
+  }
 }
 
 function onDrop(colKey: string, event: DragEvent) {
@@ -138,10 +150,12 @@ function onDrop(colKey: string, event: DragEvent) {
   const blockId = event.dataTransfer?.getData('text/plain')
   if (blockId && colKey !== '__all__') emit('cellChange', blockId, props.groupBy, colKey)
   draggedCardId.value = null
+  dragOverCol.value = null
 }
 
 function onDragEnd() {
   draggedCardId.value = null
+  dragOverCol.value = null
 }
 </script>
 
@@ -151,7 +165,9 @@ function onDragEnd() {
       v-for="col in columns"
       :key="col.key"
       class="board-column"
-      @dragover="onDragOver"
+      :class="{ 'drag-over': dragOverCol === col.key }"
+      @dragover="onDragOver(col.key, $event)"
+      @dragleave="onColumnLeave(col.key, $event)"
       @drop="onDrop(col.key, $event)"
     >
       <div class="column-header">
@@ -210,6 +226,13 @@ function onDragEnd() {
 
   &:last-child {
     border-right: none;
+  }
+
+  // 拖拽悬停的放置目标高亮（列级反馈，原生 DnD 默认无）
+  &.drag-over {
+    background: var(--accent-bg, rgba(99, 102, 241, 0.06));
+    border-radius: 8px;
+    box-shadow: inset 0 0 0 2px var(--accent);
   }
 }
 

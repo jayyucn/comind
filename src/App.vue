@@ -9,6 +9,7 @@ import { useSyncPeerToast } from './app/useSyncPeerToast'
 import { useTrashedPageRestore } from './app/useTrashedPageRestore'
 import { useWindowControls } from './app/useWindowControls'
 import BlockSelector from './components/BlockSelector.vue'
+import BlockModal from './components/Block/BlockModal.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import DateTimePickerPanel from './components/DateTimePickerPanel.vue'
 import { prefetchGraphSnapshot } from './components/GraphView/graphSnapshotCache'
@@ -206,6 +207,13 @@ function handleMainClick(e: MouseEvent) {
       :exclude-block-id="editorStore.blockSelector?.blockId ?? undefined"
       @select="handleEmbedSelect"
       @close="editorStore.closeBlockSelector()"
+    />
+
+    <!-- 单块子树编辑弹窗：全局常驻，响应 editorStore.blockModalBlockId，
+         供主编辑器 bullet / 任务中心卡片等多入口统一打开（ADR-0039） -->
+    <BlockModal
+      :block-id="editorStore.blockModalBlockId"
+      @close="editorStore.closeBlockModal()"
     />
   </div>
 </template>
