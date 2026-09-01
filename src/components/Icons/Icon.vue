@@ -64,6 +64,18 @@ const PRIORITY_ICONS: Record<string, any> = {
   'priority-urgent': AlertTriangle,
 }
 
+/**
+ * 优先级图标默认语义色：与 block 底色 / 左侧色条共用同一组 --priority-*-fg，
+ * 使斜杠命令面板与快捷属性菜单里的四档一眼可辨。
+ * 调用处若显式传 `color` 则覆盖此默认值。
+ */
+const PRIORITY_DEFAULT_COLORS: Record<string, string> = {
+  'priority-low': 'var(--priority-low-fg)',
+  'priority-medium': 'var(--priority-medium-fg)',
+  'priority-high': 'var(--priority-high-fg)',
+  'priority-urgent': 'var(--priority-urgent-fg)',
+}
+
 const GENERAL_ICONS: Record<string, any> = {
   'icon-calendar': Calendar,
   'icon-tag': Tag,
@@ -113,11 +125,11 @@ const isFilled = computed(() => props.name === 'icon-star-filled')
 // shape 仅状态图标消费，不透传给 lucide 组件以免落到多余 DOM 属性上
 const isStatusIcon = computed(() => props.name in STATUS_ICONS)
 
-/** status 图标未显式传 color 时，按 name 注入语义色；其余图标回退到文本主色 */
+/** 未显式传 color 时：status / priority 按 name 注入语义色，其余图标回退到文本主色 */
 const resolvedColor = computed(() => {
   if (props.color) return props.color
   if (isStatusIcon.value) return STATUS_DEFAULT_COLORS[props.name] ?? 'var(--text-primary)'
-  return 'var(--text-primary)'
+  return PRIORITY_DEFAULT_COLORS[props.name] ?? 'var(--text-primary)'
 })
 </script>
 

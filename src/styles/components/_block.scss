@@ -82,21 +82,22 @@
 }
 
 // Chevron 箭头（父节点）：默认隐藏，仅 hover / 激活时显现（ADR-0039：折叠手势改由 chevron 承担）
+// 改用 lucide 图标（展开 ChevronDown / 折叠 ChevronRight），不再用 CSS 边框绘制。
 .bullet-chevron {
   position: absolute;
-  left: -12px;
-  top: 8px;
-  width: var(--block-chevron-size);
-  height: var(--block-chevron-size);
-  border-right: 1.5px solid var(--block-bullet-color);
-  border-bottom: 1.5px solid var(--block-bullet-color);
-  transform: rotate(45deg) translateY(1px);
+  left: -16px;
+  top: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--block-bullet-color);
   opacity: 0;
+  cursor: pointer;
   transition: transform 180ms ease-out, opacity 150ms ease-out;
   flex-shrink: 0;
 
-  &.is-collapsed {
-    transform: rotate(-45deg) translateY(1px);
+  svg {
+    display: block;
   }
 }
 
@@ -115,12 +116,7 @@
 // .block-row 是 .block-children 的兄弟，并非子块的祖先，故 hover 子块不触发。
 .block-row:hover .bullet-chevron {
   opacity: 0.75;
-  transform: rotate(45deg) scale(1.2) translateY(1px);
-  box-shadow: 0 0 0 3px var(--accent-06);
-
-  &.is-collapsed {
-    transform: rotate(-45deg) scale(1.2) translateY(1px);
-  }
+  transform: scale(1.2);
 }
 
 // Active Block
@@ -187,8 +183,10 @@
   }
 }
 
+// 用 --block-active-bg 而非 --selection-bg：后者是 ::selection 的文本高亮（暗色 0.55），
+// 铺在这里会把 .block-content 的优先级底色与左侧色条一起盖掉
 .block.active > .block-row .block-text {
-  background: var(--selection-bg);
+  background: var(--block-active-bg);
   border-radius: $radius-sm;
 }
 
@@ -437,31 +435,35 @@
 }
 
 // 优先级背景色（只覆盖文本区域，不含 bullet 圆点与 status 图标）
-.block.priority-low .block-content {
-  background: linear-gradient(90deg, var(--priority-low-bg) 0%, rgba(148, 163, 184, 0.02) 100%);
+// Low 不上底色：四档全上等于全没上。强度由「底色混合比 + 左侧色条」两级表达 ——
+// 底色是扫描时才起作用的弱信号，色条是折叠 / 窄行时仍存在的强信号。
+// 不用渐变：渐变观感随文本长度漂移，同一优先级短行与长行显示不一致。
+.block.priority-medium .block-content,
+.block.priority-high .block-content,
+.block.priority-urgent .block-content {
   border-radius: $radius-md;
 }
 
 .block.priority-medium .block-content {
-  background: linear-gradient(90deg, var(--priority-medium-bg) 0%, rgba(59, 130, 246, 0.02) 100%);
-  border-radius: $radius-md;
+  background: var(--priority-medium-bg);
 }
 
 .block.priority-high .block-content {
-  background: linear-gradient(90deg, var(--priority-high-bg) 0%, rgba(249, 115, 22, 0.02) 100%);
-  border-radius: $radius-md;
+  background: var(--priority-high-bg);
+  box-shadow: inset 2px 0 0 var(--priority-high-fg);
 }
 
 .block.priority-urgent .block-content {
-  background: linear-gradient(90deg, var(--priority-urgent-bg) 0%, rgba(239, 68, 68, 0.02) 100%);
-  border-radius: $radius-md;
+  background: var(--priority-urgent-bg);
+  box-shadow: inset 3px 0 0 var(--priority-urgent-fg);
 }
 
-.block.active.priority-low .block-content,
-.block.active.priority-medium .block-content,
-.block.active.priority-high .block-content,
-.block.active.priority-urgent .block-content {
-  filter: brightness(1.02);
+// 让位规则：Done / Canceled 同为终态，都不该仍带紧急底色
+// 必须写在 priority 规则之后 —— 同特异性（0,3,0），后者胜
+.block.status-done .block-content,
+.block.status-canceled .block-content {
+  background: transparent;
+  box-shadow: none;
 }
 
 // 已完成（Done）block 文本加删除线并弱化

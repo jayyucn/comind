@@ -14,35 +14,36 @@
  *   拖拽结束 → onDragEnd → syncTreeToStore → store → structureVersion++
  *   → BlockList watch → syncTreeToStore → tree 重建
  */
-import { computed, ref, watch, nextTick, onMounted, onBeforeUnmount, inject, toRef } from 'vue'
-import { useEditorStore } from '../../stores/editor'
-import { useBlockStore } from '../../stores/blocks'
-import { usePropertyStore } from '../../stores/property'
+import { ChevronDown, ChevronRight } from 'lucide-vue-next'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch } from 'vue'
 import { useBlockRegistry } from '../../composables/useBlockRegistry'
 import { useBlockRelationshipCleanup } from '../../composables/useBlockRelationshipCleanup'
-import { useBlockPropertySync } from './composables/useBlockPropertySync'
+import { useBlockStore } from '../../stores/blocks'
+import { useEditorStore } from '../../stores/editor'
+import { usePropertyStore } from '../../stores/property'
+import BlockChildren from './components/BlockChildren.vue'
 import { useBlockCollapse } from './composables/useBlockCollapse'
 import { useBlockDragDrop } from './composables/useBlockDragDrop'
 import { useBlockEditorLifecycle } from './composables/useBlockEditorLifecycle'
-import BlockChildren from './components/BlockChildren.vue'
+import { useBlockPropertySync } from './composables/useBlockPropertySync'
 import './handlers/bullet'
 import './handlers/code'
-import './handlers/image'
 import './handlers/embed'
+import './handlers/image'
 import PropertyDisplay from './PropertyDisplay.vue'
 import PropertyInline from './PropertyInline.vue'
 
-import { usePageStore } from '../../stores/pages'
-import { useNavigateToPage } from '../../composables/useNavigateToPage'
+import type { CrossBlockSelection } from '../../composables/useCrossBlockSelection'
 import { useIdeasFreeze } from '../../composables/useIdeasFreeze'
+import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import { useRightSidebar } from '../../composables/useRightSidebar'
+import { usePageStore } from '../../stores/pages'
+import type { TreeNode } from '../../types/block'
+import type { BlockSetupContext, BlockTypeEditorExposed, BlockTypeHooks } from '../../types/block-type'
 import {
   decodeRelationshipContent,
   setRelationshipSnapshot,
 } from '../../utils/relationship-content'
-import type { TreeNode } from '../../types/block'
-import type { BlockTypeEditorExposed, BlockSetupContext, BlockTypeHooks } from '../../types/block-type'
-import type { CrossBlockSelection } from '../../composables/useCrossBlockSelection'
 
 defineOptions({
   name: 'Block'
@@ -434,10 +435,12 @@ watch(isActive, (active) => {
           <span
             v-if="node.children.length > 0"
             class="bullet-chevron"
-            :class="{ 'is-collapsed': collapsed }"
             title="折叠 / 展开"
             @click.stop="toggleCollapse"
-          ></span>
+          >
+            <ChevronDown v-if="!collapsed" :size="18" :stroke-width="2" />
+            <ChevronRight v-else :size="18" :stroke-width="2" />
+          </span>
           <span class="bullet-dot" title="打开块详情" @click.stop="onBulletClick"></span>
         </span>
 

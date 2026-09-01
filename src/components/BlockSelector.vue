@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
+import BasePopover from './common/BasePopover.vue'
 import { usePageStore } from '../stores/pages'
 import { useBlockStore } from '../stores/blocks'
 import { pushModal, popModal } from '../composables/useModalKeyboard'
@@ -19,8 +20,16 @@ const pageStore = usePageStore()
 const blockStore = useBlockStore()
 
 const searchQuery = ref('')
+const searchInput = ref<HTMLInputElement | null>(null)
 const allBlocks = ref<Block[]>([])
 const selectedIndex = ref(0)
+
+/** 锚点 = 发起选择的 block 行（EmbedRender placeholder 与斜杠命令都落在所属 block 内），
+ *  定位/翻转/避让交给 BasePopover；拿不到时由它退化为无锚点。 */
+const anchorEl = () =>
+  props.excludeBlockId
+    ? document.querySelector<HTMLElement>(`[data-block-id="${props.excludeBlockId}"]`)
+    : null
 
 const filteredBlocks = computed(() => {
   const q = searchQuery.value.toLowerCase()
@@ -85,12 +94,14 @@ function getBlockTypeLabel(type: string): string {
   return labels[type] || type
 }
 
-watch(() => props.visible, (v) => {
+watch(() => props.visible, async (v) => {
   if (v) {
     pushModal('block-selector')
     searchQuery.value = ''
     selectedIndex.value = 0
     loadAllBlocks()
+    await nextTick()
+    searchInput.value?.focus()
   } else {
     popModal('block-selector')
   }
@@ -118,70 +129,51 @@ function handleKeyDown(e: KeyboardEvent) {
         selectBlock(menuItems.value[selectedIndex.value].blockId)
       }
       break
-    case 'Escape':
-      e.preventDefault()
-      emit('close')
-      break
   }
 }
 </script>
 
 <template>
-  <Teleport to="body">
-    <div v-if="visible" class="block-selector-overlay" @click.self="emit('close')" @keydown="handleKeyDown">
-      <div class="block-selector">
-        <div class="bs-header">
-          <input
-            v-model="searchQuery"
-            class="bs-search"
-            placeholder="Search blocks..."
-            autofocus
-            @keydown="handleKeyDown"
-          />
-          <button class="bs-close-btn" @click="emit('close')">✕</button>
+  <BasePopover :visible="visible" :anchor-el="anchorEl" @close="emit('close')">
+    <div class="block-selector" @keydown="handleKeyDown">
+      <div class="bs-header">
+        <input
+          ref="searchInput"
+          v-model="searchQuery"
+          class="bs-search"
+          placeholder="Search blocks..."
+          @keydown="handleKeyDown"
+        />
+        <button class="bs-close-btn" @click="emit('close')">✕</button>
+      </div>
+      <div class="bs-body">
+        <div v-if="menuItems.length === 0" class="bs-empty">
+          <span v-if="!searchQuery">No blocks found</span>
+          <span v-else>No blocks match "{{ searchQuery }}"</span>
         </div>
-        <div class="bs-body">
-          <div v-if="menuItems.length === 0" class="bs-empty">
-            <span v-if="!searchQuery">No blocks found</span>
-            <span v-else>No blocks match "{{ searchQuery }}"</span>
-          </div>
-          <div
-            v-for="(item, index) in menuItems"
-            :key="item.blockId"
-            class="bs-block-item"
-            :class="{ active: selectedIndex === index }"
-            @click="selectBlock(item.blockId)"
-            @mouseenter="selectedIndex = index"
-          >
-            <span class="bs-block-type">{{ getBlockTypeLabel(item.type) }}</span>
-            <div class="bs-block-info">
-              <span class="bs-block-preview">{{ getBlockPreview(item.content) }}</span>
-              <span class="bs-block-page">{{ item.pageIcon }} {{ item.pageTitle }}</span>
-            </div>
+        <div
+          v-for="(item, index) in menuItems"
+          :key="item.blockId"
+          class="bs-block-item"
+          :class="{ active: selectedIndex === index }"
+          @click="selectBlock(item.blockId)"
+          @mouseenter="selectedIndex = index"
+        >
+          <span class="bs-block-type">{{ getBlockTypeLabel(item.type) }}</span>
+          <div class="bs-block-info">
+            <span class="bs-block-preview">{{ getBlockPreview(item.content) }}</span>
+            <span class="bs-block-page">{{ item.pageIcon }} {{ item.pageTitle }}</span>
           </div>
         </div>
       </div>
     </div>
-  </Teleport>
+  </BasePopover>
 </template>
 
 <style scoped>
-.block-selector-overlay {
-  position: fixed;
-  inset: 0;
-  background: var(--overlay);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: var(--z-dialog);
-}
-
 .block-selector {
   width: 520px;
   max-height: 480px;
-  background: var(--bg-base);
-  border-radius: 8px;
-  box-shadow: var(--shadow-elevation-2);
   display: flex;
   flex-direction: column;
   overflow: hidden;
