@@ -13,7 +13,8 @@
 | ------- | ------- | ------- | ---- |
 | **Web** | SQLite（`@wasm/comind_wasm` / sql.js WASM） | IndexedDB（整个 `.sqlite` 文件） | 主存储；`getWorkspacePath()` 在非 Tauri 环境返回 `'Web: IndexedDB'` |
 | **Desktop（Tauri）** | SQLite（`comind-core` 原生） | 磁盘 SQLite 文件 | 主存储；经 Tauri 命令访问，不走 IndexedDB |
-| **资产（两端）** | IndexedDB（Dexie） | IndexedDB（`comind-assets` 库 `assets` 表） | 仅二进制 blob，见 `src/utils/asset.ts` |
+| **资产（Web）** | IndexedDB（Dexie） | IndexedDB（`comind-assets` 库 `assets` 表） | 仅二进制 blob，见 `src/utils/asset.ts` |
+| **资产（Desktop）** | — | 磁盘 `workspace/assets/` 目录（文件 + `assets.json` 清单） | 与 `sqlite/`、`markdown/` 并列；经 `save_asset_file` / `read_asset_file` / `delete_asset_file` Tauri 命令访问 |
 
 > 逻辑表结构（Block / Page / Link / Property / …）统一见本文档 §4 的 SQLite schema，由 `comind-core` 同时服务 Web 与 Desktop，保证两端 schema 一致。Markdown 文件（§3）目前仅作为 Desktop 端的导出/导入边车通道（`export_to_markdown` / `import_from_markdown` Tauri 命令），并非主存储。
 
@@ -28,7 +29,7 @@
 
 > ⚠️ 旧实现 `ComindDB`（Dexie，`blocks/pages/links/...` 表）已无活跃引用，属历史代码。新的结构化数据读写请勿再依赖 Dexie。
 
-**Dexie 仅残留用于资产存储**：`src/utils/asset.ts` 仍用 Dexie（`comind-assets` 库）的 `assets` 表存图片等二进制 blob，与结构化数据解耦。
+**Dexie 仅残留用于资产存储（Web 端）**：`src/utils/asset.ts` 的 Web 实现仍用 Dexie（`comind-assets` 库）的 `assets` 表存图片等二进制 blob，与结构化数据解耦。Desktop（Tauri）端资产不走 IndexedDB，落盘到 `workspace/assets/` 目录（与 `sqlite/`、`markdown/` 并列），前端 `assetStorage` 按 `isTauriEnvironment()` 自动分流。
 
 以下 Record 类型即对应 §4 SQLite 表的逻辑结构（运行时对象，由 comind-core 持久化为数据库行）：
 
@@ -102,13 +103,13 @@ export interface PropertyRecord {
 | templates 表 | — | 已实现（见 §4） |
 | Page.deleted 字段 | — | 已实现（见 §4） |
 | Link.relationshipType 字段 | 已存在 | 继续保留（见 §4） |
-| assets 存储 | Dexie `assets` 表 | Dexie `assets` 表（**唯一仍用 Dexie 之处**） |
+| assets 存储 | Dexie `assets` 表 | Web：Dexie `assets` 表（唯一仍用 Dexie 之处）；Desktop：`workspace/assets/` 目录 |
 
 **存储演进路径（历史 + 当前）：**
 
 1. （历史）早期实现 `IndexedDBAdapter`（基于 Dexie），结构化数据直接存 IndexedDB。
 2. （当前✅）`comind-core` 统一以 SQLite 为存储引擎：Web 用 sql.js（WASM）持久化到 IndexedDB，Desktop 用 Tauri 原生 SQLite；前端经 `src/wasm/client.ts` 的 `CoreClient` 接口访问。
-3. （当前✅）Dexie 仅保留 `assets` 表（`src/utils/asset.ts`）存二进制 blob。
+3. （当前✅）Web 端 Dexie 仅保留 `assets` 表（`src/utils/asset.ts`）存二进制 blob；Desktop 端资产改为落盘 `workspace/assets/` 目录（与 `sqlite/`、`markdown/` 并列），`assetStorage` 按 Tauri 环境自动分流。
 4. （规划）Markdown 文件作为可移植边车通道：Desktop 端 `export_to_markdown` / `import_from_markdown`，与 §4 SQLite 主存储双向同步。
 
 ***

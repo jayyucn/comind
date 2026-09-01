@@ -195,6 +195,11 @@ function handleKeyDown(e: KeyboardEvent) {
   font-size: var(--text-sm);
   outline: none;
   background: var(--bg-base);
+  color: var(--text-primary);
+}
+
+.bs-search::placeholder {
+  color: var(--text-tertiary);
 }
 
 .bs-search:focus {

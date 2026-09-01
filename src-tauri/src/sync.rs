@@ -80,7 +80,7 @@ pub fn start_sync_task(app_handle: AppHandle) {
             {
                 if is_first {
                     log::info!("First sync detected, performing full export");
-                    match markdown::export_all(&mut *adapter, &sync_dir) {
+                    match markdown::export_all(&mut *adapter, &sync_dir, None) {
                         Ok(result) => {
                             log::info!(
                                 "Periodic sync (full) completed: {} pages, {} blocks",
@@ -93,12 +93,12 @@ pub fn start_sync_task(app_handle: AppHandle) {
                         }
                     }
                 } else {
-                    let result = markdown::export_changed(&mut *adapter, &sync_dir);
+                    let result = markdown::export_changed(&mut *adapter, &sync_dir, None);
                     match result {
                         Ok(result) => {
                             if result.last_sync_time > Utc::now().timestamp_millis() {
                                 log::warn!("last_sync_time ({}) is in the future, performing full export", result.last_sync_time);
-                                match markdown::export_all(&mut *adapter, &sync_dir)
+                                match markdown::export_all(&mut *adapter, &sync_dir, None)
                                 {
                                     Ok(full_result) => {
                                         log::info!("Periodic sync (full) completed: {} pages, {} blocks", full_result.pages_exported, full_result.blocks_exported);
@@ -153,7 +153,7 @@ pub fn sync_on_exit(app_handle: AppHandle) {
         let _ = timeout(Duration::from_secs(3), async {
             let adapter_arc = app_handle.state::<DatabaseConnection>().adapter_arc();
             let mut adapter = adapter_arc.lock().await;
-            let _ = markdown::export_all(&mut *adapter, &sync_dir);
+            let _ = markdown::export_all(&mut *adapter, &sync_dir, None);
         })
         .await;
 
@@ -186,7 +186,7 @@ pub fn sync_on_minimize(app_handle: AppHandle) {
 
         let adapter_arc = app_handle.state::<DatabaseConnection>().adapter_arc();
             let mut adapter = adapter_arc.lock().await;
-        let _ = markdown::export_changed(&mut *adapter, &sync_dir);
+        let _ = markdown::export_changed(&mut *adapter, &sync_dir, None);
 
         SYNC_IN_PROGRESS.store(false, Ordering::SeqCst);
     });
@@ -224,7 +224,7 @@ pub fn sync_on_focus(app_handle: AppHandle) {
 
         let adapter_arc = app_handle.state::<DatabaseConnection>().adapter_arc();
             let mut adapter = adapter_arc.lock().await;
-        let _ = markdown::export_all(&mut *adapter, &sync_dir);
+        let _ = markdown::export_all(&mut *adapter, &sync_dir, None);
         LAST_FULL_SYNC_TIME.store(Utc::now().timestamp_millis(), Ordering::SeqCst);
 
         SYNC_IN_PROGRESS.store(false, Ordering::SeqCst);
