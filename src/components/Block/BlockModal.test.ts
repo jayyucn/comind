@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 
 // 在 BlockModal import 之前替换依赖：
 // - Block 真实编辑器依赖 stores/router/CodeMirror，本测试只验"点击弹窗内 block 激活编辑器"、
@@ -8,6 +8,8 @@ import { mount } from '@vue/test-utils'
 const mocks = vi.hoisted(() => ({
   activateSpy: vi.fn(),
   deactivateSpy: vi.fn(),
+  // 关闭弹窗时应刷脏块卡投影，使任务视图（四象限/看板/表格）立即反映编辑结果
+  refreshIfDirtySpy: vi.fn().mockResolvedValue(undefined),
   // 模拟 editorStore.activeBlockId 当前值（由测试在挂载前/关闭前改写）
   activeId: null as string | null,
   // 捕获 router.afterEach 注册的回调，供测试模拟「路由跳转」
@@ -50,6 +52,13 @@ vi.mock('../../stores/pages', () => ({
   }),
 }))
 
+// 弹窗关闭应刷脏块卡投影（blockCardStore.refreshIfDirty）；用最小 stub 避免真实 wasm 客户端调用
+vi.mock('../../stores/blockCard', () => ({
+  useBlockCardStore: () => ({
+    refreshIfDirty: mocks.refreshIfDirtySpy,
+  }),
+}))
+
 // Block stub 渲染带 data-block-id 的元素，供 onBodyClick 的 closest 命中
 vi.mock('./index.vue', () => ({
   default: {
@@ -64,6 +73,7 @@ import BlockModal from './BlockModal.vue'
 beforeEach(() => {
   mocks.activateSpy.mockClear()
   mocks.deactivateSpy.mockClear()
+  mocks.refreshIfDirtySpy.mockClear()
   mocks.activeId = null
 })
 
@@ -138,5 +148,18 @@ describe('BlockModal edit activation', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.emitted('close')).toBeTruthy()
+  })
+
+  // 回归（本 bug）：弹窗内编辑内容/属性后关闭，必须刷脏块卡投影，
+  // 否则四象限/看板/表格等视图仍显示陈旧的任务内容。
+  it('refreshes the block card projection on close so task views reflect edits', async () => {
+    const wrapper = mount(BlockModal, { props: { blockId: 'b1' } })
+    const closeBtn = document.body.querySelector('[data-testid="block-modal-close"]') as HTMLElement
+    expect(closeBtn).toBeTruthy()
+
+    closeBtn.click()
+    await flushPromises()
+
+    expect(mocks.refreshIfDirtySpy).toHaveBeenCalled()
   })
 })

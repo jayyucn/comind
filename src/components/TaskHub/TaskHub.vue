@@ -143,6 +143,11 @@ async function onCellChange(blockId: string, key: string, value: unknown) {
     return
   }
   await propertyStore.setProperty(blockId, key, value as PropertyValue)
+  // 设置优先级（与 /schedule 一致）：block 尚无 status 时自动补 Todo
+  if (key === 'priority') {
+    // fire-and-forget：补 Todo 失败不影响属性写入与卡片刷新，避免未处理异常阻断编辑
+    propertyStore.ensureTodo(blockId).catch(() => {})
+  }
   await refresh()
 }
 

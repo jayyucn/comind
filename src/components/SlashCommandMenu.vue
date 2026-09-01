@@ -249,13 +249,18 @@ async function executeCommand(command: Command) {
       return
     }
 
-    // 立即执行设置属性（如 /todo, /done, /low 等）
+    // 立即执行设置属性（如 /todo, /done、/high、/medium、/low 等）
     if (command.immediate && command.propertyValue) {
       await propertyStore.setProperty(
         blockId,
         command.propertyKey,
         command.propertyValue as string
       )
+      // 设置优先级（与 /schedule 一致）：block 尚无 status 时自动补 Todo
+      if (command.propertyKey === 'priority') {
+        // fire-and-forget：补 Todo 失败不影响属性写入，避免未处理异常阻断编辑
+        propertyStore.ensureTodo(blockId).catch(() => {})
+      }
       return
     }
 
@@ -430,7 +435,7 @@ function bindEditorUpdate() {
 function unbindEditorUpdate() {
   const editor = editorStore.activeEditor
   if (editor && editorUpdateListener) {
-    editor.off('update', editorUpdateListener)
+    editor.off?.('update', editorUpdateListener)
     editorUpdateListener = null
   }
 }
