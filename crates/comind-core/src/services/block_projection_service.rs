@@ -65,6 +65,7 @@ pub fn get_blocks_projection(
                 properties: props,
                 date_refs: dates,
                 updated_at: b.updated_at,
+                created_at: b.created_at,
             }
         })
         .collect();

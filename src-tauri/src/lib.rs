@@ -1,5 +1,6 @@
 use tauri::{Manager, WindowEvent};
 
+mod assets;
 mod commands;
 mod config;
 mod markdown;
@@ -174,6 +175,9 @@ pub fn run() {
             commands::set_workspace_path,
             commands::reset_workspace_path,
             commands::open_workspace_path,
+            commands::save_asset_file,
+            commands::read_asset_file,
+            commands::delete_asset_file,
             commands::export_to_markdown,
             commands::import_from_markdown,
             commands::get_sync_config,

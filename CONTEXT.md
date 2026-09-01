@@ -22,6 +22,18 @@ A unit of content within a Page. Has a parent-child relationship (tree structure
 
 A Block whose `type` is `image`. Stores its image reference in `content` as `![alt](asset://id)` or `![alt](url)`. Has no edit state; insertion is via the `/image` slash command, and operations such as zoom, copy, replace, delete, and alignment are exposed through a hover toolbar. When selected, it shows a bounding border with four corner handles for inline resizing (display size is persisted in `block.format.width/height`). Display alignment is controlled by `block.format.align`. See ADR-0037.
 
+### BlockModal (单块子树编辑弹窗)
+A centered modal that opens a single Block as the **root of a subtree editor**: it renders the Block and its full descendant tree, with working block-level keyboard (Enter/Tab/arrows) and auto-focused root on open. Triggered from list/board/calendar cards and from a Block's bullet dot. Distinct from **PageDrawer** — see ADR-0039.
+
+### Subtree Editor (子树编辑器)
+The editing model behind BlockModal: a Block plus its complete subtree is editable in place, but no new *root-level sibling* may be created (Enter at the root creates a child, staying inside the visible subtree). Contrast with a full-page editor. See ADR-0039.
+
+### Bullet-to-Open
+Interaction convention: clicking a Block's `bullet-dot` opens BlockModal for that Block (primary editor entry from any view). Collapse/expand is delegated to a separate `bullet-chevron` shown on hover when the Block has children. Inside BlockModal the dot is a no-op. See ADR-0039.
+
+### inBlockModal / blockModalRootId (注入键)
+Two `provide`/`inject` keys used to scope Block behavior inside BlockModal: `inBlockModal` (true inside the modal → bullet dot is a no-op) and `blockModalRootId` (the modal's root Block id → its Enter forces a child, its Outdent is a no-op, keeping edits within the subtree). Absent in the main editor, so main-editor behavior is unchanged. See ADR-0039.
+
 ### Ensure (确保存在)
 Get-or-create pattern. Returns the existing entity if present; creates and returns it if absent. Must be idempotent — calling it multiple times has the same effect as calling it once.
 

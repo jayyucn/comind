@@ -5,6 +5,7 @@ export const TASK_STATUS_ICONS = {
   Doing: 'status-doing',
   Done: 'status-done',
   Canceled: 'status-canceled',
+  Archived: 'status-archived',
 }
 
 export const TASK_PRIORITY_ICONS = {

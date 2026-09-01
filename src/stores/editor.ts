@@ -206,6 +206,21 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
+  /**
+   * 单块子树编辑弹窗（BlockModal）的全局可控入口。
+   * 供主编辑器 bullet 点、列表/看板/日历卡片等多入口统一打开，
+   * 取代 TaskHub 的局部 drawerBlockId ref（ADR-0039）。
+   */
+  const blockModalBlockId = ref<string | null>(null)
+
+  function openBlockModal(blockId: string) {
+    blockModalBlockId.value = blockId
+  }
+
+  function closeBlockModal() {
+    blockModalBlockId.value = null
+  }
+
   /** 快捷属性编辑器状态 */
   const quickPropertyEditor = ref<{
     visible: boolean
@@ -265,5 +280,8 @@ export const useEditorStore = defineStore('editor', () => {
     blockSelector,
     openBlockSelector,
     closeBlockSelector,
+    blockModalBlockId,
+    openBlockModal,
+    closeBlockModal,
   }
 })

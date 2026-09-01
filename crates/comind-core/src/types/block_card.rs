@@ -22,4 +22,5 @@ pub struct BlockCard {
     pub properties: HashMap<String, Value>,   // 完整属性映射
     pub date_refs: Vec<DateRefLite>,
     pub updated_at: i64,
+    pub created_at: i64,
 }

@@ -24,6 +24,7 @@ function makeCard(overrides: Partial<import('../../wasm/types').BlockCard> = {})
     properties: {},
     date_refs: [],
     updated_at: 1000,
+    created_at: 1000,
     ...overrides,
   }
 }

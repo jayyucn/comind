@@ -7,10 +7,10 @@
  */
 
 /** 视图布局类型。与 View.viewKind 同源。 */
-export type ViewKind = 'table' | 'board' | 'calendar'
+export type ViewKind = 'table' | 'board' | 'calendar' | 'quadrant'
 
 /** 表格列装饰角色（渲染专属，属 LayoutConfig 而非无头 FieldDescriptor）。 */
-export type TableColumnRole = 'primary' | 'link' | 'overdue-date' | 'done'
+export type TableColumnRole = 'primary' | 'link' | 'overdue-date' | 'done' | 'status'
 
 /** 列对齐方式（表头 + 数据单元格统一生效；缺省表头 center、数据 left，见 TableView）。 */
 export type TableColumnAlign = 'left' | 'center' | 'right'
@@ -21,7 +21,7 @@ export interface TableColumnConfig {
   width?: number
   /** 列对齐：设置后表头与数据单元格内联 text-align 覆盖各自默认（表头 center / 数据 left）。可持久化（ADR-0013 菜单扩展）。 */
   align?: TableColumnAlign
-  /** 渲染装饰：primary=主文本(加粗省略号) / link=导航按钮 / overdue-date=过去日期标红 / done=布尔完成列(驱动行置灰)。 */
+  /** 渲染装饰：primary=主文本(加粗省略号) / link=导航按钮 / overdue-date=过去日期标红 / done=布尔完成列(驱动行置灰) / status=任务状态图标列(点击循环切换)。 */
   role?: TableColumnRole
   /** 自定义单元格渲染器 key：命中注入的 cellRegistry 时接管整格渲染；缺省走内置 type/role 链。可持久化（ADR-0010）。 */
   cell?: string
@@ -63,8 +63,17 @@ export interface CalendarConfig {
   dateRefKind: string
 }
 
+/**
+ * 四象限视图布局配置（艾森豪威尔矩阵）。
+ * 卡片按 priority 四值（Urgent/High/Medium/Low）落格，无额外列/分组元数据，故配置为空壳。
+ */
+export interface QuadrantConfig {
+  viewKind: 'quadrant'
+  version: 1
+}
+
 /** 视图布局配置判别联合。 */
-export type LayoutConfig = TableConfig | BoardConfig | CalendarConfig
+export type LayoutConfig = TableConfig | BoardConfig | CalendarConfig | QuadrantConfig
 
 /** 按 viewKind 取对应配置类型（辅助，便于 store / 组件按需收窄）。 */
 export type ConfigOf<K extends ViewKind> = Extract<LayoutConfig, { viewKind: K }>

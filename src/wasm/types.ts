@@ -223,6 +223,7 @@ export interface BlockCard {
   properties: Record<string, any>   // HashMap<String, Value> → Record
   date_refs: DateRefLite[]
   updated_at: number
+  created_at: number
 }
 
 export interface SavedFilterRust {

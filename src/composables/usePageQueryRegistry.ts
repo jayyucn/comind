@@ -10,7 +10,7 @@
  * 本模块是「引擎与业务解耦」主张的实证：不修改引擎一行，仅通过注册即获得筛选/排序/分组能力。
  */
 import { createRegistry, type Option, type Registry } from '../core/query'
-import type { BoardConfig, CalendarConfig, LayoutConfig, TableConfig, ViewKind } from '../core/view'
+import type { BoardConfig, CalendarConfig, LayoutConfig, QuadrantConfig, TableConfig, ViewKind } from '../core/view'
 import type { Page } from '../types/page'
 
 /** 引擎命名空间：所有 Page 字段注册于此。 */
@@ -54,6 +54,8 @@ export function pageDefaultConfig(kind: ViewKind): LayoutConfig {
     case 'table': return PAGE_DEFAULT_TABLE_CONFIG
     case 'board': return PAGE_DEFAULT_BOARD_CONFIG
     case 'calendar': return PAGE_DEFAULT_CALENDAR_CONFIG
+    // Page 实体不提供四象限视图，但该分支为 ViewKind 穷尽性所必需（block 侧才有实际布局）
+    case 'quadrant': return { viewKind: 'quadrant', version: 1 } satisfies QuadrantConfig
   }
 }
 

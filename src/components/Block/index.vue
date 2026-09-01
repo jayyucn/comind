@@ -14,35 +14,36 @@
  *   拖拽结束 → onDragEnd → syncTreeToStore → store → structureVersion++
  *   → BlockList watch → syncTreeToStore → tree 重建
  */
-import { computed, ref, watch, nextTick, onMounted, onBeforeUnmount, inject, toRef } from 'vue'
-import { useEditorStore } from '../../stores/editor'
-import { useBlockStore } from '../../stores/blocks'
-import { usePropertyStore } from '../../stores/property'
+import { ChevronDown, ChevronRight } from 'lucide-vue-next'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch } from 'vue'
 import { useBlockRegistry } from '../../composables/useBlockRegistry'
 import { useBlockRelationshipCleanup } from '../../composables/useBlockRelationshipCleanup'
-import { useBlockPropertySync } from './composables/useBlockPropertySync'
+import { useBlockStore } from '../../stores/blocks'
+import { useEditorStore } from '../../stores/editor'
+import { usePropertyStore } from '../../stores/property'
+import BlockChildren from './components/BlockChildren.vue'
 import { useBlockCollapse } from './composables/useBlockCollapse'
 import { useBlockDragDrop } from './composables/useBlockDragDrop'
 import { useBlockEditorLifecycle } from './composables/useBlockEditorLifecycle'
-import BlockChildren from './components/BlockChildren.vue'
+import { useBlockPropertySync } from './composables/useBlockPropertySync'
 import './handlers/bullet'
 import './handlers/code'
-import './handlers/image'
 import './handlers/embed'
+import './handlers/image'
 import PropertyDisplay from './PropertyDisplay.vue'
 import PropertyInline from './PropertyInline.vue'
 
-import { usePageStore } from '../../stores/pages'
-import { useNavigateToPage } from '../../composables/useNavigateToPage'
+import type { CrossBlockSelection } from '../../composables/useCrossBlockSelection'
 import { useIdeasFreeze } from '../../composables/useIdeasFreeze'
+import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import { useRightSidebar } from '../../composables/useRightSidebar'
+import { usePageStore } from '../../stores/pages'
+import type { TreeNode } from '../../types/block'
+import type { BlockSetupContext, BlockTypeEditorExposed, BlockTypeHooks } from '../../types/block-type'
 import {
   decodeRelationshipContent,
   setRelationshipSnapshot,
 } from '../../utils/relationship-content'
-import type { TreeNode } from '../../types/block'
-import type { BlockTypeEditorExposed, BlockSetupContext, BlockTypeHooks } from '../../types/block-type'
-import type { CrossBlockSelection } from '../../composables/useCrossBlockSelection'
 
 defineOptions({
   name: 'Block'
@@ -67,6 +68,8 @@ const { isFrozen } = useIdeasFreeze(toRef(props, 'pageId'))
 // 注入拖拽结束回调（由 BlockList 提供）
 const onDragEnd = inject<() => void>('onDragEnd')
 const selection = inject<CrossBlockSelection>('crossBlockSelection')
+// 是否处于 BlockModal 子树编辑器内（由 BlockModal provide）。弹窗内 dot 点击为 no-op，避免递归开弹窗。
+const inBlockModal = inject<boolean>('inBlockModal', false)
 
 // ── 便捷访问 ──
 const blockId = computed(() => props.node.id)
@@ -78,6 +81,7 @@ const {
   getPropertiesMap: getBlockPropertiesMap,
   setProperty,
   priorityClass,
+  statusClass,
 } = useBlockPropertySync(blockId)
 
 const hasSelectedAncestor = computed(() => {
@@ -253,6 +257,13 @@ onMounted(() => {
     el.addEventListener('drop', onDrop as unknown as EventListener)
     el.addEventListener('paste', onPaste as unknown as EventListener)
   }
+
+  // 挂载时若已是激活态（新建块在 activateBlock 之后才渲染、或懒加载后才挂载的根块），
+  // isActive 在挂载瞬间即为 true，watch(isActive) 不会因「变化」触发，需在此主动聚焦，
+  // 否则新块停在只读渲染态 / 光标未落位（Issue 2：弹窗内 Enter 新建节点未激活）。
+  if (isActive.value) {
+    focusActiveEditor()
+  }
 })
 
 onBeforeUnmount(() => {
@@ -297,33 +308,41 @@ async function handleDeleteBetweenProperty(e: Event) {
   }
 }
 
+/**
+ * 激活后聚焦编辑器。
+ * 优先级：点击坐标 > cursorPos > end。
+ * 等待浏览器 layout 完成，确保 ProseMirror 的 view.dom 已渲染（posAtCoords 依赖布局信息）。
+ */
+async function focusActiveEditor() {
+  if (!isActive.value) return
+  selection?.clearSelection()
+  await nextTick()
+  await new Promise(resolve => requestAnimationFrame(resolve))
+  if (!editorRef.value) return
+  const editor = editorRef.value.getEditor()
+  if (editor) {
+    editorStore.setActiveEditor(editor)
+  }
+
+  // 优先级：点击坐标 > cursorPos > end
+  const clickCoords = editorStore.consumeClickCoords()
+  if (clickCoords) {
+    editorRef.value?.focusAtCoords?.(clickCoords.x, clickCoords.y)
+  } else {
+    const pendingPos = editorStore.consumeCursorPos()
+    if (pendingPos !== null) {
+      editorRef.value.focus(pendingPos)
+    } else {
+      editorRef.value.focus('end')
+    }
+  }
+}
+
 watch(
   isActive,
-  async (active, oldActive) => {
+  (active) => {
     if (active) {
-      selection?.clearSelection()
-      await nextTick()
-      // 等待浏览器完成 layout，确保 ProseMirror 的 view.dom 已渲染（posAtCoords 依赖布局信息）
-      await new Promise(resolve => requestAnimationFrame(resolve))
-      if (editorRef.value) {
-        const editor = editorRef.value.getEditor()
-        if (editor) {
-          editorStore.setActiveEditor(editor)
-        }
-
-        // 优先级：点击坐标 > cursorPos > end
-        const clickCoords = editorStore.consumeClickCoords()
-        if (clickCoords) {
-          editorRef.value?.focusAtCoords?.(clickCoords.x, clickCoords.y)
-        } else {
-          const pendingPos = editorStore.consumeCursorPos()
-          if (pendingPos !== null) {
-            editorRef.value.focus(pendingPos)
-          } else {
-            editorRef.value.focus('end')
-          }
-        }
-      }
+      focusActiveEditor()
     } else {
       editorStore.setActiveEditor(null)
     }
@@ -370,6 +389,12 @@ async function onLanguageChange(lang: string) {
   }
 }
 
+/** bullet dot 点击：打开单块子树编辑弹窗；弹窗内（inBlockModal）为 no-op（ADR-0039） */
+function onBulletClick() {
+  if (inBlockModal) return
+  editorStore.openBlockModal(blockId.value)
+}
+
 function onDragOver(e: DragEvent) {
   if (typeHooks.value?.onDragOver?.(e) === true) return
   // 默认无行为
@@ -397,20 +422,29 @@ watch(isActive, (active) => {
 </script>
 
 <template>
-  <div class="block" :class="[priorityClass, { active: isActive, 'cb-selected': isSelected && !hasSelectedAncestor }]" :data-block-id="blockId">
+  <div class="block" :class="[priorityClass, statusClass, { active: isActive, 'cb-selected': isSelected && !hasSelectedAncestor }]" :data-block-id="blockId">
     <div class="block-row">
       <!-- 缩进占位 -->
       <div class="block-indent" :style="{ width: indentWidth }"></div>
 
       <!-- 内容区域（bullet + content）- 选中时边框只应用到此容器 -->
       <div class="block-inner">
-        <!-- Bullet -->
-        <span class="block-bullet" :class="{ collapsed, 'hide-empty-bullet': hideBulletForEmpty }"
-          @click.stop="toggleCollapse">
-          <span v-if="node.children.length > 0" class="bullet-chevron" :class="{ 'is-collapsed': collapsed }"></span>
-          <span v-else class="bullet-dot"></span>
+        <!-- Bullet：dot 常显，点击打开单块子树编辑弹窗（BlockModal）；
+             chevron 仅在有子块且 hover 时显现，点击负责折叠/展开（ADR-0039） -->
+        <span class="block-bullet" :class="{ collapsed, 'hide-empty-bullet': hideBulletForEmpty }">
+          <span
+            v-if="node.children.length > 0"
+            class="bullet-chevron"
+            title="折叠 / 展开"
+            @click.stop="toggleCollapse"
+          >
+            <ChevronDown v-if="!collapsed" :size="18" :stroke-width="2" />
+            <ChevronRight v-else :size="18" :stroke-width="2" />
+          </span>
+          <span class="bullet-dot" title="打开块详情" @click.stop="onBulletClick"></span>
         </span>
 
+        <div class="block-body">
         <!-- Between 属性显示 -->
         <PropertyInline :block-id="blockId" position="between-bullet-content" />
 
@@ -458,8 +492,7 @@ watch(isActive, (active) => {
 
         <!-- Right 属性显示 -->
         <PropertyInline :block-id="blockId" position="right-of-content" />
-
-        
+        </div>
       </div>
     </div>
 

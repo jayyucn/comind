@@ -5,6 +5,7 @@ use comind_core::{
     storage::StorageAdapter,
     types::{Block, BlockTree, Page, Property, RelationshipType, UserTemplate},
 };
+use crate::assets::{rewrite_assets_for_export, rewrite_assets_for_import};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -189,6 +190,7 @@ fn parse_page_metadata(content: &str) -> Option<PageMetadata> {
 pub fn export_all(
     storage: &mut dyn StorageAdapter,
     dir: &Path,
+    assets_dir: Option<&Path>,
 ) -> Result<ExportResult, Box<dyn Error>> {
     fs::create_dir_all(dir)?;
 
@@ -219,6 +221,12 @@ pub fn export_all(
 
         let metadata_line = serialize_page_metadata(page, &properties);
         let content_lines = serialize_block_tree(&tree, &properties);
+        // 资产联动（方案 B）：asset://<id> → assets/<file>，并复制文件使 markdown 目录自包含
+        let content_lines = match assets_dir {
+            Some(assets) => rewrite_assets_for_export(&content_lines, assets, &dir.join("assets"))
+                .map_err(|e| -> Box<dyn Error> { e.into() })?,
+            None => content_lines,
+        };
 
         let filename = format!("{}.md", sanitize_filename(&page.title));
         let file_path = dir.join(filename);
@@ -255,6 +263,7 @@ pub fn export_all(
 pub fn export_changed(
     storage: &mut dyn StorageAdapter,
     dir: &Path,
+    assets_dir: Option<&Path>,
 ) -> Result<ExportResult, Box<dyn Error>> {
     fs::create_dir_all(dir)?;
 
@@ -303,6 +312,11 @@ pub fn export_changed(
 
         let metadata_line = serialize_page_metadata(page, &properties);
         let content_lines = serialize_block_tree(&tree, &properties);
+        let content_lines = match assets_dir {
+            Some(assets) => rewrite_assets_for_export(&content_lines, assets, &dir.join("assets"))
+                .map_err(|e| -> Box<dyn Error> { e.into() })?,
+            None => content_lines,
+        };
 
         let filename = format!("{}.md", sanitize_filename(&page.title));
         let file_path = dir.join(filename);
@@ -354,6 +368,7 @@ pub fn import_all(
     storage: &mut dyn StorageAdapter,
     dir: &Path,
     strategy: &str,
+    assets_dir: Option<&Path>,
 ) -> Result<ImportResult, Box<dyn Error>> {
     let md_files = fs::read_dir(dir)?
         .filter_map(|entry| entry.ok())
@@ -568,6 +583,12 @@ pub fn import_all(
             }
 
             let (content, format, r#type) = parse_block_content(trimmed);
+            // 资产联动：assets/<file> → asset://<id>，workspace 缺文件时从 markdown/assets/ 回填
+            let content = match assets_dir {
+                Some(assets) => rewrite_assets_for_import(&content, &dir.join("assets"), assets)
+                    .map_err(|e| -> Box<dyn Error> { e.into() })?,
+                None => content,
+            };
             let parent_id = parent_stack.last().cloned();
 
             let block = BlockService::create(

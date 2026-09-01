@@ -1,7 +1,7 @@
-import { computed, onMounted, watch } from 'vue'
 import type { Ref } from 'vue'
-import { usePropertyStore } from '../../../stores/property'
+import { computed, onMounted, watch } from 'vue'
 import { useBlockStore } from '../../../stores/blocks'
+import { usePropertyStore } from '../../../stores/property'
 
 /**
  * Block 属性同步 composable
@@ -54,11 +54,25 @@ export function useBlockPropertySync(blockId: Ref<string>) {
     return `priority-${blockPriority.value.toLowerCase()}`
   })
 
+  const blockStatus = computed(() => {
+    const prop = propertyStore.getBlockProperty(blockId.value, 'status')
+    return prop?.value as string | undefined
+  })
+
+  // 已完成 / 已取消 block 加删除线：Done 中性弱化，Canceled 红色弱化区分
+  const statusClass = computed(() => {
+    if (blockStatus.value === 'Done') return 'status-done'
+    if (blockStatus.value === 'Canceled') return 'status-canceled'
+    return ''
+  })
+
   return {
     getProperty,
     getPropertiesMap,
     setProperty,
     blockPriority,
     priorityClass,
+    blockStatus,
+    statusClass,
   }
 }

@@ -116,10 +116,9 @@ function isSvgIcon(icon: string): boolean {
         <span v-if="prop.key !== 'project' && prop.key !== 'area'" class="property-key">{{ getPropertyTitle(prop.key) }}:</span>
         <span class="property-value">
           <template v-if="getIcon(prop.key, prop.value)">
-            <Icon 
+            <Icon
               v-if="isSvgIcon(getIcon(prop.key, prop.value)!)"
               :name="getIcon(prop.key, prop.value)!"
-              :size="14"
             />
             <span v-else>{{ getIcon(prop.key, prop.value) }}</span>
             <span v-if="getLabel(prop.key, prop.value) && propertyStore.getPropertyDef(prop.key)?.displayStyle !== 'icon'">

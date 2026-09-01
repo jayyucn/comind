@@ -1,3 +1,4 @@
+use crate::assets::{asset_extension, asset_file_path, is_safe_asset_component, now_millis, read_asset_manifest, write_asset_manifest, AssetMeta};
 use comind_core::{
     services::{
         build_page_with_blocks, BlockService, BlockVersionService, BlockWriteService,
@@ -897,11 +898,13 @@ pub async fn set_workspace_path(
     path: &str,
 ) -> Result<String, String> {
     let workspace = std::path::PathBuf::from(path);
-    // 创建 sqlite/ 和 markdown/ 子目录
+    // 创建 sqlite/、markdown/ 和 assets/ 子目录
     std::fs::create_dir_all(workspace.join("sqlite"))
         .map_err(|e| format!("Failed to create sqlite directory: {}", e))?;
     std::fs::create_dir_all(workspace.join("markdown"))
         .map_err(|e| format!("Failed to create markdown directory: {}", e))?;
+    std::fs::create_dir_all(workspace.join("assets"))
+        .map_err(|e| format!("Failed to create assets directory: {}", e))?;
     let mut config = super::config::AppConfig::load(&config_dir).unwrap_or_default();
     config.workspace_path = Some(path.to_string());
     config
@@ -964,6 +967,119 @@ fn open_path_in_explorer(path: &std::path::Path) -> Result<(), String> {
             .map_err(|e| format!("打开文件夹失败: {}", e))?;
         Ok(())
     }
+}
+
+// ---- 资产文件（workspace/assets/，与 sqlite/、markdown/ 并列） ----
+// manifest 读写、id 校验、扩展名提取在 assets.rs（与 markdown 导出导入共用）
+
+#[derive(Debug, Serialize)]
+pub struct AssetFileData {
+    pub name: String,
+    #[serde(rename = "mimeType")]
+    pub mime_type: String,
+    pub size: usize,
+    pub created_at: u64,
+    pub data: Vec<u8>,
+}
+
+/// 保存资产文件到 workspace/assets/，并在 assets.json 登记元数据
+#[tauri::command]
+pub async fn save_asset_file(
+    config_manager: State<'_, super::state::ConfigManager>,
+    app_handle: AppHandle,
+    id: String,
+    file_name: String,
+    mime_type: String,
+    data: Vec<u8>,
+) -> Result<(), String> {
+    if !is_safe_asset_component(&id) {
+        return Err(format!("Invalid asset id: {}", id));
+    }
+    let config = config_manager.get_config()?.clone();
+    let workspace = super::config::get_workspace_path(&app_handle, &config);
+    let assets_dir = super::config::get_assets_path(&workspace);
+    std::fs::create_dir_all(&assets_dir)
+        .map_err(|e| format!("Failed to create assets directory: {}", e))?;
+
+    // 磁盘文件名统一为 <id>.<ext>（无扩展名则退化为 <id>），避免原始文件名里的非法字符
+    let stored_file = match asset_extension(&file_name) {
+        Some(ext) => format!("{}.{}", id, ext),
+        None => id.clone(),
+    };
+    std::fs::write(assets_dir.join(&stored_file), &data)
+        .map_err(|e| format!("Failed to write asset file: {}", e))?;
+
+    let mut manifest = read_asset_manifest(&assets_dir)?;
+    manifest.insert(
+        id,
+        AssetMeta {
+            file: stored_file.clone(),
+            name: file_name,
+            mime_type,
+            created_at: now_millis(),
+        },
+    );
+    if let Err(e) = write_asset_manifest(&assets_dir, &manifest) {
+        // 清单登记失败：回滚已写入的文件，避免留下不可达的孤儿文件
+        let _ = std::fs::remove_file(assets_dir.join(&stored_file));
+        return Err(e);
+    }
+    Ok(())
+}
+
+/// 读取资产文件：按 id 从 assets.json 查元数据并返回字节
+#[tauri::command]
+pub async fn read_asset_file(
+    config_manager: State<'_, super::state::ConfigManager>,
+    app_handle: AppHandle,
+    id: String,
+) -> Result<AssetFileData, String> {
+    if !is_safe_asset_component(&id) {
+        return Err(format!("Invalid asset id: {}", id));
+    }
+    let config = config_manager.get_config()?.clone();
+    let workspace = super::config::get_workspace_path(&app_handle, &config);
+    let assets_dir = super::config::get_assets_path(&workspace);
+
+    let manifest = read_asset_manifest(&assets_dir)?;
+    let meta = manifest
+        .get(&id)
+        .ok_or_else(|| format!("Asset not found: {}", id))?;
+    let file_path = asset_file_path(&assets_dir, &meta.file)?;
+    let data = std::fs::read(&file_path)
+        .map_err(|e| format!("Failed to read asset file: {}", e))?;
+    Ok(AssetFileData {
+        name: meta.name.clone(),
+        mime_type: meta.mime_type.clone(),
+        size: data.len(),
+        created_at: meta.created_at,
+        data,
+    })
+}
+
+/// 删除资产文件并清除 assets.json 登记
+#[tauri::command]
+pub async fn delete_asset_file(
+    config_manager: State<'_, super::state::ConfigManager>,
+    app_handle: AppHandle,
+    id: String,
+) -> Result<(), String> {
+    if !is_safe_asset_component(&id) {
+        return Err(format!("Invalid asset id: {}", id));
+    }
+    let config = config_manager.get_config()?.clone();
+    let workspace = super::config::get_workspace_path(&app_handle, &config);
+    let assets_dir = super::config::get_assets_path(&workspace);
+
+    let mut manifest = read_asset_manifest(&assets_dir)?;
+    if let Some(meta) = manifest.remove(&id) {
+        let file_path = asset_file_path(&assets_dir, &meta.file)?;
+        // 删除失败要向上报告：此时清单仍在，资产可读，状态一致
+        std::fs::remove_file(&file_path)
+            .map_err(|e| format!("Failed to delete asset file: {}", e))?;
+        write_asset_manifest(&assets_dir, &manifest)?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -1367,7 +1483,11 @@ pub async fn export_to_markdown(
     let dir = super::config::get_markdown_path(&workspace);
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("Failed to create markdown directory: {}", e))?;
-    execute_with_adapter(db, |storage| super::markdown::export_all(storage, &dir)).await
+    let assets_dir = super::config::get_assets_path(&workspace);
+    execute_with_adapter(db, |storage| {
+        super::markdown::export_all(storage, &dir, Some(&assets_dir))
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1380,8 +1500,9 @@ pub async fn import_from_markdown(
     let config = config_manager.get_config()?.clone();
     let workspace = super::config::get_workspace_path(&app_handle, &config);
     let dir = super::config::get_markdown_path(&workspace);
+    let assets_dir = super::config::get_assets_path(&workspace);
     execute_with_adapter(db, |storage| {
-        super::markdown::import_all(storage, &dir, strategy)
+        super::markdown::import_all(storage, &dir, strategy, Some(&assets_dir))
     })
     .await
 }
@@ -1423,7 +1544,11 @@ pub async fn sync_now(
     let dir = super::config::get_markdown_path(&workspace);
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("Failed to create markdown directory: {}", e))?;
-    execute_with_adapter(db, |storage| super::markdown::export_all(storage, &dir)).await
+    let assets_dir = super::config::get_assets_path(&workspace);
+    execute_with_adapter(db, |storage| {
+        super::markdown::export_all(storage, &dir, Some(&assets_dir))
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1437,7 +1562,11 @@ pub async fn trigger_sync(
     let dir = super::config::get_markdown_path(&workspace);
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("Failed to create markdown directory: {}", e))?;
-    execute_with_adapter(db, |storage| super::markdown::export_changed(storage, &dir)).await
+    let assets_dir = super::config::get_assets_path(&workspace);
+    execute_with_adapter(db, |storage| {
+        super::markdown::export_changed(storage, &dir, Some(&assets_dir))
+    })
+    .await
 }
 
 #[tauri::command]

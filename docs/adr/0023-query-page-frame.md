@@ -66,33 +66,38 @@ NamedViewBar 需要 `entityKey`（screen_view.entity），QueryChipBar 需要 `e
 - `Query` 前缀呼应 ADR-0014 的命名约定（query 级展示壳），`Frame` 表达「页面骨架/外壳」语义；
 - 外壳仅做装配与编排，不感知任何实体——后续新增查询页只需复制「props + slot」调用面，不再复制骨架。
 
-### D6：主内容区硬编码渲染通用三件套，视图集合由 `viewTypes` 决定（修订，替代原具名 slot 方案）
+### D6：主内容区由消费方经具名 slot 注入视图，外壳零视图耦合（二次修订）
 
-**修订背景**：初版 D6 采用具名 slot 切换（`#table/#board/#calendar`），因当时 PagesLibrary 用实体专属
-`PageTableView`/`PageCalendarView`（Page 模型硬编码列，非通用组件封装）。用户后续决策**改为硬编码**：
-消费方视图统一为通用三件套（`views/TableView|BoardView|CalendarView`，generic 字段元数据驱动，ADR-0008），
-Page 专属视图废弃，外壳直接渲染，消费方只传参数。
+**修订背景**：D6 初版用具名 slot（`#table/#board/#calendar`），后修订为「外壳硬编码渲染通用三件套」
+（Table/Board/Calendar，ADR-0028 通用化），理由是当时视图皆字段驱动、实体无关。但 `QuadrantView`
+（艾森豪威尔矩阵，直接 `import type { BlockCard }`、吃 `priority`/`status`/`deadline`）是**任务专有视图**，
+被塞进通用外壳后破坏了 ADR-0009「零业务依赖」契约，且「三件套」描述与现实不符（实为四件）。故二次修订
+回退到具名 slot 方案——这次前提成立：视图是否通用、有哪些视图，完全由消费方决定。
 
-外壳为泛型组件（`generic="T"`），按当前激活 tab 的 `viewType` 硬编码渲染对应视图；「包含哪几个视图」
-由 `viewTypes` prop 决定（NamedViewBar 只允许创建其中的 tab 类型，`currentViewType` 不会越出）：
+外壳为泛型组件（`generic="T"`），`lib-body` 仅渲染一个具名 slot（不再 import 任何视图组件）：
 
 ```
-<TableView v-if="currentViewType === 'table'" ... />
-<BoardView v-else-if="currentViewType === 'board'" ... />
-<CalendarView v-else-if="currentViewType === 'calendar'" ... />
-<div v-else class="view-empty">暂无可用的视图</div>
+<main class="lib-body">
+  <slot :name="currentViewType" :context="viewContext" />
+  <div v-if="!$slots[currentViewType]" class="view-empty">暂无可用的视图</div>
+</main>
 ```
 
-- **视图数据契约由 props 注入**：`items/groups/grouped/sort/groupBy/tableConfig/boardConfig/calendarConfig/idKey`，
-  事件（`cell-change`/`navigate`）由外壳转发给消费方处理——消费方不含任何视图切换逻辑；
-- **PagesLibrary 专属视图废弃**：`PageTableView`/`PageCalendarView` 删除。表格改用通用 TableView
-  （Page 字段注册表已含 title/type/createdAt/updatedAt/wordCount/childrenCount，列序由
-  `PAGE_DEFAULT_TABLE_CONFIG` 定义，与原 PageTableView 6 列等价）；日历改用通用 CalendarView；
+- **`currentViewType`**：由 `useScreenViewStore(entityKey)` 得出（与 NamedViewBar 同源），即 slot 名；
+  `viewTypes` prop 决定 NamedViewBar 可建哪些 tab 类型，`currentViewType` 不会越出；
+- **`viewContext`**：外壳把共享数据契约打包成对象透传给 slot——`items/fields/groups/grouped/sort/
+  groupBy/tableConfig/boardConfig/calendarConfig/quadrantConfig/idKey/cellRegistry`；
+- **视图组件与事件由消费方在 slot 内注入**：`TaskHub` 提供 `#table/#board/#calendar/#quadrant`
+  （各自绑定 `ctx` + 事件 `cell-change`/`navigate`/`open-block`/`add-item`），`PagesLibrary` 仅
+  `#table/#calendar`；外壳不再 `emit` 任何视图事件（仅透传 `update:search`）；
 - **`CalendarConfig.dateRefKind` 从字面量放宽为 `string`**：原 `'deadline'|'schedule'` 仅适用 Block 的
   date_refs；Page 无这两个字段，日历按 `updatedAt` 落格（沿用原 PageCalendarView 语义），由
   `PAGE_DEFAULT_CALENDAR_CONFIG`（`dateRefKind: 'updatedAt'`）表达。CalendarView 本就按
   `fields.find(f => f.key === config.dateRefKind)` 动态查找字段，渲染逻辑零改动；
-  `refColorClass` 对非 schedule 走 deadline 颜色分支（过去标红），仅视觉小差异，接受。
+  `refColorClass` 对非 schedule 走 deadline 颜色分支（过去标红），仅视觉小差异，接受；
+- **好处**：外壳真正成为零业务依赖的纯骨架（ADR-0009 契约诚实兑现）；新增第 5 种视图类型只需扩展
+  `ViewKind` + 实体 registry 的 `defaultConfig` + 消费方加一个 slot，外壳与另一消费方零改动
+  （消除 Shotgun Surgery）。
 
 ### D7：上游修复——默认布局归实体注册点，store 经注入接收（修订后续）
 
@@ -136,11 +141,11 @@ Page 专属视图废弃，外壳直接渲染，消费方只传参数。
 
 | 术语 | 含义 | 备注 |
 |------|------|------|
-| `QueryPageFrame` | 查询页外壳：装配标题、命名视图条（Screen→Tab）、查询工具条、芯片行与主内容区的整页骨架组件；编排（芯片显隐/激活态/按钮转发、命名视图 store 绑定、搜索词持有、视图切换）内聚其中；泛型组件（generic="T"），硬编码渲染通用三件套 | `src/components/common/`；零业务依赖（ADR-0009） |
+| `QueryPageFrame` | 查询页外壳：装配标题、命名视图条（Screen→Tab）、查询工具条、芯片行与主内容区的整页骨架组件；编排（芯片显隐/激活态/按钮转发、命名视图 store 绑定、搜索词持有）内聚其中；泛型组件（generic="T"），主内容区经具名 slot（`#<viewType>` + `viewContext`）由消费方注入视图，外壳零视图耦合 | `src/components/common/`；零业务依赖（ADR-0009） |
 | `lib-body` | 外壳的主内容区容器（`<main>`）：带边框卡片形态，flex:1 + 滚动 | 类名保留历史拼写 |
 | `v-model:search` | 外壳与消费方之间搜索词的受控契约：外壳持有输入态，父级经 `update:search` 落库并做数据过滤 | ADR-0023 D4 |
 | `entityKey` | 外壳单一命名空间 prop：同时充当 screen_view.entity（NamedViewBar）与查询引擎实体命名空间（QueryChipBar） | ADR-0023 D3；当前两处恒同值 |
-| 视图数据契约 | 外壳的视图 props：items/groups/grouped/sort/groupBy/tableConfig/boardConfig/calendarConfig/idKey + cellChange/navigate 事件，由消费方注入、外壳转发 | ADR-0023 D6 |
+| 视图数据契约 | 外壳打包透传给具名 slot 的 `viewContext` 对象：items/fields/groups/grouped/sort/groupBy/tableConfig/boardConfig/calendarConfig/quadrantConfig/idKey/cellRegistry；视图组件与事件（cell-change/navigate/open-block/…）由消费方在 slot 内自行接线 | ADR-0023 D6 |
 | `PAGE_DEFAULT_TABLE_CONFIG` / `PAGE_DEFAULT_CALENDAR_CONFIG` / `PAGE_DEFAULT_BOARD_CONFIG` | Page 实体内建默认布局：表格 6 列（标题/类型/创建/更新/字数/子页面）、日历按 updatedAt 落格、看板默认徽章集 | `usePageQueryRegistry`；替代原 PageTableView/PageCalendarView 硬编码 |
 | `BLOCK_DEFAULT_TABLE_CONFIG` / `BLOCK_DEFAULT_BOARD_CONFIG` / `BLOCK_DEFAULT_CALENDAR_CONFIG` | Block 实体内建默认布局：表格 7 列（done/content/status/priority/project/deadline/page）、看板徽章 priority+deadline、日历按 deadline 落格 | `useBlockQueryRegistry`；自 `core/view` 上收（D7） |
 | `blockDefaultConfig` / `pageDefaultConfig` | 实体默认布局统一入口：`(kind) => LayoutConfig`，经 `useScreenViewStore` options 注入，seed/create 写入正确 config | ADR-0023 D7；未注入时 store 写空串、渲染层回退 |

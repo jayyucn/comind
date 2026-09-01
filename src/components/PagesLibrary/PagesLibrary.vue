@@ -17,6 +17,8 @@ import { useScreenViewStore } from '../../stores/screenView'
 import type { Page } from '../../types/page'
 import QueryPageFrame from '../common/QueryPageFrame.vue'
 import PageDrawer from '../Page/PageDrawer.vue'
+import TableView from '../views/TableView.vue'
+import CalendarView from '../views/CalendarView.vue'
 
 defineOptions({ name: 'PagesLibrary' })
 
@@ -125,9 +127,34 @@ onMounted(async () => {
     :group-by="null"
     :table-config="tableConfig"
     :calendar-config="calendarConfig"
-    @navigate="handleNavigateToPage"
-    @cell-click="handleCellClick"
-  />
+  >
+    <template #table="{ context }">
+      <TableView
+        :items="context.items"
+        :fields="context.fields"
+        :groups="context.groups"
+        :grouped="context.grouped"
+        :sort="context.sort"
+        :config="context.tableConfig"
+        :id-key="context.idKey"
+        :cell-registry="context.cellRegistry"
+        @column-resize="context.onColumnResize"
+        @column-align="context.onColumnAlign"
+        @column-visibility="context.onColumnVisibility"
+        @column-reset="context.onColumnReset"
+        @cell-click="handleCellClick"
+      />
+    </template>
+    <template #calendar="{ context }">
+      <CalendarView
+        :items="context.items"
+        :fields="context.fields"
+        :config="context.calendarConfig"
+        :id-key="context.idKey"
+        @navigate="handleNavigateToPage"
+      />
+    </template>
+  </QueryPageFrame>
 
   <!-- 页面详情右侧弹层（替代整页路由跳转） -->
   <PageDrawer :page-id="drawerPageId" @close="drawerPageId = null" />

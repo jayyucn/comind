@@ -217,6 +217,11 @@ pub fn get_markdown_path(workspace: &Path) -> PathBuf {
     workspace.join("markdown")
 }
 
+/// 从 workspace 派生资产目录路径：workspace/assets（与 sqlite/、markdown/ 并列）
+pub fn get_assets_path(workspace: &Path) -> PathBuf {
+    workspace.join("assets")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -338,6 +343,7 @@ mod tests {
         let workspace = PathBuf::from("/home/user/comind-workspace");
         assert_eq!(get_db_path(&workspace), PathBuf::from("/home/user/comind-workspace/sqlite/comind.db"));
         assert_eq!(get_markdown_path(&workspace), PathBuf::from("/home/user/comind-workspace/markdown"));
+        assert_eq!(get_assets_path(&workspace), PathBuf::from("/home/user/comind-workspace/assets"));
     }
 
     #[test]
