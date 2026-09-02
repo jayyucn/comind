@@ -31,6 +31,7 @@ import Icon from '../Icons/Icon.vue'
 import ChapterContent from './ChapterContent.vue'
 import TocDrawer, { type TocEntry } from './TocDrawer.vue'
 import TypographyPanel from './TypographyPanel.vue'
+import HighlightPanel from './HighlightPanel.vue'
 
 const props = defineProps<{
   bookId: string
@@ -45,6 +46,10 @@ const book = shallowRef<EPUB | null>(null)
 const currentIndex = ref(0)
 const tocOpen = ref(false)
 const typographyOpen = ref(false)
+/** 高亮管理面板开关（票 07） */
+const highlightPanelOpen = ref(false)
+/** 高亮数据版本（票 07：面板删除后递增 → ChapterContent 重载本章高亮重绘） */
+const highlightVersion = ref(0)
 /** 开书时读到的进度 CFI（用户主动跳章后清空，恢复只在首跳执行一次） */
 const progressCfi = ref<string | null>(null)
 
@@ -61,6 +66,12 @@ const chapterJumpCfi = computed(() => {
 /** 定位完成（ChapterContent 一次性消费后上报）：清空待跳 CFI */
 function onJumpDone(): void {
   jumpCfi.value = null
+}
+
+/** 面板点条目（票 07）：关抽屉 + CFI 定位（复用票 06 jumpCfi 机制：切章/同章定位+闪烁） */
+function onPanelLocate(cfi: string): void {
+  highlightPanelOpen.value = false
+  jumpCfi.value = cfi
 }
 
 /** 本实例的跳回分发（挂载即接管模块级单例；其他书的事件按 bookPageId 忽略） */
@@ -253,6 +264,9 @@ watch(typography, applyTypography)
         <button class="topbar-btn" title="目录" @click="tocOpen = true">
           <Icon name="icon-menu" :size="16" />
         </button>
+        <button class="topbar-btn" title="本书高亮" @click="highlightPanelOpen = true">
+          <Icon name="icon-highlighter" :size="16" />
+        </button>
         <button
           class="topbar-btn reader-typography-toggle"
           :class="{ active: typographyOpen }"
@@ -302,6 +316,7 @@ watch(typography, applyTypography)
         :book-title="bookTitle"
         :restore-cfi="restoreCfi"
         :jump-cfi="chapterJumpCfi"
+        :highlight-version="highlightVersion"
         @jump-done="onJumpDone"
       />
     </main>
@@ -317,6 +332,16 @@ watch(typography, applyTypography)
     <TypographyPanel
       :open="typographyOpen"
       @close="typographyOpen = false"
+    />
+
+    <!-- 票 07：高亮管理面板（本书高亮：分组列表/join 笔记摘要/定位/删除） -->
+    <HighlightPanel
+      :open="highlightPanelOpen"
+      :book-id="bookId"
+      :book-title="bookTitle"
+      @locate="onPanelLocate"
+      @close="highlightPanelOpen = false"
+      @changed="highlightVersion++"
     />
   </div>
 </template>

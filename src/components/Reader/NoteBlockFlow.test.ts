@@ -4,6 +4,7 @@
 // （切章+scrollIntoView+闪烁）、新建窗口 URL query 跳回原文。
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import type { EPUB, EPUBSection } from 'foliate-js/epub.js'
 import { cfiFromRange } from '../../services/epub-cfi'
 import { useReaderTypography } from '../../composables/useReaderTypography'
@@ -139,7 +140,12 @@ function fireListenEvent(event: string, payload: unknown): void {
 }
 
 function mountReader(bookId = 'book-1') {
-  return mount(ReaderView, { props: { bookId }, attachTo: document.body })
+  // pinia：票 07 高亮面板 setup 即取 blocks store（join 笔记摘要）
+  return mount(ReaderView, {
+    props: { bookId },
+    attachTo: document.body,
+    global: { plugins: [createPinia()] },
+  })
 }
 
 /** 输入浮层 textarea 填值并派发 input（v-model） */

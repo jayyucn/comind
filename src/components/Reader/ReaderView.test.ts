@@ -7,6 +7,7 @@
 // 点已有高亮→删除浮层→仅删高亮行。
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import type { EPUB, EPUBSection } from 'foliate-js/epub.js'
 import { cfiFromRange } from '../../services/epub-cfi'
 import { useReaderTypography } from '../../composables/useReaderTypography'
@@ -129,7 +130,12 @@ function selectText(wrapper: ReturnType<typeof mountReader>, selector: string, s
 function mountReader(bookId = 'book-1') {
   // attachTo document.body：jsdom 的 Selection.addRange 会静默忽略指向
   // detached 节点的 Range（rangeCount 保持 0），票 05 选区用例必须挂在真实文档上
-  return mount(ReaderView, { props: { bookId }, attachTo: document.body })
+  // pinia：票 07 高亮面板 setup 即取 blocks store（join 笔记摘要）
+  return mount(ReaderView, {
+    props: { bookId },
+    attachTo: document.body,
+    global: { plugins: [createPinia()] },
+  })
 }
 
 // jsdom 未实现 URL.createObjectURL/revokeObjectURL，图片用例手工 stub

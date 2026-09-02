@@ -39,6 +39,8 @@ const props = defineProps<{
   restoreCfi?: string | null
   /** 跳回原文的目标 CFI（票 06：非空时渲染完成后定位+闪烁，一次性） */
   jumpCfi?: string | null
+  /** 高亮数据版本（票 07：面板删除后父级递增，触发本章高亮重载重绘） */
+  highlightVersion?: number
 }>()
 
 const emit = defineEmits<{
@@ -282,6 +284,14 @@ watch(
   () => props.jumpCfi,
   cfi => {
     if (cfi) performJump()
+  },
+)
+
+// 票 07：高亮数据版本变化（面板删除）→ 重载本章高亮并重绘（正文与面板同步）
+watch(
+  () => props.highlightVersion,
+  () => {
+    void loadHighlights(renderGeneration)
   },
 )
 
