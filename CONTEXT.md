@@ -117,3 +117,24 @@ A Block's built-in string property (`key: 'project'`). Its value is free text �
 
 ### Area (领域)
 A Block's built-in string property (`key: 'area'`). Same free-text semantics and input convenience as **Project**: the value is a string, never a reference. _Avoid_: area entity, 领域引用.
+
+### Book Page (书籍页面)
+A Page whose `type` is `book`. Created by EPUB import; carries title/author/cover metadata. Dual identity: a plain note container in the editor (its child Blocks are reading notes), and the launch target of the Reader Window from the Library gallery. Synced as ordinary Page metadata; on devices without a reader it is just a normal note page. See ADR-0040.
+
+### Reader Window (阅读器窗口)
+A standalone Tauri `WebviewWindow` opened from the Library gallery or a Book Page's "start reading" action. Renders EPUB chapters in the main document (sanitized, no iframe) with TOC drawer, pagination controls, typography controls, and highlight overlay. Owns no editor: notes are appended as Blocks on the Book Page via the wasm client. See ADR-0040.
+
+### Highlight (高亮)
+A reader-local annotation entity (SQLite `BookHighlight` table, NOT in `SyncTable`): `{ id, bookPageId, cfi, text, chapter, color, blockId? }`. Created the moment text is selected; anchored by CFI so it re-renders across sessions and typography changes. Upgrading a highlight with a thought appends a note Block under the Book Page and backfills `blockId`. Deleting a highlight never deletes its note Block. Desktop-only. _Avoid_: annotation, 划线同步.
+
+### Note Block (读书笔记 Block)
+An ordinary bullet Block under a Book Page, carrying properties `book / chapter / cfi / quote`. Syncs to other devices as an independently readable note (the quote is embedded, no source book file needed). The `cfi` property powers jump-back-to-source on desktop. See ADR-0040.
+
+### CFI (Canonical Fragment Identifier)
+The EPUB spec's character-level position anchor, used uniformly for highlights, reading progress, and jump-back-to-source. Parsed/resolved via foliate-js `epubcfi` module; stable across typography changes. See ADR-0040 D1/D6.
+
+### Library Gallery (书房视图)
+A view of the Pages Library filtered to `type=book`, rendered by the fourth generic viewKind `gallery` (cover grid). Clicking a cover opens the Reader Window. Hidden by UI filter on devices without a reader. See ADR-0040 D9.
+
+### Reading Progress (阅读进度)
+The reader-local record of the last reading position, stored as a CFI anchor (SQLite `BookProgress` table, NOT in `SyncTable`). Restored on reopen by resolving the CFI and scrolling into view. Desktop-only.
