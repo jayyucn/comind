@@ -2,15 +2,14 @@
 // 选文件 → 解析元数据（foliate-js epub.js，内存中）→ 封面一次性提取存 asset
 // → 创建 type='book' 的 Page（走现有 page 写路径，进 sync 表照常同步）
 // → 书原文件落 workspace/books/<pageId>.epub（阅读器按 bookId 直接定位，见票 03）。
-// foliate-js 不自带解压，zip 读取层由 fflate 提供。
+// zip 加载层与 EPUB 解析抽在 epub-loader.ts（与阅读器共用）。
 import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
 import { readFile } from '@tauri-apps/plugin-fs'
-import { unzip, strFromU8 } from 'fflate'
-import { EPUB } from 'foliate-js/epub.js'
 import { assetStorage } from '../utils/asset'
 import { initCoreClient, isTauriEnvironment } from '../wasm/client'
 import type { Page } from '../wasm/types'
+import { formatLanguageMap, loadEpub } from './epub-loader'
 
 /** 封面 MIME → 扩展名（存 asset 时确定磁盘文件名的扩展名段） */
 const COVER_MIME_EXT: Record<string, string> = {
@@ -22,38 +21,11 @@ const COVER_MIME_EXT: Record<string, string> = {
   'image/svg+xml': 'svg',
 }
 
-/** foliate-js 的语言映射形态（{ lang: text }）→ 展示字符串（取首个值，同官方 demo） */
-function formatLanguageMap(x: unknown): string {
-  if (!x) return ''
-  if (typeof x === 'string') return x
-  if (typeof x === 'object') {
-    const map = x as Record<string, unknown>
-    const first = Object.keys(map)[0]
-    return first ? String(map[first] ?? '') : ''
-  }
-  return ''
-}
-
 /** 贡献者（字符串 | { name } | 数组）→ 展示字符串（多作者逗号连接，同官方 demo 逻辑） */
 function formatContributor(x: unknown): string {
   if (Array.isArray(x)) return x.map(formatContributor).filter(Boolean).join('，')
   if (typeof x === 'string') return x
   return formatLanguageMap((x as { name?: unknown } | null)?.name)
-}
-
-/** fflate 解 zip，构造 foliate-js EPUB 需要的加载层（loadText/loadBlob/getSize） */
-async function makeEpubLoader(blob: Blob) {
-  const bytes = new Uint8Array(await blob.arrayBuffer())
-  const entries = await new Promise<Record<string, Uint8Array>>((resolve, reject) =>
-    unzip(bytes, (err, data) => (err ? reject(err) : resolve(data))),
-  )
-  return {
-    loadText: (uri: string) => (uri in entries ? strFromU8(entries[uri]) : null),
-    // 复制一份绕开 fflate 的 Uint8Array<ArrayBufferLike> 与 BlobPart 的泛型不兼容
-    loadBlob: (uri: string) =>
-      uri in entries ? new Blob([new Uint8Array(entries[uri])]) : null,
-    getSize: (uri: string) => entries[uri]?.length ?? 0,
-  }
 }
 
 /**
@@ -81,8 +53,7 @@ export async function importEpub(): Promise<Page | null> {
   // 2. 读文件字节，内存中解析元数据（不依赖落盘顺序）
   const bytes = await readFile(selected)
   const fileName = selected.split(/[\\/]/).pop() || 'book.epub'
-  const loader = await makeEpubLoader(new Blob([bytes]))
-  const book = await new EPUB(loader).init()
+  const book = await loadEpub(new Blob([bytes]))
 
   const title = formatLanguageMap(book.metadata?.title).trim() || fileName.replace(/\.epub$/i, '')
   const author = formatContributor(book.metadata?.author).trim()

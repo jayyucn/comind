@@ -12,6 +12,8 @@ import { usePageStore } from '../../stores/pages'
 import { useBlockStore } from '../../stores/blocks'
 import { useEditorStore } from '../../stores/editor'
 import { useRelationshipMenu } from '../../composables/useRelationshipMenu'
+import { openReaderWindow } from '../../composables/useReaderWindow'
+import { isTauriEnvironment } from '../../wasm/tauri-platform'
 import type { Page } from '../../types/page'
 
 const props = defineProps<{
@@ -55,6 +57,16 @@ const isTitleEditable = computed(() => {
   const page = pageStore.getPage(resolvedPageId.value)
   return page?.type !== 'ideas'
 })
+
+// 书 Page（type=book，票 01 导入生成）：标题下显示「阅读」入口，
+// 唤起独立阅读器窗口（ADR-0040 D4；仅桌面端，web/Android 无阅读器）
+const isBookPage = computed(() => pageStore.getPage(resolvedPageId.value)?.type === 'book')
+const canOpenReader = computed(() => isBookPage.value && isTauriEnvironment())
+
+function handleOpenReader(): void {
+  const bookId = resolvedPageId.value
+  if (bookId) openReaderWindow(bookId)
+}
 
 const isEditingTitle = ref(false)
 const editingTitle = ref('')
@@ -178,8 +190,14 @@ function handleCancelMerge() {
               class="page-title page-title--input"
               @blur="saveTitle"
               @keydown.enter.prevent="saveTitle"
-              @keydown.escape="cancelEditTitle"
+              @keydown.escape.prevent="cancelEditTitle"
             />
+            <button
+              v-if="canOpenReader"
+              class="read-book-btn"
+              title="在独立窗口中阅读这本书"
+              @click="handleOpenReader"
+            >开始阅读</button>
           </div>
         </div>
 
@@ -222,6 +240,26 @@ function handleCancelMerge() {
 <style lang="scss" scoped>
 :deep(.navigate-highlight) {
   animation: navigate-pulse 2s ease-out;
+}
+
+// 书 Page 标题下的「开始阅读」入口（票 03 / ADR-0040 D4：唤起独立阅读器窗口）
+.read-book-btn {
+  display: block;
+  margin: var(--space-3) auto 0;
+  padding: 4px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: all 120ms ease;
+
+  &:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-03);
+  }
 }
 
 @keyframes navigate-pulse {

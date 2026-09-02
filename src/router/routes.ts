@@ -73,6 +73,15 @@ const routes: RouteRecordRaw[] = [
     component: () => import('../components/TaskHub/TaskHub.vue'),
     meta: { fullWidth: true, hideRightSidebarToggle: true },
   },
+  // 阅读器独立窗口专用路由（票 03 / ADR-0040 D4）：由 useReaderWindow 以 Tauri
+  // WebviewWindow 打开（url = /reader/<bookId>，bookId 即书 Page id），不进主窗口导航；
+  // App.vue 对该前缀路由不渲染主窗口壳（Sidebar/右侧栏/全局浮层）
+  {
+    path: '/reader/:bookId',
+    name: 'reader',
+    component: () => import('../components/Reader/ReaderView.vue'),
+    meta: { fullWidth: true, hideRightSidebarToggle: true },
+  },
   // 404 兜底
   {
     path: '/:pathMatch(.*)*',

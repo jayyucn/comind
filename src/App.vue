@@ -51,6 +51,12 @@ const route = useRoute()
 const editorStore = useEditorStore()
 const pageStore = usePageStore()
 
+// 阅读器独立窗口（票 03 / ADR-0040 D4：Tauri WebviewWindow 直开 /reader/:bookId）：
+// 不渲染主窗口壳（Sidebar/右侧栏/全局浮层），ReaderView 自带顶栏与窗口控制。
+// 用 location.pathname 判定——首帧路由尚未 resolve，route.path 不可靠。
+const isReaderWindow =
+  typeof window !== 'undefined' && window.location.pathname.startsWith('/reader')
+
 const {
   visible: dateRefPanelVisible,
   position: dateRefPanelPosition,
@@ -62,10 +68,14 @@ const {
   handleConfirm: handleDateRefConfirm,
 } = useDateTimePickerPanel()
 
-useNotificationScheduler()
-useBlockQueryRegistry()
-usePageQueryRegistry()
-useSyncPeerToast()
+// 主窗口专属的全局调度/注册（通知轮询、查询注册、同步 toast）：
+// 阅读器窗口跳过，避免双窗口重复调度（阅读器窗口经 wasm client 共用同一 SQLite）
+if (!isReaderWindow) {
+  useNotificationScheduler()
+  useBlockQueryRegistry()
+  usePageQueryRegistry()
+  useSyncPeerToast()
+}
 
 const { canGoBack, canGoForward, goBack, goForward } = useNavigationHistory()
 const { isMaximized, startDragging, minimize, maximize, close } = useWindowControls()
@@ -79,13 +89,19 @@ const {
 const { handleSelect: handleEmbedSelect } = useEmbedSelector()
 
 const showSearchPanel = ref(false)
-useGlobalHotkeys({ onToggleSearch: () => { showSearchPanel.value = !showSearchPanel.value } })
+// 主窗口专属：全局路由/搜索快捷键（阅读器窗口不注册，ctrl+g/i/t 不劫持阅读器）
+if (!isReaderWindow) {
+  useGlobalHotkeys({ onToggleSearch: () => { showSearchPanel.value = !showSearchPanel.value } })
+}
 
 const isFullWidthPage = computed(() => route.meta.fullWidth === true)
 const absolute = computed(() => route.meta.absolute === true)
 const showRightSidebarToggle = computed(() => route.meta.hideRightSidebarToggle !== true)
 
 onMounted(async () => {
+  // 阅读器窗口不做主窗口初始化（页面预载/图谱预取/Ctrl+A 兜底：
+  // 阅读器正文允许浏览器默认全选，为后续高亮选区铺路）
+  if (isReaderWindow) return
   // 预取图谱全量边快照（进程级缓存），使导航到 /graph 时画布即时填充
   prefetchGraphSnapshot()
   await useRelationshipTypes().load()
@@ -127,7 +143,9 @@ function handleMainClick(e: MouseEvent) {
 </script>
 
 <template>
-  <div class="app-layout">
+  <!-- 阅读器独立窗口：无主窗口壳，ReaderView 全屏自绘 -->
+  <RouterView v-if="isReaderWindow" />
+  <div v-else class="app-layout">
     <Sidebar :canGoBack="canGoBack" :canGoForward="canGoForward" @goBack="goBack" @goForward="goForward" @open-search="showSearchPanel = true" />
 
     <div class="page-scroll-wrapper" @click="handleMainClick">
