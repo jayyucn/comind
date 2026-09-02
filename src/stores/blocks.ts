@@ -8,7 +8,6 @@ import { debounce } from '../utils/debounce'
 import { useBlockVersionStore } from './blockVersion'
 import { usePropertyStore } from './property'
 import { useBlockCardStore } from './blockCard'
-import type { BlockSnapshot } from '../types/blockVersion'
 
 import {
   pmPosToTextOffset,

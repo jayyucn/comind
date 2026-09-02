@@ -72,7 +72,7 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
 
   // 子树编辑器根块标记（仅 BlockModal 通过 provide 下发；主编辑器无此注入）。
   // 用于约束：根块 Enter 建 child 而非页面级兄弟、根块 Outdent 不逃出子树（ADR-0039）。
-  const blockModalRootId = inject<Ref<string | null>>('blockModalRootId', null)
+  const blockModalRootId = inject<Ref<string | null> | null>('blockModalRootId', null)
 
   // ── 内部依赖的 composables ──
   const { navigateToPage } = useNavigateToPage()

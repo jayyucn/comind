@@ -161,7 +161,6 @@ let disposed = false
 onBeforeUnmount(() => { disposed = true })
 
 onMounted(async () => {
-  const startedAt = performance.now()
   // 关键：先让浏览器绘制外壳（布局 + 占位内容），再启动后台加载，
   // 整个 onMounted 不阻塞在重活上，主线程空闲、页面立即可交互、无白屏。
   await nextFrame()

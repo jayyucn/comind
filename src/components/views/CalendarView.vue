@@ -165,7 +165,7 @@ function refColorClass(dateStr: string): string {
           <div class="cal-events">
             <template v-if="cardsByDate.has(cell.date)">
               <template
-                v-for="(item, idx) in (cardsByDate.get(cell.date) ?? []).slice(0, MAX_VISIBLE)"
+                v-for="item in (cardsByDate.get(cell.date) ?? []).slice(0, MAX_VISIBLE)"
                 :key="idOf(item)"
               >
                 <div
