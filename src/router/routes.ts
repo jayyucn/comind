@@ -80,6 +80,7 @@ const routes: RouteRecordRaw[] = [
     path: '/reader/:bookId',
     name: 'reader',
     component: () => import('../components/Reader/ReaderView.vue'),
+    props: true,
     meta: { fullWidth: true, hideRightSidebarToggle: true },
   },
   // 404 兜底
