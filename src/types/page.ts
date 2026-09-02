@@ -19,7 +19,7 @@ export interface PageRecord {
   id: string
   blockId: string | null
   title: string
-  type: 'normal' | 'ideas'
+  type: 'normal' | 'ideas' | 'book'
   icon: string | null
   cover: string | null
   aliases: string

@@ -166,6 +166,19 @@ pub trait NotificationConfigRepository {
     fn save(&mut self, config: &NotificationConfig) -> Result<(), Box<dyn Error>>;
 }
 
+/// 阅读高亮（ADR-0040 D5/D7）：仅桌面本地，**绝不注册进 SyncTable**。
+pub trait BookHighlightRepository {
+    fn get_by_book_page_id(&self, book_page_id: &str) -> Result<Vec<BookHighlight>, Box<dyn Error>>;
+    fn upsert(&mut self, highlight: &BookHighlight) -> Result<BookHighlight, Box<dyn Error>>;
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
+}
+
+/// 阅读进度（ADR-0040 D5/D6）：每书一行 CFI 锚点，仅桌面本地。
+pub trait BookProgressRepository {
+    fn get(&self, book_page_id: &str) -> Result<Option<BookProgress>, Box<dyn Error>>;
+    fn upsert(&mut self, progress: &BookProgress) -> Result<BookProgress, Box<dyn Error>>;
+}
+
 pub trait StorageAdapter {
     fn blocks(&mut self) -> &mut dyn BlockRepository;
     fn pages(&mut self) -> &mut dyn PageRepository;
@@ -180,6 +193,8 @@ pub trait StorageAdapter {
     fn saved_filters(&mut self) -> &mut dyn SavedFilterRepository;
     fn screen_views(&mut self) -> &mut dyn ScreenViewRepository;
     fn notification_config(&mut self) -> &mut dyn NotificationConfigRepository;
+    fn book_highlights(&mut self) -> &mut dyn BookHighlightRepository;
+    fn book_progress(&mut self) -> &mut dyn BookProgressRepository;
 }
 
 pub trait TransactionalStorageAdapter: StorageAdapter {

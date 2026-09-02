@@ -14,7 +14,7 @@ export interface Page {
   id: string
   block_id: string | null
   title: string
-  type: 'normal' | 'ideas'
+  type: 'normal' | 'ideas' | 'book'
   icon: string | null
   cover: string | null
   aliases: string
@@ -118,10 +118,11 @@ export interface BlockUpdate {
 export interface PageUpdate {
   id?: string
   title: string
-  type: 'normal' | 'ideas'
+  type: 'normal' | 'ideas' | 'book'
   icon?: string | null
   cover?: string | null
-  aliases?: string[]
+  /** JSON 字符串数组（如 '["作者"]'）——Rust 端两侧 save_page 均按 String 反序列化 */
+  aliases?: string
 }
 
 export interface BatchOperation {
@@ -247,6 +248,28 @@ export interface ScreenViewRust {
   sort_order: number
   config: string
   created_at: number
+  updated_at: number
+}
+
+/** 阅读高亮（ADR-0040 D7）：阅读器态实体，仅桌面本地（不入 SyncTable） */
+export interface BookHighlightRust {
+  id: string
+  book_page_id: string
+  /** EPUB CFI 锚点，如 epubcfi(/6/4!/4/10/2:0) */
+  cfi: string
+  text: string
+  chapter: string
+  color: string
+  /** 关联笔记 Block，可空（D7 可选升级：写想法时回填） */
+  block_id: string | null
+  created_at: number
+  updated_at: number
+}
+
+/** 阅读进度（ADR-0040 D6）：上次位置的文字级 CFI 锚点，每书一行 */
+export interface BookProgressRust {
+  book_page_id: string
+  cfi: string
   updated_at: number
 }
 

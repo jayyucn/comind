@@ -2,7 +2,7 @@ use crate::assets::{asset_extension, asset_file_path, is_safe_asset_component, n
 use comind_core::{
     services::{
         build_page_with_blocks, BlockService, BlockVersionService, BlockWriteService,
-        DateRefService, FilterService, LinkService, PageService, PropertyService,
+        BookService, DateRefService, FilterService, LinkService, PageService, PropertyService,
         RelationshipTypeService, TemplateService,
     },
     storage::{SQLiteAdapter, StorageAdapter, TransactionalStorageAdapter},
@@ -128,6 +128,58 @@ pub async fn delete_saved_filter(
 ) -> Result<(), String> {
     execute_with_adapter(db, |storage| {
         FilterService::delete_saved_filter(storage, id)
+    })
+    .await
+}
+
+// ---- Book highlights & progress（ADR-0040 D5/D6/D7：仅桌面本地，不入 SyncTable） ----
+
+#[tauri::command]
+pub async fn upsert_book_highlight(
+    db: State<'_, super::state::DatabaseConnection>,
+    highlight: BookHighlight,
+) -> Result<BookHighlight, String> {
+    execute_with_adapter(db, |storage| {
+        BookService::upsert_highlight(storage, &highlight)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn delete_book_highlight(
+    db: State<'_, super::state::DatabaseConnection>,
+    id: &str,
+) -> Result<(), String> {
+    execute_with_adapter(db, |storage| BookService::delete_highlight(storage, id)).await
+}
+
+#[tauri::command]
+pub async fn get_book_highlights(
+    db: State<'_, super::state::DatabaseConnection>,
+    book_page_id: &str,
+) -> Result<Vec<BookHighlight>, String> {
+    execute_with_adapter(db, |storage| {
+        BookService::get_highlights(storage, book_page_id)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn get_book_progress(
+    db: State<'_, super::state::DatabaseConnection>,
+    book_page_id: &str,
+) -> Result<Option<BookProgress>, String> {
+    execute_with_adapter(db, |storage| BookService::get_progress(storage, book_page_id)).await
+}
+
+#[tauri::command]
+pub async fn upsert_book_progress(
+    db: State<'_, super::state::DatabaseConnection>,
+    book_page_id: &str,
+    cfi: &str,
+) -> Result<BookProgress, String> {
+    execute_with_adapter(db, |storage| {
+        BookService::upsert_progress(storage, book_page_id, cfi)
     })
     .await
 }
@@ -1080,6 +1132,45 @@ pub async fn delete_asset_file(
         write_asset_manifest(&assets_dir, &manifest)?;
     }
     Ok(())
+}
+
+// ---- 书文件（workspace/books/，EPUB 原文件存储；ADR-0040 D8） ----
+// 命名约定 <id>.epub，id 即书 Page id：阅读器路由 /reader/:bookId 凭此直接定位文件（票 03）
+
+/// 保存 EPUB 书文件到 workspace/books/<id>.epub
+#[tauri::command]
+pub async fn save_book_file(
+    config_manager: State<'_, super::state::ConfigManager>,
+    app_handle: AppHandle,
+    id: String,
+    data: Vec<u8>,
+) -> Result<(), String> {
+    if !is_safe_asset_component(&id) {
+        return Err(format!("Invalid book id: {}", id));
+    }
+    let config = config_manager.get_config()?.clone();
+    let workspace = super::config::get_workspace_path(&app_handle, &config);
+    let books_dir = super::config::get_books_path(&workspace);
+    std::fs::create_dir_all(&books_dir)
+        .map_err(|e| format!("Failed to create books directory: {}", e))?;
+    std::fs::write(books_dir.join(format!("{}.epub", id)), &data)
+        .map_err(|e| format!("Failed to write book file: {}", e))
+}
+
+/// 读取书文件字节（前端从 Blob 内存解析，不落中间文件）
+#[tauri::command]
+pub async fn read_book_file(
+    config_manager: State<'_, super::state::ConfigManager>,
+    app_handle: AppHandle,
+    id: String,
+) -> Result<Vec<u8>, String> {
+    if !is_safe_asset_component(&id) {
+        return Err(format!("Invalid book id: {}", id));
+    }
+    let config = config_manager.get_config()?.clone();
+    let workspace = super::config::get_workspace_path(&app_handle, &config);
+    let path = super::config::get_books_path(&workspace).join(format!("{}.epub", id));
+    std::fs::read(&path).map_err(|e| format!("Failed to read book file: {}", e))
 }
 
 #[tauri::command]

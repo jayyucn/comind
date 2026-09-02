@@ -26,6 +26,8 @@ use crate::storage::entity::saved_filter::{saved_filter_create, saved_filter_del
 use crate::storage::entity::screen_view::{screen_view_create, screen_view_delete, screen_view_get_all_by_entity, screen_view_get_by_id, screen_view_update};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::notification_config::{notification_config_get, notification_config_save};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::storage::entity::book::{book_highlight_delete, book_highlight_get_by_book_page_id, book_highlight_upsert, book_progress_get, book_progress_upsert};
 
 pub struct SQLiteAdapter {
     pub conn: Connection,
@@ -258,7 +260,28 @@ impl SQLiteAdapter {
                 quiet_hours_end             TEXT,
                 web_browser_notifications_enabled INTEGER NOT NULL DEFAULT 0
             );
-            
+
+            -- 阅读器高亮/进度（ADR-0040 D5/D6/D7）：仅桌面本地，
+            -- 绝不注册进 SyncTable —— 这是「高亮不同步」的保证。
+            CREATE TABLE IF NOT EXISTS BookHighlight (
+                id              TEXT PRIMARY KEY,
+                book_page_id    TEXT NOT NULL,
+                cfi             TEXT NOT NULL,
+                text            TEXT NOT NULL,
+                chapter         TEXT NOT NULL,
+                color           TEXT NOT NULL DEFAULT 'yellow',
+                block_id        TEXT,
+                created_at      INTEGER NOT NULL,
+                updated_at      INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_book_highlight_page ON BookHighlight(book_page_id);
+
+            CREATE TABLE IF NOT EXISTS BookProgress (
+                book_page_id    TEXT PRIMARY KEY,
+                cfi             TEXT NOT NULL,
+                updated_at      INTEGER NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_page_blockId        ON Page(block_id);
             CREATE INDEX IF NOT EXISTS idx_page_type           ON Page(type);
             CREATE INDEX IF NOT EXISTS idx_page_updatedAt      ON Page(updated_at);
@@ -882,6 +905,14 @@ impl StorageAdapter for SQLiteAdapter {
     fn notification_config(&mut self) -> &mut dyn NotificationConfigRepository {
         self
     }
+
+    fn book_highlights(&mut self) -> &mut dyn BookHighlightRepository {
+        self
+    }
+
+    fn book_progress(&mut self) -> &mut dyn BookProgressRepository {
+        self
+    }
 }
 
 impl NotificationConfigRepository for SQLiteAdapter {
@@ -891,6 +922,32 @@ impl NotificationConfigRepository for SQLiteAdapter {
 
     fn save(&mut self, config: &NotificationConfig) -> Result<(), Box<dyn Error>> {
         notification_config_save(&self.conn, config)
+    }
+}
+
+impl BookHighlightRepository for SQLiteAdapter {
+    fn get_by_book_page_id(&self, book_page_id: &str) -> Result<Vec<BookHighlight>, Box<dyn Error>> {
+        book_highlight_get_by_book_page_id(&self.conn, book_page_id)
+    }
+
+    fn upsert(&mut self, highlight: &BookHighlight) -> Result<BookHighlight, Box<dyn Error>> {
+        book_highlight_upsert(&self.conn, highlight)?;
+        Ok(highlight.clone())
+    }
+
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
+        book_highlight_delete(&self.conn, id)
+    }
+}
+
+impl BookProgressRepository for SQLiteAdapter {
+    fn get(&self, book_page_id: &str) -> Result<Option<BookProgress>, Box<dyn Error>> {
+        book_progress_get(&self.conn, book_page_id)
+    }
+
+    fn upsert(&mut self, progress: &BookProgress) -> Result<BookProgress, Box<dyn Error>> {
+        book_progress_upsert(&self.conn, progress)?;
+        Ok(progress.clone())
     }
 }
 
@@ -1403,6 +1460,14 @@ impl<'a> StorageAdapter for TxContext<'a> {
     fn notification_config(&mut self) -> &mut dyn NotificationConfigRepository {
         self
     }
+
+    fn book_highlights(&mut self) -> &mut dyn BookHighlightRepository {
+        self
+    }
+
+    fn book_progress(&mut self) -> &mut dyn BookProgressRepository {
+        self
+    }
 }
 
 impl<'a> SavedFilterRepository for TxContext<'a> {
@@ -1585,5 +1650,60 @@ impl<'a> NotificationConfigRepository for TxContext<'a> {
 
     fn save(&mut self, config: &NotificationConfig) -> Result<(), Box<dyn Error>> {
         notification_config_save(&self.conn, config)
+    }
+}
+
+impl<'a> BookHighlightRepository for TxContext<'a> {
+    fn get_by_book_page_id(&self, book_page_id: &str) -> Result<Vec<BookHighlight>, Box<dyn Error>> {
+        book_highlight_get_by_book_page_id(&self.conn, book_page_id)
+    }
+
+    fn upsert(&mut self, highlight: &BookHighlight) -> Result<BookHighlight, Box<dyn Error>> {
+        book_highlight_upsert(&self.conn, highlight)?;
+        Ok(highlight.clone())
+    }
+
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
+        book_highlight_delete(&self.conn, id)
+    }
+}
+
+impl<'a> BookProgressRepository for TxContext<'a> {
+    fn get(&self, book_page_id: &str) -> Result<Option<BookProgress>, Box<dyn Error>> {
+        book_progress_get(&self.conn, book_page_id)
+    }
+
+    fn upsert(&mut self, progress: &BookProgress) -> Result<BookProgress, Box<dyn Error>> {
+        book_progress_upsert(&self.conn, progress)?;
+        Ok(progress.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn book_tables_migration_is_idempotent() {
+        let adapter = SQLiteAdapter::open_in_memory().unwrap();
+        // 模拟老库升级：升级前的库没有这两张表
+        adapter
+            .conn
+            .execute_batch("DROP TABLE IF EXISTS BookHighlight; DROP TABLE IF EXISTS BookProgress;")
+            .unwrap();
+        // 新代码 open 时重跑 init_schema：建表且不炸
+        SQLiteAdapter::init_schema(&adapter.conn).unwrap();
+        // 幂等：重复执行为 no-op，老库上不报错
+        SQLiteAdapter::init_schema(&adapter.conn).unwrap();
+
+        let count: i64 = adapter
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('BookHighlight','BookProgress')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 2, "both book tables must exist after migration");
     }
 }

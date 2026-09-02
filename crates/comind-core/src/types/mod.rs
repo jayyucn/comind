@@ -1,6 +1,7 @@
 pub mod block;
 pub mod page;
 pub mod link;
+pub mod book;
 pub mod property;
 pub mod tag;
 pub mod relationship_type;
@@ -21,6 +22,7 @@ pub use block::*;
 pub use block_card::*;
 pub use page::*;
 pub use link::*;
+pub use book::*;
 pub use property::*;
 pub use tag::*;
 pub use relationship_type::*;
