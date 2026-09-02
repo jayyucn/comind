@@ -10,7 +10,7 @@
  */
 import { computed, watch } from 'vue'
 import { createRegistry, type Registry, type FieldDescriptor, type FieldType, type Option } from '../core/query'
-import type { BoardConfig, CalendarConfig, LayoutConfig, QuadrantConfig, TableConfig, ViewKind } from '../core/view'
+import type { BoardConfig, CalendarConfig, GalleryConfig, LayoutConfig, QuadrantConfig, TableConfig, ViewKind } from '../core/view'
 import type { BlockCard } from '../wasm/types'
 import { BUILT_IN_PROPERTIES, type PropertyDefinition, type PropertyType } from '../types/property'
 import { useBlockCardStore } from '../stores/blockCard'
@@ -63,6 +63,8 @@ export function blockDefaultConfig(kind: ViewKind): LayoutConfig {
     case 'board': return BLOCK_DEFAULT_BOARD_CONFIG
     case 'calendar': return BLOCK_DEFAULT_CALENDAR_CONFIG
     case 'quadrant': return BLOCK_DEFAULT_QUADRANT_CONFIG
+    // Block 实体不提供封面网格视图，但该分支为 ViewKind 穷尽性所必需（page 侧书房才有实际布局）
+    case 'gallery': return { viewKind: 'gallery', version: 1 } satisfies GalleryConfig
   }
 }
 

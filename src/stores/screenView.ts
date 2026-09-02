@@ -312,7 +312,11 @@ function makeScreenViewStore(
         await selectScreen(screen.id)
       }
 
-      async function createTab(name?: string, type?: string) {
+      /**
+       * 新建 tab。缺省继承当前 workingQuery（NamedViewBar 新建弹窗语义）；
+       * 显式传入 query 时按其落库（消费方种子 tab 用，如书房 type=book，票 08）。
+       */
+      async function createTab(name?: string, type?: string, query?: ViewQuery) {
         if (!currentScreenId.value) return
         const client = await getClient()
         const vt = type || currentViewType.value
@@ -321,7 +325,7 @@ function makeScreenViewStore(
           currentScreenId.value,
           name?.trim() ?? '',
           vt,
-          JSON.stringify(workingQuery.value),
+          JSON.stringify(query ?? workingQuery.value),
           nextTabSort(currentScreenId.value),
           configJson(vt),
         )

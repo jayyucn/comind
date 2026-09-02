@@ -7,7 +7,7 @@
  */
 
 /** 视图布局类型。与 View.viewKind 同源。 */
-export type ViewKind = 'table' | 'board' | 'calendar' | 'quadrant'
+export type ViewKind = 'table' | 'board' | 'calendar' | 'quadrant' | 'gallery'
 
 /** 表格列装饰角色（渲染专属，属 LayoutConfig 而非无头 FieldDescriptor）。 */
 export type TableColumnRole = 'primary' | 'link' | 'overdue-date' | 'done' | 'status'
@@ -72,8 +72,18 @@ export interface QuadrantConfig {
   version: 1
 }
 
+/**
+ * 封面网格视图布局配置（书房，票 08 / ADR-0040 D9）。
+ * 卡片为「封面 + 标题 + 副标题 + 可选进度」的通用形态，无额外列/分组元数据，配置为空壳；
+ * 将来相册/素材库等封面网格场景可直接复用该 viewKind。
+ */
+export interface GalleryConfig {
+  viewKind: 'gallery'
+  version: 1
+}
+
 /** 视图布局配置判别联合。 */
-export type LayoutConfig = TableConfig | BoardConfig | CalendarConfig | QuadrantConfig
+export type LayoutConfig = TableConfig | BoardConfig | CalendarConfig | QuadrantConfig | GalleryConfig
 
 /** 按 viewKind 取对应配置类型（辅助，便于 store / 组件按需收窄）。 */
 export type ConfigOf<K extends ViewKind> = Extract<LayoutConfig, { viewKind: K }>

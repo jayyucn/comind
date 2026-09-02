@@ -2,9 +2,9 @@ import type { Component } from 'vue'
 import type { ViewQuery } from '../query'
 import type { ScreenViewRust } from '../../wasm/types'
 
-/** 视图类型选项：由消费方按实体注入（block: 表格/看板/日历/四象限；page: 表格/日历）。 */
+/** 视图类型选项：由消费方按实体注入（block: 表格/看板/日历/四象限；page: 表格/日历/书房 gallery）。 */
 export interface ViewTypeOption {
-  key: 'table' | 'board' | 'calendar' | 'quadrant'
+  key: 'table' | 'board' | 'calendar' | 'quadrant' | 'gallery'
   label: string
   icon: Component
 }

@@ -9,8 +9,8 @@
  * Page 无自定义属性系统，注册表为静态（全部内置），无运行时增删。
  * 本模块是「引擎与业务解耦」主张的实证：不修改引擎一行，仅通过注册即获得筛选/排序/分组能力。
  */
-import { createRegistry, type Option, type Registry } from '../core/query'
-import type { BoardConfig, CalendarConfig, LayoutConfig, QuadrantConfig, TableConfig, ViewKind } from '../core/view'
+import { createRegistry, type Option, type Registry, type ViewQuery } from '../core/query'
+import type { BoardConfig, CalendarConfig, GalleryConfig, LayoutConfig, QuadrantConfig, TableConfig, ViewKind } from '../core/view'
 import type { Page } from '../types/page'
 
 /** 引擎命名空间：所有 Page 字段注册于此。 */
@@ -48,15 +48,48 @@ export const PAGE_DEFAULT_BOARD_CONFIG: BoardConfig = {
   version: 1,
 }
 
+/** Page 实体内建默认封面网格布局（书房，票 08 / ADR-0040 D9）：卡片为封面+标题+副标题+进度，无附加元数据。 */
+export const PAGE_DEFAULT_GALLERY_CONFIG: GalleryConfig = {
+  viewKind: 'gallery',
+  version: 1,
+}
+
 /** Page 实体默认布局统一入口（store seed/create 经 options 注入）。 */
 export function pageDefaultConfig(kind: ViewKind): LayoutConfig {
   switch (kind) {
     case 'table': return PAGE_DEFAULT_TABLE_CONFIG
     case 'board': return PAGE_DEFAULT_BOARD_CONFIG
     case 'calendar': return PAGE_DEFAULT_CALENDAR_CONFIG
+    case 'gallery': return PAGE_DEFAULT_GALLERY_CONFIG
     // Page 实体不提供四象限视图，但该分支为 ViewKind 穷尽性所必需（block 侧才有实际布局）
     case 'quadrant': return { viewKind: 'quadrant', version: 1 } satisfies QuadrantConfig
   }
+}
+
+/**
+ * 书房 tab 种子查询（票 08 / ADR-0040 D9）：查询条件 type=book（书 Page）。
+ * PagesLibrary 桌面端首挂时以此 seed 一个 gallery 视图 tab；web/Android 不 seed（书房入口不出现）。
+ */
+export const LIBRARY_TAB_QUERY: ViewQuery = {
+  version: 1,
+  filter: {
+    combinator: 'and',
+    children: [{ field: 'type', op: 'is', value: { kind: 'literal', value: 'book' } }],
+  },
+  sort: [],
+  groupBy: null,
+}
+
+/**
+ * Page 实体可选视图类型 key（跨端过滤，票 08 / ADR-0040 D2）：
+ * 桌面端含书房（gallery）——封面网格 + 阅读器入口；web/Android 无阅读器，书房 tab 不出现。
+ * 消费方（PagesLibrary）按 key 映射图标/文案注册为 ViewTypeOption。
+ */
+export type PageViewKind = 'table' | 'calendar' | 'gallery'
+export function pageViewKinds(isDesktop: boolean): PageViewKind[] {
+  const kinds: PageViewKind[] = ['table', 'calendar']
+  if (isDesktop) kinds.push('gallery')
+  return kinds
 }
 
 /** timestamp(ms) → 本地 yyyy-MM-dd（沿用 Ideas Page 规范）。空/非法返回 undefined（视为空值）。 */
@@ -73,6 +106,8 @@ function toDateKey(ts: number | null | undefined): string | undefined {
 const TYPE_OPTIONS: Option[] = [
   { id: 'normal', label: '普通' },
   { id: 'ideas', label: '灵感' },
+  // 书 Page（票 01 导入生成）：书房 tab 查询 type=book 及表格类型列展示需要
+  { id: 'book', label: '书' },
 ]
 
 function asPage(item: unknown): Page {

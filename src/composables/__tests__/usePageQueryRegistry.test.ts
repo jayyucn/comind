@@ -11,13 +11,17 @@ import {
   getPageRegistry,
   PAGE_ENTITY,
   pageDefaultConfig,
+  pageViewKinds,
   PAGE_DEFAULT_TABLE_CONFIG,
   PAGE_DEFAULT_BOARD_CONFIG,
   PAGE_DEFAULT_CALENDAR_CONFIG,
+  PAGE_DEFAULT_GALLERY_CONFIG,
+  LIBRARY_TAB_QUERY,
 } from '../usePageQueryRegistry'
 import { createQueryEngine } from '../../core/query'
+import { parseLayoutConfig } from '../../core/view'
 import type { Page } from '../../types/page'
-import type { TableConfig, CalendarConfig } from '../../core/view'
+import type { TableConfig, CalendarConfig, GalleryConfig } from '../../core/view'
 
 /** 构造最小 ViewQuery。 */
 const pageEngine = createQueryEngine<Page>(PAGE_ENTITY)
@@ -63,12 +67,12 @@ describe('Page 字段描述符注册表', () => {
     expect(d).toBe('2026-01-05')
   })
 
-  it('type 字段为 select 且选项含 normal/ideas', () => {
+  it('type 字段为 select 且选项含 normal/ideas/book（书 Page，票 08 书房查询用）', () => {
     const registry = createRegistry()
     registerPageBuiltinFields(registry)
     const type = registry.get(PAGE_ENTITY, 'type')!
     expect(type.type).toBe('select')
-    expect(type.options?.map((o) => o.id).sort()).toEqual(['ideas', 'normal'])
+    expect(type.options?.map((o) => o.id).sort()).toEqual(['book', 'ideas', 'normal'])
   })
 })
 
@@ -198,5 +202,48 @@ describe('pageDefaultConfig (视图 kind → 实体默认布局回退, f14a4d45)
     expect(cfg).toBe(PAGE_DEFAULT_CALENDAR_CONFIG)
     expect(cfg.viewKind).toBe('calendar')
     expect(cfg.dateRefKind).toBe('updatedAt')
+  })
+
+  it('gallery → PAGE_DEFAULT_GALLERY_CONFIG（书房，票 08）', () => {
+    const cfg = pageDefaultConfig('gallery') as GalleryConfig
+    expect(cfg).toBe(PAGE_DEFAULT_GALLERY_CONFIG)
+    expect(cfg.viewKind).toBe('gallery')
+    expect(cfg.version).toBe(1)
+  })
+})
+
+/**
+ * 书房 gallery 视图注册（票 08 / ADR-0040 D9）：GalleryConfig 解析、书房 tab 种子查询
+ * 与跨端视图类型过滤。pageViewKinds 决定书房 tab 是否出现在 Pages Library——
+ * web/Android 无阅读器（ADR-0040 D2），gallery 不可用；一旦回归（web 端出现书房入口）
+ * 无现有测试能发现，故在此集中断言。
+ */
+describe('书房 gallery 视图注册（票 08）', () => {
+  it('parseLayoutConfig 接受合法 GalleryConfig，viewKind 不符回退 null', () => {
+    expect(parseLayoutConfig('{"viewKind":"gallery","version":1}', 'gallery')).toEqual({
+      viewKind: 'gallery',
+      version: 1,
+    })
+    // 携带其他 viewKind 的 config 不能喂给 gallery 视图（错位渲染防护）
+    expect(parseLayoutConfig('{"viewKind":"table","version":1,"columns":[]}', 'gallery')).toBeNull()
+    expect(parseLayoutConfig(null, 'gallery')).toBeNull()
+    expect(parseLayoutConfig('损坏 JSON', 'gallery')).toBeNull()
+  })
+
+  it('LIBRARY_TAB_QUERY 过滤后仅剩 type=book 的书 Page', () => {
+    const registry = createRegistry()
+    registerPageBuiltinFields(registry)
+    const books: Page[] = [
+      { ...pages[0], id: 'bk1', type: 'book' },
+      { ...pages[1], id: 'bk2', type: 'book' },
+    ]
+    const mixed = [...books, ...pages]
+    const result = pageEngine.filterSort(mixed, LIBRARY_TAB_QUERY, registry)
+    expect(result.map((p) => p.id).sort()).toEqual(['bk1', 'bk2'])
+  })
+
+  it('pageViewKinds：桌面端含 gallery（书房），web/Android 不含（跨端过滤）', () => {
+    expect(pageViewKinds(true)).toEqual(['table', 'calendar', 'gallery'])
+    expect(pageViewKinds(false)).toEqual(['table', 'calendar'])
   })
 })

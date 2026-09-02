@@ -1,26 +1,39 @@
 <script setup lang="ts">
-import { CalendarDays, LayoutGrid } from 'lucide-vue-next'
-import { computed, onMounted, ref } from 'vue'
+import { BookOpen, BookPlus, CalendarDays, LayoutGrid } from 'lucide-vue-next'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { createQueryEngine } from '../../core/query'
 import {
   getPageRegistry,
+  LIBRARY_TAB_QUERY,
   PAGE_DEFAULT_CALENDAR_CONFIG,
+  PAGE_DEFAULT_GALLERY_CONFIG,
   PAGE_DEFAULT_TABLE_CONFIG,
   PAGE_ENTITY,
   pageDefaultConfig,
+  pageViewKinds,
+  type PageViewKind,
 } from '../../composables/usePageQueryRegistry'
 import type { QueryContext, ViewQuery } from '../../core/query'
-import { parseLayoutConfig, type CalendarConfig, type TableConfig } from '../../core/view'
+import { parseLayoutConfig, type CalendarConfig, type GalleryConfig, type TableConfig } from '../../core/view'
 import type { ViewTypeOption } from '../../core/view/management'
 import { usePageStore } from '../../stores/pages'
 import { useScreenViewStore } from '../../stores/screenView'
+import { openReaderWindow } from '../../composables/useReaderWindow'
+import { importEpub } from '../../services/book-import'
+import { loadBookGalleryProgress } from '../../services/book-progress'
+import { isTauriEnvironment } from '../../wasm/tauri-platform'
 import type { Page } from '../../types/page'
 import QueryPageFrame from '../common/QueryPageFrame.vue'
 import PageDrawer from '../Page/PageDrawer.vue'
 import TableView from '../views/TableView.vue'
 import CalendarView from '../views/CalendarView.vue'
+import GalleryView from '../views/GalleryView.vue'
 
 defineOptions({ name: 'PagesLibrary' })
+
+// 跨端（票 08 / ADR-0040 D2）：书房（gallery）仅桌面端——web/Android 无阅读器，
+// 书房 tab 不出现；书 Page 本身照常作为普通笔记页打开（阅读入口只在桌面显示）。
+const isDesktop = isTauriEnvironment()
 
 const pageStore = usePageStore()
 // 命名视图 store（与 QueryPageFrame 内部同 key 单例共享；此处读取 currentTab/workingQuery）。
@@ -31,11 +44,13 @@ const registry = getPageRegistry()
 const pageEngine = createQueryEngine<Page>(PAGE_ENTITY)
 
 // page 实体可选的视图类型（注入 QueryPageFrame → NamedViewBar；类型创建后固定。
-// 同时决定外壳渲染哪几个视图——table/calendar，不含 board）
-const pageViewTypes: ViewTypeOption[] = [
-  { key: 'table', label: '表格', icon: LayoutGrid },
-  { key: 'calendar', label: '日历', icon: CalendarDays },
-]
+// 同时决定外壳渲染哪几个视图——table/calendar + 桌面端 gallery 书房，不含 board）
+const VIEW_TYPE_META: Record<PageViewKind, { label: string; icon: typeof LayoutGrid }> = {
+  table: { label: '表格', icon: LayoutGrid },
+  calendar: { label: '日历', icon: CalendarDays },
+  gallery: { label: '书房', icon: BookOpen },
+}
+const pageViewTypes: ViewTypeOption[] = pageViewKinds(isDesktop).map((key) => ({ key, ...VIEW_TYPE_META[key] }))
 
 const searchQuery = ref('')
 // 当前激活 tab 的可编辑查询（单一数据源：NamedViewBar 的保存/清除/切换均作用于它）。
@@ -50,6 +65,9 @@ const tableConfig = computed<TableConfig>(() =>
 )
 const calendarConfig = computed<CalendarConfig>(() =>
   (parseLayoutConfig(screenViewStore.currentTab?.config, 'calendar') as CalendarConfig | null) ?? PAGE_DEFAULT_CALENDAR_CONFIG,
+)
+const galleryConfig = computed<GalleryConfig>(() =>
+  (parseLayoutConfig(screenViewStore.currentTab?.config, 'gallery') as GalleryConfig | null) ?? PAGE_DEFAULT_GALLERY_CONFIG,
 )
 
 // 跨记录字段引用所需的求值上下文：按 id 取 Page（用全量 store，不受搜索过滤影响）。
@@ -102,9 +120,69 @@ function handleCellClick(pageId: string, fieldKey: string) {
   handleNavigateToPage(pageId)
 }
 
+// ── 书房（票 08 / ADR-0040 D9）：gallery 视图 tab 的种子、进度与导入 ──
+
+/**
+ * 书房 tab 种子：桌面端确保存在一个 gallery 视图 tab（查询 type=book）。
+ * 已存在（含用户复制出的副本）则跳过；被删除后下次进入重建——桌面端保证书房入口常在（v1 语义）。
+ * web/Android 不调用（书房 tab 不出现，ADR-0040 D2）。
+ */
+async function ensureLibraryTab(): Promise<void> {
+  if (screenViewStore.views.some((v) => v.view_type === 'gallery')) return
+  const prevTabId = screenViewStore.currentTabId
+  await screenViewStore.createTab('书房', 'gallery', LIBRARY_TAB_QUERY)
+  // 种子后回到用户原本所在的 tab（createTab 末尾会选中新 tab）
+  if (prevTabId && prevTabId !== screenViewStore.currentTabId) {
+    await screenViewStore.selectTab(prevTabId)
+  }
+}
+
+/** 书房卡片进度（bookPageId → 0~1）；进度数据仅桌面本地（ADR-0040 D5） */
+const bookProgress = ref<Record<string, number>>({})
+
+async function refreshBookProgress(): Promise<void> {
+  if (!isDesktop) return
+  const bookIds = pageStore.pages.filter((p) => p.type === 'book').map((p) => p.id)
+  bookProgress.value = await loadBookGalleryProgress(bookIds)
+}
+
+/** 书房卡片点击 → 开阅读器独立窗口（复用票 03 入口；gallery 仅桌面注册，web 不会走到这里） */
+function handleOpenReader(bookId: string): void {
+  void openReaderWindow(bookId)
+}
+
+const importing = ref(false)
+
+/** 书房导入入口（票 08）：复用票 01 的导入 service；完成后刷新书 Page，网格即时出现新书 */
+async function handleImportEpub(): Promise<void> {
+  if (importing.value) return
+  importing.value = true
+  try {
+    const page = await importEpub()
+    if (page) {
+      await pageStore.loadAllPages()
+      await refreshBookProgress()
+    }
+  } catch (e) {
+    console.error('[书房] 导入 EPUB 失败:', e)
+  } finally {
+    importing.value = false
+  }
+}
+
 onMounted(async () => {
   await screenViewStore.load()
   await pageStore.loadAllPages()
+  if (isDesktop) {
+    await ensureLibraryTab()
+    await refreshBookProgress()
+    // 阅读器窗口关掉回到主窗口时刷新进度环（ADR-0040 D4 focus 兜底）
+    window.addEventListener('focus', refreshBookProgress)
+  }
+})
+
+onBeforeUnmount(() => {
+  if (isDesktop) window.removeEventListener('focus', refreshBookProgress)
 })
 </script>
 
@@ -127,6 +205,7 @@ onMounted(async () => {
     :group-by="null"
     :table-config="tableConfig"
     :calendar-config="calendarConfig"
+    :gallery-config="galleryConfig"
   >
     <template #table="{ context }">
       <TableView
@@ -154,8 +233,99 @@ onMounted(async () => {
         @navigate="handleNavigateToPage"
       />
     </template>
+    <!-- 书房（票 08 / ADR-0040 D9）：封面网格 + 导入入口；卡片点击开阅读器窗口（仅桌面注册） -->
+    <template #gallery="{ context }">
+      <div class="library-gallery">
+        <div class="library-toolbar">
+          <button class="import-epub-btn" :disabled="importing" @click="handleImportEpub">
+            <BookPlus :size="14" />
+            {{ importing ? '导入中…' : '导入 EPUB' }}
+          </button>
+        </div>
+        <GalleryView
+          :items="context.items"
+          :fields="context.fields"
+          :config="galleryConfig"
+          :progress="bookProgress"
+          @navigate="handleOpenReader"
+        >
+          <template #empty>
+            <BookOpen :size="40" class="empty-icon" />
+            <p class="empty-hint">书房还是空的，导入第一本 EPUB 开始阅读</p>
+            <button class="import-epub-btn primary" :disabled="importing" @click="handleImportEpub">
+              <BookPlus :size="14" />
+              {{ importing ? '导入中…' : '导入 EPUB' }}
+            </button>
+          </template>
+        </GalleryView>
+      </div>
+    </template>
   </QueryPageFrame>
 
   <!-- 页面详情右侧弹层（替代整页路由跳转） -->
   <PageDrawer :page-id="drawerPageId" @close="drawerPageId = null" />
 </template>
+
+<style lang="scss" scoped>
+// 书房 gallery 区域：工具栏（导入入口）+ 封面网格（票 08）
+.library-gallery {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.library-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 12px 8px;
+  flex: none;
+}
+
+.import-epub-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  font: 500 var(--text-xs, 0.75rem)/1 var(--font-sans, sans-serif);
+  cursor: pointer;
+  transition: all 120ms ease;
+
+  &:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-03);
+  }
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+
+  &.primary {
+    background: var(--accent);
+    border-color: transparent;
+    color: #141417;
+    font-weight: 600;
+
+    &:hover:not(:disabled) {
+      background: #93a1fa;
+    }
+  }
+}
+
+.empty-icon {
+  color: var(--text-tertiary);
+  opacity: 0.5;
+}
+
+.empty-hint {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+</style>
