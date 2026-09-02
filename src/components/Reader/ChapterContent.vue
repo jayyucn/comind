@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 单章滚动容器（票 03/04/05 / ADR-0040 D1/D6/D7/D10）：EPUB section →
+// 单章滚动容器（票 03/04/05/06 / ADR-0040 D1/D6/D7/D10）：EPUB section →
 // createDocument 取章节 XHTML → 书内图片资源替换为 blob: URL → 严格 sanitize →
 // 注入主文档（非 iframe）。组件由 ReaderView 以 :key=section.id 重建（每章一个
 // 实例），objectURL 在卸载时统一回收。
@@ -10,14 +10,19 @@
 // 重绘 = 渲染完成后 get_book_highlights → 逐条解析 → CSS Custom Highlight 绘制层
 // （等价 <mark> 包裹但不改 DOM——正文 DOM 稳定是 CFI 锚定/进度保存的前提）；
 // 点已有高亮 → 小浮层删除（仅删高亮行，不删关联 Block，ADR-0040 D7）。
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+// 票 06：操作条/高亮浮层「写笔记」→ NoteInputPopover（v1 纯文本）→
+// createOrUpdateNoteBlock（书 Page 下 append Block + 属性四件套 + 回填
+// block_id + emitTo 主窗口刷新）；jumpCfi 跳转定位（跳回原文）+ 闪烁提示。
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { EPUB, EPUBSection } from 'foliate-js/epub.js'
 import { sanitizeChapterContent } from '../../services/epub-sanitize'
 import { cfiFromRange, cfiToRange, cfiToSpineIndex } from '../../services/epub-cfi'
+import { createOrUpdateNoteBlock, loadNoteText } from '../../services/book-note'
 import type { BookHighlightRust } from '../../wasm/types'
 import { initCoreClient } from '../../wasm/client'
 import SelectionToolbar from './SelectionToolbar.vue'
 import HighlightPopover from './HighlightPopover.vue'
+import NoteInputPopover from './NoteInputPopover.vue'
 
 const props = defineProps<{
   book: EPUB
@@ -28,8 +33,16 @@ const props = defineProps<{
   spineIndex: number
   /** 本章目录名（高亮记录的章节快照） */
   chapterTitle?: string
+  /** 书名（笔记 Block 的 book 属性快照） */
+  bookTitle?: string
   /** 待恢复的进度 CFI（仅恢复章且首跳时传入，定位失败静默跳过） */
   restoreCfi?: string | null
+  /** 跳回原文的目标 CFI（票 06：非空时渲染完成后定位+闪烁，一次性） */
+  jumpCfi?: string | null
+}>()
+
+const emit = defineEmits<{
+  'jump-done': []
 }>()
 
 const containerRef = ref<HTMLElement | null>(null)
@@ -46,6 +59,10 @@ const SAVE_DEBOUNCE_MS = 1000
 
 /** CSS Custom Highlight 注册名（绘制层） */
 const HIGHLIGHT_KEY = 'reader-highlight'
+/** 跳回原文闪烁提示的绘制层注册名（票 06） */
+const JUMP_FLASH_KEY = 'reader-jump-flash'
+/** 闪烁提示持续时间 */
+const JUMP_FLASH_MS = 1600
 /** v1 单色高亮（默认黄；数据模型 color 字段已留，多色不在 v1） */
 const HIGHLIGHT_COLOR = 'yellow'
 
@@ -63,6 +80,16 @@ const toolbarY = ref(0)
 const popoverHighlightId = ref<string | null>(null)
 const popoverX = ref(0)
 const popoverY = ref(0)
+
+/** 写笔记输入浮层（票 06）：待写笔记的高亮上下文，null = 隐藏 */
+interface NoteDraft {
+  x: number
+  y: number
+  highlight: BookHighlightRust
+  /** 已有笔记的预填文本（更新路径） */
+  initialText?: string
+}
+const noteDraft = ref<NoteDraft | null>(null)
 
 /** 相对 URI 是否带协议头（http:/https:/data: 等，即书外资源；与 foliate isExternal 一致） */
 function isExternalUri(uri: string): boolean {
@@ -221,8 +248,42 @@ async function render(): Promise<void> {
   if (myGen === renderGeneration) {
     restoreScroll()
     void loadHighlights(myGen)
+    // 票 06：跳回原文（切章重建组件时 jumpCfi prop 已就位，渲染完成后定位）
+    if (props.jumpCfi) performJump()
   }
 }
+
+/** 跳转定位（票 06）：解析 CFI → scrollIntoView + 闪烁提示，一次性后通知父级清空 */
+function performJump(): void {
+  const el = containerRef.value
+  const cfi = props.jumpCfi
+  emit('jump-done')
+  if (!el || !cfi) return
+  const range = cfiToRange(el, cfi)
+  if (!range) return
+  // startContainer 可能是 text 节点（无 scrollIntoView），取其所在元素
+  const node = range.startContainer
+  const target: Element | null =
+    node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement
+  target?.scrollIntoView({ block: 'center' })
+  flashRange(range)
+}
+
+/** 跳转目标闪烁提示：临时注册到 CSS Custom Highlight 绘制层，超时自动移除 */
+function flashRange(range: Range): void {
+  const registry = (CSS as { highlights?: HighlightRegistry }).highlights
+  if (!registry || typeof Highlight === 'undefined') return
+  registry.set(JUMP_FLASH_KEY, new Highlight(range))
+  setTimeout(() => registry.delete(JUMP_FLASH_KEY), JUMP_FLASH_MS)
+}
+
+// jumpCfi 同章后续变化（如已在该章再点「↗ 原文」）：直接定位
+watch(
+  () => props.jumpCfi,
+  cfi => {
+    if (cfi) performJump()
+  },
+)
 
 // ---- 票 05：高亮（CFI 锚定） ----
 
@@ -294,13 +355,21 @@ function onSelectionChange(): void {
 
 /** 操作条「高亮」：选区 Range → CFI → upsert_book_highlight（含文本快照/章节名） */
 async function createHighlight(): Promise<void> {
-  const el = containerRef.value
   const sel = document.getSelection()
   toolbarVisible.value = false
-  if (!el || !sel || sel.rangeCount === 0) return
+  const saved = await saveHighlight()
+  // 划线完成：清选区
+  if (saved) sel?.removeAllRanges()
+}
+
+/** 选区 → 高亮行落库并绘制（「高亮」与「写笔记」共用；返回落库后的高亮行） */
+async function saveHighlight(): Promise<BookHighlightRust | null> {
+  const el = containerRef.value
+  const sel = document.getSelection()
+  if (!el || !sel || sel.rangeCount === 0) return null
   const range = sel.getRangeAt(0)
   const text = range.toString()
-  if (!text.trim()) return
+  if (!text.trim()) return null
   try {
     const cfi = cfiFromRange(el, range, props.spineIndex)
     const now = Date.now()
@@ -318,11 +387,62 @@ async function createHighlight(): Promise<void> {
     })
     chapterHighlights.value.push(saved)
     redrawHighlights()
+    return saved
   } catch (e) {
     console.warn('[reader] 高亮保存失败:', e)
+    return null
   }
-  // 划线完成：清选区
-  sel.removeAllRanges()
+}
+
+// ---- 票 06：写笔记（高亮 → Block） ----
+
+/** 操作条「写笔记」：先落高亮行（D7：笔记锚定高亮）→ 打开输入浮层 */
+async function startNoteFromSelection(): Promise<void> {
+  toolbarVisible.value = false
+  const saved = await saveHighlight()
+  document.getSelection()?.removeAllRanges()
+  if (!saved) return
+  noteDraft.value = { x: toolbarX.value, y: toolbarY.value, highlight: saved }
+}
+
+/** 高亮浮层「写笔记」：已有 block_id 则预填旧文（更新路径），否则新建 */
+async function startNoteFromHighlight(): Promise<void> {
+  const id = popoverHighlightId.value
+  popoverHighlightId.value = null
+  const h = chapterHighlights.value.find(x => x.id === id)
+  if (!h) return
+  let initialText: string | undefined
+  if (h.block_id) {
+    try {
+      initialText = await loadNoteText(h.block_id)
+    } catch {
+      // 库中无此 block（异常数据）：按新建处理
+    }
+  }
+  noteDraft.value = { x: popoverX.value, y: popoverY.value, highlight: h, initialText }
+}
+
+/** 输入浮层提交：走 book-note 写路径（新建/更新 Block + 属性 + 回填 + 跨窗口刷新） */
+async function submitNote(text: string): Promise<void> {
+  const draft = noteDraft.value
+  noteDraft.value = null
+  if (!draft) return
+  try {
+    const { highlight } = await createOrUpdateNoteBlock({
+      bookPageId: props.bookId,
+      bookTitle: props.bookTitle ?? '',
+      chapter: draft.highlight.chapter,
+      cfi: draft.highlight.cfi,
+      quote: draft.highlight.text,
+      text,
+      highlight: draft.highlight,
+    })
+    // 本地高亮行同步 block_id（后续「再写」走更新路径）
+    const idx = chapterHighlights.value.findIndex(h => h.id === highlight.id)
+    if (idx >= 0) chapterHighlights.value[idx] = highlight
+  } catch (e) {
+    console.warn('[reader] 笔记保存失败:', e)
+  }
 }
 
 /** 操作条「取消」：清选区（操作条随 selectionchange 收起） */
@@ -418,6 +538,7 @@ onBeforeUnmount(() => {
     :x="toolbarX"
     :y="toolbarY"
     @highlight="createHighlight"
+    @note="startNoteFromSelection"
     @cancel="cancelSelection"
   />
 
@@ -425,8 +546,20 @@ onBeforeUnmount(() => {
     :visible="popoverHighlightId != null"
     :x="popoverX"
     :y="popoverY"
+    @note="startNoteFromHighlight"
     @remove="removeHighlight"
     @close="popoverHighlightId = null"
+  />
+
+  <!-- 票 06：写笔记输入浮层（高亮原文上下文 + 想法输入） -->
+  <NoteInputPopover
+    :visible="noteDraft != null"
+    :x="noteDraft?.x ?? 0"
+    :y="noteDraft?.y ?? 0"
+    :quote="noteDraft?.highlight.text"
+    :initial-text="noteDraft?.initialText"
+    @submit="submitNote"
+    @close="noteDraft = null"
   />
 </template>
 
@@ -437,6 +570,12 @@ onBeforeUnmount(() => {
 // 正文元素链上的 --reader-highlight（ReaderView 主题 class 中定义）。
 ::highlight(reader-highlight) {
   background-color: var(--reader-highlight, rgba(255, 213, 79, 0.55));
+}
+
+// 跳回原文闪烁提示（票 06）：临时注册的绘制层，强调色描边
+::highlight(reader-jump-flash) {
+  background-color: var(--accent, rgba(59, 130, 246, 0.28));
+  outline: 2px solid var(--accent, #3b82f6);
 }
 </style>
 

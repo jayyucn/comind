@@ -28,6 +28,7 @@ import { useBlockQueryRegistry } from './composables/useBlockQueryRegistry'
 import { useDateTimePickerPanel } from './composables/useDateTimePickerPanel'
 import { useNotificationScheduler } from './composables/useNotificationScheduler'
 import { usePageQueryRegistry } from './composables/usePageQueryRegistry'
+import { useReaderDataChanged } from './composables/useReaderDataChanged'
 import { useRelationshipTypes } from './composables/useRelationshipTypes'
 import { useEditorStore } from './stores/editor'
 import { usePageStore } from './stores/pages'
@@ -75,6 +76,9 @@ if (!isReaderWindow) {
   useBlockQueryRegistry()
   usePageQueryRegistry()
   useSyncPeerToast()
+  // 票 06：阅读器窗口写 block 后的跨窗口刷新（reader:data-changed → 重载
+  // 对应 page blocks；focus 时兜底刷新当前页）
+  useReaderDataChanged()
 }
 
 const { canGoBack, canGoForward, goBack, goForward } = useNavigationHistory()

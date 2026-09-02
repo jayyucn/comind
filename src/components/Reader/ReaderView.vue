@@ -1,3 +1,13 @@
+<script lang="ts">
+// 票 06：reader:jump-to 事件单例分发（模块级，跨组件实例共享）。
+// 同一阅读器窗口同一时刻只有一个活跃 ReaderView，但组件会先后多次挂载
+// （路由重建/测试探针）：旧实例注册的 handler 虽随卸载解绑（真实 Tauri
+// 事件系统），但手动触发场景下旧 handler 仍可能被先调用——统一转发给
+// 当前活跃实例的 dispatch，旧 handler 天然失效。
+type JumpToPayload = { bookPageId: string; cfi: string }
+let activeJumpDispatch: ((payload: JumpToPayload) => void) | null = null
+</script>
+
 <script setup lang="ts">
 // 阅读器窗口壳（票 03/04 / ADR-0040 D1/D4/D6/D10）：独立 Tauri WebviewWindow 打开
 // （/reader/:bookId，App.vue 对该路由不渲染主窗口壳）。顶栏 = 书名/章节名 +
@@ -5,8 +15,12 @@
 // 票 04：开书读 get_book_progress → CFI → 跳章 + 定位（排版变化不漂移，
 // 因为锚点是文字级 CFI 而非像素/百分比偏移）；排版偏好经 useReaderTypography
 // 落地 CSS 变量（--reader-*）+ 主题 class 到窗口根。
-import { computed, onMounted, ref, shallowRef, watch } from 'vue'
+// 票 06：跳回原文——URL query（新建窗口携带）与 'reader:jump-to' 事件
+// （已存在窗口 emitTo）两路统一收敛为 jumpCfi 状态；切章到目标章后经 prop
+// 传给 ChapterContent 定位 + 闪烁，定位完成（jump-done）一次性清空。
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { listen } from '@tauri-apps/api/event'
 import type { EPUB, EPUBTOCItem } from 'foliate-js/epub.js'
 import { formatLanguageMap, loadEpubFromStorage } from '../../services/epub-loader'
 import { cfiToSpineIndex } from '../../services/epub-cfi'
@@ -33,6 +47,31 @@ const tocOpen = ref(false)
 const typographyOpen = ref(false)
 /** 开书时读到的进度 CFI（用户主动跳章后清空，恢复只在首跳执行一次） */
 const progressCfi = ref<string | null>(null)
+
+/** 待跳转的跳回原文 CFI（票 06）：URL query / 'reader:jump-to' 事件写入，定位后清空 */
+const jumpCfi = ref<string | null>(null)
+
+/** 跳回 CFI 属于当前章时才传给 ChapterContent（切章重建组件时经 prop 就位） */
+const chapterJumpCfi = computed(() => {
+  const cfi = jumpCfi.value
+  if (!cfi) return null
+  return cfiToSpineIndex(cfi) === currentIndex.value ? cfi : null
+})
+
+/** 定位完成（ChapterContent 一次性消费后上报）：清空待跳 CFI */
+function onJumpDone(): void {
+  jumpCfi.value = null
+}
+
+/** 本实例的跳回分发（挂载即接管模块级单例；其他书的事件按 bookPageId 忽略） */
+const myJumpDispatch = (payload: JumpToPayload): void => {
+  if (payload.bookPageId !== props.bookId || !payload.cfi) return
+  jumpCfi.value = payload.cfi
+}
+activeJumpDispatch = myJumpDispatch
+
+/** reader:jump-to 事件解绑句柄（窗口关闭时清理） */
+let unlistenJumpTo: (() => void) | null = null
 
 const windowRef = ref<HTMLElement | null>(null)
 const { isMaximized, startDragging, minimize, maximize, close } = useWindowControls()
@@ -120,19 +159,52 @@ async function loadProgressCfi(): Promise<string | null> {
 
 onMounted(async () => {
   applyTypography()
+
+  // 票 06：跳回原文（新建窗口路径）——URL query 携带的 CFI 读取后立即清除
+  // query（一次性消费：手动刷新地址栏无 cfi，不重复跳转）
+  const queryCfi = new URLSearchParams(window.location.search).get('cfi')
+  if (queryCfi) {
+    jumpCfi.value = queryCfi
+    window.history.replaceState(null, '', window.location.pathname)
+  }
+
+  // 票 06：跳回原文（已存在窗口路径）——主窗口 emitTo 'reader:jump-to'。
+  // 无条件注册（非 Tauri 环境下 listen reject 静默降级）；handler 统一转发
+  // 给当前活跃实例（其他书的事件在 dispatch 内按 bookPageId 忽略）。
+  // 书未加载完时事件先到 → 挂起在 jumpCfi，加载完成后统一消费。
+  listen<JumpToPayload>('reader:jump-to', (e) => {
+    activeJumpDispatch?.(e.payload ?? { bookPageId: '', cfi: '' })
+  }).then(
+    unlisten => { unlistenJumpTo = unlisten },
+    (e) => { console.warn('[reader] reader:jump-to 监听失败:', e) },
+  )
+
   try {
     const loaded = await loadEpubFromStorage(props.bookId)
     if (!loaded.sections.length) throw new Error('本书没有可读的章节')
     book.value = loaded
 
-    // 票 04：恢复上次位置——CFI 前缀定位 spine 章，本地路径由 ChapterContent 定位
-    const cfi = await loadProgressCfi()
-    if (cfi) {
-      const index = cfiToSpineIndex(cfi)
+    // 票 06：跳回原文优先——先切章到待跳 CFI 所在章（此时跳过进度恢复，
+    // 避免同章二次滚动）；CFI 解析失败（前缀异常）静默走进度恢复
+    let jumped = false
+    if (jumpCfi.value) {
+      const index = cfiToSpineIndex(jumpCfi.value)
       if (index != null && index >= 0 && index < loaded.sections.length) {
         currentIndex.value = index
+        jumped = true
       }
-      progressCfi.value = cfi
+    }
+
+    // 票 04：恢复上次位置——CFI 前缀定位 spine 章，本地路径由 ChapterContent 定位
+    if (!jumped) {
+      const cfi = await loadProgressCfi()
+      if (cfi) {
+        const index = cfiToSpineIndex(cfi)
+        if (index != null && index >= 0 && index < loaded.sections.length) {
+          currentIndex.value = index
+        }
+        progressCfi.value = cfi
+      }
     }
 
     phase.value = 'ready'
@@ -147,6 +219,24 @@ onMounted(async () => {
     loadError.value = e instanceof Error ? e.message : String(e)
     phase.value = 'error'
   }
+})
+
+// 票 06：书已加载后收到 'reader:jump-to'（同窗口再点「↗ 原文」）：切章到目标
+// 章（重建 ChapterContent 后经 jumpCfi prop 定位）；同章则由 ChapterContent
+// 的 jumpCfi watch 直接定位，无需切章。
+watch(jumpCfi, (cfi) => {
+  if (!cfi || !book.value) return
+  const index = cfiToSpineIndex(cfi)
+  if (index == null || index < 0 || index >= sections.value.length) return
+  if (index === currentIndex.value) return
+  // 跳转是用户主动行为：清除待恢复进度（避免切回时被拉回旧位置）
+  progressCfi.value = null
+  currentIndex.value = index
+})
+
+onBeforeUnmount(() => {
+  if (activeJumpDispatch === myJumpDispatch) activeJumpDispatch = null
+  unlistenJumpTo?.()
 })
 
 watch(typography, applyTypography)
@@ -209,7 +299,10 @@ watch(typography, applyTypography)
         :book-id="bookId"
         :spine-index="currentIndex"
         :chapter-title="chapterTitle"
+        :book-title="bookTitle"
         :restore-cfi="restoreCfi"
+        :jump-cfi="chapterJumpCfi"
+        @jump-done="onJumpDone"
       />
     </main>
 
