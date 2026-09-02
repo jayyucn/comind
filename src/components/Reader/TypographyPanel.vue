@@ -3,9 +3,9 @@
 // 浮层纪律（ADR-0032）：Teleport 到 body + var(--z-popover)，避免困在阅读器
 // 滚动容器的局部堆叠上下文。状态直接取 useReaderTypography 模块单例，
 // 与 ReaderView 共享同一份响应式状态（CSS 变量由 ReaderView 落地到窗口根）。
-import { onBeforeUnmount, watch } from 'vue'
-import type { ReaderTheme } from '../../composables/useReaderTypography'
-import { useReaderTypography } from '../../composables/useReaderTypography'
+import { onBeforeUnmount, watch } from 'vue';
+import type { ReaderTheme } from '../../composables/useReaderTypography';
+import { ReaderContentMaxWidth, ReaderContentMinWidth, useReaderTypography } from '../../composables/useReaderTypography';
 
 const props = defineProps<{
   open: boolean
@@ -67,10 +67,10 @@ onBeforeUnmount(() => {
       </div>
       <div class="panel-row">
         <span class="row-label">行宽</span>
-        <button class="step-btn" title="收窄行宽" :disabled="typography.maxWidthCh <= 28"
+        <button class="step-btn" title="收窄行宽" :disabled="typography.maxWidthCh <= ReaderContentMinWidth"
           @click="stepMaxWidth(-1)">−</button>
         <span class="row-value">{{ typography.maxWidthCh }}ch</span>
-        <button class="step-btn" title="加宽行宽" :disabled="typography.maxWidthCh >= 56"
+        <button class="step-btn" title="加宽行宽" :disabled="typography.maxWidthCh >= ReaderContentMaxWidth"
           @click="stepMaxWidth(1)">＋</button>
       </div>
       <div class="panel-row theme-row">

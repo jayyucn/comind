@@ -10,8 +10,9 @@ export interface TocEntry {
 </script>
 
 <script setup lang="ts">
-// 目录抽屉（票 03 / ADR-0040 D10）：Teleport 到 body + var(--z-*)（ADR-0032 铁律），
-// 避免困在阅读器滚动容器的局部堆叠上下文里。
+// 目录侧栏（票 03 / ADR-0040 D10 演进）：常驻侧栏——随阅读器正文区内联布局，
+// 打开时占位收窄正文、关闭时折叠为 0 宽。无遮罩、无 Teleport、无 z-index
+// （ADR-0032 铁律：非浮层不涉及堆叠上下文）。
 import Icon from '../Icons/Icon.vue'
 
 defineProps<{
@@ -27,50 +28,44 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <Teleport to="body">
-    <div v-if="open" class="toc-overlay" @click="emit('close')"></div>
-    <aside v-if="open" class="toc-drawer" role="dialog" aria-label="目录">
-      <header class="toc-header">
-        <span class="toc-title">目录</span>
-        <button class="toc-close-btn" title="关闭目录" @click="emit('close')">
-          <Icon name="icon-close" :size="16" />
-        </button>
-      </header>
-      <nav class="toc-list">
-        <button
-          v-for="(entry, i) in entries"
-          :key="i"
-          class="toc-item"
-          :class="{ active: entry.index !== null && entry.index === currentIndex }"
-          :style="{ paddingLeft: `${12 + entry.depth * 16}px` }"
-          :disabled="entry.index === null"
-          :title="entry.label"
-          @click="entry.index !== null && emit('select', entry.index)"
-        >{{ entry.label }}</button>
-      </nav>
-    </aside>
-  </Teleport>
+  <aside class="toc-drawer" :class="{ collapsed: !open }" aria-label="目录">
+    <header class="toc-header">
+      <span class="toc-title">目录</span>
+      <button class="toc-close-btn" title="关闭目录" @click="emit('close')">
+        <Icon name="icon-close" :size="16" />
+      </button>
+    </header>
+    <nav class="toc-list">
+      <button
+        v-for="(entry, i) in entries"
+        :key="i"
+        class="toc-item"
+        :class="{ active: entry.index !== null && entry.index === currentIndex }"
+        :style="{ paddingLeft: `${12 + entry.depth * 16}px` }"
+        :disabled="entry.index === null"
+        :title="entry.label"
+        @click="entry.index !== null && emit('select', entry.index)"
+      >{{ entry.label }}</button>
+    </nav>
+  </aside>
 </template>
 
 <style lang="scss" scoped>
-.toc-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-overlay);
-  background: var(--overlay);
-}
-
 .toc-drawer {
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 300px;
-  z-index: var(--z-drawer);
+  width: 260px;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: var(--bg-base);
-  box-shadow: var(--shadow-modal);
+  background: var(--reader-bg);
+  border-right: 1px solid var(--reader-border);
+  overflow: hidden;
+  transition: width 160ms ease;
+
+  &.collapsed {
+    width: 0;
+    border-right: none;
+    visibility: hidden;
+  }
 }
 
 .toc-header {
@@ -80,13 +75,14 @@ const emit = defineEmits<{
   height: 44px;
   padding: 0 8px 0 16px;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--reader-border);
 }
 
 .toc-title {
   font-size: var(--text-sm);
   font-weight: var(--font-semibold);
-  color: var(--text-primary);
+  color: var(--reader-text);
+  white-space: nowrap;
 }
 
 .toc-close-btn {
@@ -99,12 +95,12 @@ const emit = defineEmits<{
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-md);
-  color: var(--text-tertiary);
+  color: var(--reader-text-muted);
   transition: all 100ms ease;
 
   &:hover {
     background: var(--bg-hover);
-    color: var(--text-secondary);
+    color: var(--reader-text);
   }
 }
 
@@ -126,7 +122,7 @@ const emit = defineEmits<{
   padding-bottom: 6px;
   font-size: var(--text-sm);
   line-height: var(--leading-normal);
-  color: var(--text-secondary);
+  color: var(--reader-text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -134,7 +130,7 @@ const emit = defineEmits<{
 
   &:hover:not(:disabled) {
     background: var(--bg-hover);
-    color: var(--text-primary);
+    color: var(--reader-text);
   }
 
   &.active {

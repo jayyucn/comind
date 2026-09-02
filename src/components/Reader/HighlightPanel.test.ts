@@ -2,8 +2,8 @@
 // 覆盖：面板渲染（章节分组/组内创建时间倒序/有无笔记状态/笔记摘要 join）、
 // 点条目 locate 事件、删除流（无笔记直删 / 有笔记二次确认的确认与取消分支，
 // 删除仅删高亮行不删 Block）、追加与修改笔记流（复用 NoteInputPopover +
-// createOrUpdateNoteBlock）、ReaderView 顶栏开关、点条目关抽屉 + CFI 定位、
-// 删除后正文绘制层重绘（highlightVersion 联动）。
+// createOrUpdateNoteBlock）、ReaderView 顶栏开关、常驻侧栏点条目 CFI 定位
+// （面板保持展开）、删除后正文绘制层重绘（highlightVersion 联动）。
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import type { EPUB, EPUBSection } from 'foliate-js/epub.js'
@@ -309,13 +309,13 @@ describe('HighlightPanel（渲染）', () => {
     wrapper.unmount()
   })
 
-  it('默认关闭不渲染，open=true 才挂载抽屉', async () => {
+  it('默认关闭：折叠渲染、不拉数据，open 后才加载', async () => {
     db = [makeHighlight('h-1', '第一章', '引文', CH1_CFI)]
     const wrapper = mountPanel(false)
     await flushPromises()
 
-    expect(document.body.querySelector('.highlight-panel')).toBeNull()
-    // 关闭态不拉数据（打开时才加载）
+    // 常驻侧栏：关闭态折叠（非 v-if 移除），且不拉数据（打开时才加载）
+    expect(wrapper.get('.highlight-panel').classes()).toContain('collapsed')
     expect(mockGetBookHighlights).not.toHaveBeenCalled()
     wrapper.unmount()
   })
@@ -497,24 +497,28 @@ describe('ReaderView（票 07 高亮面板集成）', () => {
     return cfi
   }
 
-  it('顶栏「本书高亮」按钮开关面板', async () => {
+  it('顶栏「本书高亮」按钮开关高亮侧栏', async () => {
     mockLoadBook.mockResolvedValue(makeBook())
     const wrapper = mountReader()
     await flushPromises()
 
-    expect(document.body.querySelector('.highlight-panel')).toBeNull()
+    // 常驻侧栏：初始折叠
+    expect(wrapper.get('.highlight-panel').classes()).toContain('collapsed')
+
     await wrapper.get('button[title="本书高亮"]').trigger('click')
     await flushPromises()
-    expect(document.body.querySelector('.highlight-panel')).toBeTruthy()
+    expect(wrapper.get('.highlight-panel').classes()).not.toContain('collapsed')
+    // 常驻侧栏无黑色遮罩
+    expect(wrapper.find('.highlight-panel-overlay').exists()).toBe(false)
 
-    // 面板关闭按钮 → 收起
-    document.body.querySelector<HTMLButtonElement>('.highlight-panel .panel-close-btn')!.click()
+    // 面板关闭按钮 → 折叠
+    await wrapper.get('.highlight-panel .panel-close-btn').trigger('click')
     await flushPromises()
-    expect(document.body.querySelector('.highlight-panel')).toBeNull()
+    expect(wrapper.get('.highlight-panel').classes()).toContain('collapsed')
     wrapper.unmount()
   })
 
-  it('面板点条目：关抽屉 + 切章 + CFI 定位滚动（复用 jumpCfi 机制）', async () => {
+  it('面板点条目：切章 + CFI 定位滚动，侧栏保持常驻', async () => {
     const cfi = await makeChapter2Cfi()
     db = [makeHighlight('h-1', '第二章', '第二章内容', cfi)]
 
@@ -534,8 +538,8 @@ describe('ReaderView（票 07 高亮面板集成）', () => {
       quote!.click()
       await flushPromises()
 
-      // 抽屉关闭 + 切章定位（block: 'center'，跳转闪烁）
-      expect(document.body.querySelector('.highlight-panel')).toBeNull()
+      // 切章定位（block: 'center'，跳转闪烁），侧栏保持展开（常驻）
+      expect(wrapper.get('.highlight-panel').classes()).not.toContain('collapsed')
       expect(wrapper.get('.chapter-content').text()).toContain('第二章内容')
       expect(scrollIntoView).toHaveBeenCalledTimes(1)
       expect(scrollIntoView.mock.calls[0][0]).toEqual({ block: 'center' })

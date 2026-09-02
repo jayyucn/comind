@@ -45,6 +45,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'jump-done': []
+  /** 滚到底继续向下滚 → 请求翻到下一章（ReaderView 接 next） */
+  'next-page': []
 }>()
 
 const containerRef = ref<HTMLElement | null>(null)
@@ -223,6 +225,20 @@ function onScroll(): void {
     saveTimer = null
     void saveProgress()
   }, SAVE_DEBOUNCE_MS)
+}
+
+/** 翻页冷却：切章重建异步完成前丢弃同一滚动手势的后续 wheel 事件，防连跳 */
+let flipCooldown = false
+
+/** 滚到底继续向下滚 → 翻到下一章（符合直觉的连读；翻页后新章定位在顶部） */
+function onWheel(e: WheelEvent): void {
+  const el = containerRef.value
+  if (!el || e.deltaY <= 0 || flipCooldown) return
+  // 已在底部（内容不足一屏时恒为真，此时向下滚同样翻页）
+  if (el.scrollTop + el.clientHeight < el.scrollHeight - 2) return
+  flipCooldown = true
+  setTimeout(() => { flipCooldown = false }, 400)
+  emit('next-page')
 }
 
 async function render(): Promise<void> {
@@ -515,6 +531,7 @@ async function removeHighlight(): Promise<void> {
 onMounted(() => {
   const el = containerRef.value
   el?.addEventListener('scroll', onScroll, { passive: true })
+  el?.addEventListener('wheel', onWheel, { passive: true })
   el?.addEventListener('click', onContentClick)
   document.addEventListener('selectionchange', onSelectionChange)
   void render()
@@ -525,6 +542,7 @@ onBeforeUnmount(() => {
   releaseObjectUrls()
   const el = containerRef.value
   el?.removeEventListener('scroll', onScroll)
+  el?.removeEventListener('wheel', onWheel)
   el?.removeEventListener('click', onContentClick)
   document.removeEventListener('selectionchange', onSelectionChange)
   // 清绘制层（避免高亮残留到下一章）

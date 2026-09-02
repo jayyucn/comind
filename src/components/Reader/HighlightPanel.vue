@@ -1,10 +1,11 @@
 <script setup lang="ts">
-// 高亮管理面板（票 07 / ADR-0040 D7/D10）：阅读器窗口内侧边抽屉，列出本书
-// 全部高亮（按章节分组、创建时间倒序），有笔记的经 block_id join 书 Page
-// blocks 显示想法摘要。点条目 → 父级关抽屉 + CFI 定位（复用票 06 jumpCfi
-// 机制）；删除仅删高亮行、不删关联 Block（D7：Block 独立可读），已有笔记的
-// 条目删除前二次确认（提示笔记保留）；追加/修改笔记复用票 06 NoteInputPopover。
-// Teleport 到 body + var(--z-*)（ADR-0032 浮层纪律，同 TocDrawer 模式）。
+// 高亮管理面板（票 07 / ADR-0040 D7/D10）：常驻侧栏——随阅读器正文区内联
+// 布局，打开时占位收窄正文、关闭时折叠为 0 宽（同 TocDrawer 模式，无遮罩、
+// 无 Teleport、无 z-index）。列出本书全部高亮（按章节分组、创建时间倒序），
+// 有笔记的经 block_id join 书 Page blocks 显示想法摘要。点条目 → 父级 CFI
+// 定位（复用票 06 jumpCfi 机制，侧栏保持常驻）；删除仅删高亮行、不删关联
+// Block（D7：Block 独立可读），已有笔记的条目删除前二次确认（提示笔记保留）；
+// 追加/修改笔记复用票 06 NoteInputPopover（自 Teleport 到 body）。
 import { computed, ref, watch } from 'vue'
 import { useBlockStore } from '../../stores/blocks'
 import { createOrUpdateNoteBlock, loadNoteText } from '../../services/book-note'
@@ -197,58 +198,55 @@ async function submitNote(text: string): Promise<void> {
 </script>
 
 <template>
-  <Teleport to="body">
-    <div v-if="open" class="highlight-panel-overlay" @click="emit('close')"></div>
-    <aside v-if="open" class="highlight-panel" role="dialog" aria-label="本书高亮">
-      <header class="panel-header">
-        <span class="panel-title">本书高亮</span>
-        <button class="panel-close-btn" title="关闭高亮面板" @click="emit('close')">
-          <Icon name="icon-close" :size="16" />
-        </button>
-      </header>
-      <div class="panel-body">
-        <div v-if="phase === 'loading'" class="panel-status">加载中…</div>
-        <div v-else-if="phase === 'error'" class="panel-status">高亮加载失败，请重试</div>
-        <div v-else-if="groups.length === 0" class="panel-status">
-          还没有高亮，选中正文即可划线
-        </div>
-        <template v-else>
-          <section v-for="group in groups" :key="group.chapter" class="chapter-group">
-            <h3 class="group-title" :title="group.chapter">{{ group.chapter }}</h3>
-            <article
-              v-for="item in group.items"
-              :key="item.highlight.id"
-              class="highlight-item"
-            >
-              <button
-                class="item-quote"
-                :title="item.highlight.text"
-                @click="emit('locate', item.highlight.cfi)"
-              >{{ item.highlight.text }}</button>
-              <p v-if="item.note" class="item-note" :title="item.note">想法：{{ item.note }}</p>
-              <div class="item-actions">
-                <button class="item-btn" title="写笔记" @click="startNote(item, $event)">
-                  写笔记
-                </button>
-                <template v-if="confirmDeleteId === item.highlight.id">
-                  <span class="confirm-hint">笔记将保留在书 Page</span>
-                  <button class="item-btn danger confirm-ok" @click="confirmRemove">确认删除</button>
-                  <button class="item-btn confirm-cancel" @click="confirmDeleteId = null">取消</button>
-                </template>
-                <button
-                  v-else
-                  class="item-btn danger"
-                  title="删除高亮"
-                  @click="requestRemove(item)"
-                >删除</button>
-              </div>
-            </article>
-          </section>
-        </template>
+  <aside class="highlight-panel" :class="{ collapsed: !open }" aria-label="本书高亮">
+    <header class="panel-header">
+      <span class="panel-title">本书高亮</span>
+      <button class="panel-close-btn" title="关闭高亮面板" @click="emit('close')">
+        <Icon name="icon-close" :size="16" />
+      </button>
+    </header>
+    <div class="panel-body">
+      <div v-if="phase === 'loading'" class="panel-status">加载中…</div>
+      <div v-else-if="phase === 'error'" class="panel-status">高亮加载失败，请重试</div>
+      <div v-else-if="groups.length === 0" class="panel-status">
+        还没有高亮，选中正文即可划线
       </div>
-    </aside>
+      <template v-else>
+        <section v-for="group in groups" :key="group.chapter" class="chapter-group">
+          <h3 class="group-title" :title="group.chapter">{{ group.chapter }}</h3>
+          <article
+            v-for="item in group.items"
+            :key="item.highlight.id"
+            class="highlight-item"
+          >
+            <button
+              class="item-quote"
+              :title="item.highlight.text"
+              @click="emit('locate', item.highlight.cfi)"
+            >{{ item.highlight.text }}</button>
+            <p v-if="item.note" class="item-note" :title="item.note">想法：{{ item.note }}</p>
+            <div class="item-actions">
+              <button class="item-btn" title="写笔记" @click="startNote(item, $event)">
+                写笔记
+              </button>
+              <template v-if="confirmDeleteId === item.highlight.id">
+                <span class="confirm-hint">笔记将保留在书 Page</span>
+                <button class="item-btn danger confirm-ok" @click="confirmRemove">确认删除</button>
+                <button class="item-btn confirm-cancel" @click="confirmDeleteId = null">取消</button>
+              </template>
+              <button
+                v-else
+                class="item-btn danger"
+                title="删除高亮"
+                @click="requestRemove(item)"
+              >删除</button>
+            </div>
+          </article>
+        </section>
+      </template>
+    </div>
 
-    <!-- 票 06 写笔记输入浮层（高亮原文上下文 + 想法输入，--z-popover 高于抽屉） -->
+    <!-- 票 06 写笔记输入浮层（自 Teleport 到 body + --z-popover） -->
     <NoteInputPopover
       :visible="noteDraft != null"
       :x="noteDraft?.x ?? 0"
@@ -258,28 +256,25 @@ async function submitNote(text: string): Promise<void> {
       @submit="submitNote"
       @close="noteDraft = null"
     />
-  </Teleport>
+  </aside>
 </template>
 
 <style lang="scss" scoped>
-.highlight-panel-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-overlay);
-  background: var(--overlay);
-}
-
 .highlight-panel {
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  right: 0;
   width: 320px;
-  z-index: var(--z-drawer);
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: var(--bg-base);
-  box-shadow: var(--shadow-modal);
+  background: var(--reader-bg);
+  border-left: 1px solid var(--reader-border);
+  overflow: hidden;
+  transition: width 160ms ease;
+
+  &.collapsed {
+    width: 0;
+    border-left: none;
+    visibility: hidden;
+  }
 }
 
 .panel-header {
@@ -289,13 +284,14 @@ async function submitNote(text: string): Promise<void> {
   height: 44px;
   padding: 0 8px 0 16px;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--reader-border);
 }
 
 .panel-title {
   font-size: var(--text-sm);
   font-weight: var(--font-semibold);
-  color: var(--text-primary);
+  color: var(--reader-text);
+  white-space: nowrap;
 }
 
 .panel-close-btn {
@@ -308,12 +304,12 @@ async function submitNote(text: string): Promise<void> {
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-md);
-  color: var(--text-tertiary);
+  color: var(--reader-text-muted);
   transition: all 100ms ease;
 
   &:hover {
     background: var(--bg-hover);
-    color: var(--text-secondary);
+    color: var(--reader-text);
   }
 }
 
@@ -326,13 +322,13 @@ async function submitNote(text: string): Promise<void> {
 .panel-status {
   padding: 24px 16px;
   font-size: var(--text-sm);
-  color: var(--text-tertiary);
+  color: var(--reader-text-muted);
   text-align: center;
 }
 
 .chapter-group {
   & + & {
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--reader-border);
     margin-top: 4px;
     padding-top: 4px;
   }
@@ -343,7 +339,7 @@ async function submitNote(text: string): Promise<void> {
   padding: 8px 16px 4px;
   font-size: var(--text-xs);
   font-weight: var(--font-semibold);
-  color: var(--text-tertiary);
+  color: var(--reader-text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -368,7 +364,7 @@ async function submitNote(text: string): Promise<void> {
   padding: 0;
   font-size: var(--text-sm);
   line-height: var(--leading-normal);
-  color: var(--text-primary);
+  color: var(--reader-text);
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
@@ -385,7 +381,7 @@ async function submitNote(text: string): Promise<void> {
   border-left: 2px solid var(--accent);
   font-size: var(--text-sm);
   line-height: var(--leading-normal);
-  color: var(--text-secondary);
+  color: var(--reader-text-muted);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -401,7 +397,7 @@ async function submitNote(text: string): Promise<void> {
 
 .confirm-hint {
   font-size: var(--text-xs);
-  color: var(--text-tertiary);
+  color: var(--reader-text-muted);
   margin-right: 2px;
 }
 
@@ -416,13 +412,13 @@ async function submitNote(text: string): Promise<void> {
   justify-content: center;
   border-radius: var(--radius-sm);
   font-size: var(--text-xs);
-  color: var(--text-tertiary);
+  color: var(--reader-text-muted);
   transition: all 100ms ease;
   white-space: nowrap;
 
   &:hover {
     background: var(--bg-active, var(--bg-hover));
-    color: var(--text-primary);
+    color: var(--reader-text);
   }
 
   &.danger:hover {

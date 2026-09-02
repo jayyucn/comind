@@ -18,20 +18,20 @@ let activeJumpDispatch: ((payload: JumpToPayload) => void) | null = null
 // 票 06：跳回原文——URL query（新建窗口携带）与 'reader:jump-to' 事件
 // （已存在窗口 emitTo）两路统一收敛为 jumpCfi 状态；切章到目标章后经 prop
 // 传给 ChapterContent 定位 + 闪烁，定位完成（jump-done）一次性清空。
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
-import { getCurrentWindow } from '@tauri-apps/api/window'
 import { listen } from '@tauri-apps/api/event'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import type { EPUB, EPUBTOCItem } from 'foliate-js/epub.js'
-import { formatLanguageMap, loadEpubFromStorage } from '../../services/epub-loader'
-import { cfiToSpineIndex } from '../../services/epub-cfi'
-import { useReaderTypography } from '../../composables/useReaderTypography'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useWindowControls } from '../../app/useWindowControls'
+import { useReaderTypography } from '../../composables/useReaderTypography'
+import { cfiToSpineIndex } from '../../services/epub-cfi'
+import { formatLanguageMap, loadEpubFromStorage } from '../../services/epub-loader'
 import { initCoreClient, isTauriEnvironment } from '../../wasm/client'
 import Icon from '../Icons/Icon.vue'
 import ChapterContent from './ChapterContent.vue'
+import HighlightPanel from './HighlightPanel.vue'
 import TocDrawer, { type TocEntry } from './TocDrawer.vue'
 import TypographyPanel from './TypographyPanel.vue'
-import HighlightPanel from './HighlightPanel.vue'
 
 const props = defineProps<{
   bookId: string
@@ -68,9 +68,9 @@ function onJumpDone(): void {
   jumpCfi.value = null
 }
 
-/** 面板点条目（票 07）：关抽屉 + CFI 定位（复用票 06 jumpCfi 机制：切章/同章定位+闪烁） */
+/** 面板点条目（票 07）：CFI 定位（复用票 06 jumpCfi 机制：切章/同章定位+闪烁）；
+ *  侧栏常驻，定位不关闭面板 */
 function onPanelLocate(cfi: string): void {
-  highlightPanelOpen.value = false
   jumpCfi.value = cfi
 }
 
@@ -140,8 +140,7 @@ function applyTypography(): void {
 }
 
 function goTo(index: number): void {
-  // 跳转或点击当前章都关闭抽屉；越界/重复章不变更内容
-  tocOpen.value = false
+  // 目录为常驻侧栏：跳转不关闭侧栏；越界/重复章不变更内容
   if (index < 0 || index >= sections.value.length || index === currentIndex.value) return
   // 用户主动跳章：清除待恢复进度（避免切回进度章时被拉回旧位置）
   progressCfi.value = null
@@ -261,10 +260,20 @@ watch(typography, applyTypography)
         <span v-if="chapterTitle" class="chapter-name">{{ chapterTitle }}</span>
       </div>
       <div class="top-right-controls">
-        <button class="topbar-btn" title="目录" @click="tocOpen = true">
+        <button
+          class="topbar-btn"
+          :class="{ active: tocOpen }"
+          title="目录"
+          @click="tocOpen = !tocOpen"
+        >
           <Icon name="icon-menu" :size="16" />
         </button>
-        <button class="topbar-btn" title="本书高亮" @click="highlightPanelOpen = true">
+        <button
+          class="topbar-btn"
+          :class="{ active: highlightPanelOpen }"
+          title="本书高亮"
+          @click="highlightPanelOpen = !highlightPanelOpen"
+        >
           <Icon name="icon-highlighter" :size="16" />
         </button>
         <button
@@ -305,43 +314,47 @@ watch(typography, applyTypography)
         <p class="error-raw">{{ loadError }}</p>
       </div>
 
-      <ChapterContent
-        v-else-if="book && currentSection"
-        :key="currentSection.id"
-        :book="book"
-        :section="currentSection"
-        :book-id="bookId"
-        :spine-index="currentIndex"
-        :chapter-title="chapterTitle"
-        :book-title="bookTitle"
-        :restore-cfi="restoreCfi"
-        :jump-cfi="chapterJumpCfi"
-        :highlight-version="highlightVersion"
-        @jump-done="onJumpDone"
-      />
-    </main>
+      <template v-else-if="book && currentSection">
+        <!-- 常驻目录侧栏：打开时占位收窄正文，无遮罩 -->
+        <TocDrawer
+          :open="tocOpen"
+          :entries="flatToc"
+          :current-index="currentIndex"
+          @select="goTo"
+          @close="tocOpen = false"
+        />
+        <div class="reader-content">
+          <ChapterContent
+            :key="currentSection.id"
+            :book="book"
+            :section="currentSection"
+            :book-id="bookId"
+            :spine-index="currentIndex"
+            :chapter-title="chapterTitle"
+            :book-title="bookTitle"
+            :restore-cfi="restoreCfi"
+            :jump-cfi="chapterJumpCfi"
+            :highlight-version="highlightVersion"
+            @jump-done="onJumpDone"
+            @next-page="next"
+          />
+        </div>
 
-    <TocDrawer
-      :open="tocOpen"
-      :entries="flatToc"
-      :current-index="currentIndex"
-      @select="goTo"
-      @close="tocOpen = false"
-    />
+        <!-- 常驻高亮侧栏：打开时占位收窄正文，无遮罩 -->
+        <HighlightPanel
+          :open="highlightPanelOpen"
+          :book-id="bookId"
+          :book-title="bookTitle"
+          @locate="onPanelLocate"
+          @close="highlightPanelOpen = false"
+          @changed="highlightVersion++"
+        />
+      </template>
+    </main>
 
     <TypographyPanel
       :open="typographyOpen"
       @close="typographyOpen = false"
-    />
-
-    <!-- 票 07：高亮管理面板（本书高亮：分组列表/join 笔记摘要/定位/删除） -->
-    <HighlightPanel
-      :open="highlightPanelOpen"
-      :book-id="bookId"
-      :book-title="bookTitle"
-      @locate="onPanelLocate"
-      @close="highlightPanelOpen = false"
-      @changed="highlightVersion++"
     />
   </div>
 </template>
@@ -484,6 +497,16 @@ watch(typography, applyTypography)
 .reader-body {
   flex: 1;
   min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+// 正文容器：占满侧栏之外的剩余宽度；ChapterContent 内部自带 max-width 居中
+.reader-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  overflow: hidden;
 }
 
 .reader-placeholder,

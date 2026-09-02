@@ -33,7 +33,7 @@ describe('useReaderTypography', () => {
     expect(b.typography.value).toEqual({
       fontSize: 20,
       lineHeight: 1.6,
-      maxWidthCh: 36,
+      maxWidthCh: 72,
       theme: 'sepia',
     })
     expect(localStorage.getItem('comind-reader-typography')).toBeTruthy()
@@ -66,7 +66,7 @@ describe('useReaderTypography', () => {
     stepLineHeight(-1)
     expect(typography.value.lineHeight).toBe(1.7)
     stepMaxWidth(1)
-    expect(typography.value.maxWidthCh).toBe(46)
+    expect(typography.value.maxWidthCh).toBe(72)
 
     // 上界钳制
     for (let i = 0; i < 10; i++) stepFontSize(1)

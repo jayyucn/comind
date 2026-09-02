@@ -1,6 +1,7 @@
 // ReaderView 组件测试（票 03/04/05）：EPUB loader 与 wasm client mock
-// （vitest + @vue/test-utils）。覆盖：首章渲染、上/下章切换与边界禁用、TOC
-// 抽屉跳转、书文件缺失错误态、章节图片资源替换（书内 blob:/外链剥）、
+// （vitest + @vue/test-utils）。覆盖：首章渲染、上/下章切换与边界禁用、常驻
+// 目录侧栏跳转（无遮罩）、书文件缺失错误态、章节图片资源替换（书内
+// blob:/外链剥）、
 // 票 04：进度恢复（CFI 跳章 + scrollIntoView 定位）、滚动 debounce 写进度、
 // 关窗 flush、排版面板（主题 class + CSS 变量落地）。
 // 票 05：选中→高亮→落库与绘制、重开原位重绘、解析失败静默跳过、
@@ -226,28 +227,64 @@ describe('ReaderView', () => {
     expect(wrapper.get('.chapter-content').text()).toContain('第二章内容')
   })
 
-  it('TOC 抽屉：列出目录、当前章高亮、点击跳转并关闭抽屉', async () => {
+  it('滚到底继续向下滚 → 自动翻到下一章（连读翻页）', async () => {
+    mockLoadBook.mockResolvedValue(makeBook())
+
+    const wrapper = mountReader()
+    await flushPromises()
+    expect(wrapper.get('.chapter-content').text()).toContain('第一章内容')
+
+    // jsdom 无布局：scrollTop/clientHeight/scrollHeight 均为 0 → 视为已到底部
+    const content = wrapper.get('.chapter-content').element as HTMLElement
+    content.dispatchEvent(new WheelEvent('wheel', { deltaY: 100 }))
+    await flushPromises()
+    expect(wrapper.get('.chapter-content').text()).toContain('第二章内容')
+  })
+
+  it('未滚到底时向下滚不翻页', async () => {
     mockLoadBook.mockResolvedValue(makeBook())
 
     const wrapper = mountReader()
     await flushPromises()
 
-    // 抽屉初始不可见
-    expect(document.body.querySelector('.toc-drawer')).toBeNull()
+    // 模拟未到底部：scrollTop + clientHeight < scrollHeight
+    const content = wrapper.get('.chapter-content').element as HTMLElement
+    Object.defineProperty(content, 'scrollTop', { value: 10, configurable: true })
+    Object.defineProperty(content, 'scrollHeight', { value: 1000, configurable: true })
+    Object.defineProperty(content, 'clientHeight', { value: 500, configurable: true })
+    content.dispatchEvent(new WheelEvent('wheel', { deltaY: 100 }))
+    await flushPromises()
+
+    expect(wrapper.get('.chapter-content').text()).toContain('第一章内容')
+  })
+
+  it('目录侧栏：列出目录、当前章高亮、点击跳转且侧栏常驻（无遮罩）', async () => {
+    mockLoadBook.mockResolvedValue(makeBook())
+
+    const wrapper = mountReader()
+    await flushPromises()
+
+    // 侧栏初始折叠（常驻布局内联于正文区，非 Teleport 浮层）
+    expect(wrapper.get('.toc-drawer').classes()).toContain('collapsed')
 
     await wrapper.get('button[title="目录"]').trigger('click')
-    // 抽屉 Teleport 到 body（ADR-0032 浮层纪律）
-    const items = document.body.querySelectorAll('.toc-item')
+    const items = wrapper.findAll('.toc-item')
     expect(items).toHaveLength(3)
-    expect(items[0].textContent).toBe('第一章')
+    expect(items[0].text()).toBe('第一章')
     // 当前章高亮
-    expect(items[0].classList.contains('active')).toBe(true)
+    expect(items[0].classes()).toContain('active')
+    // 常驻侧栏无黑色遮罩
+    expect(wrapper.find('.toc-overlay').exists()).toBe(false)
 
-    // 点击第三章 → 跳转 + 抽屉关闭
-    ;(items[2] as HTMLElement).click()
+    // 点击第三章 → 跳转 + 侧栏保持展开（常驻，不随跳转关闭）
+    await items[2].trigger('click')
     await flushPromises()
     expect(wrapper.get('.chapter-content').text()).toContain('第三章内容')
-    expect(document.body.querySelector('.toc-drawer')).toBeNull()
+    expect(wrapper.get('.toc-drawer').classes()).not.toContain('collapsed')
+
+    // 关闭侧栏 → 折叠
+    await wrapper.get('.toc-close-btn').trigger('click')
+    expect(wrapper.get('.toc-drawer').classes()).toContain('collapsed')
   })
 
   it('书文件缺失（票 01 遗留：落盘失败不回滚 Page）：显示友好错误态', async () => {
@@ -292,7 +329,7 @@ describe('ReaderView', () => {
     expect(imgs[1].attributes('alt')).toBe('外链图')
   })
 
-  it('无 TOC 的书：目录按钮可开抽屉（空列表），正文照常渲染', async () => {
+  it('无 TOC 的书：目录按钮可展开侧栏（空列表），正文照常渲染', async () => {
     const book = makeBook()
     ;(book as unknown as { toc: unknown }).toc = null
     mockLoadBook.mockResolvedValue(book)
@@ -303,7 +340,7 @@ describe('ReaderView', () => {
     expect(wrapper.get('.chapter-content').text()).toContain('第一章内容')
 
     await wrapper.get('button[title="目录"]').trigger('click')
-    expect(document.body.querySelectorAll('.toc-item')).toHaveLength(0)
+    expect(wrapper.findAll('.toc-item')).toHaveLength(0)
   })
 
   // ---- 票 04：阅读进度 ----

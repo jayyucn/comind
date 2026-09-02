@@ -2,9 +2,12 @@
 // 阅读器本地偏好（非知识数据，不进库），localStorage 持久化，跨会话记住。
 // 模块级单例（同 useEditorSettings 模式）；CSS 变量的落地由 ReaderView
 // 写到阅读器窗口根元素（作用域限定在阅读器，不污染主文档根）。
-import { computed, ref } from 'vue'
+import { computed, ref } from 'vue';
 
 export type ReaderTheme = 'light' | 'sepia' | 'dark'
+
+export const ReaderContentMinWidth = 28;
+export const ReaderContentMaxWidth = 72;
 
 /** 排版参数（数值经 clamp 保证合法区间） */
 export interface ReaderTypography {
@@ -12,7 +15,7 @@ export interface ReaderTypography {
   fontSize: number
   /** 正文行距（1.4–2.4） */
   lineHeight: number
-  /** 正文行宽 ch（28–56，中文理想行长约 35–45 字） */
+  /** 正文行宽 ch（28–72，中文理想行长约 35–45 字） */
   maxWidthCh: number
   /** 主题：浅色 / 护眼米黄 / 夜间反转 */
   theme: ReaderTheme
@@ -23,14 +26,14 @@ const STORAGE_KEY = 'comind-reader-typography'
 const DEFAULTS: ReaderTypography = {
   fontSize: 17,
   lineHeight: 1.8,
-  maxWidthCh: 42,
+  maxWidthCh: ReaderContentMaxWidth,
   theme: 'light',
 }
 
 const LIMITS = {
   fontSize: [14, 24],
   lineHeight: [1.4, 2.4],
-  maxWidthCh: [28, 56],
+  maxWidthCh: [ReaderContentMinWidth, ReaderContentMaxWidth],
 } as const
 
 const THEMES: readonly ReaderTheme[] = ['light', 'sepia', 'dark']
