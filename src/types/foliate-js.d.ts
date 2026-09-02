@@ -2,6 +2,50 @@
 // 提供本项目用到的最小类型面（按 node_modules/foliate-js/epub.js 实际 API 手写）。
 // 覆盖导入链路（票 01）与阅读器链路（票 03：sections/toc/resolveHref/loadBlob）。
 
+// epubcfi.js（同包）类型面：本项目只用 fromRange/toRange/parse/joinIndir/fake
+// （票 04/05 CFI 锚定基建，封装见 src/services/epub-cfi.ts）。
+
+declare module 'foliate-js/epubcfi.js' {
+  /** CFI 单步：/index[:offset]，id/text/side 等本项目遇不到（sanitize 剥 id） */
+  export interface CFIStep {
+    index: number
+    id?: string
+    offset?: number
+    temporal?: number
+    spatial?: number[]
+    text?: string[]
+    side?: string
+  }
+
+  /** 点 CFI 解析结果：按「!」（indirection）分组的步序列，如 [[/6/4],[本地]] */
+  export type CFIParts = CFIStep[][]
+
+  /** range CFI（含逗号）解析结果：parent/start/end 均为分组步序列 */
+  export interface CFIRangeParts {
+    parent: CFIParts
+    start: CFIParts
+    end: CFIParts
+  }
+
+  /** 从 DOM Range 生成 CFI 字符串（以 range 所属文档的 documentElement 为根） */
+  export function fromRange(range: Range, filter?: unknown): string
+
+  /** 解析 CFI 步序列为 Range；parts 为 parse() 的返回值（本地点 CFI 形态） */
+  export function toRange(doc: Document, parts: CFIParts | CFIRangeParts, filter?: unknown): Range
+
+  /** 解析 CFI 字符串为结构（点 CFI → CFIParts；range CFI → CFIRangeParts） */
+  export function parse(cfi: string): CFIParts | CFIRangeParts
+
+  /** 多段 CFI 以「!」连接（用于拼接 section 前缀与本地 CFI） */
+  export function joinIndir(...xs: string[]): string
+
+  /** 无真实 package document 时按 spine 序号造 /6/N 前缀（或从前缀反推序号） */
+  export const fake: {
+    fromIndex: (index: number) => string
+    toIndex: (parts: unknown) => number
+  }
+}
+
 declare module 'foliate-js/epub.js' {
   /** EPUB 构造所需的 zip 加载层（loadText/loadBlob 返回 null 表示条目不存在） */
   export interface EPUBLoader {
