@@ -49,6 +49,12 @@ const typeIcon = computed(() => {
   }
 })
 
+// book 页面的文件类型标记（v1 仅支持 EPUB 导入，ADR-0040）；后续支持
+// 其他书格式时在此扩展映射，标记跟随真实来源而不是写死在模板里。
+const fileTypeLabel = computed(() => {
+  return props.page.type === 'book' ? 'EPUB' : ''
+})
+
 function formatTime(timestamp: number, format: 'relative' | 'absolute'): string {
   if (format === 'absolute') {
     const d = new Date(timestamp)
@@ -116,6 +122,7 @@ function handleKeydown(event: KeyboardEvent) {
       <component :is="typeIcon" :size="14" class="page-item-icon" />
       <span class="page-item-title">{{ page.title }}</span>
     </template>
+    <span v-if="fileTypeLabel && !localRenaming" class="page-item-file-type">{{ fileTypeLabel }}</span>
     <span v-if="showTime && !localRenaming" class="page-time">{{ timeDisplay }}</span>
     <slot name="suffix" />
   </div>
@@ -169,6 +176,17 @@ function handleKeydown(event: KeyboardEvent) {
 .page-item-icon {
   flex-shrink: 0;
   color: var(--text-tertiary);
+}
+
+.page-item-file-type {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-snug);
+  color: var(--text-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+  letter-spacing: 0.02em;
 }
 
 .page-time {

@@ -246,12 +246,11 @@ async function submitNote(text: string): Promise<void> {
       </template>
     </div>
 
-    <!-- 票 06 写笔记输入浮层（自 Teleport 到 body + --z-popover） -->
+    <!-- 票 06 写笔记输入浮层（外壳复用 BasePopover） -->
     <NoteInputPopover
       :visible="noteDraft != null"
       :x="noteDraft?.x ?? 0"
       :y="noteDraft?.y ?? 0"
-      :quote="noteDraft?.highlight.text"
       :initial-text="noteDraft?.initialText"
       @submit="submitNote"
       @close="noteDraft = null"

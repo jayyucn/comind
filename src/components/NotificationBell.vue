@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
 import { Check, Clock, Trash2 } from 'lucide-vue-next'
-import { useNotificationStore } from '../stores/notification'
+import { onMounted, ref } from 'vue'
 import { useNavigateToPage } from '../composables/useNavigateToPage'
+import { useNotificationStore } from '../stores/notification'
 import type { Notification } from '../wasm/types'
 import Icon from './Icons/Icon.vue'
 import BasePopover from './common/BasePopover.vue'
@@ -114,7 +114,7 @@ onMounted(() => {
       class="notification-bell-btn"
       @click="toggleDropdown"
     >
-      <Icon name="icon-bell" />
+      <Icon name="icon-bell" :size="16" />
       <span
         v-if="notificationStore.unreadCount > 0"
         class="notification-badge"

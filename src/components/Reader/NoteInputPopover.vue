@@ -1,17 +1,17 @@
 <script setup lang="ts">
 // 写笔记简易输入浮层（票 06 / ADR-0040 D4）：v1 纯文本输入，非块编辑器
-// （阅读器不内嵌编辑器，D4）。高亮操作条/高亮浮层点「写笔记」后浮现，
-// 展示高亮原文作上下文 + 输入想法。Teleport 到 body + var(--z-popover)
-// （ADR-0032 浮层纪律）；点外关闭（与 HighlightPopover 同一模式）。
-import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
+// （阅读器不内嵌编辑器，D4）。高亮操作条/高亮浮层点「写笔记」后浮现。
+// 外壳复用 BasePopover（ADR-0038）：Teleport + overlay 点外关闭 + Escape +
+// 定位收边 + 面板外观，此处不再自绘重复样板；(x, y) 沿用顶边中点语义，
+// 折算成 BasePopover 需要的面板左上角坐标，观感与旧 translate(-50%, 12px) 一致。
+import { computed, nextTick, ref, watch } from 'vue'
+import BasePopover from '../common/BasePopover.vue'
 
 const props = defineProps<{
   visible: boolean
-  /** 视口坐标（打开入口的位置） */
+  /** 视口坐标（打开入口的位置，浮层以它为顶边中点向下展开） */
   x: number
   y: number
-  /** 高亮原文（只读上下文展示） */
-  quote?: string
   /** 编辑已有笔记时预填的旧文本 */
   initialText?: string
 }>()
@@ -24,28 +24,26 @@ const emit = defineEmits<{
 const text = ref('')
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 
+/** 面板宽（与 .note-input-popover 宽度联动），折算半宽用 */
+const POPOVER_W = 320
+/** 面板与入口的纵向间隙（对应旧 transform 的 12px 下移） */
+const GAP_Y = 12
+const panelPosition = computed(() => ({
+  x: props.x - POPOVER_W / 2,
+  y: props.y + GAP_Y,
+}))
+
 watch(
   () => props.visible,
   async visible => {
     if (visible) {
       text.value = props.initialText ?? ''
-      document.addEventListener('mousedown', onDocMouseDown)
       await nextTick()
       textareaRef.value?.focus()
-    } else {
-      document.removeEventListener('mousedown', onDocMouseDown)
     }
   },
   { immediate: true },
 )
-
-/** 点浮层外关闭 */
-function onDocMouseDown(e: MouseEvent): void {
-  const target = e.target as HTMLElement | null
-  if (!target) return
-  if (target.closest('.note-input-popover')) return
-  emit('close')
-}
 
 /** 空文本不可提交 */
 function submit(): void {
@@ -55,32 +53,17 @@ function submit(): void {
 }
 
 function onKeydown(e: KeyboardEvent): void {
-  if (e.key === 'Escape') {
-    emit('close')
-    return
-  }
-  // Ctrl/Cmd+Enter 提交（Enter 留给换行）
+  // Ctrl/Cmd+Enter 提交（Enter 留给换行；Escape 关闭由 BasePopover 处理）
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
     e.preventDefault()
     submit()
   }
 }
-
-onBeforeUnmount(() => {
-  document.removeEventListener('mousedown', onDocMouseDown)
-})
 </script>
 
 <template>
-  <Teleport to="body">
-    <div
-      v-if="visible"
-      class="note-input-popover"
-      :style="{ left: `${x}px`, top: `${y}px` }"
-      role="dialog"
-      aria-label="写笔记"
-    >
-      <p v-if="quote" class="quote" :title="quote">“{{ quote }}”</p>
+  <BasePopover :visible="visible" :position="panelPosition" @close="emit('close')">
+    <div class="note-input-popover" :style="{ width: `${POPOVER_W}px` }">
       <textarea
         ref="textareaRef"
         v-model="text"
@@ -95,35 +78,17 @@ onBeforeUnmount(() => {
         <button class="btn primary" @click="submit">保存</button>
       </div>
     </div>
-  </Teleport>
+  </BasePopover>
 </template>
 
 <style lang="scss" scoped>
 .note-input-popover {
-  position: fixed;
-  // 以 (x,y) 为顶边中点向下展开（入口是选区上方/点击处）
-  transform: translate(-50%, 12px);
-  z-index: var(--z-popover);
-  width: 320px;
+  // 外壳外观（背景/边框/阴影/定位）由 BasePopover 提供，这里只留内容布局
   padding: 8px;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  background: var(--bg-base);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-modal);
-}
-
-.quote {
-  margin: 0;
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-  line-height: 1.5;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .note-input {

@@ -220,7 +220,7 @@ afterEach(() => {
 // ---- 票 06：写笔记（选区操作条入口） ----
 
 describe('ReaderView（票 06 写笔记）', () => {
-  it('选区 → 操作条「写笔记」→ 先落高亮行 → 输入浮层（quote 展示）→ 提交：service 接管四件套+回填', async () => {
+  it('选区 → 操作条「写笔记」→ 先落高亮行 → 输入浮层（BasePopover 外壳）→ 提交：service 接管四件套+回填', async () => {
     mockLoadBook.mockResolvedValue(makeBook())
     const wrapper = mountReader()
     await flushPromises()
@@ -240,10 +240,8 @@ describe('ReaderView（票 06 写笔记）', () => {
     expect(hl.text).toBe('第一章')
     expect(hl.book_page_id).toBe('book-1')
 
-    // 输入浮层：quote 上下文展示
-    const popover = document.body.querySelector('.note-input-popover')!
-    expect(popover).toBeTruthy()
-    expect(popover.textContent).toContain('第一章')
+    // 输入浮层出现（quote 上下文展示已移除，仅保留输入区）
+    expect(document.body.querySelector('.note-input-popover')).toBeTruthy()
 
     // 填写想法并保存
     fillNoteText('我的想法')

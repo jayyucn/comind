@@ -579,12 +579,11 @@ onBeforeUnmount(() => {
     @close="popoverHighlightId = null"
   />
 
-  <!-- 票 06：写笔记输入浮层（高亮原文上下文 + 想法输入） -->
+  <!-- 票 06：写笔记输入浮层 -->
   <NoteInputPopover
     :visible="noteDraft != null"
     :x="noteDraft?.x ?? 0"
     :y="noteDraft?.y ?? 0"
-    :quote="noteDraft?.highlight.text"
     :initial-text="noteDraft?.initialText"
     @submit="submitNote"
     @close="noteDraft = null"

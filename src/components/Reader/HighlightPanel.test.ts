@@ -392,7 +392,7 @@ describe('HighlightPanel（删除流）', () => {
 // ---- 面板本体：追加/修改笔记流（复用 NoteInputPopover） ----
 
 describe('HighlightPanel（笔记流）', () => {
-  it('无笔记条目点「写笔记」→ 浮层（quote 上下文）→ 提交：service 接管，摘要即时反映', async () => {
+  it('无笔记条目点「写笔记」→ 浮层出现 → 提交：service 接管，摘要即时反映', async () => {
     db = [makeHighlight('h-1', '第一章', '第一章的引文', CH1_CFI)]
     const wrapper = mountPanel()
     await flushPromises()
@@ -402,8 +402,6 @@ describe('HighlightPanel（笔记流）', () => {
 
     const popover = document.body.querySelector('.note-input-popover')
     expect(popover).toBeTruthy()
-    // 高亮原文作上下文展示
-    expect(popover!.textContent).toContain('第一章的引文')
     // 无已有笔记：不预填
     expect(mockLoadNoteText).not.toHaveBeenCalled()
 
