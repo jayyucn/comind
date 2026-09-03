@@ -63,11 +63,14 @@ const emit = defineEmits<{
   transition: width 160ms ease;
 
   &.collapsed {
-    width: 44px;
+    // 折叠后只保留「目录」按钮：容器收缩至仅容纳按钮，去背景/边框/标题/列表。
+    // header 布局（padding、左对齐）与展开态完全一致 → 按钮锚点不随开合移动。
+    width: auto;
+    background: transparent;
+    border-right: none;
 
     .toc-header {
-      padding: 0;
-      justify-content: center;
+      border-bottom: none;
     }
 
     .toc-title-text {
