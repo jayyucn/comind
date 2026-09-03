@@ -3,7 +3,8 @@
 // 点条目 locate 事件、删除流（无笔记直删 / 有笔记二次确认的确认与取消分支，
 // 删除联动删笔记 Block）、追加与修改笔记流（复用 NoteInputPopover +
 // createOrUpdateNoteBlock）、ReaderView 顶栏开关、常驻侧栏点条目 CFI 定位
-// （面板保持展开）、删除后正文绘制层重绘（highlightVersion 联动）。
+// （面板保持展开）、删除后正文绘制层重绘（highlightVersion 联动）、
+// 主窗口改笔记后的聚焦刷新（focus → 静默重载 blocks，摘要更新/移除）。
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import type { EPUB, EPUBSection } from 'foliate-js/epub.js'
@@ -589,5 +590,75 @@ describe('ReaderView（票 07 高亮面板集成）', () => {
     // 面板列表同步移除
     expect(document.body.querySelector('.highlight-item')).toBeNull()
     wrapper.unmount()
+  })
+})
+
+// ---- 主窗口改笔记后的聚焦刷新（反向跨窗口兜底） ----
+
+describe('HighlightPanel（主窗口改笔记后聚焦刷新）', () => {
+  it('面板打开 + 窗口聚焦：静默重载书 Page blocks，想法摘要刷新为最新内容', async () => {
+    const store = useBlockStore()
+    db = [makeHighlight('h-1', '第一章', '引文', CH1_CFI, { blockId: 'b-1' })]
+    store.blocks = [makeBlock('b-1', '旧想法')]
+    const wrapper = mountPanel()
+    try {
+      await flushPromises()
+      const noteEl = document.body.querySelector('.item-note')
+      expect(noteEl).toBeTruthy()
+      expect(noteEl!.textContent).toContain('旧想法')
+
+      // 主窗口编辑笔记内容 → 库中已更新；模拟阅读器窗口重新聚焦（loadPageBlocks 取到新内容）
+      const callsBefore = mockLoadPageBlocks.mock.calls.length
+      mockLoadPageBlocks.mockImplementation(async () => {
+        store.blocks = [makeBlock('b-1', '新想法')]
+      })
+      window.dispatchEvent(new Event('focus'))
+      await flushPromises()
+
+      expect(mockLoadPageBlocks.mock.calls.length).toBe(callsBefore + 1)
+      expect(mockLoadPageBlocks).toHaveBeenLastCalledWith('book-1')
+      // 不置 loading（无「加载中…」闪现），摘要就地更新
+      expect(document.body.querySelector('.panel-status')).toBeNull()
+      expect(document.body.querySelector('.item-note')!.textContent).toContain('新想法')
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('主窗口删除笔记 Block：聚焦后摘要消失（行内只剩原文 + 写笔记）', async () => {
+    const store = useBlockStore()
+    db = [makeHighlight('h-1', '第一章', '引文', CH1_CFI, { blockId: 'b-1' })]
+    store.blocks = [makeBlock('b-1', '旧想法')]
+    const wrapper = mountPanel()
+    try {
+      await flushPromises()
+      expect(document.body.querySelector('.item-note')).toBeTruthy()
+
+      // 主窗口删除该 Block → 库中已无；聚焦重载后 join 不到摘要
+      mockLoadPageBlocks.mockImplementation(async () => {
+        store.blocks = []
+      })
+      window.dispatchEvent(new Event('focus'))
+      await flushPromises()
+
+      expect(document.body.querySelector('.item-note')).toBeNull()
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('面板关闭：窗口聚焦不重载（打开时 load() 已全量加载，含 blocks）', async () => {
+    const wrapper = mountPanel(false)
+    try {
+      await flushPromises()
+      expect(mockLoadPageBlocks).not.toHaveBeenCalled()
+
+      window.dispatchEvent(new Event('focus'))
+      await flushPromises()
+
+      expect(mockLoadPageBlocks).not.toHaveBeenCalled()
+    } finally {
+      wrapper.unmount()
+    }
   })
 })

@@ -172,7 +172,7 @@ function isSvgIcon(icon: string): boolean {
     :title="canJumpToSource ? '跳回原文（在阅读器中定位高亮）' : undefined"
     @click.stop="jumpToSource"
   >
-    <Pin :size="14" class="source-pin" />
+    <Pin :size="14" class="source-pin" color="var(--accent)" />
     <span v-if="chapterLabel" class="source-chapter">{{ chapterLabel }}</span>
     <span v-if="quote" class="source-quote">{{ quote }}</span>
   </div>
@@ -256,7 +256,7 @@ function isSvgIcon(icon: string): boolean {
 
 .source-chapter {
   flex-shrink: 0;
-  color: var(--text-primary);
+  color: var(--text-secondary);
   font-weight: 500;
 }
 

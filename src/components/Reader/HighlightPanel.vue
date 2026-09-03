@@ -6,7 +6,10 @@
 // 定位（复用票 06 jumpCfi 机制，侧栏保持常驻）；删除高亮时联动删除其笔记
 // Block（不留孤儿块），已有笔记的条目删除前二次确认；
 // 追加/修改笔记复用票 06 NoteInputPopover（自 Teleport 到 body）。
-import { computed, ref, watch } from 'vue'
+// 主窗口改笔记后的刷新（反向跨窗口）：主窗口编辑/删除书 Page 上的笔记 Block
+// 不会主动通知阅读器，本组件监听窗口 focus —— 聚焦时静默重载书 Page blocks，
+// join 摘要即时反映最新想法内容（高亮行只有阅读器自身会改，无需重读）。
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useBlockStore } from '../../stores/blocks'
 import { createOrUpdateNoteBlock, deleteNoteHighlight, loadNoteText } from '../../services/book-note'
 import { cfiToSpineIndex } from '../../services/epub-cfi'
@@ -124,6 +127,26 @@ watch(
   },
   { immediate: true },
 )
+
+/**
+ * 主窗口改笔记后的兜底刷新：主窗口编辑/删除书 Page 上的笔记 Block 不通知
+ * 阅读器（反向事件暂无），阅读器窗口重新获得焦点时静默重载书 Page blocks。
+ * 不走 load()（不置 loading），避免每次聚焦闪「加载中…」；仅重载 blocks：
+ * 高亮行只有阅读器自身会改（列表无需重读），blocks 是 join 摘要的唯一数据源。
+ * 面板未开时不刷——打开时 load() 已全量加载（含 blocks）。
+ */
+function refreshBlocksOnFocus(): void {
+  if (!props.open) return
+  blockStore.loadPageBlocks(props.bookId).catch(() => undefined)
+}
+
+onMounted(() => {
+  window.addEventListener('focus', refreshBlocksOnFocus)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('focus', refreshBlocksOnFocus)
+})
 
 /** 删除按钮：已有笔记的先二次确认（确认后联动删除笔记 Block），无笔记直接删 */
 function requestRemove(item: PanelItem): void {
