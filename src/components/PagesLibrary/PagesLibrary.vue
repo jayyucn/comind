@@ -101,7 +101,11 @@ const allPages = computed<Page[]>(() => {
 })
 
 const filteredPages = computed(() => {
-  return pageEngine.filterSort(allPages.value, viewQuery.value, registry, queryContext.value)
+  const pages = pageEngine.filterSort(allPages.value, viewQuery.value, registry, queryContext.value)
+  // 书房（gallery）数据源兜底（票 08 / ADR-0040 D9）：书房卡片是阅读器入口（openReaderWindow），
+  // items 必须全是书 Page。不依赖书房 tab 的保存查询——种子 LIBRARY_TAB_QUERY 虽已 type=book，
+  // 但 tab 查询可被用户复制/改动而漂移，故在供给层强制排除 type !== 'book' 的页面。
+  return screenViewStore.currentViewType === 'gallery' ? pages.filter((p) => p.type === 'book') : pages
 })
 
 const pageGroups = computed(() => {
