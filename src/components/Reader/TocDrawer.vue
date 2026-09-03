@@ -23,16 +23,17 @@ defineProps<{
 
 const emit = defineEmits<{
   select: [index: number]
-  close: []
+  /** 顶栏 目录 按钮已移入侧栏标题：标题按钮同时承担开/关，统一 toggle */
+  toggle: []
 }>()
 </script>
 
 <template>
   <aside class="toc-drawer" :class="{ collapsed: !open }" aria-label="目录">
     <header class="toc-header">
-      <span class="toc-title">目录</span>
-      <button class="toc-close-btn" title="关闭目录" @click="emit('close')">
-        <Icon name="icon-close" :size="16" />
+      <button class="toc-title-btn" title="目录" @click="emit('toggle')">
+        <Icon name="icon-menu" :size="16" />
+        <span class="toc-title-text">目录</span>
       </button>
     </header>
     <nav class="toc-list">
@@ -62,46 +63,55 @@ const emit = defineEmits<{
   transition: width 160ms ease;
 
   &.collapsed {
-    width: 0;
-    border-right: none;
-    visibility: hidden;
+    width: 44px;
+
+    .toc-header {
+      padding: 0;
+      justify-content: center;
+    }
+
+    .toc-title-text {
+      display: none;
+    }
+
+    .toc-list {
+      display: none;
+    }
   }
 }
 
 .toc-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   height: 44px;
   padding: 0 8px 0 16px;
   flex-shrink: 0;
   border-bottom: 1px solid var(--reader-border);
 }
 
-.toc-title {
-  font-size: var(--text-sm);
-  font-weight: var(--font-semibold);
-  color: var(--reader-text);
-  white-space: nowrap;
-}
-
-.toc-close-btn {
+.toc-title-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   border: none;
   background: transparent;
   cursor: pointer;
-  width: 28px;
   height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  padding: 0 8px;
   border-radius: var(--radius-md);
   color: var(--reader-text-muted);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
   transition: all 100ms ease;
 
   &:hover {
     background: var(--bg-hover);
     color: var(--reader-text);
   }
+}
+
+.toc-title-text {
+  white-space: nowrap;
 }
 
 .toc-list {

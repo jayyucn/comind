@@ -282,8 +282,8 @@ describe('ReaderView', () => {
     expect(wrapper.get('.chapter-content').text()).toContain('第三章内容')
     expect(wrapper.get('.toc-drawer').classes()).not.toContain('collapsed')
 
-    // 关闭侧栏 → 折叠
-    await wrapper.get('.toc-close-btn').trigger('click')
+    // 关闭侧栏 → 折叠（标题按钮同时承担开/关，统一 toggle）
+    await wrapper.get('.toc-title-btn').trigger('click')
     expect(wrapper.get('.toc-drawer').classes()).toContain('collapsed')
   })
 

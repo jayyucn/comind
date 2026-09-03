@@ -262,14 +262,6 @@ watch(typography, applyTypography)
       <div class="top-right-controls">
         <button
           class="topbar-btn"
-          :class="{ active: tocOpen }"
-          title="目录"
-          @click="tocOpen = !tocOpen"
-        >
-          <Icon name="icon-menu" :size="16" />
-        </button>
-        <button
-          class="topbar-btn"
           :class="{ active: highlightPanelOpen }"
           title="本书高亮"
           @click="highlightPanelOpen = !highlightPanelOpen"
@@ -321,7 +313,7 @@ watch(typography, applyTypography)
           :entries="flatToc"
           :current-index="currentIndex"
           @select="goTo"
-          @close="tocOpen = false"
+          @toggle="tocOpen = !tocOpen"
         />
         <div class="reader-content">
           <ChapterContent
