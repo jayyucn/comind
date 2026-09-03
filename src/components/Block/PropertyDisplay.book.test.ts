@@ -1,6 +1,6 @@
 // 书笔记 Block 属性渲染单测（票 06 / ADR-0040 D3/D7）：quote/book/chapter
-// 属性使笔记脱离书文件可读（其他端语义）；cfi 是系统属性不渲染；「↗ 原文」
-// 按钮仅 Tauri 环境且 cfi 属性存在时显示，点击唤起阅读器窗口并携带 CFI。
+// 书笔记以紧凑来源行展示：Pin + [卷/部 /] 章节 + 原文引用；
+// cfi 是系统属性不渲染；仅 Tauri 环境且 cfi 属性存在时整行可点击。
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount } from '@vue/test-utils'
@@ -71,13 +71,38 @@ beforeEach(() => {
 })
 
 describe('PropertyDisplay（书笔记属性渲染）', () => {
-  it('book/chapter/quote 渲染为可读文本（笔记脱离书文件可读，其他端语义）', () => {
+  it('书笔记以紧凑来源行展示：Pin + 章节 + 原文引用（无引号）', () => {
     const wrapper = mountDisplay(noteProperties())
 
-    const text = wrapper.text()
-    expect(text).toContain('测试书')
-    expect(text).toContain('第一章')
-    expect(text).toContain('原文摘录一句')
+    const source = wrapper.find('.book-note-source')
+    expect(source.exists()).toBe(true)
+    expect(source.text()).toContain('第一章')
+    expect(source.text()).toContain('原文摘录一句')
+    expect(source.text()).not.toContain('"原文摘录一句"')
+
+    // 不再以展开的属性列表展示书名/章节/原文
+    expect(wrapper.find('.property-list').exists()).toBe(false)
+  })
+
+  it('存在 part 属性时以双层结构展示：父章节 / 子章节', () => {
+    const props = [...noteProperties(), {
+      id: 'p-part',
+      blockId: 'b-1',
+      key: 'part',
+      value: '第五部',
+      type: 'string' as const,
+      sortOrder: 4,
+      isHidden: false,
+      isDeleted: false,
+      schemaVersion: 1,
+      createdAt: 0,
+      updatedAt: 0,
+    }]
+    const wrapper = mountDisplay(props)
+
+    const source = wrapper.find('.book-note-source')
+    expect(source.exists()).toBe(true)
+    expect(source.text()).toContain('第五部 / 第一章')
   })
 
   it('cfi 是系统属性：不渲染原始 CFI 串（跳回原文的数据源，非展示信息）', () => {
@@ -87,29 +112,31 @@ describe('PropertyDisplay（书笔记属性渲染）', () => {
     expect(wrapper.text()).not.toContain('epubcfi(')
   })
 
-  it('Tauri 环境且有 cfi 属性：渲染「↗ 原文」按钮，点击唤起阅读器窗口（bookPageId + cfi）', async () => {
+  it('Tauri 环境且有 cfi 属性：来源行可点击，唤起阅读器窗口（bookPageId + cfi）', async () => {
     const wrapper = mountDisplay(noteProperties())
 
-    const btn = wrapper.find('button.jump-source-btn')
-    expect(btn.exists()).toBe(true)
-    expect(btn.text()).toContain('原文')
+    const source = wrapper.find('.book-note-source')
+    expect(source.exists()).toBe(true)
+    expect(source.classes()).toContain('can-jump')
 
-    await btn.trigger('click')
+    await source.trigger('click')
 
     expect(mockOpenReaderWindow).toHaveBeenCalledTimes(1)
     expect(mockOpenReaderWindow).toHaveBeenCalledWith('book-1', { jumpCfi: CFI })
   })
 
-  it('无 cfi 属性（普通笔记/手动建的 block）：不显示跳回原文按钮', () => {
+  it('无 cfi 属性（普通笔记/手动建的 block）：来源行仍展示，但不可跳转', () => {
     const wrapper = mountDisplay(noteProperties(false))
 
-    expect(wrapper.find('button.jump-source-btn').exists()).toBe(false)
+    expect(wrapper.find('.book-note-source').exists()).toBe(true)
+    expect(wrapper.find('.book-note-source').classes()).not.toContain('can-jump')
   })
 
-  it('非 Tauri 环境（web/Android）：不显示跳回原文按钮', () => {
+  it('非 Tauri 环境（web/Android）：来源行仍展示，但不可跳转', () => {
     mockIsTauri.mockReturnValue(false)
     const wrapper = mountDisplay(noteProperties())
 
-    expect(wrapper.find('button.jump-source-btn').exists()).toBe(false)
+    expect(wrapper.find('.book-note-source').exists()).toBe(true)
+    expect(wrapper.find('.book-note-source').classes()).not.toContain('can-jump')
   })
 })

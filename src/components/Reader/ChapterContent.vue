@@ -17,7 +17,7 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { EPUB, EPUBSection } from 'foliate-js/epub.js'
 import { sanitizeChapterContent } from '../../services/epub-sanitize'
 import { cfiFromRange, cfiToRange, cfiToSpineIndex } from '../../services/epub-cfi'
-import { createOrUpdateNoteBlock, loadNoteText } from '../../services/book-note'
+import { createOrUpdateNoteBlock, deleteNoteHighlight, loadNoteText } from '../../services/book-note'
 import type { BookHighlightRust } from '../../wasm/types'
 import { initCoreClient } from '../../wasm/client'
 import SelectionToolbar from './SelectionToolbar.vue'
@@ -33,6 +33,8 @@ const props = defineProps<{
   spineIndex: number
   /** 本章目录名（高亮记录的章节快照） */
   chapterTitle?: string
+  /** 本章父级目录名（卷/部，书笔记双层章节展示） */
+  chapterParentTitle?: string
   /** 书名（笔记 Block 的 book 属性快照） */
   bookTitle?: string
   /** 待恢复的进度 CFI（仅恢复章且首跳时传入，定位失败静默跳过） */
@@ -454,15 +456,16 @@ async function submitNote(text: string): Promise<void> {
   noteDraft.value = null
   if (!draft) return
   try {
-    const { highlight } = await createOrUpdateNoteBlock({
-      bookPageId: props.bookId,
-      bookTitle: props.bookTitle ?? '',
-      chapter: draft.highlight.chapter,
-      cfi: draft.highlight.cfi,
-      quote: draft.highlight.text,
-      text,
-      highlight: draft.highlight,
-    })
+      const { highlight } = await createOrUpdateNoteBlock({
+        bookPageId: props.bookId,
+        bookTitle: props.bookTitle ?? '',
+        chapter: draft.highlight.chapter,
+        parentChapter: props.chapterParentTitle ?? '',
+        cfi: draft.highlight.cfi,
+        quote: draft.highlight.text,
+        text,
+        highlight: draft.highlight,
+      })
     // 本地高亮行同步 block_id（后续「再写」走更新路径）
     const idx = chapterHighlights.value.findIndex(h => h.id === highlight.id)
     if (idx >= 0) chapterHighlights.value[idx] = highlight
@@ -512,19 +515,20 @@ function onContentClick(e: MouseEvent): void {
   popoverHighlightId.value = null
 }
 
-/** 删除浮层「删除」：仅删高亮行（不删关联 Block，ADR-0040 D7） */
+/** 删除浮层「删除」：删高亮行 + 联动删除其笔记 Block（不留孤儿块） */
 async function removeHighlight(): Promise<void> {
   const id = popoverHighlightId.value
   popoverHighlightId.value = null
   if (!id) return
+  const h = chapterHighlights.value.find(x => x.id === id)
+  if (!h) return
   try {
-    const client = await initCoreClient()
-    await client.deleteBookHighlight(id)
+    await deleteNoteHighlight(props.bookId, h)
   } catch (e) {
-    console.warn('[reader] 高亮删除失败:', e)
+    console.warn('[reader] 高亮/笔记删除失败:', e)
     return
   }
-  chapterHighlights.value = chapterHighlights.value.filter(h => h.id !== id)
+  chapterHighlights.value = chapterHighlights.value.filter(x => x.id !== id)
   redrawHighlights()
 }
 

@@ -20,6 +20,8 @@ const { mockClient, mockIsTauri } = vi.hoisted(() => {
     getProperties: vi.fn(),
     getBlock: vi.fn(),
     upsertBookHighlight: vi.fn(),
+    deleteBookHighlight: vi.fn(),
+    deleteBlock: vi.fn(),
     triggerSync: vi.fn(),
   }
   return { mockClient: client, mockIsTauri: vi.fn() }
@@ -35,7 +37,7 @@ vi.mock('./notification-service', () => ({
   getNotificationService: vi.fn(async () => ({ syncPayloadForBlock: vi.fn() })),
 }))
 
-import { createOrUpdateNoteBlock, loadNoteText } from './book-note'
+import { createOrUpdateNoteBlock, deleteNoteHighlight, loadNoteText } from './book-note'
 
 /** 高亮记录构造（Rust 侧 upsert 全量字段） */
 function makeHighlight(blockId: string | null = null): BookHighlightRust {
@@ -89,6 +91,8 @@ beforeEach(() => {
   mockClient.getBlocksByPage.mockResolvedValue([])
   mockClient.getProperties.mockResolvedValue([])
   mockClient.upsertBookHighlight.mockImplementation(async (h: BookHighlightRust) => h)
+  mockClient.deleteBookHighlight.mockResolvedValue(undefined)
+  mockClient.deleteBlock.mockResolvedValue(undefined)
   echoSetProperty()
 })
 
@@ -315,5 +319,38 @@ describe('loadNoteText', () => {
     mockClient.getBlock.mockResolvedValue(null as never)
 
     await expect(loadNoteText('missing')).resolves.toBe('')
+  })
+})
+
+describe('deleteNoteHighlight（删除高亮 + 联动删除笔记 Block）', () => {
+  it('高亮无 block_id：只删高亮行，不触碰任何 Block', async () => {
+    await deleteNoteHighlight('book-1', makeHighlight(null))
+
+    expect(mockClient.deleteBookHighlight).toHaveBeenCalledTimes(1)
+    expect(mockClient.deleteBookHighlight).toHaveBeenCalledWith('hl-1')
+    expect(mockClient.deleteBlock).not.toHaveBeenCalled()
+  })
+
+  it('高亮有关联笔记（block_id）：删高亮行后联动 delete_block_cascade 删 Block', async () => {
+    await deleteNoteHighlight('book-1', makeHighlight('b-1'))
+
+    expect(mockClient.deleteBookHighlight).toHaveBeenCalledWith('hl-1')
+    expect(mockClient.deleteBlock).toHaveBeenCalledTimes(1)
+    expect(mockClient.deleteBlock).toHaveBeenCalledWith('b-1')
+  })
+
+  it('Tauri 环境删除成功后 emitTo 主窗口 reader:data-changed（含 pageId）', async () => {
+    mockIsTauri.mockReturnValue(true)
+
+    await deleteNoteHighlight('book-1', makeHighlight('b-1'))
+
+    expect(mockEmitTo).toHaveBeenCalledWith('main', 'reader:data-changed', { pageId: 'book-1' })
+  })
+
+  it('高亮行删除失败：不删 Block（保持两者一致）', async () => {
+    mockClient.deleteBookHighlight.mockRejectedValue(new Error('db locked'))
+
+    await expect(deleteNoteHighlight('book-1', makeHighlight('b-1'))).rejects.toThrow('db locked')
+    expect(mockClient.deleteBlock).not.toHaveBeenCalled()
   })
 })

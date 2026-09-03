@@ -64,6 +64,7 @@ vi.mock('../../wasm/client', () => ({
 vi.mock('../../services/book-note', () => ({
   createOrUpdateNoteBlock: mockCreateOrUpdateNoteBlock,
   loadNoteText: mockLoadNoteText,
+  deleteNoteHighlight: vi.fn(async () => {}),
 }))
 
 import ReaderView from './ReaderView.vue'

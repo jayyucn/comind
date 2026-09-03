@@ -1,7 +1,7 @@
 // 票 07 组件测试：HighlightPanel 面板本体 + ReaderView 集成。
 // 覆盖：面板渲染（章节分组/组内创建时间倒序/有无笔记状态/笔记摘要 join）、
 // 点条目 locate 事件、删除流（无笔记直删 / 有笔记二次确认的确认与取消分支，
-// 删除仅删高亮行不删 Block）、追加与修改笔记流（复用 NoteInputPopover +
+// 删除联动删笔记 Block）、追加与修改笔记流（复用 NoteInputPopover +
 // createOrUpdateNoteBlock）、ReaderView 顶栏开关、常驻侧栏点条目 CFI 定位
 // （面板保持展开）、删除后正文绘制层重绘（highlightVersion 联动）。
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest'
@@ -14,8 +14,8 @@ import type { BookHighlightRust, BookProgressRust } from '../../wasm/types'
 
 const {
   mockLoadBook, mockGetBookProgress, mockUpsertBookProgress, mockGetBookHighlights,
-  mockUpsertBookHighlight, mockDeleteBookHighlight, mockCreateOrUpdateNoteBlock,
-  mockLoadNoteText, mockListen, mockLoadPageBlocks, mockStore,
+  mockUpsertBookHighlight, mockDeleteBookHighlight, mockDeleteNoteHighlight,
+  mockCreateOrUpdateNoteBlock, mockLoadNoteText, mockListen, mockLoadPageBlocks, mockStore,
 } = vi.hoisted(() => {
   const mockLoadPageBlocks = vi.fn()
   return {
@@ -25,6 +25,7 @@ const {
     mockGetBookHighlights: vi.fn(),
     mockUpsertBookHighlight: vi.fn(),
     mockDeleteBookHighlight: vi.fn(),
+    mockDeleteNoteHighlight: vi.fn(),
     mockCreateOrUpdateNoteBlock: vi.fn(),
     mockLoadNoteText: vi.fn(),
     mockListen: vi.fn(),
@@ -69,10 +70,11 @@ vi.mock('../../wasm/client', () => ({
   }),
   isTauriEnvironment: () => false,
 }))
-// 票 06/07 业务（生成/更新 Block）已由 book-note.test.ts 覆盖，此处 mock 验证接线
+// 票 06/07 业务（生成/更新/删除 Block 联动）已由 book-note.test.ts 覆盖，此处 mock 验证接线
 vi.mock('../../services/book-note', () => ({
   createOrUpdateNoteBlock: mockCreateOrUpdateNoteBlock,
   loadNoteText: mockLoadNoteText,
+  deleteNoteHighlight: mockDeleteNoteHighlight,
 }))
 // blocks store mock：reactive 包装（面板 join 摘要依赖 store.blocks 响应式，
 // 写笔记后 Block 进 store → 摘要即时刷新，模拟真实 Pinia 行为）
@@ -201,8 +203,14 @@ beforeEach(() => {
   mockUpsertBookHighlight.mockReset()
   mockUpsertBookHighlight.mockImplementation(async (h: BookHighlightRust) => h)
   mockDeleteBookHighlight.mockReset()
-  mockDeleteBookHighlight.mockImplementation(async (id: string) => {
-    db = db.filter(h => h.id !== id)
+  mockDeleteBookHighlight.mockResolvedValue(undefined)
+  mockDeleteNoteHighlight.mockReset()
+  mockDeleteNoteHighlight.mockImplementation(async (_pageId: string, highlight: BookHighlightRust) => {
+    // 模拟真实 service：删高亮行 + 联动删关联 Block（store blocks 移除）
+    db = db.filter(h => h.id !== highlight.id)
+    if (highlight.block_id) {
+      mockStore.blocks = mockStore.blocks.filter(b => b.id !== highlight.block_id)
+    }
   })
   mockCreateOrUpdateNoteBlock.mockReset()
   mockCreateOrUpdateNoteBlock.mockImplementation(async (input: {
@@ -347,15 +355,19 @@ describe('HighlightPanel（删除流）', () => {
     document.body.querySelector<HTMLButtonElement>('button[title="删除高亮"]')!.click()
     await flushPromises()
 
-    // 仅删高亮行（不动 Block：store blocks 无删除调用面）
-    expect(mockDeleteBookHighlight).toHaveBeenCalledWith('h-1')
+    // 无 block_id：只删高亮行（不触碰 Block）
+    expect(mockDeleteNoteHighlight).toHaveBeenCalledTimes(1)
+    expect(mockDeleteNoteHighlight).toHaveBeenCalledWith(
+      'book-1',
+      expect.objectContaining({ id: 'h-1', block_id: null }),
+    )
     expect(wrapper.emitted('changed')).toHaveLength(1)
     // 列表移除 → 空态
     expect(document.body.querySelector('.highlight-item')).toBeNull()
     wrapper.unmount()
   })
 
-  it('有笔记条目：点删除出二次确认（提示笔记保留）；取消不删，确认才删', async () => {
+  it('有笔记条目：点删除出二次确认（提示笔记 Block 一并删除）；取消不删，确认联动删 Block', async () => {
     db = [makeHighlight('h-1', '第一章', '引文', CH1_CFI, { blockId: 'b-1' })]
     mockStore.blocks = [makeBlock('b-1', '已有想法')]
     const wrapper = mountPanel()
@@ -364,27 +376,31 @@ describe('HighlightPanel（删除流）', () => {
     // 点删除 → 出确认（不落库）
     document.body.querySelector<HTMLButtonElement>('button[title="删除高亮"]')!.click()
     await flushPromises()
-    expect(mockDeleteBookHighlight).not.toHaveBeenCalled()
+    expect(mockDeleteNoteHighlight).not.toHaveBeenCalled()
     const hint = document.body.querySelector('.confirm-hint')
     expect(hint).toBeTruthy()
-    expect(hint!.textContent).toContain('保留')
+    expect(hint!.textContent).toContain('一并删除')
 
     // 取消 → 收起确认、不删
     document.body.querySelector<HTMLButtonElement>('.confirm-cancel')!.click()
     await flushPromises()
-    expect(mockDeleteBookHighlight).not.toHaveBeenCalled()
+    expect(mockDeleteNoteHighlight).not.toHaveBeenCalled()
     expect(document.body.querySelector('.confirm-hint')).toBeNull()
     expect(document.body.querySelectorAll('.highlight-item')).toHaveLength(1)
 
-    // 再删 → 确认 → 删高亮行
+    // 再删 → 确认 → 高亮行 + 关联笔记 Block 联动删除
     document.body.querySelector<HTMLButtonElement>('button[title="删除高亮"]')!.click()
     await flushPromises()
     document.body.querySelector<HTMLButtonElement>('.confirm-ok')!.click()
     await flushPromises()
-    expect(mockDeleteBookHighlight).toHaveBeenCalledWith('h-1')
+    expect(mockDeleteNoteHighlight).toHaveBeenCalledTimes(1)
+    expect(mockDeleteNoteHighlight).toHaveBeenCalledWith(
+      'book-1',
+      expect.objectContaining({ id: 'h-1', block_id: 'b-1' }),
+    )
     expect(wrapper.emitted('changed')).toHaveLength(1)
-    // 笔记 Block 保留（store blocks 不受影响）
-    expect(useBlockStore().blocks).toHaveLength(1)
+    // 关联 Block 一并删除（store blocks 同步移除）
+    expect(useBlockStore().blocks).toHaveLength(0)
     wrapper.unmount()
   })
 })
@@ -563,7 +579,11 @@ describe('ReaderView（票 07 高亮面板集成）', () => {
     document.body.querySelector<HTMLButtonElement>('button[title="删除高亮"]')!.click()
     await flushPromises()
 
-    expect(mockDeleteBookHighlight).toHaveBeenCalledWith('h-1')
+    expect(mockDeleteNoteHighlight).toHaveBeenCalledTimes(1)
+    expect(mockDeleteNoteHighlight).toHaveBeenCalledWith(
+      'book-1',
+      expect.objectContaining({ id: 'h-1', block_id: null }),
+    )
     // 正文高亮重载重绘（内存库已删 → 绘制层清空）
     expect(highlightRegistry().get('reader-highlight')).toBeUndefined()
     // 面板列表同步移除

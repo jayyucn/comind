@@ -2,24 +2,36 @@
 // → 重载对应 page blocks（v1 粗粒度）；window focus 兜底刷新当前打开的
 // /page/:pageId（跨窗口事件丢失时）。mock Tauri event API。
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 
-const { mockListen, mockLoadPageBlocks, mockIsTauri, mockRoute } = vi.hoisted(() => ({
-  mockListen: vi.fn(),
-  mockLoadPageBlocks: vi.fn(),
-  mockIsTauri: vi.fn(),
-  mockRoute: { name: 'page', params: { pageId: 'p-current' } } as {
-    name: string
-    params: Record<string, string>
-  },
-}))
+const { mockListen, mockLoadPageBlocks, mockIsTauri, mockRoute, mockStructureVersion } =
+  vi.hoisted(() => ({
+    mockListen: vi.fn(),
+    mockLoadPageBlocks: vi.fn(),
+    mockIsTauri: vi.fn(),
+    mockRoute: { name: 'page', params: { pageId: 'p-current' } } as {
+      name: string
+      params: Record<string, string>
+    },
+    mockStructureVersion: { value: 0 },
+  }))
 
 vi.mock('@tauri-apps/api/event', () => ({ listen: mockListen }))
 vi.mock('vue-router', () => ({ useRoute: () => mockRoute }))
 vi.mock('../wasm/tauri-platform', () => ({ isTauriEnvironment: () => mockIsTauri() }))
+// Pinia setup store 会把 ref 解包为数字暴露（store.structureVersion 是 number，
+// ++ 直接生效）——mock 用 getter/setter 模拟解包，而非裸 { value } 对象。
 vi.mock('../stores/blocks', () => ({
-  useBlockStore: () => ({ loadPageBlocks: mockLoadPageBlocks }),
+  useBlockStore: () => ({
+    loadPageBlocks: mockLoadPageBlocks,
+    get structureVersion() {
+      return mockStructureVersion.value
+    },
+    set structureVersion(v: number) {
+      mockStructureVersion.value = v
+    },
+  }),
 }))
 
 import { useReaderDataChanged } from './useReaderDataChanged'
@@ -50,6 +62,7 @@ beforeEach(() => {
   mockListen.mockImplementation(async () => vi.fn())
   mockLoadPageBlocks.mockReset()
   mockLoadPageBlocks.mockResolvedValue(undefined)
+  mockStructureVersion.value = 0
 })
 
 describe('useReaderDataChanged（主窗口侧监听）', () => {
@@ -68,6 +81,15 @@ describe('useReaderDataChanged（主窗口侧监听）', () => {
     expect(mockLoadPageBlocks).toHaveBeenCalledWith('book-1')
   })
 
+  it('重载后自增 structureVersion（触发 BlockList 重建树，UI 才刷新）', async () => {
+    mountHost()
+
+    registeredHandler()({ payload: { pageId: 'book-1' } })
+    await flushPromises()
+
+    expect(mockStructureVersion.value).toBe(1)
+  })
+
   it('payload 缺 pageId 时不重载（异常数据防御）', async () => {
     mountHost()
 
@@ -75,6 +97,7 @@ describe('useReaderDataChanged（主窗口侧监听）', () => {
     await Promise.resolve()
 
     expect(mockLoadPageBlocks).not.toHaveBeenCalled()
+    expect(mockStructureVersion.value).toBe(0)
   })
 
   it('window focus 兜底：重载当前打开的 /page/:pageId（事件丢失场景）', async () => {

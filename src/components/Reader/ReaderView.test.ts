@@ -5,7 +5,7 @@
 // 票 04：进度恢复（CFI 跳章 + scrollIntoView 定位）、滚动 debounce 写进度、
 // 关窗 flush、排版面板（主题 class + CSS 变量落地）。
 // 票 05：选中→高亮→落库与绘制、重开原位重绘、解析失败静默跳过、
-// 点已有高亮→删除浮层→仅删高亮行。
+// 点已有高亮→删除浮层→删高亮并联动删其笔记 Block。
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
@@ -16,7 +16,7 @@ import type { BookHighlightRust, BookProgressRust } from '../../wasm/types'
 
 const {
   mockLoadBook, mockGetBookProgress, mockUpsertBookProgress,
-  mockGetBookHighlights, mockUpsertBookHighlight, mockDeleteBookHighlight,
+  mockGetBookHighlights, mockUpsertBookHighlight, mockDeleteBookHighlight, mockDeleteBlock,
 } = vi.hoisted(() => ({
   mockLoadBook: vi.fn(),
   mockGetBookProgress: vi.fn(),
@@ -24,6 +24,7 @@ const {
   mockGetBookHighlights: vi.fn(),
   mockUpsertBookHighlight: vi.fn(),
   mockDeleteBookHighlight: vi.fn(),
+  mockDeleteBlock: vi.fn(),
 }))
 
 /** 绘制层断言用的 Fake Highlight（jsdom 无 CSS Custom Highlight API） */
@@ -59,6 +60,7 @@ vi.mock('../../wasm/client', () => ({
     getBookHighlights: mockGetBookHighlights,
     upsertBookHighlight: mockUpsertBookHighlight,
     deleteBookHighlight: mockDeleteBookHighlight,
+    deleteBlock: mockDeleteBlock,
   }),
   isTauriEnvironment: () => false,
 }))
@@ -101,7 +103,13 @@ function makeBook(): EPUB {
 }
 
 /** 高亮记录构造（BookHighlightRust） */
-function makeHighlight(id: string, cfi: string, text: string, chapter = '第一章'): BookHighlightRust {
+function makeHighlight(
+  id: string,
+  cfi: string,
+  text: string,
+  chapter = '第一章',
+  blockId: string | null = null,
+): BookHighlightRust {
   return {
     id,
     book_page_id: 'book-1',
@@ -109,7 +117,7 @@ function makeHighlight(id: string, cfi: string, text: string, chapter = '第一�
     text,
     chapter,
     color: 'yellow',
-    block_id: null,
+    block_id: blockId,
     created_at: 1,
     updated_at: 1,
   }
@@ -168,6 +176,8 @@ beforeEach(() => {
   mockUpsertBookHighlight.mockImplementation(async (h: BookHighlightRust) => h)
   mockDeleteBookHighlight.mockReset()
   mockDeleteBookHighlight.mockResolvedValue(undefined)
+  mockDeleteBlock.mockReset()
+  mockDeleteBlock.mockResolvedValue(undefined)
   // 排版偏好重置默认（模块级单例跨用例共享，避免用例间主题残留）
   useReaderTypography().updateTypography({
     fontSize: 17, lineHeight: 1.8, maxWidthCh: 42, theme: 'light',
@@ -581,7 +591,7 @@ describe('ReaderView', () => {
     wrapper.unmount()
   })
 
-  it('点已有高亮 → 删除浮层 → 「删除」仅删高亮行，正文文字保留', async () => {
+  it('点已有高亮 → 删除浮层 → 「删除」删高亮行并联动删笔记 Block，正文文字保留', async () => {
     // 先造一条覆盖首章段落开头的高亮 CFI
     mockLoadBook.mockResolvedValue(makeBook())
     const probe = mountReader()
@@ -595,7 +605,7 @@ describe('ReaderView', () => {
     probe.unmount()
 
     mockLoadBook.mockResolvedValue(makeBook())
-    mockGetBookHighlights.mockResolvedValue([makeHighlight('hl-1', cfi, '第一章')])
+    mockGetBookHighlights.mockResolvedValue([makeHighlight('hl-1', cfi, '第一章', '第一章', 'b-1')])
     const wrapper = mountReader()
     await flushPromises()
     expect(highlightRegistry().get('reader-highlight')!.ranges).toHaveLength(1)
@@ -606,11 +616,12 @@ describe('ReaderView', () => {
     const popover = document.body.querySelector('.highlight-popover')
     expect(popover).toBeTruthy()
 
-    // 点「删除」：delete_book_highlight 仅按 id 删高亮行
+    // 点「删除」：删高亮行 + delete_block_cascade 删关联笔记 Block
     popover!.querySelector<HTMLButtonElement>('button.popover-btn.danger')!.click()
     await flushPromises()
 
     expect(mockDeleteBookHighlight).toHaveBeenCalledWith('hl-1')
+    expect(mockDeleteBlock).toHaveBeenCalledWith('b-1')
     // 绘制层清空、浮层收起
     expect(highlightRegistry().get('reader-highlight')).toBeUndefined()
     expect(document.body.querySelector('.highlight-popover')).toBeNull()

@@ -122,9 +122,28 @@ const flatToc = computed<TocEntry[]>(() => {
   return out
 })
 
-/** 顶栏章节名：TOC 中首个指向当前 spine 下标的条目（无 TOC 时留空） */
+/** 指向当前 spine 的所有 TOC 条目，按深度降序（最具体的子章节在前） */
+const currentTocEntries = computed(() =>
+  flatToc.value
+    .filter(entry => entry.index === currentIndex.value)
+    .sort((a, b) => b.depth - a.depth))
+
+/** 顶栏章节名：取指向当前 spine 的最具体 TOC 条目（无 TOC 时留空） */
 const chapterTitle = computed(() =>
-  flatToc.value.find(entry => entry.index === currentIndex.value)?.label ?? '')
+  currentTocEntries.value[0]?.label ?? '')
+
+/** 当前章节的父级目录名（卷/部/编等），无父级时为空；用于书笔记双层章节展示 */
+const chapterParentTitle = computed(() => {
+  const current = currentTocEntries.value[0]
+  if (!current || current.depth === 0) return ''
+  const idx = flatToc.value.indexOf(current)
+  for (let i = idx - 1; i >= 0; i--) {
+    if (flatToc.value[i].depth === current.depth - 1) {
+      return flatToc.value[i].label
+    }
+  }
+  return ''
+})
 
 const canPrev = computed(() => currentIndex.value > 0)
 const canNext = computed(() => currentIndex.value < sections.value.length - 1)
@@ -323,6 +342,7 @@ watch(typography, applyTypography)
             :book-id="bookId"
             :spine-index="currentIndex"
             :chapter-title="chapterTitle"
+            :chapter-parent-title="chapterParentTitle"
             :book-title="bookTitle"
             :restore-cfi="restoreCfi"
             :jump-cfi="chapterJumpCfi"

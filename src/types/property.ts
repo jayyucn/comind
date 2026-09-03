@@ -141,6 +141,13 @@ export const BUILT_IN_PROPERTIES: PropertyDefinition[] = [
     displayStyle: 'icon-text',
   },
   {
+    key: 'part',
+    title: '部/卷',
+    type: 'string',
+    isBuiltIn: true,
+    // 系统属性：章节的双层父级，由 PropertyDisplay 紧凑展示，不进入属性列表
+  },
+  {
     key: 'chapter',
     title: '章节',
     type: 'string',

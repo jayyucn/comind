@@ -3,12 +3,12 @@
 // 布局，打开时占位收窄正文、关闭时折叠为 0 宽（同 TocDrawer 模式，无遮罩、
 // 无 Teleport、无 z-index）。列出本书全部高亮（按章节分组、创建时间倒序），
 // 有笔记的经 block_id join 书 Page blocks 显示想法摘要。点条目 → 父级 CFI
-// 定位（复用票 06 jumpCfi 机制，侧栏保持常驻）；删除仅删高亮行、不删关联
-// Block（D7：Block 独立可读），已有笔记的条目删除前二次确认（提示笔记保留）；
+// 定位（复用票 06 jumpCfi 机制，侧栏保持常驻）；删除高亮时联动删除其笔记
+// Block（不留孤儿块），已有笔记的条目删除前二次确认；
 // 追加/修改笔记复用票 06 NoteInputPopover（自 Teleport 到 body）。
 import { computed, ref, watch } from 'vue'
 import { useBlockStore } from '../../stores/blocks'
-import { createOrUpdateNoteBlock, loadNoteText } from '../../services/book-note'
+import { createOrUpdateNoteBlock, deleteNoteHighlight, loadNoteText } from '../../services/book-note'
 import { cfiToSpineIndex } from '../../services/epub-cfi'
 import { initCoreClient } from '../../wasm/client'
 import type { BookHighlightRust } from '../../wasm/types'
@@ -125,32 +125,33 @@ watch(
   { immediate: true },
 )
 
-/** 删除按钮：已有笔记的先二次确认（笔记保留在书 Page），无笔记直接删 */
+/** 删除按钮：已有笔记的先二次确认（确认后联动删除笔记 Block），无笔记直接删 */
 function requestRemove(item: PanelItem): void {
   if (item.highlight.block_id) {
     confirmDeleteId.value = item.highlight.id
     return
   }
-  void removeHighlight(item.highlight.id)
+  void removeHighlight(item.highlight)
 }
 
 /** 确认删除（已有笔记条目的二次确认分支） */
 function confirmRemove(): void {
   const id = confirmDeleteId.value
   confirmDeleteId.value = null
-  if (id) void removeHighlight(id)
+  if (!id) return
+  const h = highlights.value.find(x => x.id === id)
+  if (h) void removeHighlight(h)
 }
 
-/** 删高亮行（不删关联 Block，D7）；成功后本地列表移除 + 通知正文重绘 */
-async function removeHighlight(id: string): Promise<void> {
+/** 删高亮行 + 联动删除其笔记 Block；成功后本地列表移除 + 通知正文重绘 */
+async function removeHighlight(highlight: BookHighlightRust): Promise<void> {
   try {
-    const client = await initCoreClient()
-    await client.deleteBookHighlight(id)
+    await deleteNoteHighlight(props.bookId, highlight)
   } catch (e) {
-    console.warn('[reader] 高亮删除失败:', e)
+    console.warn('[reader] 高亮/笔记删除失败:', e)
     return
   }
-  highlights.value = highlights.value.filter(h => h.id !== id)
+  highlights.value = highlights.value.filter(h => h.id !== highlight.id)
   emit('changed')
 }
 
@@ -230,7 +231,7 @@ async function submitNote(text: string): Promise<void> {
                 写笔记
               </button>
               <template v-if="confirmDeleteId === item.highlight.id">
-                <span class="confirm-hint">笔记将保留在书 Page</span>
+                <span class="confirm-hint">笔记 Block 将一并删除</span>
                 <button class="item-btn danger confirm-ok" @click="confirmRemove">确认删除</button>
                 <button class="item-btn confirm-cancel" @click="confirmDeleteId = null">取消</button>
               </template>

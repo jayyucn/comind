@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 高亮点击浮层（票 05 / ADR-0040 D7/D10）：点击已有高亮文字时浮现于点击处，
-// 提供「写笔记（票 06 激活：已有 block_id 则预填旧文更新）/ 删除」。删除仅删
-// 高亮行，不删关联 Block（Block 独立可读，跨端承诺）。Teleport 到 body +
+// 提供「写笔记（票 06 激活：已有 block_id 则预填旧文更新）/ 删除」。删除删
+// 高亮行并联动删除其笔记 Block（不留孤儿块）。Teleport 到 body +
 // var(--z-popover)（ADR-0032 浮层纪律）。点浮层外关闭（与 TypographyPanel 同一模式）。
 import { onBeforeUnmount, watch } from 'vue'
 
