@@ -252,9 +252,29 @@ async function handleDocKeyDown(e: KeyboardEvent) {
     if (selected.length > 0) {
       e.preventDefault()
       // 同步：仅 tree 过滤（store 保留，cleanupAfterDelete 需要这些块数据）
-      tree.value = tree.value.filter(node => !selected.includes(node.id))
+      // 乐观过滤也守「至少留一块」：若移除选中会让 tree 空，则保留最后一块
+      // （与 store deleteBlocks 闸门一致），避免瞬时空屏；其内容随后由 store 清空。
+      const remaining = tree.value.filter(node => !selected.includes(node.id))
+      let keptId: string | null = null
+      if (remaining.length > 0) {
+        tree.value = remaining
+      } else if (tree.value.length > 0) {
+        // 全选删除：保留文档序最后一块（store 会清空其内容），待删除完成后激活它
+        keptId = tree.value[tree.value.length - 1].id
+        tree.value = [tree.value[tree.value.length - 1]]
+      } else {
+        tree.value = []
+      }
       // paint 完成后才从 store 删除（含 cleanupAfterDelete 的 cross-page link 降级）
-      setTimeout(() => { selection.deleteSelected() }, 0)
+      setTimeout(() => {
+        selection.deleteSelected().then(() => {
+          if (keptId) {
+            // 全选删除后页面只剩被保留的空 block：清选区并进入编辑态，光标落其内便于续写
+            selection.clearSelection()
+            editorStore.activateBlock(keptId, 1)
+          }
+        })
+      }, 0)
       return
     }
   }
@@ -495,7 +515,7 @@ onBeforeUnmount(() => {
   <div class="block-list" :class="{ 'is-frozen': isFrozen }">
     <VueDraggable
       v-model="tree"
-      :group="{ name: 'blocks', pull: true, put: true }"
+      :group="{ name: 'blocks-' + pageId, pull: true, put: true }"
       :disabled="isFrozen"
       handle=".bullet-dot"
       filter=".bullet-chevron"

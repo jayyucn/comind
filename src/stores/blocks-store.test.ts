@@ -404,3 +404,63 @@ describe('updateBlockContent clears renderSegments', () => {
     expect(merged?.renderSegments).toBeUndefined()
   })
 })
+
+describe('deleteBlocks 不变量：每 page 始终至少保留 1 个 block', () => {
+  test('删除唯一 block 时清空其内容而非消失', async () => {
+    const store = useBlockStore()
+    const pageId = 'inv-page-1'
+    const only = await store.createBlock({ pageId, content: '唯一' })
+
+    await store.deleteBlock(only.id)
+
+    const remaining = store.getBlocksByPage(pageId)
+    expect(remaining).toHaveLength(1)
+    expect(remaining[0].id).toBe(only.id)
+    expect(remaining[0].content).toBe('')
+  })
+
+  test('select-all 删除后页面恰好剩 1 个空 block（文档序最后一块）', async () => {
+    const store = useBlockStore()
+    const pageId = 'inv-page-2'
+    const a = await store.createBlock({ pageId, content: 'A' })
+    const b = await store.createBlock({ pageId, content: 'B' })
+    const c = await store.createBlock({ pageId, content: 'C' })
+
+    await store.deleteBlocks([a.id, b.id, c.id])
+
+    const remaining = store.getBlocksByPage(pageId)
+    expect(remaining).toHaveLength(1)
+    expect(remaining[0].id).toBe(c.id) // 文档序最后一块被保留
+    expect(remaining[0].content).toBe('')
+  })
+
+  test('级联删除含子孙的末顶层块也守不变量', async () => {
+    const store = useBlockStore()
+    const pageId = 'inv-page-3'
+    const top = await store.createBlock({ pageId, content: 'Top' })
+    const child = await store.createBlock({ pageId, content: 'Child', parentId: top.id })
+
+    await store.deleteBlock(top.id)
+
+    const remaining = store.getBlocksByPage(pageId)
+    expect(remaining).toHaveLength(1)
+    expect(remaining[0].id).toBe(top.id)
+    expect(remaining[0].content).toBe('')
+    // 子孙随级联删除
+    expect(store.blocks.find(b => b.id === child.id)).toBeUndefined()
+  })
+
+  test('删除非末块不触发闸门（其余块保留原样）', async () => {
+    const store = useBlockStore()
+    const pageId = 'inv-page-4'
+    const a = await store.createBlock({ pageId, content: 'A' })
+    const b = await store.createBlock({ pageId, content: 'B' })
+
+    await store.deleteBlock(a.id)
+
+    const remaining = store.getBlocksByPage(pageId)
+    expect(remaining).toHaveLength(1)
+    expect(remaining[0].id).toBe(b.id)
+    expect(remaining[0].content).toBe('B')
+  })
+})
