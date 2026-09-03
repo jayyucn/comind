@@ -3,7 +3,7 @@ import { ref, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePageStore } from '../../stores/pages'
 import { useFavorites } from '../../composables/useFavorites'
-import { MoreVertical, Star, Trash2 } from 'lucide-vue-next'
+import { MoreVertical, Pencil, Star, Trash2 } from 'lucide-vue-next'
 import ConfirmDialog from '../ConfirmDialog.vue'
 
 const props = defineProps<{
@@ -40,6 +40,12 @@ function showSoftDeleteDialog(event: Event) {
   event.stopPropagation()
   closeMenu()
   showDeleteConfirm.value = true
+}
+
+function handleRename(event: Event) {
+  event.stopPropagation()
+  closeMenu()
+  emit('rename')
 }
 
 async function handleDelete() {
@@ -79,6 +85,11 @@ onUnmounted(() => {
         <button class="menu-item" @click="handleToggleFavorite">
           <Star :size="14" :stroke-width="1.75" />
           <span>{{ isFavorite(page.id) ? '取消收藏' : '收藏' }}</span>
+        </button>
+
+        <button v-if="page.type !== 'ideas'" class="menu-item" @click="handleRename">
+          <Pencil :size="14" :stroke-width="1.75" />
+          <span>重命名</span>
         </button>
 
         <button class="menu-item danger" @click="showSoftDeleteDialog">

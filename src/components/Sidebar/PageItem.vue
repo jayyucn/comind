@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue';
+import { BookOpen, Droplet, FilePen } from 'lucide-vue-next';
 
 const props = withDefaults(defineProps<{
   page: any
@@ -38,6 +39,14 @@ watch(() => props.isRenaming, (val) => {
 const timeDisplay = computed(() => {
   if (!props.showTime) return ''
   return formatTime(props.page.updatedAt, props.timeFormat)
+})
+
+const typeIcon = computed(() => {
+  switch (props.page.type) {
+    case 'ideas': return Droplet
+    case 'book': return BookOpen
+    default: return FilePen // normal
+  }
 })
 
 function formatTime(timestamp: number, format: 'relative' | 'absolute'): string {
@@ -103,7 +112,10 @@ function handleKeydown(event: KeyboardEvent) {
       @blur="handleConfirm"
       @keydown="handleKeydown"
     />
-    <span v-else class="page-item-title">{{ page.title }}</span>
+    <template v-else>
+      <component :is="typeIcon" :size="14" class="page-item-icon" />
+      <span class="page-item-title">{{ page.title }}</span>
+    </template>
     <span v-if="showTime && !localRenaming" class="page-time">{{ timeDisplay }}</span>
     <slot name="suffix" />
   </div>
@@ -152,6 +164,11 @@ function handleKeydown(event: KeyboardEvent) {
   font-weight: var(--font-normal);
   color: var(--text-primary);
   line-height: var(--leading-snug);
+}
+
+.page-item-icon {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
 }
 
 .page-time {
