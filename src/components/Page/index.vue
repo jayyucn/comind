@@ -3,6 +3,7 @@ import { computed, ref, onBeforeUnmount, onMounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import BlockList from '../BlockList.vue'
 import Backlinks from '../Backlinks.vue'
+import BookNotesOutline from './BookNotesOutline.vue'
 import ConfirmDialog from '../ConfirmDialog.vue'
 import SlashCommandMenu from '../SlashCommandMenu.vue'
 import PropertyQuickEditor from '../Block/PropertyQuickEditor.vue'
@@ -200,6 +201,12 @@ function handleCancelMerge() {
             >开始阅读</button>
           </div>
         </div>
+
+        <!-- 书 Page：按章/节投影的笔记大纲（B 方案，结构=属性，不改块流） -->
+        <BookNotesOutline
+          v-if="isBookPage"
+          :page-id="resolvedPageId"
+        />
 
         <BlockList :page-id="resolvedPageId" />
       </main>
