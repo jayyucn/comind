@@ -12,7 +12,7 @@
 // 点已有高亮 → 小浮层删除（仅删高亮行，不删关联 Block，ADR-0040 D7）。
 // 票 06：操作条/高亮浮层「写笔记」→ NoteInputPopover（v1 纯文本）→
 // createOrUpdateNoteBlock（书 Page 下 append Block + 属性四件套 + 回填
-// block_id + emitTo 主窗口刷新）；jumpCfi 跳转定位（跳回原文）+ 闪烁提示。
+// block_id + emitTo 主窗口刷新）；jumpCfi 跳转定位（跳回原文）+ 目标元素缩放提示。
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { EPUB, EPUBSection } from 'foliate-js/epub.js'
 import { sanitizeChapterContent } from '../../services/epub-sanitize'
@@ -39,7 +39,7 @@ const props = defineProps<{
   bookTitle?: string
   /** 待恢复的进度 CFI（仅恢复章且首跳时传入，定位失败静默跳过） */
   restoreCfi?: string | null
-  /** 跳回原文的目标 CFI（票 06：非空时渲染完成后定位+闪烁，一次性） */
+  /** 跳回原文的目标 CFI（票 06：非空时渲染完成后定位 + 目标元素缩放提示，一次性） */
   jumpCfi?: string | null
   /** 高亮数据版本（票 07：面板删除后父级递增，触发本章高亮重载重绘） */
   highlightVersion?: number
@@ -65,10 +65,20 @@ const SAVE_DEBOUNCE_MS = 1000
 
 /** CSS Custom Highlight 注册名（绘制层） */
 const HIGHLIGHT_KEY = 'reader-highlight'
-/** 跳回原文闪烁提示的绘制层注册名（票 06） */
-const JUMP_FLASH_KEY = 'reader-jump-flash'
-/** 闪烁提示持续时间 */
-const JUMP_FLASH_MS = 1600
+
+/**
+ * 跳回原文的定位缩放动画配置（票 06）：以 cubic-bezier 缓动对目标元素做
+ * 一次平滑的「放大-还原」脉冲提示（替代 v1 CSS Custom Highlight 蓝色闪烁）。
+ * 所有参数集中在此，调参只需改这一处。
+ */
+const JUMP_PULSE = {
+  /** 峰值缩放倍率（1.06 = 放大 6%，足够醒目又不致文字模糊） */
+  peak: 1.06,
+  /** 单次脉冲总时长（ms） */
+  durationMs: 360,
+  /** 缓动曲线：平滑进出（换带回弹的 overshoot 曲线即可变成弹性效果） */
+  easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+} as const
 /** v1 单色高亮（默认黄；数据模型 color 字段已留，多色不在 v1） */
 const HIGHLIGHT_COLOR = 'yellow'
 
@@ -273,7 +283,7 @@ async function render(): Promise<void> {
   }
 }
 
-/** 跳转定位（票 06）：解析 CFI → scrollIntoView + 闪烁提示，一次性后通知父级清空 */
+/** 跳转定位（票 06）：解析 CFI → scrollIntoView + 目标元素弹性缩放提示，一次性后通知父级清空 */
 function performJump(): void {
   const el = containerRef.value
   const cfi = props.jumpCfi
@@ -281,20 +291,44 @@ function performJump(): void {
   if (!el || !cfi) return
   const range = cfiToRange(el, cfi)
   if (!range) return
-  // startContainer 可能是 text 节点（无 scrollIntoView），取其所在元素
+  // startContainer 可能是 text 节点（无 scrollIntoView / 无 transform），取其所在元素
   const node = range.startContainer
   const target: Element | null =
     node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement
   target?.scrollIntoView({ block: 'center' })
-  flashRange(range)
+  if (target) pulseJumpTarget(target)
 }
 
-/** 跳转目标闪烁提示：临时注册到 CSS Custom Highlight 绘制层，超时自动移除 */
-function flashRange(range: Range): void {
-  const registry = (CSS as { highlights?: HighlightRegistry }).highlights
-  if (!registry || typeof Highlight === 'undefined') return
-  registry.set(JUMP_FLASH_KEY, new Highlight(range))
-  setTimeout(() => registry.delete(JUMP_FLASH_KEY), JUMP_FLASH_MS)
+// ---- 票 06：目标元素弹性缩放提示（替代 v1 CSS Custom Highlight 蓝色闪烁） ----
+// 定位后对目标元素做一次「放大 → 还原」的平滑脉冲：纯 CSS transform + WAAPI，
+// 不触碰正文 DOM 结构（正文稳定仍是 CFI 锚定/进度保存的前提）；
+// 动画结束（或被打断）后样式由浏览器自动还原，无残留。
+
+/** 当前活跃的定位缩放动画（同一时刻只允许一个；新跳转/卸载前先取消） */
+let jumpPulseAnim: Animation | null = null
+
+/** 目标元素弹性缩放提示：无 WAAPI 环境（jsdom 等）静默降级 */
+function pulseJumpTarget(target: Element): void {
+  // 打断上一次未播完的脉冲，避免同元素/相邻元素动画叠加
+  if (jumpPulseAnim) {
+    jumpPulseAnim.cancel()
+    jumpPulseAnim = null
+  }
+  if (typeof target.animate !== 'function') return
+  const { peak, durationMs, easing } = JUMP_PULSE
+  // fill: 'none' —— 结束后不保留任何样式（transform 自然还原为 scale(1)）。
+  // 关键帧 easing 作用于「从该帧开始」的区间：放大段用贝塞尔缓出，还原段平滑。
+  const anim = target.animate(
+    [
+      { transform: 'scale(1)', easing },
+      { transform: `scale(${peak})`, offset: 0.45, easing: 'ease-in-out' },
+      { transform: 'scale(1)' },
+    ],
+    { duration: durationMs, fill: 'none' },
+  )
+  jumpPulseAnim = anim
+  anim.onfinish = () => { jumpPulseAnim = null }
+  anim.oncancel = () => { jumpPulseAnim = null }
 }
 
 // jumpCfi 同章后续变化（如已在该章再点「↗ 原文」）：直接定位
@@ -552,6 +586,8 @@ onBeforeUnmount(() => {
   // 清绘制层（避免高亮残留到下一章）
   ;(CSS as { highlights?: HighlightRegistry }).highlights?.delete(HIGHLIGHT_KEY)
   highlightRanges.clear()
+  // 取消定位缩放动画（若仍在播放；fill: none 下取消即还原 transform）
+  jumpPulseAnim?.cancel()
   // 关窗/切章：flush 待写的 debounce 进度，保住最后位置
   if (saveTimer != null) {
     clearTimeout(saveTimer)
@@ -599,14 +635,10 @@ onBeforeUnmount(() => {
 // DOM 结构（正文 DOM 稳定是 CFI 锚定/进度保存的前提）。非 scoped：
 // ::highlight 伪元素规则带 scoped hash 会被编译成无效选择器；颜色继承
 // 正文元素链上的 --reader-highlight（ReaderView 主题 class 中定义）。
+// （票 06 跳回原文的定位提示已从蓝色闪烁改为目标元素缩放动画——
+//   见 script 中 pulseJumpTarget，不再使用 ::highlight 层。）
 ::highlight(reader-highlight) {
   background-color: var(--reader-highlight, rgba(255, 213, 79, 0.55));
-}
-
-// 跳回原文闪烁提示（票 06）：临时注册的绘制层，强调色描边
-::highlight(reader-jump-flash) {
-  background-color: var(--accent, rgba(59, 130, 246, 0.28));
-  outline: 2px solid var(--accent, #3b82f6);
 }
 </style>
 

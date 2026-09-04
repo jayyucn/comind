@@ -17,7 +17,7 @@ let activeJumpDispatch: ((payload: JumpToPayload) => void) | null = null
 // 落地 CSS 变量（--reader-*）+ 主题 class 到窗口根。
 // 票 06：跳回原文——URL query（新建窗口携带）与 'reader:jump-to' 事件
 // （已存在窗口 emitTo）两路统一收敛为 jumpCfi 状态；切章到目标章后经 prop
-// 传给 ChapterContent 定位 + 闪烁，定位完成（jump-done）一次性清空。
+// 传给 ChapterContent 定位 + 目标元素弹性缩放提示，定位完成（jump-done）一次性清空。
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import type { EPUB, EPUBTOCItem } from 'foliate-js/epub.js'
@@ -68,7 +68,7 @@ function onJumpDone(): void {
   jumpCfi.value = null
 }
 
-/** 面板点条目（票 07）：CFI 定位（复用票 06 jumpCfi 机制：切章/同章定位+闪烁）；
+/** 面板点条目（票 07）：CFI 定位（复用票 06 jumpCfi 机制：切章/同章定位+动画）；
  *  侧栏常驻，定位不关闭面板 */
 function onPanelLocate(cfi: string): void {
   jumpCfi.value = cfi

@@ -1,7 +1,7 @@
 // 票 06 组件接线测试：ReaderView/ChapterContent/NoteInputPopover。
 // 覆盖：选区写笔记全流程（高亮行先落库→输入浮层→Block service 接管）、
 // 已有高亮写笔记（含 block_id 预填旧文更新同一条）、jump-to 跨窗口事件
-// （切章+scrollIntoView+闪烁）、新建窗口 URL query 跳回原文。
+// （切章+scrollIntoView+目标元素弹性缩放提示）、新建窗口 URL query 跳回原文。
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
@@ -385,12 +385,15 @@ describe('ReaderView（票 06 跳回原文）', () => {
     return cfi
   }
 
-  it('reader:jump-to 事件（已存在窗口路径）：切章 + scrollIntoView + 闪烁提示', async () => {
+  it('reader:jump-to 事件（已存在窗口路径）：切章 + scrollIntoView + 目标元素弹性缩放提示', async () => {
     const cfi = await makeChapter2Cfi()
 
     mockLoadBook.mockResolvedValue(makeBook())
     const scrollIntoView = vi.fn()
     Element.prototype.scrollIntoView = scrollIntoView
+    // jsdom 无 WAAPI：stub Element.animate，断言「缩放提示」确实对目标元素触发
+    const animate = vi.fn(() => ({ cancel: vi.fn(), onfinish: null, oncancel: null } as unknown as Animation))
+    Element.prototype.animate = animate as typeof Element.prototype.animate
     try {
       const wrapper = mountReader()
       await flushPromises()
@@ -406,13 +409,16 @@ describe('ReaderView（票 06 跳回原文）', () => {
       const target = scrollIntoView.mock.contexts[0] as Element
       expect(target.tagName).toBe('P')
       expect(target.textContent).toBe('第二章内容')
-      // 闪烁提示：跳转目标注册进绘制层（一次性，约 1.6s 后自动移除）
-      const flash = highlightRegistry().get('reader-jump-flash')
-      expect(flash).toBeInstanceOf(FakeHighlight)
-      expect(flash!.ranges[0].toString()).toBe('第二')
+      // 定位提示：对目标元素做「scale(1) → 峰值 → scale(1)」的平滑缩放脉冲
+      // （纯 transform，不触碰正文 DOM 结构；结束/打断即还原，无残留）
+      expect(animate).toHaveBeenCalledTimes(1)
+      expect(target.animate).toBe(animate)
+      const keyframes = animate.mock.calls[0][0] as Array<{ transform: string }>
+      expect(keyframes.map(k => k.transform)).toEqual(['scale(1)', 'scale(1.06)', 'scale(1)'])
       wrapper.unmount()
     } finally {
       delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+      delete (Element.prototype as { animate?: unknown }).animate
     }
   })
 
@@ -429,10 +435,9 @@ describe('ReaderView（票 06 跳回原文）', () => {
       fireListenEvent('reader:jump-to', { bookPageId: 'book-other', cfi })
       await flushPromises()
 
-      // 仍停在第一章，不定位不闪烁
+      // 仍停在第一章，不定位不动画
       expect(wrapper.get('.chapter-content').text()).toContain('第一章内容')
       expect(scrollIntoView).not.toHaveBeenCalled()
-      expect(highlightRegistry().get('reader-jump-flash')).toBeUndefined()
       wrapper.unmount()
     } finally {
       delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
