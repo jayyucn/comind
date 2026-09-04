@@ -3,7 +3,7 @@ import { computed, ref, onBeforeUnmount, onMounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import BlockList from '../BlockList.vue'
 import Backlinks from '../Backlinks.vue'
-import BookNotesOutline from './BookNotesOutline.vue'
+import Toc from './Toc.vue'
 import ConfirmDialog from '../ConfirmDialog.vue'
 import SlashCommandMenu from '../SlashCommandMenu.vue'
 import PropertyQuickEditor from '../Block/PropertyQuickEditor.vue'
@@ -202,17 +202,14 @@ function handleCancelMerge() {
           </div>
         </div>
 
-        <!-- 书 Page：按章/节投影的笔记大纲（B 方案，结构=属性，不改块流） -->
-        <BookNotesOutline
-          v-if="isBookPage"
-          :page-id="resolvedPageId"
-        />
-
         <BlockList :page-id="resolvedPageId" />
       </main>
 
       <Backlinks />
     </div>
+
+    <!-- 通用 TOC 浮层（普通页=heading 大纲 / 书页=章→节投影），自行 Teleport 到 body -->
+    <Toc :page-id="resolvedPageId" />
 
     <ConfirmDialog
       :visible="showMergeDialog"
