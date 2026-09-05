@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // 通用 TOC 的递归行：渲染单个节点（标题/章节），点击定位到对应块；
 // 书源叶子节点带 cfi 时显示「原文」跳回阅读器。自身递归渲染子树。
-import { computed, ref } from 'vue'
 import { ChevronRight } from 'lucide-vue-next'
+import { computed, onBeforeUnmount, ref } from 'vue'
 
 export interface TocNode {
   id: string
@@ -33,6 +33,12 @@ const emit = defineEmits<{
 
 const expanded = ref(true)
 
+/** 标题文本元素：用于判断是否被 ellipsis 裁剪 */
+const titleEl = ref<HTMLElement | null>(null)
+/** 悬浮全文提示 */
+const showTip = ref(false)
+const tipStyle = ref<Record<string, string>>({})
+
 function onRow() {
   emit('locate', props.node.blockId)
 }
@@ -50,6 +56,31 @@ function forwardLocate(id: string) {
 function forwardJump(cfi: string) {
   emit('jump', cfi)
 }
+
+/** 文本是否被 ellipsis 裁剪：scrollWidth 超出 clientWidth 即可判定 */
+function isClipped(): boolean {
+  const el = titleEl.value
+  return !!el && el.scrollWidth > el.clientWidth + 1
+}
+
+function onEnter(e: MouseEvent) {
+  if (!isClipped()) return
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  tipStyle.value = {
+    position: 'fixed',
+    top: `${Math.round(r.bottom + 6)}px`,
+    left: `${Math.round(r.left)}px`,
+    maxWidth: 'min(420px, calc(100vw - 24px))'
+  }
+  showTip.value = true
+}
+function onLeave() {
+  showTip.value = false
+}
+
+onBeforeUnmount(() => {
+  showTip.value = false
+})
 </script>
 
 <template>
@@ -59,6 +90,8 @@ function forwardJump(cfi: string) {
       :class="{ 'has-children': node.children.length > 0, 'is-active': active }"
       :style="{ paddingLeft: 8 + depth * 14 + 'px' }"
       @click="onRow"
+      @mouseenter="onEnter"
+      @mouseleave="onLeave"
     >
       <ChevronRight
         v-if="node.children.length > 0"
@@ -71,7 +104,10 @@ function forwardJump(cfi: string) {
         v-else
         class="chev-placeholder"
       />
-      <span class="row-title">{{ node.title }}</span>
+      <span
+        ref="titleEl"
+        class="row-title"
+      >{{ node.title }}</span>
       <button
         v-if="node.cfi && canJump"
         class="jump-btn"
@@ -97,6 +133,15 @@ function forwardJump(cfi: string) {
       />
     </ul>
   </li>
+  <Teleport to="body">
+    <div
+      v-if="showTip"
+      class="toc-tip"
+      :style="tipStyle"
+    >
+      {{ node.title }}
+    </div>
+  </Teleport>
 </template>
 
 <style lang="scss" scoped>
@@ -171,5 +216,21 @@ function forwardJump(cfi: string) {
 
 .toc-row:hover .jump-btn {
   opacity: 1;
+}
+
+// 悬浮全文提示：仅当标题被 ellipsis 裁剪时显示，Teleport 到 body 规避面板 overflow:hidden 裁剪
+.toc-tip {
+  z-index: calc(var(--z-sidebar) + 10);
+  padding: 6px 10px;
+  background: var(--bg-elevated, var(--bg-hover));
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  white-space: normal;
+  word-break: break-word;
+  pointer-events: none;
 }
 </style>

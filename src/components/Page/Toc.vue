@@ -5,7 +5,7 @@
 // - 点击行 dispatch navigate-to-block（Page/index.vue 监听滚动+高亮）；
 //   书源叶子节点带 cfi 时显示「原文」跳回阅读器。
 // 浮层 Teleport 到 body，固定定位在左侧留白带，窄屏自动隐藏，可收起。
-import { TextAlignStart } from 'lucide-vue-next'
+import { TextAlignJustify, TextAlignStart } from 'lucide-vue-next'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { buildTree } from '../../composables/useBlockTree'
 import { parseHeading } from '../../composables/useContentRenderer'
@@ -279,7 +279,14 @@ watch(
           :title="collapsed ? '展开目录' : '收起目录'"
           @click="collapsed = !collapsed"
         >
-          <TextAlignStart :size="18" />
+          <TextAlignJustify
+            v-if="collapsed"
+            :size="18"
+          />
+          <TextAlignStart
+            v-else
+            :size="18"
+          />
         </button>
         <Transition name="toc-fade">
           <div
