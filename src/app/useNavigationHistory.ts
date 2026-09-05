@@ -15,7 +15,8 @@ export function useNavigationHistory() {
   const route = useRoute()
   const pageStore = usePageStore()
 
-  const historyStack = ref<HistoryItem[]>([{ path: '' }])
+  // 以当前路由锚定首帧栈，避免深链/刷新时栈与真实历史错位（bug B 的轻量缓解）
+  const historyStack = ref<HistoryItem[]>([{ path: route.fullPath || '' }])
   const historyIndex = ref(0)
 
   const canGoBack = computed(() => historyIndex.value > 0)
@@ -23,10 +24,25 @@ export function useNavigationHistory() {
 
   watch(
     () => route.fullPath,
-    async (newPath) => {
-      if (newPath === historyStack.value[historyIndex.value]?.path) return
+    (newPath) => {
+      const stack = historyStack.value
+      const idx = historyIndex.value
 
-      // 若当前不在栈尾，先截断后续历史
+      // 1) 与当前栈顶一致：app 内 goBack/goForward 已先移动索引，路由回落到同一项
+      if (stack[idx]?.path === newPath) return
+
+      // 2) 浏览器原生前进/后退：索引未随 goBack/goForward 移动，路由落在相邻项 → 同步
+      //    否则会被误判为“全新导航”而重复压栈，导致栈与真实历史分叉（bug C）
+      if (idx > 0 && stack[idx - 1]?.path === newPath) {
+        historyIndex.value = idx - 1
+        return
+      }
+      if (idx < stack.length - 1 && stack[idx + 1]?.path === newPath) {
+        historyIndex.value = idx + 1
+        return
+      }
+
+      // 3) 全新导航：若当前不在栈尾，先截断后续历史（中段跳转丢弃“未来”分支）
       if (historyIndex.value < historyStack.value.length - 1) {
         historyStack.value = historyStack.value.slice(0, historyIndex.value + 1)
       }
@@ -59,22 +75,30 @@ export function useNavigationHistory() {
   }
 
   function removePageFromHistory(pageId: string) {
+    const currentItem = historyStack.value[historyIndex.value]
+    // 当前索引之前被删条目数：数组前移时索引需同步回退，否则当前视图会前漂（bug A）
+    const removedBefore =
+      historyStack.value.slice(0, historyIndex.value + 1).filter((i) => i.pageId === pageId).length
     const newStack = historyStack.value.filter((item) => item.pageId !== pageId)
 
-    if (historyIndex.value >= newStack.length) {
-      historyIndex.value = Math.max(0, newStack.length - 1)
+    if (newStack.length === 0) {
+      historyStack.value = [{ path: route.fullPath || '' }]
+      historyIndex.value = 0
+      return
     }
 
-    if (newStack.length === 0) {
-      historyStack.value = [{ path: '' }]
-      historyIndex.value = 0
+    if (currentItem && currentItem.pageId === pageId) {
+      // 当前项自身被删：钳到原位置，避免越界
+      historyIndex.value = Math.min(historyIndex.value, newStack.length - 1)
     } else {
-      historyStack.value = newStack
+      // 当前项存活：因前面被删条目数回退索引，保持指向同一项
+      historyIndex.value = Math.max(0, historyIndex.value - removedBefore)
     }
+    historyStack.value = newStack
   }
 
   // 自注册回收回调（单槽；App 根生命周期内唯一消费者）
   pageStore.onRemovePageFromHistory(removePageFromHistory)
 
-  return { canGoBack, canGoForward, goBack, goForward }
+  return { historyIndex, canGoBack, canGoForward, goBack, goForward }
 }

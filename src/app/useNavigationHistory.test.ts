@@ -82,4 +82,40 @@ describe('useNavigationHistory', () => {
     expect(nav.canGoBack.value).toBe(true)
     expect(nav.canGoForward.value).toBe(false)
   })
+
+  it('removePage：删除更早的页不会让当前索引前漂', async () => {
+    getPage.mockImplementation((id: string) =>
+      ['abc', 'def', 'ghi'].includes(id) ? { id } : undefined
+    )
+    const nav = useNavigationHistory()
+    route.fullPath = '/p/abc'
+    route.params = { pageId: 'abc' }
+    await nextTick()
+    route.fullPath = '/p/def'
+    route.params = { pageId: 'def' }
+    await nextTick()
+    route.fullPath = '/p/ghi'
+    route.params = { pageId: 'ghi' }
+    await nextTick()
+    nav.goBack() // 回到 /p/def，当前指向 def，/p/ghi 在其后
+    const removeFn = onRemovePageFromHistory.mock.calls[0][0] as (pageId: string) => void
+    removeFn('abc') // 删除位于当前项之前的页
+    expect(nav.canGoBack.value).toBe(true)
+    expect(nav.canGoForward.value).toBe(true) // /p/ghi 仍在前面，不应因删除更早的页而丢失
+    expect(nav.historyIndex?.value).toBe(1) // 仍指向 /p/def，而非漂移到 /p/ghi
+  })
+
+  it('浏览器前进/后退：栈索引与真实历史同步且不重复压栈', async () => {
+    const nav = useNavigationHistory()
+    route.fullPath = '/graph'
+    await nextTick()
+    route.fullPath = '/ideas'
+    await nextTick()
+    // 模拟用户直接点击浏览器“后退”：路由回到 /graph，但应用未走 goBack()
+    route.fullPath = '/graph'
+    await nextTick()
+    expect(nav.historyIndex?.value).toBe(1) // 回到 /graph
+    expect(nav.canGoForward.value).toBe(true) // /ideas 仍在前面
+    expect(nav.canGoBack.value).toBe(true)
+  })
 })
