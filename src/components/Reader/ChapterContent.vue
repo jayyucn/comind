@@ -169,7 +169,13 @@ function getBody(doc: Document): Element {
 function replaceContent(fragment: DocumentFragment): void {
   const el = containerRef.value
   if (!el) return
-  el.replaceChildren(fragment)
+  // 内联包裹层：滚动容器（.chapter-content）占满窗口宽度，正文文本经
+  // .chapter-inner 的 max-width + margin:auto 居中——滚动条因此落在窗口边缘
+  // （而非居中文本列的右侧）。
+  const inner = document.createElement('div')
+  inner.className = 'chapter-inner'
+  inner.appendChild(fragment)
+  el.replaceChildren(inner)
   el.scrollTop = 0
 }
 
@@ -644,16 +650,24 @@ onBeforeUnmount(() => {
 
 <style lang="scss" scoped>
 .chapter-content {
+  // 滚动容器占满窗口宽度（flex:1），滚动条因此落在窗口边缘；
+  // 正文宽度/居中交由内部 .chapter-inner 控制（:deep 穿透 scope）
+  flex: 1;
+  min-width: 0;
   height: 100%;
   overflow-y: auto;
-  padding: 32px 24px 96px;
+  padding: 32px 0 96px;
   // 排版参数（票 04）：变量由 ReaderView 落地到阅读器窗口根
   // （默认值仅兜底；正文色随主题在 ReaderView 主题 class 中切换）
   font-size: var(--reader-font-size, 1rem);
   line-height: var(--reader-line-height, 1.8);
-  max-width: var(--reader-max-width, 42ch);
-  margin: 0 auto;
   color: var(--reader-text, var(--text-primary));
+
+  :deep(.chapter-inner) {
+    max-width: var(--reader-max-width, 42ch);
+    margin: 0 auto;
+    padding: 0 24px;
+  }
 
   @for $i from 1 through 6 {
     :deep(h#{$i}) {

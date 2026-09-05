@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 通用 TOC 的递归行：渲染单个节点（标题/章节），点击定位到对应块；
 // 书源叶子节点带 cfi 时显示「原文」跳回阅读器。自身递归渲染子树。
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { ChevronRight } from 'lucide-vue-next'
 
 export interface TocNode {
@@ -19,7 +19,12 @@ const props = defineProps<{
   node: TocNode
   depth: number
   canJump: boolean
+  /** 当前滚动高亮对应的 blockId（由 Toc 计算并向下透传） */
+  activeId?: string
 }>()
+
+/** 本节点是否为当前所在标题 */
+const active = computed(() => (props.activeId ?? '') === props.node.blockId)
 
 const emit = defineEmits<{
   (e: 'locate', blockId: string): void
@@ -51,7 +56,7 @@ function forwardJump(cfi: string) {
   <li class="toc-item">
     <div
       class="toc-row"
-      :class="{ 'has-children': node.children.length > 0 }"
+      :class="{ 'has-children': node.children.length > 0, 'is-active': active }"
       :style="{ paddingLeft: 8 + depth * 14 + 'px' }"
       @click="onRow"
     >
@@ -86,6 +91,7 @@ function forwardJump(cfi: string) {
         :node="child"
         :depth="depth + 1"
         :can-jump="canJump"
+        :active-id="activeId"
         @locate="forwardLocate"
         @jump="forwardJump"
       />
@@ -109,6 +115,15 @@ function forwardJump(cfi: string) {
 
   &:hover {
     background: var(--bg-hover);
+  }
+
+  // 滚动联动高亮：左侧强调条 + 强调色文字（无底色，保持浮层无背景风格）
+  &.is-active {
+    box-shadow: inset 2px 0 0 var(--accent);
+
+    .row-title {
+      color: var(--accent);
+    }
   }
 }
 
