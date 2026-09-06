@@ -169,13 +169,11 @@ function getBody(doc: Document): Element {
 function replaceContent(fragment: DocumentFragment): void {
   const el = containerRef.value
   if (!el) return
-  // 内联包裹层：滚动容器（.chapter-content）占满窗口宽度，正文文本经
-  // .chapter-inner 的 max-width + margin:auto 居中——滚动条因此落在窗口边缘
-  // （而非居中文本列的右侧）。
-  const inner = document.createElement('div')
-  inner.className = 'chapter-inner'
-  inner.appendChild(fragment)
-  el.replaceChildren(inner)
+  // 关键：章节元素必须「直接」作为本容器（.chapter-content）的子节点，
+  // 不能额外包裹一层——否则会多一层 DOM 嵌套，使 CFI 绝对路径失效，
+  // 导致高亮/跳回原文/缩放定位动画全部断裂（回归 785f202 的 .chapter-inner 包裹）。
+  // 滚动条落窗口边缘 + 正文居中由下方 .chapter-content 的 flex 布局承接。
+  el.replaceChildren(fragment)
   el.scrollTop = 0
 }
 
@@ -651,22 +649,27 @@ onBeforeUnmount(() => {
 <style lang="scss" scoped>
 .chapter-content {
   // 滚动容器占满窗口宽度（flex:1），滚动条因此落在窗口边缘；
-  // 正文宽度/居中交由内部 .chapter-inner 控制（:deep 穿透 scope）
+  // 正文用 flex 列布局 + align-items:center 居中，子元素 max-width 限制列宽
+  // （替代 785f202 的 .chapter-inner 包裹层，避免多一层 DOM 破坏 CFI 绝对路径）。
+  // 章节元素直接作为本容器子节点（见 replaceContent），CFI 路径结构与之对应。
   flex: 1;
   min-width: 0;
   height: 100%;
   overflow-y: auto;
   padding: 32px 0 96px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   // 排版参数（票 04）：变量由 ReaderView 落地到阅读器窗口根
   // （默认值仅兜底；正文色随主题在 ReaderView 主题 class 中切换）
   font-size: var(--reader-font-size, 1rem);
   line-height: var(--reader-line-height, 1.8);
   color: var(--reader-text, var(--text-primary));
 
-  :deep(.chapter-inner) {
+  // 正文块限制在 max-width 内并水平居中（替代 .chapter-inner 包裹层）
+  :deep(> *) {
+    width: 100%;
     max-width: var(--reader-max-width, 42ch);
-    margin: 0 auto;
-    padding: 0 24px;
   }
 
   @for $i from 1 through 6 {

@@ -141,6 +141,74 @@ watch(
 const collapsed = ref(false)
 const canJump = computed(() => isTauriEnvironment())
 
+// —— TOC 布局常量（调试入口：只改这里）——
+const TOC_GAP_LEFT = 16   // 左间距：侧栏右缘 → TOC 左缘
+const TOC_GAP_RIGHT = 24  // 右间距：TOC 右缘 → 正文左缘
+const TOC_MIN_WIDTH = 200 // 自适应宽度低于该阈值 → 隐藏 TOC
+
+// 布局用实测而不用 50vw 公式：正文列随侧栏/右侧栏开合重新居中，
+// 公式极易漏算（曾致折叠态 TOC 压进正文）。每次直接量 DOM：
+//   left  = 侧栏当前宽度 + TOC_GAP_LEFT
+//   width = 正文左缘 - TOC_GAP_RIGHT - left
+const tocLeft = ref('0px')
+const tocWidth = ref('0px')
+const tocHidden = ref(true)
+
+// 展开时让宽度做过渡（40 → 实测宽度）更自然；而实测驱动（侧栏折叠、窗口缩放）
+// 必须关掉过渡逐帧跟随，否则过渡与逐帧更新叠加会拖影。
+const noAnim = ref(false)
+let noAnimTimer = 0
+
+let layoutRO: ResizeObserver | null = null
+
+/** @param animate 是否让本次宽度变化走过渡（仅展开为 true） */
+function updateTocLayout(animate = false): void {
+  const contentEl = document.querySelector<HTMLElement>('.page-container .main-content')
+  if (!contentEl) {
+    tocHidden.value = true
+    return
+  }
+  const sidebarEl = document.querySelector<HTMLElement>('.sidebar')
+  const left = (sidebarEl?.getBoundingClientRect().width ?? 0) + TOC_GAP_LEFT
+  const width = contentEl.getBoundingClientRect().left - TOC_GAP_RIGHT - left
+  if (width < TOC_MIN_WIDTH) {
+    tocHidden.value = true
+    return
+  }
+  if (!animate) {
+    noAnim.value = true
+    window.clearTimeout(noAnimTimer)
+    noAnimTimer = window.setTimeout(() => { noAnim.value = false }, 0)
+  }
+  tocHidden.value = false
+  tocLeft.value = `${Math.round(left)}px`
+  tocWidth.value = collapsed.value ? '40px' : `${Math.round(width)}px`
+}
+
+function startLayoutObserver(): void {
+  // jsdom 等测试环境无 ResizeObserver，直接跳过（布局保持隐藏，不影响断言）
+  if (typeof ResizeObserver === 'undefined') return
+  // content-body：侧栏/右侧栏开合、窗口缩放都会改变其宽度 → 触发重测；
+  // sidebar：折叠 width 动画期间逐帧重测，TOC 与侧栏同步滑动
+  // 注意包一层：RO 回调会传入 entries，直接传函数会被当作 animate 实参
+  layoutRO = new ResizeObserver(() => updateTocLayout())
+  for (const sel of ['.content-body', '.sidebar']) {
+    const el = document.querySelector(sel)
+    if (el) layoutRO.observe(el)
+  }
+  updateTocLayout()
+}
+
+// 展开/收起都做宽度过渡（镜像对称）：
+// 收起时宽度实测值→40 与内容淡出同步进行，内容是「被逐步裁切着淡出」，
+// 而非上次那种「宽度瞬时到 40 后内容仍亮着」导致的 chevron 碎片闪现。
+watch(collapsed, () => updateTocLayout(true))
+
+/** resize 事件对象不能直接作实参传给 updateTocLayout（会被当 animate 真值） */
+function onResize(): void {
+  updateTocLayout()
+}
+
 function locate(blockId: string): void {
   window.dispatchEvent(new CustomEvent('navigate-to-block', { detail: { blockId } }))
 }
@@ -241,12 +309,15 @@ onMounted(() => {
   // 因此无论真正滚动的是哪个内部元素，都能触发高亮重算。
   window.addEventListener('scroll', onScroll, true)
   window.addEventListener('resize', onScroll, { passive: true })
+  window.addEventListener('resize', onResize, { passive: true })
+  startLayoutObserver()
   // 首次渲染后若干帧再解析一次（block DOM 可能尚未挂载）并重算
   nextTick(() => {
     requestAnimationFrame(() => {
       scroller = resolveScroller()
       attachScroller()
       computeActive()
+      updateTocLayout()
     })
   })
 })
@@ -254,6 +325,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('scroll', onScroll, true)
   window.removeEventListener('resize', onScroll)
+  window.removeEventListener('resize', onResize)
+  window.clearTimeout(noAnimTimer)
+  layoutRO?.disconnect()
+  layoutRO = null
   cleanupScroller?.()
   if (rafId) cancelAnimationFrame(rafId)
 })
@@ -271,22 +346,25 @@ watch(
     <div
       v-if="nodes.length > 0"
       class="toc-panel"
-      :class="{ 'is-collapsed': collapsed }"
+      :class="{ 'is-hidden': tocHidden, 'is-tracking': noAnim }"
+      :style="{ left: tocLeft, width: tocWidth }"
     >
       <div class="toc-head">
         <button
+          v-if="!collapsed"
           class="toc-toggle"
-          :title="collapsed ? '展开目录' : '收起目录'"
-          @click="collapsed = !collapsed"
+          title="收起目录"
+          @click="collapsed = true"
         >
-          <TextAlignJustify
-            v-if="collapsed"
-            :size="18"
-          />
-          <TextAlignStart
-            v-else
-            :size="18"
-          />
+          <TextAlignStart :size="18" />
+        </button>
+        <button
+          v-else
+          class="toc-reopen"
+          title="展开目录"
+          @click="collapsed = false"
+        >
+          <TextAlignJustify :size="18" />
         </button>
         <Transition name="toc-fade">
           <div
@@ -323,12 +401,8 @@ watch(
 .toc-panel {
   position: fixed;
   top: calc(var(--nav-height) + 16px);
-  // 左对齐固定：侧栏旁原位，到侧栏的间距恒为 16px，不随视口移动
-  left: calc(var(--sidebar-width) + 16px);
-  // 宽度随视口变化，且右缘始终距正文 70px（保证左右间距均不变）：
-  //   正文左缘 = 50vw - 230，TOC 右缘 = left + width = (260+16) + width
-  //   间距 = (50vw - 230) - (276 + width) = 70  →  width = 50vw - 576
-  width: calc(50vw - 576px);
+  // left / width 由 updateTocLayout 实测驱动（inline 绑定，见脚本顶部常量）：
+  // 左右间距恒定，宽度自适应填满中间，低于阈值加 is-hidden 隐藏。
   padding-right: 16px;
   max-height: calc(100vh - var(--nav-height) - 32px);
   display: flex;
@@ -336,16 +410,18 @@ watch(
   background: transparent;
   z-index: var(--z-sidebar);
   overflow: hidden;
+
+  // 展开/自身折叠时宽度做过渡（40 ↔ 实测宽度）；
+  // 但实测驱动（侧栏折叠、窗口缩放）由 is-tracking 关掉，
+  // 让 TOC 逐帧跟随侧栏动画而不过渡拖影。
   transition: width 220ms cubic-bezier(0.4, 0, 0.2, 1);
 
-  &.is-collapsed {
-    width: 40px;
+  &.is-tracking {
+    transition: none;
   }
 
-  // 视口 <1712px 时 width = 50vw - 576 < 280px → 隐藏 TOC
-  // （临界：50vw - 576 = 280 → vw = 1712）
-  @media (max-width: 1711px) {
-    display: none;
+  &.is-hidden {
+    visibility: hidden;
   }
 }
 
@@ -378,7 +454,8 @@ watch(
   flex-shrink: 0;
 }
 
-.toc-toggle {
+.toc-toggle,
+.toc-reopen {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
@@ -428,7 +505,9 @@ watch(
 
 // 折叠态：收成只容纳图标的细条，标题与列表让位（head padding 保持不变，按钮位置不动）
 
-// 头部元信息（标题 + 计数）淡入淡出
+// 头部元信息 / 列表：入场淡入、离场淡出（与宽度过渡并行，构成镜像动画）。
+// 不能改回 display:none 离场——面板无背景，宽度过渡本身不可见，
+// 收起的动画正是「内容被裁切着淡出」；内容瞬间消失会让收起变回硬切。
 .toc-fade-enter-active,
 .toc-fade-leave-active {
   transition: opacity 150ms ease;
@@ -439,7 +518,6 @@ watch(
   opacity: 0;
 }
 
-// 列表整体淡入淡出
 .toc-list-enter-active,
 .toc-list-leave-active {
   transition: opacity 160ms ease;
