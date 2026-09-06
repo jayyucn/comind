@@ -59,13 +59,18 @@ describe('Block 字段描述符注册表', () => {
     registerBlockBuiltinFields(registry)
     const keys = registry.list(BLOCK_ENTITY).map((f) => f.key).sort()
     expect(keys).toEqual([
-      'area', 'content', 'dateRefDate', 'dateRefKind', 'deadline', 'done',
+      'area', 'content', 'created_at', 'dateRefDate', 'dateRefKind', 'deadline', 'done',
       'page', 'priority', 'project', 'schedule', 'status', 'updatedAt',
     ])
 
     const status = registry.get(BLOCK_ENTITY, 'status')!
     expect(status.type).toBe('select')
     expect(status.options?.map((o) => o.id)).toEqual(['Todo', 'Doing', 'Done', 'Canceled'])
+    expect(status.sortOrder).toEqual(['Doing', 'Todo', 'Done', 'Canceled'])
+
+    const priority = registry.get(BLOCK_ENTITY, 'priority')!
+    expect(priority.type).toBe('select')
+    expect(priority.sortOrder).toEqual(['Urgent', 'High', 'Medium', 'Low'])
 
     const date = registry.get(BLOCK_ENTITY, 'dateRefDate')!
     expect(date.type).toBe('date')

@@ -71,7 +71,7 @@ export function blockDefaultConfig(kind: ViewKind): LayoutConfig {
 /** 内置字段 key 集合，用于区分「内置」与「自定义」字段。 */
 const BUILTIN_KEYS = new Set<string>([
   'status', 'priority', 'project', 'area', 'dateRefKind', 'dateRefDate',
-  'content', 'page', 'done', 'deadline', 'schedule', 'updatedAt',
+  'content', 'page', 'done', 'deadline', 'schedule', 'updatedAt', 'created_at',
 ])
 
 /** dateRef.kind 的合法取值（与 property.ts normalizeKind 对齐）。 */
@@ -91,6 +91,13 @@ const PRIORITY_COLORS: Record<string, string> = {
 
 function asCard(item: unknown): BlockCard {
   return item as BlockCard
+}
+
+/** epoch 毫秒 → 本地零填充 'yyyy-MM-dd HH:mm'（datetime 字段取值约定，见 ADR-0041）。 */
+function toLocalDatetime(ts: number): string {
+  const d = new Date(ts)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 /** 注册 Block 全部内置字段描述符到注册表。 */
@@ -117,6 +124,8 @@ export function registerBlockBuiltinFields(registry: Registry): void {
       label: c.label,
       color: PRIORITY_COLORS[String(c.value)],
     })),
+    // 显式排序顺序：asc = 急→低（最重要在前，与 status 的「asc 给最相关」同构）
+    sortOrder: ['Urgent', 'High', 'Medium', 'Low'],
     get: (item) => asCard(item).properties?.['priority'],
   })
 
@@ -166,9 +175,21 @@ export function registerBlockBuiltinFields(registry: Registry): void {
     get: (item) => {
       const ts = asCard(item).updated_at
       if (!ts) return undefined
-      const d = new Date(ts)
-      const pad = (n: number) => String(n).padStart(2, '0')
-      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+      return toLocalDatetime(ts)
+    },
+  })
+
+  // 创建时间（datetime 字段）。key 用 snake_case 'created_at'：存量视图（screen_view seed /
+  // 旧系统迁移）的排序规则即引用此 key——此前未注册导致排序键全部并列、静默退化为卡片存储序
+  // （象限内旧任务在前，与视图声明的 created_at desc「新任务在前」相反）。注册后存量规则恢复语义。
+  registry.register(BLOCK_ENTITY, {
+    key: 'created_at',
+    label: '创建时间',
+    type: 'datetime',
+    get: (item) => {
+      const ts = asCard(item).created_at
+      if (!ts) return undefined
+      return toLocalDatetime(ts)
     },
   })
 
