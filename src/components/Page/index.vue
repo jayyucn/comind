@@ -15,6 +15,7 @@ import { useEditorStore } from '../../stores/editor'
 import { useRelationshipMenu } from '../../composables/useRelationshipMenu'
 import { openReaderWindow } from '../../composables/useReaderWindow'
 import { isTauriEnvironment } from '../../wasm/tauri-platform'
+import { useLayoutShell } from '../../composables/useLayoutShell'
 import type { Page } from '../../types/page'
 
 const props = defineProps<{
@@ -26,6 +27,11 @@ const pageStore = usePageStore()
 const blockStore = useBlockStore()
 const editorStore = useEditorStore()
 const relMenu = useRelationshipMenu()
+
+// 把页面正文列写入布局壳，供 Toc 据其左缘定位（取代全局 querySelector('.page-container .main-content')）。
+const shell = useLayoutShell()
+const pageMainContentRef = ref<HTMLElement | null>(null)
+watch(pageMainContentRef, el => { shell.pageMainContentEl.value = el }, { immediate: true })
 
 /** 页面 block 加载代数，快速切换路由时丢弃过期结果 */
 let pageLoadGeneration = 0
@@ -175,7 +181,7 @@ function handleCancelMerge() {
 <template>
   <div class="page-container">
     <div class="page-body">
-      <main class="main-content">
+      <main class="main-content" ref="pageMainContentRef">
         <div class="page-header">
           <div class="page-header-content">
             <h1

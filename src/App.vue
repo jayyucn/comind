@@ -30,6 +30,7 @@ import { useNotificationScheduler } from './composables/useNotificationScheduler
 import { usePageQueryRegistry } from './composables/usePageQueryRegistry'
 import { useReaderDataChanged } from './composables/useReaderDataChanged'
 import { useRelationshipTypes } from './composables/useRelationshipTypes'
+import { provideLayoutShell } from './composables/useLayoutShell'
 import { useEditorStore } from './stores/editor'
 import { usePageStore } from './stores/pages'
 import { isTauriEnvironment } from './wasm/tauri-platform'
@@ -51,6 +52,12 @@ registerPanel({
 const route = useRoute()
 const editorStore = useEditorStore()
 const pageStore = usePageStore()
+
+// 布局壳：向后代组件暴露布局元素 ref，取代 Toc 原先的 document.querySelector 全局抓取。
+const sidebarEl = ref<HTMLElement | null>(null)
+const contentBodyEl = ref<HTMLElement | null>(null)
+const pageMainContentEl = ref<HTMLElement | null>(null)
+provideLayoutShell({ sidebarEl, contentBodyEl, pageMainContentEl })
 
 // 阅读器独立窗口（票 03 / ADR-0040 D4：Tauri WebviewWindow 直开 /reader/:bookId）：
 // 不渲染主窗口壳（Sidebar/右侧栏/全局浮层），ReaderView 自带顶栏与窗口控制。
@@ -180,7 +187,7 @@ function handleMainClick(e: MouseEvent) {
       </header>
 
       <div class="page-content-wrapper">
-        <div class="content-body">
+        <div class="content-body" ref="contentBodyEl">
           <main class="main-content" :class="{ 'is-fullwidth-content': isFullWidthPage }">
             <RouterView v-slot="{ Component, route }">
               <KeepAlive include="IdeasList">

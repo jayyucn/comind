@@ -9,8 +9,15 @@ import SidebarRecent from './SidebarRecent.vue'
 import SidebarFavorites from './SidebarFavorites.vue'
 import SidebarFooter from './SidebarFooter.vue'
 import Icon from '../Icons/Icon.vue'
+import { ref, watch } from 'vue'
+import { useLayoutShell } from '../../composables/useLayoutShell'
 
 const { isCollapsed, toggle } = useSidebar()
+
+// 把侧栏根元素写入布局壳，供 Toc 实测定位（取代全局 querySelector('.sidebar')）。
+const shell = useLayoutShell()
+const sidebarRef = ref<HTMLElement | null>(null)
+watch(sidebarRef, el => { shell.sidebarEl.value = el }, { immediate: true })
 
 defineProps<{
   canGoBack: boolean
@@ -24,7 +31,7 @@ defineProps<{
       @click="toggle">
       <Icon :name="isCollapsed ? 'icon-panel-left-open' : 'icon-panel-left-close'" :size="16" />
     </button>
-    <aside class="sidebar">
+    <aside class="sidebar" ref="sidebarRef">
       <SidebarHeader :can-go-back="canGoBack" :can-go-forward="canGoForward" @go-back="$emit('goBack')"
         @go-forward="$emit('goForward')" />
 

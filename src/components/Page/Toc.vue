@@ -16,6 +16,7 @@ import { usePageStore } from '../../stores/pages'
 import { usePropertyStore } from '../../stores/property'
 import type { Block, TreeNode } from '../../types/block'
 import { isTauriEnvironment } from '../../wasm/tauri-platform'
+import { useLayoutShell } from '../../composables/useLayoutShell'
 import TocItem, { type TocNode } from './TocItem.vue'
 
 const props = defineProps<{
@@ -26,6 +27,7 @@ const props = defineProps<{
 const pageStore = usePageStore()
 const blockStore = useBlockStore()
 const propertyStore = usePropertyStore()
+const shell = useLayoutShell()
 
 const page = computed(() => pageStore.getPage(props.pageId) ?? null)
 const isBook = computed(() => page.value?.type === 'book')
@@ -163,12 +165,12 @@ let layoutRO: ResizeObserver | null = null
 
 /** @param animate 是否让本次宽度变化走过渡（仅展开为 true） */
 function updateTocLayout(animate = false): void {
-  const contentEl = document.querySelector<HTMLElement>('.page-container .main-content')
+  const contentEl = shell.pageMainContentEl.value
   if (!contentEl) {
     tocHidden.value = true
     return
   }
-  const sidebarEl = document.querySelector<HTMLElement>('.sidebar')
+  const sidebarEl = shell.sidebarEl.value
   const left = (sidebarEl?.getBoundingClientRect().width ?? 0) + TOC_GAP_LEFT
   const width = contentEl.getBoundingClientRect().left - TOC_GAP_RIGHT - left
   if (width < TOC_MIN_WIDTH) {
@@ -192,8 +194,7 @@ function startLayoutObserver(): void {
   // sidebar：折叠 width 动画期间逐帧重测，TOC 与侧栏同步滑动
   // 注意包一层：RO 回调会传入 entries，直接传函数会被当作 animate 实参
   layoutRO = new ResizeObserver(() => updateTocLayout())
-  for (const sel of ['.content-body', '.sidebar']) {
-    const el = document.querySelector(sel)
+  for (const el of [shell.contentBodyEl.value, shell.sidebarEl.value]) {
     if (el) layoutRO.observe(el)
   }
   updateTocLayout()
