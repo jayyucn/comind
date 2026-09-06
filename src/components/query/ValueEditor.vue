@@ -266,7 +266,8 @@ function chooseRecordRef(sourceId: string, entityType: string, field: string) {
         placeholder="数值…"
       />
 
-      <template v-else-if="descriptor.type === 'date'">
+      <!-- date / datetime 共用日期输入（datetime 的 before/after 以 day 为目标，见 ADR-0041） -->
+      <template v-else-if="descriptor.type === 'date' || descriptor.type === 'datetime'">
         <DatePicker
           :mode="isRange ? 'range' : 'single'"
           :model-value="(getLiteral() as string | [string, string] | undefined)"

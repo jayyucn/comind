@@ -169,11 +169,35 @@ describe('Block 列表按 ViewQuery 过滤（经 evaluate）', () => {
     expect(ids(blockEngine.filterSort(cards, q, registry))).toEqual(['c', 'b', 'a', 'd'])
   })
 
-  it('按 updatedAt 排序（date 字段，desc 最近在前）', () => {
+  it('按 updatedAt 排序（datetime 字段，desc 最近在前）', () => {
     const registry = setup()
-    // 更新日期：a=01-02, b=03-04, c=02-03, d=04-05 → desc: d > b > c > a
+    const field = registry.get(BLOCK_ENTITY, 'updatedAt')!
+    expect(field.type).toBe('datetime')
+    // 分钟级格式 yyyy-MM-dd HH:mm（ADR-0041：day 粒度会让同日更新并列）
+    expect(field.get(cards[0])).toBe('2026-01-02 12:00')
+    // a=01-02, b=03-04, c=02-03, d=04-05 → desc: d > b > c > a
     const q = vq(emptyFilter, [{ field: 'updatedAt', dir: 'desc' }])
     expect(ids(blockEngine.filterSort(cards, q, registry))).toEqual(['d', 'b', 'c', 'a'])
+  })
+
+  it('updatedAt 筛选：before/after 对 day 目标语义正确', () => {
+    const registry = setup()
+    // before '2026-02-03'：严格早于该天 → 仅 a(01-02)
+    const qBefore = vq({ combinator: 'and', children: [cond('updatedAt', 'before', '2026-02-03')] })
+    expect(ids(blockEngine.filterSort(cards, qBefore, registry))).toEqual(['a'])
+    // after '2026-02-03'：该天及之后 → c(02-03), b(03-04), d(04-05)（无排序规则，保持输入序）
+    const qAfter = vq({ combinator: 'and', children: [cond('updatedAt', 'after', '2026-02-03')] })
+    expect(ids(blockEngine.filterSort(cards, qAfter, registry))).toEqual(['b', 'c', 'd'])
+  })
+
+  it('updatedAt 分组：datetime 按 day 截取分桶', () => {
+    const registry = setup()
+    const groups = blockEngine.group(cards, 'updatedAt', registry)
+    const byKey = Object.fromEntries(groups.map((g) => [g.key, ids(g.items)]))
+    expect(byKey['2026-01-02']).toEqual(['a'])
+    expect(byKey['2026-02-03']).toEqual(['c'])
+    expect(byKey['2026-03-04']).toEqual(['b'])
+    expect(byKey['2026-04-05']).toEqual(['d'])
   })
 
   it('按 status 分组（groupItems）', () => {

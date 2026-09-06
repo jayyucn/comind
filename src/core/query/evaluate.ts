@@ -252,7 +252,7 @@ export function sortItems<T>(items: T[], sort: SortRule[], registry: Registry, e
   const descriptors = sort.map((rule) => registry.get(entityType, rule.field) as FieldDescriptor<unknown> | undefined)
   const keyed = items.map((item) => ({
     item,
-    keys: sort.map((rule, i) => {
+    keys: sort.map((_rule, i) => {
       const descriptor = descriptors[i]
       return toSortKey(descriptor ? normalize(descriptor.get(item)) : undefined, descriptor)
     }),

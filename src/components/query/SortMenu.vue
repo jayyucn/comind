@@ -43,6 +43,7 @@ const FIELD_META: Record<FieldType, { icon: Component; dirs: { asc: string; desc
   text: { icon: Type, dirs: { asc: 'A → Z', desc: 'Z → A' } },
   number: { icon: Hash, dirs: { asc: '1 → 9', desc: '9 → 1' } },
   date: { icon: CalendarDays, dirs: { asc: '旧 → 新', desc: '新 → 旧' } },
+  datetime: { icon: CalendarDays, dirs: { asc: '旧 → 新', desc: '新 → 旧' } },
   select: { icon: List, dirs: { asc: 'A → Z', desc: 'Z → A' } },
   multiSelect: { icon: List, dirs: { asc: 'A → Z', desc: 'Z → A' } },
   boolean: { icon: CheckSquare, dirs: { asc: '假 → 真', desc: '真 → 假' } },

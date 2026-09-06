@@ -157,17 +157,18 @@ export function registerBlockBuiltinFields(registry: Registry): void {
     },
   })
 
-  // 更新日期（date 字段，取 updated_at 的本地日期 yyyy-MM-dd；供排序/筛选/分组）
+  // 更新时间（datetime 字段，分钟级 yyyy-MM-dd HH:mm；day 粒度会让同日更新并列，
+  // 排序失去意义——见 ADR-0041。筛选仅 before/after，between/within 同日闭区间语义不成立）
   registry.register(BLOCK_ENTITY, {
     key: 'updatedAt',
-    label: '更新日期',
-    type: 'date',
-    dateBucket: 'day',
+    label: '更新时间',
+    type: 'datetime',
     get: (item) => {
       const ts = asCard(item).updated_at
       if (!ts) return undefined
       const d = new Date(ts)
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      const pad = (n: number) => String(n).padStart(2, '0')
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
     },
   })
 
