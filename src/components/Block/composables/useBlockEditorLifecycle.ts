@@ -1,25 +1,25 @@
+import type { ComputedRef, Ref } from 'vue'
 import { computed, inject } from 'vue'
-import type { Ref, ComputedRef } from 'vue'
+import type { useBlockRelationshipCleanup } from '../../../composables/useBlockRelationshipCleanup'
+import type { CrossBlockSelection } from '../../../composables/useCrossBlockSelection'
+import {
+  computeDatePickerPosition,
+  useDateRefClickListener,
+  useDateTimePickerPanel
+} from '../../../composables/useDateTimePickerPanel'
 import { useNavigateToPage } from '../../../composables/useNavigateToPage'
 import { useRelationshipMenu } from '../../../composables/useRelationshipMenu'
-import {
-  useDateTimePickerPanel,
-  useDateRefClickListener,
-  computeDatePickerPosition
-} from '../../../composables/useDateTimePickerPanel'
-import { DATE_REF_AT_REGEX, serializeDateRef, normalizeRecurrence } from '../../../utils/date-ref'
 import { blockOffsetFromPoint } from '../../../services/selection-geometry'
-import {
-  encodeRelationshipContent,
-  decodeRelationshipContent,
-  takeRelationshipSnapshot,
-} from '../../../utils/relationship-content'
 import type { useBlockStore } from '../../../stores/blocks'
 import type { useEditorStore } from '../../../stores/editor'
 import type { usePageStore } from '../../../stores/pages'
-import type { useBlockRelationshipCleanup } from '../../../composables/useBlockRelationshipCleanup'
-import type { CrossBlockSelection } from '../../../composables/useCrossBlockSelection'
 import type { BlockTypeEditorExposed } from '../../../types/block-type'
+import { DATE_REF_AT_REGEX, normalizeRecurrence, serializeDateRef } from '../../../utils/date-ref'
+import {
+  decodeRelationshipContent,
+  encodeRelationshipContent,
+  takeRelationshipSnapshot,
+} from '../../../utils/relationship-content'
 
 /**
  * useBlockEditorLifecycle — Block 编辑器生命周期 composable
