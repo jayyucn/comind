@@ -356,6 +356,11 @@
   display: flex;
   align-items: center;
   flex: 1;
+  // flex item 默认 min-width:auto（不小于内容 min-content）。
+  // 代码块 .cm-content 是 white-space:pre，超长行的 min-content 可达数千 px，
+  // 会把整条链撑开导致编辑器自身永不溢出、无法内部横向滚动。
+  // min-width:0 允许收缩到可用宽度，横向溢出交给 .cm-scroller(overflow-x:auto) 处理。
+  min-width: 0;
 }
 
 // 内容主体（不含 bullet）：优先级背景只覆盖此区域，bullet 圆点保持透明
