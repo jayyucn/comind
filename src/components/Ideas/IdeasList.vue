@@ -1,16 +1,16 @@
 <script setup lang="ts">
+import { useRelationshipMenu } from '@/composables/useRelationshipMenu'
+import { useBlockStore } from '@/stores/blocks'
 import { computed, onMounted, ref } from 'vue'
 import { usePageStore } from '../../stores/pages'
-import { useBlockStore } from '@/stores/blocks'
-import { useRelationshipMenu } from '@/composables/useRelationshipMenu'
+import type { Page } from '../../types/page'
+import PropertyEditor from '../Block/PropertyEditor.vue'
+import PropertyQuickEditor from '../Block/PropertyQuickEditor.vue'
 import BlockList from '../BlockList.vue'
 import PageTitle from '../common/PageTitle.vue'
 import RelationshipMenu from '../RelationshipMenu.vue'
-import IdeasHistoryList from './IdeasHistoryList.vue'
 import SlashCommandMenu from '../SlashCommandMenu.vue'
-import PropertyQuickEditor from '../Block/PropertyQuickEditor.vue'
-import PropertyEditor from '../Block/PropertyEditor.vue'
-import type { Page } from '../../types/page'
+import IdeasHistoryList from './IdeasHistoryList.vue'
 
 defineOptions({ name: 'IdeasList' })
 
@@ -129,7 +129,7 @@ const todayTitle = computed(() => {
 }
 
 .today-body {
-  padding-top: var(--space-3);
+  padding-top: var(--space-6);
   min-height: 40vh;
   /* 填满 today-card 剩余高度：BlockList 撑满整个 body（内容少时留白区可双击建块） */
   flex: 1;
