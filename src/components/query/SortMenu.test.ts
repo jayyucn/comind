@@ -55,6 +55,32 @@ describe('SortMenu', () => {
     expect(out[1].dir).toBe('desc')
   })
 
+  it('sortOrder 字段的方向选项展示排序内容链（asc 正序 / desc 逆序）', () => {
+    const fields: FieldDescriptor[] = [
+      {
+        key: 'status',
+        label: '状态',
+        type: 'select',
+        get: () => '',
+        options: [
+          { id: 'Doing', label: '进行中' },
+          { id: 'Todo', label: '待办' },
+          { id: 'Done', label: '已完成' },
+          { id: 'Canceled', label: '已取消' },
+        ],
+        sortOrder: ['Doing', 'Todo', 'Done', 'Canceled'],
+      },
+    ]
+    const w = mount(SortMenu, {
+      props: { sort: [{ field: 'status', dir: 'asc' }], fields },
+    })
+    const opts = w.findAll('[data-testid="sort-dir"] option')
+    expect(opts.map((o) => o.text().trim())).toEqual([
+      '进行中 > 待办 > 已完成 > 已取消',
+      '已取消 > 已完成 > 待办 > 进行中',
+    ])
+  })
+
   it('clicking row × removes that rule', async () => {
     const w = mount(SortMenu, {
       props: { sort: SORTS, fields: FIELDS },

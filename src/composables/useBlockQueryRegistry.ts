@@ -71,7 +71,7 @@ export function blockDefaultConfig(kind: ViewKind): LayoutConfig {
 /** 内置字段 key 集合，用于区分「内置」与「自定义」字段。 */
 const BUILTIN_KEYS = new Set<string>([
   'status', 'priority', 'project', 'area', 'dateRefKind', 'dateRefDate',
-  'content', 'page', 'done', 'deadline', 'schedule',
+  'content', 'page', 'done', 'deadline', 'schedule', 'updatedAt',
 ])
 
 /** dateRef.kind 的合法取值（与 property.ts normalizeKind 对齐）。 */
@@ -103,6 +103,8 @@ export function registerBlockBuiltinFields(registry: Registry): void {
     label: '状态',
     type: 'select',
     options: (statusDef?.closedValues ?? []).map((c) => ({ id: String(c.value), label: c.label })),
+    // 显式排序顺序：Doing 优先（进行中的任务最相关），终止态（Done/Canceled）沉底
+    sortOrder: ['Doing', 'Todo', 'Done', 'Canceled'],
     get: (item) => asCard(item).properties?.['status'],
   })
 
@@ -152,6 +154,20 @@ export function registerBlockBuiltinFields(registry: Registry): void {
       if (!refs || refs.length === 0) return undefined
       const days = refs.map((dr) => dr.date_day).filter((d): d is string => !!d).sort()
       return days[0]
+    },
+  })
+
+  // 更新日期（date 字段，取 updated_at 的本地日期 yyyy-MM-dd；供排序/筛选/分组）
+  registry.register(BLOCK_ENTITY, {
+    key: 'updatedAt',
+    label: '更新日期',
+    type: 'date',
+    dateBucket: 'day',
+    get: (item) => {
+      const ts = asCard(item).updated_at
+      if (!ts) return undefined
+      const d = new Date(ts)
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
     },
   })
 

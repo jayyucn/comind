@@ -18,22 +18,26 @@ const cards: BlockCard[] = [
   {
     block_id: 'a', page_id: 'p1', parent_id: null, content_preview: 'A',
     properties: { status: 'Done', priority: 'High', project: 'P1', area: 'A1', estimate: 5 },
-    date_refs: [dr('deadline', '2026-01-10')], updated_at: 1, created_at: 1,
+    date_refs: [dr('deadline', '2026-01-10')],
+    updated_at: new Date('2026-01-02T12:00:00').getTime(), created_at: 1,
   },
   {
     block_id: 'b', page_id: 'p1', parent_id: null, content_preview: 'B',
     properties: { status: 'Todo', priority: 'Low', project: 'P1', area: 'A2', estimate: 3 },
-    date_refs: [], updated_at: 2, created_at: 2,
+    date_refs: [],
+    updated_at: new Date('2026-03-04T12:00:00').getTime(), created_at: 2,
   },
   {
     block_id: 'c', page_id: 'p2', parent_id: null, content_preview: 'C',
     properties: { status: 'Doing', priority: 'Medium', project: 'P2', area: 'A1', estimate: 2 },
-    date_refs: [dr('schedule', '2026-03-01')], updated_at: 3, created_at: 3,
+    date_refs: [dr('schedule', '2026-03-01')],
+    updated_at: new Date('2026-02-03T12:00:00').getTime(), created_at: 3,
   },
   {
     block_id: 'd', page_id: 'p2', parent_id: null, content_preview: 'D',
     properties: { status: 'Done', priority: 'Urgent', project: 'P2', area: 'A2', estimate: 8 },
-    date_refs: [], updated_at: 4, created_at: 4,
+    date_refs: [],
+    updated_at: new Date('2026-04-05T12:00:00').getTime(), created_at: 4,
   },
 ]
 
@@ -56,7 +60,7 @@ describe('Block 字段描述符注册表', () => {
     const keys = registry.list(BLOCK_ENTITY).map((f) => f.key).sort()
     expect(keys).toEqual([
       'area', 'content', 'dateRefDate', 'dateRefKind', 'deadline', 'done',
-      'page', 'priority', 'project', 'schedule', 'status',
+      'page', 'priority', 'project', 'schedule', 'status', 'updatedAt',
     ])
 
     const status = registry.get(BLOCK_ENTITY, 'status')!
@@ -163,6 +167,13 @@ describe('Block 列表按 ViewQuery 过滤（经 evaluate）', () => {
     const q = vq(emptyFilter, [{ field: 'estimate', dir: 'asc' }])
     // c(2) < b(3) < a(5) < d(8)；全部有 estimate 值
     expect(ids(blockEngine.filterSort(cards, q, registry))).toEqual(['c', 'b', 'a', 'd'])
+  })
+
+  it('按 updatedAt 排序（date 字段，desc 最近在前）', () => {
+    const registry = setup()
+    // 更新日期：a=01-02, b=03-04, c=02-03, d=04-05 → desc: d > b > c > a
+    const q = vq(emptyFilter, [{ field: 'updatedAt', dir: 'desc' }])
+    expect(ids(blockEngine.filterSort(cards, q, registry))).toEqual(['d', 'b', 'c', 'a'])
   })
 
   it('按 status 分组（groupItems）', () => {

@@ -76,6 +76,71 @@ describe('多键排序', () => {
     sortItems(docs, [{ field: 'score', dir: 'desc' }], reg, 'doc')
     expect(docs.map((d) => d.score)).toEqual(snapshot)
   })
+
+  it('sortOrder：select 按声明序数排序，未列出值并列排最后，空值仍恒末尾', () => {
+    const reg2 = makeRegistry()
+    reg2.register('doc', {
+      key: 'status2',
+      label: '状态(显式序)',
+      type: 'select',
+      get: (d: Doc) => d.status,
+      options: [
+        { id: 'open', label: '进行中' },
+        { id: 'done', label: '已完成' },
+      ],
+      // 故意声明 done 在前——区别于字母序（done < open 恰好也是字母序，故换序验证）
+      sortOrder: ['open', 'done'],
+    })
+    const out = sortItems(
+      [
+        { status: 'done', due: null, score: 0 },
+        { status: 'open', due: null, score: 0 },
+        { status: 'unknown', due: null, score: 0 },
+        { status: null, due: null, score: 0 },
+      ],
+      [{ field: 'status2', dir: 'asc' }],
+      reg2,
+      'doc',
+    )
+    // open(0) → done(1) → 未列出的 unknown 并列(order.length=2) → 空值末尾
+    expect(out.map((d) => d.status)).toEqual(['open', 'done', 'unknown', null])
+  })
+
+  it('sortOrder：desc 为声明序的逆序，空值仍恒末尾', () => {
+    const reg2 = makeRegistry()
+    reg2.register('doc', {
+      key: 'status3',
+      label: '状态(显式序)',
+      type: 'select',
+      get: (d: Doc) => d.status,
+      sortOrder: ['open', 'done'],
+    })
+    const out = sortItems(
+      [
+        { status: 'done', due: null, score: 0 },
+        { status: 'open', due: null, score: 0 },
+        { status: null, due: null, score: 0 },
+      ],
+      [{ field: 'status3', dir: 'desc' }],
+      reg2,
+      'doc',
+    )
+    // 逆序：done → open；空值不随方向翻转，仍排末尾
+    expect(out.map((d) => d.status)).toEqual(['done', 'open', null])
+  })
+
+  it('desc 排序下空值仍恒排末尾（回归：空值不被方向翻转）', () => {
+    const out2 = sortItems(
+      [
+        { status: 'done', due: null, score: 1 },
+        { status: null, due: null, score: 2 },
+      ],
+      [{ field: 'status', dir: 'desc' }],
+      reg,
+      'doc',
+    )
+    expect(out2.map((d) => d.status)).toEqual(['done', null])
+  })
 })
 
 describe('单字段分组', () => {

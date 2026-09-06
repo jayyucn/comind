@@ -53,7 +53,14 @@ function fieldIcon(type: FieldType) {
 }
 
 function dirMeta(rule: SortRule): { asc: string; desc: string } {
-  const type = fieldOf(rule.field)?.type ?? 'text'
+  const field = fieldOf(rule.field)
+  // 显式排序顺序（sortOrder）的字段：方向选项直接展示排序内容链（如 进行中 > 待办 > 已完成 > 已取消）
+  if (field?.sortOrder?.length) {
+    const opts = typeof field.options === 'function' ? field.options() : field.options ?? []
+    const labels = field.sortOrder.map((id) => opts.find((o) => o.id === id)?.label ?? id)
+    return { asc: labels.join(' > '), desc: [...labels].reverse().join(' > ') }
+  }
+  const type = field?.type ?? 'text'
   return FIELD_META[type].dirs
 }
 
@@ -221,7 +228,8 @@ function deleteAll() {
 }
 
 .sort-dir {
-  min-width: 80px;
+  /* 容纳 sortOrder 内容链（如 进行中 > 待办 > 已完成 > 已取消），超出部分由原生 select 裁切 */
+  min-width: 160px;
 }
 
 .row-remove {
