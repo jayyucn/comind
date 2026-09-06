@@ -158,8 +158,10 @@ const tocHidden = ref(true)
 
 // 展开时让宽度做过渡（40 → 实测宽度）更自然；而实测驱动（侧栏折叠、窗口缩放）
 // 必须关掉过渡逐帧跟随，否则过渡与逐帧更新叠加会拖影。
-const noAnim = ref(false)
-let noAnimTimer = 0
+// isTracking 与模板类名 .is-tracking 同义：true = 过渡关闭、逐帧跟随实测值；
+// 每次实测布局后下一帧（setTimeout 0）恢复 false，让后续展开动画重新可用。
+const isTracking = ref(false)
+let trackingTimer = 0
 
 let layoutRO: ResizeObserver | null = null
 
@@ -178,9 +180,9 @@ function updateTocLayout(animate = false): void {
     return
   }
   if (!animate) {
-    noAnim.value = true
-    window.clearTimeout(noAnimTimer)
-    noAnimTimer = window.setTimeout(() => { noAnim.value = false }, 0)
+    isTracking.value = true
+    window.clearTimeout(trackingTimer)
+    trackingTimer = window.setTimeout(() => { isTracking.value = false }, 0)
   }
   tocHidden.value = false
   tocLeft.value = `${Math.round(left)}px`
@@ -205,8 +207,9 @@ function startLayoutObserver(): void {
 // 而非上次那种「宽度瞬时到 40 后内容仍亮着」导致的 chevron 碎片闪现。
 watch(collapsed, () => updateTocLayout(true))
 
-/** resize 事件对象不能直接作实参传给 updateTocLayout（会被当 animate 真值） */
+/** resize 同时驱动两件事：重测 TOC 布局 + 重算高亮（高亮走 onScroll 的 rAF 节流） */
 function onResize(): void {
+  onScroll()
   updateTocLayout()
 }
 
@@ -238,22 +241,20 @@ function flattenToc(list: TocNode[]): TocNode[] {
  * 解析真正可滚动的页面容器。
  * 注意：App.vue 的 .page-scroll-wrapper 是 scoped 样式且 overflow:hidden，
  * 实际滚动发生在它内部的某个祖先元素上；而 scroll 事件不冒泡，
- * 所以这里从首个 block 向上找「第一个真的可滚动」的祖先（scrollHeight>clientHeight），
- * 找不到时回退到 .page-scroll-wrapper / window。
+ * 所以这里从布局壳注入的正文列（.main-content，见 useLayoutShell）向上找
+ * 「第一个真的可滚动」的祖先（scrollHeight>clientHeight），找不到时回退 window
+ * （window 捕获阶段的 scroll 监听已能覆盖内层滚动，此回退仅为兜底）。
  */
 function resolveScroller(): HTMLElement | Window {
-  const firstBlock = document.querySelector<HTMLElement>('[data-block-id]')
-  if (firstBlock) {
-    let el: HTMLElement | null = firstBlock.parentElement
-    while (el && el !== document.body) {
-      const y = getComputedStyle(el).overflowY
-      if ((y === 'auto' || y === 'scroll' || y === 'overlay') && el.scrollHeight > el.clientHeight + 1) {
-        return el
-      }
-      el = el.parentElement
+  let el: HTMLElement | null = shell.pageMainContentEl.value
+  while (el && el !== document.body) {
+    const y = getComputedStyle(el).overflowY
+    if ((y === 'auto' || y === 'scroll' || y === 'overlay') && el.scrollHeight > el.clientHeight + 1) {
+      return el
     }
+    el = el.parentElement
   }
-  return document.querySelector<HTMLElement>('.page-scroll-wrapper') ?? window
+  return window
 }
 
 let scroller: HTMLElement | Window = window
@@ -309,7 +310,6 @@ onMounted(() => {
   // 捕获阶段监听 window：scroll 不冒泡，但会在捕获阶段被 window 捕获，
   // 因此无论真正滚动的是哪个内部元素，都能触发高亮重算。
   window.addEventListener('scroll', onScroll, true)
-  window.addEventListener('resize', onScroll, { passive: true })
   window.addEventListener('resize', onResize, { passive: true })
   startLayoutObserver()
   // 首次渲染后若干帧再解析一次（block DOM 可能尚未挂载）并重算
@@ -325,9 +325,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('scroll', onScroll, true)
-  window.removeEventListener('resize', onScroll)
   window.removeEventListener('resize', onResize)
-  window.clearTimeout(noAnimTimer)
+  window.clearTimeout(trackingTimer)
   layoutRO?.disconnect()
   layoutRO = null
   cleanupScroller?.()
@@ -347,7 +346,7 @@ watch(
     <div
       v-if="nodes.length > 0"
       class="toc-panel"
-      :class="{ 'is-hidden': tocHidden, 'is-tracking': noAnim }"
+      :class="{ 'is-hidden': tocHidden, 'is-tracking': isTracking }"
       :style="{ left: tocLeft, width: tocWidth }"
     >
       <div class="toc-head">
