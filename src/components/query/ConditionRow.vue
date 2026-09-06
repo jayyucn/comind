@@ -17,6 +17,7 @@ import type {
   Registry,
 } from '../../core/query'
 import { deriveOps } from '../../core/query'
+import { isRangeOp } from './filterMeta'
 import ValueEditor from './ValueEditor.vue'
 
 const props = defineProps<{
@@ -74,18 +75,19 @@ function onOpChange(e: Event) {
   const op = (e.target as HTMLSelectElement).value as FilterOp
   const keepValue = op !== 'isEmpty' && op !== 'isNotEmpty'
   let value = keepValue ? model.value!.value : undefined
-  // between 仅支持字面量区间：切到 between 时丢弃已有的字段/记录引用值，避免静默退化为 equals
-  if (op === 'between' && value && value.kind !== 'literal') value = undefined
+  // 区间操作符（between/within）仅支持字面量区间：切到区间时丢弃已有的字段/记录引用/动态值，
+  // 避免静默退化为 equals（动态值 relativeDate 是单日语义，无区间意义）
+  if (isRangeOp(op) && value && value.kind !== 'literal') value = undefined
   model.value = { ...model.value!, op, value }
 }
 
-// 不变式：between 只允许字面量区间。用户切换 op 已在 onOpChange 处掉落引用值，
-// 但反序列化或外部直接写入可能得到 `op:'between'` + 引用值（field/recordRef）这种非法组合，
+// 不变式：between/within 只允许字面量区间。用户切换 op 已在 onOpChange 处掉落引用值，
+// 但反序列化或外部直接写入可能得到区间 op + 引用值（field/recordRef/relativeDate）这种非法组合，
 // 故挂载即归一化清空 value，避免 UI 静默退化为 equals 或残留引用芯片。
 watch(
   model,
   (c) => {
-    if (c && c.op === 'between' && c.value && c.value.kind !== 'literal') {
+    if (c && isRangeOp(c.op) && c.value && c.value.kind !== 'literal') {
       model.value = { ...c, value: undefined }
     }
   },

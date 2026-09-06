@@ -16,6 +16,7 @@
  */
 import type { Condition, ConditionGroup, ConditionValue, FieldDescriptor, QueryContext, SortRule, ViewQuery } from './types'
 import type { Registry } from './registry'
+import { resolveRelativeExpr } from '../../utils/date-parser'
 
 /** 归一化空值：undefined / null 一律折叠为 undefined。 */
 function normalize(value: unknown): unknown {
@@ -41,6 +42,8 @@ function eqScalars(a: unknown, b: unknown): boolean {
  * - literal：原值。
  * - field：取同记录另一字段的值（字段间比较）。
  * - recordRef：经 context.getById 取出目标实体（cv.entityType + cv.recordId），再取其字段值；取不到目标或字段则 undefined（非匹配）。
+ * - relativeDate：动态日期值——每次求值时刻把相对表达式 resolve 成当天 `YYYY-MM-DD`
+ *   （见 `src/utils/date-parser.ts`），使条件跟随日期流转；解析失败返回 undefined（非匹配）。
  */
 function resolveTarget(
   cv: ConditionValue | undefined,
@@ -63,6 +66,8 @@ function resolveTarget(
       const d = registry.get(cv.entityType, cv.field)
       return d ? d.get(targetItem) : undefined
     }
+    case 'relativeDate':
+      return resolveRelativeExpr(cv.expr) ?? undefined
     default:
       return undefined
   }

@@ -83,14 +83,20 @@ export interface FieldDescriptor<T = unknown> {
  *   实现「字段间比较」（如「字数 > 子页面数」）。
  * - `recordRef`：跨记录字段引用（业务无关）——取另一实体（entityType + recordId）的某字段值作比较目标。
  *   求值需 {@link QueryContext.getById} 提供按 entityType+id 取实体的能力；不提供时一律非匹配。
+ * - `relativeDate`：动态日期值（date/datetime 专用）——expr 为相对日期表达式
+ *   （快捷 token：today/yesterday/tomorrow/weekStart/weekEnd/monthStart/monthEnd，
+ *   或键入语法：今天/明天/+3/下周一…，见 `src/utils/date-parser.ts`）。
+ *   每次求值时刻 resolve 成当天 `YYYY-MM-DD`，因此条件会「跟着今天走」：
+ *   页面每次打开/数据变化重新求值时自动取最新日期，而非固定在设置那天。
  *
- * 序列化：三者皆为纯 JSON 对象，随 ViewQuery 直接 JSON 往返；旧版裸字面量由
+ * 序列化：皆为纯 JSON 对象，随 ViewQuery 直接 JSON 往返；旧版裸字面量由
  * `parseQuery` 自动包裹为 `literal`（向前兼容）。
  */
 export type ConditionValue =
   | { kind: 'literal'; value: unknown }
   | { kind: 'field'; field: string }
   | { kind: 'recordRef'; entityType: string; recordId: string; field: string }
+  | { kind: 'relativeDate'; expr: string }
 
 /**
  * 可被引用为「另一条记录」的通用载体（业务无关）。

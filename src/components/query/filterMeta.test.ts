@@ -49,4 +49,14 @@ describe('filterMeta', () => {
     const cond: Condition = { field: 'type', op: 'isEmpty' }
     expect(summarizeCondition(selectField, cond)).toBe('类型 为空')
   })
+
+  it('summarizeCondition: relativeDate 显示中文动态词（今日/本周起始…）', () => {
+    const cond: Condition = { field: 'createdAt', op: 'after', value: { kind: 'relativeDate', expr: 'today' } }
+    expect(summarizeCondition(dateField, cond)).toBe('创建日期 晚于 今日')
+    const ws: Condition = { field: 'createdAt', op: 'after', value: { kind: 'relativeDate', expr: 'weekStart' } }
+    expect(summarizeCondition(dateField, ws)).toBe('创建日期 晚于 本周起始')
+    // 键入的自由语法原文回显
+    const custom: Condition = { field: 'createdAt', op: 'after', value: { kind: 'relativeDate', expr: '+3' } }
+    expect(summarizeCondition(dateField, custom)).toBe('创建日期 晚于 +3')
+  })
 })

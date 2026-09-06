@@ -88,6 +88,36 @@ function setLiteral(v: unknown) {
   model.value = { kind: 'literal', value: v }
 }
 
+/* —— date / datetime 值：静态日期（literal）与动态值（relativeDate）并存 ——
+ * DatePicker 单日期模式（before/after/is…）：
+ * - 日历点选 → yyyy-MM-dd → 静态 literal（固定日期，不随时间变）
+ * - 快捷按钮 / 键入表达式（今日 / +3 / 下周一…）→ 动态 relativeDate
+ *   （落库 token；evaluate 每次求值时刻解析 → 页面每次打开都按当天重算）
+ * 判定规则：8 位完整日期 = 静态；其余可解析表达式 = 动态。
+ * range（between/within）只开放静态区间：DatePicker dynamic=false 直接 resolve 成日期。
+ */
+function isStaticDate(v: unknown): boolean {
+  return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)
+}
+function getDateModel(): string | [string, string] | undefined {
+  const v = model.value
+  if (!v) return undefined
+  if (v.kind === 'relativeDate') return v.expr // 仅单日期模式会出现
+  if (v.kind === 'literal') return v.value as string | [string, string] | undefined
+  return undefined
+}
+function setDateModel(v: string | [string, string] | undefined) {
+  if (v === undefined) {
+    model.value = undefined
+    return
+  }
+  if (Array.isArray(v) || isStaticDate(v)) {
+    model.value = { kind: 'literal', value: v }
+    return
+  }
+  model.value = { kind: 'relativeDate', expr: v }
+}
+
 const numberText = computed<string>({
   get: () => (getLiteral() === undefined || getLiteral() === null ? '' : String(getLiteral())),
   set: (v) => setLiteral(v === '' ? null : Number(v)),
@@ -270,9 +300,10 @@ function chooseRecordRef(sourceId: string, entityType: string, field: string) {
       <template v-else-if="descriptor.type === 'date' || descriptor.type === 'datetime'">
         <DatePicker
           :mode="isRange ? 'range' : 'single'"
-          :model-value="(getLiteral() as string | [string, string] | undefined)"
+          :dynamic="!isRange"
+          :model-value="getDateModel()"
           data-testid="qb-date"
-          @update:model-value="setLiteral($event)"
+          @update:model-value="setDateModel"
         />
       </template>
 
