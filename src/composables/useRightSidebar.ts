@@ -9,7 +9,7 @@ export interface RightSidebarSettings {
 const STORAGE_KEY = 'comind-right-sidebar'
 
 const MIN_WIDTH = 280
-const MAX_WIDTH = 600
+const MAX_WIDTH = 1000
 const DEFAULT_WIDTH = 360
 
 function loadSettings(): RightSidebarSettings {
