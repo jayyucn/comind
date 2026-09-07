@@ -14,6 +14,8 @@ import {
   SNAPSHOT_MODAL_KEY,
   SNAPSHOT_PROPS_KEY,
   SNAPSHOT_TREE_KEY,
+  type SnapshotPropsMap,
+  type SnapshotTreeState,
 } from '../Ideas/snapshotContext'
 import type { IdeasSnapshotData } from '../../utils/ideas-snapshot'
 import type { TreeNode } from '../../types/block'
@@ -60,14 +62,14 @@ const isSnapshotMode = computed(() => !!props.blockId && !!snapshotOf.value)
 const snapshotData = ref<IdeasSnapshotData | null>(null)
 const snapshotRoot = ref<TreeNode | null>(null)
 const snapshotCollapsed = reactive(new Set<string>())
-provide(SNAPSHOT_TREE_KEY, {
+provide<SnapshotTreeState>(SNAPSHOT_TREE_KEY, {
   isCollapsed: (id) => snapshotCollapsed.has(id),
   toggle: (id) => {
     if (snapshotCollapsed.has(id)) snapshotCollapsed.delete(id)
     else snapshotCollapsed.add(id)
   },
 })
-provide(SNAPSHOT_PROPS_KEY, {
+provide<SnapshotPropsMap>(SNAPSHOT_PROPS_KEY, {
   propsByBlock: {},
   getBlockProps: (blockId) => snapshotData.value?.properties[blockId] ?? [],
 })
