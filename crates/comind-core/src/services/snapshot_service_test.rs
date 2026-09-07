@@ -152,4 +152,34 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn reads_back_materialized_snapshot_and_none_for_unsnapshotted() -> Result<(), Box<dyn Error>> {
+        let mut adapter = create_test_adapter()?;
+        let (page, _plain_id, task_id) = seed_yesterday_ideas_page(&mut adapter)?;
+        // 今日 ideas 页（无快照）
+        let today_page = PageService::create(&mut adapter, "", TODAY, Some("ideas"), None, None, None, None)?;
+
+        // 未物化前：读取为 None
+        assert!(SnapshotService::get_ideas_snapshot(&mut adapter, &page.id)?.is_none());
+
+        SnapshotService::snapshot_stale_ideas_pages(&mut adapter, TODAY)?;
+
+        // 物化后可读回完整 content_json（与行内存储一致，含当日 status）
+        let content = SnapshotService::get_ideas_snapshot(&mut adapter, &page.id)?
+            .expect("已物化页应能读回快照内容");
+        assert_eq!(
+            snapshot_task_status(&content, &task_id).as_deref(),
+            Some("Todo"),
+            "读回内容应定格当日属性"
+        );
+        let v: serde_json::Value = serde_json::from_str(&content)?;
+        assert!(v["blocks"].is_array() && v["properties"].is_object());
+
+        // 无快照页（今日 ideas / 不存在页）：None
+        assert!(SnapshotService::get_ideas_snapshot(&mut adapter, &today_page.id)?.is_none());
+        assert!(SnapshotService::get_ideas_snapshot(&mut adapter, "no-such-page")?.is_none());
+
+        Ok(())
+    }
 }

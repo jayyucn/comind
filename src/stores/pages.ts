@@ -4,6 +4,7 @@ import type { Page } from '../types/page'
 import { initCoreClient } from '../wasm/client'
 import { useBlockStore } from './blocks'
 import { useFavorites } from '../composables/useFavorites'
+import { parseIdeasSnapshotContent, type IdeasSnapshotData } from '../utils/ideas-snapshot'
 
 import type { CoreClient } from '../wasm/client'
 
@@ -136,6 +137,23 @@ export const usePageStore = defineStore('pages', () => {
 
   function setCurrentPage(pageId: string) {
     currentPageId.value = pageId
+  }
+
+  // ── Ideas 页快照读取（ADR-0042 T5 快照读取守卫）──
+  // 快照不可变 → 会话内缓存安全；null 也缓存（该页尚无快照，本次会话不再重试）。
+  const ideasSnapshots = ref<Record<string, IdeasSnapshotData | null>>({})
+
+  /**
+   * 读取 ideas 页快照渲染数据（仅历史页有快照；今日/未过期/无快照 → null）。
+   * 页面渲染方经守卫（utils/ideas-snapshot isStaleIdeasPage）先判模式，再调此方法取内容。
+   */
+  async function getIdeasSnapshot(pageId: string): Promise<IdeasSnapshotData | null> {
+    if (pageId in ideasSnapshots.value) return ideasSnapshots.value[pageId]
+    const client = await getClient()
+    const { content } = await client.getIdeasSnapshot(pageId)
+    const data = content ? parseIdeasSnapshotContent(content) : null
+    ideasSnapshots.value[pageId] = data
+    return data
   }
 
   // 保证 loadAllPages 在守卫 get-or-create 前完成一次，
@@ -349,5 +367,5 @@ export const usePageStore = defineStore('pages', () => {
     }
   }
 
-  return { pages, currentPageId, loading, trashPages, loadAllPages, ensurePagesLoaded, getIdeasPagesByMonth, getIdeasMonths, ensureTodayIdeasPage, setCurrentPage, openPage, createPage, getPage, getPageByTitle, getOrCreatePageByTitle, renamePage, mergePage, deletePage, loadTrashPages, softDeletePage, restorePage, permanentDeletePage, onRemovePageFromHistory }
+  return { pages, currentPageId, loading, trashPages, loadAllPages, ensurePagesLoaded, getIdeasPagesByMonth, getIdeasMonths, ensureTodayIdeasPage, getIdeasSnapshot, setCurrentPage, openPage, createPage, getPage, getPageByTitle, getOrCreatePageByTitle, renamePage, mergePage, deletePage, loadTrashPages, softDeletePage, restorePage, permanentDeletePage, onRemovePageFromHistory }
 })

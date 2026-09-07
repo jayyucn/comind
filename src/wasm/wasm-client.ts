@@ -38,6 +38,8 @@ export interface WasmClient {
 
   ensure_today_ideas_page(): Promise<Page>
   snapshot_stale_ideas_pages(): Promise<{ materialized: number }>
+  /** 读取 ideas 页快照 content_json（ADR-0042 快照读取守卫）；无快照返回 { content: null } */
+  get_ideas_snapshot(pageId: string): Promise<{ content: string | null }>
 
   create_block_version(blockId: string, snapshot: string, hash: string, reason: string, checkpointName?: string): Promise<BlockVersion>
   get_block_versions(blockId: string): Promise<BlockVersion[]>
@@ -249,6 +251,12 @@ export async function initWasmClient(): Promise<WasmClient> {
     async snapshot_stale_ideas_pages(): Promise<{ materialized: number }> {
       const result = await wasmModule.snapshot_stale_ideas_pages()
       return parseJsonResult<{ materialized: number }>(result)
+    },
+
+    async get_ideas_snapshot(pageId: string): Promise<{ content: string | null }> {
+      const result = await wasmModule.get_ideas_snapshot(pageId)
+      if (result === null || result === undefined) return { content: null }
+      return parseJsonResult<{ content: string | null }>(result)
     },
 
     async create_block_version(blockId: string, snapshot: string, hash: string, reason: string, checkpointName?: string): Promise<BlockVersion> {
