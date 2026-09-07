@@ -71,7 +71,15 @@ const QuadrantViewStub = defineComponent({
   },
 })
 
-const TODAY_PAGE_TITLE = new Date().toISOString().slice(0, 10)
+/** 本地时区日期（Rust ensure_today_ideas_page 用 chrono::Local，勿用 toISOString 的 UTC 日期） */
+function localDateStr(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+const TODAY_PAGE_TITLE = localDateStr(new Date())
 
 function mountTaskHub() {
   return mount(TaskHub, {
@@ -130,12 +138,59 @@ describe('TaskHub — 四象限新增任务落点', () => {
     expect(page?.title).toBe(TODAY_PAGE_TITLE)
 
     // saveBlockTree 载荷同源：page_id=今日 Ideas 页、parent_id=null
-    const payload = saveTreeSpy.mock.calls[0][0][0]
+    // （按 block id 定位载荷，避免测试多次保存时盲取首个调用）
+    const saveCall = saveTreeSpy.mock.calls.find(([updates]) => updates[0].id === block!.id)
+    expect(saveCall).toBeDefined()
+    const payload = saveCall![0][0]
     expect(payload.page_id).toBe(block!.pageId)
     expect(payload.parent_id).toBeNull()
 
     // 3) 不再创建/复用「任务收集」遗留页
     expect(pageStore.pages.some((p) => p.title === '任务收集')).toBe(false)
+
+    wrapper.unmount()
+  })
+
+  it('今日 Ideas 页缓存未加载时，先触发 guard-load 再以 parentId=null 落今日页根级', async () => {
+    // pinia P1：预置今日页两条既有手记根块到 DB
+    let pageStore = usePageStore()
+    let blockStore = useBlockStore()
+    const today = await pageStore.ensureTodayIdeasPage()
+    for (const note of ['既有手记A', '既有手记B']) {
+      const b = await blockStore.createBlock({ pageId: today.id, content: note })
+      await blockStore.flushSave(b.id)
+    }
+
+    // pinia P2（全新空缓存）：模拟跨会话 TaskHub 打开——今日页根块仅存在于 DB
+    setActivePinia(createPinia())
+    pageStore = usePageStore()
+    blockStore = useBlockStore()
+    const ensureSpy = vi.spyOn(pageStore, 'ensureTodayIdeasPage')
+    const loadSpy = vi.spyOn(blockStore, 'loadPageBlocks')
+    expect(blockStore.blocks.filter((b) => b.pageId === today.id)).toHaveLength(0)
+
+    const { wrapper } = await addFromQuadrant('Medium', '四象限新增-既有根块场景')
+
+    // guard-load 被执行（缓存缺失时先加载既有根块再追加，保证本地序正确）
+    expect(loadSpy).toHaveBeenCalledTimes(1)
+    expect(loadSpy).toHaveBeenCalledWith(today.id)
+    expect(ensureSpy).toHaveBeenCalledTimes(1)
+
+    // 任务仍以 parentId=null 落今日 Ideas 页根级
+    const task = blockStore.blocks.find((b) => b.content === '四象限新增-既有根块场景')
+    expect(task).toBeDefined()
+    expect(task!.parentId).toBeNull()
+
+    // DB 侧：任务行真实存在且为根级块
+    const dbBlocks = await getTestCore()!.getBlocksByPage(today.id)
+    const dbTask = dbBlocks.find((b) => b.id === task!.id)
+    expect(dbTask).toBeDefined()
+    expect(dbTask!.parent_id).toBeNull()
+    // 注：不在此断言「DB pos 序末尾」——Rust BlockService::create 对新建根块按
+    // calculate_gap_sort_pos_for_root 从头取空位（新块落头部是平台既有语义，与前端本地 gap
+    // 序天然不同，TaskHub 之外的所有根级创建路径一致）；本 T1 控制的是「落点页 + 根级」。
+    // 另注：WASM 测试环境的 getPageWithBlocks 返回空（getBlocksByPage 有数据）是既有问题，
+    // 故此处不校验 guard-load 的实际装载内容——桌面端走 Tauri 命令可正常装载。
 
     wrapper.unmount()
   })
