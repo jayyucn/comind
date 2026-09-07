@@ -24,6 +24,7 @@
     "os:default",
     "fs:default",
     "fs:allow-read-file",
-    "fs:allow-write-file"
+    "fs:allow-write-file",
+    "mcp:default"
   ]
 }

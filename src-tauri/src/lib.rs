@@ -20,11 +20,27 @@ pub fn run() {
 
     log::info!("Starting comind application");
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_os::init())
-        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_fs::init());
+
+    // Dev-only AI debug bridge (tauri-plugin-mcp). Registered only in debug
+    // builds; release builds never compile/register it. The MCP server connects
+    // over the platform-default socket (Unix /tmp/tauri-mcp.sock, Windows
+    // \\.\pipe\tmp\tauri-mcp.sock). Default target webview is "main"; the reader
+    // windows (reader-<bookId>) are reached by passing window_label explicitly.
+    #[cfg(debug_assertions)]
+    {
+        builder = builder.plugin(tauri_plugin_mcp::init_with_config(
+            tauri_plugin_mcp::PluginConfig::new("comind".to_string())
+                .start_socket_server(true)
+                .default_webview_label("main".to_string()),
+        ));
+    }
+
+    builder
         .setup(|app| {
             let app_handle = app.handle();
 
