@@ -248,6 +248,7 @@ pub fn run() {
             commands::apply_relationship_type_to_block_content,
             commands::extract_links_from_content,
             commands::check_has_typed_link_to_target,
+            #[cfg(debug_assertions)]
             commands::manage_window,
             // S6: date-parser / recurrence / journal-detect
             commands::parse_date_input,
