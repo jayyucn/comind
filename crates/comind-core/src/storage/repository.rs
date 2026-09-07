@@ -179,6 +179,17 @@ pub trait BookProgressRepository {
     fn upsert(&mut self, progress: &BookProgress) -> Result<BookProgress, Box<dyn Error>>;
 }
 
+/// Ideas 页不可变快照（ADR-0042，父 #65）：存储级历史诚实性保证。
+/// 一页至多一份快照（page_id 幂等键），**永不重物化、永不改写**——重复 create 是 no-op
+/// 保留既有行。历史 Ideas 页渲染读快照；活数据经块级通路编辑，与快照互不触碰。
+/// 仅本地表，先不进 SyncTable（对齐同步约定预留，见 ADR-0042）。
+pub trait PageSnapshotRepository {
+    /// 按 page_id 读快照；无 → None。物化前的幂等检查与历史渲染都走这里。
+    fn get_by_page_id(&self, page_id: &str) -> Result<Option<PageSnapshot>, Box<dyn Error>>;
+    /// 物化写入（幂等键 page_id）。已存在则保留旧行、不覆盖；返回**实际落库**的行。
+    fn create(&mut self, snapshot: &PageSnapshot) -> Result<PageSnapshot, Box<dyn Error>>;
+}
+
 pub trait StorageAdapter {
     fn blocks(&mut self) -> &mut dyn BlockRepository;
     fn pages(&mut self) -> &mut dyn PageRepository;
@@ -195,6 +206,7 @@ pub trait StorageAdapter {
     fn notification_config(&mut self) -> &mut dyn NotificationConfigRepository;
     fn book_highlights(&mut self) -> &mut dyn BookHighlightRepository;
     fn book_progress(&mut self) -> &mut dyn BookProgressRepository;
+    fn page_snapshots(&mut self) -> &mut dyn PageSnapshotRepository;
 }
 
 pub trait TransactionalStorageAdapter: StorageAdapter {
