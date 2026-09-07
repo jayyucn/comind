@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// `content_json` 与库内存储同构：flat blocks 数组 + properties map，
 /// 渲染端可直接复用既有 `buildTree`，不引入新序列化格式。
+/// 结构版本由表内 `version` 列承载（当前默认 1）——未来格式升级凭此辨识，绝不静默改格式。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PageSnapshot {
     /// 被物化的 Ideas 页 id（幂等键：一页至多一份快照）
@@ -21,6 +22,3 @@ pub struct PageSnapshot {
     /// 物化时刻（毫秒时间戳）
     pub created_at: i64,
 }
-
-/// `content_json` 的当前结构版本。升格式时必须递增并保留旧版本读取路径。
-pub const PAGE_SNAPSHOT_CONTENT_VERSION: i64 = 1;

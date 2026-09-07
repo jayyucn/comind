@@ -200,12 +200,9 @@ impl SqlJsAdapter {
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_book_highlight_page ON BookHighlight(book_page_id);")?;
         Self::exec(db, "CREATE TABLE IF NOT EXISTS BookProgress (book_page_id TEXT PRIMARY KEY, cfi TEXT NOT NULL, updated_at INTEGER NOT NULL);")?;
 
-        // Ideas 页不可变快照（ADR-0042）：page_id 幂等键（一页至多一份、永不重物化），
-        // date=页面标题日期 yyyy-MM-dd，version=content_json 结构版本（当前 1），
-        // content_json=flat blocks + properties map（与库内存储同构）。
-        // 仅本地表，先不进 SyncTable。与 sqlite.rs init_schema 逐列一致。
+        // Ideas 页不可变快照（ADR-0042）：page_id 幂等键，永不重物化；仅本地，不进 SyncTable。
+        // 与 sqlite.rs init_schema 逐列一致。
         Self::exec(db, "CREATE TABLE IF NOT EXISTS page_snapshots (page_id TEXT PRIMARY KEY, date TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, content_json TEXT NOT NULL, created_at INTEGER NOT NULL);")?;
-        Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_page_snapshots_date ON page_snapshots(date);")?;
 
         Self::migrate_date_ref_event_ts(db)?;
         Self::migrate_add_version_and_deleted_at(db)?;

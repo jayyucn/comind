@@ -284,10 +284,7 @@ impl SQLiteAdapter {
                 updated_at      INTEGER NOT NULL
             );
 
-            -- Ideas 页不可变快照（ADR-0042）：page_id 幂等键（一页至多一份、永不重物化），
-            -- date=页面标题日期 yyyy-MM-dd，version=content_json 结构版本（当前 1），
-            -- content_json=flat blocks + properties map（与库内存储同构）。
-            -- 仅本地表，先不进 SyncTable。
+            -- Ideas 页不可变快照（ADR-0042）：page_id 幂等键，永不重物化；仅本地，不进 SyncTable。
             CREATE TABLE IF NOT EXISTS page_snapshots (
                 page_id         TEXT PRIMARY KEY,
                 date            TEXT NOT NULL,
@@ -295,7 +292,6 @@ impl SQLiteAdapter {
                 content_json    TEXT NOT NULL,
                 created_at      INTEGER NOT NULL
             );
-            CREATE INDEX IF NOT EXISTS idx_page_snapshots_date ON page_snapshots(date);
 
             CREATE INDEX IF NOT EXISTS idx_page_blockId        ON Page(block_id);
             CREATE INDEX IF NOT EXISTS idx_page_type           ON Page(type);
