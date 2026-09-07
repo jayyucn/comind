@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { format } from 'date-fns'
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
-import { useBlockStore } from '../../stores/blocks'
 import { usePageStore } from '../../stores/pages'
 import type { Page } from '../../types/page'
 import MonthPicker from '../MonthPicker.vue'
@@ -14,7 +13,6 @@ const monthPagesCacheGlobal = new Map<string, Page[]>()
 const inflightMonthLoads = new Map<string, Promise<void>>()
 
 const pageStore = usePageStore()
-const blockStore = useBlockStore()
 
 const MAX_LENGTH = 31
 const currentMonth = format(new Date(), 'yyyy-MM')
@@ -27,7 +25,7 @@ const currentPages = ref<Page[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
 
-// 已加载过的月份缓存（页面元数据 + blocks 都已加载）
+// 已加载过的月份缓存（页面元数据；历史页正文由快照渲染，各 item 自行读取）
 const loadedMonths = loadedMonthsGlobal
 
 // 已加载月份的页面数据缓存
@@ -70,15 +68,9 @@ function scheduleLoadMonthData(month: string) {
   }
 }
 
-function historyPageIdsFrom(pages: Page[]): string[] {
-  return pages.filter(p => p.title !== todayKey).map(p => p.id)
-}
-
+/** 月份数据就绪 = 页面元数据已取回（正文按需读取快照，无需整月预载活块） */
 function isMonthReady(month: string): boolean {
-  if (!loadedMonths.has(month)) return false
-  const pages = monthPagesCache.get(month) ?? []
-  const ids = historyPageIdsFrom(pages)
-  return ids.length === 0 || ids.every(id => blockStore.getBlocksByPage(id).length > 0)
+  return loadedMonths.has(month)
 }
 
 function applyMonthUi(month: string) {
@@ -100,26 +92,6 @@ async function loadMonthDataImpl(month: string) {
 
     // 竞态检查：被后续请求取代则丢弃
     if (myId !== requestId) return
-
-    const pageIds = pages.map(p => p.id)
-    const uncachedPageIds = pageIds.filter(
-      id => !blockStore.getBlocksByPage(id).length
-    )
-    if (uncachedPageIds.length > 0) {
-      await blockStore.loadMultiPageBlocks(uncachedPageIds)
-    }
-
-    // 再次检查竞态
-    if (myId !== requestId) return
-
-    const historyIds = historyPageIdsFrom(pages)
-    if (historyIds.some(id => blockStore.getBlocksByPage(id).length === 0)) {
-      // abort 或 IPC 失败：不标记 loadedMonths，避免下次误判为已缓存
-      const filtered = pages.filter(p => p.title !== todayKey)
-      currentPages.value = filtered.sort((a, b) => b.title.localeCompare(a.title))
-      loading.value = false
-      return
-    }
 
     // 排除今日页面（今日由左侧面板负责），保留当月其他日期
     const filtered = pages.filter(p => p.title !== todayKey)
@@ -175,7 +147,6 @@ let initialized = false
 
 onBeforeUnmount(() => {
   cancelDeferredLoad()
-  blockStore.abortMultiPageLoad()
 })
 
 onDeactivated(() => {
