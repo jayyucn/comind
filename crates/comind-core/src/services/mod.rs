@@ -13,6 +13,10 @@ pub mod filter_service;
 pub mod content_parse_service;
 pub mod notification_service;
 pub mod block_write;
+pub mod snapshot_service;
+
+#[cfg(test)]
+pub mod snapshot_service_test;
 
 #[cfg(test)]
 pub mod block_service_test;
@@ -44,6 +48,7 @@ pub use filter_service::FilterService;
 pub use content_parse_service::*;
 pub use notification_service::NotificationService;
 pub use block_write::BlockWriteService;
+pub use snapshot_service::SnapshotService;
 pub mod render_segment_service;
 pub use render_segment_service::{build_page_with_blocks, build_segments_for_block};
 
