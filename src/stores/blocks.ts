@@ -1167,6 +1167,12 @@ export const useBlockStore = defineStore('blocks', () => {
     const block = blocks.value.find(b => b.id === blockId)
     if (!block) return
 
+    // 内容无变化守卫：编辑器 blur/unmount 等路径会无条件提交当前文本（handleSave），
+    // 若与已存内容相同仍继续会重打 updatedAt 并触发落库（Rust update 无条件
+    // updated_at=now + version+1）——只点进点出不改字也会刷新「更新时间」。
+    // 相同内容直接返回：不重打时间戳、不调度保存（flushSave 无 pending 即空转）。
+    if (block.content === content) return
+
     block.content = content
     block.updatedAt = Date.now()
     // renderSegments 是由 Rust 在 save_block_tree 时重新构建并随返回结果返回的。

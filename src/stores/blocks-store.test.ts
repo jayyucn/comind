@@ -464,3 +464,36 @@ describe('deleteBlocks 不变量：每 page 始终至少保留 1 个 block', () 
     expect(remaining[0].content).toBe('B')
   })
 })
+
+describe('updateBlockContent 内容无变化守卫（防空转 bump updated_at）', () => {
+  test('相同内容：不重打 updatedAt，flush 后依旧（整体空转）', async () => {
+    const store = useBlockStore()
+    const pageId = 'guard-page-1'
+    const block = await store.createBlock({ pageId, content: '相同内容' })
+
+    const memBefore = store.blocks.find(b => b.id === block.id)!.updatedAt
+
+    // 模拟 blur/unmount 的无条件保存：内容与 store 一致 → 应整体空转
+    await store.updateBlockContent(block.id, '相同内容')
+    await store.flushSave(block.id)
+
+    const memAfter = store.blocks.find(b => b.id === block.id)!
+    expect(memAfter.content).toBe('相同内容')
+    expect(memAfter.updatedAt).toBe(memBefore) // 未重打时间戳 → 也不会调度保存落库
+  })
+
+  test('内容实际变化：仍更新 updatedAt 并触发保存', async () => {
+    const store = useBlockStore()
+    const pageId = 'guard-page-2'
+    const block = await store.createBlock({ pageId, content: '旧内容' })
+
+    const memBefore = store.blocks.find(b => b.id === block.id)!.updatedAt
+
+    await store.updateBlockContent(block.id, '新内容')
+    await store.flushSave(block.id)
+
+    const memAfter = store.blocks.find(b => b.id === block.id)!
+    expect(memAfter.content).toBe('新内容')
+    expect(memAfter.updatedAt).toBeGreaterThanOrEqual(memBefore)
+  })
+})
