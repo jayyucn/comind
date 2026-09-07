@@ -148,6 +148,11 @@ function handlePickerKeydown(e: KeyboardEvent) {
 
 async function saveValue(value: PropertyValue) {
   await propertyStore.setProperty(blockId.value, key.value, value, currentDef.value?.type)
+  // 设置优先级（与 /schedule 一致）：block 尚无 status 时自动补 Todo
+  if (key.value === 'priority') {
+    // fire-and-forget：自动补 Todo 失败绝不影响属性写入与面板关闭，避免未处理异常阻断编辑
+    propertyStore.ensureTodo(blockId.value).catch(() => {})
+  }
   editorStore.hideQuickPropertyEditor()
 }
 

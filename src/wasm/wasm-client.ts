@@ -1,6 +1,7 @@
 import type {
   Block, Page, Property, Link, RelationshipType,
-  SearchResult, BatchResult, DateRefRecord, BlockVersion, Notification
+  SearchResult, BatchResult, DateRefRecord, BlockVersion, Notification,
+  BookHighlightRust, BookProgressRust
 } from './types'
 
 export interface WasmClient {
@@ -56,6 +57,13 @@ export interface WasmClient {
   delete_notification(id: string): Promise<void>
   cleanup_notifications(timestamp: number): Promise<void>
   mark_all_notifications_read(): Promise<void>
+
+  // Book highlights & progress（ADR-0040：仅本地，不入 SyncTable）
+  upsert_book_highlight(highlight: string): Promise<BookHighlightRust>
+  delete_book_highlight(id: string): Promise<void>
+  get_book_highlights(book_page_id: string): Promise<BookHighlightRust[]>
+  get_book_progress(book_page_id: string): Promise<BookProgressRust | null>
+  upsert_book_progress(book_page_id: string, cfi: string): Promise<BookProgressRust>
 }
 
 let wasmClient: WasmClient | null = null
@@ -320,6 +328,30 @@ export async function initWasmClient(): Promise<WasmClient> {
 
     async mark_all_notifications_read(): Promise<void> {
       await wasmModule.mark_all_notifications_read()
+    },
+
+    async upsert_book_highlight(highlight: string): Promise<BookHighlightRust> {
+      const result = await wasmModule.upsert_book_highlight(highlight)
+      return parseJsonResult<BookHighlightRust>(result)
+    },
+
+    async delete_book_highlight(id: string): Promise<void> {
+      await wasmModule.delete_book_highlight(id)
+    },
+
+    async get_book_highlights(book_page_id: string): Promise<BookHighlightRust[]> {
+      const result = await wasmModule.get_book_highlights(book_page_id)
+      return parseJsonResult<BookHighlightRust[]>(result)
+    },
+
+    async get_book_progress(book_page_id: string): Promise<BookProgressRust | null> {
+      const result = await wasmModule.get_book_progress(book_page_id)
+      return parseJsonResult<BookProgressRust | null>(result)
+    },
+
+    async upsert_book_progress(book_page_id: string, cfi: string): Promise<BookProgressRust> {
+      const result = await wasmModule.upsert_book_progress(book_page_id, cfi)
+      return parseJsonResult<BookProgressRust>(result)
     }
   }
 

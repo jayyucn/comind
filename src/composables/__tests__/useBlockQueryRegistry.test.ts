@@ -18,22 +18,26 @@ const cards: BlockCard[] = [
   {
     block_id: 'a', page_id: 'p1', parent_id: null, content_preview: 'A',
     properties: { status: 'Done', priority: 'High', project: 'P1', area: 'A1', estimate: 5 },
-    date_refs: [dr('deadline', '2026-01-10')], updated_at: 1, created_at: 1,
+    date_refs: [dr('deadline', '2026-01-10')],
+    updated_at: new Date('2026-01-02T12:00:00').getTime(), created_at: 1,
   },
   {
     block_id: 'b', page_id: 'p1', parent_id: null, content_preview: 'B',
     properties: { status: 'Todo', priority: 'Low', project: 'P1', area: 'A2', estimate: 3 },
-    date_refs: [], updated_at: 2, created_at: 2,
+    date_refs: [],
+    updated_at: new Date('2026-03-04T12:00:00').getTime(), created_at: 2,
   },
   {
     block_id: 'c', page_id: 'p2', parent_id: null, content_preview: 'C',
     properties: { status: 'Doing', priority: 'Medium', project: 'P2', area: 'A1', estimate: 2 },
-    date_refs: [dr('schedule', '2026-03-01')], updated_at: 3, created_at: 3,
+    date_refs: [dr('schedule', '2026-03-01')],
+    updated_at: new Date('2026-02-03T12:00:00').getTime(), created_at: 3,
   },
   {
     block_id: 'd', page_id: 'p2', parent_id: null, content_preview: 'D',
     properties: { status: 'Done', priority: 'Urgent', project: 'P2', area: 'A2', estimate: 8 },
-    date_refs: [], updated_at: 4, created_at: 4,
+    date_refs: [],
+    updated_at: new Date('2026-04-05T12:00:00').getTime(), created_at: 4,
   },
 ]
 
@@ -55,13 +59,18 @@ describe('Block 字段描述符注册表', () => {
     registerBlockBuiltinFields(registry)
     const keys = registry.list(BLOCK_ENTITY).map((f) => f.key).sort()
     expect(keys).toEqual([
-      'area', 'content', 'dateRefDate', 'dateRefKind', 'deadline', 'done',
-      'page', 'priority', 'project', 'schedule', 'status',
+      'area', 'content', 'created_at', 'dateRefDate', 'dateRefKind', 'deadline', 'done',
+      'page', 'priority', 'project', 'schedule', 'status', 'updatedAt',
     ])
 
     const status = registry.get(BLOCK_ENTITY, 'status')!
     expect(status.type).toBe('select')
     expect(status.options?.map((o) => o.id)).toEqual(['Todo', 'Doing', 'Done', 'Canceled'])
+    expect(status.sortOrder).toEqual(['Doing', 'Todo', 'Done', 'Canceled'])
+
+    const priority = registry.get(BLOCK_ENTITY, 'priority')!
+    expect(priority.type).toBe('select')
+    expect(priority.sortOrder).toEqual(['Urgent', 'High', 'Medium', 'Low'])
 
     const date = registry.get(BLOCK_ENTITY, 'dateRefDate')!
     expect(date.type).toBe('date')
@@ -163,6 +172,37 @@ describe('Block 列表按 ViewQuery 过滤（经 evaluate）', () => {
     const q = vq(emptyFilter, [{ field: 'estimate', dir: 'asc' }])
     // c(2) < b(3) < a(5) < d(8)；全部有 estimate 值
     expect(ids(blockEngine.filterSort(cards, q, registry))).toEqual(['c', 'b', 'a', 'd'])
+  })
+
+  it('按 updatedAt 排序（datetime 字段，desc 最近在前）', () => {
+    const registry = setup()
+    const field = registry.get(BLOCK_ENTITY, 'updatedAt')!
+    expect(field.type).toBe('datetime')
+    // 分钟级格式 yyyy-MM-dd HH:mm（ADR-0041：day 粒度会让同日更新并列）
+    expect(field.get(cards[0])).toBe('2026-01-02 12:00')
+    // a=01-02, b=03-04, c=02-03, d=04-05 → desc: d > b > c > a
+    const q = vq(emptyFilter, [{ field: 'updatedAt', dir: 'desc' }])
+    expect(ids(blockEngine.filterSort(cards, q, registry))).toEqual(['d', 'b', 'c', 'a'])
+  })
+
+  it('updatedAt 筛选：before/after 对 day 目标语义正确', () => {
+    const registry = setup()
+    // before '2026-02-03'：严格早于该天 → 仅 a(01-02)
+    const qBefore = vq({ combinator: 'and', children: [cond('updatedAt', 'before', '2026-02-03')] })
+    expect(ids(blockEngine.filterSort(cards, qBefore, registry))).toEqual(['a'])
+    // after '2026-02-03'：该天及之后 → c(02-03), b(03-04), d(04-05)（无排序规则，保持输入序）
+    const qAfter = vq({ combinator: 'and', children: [cond('updatedAt', 'after', '2026-02-03')] })
+    expect(ids(blockEngine.filterSort(cards, qAfter, registry))).toEqual(['b', 'c', 'd'])
+  })
+
+  it('updatedAt 分组：datetime 按 day 截取分桶', () => {
+    const registry = setup()
+    const groups = blockEngine.group(cards, 'updatedAt', registry)
+    const byKey = Object.fromEntries(groups.map((g) => [g.key, ids(g.items)]))
+    expect(byKey['2026-01-02']).toEqual(['a'])
+    expect(byKey['2026-02-03']).toEqual(['c'])
+    expect(byKey['2026-03-04']).toEqual(['b'])
+    expect(byKey['2026-04-05']).toEqual(['d'])
   })
 
   it('按 status 分组（groupItems）', () => {

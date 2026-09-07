@@ -3,6 +3,7 @@ import { computed, ref, onBeforeUnmount, onMounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import BlockList from '../BlockList.vue'
 import Backlinks from '../Backlinks.vue'
+import Toc from './Toc.vue'
 import ConfirmDialog from '../ConfirmDialog.vue'
 import SlashCommandMenu from '../SlashCommandMenu.vue'
 import PropertyQuickEditor from '../Block/PropertyQuickEditor.vue'
@@ -12,6 +13,9 @@ import { usePageStore } from '../../stores/pages'
 import { useBlockStore } from '../../stores/blocks'
 import { useEditorStore } from '../../stores/editor'
 import { useRelationshipMenu } from '../../composables/useRelationshipMenu'
+import { openReaderWindow } from '../../composables/useReaderWindow'
+import { isTauriEnvironment } from '../../wasm/tauri-platform'
+import { useLayoutShell } from '../../composables/useLayoutShell'
 import type { Page } from '../../types/page'
 
 const props = defineProps<{
@@ -23,6 +27,11 @@ const pageStore = usePageStore()
 const blockStore = useBlockStore()
 const editorStore = useEditorStore()
 const relMenu = useRelationshipMenu()
+
+// 把页面正文列写入布局壳，供 Toc 据其左缘定位（取代全局 querySelector('.page-container .main-content')）。
+const shell = useLayoutShell()
+const pageMainContentRef = ref<HTMLElement | null>(null)
+watch(pageMainContentRef, el => { shell.pageMainContentEl.value = el }, { immediate: true })
 
 /** 页面 block 加载代数，快速切换路由时丢弃过期结果 */
 let pageLoadGeneration = 0
@@ -55,6 +64,16 @@ const isTitleEditable = computed(() => {
   const page = pageStore.getPage(resolvedPageId.value)
   return page?.type !== 'ideas'
 })
+
+// 书 Page（type=book，票 01 导入生成）：标题下显示「阅读」入口，
+// 唤起独立阅读器窗口（ADR-0040 D4；仅桌面端，web/Android 无阅读器）
+const isBookPage = computed(() => pageStore.getPage(resolvedPageId.value)?.type === 'book')
+const canOpenReader = computed(() => isBookPage.value && isTauriEnvironment())
+
+function handleOpenReader(): void {
+  const bookId = resolvedPageId.value
+  if (bookId) openReaderWindow(bookId)
+}
 
 const isEditingTitle = ref(false)
 const editingTitle = ref('')
@@ -162,7 +181,7 @@ function handleCancelMerge() {
 <template>
   <div class="page-container">
     <div class="page-body">
-      <main class="main-content">
+      <main class="main-content" ref="pageMainContentRef">
         <div class="page-header">
           <div class="page-header-content">
             <h1
@@ -178,8 +197,14 @@ function handleCancelMerge() {
               class="page-title page-title--input"
               @blur="saveTitle"
               @keydown.enter.prevent="saveTitle"
-              @keydown.escape="cancelEditTitle"
+              @keydown.escape.prevent="cancelEditTitle"
             />
+            <button
+              v-if="canOpenReader"
+              class="read-book-btn"
+              title="在独立窗口中阅读这本书"
+              @click="handleOpenReader"
+            >开始阅读</button>
           </div>
         </div>
 
@@ -188,6 +213,9 @@ function handleCancelMerge() {
 
       <Backlinks />
     </div>
+
+    <!-- 通用 TOC 浮层（普通页=heading 大纲 / 书页=章→节投影），自行 Teleport 到 body -->
+    <Toc :page-id="resolvedPageId" />
 
     <ConfirmDialog
       :visible="showMergeDialog"
@@ -222,6 +250,26 @@ function handleCancelMerge() {
 <style lang="scss" scoped>
 :deep(.navigate-highlight) {
   animation: navigate-pulse 2s ease-out;
+}
+
+// 书 Page 标题下的「开始阅读」入口（票 03 / ADR-0040 D4：唤起独立阅读器窗口）
+.read-book-btn {
+  display: block;
+  margin: var(--space-3) auto 0;
+  padding: 4px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: all 120ms ease;
+
+  &:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-03);
+  }
 }
 
 @keyframes navigate-pulse {

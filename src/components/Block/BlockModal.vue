@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { ExternalLink, FileText, X } from 'lucide-vue-next'
 import Block from './index.vue'
 import { useBlockStore } from '../../stores/blocks'
+import { useBlockCardStore } from '../../stores/blockCard'
 import { useEditorStore } from '../../stores/editor'
 import { usePageStore } from '../../stores/pages'
 import { hasModalOpen } from '../../composables/useModalKeyboard'
@@ -41,11 +42,24 @@ provide('blockModalRootId', toRef(props, 'blockId'))
 
 // 关闭：清掉弹窗子树内的激活态（根块或任意后代，例如先激活子块再点 X 关闭），
 // 再通知父级。仅当激活块落在弹窗子树内才失活，避免误清底层页面的激活块。
+// 弹窗内对内容 / 属性的编辑已写入 blockStore 并经 blockCardStore.invalidate 标记投影脏，
+// 此处 flush 落库 + 刷脏投影，使四象限 / 看板 / 表格等视图反映最新任务内容
+// （否则仅靠 onCellChange 的 refresh 才会重拉，弹窗内编辑不会触发，卡片内容/状态长期陈旧）。
+// 关键点：落库与刷投影均为「即发即忘」（fire-and-forget），绝不在关闭路径上 await 任何
+// wasm 调用——否则调用挂起会导致 emit('close') 永不触发、弹窗卡死、进而阻塞全部 block 编辑。
 function close() {
+  const id = props.blockId
   const activeId = editorStore.activeBlockId
-  if (props.blockId && activeId && (activeId === props.blockId || isInModalSubtree(activeId))) {
+  if (id && activeId && (activeId === id || isInModalSubtree(activeId))) {
     editorStore.deactivateBlock()
   }
+  if (id) {
+    // flush 落库：编辑器自身 @save 已防抖落库，这里兜底补刷；不 await，避免挂起阻塞关闭。
+    // 用 Promise.resolve 包一层，确保 flushSave 缺省时也不会因 .catch 访问 undefined 而抛错。
+    Promise.resolve(blockStore.flushSave?.(id)).catch(() => {})
+  }
+  // 刷脏投影：后台异步重拉，关闭不依赖其结果。
+  useBlockCardStore().refreshIfDirty().catch(() => {})
   emit('close')
 }
 

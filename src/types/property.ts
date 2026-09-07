@@ -130,6 +130,47 @@ export const BUILT_IN_PROPERTIES: PropertyDefinition[] = [
     displayStyle: 'icon-text',
   },
   {
+    // 书笔记四件套（票 06 / ADR-0040 D3/D7）：阅读器高亮升格为 Block 时写入。
+    // book/chapter/quote 展示于 block 属性区（其他端语义：脱离书文件可读）；
+    // cfi 是「跳回原文」的数据源，系统属性不渲染（同 language）。
+    key: 'book',
+    title: '书名',
+    type: 'string',
+    isBuiltIn: true,
+    displayPosition: 'bottom-of-block',
+    displayStyle: 'icon-text',
+  },
+  {
+    key: 'part',
+    title: '部/卷',
+    type: 'string',
+    isBuiltIn: true,
+    // 系统属性：章节的双层父级，由 PropertyDisplay 紧凑展示，不进入属性列表
+  },
+  {
+    key: 'chapter',
+    title: '章节',
+    type: 'string',
+    isBuiltIn: true,
+    displayPosition: 'bottom-of-block',
+    displayStyle: 'icon-text',
+  },
+  {
+    key: 'cfi',
+    title: '原文锚点',
+    type: 'string',
+    isBuiltIn: true,
+    // 系统属性：不设 displayPosition → 默认不显示，也不出现在属性列表（PropertyDisplay 过滤）
+  },
+  {
+    key: 'quote',
+    title: '原文',
+    type: 'string',
+    isBuiltIn: true,
+    displayPosition: 'bottom-of-block',
+    displayStyle: 'icon-text',
+  },
+  {
     key: 'sourceBlockId',
     title: '来源块 ID',
     type: 'string',

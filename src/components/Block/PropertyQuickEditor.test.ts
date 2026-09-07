@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import { useEditorStore } from '../../stores/editor'
 import { usePropertyStore } from '../../stores/property'
 import { useBlockCardStore } from '../../stores/blockCard'
@@ -34,6 +34,7 @@ function mockStores(overrides: { cards?: CardLike[]; currentValue?: string } = {
   vi.mocked(usePropertyStore).mockReturnValue({
     getBlockProperty: vi.fn().mockReturnValue({ value: overrides.currentValue ?? 'Beta', type: 'string' }),
     setProperty: vi.fn().mockResolvedValue({}),
+    ensureTodo: vi.fn().mockResolvedValue(undefined),
   } as unknown as ReturnType<typeof usePropertyStore>)
   vi.mocked(useBlockCardStore).mockReturnValue({
     cards,
@@ -179,5 +180,42 @@ describe('PropertyQuickEditor — project/area 搜索列表分支', () => {
 
     expect(wrapper.find('.project-list').exists()).toBe(false)
     expect(wrapper.find('.quick-option').exists()).toBe(true)
+  })
+})
+
+describe('PropertyQuickEditor — 设置优先级自动补 Todo', () => {
+  it('选择优先级后调用 ensureTodo（与 /schedule 一致）', async () => {
+    editorStoreMock.quickPropertyEditor = {
+      visible: true,
+      blockId: 'block-1',
+      key: 'priority',
+      position: { x: 0, y: 0 },
+    }
+    mockStores({ cards: [card('b1')], currentValue: '' })
+    const wrapper = mountEditor()
+
+    // priority 走 closedValues 下拉，点击第一个选项（如 High）
+    await wrapper.find('.quick-option').trigger('click')
+    await flushPromises()
+
+    const store = vi.mocked(usePropertyStore())
+    expect(store.setProperty).toHaveBeenCalledWith('block-1', 'priority', expect.anything(), 'string')
+    expect(store.ensureTodo).toHaveBeenCalledWith('block-1')
+  })
+
+  it('非优先级属性不调用 ensureTodo', async () => {
+    editorStoreMock.quickPropertyEditor = {
+      visible: true,
+      blockId: 'block-1',
+      key: 'project',
+      position: { x: 0, y: 0 },
+    }
+    mockStores({ cards: [card('b1', 'Alpha')] })
+    const wrapper = mountEditor()
+
+    await wrapper.findAll('.project-option')[0].trigger('click')
+    await flushPromises()
+
+    expect(vi.mocked(usePropertyStore()).ensureTodo).not.toHaveBeenCalled()
   })
 })

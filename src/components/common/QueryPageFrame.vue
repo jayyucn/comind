@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import type { CellRegistry } from '../../components/views/types'
 import type { FieldDescriptor, Group, ReferenceableRecord, Registry, SortRule, ViewQuery } from '../../core/query'
 import type { ViewTypeOption } from '../../core/view/management'
-import type { BoardConfig, CalendarConfig, QuadrantConfig, TableColumnConfig, TableConfig } from '../../core/view'
+import type { BoardConfig, CalendarConfig, GalleryConfig, QuadrantConfig, TableColumnConfig, TableConfig } from '../../core/view'
 import { useChipBarOrchestration } from '../../composables/useChipBarOrchestration'
 import { useScreenViewStore } from '../../stores/screenView'
 import BasePopover from './BasePopover.vue'
@@ -58,6 +58,8 @@ const props = defineProps<{
   calendarConfig: CalendarConfig
   /** 四象限布局配置（艾森豪威尔矩阵；当前无附加元数据）。 */
   quadrantConfig?: QuadrantConfig
+  /** 封面网格布局配置（书房，票 08 / ADR-0040 D9；当前无附加元数据）。 */
+  galleryConfig?: GalleryConfig
   /** 取记录 id 的字段名（默认 'id'；BlockCard 用 'block_id'）。 */
   idKey?: string
   /** 自定义单元格渲染器注册表（透传 TableView；ADR-0010）。缺省时列配置中的 cell 自动回退内置渲染。 */
@@ -94,6 +96,7 @@ const viewContext = computed(() => ({
   boardConfig: props.boardConfig,
   calendarConfig: props.calendarConfig,
   quadrantConfig: props.quadrantConfig,
+  galleryConfig: props.galleryConfig,
   idKey: props.idKey,
   cellRegistry: props.cellRegistry,
   // 列管理动作（TableView 表头菜单 → 写入当前 tab 的 column 配置；逻辑内聚于外壳，经 ctx 透传给消费方）

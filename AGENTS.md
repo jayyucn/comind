@@ -54,29 +54,54 @@
 1. **禁止组件内硬编码 z-index**：一律用 `var(--z-*)`（组件 scoped 样式，定义于 `src/styles/tokens/_semantic.scss`）或 `$z-*`（全局 SCSS，定义于 `src/styles/tokens/_primitives.scss`，需 `@use`）。
 2. **浮层必须 Teleport 到 body**：渲染在 `transform/filter/backdrop-filter/opacity<1` 祖先内的浮层，z-index 会困于局部堆叠上下文而失效（已知陷阱：`.block-children` 的 `translateY(0)`）。
 
-## Agent skills
+## 代理技能
 
-### Issue tracker
+### 问题追踪（Issue tracker）
 
-Issues live as GitHub issues in `jayyucn/comind` (uses `gh` CLI). See `docs/agents/issue-tracker.md`.
+Issue 以 GitHub issue 形式存放在 `jayyucn/comind` 中（使用 `gh` CLI）。参见 `docs/agents/issue-tracker.md`。
 
-### Triage labels
+### 分流标签（Triage labels）
 
-Five canonical labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`) used as-is. See `docs/agents/triage-labels.md`.
+五个标准标签（`needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix`），按原样使用。参见 `docs/agents/triage-labels.md`。
 
-### Domain docs
+### 领域文档（Domain docs）
 
-Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+单一上下文约定：仓库根目录一份 `CONTEXT.md` + `docs/adr/`。参见 `docs/agents/domain.md`。
 
-## graphify
+## graphify（知识图谱）
 
-This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+本项目在 graphify-out/ 中维护知识图谱，包含 God Nodes、社区结构和跨文件关系。
 
-When a question is about THIS codebase, the graphify skill should be auto-loaded; if it isn't, load it explicitly before answering. The skill is installed at user level (`~/.workbuddy/skills/graphify`).
+凡涉及本代码库的问题，graphify skill 应自动加载；若未加载，回答前需显式加载。该 skill 安装在用户级目录（`~/.workbuddy/skills/graphify`）。
 
-Rules:
-- DEFAULT FOR CODEBASE QUESTIONS: whenever the user asks how something works, what calls/uses what, where something is defined, or about architecture / file relationships in THIS repo, you MUST load the graphify skill and run `graphify query "<question>"` (or `graphify path "<A>" "<B>"` / `graphify explain "<concept>"`) BEFORE any grep, Explore, or source read — and only fall back to those if graphify returns nothing. Requires `graphify-out/graph.json` to exist.
-- Dirty graphify-out/ files are expected after hooks or incremental updates; dirty graph files are not a reason to skip graphify. Only skip graphify if the task is about stale or incorrect graph output, or the user explicitly says not to use it.
-- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
-- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
-- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+规则：
+- 代码库问题的默认路径：无论用户问“某功能如何工作”“谁调用/使用了什么”“某符号定义在哪里”，还是本仓库的架构 / 文件关系，都必须先加载 graphify skill 并运行 `graphify query "<问题>"`（或 `graphify path "<A>" "<B>"` / `graphify explain "<概念>"`），之后才可 grep、Explore 或读源码——仅当 graphify 无结果时才回退到这些方式。前提：`graphify-out/graph.json` 存在。
+- graphify-out/ 出现脏文件属正常现象（hook 或增量更新后产生）；脏图谱文件不是跳过 graphify 的理由。仅当任务本身涉及图谱过期或错误、或用户明确要求不使用时才跳过。
+- 若 graphify-out/wiki/index.md 存在，做广泛导航时优先使用它，而不是直接浏览源码。
+- 仅当 query/path/explain 未提供足够上下文时，才通读 graphify-out/GRAPH_REPORT.md 做整体架构审阅。
+- 修改代码后运行 `graphify update .`，保持图谱最新（仅 AST，无 API 成本）。
+
+## codegraph（符号级索引）
+
+本仓库的符号级索引（数据在 `.codegraph/`；当前 561 个文件 / 8,050 个符号节点 / 18,176 条边）。精确回答“某符号定义在哪里 / 谁引用了它 / 哪些测试可能受影响”。全局安装为 `codegraph`（npm 包 `@colbymchenry/codegraph`）；通过 CLI 驱动——其 MCP server 可能在本机运行，但未注册到本 agent。
+
+- `codegraph context "<任务>"` — 汇总与任务相关的文件 + 关键代码片段（markdown 输出）。读代码前用它收窄改动面。
+- `codegraph query "<符号>" -k <类型>` — 定位符号的定义与引用（类型：function、class、component 等）。符号名不一定与 graphify 一致（例如 `useBlockStore` 出现在 graphify 的 God Nodes 中，但不在 codegraph 索引里）——跨工具未命中时换词重试。
+- `codegraph affected <文件...>` — 列出受改动影响的测试文件；运行这些测试。
+- `codegraph sync` — 编辑后增量重建索引（保持符号层新鲜）。
+- `codegraph status` — 索引统计 / 新鲜度（“Index is up to date”）。
+
+## 两层导航（codegraph + graphify）
+
+- 精确层 — codegraph：符号、导入、影响面分析、任务上下文（“在哪 / 改什么会坏 / 要碰哪些文件”）。
+- 战略层 — graphify：文件间及跨文档关系、社区、God Nodes（“模块之间如何连接 / 整体架构长什么样”）。遵循上文 graphify 规则。
+
+编码任务的推荐循环：
+1. `codegraph context "<任务>"` → 收窄改动面。
+2. `graphify query "<问题>"` 或 `graphify path "A" "B"` → 编辑前先理解跨模块联系。
+3. 修改代码。
+4. `codegraph affected <文件>` → 运行受影响的测试；`codegraph sync` → 刷新符号索引。
+5. `graphify update .` → 重建战略层图谱。
+6. 当 graphify 暴露出意外关联时，用 `codegraph query "<符号>" -k <类型>` 定位到确切的定义 / 引用点。
+
+口径说明：codegraph 只统计代码文件（561）；graphify 还索引文档（744）——统计范围不同，不矛盾。`graphify update` 不需要 LLM；`graphify label` / 完整管线需要。

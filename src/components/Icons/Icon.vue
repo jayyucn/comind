@@ -10,6 +10,7 @@ import {
   Droplet,
   Folder,
   History,
+  Highlighter,
   Link,
   Maximize2,
   Menu,
@@ -105,6 +106,7 @@ const GENERAL_ICONS: Record<string, any> = {
   'icon-bell': Bell,
   'icon-search': Search,
   'icon-history': History,
+  'icon-highlighter': Highlighter,
 }
 
 const ALL_ICONS = { ...STATUS_ICONS, ...PRIORITY_ICONS, ...GENERAL_ICONS }

@@ -43,7 +43,7 @@ const ops = deriveOps(props.field)
 const closeOnValue = computed(() => {
   const t = props.field.type
   if (t === 'select' || t === 'boolean') return true
-  if (t === 'date') return props.condition.op === 'before' || props.condition.op === 'after'
+  if (t === 'date' || t === 'datetime') return props.condition.op === 'before' || props.condition.op === 'after'
   return false
 })
 

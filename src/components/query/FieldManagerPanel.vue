@@ -81,6 +81,7 @@ function iconFor(type?: string) {
     case 'number':
       return Hash
     case 'date':
+    case 'datetime':
       return Calendar
     case 'select':
       return List

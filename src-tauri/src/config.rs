@@ -222,6 +222,11 @@ pub fn get_assets_path(workspace: &Path) -> PathBuf {
     workspace.join("assets")
 }
 
+/// 从 workspace 派生书文件目录路径：workspace/books（EPUB 原文件，ADR-0040 D8）
+pub fn get_books_path(workspace: &Path) -> PathBuf {
+    workspace.join("books")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

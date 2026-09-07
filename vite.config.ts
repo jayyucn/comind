@@ -6,6 +6,10 @@ import { fileURLToPath, URL } from 'node:url'
 
 export default defineConfig({
   plugins: [vue(), wasm(), topLevelAwait()],
+  // force 布局跑在 module worker 里，构建产物必须是 ES 格式（默认 iife 不支持 module worker）
+  worker: {
+    format: 'es',
+  },
   server: {
     host: '0.0.0.0',
     port: 5173,

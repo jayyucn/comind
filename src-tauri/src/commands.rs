@@ -2,7 +2,7 @@ use crate::assets::{asset_extension, asset_file_path, is_safe_asset_component, n
 use comind_core::{
     services::{
         build_page_with_blocks, BlockService, BlockVersionService, BlockWriteService,
-        DateRefService, FilterService, LinkService, PageService, PropertyService,
+        BookService, DateRefService, FilterService, LinkService, PageService, PropertyService,
         RelationshipTypeService, TemplateService,
     },
     storage::{SQLiteAdapter, StorageAdapter, TransactionalStorageAdapter},
@@ -12,7 +12,7 @@ use comind_core::{
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::process::Command;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PageUpdate {
@@ -128,6 +128,58 @@ pub async fn delete_saved_filter(
 ) -> Result<(), String> {
     execute_with_adapter(db, |storage| {
         FilterService::delete_saved_filter(storage, id)
+    })
+    .await
+}
+
+// ---- Book highlights & progress（ADR-0040 D5/D6/D7：仅桌面本地，不入 SyncTable） ----
+
+#[tauri::command]
+pub async fn upsert_book_highlight(
+    db: State<'_, super::state::DatabaseConnection>,
+    highlight: BookHighlight,
+) -> Result<BookHighlight, String> {
+    execute_with_adapter(db, |storage| {
+        BookService::upsert_highlight(storage, &highlight)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn delete_book_highlight(
+    db: State<'_, super::state::DatabaseConnection>,
+    id: &str,
+) -> Result<(), String> {
+    execute_with_adapter(db, |storage| BookService::delete_highlight(storage, id)).await
+}
+
+#[tauri::command]
+pub async fn get_book_highlights(
+    db: State<'_, super::state::DatabaseConnection>,
+    book_page_id: &str,
+) -> Result<Vec<BookHighlight>, String> {
+    execute_with_adapter(db, |storage| {
+        BookService::get_highlights(storage, book_page_id)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn get_book_progress(
+    db: State<'_, super::state::DatabaseConnection>,
+    book_page_id: &str,
+) -> Result<Option<BookProgress>, String> {
+    execute_with_adapter(db, |storage| BookService::get_progress(storage, book_page_id)).await
+}
+
+#[tauri::command]
+pub async fn upsert_book_progress(
+    db: State<'_, super::state::DatabaseConnection>,
+    book_page_id: &str,
+    cfi: &str,
+) -> Result<BookProgress, String> {
+    execute_with_adapter(db, |storage| {
+        BookService::upsert_progress(storage, book_page_id, cfi)
     })
     .await
 }
@@ -1080,6 +1132,45 @@ pub async fn delete_asset_file(
         write_asset_manifest(&assets_dir, &manifest)?;
     }
     Ok(())
+}
+
+// ---- 书文件（workspace/books/，EPUB 原文件存储；ADR-0040 D8） ----
+// 命名约定 <id>.epub，id 即书 Page id：阅读器路由 /reader/:bookId 凭此直接定位文件（票 03）
+
+/// 保存 EPUB 书文件到 workspace/books/<id>.epub
+#[tauri::command]
+pub async fn save_book_file(
+    config_manager: State<'_, super::state::ConfigManager>,
+    app_handle: AppHandle,
+    id: String,
+    data: Vec<u8>,
+) -> Result<(), String> {
+    if !is_safe_asset_component(&id) {
+        return Err(format!("Invalid book id: {}", id));
+    }
+    let config = config_manager.get_config()?.clone();
+    let workspace = super::config::get_workspace_path(&app_handle, &config);
+    let books_dir = super::config::get_books_path(&workspace);
+    std::fs::create_dir_all(&books_dir)
+        .map_err(|e| format!("Failed to create books directory: {}", e))?;
+    std::fs::write(books_dir.join(format!("{}.epub", id)), &data)
+        .map_err(|e| format!("Failed to write book file: {}", e))
+}
+
+/// 读取书文件字节（前端从 Blob 内存解析，不落中间文件）
+#[tauri::command]
+pub async fn read_book_file(
+    config_manager: State<'_, super::state::ConfigManager>,
+    app_handle: AppHandle,
+    id: String,
+) -> Result<Vec<u8>, String> {
+    if !is_safe_asset_component(&id) {
+        return Err(format!("Invalid book id: {}", id));
+    }
+    let config = config_manager.get_config()?.clone();
+    let workspace = super::config::get_workspace_path(&app_handle, &config);
+    let path = super::config::get_books_path(&workspace).join(format!("{}.epub", id));
+    std::fs::read(&path).map_err(|e| format!("Failed to read book file: {}", e))
 }
 
 #[tauri::command]
@@ -2197,4 +2288,52 @@ pub async fn get_pages_with_blocks(
         Ok(result)
     })
     .await
+}
+
+// ── Window management ──
+
+/// 查询/操作应用窗口（调试与窗口管理用）。
+///
+/// - `list`: 返回全部 WebviewWindow（label/title/visible/focused）。
+/// - `show` | `hide` | `close`: 对 `label` 指定的窗口执行操作。
+///
+/// Dev-only：与 lib.rs 中 tauri-plugin-mcp 的 cfg(debug_assertions) 门控一致，
+/// release 不编译、不注册（MCP 插件自身已覆盖同等窗口能力）。
+#[cfg(debug_assertions)]
+#[tauri::command]
+pub async fn manage_window(
+    app: AppHandle,
+    action: String,
+    label: Option<String>,
+) -> Result<serde_json::Value, String> {
+    match action.as_str() {
+        "list" => {
+            let mut windows: Vec<serde_json::Value> = Vec::new();
+            for win in app.webview_windows().values() {
+                windows.push(serde_json::json!({
+                    "label": win.label(),
+                    "title": win.title().map_err(|e| e.to_string())?,
+                    "visible": win.is_visible().map_err(|e| e.to_string())?,
+                    "focused": win.is_focused().map_err(|e| e.to_string())?,
+                }));
+            }
+            Ok(serde_json::json!({ "action": "list", "windows": windows }))
+        }
+        "show" | "hide" | "close" => {
+            let target = label
+                .ok_or_else(|| format!("action `{action}` requires `label`"))?;
+            let win = app
+                .get_webview_window(&target)
+                .ok_or_else(|| format!("window `{target}` not found"))?;
+            match action.as_str() {
+                "show" => win.show().map_err(|e| e.to_string())?,
+                "hide" => win.hide().map_err(|e| e.to_string())?,
+                _ => win.close().map_err(|e| e.to_string())?,
+            }
+            Ok(serde_json::json!({ "action": action, "label": target, "ok": true }))
+        }
+        other => Err(format!(
+            "unknown action `{other}` (expected list|show|hide|close)"
+        )),
+    }
 }

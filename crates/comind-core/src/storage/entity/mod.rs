@@ -1,5 +1,6 @@
 pub mod block;
 pub mod block_version;
+pub mod book;
 pub mod date_ref;
 pub mod link;
 pub mod notification;

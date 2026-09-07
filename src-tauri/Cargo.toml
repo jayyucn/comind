@@ -38,3 +38,9 @@ tauri-build = { version = "2.0", features = [] }
 # 移动端专用依赖
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 tauri-plugin-barcode-scanner = "2"
+
+# Dev-only AI debug bridge (tauri-plugin-mcp)：仅在 debug 构建编译/链接，
+# 注册与 manage_window 命令同样由 cfg(debug_assertions) 门控（lib.rs / commands.rs）。
+# NOTE: git dependency — pin a commit once a stable tag is chosen.
+[target.'cfg(debug_assertions)'.dependencies]
+tauri-plugin-mcp = { git = "https://github.com/P3GLEG/tauri-plugin-mcp" }

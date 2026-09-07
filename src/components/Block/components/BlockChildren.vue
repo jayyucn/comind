@@ -57,7 +57,7 @@ defineExpose({ draggableRef })
     ref="draggableRef"
     v-model="node.children"
     tag="div"
-    :group="{ name: 'blocks', pull: true, put: true }"
+    :group="{ name: 'blocks-' + pageId, pull: true, put: true }"
     :sort="true"
     handle=".bullet-dot"
     filter=".bullet-chevron"

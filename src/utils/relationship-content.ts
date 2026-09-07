@@ -221,7 +221,6 @@ export function encodeRelationshipContent(
     const parts = parseRelationshipSegment(inner)
     const rec = byLabel.get(parts.type)
     if (rec && !rec.deleted) {
-      const forwardType = rec.type === rec.label ? rec.type : undefined
       // 判断 label 属于正向还是反向
       const isForwardLabel = parts.type === rec.label
       const type = isForwardLabel ? rec.type : rec.inverse ?? rec.type

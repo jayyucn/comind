@@ -16,6 +16,7 @@
  */
 import type { Condition, ConditionGroup, ConditionValue, FieldDescriptor, QueryContext, SortRule, ViewQuery } from './types'
 import type { Registry } from './registry'
+import { resolveRelativeExpr } from '../../utils/date-parser'
 
 /** 归一化空值：undefined / null 一律折叠为 undefined。 */
 function normalize(value: unknown): unknown {
@@ -41,6 +42,8 @@ function eqScalars(a: unknown, b: unknown): boolean {
  * - literal：原值。
  * - field：取同记录另一字段的值（字段间比较）。
  * - recordRef：经 context.getById 取出目标实体（cv.entityType + cv.recordId），再取其字段值；取不到目标或字段则 undefined（非匹配）。
+ * - relativeDate：动态日期值——每次求值时刻把相对表达式 resolve 成当天 `YYYY-MM-DD`
+ *   （见 `src/utils/date-parser.ts`），使条件跟随日期流转；解析失败返回 undefined（非匹配）。
  */
 function resolveTarget(
   cv: ConditionValue | undefined,
@@ -63,6 +66,8 @@ function resolveTarget(
       const d = registry.get(cv.entityType, cv.field)
       return d ? d.get(targetItem) : undefined
     }
+    case 'relativeDate':
+      return resolveRelativeExpr(cv.expr) ?? undefined
     default:
       return undefined
   }
@@ -224,32 +229,50 @@ export interface Group<T> {
   items: T[]
 }
 
-/** 比较两个排序键值：空值（undefined）始终排在末尾，与 asc/desc 无关。 */
+/** 比较两个非空排序键值。 */
 function compareValues(a: unknown, b: unknown): number {
-  if (a === undefined && b === undefined) return 0
-  if (a === undefined) return 1
-  if (b === undefined) return -1
   if (typeof a === 'number' && typeof b === 'number') return a - b
   return String(a).localeCompare(String(b))
 }
 
 /**
+ * 把原始字段值映射为可比较的排序键：字段声明了 sortOrder（select 显式顺序）时，
+ * 按选项 id 映射为序数（未列出的值并列排在最后）；其余类型原值返回。
+ */
+function toSortKey(value: unknown, descriptor: FieldDescriptor<unknown> | undefined): unknown {
+  if (value === undefined) return undefined
+  const order = descriptor?.sortOrder
+  if (!order || order.length === 0) return value
+  const idx = order.indexOf(String(value))
+  return idx === -1 ? order.length : idx
+}
+
+/**
  * 多键稳定排序：sort 数组按序逐级回退；空值恒排末尾（asc/desc 皆然）。
+ * 字段声明 sortOrder 时按其序数比较（见 {@link toSortKey}）。
  * 纯函数，返回新数组，不修改入参。
  */
 export function sortItems<T>(items: T[], sort: SortRule[], registry: Registry, entityType: string): T[] {
   if (sort.length === 0) return items
+  const descriptors = sort.map((rule) => registry.get(entityType, rule.field) as FieldDescriptor<unknown> | undefined)
   const keyed = items.map((item) => ({
     item,
-    keys: sort.map((rule) => {
-      const descriptor = registry.get(entityType, rule.field)
-      return descriptor ? normalize(descriptor.get(item)) : undefined
+    keys: sort.map((_rule, i) => {
+      const descriptor = descriptors[i]
+      return toSortKey(descriptor ? normalize(descriptor.get(item)) : undefined, descriptor)
     }),
   }))
   return keyed
     .sort((x, y) => {
       for (let i = 0; i < sort.length; i++) {
-        const cmp = compareValues(x.keys[i], y.keys[i])
+        const a = x.keys[i]
+        const b = y.keys[i]
+        // 空值恒排末尾（asc/desc 皆然）：在方向翻转之前短路，避免 desc 把空值翻到最前
+        if (a === undefined || b === undefined) {
+          if (a === undefined && b === undefined) continue
+          return a === undefined ? 1 : -1
+        }
+        const cmp = compareValues(a, b)
         if (cmp !== 0) return sort[i].dir === 'desc' ? -cmp : cmp
       }
       return 0
@@ -281,6 +304,7 @@ function optionLabel(descriptor: FieldDescriptor<unknown>, id: string): string {
  * - groupBy 为 null：返回单一全量桶。
  * - select：按选项 id 分桶，label 取自选项。
  * - date + dateBucket：按 day/week/month 分桶。
+ * - datetime（yyyy-MM-dd HH:mm）：按 day 分桶（截取日期部分）。
  * - multiSelect：按已选 id 组合分桶（label 为各选项 label 拼接）。
  * - 其余类型：按值字符串分桶。空值落入 '' 桶，label 为「（空）」。
  * 仅产出桶划分，不含聚合（计数等由 UI 现算）。
@@ -297,6 +321,11 @@ export function groupItems<T>(items: T[], groupBy: string | null, registry: Regi
     let label: string
     if (descriptor.type === 'date' && descriptor.dateBucket) {
       key = dateBucketKey(String(value ?? ''), descriptor.dateBucket)
+      label = key || '（空）'
+    } else if (descriptor.type === 'datetime') {
+      // datetime（yyyy-MM-dd HH:mm）按 day 分桶：截取日期部分；空值落 '' 桶
+      const s = String(value ?? '')
+      key = s.slice(0, 10)
       label = key || '（空）'
     } else if (descriptor.type === 'multiSelect') {
       const ids = Array.isArray(value) ? (value as unknown[]).map(String) : value === undefined ? [] : [String(value)]

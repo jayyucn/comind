@@ -22,6 +22,8 @@ use crate::storage::entity::block_version::{block_version_select_cols, row_to_bl
 use crate::storage::entity::notification::{notification_select_cols, row_to_notification_js};
 use crate::storage::entity::saved_filter::{saved_filter_select_cols, row_to_saved_filter_js};
 use crate::storage::entity::screen_view::{screen_view_select_cols, row_to_screen_view_js};
+#[cfg(target_arch = "wasm32")]
+use crate::storage::entity::book::{book_highlight_select_cols, book_progress_select_cols, row_to_book_highlight_js, row_to_book_progress_js};
 
 #[cfg(target_arch = "wasm32")]
 pub struct SqlJsAdapter {
@@ -190,6 +192,11 @@ impl SqlJsAdapter {
         Self::exec(db, "CREATE TABLE IF NOT EXISTS SavedFilter (id TEXT PRIMARY KEY, name TEXT NOT NULL, query_json TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
 
         Self::exec(db, "CREATE TABLE IF NOT EXISTS screen_view (id TEXT PRIMARY KEY, entity TEXT NOT NULL DEFAULT 'block', parent_id TEXT, name TEXT NOT NULL, query_json TEXT NOT NULL, view_type TEXT NOT NULL DEFAULT 'table', group_by TEXT NOT NULL DEFAULT '', is_default INTEGER NOT NULL DEFAULT 0, sort_order INTEGER NOT NULL DEFAULT 0, config TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
+
+        // 阅读器高亮/进度（ADR-0040 D5/D6/D7）：仅本地，绝不注册进 SyncTable。
+        Self::exec(db, "CREATE TABLE IF NOT EXISTS BookHighlight (id TEXT PRIMARY KEY, book_page_id TEXT NOT NULL, cfi TEXT NOT NULL, text TEXT NOT NULL, chapter TEXT NOT NULL, color TEXT NOT NULL DEFAULT 'yellow', block_id TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
+        Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_book_highlight_page ON BookHighlight(book_page_id);")?;
+        Self::exec(db, "CREATE TABLE IF NOT EXISTS BookProgress (book_page_id TEXT PRIMARY KEY, cfi TEXT NOT NULL, updated_at INTEGER NOT NULL);")?;
 
         Self::migrate_date_ref_event_ts(db)?;
         Self::migrate_add_version_and_deleted_at(db)?;
@@ -1119,6 +1126,47 @@ impl ScreenViewRepository for SqlJsAdapter {
     }
 }
 
+// ---- Book highlights & progress（ADR-0040 D5/D6/D7：仅本地，不入 SyncTable） ----
+
+#[cfg(target_arch = "wasm32")]
+impl BookHighlightRepository for SqlJsAdapter {
+    fn get_by_book_page_id(&self, book_page_id: &str) -> Result<Vec<BookHighlight>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, &format!("SELECT {} FROM BookHighlight WHERE book_page_id = ? ORDER BY created_at ASC", book_highlight_select_cols()), &[book_page_id])?;
+        Ok(result.into_iter().map(|r| row_to_book_highlight_js(&r)).collect())
+    }
+
+    fn upsert(&mut self, highlight: &BookHighlight) -> Result<BookHighlight, Box<dyn std::error::Error>> {
+        // sql.js 把 NULL 归一为空串；block_id None → ""，读取时空串还原 None（同 Block.parent_id）
+        let block_id = highlight.block_id.as_deref().unwrap_or("");
+        Self::run_with_params(&self.db, "INSERT INTO BookHighlight (id, book_page_id, cfi, text, chapter, color, block_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET book_page_id = excluded.book_page_id, cfi = excluded.cfi, text = excluded.text, chapter = excluded.chapter, color = excluded.color, block_id = excluded.block_id, updated_at = excluded.updated_at", &[
+            &highlight.id, &highlight.book_page_id, &highlight.cfi, &highlight.text,
+            &highlight.chapter, &highlight.color, block_id,
+            &highlight.created_at.to_string(), &highlight.updated_at.to_string()
+        ])?;
+        Ok(highlight.clone())
+    }
+
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn std::error::Error>> {
+        Self::run_with_params(&self.db, "DELETE FROM BookHighlight WHERE id = ?", &[id])?;
+        Ok(())
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl BookProgressRepository for SqlJsAdapter {
+    fn get(&self, book_page_id: &str) -> Result<Option<BookProgress>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, &format!("SELECT {} FROM BookProgress WHERE book_page_id = ?", book_progress_select_cols()), &[book_page_id])?;
+        Ok(result.first().map(|r| row_to_book_progress_js(r)))
+    }
+
+    fn upsert(&mut self, progress: &BookProgress) -> Result<BookProgress, Box<dyn std::error::Error>> {
+        Self::run_with_params(&self.db, "INSERT INTO BookProgress (book_page_id, cfi, updated_at) VALUES (?, ?, ?) ON CONFLICT(book_page_id) DO UPDATE SET cfi = excluded.cfi, updated_at = excluded.updated_at", &[
+            &progress.book_page_id, &progress.cfi, &progress.updated_at.to_string()
+        ])?;
+        Ok(progress.clone())
+    }
+}
+
 #[cfg(target_arch = "wasm32")]
 impl SearchRepository for SqlJsAdapter {
     fn search(&self, _query: &str, _limit: usize) -> Result<Vec<SearchResult>, Box<dyn std::error::Error>> {
@@ -1236,6 +1284,14 @@ impl StorageAdapter for SqlJsAdapter {
     }
 
     fn notification_config(&mut self) -> &mut dyn NotificationConfigRepository {
+        self
+    }
+
+    fn book_highlights(&mut self) -> &mut dyn BookHighlightRepository {
+        self
+    }
+
+    fn book_progress(&mut self) -> &mut dyn BookProgressRepository {
         self
     }
 }

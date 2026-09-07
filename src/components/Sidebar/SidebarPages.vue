@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { useRouter, useRoute } from 'vue-router'
-import { BookOpen } from 'lucide-vue-next'
+import { Library } from 'lucide-vue-next'
+import { useRoute, useRouter } from 'vue-router'
 
 const router = useRouter()
 const route = useRoute()
@@ -14,7 +14,7 @@ function handleClick() {
 <template>
   <div class="nav-item pages-nav" :class="{ active: isActive() }" @click="handleClick">
     <span class="nav-icon">
-      <BookOpen :size="16" :stroke-width="1.75" />
+      <Library :size="16" :stroke-width="1.75" />
     </span>
     <span class="nav-label">页面库</span>
   </div>

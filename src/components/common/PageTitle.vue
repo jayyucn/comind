@@ -23,12 +23,13 @@ defineProps<{
   </div>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
 .page-title-container {
   display: flex;
   flex-direction: row;
   align-items: baseline;
-  padding: var(--space-2) var(--space-4) 0;
+  // 标题整体向下移动半个 nav header 高度，避开顶部透明 sticky-header（窗口控制区）的重叠区
+  padding: calc( var(--nav-height) / 2) var(--space-4) 0;
   gap: var(--space-2);
   flex-shrink: 0;
 }

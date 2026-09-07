@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsLeftIcon, ChevronsRight, CircleDot, MapPinHouse, MapPinHouseIcon } from 'lucide-vue-next'
+import { ChevronsLeft, ChevronsRight, MapPinHouse } from 'lucide-vue-next'
 
 const props = withDefaults(defineProps<{
   modelValue: string // yyyy-MM

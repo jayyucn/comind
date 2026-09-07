@@ -12,6 +12,10 @@ export const DEFAULT_OPS: Record<string, FilterOp[]> = {
   text: ['is', 'isNot', 'contains', 'notContains', 'isEmpty', 'isNotEmpty'],
   number: ['eq', 'neq', 'gt', 'lt', 'isEmpty', 'isNotEmpty'],
   date: ['before', 'after', 'between', 'within', 'isEmpty', 'isNotEmpty'],
+  // datetime（yyyy-MM-dd HH:mm）：只有 before/after 语义正确——
+  // 值对 day 目标「早于=严格早于该天 / 晚于=该天及之后」；between/within 的闭区间
+  // 会漏掉同日记录（'2026-09-06 10:44' <= '2026-09-06' 为 false），故不开放。
+  datetime: ['before', 'after', 'isEmpty', 'isNotEmpty'],
   select: ['is', 'isNot', 'isEmpty', 'isNotEmpty'],
   multiSelect: ['contains', 'notContains', 'hasAll', 'isEmpty', 'isNotEmpty'],
   boolean: ['is'],

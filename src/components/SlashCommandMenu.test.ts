@@ -103,7 +103,8 @@ describe('SlashCommandMenu', () => {
     vi.mocked(useEditorStore).mockReturnValue(mockEditorStore as any)
     
     const mockPropertyStore = {
-      setProperty: vi.fn()
+      setProperty: vi.fn(),
+      ensureTodo: vi.fn().mockResolvedValue(undefined)
     }
     vi.mocked(usePropertyStore).mockReturnValue(mockPropertyStore as any)
 
@@ -330,7 +331,8 @@ describe('SlashCommandMenu - Template List Subview', () => {
     vi.mocked(useEditorStore).mockReturnValue(mockEditorStore as any)
     
     const mockPropertyStore = {
-      setProperty: vi.fn()
+      setProperty: vi.fn(),
+      ensureTodo: vi.fn().mockResolvedValue(undefined)
     }
     vi.mocked(usePropertyStore).mockReturnValue(mockPropertyStore as any)
 
@@ -698,5 +700,49 @@ describe('SlashCommandMenu - Template List Subview', () => {
     expect(vm.visible).toBe(false)
     const userTemplatesStore = useUserTemplatesStore()
     expect(userTemplatesStore.remove).not.toHaveBeenCalled()
+  })
+})
+
+describe('SlashCommandMenu — priority 命令自动补 Todo', () => {
+  it('immediate 优先级命令（如 /high）写入 priority 并调用 ensureTodo', async () => {
+    const priorityCmd = {
+      id: 'high',
+      name: 'High',
+      alias: ['高'],
+      group: '属性',
+      icon: '🔴',
+      action: () => {},
+      propertyKey: 'priority',
+      propertyValue: 'High',
+      immediate: true
+    }
+    vi.mocked(useSlashCommands).mockReturnValue({
+      commands: [priorityCmd],
+      filterCommands: vi.fn(() => [priorityCmd]),
+      groupCommands: vi.fn(() => new Map([['属性', [priorityCmd]]])),
+      parseCommandInput: vi.fn(() => ({ command: null, argument: null }))
+    } as any)
+
+    const wrapper = mount(SlashCommandMenu, {
+      global: { stubs: { Teleport: { template: '<div><slot /></div>' } } }
+    })
+    document.dispatchEvent(new CustomEvent('slash-command-trigger', {
+      detail: {
+        view: { coordsAtPos: () => ({ left: 100, bottom: 200 }) },
+        position: 0,
+        range: { from: 0, to: 1 }
+      }
+    }))
+    await flushPromises()
+
+    const vm = wrapper.vm as any
+    vm.selectedIndex = 0
+    await flushPromises()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+    await flushPromises()
+
+    const store = vi.mocked(usePropertyStore())
+    expect(store.setProperty).toHaveBeenCalledWith('block-1', 'priority', 'High')
+    expect(store.ensureTodo).toHaveBeenCalledWith('block-1')
   })
 })

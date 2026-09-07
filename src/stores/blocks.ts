@@ -8,7 +8,6 @@ import { debounce } from '../utils/debounce'
 import { useBlockVersionStore } from './blockVersion'
 import { usePropertyStore } from './property'
 import { useBlockCardStore } from './blockCard'
-import type { BlockSnapshot } from '../types/blockVersion'
 
 import {
   pmPosToTextOffset,
@@ -1093,6 +1092,28 @@ export const useBlockStore = defineStore('blocks', () => {
       }
     }
 
+    // 1.5 不变量闸门：每个 page 始终至少保留 1 个 block（顶层）。
+    // 若本次删除会让某页顶层块归零，则保留该页「文档序最后一块」顶层块并清空其内容，
+    // 其余照删。配合 BlockList 乐观 UI 与 ensurePageBlocks 打开页补建，构成硬保证。
+    const clearContentIds = new Set<string>()
+    const affectedPages = new Set<string>()
+    for (const id of toDelete) {
+      const b = blocks.value.find(x => x.id === id)
+      if (b) affectedPages.add(b.pageId)
+    }
+    for (const pageId of affectedPages) {
+      const pageBlocks = blocks.value.filter(b => b.pageId === pageId)
+      const remainingTopLevel = pageBlocks.filter(b => !b.parentId && !toDelete.has(b.id))
+      if (remainingTopLevel.length > 0) continue
+      const deletableTopLevel = pageBlocks
+        .filter(b => !b.parentId && toDelete.has(b.id))
+        .sort((a, b) => a.pos - b.pos)
+      if (deletableTopLevel.length === 0) continue
+      const keep = deletableTopLevel[deletableTopLevel.length - 1]
+      toDelete.delete(keep.id)
+      clearContentIds.add(keep.id)
+    }
+
     // 2. 保存快照（深拷贝当前状态，用于 RPC 失败时回滚）
     const snapshot = blocks.value.map(b => ({ ...b }))
 
@@ -1104,6 +1125,11 @@ export const useBlockStore = defineStore('blocks', () => {
       blockCardStore.invalidate(id)
     }
     blocks.value = blocks.value.filter(b => !toDelete.has(b.id))
+
+    // 1.6 不变量闸门续：清空被保留块的内容，使页面收尾为恰好 1 个空 block
+    for (const id of clearContentIds) {
+      await updateBlockContent(id, '')
+    }
 
     // 4. 触发 tree rebuild
     structureVersion.value++
@@ -1140,6 +1166,12 @@ export const useBlockStore = defineStore('blocks', () => {
   async function updateBlockContent(blockId: string, content: string) {
     const block = blocks.value.find(b => b.id === blockId)
     if (!block) return
+
+    // 内容无变化守卫：编辑器 blur/unmount 等路径会无条件提交当前文本（handleSave），
+    // 若与已存内容相同仍继续会重打 updatedAt 并触发落库（Rust update 无条件
+    // updated_at=now + version+1）——只点进点出不改字也会刷新「更新时间」。
+    // 相同内容直接返回：不重打时间戳、不调度保存（flushSave 无 pending 即空转）。
+    if (block.content === content) return
 
     block.content = content
     block.updatedAt = Date.now()

@@ -20,11 +20,33 @@ pub fn run() {
 
     log::info!("Starting comind application");
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_os::init())
-        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_fs::init());
+
+    // Dev-only AI debug bridge (tauri-plugin-mcp). Registered only in debug
+    // builds; release builds never compile/register it. Uses TCP on
+    // 127.0.0.1:4000 instead of the platform IPC socket: tauri-plugin-mcp
+    // v0.3.1's Windows IPC path/token discovery is broken (the Rust plugin
+    // uses %TEMP%\tauri-mcp.sock as the pipe name while the npm MCP server
+    // hardcodes \\.\pipe\tmp\tauri-mcp.sock and can never read the token
+    // sidecar), whereas TCP aligns both sides including the token file
+    // (%TEMP%\tauri-mcp-4000.token). Default target webview is "main"; the
+    // reader windows (reader-<bookId>) are reached by passing window_label
+    // explicitly.
+    #[cfg(debug_assertions)]
+    {
+        builder = builder.plugin(tauri_plugin_mcp::init_with_config(
+            tauri_plugin_mcp::PluginConfig::new("comind".to_string())
+                .start_socket_server(true)
+                .tcp_localhost(4000)
+                .default_webview_label("main".to_string()),
+        ));
+    }
+
+    builder
         .setup(|app| {
             let app_handle = app.handle();
 
@@ -143,6 +165,11 @@ pub fn run() {
             commands::save_saved_filter,
             commands::update_saved_filter,
             commands::delete_saved_filter,
+            commands::upsert_book_highlight,
+            commands::delete_book_highlight,
+            commands::get_book_highlights,
+            commands::get_book_progress,
+            commands::upsert_book_progress,
             commands::get_screen_views,
             commands::create_screen,
             commands::create_tab,
@@ -178,6 +205,8 @@ pub fn run() {
             commands::save_asset_file,
             commands::read_asset_file,
             commands::delete_asset_file,
+            commands::save_book_file,
+            commands::read_book_file,
             commands::export_to_markdown,
             commands::import_from_markdown,
             commands::get_sync_config,
@@ -219,6 +248,8 @@ pub fn run() {
             commands::apply_relationship_type_to_block_content,
             commands::extract_links_from_content,
             commands::check_has_typed_link_to_target,
+            #[cfg(debug_assertions)]
+            commands::manage_window,
             // S6: date-parser / recurrence / journal-detect
             commands::parse_date_input,
             commands::parse_date_time_input,

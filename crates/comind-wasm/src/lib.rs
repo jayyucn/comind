@@ -817,4 +817,48 @@ mod wasm_impl {
             Ok(to_js_value(json!({"success": true})))
         })
     }
+
+    // ---- Book highlights & progress（ADR-0040 D5/D6/D7：仅本地，不入 SyncTable） ----
+
+    #[wasm_bindgen]
+    pub fn upsert_book_highlight(highlight: &str) -> Result<JsValue, JsValue> {
+        let highlight: BookHighlight = serde_json::from_str(highlight)
+            .map_err(|e| JsValue::from_str(&format!("Failed to parse highlight: {}", e)))?;
+        with_adapter(|adapter| {
+            let saved = BookService::upsert_highlight(adapter, &highlight)?;
+            Ok(to_js_value(saved))
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn delete_book_highlight(id: &str) -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            BookService::delete_highlight(adapter, id)?;
+            Ok(to_js_value(json!({"success": true})))
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn get_book_highlights(book_page_id: &str) -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            let highlights = BookService::get_highlights(adapter, book_page_id)?;
+            Ok(to_js_value(highlights))
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn get_book_progress(book_page_id: &str) -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            let progress = BookService::get_progress(adapter, book_page_id)?;
+            Ok(to_js_value(progress))
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn upsert_book_progress(book_page_id: &str, cfi: &str) -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            let progress = BookService::upsert_progress(adapter, book_page_id, cfi)?;
+            Ok(to_js_value(progress))
+        })
+    }
 }

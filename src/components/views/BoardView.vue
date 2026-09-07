@@ -107,7 +107,7 @@ function metaChips(item: T): { text: string; color?: string; overdue?: boolean }
         const opt = resolveOptions(f).find((o) => o.id === v)
         if (opt) out.push({ text: opt.label, color: opt.color })
       }
-    } else if (f.type === 'date') {
+    } else if (f.type === 'date' || f.type === 'datetime') {
       const txt = formatDate(raw)
       if (txt) out.push({ text: `⏰ ${txt}`, overdue: isOverdue(raw) })
     } else {

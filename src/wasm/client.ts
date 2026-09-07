@@ -14,7 +14,7 @@ import type {
   UserTemplate, SearchResult, BlockUpdate, BlockSaveResult, PageUpdate,
   BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig, BlockVersion,
   Notification, DateRefRecord, IncompleteTask, BlockCard, SavedFilterRust, ScreenViewRust,
-  NotificationSettings, PageWithBlocks
+  NotificationSettings, PageWithBlocks, BookHighlightRust, BookProgressRust
 } from './types'
 
 export interface CoreClient {
@@ -109,6 +109,13 @@ export interface CoreClient {
   deleteScreenView(id: string): Promise<void>
   setDefaultScreen(id: string): Promise<ScreenViewRust>
 
+  // Book highlights & progress（ADR-0040：仅桌面本地，不入 SyncTable）
+  upsertBookHighlight(highlight: BookHighlightRust): Promise<BookHighlightRust>
+  deleteBookHighlight(id: string): Promise<void>
+  getBookHighlights(bookPageId: string): Promise<BookHighlightRust[]>
+  getBookProgress(bookPageId: string): Promise<BookProgressRust | null>
+  upsertBookProgress(bookPageId: string, cfi: string): Promise<BookProgressRust>
+
   // S3/S6 Rust content-parser commands（web 无实现，Tauri 直通）
   parseDateInput(input: string): Promise<string | null>
   normalizeJournalTitle(title: string): Promise<string | null>
@@ -147,6 +154,27 @@ class TauriClient implements CoreClient {
 
   async deleteSavedFilter(id: string): Promise<void> {
     return invoke('delete_saved_filter', { id })
+  }
+
+  // ---- Book highlights & progress（ADR-0040：仅桌面本地，不入 SyncTable） ----
+  async upsertBookHighlight(highlight: BookHighlightRust): Promise<BookHighlightRust> {
+    return invoke('upsert_book_highlight', { highlight })
+  }
+
+  async deleteBookHighlight(id: string): Promise<void> {
+    return invoke('delete_book_highlight', { id })
+  }
+
+  async getBookHighlights(bookPageId: string): Promise<BookHighlightRust[]> {
+    return invoke('get_book_highlights', { bookPageId })
+  }
+
+  async getBookProgress(bookPageId: string): Promise<BookProgressRust | null> {
+    return invoke('get_book_progress', { bookPageId })
+  }
+
+  async upsertBookProgress(bookPageId: string, cfi: string): Promise<BookProgressRust> {
+    return invoke('upsert_book_progress', { bookPageId, cfi })
   }
 
   // ---- Screens & Tabs（两级层级） ----
@@ -461,6 +489,27 @@ class WasmClientAdapter implements CoreClient {
     throw new Error('WASM: saved filters not supported')
   }
 
+  // ---- Book highlights & progress（ADR-0040：仅桌面本地，不入 SyncTable） ----
+  async upsertBookHighlight(highlight: BookHighlightRust): Promise<BookHighlightRust> {
+    return this.wasm.upsert_book_highlight(JSON.stringify(highlight))
+  }
+
+  async deleteBookHighlight(id: string): Promise<void> {
+    await this.wasm.delete_book_highlight(id)
+  }
+
+  async getBookHighlights(bookPageId: string): Promise<BookHighlightRust[]> {
+    return this.wasm.get_book_highlights(bookPageId)
+  }
+
+  async getBookProgress(bookPageId: string): Promise<BookProgressRust | null> {
+    return this.wasm.get_book_progress(bookPageId)
+  }
+
+  async upsertBookProgress(bookPageId: string, cfi: string): Promise<BookProgressRust> {
+    return this.wasm.upsert_book_progress(bookPageId, cfi)
+  }
+
   // ---- Screens & Tabs（两级层级，WASM 暂不支持） ----
   async getScreenViews(_entity: string): Promise<ScreenViewRust[]> {
     return []
@@ -676,7 +725,7 @@ class WasmClientAdapter implements CoreClient {
     throw new Error('NotificationSettings not available on web')
   }
 
-  async saveNotificationSettings(config: NotificationSettings): Promise<void> {
+  async saveNotificationSettings(_config: NotificationSettings): Promise<void> {
     throw new Error('NotificationSettings not available on web')
   }
 
@@ -685,7 +734,7 @@ class WasmClientAdapter implements CoreClient {
     return []
   }
 
-  async syncPayloadForBlock(blockId: string): Promise<void> {
+  async syncPayloadForBlock(_blockId: string): Promise<void> {
     // Web: notification engine requires Rust backend, no-op
   }
 

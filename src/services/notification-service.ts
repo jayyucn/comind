@@ -73,7 +73,7 @@ export class NotificationService {
   // All business logic (recurrence calculation, quiet-hours, dedup anchoring,
   // buildPayload, fireNotification) is now in comind-core NotificationService.
 
-  async checkAndFire(settings: NotificationSettings = DEFAULT_NOTIFICATION_SETTINGS): Promise<Notification[]> {
+  async checkAndFire(_settings: NotificationSettings = DEFAULT_NOTIFICATION_SETTINGS): Promise<Notification[]> {
     return this.client.checkAndFire()
   }
 

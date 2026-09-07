@@ -5,11 +5,12 @@
  * 详细设计见 docs/2-architecture/generic-query-system.md。
  */
 
-/** 内置字段数据类型。v1 引擎仅实现这六种；`(string & {})` 使联合保持开放，允许后续自定义类型（不丢失字面量提示）。 */
+/** 内置字段数据类型。`(string & {})` 使联合保持开放，允许后续自定义类型（不丢失字面量提示）。 */
 export type FieldType =
   | 'text'
   | 'number'
   | 'date'
+  | 'datetime'
   | 'select'
   | 'multiSelect'
   | 'boolean'
@@ -57,6 +58,12 @@ export interface FieldDescriptor<T = unknown> {
   /** select / multiSelect 专用：静态数组或同步 provider。 */
   options?: Option[] | (() => Option[])
   /**
+   * select 专用：显式排序顺序（选项 id 列表，如 status 的 ['Doing','Todo','Done','Canceled']）。
+   * sortItems 按此把值映射为序数比较；未列出的值并列排在最后（空值语义不变，仍恒排末尾）。
+   * 缺省时 select 回退默认字母序。
+   */
+  sortOrder?: string[]
+  /**
    * 单元格交互可配置：缺省 true（select 弹下拉编辑、boolean 勾选）。
    * 设 false 时 TableView 渲染为只读展示（如 Page.type 只读标签）——与筛选交互无关，
    * 筛选值编辑器仍按 type 正常工作。
@@ -76,14 +83,20 @@ export interface FieldDescriptor<T = unknown> {
  *   实现「字段间比较」（如「字数 > 子页面数」）。
  * - `recordRef`：跨记录字段引用（业务无关）——取另一实体（entityType + recordId）的某字段值作比较目标。
  *   求值需 {@link QueryContext.getById} 提供按 entityType+id 取实体的能力；不提供时一律非匹配。
+ * - `relativeDate`：动态日期值（date/datetime 专用）——expr 为相对日期表达式
+ *   （快捷 token：today/yesterday/tomorrow/weekStart/weekEnd/monthStart/monthEnd，
+ *   或键入语法：今天/明天/+3/下周一…，见 `src/utils/date-parser.ts`）。
+ *   每次求值时刻 resolve 成当天 `YYYY-MM-DD`，因此条件会「跟着今天走」：
+ *   页面每次打开/数据变化重新求值时自动取最新日期，而非固定在设置那天。
  *
- * 序列化：三者皆为纯 JSON 对象，随 ViewQuery 直接 JSON 往返；旧版裸字面量由
+ * 序列化：皆为纯 JSON 对象，随 ViewQuery 直接 JSON 往返；旧版裸字面量由
  * `parseQuery` 自动包裹为 `literal`（向前兼容）。
  */
 export type ConditionValue =
   | { kind: 'literal'; value: unknown }
   | { kind: 'field'; field: string }
   | { kind: 'recordRef'; entityType: string; recordId: string; field: string }
+  | { kind: 'relativeDate'; expr: string }
 
 /**
  * 可被引用为「另一条记录」的通用载体（业务无关）。

@@ -162,7 +162,7 @@ function headerIconOf(col: TableColumnConfig) {
   const type = fieldOf(col.key)?.type
   if (type === 'text') return Type
   if (type === 'number') return Hash
-  if (type === 'date') return Calendar
+  if (type === 'date' || type === 'datetime') return Calendar
   if (type === 'select') return ListFilter
   if (type === 'multiSelect') return ListChecks
   if (type === 'boolean') return CheckSquare
@@ -474,6 +474,13 @@ function resetColumnWidth() {
 // ── 渲染辅助 ──
 function formatDate(day?: unknown): string {
   if (typeof day !== 'string' || !day) return ''
+  // datetime（yyyy-MM-dd HH:mm）：显示 MM-dd HH:mm
+  if (day.length > 10 && day.includes(' ')) {
+    const [date, time] = day.split(' ')
+    const d = new Date(date)
+    if (Number.isNaN(d.getTime())) return day
+    return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${time}`
+  }
   const d = new Date(day)
   if (Number.isNaN(d.getTime())) return String(day)
   const m = String(d.getMonth() + 1).padStart(2, '0')
@@ -483,7 +490,9 @@ function formatDate(day?: unknown): string {
 
 function isOverdue(day?: unknown): boolean {
   if (typeof day !== 'string' || !day) return false
-  const d = new Date(day)
+  // datetime：取日期部分判断（updated_at 无 overdue 语义，此处仅 date 列消费）
+  const datePart = day.includes(' ') ? day.slice(0, 10) : day
+  const d = new Date(datePart)
   if (Number.isNaN(d.getTime())) return false
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -650,8 +659,8 @@ function groupTotal(key: string): number {
                   >{{ optionLabel(resolveOptions(fieldOf(col.key)), v) }}</span>
                 </template>
 
-                <!-- date：按 role overdue-date 过去标红 -->
-                <template v-else-if="fieldOf(col.key)?.type === 'date'">
+                <!-- date / datetime：按 role overdue-date 过去标红 -->
+                <template v-else-if="fieldOf(col.key)?.type === 'date' || fieldOf(col.key)?.type === 'datetime'">
                   <span
                     v-if="formatDate(valueOf(item, col))"
                     class="cell-deadline"
