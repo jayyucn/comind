@@ -28,6 +28,8 @@ use crate::storage::entity::screen_view::{screen_view_create, screen_view_delete
 use crate::storage::entity::notification_config::{notification_config_get, notification_config_save};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::book::{book_highlight_delete, book_highlight_get_by_book_page_id, book_highlight_upsert, book_progress_get, book_progress_upsert};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::storage::entity::page_snapshot::{page_snapshot_create, page_snapshot_get_by_page_id};
 
 pub struct SQLiteAdapter {
     pub conn: Connection,
@@ -281,6 +283,19 @@ impl SQLiteAdapter {
                 cfi             TEXT NOT NULL,
                 updated_at      INTEGER NOT NULL
             );
+
+            -- Ideas 页不可变快照（ADR-0042）：page_id 幂等键（一页至多一份、永不重物化），
+            -- date=页面标题日期 yyyy-MM-dd，version=content_json 结构版本（当前 1），
+            -- content_json=flat blocks + properties map（与库内存储同构）。
+            -- 仅本地表，先不进 SyncTable。
+            CREATE TABLE IF NOT EXISTS page_snapshots (
+                page_id         TEXT PRIMARY KEY,
+                date            TEXT NOT NULL,
+                version         INTEGER NOT NULL DEFAULT 1,
+                content_json    TEXT NOT NULL,
+                created_at      INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_page_snapshots_date ON page_snapshots(date);
 
             CREATE INDEX IF NOT EXISTS idx_page_blockId        ON Page(block_id);
             CREATE INDEX IF NOT EXISTS idx_page_type           ON Page(type);
@@ -913,6 +928,20 @@ impl StorageAdapter for SQLiteAdapter {
     fn book_progress(&mut self) -> &mut dyn BookProgressRepository {
         self
     }
+
+    fn page_snapshots(&mut self) -> &mut dyn PageSnapshotRepository {
+        self
+    }
+}
+
+impl PageSnapshotRepository for SQLiteAdapter {
+    fn get_by_page_id(&self, page_id: &str) -> Result<Option<PageSnapshot>, Box<dyn Error>> {
+        page_snapshot_get_by_page_id(&self.conn, page_id)
+    }
+
+    fn create(&mut self, snapshot: &PageSnapshot) -> Result<PageSnapshot, Box<dyn Error>> {
+        page_snapshot_create(&self.conn, snapshot)
+    }
 }
 
 impl NotificationConfigRepository for SQLiteAdapter {
@@ -1468,6 +1497,20 @@ impl<'a> StorageAdapter for TxContext<'a> {
     fn book_progress(&mut self) -> &mut dyn BookProgressRepository {
         self
     }
+
+    fn page_snapshots(&mut self) -> &mut dyn PageSnapshotRepository {
+        self
+    }
+}
+
+impl<'a> PageSnapshotRepository for TxContext<'a> {
+    fn get_by_page_id(&self, page_id: &str) -> Result<Option<PageSnapshot>, Box<dyn Error>> {
+        page_snapshot_get_by_page_id(&self.conn, page_id)
+    }
+
+    fn create(&mut self, snapshot: &PageSnapshot) -> Result<PageSnapshot, Box<dyn Error>> {
+        page_snapshot_create(&self.conn, snapshot)
+    }
 }
 
 impl<'a> SavedFilterRepository for TxContext<'a> {
@@ -1705,5 +1748,117 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 2, "both book tables must exist after migration");
+    }
+
+    #[test]
+    fn page_snapshots_migration_is_idempotent() {
+        let adapter = SQLiteAdapter::open_in_memory().unwrap();
+        // 模拟老库升级：升级前的库没有这张表
+        adapter
+            .conn
+            .execute_batch("DROP TABLE IF EXISTS page_snapshots;")
+            .unwrap();
+        // 新代码 open 时重跑 init_schema：建表且不炸
+        SQLiteAdapter::init_schema(&adapter.conn).unwrap();
+        // 幂等：重复执行为 no-op，老库上不报错
+        SQLiteAdapter::init_schema(&adapter.conn).unwrap();
+
+        // 建表含 version 列（content_json 结构版本，默认 1）
+        let version_default: String = adapter
+            .conn
+            .query_row("SELECT dflt_value FROM pragma_table_info('page_snapshots') WHERE name='version'", [], |r| r.get(0))
+            .unwrap_or_else(|_| String::new());
+        assert_eq!(version_default, "1", "version column must default to 1");
+
+        let count: i64 = adapter
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='page_snapshots'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "page_snapshots table must exist after migration");
+    }
+
+    #[test]
+    fn page_snapshot_repository_create_and_get_roundtrip() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+
+        let snap = PageSnapshot {
+            page_id: "page-yesterday".into(),
+            date: "2026-09-06".into(),
+            version: 1,
+            content_json: r#"{"blocks":[],"properties":{}}"#.into(),
+            created_at: 1234,
+        };
+        let created = adapter.page_snapshots().create(&snap).unwrap();
+        assert_eq!(created.page_id, "page-yesterday");
+        assert_eq!(created.content_json, snap.content_json);
+
+        let got = adapter.page_snapshots().get_by_page_id("page-yesterday").unwrap();
+        assert!(got.is_some());
+        assert_eq!(got.unwrap().date, "2026-09-06");
+
+        assert!(adapter.page_snapshots().get_by_page_id("no-such-page").unwrap().is_none());
+    }
+
+    #[test]
+    fn page_snapshot_create_is_idempotent_never_overwrites() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+
+        let snap1 = PageSnapshot {
+            page_id: "page-yesterday".into(),
+            date: "2026-09-06".into(),
+            version: 1,
+            content_json: r#"{"blocks":[],"properties":{}}"#.into(),
+            created_at: 1111,
+        };
+        // 第二次物化（同 page_id，不同 content/created_at——模拟永不重物化语义）
+        let snap2 = PageSnapshot {
+            page_id: "page-yesterday".into(),
+            date: "2026-09-06".into(),
+            version: 1,
+            content_json: r#"{"blocks":[{"id":"new"}],"properties":{}}"#.into(),
+            created_at: 2222,
+        };
+
+        let first = adapter.page_snapshots().create(&snap1).unwrap();
+        let second = adapter.page_snapshots().create(&snap2).unwrap();
+
+        // 第二次 create 是 no-op：返回**既有行**，快照不被改写（A2 历史不可变）
+        assert_eq!(second.created_at, 1111, "existing snapshot must be kept, not overwritten");
+        assert_eq!(second.content_json, snap1.content_json);
+        assert_eq!(first.created_at, 1111);
+
+        let got = adapter.page_snapshots().get_by_page_id("page-yesterday").unwrap().unwrap();
+        assert_eq!(got.content_json, snap1.content_json);
+    }
+
+    #[test]
+    fn page_snapshot_roundtrip_inside_transaction() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+
+        let snap = PageSnapshot {
+            page_id: "page-tx".into(),
+            date: "2026-09-05".into(),
+            version: 1,
+            content_json: r#"{"blocks":[],"properties":{}}"#.into(),
+            created_at: 99,
+        };
+
+        // TxContext 内读写（事务路径复用 Executor 自由函数，ADR-0018）
+        adapter
+            .transaction(|tx| {
+                tx.page_snapshots().create(&snap)?;
+                let got = tx.page_snapshots().get_by_page_id("page-tx")?;
+                assert!(got.is_some());
+                Ok(())
+            })
+            .unwrap();
+
+        // 事务提交后可见
+        let got = adapter.page_snapshots().get_by_page_id("page-tx").unwrap();
+        assert!(got.is_some());
     }
 }

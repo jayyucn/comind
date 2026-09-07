@@ -8,6 +8,7 @@ pub mod saved_filter;
 pub mod screen_view;
 pub mod notification_config;
 pub mod page;
+pub mod page_snapshot;
 pub mod property;
 pub mod relationship_type;
 pub mod template;

@@ -24,6 +24,8 @@ use crate::storage::entity::saved_filter::{saved_filter_select_cols, row_to_save
 use crate::storage::entity::screen_view::{screen_view_select_cols, row_to_screen_view_js};
 #[cfg(target_arch = "wasm32")]
 use crate::storage::entity::book::{book_highlight_select_cols, book_progress_select_cols, row_to_book_highlight_js, row_to_book_progress_js};
+#[cfg(target_arch = "wasm32")]
+use crate::storage::entity::page_snapshot::{page_snapshot_select_cols, row_to_page_snapshot_js};
 
 #[cfg(target_arch = "wasm32")]
 pub struct SqlJsAdapter {
@@ -197,6 +199,13 @@ impl SqlJsAdapter {
         Self::exec(db, "CREATE TABLE IF NOT EXISTS BookHighlight (id TEXT PRIMARY KEY, book_page_id TEXT NOT NULL, cfi TEXT NOT NULL, text TEXT NOT NULL, chapter TEXT NOT NULL, color TEXT NOT NULL DEFAULT 'yellow', block_id TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_book_highlight_page ON BookHighlight(book_page_id);")?;
         Self::exec(db, "CREATE TABLE IF NOT EXISTS BookProgress (book_page_id TEXT PRIMARY KEY, cfi TEXT NOT NULL, updated_at INTEGER NOT NULL);")?;
+
+        // Ideas 页不可变快照（ADR-0042）：page_id 幂等键（一页至多一份、永不重物化），
+        // date=页面标题日期 yyyy-MM-dd，version=content_json 结构版本（当前 1），
+        // content_json=flat blocks + properties map（与库内存储同构）。
+        // 仅本地表，先不进 SyncTable。与 sqlite.rs init_schema 逐列一致。
+        Self::exec(db, "CREATE TABLE IF NOT EXISTS page_snapshots (page_id TEXT PRIMARY KEY, date TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, content_json TEXT NOT NULL, created_at INTEGER NOT NULL);")?;
+        Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_page_snapshots_date ON page_snapshots(date);")?;
 
         Self::migrate_date_ref_event_ts(db)?;
         Self::migrate_add_version_and_deleted_at(db)?;
@@ -1167,6 +1176,27 @@ impl BookProgressRepository for SqlJsAdapter {
     }
 }
 
+// ---- Ideas 页不可变快照（ADR-0042）：page_id 幂等键，永不重物化、永不改写 ----
+
+#[cfg(target_arch = "wasm32")]
+impl PageSnapshotRepository for SqlJsAdapter {
+    fn get_by_page_id(&self, page_id: &str) -> Result<Option<PageSnapshot>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, &format!("SELECT {} FROM page_snapshots WHERE page_id = ?", page_snapshot_select_cols()), &[page_id])?;
+        Ok(result.first().map(|r| row_to_page_snapshot_js(r)))
+    }
+
+    fn create(&mut self, snapshot: &PageSnapshot) -> Result<PageSnapshot, Box<dyn std::error::Error>> {
+        // INSERT OR IGNORE：已存在则保留旧行（永不重物化），随后回读返回实际落库行
+        Self::run_with_params(&self.db, "INSERT OR IGNORE INTO page_snapshots (page_id, date, version, content_json, created_at) VALUES (?, ?, ?, ?, ?)", &[
+            &snapshot.page_id, &snapshot.date, &snapshot.version.to_string(),
+            &snapshot.content_json, &snapshot.created_at.to_string()
+        ])?;
+        PageSnapshotRepository::get_by_page_id(self, &snapshot.page_id)?.ok_or_else(|| {
+            Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "PageSnapshot not found after insert")) as Box<dyn std::error::Error>
+        })
+    }
+}
+
 #[cfg(target_arch = "wasm32")]
 impl SearchRepository for SqlJsAdapter {
     fn search(&self, _query: &str, _limit: usize) -> Result<Vec<SearchResult>, Box<dyn std::error::Error>> {
@@ -1292,6 +1322,10 @@ impl StorageAdapter for SqlJsAdapter {
     }
 
     fn book_progress(&mut self) -> &mut dyn BookProgressRepository {
+        self
+    }
+
+    fn page_snapshots(&mut self) -> &mut dyn PageSnapshotRepository {
         self
     }
 }
