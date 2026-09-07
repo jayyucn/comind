@@ -13,12 +13,11 @@
  * - handleDragEnd 将 tree 变更同步回 store（parentId + pos）
  * - store 变更通过 structureVersion watch 触发 syncFromStore 重建树
  */
-import { ref, watch, onMounted, onBeforeUnmount, provide, computed, toRef } from 'vue'
+import { ref, watch, onMounted, onBeforeUnmount, provide, computed } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
 import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
 import { usePageStore } from '../stores/pages'
-import { useIdeasFreeze } from '../composables/useIdeasFreeze'
 import Block from './Block/index.vue'
 import BlockDropIndicator from './Block/components/BlockDropIndicator.vue'
 import { useSharedDropIndicator } from './Block/composables/useBlockDragDrop'
@@ -38,7 +37,6 @@ const props = defineProps<{
 const blockStore = useBlockStore()
 const editorStore = useEditorStore()
 const pageStore = usePageStore()
-const { isFrozen } = useIdeasFreeze(toRef(props, 'pageId'))
 
 /** 当前页面的根 Block ID */
 const rootBlockId = computed(() => pageStore.getPage(props.pageId)?.blockId ?? null)
@@ -53,7 +51,6 @@ function syncFromStore() {
 
 // ── 拖拽结束：tree 已被 vue-draggable-plus 修改，同步回 store ──
 function handleDragEnd() {
-  if (isFrozen.value) return
   const changed = syncTreeToStore(tree.value, rootBlockId.value, blockStore.blocks)
   for (const id of changed) {
     blockStore.scheduleSave(id)
@@ -63,7 +60,6 @@ function handleDragEnd() {
 
 // ── 双击底部留白区域创建新 block ──
 async function handleCreateBlock() {
-  if (isFrozen.value) return
   const newBlock = await blockStore.createBlock({
     pageId: props.pageId,
     parentId: rootBlockId.value,
@@ -171,9 +167,7 @@ function handleDocMouseUp(e: MouseEvent) {
   if (selection.textDragAnchor.value) {
     const blockId = selection.textDragAnchor.value.blockId
     selection.clearTextTracking()
-    if (!isFrozen.value) {
-      editorStore.activateBlock(blockId)
-    }
+    editorStore.activateBlock(blockId)
     return
   }
 
@@ -195,7 +189,7 @@ function handleDocMouseUp(e: MouseEvent) {
     const fromProperty = selection.trackingFromProperty.value
     selection.clearTracking()
     // 属性区起点（ADR-0035 D6）只做块选区，单击不激活编辑器
-    if (!isFrozen.value && !fromProperty) {
+    if (!fromProperty) {
       editorStore.activateBlock(blockId)
     }
   }
@@ -233,14 +227,6 @@ async function handleDocKeyDown(e: KeyboardEvent) {
   if (isInSidebar(e)) return
   // 输入框内 Backspace/Ctrl+C 保留控件自身行为（如搜索框、重命名输入）
   if (isInEditableInput(e)) return
-  if (isFrozen.value) {
-    // 冻结时只允许 Escape 清除选区
-    if (e.key === 'Escape') {
-      selection.clearSelection()
-      selection.clearTextSelection()
-    }
-    return
-  }
   // 非 Ctrl/Cmd+V 键击一律清 Shift+V 标志，避免 keydown 后 paste 未触发导致残留污染
   if ((e.key === 'v' || e.key === 'V') && (e.ctrlKey || e.metaKey)) {
     pasteShiftHeld = e.shiftKey
@@ -354,8 +340,6 @@ function handleDocKeyDownCapture(e: KeyboardEvent) {
   if (isInEditableInput(e)) return
   e.preventDefault()
   e.stopPropagation()
-  // 冻结态（只读视图）：仅屏蔽浏览器默认，不全选
-  if (isFrozen.value) return
   const activeId = editorStore.activeBlockId
   const activeInPage = !!activeId
     && blockStore.getBlock(activeId)?.pageId === props.pageId
@@ -406,10 +390,9 @@ async function handleDocPaste(e: ClipboardEvent) {
   }
   // 输入框/非 TipTap contenteditable 内粘贴走浏览器默认（文本进输入框）
   if (isInEditableInput(e)) return
-  // 先消费 Shift+V 标志（无论冻结与否），避免残留污染下一次普通粘贴
+  // 先消费 Shift+V 标志（无论粘贴分发与否），避免残留污染下一次普通粘贴
   const wasShiftPaste = pasteShiftHeld
   pasteShiftHeld = false
-  if (isFrozen.value) return
   // D9：Shift+V 纯文本粘贴，交还默认行为（单 block 落文本）
   if (wasShiftPaste) return
 
@@ -512,11 +495,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="block-list" :class="{ 'is-frozen': isFrozen }">
+  <div class="block-list">
     <VueDraggable
       v-model="tree"
       :group="{ name: 'blocks-' + pageId, pull: true, put: true }"
-      :disabled="isFrozen"
       handle=".bullet-dot"
       filter=".bullet-chevron"
       :prevent-on-filter="false"
@@ -533,8 +515,8 @@ onBeforeUnmount(() => {
     >
       <Block v-for="node in tree" :key="node.id" :node="node" :page-id="pageId" :depth="0" />
     </VueDraggable>
-    <!-- 底部留白：冻结时不允许双击创建新 block -->
-    <div v-if="!isFrozen" class="block-list-padding" @dblclick="handleCreateBlock" />
+    <!-- 底部留白：双击创建新 block -->
+    <div class="block-list-padding" @dblclick="handleCreateBlock" />
 
     <!-- 拖放指示器：模块级共享状态，整个 BlockList 只渲染一次。
          由各 Block 的 useBlockDragDrop.handleDragMove 写入共享 ref。 -->
@@ -561,14 +543,6 @@ onBeforeUnmount(() => {
   padding-left: 0;
   padding-bottom: 40px;
   min-height: 100px;
-}
-
-.block-list.is-frozen {
-  /* 冻结状态：降低视觉权重，但保持可点击选择 */
-}
-
-.block-list.is-frozen :deep(.block-bullet) {
-  cursor: default;
 }
 
 .block-list-padding {

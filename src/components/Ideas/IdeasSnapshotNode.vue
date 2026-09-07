@@ -10,11 +10,13 @@ import { ChevronDown, ChevronRight } from 'lucide-vue-next'
 import { computed, inject } from 'vue'
 import BulletRender from '../Block/handlers/bullet/BulletRender.vue'
 import { Icon } from '../Icons'
+import { useEditorStore } from '../../stores/editor'
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import { getPropertyDefinition } from '../../types/property'
 import type { Property } from '../../types/property'
 import type { TreeNode } from '../../types/block'
 import {
+  SNAPSHOT_MODAL_KEY,
   SNAPSHOT_PROPS_KEY,
   SNAPSHOT_TREE_KEY,
   type SnapshotPropsMap,
@@ -32,6 +34,9 @@ const props = defineProps<{
 
 const propsMap = inject<SnapshotPropsMap>(SNAPSHOT_PROPS_KEY)!
 const treeState = inject<SnapshotTreeState>(SNAPSHOT_TREE_KEY)!
+/** 快照只读 BlockModal 内（ADR-0042 T6）：dot 不再递归开弹窗 */
+const inSnapshotModal = inject(SNAPSHOT_MODAL_KEY, false)
+const editorStore = useEditorStore()
 const { navigateToPage } = useNavigateToPage()
 
 const blockId = computed(() => props.node.id)
@@ -86,6 +91,15 @@ function onContentClick(e: MouseEvent) {
     })
   }
 }
+
+/**
+ * dot 打开快照只读 BlockModal（ADR-0042 T6）：以快照上下文打开全局 BlockModal，
+ * 弹窗内展示该块当日快照子树（只读）。弹窗内 dot 为 no-op，避免递归开弹窗。
+ */
+function openDetail() {
+  if (inSnapshotModal) return
+  editorStore.openBlockModal(blockId.value, { snapshotOf: props.pageId })
+}
 </script>
 
 <template>
@@ -110,7 +124,7 @@ function onContentClick(e: MouseEvent) {
             <ChevronDown v-if="!isCollapsed" :size="18" :stroke-width="2" />
             <ChevronRight v-else :size="18" :stroke-width="2" />
           </span>
-          <span class="bullet-dot" />
+          <span class="bullet-dot" title="打开块详情（只读快照）" @click.stop="openDetail" />
         </span>
 
         <div class="block-body">
@@ -165,7 +179,13 @@ function onContentClick(e: MouseEvent) {
 }
 
 .snapshot-block .bullet-dot {
-  cursor: default;
+  cursor: pointer;
+  border-radius: 50%;
+  transition: background-color 0.12s ease;
+}
+
+.snapshot-block .bullet-dot:hover {
+  background: var(--bg-hover);
 }
 
 .snapshot-property-inline {

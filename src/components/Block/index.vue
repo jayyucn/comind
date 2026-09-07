@@ -15,7 +15,7 @@
  *   → BlockList watch → syncTreeToStore → tree 重建
  */
 import { ChevronDown, ChevronRight } from 'lucide-vue-next'
-import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useBlockRegistry } from '../../composables/useBlockRegistry'
 import { useBlockRelationshipCleanup } from '../../composables/useBlockRelationshipCleanup'
 import { useBlockStore } from '../../stores/blocks'
@@ -34,7 +34,6 @@ import PropertyDisplay from './PropertyDisplay.vue'
 import PropertyInline from './PropertyInline.vue'
 
 import type { CrossBlockSelection } from '../../composables/useCrossBlockSelection'
-import { useIdeasFreeze } from '../../composables/useIdeasFreeze'
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import { useRightSidebar } from '../../composables/useRightSidebar'
 import { usePageStore } from '../../stores/pages'
@@ -63,7 +62,6 @@ const pageStore = usePageStore()
 const { getHandler } = useBlockRegistry()
 const relationshipCleanup = useBlockRelationshipCleanup()
 const { navigateToPage } = useNavigateToPage()
-const { isFrozen } = useIdeasFreeze(toRef(props, 'pageId'))
 
 // 注入拖拽结束回调（由 BlockList 提供）
 const onDragEnd = inject<() => void>('onDragEnd')
@@ -451,7 +449,7 @@ watch(isActive, (active) => {
         <!-- 内容区 -->
         <div class="block-content" @mousedown="onContentMousedown">
           <component
-            v-if="isActive && handler && !isFrozen"
+            v-if="isActive && handler"
             :is="handler.editorComponent"
             ref="editorRef"
             :block-id="blockId"
@@ -459,7 +457,6 @@ watch(isActive, (active) => {
             :show-full-placeholder="isSingleEmptyBlock"
             :properties="getBlockPropertiesMap()"
             :language="getBlockProperty('language')"
-            :readonly="isFrozen"
             @save="handleSave"
             @split="handleSplit"
             @merge="handleMerge"
