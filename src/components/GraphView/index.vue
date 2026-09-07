@@ -9,6 +9,7 @@ import { usePageStore } from '../../stores/pages'
 import { getRelationshipStrength, STRENGTH_TO_WIDTH } from '../../types/relationship'
 import { buildFullGraph, createAccumulator, traverseBFS, type GraphSnapshot, type RawLink, type VisibilityMap } from './graphData'
 import { getEdgeStyle, getNodeStyle } from './graphStyle'
+import { computeForceLayoutInWorker } from './workerLayout'
 
 const pageStore = usePageStore()
 const blockStore = useBlockStore()
@@ -148,6 +149,60 @@ async function safeFitView(
   await g.fitView(options, animate)
 }
 
+// helper 参数用结构化类型而非 Graph 类：graphRef.value 的类型经 Vue UnwrapRef
+// 解包后丢失类私有字段标识，无法赋给类类型（vue-tsc TS2345）。
+type GraphLike = Pick<Graph, 'getNodeData' | 'getEdgeData' | 'getSize' | 'destroyed' | 'setData' | 'draw' | 'setLayout' | 'layout'>
+
+/**
+ * G6 原生主线程布局（force 会整段同步跑模拟，大图卡死 —— 仅作为 worker 失败时的回退）。
+ */
+async function runG6Layout(g: GraphLike, layoutType: string) {
+  g.setLayout({ type: layoutType, preventOverlap: true, nodeSize: 100 })
+  try {
+    await withTimeout(g.layout(), 15000, 'g.layout()')
+  } catch (e) {
+    // 布局挂起/失败不应阻塞页面：记录后继续，遮罩由 onMounted 安全网兜底解除。
+    console.error('[GraphView] g.layout() timed out or failed — continuing without fitView:', e)
+  }
+}
+
+/**
+ * force 布局走 Web Worker（见 workerLayout.ts）：
+ * 读取当前图数据，在子线程完成力导向模拟，把终态坐标写回节点。
+ * 返回 false 表示 worker 不可用/失败/超时，调用方应回退 runG6Layout。
+ */
+async function applyWorkerForceLayout(g: GraphLike): Promise<boolean> {
+  const nodes = g.getNodeData()
+  const edges = g.getEdgeData()
+  const box = containerRef.value
+  const [gw, gh] = g.getSize()
+  const positions = await computeForceLayoutInWorker(
+    nodes.map(n => ({ id: n.id })),
+    edges.map(e => ({
+      id: String(e.id ?? `${e.source}->${e.target}`),
+      source: String(e.source),
+      target: String(e.target),
+    })),
+    box?.clientWidth || gw,
+    box?.clientHeight || gh,
+  )
+  if (!positions?.length) return false
+  if (g.destroyed) return false
+  const posMap = new Map(positions.map(p => [p.id, p]))
+  g.setData({
+    nodes: nodes.map(n => {
+      const p = posMap.get(n.id)
+      if (!p) return n
+      return { ...n, style: { ...n.style, x: p.x, y: p.y } }
+    }),
+    edges,
+  })
+  await g.draw()
+  // worker 路径不走 g.layout()，afterlayout 不会触发——手动解除首布局遮罩
+  isFirstLayoutDone.value = true
+  return true
+}
+
 async function initGraph() {
   if (!containerRef.value) return
 
@@ -255,7 +310,11 @@ async function refreshGraphData(graph?: Graph) {
 
   const gen = ++refreshGeneration
 
+  // [DEBUG-g6freeze] 临时性能插桩——卡死问题排查结束后删除
+  performance.mark('g6f:build-start')
   const { nodes, edges } = await buildGraphData()
+  performance.mark('g6f:build-end')
+  performance.measure('g6f:build', 'g6f:build-start', 'g6f:build-end')
 
   // 守卫 1：await 期间图可能被 onBeforeUnmount / initGraph 重入销毁，
   // 此时 g 仍指向已 destroy 的实例（context 已被清空），
@@ -288,12 +347,21 @@ async function refreshGraphData(graph?: Graph) {
     : currentLayout.value
   g.setLayout({ type: effectiveLayout, preventOverlap: true, nodeSize: 100 })
   g.setData({ nodes: renderNodes, edges: renderEdges as EdgeData[] })
-  await g.draw()
-  try {
-    await withTimeout(g.layout(), 15000, 'g.layout()')
-  } catch (e) {
-    // 布局挂起/失败不应阻塞页面：记录后继续，遮罩由 onMounted 安全网兜底解除。
-    console.error('[GraphView] g.layout() timed out or failed — continuing without fitView:', e)
+
+  if (effectiveLayout === 'force') {
+    // force 走 Web Worker：坐标就绪前不 draw（否则节点全堆在原点闪现一坨），
+    // applyWorkerForceLayout 成功后一次性 setData+draw。
+    const applied = await applyWorkerForceLayout(g)
+    if (gen !== refreshGeneration) return
+    if (g.destroyed) return
+    if (!applied) {
+      // 回退：G6 原生主线程布局（worker 不可用/失败/超时）
+      await g.draw()
+      await runG6Layout(g, effectiveLayout)
+    }
+  } else {
+    await g.draw()
+    await runG6Layout(g, effectiveLayout)
   }
 
   if (gen !== refreshGeneration) return
@@ -304,11 +372,16 @@ async function refreshGraphData(graph?: Graph) {
 
 async function handleLayoutChange(layout: string) {
   currentLayout.value = layout
-  if (graphRef.value) {
-    graphRef.value.setLayout({ type: layout, preventOverlap: true, nodeSize: 100, animate: isFirstLayoutDone.value })
-    await graphRef.value.layout()
-    await safeFitView(graphRef.value, { when: 'always' }, false)
+  const g = graphRef.value
+  if (!g) return
+  if (layout === 'force') {
+    const applied = await applyWorkerForceLayout(g)
+    if (!applied && !g.destroyed) await runG6Layout(g, layout)
+  } else {
+    g.setLayout({ type: layout, preventOverlap: true, nodeSize: 100, animate: isFirstLayoutDone.value })
+    await g.layout()
   }
+  await safeFitView(g, { when: 'always' }, false)
 }
 
 async function handleFitView() {
@@ -363,15 +436,20 @@ function handleNodeDoubleClick(nodeId: string) {
 function updateNodeHighlight() {
   const g = graphRef.value
   if (!g) return
-  const nodeData = g.getNodeData()
-  for (const node of nodeData) {
-    (node.data as any).isHighlighted = node.id === highlightedNodeId.value
+  const target = highlightedNodeId.value
+  // 增量更新：只写变化节点的 data（全量 setData 会连同边一起重置，点击时产生可感知卡顿）
+  const patches = []
+  for (const node of g.getNodeData()) {
+    const isHit = node.id === target
+    if (Boolean((node.data as any).isHighlighted) === isHit) continue
+    patches.push({ id: node.id, data: { ...node.data, isHighlighted: isHit } })
   }
-  g.setData({ nodes: nodeData, edges: g.getEdgeData() })
+  if (patches.length) g.updateNodeData(patches)
   g.draw()
 }
 
 let resizeObserver: ResizeObserver | null = null
+let resizeRaf = 0
 
 let disposed = false
 onBeforeUnmount(() => { disposed = true })
@@ -395,17 +473,31 @@ onMounted(async () => {
   }, 12000)
 
   if (containerRef.value) {
+    // 侧栏拖拽 resize 时 RO 每帧触发；不防抖会连环 resize + 双 fitView 把主线程打满。
+    let resizeRaf = 0
+    let lastW = -1
+    let lastH = -1
     resizeObserver = new ResizeObserver(() => {
-      if (graphRef.value && containerRef.value) {
-        graphRef.value.resize(containerRef.value.clientWidth, containerRef.value.clientHeight)
+      const box = containerRef.value
+      if (!graphRef.value || !box) return
+      const w = box.clientWidth
+      const h = box.clientHeight
+      if (w === lastW && h === lastH) return
+      lastW = w
+      lastH = h
+      cancelAnimationFrame(resizeRaf)
+      resizeRaf = requestAnimationFrame(() => {
+        if (!graphRef.value) return
+        graphRef.value.resize(w, h)
         safeFitView(graphRef.value, { when: 'always' }, false)
-      }
+      })
     })
     resizeObserver.observe(containerRef.value)
   }
 })
 
 onBeforeUnmount(() => {
+  cancelAnimationFrame(resizeRaf)
   resizeObserver?.disconnect()
   if (graphRef.value) {
     graphRef.value.destroy()

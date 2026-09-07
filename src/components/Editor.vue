@@ -135,6 +135,13 @@ async function handleWikiLinkSelect(pageName: string) {
 
   notifyWikiLinkMenuSelect()
 
+  // 先建目标页再插入链接：插入内容会触发块保存 → link 同步，
+  // 若此时目标页尚不存在，该链接会被同步流程跳过且不再重试（link 表丢边、图谱断链）。
+  const pageStore = usePageStore()
+  if (!pageStore.getPageByTitle(pageName)) {
+    await pageStore.createPage(pageName)
+  }
+
   const { state } = editor.value
   const cursorPos = state.selection.from
   const result = findWikiLinkAtCursor(state.doc, cursorPos)
@@ -150,11 +157,6 @@ async function handleWikiLinkSelect(pageName: string) {
 
   menuVisible.value = false
   closeWikiLinkMenuByEditor()
-
-  const pageStore = usePageStore()
-  if (!pageStore.getPageByTitle(pageName)) {
-    await pageStore.createPage(pageName)
-  }
 }
 
 function handleKindSelect(kind: DateRefKind) {
