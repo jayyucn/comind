@@ -12,7 +12,7 @@ use comind_core::{
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::process::Command;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PageUpdate {
@@ -2288,4 +2288,48 @@ pub async fn get_pages_with_blocks(
         Ok(result)
     })
     .await
+}
+
+// ── Window management ──
+
+/// 查询/操作应用窗口（调试与窗口管理用）。
+///
+/// - `list`: 返回全部 WebviewWindow（label/title/visible/focused）。
+/// - `show` | `hide` | `close`: 对 `label` 指定的窗口执行操作。
+#[tauri::command]
+pub async fn manage_window(
+    app: AppHandle,
+    action: String,
+    label: Option<String>,
+) -> Result<serde_json::Value, String> {
+    match action.as_str() {
+        "list" => {
+            let mut windows: Vec<serde_json::Value> = Vec::new();
+            for win in app.webview_windows().values() {
+                windows.push(serde_json::json!({
+                    "label": win.label(),
+                    "title": win.title().map_err(|e| e.to_string())?,
+                    "visible": win.is_visible().map_err(|e| e.to_string())?,
+                    "focused": win.is_focused().map_err(|e| e.to_string())?,
+                }));
+            }
+            Ok(serde_json::json!({ "action": "list", "windows": windows }))
+        }
+        "show" | "hide" | "close" => {
+            let target = label
+                .ok_or_else(|| format!("action `{action}` requires `label`"))?;
+            let win = app
+                .get_webview_window(&target)
+                .ok_or_else(|| format!("window `{target}` not found"))?;
+            match action.as_str() {
+                "show" => win.show().map_err(|e| e.to_string())?,
+                "hide" => win.hide().map_err(|e| e.to_string())?,
+                _ => win.close().map_err(|e| e.to_string())?,
+            }
+            Ok(serde_json::json!({ "action": action, "label": target, "ok": true }))
+        }
+        other => Err(format!(
+            "unknown action `{other}` (expected list|show|hide|close)"
+        )),
+    }
 }
