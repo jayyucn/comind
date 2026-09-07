@@ -184,6 +184,7 @@ pub fn run() {
             commands::get_ideas_pages_by_month,
             commands::get_ideas_months,
             commands::ensure_today_ideas_page,
+            commands::snapshot_stale_ideas_pages,
             commands::get_backlinks,
             commands::get_outlinks,
             commands::search,

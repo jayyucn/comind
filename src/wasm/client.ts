@@ -31,6 +31,8 @@ export interface CoreClient {
   getIdeasMonths(): Promise<string[]>
   /** 幂等地获取或创建今日 Ideas 页面（Rust 端为单一事实来源） */
   ensureTodayIdeasPage(): Promise<Page>
+  /** 惰性物化过期 Ideas 页（ADR-0042）：返回本次新物化的页数。启动早期调用，幂等。 */
+  snapshotStaleIdeasPages(): Promise<{ materialized: number }>
   savePage(page: PageUpdate): Promise<Page>
   deletePageCascade(pageId: string): Promise<void>
 
@@ -240,6 +242,10 @@ class TauriClient implements CoreClient {
 
   async ensureTodayIdeasPage(): Promise<Page> {
     return invoke('ensure_today_ideas_page')
+  }
+
+  async snapshotStaleIdeasPages(): Promise<{ materialized: number }> {
+    return parseJsonResult(await invoke('snapshot_stale_ideas_pages'))
   }
 
   async savePage(page: PageUpdate): Promise<Page> {
@@ -590,6 +596,10 @@ class WasmClientAdapter implements CoreClient {
     // 共享幂等逻辑在 Rust（PageService::ensure_today_ideas_page）；
     // chrono `wasmbind` feature 下 Local 使用浏览器本地时区（ADR-0021）。
     return this.wasm.ensure_today_ideas_page()
+  }
+
+  async snapshotStaleIdeasPages(): Promise<{ materialized: number }> {
+    return this.wasm.snapshot_stale_ideas_pages()
   }
 
   async savePage(page: PageUpdate): Promise<Page> {

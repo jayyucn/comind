@@ -654,6 +654,16 @@ mod wasm_impl {
         })
     }
 
+    // ---- snapshot_stale_ideas_pages（物化服务薄转发；today 取浏览器本地时区，与 ensure 同源） ----
+    #[wasm_bindgen]
+    pub fn snapshot_stale_ideas_pages() -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+            let count = SnapshotService::snapshot_stale_ideas_pages(adapter, &today)?;
+            Ok(to_js_value(json!({ "materialized": count })))
+        })
+    }
+
     // ---- Block versions（共享 BlockVersionService，与 Tauri commands.rs 同构薄转发） ----
     #[wasm_bindgen]
     pub fn create_block_version(

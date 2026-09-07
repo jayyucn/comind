@@ -37,6 +37,7 @@ export interface WasmClient {
   rebuild_date_refs(): Promise<{ rebuilt: number }>
 
   ensure_today_ideas_page(): Promise<Page>
+  snapshot_stale_ideas_pages(): Promise<{ materialized: number }>
 
   create_block_version(blockId: string, snapshot: string, hash: string, reason: string, checkpointName?: string): Promise<BlockVersion>
   get_block_versions(blockId: string): Promise<BlockVersion[]>
@@ -243,6 +244,11 @@ export async function initWasmClient(): Promise<WasmClient> {
     async ensure_today_ideas_page(): Promise<Page> {
       const result = await wasmModule.ensure_today_ideas_page()
       return parseJsonResult<Page>(result)
+    },
+
+    async snapshot_stale_ideas_pages(): Promise<{ materialized: number }> {
+      const result = await wasmModule.snapshot_stale_ideas_pages()
+      return parseJsonResult<{ materialized: number }>(result)
     },
 
     async create_block_version(blockId: string, snapshot: string, hash: string, reason: string, checkpointName?: string): Promise<BlockVersion> {

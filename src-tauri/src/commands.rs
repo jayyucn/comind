@@ -3,7 +3,7 @@ use comind_core::{
     services::{
         build_page_with_blocks, BlockService, BlockVersionService, BlockWriteService,
         BookService, DateRefService, FilterService, LinkService, PageService, PropertyService,
-        RelationshipTypeService, TemplateService,
+        RelationshipTypeService, SnapshotService, TemplateService,
     },
     storage::{SQLiteAdapter, StorageAdapter, TransactionalStorageAdapter},
     sync::message::SyncTable,
@@ -358,6 +358,22 @@ pub async fn ensure_today_ideas_page(
     }
 
     result
+}
+
+/// 惰性物化过期 Ideas 页（ADR-0042）：遍历 `type='ideas'` 且标题日期 < 今天且尚无快照的页，
+/// 序列化整页块树 + 当日属性值写入 `page_snapshots`。幂等（二次调用不重载、不产生新行）。
+/// `page_snapshots` 仅本地表、不进 SyncTable（ADR-0042），故无需 sync_server 通知。
+/// 返回 JSON `{"materialized": <本次新物化页数>}`（与 rebuild_date_refs 的返回形态一致）。
+#[tauri::command]
+pub async fn snapshot_stale_ideas_pages(
+    db: State<'_, super::state::DatabaseConnection>,
+) -> Result<String, String> {
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let count = execute_with_adapter(db, |storage| {
+        SnapshotService::snapshot_stale_ideas_pages(storage, &today)
+    })
+    .await?;
+    Ok(format!("{{\"materialized\":{}}}", count))
 }
 
 #[tauri::command]
