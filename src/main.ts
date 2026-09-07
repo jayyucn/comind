@@ -21,6 +21,17 @@ async function bootstrap() {
         console.warn('[main] rebuildDateRefs failed (non-fatal):', err)
       }
     }
+
+    // 物化过期 Ideas 页（ADR-0042）：应用启动早期调用，先于历史页渲染
+    // （历史页走快照读路径）。幂等——无新增过期页时返回 0，重复启动零副作用。
+    try {
+      const { materialized } = await client.snapshotStaleIdeasPages()
+      if (materialized > 0) {
+        console.info('[main] materialized stale ideas pages:', materialized)
+      }
+    } catch (err) {
+      console.warn('[main] snapshotStaleIdeasPages failed (non-fatal):', err)
+    }
   } catch (err) {
     console.error('[main] Failed to initialize Core client:', err)
   }
