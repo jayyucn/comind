@@ -15,6 +15,18 @@ Legacy compatibility: pages with `type` `journal` are treated as Ideas Pages.
 ### Today's Ideas Page (今日点滴页面)
 The Ideas Page whose title matches today's local date. At most one exists per day.
 
+### Snapshot (页面快照)
+A materialized, immutable copy of an entire Ideas Page as it stood on its own day: the full block tree (content, type, format, structure) plus the property values of that day. All *page rendering* of an Idea Page older than today uses the snapshot, never live data; the snapshot is the storage-level immutability guarantee for history. Live Blocks of historical pages stay editable through block-level paths (Task Hub, BlockModal) — edits never touch the snapshot. One snapshot per page, never re-materialized. Supersedes **Freeze**. See ADR-0042. _Avoid_: 备份, cache, copy of page.
+
+### Materialize (物化)
+The act of generating a Snapshot: on startup, every Ideas Page whose date is older than today and has no snapshot yet is serialized into `page_snapshots`. Happens before anything else touches that page. See ADR-0042. _Avoid_: dump, export, freeze.
+
+### Snapshot Context / Live Context (快照上下文 / 活上下文)
+The two editability contexts of BlockModal: opened from a snapshot rendering, it renders the snapshot's data **read-only**; opened from block-level paths (Task Hub cards, bullet-to-open), it renders the live Block **fully editable** — regardless of the page's age. Editability is decided by context, never by page date. See ADR-0042. _Avoid_: frozen block, readonly-by-page.
+
+### Freeze (冻结) — RETIRED
+Formerly the UI-level read-only state of any Idea Page whose date is not today (`useIdeasFreeze`). Retired by ADR-0042: the Snapshot is the immutability guarantee, and live Blocks of historical pages remain editable via block-level paths. Remaining call sites are cleanup candidates during implementation. _Avoid_: lock, archive.
+
 ### Block
 A unit of content within a Page. Has a parent-child relationship (tree structure). A Page with no Blocks has an auto-created empty root Block.
 

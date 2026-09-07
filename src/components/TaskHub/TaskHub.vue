@@ -117,12 +117,17 @@ async function handleStatusChange(blockId: string, newStatus: string) {
   await refresh()
 }
 
-// 四象限新增任务：落到自动建/复用的「任务收集」页，status=Todo、priority=目标象限值。
+// 四象限新增任务：落到今日 Ideas 页（ensureTodayIdeasPage 按当天日期幂等获取/创建 type='ideas' 页，
+// 见 ADR-0042 T1 落点改造），与当日手记混排，status=Todo、priority=目标象限值。
 // 标题即 block content；创建后刷新卡片投影让新任务立即入格。
-const TASK_INBOX_PAGE_TITLE = '任务收集'
-
 async function handleQuadrantAdd(priority: string, title: string) {
-  const page = await pageStore.getOrCreatePageByTitle(TASK_INBOX_PAGE_TITLE)
+  const page = await pageStore.ensureTodayIdeasPage()
+  // createBlock 依 blockStore 内存缓存计算根级末尾 pos；今日页可能已有 DB 根块但缓存未加载
+  // （跨会话/未打开过该页），需先加载（仅当缓存缺失，避免覆盖页面在途编辑；也不用 ensurePageBlocks
+  // 以免空页时多建占位块），保证新任务落在根级末尾而非与首块撞 pos。
+  if (!blockStore.blocks.some((b) => b.pageId === page.id)) {
+    await blockStore.loadPageBlocks(page.id)
+  }
   const block = await blockStore.createBlock({ pageId: page.id, content: title })
   // createBlock 落库是防抖的；block_properties.block_id 外键依赖 block 行先存在，
   // 必须先 flushSave 强制持久化，否则紧跟的 setProperty 触发 FOREIGN KEY constraint failed
