@@ -2,7 +2,7 @@
 import type { EdgeData, NodeData } from '@antv/g6'
 import { Graph } from '@antv/g6'
 import { Download, ExpandIcon, RefreshCw } from 'lucide-vue-next'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useBlockStore } from '../../stores/blocks'
 import { usePageStore } from '../../stores/pages'
@@ -61,7 +61,11 @@ const LARGE_GRAPH_NODES = 250
 const MAX_FULL_GRAPH_NODES = 3000
 
 const containerRef = ref<HTMLElement | null>(null)
-const graphRef = ref<Graph | null>(null)
+// G6 实例必须用 shallowRef 而非 ref：Vue 的 reactive Proxy 会包裹 Graph 实例，
+// 破坏 @antv/g 事件边界（EventBoundary）的 identity 检查，触发
+// "It is illegal to free an event not managed by this EventBoundary!" 并导致主线程自旋卡死
+// （G6 v5 + Vue3 已知问题，见 antvis/G6#6791）。shallowRef 不深代理，实例保持原样。
+const graphRef = shallowRef<Graph | null>(null)
 const currentLayout = ref<string>('force')
 const highlightedNodeId = ref<string | null>(null)
 const isFirstLayoutDone = ref(false)
@@ -207,6 +211,7 @@ async function initGraph() {
   if (!containerRef.value) return
 
   if (graphRef.value) {
+    graphRef.value.off()
     graphRef.value.destroy()
     graphRef.value = null
   }
@@ -310,11 +315,7 @@ async function refreshGraphData(graph?: Graph) {
 
   const gen = ++refreshGeneration
 
-  // [DEBUG-g6freeze] 临时性能插桩——卡死问题排查结束后删除
-  performance.mark('g6f:build-start')
   const { nodes, edges } = await buildGraphData()
-  performance.mark('g6f:build-end')
-  performance.measure('g6f:build', 'g6f:build-start', 'g6f:build-end')
 
   // 守卫 1：await 期间图可能被 onBeforeUnmount / initGraph 重入销毁，
   // 此时 g 仍指向已 destroy 的实例（context 已被清空），
@@ -500,6 +501,7 @@ onBeforeUnmount(() => {
   cancelAnimationFrame(resizeRaf)
   resizeObserver?.disconnect()
   if (graphRef.value) {
+    graphRef.value.off()
     graphRef.value.destroy()
     graphRef.value = null
   }
