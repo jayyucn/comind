@@ -664,6 +664,15 @@ mod wasm_impl {
         })
     }
 
+    // ---- get_ideas_snapshot（快照读取守卫：历史 ideas 页渲染取回 content_json；无快照返回 null） ----
+    #[wasm_bindgen]
+    pub fn get_ideas_snapshot(page_id: &str) -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            let content = SnapshotService::get_ideas_snapshot(adapter, page_id)?;
+            Ok(to_js_value(json!({ "content": content })))
+        })
+    }
+
     // ---- Block versions（共享 BlockVersionService，与 Tauri commands.rs 同构薄转发） ----
     #[wasm_bindgen]
     pub fn create_block_version(

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { usePageStore } from '../../stores/pages'
-import BlockList from '../BlockList.vue'
+import IdeasSnapshotPage from './IdeasSnapshotPage.vue'
 
 const props = defineProps<{
   pageId: string
@@ -35,7 +35,8 @@ function getMonthDay(dateStr: string): { month: string; day: string } {
       <span class="history-weekday">{{ getWeekday(page.title) }}</span>
     </div>
     <div class="history-body">
-      <BlockList :page-id="pageId" />
+      <!-- 历史页页面渲染统一走快照只读（ADR-0042 T5），不再渲染活数据 -->
+      <IdeasSnapshotPage :page-id="pageId" />
     </div>
   </div>
 </template>

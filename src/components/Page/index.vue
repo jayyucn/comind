@@ -9,6 +9,7 @@ import SlashCommandMenu from '../SlashCommandMenu.vue'
 import PropertyQuickEditor from '../Block/PropertyQuickEditor.vue'
 import PropertyEditor from '../Block/PropertyEditor.vue'
 import RelationshipMenu from '../RelationshipMenu.vue'
+import IdeasSnapshotPage from '../Ideas/IdeasSnapshotPage.vue'
 import { usePageStore } from '../../stores/pages'
 import { useBlockStore } from '../../stores/blocks'
 import { useEditorStore } from '../../stores/editor'
@@ -16,6 +17,7 @@ import { useRelationshipMenu } from '../../composables/useRelationshipMenu'
 import { openReaderWindow } from '../../composables/useReaderWindow'
 import { isTauriEnvironment } from '../../wasm/tauri-platform'
 import { useLayoutShell } from '../../composables/useLayoutShell'
+import { isStaleIdeasPage } from '../../utils/ideas-snapshot'
 import type { Page } from '../../types/page'
 
 const props = defineProps<{
@@ -33,15 +35,6 @@ const shell = useLayoutShell()
 const pageMainContentRef = ref<HTMLElement | null>(null)
 watch(pageMainContentRef, el => { shell.pageMainContentEl.value = el }, { immediate: true })
 
-/** 页面 block 加载代数，快速切换路由时丢弃过期结果 */
-let pageLoadGeneration = 0
-
-async function loadBlocksForPage(pageId: string) {
-  const myGen = ++pageLoadGeneration
-  await blockStore.ensurePageBlocks(pageId)
-  if (myGen !== pageLoadGeneration) return
-}
-
 /** 解析实际的 pageId：props 可能是 UUID 或 date title（ideas-page 路由） */
 const resolvedPageId = computed(() => {
   const direct = pageStore.getPage(props.pageId)
@@ -51,18 +44,42 @@ const resolvedPageId = computed(() => {
   return props.pageId
 })
 
+/** 解析出的页面对象（computed 供守卫/标题/编辑判定共用） */
+const resolvedPage = computed<Page | undefined>(() => {
+  const id = resolvedPageId.value
+  return pageStore.getPage(id) ?? pageStore.getPageByTitle(id)
+})
+
+/**
+ * 快照读取守卫（ADR-0042 T5）：仅「标题日期 < 今天的 ideas 页」走 page_snapshots
+ * 只读渲染（IdeasSnapshotPage）；今日页 / 普通页 / 其他走活数据 BlockList。
+ */
+const isSnapshotIdeasPage = computed(() => {
+  const p = resolvedPage.value
+  return !!p && isStaleIdeasPage(p)
+})
+
+/** 页面 block 加载代数，快速切换路由时丢弃过期结果 */
+let pageLoadGeneration = 0
+
+async function loadBlocksForPage(pageId: string) {
+  // 历史 ideas 页由快照渲染，页面正文不再加载/持有活块（避免为只读视图引入活数据 IPC）
+  if (isSnapshotIdeasPage.value) return
+  const myGen = ++pageLoadGeneration
+  await blockStore.ensurePageBlocks(pageId)
+  if (myGen !== pageLoadGeneration) return
+}
+
 watch(resolvedPageId, (pageId) => {
   if (pageId) loadBlocksForPage(pageId)
 }, { immediate: true })
 
 const currentPageTitle = computed(() => {
-  const page = pageStore.getPage(resolvedPageId.value)
-  return page?.title ?? 'comind'
+  return resolvedPage.value?.title ?? 'comind'
 })
 
 const isTitleEditable = computed(() => {
-  const page = pageStore.getPage(resolvedPageId.value)
-  return page?.type !== 'ideas'
+  return resolvedPage.value?.type !== 'ideas'
 })
 
 // 书 Page（type=book，票 01 导入生成）：标题下显示「阅读」入口，
@@ -94,6 +111,7 @@ onBeforeUnmount(() => {
   pageLoadGeneration++
   editorStore.deactivateBlock()
   window.removeEventListener('navigate-to-block' as any, handleNavigateToBlockEvent)
+  window.removeEventListener('ideas-snapshot-mounted', handleSnapshotMounted)
 })
 
 function handleNavigateToBlockEvent(e: Event) {
@@ -106,7 +124,30 @@ function handleNavigateToBlockEvent(e: Event) {
       // Brief highlight
       el.classList.add('navigate-highlight')
       setTimeout(() => el.classList.remove('navigate-highlight'), 2000)
+      return
     }
+    // 历史 ideas 页（快照只读渲染）正文异步加载：记录待定位块，内容挂载后补一次滚动
+    pendingScrollBlockId = blockId
+  })
+}
+
+/** 快照正文异步挂载后的待滚动定位（见 handleNavigateToBlockEvent） */
+let pendingScrollBlockId: string | null = null
+
+onMounted(() => {
+  window.addEventListener('ideas-snapshot-mounted', handleSnapshotMounted)
+})
+
+function handleSnapshotMounted() {
+  if (!pendingScrollBlockId) return
+  const blockId = pendingScrollBlockId
+  pendingScrollBlockId = null
+  nextTick(() => {
+    const el = document.querySelector(`[data-block-id="${blockId}"]`)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el.classList.add('navigate-highlight')
+    setTimeout(() => el.classList.remove('navigate-highlight'), 2000)
   })
 }
 
@@ -208,7 +249,9 @@ function handleCancelMerge() {
           </div>
         </div>
 
-        <BlockList :page-id="resolvedPageId" />
+        <!-- 正文：历史 ideas 页走快照只读渲染；其余（今日 ideas / 普通页 / 书页）走活数据 BlockList -->
+        <IdeasSnapshotPage v-if="isSnapshotIdeasPage" :key="resolvedPageId" :page-id="resolvedPageId" />
+        <BlockList v-else :page-id="resolvedPageId" />
       </main>
 
       <Backlinks />

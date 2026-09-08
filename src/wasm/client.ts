@@ -33,6 +33,8 @@ export interface CoreClient {
   ensureTodayIdeasPage(): Promise<Page>
   /** 惰性物化过期 Ideas 页（ADR-0042）：返回本次新物化的页数。启动早期调用，幂等。 */
   snapshotStaleIdeasPages(): Promise<{ materialized: number }>
+  /** 读取 ideas 页快照 content_json（ADR-0042 快照读取守卫）；无快照返回 { content: null } */
+  getIdeasSnapshot(pageId: string): Promise<{ content: string | null }>
   savePage(page: PageUpdate): Promise<Page>
   deletePageCascade(pageId: string): Promise<void>
 
@@ -246,6 +248,10 @@ class TauriClient implements CoreClient {
 
   async snapshotStaleIdeasPages(): Promise<{ materialized: number }> {
     return parseJsonResult(await invoke('snapshot_stale_ideas_pages'))
+  }
+
+  async getIdeasSnapshot(pageId: string): Promise<{ content: string | null }> {
+    return parseJsonResult(await invoke('get_ideas_snapshot', { pageId }))
   }
 
   async savePage(page: PageUpdate): Promise<Page> {
@@ -600,6 +606,10 @@ class WasmClientAdapter implements CoreClient {
 
   async snapshotStaleIdeasPages(): Promise<{ materialized: number }> {
     return this.wasm.snapshot_stale_ideas_pages()
+  }
+
+  async getIdeasSnapshot(pageId: string): Promise<{ content: string | null }> {
+    return this.wasm.get_ideas_snapshot(pageId)
   }
 
   async savePage(page: PageUpdate): Promise<Page> {

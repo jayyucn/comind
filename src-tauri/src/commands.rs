@@ -376,6 +376,21 @@ pub async fn snapshot_stale_ideas_pages(
     Ok(format!("{{\"materialized\":{}}}", count))
 }
 
+/// 读取 ideas 页快照（ADR-0042 T5 快照读取守卫）：返回 `content_json` 原文。
+/// 无快照（今日页 / 未过期 / 非 ideas 页）时 `content` 为 null。
+/// 本地表只读，无写入 → 无需 sync_server 通知。
+#[tauri::command]
+pub async fn get_ideas_snapshot(
+    db: State<'_, super::state::DatabaseConnection>,
+    page_id: String,
+) -> Result<String, String> {
+    let content = execute_with_adapter(db, |storage| {
+        SnapshotService::get_ideas_snapshot(storage, &page_id)
+    })
+    .await?;
+    Ok(serde_json::json!({ "content": content }).to_string())
+}
+
 #[tauri::command]
 pub async fn get_backlinks(
     db: State<'_, super::state::DatabaseConnection>,

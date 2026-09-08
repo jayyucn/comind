@@ -92,4 +92,19 @@ impl SnapshotService {
             created_at: chrono::Utc::now().timestamp_millis(),
         })
     }
+
+    /// 读取指定 ideas 页的快照 `content_json`（原始 JSON 文本）。
+    ///
+    /// 供前端历史页渲染（ADR-0042 T5 快照读取守卫）取用：渲染端拿到
+    /// flat blocks + properties map 后经 buildTree 复用只读渲染。
+    /// 无快照（今日页 / 未过期页 / 非 ideas 页）返回 `None`。
+    pub fn get_ideas_snapshot(
+        storage: &mut dyn StorageAdapter,
+        page_id: &str,
+    ) -> Result<Option<String>, Box<dyn Error>> {
+        Ok(storage
+            .page_snapshots()
+            .get_by_page_id(page_id)?
+            .map(|s| s.content_json))
+    }
 }
