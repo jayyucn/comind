@@ -166,7 +166,7 @@ mod tests {
         SnapshotService::snapshot_stale_ideas_pages(&mut adapter, TODAY)?;
 
         // 物化后可读回完整 content_json（与行内存储一致，含当日 status）
-        let content = SnapshotService::get_ideas_snapshot(&mut adapter, &page.id)?
+        let (content, _date) = SnapshotService::get_ideas_snapshot(&mut adapter, &page.id)?
             .expect("已物化页应能读回快照内容");
         assert_eq!(
             snapshot_task_status(&content, &task_id).as_deref(),

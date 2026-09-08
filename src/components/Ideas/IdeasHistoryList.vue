@@ -1,209 +1,79 @@
 <script setup lang="ts">
-import { format } from 'date-fns'
-import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { usePageStore } from '../../stores/pages'
-import type { Page } from '../../types/page'
 import MonthPicker from '../MonthPicker.vue'
 import IdeasHistoryItem from './IdeasHistoryItem.vue'
-
-/** 跨 remount 保留：避免 ideas-list ↔ ideas-page 来回切换重复批量 IPC */
-const loadedMonthsGlobal = new Set<string>()
-const monthPagesCacheGlobal = new Map<string, Page[]>()
-/** 同月并发/重入 loadMonthData 去重，避免 remount 叠加多次批量 IPC */
-const inflightMonthLoads = new Map<string, Promise<void>>()
 
 const pageStore = usePageStore()
 
 const MAX_LENGTH = 31
-const currentMonth = format(new Date(), 'yyyy-MM')
-const todayKey = format(new Date(), 'yyyy-MM-dd')
+const currentMonth = (() => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+})()
 
 // ===== 状态 =====
 const selectedMonth = ref(currentMonth)
-const monthsWithData = ref<string[]>([])
-const currentPages = ref<Page[]>([])
-const loading = ref(false)
+/** 有快照的月份（倒序），由后端按月查询轻量返回 */
+const monthsWithData = computed(() => pageStore.ideasMonths)
+/** 当前月历史页清单（纯快照驱动：内部只引用 ideasSnapshots） */
+const currentPages = computed(() => pageStore.ideasHistoryPages(selectedMonth.value))
+const loading = ref(true)
 const error = ref<string | null>(null)
+/** 抑制由 loadMonths 程序化回退选中月份时触发的 watch（避免重复拉取同一月） */
+let suppressMonthWatch = false
 
-// 已加载过的月份缓存（页面元数据；历史页正文由快照渲染，各 item 自行读取）
-const loadedMonths = loadedMonthsGlobal
+// ===== 数据加载：按月异步获取 =====
 
-// 已加载月份的页面数据缓存
-const monthPagesCache = monthPagesCacheGlobal
-
-// 竞态保护：generation counter
-let requestId = 0
-let idleLoadHandle: ReturnType<typeof requestIdleCallback> | null = null
-let idleLoadTimeout: ReturnType<typeof setTimeout> | null = null
-
-// ===== 数据加载 =====
-
-function parseMonth(monthKey: string): [number, number] {
-  const [year, mon] = monthKey.split('-').map(Number)
-  return [year, mon]
-}
-
-function cancelDeferredLoad() {
-  if (idleLoadHandle !== null) {
-    cancelIdleCallback(idleLoadHandle)
-    idleLoadHandle = null
-  }
-  if (idleLoadTimeout !== null) {
-    clearTimeout(idleLoadTimeout)
-    idleLoadTimeout = null
-  }
-}
-
-function scheduleLoadMonthData(month: string) {
-  cancelDeferredLoad()
-  const run = () => {
-    idleLoadHandle = null
-    idleLoadTimeout = null
-    loadMonthData(month)
-  }
-  if (typeof requestIdleCallback !== 'undefined') {
-    idleLoadHandle = requestIdleCallback(run, { timeout: 1500 })
-  } else {
-    idleLoadTimeout = setTimeout(run, 50)
-  }
-}
-
-/** 月份数据就绪 = 页面元数据已取回（正文按需读取快照，无需整月预载活块） */
-function isMonthReady(month: string): boolean {
-  return loadedMonths.has(month)
-}
-
-function applyMonthUi(month: string) {
-  if (isMonthReady(month)) {
-    currentPages.value = monthPagesCache.get(month) ?? []
-    loading.value = false
-    error.value = null
-  }
-}
-
-async function loadMonthDataImpl(month: string) {
-  const myId = ++requestId
-  loading.value = true
+async function loadMonths() {
   error.value = null
-
+  loading.value = true
   try {
-    const [year, mon] = parseMonth(month)
-    const pages = await pageStore.getIdeasPagesByMonth(year, mon)
-
-    // 竞态检查：被后续请求取代则丢弃
-    if (myId !== requestId) return
-
-    // 排除今日页面（今日由左侧面板负责），保留当月其他日期
-    const filtered = pages.filter(p => p.title !== todayKey)
-    const sorted = filtered.sort((a, b) => b.title.localeCompare(a.title))
-    currentPages.value = sorted
-    loadedMonths.add(month)
-    monthPagesCache.set(month, sorted)
-    loading.value = false
+    await pageStore.loadIdeasSnapshotMonths()
+    // 默认选中当前月；当前月无快照则回退到最新有数据的月
+    if (!monthsWithData.value.includes(selectedMonth.value) && monthsWithData.value.length > 0) {
+      suppressMonthWatch = true
+      selectedMonth.value = monthsWithData.value[0]
+    }
+    await loadMonth(selectedMonth.value)
   } catch (e) {
-    if (myId !== requestId) return
-    console.error('[IdeasHistoryList] loadMonthData failed:', e)
+    console.error('[IdeasHistoryList] loadIdeasSnapshotMonths failed:', e)
     error.value = '加载失败'
+  } finally {
     loading.value = false
   }
 }
 
-async function loadMonthData(month: string) {
-  if (isMonthReady(month)) {
-    applyMonthUi(month)
-    return
-  }
-  const inflight = inflightMonthLoads.get(month)
-  if (inflight) {
-    await inflight
-    applyMonthUi(month)
-    return
-  }
-  const task = loadMonthDataImpl(month)
-  inflightMonthLoads.set(month, task)
+async function loadMonth(month: string) {
+  if (!month) return
+  error.value = null
+  loading.value = true
   try {
-    await task
+    await pageStore.loadIdeasSnapshotsByMonth(month)
+  } catch (e) {
+    console.error('[IdeasHistoryList] loadIdeasSnapshotsByMonth failed:', e)
+    error.value = '加载失败'
   } finally {
-    inflightMonthLoads.delete(month)
+    loading.value = false
   }
 }
 
-function handleMonthChange(month: string) {
-  if (isMonthReady(month)) {
-    applyMonthUi(month)
+// 切换月份 → 异步拉该月快照
+watch(selectedMonth, (m) => {
+  if (suppressMonthWatch) {
+    suppressMonthWatch = false
     return
   }
-  scheduleLoadMonthData(month)
-}
+  if (monthsWithData.value.includes(m)) loadMonth(m)
+})
 
 function retry() {
-  loadMonthData(selectedMonth.value)
+  loadMonths()
 }
 
 // ===== 生命周期 =====
 
-// 标记 onMounted 首次加载完成，避免 watch 重复触发
-let initialized = false
-
-onBeforeUnmount(() => {
-  cancelDeferredLoad()
-})
-
-onDeactivated(() => {
-  // 仅取消尚未开始的 idle 加载；进行中的 IPC 让它跑完以写入 blocks 缓存
-  cancelDeferredLoad()
-})
-
-onActivated(async () => {
-  if (!initialized) return
-  if (isMonthReady(selectedMonth.value)) {
-    applyMonthUi(selectedMonth.value)
-    return
-  }
-  const inflight = inflightMonthLoads.get(selectedMonth.value)
-  if (inflight) {
-    loading.value = true
-    await inflight
-    applyMonthUi(selectedMonth.value)
-    if (isMonthReady(selectedMonth.value)) return
-  }
-  scheduleLoadMonthData(selectedMonth.value)
-})
-
-onMounted(async () => {
-  try {
-    const months = await pageStore.getIdeasMonths()
-    monthsWithData.value = months
-
-    if (months.length === 0) {
-      loading.value = false
-      initialized = true
-      return
-    }
-
-    selectedMonth.value = months[0]
-    if (isMonthReady(selectedMonth.value)) {
-      applyMonthUi(selectedMonth.value)
-    } else {
-      scheduleLoadMonthData(selectedMonth.value)
-    }
-    initialized = true
-  } catch (e) {
-    console.error('[IdeasHistoryList] getIdeasMonths failed:', e)
-    error.value = '加载失败'
-    loading.value = false
-    initialized = true
-  }
-})
-
-// MonthPicker 月份切换（初始化完成后才响应）
-watch(selectedMonth, (newMonth) => {
-  if (!initialized) return
-  handleMonthChange(newMonth)
-})
-
-// ===== 计算属性 =====
-const isEmpty = computed(() => currentPages.value.length === 0)
+onMounted(loadMonths)
 </script>
 
 <template>
@@ -234,7 +104,7 @@ const isEmpty = computed(() => currentPages.value.length === 0)
     </div>
 
     <!-- empty -->
-    <div v-else-if="isEmpty" class="empty-state">
+    <div v-else-if="currentPages.length === 0" class="empty-state">
       <div class="empty-text">暂无历史点滴</div>
     </div>
 
@@ -242,8 +112,8 @@ const isEmpty = computed(() => currentPages.value.length === 0)
     <div v-else class="history-scroller">
       <IdeasHistoryItem
         v-for="page in currentPages.slice(0, MAX_LENGTH)"
-        :key="page.id"
-        :page-id="page.id"
+        :key="page.pageId"
+        :page-id="page.pageId"
       />
     </div>
   </div>

@@ -85,14 +85,6 @@ mod wasm_impl {
         })
     }
 
-    #[wasm_bindgen]
-    pub fn get_ideas_pages_by_month(year: i32, month: u32) -> Result<JsValue, JsValue> {
-        with_adapter(|adapter| {
-            let pages = PageService::get_ideas_by_month(adapter, year, month)?;
-            Ok(to_js_value(pages))
-        })
-    }
-
     #[derive(Debug, Clone, Serialize, Deserialize)]
     struct BlockUpdate {
         id: String,
@@ -664,12 +656,33 @@ mod wasm_impl {
         })
     }
 
-    // ---- get_ideas_snapshot（快照读取守卫：历史 ideas 页渲染取回 content_json；无快照返回 null） ----
+    // ---- get_ideas_snapshot（快照读取守卫：历史 ideas 页渲染取回 content_json + 标题日期 date；无快照返回 null） ----
     #[wasm_bindgen]
     pub fn get_ideas_snapshot(page_id: &str) -> Result<JsValue, JsValue> {
         with_adapter(|adapter| {
-            let content = SnapshotService::get_ideas_snapshot(adapter, page_id)?;
-            Ok(to_js_value(json!({ "content": content })))
+            let snapshot = SnapshotService::get_ideas_snapshot(adapter, page_id)?;
+            Ok(match snapshot {
+                Some((content, date)) => to_js_value(json!({ "content": content, "date": date })),
+                None => to_js_value(json!({ "content": null, "date": null })),
+            })
+        })
+    }
+
+    // ---- list_ideas_snapshot_months（历史面板月份列表：轻量，只返回 yyyy-MM 倒序） ----
+    #[wasm_bindgen]
+    pub fn list_ideas_snapshot_months() -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            let months = SnapshotService::list_ideas_snapshot_months(adapter)?;
+            Ok(to_js_value(months))
+        })
+    }
+
+    // ---- list_ideas_snapshots_by_month（历史列表按月异步：指定月份快照，含 content_json） ----
+    #[wasm_bindgen]
+    pub fn list_ideas_snapshots_by_month(year: i32, month: i32) -> Result<JsValue, JsValue> {
+        with_adapter(|adapter| {
+            let snapshots = SnapshotService::list_ideas_snapshots_by_month(adapter, year, month)?;
+            Ok(to_js_value(snapshots))
         })
     }
 

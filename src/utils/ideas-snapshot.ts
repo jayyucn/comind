@@ -31,14 +31,21 @@ export function isStrictIdeasDateTitle(title: string): boolean {
 
 /**
  * 快照读取守卫：页面是否应走快照只读渲染。
- * 与 Rust 物化判定镜像：type=ideas && 严格日期标题 && 标题日期 < 今天。
+ * 与 Rust 物化判定镜像：严格日期标题 && 标题日期 < 今天。
+ * 快照仅由 `type=ideas` 的过期页物化（ADR-0042），故此处无需再判 type——
+ * 传 `Page` 对象时保留 type 校验以兼容旧调用方；传纯标题字符串时按 ideas 处理。
  * 今日/未来/非严格日期 → false（走活数据）。
  */
-export function isStaleIdeasPage(page: Pick<Page, 'type' | 'title'>, today = todayDateStr()): boolean {
-  if (page.type !== 'ideas') return false
-  const title = page.title.trim()
-  if (!STRICT_DATE_RE.test(title)) return false
-  return title < today
+export function isStaleIdeasPage(
+  pageOrTitle: Pick<Page, 'type' | 'title'> | string,
+  today = todayDateStr(),
+): boolean {
+  const title = typeof pageOrTitle === 'string' ? pageOrTitle : pageOrTitle.title
+  const type = typeof pageOrTitle === 'string' ? 'ideas' : pageOrTitle.type
+  if (type !== 'ideas') return false
+  const t = title.trim()
+  if (!STRICT_DATE_RE.test(t)) return false
+  return t < today
 }
 
 /** content_json 顶层信封（snake_case 直通库内存储） */
@@ -50,6 +57,8 @@ export interface IdeasSnapshotContentRaw {
 
 /** 映射后的快照数据（camelCase，供 buildTree / 只读渲染消费） */
 export interface IdeasSnapshotData {
+  /** 页面标题日期 `yyyy-MM-dd`（即被物化页的标题；与 page_snapshots.date 同源） */
+  title: string
   blocks: Block[]
   /** blockId → 该块属性（当日值） */
   properties: Record<string, Property[]>
@@ -95,7 +104,7 @@ function mapRawBlock(raw: RustBlock): Block {
  * 解析快照 content_json 文本 → 前端渲染数据。
  * 结构版本不符或解析失败返回 null（渲染方按「无快照」兜底）。
  */
-export function parseIdeasSnapshotContent(contentJson: string): IdeasSnapshotData | null {
+export function parseIdeasSnapshotContent(contentJson: string, title = ''): IdeasSnapshotData | null {
   let raw: IdeasSnapshotContentRaw
   try {
     raw = JSON.parse(contentJson) as IdeasSnapshotContentRaw
@@ -108,6 +117,7 @@ export function parseIdeasSnapshotContent(contentJson: string): IdeasSnapshotDat
     properties[blockId] = list.map(mapRawProperty)
   }
   return {
+    title,
     blocks: raw.blocks.map(mapRawBlock),
     properties,
   }

@@ -101,10 +101,28 @@ impl SnapshotService {
     pub fn get_ideas_snapshot(
         storage: &mut dyn StorageAdapter,
         page_id: &str,
-    ) -> Result<Option<String>, Box<dyn Error>> {
+    ) -> Result<Option<(String, String)>, Box<dyn Error>> {
         Ok(storage
             .page_snapshots()
             .get_by_page_id(page_id)?
-            .map(|s| s.content_json))
+            .map(|s| (s.content_json, s.date)))
+    }
+
+    /// 列出有快照的月份（yyyy-MM 倒序），轻量，供历史面板月份选择异步获取。
+    /// 只走 `substr(date,1,7)` 去重，不加载 content_json。
+    pub fn list_ideas_snapshot_months(
+        storage: &mut dyn StorageAdapter,
+    ) -> Result<Vec<String>, Box<dyn Error>> {
+        storage.page_snapshots().list_months()
+    }
+
+    /// 列出指定月份的 ideas 页快照（含 content_json），按 date 倒序。
+    /// 供历史列表按月异步渲染：前端选中月份才调用，避免一次性全量加载。
+    pub fn list_ideas_snapshots_by_month(
+        storage: &mut dyn StorageAdapter,
+        year: i32,
+        month: i32,
+    ) -> Result<Vec<PageSnapshot>, Box<dyn Error>> {
+        storage.page_snapshots().list_by_month(year, month)
     }
 }

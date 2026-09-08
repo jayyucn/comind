@@ -4,13 +4,15 @@ import { createPinia, setActivePinia } from 'pinia'
 
 vi.mock('../../../stores/pages', () => ({
   usePageStore: () => ({
-    getPage: vi.fn((id: string) => {
-      if (id === 'page-2') return { id, title: '2026-08-02', type: 'ideas' }
+    // 纯快照驱动：IdeasHistoryItem 直接读 ideasSnapshots[pageId]
+    ideasSnapshots: {
+      'page-2': { title: '2026-08-02', blocks: [], properties: {} },
+    },
+    // IdeasSnapshotPage 内部经 getIdeasSnapshot 异步读取正文（ADR-0042 T5）
+    getIdeasSnapshot: vi.fn(async (pageId: string) => {
+      if (pageId === 'page-2') return { title: '2026-08-02', blocks: [], properties: {} }
       return null
     }),
-    getPageByTitle: vi.fn(() => null),
-    // IdeasSnapshotPage 挂载即读取当日快照（ADR-0042 T5）；无快照 → 占位提示
-    getIdeasSnapshot: vi.fn(async () => null),
   }),
 }))
 

@@ -8,7 +8,7 @@ use crate::storage::entity::date_ref::{date_ref_create, date_ref_create_many, da
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::block::{block_get_all, block_get_by_id, block_get_by_page_id, block_get_children, block_get_by_ids, block_insert, block_update, block_soft_delete_by_id, block_ids_by_page_id, block_soft_delete_by_page_id};
 #[cfg(not(target_arch = "wasm32"))]
-use crate::storage::entity::page::{page_get_by_id, page_get_by_title_including_deleted, page_get_by_title, page_get_all, page_get_trash, page_get_by_ids, page_get_ideas_by_month, page_get_ideas_months, page_create, page_update, page_delete};
+use crate::storage::entity::page::{page_get_by_id, page_get_by_title_including_deleted, page_get_by_title, page_get_all, page_get_trash, page_get_by_ids, page_create, page_update, page_delete};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::link::{link_get_by_id, link_get_by_source_block_id, link_get_by_source_block_ids, link_get_by_target_page_id, link_insert, link_create_many, link_delete, link_delete_by_source_block_id, link_delete_by_target_page_id};
 #[cfg(not(target_arch = "wasm32"))]
@@ -29,7 +29,7 @@ use crate::storage::entity::notification_config::{notification_config_get, notif
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::book::{book_highlight_delete, book_highlight_get_by_book_page_id, book_highlight_upsert, book_progress_get, book_progress_upsert};
 #[cfg(not(target_arch = "wasm32"))]
-use crate::storage::entity::page_snapshot::{page_snapshot_create, page_snapshot_get_by_page_id};
+use crate::storage::entity::page_snapshot::{page_snapshot_create, page_snapshot_get_by_page_id, page_snapshot_list_by_month, page_snapshot_list_months};
 
 pub struct SQLiteAdapter {
     pub conn: Connection,
@@ -575,14 +575,6 @@ impl PageRepository for SQLiteAdapter {
         page_get_by_ids(&self.conn, ids)
     }
 
-    fn get_ideas_by_month(&self, year: i32, month: u32) -> Result<Vec<Page>, Box<dyn Error>> {
-        page_get_ideas_by_month(&self.conn, year, month)
-    }
-
-    fn get_ideas_months(&self) -> Result<Vec<String>, Box<dyn Error>> {
-        page_get_ideas_months(&self.conn)
-    }
-
     fn create(&mut self, page: &Page) -> Result<Page, Box<dyn Error>> {
         page_create(&self.conn, page)
     }
@@ -938,6 +930,14 @@ impl PageSnapshotRepository for SQLiteAdapter {
     fn create(&mut self, snapshot: &PageSnapshot) -> Result<PageSnapshot, Box<dyn Error>> {
         page_snapshot_create(&self.conn, snapshot)
     }
+
+    fn list_months(&self) -> Result<Vec<String>, Box<dyn Error>> {
+        page_snapshot_list_months(&self.conn)
+    }
+
+    fn list_by_month(&self, year: i32, month: i32) -> Result<Vec<PageSnapshot>, Box<dyn Error>> {
+        page_snapshot_list_by_month(&self.conn, year, month)
+    }
 }
 
 impl NotificationConfigRepository for SQLiteAdapter {
@@ -1222,14 +1222,6 @@ impl<'a> PageRepository for TxContext<'a> {
         page_get_by_ids(&self.conn, ids)
     }
 
-    fn get_ideas_by_month(&self, year: i32, month: u32) -> Result<Vec<Page>, Box<dyn Error>> {
-        page_get_ideas_by_month(&self.conn, year, month)
-    }
-
-    fn get_ideas_months(&self) -> Result<Vec<String>, Box<dyn Error>> {
-        page_get_ideas_months(&self.conn)
-    }
-
     fn create(&mut self, page: &Page) -> Result<Page, Box<dyn Error>> {
         page_create(&self.conn, page)
     }
@@ -1506,6 +1498,14 @@ impl<'a> PageSnapshotRepository for TxContext<'a> {
 
     fn create(&mut self, snapshot: &PageSnapshot) -> Result<PageSnapshot, Box<dyn Error>> {
         page_snapshot_create(&self.conn, snapshot)
+    }
+
+    fn list_months(&self) -> Result<Vec<String>, Box<dyn Error>> {
+        page_snapshot_list_months(&self.conn)
+    }
+
+    fn list_by_month(&self, year: i32, month: i32) -> Result<Vec<PageSnapshot>, Box<dyn Error>> {
+        page_snapshot_list_by_month(&self.conn, year, month)
     }
 }
 

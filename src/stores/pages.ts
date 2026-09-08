@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { Page } from '../types/page'
 import { initCoreClient } from '../wasm/client'
 import { useBlockStore } from './blocks'
@@ -60,41 +60,52 @@ export const usePageStore = defineStore('pages', () => {
     }
   }
 
-  async function getIdeasPagesByMonth(year: number, month: number): Promise<Page[]> {
+  // ── Ideas 页快照：纯快照驱动历史列表（ADR-0042 T5）──
+  // 列表只消费 ideasSnapshots，按月异步获取：
+  // - loadIdeasSnapshotMonths：异步拉「有快照的月份」列表（轻量，不含 content_json），挂载即调
+  // - loadIdeasSnapshotsByMonth(month)：选中/切换月份时异步拉该月快照，并入 ideasSnapshots
+  // 不再一次性全量加载 content_json；today/未来/非日期标题的页本就不会物化，天然排除。
+  const ideasSnapshotMonths = ref<string[]>([])
+  let monthsLoaded = false
+  const monthLoadPromises = new Map<string, Promise<void>>()
+
+  async function loadIdeasSnapshotMonths() {
+    if (monthsLoaded) return
     const client = await getClient()
-    const rustPages = await client.getIdeasPagesByMonth(year, month)
-
-    const fetched = rustPages.map(rustPage => ({
-      id: rustPage.id,
-      blockId: rustPage.block_id,
-      title: rustPage.title,
-      type: rustPage.type as Page['type'],
-      icon: rustPage.icon,
-      cover: rustPage.cover,
-      aliases: JSON.parse(rustPage.aliases || '[]') as string[],
-      filePath: rustPage.file_path,
-      childrenCount: rustPage.children_count,
-      wordCount: rustPage.word_count,
-      createdAt: rustPage.created_at,
-      updatedAt: rustPage.updated_at,
-      deleted: rustPage.deleted === 1,
-      deletedAt: null
-    }))
-
-    // 合并到 pages.value（仅新增，不替换 —— 避免丢失其他来源的页面）
-    const existingIds = new Set(pages.value.map(p => p.id))
-    for (const page of fetched) {
-      if (!existingIds.has(page.id)) {
-        pages.value.push(page)
-      }
-    }
-
-    return fetched
+    ideasSnapshotMonths.value = await client.listIdeasSnapshotMonths()
+    monthsLoaded = true
   }
 
-  async function getIdeasMonths(): Promise<string[]> {
-    const client = await getClient()
-    return await client.getIdeasMonths()
+  async function loadIdeasSnapshotsByMonth(month: string) {
+    if (!month) return
+    if (monthLoadPromises.has(month)) return monthLoadPromises.get(month)
+    const promise = (async () => {
+      const [y, m] = month.split('-').map(Number)
+      const client = await getClient()
+      const list = await client.listIdeasSnapshotsByMonth(y, m)
+      const map = { ...ideasSnapshots.value }
+      for (const s of list) {
+        map[s.pageId] = s.content ? parseIdeasSnapshotContent(s.content, s.date) : null
+      }
+      ideasSnapshots.value = map
+    })()
+    monthLoadPromises.set(month, promise)
+    try {
+      await promise
+    } finally {
+      monthLoadPromises.delete(month)
+    }
+  }
+
+  /** 有快照的月份列表（yyyy-MM，倒序），供 MonthPicker */
+  const ideasMonths = computed<string[]>(() => ideasSnapshotMonths.value)
+
+  /** 某月的历史页清单（{pageId, title}，按标题倒序），供历史列表渲染 */
+  function ideasHistoryPages(month: string): { pageId: string; title: string }[] {
+    return Object.entries(ideasSnapshots.value)
+      .filter(([, s]) => !!s && s.title.startsWith(month))
+      .map(([pageId, s]) => ({ pageId, title: s!.title }))
+      .sort((a, b) => b.title.localeCompare(a.title))
   }
 
   /**
@@ -150,8 +161,8 @@ export const usePageStore = defineStore('pages', () => {
   async function getIdeasSnapshot(pageId: string): Promise<IdeasSnapshotData | null> {
     if (pageId in ideasSnapshots.value) return ideasSnapshots.value[pageId]
     const client = await getClient()
-    const { content } = await client.getIdeasSnapshot(pageId)
-    const data = content ? parseIdeasSnapshotContent(content) : null
+    const { content, date } = await client.getIdeasSnapshot(pageId)
+    const data = content ? parseIdeasSnapshotContent(content, date ?? '') : null
     ideasSnapshots.value[pageId] = data
     return data
   }
@@ -367,5 +378,5 @@ export const usePageStore = defineStore('pages', () => {
     }
   }
 
-  return { pages, currentPageId, loading, trashPages, loadAllPages, ensurePagesLoaded, getIdeasPagesByMonth, getIdeasMonths, ensureTodayIdeasPage, getIdeasSnapshot, setCurrentPage, openPage, createPage, getPage, getPageByTitle, getOrCreatePageByTitle, renamePage, mergePage, deletePage, loadTrashPages, softDeletePage, restorePage, permanentDeletePage, onRemovePageFromHistory }
+  return { pages, currentPageId, loading, trashPages, loadAllPages, ensurePagesLoaded, ensureTodayIdeasPage, getIdeasSnapshot, loadIdeasSnapshotMonths, loadIdeasSnapshotsByMonth, ideasSnapshots, ideasMonths, ideasHistoryPages, setCurrentPage, openPage, createPage, getPage, getPageByTitle, getOrCreatePageByTitle, renamePage, mergePage, deletePage, loadTrashPages, softDeletePage, restorePage, permanentDeletePage, onRemovePageFromHistory }
 })

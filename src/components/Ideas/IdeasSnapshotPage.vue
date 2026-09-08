@@ -23,10 +23,9 @@ const props = defineProps<{
 
 const pageStore = usePageStore()
 
-const page = computed(() => pageStore.getPage(props.pageId) ?? pageStore.getPageByTitle(props.pageId))
-
-/** 守卫：仅历史 ideas 页在此渲染；否则空渲染（父级已分流，此处兜底） */
-const isSnapshotPage = computed(() => !!page.value && isStaleIdeasPage(page.value))
+/** 守卫：仅历史 ideas 页在此渲染；否则空渲染（父级已分流，此处兜底）。
+ * 标题取自快照（ideasSnapshots[pageId].title），不再依赖 Page（ADR-0042 整条链路去 getPage）。 */
+const isSnapshotPage = computed(() => !!snapshot.value && isStaleIdeasPage(snapshot.value.title))
 
 const snapshot = ref<IdeasSnapshotData | null>(null)
 const loading = ref(false)

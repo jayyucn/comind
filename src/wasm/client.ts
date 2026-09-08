@@ -26,15 +26,16 @@ export interface CoreClient {
   getPage(pageId: string): Promise<Page>
   getAllPages(): Promise<Page[]>
   getTrashPages(): Promise<Page[]>
-  getIdeasPagesByMonth(year: number, month: number): Promise<Page[]>
-  /** 获取所有有 ideas 页面的月份列表（yyyy-MM 格式，倒序） */
-  getIdeasMonths(): Promise<string[]>
   /** 幂等地获取或创建今日 Ideas 页面（Rust 端为单一事实来源） */
   ensureTodayIdeasPage(): Promise<Page>
   /** 惰性物化过期 Ideas 页（ADR-0042）：返回本次新物化的页数。启动早期调用，幂等。 */
   snapshotStaleIdeasPages(): Promise<{ materialized: number }>
-  /** 读取 ideas 页快照 content_json（ADR-0042 快照读取守卫）；无快照返回 { content: null } */
-  getIdeasSnapshot(pageId: string): Promise<{ content: string | null }>
+  /** 读取 ideas 页快照（ADR-0042 快照读取守卫）；返回 content_json 与标题日期 date，无快照则均为 null */
+  getIdeasSnapshot(pageId: string): Promise<{ content: string | null; date: string | null }>
+  /** 有快照的月份列表（yyyy-MM 倒序），轻量，供历史面板月份选择异步获取 */
+  listIdeasSnapshotMonths(): Promise<string[]>
+  /** 指定月份（yyyy-MM）的全部快照（含 content_json），按 date 倒序，供按月异步渲染 */
+  listIdeasSnapshotsByMonth(year: number, month: number): Promise<{ pageId: string; date: string; content: string }[]>
   savePage(page: PageUpdate): Promise<Page>
   deletePageCascade(pageId: string): Promise<void>
 
@@ -234,14 +235,6 @@ class TauriClient implements CoreClient {
     return invoke('get_trash_pages')
   }
 
-  async getIdeasPagesByMonth(year: number, month: number): Promise<Page[]> {
-    return invoke('get_ideas_pages_by_month', { year, month })
-  }
-
-  async getIdeasMonths(): Promise<string[]> {
-    return invoke('get_ideas_months')
-  }
-
   async ensureTodayIdeasPage(): Promise<Page> {
     return invoke('ensure_today_ideas_page')
   }
@@ -250,8 +243,18 @@ class TauriClient implements CoreClient {
     return parseJsonResult(await invoke('snapshot_stale_ideas_pages'))
   }
 
-  async getIdeasSnapshot(pageId: string): Promise<{ content: string | null }> {
+  async getIdeasSnapshot(pageId: string): Promise<{ content: string | null; date: string | null }> {
     return parseJsonResult(await invoke('get_ideas_snapshot', { pageId }))
+  }
+
+  async listIdeasSnapshotMonths(): Promise<string[]> {
+    return parseJsonResult(await invoke('list_ideas_snapshot_months'))
+  }
+
+  async listIdeasSnapshotsByMonth(year: number, month: number): Promise<{ pageId: string; date: string; content: string }[]> {
+    const raw = await invoke('list_ideas_snapshots_by_month', { year, month })
+    const parsed = parseJsonResult<{ page_id: string; date: string; content_json: string }[]>(raw)
+    return parsed.map(s => ({ pageId: s.page_id, date: s.date, content: s.content_json }))
   }
 
   async savePage(page: PageUpdate): Promise<Page> {
@@ -582,22 +585,6 @@ class WasmClientAdapter implements CoreClient {
     return this.wasm.get_trash_pages()
   }
 
-  async getIdeasPagesByMonth(year: number, month: number): Promise<Page[]> {
-    return this.wasm.get_ideas_pages_by_month(year, month)
-  }
-
-  async getIdeasMonths(): Promise<string[]> {
-    // WASM fallback: 从 get_all_pages 结果中提取月份
-    const allPages = await this.wasm.get_all_pages()
-    const months = Array.from(new Set(
-      allPages
-        .filter(p => (p.type === 'ideas') && p.deleted === 0)
-        .map(p => p.title.slice(0, 7))
-    ))
-    months.sort((a, b) => b.localeCompare(a))
-    return months
-  }
-
   async ensureTodayIdeasPage(): Promise<Page> {
     // 共享幂等逻辑在 Rust（PageService::ensure_today_ideas_page）；
     // chrono `wasmbind` feature 下 Local 使用浏览器本地时区（ADR-0021）。
@@ -608,8 +595,17 @@ class WasmClientAdapter implements CoreClient {
     return this.wasm.snapshot_stale_ideas_pages()
   }
 
-  async getIdeasSnapshot(pageId: string): Promise<{ content: string | null }> {
+  async getIdeasSnapshot(pageId: string): Promise<{ content: string | null; date: string | null }> {
     return this.wasm.get_ideas_snapshot(pageId)
+  }
+
+  async listIdeasSnapshotMonths(): Promise<string[]> {
+    return this.wasm.list_ideas_snapshot_months()
+  }
+
+  async listIdeasSnapshotsByMonth(year: number, month: number): Promise<{ pageId: string; date: string; content: string }[]> {
+    const raw = await this.wasm.list_ideas_snapshots_by_month(year, month)
+    return raw.map(s => ({ pageId: s.page_id, date: s.date, content: s.content_json }))
   }
 
   async savePage(page: PageUpdate): Promise<Page> {
