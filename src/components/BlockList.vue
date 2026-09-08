@@ -26,6 +26,7 @@ import type { TreeNode } from '../types/block'
 import { useCrossBlockSelection } from '../composables/useCrossBlockSelection'
 import type { CrossBlockSelection } from '../composables/useCrossBlockSelection'
 import { resolveClipboardForest, COMIND_BLOCK_MIME } from '../services/external-paste-parse'
+import { ensureWikiLinkTargets, notifyCreatedPages } from '../services/paste-ensure-wiki-targets'
 import { sortByDocumentOrderIds } from '../utils/block-helpers'
 import { blockOffsetFromPoint, selectionClientRects } from '../services/selection-geometry'
 
@@ -399,15 +400,29 @@ async function handleDocPaste(e: ClipboardEvent) {
   const data = e.clipboardData
   if (!data) return
 
+  // 粘贴即建页（ADR-0043）：对剪贴板可读文本提取 [[目标]] 并 Ensure 建页（幂等、与键入同源），
+  // 使随后块保存抽链命中、Link 边与图谱边成立——[[x]] 粘贴语义统一为「声明页面」。
+  const ensurePages = ensureWikiLinkTargets({
+    plain: data.getData('text/plain'),
+    html: data.getData('text/html'),
+  })
+
   const forest = resolveClipboardForest(mime => data.getData(mime))
   // 无结构化内容（如纯图片）→ 放行默认行为（image 钩子在编辑态先消费）
   if (!forest || forest.length === 0) return
 
   const hasInternal = !!data.getData(COMIND_BLOCK_MIME)
-  // 外部内容 + 行内光标（块内有文本、无选区）→ TipTap 默认行内粘贴（ADR-0026 D1）
-  if (!hasInternal && selection.anchorIds.size === 0 && isInlineCaretContext(e)) return
+  // 外部内容 + 行内光标（块内有文本、无选区）→ TipTap 默认行内粘贴（ADR-0026 D1）；
+  // ensure fire-and-forget：wasm 本地毫秒级 + 块保存有 debounce，极端竞争 miss 由后续保存/点击自愈
+  if (!hasInternal && selection.anchorIds.size === 0 && isInlineCaretContext(e)) {
+    void ensurePages.then(({ created }) => notifyCreatedPages(created, editorStore.showToast))
+    return
+  }
 
   e.preventDefault()
+  // 块级粘贴：ensure 先于块落库完成，保存抽链必然命中
+  const { created } = await ensurePages
+  notifyCreatedPages(created, editorStore.showToast)
   const anchorBlockId = resolvePasteAnchor()
   await blockStore.pasteBlocks(forest, {
     pageId: props.pageId,
