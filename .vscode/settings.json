@@ -15,5 +15,11 @@
         "**/dist/**",
         "**/build/**",
         "**/outputs/**",
+    ],
+    "npm.scriptExplorerExclude": [
+        "dev",
+        "preview",
+        "test",
+        "lint",
     ]
 }
