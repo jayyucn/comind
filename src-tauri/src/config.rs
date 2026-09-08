@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+// `.path()`（Manager trait 方法）仅在非 Windows-release 分支使用
+#[cfg(not(all(target_os = "windows", not(debug_assertions))))]
 use tauri::Manager;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -170,13 +172,17 @@ impl AppConfig {
 /// - Windows release: D:/workspace
 /// - 其他平台 / debug: exe_dir/workspace-dev（移动端回退到 app_data_dir/workspace-dev）
 /// - release（非 Windows）: app_data_dir
-pub fn get_default_workspace_path(app_handle: &tauri::AppHandle) -> PathBuf {
+///
+/// 拆分为两个 cfg 版本：Windows release 恒返回 D:/workspace，
+/// 其余平台 / debug 走完整推导逻辑（避免 release 下 unreachable 死代码）。
+#[cfg(all(target_os = "windows", not(debug_assertions)))]
+pub fn get_default_workspace_path(_app_handle: &tauri::AppHandle) -> PathBuf {
     // Windows 正式版默认工作空间为 D:/workspace（仅新安装、未显式设置时生效）
-    #[cfg(all(target_os = "windows", not(debug_assertions)))]
-    {
-        return PathBuf::from("D:/workspace");
-    }
+    PathBuf::from("D:/workspace")
+}
 
+#[cfg(not(all(target_os = "windows", not(debug_assertions))))]
+pub fn get_default_workspace_path(app_handle: &tauri::AppHandle) -> PathBuf {
     #[cfg(not(target_os = "android"))]
     #[cfg(debug_assertions)]
     if let Ok(exe_dir) = app_handle.path().executable_dir() {

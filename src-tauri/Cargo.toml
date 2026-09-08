@@ -31,6 +31,12 @@ futures-util = "0.3"
 qrcode = "0.14"
 image = "0.25"
 base64 = "0.22"
+# Dev-only AI debug bridge (tauri-plugin-mcp)。Cargo 的 target cfg 依赖仅识别
+# target_os 等 target 属性，不支持 debug_assertions（写在该 section 下不生效，
+# release 同样会编译）；故放普通 dependencies，仅 debug 的插件注册与
+# manage_window 命令由 lib.rs / commands.rs 的 cfg(debug_assertions) 门控。
+# NOTE: git dependency — pin a commit once a stable tag is chosen.
+tauri-plugin-mcp = { git = "https://github.com/P3GLEG/tauri-plugin-mcp" }
 
 [build-dependencies]
 tauri-build = { version = "2.0", features = [] }
@@ -38,9 +44,3 @@ tauri-build = { version = "2.0", features = [] }
 # 移动端专用依赖
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 tauri-plugin-barcode-scanner = "2"
-
-# Dev-only AI debug bridge (tauri-plugin-mcp)：仅在 debug 构建编译/链接，
-# 注册与 manage_window 命令同样由 cfg(debug_assertions) 门控（lib.rs / commands.rs）。
-# NOTE: git dependency — pin a commit once a stable tag is chosen.
-[target.'cfg(debug_assertions)'.dependencies]
-tauri-plugin-mcp = { git = "https://github.com/P3GLEG/tauri-plugin-mcp" }
