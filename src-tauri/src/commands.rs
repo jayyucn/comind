@@ -12,7 +12,9 @@ use comind_core::{
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::process::Command;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
+#[cfg(debug_assertions)]
+use tauri::Manager;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PageUpdate {
@@ -2340,7 +2342,7 @@ pub async fn get_pages_with_blocks(
 /// - `show` | `hide` | `close`: 对 `label` 指定的窗口执行操作。
 ///
 /// Dev-only：与 lib.rs 中 tauri-plugin-mcp 的 cfg(debug_assertions) 门控一致，
-/// release 不编译、不注册（MCP 插件自身已覆盖同等窗口能力）。
+/// release 不注册（crate 仍会编译，Cargo 不支持 debug 条件依赖）；MCP 插件自身已覆盖同等窗口能力。
 #[cfg(debug_assertions)]
 #[tauri::command]
 pub async fn manage_window(

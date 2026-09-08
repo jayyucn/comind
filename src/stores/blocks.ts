@@ -136,6 +136,17 @@ export const useBlockStore = defineStore('blocks', () => {
     loading.value = false
   }
 
+  /**
+   * 已完成「整页加载」的页面集合：loadPageBlocks / loadMultiPageBlocks 成功后登记。
+   * loadBlock 等单块加载（如 Backlinks 预览）不登记 —— 否则「页面仅有零散块」
+   * 会被误判为整页已缓存，后续 ensurePageBlocks / loadMultiPageBlocks 短路跳过
+   * 整页拉取，导航打开该页时内容残缺（只剩预览过的块）。
+   */
+  const fullyLoadedPages = new Set<string>()
+  function isPageFullyLoaded(pageId: string): boolean {
+    return fullyLoadedPages.has(pageId)
+  }
+
   /** 按 pos 排序的扁平 Block 列表 */
   const sortedBlocks = computed(() => sortByPos([...blocks.value]))
 
@@ -281,7 +292,9 @@ export const useBlockStore = defineStore('blocks', () => {
         new Map()
       )
     }
-    
+
+    // 整页加载完成（两分支均以 replaceBlocksForPage 全量替换该页）→ 登记
+    fullyLoadedPages.add(pageId)
     return blocks
   }
 
@@ -290,7 +303,9 @@ export const useBlockStore = defineStore('blocks', () => {
  * 保证页面始终可编辑。等价于 openPage 原有的「空则建 block」逻辑。
  */
   async function ensurePageBlocks(pageId: string) {
-    if (blocks.value.some(b => b.pageId === pageId)) {
+    // 整页已缓存（曾整页加载且 store 仍有该页块）才短路；仅零散块（如单块预览
+    // 拉入、页面已在别处删除）必须重新整页拉取，避免内容残缺/空白。
+    if (isPageFullyLoaded(pageId) && blocks.value.some(b => b.pageId === pageId)) {
       structureVersion.value++
       return blocks
     }
@@ -317,7 +332,7 @@ export const useBlockStore = defineStore('blocks', () => {
   /** 批量加载多个 Page 的 Block 树 */
   async function loadMultiPageBlocks(pageIds: string[]) {
     const uncachedPageIds = pageIds.filter(
-      id => !blocks.value.some(b => b.pageId === id)
+      id => !isPageFullyLoaded(id)
     )
     if (uncachedPageIds.length === 0) {
       return
@@ -359,6 +374,7 @@ export const useBlockStore = defineStore('blocks', () => {
         }
       }
       if (myGeneration !== multiPageLoadGeneration) return
+      for (const id of uncachedPageIds) fullyLoadedPages.add(id)
       structureVersion.value++
     } catch (error) {
       console.error('[loadMultiPageBlocks] Unexpected error:', error)
@@ -578,7 +594,11 @@ export const useBlockStore = defineStore('blocks', () => {
       updatedAt: Date.now()
     }
 
+    const isFirstBlockOfPage = !blocks.value.some(b => b.pageId === opts.pageId)
     blocks.value.push(block)
+    // 全新页以本地创建起始 → store 内即该页完整真相，登记避免后续 ensurePageBlocks
+    // 以服务器数据整页覆盖尚未持久化的在途块（维持「页有块即缓存」的既有语义）
+    if (isFirstBlockOfPage) fullyLoadedPages.add(opts.pageId)
     structureVersion.value++
     _scheduleSave(block)
 
