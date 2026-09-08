@@ -35,5 +35,5 @@ Status: accepted
 - **副作用面**：一次批量粘贴可能创建多个页面（toast 汇总告知）；新建的空页面在删除粘贴块后残留——与键入建页后删文本同理，不做回收。
 - **幂等**：`getOrCreatePageByTitle` 幂等，同次粘贴多处引用同一目标只建一次；复制粘贴不改源数据，新块以新 `source_block_id` 建新 Link 边。
 - **同步**：ensure 走既有 wasm 命令路径，与键入建页同样被 sync（ADR-0019）覆盖；Rust 服务层无新增副作用。
-- **已知边界**：非粘贴的写入路径（程序化、未来导入）仍不 ensure；inline 粘贴的 ensure 与 TipTap 默认插入存在时序竞争（见实现草案 T-1），miss 时依赖后续保存/点击自愈。
+- **已知边界**：非粘贴的写入路径（程序化、未来导入）仍不 ensure；inline 粘贴的 ensure 与 TipTap 默认插入存在时序竞争（inline 不 preventDefault、ensure fire-and-forget：wasm 本地调用毫秒级、块保存有 debounce，ensure 几乎必然先完成；极端竞争 miss 时抽链 skip 无害，靠用户后续保存/点击自愈），miss 时依赖后续保存/点击自愈。
 - **词表**：暂不新增领域词条（本会话定），行为以本 ADR 为准。
