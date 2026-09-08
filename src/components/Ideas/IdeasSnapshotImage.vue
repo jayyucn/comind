@@ -7,7 +7,7 @@
 import { computed, ref, watch } from 'vue'
 import type { Block } from '../../types/block'
 import { assetStorage } from '../../utils/asset'
-import ImageLightbox from '../../Block/handlers/image/ImageLightbox.vue'
+import ImageLightbox from '../Block/handlers/image/ImageLightbox.vue'
 
 const props = defineProps<{
   block: Block

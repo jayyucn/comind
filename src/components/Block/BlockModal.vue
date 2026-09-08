@@ -1,14 +1,23 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, provide, toRef, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, provide, reactive, ref, toRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ExternalLink, FileText, X } from 'lucide-vue-next'
 import Block from './index.vue'
+import IdeasSnapshotNode from '../Ideas/IdeasSnapshotNode.vue'
 import { useBlockStore } from '../../stores/blocks'
 import { useBlockCardStore } from '../../stores/blockCard'
 import { useEditorStore } from '../../stores/editor'
 import { usePageStore } from '../../stores/pages'
 import { hasModalOpen } from '../../composables/useModalKeyboard'
-import { buildSubtree } from '../../composables/useBlockTree'
+import { buildSubtree, buildTree } from '../../composables/useBlockTree'
+import {
+  SNAPSHOT_MODAL_KEY,
+  SNAPSHOT_PROPS_KEY,
+  SNAPSHOT_TREE_KEY,
+  type SnapshotPropsMap,
+  type SnapshotTreeState,
+} from '../Ideas/snapshotContext'
+import type { IdeasSnapshotData } from '../../utils/ideas-snapshot'
 import type { TreeNode } from '../../types/block'
 
 /**
@@ -17,6 +26,10 @@ import type { TreeNode } from '../../types/block'
  * 以该 block 为根渲染其完整子树（子任务/备注/检查项均可见可编辑），详见 ADR-0039。
  * 复用 Block/index.vue 全部编辑能力（内容 / 属性 / 状态 / 键盘），与 PageDrawer 内嵌 Page 同理。
  * 受控组件：blockId 非空时显示，close 事件由父级清空；opened 在挂载完成时触发。
+ *
+ * 双态（ADR-0042 T6）：活上下文（blockModalSnapshotOf 为空）→ 完全可编辑；
+ * 快照上下文（blockModalSnapshotOf = 历史 ideas 页 id，由 IdeasSnapshotNode dot 打开）
+ * → 只读展示该页 page_snapshots 中的块子树（当日值，内容源 = 快照而非活 store）。
  */
 const props = defineProps<{
   /** 打开的 block id；null/空串时弹窗关闭。 */
@@ -40,6 +53,39 @@ const visible = computed(() => !!props.blockId)
 provide('inBlockModal', true)
 provide('blockModalRootId', toRef(props, 'blockId'))
 
+// ── 双态（ADR-0042 T6）：快照上下文（只读）vs 活上下文（可编辑）──
+const snapshotOf = computed(() => editorStore.blockModalSnapshotOf)
+const isSnapshotMode = computed(() => !!props.blockId && !!snapshotOf.value)
+
+// 快照上下文只读子树：内容源 = page_snapshots 当日值（非活 store），
+// 复用 IdeasSnapshotNode 的只读渲染；折叠状态为弹窗局部（独立于页面）。
+const snapshotData = ref<IdeasSnapshotData | null>(null)
+const snapshotRoot = ref<TreeNode | null>(null)
+const snapshotCollapsed = reactive(new Set<string>())
+provide<SnapshotTreeState>(SNAPSHOT_TREE_KEY, {
+  isCollapsed: (id) => snapshotCollapsed.has(id),
+  toggle: (id) => {
+    if (snapshotCollapsed.has(id)) snapshotCollapsed.delete(id)
+    else snapshotCollapsed.add(id)
+  },
+})
+provide<SnapshotPropsMap>(SNAPSHOT_PROPS_KEY, {
+  propsByBlock: {},
+  getBlockProps: (blockId) => snapshotData.value?.properties[blockId] ?? [],
+})
+/** 快照只读弹窗标记：弹窗内 IdeasSnapshotNode 的 dot 不再递归开弹窗 */
+provide(SNAPSHOT_MODAL_KEY, true)
+
+/** 在快照森林中按 id 定位块节点（子树含后代） */
+function findNodeById(nodes: TreeNode[], id: string): TreeNode | null {
+  for (const n of nodes) {
+    if (n.id === id) return n
+    const hit = findNodeById(n.children, id)
+    if (hit) return hit
+  }
+  return null
+}
+
 // 关闭：清掉弹窗子树内的激活态（根块或任意后代，例如先激活子块再点 X 关闭），
 // 再通知父级。仅当激活块落在弹窗子树内才失活，避免误清底层页面的激活块。
 // 弹窗内对内容 / 属性的编辑已写入 blockStore 并经 blockCardStore.invalidate 标记投影脏，
@@ -49,17 +95,18 @@ provide('blockModalRootId', toRef(props, 'blockId'))
 // wasm 调用——否则调用挂起会导致 emit('close') 永不触发、弹窗卡死、进而阻塞全部 block 编辑。
 function close() {
   const id = props.blockId
-  const activeId = editorStore.activeBlockId
-  if (id && activeId && (activeId === id || isInModalSubtree(activeId))) {
-    editorStore.deactivateBlock()
-  }
-  if (id) {
+  if (id && !isSnapshotMode.value) {
+    const activeId = editorStore.activeBlockId
+    if (activeId && (activeId === id || isInModalSubtree(activeId))) {
+      editorStore.deactivateBlock()
+    }
     // flush 落库：编辑器自身 @save 已防抖落库，这里兜底补刷；不 await，避免挂起阻塞关闭。
     // 用 Promise.resolve 包一层，确保 flushSave 缺省时也不会因 .catch 访问 undefined 而抛错。
     Promise.resolve(blockStore.flushSave?.(id)).catch(() => {})
+    // 刷脏投影：后台异步重拉，关闭不依赖其结果。
+    useBlockCardStore().refreshIfDirty().catch(() => {})
   }
-  // 刷脏投影：后台异步重拉，关闭不依赖其结果。
-  useBlockCardStore().refreshIfDirty().catch(() => {})
+  // 快照上下文无任何写入（只读），跳过 flush/刷投影
   emit('close')
 }
 
@@ -80,8 +127,10 @@ function isInModalSubtree(id: string): boolean {
 // 的激活逻辑由 BlockList 的 document 级 mouseup 监听负责（且限定同页 pageId），
 // 弹窗场景不经过 BlockList，block 会永远停留在 isActive=false 的只读渲染态，内容无法编辑。
 // 这里为弹窗 body 补全等价的点击激活：点击任意 block 即 activateBlock，
-// 交由 Block 自身按 isFrozen 决定渲染可编辑组件还是只读组件。
+// 激活后 Block 渲染编辑组件进入可编辑态（ADR-0039；冻结已退役 ADR-0042 T6）。
 function onBodyClick(e: MouseEvent) {
+  // 快照上下文只读展示：不激活任何块（内容来自快照，无编辑通路）
+  if (isSnapshotMode.value) return
   const target = e.target as HTMLElement
   const blockEl = target.closest('[data-block-id]') as HTMLElement | null
   const bid = blockEl?.dataset.blockId
@@ -92,9 +141,11 @@ function onBodyClick(e: MouseEvent) {
 
 const block = computed(() => (props.blockId ? blockStore.getBlock(props.blockId) : null))
 const pageId = computed(() => block.value?.pageId ?? null)
+/** 弹窗上下文所属页面：快照模式 = 快照来源页；活模式 = 块所在页 */
+const contextPageId = computed(() => (isSnapshotMode.value ? snapshotOf.value : pageId.value))
 // 所在 Page 标题
 const pageTitle = computed(() => {
-  const pid = pageId.value
+  const pid = contextPageId.value
   if (!pid) return ''
   return pageStore.getPage(pid)?.title ?? ''
 })
@@ -104,11 +155,27 @@ const node = computed<TreeNode | null>(() =>
 )
 
 // block 可能尚未在 store（跨页引用 / 懒加载），打开时确保加载真实 block 以驱动编辑器；
-// 加载后自动激活根块并聚焦光标，免去"先点一下才能编辑"（ADR-0039）
+// 加载后自动激活根块并聚焦光标，免去"先点一下才能编辑"（ADR-0039）。
+// 快照上下文分支：从该页 page_snapshots 读当日块子树（只读），不加载活块、不激活编辑器。
 watch(
-  () => props.blockId,
-  async (id) => {
+  [() => props.blockId, () => editorStore.blockModalSnapshotOf],
+  async ([id, snapshotPageId]) => {
     if (!id) return
+    if (snapshotPageId) {
+      snapshotRoot.value = null
+      snapshotData.value = null
+      try {
+        const data = await pageStore.getIdeasSnapshot(snapshotPageId)
+        snapshotData.value = data
+        if (data) {
+          snapshotRoot.value = findNodeById(buildTree(data.blocks, snapshotPageId, null), id)
+        }
+      } catch (err) {
+        /* 读取失败由模板 loading 态兜底，不弹错 */
+        console.error('[BlockModal] 读取快照失败:', err)
+      }
+      return
+    }
     try {
       await blockStore.loadBlock(id)
     } catch {
@@ -121,9 +188,10 @@ watch(
 
 // 前往所属页面并定位到该 block（与 PageDrawer.openInPage 同理，但目标是单 block）
 function openInPage() {
-  if (!pageId.value || !props.blockId) return
+  const pid = contextPageId.value
+  if (!pid || !props.blockId) return
   close()
-  router.push({ name: 'page', params: { pageId: pageId.value } })
+  router.push({ name: 'page', params: { pageId: pid } })
   setTimeout(() => {
     window.dispatchEvent(new CustomEvent('navigate-to-block', { detail: { blockId: props.blockId } }))
   }, 0)
@@ -172,7 +240,7 @@ onBeforeUnmount(() => {
         class="block-modal-overlay"
         role="dialog"
         aria-modal="true"
-        :aria-label="pageTitle ? `编辑来自「${pageTitle}」的块` : '编辑块'"
+        :aria-label="isSnapshotMode ? `浏览来自「${pageTitle}」的快照块（只读）` : (pageTitle ? `编辑来自「${pageTitle}」的块` : '编辑块')"
         @click.self="close"
       >
         <div class="block-modal">
@@ -183,6 +251,7 @@ onBeforeUnmount(() => {
               </span>
               <span v-if="pageTitle" class="modal-title-page">{{ pageTitle }}</span>
               <span v-else class="modal-title-placeholder">块详情</span>
+              <span v-if="isSnapshotMode" class="modal-readonly-tag">快照只读</span>
             </div>
             <div class="modal-actions">
               <button
@@ -207,8 +276,22 @@ onBeforeUnmount(() => {
             </div>
           </header>
           <div class="modal-body" @click="onBodyClick">
-            <div v-if="node" class="modal-content">
-              <Block :node="node" :page-id="pageId!" :depth="0" />
+            <!-- 快照上下文（ADR-0042 T6）：只读展示当日快照子树，复用 IdeasSnapshotNode 只读渲染 -->
+            <div v-if="isSnapshotMode" class="modal-content">
+              <IdeasSnapshotNode
+                v-if="snapshotRoot"
+                :node="snapshotRoot"
+                :page-id="contextPageId!"
+                :depth="0"
+              />
+              <div v-else class="modal-loading">
+                <span class="modal-spinner" aria-hidden="true"></span>
+                {{ snapshotData ? '快照中无此块' : '加载中…' }}
+              </div>
+            </div>
+            <!-- 活上下文：完整 Block 子树编辑器（冻结已退役，历史页活块同样可编辑） -->
+            <div v-else-if="node" class="modal-content">
+              <Block :node="node" :page-id="contextPageId!" :depth="0" />
             </div>
             <div v-else class="modal-loading">
               <span class="modal-spinner" aria-hidden="true"></span>
@@ -289,6 +372,19 @@ onBeforeUnmount(() => {
 
 .modal-title-placeholder {
   color: var(--text-tertiary);
+}
+
+.modal-readonly-tag {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  margin-left: 6px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  user-select: none;
 }
 
 .modal-actions {
