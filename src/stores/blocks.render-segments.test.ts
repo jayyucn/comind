@@ -9,6 +9,7 @@ const {
   mockGetPagesWithBlocks,
   mockGetBlocksByPage,
   mockGetPage,
+  mockGetBlock,
 } = vi.hoisted(() => ({
   mockInitCoreClient: vi.fn(),
   mockSaveBlockTree: vi.fn(),
@@ -16,6 +17,7 @@ const {
   mockGetPagesWithBlocks: vi.fn(),
   mockGetBlocksByPage: vi.fn(),
   mockGetPage: vi.fn(),
+  mockGetBlock: vi.fn(),
 }))
 
 // 注意：路径相对于 __tests__ 目录中的测试文件位置
@@ -362,5 +364,135 @@ describe('loadMultiPageBlocks（S10 批量 getPagesWithBlocks 携带 renderSegme
 
     expect(store.getBlock('ab1')).toBeUndefined()
     expect(store.blocks.length).toBe(0)
+  })
+})
+
+// ============================================================
+// ensurePageBlocks：单块预览（loadBlock）后必须整页补齐
+// 回归：Backlinks 反链单块预览把源页一块拉入 store → 点击 [[源页]] 导航打开时
+// ensurePageBlocks 误判「页有块=整页已缓存」而短路 → 页面只剩预览块、其余内容缺失
+// ============================================================
+describe('ensurePageBlocks - loadBlock 单块注入后整页补齐（Backlinks 跳转回归）', () => {
+  let useBlockStore: typeof import('./blocks').useBlockStore
+
+  function makeRustBlock(id: string, pageId: string, content: string) {
+    return {
+      id,
+      page_id: pageId,
+      parent_id: null,
+      pos: 100,
+      content,
+      format: '{}',
+      type: 'bullet',
+      created_at: 0,
+      updated_at: 0,
+    }
+  }
+
+  beforeEach(async () => {
+    vi.resetModules()
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+
+    const mockClient = {
+      saveBlockTree: mockSaveBlockTree,
+      getPageWithBlocks: mockGetPageWithBlocks,
+      getPagesWithBlocks: mockGetPagesWithBlocks,
+      getBlocksByPage: mockGetBlocksByPage,
+      getPage: mockGetPage,
+      getBlock: mockGetBlock,
+    }
+
+    mockSaveBlockTree.mockResolvedValue([])
+    mockGetPageWithBlocks.mockResolvedValue(makePageWithBlocks('default', []))
+    mockGetPagesWithBlocks.mockResolvedValue([])
+    mockGetBlocksByPage.mockResolvedValue([])
+    mockGetBlock.mockResolvedValue(null)
+
+    mockInitCoreClient.mockResolvedValue(mockClient)
+
+    useBlockStore = (await import('./blocks')).useBlockStore
+  })
+
+  test('仅被单块 loadBlock 拉入的页：ensurePageBlocks 仍整页拉取，内容不残缺', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-source-a'
+    const blockWithB = 'b-a1' // 含 [[B]] 的块（Backlinks 预览单块）
+    const blockWithC = 'b-a2' // 含 [[C]] 的块
+
+    // A 页整页（两块），getPageWithBlocks 返回
+    mockGetPageWithBlocks.mockResolvedValue(makePageWithBlocks(pageId, [
+      {
+        block: makeRustBlock(blockWithB, pageId, 'see [[B]]'),
+        children: [],
+        render_segments: [],
+        properties: [],
+      },
+      {
+        block: makeRustBlock(blockWithC, pageId, 'see [[C]]'),
+        children: [],
+        render_segments: [],
+        properties: [],
+      },
+    ]))
+    // 模拟 Backlinks 先对反链块做单块预览（loadBlock）
+    mockGetBlock.mockResolvedValue(makeRustBlock(blockWithB, pageId, 'see [[B]]'))
+
+    await store.loadBlock(blockWithB)
+    // 单块预览后：store 只有一块
+    expect(store.getBlocksByPage(pageId).map(b => b.id)).toEqual([blockWithB])
+
+    // 导航打开 A 页 → ensurePageBlocks 必须整页拉取补齐
+    await store.ensurePageBlocks(pageId)
+
+    expect(mockGetPageWithBlocks).toHaveBeenCalledTimes(1)
+    expect(store.getBlock(blockWithB)).toBeDefined()
+    expect(store.getBlock(blockWithC)).toBeDefined()
+    expect(store.getBlocksByPage(pageId).map(b => b.id).sort()).toEqual([blockWithB, blockWithC].sort())
+  })
+
+  test('整页已加载过的页：ensurePageBlocks 短路，不重复 IPC 且不覆盖缓存', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-source-b'
+
+    mockGetPageWithBlocks.mockResolvedValue(makePageWithBlocks(pageId, [
+      {
+        block: makeRustBlock('b1', pageId, 'Block 1'),
+        children: [],
+        render_segments: [],
+        properties: [],
+      },
+    ]))
+
+    await store.ensurePageBlocks(pageId)
+    expect(store.getBlock('b1')).toBeDefined()
+
+    await store.ensurePageBlocks(pageId)
+    expect(mockGetPageWithBlocks).toHaveBeenCalledTimes(1)
+    expect(store.getBlocksByPage(pageId).length).toBe(1)
+  })
+
+  test('loadMultiPageBlocks 整页加载成功后，ensurePageBlocks 短路', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-source-c'
+
+    mockGetPagesWithBlocks.mockResolvedValue([
+      makePageWithBlocks(pageId, [
+        {
+          block: makeRustBlock('c1', pageId, 'from multi'),
+          children: [],
+          render_segments: [],
+          properties: [],
+        },
+      ]),
+    ])
+
+    await store.loadMultiPageBlocks([pageId])
+    expect(store.getBlock('c1')).toBeDefined()
+
+    // 已整页加载 → 不再触发单页 IPC
+    await store.ensurePageBlocks(pageId)
+    expect(mockGetPageWithBlocks).toHaveBeenCalledTimes(0)
+    expect(store.getBlocksByPage(pageId).length).toBe(1)
   })
 })

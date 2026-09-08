@@ -88,16 +88,14 @@ async function loadBacklinks() {
     }
 
     // 4. 收集所有 sourcePageId，加载完整页树（文档顺序排序需要）
+    // loadMultiPageBlocks 内部按「整页是否已缓存」过滤：仅经上面 loadBlock 单块
+    // 预览过的源页（store 只有零散块）会在此整页补齐 —— 否则后续导航打开该页时
+    // ensurePageBlocks 误判已缓存而跳过拉取，页面内容残缺。
     const sourcePageIds = [...new Set(
       [...itemMap.values()].map(item => item.block.pageId)
     )]
     if (sourcePageIds.length > 0) {
-      const uncachedSourceIds = sourcePageIds.filter(
-        id => blockStore.getBlocksByPage(id).length === 0
-      )
-      if (uncachedSourceIds.length > 0) {
-        await blockStore.loadMultiPageBlocks(uncachedSourceIds)
-      }
+      await blockStore.loadMultiPageBlocks(sourcePageIds)
     }
 
     // 5. 过滤 orphan-page + 按 sourcePageId 分组
