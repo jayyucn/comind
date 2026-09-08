@@ -8,8 +8,8 @@ import { useNavigationHistory } from './app/useNavigationHistory'
 import { useSyncPeerToast } from './app/useSyncPeerToast'
 import { useTrashedPageRestore } from './app/useTrashedPageRestore'
 import { useWindowControls } from './app/useWindowControls'
-import BlockSelector from './components/BlockSelector.vue'
 import BlockModal from './components/Block/BlockModal.vue'
+import BlockSelector from './components/BlockSelector.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import DateTimePickerPanel from './components/DateTimePickerPanel.vue'
 import { prefetchGraphSnapshot } from './components/GraphView/graphSnapshotCache'
@@ -26,11 +26,11 @@ import Sidebar from './components/Sidebar/index.vue'
 import Toast from './components/Toast.vue'
 import { useBlockQueryRegistry } from './composables/useBlockQueryRegistry'
 import { useDateTimePickerPanel } from './composables/useDateTimePickerPanel'
+import { provideLayoutShell } from './composables/useLayoutShell'
 import { useNotificationScheduler } from './composables/useNotificationScheduler'
 import { usePageQueryRegistry } from './composables/usePageQueryRegistry'
 import { useReaderDataChanged } from './composables/useReaderDataChanged'
 import { useRelationshipTypes } from './composables/useRelationshipTypes'
-import { provideLayoutShell } from './composables/useLayoutShell'
 import { useEditorStore } from './stores/editor'
 import { usePageStore } from './stores/pages'
 import { isTauriEnvironment } from './wasm/tauri-platform'
@@ -248,7 +248,6 @@ function handleMainClick(e: MouseEvent) {
 </template>
 
 <style lang="scss" scoped>
-@import './styles/tokens/_primitives.scss';
 
 .app-layout {
   display: flex;
