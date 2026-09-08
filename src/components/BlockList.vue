@@ -35,6 +35,9 @@ const props = defineProps<{
   pageId: string
 }>()
 
+/** 本实例渲染树根：粘贴归属判定用（KeepAlive 缓存实例的 DOM 会脱离文档） */
+const rootEl = ref<HTMLElement | null>(null)
+
 const blockStore = useBlockStore()
 const editorStore = useEditorStore()
 const pageStore = usePageStore()
@@ -385,6 +388,13 @@ async function handleDocPaste(e: ClipboardEvent) {
   // 最近一次点击不在本页（lastClickedBlockId 已被清空）→ 不分发，避免误粘到主文档
   const target = e.target as HTMLElement | null
   const isBodyOrDocument = !target || target === document.body || target === document.documentElement
+  // 多实例归属（粘贴即建页实测回归，ADR-0043）：paste 捕获监听对所有已挂载 BlockList 实例都触发——
+  // RouterView KeepAlive 缓存 /ideas 今日面板后其实例与当前页并存、document 监听仍存活，
+  // 会让缓存实例二次 ensure（toast 双弹）并二次 pasteBlocks（今日 ideas 页莫名多 block）。
+  // 事件落点不在本实例渲染树内、或本实例 DOM 已摘离文档（KeepAlive 缓存态）→ 非本实例的粘贴，忽略。
+  if (rootEl.value) {
+    if (isBodyOrDocument ? !rootEl.value.isConnected : !rootEl.value.contains(target)) return
+  }
   if (isBodyOrDocument) {
     const ctx = lastClickedBlockId ? blockStore.getBlock(lastClickedBlockId) : null
     if (!ctx || ctx.pageId !== props.pageId) return
@@ -510,7 +520,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="block-list">
+  <div ref="rootEl" class="block-list">
     <VueDraggable
       v-model="tree"
       :group="{ name: 'blocks-' + pageId, pull: true, put: true }"
