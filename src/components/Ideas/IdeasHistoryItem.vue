@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { usePageStore } from '../../stores/pages'
-import BlockList from '../BlockList.vue'
+import IdeasSnapshotPage from './IdeasSnapshotPage.vue'
 
 const props = defineProps<{
   pageId: string
@@ -9,7 +9,9 @@ const props = defineProps<{
 
 const pageStore = usePageStore()
 
-const page = computed(() => pageStore.getPage(props.pageId))
+// 历史页标题日期直接取自快照（纯快照驱动：不再依赖 Page/getPage）
+const snapshot = computed(() => pageStore.ideasSnapshots[props.pageId] ?? null)
+const title = computed(() => snapshot.value?.title ?? '')
 
 function getWeekday(dateStr: string): string {
   const date = new Date(dateStr)
@@ -27,15 +29,16 @@ function getMonthDay(dateStr: string): { month: string; day: string } {
 </script>
 
 <template>
-  <div class="history-item" v-if="page">
+  <div class="history-item" v-if="snapshot">
     <div class="history-header">
       <span class="timeline-line" aria-hidden="true"></span>
       <span class="timeline-dot" aria-hidden="true"></span>
-      <span class="history-date">{{ getMonthDay(page.title).month }}{{ getMonthDay(page.title).day }}日</span>
-      <span class="history-weekday">{{ getWeekday(page.title) }}</span>
+      <span class="history-date">{{ getMonthDay(title).month }}{{ getMonthDay(title).day }}日</span>
+      <span class="history-weekday">{{ getWeekday(title) }}</span>
     </div>
     <div class="history-body">
-      <BlockList :page-id="pageId" />
+      <!-- 历史页页面渲染统一走快照只读（ADR-0042 T5），不再渲染活数据 -->
+      <IdeasSnapshotPage :page-id="pageId" />
     </div>
   </div>
 </template>

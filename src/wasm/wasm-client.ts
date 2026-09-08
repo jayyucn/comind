@@ -12,7 +12,6 @@ export interface WasmClient {
   get_page(pageId: string): Promise<Page>
   get_all_pages(): Promise<Page[]>
   get_trash_pages(): Promise<Page[]>
-  get_ideas_pages_by_month(year: number, month: number): Promise<Page[]>
   save_page(page: string): Promise<Page>
   delete_page_cascade(pageId: string): Promise<void>
 
@@ -37,6 +36,13 @@ export interface WasmClient {
   rebuild_date_refs(): Promise<{ rebuilt: number }>
 
   ensure_today_ideas_page(): Promise<Page>
+  snapshot_stale_ideas_pages(): Promise<{ materialized: number }>
+  /** 读取 ideas 页快照（ADR-0042 快照读取守卫）；返回 content_json 与标题日期 date */
+  get_ideas_snapshot(pageId: string): Promise<{ content: string | null; date: string | null }>
+  /** 有快照的月份列表（yyyy-MM 倒序），轻量，供历史面板月份选择异步获取 */
+  list_ideas_snapshot_months(): Promise<string[]>
+  /** 指定月份（yyyy-MM）的全部快照（含 content_json），按 date 倒序，供按月异步渲染 */
+  list_ideas_snapshots_by_month(year: number, month: number): Promise<{ page_id: string; date: string; content_json: string }[]>
 
   create_block_version(blockId: string, snapshot: string, hash: string, reason: string, checkpointName?: string): Promise<BlockVersion>
   get_block_versions(blockId: string): Promise<BlockVersion[]>
@@ -157,11 +163,6 @@ export async function initWasmClient(): Promise<WasmClient> {
       return parseJsonResult<Page[]>(result)
     },
 
-    async get_ideas_pages_by_month(year: number, month: number): Promise<Page[]> {
-      const result = await wasmModule.get_ideas_pages_by_month(year, month)
-      return parseJsonResult<Page[]>(result)
-    },
-
     async save_page(page: string): Promise<Page> {
       const result = await wasmModule.save_page(page)
       return parseJsonResult<Page>(result)
@@ -243,6 +244,30 @@ export async function initWasmClient(): Promise<WasmClient> {
     async ensure_today_ideas_page(): Promise<Page> {
       const result = await wasmModule.ensure_today_ideas_page()
       return parseJsonResult<Page>(result)
+    },
+
+    async snapshot_stale_ideas_pages(): Promise<{ materialized: number }> {
+      const result = await wasmModule.snapshot_stale_ideas_pages()
+      return parseJsonResult<{ materialized: number }>(result)
+    },
+
+    async get_ideas_snapshot(pageId: string): Promise<{ content: string | null; date: string | null }> {
+      const result = await wasmModule.get_ideas_snapshot(pageId)
+      if (result === null || result === undefined) return { content: null, date: null }
+      const parsed = parseJsonResult<{ content: string | null; date: string | null }>(result)
+      return { content: parsed.content ?? null, date: parsed.date ?? null }
+    },
+
+    async list_ideas_snapshot_months(): Promise<string[]> {
+      const result = await wasmModule.list_ideas_snapshot_months()
+      if (result === null || result === undefined) return []
+      return parseJsonResult<string[]>(result)
+    },
+
+    async list_ideas_snapshots_by_month(year: number, month: number): Promise<{ page_id: string; date: string; content_json: string }[]> {
+      const result = await wasmModule.list_ideas_snapshots_by_month(year, month)
+      if (result === null || result === undefined) return []
+      return parseJsonResult<{ page_id: string; date: string; content_json: string }[]>(result)
     },
 
     async create_block_version(blockId: string, snapshot: string, hash: string, reason: string, checkpointName?: string): Promise<BlockVersion> {

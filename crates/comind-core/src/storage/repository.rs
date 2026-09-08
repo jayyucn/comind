@@ -23,10 +23,6 @@ pub trait PageRepository {
     fn get_trash(&self) -> Result<Vec<Page>, Box<dyn Error>>;
     /// 批量按 ID 查询 page（用于 checkAndFire 批量化）
     fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Page>, Box<dyn Error>>;
-    /// 按月份查询 ideas 类型的页面（title 格式为 yyyy-MM-dd）
-    fn get_ideas_by_month(&self, year: i32, month: u32) -> Result<Vec<Page>, Box<dyn Error>>;
-    /// 获取所有有 ideas 页面的月份列表（yyyy-MM 格式，倒序）
-    fn get_ideas_months(&self) -> Result<Vec<String>, Box<dyn Error>>;
     fn create(&mut self, page: &Page) -> Result<Page, Box<dyn Error>>;
     fn update(&mut self, page: &Page) -> Result<Page, Box<dyn Error>>;
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
@@ -188,6 +184,10 @@ pub trait PageSnapshotRepository {
     fn get_by_page_id(&self, page_id: &str) -> Result<Option<PageSnapshot>, Box<dyn Error>>;
     /// 物化写入（幂等键 page_id）。已存在则保留旧行、不覆盖；返回**实际落库**的行。
     fn create(&mut self, snapshot: &PageSnapshot) -> Result<PageSnapshot, Box<dyn Error>>;
+    /// 有快照的月份列表（yyyy-MM 倒序），轻量，供历史面板月份选择异步获取。
+    fn list_months(&self) -> Result<Vec<String>, Box<dyn Error>>;
+    /// 指定月份（yyyy-MM）的全部快照（含 content_json），按 date 倒序，供按月异步渲染。
+    fn list_by_month(&self, year: i32, month: i32) -> Result<Vec<PageSnapshot>, Box<dyn Error>>;
 }
 
 pub trait StorageAdapter {

@@ -258,4 +258,36 @@ describe('useEditorStore', () => {
       expect(store.quickPropertyEditor?.visible).toBe(false)
     })
   })
+
+  describe('BlockModal 双态（ADR-0042 T6）', () => {
+    test('openBlockModal 默认活上下文（snapshotOf 为空）', () => {
+      const store = useEditorStore()
+      store.openBlockModal('block-1')
+      expect(store.blockModalBlockId).toBe('block-1')
+      expect(store.blockModalSnapshotOf).toBeNull()
+    })
+
+    test('openBlockModal 带 snapshotOf 进入快照上下文（只读）', () => {
+      const store = useEditorStore()
+      store.openBlockModal('block-1', { snapshotOf: 'page-historical' })
+      expect(store.blockModalBlockId).toBe('block-1')
+      expect(store.blockModalSnapshotOf).toBe('page-historical')
+    })
+
+    test('closeBlockModal 同时清空 blockId 与 snapshotOf', () => {
+      const store = useEditorStore()
+      store.openBlockModal('block-1', { snapshotOf: 'page-historical' })
+      store.closeBlockModal()
+      expect(store.blockModalBlockId).toBeNull()
+      expect(store.blockModalSnapshotOf).toBeNull()
+    })
+
+    test('活上下文打开不残留上次的快照上下文', () => {
+      const store = useEditorStore()
+      store.openBlockModal('block-1', { snapshotOf: 'page-historical' })
+      store.openBlockModal('block-2')
+      expect(store.blockModalBlockId).toBe('block-2')
+      expect(store.blockModalSnapshotOf).toBeNull()
+    })
+  })
 })

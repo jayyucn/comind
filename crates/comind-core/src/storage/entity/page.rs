@@ -184,29 +184,6 @@ pub fn page_get_by_ids<E: Executor>(exec: &E, ids: &[String]) -> Result<Vec<Page
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn page_get_ideas_by_month<E: Executor>(exec: &E, year: i32, month: u32) -> Result<Vec<Page>, Box<dyn Error>> {
-    let start = format!("{}-{:02}-01", year, month);
-    let end = if month == 12 {
-        format!("{}-01-01", year + 1)
-    } else {
-        format!("{}-{:02}-01", year, month + 1)
-    };
-    let sql = format!(
-        "SELECT {} FROM Page WHERE type IN ('ideas', 'journal') AND deleted = 0 AND deleted_at IS NULL AND title >= ?1 AND title < ?2 ORDER BY title DESC",
-        page_select_cols()
-    );
-    let params: Vec<&dyn ToSql> = vec![&start, &end];
-    exec.query_map(&sql, &params, |row| row_to_page_native(row)).map_err(bx)
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn page_get_ideas_months<E: Executor>(exec: &E) -> Result<Vec<String>, Box<dyn Error>> {
-    let sql = "SELECT DISTINCT substr(title, 1, 7) AS month FROM Page WHERE type IN ('ideas', 'journal') AND deleted = 0 AND deleted_at IS NULL ORDER BY month DESC";
-    let params: &[&dyn ToSql] = &[];
-    exec.query_map(&sql, params, |row| row.get::<_, String>(0)).map_err(bx)
-}
-
-#[cfg(not(target_arch = "wasm32"))]
 pub fn page_create<E: Executor>(exec: &E, page: &Page) -> Result<Page, Box<dyn Error>> {
     let params = page_params(page);
     exec.execute(&page_insert_sql(), &params)?;

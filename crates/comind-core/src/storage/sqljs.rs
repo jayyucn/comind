@@ -533,17 +533,6 @@ impl PageRepository for SqlJsAdapter {
         Ok(result.into_iter().map(|r| row_to_page_js(&r)).collect())
     }
 
-    fn get_ideas_by_month(&self, year: i32, month: u32) -> Result<Vec<Page>, Box<dyn std::error::Error>> {
-        let start = format!("{}-{:02}-01", year, month);
-        let end = if month == 12 {
-            format!("{}-01-01", year + 1)
-        } else {
-            format!("{}-{:02}-01", year, month + 1)
-        };
-        let result = Self::query(&self.db, &format!("SELECT {} FROM Page WHERE type IN ('ideas', 'journal') AND deleted = 0 AND deleted_at IS NULL AND title >= ? AND title < ? ORDER BY title DESC", page_select_cols()), &[start.as_str(), end.as_str()])?;
-        Ok(result.into_iter().map(|r| row_to_page_js(&r)).collect())
-    }
-
     fn create(&mut self, page: &Page) -> Result<Page, Box<dyn std::error::Error>> {
         let block_id = page.block_id.as_deref().unwrap_or("");
         let icon = page.icon.as_deref().unwrap_or("");
@@ -588,10 +577,6 @@ impl PageRepository for SqlJsAdapter {
         }
     }
 
-    fn get_ideas_months(&self) -> Result<Vec<String>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, "SELECT DISTINCT substr(title, 1, 7) AS month FROM Page WHERE type IN ('ideas', 'journal') AND deleted = 0 AND deleted_at IS NULL ORDER BY month DESC", &[])?;
-        Ok(result.into_iter().map(|r| r.get("month").cloned().unwrap_or_default()).collect())
-    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -1191,6 +1176,32 @@ impl PageSnapshotRepository for SqlJsAdapter {
         PageSnapshotRepository::get_by_page_id(self, &snapshot.page_id)?.ok_or_else(|| {
             Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "PageSnapshot not found after insert")) as Box<dyn std::error::Error>
         })
+    }
+
+    fn list_months(&self) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        let result = Self::query(
+            &self.db,
+            "SELECT DISTINCT substr(date,1,7) AS m FROM page_snapshots ORDER BY m DESC",
+            &[],
+        )?;
+        Ok(result
+            .into_iter()
+            .map(|r| r.get("m").cloned().unwrap_or_default())
+            .collect())
+    }
+
+    fn list_by_month(&self, year: i32, month: i32) -> Result<Vec<PageSnapshot>, Box<dyn std::error::Error>> {
+        let prefix = format!("{:04}-{:02}-", year, month);
+        let like = format!("{}%", prefix);
+        let result = Self::query(
+            &self.db,
+            &format!(
+                "SELECT {} FROM page_snapshots WHERE date LIKE ?1 ORDER BY date DESC",
+                page_snapshot_select_cols()
+            ),
+            &[like.as_str()],
+        )?;
+        Ok(result.into_iter().map(|r| row_to_page_snapshot_js(&r)).collect())
     }
 }
 

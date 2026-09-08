@@ -3,7 +3,7 @@ use comind_core::{
     services::{
         build_page_with_blocks, BlockService, BlockVersionService, BlockWriteService,
         BookService, DateRefService, FilterService, LinkService, PageService, PropertyService,
-        RelationshipTypeService, TemplateService,
+        RelationshipTypeService, SnapshotService, TemplateService,
     },
     storage::{SQLiteAdapter, StorageAdapter, TransactionalStorageAdapter},
     sync::message::SyncTable,
@@ -316,25 +316,6 @@ pub async fn get_trash_pages(
     execute_with_adapter(db, |storage| PageService::get_trash(storage)).await
 }
 
-#[tauri::command]
-pub async fn get_ideas_pages_by_month(
-    db: State<'_, super::state::DatabaseConnection>,
-    year: i32,
-    month: u32,
-) -> Result<Vec<Page>, String> {
-    execute_with_adapter(db, |storage| {
-        PageService::get_ideas_by_month(storage, year, month)
-    })
-    .await
-}
-
-#[tauri::command]
-pub async fn get_ideas_months(
-    db: State<'_, super::state::DatabaseConnection>,
-) -> Result<Vec<String>, String> {
-    execute_with_adapter(db, |storage| PageService::get_ideas_months(storage)).await
-}
-
 /// 幂等地获取或创建今日 Ideas 页面（单一事实来源：Rust 端）
 ///
 /// - 多次调用效果一致：已存在则返回现有页面，不存在则创建
@@ -358,6 +339,67 @@ pub async fn ensure_today_ideas_page(
     }
 
     result
+}
+
+/// 惰性物化过期 Ideas 页（ADR-0042）：遍历 `type='ideas'` 且标题日期 < 今天且尚无快照的页，
+/// 序列化整页块树 + 当日属性值写入 `page_snapshots`。幂等（二次调用不重载、不产生新行）。
+/// `page_snapshots` 仅本地表、不进 SyncTable（ADR-0042），故无需 sync_server 通知。
+/// 返回 JSON `{"materialized": <本次新物化页数>}`（与 rebuild_date_refs 的返回形态一致）。
+#[tauri::command]
+pub async fn snapshot_stale_ideas_pages(
+    db: State<'_, super::state::DatabaseConnection>,
+) -> Result<String, String> {
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let count = execute_with_adapter(db, |storage| {
+        SnapshotService::snapshot_stale_ideas_pages(storage, &today)
+    })
+    .await?;
+    Ok(format!("{{\"materialized\":{}}}", count))
+}
+
+/// 读取 ideas 页快照（ADR-0042 T5 快照读取守卫）：返回 `content_json` 原文与标题日期 `date`。
+/// 无快照（今日页 / 未过期 / 非 ideas 页）时 `content` 与 `date` 均为 null。
+/// 本地表只读，无写入 → 无需 sync_server 通知。
+#[tauri::command]
+pub async fn get_ideas_snapshot(
+    db: State<'_, super::state::DatabaseConnection>,
+    page_id: String,
+) -> Result<String, String> {
+    let snapshot = execute_with_adapter(db, |storage| {
+        SnapshotService::get_ideas_snapshot(storage, &page_id)
+    })
+    .await?;
+    Ok(match snapshot {
+        Some((content, date)) => serde_json::json!({ "content": content, "date": date }).to_string(),
+        None => serde_json::json!({ "content": null, "date": null }).to_string(),
+    })
+}
+
+/// 列出有快照的月份（yyyy-MM 倒序）。轻量，供历史面板月份选择异步获取。
+#[tauri::command]
+pub async fn list_ideas_snapshot_months(
+    db: State<'_, super::state::DatabaseConnection>,
+) -> Result<String, String> {
+    let months = execute_with_adapter(db, |storage| {
+        SnapshotService::list_ideas_snapshot_months(storage)
+    })
+    .await?;
+    serde_json::to_string(&months).map_err(|e| e.to_string())
+}
+
+/// 列出指定月份的 ideas 页快照（page_id/date/content_json），按 date 倒序。
+/// 供历史列表按月异步渲染：前端选中月份才调用，避免一次性全量加载 content_json。
+#[tauri::command]
+pub async fn list_ideas_snapshots_by_month(
+    db: State<'_, super::state::DatabaseConnection>,
+    year: i32,
+    month: i32,
+) -> Result<String, String> {
+    let snapshots = execute_with_adapter(db, |storage| {
+        SnapshotService::list_ideas_snapshots_by_month(storage, year, month)
+    })
+    .await?;
+    serde_json::to_string(&snapshots).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

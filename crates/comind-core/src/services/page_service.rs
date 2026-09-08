@@ -35,20 +35,6 @@ impl PageService {
         repository::PageRepository::get_trash(storage.pages())
     }
 
-    pub fn get_ideas_by_month(
-        storage: &mut dyn StorageAdapter,
-        year: i32,
-        month: u32,
-    ) -> Result<Vec<Page>, Box<dyn Error>> {
-        repository::PageRepository::get_ideas_by_month(storage.pages(), year, month)
-    }
-
-    pub fn get_ideas_months(
-        storage: &mut dyn StorageAdapter,
-    ) -> Result<Vec<String>, Box<dyn Error>> {
-        repository::PageRepository::get_ideas_months(storage.pages())
-    }
-
     /// 幂等地获取或创建今日 Ideas 页面
     ///
     /// - title 为本地时区的 `yyyy-MM-dd`

@@ -89,6 +89,38 @@ pub fn page_snapshot_create<E: Executor>(exec: &E, snapshot: &PageSnapshot) -> R
         )) as Box<dyn Error>)
 }
 
+/// 返回有快照的月份列表（yyyy-MM 去重，倒序），供历史面板月份选择。
+/// 只取 date 前缀、不加载 content_json —— 轻量，可频繁调用，支撑"按月异步获取"。
+#[cfg(not(target_arch = "wasm32"))]
+pub fn page_snapshot_list_months<E: Executor>(exec: &E) -> Result<Vec<String>, Box<dyn Error>> {
+    let sql = "SELECT DISTINCT substr(date,1,7) AS m FROM page_snapshots ORDER BY m DESC";
+    let rows = exec
+        .query_map(&sql, &[], |row| row.get::<usize, String>(0))
+        .map_err(bx)?;
+    Ok(rows.into_iter().collect())
+}
+
+/// 列出某月（yyyy-MM）的全部快照（含 content_json），按 date 倒序。
+/// 供历史列表按月异步渲染：选中月份才拉该月数据，避免一次性全量加载 content_json。
+#[cfg(not(target_arch = "wasm32"))]
+pub fn page_snapshot_list_by_month<E: Executor>(
+    exec: &E,
+    year: i32,
+    month: i32,
+) -> Result<Vec<PageSnapshot>, Box<dyn Error>> {
+    let prefix = format!("{:04}-{:02}-", year, month);
+    let like = format!("{}%", prefix);
+    let sql = format!(
+        "SELECT {} FROM page_snapshots WHERE date LIKE ?1 ORDER BY date DESC",
+        page_snapshot_select_cols()
+    );
+    let params: Vec<&dyn ToSql> = vec![&like];
+    let rows = exec
+        .query_map(&sql, &params, |row| row_to_page_snapshot_native(row))
+        .map_err(bx)?;
+    Ok(rows.into_iter().collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

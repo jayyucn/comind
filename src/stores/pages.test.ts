@@ -34,8 +34,7 @@ const { mockClient } = vi.hoisted(() => {
     ),
     getBlocksByPage: vi.fn(() => Promise.resolve([])),
     saveBlockTree: vi.fn(() => Promise.resolve([])),
-    getIdeasPagesByMonth: vi.fn(() => Promise.resolve([])),
-    getIdeasMonths: vi.fn(() => Promise.resolve([])),
+    // 纯快照驱动：列表全量改读 ideasSnapshots（按月异步走 listIdeasSnapshotMonths/listIdeasSnapshotsByMonth）
     ensureTodayIdeasPage: vi.fn(() => Promise.resolve({
       id: 'today-ideas',
       block_id: 'block-today',
@@ -51,6 +50,10 @@ const { mockClient } = vi.hoisted(() => {
       updated_at: Date.now(),
       deleted: 0,
     })),
+    // 纯快照驱动：按月异步获取（ADR-0042 T5）
+    listIdeasSnapshotMonths: vi.fn(() => Promise.resolve(['2026-08', '2026-07'])),
+    listIdeasSnapshotsByMonth: vi.fn(() => Promise.resolve([])),
+    getIdeasSnapshot: vi.fn(() => Promise.resolve({ content: null, date: null })),
   }
   return { mockClient }
 })
@@ -555,70 +558,86 @@ describe('usePageStore', () => {
     })
   })
 
-  // ===============================================================
-  // getIdeasPagesByMonth — 按月份查询 Ideas 页面
-  // ===============================================================
-  describe('getIdeasPagesByMonth', () => {
-    test('将 year 和 month 参数传递给后端', async () => {
-      const store = usePageStore()
-      mockClient.getIdeasPagesByMonth.mockResolvedValueOnce([])
-
-      await store.getIdeasPagesByMonth(2026, 8)
-
-      expect(mockClient.getIdeasPagesByMonth).toHaveBeenCalledWith(2026, 8)
+  describe('按月异步获取快照（ADR-0042）', () => {
+    const snapshotContent = JSON.stringify({
+      blocks: [
+        {
+          id: 'b1', page_id: 'p1', parent_id: null, pos: 1000,
+          content: '写周报', format: '{}', type: 'bullet',
+          created_at: 1, updated_at: 2, version: 0, deleted_at: null,
+        },
+      ],
+      properties: {},
     })
 
-    test('返回映射后的页面列表', async () => {
+    test('loadIdeasSnapshotMonths 填充月份列表，重复调用只请求一次', async () => {
       const store = usePageStore()
-      mockClient.getIdeasPagesByMonth.mockResolvedValueOnce([
-        makeRustPage({ id: 'p1', title: '2026-08-01', type: 'ideas' }),
-        makeRustPage({ id: 'p2', title: '2026-08-05', type: 'ideas', aliases: '["a"]' }),
+      mockClient.listIdeasSnapshotMonths.mockResolvedValueOnce(['2026-09', '2026-08'])
+
+      await store.loadIdeasSnapshotMonths()
+
+      expect(store.ideasMonths).toEqual(['2026-09', '2026-08'])
+
+      await store.loadIdeasSnapshotMonths()
+
+      expect(mockClient.listIdeasSnapshotMonths).toHaveBeenCalledTimes(1)
+    })
+
+    test('loadIdeasSnapshotsByMonth 按年月拉取并写入 ideasSnapshots', async () => {
+      const store = usePageStore()
+      mockClient.listIdeasSnapshotsByMonth.mockResolvedValueOnce([
+        { pageId: 'p1', date: '2026-08-31', content: snapshotContent },
       ])
 
-      const result = await store.getIdeasPagesByMonth(2026, 8)
+      await store.loadIdeasSnapshotsByMonth('2026-08')
 
-      expect(result.length).toBe(2)
-      expect(result[0].id).toBe('p1')
-      expect(result[0].title).toBe('2026-08-01')
-      expect(result[1].aliases).toEqual(['a'])
+      expect(mockClient.listIdeasSnapshotsByMonth).toHaveBeenCalledWith(2026, 8)
+      const snap = store.ideasSnapshots['p1']
+      expect(snap).toBeTruthy()
+      expect(snap!.title).toBe('2026-08-31')
+      expect(snap!.blocks.length).toBe(1)
     })
 
-    test('仅新增不在 store 中的页面，不替换已有页面', async () => {
+    test('同一月份并发调用只发一次请求（in-flight 去重）', async () => {
       const store = usePageStore()
-      // 预置一个已存在的页面
-      mockClient.ensureTodayIdeasPage.mockResolvedValueOnce(
-        makeRustPage({ id: 'existing', title: '2026-08-01', type: 'ideas', word_count: 100 })
-      )
-      await store.ensureTodayIdeasPage()
-      expect(store.pages.length).toBe(1)
+      mockClient.listIdeasSnapshotsByMonth.mockResolvedValue([])
 
-      // 查询返回包含已有页面和新页面
-      mockClient.getIdeasPagesByMonth.mockResolvedValueOnce([
-        makeRustPage({ id: 'existing', title: '2026-08-01', type: 'ideas', word_count: 999 }),
-        makeRustPage({ id: 'new', title: '2026-08-05', type: 'ideas' }),
+      await Promise.all([
+        store.loadIdeasSnapshotsByMonth('2026-08'),
+        store.loadIdeasSnapshotsByMonth('2026-08'),
       ])
 
-      await store.getIdeasPagesByMonth(2026, 8)
-
-      // store 中有 2 个页面（原 1 个 + 新增 1 个），已有页面不被替换
-      expect(store.pages.length).toBe(2)
-      const existing = store.pages.find(p => p.id === 'existing')
-      expect(existing?.wordCount).toBe(100) // 原始值，未被覆盖
+      expect(mockClient.listIdeasSnapshotsByMonth).toHaveBeenCalledTimes(1)
     })
-  })
 
-  // ===============================================================
-  // getIdeasMonths — 获取月份列表
-  // ===============================================================
-  describe('getIdeasMonths', () => {
-    test('委托给后端并返回月份列表', async () => {
+    test('切换月份时分别请求对应年月', async () => {
       const store = usePageStore()
-      mockClient.getIdeasMonths.mockResolvedValueOnce(['2026-08', '2026-07'])
+      mockClient.listIdeasSnapshotsByMonth.mockResolvedValue([])
 
-      const result = await store.getIdeasMonths()
+      await store.loadIdeasSnapshotsByMonth('2026-08')
+      await store.loadIdeasSnapshotsByMonth('2026-07')
 
-      expect(mockClient.getIdeasMonths).toHaveBeenCalledTimes(1)
-      expect(result).toEqual(['2026-08', '2026-07'])
+      expect(mockClient.listIdeasSnapshotsByMonth).toHaveBeenNthCalledWith(1, 2026, 8)
+      expect(mockClient.listIdeasSnapshotsByMonth).toHaveBeenNthCalledWith(2, 2026, 7)
+    })
+
+    test('月份为空时直接返回，不发起请求', async () => {
+      const store = usePageStore()
+
+      await store.loadIdeasSnapshotsByMonth('')
+
+      expect(mockClient.listIdeasSnapshotsByMonth).not.toHaveBeenCalled()
+    })
+
+    test('content 为空时该页快照记为 null', async () => {
+      const store = usePageStore()
+      mockClient.listIdeasSnapshotsByMonth.mockResolvedValueOnce([
+        { pageId: 'p2', date: '2026-08-30', content: '' },
+      ])
+
+      await store.loadIdeasSnapshotsByMonth('2026-08')
+
+      expect(store.ideasSnapshots['p2']).toBeNull()
     })
   })
 })

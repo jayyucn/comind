@@ -16,7 +16,6 @@
 import { AlignCenter, AlignLeft, AlignRight, Check, Copy, Crop, Fullscreen, Images, SquarePen, Trash, X } from 'lucide-vue-next'
 import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import type { CrossBlockSelection } from '../../../../composables/useCrossBlockSelection'
-import { useIdeasFreeze } from '../../../../composables/useIdeasFreeze'
 import { useBlockStore } from '../../../../stores/blocks'
 import { useEditorStore } from '../../../../stores/editor'
 import { assetStorage } from '../../../../utils/asset'
@@ -31,14 +30,12 @@ const props = withDefaults(
     showFullPlaceholder?: boolean
     properties?: Record<string, unknown>
     language?: string
-    readonly?: boolean
   }>(),
   {
     showPlaceholder: false,
     showFullPlaceholder: false,
     properties: () => ({}),
     language: undefined,
-    readonly: false,
   },
 )
 
@@ -104,12 +101,9 @@ watch(
   { immediate: true },
 )
 
-// ── 选区 / 冻结 ──
+// ── 选区 ──
 const isSelected = computed(() => selection?.isBlockSelected(props.blockId) ?? false)
 const pageId = computed(() => blockStore.getBlock(props.blockId)?.pageId ?? '')
-// 冻结态 = 页面真实只读（ideas 非今日）。render 槽位 props.readonly 恒为 true，
-// 不能作为冻结依据；D10 需以 useIdeasFreeze 为准。
-const { isFrozen } = useIdeasFreeze(pageId)
 
 // ── 对齐 / 尺寸 ──
 const align = computed<'left' | 'center' | 'right'>(() => {
@@ -137,7 +131,6 @@ const editingDesc = ref(false)
 const descDraft = ref('')
 const descInput = ref<HTMLInputElement | null>(null)
 async function startEditDesc() {
-  if (isFrozen.value) return
   // 描述编辑态与图片选中态互斥：进入编辑即取消图片选区（隐藏框选边框与缩放手柄）
   selection?.clearSelection()
   descDraft.value = description.value
@@ -188,7 +181,6 @@ async function copyImage() {
 }
 
 async function replaceImage() {
-  if (isFrozen.value) return
   const file = await openImageFileDialog()
   if (!file) return
   const asset = await assetStorage.save(file)
@@ -196,7 +188,6 @@ async function replaceImage() {
 }
 
 async function deleteImage() {
-  if (isFrozen.value) return
   // 删除图片：将 block 转为 bullet 类型的空 block，并把光标插入其中
   await blockStore.updateBlockType(props.blockId, 'bullet')
   await blockStore.updateBlockContent(props.blockId, '')
@@ -209,7 +200,7 @@ async function setAlign(a: 'left' | 'center' | 'right') {
 }
 
 function onImageClick() {
-  if (isFrozen.value || !pageId.value || !selection) return
+  if (!pageId.value || !selection) return
   // 幂等选中：未选 → 清空其它选区后选中；已选 → 保持。
   // 单纯 toggle 会与 BlockList 既有「点击区外清空」语义叠加，
   // 改成 clear+add 后无论从哪种状态点击都只选本块，符合 Q8A。
@@ -224,7 +215,6 @@ const RESIZE_MIN = 40
 let rs: { corner: string; startX: number; startY: number; startW: number; startH: number; aspect: number } | null = null
 
 function startResize(corner: string, e: MouseEvent) {
-  if (isFrozen.value) return
   e.preventDefault()
   e.stopPropagation()
   const img = imgEl.value
@@ -285,7 +275,7 @@ let cropDrag:
   | null = null
 
 function cropImage() {
-  if (isFrozen.value || !imgSrc.value || !imgEl.value) return
+  if (!imgSrc.value || !imgEl.value) return
   const w = imgEl.value.clientWidth
   const h = imgEl.value.clientHeight
   if (!w || !h) return
@@ -409,7 +399,7 @@ defineExpose({
 <template>
   <div
     class="image-block"
-    :class="{ 'is-selected': isSelected, 'is-readonly': isFrozen }"
+    :class="{ 'is-selected': isSelected }"
     :style="{ justifyContent: justify }"
     @mouseenter="onEnter"
     @mouseleave="onLeave"
@@ -424,11 +414,11 @@ defineExpose({
       </div>
       <div v-else-if="showToolbar && imgSrc" class="image-toolbar" @click.stop>
         <button class="tb-btn" title="放大查看" @click.stop="openLightbox"><Fullscreen :size="14" /></button>
-        <button v-if="!isFrozen" class="tb-btn" title="复制图片" @click.stop="copyImage"><Copy :size="14" /></button>
-        <button v-if="!isFrozen" class="tb-btn" :title="description ? '编辑描述' : '添加描述'" @click.stop="startEditDesc"><SquarePen :size="14" /></button>
-        <button v-if="!isFrozen" class="tb-btn" title="裁剪" @click.stop="cropImage"><Crop :size="14" /></button>
-        <button v-if="!isFrozen" class="tb-btn" title="替换图片" @click.stop="replaceImage"><Images :size="14" /></button>
-        <button v-if="!isFrozen" class="tb-btn danger" title="删除图片" @click.stop="deleteImage"><Trash :size="14" /></button>
+        <button class="tb-btn" title="复制图片" @click.stop="copyImage"><Copy :size="14" /></button>
+        <button class="tb-btn" :title="description ? '编辑描述' : '添加描述'" @click.stop="startEditDesc"><SquarePen :size="14" /></button>
+        <button class="tb-btn" title="裁剪" @click.stop="cropImage"><Crop :size="14" /></button>
+        <button class="tb-btn" title="替换图片" @click.stop="replaceImage"><Images :size="14" /></button>
+        <button class="tb-btn danger" title="删除图片" @click.stop="deleteImage"><Trash :size="14" /></button>
         <span class="tb-sep"></span>
         <button class="tb-btn align" :class="{ active: align === 'left' }" title="左对齐" @click.stop="setAlign('left')">
           <AlignLeft :size="14" />
@@ -452,10 +442,10 @@ defineExpose({
       />
       <div v-else class="image-empty">
         <div class="image-empty-text">{{ parsed ? '图片加载失败' : '图片已清空' }}</div>
-        <button v-if="!isFrozen" class="image-empty-btn" @click.stop="replaceImage">替换图片</button>
+        <button class="image-empty-btn" @click.stop="replaceImage">替换图片</button>
       </div>
 
-      <!-- 图片描述：底部居中，点击可编辑（冻结态只读） -->
+      <!-- 图片描述：底部居中，点击可编辑 -->
       <div v-if="editingDesc" class="image-desc-edit" @click.stop @mousedown.stop>
         <input
           ref="descInput"
@@ -470,8 +460,7 @@ defineExpose({
       </div>
       <div
         v-else-if="description && !cropOpen"
-        class="image-desc"
-        :class="{ editable: !isFrozen }"
+        class="image-desc editable"
         @click.stop="startEditDesc"
       >{{ description }}</div>
 
@@ -490,7 +479,7 @@ defineExpose({
       </div>
 
       <!-- 选中态：四角圆点手柄 -->
-      <template v-if="isSelected && !isFrozen && !cropOpen">
+      <template v-if="isSelected && !cropOpen">
         <span class="resize-handle nw" @mousedown.stop.prevent="startResize('nw', $event)" @click.stop></span>
         <span class="resize-handle ne" @mousedown.stop.prevent="startResize('ne', $event)" @click.stop></span>
         <span class="resize-handle sw" @mousedown.stop.prevent="startResize('sw', $event)" @click.stop></span>
