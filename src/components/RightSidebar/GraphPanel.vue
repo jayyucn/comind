@@ -38,8 +38,8 @@ onBeforeUnmount(() => {
 }
 
 .graph-panel :deep(.graph-view-header) {
-  padding: 8px 12px;
-  align-items: center;
+  align-items: flex-end;
+  padding: 0 8px 2px;
 }
 
 

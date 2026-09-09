@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { X } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import { useRightSidebar } from '../../composables/useRightSidebar'
 import Icon from '../Icons/Icon.vue'
 import { getRegisteredPanels } from './panels'
 
-const { visible, activePanelId, settings, setActivePanel, setVisible, setWidth, persistSettings } = useRightSidebar()
+const { visible, activePanelId, settings, setActivePanel,  setWidth, persistSettings } = useRightSidebar()
 
 const isResizing = ref(false)
 
@@ -64,20 +63,14 @@ function handleResizeStart(e: MouseEvent) {
 
       <div class="right-sidebar-header">
         <div class="right-sidebar-tabs">
-          <button
-            v-for="panel in orderedPanels"
-            :key="panel.id"
-            class="tab-btn"
-            :class="{ active: activePanelId === panel.id }"
-            @click="setActivePanel(panel.id)"
-          >
-            <span class="tab-icon"><Icon :name="panel.icon" /></span>
+          <button v-for="panel in orderedPanels" :key="panel.id" class="tab-btn"
+            :class="{ active: activePanelId === panel.id }" @click="setActivePanel(panel.id)">
+            <span class="tab-icon">
+              <Icon :name="panel.icon" :size="16" />
+            </span>
             <span class="tab-label">{{ panel.label }}</span>
           </button>
         </div>
-        <button class="close-btn" @click="setVisible(false)">
-          <X :size="14" :stroke-width="1.75" />
-        </button>
       </div>
 
       <div class="right-sidebar-content">
@@ -89,22 +82,22 @@ function handleResizeStart(e: MouseEvent) {
 
 <style lang="scss" scoped>
 .right-sidebar {
-  height: 100%;
+  top: var(--nav-height);
+  height: calc(100vh - var(--nav-height));
   background: var(--bg-sidebar);
-  border-left: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-top-left-radius: var(--radius-md);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
   overflow: hidden;
   position: relative;
-  // 右侧栏是浮层侧栏，按 ADR-0032 应高于吸附 chrome（$z-sticky=10），
-  // 否则顶部 tab 按钮会被 App.vue 的 sticky-header 盖住、无法点击。
   z-index: var(--z-sidebar);
 }
 
 .resize-handle {
   position: absolute;
-  top: 0;
+
   left: 0;
   width: 4px;
   height: 100%;
@@ -120,16 +113,15 @@ function handleResizeStart(e: MouseEvent) {
 
 .right-sidebar-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  padding: 8px 8px 8px 12px;
+  padding: 8px 8px 0px 12px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 
 .right-sidebar-tabs {
   display: flex;
-  gap: 2px;
   flex: 1;
   min-width: 0;
 }
@@ -137,57 +129,37 @@ function handleResizeStart(e: MouseEvent) {
 .tab-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
+  gap: 8px;
+  padding: 2px 8px;
   border: none;
+  border-top-left-radius: var(--radius-sm);
+  border-top-right-radius: var(--radius-sm);
   background: transparent;
   cursor: pointer;
-  font-size: var(--text-xs);
   color: var(--text-tertiary);
-  font-family: inherit;
   transition: background 80ms ease, color 80ms ease, border-color 120ms ease;
-  white-space: nowrap;
-  border-bottom: 2px solid transparent;
-}
+  border-bottom: 1px solid transparent;
 
-.tab-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-}
+  &:hover {
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+  }
 
-.tab-btn.active {
-  background: var(--bg-active);
-  color: var(--text-primary);
-  font-weight: var(--font-medium);
-  border-bottom-color: var(--accent);
+  &.active {
+    background: var(--bg-active);
+    color: var(--text-primary);
+    font-weight: var(--font-medium);
+    border-bottom-color: var(--accent);
+  }
 }
 
 .tab-icon {
-  font-size: var(--text-xs);
+  width: 16px;
+  height: 16px;
 }
 
 .tab-label {
-  font-size: var(--text-xs);
-}
-
-.close-btn {
-  width: 24px;
-  height: 24px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-sm);
-  color: var(--text-tertiary);
-  flex-shrink: 0;
-  transition: background 80ms ease, color 80ms ease;
-}
-
-.close-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-secondary);
+  font-size: var(--text-md);
 }
 
 .right-sidebar-content {

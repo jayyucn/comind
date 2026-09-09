@@ -512,13 +512,13 @@ onBeforeUnmount(() => {
   <div class="graph-view">
     <div class="graph-view-header">
       <div class="graph-view-controls">
-        <div class="control-group">
+        <div class="control-group control-group-left">
           <button v-for="layout in ['force', 'radial', 'dagre']" :key="layout" class="layout-btn"
             :class="{ active: currentLayout === layout }" @click="handleLayoutChange(layout)">
             {{ layout === 'force' ? '力导向' : layout === 'radial' ? '径向' : '层级' }}
           </button>
         </div>
-        <div class="control-group">
+        <div class="control-group control-group-right">
           <button class="control-btn" title="适应视图" @click="handleFitView">
             <ExpandIcon />
           </button>
@@ -549,7 +549,7 @@ onBeforeUnmount(() => {
   </div>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
 .graph-view {
   display: flex;
   flex-direction: column;
@@ -585,8 +585,6 @@ onBeforeUnmount(() => {
   align-items: center;
   width: 100%;
   justify-content: space-between;
-  padding-left: var(--space-12);
-  padding-right: var(--space-4);
   gap: var(--space-4);
   flex-wrap: wrap;
 }
@@ -594,25 +592,40 @@ onBeforeUnmount(() => {
 .control-group {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
 }
+
 .control-group-left {
-  padding-left: var(--space-8);
+  padding-left: var(--space-2);
+
+  .layout-btn {
+    padding: 4px 10px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-sidebar);
+    cursor: pointer;
+    font-size: var(--text-xs);
+    color: var(--text-tertiary);
+    font-family: inherit;
+    transition: background 80ms ease, color 80ms ease;
+
+    &:hover {
+      background: var(--bg-hover);
+      color: var(--text-secondary);
+    }
+
+    &.active {
+      background: var(--bg-active);
+      color: var(--text-primary);
+      font-weight: var(--font-medium);
+      border-color: #1890ff;
+    }
+  }
 }
 
-.control-label {
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-  margin-right: 4px;
+.control-group-right {
+  gap: var(--space-1);
+
 }
 
-.control-value {
-  font-size: var(--text-xs);
-  color: var(--text-primary);
-  font-weight: var(--font-medium);
-  min-width: 18px;
-  text-align: center;
-}
 
 .control-btn {
   width: var(--icon-size);
@@ -632,30 +645,6 @@ onBeforeUnmount(() => {
 
 .control-btn:hover {
   background: var(--bg-hover);
-}
-
-.layout-btn {
-  padding: 4px 10px;
-  border: 1px solid var(--border);
-  background: var(--bg-sidebar);
-  cursor: pointer;
-  border-radius: var(--radius-sm);
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-  font-family: inherit;
-  transition: background 80ms ease, color 80ms ease;
-}
-
-.layout-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-}
-
-.layout-btn.active {
-  background: var(--bg-active);
-  color: var(--text-primary);
-  font-weight: var(--font-medium);
-  border-color: #1890ff;
 }
 
 .graph-view-canvas {

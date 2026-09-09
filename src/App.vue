@@ -170,17 +170,17 @@ function handleMainClick(e: MouseEvent) {
             :title="isGraphPanelOpen ? '关闭概念图谱' : '打开概念图谱'"
             @click="handleGraphSidebarToggle"
           >
-            <Icon :name="isGraphPanelOpen ? 'icon-panel-right-close' : 'icon-panel-right-open'" :size="16" />
+            <Icon :name="isGraphPanelOpen ? 'icon-panel-right-close' : 'icon-panel-right-open'" :size="18" />
           </button>
           <div class="window-controls" v-if="isTauriEnvironment()">
             <button class="window-control-btn minimize-btn" title="最小化" @click="minimize">
-              <Icon name="icon-minimize" :size="18" />
+              <Icon name="icon-minimize" :size="14" />
             </button>
             <button class="window-control-btn maximize-btn" :title="isMaximized ? '还原' : '最大化'" @click="maximize">
-              <Icon :name="isMaximized ? 'icon-square' : 'icon-maximize'" :size="18" />
+              <Icon :name="isMaximized ? 'icon-square' : 'icon-maximize'" :size="14" />
             </button>
             <button class="window-control-btn close-btn" title="关闭" @click="close">
-              <Icon name="icon-close" :size="18" />
+              <Icon name="icon-close" :size="14" />
             </button>
           </div>
         </div>
@@ -319,12 +319,12 @@ function handleMainClick(e: MouseEvent) {
 
 .right-sidebar-toggle {
   border: none;
-  // background: transparent;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: var(--space-6);
+  width: var(--space-7);
+  height: var(--space-7);
   border-radius: var(--radius-xs);
   color: var(--text-tertiary);
 }
@@ -354,8 +354,8 @@ function handleMainClick(e: MouseEvent) {
 }
 
 .window-control-btn {
-  width: 46px;
-  height: 24px;
+  width: var(--space-11);
+  height: var(--space-7);
   border: none;
   background: transparent;
   cursor: pointer;

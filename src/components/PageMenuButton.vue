@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { Monitor, Moon, Sun } from 'lucide-vue-next'
-import { computed, onUnmounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useFavorites } from '../composables/useFavorites'
 import { useSettingsModal } from '../composables/useSettingsModal'
 import { useTheme } from '../composables/useTheme'
 import { usePageStore } from '../stores/pages'
 import ConfirmDialog from './ConfirmDialog.vue'
+import BasePopover from './common/BasePopover.vue'
 import { Icon } from './Icons'
 
 const router = useRouter()
@@ -19,6 +20,7 @@ const { theme, setTheme } = useTheme()
 const isMenuOpen = ref(false)
 const isDeleteSubmenuOpen = ref(false)
 const showPermanentDeleteConfirm = ref(false)
+const menuTriggerRef = ref<HTMLButtonElement | null>(null)
 
 const themeIconMap = {
   light: Sun,
@@ -123,33 +125,16 @@ function handleNavigateToSettings() {
   closeMenu()
   openSettings()
 }
-
-function handleClickOutside(event: MouseEvent) {
-  const target = event.target as HTMLElement
-  if (!target.closest('.page-menu-button')) {
-    closeMenu()
-  }
-}
-
-if (typeof window !== 'undefined') {
-  window.addEventListener('click', handleClickOutside)
-}
-
-onUnmounted(() => {
-  if (typeof window !== 'undefined') {
-    window.removeEventListener('click', handleClickOutside)
-  }
-})
 </script>
 
 <template>
   <div class="page-menu-button">
-    <button class="menu-trigger" @click.stop="toggleMenu">
-      <Icon name="icon-menu" :size="16" /> 
+    <button ref="menuTriggerRef" class="menu-trigger" @click.stop="toggleMenu">
+      <Icon name="icon-menu" :size="18" /> 
     </button>
 
-    <Transition name="menu">
-      <div v-if="isMenuOpen" class="menu-dropdown">
+    <BasePopover :visible="isMenuOpen" :anchor-el="() => menuTriggerRef" @close="closeMenu">
+      <div class="menu-dropdown">
         <!-- 页面相关功能仅在页面路由中显示 -->
         <template v-if="isOnPage && currentPage">
           <button class="menu-item" @click="handleToggleFavorite">
@@ -204,7 +189,7 @@ onUnmounted(() => {
           <span>设置</span>
         </button>
       </div>
-    </Transition>
+    </BasePopover>
 
     <ConfirmDialog
       v-if="currentPage"
@@ -221,13 +206,9 @@ onUnmounted(() => {
 </template>
 
 <style lang="scss" scoped>
-.page-menu-button {
-  position: relative;
-}
-
 .menu-trigger {
-  width: var(--space-6);
-  height: var(--space-6);
+  width: var(--space-7);
+  height: var(--space-7);
   border: none;
   cursor: pointer;
   display: flex;
@@ -241,18 +222,12 @@ onUnmounted(() => {
   transform: scale(1.1);
 }
 
+/* 面板外观（背景/边框/圆角/阴影/层级）由 BasePopover 提供：Teleport 到 body 后
+   以 --z-popover(900) 参与全局排序，脱离 .sticky-header(z:10) 的局部堆叠上下文
+   （参照 NotificationBell.vue 模式，见 ADR-0032）。此处仅保留内容宽度与内边距。 */
 .menu-dropdown {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
   min-width: 180px;
-  background: var(--color-paper);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-modal);
   padding: 4px;
-  // 局部语义：菜单困于 .sticky-header(z:10) 堆叠上下文内，此值只在本组件内部竞争，不参与全局量表（见 ADR-0012）
-  z-index: var(--z-dropdown);
 }
 
 .menu-item {
@@ -359,18 +334,6 @@ onUnmounted(() => {
   height: 1px;
   background: var(--color-border);
   margin: 4px 8px;
-}
-
-/* 过渡动画 */
-.menu-enter-active,
-.menu-leave-active {
-  transition: opacity 120ms ease, transform 120ms ease;
-}
-
-.menu-enter-from,
-.menu-leave-to {
-  opacity: 0;
-  transform: translateY(-4px);
 }
 
 .submenu-enter-active,

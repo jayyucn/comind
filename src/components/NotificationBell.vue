@@ -109,33 +109,21 @@ onMounted(() => {
 
 <template>
   <div v-if="notificationStore.settings.enabled" class="notification-bell relative">
-    <button
-      ref="bellRef"
-      class="notification-bell-btn"
-      @click="toggleDropdown"
-    >
-      <Icon name="icon-bell" :size="16" />
-      <span
-        v-if="notificationStore.unreadCount > 0"
-        class="notification-badge"
-      >
+    <button ref="bellRef" class="notification-bell-btn" @click="toggleDropdown">
+      <Icon name="icon-bell" :size="18" />
+      <span v-if="notificationStore.unreadCount > 0" class="notification-badge">
         {{ notificationStore.unreadCount > 99 ? '99+' : notificationStore.unreadCount }}
       </span>
     </button>
 
-    <BasePopover
-      :visible="isOpen"
-      :position="bellPos"
-      @close="closeDropdown"
-    >
+    <BasePopover :visible="isOpen" :position="bellPos" @close="closeDropdown">
       <div class="notification-dropdown">
         <div class="dropdown-header">
-          <h3 class="dropdown-title">通知</h3>
-          <button
-            v-if="notificationStore.unreadCount > 0"
-            class="mark-all-read-btn"
-            @click.stop="handleMarkAllRead"
-          >
+          <div class="dropdown-title-container">
+            <h3 class="dropdown-title">通知</h3>
+            <span class="title-hint">点击通知跳转到对应内容</span>
+          </div>
+          <button v-if="notificationStore.unreadCount > 0" class="mark-all-read-btn" @click.stop="handleMarkAllRead">
             <Check :size="12" />
             全部已读
           </button>
@@ -143,10 +131,8 @@ onMounted(() => {
 
         <!-- loading 只在无内容可显示时出现（初次加载/清空后）；已有列表的静默刷新
              （如删除通知后的 reload）若替换视图，内容驱动的面板宽度会先塌缩再恢复，肉眼即"闪一下" -->
-        <div
-          v-if="notificationStore.isLoading && notificationStore.notifications.length === 0"
-          class="dropdown-loading"
-        >
+        <div v-if="notificationStore.isLoading && notificationStore.notifications.length === 0"
+          class="dropdown-loading">
           加载中...
         </div>
 
@@ -155,88 +141,66 @@ onMounted(() => {
         </div>
 
         <div v-else class="dropdown-content">
-          <div
-            v-for="group in notificationStore.groupedNotifications"
-            :key="group.date"
-            class="notification-group"
-          >
+          <div v-for="group in notificationStore.groupedNotifications" :key="group.date" class="notification-group">
             <div class="group-date">
-              {{ group.date === new Date().toDateString() ? '今天' : group.date === new Date(Date.now() - 24 * 60 * 60 * 1000).toDateString() ? '昨天' : (new Date(group.date).getMonth() + 1) + '月' + new Date(group.date).getDate() + '日' }}
+              {{ group.date === new Date().toDateString() ? '今天' : group.date === new Date(Date.now() - 24 * 60 * 60 *
+                1000).toDateString() ? '昨天' : (new Date(group.date).getMonth() + 1) + '月' + new Date(group.date).getDate()
+                + '日' }}
             </div>
-            <div
-              v-for="notif in group.items"
-              :key="notif.id"
-              class="notification-item"
+            <div v-for="notif in group.items" :key="notif.id" class="notification-item"
               :class="{ 'notification-item--unread': notif.status === 'unread' }"
-              @click="handleNotificationClick(notif)"
-            >
+              @click="handleNotificationClick(notif)">
               <div class="notification-status">{{ getStatusIcon(notif.status) }}</div>
               <div class="notification-body">
                 <div class="notification-title">
-                  {{ notificationStore.parsePayload(notif.payload).blockSnippet || notificationStore.parsePayload(notif.payload).title }}
+                  {{ notificationStore.parsePayload(notif.payload).blockSnippet ||
+                    notificationStore.parsePayload(notif.payload).title }}
                 </div>
                 <div class="notification-meta">
                   <span :class="getKindColor(notif.kind)">{{ getKindLabel(notif.kind) }}</span>
-                  <span v-if="notificationStore.parsePayload(notif.payload).pageTitle" class="notification-page">{{ notificationStore.parsePayload(notif.payload).pageTitle }}</span>
-                  <span v-if="formatEvent(notificationStore.parsePayload(notif.payload).eventDisplay)" class="notification-time">{{ formatEvent(notificationStore.parsePayload(notif.payload).eventDisplay) }}</span>
+                  <span v-if="notificationStore.parsePayload(notif.payload).pageTitle" class="notification-page">{{
+                    notificationStore.parsePayload(notif.payload).pageTitle }}</span>
+                  <span v-if="formatEvent(notificationStore.parsePayload(notif.payload).eventDisplay)"
+                    class="notification-time">{{ formatEvent(notificationStore.parsePayload(notif.payload).eventDisplay)
+                    }}</span>
                 </div>
               </div>
               <div class="notification-actions">
-                <button
-                  v-if="notif.status === 'unread'"
-                  class="action-btn action-btn--read"
-                  @click.stop="handleMarkAsRead(notif.id)"
-                  title="标记已读"
-                >
+                <button v-if="notif.status === 'unread'" class="action-btn action-btn--read"
+                  @click.stop="handleMarkAsRead(notif.id)" title="标记已读">
                   <Check :size="12" />
                 </button>
-                <button
-                  v-if="notif.status !== 'dismissed'"
-                  class="action-btn action-btn--snooze"
-                    @click.stop
-                    title="稍后提醒"
-                  >
-                    <Clock :size="12" />
+                <button v-if="notif.status !== 'dismissed'" class="action-btn action-btn--snooze" @click.stop
+                  title="稍后提醒">
+                  <Clock :size="12" />
+                </button>
+                <div class="snooze-options">
+                  <button v-for="[key, value] in Object.entries(notificationStore.SNOOZE_PRESETS)" :key="key"
+                    class="snooze-option" @click.stop="handleSnooze(notif.id, value / 60000)">
+                    {{ { '10m': '10分钟', '30m': '30分钟', '1h': '1小时', tomorrow: '明天' }[key] }}
                   </button>
-                  <div class="snooze-options">
-                    <button
-                      v-for="[key, value] in Object.entries(notificationStore.SNOOZE_PRESETS)"
-                      :key="key"
-                      class="snooze-option"
-                      @click.stop="handleSnooze(notif.id, value / 60000)"
-                    >
-                      {{ { '10m': '10分钟', '30m': '30分钟', '1h': '1小时', tomorrow: '明天' }[key] }}
-                    </button>
-                  </div>
-                <button
-                  class="action-btn action-btn--delete"
-                  @click.stop="handleDelete(notif.id)"
-                  title="删除"
-                >
+                </div>
+                <button class="action-btn action-btn--delete" @click.stop="handleDelete(notif.id)" title="删除">
                   <Trash2 :size="12" />
                 </button>
               </div>
             </div>
           </div>
         </div>
-
-        <div class="dropdown-footer">
-          <span class="footer-hint">点击通知跳转到对应内容</span>
-        </div>
       </div>
     </BasePopover>
   </div>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
 .notification-bell {
   position: relative;
 }
 
 .notification-bell-btn {
   position: relative;
-  width: var(--space-6);
-  height: var(--space-6);
+  width: var(--space-7);
+  height: var(--space-7);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -281,28 +245,44 @@ onMounted(() => {
   justify-content: space-between;
   padding: 12px 16px;
   border-bottom: 1px solid var(--border);
+
+  .dropdown-title-container {
+    display: flex;
+    flex-direction: row;
+    align-items: baseline;
+    gap: var(--space-2);
+
+    .dropdown-title {
+      font-size: var(--text-md);
+      font-weight: var(--font-semibold);
+      color: var(--text-primary);
+      margin: 0;
+    }
+
+    .title-hint {
+      font-size: var(--text-xs);
+      color: var(--text-tertiary);
+    }
+  }
+
+  .mark-all-read-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border: none;
+    background: var(--accent);
+    color: white;
+    font-size: var(--text-xs);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: opacity 0.12s;
+  }
 }
 
-.dropdown-title {
-  font-size: var(--text-sm);
-  font-weight: var(--font-semibold);
-  color: var(--text-primary);
-  margin: 0;
-}
 
-.mark-all-read-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  border: none;
-  background: var(--accent);
-  color: white;
-  font-size: var(--text-xs);
-  border-radius: 4px;
-  cursor: pointer;
-  transition: opacity 0.12s;
-}
+
+
 
 .mark-all-read-btn:hover {
   opacity: 0.9;
@@ -471,11 +451,6 @@ onMounted(() => {
 .dropdown-footer {
   padding: 8px 16px;
   border-top: 1px solid var(--border);
-}
-
-.footer-hint {
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
 }
 
 /* 过渡由 BasePopover 的 base-popover-fade 提供 */
