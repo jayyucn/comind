@@ -1,8 +1,8 @@
 import { Extension } from '@tiptap/core'
-import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
-import { DATE_REF_AT_REGEX, normalizeRecurrence } from '../utils/date-ref'
 import type { DateRefKind, RecurrenceRule } from '../utils/date-ref'
+import { DATE_REF_AT_REGEX, normalizeRecurrence } from '../utils/date-ref'
 
 export const DATE_REF_CLICK_EVENT = 'dateRefClick'
 
@@ -109,30 +109,25 @@ export const DateRefExtension = Extension.create({
           },
 
           handleKeyDown(view: any, event: KeyboardEvent) {
-            // Backspace: 如果光标紧贴在 dateRef 装饰右侧，删除整个 dateRef
-            if (event.key === 'Backspace') {
-              const { state } = view
-              const pos = state.selection.from
-              const pluginState = DATE_REF_PLUGIN_KEY.getState(state) as DecorationSet | undefined
-              if (!pluginState) return false
+            // 有选区（非光标态）时不拦截，交给默认删除逻辑处理选区
+            const { state } = view
+            if (!state.selection.empty) return false
 
-              // 查找光标位置紧邻的 dateRef 装饰
-              const decos = pluginState.find()
-              for (const deco of decos) {
-                // 光标在装饰末尾 → 删除整个装饰范围
+            const pos = state.selection.from
+
+            // ⚠️ 不能依赖 DATE_REF_PLUGIN_KEY.getState() 拿装饰：插件的 state.init 只返回
+            // DecorationSet.empty，decorations prop 动态构建的装饰集从不写回插件状态，
+            // getState 恒为空 → 整单元删除曾长期失效（死代码）。改为直接对当前 doc 重建
+            // 装饰（与 decorations prop 共用 buildDecorations，保证同源同步）。
+            const decorations: Decoration[] = []
+            buildDecorations(state.doc, decorations)
+
+            // Backspace: 仅当光标精确位于 dateRef/schedule/deadline 单元右侧（紧随其后）时，
+            // 整单元删除；其他位置（单元左侧、单元内部、普通文本）保持正常逐字符删除
+            if (event.key === 'Backspace') {
+              for (const deco of decorations) {
+                // 光标在单元右边界（to 为开区间终点）→ 删除整个单元
                 if (pos === deco.to) {
-                  event.preventDefault()
-                  view.dispatch(state.tr.delete(deco.from, deco.to))
-                  return true
-                }
-                // 光标在装饰开头 → 删除整个装饰范围
-                if (pos === deco.from && pos > 0) {
-                  event.preventDefault()
-                  view.dispatch(state.tr.delete(deco.from, deco.to))
-                  return true
-                }
-                // 光标在装饰内部 → 删除整个装饰范围
-                if (pos > deco.from && pos < deco.to) {
                   event.preventDefault()
                   view.dispatch(state.tr.delete(deco.from, deco.to))
                   return true
@@ -140,20 +135,34 @@ export const DateRefExtension = Extension.create({
               }
             }
 
-            // Delete 键: 如果光标紧贴在 dateRef 装饰左侧，删除整个 dateRef
+            // Delete 键: 光标恰在 dateRef 单元左侧 → 删除整个单元（向右删除的镜像语义）
             if (event.key === 'Delete') {
-              const { state } = view
-              const pos = state.selection.from
-              const pluginState = DATE_REF_PLUGIN_KEY.getState(state) as DecorationSet | undefined
-              if (!pluginState) return false
-
-              const decos = pluginState.find()
-              for (const deco of decos) {
+              for (const deco of decorations) {
                 if (pos === deco.from) {
                   event.preventDefault()
                   view.dispatch(state.tr.delete(deco.from, deco.to))
                   return true
                 }
+              }
+            }
+
+            // 方向键: 光标贴单元左缘按 →（右）应整体跨过单元跳到右缘，贴右缘按 ←（左）
+            // 跳到左缘——光标不进入单元内部，把 dateRef/schedule/deadline 当整体词移动。
+            // 仅拦截无修饰键的光标态：ctrl/meta/alt/shift 组合交给默认（整词/选区扩展），
+            // 有选区（非光标态）也放行。
+            if (
+              (event.key === 'ArrowLeft' || event.key === 'ArrowRight') &&
+              !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey
+            ) {
+              // ←：跨过「右缘 == pos」的单元（它紧贴光标左侧）；→：跨过「左缘 == pos」的单元
+              const unit = decorations.find(deco =>
+                event.key === 'ArrowLeft' ? deco.to === pos : deco.from === pos
+              )
+              if (unit) {
+                event.preventDefault()
+                const target = event.key === 'ArrowLeft' ? unit.from : unit.to
+                view.dispatch(state.tr.setSelection(TextSelection.create(state.doc, target)))
+                return true
               }
             }
 

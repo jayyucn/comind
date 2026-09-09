@@ -164,9 +164,10 @@ function renderContentToHtml(input: RenderInput): string {
         const iso = escapeHtmlEntities(seg.iso)
         const recurrence = escapeHtmlEntities(seg.recurrence)
         // display the original raw syntax
-        const chars = Array.from(content);
-        // seg.start、seg.end 这里注意：这里的seg.start/end是【字符索引】，不是原码元索引！
-        const rawDisplay = chars.slice(seg.start, seg.end).join('');
+        // seg.start/end 是 Rust 端 byte_to_utf16_idx 返回的 UTF-16 码元索引（emoji 占 2 码元），
+        // 必须用 String.prototype.slice 按码元切；Array.from 按 Unicode 码点拆会与码元单位错位，
+        // 导致单元内 emoji 之后的字符被多吞/漏吞（曾出现 📅 后跟数字被吞并）。
+        const rawDisplay = content.slice(seg.start, seg.end)
         const display = escapeHtmlEntities(rawDisplay)
         const overdue = seg.is_overdue ? 'overdue' : ''
         const classes = [CSS_CLASSES.dateRef, kind, overdue].filter(Boolean).join(' ')

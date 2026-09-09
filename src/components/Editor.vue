@@ -41,6 +41,12 @@ const emit = defineEmits<{
   (e: 'cursor-change', pos: number): void
 }>()
 
+// ProseMirror 默认折叠空白，解析会丢弃段落行尾/连续空格（如 date-ref 单元后补的空格），
+// 导致「内容进编辑器一次 → blur 保存后尾随空格永久消失」。所有解析入口都要开启保留：
+// useEditor 初载 content + 两处 setContent（TipTap v3 的 setContent 快速路径不继承 editor.parseOptions，须逐点显式传）。
+// 用 preserveWhitespace: true（非 'full'）即可保留段内空白，且 setContent 仍走快速路径（无 insertContentAt 的选择跳变）。
+const PARSE_PRESERVE_WS = { preserveWhitespace: true }
+
 let syncing = false
 let savedFromOutside = false
 
@@ -84,6 +90,7 @@ const editor = shallowRef(useEditor({
     DateRefTriggerExtension,
   ],
   content: textToHtml(props.content),
+  parseOptions: PARSE_PRESERVE_WS,
   autofocus: false,
   editable: !props.readonly,
   onBlur: () => {
@@ -233,7 +240,7 @@ watch(
     if (editor.value.getText() !== newContent) {
       syncing = true
       settingContent = true
-      editor.value.commands.setContent(textToHtml(newContent))
+      editor.value.commands.setContent(textToHtml(newContent), { parseOptions: PARSE_PRESERVE_WS })
       settingContent = false
       syncing = false
     }
@@ -277,7 +284,7 @@ function syncContent(content: string, cursorPos?: number) {
     const state = editor.value.state
     const prevSel = state.selection
     syncing = true
-    editor.value.commands.setContent(content)
+    editor.value.commands.setContent(content, { parseOptions: PARSE_PRESERVE_WS })
     syncing = false
     const targetPos = (cursorPos !== undefined)
       ? Math.min(cursorPos, content.length + 1)
