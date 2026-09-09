@@ -35,7 +35,6 @@ import PropertyInline from './PropertyInline.vue'
 
 import type { CrossBlockSelection } from '../../composables/useCrossBlockSelection'
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
-import { useRightSidebar } from '../../composables/useRightSidebar'
 import { usePageStore } from '../../stores/pages'
 import type { TreeNode } from '../../types/block'
 import type { BlockSetupContext, BlockTypeEditorExposed, BlockTypeHooks } from '../../types/block-type'
@@ -55,7 +54,6 @@ const props = defineProps<{
 }>()
 
 const editorStore = useEditorStore()
-const rightSidebar = useRightSidebar()
 const blockStore = useBlockStore()
 const propertyStore = usePropertyStore()
 const pageStore = usePageStore()
@@ -408,14 +406,10 @@ async function onPaste(e: ClipboardEvent) {
   if (await typeHooks.value?.onPaste?.(e) === true) return
 }
 
-/** 选中（激活）Block 时：锁定 activeBlockId，并在右侧栏已展开时切到「版本历史」标签。
- * 入口即「选中状态」，无需在每个 Block 内嵌按钮。 */
+/** 选中（激活）Block 时：锁定 activeBlockId。不再自动切右侧栏面板（保持用户当前面板，避免误打断）。 */
 watch(isActive, (active) => {
   if (!active) return
   editorStore.activateBlock(blockId.value)
-  if (rightSidebar.visible.value) {
-    rightSidebar.setActivePanel('block-version')
-  }
 })
 </script>
 

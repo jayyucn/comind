@@ -226,22 +226,19 @@ onUnmounted(() => {
 }
 
 .menu-trigger {
-  width: 32px;
-  height: 32px;
+  width: var(--space-6);
+  height: var(--space-6);
   border: none;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-xs);
   transition: background 120ms ease, color 120ms ease;
 }
 
 .menu-trigger:hover {
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-  box-shadow: var(--shadow-sm);
-  border: 1px solid var(--color-border-light);
+  transform: scale(1.1);
 }
 
 .menu-dropdown {

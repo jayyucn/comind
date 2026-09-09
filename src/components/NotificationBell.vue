@@ -230,8 +230,8 @@ onMounted(() => {
 
 .notification-bell-btn {
   position: relative;
-  width: 36px;
-  height: 36px;
+  width: var(--space-6);
+  height: var(--space-6);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -239,27 +239,27 @@ onMounted(() => {
   background: transparent;
   color: var(--text-primary);
   cursor: pointer;
-  border-radius: 8px;
+  border-radius: var(--radius-xs);
   padding: 0;
   transition: background 0.12s;
 }
 
 .notification-bell-btn:hover {
-  background: var(--bg-hover);
+  transform: scale(1.1);
 }
 
 .notification-badge {
   position: absolute;
-  top: 2px;
+  top: 0;
   right: 0px;
-  min-width: 14px;
-  height: 14px;
+  width: var(--space-3);
+  height: var(--space-3);
   padding: 0 4px;
   background: var(--accent);
   color: white;
   font-size: var(--text-xs);
   font-weight: var(--font-semibold);
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   display: inline-flex;
   align-items: center;
   justify-content: center;

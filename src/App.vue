@@ -282,7 +282,7 @@ function handleMainClick(e: MouseEvent) {
   right: 0;
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   height: var(--nav-height);
   flex-shrink: 0;
   z-index: var(--z-sticky);
@@ -306,7 +306,7 @@ function handleMainClick(e: MouseEvent) {
 
 .top-right-controls {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 2px;
   justify-content: flex-end;
   margin-left: auto;
@@ -319,22 +319,19 @@ function handleMainClick(e: MouseEvent) {
 
 .right-sidebar-toggle {
   border: none;
-  background: transparent;
+  // background: transparent;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-md);
+  height: var(--space-6);
+  border-radius: var(--radius-xs);
   color: var(--text-tertiary);
-  transition: all 100ms ease;
 }
 
-.right-sidebar-toggle:hover {
-  color: var(--text-secondary);
-}
-
+.right-sidebar-toggle:hover,
 .right-sidebar-toggle:active {
-  transform: scale(0.95);
+  transform: scale(1.1);
 }
 
 .main-content.is-fullwidth-content {
@@ -352,13 +349,13 @@ function handleMainClick(e: MouseEvent) {
   gap: 0;
   margin-left: 8px;
   pointer-events: auto;
-  border-radius: 4px;
+  border-bottom-left-radius: var(--radius-sm);
   overflow: hidden;
 }
 
 .window-control-btn {
   width: 46px;
-  height: var(--nav-height);
+  height: 24px;
   border: none;
   background: transparent;
   cursor: pointer;
