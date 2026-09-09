@@ -118,7 +118,9 @@ describe('初始状态与计算属性', () => {
     expect(store.unreadCount).toBe(0)
     expect(store.isLoading).toBe(false)
     expect(store.settings).toEqual({ ...DEFAULT_NOTIFICATION_SETTINGS })
-    expect(store.SNOOZE_PRESETS).toBe(SNOOZE_PRESETS)
+    // beforeEach 的 vi.resetModules() 使下方动态 import 的 store 与顶层静态 import
+    // 的 SNOOZE_PRESETS 分属两个模块实例，引用比较不可靠，改为值比较
+    expect(store.SNOOZE_PRESETS).toEqual(SNOOZE_PRESETS)
   })
 
   it('sortedNotifications 过滤 dismissed 并按 fired_at 倒序', async () => {
@@ -427,6 +429,9 @@ describe('triggerCheckAndFire - 通知触发', () => {
 
     // 预置一个老通知
     const oldNotif = makeNotification({ id: 'old-1', status: 'read' })
+    // triggerCheckAndFire 末尾会 loadNotifications() 用后端权威列表整体替换本地列表；
+    // 真实后端中 fired 已持久化、reload 会带回，故 mock 须返回含 fired 的列表而非默认空数组
+    clientMock.queryRecentNotifications.mockResolvedValue([firedNotif, oldNotif])
     store.notifications = [oldNotif]
 
     await store.triggerCheckAndFire()
@@ -442,6 +447,8 @@ describe('triggerCheckAndFire - 通知触发', () => {
     const clientMock = makeClientMock()
     const firedUpdated = makeNotification({ id: 'dup-1', status: 'unread', fired_at: 9999 })
     clientMock.checkAndFire.mockResolvedValue([firedUpdated])
+    // 同上：末尾 loadNotifications 的权威列表须包含被更新后的这条，否则被空列表覆盖
+    clientMock.queryRecentNotifications.mockResolvedValue([firedUpdated])
     setupServiceMock(clientMock)
     const { useNotificationStore: useStore } = await import('./notification')
     const store = useStore()
