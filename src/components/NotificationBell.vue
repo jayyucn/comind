@@ -141,7 +141,12 @@ onMounted(() => {
           </button>
         </div>
 
-        <div v-if="notificationStore.isLoading" class="dropdown-loading">
+        <!-- loading 只在无内容可显示时出现（初次加载/清空后）；已有列表的静默刷新
+             （如删除通知后的 reload）若替换视图，内容驱动的面板宽度会先塌缩再恢复，肉眼即"闪一下" -->
+        <div
+          v-if="notificationStore.isLoading && notificationStore.notifications.length === 0"
+          class="dropdown-loading"
+        >
           加载中...
         </div>
 
