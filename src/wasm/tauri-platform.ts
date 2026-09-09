@@ -2,8 +2,8 @@
 // 与 CoreClient（业务数据命令面）分离：web 无同步概念，同步类不进 CoreClient，避免 wasm stub。
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { open } from '@tauri-apps/plugin-dialog'
-import { readFile } from '@tauri-apps/plugin-fs'
+import { open, save } from '@tauri-apps/plugin-dialog'
+import { readFile, writeFile } from '@tauri-apps/plugin-fs'
 import { platform } from '@tauri-apps/plugin-os'
 import type { Block, Page, Notification, DateRefRecord } from './types'
 
@@ -132,6 +132,27 @@ export async function tauriPickImageFile(): Promise<File | null> {
   } catch (e) {
     console.error('[tauriPickImageFile] 读取图片失败:', e)
     return null
+  }
+}
+
+// ---- 导出（Tauri webview 对 <a download> + data URL 的点击静默失效，保存走原生 dialog + fs） ----
+
+/** 把 data URL（如 G6 toDataURL 导出的 PNG）写入用户选择的本地路径。取消/失败返回 false，成功返回 true。 */
+export async function tauriSavePngDataUrl(dataUrl: string, suggestedName: string): Promise<boolean> {
+  try {
+    const path = await save({
+      title: '导出 PNG',
+      defaultPath: suggestedName,
+      filters: [{ name: 'PNG 图片', extensions: ['png'] }],
+    })
+    if (!path) return false // 用户取消
+    const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1)
+    const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
+    await writeFile(path, bytes)
+    return true
+  } catch (e) {
+    console.error('[tauriSavePngDataUrl] 导出 PNG 失败:', e)
+    return false
   }
 }
 

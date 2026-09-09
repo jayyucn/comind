@@ -7,6 +7,7 @@ import { useRouter } from 'vue-router'
 import { useBlockStore } from '../../stores/blocks'
 import { usePageStore } from '../../stores/pages'
 import { getRelationshipStrength, STRENGTH_TO_WIDTH } from '../../types/relationship'
+import { isTauriEnvironment, tauriSavePngDataUrl } from '../../wasm/tauri-platform'
 import { buildFullGraph, createAccumulator, traverseBFS, type GraphSnapshot, type RawLink, type VisibilityMap } from './graphData'
 import { getEdgeStyle, getNodeStyle } from './graphStyle'
 import { computeForceLayoutInWorker } from './workerLayout'
@@ -59,6 +60,12 @@ const LARGE_GRAPH_NODES = 250
 // 全量图节点安全上限：极端规模下截断，防止一次性渲染/布局阻塞主线程数秒。
 // 正常笔记库远不会触发；仅作为最坏情况的兜底，避免任何规模下都“卡死”。
 const MAX_FULL_GRAPH_NODES = 3000
+
+// 导出 PNG 放大倍率。G6 toDataURL 无 scale 参数：offscreen 以「视口 CSS 尺寸 × devicePixelRatio」
+// 渲染（canvas.js），固定 DPR 下导出像素被锁死，放大看即模糊。
+// 故导出前临时把画布 resize 为 EXPORT_IMAGE_SCALE 倍再 fitView（相机 zoom 同步翻倍，
+// 内容以更高物理像素绘制），toDataURL 后还原。2x 已是 DPR=1 屏幕下的显著提清档位。
+const EXPORT_IMAGE_SCALE = 2
 
 const containerRef = ref<HTMLElement | null>(null)
 // G6 实例必须用 shallowRef 而非 ref：Vue 的 reactive Proxy 会包裹 Graph 实例，
@@ -402,14 +409,36 @@ async function handleRefresh() {
 }
 
 async function handleExportPng() {
-  if (!graphRef.value) return
+  const g = graphRef.value
+  if (!g) return
   try {
-    const dataURL = await graphRef.value.toDataURL({
+    // 高清导出：G6 toDataURL 分辨率 = 视口 CSS 尺寸 × devicePixelRatio（无倍率参数），
+    // 固定 DPR 下导出图放大即糊。这里临时放大画布 + fitView，让内容以 2x 物理像素
+    // 离屏重绘，拿到高分辨率 data URL 后立刻还原视图（期间画布有短暂一次闪变）。
+    const [w, h] = g.getSize()
+    const scaled = EXPORT_IMAGE_SCALE > 1 && w * EXPORT_IMAGE_SCALE < 16384 && h * EXPORT_IMAGE_SCALE < 16384
+    if (scaled) {
+      g.resize(w * EXPORT_IMAGE_SCALE, h * EXPORT_IMAGE_SCALE)
+      await safeFitView(g, { when: 'always' }, false)
+    }
+    const dataURL = await g.toDataURL({
       type: 'image/png'
     })
+    if (scaled) {
+      g.resize(w, h)
+      await safeFitView(g, { when: 'always' }, false)
+    }
+    const fileName = `concept-graph-${Date.now()}.png`
+    if (isTauriEnvironment()) {
+      // Tauri WebView2 会静默丢弃 <a download> + data URL 的点击（实测 toDataURL 成功、无下载触发），
+      // 保存走原生「另存为」dialog + fs 写盘（tauriSavePngDataUrl）。
+      const ok = await tauriSavePngDataUrl(dataURL, fileName)
+      if (!ok) console.warn('[GraphView] PNG export cancelled or failed (see tauriSavePngDataUrl log)')
+      return
+    }
     const link = document.createElement('a')
     link.href = dataURL
-    link.download = `concept-graph-${Date.now()}.png`
+    link.download = fileName
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -519,14 +548,17 @@ onBeforeUnmount(() => {
           </button>
         </div>
         <div class="control-group control-group-right">
-          <button class="control-btn" title="适应视图" @click="handleFitView">
-            <ExpandIcon />
+          <button class="control-btn" @click="handleFitView">
+            <ExpandIcon :size="14" />
+            <span>适应视图</span>
           </button>
-          <button class="control-btn" title="刷新" @click="handleRefresh">
-            <RefreshCw />
+          <button class="control-btn" @click="handleRefresh">
+            <RefreshCw :size="14" />
+            <span>刷新</span>
           </button>
-          <button class="control-btn" title="导出 PNG" @click="handleExportPng">
-            <Download />
+          <button class="control-btn" @click="handleExportPng">
+            <Download :size="14" />
+            <span>导出 PNG</span>
           </button>
         </div>
         <div v-if="isPageScoped" class="depth-control">
@@ -622,29 +654,28 @@ onBeforeUnmount(() => {
 }
 
 .control-group-right {
+  padding-right: var(--space-2);
   gap: var(--space-1);
 
-}
+  .control-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: var(--space-6);
+    padding: 0 10px;
+    background: var(--bg-base);
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    font-family: inherit;
+    white-space: nowrap;
+    transition: background 80ms ease;
 
-
-.control-btn {
-  width: var(--icon-size);
-  height: var(--icon-size);
-  border: 1px solid var(--border);
-  background: var(--bg-base);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-sm);
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-  font-family: inherit;
-  transition: background 80ms ease;
-}
-
-.control-btn:hover {
-  background: var(--bg-hover);
+    &:hover {
+      background: var(--bg-hover);
+    }
+  }
 }
 
 .graph-view-canvas {
