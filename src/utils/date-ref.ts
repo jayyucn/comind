@@ -51,6 +51,31 @@ const KIND_TO_EMOJI: Record<string, string | undefined> = {
   deadline: '⏰',
 }
 
+/**
+ * date-ref 单元插入时给两侧补空格（防与邻接文字/符号粘连成 `⏰s`）。
+ *
+ * @param left  单元左邻字符；null/'' 表示块首或文档边界（不补前导空格）
+ * @param right 单元右邻字符；null/'' 表示行尾/块尾（补尾随空格）
+ * @param unit  序列化后的 date-ref 文本
+ *
+ * 规则：
+ * - left 存在且非空白 → 补前导空格；left 已是空白 → 不补（防双空格）
+ * - right 为 null/''（行尾）或非空白 → 补尾随空格；right 已是空白 → 不补
+ * - 行尾也补尾空格：确认后继续输入不会与单元粘连；该尾空格由编辑器往返
+ *   preserveWhitespace 保真（Editor.vue PARSE_PRESERVE_WS），持久化不丢。
+ */
+export function padDateRefUnit(left: string | null, right: string | null, unit: string): string {
+  let padded = unit
+  // 左侧补空格：块首（null/''）、已有时（' '）、tab/nbsp 等现成分隔 不补；
+  // 换行符 \n 在单行渲染（预览/列表）下会塌缩，必须补，否则与上一行内容粘连成 `x@...`
+  const leftNeedsSpace =
+    left !== null && left !== '' && left !== ' ' && left !== '\t' && left !== '\u00A0'
+  if (leftNeedsSpace) padded = ` ${padded}`
+  // 右侧：行尾（null/''）或紧跟非空白字符 → 补尾随空格；已有时（' '/\n/tab/nbsp）不补
+  if (!right || !/\s/.test(right)) padded = `${padded} `
+  return padded
+}
+
 export function normalizeRecurrence(rec: string | undefined): RecurrenceRule {
   return rec && (RECURRENCE_RULES as string[]).includes(rec) ? (rec as RecurrenceRule) : 'none'
 }

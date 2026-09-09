@@ -3,7 +3,60 @@ import {
   serializeDateRef,
   formatIsoDisplay,
   normalizeRecurrence,
+  padDateRefUnit,
 } from './date-ref'
+
+describe('padDateRefUnit — 插入时两侧补空格（防粘连）', () => {
+  const u = '@2026-08-03 📅'
+
+  it('文字-文字：两侧都补', () => {
+    expect(padDateRefUnit('a', 'b', u)).toBe(' @2026-08-03 📅 ')
+  })
+
+  it('中文（非空白）：两侧都补', () => {
+    expect(padDateRefUnit('买', '奶', u)).toBe(' @2026-08-03 📅 ')
+  })
+
+  it('左空白：只补右侧', () => {
+    expect(padDateRefUnit(' ', 'b', u)).toBe('@2026-08-03 📅 ')
+  })
+
+  it('右空白：只补左侧', () => {
+    expect(padDateRefUnit('a', ' ', u)).toBe(' @2026-08-03 📅')
+  })
+
+  it('两侧空白：不重复补（防双空格）', () => {
+    expect(padDateRefUnit(' ', ' ', u)).toBe('@2026-08-03 📅')
+  })
+
+  it('行首（left null）：只补右侧', () => {
+    expect(padDateRefUnit(null, 'b', u)).toBe('@2026-08-03 📅 ')
+  })
+
+  it('换行符左侧（行首段首）：补左空格，防单行渲染与上一行粘连', () => {
+    expect(padDateRefUnit('\n', 'b', u)).toBe(' @2026-08-03 📅 ')
+  })
+
+  it('行尾（right null）：左侧补 + 行尾补尾空格', () => {
+    expect(padDateRefUnit('a', null, u)).toBe(' @2026-08-03 📅 ')
+  })
+
+  it('独立块（两侧 null）：仅补尾空格', () => {
+    expect(padDateRefUnit(null, null, u)).toBe('@2026-08-03 📅 ')
+  })
+
+  it('右邻为空字符串视同行尾', () => {
+    expect(padDateRefUnit('a', '', u)).toBe(' @2026-08-03 📅 ')
+  })
+
+  it('nbsp 视为空白：不补', () => {
+    expect(padDateRefUnit('\u00A0', 'b', u)).toBe('@2026-08-03 📅 ')
+  })
+
+  it('tab 视为空白：不补', () => {
+    expect(padDateRefUnit('\t', 'b', u)).toBe('@2026-08-03 📅 ')
+  })
+})
 
 describe('date-ref', () => {
   // parseDateRefs removed in 4.3 — all parsing moved to Rust DateRefService.

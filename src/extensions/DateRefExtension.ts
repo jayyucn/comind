@@ -122,45 +122,63 @@ export const DateRefExtension = Extension.create({
             const decorations: Decoration[] = []
             buildDecorations(state.doc, decorations)
 
-            // Backspace: 仅当光标精确位于 dateRef/schedule/deadline 单元右侧（紧随其后）时，
-            // 整单元删除；其他位置（单元左侧、单元内部、普通文本）保持正常逐字符删除
-            if (event.key === 'Backspace') {
+            // 语义（2026-09-09）：date-ref 两侧的 pad 空格属于单元的一部分，单元在交互上
+            // 是「整体区间」[L, R)：L = from - (左邻空格?1:0)，R = to + (右邻空格?1:0)。
+            // 删除与方向键跨越都按整体区间处理；装饰 span 仍只覆盖 [from, to)（视觉不含空格）。
+            const unitBounds = (from: number, to: number) => {
+              const size = state.doc.content.size
+              const leftPad = from > 0 && state.doc.textBetween(from - 1, from, '\n', ' ') === ' '
+              const rightPad = to < size && state.doc.textBetween(to, to + 1, '\n', ' ') === ' '
+              return { from, to, leftPad, rightPad, L: leftPad ? from - 1 : from, R: rightPad ? to + 1 : to }
+            }
+
+            // 删除整体区间并处理分隔：右 pad 随单元删；左 pad 仅在「删后同块右侧无内容（行尾）」
+            // 时连带删（并把行尾多余空白一并清掉），避免悬挂空格/双空格；中间位置保留左 pad 作分隔。
+            const deleteUnit = (from: number, to: number) => {
+              const u = unitBounds(from, to)
+              const blockEnd = state.doc.resolve(u.R).end()
+              const rest = u.R < blockEnd ? state.doc.textBetween(u.R, blockEnd, '\n', ' ') : ''
+              const restHasContent = rest.trim().length > 0
+              const delFrom = restHasContent ? u.from : u.leftPad ? u.L : u.from
+              const delTo = restHasContent ? u.R : blockEnd
+              let tr = state.tr.delete(delFrom, delTo)
+              tr = tr.setSelection(TextSelection.create(tr.doc, delFrom))
+              view.dispatch(tr)
+            }
+
+            // Backspace/Delete：光标位于整体区间两侧的 pad 边界带时整单元删除。
+            // Backspace 右缘带 = [to, R]（含站在右 pad 空格上）；Delete 左缘带 = [L, from]。
+            // 单元内部（from..to 之间）与其他位置保持正常逐字符删除。
+            if (event.key === 'Backspace' || event.key === 'Delete') {
+              const deletingLeft = event.key === 'Backspace'
               for (const deco of decorations) {
-                // 光标在单元右边界（to 为开区间终点）→ 删除整个单元
-                if (pos === deco.to) {
-                  event.preventDefault()
-                  view.dispatch(state.tr.delete(deco.from, deco.to))
-                  return true
-                }
+                const u = unitBounds(deco.from, deco.to)
+                const inZone = deletingLeft
+                  ? pos >= deco.to && pos <= u.R
+                  : pos >= u.L && pos <= deco.from
+                if (!inZone) continue
+                event.preventDefault()
+                deleteUnit(deco.from, deco.to)
+                return true
               }
             }
 
-            // Delete 键: 光标恰在 dateRef 单元左侧 → 删除整个单元（向右删除的镜像语义）
-            if (event.key === 'Delete') {
-              for (const deco of decorations) {
-                if (pos === deco.from) {
-                  event.preventDefault()
-                  view.dispatch(state.tr.delete(deco.from, deco.to))
-                  return true
-                }
-              }
-            }
-
-            // 方向键: 光标贴单元左缘按 →（右）应整体跨过单元跳到右缘，贴右缘按 ←（左）
-            // 跳到左缘——光标不进入单元内部，把 dateRef/schedule/deadline 当整体词移动。
-            // 仅拦截无修饰键的光标态：ctrl/meta/alt/shift 组合交给默认（整词/选区扩展），
-            // 有选区（非光标态）也放行。
+            // 方向键: 光标在整体区间左缘带 [L, from] 按 → 整体跨到 R（右 pad 后）；
+            // 在右缘带 [to, R] 按 ← 整体跨回 L（左 pad 前）——pad 空格随单元一起跨过，
+            // 光标不进入单元与 pad 之间。仅拦截无修饰键的光标态：ctrl/meta/alt/shift
+            // 组合交给默认（整词/选区扩展），有选区（非光标态）也放行。
             if (
-              (event.key === 'ArrowLeft' || event.key === 'ArrowRight') &&
+              (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'ArrowDown') &&
               !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey
             ) {
-              // ←：跨过「右缘 == pos」的单元（它紧贴光标左侧）；→：跨过「左缘 == pos」的单元
-              const unit = decorations.find(deco =>
-                event.key === 'ArrowLeft' ? deco.to === pos : deco.from === pos
-              )
-              if (unit) {
+              for (const deco of decorations) {
+                const u = unitBounds(deco.from, deco.to)
+                const inZone = event.key === 'ArrowLeft'
+                  ? pos >= deco.to && pos <= u.R
+                  : pos >= u.L && pos <= deco.from
+                if (!inZone) continue
                 event.preventDefault()
-                const target = event.key === 'ArrowLeft' ? unit.from : unit.to
+                const target = event.key === 'ArrowLeft' ? u.L : u.R
                 view.dispatch(state.tr.setSelection(TextSelection.create(state.doc, target)))
                 return true
               }

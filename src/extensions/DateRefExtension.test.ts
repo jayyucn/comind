@@ -176,8 +176,10 @@ describe('DateRefExtension handleClick event', () => {
 })
 
 // ─── handleKeyDown：Backspace/Delete 整单元删除 ─────────────────────────────
-// 需求：光标精确位于 dateRef/schedule/deadline 内容单元右侧（紧随其后）按 Backspace，
-// 应整单元删除；其他光标位置保持正常逐字符删除。单元= decoration 的 [from, to)。
+// 需求：date-ref 两侧的 pad 空格属于单元的一部分（整体区间 = 单元 + 紧邻空格）。
+// Backspace 光标在单元右侧边界带 [to, R]（含站在右 pad 空格上）→ 整单元删除，
+// 右 pad 随单元删、中间保留左 pad 作分隔、行尾不留悬挂空格；Delete 镜像（左缘带 [L, from]）。
+// 其他光标位置（单元内部、普通文本）保持正常逐字符删除。单元= decoration 的 [from, to)。
 // 注：不能依赖插件 getState 取装饰（恒空，曾致整删失效），测试直接驱动真实 view。
 
 function dateRefRangeFromDoc(editor: Editor): { from: number; to: number }[] {
@@ -218,7 +220,7 @@ describe('DateRefExtension handleKeyDown — 整单元删除', () => {
     handle?.teardown()
   })
 
-  it('Backspace：光标精确位于 schedule 单元右侧 → 删除整个单元（含 emoji 与参数）', () => {
+  it('Backspace：光标精确位于 schedule 单元右侧 → 删除整体（单元+两侧 pad 空格），保留单空格分隔', () => {
     handle = createEditor('meet @2026-07-15T14:00 📅|weekly tomorrow')
     const ranges = dateRefRangeFromDoc(handle.editor)
     expect(ranges).toHaveLength(1)
@@ -226,25 +228,41 @@ describe('DateRefExtension handleKeyDown — 整单元删除', () => {
     const r = dateRefKeydown(handle.editor, 'Backspace', to)
     expect(r.handled).toBe(true)
     expect(r.preventDefaultCalled).toBe(true)
-    expect(plainText(handle.editor)).toBe('meet  tomorrow')
+    expect(plainText(handle.editor)).toBe('meet tomorrow')
   })
 
-  it('Backspace：光标精确位于 deadline 单元右侧 → 删除整个单元（含 ⏰ 与参数）', () => {
+  it('Backspace：光标精确位于 deadline 单元右侧 → 删除整体，保留单空格分隔', () => {
     handle = createEditor('ship @2026-07-20 ⏰||30 by friday')
     const ranges = dateRefRangeFromDoc(handle.editor)
     const { to } = ranges[0]
     const r = dateRefKeydown(handle.editor, 'Backspace', to)
     expect(r.handled).toBe(true)
-    expect(plainText(handle.editor)).toBe('ship  by friday')
+    expect(plainText(handle.editor)).toBe('ship by friday')
   })
 
-  it('Backspace：光标精确位于 ref 单元右侧 → 删除整个单元', () => {
+  it('Backspace：光标精确位于 ref 单元右侧 → 删除整体', () => {
     handle = createEditor('see @2026-08-03 later')
     const ranges = dateRefRangeFromDoc(handle.editor)
     const { to } = ranges[0]
     const r = dateRefKeydown(handle.editor, 'Backspace', to)
     expect(r.handled).toBe(true)
-    expect(plainText(handle.editor)).toBe('see  later')
+    expect(plainText(handle.editor)).toBe('see later')
+  })
+
+  it('Backspace：光标站在右 pad 空格上（to+1）→ 删除整个整体（空格属单元，不留悬挂）', () => {
+    handle = createEditor('meet @2026-07-15T14:00 📅|weekly tomorrow')
+    const { to } = dateRefRangeFromDoc(handle.editor)[0]
+    const r = dateRefKeydown(handle.editor, 'Backspace', to + 1)
+    expect(r.handled).toBe(true)
+    expect(plainText(handle.editor)).toBe('meet tomorrow')
+  })
+
+  it('Backspace：行尾单元带尾 pad（doc 末尾）→ 整体删除不留任何空格', () => {
+    handle = createEditor('meet @2026-07-15T14:00 📅|weekly ')
+    const { to } = dateRefRangeFromDoc(handle.editor)[0]
+    const r = dateRefKeydown(handle.editor, 'Backspace', to)
+    expect(r.handled).toBe(true)
+    expect(plainText(handle.editor)).toBe('meet')
   })
 
   it('Backspace：光标在单元内部 → 不整删（返回 false，走正常逐字符删除）', () => {
@@ -290,21 +308,29 @@ describe('DateRefExtension handleKeyDown — 整单元删除', () => {
     expect(r.preventDefaultCalled).toBe(false)
   })
 
-  it('多单元：光标在第一个单元右侧 → 只删第一个，保留第二个', () => {
+  it('多单元：光标在第一个单元右侧 → 只删第一个整体，保留第二个', () => {
     handle = createEditor('@2026-07-20 📅 与 @2026-07-17T18:00 ⏰|daily')
     const ranges = dateRefRangeFromDoc(handle.editor)
     expect(ranges).toHaveLength(2)
     const r = dateRefKeydown(handle.editor, 'Backspace', ranges[0].to)
     expect(r.handled).toBe(true)
-    expect(plainText(handle.editor)).toBe(' 与 @2026-07-17T18:00 ⏰|daily')
+    expect(plainText(handle.editor)).toBe('与 @2026-07-17T18:00 ⏰|daily')
   })
 
-  it('Delete：光标在单元左侧 → 删除整个单元（保持镜像语义）', () => {
+  it('Delete：光标在单元左侧 → 删除整个整体（保持镜像语义）', () => {
     handle = createEditor('meet @2026-07-15T14:00 📅|weekly tomorrow')
     const { from } = dateRefRangeFromDoc(handle.editor)[0]
     const r = dateRefKeydown(handle.editor, 'Delete', from)
     expect(r.handled).toBe(true)
-    expect(plainText(handle.editor)).toBe('meet  tomorrow')
+    expect(plainText(handle.editor)).toBe('meet tomorrow')
+  })
+
+  it('Delete：光标站在左 pad 空格上（from-1）→ 同样删除整个整体', () => {
+    handle = createEditor('meet @2026-07-15T14:00 📅|weekly tomorrow')
+    const { from } = dateRefRangeFromDoc(handle.editor)[0]
+    const r = dateRefKeydown(handle.editor, 'Delete', from - 1)
+    expect(r.handled).toBe(true)
+    expect(plainText(handle.editor)).toBe('meet tomorrow')
   })
 
   it('Backspace：光标在单元右侧但有选区（非 collapsed）→ 不拦截（交给默认选区删除）', () => {
@@ -330,19 +356,20 @@ describe('DateRefExtension handleKeyDown — 整单元删除', () => {
     expect(plainText(handle.editor)).toBe('go ,then continue')
   })
 
-  it('Backspace：单元右侧无内容且紧跟其后（光标=to=doc末尾）→ 整单元删除', () => {
+  it('Backspace：单元右侧无内容（行尾）→ 删除整体并连左 pad 一起清，不留悬挂空格', () => {
     handle = createEditor('only @2026-07-15T14:00 📅|weekly')
     const ranges = dateRefRangeFromDoc(handle.editor)
     expect(ranges).toHaveLength(1)
     const r = dateRefKeydown(handle.editor, 'Backspace', ranges[0].to)
     expect(r.handled).toBe(true)
-    expect(plainText(handle.editor)).toBe('only ')
+    expect(plainText(handle.editor)).toBe('only')
   })
 })
 
 // ─── handleKeyDown：方向键整体跨过单元 ─────────────────────────────────────
-// 需求：光标贴 dateRef/schedule/deadline 单元左缘按 → 应跨过整个单元到右缘；
-// 贴右缘按 ← 应跨回左缘（单元不可进入）。其他位置/带修饰键/带选区 → 放行默认。
+// 需求：date-ref 两侧 pad 空格属于单元一部分——→ 在整体左缘带 [L, from] 按 → 跨到
+// 整体右缘 R（右 pad 后）；← 在整体右缘带 [to, R] 按 ← 跨回整体左缘 L（左 pad 前）。
+// 光标不进入单元与 pad 空格之间。其他位置/带修饰键/带选区 → 放行默认。
 
 describe('DateRefExtension handleKeyDown — 方向键跨过单元', () => {
   let handle: DecoratedEditor
@@ -350,30 +377,47 @@ describe('DateRefExtension handleKeyDown — 方向键跨过单元', () => {
     handle?.teardown()
   })
 
-  it('ArrowRight：光标在 schedule 单元左缘（from）→ 跨过单元到 to', () => {
+  it('ArrowRight：光标在 schedule 单元左缘（from）→ 整体跨过单元到右 pad 后（R）', () => {
     handle = createEditor('meet @2026-07-15T14:00 📅|weekly tomorrow')
     const { from, to } = dateRefRangeFromDoc(handle.editor)[0]
     const r = dateRefKeydown(handle.editor, 'ArrowRight', from)
     expect(r.handled).toBe(true)
     expect(r.preventDefaultCalled).toBe(true)
-    expect(handle.editor.state.selection.from).toBe(to)
+    expect(handle.editor.state.selection.from).toBe(to + 1) // 跳过右侧 pad 空格
     expect(plainText(handle.editor)).toContain('@2026-07-15T14:00 📅|weekly')
   })
 
-  it('ArrowLeft：光标在 deadline 单元右缘（to）→ 跨回单元到 from', () => {
+  it('ArrowLeft：光标在 deadline 单元右缘（to）→ 整体跨回左 pad 前（L）', () => {
     handle = createEditor('ship @2026-07-20 ⏰||30 by friday')
     const { from, to } = dateRefRangeFromDoc(handle.editor)[0]
     const r = dateRefKeydown(handle.editor, 'ArrowLeft', to)
     expect(r.handled).toBe(true)
-    expect(handle.editor.state.selection.from).toBe(from)
+    expect(handle.editor.state.selection.from).toBe(from - 1) // 跳过左侧 pad 空格
   })
 
-  it('ArrowLeft：光标在 ref 单元右缘 → 跨回 from', () => {
+  it('ArrowLeft：光标在 ref 单元右缘 → 整体跨回 L', () => {
     handle = createEditor('see @2026-08-03 later')
     const { from, to } = dateRefRangeFromDoc(handle.editor)[0]
     const r = dateRefKeydown(handle.editor, 'ArrowLeft', to)
     expect(r.handled).toBe(true)
-    expect(handle.editor.state.selection.from).toBe(from)
+    expect(handle.editor.state.selection.from).toBe(from - 1)
+  })
+
+  it('ArrowRight：光标在整体左缘（左 pad 前，from-1）→ 同样整体跨到 R', () => {
+    handle = createEditor('meet @2026-07-15T14:00 📅|weekly tomorrow')
+    const { from, to } = dateRefRangeFromDoc(handle.editor)[0]
+    const r = dateRefKeydown(handle.editor, 'ArrowRight', from - 1)
+    expect(r.handled).toBe(true)
+    expect(handle.editor.state.selection.from).toBe(to + 1)
+  })
+
+  it('ArrowLeft：光标站在右 pad 空格上（to+1）→ 整体跨回 L（空格属单元，不逐字移动）', () => {
+    handle = createEditor('meet @2026-07-15T14:00 📅|weekly tomorrow')
+    const { from, to } = dateRefRangeFromDoc(handle.editor)[0]
+    const r = dateRefKeydown(handle.editor, 'ArrowLeft', to + 1)
+    expect(r.handled).toBe(true)
+    expect(r.preventDefaultCalled).toBe(true)
+    expect(handle.editor.state.selection.from).toBe(from - 1)
   })
 
   it('ArrowRight：光标在普通文本（非单元左缘）→ 不拦截', () => {
@@ -383,10 +427,10 @@ describe('DateRefExtension handleKeyDown — 方向键跨过单元', () => {
     expect(r.preventDefaultCalled).toBe(false)
   })
 
-  it('ArrowLeft：光标在普通文本（非单元右缘）→ 不拦截', () => {
+  it('ArrowLeft：光标在右 pad 之后的普通文本（to+2）→ 不拦截', () => {
     handle = createEditor('meet @2026-07-15T14:00 📅|weekly tomorrow')
     const { to } = dateRefRangeFromDoc(handle.editor)[0]
-    const r = dateRefKeydown(handle.editor, 'ArrowLeft', to + 1) // to 后是空格
+    const r = dateRefKeydown(handle.editor, 'ArrowLeft', to + 2) // to+1 是 pad 空格（属单元），to+2 已入正文
     expect(r.handled).toBe(false)
     expect(r.preventDefaultCalled).toBe(false)
   })
