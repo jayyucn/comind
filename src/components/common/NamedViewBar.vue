@@ -207,14 +207,6 @@ watch(
 function onDragEnd() {
   store.reorderTabs(localTabs.value.map((t) => t.id))
 }
-// 测试接缝：直接设定本地顺序后触发 onDragEnd，等价于 VueDraggable 真实拖拽结束。
-function __test_setLocalOrder(ids: string[]) {
-  const map = new Map(store.currentTabs.map((t) => [t.id, t]))
-  localTabs.value = ids
-    .map((id) => map.get(id))
-    .filter((t): t is ScreenViewRust => !!t)
-}
-defineExpose({ onDragEnd, __test_setLocalOrder })
 // 当前 tab 实际改动了哪几部分（筛选/排序/分组），按 筛选>排序>分组 优先级
 const PART_LABEL: Record<QueryPart, string> = { filter: '筛选', sort: '排序', group: '分组' }
 const dirtyParts = computed<QueryPart[]>(() => {
