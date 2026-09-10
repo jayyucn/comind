@@ -12,6 +12,7 @@ const {
   mockDeleteScreen,
   mockDeleteScreenView,
   mockSetDefaultScreen,
+  mockReorderScreenViews,
   mockInitCoreClient,
 } = vi.hoisted(() => {
   return {
@@ -23,6 +24,7 @@ const {
     mockDeleteScreen: vi.fn(),
     mockDeleteScreenView: vi.fn(),
     mockSetDefaultScreen: vi.fn(),
+    mockReorderScreenViews: vi.fn(),
     mockInitCoreClient: vi.fn(),
   }
 })
@@ -83,6 +85,7 @@ function createMockClient(overrides: Record<string, unknown> = {}) {
     deleteScreen: mockDeleteScreen,
     deleteScreenView: mockDeleteScreenView,
     setDefaultScreen: mockSetDefaultScreen,
+    reorderScreenViews: mockReorderScreenViews,
     ...overrides,
   }
 }
@@ -118,6 +121,7 @@ describe('screenView store (two-level Screen→Tab)', () => {
     mockDeleteScreen.mockResolvedValue()
     mockDeleteScreenView.mockResolvedValue()
     mockSetDefaultScreen.mockImplementation(async (id: string) => makeScreen({ id, is_default: 1 }))
+    mockReorderScreenViews.mockResolvedValue(undefined)
     mockInitCoreClient.mockResolvedValue(createMockClient())
   })
 
@@ -449,6 +453,69 @@ describe('screenView store (two-level Screen→Tab)', () => {
 
       expect(mockCreateTab).toHaveBeenCalledWith('block', 's1', 't1 副本', 'board', JSON.stringify(DIRTY_QUERY), expect.any(Number), 'cfg')
       expect(store.currentTabId).toBe('seed-tab')
+    })
+  })
+
+  // ── 拖拽重排（ADR-0044） ──
+
+  describe('reorderTabs (ADR-0044 drag reorder)', () => {
+    /** s1 下三个 tab，sort_order 1/2/3；只测外部行为：顺序变化、入参、回滚。 */
+    function setupReorderStore() {
+      const store = useScreenViewStore()
+      store.views = [
+        makeScreen({ id: 's1', is_default: 1 }),
+        makeTab({ id: 't1', parent_id: 's1', sort_order: 1 }),
+        makeTab({ id: 't2', parent_id: 's1', sort_order: 2 }),
+        makeTab({ id: 't3', parent_id: 's1', sort_order: 3 }),
+      ]
+      store.currentScreenId = 's1'
+      store.currentTabId = 't1'
+      return store
+    }
+
+    it('乐观重排：currentTabs 立即反映新顺序，入参为 (entity, screenId, orderedIds)', async () => {
+      const store = setupReorderStore()
+
+      await store.reorderTabs(['t3', 't1', 't2'])
+
+      expect(mockReorderScreenViews).toHaveBeenCalledTimes(1)
+      expect(mockReorderScreenViews).toHaveBeenCalledWith('block', 's1', ['t3', 't1', 't2'])
+      expect(store.currentTabs.map((t) => t.id)).toEqual(['t3', 't1', 't2'])
+    })
+
+    it('乐观更新按数组下标重写 sort_order', async () => {
+      const store = setupReorderStore()
+
+      await store.reorderTabs(['t3', 't1', 't2'])
+
+      const orders = Object.fromEntries(
+        store.views.filter((v) => v.parent_id === 's1').map((v) => [v.id, v.sort_order]),
+      )
+      expect(orders).toEqual({ t3: 0, t1: 1, t2: 2 })
+    })
+
+    it('后端失败回滚到原顺序（不向上抛错：组件侧 fire-and-forget）', async () => {
+      const store = setupReorderStore()
+      mockReorderScreenViews.mockRejectedValueOnce(new Error('db down'))
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      await store.reorderTabs(['t3', 't1', 't2'])
+
+      errSpy.mockRestore()
+      expect(store.currentTabs.map((t) => t.id)).toEqual(['t1', 't2', 't3'])
+      expect(store.views.find((v) => v.id === 't1')?.sort_order).toBe(1)
+      expect(store.views.find((v) => v.id === 't3')?.sort_order).toBe(3)
+    })
+
+    it('无当前 Screen 时为安全 no-op（不调后端、不改顺序）', async () => {
+      const store = useScreenViewStore()
+      store.views = [makeScreen({ id: 's1' }), makeTab({ id: 't1', parent_id: 's1' })]
+      store.currentScreenId = null
+
+      await store.reorderTabs(['t1'])
+
+      expect(mockReorderScreenViews).not.toHaveBeenCalled()
+      expect(store.views.find((v) => v.id === 't1')?.sort_order).toBe(1)
     })
   })
 

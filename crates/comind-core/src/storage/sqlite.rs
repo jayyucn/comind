@@ -23,7 +23,7 @@ use crate::storage::entity::notification::{notification_batch_create, notificati
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::saved_filter::{saved_filter_create, saved_filter_delete, saved_filter_get_all, saved_filter_get_by_id, saved_filter_update};
 #[cfg(not(target_arch = "wasm32"))]
-use crate::storage::entity::screen_view::{screen_view_create, screen_view_delete, screen_view_get_all_by_entity, screen_view_get_by_id, screen_view_update};
+use crate::storage::entity::screen_view::{screen_view_create, screen_view_delete, screen_view_get_all_by_entity, screen_view_get_by_id, screen_view_reorder, screen_view_update};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::notification_config::{notification_config_get, notification_config_save};
 #[cfg(not(target_arch = "wasm32"))]
@@ -854,6 +854,10 @@ impl ScreenViewRepository for SQLiteAdapter {
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
         screen_view_delete(&self.conn, id)
     }
+
+    fn reorder(&mut self, entity: &str, parent_id: &str, ordered_ids: &[String]) -> Result<(), Box<dyn Error>> {
+        screen_view_reorder(&self.conn, entity, parent_id, ordered_ids)
+    }
 }
 
 impl StorageAdapter for SQLiteAdapter {
@@ -1554,6 +1558,10 @@ impl<'a> ScreenViewRepository for TxContext<'a> {
 
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
         screen_view_delete(&self.conn, id)
+    }
+
+    fn reorder(&mut self, entity: &str, parent_id: &str, ordered_ids: &[String]) -> Result<(), Box<dyn Error>> {
+        screen_view_reorder(&self.conn, entity, parent_id, ordered_ids)
     }
 }
 

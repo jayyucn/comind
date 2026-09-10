@@ -112,4 +112,16 @@ impl FilterService {
         view.updated_at = chrono::Utc::now().timestamp_millis();
         repository::ScreenViewRepository::update(storage.screen_views(), &view)
     }
+
+    /// 批量原子重排某 `(entity, parent_id)` 下的 Tabs 顺序（ADR-0044，拖拽持久化）。
+    /// `ordered_ids` 为拖拽后的完整有序 id 数组；事务内按数组下标重写 `sort_order` 并校验归属。
+    /// `parent_id` 传 `''` 即表示对 Screens 重排（预留复用）。
+    pub fn reorder_screen_views(
+        storage: &mut dyn StorageAdapter,
+        entity: &str,
+        parent_id: &str,
+        ordered_ids: &[String],
+    ) -> Result<(), Box<dyn Error>> {
+        repository::ScreenViewRepository::reorder(storage.screen_views(), entity, parent_id, ordered_ids)
+    }
 }

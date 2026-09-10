@@ -177,6 +177,7 @@ pub fn run() {
             commands::delete_screen,
             commands::delete_screen_view,
             commands::set_default_screen,
+            commands::reorder_screen_views,
             commands::get_page,
             commands::get_all_pages,
             commands::get_trash_pages,

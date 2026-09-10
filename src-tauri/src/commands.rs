@@ -297,6 +297,20 @@ pub async fn set_default_screen(
 }
 
 #[tauri::command]
+pub async fn reorder_screen_views(
+    db: State<'_, super::state::DatabaseConnection>,
+    entity: String,
+    parent_id: String,
+    ordered_ids: Vec<String>,
+) -> Result<(), String> {
+    // 事务内原子重写该 (entity, parent_id) 下所有子项的 sort_order（ADR-0044）
+    execute_with_transaction_adapter(db, |storage| {
+        FilterService::reorder_screen_views(storage, &entity, &parent_id, &ordered_ids)
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn get_page(
     db: State<'_, super::state::DatabaseConnection>,
     page_id: &str,
