@@ -146,6 +146,40 @@ pub fn screen_view_delete<E: Executor>(exec: &E, id: &str) -> Result<(), Box<dyn
     Ok(())
 }
 
+/// 批量原子重排：在 `(entity, parent_id)` 下按 `ordered_ids` 数组下标重写每条子项的 `sort_order`。
+/// 一次调用完成整条重排（优于逐条 `updateTab`）。调用方须保证 `ordered_ids` 覆盖该范围内全部子项；
+/// 若缺漏，未列 id 保持其旧 `sort_order`，可能与新序产生间隙——由上层（store 计算完整顺序）保证。
+/// 校验归属：任一 id 不属于该 `(entity, parent_id)` 即拒绝，防止越权写入其它层级。
+#[cfg(not(target_arch = "wasm32"))]
+pub fn screen_view_reorder<E: Executor>(
+    exec: &E,
+    entity: &str,
+    parent_id: &str,
+    ordered_ids: &[String],
+) -> Result<(), Box<dyn Error>> {
+    let all = screen_view_get_all_by_entity(exec, entity)?;
+    let owned: std::collections::HashSet<&str> = all
+        .iter()
+        .filter(|v| v.parent_id == parent_id)
+        .map(|v| v.id.as_str())
+        .collect();
+    for id in ordered_ids {
+        if !owned.contains(id.as_str()) {
+            return Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("screen_view id {id} not owned by ({entity}, {parent_id})"),
+            )));
+        }
+    }
+    let sql = "UPDATE screen_view SET sort_order = ?2 WHERE id = ?1";
+    for (idx, id) in ordered_ids.iter().enumerate() {
+        let sort = idx as i64;
+        let params: Vec<&dyn ToSql> = vec![&id, &sort];
+        exec.execute(sql, &params)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

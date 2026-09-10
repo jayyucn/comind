@@ -155,6 +155,8 @@ pub trait ScreenViewRepository {
     fn create(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn Error>>;
     fn update(&mut self, view: &ScreenView) -> Result<ScreenView, Box<dyn Error>>;
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
+    /// 批量原子重排 `(entity, parent_id)` 下子项顺序（ADR-0044，Tabs 拖拽持久化）。
+    fn reorder(&mut self, entity: &str, parent_id: &str, ordered_ids: &[String]) -> Result<(), Box<dyn Error>>;
 }
 
 pub trait NotificationConfigRepository {

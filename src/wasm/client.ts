@@ -113,6 +113,8 @@ export interface CoreClient {
   deleteScreen(id: string): Promise<void>
   deleteScreenView(id: string): Promise<void>
   setDefaultScreen(id: string): Promise<ScreenViewRust>
+  /** 批量原子重排某 (entity, parentId) 下 Tabs 顺序（ADR-0044，拖拽持久化）。 */
+  reorderScreenViews(entity: string, parentId: string, orderedIds: string[]): Promise<void>
 
   // Book highlights & progress（ADR-0040：仅桌面本地，不入 SyncTable）
   upsertBookHighlight(highlight: BookHighlightRust): Promise<BookHighlightRust>
@@ -213,6 +215,10 @@ class TauriClient implements CoreClient {
 
   async setDefaultScreen(id: string): Promise<ScreenViewRust> {
     return invoke('set_default_screen', { id })
+  }
+
+  async reorderScreenViews(entity: string, parentId: string, orderedIds: string[]): Promise<void> {
+    return invoke('reorder_screen_views', { entity, parentId, orderedIds })
   }
 
   async saveBlockTree(blocks: BlockUpdate[]): Promise<BlockSaveResult[]> {
@@ -555,6 +561,10 @@ class WasmClientAdapter implements CoreClient {
   }
 
   async setDefaultScreen(_id: string): Promise<ScreenViewRust> {
+    throw new Error('WASM: screens not supported')
+  }
+
+  async reorderScreenViews(_entity: string, _parentId: string, _orderedIds: string[]): Promise<void> {
     throw new Error('WASM: screens not supported')
   }
 

@@ -1115,6 +1115,28 @@ impl ScreenViewRepository for SqlJsAdapter {
         Self::run_with_params(&self.db, "DELETE FROM screen_view WHERE id = ?", &[id])?;
         Ok(())
     }
+
+    fn reorder(&mut self, entity: &str, parent_id: &str, ordered_ids: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+        // 校验归属：所有 id 必须属于 (entity, parent_id)
+        let rows = Self::query(&self.db, "SELECT id, parent_id FROM screen_view WHERE entity = ?1", &[entity])?;
+        let owned: std::collections::HashSet<String> = rows
+            .into_iter()
+            .filter(|r| r.get("parent_id").map(|v| v == parent_id).unwrap_or(false))
+            .filter_map(|r| r.get("id").cloned())
+            .collect();
+        for id in ordered_ids {
+            if !owned.contains(id) {
+                return Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("screen_view id {id} not owned by ({entity}, {parent_id})"),
+                )));
+            }
+        }
+        for (idx, id) in ordered_ids.iter().enumerate() {
+            Self::run_with_params(&self.db, "UPDATE screen_view SET sort_order = ?1 WHERE id = ?2", &[&(idx as i64).to_string(), id])?;
+        }
+        Ok(())
+    }
 }
 
 // ---- Book highlights & progress（ADR-0040 D5/D6/D7：仅本地，不入 SyncTable） ----

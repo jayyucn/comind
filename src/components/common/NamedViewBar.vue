@@ -2,6 +2,7 @@
 import {
   ChevronDown,
   Copy,
+  GripVertical,
   MoreVertical,
   Pencil,
   Plus,
@@ -9,8 +10,9 @@ import {
   Table,
   Trash2
 } from 'lucide-vue-next'
+import Sortable from 'sortablejs'
 import type { Component } from 'vue'
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   canDeleteScreen,
   canDeleteTab,
@@ -201,6 +203,56 @@ const dirtyParts = computed<QueryPart[]>(() => {
   return diffQueryParts(parseViewQuery(t?.query_json), store.workingQuery)
 })
 const dirtyHint = computed(() => dirtyParts.value.map((p) => PART_LABEL[p]).join('、'))
+
+// ── Tab 拖拽排序（ADR-0044） ──
+const tabRowEl = ref<HTMLElement | null>(null)
+// 本地 mirror：避免 Vue 响应式（currentTabs computed）与 Sortable 直接互搏 DOM；
+// onEnd 后 store.reorderTabs 更新真相，watch 同步回 localTabs（顺序已一致，v-for patch 为 no-op）。
+const localTabs = ref<ScreenViewRust[]>([])
+const isDragging = ref(false)
+let sortable: Sortable | null = null
+
+watch(
+  currentTabs,
+  (t) => { localTabs.value = [...t] },
+  { immediate: true },
+)
+
+// 从 DOM 读取拖拽后的真实顺序（Sortable 已移动节点，作为单一事实来源，保证完整覆盖）
+function readTabOrder(): string[] {
+  if (!tabRowEl.value) return []
+  return Array.from(tabRowEl.value.querySelectorAll<HTMLElement>('.tab'))
+    .map((el) => el.dataset.id)
+    .filter((id): id is string => !!id)
+}
+
+function handleDragEnd() {
+  isDragging.value = false
+  const ids = readTabOrder()
+  if (ids.length) void store.reorderTabs(ids)
+}
+
+onMounted(() => {
+  if (!tabRowEl.value) return
+  sortable = new Sortable(tabRowEl.value, {
+    draggable: '.tab',
+    filter: '.kebab, .rename, input, .action',
+    preventOnFilter: false,
+    forceFallback: true,
+    delay: 120,
+    animation: 150,
+    dragClass: 'nvb-drag',
+    ghostClass: 'nvb-ghost',
+    chosenClass: 'nvb-chosen',
+    onStart: () => { isDragging.value = true },
+    onEnd: handleDragEnd,
+  })
+})
+
+onBeforeUnmount(() => {
+  sortable?.destroy()
+  sortable = null
+})
 </script>
 
 <template>
@@ -213,14 +265,16 @@ const dirtyHint = computed(() => dirtyParts.value.map((p) => PART_LABEL[p]).join
     </button>
 
     <!-- Tabs 条 -->
-    <div class="tab-row">
+    <div ref="tabRowEl" class="tab-row">
       <div
-        v-for="t in currentTabs"
+        v-for="t in localTabs"
         :key="t.id"
+        :data-id="t.id"
         class="tab"
         :class="{ active: t.id === store.currentTabId }"
-        @click="renamingTabId ? null : store.selectTab(t.id)"
+        @click="renamingTabId ? null : (isDragging ? null : store.selectTab(t.id))"
       >
+        <GripVertical :size="13" class="nvb-grip" />
         <component :is="viewTypeIcon(t.view_type)" :size="13" class="ico" />
         <input
           v-if="renamingTabId === t.id"
@@ -236,8 +290,8 @@ const dirtyHint = computed(() => dirtyParts.value.map((p) => PART_LABEL[p]).join
           <span class="name">{{ tabName(t) }}</span>
           <template v-if="t.id === store.currentTabId && dirtyHint && !renamingTabId">
             <span class="tab-hint">你调整了{{ dirtyHint }}</span>
-            <button class="action" @click.stop="store.discardActiveTab()">清除</button>
-            <button class="action" @click.stop="store.saveActiveTab()">保存</button>
+            <button class="action" @click.stop="isDragging ? null : store.discardActiveTab()">清除</button>
+            <button class="action" @click.stop="isDragging ? null : store.saveActiveTab()">保存</button>
           </template>
           <template v-else>
             <span v-if="store.dirtyByTab.has(t.id)" class="dot" title="有未保存的更改"></span>
@@ -245,7 +299,7 @@ const dirtyHint = computed(() => dirtyParts.value.map((p) => PART_LABEL[p]).join
               v-else
               class="kebab"
               :class="{ on: t.id === store.currentTabId }"
-              @click.stop="openTabMenu(t.id, $event)"
+              @click.stop="isDragging ? null : openTabMenu(t.id, $event)"
             >
               <MoreVertical :size="14" />
             </span>
@@ -459,9 +513,9 @@ const dirtyHint = computed(() => dirtyParts.value.map((p) => PART_LABEL[p]).join
   align-items: center;
   gap: 4px;
   white-space: nowrap;
-  padding: 0 10px;
+  padding: 0 10px 0 22px;
   height: 100%;
-  cursor: pointer;
+  cursor: grab;
   user-select: none;
   position: relative;
   color: var(--text-tertiary);
@@ -472,6 +526,10 @@ const dirtyHint = computed(() => dirtyParts.value.map((p) => PART_LABEL[p]).join
   &:hover {
     color: var(--text-secondary);
     background: var(--bg-hover);
+  }
+
+  &:active {
+    cursor: grabbing;
   }
 
   &.active {
@@ -499,6 +557,46 @@ const dirtyHint = computed(() => dirtyParts.value.map((p) => PART_LABEL[p]).join
     color: var(--accent);
     opacity: 1;
   }
+
+  // ── 拖拽相关（ADR-0044） ──
+  // 可发现性：hover 时左侧淡入 grip，纯视觉提示、不占布局
+  .nvb-grip {
+    position: absolute;
+    left: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-tertiary);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 100ms ease;
+  }
+
+  &:hover .nvb-grip {
+    opacity: 0.55;
+  }
+
+  // 浮动克隆（force-fallback）：外观与 .tab 完全一致，无阴影/半透明/缩放
+  &.nvb-drag {
+    background: var(--bg-base);
+    box-shadow: none;
+    opacity: 1;
+  }
+
+  // 落点占位：中性 gap，隐藏内部内容，仅示落点
+  &.nvb-ghost {
+    background: var(--bg-base2);
+    box-shadow: inset 0 0 0 1px var(--border);
+
+    > * {
+      visibility: hidden;
+    }
+  }
+
+  // 拖拽起点：仅极轻强调
+  &.nvb-chosen {
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+
 
   .name {
     overflow: hidden;

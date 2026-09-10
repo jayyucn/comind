@@ -403,6 +403,36 @@ function makeScreenViewStore(
         await selectTab(tab.id)
       }
 
+      /**
+       * 拖拽重排当前 Screen 下 Tabs 顺序（ADR-0044）。
+       * 乐观更新本地 `views` 的 `sort_order`（computed `currentTabs` 立即反映新顺序），
+       * 再异步调用后端 `reorderScreenViews` 在事务内原子持久化；失败回滚本地顺序。
+       * @param ids 拖拽后的完整有序 id 数组（仅当前 Screen 的 tab）
+       */
+      async function reorderTabs(ids: string[]) {
+        if (!currentScreenId.value) return
+        const screenId = currentScreenId.value
+        // 快照当前 Screen 下 tab 原 sort_order，供失败回滚
+        const prevOrder = new Map<string, number>(
+          views.value.filter((v) => v.parent_id === screenId).map((v) => [v.id, v.sort_order]),
+        )
+        // 乐观更新：按 ids 下标重写 sort_order
+        const newOrder = new Map(ids.map((id, idx) => [id, idx]))
+        views.value = views.value.map((v) =>
+          v.parent_id === screenId && newOrder.has(v.id) ? { ...v, sort_order: newOrder.get(v.id)! } : v,
+        )
+        try {
+          const client = await getClient()
+          await client.reorderScreenViews(entityKey, screenId, ids)
+        } catch (e) {
+          // 回滚本地顺序；组件侧为 fire-and-forget 调用，吞掉错误避免 unhandled rejection
+          views.value = views.value.map((v) =>
+            prevOrder.has(v.id) ? { ...v, sort_order: prevOrder.get(v.id)! } : v,
+          )
+          console.error('[screenView] reorderTabs 持久化失败，已回滚本地顺序', e)
+        }
+      }
+
       return {
         views,
         screens,
@@ -430,6 +460,7 @@ function makeScreenViewStore(
         deleteScreen,
         deleteTab,
         duplicateTab,
+        reorderTabs,
         patchActiveTabConfig,
         patchAllTabConfigs,
         activeTabColumns,
