@@ -2,7 +2,6 @@
 import {
   ChevronDown,
   Copy,
-  GripVertical,
   MoreVertical,
   Pencil,
   Plus,
@@ -236,12 +235,13 @@ const dirtyHint = computed(() => dirtyParts.value.map((p) => PART_LABEL[p]).join
       <ChevronDown :size="14" class="chev" />
     </button>
 
-    <!-- Tabs 条（可拖拽排序：handle=.tab-grip，force-fallback 跨浏览器幽灵，重命名时禁用拖拽） -->
+    <!-- Tabs 条（可拖拽排序：整个 tab 可拖；force-fallback 让本体随光标移动，fallback-on-body 避免被 overflow 裁剪；沿途 tab 随 animation 滑动；重命名时禁用拖拽） -->
     <VueDraggable
       v-model="localTabs"
       class="tab-row"
-      handle=".tab-grip"
       :force-fallback="true"
+      :fallback-on-body="true"
+      :animation="180"
       :disabled="!!renamingTabId"
       ghost-class="tab-ghost"
       @end="onDragEnd"
@@ -253,7 +253,6 @@ const dirtyHint = computed(() => dirtyParts.value.map((p) => PART_LABEL[p]).join
         :class="{ active: t.id === store.currentTabId }"
         @click="renamingTabId ? null : store.selectTab(t.id)"
       >
-        <span class="tab-grip" title="拖拽排序"><GripVertical :size="12" /></span>
         <component :is="viewTypeIcon(t.view_type)" :size="13" class="ico" />
         <input
           v-if="renamingTabId === t.id"
@@ -494,9 +493,13 @@ const dirtyHint = computed(() => dirtyParts.value.map((p) => PART_LABEL[p]).join
   white-space: nowrap;
   padding: 0 10px;
   height: 100%;
-  cursor: pointer;
+  cursor: grab;
   user-select: none;
   position: relative;
+
+  &:active {
+    cursor: grabbing;
+  }
   color: var(--text-tertiary);
   font-size: var(--text-xs, 0.75rem);
   font-weight: 500;
@@ -533,28 +536,13 @@ const dirtyHint = computed(() => dirtyParts.value.map((p) => PART_LABEL[p]).join
     opacity: 1;
   }
 
-  .tab-grip {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-tertiary);
-    cursor: grab;
-    opacity: 0;
-    transition: opacity 80ms ease;
-    flex: none;
-
-    .tab:hover & {
-      opacity: 1;
-    }
-
-    &:active {
-      cursor: grabbing;
-    }
-  }
-
   .tab-ghost {
-    opacity: 0.4;
-    background: var(--bg-hover);
+    background: var(--bg-base2);
+    outline: 1px dashed var(--border);
+
+    > * {
+      visibility: hidden;
+    }
   }
 
   .name {
