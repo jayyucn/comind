@@ -31,6 +31,7 @@ vi.mock('../../wasm/client', () => ({
 }))
 
 import NamedViewBar from './NamedViewBar.vue'
+import Sortable from 'sortablejs'
 import { useScreenViewStore } from '../../stores/screenView'
 
 const EMPTY_QUERY = { version: 1, filter: { combinator: 'and', children: [] }, sort: [], groupBy: null }
@@ -119,7 +120,7 @@ describe('NamedViewBar tabs drag reorder (ADR-0044)', () => {
     expect(capturedOptions.current!.filter).toBe('.kebab, .rename, input, .action')
     expect(capturedOptions.current!.forceFallback).toBe(true)
     expect(capturedOptions.current!.delay).toBe(120)
-    expect(capturedOptions.current!.animation).toBe(150)
+    expect(capturedOptions.current!.animation).toBe(300)
 
     wrapper.unmount()
     expect(mockDestroy).toHaveBeenCalled()
@@ -172,5 +173,52 @@ describe('NamedViewBar tabs drag reorder (ADR-0044)', () => {
     expect(store.currentTabs.map((t) => t.id)).toEqual(['t1', 't2', 't3'])
 
     wrapper.unmount()
+  })
+
+  it('预览块 Y 轴锁：onStart 后每次移动把幽灵块 transform 的 f 分量归零、e 保留；onEnd 后卸锁', async () => {
+    setupStore()
+    const fakeSortable = Sortable as unknown as { ghost: HTMLElement | null }
+    const ghost = document.createElement('div')
+    const setTransform = (e: number, f: number) => {
+      const t = `matrix(1, 0, 0, 1, ${e}, ${f})`
+      ghost.style.transform = t
+      ghost.style.webkitTransform = t
+    }
+    fakeSortable.ghost = ghost
+
+    // jsdom 序列化 transform 时会去掉逗号后的空格，比较前归一化
+    const norm = (s: string) => s.replace(/\s+/g, '')
+
+    try {
+      const wrapper = mountBar()
+      await flushPromises()
+
+      // onStart 挂锁后，首次移动（f≠0）被钳回 0，e 原样保留
+      setTransform(-200, 150)
+      ;(capturedOptions.current!.onStart as () => void)()
+      document.dispatchEvent(new MouseEvent('mousemove'))
+      expect(norm(ghost.style.transform)).toBe('matrix(1,0,0,1,-200,0)')
+
+      // Sortable 每次移动重写 transform，钳制持续生效（X 继续累积不受影响）
+      setTransform(-150, 90)
+      document.dispatchEvent(new MouseEvent('mousemove'))
+      expect(norm(ghost.style.transform)).toBe('matrix(1,0,0,1,-150,0)')
+
+      // pointermove 同样钳制
+      setTransform(-100, 60)
+      document.dispatchEvent(new Event('pointermove'))
+      expect(norm(ghost.style.transform)).toBe('matrix(1,0,0,1,-100,0)')
+
+      // onEnd 卸锁：之后写入的 f 不再被归零
+      ;(capturedOptions.current!.onEnd as () => void)()
+      await flushPromises()
+      setTransform(-50, 40)
+      document.dispatchEvent(new MouseEvent('mousemove'))
+      expect(norm(ghost.style.transform)).toBe('matrix(1,0,0,1,-50,40)')
+
+      wrapper.unmount()
+    } finally {
+      fakeSortable.ghost = null
+    }
   })
 })

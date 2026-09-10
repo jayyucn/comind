@@ -212,6 +212,38 @@ const localTabs = ref<ScreenViewRust[]>([])
 const isDragging = ref(false)
 let sortable: Sortable | null = null
 
+// 预览块（fallback 克隆）Y 轴锁：横向 tab 条上克隆体仅 X 跟随鼠标。
+// SortableJS 无内建轴锁（fallback 用 matrix(e=dx, f=dy) 双轴驱动）；本监听在 onStart 注册、
+// 晚于 Sortable 自身的 document 冒泡监听，每次移动后把幽灵块 transform 的 Y 分量归零——
+// 幽灵块 top 已锚定在 tab 条原位（f=0 即锁定在条高），X 分量不受影响正常累积。
+let ghostYLock: ((e: Event) => void) | null = null
+
+function clampGhostY() {
+  const ghost = Sortable.ghost as HTMLElement | null
+  const m = ghost?.style.transform.match(/matrix\(([^)]+)\)/)
+  if (!ghost || !m) return
+  const v = m[1].split(',').map((s) => parseFloat(s))
+  if (v.length < 6 || v[5] === 0) return
+  v[5] = 0
+  const next = `matrix(${v.join(',')})`
+  ghost.style.transform = next
+  ghost.style.webkitTransform = next
+}
+
+function attachGhostYLock() {
+  ghostYLock = () => clampGhostY()
+  document.addEventListener('pointermove', ghostYLock)
+  document.addEventListener('mousemove', ghostYLock)
+}
+
+function detachGhostYLock() {
+  if (!ghostYLock) return
+  document.removeEventListener('pointermove', ghostYLock)
+  document.removeEventListener('mousemove', ghostYLock)
+  ghostYLock = null
+  clampGhostY()
+}
+
 watch(
   currentTabs,
   (t) => { localTabs.value = [...t] },
@@ -227,6 +259,7 @@ function readTabOrder(): string[] {
 }
 
 function handleDragEnd() {
+  detachGhostYLock()
   isDragging.value = false
   const ids = readTabOrder()
   if (ids.length) void store.reorderTabs(ids)
@@ -239,12 +272,15 @@ onMounted(() => {
     filter: '.kebab, .rename, input, .action',
     preventOnFilter: false,
     forceFallback: true,
-    delay: 120,
-    animation: 150,
+    delay: 60,
+    animation: 300,
     dragClass: 'nvb-drag',
     ghostClass: 'nvb-ghost',
     chosenClass: 'nvb-chosen',
-    onStart: () => { isDragging.value = true },
+    onStart: () => {
+      isDragging.value = true
+      attachGhostYLock()
+    },
     onEnd: handleDragEnd,
   })
 })
@@ -460,7 +496,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border);
   border-top-left-radius: var(--radius-md);
   border-top-right-radius: var(--radius-md);
-  background: var(--bg-base);
+  background: var(--bg-base2);
   flex-shrink: 0;
 }
 
@@ -506,6 +542,7 @@ onBeforeUnmount(() => {
   overflow-x: auto;
   align-self: stretch;
   overflow-y: hidden;
+  background: var(--bg-active);
 }
 
 .tab {
@@ -518,6 +555,7 @@ onBeforeUnmount(() => {
   cursor: grab;
   user-select: none;
   position: relative;
+  background: var(--bg-base2);
   color: var(--text-tertiary);
   font-size: var(--text-xs, 0.75rem);
   font-weight: 500;
@@ -526,6 +564,7 @@ onBeforeUnmount(() => {
   &:hover {
     color: var(--text-secondary);
     background: var(--bg-hover);
+    border-radius: 0;
   }
 
   &:active {
@@ -533,7 +572,10 @@ onBeforeUnmount(() => {
   }
 
   &.active {
+    background: transparent;
     color: var(--text-primary);
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
   }
 
   &.active::after {
@@ -543,7 +585,7 @@ onBeforeUnmount(() => {
     right: 8px;
     bottom: -1px;
     height: 2px;
-    background: var(--accent);
+    // background: var(--accent);
     border-radius: 2px;
     box-shadow: 0 0 8px rgba(129, 140, 248, 0.55);
   }
@@ -584,8 +626,9 @@ onBeforeUnmount(() => {
 
   // 落点占位：中性 gap，隐藏内部内容，仅示落点
   &.nvb-ghost {
-    background: var(--bg-base2);
-    box-shadow: inset 0 0 0 1px var(--border);
+    background: transparent !important;
+
+    // box-shadow: inset 0 0 0 1px var(--border);
 
     > * {
       visibility: hidden;
@@ -594,7 +637,8 @@ onBeforeUnmount(() => {
 
   // 拖拽起点：仅极轻强调
   &.nvb-chosen {
-    box-shadow: inset 0 0 0 1px var(--accent);
+    background: var(--bg-base2);
+    // box-shadow: inset 0 0 0 1px var(--accent);
   }
 
 

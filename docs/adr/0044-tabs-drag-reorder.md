@@ -102,3 +102,4 @@ tab 上已有 点击选中 / 双击重命名 / `⋯` 菜单 / 脏点提示按钮
 - **WASM 范围修正**：上文"通过 wasm-bindgen 导出并重新 wasm:build"**未按字面执行**——comind-wasm 本就未实现任何 screen_view 命令，`WasmClientAdapter` 对全部 screen 方法统一 throw `'WASM: screens not supported'`，`reorderScreenViews` 沿用同款 throw（web 端 screens 整体不可用是既有状态）。后端写路径落地为 **Tauri-only**：`reorder_screen_views` 命令经 `execute_with_transaction_adapter` 在事务内调用 core；`sqljs.rs` 的 `reorder` 实现仅为满足 repository trait（web 不可达）。
 - **后端完整性校验**：`reorder` 校验 `ordered_ids` 去重且**恰好覆盖**该 `(entity, parent_id)` 下全部子项（越界/缺漏/重复均拒绝），落实"重写所有子项"语义。
 - **onEnd 取序方式**：实现用 `readTabOrder()` 读取拖拽后 DOM 的完整 `.tab` 顺序（`data-id`），替代规格中的 `oldIndex/newIndex` 拼接——行为等价、天然保证完整覆盖，规避下标计算的边界分支。
+- **预览块 Y 轴锁**（用户追加需求）：横向 tab 条上，拖拽预览块（fallback 克隆）**Y 轴锁死、仅 X 跟随鼠标**。SortableJS 无内建轴锁（开源 issue #1341），实现为 `onStart` 注册 document 级 `pointermove/mousemove` 监听（注册晚于 Sortable 自身监听，天然后置），每次移动后把幽灵块 `Sortable.ghost` transform 的 Y 分量（f）归零——幽灵块 `top` 已锚定 tab 条原位，f=0 即锁定条高；X 分量（e）不受影响。触屏路径（`evt.touches[0]`）不覆盖，桌面行为为准。
