@@ -235,16 +235,13 @@ const dirtyHint = computed(() => dirtyParts.value.map((p) => PART_LABEL[p]).join
       <ChevronDown :size="14" class="chev" />
     </button>
 
-    <!-- Tabs 条（可拖拽排序：整个 tab 可拖；force-fallback 让本体随光标移动，fallback-on-body 避免被 overflow 裁剪；沿途 tab 随 animation 滑动；重命名时禁用拖拽） -->
+    <!-- Tabs 条（可拖拽排序：整个 tab 可拖；被拖的是 tab 本体本身，不创建克隆/ ghost；direction=horizontal 使落点判定仅按 x 坐标；沿途 tab 随 animation 滑动；重命名时禁用拖拽） -->
     <VueDraggable
       v-model="localTabs"
       class="tab-row"
-      :force-fallback="true"
-      :fallback-on-body="true"
       direction="horizontal"
       :animation="180"
       :disabled="!!renamingTabId"
-      ghost-class="tab-ghost"
       @end="onDragEnd"
     >
       <div
@@ -535,10 +532,6 @@ const dirtyHint = computed(() => dirtyParts.value.map((p) => PART_LABEL[p]).join
   &.active .ico {
     color: var(--accent);
     opacity: 1;
-  }
-
-  .tab-ghost {
-    display: none;
   }
 
   .name {
