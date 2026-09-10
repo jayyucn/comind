@@ -240,6 +240,7 @@ const dirtyHint = computed(() => dirtyParts.value.map((p) => PART_LABEL[p]).join
         v-for="t in localTabs"
         :key="t.id"
         class="tab"
+        :draggable="renamingTabId !== t.id"
         :class="{ active: t.id === store.currentTabId }"
         @click="renamingTabId ? null : store.selectTab(t.id)"
       >
