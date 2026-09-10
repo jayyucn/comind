@@ -4,6 +4,7 @@ import type { QuadrantConfig } from '../../core/view'
 import { sortItems } from '../../core/query'
 import type { SortRule, Registry } from '../../core/query'
 import type { BlockCard } from '../../wasm/types'
+import { resolveRelativeExpr } from '../../utils/date-parser'
 import BulletRender from '../Block/handlers/bullet/BulletRender.vue'
 import Icon from '../Icons/Icon.vue'
 
@@ -15,7 +16,9 @@ import Icon from '../Icons/Icon.vue'
  *   左下 Low     不重要不紧急 → 减少
  *   右下 High    不重要但紧急 → 委托
  * 拖拽卡片到另一象限即改写其 priority（复用消费方 onCellChange → propertyStore.setProperty）。
- * 仅纳入 status ∈ {Todo, Doing, Done} 且含 priority 的卡片（四象限需同时具备 status 与 priority），无 priority 的卡片不显示。
+ * 系统默认筛选（组件内置，无需 tab 存储 query）：含 priority 且 status 命中——
+ * status 是 Todo / 是 Doing /（是 Done 且 updatedAt 在昨天及之后）；无 priority 或久前完成的 Done 不显示。
+ * 系统默认排序：status asc → updatedAt desc；工具栏设了排序规则时按规则（复用引擎 sortItems）。
  * 组件零业务耦合：只消费 items（泛型）与 BlockCard 形状，事件经 cell-change / navigate 上抛。
  */
 const props = defineProps<{
@@ -55,18 +58,49 @@ function asCard(item: T): Card {
 // 四象限需同时具备 status 与 priority，无 priority 的卡片不显示。
 const ACTIVE_STATUSES = new Set(['Todo', 'Doing', 'Done'])
 
-/** 落格资格：status 活跃（Todo/Doing/Done）且 priority 为合法象限值。 */
+/** 象限系统默认排序：status asc → updatedAt desc（与「重要紧急视图」默认规则一致）。 */
+const DEFAULT_QUADRANT_SORT: SortRule[] = [
+  { field: 'status', dir: 'asc' },
+  { field: 'updatedAt', dir: 'desc' },
+]
+/** status asc 显式顺序（与 block 注册表 status.sortOrder 对齐：进行中最相关，终止态沉底）。 */
+const STATUS_SORT_ORDER = ['Doing', 'Todo', 'Done', 'Canceled']
+
+/** 取卡片 updatedAt 的可比较日期串，镜像引擎：优先用注册表 updatedAt getter（toLocalDatetime），
+ *  无注册表时回退 BlockCard.updated_at（epoch）→ 本地 YYYY-MM-DDTHH:mm:ss（保证同日 > 昨日日期串）。 */
+function resolveUpdatedAtString(item: T): string | undefined {
+  const reg = props.registry
+  if (reg) {
+    const d = reg.get(props.entityType ?? 'block', 'updatedAt')
+    if (d) {
+      const v = d.get(item)
+      if (v != null) return String(v)
+    }
+  }
+  const ts = asCard(item).updated_at
+  if (ts == null) return undefined
+  const dt = new Date(ts)
+  if (Number.isNaN(dt.getTime())) return undefined
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}:${pad(dt.getSeconds())}`
+}
+
+/** 落格资格：含 priority 且 status 命中系统默认筛选（含「Done 须昨日后」）。 */
 function qualifies(item: T): boolean {
   const card = asCard(item)
-  const st = card.properties?.['status']
   const pr = card.properties?.['priority']
-  return (
-    st != null &&
-    ACTIVE_STATUSES.has(String(st)) &&
-    pr != null &&
-    pr !== '' &&
-    QUADRANT_KEYS.includes(String(pr))
-  )
+  if (pr == null || pr === '' || !QUADRANT_KEYS.includes(String(pr))) return false
+  const st = card.properties?.['status']
+  if (st == null) return false
+  const s = String(st)
+  if (s === 'Todo' || s === 'Doing') return true
+  if (s === 'Done') {
+    // 镜像引擎 op:'after' + relativeDate('yesterday')：updatedAt > 昨日日期串（含昨日起更新）
+    const updated = resolveUpdatedAtString(item)
+    const y = resolveRelativeExpr('yesterday') ?? ''
+    return updated != null && String(updated) > String(y)
+  }
+  return false
 }
 
 /** 全部记录 id → item（供父级可见性判断）。 */
@@ -145,9 +179,31 @@ function statusKey(item: T): string {
   return 'status-' + s.toLowerCase()
 }
 
-// 象限内默认按 block 创建时间降序：新任务在前（沿用「新任务置顶」体感）
+// 象限内排序：工具栏设了排序规则则按规则（复用引擎 sortItems，与表格/看板一致）；
+// 否则回落「系统默认排序」status asc → updatedAt desc（沿用「重要紧急视图」默认规则）。
+// 两套路径都基于已分桶结果独立排序。
 function sortByCreatedAt(list: T[]): T[] {
   return [...list].sort((a, b) => (asCard(b).created_at ?? 0) - (asCard(a).created_at ?? 0))
+}
+
+/** 无注册表时的系统默认排序回退：status asc（见 STATUS_SORT_ORDER）→ updatedAt desc。 */
+function sortByDefault(list: T[]): T[] {
+  return [...list].sort((a, b) => {
+    const sa = String(asCard(a).properties?.['status'] ?? '')
+    const sb = String(asCard(b).properties?.['status'] ?? '')
+    const ra = STATUS_SORT_ORDER.indexOf(sa)
+    const rb = STATUS_SORT_ORDER.indexOf(sb)
+    const ia = ra === -1 ? STATUS_SORT_ORDER.length : ra
+    const ib = rb === -1 ? STATUS_SORT_ORDER.length : rb
+    if (ia !== ib) return ia - ib
+    return (asCard(b).updated_at ?? 0) - (asCard(a).updated_at ?? 0)
+  })
+}
+
+/** 按规则排序：有注册表走引擎 sortItems（含默认规则），无注册表时默认规则走 sortByDefault、自定义规则回退 sortByCreatedAt。 */
+function sortWithRules(list: T[], rules: SortRule[]): T[] {
+  if (props.registry) return sortItems(list, rules, props.registry, props.entityType ?? 'block')
+  return rules === DEFAULT_QUADRANT_SORT ? sortByDefault(list) : sortByCreatedAt(list)
 }
 
 // 预先分桶（单次遍历 + 每桶排序），避免模板内重复计算
@@ -157,13 +213,10 @@ const buckets = computed<Record<string, T[]>>(() => {
     const p = priorityOf(i)
     if (p && map[p]) map[p].push(i)
   }
-  // 象限内排序：工具栏设了排序规则则按规则（复用引擎 sortItems，与表格/看板一致，保证工具栏排序在象限生效）；
-  // 否则回落「按创建时间降序」（新任务在前，象限默认序）。两路径都基于已分桶结果独立排序。
-  const rules = props.sort && props.sort.length > 0 ? props.sort : null
+  // 象限内排序：工具栏设了排序规则则按规则，否则用系统默认排序（status asc → updatedAt desc）
+  const rules = props.sort && props.sort.length > 0 ? props.sort : DEFAULT_QUADRANT_SORT
   for (const k of QUADRANT_KEYS) {
-    map[k] = rules && props.registry
-      ? sortItems(map[k], rules, props.registry, props.entityType ?? 'block')
-      : sortByCreatedAt(map[k])
+    map[k] = sortWithRules(map[k], rules)
   }
   return map
 })
@@ -184,7 +237,7 @@ const activeById = computed(() => {
 
 /** parent_id → 直接子任务（父级须活跃，整枝才可见；列表已按 sort 规则或创建时间排序）。 */
 const childrenMap = computed(() => {
-  const rules = props.sort && props.sort.length > 0 ? props.sort : null
+  const rules = props.sort && props.sort.length > 0 ? props.sort : DEFAULT_QUADRANT_SORT
   const m = new Map<string, T[]>()
   for (const i of props.items) {
     const st = asCard(i).properties?.['status']
@@ -196,11 +249,9 @@ const childrenMap = computed(() => {
       m.set(pid, arr)
     }
   }
-  // 与顶层卡片同引擎排序：有规则按规则，无规则回退创建时间降序
+  // 与顶层卡片同引擎排序：有规则按规则，无规则回退系统默认排序（status asc → updatedAt desc）
   for (const [pid, list] of m) {
-    m.set(pid, rules && props.registry
-      ? sortItems(list, rules, props.registry, props.entityType ?? 'block')
-      : sortByCreatedAt(list))
+    m.set(pid, sortWithRules(list, rules))
   }
   return m
 })
