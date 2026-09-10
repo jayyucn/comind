@@ -241,6 +241,7 @@ const dirtyHint = computed(() => dirtyParts.value.map((p) => PART_LABEL[p]).join
       class="tab-row"
       :force-fallback="true"
       :fallback-on-body="true"
+      direction="horizontal"
       :animation="180"
       :disabled="!!renamingTabId"
       ghost-class="tab-ghost"
@@ -537,12 +538,7 @@ const dirtyHint = computed(() => dirtyParts.value.map((p) => PART_LABEL[p]).join
   }
 
   .tab-ghost {
-    background: var(--bg-base2);
-    outline: 1px dashed var(--border);
-
-    > * {
-      visibility: hidden;
-    }
+    display: none;
   }
 
   .name {
