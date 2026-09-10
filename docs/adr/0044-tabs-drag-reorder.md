@@ -96,3 +96,9 @@ tab 上已有 点击选中 / 双击重命名 / `⋯` 菜单 / 脏点提示按钮
   4. `NamedViewBar.vue` 集成：本地 `localTabs` mirror + `onMounted` 建 Sortable（`draggable:'.tab'`、`filter:'.kebab,.rename,input,.action'`、`forceFallback:true`、`delay:120`、`animation:150`、`dragClass`/`ghostClass`/`chosenClass` 映射设计 token，克隆外观与 `.tab` 一致、落点仅中性 gap）+ `onBeforeUnmount` destroy + `onEnd`→`store.reorderTabs`；hover 淡入 grip affordance（`isDragging` 守卫冻结 click/hover）；`.tab-row` 已是 `overflow-x:auto`，force-fallback 规避滚动冲突；
   5. 新增 `NamedViewBar.test.ts`：模拟 `onEnd` 校验 `reorderTabs` 收到正确 id 顺序、`localTabs` 重排、`currentTabs` 反映新序；`screenView.test.ts` 补 `reorderTabs` 持久化 + 回滚用例；
   6. 验证：`vue-tsc -b` + `eslint` + `vitest run` 全绿，手动 `npm run dev` 手测拖拽不误触 kebab/重命名/提示按钮。
+
+## Implementation Notes（2026-09-10 落地勘误）
+
+- **WASM 范围修正**：上文"通过 wasm-bindgen 导出并重新 wasm:build"**未按字面执行**——comind-wasm 本就未实现任何 screen_view 命令，`WasmClientAdapter` 对全部 screen 方法统一 throw `'WASM: screens not supported'`，`reorderScreenViews` 沿用同款 throw（web 端 screens 整体不可用是既有状态）。后端写路径落地为 **Tauri-only**：`reorder_screen_views` 命令经 `execute_with_transaction_adapter` 在事务内调用 core；`sqljs.rs` 的 `reorder` 实现仅为满足 repository trait（web 不可达）。
+- **后端完整性校验**：`reorder` 校验 `ordered_ids` 去重且**恰好覆盖**该 `(entity, parent_id)` 下全部子项（越界/缺漏/重复均拒绝），落实"重写所有子项"语义。
+- **onEnd 取序方式**：实现用 `readTabOrder()` 读取拖拽后 DOM 的完整 `.tab` 顺序（`data-id`），替代规格中的 `oldIndex/newIndex` 拼接——行为等价、天然保证完整覆盖，规避下标计算的边界分支。
