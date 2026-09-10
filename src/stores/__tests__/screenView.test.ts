@@ -12,6 +12,7 @@ const {
   mockDeleteScreen,
   mockDeleteScreenView,
   mockSetDefaultScreen,
+  mockReorderTabs,
   mockInitCoreClient,
 } = vi.hoisted(() => {
   return {
@@ -23,6 +24,7 @@ const {
     mockDeleteScreen: vi.fn(),
     mockDeleteScreenView: vi.fn(),
     mockSetDefaultScreen: vi.fn(),
+    mockReorderTabs: vi.fn(),
     mockInitCoreClient: vi.fn(),
   }
 })
@@ -83,6 +85,7 @@ function createMockClient(overrides: Record<string, unknown> = {}) {
     deleteScreen: mockDeleteScreen,
     deleteScreenView: mockDeleteScreenView,
     setDefaultScreen: mockSetDefaultScreen,
+    reorderTabs: mockReorderTabs,
     ...overrides,
   }
 }
@@ -118,6 +121,7 @@ describe('screenView store (two-level Screen→Tab)', () => {
     mockDeleteScreen.mockResolvedValue()
     mockDeleteScreenView.mockResolvedValue()
     mockSetDefaultScreen.mockImplementation(async (id: string) => makeScreen({ id, is_default: 1 }))
+    mockReorderTabs.mockResolvedValue()
     mockInitCoreClient.mockResolvedValue(createMockClient())
   })
 
@@ -449,6 +453,60 @@ describe('screenView store (two-level Screen→Tab)', () => {
 
       expect(mockCreateTab).toHaveBeenCalledWith('block', 's1', 't1 副本', 'board', JSON.stringify(DIRTY_QUERY), expect.any(Number), 'cfg')
       expect(store.currentTabId).toBe('seed-tab')
+    })
+  })
+
+  // ── Tab 拖拽排序 ──
+
+  describe('reorder tabs (drag-and-drop order)', () => {
+    it('reorderTabs 按传入顺序写入 sort_order=1..n 并经由 client.reorderTabs 持久化', async () => {
+      const store = useScreenViewStore()
+      store.views = [
+        makeScreen({ id: 's1' }),
+        makeTab({ id: 't1', parent_id: 's1', sort_order: 1 }),
+        makeTab({ id: 't2', parent_id: 's1', sort_order: 2 }),
+        makeTab({ id: 't3', parent_id: 's1', sort_order: 3 }),
+      ]
+      store.currentScreenId = 's1'
+      store.currentTabId = 't1'
+
+      // 模拟拖拽：t3 移到最前，t1、t2 依次后退
+      await store.reorderTabs(['t3', 't1', 't2'])
+
+      expect(mockReorderTabs).toHaveBeenCalledWith('block', 's1', ['t3', 't1', 't2'])
+      const byId = (id: string) => store.views.find((v) => v.id === id)!
+      expect(byId('t3').sort_order).toBe(1)
+      expect(byId('t1').sort_order).toBe(2)
+      expect(byId('t2').sort_order).toBe(3)
+      // currentTabs 立即按新顺序重排（按 sort_order 排序）
+      expect(store.currentTabs.map((t) => t.id)).toEqual(['t3', 't1', 't2'])
+    })
+
+    it('reorderTabs 不影响其他 Screen 的 Tab', async () => {
+      const store = useScreenViewStore()
+      store.views = [
+        makeScreen({ id: 's1' }),
+        makeScreen({ id: 's2' }),
+        makeTab({ id: 't1', parent_id: 's1', sort_order: 1 }),
+        makeTab({ id: 't2', parent_id: 's1', sort_order: 2 }),
+        makeTab({ id: 't9', parent_id: 's2', sort_order: 1 }),
+      ]
+      store.currentScreenId = 's1'
+
+      await store.reorderTabs(['t2', 't1'])
+
+      expect(store.views.find((v) => v.id === 't9')?.sort_order).toBe(1)
+      expect(mockReorderTabs).toHaveBeenCalledWith('block', 's1', ['t2', 't1'])
+    })
+
+    it('reorderTabs 无当前 Screen 时为安全 no-op（不写库）', async () => {
+      const store = useScreenViewStore()
+      store.views = [makeScreen({ id: 's1' }), makeTab({ id: 't1', parent_id: 's1' })]
+      store.currentScreenId = null
+
+      await store.reorderTabs(['t1'])
+
+      expect(mockReorderTabs).not.toHaveBeenCalled()
     })
   })
 

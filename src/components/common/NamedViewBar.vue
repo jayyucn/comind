@@ -2,6 +2,7 @@
 import {
   ChevronDown,
   Copy,
+  GripVertical,
   MoreVertical,
   Pencil,
   Plus,
@@ -10,7 +11,8 @@ import {
   Trash2
 } from 'lucide-vue-next'
 import type { Component } from 'vue'
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
+import { VueDraggable } from 'vue-draggable-plus'
 import {
   canDeleteScreen,
   canDeleteTab,
@@ -192,6 +194,28 @@ function createTab() {
 
 const currentScreen = computed(() => store.currentScreen)
 const currentTabs = computed(() => store.currentTabs)
+// 本地拖拽数组：VueDraggable 直接重排 localTabs，持久化真相在 store（reorderTabs 回流后同步回本地）。
+// 与 FieldManagerPanel 的字段拖拽同构——避免组件内改写 props/store.currentTabs 这一只读派生。
+const localTabs = ref<ScreenViewRust[]>([])
+watch(
+  () => store.currentTabs,
+  (tabs) => {
+    localTabs.value = tabs.slice()
+  },
+  { immediate: true },
+)
+/** 拖拽结束：localTabs 已被 VueDraggable 重排，emit 新 id 顺序交由 store 持久化。 */
+function onDragEnd() {
+  store.reorderTabs(localTabs.value.map((t) => t.id))
+}
+// 测试接缝：直接设定本地顺序后触发 onDragEnd，等价于 VueDraggable 真实拖拽结束。
+function __test_setLocalOrder(ids: string[]) {
+  const map = new Map(store.currentTabs.map((t) => [t.id, t]))
+  localTabs.value = ids
+    .map((id) => map.get(id))
+    .filter((t): t is ScreenViewRust => !!t)
+}
+defineExpose({ onDragEnd, __test_setLocalOrder })
 // 当前 tab 实际改动了哪几部分（筛选/排序/分组），按 筛选>排序>分组 优先级
 const PART_LABEL: Record<QueryPart, string> = { filter: '筛选', sort: '排序', group: '分组' }
 const dirtyParts = computed<QueryPart[]>(() => {
@@ -212,15 +236,24 @@ const dirtyHint = computed(() => dirtyParts.value.map((p) => PART_LABEL[p]).join
       <ChevronDown :size="14" class="chev" />
     </button>
 
-    <!-- Tabs 条 -->
-    <div class="tab-row">
+    <!-- Tabs 条（可拖拽排序：handle=.tab-grip，force-fallback 跨浏览器幽灵，重命名时禁用拖拽） -->
+    <VueDraggable
+      v-model="localTabs"
+      class="tab-row"
+      handle=".tab-grip"
+      :force-fallback="true"
+      :disabled="!!renamingTabId"
+      ghost-class="tab-ghost"
+      @end="onDragEnd"
+    >
       <div
-        v-for="t in currentTabs"
+        v-for="t in localTabs"
         :key="t.id"
         class="tab"
         :class="{ active: t.id === store.currentTabId }"
         @click="renamingTabId ? null : store.selectTab(t.id)"
       >
+        <span class="tab-grip" title="拖拽排序"><GripVertical :size="12" /></span>
         <component :is="viewTypeIcon(t.view_type)" :size="13" class="ico" />
         <input
           v-if="renamingTabId === t.id"
@@ -252,7 +285,7 @@ const dirtyHint = computed(() => dirtyParts.value.map((p) => PART_LABEL[p]).join
           </template>
         </template>
       </div>
-    </div>
+    </VueDraggable>
 
     <!-- 新建 tab -->
     <button class="add-tab" title="新建 tab" @click="openNewTabModal">
@@ -498,6 +531,30 @@ const dirtyHint = computed(() => dirtyParts.value.map((p) => PART_LABEL[p]).join
   &.active .ico {
     color: var(--accent);
     opacity: 1;
+  }
+
+  .tab-grip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-tertiary);
+    cursor: grab;
+    opacity: 0;
+    transition: opacity 80ms ease;
+    flex: none;
+
+    .tab:hover & {
+      opacity: 1;
+    }
+
+    &:active {
+      cursor: grabbing;
+    }
+  }
+
+  .tab-ghost {
+    opacity: 0.4;
+    background: var(--bg-hover);
   }
 
   .name {

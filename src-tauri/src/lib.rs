@@ -174,6 +174,7 @@ pub fn run() {
             commands::create_tab,
             commands::update_screen,
             commands::update_tab,
+            commands::reorder_tabs,
             commands::delete_screen,
             commands::delete_screen_view,
             commands::set_default_screen,

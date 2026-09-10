@@ -403,6 +403,23 @@ function makeScreenViewStore(
         await selectTab(tab.id)
       }
 
+      /**
+       * 重排当前 Screen 下 Tab 的顺序（拖拽排序落库）。
+       * 传入「拖拽后的有序 id 列表」：经 client.reorderTabs 持久化（Rust 端写 sort_order = 1..n），
+       * 本地乐观重写对应 Tab 的 sort_order，使 currentTabs 立即按新顺序重排（currentTabs 按 sort_order 排序）。
+       */
+      async function reorderTabs(orderedIds: string[]) {
+        if (!currentScreenId.value) return
+        const client = await getClient()
+        await client.reorderTabs(entityKey, currentScreenId.value, orderedIds)
+        const order = new Map(orderedIds.map((id, i) => [id, i + 1] as const))
+        views.value = views.value.map((v) =>
+          v.parent_id === currentScreenId.value && order.has(v.id)
+            ? { ...v, sort_order: order.get(v.id)!, updated_at: Date.now() }
+            : v,
+        )
+      }
+
       return {
         views,
         screens,
@@ -430,6 +447,7 @@ function makeScreenViewStore(
         deleteScreen,
         deleteTab,
         duplicateTab,
+        reorderTabs,
         patchActiveTabConfig,
         patchAllTabConfigs,
         activeTabColumns,

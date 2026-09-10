@@ -110,6 +110,8 @@ export interface CoreClient {
   createTab(entity: string, parentId: string, name: string, viewType: string, queryJson: string, sortOrder: number, config: string): Promise<ScreenViewRust>
   updateScreen(id: string, name: string, viewType: string, config: string): Promise<ScreenViewRust>
   updateTab(id: string, name: string, viewType: string, queryJson: string, config: string): Promise<ScreenViewRust>
+  /** 重排某 Screen 下 Tab 顺序：按有序 id 列表写入 sort_order = 1..n（仅作用于该 Screen 的 Tab）。 */
+  reorderTabs(entity: string, parentId: string, orderedIds: string[]): Promise<void>
   deleteScreen(id: string): Promise<void>
   deleteScreenView(id: string): Promise<void>
   setDefaultScreen(id: string): Promise<ScreenViewRust>
@@ -201,6 +203,10 @@ class TauriClient implements CoreClient {
 
   async updateTab(id: string, name: string, viewType: string, queryJson: string, config: string): Promise<ScreenViewRust> {
     return invoke('update_tab', { id, name, viewType, queryJson, config })
+  }
+
+  async reorderTabs(entity: string, parentId: string, orderedIds: string[]): Promise<void> {
+    return invoke('reorder_tabs', { entity, parentId, orderedIds })
   }
 
   async deleteScreen(id: string): Promise<void> {
@@ -544,6 +550,10 @@ class WasmClientAdapter implements CoreClient {
 
   async updateTab(_id: string, _name: string, _viewType: string, _queryJson: string, _config: string): Promise<ScreenViewRust> {
     throw new Error('WASM: tabs not supported')
+  }
+
+  async reorderTabs(_entity: string, _parentId: string, _orderedIds: string[]): Promise<void> {
+    throw new Error('WASM: screens not supported')
   }
 
   async deleteScreen(_id: string): Promise<void> {

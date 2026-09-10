@@ -270,6 +270,19 @@ pub async fn update_tab(
 }
 
 #[tauri::command]
+pub async fn reorder_tabs(
+    db: State<'_, super::state::DatabaseConnection>,
+    entity: String,
+    parent_id: String,
+    ordered_ids: Vec<String>,
+) -> Result<(), String> {
+    execute_with_adapter(db, |storage| {
+        FilterService::reorder_tabs(storage, &entity, &parent_id, &ordered_ids)
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn delete_screen(
     db: State<'_, super::state::DatabaseConnection>,
     id: String,

@@ -77,6 +77,21 @@ impl FilterService {
         repository::ScreenViewRepository::update(storage.screen_views(), &view)
     }
 
+    /// 重排某 Screen 下 Tab 的显示顺序：按传入的有序 id 列表，依次写入 sort_order = 1..n。
+    /// 仅处理 parent_id 命中该 Screen 的 Tab；其他实体/Screen 的视图不受影响（命令层已校验 parent_id 属于该 entity）。
+    pub fn reorder_tabs(storage: &mut dyn StorageAdapter, entity: &str, parent_id: &str, ordered_ids: &[String]) -> Result<(), Box<dyn Error>> {
+        let views = repository::ScreenViewRepository::get_all_by_entity(storage.screen_views(), entity)?;
+        let now = chrono::Utc::now().timestamp_millis();
+        for (idx, id) in ordered_ids.iter().enumerate() {
+            if let Some(mut v) = views.iter().find(|v| v.id == *id && v.parent_id == parent_id).cloned() {
+                v.sort_order = (idx as i64) + 1;
+                v.updated_at = now;
+                repository::ScreenViewRepository::update(storage.screen_views(), &v)?;
+            }
+        }
+        Ok(())
+    }
+
     /// 删除 Screen 及其下全部 Tab（级联）。
     pub fn delete_screen(storage: &mut dyn StorageAdapter, id: &str) -> Result<(), Box<dyn Error>> {
         let entity = repository::ScreenViewRepository::get_by_id(storage.screen_views(), id)?.entity;
