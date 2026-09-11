@@ -385,9 +385,10 @@
   opacity: 0.3;
   background: var(--accent-06);
   border: 2px dashed var(--color-accent);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   position: relative !important;
   max-width: 100%;
+  height: var(--space-8);
   box-sizing: border-box;
 
   .block-content,
@@ -412,10 +413,6 @@
 
 .block-drag {
   opacity: 1;
-  transform: scale(1.02);
-  box-shadow: 0 6px 20px var(--overlay);
-  border-radius: var(--radius-md);
-  cursor: grabbing;
 }
 
 // 放置指示线
