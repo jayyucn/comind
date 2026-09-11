@@ -36,6 +36,7 @@ import type { CrossBlockSelection } from '../../composables/useCrossBlockSelecti
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import { usePageStore } from '../../stores/pages'
 import type { TreeNode } from '../../types/block'
+import type { DragEndIntent } from './composables/useBlockDragDrop'
 import type { BlockSetupContext, BlockTypeEditorExposed, BlockTypeHooks } from '../../types/block-type'
 import {
   decodeRelationshipContent,
@@ -61,7 +62,7 @@ const relationshipCleanup = useBlockRelationshipCleanup()
 const { navigateToPage } = useNavigateToPage()
 
 // 注入拖拽结束落库回调（由 BlockList / BlockModal 提供，syncTreeToStore 完整树 diff）
-const onDragEnd = inject<() => void>('onDragEnd')
+const onDragEnd = inject<(intent: DragEndIntent | null) => void>('onDragEnd')
 const selection = inject<CrossBlockSelection>('crossBlockSelection')
 // 是否处于 BlockModal 子树编辑器内（由 BlockModal provide）。弹窗内 dot 点击为 no-op，避免递归开弹窗。
 const inBlockModal = inject<boolean>('inBlockModal', false)
@@ -499,7 +500,7 @@ watch(isActive, (active) => {
       :depth="depth + 1"
       :class="childrenContainerClass"
       :style="{ '--indent-depth': depth }"
-      @drag-end="onDragEnd?.()"
+      @drag-end="intent => onDragEnd?.(intent)"
     />
   </div>
 </template>

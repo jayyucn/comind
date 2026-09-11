@@ -18,6 +18,7 @@ import { useBlockStore } from '../../../stores/blocks'
 import { useEditorStore } from '../../../stores/editor'
 import type { TreeNode } from '../../../types/block'
 import { useBlockDragDrop } from '../composables/useBlockDragDrop'
+import type { DragEndIntent } from '../composables/useBlockDragDrop'
 import Block from '../index.vue'
 
 defineProps<{
@@ -39,8 +40,8 @@ defineProps<{
 const list = defineModel<TreeNode[]>({ required: true })
 
 const emit = defineEmits<{
-  /** 拖拽结束：调用方在此把完整树落库 */
-  (e: 'drag-end'): void
+  /** 拖拽结束：调用方按落位意图校正树后把完整树落库 */
+  (e: 'drag-end', intent: DragEndIntent | null): void
 }>()
 
 const blockStore = useBlockStore()
@@ -48,7 +49,7 @@ const editorStore = useEditorStore()
 
 const { handleDragMove, handleBlockDragEnd } = useBlockDragDrop({
   blockStore,
-  onDragEnd: () => emit('drag-end'),
+  onDragEnd: intent => emit('drag-end', intent),
 })
 
 const draggableRef = ref<any>(null)

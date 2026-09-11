@@ -1,616 +1,197 @@
-# Sortable.js 拖拽实现方案
+# Block 拖拽实现（vue-draggable-plus / Sortable.js）
 
-> 版本：v0.2
-> 日期：2026-04-29
-> 状态：已实现
-
----
-
-## 1. 背景
-
-Phase 1 拖拽功能经历多次迭代，均存在稳定性问题：
-
-- 原生 `elementFromPoint` 方案：目标检测不稳定（`pointer-events` 覆盖、事件竞态）
-- 指示线与实际放置位置不一致
-
-本文档制定 Sortable.js 替代方案，作为正式实现指南。
+> 版本：v0.3
+> 日期：2026-09-11
+> 状态：**现行实现**。v0.2 的 `useSortable` + `moveBlock` 增量写路径已于 2026-09-11 的拖拽重构中作废，差异见 §11。
 
 ---
 
-## 2. 核心约束
-
-本文档实现必须遵守 comind 的核心架构约束：
+## 1. 核心约束
 
 | 约束 | 说明 |
 |------|------|
 | **C1 单编辑器** | 任何时刻只有 1 个 tiptap 实例，拖拽不引入新实例 |
-| **C2 Block 唯一数据单元** | 所有操作通过 blocks.ts 的 Block 状态，Sortable.js 只负责 UI 层 |
+| **C2 Block 唯一数据单元** | 数据变更只经 Pinia blocks store；Sortable.js 只负责 UI 层 |
 | **C3 状态驱动** | DOM 变更必须与 Pinia 状态一致，不允许 DOM 驱动数据 |
 
----
-
-## 3. 架构设计
-
-### 3.1 职责划分
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        用户交互层                            │
-│  Sortable.js：检测拖拽、动画、ghost、放置位置计算                │
-└────────────────────────────┬────────────────────────────────┘
-                             │ onEnd 事件（仅获取信息）
-                             ▼
-┌─────────────────────────────────────────────────────────────┐
-│                       数据模型层                             │
-│  blocks.ts：moveBlock() 更新 parentId + pos + 持久化         │
-└────────────────────────────┬────────────────────────────────┘
-                             │ Vue 响应式
-                             ▼
-┌─────────────────────────────────────────────────────────────┐
-│                       渲染层                                 │
-│  Block.vue v-for keyed by block.id：按 blockTree 渲染        │
-└─────────────────────────────────────────────────────────────┘
-```
-
-**关键原则**：
-
-- Sortable.js **只读** blocks 数据（读 parentId 用于分组）
-- 数据变更**只能**通过 blocks.ts 的响应式状态
-- Vue 组件是 `v-for keyed` 的，Sortable.js 移动 DOM 后 Vue 能正确识别"同一组件换了位置"
-
-### 3.2 Sortable.js 与 Vue 的协同机制
-
-**为什么不会冲突？**
-
-Sortable.js 移动 DOM 元素时，Vue 组件的 `key`（block.id）不变。当 blocks 数据更新后：
-
-1. Vue 的 keyed diffing 识别到组件 A 的 key 没变
-2. 组件 A 已经在正确位置（Sortable.js 刚移过来的）
-3. Vue 只更新 props（content 等），不重建 DOM 节点
-4. 拖拽动画（ghost、opacity 变化）不受影响
-
-### 3.3 每个 .block-children 是一个 Sortable group
-
-```
-Root Container (Sortable group="blocks", data-parent-id="")
-├── Block A
-├── Block B
-│   └── .block-children (data-parent-id="B")
-│       ├── Block B1
-│       └── Block B2
-├── Block C
-└── Block D
-    └── .block-children (data-parent-id="D")
-        └── Block D1
-```
-
-- 所有 group 用同一个 name：`"blocks"`
-- Sortable.js 自动允许跨 group 拖拽
-- 容器使用 `data-parent-id` 属性标识所属 parent（null 时为空字符串）
+落库路径是「一次性完整树 diff」，而非增量移动：Sortable 先让 DOM / v-model 动，`@end` 后把整棵树同步回 store（§7）。
 
 ---
 
-## 4. 数据模型影响
-
-### 4.1 Block 字段
-
-Sortable.js 只负责 UI 层排序，Block 数据模型使用以下关键字段：
+## 2. 组件与职责
 
 ```
-Block.id          ← 组件 key，不变
-Block.parentId    ← 由 moveBlock 更新
-Block.pos         ← 由 moveBlock 更新（见 §4.2）
-Block.content     ← 不变
-Block.children    ← 由 parentId 推导，不单独存储
+BlockDraggableList.vue          唯一接线（根级与子级共用一份）
+  └─ useBlockDragDrop.ts        放置判定 / 指示器 / @move @end 处理
+       ├─ resolveDropAction     放置语义判定（纯函数）
+       └─ applyDropTarget       按意图校正树（纯函数）
+
+调用方
+  BlockList.vue      v-model="tree"              parentId = null（根级）
+  Block/index.vue    v-model="node.children"     parentId = node.id（子级，depth + 1）
+  BlockModal.vue     node.children + provide('onDragEnd')   （子树编辑器）
 ```
 
-### 4.2 pos 值计算策略
+两个拖拽容器**只有一份接线**。2026-09-11 之前根级（BlockList）与子级（BlockChildren）各手写一遍几乎相同的配置，复制粘贴漂移出「根级起手拖拽全程无指示线」（`@move` 只绑在子级）等问题。`BlockChildren.vue` 已删除，职责并入 `BlockDraggableList.vue`。
 
-采用**动态插入位置计算**策略，使用 `safeCalcInsertPos()` 函数：
-
-- 基于前一个和后一个兄弟节点的 pos 值计算中间位置
-- 当间隔耗尽（gap exhausted）时自动触发重新编号
-- 重新编号后通过回调重新计算位置参数
-
-**核心函数：**
-
-```typescript
-async function safeCalcInsertPos(
-  prevPos: number | null,
-  nextPos: number | null,
-  blocksRef: Block[],
-  storageRef: typeof storage,
-  recalcPos?: () => { prevPos: number | null; nextPos: number | null }
-): Promise<number>
-```
-
-**优点：**
-- 自动处理间隔耗尽问题
-- 重新编号后位置参数自动更新
-- 避免显式重排所有兄弟节点
-
-### 4.3 子节点跟随规则
-
-当 Block X 从 parent A 移动到 parent B 时：
-- X 的子节点**不需要**修改（它们的 parentId 仍是 X.id）
-- X 的 `parentId` 改为 B.id
-- X 的 `pos` 根据目标位置重新计算
+落库由调用方经 `inject('onDragEnd')` / `@drag-end` 注入，终点统一是 `syncTreeToStore`。
 
 ---
 
-## 5. blocks.ts 改造
+## 3. 接线配置
 
-### 5.1 moveBlock 方法
+`BlockDraggableList.vue` 上的 VueDraggable 配置即唯一事实来源：
 
-```typescript
-/**
- * 移动 Block 到新位置
- *
- * @param opts.blockId       被移动的 Block ID
- * @param opts.toParentId    目标 parentId（移动后）
- * @param opts.newIndex      在目标 parent 下的新位置（0-based）
- */
-async function moveBlock(opts: {
-  blockId: string
-  toParentId: string | null
-  newIndex: number
-}) {
-  const { blockId, toParentId, newIndex } = opts
-  const block = blocks.value.find(b => b.id === blockId)
-  if (!block) return
-
-  // 循环检测：阻止将 block 移动到自己的子树中
-  if (isDescendantOf(toParentId, blockId)) {
-    console.warn('[moveBlock] 禁止循环移动')
-    return
-  }
-
-  // 计算目标位置
-  const calcPositions = () => {
-    const targetSiblings = getSortedChildren(blocks.value, toParentId, block.pageId, blockId)
-    const clampedIndex = Math.max(0, Math.min(newIndex, targetSiblings.length))
-    return {
-      prevPos: clampedIndex > 0 ? targetSiblings[clampedIndex - 1].pos : null,
-      nextPos: clampedIndex < targetSiblings.length ? targetSiblings[clampedIndex].pos : null
-    }
-  }
-
-  const { prevPos, nextPos } = calcPositions()
-  block.parentId = toParentId
-  block.pos = await safeCalcInsertPos(prevPos, nextPos, blocks.value, storage, calcPositions)
-  block.updatedAt = Date.now()
-
-  _scheduleSave(block)
-}
-```
-
-### 5.2 safeCalcInsertPos 安全插入位置计算
-
-```typescript
-/**
- * 安全计算插入位置，带自动重试机制
- *
- * 当间隔耗尽时自动触发重新编号，然后通过回调重新计算位置参数。
- * 这解决了重编号后 prevPos/nextPos 过时的问题。
- */
-async function safeCalcInsertPos(
-  prevPos: number | null,
-  nextPos: number | null,
-  blocksRef: Block[],
-  storageRef: typeof storage,
-  recalcPos?: () => { prevPos: number | null; nextPos: number | null }
-): Promise<number>
-```
-
-### 5.3 isDescendantOf 循环检测
-
-```typescript
-/**
- * 检查 targetId 是否是 blockId 的后代
- * @param targetId 要检查的节点（移动目标）
- * @param blockId 潜在祖先（被拖拽的 block）
- */
-function isDescendantOf(targetId: string | null, blockId: string): boolean
-```
+| Prop | 值 | 说明 |
+|---|---|---|
+| `group` | `{ name: 'blocks-' + pageId, pull: true, put: true }` | 同页可互拖；group 带 pageId 以隔离跨页 |
+| `handle` | `.bullet-dot` | 只能从 bullet 起拖 |
+| `filter` | `.bullet-chevron` | 折叠箭头不触发拖拽（配 `:prevent-on-filter="false"` 让它的 click 照常生效） |
+| `force-fallback` | `true` | 统一走 pointer 事件 + ghost，不依赖 native DnD |
+| `fallback-tolerance` | `5` | 移动超过 5px 才进入拖拽态 |
+| `animation` | `200` | |
+| 三个态 class | `block-ghost` / `block-drag` / `block-chosen` | 样式见 `src/styles/components/_block.scss` |
+| `empty-insert-threshold` | `0` | |
+| `data-parent-id` | `parentId ?? ''` | **不可省略该属性**：`handleDragMove` 靠空串判定根级；`_reset.scss` 靠该属性区分拖拽容器与 Sortable 占位元素 |
+| `@start` | `editorStore.deactivateBlock()` | |
+| `@move` | `handleDragMove` | 返回 `false` 可阻止 Sortable 承接 |
+| `@end` | `handleBlockDragEnd` | |
 
 ---
 
-## 6. useSortable.ts Composable
+## 4. 事件模型（Sortable 既有行为，务必记住）
 
-### 6.1 实现
+### 4.1 回调按「拖拽起始容器」路由
 
-```typescript
-// src/composables/useSortable.ts
-import { ref, onMounted, onBeforeUnmount, type Ref } from 'vue'
-import Sortable from 'sortablejs'
-import { useBlockStore } from '../stores/blocks'
-import { useEditorStore } from '../stores/editor'
+`_prepareDragStart` 把 `rootEl` 写为模块级变量（整个拖拽期不变），`_onMove` 从 `fromEl[expando].options.onMove` 取回调 —— **`@move` 属于起始容器，`evt.to` 才是当前悬停容器**。同一机制下还有两项：
 
-/**
- * 使用响应式 ref 初始化 Sortable 实例
- *
- * 此函数必须在 setup 阶段调用，确保生命周期钩子正确注册。
- * Sortable 实例会在容器元素挂载后自动创建，在组件卸载时自动销毁。
- *
- * @param containerRef - 指向 .block-children 容器的 ref
- * @returns Sortable 实例的 ref（可用于手动控制）
- */
-export function useSortable(containerRef: Ref<HTMLElement | null>) {
-  const blockStore = useBlockStore()
-  const editorStore = useEditorStore()
-  const sortableRef = ref<Sortable | null>(null)
+- `_appendGhost` 的 `container = rootEl`（决定 ghost 的包含块与定位父级）
+- `revert = parentEl !== rootEl`
 
-  onMounted(() => {
-    if (containerRef.value) {
-      sortableRef.value = Sortable.create(containerRef.value, {
-        group: 'blocks',              // 跨 parent 拖拽
-        animation: 150,              // 拖拽动画
-        ghostClass: 'block-ghost',    // 拖拽中 ghost 样式
-        dragClass: 'block-drag',     // 正在拖拽的样式
-        chosenClass: 'block-chosen',  // 占位符样式
-        handle: '.block-bullet',     // 只能从 bullet 拖拽
-        emptyInsertThreshold: 0,      // 禁用空容器占位符
-        swap: false,                  // 禁用 swap 模式
+### 4.2 `@end` 在源容器触发，`@move` 在目标容器触发
 
-        // onStart：拖拽开始时失活编辑器
-        onStart() {
-          editorStore.deactivateBlock()
-        },
+跨容器拖拽时两者不在同一组件实例上；但 vue-draggable-plus 的 v-model 同步是完整的（`onRemove` 源 + `onAdd` 目标都会 mutate），所以 `@end` 之后**起始容器实例**持有的完整树一定反映最终结构。
 
-        // onMove：拖拽中判断是否能放置
-        onMove(evt) {
-          const draggedId = (evt.dragged as HTMLElement).dataset.blockId
-          const related = evt.related as HTMLElement
+因此：**跨容器落库只能靠 `@end` 后的完整树**，不能靠源 Block 的局部 `node.children`（会丢）。
 
-          // 阻止放置到自身
-          if (draggedId && related) {
-            const targetBlock = related.closest('.block') as HTMLElement | null
-            if (targetBlock?.dataset.blockId === draggedId) {
-              return false
-            }
-          }
+### 4.3 fallback 模式的副作用
 
-          // 阻止放置到自己子树中
-          const rawTargetId = (evt.to as HTMLElement).dataset.parentId ?? null
-          const targetId = rawTargetId === '' ? null : rawTargetId
+`force-fallback: true` ⇒ Sortable 绑 pointer 事件而非 mouse，并起 `setInterval(_emulateDragOver, 50)` 轮询驱动 `_onDragOver`。两个可观察后果：
 
-          if (draggedId && blockStore.isDescendantOf(targetId, draggedId)) {
-            return false
-          }
-
-          return true
-        },
-
-        // onEnd：拖拽结束，核心回调
-        onEnd: async (evt) => {
-          const blockId = (evt.item as HTMLElement).dataset.blockId
-          if (!blockId) return
-
-          const fromEl = evt.from as HTMLElement
-          const oldIndex = evt.oldIndex
-
-          const rawToParentId = (evt.to as HTMLElement).dataset.parentId ?? null
-          const toParentId = rawToParentId === '' ? null : rawToParentId
-          const newIndex = evt.newIndex ?? 0
-
-          try {
-            await blockStore.moveBlock({ blockId, toParentId, newIndex })
-          } catch (error) {
-            console.error('[useSortable] moveBlock failed, rolling back DOM:', error)
-            // 失败时回滚 DOM
-            if (fromEl && oldIndex != null) {
-              const refChild = fromEl.children[oldIndex] ?? null
-              fromEl.insertBefore(evt.item, refChild)
-            }
-          }
-        }
-      })
-    }
-  })
-
-  onBeforeUnmount(() => {
-    if (sortableRef.value) {
-      sortableRef.value.destroy()
-      sortableRef.value = null
-    }
-  })
-
-  return sortableRef
-}
-```
-
-### 6.2 关键设计决策
-
-**为什么用 async/await + try-catch？**
-
-```
-时刻 0: Sortable.js 移动 DOM 元素 A 到 B 的容器（动画开始）
-时刻 0: onEnd 回调触发
-时刻 1: Sortable 动画完成
-时刻 2: await moveBlock() 执行 → blocks.ts 数据更新 → Vue 响应式更新
-时刻 3: 若失败 → DOM 回滚到原始位置
-```
-
-- **async/await**：确保异步操作完成后再进行后续处理
-- **try-catch**：数据层失败时回滚 DOM，保持 DOM 与数据一致性
-
-**为什么不需要 fromParentId？**
-
-moveBlock 内部通过 `block.parentId` 获取原始 parent，无需调用方传入，简化 API。
+- fallback 路径**不打 `dragClass`**（`!fallback && toggleClass(...)`）；
+- `@move` 只在「悬停块变化」时触发 —— 同一块内横向微调不会重复触发，指示器因此只在块间移动时刷新。
 
 ---
 
-## 7. Block.vue 改造
+## 5. 放置判定 —— `resolveDropAction`（纯函数）
 
-### 7.1 使用方式
+光标相对**目标块 bullet** 的位置决定语义（左右阈值各 15px，见 `src/composables/useDragDrop.ts`）：
 
-```typescript
-import { ref } from 'vue'
-import { useSortable } from '../composables/useSortable'
+| 光标区 | 条件 | 结果 |
+|---|---|---|
+| 左区 | `x ≤ bullet.left + 15` | 目标有父级 → `promote`（提升到目标父级、位于目标之前）；目标已在根级 → `sort`（before 目标） |
+| 右区 | `x ≥ bullet.right - 15` | `nest`（成为目标块的子节点，追加到末尾） |
+| 中区 | 其余 | `sort`（按上下半区决定 before 目标 / before 其后继） |
 
-const childrenRef = ref<HTMLElement | null>(null)
+⚠️ bullet 宽 20px，`left + 15 = right − 5 > right − 15` ⇒ **中区实际不可达**：左区恒先胜出，根级排序靠「拖到目标左区」表达（见 §10.2）。
 
-// 直接传入 ref，无需在 onMounted 中调用
-useSortable(childrenRef)
-```
-
-```vue
-<!-- 模板改动 -->
-<template>
-  <div class="block" :class="{ active: isActive }" :data-block-id="blockId">
-    <div class="block-row">
-      <div class="block-indent" :style="{ width: indentWidth }"></div>
-      <!-- bullet 作为拖拽手柄 -->
-      <span class="block-bullet" :class="{ collapsed }" @click.stop="toggleCollapse">
-        <span v-if="children.length > 0" class="bullet-chevron" :class="{ 'is-collapsed': collapsed }"></span>
-        <span v-else class="bullet-dot"></span>
-      </span>
-      <div class="block-content" @mousedown="startEditingAtClick">
-        <Editor v-if="isActive" ... />
-        <div v-else class="block-text" v-html="renderContent(block.content)"></div>
-      </div>
-    </div>
-
-    <!-- 子节点容器：Sortable group -->
-    <div
-      v-if="children.length > 0"
-      ref="childrenRef"
-      class="block-children"
-      :data-parent-id="blockId"
-    >
-      <Block
-        v-for="child in children"
-        :key="child.id"
-        :block-id="child.id"
-        :block="child"
-      />
-    </div>
-  </div>
-</template>
-```
-
-### 7.2 关键注意事项
-
-- `useSortable` 必须在 setup 阶段直接调用（不是在 onMounted 内部）
-- 传入的是 `ref` 对象，而非 DOM 元素本身
-- Sortable 实例会在容器挂载后自动创建
+`readDropGeometry` 是模块内唯一接触 DOM 的入口（读 `data-block-id`、bullet rect、父块 `data-parent-id`、`nextElementSibling`）；`findDropTarget` 只是它加 `resolveDropAction` 的适配层。
 
 ---
 
-## 8. Editor.vue 改造（根容器）
+## 6. 落位校正 —— `applyDropTarget`（纯函数）
 
-```vue
-<!-- Editor.vue -->
-<template>
-  <div class="editor-root" data-parent-id="">
-    <Block
-      v-for="root in rootBlocks"
-      :key="root.id"
-      :block-id="root.id"
-      :block="root"
-    />
-  </div>
-</template>
+Sortable 自身只做「同级重排 + 相邻容器吸附」，与判定意图并不一致（实测：右区画 `nest` 线却落成 sort）。因此 `@end` 时按最后一次 `@move` 记录的意图重排树：
 
-<script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
-import { useBlockStore } from '../stores/blocks'
-import { useSortable } from '../composables/useSortable'
-import Block from './Block.vue'
-
-const blockStore = useBlockStore()
-const rootContainerRef = ref<HTMLElement | null>(null)
-
-const rootBlocks = computed(() => blockStore.blockTree.get(null) ?? [])
-
-onMounted(() => {
-  // 根容器需要在 onMounted 中初始化
-  // 因为根容器不是 Block 组件，没有自动调用 useSortable
-  if (rootContainerRef.value) {
-    useSortable(rootContainerRef)
-  }
-})
-</script>
+```ts
+applyDropTarget(tree: TreeNode[], draggedId: string, target: DropTarget): boolean
 ```
 
+判定顺序：
+
+1. `target.action` 为空 → `false`
+2. `toParentId` / `beforeId` 指向被拖块自身 → `false`（已在目标位置）
+3. `locate(draggedId)` 失败 → `false`
+4. 目标父级或 `beforeId` 落在被拖块子树内 → `false`（防循环）
+5. 摘除节点 → 插入 `toParentId` 的 children（`beforeId` 之前；找不到则 push 末尾）
+
+「先摘除再定位 `beforeId`」是刻意的：索引必须与目标列表的当前状态一致。
+
+意图来源：`handleDragMove` 每次成功判定都暂存 `pendingIntent` / `pendingDraggedId`；所有早退分支都不记录。`@end` 以 `indicatorVisible` 作为「意图有效」判据 —— 无效分支都会 `clearIndicator()`，因此无需逐分支清理。
+
 ---
 
-## 9. CSS 改造
+## 7. 落库 —— 单一写路径
 
-### 9.1 新增样式
-
-```css
-/* Sortable.js 拖拽样式 */
-
-/* ghost：被拖拽元素的半透明投影 */
-.block-ghost {
-  opacity: 0.4;
-  background: rgba(180, 83, 9, 0.08);
-  border-radius: 4px;
-}
-
-/* drag：正在被拖拽的元素本身 */
-.block-drag {
-  opacity: 0.9;
-  cursor: grabbing !important;
-}
-
-/* chosen：拖拽时的占位符 */
-.block-chosen {
-  background: rgba(180, 83, 9, 0.05);
-}
-
-/* 拖拽时 bullet 手柄反馈 */
-.block-drag .block-bullet {
-  cursor: grabbing;
-}
+```
+拖拽结束
+  → handleBlockDragEnd()     回传 DragEndIntent | null，并清指示器
+  → 调用方                   applyDropTarget(tree, intent.draggedId, intent.target)   校正
+  →                          syncTreeToStore(tree, rootBlockId, blockStore.blocks)     完整树 diff
+                               递归设置 block.parentId；按顺序重发 pos（1000 / 2000 / 3000 …）
+  →                          blockStore.scheduleSave(id)                              每 block 独立 debounce
+  →                          blockStore.structureVersion++ → BlockList watch → syncFromStore() 重建 tree
 ```
 
----
-
-## 10. 循环检测
-
-### 10.1 检测时机
-
-- **onMove 钩子**：阻止 Sortable.js 展示"可放置"状态（返回 false）
-- **moveBlock 方法内部**：双重保险，阻止实际数据变更
-
-```typescript
-// onMove 钩子中
-onMove(evt) {
-  const targetId = (evt.to as HTMLElement).dataset.parentId ?? null
-  const draggedId = (evt.dragged as HTMLElement).dataset.blockId
-
-  if (draggedId && blockStore.isDescendantOf(targetId, draggedId)) {
-    return false
-  }
-  return true
-}
-
-// moveBlock 方法内部
-if (isDescendantOf(toParentId, blockId)) {
-  console.warn('[moveBlock] 禁止循环嵌套移动')
-  return
-}
-```
-
-### 10.2 防止放置到自身
-
-额外检测防止将 block 放置到自身或自身内容区域：
-
-```typescript
-const targetBlock = related.closest('.block') as HTMLElement | null
-if (targetBlock?.dataset.blockId === draggedId) {
-  return false
-}
-```
+- **pos 策略**：`syncTreeToStore` 对整棵树重新分配连续 pos（gap 1000）。v0.2 的 `safeCalcInsertPos`「取中间值 + 间隔耗尽重编号」已随 `moveBlock` 一并删除。
+- **子节点跟随**：跨父级移动只改被拖块自己的 `parentId` / `pos`，其后代的 `parentId` 仍指向原父，无需修改。
+- **三处注入同源**：`BlockList.handleDragEnd`、`BlockModal` 的 `provide('onDragEnd')`、`Block/index.vue` 的透传 —— 终点都是 `syncTreeToStore`。
+- **弹窗子树**：`BlockModal` 的树以弹窗根块为根，意图里的 `toParentId === rootId` 先归一化为 `null` 再交给 `applyDropTarget`。
 
 ---
 
-## 11. 折叠态处理
+## 8. 循环嵌套防护
 
-当 Block 处于折叠态时：
-- `.block-children` 容器仍存在（`v-if="children.length > 0"`）
-- 通过 CSS `max-height: 0` + `overflow: hidden` 隐藏内容
-- Sortable.js 无法将元素放置到折叠容器内（容器高度为 0）
-
----
-
-## 12. 错误处理机制
-
-### 12.1 DOM 回滚
-
-当 `moveBlock` 失败时，自动将 DOM 元素回滚到原始位置：
-
-```typescript
-try {
-  await blockStore.moveBlock({ blockId, toParentId, newIndex })
-} catch (error) {
-  console.error('[useSortable] moveBlock failed, rolling back DOM:', error)
-  if (fromEl && oldIndex != null) {
-    const refChild = fromEl.children[oldIndex] ?? null
-    fromEl.insertBefore(evt.item, refChild)
-  }
-}
-```
-
-### 12.2 间隔耗尽自动恢复
-
-当 pos 值间隔耗尽时，自动触发重新编号：
-
-```typescript
-if (isGapExhaustedError(error)) {
-  renumberBlocks(blocksRef)
-  // 持久化 + 重新计算位置
-}
-```
+| 层 | 位置 | 手段 |
+|---|---|---|
+| 拖拽中 | `handleDragMove` | ① `related` 落在被拖块自身 → `return false`（阻止 Sortable 承接）② `toEl.dataset.parentId` 是被拖块的后代 → `return false`（`isDescendantOf`，`src/utils/block-helpers.ts`） |
+| 落位 | `applyDropTarget` | 目标父级 / `beforeId` 落在被拖块子树内 → 拒绝（纯函数层兜底，不依赖 DOM 状态） |
 
 ---
 
-## 13. 实施步骤
+## 9. 指示器
 
-| 步骤 | 内容 | 依赖 |
-|------|------|------|
-| 1 | 安装依赖：`npm install sortablejs @types/sortablejs` | 无 |
-| 2 | 创建 `src/composables/useSortable.ts` | 步骤 1 |
-| 3 | blocks.ts：新增 `moveBlock()` + `safeCalcInsertPos()` | 无 |
-| 4 | Block.vue：接入 `useSortable(childrenRef)` | 步骤 2, 3 |
-| 5 | Editor.vue：根容器接入 `useSortable` | 步骤 2 |
-| 6 | CSS：新增 ghost/drag/chosen 样式 | 步骤 4, 5 |
-| 7 | 手动测试：同 parent、跨 parent、循环检测、折叠态拖拽 | 步骤 1-6 |
-| 8 | 单元测试：更新/新增 moveBlock 测试用例 | 步骤 3 |
+- 模块级共享 ref（`sharedIndicatorStyle` / `sharedIndicatorClass` / `sharedIndicatorVisible`）：全应用只有一个 `<BlockDropIndicator>`，由 `BlockList` 经 `useSharedDropIndicator()` 渲染（`position: fixed`，`z-index: var(--z-sidebar)`）。
+- `sort` 线贴 bullet 顶 / 底；`nest` 用 bullet 矩形加缩进（`.nest`）；`promote` 贴 bullet 顶。
+- 无效、越界（bullet 无尺寸 / 滚出视口）的目标一律 `clearIndicator()`。
 
 ---
 
-## 14. 测试用例
+## 10. 已知缺口
 
-### 14.1 手动测试清单
-
-| 场景 | 操作 | 预期结果 |
-|------|------|---------|
-| 同 parent 移动 | 拖 A 到 C 后面 | A.pos 正确更新 |
-| 跨 parent 移动 | 拖 A 到 B 的 children 中 | A.parentId = B.id |
-| 子节点跟随 | 拖父节点 X 到新位置 | X 的所有子节点跟随移动 |
-| 循环检测 | 尝试将父节点拖入自己的子节点 | 阻止，block 不移动 |
-| 阻止放置自身 | 尝试将 block 拖到自身位置 | 阻止放置 |
-| 错误回滚 | 模拟 moveBlock 失败 | DOM 回滚到原始位置 |
-| 间隔耗尽 | 多次插入触发间隔耗尽 | 自动重新编号并恢复 |
-
-### 14.2 单元测试覆盖
-
-```typescript
-// blocks.test.ts 新增
-describe('moveBlock', () => {
-  test('同 parent 移动', ...)
-  test('跨 parent 移动', ...)
-  test('子节点跟随父节点移动', ...)
-  test('循环检测：阻止父节点移入子节点', ...)
-  test('循环检测：阻止节点移入孙节点', ...)
-  test('移动后 pos 值正确', ...)
-})
-
-describe('safeCalcInsertPos', () => {
-  test('正常插入位置计算', ...)
-  test('间隔耗尽时自动重新编号', ...)
-  test('重编号后位置正确', ...)
-})
-```
+1. **`nest` 指示器几何不准**：`.block` 上没有 `data-depth`，`renderDropIndicator` 的 nest 分支 `targetDepth` 恒为 0，缩进按 `24 * (depth + 1)` 计算会偏；且 bullet 只有 20px 宽时 nest 线宽被 clamp 到 **1px**。
+2. **中区不可达**（§5）：`sort-after`（追加到末尾）没有独立手势，只能用「拖到后继块左区」等价表达。
+3. **`@move` 只在块间移动时触发**（§4.3）：同一块内横向微调不刷新指示器。
+4. **【存储层】`parent_id` 无法写回 NULL**：把块拖回根级后，`save_block_tree` 的 UPDATE 会**保留旧 `parent_id`**（实测传 `null` 被忽略、`version` 照样自增；传 `""` 才能写入）。表现为「拖回根级 → reload 后回到原父级」。根因待查：`crates/comind-core/src/services/block_write.rs::save_blocks`。
+5. **文档与测试**：`docs/sort/phase-1-1-plan.md` / `phase-1-1-dev.md` 描述的是 v0.2 方案。单测覆盖 `resolveDropAction` / `applyDropTarget` 两个纯函数（`useBlockDragDrop.test.ts`）；真机回归靠 tauri-mcp，混合法：`execute_js` 派发**带时间间隔**的 `PointerEvent` 序列（无间隔则 Sortable 的 `setInterval(_emulateDragOver, 50)` 无机会跑），再用 `dispatch_pointer(gesture='up')` 收尾。
 
 ---
 
-## 15. 已知限制
+## 11. 历史（v0.2，已作废）
 
-1. **触摸设备**：`handle: '.block-bullet'` 可能需要根据实际测试调整
-2. **大量子节点**（500+）：Sortable.js 对大列表的性能尚可，Phase 1 足够
-3. **SSR 兼容**：不适用，comind 是纯客户端应用
+v0.2（2026-04-29，状态「已实现」）的内容已被取代，**不要再参照**：
+
+| v0.2 内容 | 现状 |
+|---|---|
+| `src/composables/useSortable.ts` | **文件已删除**，接线收敛到 `BlockDraggableList.vue` |
+| `blocks.ts: moveBlock()` | **已删除**，落库改走 `syncTreeToStore` 完整树 diff |
+| `safeCalcInsertPos()` 中间值插入 | 已删除，改由 `syncTreeToStore` 重发连续 pos |
+| `group: 'blocks'`（全局同名 group） | 现为 `'blocks-' + pageId` |
+| `handle: '.block-bullet'` | 现为 `.bullet-dot`（chevron 走 `filter`） |
+| `onEnd` 内 `await moveBlock` + 失败回滚 DOM | 已无增量写路径，故无回滚逻辑；落库是纯数据操作 |
+| Editor.vue 根容器接 Sortable | 根级接线现在 `BlockList.vue` |
+| 每个 `.block-children` 各自持有一个 Sortable 实例 | 改为组件化 `<BlockDraggableList>`，VueDraggable 自管实例 |
+
+原 v0.2 遗留的「指示线与实际放置位置不一致」问题，现由 §6 的 `applyDropTarget` 兜底。
 
 ---
 
-## 16. 相关文档
+## 12. 相关文档
 
 | 文档 | 说明 |
 |------|------|
-| `SPEC.md` | 项目总规范（核心约束） |
-| `data-model.md` | 数据模型（Block.pos 字段说明） |
-| `block-editor-spec.md` | 编辑器架构规范（C1-C4） |
-| `storage-spec.md` | 存储层规范 |
+| [`../1-overview/SPEC.md`](../1-overview/SPEC.md) | 项目总规范（核心约束） |
+| [`../3-features/block-editor-spec.md`](../3-features/block-editor-spec.md) | 编辑器架构规范 |
+| [`../3-features/block-ordering-redesign.md`](../3-features/block-ordering-redesign.md) | 块排序重构 |
+| `CONTEXT.md`（仓库根） | 单一上下文领域文档 |
+| `docs/adr/` | 架构决策记录 |

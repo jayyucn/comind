@@ -10,6 +10,8 @@ import { useEditorStore } from '../../stores/editor'
 import { usePageStore } from '../../stores/pages'
 import { hasModalOpen } from '../../composables/useModalKeyboard'
 import { buildSubtree, buildTree, syncTreeToStore } from '../../composables/useBlockTree'
+import { applyDropTarget } from './composables/useBlockDragDrop'
+import type { DragEndIntent } from './composables/useBlockDragDrop'
 import {
   SNAPSHOT_MODAL_KEY,
   SNAPSHOT_PROPS_KEY,
@@ -157,9 +159,15 @@ const node = computed<TreeNode | null>(() =>
 // 拖拽落库（单一写路径）：弹窗内无 BlockList，此处注入 onDragEnd 做完整子树落库，
 // 与主编辑器 BlockList.handleDragEnd 同源（syncTreeToStore 完整树 diff）。
 // 快照上下文渲染 IdeasSnapshotNode（无 VueDraggable），不会触发该回调。
-provide('onDragEnd', () => {
+provide('onDragEnd', (intent: DragEndIntent | null) => {
   if (!node.value) return
-  const changed = syncTreeToStore(node.value.children, node.value.id, blockStore.blocks)
+  const rootId = node.value.id
+  // 弹窗树以 rootId 为根：意图里的 rootId 等价于「根列表」（toParentId = null）
+  if (intent) {
+    const toParentId = intent.target.toParentId === rootId ? null : intent.target.toParentId
+    applyDropTarget(node.value.children, intent.draggedId, { ...intent.target, toParentId })
+  }
+  const changed = syncTreeToStore(node.value.children, rootId, blockStore.blocks)
   for (const id of changed) blockStore.scheduleSave(id)
   blockStore.structureVersion++
 })

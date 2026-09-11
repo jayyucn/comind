@@ -15,6 +15,8 @@
  */
 import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import { buildTree, syncTreeToStore } from '../composables/useBlockTree'
+import { applyDropTarget } from './Block/composables/useBlockDragDrop'
+import type { DragEndIntent } from './Block/composables/useBlockDragDrop'
 import type { CrossBlockSelection } from '../composables/useCrossBlockSelection'
 import { useCrossBlockSelection } from '../composables/useCrossBlockSelection'
 import { COMIND_BLOCK_MIME, resolveClipboardForest } from '../services/external-paste-parse'
@@ -52,8 +54,9 @@ function syncFromStore() {
   tree.value = buildTree(blockStore.blocks, props.pageId, rootBlockId.value)
 }
 
-// ── 拖拽结束：tree 已被 vue-draggable-plus 修改，同步回 store ──
-function handleDragEnd() {
+// ── 拖拽结束：先按落位意图校正 tree（Sortable 的吸附结果不等同于判定意图），再同步回 store ──
+function handleDragEnd(intent?: DragEndIntent | null) {
+  if (intent) applyDropTarget(tree.value, intent.draggedId, intent.target)
   const changed = syncTreeToStore(tree.value, rootBlockId.value, blockStore.blocks)
   for (const id of changed) {
     blockStore.scheduleSave(id)

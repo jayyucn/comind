@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import { useBlockDragDrop, resolveDropAction } from './useBlockDragDrop'
+import { useBlockDragDrop, resolveDropAction, applyDropTarget } from './useBlockDragDrop'
 import type { DropTargetGeometry } from './useBlockDragDrop'
 import { useBlockStore } from '../../../stores/blocks'
-import type { Block } from '../../../types/block'
+import type { Block, TreeNode } from '../../../types/block'
 
 function makeBlock(overrides: Partial<Block> = {}): Block {
   return {
@@ -18,6 +18,10 @@ function makeBlock(overrides: Partial<Block> = {}): Block {
     updatedAt: 0,
     ...overrides
   }
+}
+
+function makeNode(id: string, children: TreeNode[] = []): TreeNode {
+  return { id, block: makeBlock({ id }), children }
 }
 
 describe('useBlockDragDrop', () => {
@@ -38,7 +42,8 @@ describe('useBlockDragDrop', () => {
       indicatorVisible.value = true
       handleBlockDragEnd()
       expect(indicatorVisible.value).toBe(false)
-      expect(onDragEnd).toHaveBeenCalledTimes(1)
+      // 未经 handleDragMove 产生意图 → 回传 null（调用方不做校正）
+      expect(onDragEnd).toHaveBeenCalledWith(null)
     })
 
     it('is a safe no-op when onDragEnd is not provided', () => {
@@ -97,6 +102,66 @@ describe('useBlockDragDrop', () => {
       clearIndicator()
       expect(indicatorVisible.value).toBe(false)
     })
+  })
+})
+
+describe('applyDropTarget', () => {
+  /** 根级 [A, B[C1, C2], D] */
+  function makeTree(): TreeNode[] {
+    return [makeNode('A'), makeNode('B', [makeNode('B1'), makeNode('B2')]), makeNode('C')]
+  }
+  const ids = (list: TreeNode[]) => list.map(n => n.id)
+
+  it('sort：同级移动到目标块之前', () => {
+    const tree = makeTree()
+    expect(applyDropTarget(tree, 'C', { action: 'sort', toParentId: null, beforeId: 'A' })).toBe(true)
+    expect(ids(tree)).toEqual(['C', 'A', 'B'])
+  })
+
+  it('sort：beforeId 为 null 时追加到同级末尾', () => {
+    const tree = makeTree()
+    expect(applyDropTarget(tree, 'A', { action: 'sort', toParentId: null, beforeId: null })).toBe(true)
+    expect(ids(tree)).toEqual(['B', 'C', 'A'])
+  })
+
+  it('nest：移入目标块的子级末尾', () => {
+    const tree = makeTree()
+    expect(applyDropTarget(tree, 'C', { action: 'nest', toParentId: 'B', beforeId: null })).toBe(true)
+    expect(ids(tree)).toEqual(['A', 'B'])
+    expect(ids(tree[1].children)).toEqual(['B1', 'B2', 'C'])
+  })
+
+  it('promote：提升到目标块的父级、位于目标之前', () => {
+    const tree = makeTree()
+    expect(applyDropTarget(tree, 'B1', { action: 'promote', toParentId: null, beforeId: 'B' })).toBe(true)
+    expect(ids(tree)).toEqual(['A', 'B1', 'B', 'C'])
+    expect(ids(tree.find(n => n.id === 'B')!.children)).toEqual(['B2'])
+  })
+
+  it('跨容器：子块移入另一父块下，原容器同时摘除', () => {
+    const tree = [makeNode('A', [makeNode('A1')]), makeNode('B', [makeNode('B1')])]
+    expect(applyDropTarget(tree, 'A1', { action: 'nest', toParentId: 'B', beforeId: null })).toBe(true)
+    expect(tree[0].children).toEqual([])
+    expect(ids(tree[1].children)).toEqual(['B1', 'A1'])
+  })
+
+  it('拒绝移入自身子树', () => {
+    const tree = makeTree()
+    expect(applyDropTarget(tree, 'B', { action: 'nest', toParentId: 'B1', beforeId: null })).toBe(false)
+    expect(ids(tree)).toEqual(['A', 'B', 'C'])
+  })
+
+  it('目标即自身位置时不移动', () => {
+    const tree = makeTree()
+    expect(applyDropTarget(tree, 'B', { action: 'sort', toParentId: null, beforeId: 'B' })).toBe(false)
+    expect(applyDropTarget(tree, 'B', { action: 'nest', toParentId: 'B', beforeId: null })).toBe(false)
+  })
+
+  it('无 action 或被拖块不存在时不移动', () => {
+    const tree = makeTree()
+    expect(applyDropTarget(tree, 'B', { action: null, toParentId: null, beforeId: null })).toBe(false)
+    expect(applyDropTarget(tree, 'ZZ', { action: 'nest', toParentId: 'B', beforeId: null })).toBe(false)
+    expect(ids(tree)).toEqual(['A', 'B', 'C'])
   })
 })
 

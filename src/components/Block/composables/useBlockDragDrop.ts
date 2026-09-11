@@ -2,6 +2,7 @@ import { ref } from 'vue'
 import { isDescendantOf } from '../../../utils/block-helpers'
 import { computeDropZone, computeSortPosition } from '../../../composables/useDragDrop'
 import type { DragRect } from '../../../composables/useDragDrop'
+import type { TreeNode } from '../../../types/block'
 import type { useBlockStore } from '../../../stores/blocks'
 
 /**
@@ -68,10 +69,70 @@ export function resolveDropAction(
   }
 }
 
+/** 拖拽结束时的落位意图：被拖块 id + 最后一次 @move 判定出的目标 */
+export interface DragEndIntent {
+  draggedId: string
+  target: DropTarget
+}
+
+/** 在树中定位节点所在容器（用于摘除与合法性校验） */
+function locate(
+  list: TreeNode[],
+  id: string
+): { list: TreeNode[]; index: number; node: TreeNode } | null {
+  for (let i = 0; i < list.length; i++) {
+    const node = list[i]
+    if (node.id === id) return { list, index: i, node }
+    const inner = locate(node.children, id)
+    if (inner) return inner
+  }
+  return null
+}
+
+/** 目标父节点的 children 列表（toParentId 为 null 时即根列表） */
+function resolveParentList(tree: TreeNode[], toParentId: string | null): TreeNode[] | null {
+  if (toParentId === null) return tree
+  return locate(tree, toParentId)?.node.children ?? null
+}
+
+/**
+ * 按落位意图重排树（纯函数）。
+ *
+ * Sortable 自身只做「同级重排 + 相邻容器吸附」，落位与 resolveDropAction 的判定
+ * 并不一致（右区画 nest 线却落成 sort）。此函数在 @end 后把 Sortable 的结果纠正为
+ * 意图结果：摘下 draggedId，插入 target 指定的位置。
+ *
+ * @returns 是否发生了实际移动（未移动时调用方无需额外处理）
+ */
+export function applyDropTarget(tree: TreeNode[], draggedId: string, target: DropTarget): boolean {
+  if (!target.action) return false
+  // 目标位置即自身当前位置（sort-after 时 nextSibling 恰为被拖块自身）→ 无需校正
+  if (target.toParentId === draggedId || target.beforeId === draggedId) return false
+
+  const source = locate(tree, draggedId)
+  if (!source) return false
+  // 禁止移入自身子树
+  if (target.toParentId && locate(source.node.children, target.toParentId)) return false
+  if (target.beforeId && locate(source.node.children, target.beforeId)) return false
+
+  const dest = resolveParentList(tree, target.toParentId)
+  if (!dest) return false
+
+  source.list.splice(source.index, 1)
+  // 摘除后再定位 beforeId，索引才与目标列表当前状态一致
+  const at = target.beforeId ? dest.findIndex(n => n.id === target.beforeId) : -1
+  if (at === -1) dest.push(source.node)
+  else dest.splice(at, 0, source.node)
+  return true
+}
+
 interface UseBlockDragDropOptions {
   blockStore: ReturnType<typeof useBlockStore>
-  /** 拖拽结束后的落库回调（由 BlockList / BlockModal 注入，syncTreeToStore 完整树 diff） */
-  onDragEnd?: () => void
+  /**
+   * 拖拽结束回调：回传本次拖拽的落位意图（无有效意图时为 null）。
+   * 调用方按意图校正树后再落库（syncTreeToStore 完整树 diff）。
+   */
+  onDragEnd?: (intent: DragEndIntent | null) => void
 }
 
 /**
@@ -80,12 +141,12 @@ interface UseBlockDragDropOptions {
  * - resolveDropAction: 放置判定核心（纯函数，无 DOM 依赖，可单测）
  * - findDropTarget: DOM 适配层，读取目标块元数据后交给 resolveDropAction
  * - handleDragMove: VueDraggable @move 处理器，做循环嵌套检测并更新指示器
- * - handleBlockDragEnd: VueDraggable @end 处理器，清指示器并触发 onDragEnd 落库
+ * - handleBlockDragEnd: VueDraggable @end 处理器，回传落位意图并触发 onDragEnd
  * - renderDropIndicator / clearIndicator: 通过响应式 ref 驱动 <BlockDropIndicator>
  *
- * 落库职责（单一写路径）：handleBlockDragEnd 只清指示器 + 触发 onDragEnd。
- * 拖拽结束后 vue-draggable-plus 已重排树（v-model），落库统一由 onDragEnd 注入的
- * syncTreeToStore（完整树 diff）完成——主编辑器、弹窗、子级列表同源。
+ * 落库职责（单一写路径）：handleBlockDragEnd 只回传意图 + 触发 onDragEnd。
+ * 调用方先按意图校正树（applyDropTarget），再走 syncTreeToStore（完整树 diff）
+ * ——主编辑器、弹窗、子级列表同源。
  *
  * 指示器状态为模块级共享 ref：所有拖拽列表共用一个指示器，
  * 由 BlockList 通过 useSharedDropIndicator() 渲染单个 <BlockDropIndicator>。
@@ -117,6 +178,10 @@ export function useSharedDropIndicator() {
 
 export function useBlockDragDrop(options: UseBlockDragDropOptions) {
   const { blockStore, onDragEnd } = options
+
+  /** 最近一次 @move 判定出的落位意图（本次拖拽期内有效，@end 时消费） */
+  let pendingIntent: DropTarget | null = null
+  let pendingDraggedId: string | null = null
 
   // ── 指示器响应式状态（模块级共享，所有 Block 实例共用）──
   const indicatorStyle = sharedIndicatorStyle
@@ -265,6 +330,10 @@ export function useBlockDragDrop(options: UseBlockDragDropOptions) {
 
     const dropTarget = findDropTarget(cursorX, cursorY, targetBlock)
     if (dropTarget) {
+      // 记录意图：@end 时以它为准校正 Sortable 的落位（早退分支都不记录，天然作废）
+      pendingIntent = dropTarget
+      pendingDraggedId = draggedId ?? null
+
       const bullet = targetBlock.querySelector('.block-bullet')
       if (!bullet) {
         clearIndicator()
@@ -286,15 +355,25 @@ export function useBlockDragDrop(options: UseBlockDragDropOptions) {
   }
 
   /**
-   * 拖拽结束：清指示器并触发落库。
+   * 拖拽结束：回传落位意图、清指示器并触发落库。
    *
    * VueDraggable @end 处理器。Sortable 已在 end 之前完成树 mutate（v-model，
-   * 跨容器走 onRemove/onAdd 双向同步），落库统一由 onDragEnd 注入的
-   * syncTreeToStore（完整树 diff）完成，此处不再写 store。
+   * 跨容器走 onRemove/onAdd 双向同步），但其落位是「同级重排 + 相邻容器吸附」，
+   * 与 resolveDropAction 的判定并不一致（右区画 nest 线却落成 sort）。
+   * 因此这里把本次意图交给调用方，由 applyDropTarget 校正后再落库，此处不写 store。
+   *
+   * 以 indicatorVisible 作为「意图有效」的判据：所有非法/无效分支都会 clearIndicator，
+   * 无需逐分支清理 pendingIntent。
    */
   function handleBlockDragEnd() {
+    const intent: DragEndIntent | null =
+      indicatorVisible.value && pendingIntent && pendingDraggedId
+        ? { draggedId: pendingDraggedId, target: pendingIntent }
+        : null
+    pendingIntent = null
+    pendingDraggedId = null
     clearIndicator()
-    onDragEnd?.()
+    onDragEnd?.(intent)
   }
 
   return {
