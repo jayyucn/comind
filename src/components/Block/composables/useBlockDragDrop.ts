@@ -2,6 +2,7 @@ import { ref } from 'vue'
 import type { Ref } from 'vue'
 import { isDescendantOf } from '../../../utils/block-helpers'
 import { computeDropZone, computeSortPosition } from '../../../composables/useDragDrop'
+import type { DragRect } from '../../../composables/useDragDrop'
 import type { useBlockStore } from '../../../stores/blocks'
 
 /**
@@ -11,12 +12,61 @@ import type { useBlockStore } from '../../../stores/blocks'
  * - nest: 嵌套为目标 block 的子节点
  * - promote: 提升到目标 block 的父级（与目标 block 同级、位于其前）
  */
-type DropAction = 'sort' | 'nest' | 'promote' | null
+export type DropAction = 'sort' | 'nest' | 'promote' | null
 
-interface DropTarget {
+export interface DropTarget {
   action: DropAction
   toParentId: string | null
   beforeId: string | null
+}
+
+/** 放置判定的输入：目标块的可测元数据（纯数据，不含 DOM 引用） */
+export interface DropTargetGeometry {
+  /** 目标块的 blockId */
+  blockId: string | null
+  /** 目标块的父块 id（sort / promote 的归属父级；根级为 null） */
+  parentId: string | null
+  /** 目标块在同级的下一块 id（sort-after 的 beforeId；null 表示追加到末尾） */
+  nextSiblingId: string | null
+  /** 目标块 bullet 的矩形；null 表示无 bullet，不可作为放置目标 */
+  bulletRect: DragRect | null
+}
+
+/**
+ * 放置判定核心（纯函数）：由光标位置 + 目标块元数据解出放置语义。
+ *
+ * - 左区 → promote（提升到父级、位于目标之前）；目标已在根级时退化为 sort
+ * - 右区 → nest（成为目标块的子节点）
+ * - 中区 → sort（按上下半区决定位于目标之前 / 之后）
+ *
+ * 无 DOM 依赖，可直接单测。
+ */
+export function resolveDropAction(
+  cursor: { x: number; y: number },
+  geometry: DropTargetGeometry
+): DropTarget | null {
+  const { bulletRect, blockId, parentId, nextSiblingId } = geometry
+  if (!bulletRect) return null
+
+  const zone = computeDropZone(cursor.x, bulletRect)
+
+  if (zone === 'left') {
+    if (parentId) {
+      return { action: 'promote', toParentId: parentId, beforeId: blockId }
+    }
+    return { action: 'sort', toParentId: null, beforeId: blockId }
+  }
+
+  if (zone === 'right') {
+    return { action: 'nest', toParentId: blockId, beforeId: null }
+  }
+
+  const position = computeSortPosition(cursor.y, bulletRect)
+  return {
+    action: 'sort',
+    toParentId: parentId,
+    beforeId: position === 'before' ? blockId : nextSiblingId
+  }
 }
 
 interface UseBlockDragDropOptions {
@@ -33,7 +83,8 @@ interface UseBlockDragDropOptions {
  * useBlockDragDrop — Block 拖放逻辑 composable
  *
  * 从原 Block/index.vue 抽取的拖放逻辑：
- * - findDropTarget: 根据光标位置计算放置目标（sort/nest/promote）
+ * - resolveDropAction: 放置判定核心（纯函数，无 DOM 依赖，可单测）
+ * - findDropTarget: DOM 适配层，读取目标块元数据后交给 resolveDropAction
  * - handleDragMove: VueDraggable @move 处理器，做循环嵌套检测并更新指示器
  * - handleBlockDragEnd: VueDraggable @end 处理器，清指示器并触发 onDragEnd 落库
  * - renderDropIndicator / clearIndicator: 通过响应式 ref 驱动 <BlockDropIndicator>
@@ -82,67 +133,30 @@ export function useBlockDragDrop(options: UseBlockDragDropOptions) {
   const indicatorClass = sharedIndicatorClass
   const indicatorVisible = sharedIndicatorVisible
 
+  /** 从 DOM 读取放置判定所需的元数据（本模块唯一接触 DOM 的入口） */
+  function readDropGeometry(targetBlockEl: HTMLElement): DropTargetGeometry {
+    const bullet = targetBlockEl.querySelector('.block-bullet') as HTMLElement | null
+    const parentBlock = targetBlockEl.parentElement?.closest('.block') as HTMLElement | null
+    const nextSibling = targetBlockEl.nextElementSibling as HTMLElement | null
+    return {
+      blockId: targetBlockEl.dataset.blockId ?? null,
+      parentId: parentBlock?.dataset.blockId ?? null,
+      nextSiblingId: nextSibling?.dataset.blockId ?? null,
+      bulletRect: bullet ? bullet.getBoundingClientRect() : null
+    }
+  }
+
   /**
-   * 根据光标位置计算放置目标
+   * 根据光标位置计算放置目标（DOM 适配层）
    *
-   * 复制自原 Block/index.vue 的 findDropTarget：
-   * - 左侧区域 → promote（提升到父级，位于目标前）
-   * - 右侧区域 → nest（嵌套为目标子节点）
-   * - 中间区域 → sort（按上下半区决定 before/after）
+   * 判定逻辑见纯函数 resolveDropAction；此处只负责读出 DOM 元数据。
    */
   function findDropTarget(
     cursorX: number,
     cursorY: number,
     targetBlockEl: HTMLElement
   ): DropTarget | null {
-    const bullet = targetBlockEl.querySelector('.block-bullet') as HTMLElement
-    if (!bullet) return null
-
-    const bulletRect = bullet.getBoundingClientRect()
-    const zone = computeDropZone(cursorX, bulletRect)
-
-    if (zone === 'left') {
-      const parentBlock = targetBlockEl.parentElement?.closest('.block') as HTMLElement | null
-      if (parentBlock) {
-        return {
-          action: 'promote',
-          toParentId: parentBlock.dataset.blockId ?? null,
-          beforeId: targetBlockEl.dataset.blockId ?? null
-        }
-      }
-      return {
-        action: 'sort',
-        toParentId: null,
-        beforeId: targetBlockEl.dataset.blockId ?? null
-      }
-    }
-
-    if (zone === 'right') {
-      return {
-        action: 'nest',
-        toParentId: targetBlockEl.dataset.blockId ?? null,
-        beforeId: null
-      }
-    }
-
-    const position = computeSortPosition(cursorY, bulletRect)
-    const parentBlock = targetBlockEl.parentElement?.closest('.block') as HTMLElement | null
-    const parentId = parentBlock?.dataset.blockId ?? null
-
-    if (position === 'before') {
-      return {
-        action: 'sort',
-        toParentId: parentId,
-        beforeId: targetBlockEl.dataset.blockId ?? null
-      }
-    } else {
-      const nextSibling = targetBlockEl.nextElementSibling as HTMLElement | null
-      return {
-        action: 'sort',
-        toParentId: parentId,
-        beforeId: nextSibling?.dataset.blockId ?? null
-      }
-    }
+    return resolveDropAction({ x: cursorX, y: cursorY }, readDropGeometry(targetBlockEl))
   }
 
   /**
