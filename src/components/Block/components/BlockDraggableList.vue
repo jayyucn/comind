@@ -17,8 +17,8 @@ import { VueDraggable } from 'vue-draggable-plus'
 import { useBlockStore } from '../../../stores/blocks'
 import { useEditorStore } from '../../../stores/editor'
 import type { TreeNode } from '../../../types/block'
-import { useBlockDragDrop } from '../composables/useBlockDragDrop'
 import type { DragEndIntent } from '../composables/useBlockDragDrop'
+import { useBlockDragDrop } from '../composables/useBlockDragDrop'
 import Block from '../index.vue'
 
 defineProps<{
@@ -81,6 +81,10 @@ defineExpose({
     :prevent-on-filter="false"
     :fallback-tolerance="5"
     :animation="200"
+    :invert-swap="true"
+    :inverted-swap-threshold="0.5"
+    :swap-threshold="0.65"
+    direction="vertical"
     ghost-class="block-ghost"
     drag-class="block-drag"
     chosen-class="block-chosen"
