@@ -678,7 +678,7 @@ describe('bullet dot opens BlockModal (ADR-0039)', () => {
 })
 
 // NOTE: Drag-drop behavior (handleDragMove circular detection, handleBlockDragEnd
-// calling moveBlock) is covered by Playwright e2e tests in Task 4
-// (tests/block-drag-drop.spec.ts). Unit-testing vue-draggable-plus event flow
-// in jsdom is unreliable and would couple to internal function names that will
-// move to useBlockDragDrop composable in commit 4.
+// clearing the indicator + triggering onDragEnd) is covered by Playwright e2e tests
+// in Task 4 (tests/block-drag-drop.spec.ts). Unit-testing vue-draggable-plus event flow
+// in jsdom is unreliable and would couple to internal function names that now
+// live in the useBlockDragDrop composable.

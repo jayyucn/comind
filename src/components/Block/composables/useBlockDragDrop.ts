@@ -2,9 +2,7 @@ import { ref } from 'vue'
 import type { Ref } from 'vue'
 import { isDescendantOf } from '../../../utils/block-helpers'
 import { computeDropZone, computeSortPosition } from '../../../composables/useDragDrop'
-import type { Block } from '../../../types/block'
 import type { useBlockStore } from '../../../stores/blocks'
-import type { usePageStore } from '../../../stores/pages'
 
 /**
  * 放置目标类型
@@ -27,19 +25,22 @@ interface UseBlockDragDropOptions {
   /** 当前 Block 所在页面 ID */
   pageId: string
   blockStore: ReturnType<typeof useBlockStore>
-  pageStore: ReturnType<typeof usePageStore>
-  /** 拖拽结束后的回调（由 BlockList 注入，用于 syncTreeToStore） */
+  /** 拖拽结束后的落库回调（由 BlockList / BlockModal 注入，syncTreeToStore 完整树 diff） */
   onDragEnd?: () => void
 }
 
 /**
  * useBlockDragDrop — Block 拖放逻辑 composable
  *
- * 从原 Block/index.vue 抽取的 ~250 行拖放逻辑：
+ * 从原 Block/index.vue 抽取的拖放逻辑：
  * - findDropTarget: 根据光标位置计算放置目标（sort/nest/promote）
  * - handleDragMove: VueDraggable @move 处理器，做循环嵌套检测并更新指示器
- * - handleBlockDragEnd: VueDraggable @end 处理器，调用 blockStore.moveBlock
+ * - handleBlockDragEnd: VueDraggable @end 处理器，清指示器并触发 onDragEnd 落库
  * - renderDropIndicator / clearIndicator: 通过响应式 ref 驱动 <BlockDropIndicator>
+ *
+ * 落库职责（单一写路径）：handleBlockDragEnd 不再调用 blockStore.moveBlock。
+ * 拖拽结束后 Sortable 已完整 mutate 树（v-model，跨容器走 onRemove/onAdd 双向同步），
+ * 落库统一由 onDragEnd 注入的 syncTreeToStore（完整树 diff）完成——主编辑器与 BlockModal 同源。
  *
  * 与原实现的关键变化：
  * - 不再使用 document.querySelector('.drop-indicator') 创建/更新 DOM 元素
@@ -48,8 +49,6 @@ interface UseBlockDragDropOptions {
  *   由 BlockList 通过 useSharedDropIndicator() 渲染单个 <BlockDropIndicator>
  *
  * 注意：
- * - handleBlockDragEnd 仍通过 document.querySelector('.block-chosen') 读取被拖拽
- *   block 的 ID。VueDraggable 通过 chosen-class 动态添加该 class，无法用纯 ref 替代。
  * - handleDragMove 必须保留 boolean 返回值（false 阻止非法移动），由 BlockChildren
  *   通过 moveHandler prop 透传给 VueDraggable 的 @move。
  */
@@ -76,24 +75,12 @@ export function useSharedDropIndicator() {
 }
 
 export function useBlockDragDrop(options: UseBlockDragDropOptions) {
-  const { blockStore, pageStore, onDragEnd } = options
-
-  // ── 拖拽状态 ──
-  const dragState = ref<{
-    currentDropTarget: DropTarget | null
-  }>({
-    currentDropTarget: null
-  })
+  const { blockStore, onDragEnd } = options
 
   // ── 指示器响应式状态（模块级共享，所有 Block 实例共用）──
   const indicatorStyle = sharedIndicatorStyle
   const indicatorClass = sharedIndicatorClass
   const indicatorVisible = sharedIndicatorVisible
-
-  /** 显式设置 dropTarget（主要供测试使用；运行时由 handleDragMove 内部调用） */
-  function setDropTarget(target: DropTarget | null) {
-    dragState.value.currentDropTarget = target
-  }
 
   /**
    * 根据光标位置计算放置目标
@@ -286,7 +273,6 @@ export function useBlockDragDrop(options: UseBlockDragDropOptions) {
         return true
       }
 
-      dragState.value.currentDropTarget = dropTarget
       renderDropIndicator(targetBlock, dropTarget)
     } else {
       clearIndicator()
@@ -296,61 +282,21 @@ export function useBlockDragDrop(options: UseBlockDragDropOptions) {
   }
 
   /**
-   * 拖拽结束：计算放置位置并同步到 store
+   * 拖拽结束：清指示器并触发落库。
    *
-   * VueDraggable @end 处理器。复制自原 Block/index.vue 的 handleBlockDragEnd。
-   *
-   * 注意：仍通过 document.querySelector('.block-chosen') 读取被拖拽 block 的 ID。
-   * VueDraggable 通过 chosen-class="block-chosen" 动态添加该 class，无法用纯 ref 替代。
+   * VueDraggable @end 处理器。Sortable 已在 end 之前完成树 mutate（v-model，
+   * 跨容器走 onRemove/onAdd 双向同步），落库统一由 onDragEnd 注入的
+   * syncTreeToStore（完整树 diff）完成，此处不再写 store。
    */
-  async function handleBlockDragEnd() {
-    const dropTarget = dragState.value.currentDropTarget
-
-    if (dropTarget && dropTarget.action) {
-      const draggedEl = document.querySelector('.block-chosen') as HTMLElement | null
-      const draggedId = draggedEl?.dataset.blockId
-
-      if (draggedId) {
-        let siblings: Block[]
-        if (dropTarget.toParentId === null) {
-          siblings = blockStore
-            .getBlocksByPage(pageStore.currentPageId)
-            .filter(b => b.parentId === null)
-        } else {
-          siblings = blockStore.getChildren(dropTarget.toParentId)
-        }
-
-        let newIndex: number
-        if (dropTarget.action === 'sort') {
-          if (dropTarget.beforeId === null) {
-            newIndex = siblings.length
-          } else {
-            const insertIdx = siblings.findIndex(b => b.id === dropTarget.beforeId)
-            newIndex = insertIdx >= 0 ? insertIdx : siblings.length
-          }
-        } else {
-          newIndex = siblings.length
-        }
-
-        await blockStore.moveBlock({
-          blockId: draggedId,
-          toParentId: dropTarget.toParentId,
-          newIndex
-        })
-      }
-    }
-
+  function handleBlockDragEnd() {
     clearIndicator()
-    dragState.value.currentDropTarget = null
     onDragEnd?.()
   }
 
   return {
-    dragState,
     indicatorStyle,
     indicatorClass,
     indicatorVisible,
-    setDropTarget,
     findDropTarget,
     renderDropIndicator,
     clearIndicator,

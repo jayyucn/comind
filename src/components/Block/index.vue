@@ -61,7 +61,7 @@ const { getHandler } = useBlockRegistry()
 const relationshipCleanup = useBlockRelationshipCleanup()
 const { navigateToPage } = useNavigateToPage()
 
-// 注入拖拽结束回调（由 BlockList 提供）
+// 注入拖拽结束落库回调（由 BlockList / BlockModal 提供，syncTreeToStore 完整树 diff）
 const onDragEnd = inject<() => void>('onDragEnd')
 const selection = inject<CrossBlockSelection>('crossBlockSelection')
 // 是否处于 BlockModal 子树编辑器内（由 BlockModal provide）。弹窗内 dot 点击为 no-op，避免递归开弹窗。
@@ -168,7 +168,6 @@ const {
   blockId,
   pageId: props.pageId,
   blockStore,
-  pageStore,
   onDragEnd,
 })
 

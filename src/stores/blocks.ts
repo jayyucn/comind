@@ -20,8 +20,7 @@ import {
   renumberBlocks,
   isGapExhaustedError,
   SAVE_DEBOUNCE_MS,
-  findBlockIndex,
-  isDescendantOf
+  findBlockIndex
 } from '../utils/block-helpers'
 
 import type { CoreClient } from '../wasm/client'
@@ -1053,40 +1052,6 @@ export const useBlockStore = defineStore('blocks', () => {
     structureVersion.value++
   }
 
-  /** 移动 Block */
-  async function moveBlock(opts: {
-    blockId: string
-    toParentId: string | null
-    newIndex: number
-  }) {
-    const { blockId, toParentId, newIndex } = opts
-    const block = blocks.value.find(b => b.id === blockId)
-    if (!block) return
-
-    if (isDescendantOf(blocks.value, toParentId, blockId)) {
-      console.warn('[moveBlock] 禁止循环移动')
-      return
-    }
-
-    const calcPositions = () => {
-      const targetSiblings = getSortedChildren(blocks.value, toParentId, block.pageId, blockId)
-      const clampedIndex = Math.max(0, Math.min(newIndex, targetSiblings.length))
-      return {
-        prevPos: clampedIndex > 0 ? targetSiblings[clampedIndex - 1].pos : null,
-        nextPos: clampedIndex < targetSiblings.length ? targetSiblings[clampedIndex].pos : null
-      }
-    }
-
-    const { prevPos, nextPos } = calcPositions()
-    block.parentId = toParentId
-    block.pos = await safeCalcInsertPos(prevPos, nextPos, blocks.value, calcPositions)
-    block.updatedAt = Date.now()
-
-    _scheduleSave(block)
-
-    structureVersion.value++
-  }
-
   /**
    * 批量删除 Block（支持级联子节点）
    * - 一次性收集所有根节点 + 子孙节点
@@ -1404,7 +1369,6 @@ export const useBlockStore = defineStore('blocks', () => {
     findNextBlockInTreeOrder,
     indent,
     outdent,
-    moveBlock,
     deleteBlock,
     deleteBlocks,
     pasteBlocks,

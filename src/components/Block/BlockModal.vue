@@ -9,7 +9,7 @@ import { useBlockCardStore } from '../../stores/blockCard'
 import { useEditorStore } from '../../stores/editor'
 import { usePageStore } from '../../stores/pages'
 import { hasModalOpen } from '../../composables/useModalKeyboard'
-import { buildSubtree, buildTree } from '../../composables/useBlockTree'
+import { buildSubtree, buildTree, syncTreeToStore } from '../../composables/useBlockTree'
 import {
   SNAPSHOT_MODAL_KEY,
   SNAPSHOT_PROPS_KEY,
@@ -153,6 +153,16 @@ const pageTitle = computed(() => {
 const node = computed<TreeNode | null>(() =>
   props.blockId ? buildSubtree(blockStore.blocks, props.blockId) : null,
 )
+
+// 拖拽落库（单一写路径）：弹窗内无 BlockList，此处注入 onDragEnd 做完整子树落库，
+// 与主编辑器 BlockList.handleDragEnd 同源（syncTreeToStore 完整树 diff）。
+// 快照上下文渲染 IdeasSnapshotNode（无 VueDraggable），不会触发该回调。
+provide('onDragEnd', () => {
+  if (!node.value) return
+  const changed = syncTreeToStore(node.value.children, node.value.id, blockStore.blocks)
+  for (const id of changed) blockStore.scheduleSave(id)
+  blockStore.structureVersion++
+})
 
 // block 可能尚未在 store（跨页引用 / 懒加载），打开时确保加载真实 block 以驱动编辑器；
 // 加载后自动激活根块并聚焦光标，免去"先点一下才能编辑"（ADR-0039）。
