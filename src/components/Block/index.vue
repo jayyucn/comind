@@ -21,9 +21,8 @@ import { useBlockRelationshipCleanup } from '../../composables/useBlockRelations
 import { useBlockStore } from '../../stores/blocks'
 import { useEditorStore } from '../../stores/editor'
 import { usePropertyStore } from '../../stores/property'
-import BlockChildren from './components/BlockChildren.vue'
+import BlockDraggableList from './components/BlockDraggableList.vue'
 import { useBlockCollapse } from './composables/useBlockCollapse'
-import { useBlockDragDrop } from './composables/useBlockDragDrop'
 import { useBlockEditorLifecycle } from './composables/useBlockEditorLifecycle'
 import { useBlockPropertySync } from './composables/useBlockPropertySync'
 import './handlers/bullet'
@@ -151,25 +150,19 @@ const indentWidth = computed(() => `${props.depth * INDENT_WIDTH_PER_LEVEL}px`)
 const {
   collapsed,
   isAnimating,
-  childrenHeight,
   toggleCollapse,
   updateChildrenHeight,
 } = useBlockCollapse(computed(() => props.node))
 
-// ── 拖放逻辑（由 useBlockDragDrop 统一管理） ──
-// 原 ~250 行 findDropTarget/handleDragMove/handleBlockDragEnd/指示器渲染
-// 已抽离至 ./composables/useBlockDragDrop。
-// 指示器状态为模块级共享 ref，由 BlockList 渲染单个 <BlockDropIndicator> 消费，
-// 消除 document.querySelector DOM 操作并避免跨容器拖拽时的残留指示器。
-const {
-  handleDragMove,
-  handleBlockDragEnd,
-} = useBlockDragDrop({
-  blockId,
-  pageId: props.pageId,
-  blockStore,
-  onDragEnd,
-})
+// ── 子节点列表容器（拖拽接线由 BlockDraggableList 统一承载） ──
+// 拖拽配置 / @move 循环嵌套守卫 / @end 指示器清理与落库，均与根级列表同源，
+// 见 ./components/BlockDraggableList.vue。此处只负责本块子容器的类名（折叠动画）。
+const childrenContainerClass = computed(() => ({
+  'block-children': true,
+  'has-children': !collapsed.value && props.node.children.length > 0,
+  'is-collapsed': collapsed.value,
+  'is-animating': isAnimating.value,
+}))
 
 // ── 编辑器生命周期（由 useBlockEditorLifecycle 统一管理） ──
 // 原 ~300 行 save/split/merge/delete/indent/outdent/move/exit/click/mousedown
@@ -230,12 +223,12 @@ watch(() => block.value.type, (newType, oldType) => {
   typeHooks.value?.onTypeChanged?.(newType, oldType)
 })
 
-// BlockChildren 实例 ref（用于获取子节点容器 DOM 做高度测量）
-const blockChildrenRef = ref<InstanceType<typeof BlockChildren> | null>(null)
+// 子节点列表实例 ref（用于获取子节点容器 DOM 做高度测量）
+const blockDraggableRef = ref<InstanceType<typeof BlockDraggableList> | null>(null)
 
-/** 获取子节点容器的 DOM 元素（透过 BlockChildren → VueDraggable → $el） */
-const childrenEl = computed(() => {
-  return (blockChildrenRef.value as any)?.draggableRef?.$el as HTMLElement | null
+/** 子节点容器 DOM（由 BlockDraggableList 暴露的 getContainerEl） */
+const childrenEl = computed<HTMLElement | null>(() => {
+  return blockDraggableRef.value?.getContainerEl() ?? null
 })
 
 onMounted(() => {
@@ -492,22 +485,21 @@ watch(isActive, (active) => {
     </div>
 
     <!--
-      子节点容器（<BlockChildren> 封装 VueDraggable + 折叠动画）
-      - 内部 v-model="node.children" 驱动渲染和拖拽
-      - move-handler 保留返回值以阻止循环嵌套等非法移动
-      - collapsed / isAnimating / childrenHeight 由 useBlockCollapse 管理
+      子节点列表（BlockDraggableList：拖拽接线 + 折叠动画容器）
+      - v-model="node.children" 驱动渲染与拖拽
+      - embed 子块不渲染拖拽子列表（无可拖拽内容）
+      - collapsed / isAnimating 驱动容器类名；childrenHeight 由 useBlockCollapse 维护
     -->
-    <BlockChildren
-      ref="blockChildrenRef"
-      :node="node"
+    <BlockDraggableList
+      v-if="node.block.type !== 'embed'"
+      ref="blockDraggableRef"
+      v-model="node.children"
       :page-id="pageId"
-      :depth="depth"
-      :collapsed="collapsed"
-      :is-animating="isAnimating"
-      :children-height="childrenHeight"
-      :move-handler="handleDragMove"
-      @drag-start="editorStore.deactivateBlock()"
-      @drag-end="handleBlockDragEnd"
+      :parent-id="node.id"
+      :depth="depth + 1"
+      :class="childrenContainerClass"
+      :style="{ '--indent-depth': depth }"
+      @drag-end="onDragEnd?.()"
     />
   </div>
 </template>

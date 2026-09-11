@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import { ref } from 'vue'
 import { useBlockDragDrop, resolveDropAction } from './useBlockDragDrop'
 import type { DropTargetGeometry } from './useBlockDragDrop'
 import { useBlockStore } from '../../../stores/blocks'
@@ -29,12 +28,9 @@ describe('useBlockDragDrop', () => {
 
   describe('handleBlockDragEnd', () => {
     it('clears indicator and calls onDragEnd', () => {
-      const blockId = ref('b1')
       const blockStore = useBlockStore()
       const onDragEnd = vi.fn()
       const { handleBlockDragEnd, indicatorVisible } = useBlockDragDrop({
-        blockId,
-        pageId: 'p1',
         blockStore,
         onDragEnd
       })
@@ -46,11 +42,8 @@ describe('useBlockDragDrop', () => {
     })
 
     it('is a safe no-op when onDragEnd is not provided', () => {
-      const blockId = ref('b1')
       const blockStore = useBlockStore()
       const { handleBlockDragEnd } = useBlockDragDrop({
-        blockId,
-        pageId: 'p1',
         blockStore
       })
       expect(() => handleBlockDragEnd()).not.toThrow()
@@ -59,15 +52,12 @@ describe('useBlockDragDrop', () => {
 
   describe('handleDragMove cycle prevention', () => {
     it('returns false when dragging parent into its own descendant container', () => {
-      const blockId = ref('b1')
       const blockStore = useBlockStore()
       blockStore.blocks = [
         makeBlock({ id: 'b1', parentId: null, pos: 0 }),
         makeBlock({ id: 'b2', parentId: 'b1', pos: 1000 })
       ]
       const { handleDragMove } = useBlockDragDrop({
-        blockId,
-        pageId: 'p1',
         blockStore
       })
       const evt = {
@@ -81,12 +71,9 @@ describe('useBlockDragDrop', () => {
     })
 
     it('returns false when dropping block onto itself', () => {
-      const blockId = ref('b1')
       const blockStore = useBlockStore()
       blockStore.blocks = [makeBlock({ id: 'b1', pos: 0 })]
       const { handleDragMove } = useBlockDragDrop({
-        blockId,
-        pageId: 'p1',
         blockStore
       })
       const evt = {
@@ -102,11 +89,8 @@ describe('useBlockDragDrop', () => {
 
   describe('indicator reactivity', () => {
     it('clearIndicator sets indicatorVisible to false', () => {
-      const blockId = ref('b1')
       const blockStore = useBlockStore()
       const { clearIndicator, indicatorVisible } = useBlockDragDrop({
-        blockId,
-        pageId: 'p1',
         blockStore
       })
       // 即使当前未显示，clearIndicator 也应是安全的 no-op

@@ -4,17 +4,16 @@
  *
  * 职责：
  * 1. 从 store 的扁平 blocks[] 构建 TreeNode 树
- * 2. 通过 VueDraggable 驱动根级渲染和拖拽
+ * 2. 通过 <BlockDraggableList> 驱动根级渲染和拖拽
  * 3. 通过 provide 向子 Block 组件注入拖拽回调
  *
  * 架构：
- * - tree ref 是 VueDraggable 的 v-model 数据源（唯一渲染权威）
- * - 拖拽后 tree 已被 vue-draggable-plus 直接修改
+ * - tree ref 是 BlockDraggableList 的 v-model 数据源（唯一渲染权威）
+ * - 拖拽后 tree 已被 vue-draggable-plus 更新（update:modelValue）
  * - handleDragEnd 将 tree 变更同步回 store（parentId + pos）
  * - store 变更通过 structureVersion watch 触发 syncFromStore 重建树
  */
 import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
-import { VueDraggable } from 'vue-draggable-plus'
 import { buildTree, syncTreeToStore } from '../composables/useBlockTree'
 import type { CrossBlockSelection } from '../composables/useCrossBlockSelection'
 import { useCrossBlockSelection } from '../composables/useCrossBlockSelection'
@@ -26,9 +25,9 @@ import { useEditorStore } from '../stores/editor'
 import { usePageStore } from '../stores/pages'
 import type { TreeNode } from '../types/block'
 import { sortByDocumentOrderIds } from '../utils/block-helpers'
+import BlockDraggableList from './Block/components/BlockDraggableList.vue'
 import BlockDropIndicator from './Block/components/BlockDropIndicator.vue'
 import { useSharedDropIndicator } from './Block/composables/useBlockDragDrop'
-import Block from './Block/index.vue'
 
 const props = defineProps<{
   /** 页面 ID，用于过滤 Block */
@@ -521,25 +520,15 @@ onBeforeUnmount(() => {
 
 <template>
   <div ref="rootEl" class="block-list">
-    <VueDraggable
+    <!-- 根级拖拽列表：与 Block 子级列表共用同一实现（BlockDraggableList），
+         接线只有一份，避免两处配置漂移。落库由 @drag-end 统一接管。 -->
+    <BlockDraggableList
       v-model="tree"
-      :group="{ name: 'blocks-' + pageId, pull: true, put: true }"
-      handle=".bullet-dot"
-      filter=".bullet-chevron"
-      :prevent-on-filter="false"
-      :fallback-tolerance="5"
-      :animation="200"
-      ghost-class="block-ghost"
-      drag-class="block-drag"
-      chosen-class="block-chosen"
-      :force-fallback="true"
-      :empty-insert-threshold="0"
-      data-parent-id=""
-      @start="editorStore.deactivateBlock()"
-      @end="handleDragEnd"
-    >
-      <Block v-for="node in tree" :key="node.id" :node="node" :page-id="pageId" :depth="0" />
-    </VueDraggable>
+      :page-id="pageId"
+      :parent-id="null"
+      :depth="0"
+      @drag-end="handleDragEnd"
+    />
     <!-- 底部留白：双击创建新 block -->
     <div class="block-list-padding" @dblclick="handleCreateBlock" />
 

@@ -12,7 +12,7 @@ const COLLAPSE_ANIMATION_DURATION = 220 // ms
  * - 管理 collapsed 状态（初始化自 block.format.collapsed）
  * - toggleCollapse 切换状态并同步 store
  * - 控制折叠/展开动画时序（isAnimating 标志驱动 CSS 过渡）
- * - 计算 childrenHeight（供 <BlockChildren> 做动画，当前由 CSS 类驱动）
+ * - 计算 childrenHeight（供子节点容器做动画；当前折叠动画由 CSS 类驱动）
  */
 export function useBlockCollapse(node: Ref<TreeNode>) {
   const blockStore = useBlockStore()

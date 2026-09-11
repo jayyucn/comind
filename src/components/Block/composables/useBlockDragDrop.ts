@@ -1,5 +1,4 @@
 import { ref } from 'vue'
-import type { Ref } from 'vue'
 import { isDescendantOf } from '../../../utils/block-helpers'
 import { computeDropZone, computeSortPosition } from '../../../composables/useDragDrop'
 import type { DragRect } from '../../../composables/useDragDrop'
@@ -70,38 +69,29 @@ export function resolveDropAction(
 }
 
 interface UseBlockDragDropOptions {
-  /** 当前 Block 的 ID（所属组件实例标识） */
-  blockId: Ref<string>
-  /** 当前 Block 所在页面 ID */
-  pageId: string
   blockStore: ReturnType<typeof useBlockStore>
   /** 拖拽结束后的落库回调（由 BlockList / BlockModal 注入，syncTreeToStore 完整树 diff） */
   onDragEnd?: () => void
 }
 
 /**
- * useBlockDragDrop — Block 拖放逻辑 composable
+ * useBlockDragDrop — block 拖放逻辑 composable（<BlockDraggableList> 内部使用）
  *
- * 从原 Block/index.vue 抽取的拖放逻辑：
  * - resolveDropAction: 放置判定核心（纯函数，无 DOM 依赖，可单测）
  * - findDropTarget: DOM 适配层，读取目标块元数据后交给 resolveDropAction
  * - handleDragMove: VueDraggable @move 处理器，做循环嵌套检测并更新指示器
  * - handleBlockDragEnd: VueDraggable @end 处理器，清指示器并触发 onDragEnd 落库
  * - renderDropIndicator / clearIndicator: 通过响应式 ref 驱动 <BlockDropIndicator>
  *
- * 落库职责（单一写路径）：handleBlockDragEnd 不再调用 blockStore.moveBlock。
- * 拖拽结束后 Sortable 已完整 mutate 树（v-model，跨容器走 onRemove/onAdd 双向同步），
- * 落库统一由 onDragEnd 注入的 syncTreeToStore（完整树 diff）完成——主编辑器与 BlockModal 同源。
+ * 落库职责（单一写路径）：handleBlockDragEnd 只清指示器 + 触发 onDragEnd。
+ * 拖拽结束后 vue-draggable-plus 已重排树（v-model），落库统一由 onDragEnd 注入的
+ * syncTreeToStore（完整树 diff）完成——主编辑器、弹窗、子级列表同源。
  *
- * 与原实现的关键变化：
- * - 不再使用 document.querySelector('.drop-indicator') 创建/更新 DOM 元素
- * - 指示器位置/样式/可见性通过 indicatorStyle / indicatorClass / indicatorVisible 暴露
- * - 这些 ref 为模块级共享状态：所有 Block 实例共用一个指示器，
- *   由 BlockList 通过 useSharedDropIndicator() 渲染单个 <BlockDropIndicator>
+ * 指示器状态为模块级共享 ref：所有拖拽列表共用一个指示器，
+ * 由 BlockList 通过 useSharedDropIndicator() 渲染单个 <BlockDropIndicator>。
  *
- * 注意：
- * - handleDragMove 必须保留 boolean 返回值（false 阻止非法移动），由 BlockChildren
- *   通过 moveHandler prop 透传给 VueDraggable 的 @move。
+ * 注意：handleDragMove 必须保留 boolean 返回值（false 阻止非法移动），
+ * 由 <BlockDraggableList> 直接绑到 VueDraggable 的 @move。
  */
 
 // ── 模块级共享指示器状态 ──────────────────────────────────────────────
