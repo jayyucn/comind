@@ -52,15 +52,28 @@ impl BlockWriteService {
 
                 let existing = BlockService::get_by_id(storage, &block.id);
                 let saved_block = match existing {
-                    Ok(_) => BlockService::update(
-                        storage,
-                        &block.id,
-                        Some(&block.content),
-                        Some(&block.format),
-                        Some(&block.r#type),
-                        block.parent_id.as_deref(),
-                        Some(block.pos),
-                    )?,
+                    Ok(_) => {
+                        let updated = BlockService::update(
+                            storage,
+                            &block.id,
+                            Some(&block.content),
+                            Some(&block.format),
+                            Some(&block.r#type),
+                            block.parent_id.as_deref(),
+                            Some(block.pos),
+                        )?;
+                        // `update` 的 parent_id 为 None 表示「不修改」，无法表达「移到根级」；
+                        // 保存路径下 parent_id 是权威值，与库中不一致时显式写回（含清空为 NULL）。
+                        if updated.parent_id != block.parent_id {
+                            BlockService::set_parent_id(
+                                storage,
+                                &block.id,
+                                block.parent_id.as_deref(),
+                            )?
+                        } else {
+                            updated
+                        }
+                    }
                     Err(_) => BlockService::create(
                         storage,
                         &block.page_id,
@@ -279,6 +292,32 @@ mod tests {
         let children = BlockService::get_children(&mut adapter, "b1").unwrap();
         assert_eq!(children.len(), 1);
         assert_eq!(children[0].id, "b2");
+    }
+
+    #[test]
+    fn save_blocks_clears_parent_id_back_to_root() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let p1 = seed_page(&mut adapter, "p1");
+
+        // b2 先落在 b1 之下
+        BlockWriteService::save_blocks(
+            &mut adapter,
+            vec![block("b1", &p1, None, 1000), block("b2", &p1, Some("b1"), 1000)],
+        )
+        .unwrap();
+        assert_eq!(
+            BlockService::get_by_id(&mut adapter, "b2").unwrap().parent_id.as_deref(),
+            Some("b1")
+        );
+
+        // 再以 parent_id = None 保存（拖回根级）
+        let outcome =
+            BlockWriteService::save_blocks(&mut adapter, vec![block("b2", &p1, None, 2000)]).unwrap();
+
+        assert!(outcome.results[0].block.parent_id.is_none());
+        // 回归：`BlockService::update` 的 None 语义是「不修改」，保存路径必须显式补写 NULL，
+        // 否则块会静默留在旧父级下（拖回根级 → reload 回退）。
+        assert!(BlockService::get_by_id(&mut adapter, "b2").unwrap().parent_id.is_none());
     }
 
     #[test]

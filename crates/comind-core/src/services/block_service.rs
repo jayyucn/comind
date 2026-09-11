@@ -168,6 +168,22 @@ impl BlockService {
         repository::BlockRepository::update(storage.blocks(), &block)
     }
 
+    /// 显式设置 parent_id，`None` 表示移到根级（写回 NULL）。
+    ///
+    /// 与 `update` 的区别：`update` 的 `parent_id: Option<&str>` 中 `None` 表示「不修改」，
+    /// 无法表达「清空父级」；保存路径（`BlockWriteService::save_blocks`）以传入值为权威，
+    /// 需要本方法补写 `update` 表达不了的 NULL。
+    pub fn set_parent_id(
+        storage: &mut dyn StorageAdapter,
+        block_id: &str,
+        parent_id: Option<&str>,
+    ) -> Result<Block, Box<dyn Error>> {
+        let mut block = repository::BlockRepository::get_by_id(storage.blocks(), block_id)?;
+        block.parent_id = parent_id.map(|p| p.to_string());
+        block.updated_at = chrono::Utc::now().timestamp_millis();
+        repository::BlockRepository::update(storage.blocks(), &block)
+    }
+
     pub fn build_tree(
         storage: &mut dyn StorageAdapter,
         page_id: &str,
