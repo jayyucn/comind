@@ -6,6 +6,15 @@ import type { TreeNode } from '../../../types/block'
 import type { useBlockStore } from '../../../stores/blocks'
 
 /**
+ * 一级缩进总宽（px）= `.block-children` 的 `padding-left`(20) + Block/index.vue 的
+ * `INDENT_WIDTH_PER_LEVEL`(24)。改其中任一处，此常量必须同步。
+ *
+ * 不要用目标块的 `depth` 参与计算：bullet 的 x 已包含行内 `.block-indent` 的累计
+ * 缩进，再乘层级会把缩进算两遍（详见 docs/sort/sortable-implementation.md §9）。
+ */
+const INDENT_TOTAL_PER_LEVEL = 44
+
+/**
  * 放置目标类型
  *
  * - sort: 同级排序（beforeId 指定插入到哪个 block 之前；null 表示追加到末尾）
@@ -30,6 +39,13 @@ export interface DropTargetGeometry {
   nextSiblingId: string | null
   /** 目标块 bullet 的矩形；null 表示无 bullet，不可作为放置目标 */
   bulletRect: DragRect | null
+  /**
+   * 目标块整行（`.block-row`）的矩形，水平三分区的基准；null 时退回 bulletRect。
+   *
+   * 必须用行矩形而非 bullet 矩形：bullet 实测仅 20px 宽，扣掉左右各 15px 阈值后
+   * 中区为空集（`left + 15 > right - 15`），sort-after 永远无法用手势表达。
+   */
+  rowRect?: DragRect | null
 }
 
 /**
@@ -45,10 +61,11 @@ export function resolveDropAction(
   cursor: { x: number; y: number },
   geometry: DropTargetGeometry
 ): DropTarget | null {
-  const { bulletRect, blockId, parentId, nextSiblingId } = geometry
+  const { bulletRect, rowRect, blockId, parentId, nextSiblingId } = geometry
   if (!bulletRect) return null
 
-  const zone = computeDropZone(cursor.x, bulletRect)
+  // 水平分区以整行矩形为基准（缺省退回 bullet）：bullet 仅 20px 宽，用它做基准时中区为空集
+  const zone = computeDropZone(cursor.x, rowRect ?? bulletRect)
 
   if (zone === 'left') {
     if (parentId) {
@@ -188,6 +205,14 @@ export function useBlockDragDrop(options: UseBlockDragDropOptions) {
   const indicatorClass = sharedIndicatorClass
   const indicatorVisible = sharedIndicatorVisible
 
+  /** 目标块整行（.block-row）的矩形；找不到行元素时返回 null */
+  function readRowRect(targetBlockEl: HTMLElement): DragRect | null {
+    const row = targetBlockEl.querySelector('.block-row') as HTMLElement | null
+    if (!row) return null
+    const rect = row.getBoundingClientRect()
+    return { left: rect.left, right: rect.right, top: rect.top, height: rect.height }
+  }
+
   /** 从 DOM 读取放置判定所需的元数据（本模块唯一接触 DOM 的入口） */
   function readDropGeometry(targetBlockEl: HTMLElement): DropTargetGeometry {
     const bullet = targetBlockEl.querySelector('.block-bullet') as HTMLElement | null
@@ -197,7 +222,8 @@ export function useBlockDragDrop(options: UseBlockDragDropOptions) {
       blockId: targetBlockEl.dataset.blockId ?? null,
       parentId: parentBlock?.dataset.blockId ?? null,
       nextSiblingId: nextSibling?.dataset.blockId ?? null,
-      bulletRect: bullet ? bullet.getBoundingClientRect() : null
+      bulletRect: bullet ? bullet.getBoundingClientRect() : null,
+      rowRect: readRowRect(targetBlockEl)
     }
   }
 
@@ -226,9 +252,10 @@ export function useBlockDragDrop(options: UseBlockDragDropOptions) {
       return
     }
 
-    const rect = bullet.getBoundingClientRect()
+    const bulletRect = bullet.getBoundingClientRect()
+    const rowRect = readRowRect(targetBlockEl)
 
-    if (rect.width <= 0 || rect.height <= 0) {
+    if (bulletRect.width <= 0 || bulletRect.height <= 0 || !rowRect || rowRect.height <= 0) {
       clearIndicator()
       return
     }
@@ -236,46 +263,47 @@ export function useBlockDragDrop(options: UseBlockDragDropOptions) {
     const viewportHeight = window.innerHeight
     const viewportWidth = window.innerWidth
 
-    if (rect.bottom < 0 || rect.top > viewportHeight || rect.right < 0 || rect.left > viewportWidth) {
+    if (rowRect.top > viewportHeight || rowRect.top + rowRect.height < 0) {
       clearIndicator()
       return
     }
 
-    const left = Math.max(0, Math.min(rect.left, viewportWidth - 1))
-    const width = Math.max(1, Math.min(rect.right - rect.left, viewportWidth - left))
+    const clampX = (value: number) => Math.max(0, Math.min(value, viewportWidth - 1))
+    const clampY = (value: number) => Math.max(0, Math.min(value, viewportHeight - 1))
+    const rowRight = clampX(rowRect.right)
 
-    const style: Record<string, string> = {
-      left: `${left}px`,
-      width: `${width}px`,
-      top: `${rect.top}px`,
-      height: '2px'
-    }
+    // 三种指示器各锚定一个内容列（均以 bullet 为基准，兄弟关系由一级缩进量表达）：
+    // - sort    本行内容列：bullet 左边缘
+    // - promote 父级内容列：左移一级缩进
+    // - nest    子级内容列：右移一级缩进（竖线）
+    // 横线宽度铺到行右端 —— 旧实现取 bullet 的 20px 宽，线短到几乎看不见。
+    let contentLeft = clampX(bulletRect.left)
+    let width = Math.max(1, rowRight - contentLeft)
+    let top = clampY(rowRect.top)
+    let height = '2px'
     let cssClass = ''
 
     if (dropTarget.action === 'sort') {
-      const position = dropTarget.beforeId ? 'before' : 'after'
-      if (position === 'after') {
-        style.top = `${rect.bottom}px`
-      } else {
-        style.top = `${rect.top}px`
-      }
+      // beforeId 为 null 表示追加到末尾，线画在行底部
+      if (!dropTarget.beforeId) top = clampY(rowRect.top + rowRect.height)
       cssClass = 'sort'
     } else if (dropTarget.action === 'nest') {
-      const targetDepth = parseInt(targetBlockEl.dataset.depth ?? '0', 10)
-      const indentWidth = 24 * (targetDepth + 1)
-      const nestLeft = Math.max(0, Math.min(rect.left + indentWidth, viewportWidth - 1))
-      const nestWidth = Math.max(1, Math.min(rect.right - rect.left - indentWidth, viewportWidth - nestLeft))
-      style.left = `${nestLeft}px`
-      style.width = `${nestWidth}px`
-      style.top = `${rect.top}px`
-      style.height = `${Math.max(1, rect.height)}px`
+      contentLeft = clampX(bulletRect.left + INDENT_TOTAL_PER_LEVEL)
+      width = 1
+      height = `${Math.max(1, rowRect.height)}px`
       cssClass = 'nest'
     } else if (dropTarget.action === 'promote') {
-      style.top = `${rect.top}px`
+      contentLeft = clampX(bulletRect.left - INDENT_TOTAL_PER_LEVEL)
+      width = Math.max(1, rowRight - contentLeft)
       cssClass = 'promote'
     }
 
-    indicatorStyle.value = style
+    indicatorStyle.value = {
+      left: `${contentLeft}px`,
+      width: `${width}px`,
+      top: `${top}px`,
+      height
+    }
     indicatorClass.value = cssClass
     indicatorVisible.value = true
   }
@@ -362,14 +390,16 @@ export function useBlockDragDrop(options: UseBlockDragDropOptions) {
    * 与 resolveDropAction 的判定并不一致（右区画 nest 线却落成 sort）。
    * 因此这里把本次意图交给调用方，由 applyDropTarget 校正后再落库，此处不写 store。
    *
-   * 以 indicatorVisible 作为「意图有效」的判据：所有非法/无效分支都会 clearIndicator，
-   * 无需逐分支清理 pendingIntent。
+   * 判据只用 pendingIntent（最后一条有效意图），**不能用 indicatorVisible**：
+   * 拖拽末段指针常落在被拖块自身或其它无效位置（ghost 跟随指针，指针就压在它上方），
+   * 此时 handleDragMove 会 clearIndicator 隐藏指示线，但用户最后看到的那条线依然有效 ——
+   * 用它作判据会连带作废意图，表现为「明明看到 nest 线，落位却按 Sortable 自然结果」
+   * （真机实测：拖到目标行右端后落位跑到了隔壁块下）。
+   * pendingIntent 只在成功判定分支赋值、且每次 @end 后重置，不会跨次残留。
    */
   function handleBlockDragEnd() {
     const intent: DragEndIntent | null =
-      indicatorVisible.value && pendingIntent && pendingDraggedId
-        ? { draggedId: pendingDraggedId, target: pendingIntent }
-        : null
+      pendingIntent && pendingDraggedId ? { draggedId: pendingDraggedId, target: pendingIntent } : null
     pendingIntent = null
     pendingDraggedId = null
     clearIndicator()

@@ -46,6 +46,44 @@ describe('useBlockDragDrop', () => {
       expect(onDragEnd).toHaveBeenCalledWith(null)
     })
 
+    it('末段清指示器后，此前记录的有效意图仍然生效', () => {
+      const blockStore = useBlockStore()
+      const onDragEnd = vi.fn()
+      const { handleDragMove, handleBlockDragEnd } = useBlockDragDrop({ blockStore, onDragEnd })
+
+      // 真实 bullet 宽 20px、行宽 400px
+      const bulletEl = { getBoundingClientRect: () => ({ left: 100, right: 120, top: 100, height: 30 }) }
+      const rowEl = { getBoundingClientRect: () => ({ left: 100, right: 500, top: 100, height: 30 }) }
+      const targetBlockEl = {
+        dataset: { blockId: 'b2' },
+        parentElement: null,
+        nextElementSibling: null,
+        querySelector: (sel: string) => (sel === '.block-bullet' ? bulletEl : sel === '.block-row' ? rowEl : null)
+      }
+
+      // 第一次 @move 命中中区 → 记录 sort 意图
+      handleDragMove({
+        dragged: { dataset: { blockId: 'b1' } },
+        related: { closest: () => targetBlockEl },
+        to: { dataset: { parentId: '' } },
+        originalEvent: { clientX: 300, clientY: 100 }
+      } as any)
+
+      // 末段 @move：指针回到被拖块自身 → clearIndicator（此前会连带作废意图）
+      handleDragMove({
+        dragged: { dataset: { blockId: 'b1' } },
+        related: { closest: () => ({ dataset: { blockId: 'b1' } }) },
+        to: { dataset: { parentId: '' } },
+        originalEvent: { clientX: 300, clientY: 100 }
+      } as any)
+
+      handleBlockDragEnd()
+      expect(onDragEnd).toHaveBeenCalledWith({
+        draggedId: 'b1',
+        target: { action: 'sort', toParentId: null, beforeId: 'b2' }
+      })
+    })
+
     it('is a safe no-op when onDragEnd is not provided', () => {
       const blockStore = useBlockStore()
       const { handleBlockDragEnd } = useBlockDragDrop({
@@ -175,6 +213,7 @@ describe('resolveDropAction', () => {
       parentId: 'b1',
       nextSiblingId: 'b3',
       bulletRect,
+      rowRect: bulletRect,
       ...overrides
     }
   }
@@ -234,5 +273,37 @@ describe('resolveDropAction', () => {
   it('treats exact threshold boundaries as left and right zones', () => {
     expect(resolveDropAction({ x: 115, y: 110 }, geometry())?.action).toBe('promote')
     expect(resolveDropAction({ x: 135, y: 110 }, geometry())?.action).toBe('nest')
+  })
+
+  it('真实 20px bullet 下中区为空集，改用行矩形基准后中区可达', () => {
+    // 真机实测：bullet 宽 20px、.block-row 宽约 400px。
+    // 用 bullet 作基准时 left 阈(115) 与 right 阈(left+5) 交叉 → 中区为空，
+    // 同一光标位置只能落进右区，sort-after 无法用手势表达。
+    const narrowBullet = { left: 100, right: 120, top: 100, height: 30 }
+    const wideRow = { left: 100, right: 500, top: 100, height: 30 }
+
+    expect(
+      resolveDropAction({ x: 300, y: 110 }, geometry({ bulletRect: narrowBullet, rowRect: narrowBullet }))?.action
+    ).toBe('nest')
+
+    expect(resolveDropAction({ x: 300, y: 110 }, geometry({ bulletRect: narrowBullet, rowRect: wideRow }))).toEqual({
+      action: 'sort',
+      toParentId: 'b1',
+      beforeId: 'b2'
+    })
+
+    // 行右端 15px 内才是 nest
+    expect(
+      resolveDropAction({ x: 490, y: 110 }, geometry({ bulletRect: narrowBullet, rowRect: wideRow }))?.action
+    ).toBe('nest')
+  })
+
+  it('缺省 rowRect 时退回 bulletRect 基准', () => {
+    expect(
+      resolveDropAction(
+        { x: 300, y: 110 },
+        { blockId: 'b2', parentId: 'b1', nextSiblingId: null, bulletRect: { left: 100, right: 120, top: 100, height: 30 } }
+      )?.action
+    ).toBe('nest')
   })
 })
