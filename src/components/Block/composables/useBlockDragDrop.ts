@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { getCurrentInstance, onBeforeUnmount, ref } from 'vue'
 import { isDescendantOf } from '../../../utils/block-helpers'
 import { computeDropZone, computeSortPosition } from '../../../composables/useDragDrop'
 import type { DragRect } from '../../../composables/useDragDrop'
@@ -156,10 +156,16 @@ interface UseBlockDragDropOptions {
  * useBlockDragDrop — block 拖放逻辑 composable（<BlockDraggableList> 内部使用）
  *
  * - resolveDropAction: 放置判定核心（纯函数，无 DOM 依赖，可单测）
- * - findDropTarget: DOM 适配层，读取目标块元数据后交给 resolveDropAction
- * - handleDragMove: VueDraggable @move 处理器，做循环嵌套检测并更新指示器
+ * - resolveTargetBlock: 指针 → 目标块（本模块唯一用 elementFromPoint 的地方）
+ * - handleDragStart: VueDraggable @start 处理器，接管拖拽期指针跟踪
+ * - handleDragMove: VueDraggable @move 处理器，只做循环嵌套守卫
  * - handleBlockDragEnd: VueDraggable @end 处理器，回传落位意图并触发 onDragEnd
  * - renderDropIndicator / clearIndicator: 通过响应式 ref 驱动 <BlockDropIndicator>
+ *
+ * 落位意图由拖拽期间的 pointermove 持续重算，**不用 Sortable 的 @move 采样**：
+ * @move 只在「Sortable 决定换位」的那一瞬派发，而被拖元素随即被移到指针下方并挡住指针，
+ * Sortable 对它 early-return（`dragEl.contains(evt.target)`）不再派发 —— 于是最后一个采样
+ * 恒是「指针刚进目标上半区」的判定，表现为「从上往下拖，落点偏上一个」。
  *
  * 落库职责（单一写路径）：handleBlockDragEnd 只回传意图 + 触发 onDragEnd。
  * 调用方先按意图校正树（applyDropTarget），再走 syncTreeToStore（完整树 diff）
@@ -196,9 +202,14 @@ export function useSharedDropIndicator() {
 export function useBlockDragDrop(options: UseBlockDragDropOptions) {
   const { blockStore, onDragEnd } = options
 
-  /** 最近一次 @move 判定出的落位意图（本次拖拽期内有效，@end 时消费） */
+  /** 本次拖拽的被拖元素（Sortable 会给它加 ghost-class，并把它移到指针所在位置挡住指针） */
+  let draggedEl: HTMLElement | null = null
+  /** 落位意图：拖拽期间随指针持续重算，@end 时消费 */
   let pendingIntent: DropTarget | null = null
   let pendingDraggedId: string | null = null
+  /** 上一次指针位置：pointermove 高频，位置没变就不重算（避免无谓的 DOM 读取与响应式写入） */
+  let lastPointerX = Number.NaN
+  let lastPointerY = Number.NaN
 
   // ── 指示器响应式状态（模块级共享，所有 Block 实例共用）──
   const indicatorStyle = sharedIndicatorStyle
@@ -211,6 +222,26 @@ export function useBlockDragDrop(options: UseBlockDragDropOptions) {
     if (!row) return null
     const rect = row.getBoundingClientRect()
     return { left: rect.left, right: rect.right, top: rect.top, height: rect.height }
+  }
+
+  /**
+   * 锚点块（`beforeId`）所在行的矩形 —— sort 指示线要画在真正的插入口上。
+   *
+   * 判定出的 `beforeId` 不一定是「指针下那块」：中区下半区会指向目标的下一块，
+   * 指针压在被拖元素上时指向被拖元素自己。线若一律画在目标行顶部，就会比落位高一行
+   * （真机实测：向下拖到底时线停在 EE 之上，实际却落在 EE 之后）。
+   *
+   * 跳过 Sortable 的 fallback 克隆（.block-drag，与被拖元素同 id），保留被拖元素本身 ——
+   * 它的槽位正是「插到自己之前」的落点。
+   */
+  function readAnchorRowRect(targetBlockEl: HTMLElement, beforeId: string): DragRect | null {
+    const container = targetBlockEl.parentElement
+    if (!container) return null
+    for (const child of Array.from(container.children) as HTMLElement[]) {
+      if (child.classList.contains('block-drag') || child.dataset.blockId !== beforeId) continue
+      return readRowRect(child)
+    }
+    return null
   }
 
   /** 从 DOM 读取放置判定所需的元数据（本模块唯一接触 DOM 的入口） */
@@ -238,6 +269,105 @@ export function useBlockDragDrop(options: UseBlockDragDropOptions) {
     targetBlockEl: HTMLElement
   ): DropTarget | null {
     return resolveDropAction({ x: cursorX, y: cursorY }, readDropGeometry(targetBlockEl))
+  }
+
+  /**
+   * 被拖元素所在容器内、离指针垂直距离最近的兄弟块（排除被拖元素自己与 Sortable 的 fallback 克隆）。
+   */
+  function pickNearestSiblingBlock(dragged: HTMLElement, cursorY: number): HTMLElement | null {
+    const container = dragged.parentElement
+    if (!container) return null
+
+    let nearest: HTMLElement | null = null
+    let nearestDistance = Number.POSITIVE_INFINITY
+    for (const child of Array.from(container.children)) {
+      const el = child as HTMLElement
+      if (el === dragged || !el.classList.contains('block') || el.classList.contains('block-drag')) continue
+      const row = el.querySelector('.block-row') as HTMLElement | null
+      if (!row) continue
+      const rect = row.getBoundingClientRect()
+      const distance = cursorY < rect.top ? rect.top - cursorY : cursorY > rect.bottom ? cursorY - rect.bottom : 0
+      if (distance < nearestDistance) {
+        nearestDistance = distance
+        nearest = el
+      }
+    }
+    return nearest
+  }
+
+  /**
+   * 指针命中的目标块。
+   *
+   * 拖拽中 Sortable 会把被拖元素移到指针所在位置，于是被拖元素必然压在指针下方；
+   * 而 Sortable 对「指针落在被拖元素上」直接 early-return，不会派发 @move。
+   * 因此命中被拖元素（或其子树、或它移走后剩下的空白）时，退回同容器内离指针最近的兄弟块。
+   */
+  function resolveTargetBlock(cursorX: number, cursorY: number): HTMLElement | null {
+    const hit = document.elementFromPoint(cursorX, cursorY)
+    const hitBlock = (hit?.closest('.block') as HTMLElement | null) ?? null
+    if (hitBlock && !(draggedEl && (hitBlock === draggedEl || draggedEl.contains(hitBlock)))) {
+      return hitBlock
+    }
+    return draggedEl ? pickNearestSiblingBlock(draggedEl, cursorY) : null
+  }
+
+  /** 按指针位置重算落位意图并刷新指示器（拖拽期间唯一写入 pendingIntent 的地方） */
+  function updateIntentFromPointer(cursorX: number, cursorY: number) {
+    const draggedId = draggedEl?.dataset.blockId ?? null
+    const targetBlock = draggedId ? resolveTargetBlock(cursorX, cursorY) : null
+    const geometry = targetBlock ? readDropGeometry(targetBlock) : null
+
+    // 容器归属守卫：目标容器位于被拖块的子树内 → 非法（与 @move 的循环嵌套守卫同源）
+    const illegalContainer =
+      !!draggedId && !!geometry?.parentId && isDescendantOf(blockStore.blocks, geometry.parentId, draggedId)
+    const dropTarget =
+      geometry && !illegalContainer ? resolveDropAction({ x: cursorX, y: cursorY }, geometry) : null
+
+    pendingIntent = dropTarget
+    pendingDraggedId = dropTarget ? draggedId : null
+
+    if (!dropTarget || !targetBlock) clearIndicator()
+    else renderDropIndicator(targetBlock, dropTarget)
+  }
+
+  /**
+   * 拖拽期间的指针跟踪（落位意图的唯一数据源）。
+   *
+   * 位置未变则跳过：pointermove 频率可达每帧一次，而判定要读 elementFromPoint
+   * 与多个 getBoundingClientRect（会触发样式重算），没必要重复算同一个点。
+   */
+  function handleDocumentPointerMove(e: PointerEvent) {
+    if (!draggedEl || (e.clientX === lastPointerX && e.clientY === lastPointerY)) return
+    lastPointerX = e.clientX
+    lastPointerY = e.clientY
+    updateIntentFromPointer(e.clientX, e.clientY)
+  }
+
+  /** 停止指针跟踪并清空拖拽期状态（正常结束与组件卸载共用） */
+  function stopPointerTracking() {
+    document.removeEventListener('pointermove', handleDocumentPointerMove)
+    draggedEl = null
+    lastPointerX = Number.NaN
+    lastPointerY = Number.NaN
+  }
+
+  /**
+   * 拖拽开始：记录被拖元素并接管指针跟踪（由 <BlockDraggableList> 绑到 VueDraggable 的 @start）。
+   *
+   * 被拖元素优先取自 Sortable 事件载荷（@start 的 info 带 targetEl/item），
+   * 退回 ghost-class（Sortable 在派发 start 之前已给被拖元素加上该 class）。
+   */
+  function handleDragStart(evt: any) {
+    const candidate = (evt?.targetEl ?? evt?.item ?? evt?.originalEvent?.target) as HTMLElement | undefined
+    draggedEl =
+      (candidate?.closest?.('.block') as HTMLElement | null) ??
+      (document.querySelector('.block-ghost') as HTMLElement | null)
+
+    lastPointerX = Number.NaN
+    lastPointerY = Number.NaN
+    pendingIntent = null
+    pendingDraggedId = null
+    document.addEventListener('pointermove', handleDocumentPointerMove)
   }
 
   /**
@@ -284,8 +414,10 @@ export function useBlockDragDrop(options: UseBlockDragDropOptions) {
     let cssClass = ''
 
     if (dropTarget.action === 'sort') {
-      // beforeId 为 null 表示追加到末尾，线画在行底部
-      if (!dropTarget.beforeId) top = clampY(rowRect.top + rowRect.height)
+      // 线画在真正的插入口：锚点块（beforeId）的行顶；无锚点表示追加到末尾，画在最后一行底部
+      const anchorRect = dropTarget.beforeId ? readAnchorRowRect(targetBlockEl, dropTarget.beforeId) : null
+      if (anchorRect) top = clampY(anchorRect.top)
+      else if (!dropTarget.beforeId) top = clampY(rowRect.top + rowRect.height)
       cssClass = 'sort'
     } else if (dropTarget.action === 'nest') {
       contentLeft = clampX(bulletRect.left + INDENT_TOTAL_PER_LEVEL)
@@ -316,95 +448,46 @@ export function useBlockDragDrop(options: UseBlockDragDropOptions) {
   }
 
   /**
-   * 拖拽移动检测（防止循环嵌套）
+   * 循环嵌套守卫（VueDraggable @move 处理器）：返回 false 阻止 Sortable 把块插进自己的子树。
    *
-   * VueDraggable @move 处理器：返回 false 阻止非法移动。
-   * 复制自原 Block/index.vue 的 handleDragMove。
+   * 落位意图不在这里算 —— Sortable 只在「决定换位」的瞬间派发 @move，且被拖元素随后就挡住
+   * 指针（拿不到后续采样），用它做意图会向下拖时偏上一个；意图统一由 handleDocumentPointerMove
+   * 按指针位置实时重算。
    */
-  function handleDragMove(evt: any): boolean | void {
+  function handleDragMove(evt: any): boolean {
     const draggedId = (evt.dragged as HTMLElement)?.dataset.blockId
-    const related = evt.related as HTMLElement
-
-    if (draggedId && related) {
-      const targetBlock = related.closest('.block') as HTMLElement | null
-      if (targetBlock?.dataset.blockId === draggedId) {
-        clearIndicator()
-        return false
-      }
-    }
-
-    const toEl = evt.to as HTMLElement
-    if (!toEl) {
-      clearIndicator()
-      return true
-    }
+    const toEl = evt.to as HTMLElement | undefined
+    if (!draggedId || !toEl) return true
 
     const rawTargetId = toEl.dataset.parentId ?? null
     const targetId = rawTargetId === '' ? null : rawTargetId
-
-    if (draggedId && targetId && isDescendantOf(blockStore.blocks, targetId, draggedId)) {
-      clearIndicator()
-      return false
-    }
-
-    const cursorX = evt.originalEvent.clientX
-    const cursorY = evt.originalEvent.clientY
-    const targetBlock = related?.closest('.block') as HTMLElement | null
-
-    if (!targetBlock) {
-      clearIndicator()
-      return true
-    }
-
-    const dropTarget = findDropTarget(cursorX, cursorY, targetBlock)
-    if (dropTarget) {
-      // 记录意图：@end 时以它为准校正 Sortable 的落位（早退分支都不记录，天然作废）
-      pendingIntent = dropTarget
-      pendingDraggedId = draggedId ?? null
-
-      const bullet = targetBlock.querySelector('.block-bullet')
-      if (!bullet) {
-        clearIndicator()
-        return true
-      }
-
-      const rect = (bullet as HTMLElement).getBoundingClientRect()
-      if (rect.top < 0 || rect.bottom > window.innerHeight) {
-        clearIndicator()
-        return true
-      }
-
-      renderDropIndicator(targetBlock, dropTarget)
-    } else {
-      clearIndicator()
-    }
-
-    return true
+    return !(targetId && isDescendantOf(blockStore.blocks, targetId, draggedId))
   }
 
   /**
-   * 拖拽结束：回传落位意图、清指示器并触发落库。
+   * 拖拽结束：回传落位意图、停止指针跟踪、清指示器并触发落库。
    *
    * VueDraggable @end 处理器。Sortable 已在 end 之前完成树 mutate（v-model，
    * 跨容器走 onRemove/onAdd 双向同步），但其落位是「同级重排 + 相邻容器吸附」，
    * 与 resolveDropAction 的判定并不一致（右区画 nest 线却落成 sort）。
    * 因此这里把本次意图交给调用方，由 applyDropTarget 校正后再落库，此处不写 store。
    *
-   * 判据只用 pendingIntent（最后一条有效意图），**不能用 indicatorVisible**：
-   * 拖拽末段指针常落在被拖块自身或其它无效位置（ghost 跟随指针，指针就压在它上方），
-   * 此时 handleDragMove 会 clearIndicator 隐藏指示线，但用户最后看到的那条线依然有效 ——
-   * 用它作判据会连带作废意图，表现为「明明看到 nest 线，落位却按 Sortable 自然结果」
-   * （真机实测：拖到目标行右端后落位跑到了隔壁块下）。
-   * pendingIntent 只在成功判定分支赋值、且每次 @end 后重置，不会跨次残留。
+   * 意图取的是「指针最后停住的位置」算出的那一条（handleDocumentPointerMove 维护）。
+   * 指针停在被拖元素的占位行上时，那条意图等价于「留在 Sortable 放的槽位」，
+   * applyDropTarget 自然成为 no-op —— 这正是向下拖不再偏一格的原因。
    */
   function handleBlockDragEnd() {
     const intent: DragEndIntent | null =
       pendingIntent && pendingDraggedId ? { draggedId: pendingDraggedId, target: pendingIntent } : null
+    stopPointerTracking()
     pendingIntent = null
     pendingDraggedId = null
     clearIndicator()
     onDragEnd?.(intent)
   }
+
+  // 组件在拖拽中被卸载（KeepAlive 切页等）时也要摘掉 document 级监听
+  if (getCurrentInstance()) onBeforeUnmount(stopPointerTracking)
 
   return {
     indicatorStyle,
@@ -413,6 +496,7 @@ export function useBlockDragDrop(options: UseBlockDragDropOptions) {
     findDropTarget,
     renderDropIndicator,
     clearIndicator,
+    handleDragStart,
     handleDragMove,
     handleBlockDragEnd
   }

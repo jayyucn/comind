@@ -47,10 +47,19 @@ const emit = defineEmits<{
 const blockStore = useBlockStore()
 const editorStore = useEditorStore()
 
-const { handleDragMove, handleBlockDragEnd } = useBlockDragDrop({
+const { handleDragStart, handleDragMove, handleBlockDragEnd } = useBlockDragDrop({
   blockStore,
   onDragEnd: intent => emit('drag-end', intent),
 })
+
+/**
+ * Sortable @start：先结束 block 编辑态，再把拖拽期指针跟踪交给 hook。
+ * 落位意图由指针位置实时重算（见 useBlockDragDrop 顶部说明），因此这里必须接管 @start。
+ */
+function onDragStart(evt: unknown) {
+  editorStore.deactivateBlock()
+  handleDragStart(evt)
+}
 
 const draggableRef = ref<any>(null)
 
@@ -78,7 +87,7 @@ defineExpose({
     :force-fallback="true"
     :empty-insert-threshold="0"
     :data-parent-id="parentId ?? ''"
-    @start="editorStore.deactivateBlock()"
+    @start="onDragStart"
     @move="handleDragMove"
     @end="handleBlockDragEnd"
   >

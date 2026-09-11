@@ -1,8 +1,9 @@
 # Block 拖拽实现（vue-draggable-plus / Sortable.js）
 
-> 版本：v0.3
+> 版本：v0.4
 > 日期：2026-09-11
 > 状态：**现行实现**。v0.2 的 `useSortable` + `moveBlock` 增量写路径已于 2026-09-11 的拖拽重构中作废，差异见 §11。
+> v0.4 修订：落位意图改为拖拽期 `pointermove` 实时重算（原来靠 Sortable 的 `@move` 采样，导致「向下拖落点偏上一个」，见 §4.5）；`sort` 指示线锚到真正的插入口（§9）；补上 fallback 模式下的 DOM 角色辨析（§4.4）。
 
 ---
 
@@ -22,9 +23,10 @@
 
 ```
 BlockDraggableList.vue          唯一接线（根级与子级共用一份）
-  └─ useBlockDragDrop.ts        放置判定 / 指示器 / @move @end 处理
+  └─ useBlockDragDrop.ts        放置判定 / 指示器 / @start @move @end 处理
        ├─ resolveDropAction     放置语义判定（纯函数）
-       └─ applyDropTarget       按意图校正树（纯函数）
+       ├─ applyDropTarget       按意图校正树（纯函数）
+       └─ handleDragStart       接管拖拽期 document 级 pointermove（意图数据源）
 
 调用方
   BlockList.vue      v-model="tree"              parentId = null（根级）
@@ -53,9 +55,9 @@ BlockDraggableList.vue          唯一接线（根级与子级共用一份）
 | 三个态 class | `block-ghost` / `block-drag` / `block-chosen` | 样式见 `src/styles/components/_block.scss` |
 | `empty-insert-threshold` | `0` | |
 | `data-parent-id` | `parentId ?? ''` | **不可省略该属性**：`handleDragMove` 靠空串判定根级；`_reset.scss` 靠该属性区分拖拽容器与 Sortable 占位元素 |
-| `@start` | `editorStore.deactivateBlock()` | |
-| `@move` | `handleDragMove` | 返回 `false` 可阻止 Sortable 承接 |
-| `@end` | `handleBlockDragEnd` | |
+| `@start` | `onDragStart`（`editorStore.deactivateBlock()` + `handleDragStart`） | **必须接管**：`handleDragStart` 记录被拖元素并挂上 document 级 `pointermove` 监听 —— 落位意图的唯一数据源（§4.5） |
+| `@move` | `handleDragMove` | 返回 `false` 可阻止 Sortable 承接；**只做循环嵌套守卫**，不再参与意图判定 |
+| `@end` | `handleBlockDragEnd` | 回传意图并摘掉指针监听 |
 
 ---
 
@@ -76,10 +78,51 @@ BlockDraggableList.vue          唯一接线（根级与子级共用一份）
 
 ### 4.3 fallback 模式的副作用
 
-`force-fallback: true` ⇒ Sortable 绑 pointer 事件而非 mouse，并起 `setInterval(_emulateDragOver, 50)` 轮询驱动 `_onDragOver`。两个可观察后果：
+`force-fallback: true` ⇒ Sortable 绑 pointer 事件而非 mouse，并起 `setInterval(_emulateDragOver, 50)` 轮询驱动 `_onDragOver`。可观察后果：
 
-- fallback 路径**不打 `dragClass`**（`!fallback && toggleClass(...)`）；
-- `@move` 只在「悬停块变化」时触发 —— 同一块内横向微调不会重复触发，指示器因此只在块间移动时刷新。
+- `_emulateDragOver` 用**最后一次真实 pointermove 的坐标**（模块级 `touchEvt`）做 `elementFromPoint` —— 轮询本身不产生新坐标，指针不动时它只是反复对同一点做判定；
+- `@move` 只在「悬停块变化」时触发 —— 同一块内微调不会重复触发，指示器因此只在块间移动时刷新。
+
+### 4.4 fallback 下的 DOM 角色（名字反直觉，务必分清）
+
+`_appendGhost`（`sortable.esm.js:1509`）做的事：
+
+```js
+ghostEl = dragEl.cloneNode(true)
+toggleClass(ghostEl, options.ghostClass, false)    // 从克隆上【移除】block-ghost
+toggleClass(ghostEl, options.fallbackClass, true)  // 加 sortable-fallback
+toggleClass(ghostEl, options.dragClass, true)      // 加 block-drag
+css(ghostEl, 'pointerEvents', 'none')              // ← 关键
+css(ghostEl, 'position', 'fixed'); zIndex 100000
+container.appendChild(ghostEl)                     // container = rootEl（本项未开 fallbackOnBody）
+```
+
+于是拖拽期容器里有**两个同 `data-block-id` 的元素**：
+
+| 元素 | 类名 | 角色 | 是否在流内 | 是否可被 `elementFromPoint` 命中 |
+|---|---|---|---|---|
+| 真实被拖元素（`dragEl`） | `block-ghost` + `block-chosen` | **留在列表里的占位**，标记落点位置 | ✅ 在流内 | ✅（它就是指针下方那个） |
+| 克隆（`ghostEl`） | `block-drag` + `sortable-fallback` | **跟随指针的浮层** | ❌ `position: fixed` | ❌（`pointer-events: none`） |
+
+两个反直觉点，改拖拽代码时最容易被绕进去：
+
+1. **`block-ghost` 不是浮层，是占位**；跟随指针的那个叫 `block-drag`。名字是 Sortable 的历史包袱。
+2. **`elementFromPoint` 在指针处拿到的是被拖元素自己**（占位），不是克隆 —— 因为克隆被 `pointer-events: none` 排除了。这正是 §4.5 里「向下拖偏上一个」的物理前提。
+
+推论（§9 指示线与 §6 不变式都依赖它）：**占位元素的当前位置 = 用户看到的落点**。所以指针压在占位元素上时，判定必须收敛为「不动」，否则会和用户看到的位置打架。
+
+### 4.5 为什么 `@move` 不能当落位意图来源（「向下拖偏上一个」的根因）
+
+`_onDragOver` 开头有 `if (dragEl.contains(evt.target) ...) return completed(false)`。结合 §4.4：
+
+1. 指针向下移动，进入下一个块的上半区 → Sortable 决定换位 → **派发一次 `@move`**（此帧意图是对的）；
+2. 换位的代价是：占位元素被挪到指针下方，于是**指针立刻压在被拖元素自己身上**；
+3. 之后每一帧 `_onDragOver` 都在第 1 行 early-return，**再也不派发 `@move`**；
+4. ⇒ 最后一次采样永远是第 1 步那次（「指针刚进目标上半区」），落位表现就是**比指针位置高一个槽位**。
+
+向上拖为什么看着正常：向上拖时「刚进目标上半区」恰好等于用户想插到的位置，冻结值与正确答案相同。**这不是两个方向的差异，而是同一个冻结 bug 在一个方向上凑巧正确。**
+
+修法（v0.4）：意图改由 document 级 `pointermove` 持续重算（`handleDragStart` 接管、`handleBlockDragEnd` 摘除），不再依赖 Sortable 的稀疏采样；`@move` 收窄为纯循环嵌套守卫。
 
 ---
 
@@ -121,9 +164,13 @@ applyDropTarget(tree: TreeNode[], draggedId: string, target: DropTarget): boolea
 
 「先摘除再定位 `beforeId`」是刻意的：索引必须与目标列表的当前状态一致。
 
-意图来源：`handleDragMove` 每次成功判定都暂存 `pendingIntent` / `pendingDraggedId`；早退分支不记录，但**也不清除**已记录的意图。
+**意图来源**（v0.4）：`handleDocumentPointerMove`（document 级 `pointermove`）每次按指针位置重算并暂存 `pendingIntent` / `pendingDraggedId`，`@end` 消费一次后重置。指针位置未变则跳过重算（`pointermove` 可达每帧一次，而判定要读 `elementFromPoint` + 多个 `getBoundingClientRect`）。**不用 `@move` 采样**，理由见 §4.5。
 
-`@end` 的判据是「`pendingIntent` 是否存在」，**不能用 `indicatorVisible`**：拖拽末段指针常落在被拖块自身或其它无效位置（ghost 跟随指针，指针就压在它上方），此时 `handleDragMove` 会 `clearIndicator()` 把线隐藏，但用户最后看到的那条线依然有效 —— 用它作判据会连带作废意图，表现为「明明看到 nest 线，落位却按 Sortable 自然结果」（实测：拖到目标行右端后落位跑到了隔壁块下）。`pendingIntent` 只在成功判定分支赋值、且每次 `@end` 后重置，不会跨次残留。
+指针落在被拖元素自己身上（§4.4 的占位元素）时，`resolveTargetBlock` 退回「同容器内离指针最近的兄弟块」。此时解出的 `beforeId` 往往就是被拖块自身 ⇒ `applyDropTarget` 返回 `false` ⇒ **Sortable 的落位原样保留**。这是一个刻意维持的不变式：
+
+> 指针压在占位元素上 ⇒ 落位 = 占位元素所在位置 = 用户看到的位置。
+
+`@end` 的判据是「`pendingIntent` 是否存在」，**不能用 `indicatorVisible`**：拖拽末段指针常落在无效位置，此时会 `clearIndicator()` 把线隐藏，但用户最后看到的那条线依然有效 —— 用它作判据会连带作废意图，表现为「明明看到 nest 线，落位却按 Sortable 自然结果」。`pendingIntent` 只在成功判定分支赋值、且每次 `@end` 后重置，不会跨次残留。
 
 ---
 
@@ -151,8 +198,11 @@ applyDropTarget(tree: TreeNode[], draggedId: string, target: DropTarget): boolea
 
 | 层 | 位置 | 手段 |
 |---|---|---|
-| 拖拽中 | `handleDragMove` | ① `related` 落在被拖块自身 → `return false`（阻止 Sortable 承接）② `toEl.dataset.parentId` 是被拖块的后代 → `return false`（`isDescendantOf`，`src/utils/block-helpers.ts`） |
+| 拖拽中（Sortable 承接前） | `handleDragMove` | `toEl.dataset.parentId` 是被拖块的后代 → `return false`（`isDescendantOf`，`src/utils/block-helpers.ts`） |
+| 拖拽中（意图计算） | `updateIntentFromPointer` | 目标容器落在被拖块子树内 → 本次不产生意图（`dropTarget = null`），指示器隐藏 |
 | 落位 | `applyDropTarget` | 目标父级 / `beforeId` 落在被拖块子树内 → 拒绝（纯函数层兜底，不依赖 DOM 状态） |
+
+「指针落在被拖块自身」不需要单独判断：§4.5 的 early-return 本就发生在 Sortable 内部，且 §6 的不变式会让意图自动收敛为「不动」。
 
 ---
 
@@ -163,9 +213,11 @@ applyDropTarget(tree: TreeNode[], draggedId: string, target: DropTarget): boolea
 
 | 指示器 | 形态 | 水平位置 | 垂直位置 |
 |---|---|---|---|
-| `sort` | 2px 横线 | `bullet.left`（本行内容列），宽度铺到 `row.right` | `row.top`（before）/ `row.bottom`（after，即 `beforeId === null`） |
+| `sort` | 2px 横线 | `bullet.left`（本行内容列），宽度铺到 `row.right` | **锚点行（`beforeId`）的行顶**；无锚点（追加到末尾）→ 目标行底部 |
 | `promote` | 2px 横线 | `bullet.left − INDENT_TOTAL_PER_LEVEL`（父级内容列） | `row.top` |
 | `nest` | 竖线（1px 宽 + 2px `border-left`） | `bullet.left + INDENT_TOTAL_PER_LEVEL`（子级内容列） | `row.top` 起，高 = `row.height` |
+
+- **`sort` 线的垂直位置必须按锚点行算，不能一律画在「指针下那个目标行」的顶部**（v0.4 修）：判定出的 `beforeId` 不一定是指针下那块 —— 中区下半区会指向目标的下一块，指针压在被拖元素上时会指向被拖元素自己。线画在目标行顶部就会比真实落位高一行（真机实测：向下拖到底时线停在 `EE` 之上，实际却落在 `EE` 之后）。`readAnchorRowRect` 在目标块所在容器的直接子块里找 `data-block-id === beforeId` 的那一行；跳过 `.block-drag`（§4.4 的浮层克隆），保留 `.block-ghost`（真实被拖元素 —— 它的槽位正是「插到自己之前」的落点）。
 
 - **`INDENT_TOTAL_PER_LEVEL = 44`**（`useBlockDragDrop.ts`）= `.block-children` 的 `padding-left`(20) + `Block/index.vue` 的 `INDENT_WIDTH_PER_LEVEL`(24)。改这两处必须同步此常量。
 - ⚠️ **不要用目标块的 `depth` 参与缩进计算**：bullet 的 x 已经包含行内 `.block-indent` 的累计缩进（实测每级位移 44px：570 → 614 → 658 → 702），再乘层级会把缩进算两遍。所以「给 `.block` 加 `data-depth`」是错的方向 —— 代码里**刻意没有**这个属性。
@@ -178,9 +230,24 @@ applyDropTarget(tree: TreeNode[], draggedId: string, target: DropTarget): boolea
 
 1. **【已于 2026-09-11 修复】指示器几何不准 + 中区不可达**：水平基准曾用 20px 的 bullet 矩形 → 中区为空集（`sort-after` 无独立手势）、`sort`/`promote` 横线只有 20px、`nest` 线宽被 clamp 到 1px；`nest` 还按 `24 * (depth + 1)` 算缩进（`.block` 上没有 `data-depth`，恒按 0 算）。修法：基准换成 `.block-row`，缩进改为常量 `INDENT_TOTAL_PER_LEVEL = 44`，**不引入 `data-depth`**（引入反而把缩进算两遍，见 §9）。对照回归用例：`useBlockDragDrop.test.ts` 的「真实 20px bullet 下中区为空集，改用行矩形基准后中区可达」。
 2. **【未修，高危】跨容器拖拽会拆散子树**：把带子块的块从子容器拖到**根容器**后，它的二级子块被提升为根级（实测：`CC` 带子块 `AA` 从 `BBB` 的子容器拖到根容器 → `AA.parent_id` 由 `CC` 变成 `null`）。**同容器内 sort 不触发**（对照实验通过）。同一次拖拽后还观察到 DOM 内容错位（`AA` 重复 3 次、被拖块消失），reload 后由数据重建才恢复。疑因嵌套 Sortable 列表未声明 item 选择器（`closest` 可能命中嵌套子块）或 v-model 的 `onRemove`/`onAdd` 索引按 DOM 计算，需进一步确认。**在修好之前，跨容器拖拽的回归必须以「reload 后比对 IPC 数据」为准，不要相信拖拽后的即时 DOM。**
-3. **`@move` 只在块间移动时触发**（§4.3）：同一块内横向微调不刷新指示器 —— 想从 `sort` 切到 `nest` 必须把指针移到另一块再回来。因为判定基准换成整行后三区都在同一行内，这条的影响比之前更明显（横向移动量变大）。
+3. **【已于 2026-09-11 修复】「向下拖时落点偏上一个」**：根因是意图来自 Sortable 的 `@move` 稀疏采样，被拖元素换位后挡住指针 → `_onDragOver` early-return → 采样冻结在换位前那一帧（完整机理见 §4.5）。修法：意图改由 document 级 `pointermove` 持续重算。回归用例：`useBlockDragDrop.test.ts` 的 `指针压在被拖元素上（向下拖的回归）` 三条。真机双向验证（下拖 → `EE,DD`；上拖 → `DD,EE`）见 §10.6。
 4. **【已于 2026-09-11 修复】`parent_id` 曾无法写回 NULL**：`BlockService::update` 的 `parent_id: Option<&str>` 中 `None` 意为「不修改」，而 `save_blocks` 直接透传 `block.parent_id.as_deref()`，于是「拖回根级」的 `null` 被静默忽略（`version` 照样自增）→ reload 后回到原父级。修法：`save_blocks` 在 `update` 之后比对 `updated.parent_id != block.parent_id`，不一致时调新增的 `BlockService::set_parent_id` 显式写回（含 NULL）。回归测试：`block_write.rs::save_blocks_clears_parent_id_back_to_root`。
-5. **文档与测试**：`docs/sort/phase-1-1-plan.md` / `phase-1-1-dev.md` 描述的是 v0.2 方案，已在文首标注「已作废」。单测覆盖 `resolveDropAction` / `applyDropTarget` 两个纯函数与 `handleBlockDragEnd` 的意图判据（`useBlockDragDrop.test.ts`）；真机回归靠 tauri-mcp，混合法：`execute_js` 派发**带时间间隔**的 `PointerEvent` 序列（无间隔则 Sortable 的 `setInterval(_emulateDragOver, 50)` 无机会跑），再用 `dispatch_pointer(gesture='up')` 收尾。注意拖拽中布局持续变化（源元素被 Sortable 重排），**终点坐标必须在拖拽进行中重新测量**。
+5. **【已知，影响小】指针静止时指示线不会跟随 Sortable 自身的重排**：指示器只在 `pointermove` 时刷新，而 Sortable 的 `setInterval(_emulateDragOver, 50)` 会在指针不动时继续调整占位元素（带 200ms 动画）。所以「松手前一刻把指针停住、等动画跑完」的场景下，线可能停在旧位置（真机实测到 `top=470` vs 重排后的 `499`）。落位本身正确（意图按指针算、§6 不变式兜底），只是线的视觉位置会短暂不同步。要修的话得在意图重算之外再加一个 rAF/动画结束后的重锚。
+6. **文档与测试**：`docs/sort/phase-1-1-plan.md` / `phase-1-1-dev.md` 描述的是 v0.2 方案，已在文首标注「已作废」。单测覆盖 `resolveDropAction` / `applyDropTarget` 两个纯函数与 `handleBlockDragEnd` 的意图判据（`useBlockDragDrop.test.ts`）。
+
+   真机回归靠 tauri-mcp，混合法：`execute_js` 派发**带时间间隔**（`await sleep(130~150)`）的 `PointerEvent` 序列（无间隔则 `_emulateDragOver` 轮询无机会跑）→ 读 `.drop-indicator` 的 class/inline `top` 确认意图 → `dispatch_pointer(gesture='up')` 收尾。四个易踩的点：
+
+   - `pointerdown` 必须派发在 `.bullet-dot` 上（`handle: '.bullet-dot'`，Sortable 的 `_onTapStart` 绑在容器上、靠冒泡命中）；后续 `pointermove` 派发到 `document`（`_onTouchMove` 挂 document）。
+   - 拖拽中布局持续变化（占位元素被 Sortable 重排），**终点坐标必须在拖拽进行中重新测量**。
+   - 收尾用 `dispatch_pointer(gesture='up')`；**它的落点会重定位到元素中心**，所以别拿它当落点判据。更稳的做法是 `selector_value='.block-drag'`（浮层克隆就在指针处），坐标与指针一致。
+   - **落位判据只看 IPC**：`navigate(reload)` 后 `manage_ipc invoke get_blocks_by_page` 比对 `parent_id` / `pos`。拖拽后的即时 DOM 不可信（§10.2）。
+
+   2026-09-11 的实测记录（页面 `70fd4424…`，根级最后两块 `DD` / `EE`）：
+
+   | 手势 | 指针落点 | 落库结果 |
+   |---|---|---|
+   | 下拖 `DD`（在 `EE` 之上 → 拖到 `EE` 行下半区） | (930, 521) | `EE(4000) / DD(5000)` ✅ 落在 `EE` 之后 |
+   | 上拖 `DD`（在 `EE` 之下 → 拖到 `EE` 行上半区） | (930, 471) | `DD(4000) / EE(5000)` ✅ 回到 `EE` 之前 |
 
 ---
 

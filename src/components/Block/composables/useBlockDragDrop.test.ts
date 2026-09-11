@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useBlockDragDrop, resolveDropAction, applyDropTarget } from './useBlockDragDrop'
-import type { DropTargetGeometry } from './useBlockDragDrop'
+import type { DragEndIntent, DropTargetGeometry } from './useBlockDragDrop'
 import { useBlockStore } from '../../../stores/blocks'
 import type { Block, TreeNode } from '../../../types/block'
 
@@ -24,10 +24,70 @@ function makeNode(id: string, children: TreeNode[] = []): TreeNode {
   return { id, block: makeBlock({ id }), children }
 }
 
+/** 判定路径只读 bullet / row 的矩形；这里给出结构等价的替身（jsdom 没有布局） */
+interface FakeRect {
+  left: number
+  right: number
+  top: number
+  bottom: number
+  width: number
+  height: number
+}
+
+/** 行矩形：x 100..500（中区够宽），高 30 */
+function ROW(top: number): FakeRect {
+  return { left: 100, right: 500, top, bottom: top + 30, width: 400, height: 30 }
+}
+
+/** 拖拽容器（渲染 data-parent-id，根级为 ''） */
+function makeContainer(): HTMLElement {
+  const container = document.createElement('div')
+  container.dataset.parentId = ''
+  document.body.appendChild(container)
+  return container
+}
+
+/** 假 block 元素：真 DOM 元素 + 覆写 getBoundingClientRect（jsdom 无布局） */
+function makeBlockEl(id: string, rect: FakeRect, container: HTMLElement, className = 'block'): HTMLElement {
+  const el = document.createElement('div')
+  el.className = className
+  el.dataset.blockId = id
+  for (const childClass of ['block-row', 'block-bullet']) {
+    const child = document.createElement('div')
+    child.className = childClass
+    child.getBoundingClientRect = () => rect as unknown as DOMRect
+    el.appendChild(child)
+  }
+  container.appendChild(el)
+  return el
+}
+
+/** 指针命中物（`document.elementFromPoint` 的返回值） */
+function stubElementFromPoint(el: Element | null) {
+  ;(document as unknown as { elementFromPoint: unknown }).elementFromPoint = vi.fn(() => el)
+}
+
+/** 走真实接线取出 hook 挂到 document 上的 pointermove 处理器 */
+function startDrag(
+  handleDragStart: (evt: unknown) => void,
+  dragged: HTMLElement
+): (e: { clientX: number; clientY: number }) => void {
+  const add = vi.spyOn(document, 'addEventListener')
+  handleDragStart({ targetEl: dragged })
+  const handler = add.mock.calls.find(call => call[0] === 'pointermove')?.[1] as
+    | ((e: { clientX: number; clientY: number }) => void)
+    | undefined
+  add.mockRestore()
+  if (!handler) throw new Error('handleDragStart 未挂载 pointermove 监听')
+  return handler
+}
+
 describe('useBlockDragDrop', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.restoreAllMocks()
+    document.body.innerHTML = ''
+    stubElementFromPoint(null)
   })
 
   describe('handleBlockDragEnd', () => {
@@ -46,42 +106,32 @@ describe('useBlockDragDrop', () => {
       expect(onDragEnd).toHaveBeenCalledWith(null)
     })
 
-    it('末段清指示器后，此前记录的有效意图仍然生效', () => {
+    it('拖拽结束回传的是「指针最后停住的位置」算出的意图', () => {
       const blockStore = useBlockStore()
       const onDragEnd = vi.fn()
-      const { handleDragMove, handleBlockDragEnd } = useBlockDragDrop({ blockStore, onDragEnd })
+      const hook = useBlockDragDrop({ blockStore, onDragEnd })
 
-      // 真实 bullet 宽 20px、行宽 400px
-      const bulletEl = { getBoundingClientRect: () => ({ left: 100, right: 120, top: 100, height: 30 }) }
-      const rowEl = { getBoundingClientRect: () => ({ left: 100, right: 500, top: 100, height: 30 }) }
-      const targetBlockEl = {
-        dataset: { blockId: 'b2' },
-        parentElement: null,
-        nextElementSibling: null,
-        querySelector: (sel: string) => (sel === '.block-bullet' ? bulletEl : sel === '.block-row' ? rowEl : null)
-      }
+      const container = makeContainer()
+      const a = makeBlockEl('A', ROW(100), container)
+      const b = makeBlockEl('B', ROW(130), container)
+      makeBlockEl('C', ROW(160), container)
 
-      // 第一次 @move 命中中区 → 记录 sort 意图
-      handleDragMove({
-        dragged: { dataset: { blockId: 'b1' } },
-        related: { closest: () => targetBlockEl },
-        to: { dataset: { parentId: '' } },
-        originalEvent: { clientX: 300, clientY: 100 }
-      } as any)
+      // 指针停在 B 行下半区（130..160 的中心是 145）→ sort-after B
+      stubElementFromPoint(b)
+      const pointerMove = startDrag(hook.handleDragStart, a)
+      pointerMove({ clientX: 300, clientY: 145 })
 
-      // 末段 @move：指针回到被拖块自身 → clearIndicator（此前会连带作废意图）
-      handleDragMove({
-        dragged: { dataset: { blockId: 'b1' } },
-        related: { closest: () => ({ dataset: { blockId: 'b1' } }) },
-        to: { dataset: { parentId: '' } },
-        originalEvent: { clientX: 300, clientY: 100 }
-      } as any)
-
-      handleBlockDragEnd()
+      hook.handleBlockDragEnd()
       expect(onDragEnd).toHaveBeenCalledWith({
-        draggedId: 'b1',
-        target: { action: 'sort', toParentId: null, beforeId: 'b2' }
+        draggedId: 'A',
+        target: { action: 'sort', toParentId: null, beforeId: 'C' }
       })
+
+      // 意图落到树上 → A 移到 B 之后、C 之前
+      const tree = [makeNode('A'), makeNode('B'), makeNode('C')]
+      const intent = onDragEnd.mock.calls[0][0] as DragEndIntent
+      applyDropTarget(tree, intent.draggedId, intent.target)
+      expect(tree.map(n => n.id)).toEqual(['B', 'A', 'C'])
     })
 
     it('is a safe no-op when onDragEnd is not provided', () => {
@@ -112,21 +162,89 @@ describe('useBlockDragDrop', () => {
       const result = handleDragMove(evt as any)
       expect(result).toBe(false)
     })
+  })
 
-    it('returns false when dropping block onto itself', () => {
+  /**
+   * 回归：向下拖时落点曾恒偏上一个。
+   *
+   * Sortable 只在「决定换位」的瞬间派发 @move，而被拖元素换位后必然压在指针下方
+   * （ghost 跟随指针），Sortable 对它 early-return 不再派发 —— 最后的采样于是永远是
+   * 「指针刚进目标上半区」的判定。意图改由 pointermove 驱动后，指针压在被拖元素上时
+   * 退回同容器内最近的兄弟块，落位即 Sortable 摆好的槽位（用户看到的虚线占位）。
+   */
+  describe('指针压在被拖元素上（向下拖的回归）', () => {
+    it('退回同容器最近的兄弟块 → 保持 Sortable 摆好的槽位，不偏上一个', () => {
       const blockStore = useBlockStore()
-      blockStore.blocks = [makeBlock({ id: 'b1', pos: 0 })]
-      const { handleDragMove } = useBlockDragDrop({
-        blockStore
-      })
-      const evt = {
-        dragged: { dataset: { blockId: 'b1' } },
-        related: { closest: () => ({ dataset: { blockId: 'b1' } }) },
-        to: { dataset: { parentId: null } },
-        originalEvent: { clientX: 0, clientY: 0 }
-      }
-      const result = handleDragMove(evt as any)
-      expect(result).toBe(false)
+      const onDragEnd = vi.fn()
+      const hook = useBlockDragDrop({ blockStore, onDragEnd })
+
+      // 向下拖 A：Sortable 已把 A 换到 B 之后 → DOM [B, A]，指针停在 A 的占位行（130..160）上
+      const container = makeContainer()
+      makeBlockEl('B', ROW(100), container)
+      const a = makeBlockEl('A', ROW(130), container)
+      makeBlockEl('A', ROW(130), container, 'block block-drag') // fallback 克隆，不是合法目标
+
+      stubElementFromPoint(a) // 指针命中的是被拖元素自己
+      const pointerMove = startDrag(hook.handleDragStart, a)
+      pointerMove({ clientX: 300, clientY: 145 })
+
+      expect(hook.indicatorVisible.value).toBe(true)
+      expect(hook.indicatorClass.value).toBe('sort')
+      // 指示线锚在真正的插入口（被拖元素自己的行顶 = 虚线占位处），而不是目标行顶部
+      expect(hook.indicatorStyle.value.top).toBe('130px')
+
+      hook.handleBlockDragEnd()
+      const intent = onDragEnd.mock.calls[0][0] as DragEndIntent
+      expect(intent.draggedId).toBe('A')
+      // B 的下一块就是 A 自己 → 语义是「插到自己前面」，即原地不动
+      expect(intent.target).toEqual({ action: 'sort', toParentId: null, beforeId: 'A' })
+
+      const tree = [makeNode('B'), makeNode('A')]
+      applyDropTarget(tree, intent.draggedId, intent.target)
+      expect(tree.map(n => n.id)).toEqual(['B', 'A'])
+    })
+
+    it('向上拖是对称的（原本就正常的那一侧不回退）', () => {
+      const blockStore = useBlockStore()
+      const onDragEnd = vi.fn()
+      const hook = useBlockDragDrop({ blockStore, onDragEnd })
+
+      // 向上拖 B：Sortable 把 B 换到 A 之前 → DOM [B, A]，指针停在 B 的占位行上
+      const container = makeContainer()
+      const b = makeBlockEl('B', ROW(100), container)
+      makeBlockEl('A', ROW(130), container)
+
+      stubElementFromPoint(b)
+      const pointerMove = startDrag(hook.handleDragStart, b)
+      pointerMove({ clientX: 300, clientY: 115 })
+
+      hook.handleBlockDragEnd()
+      const intent = onDragEnd.mock.calls[0][0] as DragEndIntent
+      expect(intent.target).toEqual({ action: 'sort', toParentId: null, beforeId: 'A' })
+
+      const tree = [makeNode('B'), makeNode('A')]
+      applyDropTarget(tree, intent.draggedId, intent.target)
+      expect(tree.map(n => n.id)).toEqual(['B', 'A'])
+    })
+
+    it('指针没命中任何块（落在容器空白）时也用最近的兄弟块，不留丢意图', () => {
+      const blockStore = useBlockStore()
+      const onDragEnd = vi.fn()
+      const hook = useBlockDragDrop({ blockStore, onDragEnd })
+
+      const container = makeContainer()
+      makeBlockEl('B', ROW(100), container)
+      const a = makeBlockEl('A', ROW(130), container)
+
+      stubElementFromPoint(null)
+      const pointerMove = startDrag(hook.handleDragStart, a)
+      pointerMove({ clientX: 300, clientY: 145 })
+
+      expect(hook.indicatorVisible.value).toBe(true)
+
+      hook.handleBlockDragEnd()
+      const intent = onDragEnd.mock.calls[0][0] as DragEndIntent
+      expect(intent.target).toEqual({ action: 'sort', toParentId: null, beforeId: 'A' })
     })
   })
 
