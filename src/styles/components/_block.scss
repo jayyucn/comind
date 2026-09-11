@@ -381,7 +381,9 @@
   opacity: 0.3 !important;
 }
 
-.block-ghost {
+// 用 .block.block-ghost（特异性 0,2,0）压过 .block-children > .block 的 opacity:1（0,1,1）：
+// 否则子节点占位框被强制不透明（亮蓝），与根节点 0.3 透明度的灰蓝框不一致。
+.block.block-ghost {
   opacity: 0.3;
   background: var(--accent-06);
   border: 2px dashed var(--color-accent);
@@ -390,6 +392,10 @@
   max-width: 100%;
   height: var(--space-8);
   box-sizing: border-box;
+  // 边框对齐内容列（.block-inner）：整块包含 .block-indent 缩进占位，
+  // 占位框右移一个缩进量并收窄同等宽度；根级 --block-indent 为 0，各级表现一致。
+  margin-left: var(--block-indent, 0px);
+  width: calc(100% - var(--block-indent, 0px));
 
   .block-content,
   .block-bullet {
@@ -409,6 +415,13 @@
   .block-children::before {
     display: none !important;
   }
+}
+
+// 子块继承了 .block-children > .block 的 opacity/transform 入场过渡；
+// 占位框必须像根级一样瞬时成形，否则起拖 200ms 内仍是未透明的亮蓝边框。
+// Sortable 换位时写入的内联 transition 仅含 transform，不受此规则影响。
+.block-children > .block.block-ghost {
+  transition: none;
 }
 
 .block-drag {

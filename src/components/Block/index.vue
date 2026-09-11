@@ -36,12 +36,12 @@ import type { CrossBlockSelection } from '../../composables/useCrossBlockSelecti
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import { usePageStore } from '../../stores/pages'
 import type { TreeNode } from '../../types/block'
-import type { DragEndIntent } from './composables/useBlockDragDrop'
 import type { BlockSetupContext, BlockTypeEditorExposed, BlockTypeHooks } from '../../types/block-type'
 import {
   decodeRelationshipContent,
   setRelationshipSnapshot,
 } from '../../utils/relationship-content'
+import type { DragEndIntent } from './composables/useBlockDragDrop'
 
 defineOptions({
   name: 'Block'
@@ -407,7 +407,12 @@ watch(isActive, (active) => {
 </script>
 
 <template>
-  <div class="block" :class="[priorityClass, statusClass, { active: isActive, 'cb-selected': isSelected && !hasSelectedAncestor }]" :data-block-id="blockId">
+  <div
+    class="block"
+    :class="[priorityClass, statusClass, { active: isActive, 'cb-selected': isSelected && !hasSelectedAncestor }]"
+    :data-block-id="blockId"
+    :style="{ '--block-indent': indentWidth }"
+  >
     <div class="block-row">
       <!-- 缩进占位 -->
       <div class="block-indent" :style="{ width: indentWidth }"></div>
