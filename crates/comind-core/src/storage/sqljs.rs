@@ -1124,7 +1124,7 @@ impl ScreenViewRepository for SqlJsAdapter {
             .filter(|r| r.get("parent_id").map(|v| v == parent_id).unwrap_or(false))
             .filter_map(|r| r.get("id").cloned())
             .collect();
-        let ids_set: std::collections::HashSet<&String> = ordered_ids.iter().collect();
+        let ids_set: std::collections::HashSet<String> = ordered_ids.iter().cloned().collect();
         if ids_set.len() != ordered_ids.len() || ids_set != owned {
             return Err(Box::new(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
