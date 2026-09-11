@@ -12,10 +12,10 @@
  *   VueDraggable 的 @move 需要返回 false 来阻止循环嵌套等非法移动。
  * - draggableRef 通过 defineExpose 暴露给父组件，用于测量 childrenHeight。
  */
-import { computed, ref } from 'vue'
-import { VueDraggable } from 'vue-draggable-plus'
-import Block from '../index.vue'
-import type { TreeNode } from '../../../types/block'
+import { computed, ref } from 'vue';
+import { VueDraggable } from 'vue-draggable-plus';
+import type { TreeNode } from '../../../types/block';
+import Block from '../index.vue';
 
 const props = defineProps<{
   node: TreeNode
@@ -63,7 +63,7 @@ defineExpose({ draggableRef })
     filter=".bullet-chevron"
     :prevent-on-filter="false"
     :fallback-tolerance="5"
-    :animation="150"
+    :animation="200"
     ghost-class="block-ghost"
     drag-class="block-drag"
     chosen-class="block-chosen"

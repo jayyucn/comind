@@ -13,22 +13,22 @@
  * - handleDragEnd 将 tree 变更同步回 store（parentId + pos）
  * - store 变更通过 structureVersion watch 触发 syncFromStore 重建树
  */
-import { ref, watch, onMounted, onBeforeUnmount, provide, computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
+import { buildTree, syncTreeToStore } from '../composables/useBlockTree'
+import type { CrossBlockSelection } from '../composables/useCrossBlockSelection'
+import { useCrossBlockSelection } from '../composables/useCrossBlockSelection'
+import { COMIND_BLOCK_MIME, resolveClipboardForest } from '../services/external-paste-parse'
+import { ensureWikiLinkTargets, notifyCreatedPages } from '../services/paste-ensure-wiki-targets'
+import { blockOffsetFromPoint, selectionClientRects } from '../services/selection-geometry'
 import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
 import { usePageStore } from '../stores/pages'
-import Block from './Block/index.vue'
+import type { TreeNode } from '../types/block'
+import { sortByDocumentOrderIds } from '../utils/block-helpers'
 import BlockDropIndicator from './Block/components/BlockDropIndicator.vue'
 import { useSharedDropIndicator } from './Block/composables/useBlockDragDrop'
-import { buildTree, syncTreeToStore } from '../composables/useBlockTree'
-import type { TreeNode } from '../types/block'
-import { useCrossBlockSelection } from '../composables/useCrossBlockSelection'
-import type { CrossBlockSelection } from '../composables/useCrossBlockSelection'
-import { resolveClipboardForest, COMIND_BLOCK_MIME } from '../services/external-paste-parse'
-import { ensureWikiLinkTargets, notifyCreatedPages } from '../services/paste-ensure-wiki-targets'
-import { sortByDocumentOrderIds } from '../utils/block-helpers'
-import { blockOffsetFromPoint, selectionClientRects } from '../services/selection-geometry'
+import Block from './Block/index.vue'
 
 const props = defineProps<{
   /** 页面 ID，用于过滤 Block */
@@ -528,7 +528,7 @@ onBeforeUnmount(() => {
       filter=".bullet-chevron"
       :prevent-on-filter="false"
       :fallback-tolerance="5"
-      :animation="150"
+      :animation="200"
       ghost-class="block-ghost"
       drag-class="block-drag"
       chosen-class="block-chosen"
