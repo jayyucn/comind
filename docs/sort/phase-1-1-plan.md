@@ -1,5 +1,7 @@
 # Phase 1.1 规划
 
+> ⚠️ **已作废（2026-09-11）**：本文描述 v0.2 方案（`useSortable.ts` + `store.moveBlock`），两者均已从代码中移除，本文仅作历史留档，请勿据此改代码。现行实现见 [sortable-implementation.md](./sortable-implementation.md)。
+
 > 版本：v0.3
 > 日期：2026-04-26
 > 状态：**进行中**

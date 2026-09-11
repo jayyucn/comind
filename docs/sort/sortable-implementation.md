@@ -133,7 +133,7 @@ applyDropTarget(tree: TreeNode[], draggedId: string, target: DropTarget): boolea
   →                          blockStore.structureVersion++ → BlockList watch → syncFromStore() 重建 tree
 ```
 
-- **pos 策略**：`syncTreeToStore` 对整棵树重新分配连续 pos（gap 1000）。v0.2 的 `safeCalcInsertPos`「取中间值 + 间隔耗尽重编号」已随 `moveBlock` 一并删除。
+- **pos 策略**：`syncTreeToStore` 对整棵树重新分配连续 pos（gap 1000）。`safeCalcInsertPos`（取中间值 + 间隔耗尽重编号，`src/stores/blocks.ts`）**仍在**，但只服务非拖拽插入路径（`createBlock` / `insertSiblingAbove` / `insertAtPosition` / `mergeWithPrevious` / `indent` / `outdent` / `pasteBlocks`）；拖拽路径已不再调用它。随 `moveBlock` 一并删除的是 `src/stores/moveBlock.test.ts`。
 - **子节点跟随**：跨父级移动只改被拖块自己的 `parentId` / `pos`，其后代的 `parentId` 仍指向原父，无需修改。
 - **`parent_id` 语义**：`BlockService::update` 的 `parent_id: None` 意为「不修改」，表达不了「移到根级」；`save_blocks` 以传入值为权威，在 `update` 之后用 `BlockService::set_parent_id` 补写不一致（含清空为 NULL）。改这块时勿把这一步当冗余删掉。
 - **三处注入同源**：`BlockList.handleDragEnd`、`BlockModal` 的 `provide('onDragEnd')`、`Block/index.vue` 的透传 —— 终点都是 `syncTreeToStore`。
@@ -164,7 +164,7 @@ applyDropTarget(tree: TreeNode[], draggedId: string, target: DropTarget): boolea
 2. **中区不可达**（§5）：`sort-after`（追加到末尾）没有独立手势，只能用「拖到后继块左区」等价表达。
 3. **`@move` 只在块间移动时触发**（§4.3）：同一块内横向微调不刷新指示器。
 4. **【已于 2026-09-11 修复】`parent_id` 曾无法写回 NULL**：`BlockService::update` 的 `parent_id: Option<&str>` 中 `None` 意为「不修改」，而 `save_blocks` 直接透传 `block.parent_id.as_deref()`，于是「拖回根级」的 `null` 被静默忽略（`version` 照样自增）→ reload 后回到原父级。修法：`save_blocks` 在 `update` 之后比对 `updated.parent_id != block.parent_id`，不一致时调新增的 `BlockService::set_parent_id` 显式写回（含 NULL）。回归测试：`block_write.rs::save_blocks_clears_parent_id_back_to_root`。
-5. **文档与测试**：`docs/sort/phase-1-1-plan.md` / `phase-1-1-dev.md` 描述的是 v0.2 方案。单测覆盖 `resolveDropAction` / `applyDropTarget` 两个纯函数（`useBlockDragDrop.test.ts`）；真机回归靠 tauri-mcp，混合法：`execute_js` 派发**带时间间隔**的 `PointerEvent` 序列（无间隔则 Sortable 的 `setInterval(_emulateDragOver, 50)` 无机会跑），再用 `dispatch_pointer(gesture='up')` 收尾。
+5. **文档与测试**：`docs/sort/phase-1-1-plan.md` / `phase-1-1-dev.md` 描述的是 v0.2 方案，已在文首标注「已作废」。单测覆盖 `resolveDropAction` / `applyDropTarget` 两个纯函数（`useBlockDragDrop.test.ts`）；真机回归靠 tauri-mcp，混合法：`execute_js` 派发**带时间间隔**的 `PointerEvent` 序列（无间隔则 Sortable 的 `setInterval(_emulateDragOver, 50)` 无机会跑），再用 `dispatch_pointer(gesture='up')` 收尾。
 
 ---
 
