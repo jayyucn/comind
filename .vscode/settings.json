@@ -1,5 +1,7 @@
 {
     "files.exclude": {
+        "**/*.spec.ts": true,
+        "**/*.test.ts": true,
         "**/*.py": true,
         "memory/**": true
     },
