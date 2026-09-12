@@ -142,6 +142,9 @@ function blocksBetween(startEl: HTMLElement, endEl: HTMLElement): HTMLElement[] 
  * 2. 非端点侧若用容器边界（`root, 0` … `root.childNodes.length`），`getClientRects()`
  *    还会多吐一个「整个内容区盒子」的矩形，把整行铺成色带；夹到首/末**文本节点**
  *    后只剩逐行的文字行盒（interior 行铺满行宽、末行按实际字符宽度收窄）。
+ * 3. Range 跨过嵌套内联元素（如 `[[page]]` 渲染成的 `span > span.block-link >
+ *    span.wiki-bracket`）时，Chromium 会把同一段内联盒子**重复上报**（实测两组矩形
+ *    浮点值逐位相同）——覆盖层同位叠两层，颜色深一档。按几何去重。
  */
 export function selectionClientRects(anchor: BlockOffset, head: BlockOffset): DOMRect[] {
   const a = collapsedRangeAtBlockOffset(anchor.blockId, anchor.offset)
@@ -161,6 +164,7 @@ export function selectionClientRects(anchor: BlockOffset, head: BlockOffset): DO
 
   const blocks = blocksBetween(startEl, endEl)
   const rects: DOMRect[] = []
+  const seen = new Set<string>()
   for (let i = 0; i < blocks.length; i++) {
     const root = contentRoot(blocks[i])
     const isFirst = i === 0
@@ -173,7 +177,13 @@ export function selectionClientRects(anchor: BlockOffset, head: BlockOffset): DO
     const range = document.createRange()
     range.setStart(startNode, isFirst ? startPoint.startOffset : 0)
     range.setEnd(endNode, isLast ? endPoint.startOffset : (endNode as Text).length)
-    rects.push(...Array.from(range.getClientRects()))
+    for (const rect of Array.from(range.getClientRects())) {
+      if (rect.width <= 0 || rect.height <= 0) continue
+      const key = `${Math.round(rect.left * 100)}|${Math.round(rect.top * 100)}|${Math.round(rect.width * 100)}|${Math.round(rect.height * 100)}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      rects.push(rect)
+    }
   }
   return rects
 }
