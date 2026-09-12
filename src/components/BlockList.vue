@@ -554,7 +554,7 @@ onBeforeUnmount(() => {
   </div>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
 .block-list {
   padding-left: 0;
   padding-bottom: 40px;
@@ -572,7 +572,7 @@ onBeforeUnmount(() => {
 .text-selection-rect {
   position: fixed;
   pointer-events: none;
-  background: rgba(66, 133, 244, 0.15);
+  background: var(--selection-bg);
   border-radius: 2px;
   z-index: var(--z-sticky);
 }

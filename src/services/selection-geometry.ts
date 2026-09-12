@@ -70,12 +70,24 @@ function lastTextNode(root: HTMLElement): Text | null {
   return last
 }
 
+/** 取 root 下第一个文本节点（无文本时 null） */
+function firstTextNode(root: HTMLElement): Text | null {
+  let first: Text | null = null
+  walkTextNodes(root, (node) => { first = node; return false })
+  return first
+}
+
+/** 按 blockId 取块元素 */
+function blockElement(blockId: string): HTMLElement | null {
+  return document.querySelector(`[data-block-id="${blockId}"]`)
+}
+
 /**
  * 由 block 内字符偏移构造一个折叠的 DOM Range（`blockOffsetFromPoint` 的逆映射）。
  * 用于跨块选区高亮时确定起止点。
  */
 export function collapsedRangeAtBlockOffset(blockId: string, offset: number): Range | null {
-  const blockEl = document.querySelector(`[data-block-id="${blockId}"]`) as HTMLElement | null
+  const blockEl = blockElement(blockId)
   if (!blockEl) return null
 
   const root = contentRoot(blockEl)
@@ -109,23 +121,59 @@ export function collapsedRangeAtBlockOffset(blockId: string, offset: number): Ra
   return range
 }
 
+/** 同一 `.block-list` 子树内、文档序 startEl→endEl（含两端）的块元素 */
+function blocksBetween(startEl: HTMLElement, endEl: HTMLElement): HTMLElement[] {
+  const scope = startEl.closest('.block-list') ?? document
+  const all = Array.from(scope.querySelectorAll<HTMLElement>('[data-block-id]'))
+  const from = all.indexOf(startEl)
+  const to = all.indexOf(endEl)
+  if (from < 0 || to < 0 || from > to) return []
+  return all.slice(from, to + 1)
+}
+
 /**
  * 计算 anchor→head 跨块选区的所有视口矩形（每行一个）。
  * 支持反向拖拽（head 在 anchor 之前自动交换）。
+ *
+ * 逐块构造**只覆盖文字**的子 Range，而不是跨块一个大 Range：
+ * 1. 大 Range 在文档序上必然包住各块行首的 bullet / chevron 槽位（它们都排在
+ *    `.block-body` 之前），`getClientRects()` 会为这些槽位各吐一个矩形——高亮
+ *    凭空盖住 bullet dot。
+ * 2. 非端点侧若用容器边界（`root, 0` … `root.childNodes.length`），`getClientRects()`
+ *    还会多吐一个「整个内容区盒子」的矩形，把整行铺成色带；夹到首/末**文本节点**
+ *    后只剩逐行的文字行盒（interior 行铺满行宽、末行按实际字符宽度收窄）。
  */
 export function selectionClientRects(anchor: BlockOffset, head: BlockOffset): DOMRect[] {
   const a = collapsedRangeAtBlockOffset(anchor.blockId, anchor.offset)
   const h = collapsedRangeAtBlockOffset(head.blockId, head.offset)
   if (!a || !h) return []
 
-  const range = document.createRange()
-  range.setStart(a.startContainer, a.startOffset)
-  try {
-    range.setEnd(h.startContainer, h.startOffset)
-  } catch {
-    // head 在 anchor 之前（反向拖拽）：交换起止
-    range.setEnd(a.startContainer, a.startOffset)
-    range.setStart(h.startContainer, h.startOffset)
+  // 反向拖拽（head 在 anchor 之前）必须先按文档序排好两端点：Range.setEnd 遇到
+  // 早于起点的终点不会报错，而是把起点钳到终点，range 直接塌缩成锚点处零宽矩形
+  // ——高亮整体消失（向上拖拽选不出来的根因）。
+  const reversed = a.compareBoundaryPoints(Range.START_TO_START, h) > 0
+  const startPoint = reversed ? h : a
+  const endPoint = reversed ? a : h
+
+  const startEl = blockElement(reversed ? head.blockId : anchor.blockId)
+  const endEl = blockElement(reversed ? anchor.blockId : head.blockId)
+  if (!startEl || !endEl) return []
+
+  const blocks = blocksBetween(startEl, endEl)
+  const rects: DOMRect[] = []
+  for (let i = 0; i < blocks.length; i++) {
+    const root = contentRoot(blocks[i])
+    const isFirst = i === 0
+    const isLast = i === blocks.length - 1
+    // 端点侧用真实拖拽端点，其余侧夹到该块的首/末文本节点
+    const startNode = isFirst ? startPoint.startContainer : firstTextNode(root)
+    const endNode = isLast ? endPoint.startContainer : lastTextNode(root)
+    if (!startNode || !endNode) continue
+
+    const range = document.createRange()
+    range.setStart(startNode, isFirst ? startPoint.startOffset : 0)
+    range.setEnd(endNode, isLast ? endPoint.startOffset : (endNode as Text).length)
+    rects.push(...Array.from(range.getClientRects()))
   }
-  return Array.from(range.getClientRects())
+  return rects
 }
