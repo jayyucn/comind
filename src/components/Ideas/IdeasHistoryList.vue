@@ -144,6 +144,7 @@ onMounted(loadMonths)
   padding: 8px 36px;
   border-bottom: 1px solid var(--border, #E7E5E4);
   backdrop-filter: blur(4px);
+  user-select: none;
 }
 
 .history-scroller {
