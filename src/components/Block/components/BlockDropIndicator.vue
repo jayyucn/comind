@@ -10,8 +10,8 @@
  * - 基础样式（position:fixed; pointer-events:none; z-index:var(--z-sidebar)）保持与原
  *   getOrCreateIndicator 内联 cssText 一致，确保替换前后视觉等价。
  * - .visible 类控制透明度切换（与原逻辑一致）。
- * - sort / nest / promote 类由 useBlockDragDrop 通过 cssClass prop 透传，
- *   具体颜色/形态由全局样式表定义。
+ * - 所有放置意图共用同一种槽位形态（横线 + 左竖头，见 _block.scss 的 .drop-indicator）；
+ *   目标深度由 useBlockDragDrop 通过内联 left/width 表达，cssClass 不再区分动作类型。
  */
 const props = defineProps<{
   style: Record<string, string>

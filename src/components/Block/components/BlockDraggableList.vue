@@ -70,6 +70,11 @@ defineExpose({
 </script>
 
 <template>
+  <!--
+    fallback-on-body：跟随光标的克隆必须挂到 body。子级容器 .block-children 带
+    transform（折叠动画），会改写克隆 position:fixed 的包含块；且克隆挂在容器内会命中
+    .block-children > .block 的 transition: transform，拖影会延迟 200ms 追赶光标。
+  -->
   <VueDraggable
     ref="draggableRef"
     v-model="list"
@@ -89,6 +94,7 @@ defineExpose({
     drag-class="block-drag"
     chosen-class="block-chosen"
     :force-fallback="true"
+    :fallback-on-body="true"
     :empty-insert-threshold="0"
     :data-parent-id="parentId ?? ''"
     @start="onDragStart"

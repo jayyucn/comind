@@ -83,9 +83,11 @@ body {
   -webkit-user-drag: element;
 }
 
-// 临时占位符元素（跨容器拖拽时插入）
-.block-children > div:not([data-block-id]):not([data-parent-id]):not(.block-list-padding),
-.block-list > div:not([data-block-id]):not([data-parent-id]):not(.block-list-padding) {
+// 临时占位符元素（跨容器拖拽时插入）。
+// :not(.drop-indicator)：指示器是 .block-list 的常驻直接子 div（无 data-* 标记），
+// 不能被这条兜底规则一起隐藏（display:none !important 会压过 v-show）。
+.block-children > div:not([data-block-id]):not([data-parent-id]):not(.block-list-padding):not(.drop-indicator),
+.block-list > div:not([data-block-id]):not([data-parent-id]):not(.block-list-padding):not(.drop-indicator) {
   display: none !important;
 }
 

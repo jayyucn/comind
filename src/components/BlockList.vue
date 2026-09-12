@@ -15,8 +15,6 @@
  */
 import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import { buildTree, syncTreeToStore } from '../composables/useBlockTree'
-import { applyDropTarget } from './Block/composables/useBlockDragDrop'
-import type { DragEndIntent } from './Block/composables/useBlockDragDrop'
 import type { CrossBlockSelection } from '../composables/useCrossBlockSelection'
 import { useCrossBlockSelection } from '../composables/useCrossBlockSelection'
 import { COMIND_BLOCK_MIME, resolveClipboardForest } from '../services/external-paste-parse'
@@ -29,7 +27,8 @@ import type { TreeNode } from '../types/block'
 import { sortByDocumentOrderIds } from '../utils/block-helpers'
 import BlockDraggableList from './Block/components/BlockDraggableList.vue'
 import BlockDropIndicator from './Block/components/BlockDropIndicator.vue'
-import { useSharedDropIndicator } from './Block/composables/useBlockDragDrop'
+import type { DragEndIntent } from './Block/composables/useBlockDragDrop'
+import { applyDropTarget, useSharedDropIndicator } from './Block/composables/useBlockDragDrop'
 
 const props = defineProps<{
   /** 页面 ID，用于过滤 Block */

@@ -119,7 +119,7 @@ describe('useBlockDragDrop', () => {
       // 指针停在 B 行下半区（130..160 的中心是 145）→ sort-after B
       stubElementFromPoint(b)
       const pointerMove = startDrag(hook.handleDragStart, a)
-      pointerMove({ clientX: 300, clientY: 145 })
+      pointerMove({ clientX: 100, clientY: 145 })
 
       hook.handleBlockDragEnd()
       expect(onDragEnd).toHaveBeenCalledWith({
@@ -186,11 +186,13 @@ describe('useBlockDragDrop', () => {
 
       stubElementFromPoint(a) // 指针命中的是被拖元素自己
       const pointerMove = startDrag(hook.handleDragStart, a)
-      pointerMove({ clientX: 300, clientY: 145 })
+      pointerMove({ clientX: 100, clientY: 145 })
 
       expect(hook.indicatorVisible.value).toBe(true)
-      expect(hook.indicatorClass.value).toBe('sort')
-      // 指示线锚在真正的插入口（被拖元素自己的行顶 = 虚线占位处），而不是目标行顶部
+      expect(hook.indicatorClass.value).toBe('')
+      // 统一槽位：横线在同级内容列（bullet 左缘 100），纵向锚在真正的插入口
+      // （被拖元素自己的行顶 = 虚线占位处），而不是目标行顶部
+      expect(hook.indicatorStyle.value.left).toBe('100px')
       expect(hook.indicatorStyle.value.top).toBe('130px')
 
       hook.handleBlockDragEnd()
@@ -216,7 +218,7 @@ describe('useBlockDragDrop', () => {
 
       stubElementFromPoint(b)
       const pointerMove = startDrag(hook.handleDragStart, b)
-      pointerMove({ clientX: 300, clientY: 115 })
+      pointerMove({ clientX: 100, clientY: 115 })
 
       hook.handleBlockDragEnd()
       const intent = onDragEnd.mock.calls[0][0] as DragEndIntent
@@ -225,6 +227,27 @@ describe('useBlockDragDrop', () => {
       const tree = [makeNode('B'), makeNode('A')]
       applyDropTarget(tree, intent.draggedId, intent.target)
       expect(tree.map(n => n.id)).toEqual(['B', 'A'])
+    })
+
+    it('流动中的 ghost 不参与 beforeId 解析（几何基于「抽掉被拖块的树」）', () => {
+      const blockStore = useBlockStore()
+      const onDragEnd = vi.fn()
+      const hook = useBlockDragDrop({ blockStore, onDragEnd })
+
+      // Sortable 已把被拖的 A 换到 B、C 之间（ghost 在 DOM 中流动）
+      const container = makeContainer()
+      makeBlockEl('B', ROW(100), container)
+      const a = makeBlockEl('A', ROW(130), container, 'block block-ghost')
+      makeBlockEl('C', ROW(160), container)
+
+      // 指针在 B 行下半 → sort-after B：锚点应跳过 ghost A，取到真实的 C
+      stubElementFromPoint(container.querySelector('[data-block-id="B"]'))
+      const pointerMove = startDrag(hook.handleDragStart, a)
+      pointerMove({ clientX: 100, clientY: 120 })
+
+      hook.handleBlockDragEnd()
+      const intent = onDragEnd.mock.calls[0][0] as DragEndIntent
+      expect(intent.target).toEqual({ action: 'sort', toParentId: null, beforeId: 'C' })
     })
 
     it('指针没命中任何块（落在容器空白）时也用最近的兄弟块，不留丢意图', () => {
@@ -238,13 +261,169 @@ describe('useBlockDragDrop', () => {
 
       stubElementFromPoint(null)
       const pointerMove = startDrag(hook.handleDragStart, a)
-      pointerMove({ clientX: 300, clientY: 145 })
+      pointerMove({ clientX: 100, clientY: 145 })
 
       expect(hook.indicatorVisible.value).toBe(true)
 
       hook.handleBlockDragEnd()
       const intent = onDragEnd.mock.calls[0][0] as DragEndIntent
       expect(intent.target).toEqual({ action: 'sort', toParentId: null, beforeId: 'A' })
+    })
+  })
+
+  /**
+   * 三层嵌套假块：block 自身矩形是 border-box（含整棵子树），row 是单行矩形，
+   * bullet 每级向右缩进 44。模拟真实 .block 几何。
+   */
+  function makeTreeBlock(
+    id: string,
+    rects: { box: FakeRect; rowTop: number; bulletLeft: number },
+    mount: HTMLElement
+  ): { el: HTMLElement; children: HTMLElement } {
+    const el = document.createElement('div')
+    el.className = 'block'
+    el.dataset.blockId = id
+    el.getBoundingClientRect = () => {
+      const isCollapsed = el
+        .querySelector('.block-bullet')
+        ?.classList.contains('collapsed')
+      return (isCollapsed ? { ...rects.box, bottom: rects.rowTop + 30 } : rects.box) as unknown as DOMRect
+    }
+    const row = document.createElement('div')
+    row.className = 'block-row'
+    row.getBoundingClientRect = () => ROW(rects.rowTop)
+    const bullet = document.createElement('div')
+    bullet.className = 'block-bullet'
+    bullet.getBoundingClientRect = () =>
+      ({ left: rects.bulletLeft, right: rects.bulletLeft + 50, top: rects.rowTop + 3, bottom: rects.rowTop + 27, width: 50, height: 24 }) as unknown as DOMRect
+    const children = document.createElement('div')
+    children.className = 'block-children'
+    children.dataset.parentId = id
+    el.append(row, bullet, children)
+    mount.appendChild(el)
+    return { el, children }
+  }
+
+  /**
+   * 回归：子容器左 padding / 子块 indent 空白处 elementFromPoint 命中祖先块
+   * （.block 盒包含整棵子树），曾使子块 promote 左列只有 2px 可命中。
+   * refineTargetByBand 按「光标列 × y 所在最深后代」修正目标。
+   */
+  describe('目标精化：命中祖先 padding 时按列条带下钻', () => {
+    // G(bullet 100, 行 100..130, 盒到 190) > P(bullet 144, 行 130..160, 盒到 190) > C(bullet 188, 行 160..190)
+    function buildTree() {
+      const root = makeContainer()
+      const g = makeTreeBlock('G', { box: { ...ROW(100), bottom: 190 }, rowTop: 100, bulletLeft: 100 }, root)
+      const p = makeTreeBlock('P', { box: { ...ROW(130), bottom: 190 }, rowTop: 130, bulletLeft: 144 }, g.children)
+      const c = makeTreeBlock('C', { box: ROW(160), rowTop: 160, bulletLeft: 188 }, p.children)
+      const dragged = makeBlockEl('D', ROW(220), root)
+      return { root, g: g.el, p: p.el, c: c.el, dragged }
+    }
+
+    it('孙块行 × 祖父列：目标解析为 P，指示槽位画在祖父列（promote P）', () => {
+      const blockStore = useBlockStore()
+      const onDragEnd = vi.fn()
+      const hook = useBlockDragDrop({ blockStore, onDragEnd })
+      const { g, dragged } = buildTree()
+
+      stubElementFromPoint(g) // 指针在 G 子容器左 padding（292..312 那种区）
+      const pointerMove = startDrag(hook.handleDragStart, dragged)
+      pointerMove({ clientX: 100, clientY: 175 })
+
+      // 没有下钻到 P 之外（C 的条带左缘 = 188−44 = 144，x=100 不覆盖）
+      expect(hook.indicatorStyle.value.left).toBe('100px') // P bullet 144 −44
+
+      hook.handleBlockDragEnd()
+      const intent = onDragEnd.mock.calls[0][0] as DragEndIntent
+      // P 提升到 G 之后：G 的下一兄弟是 D
+      expect(intent.target).toEqual({ action: 'promote', toParentId: null, beforeId: 'D' })
+    })
+
+    it('孙块行 × 父列：穿过中间层解析到 C，槽位画父列（promote C）', () => {
+      const blockStore = useBlockStore()
+      const onDragEnd = vi.fn()
+      const hook = useBlockDragDrop({ blockStore, onDragEnd })
+      const { g, dragged } = buildTree()
+
+      stubElementFromPoint(g)
+      const pointerMove = startDrag(hook.handleDragStart, dragged)
+      pointerMove({ clientX: 144, clientY: 175 })
+
+      expect(hook.indicatorStyle.value.left).toBe('144px') // C bullet 188 −44
+
+      hook.handleBlockDragEnd()
+      const intent = onDragEnd.mock.calls[0][0] as DragEndIntent
+      // C 的父是 P、祖父是 G；P 无下一兄弟 → 追加到 G 容器末尾
+      expect(intent.target).toEqual({ action: 'promote', toParentId: 'G', beforeId: null })
+    })
+
+    it('光标列在条带左缘之外 → 停在祖先块（根级左列钳制为 sort）', () => {
+      const blockStore = useBlockStore()
+      const onDragEnd = vi.fn()
+      const hook = useBlockDragDrop({ blockStore, onDragEnd })
+      const { g, dragged } = buildTree()
+
+      stubElementFromPoint(g)
+      const pointerMove = startDrag(hook.handleDragStart, dragged)
+      pointerMove({ clientX: 55, clientY: 175 }) // < G bullet 100−44=56
+      hook.handleBlockDragEnd()
+      const intent = onDragEnd.mock.calls[0][0] as DragEndIntent
+      expect(intent.target).toEqual({ action: 'sort', toParentId: null, beforeId: 'D' })
+    })
+
+    it('折叠的中间层不下钻', () => {
+      const blockStore = useBlockStore()
+      const onDragEnd = vi.fn()
+      const hook = useBlockDragDrop({ blockStore, onDragEnd })
+      const { g, p, dragged } = buildTree()
+      p.querySelector('.block-bullet')!.classList.add('collapsed')
+
+      stubElementFromPoint(g)
+      const pointerMove = startDrag(hook.handleDragStart, dragged)
+      pointerMove({ clientX: 100, clientY: 175 }) // 折叠后 P 盒收缩到 130..160，停在 G（中列 → sort）
+      hook.handleBlockDragEnd()
+      const intent = onDragEnd.mock.calls[0][0] as DragEndIntent
+      expect(intent.target).toEqual({ action: 'sort', toParentId: null, beforeId: 'D' })
+    })
+  })
+
+  describe('Esc 取消拖拽', () => {
+    it('回滚：DOM 插回原槽位，@end 回传「写回原槽位」的 sort 意图', () => {
+      const blockStore = useBlockStore()
+      const onDragEnd = vi.fn()
+      const hook = useBlockDragDrop({ blockStore, onDragEnd })
+
+      const container = makeContainer()
+      const a = makeBlockEl('A', ROW(100), container)
+      makeBlockEl('B', ROW(130), container)
+      makeBlockEl('C', ROW(160), container)
+
+      const bEl = container.querySelector('[data-block-id="B"]') as HTMLElement
+      stubElementFromPoint(bEl)
+      const pointerMove = startDrag(hook.handleDragStart, a)
+      pointerMove({ clientX: 100, clientY: 145 })
+      expect(hook.indicatorVisible.value).toBe(true)
+
+      // 模拟 Sortable 换位：被拖元素在 DOM 中被移到末尾
+      container.appendChild(a)
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      expect(hook.indicatorVisible.value).toBe(false)
+      // 1) DOM 已被插回原槽位
+      expect(Array.from(container.children).map(e => (e as HTMLElement).dataset.blockId)).toEqual([
+        'A',
+        'B',
+        'C'
+      ])
+
+      hook.handleBlockDragEnd()
+      // 2) @end 回传的不是 null（vue-draggable-plus 仍会强制 splice 数组），
+      //    而是写回原槽位的 sort 意图，经 applyDropTarget 校正后树恢复原序
+      const intent = onDragEnd.mock.calls[0][0] as DragEndIntent
+      expect(intent).toEqual({ draggedId: 'A', target: { action: 'sort', toParentId: null, beforeId: 'B' } })
+      const tree = [makeNode('B'), makeNode('A'), makeNode('C')]
+      applyDropTarget(tree, intent.draggedId, intent.target)
+      expect(tree.map(n => n.id)).toEqual(['A', 'B', 'C'])
     })
   })
 
@@ -321,107 +500,129 @@ describe('applyDropTarget', () => {
   })
 })
 
-describe('resolveDropAction', () => {
-  /** bullet 矩形 x 100..150、y 100..130 → 左区 x<=115、右区 x>=135、中线 y=115 */
+describe('resolveDropAction（间隙 × 深度刻度矩阵）', () => {
+  // bullet x 100..150、y 100..130；刻度 44 → 中列 [78,122)、右列 ≥122、左列 ≤78；y 中线 115
   const bulletRect = { left: 100, right: 150, top: 100, height: 30 }
 
   function geometry(overrides: Partial<DropTargetGeometry> = {}): DropTargetGeometry {
     return {
       blockId: 'b2',
       parentId: 'b1',
+      grandparentId: 'g1',
       nextSiblingId: 'b3',
+      parentNextSiblingId: 'b4',
+      firstChildId: 'b2c1',
       bulletRect,
-      rowRect: bulletRect,
       ...overrides
     }
   }
 
   it('returns null when the target block has no bullet', () => {
-    expect(resolveDropAction({ x: 120, y: 110 }, geometry({ bulletRect: null }))).toBeNull()
+    expect(resolveDropAction({ x: 100, y: 110 }, geometry({ bulletRect: null }))).toBeNull()
   })
 
-  it('promotes to the parent when cursor is in the left zone', () => {
-    expect(resolveDropAction({ x: 110, y: 110 }, geometry())).toEqual({
-      action: 'promote',
-      toParentId: 'b1',
-      beforeId: 'b2'
-    })
+  it('returns null when the target block has no id', () => {
+    expect(resolveDropAction({ x: 100, y: 110 }, geometry({ blockId: null }))).toBeNull()
   })
 
-  it('falls back to sort at root level when left zone has no parent', () => {
-    expect(resolveDropAction({ x: 110, y: 110 }, geometry({ parentId: null }))).toEqual({
-      action: 'sort',
-      toParentId: null,
-      beforeId: 'b2'
-    })
-  })
-
-  it('nests into the target when cursor is in the right zone', () => {
-    expect(resolveDropAction({ x: 140, y: 110 }, geometry())).toEqual({
-      action: 'nest',
-      toParentId: 'b2',
-      beforeId: null
-    })
-  })
-
-  it('sorts before the target in the upper half of the center zone', () => {
-    expect(resolveDropAction({ x: 125, y: 110 }, geometry())).toEqual({
+  it('中列上半区 → sort 到目标之前', () => {
+    expect(resolveDropAction({ x: 100, y: 110 }, geometry())).toEqual({
       action: 'sort',
       toParentId: 'b1',
       beforeId: 'b2'
     })
   })
 
-  it('sorts before the next sibling in the lower half of the center zone', () => {
-    expect(resolveDropAction({ x: 125, y: 120 }, geometry())).toEqual({
+  it('中列下半区 → sort 到下一兄弟之前', () => {
+    expect(resolveDropAction({ x: 100, y: 120 }, geometry())).toEqual({
       action: 'sort',
       toParentId: 'b1',
       beforeId: 'b3'
     })
   })
 
-  it('appends to the end when there is no next sibling', () => {
-    expect(resolveDropAction({ x: 125, y: 120 }, geometry({ nextSiblingId: null }))).toEqual({
+  it('中列下半区且无下一兄弟 → 追加到同级末尾', () => {
+    expect(resolveDropAction({ x: 100, y: 120 }, geometry({ nextSiblingId: null }))).toEqual({
       action: 'sort',
       toParentId: 'b1',
       beforeId: null
     })
   })
 
-  it('treats exact threshold boundaries as left and right zones', () => {
-    expect(resolveDropAction({ x: 115, y: 110 }, geometry())?.action).toBe('promote')
-    expect(resolveDropAction({ x: 135, y: 110 }, geometry())?.action).toBe('nest')
+  it('右列上半区 → nest 到长子位（beforeId = 长子）', () => {
+    expect(resolveDropAction({ x: 130, y: 110 }, geometry())).toEqual({
+      action: 'nest',
+      toParentId: 'b2',
+      beforeId: 'b2c1'
+    })
   })
 
-  it('真实 20px bullet 下中区为空集，改用行矩形基准后中区可达', () => {
-    // 真机实测：bullet 宽 20px、.block-row 宽约 400px。
-    // 用 bullet 作基准时 left 阈(115) 与 right 阈(left+5) 交叉 → 中区为空，
-    // 同一光标位置只能落进右区，sort-after 无法用手势表达。
-    const narrowBullet = { left: 100, right: 120, top: 100, height: 30 }
-    const wideRow = { left: 100, right: 500, top: 100, height: 30 }
+  it('右列下半区 → nest 到子级末尾', () => {
+    expect(resolveDropAction({ x: 130, y: 120 }, geometry())).toEqual({
+      action: 'nest',
+      toParentId: 'b2',
+      beforeId: null
+    })
+  })
 
-    expect(
-      resolveDropAction({ x: 300, y: 110 }, geometry({ bulletRect: narrowBullet, rowRect: narrowBullet }))?.action
-    ).toBe('nest')
+  it('右列上半区但目标无子 → beforeId 为 null（空 children 追加）', () => {
+    expect(resolveDropAction({ x: 130, y: 110 }, geometry({ firstChildId: null }))).toEqual({
+      action: 'nest',
+      toParentId: 'b2',
+      beforeId: null
+    })
+  })
 
-    expect(resolveDropAction({ x: 300, y: 110 }, geometry({ bulletRect: narrowBullet, rowRect: wideRow }))).toEqual({
+  it('左列上半区 → promote 到祖父容器、父块之前', () => {
+    expect(resolveDropAction({ x: 70, y: 110 }, geometry())).toEqual({
+      action: 'promote',
+      toParentId: 'g1',
+      beforeId: 'b1'
+    })
+  })
+
+  it('左列下半区 → promote 到父块的下一兄弟之前（父块之后）', () => {
+    expect(resolveDropAction({ x: 70, y: 120 }, geometry())).toEqual({
+      action: 'promote',
+      toParentId: 'g1',
+      beforeId: 'b4'
+    })
+  })
+
+  it('左列下半区且父块无下一兄弟 → 追加到祖父容器末尾', () => {
+    expect(resolveDropAction({ x: 70, y: 120 }, geometry({ parentNextSiblingId: null }))).toEqual({
+      action: 'promote',
+      toParentId: 'g1',
+      beforeId: null
+    })
+  })
+
+  it('根级行的左列钳制为同级 sort（无可提升处）', () => {
+    expect(resolveDropAction({ x: 70, y: 110 }, geometry({ parentId: null, grandparentId: null }))).toEqual({
       action: 'sort',
-      toParentId: 'b1',
+      toParentId: null,
       beforeId: 'b2'
     })
-
-    // 行右端 15px 内才是 nest
-    expect(
-      resolveDropAction({ x: 490, y: 110 }, geometry({ bulletRect: narrowBullet, rowRect: wideRow }))?.action
-    ).toBe('nest')
+    expect(resolveDropAction({ x: 70, y: 120 }, geometry({
+      parentId: null,
+      grandparentId: null,
+      nextSiblingId: 'b3'
+    }))).toEqual({
+      action: 'sort',
+      toParentId: null,
+      beforeId: 'b3'
+    })
   })
 
-  it('缺省 rowRect 时退回 bulletRect 基准', () => {
-    expect(
-      resolveDropAction(
-        { x: 300, y: 110 },
-        { blockId: 'b2', parentId: 'b1', nextSiblingId: null, bulletRect: { left: 100, right: 120, top: 100, height: 30 } }
-      )?.action
-    ).toBe('nest')
+  it('半刻度边界：+22 降级、−22 提升，±21 仍同级', () => {
+    expect(resolveDropAction({ x: 122, y: 110 }, geometry())?.action).toBe('nest')
+    expect(resolveDropAction({ x: 121, y: 110 }, geometry())?.action).toBe('sort')
+    expect(resolveDropAction({ x: 78, y: 110 }, geometry())?.action).toBe('promote')
+    expect(resolveDropAction({ x: 79, y: 110 }, geometry())?.action).toBe('sort')
+  })
+
+  it('跨多列只切一级（多级切换本轮不启用）', () => {
+    expect(resolveDropAction({ x: 200, y: 110 }, geometry())?.action).toBe('nest')
+    expect(resolveDropAction({ x: 0, y: 110 }, geometry())?.action).toBe('promote')
   })
 })
