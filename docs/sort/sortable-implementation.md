@@ -1,9 +1,9 @@
 # Block 拖拽实现（vue-draggable-plus / Sortable.js）
 
-> 版本：v0.4
-> 日期：2026-09-11
+> 版本：v0.5
+> 日期：2026-09-12
 > 状态：**现行实现**。v0.2 的 `useSortable` + `moveBlock` 增量写路径已于 2026-09-11 的拖拽重构中作废，差异见 §11。
-> v0.4 修订：落位意图改为拖拽期 `pointermove` 实时重算（原来靠 Sortable 的 `@move` 采样，导致「向下拖落点偏上一个」，见 §4.5）；`sort` 指示线锚到真正的插入口（§9）；补上 fallback 模式下的 DOM 角色辨析（§4.4）。
+> v0.5 修订：§5 放置判定对齐现行的「间隙 × 深度刻度」六格矩阵（`computeDepthDelta`，取代旧的行缘 15px 热区描述）；§10.2 跨容器拆散子树复验通过、标记已修复；§10.7/10.8 记录候选 3（指示器去单例化）与候选 4（单一编排层）的评估结论——均不采纳。
 
 ---
 
@@ -128,21 +128,20 @@ container.appendChild(ghostEl)                     // container = rootEl（本�
 
 ## 5. 放置判定 —— `resolveDropAction`（纯函数）
 
-光标相对**目标块整行（`.block-row`）**的位置决定语义（左右阈值各 15px，见 `src/composables/useDragDrop.ts`）：
+**「间隙 × 深度刻度」六格矩阵**（2026-09-12 起现行，取代旧的「行左右缘 15px 热区」模型）：
 
-| 光标区 | 条件 | 结果 |
-|---|---|---|
-| 左区 | `x ≤ row.left + 15` | 目标有父级 → `promote`（提升到目标父级、位于目标之前）；目标已在根级 → `sort`（before 目标） |
-| 右区 | `x ≥ row.right - 15` | `nest`（成为目标块的子节点，追加到末尾） |
-| 中区 | 其余 | `sort`（按上下半区决定 before 目标 / before 其后继） |
+- **Y 维（间隙）**：光标相对目标块 **bullet 垂直中线**分上/下半区 → `computeSortPosition`（`useDragDrop.ts`），决定 before / after；
+- **X 维（深度）**：光标相对目标块 **bullet 左缘**按 `INDENT_TOTAL_PER_LEVEL`(44) 刻度量化为 −1/0/+1 → `computeDepthDelta`，锚点两侧各 ±22px（半刻度）为同级宽列；
+- 根级行的 −1 列钳制为同级 `sort`（根级无可提升处）。
 
-**水平基准必须是行矩形，不能是 bullet 矩形**：bullet 实测宽仅 20px，`left + 15 = right − 5 > right − 15` ⇒ 中区为空集，`sort-after` 永远无法用手势表达（2026-09-11 修复，见 §10.1）。行矩形宽数百 px，三区都可用。
+| | 左列 −1（`x ≤ bullet.left − 22`） | 中列 0（±22 内） | 右列 +1（`x ≥ bullet.left + 22`） |
+|---|---|---|---|
+| **上半区** | P 之前 / `promote` | T 之前 / `sort` | T 长子位 / `nest`（`beforeId = firstChildId`，无子则 null = 追加） |
+| **下半区** | P 之后 / `promote` | T 之后 / `sort` | T 末尾子位 / `nest`（追加） |
 
-⚠️ 单测里的 `bulletRect` 是宽 50px 的假数据，中区「看起来」可达 —— 改阈值时必须同时按真实 20px 尺寸验证；`useBlockDragDrop.test.ts` 有一条专门的对照用例（同一个光标位置：bullet 基准判 `nest`、行基准判 `sort`）。
+其中 P = 目标的父块，promote 的 `beforeId` 取 `parentId`（上半）/ `parentNextSiblingId`（下半）。**真机取点必须钉在目标 bullet 左缘 ±22 内才能表达同级 sort**——把 x 放在行中部（offset ≫ +22）会判成 `nest`（2026-09-12 真机实测两次踩中）。
 
-`DropTargetGeometry.rowRect` 是可选字段，缺省退回 `bulletRect`（兼容既有单测与旧调用）。
-
-`readDropGeometry` 是模块内唯一接触 DOM 的入口（读 `data-block-id`、bullet rect、`rowRect`、父块 `data-parent-id`、`nextElementSibling`）；`findDropTarget` 只是它加 `resolveDropAction` 的适配层。
+`readDropGeometry` 是模块内唯一接触 DOM 的入口（读 `data-block-id`、bullet rect、`rowRect`、父块/祖父块/后继兄弟的 id）；`findDropTarget` 只是它加 `resolveDropAction` 的适配层。
 
 ---
 
@@ -187,7 +186,7 @@ applyDropTarget(tree: TreeNode[], draggedId: string, target: DropTarget): boolea
 ```
 
 - **pos 策略**：`syncTreeToStore` 对整棵树重新分配连续 pos（gap 1000）。`safeCalcInsertPos`（取中间值 + 间隔耗尽重编号，`src/stores/blocks.ts`）**仍在**，但只服务非拖拽插入路径（`createBlock` / `insertSiblingAbove` / `insertAtPosition` / `mergeWithPrevious` / `indent` / `outdent` / `pasteBlocks`）；拖拽路径已不再调用它。随 `moveBlock` 一并删除的是 `src/stores/moveBlock.test.ts`。
-- **子节点跟随**：跨父级移动**本应**只改被拖块自己的 `parentId` / `pos`（后代的 `parentId` 指向被拖块，无需修改）—— 但实测跨容器拖拽会破坏这一点，见 §10.2。
+- **子节点跟随**：跨父级移动只改被拖块自己的 `parentId` / `pos`（后代的 `parentId` 指向被拖块，无需修改）。跨容器拖拽曾破坏过这一点（§10.2），2026-09-12 三条路径复验已不再复现。
 - **`parent_id` 语义**：`BlockService::update` 的 `parent_id: None` 意为「不修改」，表达不了「移到根级」；`save_blocks` 以传入值为权威，在 `update` 之后用 `BlockService::set_parent_id` 补写不一致（含清空为 NULL）。改这块时勿把这一步当冗余删掉。
 - **三处注入同源**：`BlockList.handleDragEnd`、`BlockModal` 的 `provide('onDragEnd')`、`Block/index.vue` 的透传 —— 终点都是 `syncTreeToStore`。
 - **弹窗子树**：`BlockModal` 的树以弹窗根块为根，意图里的 `toParentId === rootId` 先归一化为 `null` 再交给 `applyDropTarget`。
@@ -229,7 +228,7 @@ applyDropTarget(tree: TreeNode[], draggedId: string, target: DropTarget): boolea
 ## 10. 已知缺口
 
 1. **【已于 2026-09-11 修复】指示器几何不准 + 中区不可达**：水平基准曾用 20px 的 bullet 矩形 → 中区为空集（`sort-after` 无独立手势）、`sort`/`promote` 横线只有 20px、`nest` 线宽被 clamp 到 1px；`nest` 还按 `24 * (depth + 1)` 算缩进（`.block` 上没有 `data-depth`，恒按 0 算）。修法：基准换成 `.block-row`，缩进改为常量 `INDENT_TOTAL_PER_LEVEL = 44`，**不引入 `data-depth`**（引入反而把缩进算两遍，见 §9）。对照回归用例：`useBlockDragDrop.test.ts` 的「真实 20px bullet 下中区为空集，改用行矩形基准后中区可达」。
-2. **【未修，高危】跨容器拖拽会拆散子树**：把带子块的块从子容器拖到**根容器**后，它的二级子块被提升为根级（实测：`CC` 带子块 `AA` 从 `BBB` 的子容器拖到根容器 → `AA.parent_id` 由 `CC` 变成 `null`）。**同容器内 sort 不触发**（对照实验通过）。同一次拖拽后还观察到 DOM 内容错位（`AA` 重复 3 次、被拖块消失），reload 后由数据重建才恢复。疑因嵌套 Sortable 列表未声明 item 选择器（`closest` 可能命中嵌套子块）或 v-model 的 `onRemove`/`onAdd` 索引按 DOM 计算，需进一步确认。**在修好之前，跨容器拖拽的回归必须以「reload 后比对 IPC 数据」为准，不要相信拖拽后的即时 DOM。**
+2. **【已修复，2026-09-12 复验通过】跨容器拖拽曾拆散子树**：历史现象是把带子块的块从子容器拖到根容器后，其子块被提升为根级（`AA.parent_id` 由 `CC` 变 `null`），且拖拽后即时 DOM 错位（`AA` 重复 3 次、被拖块消失）。2026-09-12 在测试页（`CC` 带两个子块，置于 `BBB` 子容器）复验三条跨容器路径：nest 进根级块（×2）、根级 sort（指针钉在目标 bullet ±22 内，落点 = EE 之前根级），三次落库后子块 `parent_id` 均保持指向被拖块，子树完整随迁，DOM 亦无错位。判定为已被落位策略重构（`efb7053` invert-swap + `8e83d30` 指示/占位重构）顺带修复；真机回归仍以「reload 后比对 IPC 数据」为准（§10.6）。
 3. **【已于 2026-09-11 修复】「向下拖时落点偏上一个」**：根因是意图来自 Sortable 的 `@move` 稀疏采样，被拖元素换位后挡住指针 → `_onDragOver` early-return → 采样冻结在换位前那一帧（完整机理见 §4.5）。修法：意图改由 document 级 `pointermove` 持续重算。回归用例：`useBlockDragDrop.test.ts` 的 `指针压在被拖元素上（向下拖的回归）` 三条。真机双向验证（下拖 → `EE,DD`；上拖 → `DD,EE`）见 §10.6。
 4. **【已于 2026-09-11 修复】`parent_id` 曾无法写回 NULL**：`BlockService::update` 的 `parent_id: Option<&str>` 中 `None` 意为「不修改」，而 `save_blocks` 直接透传 `block.parent_id.as_deref()`，于是「拖回根级」的 `null` 被静默忽略（`version` 照样自增）→ reload 后回到原父级。修法：`save_blocks` 在 `update` 之后比对 `updated.parent_id != block.parent_id`，不一致时调新增的 `BlockService::set_parent_id` 显式写回（含 NULL）。回归测试：`block_write.rs::save_blocks_clears_parent_id_back_to_root`。
 5. **【已知，影响小】指针静止时指示线不会跟随 Sortable 自身的重排**：指示器只在 `pointermove` 时刷新，而 Sortable 的 `setInterval(_emulateDragOver, 50)` 会在指针不动时继续调整占位元素（带 200ms 动画）。所以「松手前一刻把指针停住、等动画跑完」的场景下，线可能停在旧位置（真机实测到 `top=470` vs 重排后的 `499`）。落位本身正确（意图按指针算、§6 不变式兜底），只是线的视觉位置会短暂不同步。要修的话得在意图重算之外再加一个 rAF/动画结束后的重锚。
@@ -241,6 +240,9 @@ applyDropTarget(tree: TreeNode[], draggedId: string, target: DropTarget): boolea
    - 拖拽中布局持续变化（占位元素被 Sortable 重排），**终点坐标必须在拖拽进行中重新测量**。
    - 收尾用 `dispatch_pointer(gesture='up')`；**它的落点会重定位到元素中心**，所以别拿它当落点判据。更稳的做法是 `selector_value='.block-drag'`（浮层克隆就在指针处），坐标与指针一致。
    - **落位判据只看 IPC**：`navigate(reload)` 后 `manage_ipc invoke get_blocks_by_page` 比对 `parent_id` / `pos`。拖拽后的即时 DOM 不可信（§10.2）。
+
+7. **【已评估，不采纳，2026-09-12】指示器状态去单例化**（原候选 3）：曾提议把模块级 `sharedIndicator*` 改为 provide/inject 作用域，避免多实例（KeepAlive 缓存 / 弹窗）抢占同一指示器。评估结论：**模块级单例在「同一时刻只有一次拖拽、指示器只该有一条」的前提下是正确语义而非缺陷**；#82 的真正教训（缓存实例的 document 监听双处理）已被现有防线覆盖——pointermove 监听只在拖拽期挂载（`@start` 接 / `@end` 摘）+ `onBeforeUnmount(stopPointerTracking)` 兜底，残留风险仅剩「拖拽中途组件被卸载」的极端路径。重写要动全部挂载点的接线，成本 > 防回归收益。**触发重估的条件**：真机出现指示器串页 / 双指示器 / 缓存实例残留指示器的实际 bug。
+8. **【已评估，不采纳，2026-09-12】单一 useBlockDrag 编排层**（原候选 4）：曾提议收敛散落 7 文件的拖拽关注点。评估结论：「7 文件」中真正含拖拽逻辑的只有 3 个（`useBlockDragDrop.ts` 判定/意图、`BlockDraggableList.vue` Sortable 接线、`BlockModal.vue` 意图消费），其余是渲染组件（`BlockDropIndicator`）、集成点（`BlockList` / `Block/index.vue` 的 provide/inject）与数据层（`syncTreeToStore` / stores），且「单一写路径」刚在候选 5/6 收敛完成、职责清晰。再加一层编排等于推翻刚稳定的架构，风险 > 收益。另：早期 grep 命中的 `NamedViewBar` / `FieldManagerPanel` / `SortMenu` 是 "sort" 菜单的误匹配，与拖拽无关。
 
    2026-09-11 的实测记录（页面 `70fd4424…`，根级最后两块 `DD` / `EE`）：
 
