@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
+import { computed } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import { useBlockStore } from '../stores/blocks'
 import { usePropertyStore } from '../stores/property'
@@ -223,6 +224,106 @@ describe('useCrossBlockSelection', () => {
     })
   })
 
+  describe('互斥不变量（ADR-0035 D2：任意时刻至多一种选区）', () => {
+    /** 当前非空的选区种类 */
+    function activeKinds(selection: ReturnType<typeof useCrossBlockSelection>): string[] {
+      const kinds: string[] = []
+      if (selection.anchorIds.size > 0 || selection.selectedIds.size > 0) kinds.push('block')
+      if (selection.textRange.value) kinds.push('text')
+      return kinds
+    }
+
+    test('写块 id 视图（BlockList 拖拽落位路径）不保留文本选区', () => {
+      const selection = useCrossBlockSelection()
+
+      selection.startTextTracking({ blockId: 'a', offset: 0 }, { x: 0, y: 0 })
+      selection.updateTextDrag({ blockId: 'a', offset: 2 })
+      expect(selection.textRange.value).not.toBeNull()
+
+      selection.selectedIds.add('b')
+
+      expect(selection.selectedIds.size).toBe(1)
+      expect(selection.textRange.value).toBeNull()
+    })
+
+    test('任意动作序列后至多一种选区非空', async () => {
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+      const b1 = await blockStore.createBlock({ pageId, content: 'Block 1' })
+      const b2 = await blockStore.createBlock({ pageId, content: 'Block 2', parentId: b1.id })
+
+      const actions: Array<[string, () => void]> = [
+        ['startTracking', () => selection.startTracking(b1.id, true)],
+        ['块拖拽落位（startTracking→isDragging→selectedIds.add）', () => {
+          selection.startTracking(b1.id)
+          selection.isDragging.value = true
+          selection.selectedIds.add(b1.id)
+        }],
+        ['selectedIds.add', () => selection.selectedIds.add(b1.id)],
+        ['finalizeSelection', () => selection.finalizeSelection()],
+        ['anchorIds.add', () => selection.anchorIds.add(b2.id)],
+        ['toggleBlock', () => selection.toggleBlock(b1.id, pageId)],
+        ['selectAll', () => selection.selectAll(pageId)],
+        ['文本拖拽（startTextTracking→updateTextDrag）', () => {
+          selection.startTextTracking({ blockId: b1.id, offset: 1 }, { x: 0, y: 0 })
+          selection.updateTextDrag({ blockId: b2.id, offset: 2 })
+        }],
+        ['startTextTracking', () => selection.startTextTracking({ blockId: b1.id, offset: 1 }, { x: 0, y: 0 })],
+        ['updateTextDrag', () => selection.updateTextDrag({ blockId: b2.id, offset: 2 })],
+        ['finalizeTextDrag', () => selection.finalizeTextDrag()],
+        ['clearTextTracking', () => selection.clearTextTracking()],
+        ['clearTracking', () => selection.clearTracking()],
+        ['clearTextSelection', () => selection.clearTextSelection()],
+        ['clearSelection', () => selection.clearSelection()],
+      ]
+
+      const reset = () => {
+        selection.clearSelection()
+        selection.clearTracking()
+        selection.clearTextSelection()
+        selection.clearTextTracking()
+      }
+
+      for (const [name1, action1] of actions) {
+        for (const [name2, action2] of actions) {
+          reset()
+          action1()
+          const after1 = activeKinds(selection)
+          expect(after1.length, `「${name1}」后实得 ${after1.join('+') || '无'}`).toBeLessThanOrEqual(1)
+
+          action2()
+          const after2 = activeKinds(selection)
+          expect(after2.length, `「${name1}」→「${name2}」后实得 ${after2.join('+') || '无'}`).toBeLessThanOrEqual(1)
+        }
+      }
+    })
+  })
+
+  describe('视图响应式（id 视图 / textRange 计算视图）', () => {
+    test('视图读写保持响应式（computed 随状态变更失效重算）', () => {
+      const selection = useCrossBlockSelection()
+      const committedSize = computed(() => selection.anchorIds.size)
+      const trackingSize = computed(() => selection.selectedIds.size)
+      const hasText = computed(() => selection.textRange.value !== null)
+
+      expect([committedSize.value, trackingSize.value, hasText.value]).toEqual([0, 0, false])
+
+      selection.anchorIds.add('a')
+      expect(committedSize.value).toBe(1)
+      expect(trackingSize.value).toBe(0)
+
+      selection.selectedIds.add('b')
+      expect([committedSize.value, trackingSize.value]).toEqual([0, 1])
+
+      selection.startTextTracking({ blockId: 'a', offset: 0 }, { x: 0, y: 0 })
+      selection.updateTextDrag({ blockId: 'a', offset: 3 })
+      expect([trackingSize.value, hasText.value]).toEqual([0, true])
+
+      selection.clearTextSelection()
+      expect(hasText.value).toBe(false)
+    })
+  })
+
   describe('computeRange', () => {
     test('无起始块ID时返回空集合', async () => {
       const selection = useCrossBlockSelection()
@@ -420,7 +521,7 @@ describe('useCrossBlockSelection', () => {
       expect(selection.isBlockSelected(block.id)).toBe(true)
     })
 
-    test('当 anchorIds 非空时应检查 anchorIds', async () => {
+    test('新的追踪选区取代已固化选区（互斥）', async () => {
       const selection = useCrossBlockSelection()
       const pageId = 'page-1'
 
@@ -430,8 +531,9 @@ describe('useCrossBlockSelection', () => {
       selection.anchorIds.add(block1.id)
       selection.selectedIds.add(block2.id)
 
-      expect(selection.isBlockSelected(block1.id)).toBe(true)
-      expect(selection.isBlockSelected(block2.id)).toBe(false)
+      expect(selection.anchorIds.size).toBe(0)
+      expect(selection.isBlockSelected(block1.id)).toBe(false)
+      expect(selection.isBlockSelected(block2.id)).toBe(true)
     })
 
     test('未选中任何块时应返回 false', async () => {
@@ -600,41 +702,6 @@ describe('useCrossBlockSelection', () => {
       const payload = await writtenPayload()
       expect(payload.blocks).toEqual([])
       expect(await writtenPlainText()).toBe('')
-    })
-
-    test('clipboard.write 失败时降级为 writeText（仅纯文本）', async () => {
-      const selection = useCrossBlockSelection()
-      const pageId = 'page-1'
-
-      const block = await blockStore.createBlock({ pageId, content: '降级' })
-      selection.anchorIds.add(block.id)
-      writeMock.mockRejectedValue(new Error('write failed'))
-
-      await selection.copyToClipboard()
-
-      expect(writeTextMock).toHaveBeenCalled()
-      expect(writeTextMock.mock.calls[0][0]).toContain('降级')
-    })
-
-    test('write 与 writeText 均失败时 execCommand 兜底', async () => {
-      const selection = useCrossBlockSelection()
-      const pageId = 'page-1'
-
-      const block = await blockStore.createBlock({ pageId, content: '兜底' })
-      selection.anchorIds.add(block.id)
-      writeMock.mockRejectedValue(new Error('write failed'))
-      writeTextMock.mockRejectedValue(new Error('writeText failed'))
-
-      const execCommand = vi.fn()
-      vi.stubGlobal('document', {
-        createElement: vi.fn().mockReturnValue({ value: '', style: {}, select: vi.fn() }),
-        body: { appendChild: vi.fn(), removeChild: vi.fn() },
-        execCommand
-      })
-
-      await selection.copyToClipboard()
-
-      expect(execCommand).toHaveBeenCalledWith('copy')
     })
   })
 

@@ -1,61 +1,124 @@
 /**
  * 跨 Block 选择状态管理
  *
- * 管理拖拽选区（selectedIds）和固化选区（anchorIds）双重状态。
- * - selectedIds: 拖拽过程中的实时选区
- * - anchorIds: mouseup 后固化的最终选区，用于复制等操作
- * - isDragging: 由外部消费者（BlockList）在 mousemove 中设置
+ * 选区按 ADR-0035 D2 建模为判别联合：任意时刻至多是 Block Selection 与 Text Range 之一。
+ * 互斥由唯一写入口 transition() 拥有——转移即「整体替换目标态」，不存在「进这一态时
+ * 记得清另一态」的散落清理，新增手势也无从漏清。
+ *
+ * 状态机（内部表示）：
+ * - `{ kind: 'none' }`                              无选区
+ * - `{ kind: 'block', ids, phase: 'tracking' }`      块选区拖拽中（对外视图 selectedIds）
+ * - `{ kind: 'block', ids, phase: 'committed' }`     块选区已固化（对外视图 anchorIds）
+ * - `{ kind: 'text', range }`                        跨块文本选区（对外视图 textRange）
+ *
+ * 手势临时量（dragStartBlockId / isDragging / trackingFromProperty / textDrag*）不参与
+ * 选区互斥，单独保存；isDragging 由外部消费者（BlockList）在 mousemove 中设置。
  */
-import { reactive, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useBlockStore } from '../stores/blocks'
 import { usePropertyStore } from '../stores/property'
 import { useBlockRelationshipCleanup } from './useBlockRelationshipCleanup'
 import { sortByDocumentOrderIds } from '../utils/block-helpers'
-import type { Block, BlockClipPayload, BlockClipboardPayload } from '../types/block'
+import type { Block } from '../types/block'
 import type { Property, PropertyType } from '../types/property'
 
-import { COMIND_BLOCK_MIME } from '../services/external-paste-parse'
+import { COMIND_BLOCK_MIME, serializeBlocks, writeClipboardPayload } from '../services/block-clipboard'
 // 内部剪贴板格式 MIME 单一来源（ADR-0025 D5）；此处仅转发供既有导入方使用
 export { COMIND_BLOCK_MIME }
 import { textRangeToText } from '../services/text-range'
 import type { BlockOffset, TextRange } from '../services/text-range'
 
+/** 选区状态（判别联合）：块选区与文本选区互斥由此结构保证 */
+type SelectionState =
+  | { kind: 'none' }
+  | { kind: 'block'; ids: Set<string>; phase: 'tracking' | 'committed' }
+  | { kind: 'text'; range: TextRange }
+
+/**
+ * 块 id 视图：只读部分保持 Set 习惯（size / has / 迭代），写方法只留消费方实际用到的
+ * add / clear，且一律转投 transition()——外部直接写也不会绕过互斥。
+ */
+export interface SelectionIdView extends Iterable<string> {
+  readonly size: number
+  has(id: string): boolean
+  add(id: string): void
+  clear(): void
+}
+
+/** 空集合常量：非块态或相位不符时视图统一读它（idsOf 先读 state.value，依赖仍可追踪） */
+const NO_IDS: ReadonlySet<string> = new Set()
+
 export function useCrossBlockSelection() {
   const blockStore = useBlockStore()
   const relationshipCleanup = useBlockRelationshipCleanup()
+
+  /** 选区权威（唯一真相） */
+  const state = ref<SelectionState>({ kind: 'none' })
 
   const dragStartBlockId = ref<string | null>(null)
   const isDragging = ref(false)
   /** 本次追踪是否起始于属性区（ADR-0035 D6）：属性区起点仅做块选区、不激活编辑器 */
   const trackingFromProperty = ref(false)
-  const selectedIds = reactive(new Set<string>())
-  const anchorIds = reactive(new Set<string>())
   /** 文本选区拖拽状态（ADR-0035 D1）：内容区起点 */
   const textDragAnchor = ref<BlockOffset | null>(null)
   /** 文本拖拽起始屏幕坐标（用于与单击区分的最小位移阈值） */
   const textDragStartPoint = ref<{ x: number; y: number } | null>(null)
   const isTextDragging = ref(false)
-  /** 固化后的文本选区（mouseup 后用于复制/高亮） */
-  const textRange = ref<TextRange | null>(null)
+
+  /** 唯一写入口：进入块态即无文本选区，进入文本态即无块选区；空块选区归一为「无选区」 */
+  function transition(next: SelectionState) {
+    state.value = next.kind === 'block' && next.ids.size === 0 ? { kind: 'none' } : next
+  }
+
+  function idsOf(phase: 'tracking' | 'committed'): ReadonlySet<string> {
+    const s = state.value
+    return s.kind === 'block' && s.phase === phase ? s.ids : NO_IDS
+  }
+
+  function idView(phase: 'tracking' | 'committed'): SelectionIdView {
+    const read = () => idsOf(phase)
+    const write = (ids: Set<string>) => transition({ kind: 'block', ids, phase })
+    return {
+      get size() {
+        return read().size
+      },
+      has: (id: string) => read().has(id),
+      add(id: string) {
+        write(new Set(read()).add(id))
+      },
+      clear() {
+        if (read().size > 0) write(new Set())
+      },
+      [Symbol.iterator]: () => read()[Symbol.iterator](),
+    }
+  }
+
+  /** 拖拽中的块选区（BlockList 在 mousemove 中实时写入） */
+  const selectedIds = idView('tracking')
+  /** 已固化块选区：复制/删除等操作的作用对象 */
+  const anchorIds = idView('committed')
+  /** 已固化文本选区（只读视图） */
+  const textRange = computed<TextRange | null>(() => {
+    const s = state.value
+    return s.kind === 'text' ? s.range : null
+  })
 
   function clearSelection() {
-    anchorIds.clear()
-    selectedIds.clear()
+    transition({ kind: 'none' })
   }
 
   function clearTracking() {
     dragStartBlockId.value = null
     isDragging.value = false
     trackingFromProperty.value = false
-    selectedIds.clear()
+    // 仅中断「拖拽中」的块选区；已固化选区与文本选区不受清追踪影响
+    const s = state.value
+    if (s.kind === 'block' && s.phase === 'tracking') transition({ kind: 'none' })
   }
 
   function startTracking(blockId: string, fromProperty = false) {
-    if (anchorIds.size > 0) {
-      clearSelection()
-    }
-    // 块选区手势开始即清文本选区（互斥）
-    if (textRange.value) textRange.value = null
+    // 块选区手势开始：清掉已固化选区与文本选区（此刻尚未产生选区，故归一为「无选区」）
+    transition({ kind: 'block', ids: new Set(), phase: 'tracking' })
     dragStartBlockId.value = blockId
     trackingFromProperty.value = fromProperty
   }
@@ -118,21 +181,14 @@ export function useCrossBlockSelection() {
   }
 
   function finalizeSelection() {
-    anchorIds.clear()
-    for (const id of selectedIds) {
-      anchorIds.add(id)
-    }
+    // 固化 = 拖拽中的块选区就地转为已固化块选区；非块态则固化为空（顺带清掉文本选区）
+    transition({ kind: 'block', ids: new Set(idsOf('tracking')), phase: 'committed' })
     isDragging.value = false
     dragStartBlockId.value = null
     trackingFromProperty.value = false
-    selectedIds.clear()
-    // 块选区固化即清文本选区（互斥）
-    if (textRange.value) textRange.value = null
   }
 
   function toggleBlock(blockId: string, pageId: string) {
-    // Ctrl+Click 切换块选区即清文本选区（互斥）
-    if (textRange.value) textRange.value = null
     const toToggle = new Set<string>()
     const visited = new Set<string>()
 
@@ -148,49 +204,49 @@ export function useCrossBlockSelection() {
     }
     collect(blockId)
 
-    const isSelected = anchorIds.has(blockId)
+    const ids = new Set(idsOf('committed'))
 
-    if (isSelected) {
+    if (ids.has(blockId)) {
       for (const id of toToggle) {
-        anchorIds.delete(id)
+        ids.delete(id)
       }
     } else {
       for (const id of toToggle) {
-        anchorIds.add(id)
+        ids.add(id)
       }
     }
+    // Ctrl+Click 切换即固化块选区（文本选区随之失效）
+    transition({ kind: 'block', ids, phase: 'committed' })
   }
 
   /**
-   * Ctrl+A 全选页面所有 Block（含后代子树），固化到 anchorIds。
+   * Ctrl+A 全选页面所有 Block（含后代子树），固化到块选区。
    * excludeRootId：页面根 Block 不参与渲染/选区（与 buildTree 一致）。
-   * 块选区手势开始即清文本选区（互斥）。
    */
   function selectAll(pageId: string, excludeRootId: string | null = null) {
-    // 中断进行中的拖拽/文本拖拽态，避免随后的 mouseup finalizeSelection 用空 selectedIds 覆盖新选区
+    // 中断进行中的拖拽/文本拖拽态，避免随后的 mouseup finalizeSelection 用空选区覆盖新选区
     clearTracking()
     clearTextTracking()
-    if (textRange.value) textRange.value = null
-    anchorIds.clear()
-    selectedIds.clear()
+    const ids = new Set<string>()
     for (const block of blockStore.getBlocksByPage(pageId)) {
       if (block.id === excludeRootId) continue
-      anchorIds.add(block.id)
+      ids.add(block.id)
     }
+    transition({ kind: 'block', ids, phase: 'committed' })
   }
 
   function isBlockSelected(blockId: string): boolean {
-    return anchorIds.size > 0
-      ? anchorIds.has(blockId)
-      : selectedIds.has(blockId)
+    // 已固化看 anchorIds、未固化看 selectedIds —— 互斥保证同一时刻只有一个非空，故看当前块选区即可
+    const s = state.value
+    return s.kind === 'block' && s.ids.has(blockId)
   }
 
   // ── 文本选区（ADR-0035 D1/D3）──
 
   /** 内容区 mousedown 开始文本拖拽：记录锚点，清旧选区（文本+块） */
   function startTextTracking(anchor: BlockOffset, startPoint: { x: number; y: number }) {
-    if (textRange.value) textRange.value = null
-    if (anchorIds.size > 0 || selectedIds.size > 0) clearSelection()
+    // 拖拽尚未产生选区：整体替换为「无选区」即清掉块选区与旧文本选区（互斥）
+    transition({ kind: 'none' })
     textDragAnchor.value = anchor
     textDragStartPoint.value = startPoint
     isTextDragging.value = false
@@ -200,7 +256,7 @@ export function useCrossBlockSelection() {
   function updateTextDrag(head: BlockOffset) {
     if (!textDragAnchor.value) return
     isTextDragging.value = true
-    textRange.value = { anchor: textDragAnchor.value, head }
+    transition({ kind: 'text', range: { anchor: textDragAnchor.value, head } })
   }
 
   /** mouseup 固化文本选区：保留 textRange，清拖拽态 */
@@ -217,8 +273,9 @@ export function useCrossBlockSelection() {
     isTextDragging.value = false
   }
 
+  /** 仅清文本选区（块选区不受影响） */
   function clearTextSelection() {
-    textRange.value = null
+    if (state.value.kind === 'text') transition({ kind: 'none' })
   }
 
   /** 复制文本选区：内容切片拼接（委托纯模块 textRangeToText） */
@@ -244,19 +301,19 @@ export function useCrossBlockSelection() {
   /**
    * 复制选中 block 为结构化剪贴板载荷（ADR-0025 D4/D5/D10/D11）。
    *
-   * - 自定义 MIME（JSON 森林）+ text/plain 缩进文本兜底
-   * - 完整子树（无视 collapsed）；仅遍历锚点及其后代，不再全页 DFS
-   * - properties 随行：优先 propertyStore 实时缓存，回退 on-block 载入快照
+   * 选区侧只负责「块选区 → 文档序顶层根」；载荷序列化（完整子树 + properties 随行）
+   * 与落盘（自定义 MIME + text/plain 兜底降级链）委托 block-clipboard 模块。
    */
   async function copyToClipboard() {
-    const forest = buildClipForest()
-    const payload: BlockClipboardPayload = { version: 1, kind: 'blocks', blocks: forest }
-    const text = forestToText(forest, 0, [])
-    await writeClipboard(payload, text)
+    const payload = serializeBlocks(resolveClipRoots(), {
+      resolveChildren: block => blockStore.getChildren(block.id),
+      resolveProperties: blockPropsRecord,
+    })
+    await writeClipboardPayload(payload)
   }
 
   /** 森林顶层 = 文档序锚点中非「另一锚点后代」者；子树完整递归（D8/D10） */
-  function buildClipForest(): BlockClipPayload[] {
+  function resolveClipRoots(): Block[] {
     if (anchorIds.size === 0) return []
 
     const anchors = sortByDocumentOrderIds(anchorIds, blockStore.blocks)
@@ -270,24 +327,9 @@ export function useCrossBlockSelection() {
       return false
     }
 
-    const roots = anchors
+    return anchors
       .map(id => blockStore.blocks.find(b => b.id === id))
       .filter((b): b is Block => !!b && !isUnderAnchor(b))
-
-    return roots.map(b => buildClipPayload(b))
-  }
-
-  function buildClipPayload(block: Block): BlockClipPayload {
-    // 完整子树：无视 collapsed（D10 —— 折叠只是视图状态）
-    const children = blockStore.getChildren(block.id).map(c => buildClipPayload(c))
-    return {
-      id: block.id,
-      content: block.content,
-      type: block.type,
-      format: block.format ? { ...block.format } : null,
-      properties: blockPropsRecord(block),
-      children,
-    }
   }
 
   /** 属性随行（D11）：propertyStore 实时缓存优先，回退页面载入时的 on-block 快照 */
@@ -318,43 +360,6 @@ export function useCrossBlockSelection() {
       }
     }
     return record
-  }
-
-  /** text/plain 兜底：人类可读的缩进文本（外部 App 粘贴可用） */
-  function forestToText(nodes: BlockClipPayload[], depth: number, parts: string[]): string {
-    for (const n of nodes) {
-      parts.push('  '.repeat(depth) + n.content)
-      forestToText(n.children, depth + 1, parts)
-    }
-    return parts.join('\n')
-  }
-
-  async function writeClipboard(payload: BlockClipboardPayload, text: string): Promise<void> {
-    const json = JSON.stringify(payload)
-    try {
-      const item = new ClipboardItem({
-        [COMIND_BLOCK_MIME]: new Blob([json], { type: COMIND_BLOCK_MIME }),
-        'text/plain': new Blob([text], { type: 'text/plain' }),
-      })
-      await navigator.clipboard.write([item])
-      return
-    } catch {
-      // 降级 1：仅纯文本（内部粘贴不可用，外部可读）
-      try {
-        await navigator.clipboard.writeText(text)
-        return
-      } catch {
-        // 降级 2：execCommand 兜底
-      }
-    }
-    const textarea = document.createElement('textarea')
-    textarea.value = text
-    textarea.style.position = 'fixed'
-    textarea.style.opacity = '0'
-    document.body.appendChild(textarea)
-    textarea.select()
-    document.execCommand('copy')
-    document.body.removeChild(textarea)
   }
 
   async function deleteSelected() {

@@ -14,9 +14,11 @@
  * - 纯文本（D6）：按 \n 拆分、trim、跳过空行
  * - properties 恒为 null（外部无 Property 表数据）
  */
-import type { BlockClipPayload, BlockClipboardPayload } from '../types/block'
+import type { BlockClipPayload } from '../types/block'
+import { COMIND_BLOCK_MIME, deserializeClipboardBlocks } from './block-clipboard'
 
-export const COMIND_BLOCK_MIME = 'application/x-comind-block'
+// 内部剪贴板格式 MIME 的唯一来源在 block-clipboard（ADR-0025 D5）；此处转发供既有导入方使用
+export { COMIND_BLOCK_MIME }
 
 function bullet(content: string, children: BlockClipPayload[] = []): BlockClipPayload {
   return { content, type: 'bullet', format: null, properties: null, children }
@@ -166,24 +168,15 @@ function mapListItem(li: Element): BlockClipPayload[] {
 
 /**
  * 解析剪贴板数据为待粘贴森林：
- * 1. 命中内部 MIME（application/x-comind-block）→ 返回内部载荷 blocks；
+ * 1. 命中内部 MIME（application/x-comind-block）→ 委托 block-clipboard 反序列化；
  * 2. 否则按外部规则（html 优先）解析；
  * 3. 无可解析内容 → null。
  */
 export function resolveClipboardForest(
   getData: (mime: string) => string
 ): BlockClipPayload[] | null {
-  const internalJson = getData(COMIND_BLOCK_MIME)
-  if (internalJson) {
-    try {
-      const payload = JSON.parse(internalJson) as BlockClipboardPayload
-      if (payload && payload.kind === 'blocks' && Array.isArray(payload.blocks)) {
-        return payload.blocks
-      }
-    } catch {
-      // 损坏的内部载荷 → 回落外部解析
-    }
-  }
+  const internalBlocks = deserializeClipboardBlocks(getData(COMIND_BLOCK_MIME))
+  if (internalBlocks) return internalBlocks
   const forest = parseExternalPaste({
     html: getData('text/html'),
     plain: getData('text/plain'),
