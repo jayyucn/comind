@@ -1163,3 +1163,107 @@ describe('deleteTextRange - 文本选区删除（#95）', () => {
     expect(store.blocks.find(x => x.id === b.id)).toBeUndefined()
   })
 })
+
+// ============================================================
+// planTextRangeDeletion - 文本选区删除计划（#100）
+// 把「删了什么」表达为数据：中间整删 / 端点被裁片段 / 裁后内容 / 合并消失块。
+// 编排层先据计划跑关系清理（存活判定 = 操作后本页 typed-link 存留），再 apply。
+// ============================================================
+describe('planTextRangeDeletion - 删除计划形状（#100）', () => {
+  test('同一块内切片：片段 = 选中区间，裁后内容 = 前后拼接，无合并', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-textplan-1'
+
+    const a = await store.createBlock({ pageId, content: 'hello world' })
+
+    const plan = store.planTextRangeDeletion(pageId, {
+      anchor: { blockId: a.id, offset: 5 },
+      head: { blockId: a.id, offset: 8 },
+    })
+
+    // 'hello world'.slice(0,5) + slice(8) = 'hello' + 'rld' = 'hellorld'
+    expect(plan).toEqual({
+      middleBlockIds: [],
+      mergedAwayBlockId: null,
+      contentAfter: { [a.id]: 'hellorld' },
+      vanishedFragments: [{ blockId: a.id, text: ' wo' }],
+      merge: null,
+      cursor: { id: a.id, cursorPos: 6 },
+    })
+  })
+
+  test('跨块合并：片段含两端被裁部分，end 块为 mergedAwayBlockId', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-textplan-2'
+
+    const a = await store.createBlock({ pageId, content: 'hello' })
+    const b = await store.createBlock({ pageId, content: 'world' })
+
+    const plan = store.planTextRangeDeletion(pageId, {
+      anchor: { blockId: a.id, offset: 2 },
+      head: { blockId: b.id, offset: 3 },
+    })
+
+    expect(plan!.middleBlockIds).toEqual([])
+    expect(plan!.mergedAwayBlockId).toBe(b.id)
+    expect(plan!.contentAfter).toEqual({ [a.id]: 'held' })
+    expect(plan!.vanishedFragments).toEqual([
+      { blockId: a.id, text: 'llo' },
+      { blockId: b.id, text: 'wor' },
+    ])
+    expect(plan!.merge).toEqual({ targetId: a.id, sourceId: b.id, mergedContent: 'held' })
+    expect(plan!.cursor).toEqual({ id: a.id, cursorPos: 3 })
+  })
+
+  test('跨中间块：middleBlockIds 交给清理收口', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-textplan-3'
+
+    const a = await store.createBlock({ pageId, content: 'aa' })
+    const mid = await store.createBlock({ pageId, content: 'mid' })
+    const b = await store.createBlock({ pageId, content: 'bb' })
+
+    const plan = store.planTextRangeDeletion(pageId, {
+      anchor: { blockId: a.id, offset: 1 },
+      head: { blockId: b.id, offset: 1 },
+    })
+
+    expect(plan!.middleBlockIds).toEqual([mid.id])
+    expect(plan!.mergedAwayBlockId).toBe(b.id)
+    expect(plan!.contentAfter).toEqual({ [a.id]: 'a' + 'b' })
+    expect(plan!.cursor).toEqual({ id: a.id, cursorPos: 2 })
+  })
+
+  test('端点为非文本块：非文本端不产生片段也不被裁，另一端照常', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-textplan-4'
+
+    const a = await store.createBlock({ pageId, content: 'hello' })
+    const img = await store.createBlock({ pageId, content: 'img://a.png', type: 'image' })
+
+    const plan = store.planTextRangeDeletion(pageId, {
+      anchor: { blockId: a.id, offset: 2 },
+      head: { blockId: img.id, offset: 0 },
+    })
+
+    expect(plan!.mergedAwayBlockId).toBeNull()
+    expect(plan!.contentAfter).toEqual({ [a.id]: 'he' })
+    expect(plan!.vanishedFragments).toEqual([{ blockId: a.id, text: 'llo' }])
+    expect(plan!.merge).toBeNull()
+  })
+
+  test('两端皆非文本块：退化选区，计划为 null', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-textplan-5'
+
+    const img = await store.createBlock({ pageId, content: 'img://c.png', type: 'image' })
+    const code = await store.createBlock({ pageId, content: 'const y = 2', type: 'code' })
+
+    const plan = store.planTextRangeDeletion(pageId, {
+      anchor: { blockId: img.id, offset: 0 },
+      head: { blockId: code.id, offset: 0 },
+    })
+
+    expect(plan).toBeNull()
+  })
+})

@@ -28,6 +28,25 @@ import type { BatchOperation } from '@/wasm/types'
 import { normalizeTextRange, type TextRange } from '../services/text-range'
 import { renderedOffsetToEncodedOffset } from '../services/render-text'
 
+/**
+ * 文本选区删除计划（#100）：把「删了什么」表达为数据，供编排层先做关系清理
+ * （存活判定口径 = 操作后本页 typed-link 存留）再应用结构变更。
+ */
+export interface TextRangeDeletionPlan {
+  /** 整块消失、交由清理收口删除的中间块 */
+  middleBlockIds: string[]
+  /** 块本身消失但内容部分转移（merge 的 source 块）：清理时不按整块内容提取、也不算存活 */
+  mergedAwayBlockId: string | null
+  /** 存活但内容被裁的块 → 操作后的最终内容（清理的存活检查与 apply 的落库共用） */
+  contentAfter: Record<string, string>
+  /** 部分消失的文本片段（清理的目标提取输入，与宿主块存亡无关） */
+  vanishedFragments: Array<{ blockId: string; text: string }>
+  /** 应用阶段的结构合并（target 并入 source）；null = 纯裁剪/切片 */
+  merge: { targetId: string; sourceId: string; mergedContent: string } | null
+  /** 删除后的光标落点（ProseMirror position 口径 = 文本偏移 + 1） */
+  cursor: { id: string; cursorPos: number }
+}
+
 let coreClientPromise: Promise<CoreClient> | null = null
 
 async function getClient() {
@@ -1023,10 +1042,95 @@ export const useBlockStore = defineStore('blocks', () => {
   }
 
   /**
-   * 删除跨块文本选区（#95 / ADR-0035 D7）
+   * 文本选区删除 = 计划 + 应用两段（#100 grill-up 锚定）。
    *
-   * 端点偏移来自界面渲染文本，先经 renderedOffsetToEncodedOffset 换算为 encoded
-   * 偏移再切片（#93，否则含内联标记的块会切错）。
+   * 计划把「删了什么」表达为数据：哪些块整删（middleBlockIds）、哪些块内容被裁
+   * （contentAfter = 裁后最终内容）、哪些片段部分消失（vanishedFragments）、
+   * 哪个块因合并整行消失（mergedAwayBlockId）。编排层据此**先**跑关系清理——
+   * 存活判定口径 = 操作后本页 typed-link 存留（见 cleanupAfterDelete 的 plan
+   * 入参）——再 applyTextRangeDeletion 落库结构变更。
+   */
+  function planTextRangeDeletion(pageId: string, range: TextRange): TextRangeDeletionPlan | null {
+    const { start, end, middleBlockIds } = normalizeTextRange(getBlocksByPage(pageId), range)
+    const startBlock = blocks.value.find(b => b.id === start.blockId)
+    const endBlock = blocks.value.find(b => b.id === end.blockId)
+    if (!startBlock || !endBlock) return null
+
+    const lo = renderedOffsetToEncodedOffset(startBlock.content, startBlock.renderSegments, start.offset)
+    const hi = renderedOffsetToEncodedOffset(endBlock.content, endBlock.renderSegments, end.offset)
+    // 只有普通文本块参与裁剪/合并（heading 等同为 bullet + format）
+    const startIsText = startBlock.type === 'bullet'
+    const endIsText = endBlock.type === 'bullet'
+    // 光标口径换算：cursorPos 是 ProseMirror position（文档位置 = 文本偏移 + 1）
+    const caret = (textOffset: number) => textOffset + 1
+
+    // 两端皆非文本块：没有字符可删，视为退化选区，整体不动
+    if (!startIsText && !endIsText) return null
+
+    if (start.blockId === end.blockId) {
+      return {
+        middleBlockIds: [],
+        mergedAwayBlockId: null,
+        contentAfter: { [startBlock.id]: startBlock.content.slice(0, lo) + startBlock.content.slice(hi) },
+        vanishedFragments: [{ blockId: startBlock.id, text: startBlock.content.slice(lo, hi) }],
+        merge: null,
+        cursor: { id: startBlock.id, cursorPos: caret(lo) },
+      }
+    }
+
+    // 端点落在非文本块上：该块原样保留，只裁剪另一端的文本块
+    if (!startIsText) {
+      return {
+        middleBlockIds,
+        mergedAwayBlockId: null,
+        contentAfter: { [endBlock.id]: endBlock.content.slice(hi) },
+        vanishedFragments: [{ blockId: endBlock.id, text: endBlock.content.slice(0, hi) }],
+        merge: null,
+        cursor: { id: endBlock.id, cursorPos: caret(0) },
+      }
+    }
+    if (!endIsText) {
+      return {
+        middleBlockIds,
+        mergedAwayBlockId: null,
+        contentAfter: { [startBlock.id]: startBlock.content.slice(0, lo) },
+        vanishedFragments: [{ blockId: startBlock.id, text: startBlock.content.slice(lo) }],
+        merge: null,
+        cursor: { id: startBlock.id, cursorPos: caret(lo) },
+      }
+    }
+
+    return {
+      middleBlockIds,
+      mergedAwayBlockId: endBlock.id,
+      contentAfter: { [startBlock.id]: startBlock.content.slice(0, lo) + endBlock.content.slice(hi) },
+      vanishedFragments: [
+        { blockId: startBlock.id, text: startBlock.content.slice(lo) },
+        { blockId: endBlock.id, text: endBlock.content.slice(0, hi) },
+      ],
+      merge: {
+        targetId: startBlock.id,
+        sourceId: endBlock.id,
+        mergedContent: startBlock.content.slice(0, lo) + endBlock.content.slice(hi),
+      },
+      cursor: { id: startBlock.id, cursorPos: caret(lo) },
+    }
+  }
+
+  /** 应用删除计划：纯裁剪/切片走 updateBlockContent；合并走 mergeBlockInto（含 source 删除与子块迁移） */
+  async function applyTextRangeDeletion(plan: TextRangeDeletionPlan): Promise<{ id: string; cursorPos: number } | null> {
+    if (plan.merge) {
+      const merged = await mergeBlockInto(plan.merge.targetId, plan.merge.sourceId, plan.merge.mergedContent, plan.cursor.cursorPos)
+      return merged ?? { id: plan.cursor.id, cursorPos: plan.cursor.cursorPos }
+    }
+    for (const [blockId, content] of Object.entries(plan.contentAfter)) {
+      await updateBlockContent(blockId, content)
+    }
+    return { id: plan.cursor.id, cursorPos: plan.cursor.cursorPos }
+  }
+
+  /**
+   * 删除跨块文本选区（#95 / ADR-0035 D7）——计划 + 应用的组合捷径。
    *
    * 语义：
    * - 同一普通文本块内：只剔除选中字符
@@ -1040,9 +1144,9 @@ export const useBlockStore = defineStore('blocks', () => {
    * ProseMirror position，见 stores/editor.ts）；端点无效时返回 null。
    *
    * `deleteMiddleBlocks` 是「中间整块」的删除出口，**必填**——调用方必须显式决定中间块
-   * 怎么删，以免新入口静默绕过关系清理（本参数的来由，见 issue #100）。生产调用点注入
-   * 关系清理收口（`cleanupAfterDelete` 自身含删除），使本入口与单块删除 / 块选区删除同源；
-   * store 不能反向依赖 composable，故以参数注入（见 useCrossBlockSelection）。
+   * 怎么删，以免新入口静默绕过关系清理。生产调用点（useCrossBlockSelection）已改走
+   * plan/apply 两段以把端点片段交给清理收口（#100），本组合入口保留给测试与工具路径；
+   * store 不能反向依赖 composable，故以参数注入。
    * 出口返回值不被使用（收口返回 CleanupResult），故类型为 unknown。
    */
   async function deleteTextRange(
@@ -1050,45 +1154,10 @@ export const useBlockStore = defineStore('blocks', () => {
     range: TextRange,
     deleteMiddleBlocks: (ids: string[]) => Promise<unknown>
   ): Promise<{ id: string; cursorPos: number } | null> {
-    const { start, end, middleBlockIds } = normalizeTextRange(getBlocksByPage(pageId), range)
-    const startBlock = blocks.value.find(b => b.id === start.blockId)
-    const endBlock = blocks.value.find(b => b.id === end.blockId)
-    if (!startBlock || !endBlock) return null
-
-    const lo = renderedOffsetToEncodedOffset(startBlock.content, startBlock.renderSegments, start.offset)
-    const hi = renderedOffsetToEncodedOffset(endBlock.content, endBlock.renderSegments, end.offset)
-    // 只有普通文本块参与裁剪/合并（heading 等同为 bullet + format）
-    const startIsText = startBlock.type === 'bullet'
-    const endIsText = endBlock.type === 'bullet'
-    // 光标口径换算：pendingCursorPos 是 ProseMirror position（文档位置 = 文本偏移 + 1）
-    const caret = (textOffset: number) => textOffset + 1
-
-    // 两端皆非文本块：没有字符可删，视为退化选区，整体不动
-    if (!startIsText && !endIsText) return null
-
-    if (start.blockId === end.blockId) {
-      await updateBlockContent(startBlock.id, startBlock.content.slice(0, lo) + startBlock.content.slice(hi))
-      return { id: startBlock.id, cursorPos: caret(lo) }
-    }
-
-    if (middleBlockIds.length > 0) await deleteMiddleBlocks(middleBlockIds)
-
-    // 端点落在非文本块上：该块原样保留，只裁剪另一端的文本块
-    if (!startIsText) {
-      await updateBlockContent(endBlock.id, endBlock.content.slice(hi))
-      return { id: endBlock.id, cursorPos: caret(0) }
-    }
-    if (!endIsText) {
-      await updateBlockContent(startBlock.id, startBlock.content.slice(0, lo))
-      return { id: startBlock.id, cursorPos: caret(lo) }
-    }
-
-    return mergeBlockInto(
-      startBlock.id,
-      endBlock.id,
-      startBlock.content.slice(0, lo) + endBlock.content.slice(hi),
-      caret(lo)
-    )
+    const plan = planTextRangeDeletion(pageId, range)
+    if (!plan) return null
+    if (plan.middleBlockIds.length > 0) await deleteMiddleBlocks(plan.middleBlockIds)
+    return applyTextRangeDeletion(plan)
   }
 
   /** 缩进 */
@@ -1458,6 +1527,8 @@ export const useBlockStore = defineStore('blocks', () => {
     insertAtPosition,
     mergeWithPrevious,
     deleteTextRange,
+    planTextRangeDeletion,
+    applyTextRangeDeletion,
     findPreviousBlockInTreeOrder,
     findPreviousVisibleBlock,
     findLastVisibleDescendant,

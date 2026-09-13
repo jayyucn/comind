@@ -236,6 +236,35 @@ describe('BlockList 删除键四格分派（#95 / #96）', () => {
 
     wrapper.unmount()
   })
+
+  test('文本选区跨端点片段：被裁片段进入清理的目标提取（#100 接线证据）', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-keydel-text-frag'
+
+    // 头块被裁的后缀里含 typed link（片段含完整链接语法，可被解析器匹配）
+    const a = await store.createBlock({ pageId, content: 'head ((a<->b))[[X]] tail' })
+    const b = await store.createBlock({ pageId, content: 'world' })
+
+    const wrapper = mountBlockList(pageId)
+    const selection = getSelection(wrapper)
+    selection.startTextTracking({ blockId: a.id, offset: 5 }, { x: 0, y: 0 })
+    selection.updateTextDrag({ blockId: b.id, offset: 1 })
+    selection.finalizeTextDrag()
+
+    const ev = dispatchDeleteKey('Backspace')
+    await flushAsync()
+
+    expect(ev.defaultPrevented).toBe(true)
+    // 头块被裁后缀 '((a<->b))[[X]] tail' 作为消失片段进入目标提取（#100 前不接线，必不发生）
+    expect(extractLinksSpy).toHaveBeenCalledWith('((a<->b))[[X]] tail')
+    // 尾块被裁前缀同样进入
+    expect(extractLinksSpy).toHaveBeenCalledWith('w')
+    // 删除语义不回归：'head ' + 'orld' 拼接，尾块消失
+    expect(store.blocks.find(x => x.id === a.id)?.content).toBe('head orld')
+    expect(store.blocks.find(x => x.id === b.id)).toBeUndefined()
+
+    wrapper.unmount()
+  })
 })
 
 /**

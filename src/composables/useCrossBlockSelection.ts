@@ -331,21 +331,23 @@ export function useCrossBlockSelection() {
    * 计算与落库分别委托纯模块与 block store；此处只负责「读选区 → 调用 → 清选区
    * → 回传落点」，供 BlockList 删除键分派后激活编辑态。
    *
-   * 中间整块是「整块消失」，其删除交给关系清理收口（cleanupAfterDelete 自身含删除），
-   * 与单块删除 / 块选区删除同源。
-   *
-   * 端点块不纳入：它们的内容**只有一部分存活**（头块保留前缀；尾块的后缀并入生存块，
-   * 尾块本身被合并删除），而 cleanupAfterDelete 的模型要求「该 id 的整块内容全部消失」——
-   * 按整块计入会把仍存活的关系误判为已删（假降级）。代价是端点被丢弃的那段字符里若含
-   * 唯一 inverse typed-link 会漏降级（方向安全：只会漏摘，不会误摘目标页标签，见 #100）。
+   * 关系清理同源收口（#100 grill-up 锚定：判定口径 = 操作后本页 typed-link 存留）：
+   * 先 plan 再清理再 apply——清理拿到完整操作计划（中间整块整删 + 端点被裁片段 +
+   * 裁后内容 + 合并消失块），端点被裁片段里的唯一 inverse typed-link 不再漏降级，
+   * 同时不会因转移存活的内容而假降级。
    */
   async function deleteTextSelection(pageId: string) {
     const range = textRange.value
     if (!range) return null
     const blocksBeforeDelete = [...blockStore.blocks]
-    const result = await blockStore.deleteTextRange(pageId, range, ids =>
-      relationshipCleanup.cleanupAfterDelete(pageId, ids, blocksBeforeDelete)
-    )
+    const plan = blockStore.planTextRangeDeletion(pageId, range)
+    if (!plan) return null
+    await relationshipCleanup.cleanupAfterDelete(pageId, plan.middleBlockIds, blocksBeforeDelete, {
+      removedBlockIds: plan.mergedAwayBlockId ? [plan.mergedAwayBlockId] : undefined,
+      vanishedFragments: plan.vanishedFragments,
+      contentAfter: plan.contentAfter,
+    })
+    const result = await blockStore.applyTextRangeDeletion(plan)
     clearTextSelection()
     return result
   }

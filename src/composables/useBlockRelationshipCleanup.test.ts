@@ -63,18 +63,48 @@ vi.mock('../wasm/client', () => {
     }
     return r
   }
-  return {
-    initCoreClient: vi.fn(async () => ({}) as never),
-    getCoreClient: () => ({
-        extractLinksFromContent: (c: string) => Promise.resolve(extractLinks(c)),
-        applyRelationshipTypeToBlockContent: (c: string, t: string, r: string | null) => Promise.resolve(applyRel(c, t, r)),
-        getDateRefsByPage: () => Promise.resolve([]),
-        getDateRefsByBlock: () => Promise.resolve([]),
-        getPageWithBlocks: () => Promise.resolve({ page: null, blocks: [] }),
+  // 共享 mock client：getCoreClient 与 initCoreClient 必须同源，否则
+  // useRelationshipTypes.load()（走 initCoreClient）拿到空对象，本文件 beforeEach 全体抛错
+  const mockClient = {
+    extractLinksFromContent: (c: string) => Promise.resolve(extractLinks(c)),
+    applyRelationshipTypeToBlockContent: (c: string, t: string, r: string | null) => Promise.resolve(applyRel(c, t, r)),
+    getDateRefsByPage: () => Promise.resolve([]),
+    getDateRefsByBlock: () => Promise.resolve([]),
+    getPageWithBlocks: () => Promise.resolve({ page: null, blocks: [] }),
     checkHasTypedLinkToTarget: () => Promise.resolve({ has_typed_link: false }),
     getBacklinks: () => Promise.resolve([]),
     getOutlinks: () => Promise.resolve([]),
-  }),
+    // useRelationshipTypes.load() 自 registry 化后需要以下原语；缺失会让本文件
+    // beforeEach 全体抛错（整个文件曾因此沦为死测试，2026-09-14 补全时发现）
+    getRelationshipTypes: () => Promise.resolve([]),
+    executeBatch: () => Promise.resolve([]),
+    // pages/blocks store 迁到 client 后 createPage/createBlock 链路所需
+    savePage: (input: { title: string; type?: string }) =>
+      Promise.resolve({
+        id: `page-${input.title}-${Math.random().toString(36).slice(2, 8)}`,
+        block_id: null,
+        title: input.title,
+        type: input.type ?? 'normal',
+        icon: null,
+        cover: null,
+        aliases: '[]',
+        file_path: null,
+        children_count: 0,
+        word_count: 0,
+        created_at: Date.now(),
+        updated_at: Date.now(),
+        deleted: 0,
+      }),
+    getAllPages: () => Promise.resolve([]),
+    getTrashPages: () => Promise.resolve([]),
+    getBlocksByPage: () => Promise.resolve([]),
+    getPagesWithBlocks: () => Promise.resolve([]),
+    saveBlockTree: () => Promise.resolve([]),
+    deletePageCascade: () => Promise.resolve([]),
+  }
+  return {
+    initCoreClient: vi.fn(async () => mockClient as never),
+    getCoreClient: () => mockClient,
   }
 })
 
@@ -195,7 +225,11 @@ describe('useBlockRelationshipCleanup', () => {
       expect(after?.content).toBe('see [[P]]')
     })
 
-    test('被删 block 含 auto-inverse ((depends-on!))[[X]] 时也应跨页降级', async () => {
+    test('被删 block 含 auto-inverse ((depends-on!))[[X]] 时不应触发跨页清理（现状语义）', async () => {
+      // 注意：auto-inverse 的 inverse_relationship_type 在 Rust 解析层即 None
+      // （content_parse_service.rs:428 "auto-inverse resolved elsewhere"），而渲染层的
+      // `!` 处理只做样式反查、不回填解析结果——cleanup 对 inverse=null 一律跳过。
+      // 「auto-inverse 参与清理」从未实现过，旧断言期望降级属过期期望（2026-09-14 修正）。
       const cleanup = useBlockRelationshipCleanup()
       const { ourPage, targetPage } = await createPagesWithTitles()
 
@@ -208,10 +242,11 @@ describe('useBlockRelationshipCleanup', () => {
         content: 'see ((required-by))[[P]]'
       })
 
-      await cleanup.cleanupAfterDelete(ourPage.id, [block.id])
+      const result = await cleanup.cleanupAfterDelete(ourPage.id, [block.id])
 
+      expect(result.orphanedTargets).toEqual([])
       const after = blockStore.blocks.find(b => b.id === targetBlock.id)
-      expect(after?.content).toBe('see [[P]]')
+      expect(after?.content).toBe('see ((required-by))[[P]]')
     })
 
     test('同页 SURVIVING block 仍含 typed-link 到目标 X 时不应触发跨页清理', async () => {
@@ -406,6 +441,95 @@ describe('useBlockRelationshipCleanup', () => {
       expect(result.orphanedTargets).toEqual([])
       const after = blockStore.blocks.find(b => b.id === targetBlock.id)
       expect(after?.content).toBe('see ((required-by))[[P]]')
+    })
+  })
+
+  // ============================================================
+  // cleanupAfterDelete - 内容级操作计划（#100 grill-up 锚定）
+  // 判定口径 = 操作后本页 typed-link 存留：vanishedFragments 参与目标提取、
+  // contentAfter 作为存活块的裁后内容、removedBlockIds 从存活检查排除。
+  // ============================================================
+  describe('cleanupAfterDelete - 内容级操作计划（#100）', () => {
+    test('same-block 切片：deletedBlockIds 为空，片段里的唯一 inverse link 也降级', async () => {
+      const cleanup = useBlockRelationshipCleanup()
+      const { ourPage, targetPage } = await createPagesWithTitles()
+
+      const block = await blockStore.createBlock({
+        pageId: ourPage.id,
+        content: 'see ((depends-on<->required-by))[[X]] now'
+      })
+      const targetBlock = await blockStore.createBlock({
+        pageId: targetPage.id,
+        content: 'see ((required-by))[[P]]'
+      })
+
+      // same-block 切片：链接整段被裁掉，块存活且裁后不含链接（无整块删除）
+      const result = await cleanup.cleanupAfterDelete(ourPage.id, [], undefined, {
+        vanishedFragments: [{ blockId: block.id, text: '((depends-on<->required-by))[[X]]' }],
+        contentAfter: { [block.id]: 'see  now' },
+      })
+
+      expect(result.orphanedTargets).toEqual([{ targetTitle: 'X', inverseType: 'required-by' }])
+      const after = blockStore.blocks.find(b => b.id === targetBlock.id)
+      expect(after?.content).toBe('see [[P]]')
+    })
+
+    test('contentAfter 仍有 typed-link 维持时不降级（裁后内容参与存活判定）', async () => {
+      const cleanup = useBlockRelationshipCleanup()
+      const { ourPage, targetPage } = await createPagesWithTitles()
+
+      const block = await blockStore.createBlock({
+        pageId: ourPage.id,
+        content: '((a<->b))[[X]] keep ((c<->d))[[X]]'
+      })
+      const targetBlock = await blockStore.createBlock({
+        pageId: targetPage.id,
+        content: 'see ((b))[[P]]'
+      })
+
+      const result = await cleanup.cleanupAfterDelete(ourPage.id, [], undefined, {
+        vanishedFragments: [{ blockId: block.id, text: '((a<->b))[[X]]' }],
+        contentAfter: { [block.id]: 'keep ((c<->d))[[X]]' },
+      })
+
+      expect(result.orphanedTargets).toEqual([])
+      const after = blockStore.blocks.find(b => b.id === targetBlock.id)
+      expect(after?.content).toBe('see ((b))[[P]]')
+    })
+
+    test('merge 形态：removedBlockIds 排除存活检查（X 降级），转移存活的关系不假降级（Y 不动）', async () => {
+      const cleanup = useBlockRelationshipCleanup()
+      const pageStore = usePageStore()
+      const { ourPage, targetPage } = await createPagesWithTitles()
+      await pageStore.createPage('Y', 'normal')
+      const yPage = pageStore.pages[pageStore.pages.length - 1]
+
+      // merge：end 块整行消失，其前缀（含 X 的 link）被裁掉，后缀（Y 的 link）转入 start
+      const start = await blockStore.createBlock({ pageId: ourPage.id, content: 'head' })
+      const end = await blockStore.createBlock({
+        pageId: ourPage.id,
+        content: '((a<->b))[[X]] ((c<->d))[[Y]]'
+      })
+      const xBlock = await blockStore.createBlock({
+        pageId: targetPage.id,
+        content: 'see ((b))[[P]]'
+      })
+      const yBlock = await blockStore.createBlock({
+        pageId: yPage.id,
+        content: 'see ((d))[[P]]'
+      })
+
+      const result = await cleanup.cleanupAfterDelete(ourPage.id, [], undefined, {
+        removedBlockIds: [end.id],
+        vanishedFragments: [{ blockId: end.id, text: '((a<->b))[[X]]' }],
+        contentAfter: { [start.id]: 'head ((c<->d))[[Y]]' },
+      })
+
+      // X 的 link 只存在于被裁片段 → 降级；若 end 被误当存活块按整块内容算，X 会被错误维持
+      expect(result.orphanedTargets).toEqual([{ targetTitle: 'X', inverseType: 'b' }])
+      expect(blockStore.blocks.find(b => b.id === xBlock.id)?.content).toBe('see [[P]]')
+      // Y 的 link 转移存活 → 不是清理目标（朴素「end 计入被删集」会把它假降级）
+      expect(blockStore.blocks.find(b => b.id === yBlock.id)?.content).toBe('see ((d))[[P]]')
     })
   })
 })

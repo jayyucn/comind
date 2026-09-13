@@ -2,7 +2,7 @@
 
 - 状态：已采纳（Accepted）
 - 日期：2026-08-24
-- 修订：2026-09-13（#93 开放问题 1 写回；#94 D6 命中面修订；#95/#96 新增 D8 键盘删除语义；高亮跳过无文本节点块，新增 D9 并闭合开放问题 4；shift+click 延伸，新增 D10 并从 D7 范围外移出 Shift+Click）；2026-09-14（D8 增补 Ctrl+X 剪切同表）
+- 修订：2026-09-13（#93 开放问题 1 写回；#94 D6 命中面修订；#95/#96 新增 D8 键盘删除语义；高亮跳过无文本节点块，新增 D9 并闭合开放问题 4；shift+click 延伸，新增 D10 并从 D7 范围外移出 Shift+Click）；2026-09-14（D8 增补 Ctrl+X 剪切同表；端点片段收口，闭合 #100）
 - 范围：
   - `src/composables/useCrossBlockSelection.ts`（选区模型扩展：新增文本选区，保留块选区）
   - `src/components/BlockList.vue`（document 级拖拽/按键事件改为按"文本选区"语义驱动）
@@ -96,6 +96,7 @@ type BlockSelection = Set<string>  // block id 集合（沿用 anchorIds/selecte
 - **文本选区的删除 = 按字符裁剪 + 端点合并**：头块保留 `[0, lo)`、尾块保留 `[hi, ∞)` 后接成一块（生存者 = 文档序靠前的头块），尾块的子块迁到生存块末尾；中间整块（含子树）删除。
 - **端点落在非 `bullet` 类型（image/code/embed/query/property）**：该端点块原样保留，不裁剪也不合并 —— 这些类型没有「部分选中」这回事，且合并等于把生存者的类型强加给另一端、销毁其类型与渲染方式。
 - **任何删除入口都必须同源（走关系清理收口）**：文本选区删除的「中间整块」经 `deleteTextRange` 的**必填**出口参数注入 `cleanupAfterDelete`；端点块因其内容只有一部分存活、不满足收口「整块内容全部消失」的前提而**不入被删集**——残余缺口（端点被丢弃片段里的 inverse typed-link 漏降级，方向安全）记为 **#100**。
+- **端点片段收口（2026-09-14，#100 grill-up 锚定，闭合 #100）**：关系降级的判定口径从「哪些块被删」升级为「**操作后本页还剩哪些 typed-link**」。`deleteTextRange` 拆为 `planTextRangeDeletion`（计划：中间整删 / 端点被裁片段 `vanishedFragments` / 裁后内容 `contentAfter` / 合并消失块 `mergedAwayBlockId`）+ `applyTextRangeDeletion`（应用）；`cleanupAfterDelete` 增加可选 `CleanupContentPlan` 入参——消失片段参与目标提取、存活检查用裁后内容、合并消失块从存活检查排除（其目标提取只认片段，防假降级）。编排层 `deleteTextSelection` = plan → cleanup(含 plan) → apply。**same-block 切片**（issue 原文未覆盖的格）一并纳入：无块删除、仅片段 + 裁后内容。不传 plan 的另两个入口（单块删除 / 块选区删除）行为零变化。已知残余：auto-inverse `((type!))` 的 inverse 在解析层即 `null`，从不参与清理（渲染层 `!` 只做样式反查），与 #100 正交、维持现状。
 - 端点偏移先经 `renderedOffsetToEncodedOffset` 换算（开放问题 1）再切片；删除后落点的 `cursorPos` 口径 = ProseMirror position（文本偏移 + 1）。
 
 ### D9：无文本节点的块 = 跳过，不弃整条选区（2026-09-13，闭合开放问题 4）
