@@ -232,6 +232,15 @@ function isNoEditTextBlock(id: string): boolean {
 }
 
 /**
+ * 按当前选区类型复制（文本选区优先——两类选区互斥，只会命中其一）；无选区时不做任何事。
+ * Ctrl+C 与 Ctrl+X 共用同一分流，保证复制口径单源。
+ */
+function copySelectionToClipboard(): void {
+  if (selection.textRange.value) selection.copyTextToClipboard(props.pageId)
+  else if (selection.anchorIds.size > 0) selection.copyToClipboard()
+}
+
+/**
  * 块选区删除编排：Backspace/Delete 与 Ctrl+X 共用同一落库路径。
  * 乐观过滤 + 延迟落库 + 全选删除的保留块兜底（原 Backspace 分支原样上提）。
  */
@@ -273,16 +282,14 @@ async function handleDocKeyDown(e: KeyboardEvent) {
   } else {
     pasteShiftHeld = false
   }
-  const isCutKey = (e.key === 'x' || e.key === 'X') && (e.ctrlKey || e.metaKey)
+  // Ctrl/Cmd+X（不带 Shift/Alt）：剪切的字面授权只有这一 chord，其余组合交还原生行为
+  const isCutKey = (e.key === 'x' || e.key === 'X') && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey
   if (e.key === 'Backspace' || e.key === 'Delete' || isCutKey) {
     // 键盘删除/剪切分派表：{Backspace, Delete, Ctrl+X} × {文本选区, 块选区}（#95 / #96）。
     // 两类选区语义一致：选中即被支配。文本选区优先——与 Ctrl+C 同一口径（互斥，只会命中其一）。
     // 剪切 = 先复制后删除：复制函数在首个 await 前同步快照选区内容，先于删除的落库变更。
     // 无选区时不接管（preventDefault 都不做），保留编辑器/浏览器原生命中剪切。
-    if (isCutKey) {
-      if (selection.textRange.value) void selection.copyTextToClipboard(props.pageId)
-      else if (selection.anchorIds.size > 0) void selection.copyToClipboard()
-    }
+    if (isCutKey) copySelectionToClipboard()
     if (selection.textRange.value) {
       e.preventDefault()
       const deleted = await selection.deleteTextSelection(props.pageId)
@@ -335,12 +342,9 @@ async function handleDocKeyDown(e: KeyboardEvent) {
   }
   if ((e.key === 'c' || e.key === 'C') && (e.ctrlKey || e.metaKey)) {
     // 文本选区优先于块选区（互斥，只会命中其一）
-    if (selection.textRange.value) {
+    if (selection.textRange.value || selection.anchorIds.size > 0) {
       e.preventDefault()
-      selection.copyTextToClipboard(props.pageId)
-    } else if (selection.anchorIds.size > 0) {
-      e.preventDefault()
-      selection.copyToClipboard()
+      copySelectionToClipboard()
     }
   }
 }

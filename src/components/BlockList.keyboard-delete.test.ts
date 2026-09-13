@@ -343,10 +343,12 @@ describe('BlockList 剪切键分派（Ctrl+X）', () => {
     }
   })
 
-  function dispatchCutKey(): KeyboardEvent {
+  function dispatchCutKey(mods: { shift?: boolean; meta?: boolean } = {}): KeyboardEvent {
     const ev = new KeyboardEvent('keydown', {
       key: 'x',
-      ctrlKey: true,
+      ctrlKey: !mods.meta,
+      metaKey: !!mods.meta,
+      shiftKey: !!mods.shift,
       bubbles: true,
       cancelable: true,
     })
@@ -422,6 +424,86 @@ describe('BlockList 剪切键分派（Ctrl+X）', () => {
     expect(ev.defaultPrevented).toBe(false)
     expect(writeTextMock).not.toHaveBeenCalled()
     expect(store.blocks.find(x => x.id === a.id)?.content).toBe('hello')
+
+    wrapper.unmount()
+  })
+
+  test('剪切时序钉子：writeText 永不 resolve，删除仍完成且剪贴板快照是删除前内容', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-cut-ordering'
+
+    const a = await store.createBlock({ pageId, content: 'hello' })
+    const b = await store.createBlock({ pageId, content: 'world' })
+
+    const wrapper = mountBlockList(pageId)
+    const selection = getSelection(wrapper)
+    selection.startTextTracking({ blockId: a.id, offset: 2 }, { x: 0, y: 0 })
+    selection.updateTextDrag({ blockId: b.id, offset: 3 })
+    selection.finalizeTextDrag()
+
+    // 复制 promise 挂起不落：若实现错误地「先等复制完成再删除」，删除将永不发生
+    writeTextMock.mockImplementation(() => new Promise(() => {}))
+
+    const ev = dispatchCutKey()
+    await flushAsync()
+
+    expect(ev.defaultPrevented).toBe(true)
+    // 快照在首个 await 前完成：即使复制未落盘，收到的也是删除前的选区文本
+    expect(writeTextMock).toHaveBeenCalledWith('llo\nwor')
+    // 删除不等复制：照常落库（与 Backspace 同一编排）
+    expect(store.blocks.find(x => x.id === a.id)?.content).toBe('held')
+    expect(store.blocks.find(x => x.id === b.id)).toBeUndefined()
+
+    wrapper.unmount()
+  })
+
+  test('Cmd+X（metaKey）：与 Ctrl+X 同语义', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-cut-meta'
+
+    const a = await store.createBlock({ pageId, content: 'hello' })
+    const b = await store.createBlock({ pageId, content: 'world' })
+
+    const wrapper = mountBlockList(pageId)
+    const selection = getSelection(wrapper)
+    selection.startTextTracking({ blockId: a.id, offset: 1 }, { x: 0, y: 0 })
+    selection.updateTextDrag({ blockId: b.id, offset: 2 })
+    selection.finalizeTextDrag()
+
+    const ev = dispatchCutKey({ meta: true })
+    await flushAsync()
+
+    expect(ev.defaultPrevented).toBe(true)
+    expect(writeTextMock).toHaveBeenCalledWith('ello\nwo')
+    // 头块前缀 'h' + 尾块后缀 'rld' = 'hrld'
+    expect(store.blocks.find(x => x.id === a.id)?.content).toBe('hrld')
+    expect(store.blocks.find(x => x.id === b.id)).toBeUndefined()
+
+    wrapper.unmount()
+  })
+
+  test('Ctrl+Shift+X：不在剪切的字面授权内，不接管（选区保留）', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-cut-shift-x'
+
+    const a = await store.createBlock({ pageId, content: 'hello' })
+    const b = await store.createBlock({ pageId, content: 'world' })
+
+    const wrapper = mountBlockList(pageId)
+    const selection = getSelection(wrapper)
+    selection.startTextTracking({ blockId: a.id, offset: 1 }, { x: 0, y: 0 })
+    selection.updateTextDrag({ blockId: b.id, offset: 2 })
+    selection.finalizeTextDrag()
+    expect(selection.textRange.value).not.toBeNull()
+
+    const ev = dispatchCutKey({ shift: true })
+    await flushAsync()
+
+    expect(ev.defaultPrevented).toBe(false)
+    expect(writeTextMock).not.toHaveBeenCalled()
+    expect(selection.textRange.value).not.toBeNull()
+    expect(store.blocks.find(x => x.id === a.id)?.content).toBe('hello')
+    expect(store.blocks.find(x => x.id === b.id)?.content).toBe('world')
 
     wrapper.unmount()
   })
