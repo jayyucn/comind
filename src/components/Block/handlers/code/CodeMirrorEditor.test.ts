@@ -491,3 +491,93 @@ describe('CodeMirrorEditor — 编程语言选择（选中后保存）', () => {
     expect(emitted).toBeUndefined()
   })
 })
+
+describe('CodeMirrorEditor — 跨块方向键导航（边界 emit）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  /** 取 CM EditorView 实例（defineExpose(getEditor)） */
+  function getView(wrapper: ReturnType<typeof mountEditor>) {
+    return (wrapper.vm as any).getEditor() as {
+      state: any
+      contentDOM: HTMLElement
+      dispatch: (spec: any) => void
+      focus: () => void
+    }
+  }
+
+  function pressKey(view: { contentDOM: HTMLElement }, key: string) {
+    view.contentDOM.dispatchEvent(
+      new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+    )
+  }
+
+  it('光标在首行按 ArrowUp → emit move-up（携带 x 坐标）', async () => {
+    const wrapper = mountEditor({ readonly: false, content: 'line1\nline2\nline3' })
+    await flushPromises()
+    const view = getView(wrapper)
+    view.focus()
+    view.dispatch({ selection: { anchor: 2 } }) // line1 中间
+
+    pressKey(view, 'ArrowUp')
+
+    const emitted = wrapper.emitted('move-up')
+    expect(emitted).toBeTruthy()
+    expect(emitted!.length).toBe(1)
+    expect(typeof emitted![0][0]).toBe('number')
+  })
+
+  it('光标在中间行按 ArrowUp → 不跨块（交回 defaultKeymap）', async () => {
+    const wrapper = mountEditor({ readonly: false, content: 'line1\nline2\nline3' })
+    await flushPromises()
+    const view = getView(wrapper)
+    view.focus()
+    view.dispatch({ selection: { anchor: 8 } }) // line2 中间（line1\n = 6 字符）
+
+    pressKey(view, 'ArrowUp')
+
+    expect(wrapper.emitted('move-up')).toBeFalsy()
+  })
+
+  it('光标在末行按 ArrowDown → emit move-down（携带 x 坐标）', async () => {
+    const wrapper = mountEditor({ readonly: false, content: 'line1\nline2\nline3' })
+    await flushPromises()
+    const view = getView(wrapper)
+    view.focus()
+    view.dispatch({ selection: { anchor: view.state.doc.length } }) // 末行末尾
+
+    pressKey(view, 'ArrowDown')
+
+    const emitted = wrapper.emitted('move-down')
+    expect(emitted).toBeTruthy()
+    expect(emitted!.length).toBe(1)
+    expect(typeof emitted![0][0]).toBe('number')
+  })
+
+  it('光标在中间行按 ArrowDown → 不跨块（交回 defaultKeymap）', async () => {
+    const wrapper = mountEditor({ readonly: false, content: 'line1\nline2\nline3' })
+    await flushPromises()
+    const view = getView(wrapper)
+    view.focus()
+    view.dispatch({ selection: { anchor: 8 } }) // line2 中间
+
+    pressKey(view, 'ArrowDown')
+
+    expect(wrapper.emitted('move-down')).toBeFalsy()
+  })
+
+  it('readonly 时不跨块（渲染态 ArrowUp/ArrowDown 均不 emit）', async () => {
+    const wrapper = mountEditor({ readonly: true, content: 'line1\nline2' })
+    await flushPromises()
+    const view = getView(wrapper)
+    view.focus()
+    view.dispatch({ selection: { anchor: 0 } })
+
+    pressKey(view, 'ArrowUp')
+    pressKey(view, 'ArrowDown')
+
+    expect(wrapper.emitted('move-up')).toBeFalsy()
+    expect(wrapper.emitted('move-down')).toBeFalsy()
+  })
+})

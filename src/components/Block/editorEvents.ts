@@ -1,13 +1,13 @@
-import type { Ref } from 'vue'
 import type { Editor } from '@tiptap/core'
 import { TextSelection } from '@tiptap/pm/state'
-import { getRelationshipLabel } from '../../types/relationship'
-import {
-  notifyRelationshipMenuSelect,
-  closeRelationshipMenuByEditor,
-} from '../../extensions/RelationshipTriggerExtension'
+import type { Ref } from 'vue'
 import { DATE_REF_CLICK_EVENT, type DateRefClickPayload } from '../../extensions/DateRefExtension'
 import type { DateRefKindSelectEvent } from '../../extensions/DateRefTriggerExtension'
+import {
+  closeRelationshipMenuByEditor,
+  notifyRelationshipMenuSelect,
+} from '../../extensions/RelationshipTriggerExtension'
+import { getRelationshipLabel } from '../../types/relationship'
 
 export interface RelationshipMenuApi {
   open: (opts: {
@@ -230,7 +230,7 @@ export function createEditorEvents(ctx: EditorEventCtx): Record<string, (e: Even
   }
 
   function handleEnterAsBlock(event: Event) {
-    const customEvent = event as CustomEvent<{ type: string; pos?: number }>
+    const customEvent = event as CustomEvent<{ type: string; pos?: number; x?: number }>
     switch (customEvent.detail.type) {
       case 'split':
         ctx.emit('split', customEvent.detail.pos ?? 0)
@@ -248,10 +248,16 @@ export function createEditorEvents(ctx: EditorEventCtx): Record<string, (e: Even
         ctx.emit('outdent')
         break
       case 'moveUp':
-        ctx.emit('moveUp')
+        ctx.emit('moveUp', customEvent.detail.x)
         break
       case 'moveDown':
-        ctx.emit('moveDown')
+        ctx.emit('moveDown', customEvent.detail.x)
+        break
+      case 'moveLeft':
+        ctx.emit('moveLeft', customEvent.detail.x)
+        break
+      case 'moveRight':
+        ctx.emit('moveRight', customEvent.detail.x)
         break
       case 'exitEdit':
         ctx.emit('exitEdit')

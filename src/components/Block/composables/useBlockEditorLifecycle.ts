@@ -213,17 +213,43 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     editorStore.activateBlock(blockId.value)
   })
 
-  const handleMoveUp = withContentSync(async () => {
+  const handleMoveUp = withContentSync(async (x?: number) => {
     const prevBlock = blockStore.findPreviousBlockInTreeOrder(blockId.value)
     if (prevBlock) {
+      // 上移落到上一块的末行，保持源块水平列位置（短块由 posAtCoords 钳制）
+      if (x !== undefined) editorStore.setArrowFocus(x, 'last')
       editorStore.deactivateBlock()
       editorStore.activateBlock(prevBlock.id)
     }
   })
 
-  const handleMoveDown = withContentSync(async () => {
+  const handleMoveDown = withContentSync(async (x?: number) => {
     const nextBlock = blockStore.findNextBlockInTreeOrder(blockId.value)
     if (nextBlock) {
+      // 下移落到下一块的首行，保持源块水平列位置（短块由 posAtCoords 钳制）
+      if (x !== undefined) editorStore.setArrowFocus(x, 'first')
+      editorStore.deactivateBlock()
+      editorStore.activateBlock(nextBlock.id)
+    }
+  })
+
+  const handleMoveLeft = withContentSync(async () => {
+    //在块首左移，落到上一块的末行行尾（不保持列，emit 的 x 有意忽略）
+    if (cursorPos.value !== 0) return
+    const prevBlock = blockStore.findPreviousBlockInTreeOrder(blockId.value)
+    if (prevBlock) {
+      editorStore.setArrowFocus(null, 'last')
+      editorStore.deactivateBlock()
+      editorStore.activateBlock(prevBlock.id)
+    }
+
+  })
+
+  const handleMoveRight = withContentSync(async () => {
+    //在块尾右移，落到下一块的首行行首（不保持列，emit 的 x 有意忽略）
+    const nextBlock = blockStore.findNextBlockInTreeOrder(blockId.value)
+    if (nextBlock) {
+      editorStore.setArrowFocus(null, 'first')
       editorStore.deactivateBlock()
       editorStore.activateBlock(nextBlock.id)
     }
@@ -404,6 +430,8 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     handleOutdent,
     handleMoveUp,
     handleMoveDown,
+    handleMoveLeft,
+    handleMoveRight,
     handleExitEdit,
     handleClear,
     handleCursorChange,

@@ -35,8 +35,8 @@ const emit = defineEmits<{
   (e: 'delete'): void
   (e: 'indent'): void
   (e: 'outdent'): void
-  (e: 'move-up'): void
-  (e: 'move-down'): void
+  (e: 'move-up', x?: number): void
+  (e: 'move-down', x?: number): void
   (e: 'exit-edit'): void
   (e: 'cursor-change', pos: number): void
   (e: 'language-change', lang: string): void
@@ -178,6 +178,15 @@ const githubTheme = EditorView.theme({
   },
 })
 
+/** 取 pos 的屏幕水平坐标。jsdom（单测）或隐藏态下测量可能抛错，回退 0（仅用于跨块落列提示） */
+function caretLeft(v: EditorView, pos: number): number {
+  try {
+    return v.coordsAtPos(pos)?.left ?? 0
+  } catch {
+    return 0
+  }
+}
+
 function createEditor() {
   if (!editorRef.value) return
 
@@ -193,6 +202,38 @@ function createEditor() {
     EditorView.editable.of(!props.readonly),
     ...(wrap.value ? [EditorView.lineWrapping] : []),
     keymap.of([
+      // 跨块上下导航：光标在首/末「视觉行」时交给 Block 层（词处理器模型，
+      // 与 PM 端 EnterAsBlockExtension 的 endOfTextblock('up'/'down') 语义一致；
+      // 视觉行判定在 wrap 开启时同样正确）。不在边界则返回 false，
+      // 落入 defaultKeymap 的 cursorLineUp/Down（块内移动 + 原生滚动）。
+      {
+        key: 'ArrowUp',
+        run: () => {
+          if (props.readonly) return false
+          const v = view.value
+          if (!v) return false
+          const head = v.state.selection.main.head
+          if (head <= v.lineBlockAt(0).to) {
+            emit('move-up', caretLeft(v, head))
+            return true
+          }
+          return false
+        }
+      },
+      {
+        key: 'ArrowDown',
+        run: () => {
+          if (props.readonly) return false
+          const v = view.value
+          if (!v) return false
+          const head = v.state.selection.main.head
+          if (head >= v.lineBlockAt(v.state.doc.length).from) {
+            emit('move-down', caretLeft(v, head))
+            return true
+          }
+          return false
+        }
+      },
       ...defaultKeymap,
       ...historyKeymap,
       indentWithTab,

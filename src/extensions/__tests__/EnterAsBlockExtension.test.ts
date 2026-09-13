@@ -19,6 +19,9 @@ function makeEditor(opts: {
   parentSize?: number
   from?: number
   to?: number
+  atFirstLine?: boolean
+  atLastLine?: boolean
+  caretX?: number
 } = {}) {
   const dom = document.createElement('div')
   const log: LogEntry[] = []
@@ -41,13 +44,21 @@ function makeEditor(opts: {
     run: runMock,
   }
 
+  const endOfTextblock = (dir: 'up' | 'down' | 'left' | 'right') => {
+    if (dir === 'up') return opts.atFirstLine ?? false
+    if (dir === 'down') return opts.atLastLine ?? false
+    return false
+  }
+  const coordsAtPos = () => ({ left: opts.caretX ?? 0, top: 0, bottom: 12, right: 10 })
+
   const editor: any = {
-    view: { dom },
+    view: { dom, endOfTextblock, coordsAtPos },
     getText: () => text,
     state: {
       selection: {
         from,
         to,
+        head: from,
         $from: { parentOffset, parent: { content: { size: parentSize } } },
       },
     },
@@ -108,23 +119,30 @@ describe('EnterAsBlockExtension — 派发侧', () => {
     expect(log).toEqual([{ name: 'enter-as-block', detail: { type: 'outdent' } }])
   })
 
-  it('ArrowUp 在行首 → enter-as-block { moveUp }', () => {
-    const { editor, log } = makeEditor({ parentOffset: 0 })
+  it('ArrowUp 在首行 → enter-as-block { moveUp, x }（携带 caret 水平坐标）', () => {
+    const { editor, log } = makeEditor({ parentOffset: 3, atFirstLine: true, caretX: 42 })
     shortcuts['ArrowUp']({ editor })
-    expect(log).toEqual([{ name: 'enter-as-block', detail: { type: 'moveUp' } }])
+    expect(log).toEqual([{ name: 'enter-as-block', detail: { type: 'moveUp', x: 42 } }])
   })
 
-  it('ArrowUp 不在行首 → 不 dispatch', () => {
-    const { editor, log } = makeEditor({ parentOffset: 3 })
+  it('ArrowUp 不在首行（中间行）→ 不 dispatch，交原生换行', () => {
+    const { editor, log } = makeEditor({ parentOffset: 3, atFirstLine: false, caretX: 42 })
     const ret = shortcuts['ArrowUp']({ editor })
     expect(ret).toBe(false)
     expect(log).toEqual([])
   })
 
-  it('ArrowDown 在行尾 → enter-as-block { moveDown }', () => {
-    const { editor, log } = makeEditor({ text: 'abcde', parentOffset: 5, parentSize: 5 })
+  it('ArrowDown 在末行 → enter-as-block { moveDown, x }', () => {
+    const { editor, log } = makeEditor({ text: 'abcde', parentOffset: 5, parentSize: 5, atLastLine: true, caretX: 64 })
     shortcuts['ArrowDown']({ editor })
-    expect(log).toEqual([{ name: 'enter-as-block', detail: { type: 'moveDown' } }])
+    expect(log).toEqual([{ name: 'enter-as-block', detail: { type: 'moveDown', x: 64 } }])
+  })
+
+  it('ArrowDown 不在末行（中间行）→ 不 dispatch', () => {
+    const { editor, log } = makeEditor({ text: 'abcde', parentOffset: 2, parentSize: 5, atLastLine: false, caretX: 64 })
+    const ret = shortcuts['ArrowDown']({ editor })
+    expect(ret).toBe(false)
+    expect(log).toEqual([])
   })
 
   it('Escape → enter-as-block { exitEdit }', () => {

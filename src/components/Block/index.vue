@@ -33,6 +33,7 @@ import PropertyDisplay from './PropertyDisplay.vue'
 import PropertyInline from './PropertyInline.vue'
 
 import type { CrossBlockSelection } from '../../composables/useCrossBlockSelection'
+import type { EditorView } from '@codemirror/view'
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import { usePageStore } from '../../stores/pages'
 import type { TreeNode } from '../../types/block'
@@ -181,6 +182,8 @@ const {
   handleOutdent,
   handleMoveUp,
   handleMoveDown,
+  handleMoveLeft,
+  handleMoveRight,
   handleExitEdit,
   handleClear,
   handleCursorChange,
@@ -311,6 +314,57 @@ async function focusActiveEditor() {
   const editor = editorRef.value.getEditor()
   if (editor) {
     editorStore.setActiveEditor(editor)
+  }
+
+  // 优先级：跨块同列 > 点击坐标 > cursorPos > end
+  const arrowFocus = editorStore.consumeArrowFocus()
+  if (arrowFocus && editorRef.value?.getEditor()) {
+    const editor = editorRef.value.getEditor()!
+    // x = null：不保持列，'last' 直接落行尾 / 'first' 落行首（块首左移场景）
+    if (arrowFocus.x === null) {
+      editorRef.value.focus(arrowFocus.line === 'last' ? 'end' : 'start')
+      return
+    }
+    // 代码块（CodeMirror）目标：getEditor() 返回 CM EditorView（无 .view），
+    // 用 CM 的 coordsAtPos/posAtCoords 做同列落位（与 PM 分支同语义）
+    if (typeof (editor as any).lineBlockAt === 'function') {
+      const cm = editor as EditorView
+      const docLen = cm.state.doc.length
+      // 目标落位行：'first' → 文档起始，'last' → 文档末尾
+      const linePos = arrowFocus.line === 'last' ? docLen : 0
+      const lineRect = cm.coordsAtPos(linePos)
+      if (lineRect) {
+        // 末行用底线略上、首行用顶线略下，水平用源块 caret x（posAtCoords 钳制到该行最近位置）
+        const top = arrowFocus.line === 'last' ? lineRect.bottom - 1 : lineRect.top + 1
+        const hit = cm.posAtCoords({ x: arrowFocus.x, y: top })
+        cm.dispatch({
+          selection: { anchor: hit ?? linePos },
+          scrollIntoView: true,
+        })
+      } else {
+        cm.dispatch({ selection: { anchor: linePos }, scrollIntoView: true })
+      }
+      cm.focus()
+      return
+    }
+    const view = (editor as any).view
+    const doc = view.state.doc
+    // 目标落位行：上移→上一块末行，下移→下一块首行
+    const linePos = arrowFocus.line === 'last'
+      ? Math.max(1, doc.content.size - 1)
+      : 1
+    const lineCoords = view.coordsAtPos(linePos)
+    // 取该行纵坐标（末行用底线略上、首行用顶线略下），水平用源块 caret x
+    const top = arrowFocus.line === 'last' ? lineCoords.bottom - 1 : lineCoords.top + 1
+    const hit = view.posAtCoords({ left: arrowFocus.x, top })
+    if (hit) {
+      editorRef.value.focus(hit.pos)
+    } else if (arrowFocus.line === 'last') {
+      editorRef.value.focus('end')
+    } else {
+      editorRef.value.focus('start')
+    }
+    return
   }
 
   // 优先级：点击坐标 > cursorPos > end
@@ -457,6 +511,8 @@ watch(isActive, (active) => {
             @outdent="handleOutdent"
             @move-up="handleMoveUp"
             @move-down="handleMoveDown"
+            @move-left="handleMoveLeft"
+            @move-right="handleMoveRight"
             @exit-edit="handleExitEdit"
             @cursor-change="handleCursorChange"
             @language-change="onLanguageChange"
