@@ -299,14 +299,20 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
       return
     }
 
-    // 已激活的 block 交给 ProseMirror 原生处理光标定位
-    if (editorStore.activeBlockId === blockId.value) return
-
-    // 保存鼠标坐标，Editor 挂载后用 posAtCoords 精确定位
-    editorStore.setClickCoords(e.clientX, e.clientY)
+    // 未激活的块：保存鼠标坐标，Editor 挂载后用 posAtCoords 精确定位光标。
+    // 已激活的块不设坐标 —— 光标由 ProseMirror 原生 mousedown 定位（此处不 preventDefault，
+    // 也不阻断事件），故单击语义保持原样。
+    if (editorStore.activeBlockId !== blockId.value) {
+      editorStore.setClickCoords(e.clientX, e.clientY)
+    }
 
     if (selection) {
-      // 内容区 mousedown 启动文本选区拖拽（ADR-0035 D1）：定位起始字符偏移
+      // 内容区 mousedown 启动文本选区拖拽（ADR-0035 D1）：定位起始字符偏移。
+      //
+      // 已激活块同样走这里（旧实现提前 return）：否则起始于激活块内时 ProseMirror
+      // 独占拖拽、comind 无从接管，选区被钳在编辑器自己的 doc 内 —— 拖不出本块。
+      // 拖拽超过阈值后由 BlockList.handleDocMouseMove 失活编辑器统一接管，
+      // 与非激活块起点完全同构；未拖时（单击/双击）不干预，光标仍归 ProseMirror。
       const anchor = blockOffsetFromPoint(e.clientX, e.clientY)
       if (anchor) {
         selection.startTextTracking(anchor, { x: e.clientX, y: e.clientY })

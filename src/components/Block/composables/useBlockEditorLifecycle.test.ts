@@ -46,13 +46,24 @@ vi.mock('../../../composables/useDateTimePickerPanel', async () => {
   }
 })
 
+// selection-geometry 依赖 document.elementFromPoint / caretRangeFromPoint（jsdom 无布局），
+// 桩掉它才能断言 handleContentMousedown 是否真的启动了文本选区追踪。
+const { blockOffsetFromPointMock } = vi.hoisted(() => ({
+  blockOffsetFromPointMock: vi.fn()
+}))
+
+vi.mock('../../../services/selection-geometry', () => ({
+  blockOffsetFromPoint: blockOffsetFromPointMock
+}))
+
 describe('useBlockEditorLifecycle', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    blockOffsetFromPointMock.mockReset()
   })
 
-  function setup() {
+  function setup(selection?: { startTextTracking: (a: unknown, p: unknown) => void; toggleBlock: () => void }) {
     const blockStore = useBlockStore()
     const editorStore = useEditorStore()
     const pageStore = usePageStore()
@@ -77,7 +88,8 @@ describe('useBlockEditorLifecycle', () => {
       blockStore,
       editorStore,
       pageStore,
-      relationshipCleanup
+      relationshipCleanup,
+      selection: (selection ?? null) as never
     })
 
     return { lifecycle, blockStore, editorStore, blockId, relationshipCleanup, cursorPos }
@@ -252,6 +264,55 @@ describe('useBlockEditorLifecycle', () => {
       } as any
       lifecycle.handleContentMousedown(e)
       expect(setCoordsSpy).not.toHaveBeenCalled()
+    })
+
+    // ── 起点在激活块：手势必须与非激活块同构 ──
+    // 旧实现「已激活的 block 交给 ProseMirror 原生处理光标定位」直接 return，
+    // 文本追踪根本不启动 → ProseMirror 独占拖拽，comind 无从接管（拖不出本块）。
+
+    /** 内容区左键 mousedown（未命中 .block-link / .rel-type-label / .date-ref） */
+    function contentMousedown(): MouseEvent {
+      return {
+        target: { closest: () => null },
+        button: 0,
+        ctrlKey: false, metaKey: false,
+        clientX: 10, clientY: 20,
+        preventDefault: () => {}
+      } as unknown as MouseEvent
+    }
+
+    it('已激活块：仍启动文本选区追踪（回归：起点在激活块内拖不出本块）', () => {
+      const startTextTracking = vi.fn()
+      const { lifecycle, editorStore } = setup({ startTextTracking, toggleBlock: vi.fn() })
+      editorStore.activateBlock('b1')
+      blockOffsetFromPointMock.mockReturnValue({ blockId: 'b1', offset: 3 })
+
+      lifecycle.handleContentMousedown(contentMousedown())
+
+      expect(startTextTracking).toHaveBeenCalledWith({ blockId: 'b1', offset: 3 }, { x: 10, y: 20 })
+    })
+
+    it('已激活块：不设 clickCoords —— 光标定位仍归 ProseMirror', () => {
+      const { lifecycle, editorStore } = setup({ startTextTracking: vi.fn(), toggleBlock: vi.fn() })
+      editorStore.activateBlock('b1')
+      const setCoordsSpy = vi.spyOn(editorStore, 'setClickCoords').mockImplementation(() => {})
+      blockOffsetFromPointMock.mockReturnValue(null)
+
+      lifecycle.handleContentMousedown(contentMousedown())
+
+      expect(setCoordsSpy).not.toHaveBeenCalled()
+    })
+
+    it('未激活块：既设 clickCoords 也启动追踪（对照组）', () => {
+      const startTextTracking = vi.fn()
+      const { lifecycle, editorStore } = setup({ startTextTracking, toggleBlock: vi.fn() })
+      const setCoordsSpy = vi.spyOn(editorStore, 'setClickCoords').mockImplementation(() => {})
+      blockOffsetFromPointMock.mockReturnValue({ blockId: 'b1', offset: 0 })
+
+      lifecycle.handleContentMousedown(contentMousedown())
+
+      expect(setCoordsSpy).toHaveBeenCalledWith(10, 20)
+      expect(startTextTracking).toHaveBeenCalledWith({ blockId: 'b1', offset: 0 }, { x: 10, y: 20 })
     })
   })
 
