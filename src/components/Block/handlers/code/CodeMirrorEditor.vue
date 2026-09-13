@@ -37,6 +37,7 @@ const emit = defineEmits<{
   (e: 'outdent'): void
   (e: 'move-up', x?: number): void
   (e: 'move-down', x?: number): void
+  (e: 'backspace-empty'): void
   (e: 'exit-edit'): void
   (e: 'cursor-change', pos: number): void
   (e: 'language-change', lang: string): void
@@ -232,6 +233,18 @@ function createEditor() {
             return true
           }
           return false
+        }
+      },
+      // 空文档按 Backspace → 交给 Block 层转为 bullet（Notion 惯例）；
+      // 非空则返回 false 落入 defaultKeymap 正常删字符。
+      {
+        key: 'Backspace',
+        run: () => {
+          if (props.readonly) return false
+          const v = view.value
+          if (!v || v.state.doc.length !== 0) return false
+          emit('backspace-empty')
+          return true
         }
       },
       ...defaultKeymap,

@@ -1,5 +1,5 @@
 import type { ComputedRef, Ref } from 'vue'
-import { computed, inject } from 'vue'
+import { computed, inject, nextTick } from 'vue'
 import type { useBlockRelationshipCleanup } from '../../../composables/useBlockRelationshipCleanup'
 import type { CrossBlockSelection } from '../../../composables/useCrossBlockSelection'
 import {
@@ -259,6 +259,16 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     editorStore.deactivateBlock()
   })
 
+  /** 空代码块 Backspace：转为 bullet 并重激活聚焦（Notion 惯例）。
+   *  deactivate→nextTick→activate 确保编辑器组件随类型切换重挂载、
+   *  watch(isActive) 触发 focusActiveEditor。 */
+  const handleBackspaceEmpty = withContentSync(async () => {
+    await blockStore.updateBlockType(blockId.value, 'bullet')
+    editorStore.deactivateBlock()
+    await nextTick()
+    editorStore.activateBlock(blockId.value)
+  })
+
   async function handleClear() {
     if (editorRef.value) editorRef.value.markSaved()
     await blockStore.updateBlockContent(blockId.value, '')
@@ -433,6 +443,7 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     handleMoveLeft,
     handleMoveRight,
     handleExitEdit,
+    handleBackspaceEmpty,
     handleClear,
     handleCursorChange,
     handleContentMousedown,

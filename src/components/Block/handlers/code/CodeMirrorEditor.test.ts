@@ -2,6 +2,20 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { nextTick } from 'vue'
 
+// jsdom 未实现 Range/Element.getClientRects，CodeMirror 坐标测量（如
+// defaultKeymap 的 cursorLineUp/Down）会抛 TypeError 成为 unhandled error。
+// 补零值 rect 使 CM 命令可正常走通（布局全为 0，不影响 emit 断言）。
+if (!Range.prototype.getClientRects) {
+  ;(Range.prototype as any).getClientRects = function () {
+    return [{ left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 }]
+  }
+}
+if (!Element.prototype.getClientRects) {
+  ;(Element.prototype as any).getClientRects = function () {
+    return [{ left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 }]
+  }
+}
+
 // Mock useTheme before importing the component
 vi.mock('../../../../composables/useTheme', () => ({
   useTheme: vi.fn(() => ({
@@ -579,5 +593,40 @@ describe('CodeMirrorEditor — 跨块方向键导航（边界 emit）', () => {
 
     expect(wrapper.emitted('move-up')).toBeFalsy()
     expect(wrapper.emitted('move-down')).toBeFalsy()
+  })
+
+  it('空文档按 Backspace → emit backspace-empty（转 bullet 信号）', async () => {
+    const wrapper = mountEditor({ readonly: false, content: '' })
+    await flushPromises()
+    const view = getView(wrapper)
+    view.focus()
+
+    pressKey(view, 'Backspace')
+
+    expect(wrapper.emitted('backspace-empty')).toBeTruthy()
+    expect(wrapper.emitted('backspace-empty')!.length).toBe(1)
+  })
+
+  it('非空文档按 Backspace → 不 emit（正常删字符）', async () => {
+    const wrapper = mountEditor({ readonly: false, content: 'code here' })
+    await flushPromises()
+    const view = getView(wrapper)
+    view.focus()
+    view.dispatch({ selection: { anchor: view.state.doc.length } })
+
+    pressKey(view, 'Backspace')
+
+    expect(wrapper.emitted('backspace-empty')).toBeFalsy()
+  })
+
+  it('readonly 空文档按 Backspace → 不 emit', async () => {
+    const wrapper = mountEditor({ readonly: true, content: '' })
+    await flushPromises()
+    const view = getView(wrapper)
+    view.focus()
+
+    pressKey(view, 'Backspace')
+
+    expect(wrapper.emitted('backspace-empty')).toBeFalsy()
   })
 })

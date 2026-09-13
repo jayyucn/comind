@@ -32,8 +32,8 @@ import './handlers/image'
 import PropertyDisplay from './PropertyDisplay.vue'
 import PropertyInline from './PropertyInline.vue'
 
-import type { CrossBlockSelection } from '../../composables/useCrossBlockSelection'
 import type { EditorView } from '@codemirror/view'
+import type { CrossBlockSelection } from '../../composables/useCrossBlockSelection'
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import { usePageStore } from '../../stores/pages'
 import type { TreeNode } from '../../types/block'
@@ -185,6 +185,7 @@ const {
   handleMoveLeft,
   handleMoveRight,
   handleExitEdit,
+  handleBackspaceEmpty,
   handleClear,
   handleCursorChange,
   handleContentMousedown,
@@ -513,6 +514,7 @@ watch(isActive, (active) => {
             @move-down="handleMoveDown"
             @move-left="handleMoveLeft"
             @move-right="handleMoveRight"
+            @backspace-empty="handleBackspaceEmpty"
             @exit-edit="handleExitEdit"
             @cursor-change="handleCursorChange"
             @language-change="onLanguageChange"
