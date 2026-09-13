@@ -1,6 +1,6 @@
+import type { Editor } from '@tiptap/vue-3'
 import { defineStore } from 'pinia'
 import { ref, shallowRef } from 'vue'
-import type { Editor } from '@tiptap/vue-3'
 import type { DateRefKind, RecurrenceRule } from '../utils/date-ref'
 
 export interface ToastMessage {
@@ -15,6 +15,13 @@ export const useEditorStore = defineStore('editor', () => {
   const pendingCursorPos = ref<number | null>(null)
   /** 激活后用 posAtCoords 定位的鼠标坐标，用完即清 */
   const pendingClickCoords = ref<{ x: number; y: number } | null>(null)
+  /**
+   * 跨块方向键导航时，激活目标块后要恢复的光标位置。
+   * x = 源块光标的客户端水平坐标（保持同列）；x = null 表示不保持列——
+   * 'last' 直接落行尾、'first' 落行首。line = 目标块落位行（'first'|'last'）。
+   * 用完即清。优先于 pendingCursorPos/pendingClickCoords 在 focusActiveEditor 中消费。
+   */
+  const pendingArrowFocus = ref<{ x: number | null; line: 'first' | 'last' } | null>(null)
   
   /** 当前活跃的编辑器实例 */
   const activeEditor = shallowRef<Editor | null>(null)
@@ -60,11 +67,23 @@ export const useEditorStore = defineStore('editor', () => {
     pendingClickCoords.value = { x, y }
   }
 
+  /** 设置跨块方向键导航的光标目标（由 handleMoveUp/Down/Left/Right 触发） */
+  function setArrowFocus(x: number | null, line: 'first' | 'last') {
+    pendingArrowFocus.value = { x, line }
+  }
+
   /** 消费并清除待定位的鼠标坐标 */
   function consumeClickCoords(): { x: number; y: number } | null {
     const coords = pendingClickCoords.value
     pendingClickCoords.value = null
     return coords
+  }
+
+  /** 消费并清除跨块方向键导航的光标目标 */
+  function consumeArrowFocus(): { x: number | null; line: 'first' | 'last' } | null {
+    const v = pendingArrowFocus.value
+    pendingArrowFocus.value = null
+    return v
   }
 
   /** 设置当前编辑器实例 */
@@ -259,6 +278,7 @@ export const useEditorStore = defineStore('editor', () => {
     activeBlockId,
     pendingCursorPos,
     pendingClickCoords,
+    pendingArrowFocus,
     activeEditor,
     slashCommand,
     activateBlock,
@@ -267,6 +287,8 @@ export const useEditorStore = defineStore('editor', () => {
     setCursorPos,
     setClickCoords,
     consumeClickCoords,
+    setArrowFocus,
+    consumeArrowFocus,
     setActiveEditor,
     showSlashCommand,
     hideSlashCommand,
