@@ -299,6 +299,19 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
       return
     }
 
+    // shift+click：延伸已有文本选区的活动端（ADR-0035 D10）。无选区时退化为普通点击。
+    // preventDefault 屏蔽激活块内 ProseMirror 原生 shift+click，避免其原生蓝底选区
+    // 与 comind 覆盖层双高亮并存；后续拖拽/固化全部复用既有拖拽循环（startTextExtend
+    // 置 isTextDragging，mousemove 免阈值、mouseup 固化），此处不再设 clickCoords。
+    if (e.shiftKey && selection?.textRange.value) {
+      const head = blockOffsetFromPoint(e.clientX, e.clientY)
+      if (head) {
+        e.preventDefault()
+        selection.startTextExtend(head, { x: e.clientX, y: e.clientY })
+      }
+      return
+    }
+
     // 未激活的块：保存鼠标坐标，Editor 挂载后用 posAtCoords 精确定位光标。
     // 已激活的块不设坐标 —— 光标由 ProseMirror 原生 mousedown 定位（此处不 preventDefault，
     // 也不阻断事件），故单击语义保持原样。

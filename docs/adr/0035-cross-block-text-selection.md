@@ -2,7 +2,7 @@
 
 - 状态：已采纳（Accepted）
 - 日期：2026-08-24
-- 修订：2026-09-13（#93 开放问题 1 写回；#94 D6 命中面修订；#95/#96 新增 D8 键盘删除语义；高亮跳过无文本节点块，新增 D9 并闭合开放问题 4）
+- 修订：2026-09-13（#93 开放问题 1 写回；#94 D6 命中面修订；#95/#96 新增 D8 键盘删除语义；高亮跳过无文本节点块，新增 D9 并闭合开放问题 4；shift+click 延伸，新增 D10 并从 D7 范围外移出 Shift+Click）
 - 范围：
   - `src/composables/useCrossBlockSelection.ts`（选区模型扩展：新增文本选区，保留块选区）
   - `src/components/BlockList.vue`（document 级拖拽/按键事件改为按"文本选区"语义驱动）
@@ -83,7 +83,7 @@ type BlockSelection = Set<string>  // block id 集合（沿用 anchorIds/selecte
 
 ### D7：范围外（本轮不做）
 
-- 键盘范围选择（Shift+Click / Shift+↑↓）。
+- 键盘范围选择（Shift+↑↓）。~~Shift+Click~~ **已由 D10 补齐**。
 - 选区浮动格式工具条（用户本轮选"仅复制"；**删除已由 D8 补齐**）。
 - 行内富文本格式模型。
 - "无 5px 阈值误触"随 D1 拖拽语义重写一并解决，不单独立项。
@@ -104,6 +104,13 @@ type BlockSelection = Set<string>  // block id 集合（沿用 anchorIds/selecte
 - **实现要点**：端点判序不能再用 `Range.compareBoundaryPoints`（无文本节点时比较不了），改为按**块在文档序中的位置**判先后；同块内退回按字符偏移判序（否则反向拖拽塌缩成零宽）。
 - **不影响选区成员资格**：删除仍按 D8 把中间的无文本块整块删除（含子树），复制仍含其 `content`——「不画高亮」只关乎显示。
 - **回归网**：`src/services/selection-geometry.test.ts`。jsdom 未实现 `Range.getClientRects`（该模块此前只有真机验证），测试注入替身把「覆盖的块 + 覆盖字数」编码进矩形，使断言落在选中语义而非像素几何上。
+
+### D10：shift+click 延伸已有文本选区（2026-09-13）
+
+- **语义**：`shift+click` = 把已有文本选区的**活动端（head）延伸到点击处**，anchor 不动（Word / 浏览器通用行为）；点击在 anchor 之前则选区反向，文档序归一交给消费方（几何层 / `textRangeToText` 已按位置判序）。**无已有文本选区时退化为普通点击**（不从光标起选——光标位置只有激活块内可靠，不值得为此引入「上次光标位置」状态）。
+- **shift+mousedown 后按住拖动 = 连续调整**：`startTextExtend` 置 `isTextDragging = true`，使既有拖拽循环直接接管——`handleDocMouseMove` 免 4px 阈值连续重调 head，`handleDocMouseUp` 走固化分支保留选区。零新增事件机制。
+- **激活块内接管并屏蔽**：shift+mousedown 且已有选区时 `preventDefault`，抑制 ProseMirror 原生 shift+click（否则其原生蓝底选区与 comind 覆盖层双高亮）。注意该状态当前**不可达**：任何拖拽过阈值都会 `deactivateBlock`，而单击激活会清选区——`preventDefault` 是面向未来的护栏（单测覆盖分支）。
+- **实现**：`useCrossBlockSelection.startTextExtend(head, startPoint)`（锚点取既有 range.anchor）+ `useBlockEditorLifecycle.handleContentMousedown` 的 shift 分支（先于 clickCoords/激活路径）。
 
 ---
 

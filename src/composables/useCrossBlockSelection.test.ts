@@ -222,6 +222,72 @@ describe('useCrossBlockSelection', () => {
       expect(selection.textRange.value).toBeNull()
       expect(selection.textDragAnchor.value).toEqual({ blockId: 'b', offset: 0 })
     })
+
+    // ── shift+click 延伸（ADR-0035 D10）──
+
+    test('startTextExtend：anchor 不动、head 跳到点击处，且立即进入可连续调整的拖拽态', async () => {
+      const selection = useCrossBlockSelection()
+      const a = await blockStore.createBlock({ pageId: 'page-1', content: 'aaaa' })
+      const b = await blockStore.createBlock({ pageId: 'page-1', content: 'bbbb' })
+
+      // 造既有选区：a 块 [0, 2)，已固化
+      selection.startTextTracking({ blockId: a.id, offset: 0 }, { x: 0, y: 0 })
+      selection.updateTextDrag({ blockId: a.id, offset: 2 })
+      selection.finalizeTextDrag()
+
+      selection.startTextExtend({ blockId: b.id, offset: 3 }, { x: 10, y: 20 })
+
+      expect(selection.textRange.value).toEqual({
+        anchor: { blockId: a.id, offset: 0 },
+        head: { blockId: b.id, offset: 3 }
+      })
+      // isTextDragging 置真 → BlockList 的 mousemove 免阈值连续重调、mouseup 固化
+      expect(selection.isTextDragging.value).toBe(true)
+      expect(selection.textDragAnchor.value).toEqual({ blockId: a.id, offset: 0 })
+
+      // 按住继续拖：仍走既有 updateTextDrag，anchor 不变
+      selection.updateTextDrag({ blockId: b.id, offset: 1 })
+      expect(selection.textRange.value).toEqual({
+        anchor: { blockId: a.id, offset: 0 },
+        head: { blockId: b.id, offset: 1 }
+      })
+
+      // mouseup 固化：清拖拽态、保留选区
+      selection.finalizeTextDrag()
+      expect(selection.isTextDragging.value).toBe(false)
+      expect(selection.textRange.value).toEqual({
+        anchor: { blockId: a.id, offset: 0 },
+        head: { blockId: b.id, offset: 1 }
+      })
+    })
+
+    test('startTextExtend 反向延伸：head 落在 anchor 之前，原样记录（文档序归一交给消费方）', async () => {
+      const selection = useCrossBlockSelection()
+      const a = await blockStore.createBlock({ pageId: 'page-1', content: 'aaaa' })
+      const b = await blockStore.createBlock({ pageId: 'page-1', content: 'bbbb' })
+
+      // 既有选区在后块 b 内；延伸到前块 a（文档序在 anchor 之前）
+      selection.startTextTracking({ blockId: b.id, offset: 1 }, { x: 0, y: 0 })
+      selection.updateTextDrag({ blockId: b.id, offset: 3 })
+      selection.finalizeTextDrag()
+
+      selection.startTextExtend({ blockId: a.id, offset: 2 }, { x: 1, y: 2 })
+
+      expect(selection.textRange.value).toEqual({
+        anchor: { blockId: b.id, offset: 1 },
+        head: { blockId: a.id, offset: 2 }
+      })
+    })
+
+    test('startTextExtend 无选区时 no-op', () => {
+      const selection = useCrossBlockSelection()
+
+      selection.startTextExtend({ blockId: 'a', offset: 1 }, { x: 0, y: 0 })
+
+      expect(selection.textRange.value).toBeNull()
+      expect(selection.textDragAnchor.value).toBeNull()
+      expect(selection.isTextDragging.value).toBe(false)
+    })
   })
 
   describe('互斥不变量（ADR-0035 D2：任意时刻至多一种选区）', () => {

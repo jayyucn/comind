@@ -259,6 +259,22 @@ export function useCrossBlockSelection() {
     transition({ kind: 'text', range: { anchor: textDragAnchor.value, head } })
   }
 
+  /**
+   * shift+click 延伸已有文本选区（ADR-0035 D10）：anchor 不动，head 立即跳到点击处。
+   *
+   * isTextDragging 置真使既有拖拽循环直接接管：handleDocMouseMove 免 4px 阈值
+   * 连续重调 head（shift+mousedown+drag 与浏览器行为一致），handleDocMouseUp
+   * 走固化分支保留选区（不再触发单击激活）。无选区时 no-op（调用方保证不走此路）。
+   */
+  function startTextExtend(head: BlockOffset, startPoint: { x: number; y: number }) {
+    const range = textRange.value
+    if (!range) return
+    textDragAnchor.value = range.anchor
+    textDragStartPoint.value = startPoint
+    isTextDragging.value = true
+    transition({ kind: 'text', range: { anchor: range.anchor, head } })
+  }
+
   /** mouseup 固化文本选区：保留 textRange，清拖拽态 */
   function finalizeTextDrag() {
     isTextDragging.value = false
@@ -432,6 +448,7 @@ export function useCrossBlockSelection() {
     copyToClipboard,
     deleteSelected,
     startTextTracking,
+    startTextExtend,
     updateTextDrag,
     finalizeTextDrag,
     clearTextTracking,

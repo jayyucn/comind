@@ -314,6 +314,72 @@ describe('useBlockEditorLifecycle', () => {
       expect(setCoordsSpy).toHaveBeenCalledWith(10, 20)
       expect(startTextTracking).toHaveBeenCalledWith({ blockId: 'b1', offset: 0 }, { x: 10, y: 20 })
     })
+
+    // ── shift+click：延伸已有文本选区（ADR-0035 D10）──
+
+    /** shift+左键 mousedown */
+    function shiftMousedown(pd: () => void = () => {}): MouseEvent {
+      return {
+        target: { closest: () => null },
+        button: 0,
+        shiftKey: true,
+        ctrlKey: false, metaKey: false,
+        clientX: 30, clientY: 40,
+        preventDefault: pd
+      } as unknown as MouseEvent
+    }
+
+    /** 带既有文本选区的 selection stub */
+    function selectionWithRange() {
+      return {
+        textRange: { value: { anchor: { blockId: 'b1', offset: 0 }, head: { blockId: 'b1', offset: 2 } } },
+        startTextTracking: vi.fn(),
+        startTextExtend: vi.fn(),
+        toggleBlock: vi.fn()
+      }
+    }
+
+    it('已有文本选区：head 延伸到点击处并 preventDefault，不走激活路径', () => {
+      const sel = selectionWithRange()
+      const { lifecycle, editorStore } = setup(sel)
+      const setCoordsSpy = vi.spyOn(editorStore, 'setClickCoords').mockImplementation(() => {})
+      const pd = vi.fn()
+      blockOffsetFromPointMock.mockReturnValue({ blockId: 'b2', offset: 4 })
+
+      lifecycle.handleContentMousedown(shiftMousedown(pd))
+
+      expect(sel.startTextExtend).toHaveBeenCalledWith({ blockId: 'b2', offset: 4 }, { x: 30, y: 40 })
+      expect(pd).toHaveBeenCalled()
+      // 延伸不是新建选区，也不激活编辑器（不重定位光标）
+      expect(sel.startTextTracking).not.toHaveBeenCalled()
+      expect(setCoordsSpy).not.toHaveBeenCalled()
+    })
+
+    it('无文本选区：退化为普通路径（照常启动拖拽追踪）', () => {
+      const sel = { textRange: { value: null }, startTextTracking: vi.fn(), startTextExtend: vi.fn(), toggleBlock: vi.fn() }
+      const { lifecycle, editorStore } = setup(sel)
+      const setCoordsSpy = vi.spyOn(editorStore, 'setClickCoords').mockImplementation(() => {})
+      blockOffsetFromPointMock.mockReturnValue({ blockId: 'b1', offset: 1 })
+
+      lifecycle.handleContentMousedown(shiftMousedown())
+
+      expect(sel.startTextTracking).toHaveBeenCalledWith({ blockId: 'b1', offset: 1 }, { x: 30, y: 40 })
+      expect(sel.startTextExtend).not.toHaveBeenCalled()
+      expect(setCoordsSpy).toHaveBeenCalledWith(30, 40)
+    })
+
+    it('点击处无有效偏移：不延伸、不启动普通拖拽、不 preventDefault（shift 语义下不误发）', () => {
+      const sel = selectionWithRange()
+      const { lifecycle } = setup(sel)
+      const pd = vi.fn()
+      blockOffsetFromPointMock.mockReturnValue(null)
+
+      lifecycle.handleContentMousedown(shiftMousedown(pd))
+
+      expect(sel.startTextExtend).not.toHaveBeenCalled()
+      expect(sel.startTextTracking).not.toHaveBeenCalled()
+      expect(pd).not.toHaveBeenCalled()
+    })
   })
 
   describe('handleContentClick', () => {
