@@ -10,7 +10,7 @@
   - `src/components/BlockList.vue`（`handleDocKeyDown` 兜底无编辑态块的 Tab / 上方插入空块行为）
 - 关联 ADR：
   - **ADR-0035**（跨 Block 文本选区）——图片块点击/选中行为需与块选区模型协调
-  - **ADR-0012**（z-index 分层）——lightbox 浮层必须 Teleport 到 body 并用 `var(--z-*)`
+  - **ADR-0032**（z-index 分层）——lightbox 浮层必须 Teleport 到 body 并用 `var(--z-*)`
 
 ---
 
@@ -169,6 +169,6 @@ image block 无编辑器，`EnterAsBlockExtension` 不生效；Tab 落到文档�
 - 插入图片心智模型简化：`/image` 即选即用；
 - 三类「缩放」语义清晰分离：**行内缩放**（D11，持久化尺寸）／**对齐**（D4，布局锚点）／**lightbox 缩放**（D5，临时视图）；
 - `format.align`、`format.width/height` 与 `format.description` 引入新块级展示字段，导出/序列化需透传 `format`；
-- lightbox 为新的全局浮层组件，须遵循 ADR-0012 的 z-index 与 Teleport 约定；
+- lightbox 为新的全局浮层组件，须遵循 ADR-0032 的 z-index 与 Teleport 约定；
 - Tab / Shift-Tab 缩进行为由 `BlockList.handleDocKeyDown` 统一兜底（覆盖无编辑态块），须与文本 block 的 `EnterAsBlockExtension` 语义保持一致（D15）；
 - 四角手柄的拖拽手势需与块选区拖拽（ADR-0035）区分，避免误触发块移动。

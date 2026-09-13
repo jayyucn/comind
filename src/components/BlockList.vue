@@ -577,7 +577,7 @@ onBeforeUnmount(() => {
       :visible="indicatorVisible"
     />
 
-    <!-- 文本选区覆盖层高亮（ADR-0035 D4）：Teleport 到 body，避免 transform 祖先困住 fixed 定位（ADR-0012 铁律 2） -->
+    <!-- 文本选区覆盖层高亮（ADR-0035 D4）：Teleport 到 body，避免 transform 祖先困住 fixed 定位（ADR-0032 铁律 2） -->
     <Teleport to="body">
       <div
         v-for="(rect, i) in highlightRects"
