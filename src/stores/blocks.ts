@@ -1038,10 +1038,15 @@ export const useBlockStore = defineStore('blocks', () => {
    *
    * 返回生存块 id 与落点，供调用方激活编辑（`cursorPos` 口径 = pendingCursorPos 的
    * ProseMirror position，见 stores/editor.ts）；端点无效时返回 null。
+   *
+   * `deleteMiddle` 是「中间整块」的删除出口，默认 deleteBlocks。调用方可注入关系清理
+   * 收口（`cleanupAfterDelete` 自身含删除），使本入口与单块删除 / 块选区删除同源；
+   * store 不能反向依赖 composable，故以参数注入（见 useCrossBlockSelection）。
    */
   async function deleteTextRange(
     pageId: string,
-    range: TextRange
+    range: TextRange,
+    deleteMiddle: (ids: string[]) => Promise<unknown> = deleteBlocks
   ): Promise<{ id: string; cursorPos: number } | null> {
     const { start, end, middleBlockIds } = normalizeTextRange(getBlocksByPage(pageId), range)
     const startBlock = blocks.value.find(b => b.id === start.blockId)
@@ -1064,7 +1069,7 @@ export const useBlockStore = defineStore('blocks', () => {
       return { id: startBlock.id, cursorPos: caret(lo) }
     }
 
-    if (middleBlockIds.length > 0) await deleteBlocks(middleBlockIds)
+    if (middleBlockIds.length > 0) await deleteMiddle(middleBlockIds)
 
     // 端点落在非文本块上：该块原样保留，只裁剪另一端的文本块
     if (!startIsText) {

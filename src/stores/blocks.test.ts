@@ -1119,4 +1119,33 @@ describe('deleteTextRange - 文本选区删除（#95）', () => {
     expect(result).toBeNull()
     expect(store.blocks.find(x => x.id === a.id)?.content).toBe('aa')
   })
+
+  test('deleteMiddle 注入：中间整块完全交给注入的删除出口（关系清理收口用）', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-textdel-11'
+
+    const a = await store.createBlock({ pageId, content: 'head' })
+    const mid = await store.createBlock({ pageId, content: 'mid' })
+    const b = await store.createBlock({ pageId, content: 'tail' })
+
+    const handed: string[][] = []
+    const result = await store.deleteTextRange(
+      pageId,
+      {
+        anchor: { blockId: a.id, offset: 1 },
+        head: { blockId: b.id, offset: 2 },
+      },
+      async ids => {
+        handed.push([...ids])
+      }
+    )
+
+    // 中间整块进入注入出口；注入器未删 → store 不自作主张删它
+    expect(handed).toEqual([[mid.id]])
+    expect(store.blocks.find(x => x.id === mid.id)).toBeDefined()
+    // 端点裁剪/合并照常（'h' + 'il'）
+    expect(result).toEqual({ id: a.id, cursorPos: 2 })
+    expect(store.blocks.find(x => x.id === a.id)?.content).toBe('hil')
+    expect(store.blocks.find(x => x.id === b.id)).toBeUndefined()
+  })
 })

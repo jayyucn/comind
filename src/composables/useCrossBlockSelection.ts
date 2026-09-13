@@ -303,11 +303,18 @@ export function useCrossBlockSelection() {
    *
    * 计算与落库分别委托纯模块与 block store；此处只负责「读选区 → 调用 → 清选区
    * → 回传落点」，供 BlockList 删除键分派后激活编辑态。
+   *
+   * 中间整块是「整块消失」，其删除交给关系清理收口（cleanupAfterDelete 自身含删除），
+   * 与单块删除 / 块选区删除同源。端点块只被裁剪、并未消失，故不纳入——端点被裁片段
+   * 里若含唯一 inverse typed-link 会漏降级（方向安全：只会漏摘，不会误摘目标页标签）。
    */
   async function deleteTextSelection(pageId: string) {
     const range = textRange.value
     if (!range) return null
-    const result = await blockStore.deleteTextRange(pageId, range)
+    const blocksBeforeDelete = [...blockStore.blocks]
+    const result = await blockStore.deleteTextRange(pageId, range, ids =>
+      relationshipCleanup.cleanupAfterDelete(pageId, ids, blocksBeforeDelete)
+    )
     clearTextSelection()
     return result
   }

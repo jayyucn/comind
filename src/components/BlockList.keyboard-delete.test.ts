@@ -203,4 +203,35 @@ describe('BlockList 删除键四格分派（#95 / #96）', () => {
 
     wrapper.unmount()
   })
+
+  test('文本选区跨中间块：中间整块经关系清理收口', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-keydel-text-mid'
+
+    const a = await store.createBlock({ pageId, content: 'head' })
+    const mid = await store.createBlock({ pageId, content: 'mid-links-here' })
+    const b = await store.createBlock({ pageId, content: 'tail' })
+
+    const wrapper = mountBlockList(pageId)
+    const selection = getSelection(wrapper)
+    selection.startTextTracking({ blockId: a.id, offset: 1 }, { x: 0, y: 0 })
+    selection.updateTextDrag({ blockId: b.id, offset: 2 })
+    selection.finalizeTextDrag()
+
+    const ev = dispatchDeleteKey('Delete')
+    await flushAsync()
+
+    expect(ev.defaultPrevented).toBe(true)
+    // 中间整块消失，端点首尾拼接（'h' + 'il' = 'hil'）
+    expect(store.blocks.find(x => x.id === mid.id)).toBeUndefined()
+    expect(store.blocks.find(x => x.id === a.id)?.content).toBe('hil')
+    expect(store.blocks.find(x => x.id === b.id)).toBeUndefined()
+    // 收口证据：被删中间块的内容进入 cleanupAfterDelete 的目标提取；
+    // 端点块只被裁剪、不参与提取（= 只接中间整块的语义）
+    expect(extractLinksSpy).toHaveBeenCalledWith('mid-links-here')
+    expect(extractLinksSpy).not.toHaveBeenCalledWith('head')
+    expect(extractLinksSpy).not.toHaveBeenCalledWith('tail')
+
+    wrapper.unmount()
+  })
 })
