@@ -49,7 +49,7 @@
 
 ## 样式约定：z-index
 
-详见 `docs/adr/0012-z-index-layering.md`，两条铁律：
+详见 `docs/adr/0032-z-index-layering.md`，两条铁律：
 
 1. **禁止组件内硬编码 z-index**：一律用 `var(--z-*)`（组件 scoped 样式，定义于 `src/styles/tokens/_semantic.scss`）或 `$z-*`（全局 SCSS，定义于 `src/styles/tokens/_primitives.scss`，需 `@use`）。
 2. **浮层必须 Teleport 到 body**：渲染在 `transform/filter/backdrop-filter/opacity<1` 祖先内的浮层，z-index 会困于局部堆叠上下文而失效（已知陷阱：`.block-children` 的 `translateY(0)`）。

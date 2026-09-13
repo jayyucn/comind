@@ -133,7 +133,7 @@ describe('useBlockEditorLifecycle', () => {
         content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
       }
       blockStore.blocks.push(prevBlock as any)
-      vi.spyOn(blockStore, 'findPreviousBlockInTreeOrder').mockReturnValue(prevBlock as any)
+      vi.spyOn(blockStore, 'findPreviousVisibleBlock').mockReturnValue(prevBlock as any)
       vi.spyOn(blockStore, 'deleteBlocks').mockResolvedValue(undefined)
       vi.spyOn(relationshipCleanup, 'cleanupAfterDelete').mockResolvedValue({
         modifiedCrossPageBlocks: [],

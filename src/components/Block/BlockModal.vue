@@ -167,9 +167,12 @@ provide('onDragEnd', (intent: DragEndIntent | null) => {
     const toParentId = intent.target.toParentId === rootId ? null : intent.target.toParentId
     applyDropTarget(node.value.children, intent.draggedId, { ...intent.target, toParentId })
   }
-  const changed = syncTreeToStore(node.value.children, rootId, blockStore.blocks)
+  // 搬迁影响面：新父块「获得」子节点、旧父块「可能失去」（ADR-0045 D2/D4 对账输入）
+  const affected = { gained: new Set<string>(), emptied: new Set<string>() }
+  const changed = syncTreeToStore(node.value.children, rootId, blockStore.blocks, undefined, affected)
   for (const id of changed) blockStore.scheduleSave(id)
   blockStore.structureVersion++
+  blockStore.reconcileCollapse(affected.emptied, affected.gained)
 })
 
 // block 可能尚未在 store（跨页引用 / 懒加载），打开时确保加载真实 block 以驱动编辑器；

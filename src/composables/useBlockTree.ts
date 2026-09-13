@@ -88,13 +88,16 @@ export function buildSubtree(blocks: Block[], rootId: string): TreeNode | null {
  * @param nodes - 树节点列表
  * @param parentId - 当前层级的父节点 ID（null = 根级）
  * @param gapSize - pos 步长（默认 1000）
+ * @param affected - 可选累加器：记录因搬迁而"获得/可能失去"子节点的父块，
+ *   供调用方做折叠不变量对账（ADR-0045 D2/D4）。不传则不做任何额外记账。
  * @returns 所有被修改的 block id 列表
  */
 export function syncTreeToStore(
   nodes: TreeNode[],
   parentId: string | null,
   allBlocks: Block[],
-  gapSize: number = 1000
+  gapSize: number = 1000,
+  affected?: { gained: Set<string>; emptied: Set<string> }
 ): string[] {
   const changed: string[] = []
 
@@ -107,6 +110,8 @@ export function syncTreeToStore(
       let dirty = false
 
       if (block.parentId !== parentId) {
+        if (parentId) affected?.gained.add(parentId)
+        if (block.parentId) affected?.emptied.add(block.parentId)
         block.parentId = parentId
         dirty = true
       }
@@ -121,7 +126,7 @@ export function syncTreeToStore(
     }
 
     // 递归处理子节点
-    const childChanged = syncTreeToStore(node.children, node.id, allBlocks, gapSize)
+    const childChanged = syncTreeToStore(node.children, node.id, allBlocks, gapSize, affected)
     changed.push(...childChanged)
   }
 
