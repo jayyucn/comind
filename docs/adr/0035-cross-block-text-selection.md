@@ -2,11 +2,12 @@
 
 - 状态：已采纳（Accepted）
 - 日期：2026-08-24
-- 修订：2026-09-13（#93 开放问题 1 写回；#94 D6 命中面修订；#95/#96 新增 D8 键盘删除语义）
+- 修订：2026-09-13（#93 开放问题 1 写回；#94 D6 命中面修订；#95/#96 新增 D8 键盘删除语义；高亮跳过无文本节点块，新增 D9 并闭合开放问题 4）
 - 范围：
   - `src/composables/useCrossBlockSelection.ts`（选区模型扩展：新增文本选区，保留块选区）
   - `src/components/BlockList.vue`（document 级拖拽/按键事件改为按"文本选区"语义驱动）
   - `src/components/Block/index.vue`（属性区 mousedown 纳入块选区追踪；内容区拖拽改为文本选区语义）
+  - `src/services/selection-geometry.ts`（偏移 ↔ DOM Range 映射与高亮矩形计算）
   - 关联 ADR：**ADR-0025 / ADR-0026**（block 剪贴板链路，依赖块选区不变）；**dev-guide 5.2 单编辑器模型**（本 ADR 的前提约束）。
 - 来源：用户「文本选择功能优化」，经 grilling 收敛：作用域 = block 内文字选区 + 跨 block 多选，动机 = 打磨体验。
 
@@ -62,7 +63,7 @@ type BlockSelection = Set<string>  // block id 集合（沿用 anchorIds/selecte
 ### D4：实现路径 = 自定义选区覆盖层（保持单编辑器）
 
 - 拖拽时用 `document.caretRangeFromPoint` / `caretPositionFromPoint` 定位首尾 DOM 位置，再借 `renderSegments` 的 `{start,end}` 把 DOM 位置映射回原文字符偏移，得到 `TextRange`。
-- 选区高亮用**覆盖层**绘制（首尾部分字 + 中间整块），不侵入 block 内部结构、不改变 contenteditable 边界。
+- 选区高亮用**覆盖层**绘制（首尾部分字 + 中间整块），不侵入 block 内部结构、不改变 contenteditable 边界；无文本节点的块（空行 / 图片块）不产生矩形（D9）。
 - 复制是纯读取（按偏移切片 `content` 拼接），无需行内富文本编辑能力。
 - **否决的备选**：全 contenteditable（Notion 式）——把所有 block 改成同时可编辑、让原生选区跨块。会推翻 dev-guide 5.2 单编辑器模型与大量既有生命周期/粘贴逻辑，重写量巨大，与"打磨体验"定位不符。
 
@@ -95,6 +96,15 @@ type BlockSelection = Set<string>  // block id 集合（沿用 anchorIds/selecte
 - **任何删除入口都必须同源（走关系清理收口）**：文本选区删除的「中间整块」经 `deleteTextRange` 的**必填**出口参数注入 `cleanupAfterDelete`；端点块因其内容只有一部分存活、不满足收口「整块内容全部消失」的前提而**不入被删集**——残余缺口（端点被丢弃片段里的 inverse typed-link 漏降级，方向安全）记为 **#100**。
 - 端点偏移先经 `renderedOffsetToEncodedOffset` 换算（开放问题 1）再切片；删除后落点的 `cursorPos` 口径 = ProseMirror position（文本偏移 + 1）。
 
+### D9：无文本节点的块 = 跳过，不弃整条选区（2026-09-13，闭合开放问题 4）
+
+- **现象**：拖拽扫过空行（或图片块）时，高亮**整条消失**；空行夹在中间则该行留一个空洞。
+- **根因**：高亮靠「偏移 ↔ DOM Range」逐块构造子 Range，而空行在无占位符时渲染成裸 `<span></span>`（`BulletRender.vue`）——**块内没有任何文本节点** → 构造不出 Range → 旧实现据此 `return []`，把前面已经选中的文本一并丢弃。
+- **决策**：无文本节点的块（空行、图片/嵌入块）**不产生高亮矩形**，其余块的高亮不受影响。端点落在这种块上时，端点由**相邻文本块的边界兜底**（首侧取块首、尾侧取块末）——这就是开放问题 4「拖到其上时首尾偏移如何归一化」的答案：不归一化进该块，而是让它退出，端点吸附到相邻文本块。
+- **实现要点**：端点判序不能再用 `Range.compareBoundaryPoints`（无文本节点时比较不了），改为按**块在文档序中的位置**判先后；同块内退回按字符偏移判序（否则反向拖拽塌缩成零宽）。
+- **不影响选区成员资格**：删除仍按 D8 把中间的无文本块整块删除（含子树），复制仍含其 `content`——「不画高亮」只关乎显示。
+- **回归网**：`src/services/selection-geometry.test.ts`。jsdom 未实现 `Range.getClientRects`（该模块此前只有真机验证），测试注入替身把「覆盖的块 + 覆盖字数」编码进矩形，使断言落在选中语义而非像素几何上。
+
 ---
 
 ## 后果 / 权衡
@@ -121,7 +131,7 @@ type BlockSelection = Set<string>  // block id 集合（沿用 anchorIds/selecte
 1. **偏移基准**：**已决（#93，2026-09-13）—— `TextRange.offset` 以 encoded（`block.content` 存储原文）为基准**，与 D5「复制输出 = 内容切片拼接」保持一致，不引入 decode 输出路径。几何模块仍按「界面渲染文本」给偏移，跨界处由 `src/services/render-text.ts` 的 `renderedOffsetToEncodedOffset` 换算（换算规则与渲染器同源；标记内部按落点吸附到标记边界，避免切出残缺标记）。locality / testability 债（几何坐标基准一等化、换算收敛到一处）留在 #99。
 2. **高亮视觉**：覆盖层高亮如何与原生 `::selection`（激活块内）视觉一致，避免"一块一个颜色"的割裂。
 3. **折叠块**：block 折叠时子块不可见，文本选区拖过折叠块如何表现（只选折叠块自身？）。
-4. **图片/嵌入块在文本选区中的切片语义**：非文本块无字符偏移，拖到其上时首尾偏移如何归一化。
+4. **图片/嵌入块在文本选区中的切片语义**：非文本块无字符偏移，拖到其上时首尾偏移如何归一化。→ **已于 2026-09-13 闭合（D9）**：该块退出高亮、端点吸附到相邻文本块边界；删除/复制的成员资格不变（D8）。
 
 ---
 

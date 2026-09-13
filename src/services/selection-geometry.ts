@@ -5,7 +5,8 @@ import type { BlockOffset } from './text-range'
  *
  * 与 `text-range.ts` 的纯计算分离：本模块负责「屏幕坐标 ↔ block 内字符偏移」与
  * 「偏移 ↔ DOM Range」的双向换算，以及跨块选区的高亮矩形计算。
- * 只在运行时（浏览器 / Tauri webview）调用，不参与 vitest。
+ * 只在运行时（浏览器 / Tauri webview）调用；jsdom 未实现 `Range.getClientRects`，
+ * 几何回归由 `selection-geometry.test.ts` 注入替身后覆盖。
  */
 
 /** 取 block 内容区的根元素（文本偏移只统计内容区，不含 bullet/属性区文字） */
@@ -121,14 +122,10 @@ export function collapsedRangeAtBlockOffset(blockId: string, offset: number): Ra
   return range
 }
 
-/** 同一 `.block-list` 子树内、文档序 startEl→endEl（含两端）的块元素 */
-function blocksBetween(startEl: HTMLElement, endEl: HTMLElement): HTMLElement[] {
-  const scope = startEl.closest('.block-list') ?? document
-  const all = Array.from(scope.querySelectorAll<HTMLElement>('[data-block-id]'))
-  const from = all.indexOf(startEl)
-  const to = all.indexOf(endEl)
-  if (from < 0 || to < 0 || from > to) return []
-  return all.slice(from, to + 1)
+/** 同一 `.block-list` 子树内的全部块元素，文档序 */
+function orderedBlockElements(scope: HTMLElement): HTMLElement[] {
+  const listRoot = scope.closest('.block-list') ?? document
+  return Array.from(listRoot.querySelectorAll<HTMLElement>('[data-block-id]'))
 }
 
 /**
@@ -145,38 +142,50 @@ function blocksBetween(startEl: HTMLElement, endEl: HTMLElement): HTMLElement[] 
  * 3. Range 跨过嵌套内联元素（如 `[[page]]` 渲染成的 `span > span.block-link >
  *    span.wiki-bracket`）时，Chromium 会把同一段内联盒子**重复上报**（实测两组矩形
  *    浮点值逐位相同）——覆盖层同位叠两层，颜色深一档。按几何去重。
+ *
+ * 无文本节点的块（空行、图片块等）**不产生矩形**：它们既构造不出 Range，也没有可
+ * 高亮的文字。跳过它们，但**不得**因此丢弃整条选区——拖拽时鼠标扫过空行是常态。
+ * 端点落在这种块上时，该端点由相邻文本块的边界兜底（首侧取块首、尾侧取块末）。
  */
 export function selectionClientRects(anchor: BlockOffset, head: BlockOffset): DOMRect[] {
-  const a = collapsedRangeAtBlockOffset(anchor.blockId, anchor.offset)
-  const h = collapsedRangeAtBlockOffset(head.blockId, head.offset)
-  if (!a || !h) return []
+  const anchorEl = blockElement(anchor.blockId)
+  const headEl = blockElement(head.blockId)
+  if (!anchorEl || !headEl) return []
 
-  // 反向拖拽（head 在 anchor 之前）必须先按文档序排好两端点：Range.setEnd 遇到
-  // 早于起点的终点不会报错，而是把起点钳到终点，range 直接塌缩成锚点处零宽矩形
-  // ——高亮整体消失（向上拖拽选不出来的根因）。
-  const reversed = a.compareBoundaryPoints(Range.START_TO_START, h) > 0
-  const startPoint = reversed ? h : a
-  const endPoint = reversed ? a : h
+  const all = orderedBlockElements(anchorEl)
+  const anchorIdx = all.indexOf(anchorEl)
+  const headIdx = all.indexOf(headEl)
+  if (anchorIdx < 0 || headIdx < 0) return []
 
-  const startEl = blockElement(reversed ? head.blockId : anchor.blockId)
-  const endEl = blockElement(reversed ? anchor.blockId : head.blockId)
-  if (!startEl || !endEl) return []
+  // 端点先后按**块在文档序中的位置**判定，不再用 `Range.compareBoundaryPoints`：
+  // 无文本节点的块构造不出 Range，比较不了——旧实现据此 `return []` 丢弃整条选区，
+  // 表现为「拖拽扫过空行时高亮整体消失」。同块内退回按字符偏移判序：`Range.setEnd`
+  // 遇到早于起点的终点不报错，而是把起点钳到终点，range 塌缩成零宽矩形（向上拖拽
+  // 选不出来的根因，ADR-0035）。
+  const reversed = anchorIdx > headIdx || (anchorIdx === headIdx && anchor.offset > head.offset)
+  const start = reversed ? head : anchor
+  const end = reversed ? anchor : head
 
-  const blocks = blocksBetween(startEl, endEl)
   const rects: DOMRect[] = []
   const seen = new Set<string>()
-  for (let i = 0; i < blocks.length; i++) {
-    const root = contentRoot(blocks[i])
-    const isFirst = i === 0
-    const isLast = i === blocks.length - 1
-    // 端点侧用真实拖拽端点，其余侧夹到该块的首/末文本节点
-    const startNode = isFirst ? startPoint.startContainer : firstTextNode(root)
-    const endNode = isLast ? endPoint.startContainer : lastTextNode(root)
-    if (!startNode || !endNode) continue
+  for (let i = Math.min(anchorIdx, headIdx); i <= Math.max(anchorIdx, headIdx); i++) {
+    const el = all[i]
+    const blockId = el.getAttribute('data-block-id')
+    if (!blockId) continue
+
+    const root = contentRoot(el)
+    const first = firstTextNode(root)
+    const last = lastTextNode(root)
+    if (!first || !last) continue // 无文本节点的块跳过，不弃整条选区
+
+    // 端点侧用真实拖拽端点，其余侧夹到该块的首/末文本节点。端点块本身无文本节点时
+    // 已被上面跳过，改由相邻文本块的边界兜底。
+    const from = blockId === start.blockId ? collapsedRangeAtBlockOffset(blockId, start.offset) : null
+    const to = blockId === end.blockId ? collapsedRangeAtBlockOffset(blockId, end.offset) : null
 
     const range = document.createRange()
-    range.setStart(startNode, isFirst ? startPoint.startOffset : 0)
-    range.setEnd(endNode, isLast ? endPoint.startOffset : (endNode as Text).length)
+    range.setStart(from ? from.startContainer : first, from ? from.startOffset : 0)
+    range.setEnd(to ? to.startContainer : last, to ? to.startOffset : last.length)
     for (const rect of Array.from(range.getClientRects())) {
       if (rect.width <= 0 || rect.height <= 0) continue
       const key = `${Math.round(rect.left * 100)}|${Math.round(rect.top * 100)}|${Math.round(rect.width * 100)}|${Math.round(rect.height * 100)}`
