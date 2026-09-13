@@ -41,7 +41,7 @@ export interface TextRangeDeletionPlan {
   contentAfter: Record<string, string>
   /** 部分消失的文本片段（清理的目标提取输入，与宿主块存亡无关） */
   vanishedFragments: Array<{ blockId: string; text: string }>
-  /** 应用阶段的结构合并（target 并入 source）；null = 纯裁剪/切片 */
+  /** 应用阶段的结构合并（source 并入 target：target 存活、source 消失）；null = 纯裁剪/切片 */
   merge: { targetId: string; sourceId: string; mergedContent: string } | null
   /** 删除后的光标落点（ProseMirror position 口径 = 文本偏移 + 1） */
   cursor: { id: string; cursorPos: number }
@@ -961,7 +961,7 @@ export const useBlockStore = defineStore('blocks', () => {
   }
 
   /**
-   * 把 source 块并入 target 块（合并的落点，见 mergeWithPrevious / deleteTextRange）
+   * 把 source 块并入 target 块（合并的落点，见 mergeWithPrevious / applyTextRangeDeletion）
    *
    * 1. target 内容整体替换为 mergedContent（由调用方决定裁剪/拼接结果）
    * 2. source 的子节点保留并转移到 target 末尾
@@ -1100,10 +1100,13 @@ export const useBlockStore = defineStore('blocks', () => {
       }
     }
 
+    // 合并后生存块内容：apply 落库（mergeBlockInto）与清理的存活检查（contentAfter）
+    // 两个消费方共用同一值，必须一致
+    const mergedContent = startBlock.content.slice(0, lo) + endBlock.content.slice(hi)
     return {
       middleBlockIds,
       mergedAwayBlockId: endBlock.id,
-      contentAfter: { [startBlock.id]: startBlock.content.slice(0, lo) + endBlock.content.slice(hi) },
+      contentAfter: { [startBlock.id]: mergedContent },
       vanishedFragments: [
         { blockId: startBlock.id, text: startBlock.content.slice(lo) },
         { blockId: endBlock.id, text: endBlock.content.slice(0, hi) },
@@ -1111,7 +1114,7 @@ export const useBlockStore = defineStore('blocks', () => {
       merge: {
         targetId: startBlock.id,
         sourceId: endBlock.id,
-        mergedContent: startBlock.content.slice(0, lo) + endBlock.content.slice(hi),
+        mergedContent,
       },
       cursor: { id: startBlock.id, cursorPos: caret(lo) },
     }
@@ -1130,9 +1133,7 @@ export const useBlockStore = defineStore('blocks', () => {
   }
 
   /**
-   * 删除跨块文本选区（#95 / ADR-0035 D7）——计划 + 应用的组合捷径。
-   *
-   * 语义：
+   * 文本选区删除的语义（#95 / ADR-0035 D7，plan/apply 共同遵守）：
    * - 同一普通文本块内：只剔除选中字符
    * - 跨块：头块保留 [0, lo)、尾块保留 [hi, ∞) 拼成一块（生存者 = 文档序靠前的
    *   头块），中间整块（含子树）删除，尾块的子块转移到生存块末尾
@@ -1140,25 +1141,10 @@ export const useBlockStore = defineStore('blocks', () => {
    *   不裁剪也不合并 —— 这些类型没有「部分选中」这回事（决定表 ⑥），且合并等于
    *   把生存者的类型强加给另一端，会销毁其类型与渲染方式
    *
-   * 返回生存块 id 与落点，供调用方激活编辑（`cursorPos` 口径 = pendingCursorPos 的
-   * ProseMirror position，见 stores/editor.ts）；端点无效时返回 null。
-   *
-   * `deleteMiddleBlocks` 是「中间整块」的删除出口，**必填**——调用方必须显式决定中间块
-   * 怎么删，以免新入口静默绕过关系清理。生产调用点（useCrossBlockSelection）已改走
-   * plan/apply 两段以把端点片段交给清理收口（#100），本组合入口保留给测试与工具路径；
-   * store 不能反向依赖 composable，故以参数注入。
-   * 出口返回值不被使用（收口返回 CleanupResult），故类型为 unknown。
+   * `cursorPos` 口径 = ProseMirror position（文本偏移 + 1，见 stores/editor.ts）。
+   * 中间整块的删除出口由编排层决定（生产走关系清理收口，见 useCrossBlockSelection）；
+   * store 不能反向依赖 composable。
    */
-  async function deleteTextRange(
-    pageId: string,
-    range: TextRange,
-    deleteMiddleBlocks: (ids: string[]) => Promise<unknown>
-  ): Promise<{ id: string; cursorPos: number } | null> {
-    const plan = planTextRangeDeletion(pageId, range)
-    if (!plan) return null
-    if (plan.middleBlockIds.length > 0) await deleteMiddleBlocks(plan.middleBlockIds)
-    return applyTextRangeDeletion(plan)
-  }
 
   /** 缩进 */
   async function indent(blockId: string) {
@@ -1526,7 +1512,6 @@ export const useBlockStore = defineStore('blocks', () => {
     insertSiblingAbove,
     insertAtPosition,
     mergeWithPrevious,
-    deleteTextRange,
     planTextRangeDeletion,
     applyTextRangeDeletion,
     findPreviousBlockInTreeOrder,

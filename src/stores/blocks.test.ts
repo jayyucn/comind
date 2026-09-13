@@ -900,16 +900,19 @@ describe('updateBlockContent - dateRef 自动标记 Todo', () => {
 // cursorPos 口径 = ProseMirror position（文本偏移 + 1），同 mergeWithPrevious
 // ============================================================
 /**
- * 既有用例只验证裁剪 / 合并 / 删除语义，不关心中间块走哪个出口 —— 这里复用 store 原语
- * 作为出口。生产的文本选区删除由编排层注入关系清理收口（见 useCrossBlockSelection，
- * 以及本文件末尾那例「deleteMiddleBlocks 注入」；来由见 issue #100）。
+ * 既有用例只验证裁剪 / 合并 / 删除语义，不关心中间块走哪个出口 —— 这里在测试侧
+ * 组合 plan/apply（生产的组合在编排层 useCrossBlockSelection，注入关系清理收口，
+ * 来由见 issue #100）。store 不再保留测试专用组合入口。
  */
-function deleteRange(
+async function deleteRange(
   store: ReturnType<typeof useBlockStore>,
   pageId: string,
   range: TextRange
 ) {
-  return store.deleteTextRange(pageId, range, store.deleteBlocks)
+  const plan = store.planTextRangeDeletion(pageId, range)
+  if (!plan) return null
+  if (plan.middleBlockIds.length > 0) await store.deleteBlocks(plan.middleBlockIds)
+  return store.applyTextRangeDeletion(plan)
 }
 
 describe('deleteTextRange - 文本选区删除（#95）', () => {
@@ -1134,7 +1137,7 @@ describe('deleteTextRange - 文本选区删除（#95）', () => {
     expect(store.blocks.find(x => x.id === a.id)?.content).toBe('aa')
   })
 
-  test('deleteMiddleBlocks 注入：中间整块完全交给注入的删除出口（关系清理收口用）', async () => {
+  test('计划与应用分离：中间块只出现在计划里，apply 不碰它（删除出口由编排层决定）', async () => {
     const store = useBlockStore()
     const pageId = 'page-textdel-11'
 
@@ -1142,20 +1145,14 @@ describe('deleteTextRange - 文本选区删除（#95）', () => {
     const mid = await store.createBlock({ pageId, content: 'mid' })
     const b = await store.createBlock({ pageId, content: 'tail' })
 
-    const handed: string[][] = []
-    const result = await store.deleteTextRange(
-      pageId,
-      {
-        anchor: { blockId: a.id, offset: 1 },
-        head: { blockId: b.id, offset: 2 },
-      },
-      async ids => {
-        handed.push([...ids])
-      }
-    )
+    const plan = store.planTextRangeDeletion(pageId, {
+      anchor: { blockId: a.id, offset: 1 },
+      head: { blockId: b.id, offset: 2 },
+    })
 
-    // 中间整块进入注入出口；注入器未删 → store 不自作主张删它
-    expect(handed).toEqual([[mid.id]])
+    // 中间整块进入计划，交由编排层走关系清理收口；store 不自作主张删它
+    expect(plan!.middleBlockIds).toEqual([mid.id])
+    const result = await store.applyTextRangeDeletion(plan!)
     expect(store.blocks.find(x => x.id === mid.id)).toBeDefined()
     // 端点裁剪/合并照常（'h' + 'il'）
     expect(result).toEqual({ id: a.id, cursorPos: 2 })

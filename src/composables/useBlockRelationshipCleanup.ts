@@ -76,7 +76,12 @@ export function useBlockRelationshipCleanup() {
       orphanedTargets: []
     }
 
-    const hasPlan = !!(plan && (plan.removedBlockIds?.length || plan.vanishedFragments?.length || plan.contentAfter && Object.keys(plan.contentAfter).length > 0))
+    // 计划非空才绕过「无被删块即退出」的旧闸门（same-block 切片无块删除但有内容消失）
+    const hasPlan = !!plan && (
+      (plan.removedBlockIds?.length ?? 0) > 0 ||
+      (plan.vanishedFragments?.length ?? 0) > 0 ||
+      Object.keys(plan.contentAfter ?? {}).length > 0
+    )
     if (deletedBlockIds.length === 0 && !hasPlan) return result
 
     // 在删除前保存 blocks 的快照，因为删除后 blockStore.blocks 会改变！
