@@ -1,7 +1,8 @@
 /**
  * BlockList 删除键四格分派回归测试（#95 / #96）
  *
- * 覆盖矩阵：{块选区, 跨块文本选区} × {Backspace, Delete}
+ * 覆盖矩阵：{块选区, 跨块文本选区} × {Backspace, Delete}，另含 Ctrl+X 剪切分派
+ * （剪切 = 先复制后删除，共用同一张删除分派表）。
  * 断言口径 = 文档级 keydown 确实被 BlockList 接管（preventDefault）且落到正确分支
  * （经真实落库结果观察，而非替身计数）。
  *
@@ -304,6 +305,123 @@ describe('BlockList mouseup 清除豁免（D10：shift+click 延伸落空保住�
     await flushAsync()
 
     expect(selection.textRange.value).toBeNull()
+
+    wrapper.unmount()
+  })
+})
+
+/**
+ * Ctrl+X 剪切分派：{文本选区, 块选区} × 剪切 = 先复制后删除（与 Backspace/Delete
+ * 同一张分派表共用删除编排）。无选区时不接管（保留编辑器原生命中剪切）。
+ * 剪贴板经 navigator.clipboard.writeText 替身观察（jsdom 无真实剪贴板；
+ * ClipboardItem 未实现时 writeClipboardPayload 自动降级到 writeText 路径）。
+ */
+describe('BlockList 剪切键分派（Ctrl+X）', () => {
+  let extractLinksSpy: MockInstance
+  let writeTextMock: ReturnType<typeof vi.fn>
+  let originalClipboard: PropertyDescriptor | undefined
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    extractLinksSpy = vi
+      .spyOn(getCoreClient()!, 'extractLinksFromContent')
+      .mockResolvedValue([])
+    originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+    writeTextMock = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: writeTextMock },
+    })
+  })
+
+  afterEach(() => {
+    extractLinksSpy.mockRestore()
+    if (originalClipboard) {
+      Object.defineProperty(navigator, 'clipboard', originalClipboard)
+    } else {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined })
+    }
+  })
+
+  function dispatchCutKey(): KeyboardEvent {
+    const ev = new KeyboardEvent('keydown', {
+      key: 'x',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    document.body.dispatchEvent(ev)
+    return ev
+  }
+
+  test('文本选区 + Ctrl+X：复制切片文本到剪贴板 + 删除落库', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-cut-text'
+
+    const a = await store.createBlock({ pageId, content: 'hello' })
+    const b = await store.createBlock({ pageId, content: 'world' })
+
+    const wrapper = mountBlockList(pageId)
+    const selection = getSelection(wrapper)
+    selection.startTextTracking({ blockId: a.id, offset: 2 }, { x: 0, y: 0 })
+    selection.updateTextDrag({ blockId: b.id, offset: 3 })
+    selection.finalizeTextDrag()
+    expect(selection.textRange.value).not.toBeNull()
+
+    const ev = dispatchCutKey()
+    await flushAsync()
+
+    expect(ev.defaultPrevented).toBe(true)
+    // 复制内容 = 首块后缀 + '\n' + 尾块前缀（textRangeToText 口径）
+    expect(writeTextMock).toHaveBeenCalledWith('llo\nwor')
+    // 删除语义与 Backspace 完全一致（同一分派表）
+    expect(store.blocks.find(x => x.id === a.id)?.content).toBe('held')
+    expect(store.blocks.find(x => x.id === b.id)).toBeUndefined()
+    expect(selection.textRange.value).toBeNull()
+
+    wrapper.unmount()
+  })
+
+  test('块选区 + Ctrl+X：复制块载荷纯文本 + 删除选中块', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-cut-block'
+
+    const keep = await store.createBlock({ pageId, content: 'keep' })
+    const drop = await store.createBlock({ pageId, content: 'drop' })
+
+    const wrapper = mountBlockList(pageId)
+    const selection = getSelection(wrapper)
+    selection.toggleBlock(drop.id, pageId)
+    expect(selection.anchorIds.has(drop.id)).toBe(true)
+
+    const ev = dispatchCutKey()
+    await flushAsync()
+
+    expect(ev.defaultPrevented).toBe(true)
+    // payloadToPlainText 口径：顶层块按行拼接
+    expect(writeTextMock).toHaveBeenCalledWith('drop')
+    expect(store.blocks.find(x => x.id === drop.id)).toBeUndefined()
+    expect(store.blocks.find(x => x.id === keep.id)).toBeDefined()
+
+    wrapper.unmount()
+  })
+
+  test('无选区 + Ctrl+X：不接管（保留编辑器/浏览器原生命中剪切）', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-cut-none'
+
+    const a = await store.createBlock({ pageId, content: 'hello' })
+
+    const wrapper = mountBlockList(pageId)
+    const selection = getSelection(wrapper)
+    expect(selection.textRange.value).toBeNull()
+
+    const ev = dispatchCutKey()
+    await flushAsync()
+
+    expect(ev.defaultPrevented).toBe(false)
+    expect(writeTextMock).not.toHaveBeenCalled()
+    expect(store.blocks.find(x => x.id === a.id)?.content).toBe('hello')
 
     wrapper.unmount()
   })

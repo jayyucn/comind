@@ -231,6 +231,38 @@ function isNoEditTextBlock(id: string): boolean {
   return !!b && b.type === 'image'
 }
 
+/**
+ * 块选区删除编排：Backspace/Delete 与 Ctrl+X 共用同一落库路径。
+ * 乐观过滤 + 延迟落库 + 全选删除的保留块兜底（原 Backspace 分支原样上提）。
+ */
+async function deleteSelectedBlocks(): Promise<void> {
+  const selected = [...selection.anchorIds]
+  // 同步：仅 tree 过滤（store 保留，cleanupAfterDelete 需要这些块数据）
+  // 乐观过滤也守「至少留一块」：若移除选中会让 tree 空，则保留最后一块
+  // （与 store deleteBlocks 闸门一致），避免瞬时空屏；其内容随后由 store 清空。
+  const remaining = tree.value.filter(node => !selected.includes(node.id))
+  let keptId: string | null = null
+  if (remaining.length > 0) {
+    tree.value = remaining
+  } else if (tree.value.length > 0) {
+    // 全选删除：保留文档序最后一块（store 会清空其内容），待删除完成后激活它
+    keptId = tree.value[tree.value.length - 1].id
+    tree.value = [tree.value[tree.value.length - 1]]
+  } else {
+    tree.value = []
+  }
+  // paint 完成后才从 store 删除（含 cleanupAfterDelete 的 cross-page link 降级）
+  setTimeout(() => {
+    selection.deleteSelected().then(() => {
+      if (keptId) {
+        // 全选删除后页面只剩被保留的空 block：清选区并进入编辑态，光标落其内便于续写
+        selection.clearSelection()
+        editorStore.activateBlock(keptId, 1)
+      }
+    })
+  }, 0)
+}
+
 async function handleDocKeyDown(e: KeyboardEvent) {
   if (isInSidebar(e)) return
   // 输入框内 Backspace/Ctrl+C 保留控件自身行为（如搜索框、重命名输入）
@@ -241,9 +273,16 @@ async function handleDocKeyDown(e: KeyboardEvent) {
   } else {
     pasteShiftHeld = false
   }
-  if (e.key === 'Backspace' || e.key === 'Delete') {
-    // 两类选区在键盘删除语义上一致：选中即被支配（#95 / #96）。
-    // 文本选区优先——与 Ctrl+C 同一口径（两者互斥，只会命中其一）。
+  const isCutKey = (e.key === 'x' || e.key === 'X') && (e.ctrlKey || e.metaKey)
+  if (e.key === 'Backspace' || e.key === 'Delete' || isCutKey) {
+    // 键盘删除/剪切分派表：{Backspace, Delete, Ctrl+X} × {文本选区, 块选区}（#95 / #96）。
+    // 两类选区语义一致：选中即被支配。文本选区优先——与 Ctrl+C 同一口径（互斥，只会命中其一）。
+    // 剪切 = 先复制后删除：复制函数在首个 await 前同步快照选区内容，先于删除的落库变更。
+    // 无选区时不接管（preventDefault 都不做），保留编辑器/浏览器原生命中剪切。
+    if (isCutKey) {
+      if (selection.textRange.value) void selection.copyTextToClipboard(props.pageId)
+      else if (selection.anchorIds.size > 0) void selection.copyToClipboard()
+    }
     if (selection.textRange.value) {
       e.preventDefault()
       const deleted = await selection.deleteTextSelection(props.pageId)
@@ -254,30 +293,7 @@ async function handleDocKeyDown(e: KeyboardEvent) {
     const selected = [...selection.anchorIds]
     if (selected.length > 0) {
       e.preventDefault()
-      // 同步：仅 tree 过滤（store 保留，cleanupAfterDelete 需要这些块数据）
-      // 乐观过滤也守「至少留一块」：若移除选中会让 tree 空，则保留最后一块
-      // （与 store deleteBlocks 闸门一致），避免瞬时空屏；其内容随后由 store 清空。
-      const remaining = tree.value.filter(node => !selected.includes(node.id))
-      let keptId: string | null = null
-      if (remaining.length > 0) {
-        tree.value = remaining
-      } else if (tree.value.length > 0) {
-        // 全选删除：保留文档序最后一块（store 会清空其内容），待删除完成后激活它
-        keptId = tree.value[tree.value.length - 1].id
-        tree.value = [tree.value[tree.value.length - 1]]
-      } else {
-        tree.value = []
-      }
-      // paint 完成后才从 store 删除（含 cleanupAfterDelete 的 cross-page link 降级）
-      setTimeout(() => {
-        selection.deleteSelected().then(() => {
-          if (keptId) {
-            // 全选删除后页面只剩被保留的空 block：清选区并进入编辑态，光标落其内便于续写
-            selection.clearSelection()
-            editorStore.activateBlock(keptId, 1)
-          }
-        })
-      }, 0)
+      await deleteSelectedBlocks()
       return
     }
   }
