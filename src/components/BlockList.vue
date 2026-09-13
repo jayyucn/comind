@@ -238,7 +238,16 @@ async function handleDocKeyDown(e: KeyboardEvent) {
   } else {
     pasteShiftHeld = false
   }
-  if (e.key === 'Backspace') {
+  if (e.key === 'Backspace' || e.key === 'Delete') {
+    // 两类选区在键盘删除语义上一致：选中即被支配（#95 / #96）。
+    // 文本选区优先——与 Ctrl+C 同一口径（两者互斥，只会命中其一）。
+    if (selection.textRange.value) {
+      e.preventDefault()
+      const deleted = await selection.deleteTextSelection(props.pageId)
+      // 裁剪/合并后的落点：光标就地进编辑态，可直接接着打字
+      if (deleted) editorStore.activateBlock(deleted.id, deleted.cursorPos)
+      return
+    }
     const selected = [...selection.anchorIds]
     if (selected.length > 0) {
       e.preventDefault()

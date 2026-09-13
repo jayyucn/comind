@@ -677,6 +677,154 @@ describe('bullet dot opens BlockModal (ADR-0039)', () => {
   })
 })
 
+// ── 块选区命中面：Ctrl/Cmd+Click 覆盖整块行（内容区以外） ──
+//
+// 注意：jsdom 无布局，`trigger` 直接派发事件，不校验元素可命中面积。
+// 这里锁的是**分发逻辑**（谁接管、谁不接管、有没有重复触发）；
+// 「属性区在无属性块上高度为 0 导致真实鼠标点不到」属几何问题，需真机取证。
+
+describe('块选区命中面：Ctrl/Cmd+Click 覆盖整块行非内容区', () => {
+  const PAGE_ID = 'p1'
+  const BLOCK_ID = 'b1'
+
+  let blockStore: ReturnType<typeof useBlockStore>
+  let pageStore: ReturnType<typeof usePageStore>
+  let propertyStore: ReturnType<typeof usePropertyStore>
+  let selectionStub: {
+    toggleBlock: ReturnType<typeof vi.fn>
+    isBlockSelected: ReturnType<typeof vi.fn>
+    startTracking: ReturnType<typeof vi.fn>
+  }
+
+  const StubBlockDraggableList = defineComponent({
+    name: 'BlockDraggableList',
+    props: {
+      modelValue: { type: Array, default: () => [] },
+      pageId: { type: String, default: '' },
+      parentId: { type: String, default: '' },
+      depth: { type: Number, default: 0 }
+    },
+    setup(_, { expose }) {
+      expose({ getContainerEl: () => null })
+      return () =>
+        h('div', { class: 'block-children' }, [
+          h('div', { class: 'block', 'data-block-id': 'child-1' }, [
+            h('div', { class: 'block-row' }, [
+              h('div', { class: 'block-body' }, [h('div', { class: 'block-content' })])
+            ])
+          ])
+        ])
+    }
+  })
+
+  function mountBlock() {
+    const node: TreeNode = { id: BLOCK_ID, block: blockStore.blocks[0], children: [] }
+    return mount(Block, {
+      props: { node, pageId: PAGE_ID, depth: 0 },
+      global: {
+        stubs: { BulletRender: StubBulletRender, BlockDraggableList: StubBlockDraggableList },
+        provide: { crossBlockSelection: selectionStub }
+      }
+    })
+  }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    blockStore = useBlockStore()
+    blockStore.blocks = [{
+      id: BLOCK_ID, pageId: PAGE_ID, parentId: null, pos: 1000,
+      content: 'hello', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
+    }]
+    pageStore = usePageStore()
+    Object.defineProperty(pageStore, 'currentPageId', { value: PAGE_ID, configurable: true })
+    propertyStore = usePropertyStore()
+    selectionStub = {
+      toggleBlock: vi.fn(),
+      isBlockSelected: vi.fn(() => false),
+      startTracking: vi.fn()
+    }
+  })
+
+  it('Ctrl+Click 属性区（无属性时其高度为 0，但落点仍在本块内）→ 切换整块选中', async () => {
+    const wrapper = mountBlock()
+    await flushPromises()
+    await wrapper.find('.block-properties').trigger('mousedown', { ctrlKey: true })
+    expect(selectionStub.toggleBlock).toHaveBeenCalledWith(BLOCK_ID, PAGE_ID)
+    wrapper.unmount()
+  })
+
+  it('Ctrl+Click 缩进行空白（.block-indent）→ 切换整块选中', async () => {
+    const wrapper = mountBlock()
+    await flushPromises()
+    await wrapper.find('.block-indent').trigger('mousedown', { ctrlKey: true })
+    expect(selectionStub.toggleBlock).toHaveBeenCalledWith(BLOCK_ID, PAGE_ID)
+    wrapper.unmount()
+  })
+
+  it('Cmd+Click（metaKey）同样生效', async () => {
+    const wrapper = mountBlock()
+    await flushPromises()
+    await wrapper.find('.block-properties').trigger('mousedown', { metaKey: true })
+    expect(selectionStub.toggleBlock).toHaveBeenCalledWith(BLOCK_ID, PAGE_ID)
+    wrapper.unmount()
+  })
+
+  it('Ctrl+Click 内容区 → 仍走既有路径，且只切换一次（不重复）', async () => {
+    const wrapper = mountBlock()
+    await flushPromises()
+    await wrapper.find('.block-content').trigger('mousedown', { ctrlKey: true })
+    expect(selectionStub.toggleBlock).toHaveBeenCalledTimes(1)
+    expect(selectionStub.toggleBlock).toHaveBeenCalledWith(BLOCK_ID, PAGE_ID)
+    wrapper.unmount()
+  })
+
+  it('无修饰键点属性区 → 不切换选中，仍走属性区起拖（ADR-0035 D6）', async () => {
+    const wrapper = mountBlock()
+    await flushPromises()
+    await wrapper.find('.block-properties').trigger('mousedown')
+    expect(selectionStub.toggleBlock).not.toHaveBeenCalled()
+    expect(selectionStub.startTracking).toHaveBeenCalledWith(BLOCK_ID, true)
+    wrapper.unmount()
+  })
+
+  it('Ctrl+Click bullet 区 → 不切换（Sortable 手柄 / BlockModal 语义）', async () => {
+    const wrapper = mountBlock()
+    await flushPromises()
+    await wrapper.find('.block-bullet').trigger('mousedown', { ctrlKey: true })
+    expect(selectionStub.toggleBlock).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('Ctrl+Click 自交互元素（属性 chip）→ 不切换，保留 chip 自身语义', async () => {
+    const wrapper = mountBlock()
+    await flushPromises()
+    // 挂载后再注入属性：loadBlockProperties 会整体替换 propertiesByBlock 的 Map，
+    // 挂载前 set 进去的条目会被丢掉
+    propertyStore.propertiesByBlock.set(BLOCK_ID, [{
+      id: 'prop-1', blockId: BLOCK_ID, key: 'foo', value: 'bar',
+      type: 'string' as const, sortOrder: 0, isHidden: false, isDeleted: false,
+      schemaVersion: 1, createdAt: 0, updatedAt: 0
+    }])
+    await flushPromises()
+    const chip = wrapper.find('.property-item')
+    expect(chip.exists()).toBe(true)
+    await chip.trigger('mousedown', { ctrlKey: true })
+    expect(selectionStub.toggleBlock).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('Ctrl+Click 子块区域 → 归属守卫：不越权切换祖先块', async () => {
+    const wrapper = mountBlock()
+    await flushPromises()
+    const childBody = wrapper.find('[data-block-id="child-1"] .block-body')
+    expect(childBody.exists()).toBe(true)
+    await childBody.trigger('mousedown', { ctrlKey: true })
+    expect(selectionStub.toggleBlock).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+})
+
 // NOTE: Drag-drop behavior (handleDragMove circular detection, handleBlockDragEnd
 // clearing the indicator + triggering onDragEnd) is covered by Playwright e2e tests
 // in Task 4 (tests/block-drag-drop.spec.ts). Unit-testing vue-draggable-plus event flow

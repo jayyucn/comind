@@ -299,6 +299,20 @@ export function useCrossBlockSelection() {
   }
 
   /**
+   * 删除文本选区：按字符裁剪 + 端点合并（#95，决定表 ②③④）。
+   *
+   * 计算与落库分别委托纯模块与 block store；此处只负责「读选区 → 调用 → 清选区
+   * → 回传落点」，供 BlockList 删除键分派后激活编辑态。
+   */
+  async function deleteTextSelection(pageId: string) {
+    const range = textRange.value
+    if (!range) return null
+    const result = await blockStore.deleteTextRange(pageId, range)
+    clearTextSelection()
+    return result
+  }
+
+  /**
    * 复制选中 block 为结构化剪贴板载荷（ADR-0025 D4/D5/D10/D11）。
    *
    * 选区侧只负责「块选区 → 文档序顶层根」；载荷序列化（完整子树 + properties 随行）
@@ -411,7 +425,8 @@ export function useCrossBlockSelection() {
     finalizeTextDrag,
     clearTextTracking,
     clearTextSelection,
-    copyTextToClipboard
+    copyTextToClipboard,
+    deleteTextSelection
   }
 }
 

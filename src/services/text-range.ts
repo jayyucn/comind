@@ -1,4 +1,5 @@
 import type { Block } from '../types/block'
+import { renderedOffsetToEncodedOffset } from './render-text'
 
 /**
  * 文本选区纯计算模块（ADR-0035 D3/D5 的无 DOM 地基）。
@@ -105,13 +106,13 @@ export function normalizeTextRange(blocks: Block[], range: TextRange): Normalize
   return { start, end, middleBlockIds }
 }
 
-function clampOffset(offset: number, length: number): number {
-  return Math.max(0, Math.min(offset, length))
-}
-
 /**
  * 复制文本：首尾按 offset 切片 + 中间整块，块间 '\n' 连接。
  * 非文本块（image/code/heading 等）沿用其 content 的现有表示。
+ *
+ * 端点 offset 来自界面渲染文本（含隐藏了类型名/target 的内联标记），
+ * 而本函数切的是存储原文（encoded）——先经 `renderedOffsetToEncodedOffset`
+ * 换算，否则含标记的块上会错位（#93 / ADR-0035 开放问题 #1）。
  */
 export function textRangeToText(blocks: Block[], range: TextRange): string {
   const { start, end, middleBlockIds } = normalizeTextRange(blocks, range)
@@ -120,19 +121,21 @@ export function textRangeToText(blocks: Block[], range: TextRange): string {
   const endBlock = byId.get(end.blockId)
   if (!startBlock || !endBlock) return ''
 
+  // 换算内部已按 content 长度钳制
+  const lo = renderedOffsetToEncodedOffset(startBlock.content, startBlock.renderSegments, start.offset)
+  const hi = renderedOffsetToEncodedOffset(endBlock.content, endBlock.renderSegments, end.offset)
+
   if (start.blockId === end.blockId) {
-    // normalizeTextRange 已保证 start.offset <= end.offset
-    const lo = clampOffset(start.offset, startBlock.content.length)
-    const hi = clampOffset(end.offset, startBlock.content.length)
+    // normalizeTextRange 已保证 start.offset <= end.offset，换算保持单调
     return startBlock.content.slice(lo, hi)
   }
 
   const parts: string[] = []
-  parts.push(startBlock.content.slice(clampOffset(start.offset, startBlock.content.length)))
+  parts.push(startBlock.content.slice(lo))
   for (const id of middleBlockIds) {
     const b = byId.get(id)
     if (b) parts.push(b.content)
   }
-  parts.push(endBlock.content.slice(0, clampOffset(end.offset, endBlock.content.length)))
+  parts.push(endBlock.content.slice(0, hi))
   return parts.join('\n')
 }

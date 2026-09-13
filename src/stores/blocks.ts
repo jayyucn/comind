@@ -25,6 +25,8 @@ import {
 
 import type { CoreClient } from '../wasm/client'
 import type { BatchOperation } from '@/wasm/types'
+import { normalizeTextRange, type TextRange } from '../services/text-range'
+import { renderedOffsetToEncodedOffset } from '../services/render-text'
 
 let coreClientPromise: Promise<CoreClient> | null = null
 
@@ -940,6 +942,61 @@ export const useBlockStore = defineStore('blocks', () => {
   }
 
   /**
+   * 把 source 块并入 target 块（合并的落点，见 mergeWithPrevious / deleteTextRange）
+   *
+   * 1. target 内容整体替换为 mergedContent（由调用方决定裁剪/拼接结果）
+   * 2. source 的子节点保留并转移到 target 末尾
+   * 3. 删除 source，返回 { id: target, cursorPos } 供调用方定位光标
+   */
+  async function mergeBlockInto(
+    targetId: string,
+    sourceId: string,
+    mergedContent: string,
+    cursorPos: number
+  ) {
+    if (targetId === sourceId) return null
+    const target = blocks.value.find(b => b.id === targetId)
+    const source = blocks.value.find(b => b.id === sourceId)
+    if (!target || !source) return null
+
+    target.content = mergedContent
+    target.updatedAt = Date.now()
+    // 内容变更后清除过时的 renderSegments（同 updateBlockContent 逻辑）
+    target.renderSegments = undefined
+    _scheduleSave(target)
+
+    const childrenToMove: Block[] = []
+    for (const child of blocks.value) {
+      if (child.parentId === sourceId) {
+        childrenToMove.push(child)
+      }
+    }
+
+    if (childrenToMove.length > 0) {
+      const targetChildren = blocks.value.filter(b => b.parentId === targetId)
+      const lastTargetChild = targetChildren[targetChildren.length - 1]
+
+      // 使用 safeCalcInsertPos，避免 Gap 耗尽时直接抛错
+      let prevPos = lastTargetChild?.pos ?? null
+      for (const child of childrenToMove) {
+        const calcPositions = () => ({ prevPos, nextPos: null })
+        const newPos = await safeCalcInsertPos(prevPos, null, blocks.value, calcPositions)
+        child.parentId = targetId
+        child.pos = newPos
+        child.updatedAt = Date.now()
+        _scheduleSave(child)
+        prevPos = newPos
+      }
+
+      structureVersion.value++
+    }
+
+    await deleteBlock(sourceId)
+
+    return { id: targetId, cursorPos }
+  }
+
+  /**
    * 与上一个可见 Block 合并（Backspace 键操作）
    *
    * 合并规则：
@@ -957,44 +1014,74 @@ export const useBlockStore = defineStore('blocks', () => {
     const mergeTarget = findPreviousVisibleBlock(blockId)
     if (!mergeTarget) return
 
-    const targetContentLen = mergeTarget.content.length
-    mergeTarget.content += block.content
+    return mergeBlockInto(
+      mergeTarget.id,
+      blockId,
+      mergeTarget.content + block.content,
+      mergeTarget.content.length + 1
+    )
+  }
 
-    const cursorPos = targetContentLen + 1
-    mergeTarget.updatedAt = Date.now()
-    // 内容变更后清除过时的 renderSegments（同 updateBlockContent 逻辑）
-    mergeTarget.renderSegments = undefined
-    _scheduleSave(mergeTarget)
+  /**
+   * 删除跨块文本选区（#95 / ADR-0035 D7）
+   *
+   * 端点偏移来自界面渲染文本，先经 renderedOffsetToEncodedOffset 换算为 encoded
+   * 偏移再切片（#93，否则含内联标记的块会切错）。
+   *
+   * 语义：
+   * - 同一普通文本块内：只剔除选中字符
+   * - 跨块：头块保留 [0, lo)、尾块保留 [hi, ∞) 拼成一块（生存者 = 文档序靠前的
+   *   头块），中间整块（含子树）删除，尾块的子块转移到生存块末尾
+   * - 端点落在非普通文本块（image/code/embed/query/property）上：该端点块原样保留，
+   *   不裁剪也不合并 —— 这些类型没有「部分选中」这回事（决定表 ⑥），且合并等于
+   *   把生存者的类型强加给另一端，会销毁其类型与渲染方式
+   *
+   * 返回生存块 id 与落点，供调用方激活编辑（`cursorPos` 口径 = pendingCursorPos 的
+   * ProseMirror position，见 stores/editor.ts）；端点无效时返回 null。
+   */
+  async function deleteTextRange(
+    pageId: string,
+    range: TextRange
+  ): Promise<{ id: string; cursorPos: number } | null> {
+    const { start, end, middleBlockIds } = normalizeTextRange(getBlocksByPage(pageId), range)
+    const startBlock = blocks.value.find(b => b.id === start.blockId)
+    const endBlock = blocks.value.find(b => b.id === end.blockId)
+    if (!startBlock || !endBlock) return null
 
-    const childrenToMove: Block[] = []
-    for (const child of blocks.value) {
-      if (child.parentId === block.id) {
-        childrenToMove.push(child)
-      }
+    const lo = renderedOffsetToEncodedOffset(startBlock.content, startBlock.renderSegments, start.offset)
+    const hi = renderedOffsetToEncodedOffset(endBlock.content, endBlock.renderSegments, end.offset)
+    // 只有普通文本块参与裁剪/合并（heading 等同为 bullet + format）
+    const startIsText = startBlock.type === 'bullet'
+    const endIsText = endBlock.type === 'bullet'
+    // 光标口径换算：pendingCursorPos 是 ProseMirror position（文档位置 = 文本偏移 + 1）
+    const caret = (textOffset: number) => textOffset + 1
+
+    // 两端皆非文本块：没有字符可删，视为退化选区，整体不动
+    if (!startIsText && !endIsText) return null
+
+    if (start.blockId === end.blockId) {
+      await updateBlockContent(startBlock.id, startBlock.content.slice(0, lo) + startBlock.content.slice(hi))
+      return { id: startBlock.id, cursorPos: caret(lo) }
     }
 
-    if (childrenToMove.length > 0) {
-      const mergeTargetChildren = blocks.value.filter(b => b.parentId === mergeTarget.id)
-      const lastMergeChild = mergeTargetChildren[mergeTargetChildren.length - 1]
+    if (middleBlockIds.length > 0) await deleteBlocks(middleBlockIds)
 
-      // 使用 safeCalcInsertPos，避免 Gap 耗尽时直接抛错
-      let prevPos = lastMergeChild?.pos ?? null
-      for (const child of childrenToMove) {
-        const calcPositions = () => ({ prevPos, nextPos: null })
-        const newPos = await safeCalcInsertPos(prevPos, null, blocks.value, calcPositions)
-        child.parentId = mergeTarget.id
-        child.pos = newPos
-        child.updatedAt = Date.now()
-        _scheduleSave(child)
-        prevPos = newPos
-      }
-
-      structureVersion.value++
+    // 端点落在非文本块上：该块原样保留，只裁剪另一端的文本块
+    if (!startIsText) {
+      await updateBlockContent(endBlock.id, endBlock.content.slice(hi))
+      return { id: endBlock.id, cursorPos: caret(0) }
+    }
+    if (!endIsText) {
+      await updateBlockContent(startBlock.id, startBlock.content.slice(0, lo))
+      return { id: startBlock.id, cursorPos: caret(lo) }
     }
 
-    await deleteBlock(blockId)
-
-    return { id: mergeTarget.id, cursorPos }
+    return mergeBlockInto(
+      startBlock.id,
+      endBlock.id,
+      startBlock.content.slice(0, lo) + endBlock.content.slice(hi),
+      caret(lo)
+    )
   }
 
   /** 缩进 */
@@ -1363,6 +1450,7 @@ export const useBlockStore = defineStore('blocks', () => {
     insertSiblingAbove,
     insertAtPosition,
     mergeWithPrevious,
+    deleteTextRange,
     findPreviousBlockInTreeOrder,
     findPreviousVisibleBlock,
     findLastVisibleDescendant,

@@ -1,6 +1,5 @@
 import type { RenderInput } from '../wasm/types'
-import { getRelationshipLabel } from '../types/relationship'
-import { parseRelationshipSegment } from '../utils/relationship-content'
+import { WIKI_LINK_REGEX, resolveRelationshipLabel, wikiLinkDisplay } from '../services/render-text'
 
 const CSS_CLASSES = {
   blockLink: 'block-link',
@@ -13,45 +12,12 @@ const TAG_PATTERN = '([\\p{L}_][\\p{L}\\p{N}_]*(?:\\/[\\p{L}_][\\p{L}\\p{N}_]*)*
 // 排除 `"`（data-page 属性值内）与 `[`（[[...]] 内），避免 #tag 与 wiki link 互相污染
 const TAG_TRIGGER_REGEX = new RegExp(`(?<![\\/|>|@"[])#${TAG_PATTERN}`, 'gu')
 
-/**
- * Wiki link 语法：[[target]] 或 [[target|display]]。
- * 在文本段（fallback / Rust 未生成 link 段）中兜底渲染，
- * 输出与结构化 Link segment 相同的 .block-link 结构，保证样式与点击行为一致。
- */
-const WIKI_LINK_REGEX = /\[\[([^\[\]]+?)(?:\|([^\[\]]+?))?\]\]/g
-
 function escapeHtmlEntities(text: string): string {
   return text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-}
-
-/**
- * 从 relationship_type（可能含 <-> / ! 修饰符）解析出中文 label。
- * 兼容三种语法：
- *   ((type))            → getRelationshipLabel(type)
- *   ((type<->inverse))  → label<->inverseLabel
- *   ((type!))           → label!
- * 未知类型回退显示原文（与 Rust rel_cache 行为一致）。
- */
-function resolveRelationshipLabel(relType: string): string {
-  const parts = parseRelationshipSegment(relType)
-  const label = getRelationshipLabel(parts.type)
-  if (parts.inverse !== undefined) {
-    const invLabel = getRelationshipLabel(parts.inverse)
-    // 未知反向类型时回退原文，避免半转换
-    if (invLabel === parts.inverse) return relType
-    return `${label}<->${invLabel}`
-  }
-  if (parts.autoInverse) {
-    // 未知正向类型时回退原文
-    if (label === parts.type) return relType
-    return `${label}!`
-  }
-  // 未知类型回退原文
-  return label === parts.type ? relType : label
 }
 
 export interface HeadingParseResult {
@@ -75,6 +41,8 @@ export function parseHeading(text: string): HeadingParseResult | null {
  * [[...]] 兜底：Rust 的 render_segments 基于 DB links 表构建，当 links 表缺少记录时
  * （旧数据/导入数据），[[target]] 会落入 text 段。此处按结构化 Link segment
  * 的同一 HTML 结构渲染，保证链接样式与点击跳转一致。
+ * 「显示哪一段」（别名优先）走 `wikiLinkDisplay`，与 `services/render-text`
+ * 的偏移换算共用同一份规则。
  */
 function renderTextSegmentWithTags(text: string): string {
   return escapeHtmlEntities(text)
@@ -83,7 +51,7 @@ function renderTextSegmentWithTags(text: string): string {
     .replace(WIKI_LINK_REGEX, (_, target: string, display?: string) => {
       // 输入已是 escapeHtmlEntities 后的文本，捕获的 target/display 无需再次转义
       const page = target
-      const shown = display ?? target
+      const shown = wikiLinkDisplay(target, display)
       return `<span class="${CSS_CLASSES.blockLink}" data-page="${page}">` +
         `<span class="wiki-bracket">[[</span>${shown}<span class="wiki-bracket">]]</span></span>`
     })

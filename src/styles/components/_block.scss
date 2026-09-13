@@ -464,6 +464,10 @@
 
 // 属性显示区域
 .block-properties {
+  // 最小高度：无属性块上该区域会塌成 0 高度，「块下方」于是完全不可命中，
+  // 块选区的 Ctrl/Cmd+Click 命中面只剩内容区（#94）。给一个恒存在的可点带，
+  // 使「整块行都是块选区命中面」在几何上真正成立。
+  min-height: $space-2;
   margin-left: calc(var(--indent-depth, 0) * var(--block-indent-width) + 20px);
   padding-right: $space-2;
 }

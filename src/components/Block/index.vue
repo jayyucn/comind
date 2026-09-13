@@ -419,9 +419,41 @@ function onContentClick(e: MouseEvent) {
   handleContentClick(e)
 }
 
+/** 内容区以外的「自交互」元素：保留自身点击语义，Ctrl/Cmd+Click 不接管 */
+const SELF_INTERACTIVE_SELECTOR =
+  '.block-link, .rel-type-label, .date-ref, .property-item, .property-inline-item'
+
+/**
+ * 块选区命中面（ADR-0035 D6）：`Ctrl/Cmd+Click` 在**整块行内、内容区以外**的任意
+ * 非自交互落点都切换整块选中。
+ *
+ * 修正前的缺陷：命中面只挂在 `.block-content`，块内其余落点（属性区、缩进行空白、
+ * 行内空隙）按 Ctrl/Cmd 毫无反应；而属性区在无属性块上高度为 0，更是完全点不到。
+ *
+ * 不接管内容区：那里由 handleContentMousedown 处理，且类型钩子（image/embed/code）
+ * 对 mousedown 有专属语义，上提会破坏它们。
+ * 不接管 bullet 区：它是 Sortable 的拖拽手柄，点击又归 BlockModal（ADR-0039）。
+ */
+function onBlockMousedown(e: MouseEvent) {
+  if (e.button !== 0) return
+  if (!e.ctrlKey && !e.metaKey) return
+  const target = e.target as HTMLElement | null
+  if (typeof target?.closest !== 'function') return
+  // 归属守卫：子块的事件会冒泡到祖先 .block，不得越权切换祖先的选中态
+  if (target.closest('[data-block-id]')?.getAttribute('data-block-id') !== blockId.value) return
+  if (target.closest('.block-content')) return
+  if (target.closest('.block-bullet')) return
+  if (target.closest(SELF_INTERACTIVE_SELECTOR)) return
+
+  selection?.toggleBlock(blockId.value, pageStore.currentPageId)
+  e.preventDefault()
+}
+
 /** 属性区 mousedown：作为块选区起点（ADR-0035 D6），只做块选区、不激活编辑器 */
 function onPropertyMousedown(e: MouseEvent) {
   if (e.button !== 0) return
+  // Ctrl/Cmd+Click 交给块级命中面 onBlockMousedown 统一接管（其命中面覆盖本区域）
+  if (e.ctrlKey || e.metaKey) return
   selection?.startTracking(blockId.value, true)
 }
 
@@ -467,6 +499,7 @@ watch(isActive, (active) => {
     :class="[priorityClass, statusClass, { active: isActive, 'cb-selected': isSelected && !hasSelectedAncestor }]"
     :data-block-id="blockId"
     :style="{ '--block-indent': indentWidth }"
+    @mousedown="onBlockMousedown"
   >
     <div class="block-row">
       <!-- 缩进占位 -->

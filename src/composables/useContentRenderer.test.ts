@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { useContentRenderer, parseHeading } from './useContentRenderer'
+import { segmentVisibleText } from '../services/render-text'
+import type { RenderSegment } from '../wasm/types'
 import { useRelationshipTypes } from './useRelationshipTypes'
 import { cleanupRelationshipTypes } from '../../tests/core-client'
 
@@ -551,5 +553,107 @@ describe('parseHeading — 标题解析测试', () => {
   it('空格开头的 # 不识别为标题', () => {
     const result = parseHeading(' # 标题')
     expect(result).toBeNull()
+  })
+})
+
+/**
+ * #93：偏移换算（`services/render-text`）必须与「渲染器实际吐出的可见文字」一致。
+ * 两者共用 `resolveRelationshipLabel` / `wikiLinkDisplay` / `WIKI_LINK_REGEX`；
+ * 本组用例把这条同源关系钉住 —— 谁改动渲染布局，这里就会红。
+ */
+describe('segmentVisibleText 与渲染输出同源（#93）', () => {
+  /** 去标签即得可见文本；本组内容不含 &<>" 实体，无需反转义 */
+  const htmlToText = (html: string): string => html.replace(/<[^>]*>/g, '')
+
+  const textSeg = (start: number, end: number): RenderSegment => ({ type: 'text', start, end })
+
+  const cases: Array<{ name: string; content: string; segments: RenderSegment[] }> = [
+    {
+      name: 'typed_link（label 比 type 短）',
+      content: '((is-a))[[项目A]]',
+      segments: [
+        {
+          type: 'typed_link',
+          start: 0,
+          end: 15,
+          target_page_title: '项目A',
+          display_text: '项目A',
+          relationship_type: 'is-a',
+          rel_label: '是一个',
+          rel_color: '#888888',
+        },
+      ],
+    },
+    {
+      name: '带别名的 link',
+      content: '[[项目A|别名]]',
+      segments: [
+        {
+          type: 'link',
+          start: 0,
+          end: 10,
+          target_page_title: '项目A',
+          display_text: '别名',
+        },
+      ],
+    },
+    {
+      name: 'text 段里的别名链接（Rust 未生成 link 段时的兜底）',
+      content: 'x[[项目A|别名]]y',
+      segments: [textSeg(0, 12)],
+    },
+    {
+      name: 'date_ref 显示原文',
+      content: '[[2026-09-13]]',
+      segments: [
+        {
+          type: 'date_ref',
+          start: 0,
+          end: 14,
+          kind: 'date',
+          iso: '2026-09-13',
+          recurrence: '',
+          lead_minutes: 0,
+          is_overdue: false,
+        },
+      ],
+    },
+    {
+      name: 'external_link 显示 url',
+      content: 'https://example.com',
+      segments: [{ type: 'external_link', start: 0, end: 19, url: 'https://example.com' }],
+    },
+    {
+      name: '混合：普通文字 + typed_link + 带别名 link',
+      content: '前置((is-a))[[项目A]]中[[项目B|乙]]后',
+      segments: [
+        textSeg(0, 2),
+        {
+          type: 'typed_link',
+          start: 2,
+          end: 17,
+          target_page_title: '项目A',
+          display_text: '项目A',
+          relationship_type: 'is-a',
+          rel_label: '是一个',
+          rel_color: '#888888',
+        },
+        textSeg(17, 18),
+        {
+          type: 'link',
+          start: 18,
+          end: 28,
+          target_page_title: '项目B',
+          display_text: '乙',
+        },
+        textSeg(28, 29),
+      ],
+    },
+  ]
+
+  it.each(cases)('$name', ({ content, segments }) => {
+    const html = renderContentToHtml({ content, segments, blockId: 'b1' })
+    const visible = segments.map(seg => segmentVisibleText(content, seg)).join('')
+    expect(htmlToText(html)).toBe(visible)
   })
 })

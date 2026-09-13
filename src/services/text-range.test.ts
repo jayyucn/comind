@@ -1,6 +1,9 @@
-import { describe, test, expect } from 'vitest'
+import { describe, test, expect, beforeEach, afterEach } from 'vitest'
 import { normalizeTextRange, textRangeToText } from './text-range'
+import { useRelationshipTypes } from '../composables/useRelationshipTypes'
+import { cleanupRelationshipTypes } from '../../tests/core-client'
 import type { Block } from '../types/block'
+import type { RenderSegment } from '../wasm/types'
 import type { BlockOffset, TextRange } from './text-range'
 
 function makeBlock(overrides: Partial<Block> & Pick<Block, 'id' | 'content'>): Block {
@@ -156,5 +159,104 @@ describe('normalizeTextRange', () => {
     expect(norm.start).toEqual({ blockId: 'a', offset: 1 })
     expect(norm.end).toEqual({ blockId: 'a', offset: 5 })
     expect(norm.middleBlockIds).toEqual([])
+  })
+})
+
+/**
+ * #93：端点偏移来自界面渲染文本（隐藏了类型名 / target），
+ * 切片切的是存储原文（encoded）—— 必须先换算再切。
+ */
+describe('textRangeToText — 渲染偏移 → encoded 偏移（#93）', () => {
+  beforeEach(async () => {
+    await cleanupRelationshipTypes()
+    const { _resetForTest, load } = useRelationshipTypes()
+    _resetForTest()
+    await load()
+  })
+
+  afterEach(async () => {
+    await cleanupRelationshipTypes()
+    const { _resetForTest } = useRelationshipTypes()
+    _resetForTest()
+  })
+
+  const textSeg = (start: number, end: number): RenderSegment => ({ type: 'text', start, end })
+
+  /** Rust 把 `((is-a))[[项目A]]` 整体作为一个 typed_link 段吐出 */
+  const typedLinkSeg = (start: number, end: number): RenderSegment => ({
+    type: 'typed_link',
+    start,
+    end,
+    target_page_title: '项目A',
+    display_text: '项目A',
+    relationship_type: 'is-a',
+    rel_label: '是一个',
+    rel_color: '#888888',
+  })
+
+  const linkSeg = (start: number, end: number, display: string): RenderSegment => ({
+    type: 'link',
+    start,
+    end,
+    target_page_title: '项目A',
+    display_text: display,
+  })
+
+  test('端点块含 typed_link：端点落在标记之后的普通文字上，按存储原文切片', () => {
+    // 存储 `前((is-a))[[项目A]]尾`（17 字），渲染 `前((是一个))[[项目A]]尾`（16 字）
+    const bs = [
+      makeBlock({
+        id: 'a',
+        content: '前((is-a))[[项目A]]尾',
+        renderSegments: [textSeg(0, 1), typedLinkSeg(1, 16), textSeg(16, 17)],
+      }),
+      makeBlock({ id: 'b', content: 'bbb' }),
+    ]
+    // 渲染偏移 15 = 「尾」之前 → encoded 16
+    expect(textRangeToText(bs, range(offset('a', 15), offset('b', 3)))).toBe('尾\nbbb')
+  })
+
+  test('同块内端点落在标记之前的普通文字上：按累积渲染长度换算', () => {
+    const bs = [
+      makeBlock({
+        id: 'a',
+        content: '前((is-a))[[项目A]]尾',
+        renderSegments: [textSeg(0, 1), typedLinkSeg(1, 16), textSeg(16, 17)],
+      }),
+    ]
+    // 渲染偏移 15 → encoded 16
+    expect(textRangeToText(bs, range(offset('a', 0), offset('a', 15)))).toBe('前((is-a))[[项目A]]')
+  })
+
+  test('端点块含带别名的 link：display_text 比存储短，同样按存储原文切片', () => {
+    // 存储 `x[[项目A|别名]]y`（12 字），渲染 `x[[别名]]y`（8 字）
+    const bs = [
+      makeBlock({
+        id: 'a',
+        content: 'x[[项目A|别名]]y',
+        renderSegments: [textSeg(0, 1), linkSeg(1, 11, '别名'), textSeg(11, 12)],
+      }),
+    ]
+    // 渲染偏移 7 = 「y」之前 → encoded 11
+    expect(textRangeToText(bs, range(offset('a', 0), offset('a', 7)))).toBe('x[[项目A|别名]]')
+  })
+
+  test('别名链接落在 text 段内（Rust 未生成 link 段）时同样正确', () => {
+    // 存储 `x[[项目A|别名]]y`（12 字），渲染 `x[[别名]]y`（8 字）
+    const bs = [
+      makeBlock({
+        id: 'a',
+        content: 'x[[项目A|别名]]y',
+        renderSegments: [textSeg(0, 12)],
+      }),
+    ]
+    // 渲染偏移 7 = 「y」之前 → encoded 11
+    expect(textRangeToText(bs, range(offset('a', 0), offset('a', 7)))).toBe('x[[项目A|别名]]')
+  })
+
+  test('无 renderSegments 的纯文本块：行为与改动前一致', () => {
+    const bs = blocks([{ id: 'a', content: 'aaa' }])
+    expect(textRangeToText(bs, range(offset('a', 0), offset('a', 2)))).toBe('aa')
+    expect(textRangeToText(bs, range(offset('a', 99), offset('a', 0)))).toBe('aaa')
   })
 })

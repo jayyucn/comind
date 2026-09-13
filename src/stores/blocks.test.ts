@@ -891,3 +891,232 @@ describe('updateBlockContent - dateRef 自动标记 Todo', () => {
     expect(updated?.content).toBe('普通文本 #tag')
   })
 })
+
+// ============================================================
+// deleteTextRange - 跨块文本选区删除（#95）
+// 决定表：裁剪 + 端点合并；生存者 = 文档序靠前的头块；
+// 中间整块连子树删；非文本块端点原样保留
+// cursorPos 口径 = ProseMirror position（文本偏移 + 1），同 mergeWithPrevious
+// ============================================================
+describe('deleteTextRange - 文本选区删除（#95）', () => {
+  test('同一块内：只剔除选中字符，不合并也不删块', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-textdel-1'
+
+    const a = await store.createBlock({ pageId, content: 'hello world' })
+
+    const result = await store.deleteTextRange(pageId, {
+      anchor: { blockId: a.id, offset: 6 },
+      head: { blockId: a.id, offset: 11 },
+    })
+
+    expect(store.blocks.find(x => x.id === a.id)?.content).toBe('hello ')
+    expect(result).toEqual({ id: a.id, cursorPos: 7 })
+    expect(store.blocks.filter(x => x.pageId === pageId)).toHaveLength(1)
+  })
+
+  test('跨块：头块留前半、尾块留后半拼成一块（生存者 = 文档序靠前的头块）', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-textdel-2'
+
+    const a = await store.createBlock({ pageId, content: 'hello' })
+    const b = await store.createBlock({ pageId, content: 'world' })
+
+    const result = await store.deleteTextRange(pageId, {
+      anchor: { blockId: a.id, offset: 2 },
+      head: { blockId: b.id, offset: 3 },
+    })
+
+    expect(result).toEqual({ id: a.id, cursorPos: 3 })
+    expect(store.blocks.find(x => x.id === a.id)?.content).toBe('held')
+    expect(store.blocks.find(x => x.id === b.id)).toBeUndefined()
+  })
+
+  test('跨块：中间整块连子块一起删掉', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-textdel-3'
+
+    const a = await store.createBlock({ pageId, content: 'aaa' })
+    const mid = await store.createBlock({ pageId, content: 'mid' })
+    const midChild = await store.createBlock({ pageId, content: 'mid-child', parentId: mid.id })
+    const c = await store.createBlock({ pageId, content: 'ccc' })
+
+    await store.deleteTextRange(pageId, {
+      anchor: { blockId: a.id, offset: 1 },
+      head: { blockId: c.id, offset: 1 },
+    })
+
+    expect(store.blocks.find(x => x.id === mid.id)).toBeUndefined()
+    expect(store.blocks.find(x => x.id === midChild.id)).toBeUndefined()
+    expect(store.blocks.find(x => x.id === c.id)).toBeUndefined()
+    expect(store.blocks.find(x => x.id === a.id)?.content).toBe('acc')
+  })
+
+  test('跨块：尾块的子块转移到生存块末尾', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-textdel-4'
+
+    const a = await store.createBlock({ pageId, content: 'aa' })
+    const b = await store.createBlock({ pageId, content: 'bb' })
+    const bChild = await store.createBlock({ pageId, content: 'b-child', parentId: b.id })
+
+    await store.deleteTextRange(pageId, {
+      anchor: { blockId: a.id, offset: 1 },
+      head: { blockId: b.id, offset: 0 },
+    })
+
+    const bChildAfter = store.blocks.find(x => x.id === bChild.id)
+    expect(bChildAfter).toBeDefined()
+    expect(bChildAfter?.parentId).toBe(a.id)
+    expect(store.blocks.find(x => x.id === a.id)?.content).toBe('abb')
+  })
+
+  test('端点偏移按 encoded 换算：含别名链接的块不会切错（#93 口径）', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-textdel-5'
+
+    const a = await store.createBlock({ pageId, content: '[[项目A|别名]]' })
+    const b = await store.createBlock({ pageId, content: 'xyz' })
+
+    // Rust 会为该内容产出 link 段：渲染为「[[别名]]」（6 字），存储原文 10 字
+    const aBlock = store.blocks.find(x => x.id === a.id)!
+    aBlock.renderSegments = [
+      { type: 'link', start: 0, end: 10, target_page_title: '项目A', display_text: '别名' },
+    ]
+
+    const result = await store.deleteTextRange(pageId, {
+      anchor: { blockId: a.id, offset: 4 },
+      head: { blockId: b.id, offset: 0 },
+    })
+
+    // 渲染偏移 4 吸附到标记末端 = encoded 10；若按渲染偏移直切会得到残片「[[项目」
+    expect(store.blocks.find(x => x.id === a.id)?.content).toBe('[[项目A|别名]]xyz')
+    expect(result).toEqual({ id: a.id, cursorPos: 11 })
+  })
+
+  test('全页跨块选删后仍留 1 块（内容清空）', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-textdel-6'
+
+    const a = await store.createBlock({ pageId, content: 'aaa' })
+    const b = await store.createBlock({ pageId, content: 'bbb' })
+
+    const result = await store.deleteTextRange(pageId, {
+      anchor: { blockId: a.id, offset: 0 },
+      head: { blockId: b.id, offset: 3 },
+    })
+
+    const remaining = store.blocks.filter(x => x.pageId === pageId)
+    expect(remaining).toHaveLength(1)
+    expect(remaining[0].id).toBe(a.id)
+    expect(remaining[0].content).toBe('')
+    expect(result).toEqual({ id: a.id, cursorPos: 1 })
+  })
+
+  test('端点落在图片块上：图片块原样保留，只裁剪另一端的文字块', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-textdel-7'
+
+    const a = await store.createBlock({ pageId, content: 'hello' })
+    const img = await store.createBlock({ pageId, content: 'img://a.png', type: 'image' })
+
+    const result = await store.deleteTextRange(pageId, {
+      anchor: { blockId: a.id, offset: 2 },
+      head: { blockId: img.id, offset: 0 },
+    })
+
+    expect(store.blocks.find(x => x.id === img.id)?.content).toBe('img://a.png')
+    expect(store.blocks.find(x => x.id === a.id)?.content).toBe('he')
+    expect(result).toEqual({ id: a.id, cursorPos: 3 })
+    expect(store.blocks.filter(x => x.pageId === pageId)).toHaveLength(2)
+  })
+
+  test('图片块夹在中间：整块连子块删掉', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-textdel-8'
+
+    const a = await store.createBlock({ pageId, content: 'aaa' })
+    const img = await store.createBlock({ pageId, content: 'img://b.png', type: 'image' })
+    const imgChild = await store.createBlock({ pageId, content: 'under-img', parentId: img.id })
+    const c = await store.createBlock({ pageId, content: 'ccc' })
+
+    await store.deleteTextRange(pageId, {
+      anchor: { blockId: a.id, offset: 1 },
+      head: { blockId: c.id, offset: 1 },
+    })
+
+    expect(store.blocks.find(x => x.id === img.id)).toBeUndefined()
+    expect(store.blocks.find(x => x.id === imgChild.id)).toBeUndefined()
+    expect(store.blocks.find(x => x.id === a.id)?.content).toBe('acc')
+  })
+
+  test('端点落在代码块上：代码块原样保留（非文本块不做裁剪/合并）', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-textdel-8b'
+
+    const a = await store.createBlock({ pageId, content: 'text' })
+    const code = await store.createBlock({ pageId, content: 'const x = 1', type: 'code' })
+
+    const result = await store.deleteTextRange(pageId, {
+      anchor: { blockId: a.id, offset: 2 },
+      head: { blockId: code.id, offset: 0 },
+    })
+
+    // 合并会把生存者（bullet）类型强加给代码块 → 代码块类型/渲染方式被销毁，故按边界处理
+    expect(store.blocks.find(x => x.id === code.id)?.content).toBe('const x = 1')
+    expect(store.blocks.find(x => x.id === code.id)?.type).toBe('code')
+    expect(store.blocks.find(x => x.id === a.id)?.content).toBe('te')
+    expect(result).toEqual({ id: a.id, cursorPos: 3 })
+    expect(store.blocks.filter(x => x.pageId === pageId)).toHaveLength(2)
+  })
+
+  test('两端皆非文本块：退化选区，整体不动（连中间块也不删）', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-textdel-8c'
+
+    const img = await store.createBlock({ pageId, content: 'img://c.png', type: 'image' })
+    const mid = await store.createBlock({ pageId, content: 'mid' })
+    const code = await store.createBlock({ pageId, content: 'const y = 2', type: 'code' })
+
+    const result = await store.deleteTextRange(pageId, {
+      anchor: { blockId: img.id, offset: 0 },
+      head: { blockId: code.id, offset: 0 },
+    })
+
+    expect(result).toBeNull()
+    expect(store.blocks.filter(x => x.pageId === pageId)).toHaveLength(3)
+    expect(store.blocks.find(x => x.id === mid.id)?.content).toBe('mid')
+  })
+
+  test('端点倒序（anchor 在后）：仍按文档序归一，生存者仍是靠前的块', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-textdel-9'
+
+    const a = await store.createBlock({ pageId, content: 'aa' })
+    const b = await store.createBlock({ pageId, content: 'bb' })
+
+    const result = await store.deleteTextRange(pageId, {
+      anchor: { blockId: b.id, offset: 2 },
+      head: { blockId: a.id, offset: 1 },
+    })
+
+    expect(result).toEqual({ id: a.id, cursorPos: 2 })
+    expect(store.blocks.find(x => x.id === a.id)?.content).toBe('a')
+    expect(store.blocks.find(x => x.id === b.id)).toBeUndefined()
+  })
+
+  test('端点块不存在时返回 null，且不动任何块', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-textdel-10'
+
+    const a = await store.createBlock({ pageId, content: 'aa' })
+
+    const result = await store.deleteTextRange(pageId, {
+      anchor: { blockId: a.id, offset: 0 },
+      head: { blockId: 'no-such-block', offset: 0 },
+    })
+
+    expect(result).toBeNull()
+    expect(store.blocks.find(x => x.id === a.id)?.content).toBe('aa')
+  })
+})

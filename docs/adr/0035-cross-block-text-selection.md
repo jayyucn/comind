@@ -104,7 +104,7 @@ type BlockSelection = Set<string>  // block id 集合（沿用 anchorIds/selecte
 
 ## 开放问题 / 待确认
 
-1. **偏移基准**：TipTap 内编辑用 decoded 文本（中文 label），而 `block.content` 是 encoded（英文 type）——`TextRange.offset` 以哪个为基准？需与 `handleSplit` 的 decode↔encode 偏移转换对齐。
+1. **偏移基准**：**已决（#93，2026-09-13）—— `TextRange.offset` 以 encoded（`block.content` 存储原文）为基准**，与 D5「复制输出 = 内容切片拼接」保持一致，不引入 decode 输出路径。几何模块仍按「界面渲染文本」给偏移，跨界处由 `src/services/render-text.ts` 的 `renderedOffsetToEncodedOffset` 换算（换算规则与渲染器同源；标记内部按落点吸附到标记边界，避免切出残缺标记）。locality / testability 债（几何坐标基准一等化、换算收敛到一处）留在 #99。
 2. **高亮视觉**：覆盖层高亮如何与原生 `::selection`（激活块内）视觉一致，避免"一块一个颜色"的割裂。
 3. **折叠块**：block 折叠时子块不可见，文本选区拖过折叠块如何表现（只选折叠块自身？）。
 4. **图片/嵌入块在文本选区中的切片语义**：非文本块无字符偏移，拖到其上时首尾偏移如何归一化。
