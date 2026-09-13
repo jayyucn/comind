@@ -30,6 +30,12 @@ Formerly the UI-level read-only state of any Idea Page whose date is not today (
 ### Block
 A unit of content within a Page. Has a parent-child relationship (tree structure). A Page with no Blocks has an auto-created empty root Block.
 
+### Rendered Offset (渲染文本偏移)
+A character offset measured in a Block's *rendered* text content — what the DOM `textContent` of the content area shows (decoded relationship labels, collapsed aliases). Produced by the geometry layer (`selection-geometry.ts`) from screen coordinates. Not the storage coordinate; convert to Encoded Offset via `renderedOffsetToEncodedOffset` before slicing `block.content`. See ADR-0035 D3 / open issue 1.
+
+### Encoded Offset (存储原文偏移)
+A character offset measured in a Block's *stored* `content` (`block.content`, the encoded form with `((type))` / `[[target|alias]]` intact). This is the canonical coordinate for `TextRange.offset` (ADR-0035 open issue 1, resolved #93). The geometry layer emits Rendered Offsets; the single conversion seam to Encoded Offset lives in `src/services/render-text.ts`.
+
 ### Image Block
 
 A Block whose `type` is `image`. Stores its image reference in `content` as `![alt](asset://id)` or `![alt](url)`. Has no edit state; insertion is via the `/image` slash command, and operations such as zoom, copy, replace, delete, and alignment are exposed through a hover toolbar. When selected, it shows a bounding border with four corner handles for inline resizing (display size is persisted in `block.format.width/height`). Display alignment is controlled by `block.format.align`. See ADR-0037.

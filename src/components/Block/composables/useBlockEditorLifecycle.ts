@@ -16,10 +16,10 @@ import type { usePageStore } from '../../../stores/pages'
 import type { BlockTypeEditorExposed } from '../../../types/block-type'
 import { DATE_REF_AT_REGEX, normalizeRecurrence, serializeDateRef } from '../../../utils/date-ref'
 import {
-  decodeRelationshipContent,
   encodeRelationshipContent,
   takeRelationshipSnapshot,
 } from '../../../utils/relationship-content'
+import { renderedOffsetToEncodedOffset } from '../../../services/render-text'
 
 /**
  * useBlockEditorLifecycle — Block 编辑器生命周期 composable
@@ -149,12 +149,10 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
         // 行首：无需转换
         effectivePos = 1
       } else {
-        // 中间：将 decoded 偏移转换为 encoded 偏移
-        const decodedBefore = decodedText.slice(0, decodedOffset)
-        // 重新 build snapshot：block.content 此时已是 encoded，decode 后得到新 snapshot
-        const { snapshot: freshSnapshot } = decodeRelationshipContent(encodedContent)
-        const encodedBefore = encodeRelationshipContent(decodedBefore, freshSnapshot)
-        effectivePos = encodedBefore.length + 1  // 转回 ProseMirror 坐标
+        // 中间：decoded 文本即界面渲染文本（textContent），经 render-text.ts 单一 seam 换算为 encoded 偏移
+        const segments = blockStore.getBlock(blockId.value)?.renderSegments
+        const encodedOffset = renderedOffsetToEncodedOffset(encodedContent, segments, decodedOffset)
+        effectivePos = encodedOffset + 1  // 转回 ProseMirror 坐标
       }
     }
 

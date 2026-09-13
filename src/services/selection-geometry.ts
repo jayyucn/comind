@@ -18,10 +18,11 @@ function contentRoot(blockEl: HTMLElement): HTMLElement {
  * 由屏幕坐标定位 block 内的字符偏移（UTF-16 码元）。
  * 返回 { blockId, offset }；offset 为 block 内容区渲染文本(textContent)中的偏移。
  *
- * 已知局限（ADR-0035 开放问题 #1，未解决）：offset 以「渲染文本」为基准，
- * 对纯文本块与存储 content 一致；对含 typed_link/date_ref 等内联标记的块，
- * 渲染文本（中文 label）与存储 content（英文 type）长度不同，偏移会错位。
- * 精确需借 renderSegments 做码点↔码元↔decode 换算（后续独立项）。
+ * 偏移以「渲染文本」为基准是刻意设计（ADR-0035 开放问题 #1，2026-09-13 已决）：
+ * 几何模块只负责 DOM 布局 ↔ 渲染文本偏移的映射，不耦合 store、不持有 content/renderSegments。
+ * 对含 typed_link/date_ref 等内联标记的块，渲染文本（中文 label）与存储 content（英文 type）
+ * 长度不同导致的偏移错位，由消费侧经 `src/services/render-text.ts` 的
+ * `renderedOffsetToEncodedOffset` 单一 seam 换算为 encoded 偏移。
  */
 export function blockOffsetFromPoint(x: number, y: number): BlockOffset | null {
   const el = document.elementFromPoint(x, y)
