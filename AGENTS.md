@@ -83,11 +83,11 @@ Issue 以 GitHub issue 形式存放在 `jayyucn/comind` 中（使用 `gh` CLI）
 
 ## codegraph（符号级索引）
 
-本仓库的符号级索引（数据在 `.codegraph/`；当前 561 个文件 / 8,050 个符号节点 / 18,176 条边）。精确回答“某符号定义在哪里 / 谁引用了它 / 哪些测试可能受影响”。全局安装为 `codegraph`（npm 包 `@colbymchenry/codegraph`）；通过 CLI 驱动——其 MCP server 可能在本机运行，但未注册到本 agent。
+本仓库的符号级索引（数据在 `.codegraph/`；规模以 `codegraph status` 实时为准，2026-09-14 实测约 543 文件 / 7,558 符号节点 / 10,937 边）。精确回答“某符号定义在哪里 / 谁引用了它”。全局安装为 `codegraph`（npm 包 `@colbymchenry/codegraph`）；通过 CLI 驱动——其 MCP server 可能在本机运行，但未注册到本 agent。
 
 - `codegraph context "<任务>"` — 汇总与任务相关的文件 + 关键代码片段（markdown 输出）。读代码前用它收窄改动面。
 - `codegraph query "<符号>" -k <类型>` — 定位符号的定义与引用（类型：function、class、component 等）。符号名不一定与 graphify 一致（例如 `useBlockStore` 出现在 graphify 的 God Nodes 中，但不在 codegraph 索引里）——跨工具未命中时换词重试。
-- `codegraph affected <文件...>` — 列出受改动影响的测试文件；运行这些测试。
+- **`codegraph affected <文件...>` 在本仓不可用（2026-09-14 实证）**：索引缺测试→源码的反向边，对任何文件恒返回 "No test files affected"——不可作为测试筛选依据。筛测试改用**测试文件名配对**（`src/x/foo.ts` ↔ `foo.test.ts` 同目录/同名约定），跨层影响用 graphify 的 callers/关系查询兜底。
 - `codegraph sync` — 编辑后增量重建索引（保持符号层新鲜）。
 - `codegraph status` — 索引统计 / 新鲜度（“Index is up to date”）。
 
@@ -100,8 +100,8 @@ Issue 以 GitHub issue 形式存放在 `jayyucn/comind` 中（使用 `gh` CLI）
 1. `codegraph context "<任务>"` → 收窄改动面。
 2. `graphify query "<问题>"` 或 `graphify path "A" "B"` → 编辑前先理解跨模块联系。
 3. 修改代码。
-4. `codegraph affected <文件>` → 运行受影响的测试；`codegraph sync` → 刷新符号索引。
+4. 测试筛选：按**测试文件名配对**（`foo.ts` ↔ `foo.test.ts`）+ 相关套件；`codegraph sync` → 刷新符号索引（`affected` 在本仓不可用，见上）。
 5. `graphify update .` → 重建战略层图谱。
 6. 当 graphify 暴露出意外关联时，用 `codegraph query "<符号>" -k <类型>` 定位到确切的定义 / 引用点。
 
-口径说明：codegraph 只统计代码文件（561）；graphify 还索引文档（744）——统计范围不同，不矛盾。`graphify update` 不需要 LLM；`graphify label` / 完整管线需要。
+口径说明：codegraph 只统计代码文件；graphify 还索引文档——统计范围不同，不矛盾（各自数字以 `codegraph status` / `graphify-out/GRAPH_REPORT.md` 实时为准）。`graphify update` 不需要 LLM；`graphify label` / 完整管线需要。
