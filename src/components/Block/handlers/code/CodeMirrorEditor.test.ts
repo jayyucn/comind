@@ -2,6 +2,20 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { nextTick } from 'vue'
 
+// jsdom 未实现 Range/Element.getClientRects，CodeMirror 坐标测量（如
+// defaultKeymap 的 cursorLineUp/Down）会抛 TypeError 成为 unhandled error。
+// 补零值 rect 使 CM 命令可正常走通（布局全为 0，不影响 emit 断言）。
+if (!Range.prototype.getClientRects) {
+  ;(Range.prototype as any).getClientRects = function () {
+    return [{ left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 }]
+  }
+}
+if (!Element.prototype.getClientRects) {
+  ;(Element.prototype as any).getClientRects = function () {
+    return [{ left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 }]
+  }
+}
+
 // Mock useTheme before importing the component
 vi.mock('../../../../composables/useTheme', () => ({
   useTheme: vi.fn(() => ({
@@ -489,5 +503,130 @@ describe('CodeMirrorEditor — 编程语言选择（选中后保存）', () => {
     const emitted = wrapper.emitted('language-change')
     // currentLang 已是 javascript，与 props.language 相同 → 不 emit
     expect(emitted).toBeUndefined()
+  })
+})
+
+describe('CodeMirrorEditor — 跨块方向键导航（边界 emit）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  /** 取 CM EditorView 实例（defineExpose(getEditor)） */
+  function getView(wrapper: ReturnType<typeof mountEditor>) {
+    return (wrapper.vm as any).getEditor() as {
+      state: any
+      contentDOM: HTMLElement
+      dispatch: (spec: any) => void
+      focus: () => void
+    }
+  }
+
+  function pressKey(view: { contentDOM: HTMLElement }, key: string) {
+    view.contentDOM.dispatchEvent(
+      new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+    )
+  }
+
+  it('光标在首行按 ArrowUp → emit move-up（携带 x 坐标）', async () => {
+    const wrapper = mountEditor({ readonly: false, content: 'line1\nline2\nline3' })
+    await flushPromises()
+    const view = getView(wrapper)
+    view.focus()
+    view.dispatch({ selection: { anchor: 2 } }) // line1 中间
+
+    pressKey(view, 'ArrowUp')
+
+    const emitted = wrapper.emitted('move-up')
+    expect(emitted).toBeTruthy()
+    expect(emitted!.length).toBe(1)
+    expect(typeof emitted![0][0]).toBe('number')
+  })
+
+  it('光标在中间行按 ArrowUp → 不跨块（交回 defaultKeymap）', async () => {
+    const wrapper = mountEditor({ readonly: false, content: 'line1\nline2\nline3' })
+    await flushPromises()
+    const view = getView(wrapper)
+    view.focus()
+    view.dispatch({ selection: { anchor: 8 } }) // line2 中间（line1\n = 6 字符）
+
+    pressKey(view, 'ArrowUp')
+
+    expect(wrapper.emitted('move-up')).toBeFalsy()
+  })
+
+  it('光标在末行按 ArrowDown → emit move-down（携带 x 坐标）', async () => {
+    const wrapper = mountEditor({ readonly: false, content: 'line1\nline2\nline3' })
+    await flushPromises()
+    const view = getView(wrapper)
+    view.focus()
+    view.dispatch({ selection: { anchor: view.state.doc.length } }) // 末行末尾
+
+    pressKey(view, 'ArrowDown')
+
+    const emitted = wrapper.emitted('move-down')
+    expect(emitted).toBeTruthy()
+    expect(emitted!.length).toBe(1)
+    expect(typeof emitted![0][0]).toBe('number')
+  })
+
+  it('光标在中间行按 ArrowDown → 不跨块（交回 defaultKeymap）', async () => {
+    const wrapper = mountEditor({ readonly: false, content: 'line1\nline2\nline3' })
+    await flushPromises()
+    const view = getView(wrapper)
+    view.focus()
+    view.dispatch({ selection: { anchor: 8 } }) // line2 中间
+
+    pressKey(view, 'ArrowDown')
+
+    expect(wrapper.emitted('move-down')).toBeFalsy()
+  })
+
+  it('readonly 时不跨块（渲染态 ArrowUp/ArrowDown 均不 emit）', async () => {
+    const wrapper = mountEditor({ readonly: true, content: 'line1\nline2' })
+    await flushPromises()
+    const view = getView(wrapper)
+    view.focus()
+    view.dispatch({ selection: { anchor: 0 } })
+
+    pressKey(view, 'ArrowUp')
+    pressKey(view, 'ArrowDown')
+
+    expect(wrapper.emitted('move-up')).toBeFalsy()
+    expect(wrapper.emitted('move-down')).toBeFalsy()
+  })
+
+  it('空文档按 Backspace → emit backspace-empty（转 bullet 信号）', async () => {
+    const wrapper = mountEditor({ readonly: false, content: '' })
+    await flushPromises()
+    const view = getView(wrapper)
+    view.focus()
+
+    pressKey(view, 'Backspace')
+
+    expect(wrapper.emitted('backspace-empty')).toBeTruthy()
+    expect(wrapper.emitted('backspace-empty')!.length).toBe(1)
+  })
+
+  it('非空文档按 Backspace → 不 emit（正常删字符）', async () => {
+    const wrapper = mountEditor({ readonly: false, content: 'code here' })
+    await flushPromises()
+    const view = getView(wrapper)
+    view.focus()
+    view.dispatch({ selection: { anchor: view.state.doc.length } })
+
+    pressKey(view, 'Backspace')
+
+    expect(wrapper.emitted('backspace-empty')).toBeFalsy()
+  })
+
+  it('readonly 空文档按 Backspace → 不 emit', async () => {
+    const wrapper = mountEditor({ readonly: true, content: '' })
+    await flushPromises()
+    const view = getView(wrapper)
+    view.focus()
+
+    pressKey(view, 'Backspace')
+
+    expect(wrapper.emitted('backspace-empty')).toBeFalsy()
   })
 })

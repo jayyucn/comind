@@ -80,23 +80,19 @@ describe('createEditorEvents — 声明式事件表', () => {
   it('enter-as-block 各类型正确 emit', () => {
     const ctx = makeCtx()
     const { dom } = setup(ctx)
-    const types: [string, string, unknown?][] = [
-      ['split', 'split', 7],
-      ['delete', 'delete'],
-      ['merge', 'merge'],
-      ['indent', 'indent'],
-      ['outdent', 'outdent'],
-      ['moveUp', 'moveUp'],
-      ['moveDown', 'moveDown'],
-      ['exitEdit', 'exitEdit'],
+    const cases: { detail: Record<string, unknown>; expectArgs: unknown[] }[] = [
+      { detail: { type: 'split', pos: 7 }, expectArgs: ['split', 7] },
+      { detail: { type: 'delete' }, expectArgs: ['delete'] },
+      { detail: { type: 'merge' }, expectArgs: ['merge'] },
+      { detail: { type: 'indent' }, expectArgs: ['indent'] },
+      { detail: { type: 'outdent' }, expectArgs: ['outdent'] },
+      { detail: { type: 'moveUp', x: 50 }, expectArgs: ['moveUp', 50] },
+      { detail: { type: 'moveDown', x: 80 }, expectArgs: ['moveDown', 80] },
+      { detail: { type: 'exitEdit' }, expectArgs: ['exitEdit'] },
     ]
-    for (const [detailType, emitName, arg] of types) {
-      dom.dispatchEvent(new CustomEvent('enter-as-block', { detail: { type: detailType, pos: arg } }))
-      if (arg !== undefined) {
-        expect(ctx.emit).toHaveBeenCalledWith(emitName, arg)
-      } else {
-        expect(ctx.emit).toHaveBeenCalledWith(emitName)
-      }
+    for (const c of cases) {
+      dom.dispatchEvent(new CustomEvent('enter-as-block', { detail: c.detail }))
+      expect(ctx.emit).toHaveBeenCalledWith(...c.expectArgs)
     }
   })
 

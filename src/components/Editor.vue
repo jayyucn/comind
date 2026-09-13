@@ -35,8 +35,8 @@ const emit = defineEmits<{
   (e: 'delete'): void
   (e: 'indent'): void
   (e: 'outdent'): void
-  (e: 'moveUp'): void
-  (e: 'moveDown'): void
+  (e: 'moveUp', x?: number): void
+  (e: 'moveDown', x?: number): void
   (e: 'exitEdit'): void
   (e: 'cursor-change', pos: number): void
 }>()

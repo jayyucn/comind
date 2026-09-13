@@ -81,11 +81,13 @@ const EnterAsBlockExtension = Extension.create({
       ArrowUp: ({ editor }) => {
         if (hasModalOpen()) return false
 
-        const { $from } = editor.state.selection
-        if ($from.parentOffset === 0) {
+        // 词处理器模型：光标在块的首行（而非仅 offset 0）时向上跨块。
+        // 单行块任意列按 ArrowUp 都应上移（修复「B 末尾按 ArrowUp 只回到 B 开头」）。
+        if (editor.view.endOfTextblock('up')) {
+          const x = editor.view.coordsAtPos(editor.state.selection.head).left
           editor.view.dom.dispatchEvent(new CustomEvent('enter-as-block', {
             bubbles: true,
-            detail: { type: 'moveUp' }
+            detail: { type: 'moveUp', x }
           }))
           return true
         }
@@ -95,11 +97,38 @@ const EnterAsBlockExtension = Extension.create({
       ArrowDown: ({ editor }) => {
         if (hasModalOpen()) return false
 
-        const { $from } = editor.state.selection
-        if ($from.parentOffset === $from.parent.content.size) {
+        // 词处理器模型：光标在块的末行（而非仅 offset === size）时向下跨块。
+        if (editor.view.endOfTextblock('down')) {
+          const x = editor.view.coordsAtPos(editor.state.selection.head).left
           editor.view.dom.dispatchEvent(new CustomEvent('enter-as-block', {
             bubbles: true,
-            detail: { type: 'moveDown' }
+            detail: { type: 'moveDown', x }
+          }))
+          return true
+        }
+        return false
+      },
+      ArrowLeft: ({editor}) => {
+        if (hasModalOpen()) return false
+
+         if (editor.view.endOfTextblock('left')) {
+          const x = editor.view.coordsAtPos(editor.state.selection.head).left
+          editor.view.dom.dispatchEvent(new CustomEvent('enter-as-block', {
+            bubbles: true,
+            detail: { type: 'moveLeft', x }
+          }))
+          return true
+        }
+        return false
+      },
+      ArrowRight: ({editor}) => {
+        if (hasModalOpen()) return false
+
+         if (editor.view.endOfTextblock('right')) {
+          const x = editor.view.coordsAtPos(editor.state.selection.head).left
+          editor.view.dom.dispatchEvent(new CustomEvent('enter-as-block', {
+            bubbles: true,
+            detail: { type: 'moveRight', x }
           }))
           return true
         }
