@@ -557,6 +557,7 @@ onBeforeUnmount(() => {
         v-for="(rect, i) in highlightRects"
         :key="i"
         class="text-selection-rect"
+        :class="{ 'is-first': i === 0, 'is-last': i === highlightRects.length - 1 }"
         :style="{ top: `${rect.top}px`, left: `${rect.left}px`, width: `${rect.width}px`, height: `${rect.height}px` }"
       />
     </Teleport>
@@ -577,12 +578,24 @@ onBeforeUnmount(() => {
   cursor: default;
 }
 
-/* 文本选区覆盖层高亮：position:fixed + 视口矩形，pointer-events 穿透 */
+/* 文本选区覆盖层高亮：position:fixed + 视口矩形，pointer-events 穿透。
+   圆角只在多行选区的「两端」：首矩形左侧、末矩形右侧，中间矩形直角——
+   避免每段四角圆角把连续选区切成一节一节的外观；单矩形时 is-first 与
+   is-last 同时命中，四角圆角与旧观感一致。 */
 .text-selection-rect {
   position: fixed;
   pointer-events: none;
   background: var(--selection-bg);
-  border-radius: 2px;
   z-index: var(--z-sticky);
+}
+
+.text-selection-rect.is-first {
+  border-top-left-radius: 2px;
+  border-bottom-left-radius: 2px;
+}
+
+.text-selection-rect.is-last {
+  border-top-right-radius: 2px;
+  border-bottom-right-radius: 2px;
 }
 </style>
