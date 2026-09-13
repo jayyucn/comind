@@ -2,6 +2,7 @@
 
 - 状态：已采纳（Accepted）
 - 日期：2026-08-24
+- 修订：2026-09-13（#93 开放问题 1 写回；#94 D6 命中面修订；#95/#96 新增 D8 键盘删除语义）
 - 范围：
   - `src/composables/useCrossBlockSelection.ts`（选区模型扩展：新增文本选区，保留块选区）
   - `src/components/BlockList.vue`（document 级拖拽/按键事件改为按"文本选区"语义驱动）
@@ -39,7 +40,7 @@
 | 选区 | 含义 | 手势 | 用途 |
 |------|------|------|------|
 | 块选区（Block Selection） | block id 集合 | Ctrl/Cmd+Click 切换；**拖属性区** | block 复制/粘贴/删除 |
-| 文本选区（Text Range） | 跨块字符范围 | 内容区**拖拽** | 文本复制 |
+| 文本选区（Text Range） | 跨块字符范围 | 内容区**拖拽** | 文本复制/删除（D8） |
 
 - 同一时刻至多一种生效；进入其一清除另一。
 - 复制分流：有文本选区 → 复制文本（D5）；有块选区 → 走 ADR-0025/0026 结构化块复制；皆无 → 浏览器默认。
@@ -70,16 +71,29 @@ type BlockSelection = Set<string>  // block id 集合（沿用 anchorIds/selecte
 - 文本选区 `Ctrl+C` → 复制"内容切片拼接"：中间整块 `content` + 首尾按偏移切片，块间 `\n` 连接。
 - 非文本块沿用其 `content` 的现有表示（image=`![alt](url)`、code=原文），不引入新的序列化约定。
 
-### D6：属性区纳入块选区追踪起点
+### D6：块选区命中面 = 整块行（2026-09-13 修订，原为属性区）
 
-- `mousedown` 落在 `.block-properties`（块下方属性 chips）也启动块选区追踪，拖拽即从该块开始整块选择——修复"从属性区选不中"。
+- **原决策（2026-08-24）**：`mousedown` 落在 `.block-properties`（块下方属性 chips）启动块选区追踪。
+- **暴露的问题**：该载体在**无属性块上高度为 0** → 「点不中」；且载体的存在性由「块有没有属性」决定，属偶然耦合。真机实测可命中带仅 ≈2px。
+- **修订（#94）**：命中面的判据改为 **恒存在 + 可发现**，形态是**整条块行的可点带**，而非某个子元素。
+  - `.block` 根挂 `onBlockMousedown`：仅左键 + `Ctrl/Cmd`，带**归属守卫**（`closest('[data-block-id]')` 防子块冒泡越权），并排除 `.block-content`（该区已被各类型的 mousedown 钩子占用）/ `.block-bullet` / 自交互元素（link / rel-type-label / date-ref / property-item）。
+  - `.block-properties` 补 `min-height: $space-2`（8px），使块下方成为恒存在可点带；其左缘 = 块左缘 + 20px，**天然避开 bullet 列**。代价：每块行距 29 → 37px。
+  - **不做**拖拽式范围选块（手势集合只扩 Ctrl/Cmd+Click）。
 
 ### D7：范围外（本轮不做）
 
 - 键盘范围选择（Shift+Click / Shift+↑↓）。
-- 选区浮动格式工具条（用户本轮选"仅复制"）。
+- 选区浮动格式工具条（用户本轮选"仅复制"；**删除已由 D8 补齐**）。
 - 行内富文本格式模型。
 - "无 5px 阈值误触"随 D1 拖拽语义重写一并解决，不单独立项。
+
+### D8：选区的键盘删除语义统一（2026-09-13，#95 / #96）
+
+- **原则**：块选区与跨块文本选区在键盘删除上语义一致 —— **选中即被支配**；`Backspace` 与 `Delete` 同义（同一张 document 级分派表，且**无条件 `preventDefault`**）。
+- **文本选区的删除 = 按字符裁剪 + 端点合并**：头块保留 `[0, lo)`、尾块保留 `[hi, ∞)` 后接成一块（生存者 = 文档序靠前的头块），尾块的子块迁到生存块末尾；中间整块（含子树）删除。
+- **端点落在非 `bullet` 类型（image/code/embed/query/property）**：该端点块原样保留，不裁剪也不合并 —— 这些类型没有「部分选中」这回事，且合并等于把生存者的类型强加给另一端、销毁其类型与渲染方式。
+- **任何删除入口都必须同源（走关系清理收口）**：文本选区删除的「中间整块」经 `deleteTextRange` 的**必填**出口参数注入 `cleanupAfterDelete`；端点块因其内容只有一部分存活、不满足收口「整块内容全部消失」的前提而**不入被删集**——残余缺口（端点被丢弃片段里的 inverse typed-link 漏降级，方向安全）记为 **#100**。
+- 端点偏移先经 `renderedOffsetToEncodedOffset` 换算（开放问题 1）再切片；删除后落点的 `cursorPos` 口径 = ProseMirror position（文本偏移 + 1）。
 
 ---
 
@@ -98,7 +112,7 @@ type BlockSelection = Set<string>  // block id 集合（沿用 anchorIds/selecte
   - 覆盖层 vs 全 contenteditable：选覆盖层（单编辑器不动，增量可控）；
   - 文本选区 vs 整块选择替换拖拽：选文本选区（直接命中"Word 式"诉求）；
   - `{anchor,head}` vs `{start,end}`：选前者（保留方向性，为键盘扩展留余地）；
-  - 复制 only vs 复制+格式/删除：选复制 only（契合"打磨"初衷，格式/删除留待后续）。
+  - 复制 only vs 复制+格式/删除：原选复制 only（契合"打磨"初衷）；**删除已于 2026-09-13 补齐（D8 / #95）**，格式仍留待后续。
 
 ---
 
@@ -116,5 +130,5 @@ type BlockSelection = Set<string>  // block id 集合（沿用 anchorIds/selecte
 | 术语 | 含义 | 备注 |
 |------|------|------|
 | Block Selection（块选区） | 以整块为单位选中的 block id 集合，用于 block 级复制/粘贴/删除 | ADR-0035 D2 |
-| Text Range（文本选区） | 跨多个 block 的连续文本范围，由首尾两个字符位置（各含 blockId 与字符偏移）界定 | ADR-0035 D1/D3 |
+| Text Range（文本选区） | 跨多个 block 的连续文本范围，由首尾两个字符位置（各含 blockId 与字符偏移）界定 | ADR-0035 D1/D3/D8 |
 | Block Offset（块偏移） | 文本选区端点：`{ blockId, offset }`，offset 为该 block 原文的字符偏移 | ADR-0035 D3 |
