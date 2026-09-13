@@ -214,6 +214,14 @@
     transform: translateY(-8px);
   }
 
+  // 折叠 = 布局移除（ADR-0045 D1）：只在折叠动画跑完之后（is-animating 已摘除）移除布局。
+  // 折叠时 max-height 过渡先跑，结束后再 display:none；展开时 is-collapsed 先摘除，
+  // display 自然恢复、过渡照跑。这样几何消费者（选区高亮 / TOC / scrollIntoView）无需
+  // 各自补折叠判定 —— 没有布局就等于不可见，折叠的「隐藏」只有一个来源。
+  &.is-collapsed:not(.is-animating) {
+    display: none;
+  }
+
   &.is-animating {
     overflow: hidden;
   }

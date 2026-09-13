@@ -56,11 +56,14 @@ function syncFromStore() {
 // ── 拖拽结束：先按落位意图校正 tree（Sortable 的吸附结果不等同于判定意图），再同步回 store ──
 function handleDragEnd(intent?: DragEndIntent | null) {
   if (intent) applyDropTarget(tree.value, intent.draggedId, intent.target)
-  const changed = syncTreeToStore(tree.value, rootBlockId.value, blockStore.blocks)
+  // 搬迁影响面：新父块「获得」子节点、旧父块「可能失去」（ADR-0045 D2/D4 对账输入）
+  const affected = { gained: new Set<string>(), emptied: new Set<string>() }
+  const changed = syncTreeToStore(tree.value, rootBlockId.value, blockStore.blocks, undefined, affected)
   for (const id of changed) {
     blockStore.scheduleSave(id)
   }
   blockStore.structureVersion++
+  blockStore.reconcileCollapse(affected.emptied, affected.gained)
 }
 
 // ── 双击底部留白区域创建新 block ──

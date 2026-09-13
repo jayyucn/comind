@@ -43,6 +43,10 @@ The editing model behind BlockModal: a Block plus its complete subtree is editab
 ### Bullet-to-Open
 Interaction convention: clicking a Block's `bullet-dot` opens BlockModal for that Block (primary editor entry from any view). Collapse/expand is delegated to a separate `bullet-chevron` shown on hover when the Block has children. Inside BlockModal the dot is a no-op. See ADR-0039.
 
+### Collapse (折叠)
+
+The per-Block view state that hides a Block's descendant subtree. Persisted in `block.format.collapsed`, which is the **single authority** for "is this subtree hidden"; DOM classes and geometry consumers must derive from it rather than form their own truth. Invariant: a Block with no children is never collapsed — reconciled where a Block's child set changes, with a read-side fallback of `collapsed && has children`. Collapsing is view-only: it never deletes, moves, or changes the participation of hidden descendants in selection, copy, or delete semantics (copy takes the full subtree — ADR-0025). See ADR-0045.
+
 ### inBlockModal / blockModalRootId (注入键)
 Two `provide`/`inject` keys used to scope Block behavior inside BlockModal: `inBlockModal` (true inside the modal → bullet dot is a no-op) and `blockModalRootId` (the modal's root Block id → its Enter forces a child, its Outdent is a no-op, keeping edits within the subtree). Absent in the main editor, so main-editor behavior is unchanged. See ADR-0039.
 

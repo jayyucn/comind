@@ -497,3 +497,84 @@ describe('updateBlockContent 内容无变化守卫（防空转 bump updated_at�
     expect(memAfter.updatedAt).toBeGreaterThanOrEqual(memBefore)
   })
 })
+
+// ── ADR-0045 折叠语义：单一权威 + 不变量 ─────────────────────────────
+describe('findNextVisibleBlock（D3：落点只能是可见块）', () => {
+  test('折叠块不进入其后代，落点为下一个兄弟', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-visible-1'
+
+    const parent = await store.createBlock({ pageId, content: 'Parent' })
+    const child = await store.createBlock({ pageId, content: 'Child', parentId: parent.id })
+    const next = await store.createBlock({ pageId, content: 'Next' })
+
+    await store.updateBlockFormat(parent.id, { collapsed: true })
+    expect(store.findNextVisibleBlock(parent.id)?.id).toBe(next.id)
+
+    // 对照组：展开后回到「进入第一个子块」的原有语义
+    await store.updateBlockFormat(parent.id, { collapsed: false })
+    expect(store.findNextVisibleBlock(parent.id)?.id).toBe(child.id)
+  })
+
+  test('文档末块没有下一个可见落点', async () => {
+    const store = useBlockStore()
+    const only = await store.createBlock({ pageId: 'page-visible-2', content: 'Only' })
+    expect(store.findNextVisibleBlock(only.id)).toBeUndefined()
+  })
+
+  test('末子块上溯到祖先的兄弟', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-visible-3'
+
+    const parent = await store.createBlock({ pageId, content: 'Parent' })
+    const child = await store.createBlock({ pageId, content: 'Child', parentId: parent.id })
+    const uncle = await store.createBlock({ pageId, content: 'Uncle' })
+
+    expect(store.findNextVisibleBlock(child.id)?.id).toBe(uncle.id)
+  })
+})
+
+describe('折叠不变量对账（D2/D4）', () => {
+  test('删除掏空折叠父块 ⇒ 复位 collapsed（stale 残留的根治点）', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-reconcile-1'
+
+    const parent = await store.createBlock({ pageId, content: 'Parent' })
+    const child = await store.createBlock({ pageId, content: 'Child', parentId: parent.id })
+    await store.updateBlockFormat(parent.id, { collapsed: true })
+
+    await store.deleteBlock(child.id)
+
+    expect(store.getBlock(parent.id)?.format?.collapsed).toBe(false)
+  })
+
+  test('缩进落入折叠父块 ⇒ 展开父块（落点 = 可见结果）', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-reconcile-2'
+
+    const target = await store.createBlock({ pageId, content: 'Target' })
+    await store.createBlock({ pageId, content: 'Existing', parentId: target.id })
+    const sibling = await store.createBlock({ pageId, content: 'Sibling' })
+    await store.updateBlockFormat(target.id, { collapsed: true })
+
+    await store.indent(sibling.id)
+
+    expect(store.getBlock(sibling.id)?.parentId).toBe(target.id)
+    expect(store.getBlock(target.id)?.format?.collapsed).toBe(false)
+  })
+
+  test('合并把子树转入折叠目标 ⇒ 展开目标', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-reconcile-3'
+
+    const target = await store.createBlock({ pageId, content: 'Target' })
+    const source = await store.createBlock({ pageId, content: 'Source' })
+    await store.createBlock({ pageId, content: 'MovedChild', parentId: source.id })
+    await store.updateBlockFormat(target.id, { collapsed: true })
+
+    await store.mergeWithPrevious(source.id)
+
+    expect(store.getBlock(source.id)).toBeUndefined()
+    expect(store.getBlock(target.id)?.format?.collapsed).toBe(false)
+  })
+})

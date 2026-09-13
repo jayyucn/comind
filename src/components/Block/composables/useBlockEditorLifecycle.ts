@@ -182,7 +182,7 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
   })
 
   async function handleDelete() {
-    const prevBlock = blockStore.findPreviousBlockInTreeOrder(blockId.value)
+    const prevBlock = blockStore.findPreviousVisibleBlock(blockId.value)
     const prevId = prevBlock?.id
 
     if (!prevId) {
@@ -214,7 +214,7 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
   })
 
   const handleMoveUp = withContentSync(async (x?: number) => {
-    const prevBlock = blockStore.findPreviousBlockInTreeOrder(blockId.value)
+    const prevBlock = blockStore.findPreviousVisibleBlock(blockId.value)
     if (prevBlock) {
       // 上移落到上一块的末行，保持源块水平列位置（短块由 posAtCoords 钳制）
       if (x !== undefined) editorStore.setArrowFocus(x, 'last')
@@ -224,7 +224,7 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
   })
 
   const handleMoveDown = withContentSync(async (x?: number) => {
-    const nextBlock = blockStore.findNextBlockInTreeOrder(blockId.value)
+    const nextBlock = blockStore.findNextVisibleBlock(blockId.value)
     if (nextBlock) {
       // 下移落到下一块的首行，保持源块水平列位置（短块由 posAtCoords 钳制）
       if (x !== undefined) editorStore.setArrowFocus(x, 'first')
@@ -236,7 +236,7 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
   const handleMoveLeft = withContentSync(async () => {
     //在块首左移，落到上一块的末行行尾（不保持列，emit 的 x 有意忽略）
     if (cursorPos.value !== 0) return
-    const prevBlock = blockStore.findPreviousBlockInTreeOrder(blockId.value)
+    const prevBlock = blockStore.findPreviousVisibleBlock(blockId.value)
     if (prevBlock) {
       editorStore.setArrowFocus(null, 'last')
       editorStore.deactivateBlock()
@@ -247,7 +247,7 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
 
   const handleMoveRight = withContentSync(async () => {
     //在块尾右移，落到下一块的首行行首（不保持列，emit 的 x 有意忽略）
-    const nextBlock = blockStore.findNextBlockInTreeOrder(blockId.value)
+    const nextBlock = blockStore.findNextVisibleBlock(blockId.value)
     if (nextBlock) {
       editorStore.setArrowFocus(null, 'first')
       editorStore.deactivateBlock()

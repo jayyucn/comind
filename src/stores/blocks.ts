@@ -961,6 +961,45 @@ export const useBlockStore = defineStore('blocks', () => {
   }
 
   /**
+   * 找到当前 Block 在视觉上的下一个 Block（考虑折叠状态，ADR-0045 D3）
+   *
+   * 与 findNextBlockInTreeOrder 的区别：折叠块的后代是隐藏的，不能作为落点。
+   * - 有展开的子 Block → 第一个子 Block
+   * - 否则（无子节点 / 已折叠）→ 下一个兄弟；没有则上溯到最近一个有后继兄弟的祖先
+   *
+   * 注意：选区「成员资格」不走这里（Ctrl+A / 拖拽扩展有意包含隐藏块，见 ADR-0045 ④）。
+   */
+  function findNextVisibleBlock(blockId: string): Block | undefined {
+    const block = blocks.value.find(b => b.id === blockId)
+    if (!block) return undefined
+
+    const children = getSortedChildren(blocks.value, block.id, block.pageId)
+    if (children.length > 0 && block.format?.collapsed !== true) {
+      return children[0]
+    }
+
+    const nextSibling = getNextSibling(blocks.value, block)
+    if (nextSibling) {
+      return nextSibling
+    }
+
+    let currentParentId = block.parentId
+    while (currentParentId) {
+      const parent = blocks.value.find(b => b.id === currentParentId)
+      if (!parent) break
+
+      const nextParentSibling = getNextSibling(blocks.value, parent)
+      if (nextParentSibling) {
+        return nextParentSibling
+      }
+
+      currentParentId = parent.parentId
+    }
+
+    return undefined
+  }
+
+  /**
    * 把 source 块并入 target 块（合并的落点，见 mergeWithPrevious / applyTextRangeDeletion）
    *
    * 1. target 内容整体替换为 mergedContent（由调用方决定裁剪/拼接结果）
@@ -1009,6 +1048,9 @@ export const useBlockStore = defineStore('blocks', () => {
 
       structureVersion.value++
     }
+
+    // 子树转入 target ⇒ 若 target 折叠则展开（ADR-0045 D4）
+    if (childrenToMove.length > 0) reconcileCollapse([], [targetId])
 
     await deleteBlock(sourceId)
 
@@ -1171,6 +1213,9 @@ export const useBlockStore = defineStore('blocks', () => {
     _scheduleSave(block)
 
     structureVersion.value++
+
+    // 落入折叠父块 ⇒ 展开（ADR-0045 D4）：落点必须是可见结果
+    reconcileCollapse([], [prev.id])
   }
 
   /** 反缩进 */
@@ -1199,6 +1244,9 @@ export const useBlockStore = defineStore('blocks', () => {
     _scheduleSave(block)
 
     structureVersion.value++
+
+    // 原父块可能被掏空 ⇒ 复位；升入的新父块若折叠 ⇒ 展开（ADR-0045 D2/D4）
+    reconcileCollapse([parent.id], newParentId ? [newParentId] : [])
   }
 
   /**
@@ -1259,6 +1307,16 @@ export const useBlockStore = defineStore('blocks', () => {
       blockCardStore.invalidate(id)
     }
     blocks.value = blocks.value.filter(b => !toDelete.has(b.id))
+
+    // 折叠不变量对账（ADR-0045 D2）：本次删除可能掏空某些【存活】父块 ——
+    // 含「至少留一块」闸门保留下来的那块（其子节点已全部进入 toDelete）。
+    // 用删除前快照查 parentId，因为此刻块已从 blocks 里移除。
+    const emptiedParents = new Set<string>()
+    for (const id of toDelete) {
+      const parentId = snapshot.find(b => b.id === id)?.parentId
+      if (parentId && !toDelete.has(parentId)) emptiedParents.add(parentId)
+    }
+    reconcileCollapse(emptiedParents)
 
     // 1.6 不变量闸门续：清空被保留块的内容，使页面收尾为恰好 1 个空 block
     for (const id of clearContentIds) {
@@ -1340,6 +1398,31 @@ export const useBlockStore = defineStore('blocks', () => {
     block.updatedAt = Date.now()
     _scheduleSave(block)
     structureVersion.value++
+  }
+
+  /**
+   * 折叠不变量的对账（ADR-0045 D2）
+   *
+   * 一条规则、两种触发，替代「每个操作各自重置 format」：
+   * - `emptiedParentIds`：这些块的子节点集合刚变小/清空 ⇒ 无子节点则不折叠
+   * - `gainedParentIds`：这些块刚获得子节点 ⇒ 落入折叠块则展开（D4，落点=可见结果）
+   *
+   * 判定与写入同源（都读 `format.collapsed`），不引入第二份折叠真相；
+   * 未折叠的块直接跳过，不产生无谓的 `_scheduleSave`。
+   */
+  function reconcileCollapse(emptiedParentIds: Iterable<string>, gainedParentIds: Iterable<string> = []) {
+    const candidate = new Set<string>()
+    for (const id of emptiedParentIds) {
+      const block = blocks.value.find(b => b.id === id)
+      if (block?.format?.collapsed === true && getChildren(id).length === 0) candidate.add(id)
+    }
+    for (const id of gainedParentIds) {
+      const block = blocks.value.find(b => b.id === id)
+      if (block?.format?.collapsed === true && getChildren(id).length > 0) candidate.add(id)
+    }
+    for (const id of candidate) {
+      void updateBlockFormat(id, { collapsed: false })
+    }
   }
 
   /** 更新 Block 类型 */
@@ -1518,6 +1601,8 @@ export const useBlockStore = defineStore('blocks', () => {
     findPreviousVisibleBlock,
     findLastVisibleDescendant,
     findNextBlockInTreeOrder,
+    findNextVisibleBlock,
+    reconcileCollapse,
     indent,
     outdent,
     deleteBlock,

@@ -230,3 +230,54 @@ describe('syncTreeToStore', () => {
     expect(changed).toEqual([])
   })
 })
+
+// ADR-0045 D2/D4：搬迁影响面（谁能拿到「谁获得了 / 谁可能失去子节点」）
+// —— 拖拽落库走的是 syncTreeToStore，它绕开 store 方法直接改 parentId，
+// 所以折叠不变量的对账输入必须由它记账，否则拖拽路径永远不进对账。
+describe('syncTreeToStore - affected 累加器', () => {
+  function makeBlocks(): Block[] {
+    const base = { content: 'x', format: {}, type: 'bullet' as const, properties: {}, createdAt: 0, updatedAt: 0 }
+    return [
+      { id: 'b1', pageId: 'p1', parentId: null, pos: 1000, ...base },
+      { id: 'b2', pageId: 'p1', parentId: null, pos: 2000, ...base }
+    ]
+  }
+
+  test('拖进某块 → 新父块记为 gained', () => {
+    const blocks = makeBlocks()
+    const tree: TreeNode[] = [
+      { id: 'b1', block: blocks[0], children: [{ id: 'b2', block: blocks[1], children: [] }] }
+    ]
+    const affected = { gained: new Set<string>(), emptied: new Set<string>() }
+
+    syncTreeToStore(tree, null, blocks, undefined, affected)
+
+    expect([...affected.gained]).toEqual(['b1'])
+    expect([...affected.emptied]).toEqual([])
+  })
+
+  test('拖出某块 → 原父块记为 emptied', () => {
+    const blocks = makeBlocks()
+    blocks[1].parentId = 'b1'
+    const tree: TreeNode[] = [
+      { id: 'b1', block: blocks[0], children: [] },
+      { id: 'b2', block: blocks[1], children: [] }
+    ]
+    const affected = { gained: new Set<string>(), emptied: new Set<string>() }
+
+    syncTreeToStore(tree, null, blocks, undefined, affected)
+
+    expect([...affected.gained]).toEqual([])
+    expect([...affected.emptied]).toEqual(['b1'])
+  })
+
+  test('不传累加器时不记账也不报错（既有调用点零影响）', () => {
+    const blocks = makeBlocks()
+    const tree: TreeNode[] = [
+      { id: 'b1', block: blocks[0], children: [{ id: 'b2', block: blocks[1], children: [] }] }
+    ]
+
+    expect(() => syncTreeToStore(tree, null, blocks)).not.toThrow()
+    expect(blocks[1].parentId).toBe('b1')
+  })
+})
