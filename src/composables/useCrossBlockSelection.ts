@@ -271,8 +271,8 @@ export function useCrossBlockSelection() {
     if (!range) return
     textDragAnchor.value = range.anchor
     textDragStartPoint.value = startPoint
-    isTextDragging.value = true
-    transition({ kind: 'text', range: { anchor: range.anchor, head } })
+    // head 跳转与后续连续调整同走 updateTextDrag，两条路径永不分叉
+    updateTextDrag(head)
   }
 
   /** mouseup 固化文本选区：保留 textRange，清拖拽态 */
