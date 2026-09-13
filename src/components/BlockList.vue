@@ -590,12 +590,12 @@ onBeforeUnmount(() => {
 }
 
 .text-selection-rect.is-first {
-  border-top-left-radius: 2px;
-  border-bottom-left-radius: 2px;
+  border-top-left-radius: var(--radius-xs);
+  border-bottom-left-radius: var(--radius-xs);
 }
 
 .text-selection-rect.is-last {
-  border-top-right-radius: 2px;
-  border-bottom-right-radius: 2px;
+  border-top-right-radius: var(--radius-xs);
+  border-bottom-right-radius: var(--radius-xs);
 }
 </style>
