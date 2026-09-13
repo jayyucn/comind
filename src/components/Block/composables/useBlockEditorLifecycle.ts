@@ -299,20 +299,16 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
       return
     }
 
-    // shift+click（ADR-0035 D10）：
-    // ① 有 comind 文本选区 → 延伸其活动端（anchor 不动）；
-    // ② 无选区但有光标（激活块内 PM 维护的 DOM selection，含 PM 已把原生选区
-    //    从原光标延伸到点击处的情形——anchor 仍是原光标位）→ 从光标起选；
-    // ③ 都没有 → 落到下方普通点击路径（激活 + 定位光标，D10 原退化语义）。
-    // preventDefault 屏蔽激活块内 ProseMirror 原生 shift+click，避免其原生蓝底选区
-    // 与 comind 覆盖层双高亮并存；后续拖拽/固化全部复用既有拖拽循环（startTextExtend
-    // 置 isTextDragging，mousemove 免阈值、mouseup 固化），此处不再设 clickCoords。
-    // ② 起选后立即失活编辑器：与拖拽过阈值后的状态同构——PM 挂载与 comind
-    // 文本选区不并存，单击/按键语义不因选区存在而分叉。
+    // shift+click（ADR-0035 D10）三分支：① 有文本选区 → 延伸（head 无效时仍 return，
+    // mouseup 侧对 shift 豁免清除，保住既有选区）；② 无选区但有光标 → 从光标起选；
+    // ③ 都没有 → 落到下方普通点击路径。preventDefault 屏蔽 PM 原生 shift+click 的
+    // 双高亮；拖拽/固化复用既有循环（isTextDragging，mousemove 免阈值、mouseup 固化），
+    // 不设 clickCoords。PM 的 mousedown 处理先于本分支运行（冒泡序），② 读到的
+    // DOM selection 往往已被 PM 从原光标延伸到点击处——caretBlockOffsetFromDomSelection
+    // 取 anchor（= 原光标位）即为此设计；起选后立即失活编辑器，维持「PM 挂载与
+    // comind 文本选区不并存」不变量。
     if (e.shiftKey && selection) {
       const head = blockOffsetFromPoint(e.clientX, e.clientY)
-      // ① 已有 comind 文本选区 → 延伸其活动端（anchor 不动）；head 无效时不落下
-      //    （保住既有选区，也不走普通点击路径）
       if (selection.textRange.value) {
         if (head) {
           e.preventDefault()
@@ -320,10 +316,6 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
         }
         return
       }
-      // ② 无选区但有光标（激活块内 PM 维护的 DOM selection；PM 对 shift+mousedown
-      //    的原生处理会把选区从原光标延伸到点击处，此时 anchor 仍是原光标位）
-      //    → 从光标起选，并立即失活编辑器：与拖拽过阈值后的状态同构——PM 挂载与
-      //    comind 文本选区不并存，双高亮只在失活落定前闪一帧。
       if (head) {
         const anchor = caretBlockOffsetFromDomSelection()
         if (anchor) {
@@ -333,7 +325,6 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
           return
         }
       }
-      // ③ 都没有 → 落到下方普通点击路径（激活 + 定位光标，D10 原退化语义）
     }
 
     // 未激活的块：保存鼠标坐标，Editor 挂载后用 posAtCoords 精确定位光标。

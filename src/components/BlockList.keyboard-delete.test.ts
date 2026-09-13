@@ -236,3 +236,75 @@ describe('BlockList 删除键四格分派（#95 / #96）', () => {
     wrapper.unmount()
   })
 })
+
+/**
+ * D10 延伸落空的 mouseup 豁免：shift+click 延伸时若 head 无效（mousedown 直接
+ * return），mouseup 不能落入「点击选区外清除」分支把既有选区清掉——文本选区
+ * 激活时 anchorIds 必空（互斥），isInSelectedArea 恒 false，旧实现必清。
+ * 夹具与删除键分派同法：mount + 文档级派发 + 经 provide 写入选区。
+ */
+describe('BlockList mouseup 清除豁免（D10：shift+click 延伸落空保住选区）', () => {
+  let extractLinksSpy: MockInstance
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    extractLinksSpy = vi
+      .spyOn(getCoreClient()!, 'extractLinksFromContent')
+      .mockResolvedValue([])
+  })
+
+  afterEach(() => {
+    extractLinksSpy.mockRestore()
+  })
+
+  function dispatchMouseUp(shiftKey: boolean): MouseEvent {
+    const ev = new MouseEvent('mouseup', { bubbles: true, cancelable: true, shiftKey })
+    document.body.dispatchEvent(ev)
+    return ev
+  }
+
+  test('已有文本选区 + shift+mouseup（选区外）：选区保留', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-mouseup-shift-keep'
+
+    const a = await store.createBlock({ pageId, content: 'hello' })
+    const b = await store.createBlock({ pageId, content: 'world' })
+
+    const wrapper = mountBlockList(pageId)
+    const selection = getSelection(wrapper)
+    selection.startTextTracking({ blockId: a.id, offset: 1 }, { x: 0, y: 0 })
+    selection.updateTextDrag({ blockId: b.id, offset: 2 })
+    selection.finalizeTextDrag()
+    expect(selection.textRange.value).not.toBeNull()
+
+    // head 无效的延伸尝试：mousedown 在 lifecycle shift 分支 return（未动选区），
+    // mouseup 落在选区外（body）——豁免分支应保住选区
+    dispatchMouseUp(true)
+    await flushAsync()
+
+    expect(selection.textRange.value).not.toBeNull()
+
+    wrapper.unmount()
+  })
+
+  test('已有文本选区 + 普通 mouseup（选区外）：照常清除（对照组，钉住豁免的区分力）', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-mouseup-plain-clear'
+
+    const a = await store.createBlock({ pageId, content: 'hello' })
+    const b = await store.createBlock({ pageId, content: 'world' })
+
+    const wrapper = mountBlockList(pageId)
+    const selection = getSelection(wrapper)
+    selection.startTextTracking({ blockId: a.id, offset: 1 }, { x: 0, y: 0 })
+    selection.updateTextDrag({ blockId: b.id, offset: 2 })
+    selection.finalizeTextDrag()
+
+    dispatchMouseUp(false)
+    await flushAsync()
+
+    expect(selection.textRange.value).toBeNull()
+
+    wrapper.unmount()
+  })
+})

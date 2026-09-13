@@ -179,8 +179,11 @@ function handleDocMouseUp(e: MouseEvent) {
   // 块选区（属性区起点）
   if (!selection.dragStartBlockId.value) {
     const target = e.target as HTMLElement
-    // 点击选中区域外任意位置 → 取消选中（页面空白、sidebar、未选中 block、留白等）
+    // 点击选中区域外任意位置 → 取消选中（页面空白、sidebar、未选中 block、留白等）。
+    // shift+mouseup 豁免：shift+click 是延伸尝试（ADR-0035 D10），落空（head 无效）
+    // 时应保住既有选区——与浏览器 shift+click 不因点击位置而放弃选区一致。
     if (!isInSelectedArea(target)) {
+      if (selection.textRange.value && e.shiftKey) return
       if (selection.anchorIds.size > 0) selection.clearSelection()
       if (selection.textRange.value) selection.clearTextSelection()
     }
