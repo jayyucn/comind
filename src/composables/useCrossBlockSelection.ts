@@ -305,8 +305,12 @@ export function useCrossBlockSelection() {
    * → 回传落点」，供 BlockList 删除键分派后激活编辑态。
    *
    * 中间整块是「整块消失」，其删除交给关系清理收口（cleanupAfterDelete 自身含删除），
-   * 与单块删除 / 块选区删除同源。端点块只被裁剪、并未消失，故不纳入——端点被裁片段
-   * 里若含唯一 inverse typed-link 会漏降级（方向安全：只会漏摘，不会误摘目标页标签）。
+   * 与单块删除 / 块选区删除同源。
+   *
+   * 端点块不纳入：它们的内容**只有一部分存活**（头块保留前缀；尾块的后缀并入生存块，
+   * 尾块本身被合并删除），而 cleanupAfterDelete 的模型要求「该 id 的整块内容全部消失」——
+   * 按整块计入会把仍存活的关系误判为已删（假降级）。代价是端点被丢弃的那段字符里若含
+   * 唯一 inverse typed-link 会漏降级（方向安全：只会漏摘，不会误摘目标页标签，见 #100）。
    */
   async function deleteTextSelection(pageId: string) {
     const range = textRange.value

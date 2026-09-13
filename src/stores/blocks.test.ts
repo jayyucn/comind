@@ -3,6 +3,7 @@ import { setActivePinia, createPinia } from 'pinia'
 import { useBlockStore } from './blocks'
 import { isDescendantOf, calcInsertPos, GAP_SIZE } from '../utils/block-helpers'
 import { initTestCore } from '../../tests/core-client'
+import type { TextRange } from '../services/text-range'
 
 // Mock IndexedDB 存储层
 vi.mock('../storage/indexedDB', () => ({
@@ -898,6 +899,19 @@ describe('updateBlockContent - dateRef 自动标记 Todo', () => {
 // 中间整块连子树删；非文本块端点原样保留
 // cursorPos 口径 = ProseMirror position（文本偏移 + 1），同 mergeWithPrevious
 // ============================================================
+/**
+ * 既有用例只验证裁剪 / 合并 / 删除语义，不关心中间块走哪个出口 —— 这里复用 store 原语
+ * 作为出口。生产的文本选区删除由编排层注入关系清理收口（见 useCrossBlockSelection，
+ * 以及本文件末尾那例「deleteMiddleBlocks 注入」；来由见 issue #100）。
+ */
+function deleteRange(
+  store: ReturnType<typeof useBlockStore>,
+  pageId: string,
+  range: TextRange
+) {
+  return store.deleteTextRange(pageId, range, store.deleteBlocks)
+}
+
 describe('deleteTextRange - 文本选区删除（#95）', () => {
   test('同一块内：只剔除选中字符，不合并也不删块', async () => {
     const store = useBlockStore()
@@ -905,7 +919,7 @@ describe('deleteTextRange - 文本选区删除（#95）', () => {
 
     const a = await store.createBlock({ pageId, content: 'hello world' })
 
-    const result = await store.deleteTextRange(pageId, {
+    const result = await deleteRange(store, pageId, {
       anchor: { blockId: a.id, offset: 6 },
       head: { blockId: a.id, offset: 11 },
     })
@@ -922,7 +936,7 @@ describe('deleteTextRange - 文本选区删除（#95）', () => {
     const a = await store.createBlock({ pageId, content: 'hello' })
     const b = await store.createBlock({ pageId, content: 'world' })
 
-    const result = await store.deleteTextRange(pageId, {
+    const result = await deleteRange(store, pageId, {
       anchor: { blockId: a.id, offset: 2 },
       head: { blockId: b.id, offset: 3 },
     })
@@ -941,7 +955,7 @@ describe('deleteTextRange - 文本选区删除（#95）', () => {
     const midChild = await store.createBlock({ pageId, content: 'mid-child', parentId: mid.id })
     const c = await store.createBlock({ pageId, content: 'ccc' })
 
-    await store.deleteTextRange(pageId, {
+    await deleteRange(store, pageId, {
       anchor: { blockId: a.id, offset: 1 },
       head: { blockId: c.id, offset: 1 },
     })
@@ -960,7 +974,7 @@ describe('deleteTextRange - 文本选区删除（#95）', () => {
     const b = await store.createBlock({ pageId, content: 'bb' })
     const bChild = await store.createBlock({ pageId, content: 'b-child', parentId: b.id })
 
-    await store.deleteTextRange(pageId, {
+    await deleteRange(store, pageId, {
       anchor: { blockId: a.id, offset: 1 },
       head: { blockId: b.id, offset: 0 },
     })
@@ -984,7 +998,7 @@ describe('deleteTextRange - 文本选区删除（#95）', () => {
       { type: 'link', start: 0, end: 10, target_page_title: '项目A', display_text: '别名' },
     ]
 
-    const result = await store.deleteTextRange(pageId, {
+    const result = await deleteRange(store, pageId, {
       anchor: { blockId: a.id, offset: 4 },
       head: { blockId: b.id, offset: 0 },
     })
@@ -1001,7 +1015,7 @@ describe('deleteTextRange - 文本选区删除（#95）', () => {
     const a = await store.createBlock({ pageId, content: 'aaa' })
     const b = await store.createBlock({ pageId, content: 'bbb' })
 
-    const result = await store.deleteTextRange(pageId, {
+    const result = await deleteRange(store, pageId, {
       anchor: { blockId: a.id, offset: 0 },
       head: { blockId: b.id, offset: 3 },
     })
@@ -1020,7 +1034,7 @@ describe('deleteTextRange - 文本选区删除（#95）', () => {
     const a = await store.createBlock({ pageId, content: 'hello' })
     const img = await store.createBlock({ pageId, content: 'img://a.png', type: 'image' })
 
-    const result = await store.deleteTextRange(pageId, {
+    const result = await deleteRange(store, pageId, {
       anchor: { blockId: a.id, offset: 2 },
       head: { blockId: img.id, offset: 0 },
     })
@@ -1040,7 +1054,7 @@ describe('deleteTextRange - 文本选区删除（#95）', () => {
     const imgChild = await store.createBlock({ pageId, content: 'under-img', parentId: img.id })
     const c = await store.createBlock({ pageId, content: 'ccc' })
 
-    await store.deleteTextRange(pageId, {
+    await deleteRange(store, pageId, {
       anchor: { blockId: a.id, offset: 1 },
       head: { blockId: c.id, offset: 1 },
     })
@@ -1057,7 +1071,7 @@ describe('deleteTextRange - 文本选区删除（#95）', () => {
     const a = await store.createBlock({ pageId, content: 'text' })
     const code = await store.createBlock({ pageId, content: 'const x = 1', type: 'code' })
 
-    const result = await store.deleteTextRange(pageId, {
+    const result = await deleteRange(store, pageId, {
       anchor: { blockId: a.id, offset: 2 },
       head: { blockId: code.id, offset: 0 },
     })
@@ -1078,7 +1092,7 @@ describe('deleteTextRange - 文本选区删除（#95）', () => {
     const mid = await store.createBlock({ pageId, content: 'mid' })
     const code = await store.createBlock({ pageId, content: 'const y = 2', type: 'code' })
 
-    const result = await store.deleteTextRange(pageId, {
+    const result = await deleteRange(store, pageId, {
       anchor: { blockId: img.id, offset: 0 },
       head: { blockId: code.id, offset: 0 },
     })
@@ -1095,7 +1109,7 @@ describe('deleteTextRange - 文本选区删除（#95）', () => {
     const a = await store.createBlock({ pageId, content: 'aa' })
     const b = await store.createBlock({ pageId, content: 'bb' })
 
-    const result = await store.deleteTextRange(pageId, {
+    const result = await deleteRange(store, pageId, {
       anchor: { blockId: b.id, offset: 2 },
       head: { blockId: a.id, offset: 1 },
     })
@@ -1111,7 +1125,7 @@ describe('deleteTextRange - 文本选区删除（#95）', () => {
 
     const a = await store.createBlock({ pageId, content: 'aa' })
 
-    const result = await store.deleteTextRange(pageId, {
+    const result = await deleteRange(store, pageId, {
       anchor: { blockId: a.id, offset: 0 },
       head: { blockId: 'no-such-block', offset: 0 },
     })
@@ -1120,7 +1134,7 @@ describe('deleteTextRange - 文本选区删除（#95）', () => {
     expect(store.blocks.find(x => x.id === a.id)?.content).toBe('aa')
   })
 
-  test('deleteMiddle 注入：中间整块完全交给注入的删除出口（关系清理收口用）', async () => {
+  test('deleteMiddleBlocks 注入：中间整块完全交给注入的删除出口（关系清理收口用）', async () => {
     const store = useBlockStore()
     const pageId = 'page-textdel-11'
 

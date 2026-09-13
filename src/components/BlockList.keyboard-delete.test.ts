@@ -226,10 +226,11 @@ describe('BlockList 删除键四格分派（#95 / #96）', () => {
     expect(store.blocks.find(x => x.id === mid.id)).toBeUndefined()
     expect(store.blocks.find(x => x.id === a.id)?.content).toBe('hil')
     expect(store.blocks.find(x => x.id === b.id)).toBeUndefined()
-    // 收口证据：被删中间块的内容进入 cleanupAfterDelete 的目标提取；
-    // 端点块只被裁剪、不参与提取（= 只接中间整块的语义）
+    // 收口证据：被删中间块的内容进入 cleanupAfterDelete 的目标提取（未接线时该调用根本不会发生）。
+    // 尾端点被误纳入被删集时，它的原内容也会被提取 —— 这正是下面第二条断言要拦的。
+    // 头端点在任何实现下都进不了被删集，故不设断言；本用例的 pageId 未注册进 pageStore，
+    // cleanup 的 surviving 扫描（第 3 步）不会跑，被观察到的只有第 1 步的目标提取。
     expect(extractLinksSpy).toHaveBeenCalledWith('mid-links-here')
-    expect(extractLinksSpy).not.toHaveBeenCalledWith('head')
     expect(extractLinksSpy).not.toHaveBeenCalledWith('tail')
 
     wrapper.unmount()
