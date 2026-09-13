@@ -260,17 +260,28 @@ export function useCrossBlockSelection() {
   }
 
   /**
-   * shift+click 延伸已有文本选区（ADR-0035 D10）：anchor 不动，head 立即跳到点击处。
+   * shift+click 延伸文本选区（ADR-0035 D10）：anchor 不动，head 立即跳到点击处。
+   *
+   * - 有选区：anchor = 既有 range.anchor（延伸语义）。
+   * - 无选区但传入 anchorOverride：从光标位置起选（先用 startTextTracking 清块选区/
+   *   旧文本选区，再立即置 head）。
+   * - 两者皆无：no-op。
    *
    * isTextDragging 置真使既有拖拽循环直接接管：handleDocMouseMove 免 4px 阈值
    * 连续重调 head（shift+mousedown+drag 与浏览器行为一致），handleDocMouseUp
-   * 走固化分支保留选区（不再触发单击激活）。无选区时 no-op（调用方保证不走此路）。
+   * 走固化分支保留选区（不再触发单击激活）。
    */
-  function startTextExtend(head: BlockOffset, startPoint: { x: number; y: number }) {
+  function startTextExtend(head: BlockOffset, startPoint: { x: number; y: number }, anchorOverride?: BlockOffset) {
     const range = textRange.value
-    if (!range) return
-    textDragAnchor.value = range.anchor
-    textDragStartPoint.value = startPoint
+    if (range) {
+      textDragAnchor.value = range.anchor
+      textDragStartPoint.value = startPoint
+    } else if (anchorOverride) {
+      // 无选区：从光标位置起选（anchorOverride），沿用新建选区的清场语义
+      startTextTracking(anchorOverride, startPoint)
+    } else {
+      return
+    }
     // head 跳转与后续连续调整同走 updateTextDrag，两条路径永不分叉
     updateTextDrag(head)
   }

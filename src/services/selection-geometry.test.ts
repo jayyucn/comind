@@ -13,7 +13,7 @@
  * 内容为空时渲染成 `<span></span>`（无文本节点，与真机一致）。
  */
 import { describe, test, expect, beforeEach, afterEach } from 'vitest'
-import { collapsedRangeAtBlockOffset, selectionClientRects } from './selection-geometry'
+import { caretBlockOffsetFromDomSelection, collapsedRangeAtBlockOffset, selectionClientRects } from './selection-geometry'
 import type { BlockOffset } from './text-range'
 
 /** 构造一页（数组下标 = 文档序），空串模拟空行 */
@@ -61,6 +61,7 @@ beforeEach(() => {
 afterEach(() => {
   if (realGetClientRects) Object.defineProperty(Range.prototype, 'getClientRects', realGetClientRects)
   else delete (Range.prototype as { getClientRects?: unknown }).getClientRects
+  window.getSelection()?.removeAllRanges()
   document.body.innerHTML = ''
 })
 
@@ -108,5 +109,44 @@ describe('selectionClientRects - 端点判序', () => {
       [0, 2],
       [2, 3],
     ])
+  })
+})
+
+describe('caretBlockOffsetFromDomSelection - shift+click 从光标起选的起点读取', () => {
+  test('光标（折叠选区）在文本节点内：返回所在块与 textContent 偏移', () => {
+    buildPage(['abc', 'defgh'])
+    const text = document.querySelector('[data-block-id="b1"] span')!.firstChild!
+    window.getSelection()!.collapse(text, 2)
+    expect(caretBlockOffsetFromDomSelection()).toEqual({ blockId: 'b1', offset: 2 })
+  })
+
+  test('多文本节点：累计前置节点长度（与 blockOffsetFromPoint 同为 textContent 口径）', () => {
+    document.body.innerHTML =
+      '<div data-block-id="bx"><div class="block-content"><span>ab</span><em>cde</em><span>f</span></div></div>'
+    const emText = document.querySelector('[data-block-id="bx"] em')!.firstChild!
+    window.getSelection()!.collapse(emText, 1)
+    // "ab" (2) + "c" (1) = 3
+    expect(caretBlockOffsetFromDomSelection()).toEqual({ blockId: 'bx', offset: 3 })
+  })
+
+  test('非折叠选区取 anchor：PM 原生 shift+click 已把选区延伸到点击处时，anchor 仍是原光标位', () => {
+    buildPage(['abc', 'def'])
+    const a = document.querySelector('[data-block-id="b0"] span')!.firstChild!
+    const b = document.querySelector('[data-block-id="b1"] span')!.firstChild!
+    // 模拟 PM 原生 shift+click：base=原光标（b0:1），extent=点击处（b1:2）
+    window.getSelection()!.setBaseAndExtent(a, 1, b, 2)
+    expect(caretBlockOffsetFromDomSelection()).toEqual({ blockId: 'b0', offset: 1 })
+  })
+
+  test('光标不在任何块内容区内（页面空白 / bullet 区）：返回 null', () => {
+    buildPage(['abc'])
+    window.getSelection()!.collapse(document.body, 0)
+    expect(caretBlockOffsetFromDomSelection()).toBeNull()
+  })
+
+  test('无 selection（rangeCount 0）：返回 null，调用方退化为普通点击', () => {
+    buildPage(['abc'])
+    window.getSelection()!.removeAllRanges()
+    expect(caretBlockOffsetFromDomSelection()).toBeNull()
   })
 })

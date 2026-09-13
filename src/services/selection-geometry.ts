@@ -40,6 +40,31 @@ export function blockOffsetFromPoint(x: number, y: number): BlockOffset | null {
   return { blockId, offset: textNodeOffsetInRoot(contentRoot(blockEl), range.startContainer, range.startOffset) }
 }
 
+/**
+ * 从当前 DOM selection 读取光标所在的块内偏移（与 `blockOffsetFromPoint` 同口径：
+ * 渲染文本 textContent 中的偏移）。
+ *
+ * 供 shift+click「无选区但有光标」时取起点：光标由激活块内的 ProseMirror 维护，
+ * 其 DOM selection 始终反映当前插入位，无需额外维护「上次光标位置」状态。
+ * 取 anchor（而非 focus）：PM 对 shift+mousedown 的原生处理会把选区从原光标
+ * anchor 延伸到点击处，此时 anchor 仍是原光标位置。光标不在任何块内容区内
+ * （聚焦搜索框、页面空白）时返回 null，调用方退化为普通点击。
+ */
+export function caretBlockOffsetFromDomSelection(): BlockOffset | null {
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0 || !sel.anchorNode) return null
+  const node = sel.anchorNode
+  const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : (node as HTMLElement)
+  const blockEl = el?.closest('[data-block-id]') as HTMLElement | null
+  if (!blockEl) return null
+  const blockId = blockEl.getAttribute('data-block-id')
+  if (!blockId) return null
+  const root = contentRoot(blockEl)
+  // bullet 列 / 属性区不作为文本选区起点（与内容区拖拽的命中面一致）
+  if (!root.contains(node)) return null
+  return { blockId, offset: textNodeOffsetInRoot(root, node, sel.anchorOffset) }
+}
+
 /** 遍历 root 下所有文本节点；回调返回 false 提前终止 */
 function walkTextNodes(root: Node, fn: (node: Text) => false | void): void {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)

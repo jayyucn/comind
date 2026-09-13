@@ -48,12 +48,14 @@ vi.mock('../../../composables/useDateTimePickerPanel', async () => {
 
 // selection-geometry 依赖 document.elementFromPoint / caretRangeFromPoint（jsdom 无布局），
 // 桩掉它才能断言 handleContentMousedown 是否真的启动了文本选区追踪。
-const { blockOffsetFromPointMock } = vi.hoisted(() => ({
-  blockOffsetFromPointMock: vi.fn()
+const { blockOffsetFromPointMock, caretBlockOffsetMock } = vi.hoisted(() => ({
+  blockOffsetFromPointMock: vi.fn(),
+  caretBlockOffsetMock: vi.fn()
 }))
 
 vi.mock('../../../services/selection-geometry', () => ({
-  blockOffsetFromPoint: blockOffsetFromPointMock
+  blockOffsetFromPoint: blockOffsetFromPointMock,
+  caretBlockOffsetFromDomSelection: caretBlockOffsetMock
 }))
 
 describe('useBlockEditorLifecycle', () => {
@@ -61,6 +63,7 @@ describe('useBlockEditorLifecycle', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     blockOffsetFromPointMock.mockReset()
+    caretBlockOffsetMock.mockReset()
   })
 
   function setup(selection?: { startTextTracking: (a: unknown, p: unknown) => void; toggleBlock: () => void }) {
@@ -355,11 +358,35 @@ describe('useBlockEditorLifecycle', () => {
       expect(setCoordsSpy).not.toHaveBeenCalled()
     })
 
-    it('无文本选区：退化为普通路径（照常启动拖拽追踪）', () => {
+    it('无文本选区但有光标：从光标起选 + preventDefault + 失活编辑器，不走激活路径', () => {
+      const sel = { textRange: { value: null }, startTextTracking: vi.fn(), startTextExtend: vi.fn(), toggleBlock: vi.fn() }
+      const { lifecycle, editorStore } = setup(sel)
+      const deactivateSpy = vi.spyOn(editorStore, 'deactivateBlock').mockImplementation(() => {})
+      const setCoordsSpy = vi.spyOn(editorStore, 'setClickCoords').mockImplementation(() => {})
+      const pd = vi.fn()
+      blockOffsetFromPointMock.mockReturnValue({ blockId: 'b2', offset: 4 })
+      caretBlockOffsetMock.mockReturnValue({ blockId: 'b1', offset: 2 })
+
+      lifecycle.handleContentMousedown(shiftMousedown(pd))
+
+      expect(sel.startTextExtend).toHaveBeenCalledWith(
+        { blockId: 'b2', offset: 4 },
+        { x: 30, y: 40 },
+        { blockId: 'b1', offset: 2 }
+      )
+      expect(pd).toHaveBeenCalled()
+      // 光标在激活块编辑器里：起选即失活（PM 挂载与 comind 文本选区不并存）
+      expect(deactivateSpy).toHaveBeenCalled()
+      expect(setCoordsSpy).not.toHaveBeenCalled()
+      expect(sel.startTextTracking).not.toHaveBeenCalled()
+    })
+
+    it('无文本选区且无光标：退化为普通路径（照常启动拖拽追踪）', () => {
       const sel = { textRange: { value: null }, startTextTracking: vi.fn(), startTextExtend: vi.fn(), toggleBlock: vi.fn() }
       const { lifecycle, editorStore } = setup(sel)
       const setCoordsSpy = vi.spyOn(editorStore, 'setClickCoords').mockImplementation(() => {})
       blockOffsetFromPointMock.mockReturnValue({ blockId: 'b1', offset: 1 })
+      caretBlockOffsetMock.mockReturnValue(null)
 
       lifecycle.handleContentMousedown(shiftMousedown())
 

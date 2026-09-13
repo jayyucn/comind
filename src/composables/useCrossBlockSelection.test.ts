@@ -288,6 +288,44 @@ describe('useCrossBlockSelection', () => {
       expect(selection.textDragAnchor.value).toBeNull()
       expect(selection.isTextDragging.value).toBe(false)
     })
+
+    test('startTextExtend 无选区但传入光标 anchor：从光标起选（anchor=光标，head=点击处）', () => {
+      const selection = useCrossBlockSelection()
+
+      selection.startTextExtend(
+        { blockId: 'b', offset: 4 },
+        { x: 1, y: 2 },
+        { blockId: 'a', offset: 2 }
+      )
+
+      expect(selection.textRange.value).toEqual({
+        anchor: { blockId: 'a', offset: 2 },
+        head: { blockId: 'b', offset: 4 }
+      })
+      // 置拖拽态：后续 mousemove 免阈值连续调整、mouseup 固化，与延伸路径同构
+      expect(selection.isTextDragging.value).toBe(true)
+      expect(selection.textDragAnchor.value).toEqual({ blockId: 'a', offset: 2 })
+    })
+
+    test('startTextExtend 从光标起选会清掉既有块选区（互斥）', async () => {
+      const selection = useCrossBlockSelection()
+      const a = await blockStore.createBlock({ pageId: 'page-1', content: 'aaaa' })
+
+      selection.toggleBlock(a.id, 'page-1')
+      expect(selection.anchorIds.size).toBe(1)
+
+      selection.startTextExtend(
+        { blockId: a.id, offset: 3 },
+        { x: 0, y: 0 },
+        { blockId: a.id, offset: 1 }
+      )
+
+      expect(selection.anchorIds.size).toBe(0)
+      expect(selection.textRange.value).toEqual({
+        anchor: { blockId: a.id, offset: 1 },
+        head: { blockId: a.id, offset: 3 }
+      })
+    })
   })
 
   describe('互斥不变量（ADR-0035 D2：任意时刻至多一种选区）', () => {

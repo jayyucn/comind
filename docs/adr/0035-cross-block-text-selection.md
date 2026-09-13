@@ -106,12 +106,12 @@ type BlockSelection = Set<string>  // block id 集合（沿用 anchorIds/selecte
 - **不影响选区成员资格**：删除仍按 D8 把中间的无文本块整块删除（含子树），复制仍含其 `content`——「不画高亮」只关乎显示。
 - **回归网**：`src/services/selection-geometry.test.ts`。jsdom 未实现 `Range.getClientRects`（该模块此前只有真机验证），测试注入替身把「覆盖的块 + 覆盖字数」编码进矩形，使断言落在选中语义而非像素几何上。
 
-### D10：shift+click 延伸已有文本选区（2026-09-13）
+### D10：shift+click 延伸已有文本选区 / 从光标起选（2026-09-13，同日修订）
 
-- **语义**：`shift+click` = 把已有文本选区的**活动端（head）延伸到点击处**，anchor 不动（Word / 浏览器通用行为）；点击在 anchor 之前则选区反向，文档序归一交给消费方（几何层 / `textRangeToText` 已按位置判序）。**无已有文本选区时退化为普通点击**（不从光标起选——光标位置只有激活块内可靠，不值得为此引入「上次光标位置」状态）。
-- **shift+mousedown 后按住拖动 = 连续调整**：`startTextExtend` 置 `isTextDragging = true`，使既有拖拽循环直接接管——`handleDocMouseMove` 免 4px 阈值连续重调 head，`handleDocMouseUp` 走固化分支保留选区。零新增事件机制。
-- **激活块内接管并屏蔽**：shift+mousedown 且已有选区时 `preventDefault`，抑制 ProseMirror 原生 shift+click（否则其原生蓝底选区与 comind 覆盖层双高亮）。注意该状态当前**不可达**：任何拖拽过阈值都会 `deactivateBlock`，而单击激活会清选区——`preventDefault` 是面向未来的护栏（单测覆盖分支）。
-- **实现**：`useCrossBlockSelection.startTextExtend(head, startPoint)`（锚点取既有 range.anchor）+ `useBlockEditorLifecycle.handleContentMousedown` 的 shift 分支（先于 clickCoords/激活路径）。
+- **语义**：`shift+click` = 把已有文本选区的**活动端（head）延伸到点击处**，anchor 不动（Word / 浏览器通用行为）；点击在 anchor 之前则选区反向，文档序归一交给消费方（几何层 / `textRangeToText` 已按位置判序）。**无选区但有光标时从光标起选**（同日用户翻转初裁——初版为「无选区退化为普通点击」；光标直接读激活块 PM 维护的 DOM selection 的 anchor，零新增「上次光标位置」状态）；两者皆无（光标不在任何块内容区内）才退化为普通点击。
+- **shift+mousedown 后按住拖动 = 连续调整**：`startTextExtend` 置 `isTextDragging = true`，使既有拖拽循环直接接管——`handleDocMouseMove` 免 4px 阈值连续重调 head，`handleDocMouseUp` 走固化分支保留选区。零新增事件机制。从光标起选与延伸共用此循环（`startTextExtend(head, startPoint, anchorOverride?)`：有 range 用 range.anchor，无 range 用 override 先 `startTextTracking` 清场）。
+- **激活块内接管并屏蔽**：shift+mousedown 且已有选区、或从光标起选时 `preventDefault`，抑制 ProseMirror 原生 shift+click（否则其原生蓝底选区与 comind 覆盖层双高亮）。注意：PM 的 mousedown 处理先于本分支运行（事件冒泡序），故从光标起选时读到的往往是 PM 已延伸过的**非折叠**选区——**取 anchor 而非要求折叠**（PM 的 shift 延伸保持 anchor = 原光标）。**从光标起选后立即 `deactivateBlock`**：维持「PM 挂载与 comind 文本选区不并存」不变量（双高亮只在失活落定前闪一帧）。
+- **实现**：`useCrossBlockSelection.startTextExtend(head, startPoint, anchorOverride?)` + `selection-geometry.caretBlockOffsetFromDomSelection()`（光标→BlockOffset，textContent 口径与 `blockOffsetFromPoint` 一致）+ `useBlockEditorLifecycle.handleContentMousedown` 的 shift 分支（先于 clickCoords/激活路径；已有选区且 head 无效时不落普通路径，保住既有选区）。
 
 ---
 
