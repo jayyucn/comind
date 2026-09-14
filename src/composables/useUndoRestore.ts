@@ -194,6 +194,11 @@ export async function restoreEntry(pageId: string, snapshot: HistoryEntry): Prom
   }
   propertyStore.propertiesByBlock = nextProps
 
+  // 撤销/重做回填了 blocks（含复活/新增/重组的块）后，必须触发 BlockList 的 tree 重建：
+  // tree 是 ref，仅在 blockStore.structureVersion 变化时由 syncFromStore 重算（BlockList.vue:611 watch）。
+  // 不 bump 会导致复活块滞留 store 却不进 DOM（#103 T1 驱动发现：删块→Ctrl+Z 复活后块不可见，须 reload 才恢复）。
+  blockStore.structureVersion++
+
   // ---- 落库：undelete 作为 op 并入单次 executeBatch（单一事务）----
   // 精确复活「当前软删、且明确列于快照」的块（不级联，故不产生 stray）。undelete op
   // 排在 update/delete/prop 之前，保证「先复活、再还原字段」在同一事务内顺序生效。
