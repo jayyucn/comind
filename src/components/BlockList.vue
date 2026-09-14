@@ -13,10 +13,13 @@
  * - handleDragEnd 将 tree 变更同步回 store（parentId + pos）
  * - store 变更通过 structureVersion watch 触发 syncFromStore 重建树
  */
-import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import { buildTree, syncTreeToStore } from '../composables/useBlockTree'
 import type { CrossBlockSelection } from '../composables/useCrossBlockSelection'
 import { useCrossBlockSelection } from '../composables/useCrossBlockSelection'
+import { ensureStack, hasStack } from '../composables/useUndoHistory'
+import { runUndoOrRedo } from '../composables/useUndoRestore'
+import { resolveUndoChord, resolveUndoScopeBlockPage } from '../utils/undo-chord'
 import { COMIND_BLOCK_MIME, resolveClipboardForest } from '../services/external-paste-parse'
 import { ensureWikiLinkTargets, notifyCreatedPages } from '../services/paste-ensure-wiki-targets'
 import { blockOffsetFromPoint, selectionClientRects } from '../services/selection-geometry'
@@ -391,6 +394,92 @@ function handleDocKeyDownCapture(e: KeyboardEvent) {
   }
 }
 
+/**
+ * 捕获阶段接管 Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y（ADR-0046 D2：统一栈全权接管）。
+ *
+ * 为什么必须是捕获阶段：TipTap 与 CodeMirror 的按键处理都挂在编辑区自身（目标阶段），
+ * 捕获阶段先于它们执行才能把按键拿掉。两者的内置历史由同票一并禁用（Editor.vue
+ * `undoRedo:false` / CodeMirrorEditor 去 `history()`+`historyKeymap`）—— 接管与禁用
+ * 是一对，中间态会让两个栈互抢（D7 拒绝分阶段）。
+ *
+ * 豁免面比 Ctrl+A 窄：原生输入控件（搜索框 / 重命名）保留浏览器自身撤销；CodeMirror
+ * 编辑区同样是 contenteditable 但不豁免，它归统一栈。**本实例不接管的落点**（不 preventDefault，
+ * 交还原生行为）见 resolveUndoScopePage —— 无栈页块与列表外目标两类（#109 已裁定的边界）。
+ */
+function handleDocUndoRedoKeyDown(e: KeyboardEvent) {
+  const chord = resolveUndoChord(e)
+  if (!chord) return
+  const pageId = resolveUndoScopePage(e)
+  if (!pageId || !hasStack(pageId)) return
+  e.preventDefault()
+  e.stopPropagation()
+  runUndoRedo(pageId, chord).catch((err) => console.error('[undo] 恢复失败:', err))
+}
+
+/**
+ * 本次按键的撤销作用域页；null = 本实例不接管（按键交还原生行为）。
+ * - 焦点在某块内 → 复用全局作用域裁决单一真源 `resolveUndoScopeBlockPage`（B2：
+ *   与 App 的全局兜底共用，杜绝两处口径漂移），取该块所属页（含 BlockModal 内的
+ *   **他页块**）。是否接管由 handleDocUndoRedoKeyDown 的 `hasStack` 判定：那页有栈
+ *   （曾整页加载）才接管；无栈（从未整页加载，memento 无快照可撤）交还原生行为（D6 机制边界）。
+ * - 焦点不在块内（底部留白 / 属性区 / 点击不可聚焦元素后焦点落回 body）→ 按实例归属判定；
+ *   目标落在本列表之外（页面标题区、右栏等）同样不接管。
+ */
+function resolveUndoScopePage(e: KeyboardEvent): string | null {
+  // 块内焦点：复用全局作用域裁决单一真源（B2：与 App 的全局兜底共用，杜绝口径漂移），
+  // 取该块所属页（含 BlockModal 内的**他页块**）。是否接管由 handleDocUndoRedoKeyDown
+  // 的 `hasStack` 判定：那页有栈（曾整页加载）才接管；无栈（从未整页加载，memento 无快照可撤）
+  // 交还原生行为（D6 机制边界）。
+  const blockPage = resolveUndoScopeBlockPage(e)
+  if (blockPage) return blockPage
+  // 非块元素：实例归属判定（仅 BlockList 有此逻辑；App 全局兜底只认块内焦点，无此分支）。
+  // 注意：原生输入控件（input/textarea）必须在此再豁免一次 —— 全局裁决对「非块」统一返回
+  // null，但本函数有实例归属兜底（下方 return props.pageId），input 焦点不能落到该兜底被接管。
+  const target = e.target as HTMLElement | null
+  if (!target || typeof target.closest !== 'function') return null
+  if (target.closest('input, textarea')) return null
+  // 口径同 handleDocPaste 的「DOM 已摘离文档的缓存实例不接管」那一半（ADR-0043）。另一半
+  // （按 lastClickedBlockId 校验页归属）只在粘贴需要锚点块时才有意义，撤销作用域恒为
+  // props.pageId，故不需要。
+  const isBodyOrDocument = target === document.body || target === document.documentElement
+  if (rootEl.value && (isBodyOrDocument ? !rootEl.value.isConnected : !rootEl.value.contains(target))) {
+    return null
+  }
+  return props.pageId
+}
+
+/**
+ * 撤销 / 重做 + 落点（#109）。执行（退出编辑态 → 封口 → 恢复）收口在 useUndoRestore 的
+ * runUndoOrRedo，此处只补「落点」：受影响块置为块选区并滚入视野（D-rollback landing）。
+ * 落点只在本页做 —— 跨页（BlockModal 他页块）恢复只改 store，弹窗经响应式自刷，
+ * 本列表的块选区 / 滚动对 props.pageId 之外的页无意义。
+ */
+async function runUndoRedo(pageId: string, chord: 'undo' | 'redo'): Promise<void> {
+  const changed = await runUndoOrRedo(pageId, chord)
+  if (!changed || changed.length === 0) return
+  if (pageId === props.pageId) landOnChangedBlocks(changed)
+}
+
+/** 落点：受影响块整体置为**块选区**（不进文字编辑态）+ 文档序首块滚入视野 */
+function landOnChangedBlocks(ids: string[]): void {
+  // 恢复后 store 里只剩快照内的块：撤销「新建」时受影响块已被软删，sortByDocumentOrderIds
+  // 会按块现有文档序把不存在的 id 过滤掉 —— 无可落点块时保持原状即可。
+  // 另须排除页面根块：它不参与渲染/选区（同 selectAll 的 excludeRootId 口径），
+  // 一旦进 anchorIds，后续的复制/删除会波及整页根。
+  const ordered = sortByDocumentOrderIds(
+    ids.filter((id) => id !== rootBlockId.value),
+    blockStore.blocks,
+  )
+  if (ordered.length === 0) return
+  selection.selectBlocks(ordered)
+  nextTick(() => {
+    // 限定在本实例的渲染树内查：多实例共存时避免滚到弹窗/抽屉里的副本
+    const el = rootEl.value?.querySelector(`[data-block-id="${ordered[0]}"]`)
+    // jsdom 等测试环境没有 scrollIntoView
+    if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'center' })
+  })
+}
+
 // ── 粘贴分发控制器（ADR-0025 D13 + ADR-0026 D8） ──
 // 捕获阶段拦截 document paste，集中决策：
 // ① Ctrl/Cmd+Shift+V → 放行（TipTap 单 block 纯文本，D9）
@@ -532,12 +621,31 @@ watch(() => props.pageId, (newId, oldId) => {
   }
 })
 
+// ── 撤销栈（ADR-0046）：本页整页加载完成后建立/接管（幂等）──
+// 收口在 BlockList 内部而不是各调用方：/page（Page/index.vue）与 /ideas（IdeasList.vue）
+// 两处都各自加载页面，若各自接线必然漂移。前置条件是**整页已加载** —— 残缺快照会在撤销时
+// 把未加载的块当「新增」软删。isPageFullyLoaded 读的是非响应式 Set，故用「页 id + 块数」
+// 这个派生值作观察源（既随 blocks 变化重算，又不会在「切到块数相同的另一页」时漏触发）；
+// 块数为 0 同样不建栈（空快照入栈 = 撤销时整页被软删）。
+watch(
+  () => {
+    if (!blockStore.isPageFullyLoaded(props.pageId)) return ''
+    const count = blockStore.getBlocksByPage(props.pageId).length
+    return count > 0 ? `${props.pageId}:${count}` : ''
+  },
+  (key) => {
+    if (key) ensureStack(props.pageId)
+  },
+  { immediate: true },
+)
+
 onMounted(() => {
   syncFromStore()
   document.addEventListener('mousemove', handleDocMouseMove)
   document.addEventListener('mouseup', handleDocMouseUp)
   document.addEventListener('keydown', handleDocKeyDown)
   document.addEventListener('keydown', handleDocKeyDownCapture, true)
+  document.addEventListener('keydown', handleDocUndoRedoKeyDown, true)
   document.addEventListener('paste', handleDocPaste, true)
   // 文本选区覆盖层高亮需随滚动/缩放重绘（视口矩形会失效）
   document.addEventListener('scroll', handleViewportChange, true)
@@ -549,6 +657,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('mouseup', handleDocMouseUp)
   document.removeEventListener('keydown', handleDocKeyDown)
   document.removeEventListener('keydown', handleDocKeyDownCapture, true)
+  document.removeEventListener('keydown', handleDocUndoRedoKeyDown, true)
   document.removeEventListener('paste', handleDocPaste, true)
   document.removeEventListener('scroll', handleViewportChange, true)
   window.removeEventListener('resize', handleViewportChange)

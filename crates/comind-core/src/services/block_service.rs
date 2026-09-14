@@ -30,6 +30,22 @@ impl BlockService {
         repository::BlockRepository::get_children(storage.blocks(), parent_id)
     }
 
+    pub fn get_children_including_deleted(
+        storage: &mut dyn StorageAdapter,
+        parent_id: &str,
+    ) -> Result<Vec<Block>, Box<dyn Error>> {
+        repository::BlockRepository::get_children_including_deleted(storage.blocks(), parent_id)
+    }
+
+    /// 撤销软删除（ADR-0046 D10）：清 deleted_at 并回写已复活块。仅管块本身，
+    /// 派生数据（属性/dateRef/通知）复活由各自原语负责，T1 不覆盖。
+    pub fn undelete(
+        storage: &mut dyn StorageAdapter,
+        id: &str,
+    ) -> Result<Block, Box<dyn Error>> {
+        repository::BlockRepository::undelete(storage.blocks(), id)
+    }
+
     pub fn create(
         storage: &mut dyn StorageAdapter,
         page_id: &str,

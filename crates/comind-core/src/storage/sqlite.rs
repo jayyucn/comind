@@ -6,7 +6,7 @@ use super::repository::*;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::date_ref::{date_ref_create, date_ref_create_many, date_ref_delete, date_ref_delete_by_block_id, date_ref_get_all, date_ref_get_by_block_id, date_ref_get_by_id, date_ref_query_all_recurring, date_ref_query_by_date_range, date_ref_query_due_non_recurring, date_ref_query_overdue};
 #[cfg(not(target_arch = "wasm32"))]
-use crate::storage::entity::block::{block_get_all, block_get_by_id, block_get_by_page_id, block_get_children, block_get_by_ids, block_insert, block_update, block_soft_delete_by_id, block_ids_by_page_id, block_soft_delete_by_page_id};
+use crate::storage::entity::block::{block_get_all, block_get_by_id, block_get_by_page_id, block_get_children, block_get_children_including_deleted, block_get_by_ids, block_insert, block_update, block_soft_delete_by_id, block_undelete_by_id, block_ids_by_page_id, block_soft_delete_by_page_id};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::page::{page_get_by_id, page_get_by_title_including_deleted, page_get_by_title, page_get_all, page_get_trash, page_get_by_ids, page_create, page_update, page_delete};
 #[cfg(not(target_arch = "wasm32"))]
@@ -516,6 +516,10 @@ impl BlockRepository for SQLiteAdapter {
         block_get_children(&self.conn, parent_id)
     }
 
+    fn get_children_including_deleted(&self, parent_id: &str) -> Result<Vec<Block>, Box<dyn Error>> {
+        block_get_children_including_deleted(&self.conn, parent_id)
+    }
+
     fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Block>, Box<dyn Error>> {
         block_get_by_ids(&self.conn, ids)
     }
@@ -536,6 +540,13 @@ impl BlockRepository for SQLiteAdapter {
         block_soft_delete_by_id(&self.conn, id)?;
         self.conn.execute("DELETE FROM SearchIndex WHERE block_id = ?1", params![id])?;
         Ok(())
+    }
+
+    fn undelete(&mut self, id: &str) -> Result<Block, Box<dyn Error>> {
+        let b = block_undelete_by_id(&self.conn, id)?;
+        // 软删时 SearchIndex 行被删，复活后需重新建索引。
+        self.update_search_index(&b)?;
+        Ok(b)
     }
 
     fn delete_by_page_id(&mut self, page_id: &str) -> Result<(), Box<dyn Error>> {
@@ -1139,6 +1150,10 @@ impl<'a> BlockRepository for TxContext<'a> {
         block_get_children(&self.conn, parent_id)
     }
 
+    fn get_children_including_deleted(&self, parent_id: &str) -> Result<Vec<Block>, Box<dyn Error>> {
+        block_get_children_including_deleted(&self.conn, parent_id)
+    }
+
     fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Block>, Box<dyn Error>> {
         block_get_by_ids(&self.conn, ids)
     }
@@ -1159,6 +1174,13 @@ impl<'a> BlockRepository for TxContext<'a> {
         block_soft_delete_by_id(&self.conn, id)?;
         self.conn.execute("DELETE FROM SearchIndex WHERE block_id = ?1", params![id])?;
         Ok(())
+    }
+
+    fn undelete(&mut self, id: &str) -> Result<Block, Box<dyn Error>> {
+        let b = block_undelete_by_id(&self.conn, id)?;
+        // 软删时 SearchIndex 行被删，复活后需重新建索引。
+        self.update_search_index(&b)?;
+        Ok(b)
     }
 
     fn delete_by_page_id(&mut self, page_id: &str) -> Result<(), Box<dyn Error>> {

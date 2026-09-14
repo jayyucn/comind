@@ -439,6 +439,12 @@ impl BlockRepository for SqlJsAdapter {
         Ok(result.into_iter().map(|r| row_to_block_js(&r)).collect())
     }
 
+    fn get_children_including_deleted(&self, parent_id: &str) -> Result<Vec<Block>, Box<dyn std::error::Error>> {
+        // 与 get_children 唯一差异：不过滤 deleted_at，供级联复活遍历软删子树。
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Block WHERE parent_id = ? ORDER BY pos", block_select_cols()), &[parent_id])?;
+        Ok(result.into_iter().map(|r| row_to_block_js(&r)).collect())
+    }
+
     fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Block>, Box<dyn std::error::Error>> {
         if ids.is_empty() {
             return Ok(Vec::new());
@@ -479,6 +485,17 @@ impl BlockRepository for SqlJsAdapter {
         let now = chrono::Utc::now().timestamp_millis();
         Self::run_with_params(&self.db, "UPDATE Block SET deleted_at = ?, version = version + 1, updated_at = ? WHERE id = ?", &[&now.to_string(), &now.to_string(), id])?;
         Ok(())
+    }
+
+    fn undelete(&mut self, id: &str) -> Result<Block, Box<dyn std::error::Error>> {
+        // 撤销软删除：deleted_at 清 NULL，版本 +1，刷新 updated_at（与 delete 对称）。
+        let now = chrono::Utc::now().timestamp_millis();
+        Self::run_with_params(&self.db, "UPDATE Block SET deleted_at = NULL, version = version + 1, updated_at = ? WHERE id = ?", &[&now.to_string(), id])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Block WHERE id = ?", block_select_cols()), &[id])?;
+        if result.is_empty() {
+            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Block not found")));
+        }
+        Ok(row_to_block_js(&result[0]))
     }
 
     fn delete_by_page_id(&mut self, page_id: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -1382,6 +1399,27 @@ impl TransactionalStorageAdapter for SqlJsAdapter {
     where
         F: FnOnce(&mut dyn StorageAdapter) -> Result<R, Box<dyn std::error::Error>>,
     {
-        f(self)
+        // 真事务（ADR-0046 约束3 / #108 验收#2）：sql.js 即标准 SQLite，
+        // BEGIN..COMMIT/ROLLBACK 与 tauri 路径（execute_with_transaction_adapter，
+        // commands.rs）语义对齐 —— 失败整批回滚。此前为 pass-through no-op：
+        // 逐 op 自动提交，中途失败会留下半提交状态且被上层吞错为 Null。
+        Self::exec(&self.db, "BEGIN")?;
+        match f(self) {
+            Ok(result) => {
+                // COMMIT 失败时同样尝试 ROLLBACK（与 Err 分支对称；若事务已被
+                // SQLite 自动回滚则为无害 no-op）。
+                if let Err(commit_err) = Self::exec(&self.db, "COMMIT") {
+                    let _ = Self::exec(&self.db, "ROLLBACK");
+                    return Err(commit_err);
+                }
+                Ok(result)
+            }
+            Err(err) => {
+                // 保留原始错误：ROLLBACK 自身失败（事务可能已被 SQLite 自动回滚）
+                // 时不得掩盖成因。
+                let _ = Self::exec(&self.db, "ROLLBACK");
+                Err(err)
+            }
+        }
     }
 }

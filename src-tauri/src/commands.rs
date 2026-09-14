@@ -801,6 +801,28 @@ pub async fn delete_block(
 }
 
 #[tauri::command]
+pub async fn undelete_blocks(
+    db: State<'_, super::state::DatabaseConnection>,
+    sync_server: State<'_, super::state::SyncServerHandle>,
+    ids: Vec<String>,
+) -> Result<(), String> {
+    let adapter_arc = db.adapter_arc();
+    let mut adapter = adapter_arc.lock().await;
+    let sync_changes =
+        BlockWriteService::undelete_blocks(&mut *adapter, &ids).map_err(|e| e.to_string())?;
+    drop(adapter);
+
+    let sync_server_clone = sync_server.inner().clone();
+    tokio::spawn(async move {
+        for (table, ids) in sync_changes {
+            sync_server_clone.record_and_notify(table, ids).await;
+        }
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn save_page(
     db: State<'_, super::state::DatabaseConnection>,
     sync_server: State<'_, super::state::SyncServerHandle>,
@@ -1510,6 +1532,50 @@ pub async fn execute_batch(
                     let result = storage.properties().create(&prop)?;
                     serde_json::to_value(result)?
                 }
+                ("property", "set") => {
+                    // Upsert 而非裸 INSERT（对齐 WASM 路径 lib.rs "property/set"，#108 验收#1/#5）：
+                    // 属性删除是软删（行留存，UNIQUE(block_id,key) 会拦裸 INSERT），且块删除级联
+                    // 软删属性后 undelete_blocks 不复活属性 —— 撤销恢复属性必须走 upsert（冲突即
+                    // 复活 is_deleted=0 / deleted_at=NULL）。id / sort_order / is_hidden 由快照忠实带回
+                    // （不可重生成 id，否则与软删行 UNIQUE 冲突）。
+                    let block_id = params
+                        .get("block_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string();
+                    let key = params.get("key").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                    let value = params.get("value").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                    let r#type = params.get("type").and_then(|v| v.as_str()).unwrap_or("text").to_string();
+                    let prop_id = params.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                    let sort_order = params.get("sort_order").and_then(|v| v.as_i64()).unwrap_or(0);
+                    let is_hidden = params.get("is_hidden").and_then(|v| v.as_i64()).unwrap_or(0);
+                    let now = chrono::Utc::now().timestamp_millis();
+                    let property = Property {
+                        id: if prop_id.is_empty() {
+                            PropertyService::generate_id()
+                        } else {
+                            prop_id
+                        },
+                        block_id,
+                        key,
+                        value,
+                        r#type,
+                        sort_order,
+                        is_hidden,
+                        is_deleted: 0,
+                        schema_version: 1,
+                        created_at: now,
+                        updated_at: now,
+                        version: 0,
+                        deleted_at: None,
+                    };
+                    sync_changes
+                        .entry(SyncTable::Property)
+                        .or_insert_with(Vec::new)
+                        .push(property.id.clone());
+                    let saved = storage.properties().upsert(&property)?;
+                    serde_json::to_value(saved)?
+                }
                 ("property", "update") => {
                     let prop: Property = serde_json::from_value(params)?;
                     sync_changes
@@ -1592,6 +1658,25 @@ pub async fn execute_batch(
                         .or_insert_with(Vec::new)
                         .push(id.clone());
                     storage.templates().delete(&id)?;
+                    serde_json::to_value("OK")?
+                }
+                ("block", "undelete") => {
+                    // 撤销恢复：精确复活单块（对齐 WASM 路径，#103 审查 (a)2）。
+                    // 不级联（理由同 WASM 路径的 ("block","undelete") arm）。
+                    let id: String = params
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string();
+                    let revived = match BlockService::get_by_id(storage, &id) {
+                        Ok(existing) => existing, // 已 live → no-op
+                        Err(_) => BlockService::undelete(storage, &id)?,
+                    };
+                    sync_changes
+                        .entry(SyncTable::Block)
+                        .or_insert_with(Vec::new)
+                        .push(revived.id.clone());
+                    page_ids.insert(revived.page_id.clone());
                     serde_json::to_value("OK")?
                 }
                 _ => serde_json::to_value(format!("Unknown operation: {} {}", entity, action))?,

@@ -22,6 +22,8 @@ export interface CoreClient {
   getBlocksByPage(pageId: string): Promise<Block[]>
   saveBlockTree(blocks: BlockUpdate[]): Promise<BlockSaveResult[]>
   deleteBlock(blockId: string): Promise<void>
+  /** 撤销软删除（ADR-0046 D10）：复活块及其下整棵软删子树 */
+  undeleteBlocks(ids: string[]): Promise<void>
 
   getPage(pageId: string): Promise<Page>
   getAllPages(): Promise<Page[]>
@@ -227,6 +229,10 @@ class TauriClient implements CoreClient {
 
   async deleteBlock(blockId: string): Promise<void> {
     return invoke('delete_block', { blockId })
+  }
+
+  async undeleteBlocks(ids: string[]): Promise<void> {
+    return invoke('undelete_blocks', { ids })
   }
 
   async getPage(pageId: string): Promise<Page> {
@@ -581,6 +587,10 @@ class WasmClientAdapter implements CoreClient {
       params: { id: blockId }
     }])
     await this.wasm.execute_batch(opsJson)
+  }
+
+  async undeleteBlocks(ids: string[]): Promise<void> {
+    await this.wasm.undelete_blocks(JSON.stringify(ids))
   }
 
   async getPage(pageId: string): Promise<Page> {

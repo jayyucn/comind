@@ -4,7 +4,7 @@ mod lib_test;
 #[cfg(target_arch = "wasm32")]
 mod wasm_impl {
     use comind_core::services::*;
-    use comind_core::storage::StorageAdapter;
+    use comind_core::storage::{StorageAdapter, TransactionalStorageAdapter};
     use comind_core::types::*;
     use lazy_static::lazy_static;
     use serde::{Deserialize, Serialize};
@@ -383,22 +383,27 @@ mod wasm_impl {
             .map_err(|e| JsValue::from_str(&format!("Failed to parse operations: {}", e)))?;
 
         with_adapter(|adapter| {
-            let mut results = Vec::new();
-            for op in ops {
-                let entity = op.get("entity").and_then(|v| v.as_str()).unwrap_or("");
-                let action = op.get("action").and_then(|v| v.as_str()).unwrap_or("");
-                let params = op.get("params").unwrap_or(&serde_json::Value::Null);
+            // 事务对齐（ADR-0046 约束3 / #108 验收#2）：整批一个事务，任一 op
+            // 失败 → 整批回滚并向上抛错（此前逐 op 自动提交 + 吞错为 Null，会
+            // 留下半恢复且静默的状态）。unknown op 与 tauri 端一致：返回 Ok
+            // 字符串，不失败。
+            adapter.transaction(|storage| {
+                let mut results = Vec::new();
+                for op in ops {
+                    let entity = op.get("entity").and_then(|v| v.as_str()).unwrap_or("");
+                    let action = op.get("action").and_then(|v| v.as_str()).unwrap_or("");
+                    let params = op.get("params").unwrap_or(&serde_json::Value::Null);
 
-                let result = match (entity, action) {
+                    let result = match (entity, action) {
                     ("block", "get") => {
                         let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                        let block = BlockService::get_by_id(adapter, id)?;
+                        let block = BlockService::get_by_id(storage, id)?;
                         serde_json::to_value(block)
                     }
                     ("block", "create") => {
                         let block: Block = serde_json::from_value(params.clone())?;
                         let created = BlockService::create(
-                            adapter,
+                            storage,
                             &block.page_id,
                             block.parent_id.as_deref(),
                             &block.content,
@@ -411,7 +416,7 @@ mod wasm_impl {
                     ("block", "update") => {
                         let block: Block = serde_json::from_value(params.clone())?;
                         let updated = BlockService::update(
-                            adapter,
+                            storage,
                             &block.id,
                             Some(&block.content),
                             Some(&block.format),
@@ -423,24 +428,24 @@ mod wasm_impl {
                     }
                     ("block", "delete") => {
                         let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                        comind_core::storage::repository::LinkRepository::delete_by_source_block_id(adapter.links(), id)?;
+                        comind_core::storage::repository::LinkRepository::delete_by_source_block_id(storage.links(), id)?;
                         comind_core::storage::repository::PropertyRepository::delete_by_block_id(
-                            adapter.properties(),
+                            storage.properties(),
                             id,
                         )?;
-                        BlockService::delete(adapter, id)?;
+                        BlockService::delete(storage, id)?;
                         serde_json::to_value(json!({"success": true}))
                     }
                     ("page", "get") => {
                         let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                        let page = PageService::get_by_id(adapter, id)?;
+                        let page = PageService::get_by_id(storage, id)?;
                         serde_json::to_value(page)
                     }
                     ("page", "create") => {
                         let page: Page = serde_json::from_value(params.clone())?;
                         let block_id = page.block_id.as_deref().unwrap_or("");
                         let created = PageService::create(
-                            adapter,
+                            storage,
                             block_id,
                             &page.title,
                             Some(&page.r#type),
@@ -454,7 +459,7 @@ mod wasm_impl {
                     ("page", "update") => {
                         let page: Page = serde_json::from_value(params.clone())?;
                         let updated = PageService::update(
-                            adapter,
+                            storage,
                             &page.id,
                             Some(&page.title),
                             Some(&page.r#type),
@@ -469,7 +474,7 @@ mod wasm_impl {
                     }
                     ("page", "delete") => {
                         let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                        PageService::delete(adapter, id)?;
+                        PageService::delete(storage, id)?;
                         serde_json::to_value(json!({"success": true}))
                     }
                     ("property", "set") => {
@@ -483,20 +488,52 @@ mod wasm_impl {
                             .get("type")
                             .and_then(|v| v.as_str())
                             .unwrap_or("text");
-                        let created = PropertyService::create(
-                            adapter, block_id, key, value, r#type, 0, 0, 1,
-                        )?;
-                        serde_json::to_value(created)
+                        // Upsert 而非裸 INSERT（#108 验收#1/#5）：属性删除是软删
+                        // （行留存，UNIQUE(block_id,key) 会拦裸 INSERT），且块删除
+                        // 级联软删属性后 undelete_blocks 不复活属性 —— 撤销恢复属性
+                        // 必须走 upsert（冲突即复活 is_deleted=0 / deleted_at=NULL）。
+                        // id / sort_order / is_hidden 由快照忠实带回。
+                        let prop_id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                        let sort_order = params
+                            .get("sort_order")
+                            .and_then(|v| v.as_i64())
+                            .unwrap_or(0);
+                        let is_hidden = params
+                            .get("is_hidden")
+                            .and_then(|v| v.as_i64())
+                            .unwrap_or(0);
+                        let now = chrono::Utc::now().timestamp_millis();
+                        let property = Property {
+                            id: if prop_id.is_empty() {
+                                PropertyService::generate_id()
+                            } else {
+                                prop_id.to_string()
+                            },
+                            block_id: block_id.to_string(),
+                            key: key.to_string(),
+                            value: value.to_string(),
+                            r#type: r#type.to_string(),
+                            sort_order,
+                            is_hidden,
+                            is_deleted: 0,
+                            schema_version: 1,
+                            version: 0,
+                            deleted_at: None,
+                            created_at: now,
+                            updated_at: now,
+                        };
+                        let saved = storage.properties().upsert(&property)?;
+                        serde_json::to_value(saved)
                     }
                     ("property", "delete") => {
                         let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                        PropertyService::delete(adapter, id)?;
+                        PropertyService::delete(storage, id)?;
                         serde_json::to_value(json!({"success": true}))
                     }
                     ("link", "create") => {
                         let link: Link = serde_json::from_value(params.clone())?;
                         let created = LinkService::create(
-                            adapter,
+                            storage,
                             &link.source_block_id,
                             &link.target_page_id,
                             &link.display_text,
@@ -506,7 +543,7 @@ mod wasm_impl {
                     }
                     ("link", "delete") => {
                         let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                        LinkService::delete(adapter, id)?;
+                        LinkService::delete(storage, id)?;
                         serde_json::to_value(json!({"success": true}))
                     }
                     ("link", "sync_by_block") => {
@@ -519,7 +556,7 @@ mod wasm_impl {
                             .and_then(|v| v.as_array())
                             .cloned()
                             .unwrap_or_default();
-                        LinkService::delete_by_source_block_id(adapter, block_id)?;
+                        LinkService::delete_by_source_block_id(storage, block_id)?;
                         let mut created = Vec::new();
                         for link_data in links_data {
                             let source_block_id = link_data
@@ -537,7 +574,7 @@ mod wasm_impl {
                             let relationship_type =
                                 link_data.get("relationship_type").and_then(|v| v.as_str());
                             let new_link = LinkService::create(
-                                adapter,
+                                storage,
                                 source_block_id,
                                 target_page_id,
                                 display_text,
@@ -550,7 +587,7 @@ mod wasm_impl {
                     ("relationshipType", "create") => {
                         let rt: RelationshipType = serde_json::from_value(params.clone())?;
                         let created = RelationshipTypeService::create(
-                            adapter,
+                            storage,
                             Some(&rt.id),
                             &rt.r#type,
                             rt.inverse.as_deref(),
@@ -566,7 +603,7 @@ mod wasm_impl {
                     ("relationshipType", "update") => {
                         let rt: RelationshipType = serde_json::from_value(params.clone())?;
                         let updated = RelationshipTypeService::update(
-                            adapter,
+                            storage,
                             &rt.id,
                             Some(&rt.label),
                             Some(&rt.inverse_label),
@@ -578,11 +615,11 @@ mod wasm_impl {
                     }
                     ("relationshipType", "delete") => {
                         let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                        RelationshipTypeService::delete(adapter, id)?;
+                        RelationshipTypeService::delete(storage, id)?;
                         serde_json::to_value(json!({"success": true}))
                     }
                     ("template", "get") => {
-                        let templates = TemplateService::get_all(adapter)?;
+                        let templates = TemplateService::get_all(storage)?;
                         serde_json::to_value(templates)
                     }
                     ("template", "create") => {
@@ -607,7 +644,7 @@ mod wasm_impl {
                             updated_at: now,
                         };
                         let created = comind_core::storage::repository::TemplateRepository::create(
-                            adapter.templates(),
+                            storage.templates(),
                             &template,
                         )?;
                         serde_json::to_value(created)
@@ -618,22 +655,45 @@ mod wasm_impl {
                         let category = params.get("category").and_then(|v| v.as_str());
                         let content = params.get("content").and_then(|v| v.as_str());
                         let updated =
-                            TemplateService::update(adapter, id, name, category, content)?;
+                            TemplateService::update(storage, id, name, category, content)?;
                         serde_json::to_value(updated)
                     }
                     ("template", "delete") => {
                         let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                        TemplateService::delete(adapter, id)?;
+                        TemplateService::delete(storage, id)?;
                         serde_json::to_value(json!({"success": true}))
+                    }
+                    ("block", "undelete") => {
+                        // 撤销恢复：精确复活单块（ADR-0046 T3 / #108 审查 (a)2）。
+                        // 不级联：撤销目标是快照里明确列出的块，逐个 id 复活即可；级联反而
+                        // 会把「软删但不在快照」的子块一并复活（stray，此前需事后补删）。
+                        // 该 op 处于 execute_batch 单一事务内 → 与块字段还原 / 删除 / 属性还原
+                        // 原子提交，消除「undelete 成功而 batch 失败留下半恢复」的窗口。
+                        let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                        match BlockService::get_by_id(storage, id) {
+                            Ok(existing) => {
+                                // 已 live（被祖先隐藏、自身未删）→ no-op，不 bump version。
+                                serde_json::to_value(json!({"success": true, "revived": false}))
+                            }
+                            Err(_) => {
+                                let revived = BlockService::undelete(storage, id)?;
+                                serde_json::to_value(json!({"success": true, "revived": true, "page_id": revived.page_id}))
+                            }
+                        }
                     }
                     _ => serde_json::to_value(
                         json!({"error": format!("Unknown operation: {} {}", entity, action)}),
                     ),
                 };
 
-                results.push(result.unwrap_or_else(|_| serde_json::Value::Null));
-            }
-            Ok(serde_json::to_string(&results).unwrap_or_else(|_| "[]".to_string()))
+                    // op 失败即整批回滚（与 tauri commands.rs execute_batch 的 `?`
+                    // 传播一致），不再吞错为 Null —— 半恢复且静默是撤销恢复的直接
+                    // 数据风险（ADR-0046 约束3 / #108 验收#2）。
+                    results.push(result?);
+                }
+                serde_json::to_string(&results)
+                    .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+            })
         })
     }
 
@@ -730,6 +790,19 @@ mod wasm_impl {
         with_adapter(|adapter| {
             let version = BlockVersionService::restore(adapter, version_id)?;
             Ok(to_js_value(version))
+        })
+    }
+
+    /// 撤销软删除（ADR-0046 D10）：复活每个请求 id 及其下整棵软删子树，
+    /// 返回 `HashMap<SyncTable, Vec<String>>` 的 JSON 串（与 delete_block_cascade 对称）。
+    #[wasm_bindgen]
+    pub fn undelete_blocks(ids_json: &str) -> Result<String, JsValue> {
+        let ids: Vec<String> = serde_json::from_str(ids_json)
+            .map_err(|e| JsValue::from_str(&format!("Failed to parse ids: {}", e)))?;
+        with_adapter(|adapter| {
+            let sync_changes = BlockWriteService::undelete_blocks(adapter, &ids)?;
+            serde_json::to_string(&sync_changes)
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
         })
     }
 

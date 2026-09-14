@@ -50,6 +50,8 @@ export interface WasmClient {
   restore_block_version(versionId: string): Promise<BlockVersion>
   cleanup_block_versions(retentionDays: number): Promise<void>
   delete_block_version(versionId: string): Promise<void>
+  /** 撤销软删除（ADR-0046 D10）：复活块及其下整棵软删子树，返回 sync_changes 的 JSON 串 */
+  undelete_blocks(ids_json: string): Promise<string>
 
   get_notification(id: string): Promise<Notification>
   get_notifications_by_block(blockId: string): Promise<Notification[]>
@@ -296,6 +298,10 @@ export async function initWasmClient(): Promise<WasmClient> {
 
     async delete_block_version(versionId: string): Promise<void> {
       await wasmModule.delete_block_version(versionId)
+    },
+
+    async undelete_blocks(ids_json: string): Promise<string> {
+      return wasmModule.undelete_blocks(ids_json)
     },
 
     async get_notification(id: string): Promise<Notification> {

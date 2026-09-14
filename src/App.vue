@@ -16,10 +16,9 @@ import { prefetchGraphSnapshot } from './components/GraphView/graphSnapshotCache
 import Icon from './components/Icons/Icon.vue'
 import NotificationBell from './components/NotificationBell.vue'
 import PageMenuButton from './components/PageMenuButton.vue'
-import BlockVersionPanel from './components/RightSidebar/BlockVersionPanel.vue'
 import GraphPanel from './components/RightSidebar/GraphPanel.vue'
 import RightSidebar from './components/RightSidebar/index.vue'
-import { registerPanel } from './components/RightSidebar/panels'
+import { getRegisteredPanels, registerPanel } from './components/RightSidebar/panels'
 import SearchPanel from './components/SearchPanel.vue'
 import SettingsModal from './components/Settings/SettingsModal.vue'
 import Sidebar from './components/Sidebar/index.vue'
@@ -31,16 +30,13 @@ import { useNotificationScheduler } from './composables/useNotificationScheduler
 import { usePageQueryRegistry } from './composables/usePageQueryRegistry'
 import { useReaderDataChanged } from './composables/useReaderDataChanged'
 import { useRelationshipTypes } from './composables/useRelationshipTypes'
+import { reconcilePanels } from './composables/useRightSidebar'
+import { hasStack } from './composables/useUndoHistory'
+import { runUndoOrRedo } from './composables/useUndoRestore'
 import { useEditorStore } from './stores/editor'
 import { usePageStore } from './stores/pages'
 import { isTauriEnvironment } from './wasm/tauri-platform'
-
-registerPanel({
-  id: 'block-version',
-  label: '版本历史',
-  icon: 'icon-history',
-  component: BlockVersionPanel
-})
+import { resolveUndoChord, resolveUndoScopeBlockPage } from './utils/undo-chord'
 
 registerPanel({
   id: 'graph',
@@ -48,6 +44,9 @@ registerPanel({
   icon: 'icon-network',
   component: GraphPanel
 })
+
+// ADR-0047 D1：block-version 面板已下架，把持久化设置里指向它的引用回落到已注册面板。
+reconcilePanels(getRegisteredPanels().map(p => p.id))
 
 const route = useRoute()
 const editorStore = useEditorStore()
@@ -120,10 +119,13 @@ onMounted(async () => {
   // 全局 Ctrl+A 兜底：BlockList 区域由 BlockList 的捕获监听处理，
   // 可编辑输入区保留控件自身全选，其余区域一律屏蔽浏览器整页文本全选。
   document.addEventListener('keydown', handleGlobalKeydownCapture, true)
+  // 全局撤销兜底（无 BlockList 表面里的 BlockModal，见函数注释）
+  document.addEventListener('keydown', handleGlobalUndoRedoKeyDown, true)
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', handleGlobalKeydownCapture, true)
+  document.removeEventListener('keydown', handleGlobalUndoRedoKeyDown, true)
 })
 
 /**
@@ -141,6 +143,27 @@ function handleGlobalKeydownCapture(e: KeyboardEvent) {
   }
   e.preventDefault()
   e.stopPropagation()
+}
+
+/**
+ * 全局撤销兜底（capture 阶段，注册晚于 BlockList 的接管 → 捕获阶段 BlockList 先执行）：
+ * 覆盖**无 BlockList 挂载**的表面（任务中心 / 查询页）里的 BlockModal —— 焦点落在某块内
+ * 且该块所属页已有撤销栈时，复用该页栈撤销/重做（ADR-0046 D6 + #109 验收「任何焦点一致、
+ * 无『无反应』落点」）。不落点（无块选区/滚动上下文）：恢复后弹窗经响应式自刷。
+ *
+ * 只认「块内焦点」：body / 列表空白 / 侧栏 / 输入框这些 BlockList 能处理或该豁免的场景
+ * 一律不抢（避免与 BlockList 双接管）。`e.defaultPrevented` 是「已有更早接管（BlockList）」
+ * 的信号 —— BlockList 接管时 preventDefault，这里据此跳过。
+ */
+function handleGlobalUndoRedoKeyDown(e: KeyboardEvent) {
+  if (e.defaultPrevented) return
+  const chord = resolveUndoChord(e)
+  if (!chord) return
+  const pageId = resolveUndoScopeBlockPage(e)
+  if (!pageId || !hasStack(pageId)) return
+  e.preventDefault()
+  e.stopPropagation()
+  runUndoOrRedo(pageId, chord).catch((err) => console.error('[undo] 恢复失败:', err))
 }
 
 function handleMainClick(e: MouseEvent) {
