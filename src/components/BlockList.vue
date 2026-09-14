@@ -629,8 +629,8 @@ watch(() => props.pageId, (newId, oldId) => {
 // 块数为 0 同样不建栈（空快照入栈 = 撤销时整页被软删）。
 watch(
   () => {
-    if (!blockStore.isPageFullyLoaded(props.pageId)) return ''
     const count = blockStore.getBlocksByPage(props.pageId).length
+    if (!blockStore.isPageFullyLoaded(props.pageId)) return ''
     return count > 0 ? `${props.pageId}:${count}` : ''
   },
   (key) => {
