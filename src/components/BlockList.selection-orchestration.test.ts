@@ -10,7 +10,8 @@
  * 1. 手势——单击 vs 拖拽（4px 阈值）、内容区起点（文本拖拽）vs 属性区起点（块选区）；
  * 2. 按键分发——`Ctrl+A`（捕获阶段 + body 焦点回退）/ `Ctrl+C`（文本选区优先）/
  *    `Enter`、`Tab`、`Shift+Tab`（仅无编辑态块）/ `Escape`；
- * 3. 粘贴分发——内部 MIME / 外部源拆分 / Shift+V 纯文本标志消费（归属守卫见 paste-guard）。
+ * 3. 粘贴分发——内部 MIME / 外部源拆分 / Shift+V 纯文本标志消费（归属守卫见 paste-guard）；
+ * 4. 编排豁免门——侧边栏（`isInSidebar`）与可编辑输入区（`isInEditableInput`）。
  *
  * 几何替身（必要）：`handleDocMouseMove` 经 `blockOffsetFromPoint` 调
  * `document.elementFromPoint` + `document.caretRangeFromPoint`，jsdom 两个都没实现
@@ -840,6 +841,105 @@ describe('BlockList 粘贴分发（#92）', () => {
     expect(ev.defaultPrevented).toBe(true)
     expect(store.blocks.some(b => b.pageId === pageId && b.content === '复位后再粘贴')).toBe(true)
 
+    wrapper.unmount()
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════
+// 四、编排豁免门（判定函数白名单）
+// ══════════════════════════════════════════════════════════════════
+
+describe('BlockList 编排豁免门（#92）', () => {
+  let writeTextMock: ReturnType<typeof vi.fn>
+  let originalClipboard: PropertyDescriptor | undefined
+
+  beforeEach(() => {
+    originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+    writeTextMock = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: writeTextMock },
+    })
+  })
+
+  afterEach(() => {
+    if (originalClipboard) Object.defineProperty(navigator, 'clipboard', originalClipboard)
+    else Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined })
+  })
+
+  test('侧边栏内：键盘与粘贴均不接管（sidebar 是导航区，无主文档编辑上下文）', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-exempt-sidebar'
+
+    const a = await store.createBlock({ pageId, content: 'aaa' })
+
+    const wrapper = await mountBlockList(pageId)
+    const selection = getSelection(wrapper)
+    selection.toggleBlock(a.id, pageId)
+    expect(selection.anchorIds.size).toBe(1)
+
+    // 侧边栏在 BlockList 渲染树内（否则会被粘贴归属守卫先行拦掉，测不到 isInSidebar 本身）
+    const sidebar = document.createElement('div')
+    sidebar.className = 'sidebar-wrapper'
+    const inner = document.createElement('div')
+    sidebar.appendChild(inner)
+    wrapper.element.appendChild(sidebar)
+
+    const cutEv = dispatchKey('c', { ctrl: true }, inner)
+    expect(cutEv.defaultPrevented).toBe(false)
+    expect(writeTextMock).not.toHaveBeenCalled()
+    // 选区不受影响（未被清、未被消费）
+    expect(selection.anchorIds.size).toBe(1)
+
+    const before = docOrder(pageId)
+    const pasteEv = makePasteEvent({
+      'text/html': '<p>侧边栏粘贴不该落块</p>',
+      'text/plain': '侧边栏粘贴不该落块',
+    })
+    inner.dispatchEvent(pasteEv)
+    await flushAsync()
+
+    expect(pasteEv.defaultPrevented).toBe(false)
+    expect(docOrder(pageId)).toEqual(before)
+
+    sidebar.remove()
+    wrapper.unmount()
+  })
+
+  test('可编辑输入区内：删除键 / Ctrl+C / 粘贴均不接管（保留控件自身行为）', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-exempt-input'
+
+    const a = await store.createBlock({ pageId, content: 'aaa' })
+
+    const wrapper = await mountBlockList(pageId)
+    const selection = getSelection(wrapper)
+    selection.toggleBlock(a.id, pageId)
+    const before = docOrder(pageId)
+
+    const input = document.createElement('input')
+    wrapper.element.appendChild(input)
+
+    const delEv = dispatchKey('Backspace', {}, input)
+    expect(delEv.defaultPrevented).toBe(false)
+
+    const copyEv = dispatchKey('c', { ctrl: true }, input)
+    expect(copyEv.defaultPrevented).toBe(false)
+    expect(writeTextMock).not.toHaveBeenCalled()
+
+    const pasteEv = makePasteEvent({
+      'text/html': '<p>输入框粘贴不该落块</p>',
+      'text/plain': '输入框粘贴不该落块',
+    })
+    input.dispatchEvent(pasteEv)
+    await flushAsync()
+
+    expect(pasteEv.defaultPrevented).toBe(false)
+    expect(docOrder(pageId)).toEqual(before)
+    // 块选区未被消费掉（控件自身行为不该影响主文档选区）
+    expect(selection.anchorIds.size).toBe(1)
+
+    input.remove()
     wrapper.unmount()
   })
 })
