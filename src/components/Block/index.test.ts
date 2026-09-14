@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
@@ -24,6 +24,7 @@ import { useBlockStore } from '../../stores/blocks'
 import { usePageStore } from '../../stores/pages'
 import { useRelationshipMenu } from '../../composables/useRelationshipMenu'
 import { useRelationshipTypes } from '../../composables/useRelationshipTypes'
+import { getCoreClient } from '../../wasm/client'
 import { cleanupRelationshipTypes, cleanupPages } from '../../../tests/core-client'
 import type { TreeNode } from '../../types/block'
 import { useEditorStore } from '../../stores/editor'
@@ -234,12 +235,50 @@ describe('Block - rel-type-label click handling', () => {
 describe('Block - handleDelete 关系清理集成', () => {
   let blockStore: ReturnType<typeof useBlockStore>
   let pageStore: ReturnType<typeof usePageStore>
+  let extractLinksSpy: MockInstance
+  let applyRelSpy: MockInstance
   const PAGE_TITLE = 'P'
   const TARGET_TITLE = 'X'
+
+  // 本 describe 断言的是跨页反向降级，该路径依赖两个 jsdom/WASM 下硬编码 throw 的原语
+  // （WasmClientAdapter.extractLinksFromContent / applyRelationshipTypeToBlockContent）。
+  // 只替换这两个，按 Rust ContentParseService 口径忠实实现；cleanupAfterDelete / deleteBlocks 走真实实现。
+  // （空数组桩会让 targetSet 为空、降级永不发生，故此处必须忠实。）
+  function stubExtractLinks(content: string) {
+    return Array.from(content.matchAll(/\(\(([^)]+)\)\)\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g)).map(m => {
+      const bi = m[1].trim().match(/^(.+)<->(.+)$/)
+      return {
+        target_title: m[2].trim(),
+        display_text: (m[3] ?? m[2]).trim(),
+        position: m.index ?? 0,
+        is_external: false,
+        relationship_type: bi ? bi[1].trim() : m[1].trim(),
+        inverse_relationship_type: bi ? bi[2].trim() : null
+      }
+    })
+  }
+
+  function stubApplyRel(content: string, targetTitle: string, newType: string | null) {
+    if (newType !== null) return content
+    const esc = targetTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    return content.replace(
+      new RegExp(`\\(\\([^)]+\\)\\)\\[\\[${esc}(\\|[^\\]]+)?\\]\\]`, 'g'),
+      (_, display) => `[[${targetTitle}${display ?? ''}]]`
+    )
+  }
 
   beforeEach(async () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    extractLinksSpy = vi
+      .spyOn(getCoreClient()!, 'extractLinksFromContent')
+      .mockImplementation(async (content: string) => stubExtractLinks(content))
+    applyRelSpy = vi
+      .spyOn(getCoreClient()!, 'applyRelationshipTypeToBlockContent')
+      .mockImplementation(
+        async (content: string, targetTitle: string, newType: string | null) =>
+          stubApplyRel(content, targetTitle, newType)
+      )
 
     await cleanupRelationshipTypes()
     await cleanupPages()
@@ -318,6 +357,11 @@ describe('Block - handleDelete 关系清理集成', () => {
     expect(after?.content).toBe('reverse [[P]]')
 
     wrapper.unmount()
+  })
+
+  afterEach(() => {
+    extractLinksSpy.mockRestore()
+    applyRelSpy.mockRestore()
   })
 })
 
@@ -527,9 +571,19 @@ describe('characterization: save', () => {
 })
 
 describe('characterization: delete', () => {
+  let extractLinksSpy: MockInstance
+
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    // 同上：仅替换 jsdom/WASM 下不可用的原语
+    extractLinksSpy = vi
+      .spyOn(getCoreClient()!, 'extractLinksFromContent')
+      .mockResolvedValue([])
+  })
+
+  afterEach(() => {
+    extractLinksSpy.mockRestore()
   })
 
   it('deleting block with no previous block clears content', async () => {

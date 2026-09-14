@@ -205,18 +205,18 @@ export function useRelationshipMenu() {
     setDirection(state.value.selectedDirection === 'forward' ? 'inverse' : 'forward')
   }
 
-  /** 把 (group, direction) 解析为实际 type */
-  function resolveLabel(): string | null {
+  /** 把 (group, direction) 解析为实际 type（正向 group.type / 反向 group.inverse；自反组回落 group.type） */
+  function resolveType(): string | null {
     const group = items.value[state.value.selectedGroupIndex]
     if (!group) return null
-    if (state.value.selectedDirection === 'inverse' && group.inverseLabel) {
-      return group.inverseLabel
+    if (state.value.selectedDirection === 'inverse' && group.inverse) {
+      return group.inverse
     }
-    return group.label
+    return group.type
   }
 
   function select() {
-    const type = resolveLabel()
+    const type = resolveType()
     if (!type) return
     const onSelect = state.value.onSelect
     close()
@@ -234,7 +234,7 @@ export function useRelationshipMenu() {
     moveGroup,
     setDirection,
     toggleDirection,
-    resolveType: resolveLabel,
+    resolveType,
     select
   }
 }
