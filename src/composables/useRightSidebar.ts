@@ -19,14 +19,14 @@ function loadSettings(): RightSidebarSettings {
       const parsed = JSON.parse(stored)
       return {
         defaultPanel: parsed.defaultPanel ?? 'graph',
-        panelOrder: parsed.panelOrder ?? ['block-version', 'graph'],
+        panelOrder: parsed.panelOrder ?? ['graph'],
         width: Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, parsed.width ?? DEFAULT_WIDTH)),
       }
     } catch { /* fallback */ }
   }
   return {
-    defaultPanel: 'block-version',
-    panelOrder: ['block-version', 'graph'],
+    defaultPanel: 'graph',
+    panelOrder: ['graph'],
     width: DEFAULT_WIDTH
   }
 }
@@ -38,6 +38,30 @@ function saveSettings(settings: RightSidebarSettings) {
 const visible = ref(false)
 const settings = ref<RightSidebarSettings>(loadSettings())
 const activePanelId = ref<string>(settings.value.defaultPanel)
+
+/**
+ * 面板回落（ADR-0047 D1）：把设置与当前面板中指向「未注册面板」的引用收敛到首个已注册
+ * 面板，使已下架的面板（如 block-version）不再留下空白面板区与无高亮的 tab。
+ * 只收敛内存状态、不改写 localStorage（存储交由后续正常写入自愈）；面板注册发生在模块加载
+ * 之后（App.vue 的 registerPanel），故必须在注册完成后显式调用一次。
+ */
+export function reconcilePanels(registeredIds: string[]) {
+  const first = registeredIds[0]
+  if (!first) return
+
+  const isRegistered = (id: string) => registeredIds.includes(id)
+  const defaultPanel = isRegistered(settings.value.defaultPanel) ? settings.value.defaultPanel : first
+  settings.value = {
+    ...settings.value,
+    defaultPanel,
+    panelOrder: settings.value.panelOrder.filter(isRegistered),
+  }
+
+  // 未注册则跟随净化后的 defaultPanel —— 会话启动时当前面板本就由 defaultPanel 播种，同源。
+  if (!isRegistered(activePanelId.value)) {
+    activePanelId.value = defaultPanel
+  }
+}
 
 export function useRightSidebar() {
   function setVisible(v: boolean) {

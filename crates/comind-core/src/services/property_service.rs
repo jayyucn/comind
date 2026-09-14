@@ -142,7 +142,7 @@ impl PropertyService {
         repository::PropertyRepository::query_block_ids_by_key_value(storage.properties(), key, values)
     }
 
-    fn generate_id() -> String {
+    pub fn generate_id() -> String {
         let mut rng = rand::thread_rng();
         let bytes: Vec<u8> = (0..16).map(|_| rng.gen()).collect();
         hex::encode(bytes)

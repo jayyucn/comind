@@ -1009,4 +1009,68 @@ describe('useCrossBlockSelection', () => {
       expect(selection.anchorIds.has(block2.id)).toBe(true)
     })
   })
+
+  /**
+   * selectBlocks：撤销落点用的程序化写入（#109 T4）。与 selectAll 的差别是
+   * 「给什么选什么」—— 不按页枚举，因为受影响块由 diff 算出。
+   */
+  describe('selectBlocks', () => {
+    test('按给定 id 集合固化块选区（含子块 id 一并纳入）', async () => {
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+
+      const block1 = await blockStore.createBlock({ pageId, content: 'Block 1' })
+      const block2 = await blockStore.createBlock({ pageId, content: 'Block 2' })
+      const untouched = await blockStore.createBlock({ pageId, content: 'Block 3' })
+
+      selection.selectBlocks([block1.id, block2.id])
+
+      expect([...selection.anchorIds].sort()).toEqual([block1.id, block2.id].sort())
+      expect(selection.anchorIds.has(untouched.id)).toBe(false)
+      expect(selection.isBlockSelected(block1.id)).toBe(true)
+    })
+
+    test('整体替换既有选区（旧选区不被并入）', async () => {
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+
+      const block1 = await blockStore.createBlock({ pageId, content: 'Block 1' })
+      const block2 = await blockStore.createBlock({ pageId, content: 'Block 2' })
+      selection.selectAll(pageId)
+
+      selection.selectBlocks([block2.id])
+
+      expect(selection.anchorIds.size).toBe(1)
+      expect(selection.anchorIds.has(block1.id)).toBe(false)
+    })
+
+    test('清文本选区与拖拽追踪（互斥不变量：至多一种选区）', async () => {
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+
+      const block = await blockStore.createBlock({ pageId, content: 'Block' })
+      selection.startTextTracking({ blockId: block.id, offset: 0 }, { x: 0, y: 0 })
+      selection.updateTextDrag({ blockId: block.id, offset: 3 })
+      selection.dragStartBlockId.value = block.id
+
+      selection.selectBlocks([block.id])
+
+      expect(selection.textRange.value).toBeNull()
+      expect(selection.dragStartBlockId.value).toBeNull()
+      expect(selection.isDragging.value).toBe(false)
+    })
+
+    test('空集合归一为「无选区」（与 transition 口径一致）', async () => {
+      const selection = useCrossBlockSelection()
+      const pageId = 'page-1'
+
+      await blockStore.createBlock({ pageId, content: 'Block' })
+      selection.selectAll(pageId)
+
+      selection.selectBlocks([])
+
+      expect(selection.anchorIds.size).toBe(0)
+      expect(selection.selectedIds.size).toBe(0)
+    })
+  })
 })
