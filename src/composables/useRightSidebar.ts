@@ -44,6 +44,11 @@ const activePanelId = ref<string>(settings.value.defaultPanel)
  * 面板，使已下架的面板（如 block-version）不再留下空白面板区与无高亮的 tab。
  * 只收敛内存状态、不改写 localStorage（存储交由后续正常写入自愈）；面板注册发生在模块加载
  * 之后（App.vue 的 registerPanel），故必须在注册完成后显式调用一次。
+ *
+ * 调用时机约束：必须在**全部** registerPanel 之后调用 —— 传入的 registeredIds 就是「幸存名单」，
+ * 没被传进来的已注册面板 id 会被从 panelOrder 剔除，defaultPanel 若指向它则回落。
+ * 现状：全仓唯一注册点是 App.vue（graph），本调用紧随其后（#104 下架 block-version 后仅剩一个面板）。
+ * 将来若在子组件里懒注册新面板，必须把注册提到本调用之前，否则其 id 会被这次净化误删。
  */
 export function reconcilePanels(registeredIds: string[]) {
   const first = registeredIds[0]

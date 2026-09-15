@@ -63,7 +63,7 @@
  * 29 例（当时总数）由全绿转 **28 红 / 1 绿**。唯一未变红的是「别页块进同一 blocks 数组不改本页栈」——
  * 它不检验按键接线，只检验 T2 的逐页归因（对照信号在 T2 自己的单测里，与本文件分工不重叠）。
  * 每条「不接管」用例都自带对照组（同一夹具下 Ctrl+Z 必须被接管），故接线消失时它们也不会
- * 静默通过。现总数 37 例（2026-09-15 加 G 组落点 7 例）。
+ * 静默通过。现总数 39 例（2026-09-15 加 G 组落点 8 例）。
  */
 import { describe, test, expect, beforeEach, afterEach, beforeAll, afterAll, vi, type MockInstance } from 'vitest'
 import { nextTick } from 'vue'
@@ -1262,6 +1262,58 @@ describe('G. 落点：闪烁 + 光标', () => {
     await flushAsync()
     expect(contentOf(a)).toBe('A0')
     expect(flashedBlocks()).toEqual([1])
+    wrapper.unmount()
+  })
+
+  test('连发撤销且旧轮测量帧尚未跑完：过期帧作废，不拿旧 ids 覆盖本轮', async () => {
+    const pageId = 'page-undo-landing-stale-round'
+    const [a, b] = await seed(pageId, ['A0', 'B0'])
+    const wrapper = await mountBlockList(pageId)
+    stubInkRects()
+
+    await typeStep(a, 'A1')
+    await typeStep(b, 'B1')
+    // 两块都可能被激活（jsdom 里内容区量不出墨迹）⇒ 各自从属性带取墨迹
+    inkInProperties(wrapper, a)
+    inkInProperties(wrapper, b)
+
+    // 受控 rAF：帧不自动跑，由本例决定「哪一帧在何时执行」。
+    // 为什么必须受控：真 rAF 一帧 ~16ms，而两次撤销之间隔着 flushAsync 的若干宏任务，
+    // 旧轮那 2 帧早跑完了 —— 复现不出「旧帧迟到」。真机上要够到这个窗口得靠长按
+    // Ctrl+Z 的键盘自动重复（~30ms 一次），本例用受控帧把它变成确定的事件次序。
+    const frames: FrameRequestCallback[] = []
+    const fakeRaf = ((cb: FrameRequestCallback) => frames.push(cb)) as typeof window.requestAnimationFrame
+    // 两处都换：产品侧是 bare 调用（解析到 globalThis），而 jsdom 环境里 globalThis 与 window
+    // 不是同一个对象 —— 只换 window 的话 bare 调用仍走原生帧，旧帧会在 flushAsync 期间偷偷跑完。
+    vi.stubGlobal('requestAnimationFrame', fakeRaf)
+    const savedRaf = window.requestAnimationFrame
+    window.requestAnimationFrame = fakeRaf
+
+    try {
+      undoKey(document.body) // 撤 B1
+      await flushAsync()
+      expect(contentOf(b)).toBe('B0')
+      // 首量是同步的 ⇒ B 已画出；旧轮余帧此刻还压在队列里（本例前提，不是断言目标）
+      expect(flashedBlocks()).toEqual([2])
+      const staleFrame = frames.shift()
+      expect(staleFrame).toBeTypeOf('function')
+
+      undoKey(document.body) // 旧轮一帧未跑就撤 A1
+      await flushAsync()
+      expect(contentOf(a)).toBe('A0')
+      expect(flashedBlocks()).toEqual([1]) // 本轮首量
+
+      // 决定性一步：手动跑掉**旧轮**那一帧。无轮次守卫 ⇒ 它拿 [b] 覆盖本轮的 [a]，
+      // 闪烁与落点错位（要等 600ms 窗口结束才自愈）；有守卫 ⇒ 立即作废，本轮结果不动。
+      // 必须等一次 tick 再读：`.restore-flash-rect` 由 flashRects 渲染，同步读 DOM 看到的
+      // 还是上一帧的画面 —— 不等就断言不到「旧帧把它改回去了」（这一例的牙齿靠这一步）。
+      staleFrame?.(0)
+      await nextTick()
+      expect(flashedBlocks()).toEqual([1])
+    } finally {
+      window.requestAnimationFrame = savedRaf
+      vi.unstubAllGlobals()
+    }
     wrapper.unmount()
   })
 

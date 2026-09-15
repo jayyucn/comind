@@ -478,6 +478,13 @@ async function runUndoRedo(pageId: string, chord: 'undo' | 'redo'): Promise<void
  *   没改过的块上；承载表面（弹窗）经响应式自刷已足以看出撤了什么。
  * - 块内空无一物（空块且无属性）⇒ 量不出墨迹、不画矩形 —— 这是「只亮非空白区域」的直接结果。
  */
+/**
+ * 闪烁测量的轮次令牌（实例级）：每轮测量领一个号，过期轮的 rAF 回调直接作废。
+ * 背景：连发撤销（长按 Ctrl+Z 的键盘自动重复可到 ~30ms）时，上一轮最多还有 2 帧未跑完，
+ * 会拿**旧 ids** 覆盖本轮的 flashRects / flashingIds —— 闪烁与落点错位（600ms 后自愈）。
+ */
+let flashMeasureGeneration = 0
+
 function landOnChangedBlocks(ids: string[]): void {
   // 恢复后 store 里只剩快照内的块：撤销「新建」时受影响块已被软删，sortByDocumentOrderIds
   // 会按块现有文档序把不存在的 id 过滤掉 —— 无可落点块时保持原状即可。
@@ -514,7 +521,10 @@ function landOnChangedBlocks(ids: string[]): void {
     // 再 activate，TipTap 重挂晚于本 tick（真机实测：本 tick 量到 0 墨迹，或量到重挂前的旧短文本
     // = 「只盖一行」的病历）。故连量 3 次（首量 + 2 帧），重挂尘埃落定后的最终布局胜出；
     // flashChangedBlocks 整体替换语义下重入安全，量到的矩形最多晚 2 帧（仍在 600ms 窗口内）。
+    flashMeasureGeneration += 1
+    const myGeneration = flashMeasureGeneration
     const measureWhenSettled = (left: number): void => {
+      if (myGeneration !== flashMeasureGeneration) return
       flashChangedBlocks(ordered)
       if (left > 0) requestAnimationFrame(() => measureWhenSettled(left - 1))
     }
