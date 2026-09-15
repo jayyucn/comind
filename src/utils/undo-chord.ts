@@ -1,4 +1,5 @@
 import { useBlockStore } from '../stores/blocks'
+import { hasStack } from '../composables/useUndoHistory'
 
 /**
  * 撤销/重做键位裁决（ADR-0046 T4 / #109）。
@@ -35,6 +36,43 @@ export function resolveUndoChord(e: UndoChordEvent): UndoChord {
     default:
       return null
   }
+}
+
+/** 接管成功时返回的信息：恢复编排放调用方做（带/不带落点是两者的本质差异） */
+export interface UndoTakeover {
+  pageId: string
+  chord: Exclude<UndoChord, null>
+}
+
+/**
+ * 撤销/重做接管的四步相同链（#114）：chord 裁决 → scope 解析 → hasStack 门 →
+ * preventDefault + stopPropagation。BlockList 的捕获接管与 App 的全局兜底此前
+ * 各手写一遍这四步（逐行同构），收口到本函数后各剩一行调用；**scope 解析与
+ * dispatch 有意留在调用方**：
+ * - scope 解析：BlockList 有实例归属兜底（依赖组件 root/props），App 只认块内焦点；
+ * - dispatch：BlockList 带落点闪烁（#109），App 不带（弹窗经响应式自刷）。
+ *
+ * ⚠️ 让位契约（时序不变量，唯一文档点）：两个 document 捕获监听器靠**注册顺序**
+ * 分先后 —— BlockList 挂载时先注册，App 兜底在 App.vue onMounted 后注册、执行
+ * 晚于 BlockList，故 App 侧调用前须检查 `e.defaultPrevented`（= BlockList 已
+ * 接管的信号）自行让位。本函数**有意不读** defaultPrevented：接管方（BlockList）
+ * 若也读，会被其它更早的 preventDefault 误伤；让位语义归兜底方所有。
+ * 新增按键入口时：先注册者优先，后来者必须让位。
+ *
+ * 返回 null = 本调用方不接管（**未**调用 preventDefault/stopPropagation，按键
+ * 交还原生行为或后续监听者）；返回 UndoTakeover = 已接管（两个方法均已调用）。
+ */
+export function takeOverUndoRedo(
+  e: KeyboardEvent,
+  resolvePage: (e: KeyboardEvent) => string | null,
+): UndoTakeover | null {
+  const chord = resolveUndoChord(e)
+  if (!chord) return null
+  const pageId = resolvePage(e)
+  if (!pageId || !hasStack(pageId)) return null
+  e.preventDefault()
+  e.stopPropagation()
+  return { pageId, chord }
 }
 
 /**

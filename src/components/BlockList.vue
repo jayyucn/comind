@@ -17,9 +17,9 @@ import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } f
 import { buildTree, syncTreeToStore } from '../composables/useBlockTree'
 import type { CrossBlockSelection } from '../composables/useCrossBlockSelection'
 import { useCrossBlockSelection } from '../composables/useCrossBlockSelection'
-import { ensureStack, hasStack } from '../composables/useUndoHistory'
+import { ensureStack } from '../composables/useUndoHistory'
 import { runUndoOrRedo } from '../composables/useUndoRestore'
-import { resolveUndoChord, resolveUndoScopeBlockPage } from '../utils/undo-chord'
+import { resolveUndoScopeBlockPage, takeOverUndoRedo } from '../utils/undo-chord'
 import { COMIND_BLOCK_MIME, resolveClipboardForest } from '../services/external-paste-parse'
 import { ensureWikiLinkTargets, notifyCreatedPages } from '../services/paste-ensure-wiki-targets'
 import { blockOffsetFromPoint, selectionClientRects } from '../services/selection-geometry'
@@ -407,28 +407,24 @@ function handleDocKeyDownCapture(e: KeyboardEvent) {
  * 交还原生行为）见 resolveUndoScopePage —— 无栈页块与列表外目标两类（#109 已裁定的边界）。
  */
 function handleDocUndoRedoKeyDown(e: KeyboardEvent) {
-  const chord = resolveUndoChord(e)
-  if (!chord) return
-  const pageId = resolveUndoScopePage(e)
-  if (!pageId || !hasStack(pageId)) return
-  e.preventDefault()
-  e.stopPropagation()
-  runUndoRedo(pageId, chord).catch((err) => console.error('[undo] 恢复失败:', err))
+  const takeover = takeOverUndoRedo(e, resolveUndoScopePage)
+  if (!takeover) return
+  runUndoRedo(takeover.pageId, takeover.chord).catch((err) => console.error('[undo] 恢复失败:', err))
 }
 
 /**
  * 本次按键的撤销作用域页；null = 本实例不接管（按键交还原生行为）。
  * - 焦点在某块内 → 复用全局作用域裁决单一真源 `resolveUndoScopeBlockPage`（B2：
  *   与 App 的全局兜底共用，杜绝两处口径漂移），取该块所属页（含 BlockModal 内的
- *   **他页块**）。是否接管由 handleDocUndoRedoKeyDown 的 `hasStack` 判定：那页有栈
+ *   **他页块**）。是否接管由 takeOverUndoRedo 的 hasStack 门判定：那页有栈
  *   （曾整页加载）才接管；无栈（从未整页加载，memento 无快照可撤）交还原生行为（D6 机制边界）。
  * - 焦点不在块内（底部留白 / 属性区 / 点击不可聚焦元素后焦点落回 body）→ 按实例归属判定；
  *   目标落在本列表之外（页面标题区、右栏等）同样不接管。
  */
 function resolveUndoScopePage(e: KeyboardEvent): string | null {
   // 块内焦点：复用全局作用域裁决单一真源（B2：与 App 的全局兜底共用，杜绝口径漂移），
-  // 取该块所属页（含 BlockModal 内的**他页块**）。是否接管由 handleDocUndoRedoKeyDown
-  // 的 `hasStack` 判定：那页有栈（曾整页加载）才接管；无栈（从未整页加载，memento 无快照可撤）
+  // 取该块所属页（含 BlockModal 内的**他页块**）。是否接管由 takeOverUndoRedo 的
+  // hasStack 门判定：那页有栈（曾整页加载）才接管；无栈（从未整页加载，memento 无快照可撤）
   // 交还原生行为（D6 机制边界）。
   const blockPage = resolveUndoScopeBlockPage(e)
   if (blockPage) return blockPage

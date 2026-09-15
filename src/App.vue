@@ -31,12 +31,11 @@ import { usePageQueryRegistry } from './composables/usePageQueryRegistry'
 import { useReaderDataChanged } from './composables/useReaderDataChanged'
 import { useRelationshipTypes } from './composables/useRelationshipTypes'
 import { reconcilePanels } from './composables/useRightSidebar'
-import { hasStack } from './composables/useUndoHistory'
 import { runUndoOrRedo } from './composables/useUndoRestore'
 import { useEditorStore } from './stores/editor'
 import { usePageStore } from './stores/pages'
 import { isTauriEnvironment } from './wasm/tauri-platform'
-import { resolveUndoChord, resolveUndoScopeBlockPage } from './utils/undo-chord'
+import { resolveUndoScopeBlockPage, takeOverUndoRedo } from './utils/undo-chord'
 
 registerPanel({
   id: 'graph',
@@ -152,18 +151,14 @@ function handleGlobalKeydownCapture(e: KeyboardEvent) {
  * 无『无反应』落点」）。不落点（无块选区/滚动上下文）：恢复后弹窗经响应式自刷。
  *
  * 只认「块内焦点」：body / 列表空白 / 侧栏 / 输入框这些 BlockList 能处理或该豁免的场景
- * 一律不抢（避免与 BlockList 双接管）。`e.defaultPrevented` 是「已有更早接管（BlockList）」
- * 的信号 —— BlockList 接管时 preventDefault，这里据此跳过。
+ * 一律不抢（避免与 BlockList 双接管）。让位机制（defaultPrevented + 注册顺序）的
+ * 契约唯一文档点在 takeOverUndoRedo 的 JSDoc。
  */
 function handleGlobalUndoRedoKeyDown(e: KeyboardEvent) {
-  if (e.defaultPrevented) return
-  const chord = resolveUndoChord(e)
-  if (!chord) return
-  const pageId = resolveUndoScopeBlockPage(e)
-  if (!pageId || !hasStack(pageId)) return
-  e.preventDefault()
-  e.stopPropagation()
-  runUndoOrRedo(pageId, chord).catch((err) => console.error('[undo] 恢复失败:', err))
+  if (e.defaultPrevented) return // 让位：BlockList 已接管（契约见 takeOverUndoRedo JSDoc）
+  const takeover = takeOverUndoRedo(e, resolveUndoScopeBlockPage)
+  if (!takeover) return
+  runUndoOrRedo(takeover.pageId, takeover.chord).catch((err) => console.error('[undo] 恢复失败:', err))
 }
 
 function handleMainClick(e: MouseEvent) {
