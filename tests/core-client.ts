@@ -16,10 +16,26 @@ export async function cleanupRelationshipTypes(): Promise<void> {
   const c = await initTestCore()
   const types = await c.getRelationshipTypes()
   for (const t of types) {
+    // relationship_type/update 是「整行写入」契约（core services/batch.rs:414
+    // 全量反序列化 RelationshipType），只发 { id, deleted } 会报
+    // missing field `type` —— 必须补完整行。
     await c.executeBatch([{
       entity: 'relationship_type',
       action: 'update',
-      params: { id: t.id, deleted: 1 }
+      params: {
+        id: t.id,
+        type: t.type,
+        inverse: t.inverse,
+        label: t.label,
+        inverse_label: t.inverse_label,
+        color: t.color,
+        order: t.order,
+        strength: t.strength,
+        deleted: 1,
+        builtin: t.builtin,
+        created_at: t.created_at,
+        updated_at: t.updated_at
+      }
     }])
   }
   for (const t of types) {
