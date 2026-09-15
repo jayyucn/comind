@@ -11,16 +11,15 @@
  * - tree ref 是 BlockDraggableList 的 v-model 数据源（唯一渲染权威）
  * - 拖拽后 tree 已被 vue-draggable-plus 更新（update:modelValue）
  * - handleDragEnd 将 tree 变更同步回 store（parentId + pos）
- * - store 变更通过 structureVersion watch 触发 syncFromStore 重建树
+ * - store 结构变更通过结构签名 watch（#118 D2）触发 syncFromStore 重建树
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import { buildTree, syncTreeToStore } from '../composables/useBlockTree'
 import type { CrossBlockSelection } from '../composables/useCrossBlockSelection'
 import { useCrossBlockSelection } from '../composables/useCrossBlockSelection'
+import { UNDO_FLASH_MS, useRestoreFlash } from '../composables/useRestoreFlash'
 import { ensureStack } from '../composables/useUndoHistory'
 import { runUndoOrRedo } from '../composables/useUndoRestore'
-import { UNDO_FLASH_MS, useRestoreFlash } from '../composables/useRestoreFlash'
-import { resolveUndoScopeBlockPage, takeOverUndoRedo } from '../utils/undo-chord'
 import { COMIND_BLOCK_MIME, resolveClipboardForest } from '../services/external-paste-parse'
 import { ensureWikiLinkTargets, notifyCreatedPages } from '../services/paste-ensure-wiki-targets'
 import { blockOffsetFromPoint, selectionClientRects } from '../services/selection-geometry'
@@ -29,6 +28,7 @@ import { useEditorStore } from '../stores/editor'
 import { usePageStore } from '../stores/pages'
 import type { TreeNode } from '../types/block'
 import { sortByDocumentOrderIds } from '../utils/block-helpers'
+import { resolveUndoScopeBlockPage, takeOverUndoRedo } from '../utils/undo-chord'
 import BlockDraggableList from './Block/components/BlockDraggableList.vue'
 import BlockDropIndicator from './Block/components/BlockDropIndicator.vue'
 import type { DragEndIntent } from './Block/composables/useBlockDragDrop'
@@ -69,7 +69,6 @@ function handleDragEnd(intent?: DragEndIntent | null) {
   for (const id of changed) {
     blockStore.scheduleSave(id)
   }
-  blockStore.structureVersion++
   blockStore.reconcileCollapse(affected.emptied, affected.gained)
 }
 
@@ -83,7 +82,6 @@ async function handleCreateBlock() {
   })
 
   if (newBlock) {
-    blockStore.structureVersion++
     editorStore.activateBlock(newBlock.id, 1)
   }
 }
@@ -660,12 +658,19 @@ const {
   visible: indicatorVisible
 } = useSharedDropIndicator()
 
-// ── 监听结构变化重建树 ──
-watch(() => blockStore.structureVersion, () => {
+// ── 监听结构变化重建树（#118 D2：结构签名 watch，免疫式收口）──
+// 签名读面 = buildTree 的全部输入（id / parentId / pos / pageId / 块对象身份 / 数组身份），
+// 不读 content / format / renderSegments ⇒ 打字、格式、renderSegments 写回不触发重建。
+// 任何结构写 —— 替换、push、原地 mutate、回滚赋值 —— 必使签名变化 ⇒ 树重建，
+// 正确性长在读侧派生里，不依赖写方「记得 bump」（不变量哨兵：BlockList.structure-sync.test.ts）。
+const structureSig = computed(() =>
+  blockStore.blocks.map((b) => [b.id, b.parentId, b.pos, b.pageId, b])
+)
+watch(structureSig, () => {
   syncFromStore()
 })
 
-// ── 页面 ID 变化时清除选区，同步由 structureVersion 变化触发 ──
+// ── 页面 ID 变化时清除选区，树同步由结构签名 watch 触发 ──
 watch(() => props.pageId, (newId, oldId) => {
   if (newId !== oldId) {
     selection.clearSelection()

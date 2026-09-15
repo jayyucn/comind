@@ -260,54 +260,6 @@ describe('findPreviousBlockInTreeOrder', () => {
   })
 })
 
-describe('structureVersion', () => {
-  test('increments after createBlock', async () => {
-    const store = useBlockStore()
-    const pageId = 'page-1'
-    const initialVersion = store.structureVersion
-
-    await store.createBlock({ pageId, content: 'New Block' })
-
-    expect(store.structureVersion).toBe(initialVersion + 1)
-  })
-
-  test('increments after deleteBlock', async () => {
-    const store = useBlockStore()
-    const pageId = 'page-1'
-    const block = await store.createBlock({ pageId, content: 'Block' })
-    const versionAfterCreate = store.structureVersion
-
-    await store.deleteBlock(block.id)
-
-    expect(store.structureVersion).toBe(versionAfterCreate + 1)
-  })
-
-  test('increments after indent', async () => {
-    const store = useBlockStore()
-    const pageId = 'page-1'
-    const parent = await store.createBlock({ pageId, content: 'Parent' })
-    await store.createBlock({ pageId, content: 'Child1', parentId: parent.id })
-    const child2 = await store.createBlock({ pageId, content: 'Child2', parentId: parent.id })
-    const versionBefore = store.structureVersion
-
-    await store.indent(child2.id)
-
-    expect(store.structureVersion).toBeGreaterThan(versionBefore)
-  })
-
-  test('increments after outdent', async () => {
-    const store = useBlockStore()
-    const pageId = 'page-1'
-    const parent = await store.createBlock({ pageId, content: 'Parent' })
-    const child = await store.createBlock({ pageId, content: 'Child', parentId: parent.id })
-    const versionBefore = store.structureVersion
-
-    await store.outdent(child.id)
-
-    expect(store.structureVersion).toBeGreaterThan(versionBefore)
-  })
-})
-
 describe('getBlocksByPage', () => {
   test('returns only blocks for specified page', async () => {
     const store = useBlockStore()

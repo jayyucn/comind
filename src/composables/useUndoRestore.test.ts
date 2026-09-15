@@ -312,14 +312,14 @@ describe('renderSegments 退化修复（Spec #5）', () => {
     expect(bs.getBlocksByPage('p1')[0].renderSegments).toBeUndefined()
   })
 
-  it('写回必须原地 mutate 不换对象：structureVersion 重建的树引用与后续写入同源（撤销后打字失活即消失回归）', async () => {
+  it('写回必须原地 mutate 不换对象：恢复后渲染树引用与后续写入同源（撤销后打字失活即消失回归）', async () => {
     const bs = useBlockStore()
     bs.blocks = [makeBlock('B', 'p1', { content: 'old' })]
     usePropertyStore().propertiesByBlock = new Map()
 
     const segs = [{ type: 'text', start: 0, end: 3 }]
-    // getPageWithBlocks 在 structureVersion++（树重建点）之后、写回之前被调用：
-    // 此刻捕获的引用即渲染树将持有的对象引用
+    // getPageWithBlocks 在乐观更新（数组身份替换 = 结构签名重建点）之后、写回之前被调用：
+    // 此刻捕获的引用即渲染树重建后将持有的对象引用（#118 D2：读方按签名自动重建）
     let refAtTreeBuild: Block | undefined
     hoisted.client.getPageWithBlocks.mockImplementationOnce(async () => {
       refAtTreeBuild = bs.blocks.find((b) => b.id === 'B')
@@ -333,8 +333,8 @@ describe('renderSegments 退化修复（Spec #5）', () => {
 
     const refAfter = bs.blocks.find((b) => b.id === 'B')!
     // restoreEntry 乐观更新允许换对象，但 refreshRenderSegments 不许再换：
-    // 换了又不 bump version，树节点攥旧对象 → 此后 updateBlockContent 原地 mutate
-    // 对渲染不可见 → 「撤销后打字，失活即消失」且 store/DOM 永久分叉（真机实证）
+    // 换对象 = 对象身份变化 = 结构签名变化 = 触发一次无谓的整树重建，且树重建
+    // 时机与后续原地 mutate 交错（#109 一族竞态）；原地写则树/store 永不分叉
     expect(refAfter).toBe(refAtTreeBuild)
     expect(refAfter.renderSegments).toEqual(segs)
   })

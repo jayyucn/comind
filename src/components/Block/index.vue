@@ -11,8 +11,8 @@
  *
  * 数据流：
  *   tree ref (BlockList) → VueDraggable v-model → node.children (渲染)
- *   拖拽结束 → onDragEnd → syncTreeToStore → store → structureVersion++
- *   → BlockList watch → syncTreeToStore → tree 重建
+ *   拖拽结束 → onDragEnd → syncTreeToStore → store
+ *   → 结构签名变化（#118 D2）→ BlockList watch → syncFromStore → tree 重建
  */
 import { ChevronDown, ChevronRight } from 'lucide-vue-next'
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'

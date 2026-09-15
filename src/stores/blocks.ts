@@ -145,9 +145,6 @@ export const useBlockStore = defineStore('blocks', () => {
     trashedPageWarnings.value = []
   }
 
-  /** 结构版本号 - 用于触发 Sortable 实例重建 */
-  const structureVersion = ref(0)
-
   /** 批量历史加载代数；abortMultiPageLoad 递增以丢弃进行中的 IPC 结果 */
   let multiPageLoadGeneration = 0
 
@@ -326,14 +323,12 @@ export const useBlockStore = defineStore('blocks', () => {
     // 整页已缓存（曾整页加载且 store 仍有该页块）才短路；仅零散块（如单块预览
     // 拉入、页面已在别处删除）必须重新整页拉取，避免内容残缺/空白。
     if (isPageFullyLoaded(pageId) && blocks.value.some(b => b.pageId === pageId)) {
-      structureVersion.value++
       return blocks
     }
     const pageBlocks = await loadPageBlocks(pageId)
     if (pageBlocks.value.filter(b => b.pageId === pageId).length === 0) {
       await createBlock({ pageId, content: '', parentId: null })
     }
-    structureVersion.value++
     return blocks
   }
 
@@ -347,7 +342,6 @@ export const useBlockStore = defineStore('blocks', () => {
       //    （级联复活的子树一并回 store；同时修正旧实现「拿 pageId 当 blockId」导致内容不刷新的问题）。
       const restored = await client.getBlock(blockId)
       await loadPageBlocks(restored.page_id)
-      structureVersion.value++
     } catch (error) {
       console.error('[restoreBlock] Failed to restore block:', error)
     }
@@ -399,7 +393,6 @@ export const useBlockStore = defineStore('blocks', () => {
       }
       if (myGeneration !== multiPageLoadGeneration) return
       for (const id of uncachedPageIds) fullyLoadedPages.add(id)
-      structureVersion.value++
     } catch (error) {
       console.error('[loadMultiPageBlocks] Unexpected error:', error)
     } finally {
@@ -613,7 +606,6 @@ export const useBlockStore = defineStore('blocks', () => {
     // 全新页以本地创建起始 → store 内即该页完整真相，登记避免后续 ensurePageBlocks
     // 以服务器数据整页覆盖尚未持久化的在途块（维持「页有块即缓存」的既有语义）
     if (isFirstBlockOfPage) fullyLoadedPages.add(opts.pageId)
-    structureVersion.value++
     _scheduleSave(block)
 
     return block
@@ -1039,8 +1031,6 @@ export const useBlockStore = defineStore('blocks', () => {
         _scheduleSave(child)
         prevPos = newPos
       }
-
-      structureVersion.value++
     }
 
     // 子树转入 target ⇒ 若 target 折叠则展开（ADR-0045 D4）
@@ -1206,8 +1196,6 @@ export const useBlockStore = defineStore('blocks', () => {
     block.updatedAt = Date.now()
     _scheduleSave(block)
 
-    structureVersion.value++
-
     // 落入折叠父块 ⇒ 展开（ADR-0045 D4）：落点必须是可见结果
     reconcileCollapse([], [prev.id])
   }
@@ -1236,8 +1224,6 @@ export const useBlockStore = defineStore('blocks', () => {
 
     block.updatedAt = Date.now()
     _scheduleSave(block)
-
-    structureVersion.value++
 
     // 原父块可能被掏空 ⇒ 复位；升入的新父块若折叠 ⇒ 展开（ADR-0045 D2/D4）
     reconcileCollapse([parent.id], newParentId ? [newParentId] : [])
@@ -1317,10 +1303,7 @@ export const useBlockStore = defineStore('blocks', () => {
       await updateBlockContent(id, '')
     }
 
-    // 4. 触发 tree rebuild
-    structureVersion.value++
-
-    // 5. RPC（paint 之后才发出）
+    // 4. RPC（paint 之后才发出）
     const operations: BatchOperation[] = [...toDelete].map(id => ({
       entity: 'block',
       action: 'delete',
@@ -1334,7 +1317,6 @@ export const useBlockStore = defineStore('blocks', () => {
         console.error('[deleteBlocks] execute_batch failed:', error)
         // S9: rollback to snapshot
         blocks.value = snapshot
-        structureVersion.value++
         for (const b of snapshot) {
           blockCardStore.invalidate(b.id)
         }
@@ -1391,7 +1373,6 @@ export const useBlockStore = defineStore('blocks', () => {
     block.format = { ...block.format, ...format }
     block.updatedAt = Date.now()
     _scheduleSave(block)
-    structureVersion.value++
   }
 
   /**
@@ -1427,7 +1408,6 @@ export const useBlockStore = defineStore('blocks', () => {
     block.type = type
     block.updatedAt = Date.now()
     _scheduleSave(block)
-    structureVersion.value++
   }
 
   /**
@@ -1547,7 +1527,6 @@ export const useBlockStore = defineStore('blocks', () => {
     for (const [key, value] of Object.entries(properties)) {
       await propertyStore.setProperty(blockId, key, value)
     }
-    structureVersion.value++
   }
 
   /** 调度单个 Block 的防抖持久化（供外部拖拽同步调用） */
@@ -1561,7 +1540,6 @@ export const useBlockStore = defineStore('blocks', () => {
     sortedBlocks,
     blockTree,
     loading,
-    structureVersion,
     childrenMap,
     getChildren,
     getBlocksByPage,
