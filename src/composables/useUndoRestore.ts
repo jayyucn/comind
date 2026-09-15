@@ -4,9 +4,10 @@
  * 给定目标快照（来自 useUndoHistory 的 undo/redo 返回的 HistoryEntry），计算
  * 「当前 store 状态 vs 目标快照」的差异，并一次性落库：
  *  - 目标有、当前无（被软删）  → 精确 undelete op 复活（在 executeBatch 事务内）+ block update 还原字段
+ *                              + 该块属性**无条件**重设（删除级联软删了属性行，见 reviveProps）
  *  - 目标有、当前有但不同      → block update
  *  - 当前有、目标无            → block delete（batch，级联清理 link + property）
- *  - 属性：按 key 对齐         → property set / delete（并入同一批）
+ *  - 属性：按 key 对齐         → property set / delete（并入同一批；复活块除外，见上）
  *
  * 落库：全部操作（含 undelete）并入**单次** executeBatch（#108 验收#2，对齐
  * blocks.ts:1338 的 deleteBlocks 范式），整批一个事务、任一 op 失败整批回滚。
@@ -97,6 +98,27 @@ function propDeleteOp(p: Property): BatchOperation {
 }
 
 /**
+ * 复活块的属性必须**无条件重设**，不走 alignProps 的相等短路。
+ *
+ * 成因：Rust 侧删块时级联软删其属性行（`delete_block_cascade` →
+ * `PropertyService::delete_by_block_id`，见 `entity/property.rs`），而 T1 的
+ * `undelete_blocks` 只复活块行 —— 派生数据明确不在其范围内（`block_write.rs`
+ * `undelete_block_subtree_inner` 的 Scope 注）。「块行复活 + 属性行复活」的对称性
+ * 由本处的 `property set` 承担：`property_upsert` 的 `ON CONFLICT(block_id, key)`
+ * 会把 `deleted_at` 清回 NULL，即同一条属性行原地复活（不撞 PK）。
+ *
+ * 为什么不复用 alignProps：它的相等判定以「客户端属性缓存 = DB 现状」为前提，而
+ * `deleteBlocks` 只从 store 移块、**不清理 propertyStore** —— 删除后缓存里仍是旧值，
+ * 对复活块而言缓存与 DB 已经脱节，「目标 == 缓存」不再蕴含「DB 行仍 live」。
+ * 2026-09-15 真机实证：块 undelete 复活（updated_at 1789433521627）比其属性行的
+ * deleted_at（1789433518288）晚 3.3s，恢复批次里一个 property op 都没有。
+ */
+function reviveProps(targetProps: Property[], propOps: BatchOperation[]): boolean {
+  for (const tp of targetProps) propOps.push(propSetOp(tp))
+  return targetProps.length > 0
+}
+
+/**
  * 按 key 对齐某块的属性：目标有而当前无 / 值不同 → set；当前有而目标无 → delete。
  * 生成的操作 push 进 propOps；返回**是否产生了任何属性操作**（供调用方判定该块是否受影响，
  * 不再靠 propOps 长度差这种隐式协议）。
@@ -154,18 +176,23 @@ export async function restoreEntry(pageId: string, snapshot: HistoryEntry): Prom
 
   for (const target of snapshot.blocks) {
     const current = currentById.get(target.id)
+    const targetProps = snapshot.properties[target.id] ?? []
     if (!current) {
       // 被软删 → 复活（清 deleted_at）+ 还原字段
       revivedIds.push(target.id)
       blockUpdateOps.push(blockUpdateOp(target))
       affected.add(target.id)
-    } else if (!blockFieldsEqual(current, target)) {
-      blockUpdateOps.push(blockUpdateOp(target))
-      affected.add(target.id)
-    }
-    // 属性对齐（无论块是否变化，目标快照里该块的属性即为期望态）
-    if (alignProps(target.id, snapshot.properties[target.id] ?? [], propertyStore, propOps)) {
-      affected.add(target.id)
+      // 属性行一并复活（级联软删的对称恢复，见 reviveProps 注）
+      if (reviveProps(targetProps, propOps)) affected.add(target.id)
+    } else {
+      if (!blockFieldsEqual(current, target)) {
+        blockUpdateOps.push(blockUpdateOp(target))
+        affected.add(target.id)
+      }
+      // 属性对齐（无论块是否变化，目标快照里该块的属性即为期望态）
+      if (alignProps(target.id, targetProps, propertyStore, propOps)) {
+        affected.add(target.id)
+      }
     }
   }
 

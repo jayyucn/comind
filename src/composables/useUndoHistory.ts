@@ -91,7 +91,13 @@ function cloneBlockSlim(b: Block): Block {
 }
 
 function cloneProperty(p: Property): Property {
-  return { ...p, value: deepClonePlain(p.value) }
+  // createdAt/updatedAt 归一化为 0：服务端写入的时间戳不承载恢复语义，却会漂移 ——
+  // 撤销「删块」后复活块的组件重挂载，useBlockPropertySync.onMounted 会
+  // loadBlockProperties 从 DB 重读，而恢复批次的 property set 刚刷过 updated_at。
+  // 若签名含该字段，「同一状态」会被判成一次新改动 ⇒ 推入一份近似重复的快照并截断
+  // redo 尾（2026-09-15 实机：删块 → Ctrl+Z 后约 500ms 起 Ctrl+Shift+Z 变 null；
+  // 实测唯一漂移字节 = 属性行的 updatedAt）。信封只承载恢复所需字段，故归零。
+  return { ...p, value: deepClonePlain(p.value), createdAt: 0, updatedAt: 0 }
 }
 
 // ---- 字节预算（D5：32MB 上限，超限裁最旧）----

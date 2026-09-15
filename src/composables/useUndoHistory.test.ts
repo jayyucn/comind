@@ -206,6 +206,30 @@ describe('派生字段剔除', () => {
     // 属性被捕获进 envelope
     expect(latest.properties['b1']?.[0]?.value).toBe('Todo')
   })
+
+  it('属性信封不含服务端时间戳；仅时间戳漂移不算改动（否则截断 redo 尾）', async () => {
+    const blockStore = useBlockStore()
+    const propertyStore = usePropertyStore()
+    blockStore.blocks = [makeBlock('b1', 'p1')]
+    propertyStore.propertiesByBlock = new Map([['b1', [makeProp('b1', 'status', 'Todo')]]])
+    ensureStack('p1')
+
+    // 一次真实属性改动 → 入栈
+    propertyStore.propertiesByBlock = new Map([['b1', [makeProp('b1', 'status', 'Done')]]])
+    await flushChange()
+    expect(_debugStats().stackSizes['p1']).toBe(2)
+    // 取最新快照（undo 取值 → redo 复位游标，勿把游标停在旧快照上）
+    undo('p1')
+    const latest = redo('p1')!
+    expect(latest.properties['b1']?.[0]?.updatedAt).toBe(0)
+
+    // 模拟撤销「删块」后复活块重挂载：loadBlockProperties 从 DB 重读同一属性，
+    // 语义不变、只有 updated_at 比快照新（恢复批次的 property set 刚刷过它）。
+    const reread = { ...makeProp('b1', 'status', 'Done'), updatedAt: 9_999 }
+    propertyStore.propertiesByBlock = new Map([['b1', [reread]]])
+    await flushChange()
+    expect(_debugStats().stackSizes['p1']).toBe(2)
+  })
 })
 
 describe('页面隔离', () => {

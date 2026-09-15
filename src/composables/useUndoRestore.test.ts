@@ -185,6 +185,44 @@ describe('删除撤销（含子树级联）', () => {
   })
 })
 
+describe('删除撤销：属性行必须随块一并复活（生产删除路径）', () => {
+  it('deleteBlocks 不清客户端属性缓存 → 块复活仍须强制 property set（否则 DB 属性行停在级联软删）', async () => {
+    const bs = useBlockStore()
+    const ps = usePropertyStore()
+    bs.blocks = [
+      makeBlock('A', 'p1', { parentId: null, pos: 0 }),
+      makeBlock('B', 'p1', { parentId: 'A', pos: 1, content: 'child' }),
+    ]
+    ps.propertiesByBlock = new Map([['B', [makeProp('pB', 'B', 'project', 'CoMind')]]])
+
+    // 生产删除路径：store 移块，但**不清理 propertyStore** —— 与 Rust 侧
+    // delete_block_cascade → PropertyService::delete_by_block_id 的级联软删不对称。
+    // 于是恢复时「目标属性 == 客户端缓存」并不蕴含「DB 属性行仍 live」。
+    await bs.deleteBlocks(['B'])
+    expect(ps.propertiesByBlock.get('B')).toHaveLength(1)
+
+    await restoreEntry(
+      'p1',
+      entry(
+        [
+          makeBlock('A', 'p1', { parentId: null, pos: 0 }),
+          makeBlock('B', 'p1', { parentId: 'A', pos: 1, content: 'child' }),
+        ],
+        { B: [makeProp('pB', 'B', 'project', 'CoMind')] },
+      ),
+    )
+
+    // deleteBlocks 的落库在 setTimeout 里是另一个批次，故按 undelete 定位恢复批次
+    const batches = hoisted.client.executeBatch.mock.calls.map(
+      (c) => c[0] as Array<{ entity: string; action: string; params: Record<string, unknown> }>,
+    )
+    const restoreOps = batches.find((ops) => ops.some((o) => o.action === 'undelete'))!
+    expect(restoreOps.find((o) => o.entity === 'property' && o.action === 'set')).toMatchObject({
+      params: { block_id: 'B', key: 'project', value: 'CoMind' },
+    })
+  })
+})
+
 describe('精确复活不级联（Spec #6 回声抑制的结构性解法）', () => {
   it('恢复 B1 时精确复活 B1，不连带复活不在快照中的软删子块 B2（无 stray、无补删）', async () => {
     const bs = useBlockStore()
