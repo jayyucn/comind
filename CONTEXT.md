@@ -16,7 +16,7 @@ Legacy compatibility: pages with `type` `journal` are treated as Ideas Pages.
 The Ideas Page whose title matches today's local date. At most one exists per day.
 
 ### Snapshot (页面快照)
-A materialized, immutable copy of an entire Ideas Page as it stood on its own day: the full block tree (content, type, format, structure) plus the property values of that day. All *page rendering* of an Idea Page older than today uses the snapshot, never live data; the snapshot is the storage-level immutability guarantee for history. Live Blocks of historical pages stay editable through block-level paths (Task Hub, BlockModal) — edits never touch the snapshot. One snapshot per page, never re-materialized. Supersedes **Freeze**. See ADR-0042. _Avoid_: 备份, cache, copy of page.
+A materialized, immutable copy of an entire Ideas Page as it stood on its own day: the full block tree (content, type, format, structure) plus the property values of that day. All *page rendering* of an Idea Page older than today uses the snapshot, never live data; the snapshot is the storage-level immutability guarantee for history. Live Blocks of historical pages stay editable through block-level paths (Task Hub, BlockModal) — edits never touch the snapshot. One snapshot per page, never re-materialized. Supersedes **Freeze**. See ADR-0042. _Avoid_: 备份, cache, copy of page, 撤销历史栈 (a separate concept — see **History Stack**).
 
 ### Materialize (物化)
 The act of generating a Snapshot: on startup, every Ideas Page whose date is older than today and has no snapshot yet is serialized into `page_snapshots`. Happens before anything else touches that page. See ADR-0042. _Avoid_: dump, export, freeze.
@@ -26,6 +26,9 @@ The two editability contexts of BlockModal: opened from a snapshot rendering, it
 
 ### Freeze (冻结) — RETIRED
 Formerly the UI-level read-only state of any Idea Page whose date is not today (`useIdeasFreeze`). Retired by ADR-0042: the Snapshot is the immutability guarantee, and live Blocks of historical pages remain editable via block-level paths. Remaining call sites are cleanup candidates during implementation. _Avoid_: lock, archive.
+
+### History Stack (撤销历史栈 / Undo History)
+The page-scoped, session-lived record of user-visible document changes that `Ctrl+Z` / `Ctrl+Shift+Z` (and `Ctrl+Y`) walk backwards and forwards. One entry per **input burst** — a run of typing sealed by a ≈500ms pause or a focus change. Covers all content and structure mutations (text, insert/delete, move/indent, block type, block properties); excludes **view noise** (collapse state, selection/cursor, scroll, page switching, page-level rename/delete). Not persistent: cleared on app restart, depth-capped. There is exactly **one** such stack per page — the editors' built-in histories (TipTap `UndoRedo`, CodeMirror `history`) must not run a second one, or `Ctrl+Z` would mean different things depending on where the focus is. See ADR-0046. _Avoid_: Snapshot, 快照, 页面快照 — that word belongs to the Ideas-page materialization (ADR-0042) and means something unrelated.
 
 ### Block
 A unit of content within a Page. Has a parent-child relationship (tree structure). A Page with no Blocks has an auto-created empty root Block.
@@ -160,3 +163,9 @@ A view of the Pages Library filtered to `type=book`, rendered by the fourth gene
 
 ### Reading Progress (阅读进度)
 The reader-local record of the last reading position, stored as a CFI anchor (SQLite `BookProgress` table, NOT in `SyncTable`). Restored on reopen by resolving the CFI and scrolling into view. Desktop-only.
+
+### Batch Operation (批量操作)
+The JSON envelope `{entity, action, params}` the frontend sends via `executeBatch`. Dispatch semantics live in **one** place: `crates/comind-core/src/services/batch.rs` (`apply_batch`); the Tauri and WASM `execute_batch` commands are thin adapters (transaction wrapping only). See ADR-0048.
+
+### OpEffect (批量操作效果)
+What `apply_batch` returns per op: `{value, sync, page_ids}` — `value` goes to the frontend (fire-and-forget), `sync` is `(SyncTable, row id)` pairs consumed by the Tauri layer for `record_and_notify`, `page_ids` drive the in-transaction page touch. WASM ignores `sync`/`page_ids`. Unknown ops are tolerated (Ok with an `error` field), any known-op failure rolls back the whole batch.

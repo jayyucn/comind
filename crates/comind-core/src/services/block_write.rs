@@ -183,6 +183,43 @@ impl BlockWriteService {
         })
     }
 
+    /// Undelete blocks (ADR-0046 D10): reverse soft-deletion for each requested
+    /// id and its entire soft-deleted subtree, reporting the revived ids for sync.
+    ///
+    /// NOTE: this is **not** structurally symmetric to `delete_block_cascade`.
+    /// Here the loop is in Rust (this fn), and each call to
+    /// `undelete_block_subtree_inner` *recurses the whole soft-deleted subtree*
+    /// itself (stack walk). By contrast `delete_block_cascade_inner` handles only
+    /// a single block (its links/props/version) — the delete loop is also in Rust
+    /// but each inner call is non-recursive. So the two `*_inner` helpers carry
+    /// the `cascade` name with different meanings; do not assume they share a
+    /// shape. Both run inside the single `adapter.transaction`, so all ids revive
+    /// or none do (fully in-transaction).
+    pub fn undelete_blocks<S: TransactionalStorageAdapter>(
+        adapter: &mut S,
+        ids: &[String],
+    ) -> Result<HashMap<SyncTable, Vec<String>>, Box<dyn Error>> {
+        adapter.transaction(|storage| {
+            let mut sync_changes: HashMap<SyncTable, Vec<String>> = HashMap::new();
+            for id in ids {
+                Self::undelete_block_subtree_inner(storage, id, &mut sync_changes)?;
+            }
+            // 受影响页重新统计字数（best-effort，in-transaction）。
+            let mut page_ids = std::collections::HashSet::new();
+            if let Some(blocks) = sync_changes.get(&SyncTable::Block) {
+                for bid in blocks {
+                    if let Ok(b) = BlockService::get_by_id(storage, bid) {
+                        page_ids.insert(b.page_id);
+                    }
+                }
+            }
+            for page_id in page_ids {
+                let _ = PageService::recount_word_count(storage, &page_id);
+            }
+            Ok(sync_changes)
+        })
+    }
+
     /// Single-block delete skeleton (ADR-0019 Q8/Q14), shared by
     /// `delete_block_cascade` and `delete_page_cascade`. Runs on a
     /// `&mut dyn StorageAdapter` so callers wrap it in their own transaction.
@@ -221,6 +258,52 @@ impl BlockWriteService {
             .push(block_id.to_string());
 
         Ok(page_id)
+    }
+
+    /// Soft-deleted subtree reviver (ADR-0046 D10), shared by `undelete_blocks`.
+    /// Despite the old `*_cascade_inner` name this is **not** a single-block
+    /// helper: it stack-walks and revives every node in the **soft-deleted**
+    /// subtree (via `get_children_including_deleted`), but only descends into
+    /// children that are themselves soft-deleted. Runs on a `&mut dyn
+    /// StorageAdapter` so callers wrap it in their own transaction.
+    ///
+    /// Invariant: a block that is already live — e.g. a descendant merely hidden
+    /// by a deleted ancestor, or a root passed by mistake — is a no-op: it is
+    /// skipped without bumping `version`/`updated_at` or emitting a sync entry,
+    /// and its live subtree is left untouched (spec: "对未删除块为 no-op").
+    ///
+    /// Scope (per agreed design): only block rows are revived. Reviving derived
+    /// data (properties / dateRefs / notifications) is owned by separate
+    /// primitives and is out of scope for T1.
+    fn undelete_block_subtree_inner(
+        storage: &mut dyn StorageAdapter,
+        block_id: &str,
+        sync_changes: &mut HashMap<SyncTable, Vec<String>>,
+    ) -> Result<(), Box<dyn Error>> {
+        // 栈式遍历（顺序无关）：只复活「当前仍软删」的块。`get_by_id` 过滤
+        // deleted_at —— 返回 Ok 即已 live，直接跳过（不递归、不 bump version）。
+        // 仅把「仍软删」的子节点压栈，下一轮一并复活；live 子节点（被祖先隐藏、
+        // 自身未删）不碰，避免污染其整棵 live 子树。
+        let mut stack: Vec<String> = vec![block_id.to_string()];
+        while let Some(current) = stack.pop() {
+            if BlockService::get_by_id(storage, &current).is_ok() {
+                continue;
+            }
+            let block = BlockService::undelete(storage, &current)?;
+            sync_changes
+                .entry(SyncTable::Block)
+                .or_insert_with(Vec::new)
+                .push(block.id.clone());
+
+            // 仅级联「仍软删」的子节点；live 子节点不参与。
+            let children = BlockService::get_children_including_deleted(storage, &current)?;
+            for child in children {
+                if child.deleted_at.is_some() {
+                    stack.push(child.id);
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -446,5 +529,160 @@ mod tests {
         // 只剩 b1：你好(2) + hello(1) = 3
         let page = PageService::get_by_id(&mut adapter, &p1).unwrap();
         assert_eq!(page.word_count, 3);
+    }
+
+    #[test]
+    fn undelete_blocks_revives_block_and_subtree() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let p1 = seed_page(&mut adapter, "p1");
+        // 一棵三层树：b1 -> b2 -> b3
+        BlockWriteService::save_blocks(
+            &mut adapter,
+            vec![
+                block("b1", &p1, None, 1000),
+                block("b2", &p1, Some("b1"), 1000),
+                block("b3", &p1, Some("b2"), 1000),
+            ],
+        )
+        .unwrap();
+
+        // 模拟回收站逐块软删整棵子树（块级级联删除只删自身，故逐块删）。
+        // 真实场景中整页/整棵被软删后，从根复活应能带回全部子孙。
+        BlockWriteService::delete_block_cascade(&mut adapter, "b1").unwrap();
+        BlockWriteService::delete_block_cascade(&mut adapter, "b2").unwrap();
+        BlockWriteService::delete_block_cascade(&mut adapter, "b3").unwrap();
+        assert!(BlockService::get_by_id(&mut adapter, "b1").is_err());
+        assert!(BlockService::get_by_id(&mut adapter, "b2").is_err());
+        assert!(BlockService::get_by_id(&mut adapter, "b3").is_err());
+
+        // 从根复活：应带回 b1 + b2 + b3 全子树（BFS 遍历含软删子节点）
+        let sync = BlockWriteService::undelete_blocks(&mut adapter, &["b1".to_string()]).unwrap();
+        let blocks_sync = sync.get(&SyncTable::Block).unwrap();
+        assert_eq!(blocks_sync.len(), 3);
+        assert!(blocks_sync.contains(&"b1".to_string()));
+        assert!(blocks_sync.contains(&"b2".to_string()));
+        assert!(blocks_sync.contains(&"b3".to_string()));
+
+        // 全部可读回、且已不在软删状态
+        assert!(BlockService::get_by_id(&mut adapter, "b1").is_ok());
+        assert!(BlockService::get_by_id(&mut adapter, "b2").is_ok());
+        assert!(BlockService::get_by_id(&mut adapter, "b3").is_ok());
+        // 树结构保持：b3 仍是 b2 的子
+        assert_eq!(
+            BlockService::get_by_id(&mut adapter, "b3").unwrap().parent_id.as_deref(),
+            Some("b2")
+        );
+    }
+
+    #[test]
+    fn undelete_blocks_missing_id_errors_without_side_effects() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let p1 = seed_page(&mut adapter, "p1");
+        BlockWriteService::save_blocks(
+            &mut adapter,
+            vec![block("b1", &p1, None, 1000)],
+        )
+        .unwrap();
+
+        // 不存在的 id 应报错且不牵动已存在块
+        let err = BlockWriteService::undelete_blocks(&mut adapter, &["nope".to_string()]).unwrap_err();
+        assert!(!err.to_string().is_empty());
+        assert!(BlockService::get_by_id(&mut adapter, "b1").is_ok());
+    }
+
+    #[test]
+    fn undelete_blocks_single_block() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let p1 = seed_page(&mut adapter, "p1");
+        BlockWriteService::save_blocks(
+            &mut adapter,
+            vec![block("b1", &p1, None, 1000), block("b2", &p1, None, 2000)],
+        )
+        .unwrap();
+
+        // 只删 b1（块级级联只删自身，b2 不受影响）
+        BlockWriteService::delete_block_cascade(&mut adapter, "b1").unwrap();
+        assert!(BlockService::get_by_id(&mut adapter, "b1").is_err());
+        assert!(BlockService::get_by_id(&mut adapter, "b2").is_ok());
+
+        // 复活 b1：sync 只报 b1 一个
+        let sync = BlockWriteService::undelete_blocks(&mut adapter, &["b1".to_string()]).unwrap();
+        assert_eq!(sync.get(&SyncTable::Block).unwrap(), &vec!["b1".to_string()]);
+        assert!(BlockService::get_by_id(&mut adapter, "b1").is_ok());
+        assert!(BlockService::get_by_id(&mut adapter, "b2").is_ok());
+    }
+
+    #[test]
+    fn undelete_blocks_noop_on_live_block() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let p1 = seed_page(&mut adapter, "p1");
+        BlockWriteService::save_blocks(
+            &mut adapter,
+            vec![block("b1", &p1, None, 1000)],
+        )
+        .unwrap();
+
+        // 未删除的 live 块：复活应为 no-op（不 bump version、不进 sync）
+        let before = BlockService::get_by_id(&mut adapter, "b1").unwrap().version;
+        let sync = BlockWriteService::undelete_blocks(&mut adapter, &["b1".to_string()]).unwrap();
+        let after = BlockService::get_by_id(&mut adapter, "b1").unwrap().version;
+        assert_eq!(before, after, "live block must not be bumped");
+        assert!(
+            sync.get(&SyncTable::Block).map_or(true, |v| v.is_empty()),
+            "no-op must not emit a Block sync entry"
+        );
+    }
+
+    #[test]
+    fn undelete_blocks_does_not_dirty_live_children() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let p1 = seed_page(&mut adapter, "p1");
+        // b1 为父，b2/b3 为其子。块级级联删除只删 b1 自身，子节点仍 live（仅被祖先隐藏）。
+        BlockWriteService::save_blocks(
+            &mut adapter,
+            vec![
+                block("b1", &p1, None, 1000),
+                block("b2", &p1, Some("b1"), 1000),
+                block("b3", &p1, Some("b1"), 2000),
+            ],
+        )
+        .unwrap();
+
+        BlockWriteService::delete_block_cascade(&mut adapter, "b1").unwrap();
+        let v2_before = BlockService::get_by_id(&mut adapter, "b2").unwrap().version;
+        let v3_before = BlockService::get_by_id(&mut adapter, "b3").unwrap().version;
+
+        // 复活 b1：live 子节点不得被 bump version、不得进 sync
+        let sync = BlockWriteService::undelete_blocks(&mut adapter, &["b1".to_string()]).unwrap();
+        assert_eq!(
+            sync.get(&SyncTable::Block).unwrap(),
+            &vec!["b1".to_string()],
+            "live children must not be reported as revived"
+        );
+
+        let v2_after = BlockService::get_by_id(&mut adapter, "b2").unwrap().version;
+        let v3_after = BlockService::get_by_id(&mut adapter, "b3").unwrap().version;
+        assert_eq!(v2_before, v2_after, "live child b2 must not be dirtied");
+        assert_eq!(v3_before, v3_after, "live child b3 must not be dirtied");
+        assert!(BlockService::get_by_id(&mut adapter, "b1").is_ok());
+    }
+
+    #[test]
+    fn undelete_blocks_cross_page_ownership() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let pa = seed_page(&mut adapter, "pa");
+        let pb = seed_page(&mut adapter, "pb");
+        BlockWriteService::save_blocks(
+            &mut adapter,
+            vec![block("a1", &pa, None, 1000), block("b1", &pb, None, 1000)],
+        )
+        .unwrap();
+
+        // 只删 page A 上的 a1，复活后 page B 的 b1 必须完全不受影响
+        BlockWriteService::delete_block_cascade(&mut adapter, "a1").unwrap();
+        let sync = BlockWriteService::undelete_blocks(&mut adapter, &["a1".to_string()]).unwrap();
+        assert_eq!(sync.get(&SyncTable::Block).unwrap(), &vec!["a1".to_string()]);
+        let b1 = BlockService::get_by_id(&mut adapter, "b1").unwrap();
+        assert_eq!(b1.page_id, pb);
     }
 }

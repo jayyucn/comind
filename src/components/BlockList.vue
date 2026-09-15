@@ -13,10 +13,14 @@
  * - handleDragEnd 将 tree 变更同步回 store（parentId + pos）
  * - store 变更通过 structureVersion watch 触发 syncFromStore 重建树
  */
-import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import { buildTree, syncTreeToStore } from '../composables/useBlockTree'
 import type { CrossBlockSelection } from '../composables/useCrossBlockSelection'
 import { useCrossBlockSelection } from '../composables/useCrossBlockSelection'
+import { ensureStack } from '../composables/useUndoHistory'
+import { runUndoOrRedo } from '../composables/useUndoRestore'
+import { UNDO_FLASH_MS, useRestoreFlash } from '../composables/useRestoreFlash'
+import { resolveUndoScopeBlockPage, takeOverUndoRedo } from '../utils/undo-chord'
 import { COMIND_BLOCK_MIME, resolveClipboardForest } from '../services/external-paste-parse'
 import { ensureWikiLinkTargets, notifyCreatedPages } from '../services/paste-ensure-wiki-targets'
 import { blockOffsetFromPoint, selectionClientRects } from '../services/selection-geometry'
@@ -41,6 +45,9 @@ const rootEl = ref<HTMLElement | null>(null)
 const blockStore = useBlockStore()
 const editorStore = useEditorStore()
 const pageStore = usePageStore()
+
+// 落点闪烁：墨迹测量 + 状态机（#115）。timer 清理由 composable 的 onScopeDispose 承担。
+const { flashRects, flashChangedBlocks, refreshFlashRects } = useRestoreFlash(() => rootEl.value)
 
 /** 当前页面的根 Block ID */
 const rootBlockId = computed(() => pageStore.getPage(props.pageId)?.blockId ?? null)
@@ -391,6 +398,140 @@ function handleDocKeyDownCapture(e: KeyboardEvent) {
   }
 }
 
+/**
+ * 捕获阶段接管 Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y（ADR-0046 D2：统一栈全权接管）。
+ *
+ * 为什么必须是捕获阶段：TipTap 与 CodeMirror 的按键处理都挂在编辑区自身（目标阶段），
+ * 捕获阶段先于它们执行才能把按键拿掉。两者的内置历史由同票一并禁用（Editor.vue
+ * `undoRedo:false` / CodeMirrorEditor 去 `history()`+`historyKeymap`）—— 接管与禁用
+ * 是一对，中间态会让两个栈互抢（D7 拒绝分阶段）。
+ *
+ * 豁免面比 Ctrl+A 窄：原生输入控件（搜索框 / 重命名）保留浏览器自身撤销；CodeMirror
+ * 编辑区同样是 contenteditable 但不豁免，它归统一栈。**本实例不接管的落点**（不 preventDefault，
+ * 交还原生行为）见 resolveUndoScopePage —— 无栈页块与列表外目标两类（#109 已裁定的边界）。
+ */
+function handleDocUndoRedoKeyDown(e: KeyboardEvent) {
+  const takeover = takeOverUndoRedo(e, resolveUndoScopePage)
+  if (!takeover) return
+  runUndoRedo(takeover.pageId, takeover.chord).catch((err) => console.error('[undo] 恢复失败:', err))
+}
+
+/**
+ * 本次按键的撤销作用域页；null = 本实例不接管（按键交还原生行为）。
+ * - 焦点在某块内 → 复用全局作用域裁决单一真源 `resolveUndoScopeBlockPage`（B2：
+ *   与 App 的全局兜底共用，杜绝两处口径漂移），取该块所属页（含 BlockModal 内的
+ *   **他页块**）。是否接管由 takeOverUndoRedo 的 hasStack 门判定：那页有栈
+ *   （曾整页加载）才接管；无栈（从未整页加载，memento 无快照可撤）交还原生行为（D6 机制边界）。
+ * - 焦点不在块内（底部留白 / 属性区 / 点击不可聚焦元素后焦点落回 body）→ 按实例归属判定；
+ *   目标落在本列表之外（页面标题区、右栏等）同样不接管。
+ */
+function resolveUndoScopePage(e: KeyboardEvent): string | null {
+  // 块内焦点：复用全局作用域裁决单一真源（B2：与 App 的全局兜底共用，杜绝口径漂移），
+  // 取该块所属页（含 BlockModal 内的**他页块**）。是否接管由 takeOverUndoRedo 的
+  // hasStack 门判定：那页有栈（曾整页加载）才接管；无栈（从未整页加载，memento 无快照可撤）
+  // 交还原生行为（D6 机制边界）。
+  const blockPage = resolveUndoScopeBlockPage(e)
+  if (blockPage) return blockPage
+  // 非块元素：实例归属判定（仅 BlockList 有此逻辑；App 全局兜底只认块内焦点，无此分支）。
+  // 注意：原生输入控件（input/textarea）必须在此再豁免一次 —— 全局裁决对「非块」统一返回
+  // null，但本函数有实例归属兜底（下方 return props.pageId），input 焦点不能落到该兜底被接管。
+  const target = e.target as HTMLElement | null
+  if (!target || typeof target.closest !== 'function') return null
+  if (target.closest('input, textarea')) return null
+  // 口径同 handleDocPaste 的「DOM 已摘离文档的缓存实例不接管」那一半（ADR-0043）。另一半
+  // （按 lastClickedBlockId 校验页归属）只在粘贴需要锚点块时才有意义，撤销作用域恒为
+  // props.pageId，故不需要。
+  const isBodyOrDocument = target === document.body || target === document.documentElement
+  if (rootEl.value && (isBodyOrDocument ? !rootEl.value.isConnected : !rootEl.value.contains(target))) {
+    return null
+  }
+  return props.pageId
+}
+
+/**
+ * 撤销 / 重做 + 落点（#109）。执行（退出编辑态 → 封口 → 恢复）收口在 useUndoRestore 的
+ * runUndoOrRedo，此处只补「落点」：受影响块短暂闪烁 + 光标落进其中一块（D-rollback landing，
+ * 2026-09-15 修订：原「受影响块置为块选区」的**持久高亮**改为一次淡出闪烁 —— 落点目的是
+ * 「让用户看出撤了什么」，而不是把块留在选中态；且块选区与光标本就互斥 ——
+ * `Block/index.vue` 的 `focusActiveEditor` 在通过 isActive 守卫后立刻 `selection.clearSelection()`）。
+ * 落点只在本页做 —— 跨页（BlockModal 他页块）恢复只改 store，弹窗经响应式自刷，
+ * 本列表的闪烁 / 光标 / 滚动对 props.pageId 之外的页无意义。
+ */
+async function runUndoRedo(pageId: string, chord: 'undo' | 'redo'): Promise<void> {
+  const changed = await runUndoOrRedo(pageId, chord)
+  if (!changed || changed.length === 0) return
+  if (pageId === props.pageId) landOnChangedBlocks(changed)
+}
+
+// 落点闪烁的测量与状态机收口在 useRestoreFlash（#115）：墨迹测量（Range 逐行贴字 /
+// 原子元素自身盒）与闪烁窗口、视口重算都在那里，本组件只留落点编排与模板渲染。
+
+/**
+ * 落点：受影响块**短暂闪烁** + 光标（编辑态）落进**文档序最后一块**；该块若已在视口内就不滚。
+ * 多块时取最后一块 = 光标停在这步改动的末尾，符合「接着往下写」的直觉。
+ * 两条信号分工不同、各自独立：闪烁答「这一步改了**哪几块**」（集合，无条件给出），
+ * 滚动答「它们**在哪**」（位置，已可见时无需重复告知）—— 故只有滚动按可见性门控。
+ *
+ * 边界（有意不兜底）：
+ * - 目标块若在**折叠祖先**之下（例：BlockModal 里改了折叠子树内的块），主列表里它不渲染
+ *   ⇒ 闪不出、光标也落不进。不回退到「最近的可见受影响块」—— 那会把光标放到用户根本
+ *   没改过的块上；承载表面（弹窗）经响应式自刷已足以看出撤了什么。
+ * - 块内空无一物（空块且无属性）⇒ 量不出墨迹、不画矩形 —— 这是「只亮非空白区域」的直接结果。
+ */
+/**
+ * 闪烁测量的轮次令牌（实例级）：每轮测量领一个号，过期轮的 rAF 回调直接作废。
+ * 背景：连发撤销（长按 Ctrl+Z 的键盘自动重复可到 ~30ms）时，上一轮最多还有 2 帧未跑完，
+ * 会拿**旧 ids** 覆盖本轮的 flashRects / flashingIds —— 闪烁与落点错位（600ms 后自愈）。
+ */
+let flashMeasureGeneration = 0
+
+function landOnChangedBlocks(ids: string[]): void {
+  // 恢复后 store 里只剩快照内的块：撤销「新建」时受影响块已被软删，sortByDocumentOrderIds
+  // 会按块现有文档序把不存在的 id 过滤掉 —— 无可落点块时保持原状即可。
+  // 另须排除页面根块：它不参与渲染/选区（同 selectAll 的 excludeRootId 口径），
+  // 一旦落上闪烁或光标，会波及整页根。
+  const ordered = sortByDocumentOrderIds(
+    ids.filter((id) => id !== rootBlockId.value),
+    blockStore.blocks,
+  )
+  if (ordered.length === 0) return
+
+  const target = ordered[ordered.length - 1]
+  // 光标落行尾：activateBlock 不带 cursorPos，focusActiveEditor 走 focus('end') 分支。
+  // 别页编辑态不连坐清掉（与 useUndoRestore.runUndoOrRedo 的「只退**目标页**的编辑态」守卫同口径）：
+  // 当前编辑态挂在**别的页**（BlockModal）上时只闪不抢光标 —— 落点目标是本页的块，
+  // 抢过去会把别页的编辑态连坐清掉。
+  const activeId = editorStore.activeBlockId
+  if (!activeId || blockStore.getBlock(activeId)?.pageId === props.pageId) {
+    editorStore.activateBlock(target)
+  }
+  nextTick(() => {
+    // 限定在本实例的渲染树内查：多实例共存时避免滚到弹窗/抽屉里的副本
+    const el = rootEl.value?.querySelector(`[data-block-id="${target}"]`)
+    if (el && typeof el.scrollIntoView === 'function') {
+      // 已可见就不滚（2026-09-15 裁定）：无条件 scrollIntoView({ block: 'center' }) 会在落点
+      // 本就在眼前时把视口重新居中 —— 白跳一下。可见性判的是**位置**，与闪烁（集合标识）各管一头，
+      // 所以只门控这一句，闪烁仍无条件。getBoundingClientRect 以视口为基准，不必去认滚动容器是谁。
+      const rect = el.getBoundingClientRect()
+      if (!(rect.bottom > 0 && rect.top < window.innerHeight)) el.scrollIntoView({ block: 'center' })
+    }
+    // 量矩形放在滚动**之后**：滚动是同步的（全仓无 scroll-behavior: smooth），紧接着读矩形已是新位置；
+    // 反过来先量后滚，会把掉出视口的落点画在旧位置上。
+    // 但「树已重建」只对块列表 v-for 成立 —— 受影响块若是**活动块**，runUndoOrRedo 先 deactivate
+    // 再 activate，TipTap 重挂晚于本 tick（真机实测：本 tick 量到 0 墨迹，或量到重挂前的旧短文本
+    // = 「只盖一行」的病历）。故连量 3 次（首量 + 2 帧），重挂尘埃落定后的最终布局胜出；
+    // flashChangedBlocks 整体替换语义下重入安全，量到的矩形最多晚 2 帧（仍在 600ms 窗口内）。
+    flashMeasureGeneration += 1
+    const myGeneration = flashMeasureGeneration
+    const measureWhenSettled = (left: number): void => {
+      if (myGeneration !== flashMeasureGeneration) return
+      flashChangedBlocks(ordered)
+      if (left > 0) requestAnimationFrame(() => measureWhenSettled(left - 1))
+    }
+    measureWhenSettled(2)
+  })
+}
+
 // ── 粘贴分发控制器（ADR-0025 D13 + ADR-0026 D8） ──
 // 捕获阶段拦截 document paste，集中决策：
 // ① Ctrl/Cmd+Shift+V → 放行（TipTap 单 block 纯文本，D9）
@@ -505,6 +646,7 @@ function refreshTextHighlight() {
 
 function handleViewportChange() {
   refreshTextHighlight()
+  refreshFlashRects()
 }
 
 watch(() => selection.textRange.value, () => refreshTextHighlight())
@@ -532,12 +674,31 @@ watch(() => props.pageId, (newId, oldId) => {
   }
 })
 
+// ── 撤销栈（ADR-0046）：本页整页加载完成后建立/接管（幂等）──
+// 收口在 BlockList 内部而不是各调用方：/page（Page/index.vue）与 /ideas（IdeasList.vue）
+// 两处都各自加载页面，若各自接线必然漂移。前置条件是**整页已加载** —— 残缺快照会在撤销时
+// 把未加载的块当「新增」软删。isPageFullyLoaded 读的是非响应式 Set，故用「页 id + 块数」
+// 这个派生值作观察源（既随 blocks 变化重算，又不会在「切到块数相同的另一页」时漏触发）；
+// 块数为 0 同样不建栈（空快照入栈 = 撤销时整页被软删）。
+watch(
+  () => {
+    const count = blockStore.getBlocksByPage(props.pageId).length
+    if (!blockStore.isPageFullyLoaded(props.pageId)) return ''
+    return count > 0 ? `${props.pageId}:${count}` : ''
+  },
+  (key) => {
+    if (key) ensureStack(props.pageId)
+  },
+  { immediate: true },
+)
+
 onMounted(() => {
   syncFromStore()
   document.addEventListener('mousemove', handleDocMouseMove)
   document.addEventListener('mouseup', handleDocMouseUp)
   document.addEventListener('keydown', handleDocKeyDown)
   document.addEventListener('keydown', handleDocKeyDownCapture, true)
+  document.addEventListener('keydown', handleDocUndoRedoKeyDown, true)
   document.addEventListener('paste', handleDocPaste, true)
   // 文本选区覆盖层高亮需随滚动/缩放重绘（视口矩形会失效）
   document.addEventListener('scroll', handleViewportChange, true)
@@ -549,6 +710,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('mouseup', handleDocMouseUp)
   document.removeEventListener('keydown', handleDocKeyDown)
   document.removeEventListener('keydown', handleDocKeyDownCapture, true)
+  document.removeEventListener('keydown', handleDocUndoRedoKeyDown, true)
   document.removeEventListener('paste', handleDocPaste, true)
   document.removeEventListener('scroll', handleViewportChange, true)
   window.removeEventListener('resize', handleViewportChange)
@@ -587,6 +749,18 @@ onBeforeUnmount(() => {
         :style="{ top: `${rect.top}px`, left: `${rect.left}px`, width: `${rect.width}px`, height: `${rect.height}px` }"
       />
     </Teleport>
+
+    <!-- 落点闪烁层（#109）：矩形与上一层同理 Teleport 到 body —— fixed 定位会被 transform 祖先困住。
+         矩形量的是「内容区 + 属性区」的墨迹（测量收口在 useRestoreFlash，#115），只覆盖有内容的非空白区域。
+         淡出时长由 UNDO_FLASH_MS 单源下发（#115）：与 JS 清空计时共用同一常量，不会漂。 -->
+    <Teleport to="body">
+      <div
+        v-for="(rect, i) in flashRects"
+        :key="i"
+        class="restore-flash-rect"
+        :style="{ top: `${rect.top}px`, left: `${rect.left}px`, width: `${rect.width}px`, height: `${rect.height}px`, animationDuration: `${UNDO_FLASH_MS}ms` }"
+      />
+    </Teleport>
   </div>
 </template>
 
@@ -623,5 +797,27 @@ onBeforeUnmount(() => {
 .text-selection-rect.is-last {
   border-top-right-radius: var(--radius-xs);
   border-bottom-right-radius: var(--radius-xs);
+}
+
+/* 撤销 / 重做落点的闪烁矩形：与文本选区同色（同为「这段内容」的提示），一次淡出后由
+   useRestoreFlash 的计时器清空矩形列表；时长由模板 inline style 从 UNDO_FLASH_MS
+   单源下发（#115），此处不再写死。 */
+.restore-flash-rect {
+  position: fixed;
+  pointer-events: none;
+  background: var(--selection-bg);
+  border-radius: var(--radius-xs);
+  z-index: var(--z-sticky);
+  animation: restore-flash-fade ease-out forwards;
+}
+
+@keyframes restore-flash-fade {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
 }
 </style>

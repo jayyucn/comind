@@ -6,8 +6,12 @@ pub trait BlockRepository {
     fn get_by_id(&self, id: &str) -> Result<Block, Box<dyn Error>>;
     fn get_by_page_id(&self, page_id: &str) -> Result<Vec<Block>, Box<dyn Error>>;
     fn get_children(&self, parent_id: &str) -> Result<Vec<Block>, Box<dyn Error>>;
+    /// 含软删子节点——级联复活遍历用（不过滤 deleted_at），其余语义同 get_children。
+    fn get_children_including_deleted(&self, parent_id: &str) -> Result<Vec<Block>, Box<dyn Error>>;
     /// 批量按 ID 查询 block（用于 checkAndFire 批量化，避免 N+1 IPC）
     fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Block>, Box<dyn Error>>;
+    /// 撤销软删除：将 deleted_at 置 NULL（版本 +1、刷新 updated_at），返回复活后的块。
+    fn undelete(&mut self, id: &str) -> Result<Block, Box<dyn Error>>;
     fn create(&mut self, block: &Block) -> Result<Block, Box<dyn Error>>;
     fn update(&mut self, block: &Block) -> Result<Block, Box<dyn Error>>;
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;

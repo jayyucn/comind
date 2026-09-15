@@ -4,7 +4,7 @@ mod lib_test;
 #[cfg(target_arch = "wasm32")]
 mod wasm_impl {
     use comind_core::services::*;
-    use comind_core::storage::StorageAdapter;
+    use comind_core::storage::{StorageAdapter, TransactionalStorageAdapter};
     use comind_core::types::*;
     use lazy_static::lazy_static;
     use serde::{Deserialize, Serialize};
@@ -383,259 +383,20 @@ mod wasm_impl {
             .map_err(|e| JsValue::from_str(&format!("Failed to parse operations: {}", e)))?;
 
         with_adapter(|adapter| {
-            let mut results = Vec::new();
-            for op in ops {
-                let entity = op.get("entity").and_then(|v| v.as_str()).unwrap_or("");
-                let action = op.get("action").and_then(|v| v.as_str()).unwrap_or("");
-                let params = op.get("params").unwrap_or(&serde_json::Value::Null);
-
-                let result = match (entity, action) {
-                    ("block", "get") => {
-                        let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                        let block = BlockService::get_by_id(adapter, id)?;
-                        serde_json::to_value(block)
-                    }
-                    ("block", "create") => {
-                        let block: Block = serde_json::from_value(params.clone())?;
-                        let created = BlockService::create(
-                            adapter,
-                            &block.page_id,
-                            block.parent_id.as_deref(),
-                            &block.content,
-                            &block.format,
-                            &block.r#type,
-                            Some(&block.id),
-                        )?;
-                        serde_json::to_value(created)
-                    }
-                    ("block", "update") => {
-                        let block: Block = serde_json::from_value(params.clone())?;
-                        let updated = BlockService::update(
-                            adapter,
-                            &block.id,
-                            Some(&block.content),
-                            Some(&block.format),
-                            Some(&block.r#type),
-                            block.parent_id.as_deref(),
-                            Some(block.pos),
-                        )?;
-                        serde_json::to_value(updated)
-                    }
-                    ("block", "delete") => {
-                        let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                        comind_core::storage::repository::LinkRepository::delete_by_source_block_id(adapter.links(), id)?;
-                        comind_core::storage::repository::PropertyRepository::delete_by_block_id(
-                            adapter.properties(),
-                            id,
-                        )?;
-                        BlockService::delete(adapter, id)?;
-                        serde_json::to_value(json!({"success": true}))
-                    }
-                    ("page", "get") => {
-                        let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                        let page = PageService::get_by_id(adapter, id)?;
-                        serde_json::to_value(page)
-                    }
-                    ("page", "create") => {
-                        let page: Page = serde_json::from_value(params.clone())?;
-                        let block_id = page.block_id.as_deref().unwrap_or("");
-                        let created = PageService::create(
-                            adapter,
-                            block_id,
-                            &page.title,
-                            Some(&page.r#type),
-                            page.icon.as_deref(),
-                            page.cover.as_deref(),
-                            Some(&page.aliases),
-                            page.file_path.as_deref(),
-                        )?;
-                        serde_json::to_value(created)
-                    }
-                    ("page", "update") => {
-                        let page: Page = serde_json::from_value(params.clone())?;
-                        let updated = PageService::update(
-                            adapter,
-                            &page.id,
-                            Some(&page.title),
-                            Some(&page.r#type),
-                            page.icon.as_deref(),
-                            page.cover.as_deref(),
-                            Some(&page.aliases),
-                            page.file_path.as_deref(),
-                            Some(page.children_count),
-                            Some(page.word_count),
-                        )?;
-                        serde_json::to_value(updated)
-                    }
-                    ("page", "delete") => {
-                        let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                        PageService::delete(adapter, id)?;
-                        serde_json::to_value(json!({"success": true}))
-                    }
-                    ("property", "set") => {
-                        let block_id = params
-                            .get("block_id")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("");
-                        let key = params.get("key").and_then(|v| v.as_str()).unwrap_or("");
-                        let value = params.get("value").and_then(|v| v.as_str()).unwrap_or("");
-                        let r#type = params
-                            .get("type")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("text");
-                        let created = PropertyService::create(
-                            adapter, block_id, key, value, r#type, 0, 0, 1,
-                        )?;
-                        serde_json::to_value(created)
-                    }
-                    ("property", "delete") => {
-                        let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                        PropertyService::delete(adapter, id)?;
-                        serde_json::to_value(json!({"success": true}))
-                    }
-                    ("link", "create") => {
-                        let link: Link = serde_json::from_value(params.clone())?;
-                        let created = LinkService::create(
-                            adapter,
-                            &link.source_block_id,
-                            &link.target_page_id,
-                            &link.display_text,
-                            link.relationship_type.as_deref(),
-                        )?;
-                        serde_json::to_value(created)
-                    }
-                    ("link", "delete") => {
-                        let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                        LinkService::delete(adapter, id)?;
-                        serde_json::to_value(json!({"success": true}))
-                    }
-                    ("link", "sync_by_block") => {
-                        let block_id = params
-                            .get("block_id")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("");
-                        let links_data = params
-                            .get("links")
-                            .and_then(|v| v.as_array())
-                            .cloned()
-                            .unwrap_or_default();
-                        LinkService::delete_by_source_block_id(adapter, block_id)?;
-                        let mut created = Vec::new();
-                        for link_data in links_data {
-                            let source_block_id = link_data
-                                .get("source_block_id")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("");
-                            let target_page_id = link_data
-                                .get("target_page_id")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("");
-                            let display_text = link_data
-                                .get("display_text")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("");
-                            let relationship_type =
-                                link_data.get("relationship_type").and_then(|v| v.as_str());
-                            let new_link = LinkService::create(
-                                adapter,
-                                source_block_id,
-                                target_page_id,
-                                display_text,
-                                relationship_type,
-                            )?;
-                            created.push(new_link);
-                        }
-                        serde_json::to_value(created)
-                    }
-                    ("relationshipType", "create") => {
-                        let rt: RelationshipType = serde_json::from_value(params.clone())?;
-                        let created = RelationshipTypeService::create(
-                            adapter,
-                            Some(&rt.id),
-                            &rt.r#type,
-                            rt.inverse.as_deref(),
-                            &rt.label,
-                            &rt.inverse_label,
-                            &rt.color,
-                            rt.order,
-                            &rt.strength,
-                            rt.builtin,
-                        )?;
-                        serde_json::to_value(created)
-                    }
-                    ("relationshipType", "update") => {
-                        let rt: RelationshipType = serde_json::from_value(params.clone())?;
-                        let updated = RelationshipTypeService::update(
-                            adapter,
-                            &rt.id,
-                            Some(&rt.label),
-                            Some(&rt.inverse_label),
-                            Some(&rt.color),
-                            Some(rt.order),
-                            Some(&rt.strength),
-                        )?;
-                        serde_json::to_value(updated)
-                    }
-                    ("relationshipType", "delete") => {
-                        let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                        RelationshipTypeService::delete(adapter, id)?;
-                        serde_json::to_value(json!({"success": true}))
-                    }
-                    ("template", "get") => {
-                        let templates = TemplateService::get_all(adapter)?;
-                        serde_json::to_value(templates)
-                    }
-                    ("template", "create") => {
-                        let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                        let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                        let category = params
-                            .get("category")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("custom");
-                        let content = params.get("content").and_then(|v| v.as_str()).unwrap_or("");
-                        let now = chrono::Utc::now().timestamp_millis();
-                        let template = UserTemplate {
-                            id: if id.is_empty() {
-                                TemplateService::generate_id()
-                            } else {
-                                id.to_string()
-                            },
-                            name: name.to_string(),
-                            category: category.to_string(),
-                            content: content.to_string(),
-                            created_at: now,
-                            updated_at: now,
-                        };
-                        let created = comind_core::storage::repository::TemplateRepository::create(
-                            adapter.templates(),
-                            &template,
-                        )?;
-                        serde_json::to_value(created)
-                    }
-                    ("template", "update") => {
-                        let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                        let name = params.get("name").and_then(|v| v.as_str());
-                        let category = params.get("category").and_then(|v| v.as_str());
-                        let content = params.get("content").and_then(|v| v.as_str());
-                        let updated =
-                            TemplateService::update(adapter, id, name, category, content)?;
-                        serde_json::to_value(updated)
-                    }
-                    ("template", "delete") => {
-                        let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                        TemplateService::delete(adapter, id)?;
-                        serde_json::to_value(json!({"success": true}))
-                    }
-                    _ => serde_json::to_value(
-                        json!({"error": format!("Unknown operation: {} {}", entity, action)}),
-                    ),
-                };
-
-                results.push(result.unwrap_or_else(|_| serde_json::Value::Null));
-            }
-            Ok(serde_json::to_string(&results).unwrap_or_else(|_| "[]".to_string()))
+            // 事务对齐（ADR-0046 约束3 / #108 验收#2）：整批一个事务，任一 op
+            // 失败 → 整批回滚并向上抛错。分派单源在 core（ADR-0048 / #116）：
+            // op 语义变更只改 comind-core services/batch.rs 一处；OpEffect 的
+            // sync/page_ids 效果仅 Tauri 路径消费，WASM 忽略。
+            adapter.transaction(|storage| {
+                let effects = comind_core::services::batch::apply_batch(storage, &ops)?;
+                let results: Vec<serde_json::Value> =
+                    effects.into_iter().map(|e| e.value).collect();
+                serde_json::to_string(&results)
+                    .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+            })
         })
     }
+
 
     // ---- ensure_today_ideas_page（共享幂等逻辑；chrono `wasmbind` → 浏览器本地时区） ----
     #[wasm_bindgen]
@@ -730,6 +491,19 @@ mod wasm_impl {
         with_adapter(|adapter| {
             let version = BlockVersionService::restore(adapter, version_id)?;
             Ok(to_js_value(version))
+        })
+    }
+
+    /// 撤销软删除（ADR-0046 D10）：复活每个请求 id 及其下整棵软删子树，
+    /// 返回 `HashMap<SyncTable, Vec<String>>` 的 JSON 串（与 delete_block_cascade 对称）。
+    #[wasm_bindgen]
+    pub fn undelete_blocks(ids_json: &str) -> Result<String, JsValue> {
+        let ids: Vec<String> = serde_json::from_str(ids_json)
+            .map_err(|e| JsValue::from_str(&format!("Failed to parse ids: {}", e)))?;
+        with_adapter(|adapter| {
+            let sync_changes = BlockWriteService::undelete_blocks(adapter, &ids)?;
+            serde_json::to_string(&sync_changes)
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
         })
     }
 

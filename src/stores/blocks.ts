@@ -4,8 +4,8 @@ import type { Block, BlockClipPayload } from '../types/block'
 import type { PropertyValue, PropertyType } from '../types/property'
 import { initCoreClient, triggerSync, isTauriEnvironment } from '../wasm/client'
 import { generateUUID } from '../utils/id'
+import { decodePropertyValue } from '../utils/property-codec'
 import { debounce } from '../utils/debounce'
-import { useBlockVersionStore } from './blockVersion'
 import { usePropertyStore } from './property'
 import { useBlockCardStore } from './blockCard'
 
@@ -338,14 +338,18 @@ export const useBlockStore = defineStore('blocks', () => {
   }
 
   async function restoreBlock(blockId: string) {
-    const block = getBlock(blockId)
-    if (block) {
-      try {
-        await loadBlock(block.pageId)
-        structureVersion.value++
-      } catch (error) {
-        console.error('[restoreBlock] Failed to load block:', error)
-      }
+    const client = await getClient()
+    try {
+      // 1) 用 Rust 原语复活块 + 其下整棵软删子树（ADR-0046 D10）。
+      //    对未删除的块（如版本恢复场景）为 no-op + 版本 +1，无害。
+      await client.undeleteBlocks([blockId])
+      // 2) 取回复活后的块以拿到 pageId，再整页重载，使 store 与 DB 一致
+      //    （级联复活的子树一并回 store；同时修正旧实现「拿 pageId 当 blockId」导致内容不刷新的问题）。
+      const restored = await client.getBlock(blockId)
+      await loadPageBlocks(restored.page_id)
+      structureVersion.value++
+    } catch (error) {
+      console.error('[restoreBlock] Failed to restore block:', error)
     }
   }
 
@@ -509,16 +513,6 @@ export const useBlockStore = defineStore('blocks', () => {
       if (saveResult.render_segments && saveResult.render_segments.length > 0) {
         if (currentBlock.content === saveResult.block.content) {
           currentBlock.renderSegments = saveResult.render_segments
-        }
-      }
-
-      // S4: snapshot pre-built by Rust inside the save transaction — zero extra IPC.
-      if (saveResult.snapshot) {
-        try {
-          const versionStore = useBlockVersionStore()
-          versionStore.scheduleVersion(savedBlock.id, JSON.parse(saveResult.snapshot), 'auto')
-        } catch (e) {
-          console.error('[BlockStore] Failed to schedule version from save result:', e)
         }
       }
 
@@ -1534,7 +1528,7 @@ export const useBlockStore = defineStore('blocks', () => {
           await propertyStore.setProperty(
             job.blockId,
             key,
-            revivePropValue(prop.value, prop.type) as PropertyValue,
+            decodePropertyValue(prop.value, prop.type) as PropertyValue,
             prop.type as PropertyType,
           )
         }
@@ -1542,16 +1536,6 @@ export const useBlockStore = defineStore('blocks', () => {
     }
 
     return created
-  }
-
-  /** 把剪贴板载荷中的属性字符串值还原为原始类型（string/page 直通，其余尝试 JSON.parse） */
-  function revivePropValue(value: string, type: string): unknown {
-    if (type === 'string' || type === 'page') return value
-    try {
-      return JSON.parse(value)
-    } catch {
-      return value
-    }
   }
 
   /** 更新 Block 属性（使用独立的 properties 表）。
@@ -1581,6 +1565,7 @@ export const useBlockStore = defineStore('blocks', () => {
     childrenMap,
     getChildren,
     getBlocksByPage,
+    isPageFullyLoaded,
     getBlock,
     getOutlinks,
     getBacklinks,

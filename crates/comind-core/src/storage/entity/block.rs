@@ -138,6 +138,33 @@ pub fn block_get_by_ids<E: Executor>(exec: &E, ids: &[String]) -> Result<Vec<Blo
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+pub fn block_get_children_including_deleted<E: Executor>(
+    exec: &E,
+    parent_id: &str,
+) -> Result<Vec<Block>, Box<dyn Error>> {
+    // 与 block_get_children 唯一差异：不过滤 deleted_at，供级联复活遍历软删子树。
+    let sql = format!(
+        "SELECT {} FROM Block WHERE parent_id = ?1 ORDER BY pos",
+        block_select_cols()
+    );
+    let params: Vec<&dyn ToSql> = vec![&parent_id];
+    exec.query_map(&sql, &params, |row| row_to_block_native(row)).map_err(bx)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn block_undelete_by_id<E: Executor>(exec: &E, id: &str) -> Result<Block, Box<dyn Error>> {
+    // 撤销软删除：deleted_at 清 NULL，版本 +1，刷新 updated_at（与 block_soft_delete_by_id 对称）。
+    let now = chrono::Utc::now().timestamp_millis();
+    let params: Vec<&dyn ToSql> = vec![&now, &now, &id];
+    exec.execute(
+        "UPDATE Block SET deleted_at = NULL, version = version + 1, updated_at = ?1 WHERE id = ?3",
+        &params,
+    )?;
+    // 复活后 deleted_at 已 NULL，可用 get_by_id（其本身即过滤 deleted_at）取回完整块。
+    block_get_by_id(exec, id)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub fn block_insert<E: Executor>(exec: &E, b: &Block) -> Result<(), Box<dyn Error>> {
     let params = block_params(b);
     exec.execute(&block_insert_sql(), &params)?;

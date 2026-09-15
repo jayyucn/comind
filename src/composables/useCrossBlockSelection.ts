@@ -235,6 +235,18 @@ export function useCrossBlockSelection() {
     transition({ kind: 'block', ids, phase: 'committed' })
   }
 
+  /**
+   * 按给定 id 集合固化块选区（整体替换）。供撤销落点等**程序化**入口使用 ——
+   * 与 selectAll 的差别是「给什么选什么」：受影响块由 diff 算出，不按页枚举。
+   * 调用方须保证 ids 属于同一页、已从 store 过滤掉不存在的块，且**不含页面根块**
+   * （根块不进选区是本仓既定口径，见 selectAll 的 excludeRootId）。
+   */
+  function selectBlocks(ids: Iterable<string>) {
+    clearTracking()
+    clearTextTracking()
+    transition({ kind: 'block', ids: new Set(ids), phase: 'committed' })
+  }
+
   function isBlockSelected(blockId: string): boolean {
     // 已固化看 anchorIds、未固化看 selectedIds —— 互斥保证同一时刻只有一个非空，故看当前块选区即可
     const s = state.value
@@ -457,6 +469,7 @@ export function useCrossBlockSelection() {
     finalizeSelection,
     toggleBlock,
     selectAll,
+    selectBlocks,
     isBlockSelected,
     copyToClipboard,
     deleteSelected,

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
+import { defaultKeymap, indentWithTab } from '@codemirror/commands'
 import { css } from '@codemirror/lang-css'
 import { go } from '@codemirror/lang-go'
 import { html } from '@codemirror/lang-html'
@@ -199,7 +199,9 @@ function createEditor() {
     lineNumbers(),
     highlightActiveLine(),
     highlightActiveLineGutter(),
-    history(),
+    // 内置撤销历史已禁用（ADR-0046 D2）：`history()` 状态字段与 `historyKeymap`
+    // （Mod-z / Mod-y / Mod-u 的绑定位都在其中）一并去掉 —— 代码块编辑态的 Ctrl+Z
+    // 统一归 BlockList 的 document 捕获处理器，不留第二个栈（D7 拒绝中间态）。
     EditorView.editable.of(!props.readonly),
     ...(wrap.value ? [EditorView.lineWrapping] : []),
     keymap.of([
@@ -248,7 +250,6 @@ function createEditor() {
         }
       },
       ...defaultKeymap,
-      ...historyKeymap,
       indentWithTab,
       {
         key: 'Mod-]',

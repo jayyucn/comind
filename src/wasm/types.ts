@@ -127,7 +127,9 @@ export interface PageUpdate {
 
 export interface BatchOperation {
   entity: 'block' | 'page' | 'link' | 'property' | 'relationship_type' | 'template'
-  action: 'create' | 'update' | 'delete' | 'get' | 'sync_by_block'
+  // 'set' 仅用于 property（Rust execute_batch 的 ("property", "set") 分支）；
+  // 'undelete' 仅用于 block（撤销恢复：精确复活软删块，见 useUndoRestore）
+  action: 'create' | 'update' | 'delete' | 'get' | 'set' | 'sync_by_block' | 'undelete'
   params: Record<string, any>
 }
 

@@ -1,0 +1,429 @@
+/**
+ * useUndoHistory 单测（issue #107 / ADR-0046 T2）。
+ * 五类：捕获触发 / idle 合并 / 预算裁切 / 派生字段剔除 / 页面隔离(+属性归因)。
+ * 用假定时器把 idle 窗口注入到极短，保证确定性。
+ */
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { setActivePinia, createPinia } from 'pinia'
+import { nextTick } from 'vue'
+import { useBlockStore } from '../stores/blocks'
+import { usePropertyStore } from '../stores/property'
+import type { Block } from '../types/block'
+import type { RenderSegment } from '../wasm/types'
+import type { Property as RawProperty } from '../types/property'
+import {
+  ensureStack,
+  commitNow,
+  undo,
+  redo,
+  canUndo,
+  canRedo,
+  configureUndoHistory,
+  resetUndoHistory,
+  documentState,
+  blockDocumentEqual,
+  _debugStats,
+} from './useUndoHistory'
+
+function makeBlock(id: string, pageId: string, over: Partial<Block> = {}): Block {
+  return {
+    id,
+    pageId,
+    parentId: null,
+    pos: 1000,
+    content: 'x',
+    format: {},
+    type: 'bullet',
+    createdAt: 0,
+    updatedAt: 0,
+    ...over,
+  }
+}
+
+function makeProp(blockId: string, key: string, value: unknown, type: RawProperty['type'] = 'string'): RawProperty {
+  return {
+    id: `prop-${key}`,
+    blockId,
+    key,
+    value,
+    type,
+    sortOrder: 0,
+    isHidden: 0,
+    isDeleted: 0,
+    schemaVersion: 1,
+    createdAt: 0,
+    updatedAt: 0,
+  }
+}
+
+/** 触发一次变更并走完 idle 窗口 */
+async function flushChange(): Promise<void> {
+  await nextTick()
+  vi.advanceTimersByTime(50)
+  await nextTick()
+}
+
+beforeEach(() => {
+  setActivePinia(createPinia())
+  resetUndoHistory()
+  configureUndoHistory({ idleMs: 20, maxBytes: 32 * 1024 * 1024 })
+  vi.useFakeTimers()
+})
+
+afterEach(() => {
+  vi.useRealTimers()
+})
+
+describe('捕获触发', () => {
+  it('改 content → idle 后入栈，canUndo 变 true，undo 回到初始', async () => {
+    const blockStore = useBlockStore()
+    blockStore.blocks = [makeBlock('b1', 'p1', { content: 'hello' })]
+    ensureStack('p1')
+    expect(canUndo('p1')).toBe(false)
+
+    blockStore.blocks[0].content = 'world'
+    await flushChange()
+
+    expect(canUndo('p1')).toBe(true)
+    const snap = undo('p1')
+    expect(snap?.blocks[0].content).toBe('hello')
+  })
+})
+
+describe('idle 合并', () => {
+  it('分步：每次走完一个 idle 窗口各算一步（连续 3 次 = 初始 + 3 = 4 条）', async () => {
+    const blockStore = useBlockStore()
+    blockStore.blocks = [makeBlock('b1', 'p1', { content: 'a' })]
+    ensureStack('p1')
+
+    blockStore.blocks[0].content = 'b'
+    await flushChange() // 第一次改动 → 入栈 [a, b]
+    blockStore.blocks[0].content = 'c'
+    await flushChange() // 第二次（上一个窗口已走完，新窗口）
+    blockStore.blocks[0].content = 'd'
+    await flushChange() // 第三次
+
+    // 每次 flushChange 都走完一个 idle 窗口 ⇒ 每次都是独立一步
+    expect(_debugStats().stackSizes['p1']).toBe(4) // [a,b,c,d]
+    expect(undo('p1')?.blocks[0].content).toBe('c')
+  })
+
+  it('窗口内的多次写入合成一步：改 3 次但只 reset 一次计时器', async () => {
+    const blockStore = useBlockStore()
+    blockStore.blocks = [makeBlock('b1', 'p1', { content: 'a' })]
+    ensureStack('p1')
+
+    blockStore.blocks[0].content = 'b'
+    await nextTick()
+    vi.advanceTimersByTime(5)
+    blockStore.blocks[0].content = 'c'
+    await nextTick()
+    vi.advanceTimersByTime(5)
+    blockStore.blocks[0].content = 'd'
+    await nextTick()
+    vi.advanceTimersByTime(40) // 只在最后走完窗口
+    await nextTick()
+
+    expect(_debugStats().stackSizes['p1']).toBe(2) // [a, d] 合并
+    expect(canUndo('p1')).toBe(true)
+    expect(undo('p1')?.blocks[0].content).toBe('a')
+  })
+})
+
+describe('预算裁切', () => {
+  it('超字节预算 ⇒ 裁最旧，总字节回落预算内', async () => {
+    const blockStore = useBlockStore()
+    configureUndoHistory({ idleMs: 10, maxBytes: 300 })
+    blockStore.blocks = [makeBlock('b1', 'p1', { content: 'seed' })]
+    ensureStack('p1')
+
+    for (let i = 0; i < 10; i++) {
+      blockStore.blocks[0].content = 'payload-' + i + '-yyyyyyyy'
+      await flushChange()
+    }
+
+    const stats = _debugStats()
+    expect(stats.totalBytes).toBeLessThanOrEqual(300)
+    expect(stats.stackSizes['p1']).toBeLessThan(11) // 初始 + 10 次被裁
+  })
+
+  it('#110 验收#4：>1000 块页在默认 32MB 预算下超限裁最旧', async () => {
+    const blockStore = useBlockStore()
+    const N = 1001
+    // >1000 块页：内容带填充，使单份快照体积可观，32MB 预算在可接受步数内被越过。
+    // 各块 id 用短名（非真实 uuid），故用较长正文补偿体积，确保「250 步 × 单份快照」远大于 32MB。
+    const blocks: Block[] = []
+    for (let i = 0; i < N; i++) {
+      blocks.push(makeBlock(`b${i}`, 'p1', { content: `block-${i}-${'x'.repeat(200)}` }))
+    }
+    blockStore.blocks = blocks
+    // 默认 32MB（不注入小预算）
+    configureUndoHistory({ idleMs: 10, maxBytes: 32 * 1024 * 1024 })
+    ensureStack('p1')
+    expect(_debugStats().totalBytes).toBeLessThan(32 * 1024 * 1024)
+
+    // 反复改一个块并立即封口（同键盘接管路径）；250 步累计远超 32MB ⇒ 必然触发裁最旧
+    const steps = 250
+    for (let i = 0; i < steps; i++) {
+      blockStore.blocks[0].content = `step-${i}-${'y'.repeat(200)}`
+      commitNow('p1')
+    }
+
+    const stats = _debugStats()
+    expect(stats.totalBytes).toBeLessThanOrEqual(32 * 1024 * 1024)
+    // 裁切发生：若未裁，栈长应为 steps + 1（初始 + 250）；裁后远小于此
+    expect(stats.stackSizes['p1']).toBeLessThan(steps + 1)
+  })
+})
+
+describe('派生字段剔除', () => {
+  it('renderSegments/properties 不入栈；format 深拷贝且引用独立；属性进 envelope', async () => {
+    const blockStore = useBlockStore()
+    const propertyStore = usePropertyStore()
+    const block = makeBlock('b1', 'p1', { content: 'c', format: { collapsed: false } })
+    const seg: RenderSegment = { kind: 'text', text: 'x' } as RenderSegment
+    block.renderSegments = [seg]
+    block.properties = [makeProp('b1', 'k', 'v')]
+    blockStore.blocks = [block]
+    propertyStore.propertiesByBlock = new Map([
+      ['b1', [makeProp('b1', 'status', 'Todo')]],
+    ])
+    ensureStack('p1')
+
+    blockStore.blocks[0].format.collapsed = true
+    await flushChange()
+
+    // 已在最新态，redo 返回 null；先 undo 回初始再 redo 取回最新快照
+    undo('p1')
+    const latest = redo('p1')!
+    const sb = latest.blocks[0]
+    expect((sb as unknown as { renderSegments?: unknown }).renderSegments).toBeUndefined()
+    expect((sb as unknown as { properties?: unknown }).properties).toBeUndefined()
+    expect(sb.format).toEqual({ collapsed: true })
+
+    // 深拷贝独立：改原 block.format，快照不受影响
+    blockStore.blocks[0].format.collapsed = false
+    expect(sb.format).toEqual({ collapsed: true })
+
+    // 属性被捕获进 envelope
+    expect(latest.properties['b1']?.[0]?.value).toBe('Todo')
+  })
+
+  it('属性信封不含服务端时间戳；仅时间戳漂移不算改动（否则截断 redo 尾）', async () => {
+    const blockStore = useBlockStore()
+    const propertyStore = usePropertyStore()
+    blockStore.blocks = [makeBlock('b1', 'p1')]
+    propertyStore.propertiesByBlock = new Map([['b1', [makeProp('b1', 'status', 'Todo')]]])
+    ensureStack('p1')
+
+    // 一次真实属性改动 → 入栈
+    propertyStore.propertiesByBlock = new Map([['b1', [makeProp('b1', 'status', 'Done')]]])
+    await flushChange()
+    expect(_debugStats().stackSizes['p1']).toBe(2)
+    // 取最新快照（undo 取值 → redo 复位游标，勿把游标停在旧快照上）
+    undo('p1')
+    const latest = redo('p1')!
+    expect(latest.properties['b1']?.[0]?.updatedAt).toBe(0)
+
+    // 模拟撤销「删块」后复活块重挂载：loadBlockProperties 从 DB 重读同一属性，
+    // 语义不变、只有 updated_at 比快照新（恢复批次的 property set 刚刷过它）。
+    const reread = { ...makeProp('b1', 'status', 'Done'), updatedAt: 9_999 }
+    propertyStore.propertiesByBlock = new Map([['b1', [reread]]])
+    await flushChange()
+    expect(_debugStats().stackSizes['p1']).toBe(2)
+  })
+
+  /**
+   * 信封完整性（前提哨兵的另一端）：**store 里所有有属性的块都必须进信封**，一个不漏。
+   *
+   * 漏一个 = 撤销「删块」后该块的属性永久丢失（恢复批次靠信封重设属性，DB 行已被级联软删）。
+   * 空数组的条目（`loadBlockProperties` 对无属性块也会写键）则**不必**进信封 —— 那是
+   * D11 的省流优化（真机省 48.5%），不是漏项；故这里断言的是**精确集合**，两头都锁住。
+   * 会变红的情形：给 `propEnvelope` 加过滤 / 换数据源 / 把 `length > 0` 判断写窄。
+   */
+  it('信封覆盖 store 中所有有属性的块（多块场景，且只收它们）', async () => {
+    const blockStore = useBlockStore()
+    const propertyStore = usePropertyStore()
+    blockStore.blocks = [
+      makeBlock('b1', 'p1'),
+      makeBlock('b2', 'p1'),
+      makeBlock('b3', 'p1'),
+    ]
+    propertyStore.propertiesByBlock = new Map([
+      ['b1', [makeProp('b1', 'status', 'Todo')]],
+      ['b2', [makeProp('b2', 'priority', 'High')]],
+      ['b3', []],
+    ])
+    ensureStack('p1')
+
+    blockStore.blocks[0].content = 'changed'
+    await flushChange()
+    undo('p1')
+    const latest = redo('p1')!
+
+    expect(Object.keys(latest.properties).sort()).toEqual(['b1', 'b2'])
+    expect(latest.properties['b2']?.[0]?.value).toBe('High')
+  })
+})
+
+describe('页面隔离', () => {
+  it('仅改动页 A ⇒ 页 A 栈增长，页 B 不受影响；各自撤销互不干扰', async () => {
+    const blockStore = useBlockStore()
+    blockStore.blocks = [
+      makeBlock('a1', 'pA', { content: 'a-orig' }),
+      makeBlock('a2', 'pA', { content: 'a2' }),
+      makeBlock('b1', 'pB', { content: 'b-orig' }),
+      makeBlock('b2', 'pB', { content: 'b2' }),
+    ]
+    ensureStack('pA')
+    ensureStack('pB')
+    expect(canUndo('pA')).toBe(false)
+    expect(canUndo('pB')).toBe(false)
+
+    blockStore.blocks.find((b) => b.id === 'a1')!.content = 'A-changed'
+    await flushChange()
+    expect(canUndo('pA')).toBe(true)
+    expect(canUndo('pB')).toBe(false)
+
+    blockStore.blocks.find((b) => b.id === 'b1')!.content = 'B-changed'
+    await flushChange()
+    expect(canUndo('pB')).toBe(true)
+
+    const snapA = undo('pA')!
+    expect(snapA.blocks.find((b) => b.id === 'a1')!.content).toBe('a-orig')
+    // 页 B 的栈未受页 A 撤销影响
+    expect(canRedo('pB')).toBe(false)
+  })
+
+  it('属性变更归因到所属页 ⇒ 改块属性也入栈', async () => {
+    const blockStore = useBlockStore()
+    const propertyStore = usePropertyStore()
+    blockStore.blocks = [makeBlock('a1', 'pA', { content: 'c' })]
+    propertyStore.propertiesByBlock = new Map([['a1', []]])
+    ensureStack('pA')
+
+    // 模拟 setProperty 写路径：以新 Map 替换该 block 的属性
+    propertyStore.propertiesByBlock = new Map([['a1', [makeProp('a1', 'status', 'Done')]]])
+    await flushChange()
+
+    expect(canUndo('pA')).toBe(true)
+    const snap = undo('pA')!
+    // 撤销回无属性状态
+    expect(snap.properties['a1']).toBeUndefined()
+  })
+})
+
+describe('信封真源（#113）', () => {
+  const base = makeBlock('b1', 'p1', { pos: 10, format: { collapsed: false } })
+
+  /**
+   * 逐字段哨兵：documentState 投影的**每个字段**差异都必须被 diff 判为不等；
+   * 下方 toEqual 同时钉住键集本身（键被误删/改名会红）。
+   * 残余风险（固有）：将来给 Block 新增文档态字段但**漏进 documentState**，本哨兵
+   * 无法感知（运行时拿不到 Block 类型清单）——那条防线是 op 哨兵 + code review，
+   * 与 F7 时间戳哨兵同一信任级别。
+   */
+  it('documentState 每个字段的差异都被 blockDocumentEqual 判为不等', () => {
+    expect(Object.keys(documentState(base)).sort()).toEqual(
+      ['content', 'format', 'id', 'pageId', 'parentId', 'pos', 'type'],
+    )
+
+    const variants: Partial<Block>[] = [
+      { id: 'other' },
+      { pageId: 'p2' },
+      { parentId: 'parent-x' },
+      { pos: 99 },
+      { content: 'different' },
+      { format: { collapsed: true } },
+      { type: 'heading' },
+    ]
+    for (const v of variants) {
+      expect(blockDocumentEqual(base, { ...base, ...v })).toBe(false)
+    }
+    expect(blockDocumentEqual(base, { ...base })).toBe(true)
+  })
+
+  it('时间戳不在投影内：仅 createdAt/updatedAt 差异仍相等（时间戳不承载恢复语义）', () => {
+    expect(blockDocumentEqual(base, { ...base, createdAt: 1, updatedAt: 9_999 })).toBe(true)
+  })
+
+  /** #113 候选2：undo/redo 返回深拷贝——别名泄漏时篡改返回值会污染栈内快照 */
+  it('undo/redo 返回深拷贝：篡改返回值不污染栈内快照', async () => {
+    const blockStore = useBlockStore()
+    blockStore.blocks = [makeBlock('b1', 'p1', { content: 'a', format: { collapsed: false } })]
+    ensureStack('p1')
+    blockStore.blocks[0].content = 'b'
+    await flushChange()
+
+    const older = undo('p1')!
+    older.blocks[0].content = 'TAMPERED'
+    older.blocks[0].format.collapsed = true
+    expect(redo('p1')!.blocks[0].content).toBe('b')
+    const olderAgain = undo('p1')!
+    expect(olderAgain.blocks[0].content).toBe('a')
+    expect(olderAgain.blocks[0].format).toEqual({ collapsed: false })
+  })
+})
+
+describe('commitNow 封口', () => {
+  it('改动后不等 idle 直接封口 ⇒ 立即可撤，且到期的定时器不会重复入栈', async () => {
+    const blockStore = useBlockStore()
+    blockStore.blocks = [makeBlock('b1', 'p1', { content: 'a' })]
+    ensureStack('p1')
+
+    blockStore.blocks[0].content = 'b'
+    await nextTick()
+    expect(canUndo('p1')).toBe(false) // idle 窗口未到 ⇒ 尚未入栈
+
+    commitNow('p1')
+    expect(canUndo('p1')).toBe(true)
+    expect(_debugStats().stackSizes['p1']).toBe(2)
+
+    // 封口已取消 pending 定时器：再走完一个 idle 窗口不应压出第三条
+    vi.advanceTimersByTime(50)
+    await nextTick()
+    expect(_debugStats().stackSizes['p1']).toBe(2)
+    expect(undo('p1')?.blocks[0].content).toBe('a')
+  })
+
+  it('状态未变（当前 = 游标处快照）⇒ no-op：不增栈、不截 redo 尾', async () => {
+    const blockStore = useBlockStore()
+    blockStore.blocks = [makeBlock('b1', 'p1', { content: 'a' })]
+    ensureStack('p1')
+    blockStore.blocks[0].content = 'b'
+    await flushChange() // 栈 = [a, b]，游标 1
+
+    undo('p1')
+    // 模拟 restoreEntry 把 store 回退到游标处快照：此后「当前 = 游标处」
+    blockStore.blocks[0].content = 'a'
+    await nextTick()
+
+    commitNow('p1')
+    expect(_debugStats().stackSizes['p1']).toBe(2) // 未新增
+    expect(canRedo('p1')).toBe(true) // redo 尾未被截断 —— 连按两次 Ctrl+Z 不会吃掉重做分支
+  })
+
+  it('撤销后发生新改动并封口 ⇒ 标准 redo 清空语义', async () => {
+    const blockStore = useBlockStore()
+    blockStore.blocks = [makeBlock('b1', 'p1', { content: 'a' })]
+    ensureStack('p1')
+    blockStore.blocks[0].content = 'b'
+    await flushChange()
+
+    undo('p1')
+    blockStore.blocks[0].content = 'a'
+    await nextTick()
+
+    blockStore.blocks[0].content = 'c'
+    await nextTick()
+    commitNow('p1')
+
+    expect(redo('p1')).toBeNull()
+    expect(_debugStats().stackSizes['p1']).toBe(2) // [a, c]
+  })
+
+  it('未建栈的页封口 ⇒ 静默 no-op（不抛错、不留下半截栈）', () => {
+    expect(() => commitNow('never-visited')).not.toThrow()
+    expect(_debugStats().stackSizes['never-visited']).toBeUndefined()
+  })
+})

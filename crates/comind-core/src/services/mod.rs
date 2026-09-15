@@ -1,3 +1,4 @@
+pub mod batch;
 pub mod block_service;
 pub mod link_service;
 pub mod page_service;
@@ -19,6 +20,9 @@ pub mod snapshot_service;
 pub mod block_service_test;
 
 #[cfg(test)]
+pub mod batch_test;
+
+#[cfg(test)]
 pub mod page_service_test;
 
 #[cfg(test)]
@@ -34,6 +38,7 @@ pub mod book_service_test;
 pub mod snapshot_service_test;
 
 pub use block_service::BlockService;
+pub use batch::{apply_batch, OpEffect};
 pub use link_service::LinkService;
 pub use page_service::PageService;
 pub use property_service::PropertyService;

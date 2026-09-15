@@ -1036,7 +1036,7 @@ function navigateToResult(result: SearchResult) {
 | 块级引用（Block Reference）        | Phase 2 考虑 |
 | 富文本快捷键（Ctrl+B, Ctrl+I 等）     | Phase 2 考虑 |
 | 全局搜索（Ctrl+K/Cmd+K）        | ✅ 已实现（Phase 2 Sprint 3） |
-| 撤销/重做（Ctrl+Z / Ctrl+Shift+Z） | Phase 2 考虑 |
+| 撤销/重做（Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y） | ✅ 已实现（ADR-0046：页面级单栈，跨页 BlockModal 复用该页栈） |
 | 移动端触摸交互                      | 远期规划       |
 | 语音输入                         | 远期规划       |
 

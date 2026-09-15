@@ -78,7 +78,12 @@ const { open: openDateRefPanel } = useDateTimePickerPanel()
 
 const editor = shallowRef(useEditor({
   extensions: [
-    StarterKit.configure({ heading: false, codeBlock: false, blockquote: false, horizontalRule: false }),
+    StarterKit.configure({
+      heading: false, codeBlock: false, blockquote: false, horizontalRule: false,
+      // 内置撤销历史禁用（ADR-0046 D2：统一栈接管 Ctrl+Z）—— 与 BlockList 的键盘接管、
+      // CodeMirrorEditor 去 history() 必须同票落地，否则两个栈互抢（D7 拒绝分阶段）
+      undoRedo: false,
+    }),
     SlashCommandExtension,
     EnterAsBlockExtension,
     WikiLinkExtension,
