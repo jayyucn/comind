@@ -19,6 +19,7 @@ import type { CrossBlockSelection } from '../composables/useCrossBlockSelection'
 import { useCrossBlockSelection } from '../composables/useCrossBlockSelection'
 import { ensureStack } from '../composables/useUndoHistory'
 import { runUndoOrRedo } from '../composables/useUndoRestore'
+import { UNDO_FLASH_MS, useRestoreFlash } from '../composables/useRestoreFlash'
 import { resolveUndoScopeBlockPage, takeOverUndoRedo } from '../utils/undo-chord'
 import { COMIND_BLOCK_MIME, resolveClipboardForest } from '../services/external-paste-parse'
 import { ensureWikiLinkTargets, notifyCreatedPages } from '../services/paste-ensure-wiki-targets'
@@ -44,6 +45,9 @@ const rootEl = ref<HTMLElement | null>(null)
 const blockStore = useBlockStore()
 const editorStore = useEditorStore()
 const pageStore = usePageStore()
+
+// 落点闪烁：墨迹测量 + 状态机（#115）。timer 清理由 composable 的 onScopeDispose 承担。
+const { flashRects, flashChangedBlocks, refreshFlashRects } = useRestoreFlash(() => rootEl.value)
 
 /** 当前页面的根 Block ID */
 const rootBlockId = computed(() => pageStore.getPage(props.pageId)?.blockId ?? null)
@@ -459,102 +463,8 @@ async function runUndoRedo(pageId: string, chord: 'undo' | 'redo'): Promise<void
   if (pageId === props.pageId) landOnChangedBlocks(changed)
 }
 
-/** 闪烁窗口，与模板里 `.restore-flash-rect` 的淡出动画时长对齐 */
-const UNDO_FLASH_MS = 600
-
-/**
- * 落点闪烁的矩形（视口坐标，交给 Teleport 到 body 的 fixed 层绘制）。
- *
- * 为什么是「量出来的矩形」而不是给块加类、用 `::after` 铺遮罩（2026-09-15 裁定）：
- * 遮罩铺的是**宿主盒**，而内容区宿主恒是满宽 —— 真机实测 720px 的行里文字只有 19px，
- * 铺出来就是一大片压在空白上的色块。这里换用与文本选区同一套手法（`Range`）量**墨迹**：
- * 内容区与属性区各自的**实际内容范围**，于是只有「有内容的非空白区域」会亮。
- * 附带好处：矩形独立于块选区与编辑态 —— `focusActiveEditor` 的 `clearSelection()` 抹不掉它。
- */
-const flashRects = ref<DOMRect[]>([])
-/** 闪烁窗口内仍有效的块 id：视口变化（滚动 / 缩放）时据此重算 —— fixed 矩形会随滚动失效 */
-const flashingIds = ref<string[]>([])
-let flashTimer: ReturnType<typeof setTimeout> | null = null
-
-/** 原子内容元素（图片/画布/音视频/内嵌页）：它们的**自身盒**就是墨迹，不必也不该往里钻 */
-const ATOMIC_INK_SELECTOR = 'img, canvas, video, audio, iframe, object, embed, svg'
-
-/**
- * 收集一个区域内的**墨迹**矩形：文本按 `Range` 逐行贴字，原子元素取自身盒。
- * 块级容器（`.block-text`、`.cm-line`、属性 chip 的外壳…）**自己不取** —— 它的盒是满宽，
- * 取它就等于把色块铺回空白上（真机实测：`.block-content` 的 Range bbox 是 **700×24** 满宽，
- * 而文字只有 19×24）。这就是本次「只亮非空白区域」的全部技术含义。
- */
-function collectInkRects(node: Node, out: DOMRect[]): void {
-  node.childNodes.forEach((child) => {
-    if (child.nodeType === Node.TEXT_NODE) {
-      if (!child.textContent?.trim()) return
-      const range = document.createRange()
-      range.selectNode(child)
-      out.push(...range.getClientRects())
-      return
-    }
-    if (child.nodeType !== Node.ELEMENT_NODE) return
-    const el = child as Element
-    if (el.matches(ATOMIC_INK_SELECTOR)) {
-      out.push(el.getBoundingClientRect())
-      return
-    }
-    collectInkRects(el, out)
-  })
-}
-
-/** 区域内**墨迹**的包围盒；区域内空无一物（空块的内容区、无属性块的属性带）返回 null */
-function regionInkRect(host: Element | null): DOMRect | null {
-  if (!host) return null
-  const ink: DOMRect[] = []
-  collectInkRects(host, ink)
-  const solid = ink.filter((r) => r.width > 0 && r.height > 0)
-  if (solid.length === 0) return null
-  const left = Math.min(...solid.map((r) => r.left))
-  const top = Math.min(...solid.map((r) => r.top))
-  const right = Math.max(...solid.map((r) => r.right))
-  const bottom = Math.max(...solid.map((r) => r.bottom))
-  return new DOMRect(left, top, right - left, bottom - top)
-}
-
-/** 量出这些块「内容区 + 属性区」的墨迹矩形（顺序同传参） */
-function measureFlashRects(ids: string[]): DOMRect[] {
-  const root = rootEl.value
-  if (!root) return []
-  const rects: DOMRect[] = []
-  for (const id of ids) {
-    // 限定在本实例的渲染树内查：多实例共存时避免量到弹窗/抽屉里的副本
-    const blockEl = root.querySelector(`[data-block-id="${id}"]`)
-    if (!blockEl) continue
-    // 内容区在 .block-row 下还有 .block-inner/.block-body 两层，故用后代选择器；子块的内容区在
-    // `.block-children`（.block-row 的**兄弟**）之下，不会被这里捞到。
-    const hosts = blockEl.querySelectorAll(':scope > .block-row .block-content, :scope > .block-properties')
-    hosts.forEach((host) => {
-      const rect = regionInkRect(host)
-      if (rect) rects.push(rect)
-    })
-  }
-  return rects
-}
-
-function flashChangedBlocks(ids: string[]): void {
-  // 整体替换（而非逐个增删）：让上一轮的块在本轮即刻失去闪烁，不残留旧矩形
-  flashRects.value = measureFlashRects(ids)
-  flashingIds.value = ids
-  if (flashTimer) clearTimeout(flashTimer)
-  flashTimer = setTimeout(() => {
-    flashRects.value = []
-    flashingIds.value = []
-    flashTimer = null
-  }, UNDO_FLASH_MS)
-}
-
-/** 重算闪烁矩形（随视口变化重画）；不在闪烁窗口内时为空操作 */
-function refreshFlashRects(): void {
-  if (flashingIds.value.length === 0) return
-  flashRects.value = measureFlashRects(flashingIds.value)
-}
+// 落点闪烁的测量与状态机收口在 useRestoreFlash（#115）：墨迹测量（Range 逐行贴字 /
+// 原子元素自身盒）与闪烁窗口、视口重算都在那里，本组件只留落点编排与模板渲染。
 
 /**
  * 落点：受影响块**短暂闪烁** + 光标（编辑态）落进**文档序最后一块**；该块若已在视口内就不滚。
@@ -599,8 +509,16 @@ function landOnChangedBlocks(ids: string[]): void {
       if (!(rect.bottom > 0 && rect.top < window.innerHeight)) el.scrollIntoView({ block: 'center' })
     }
     // 量矩形放在滚动**之后**：滚动是同步的（全仓无 scroll-behavior: smooth），紧接着读矩形已是新位置；
-    // 反过来先量后滚，会把掉出视口的落点画在旧位置上。树在本 tick 已重建完（与上面查 el 同一前提）。
-    flashChangedBlocks(ordered)
+    // 反过来先量后滚，会把掉出视口的落点画在旧位置上。
+    // 但「树已重建」只对块列表 v-for 成立 —— 受影响块若是**活动块**，runUndoOrRedo 先 deactivate
+    // 再 activate，TipTap 重挂晚于本 tick（真机实测：本 tick 量到 0 墨迹，或量到重挂前的旧短文本
+    // = 「只盖一行」的病历）。故连量 3 次（首量 + 2 帧），重挂尘埃落定后的最终布局胜出；
+    // flashChangedBlocks 整体替换语义下重入安全，量到的矩形最多晚 2 帧（仍在 600ms 窗口内）。
+    const measureWhenSettled = (left: number): void => {
+      flashChangedBlocks(ordered)
+      if (left > 0) requestAnimationFrame(() => measureWhenSettled(left - 1))
+    }
+    measureWhenSettled(2)
   })
 }
 
@@ -778,8 +696,6 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  // 落点闪烁的计时器：不清理会让已卸载实例的 ref 在闪烁窗口结束后被写（无害但无谓）
-  if (flashTimer) clearTimeout(flashTimer)
   document.removeEventListener('mousemove', handleDocMouseMove)
   document.removeEventListener('mouseup', handleDocMouseUp)
   document.removeEventListener('keydown', handleDocKeyDown)
@@ -825,13 +741,14 @@ onBeforeUnmount(() => {
     </Teleport>
 
     <!-- 落点闪烁层（#109）：矩形与上一层同理 Teleport 到 body —— fixed 定位会被 transform 祖先困住。
-         矩形量的是「内容区 + 属性区」的墨迹（见 measureFlashRects），只覆盖有内容的非空白区域。 -->
+         矩形量的是「内容区 + 属性区」的墨迹（测量收口在 useRestoreFlash，#115），只覆盖有内容的非空白区域。
+         淡出时长由 UNDO_FLASH_MS 单源下发（#115）：与 JS 清空计时共用同一常量，不会漂。 -->
     <Teleport to="body">
       <div
         v-for="(rect, i) in flashRects"
         :key="i"
         class="restore-flash-rect"
-        :style="{ top: `${rect.top}px`, left: `${rect.left}px`, width: `${rect.width}px`, height: `${rect.height}px` }"
+        :style="{ top: `${rect.top}px`, left: `${rect.left}px`, width: `${rect.width}px`, height: `${rect.height}px`, animationDuration: `${UNDO_FLASH_MS}ms` }"
       />
     </Teleport>
   </div>
@@ -873,14 +790,15 @@ onBeforeUnmount(() => {
 }
 
 /* 撤销 / 重做落点的闪烁矩形：与文本选区同色（同为「这段内容」的提示），一次淡出后由
-   BlockList 的计时器清空列表；时长与 `UNDO_FLASH_MS` 对齐。 */
+   useRestoreFlash 的计时器清空矩形列表；时长由模板 inline style 从 UNDO_FLASH_MS
+   单源下发（#115），此处不再写死。 */
 .restore-flash-rect {
   position: fixed;
   pointer-events: none;
   background: var(--selection-bg);
   border-radius: var(--radius-xs);
   z-index: var(--z-sticky);
-  animation: restore-flash-fade 600ms ease-out forwards;
+  animation: restore-flash-fade ease-out forwards;
 }
 
 @keyframes restore-flash-fade {
