@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 
-const { mockListen, mockLoadPageBlocks, mockIsTauri, mockRoute, mockStructureVersion } =
+const { mockListen, mockLoadPageBlocks, mockIsTauri, mockRoute } =
   vi.hoisted(() => ({
     mockListen: vi.fn(),
     mockLoadPageBlocks: vi.fn(),
@@ -14,23 +14,15 @@ const { mockListen, mockLoadPageBlocks, mockIsTauri, mockRoute, mockStructureVer
       name: string
       params: Record<string, string>
     },
-    mockStructureVersion: { value: 0 },
   }))
 
 vi.mock('@tauri-apps/api/event', () => ({ listen: mockListen }))
 vi.mock('vue-router', () => ({ useRoute: () => mockRoute }))
 vi.mock('../wasm/tauri-platform', () => ({ isTauriEnvironment: () => mockIsTauri() }))
-// Pinia setup store 会把 ref 解包为数字暴露（store.structureVersion 是 number，
-// ++ 直接生效）——mock 用 getter/setter 模拟解包，而非裸 { value } 对象。
+// 树刷新由 BlockList 的结构签名 watch（#118 D2）自动完成，store 无需暴露任何触发器
 vi.mock('../stores/blocks', () => ({
   useBlockStore: () => ({
     loadPageBlocks: mockLoadPageBlocks,
-    get structureVersion() {
-      return mockStructureVersion.value
-    },
-    set structureVersion(v: number) {
-      mockStructureVersion.value = v
-    },
   }),
 }))
 
@@ -62,7 +54,6 @@ beforeEach(() => {
   mockListen.mockImplementation(async () => vi.fn())
   mockLoadPageBlocks.mockReset()
   mockLoadPageBlocks.mockResolvedValue(undefined)
-  mockStructureVersion.value = 0
 })
 
 describe('useReaderDataChanged（主窗口侧监听）', () => {
@@ -72,22 +63,14 @@ describe('useReaderDataChanged（主窗口侧监听）', () => {
     expect(mockListen).toHaveBeenCalledWith('reader:data-changed', expect.any(Function))
   })
 
-  it('事件到达：按 payload.pageId 重载对应 page blocks', async () => {
-    mountHost()
-
-    registeredHandler()({ payload: { pageId: 'book-1' } })
-    await Promise.resolve()
-
-    expect(mockLoadPageBlocks).toHaveBeenCalledWith('book-1')
-  })
-
-  it('重载后自增 structureVersion（触发 BlockList 重建树，UI 才刷新）', async () => {
+  it('事件到达：按 payload.pageId 重载对应 page blocks（树刷新由结构签名 watch 自动完成，#118 D2）', async () => {
     mountHost()
 
     registeredHandler()({ payload: { pageId: 'book-1' } })
     await flushPromises()
 
-    expect(mockStructureVersion.value).toBe(1)
+    // composable 的职责止于重载 store；树刷新不在这里断言（哨兵见 BlockList.structure-sync.test.ts）
+    expect(mockLoadPageBlocks).toHaveBeenCalledWith('book-1')
   })
 
   it('payload 缺 pageId 时不重载（异常数据防御）', async () => {
@@ -97,7 +80,6 @@ describe('useReaderDataChanged（主窗口侧监听）', () => {
     await Promise.resolve()
 
     expect(mockLoadPageBlocks).not.toHaveBeenCalled()
-    expect(mockStructureVersion.value).toBe(0)
   })
 
   it('window focus 兜底：重载当前打开的 /page/:pageId（事件丢失场景）', async () => {

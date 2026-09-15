@@ -744,18 +744,6 @@ describe('deleteBlocks - RPC失败快照回滚', () => {
     const remaining = store.blocks.filter(b => allIds.includes(b.id))
     expect(remaining.length).toBe(0)
   })
-
-  test('structureVersion 在删除后递增', async () => {
-    const store = useBlockStore()
-    const pageId = 'page-struct-version'
-
-    const block = await store.createBlock({ pageId, content: 'To Delete' })
-    const versionBefore = store.structureVersion
-
-    await store.deleteBlock(block.id)
-
-    expect(store.structureVersion).toBeGreaterThan(versionBefore)
-  })
 })
 
 // ============================================================

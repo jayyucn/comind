@@ -145,7 +145,10 @@ export async function restoreEntry(pageId: string, snapshot: HistoryEntry): Prom
   const currentById = new Map(currentBlocks.map((b) => [b.id, b]))
   const targetById = new Map(snapshot.blocks.map((b) => [b.id, b]))
 
-  // 回滚快照（深拷贝当前 reactive 状态）
+  // 回滚快照（浅拷贝：逐块 `{...b}`，块内字段不深拷）——安全性依赖「恢复路径
+  // 不嵌套 mutate 块内字段」的约定：format 整体替换、属性在独立 store（#118 F3 勘误）。
+  // 真正回滚 = 把这组副本赋回 store（见 catch），对象身份整体替换 → 结构签名变化
+  // → BlockList 自动重建树，无需任何 bump（#118 D2）。
   const rollbackBlocks = blockStore.blocks.map((b) => ({ ...b }))
   const rollbackProps = new Map(
     [...propertyStore.propertiesByBlock.entries()].map(([k, v]) => [k, v.map((p) => ({ ...p }))]),
@@ -190,6 +193,8 @@ export async function restoreEntry(pageId: string, snapshot: HistoryEntry): Prom
   }
 
   // ---- 乐观更新 reactive 状态（使 UI 立即反映快照）----
+  // 整页换新对象：数组与对象身份都变化 → 结构签名（#118 D2）必变 → BlockList 自动重建树。
+  // （旧实现须手动 bump structureVersion，见 #103 T1：不触发则复活块滞留 store 不进 DOM。）
   blockStore.blocks = [
     ...blockStore.blocks.filter((b) => b.pageId !== pageId),
     ...snapshot.blocks.map((b) => ({ ...b })),
@@ -206,11 +211,6 @@ export async function restoreEntry(pageId: string, snapshot: HistoryEntry): Prom
     if (!targetById.has(current.id)) nextProps.delete(current.id)
   }
   propertyStore.propertiesByBlock = nextProps
-
-  // 撤销/重做回填了 blocks（含复活/新增/重组的块）后，必须触发 BlockList 的 tree 重建：
-  // tree 是 ref，仅在 blockStore.structureVersion 变化时由 syncFromStore 重算（BlockList.vue:611 watch）。
-  // 不 bump 会导致复活块滞留 store 却不进 DOM（#103 T1 驱动发现：删块→Ctrl+Z 复活后块不可见，须 reload 才恢复）。
-  blockStore.structureVersion++
 
   // ---- 落库：undelete 作为 op 并入单次 executeBatch（单一事务）----
   // 精确复活「当前软删、且明确列于快照」的块（不级联，故不产生 stray）。undelete op
@@ -230,7 +230,8 @@ export async function restoreEntry(pageId: string, snapshot: HistoryEntry): Prom
       await client.executeBatch(operations)
     }
   } catch (error) {
-    // 回滚 reactive 状态（与 deleteBlocks 一致）
+    // 回滚 reactive 状态：赋回回滚快照 = 对象身份整体替换 → 结构签名（#118 D2）变化
+    // → BlockList 自动重建树，回滚在 UI 层即时生效，无需 bump。
     blockStore.blocks = rollbackBlocks
     propertyStore.propertiesByBlock = rollbackProps
     console.error('[restoreEntry] commit failed, rolled back reactive state:', error)
@@ -259,10 +260,11 @@ async function refreshRenderSegments(pageId: string): Promise<void> {
     if (segByBlock.size === 0) return
     const blockStore = useBlockStore()
     // 原地写 renderSegments，禁止整页替换对象：树（BlockList.tree）持有块对象引用，
-    // 仅在 structureVersion 变化时重建；此处若用 `blocks.map(b => ({ ...b, renderSegments }))`
-    // 换新对象又不 bump version（本函数定位为只读重取），树节点便攥着旧对象 —— 此后
-    // updateBlockContent 原地 mutate 的是 store 新对象，撤销落点激活的块一旦失活，
-    // 读态渲染读树上的旧对象 → 「撤销后打字，失活即消失」且 store/DOM 永久分叉（真机实证）。
+    // 本函数定位为只读重取，若用 `blocks.map(b => ({ ...b, renderSegments }))`
+    // 换新对象，结构签名（#118 D2）会因对象身份变化而触发不必要的整树重建，且
+    // 树重建时机与后续 updateBlockContent 的原地 mutate 交错是 #109「只盖一行」
+    // 一族的竞态温床；原地写则内容经深响应直达读态渲染，树与 store 永不分叉。
+    // （历史注：计数器时代「换对象又不 bump」曾致「撤销后打字，失活即消失」，真机实证。）
     for (const b of blockStore.blocks) {
       if (b.pageId !== pageId) continue
       const segs = segByBlock.get(b.id)

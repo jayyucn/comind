@@ -171,7 +171,6 @@ provide('onDragEnd', (intent: DragEndIntent | null) => {
   const affected = { gained: new Set<string>(), emptied: new Set<string>() }
   const changed = syncTreeToStore(node.value.children, rootId, blockStore.blocks, undefined, affected)
   for (const id of changed) blockStore.scheduleSave(id)
-  blockStore.structureVersion++
   blockStore.reconcileCollapse(affected.emptied, affected.gained)
 })
 

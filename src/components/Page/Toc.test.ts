@@ -27,7 +27,7 @@ vi.mock('../../stores/pages', () => ({
   usePageStore: () => ({ getPage: mockGetPage }),
 }))
 vi.mock('../../stores/blocks', () => ({
-  useBlockStore: () => ({ blocks: mockBlocks.value, structureVersion: 0 }),
+  useBlockStore: () => ({ blocks: mockBlocks.value }),
 }))
 vi.mock('../../stores/property', () => ({
   usePropertyStore: () => ({
