@@ -4,6 +4,7 @@ import type { Block, BlockClipPayload } from '../types/block'
 import type { PropertyValue, PropertyType } from '../types/property'
 import { initCoreClient, triggerSync, isTauriEnvironment } from '../wasm/client'
 import { generateUUID } from '../utils/id'
+import { decodePropertyValue } from '../utils/property-codec'
 import { debounce } from '../utils/debounce'
 import { usePropertyStore } from './property'
 import { useBlockCardStore } from './blockCard'
@@ -1527,7 +1528,7 @@ export const useBlockStore = defineStore('blocks', () => {
           await propertyStore.setProperty(
             job.blockId,
             key,
-            revivePropValue(prop.value, prop.type) as PropertyValue,
+            decodePropertyValue(prop.value, prop.type) as PropertyValue,
             prop.type as PropertyType,
           )
         }
@@ -1535,16 +1536,6 @@ export const useBlockStore = defineStore('blocks', () => {
     }
 
     return created
-  }
-
-  /** 把剪贴板载荷中的属性字符串值还原为原始类型（string/page 直通，其余尝试 JSON.parse） */
-  function revivePropValue(value: string, type: string): unknown {
-    if (type === 'string' || type === 'page') return value
-    try {
-      return JSON.parse(value)
-    } catch {
-      return value
-    }
   }
 
   /** 更新 Block 属性（使用独立的 properties 表）。

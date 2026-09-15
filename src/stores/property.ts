@@ -6,6 +6,7 @@ import { getAllPropertyDefinitions, getPropertyDefinition } from '../types/prope
 import { useBlockStore } from './blocks'
 import { useBlockCardStore } from './blockCard'
 import { serializeDateRef, type DateRefKind } from '../utils/date-ref'
+import { encodePropertyValue, decodePropertyValue } from '../utils/property-codec'
 import type { RecurrenceRule } from '../utils/date-ref'
 // 4.2 / S6: calculateNextRecurrence migrated to Rust
 import { getCoreClient } from '../wasm/client'
@@ -19,14 +20,6 @@ function normalizeKind(kind: string): DateRefKind {
 }
 
 let coreClientPromise: Promise<CoreClient> | null = null
-
-function safeParseJson(value: string): any {
-  try {
-    return JSON.parse(value)
-  } catch {
-    return value
-  }
-}
 
 async function getClient() {
   if (!coreClientPromise) {
@@ -72,7 +65,7 @@ export const usePropertyStore = defineStore('property', () => {
         id: rustProp.id,
         blockId: rustProp.block_id,
         key: rustProp.key,
-        value: safeParseJson(rustProp.value),
+        value: decodePropertyValue(rustProp.value, rustProp.type) as PropertyValue,
         type: rustProp.type as PropertyType,
         sortOrder: rustProp.sort_order,
         isHidden: rustProp.is_hidden === 1,
@@ -81,7 +74,7 @@ export const usePropertyStore = defineStore('property', () => {
         createdAt: rustProp.created_at,
         updatedAt: rustProp.updated_at
       }))
-      
+
       propertiesByBlock.value = new Map(propertiesByBlock.value.set(blockId, props))
       return props
     } finally {
@@ -99,7 +92,7 @@ export const usePropertyStore = defineStore('property', () => {
           id: rustProp.id,
           blockId: rustProp.block_id,
           key: rustProp.key,
-          value: safeParseJson(rustProp.value),
+          value: decodePropertyValue(rustProp.value, rustProp.type) as PropertyValue,
           type: rustProp.type as PropertyType,
           sortOrder: rustProp.sort_order,
           isHidden: rustProp.is_hidden === 1,
@@ -123,18 +116,17 @@ export const usePropertyStore = defineStore('property', () => {
     type?: PropertyType
   ): Promise<Property> {
     const client = await getClient()
-    const valueStr = typeof value === 'string' ? value : JSON.stringify(value)
     const propType = type || inferType(value)
-    
+    // codec 单源（#117）：按 type 判别（string/page 直通，其余 JSON 编码），
+    // 不再按「值是否 string」——number 属性传字符串不再静默变型
+    const valueStr = encodePropertyValue(value, propType)
+
     const rustProp = await client.setProperty(blockId, key, valueStr, propType)
-    
-    // 反序列化：string/page 类型 Rust 直接返回字符串，无需 JSON.parse
-    // number/boolean/date/array 类型 Rust 返回 JSON 编码字符串，需要解析
+
+    // 回读解析走 codec 单源（#117）：按 type 判别 + 容错——此前不容错的
+    // JSON.parse 会因历史脏数据/外部写入炸掉整个 setProperty
     const parsedType = rustProp.type as PropertyType
-    const isPlainStringType = parsedType === 'string' || parsedType === 'page'
-    const parsedValue: PropertyValue = isPlainStringType
-      ? rustProp.value
-      : JSON.parse(rustProp.value)
+    const parsedValue = decodePropertyValue(rustProp.value, parsedType) as PropertyValue
 
     const prop: Property = {
       id: rustProp.id,

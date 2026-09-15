@@ -31,6 +31,7 @@ import type { Block } from '../types/block'
 import type { Property } from '../types/property'
 import type { HistoryEntry } from './useUndoHistory'
 import { blockDocumentEqual, commitNow, redo, undo } from './useUndoHistory'
+import { encodePropertyValue } from '../utils/property-codec'
 
 let clientPromise: Promise<CoreClient> | null = null
 async function getClient(): Promise<CoreClient> {
@@ -38,12 +39,6 @@ async function getClient(): Promise<CoreClient> {
   const client = await clientPromise
   if (!client) throw new Error('Core client not initialized')
   return client
-}
-
-// 属性值序列化：与 property.ts setProperty 保持一致
-// （string/page 类型值为字符串则原样，其余 JSON.stringify）
-function propValueToString(value: unknown): string {
-  return typeof value === 'string' ? value : JSON.stringify(value)
 }
 
 function propValueEqual(a: Property, b: Property): boolean {
@@ -74,7 +69,7 @@ function propSetOp(p: Property): BatchOperation {
       id: p.id,
       block_id: p.blockId,
       key: p.key,
-      value: propValueToString(p.value),
+      value: encodePropertyValue(p.value, p.type),
       type: p.type,
       sort_order: p.sortOrder,
       is_hidden: p.isHidden ? 1 : 0,
