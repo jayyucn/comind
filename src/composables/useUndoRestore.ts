@@ -30,7 +30,7 @@ import { usePropertyStore } from '../stores/property'
 import type { Block } from '../types/block'
 import type { Property } from '../types/property'
 import type { HistoryEntry } from './useUndoHistory'
-import { commitNow, redo, undo } from './useUndoHistory'
+import { blockDocumentEqual, commitNow, redo, undo } from './useUndoHistory'
 
 let clientPromise: Promise<CoreClient> | null = null
 async function getClient(): Promise<CoreClient> {
@@ -44,17 +44,6 @@ async function getClient(): Promise<CoreClient> {
 // （string/page 类型值为字符串则原样，其余 JSON.stringify）
 function propValueToString(value: unknown): string {
   return typeof value === 'string' ? value : JSON.stringify(value)
-}
-
-// 仅比较快照关心的块字段（正文 / 结构 / format 含折叠）
-function blockFieldsEqual(a: Block, b: Block): boolean {
-  return (
-    a.content === b.content &&
-    a.type === b.type &&
-    a.parentId === b.parentId &&
-    a.pos === b.pos &&
-    JSON.stringify(a.format) === JSON.stringify(b.format)
-  )
 }
 
 function propValueEqual(a: Property, b: Property): boolean {
@@ -185,7 +174,9 @@ export async function restoreEntry(pageId: string, snapshot: HistoryEntry): Prom
       // 属性行一并复活（级联软删的对称恢复，见 reviveProps 注）
       if (reviveProps(targetProps, propOps)) affected.add(target.id)
     } else {
-      if (!blockFieldsEqual(current, target)) {
+      // 块字段 diff（#113）：从信封真源派生（useUndoHistory.blockDocumentEqual），
+      // 不再手工枚举字段清单——新增文档态字段改 documentState 一处即自动进 diff。
+      if (!blockDocumentEqual(current, target)) {
         blockUpdateOps.push(blockUpdateOp(target))
         affected.add(target.id)
       }

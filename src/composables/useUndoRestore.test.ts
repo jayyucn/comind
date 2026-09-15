@@ -27,7 +27,7 @@ vi.mock('../wasm/client', () => ({
 import { useBlockStore } from '../stores/blocks'
 import { usePropertyStore } from '../stores/property'
 import { restoreEntry, redoAndRestore, undoAndRestore } from './useUndoRestore'
-import { ensureStack, canUndo, canRedo, commitNow, resetUndoHistory, _debugStats } from './useUndoHistory'
+import { documentState, ensureStack, canUndo, canRedo, commitNow, resetUndoHistory, _debugStats } from './useUndoHistory'
 
 function makeBlock(id: string, pageId: string, overrides: Partial<Block> = {}): Block {
   return {
@@ -512,5 +512,43 @@ describe('返回受影响块 id', () => {
 
     expect(await redoAndRestore('p1')).toEqual(['b1'])
     expect(bs.getBlocksByPage('p1')[0].content).toBe('b')
+  })
+})
+
+/**
+ * op 哨兵（#113）：block update op 的 params 是与 Rust block_update 的契约，
+ * 构造保持手工——本哨兵只保证它**不漂移出信封**：params 键集 − {id} 必须落在
+ * documentState 字段集（camelCase → snake_case 约定）内。op 检测到了信封没有的
+ * 字段（或信封字段改名后 op 没跟上）都会在这里变红，而不是静默丢改动。
+ */
+describe('op 哨兵（#113）', () => {
+  function camelToSnake(s: string): string {
+    return s.replace(/[A-Z]/g, (c) => '_' + c.toLowerCase())
+  }
+
+  it('block update op 的 params 键集 ⊆ documentState 字段集（camel→snake）+ id', async () => {
+    const bs = useBlockStore()
+    bs.blocks = [makeBlock('b1', 'p1', { content: 'world' })]
+    usePropertyStore().propertiesByBlock = new Map()
+
+    await restoreEntry('p1', entry([makeBlock('b1', 'p1', { content: 'hello' })]))
+
+    const ops = hoisted.client.executeBatch.mock.calls[0][0] as Array<{
+      entity: string
+      action: string
+      params: Record<string, unknown>
+    }>
+    const updateOps = ops.filter((o) => o.entity === 'block' && o.action === 'update')
+    expect(updateOps.length).toBeGreaterThan(0)
+
+    const envelopeParamKeys = new Set([
+      'id',
+      ...Object.keys(documentState(makeBlock('x', 'p1'))).map(camelToSnake),
+    ])
+    for (const op of updateOps) {
+      for (const key of Object.keys(op.params)) {
+        expect(envelopeParamKeys.has(key)).toBe(true)
+      }
+    }
   })
 })

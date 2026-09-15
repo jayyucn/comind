@@ -20,6 +20,8 @@ import {
   canRedo,
   configureUndoHistory,
   resetUndoHistory,
+  documentState,
+  blockDocumentEqual,
   _debugStats,
 } from './useUndoHistory'
 
@@ -308,6 +310,58 @@ describe('页面隔离', () => {
     const snap = undo('pA')!
     // 撤销回无属性状态
     expect(snap.properties['a1']).toBeUndefined()
+  })
+})
+
+describe('信封真源（#113）', () => {
+  const base = makeBlock('b1', 'p1', { pos: 10, format: { collapsed: false } })
+
+  /**
+   * 逐字段哨兵：documentState 投影的**每个字段**差异都必须被 diff 判为不等；
+   * 下方 toEqual 同时钉住键集本身（键被误删/改名会红）。
+   * 残余风险（固有）：将来给 Block 新增文档态字段但**漏进 documentState**，本哨兵
+   * 无法感知（运行时拿不到 Block 类型清单）——那条防线是 op 哨兵 + code review，
+   * 与 F7 时间戳哨兵同一信任级别。
+   */
+  it('documentState 每个字段的差异都被 blockDocumentEqual 判为不等', () => {
+    expect(Object.keys(documentState(base)).sort()).toEqual(
+      ['content', 'format', 'id', 'pageId', 'parentId', 'pos', 'type'],
+    )
+
+    const variants: Partial<Block>[] = [
+      { id: 'other' },
+      { pageId: 'p2' },
+      { parentId: 'parent-x' },
+      { pos: 99 },
+      { content: 'different' },
+      { format: { collapsed: true } },
+      { type: 'heading' },
+    ]
+    for (const v of variants) {
+      expect(blockDocumentEqual(base, { ...base, ...v })).toBe(false)
+    }
+    expect(blockDocumentEqual(base, { ...base })).toBe(true)
+  })
+
+  it('时间戳不在投影内：仅 createdAt/updatedAt 差异仍相等（时间戳不承载恢复语义）', () => {
+    expect(blockDocumentEqual(base, { ...base, createdAt: 1, updatedAt: 9_999 })).toBe(true)
+  })
+
+  /** #113 候选2：undo/redo 返回深拷贝——别名泄漏时篡改返回值会污染栈内快照 */
+  it('undo/redo 返回深拷贝：篡改返回值不污染栈内快照', async () => {
+    const blockStore = useBlockStore()
+    blockStore.blocks = [makeBlock('b1', 'p1', { content: 'a', format: { collapsed: false } })]
+    ensureStack('p1')
+    blockStore.blocks[0].content = 'b'
+    await flushChange()
+
+    const older = undo('p1')!
+    older.blocks[0].content = 'TAMPERED'
+    older.blocks[0].format.collapsed = true
+    expect(redo('p1')!.blocks[0].content).toBe('b')
+    const olderAgain = undo('p1')!
+    expect(olderAgain.blocks[0].content).toBe('a')
+    expect(olderAgain.blocks[0].format).toEqual({ collapsed: false })
   })
 })
 

@@ -76,7 +76,13 @@ function deepClonePlain<T>(value: T): T {
   return out as unknown as T
 }
 
-function cloneBlockSlim(b: Block): Block {
+/**
+ * 文档态投影（#113）：信封字段清单的**唯一书写处** —— 快照信封（cloneBlockSlim）、
+ * 恢复 diff（blockDocumentEqual）、op 哨兵测试都从这里派生。新增文档态字段只改这里，
+ * 三处自动跟进；类型化对象字面量保证拼错/漏字段编译期报错。
+ * 时间戳（createdAt/updatedAt）不承载恢复语义，有意不在投影内（与属性信封归零同理）。
+ */
+export function documentState(b: Block): Pick<Block, 'id' | 'pageId' | 'parentId' | 'pos' | 'content' | 'format' | 'type'> {
   return {
     id: b.id,
     pageId: b.pageId,
@@ -85,9 +91,19 @@ function cloneBlockSlim(b: Block): Block {
     content: b.content,
     format: deepClonePlain(b.format),
     type: b.type,
-    createdAt: b.createdAt,
-    updatedAt: b.updatedAt,
   }
+}
+
+function cloneBlockSlim(b: Block): Block {
+  return { ...documentState(b), createdAt: b.createdAt, updatedAt: b.updatedAt }
+}
+
+/**
+ * 文档态相等（#113）：恢复 diff 与签名/回声抑制共用同一比较口径 —— 对 documentState
+ * 投影做 stringify 全等（「签名变了 ⇔ 快照会变」的同型不变量）。时间戳漂移不算差异。
+ */
+export function blockDocumentEqual(a: Block, b: Block): boolean {
+  return JSON.stringify(documentState(a)) === JSON.stringify(documentState(b))
 }
 
 function cloneProperty(p: Property): Property {
@@ -147,8 +163,8 @@ function captureEntry(pageId: string): HistoryEntry {
 // ---- 归因签名（哪页变了，非 dedupe）----
 /**
  * 该页 blocks 的内容签名。与 captureEntry 同源 —— 直接序列化 cloneBlockSlim
- * 的输出，保证「签名变了 ⇔ 快照会变」。新增文档态字段只需改 cloneBlockSlim 一处
- * （Spec #7），签名自动跟进，不再手工枚举字段清单（曾在两处维护、易漏）。
+ * 的输出，保证「签名变了 ⇔ 快照会变」。新增文档态字段只需改 documentState 一处
+ * （Spec #7 / #113），签名自动跟进，不再手工枚举字段清单（曾在两处维护、易漏）。
  * 背景加载其它页不会改变本页签名（filter 出的块相同）。
  */
 function blockSig(pageId: string): string {
@@ -267,24 +283,26 @@ function evictIfNeeded(): void {
   }
 }
 
-/** 撤销：游标前移一位，返回目标快照；无可撤返回 null */
+/** 撤销：游标前移一位，返回目标快照的深拷贝；无可撤返回 null */
 export function undo(pageId: string): HistoryEntry | null {
   const ps = pageStacks.get(pageId)
   if (!ps) return null
   if (ps.cursor <= 0) return null
   const next = ps.cursor - 1
   ps.cursor = next
-  return ps.stack[next]
+  // #113 候选2：返回深拷贝 —— 栈内 memento 不外泄，历史栈与 store 的别名共享
+  // 在 seam 处被结构性切断（调用方篡改返回值不得影响后续 undo/redo）。
+  return deepClonePlain(ps.stack[next])
 }
 
-/** 重做：游标后移一位，返回目标快照；无可重做返回 null */
+/** 重做：游标后移一位，返回目标快照的深拷贝；无可重做返回 null */
 export function redo(pageId: string): HistoryEntry | null {
   const ps = pageStacks.get(pageId)
   if (!ps) return null
   if (ps.cursor >= ps.stack.length - 1) return null
   const next = ps.cursor + 1
   ps.cursor = next
-  return ps.stack[next]
+  return deepClonePlain(ps.stack[next]) // 同 undo：深拷贝，栈内 memento 不外泄（#113 候选2）
 }
 
 export function canUndo(pageId: string): boolean {
