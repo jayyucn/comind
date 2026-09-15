@@ -8,20 +8,45 @@
  * —— 不 mock 编排层，也不 mock wasm client（jsdom 走 WasmClientAdapter，恢复经 `executeBatch`
  * 单事务真实现；`undelete` 已作为该事务内的 op，独立 `undeleteBlocks` 原语保留供回收站复用）。
  *
- * 三处必要替身（皆为 jsdom 能力缺口，非本功能问题）：
- * 1. `Range.prototype.getClientRects`：块选区一建立就触发高亮层 watcher，jsdom 无此方法
+ * 六处必要替身（皆为 jsdom 能力缺口，非本功能问题）：
+ * 1. `window.matchMedia`：import 链中模块级求值会调用（先例：TaskHub.test.ts）。
+ * 2. `Range.prototype.getClientRects`：块选区一建立就触发高亮层 watcher，jsdom 无此方法
  *    （同 #92，空矩形即可 —— 本文件不验像素）。
- * 2. `window.matchMedia`：import 链中模块级求值会调用（先例：TaskHub.test.ts）。
- * 3. 「编辑态焦点」用注入的合成元素（`div.ProseMirror[contenteditable]` / CodeMirror 形状）
+ * 3. `Range.prototype.getBoundingClientRect` 与 `Node.prototype.getBoundingClientRect`：撤销/重做
+ *    **落点会激活块**（`activateBlock` → `focusActiveEditor`），于是真挂 TipTap —— ProseMirror 的
+ *    `coordsAtPos` 会把文本节点包成 Range 交给 `singleRect`：先 `getClientRects()`（替身 2 已给）、
+ *    空则回落到 `getBoundingClientRect()`，而 jsdom 的 Range / Text 都没实现。
+ * 4. `document.elementFromPoint`：落点激活块后 `focusActiveEditor` 的「点击坐标」分支会调
+ *    `Editor.focusAtCoords` → PM `posAtCoords`。恒 null ⇒ PM 判定坐标不在框内 ⇒ 回落 `focus('end')`。
+ * 5. `Element.prototype.scrollIntoView`（在「滚入视野」与「可见性门控」两例内局部装/还原）：jsdom 未实现，
+ *    而产品侧有 `typeof` 守卫会静默跳过 —— 不装替身就**无法**证明「滚 / 不滚的是光标落点那块」。
+ * 6. 「编辑态焦点」用注入的合成元素（`div.ProseMirror[contenteditable]` / CodeMirror 形状）
  *    而非真挂 TipTap/CodeMirror —— 本票验的是**按键路由**；「禁用内置历史」由 #109 在
  *    `Editor.vue`（`undoRedo:false`）与 `CodeMirrorEditor.vue`（去 `history()`+`historyKeymap`）
  *    单独钉过，重复挂真编辑器只会引入 jsdom 脆弱性而不增加信号。
+ * 7. 「墨迹」替身（`stubInkRects`，**逐例**装 / 还原）：落点闪烁量的是区域内**文本节点**的
+ *    `Range.getClientRects`，而 jsdom 无布局 ⇒ 恒空 ⇒ 生产侧判定「无墨迹 ⇒ 不闪」。不装替身，
+ *    G 组的闪烁断言就无从成立 —— 替身把「哪一块、哪个区域」编码进假矩形，见其注释。
  *
  * 已知未覆盖（有意，附理由 —— 别当漏项补）：
  * - `runUndoRedo` 的**退出编辑态**那一步（`deactivateBlock()` + `nextTick()`，借 Editor 卸载时
- *   `onBeforeUnmount` 同步那段未落库文本）在本网**没有等价断言**。要让它有意义必须真挂 TipTap，
- *   而真挂之后 Editor 卸载会把**它自己那份 stale 内容**写回 store、绕过撤销 —— 断言会变假绿。
- *   故本网只从**边界侧**钉住该守卫（见 D 组「编辑态落在别页块上」），该步交真机复核。
+ *   `onBeforeUnmount` 同步那段未落库文本）在本网**没有等价断言**：要断言它必须先在**真编辑态**里
+ *   打字（合成按键到不了 TipTap 的 onUpdate），而真挂之后 Editor 卸载会把**它自己那份 stale 内容**
+ *   写回 store、绕过撤销 —— 断言会变假绿。故本网只从**边界侧**钉住该守卫（见 D 组「编辑态落在
+ *   别页块上」），该步交真机复核。（注意：落点那一侧现在**确实**会真挂 TipTap，见替身 3/4 ——
+ *   未覆盖的只是「退出编辑态」，不是「挂编辑器」。）
+ * - 落点的**像素表现**（矩形落在哪一像素、动画是否淡出）不在本网：只验 `.restore-flash-rect`
+ *   的建立（数量 + 来源编码）与到期清空 —— 淡出是 CSS 动画，jsdom 不跑动画。视觉由真机复核。
+ * - 落点块**在折叠祖先之下**（例：BlockModal 里改了折叠子树内的块）时，主列表里它不渲染 ⇒
+ *   量不出矩形、光标也落不进去（`activeBlockId` 仍会被设为该块，与方向键导航同口径）。
+ *   产品侧有意不兜底（见 `BlockList.vue` `landOnChangedBlocks` 注释）；故本网只覆盖可见块。
+ * - **编辑态块的内容区在 jsdom 里量不出墨迹**：落点总会把目标块切进编辑态，而真挂的 TipTap 内部
+ *   在本网按零矩形处理（替身 2/3），jsdom 也没把它的文本渲染出来 ⇒ G 组用 `inkInProperties` 给
+ *   目标块的属性带造墨迹。「编辑态块的内容区闪了没」由真机复核（真机上它当然是有文本的）。
+ * - 落点落行尾**依赖 `focus('end')` 分支**：本网以「激活后 PM 选区停在文档末尾」断言（G 组）。若
+ *   残留 `pendingClickCoords`（`deactivateBlock` 不清 pending 系列），`focusActiveEditor` 会先走
+ *   点击坐标分支 —— 那个分支的坐标基本落在新挂编辑器之外，PM 判 null 后仍回落 `focus('end')`，
+ *   故结论不变；但这条链路**没有**单独断言。
  * - 验收 4 的字面要求是「**>1000 块页模拟下** 32MB 预算生效」。本网（集成网，走真实
  *   wasm + persistAll）按用户裁定改为**注入小 maxBytes** 验「裁最旧」语义 + 补一例默认
  *   32MB 下不裁；**>1000 块页 + 默认 32MB 的裁切**在 `useUndoHistory.test.ts`（单测、假
@@ -35,10 +60,10 @@
  * `runUndoRedo` 走完 `executeBatch` 单事务（undelete 已是其中 op，不再有独立 RPC 窗口）。
  *
  * 牙齿验证（2026-09-14）：临时摘掉 `BlockList.vue` 的 `handleDocUndoRedoKeyDown` 捕获接线，
- * 29 例由全绿转 **28 红 / 1 绿**。唯一未变红的是「别页块进同一 blocks 数组不改本页栈」——
+ * 29 例（当时总数）由全绿转 **28 红 / 1 绿**。唯一未变红的是「别页块进同一 blocks 数组不改本页栈」——
  * 它不检验按键接线，只检验 T2 的逐页归因（对照信号在 T2 自己的单测里，与本文件分工不重叠）。
  * 每条「不接管」用例都自带对照组（同一夹具下 Ctrl+Z 必须被接管），故接线消失时它们也不会
- * 静默通过。
+ * 静默通过。现总数 37 例（2026-09-15 加 G 组落点 7 例）。
  */
 import { describe, test, expect, beforeEach, afterEach, beforeAll, afterAll, vi, type MockInstance } from 'vitest'
 import { nextTick } from 'vue'
@@ -81,6 +106,28 @@ const IDLE_MS = 10
 
 // ── 几何替身：块选区一建立即触发高亮层 watcher → jsdom 无 Range.getClientRects ──
 let savedGetClientRects: PropertyDescriptor | undefined
+let savedRangeGetBoundingClientRect: PropertyDescriptor | undefined
+// ── 几何替身 2：落点要激活块 → 真挂 TipTap。ProseMirror 的 coordsAtPos 会拿
+//    **Range**（文本节点包成 Range）做 singleRect：先 getClientRects()（替身 1 已给），
+//    空则回落到 getBoundingClientRect()（jsdom 的 Range 没实现）→ 两者都要零矩形。
+//    同为 jsdom 无布局能力，非本功能问题。──
+let savedNodeGetBoundingClientRect: PropertyDescriptor | undefined
+// ── 几何替身 3：`document.elementFromPoint`（jsdom 未实现）。落点激活块后，
+//    focusActiveEditor 会消费「点击坐标」分支 → Editor.focusAtCoords → PM posAtCoords。
+//    恒返回 null ⇒ PM 走 `!elt` → 矩形不含坐标 → posAtCoords 返回 null ⇒ 落 focus('end')。──
+let savedElementFromPoint: PropertyDescriptor | undefined
+
+const zeroRect = (): DOMRect => ({
+  x: 0,
+  y: 0,
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  width: 0,
+  height: 0,
+  toJSON: () => ({}),
+}) as DOMRect
 
 beforeAll(() => {
   savedGetClientRects = Object.getOwnPropertyDescriptor(Range.prototype, 'getClientRects')
@@ -89,12 +136,122 @@ beforeAll(() => {
     writable: true,
     value: () => [],
   })
+  savedRangeGetBoundingClientRect = Object.getOwnPropertyDescriptor(Range.prototype, 'getBoundingClientRect')
+  Object.defineProperty(Range.prototype, 'getBoundingClientRect', {
+    configurable: true,
+    writable: true,
+    value: zeroRect,
+  })
+  savedNodeGetBoundingClientRect = Object.getOwnPropertyDescriptor(Node.prototype, 'getBoundingClientRect')
+  Object.defineProperty(Node.prototype, 'getBoundingClientRect', {
+    configurable: true,
+    writable: true,
+    value: zeroRect,
+  })
+  savedElementFromPoint = Object.getOwnPropertyDescriptor(Document.prototype, 'elementFromPoint')
+  Object.defineProperty(Document.prototype, 'elementFromPoint', {
+    configurable: true,
+    writable: true,
+    value: () => null,
+  })
 })
 
 afterAll(() => {
   if (savedGetClientRects) Object.defineProperty(Range.prototype, 'getClientRects', savedGetClientRects)
   else delete (Range.prototype as unknown as Record<string, unknown>).getClientRects
+  if (savedRangeGetBoundingClientRect) {
+    Object.defineProperty(Range.prototype, 'getBoundingClientRect', savedRangeGetBoundingClientRect)
+  } else {
+    delete (Range.prototype as unknown as Record<string, unknown>).getBoundingClientRect
+  }
+  if (savedNodeGetBoundingClientRect) {
+    Object.defineProperty(Node.prototype, 'getBoundingClientRect', savedNodeGetBoundingClientRect)
+  } else {
+    delete (Node.prototype as unknown as Record<string, unknown>).getBoundingClientRect
+  }
+  if (savedElementFromPoint) Object.defineProperty(Document.prototype, 'elementFromPoint', savedElementFromPoint)
+  else delete (Document.prototype as unknown as Record<string, unknown>).elementFromPoint
 })
+
+// ── 几何替身 4（**逐例**装 / 还原，见 stubInkRects）：落点闪烁量的是**墨迹** ——
+//    递归收集区域内的文本节点（`Range.getClientRects`）与原子元素的自身盒。jsdom 无布局 ⇒ 恒空
+//    ⇒ 生产侧判定「无墨迹 ⇒ 不闪」，于是不装替身就**无法**证明闪烁真的画了出来（G 组主线）。──
+
+/** 假矩形：把「来源」编码进 left（见 stubInkRects），不验像素 */
+const inkRect = (left: number): DOMRect =>
+  ({ x: left, y: 0, top: 0, left, width: 20, height: 10, right: left + 20, bottom: 10, toJSON: () => ({}) }) as DOMRect
+
+/** 逐例装的「墨迹」替身的还原函数（由 afterEach 统一调用，见 afterEach 注释） */
+let pendingInkRestore: (() => void) | null = null
+
+/**
+ * 「墨迹」替身（返回还原函数）。产品侧量墨迹 = 递归收集区域内的**文本节点**（按字量 `Range`）
+ * 与原子元素的自身盒（`BlockList.vue` 的 `collectInkRects`）。
+ *
+ * 回答范围**有意收窄**：
+ * - 文本落在 `.block-content` / `.block-properties` 内 ⇒ 给一个假矩形；
+ * - 落在 `.ProseMirror` / `.cm-editor` 内部 ⇒ 仍给空表 —— 那是文件级替身 2/3 的地盘（真挂编辑器的
+ *   几何交给真机），且 jsdom 里编辑态块的内容区本就没有渲染出文本，本网不假装它有（见文件头）。
+ *
+ * 假矩形把「哪一块、哪个区域」编码进 `left`（本网不验像素）：
+ * - 内容区 = 该块在列表中的**序号**（1 起、按文档序）；属性区 = 1000 + 序号。
+ *   用序号而非文本长度：jsdom 里编辑态块渲染不出文本，长度编不出来。
+ *
+ * 「空区域不亮」不必替身造：产品侧要求区域内**有文本节点**才算有墨迹，空属性带自然量不出矩形。
+ * `onMeasure` 用来观察「量发生在哪一步」（如：是否在滚动之后）。
+ */
+function stubInkRects(onMeasure?: (region: Element) => void): () => void {
+  const regionOf = (range: Range): Element | null => {
+    const node = range.startContainer
+    const el = (node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement) as Element | null
+    if (!el || el.closest('.ProseMirror, .cm-editor')) return null
+    return el.closest('.block-content, .block-properties')
+  }
+  const indexOf = (region: Element): number => {
+    const blockEl = region.closest('[data-block-id]')
+    const list = blockEl?.closest('.block-list')
+    const all = list ? [...list.querySelectorAll('[data-block-id]')] : []
+    return all.indexOf(blockEl as Element) + 1
+  }
+  const answer = function (this: Range): DOMRect | null {
+    const region = regionOf(this)
+    if (!region) return null
+    onMeasure?.(region)
+    const index = indexOf(region)
+    return inkRect(region.classList.contains('block-properties') ? 1000 + index : index)
+  }
+  const savedRects = Object.getOwnPropertyDescriptor(Range.prototype, 'getClientRects')
+  const savedBox = Object.getOwnPropertyDescriptor(Range.prototype, 'getBoundingClientRect')
+  Object.defineProperty(Range.prototype, 'getClientRects', {
+    configurable: true,
+    writable: true,
+    value: function (this: Range) {
+      const rect = answer.call(this)
+      return rect ? [rect] : []
+    },
+  })
+  Object.defineProperty(Range.prototype, 'getBoundingClientRect', {
+    configurable: true,
+    writable: true,
+    value: function (this: Range) {
+      return answer.call(this) ?? zeroRect()
+    },
+  })
+  const restore = (): void => {
+    if (savedRects) Object.defineProperty(Range.prototype, 'getClientRects', savedRects)
+    if (savedBox) Object.defineProperty(Range.prototype, 'getBoundingClientRect', savedBox)
+  }
+  // 登记给 afterEach 统一还原：用例中途失败也不会把替身泄漏给后续用例
+  pendingInkRestore = restore
+  return restore
+}
+
+/** 已画出的闪烁矩形（left 即编码：内容区 = 块序号，属性区 = 1000 + 块序号） */
+const flashLefts = (): number[] =>
+  [...document.querySelectorAll<HTMLElement>('.restore-flash-rect')].map((el) => Number.parseFloat(el.style.left))
+
+/** 闪烁覆盖到的**块序号**（去重，1 起按列表内文档序）—— 断「闪的是哪几块」用这个 */
+const flashedBlocks = (): number[] => [...new Set(flashLefts().map((left) => left % 1000))]
 
 // ── 夹具 ──────────────────────────────────────────────────────────
 
@@ -134,6 +291,20 @@ function blockEl(wrapper: VueWrapper, blockId: string): HTMLElement {
   const el = wrapper.element.querySelector<HTMLElement>(`[data-block-id="${blockId}"]`)
   if (!el) throw new Error(`未渲染块 ${blockId}`)
   return el
+}
+
+/**
+ * 给某块的**属性带**注入一段真实文本 —— 只为让替身量得出墨迹。
+ *
+ * 为什么需要：jsdom 里**编辑态块的内容区渲染不出文本**（TipTap 真挂了，但那条路按零矩形处理，
+ * 见替身 2/3），而落点恰恰总会激活目标块 —— 不给它造点墨迹，G 组里「目标块闪了没」就无从断言。
+ * 属性带不受激活影响（`PropertyDisplay` 不依赖 `isActive`），于是拿它当载体；真机上属性带的墨迹
+ * 本来就是属性 chip 的文字，同一条路径。**必须在撤销之前注入**（落点在撤销的 nextTick 里量）。
+ */
+function inkInProperties(wrapper: VueWrapper, blockId: string): void {
+  const band = blockEl(wrapper, blockId).querySelector('.block-properties')
+  if (!band) throw new Error(`未渲染属性带 ${blockId}`)
+  band.appendChild(document.createTextNode('p'))
 }
 
 interface KeyInit {
@@ -269,6 +440,9 @@ afterEach(() => {
     mounted = null
   }
   document.body.innerHTML = ''
+  // 逐例装的「墨迹」替身：统一在这里还原 —— 用例中途失败也不会泄漏给后续用例
+  pendingInkRestore?.()
+  pendingInkRestore = null
   const silent = errorSpy.mock.calls.filter((c) => String(c[0]).includes('[undo] 恢复失败'))
   errorSpy.mockRestore()
   expect(
@@ -637,6 +811,8 @@ describe('B. 焦点作用域', () => {
 
     const wrapper = await mountBlockList(pageId)
     const selection = getSelection(wrapper)
+    // 装上「墨迹」替身：否则本例的「没有闪烁矩形」会退化成「量不出墨迹」的副产物，毫无牙力
+    stubInkRects()
 
     // 只让「根块」受影响：改它的 format，撤销时恢复集合里便只有根块
     await store.updateBlockFormat(root.id, { collapsed: true })
@@ -647,9 +823,12 @@ describe('B. 焦点作用域', () => {
 
     expect(ev.defaultPrevented).toBe(true)
     expect(store.getBlock(root.id)!.format?.collapsed).toBeFalsy()
-    // 受影响块只有根块 ⇒ 过滤后无落点；若不过滤，anchorIds 会含页面根块
+    // 受影响块只有根块 ⇒ 过滤后无落点；若不过滤，根块会进选区 / 被激活 / 被画矩形
+    // （根块不参与渲染，故按「页面里没有任何闪烁矩形」断言）
     expect(selection.anchorIds.has(root.id)).toBe(false)
     expect(selection.anchorIds.size).toBe(0)
+    expect(flashLefts()).toEqual([])
+    expect(useEditorStore().activeBlockId).toBeNull()
     wrapper.unmount()
   })
 })
@@ -959,6 +1138,262 @@ describe('F. 字节预算裁切', () => {
       await flushAsync()
     }
     expect(contentOf(a)).toBe('v0')
+    wrapper.unmount()
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════
+// G. 落点：短暂闪烁 + 光标（修订 #109「undo 落点 = 块选区选中态」）
+// ══════════════════════════════════════════════════════════════════
+
+describe('G. 落点：闪烁 + 光标', () => {
+  /** 与 BlockList.vue 的 UNDO_FLASH_MS 对齐；只用它等「闪烁窗口结束」，不验时长本身 */
+  const FLASH_MS = 600
+
+  /** 越过闪烁窗口 ⇒ BlockList 的计时器清空闪烁矩形列表 */
+  async function flashSettled(): Promise<void> {
+    await new Promise((r) => setTimeout(r, FLASH_MS + 50))
+    await nextTick()
+  }
+
+  test('undo：不进块选区；受影响块画一次闪烁；光标落进该块', async () => {
+    const pageId = 'page-undo-landing-single'
+    const [id] = await seed(pageId, ['v0'])
+    const wrapper = await mountBlockList(pageId)
+    const selection = getSelection(wrapper)
+    const editorStore = useEditorStore()
+    stubInkRects()
+
+    await typeStep(id, 'v1')
+    inkInProperties(wrapper, id)
+
+    const ev = undoKey(document.body)
+    await flushAsync()
+
+    expect(ev.defaultPrevented).toBe(true)
+    expect(contentOf(id)).toBe('v0')
+    // ① 不再建块选区（持久高亮 → 一次闪烁）
+    expect(selection.anchorIds.size).toBe(0)
+    // ② 闪烁画了出来，且落在受影响块上（「闪的是哪几块」= 编码反查，见 stubInkRects）。
+    //    该块此刻是编辑态，jsdom 里内容区渲染不出文本 ⇒ 这一例的墨迹来自它的属性带
+    expect(flashedBlocks()).toEqual([1])
+    // ③ 光标（编辑态）落进该块 —— 与块选区互斥：激活时 focusActiveEditor 先 clearSelection
+    expect(editorStore.activeBlockId).toBe(id)
+
+    await flashSettled()
+    expect(flashLefts()).toEqual([])
+    wrapper.unmount()
+  })
+
+  test('一次突发改两块（同一步）：闪烁覆盖全部受影响块（内容区 + 属性区都量到），光标落文档序最后一块', async () => {
+    const pageId = 'page-undo-landing-multi'
+    const [a, b] = await seed(pageId, ['A0', 'B0'])
+    const wrapper = await mountBlockList(pageId)
+    const editorStore = useEditorStore()
+    stubInkRects()
+
+    typeInto(a, 'A1')
+    typeInto(b, 'B1')
+    await settleStep() // 同一 idle 窗口 ⇒ 一步
+    // b 是落点（会被激活）⇒ 内容区在 jsdom 里量不出墨迹，改从它的属性带取
+    inkInProperties(wrapper, b)
+
+    undoKey(document.body)
+    await flushAsync()
+
+    expect(contentOf(a)).toBe('A0')
+    expect(contentOf(b)).toBe('B0')
+    // a（非编辑态）的**内容区** = 序号 1；b 的**属性区** = 1000 + 序号 2 —— 两个区域都在闪烁范围内
+    expect(flashLefts()).toEqual([1, 1002])
+    expect(editorStore.activeBlockId).toBe(b)
+    wrapper.unmount()
+  })
+
+  test('redo：同样闪烁 + 光标落进目标块，不留持久高亮', async () => {
+    const pageId = 'page-undo-landing-redo'
+    const [id] = await seed(pageId, ['v0'])
+    const wrapper = await mountBlockList(pageId)
+    const selection = getSelection(wrapper)
+    const editorStore = useEditorStore()
+    stubInkRects()
+
+    await typeStep(id, 'v1')
+    inkInProperties(wrapper, id)
+
+    undoKey(document.body)
+    await flushAsync()
+    expect(contentOf(id)).toBe('v0')
+
+    const ev = dispatchKey(document.body, { key: 'z', ctrlKey: true, shiftKey: true })
+    await flushAsync()
+
+    expect(ev.defaultPrevented).toBe(true)
+    expect(contentOf(id)).toBe('v1')
+    expect(selection.anchorIds.size).toBe(0)
+    expect(flashedBlocks()).toEqual([1])
+    expect(editorStore.activeBlockId).toBe(id)
+
+    await flashSettled()
+    expect(flashLefts()).toEqual([])
+    wrapper.unmount()
+  })
+
+  test('连按两次 undo：上一轮的闪烁矩形即刻让位给本轮（不残留旧块）', async () => {
+    const pageId = 'page-undo-landing-replace'
+    const [a, b] = await seed(pageId, ['A0', 'B0'])
+    const wrapper = await mountBlockList(pageId)
+    stubInkRects()
+
+    await typeStep(a, 'A1')
+    await typeStep(b, 'B1')
+    // 两块都可能处于编辑态（jsdom 里内容区量不出墨迹）⇒ 各自从属性带取墨迹
+    inkInProperties(wrapper, a)
+    inkInProperties(wrapper, b)
+
+    // 第一次 undo：只撤 B1
+    undoKey(document.body)
+    await flushAsync()
+    expect(contentOf(b)).toBe('B0')
+    expect(flashedBlocks()).toEqual([2])
+
+    // 第二次 undo（未等闪烁窗口结束）：只撤 A1，B 的矩形必须已经让位
+    undoKey(document.body)
+    await flushAsync()
+    expect(contentOf(a)).toBe('A0')
+    expect(flashedBlocks()).toEqual([1])
+    wrapper.unmount()
+  })
+
+  test('滚入视野：滚动目标 = 光标落点那块（文档序最后一块）', async () => {
+    const pageId = 'page-undo-landing-scroll'
+    const [a, b] = await seed(pageId, ['A0', 'B0'])
+    const wrapper = await mountBlockList(pageId)
+
+    // jsdom 没实现 Element.scrollIntoView（产品侧已有 typeof 守卫）→ 装上可观测替身。
+    // 用 function 而非箭头，才能从 this 取回被滚动的元素。
+    const scrolledIds: Array<string | null> = []
+    // 「量发生在哪一步」的证人：产品侧若先量后滚，掉出视口的落点会被画在旧位置上
+    const measuredAfterScroll: boolean[] = []
+    stubInkRects(() => measuredAfterScroll.push(scrolledIds.length > 0))
+    const savedScrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView')
+    const scrollSpy = vi.fn(function (this: HTMLElement) {
+      scrolledIds.push(this.getAttribute('data-block-id'))
+    })
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      configurable: true,
+      writable: true,
+      value: scrollSpy,
+    })
+
+    try {
+      typeInto(a, 'A1')
+      typeInto(b, 'B1')
+      await settleStep()
+      inkInProperties(wrapper, b)
+
+      undoKey(document.body)
+      await flushAsync()
+
+      expect(scrolledIds).toEqual([b])
+      expect(scrollSpy).toHaveBeenCalledWith({ block: 'center' })
+      // 落点那块确实闪了 —— 这一步改的是两块（同 idle 窗口），故两块都在闪烁集合里
+      expect(flashedBlocks()).toEqual([1, 2])
+      // 且矩形是**滚完之后**才量的（先量后滚 ⇒ 证人里出现 false）
+      expect(measuredAfterScroll).not.toHaveLength(0)
+      expect(measuredAfterScroll.every(Boolean)).toBe(true)
+    } finally {
+      if (savedScrollIntoView) Object.defineProperty(Element.prototype, 'scrollIntoView', savedScrollIntoView)
+      else delete (Element.prototype as unknown as Record<string, unknown>).scrollIntoView
+    }
+    wrapper.unmount()
+  })
+
+  test('可见性门控：落点块已在视口内就不滚；掉出视口才滚（对照）', async () => {
+    const pageId = 'page-undo-landing-scroll-gate'
+    const [a, b] = await seed(pageId, ['A0', 'B0'])
+    const wrapper = await mountBlockList(pageId)
+
+    const scrolledIds: Array<string | null> = []
+    const savedScrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView')
+    const savedGetRect = Object.getOwnPropertyDescriptor(Element.prototype, 'getBoundingClientRect')
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      configurable: true,
+      writable: true,
+      value: function (this: HTMLElement) {
+        scrolledIds.push(this.getAttribute('data-block-id'))
+      },
+    })
+    // 只改**落点块**的矩形，其余元素保持 jsdom 的全零矩形（与不装替身等价，不影响其它路径）。
+    // 视口内 / 视口外由 onScreen 切换 —— 同一落点、只变可见性，用来验「门控真的在判可见性」。
+    let onScreen = true
+    Object.defineProperty(Element.prototype, 'getBoundingClientRect', {
+      configurable: true,
+      writable: true,
+      value: function (this: Element) {
+        const top = onScreen ? 100 : window.innerHeight + 50
+        if (this.getAttribute('data-block-id') !== b) {
+          return { top: 0, bottom: 0, height: 0, left: 0, right: 0, width: 0, x: 0, y: 0, toJSON: () => ({}) } as DOMRect
+        }
+        return {
+          top,
+          bottom: top + 37,
+          height: 37,
+          left: 0,
+          right: 720,
+          width: 720,
+          x: 0,
+          y: top,
+          toJSON: () => ({}),
+        } as DOMRect
+      },
+    })
+
+    stubInkRects()
+
+    try {
+      typeInto(a, 'A1')
+      typeInto(b, 'B1')
+      await settleStep()
+      inkInProperties(wrapper, b)
+
+      // ① 落点块本就在眼前 ⇒ 不滚；但闪烁照旧 —— 门控只管位置，集合标识（闪烁）仍无条件给出
+      undoKey(document.body)
+      await flushAsync()
+      expect(flashedBlocks()).toEqual([1, 2])
+      expect(scrolledIds).toEqual([])
+
+      // ② 同一落点掉出视口 ⇒ 滚（证明 ① 不是「替身坏了导致什么都不滚」）
+      onScreen = false
+      undoKey(document.body, { shiftKey: true })
+      await flushAsync()
+      expect(flashedBlocks()).toEqual([1, 2])
+      expect(scrolledIds).toEqual([b])
+    } finally {
+      if (savedScrollIntoView) Object.defineProperty(Element.prototype, 'scrollIntoView', savedScrollIntoView)
+      else delete (Element.prototype as unknown as Record<string, unknown>).scrollIntoView
+      if (savedGetRect) Object.defineProperty(Element.prototype, 'getBoundingClientRect', savedGetRect)
+      else delete (Element.prototype as unknown as Record<string, unknown>).getBoundingClientRect
+    }
+    wrapper.unmount()
+  })
+
+  test('光标落行尾：激活后编辑器选区停在文档末尾', async () => {
+    const pageId = 'page-undo-landing-caret-end'
+    const [id] = await seed(pageId, ['v0'])
+    const wrapper = await mountBlockList(pageId)
+    const editorStore = useEditorStore()
+
+    await typeStep(id, 'v1')
+
+    undoKey(document.body)
+    await flushAsync()
+
+    // activateBlock 不带 cursorPos ⇒ focusActiveEditor 走 focus('end') ⇒ PM 选区在文档末尾
+    // （"v0" 的正文两端各占一个位置 ⇒ 行尾 = content.size - 1）
+    const editor = editorStore.activeEditor
+    expect(editor).not.toBeNull()
+    expect(editor!.state.doc.textContent).toBe('v0')
+    expect(editor!.state.selection.to).toBe(editor!.state.doc.content.size - 1)
     wrapper.unmount()
   })
 })
