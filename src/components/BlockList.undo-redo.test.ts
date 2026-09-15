@@ -73,6 +73,7 @@ import BlockList from './BlockList.vue'
 import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
 import { usePageStore } from '../stores/pages'
+import { usePropertyStore } from '../stores/property'
 import type { Page } from '../types/page'
 import {
   resetUndoHistory,
@@ -1394,6 +1395,43 @@ describe('G. 落点：闪烁 + 光标', () => {
     expect(editor).not.toBeNull()
     expect(editor!.state.doc.textContent).toBe('v0')
     expect(editor!.state.selection.to).toBe(editor!.state.doc.content.size - 1)
+    wrapper.unmount()
+  })
+})
+
+describe('H. 前提哨兵：快照属性数据源的覆盖完备性', () => {
+  /**
+   * 这条**不是**功能断言，是**前提哨兵** —— 钉住 `useUndoHistory.propEnvelope` 的安全性前提。
+   *
+   * 信封只读 `propertyStore.propertiesByBlock`（不用 DB 兜底，见其注释「为什么信封只读缓存」），
+   * 这份数据之所以够用，全靠「页面每个块只要渲染就会被挂载、挂载即**无条件**加载属性」
+   * （`useBlockPropertySync.onMounted` → `loadBlockProperties`，后者无条件写缓存）。
+   * 这里把该前提变成可执行断言：**页面块集合 ⊆ propertyStore 的键集合**。
+   *
+   * 会变红的情形（= 该去重新评估「恢复是否还完备」的信号）：
+   * - 引入虚拟滚动 / 懒渲染 ⇒ 未渲染的块不挂载 ⇒ 不加载属性；
+   * - `useBlockPropertySync` 的加载被改成条件式（如只给特定 type 加载）；
+   * - 属性缓存被驱逐（`clearBlockCache` 目前生产零调用）。
+   * 真红之后须知：撤销「删块」时那些块的信封属性缺失 ⇒ 该块属性**永久丢失**，
+   * 此时才需要动 Rust（让 `undelete_blocks` 顺带复活属性行）。2026-09-15 grill-up 核查结论：
+   * 当前不可达（无虚拟滚动、折叠用 display:none 不卸载、缓存零驱逐、删块入口只在 BlockList），
+   * 故**未**改 T1 语义、也**未**动 ADR-0046 D10。
+   */
+  test('页面每个块渲染后其属性条目都进 propertyStore（信封完备性的前提）', async () => {
+    const pageId = 'page-envelope-coverage'
+    const ids = await seed(pageId, ['a', 'b', 'c'])
+    const wrapper = await mountBlockList(pageId)
+    await flushAsync()
+
+    const propertyStore = usePropertyStore()
+    const pageBlocks = useBlockStore().getBlocksByPage(pageId)
+    const missing = pageBlocks.filter((b) => !propertyStore.propertiesByBlock.has(b.id))
+
+    // 夹具自检：三个块确实都进了本页（否则下面的「无缺失」会因空集合而假绿）
+    expect(pageBlocks.map((b) => b.id)).toEqual(expect.arrayContaining(ids))
+    expect(pageBlocks.length).toBeGreaterThanOrEqual(3)
+    // 核心断言：一个都不许漏
+    expect(missing.map((b) => b.content)).toEqual([])
     wrapper.unmount()
   })
 })

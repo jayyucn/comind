@@ -111,6 +111,21 @@ function byteSize(snap: HistoryEntry): number {
   return utf8Len(JSON.stringify(snap))
 }
 
+/**
+ * ⚠️ 本函数**只读客户端缓存**（`propertyStore`），不查 DB。其安全前提是「页面每个块只要渲染
+ * 就会被挂载、挂载即**无条件**加载属性」（`useBlockPropertySync.onMounted` → `loadBlockProperties`），
+ * 因此缓存对本页块是**完备**的 —— 若前提不成立，信封会缺块，撤销「删块」时该块属性随级联软删
+ * **永久丢失**（DB 行已被 `PropertyService::delete_by_block_id` 软删）。
+ *
+ * 该前提已钉成两条可执行哨兵（2026-09-15 grill-up 核查后加，此前是一条**未验证的推测**）：
+ * - 前提侧：`BlockList.undo-redo.test.ts` H 组「页面块集合 ⊆ propertyStore 键集合」
+ * - 信封侧：`useUndoHistory.test.ts`「信封覆盖 store 中所有有属性的块」
+ * 任一变红 ⇒ 前提被破坏（虚拟滚动 / 懒渲染 / 条件加载 / 缓存驱逐），**那时才需要**动 Rust
+ * （让 `undelete_blocks` 顺带复活属性行，须先过 ADR-0046 D10）。现状核查结论：无虚拟滚动
+ * （`v-for` 全量渲染）、折叠是 `display: none` 不卸载、`clearBlockCache` 生产零调用、
+ * 删块入口只在 `BlockList` ⇒ 不可达，故**未**改 T1 语义。
+ */
+
 /** 属性信封（D11）：{ blockId → 属性深拷贝[] }。captureEntry 与 propSig 的**单一真源** ——
  *  两处必须逐字节一致，否则「签名变了 ⇔ 快照会变」不成立（Spec #7）。 */
 function propEnvelope(pageBlocks: Block[]): Record<string, Property[]> {

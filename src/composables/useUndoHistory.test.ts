@@ -230,6 +230,38 @@ describe('派生字段剔除', () => {
     await flushChange()
     expect(_debugStats().stackSizes['p1']).toBe(2)
   })
+
+  /**
+   * 信封完整性（前提哨兵的另一端）：**store 里所有有属性的块都必须进信封**，一个不漏。
+   *
+   * 漏一个 = 撤销「删块」后该块的属性永久丢失（恢复批次靠信封重设属性，DB 行已被级联软删）。
+   * 空数组的条目（`loadBlockProperties` 对无属性块也会写键）则**不必**进信封 —— 那是
+   * D11 的省流优化（真机省 48.5%），不是漏项；故这里断言的是**精确集合**，两头都锁住。
+   * 会变红的情形：给 `propEnvelope` 加过滤 / 换数据源 / 把 `length > 0` 判断写窄。
+   */
+  it('信封覆盖 store 中所有有属性的块（多块场景，且只收它们）', async () => {
+    const blockStore = useBlockStore()
+    const propertyStore = usePropertyStore()
+    blockStore.blocks = [
+      makeBlock('b1', 'p1'),
+      makeBlock('b2', 'p1'),
+      makeBlock('b3', 'p1'),
+    ]
+    propertyStore.propertiesByBlock = new Map([
+      ['b1', [makeProp('b1', 'status', 'Todo')]],
+      ['b2', [makeProp('b2', 'priority', 'High')]],
+      ['b3', []],
+    ])
+    ensureStack('p1')
+
+    blockStore.blocks[0].content = 'changed'
+    await flushChange()
+    undo('p1')
+    const latest = redo('p1')!
+
+    expect(Object.keys(latest.properties).sort()).toEqual(['b1', 'b2'])
+    expect(latest.properties['b2']?.[0]?.value).toBe('High')
+  })
 })
 
 describe('页面隔离', () => {
