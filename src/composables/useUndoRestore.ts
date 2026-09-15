@@ -263,11 +263,16 @@ async function refreshRenderSegments(pageId: string): Promise<void> {
     const segByBlock = new Map(pw.blocks.map((brd) => [brd.block.id, brd.render_segments]))
     if (segByBlock.size === 0) return
     const blockStore = useBlockStore()
-    blockStore.blocks = blockStore.blocks.map((b) => {
-      if (b.pageId !== pageId) return b
+    // 原地写 renderSegments，禁止整页替换对象：树（BlockList.tree）持有块对象引用，
+    // 仅在 structureVersion 变化时重建；此处若用 `blocks.map(b => ({ ...b, renderSegments }))`
+    // 换新对象又不 bump version（本函数定位为只读重取），树节点便攥着旧对象 —— 此后
+    // updateBlockContent 原地 mutate 的是 store 新对象，撤销落点激活的块一旦失活，
+    // 读态渲染读树上的旧对象 → 「撤销后打字，失活即消失」且 store/DOM 永久分叉（真机实证）。
+    for (const b of blockStore.blocks) {
+      if (b.pageId !== pageId) continue
       const segs = segByBlock.get(b.id)
-      return segs ? { ...b, renderSegments: segs } : b
-    })
+      if (segs) b.renderSegments = segs
+    }
   } catch {
     // 只读重取失败不影响已提交的恢复
   }

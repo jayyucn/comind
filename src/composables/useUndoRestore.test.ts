@@ -311,6 +311,33 @@ describe('renderSegments 退化修复（Spec #5）', () => {
 
     expect(bs.getBlocksByPage('p1')[0].renderSegments).toBeUndefined()
   })
+
+  it('写回必须原地 mutate 不换对象：structureVersion 重建的树引用与后续写入同源（撤销后打字失活即消失回归）', async () => {
+    const bs = useBlockStore()
+    bs.blocks = [makeBlock('B', 'p1', { content: 'old' })]
+    usePropertyStore().propertiesByBlock = new Map()
+
+    const segs = [{ type: 'text', start: 0, end: 3 }]
+    // getPageWithBlocks 在 structureVersion++（树重建点）之后、写回之前被调用：
+    // 此刻捕获的引用即渲染树将持有的对象引用
+    let refAtTreeBuild: Block | undefined
+    hoisted.client.getPageWithBlocks.mockImplementationOnce(async () => {
+      refAtTreeBuild = bs.blocks.find((b) => b.id === 'B')
+      return {
+        page: {},
+        blocks: [{ block: { id: 'B' }, children: [], render_segments: segs, properties: [] }],
+      }
+    })
+
+    await restoreEntry('p1', entry([makeBlock('B', 'p1', { content: 'new' })]))
+
+    const refAfter = bs.blocks.find((b) => b.id === 'B')!
+    // restoreEntry 乐观更新允许换对象，但 refreshRenderSegments 不许再换：
+    // 换了又不 bump version，树节点攥旧对象 → 此后 updateBlockContent 原地 mutate
+    // 对渲染不可见 → 「撤销后打字，失活即消失」且 store/DOM 永久分叉（真机实证）
+    expect(refAfter).toBe(refAtTreeBuild)
+    expect(refAfter.renderSegments).toEqual(segs)
+  })
 })
 
 describe('属性撤销', () => {
