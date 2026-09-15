@@ -163,3 +163,9 @@ A view of the Pages Library filtered to `type=book`, rendered by the fourth gene
 
 ### Reading Progress (阅读进度)
 The reader-local record of the last reading position, stored as a CFI anchor (SQLite `BookProgress` table, NOT in `SyncTable`). Restored on reopen by resolving the CFI and scrolling into view. Desktop-only.
+
+### Batch Operation (批量操作)
+The JSON envelope `{entity, action, params}` the frontend sends via `executeBatch`. Dispatch semantics live in **one** place: `crates/comind-core/src/services/batch.rs` (`apply_batch`); the Tauri and WASM `execute_batch` commands are thin adapters (transaction wrapping only). See ADR-0048.
+
+### OpEffect (批量操作效果)
+What `apply_batch` returns per op: `{value, sync, page_ids}` — `value` goes to the frontend (fire-and-forget), `sync` is `(SyncTable, row id)` pairs consumed by the Tauri layer for `record_and_notify`, `page_ids` drive the in-transaction page touch. WASM ignores `sync`/`page_ids`. Unknown ops are tolerated (Ok with an `error` field), any known-op failure rolls back the whole batch.
