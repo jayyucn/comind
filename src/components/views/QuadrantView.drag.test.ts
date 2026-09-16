@@ -124,7 +124,8 @@ describe('QuadrantView 子任务显示（最多 3 层）', () => {
       { block_id: 'b', parent_id: 'a', content_preview: '子任务B', properties: { status: 'Todo' }, date_refs: [] },
       { block_id: 'c', parent_id: 'b', content_preview: '孙任务C', properties: { status: 'Todo' }, date_refs: [] },
       { block_id: 'd', parent_id: 'c', content_preview: '曾孙任务D', properties: { status: 'Todo' }, date_refs: [] },
-      { block_id: 'e', parent_id: '', content_preview: '任务E', properties: { status: 'Done', priority: 'Urgent' }, date_refs: [] },
+      // E 为 Done：落格资格要求「Done 须昨日后更新」（qualifies），补 updated_at 使其可见
+      { block_id: 'e', parent_id: '', content_preview: '任务E', properties: { status: 'Done', priority: 'Urgent' }, date_refs: [], updated_at: Date.now() },
     ]
   }
 

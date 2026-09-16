@@ -6,11 +6,38 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useBlockStore } from './blocks'
 import { usePropertyStore } from './property'
 
-// Mock core client
-vi.mock('../wasm/client', () => ({
-  initCoreClient: vi.fn(() => Promise.resolve({
-    getProperties: vi.fn(() => Promise.resolve([])), // T11 新增
-    getPropertiesByBlock: vi.fn(() => Promise.resolve([])),
+// Mock core client —— 周期推进的日期计算本体在 Rust（S6），wasm 适配层无实现；
+// 这里按用例数据在 mock 中复刻 Rust 契约（daily +1d / weekly +7d / monthly 取月末钳制）。
+const { mockClient } = vi.hoisted(() => {
+  function daysInMonth(year: number, month: number): number {
+    return new Date(year, month, 0).getDate()
+  }
+  function nextIso(iso: string, rule: string): string {
+    const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/)!
+    let [, y, mo, d] = m.map(Number) as unknown as number[]
+    if (rule === 'daily') {
+      const dt = new Date(y, mo - 1, d + 1)
+      y = dt.getFullYear(); mo = dt.getMonth() + 1; d = dt.getDate()
+    } else if (rule === 'weekly') {
+      const dt = new Date(y, mo - 1, d + 7)
+      y = dt.getFullYear(); mo = dt.getMonth() + 1; d = dt.getDate()
+    } else if (rule === 'monthly') {
+      mo += 1
+      if (mo > 12) { mo = 1; y += 1 }
+      d = Math.min(d, daysInMonth(y, mo))
+    } else {
+      return iso
+    }
+    return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+  }
+  const dateRefsByBlock: Record<string, Array<{ id: string; block_id: string; kind: string; iso: string; date_day: string; recurrence: string; lead_minutes: number; event_ts: number; created_at: number }>> = {
+    // kind 与用例 content 中的 emoji 对应（📅=schedule，⏰=deadline）
+    'block-1': [{ id: 'ref-1', block_id: 'block-1', kind: 'deadline', iso: '2026-07-15', date_day: '2026-07-15', recurrence: 'weekly', lead_minutes: 0, event_ts: 0, created_at: 0 }],
+    'block-2': [{ id: 'ref-2', block_id: 'block-2', kind: 'schedule', iso: '2026-07-15', date_day: '2026-07-15', recurrence: 'daily', lead_minutes: 0, event_ts: 0, created_at: 0 }],
+    'block-3': [{ id: 'ref-3', block_id: 'block-3', kind: 'deadline', iso: '2026-01-31', date_day: '2026-01-31', recurrence: 'monthly', lead_minutes: 0, event_ts: 0, created_at: 0 }],
+  }
+  const mockClient = {
+    getProperties: vi.fn(() => Promise.resolve([])),
     setProperty: vi.fn(() => Promise.resolve({
       id: 'prop-1',
       block_id: 'block-1',
@@ -24,7 +51,15 @@ vi.mock('../wasm/client', () => ({
       created_at: Date.now(),
       updated_at: Date.now(),
     })),
-  })),
+    getDateRefsByBlock: vi.fn(async (blockId: string) => dateRefsByBlock[blockId] ?? []),
+    calculateNextRecurrence: vi.fn(async (iso: string, rule: string) => nextIso(iso, rule)),
+  }
+  return { mockClient }
+})
+
+vi.mock('../wasm/client', () => ({
+  initCoreClient: vi.fn(() => Promise.resolve(mockClient)),
+  getCoreClient: vi.fn(() => mockClient),
 }))
 
 // Mock blocks store

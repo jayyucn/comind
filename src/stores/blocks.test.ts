@@ -734,6 +734,8 @@ describe('deleteBlocks - RPC失败快照回滚', () => {
     const child1 = await store.createBlock({ pageId, content: 'Child 1', parentId: parent.id })
     const child2 = await store.createBlock({ pageId, content: 'Child 2', parentId: parent.id })
     const grandchild = await store.createBlock({ pageId, content: 'Grandchild', parentId: child1.id })
+    // 「每页至少留 1 个顶层块」不变量闸门（deleteBlocks 1.5）：额外顶层块规避闸门保留
+    await store.createBlock({ pageId, content: 'Keep' })
 
     const allIds = [parent.id, child1.id, child2.id, grandchild.id]
     expect(store.blocks.filter(b => allIds.includes(b.id)).length).toBe(4)

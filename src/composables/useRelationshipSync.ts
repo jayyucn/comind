@@ -48,11 +48,16 @@ export function useRelationshipSync(
   // blockId -> targetTitle -> 关系类型快照
   const linkSnapshot = ref<Map<string, Map<string, string | null>>>(new Map())
 
+  // 刷新代号：并发 refreshSnapshot 时仅允许最新一次写入快照，防止过期结果覆盖（如
+  // 挂载时的 immediate 刷新尚未完成、用户已 setEditingBlock 并显式刷新的场景）。
+  let refreshSeq = 0
+
   /**
    * 解析当前所有 Block 中的关系类型链接，建立快照。
    * 注意：跳过正在编辑的 Block。
    */
   async function refreshSnapshot() {
+    const seq = ++refreshSeq
     const newSnapshot = new Map<string, Map<string, string | null>>()
     const pageBlocks = blocks.value
 
@@ -76,6 +81,8 @@ export function useRelationshipSync(
       }
     }
 
+    // 期间已有更新的刷新启动：本次结果已过期，丢弃
+    if (seq !== refreshSeq) return
     linkSnapshot.value = newSnapshot
   }
 

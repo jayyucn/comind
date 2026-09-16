@@ -1,4 +1,4 @@
-import { initCoreClient, getCoreClient, type CoreClient } from '../src/wasm/client'
+import { initCoreClient, type CoreClient } from '../src/wasm/client'
 
 let client: CoreClient | null = null
 
@@ -49,19 +49,15 @@ export async function cleanupRelationshipTypes(): Promise<void> {
 
 export async function cleanupTemplates(): Promise<void> {
   const c = await initTestCore()
-  const templates = await c.executeBatch([{
-    entity: 'template',
-    action: 'get',
-    params: {}
-  }])
+  // 必须用 getTemplates()（已解包 UserTemplate[]）；executeBatch get 返回
+  // op results 数组（外层是 [[template...]]），直接遍历拿不到 id → 清理空转。
+  const templates = await c.getTemplates()
   for (const t of templates) {
-    if (t.success && t.id) {
-      await c.executeBatch([{
-        entity: 'template',
-        action: 'delete',
-        params: { id: t.id }
-      }])
-    }
+    await c.executeBatch([{
+      entity: 'template',
+      action: 'delete',
+      params: { id: t.id }
+    }])
   }
 }
 

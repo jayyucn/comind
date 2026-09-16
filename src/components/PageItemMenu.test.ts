@@ -172,7 +172,8 @@ describe('PageItemMenu Component', () => {
       await wrapper.find('.menu-trigger').trigger('click')
       await nextTick()
 
-      const deleteItem = wrapper.findAll('.menu-item')[1]
+      // 删除项有 danger 类，按语义选择（菜单项顺序可变）
+      const deleteItem = wrapper.find('.menu-item.danger')
       await deleteItem.trigger('click')
       await nextTick()
 

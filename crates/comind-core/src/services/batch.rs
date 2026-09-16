@@ -402,9 +402,22 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
         ("relationship_type", "create") => {
             // 裁定：全量反序列化 + repo create —— 前端种子同步发完整行
             // （含 created_at/updated_at/deleted/builtin），契约是整行写入。
+            // 复活语义（软删 UNIQUE 兼容）：repo get_all / get_by_type 均过滤
+            // deleted=0，但 id 上有 UNIQUE 约束。前端 load() 以种子 id 幂等同步
+            // （rt_seed_*），当该 id 已被软删时 get_all 不可见 → 走 create →
+            // INSERT 撞 UNIQUE（App 启动 load() 直接崩；测试 cleanup 同因失效）。
+            // get_by_id 不过滤 deleted：命中即改走全行 update（按入参复活/覆盖）。
             let rt: RelationshipType = serde_json::from_value(params)?;
-            let created =
-                repository::RelationshipTypeRepository::create(storage.relationship_types(), &rt)?;
+            let exists = repository::RelationshipTypeRepository::get_by_id(
+                storage.relationship_types(),
+                &rt.id,
+            )
+            .is_ok();
+            let created = if exists {
+                repository::RelationshipTypeRepository::update(storage.relationship_types(), &rt)?
+            } else {
+                repository::RelationshipTypeRepository::create(storage.relationship_types(), &rt)?
+            };
             Ok(OpEffect {
                 value: serde_json::to_value(&created)?,
                 sync: vec![(SyncTable::RelationshipType, created.id)],

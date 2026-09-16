@@ -18,7 +18,7 @@ describe('useReaderTypography', () => {
     expect(typography.value).toEqual({
       fontSize: 17,
       lineHeight: 1.8,
-      maxWidthCh: 42,
+      maxWidthCh: 72, // DEFAULTS = ReaderContentMaxWidth
       theme: 'light',
     })
   })
@@ -33,7 +33,7 @@ describe('useReaderTypography', () => {
     expect(b.typography.value).toEqual({
       fontSize: 20,
       lineHeight: 1.6,
-      maxWidthCh: 72,
+      maxWidthCh: 36, // 36 在 [28, 72] 合法区间，原样持久化
       theme: 'sepia',
     })
     expect(localStorage.getItem('comind-reader-typography')).toBeTruthy()

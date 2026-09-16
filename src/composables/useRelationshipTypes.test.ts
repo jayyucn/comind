@@ -32,9 +32,9 @@ describe('useRelationshipTypes', () => {
     it('非空时以 JSON 为准同步内置记录', async () => {
       const { load, all } = useRelationshipTypes()
       await load()
-      // 首次 load 后 label 已是 JSON 值
+      // 首次 load 后 label 已是 JSON 种子值
       const isA = all.value.find(r => r.type === 'is-a')
-      expect(isA?.label).toBe('is-a')
+      expect(isA?.label).toBe('是一个')
       expect(all.value).toHaveLength(8)
       // 再次 load 不产生重复记录
       await load()
@@ -48,7 +48,7 @@ describe('useRelationshipTypes', () => {
       await update(isA.id, { label: '手动修改' })
       expect(all.value.find(r => r.id === isA.id)?.label).toBe('手动修改')
       await load()
-      expect(all.value.find(r => r.id === isA.id)?.label).toBe('is-a')
+      expect(all.value.find(r => r.id === isA.id)?.label).toBe('是一个')
     })
 
     it('load 后 loaded 变为 true', async () => {

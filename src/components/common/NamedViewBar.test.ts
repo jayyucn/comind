@@ -119,7 +119,7 @@ describe('NamedViewBar tabs drag reorder (ADR-0044)', () => {
     expect(capturedOptions.current!.draggable).toBe('.tab')
     expect(capturedOptions.current!.filter).toBe('.kebab, .rename, input, .action')
     expect(capturedOptions.current!.forceFallback).toBe(true)
-    expect(capturedOptions.current!.delay).toBe(120)
+    expect(capturedOptions.current!.delay).toBe(60)
     expect(capturedOptions.current!.animation).toBe(300)
 
     wrapper.unmount()

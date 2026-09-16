@@ -59,3 +59,4 @@ comind-android-mobile/
 comind-android/
 .vite-t6-cache/
 dist.old-**
+*.txt

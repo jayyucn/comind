@@ -48,13 +48,11 @@ describe('diag: 切页后 property icon 消失', () => {
 
   it('切页后 loadBlockProperties 填充 propertiesByBlock，PropertyInline 能读到', async () => {
     const propertyStore = usePropertyStore()
-    // mock getClient 返回的数据
+    // mock 数据源：pinia 解包 ref，store 上 propertiesByBlock 直接是 reactive Map
     vi.spyOn(propertyStore, 'loadBlockProperties').mockImplementation(async (blockId: string) => {
-      ;(propertyStore as any).propertiesByBlock.value = new Map(
-        (propertyStore as any).propertiesByBlock.value.set(blockId, [
-          makeProp(blockId, 'status', 'Todo'),
-        ])
-      )
+      ;(propertyStore.propertiesByBlock as unknown as Map<string, Property[]>).set(blockId, [
+        makeProp(blockId, 'status', 'Todo'),
+      ])
       return []
     })
 

@@ -2,27 +2,44 @@ import { describe, test, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { usePageStore } from '../stores/pages'
 
-vi.mock('../storage/indexedDB', () => ({
-  storage: {
-    getAllPages: vi.fn().mockResolvedValue([]),
-    createPageWithRootBlock: vi.fn().mockImplementation(async (title: string, type: string) => ({
-      id: `page-${title}`,
-      title,
-      type,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+// Mock the WASM core client — the store delegates all persistence to it.
+// S6: normalizeJournalTitle 已迁移到 Rust；测试内以 TS 等价实现替代。
+const { mockClient } = vi.hoisted(() => {
+  const mockClient = {
+    getAllPages: vi.fn(() => Promise.resolve([])),
+    savePage: vi.fn(async (page: { title: string; type: string }) => ({
+      id: page.id || `page-${page.title}`,
+      block_id: null,
+      title: page.title,
+      type: page.type || 'normal',
+      icon: null,
+      cover: null,
+      aliases: '[]',
+      file_path: null,
+      children_count: 0,
+      word_count: 0,
+      created_at: Date.now(),
+      updated_at: Date.now(),
+      deleted: 0,
     })),
-    getPage: vi.fn(),
-    getById: vi.fn(),
-    getBlockTree: vi.fn().mockResolvedValue([])
+    normalizeJournalTitle: vi.fn(async (title: string) => {
+      const regex = /^\d{4}-\d{2}-\d{2}$/
+      return regex.test(title) ? title : null
+    }),
   }
+  return { mockClient }
+})
+
+vi.mock('../wasm/client', () => ({
+  initCoreClient: vi.fn(() => Promise.resolve(mockClient)),
+  getCoreClient: vi.fn(() => mockClient),
 }))
 
-vi.mock('../utils/ideas-detect', () => ({
-  normalizeJournalTitle: vi.fn((title: string) => {
-    const regex = /^\d{4}-\d{2}-\d{2}$/
-    return regex.test(title) ? title : null
-  })
+vi.mock('../stores/blocks', () => ({
+  useBlockStore: vi.fn(() => ({
+    loadPageBlocks: vi.fn(),
+    ensurePageBlocks: vi.fn(),
+  }))
 }))
 
 beforeEach(() => {
@@ -123,15 +140,13 @@ describe('页面查找逻辑', () => {
 
 describe('ideas-page 路由逻辑', () => {
   test('normalizeJournalTitle 对 YYYY-MM-DD 格式返回标准化标题', async () => {
-    const { normalizeJournalTitle } = await import('../utils/ideas-detect')
-    expect(normalizeJournalTitle('2026-05-24')).toBe('2026-05-24')
-    expect(normalizeJournalTitle('2024-12-31')).toBe('2024-12-31')
+    expect(await mockClient.normalizeJournalTitle('2026-05-24')).toBe('2026-05-24')
+    expect(await mockClient.normalizeJournalTitle('2024-12-31')).toBe('2024-12-31')
   })
 
   test('normalizeJournalTitle 对非日期格式返回 null', async () => {
-    const { normalizeJournalTitle } = await import('../utils/ideas-detect')
-    expect(normalizeJournalTitle('My Page')).toBeNull()
-    expect(normalizeJournalTitle('Random Text')).toBeNull()
+    expect(await mockClient.normalizeJournalTitle('My Page')).toBeNull()
+    expect(await mockClient.normalizeJournalTitle('Random Text')).toBeNull()
   })
 
   test('ideas 类型页面应该被正确识别', async () => {

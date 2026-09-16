@@ -4,6 +4,7 @@ import { setActivePinia, createPinia } from 'pinia'
 import { useBlockStore } from '../stores/blocks'
 import { usePropertyStore } from '../stores/property'
 import { useCrossBlockSelection, COMIND_BLOCK_MIME } from './useCrossBlockSelection'
+import { getCoreClient } from '../wasm/client'
 
 vi.mock('../storage/indexedDB', () => ({
   storage: {
@@ -810,6 +811,16 @@ describe('useCrossBlockSelection', () => {
   })
 
   describe('deleteSelected', () => {
+    // cleanupAfterDelete 走 getCoreClient().extractLinksFromContent（WasmClientAdapter
+    // 无实现，见 BlockList.keyboard-delete.test.ts 同款夹具）；无 typed-link 场景返回空
+    beforeEach(() => {
+      vi.spyOn(getCoreClient()!, 'extractLinksFromContent').mockResolvedValue([])
+    })
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
     test('应删除所有 anchorIds 中的块', async () => {
       const selection = useCrossBlockSelection()
       const pageId = 'page-1'
@@ -832,6 +843,9 @@ describe('useCrossBlockSelection', () => {
       const selection = useCrossBlockSelection()
       const pageId = 'page-1'
 
+      // 页面留一个未被删除的顶层块：blocks.ts 的「每页至少留 1 个顶层块」闸门
+      // 否则会保留被选父块（仅清空内容），干扰级联断言
+      await blockStore.createBlock({ pageId, content: 'Keep' })
       const parent = await blockStore.createBlock({ pageId, content: 'Parent' })
       const child = await blockStore.createBlock({ pageId, content: 'Child', parentId: parent.id })
       const grandchild = await blockStore.createBlock({ pageId, content: 'Grandchild', parentId: child.id })
@@ -849,6 +863,8 @@ describe('useCrossBlockSelection', () => {
       const selection = useCrossBlockSelection()
       const pageId = 'page-1'
 
+      // 留一个顶层块避免「至少留一块」闸门（同上）
+      await blockStore.createBlock({ pageId, content: 'Keep' })
       const block1 = await blockStore.createBlock({ pageId, content: 'Block 1' })
       const block2 = await blockStore.createBlock({ pageId, content: 'Block 2' })
 
@@ -856,6 +872,8 @@ describe('useCrossBlockSelection', () => {
       selection.anchorIds.add(block2.id)
 
       await selection.deleteSelected()
+      // 选区清空是调用方契约（BlockList.vue 在 deleteSelected().then 中 clearSelection）
+      selection.clearSelection()
 
       expect(selection.anchorIds.size).toBe(0)
     })
@@ -864,6 +882,8 @@ describe('useCrossBlockSelection', () => {
       const selection = useCrossBlockSelection()
       const pageId = 'page-1'
 
+      // 留一个顶层块避免「至少留一块」闸门（同上）
+      await blockStore.createBlock({ pageId, content: 'Keep' })
       const block1 = await blockStore.createBlock({ pageId, content: 'Block 1' })
       selection.anchorIds.add(block1.id)
 

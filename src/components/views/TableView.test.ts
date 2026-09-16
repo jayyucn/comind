@@ -719,7 +719,7 @@ describe('TableView column resize (ADR-0013)', () => {
     await wrapper.find('thead .col-content .th-label').trigger('click')
     const menu = document.body.querySelector('[data-testid="col-menu"]') as HTMLElement
     const item = Array.from(menu.querySelectorAll('.col-menu-item')).find(
-      (b) => b.textContent === '隐藏此字段',
+      (b) => b.textContent?.trim() === '隐藏此字段',
     ) as HTMLElement
     item.click()
     await wrapper.vm.$nextTick()
@@ -731,7 +731,7 @@ describe('TableView column resize (ADR-0013)', () => {
     await wrapper.find('thead .col-content .th-label').trigger('click')
     const menu = document.body.querySelector('[data-testid="col-menu"]') as HTMLElement
     const item = Array.from(menu.querySelectorAll('.col-menu-item')).find(
-      (b) => b.textContent === '重置列宽',
+      (b) => b.textContent?.trim() === '重置列宽',
     ) as HTMLElement
     item.click()
     await wrapper.vm.$nextTick()

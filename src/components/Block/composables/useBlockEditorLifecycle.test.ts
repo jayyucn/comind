@@ -161,7 +161,8 @@ describe('useBlockEditorLifecycle', () => {
       await lifecycle.handleSplit(5)
       expect(flushSpy).toHaveBeenCalledWith('b1')
       expect(deactivateSpy).toHaveBeenCalled()
-      expect(blockStore.insertBlockAtCursor).toHaveBeenCalledWith('b1', 5, false)
+      // insertBlockAtCursor 签名含子树根标记（ADR-0039）：(id, pos, collapsed, undefined, subtreeRoot)
+      expect(blockStore.insertBlockAtCursor).toHaveBeenCalledWith('b1', 5, false, undefined, undefined)
       expect(activateSpy).toHaveBeenCalledWith('b2', 1)
     })
 
@@ -222,6 +223,7 @@ describe('useBlockEditorLifecycle', () => {
       const setCoordsSpy = vi.spyOn(editorStore, 'setClickCoords').mockImplementation(() => {})
       const e = {
         target: { closest: () => null },
+        button: 0,
         ctrlKey: false, metaKey: false,
         clientX: 100, clientY: 200,
         preventDefault: () => {}
@@ -447,8 +449,8 @@ describe('useBlockEditorLifecycle', () => {
         dataset: {
           relType: 'relates',
           blockId: 'b1',
-          labelFrom: '0',
-          labelTo: '5'
+          typedFrom: '0',
+          typedTo: '5'
         },
         getBoundingClientRect: () => ({
           left: 10, top: 20, bottom: 40, right: 100, width: 90, height: 20

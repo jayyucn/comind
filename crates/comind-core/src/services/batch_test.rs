@@ -214,6 +214,60 @@ fn test_relationship_type_snake_case_dispatch() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn test_relationship_type_create_revives_soft_deleted() -> Result<(), Box<dyn Error>> {
+    // 回归钉：load() 以种子 id 幂等同步；同 id 行被软删后 get_all 不可见 →
+    // create 重放撞 id UNIQUE（App 启动崩溃）。create 必须按入参复活该行。
+    let mut adapter = SQLiteAdapter::open_in_memory()?;
+    let rt_row = json!({
+        "id": "rt_seed_related",
+        "type": "related",
+        "inverse": null,
+        "label": "相关",
+        "inverse_label": "相关",
+        "color": "#8c8c8c",
+        "order": 0,
+        "strength": "weak",
+        "deleted": 0,
+        "builtin": 1,
+        "created_at": 1700000000000i64,
+        "updated_at": 1700000000000i64
+    });
+    apply_batch(
+        &mut adapter,
+        &[json!({"entity": "relationship_type", "action": "create", "params": rt_row})],
+    )?;
+    // 软删（delete 是 UPDATE deleted=1，行仍占 id）
+    apply_batch(
+        &mut adapter,
+        &[json!({"entity": "relationship_type", "action": "delete", "params": {"id": "rt_seed_related"}})],
+    )?;
+    // 重放同一 create：应复活而非撞 UNIQUE
+    let rt_row2 = json!({
+        "id": "rt_seed_related",
+        "type": "related",
+        "inverse": null,
+        "label": "相关",
+        "inverse_label": "相关",
+        "color": "#8c8c8c",
+        "order": 0,
+        "strength": "weak",
+        "deleted": 0,
+        "builtin": 1,
+        "created_at": 1700000000000i64,
+        "updated_at": 1700000001000i64
+    });
+    apply_batch(
+        &mut adapter,
+        &[json!({"entity": "relationship_type", "action": "create", "params": rt_row2})],
+    )?;
+
+    let found = crate::services::RelationshipTypeService::get_by_type(&mut adapter, "related")?;
+    assert!(found.is_some());
+    assert_eq!(found.unwrap().deleted, 0);
+    Ok(())
+}
+
+#[test]
 fn test_template_incremental_contract() -> Result<(), Box<dyn Error>> {
     // 回归钉：create 只收 {id,name,category,content}（原 Tauri 全量 UserTemplate
     // 反序列化缺 created_at/updated_at 必失败 → 桌面端静默回滚）

@@ -2,6 +2,7 @@ import { describe, test, expect, beforeEach, vi } from 'vitest'
 import { useNavigateToPage } from './useNavigateToPage'
 
 const mockPush = vi.fn()
+const mockNormalizeJournalTitle = vi.fn<(title: string) => Promise<string | null>>()
 
 vi.mock('vue-router', () => ({
   useRouter: vi.fn(() => ({
@@ -9,18 +10,21 @@ vi.mock('vue-router', () => ({
   }))
 }))
 
-vi.mock('../utils/ideas-detect', () => ({
-  normalizeJournalTitle: vi.fn()
+// S6: normalizeJournalTitle 已迁移到 Rust，经 getCoreClient() 调用
+vi.mock('../wasm/client', () => ({
+  getCoreClient: vi.fn(() => ({
+    normalizeJournalTitle: mockNormalizeJournalTitle
+  }))
 }))
 
 beforeEach(() => {
   mockPush.mockClear()
+  mockNormalizeJournalTitle.mockReset()
 })
 
 describe('useNavigateToPage', () => {
   test('navigateToPage 跳转到普通页面', async () => {
-    const { normalizeJournalTitle } = await import('../utils/ideas-detect')
-    vi.mocked(normalizeJournalTitle).mockReturnValue(null)
+    mockNormalizeJournalTitle.mockResolvedValue(null)
 
     const { navigateToPage } = useNavigateToPage()
     await navigateToPage('My Page')
@@ -29,8 +33,7 @@ describe('useNavigateToPage', () => {
   })
 
   test('navigateToPage 跳转到日记页面', async () => {
-    const { normalizeJournalTitle } = await import('../utils/ideas-detect')
-    vi.mocked(normalizeJournalTitle).mockReturnValue('2026-04-26')
+    mockNormalizeJournalTitle.mockResolvedValue('2026-04-26')
 
     const { navigateToPage } = useNavigateToPage()
     await navigateToPage('2026-04-26')
@@ -39,8 +42,7 @@ describe('useNavigateToPage', () => {
   })
 
   test('navigateToPage 对 URL 特殊字符进行编码', async () => {
-    const { normalizeJournalTitle } = await import('../utils/ideas-detect')
-    vi.mocked(normalizeJournalTitle).mockReturnValue(null)
+    mockNormalizeJournalTitle.mockResolvedValue(null)
 
     const { navigateToPage } = useNavigateToPage()
     await navigateToPage('Page with spaces & special chars!')
@@ -49,8 +51,7 @@ describe('useNavigateToPage', () => {
   })
 
   test('navigateToPage 使用 UUID 直接跳转', async () => {
-    const { normalizeJournalTitle } = await import('../utils/ideas-detect')
-    vi.mocked(normalizeJournalTitle).mockReturnValue(null)
+    mockNormalizeJournalTitle.mockResolvedValue(null)
 
     const { navigateToPage } = useNavigateToPage()
     await navigateToPage('550e8400-e29b-41d4-a716-446655440000')

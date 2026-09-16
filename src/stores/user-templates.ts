@@ -41,7 +41,8 @@ export const useUserTemplatesStore = defineStore('user-templates', () => {
   async function create(input: CreateTemplateInput): Promise<UserTemplate> {
     const client = await getClient()
     const record: UserTemplate = {
-      id: `template_${Date.now()}`,
+      // Date.now() 同毫秒冲突（UNIQUE constraint）：补随机后缀
+      id: `template_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       name: input.name,
       description: input.description ?? '',
       category: input.category ?? 'custom',

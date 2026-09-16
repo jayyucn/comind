@@ -104,7 +104,7 @@ describe('DateRefExtension decoration rendering', () => {
       content: '<p>@2026-07-15 ⏰ and [[Some Page]]</p>',
     })
     expect(spanData(el)).toHaveLength(1) // dateRef span
-    expect(el.querySelector('span.wiki-link')).not.toBeNull() // wikilink span
+    expect(el.querySelector('span.block-link')).not.toBeNull() // wikilink span
     ed.destroy()
     el.remove()
   })

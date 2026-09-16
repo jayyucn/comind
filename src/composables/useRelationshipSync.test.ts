@@ -11,7 +11,7 @@ vi.mock('../wasm/client', () => {
   function extractLinks(content: string) {
     const results: any[] = []
     const covered = new Set<number>()
-    for (const m of content.matchAll(/\(\\(([^)]+)\)\)\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g)) {
+    for (const m of content.matchAll(/\(\(([^)]+)\)\)\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g)) {
       const target = m[2].trim()
       if (/^https?:\/\/|ftp:\/\/|mailto:/.test(target)) continue
       let relType: string | null = null, invType: string | null = null

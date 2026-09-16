@@ -15,10 +15,10 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import type { FieldDescriptor, Group, Option, SortRule } from '../../core/query';
 import type { TableColumnConfig, TableConfig } from '../../core/view';
 import BasePopover from '../common/BasePopover.vue';
-import PaginationFooter from './PaginationFooter.vue';
 import Icon from '../Icons/Icon.vue';
-import type { CellRegistry } from './types';
+import PaginationFooter from './PaginationFooter.vue';
 import { distributeColumnWidths } from './tableWidths';
+import type { CellRegistry } from './types';
 
 /** 缺省每页行数。 */
 const DEFAULT_PAGE_SIZE = 50
@@ -987,7 +987,6 @@ function groupTotal(key: string): number {
 
 .cell-primary {
   display: -webkit-box;
-  -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
   color: var(--text-primary);

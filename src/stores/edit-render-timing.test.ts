@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import { defineComponent, h, computed, nextTick } from 'vue'
+import { defineComponent, h, computed, nextTick, onBeforeUnmount } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import { useBlockStore } from './blocks'
 import { useEditorStore } from './editor'
@@ -16,7 +16,19 @@ beforeEach(() => {
  *
  * 关键：Editor 卸载时 onBeforeUnmount emit('save', text) → updateBlockContent
  * 此时 Vue 正在同一渲染周期中挂载 BulletRender——props 可能是旧值。
+ *
+ * 注：Editor 模拟用【子组件 + onBeforeUnmount】（与真实 Editor.vue 同构）。
+ * Vue 3.5 起 onVnodeUnmounted 在普通元素 vnode 上不再触发，不能用 div 模拟。
  */
+const FakeEditor = defineComponent({
+  emits: ['save'],
+  setup(_, { emit }) {
+    // 模拟 editor.getText() = 'a'；卸载时同步 emit（与真实 Editor.vue 一致）
+    onBeforeUnmount(() => emit('save', 'a'))
+    return () => h('div', { class: 'fake-editor', 'data-text': 'a' })
+  },
+})
+
 const FakeBlockComponent = defineComponent({
   props: {
     blockId: String,
@@ -26,10 +38,8 @@ const FakeBlockComponent = defineComponent({
     const blockStore = useBlockStore()
     const block = computed(() => blockStore.getBlock(props.blockId!))
 
-    // 模拟 Editor 的 onBeforeUnmount 行为
-    const onEditorUnmount = async () => {
-      // 模拟 editor.getText() = 'a'
-      const text = 'a'
+    // 模拟 Editor emit('save') → handleSave → updateBlockContent
+    const onSave = async (text: string) => {
       if (text) {
         await blockStore.updateBlockContent(props.blockId!, text)
       }
@@ -37,12 +47,7 @@ const FakeBlockComponent = defineComponent({
 
     return () => {
       if (props.isActive) {
-        // 模拟 Editor 组件 — 用 onBeforeUnmount 钩子
-        return h('div', {
-          class: 'fake-editor',
-          'data-text': 'a',
-          onVnodeUnmounted: () => onEditorUnmount(),
-        }, `Editor: ${block.value?.content ?? ''}`)
+        return h(FakeEditor, { onSave })
       } else {
         // 模拟 BulletRender 组件
         const content = block.value?.content ?? ''
@@ -142,22 +147,27 @@ describe('Editor.vue onBeforeUnmount timing analysis', () => {
     // Simulate the exact flow in index.vue:
     // v-if="isActive" → Editor (onBeforeUnmount emits save)
     // v-else → BulletRender (reads block.content)
+    const Editor = defineComponent({
+      emits: ['save'],
+      setup(_, { emit }) {
+        onBeforeUnmount(() => emit('save', 'a'))
+        return () => h('div', { class: 'editor' }, 'Editor')
+      },
+    })
     const ParentComp = defineComponent({
       props: { isActive: Boolean },
       setup(props) {
         const blockRef = computed(() => blockStore.getBlock(block.id)!)
+        const onSave = async () => {
+          log.push('onBeforeUnmount: start')
+          // Simulate emit('save', 'a') → handleSave → updateBlockContent
+          await blockStore.updateBlockContent(block.id, 'a')
+          log.push('onBeforeUnmount: after updateBlockContent')
+        }
 
         return () => {
           if (props.isActive) {
-            return h('div', {
-              class: 'editor',
-              onVnodeUnmounted: async () => {
-                log.push('onBeforeUnmount: start')
-                // Simulate emit('save', 'a') → handleSave → updateBlockContent
-                await blockStore.updateBlockContent(block.id, 'a')
-                log.push('onBeforeUnmount: after updateBlockContent')
-              },
-            }, 'Editor')
+            return h(Editor, { onSave })
           } else {
             const content = blockRef.value?.content ?? ''
             const segs = blockRef.value?.renderSegments

@@ -1,38 +1,45 @@
 import { describe, test, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { usePageStore } from '../stores/pages'
-import type { Page } from '../types/page'
 
-vi.mock('../storage/indexedDB', () => ({
-  storage: {
-    getAllPages: vi.fn().mockResolvedValue([]),
-    createPageWithRootBlock: vi.fn().mockImplementation(async (title: string, type: string) => ({
-      id: `page-${title}`,
-      title,
-      type,
-      blockId: `root-${title}`,
+// Mock the WASM core client — the store delegates all persistence to it.
+// S6: normalizeJournalTitle 已迁移到 Rust；测试内以 TS 等价实现替代。
+const { mockClient } = vi.hoisted(() => {
+  const mockClient = {
+    getAllPages: vi.fn(() => Promise.resolve([])),
+    savePage: vi.fn(async (page: { title: string; type: string }) => ({
+      id: page.id || `page-${page.title}`,
+      block_id: null,
+      title: page.title,
+      type: page.type || 'normal',
       icon: null,
       cover: null,
-      aliases: [],
-      filePath: null,
-      childrenCount: 0,
-      wordCount: 0,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      deleted: false,
-      deletedAt: null
+      aliases: '[]',
+      file_path: null,
+      children_count: 0,
+      word_count: 0,
+      created_at: Date.now(),
+      updated_at: Date.now(),
+      deleted: 0,
     })),
-    getPage: vi.fn(),
-    getById: vi.fn(),
-    getBlockTree: vi.fn().mockResolvedValue([])
+    normalizeJournalTitle: vi.fn(async (title: string) => {
+      const regex = /^\d{4}-\d{2}-\d{2}$/
+      return regex.test(title) ? title : null
+    }),
   }
+  return { mockClient }
+})
+
+vi.mock('../wasm/client', () => ({
+  initCoreClient: vi.fn(() => Promise.resolve(mockClient)),
+  getCoreClient: vi.fn(() => mockClient),
 }))
 
-vi.mock('../utils/ideas-detect', () => ({
-  normalizeJournalTitle: vi.fn((title: string) => {
-    const regex = /^\d{4}-\d{2}-\d{2}$/
-    return regex.test(title) ? title : null
-  })
+vi.mock('../stores/blocks', () => ({
+  useBlockStore: vi.fn(() => ({
+    loadPageBlocks: vi.fn(),
+    ensurePageBlocks: vi.fn(),
+  }))
 }))
 
 beforeEach(() => {
@@ -142,17 +149,13 @@ describe('路由守卫逻辑 - /page/:pageId 处理', () => {
 
 describe('路由守卫逻辑 - /ideas/:date 处理', () => {
   test('标准日期格式应通过 normalizeJournalTitle', async () => {
-    const { normalizeJournalTitle } = await import('../utils/ideas-detect')
-
-    expect(normalizeJournalTitle('2026-05-24')).toBe('2026-05-24')
-    expect(normalizeJournalTitle('2026-01-01')).toBe('2026-01-01')
-    expect(normalizeJournalTitle('2026-12-31')).toBe('2026-12-31')
+    expect(await mockClient.normalizeJournalTitle('2026-05-24')).toBe('2026-05-24')
+    expect(await mockClient.normalizeJournalTitle('2026-01-01')).toBe('2026-01-01')
+    expect(await mockClient.normalizeJournalTitle('2026-12-31')).toBe('2026-12-31')
   })
 
   test('非日期格式应返回 null 并重定向到 page', async () => {
-    const { normalizeJournalTitle } = await import('../utils/ideas-detect')
-
-    const result = normalizeJournalTitle('My Page')
+    const result = await mockClient.normalizeJournalTitle('My Page')
     expect(result).toBeNull()
   })
 
@@ -262,10 +265,9 @@ describe('错误边界和异常处理', () => {
 describe('路由守卫集成场景', () => {
   test('用户直接访问 /ideas/2026-05-24 应正确创建 ideas 页面', async () => {
     const pageStore = usePageStore()
-    const { normalizeJournalTitle } = await import('../utils/ideas-detect')
 
     const rawParam = '2026-05-24'
-    const normalized = normalizeJournalTitle(rawParam)
+    const normalized = await mockClient.normalizeJournalTitle(rawParam)
 
     expect(normalized).toBe('2026-05-24')
 
