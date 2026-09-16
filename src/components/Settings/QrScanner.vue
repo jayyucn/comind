@@ -34,8 +34,9 @@ async function startScan() {
     ctx = canvas.getContext('2d', { willReadFrequently: true })
     scanning.value = true
     scanLoop()
-  } catch (e: any) {
-    const msg = e?.message || e?.toString() || String(e)
+  } catch (e) {
+    const err = e as { message?: string; toString?: () => string }
+    const msg = err?.message || err?.toString?.() || String(e)
     if (msg.includes('Permission') || msg.includes('permission') || msg.includes('NotAllowed')) {
       error.value = '相机权限被拒绝，请在系统设置中允许相机访问'
     } else {
@@ -105,20 +106,38 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="qr-scanner-overlay" @click.self="emit('cancel')">
+  <div
+    class="qr-scanner-overlay"
+    @click.self="emit('cancel')"
+  >
     <div class="qr-scanner-panel">
       <div class="qr-scanner-header">
         <span>扫描二维码</span>
-        <button class="qr-scanner-close" @click="emit('cancel')">✕</button>
+        <button
+          class="qr-scanner-close"
+          @click="emit('cancel')"
+        >
+          ✕
+        </button>
       </div>
       <div class="qr-reader">
-        <video ref="videoRef" muted playsinline></video>
-        <div class="qr-reader-frame"></div>
+        <video
+          ref="videoRef"
+          muted
+          playsinline
+        />
+        <div class="qr-reader-frame" />
       </div>
-      <div v-if="error" class="qr-scanner-error">
+      <div
+        v-if="error"
+        class="qr-scanner-error"
+      >
         {{ error }}
       </div>
-      <div v-else class="qr-scanner-hint">
+      <div
+        v-else
+        class="qr-scanner-hint"
+      >
         将 PC 端显示的二维码对准摄像头
       </div>
     </div>

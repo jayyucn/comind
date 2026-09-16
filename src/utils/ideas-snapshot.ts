@@ -81,7 +81,7 @@ function mapRawProperty(raw: RustProperty): Property {
 }
 
 function mapRawBlock(raw: RustBlock): Block {
-  let format: Record<string, any> = {}
+  let format: Record<string, unknown>
   try {
     format = JSON.parse(raw.format || '{}')
   } catch {

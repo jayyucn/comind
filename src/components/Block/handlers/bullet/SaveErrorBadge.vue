@@ -32,7 +32,7 @@ async function handleRetry() {
     v-if="saveError"
     class="save-error-dot"
     :class="{ 'save-error-dot--retrying': retrying }"
-    @click.stop="handleRetry"
     title="保存失败，点击重试"
-  ></span>
+    @click.stop="handleRetry"
+  />
 </template>

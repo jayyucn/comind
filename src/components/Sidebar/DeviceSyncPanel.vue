@@ -135,40 +135,84 @@ onUnmounted(stopTimers)
 <template>
   <div class="device-sync-panel">
     <!-- 状态 A：未配对 → 展示配对二维码 -->
-    <div v-if="!isPaired" class="device-sync-unpaired">
+    <div
+      v-if="!isPaired"
+      class="device-sync-unpaired"
+    >
       <div class="qr-code-container">
         <div class="qr-code">
-          <img v-if="qrUrl" :src="`data:image/png;base64,${qrUrl}`" alt="配对二维码" />
-          <div v-else class="qr-code-loading">生成中…</div>
+          <img
+            v-if="qrUrl"
+            :src="`data:image/png;base64,${qrUrl}`"
+            alt="配对二维码"
+          >
+          <div
+            v-else
+            class="qr-code-loading"
+          >
+            生成中…
+          </div>
         </div>
         <div class="qr-code-expiry">
-          <Clock :size="12" :stroke-width="1.75" />
+          <Clock
+            :size="12"
+            :stroke-width="1.75"
+          />
           <span>{{ Math.floor(qrExpiry / 60) }}:{{ String(qrExpiry % 60).padStart(2, '0') }} 后过期</span>
         </div>
       </div>
-      <button class="device-sync-regenerate" :disabled="qrLoading" @click="refreshQr">
-        <QrCode :size="13" :stroke-width="1.75" />
+      <button
+        class="device-sync-regenerate"
+        :disabled="qrLoading"
+        @click="refreshQr"
+      >
+        <QrCode
+          :size="13"
+          :stroke-width="1.75"
+        />
         重新生成二维码
       </button>
       <div class="device-sync-note">
-        <Smartphone :size="12" :stroke-width="1.75" />
+        <Smartphone
+          :size="12"
+          :stroke-width="1.75"
+        />
         <span>在移动端打开扫码功能，扫描上方二维码完成配对</span>
       </div>
     </div>
 
     <!-- 状态 B/C：已配对（在线 / 离线）→ 设备卡片 -->
-    <div v-else class="device-sync-paired">
+    <div
+      v-else
+      class="device-sync-paired"
+    >
       <!-- 设备卡片 -->
-      <div class="device-card" :class="{ online: isOnline, offline: !isOnline }">
+      <div
+        class="device-card"
+        :class="{ online: isOnline, offline: !isOnline }"
+      >
         <div class="device-card-header">
           <div class="device-card-icon">
-            <Smartphone :size="18" :stroke-width="1.75" />
+            <Smartphone
+              :size="18"
+              :stroke-width="1.75"
+            />
           </div>
           <div class="device-card-info">
             <span class="device-card-name">{{ peerName }}</span>
             <div class="device-card-status">
-              <Wifi v-if="isOnline" :size="11" :stroke-width="2" class="status-icon-online" />
-              <WifiOff v-else :size="11" :stroke-width="2" class="status-icon-offline" />
+              <Wifi
+                v-if="isOnline"
+                :size="11"
+                :stroke-width="2"
+                class="status-icon-online"
+              />
+              <WifiOff
+                v-else
+                :size="11"
+                :stroke-width="2"
+                class="status-icon-offline"
+              />
               <span :class="isOnline ? 'status-text-online' : 'status-text-offline'">
                 {{ isOnline ? '在线' : '离线' }}
               </span>
@@ -176,7 +220,10 @@ onUnmounted(stopTimers)
           </div>
         </div>
         <div class="device-card-meta">
-          <Clock :size="11" :stroke-width="1.75" />
+          <Clock
+            :size="11"
+            :stroke-width="1.75"
+          />
           <span>上次同步 · {{ formatTimestamp(pairedDevice?.last_sync_at ?? 0) }}</span>
         </div>
       </div>
@@ -189,10 +236,17 @@ onUnmounted(stopTimers)
           :disabled="resyncLoading"
           @click="handleResync"
         >
-          <RefreshCw :size="13" :stroke-width="1.75" :class="{ spinning: resyncLoading }" />
+          <RefreshCw
+            :size="13"
+            :stroke-width="1.75"
+            :class="{ spinning: resyncLoading }"
+          />
           {{ resyncLoading ? '同步中…' : '重新同步' }}
         </button>
-        <button class="device-action-btn danger" @click="handleUnpair">
+        <button
+          class="device-action-btn danger"
+          @click="handleUnpair"
+        >
           取消配对
         </button>
       </div>

@@ -48,30 +48,71 @@ onBeforeUnmount(() => {
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="typography-panel" role="dialog" aria-label="排版设置">
+    <div
+      v-if="open"
+      class="typography-panel"
+      role="dialog"
+      aria-label="排版设置"
+    >
       <div class="panel-row">
         <span class="row-label">字号</span>
-        <button class="step-btn" title="减小字号" :disabled="typography.fontSize <= 14"
-          @click="stepFontSize(-1)">−</button>
+        <button
+          class="step-btn"
+          title="减小字号"
+          :disabled="typography.fontSize <= 14"
+          @click="stepFontSize(-1)"
+        >
+          −
+        </button>
         <span class="row-value">{{ typography.fontSize }}px</span>
-        <button class="step-btn" title="增大字号" :disabled="typography.fontSize >= 24"
-          @click="stepFontSize(1)">＋</button>
+        <button
+          class="step-btn"
+          title="增大字号"
+          :disabled="typography.fontSize >= 24"
+          @click="stepFontSize(1)"
+        >
+          ＋
+        </button>
       </div>
       <div class="panel-row">
         <span class="row-label">行距</span>
-        <button class="step-btn" title="减小行距" :disabled="typography.lineHeight <= 1.4"
-          @click="stepLineHeight(-1)">−</button>
+        <button
+          class="step-btn"
+          title="减小行距"
+          :disabled="typography.lineHeight <= 1.4"
+          @click="stepLineHeight(-1)"
+        >
+          −
+        </button>
         <span class="row-value">{{ typography.lineHeight.toFixed(1) }}</span>
-        <button class="step-btn" title="增大行距" :disabled="typography.lineHeight >= 2.4"
-          @click="stepLineHeight(1)">＋</button>
+        <button
+          class="step-btn"
+          title="增大行距"
+          :disabled="typography.lineHeight >= 2.4"
+          @click="stepLineHeight(1)"
+        >
+          ＋
+        </button>
       </div>
       <div class="panel-row">
         <span class="row-label">行宽</span>
-        <button class="step-btn" title="收窄行宽" :disabled="typography.maxWidthCh <= ReaderContentMinWidth"
-          @click="stepMaxWidth(-1)">−</button>
+        <button
+          class="step-btn"
+          title="收窄行宽"
+          :disabled="typography.maxWidthCh <= ReaderContentMinWidth"
+          @click="stepMaxWidth(-1)"
+        >
+          −
+        </button>
         <span class="row-value">{{ typography.maxWidthCh }}ch</span>
-        <button class="step-btn" title="加宽行宽" :disabled="typography.maxWidthCh >= ReaderContentMaxWidth"
-          @click="stepMaxWidth(1)">＋</button>
+        <button
+          class="step-btn"
+          title="加宽行宽"
+          :disabled="typography.maxWidthCh >= ReaderContentMaxWidth"
+          @click="stepMaxWidth(1)"
+        >
+          ＋
+        </button>
       </div>
       <div class="panel-row theme-row">
         <span class="row-label">主题</span>
@@ -81,7 +122,9 @@ onBeforeUnmount(() => {
           class="theme-btn"
           :class="{ active: typography.theme === option.value }"
           @click="updateTypography({ theme: option.value })"
-        >{{ option.label }}</button>
+        >
+          {{ option.label }}
+        </button>
       </div>
     </div>
   </Teleport>

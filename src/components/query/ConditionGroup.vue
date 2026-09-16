@@ -72,15 +72,28 @@ function setCombinator(c: 'and' | 'or') {
 
 <template>
   <!-- flex 行：内容区（带边框）+ 删除按钮（边框外右侧，不换行） -->
-  <div class="qb-group" :data-depth="depth">
+  <div
+    class="qb-group"
+    :data-depth="depth"
+  >
     <!-- 内容区：承载所有子条件、边框、底色 -->
     <div class="qb-group-content">
       <div class="qb-group-main">
         <div class="qb-children">
-          <div v-for="(child, i) in children" :key="i" class="qb-child-row">
+          <div
+            v-for="(child, i) in children"
+            :key="i"
+            class="qb-child-row"
+          >
             <!-- 首条：填充文字占位；第 2 条：可编辑且/或下拉；其后：静态且/或文本 -->
-            <span v-if="i === 0" class="qb-child-combinator qb-child-combinator--text">满足</span>
-            <span v-else-if="i === 1" class="qb-child-combinator">
+            <span
+              v-if="i === 0"
+              class="qb-child-combinator qb-child-combinator--text"
+            >满足</span>
+            <span
+              v-else-if="i === 1"
+              class="qb-child-combinator"
+            >
               <select
                 class="qb-combinator-select"
                 :value="model?.combinator"
@@ -90,7 +103,10 @@ function setCombinator(c: 'and' | 'or') {
                 <option value="or">或</option>
               </select>
             </span>
-            <span v-else class="qb-child-combinator qb-child-combinator--text">
+            <span
+              v-else
+              class="qb-child-combinator qb-child-combinator--text"
+            >
               {{ model?.combinator === 'or' ? '或' : '且' }}
             </span>
 
@@ -117,10 +133,19 @@ function setCombinator(c: 'and' | 'or') {
         </div>
 
         <div class="qb-group-actions">
-          <button type="button" class="qb-text-btn" @click="addCondition">
+          <button
+            type="button"
+            class="qb-text-btn"
+            @click="addCondition"
+          >
             <Plus :size="14" /> 添加条件
           </button>
-          <button v-if="canAddGroup" type="button" class="qb-text-btn" @click="addGroup">
+          <button
+            v-if="canAddGroup"
+            type="button"
+            class="qb-text-btn"
+            @click="addGroup"
+          >
             <Plus :size="14" /> 添加条件组
           </button>
         </div>

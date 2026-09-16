@@ -424,7 +424,10 @@ function onCardClick(item: T) {
 
 <template>
   <div class="quadrant-view">
-    <div class="q-axis q-axis-y" aria-hidden="true">
+    <div
+      class="q-axis q-axis-y"
+      aria-hidden="true"
+    >
       <span class="q-axis-label">重要</span>
       <span class="q-axis-line" />
       <span class="q-axis-label">不重要</span>
@@ -449,13 +452,27 @@ function onCardClick(item: T) {
             :class="{ active: addingFor === q.priority }"
             @click="startAdd(q.priority)"
           >
-            <svg class="q-add-plus" width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2.5V11.5M2.5 7H11.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
+            <svg
+              class="q-add-plus"
+              width="14"
+              height="14"
+              viewBox="0 0 14 14"
+              fill="none"
+            ><path
+              d="M7 2.5V11.5M2.5 7H11.5"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+            /></svg>
             <span>新建任务</span>
           </button>
         </header>
         <div class="q-cards">
-          <div v-if="addingFor === q.priority" class="q-add-box">
-            <Icon name="status-todo"/>
+          <div
+            v-if="addingFor === q.priority"
+            class="q-add-box"
+          >
+            <Icon name="status-todo" />
             <input
               :ref="setAddInputRef"
               v-model="addDraft"
@@ -464,9 +481,14 @@ function onCardClick(item: T) {
               @keydown.enter.prevent="commitAdd()"
               @keydown.esc.prevent="cancelAdd()"
               @blur="cancelAdd()"
-            />
+            >
           </div>
-          <div v-if="addingFor === q.priority" class="q-add-hint">回车添加 · Esc 收起 · 可连续录入</div>
+          <div
+            v-if="addingFor === q.priority"
+            class="q-add-hint"
+          >
+            回车添加 · Esc 收起 · 可连续录入
+          </div>
           <article
             v-for="card in buckets[q.priority]"
             :key="idOf(card)"
@@ -476,7 +498,10 @@ function onCardClick(item: T) {
             @click="onCardClick(card)"
           >
             <div class="q-card-main">
-              <Icon class="q-status" :name="statusKey(card)" />
+              <Icon
+                class="q-status"
+                :name="statusKey(card)"
+              />
               <BulletRender
                 class="q-content"
                 :content="asCard(card).content_preview || idOf(card)"
@@ -489,7 +514,10 @@ function onCardClick(item: T) {
               >{{ formatDate(cardDeadline(card)) }}</span>
             </div>
             <!-- 子任务：按 depth 缩进（2=子任务、3=孙任务），最多 3 层；行内点击打开子任务，不参与拖拽 -->
-            <div v-if="subtasksOf(card).length" class="q-subtasks">
+            <div
+              v-if="subtasksOf(card).length"
+              class="q-subtasks"
+            >
               <div
                 v-for="node in subtasksOf(card)"
                 :key="idOf(node.item)"
@@ -498,7 +526,10 @@ function onCardClick(item: T) {
                 @pointerdown.stop
                 @click.stop="onOpenSub(node.item)"
               >
-                <Icon class="q-status" :name="statusKey(node.item)" />
+                <Icon
+                  class="q-status"
+                  :name="statusKey(node.item)"
+                />
                 <BulletRender
                   class="q-content"
                   :content="asCard(node.item).content_preview || idOf(node.item)"
@@ -516,7 +547,10 @@ function onCardClick(item: T) {
       </section>
     </div>
 
-    <div class="q-axis q-axis-x" aria-hidden="true">
+    <div
+      class="q-axis q-axis-x"
+      aria-hidden="true"
+    >
       <span class="q-axis-label">不紧急</span>
       <span class="q-axis-line" />
       <span class="q-axis-label">紧急</span>
@@ -528,7 +562,10 @@ function onCardClick(item: T) {
       class="q-drag-ghost"
       :style="{ left: ghost.x + 'px', top: ghost.y + 'px', width: ghost.w ? ghost.w + 'px' : undefined }"
     >
-      <Icon class="q-status" :name="ghost.status" />
+      <Icon
+        class="q-status"
+        :name="ghost.status"
+      />
       <BulletRender
         class="q-content"
         :content="ghost.content"

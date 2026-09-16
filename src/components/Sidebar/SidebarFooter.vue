@@ -20,20 +20,26 @@ function openTrash() {
         title="设置"
         @click="openSettings"
       >
-        <Settings :size="15" :stroke-width="1.75" />
+        <Settings
+          :size="15"
+          :stroke-width="1.75"
+        />
       </button>
     </div>
-    <div class="footer-divider"></div>
+    <div class="footer-divider" />
     <div class="footer-section">
       <button
         class="settings-btn"
         title="回收站"
         @click="openTrash"
       >
-        <Trash :size="15" :stroke-width="1.75" />
+        <Trash
+          :size="15"
+          :stroke-width="1.75"
+        />
       </button>
     </div>
-    <div class="footer-divider"></div>
+    <div class="footer-divider" />
     <div class="footer-section">
       <SyncStatusBar />
     </div>

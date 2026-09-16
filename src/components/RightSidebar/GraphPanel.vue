@@ -18,7 +18,10 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="graph-panel">
-    <GraphView v-if="ready" :pageId="pageStore.currentPageId" />
+    <GraphView
+      v-if="ready"
+      :page-id="pageStore.currentPageId"
+    />
   </div>
 </template>
 

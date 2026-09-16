@@ -1,6 +1,7 @@
 // composables/useFavorites.ts
 import { ref, computed, watch } from 'vue'
 import { usePageStore } from '../stores/pages'
+import type { Page } from '../types/page'
 
 const STORAGE_KEY = 'comind:favorites'
 const COLLAPSE_KEY = 'comind:sidebar-fav-collapsed'
@@ -48,7 +49,7 @@ export function useFavorites() {
   const favoritePages = computed(() => {
     return favoriteIds.value
       .map(id => pageStore.getPage(id))
-      .filter(Boolean) as any[]
+      .filter((page): page is Page => page !== undefined)
   })
 
   function isFavorite(pageId: string): boolean {

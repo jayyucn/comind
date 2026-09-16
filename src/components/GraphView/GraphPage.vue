@@ -185,14 +185,24 @@ watch(graphViewRef, () => {
 
 <template>
   <div class="graph-page-header">
-    <PageTitle title="图谱" subtitle="已显示部分节点" />
+    <PageTitle
+      title="图谱"
+      subtitle="已显示部分节点"
+    />
   </div>
   <div class="graph-page">
     <div class="graph-page-sidebar">
-      <FilterPanel @filter-change="handleFilterChange" @collapsed-change="handleCollapsedChange" />
+      <FilterPanel
+        @filter-change="handleFilterChange"
+        @collapsed-change="handleCollapsedChange"
+      />
     </div>
-    <GraphView ref="graphViewRef" v-bind="graphProps" :graph-snapshot="graphSnapshot"
-      @request-refresh="handleRequestRefresh" />
+    <GraphView
+      ref="graphViewRef"
+      v-bind="graphProps"
+      :graph-snapshot="graphSnapshot"
+      @request-refresh="handleRequestRefresh"
+    />
   </div>
 </template>
 

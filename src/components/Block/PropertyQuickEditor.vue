@@ -204,7 +204,10 @@ function isSvgIcon(icon: string): boolean {
           :class="{ selected: cv.value === currentValue }"
           @click.stop="handleSelectClosedValue(cv.value as string)"
         >
-          <span v-if="cv.icon" class="option-icon">
+          <span
+            v-if="cv.icon"
+            class="option-icon"
+          >
             <Icon
               v-if="isSvgIcon(cv.icon)"
               :name="cv.icon"
@@ -214,7 +217,10 @@ function isSvgIcon(icon: string): boolean {
           </span>
           <div class="option-text">
             <span class="option-label">{{ cv.label }}</span>
-            <span v-if="cv.description" class="option-description">{{ cv.description }}</span>
+            <span
+              v-if="cv.description"
+              class="option-description"
+            >{{ cv.description }}</span>
           </div>
         </div>
       </template>
@@ -227,20 +233,26 @@ function isSvgIcon(icon: string): boolean {
           :value="currentValue as string"
           @change.stop="handleDateChange"
           @click.stop
-        />
+        >
       </template>
 
       <!-- Tags Input -->
       <template v-else-if="currentDef.type === 'array'">
         <div class="tags-editor">
-          <div v-if="tagList.length > 0" class="tags-list">
+          <div
+            v-if="tagList.length > 0"
+            class="tags-list"
+          >
             <span
               v-for="tag in tagList"
               :key="tag"
               class="tag-item"
             >
               {{ tag }}
-              <button @click.stop="removeTag(tag)" class="tag-remove">×</button>
+              <button
+                class="tag-remove"
+                @click.stop="removeTag(tag)"
+              >×</button>
             </span>
           </div>
           <input
@@ -250,7 +262,7 @@ function isSvgIcon(icon: string): boolean {
             placeholder="输入标签，回车添加"
             @keydown.enter.prevent.stop="addTag"
             @click.stop
-          />
+          >
         </div>
       </template>
 
@@ -261,11 +273,11 @@ function isSvgIcon(icon: string): boolean {
           type="text"
           :value="textValue"
           :placeholder="pickerPlaceholder"
+          class="text-input project-search"
           @input="onPickerInput"
           @keydown="handlePickerKeydown"
           @click.stop
-          class="text-input project-search"
-        />
+        >
         <div class="project-list">
           <div
             v-for="(p, idx) in filteredRefs"
@@ -281,7 +293,10 @@ function isSvgIcon(icon: string): boolean {
               <span class="option-label">{{ p.name }}</span>
             </div>
           </div>
-          <div v-if="filteredRefs.length === 0" class="project-empty">
+          <div
+            v-if="filteredRefs.length === 0"
+            class="project-empty"
+          >
             {{ pickerEmptyHint }}
           </div>
         </div>
@@ -293,12 +308,12 @@ function isSvgIcon(icon: string): boolean {
           ref="textInputRef"
           type="text"
           :value="textValue"
+          class="text-input"
+          placeholder="输入内容，回车保存"
           @input="handleTextChange"
           @keydown.enter.prevent.stop="handleTextSave"
           @click.stop
-          class="text-input"
-          placeholder="输入内容，回车保存"
-        />
+        >
       </template>
     </template>
   </BasePopover>

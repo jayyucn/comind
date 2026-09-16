@@ -100,7 +100,7 @@ describe('路由守卫逻辑 - /page/:pageId 处理', () => {
     const existingPage = await pageStore.createPage('existing-page', 'normal')
 
     const rawParam = existingPage.id
-    let page = pageStore.getPage(rawParam) ?? pageStore.getPageByTitle(rawParam)
+    const page = pageStore.getPage(rawParam) ?? pageStore.getPageByTitle(rawParam)
 
     expect(page).toBeDefined()
     expect(page?.type).toBe('normal')

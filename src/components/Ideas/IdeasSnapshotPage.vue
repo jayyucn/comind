@@ -80,15 +80,25 @@ const roots = computed(() => {
 </script>
 
 <template>
-  <div v-if="isSnapshotPage" class="snapshot-page" data-snapshot-view>
+  <div
+    v-if="isSnapshotPage"
+    class="snapshot-page"
+    data-snapshot-view
+  >
     <!-- 加载中骨架 -->
-    <div v-if="loading" class="snapshot-loading">
-      <div class="snapshot-line"></div>
-      <div class="snapshot-line short"></div>
-      <div class="snapshot-line"></div>
+    <div
+      v-if="loading"
+      class="snapshot-loading"
+    >
+      <div class="snapshot-line" />
+      <div class="snapshot-line short" />
+      <div class="snapshot-line" />
     </div>
     <!-- 读取失败：静默降级为空白占位（快照只读，无重试副作用） -->
-    <div v-else-if="loadError" class="snapshot-empty">
+    <div
+      v-else-if="loadError"
+      class="snapshot-empty"
+    >
       <span class="snapshot-empty-text">快照加载失败</span>
     </div>
     <!-- 有快照内容 → 只读树 -->
@@ -102,12 +112,18 @@ const roots = computed(() => {
           :depth="0"
         />
       </template>
-      <div v-else class="snapshot-empty">
+      <div
+        v-else
+        class="snapshot-empty"
+      >
         <span class="snapshot-empty-text">当日无内容</span>
       </div>
     </template>
     <!-- 无快照（守卫放行但尚未物化，如启动竞态）：占位，不读活数据 -->
-    <div v-else class="snapshot-empty">
+    <div
+      v-else
+      class="snapshot-empty"
+    >
       <span class="snapshot-empty-text">该页快照尚未生成</span>
     </div>
   </div>

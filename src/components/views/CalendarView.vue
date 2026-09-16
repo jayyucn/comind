@@ -140,21 +140,43 @@ function refColorClass(dateStr: string): string {
   <div class="calendar-view">
     <div class="calendar-header">
       <div class="cal-nav">
-        <button class="cal-nav-btn" @click="prevMonth" title="上个月">
+        <button
+          class="cal-nav-btn"
+          title="上个月"
+          @click="prevMonth"
+        >
           <ChevronLeft :size="16" />
         </button>
         <span class="cal-month-label">{{ monthLabel }}</span>
-        <button class="cal-nav-btn" @click="nextMonth" title="下个月">
+        <button
+          class="cal-nav-btn"
+          title="下个月"
+          @click="nextMonth"
+        >
           <ChevronRight :size="16" />
         </button>
       </div>
-      <button class="cal-today-btn" @click="goToday">今天</button>
+      <button
+        class="cal-today-btn"
+        @click="goToday"
+      >
+        今天
+      </button>
     </div>
 
     <div class="calendar-grid">
-      <div v-for="wd in WEEKDAYS" :key="'h-' + wd" class="cal-weekday">{{ wd }}</div>
+      <div
+        v-for="wd in WEEKDAYS"
+        :key="'h-' + wd"
+        class="cal-weekday"
+      >
+        {{ wd }}
+      </div>
 
-      <template v-for="row in calendarRows" :key="'r-' + row[0].date">
+      <template
+        v-for="row in calendarRows"
+        :key="'r-' + row[0].date"
+      >
         <div
           v-for="cell in row"
           :key="cell.date"
@@ -197,7 +219,10 @@ function refColorClass(dateStr: string): string {
       </template>
     </div>
 
-    <div v-if="items.length === 0" class="calendar-empty">
+    <div
+      v-if="items.length === 0"
+      class="calendar-empty"
+    >
       <p>没有带日期的记录</p>
     </div>
   </div>

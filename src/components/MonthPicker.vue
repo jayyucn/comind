@@ -73,26 +73,57 @@ function selectMonth(index: number) {
 <template>
   <div class="month-picker">
     <div class="mp-header">
-      <button class="mp-today" type="button" :disabled="isTodayActive" @click="goToday">
+      <button
+        class="mp-today"
+        type="button"
+        :disabled="isTodayActive"
+        @click="goToday"
+      >
         <MapPinHouse />
       </button>
      
       <span class="mp-year-label">{{ viewYear }}年</span>
-       <button class="mp-nav" type="button" aria-label="上一年" @click="prevYear">
-        <ChevronsLeft :size="18" :stroke-width="2" />
+      <button
+        class="mp-nav"
+        type="button"
+        aria-label="上一年"
+        @click="prevYear"
+      >
+        <ChevronsLeft
+          :size="18"
+          :stroke-width="2"
+        />
       </button>
-      <button class="mp-nav" type="button" aria-label="下一年" :disabled="viewYear >= currentYear" @click="nextYear">
-        <ChevronsRight :size="18" :stroke-width="2" />
+      <button
+        class="mp-nav"
+        type="button"
+        aria-label="下一年"
+        :disabled="viewYear >= currentYear"
+        @click="nextYear"
+      >
+        <ChevronsRight
+          :size="18"
+          :stroke-width="2"
+        />
       </button>
-
     </div>
     <div class="mp-grid">
-      <button v-for="m in months" :key="m.index" type="button" class="mp-cell" :class="{
-        'is-selected': m.isSelected,
-        'is-current': m.isCurrent,
-        'is-future': m.isFuture,
-        'has-data': m.hasData,
-      }" :disabled="m.isFuture" @click="selectMonth(m.index)">{{ m.label }}</button>
+      <button
+        v-for="m in months"
+        :key="m.index"
+        type="button"
+        class="mp-cell"
+        :class="{
+          'is-selected': m.isSelected,
+          'is-current': m.isCurrent,
+          'is-future': m.isFuture,
+          'has-data': m.hasData,
+        }"
+        :disabled="m.isFuture"
+        @click="selectMonth(m.index)"
+      >
+        {{ m.label }}
+      </button>
     </div>
   </div>
 </template>

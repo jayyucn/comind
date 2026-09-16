@@ -13,9 +13,17 @@ function handleClick() {
 </script>
 
 <template>
-  <div class="nav-item graph-nav" :class="{ active: isActive() }" @click="handleClick">
+  <div
+    class="nav-item graph-nav"
+    :class="{ active: isActive() }"
+    @click="handleClick"
+  >
     <span class="nav-icon">
-      <Icon name="icon-network" :size="16" :stroke-width="1.75" />
+      <Icon
+        name="icon-network"
+        :size="16"
+        :stroke-width="1.75"
+      />
     </span>
     <span class="nav-label">图谱</span>
   </div>

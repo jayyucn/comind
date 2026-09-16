@@ -1,4 +1,4 @@
-import type { NodeData } from '@antv/g6'
+import type { EdgeData, NodeData } from '@antv/g6'
 
 type NodeState = 'current' | 'highlighted' | 'filtered' | 'default'
 type EdgeState = 'filtered' | 'default'
@@ -44,11 +44,11 @@ export function getNodeStyle(d: NodeData): NodeStyleConfig {
   return NODE_STYLES[getNodeState(d)]
 }
 
-export function getEdgeState(d: any): EdgeState {
+export function getEdgeState(d: EdgeData): EdgeState {
   return d.data?.isFiltered ? 'filtered' : 'default'
 }
 
-export function getEdgeStyle(d: any): EdgeStyleConfig {
+export function getEdgeStyle(d: EdgeData): EdgeStyleConfig {
   return EDGE_STYLES[getEdgeState(d)]
 }
 

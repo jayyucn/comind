@@ -55,7 +55,10 @@ const todayTitle = computed(() => {
     <div class="ideas-split-view">
       <!-- 今日面板：Rust 端幂等创建，保证一定存在；loading 期间显示骨架屏 -->
       <div class="today-panel">
-        <div v-if="todayPage" class="today-card">
+        <div
+          v-if="todayPage"
+          class="today-card"
+        >
           <div class="today-header">
             <PageTitle :title="todayTitle" />
           </div>
@@ -64,15 +67,18 @@ const todayTitle = computed(() => {
           </div>
           <RelationshipMenu :menu="relMenu" />
         </div>
-        <div v-else-if="loadingToday" class="today-card is-loading">
+        <div
+          v-else-if="loadingToday"
+          class="today-card is-loading"
+        >
           <div class="skeleton-header">
-            <div class="skeleton-badge"></div>
-            <div class="skeleton-date"></div>
+            <div class="skeleton-badge" />
+            <div class="skeleton-date" />
           </div>
           <div class="skeleton-body">
-            <div class="skeleton-line"></div>
-            <div class="skeleton-line short"></div>
-            <div class="skeleton-line"></div>
+            <div class="skeleton-line" />
+            <div class="skeleton-line short" />
+            <div class="skeleton-line" />
           </div>
         </div>
       </div>

@@ -2,6 +2,7 @@ import { defineComponent, h, type PropType } from 'vue'
 import { useBlockRegistry } from '../../../../composables/useBlockRegistry'
 import { usePropertyStore } from '../../../../stores/property'
 import type { SubtreeNode } from '../../../../types/block'
+import type { PropertyValue } from '../../../../types/property'
 
 const SubtreeRenderer = defineComponent({
   name: 'SubtreeRenderer',
@@ -24,9 +25,9 @@ const SubtreeRenderer = defineComponent({
       emit('language-change', lang)
     }
 
-    function getBlockProperties(blockId: string): Record<string, any> {
+    function getBlockProperties(blockId: string): Record<string, PropertyValue> {
       const props = propertyStore.getBlockProperties(blockId)
-      const result: Record<string, any> = {}
+      const result: Record<string, PropertyValue> = {}
       for (const prop of props) {
         result[prop.key] = prop.value
       }

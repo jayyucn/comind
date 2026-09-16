@@ -21,7 +21,7 @@
     "npm.scriptExplorerExclude": [
         "preview",
         "test",
-        "lint",
+        // "lint",
     ],
     "npm.scriptExplorerAction": "run",
 }

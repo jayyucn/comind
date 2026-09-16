@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { BookOpen, Droplet, FilePen } from 'lucide-vue-next';
+import type { Page } from '../../types/page';
 
 const props = withDefaults(defineProps<{
-  page: any
+  page: Page
   active?: boolean
   showTime?: boolean
   timeFormat?: 'relative' | 'absolute'
@@ -117,13 +118,23 @@ function handleKeydown(event: KeyboardEvent) {
       class="page-item-input"
       @blur="handleConfirm"
       @keydown="handleKeydown"
-    />
+    >
     <template v-else>
-      <component :is="typeIcon" :size="14" class="page-item-icon" />
+      <component
+        :is="typeIcon"
+        :size="14"
+        class="page-item-icon"
+      />
       <span class="page-item-title">{{ page.title }}</span>
     </template>
-    <span v-if="fileTypeLabel && !localRenaming" class="page-item-file-type">{{ fileTypeLabel }}</span>
-    <span v-if="showTime && !localRenaming" class="page-time">{{ timeDisplay }}</span>
+    <span
+      v-if="fileTypeLabel && !localRenaming"
+      class="page-item-file-type"
+    >{{ fileTypeLabel }}</span>
+    <span
+      v-if="showTime && !localRenaming"
+      class="page-time"
+    >{{ timeDisplay }}</span>
     <slot name="suffix" />
   </div>
 </template>

@@ -134,8 +134,15 @@ function handleKeyDown(e: KeyboardEvent) {
 </script>
 
 <template>
-  <BasePopover :visible="visible" :anchor-el="anchorEl" @close="emit('close')">
-    <div class="block-selector" @keydown="handleKeyDown">
+  <BasePopover
+    :visible="visible"
+    :anchor-el="anchorEl"
+    @close="emit('close')"
+  >
+    <div
+      class="block-selector"
+      @keydown="handleKeyDown"
+    >
       <div class="bs-header">
         <input
           ref="searchInput"
@@ -143,11 +150,19 @@ function handleKeyDown(e: KeyboardEvent) {
           class="bs-search"
           placeholder="Search blocks..."
           @keydown="handleKeyDown"
-        />
-        <button class="bs-close-btn" @click="emit('close')">✕</button>
+        >
+        <button
+          class="bs-close-btn"
+          @click="emit('close')"
+        >
+          ✕
+        </button>
       </div>
       <div class="bs-body">
-        <div v-if="menuItems.length === 0" class="bs-empty">
+        <div
+          v-if="menuItems.length === 0"
+          class="bs-empty"
+        >
           <span v-if="!searchQuery">No blocks found</span>
           <span v-else>No blocks match "{{ searchQuery }}"</span>
         </div>

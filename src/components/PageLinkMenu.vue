@@ -138,26 +138,29 @@ defineExpose({ selectNext, selectPrev, confirmSelect, close });
   >
     <div class="wiki-link-menu">
       <div class="wlm-body">
-          <div v-if="menuItems.length === 0" class="wlm-empty">
-            <span v-if="!query">No pages yet</span>
-            <span v-else>No pages found</span>
-          </div>
-          <div
-            v-for="(item, index) in menuItems"
-            :key="item.type === 'page' ? item.pageId : `create-${item.title}`"
-            class="wlm-item"
-            :class="{ 
-              active: selectedIndex === index,
-              'wlm-create': item.type === 'create'
-            }"
-            @click="selectItem(item)"
-            @mouseenter="selectedIndex = index"
-          >
-            <span class="wlm-icon">{{ item.type === 'create' ? '+' : '📄' }}</span>
-            <span class="wlm-title">{{ item.type === 'create' ? `Create "${item.title}"` : item.title }}</span>
-          </div>
+        <div
+          v-if="menuItems.length === 0"
+          class="wlm-empty"
+        >
+          <span v-if="!query">No pages yet</span>
+          <span v-else>No pages found</span>
+        </div>
+        <div
+          v-for="(item, index) in menuItems"
+          :key="item.type === 'page' ? item.pageId : `create-${item.title}`"
+          class="wlm-item"
+          :class="{ 
+            active: selectedIndex === index,
+            'wlm-create': item.type === 'create'
+          }"
+          @click="selectItem(item)"
+          @mouseenter="selectedIndex = index"
+        >
+          <span class="wlm-icon">{{ item.type === 'create' ? '+' : '📄' }}</span>
+          <span class="wlm-title">{{ item.type === 'create' ? `Create "${item.title}"` : item.title }}</span>
         </div>
       </div>
+    </div>
   </BasePopover>
 </template>
 

@@ -9,6 +9,13 @@
 const HIDE_DELAY = 300 // 停滞后淡出延迟（ms）
 const MIN_THUMB = 24 // 指示条最小高度（px），避免过短难以点中
 
+/** 幂等初始化哨兵：仅允许绑定一次 document 级监听 */
+declare global {
+  interface Window {
+    __cm_overlay_scrollbar?: boolean
+  }
+}
+
 let overlay: HTMLElement | null = null
 let activeEl: HTMLElement | null = null
 let hideTimer: number | null = null
@@ -158,8 +165,8 @@ function bindDrag(ov: HTMLElement): void {
  * 返回当前活动容器，便于测试；正常运行无需使用。
  */
 export function initOverlayScrollbars(): void {
-  if ((window as any).__cm_overlay_scrollbar) return
-  ;(window as any).__cm_overlay_scrollbar = true
+  if (window.__cm_overlay_scrollbar) return
+  window.__cm_overlay_scrollbar = true
 
   // scroll 不冒泡，用捕获阶段在 document 上统一截获任何元素的滚动。
   // 同样走 findScrollable 校验纵向溢出，避免非溢出容器被误判。

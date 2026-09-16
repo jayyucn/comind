@@ -15,7 +15,7 @@
  *   → 结构签名变化（#118 D2）→ BlockList watch → syncFromStore → tree 重建
  */
 import { ChevronDown, ChevronRight } from 'lucide-vue-next'
-import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch } from 'vue'
 import { useBlockRegistry } from '../../composables/useBlockRegistry'
 import { useBlockRelationshipCleanup } from '../../composables/useBlockRelationshipCleanup'
 import { useBlockStore } from '../../stores/blocks'
@@ -33,6 +33,7 @@ import PropertyDisplay from './PropertyDisplay.vue'
 import PropertyInline from './PropertyInline.vue'
 
 import type { EditorView } from '@codemirror/view'
+import type { Editor } from '@tiptap/core'
 import type { CrossBlockSelection } from '../../composables/useCrossBlockSelection'
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import { usePageStore } from '../../stores/pages'
@@ -71,6 +72,16 @@ const inBlockModal = inject<boolean>('inBlockModal', false)
 // ── 便捷访问 ──
 const blockId = computed(() => props.node.id)
 const block = computed(() => props.node.block)
+
+// ── 子级列表 v-model ──
+// 树节点由 BlockList 的 tree 持有（唯一渲染权威），Block 只是渲染层，写入路径
+// 是同一份响应式数据。node.children 的写回经 toRef 代理完成（模板直接
+// v-model="node.children" 会触发 vue/no-mutating-props），赋值行为与原先完全一致。
+const nodeRef = toRef(props, 'node')
+const childrenModel = computed<TreeNode[]>({
+  get: () => nodeRef.value.children,
+  set: children => { nodeRef.value.children = children },
+})
 
 // ── 属性读取 / 优先级 CSS 类（由 useBlockPropertySync 统一管理）──
 const {
@@ -320,7 +331,7 @@ async function focusActiveEditor() {
   // 优先级：跨块同列 > 点击坐标 > cursorPos > end
   const arrowFocus = editorStore.consumeArrowFocus()
   if (arrowFocus && editorRef.value?.getEditor()) {
-    const editor = editorRef.value.getEditor()!
+    const editor = editorRef.value.getEditor() as Editor | EditorView
     // x = null：不保持列，'last' 直接落行尾 / 'first' 落行首（块首左移场景）
     if (arrowFocus.x === null) {
       editorRef.value.focus(arrowFocus.line === 'last' ? 'end' : 'start')
@@ -328,8 +339,8 @@ async function focusActiveEditor() {
     }
     // 代码块（CodeMirror）目标：getEditor() 返回 CM EditorView（无 .view），
     // 用 CM 的 coordsAtPos/posAtCoords 做同列落位（与 PM 分支同语义）
-    if (typeof (editor as any).lineBlockAt === 'function') {
-      const cm = editor as EditorView
+    if ('lineBlockAt' in editor) {
+      const cm = editor as unknown as EditorView
       const docLen = cm.state.doc.length
       // 目标落位行：'first' → 文档起始，'last' → 文档末尾
       const linePos = arrowFocus.line === 'last' ? docLen : 0
@@ -348,7 +359,7 @@ async function focusActiveEditor() {
       cm.focus()
       return
     }
-    const view = (editor as any).view
+    const view = editor.view
     const doc = view.state.doc
     // 目标落位行：上移→上一块末行，下移→下一块首行
     const linePos = arrowFocus.line === 'last'
@@ -503,81 +514,114 @@ watch(isActive, (active) => {
   >
     <div class="block-row">
       <!-- 缩进占位 -->
-      <div class="block-indent" :style="{ width: indentWidth }"></div>
+      <div
+        class="block-indent"
+        :style="{ width: indentWidth }"
+      />
 
       <!-- 内容区域（bullet + content）- 选中时边框只应用到此容器 -->
       <div class="block-inner">
         <!-- Bullet：dot 常显，点击打开单块子树编辑弹窗（BlockModal）；
              chevron 仅在有子块且 hover 时显现，点击负责折叠/展开（ADR-0039） -->
-        <span class="block-bullet" :class="{ collapsed, 'hide-empty-bullet': hideBulletForEmpty }">
+        <span
+          class="block-bullet"
+          :class="{ collapsed, 'hide-empty-bullet': hideBulletForEmpty }"
+        >
           <span
             v-if="node.children.length > 0"
             class="bullet-chevron"
             title="折叠 / 展开"
             @click.stop="toggleCollapse"
           >
-            <ChevronDown v-if="!collapsed" :size="18" :stroke-width="2" />
-            <ChevronRight v-else :size="18" :stroke-width="2" />
+            <ChevronDown
+              v-if="!collapsed"
+              :size="18"
+              :stroke-width="2"
+            />
+            <ChevronRight
+              v-else
+              :size="18"
+              :stroke-width="2"
+            />
           </span>
-          <span class="bullet-dot" title="打开块详情" @click.stop="onBulletClick"></span>
+          <span
+            class="bullet-dot"
+            title="打开块详情"
+            @click.stop="onBulletClick"
+          />
         </span>
 
         <div class="block-body">
-        <!-- Between 属性显示 -->
-        <PropertyInline :block-id="blockId" position="between-bullet-content" />
+          <!-- Between 属性显示 -->
+          <PropertyInline
+            :block-id="blockId"
+            position="between-bullet-content"
+          />
 
-        <!-- 内容区 -->
-        <div class="block-content" @mousedown="onContentMousedown">
-          <component
-            v-if="isActive && handler"
-            :is="handler.editorComponent"
-            ref="editorRef"
-            :block-id="blockId"
-            :content="editContent"
-            :show-full-placeholder="isSingleEmptyBlock"
-            :properties="getBlockPropertiesMap()"
-            :language="getBlockProperty('language')"
-            @save="handleSave"
-            @split="handleSplit"
-            @merge="handleMerge"
-            @delete="handleDelete"
-            @indent="handleIndent"
-            @outdent="handleOutdent"
-            @move-up="handleMoveUp"
-            @move-down="handleMoveDown"
-            @move-left="handleMoveLeft"
-            @move-right="handleMoveRight"
-            @backspace-empty="handleBackspaceEmpty"
-            @exit-edit="handleExitEdit"
-            @cursor-change="handleCursorChange"
-            @language-change="onLanguageChange"
-          />
-          <component
-            v-else-if="handler"
-            :is="handler.renderComponent"
-            :block-id="blockId"
-            :content="block.content"
-            :properties="getBlockPropertiesMap()"
-            :language="getBlockProperty('language')"
-            :show-placeholder="isSingleEmptyBlock"
-            :readonly="true"
-            @content-click="onContentClick"
-            @language-change="onLanguageChange"
-            @clear="handleClear"
-          />
-          <div v-else class="block-text block-text--unregistered">
-            <span class="block-placeholder">{{ block.type }} (not registered)</span>
+          <!-- 内容区 -->
+          <div
+            class="block-content"
+            @mousedown="onContentMousedown"
+          >
+            <component
+              :is="handler.editorComponent"
+              v-if="isActive && handler"
+              ref="editorRef"
+              :block-id="blockId"
+              :content="editContent"
+              :show-full-placeholder="isSingleEmptyBlock"
+              :properties="getBlockPropertiesMap()"
+              :language="getBlockProperty('language')"
+              @save="handleSave"
+              @split="handleSplit"
+              @merge="handleMerge"
+              @delete="handleDelete"
+              @indent="handleIndent"
+              @outdent="handleOutdent"
+              @move-up="handleMoveUp"
+              @move-down="handleMoveDown"
+              @move-left="handleMoveLeft"
+              @move-right="handleMoveRight"
+              @backspace-empty="handleBackspaceEmpty"
+              @exit-edit="handleExitEdit"
+              @cursor-change="handleCursorChange"
+              @language-change="onLanguageChange"
+            />
+            <component
+              :is="handler.renderComponent"
+              v-else-if="handler"
+              :block-id="blockId"
+              :content="block.content"
+              :properties="getBlockPropertiesMap()"
+              :language="getBlockProperty('language')"
+              :show-placeholder="isSingleEmptyBlock"
+              :readonly="true"
+              @content-click="onContentClick"
+              @language-change="onLanguageChange"
+              @clear="handleClear"
+            />
+            <div
+              v-else
+              class="block-text block-text--unregistered"
+            >
+              <span class="block-placeholder">{{ block.type }} (not registered)</span>
+            </div>
           </div>
-        </div>
 
-        <!-- Right 属性显示 -->
-        <PropertyInline :block-id="blockId" position="right-of-content" />
+          <!-- Right 属性显示 -->
+          <PropertyInline
+            :block-id="blockId"
+            position="right-of-content"
+          />
         </div>
       </div>
     </div>
 
     <!-- 属区显示区 -->
-    <div class="block-properties" @mousedown="onPropertyMousedown">
+    <div
+      class="block-properties"
+      @mousedown="onPropertyMousedown"
+    >
       <PropertyDisplay :block-id="blockId" />
     </div>
 
@@ -590,7 +634,7 @@ watch(isActive, (active) => {
     <BlockDraggableList
       v-if="node.block.type !== 'embed'"
       ref="blockDraggableRef"
-      v-model="node.children"
+      v-model="childrenModel"
       :page-id="pageId"
       :parent-id="node.id"
       :depth="depth + 1"

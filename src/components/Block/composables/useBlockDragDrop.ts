@@ -1,4 +1,6 @@
 import { getCurrentInstance, onBeforeUnmount, ref } from 'vue'
+import type { MoveEvent } from 'sortablejs'
+import type { DraggableEvent } from 'vue-draggable-plus'
 import type { DragRect } from '../../../composables/useDragDrop'
 import { computeDepthDelta, computeSortPosition } from '../../../composables/useDragDrop'
 import type { useBlockStore } from '../../../stores/blocks'
@@ -531,7 +533,7 @@ export function useBlockDragDrop(options: UseBlockDragDropOptions) {
    * 退回 ghost-class（Sortable 在派发 start 之前已给被拖元素加上该 class）。
    * 同时记下原槽位（父容器 + 下一兄弟），供 Esc 取消时插回。
    */
-  function handleDragStart(evt: any) {
+  function handleDragStart(evt: DraggableEvent & { targetEl?: HTMLElement; originalEvent?: Event }) {
     const candidate = (evt?.targetEl ?? evt?.item ?? evt?.originalEvent?.target) as HTMLElement | undefined
     draggedEl =
       (candidate?.closest?.('.block') as HTMLElement | null) ??
@@ -686,7 +688,7 @@ export function useBlockDragDrop(options: UseBlockDragDropOptions) {
    * 指针（拿不到后续采样），用它做意图会向下拖时偏上一个；意图统一由 handleDocumentPointerMove
    * 按指针位置实时重算。
    */
-  function handleDragMove(evt: any): boolean {
+  function handleDragMove(evt: MoveEvent): boolean {
     const draggedId = (evt.dragged as HTMLElement)?.dataset.blockId
     const toEl = evt.to as HTMLElement | undefined
     if (!draggedId || !toEl) return true
@@ -708,14 +710,14 @@ export function useBlockDragDrop(options: UseBlockDragDropOptions) {
    * 指针停在被拖元素的占位行上时，那条意图等价于「留在 Sortable 放的槽位」，
    * applyDropTarget 自然成为 no-op —— 这正是向下拖不再偏一格的原因。
    */
-  function handleBlockDragEnd(evt?: any) {
+  function handleBlockDragEnd(evt?: DraggableEvent) {
     // Esc 取消优先：回滚意图把被强制 splice 的树数组纠回原槽位
     const intent: DragEndIntent | null = pendingRevert
       ? pendingRevert
       : pendingIntent && pendingDraggedId
         ? { draggedId: pendingDraggedId, target: pendingIntent }
         : null
-    // eslint-disable-next-line no-console
+     
     console.log('[DBG end] from=', (evt?.from?.dataset?.parentId ?? '?') || 'ROOT', 'intent=', JSON.stringify(intent && { d: intent.draggedId.slice(0, 4), a: intent.target.action, p: (intent.target.toParentId ?? 'ROOT').slice(0, 4), b: (intent.target.beforeId ?? 'NULL').slice(0, 4) }))
     document.documentElement.dataset.dbgEnd = `end:from=${(evt?.from?.dataset?.parentId ?? '?') || 'ROOT'}:to=${(evt?.to?.dataset?.parentId ?? '?') || 'ROOT'}:old=${evt?.oldIndex}:new=${evt?.newIndex}:intent=${intent ? intent.target.action + '/' + ((intent.target.toParentId ?? 'ROOT').slice(0, 4)) + '/' + ((intent.target.beforeId ?? 'NULL').slice(0, 4)) : 'NULL'}`
     stopPointerTracking()

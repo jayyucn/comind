@@ -5,9 +5,10 @@ import { usePageStore } from '../../stores/pages'
 import { useFavorites } from '../../composables/useFavorites'
 import { MoreVertical, Pencil, Star, Trash2 } from 'lucide-vue-next'
 import ConfirmDialog from '../ConfirmDialog.vue'
+import type { Page } from '../../types/page'
 
 const props = defineProps<{
-  page: any
+  page: Page
 }>()
 
 const emit = defineEmits<{
@@ -76,24 +77,53 @@ onUnmounted(() => {
 
 <template>
   <div class="page-item-menu">
-    <button class="menu-trigger" @click="toggleMenu">
-      <MoreVertical :size="16" :stroke-width="1.75" />
+    <button
+      class="menu-trigger"
+      @click="toggleMenu"
+    >
+      <MoreVertical
+        :size="16"
+        :stroke-width="1.75"
+      />
     </button>
 
     <Transition name="menu">
-      <div v-if="isMenuOpen" class="menu-dropdown" @click.stop>
-        <button class="menu-item" @click="handleToggleFavorite">
-          <Star :size="14" :stroke-width="1.75" />
+      <div
+        v-if="isMenuOpen"
+        class="menu-dropdown"
+        @click.stop
+      >
+        <button
+          class="menu-item"
+          @click="handleToggleFavorite"
+        >
+          <Star
+            :size="14"
+            :stroke-width="1.75"
+          />
           <span>{{ isFavorite(page.id) ? '取消收藏' : '收藏' }}</span>
         </button>
 
-        <button v-if="page.type !== 'ideas'" class="menu-item" @click="handleRename">
-          <Pencil :size="14" :stroke-width="1.75" />
+        <button
+          v-if="page.type !== 'ideas'"
+          class="menu-item"
+          @click="handleRename"
+        >
+          <Pencil
+            :size="14"
+            :stroke-width="1.75"
+          />
           <span>重命名</span>
         </button>
 
-        <button class="menu-item danger" @click="showSoftDeleteDialog">
-          <Trash2 :size="14" :stroke-width="1.75" />
+        <button
+          class="menu-item danger"
+          @click="showSoftDeleteDialog"
+        >
+          <Trash2
+            :size="14"
+            :stroke-width="1.75"
+          />
           <span>删除</span>
         </button>
       </div>

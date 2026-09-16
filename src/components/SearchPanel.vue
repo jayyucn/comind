@@ -150,7 +150,11 @@ function getResultTypeLabel(result: SearchResult): string {
 
 <template>
   <Teleport to="body">
-    <div v-if="visible" class="search-overlay" @click.self="$emit('close')">
+    <div
+      v-if="visible"
+      class="search-overlay"
+      @click.self="$emit('close')"
+    >
       <div class="search-panel">
         <div class="search-header">
           <input
@@ -160,7 +164,7 @@ function getResultTypeLabel(result: SearchResult): string {
             class="search-input"
             placeholder="搜索页面和内容..."
             @keydown.stop
-          />
+          >
           <span class="search-hint">
             <kbd>↑</kbd><kbd>↓</kbd> 选择
             <kbd>Enter</kbd> 打开
@@ -169,21 +173,35 @@ function getResultTypeLabel(result: SearchResult): string {
         </div>
 
         <div class="search-results">
-          <div v-if="loading" class="search-loading">
+          <div
+            v-if="loading"
+            class="search-loading"
+          >
             搜索中...
           </div>
 
-          <div v-else-if="query && results.length === 0" class="search-empty">
+          <div
+            v-else-if="query && results.length === 0"
+            class="search-empty"
+          >
             未找到相关结果
           </div>
 
-          <div v-else-if="!query" class="search-empty">
+          <div
+            v-else-if="!query"
+            class="search-empty"
+          >
             输入关键词开始搜索
           </div>
 
           <template v-else>
-            <div v-if="groupedResults.pages.length > 0" class="search-group">
-              <div class="search-group-title">页面</div>
+            <div
+              v-if="groupedResults.pages.length > 0"
+              class="search-group"
+            >
+              <div class="search-group-title">
+                页面
+              </div>
               <div
                 v-for="(result, idx) in groupedResults.pages"
                 :key="result.id"
@@ -193,14 +211,23 @@ function getResultTypeLabel(result: SearchResult): string {
               >
                 <span class="search-item-icon">📄</span>
                 <div class="search-item-content">
-                  <div class="search-item-title">{{ getResultTitle(result) }}</div>
-                  <div class="search-item-type">{{ getResultTypeLabel(result) }}</div>
+                  <div class="search-item-title">
+                    {{ getResultTitle(result) }}
+                  </div>
+                  <div class="search-item-type">
+                    {{ getResultTypeLabel(result) }}
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div v-if="groupedResults.blocks.length > 0" class="search-group">
-              <div class="search-group-title">内容</div>
+            <div
+              v-if="groupedResults.blocks.length > 0"
+              class="search-group"
+            >
+              <div class="search-group-title">
+                内容
+              </div>
               <div
                 v-for="(result, idx) in groupedResults.blocks"
                 :key="result.id"
@@ -210,8 +237,12 @@ function getResultTypeLabel(result: SearchResult): string {
               >
                 <span class="search-item-icon">📝</span>
                 <div class="search-item-content">
-                  <div class="search-item-title">{{ getResultTitle(result) }}</div>
-                  <div class="search-item-match">{{ result.matchedText }}</div>
+                  <div class="search-item-title">
+                    {{ getResultTitle(result) }}
+                  </div>
+                  <div class="search-item-match">
+                    {{ result.matchedText }}
+                  </div>
                 </div>
               </div>
             </div>

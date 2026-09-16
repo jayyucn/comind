@@ -192,11 +192,11 @@ function handleCellClick(blockId: string, fieldKey: string) {
 
 <template>
   <QueryPageFrame
+    v-model:search="searchQuery"
     title="任务中心"
     :subtitle="`${flatCards.length} 个任务`"
     entity-key="block"
     :view-types="blockViewTypes"
-    v-model:search="searchQuery"
     :fields="blockRefFields"
     :registry="registry"
     :items="flatCards"
@@ -265,7 +265,11 @@ function handleCellClick(blockId: string, fieldKey: string) {
   </QueryPageFrame>
 
   <!-- 页面详情右侧弹层（替代整页路由跳转；打开后定位到来源 block） -->
-  <PageDrawer :page-id="drawerPageId" @close="drawerPageId = null" @opened="onDrawerOpened" />
+  <PageDrawer
+    :page-id="drawerPageId"
+    @close="drawerPageId = null"
+    @opened="onDrawerOpened"
+  />
 
   <!-- 单 block 子树编辑弹窗由全局 BlockModal（App.vue）响应 editorStore.blockModalBlockId，此处不再渲染 -->
 </template>

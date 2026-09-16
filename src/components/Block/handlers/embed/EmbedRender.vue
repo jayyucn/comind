@@ -12,7 +12,7 @@ import type { Block } from '../../../../types/block'
 const props = defineProps<{
   content: string
   showPlaceholder?: boolean
-  properties: Record<string, any>
+  properties: Record<string, unknown>
   blockId: string
 }>()
 
@@ -242,27 +242,52 @@ function handleLanguageChange(lang: string) {
 </script>
 
 <template>
-  <div ref="rootRef" class="embed-block" @mousedown.stop @click="emit('content-click', $event)">
+  <div
+    ref="rootRef"
+    class="embed-block"
+    @mousedown.stop
+    @click="emit('content-click', $event)"
+  >
     <template v-if="!sourceBlockId">
-      <div class="embed-placeholder" @click="editorStore.openBlockSelector(blockId)">
+      <div
+        class="embed-placeholder"
+        @click="editorStore.openBlockSelector(blockId)"
+      >
         Select a block to embed...
       </div>
     </template>
     <template v-else-if="!sourceBlock">
-      <div class="embed-error">Source block not found</div>
+      <div class="embed-error">
+        Source block not found
+      </div>
     </template>
     <template v-else>
-      <div class="embed-card" :class="{ selected: isClicked }" @click.stop="handleCardClick">
+      <div
+        class="embed-card"
+        :class="{ selected: isClicked }"
+        @click.stop="handleCardClick"
+      >
         <div class="embed-header">
           <span class="embed-page-name">
             {{ sourcePage ? sourcePage.title : 'Deleted page' }}
           </span>
-          <span v-if="isSamePage" class="embed-same-page-tag">same page</span>
+          <span
+            v-if="isSamePage"
+            class="embed-same-page-tag"
+          >same page</span>
           <span class="embed-hint">click to jump</span>
         </div>
         <div class="embed-content">
-          <div v-if="circularDetected" class="embed-circular-warning">Circular embed</div>
-          <div v-else-if="sourceSubtree" class="embed-source-block">
+          <div
+            v-if="circularDetected"
+            class="embed-circular-warning"
+          >
+            Circular embed
+          </div>
+          <div
+            v-else-if="sourceSubtree"
+            class="embed-source-block"
+          >
             <SubtreeRenderer
               :node="sourceSubtree"
               :depth="0"

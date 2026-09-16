@@ -140,7 +140,7 @@ async function resolveImages(doc: Document): Promise<void> {
       img.removeAttribute('src')
       continue
     }
-    let blob: Blob | null = null
+    let blob: Blob | null
     try {
       blob = await props.book.loadBlob(resolveZipPath(src, props.section.id))
     } catch {
@@ -602,7 +602,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="containerRef" class="chapter-content"></div>
+  <div
+    ref="containerRef"
+    class="chapter-content"
+  />
 
   <!-- 浮层 Teleport 到 body + var(--z-popover)（ADR-0032 浮层纪律） -->
   <SelectionToolbar

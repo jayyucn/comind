@@ -244,7 +244,10 @@ function clearValue() {
 </script>
 
 <template>
-  <div class="date-picker" :class="['dp-' + mode, { 'dp-open': open }]">
+  <div
+    class="date-picker"
+    :class="['dp-' + mode, { 'dp-open': open }]"
+  >
     <button
       ref="triggerEl"
       type="button"
@@ -253,9 +256,17 @@ function clearValue() {
       data-testid="dp-trigger"
       @click.stop="toggle"
     >
-      <Calendar :size="14" class="dp-ico" />
+      <Calendar
+        :size="14"
+        class="dp-ico"
+      />
       <span class="dp-text">{{ display }}</span>
-      <span v-if="hasValue" class="dp-clear" title="清除" @click.stop="clearValue">×</span>
+      <span
+        v-if="hasValue"
+        class="dp-clear"
+        title="清除"
+        @click.stop="clearValue"
+      >×</span>
     </button>
 
     <Teleport to="body">
@@ -265,12 +276,18 @@ function clearValue() {
         class="dp-root"
         :style="{ left: anchor.x + 'px', top: anchor.y + 'px' }"
       >
-        <div class="dp-backdrop" @click="close"></div>
+        <div
+          class="dp-backdrop"
+          @click="close"
+        />
         <div class="dp-panel">
           <!-- 快捷值（今日 / 昨日 / ... / 本月末）：
                dynamic=false → resolve 为 yyyy-MM-DD 落库（具体某天）
                dynamic=true  → emit token（动态值，求值时刻按当天解析） -->
-          <div class="dp-shortcuts" data-testid="dp-shortcuts">
+          <div
+            class="dp-shortcuts"
+            data-testid="dp-shortcuts"
+          >
             <button
               v-for="key in (['today','yesterday','tomorrow','weekStart','weekEnd','monthStart','monthEnd'] as const)"
               :key="key"
@@ -284,7 +301,10 @@ function clearValue() {
             </button>
           </div>
           <!-- 键入：相对日期表达式（今天 / +3 / 下周一 / 2026-09-06） -->
-          <div class="dp-custom" data-testid="dp-custom">
+          <div
+            class="dp-custom"
+            data-testid="dp-custom"
+          >
             <input
               v-model="customInput"
               type="text"
@@ -292,7 +312,7 @@ function clearValue() {
               placeholder="或键入：今天 / +3 / 下周一 / 2026-09-06…"
               data-testid="dp-custom-input"
               @keydown="onCustomKeydown"
-            />
+            >
             <button
               type="button"
               class="dp-custom-apply"
@@ -302,7 +322,11 @@ function clearValue() {
               确定
             </button>
           </div>
-          <p v-if="customError" class="dp-custom-error" data-testid="dp-custom-error">
+          <p
+            v-if="customError"
+            class="dp-custom-error"
+            data-testid="dp-custom-error"
+          >
             {{ customError }}
           </p>
 
@@ -315,7 +339,10 @@ function clearValue() {
             :range-end="mode === 'range' ? rangeTuple[1] : ''"
             @select="onSelect"
           />
-          <p v-if="mode === 'range'" class="dp-range-hint">
+          <p
+            v-if="mode === 'range'"
+            class="dp-range-hint"
+          >
             {{ phase === 'from' ? '选择开始日期' : '选择结束日期' }}
           </p>
         </div>

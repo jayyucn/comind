@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import { History } from 'lucide-vue-next'
 
-const props = defineProps<{
+defineProps<{
   blockId: string
 }>()
 
@@ -21,10 +21,10 @@ const buttonClass = computed(() => ({
 <template>
   <button
     :class="buttonClass"
+    title="查看历史版本"
     @mouseenter="isHovered = true"
     @mouseleave="isHovered = false"
     @click.stop="emit('open')"
-    title="查看历史版本"
   >
     <History :size="14" />
   </button>

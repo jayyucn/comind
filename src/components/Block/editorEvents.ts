@@ -1,5 +1,6 @@
 import type { Editor } from '@tiptap/core'
 import { TextSelection } from '@tiptap/pm/state'
+import type { EditorView } from '@tiptap/pm/view'
 import type { Ref } from 'vue'
 import { DATE_REF_CLICK_EVENT, type DateRefClickPayload } from '../../extensions/DateRefExtension'
 import type { DateRefKindSelectEvent } from '../../extensions/DateRefTriggerExtension'
@@ -11,7 +12,7 @@ import { getRelationshipLabel } from '../../types/relationship'
 
 export interface RelationshipMenuApi {
   open: (opts: {
-    view: any
+    view: EditorView
     position: { x: number; y: number }
     range: { from: number; to: number }
     initialQuery?: string
@@ -19,6 +20,17 @@ export interface RelationshipMenuApi {
   }) => void
   close: () => void
 }
+
+/** PageLinkMenu 暴露的实例方法（供 DOM 事件表调用） */
+export interface WikiLinkMenuApi {
+  confirmSelect: () => void
+  close: () => void
+  selectNext: () => void
+  selectPrev: () => void
+}
+
+/** date-ref 面板打开配置（DateRefClickPayload + 弹出位置） */
+export type DateRefPanelConfig = DateRefClickPayload & { position: { x: number; y: number } }
 
 export interface EditorEventCtx {
   emit: (event: string, ...args: unknown[]) => void
@@ -28,15 +40,17 @@ export interface EditorEventCtx {
   menuPosition: Ref<{ x: number; y: number }>
   menuRange: Ref<{ from: number; to: number }>
   menuQuery: Ref<string>
-  menuRef: Ref<any>
+  menuRef: Ref<WikiLinkMenuApi | null>
   /** wiki-link 菜单锚点（光标所在 DOM 元素），供 PageLinkMenu 内的 BasePopover 避让/翻转（ADR-0038）。 */
   menuAnchorEl: Ref<HTMLElement | null>
   kindSelectorVisible: Ref<boolean>
   kindSelectorPosition: Ref<{ left: number; top: number; bottom: number }>
   kindSelectorRange: Ref<{ from: number; to: number }>
-  kindSelectorView: Ref<any>
+  // Vue 的 ref() 会对类实例做 UnwrapRef 深展开（丢失 EditorView 的内部成员），
+  // 此处只写不读，用 unknown 接收调用方各形态的 view ref，避免边界处类型不可赋值。
+  kindSelectorView: Ref<unknown>
   relMenu: RelationshipMenuApi
-  openDateRefPanel: (cfg: any, source: string) => void
+  openDateRefPanel: (cfg: DateRefPanelConfig, source: string) => void
   closeWikiLinkMenuByEditor: () => void
 }
 
@@ -51,7 +65,7 @@ export interface EditorEventCtx {
 export function createEditorEvents(ctx: EditorEventCtx): Record<string, (e: Event) => void> {
   function handleRelationshipTrigger(event: Event) {
     const customEvent = event as CustomEvent<{
-      view: any
+      view: EditorView
       position: number
       range: { from: number; to: number }
       relationshipType: string
@@ -103,7 +117,7 @@ export function createEditorEvents(ctx: EditorEventCtx): Record<string, (e: Even
 
   function handleDateRefTrigger(event: Event) {
     const customEvent = event as CustomEvent<{
-      view: any
+      view: EditorView
       position: number
       range: { from: number; to: number }
       kind: 'schedule' | 'deadline'
@@ -112,12 +126,13 @@ export function createEditorEvents(ctx: EditorEventCtx): Record<string, (e: Even
     const coords = view.coordsAtPos(position)
 
     // PM 节点不携带 blockId，需借助 .block[data-block-id] 包裹层从 DOM 解析
-    let blockId: string | null = null
+    let blockId: string | null
     try {
       const domAt = view.domAtPos(position)
-      let domEl: any = domAt.node
-      if (domEl && domEl.nodeType === 3) domEl = domEl.parentElement
-      const blockEl = domEl?.closest?.('[data-block-id]') as HTMLElement | null
+      let domEl: Node | null = domAt.node
+      if (domEl && domEl.nodeType === Node.TEXT_NODE) domEl = domEl.parentElement
+      // 用可选调用而非 instanceof Element：测试与跨 realm 场景下可能是非 Element 的假节点
+      const blockEl = (domEl as Element | null)?.closest?.('[data-block-id]') as HTMLElement | null
       blockId = blockEl?.dataset?.blockId ?? null
     } catch {
       blockId = null
@@ -175,7 +190,7 @@ export function createEditorEvents(ctx: EditorEventCtx): Record<string, (e: Even
 
   function handleWikiLinkTrigger(event: Event) {
     const customEvent = event as CustomEvent<{
-      view: any
+      view: EditorView
       position: number
       range: { from: number; to: number }
       query: string

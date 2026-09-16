@@ -192,13 +192,13 @@ onBeforeUnmount(() => {
 
 <template>
   <QueryPageFrame
+    v-model:search="searchQuery"
     title="页面库"
     :subtitle="`${filteredPages.length} 个页面`"
     entity-key="page"
     :view-types="pageViewTypes"
     default-view-name="全部页面"
     default-view-type="table"
-    v-model:search="searchQuery"
     :fields="pageRefFields"
     :registry="registry"
     :cross-record-sources="crossRecordSources"
@@ -241,7 +241,11 @@ onBeforeUnmount(() => {
     <template #gallery="{ context }">
       <div class="library-gallery">
         <div class="library-toolbar">
-          <button class="import-epub-btn" :disabled="importing" @click="handleImportEpub">
+          <button
+            class="import-epub-btn"
+            :disabled="importing"
+            @click="handleImportEpub"
+          >
             <BookPlus :size="14" />
             {{ importing ? '导入中…' : '导入 EPUB' }}
           </button>
@@ -254,9 +258,18 @@ onBeforeUnmount(() => {
           @navigate="handleOpenReader"
         >
           <template #empty>
-            <BookOpen :size="40" class="empty-icon" />
-            <p class="empty-hint">书房还是空的，导入第一本 EPUB 开始阅读</p>
-            <button class="import-epub-btn primary" :disabled="importing" @click="handleImportEpub">
+            <BookOpen
+              :size="40"
+              class="empty-icon"
+            />
+            <p class="empty-hint">
+              书房还是空的，导入第一本 EPUB 开始阅读
+            </p>
+            <button
+              class="import-epub-btn primary"
+              :disabled="importing"
+              @click="handleImportEpub"
+            >
               <BookPlus :size="14" />
               {{ importing ? '导入中…' : '导入 EPUB' }}
             </button>
@@ -267,7 +280,10 @@ onBeforeUnmount(() => {
   </QueryPageFrame>
 
   <!-- 页面详情右侧弹层（替代整页路由跳转） -->
-  <PageDrawer :page-id="drawerPageId" @close="drawerPageId = null" />
+  <PageDrawer
+    :page-id="drawerPageId"
+    @close="drawerPageId = null"
+  />
 </template>
 
 <style lang="scss" scoped>

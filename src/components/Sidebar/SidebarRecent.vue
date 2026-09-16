@@ -42,15 +42,29 @@ function handleCancelRename() {
 
 <template>
   <div class="recent-section">
-    <div class="section-header" @click="toggleExpand">
+    <div
+      class="section-header"
+      @click="toggleExpand"
+    >
       <span class="section-title">最近</span>
       <span class="expand-icon">
-        <ChevronUp v-if="isExpanded" :size="12" :stroke-width="2" />
-        <ChevronDown v-else :size="12" :stroke-width="2" />
+        <ChevronUp
+          v-if="isExpanded"
+          :size="12"
+          :stroke-width="2"
+        />
+        <ChevronDown
+          v-else
+          :size="12"
+          :stroke-width="2"
+        />
       </span>
     </div>
 
-    <div v-show="isExpanded" class="section-content">
+    <div
+      v-show="isExpanded"
+      class="section-content"
+    >
       <PageItem
         v-for="page in recentPages"
         :key="page.id"
@@ -69,7 +83,10 @@ function handleCancelRename() {
         </template>
       </PageItem>
 
-      <div v-if="recentPages.length === 0" class="empty-text">
+      <div
+        v-if="recentPages.length === 0"
+        class="empty-text"
+      >
         浏览页面后将显示在此处
       </div>
     </div>

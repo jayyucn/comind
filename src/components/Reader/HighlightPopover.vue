@@ -49,8 +49,20 @@ onBeforeUnmount(() => {
       role="dialog"
       aria-label="高亮操作"
     >
-      <button class="popover-btn" title="写笔记" @click="emit('note')">写笔记</button>
-      <button class="popover-btn danger" title="删除高亮" @click="emit('remove')">删除</button>
+      <button
+        class="popover-btn"
+        title="写笔记"
+        @click="emit('note')"
+      >
+        写笔记
+      </button>
+      <button
+        class="popover-btn danger"
+        title="删除高亮"
+        @click="emit('remove')"
+      >
+        删除
+      </button>
     </div>
   </Teleport>
 </template>

@@ -354,130 +354,151 @@ defineExpose({
 </script>
 
 <template>
-  <div class="chipbar-wrap" :class="{ 'is-open': visible }" data-testid="chipbar-wrap" ref="wrapEl">
+  <div
+    ref="wrapEl"
+    class="chipbar-wrap"
+    :class="{ 'is-open': visible }"
+    data-testid="chipbar-wrap"
+  >
     <div class="chipbar-inner">
-      <div class="chip-bar" data-testid="chip-bar">
-    <!-- 排序：始终聚合成单个 chip（ADR-0013 D3），最左 -->
-    <button
-      v-if="sorts.length"
-      ref="sortChipEl"
-      class="agg-chip is-sort"
-      :class="{ active: active?.kind === 'sortEdit' }"
-      data-testid="bar-sort-agg"
-      @click="openSortMenu($event.currentTarget as HTMLElement)"
-    >
-      <ArrowUp :size="14" />{{ sorts.length }} sorts ▾
-    </button>
-    <!-- sort | (group|filters) 分割线 -->
-    <span v-if="divAfterSort" class="bar-divider" aria-hidden="true"></span>
+      <div
+        class="chip-bar"
+        data-testid="chip-bar"
+      >
+        <!-- 排序：始终聚合成单个 chip（ADR-0013 D3），最左 -->
+        <button
+          v-if="sorts.length"
+          ref="sortChipEl"
+          class="agg-chip is-sort"
+          :class="{ active: active?.kind === 'sortEdit' }"
+          data-testid="bar-sort-agg"
+          @click="openSortMenu($event.currentTarget as HTMLElement)"
+        >
+          <ArrowUp :size="14" />{{ sorts.length }} sorts ▾
+        </button>
+        <!-- sort | (group|filters) 分割线 -->
+        <span
+          v-if="divAfterSort"
+          class="bar-divider"
+          aria-hidden="true"
+        />
 
-    <!-- 分组：激活时显示单个 chip（groupBy 经 GroupMenu 编辑） -->
-    <button
-      v-if="groupBy"
-      ref="groupChipEl"
-      class="agg-chip"
-      data-testid="bar-group-chip"
-      @click="openGroupMenu($event.currentTarget as HTMLElement)"
-    >
-    <Layers :size="14" />{{ groupLabel }} ▾
-    </button>
-    <!-- group | filters 分割线 -->
-    <span v-if="divAfterGroup" class="bar-divider" aria-hidden="true"></span>
+        <!-- 分组：激活时显示单个 chip（groupBy 经 GroupMenu 编辑） -->
+        <button
+          v-if="groupBy"
+          ref="groupChipEl"
+          class="agg-chip"
+          data-testid="bar-group-chip"
+          @click="openGroupMenu($event.currentTarget as HTMLElement)"
+        >
+          <Layers :size="14" />{{ groupLabel }} ▾
+        </button>
+        <!-- group | filters 分割线 -->
+        <span
+          v-if="divAfterGroup"
+          class="bar-divider"
+          aria-hidden="true"
+        />
 
-    <!-- 嵌套/高级条件：聚合成单个 chip，始终在扁平 chip 左侧（ADR-0013 D2 修订） -->
-    <button
-      v-if="hasNested"
-      class="agg-chip"
-      data-testid="bar-agg"
-      :title="`${nestedCount} 条高级/嵌套筛选规则`"
-      @click="openAdvanced($event)"
-    >
-      <span class="agg-ico">≡</span> {{ nestedLabel }} ▾
-    </button>
+        <!-- 嵌套/高级条件：聚合成单个 chip，始终在扁平 chip 左侧（ADR-0013 D2 修订） -->
+        <button
+          v-if="hasNested"
+          class="agg-chip"
+          data-testid="bar-agg"
+          :title="`${nestedCount} 条高级/嵌套筛选规则`"
+          @click="openAdvanced($event)"
+        >
+          <span class="agg-ico">≡</span> {{ nestedLabel }} ▾
+        </button>
 
-    <!-- 扁平条件：始终以独立 chip 展示，按创建顺序从左到右（ADR-0013 D2 修订）。
+        <!-- 扁平条件：始终以独立 chip 展示，按创建顺序从左到右（ADR-0013 D2 修订）。
          使用 flatItems 携带的 children 真实索引，避免与嵌套组并列时错位。
          包裹 span 仅用于测量芯片 DOM 矩形，以便把 popover 锚定到其下方。 -->
-    <span
-      v-for="item in flatItems"
-      :key="'c' + item.idx"
-      :ref="(el: unknown) => setChipEl(item.idx, el)"
-      class="chip-slot"
-    >
-      <FilterChip
-        :label="condLabel(item.cond)"
-        data-testid="bar-filter-chip"
-        @click="openAt({ kind: 'cond', index: item.idx }, $event)"
-        @remove="onCondRemove(item.idx)"
-      />
-    </span>
+        <span
+          v-for="item in flatItems"
+          :key="'c' + item.idx"
+          :ref="(el: unknown) => setChipEl(item.idx, el)"
+          class="chip-slot"
+        >
+          <FilterChip
+            :label="condLabel(item.cond)"
+            data-testid="bar-filter-chip"
+            @click="openAt({ kind: 'cond', index: item.idx }, $event)"
+            @remove="onCondRemove(item.idx)"
+          />
+        </span>
 
-    <button ref="addFilterBtn" class="add-btn" data-testid="bar-add-filter" @click="openAt({ kind: 'fieldMenu' }, $event)">
-      + Filter
-    </button>
+        <button
+          ref="addFilterBtn"
+          class="add-btn"
+          data-testid="bar-add-filter"
+          @click="openAt({ kind: 'fieldMenu' }, $event)"
+        >
+          + Filter
+        </button>
 
-    <FieldSelectMenu
-      v-if="active?.kind === 'fieldMenu'"
-      :fields="fields"
-      :position="anchor"
-      @select="addFilter"
-      @advanced="openAdvancedFromMenu"
-      @close="close"
-    />
-    <ConditionPopover
-      v-if="condTarget && condTargetField"
-      :field="condTargetField"
-      :condition="condTarget"
-      :fields="fields"
-      :position="anchor"
-      :entity-type="entityType"
-      :registry="registry"
-      @update:condition="onCondUpdate(condIndex, $event)"
-      @remove="onCondRemove(condIndex)"
-      @advanced="onCondAdvanced(condIndex)"
-      @close="close"
-    />
-    <GroupMenu
-      v-if="active?.kind === 'group'"
-      :group-by="groupBy"
-      :fields="fields"
-      :position="anchor"
-      @update:group-by="onGroupUpdate"
-      @close="close"
-    />
+        <FieldSelectMenu
+          v-if="active?.kind === 'fieldMenu'"
+          :fields="fields"
+          :position="anchor"
+          @select="addFilter"
+          @advanced="openAdvancedFromMenu"
+          @close="close"
+        />
+        <ConditionPopover
+          v-if="condTarget && condTargetField"
+          :field="condTargetField"
+          :condition="condTarget"
+          :fields="fields"
+          :position="anchor"
+          :entity-type="entityType"
+          :registry="registry"
+          @update:condition="onCondUpdate(condIndex, $event)"
+          @remove="onCondRemove(condIndex)"
+          @advanced="onCondAdvanced(condIndex)"
+          @close="close"
+        />
+        <GroupMenu
+          v-if="active?.kind === 'group'"
+          :group-by="groupBy"
+          :fields="fields"
+          :position="anchor"
+          @update:group-by="onGroupUpdate"
+          @close="close"
+        />
 
-    <!-- 高级筛选 = 聚合 chip（或 + Filter 菜单）触发的 popover，仅筛选条件（ADR-0013 D5） -->
-    <BasePopover
-      v-if="active?.kind === 'advanced'"
-      :visible="true"
-      :position="anchor"
-      @close="close"
-    >
-      <FilterBuilder
-        :registry="registry"
-        :entity-type="entityType"
-        :cross-record-sources="crossRecordSources"
-        :model-value="advancedModel"
-        :show-sort-group="false"
-        @update:model-value="onAdvancedUpdate"
-      />
-    </BasePopover>
+        <!-- 高级筛选 = 聚合 chip（或 + Filter 菜单）触发的 popover，仅筛选条件（ADR-0013 D5） -->
+        <BasePopover
+          v-if="active?.kind === 'advanced'"
+          :visible="true"
+          :position="anchor"
+          @close="close"
+        >
+          <FilterBuilder
+            :registry="registry"
+            :entity-type="entityType"
+            :cross-record-sources="crossRecordSources"
+            :model-value="advancedModel"
+            :show-sort-group="false"
+            @update:model-value="onAdvancedUpdate"
+          />
+        </BasePopover>
       </div>
 
-    <!-- 排序编辑器：弹窗形式（与 FilterBuilder 高级筛选一致，包一层 BasePopover） -->
-    <BasePopover
-      v-if="active?.kind === 'sortEdit'"
-      :visible="true"
-      :position="anchor"
-      @close="close"
-    >
-      <SortMenu
-        :sort="sorts"
-        :fields="fields"
-        @update:sort="onSortUpdate"
+      <!-- 排序编辑器：弹窗形式（与 FilterBuilder 高级筛选一致，包一层 BasePopover） -->
+      <BasePopover
+        v-if="active?.kind === 'sortEdit'"
+        :visible="true"
+        :position="anchor"
         @close="close"
-      />
-    </BasePopover>
+      >
+        <SortMenu
+          :sort="sorts"
+          :fields="fields"
+          @update:sort="onSortUpdate"
+          @close="close"
+        />
+      </BasePopover>
     </div>
   </div>
 </template>

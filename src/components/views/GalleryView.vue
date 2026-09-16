@@ -96,7 +96,10 @@ watch(
 
 <template>
   <div class="gallery-view">
-    <div v-if="items.length > 0" class="gallery-grid">
+    <div
+      v-if="items.length > 0"
+      class="gallery-grid"
+    >
       <div
         v-for="item in items"
         :key="idOf(item)"
@@ -110,15 +113,41 @@ watch(
             :src="coverUrls[idOf(item)]"
             :alt="titleOf(item)"
             loading="lazy"
+          >
+          <Book
+            v-else
+            class="cover-placeholder"
+            :size="36"
           />
-          <Book v-else class="cover-placeholder" :size="36" />
         </div>
         <div class="card-meta">
-          <div class="card-title" :title="titleOf(item)">{{ titleOf(item) }}</div>
-          <div v-if="subtitleOf(item)" class="card-subtitle">{{ subtitleOf(item) }}</div>
-          <div v-if="progressOf(item) !== null" class="card-progress">
-            <svg class="progress-ring" viewBox="0 0 36 36" aria-hidden="true">
-              <circle class="ring-bg" cx="18" cy="18" r="15" />
+          <div
+            class="card-title"
+            :title="titleOf(item)"
+          >
+            {{ titleOf(item) }}
+          </div>
+          <div
+            v-if="subtitleOf(item)"
+            class="card-subtitle"
+          >
+            {{ subtitleOf(item) }}
+          </div>
+          <div
+            v-if="progressOf(item) !== null"
+            class="card-progress"
+          >
+            <svg
+              class="progress-ring"
+              viewBox="0 0 36 36"
+              aria-hidden="true"
+            >
+              <circle
+                class="ring-bg"
+                cx="18"
+                cy="18"
+                r="15"
+              />
               <circle
                 class="ring-fg"
                 cx="18"
@@ -132,7 +161,10 @@ watch(
         </div>
       </div>
     </div>
-    <div v-else class="gallery-empty">
+    <div
+      v-else
+      class="gallery-empty"
+    >
       <!-- 空态内容由消费方注入（如书房的「导入 EPUB」入口，票 08） -->
       <slot name="empty">
         <p>暂无记录</p>

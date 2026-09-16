@@ -13,7 +13,7 @@
  * inject('onDragEnd') → syncTreeToStore（完整树 diff）完成。
  */
 import { ref } from 'vue'
-import { VueDraggable } from 'vue-draggable-plus'
+import { VueDraggable, type DraggableEvent } from 'vue-draggable-plus'
 import { useBlockStore } from '../../../stores/blocks'
 import { useEditorStore } from '../../../stores/editor'
 import type { TreeNode } from '../../../types/block'
@@ -56,12 +56,12 @@ const { handleDragStart, handleDragMove, handleBlockDragEnd } = useBlockDragDrop
  * Sortable @start：先结束 block 编辑态，再把拖拽期指针跟踪交给 hook。
  * 落位意图由指针位置实时重算（见 useBlockDragDrop 顶部说明），因此这里必须接管 @start。
  */
-function onDragStart(evt: unknown) {
+function onDragStart(evt: DraggableEvent) {
   editorStore.deactivateBlock()
   handleDragStart(evt)
 }
 
-const draggableRef = ref<any>(null)
+const draggableRef = ref<InstanceType<typeof VueDraggable> | null>(null)
 
 defineExpose({
   /** 容器 DOM（调用方用于测量子节点高度） */
@@ -101,6 +101,12 @@ defineExpose({
     @move="handleDragMove"
     @end="handleBlockDragEnd"
   >
-    <Block v-for="node in list" :key="node.id" :node="node" :page-id="pageId" :depth="depth" />
+    <Block
+      v-for="node in list"
+      :key="node.id"
+      :node="node"
+      :page-id="pageId"
+      :depth="depth"
+    />
   </VueDraggable>
 </template>

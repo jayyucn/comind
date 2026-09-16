@@ -130,7 +130,7 @@ export interface BatchOperation {
   // 'set' 仅用于 property（Rust execute_batch 的 ("property", "set") 分支）；
   // 'undelete' 仅用于 block（撤销恢复：精确复活软删块，见 useUndoRestore）
   action: 'create' | 'update' | 'delete' | 'get' | 'set' | 'sync_by_block' | 'undelete'
-  params: Record<string, any>
+  params: Record<string, unknown>
 }
 
 export interface BatchResult {
@@ -223,7 +223,7 @@ export interface BlockCard {
   page_id: string
   parent_id: string
   content_preview: string
-  properties: Record<string, any>   // HashMap<String, Value> → Record
+  properties: Record<string, unknown>   // HashMap<String, Value> → Record
   date_refs: DateRefLite[]
   updated_at: number
   created_at: number

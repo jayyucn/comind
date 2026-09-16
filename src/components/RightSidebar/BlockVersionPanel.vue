@@ -157,48 +157,83 @@ onMounted(async () => {
 
 <template>
   <div class="block-version-panel">
-    <div v-if="restoreError" class="error-message">
+    <div
+      v-if="restoreError"
+      class="error-message"
+    >
       <AlertCircle :size="14" />
       {{ restoreError }}
     </div>
 
-    <div v-if="deleteError" class="error-message">
+    <div
+      v-if="deleteError"
+      class="error-message"
+    >
       <AlertCircle :size="14" />
       {{ deleteError }}
     </div>
 
-    <div v-if="!activeBlockId" class="no-selection">
+    <div
+      v-if="!activeBlockId"
+      class="no-selection"
+    >
       <Clock :size="48" />
       <p>请选中一个 Block</p>
-      <p class="hint">点击编辑区域中的任意 Block 来查看其版本历史</p>
+      <p class="hint">
+        点击编辑区域中的任意 Block 来查看其版本历史
+      </p>
     </div>
 
-    <div v-else-if="isLoading" class="loading">
-      <div class="loading-spinner"></div>
+    <div
+      v-else-if="isLoading"
+      class="loading"
+    >
+      <div class="loading-spinner" />
       <span>加载中...</span>
     </div>
 
-    <div v-else-if="versions.length === 0" class="empty-state">
+    <div
+      v-else-if="versions.length === 0"
+      class="empty-state"
+    >
       <Clock :size="48" />
       <p>暂无版本历史</p>
-      <p class="hint">编辑内容后将自动保存版本</p>
+      <p class="hint">
+        编辑内容后将自动保存版本
+      </p>
     </div>
 
-    <div v-else class="version-list">
+    <div
+      v-else
+      class="version-list"
+    >
       <div class="version-list-header">
         <span class="version-count">共 {{ versions.length }} 个版本</span>
       </div>
 
-      <div v-for="version in sortedVersions" :key="version.id" class="version-item"
-        :class="{ selected: selectedVersion?.id === version.id }" @click="selectedVersion = version">
+      <div
+        v-for="version in sortedVersions"
+        :key="version.id"
+        class="version-item"
+        :class="{ selected: selectedVersion?.id === version.id }"
+        @click="selectedVersion = version"
+      >
         <div class="version-header">
           <span class="version-date">{{ formatDate(version.created_at) }}</span>
           <div class="version-actions">
-            <button v-if="selectedVersion?.id === version.id" class="action-btn restore-btn"
-              @click.stop="handleRestore(version.id)" title="恢复此版本">
+            <button
+              v-if="selectedVersion?.id === version.id"
+              class="action-btn restore-btn"
+              title="恢复此版本"
+              @click.stop="handleRestore(version.id)"
+            >
               <RotateCcw :size="14" />
             </button>
-            <button class="action-btn delete-btn" @click.stop="handleDelete(version)" title="删除此版本">
+            <button
+              class="action-btn delete-btn"
+              title="删除此版本"
+              @click.stop="handleDelete(version)"
+            >
               <Trash2 :size="14" />
             </button>
           </div>
@@ -208,30 +243,52 @@ onMounted(async () => {
           <div class="version-title-row">
             <span class="version-number">版本 {{ version.version }}</span>
             <span class="version-source">{{ getSourceLabel(version.source) }}</span>
-            <span v-if="version.message" class="version-message">
+            <span
+              v-if="version.message"
+              class="version-message"
+            >
               <MessageSquare :size="12" />
               {{ version.message }}
             </span>
           </div>
 
-          <div v-if="selectedVersion?.id === version.id" class="version-content-preview">
+          <div
+            v-if="selectedVersion?.id === version.id"
+            class="version-content-preview"
+          >
             <div class="block-row">
               <span class="block-bullet">
-                <span class="bullet-dot"></span>
+                <span class="bullet-dot" />
               </span>
-              <div class="block-text" v-html="renderBlockContent(version.snapshot, version.block_id)"></div>
+              <div
+                class="block-text"
+                v-html="renderBlockContent(version.snapshot, version.block_id)"
+              />
             </div>
 
-            <div v-if="getProperties(version.snapshot).length > 0" class="version-properties">
-              <div v-for="prop in getProperties(version.snapshot)" :key="prop.key" class="property-item">
+            <div
+              v-if="getProperties(version.snapshot).length > 0"
+              class="version-properties"
+            >
+              <div
+                v-for="prop in getProperties(version.snapshot)"
+                :key="prop.key"
+                class="property-item"
+              >
                 <span class="property-key">{{ prop.key }}</span>
                 <span class="property-value">{{ prop.value }}</span>
               </div>
             </div>
 
-            <div v-if="getRelationships(version.snapshot).length > 0" class="version-relationships">
-              <div v-for="rel in getRelationships(version.snapshot)" :key="rel.target_page_id"
-                class="relationship-item">
+            <div
+              v-if="getRelationships(version.snapshot).length > 0"
+              class="version-relationships"
+            >
+              <div
+                v-for="rel in getRelationships(version.snapshot)"
+                :key="rel.target_page_id"
+                class="relationship-item"
+              >
                 <span class="rel-arrow">→</span>
                 <span class="rel-target">{{ rel.display_text }}</span>
               </div>
@@ -242,8 +299,16 @@ onMounted(async () => {
     </div>
   </div>
 
-  <ConfirmDialog :visible="!!deleteConfirmVersion" title="确认删除" message="确定要删除此版本吗？此操作不可撤销。" confirm-text="删除" danger
-    :showDontRemindToday=true @confirm="confirmDelete" @cancel="cancelDelete" />
+  <ConfirmDialog
+    :visible="!!deleteConfirmVersion"
+    title="确认删除"
+    message="确定要删除此版本吗？此操作不可撤销。"
+    confirm-text="删除"
+    danger
+    :show-dont-remind-today="true"
+    @confirm="confirmDelete"
+    @cancel="cancelDelete"
+  />
 </template>
 
 <style scoped lang="scss">

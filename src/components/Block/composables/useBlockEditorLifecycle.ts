@@ -14,7 +14,7 @@ import type { useBlockStore } from '../../../stores/blocks'
 import type { useEditorStore } from '../../../stores/editor'
 import type { usePageStore } from '../../../stores/pages'
 import type { BlockTypeEditorExposed } from '../../../types/block-type'
-import { DATE_REF_AT_REGEX, normalizeRecurrence, serializeDateRef } from '../../../utils/date-ref'
+import { DATE_REF_AT_REGEX, normalizeRecurrence, serializeDateRef, type DateRefKind, type RecurrenceRule } from '../../../utils/date-ref'
 import {
   encodeRelationshipContent,
   takeRelationshipSnapshot,
@@ -110,7 +110,7 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
   async function syncBlockContent() {
     if (editorRef.value) {
       editorRef.value.markSaved()
-      const editorComponent = editorRef.value as any
+      const editorComponent = editorRef.value
       if (editorComponent.cancelDebouncedSave) {
         editorComponent.cancelDebouncedSave()
       }
@@ -119,7 +119,7 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
   }
 
   /** 高阶函数：统一处理内容同步 */
-  function withContentSync<T extends (...args: any[]) => Promise<void>>(fn: T): T {
+  function withContentSync<T extends (...args: never[]) => Promise<void>>(fn: T): T {
     return (async (...args: Parameters<T>) => {
       await syncBlockContent()
       return fn(...args)
@@ -414,7 +414,7 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
         const emoji = m[2]
         const kind = emoji === '📅' ? 'schedule' : emoji === '⏰' ? 'deadline' : 'ref'
         const matchedRaw = serializeDateRef({
-          kind: kind as any,
+          kind,
           iso: m[1],
           recurrence: normalizeRecurrence(m[3]),
           leadMinutes: m[4] ? parseInt(m[4], 10) || 0 : 0,
@@ -433,9 +433,9 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
           blockId: blockId.value,
           from: idx,
           to: idx + raw.length,
-          kind: kind as any,
+          kind: kind as DateRefKind,
           iso,
-          recurrence: recurrence as any,
+          recurrence: recurrence as RecurrenceRule,
           leadMinutes,
           position: computeDatePickerPosition(dateRefSpan),
         },

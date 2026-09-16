@@ -1,8 +1,10 @@
 import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
+import type { Node } from '@tiptap/pm/model'
+import type { EditorView } from '@tiptap/pm/view'
 
 export interface WikiLinkTriggerEvent {
-  view: any
+  view: EditorView
   position: number
   range: { from: number; to: number }
   query: string
@@ -40,7 +42,7 @@ export function closeWikiLinkMenuByEditor() {
 }
 
 export function findWikiLinkAtCursor(
-  doc: any,
+  doc: Node,
   pos: number
 ): WikiLinkAtCursorResult {
   const linkRegex = /\[\[([^\]|]*)(?:\|[^\]]*)?\]\]|\[\[([^\]|]*)(?:\|[^\]]*)?/g
@@ -48,7 +50,7 @@ export function findWikiLinkAtCursor(
 
   let result: WikiLinkAtCursorResult = { found: false, range: null, query: '' }
 
-  doc.descendants((node: any, nodePos: number) => {
+  doc.descendants((node, nodePos: number) => {
     if (!node.isText || foundMatch) return
 
     const text = node.text || ''
@@ -73,7 +75,7 @@ export function findWikiLinkAtCursor(
   return result
 }
 
-function closeWikiLinkMenu(view: any) {
+function closeWikiLinkMenu(view: EditorView) {
   const query = currentQuery
   menuIsOpen = false
   currentQuery = ''
@@ -85,7 +87,7 @@ function closeWikiLinkMenu(view: any) {
 }
 
 function triggerWikiLinkMenu(
-  view: any,
+  view: EditorView,
   position: number,
   range: { from: number; to: number },
   query: string
@@ -100,7 +102,7 @@ function triggerWikiLinkMenu(
   view.dom.dispatchEvent(triggerEvent)
 }
 
-function handleWikiLinkDetection(view: any) {
+function handleWikiLinkDetection(view: EditorView) {
   const { state } = view
   const cursorPos = state.selection.from
   const result = findWikiLinkAtCursor(state.doc, cursorPos)

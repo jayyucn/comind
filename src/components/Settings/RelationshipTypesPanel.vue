@@ -169,33 +169,97 @@ function moveDown(id: string): void {
       >
         <template v-if="editingKey === r.id && editState && !editState.isNew">
           <div class="rel-edit-grid">
-            <input v-model="editState.type" class="rel-input" placeholder="type (英文)" />
-            <input v-model="editState.inverse" class="rel-input" placeholder="inverse (可空)" />
-            <input v-model="editState.label" class="rel-input" placeholder="正向中文标签" />
-            <input v-model="editState.inverseLabel" class="rel-input" placeholder="反向中文标签" />
-            <select v-model="editState.strength" class="rel-input rel-input--strength" title="强度等级">
-              <option v-for="o in STRENGTH_OPTIONS" :key="o.value" :value="o.value">{{ o.text }}</option>
+            <input
+              v-model="editState.type"
+              class="rel-input"
+              placeholder="type (英文)"
+            >
+            <input
+              v-model="editState.inverse"
+              class="rel-input"
+              placeholder="inverse (可空)"
+            >
+            <input
+              v-model="editState.label"
+              class="rel-input"
+              placeholder="正向中文标签"
+            >
+            <input
+              v-model="editState.inverseLabel"
+              class="rel-input"
+              placeholder="反向中文标签"
+            >
+            <select
+              v-model="editState.strength"
+              class="rel-input rel-input--strength"
+              title="强度等级"
+            >
+              <option
+                v-for="o in STRENGTH_OPTIONS"
+                :key="o.value"
+                :value="o.value"
+              >
+                {{ o.text }}
+              </option>
             </select>
-            <input v-model="editState.color" class="rel-input rel-input--color" placeholder="#hex" />
+            <input
+              v-model="editState.color"
+              class="rel-input rel-input--color"
+              placeholder="#hex"
+            >
             <div class="rel-edit-actions">
-              <button class="rel-btn rel-btn--primary" :disabled="!canSave" @click="saveEdit">
-                <Check :size="12" :stroke-width="2" /> 保存
+              <button
+                class="rel-btn rel-btn--primary"
+                :disabled="!canSave"
+                @click="saveEdit"
+              >
+                <Check
+                  :size="12"
+                  :stroke-width="2"
+                /> 保存
               </button>
-              <button class="rel-btn" @click="cancelEdit">
-                <X :size="12" :stroke-width="2" /> 取消
+              <button
+                class="rel-btn"
+                @click="cancelEdit"
+              >
+                <X
+                  :size="12"
+                  :stroke-width="2"
+                /> 取消
               </button>
             </div>
           </div>
-          <div v-if="!canSave" class="rel-error">{{ validateResult }}</div>
+          <div
+            v-if="!canSave"
+            class="rel-error"
+          >
+            {{ validateResult }}
+          </div>
         </template>
 
         <template v-else>
           <div class="rel-sort">
-            <button class="rel-icon-btn" :disabled="idx === 0" title="上移" @click="moveUp(r.id)">
-              <ArrowUp :size="12" :stroke-width="1.75" />
+            <button
+              class="rel-icon-btn"
+              :disabled="idx === 0"
+              title="上移"
+              @click="moveUp(r.id)"
+            >
+              <ArrowUp
+                :size="12"
+                :stroke-width="1.75"
+              />
             </button>
-            <button class="rel-icon-btn" :disabled="idx === activeItems.length - 1" title="下移" @click="moveDown(r.id)">
-              <ArrowDown :size="12" :stroke-width="1.75" />
+            <button
+              class="rel-icon-btn"
+              :disabled="idx === activeItems.length - 1"
+              title="下移"
+              @click="moveDown(r.id)"
+            >
+              <ArrowDown
+                :size="12"
+                :stroke-width="1.75"
+              />
             </button>
           </div>
           <div class="rel-labels">
@@ -203,76 +267,200 @@ function moveDown(id: string): void {
             <span class="rel-sep">/</span>
             <span class="rel-label">{{ r.inverseLabel }}</span>
           </div>
-          <span class="rel-strength-badge" :class="`rel-strength-badge--${r.strength}`" :title="`强度：${strengthText(r.strength)}`">{{ strengthText(r.strength) }}</span>
-          <div class="rel-color-block" :style="{ background: r.color }" :title="r.color"></div>
+          <span
+            class="rel-strength-badge"
+            :class="`rel-strength-badge--${r.strength}`"
+            :title="`强度：${strengthText(r.strength)}`"
+          >{{ strengthText(r.strength) }}</span>
+          <div
+            class="rel-color-block"
+            :style="{ background: r.color }"
+            :title="r.color"
+          />
           <div class="rel-actions">
-            <button class="rel-icon-btn" title="编辑" @click="startEdit(r.id)">
-              <Pencil :size="12" :stroke-width="1.75" />
+            <button
+              class="rel-icon-btn"
+              title="编辑"
+              @click="startEdit(r.id)"
+            >
+              <Pencil
+                :size="12"
+                :stroke-width="1.75"
+              />
             </button>
-            <button class="rel-icon-btn" title="删除" @click="onDelete(r.id)">
-              <Trash2 :size="12" :stroke-width="1.75" />
+            <button
+              class="rel-icon-btn"
+              title="删除"
+              @click="onDelete(r.id)"
+            >
+              <Trash2
+                :size="12"
+                :stroke-width="1.75"
+              />
             </button>
           </div>
         </template>
       </div>
 
       <!-- 新增行（编辑态） -->
-      <div v-if="editState?.isNew" class="rel-row rel-row--editing rel-row--new">
+      <div
+        v-if="editState?.isNew"
+        class="rel-row rel-row--editing rel-row--new"
+      >
         <div class="rel-edit-grid">
-          <input v-model="editState.type" class="rel-input" placeholder="type (英文)" />
-          <input v-model="editState.inverse" class="rel-input" placeholder="inverse (可空)" />
-          <input v-model="editState.label" class="rel-input" placeholder="正向中文标签" />
-          <input v-model="editState.inverseLabel" class="rel-input" placeholder="反向中文标签" />
-          <select v-model="editState.strength" class="rel-input rel-input--strength" title="强度等级">
-            <option v-for="o in STRENGTH_OPTIONS" :key="o.value" :value="o.value">{{ o.text }}</option>
+          <input
+            v-model="editState.type"
+            class="rel-input"
+            placeholder="type (英文)"
+          >
+          <input
+            v-model="editState.inverse"
+            class="rel-input"
+            placeholder="inverse (可空)"
+          >
+          <input
+            v-model="editState.label"
+            class="rel-input"
+            placeholder="正向中文标签"
+          >
+          <input
+            v-model="editState.inverseLabel"
+            class="rel-input"
+            placeholder="反向中文标签"
+          >
+          <select
+            v-model="editState.strength"
+            class="rel-input rel-input--strength"
+            title="强度等级"
+          >
+            <option
+              v-for="o in STRENGTH_OPTIONS"
+              :key="o.value"
+              :value="o.value"
+            >
+              {{ o.text }}
+            </option>
           </select>
-          <input v-model="editState.color" class="rel-input rel-input--color" placeholder="#hex" />
+          <input
+            v-model="editState.color"
+            class="rel-input rel-input--color"
+            placeholder="#hex"
+          >
           <div class="rel-edit-actions">
-            <button class="rel-btn rel-btn--primary" :disabled="!canSave" @click="saveEdit">
-              <Check :size="12" :stroke-width="2" /> 保存
+            <button
+              class="rel-btn rel-btn--primary"
+              :disabled="!canSave"
+              @click="saveEdit"
+            >
+              <Check
+                :size="12"
+                :stroke-width="2"
+              /> 保存
             </button>
-            <button class="rel-btn" @click="cancelEdit">
-              <X :size="12" :stroke-width="2" /> 取消
+            <button
+              class="rel-btn"
+              @click="cancelEdit"
+            >
+              <X
+                :size="12"
+                :stroke-width="2"
+              /> 取消
             </button>
           </div>
         </div>
-        <div v-if="!canSave" class="rel-error">{{ validateResult }}</div>
+        <div
+          v-if="!canSave"
+          class="rel-error"
+        >
+          {{ validateResult }}
+        </div>
       </div>
 
-      <button class="rel-add-btn" @click="startNew">
-        <Plus :size="12" :stroke-width="2" />
+      <button
+        class="rel-add-btn"
+        @click="startNew"
+      >
+        <Plus
+          :size="12"
+          :stroke-width="2"
+        />
         新增关系类型
       </button>
     </div>
 
-    <div v-if="deletedItems.length > 0" class="rel-deleted-section">
-      <button class="rel-deleted-toggle" @click="showDeleted = !showDeleted">
-        <ChevronDown v-if="showDeleted" :size="12" :stroke-width="1.75" />
-        <ChevronRight v-else :size="12" :stroke-width="1.75" />
+    <div
+      v-if="deletedItems.length > 0"
+      class="rel-deleted-section"
+    >
+      <button
+        class="rel-deleted-toggle"
+        @click="showDeleted = !showDeleted"
+      >
+        <ChevronDown
+          v-if="showDeleted"
+          :size="12"
+          :stroke-width="1.75"
+        />
+        <ChevronRight
+          v-else
+          :size="12"
+          :stroke-width="1.75"
+        />
         已删除（{{ deletedItems.length }}）
       </button>
-      <div v-if="showDeleted" class="rel-deleted-list">
-        <div v-for="r in deletedItems" :key="r.id" class="rel-row rel-row--deleted">
+      <div
+        v-if="showDeleted"
+        class="rel-deleted-list"
+      >
+        <div
+          v-for="r in deletedItems"
+          :key="r.id"
+          class="rel-row rel-row--deleted"
+        >
           <div class="rel-labels">
             <span class="rel-label">{{ r.label }}</span>
             <span class="rel-sep">/</span>
             <span class="rel-label">{{ r.inverseLabel }}</span>
           </div>
-          <span class="rel-strength-badge" :class="`rel-strength-badge--${r.strength}`">{{ strengthText(r.strength) }}</span>
-          <div class="rel-color-block" :style="{ background: r.color }"></div>
+          <span
+            class="rel-strength-badge"
+            :class="`rel-strength-badge--${r.strength}`"
+          >{{ strengthText(r.strength) }}</span>
+          <div
+            class="rel-color-block"
+            :style="{ background: r.color }"
+          />
           <div class="rel-actions">
-            <button class="rel-btn" @click="restore(r.id)">
-              <Undo2 :size="12" :stroke-width="1.75" /> 恢复
+            <button
+              class="rel-btn"
+              @click="restore(r.id)"
+            >
+              <Undo2
+                :size="12"
+                :stroke-width="1.75"
+              /> 恢复
             </button>
           </div>
         </div>
       </div>
     </div>
 
-    <div v-if="toasts.length > 0" class="rel-toast-area">
-      <div v-for="t in toasts" :key="t.id" class="rel-toast">
+    <div
+      v-if="toasts.length > 0"
+      class="rel-toast-area"
+    >
+      <div
+        v-for="t in toasts"
+        :key="t.id"
+        class="rel-toast"
+      >
         已删除
-        <button class="rel-toast-undo" @click="onUndo(t.recordId)">撤销</button>
+        <button
+          class="rel-toast-undo"
+          @click="onUndo(t.recordId)"
+        >
+          撤销
+        </button>
       </div>
     </div>
   </div>

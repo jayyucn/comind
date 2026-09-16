@@ -1,10 +1,10 @@
 /**
  * T11 · 自动推进 dateRef 测试（Done 语义）
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { setActivePinia, createPinia } from 'pinia'
-import { usePropertyStore } from './property'
+import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useBlockStore } from './blocks'
+import { usePropertyStore } from './property'
 
 // Mock core client
 vi.mock('../wasm/client', () => ({

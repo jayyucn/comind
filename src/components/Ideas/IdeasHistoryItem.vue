@@ -29,10 +29,19 @@ function getMonthDay(dateStr: string): { month: string; day: string } {
 </script>
 
 <template>
-  <div class="history-item" v-if="snapshot">
+  <div
+    v-if="snapshot"
+    class="history-item"
+  >
     <div class="history-header">
-      <span class="timeline-line" aria-hidden="true"></span>
-      <span class="timeline-dot" aria-hidden="true"></span>
+      <span
+        class="timeline-line"
+        aria-hidden="true"
+      />
+      <span
+        class="timeline-dot"
+        aria-hidden="true"
+      />
       <span class="history-date">{{ getMonthDay(title).month }}{{ getMonthDay(title).day }}日</span>
       <span class="history-weekday">{{ getWeekday(title) }}</span>
     </div>

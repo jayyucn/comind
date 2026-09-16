@@ -1,9 +1,11 @@
 import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
+import type { Node } from '@tiptap/pm/model'
+import type { EditorView } from '@tiptap/pm/view'
 import type { DateRefKind } from '../utils/date-ref'
 
 export interface DateRefTriggerEvent {
-  view: any
+  view: EditorView
   /** 光标在触发符后的位置 */
   position: number
   /** 触发符的完整范围（插入后文档坐标） */
@@ -13,7 +15,7 @@ export interface DateRefTriggerEvent {
 }
 
 export interface DateRefKindSelectEvent {
-  view: any
+  view: EditorView
   /** @ 符号的位置 */
   range: { from: number; to: number }
   /** 屏幕坐标 */
@@ -29,7 +31,7 @@ export function closeDateRefMenu() {
 /**
  * 检测光标前是否有 @ 模式（新格式触发器）
  */
-function findDateRefTrigger(doc: any, pos: number): {
+function findDateRefTrigger(doc: Node, pos: number): {
   found: boolean
   from: number
   to: number
@@ -37,7 +39,7 @@ function findDateRefTrigger(doc: any, pos: number): {
 } {
   let result = { found: false, from: 0, to: 0, kind: 'ref' as DateRefKind }
 
-  doc.descendants((node: any, nodePos: number) => {
+  doc.descendants((node, nodePos: number) => {
     if (!node.isText) return
     const text = node.text || ''
     const localPos = pos - nodePos

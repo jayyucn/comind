@@ -1,8 +1,11 @@
 import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
+import type { Node } from '@tiptap/pm/model'
+import type { EditorState } from '@tiptap/pm/state'
+import type { EditorView } from '@tiptap/pm/view'
 
 export interface RelationshipTriggerEvent {
-  view: any
+  view: EditorView
   position: number
   // 包含 '((type))' 段的范围
   range: { from: number; to: number }
@@ -45,7 +48,7 @@ export interface RelationshipAtCaretResult {
  * 触发后，用户选择关系类型，插入 '((type))'，然后用户继续输入 '[[' 触发 wiki link
  */
 export function findRelationshipAtCaret(
-  doc: any,
+  doc: Node,
   pos: number
 ): RelationshipAtCaretResult {
   // 用 doc.textBetween 取 cursor 前的纯文本（不包含 block 边界）
@@ -81,7 +84,7 @@ export function findRelationshipAtCaret(
   }
 }
 
-function closeRelationshipMenuByExtension(view: any, reason: 'cursor-move' | 'doc-change' | 'escape' = 'doc-change') {
+function closeRelationshipMenuByExtension(view: EditorView, reason: 'cursor-move' | 'doc-change' | 'escape' = 'doc-change') {
   if (!menuIsOpen) return
   menuIsOpen = false
   const closeEvent = new CustomEvent<RelationshipCloseEvent>('relationship-close', {
@@ -92,7 +95,7 @@ function closeRelationshipMenuByExtension(view: any, reason: 'cursor-move' | 'do
 }
 
 function triggerRelationshipMenu(
-  view: any,
+  view: EditorView,
   position: number,
   range: { from: number; to: number },
   relationshipType: string
@@ -105,7 +108,7 @@ function triggerRelationshipMenu(
   view.dom.dispatchEvent(event)
 }
 
-function handleRelationshipDetection(view: any) {
+function handleRelationshipDetection(view: EditorView) {
   const { state } = view
   const cursorPos = state.selection.from
   const result = findRelationshipAtCaret(state.doc, cursorPos)
@@ -192,9 +195,9 @@ export const RelationshipTriggerExtension = Extension.create({
             return false
           },
         },
-        view(_view: any) {
+        view(_view: EditorView) {
           return {
-            update(view: any, prevState: any) {
+            update(view: EditorView, prevState: EditorState) {
               if (view.state.doc === prevState.doc) return
               if (!menuIsOpen) return
               // 文档结构变化时重新检测

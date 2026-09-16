@@ -55,16 +55,30 @@ function handleClick(e: MouseEvent) {
 </script>
 
 <template>
-  <div class="block-text" @click="handleClick">
-    <span v-if="showPlaceholder && !content" class="block-placeholder">写点什么…</span>
+  <div
+    class="block-text"
+    @click="handleClick"
+  >
+    <span
+      v-if="showPlaceholder && !content"
+      class="block-placeholder"
+    >写点什么…</span>
     <component
-      v-else-if="headingTag"
       :is="headingTag"
+      v-else-if="headingTag"
       :class="['block-heading', headingTag]"
-      v-html="headingContent"
-    ></component>
-    <span v-else v-html="normalContent"></span>
+    >
+      <span v-html="headingContent" />
+    </component>
+    <span
+      v-else
+      v-html="normalContent"
+    />
     <!-- S9: 保存失败指示抽为独立展示组件，重试调度在其内部 -->
-    <SaveErrorBadge v-if="hasSaveError" :block-id="props.blockId ?? ''" :save-error="hasSaveError" />
+    <SaveErrorBadge
+      v-if="hasSaveError"
+      :block-id="props.blockId ?? ''"
+      :save-error="hasSaveError"
+    />
   </div>
 </template>

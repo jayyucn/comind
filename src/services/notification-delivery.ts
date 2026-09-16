@@ -29,6 +29,7 @@ class TauriNotificationDelivery implements NotificationDelivery {
         })
       }
     } catch {
+      // 通知插件不可用时静默忽略（非致命路径，不影响主流程）
     }
   }
 

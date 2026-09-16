@@ -182,7 +182,7 @@ export function useDateTimePickerPanel() {
         let resolvedFrom = cursor
         let resolvedTo = cursor
 
-        doc.descendants((node: any, pos: number) => {
+        doc.descendants((node, pos) => {
           if (!node.isText || found) return
           const text = node.text || ''
           const re = new RegExp(DATE_REF_AT_REGEX.source, 'g')

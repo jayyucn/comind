@@ -79,37 +79,63 @@ onMounted(loadMonths)
 <template>
   <div class="history-list">
     <div class="history-sticky-header">
-      <MonthPicker v-model="selectedMonth" :months-with-data="monthsWithData" />
+      <MonthPicker
+        v-model="selectedMonth"
+        :months-with-data="monthsWithData"
+      />
     </div>
 
     <!-- loading: 骨架屏 -->
-    <div v-if="loading" class="history-scroller skeleton-list">
-      <div v-for="i in 3" :key="i" class="skeleton-item">
+    <div
+      v-if="loading"
+      class="history-scroller skeleton-list"
+    >
+      <div
+        v-for="i in 3"
+        :key="i"
+        class="skeleton-item"
+      >
         <div class="skeleton-header">
-          <div class="skeleton-dot"></div>
-          <div class="skeleton-date"></div>
-          <div class="skeleton-weekday"></div>
+          <div class="skeleton-dot" />
+          <div class="skeleton-date" />
+          <div class="skeleton-weekday" />
         </div>
         <div class="skeleton-body">
-          <div class="skeleton-line"></div>
-          <div class="skeleton-line short"></div>
+          <div class="skeleton-line" />
+          <div class="skeleton-line short" />
         </div>
       </div>
     </div>
 
     <!-- error -->
-    <div v-else-if="error" class="error-state">
+    <div
+      v-else-if="error"
+      class="error-state"
+    >
       <span class="error-text">{{ error }}，点击重试</span>
-      <button class="retry-btn" @click="retry">重试</button>
+      <button
+        class="retry-btn"
+        @click="retry"
+      >
+        重试
+      </button>
     </div>
 
     <!-- empty -->
-    <div v-else-if="currentPages.length === 0" class="empty-state">
-      <div class="empty-text">暂无历史点滴</div>
+    <div
+      v-else-if="currentPages.length === 0"
+      class="empty-state"
+    >
+      <div class="empty-text">
+        暂无历史点滴
+      </div>
     </div>
 
     <!-- normal -->
-    <div v-else class="history-scroller">
+    <div
+      v-else
+      class="history-scroller"
+    >
       <IdeasHistoryItem
         v-for="page in currentPages.slice(0, MAX_LENGTH)"
         :key="page.pageId"

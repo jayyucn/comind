@@ -24,17 +24,29 @@ function dismiss(id: string) {
 <template>
   <Teleport to="body">
     <Transition name="toast">
-      <div v-if="visible && messages.length > 0" class="toast-container">
+      <div
+        v-if="visible && messages.length > 0"
+        class="toast-container"
+      >
         <div
           v-for="msg in messages"
           :key="msg.id"
           class="toast-item"
           :class="`toast-item--${msg.type || 'info'}`"
         >
-          <Info :size="14" :stroke-width="2" />
+          <Info
+            :size="14"
+            :stroke-width="2"
+          />
           <span class="toast-message">{{ msg.message }}</span>
-          <button class="toast-close" @click="dismiss(msg.id)">
-            <X :size="12" :stroke-width="2" />
+          <button
+            class="toast-close"
+            @click="dismiss(msg.id)"
+          >
+            <X
+              :size="12"
+              :stroke-width="2"
+            />
           </button>
         </div>
       </div>

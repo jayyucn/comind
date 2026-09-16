@@ -29,10 +29,21 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <aside class="toc-drawer" :class="{ collapsed: !open }" aria-label="目录">
+  <aside
+    class="toc-drawer"
+    :class="{ collapsed: !open }"
+    aria-label="目录"
+  >
     <header class="toc-header">
-      <button class="toc-title-btn" title="目录" @click="emit('toggle')">
-        <Icon name="icon-menu" :size="16" />
+      <button
+        class="toc-title-btn"
+        title="目录"
+        @click="emit('toggle')"
+      >
+        <Icon
+          name="icon-menu"
+          :size="16"
+        />
         <span class="toc-title-text">目录</span>
       </button>
     </header>
@@ -46,7 +57,9 @@ const emit = defineEmits<{
         :disabled="entry.index === null"
         :title="entry.label"
         @click="entry.index !== null && emit('select', entry.index)"
-      >{{ entry.label }}</button>
+      >
+        {{ entry.label }}
+      </button>
     </nav>
   </aside>
 </template>

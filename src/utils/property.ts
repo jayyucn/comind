@@ -4,7 +4,7 @@ import type { PropertyType, PropertyValue } from '../types/property'
  * 格式化和验证属性值
  */
 export function formatPropertyValue(
-  value: any,
+  value: PropertyValue,
   type: PropertyType
 ): PropertyValue | null {
   try {
@@ -34,7 +34,7 @@ export function formatPropertyValue(
         return null
       }
 
-      case 'array':
+      case 'array': {
         if (Array.isArray(value)) {
           return value.map(v => String(v).trim()).filter(Boolean)
         }
@@ -45,6 +45,7 @@ export function formatPropertyValue(
         }
         // Otherwise treat as single-item array
         return [String(value).trim()].filter(Boolean)
+      }
 
       case 'page':
         // Page reference is just a string ID or title

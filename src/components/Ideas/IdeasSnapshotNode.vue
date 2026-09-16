@@ -110,7 +110,10 @@ function openDetail() {
   >
     <div class="block-row">
       <!-- 缩进占位 -->
-      <div class="block-indent" :style="{ width: `${depth * 24}px` }"></div>
+      <div
+        class="block-indent"
+        :style="{ width: `${depth * 24}px` }"
+      />
 
       <div class="block-inner">
         <!-- Bullet：chevron 有子块时负责折叠/展开；dot 仅占位（快照只读，不触发 BlockModal） -->
@@ -121,15 +124,30 @@ function openDetail() {
             title="折叠 / 展开"
             @click.stop="treeState.toggle(blockId)"
           >
-            <ChevronDown v-if="!isCollapsed" :size="18" :stroke-width="2" />
-            <ChevronRight v-else :size="18" :stroke-width="2" />
+            <ChevronDown
+              v-if="!isCollapsed"
+              :size="18"
+              :stroke-width="2"
+            />
+            <ChevronRight
+              v-else
+              :size="18"
+              :stroke-width="2"
+            />
           </span>
-          <span class="bullet-dot" title="打开块详情（只读快照）" @click.stop="openDetail" />
+          <span
+            class="bullet-dot"
+            title="打开块详情（只读快照）"
+            @click.stop="openDetail"
+          />
         </span>
 
         <div class="block-body">
           <!-- Between 属性静态 chip（当日值，不可交互） -->
-          <span v-if="betweenChips.length" class="snapshot-property-inline">
+          <span
+            v-if="betweenChips.length"
+            class="snapshot-property-inline"
+          >
             <span
               v-for="chip in betweenChips"
               :key="chip.icon"
@@ -144,7 +162,10 @@ function openDetail() {
 
           <!-- 内容区：image 走只读图片；其余统一复用 BulletRender -->
           <div class="block-content">
-            <IdeasSnapshotImage v-if="node.block.type === 'image'" :block="node.block" />
+            <IdeasSnapshotImage
+              v-if="node.block.type === 'image'"
+              :block="node.block"
+            />
             <BulletRender
               v-else
               :content="node.block.content"

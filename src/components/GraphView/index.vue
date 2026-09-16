@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { EdgeData, NodeData } from '@antv/g6'
+import type { EdgeData, IElementEvent, NodeData } from '@antv/g6'
 import { Graph } from '@antv/g6'
 import { Download, ExpandIcon, RefreshCw } from 'lucide-vue-next'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
@@ -74,7 +74,7 @@ const containerRef = ref<HTMLElement | null>(null)
 // （G6 v5 + Vue3 已知问题，见 antvis/G6#6791）。shallowRef 不深代理，实例保持原样。
 const graphRef = shallowRef<Graph | null>(null)
 const currentLayout = ref<string>('force')
-const highlightedNodeId = ref<string | null>(null)
+const localHighlightedNodeId = ref<string | null>(null)
 const isFirstLayoutDone = ref(false)
 // 全量图因规模过大被截断时置位，用于在 header 显示提示（同时有 console.warn）
 const fullGraphTruncated = ref(false)
@@ -86,7 +86,7 @@ const isPageScoped = computed(() => !!props.pageId)
 let refreshGeneration = 0
 
 watch(() => props.highlightedNodeId, (val) => {
-  highlightedNodeId.value = val ?? null
+  localHighlightedNodeId.value = val ?? null
   if (graphRef.value) updateNodeHighlight()
 })
 
@@ -131,11 +131,11 @@ async function buildGraphData() {
     const allPages = [...pageStore.pages.filter(p => !p.deleted)]
       .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
     const snapshot = props.graphSnapshot ?? undefined
-    await buildFullGraph(allPages, acc, visibility, currentPageId.value, highlightedNodeId.value, getPage, fetchNeighbors, getBlock, snapshot)
+    await buildFullGraph(allPages, acc, visibility, currentPageId.value, localHighlightedNodeId.value, getPage, fetchNeighbors, getBlock, snapshot)
   } else {
     const rootId = currentPageId.value
     if (rootId) {
-      await traverseBFS(rootId, maxDepth.value, acc, visibility, currentPageId.value, highlightedNodeId.value, getPage, fetchNeighbors, getBlock)
+      await traverseBFS(rootId, maxDepth.value, acc, visibility, currentPageId.value, localHighlightedNodeId.value, getPage, fetchNeighbors, getBlock)
     }
   }
   return { nodes: acc.nodes, edges: acc.edges }
@@ -256,20 +256,20 @@ async function initGraph() {
     edge: {
       type: 'quadratic',
       style: {
-        stroke: (d: any) => d.data?.isFiltered ? getEdgeStyle(d).stroke : (d.data?.color ?? getEdgeStyle(d).stroke),
-        strokeOpacity: (d: any) => getEdgeStyle(d).strokeOpacity,
-        strokeWidth: (d: any) => STRENGTH_TO_WIDTH[getRelationshipStrength((d.data?.relationshipType as string) ?? 'related')],
+        stroke: (d: EdgeData) => d.data?.isFiltered ? getEdgeStyle(d).stroke : ((d.data?.color as string | undefined) ?? getEdgeStyle(d).stroke),
+        strokeOpacity: (d: EdgeData) => getEdgeStyle(d).strokeOpacity,
+        strokeWidth: (d: EdgeData) => STRENGTH_TO_WIDTH[getRelationshipStrength((d.data?.relationshipType as string) ?? 'related')],
         endArrow: true,
-        curveOffset: (d: any) => d.data?.curveOffset ?? 0,
-        labelText: (d: any) => d.data?.label ?? '',
+        curveOffset: (d: EdgeData) => (d.data?.curveOffset as number | undefined) ?? 0,
+        labelText: (d: EdgeData) => (d.data?.label as string) ?? '',
         labelFontSize: 9,
-        labelFill: (d: any) => getEdgeStyle(d).labelFill,
+        labelFill: (d: EdgeData) => getEdgeStyle(d).labelFill,
         labelBackground: true,
         labelBackgroundFill: '#ffffff',
         labelBackgroundOpacity: 1,
         labelBackgroundRadius: 2,
         labelBackgroundPadding: [2, 4] as [number, number],
-        endPointOffset: (d: any) => d.data?.endPointOffset ?? [0, 0],
+        endPointOffset: (d: EdgeData) => (d.data?.endPointOffset as [number, number] | undefined) ?? [0, 0],
       }
     },
     layout: {
@@ -291,13 +291,13 @@ async function initGraph() {
     }
   })
 
-  graph.on('node:click', (evt: any) => {
+  graph.on('node:click', (evt: IElementEvent) => {
     const nodeId = evt.target?.id
     if (!nodeId) return
     handleNodeClick(nodeId)
   })
 
-  graph.on('node:dblclick', (evt: any) => {
+  graph.on('node:dblclick', (evt: IElementEvent) => {
     const nodeId = evt.target?.id
     if (!nodeId) return
     handleNodeDoubleClick(nodeId)
@@ -448,10 +448,10 @@ async function handleExportPng() {
 }
 
 function handleNodeClick(nodeId: string) {
-  if (highlightedNodeId.value === nodeId) {
-    highlightedNodeId.value = null
+  if (localHighlightedNodeId.value === nodeId) {
+    localHighlightedNodeId.value = null
   } else {
-    highlightedNodeId.value = nodeId
+    localHighlightedNodeId.value = nodeId
   }
   updateNodeHighlight()
 }
@@ -466,12 +466,12 @@ function handleNodeDoubleClick(nodeId: string) {
 function updateNodeHighlight() {
   const g = graphRef.value
   if (!g) return
-  const target = highlightedNodeId.value
+  const target = localHighlightedNodeId.value
   // 增量更新：只写变化节点的 data（全量 setData 会连同边一起重置，点击时产生可感知卡顿）
   const patches = []
   for (const node of g.getNodeData()) {
     const isHit = node.id === target
-    if (Boolean((node.data as any).isHighlighted) === isHit) continue
+    if (Boolean((node.data as Record<string, unknown>).isHighlighted) === isHit) continue
     patches.push({ id: node.id, data: { ...node.data, isHighlighted: isHit } })
   }
   if (patches.length) g.updateNodeData(patches)
@@ -542,38 +542,68 @@ onBeforeUnmount(() => {
     <div class="graph-view-header">
       <div class="graph-view-controls">
         <div class="control-group control-group-left">
-          <button v-for="layout in ['force', 'radial', 'dagre']" :key="layout" class="layout-btn"
-            :class="{ active: currentLayout === layout }" @click="handleLayoutChange(layout)">
+          <button
+            v-for="layout in ['force', 'radial', 'dagre']"
+            :key="layout"
+            class="layout-btn"
+            :class="{ active: currentLayout === layout }"
+            @click="handleLayoutChange(layout)"
+          >
             {{ layout === 'force' ? '力导向' : layout === 'radial' ? '径向' : '层级' }}
           </button>
         </div>
         <div class="control-group control-group-right">
-          <button class="control-btn" @click="handleFitView">
+          <button
+            class="control-btn"
+            @click="handleFitView"
+          >
             <ExpandIcon :size="14" />
             <span>适应视图</span>
           </button>
-          <button class="control-btn" @click="handleRefresh">
+          <button
+            class="control-btn"
+            @click="handleRefresh"
+          >
             <RefreshCw :size="14" />
             <span>刷新</span>
           </button>
-          <button class="control-btn" @click="handleExportPng">
+          <button
+            class="control-btn"
+            @click="handleExportPng"
+          >
             <Download :size="14" />
             <span>导出 PNG</span>
           </button>
         </div>
-        <div v-if="isPageScoped" class="depth-control">
+        <div
+          v-if="isPageScoped"
+          class="depth-control"
+        >
           <span class="depth-label">层级</span>
           <div class="depth-options">
-            <button v-for="d in [1, 2, 3]" :key="d" class="depth-btn" :class="{ active: maxDepth === d }"
-              @click="maxDepth = d">{{ d }}</button>
+            <button
+              v-for="d in [1, 2, 3]"
+              :key="d"
+              class="depth-btn"
+              :class="{ active: maxDepth === d }"
+              @click="maxDepth = d"
+            >
+              {{ d }}
+            </button>
           </div>
         </div>
       </div>
     </div>
     <div class="graph-view-body">
-      <div ref="containerRef" class="graph-view-canvas">
-        <div v-if="!isFirstLayoutDone" class="graph-loading-overlay">
-          <div class="loading-spinner"></div>
+      <div
+        ref="containerRef"
+        class="graph-view-canvas"
+      >
+        <div
+          v-if="!isFirstLayoutDone"
+          class="graph-loading-overlay"
+        >
+          <div class="loading-spinner" />
           <span>正在加载图谱数据…</span>
         </div>
       </div>

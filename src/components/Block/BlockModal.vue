@@ -265,13 +265,28 @@ onBeforeUnmount(() => {
       >
         <div class="block-modal">
           <header class="modal-header">
-            <div class="modal-title" :title="pageTitle">
-              <span class="modal-title-icon" aria-hidden="true">
+            <div
+              class="modal-title"
+              :title="pageTitle"
+            >
+              <span
+                class="modal-title-icon"
+                aria-hidden="true"
+              >
                 <FileText :size="16" />
               </span>
-              <span v-if="pageTitle" class="modal-title-page">{{ pageTitle }}</span>
-              <span v-else class="modal-title-placeholder">块详情</span>
-              <span v-if="isSnapshotMode" class="modal-readonly-tag">快照只读</span>
+              <span
+                v-if="pageTitle"
+                class="modal-title-page"
+              >{{ pageTitle }}</span>
+              <span
+                v-else
+                class="modal-title-placeholder"
+              >块详情</span>
+              <span
+                v-if="isSnapshotMode"
+                class="modal-readonly-tag"
+              >快照只读</span>
             </div>
             <div class="modal-actions">
               <button
@@ -283,7 +298,10 @@ onBeforeUnmount(() => {
               >
                 <ExternalLink :size="18" />
               </button>
-              <span class="modal-esc-hint" aria-hidden="true">Esc</span>
+              <span
+                class="modal-esc-hint"
+                aria-hidden="true"
+              >Esc</span>
               <button
                 class="modal-action modal-action-close"
                 type="button"
@@ -295,26 +313,51 @@ onBeforeUnmount(() => {
               </button>
             </div>
           </header>
-          <div class="modal-body" @click="onBodyClick">
+          <div
+            class="modal-body"
+            @click="onBodyClick"
+          >
             <!-- 快照上下文（ADR-0042 T6）：只读展示当日快照子树，复用 IdeasSnapshotNode 只读渲染 -->
-            <div v-if="isSnapshotMode" class="modal-content">
+            <div
+              v-if="isSnapshotMode"
+              class="modal-content"
+            >
               <IdeasSnapshotNode
                 v-if="snapshotRoot"
                 :node="snapshotRoot"
                 :page-id="contextPageId!"
                 :depth="0"
               />
-              <div v-else class="modal-loading">
-                <span class="modal-spinner" aria-hidden="true"></span>
+              <div
+                v-else
+                class="modal-loading"
+              >
+                <span
+                  class="modal-spinner"
+                  aria-hidden="true"
+                />
                 {{ snapshotData ? '快照中无此块' : '加载中…' }}
               </div>
             </div>
             <!-- 活上下文：完整 Block 子树编辑器（冻结已退役，历史页活块同样可编辑） -->
-            <div v-else-if="node" class="modal-content">
-              <Block :node="node" :page-id="contextPageId!" :depth="0" />
+            <div
+              v-else-if="node"
+              class="modal-content"
+            >
+              <Block
+                :node="node"
+                :page-id="contextPageId!"
+                :depth="0"
+              />
             </div>
-            <div v-else class="modal-loading">
-              <span class="modal-spinner" aria-hidden="true"></span>
+            <div
+              v-else
+              class="modal-loading"
+            >
+              <span
+                class="modal-spinner"
+                aria-hidden="true"
+              />
               加载中…
             </div>
           </div>

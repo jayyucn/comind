@@ -122,20 +122,38 @@ defineExpose({ onDragEnd, __test_setOrder })
   <div class="field-manager">
     <div class="fm-header">
       <span class="fm-title">字段</span>
-      <label class="fm-edit-toggle" :class="{ on: editMode }">
-        <input type="checkbox" v-model="editMode" data-testid="fm-edit" />
+      <label
+        class="fm-edit-toggle"
+        :class="{ on: editMode }"
+      >
+        <input
+          v-model="editMode"
+          type="checkbox"
+          data-testid="fm-edit"
+        >
         <span>编辑</span>
       </label>
     </div>
 
     <div class="fm-search">
-      <Search :size="14" class="fm-search-icon" />
-      <input v-model="search" type="text" placeholder="搜索字段..." data-testid="fm-search" class="fm-search-input" />
+      <Search
+        :size="14"
+        class="fm-search-icon"
+      />
+      <input
+        v-model="search"
+        type="text"
+        placeholder="搜索字段..."
+        data-testid="fm-search"
+        class="fm-search-input"
+      >
     </div>
 
     <!-- 第一组：已用字段（per-tab 拖拽排序 + 显示/隐藏；编辑开时含全局删除） -->
     <div class="fm-group">
-      <div class="fm-group-title">已用字段</div>
+      <div class="fm-group-title">
+        已用字段
+      </div>
       <VueDraggable
         v-model="localActive"
         class="fm-list"
@@ -147,14 +165,21 @@ defineExpose({ onDragEnd, __test_setOrder })
       >
         <li
           v-for="item in localActive"
-          :key="item.column.key"
           v-show="matchesSearch(item)"
+          :key="item.column.key"
           class="fm-row"
           :class="{ hidden: item.column.visible === false }"
           data-testid="fm-active-row"
         >
-          <span class="fm-grip" title="拖拽排序"><GripVertical :size="14" /></span>
-          <component :is="iconFor(item.field?.type)" :size="14" class="fm-icon" />
+          <span
+            class="fm-grip"
+            title="拖拽排序"
+          ><GripVertical :size="14" /></span>
+          <component
+            :is="iconFor(item.field?.type)"
+            :size="14"
+            class="fm-icon"
+          />
           <span class="fm-label">{{ item.field?.label ?? item.column.key }}</span>
           <button
             class="fm-eye"
@@ -162,7 +187,10 @@ defineExpose({ onDragEnd, __test_setOrder })
             :title="item.column.visible === false ? '显示' : '隐藏'"
             @click="toggleVisibility(item.column.key, item.column.visible === false)"
           >
-            <component :is="item.column.visible === false ? EyeOff : Eye" :size="15" />
+            <component
+              :is="item.column.visible === false ? EyeOff : Eye"
+              :size="15"
+            />
           </button>
           <button
             v-if="editMode"
@@ -178,17 +206,41 @@ defineExpose({ onDragEnd, __test_setOrder })
     </div>
 
     <!-- 第二组：候选字段（编辑开时显示；+ = 全局新增） -->
-    <div v-if="editMode" class="fm-group">
-      <div class="fm-group-title">候选字段</div>
+    <div
+      v-if="editMode"
+      class="fm-group"
+    >
+      <div class="fm-group-title">
+        候选字段
+      </div>
       <ul class="fm-list">
-        <li v-for="field in filteredCandidates" :key="field.key" class="fm-row candidate" data-testid="fm-candidate-row">
-          <component :is="iconFor(field.type)" :size="14" class="fm-icon" />
+        <li
+          v-for="field in filteredCandidates"
+          :key="field.key"
+          class="fm-row candidate"
+          data-testid="fm-candidate-row"
+        >
+          <component
+            :is="iconFor(field.type)"
+            :size="14"
+            class="fm-icon"
+          />
           <span class="fm-label">{{ field.label }}</span>
-          <button class="fm-add" data-testid="fm-add" title="添加到所有视图" @click="emit('add-global', field.key)">
+          <button
+            class="fm-add"
+            data-testid="fm-add"
+            title="添加到所有视图"
+            @click="emit('add-global', field.key)"
+          >
             <Plus :size="14" />
           </button>
         </li>
-        <li v-if="filteredCandidates.length === 0" class="fm-empty">无候选字段</li>
+        <li
+          v-if="filteredCandidates.length === 0"
+          class="fm-empty"
+        >
+          无候选字段
+        </li>
       </ul>
     </div>
   </div>

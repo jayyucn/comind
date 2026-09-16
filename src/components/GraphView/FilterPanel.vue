@@ -110,8 +110,8 @@ function updateTimeRange(range: string) {
   const oneDay = 24 * 60 * 60 * 1000
   const oneWeek = 7 * oneDay
 
-  let start: number | null = null
-  let end: number | null = null
+  let start: number | null
+  let end: number | null
 
   switch (range) {
     case 'today': {
@@ -229,33 +229,52 @@ init()
 </script>
 
 <template>
-  <button class="collapse-btn" @click="toggleCollapse" :title="collapsed ? '展开面板' : '折叠面板'">
-        <ChevronRight v-if="collapsed" :size="16" />
-        <ChevronLeft v-else :size="16" />
-      </button>
-  <div class="filter-panel" :class="{ collapsed }">
+  <button
+    class="collapse-btn"
+    :title="collapsed ? '展开面板' : '折叠面板'"
+    @click="toggleCollapse"
+  >
+    <ChevronRight
+      v-if="collapsed"
+      :size="16"
+    />
+    <ChevronLeft
+      v-else
+      :size="16"
+    />
+  </button>
+  <div
+    class="filter-panel"
+    :class="{ collapsed }"
+  >
     <div class="filter-panel-header">
-      <div class="filter-panel-title">筛选</div>
-      
+      <div class="filter-panel-title">
+        筛选
+      </div>
     </div>
 
-    <div v-if="!collapsed" class="filter-panel-content">
+    <div
+      v-if="!collapsed"
+      class="filter-panel-content"
+    >
       <!-- 搜索 -->
       <div class="filter-section">
         <input
-          type="text"
           v-model="search"
+          type="text"
           placeholder="搜索标题..."
           class="search-input"
           @input="emitChange"
-        />
+        >
       </div>
 
       <div class="filter-divider" />
 
       <!-- 关系类型 -->
       <div class="filter-section">
-        <div class="filter-section-label">关系类型</div>
+        <div class="filter-section-label">
+          关系类型
+        </div>
         <div class="relationship-chips">
           <button
             v-for="relType in types.items.value"
@@ -267,7 +286,10 @@ init()
           >
             {{ relType.label }}
           </button>
-          <span v-if="types.items.value.length === 0" class="empty-hint">无关系类型</span>
+          <span
+            v-if="types.items.value.length === 0"
+            class="empty-hint"
+          >无关系类型</span>
         </div>
       </div>
 
@@ -275,7 +297,9 @@ init()
 
       <!-- 时间范围 -->
       <div class="filter-section">
-        <div class="filter-section-label">时间</div>
+        <div class="filter-section-label">
+          时间
+        </div>
         <div class="quick-time-ranges">
           <button
             v-for="range in quickTimeRanges"
@@ -289,14 +313,26 @@ init()
         </div>
         <!-- Q19: 日期容器用输入框风格 -->
         <div class="custom-date-range">
-          <button class="date-field" @click="openStartPicker">
+          <button
+            class="date-field"
+            @click="openStartPicker"
+          >
             <span v-if="getStartDateStr()">{{ getStartDateStr() }}</span>
-            <span v-else class="date-placeholder">开始日期</span>
+            <span
+              v-else
+              class="date-placeholder"
+            >开始日期</span>
           </button>
           <span class="date-separator">→</span>
-          <button class="date-field" @click="openEndPicker">
+          <button
+            class="date-field"
+            @click="openEndPicker"
+          >
             <span v-if="getEndDateStr()">{{ getEndDateStr() }}</span>
-            <span v-else class="date-placeholder">结束日期</span>
+            <span
+              v-else
+              class="date-placeholder"
+            >结束日期</span>
           </button>
         </div>
       </div>
@@ -305,7 +341,9 @@ init()
 
       <!-- 显示选项：Q28 chip 风格 toggle -->
       <div class="filter-section">
-        <div class="filter-section-label">显示选项</div>
+        <div class="filter-section-label">
+          显示选项
+        </div>
         <div class="toggle-row">
           <span class="toggle-label">显示点滴</span>
           <button
@@ -331,7 +369,12 @@ init()
       <div class="filter-divider" />
 
       <!-- 重置 -->
-      <button class="reset-btn" @click="resetFilters">重置筛选</button>
+      <button
+        class="reset-btn"
+        @click="resetFilters"
+      >
+        重置筛选
+      </button>
     </div>
 
     <!-- CalendarPopover 弹出 -->

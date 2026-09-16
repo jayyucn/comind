@@ -27,9 +27,27 @@ const emit = defineEmits<{
       aria-label="选区操作"
       @mousedown.prevent
     >
-      <button class="toolbar-btn primary" title="高亮" @click="emit('highlight')">高亮</button>
-      <button class="toolbar-btn" title="写笔记" @click="emit('note')">写笔记</button>
-      <button class="toolbar-btn" title="取消" @click="emit('cancel')">取消</button>
+      <button
+        class="toolbar-btn primary"
+        title="高亮"
+        @click="emit('highlight')"
+      >
+        高亮
+      </button>
+      <button
+        class="toolbar-btn"
+        title="写笔记"
+        @click="emit('note')"
+      >
+        写笔记
+      </button>
+      <button
+        class="toolbar-btn"
+        title="取消"
+        @click="emit('cancel')"
+      >
+        取消
+      </button>
     </div>
   </Teleport>
 </template>

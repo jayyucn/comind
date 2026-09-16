@@ -272,11 +272,21 @@ watch(typography, applyTypography)
 </script>
 
 <template>
-  <div ref="windowRef" class="reader-window" :class="themeClass">
-    <header class="reader-topbar" @mousedown="startDragging">
+  <div
+    ref="windowRef"
+    class="reader-window"
+    :class="themeClass"
+  >
+    <header
+      class="reader-topbar"
+      @mousedown="startDragging"
+    >
       <div class="reader-title">
         <span class="book-title">{{ bookTitle }}</span>
-        <span v-if="chapterTitle" class="chapter-name">{{ chapterTitle }}</span>
+        <span
+          v-if="chapterTitle"
+          class="chapter-name"
+        >{{ chapterTitle }}</span>
       </div>
       <div class="top-right-controls">
         <button
@@ -285,7 +295,10 @@ watch(typography, applyTypography)
           title="本书高亮"
           @click="highlightPanelOpen = !highlightPanelOpen"
         >
-          <Icon name="icon-highlighter" :size="16" />
+          <Icon
+            name="icon-highlighter"
+            :size="16"
+          />
         </button>
         <button
           class="topbar-btn reader-typography-toggle"
@@ -293,36 +306,95 @@ watch(typography, applyTypography)
           title="排版"
           @click="typographyOpen = !typographyOpen"
         >
-          <Icon name="icon-settings" :size="16" />
+          <Icon
+            name="icon-settings"
+            :size="16"
+          />
         </button>
-        <button class="topbar-btn" title="上一章" :disabled="!canPrev" @click="prev">
-          <Icon name="icon-arrow-left" :size="16" />
+        <button
+          class="topbar-btn"
+          title="上一章"
+          :disabled="!canPrev"
+          @click="prev"
+        >
+          <Icon
+            name="icon-arrow-left"
+            :size="16"
+          />
         </button>
-        <button class="topbar-btn" title="下一章" :disabled="!canNext" @click="next">
-          <Icon name="icon-arrow-right" :size="16" />
+        <button
+          class="topbar-btn"
+          title="下一章"
+          :disabled="!canNext"
+          @click="next"
+        >
+          <Icon
+            name="icon-arrow-right"
+            :size="16"
+          />
         </button>
-        <div v-if="isTauriEnvironment()" class="window-controls">
-          <button class="window-control-btn" title="最小化" @click="minimize">
-            <Icon name="icon-minimize" :size="18" />
+        <div
+          v-if="isTauriEnvironment()"
+          class="window-controls"
+        >
+          <button
+            class="window-control-btn"
+            title="最小化"
+            @click="minimize"
+          >
+            <Icon
+              name="icon-minimize"
+              :size="18"
+            />
           </button>
-          <button class="window-control-btn" :title="isMaximized ? '还原' : '最大化'" @click="maximize">
-            <Icon :name="isMaximized ? 'icon-square' : 'icon-maximize'" :size="18" />
+          <button
+            class="window-control-btn"
+            :title="isMaximized ? '还原' : '最大化'"
+            @click="maximize"
+          >
+            <Icon
+              :name="isMaximized ? 'icon-square' : 'icon-maximize'"
+              :size="18"
+            />
           </button>
-          <button class="window-control-btn close-btn" title="关闭" @click="close">
-            <Icon name="icon-close" :size="18" />
+          <button
+            class="window-control-btn close-btn"
+            title="关闭"
+            @click="close"
+          >
+            <Icon
+              name="icon-close"
+              :size="18"
+            />
           </button>
         </div>
       </div>
     </header>
 
     <main class="reader-body">
-      <div v-if="phase === 'loading'" class="reader-placeholder">正在打开书…</div>
+      <div
+        v-if="phase === 'loading'"
+        class="reader-placeholder"
+      >
+        正在打开书…
+      </div>
 
-      <div v-else-if="phase === 'error'" class="reader-error">
-        <p class="error-title">无法打开这本书</p>
-        <p class="error-detail">书文件缺失或无法读取（可能导入时保存失败）。</p>
-        <p class="error-detail">请删除这本书后重新导入。</p>
-        <p class="error-raw">{{ loadError }}</p>
+      <div
+        v-else-if="phase === 'error'"
+        class="reader-error"
+      >
+        <p class="error-title">
+          无法打开这本书
+        </p>
+        <p class="error-detail">
+          书文件缺失或无法读取（可能导入时保存失败）。
+        </p>
+        <p class="error-detail">
+          请删除这本书后重新导入。
+        </p>
+        <p class="error-raw">
+          {{ loadError }}
+        </p>
       </div>
 
       <template v-else-if="book && currentSection">

@@ -32,9 +32,19 @@ const tags = computed(() =>
 </script>
 
 <template>
-  <div class="block-content-cell" :class="{ 'is-done': done }">
-    <BulletRender :content="stripImageEmbeds(value)" :block-id="item.block_id" />
-    <span v-for="t in tags" :key="t" class="tag">{{ t }}</span>
+  <div
+    class="block-content-cell"
+    :class="{ 'is-done': done }"
+  >
+    <BulletRender
+      :content="stripImageEmbeds(value)"
+      :block-id="item.block_id"
+    />
+    <span
+      v-for="t in tags"
+      :key="t"
+      class="tag"
+    >{{ t }}</span>
   </div>
 </template>
 

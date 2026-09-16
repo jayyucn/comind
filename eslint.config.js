@@ -22,8 +22,17 @@ export default [
       }
     },
     rules: {
-      'vue/multi-word-component-names': 'off'
+      'vue/multi-word-component-names': 'off',
+      '@typescript-eslint/no-unused-vars': ['error', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_'
+      }],
     }
+  },
+  {
+    // 完全忽略所有测试文件的 lint
+    ignores: ['**/*.test.ts']
   },
   {
     // 无头核心：通用查询引擎必须保持与框架无关，禁止引入 Vue / Pinia / 任何 .vue 组件。

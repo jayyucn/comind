@@ -19,9 +19,16 @@ function handleClick() {
 </script>
 
 <template>
-  <div class="nav-item drip-nav" :class="{ active: isActive() }" @click="handleClick">
+  <div
+    class="nav-item drip-nav"
+    :class="{ active: isActive() }"
+    @click="handleClick"
+  >
     <span class="nav-icon">
-      <Droplets :size="16" :stroke-width="1.75" />
+      <Droplets
+        :size="16"
+        :stroke-width="1.75"
+      />
     </span>
     <span class="nav-label">点滴</span>
     <span class="nav-time">{{ today }} · {{ weekday }}</span>

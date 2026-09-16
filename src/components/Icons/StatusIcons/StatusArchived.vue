@@ -28,11 +28,35 @@ withDefaults(defineProps<{
     stroke-linecap="round"
     stroke-linejoin="round"
   >
-    <circle v-if="shape === 'round'" cx="12" cy="12" r="9" :fill="color" fill-opacity="0.18" stroke="none" />
-    <rect v-else x="3" y="3" width="18" height="18" rx="5" :fill="color" fill-opacity="0.18" stroke="none" />
+    <circle
+      v-if="shape === 'round'"
+      cx="12"
+      cy="12"
+      r="9"
+      :fill="color"
+      fill-opacity="0.18"
+      stroke="none"
+    />
+    <rect
+      v-else
+      x="3"
+      y="3"
+      width="18"
+      height="18"
+      rx="5"
+      :fill="color"
+      fill-opacity="0.18"
+      stroke="none"
+    />
     <template v-if="shape === 'round'">
       <path d="M12 8v2.6 M10.4 9.8l1.6 1.5 1.6-1.5" />
-      <rect x="8.5" y="13" width="7" height="4.3" rx="1" />
+      <rect
+        x="8.5"
+        y="13"
+        width="7"
+        height="4.3"
+        rx="1"
+      />
     </template>
     <template v-else>
       <path d="M12 8v5 M9.5 10.5L12 13l2.5-2.5" />

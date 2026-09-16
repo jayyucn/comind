@@ -13,9 +13,16 @@ function handleClick() {
 </script>
 
 <template>
-  <div class="nav-item task-nav" :class="{ active: isActive() }" @click="handleClick">
+  <div
+    class="nav-item task-nav"
+    :class="{ active: isActive() }"
+    @click="handleClick"
+  >
     <span class="nav-icon">
-      <CheckSquare :size="16" :stroke-width="1.75" />
+      <CheckSquare
+        :size="16"
+        :stroke-width="1.75"
+      />
     </span>
     <span class="nav-label">任务</span>
   </div>

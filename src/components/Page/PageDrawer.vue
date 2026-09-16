@@ -37,7 +37,11 @@ onMounted(() => {
 <template>
   <Teleport to="body">
     <Transition name="page-drawer">
-      <div v-if="pageId" class="page-drawer-backdrop" @click.self="emit('close')">
+      <div
+        v-if="pageId"
+        class="page-drawer-backdrop"
+        @click.self="emit('close')"
+      >
         <aside class="page-drawer">
           <header class="drawer-header">
             <button
@@ -48,12 +52,20 @@ onMounted(() => {
             >
               <ExternalLink :size="18" />
             </button>
-            <button class="drawer-close" title="关闭" data-testid="page-drawer-close" @click="emit('close')">
+            <button
+              class="drawer-close"
+              title="关闭"
+              data-testid="page-drawer-close"
+              @click="emit('close')"
+            >
               <X :size="18" />
             </button>
           </header>
           <div class="drawer-body">
-            <PageIndex :key="pageId" :page-id="pageId" />
+            <PageIndex
+              :key="pageId"
+              :page-id="pageId"
+            />
           </div>
         </aside>
       </div>

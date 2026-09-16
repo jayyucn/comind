@@ -104,8 +104,16 @@ onMounted(() => {
 </script>
 
 <template>
-  <BasePopover :visible="true" :position="position" @close="emit('close')">
-    <div class="cond-popover" data-testid="cond-popover" ref="popoverEl">
+  <BasePopover
+    :visible="true"
+    :position="position"
+    @close="emit('close')"
+  >
+    <div
+      ref="popoverEl"
+      class="cond-popover"
+      data-testid="cond-popover"
+    >
       <!-- Row 1: 字段下拉 + 操作符下拉 + ⋯ 更多 -->
       <div class="cond-top-row">
         <div class="cond-field-op">
@@ -116,7 +124,11 @@ onMounted(() => {
             :value="props.condition.field"
             @change="onFieldChange"
           >
-            <option v-for="f in props.fields" :key="f.key" :value="f.key">
+            <option
+              v-for="f in props.fields"
+              :key="f.key"
+              :value="f.key"
+            >
               {{ f.label }}
             </option>
           </select>
@@ -127,10 +139,24 @@ onMounted(() => {
             :value="props.condition.op"
             @change="onOpChange"
           >
-            <option v-for="op in ops" :key="op" :value="op">{{ opLabel(op) }}</option>
+            <option
+              v-for="op in ops"
+              :key="op"
+              :value="op"
+            >
+              {{ opLabel(op) }}
+            </option>
           </select>
         </div>
-        <button class="cond-more" type="button" data-testid="cond-more" title="更多操作" @click="toggleMore">⋯</button>
+        <button
+          class="cond-more"
+          type="button"
+          data-testid="cond-more"
+          title="更多操作"
+          @click="toggleMore"
+        >
+          ⋯
+        </button>
       </div>
 
       <!-- Row 2: 值输入 -->
@@ -147,11 +173,25 @@ onMounted(() => {
       </div>
 
       <!-- Row 3: ⋯ 二级面板（默认折叠，点击 ⋯ 展开） -->
-      <div v-if="moreOpen" class="cond-more-panel" data-testid="cond-more-panel">
-        <button class="cond-action-link" type="button" data-testid="cond-remove" @click="onRemove">
+      <div
+        v-if="moreOpen"
+        class="cond-more-panel"
+        data-testid="cond-more-panel"
+      >
+        <button
+          class="cond-action-link"
+          type="button"
+          data-testid="cond-remove"
+          @click="onRemove"
+        >
           🗑 Delete filter
         </button>
-        <button class="cond-action-link" type="button" data-testid="cond-advanced" @click="onAdvanced">
+        <button
+          class="cond-action-link"
+          type="button"
+          data-testid="cond-advanced"
+          @click="onAdvanced"
+        >
           ➕ Add to advanced filter
         </button>
       </div>

@@ -48,7 +48,11 @@ onUnmounted(() => document.removeEventListener('click', onDocClick, true))
 </script>
 
 <template>
-  <div v-if="visible" ref="dockEl" class="sync-dock">
+  <div
+    v-if="visible"
+    ref="dockEl"
+    class="sync-dock"
+  >
     <button
       class="sync-dock-btn"
       :class="dockState"
@@ -56,17 +60,40 @@ onUnmounted(() => document.removeEventListener('click', onDocClick, true))
       @click="open = !open"
     >
       <!-- <span class="sync-dock-dot" :class="dockState" /> -->
-      <QrCode v-if="dockState === 'unpaired'" :size="15" :stroke-width="1.75" />
-      <Wifi v-else-if="dockState === 'online'" :size="15" :stroke-width="1.75" />
-      <Smartphone v-else :size="15" :stroke-width="1.75" />
+      <QrCode
+        v-if="dockState === 'unpaired'"
+        :size="15"
+        :stroke-width="1.75"
+      />
+      <Wifi
+        v-else-if="dockState === 'online'"
+        :size="15"
+        :stroke-width="1.75"
+      />
+      <Smartphone
+        v-else
+        :size="15"
+        :stroke-width="1.75"
+      />
     </button>
 
     <Teleport to="body">
-      <div v-if="open" ref="popoverEl" class="sync-dock-popover" role="dialog">
+      <div
+        v-if="open"
+        ref="popoverEl"
+        class="sync-dock-popover"
+        role="dialog"
+      >
         <div class="sync-dock-popover-head">
           <span class="sync-dock-title">设备同步</span>
-          <button class="sync-dock-close" @click="open = false">
-            <X :size="15" :stroke-width="1.75" />
+          <button
+            class="sync-dock-close"
+            @click="open = false"
+          >
+            <X
+              :size="15"
+              :stroke-width="1.75"
+            />
           </button>
         </div>
         <div class="sync-dock-popover-body">

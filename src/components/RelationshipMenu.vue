@@ -68,66 +68,69 @@ defineExpose({ select, close })
     :position="state.position || {x: 0, y: 0}"
     @close="close"
   >
-    <div class="rel-menu" @mousedown.stop>
-        <ul
-          v-if="items.length > 0"
-          ref="listRef"
-          class="rel-menu-list"
+    <div
+      class="rel-menu"
+      @mousedown.stop
+    >
+      <ul
+        v-if="items.length > 0"
+        ref="listRef"
+        class="rel-menu-list"
+      >
+        <li
+          v-for="(item, index) in items"
+          :key="item.type"
+          class="rel-menu-item"
+          :class="{
+            selected: index === state.selectedGroupIndex,
+            'has-inverse': item.inverse !== null
+          }"
+          :data-type="item.type"
+          :style="{ '--rel-color': item.color }"
         >
-          <li
-            v-for="(item, index) in items"
-            :key="item.type"
-            class="rel-menu-item"
-            :class="{
-              selected: index === state.selectedGroupIndex,
-              'has-inverse': item.inverse !== null
-            }"
-            :data-type="item.type"
-            :style="{ '--rel-color': item.color }"
-          >
-            <template v-if="item.inverse">
-              <button
-                type="button"
-                class="rel-menu-direction rel-menu-direction-forward"
-                :class="{ active: index === state.selectedGroupIndex && state.selectedDirection === 'forward' }"
-                :data-direction="item.type"
-                @mousedown="onDirectionMouseDown($event, index, 'forward')"
-              >
-                <span class="rel-menu-type">{{ item.label }}</span>
-              </button>
-              <span
-                class="rel-menu-sep"
-                aria-hidden="true"
-              >↔</span>
-              <button
-                type="button"
-                class="rel-menu-direction rel-menu-direction-inverse"
-                :class="{ active: index === state.selectedGroupIndex && state.selectedDirection === 'inverse' }"
-                :data-direction="item.inverse"
-                @mousedown="onDirectionMouseDown($event, index, 'inverse')"
-              >
-                <span class="rel-menu-type">{{ item.inverseLabel }}</span>
-              </button>
-            </template>
+          <template v-if="item.inverse">
             <button
-              v-else
               type="button"
-              class="rel-menu-direction rel-menu-direction-forward rel-menu-direction-single"
-              :class="{ active: index === state.selectedGroupIndex }"
+              class="rel-menu-direction rel-menu-direction-forward"
+              :class="{ active: index === state.selectedGroupIndex && state.selectedDirection === 'forward' }"
               :data-direction="item.type"
-              @mousedown="onItemMouseDown($event, index)"
+              @mousedown="onDirectionMouseDown($event, index, 'forward')"
             >
               <span class="rel-menu-type">{{ item.label }}</span>
             </button>
-          </li>
-        </ul>
-        <div
-          v-else
-          class="rel-menu-empty"
-        >
-          No matches
-        </div>
+            <span
+              class="rel-menu-sep"
+              aria-hidden="true"
+            >↔</span>
+            <button
+              type="button"
+              class="rel-menu-direction rel-menu-direction-inverse"
+              :class="{ active: index === state.selectedGroupIndex && state.selectedDirection === 'inverse' }"
+              :data-direction="item.inverse"
+              @mousedown="onDirectionMouseDown($event, index, 'inverse')"
+            >
+              <span class="rel-menu-type">{{ item.inverseLabel }}</span>
+            </button>
+          </template>
+          <button
+            v-else
+            type="button"
+            class="rel-menu-direction rel-menu-direction-forward rel-menu-direction-single"
+            :class="{ active: index === state.selectedGroupIndex }"
+            :data-direction="item.type"
+            @mousedown="onItemMouseDown($event, index)"
+          >
+            <span class="rel-menu-type">{{ item.label }}</span>
+          </button>
+        </li>
+      </ul>
+      <div
+        v-else
+        class="rel-menu-empty"
+      >
+        No matches
       </div>
+    </div>
   </BasePopover>
 </template>
 

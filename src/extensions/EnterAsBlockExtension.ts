@@ -1,4 +1,5 @@
 import { Extension } from '@tiptap/core'
+import type { Editor } from '@tiptap/core'
 import { hasModalOpen } from '../composables/useModalKeyboard'
 
 const EnterAsBlockExtension = Extension.create({
@@ -193,7 +194,7 @@ const EnterAsBlockExtension = Extension.create({
   }
 })
 
-function applyHeading(editor: any, level: number) {
+function applyHeading(editor: Editor, level: number) {
   const content = editor.getText()
   const headingPrefix = '#'.repeat(level) + ' '
 

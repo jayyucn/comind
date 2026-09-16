@@ -1,5 +1,5 @@
-import { describe, test, expect, beforeEach, vi } from 'vitest'
-import { setActivePinia, createPinia } from 'pinia'
+import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, expect, test } from 'vitest'
 import { useEditorStore } from './editor'
 
 beforeEach(() => {

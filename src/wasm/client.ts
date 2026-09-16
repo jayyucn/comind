@@ -3,7 +3,7 @@ import { isTauriEnvironment, type TauriBatchCheckAndFireData, type TauriGraphEdg
 export { isTauriEnvironment } from './tauri-platform'
 import { initWasmClient, type WasmClient } from './wasm-client'
 
-function parseJsonResult<T>(result: any): T {
+function parseJsonResult<T>(result: unknown): T {
   if (typeof result === 'string') {
     return JSON.parse(result) as T
   }

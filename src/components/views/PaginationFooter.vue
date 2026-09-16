@@ -36,14 +36,23 @@ function onSizeChange(e: Event) {
 </script>
 
 <template>
-  <div class="pagination-footer" data-testid="pagination-bar">
+  <div
+    class="pagination-footer"
+    data-testid="pagination-bar"
+  >
     <select
       class="page-size-select"
       :value="pageSize"
       data-testid="page-size-select"
       @change="onSizeChange"
     >
-      <option v-for="n in pageSizeOptions ?? PAGE_SIZE_OPTIONS" :key="n" :value="n">{{ n }} 条/页</option>
+      <option
+        v-for="n in pageSizeOptions ?? PAGE_SIZE_OPTIONS"
+        :key="n"
+        :value="n"
+      >
+        {{ n }} 条/页
+      </option>
     </select>
     <span class="pagination-total">共 {{ total }} 条</span>
     <span class="pagination-info">第 {{ page }}/{{ totalPages }} 页</span>
@@ -53,14 +62,18 @@ function onSizeChange(e: Event) {
       :disabled="page <= 1"
       data-testid="page-prev"
       @click="onPrev"
-    >‹ 上一页</button>
+    >
+      ‹ 上一页
+    </button>
     <button
       type="button"
       class="pagination-btn"
       :disabled="page >= totalPages"
       data-testid="page-next"
       @click="onNext"
-    >下一页 ›</button>
+    >
+      下一页 ›
+    </button>
   </div>
 </template>
 

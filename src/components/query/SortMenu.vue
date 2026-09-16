@@ -117,7 +117,10 @@ function deleteAll() {
 </script>
 
 <template>
-  <div class="sort-editor" data-testid="sort-editor">
+  <div
+    class="sort-editor"
+    data-testid="sort-editor"
+  >
     <VueDraggable
       v-model="local"
       class="sort-list"
@@ -126,20 +129,39 @@ function deleteAll() {
       ghost-class="sort-ghost"
       @end="onDragEnd"
     >
-      <div v-for="(rule, idx) in local" :key="keyFor(rule)" class="sort-row" data-testid="sort-row">
-        <span class="drag-handle" aria-hidden="true" title="拖拽排序">
+      <div
+        v-for="(rule, idx) in local"
+        :key="keyFor(rule)"
+        class="sort-row"
+        data-testid="sort-row"
+      >
+        <span
+          class="drag-handle"
+          aria-hidden="true"
+          title="拖拽排序"
+        >
           <GripVertical :size="14" />
         </span>
 
         <div class="select-wrap field-select-wrap">
-          <component :is="fieldIcon(fieldOf(rule.field)?.type ?? 'text')" :size="14" class="select-icon" />
+          <component
+            :is="fieldIcon(fieldOf(rule.field)?.type ?? 'text')"
+            :size="14"
+            class="select-icon"
+          />
           <select
             class="sort-select sort-field"
             data-testid="sort-field"
             :value="rule.field"
             @change="update(idx, { field: ($event.target as HTMLSelectElement).value })"
           >
-            <option v-for="f in fields" :key="f.key" :value="f.key">{{ f.label }}</option>
+            <option
+              v-for="f in fields"
+              :key="f.key"
+              :value="f.key"
+            >
+              {{ f.label }}
+            </option>
           </select>
           <span class="select-caret">▾</span>
         </div>
@@ -151,8 +173,12 @@ function deleteAll() {
             :value="rule.dir"
             @change="update(idx, { dir: ($event.target as HTMLSelectElement).value as 'asc' | 'desc' })"
           >
-            <option value="asc"> {{ dirMeta(rule).asc }}</option>
-            <option value="desc"> {{ dirMeta(rule).desc }}</option>
+            <option value="asc">
+              {{ dirMeta(rule).asc }}
+            </option>
+            <option value="desc">
+              {{ dirMeta(rule).desc }}
+            </option>
           </select>
           <span class="select-caret">▾</span>
         </div>
@@ -170,10 +196,21 @@ function deleteAll() {
     </VueDraggable>
 
     <div class="sort-foot">
-      <button type="button" class="sort-add" data-testid="sort-add" @click="addSort">
+      <button
+        type="button"
+        class="sort-add"
+        data-testid="sort-add"
+        @click="addSort"
+      >
         + Add sort
       </button>
-      <button v-if="local.length" type="button" class="sort-del-all" data-testid="sort-del-all" @click="deleteAll">
+      <button
+        v-if="local.length"
+        type="button"
+        class="sort-del-all"
+        data-testid="sort-del-all"
+        @click="deleteAll"
+      >
         <Trash2 :size="14" />
         Delete sort
       </button>

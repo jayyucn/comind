@@ -21,7 +21,9 @@ const embedHandler: BlockTypeHandler = {
         // 有 source → 导航到源页面
         const sourcePageId = ctx.getProperty('sourcePageId')
         if (sourcePageId) {
-          const sourcePage = ctx.pageStore.pages.find((p: any) => p.id === sourcePageId)
+          const sourcePage = ctx.pageStore.pages.find(
+            (p: { id: string; title: string }) => p.id === sourcePageId
+          )
           if (sourcePage) {
             ctx.navigateToPage(sourcePage.title)
             return true

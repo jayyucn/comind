@@ -33,15 +33,32 @@ watch(
 <template>
   <Teleport to="body">
     <Transition name="fade">
-      <div v-if="visible" class="dialog-overlay" @click.self="emit('cancel')">
+      <div
+        v-if="visible"
+        class="dialog-overlay"
+        @click.self="emit('cancel')"
+      >
         <div class="dialog-card">
-          <div v-if="$slots.icon" class="dialog-icon"><slot name="icon" /></div>
-          <div class="dialog-title">{{ title }}</div>
+          <div
+            v-if="$slots.icon"
+            class="dialog-icon"
+          >
+            <slot name="icon" />
+          </div>
+          <div class="dialog-title">
+            {{ title }}
+          </div>
           <div class="dialog-body">
             <slot>{{ message }}</slot>
           </div>
-          <label v-if="showDontRemindToday" class="dialog-dont-remind">
-            <input type="checkbox" v-model="dontRemindToday" />
+          <label
+            v-if="showDontRemindToday"
+            class="dialog-dont-remind"
+          >
+            <input
+              v-model="dontRemindToday"
+              type="checkbox"
+            >
             <span>今日不再提醒</span>
           </label>
           <div class="dialog-actions">

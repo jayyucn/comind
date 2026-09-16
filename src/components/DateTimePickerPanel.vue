@@ -7,6 +7,7 @@ import { useEditorStore } from '../stores/editor'
 import { useBlockStore } from '../stores/blocks'
 import { getCoreClient } from '../wasm/client'
 import type { DateRefKind, RecurrenceRule } from '../utils/date-ref'
+import type { DateRefRecord } from '../wasm/types'
 
 export interface DateTimePickerConfirm {
   kind: DateRefKind
@@ -105,7 +106,7 @@ watch(localKind, async (newKind, oldKind) => {
         const client = getCoreClient()
         if (!client) return
         const dateRefs = await client.getDateRefsByBlock(state.blockId)
-        if (dateRefs.some((r: any) => r.kind === newKind)) {
+        if (dateRefs.some((r: DateRefRecord) => r.kind === newKind)) {
           const label = newKind === 'deadline' ? '截止时间' : newKind === 'schedule' ? '计划时间' : '日期引用'
           editorStore.showToast(`该任务已有${label}`, 'warning')
           kindGuard = true
@@ -149,114 +150,243 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown, true))
     @close="handleCancel"
   >
     <div class="dtp-panel">
-          <!-- Kind 切换 -->
-          <div class="dtp-section dtp-kind-row">
-            <div class="dtp-kind-wrapper">
-              <span class="dtp-kind-icon">{{ localKind === 'schedule' ? '📅' : localKind === 'deadline' ? '⏰' : '🗓️' }}</span>
-              <select v-model="localKind" class="dtp-select dtp-select--kind">
-                <option value="ref">日期引用</option>
-                <option value="schedule">计划时间</option>
-                <option value="deadline">截止时间</option>
-              </select>
-            </div>
-          </div>
-
-          <!-- 日历（inline CalendarPopover） -->
-          <div class="dtp-section">
-            <CalendarPopover
-              inline
-              :visible="true"
-              :selected-date="localDate"
-              @select="(date: string) => localDate = date"
-            />
-          </div>
-
-          <!-- 时间设置 -->
-          <div class="dtp-section dtp-time-toggle">
-            <label class="dtp-checkbox-label">
-              <input type="checkbox" v-model="enableTime" class="dtp-checkbox" />
-              <span class="dtp-checkbox-text">设置时间</span>
-            </label>
-            <div v-if="enableTime" class="dtp-time-selector">
-              <Clock :size="12" :stroke-width="2" />
-              <select v-model="localTime" class="dtp-select dtp-select--time">
-                <option value="00:00">00:00</option>
-                <option value="01:00">01:00</option>
-                <option value="02:00">02:00</option>
-                <option value="03:00">03:00</option>
-                <option value="04:00">04:00</option>
-                <option value="05:00">05:00</option>
-                <option value="06:00">06:00</option>
-                <option value="07:00">07:00</option>
-                <option value="08:00">08:00</option>
-                <option value="09:00">09:00</option>
-                <option value="10:00">10:00</option>
-                <option value="11:00">11:00</option>
-                <option value="12:00">12:00</option>
-                <option value="13:00">13:00</option>
-                <option value="14:00">14:00</option>
-                <option value="15:00">15:00</option>
-                <option value="16:00">16:00</option>
-                <option value="17:00">17:00</option>
-                <option value="18:00">18:00</option>
-                <option value="19:00">19:00</option>
-                <option value="20:00">20:00</option>
-                <option value="21:00">21:00</option>
-                <option value="22:00">22:00</option>
-                <option value="23:00">23:00</option>
-              </select>
-            </div>
-          </div>
-
-          <!-- 重复（仅 schedule） -->
-          <div v-if="localKind === 'schedule'" class="dtp-section dtp-field-row">
-            <label class="dtp-field-label">
-              <Repeat :size="11" :stroke-width="2" /> 重复
-            </label>
-            <select v-model="localRecurrence" class="dtp-select dtp-select--field">
-              <option value="none">不重复</option>
-              <option value="daily">每天</option>
-              <option value="weekly">每周</option>
-              <option value="monthly">每月</option>
-              <option value="yearly">每年</option>
-            </select>
-          </div>
-
-          <!-- 提前提醒（ref 不需要提醒） -->
-          <div v-if="localKind !== 'ref'" class="dtp-section dtp-field-row">
-            <label class="dtp-field-label">
-              <Clock :size="11" :stroke-width="2" /> 提前提醒
-            </label>
-            <select v-model="localLeadMinutes" class="dtp-select dtp-select--field">
-              <option :value="0">准时提醒</option>
-              <option :value="15">提前 15 分钟</option>
-              <option :value="30">提前 30 分钟</option>
-              <option :value="60">提前 1 小时</option>
-              <option :value="120">提前 2 小时</option>
-              <option :value="720">提前 12 小时</option>
-              <option :value="1440">提前 1 天</option>
-            </select>
-          </div>
-
-          <!-- Footer -->
-          <div class="dtp-footer">
-            <span v-if="previewText" class="dtp-preview">
-              {{ previewText }}<span v-if="recurrenceLabel" class="dtp-preview-rec"> · {{ recurrenceLabel }}</span>
-            </span>
-            <span v-else class="dtp-preview dtp-preview--empty">请选择日期</span>
-
-            <div class="dtp-actions">
-              <button class="dtp-btn dtp-btn--cancel" @click="handleCancel">取消</button>
-              <button
-                class="dtp-btn dtp-btn--confirm"
-                :disabled="!localDate"
-                @click="handleConfirm"
-              >
-                <Check :size="11" :stroke-width="2.5" /> 确定
-              </button>
-            </div>
-          </div>
+      <!-- Kind 切换 -->
+      <div class="dtp-section dtp-kind-row">
+        <div class="dtp-kind-wrapper">
+          <span class="dtp-kind-icon">{{ localKind === 'schedule' ? '📅' : localKind === 'deadline' ? '⏰' : '🗓️' }}</span>
+          <select
+            v-model="localKind"
+            class="dtp-select dtp-select--kind"
+          >
+            <option value="ref">
+              日期引用
+            </option>
+            <option value="schedule">
+              计划时间
+            </option>
+            <option value="deadline">
+              截止时间
+            </option>
+          </select>
         </div>
+      </div>
+
+      <!-- 日历（inline CalendarPopover） -->
+      <div class="dtp-section">
+        <CalendarPopover
+          inline
+          :visible="true"
+          :selected-date="localDate"
+          @select="(date: string) => localDate = date"
+        />
+      </div>
+
+      <!-- 时间设置 -->
+      <div class="dtp-section dtp-time-toggle">
+        <label class="dtp-checkbox-label">
+          <input
+            v-model="enableTime"
+            type="checkbox"
+            class="dtp-checkbox"
+          >
+          <span class="dtp-checkbox-text">设置时间</span>
+        </label>
+        <div
+          v-if="enableTime"
+          class="dtp-time-selector"
+        >
+          <Clock
+            :size="12"
+            :stroke-width="2"
+          />
+          <select
+            v-model="localTime"
+            class="dtp-select dtp-select--time"
+          >
+            <option value="00:00">
+              00:00
+            </option>
+            <option value="01:00">
+              01:00
+            </option>
+            <option value="02:00">
+              02:00
+            </option>
+            <option value="03:00">
+              03:00
+            </option>
+            <option value="04:00">
+              04:00
+            </option>
+            <option value="05:00">
+              05:00
+            </option>
+            <option value="06:00">
+              06:00
+            </option>
+            <option value="07:00">
+              07:00
+            </option>
+            <option value="08:00">
+              08:00
+            </option>
+            <option value="09:00">
+              09:00
+            </option>
+            <option value="10:00">
+              10:00
+            </option>
+            <option value="11:00">
+              11:00
+            </option>
+            <option value="12:00">
+              12:00
+            </option>
+            <option value="13:00">
+              13:00
+            </option>
+            <option value="14:00">
+              14:00
+            </option>
+            <option value="15:00">
+              15:00
+            </option>
+            <option value="16:00">
+              16:00
+            </option>
+            <option value="17:00">
+              17:00
+            </option>
+            <option value="18:00">
+              18:00
+            </option>
+            <option value="19:00">
+              19:00
+            </option>
+            <option value="20:00">
+              20:00
+            </option>
+            <option value="21:00">
+              21:00
+            </option>
+            <option value="22:00">
+              22:00
+            </option>
+            <option value="23:00">
+              23:00
+            </option>
+          </select>
+        </div>
+      </div>
+
+      <!-- 重复（仅 schedule） -->
+      <div
+        v-if="localKind === 'schedule'"
+        class="dtp-section dtp-field-row"
+      >
+        <label class="dtp-field-label">
+          <Repeat
+            :size="11"
+            :stroke-width="2"
+          /> 重复
+        </label>
+        <select
+          v-model="localRecurrence"
+          class="dtp-select dtp-select--field"
+        >
+          <option value="none">
+            不重复
+          </option>
+          <option value="daily">
+            每天
+          </option>
+          <option value="weekly">
+            每周
+          </option>
+          <option value="monthly">
+            每月
+          </option>
+          <option value="yearly">
+            每年
+          </option>
+        </select>
+      </div>
+
+      <!-- 提前提醒（ref 不需要提醒） -->
+      <div
+        v-if="localKind !== 'ref'"
+        class="dtp-section dtp-field-row"
+      >
+        <label class="dtp-field-label">
+          <Clock
+            :size="11"
+            :stroke-width="2"
+          /> 提前提醒
+        </label>
+        <select
+          v-model="localLeadMinutes"
+          class="dtp-select dtp-select--field"
+        >
+          <option :value="0">
+            准时提醒
+          </option>
+          <option :value="15">
+            提前 15 分钟
+          </option>
+          <option :value="30">
+            提前 30 分钟
+          </option>
+          <option :value="60">
+            提前 1 小时
+          </option>
+          <option :value="120">
+            提前 2 小时
+          </option>
+          <option :value="720">
+            提前 12 小时
+          </option>
+          <option :value="1440">
+            提前 1 天
+          </option>
+        </select>
+      </div>
+
+      <!-- Footer -->
+      <div class="dtp-footer">
+        <span
+          v-if="previewText"
+          class="dtp-preview"
+        >
+          {{ previewText }}<span
+            v-if="recurrenceLabel"
+            class="dtp-preview-rec"
+          > · {{ recurrenceLabel }}</span>
+        </span>
+        <span
+          v-else
+          class="dtp-preview dtp-preview--empty"
+        >请选择日期</span>
+
+        <div class="dtp-actions">
+          <button
+            class="dtp-btn dtp-btn--cancel"
+            @click="handleCancel"
+          >
+            取消
+          </button>
+          <button
+            class="dtp-btn dtp-btn--confirm"
+            :disabled="!localDate"
+            @click="handleConfirm"
+          >
+            <Check
+              :size="11"
+              :stroke-width="2.5"
+            /> 确定
+          </button>
+        </div>
+      </div>
+    </div>
   </BasePopover>
 </template>
 

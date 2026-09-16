@@ -13,7 +13,7 @@
  */
 import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 
-const props = defineProps<{
+defineProps<{
   src: string
   alt?: string
 }>()
@@ -121,8 +121,8 @@ onBeforeUnmount(() => {
 <template>
   <Teleport to="body">
     <div
-      class="image-lightbox"
       ref="stage"
+      class="image-lightbox"
       @click="onStageClick"
       @wheel="onWheel"
     >
@@ -132,18 +132,49 @@ onBeforeUnmount(() => {
         :src="src"
         :alt="alt ?? ''"
         :style="{ transform }"
+        draggable="false"
         @load="computeFit"
         @mousedown.stop.prevent="onImgMouseDown"
         @dblclick.stop="onImgDoubleClick"
-        draggable="false"
-      />
+      >
 
-      <div class="image-lightbox-bar" @click.stop>
-        <button type="button" class="lb-btn" title="缩小" @click="zoomBy(1 / 1.2)">−</button>
-        <button type="button" class="lb-btn" title="原始尺寸" @click="resetView">1:1</button>
-        <button type="button" class="lb-btn" title="放大" @click="zoomBy(1.2)">+</button>
+      <div
+        class="image-lightbox-bar"
+        @click.stop
+      >
+        <button
+          type="button"
+          class="lb-btn"
+          title="缩小"
+          @click="zoomBy(1 / 1.2)"
+        >
+          −
+        </button>
+        <button
+          type="button"
+          class="lb-btn"
+          title="原始尺寸"
+          @click="resetView"
+        >
+          1:1
+        </button>
+        <button
+          type="button"
+          class="lb-btn"
+          title="放大"
+          @click="zoomBy(1.2)"
+        >
+          +
+        </button>
         <span class="lb-zoom">{{ Math.round(scale * 100) }}%</span>
-        <button type="button" class="lb-btn lb-close" title="关闭 (Esc)" @click="emit('close')">✕</button>
+        <button
+          type="button"
+          class="lb-btn lb-close"
+          title="关闭 (Esc)"
+          @click="emit('close')"
+        >
+          ✕
+        </button>
       </div>
     </div>
   </Teleport>

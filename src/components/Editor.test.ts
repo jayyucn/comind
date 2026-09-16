@@ -44,7 +44,7 @@ describe('Editor WikiLink Selection Logic', () => {
         }
       }
 
-      let cursorPos = 13
+      const cursorPos = 13
       let from = cursorPos - 1
       while (from >= 0) {
         if (from >= 1 && doc.textBetween(from - 1, from + 1) === '[[') {
@@ -59,7 +59,7 @@ describe('Editor WikiLink Selection Logic', () => {
     })
 
     test('should handle edge case when [[ is at document start', () => {
-      let cursorPos = 2
+      const cursorPos = 2
       let from = cursorPos - 1
       while (from >= 0) {
         if (from >= 1 && '[['.includes('X')) {
@@ -85,7 +85,7 @@ describe('Editor WikiLink Selection Logic', () => {
         }
       }
 
-      let cursorPos = 10
+      const cursorPos = 10
       let to = cursorPos
       while (to < doc.content.size - 1) {
         if (doc.textBetween(to, to + 2) === ']]') {

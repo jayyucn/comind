@@ -57,7 +57,11 @@ function pickField(field: FieldDescriptor) {
     <template v-if="!selectedSource">
       <div class="pf-search">
         <Search :size="13" />
-        <input v-model="query" type="text" placeholder="搜索记录标题…" />
+        <input
+          v-model="query"
+          type="text"
+          placeholder="搜索记录标题…"
+        >
       </div>
       <div class="pf-source-list">
         <button
@@ -69,13 +73,23 @@ function pickField(field: FieldDescriptor) {
         >
           {{ s.title || '(无标题)' }}
         </button>
-        <p v-if="filteredSources.length === 0" class="pf-empty">无匹配记录</p>
+        <p
+          v-if="filteredSources.length === 0"
+          class="pf-empty"
+        >
+          无匹配记录
+        </p>
       </div>
     </template>
 
     <template v-else>
       <div class="pf-source-head">
-        <button type="button" class="qb-icon" title="返回" @click="back">
+        <button
+          type="button"
+          class="qb-icon"
+          title="返回"
+          @click="back"
+        >
           <ArrowLeft :size="14" />
         </button>
         <span class="pf-source-title">{{ selectedSource.title || '(无标题)' }}</span>
@@ -90,11 +104,22 @@ function pickField(field: FieldDescriptor) {
         >
           {{ f.label }}
         </button>
-        <p v-if="availableFields.length === 0" class="pf-empty">无同类型字段可引用</p>
+        <p
+          v-if="availableFields.length === 0"
+          class="pf-empty"
+        >
+          无同类型字段可引用
+        </p>
       </div>
     </template>
 
-    <button type="button" class="pf-cancel" @click="emit('cancel')">取消</button>
+    <button
+      type="button"
+      class="pf-cancel"
+      @click="emit('cancel')"
+    >
+      取消
+    </button>
   </div>
 </template>
 

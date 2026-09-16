@@ -531,164 +531,205 @@ function groupTotal(key: string): number {
 </script>
 
 <template>
-  <div class="table-view" ref="rootEl">
+  <div
+    ref="rootEl"
+    class="table-view"
+  >
     <div class="table-scroll">
-      <div v-if="items.length === 0" class="empty-state">
+      <div
+        v-if="items.length === 0"
+        class="empty-state"
+      >
         <p>没有数据</p>
         <span class="empty-hint">尝试修改筛选条件</span>
       </div>
 
       <template v-else>
-        <div v-for="section in pageSections" :key="section.key" class="table-section">
-        <div v-if="grouped" class="group-header">
-          <span class="group-label">{{ section.label || '全部' }}</span>
-          <span class="group-count">{{ groupTotal(section.key) }}</span>
-        </div>
-        <table class="data-table" :style="tableStyle">
-          <thead>
-            <tr>
-              <th
-                v-for="(col, i) in columns"
-                :key="col.key"
-                :class="`col-${col.key}`"
-                :style="{ width: columnWidth(col), textAlign: col.align }"
-              >
-                <div class="th-inner">
-                  <component :is="headerIconOf(col)" v-if="headerIconOf(col)" class="col-header-icon" :size="12" />
-                  <button
-                    type="button"
-                    class="th-label"
-                    :class="{ open: headerMenu?.col.key === col.key }"
-                    :title="`${fieldOf(col.key)?.label ?? col.key}：菜单`"
-                    @click.stop="openHeaderMenu(col, $event)"
-                  >{{ fieldOf(col.key)?.label ?? col.key }}<template v-if="getSortDir(col.key)">{{ renderSortIcon(col.key) }}</template></button>
-                  <span
-                    v-if="col.role !== 'link' && i < columns.length - 1"
-                    class="col-resizer"
-                    data-testid="col-resizer"
-                    @pointerdown.stop="onResizeStart(col, $event)"
-                  />
-                </div>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="item in section.items"
-              :key="idOf(item)"
-              class="data-row"
-              :class="{ 'is-done': isDoneRow(item) }"
-            >
-              <td
-                v-for="col in columns"
-                :key="col.key"
-                :class="[`col-${col.key}`, { 'cell-link': col.role === 'link' }, `align-${col.align ?? 'left'}`]"
-                :style="{ width: columnWidth(col), textAlign: col.align }"
-                @click="onCellMaybeOpenSelect(item, col, $event)"
-              >
-                <!-- 自定义单元格：命中注册表才委派，否则回退内置链（含 role 兜底） -->
-                <template v-if="hasCell(col)">
-                  <component
-                    :is="resolveCell(col)"
-                    :item="item"
-                    :value="valueOf(item, col)"
-                    :field="fieldOf(col.key)"
-                    :col="col"
-                    :editable="isFieldEditable(col)"
-                    @change="(v: unknown) => onCustomChange(col, item, v)"
-                  />
-                </template>
-
-                <!-- status 角色：任务状态图标（StatusTodo/Doing/Done/Canceled/Archived），整格点击循环切换 -->
-                <template v-else-if="col.role === 'status'">
-                  <button
-                    type="button"
-                    class="status-icon-btn"
-                    :class="{ readonly: !isFieldEditable(col) }"
-                    :title="optionLabel(resolveOptions(fieldOf(col.key)), valueOf(item, col)) || '待办'"
-                  >
-                    <Icon :name="statusIconName(valueOf(item, col))" :size="18" />
-                  </button>
-                </template>
-
-                <!-- boolean：可编辑勾选；editable=false 时只读勾选态 -->
-                <template v-else-if="fieldOf(col.key)?.type === 'boolean'">
-                  <input
-                    v-if="isFieldEditable(col)"
-                    type="checkbox"
-                    class="bool-check"
-                    :checked="Boolean(valueOf(item, col))"
-                    @click.stop
-                    @change="onBoolChange(item, col, $event)"
-                  />
-                  <span v-else class="cell-bool-readonly">{{ Boolean(valueOf(item, col)) ? '✓' : '' }}</span>
-                </template>
-
-                <!-- select：整个 cell 为点击区域（去边框、无 padding）；ChevronDown 常驻渲染，
-                  仅 hover / 菜单打开（.open）时显示（CSS 控制），靠右对齐；.empty 仅作空态标记 -->
-                <template v-else-if="fieldOf(col.key)?.type === 'select'">
-                  <span
-                    class="cell-select"
-                    :class="{
-                      readonly: !isFieldEditable(col),
-                      open: isSelectMenuOpen(item, col),
-                      empty: isSelectEmpty(item, col),
-                    }"
-                    :title="optionLabel(resolveOptions(fieldOf(col.key)), valueOf(item, col))"
-                  >
-                    <span
-                      v-if="selectedColor(resolveOptions(fieldOf(col.key)), valueOf(item, col))"
-                      class="color-dot"
-                      :style="{ background: selectedColor(resolveOptions(fieldOf(col.key)), valueOf(item, col)) }"
+        <div
+          v-for="section in pageSections"
+          :key="section.key"
+          class="table-section"
+        >
+          <div
+            v-if="grouped"
+            class="group-header"
+          >
+            <span class="group-label">{{ section.label || '全部' }}</span>
+            <span class="group-count">{{ groupTotal(section.key) }}</span>
+          </div>
+          <table
+            class="data-table"
+            :style="tableStyle"
+          >
+            <thead>
+              <tr>
+                <th
+                  v-for="(col, i) in columns"
+                  :key="col.key"
+                  :class="`col-${col.key}`"
+                  :style="{ width: columnWidth(col), textAlign: col.align }"
+                >
+                  <div class="th-inner">
+                    <component
+                      :is="headerIconOf(col)"
+                      v-if="headerIconOf(col)"
+                      class="col-header-icon"
+                      :size="12"
                     />
+                    <button
+                      type="button"
+                      class="th-label"
+                      :class="{ open: headerMenu?.col.key === col.key }"
+                      :title="`${fieldOf(col.key)?.label ?? col.key}：菜单`"
+                      @click.stop="openHeaderMenu(col, $event)"
+                    >
+                      {{ fieldOf(col.key)?.label ?? col.key }}<template v-if="getSortDir(col.key)">
+                        {{ renderSortIcon(col.key) }}
+                      </template>
+                    </button>
                     <span
-                      v-if="!isSelectEmpty(item, col)"
-                      class="cell-select-label"
-                    >{{ optionLabel(resolveOptions(fieldOf(col.key)), valueOf(item, col)) }}</span>
-                    <ChevronDown :size="14" class="cell-select-chevron" />
-                  </span>
-                </template>
+                      v-if="col.role !== 'link' && i < columns.length - 1"
+                      class="col-resizer"
+                      data-testid="col-resizer"
+                      @pointerdown.stop="onResizeStart(col, $event)"
+                    />
+                  </div>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="item in section.items"
+                :key="idOf(item)"
+                class="data-row"
+                :class="{ 'is-done': isDoneRow(item) }"
+              >
+                <td
+                  v-for="col in columns"
+                  :key="col.key"
+                  :class="[`col-${col.key}`, { 'cell-link': col.role === 'link' }, `align-${col.align ?? 'left'}`]"
+                  :style="{ width: columnWidth(col), textAlign: col.align }"
+                  @click="onCellMaybeOpenSelect(item, col, $event)"
+                >
+                  <!-- 自定义单元格：命中注册表才委派，否则回退内置链（含 role 兜底） -->
+                  <template v-if="hasCell(col)">
+                    <component
+                      :is="resolveCell(col)"
+                      :item="item"
+                      :value="valueOf(item, col)"
+                      :field="fieldOf(col.key)"
+                      :col="col"
+                      :editable="isFieldEditable(col)"
+                      @change="(v: unknown) => onCustomChange(col, item, v)"
+                    />
+                  </template>
 
-                <!-- multiSelect：彩色徽章（只读） -->
-                <template v-else-if="fieldOf(col.key)?.type === 'multiSelect'">
-                  <span
-                    v-for="v in (Array.isArray(valueOf(item, col)) ? valueOf(item, col) as unknown[] : [])"
-                    :key="String(v)"
-                    class="cell-badge"
-                    :style="selectedColor(resolveOptions(fieldOf(col.key)), v) ? { color: selectedColor(resolveOptions(fieldOf(col.key)), v), borderColor: selectedColor(resolveOptions(fieldOf(col.key)), v) } : {}"
-                  >{{ optionLabel(resolveOptions(fieldOf(col.key)), v) }}</span>
-                </template>
+                  <!-- status 角色：任务状态图标（StatusTodo/Doing/Done/Canceled/Archived），整格点击循环切换 -->
+                  <template v-else-if="col.role === 'status'">
+                    <button
+                      type="button"
+                      class="status-icon-btn"
+                      :class="{ readonly: !isFieldEditable(col) }"
+                      :title="optionLabel(resolveOptions(fieldOf(col.key)), valueOf(item, col)) || '待办'"
+                    >
+                      <Icon
+                        :name="statusIconName(valueOf(item, col))"
+                        :size="18"
+                      />
+                    </button>
+                  </template>
 
-                <!-- date / datetime：按 role overdue-date 过去标红 -->
-                <template v-else-if="fieldOf(col.key)?.type === 'date' || fieldOf(col.key)?.type === 'datetime'">
-                  <span
-                    v-if="formatDate(valueOf(item, col))"
-                    class="cell-deadline"
-                    :class="{ overdue: col.role === 'overdue-date' && isOverdue(valueOf(item, col)) }"
-                  >{{ formatDate(valueOf(item, col)) }}</span>
-                </template>
+                  <!-- boolean：可编辑勾选；editable=false 时只读勾选态 -->
+                  <template v-else-if="fieldOf(col.key)?.type === 'boolean'">
+                    <input
+                      v-if="isFieldEditable(col)"
+                      type="checkbox"
+                      class="bool-check"
+                      :checked="Boolean(valueOf(item, col))"
+                      @click.stop
+                      @change="onBoolChange(item, col, $event)"
+                    >
+                    <span
+                      v-else
+                      class="cell-bool-readonly"
+                    >{{ Boolean(valueOf(item, col)) ? '✓' : '' }}</span>
+                  </template>
 
-                <!-- primary 文本（link 角色渲染为导航按钮） -->
-                <template v-else-if="col.role === 'link'">
-                  <button class="link-btn" :title="String(valueOf(item, col) ?? '')" type="button">
-                    <MapPin :size="12" />
-                  </button>
-                </template>
-                <template v-else-if="col.role === 'primary'">
-                  <span class="cell-primary" :title="String(valueOf(item, col) ?? '')">{{ valueOf(item, col) }}</span>
-                </template>
+                  <!-- select：整个 cell 为点击区域（去边框、无 padding）；ChevronDown 常驻渲染，
+                  仅 hover / 菜单打开（.open）时显示（CSS 控制），靠右对齐；.empty 仅作空态标记 -->
+                  <template v-else-if="fieldOf(col.key)?.type === 'select'">
+                    <span
+                      class="cell-select"
+                      :class="{
+                        readonly: !isFieldEditable(col),
+                        open: isSelectMenuOpen(item, col),
+                        empty: isSelectEmpty(item, col),
+                      }"
+                      :title="optionLabel(resolveOptions(fieldOf(col.key)), valueOf(item, col))"
+                    >
+                      <span
+                        v-if="selectedColor(resolveOptions(fieldOf(col.key)), valueOf(item, col))"
+                        class="color-dot"
+                        :style="{ background: selectedColor(resolveOptions(fieldOf(col.key)), valueOf(item, col)) }"
+                      />
+                      <span
+                        v-if="!isSelectEmpty(item, col)"
+                        class="cell-select-label"
+                      >{{ optionLabel(resolveOptions(fieldOf(col.key)), valueOf(item, col)) }}</span>
+                      <ChevronDown
+                        :size="14"
+                        class="cell-select-chevron"
+                      />
+                    </span>
+                  </template>
 
-                <!-- 默认：文本/数字 -->
-                <template v-else>
-                  <span class="cell-text">{{ valueOf(item, col) }}</span>
-                </template>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+                  <!-- multiSelect：彩色徽章（只读） -->
+                  <template v-else-if="fieldOf(col.key)?.type === 'multiSelect'">
+                    <span
+                      v-for="v in (Array.isArray(valueOf(item, col)) ? valueOf(item, col) as unknown[] : [])"
+                      :key="String(v)"
+                      class="cell-badge"
+                      :style="selectedColor(resolveOptions(fieldOf(col.key)), v) ? { color: selectedColor(resolveOptions(fieldOf(col.key)), v), borderColor: selectedColor(resolveOptions(fieldOf(col.key)), v) } : {}"
+                    >{{ optionLabel(resolveOptions(fieldOf(col.key)), v) }}</span>
+                  </template>
 
-      <!-- select 单元格选项菜单 -->
+                  <!-- date / datetime：按 role overdue-date 过去标红 -->
+                  <template v-else-if="fieldOf(col.key)?.type === 'date' || fieldOf(col.key)?.type === 'datetime'">
+                    <span
+                      v-if="formatDate(valueOf(item, col))"
+                      class="cell-deadline"
+                      :class="{ overdue: col.role === 'overdue-date' && isOverdue(valueOf(item, col)) }"
+                    >{{ formatDate(valueOf(item, col)) }}</span>
+                  </template>
+
+                  <!-- primary 文本（link 角色渲染为导航按钮） -->
+                  <template v-else-if="col.role === 'link'">
+                    <button
+                      class="link-btn"
+                      :title="String(valueOf(item, col) ?? '')"
+                      type="button"
+                    >
+                      <MapPin :size="12" />
+                    </button>
+                  </template>
+                  <template v-else-if="col.role === 'primary'">
+                    <span
+                      class="cell-primary"
+                      :title="String(valueOf(item, col) ?? '')"
+                    >{{ valueOf(item, col) }}</span>
+                  </template>
+
+                  <!-- 默认：文本/数字 -->
+                  <template v-else>
+                    <span class="cell-text">{{ valueOf(item, col) }}</span>
+                  </template>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- select 单元格选项菜单 -->
         <BasePopover
           :visible="selectMenu !== null"
           :position="selectMenuPos"
@@ -696,7 +737,10 @@ function groupTotal(key: string): number {
           placement="bottom"
           @close="selectMenu = null"
         >
-          <ul class="select-menu" data-testid="select-menu">
+          <ul
+            class="select-menu"
+            data-testid="select-menu"
+          >
             <li
               v-for="opt in selectMenu?.options ?? []"
               :key="opt.id"
@@ -704,7 +748,11 @@ function groupTotal(key: string): number {
               :class="{ selected: opt.id === selectMenu?.value }"
               @click="pickSelectOption(opt.id)"
             >
-              <span v-if="opt.color" class="color-dot" :style="{ background: opt.color }" />
+              <span
+                v-if="opt.color"
+                class="color-dot"
+                :style="{ background: opt.color }"
+              />
               <span class="select-option-label">{{ opt.label }}</span>
             </li>
           </ul>
@@ -718,8 +766,13 @@ function groupTotal(key: string): number {
           placement="bottom"
           @close="headerMenu = null"
         >
-          <div class="col-menu" data-testid="col-menu">
-            <div class="col-menu-label">对齐方式</div>
+          <div
+            class="col-menu"
+            data-testid="col-menu"
+          >
+            <div class="col-menu-label">
+              对齐方式
+            </div>
             <div class="col-menu-align">
               <button
                 v-for="a in ['left', 'center', 'right'] as const"
@@ -728,10 +781,24 @@ function groupTotal(key: string): number {
                 class="col-menu-align-btn"
                 :class="{ active: headerMenu && alignOf(headerMenu.col) === a }"
                 @click="setColumnAlign(a)"
-              >{{ a === 'left' ? '左' : a === 'center' ? '中' : '右' }}</button>
+              >
+                {{ a === 'left' ? '左' : a === 'center' ? '中' : '右' }}
+              </button>
             </div>
-            <button type="button" class="col-menu-item" @click="hideColumn">隐藏此字段</button>
-            <button type="button" class="col-menu-item" @click="resetColumnWidth">重置列宽</button>
+            <button
+              type="button"
+              class="col-menu-item"
+              @click="hideColumn"
+            >
+              隐藏此字段
+            </button>
+            <button
+              type="button"
+              class="col-menu-item"
+              @click="resetColumnWidth"
+            >
+              重置列宽
+            </button>
           </div>
         </BasePopover>
       </template>

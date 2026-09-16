@@ -15,9 +15,17 @@ defineProps<{
 
 <template>
   <div class="page-title-container">
-    <h1 class="page-title">{{ title }}</h1>
-    <span v-if="subtitle" class="page-title-subtitle">{{ subtitle }}</span>
-    <div v-if="$slots.actions" class="page-title-actions">
+    <h1 class="page-title">
+      {{ title }}
+    </h1>
+    <span
+      v-if="subtitle"
+      class="page-title-subtitle"
+    >{{ subtitle }}</span>
+    <div
+      v-if="$slots.actions"
+      class="page-title-actions"
+    >
       <slot name="actions" />
     </div>
   </div>

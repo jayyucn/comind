@@ -31,13 +31,14 @@ import {
   X
 } from 'lucide-vue-next'
 import { computed } from 'vue'
+import type { Component } from 'vue'
 import StatusArchived from './StatusIcons/StatusArchived.vue'
 import StatusCanceled from './StatusIcons/StatusCanceled.vue'
 import StatusDoing from './StatusIcons/StatusDoing.vue'
 import StatusDone from './StatusIcons/StatusDone.vue'
 import StatusTodo from './StatusIcons/StatusTodo.vue'
 
-const STATUS_ICONS: Record<string, any> = {
+const STATUS_ICONS: Record<string, Component> = {
   'status-todo': StatusTodo,
   'status-doing': StatusDoing,
   'status-done': StatusDone,
@@ -58,7 +59,7 @@ const STATUS_DEFAULT_COLORS: Record<string, string> = {
   'status-archived': 'var(--text-secondary)',
 }
 
-const PRIORITY_ICONS: Record<string, any> = {
+const PRIORITY_ICONS: Record<string, Component> = {
   'priority-low': ArrowDown,
   'priority-medium': Minus,
   'priority-high': ArrowUp,
@@ -77,7 +78,7 @@ const PRIORITY_DEFAULT_COLORS: Record<string, string> = {
   'priority-urgent': 'var(--priority-urgent-fg)',
 }
 
-const GENERAL_ICONS: Record<string, any> = {
+const GENERAL_ICONS: Record<string, Component> = {
   'icon-calendar': Calendar,
   'icon-tag': Tag,
   'icon-folder': Folder,

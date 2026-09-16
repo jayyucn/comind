@@ -1,6 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { setActivePinia, createPinia } from 'pinia'
-import { useNotificationStore } from './notification'
+import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_NOTIFICATION_SETTINGS, SNOOZE_PRESETS } from '../types/notification'
 import type { Notification } from '../wasm/types'
 
@@ -397,13 +396,11 @@ describe('加载与保存', () => {
     const store = useStore()
 
     // 使用包装来捕获过程中的 isLoading 状态
-    let loadingDuringCall: boolean | undefined
-    const origGetter = Object.getOwnPropertyDescriptor(store, 'isLoading')
     // 由于 isLoading 是 ref，直接检查前后状态
     expect(store.isLoading).toBe(false)
     const loadPromise = store.loadNotifications()
     // 微任务队列内 isLoading 应为 true
-    loadingDuringCall = store.isLoading
+    const loadingDuringCall = store.isLoading
     await loadPromise
 
     // 最终状态

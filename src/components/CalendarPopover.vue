@@ -150,24 +150,52 @@ watch(
 
 <template>
   <!-- inline 模式：直接渲染日历网格 -->
-  <div v-if="inline" class="cal-popover cal-popover--inline">
+  <div
+    v-if="inline"
+    class="cal-popover cal-popover--inline"
+  >
     <div class="cal-header">
-      <select v-model="calendarYear" class="cal-year-select">
-        <option v-for="y in yearOptions" :key="y" :value="y">{{ y }}年</option>
+      <select
+        v-model="calendarYear"
+        class="cal-year-select"
+      >
+        <option
+          v-for="y in yearOptions"
+          :key="y"
+          :value="y"
+        >
+          {{ y }}年
+        </option>
       </select>
       <span class="cal-month-label">{{ monthNames[calendarMonth] }}</span>
       <div class="cal-nav-group">
-        <button class="cal-nav" @click="prevMonth">
-          <ChevronLeft :size="14" :stroke-width="2" />
+        <button
+          class="cal-nav"
+          @click="prevMonth"
+        >
+          <ChevronLeft
+            :size="14"
+            :stroke-width="2"
+          />
         </button>
-        <button class="cal-nav" @click="nextMonth">
-          <ChevronRight :size="14" :stroke-width="2" />
+        <button
+          class="cal-nav"
+          @click="nextMonth"
+        >
+          <ChevronRight
+            :size="14"
+            :stroke-width="2"
+          />
         </button>
       </div>
     </div>
 
     <div class="cal-weekdays">
-      <span v-for="day in weekDays" :key="day" class="cal-weekday">{{ day }}</span>
+      <span
+        v-for="day in weekDays"
+        :key="day"
+        class="cal-weekday"
+      >{{ day }}</span>
     </div>
 
     <div class="cal-grid">
@@ -198,42 +226,67 @@ watch(
     @close="handleOverlayClick"
   >
     <div class="cal-popover">
-          <div class="cal-header">
-            <select v-model="calendarYear" class="cal-year-select">
-              <option v-for="y in yearOptions" :key="y" :value="y">{{ y }}年</option>
-            </select>
-            <span class="cal-month-label">{{ monthNames[calendarMonth] }}</span>
-            <div class="cal-nav-group">
-              <button class="cal-nav" @click="prevMonth">
-                <ChevronLeft :size="14" :stroke-width="2" />
-              </button>
-              <button class="cal-nav" @click="nextMonth">
-                <ChevronRight :size="14" :stroke-width="2" />
-              </button>
-            </div>
-          </div>
+      <div class="cal-header">
+        <select
+          v-model="calendarYear"
+          class="cal-year-select"
+        >
+          <option
+            v-for="y in yearOptions"
+            :key="y"
+            :value="y"
+          >
+            {{ y }}年
+          </option>
+        </select>
+        <span class="cal-month-label">{{ monthNames[calendarMonth] }}</span>
+        <div class="cal-nav-group">
+          <button
+            class="cal-nav"
+            @click="prevMonth"
+          >
+            <ChevronLeft
+              :size="14"
+              :stroke-width="2"
+            />
+          </button>
+          <button
+            class="cal-nav"
+            @click="nextMonth"
+          >
+            <ChevronRight
+              :size="14"
+              :stroke-width="2"
+            />
+          </button>
+        </div>
+      </div>
 
-          <div class="cal-weekdays">
-            <span v-for="day in weekDays" :key="day" class="cal-weekday">{{ day }}</span>
-          </div>
+      <div class="cal-weekdays">
+        <span
+          v-for="day in weekDays"
+          :key="day"
+          class="cal-weekday"
+        >{{ day }}</span>
+      </div>
 
-          <div class="cal-grid">
-            <button
-              v-for="(day, index) in calendarDays"
-              :key="index"
-              class="cal-day"
-              :class="{
-                'cal-day--other': !day.currentMonth,
-                'cal-day--today': day.today,
-                'cal-day--selected': day.selected || day.isRangeStart || day.isRangeEnd,
-                'cal-day--in-range': day.inRange,
-                'cal-day--range-start': day.isRangeStart,
-                'cal-day--range-end': day.isRangeEnd,
-              }"
-              @click="selectDay(day)"
-            >
-              {{ day.date }}
-            </button>
+      <div class="cal-grid">
+        <button
+          v-for="(day, index) in calendarDays"
+          :key="index"
+          class="cal-day"
+          :class="{
+            'cal-day--other': !day.currentMonth,
+            'cal-day--today': day.today,
+            'cal-day--selected': day.selected || day.isRangeStart || day.isRangeEnd,
+            'cal-day--in-range': day.inRange,
+            'cal-day--range-start': day.isRangeStart,
+            'cal-day--range-end': day.isRangeEnd,
+          }"
+          @click="selectDay(day)"
+        >
+          {{ day.date }}
+        </button>
       </div>
     </div>
   </BasePopover>

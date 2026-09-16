@@ -126,7 +126,7 @@ const imgStyle = computed(() => {
 const showToolbar = computed(() => hovered.value)
 
 // ── 图片描述（底部居中，存于 block.format.description）──
-const description = computed(() => blockStore.getBlock(props.blockId)?.format?.description ?? '')
+const description = computed(() => (blockStore.getBlock(props.blockId)?.format?.description as string | undefined) ?? '')
 const editingDesc = ref(false)
 const descDraft = ref('')
 const descInput = ref<HTMLInputElement | null>(null)
@@ -404,29 +404,109 @@ defineExpose({
     @mouseenter="onEnter"
     @mouseleave="onLeave"
   >
-    <div class="image-flash" v-if="flashMsg">{{ flashMsg }}</div>
+    <div
+      v-if="flashMsg"
+      class="image-flash"
+    >
+      {{ flashMsg }}
+    </div>
 
-    <div class="image-frame" :class="{ selected: isSelected }" @click.stop="onImageClick">
+    <div
+      class="image-frame"
+      :class="{ selected: isSelected }"
+      @click.stop="onImageClick"
+    >
       <!-- hover / 选中 工具栏：置于 frame 内，使其水平位置始终跟随图片（左/中/右对齐均居中于图片） -->
-      <div v-if="cropOpen" class="image-toolbar crop-toolbar" @click.stop>
-        <button class="tb-btn" title="取消" @click.stop="cancelCrop"><X :size="14" /></button>
-        <button class="tb-btn confirm" title="确认裁剪" @click.stop="confirmCrop"><Check :size="14" /></button>
+      <div
+        v-if="cropOpen"
+        class="image-toolbar crop-toolbar"
+        @click.stop
+      >
+        <button
+          class="tb-btn"
+          title="取消"
+          @click.stop="cancelCrop"
+        >
+          <X :size="14" />
+        </button>
+        <button
+          class="tb-btn confirm"
+          title="确认裁剪"
+          @click.stop="confirmCrop"
+        >
+          <Check :size="14" />
+        </button>
       </div>
-      <div v-else-if="showToolbar && imgSrc" class="image-toolbar" @click.stop>
-        <button class="tb-btn" title="放大查看" @click.stop="openLightbox"><Fullscreen :size="14" /></button>
-        <button class="tb-btn" title="复制图片" @click.stop="copyImage"><Copy :size="14" /></button>
-        <button class="tb-btn" :title="description ? '编辑描述' : '添加描述'" @click.stop="startEditDesc"><SquarePen :size="14" /></button>
-        <button class="tb-btn" title="裁剪" @click.stop="cropImage"><Crop :size="14" /></button>
-        <button class="tb-btn" title="替换图片" @click.stop="replaceImage"><Images :size="14" /></button>
-        <button class="tb-btn danger" title="删除图片" @click.stop="deleteImage"><Trash :size="14" /></button>
-        <span class="tb-sep"></span>
-        <button class="tb-btn align" :class="{ active: align === 'left' }" title="左对齐" @click.stop="setAlign('left')">
+      <div
+        v-else-if="showToolbar && imgSrc"
+        class="image-toolbar"
+        @click.stop
+      >
+        <button
+          class="tb-btn"
+          title="放大查看"
+          @click.stop="openLightbox"
+        >
+          <Fullscreen :size="14" />
+        </button>
+        <button
+          class="tb-btn"
+          title="复制图片"
+          @click.stop="copyImage"
+        >
+          <Copy :size="14" />
+        </button>
+        <button
+          class="tb-btn"
+          :title="description ? '编辑描述' : '添加描述'"
+          @click.stop="startEditDesc"
+        >
+          <SquarePen :size="14" />
+        </button>
+        <button
+          class="tb-btn"
+          title="裁剪"
+          @click.stop="cropImage"
+        >
+          <Crop :size="14" />
+        </button>
+        <button
+          class="tb-btn"
+          title="替换图片"
+          @click.stop="replaceImage"
+        >
+          <Images :size="14" />
+        </button>
+        <button
+          class="tb-btn danger"
+          title="删除图片"
+          @click.stop="deleteImage"
+        >
+          <Trash :size="14" />
+        </button>
+        <span class="tb-sep" />
+        <button
+          class="tb-btn align"
+          :class="{ active: align === 'left' }"
+          title="左对齐"
+          @click.stop="setAlign('left')"
+        >
           <AlignLeft :size="14" />
         </button>
-        <button class="tb-btn align" :class="{ active: align === 'center' }" title="居中对齐" @click.stop="setAlign('center')">
+        <button
+          class="tb-btn align"
+          :class="{ active: align === 'center' }"
+          title="居中对齐"
+          @click.stop="setAlign('center')"
+        >
           <AlignCenter :size="14" />
         </button>
-        <button class="tb-btn align" :class="{ active: align === 'right' }" title="右对齐" @click.stop="setAlign('right')">
+        <button
+          class="tb-btn align"
+          :class="{ active: align === 'right' }"
+          title="右对齐"
+          @click.stop="setAlign('right')"
+        >
           <AlignRight :size="14" />
         </button>
       </div>
@@ -439,14 +519,29 @@ defineExpose({
         :alt="parsed?.alt ?? ''"
         :style="imgStyle"
         draggable="false"
-      />
-      <div v-else class="image-empty">
-        <div class="image-empty-text">{{ parsed ? '图片加载失败' : '图片已清空' }}</div>
-        <button class="image-empty-btn" @click.stop="replaceImage">替换图片</button>
+      >
+      <div
+        v-else
+        class="image-empty"
+      >
+        <div class="image-empty-text">
+          {{ parsed ? '图片加载失败' : '图片已清空' }}
+        </div>
+        <button
+          class="image-empty-btn"
+          @click.stop="replaceImage"
+        >
+          替换图片
+        </button>
       </div>
 
       <!-- 图片描述：底部居中，点击可编辑 -->
-      <div v-if="editingDesc" class="image-desc-edit" @click.stop @mousedown.stop>
+      <div
+        v-if="editingDesc"
+        class="image-desc-edit"
+        @click.stop
+        @mousedown.stop
+      >
         <input
           ref="descInput"
           v-model="descDraft"
@@ -456,38 +551,94 @@ defineExpose({
           @keydown.enter.exact.prevent="saveDesc"
           @keydown.esc.prevent="cancelDesc"
           @blur="saveDesc"
-        />
+        >
       </div>
       <div
         v-else-if="description && !cropOpen"
         class="image-desc editable"
         @click.stop="startEditDesc"
-      >{{ description }}</div>
+      >
+        {{ description }}
+      </div>
 
       <!-- 行内裁剪框：直接覆盖在图片上（裁剪态） -->
-      <div v-if="cropOpen && cropRect" class="crop-layer" @mousedown.stop="cropStart('move', $event)" @click.stop>
-        <div class="crop-box" :style="cropBoxStyle" @mousedown.stop>
-          <span class="crop-handle nw" @mousedown.stop="cropStart('nw', $event)"></span>
-          <span class="crop-handle ne" @mousedown.stop="cropStart('ne', $event)"></span>
-          <span class="crop-handle sw" @mousedown.stop="cropStart('sw', $event)"></span>
-          <span class="crop-handle se" @mousedown.stop="cropStart('se', $event)"></span>
-          <span class="crop-handle n" @mousedown.stop="cropStart('n', $event)"></span>
-          <span class="crop-handle s" @mousedown.stop="cropStart('s', $event)"></span>
-          <span class="crop-handle w" @mousedown.stop="cropStart('w', $event)"></span>
-          <span class="crop-handle e" @mousedown.stop="cropStart('e', $event)"></span>
+      <div
+        v-if="cropOpen && cropRect"
+        class="crop-layer"
+        @mousedown.stop="cropStart('move', $event)"
+        @click.stop
+      >
+        <div
+          class="crop-box"
+          :style="cropBoxStyle"
+          @mousedown.stop
+        >
+          <span
+            class="crop-handle nw"
+            @mousedown.stop="cropStart('nw', $event)"
+          />
+          <span
+            class="crop-handle ne"
+            @mousedown.stop="cropStart('ne', $event)"
+          />
+          <span
+            class="crop-handle sw"
+            @mousedown.stop="cropStart('sw', $event)"
+          />
+          <span
+            class="crop-handle se"
+            @mousedown.stop="cropStart('se', $event)"
+          />
+          <span
+            class="crop-handle n"
+            @mousedown.stop="cropStart('n', $event)"
+          />
+          <span
+            class="crop-handle s"
+            @mousedown.stop="cropStart('s', $event)"
+          />
+          <span
+            class="crop-handle w"
+            @mousedown.stop="cropStart('w', $event)"
+          />
+          <span
+            class="crop-handle e"
+            @mousedown.stop="cropStart('e', $event)"
+          />
         </div>
       </div>
 
       <!-- 选中态：四角圆点手柄 -->
       <template v-if="isSelected && !cropOpen">
-        <span class="resize-handle nw" @mousedown.stop.prevent="startResize('nw', $event)" @click.stop></span>
-        <span class="resize-handle ne" @mousedown.stop.prevent="startResize('ne', $event)" @click.stop></span>
-        <span class="resize-handle sw" @mousedown.stop.prevent="startResize('sw', $event)" @click.stop></span>
-        <span class="resize-handle se" @mousedown.stop.prevent="startResize('se', $event)" @click.stop></span>
+        <span
+          class="resize-handle nw"
+          @mousedown.stop.prevent="startResize('nw', $event)"
+          @click.stop
+        />
+        <span
+          class="resize-handle ne"
+          @mousedown.stop.prevent="startResize('ne', $event)"
+          @click.stop
+        />
+        <span
+          class="resize-handle sw"
+          @mousedown.stop.prevent="startResize('sw', $event)"
+          @click.stop
+        />
+        <span
+          class="resize-handle se"
+          @mousedown.stop.prevent="startResize('se', $event)"
+          @click.stop
+        />
       </template>
     </div>
 
-    <ImageLightbox v-if="lightboxOpen" :src="imgSrc" :alt="parsed?.alt" @close="lightboxOpen = false" />
+    <ImageLightbox
+      v-if="lightboxOpen"
+      :src="imgSrc"
+      :alt="parsed?.alt"
+      @close="lightboxOpen = false"
+    />
   </div>
 </template>
 

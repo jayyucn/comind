@@ -1,5 +1,6 @@
 import type { Component } from 'vue'
 import type { Ref } from 'vue'
+import type { Editor } from '@tiptap/vue-3'
 import type { Block } from './block'
 
 export interface BlockTypeHandler {
@@ -11,19 +12,29 @@ export interface BlockTypeHandler {
   setupBlock?: (ctx: BlockSetupContext) => BlockTypeHooks | void
 }
 
+/** handler 内实际用到的 store 最小接口（避免 types ↔ stores 循环类型依赖） */
+export interface BlockStoreLike {
+  updateBlockContent: (blockId: string, content: string) => Promise<void>
+}
+
+export interface PageStoreLike {
+  /** handler 仅按 id 查页并读取标题（embed 跳转源页） */
+  pages: Array<{ id: string; title: string }>
+}
+
 export interface BlockSetupContext {
   blockId: Ref<string>
   block: Ref<Block>
   pageId: string
   getProperty: (key: string) => string | undefined
-  getPropertiesMap: () => Record<string, any>
-  setProperty: (key: string, value: any) => Promise<void>
-  // Store 类型使用 any 以避免 types 文件与 stores 之间潜在的循环类型依赖。
+  getPropertiesMap: () => Record<string, unknown>
+  setProperty: (key: string, value: unknown) => Promise<void>
+  // Store 采用最小接口 / unknown 收窄，避免 types 文件与 stores 之间潜在的循环类型依赖。
   // handler 内部仅调用已知方法（blockStore.updateBlockContent / pageStore.pages 等）。
-  blockStore: any
-  editorStore: any
-  propertyStore: any
-  pageStore: any
+  blockStore: BlockStoreLike
+  editorStore: unknown
+  propertyStore: unknown
+  pageStore: PageStoreLike
   navigateToPage: (title: string) => Promise<void>
 }
 
@@ -48,7 +59,7 @@ export interface BlockTypeEditorExposed {
   focus: (pos?: number | 'start' | 'end') => void
   getText: () => string
   markSaved: () => void
-  getEditor: () => any
+  getEditor: () => Editor
   cancelDebouncedSave?: () => void
   focusAtCoords?: (x: number, y: number) => void
 }

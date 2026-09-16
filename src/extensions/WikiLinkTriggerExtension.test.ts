@@ -432,7 +432,7 @@ describe('WikiLinkTriggerExtension', () => {
 
   describe('menu state management behavior', () => {
     test('menuIsOpen should be initially false', () => {
-      let menuIsOpen = false
+      const menuIsOpen = false
       expect(menuIsOpen).toBe(false)
     })
 

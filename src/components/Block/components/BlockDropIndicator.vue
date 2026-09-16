@@ -13,7 +13,7 @@
  * - 所有放置意图共用同一种槽位形态（横线 + 左竖头，见 _block.scss 的 .drop-indicator）；
  *   目标深度由 useBlockDragDrop 通过内联 left/width 表达，cssClass 不再区分动作类型。
  */
-const props = defineProps<{
+defineProps<{
   style: Record<string, string>
   cssClass: string
   visible: boolean

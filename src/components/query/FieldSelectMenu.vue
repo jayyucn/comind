@@ -29,15 +29,22 @@ function pick(key: string) {
 </script>
 
 <template>
-  <BasePopover :visible="true" :position="position" @close="emit('close')">
-    <div class="field-menu" data-testid="field-menu">
+  <BasePopover
+    :visible="true"
+    :position="position"
+    @close="emit('close')"
+  >
+    <div
+      class="field-menu"
+      data-testid="field-menu"
+    >
       <input
+        v-model="search"
         class="field-search"
         type="text"
-        v-model="search"
         placeholder="搜索字段…"
         data-testid="field-search"
-      />
+      >
       <ul class="field-list">
         <li
           v-for="f in filtered"
@@ -49,9 +56,19 @@ function pick(key: string) {
           <span class="field-name">{{ f.label }}</span>
           <span class="field-type">{{ f.type }}</span>
         </li>
-        <li v-if="filtered.length === 0" class="field-empty">无匹配字段</li>
+        <li
+          v-if="filtered.length === 0"
+          class="field-empty"
+        >
+          无匹配字段
+        </li>
       </ul>
-      <button class="field-advanced" type="button" data-testid="field-advanced" @click="emit('advanced')">
+      <button
+        class="field-advanced"
+        type="button"
+        data-testid="field-advanced"
+        @click="emit('advanced')"
+      >
         + Add advanced filter
       </button>
     </div>

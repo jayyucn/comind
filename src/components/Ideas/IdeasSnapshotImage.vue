@@ -61,7 +61,10 @@ function openLightbox() {
 </script>
 
 <template>
-  <div class="snapshot-image" :style="{ justifyContent: justify }">
+  <div
+    class="snapshot-image"
+    :style="{ justifyContent: justify }"
+  >
     <div class="snapshot-image-frame">
       <img
         v-if="imgSrc"
@@ -71,13 +74,26 @@ function openLightbox() {
         :style="imgStyle"
         draggable="false"
         @click="openLightbox"
-      />
-      <div v-else class="snapshot-image-empty">
+      >
+      <div
+        v-else
+        class="snapshot-image-empty"
+      >
         <span class="snapshot-image-empty-text">{{ parsed ? '图片加载失败' : '图片已清空' }}</span>
       </div>
     </div>
-    <div v-if="description" class="snapshot-image-desc">{{ description }}</div>
-    <ImageLightbox v-if="lightboxOpen" :src="imgSrc" :alt="parsed?.alt" @close="lightboxOpen = false" />
+    <div
+      v-if="description"
+      class="snapshot-image-desc"
+    >
+      {{ description }}
+    </div>
+    <ImageLightbox
+      v-if="lightboxOpen"
+      :src="imgSrc"
+      :alt="parsed?.alt"
+      @close="lightboxOpen = false"
+    />
   </div>
 </template>
 

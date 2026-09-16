@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import type { EditorView } from '@tiptap/pm/view'
 import { useModalKeyboardRef } from '../composables/useModalKeyboard'
 import { buildTemplateCommands, executeTemplateCommand, filterCommands, groupCommands, parseCommandInput, useSlashCommands } from '../composables/useSlashCommands'
 import { useTemplateRegistry } from '../composables/useTemplateRegistry'
@@ -45,7 +46,7 @@ const listRef = ref<HTMLElement | null>(null)
 // 锚点（ADR-0038）：斜杠面板跟随光标。光标是 ProseMirror 文本位置，没有稳定 DOM
 // 引用，故在触发瞬间记录 view+pos，由 anchorElProp getter 实时反查光标所在元素——
 // 滚动/布局变动时 BasePopover 会重新测算，面板始终贴着输入框而不会遮住光标。
-const anchorView = ref<any>(null)
+const anchorView = shallowRef<EditorView | null>(null)
 const anchorPos = ref(0)
 
 // 删除模板确认弹窗状态（原生 window.confirm/alert 已替换为 Vue 弹窗）
@@ -85,7 +86,7 @@ const flatCommands = computed(() => {
 // 监听 slash-command-trigger 事件
 function handleSlashCommandTrigger(event: Event) {
   const customEvent = event as CustomEvent<{
-    view: any
+    view: EditorView
     position: number
     range: { from: number; to: number }
   }>
@@ -107,7 +108,7 @@ function handleSlashCommandTrigger(event: Event) {
 
 // 由 ProseMirror 文本位置反查光标所在 DOM 元素，作为 BasePopover 的避让锚点。
 // 文本节点取其父元素；元素节点直接用。失败（如 view 无 domAtPos）则回退到 position 模式。
-function anchorFromView(view: any, pos: number): HTMLElement | null {
+function anchorFromView(view: EditorView, pos: number): HTMLElement | null {
   try {
     const { node } = view.domAtPos(pos)
     const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : (node as HTMLElement)
@@ -119,9 +120,10 @@ function anchorFromView(view: any, pos: number): HTMLElement | null {
 
 // 锚点 getter（ADR-0038）：未触发时返回 undefined，BasePopover 走 position 兜底；
 // 触发后返回一个每次重新反查光标的 getter，使滚动时面板实时跟随而不遮挡输入框。
-const anchorElProp = computed<HTMLElement | (() => HTMLElement | null) | undefined>(() =>
-  anchorView.value ? () => anchorFromView(anchorView.value, anchorPos.value) : undefined,
-)
+const anchorElProp = computed<HTMLElement | (() => HTMLElement | null) | undefined>(() => {
+  const view = anchorView.value
+  return view ? () => anchorFromView(view, anchorPos.value) : undefined
+})
 
 // 监听键盘事件
 function handleKeyDown(event: KeyboardEvent) {
@@ -293,7 +295,7 @@ async function executeCommand(command: Command) {
 
     // 接受参数的命令（如 /deadline 2024-05-20, /project 项目A）
     if (command.acceptArgument && argument) {
-      let value: any = argument
+      let value: string = argument
 
       // 对于日期类型进行特殊处理
       if (command.propertyKey === 'deadline' || command.propertyKey === 'scheduled') {

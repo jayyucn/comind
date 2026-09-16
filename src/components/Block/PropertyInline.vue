@@ -182,8 +182,8 @@ function isSvgIcon(icon: string): boolean {
       <button
         v-if="position === 'right-of-content' && hoveredPropertyId === prop.id"
         class="delete-button"
-        @click.stop="deleteProperty(prop, $event)"
         title="删除属性"
+        @click.stop="deleteProperty(prop, $event)"
       >
         ×
       </button>

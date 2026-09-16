@@ -129,39 +129,83 @@ function handleNavigateToSettings() {
 
 <template>
   <div class="page-menu-button">
-    <button ref="menuTriggerRef" class="menu-trigger" @click.stop="toggleMenu">
-      <Icon name="icon-menu" :size="18" /> 
+    <button
+      ref="menuTriggerRef"
+      class="menu-trigger"
+      @click.stop="toggleMenu"
+    >
+      <Icon
+        name="icon-menu"
+        :size="18"
+      /> 
     </button>
 
-    <BasePopover :visible="isMenuOpen" :anchor-el="() => menuTriggerRef" @close="closeMenu">
+    <BasePopover
+      :visible="isMenuOpen"
+      :anchor-el="() => menuTriggerRef"
+      @close="closeMenu"
+    >
       <div class="menu-dropdown">
         <!-- 页面相关功能仅在页面路由中显示 -->
         <template v-if="isOnPage && currentPage">
-          <button class="menu-item" @click="handleToggleFavorite">
-            <Icon :name="favorited ? 'icon-star-filled' : 'icon-star'" :size="16" />
+          <button
+            class="menu-item"
+            @click="handleToggleFavorite"
+          >
+            <Icon
+              :name="favorited ? 'icon-star-filled' : 'icon-star'"
+              :size="16"
+            />
             <span>{{ favorited ? '取消收藏' : '添加收藏' }}</span>
           </button>
 
-          <div v-if="shouldDelete" class="menu-item has-submenu" @click="toggleDeleteSubmenu">
-            <Icon name="icon-trash2" :size="16" />
+          <div
+            v-if="shouldDelete"
+            class="menu-item has-submenu"
+            @click="toggleDeleteSubmenu"
+          >
+            <Icon
+              name="icon-trash2"
+              :size="16"
+            />
             <span>删除本页</span>
-            <Icon class="arrow-icon" :class="{ rotated: isDeleteSubmenuOpen }" name="icon-arrow-right" :size="16" />
+            <Icon
+              class="arrow-icon"
+              :class="{ rotated: isDeleteSubmenuOpen }"
+              name="icon-arrow-right"
+              :size="16"
+            />
           </div>
 
           <Transition name="submenu">
-            <div v-if="isDeleteSubmenuOpen" class="submenu">
-              <button class="menu-item submenu-item" @click="handleSoftDelete">
-                <Icon name="icon-trash2" :size="16" />
+            <div
+              v-if="isDeleteSubmenuOpen"
+              class="submenu"
+            >
+              <button
+                class="menu-item submenu-item"
+                @click="handleSoftDelete"
+              >
+                <Icon
+                  name="icon-trash2"
+                  :size="16"
+                />
                 <span>移至回收站</span>
               </button>
-              <button class="menu-item submenu-item danger" @click="handlePermanentDelete">
-                <Icon name="icon-trash-permanent" :size="16" />
+              <button
+                class="menu-item submenu-item danger"
+                @click="handlePermanentDelete"
+              >
+                <Icon
+                  name="icon-trash-permanent"
+                  :size="16"
+                />
                 <span>永久删除</span>
               </button>
             </div>
           </Transition>
 
-          <div class="menu-divider"></div>
+          <div class="menu-divider" />
         </template>
 
         <!-- 全局功能始终显示 -->
@@ -175,17 +219,33 @@ function handleNavigateToSettings() {
             :title="themeLabelMap[t]"
             @click.stop="handleSelectTheme(t)"
           >
-            <component :is="themeIconMap[t]" :size="15" :stroke-width="1.75" />
+            <component
+              :is="themeIconMap[t]"
+              :size="15"
+              :stroke-width="1.75"
+            />
           </button>
         </div>
 
-        <button class="menu-item" @click="handleNavigateToTrash">
-          <Icon name="icon-trash" :size="16" />
+        <button
+          class="menu-item"
+          @click="handleNavigateToTrash"
+        >
+          <Icon
+            name="icon-trash"
+            :size="16"
+          />
           <span>回收站</span>
         </button>
 
-        <button class="menu-item" @click="handleNavigateToSettings">
-          <Icon name="icon-settings" :size="16" />
+        <button
+          class="menu-item"
+          @click="handleNavigateToSettings"
+        >
+          <Icon
+            name="icon-settings"
+            :size="16"
+          />
           <span>设置</span>
         </button>
       </div>

@@ -188,7 +188,10 @@ function onRemoveGlobal(key: string) {
 
 <template>
   <div class="query-page-frame">
-    <PageTitle :title="title" :subtitle="subtitle" />
+    <PageTitle
+      :title="title"
+      :subtitle="subtitle"
+    />
 
     <!-- 视图管理（Screen→Tab 两级 + 查询工具条 + 未保存提示均内聚于 NamedViewBar） -->
     <NamedViewBar
@@ -243,8 +246,14 @@ function onRemoveGlobal(key: string) {
     <!-- 主内容区：具名 slot 由消费方注入视图组件（ADR-0023 D6 修订：外壳零视图耦合，
          QuadrantView 等任务专有视图不再硬编码进通用外壳；viewContext 打包共享数据契约） -->
     <main class="lib-body">
-      <slot :name="currentViewType" :context="viewContext" />
-      <div v-if="!$slots[currentViewType]" class="view-empty">
+      <slot
+        :name="currentViewType"
+        :context="viewContext"
+      />
+      <div
+        v-if="!$slots[currentViewType]"
+        class="view-empty"
+      >
         <p>暂无可用的视图</p>
       </div>
     </main>

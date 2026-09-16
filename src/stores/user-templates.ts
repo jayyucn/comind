@@ -90,7 +90,7 @@ export const useUserTemplatesStore = defineStore('user-templates', () => {
       if (idx !== -1) {
         templates.value[idx] = { ...templates.value[idx], name: newName, updatedAt: Date.now() }
       }
-    } catch (e) {
+    } catch (_e) {
       // Template not found - ignore silently
     }
   }
@@ -98,7 +98,7 @@ export const useUserTemplatesStore = defineStore('user-templates', () => {
   async function update(id: string, patch: Partial<Omit<UserTemplate, 'id' | 'createdAt'>>): Promise<void> {
     const client = await getClient()
     try {
-      const params: Record<string, any> = { id }
+      const params: Record<string, unknown> = { id }
       if (patch.name !== undefined) params.name = patch.name
       if (patch.description !== undefined) params.description = patch.description
       if (patch.category !== undefined) params.category = patch.category
@@ -113,7 +113,7 @@ export const useUserTemplatesStore = defineStore('user-templates', () => {
       if (idx !== -1) {
         templates.value[idx] = { ...templates.value[idx], ...patch, updatedAt: Date.now() }
       }
-    } catch (e) {
+    } catch {
       // Template not found - ignore silently
     }
   }

@@ -26,20 +26,43 @@ defineProps<{
 </script>
 
 <template>
-  <div class="sidebar-wrapper" :class="{ collapsed: isCollapsed }">
-    <button class="sidebar-floating-toggle" :title="isCollapsed ? '展开侧边栏' : '折叠侧边栏'" :class="{ collapsed: isCollapsed }"
-      @click="toggle">
-      <Icon :name="isCollapsed ? 'icon-panel-left-open' : 'icon-panel-left-close'" :size="16" />
+  <div
+    class="sidebar-wrapper"
+    :class="{ collapsed: isCollapsed }"
+  >
+    <button
+      class="sidebar-floating-toggle"
+      :title="isCollapsed ? '展开侧边栏' : '折叠侧边栏'"
+      :class="{ collapsed: isCollapsed }"
+      @click="toggle"
+    >
+      <Icon
+        :name="isCollapsed ? 'icon-panel-left-open' : 'icon-panel-left-close'"
+        :size="16"
+      />
     </button>
-    <aside class="sidebar" ref="sidebarRef">
-      <SidebarHeader :can-go-back="canGoBack" :can-go-forward="canGoForward" @go-back="$emit('goBack')"
-        @go-forward="$emit('goForward')" />
+    <aside
+      ref="sidebarRef"
+      class="sidebar"
+    >
+      <SidebarHeader
+        :can-go-back="canGoBack"
+        :can-go-forward="canGoForward"
+        @go-back="$emit('goBack')"
+        @go-forward="$emit('goForward')"
+      />
 
       <div class="sidebar-content">
         <!-- 搜索触发 -->
-        <div class="search-trigger" @click="$emit('open-search')">
+        <div
+          class="search-trigger"
+          @click="$emit('open-search')"
+        >
           <div class="search-icon">
-            <Icon name="icon-search" color="var(--text-secondary)" />
+            <Icon
+              name="icon-search"
+              color="var(--text-secondary)"
+            />
             <span class="search-placeholder">搜索</span>
           </div>
           <span class="search-shortcut">Ctrl K</span>

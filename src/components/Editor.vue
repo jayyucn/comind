@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, watch, shallowRef, ref } from 'vue'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
+import type { EditorView } from '@tiptap/pm/view'
 import StarterKit from '@tiptap/starter-kit'
 import { WikiLinkExtension } from '../extensions/WikiLinkExtension'
 import { WikiLinkTriggerExtension, notifyWikiLinkMenuSelect, closeWikiLinkMenuByEditor, findWikiLinkAtCursor } from '../extensions/WikiLinkTriggerExtension'
@@ -17,6 +18,7 @@ import { useRelationshipMenu } from '../composables/useRelationshipMenu'
 import { debounce } from '../utils/debounce'
 import PageLinkMenu from './PageLinkMenu.vue'
 import DateRefKindSelector from './DateRefKindSelector.vue'
+import type { DateRefClickPayload } from '../extensions/DateRefExtension'
 import type { DateRefKind } from '../utils/date-ref'
 import { createEditorEvents } from './Block/editorEvents'
 import { useDomEvents } from '../composables/useDomEvents'
@@ -71,7 +73,7 @@ const menuRef = ref<InstanceType<typeof PageLinkMenu> | null>(null)
 const kindSelectorVisible = ref(false)
 const kindSelectorPosition = ref({ left: 0, top: 0, bottom: 0 })
 const kindSelectorRange = ref({ from: 0, to: 0 })
-const kindSelectorView = ref<any>(null)
+const kindSelectorView = ref<EditorView | null>(null)
 
 const relMenu = useRelationshipMenu()
 const { open: openDateRefPanel } = useDateTimePickerPanel()
@@ -223,7 +225,10 @@ const events = createEditorEvents({
   kindSelectorRange,
   kindSelectorView,
   relMenu,
-  openDateRefPanel: openDateRefPanel as unknown as (cfg: any, source: string) => void,
+  openDateRefPanel: openDateRefPanel as unknown as (
+    cfg: DateRefClickPayload & { position: { x: number; y: number } },
+    source: string
+  ) => void,
   closeWikiLinkMenuByEditor,
 })
 useDomEvents(() => editor.value?.view?.dom ?? null, () => events)
@@ -348,7 +353,12 @@ defineExpose({ syncContent, focus, focusAtCoords, getText: () => editor.value?.g
 
 <template>
   <div class="editor-wrapper">
-    <div v-if="showFullPlaceholder && !hasContent" class="editor-placeholder">写点什么…</div>
+    <div
+      v-if="showFullPlaceholder && !hasContent"
+      class="editor-placeholder"
+    >
+      写点什么…
+    </div>
     <EditorContent :editor="editor" />
     <PageLinkMenu
       ref="menuRef"

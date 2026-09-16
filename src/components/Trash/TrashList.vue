@@ -61,7 +61,10 @@ function formatDate(timestamp: number): string {
 <template>
   <div class="trash-list-view">
     <div class="trash-header">
-      <PageTitle title="回收站" :subtitle="`${pageStore.trashPages.length} 个页面`" />
+      <PageTitle
+        title="回收站"
+        :subtitle="`${pageStore.trashPages.length} 个页面`"
+      />
     </div>
 
     <div class="trash-list">
@@ -70,25 +73,50 @@ function formatDate(timestamp: number): string {
         :key="page.id"
         class="trash-item"
       >
-        <div class="trash-item-info" @click="handleNavigateToPage(page.id)">
+        <div
+          class="trash-item-info"
+          @click="handleNavigateToPage(page.id)"
+        >
           <span class="trash-item-title">{{ page.title }}</span>
           <span class="trash-item-date">删除于 {{ formatDate(page.deletedAt!) }}</span>
         </div>
         <div class="trash-item-actions">
-          <button class="action-btn restore" title="恢复" @click="handleRestore(page.id)">
-            <Icon name="icon-restore" :size="16" />
+          <button
+            class="action-btn restore"
+            title="恢复"
+            @click="handleRestore(page.id)"
+          >
+            <Icon
+              name="icon-restore"
+              :size="16"
+            />
             <span>恢复</span>
           </button>
-          <button class="action-btn delete" title="永久删除" @click="handlePermanentDelete(page.id)">
-            <Icon name="icon-trash-permanent" :size="16" />
+          <button
+            class="action-btn delete"
+            title="永久删除"
+            @click="handlePermanentDelete(page.id)"
+          >
+            <Icon
+              name="icon-trash-permanent"
+              :size="16"
+            />
             <span>删除</span>
           </button>
         </div>
       </div>
 
-      <div v-if="pageStore.trashPages.length === 0" class="empty-state">
-        <Icon name="icon-trash" :size="48" />
-        <div class="empty-text">回收站为空</div>
+      <div
+        v-if="pageStore.trashPages.length === 0"
+        class="empty-state"
+      >
+        <Icon
+          name="icon-trash"
+          :size="48"
+        />
+        <div class="empty-text">
+          回收站为空
+        </div>
       </div>
     </div>
 

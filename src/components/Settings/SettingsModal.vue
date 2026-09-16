@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
+import type { Component } from 'vue'
 import { useSettingsModal } from '../../composables/useSettingsModal'
 import { pushModal, popModal } from '../../composables/useModalKeyboard'
 import { useTheme } from '../../composables/useTheme'
@@ -194,8 +195,9 @@ async function onQrScanned(content: string) {
     console.log('Android scan: got QR content', content)
     await tauriConnectToServer(content)
     await loadAndroidSyncStatus()
-  } catch (e: any) {
-    const msg = typeof e === 'string' ? e : (e?.message || e?.toString?.() || JSON.stringify(e))
+  } catch (e) {
+    const err = e as string | { message?: string; toString?: () => string }
+    const msg = typeof err === 'string' ? err : (err?.message || err?.toString?.() || JSON.stringify(err))
     console.error('Android scan/connect failed:', msg, e)
   } finally {
     androidConnecting.value = false
@@ -245,7 +247,7 @@ const sections: { key: Section; label: string }[] = [
   { key: 'about', label: '关于' },
 ]
 
-const themeOptions: { value: 'light' | 'dark' | 'system'; label: string; icon: any }[] = [
+const themeOptions: { value: 'light' | 'dark' | 'system'; label: string; icon: Component }[] = [
   { value: 'light', label: '浅色', icon: Sun },
   { value: 'dark', label: '暗色', icon: Moon },
   { value: 'system', label: '跟随系统', icon: Monitor },
@@ -280,10 +282,16 @@ onUnmounted(() => {
 <template>
   <Teleport to="body">
     <Transition name="settings-modal">
-      <div v-if="isOpen" class="settings-modal-overlay" @click.self="handleOverlayClick">
+      <div
+        v-if="isOpen"
+        class="settings-modal-overlay"
+        @click.self="handleOverlayClick"
+      >
         <div class="settings-modal">
           <div class="settings-modal-nav">
-            <div class="nav-title">设置</div>
+            <div class="nav-title">
+              设置
+            </div>
             <button
               v-for="section in sections"
               :key="section.key"
@@ -297,9 +305,17 @@ onUnmounted(() => {
 
           <div class="settings-modal-content">
             <div class="content-header">
-              <h2 class="content-title">{{ sections.find(s => s.key === activeSection)?.label }}</h2>
-              <button class="close-btn" @click="close">
-                <X :size="16" :stroke-width="1.75" />
+              <h2 class="content-title">
+                {{ sections.find(s => s.key === activeSection)?.label }}
+              </h2>
+              <button
+                class="close-btn"
+                @click="close"
+              >
+                <X
+                  :size="16"
+                  :stroke-width="1.75"
+                />
               </button>
             </div>
 
@@ -318,7 +334,11 @@ onUnmounted(() => {
                       :class="{ active: theme === option.value }"
                       @click="setTheme(option.value)"
                     >
-                      <component :is="option.icon" :size="14" :stroke-width="1.75" />
+                      <component
+                        :is="option.icon"
+                        :size="14"
+                        :stroke-width="1.75"
+                      />
                       {{ option.label }}
                     </button>
                   </div>
@@ -353,22 +373,40 @@ onUnmounted(() => {
               </template>
 
               <template v-if="activeSection === 'data'">
-                <div v-if="isDesktop" class="setting-item setting-item--column">
+                <div
+                  v-if="isDesktop"
+                  class="setting-item setting-item--column"
+                >
                   <div class="setting-info">
                     <span class="setting-label">工作空间路径</span>
                     <span class="setting-desc">统一管理数据库和 Markdown 同步文件的根目录</span>
                   </div>
                   <div class="db-path-container">
                     <div class="db-path-display">
-                      <Folder :size="14" :stroke-width="1.75" />
+                      <Folder
+                        :size="14"
+                        :stroke-width="1.75"
+                      />
                       <span class="db-path-text">{{ workspacePath || '加载中...' }}</span>
                     </div>
-                    <div v-if="!showWorkspacePathInput" class="db-path-actions">
-                      <button class="db-path-btn db-path-btn--secondary" @click="showWorkspacePathInput = true">
+                    <div
+                      v-if="!showWorkspacePathInput"
+                      class="db-path-actions"
+                    >
+                      <button
+                        class="db-path-btn db-path-btn--secondary"
+                        @click="showWorkspacePathInput = true"
+                      >
                         更改路径
                       </button>
-                      <button class="db-path-btn db-path-btn--secondary" @click="handleResetWorkspacePath">
-                        <RotateCcw :size="12" :stroke-width="1.75" />
+                      <button
+                        class="db-path-btn db-path-btn--secondary"
+                        @click="handleResetWorkspacePath"
+                      >
+                        <RotateCcw
+                          :size="12"
+                          :stroke-width="1.75"
+                        />
                         恢复默认
                       </button>
                       <button
@@ -376,49 +414,94 @@ onUnmounted(() => {
                         :disabled="!workspacePath"
                         @click="handleOpenWorkspacePath"
                       >
-                        <FolderOpen :size="12" :stroke-width="1.75" />
+                        <FolderOpen
+                          :size="12"
+                          :stroke-width="1.75"
+                        />
                         打开目录
                       </button>
                     </div>
-                    <div v-else class="db-path-input-container">
+                    <div
+                      v-else
+                      class="db-path-input-container"
+                    >
                       <input
                         v-model="customWorkspacePath"
                         type="text"
                         class="db-path-input"
                         placeholder="输入新的工作空间目录路径"
                         @keydown.enter="handleSetWorkspacePath"
-                      />
-                      <button class="db-path-btn" @click="handlePickDirectory">
-                        <Folder :size="12" :stroke-width="1.75" />
+                      >
+                      <button
+                        class="db-path-btn"
+                        @click="handlePickDirectory"
+                      >
+                        <Folder
+                          :size="12"
+                          :stroke-width="1.75"
+                        />
                       </button>
-                      <button class="db-path-btn" @click="handleSetWorkspacePath">确定</button>
-                      <button class="db-path-btn db-path-btn--secondary" @click="showWorkspacePathInput = false">取消</button>
+                      <button
+                        class="db-path-btn"
+                        @click="handleSetWorkspacePath"
+                      >
+                        确定
+                      </button>
+                      <button
+                        class="db-path-btn db-path-btn--secondary"
+                        @click="showWorkspacePathInput = false"
+                      >
+                        取消
+                      </button>
                     </div>
                   </div>
                   <div class="db-path-note">
-                    <AlertCircle :size="12" :stroke-width="1.75" />
+                    <AlertCircle
+                      :size="12"
+                      :stroke-width="1.75"
+                    />
                     <span>更改路径后需要重启应用生效（workspace 下包含 sqlite/ 和 markdown/ 子目录）</span>
                   </div>
                 </div>
-                <div v-if="!isDesktop" class="setting-item">
+                <div
+                  v-if="!isDesktop"
+                  class="setting-item"
+                >
                   <div class="setting-info">
                     <span class="setting-label">工作空间路径</span>
                     <span class="setting-desc">Web 版本使用浏览器 IndexedDB</span>
                   </div>
                   <span class="setting-value">IndexedDB</span>
                 </div>
-                <div v-if="isDesktop" class="setting-item setting-item--column">
+                <div
+                  v-if="isDesktop"
+                  class="setting-item setting-item--column"
+                >
                   <div class="setting-info">
                     <span class="setting-label">自动同步</span>
                     <span class="setting-desc">将数据自动同步到工作空间下的 Markdown 文件，切换设备时保持一致</span>
                   </div>
                   <div class="sync-container">
-                    <button class="sync-toggle" @click="handleToggleSync">
-                      <ToggleLeft v-if="!syncEnabled" :size="16" :stroke-width="1.75" />
-                      <ToggleRight v-else :size="16" :stroke-width="1.75" />
+                    <button
+                      class="sync-toggle"
+                      @click="handleToggleSync"
+                    >
+                      <ToggleLeft
+                        v-if="!syncEnabled"
+                        :size="16"
+                        :stroke-width="1.75"
+                      />
+                      <ToggleRight
+                        v-else
+                        :size="16"
+                        :stroke-width="1.75"
+                      />
                       <span>{{ syncEnabled ? '已开启' : '已关闭' }}</span>
                     </button>
-                    <div v-if="syncEnabled" class="sync-options">
+                    <div
+                      v-if="syncEnabled"
+                      class="sync-options"
+                    >
                       <div class="sync-interval">
                         <span>同步间隔</span>
                         <input
@@ -428,17 +511,28 @@ onUnmounted(() => {
                           max="60"
                           class="sync-interval-input"
                           @change="setSyncConfig(syncEnabled, syncInterval * 60)"
-                        />
+                        >
                         <span>分钟</span>
                       </div>
-                      <button class="sync-now-btn" :disabled="syncLoading" @click="handleSyncNow">
-                        <RefreshCw :size="12" :stroke-width="1.75" :class="{ spinning: syncLoading }" />
+                      <button
+                        class="sync-now-btn"
+                        :disabled="syncLoading"
+                        @click="handleSyncNow"
+                      >
+                        <RefreshCw
+                          :size="12"
+                          :stroke-width="1.75"
+                          :class="{ spinning: syncLoading }"
+                        />
                         {{ syncLoading ? '同步中...' : '立即同步' }}
                       </button>
                     </div>
                   </div>
                   <div class="sync-note">
-                    <AlertCircle :size="12" :stroke-width="1.75" />
+                    <AlertCircle
+                      :size="12"
+                      :stroke-width="1.75"
+                    />
                     <span>开启后会定时将数据导出到工作空间下 markdown/ 目录的 Markdown 文件</span>
                   </div>
                 </div>
@@ -447,8 +541,15 @@ onUnmounted(() => {
                     <span class="setting-label">导出数据</span>
                     <span class="setting-desc">将所有页面和块导出为 Markdown 文件</span>
                   </div>
-                  <button class="setting-btn" :disabled="!isDesktop || exportLoading" @click="handleExport">
-                    <Download :size="12" :stroke-width="1.75" />
+                  <button
+                    class="setting-btn"
+                    :disabled="!isDesktop || exportLoading"
+                    @click="handleExport"
+                  >
+                    <Download
+                      :size="12"
+                      :stroke-width="1.75"
+                    />
                     {{ exportLoading ? '导出中...' : '导出' }}
                   </button>
                 </div>
@@ -457,39 +558,68 @@ onUnmounted(() => {
                     <span class="setting-label">导入数据</span>
                     <span class="setting-desc">从 Markdown 文件导入数据（合并模式）</span>
                   </div>
-                  <button class="setting-btn" :disabled="!isDesktop || importLoading" @click="handleImport">
-                    <Upload :size="12" :stroke-width="1.75" />
+                  <button
+                    class="setting-btn"
+                    :disabled="!isDesktop || importLoading"
+                    @click="handleImport"
+                  >
+                    <Upload
+                      :size="12"
+                      :stroke-width="1.75"
+                    />
                     {{ importLoading ? '导入中...' : '导入' }}
                   </button>
                 </div>
-                <div v-if="isDesktop" class="setting-item setting-item--column">
+                <div
+                  v-if="isDesktop"
+                  class="setting-item setting-item--column"
+                >
                   <DeviceSyncPanel @toast="onPcSyncToast" />
                 </div>
                 <!-- Android 端：扫码连接 PC -->
-                <div v-if="androidIsAndroid" class="setting-item setting-item--column">
+                <div
+                  v-if="androidIsAndroid"
+                  class="setting-item setting-item--column"
+                >
                   <div class="setting-info">
                     <span class="setting-label">设备同步</span>
                     <span class="setting-desc">扫描 PC 端二维码连接并同步数据</span>
                   </div>
                   <div class="device-sync-container">
-                    <div v-if="!androidSyncStatus?.connected" class="device-sync-unpaired">
+                    <div
+                      v-if="!androidSyncStatus?.connected"
+                      class="device-sync-unpaired"
+                    >
                       <button
                         class="device-sync-qr-btn"
                         :disabled="androidConnecting"
                         @click="handleAndroidScan"
                       >
-                        <QrCode :size="14" :stroke-width="1.75" />
+                        <QrCode
+                          :size="14"
+                          :stroke-width="1.75"
+                        />
                         {{ androidConnecting ? '连接中...' : '扫码连接 PC' }}
                       </button>
                       <div class="device-sync-note">
-                        <Monitor :size="12" :stroke-width="1.75" />
+                        <Monitor
+                          :size="12"
+                          :stroke-width="1.75"
+                        />
                         <span>在 PC 端「设置 → 设备同步」显示二维码后扫描</span>
                       </div>
                     </div>
-                    <div v-else class="device-sync-paired">
+                    <div
+                      v-else
+                      class="device-sync-paired"
+                    >
                       <div class="paired-device-header">
                         <div class="paired-device-status">
-                          <Wifi :size="14" :stroke-width="1.75" class="paired-status-icon" />
+                          <Wifi
+                            :size="14"
+                            :stroke-width="1.75"
+                            class="paired-status-icon"
+                          />
                           <span>已连接{{ androidSyncStatus?.server_name ? ' · ' + androidSyncStatus.server_name : '' }}</span>
                         </div>
                         <button
@@ -497,15 +627,25 @@ onUnmounted(() => {
                           :disabled="androidSyncing"
                           @click="handleAndroidFullSync"
                         >
-                          <RefreshCw :size="12" :stroke-width="1.75" :class="{ spinning: androidSyncing }" />
+                          <RefreshCw
+                            :size="12"
+                            :stroke-width="1.75"
+                            :class="{ spinning: androidSyncing }"
+                          />
                           立即同步
                         </button>
                       </div>
                       <div class="device-sync-paired-note">
-                        <AlertCircle :size="12" :stroke-width="1.75" />
+                        <AlertCircle
+                          :size="12"
+                          :stroke-width="1.75"
+                        />
                         <span>实时同步已开启，数据变更自动推送</span>
                       </div>
-                      <button class="paired-device-unpair-btn" @click="handleAndroidDisconnect">
+                      <button
+                        class="paired-device-unpair-btn"
+                        @click="handleAndroidDisconnect"
+                      >
                         断开连接
                       </button>
                     </div>
@@ -519,50 +659,106 @@ onUnmounted(() => {
                     <span class="setting-label">通知总开关</span>
                     <span class="setting-desc">启用或禁用所有通知</span>
                   </div>
-                  <button class="sync-toggle" @click="notificationStore.toggleSetting('enabled')">
-                    <ToggleLeft v-if="!notificationStore.settings.enabled" :size="16" :stroke-width="1.75" />
-                    <ToggleRight v-else :size="16" :stroke-width="1.75" />
+                  <button
+                    class="sync-toggle"
+                    @click="notificationStore.toggleSetting('enabled')"
+                  >
+                    <ToggleLeft
+                      v-if="!notificationStore.settings.enabled"
+                      :size="16"
+                      :stroke-width="1.75"
+                    />
+                    <ToggleRight
+                      v-else
+                      :size="16"
+                      :stroke-width="1.75"
+                    />
                     <span>{{ notificationStore.settings.enabled ? '已开启' : '已关闭' }}</span>
                   </button>
                 </div>
 
-                <div v-if="notificationStore.settings.enabled" class="setting-item">
+                <div
+                  v-if="notificationStore.settings.enabled"
+                  class="setting-item"
+                >
                   <div class="setting-info">
                     <span class="setting-label">计划时间通知</span>
                     <span class="setting-desc">接收计划时间提醒</span>
                   </div>
-                  <button class="sync-toggle" @click="notificationStore.toggleSetting('schedule_enabled')">
-                    <ToggleLeft v-if="!notificationStore.settings.schedule_enabled" :size="16" :stroke-width="1.75" />
-                    <ToggleRight v-else :size="16" :stroke-width="1.75" />
+                  <button
+                    class="sync-toggle"
+                    @click="notificationStore.toggleSetting('schedule_enabled')"
+                  >
+                    <ToggleLeft
+                      v-if="!notificationStore.settings.schedule_enabled"
+                      :size="16"
+                      :stroke-width="1.75"
+                    />
+                    <ToggleRight
+                      v-else
+                      :size="16"
+                      :stroke-width="1.75"
+                    />
                     <span>{{ notificationStore.settings.schedule_enabled ? '已开启' : '已关闭' }}</span>
                   </button>
                 </div>
 
-                <div v-if="notificationStore.settings.enabled" class="setting-item">
+                <div
+                  v-if="notificationStore.settings.enabled"
+                  class="setting-item"
+                >
                   <div class="setting-info">
                     <span class="setting-label">截止时间通知</span>
                     <span class="setting-desc">接收截止时间提醒</span>
                   </div>
-                  <button class="sync-toggle" @click="notificationStore.toggleSetting('deadline_enabled')">
-                    <ToggleLeft v-if="!notificationStore.settings.deadline_enabled" :size="16" :stroke-width="1.75" />
-                    <ToggleRight v-else :size="16" :stroke-width="1.75" />
+                  <button
+                    class="sync-toggle"
+                    @click="notificationStore.toggleSetting('deadline_enabled')"
+                  >
+                    <ToggleLeft
+                      v-if="!notificationStore.settings.deadline_enabled"
+                      :size="16"
+                      :stroke-width="1.75"
+                    />
+                    <ToggleRight
+                      v-else
+                      :size="16"
+                      :stroke-width="1.75"
+                    />
                     <span>{{ notificationStore.settings.deadline_enabled ? '已开启' : '已关闭' }}</span>
                   </button>
                 </div>
 
-                <div v-if="notificationStore.settings.enabled" class="setting-item">
+                <div
+                  v-if="notificationStore.settings.enabled"
+                  class="setting-item"
+                >
                   <div class="setting-info">
                     <span class="setting-label">逾期通知</span>
                     <span class="setting-desc">接收逾期任务提醒</span>
                   </div>
-                  <button class="sync-toggle" @click="notificationStore.toggleSetting('overdue_enabled')">
-                    <ToggleLeft v-if="!notificationStore.settings.overdue_enabled" :size="16" :stroke-width="1.75" />
-                    <ToggleRight v-else :size="16" :stroke-width="1.75" />
+                  <button
+                    class="sync-toggle"
+                    @click="notificationStore.toggleSetting('overdue_enabled')"
+                  >
+                    <ToggleLeft
+                      v-if="!notificationStore.settings.overdue_enabled"
+                      :size="16"
+                      :stroke-width="1.75"
+                    />
+                    <ToggleRight
+                      v-else
+                      :size="16"
+                      :stroke-width="1.75"
+                    />
                     <span>{{ notificationStore.settings.overdue_enabled ? '已开启' : '已关闭' }}</span>
                   </button>
                 </div>
 
-                <div v-if="notificationStore.settings.enabled" class="setting-item setting-item--column">
+                <div
+                  v-if="notificationStore.settings.enabled"
+                  class="setting-item setting-item--column"
+                >
                   <div class="setting-info">
                     <span class="setting-label">免打扰时段</span>
                     <span class="setting-desc">在此期间不发送通知</span>
@@ -572,10 +768,14 @@ onUnmounted(() => {
                       <span class="quiet-hours-label">开始时间</span>
                       <select
                         :value="notificationStore.settings.quiet_hours_start || '22:00'"
-                        @change="notificationStore.updateSetting('quiet_hours_start', ($event.target as HTMLSelectElement).value)"
                         class="quiet-hours-select"
+                        @change="notificationStore.updateSetting('quiet_hours_start', ($event.target as HTMLSelectElement).value)"
                       >
-                        <option v-for="h in 24" :key="`${h-1}:00`" :value="`${String(h-1).padStart(2, '0')}:00`">
+                        <option
+                          v-for="h in 24"
+                          :key="`${h-1}:00`"
+                          :value="`${String(h-1).padStart(2, '0')}:00`"
+                        >
                           {{ String(h-1).padStart(2, '0') }}:00
                         </option>
                       </select>
@@ -584,10 +784,14 @@ onUnmounted(() => {
                       <span class="quiet-hours-label">结束时间</span>
                       <select
                         :value="notificationStore.settings.quiet_hours_end || '08:00'"
-                        @change="notificationStore.updateSetting('quiet_hours_end', ($event.target as HTMLSelectElement).value)"
                         class="quiet-hours-select"
+                        @change="notificationStore.updateSetting('quiet_hours_end', ($event.target as HTMLSelectElement).value)"
                       >
-                        <option v-for="h in 24" :key="`${h-1}:00`" :value="`${String(h-1).padStart(2, '0')}:00`">
+                        <option
+                          v-for="h in 24"
+                          :key="`${h-1}:00`"
+                          :value="`${String(h-1).padStart(2, '0')}:00`"
+                        >
                           {{ String(h-1).padStart(2, '0') }}:00
                         </option>
                       </select>
@@ -595,14 +799,28 @@ onUnmounted(() => {
                   </div>
                 </div>
 
-                <div v-if="notificationStore.settings.enabled && !isDesktop" class="setting-item">
+                <div
+                  v-if="notificationStore.settings.enabled && !isDesktop"
+                  class="setting-item"
+                >
                   <div class="setting-info">
                     <span class="setting-label">浏览器通知</span>
                     <span class="setting-desc">在浏览器中显示通知</span>
                   </div>
-                  <button class="sync-toggle" @click="notificationStore.toggleSetting('web_browser_notifications_enabled')">
-                    <ToggleLeft v-if="!notificationStore.settings.web_browser_notifications_enabled" :size="16" :stroke-width="1.75" />
-                    <ToggleRight v-else :size="16" :stroke-width="1.75" />
+                  <button
+                    class="sync-toggle"
+                    @click="notificationStore.toggleSetting('web_browser_notifications_enabled')"
+                  >
+                    <ToggleLeft
+                      v-if="!notificationStore.settings.web_browser_notifications_enabled"
+                      :size="16"
+                      :stroke-width="1.75"
+                    />
+                    <ToggleRight
+                      v-else
+                      :size="16"
+                      :stroke-width="1.75"
+                    />
                     <span>{{ notificationStore.settings.web_browser_notifications_enabled ? '已开启' : '已关闭' }}</span>
                   </button>
                 </div>

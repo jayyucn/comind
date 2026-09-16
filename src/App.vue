@@ -34,8 +34,8 @@ import { reconcilePanels } from './composables/useRightSidebar'
 import { runUndoOrRedo } from './composables/useUndoRestore'
 import { useEditorStore } from './stores/editor'
 import { usePageStore } from './stores/pages'
-import { isTauriEnvironment } from './wasm/tauri-platform'
 import { resolveUndoScopeBlockPage, takeOverUndoRedo } from './utils/undo-chord'
+import { isTauriEnvironment } from './wasm/tauri-platform'
 
 registerPanel({
   id: 'graph',
@@ -174,11 +174,27 @@ function handleMainClick(e: MouseEvent) {
 <template>
   <!-- 阅读器独立窗口：无主窗口壳，ReaderView 全屏自绘 -->
   <RouterView v-if="isReaderWindow" />
-  <div v-else class="app-layout">
-    <Sidebar :canGoBack="canGoBack" :canGoForward="canGoForward" @goBack="goBack" @goForward="goForward" @open-search="showSearchPanel = true" />
+  <div
+    v-else
+    class="app-layout"
+  >
+    <Sidebar
+      :can-go-back="canGoBack"
+      :can-go-forward="canGoForward"
+      @go-back="goBack"
+      @go-forward="goForward"
+      @open-search="showSearchPanel = true"
+    />
 
-    <div class="page-scroll-wrapper" @click="handleMainClick">
-      <header class="sticky-header" @mousedown="startDragging" :class="{ 'absolute': absolute }">
+    <div
+      class="page-scroll-wrapper"
+      @click="handleMainClick"
+    >
+      <header
+        class="sticky-header"
+        :class="{ 'absolute': absolute }"
+        @mousedown="startDragging"
+      >
         <div class="top-right-controls">
           <NotificationBell />
           <PageMenuButton />
@@ -188,25 +204,58 @@ function handleMainClick(e: MouseEvent) {
             :title="isGraphPanelOpen ? '关闭概念图谱' : '打开概念图谱'"
             @click="handleGraphSidebarToggle"
           >
-            <Icon :name="isGraphPanelOpen ? 'icon-panel-right-close' : 'icon-panel-right-open'" :size="18" />
+            <Icon
+              :name="isGraphPanelOpen ? 'icon-panel-right-close' : 'icon-panel-right-open'"
+              :size="18"
+            />
           </button>
-          <div class="window-controls" v-if="isTauriEnvironment()">
-            <button class="window-control-btn minimize-btn" title="最小化" @click="minimize">
-              <Icon name="icon-minimize" :size="14" />
+          <div
+            v-if="isTauriEnvironment()"
+            class="window-controls"
+          >
+            <button
+              class="window-control-btn minimize-btn"
+              title="最小化"
+              @click="minimize"
+            >
+              <Icon
+                name="icon-minimize"
+                :size="14"
+              />
             </button>
-            <button class="window-control-btn maximize-btn" :title="isMaximized ? '还原' : '最大化'" @click="maximize">
-              <Icon :name="isMaximized ? 'icon-square' : 'icon-maximize'" :size="14" />
+            <button
+              class="window-control-btn maximize-btn"
+              :title="isMaximized ? '还原' : '最大化'"
+              @click="maximize"
+            >
+              <Icon
+                :name="isMaximized ? 'icon-square' : 'icon-maximize'"
+                :size="14"
+              />
             </button>
-            <button class="window-control-btn close-btn" title="关闭" @click="close">
-              <Icon name="icon-close" :size="14" />
+            <button
+              class="window-control-btn close-btn"
+              title="关闭"
+              @click="close"
+            >
+              <Icon
+                name="icon-close"
+                :size="14"
+              />
             </button>
           </div>
         </div>
       </header>
 
       <div class="page-content-wrapper">
-        <div class="content-body" ref="contentBodyEl">
-          <main class="main-content" :class="{ 'is-fullwidth-content': isFullWidthPage }">
+        <div
+          ref="contentBodyEl"
+          class="content-body"
+        >
+          <main
+            class="main-content"
+            :class="{ 'is-fullwidth-content': isFullWidthPage }"
+          >
             <RouterView v-slot="{ Component, route }">
               <KeepAlive include="IdeasList">
                 <component
@@ -234,9 +283,16 @@ function handleMainClick(e: MouseEvent) {
 
     <SettingsModal />
 
-    <SearchPanel :visible="showSearchPanel" @close="showSearchPanel = false" />
+    <SearchPanel
+      :visible="showSearchPanel"
+      @close="showSearchPanel = false"
+    />
 
-    <Toast :visible="true" :messages="editorStore.toasts" @remove="editorStore.removeToast" />
+    <Toast
+      :visible="true"
+      :messages="editorStore.toasts"
+      @remove="editorStore.removeToast"
+    />
 
     <DateTimePickerPanel
       :visible="dateRefPanelVisible"

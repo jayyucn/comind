@@ -8,6 +8,7 @@ import { usePropertyStore } from '../stores/property'
 import { useBlockRegistry } from '../composables/useBlockRegistry'
 import { buildDocumentOrder } from '../utils/block-helpers'
 import type { Block } from '../types/block'
+import type { PropertyValue } from '../types/property'
 import PropertyInline from './Block/PropertyInline.vue'
 import PropertyDisplay from './Block/PropertyDisplay.vue'
 
@@ -187,9 +188,9 @@ async function handleGroupClick(sourcePageId: string) {
   }
 }
 
-function getBlockPropertiesMap(blockId: string): Record<string, any> {
+function getBlockPropertiesMap(blockId: string): Record<string, PropertyValue> {
   const props = propertyStore.getBlockProperties(blockId)
-  const result: Record<string, any> = {}
+  const result: Record<string, PropertyValue> = {}
   for (const prop of props) {
     result[prop.key] = prop.value
   }
@@ -212,9 +213,16 @@ watch(
 </script>
 
 <template>
-  <div v-if="hasBacklinks" class="backlinks-panel" :class="{ 'is-collapsed': collapsed }">
+  <div
+    v-if="hasBacklinks"
+    class="backlinks-panel"
+    :class="{ 'is-collapsed': collapsed }"
+  >
     <!-- 面板 Header：始终可见，点击切换折叠 -->
-    <div class="backlinks-header" @click="collapsed = !collapsed">
+    <div
+      class="backlinks-header"
+      @click="collapsed = !collapsed"
+    >
       <span class="backlinks-toggle">{{ collapsed ? '▶' : '▼' }}</span>
       <span class="backlinks-title">
         反向链接
@@ -223,18 +231,32 @@ watch(
     </div>
 
     <!-- 折叠内容区：grid-template-rows 动画，无 JS maxHeight 操作 -->
-    <div class="backlinks-body-wrapper" :class="{ 'is-collapsed': collapsed }">
+    <div
+      class="backlinks-body-wrapper"
+      :class="{ 'is-collapsed': collapsed }"
+    >
       <div class="backlinks-body">
-        <div v-if="loading" class="backlinks-loading">加载中...</div>
+        <div
+          v-if="loading"
+          class="backlinks-loading"
+        >
+          加载中...
+        </div>
 
-        <div v-else class="backlinks-groups">
+        <div
+          v-else
+          class="backlinks-groups"
+        >
           <div
             v-for="group in groupedBacklinks"
             :key="group.sourcePageId"
             class="backlink-group"
           >
             <!-- 组标题：[[A]] (count)，点击跳转到源页 -->
-            <div class="backlink-group-header" @click="handleGroupClick(group.sourcePageId)">
+            <div
+              class="backlink-group-header"
+              @click="handleGroupClick(group.sourcePageId)"
+            >
               <span class="backlink-group-title">[[{{ group.sourcePageTitle }}]]</span>
               <span class="backlink-group-count">({{ group.items.length }})</span>
             </div>
@@ -249,7 +271,7 @@ watch(
               >
                 <!-- Bullet（纯展示圆点，不可拖拽/折叠） -->
                 <span class="block-bullet backlink-bullet">
-                  <span class="bullet-dot"></span>
+                  <span class="bullet-dot" />
                 </span>
 
                 <!-- PropertyInline: between-bullet-content -->
@@ -260,8 +282,8 @@ watch(
 
                 <!-- 块内容：renderComponent（readonly） -->
                 <component
-                  v-if="getHandler(item.block.type)"
                   :is="getHandler(item.block.type)!.renderComponent"
+                  v-if="getHandler(item.block.type)"
                   :block-id="item.link.sourceBlockId"
                   :content="item.block.content"
                   :properties="getBlockPropertiesMap(item.link.sourceBlockId)"
@@ -269,7 +291,10 @@ watch(
                   :readonly="true"
                   @content-click="handleContentClick"
                 />
-                <span v-else class="backlink-text-fallback">{{ item.block.content || '空块' }}</span>
+                <span
+                  v-else
+                  class="backlink-text-fallback"
+                >{{ item.block.content || '空块' }}</span>
 
                 <!-- PropertyInline: right-of-content -->
                 <PropertyInline
@@ -278,7 +303,10 @@ watch(
                 />
 
                 <!-- PropertyDisplay（下方属性区，stopPropagation） -->
-                <div class="backlink-properties" @click.stop>
+                <div
+                  class="backlink-properties"
+                  @click.stop
+                >
                   <PropertyDisplay :block-id="item.link.sourceBlockId" />
                 </div>
               </div>

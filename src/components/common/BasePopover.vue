@@ -282,8 +282,8 @@ onBeforeUnmount(() => {
         @click.self="onOverlayClick"
       >
         <div
-          class="base-popover"
           ref="panelEl"
+          class="base-popover"
           role="dialog"
           data-testid="base-popover"
           :style="panelStyle"

@@ -97,8 +97,18 @@ watch(
 
 <template>
   <div class="qb-row">
-    <select class="qb-select" :value="model?.field" @change="onFieldChange">
-      <option v-for="f in fields" :key="f.key" :value="f.key">{{ f.label }}</option>
+    <select
+      class="qb-select"
+      :value="model?.field"
+      @change="onFieldChange"
+    >
+      <option
+        v-for="f in fields"
+        :key="f.key"
+        :value="f.key"
+      >
+        {{ f.label }}
+      </option>
     </select>
 
     <select
@@ -107,7 +117,13 @@ watch(
       :disabled="!currentDescriptor"
       @change="onOpChange"
     >
-      <option v-for="o in ops" :key="o" :value="o">{{ opLabels[o] ?? o }}</option>
+      <option
+        v-for="o in ops"
+        :key="o"
+        :value="o"
+      >
+        {{ opLabels[o] ?? o }}
+      </option>
     </select>
 
     <ValueEditor
@@ -123,7 +139,12 @@ watch(
       @update:model-value="onValue"
     />
 
-    <button class="qb-icon qb-row-remove" type="button" title="删除条件" @click="emit('remove')">
+    <button
+      class="qb-icon qb-row-remove"
+      type="button"
+      title="删除条件"
+      @click="emit('remove')"
+    >
       <X :size="14" />
     </button>
   </div>

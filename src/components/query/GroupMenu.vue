@@ -25,9 +25,18 @@ function select(key: string | null) {
 </script>
 
 <template>
-  <BasePopover :visible="true" :position="position" @close="emit('close')">
-    <div class="group-menu" data-testid="group-menu">
-      <div class="group-head">分组</div>
+  <BasePopover
+    :visible="true"
+    :position="position"
+    @close="emit('close')"
+  >
+    <div
+      class="group-menu"
+      data-testid="group-menu"
+    >
+      <div class="group-head">
+        分组
+      </div>
 
       <button
         type="button"

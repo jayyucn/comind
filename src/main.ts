@@ -58,4 +58,4 @@ async function bootstrap() {
 
 bootstrap()
 
-;(window as any).__get_core_client = getCoreClient
+;(window as unknown as { __get_core_client?: typeof getCoreClient }).__get_core_client = getCoreClient

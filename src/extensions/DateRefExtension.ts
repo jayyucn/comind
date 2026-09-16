@@ -1,6 +1,9 @@
 import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
+import type { Node } from '@tiptap/pm/model'
+import type { EditorState } from '@tiptap/pm/state'
+import type { EditorView } from '@tiptap/pm/view'
 import type { DateRefKind, RecurrenceRule } from '../utils/date-ref'
 import { DATE_REF_AT_REGEX, normalizeRecurrence } from '../utils/date-ref'
 
@@ -17,8 +20,8 @@ export interface DateRefClickPayload {
   leadMinutes: number
 }
 
-function buildDecorations(doc: any, decorations: Decoration[]) {
-  doc.descendants((node: any, pos: number) => {
+function buildDecorations(doc: Node, decorations: Decoration[]) {
+  doc.descendants((node, pos: number) => {
     if (!node.isText) return
     const text = node.text || ''
 
@@ -73,13 +76,13 @@ export const DateRefExtension = Extension.create({
         key: DATE_REF_PLUGIN_KEY,
 
         props: {
-          decorations(state: any) {
+          decorations(state: EditorState) {
             const decorations: Decoration[] = []
             buildDecorations(state.doc, decorations)
             return DecorationSet.create(state.doc, decorations)
           },
 
-          handleClick(view: any, pos: number, event: MouseEvent) {
+          handleClick(view: EditorView, pos: number, event: MouseEvent) {
             const target = event.target as HTMLElement
             if (!target.classList.contains('date-ref')) return false
 
@@ -108,7 +111,7 @@ export const DateRefExtension = Extension.create({
             return true
           },
 
-          handleKeyDown(view: any, event: KeyboardEvent) {
+          handleKeyDown(view: EditorView, event: KeyboardEvent) {
             // 有选区（非光标态）时不拦截，交给默认删除逻辑处理选区
             const { state } = view
             if (!state.selection.empty) return false

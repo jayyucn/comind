@@ -62,8 +62,15 @@ function onKeydown(e: KeyboardEvent): void {
 </script>
 
 <template>
-  <BasePopover :visible="visible" :position="panelPosition" @close="emit('close')">
-    <div class="note-input-popover" :style="{ width: `${POPOVER_W}px` }">
+  <BasePopover
+    :visible="visible"
+    :position="panelPosition"
+    @close="emit('close')"
+  >
+    <div
+      class="note-input-popover"
+      :style="{ width: `${POPOVER_W}px` }"
+    >
       <textarea
         ref="textareaRef"
         v-model="text"
@@ -71,11 +78,21 @@ function onKeydown(e: KeyboardEvent): void {
         rows="3"
         placeholder="写下你的想法…"
         @keydown="onKeydown"
-      ></textarea>
+      />
       <div class="actions">
         <span class="hint">Ctrl+Enter 保存</span>
-        <button class="btn cancel" @click="emit('close')">取消</button>
-        <button class="btn primary" @click="submit">保存</button>
+        <button
+          class="btn cancel"
+          @click="emit('close')"
+        >
+          取消
+        </button>
+        <button
+          class="btn primary"
+          @click="submit"
+        >
+          保存
+        </button>
       </div>
     </div>
   </BasePopover>

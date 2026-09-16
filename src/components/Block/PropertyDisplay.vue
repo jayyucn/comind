@@ -172,12 +172,25 @@ function isSvgIcon(icon: string): boolean {
     :title="canJumpToSource ? '跳回原文（在阅读器中定位高亮）' : undefined"
     @click.stop="jumpToSource"
   >
-    <Pin :size="14" class="source-pin" color="var(--accent)" />
-    <span v-if="chapterLabel" class="source-chapter">{{ chapterLabel }}</span>
-    <span v-if="quote" class="source-quote">{{ quote }}</span>
+    <Pin
+      :size="14"
+      class="source-pin"
+      color="var(--accent)"
+    />
+    <span
+      v-if="chapterLabel"
+      class="source-chapter"
+    >{{ chapterLabel }}</span>
+    <span
+      v-if="quote"
+      class="source-quote"
+    >{{ quote }}</span>
   </div>
 
-  <div v-else-if="visibleProperties.length > 0" class="property-display">
+  <div
+    v-else-if="visibleProperties.length > 0"
+    class="property-display"
+  >
     <div class="property-list">
       <div
         v-for="prop in visibleProperties"
@@ -190,7 +203,10 @@ function isSvgIcon(icon: string): boolean {
         @click.stop="editProperty(prop, $event)"
       >
         <!-- project/area 直接以图标+名称展示，不渲染标签 -->
-        <span v-if="prop.key !== 'project' && prop.key !== 'area'" class="property-key">{{ getPropertyTitle(prop.key) }}:</span>
+        <span
+          v-if="prop.key !== 'project' && prop.key !== 'area'"
+          class="property-key"
+        >{{ getPropertyTitle(prop.key) }}:</span>
         <span class="property-value">
           <template v-if="getIcon(prop.key, prop.value)">
             <Icon
@@ -207,8 +223,8 @@ function isSvgIcon(icon: string): boolean {
         <button
           v-if="hoveredPropertyId === prop.id"
           class="delete-button"
-          @click.stop="deleteProperty(prop, $event)"
           title="删除属性"
+          @click.stop="deleteProperty(prop, $event)"
         >
           ×
         </button>

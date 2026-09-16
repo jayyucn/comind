@@ -106,7 +106,11 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick, true))
     </button>
 
     <!-- 搜索：图标按钮开关 + 可收起输入框（输入框在按钮右侧，从左向右展开）；点外部任何内容收起 -->
-    <div class="search" ref="searchRoot" :class="{ open: searchOpen }">
+    <div
+      ref="searchRoot"
+      class="search"
+      :class="{ open: searchOpen }"
+    >
       <button
         class="hdr-btn"
         title="搜索"
@@ -123,7 +127,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick, true))
           placeholder="搜索标题..."
           class="search-input"
           @input="onInput"
-        />
+        >
       </div>
       <button
         v-if="searchOpen && modelValue"

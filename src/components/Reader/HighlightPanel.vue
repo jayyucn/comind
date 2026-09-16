@@ -222,22 +222,55 @@ async function submitNote(text: string): Promise<void> {
 </script>
 
 <template>
-  <aside class="highlight-panel" :class="{ collapsed: !open }" aria-label="本书高亮">
+  <aside
+    class="highlight-panel"
+    :class="{ collapsed: !open }"
+    aria-label="本书高亮"
+  >
     <header class="panel-header">
       <span class="panel-title">本书高亮</span>
-      <button class="panel-close-btn" title="关闭高亮面板" @click="emit('close')">
-        <Icon name="icon-close" :size="16" />
+      <button
+        class="panel-close-btn"
+        title="关闭高亮面板"
+        @click="emit('close')"
+      >
+        <Icon
+          name="icon-close"
+          :size="16"
+        />
       </button>
     </header>
     <div class="panel-body">
-      <div v-if="phase === 'loading'" class="panel-status">加载中…</div>
-      <div v-else-if="phase === 'error'" class="panel-status">高亮加载失败，请重试</div>
-      <div v-else-if="groups.length === 0" class="panel-status">
+      <div
+        v-if="phase === 'loading'"
+        class="panel-status"
+      >
+        加载中…
+      </div>
+      <div
+        v-else-if="phase === 'error'"
+        class="panel-status"
+      >
+        高亮加载失败，请重试
+      </div>
+      <div
+        v-else-if="groups.length === 0"
+        class="panel-status"
+      >
         还没有高亮，选中正文即可划线
       </div>
       <template v-else>
-        <section v-for="group in groups" :key="group.chapter" class="chapter-group">
-          <h3 class="group-title" :title="group.chapter">{{ group.chapter }}</h3>
+        <section
+          v-for="group in groups"
+          :key="group.chapter"
+          class="chapter-group"
+        >
+          <h3
+            class="group-title"
+            :title="group.chapter"
+          >
+            {{ group.chapter }}
+          </h3>
           <article
             v-for="item in group.items"
             :key="item.highlight.id"
@@ -247,23 +280,47 @@ async function submitNote(text: string): Promise<void> {
               class="item-quote"
               :title="item.highlight.text"
               @click="emit('locate', item.highlight.cfi)"
-            >{{ item.highlight.text }}</button>
-            <p v-if="item.note" class="item-note" :title="item.note">想法：{{ item.note }}</p>
+            >
+              {{ item.highlight.text }}
+            </button>
+            <p
+              v-if="item.note"
+              class="item-note"
+              :title="item.note"
+            >
+              想法：{{ item.note }}
+            </p>
             <div class="item-actions">
-              <button class="item-btn" title="写笔记" @click="startNote(item, $event)">
+              <button
+                class="item-btn"
+                title="写笔记"
+                @click="startNote(item, $event)"
+              >
                 写笔记
               </button>
               <template v-if="confirmDeleteId === item.highlight.id">
                 <span class="confirm-hint">笔记 Block 将一并删除</span>
-                <button class="item-btn danger confirm-ok" @click="confirmRemove">确认删除</button>
-                <button class="item-btn confirm-cancel" @click="confirmDeleteId = null">取消</button>
+                <button
+                  class="item-btn danger confirm-ok"
+                  @click="confirmRemove"
+                >
+                  确认删除
+                </button>
+                <button
+                  class="item-btn confirm-cancel"
+                  @click="confirmDeleteId = null"
+                >
+                  取消
+                </button>
               </template>
               <button
                 v-else
                 class="item-btn danger"
                 title="删除高亮"
                 @click="requestRemove(item)"
-              >删除</button>
+              >
+                删除
+              </button>
             </div>
           </article>
         </section>

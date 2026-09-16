@@ -240,31 +240,60 @@ function chooseRecordRef(sourceId: string, entityType: string, field: string) {
 <template>
   <div class="qb-value-wrap">
     <!-- 跨记录引用：芯片预览（不可编辑，× 清除） -->
-    <div v-if="isRecordRef && refPreview && !isRange" class="qb-ref-chip">
-      <component :is="refPreview.target === 'record' ? File : Tag" :size="13" class="qb-ref-ico" />
+    <div
+      v-if="isRecordRef && refPreview && !isRange"
+      class="qb-ref-chip"
+    >
+      <component
+        :is="refPreview.target === 'record' ? File : Tag"
+        :size="13"
+        class="qb-ref-ico"
+      />
       <span class="qb-ref-text">{{ refPreview.text }}</span>
-      <button type="button" class="qb-icon" title="清除引用" @click="clearRef">
+      <button
+        type="button"
+        class="qb-icon"
+        title="清除引用"
+        @click="clearRef"
+      >
         <X :size="13" />
       </button>
     </div>
 
     <!-- 同记录字段引用：字段下拉 + 清除按钮回到字面量（mode==='field' 始终渲染，不因无同类型字段而跌落到字面量分支） -->
-    <div v-else-if="mode === 'field' && showRefControls" class="qb-field-row">
+    <div
+      v-else-if="mode === 'field' && showRefControls"
+      class="qb-field-row"
+    >
       <select
         class="qb-value"
         :value="fieldSelectValue"
         @change="onFieldRefChange"
       >
-        <option v-for="f in sameTypeFields" :key="f.key" :value="f.key">{{ f.label }}</option>
+        <option
+          v-for="f in sameTypeFields"
+          :key="f.key"
+          :value="f.key"
+        >
+          {{ f.label }}
+        </option>
       </select>
-      <button type="button" class="qb-icon" title="清除引用" @click="setMode('literal')">
+      <button
+        type="button"
+        class="qb-icon"
+        title="清除引用"
+        @click="setMode('literal')"
+      >
         <X :size="14" />
       </button>
     </div>
 
     <!-- 字面量输入：仅当非「字段引用」且非「记录引用」时渲染（v-else 承接上方两条分支）。
          + 引用入口按钮置于输入框前面（左侧）。 -->
-    <div v-else class="qb-input-row">
+    <div
+      v-else
+      class="qb-input-row"
+    >
       <!-- + 菜单入口：引用值（当前记录字段 / 其他记录），放在输入框前面 -->
       <button
         v-if="showRefControls"
@@ -277,24 +306,27 @@ function chooseRecordRef(sourceId: string, entityType: string, field: string) {
         <EllipsisVertical :size="14" />
       </button>
 
-      <span v-if="isEmptyOp" class="qb-value qb-value-empty">无需值</span>
+      <span
+        v-if="isEmptyOp"
+        class="qb-value qb-value-empty"
+      >无需值</span>
 
       <input
         v-else-if="descriptor.type === 'text'"
         class="qb-value"
         type="text"
         :value="getLiteral() as string"
-        @input="setLiteral(($event.target as HTMLInputElement).value)"
         placeholder="值…"
-      />
+        @input="setLiteral(($event.target as HTMLInputElement).value)"
+      >
 
       <input
         v-else-if="descriptor.type === 'number'"
+        v-model="numberText"
         class="qb-value"
         type="number"
-        v-model="numberText"
         placeholder="数值…"
-      />
+      >
 
       <!-- date / datetime 共用日期输入（datetime 的 before/after 以 day 为目标，见 ADR-0041） -->
       <template v-else-if="descriptor.type === 'date' || descriptor.type === 'datetime'">
@@ -313,23 +345,44 @@ function chooseRecordRef(sourceId: string, entityType: string, field: string) {
         :value="getLiteral() as string"
         @change="setLiteral(($event.target as HTMLSelectElement).value)"
       >
-        <option v-for="o in options" :key="o.id" :value="o.id">{{ o.label }}</option>
+        <option
+          v-for="o in options"
+          :key="o.id"
+          :value="o.id"
+        >
+          {{ o.label }}
+        </option>
       </select>
 
-      <div v-else-if="descriptor.type === 'multiSelect'" class="qb-multi">
-        <label v-for="o in options" :key="o.id" class="qb-multi-item">
-          <input type="checkbox" :checked="isChecked(o.id)" @change="toggleMulti(o.id)" />
+      <div
+        v-else-if="descriptor.type === 'multiSelect'"
+        class="qb-multi"
+      >
+        <label
+          v-for="o in options"
+          :key="o.id"
+          class="qb-multi-item"
+        >
+          <input
+            type="checkbox"
+            :checked="isChecked(o.id)"
+            @change="toggleMulti(o.id)"
+          >
           <span>{{ o.label }}</span>
         </label>
       </div>
 
       <select
         v-else-if="descriptor.type === 'boolean'"
-        class="qb-value"
         v-model="boolText"
+        class="qb-value"
       >
-        <option value="true">是</option>
-        <option value="false">否</option>
+        <option value="true">
+          是
+        </option>
+        <option value="false">
+          否
+        </option>
       </select>
 
       <input
@@ -337,9 +390,9 @@ function chooseRecordRef(sourceId: string, entityType: string, field: string) {
         class="qb-value"
         type="text"
         :value="getLiteral() as string"
-        @input="setLiteral(($event.target as HTMLInputElement).value)"
         placeholder="值…"
-      />
+        @input="setLiteral(($event.target as HTMLInputElement).value)"
+      >
     </div>
 
     <!-- 引用值弹出层：teleport 到 body，fixed 定位，避免被 FilterBuilder 面板 overflow 裁切 -->
@@ -350,54 +403,64 @@ function chooseRecordRef(sourceId: string, entityType: string, field: string) {
         class="qb-popover-root"
         :style="{ left: anchor.x + 'px', top: anchor.y + 'px' }"
       >
-        <div class="qb-popover-backdrop" @click="closeMenu"></div>
+        <div
+          class="qb-popover-backdrop"
+          @click="closeMenu"
+        />
         <div class="qb-popover">
-        <template v-if="menuView === 'root'">
-          <p class="qb-pop-title">引用值</p>
-          <button
-            v-if="sameTypeFields.length > 0"
-            type="button"
-            class="qb-pop-item"
-            @click="menuView = 'recordField'"
-          >
-            <Tag :size="13" /> 当前记录字段
-          </button>
-          <button
-            v-if="crossRecordSources && crossRecordSources.length > 0"
-            type="button"
-            class="qb-pop-item"
-            @click="menuView = 'recordRef'"
-          >
-            <File :size="13" /> 其他记录…
-          </button>
-          <p v-if="sameTypeFields.length === 0 && (!crossRecordSources || crossRecordSources.length === 0)" class="qb-pop-empty">
-            无可引用来源
-          </p>
-        </template>
+          <template v-if="menuView === 'root'">
+            <p class="qb-pop-title">
+              引用值
+            </p>
+            <button
+              v-if="sameTypeFields.length > 0"
+              type="button"
+              class="qb-pop-item"
+              @click="menuView = 'recordField'"
+            >
+              <Tag :size="13" /> 当前记录字段
+            </button>
+            <button
+              v-if="crossRecordSources && crossRecordSources.length > 0"
+              type="button"
+              class="qb-pop-item"
+              @click="menuView = 'recordRef'"
+            >
+              <File :size="13" /> 其他记录…
+            </button>
+            <p
+              v-if="sameTypeFields.length === 0 && (!crossRecordSources || crossRecordSources.length === 0)"
+              class="qb-pop-empty"
+            >
+              无可引用来源
+            </p>
+          </template>
 
-        <template v-else-if="menuView === 'recordField'">
-          <p class="qb-pop-title">当前记录字段</p>
-          <button
-            v-for="f in sameTypeFields"
-            :key="f.key"
-            type="button"
-            class="qb-pop-item"
-            @click="chooseRecordField(f.key)"
-          >
-            {{ f.label }}
-          </button>
-        </template>
+          <template v-else-if="menuView === 'recordField'">
+            <p class="qb-pop-title">
+              当前记录字段
+            </p>
+            <button
+              v-for="f in sameTypeFields"
+              :key="f.key"
+              type="button"
+              class="qb-pop-item"
+              @click="chooseRecordField(f.key)"
+            >
+              {{ f.label }}
+            </button>
+          </template>
 
-        <template v-else-if="menuView === 'recordRef'">
-          <CrossRecordRefPicker
-            :sources="crossRecordSources ?? []"
-            :descriptor-type="descriptor.type"
-            @select="chooseRecordRef"
-            @cancel="closeMenu"
-          />
-        </template>
+          <template v-else-if="menuView === 'recordRef'">
+            <CrossRecordRefPicker
+              :sources="crossRecordSources ?? []"
+              :descriptor-type="descriptor.type"
+              @select="chooseRecordRef"
+              @cancel="closeMenu"
+            />
+          </template>
+        </div>
       </div>
-    </div>
     </Teleport>
   </div>
 </template>

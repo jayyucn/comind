@@ -103,11 +103,20 @@ watch(visible, (val) => {
 <template>
   <Teleport to="body">
     <Transition name="fade">
-      <div v-if="visible" class="property-editor-overlay" @click.self="close">
+      <div
+        v-if="visible"
+        class="property-editor-overlay"
+        @click.self="close"
+      >
         <div class="property-editor-dialog">
           <div class="dialog-header">
             <h3>{{ initialKey ? '编辑自定义属性' : '添加自定义属性' }}</h3>
-            <button @click="close" class="close-btn">×</button>
+            <button
+              class="close-btn"
+              @click="close"
+            >
+              ×
+            </button>
           </div>
           
           <div class="dialog-body">
@@ -123,8 +132,15 @@ watch(visible, (val) => {
 
             <div class="form-group">
               <label>类型</label>
-              <select v-model="selectedType" :disabled="!!initialKey">
-                <option v-for="t in propertyTypes" :key="t.type" :value="t.type">
+              <select
+                v-model="selectedType"
+                :disabled="!!initialKey"
+              >
+                <option
+                  v-for="t in propertyTypes"
+                  :key="t.type"
+                  :value="t.type"
+                >
                   {{ t.label }}
                 </option>
               </select>
@@ -134,29 +150,51 @@ watch(visible, (val) => {
               <label>值</label>
               
               <!-- Boolean -->
-              <div v-if="selectedType === 'boolean'" class="boolean-options">
+              <div
+                v-if="selectedType === 'boolean'"
+                class="boolean-options"
+              >
                 <label class="boolean-option">
-                  <input type="radio" v-model="currentValue" :value="true">
+                  <input
+                    v-model="currentValue"
+                    type="radio"
+                    :value="true"
+                  >
                   <span>是</span>
                 </label>
                 <label class="boolean-option">
-                  <input type="radio" v-model="currentValue" :value="false">
+                  <input
+                    v-model="currentValue"
+                    type="radio"
+                    :value="false"
+                  >
                   <span>否</span>
                 </label>
               </div>
 
               <!-- Date -->
-              <input v-else-if="selectedType === 'date'" type="date" v-model="currentValue">
+              <input
+                v-else-if="selectedType === 'date'"
+                v-model="currentValue"
+                type="date"
+              >
 
               <!-- Number -->
-              <input v-else-if="selectedType === 'number'" type="number" v-model.number="currentValue">
+              <input
+                v-else-if="selectedType === 'number'"
+                v-model.number="currentValue"
+                type="number"
+              >
 
               <!-- Array (tags) -->
-              <div v-else-if="selectedType === 'array'" class="array-input">
+              <div
+                v-else-if="selectedType === 'array'"
+                class="array-input"
+              >
                 <input
                   v-model="arrayInput"
-                  @keydown.enter.prevent="addArrayItem"
                   placeholder="输入标签，回车添加"
+                  @keydown.enter.prevent="addArrayItem"
                 >
                 <div class="array-items">
                   <span
@@ -165,19 +203,38 @@ watch(visible, (val) => {
                     class="array-item"
                   >
                     {{ item }}
-                    <button @click="removeArrayItem(idx)" class="remove-btn">×</button>
+                    <button
+                      class="remove-btn"
+                      @click="removeArrayItem(idx)"
+                    >×</button>
                   </span>
                 </div>
               </div>
 
               <!-- Default: string -->
-              <input v-else type="text" v-model="currentValue" placeholder="输入值">
+              <input
+                v-else
+                v-model="currentValue"
+                type="text"
+                placeholder="输入值"
+              >
             </div>
           </div>
 
           <div class="dialog-footer">
-            <button @click="close" class="btn btn-secondary">取消</button>
-            <button @click="save" class="btn btn-primary" :disabled="!canSave">保存</button>
+            <button
+              class="btn btn-secondary"
+              @click="close"
+            >
+              取消
+            </button>
+            <button
+              class="btn btn-primary"
+              :disabled="!canSave"
+              @click="save"
+            >
+              保存
+            </button>
           </div>
         </div>
       </div>

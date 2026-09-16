@@ -7,7 +7,7 @@ export interface RightSidebarPanel {
   component: Component
 }
 
-let panels: RightSidebarPanel[] = []
+const panels: RightSidebarPanel[] = []
 
 export function registerPanel(panel: RightSidebarPanel) {
   if (!panels.find(p => p.id === panel.id)) {

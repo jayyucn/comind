@@ -4,7 +4,7 @@ import { useNotificationStore } from '../stores/notification'
 const SCHEDULER_INTERVAL_MS = 60 * 1000
 
 let intervalId: ReturnType<typeof setInterval> | null = null
-let isPrimary = ref(false)
+const isPrimary = ref(false)
 
 export function useNotificationScheduler() {
   const notificationStore = useNotificationStore()

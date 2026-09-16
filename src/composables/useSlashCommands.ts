@@ -85,7 +85,7 @@ function insertFormat(mark: string, placeholder = '|') {
 /**
  * 在行首插入标题
  */
-function insertHeadingAtLineStart(editor: any, level: number) {
+function insertHeadingAtLineStart(editor: Editor, level: number) {
   const { $from } = editor.state.selection
   const lineStart = $from.start()
   const originalCursorPos = $from.pos

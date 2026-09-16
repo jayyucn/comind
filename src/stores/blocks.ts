@@ -1,32 +1,32 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { Block, BlockClipPayload } from '../types/block'
-import type { PropertyValue, PropertyType } from '../types/property'
-import { initCoreClient, triggerSync, isTauriEnvironment } from '../wasm/client'
+import type { PropertyType, PropertyValue } from '../types/property'
+import { debounce } from '../utils/debounce'
 import { generateUUID } from '../utils/id'
 import { decodePropertyValue } from '../utils/property-codec'
-import { debounce } from '../utils/debounce'
-import { usePropertyStore } from './property'
+import { initCoreClient, isTauriEnvironment, triggerSync } from '../wasm/client'
 import { useBlockCardStore } from './blockCard'
+import { usePropertyStore } from './property'
 
 import {
-  pmPosToTextOffset,
+  calcInsertPos,
+  findBlockIndex,
+  getNextSibling,
+  getPrevSibling,
   getSortedChildren,
   getSortedSiblings,
-  sortByPos,
-  getPrevSibling,
-  getNextSibling,
-  calcInsertPos,
-  renumberBlocks,
   isGapExhaustedError,
+  pmPosToTextOffset,
+  renumberBlocks,
   SAVE_DEBOUNCE_MS,
-  findBlockIndex
+  sortByPos
 } from '../utils/block-helpers'
 
-import type { CoreClient } from '../wasm/client'
 import type { BatchOperation } from '@/wasm/types'
-import { normalizeTextRange, type TextRange } from '../services/text-range'
 import { renderedOffsetToEncodedOffset } from '../services/render-text'
+import { normalizeTextRange, type TextRange } from '../services/text-range'
+import type { CoreClient } from '../wasm/client'
 
 /**
  * 文本选区删除计划（#100）：把「删了什么」表达为数据，供编排层先做关系清理
@@ -113,7 +113,8 @@ async function safeCalcInsertPos(
           console.error('[safeCalcInsertPos] Retry failed after renumbering:', retryError)
           throw new Error(
             'Failed to calculate insert position even after renumbering. ' +
-            'This indicates a serious data consistency issue.'
+            'This indicates a serious data consistency issue.',
+            { cause: retryError }
           )
         }
       }
@@ -125,7 +126,8 @@ async function safeCalcInsertPos(
         console.error('[safeCalcInsertPos] Retry failed after renumbering:', retryError)
         throw new Error(
           'Failed to calculate insert position even after renumbering. ' +
-          'This indicates a serious data consistency issue.'
+          'This indicates a serious data consistency issue.',
+          { cause: retryError }
         )
       }
     }
@@ -366,7 +368,6 @@ export const useBlockStore = defineStore('blocks', () => {
       if (myGeneration !== multiPageLoadGeneration) return
 
       const existingIds = new Set(blocks.value.map(b => b.id))
-      let added = 0
       for (const pwb of pagesWithBlocks) {
         if (!pwb) continue
         for (const brd of pwb.blocks) {
@@ -387,7 +388,6 @@ export const useBlockStore = defineStore('blocks', () => {
           if (!existingIds.has(newBlock.id)) {
             blocks.value.push(newBlock)
             existingIds.add(newBlock.id)
-            added++
           }
         }
       }
@@ -629,7 +629,7 @@ export const useBlockStore = defineStore('blocks', () => {
     blockId: string,
     cursorPos: number,
     isCollapsed: boolean,
-    blockFormat?: Record<string, any>,
+    blockFormat?: Block['format'],
     opts?: { forceParentId?: string | null }
   ): Promise<Block | null> {
     const block = blocks.value.find(b => b.id === blockId)
@@ -653,7 +653,7 @@ export const useBlockStore = defineStore('blocks', () => {
     // 单字符（contentLen === 1）：cursorPos 只能在 1（行首）或 2（行尾）
     // 这两种情况都被上面的条件正确覆盖，无需额外处理
 
-    let newBlock: Block | null = null
+    let newBlock: Block | null
 
     // ── 情况1：行首位置 ─────────────────────────────────────────────────
     if (isAtLineStart) {
@@ -730,7 +730,7 @@ export const useBlockStore = defineStore('blocks', () => {
    */
   async function insertSiblingAbove(
     block: Block,
-    blockFormat?: Record<string, any>
+    blockFormat?: Block['format']
   ): Promise<Block> {
     // 预先捕获 nextPos，避免 renumber 后 block.pos 被就地修改导致回调中的 nextPos 偏离
     const originalNextPos = block.pos
@@ -781,7 +781,7 @@ export const useBlockStore = defineStore('blocks', () => {
     refBlock: Block,
     _childBlocks: Block[],
     asFirstChild: boolean,
-    blockFormat?: Record<string, any>
+    blockFormat?: Block['format']
   ): Promise<Block> {
     let newPos: number
 
@@ -1359,14 +1359,14 @@ export const useBlockStore = defineStore('blocks', () => {
     // 输入 @、粘贴等最终都会流经此处），因此无论用何种方式写入 dateRef，
     // block 都会自动成为任务。仅当 block 尚无 status 时补 Todo；
     // 移除 dateRef 时不会反向清除 status（保持任务状态）。
-    if (/@\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2})?\s*[📅⏰]/.test(content)) {
+    if (/@\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2})?\s*[📅⏰]/u.test(content)) {
       const propertyStore = usePropertyStore()
       await propertyStore.ensureTodo(blockId)
     }
   }
 
   /** 更新 Block 格式 */
-  async function updateBlockFormat(blockId: string, format: Record<string, any>) {
+  async function updateBlockFormat(blockId: string, format: Block['format']) {
     const block = blocks.value.find(b => b.id === blockId)
     if (!block) return
 
@@ -1522,7 +1522,7 @@ export const useBlockStore = defineStore('blocks', () => {
    *  必须走 propertyStore.setProperty 完整路径：写完数据库后刷新
    *  propertyStore 内存缓存 + 失效 blockCard，否则 UI 立即重渲染时
    *  仍读到旧值（如语言切换后退出编辑态"变回去"，刷新才生效）。 */
-  async function updateBlockProperties(blockId: string, properties: Record<string, any>) {
+  async function updateBlockProperties(blockId: string, properties: Record<string, PropertyValue>) {
     const propertyStore = usePropertyStore()
     for (const [key, value] of Object.entries(properties)) {
       await propertyStore.setProperty(blockId, key, value)

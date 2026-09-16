@@ -1,17 +1,19 @@
 import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
+import type { Node } from '@tiptap/pm/model'
+import type { EditorView } from '@tiptap/pm/view'
 
 /**
  * 检查光标是否在 URL 中
  */
-function isInURL(doc: any, pos: number): boolean {
+function isInURL(doc: Node, pos: number): boolean {
   const $pos = doc.resolve(pos)
   const textBefore = $pos.nodeBefore?.text || ''
 
   //检测是否在 [[[...]] 中
-  if (textBefore.match(/\[\[([^\[\]]*)/)){
+  if (textBefore.match(/\[\[([^[\]]*)/)){
     const textAfter = $pos.nodeAfter?.text || ''
-    if (textAfter.match(/[^\[\]]*\]\]/)) return true
+    if (textAfter.match(/[^[\]]*\]\]/)) return true
   }
 
   // 检查前面是否有 ://（URL 协议）
@@ -25,7 +27,7 @@ function isInURL(doc: any, pos: number): boolean {
 }
 
 export interface SlashCommandTriggerEvent {
-  view: any
+  view: EditorView
   position: number
   range: { from: number; to: number }
 }

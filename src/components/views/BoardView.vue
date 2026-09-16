@@ -171,12 +171,20 @@ function onDragEnd() {
       @drop="onDrop(col.key, $event)"
     >
       <div class="column-header">
-        <span class="column-title" :style="col.color ? { color: col.color } : undefined">{{ col.label }}</span>
+        <span
+          class="column-title"
+          :style="col.color ? { color: col.color } : undefined"
+        >{{ col.label }}</span>
         <span class="column-count">{{ cardsIn(col.key).length }}</span>
       </div>
 
       <div class="column-cards">
-        <div v-if="cardsIn(col.key).length === 0" class="column-empty">暂无卡片</div>
+        <div
+          v-if="cardsIn(col.key).length === 0"
+          class="column-empty"
+        >
+          暂无卡片
+        </div>
 
         <div
           v-for="card in cardsIn(col.key)"
@@ -188,10 +196,17 @@ function onDragEnd() {
           @dragend="onDragEnd"
           @click="emit('navigate', idOf(card))"
         >
-          <div class="card-grip"><GripVertical :size="12" /></div>
+          <div class="card-grip">
+            <GripVertical :size="12" />
+          </div>
           <div class="card-body">
-            <p class="card-content">{{ titleField ? titleField.get(card) : idOf(card) }}</p>
-            <div v-if="metaChips(card).length" class="card-meta">
+            <p class="card-content">
+              {{ titleField ? titleField.get(card) : idOf(card) }}
+            </p>
+            <div
+              v-if="metaChips(card).length"
+              class="card-meta"
+            >
               <span
                 v-for="(chip, i) in metaChips(card)"
                 :key="i"

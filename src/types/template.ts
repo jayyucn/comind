@@ -108,7 +108,7 @@ export interface BlockDraft {
    * 约定：heading 类型写入 `{ type: 'heading', level: 1 | 2 | 3 }`。
    * 与 `Block.format` 类型保持一致以便直接兼容。
    */
-  format: Record<string, any>
+  format: Record<string, unknown>
   type: 'bullet' | 'property' | 'query' | 'embed' | 'code' | 'image'
   /** 来自 {{cursor}} 替换，插入后用于定位光标；仅第一个非 null 的生效 */
   cursorMarker: '__CURSOR__' | null

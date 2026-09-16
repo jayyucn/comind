@@ -58,15 +58,30 @@ function handleResizeStart(e: MouseEvent) {
 
 <template>
   <Transition name="right-sidebar">
-    <div v-if="visible" class="right-sidebar" :style="{ width: sidebarWidth }">
-      <div class="resize-handle" @mousedown="handleResizeStart"></div>
+    <div
+      v-if="visible"
+      class="right-sidebar"
+      :style="{ width: sidebarWidth }"
+    >
+      <div
+        class="resize-handle"
+        @mousedown="handleResizeStart"
+      />
 
       <div class="right-sidebar-header">
         <div class="right-sidebar-tabs">
-          <button v-for="panel in orderedPanels" :key="panel.id" class="tab-btn"
-            :class="{ active: activePanelId === panel.id }" @click="setActivePanel(panel.id)">
+          <button
+            v-for="panel in orderedPanels"
+            :key="panel.id"
+            class="tab-btn"
+            :class="{ active: activePanelId === panel.id }"
+            @click="setActivePanel(panel.id)"
+          >
             <span class="tab-icon">
-              <Icon :name="panel.icon" :size="16" />
+              <Icon
+                :name="panel.icon"
+                :size="16"
+              />
             </span>
             <span class="tab-label">{{ panel.label }}</span>
           </button>
@@ -74,7 +89,10 @@ function handleResizeStart(e: MouseEvent) {
       </div>
 
       <div class="right-sidebar-content">
-        <component :is="activePanel?.component" v-if="activePanel" />
+        <component
+          :is="activePanel?.component"
+          v-if="activePanel"
+        />
       </div>
     </div>
   </Transition>

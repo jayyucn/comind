@@ -1,7 +1,14 @@
 import type {
-  Block, Page, Property, Link, RelationshipType,
-  SearchResult, BatchResult, DateRefRecord, BlockVersion, Notification,
-  BookHighlightRust, BookProgressRust
+  BatchResult,
+  Block,
+  BlockVersion,
+  BookHighlightRust, BookProgressRust,
+  DateRefRecord,
+  Link,
+  Notification,
+  Page, Property,
+  RelationshipType,
+  SearchResult
 } from './types'
 
 export interface WasmClient {
@@ -76,8 +83,19 @@ export interface WasmClient {
 
 let wasmClient: WasmClient | null = null
 
+/** sql.js 挂到 window 上的最小句柄（完整类型见 @types/sql.js 的 SqlJsStatic） */
+interface WindowSqlJs {
+  Database: unknown
+}
+
+declare global {
+  interface Window {
+    SQL?: WindowSqlJs
+  }
+}
+
 async function ensureSqlJsLoaded(): Promise<void> {
-  if ((window as any).SQL && typeof (window as any).SQL.Database === 'function') {
+  if (window.SQL && typeof window.SQL.Database === 'function') {
     return
   }
   try {
@@ -91,7 +109,7 @@ async function ensureSqlJsLoaded(): Promise<void> {
       } catch {
         sqlPath = '/node_modules/sql.js/dist'
       }
-      ;(window as any).SQL = await initSqlJs({
+      window.SQL = await initSqlJs({
         locateFile: (file: string) => {
           return `${sqlPath}/${file}`
         }
@@ -104,7 +122,7 @@ async function ensureSqlJsLoaded(): Promise<void> {
   throw new Error('sql.js not loaded')
 }
 
-function parseJsonResult<T>(result: any): T {
+function parseJsonResult<T>(result: unknown): T {
   if (typeof result === 'string') {
     return JSON.parse(result) as T
   }

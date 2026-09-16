@@ -294,14 +294,29 @@ onBeforeUnmount(() => {
 <template>
   <div class="named-view-bar">
     <!-- Screen 下拉触发器 -->
-    <button ref="screenTriggerRef" class="screen-trigger" :class="{ open: showScreenPop }" @click="toggleScreenPop">
-      <Star v-if="isDefaultScreen(currentScreen)" :size="12" class="def-star" />
+    <button
+      ref="screenTriggerRef"
+      class="screen-trigger"
+      :class="{ open: showScreenPop }"
+      @click="toggleScreenPop"
+    >
+      <Star
+        v-if="isDefaultScreen(currentScreen)"
+        :size="12"
+        class="def-star"
+      />
       <span class="cur-name">{{ currentScreen?.name ?? '视图' }}</span>
-      <ChevronDown :size="14" class="chev" />
+      <ChevronDown
+        :size="14"
+        class="chev"
+      />
     </button>
 
     <!-- Tabs 条 -->
-    <div ref="tabRowEl" class="tab-row">
+    <div
+      ref="tabRowEl"
+      class="tab-row"
+    >
       <div
         v-for="t in localTabs"
         :key="t.id"
@@ -310,8 +325,15 @@ onBeforeUnmount(() => {
         :class="{ active: t.id === store.currentTabId }"
         @click="renamingTabId ? null : (isDragging ? null : store.selectTab(t.id))"
       >
-        <GripVertical :size="13" class="nvb-grip" />
-        <component :is="viewTypeIcon(t.view_type)" :size="13" class="ico" />
+        <GripVertical
+          :size="13"
+          class="nvb-grip"
+        />
+        <component
+          :is="viewTypeIcon(t.view_type)"
+          :size="13"
+          class="ico"
+        />
         <input
           v-if="renamingTabId === t.id"
           id="tabRenameInput"
@@ -321,16 +343,30 @@ onBeforeUnmount(() => {
           @keyup.escape="renamingTabId = null"
           @blur="confirmTabRename"
           @click.stop
-        />
+        >
         <template v-else>
           <span class="name">{{ tabName(t) }}</span>
           <template v-if="t.id === store.currentTabId && dirtyHint && !renamingTabId">
             <span class="tab-hint">你调整了{{ dirtyHint }}</span>
-            <button class="action" @click.stop="isDragging ? null : store.discardActiveTab()">清除</button>
-            <button class="action" @click.stop="isDragging ? null : store.saveActiveTab()">保存</button>
+            <button
+              class="action"
+              @click.stop="isDragging ? null : store.discardActiveTab()"
+            >
+              清除
+            </button>
+            <button
+              class="action"
+              @click.stop="isDragging ? null : store.saveActiveTab()"
+            >
+              保存
+            </button>
           </template>
           <template v-else>
-            <span v-if="store.dirtyByTab.has(t.id)" class="dot" title="有未保存的更改"></span>
+            <span
+              v-if="store.dirtyByTab.has(t.id)"
+              class="dot"
+              title="有未保存的更改"
+            />
             <span
               v-else
               class="kebab"
@@ -345,7 +381,11 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- 新建 tab -->
-    <button class="add-tab" title="新建 tab" @click="openNewTabModal">
+    <button
+      class="add-tab"
+      title="新建 tab"
+      @click="openNewTabModal"
+    >
       <Plus :size="15" />
     </button>
 
@@ -363,7 +403,9 @@ onBeforeUnmount(() => {
       @close="showScreenPop = false"
     >
       <div class="screen-pop">
-        <div class="hd">SCREENS</div>
+        <div class="hd">
+          SCREENS
+        </div>
         <input
           v-if="creatingScreen"
           id="screenNameInput"
@@ -372,16 +414,22 @@ onBeforeUnmount(() => {
           placeholder="Screen 名称，回车创建"
           @keyup.enter="confirmScreenName"
           @keyup.escape="creatingScreen = false"
-        />
+        >
         <template v-else>
-          <button class="new-screen" @click="startCreateScreen">
+          <button
+            class="new-screen"
+            @click="startCreateScreen"
+          >
             <Plus :size="13" /> 新建 Screen
           </button>
-          <button class="new-screen rename-screen" @click="currentScreen && startRenameScreen(currentScreen.id)">
+          <button
+            class="new-screen rename-screen"
+            @click="currentScreen && startRenameScreen(currentScreen.id)"
+          >
             <Pencil :size="13" /> 重命名
           </button>
         </template>
-        <div class="sep"></div>
+        <div class="sep" />
         <div
           v-for="s in store.screens"
           :key="s.id"
@@ -398,12 +446,19 @@ onBeforeUnmount(() => {
             @keyup.escape="renamingScreenId = null"
             @blur="confirmScreenName"
             @click.stop
-          />
+          >
           <template v-else>
-            <button class="act" data-act="rename" title="重命名">
+            <button
+              class="act"
+              data-act="rename"
+              title="重命名"
+            >
               <Pencil :size="12" />
             </button>
-            <span class="nm" title="双击重命名">{{ s.name }}</span>
+            <span
+              class="nm"
+              title="双击重命名"
+            >{{ s.name }}</span>
             <span class="tabs-cnt">{{ tabCountOf(s.id) }}</span>
             <button
               class="act"
@@ -435,13 +490,19 @@ onBeforeUnmount(() => {
       @close="showTabMenu = false"
     >
       <div class="pop-menu">
-        <button class="pop-item" @click="tabMenuId && startRenameTab(tabMenuId); showTabMenu = false">
+        <button
+          class="pop-item"
+          @click="tabMenuId && startRenameTab(tabMenuId); showTabMenu = false"
+        >
           <Pencil :size="13" /> 重命名
         </button>
-        <button class="pop-item" @click="tabMenuId && (onDuplicateTab(tabMenuId), showTabMenu = false)">
+        <button
+          class="pop-item"
+          @click="tabMenuId && (onDuplicateTab(tabMenuId), showTabMenu = false)"
+        >
           <Copy :size="13" /> 复制 视图
         </button>
-        <div class="sep"></div>
+        <div class="sep" />
         <button
           class="pop-item danger"
           :disabled="!canDeleteTab(currentTabs)"
@@ -453,13 +514,25 @@ onBeforeUnmount(() => {
     </BasePopover>
 
     <!-- 新建 tab 弹窗 -->
-    <div v-if="showNewTabModal" class="mask" @click.self="showNewTabModal = false">
+    <div
+      v-if="showNewTabModal"
+      class="mask"
+      @click.self="showNewTabModal = false"
+    >
       <div class="modal">
         <h3>新建 tab</h3>
-        <p class="sub">在当前 Screen「{{ currentScreen?.name }}」内创建；类型创建后固定。</p>
+        <p class="sub">
+          在当前 Screen「{{ currentScreen?.name }}」内创建；类型创建后固定。
+        </p>
         <div class="field">
           <label>名称（可选，默认为类型名）</label>
-          <input id="newTabName" v-model="newTabName" type="text" placeholder="例如：高优先级" @keyup.enter="createTab" />
+          <input
+            id="newTabName"
+            v-model="newTabName"
+            type="text"
+            placeholder="例如：高优先级"
+            @keyup.enter="createTab"
+          >
         </div>
         <div class="field">
           <label>类型</label>
@@ -471,14 +544,27 @@ onBeforeUnmount(() => {
               :class="{ sel: newTabType === vt.key }"
               @click="newTabType = vt.key"
             >
-              <component :is="vt.icon" :size="18" />
+              <component
+                :is="vt.icon"
+                :size="18"
+              />
               <span>{{ vt.label }}</span>
             </button>
           </div>
         </div>
         <div class="modal-actions">
-          <button class="btn" @click="showNewTabModal = false">取消</button>
-          <button class="btn primary" @click="createTab">创建 tab</button>
+          <button
+            class="btn"
+            @click="showNewTabModal = false"
+          >
+            取消
+          </button>
+          <button
+            class="btn primary"
+            @click="createTab"
+          >
+            创建 tab
+          </button>
         </div>
       </div>
     </div>

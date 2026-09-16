@@ -2,6 +2,7 @@ import type { Ref } from 'vue'
 import { computed, onMounted, watch } from 'vue'
 import { useBlockStore } from '../../../stores/blocks'
 import { usePropertyStore } from '../../../stores/property'
+import type { PropertyValue } from '../../../types/property'
 
 /**
  * Block 属性同步 composable
@@ -31,17 +32,17 @@ export function useBlockPropertySync(blockId: Ref<string>) {
     return prop?.value as string | undefined
   }
 
-  function getPropertiesMap(): Record<string, any> {
+  function getPropertiesMap(): Record<string, PropertyValue> {
     const props = propertyStore.getBlockProperties(blockId.value)
-    const result: Record<string, any> = {}
+    const result: Record<string, PropertyValue> = {}
     for (const prop of props) {
       result[prop.key] = prop.value
     }
     return result
   }
 
-  async function setProperty(key: string, value: any): Promise<void> {
-    await blockStore.updateBlockProperties(blockId.value, { [key]: value })
+  async function setProperty(key: string, value: unknown): Promise<void> {
+    await blockStore.updateBlockProperties(blockId.value, { [key]: value as PropertyValue })
   }
 
   const blockPriority = computed(() => {

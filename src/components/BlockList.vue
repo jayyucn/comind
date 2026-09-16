@@ -761,7 +761,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="rootEl" class="block-list">
+  <div
+    ref="rootEl"
+    class="block-list"
+  >
     <!-- 根级拖拽列表：与 Block 子级列表共用同一实现（BlockDraggableList），
          接线只有一份，避免两处配置漂移。落库由 @drag-end 统一接管。 -->
     <BlockDraggableList
@@ -772,7 +775,10 @@ onBeforeUnmount(() => {
       @drag-end="handleDragEnd"
     />
     <!-- 底部留白：双击创建新 block -->
-    <div class="block-list-padding" @dblclick="handleCreateBlock" />
+    <div
+      class="block-list-padding"
+      @dblclick="handleCreateBlock"
+    />
 
     <!-- 拖放指示器：模块级共享状态，整个 BlockList 只渲染一次。
          由各 Block 的 useBlockDragDrop.handleDragMove 写入共享 ref。 -->

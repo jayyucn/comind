@@ -104,13 +104,13 @@ const pendingNewTitle = ref('')
 
 onMounted(() => {
   // TaskHub navigate-to-block: scroll to target block after route change
-  window.addEventListener('navigate-to-block' as any, handleNavigateToBlockEvent)
+  window.addEventListener('navigate-to-block', handleNavigateToBlockEvent)
 })
 
 onBeforeUnmount(() => {
   pageLoadGeneration++
   editorStore.deactivateBlock()
-  window.removeEventListener('navigate-to-block' as any, handleNavigateToBlockEvent)
+  window.removeEventListener('navigate-to-block', handleNavigateToBlockEvent)
   window.removeEventListener('ideas-snapshot-mounted', handleSnapshotMounted)
 })
 
@@ -222,7 +222,10 @@ function handleCancelMerge() {
 <template>
   <div class="page-container">
     <div class="page-body">
-      <main class="main-content" ref="pageMainContentRef">
+      <main
+        ref="pageMainContentRef"
+        class="main-content"
+      >
         <div class="page-header">
           <div class="page-header-content">
             <h1
@@ -230,7 +233,9 @@ function handleCancelMerge() {
               class="page-title page-title--display"
               :class="{ 'page-title--editable': isTitleEditable }"
               @click="startEditTitle"
-            >{{ currentPageTitle }}</h1>
+            >
+              {{ currentPageTitle }}
+            </h1>
             <input
               v-else
               ref="titleInputRef"
@@ -239,19 +244,28 @@ function handleCancelMerge() {
               @blur="saveTitle"
               @keydown.enter.prevent="saveTitle"
               @keydown.escape.prevent="cancelEditTitle"
-            />
+            >
             <button
               v-if="canOpenReader"
               class="read-book-btn"
               title="在独立窗口中阅读这本书"
               @click="handleOpenReader"
-            >开始阅读</button>
+            >
+              开始阅读
+            </button>
           </div>
         </div>
 
         <!-- 正文：历史 ideas 页走快照只读渲染；其余（今日 ideas / 普通页 / 书页）走活数据 BlockList -->
-        <IdeasSnapshotPage v-if="isSnapshotIdeasPage" :key="resolvedPageId" :page-id="resolvedPageId" />
-        <BlockList v-else :page-id="resolvedPageId" />
+        <IdeasSnapshotPage
+          v-if="isSnapshotIdeasPage"
+          :key="resolvedPageId"
+          :page-id="resolvedPageId"
+        />
+        <BlockList
+          v-else
+          :page-id="resolvedPageId"
+        />
       </main>
 
       <Backlinks />
@@ -267,7 +281,9 @@ function handleCancelMerge() {
       @confirm="handleMerge"
       @cancel="handleCancelMerge"
     >
-      <template #icon>⚡</template>
+      <template #icon>
+        ⚡
+      </template>
       页面「<strong class="dialog-highlight">{{ editingTitle }}</strong>」已存在，合并后将把所有内容移入已有页面。
     </ConfirmDialog>
 

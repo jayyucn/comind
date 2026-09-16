@@ -82,13 +82,33 @@ watch(
     </section>
 
     <!-- 排序区（多键） -->
-    <section v-if="showSortGroup" class="qb-section">
-      <h4 class="qb-section-title">排序</h4>
+    <section
+      v-if="showSortGroup"
+      class="qb-section"
+    >
+      <h4 class="qb-section-title">
+        排序
+      </h4>
       <div class="qb-sort-list">
-        <div v-for="(rule, i) in query.sort" :key="i" class="qb-sort-row">
-          <select class="qb-select" v-model="rule.field">
-            <option value="">（无）</option>
-            <option v-for="f in sortFieldOptions" :key="f.key" :value="f.key">{{ f.label }}</option>
+        <div
+          v-for="(rule, i) in query.sort"
+          :key="i"
+          class="qb-sort-row"
+        >
+          <select
+            v-model="rule.field"
+            class="qb-select"
+          >
+            <option value="">
+              （无）
+            </option>
+            <option
+              v-for="f in sortFieldOptions"
+              :key="f.key"
+              :value="f.key"
+            >
+              {{ f.label }}
+            </option>
           </select>
           <button
             class="qb-icon"
@@ -99,22 +119,48 @@ watch(
           >
             {{ rule.dir === 'asc' ? '↑' : '↓' }}
           </button>
-          <button class="qb-icon" type="button" title="删除排序" @click="removeSort(i)">
+          <button
+            class="qb-icon"
+            type="button"
+            title="删除排序"
+            @click="removeSort(i)"
+          >
             <X :size="12" />
           </button>
         </div>
       </div>
-      <button type="button" class="qb-text-btn" @click="addSort">
+      <button
+        type="button"
+        class="qb-text-btn"
+        @click="addSort"
+      >
         <Plus :size="14" /> 添加排序
       </button>
     </section>
 
     <!-- 分组区（单字段） -->
-    <section v-if="showSortGroup" class="qb-section">
-      <h4 class="qb-section-title">分组</h4>
-      <select class="qb-select" :value="query.groupBy" @change="query.groupBy = ($event.target as HTMLSelectElement).value || null">
-        <option :value="null">不分组</option>
-        <option v-for="f in groupOptions" :key="f.key" :value="f.key">{{ f.label }}</option>
+    <section
+      v-if="showSortGroup"
+      class="qb-section"
+    >
+      <h4 class="qb-section-title">
+        分组
+      </h4>
+      <select
+        class="qb-select"
+        :value="query.groupBy"
+        @change="query.groupBy = ($event.target as HTMLSelectElement).value || null"
+      >
+        <option :value="null">
+          不分组
+        </option>
+        <option
+          v-for="f in groupOptions"
+          :key="f.key"
+          :value="f.key"
+        >
+          {{ f.label }}
+        </option>
       </select>
     </section>
   </div>

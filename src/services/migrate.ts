@@ -15,6 +15,7 @@
  * 幂等可重跑：已迁移的 block 不会再处理（通过检查 content 是否已含 dateRef）。
  */
 import type { CoreClient } from '../wasm/client'
+import type { RecurrenceRule } from '../utils/date-ref'
 import { serializeDateRef } from '../utils/date-ref'
 
 export interface MigrationResult {
@@ -103,7 +104,7 @@ export async function migrateDateProperties(client: CoreClient): Promise<Migrati
           const dateRefText = serializeDateRef({
             kind,
             iso,
-            recurrence: recurrence as any,
+            recurrence: recurrence as RecurrenceRule,
             leadMinutes: 0,
           })
 

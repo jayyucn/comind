@@ -21,7 +21,10 @@ async function handleMouseDown() {
 </script>
 
 <template>
-  <div class="sidebar-header" @mousedown="handleMouseDown">
+  <div
+    class="sidebar-header"
+    @mousedown="handleMouseDown"
+  >
     <span class="sidebar-logo">COMIND</span>
     <div class="header-right">
       <button
@@ -31,7 +34,10 @@ async function handleMouseDown() {
         @mousedown.stop
         @click="$emit('goBack')"
       >
-        <Icon name="icon-arrow-left" :size="16" />
+        <Icon
+          name="icon-arrow-left"
+          :size="16"
+        />
       </button>
       <button
         class="nav-btn"
@@ -40,7 +46,10 @@ async function handleMouseDown() {
         @mousedown.stop
         @click="$emit('goForward')"
       >
-        <Icon name="icon-arrow-right" :size="16" />
+        <Icon
+          name="icon-arrow-right"
+          :size="16"
+        />
       </button>
     </div>
   </div>
