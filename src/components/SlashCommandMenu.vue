@@ -32,6 +32,12 @@ onMounted(async () => {
 const visible = ref(false)
 const query = ref('')
 const selectedIndex = ref(0)
+/**
+ * 无选中项（#122）：query 为空时**不得**默认高亮首项 —— 首项是 /time，
+ * 一回车就把当前时间插进块里。空 query ⇒ 无高亮 ⇒ 回车不执行任何命令
+ * （方向键仍可主动选中，那时是用户显式选择，与「默认落到首项」两回事）。
+ */
+const NO_SELECTION = -1
 const position = ref({ x: 0, y: 0 })
 const range = ref<{ from: number; to: number } | null>(null)
 const listRef = ref<HTMLElement | null>(null)
@@ -96,7 +102,7 @@ function handleSlashCommandTrigger(event: Event) {
   anchorPos.value = pos
   range.value = r
   query.value = ''
-  selectedIndex.value = 0
+  selectedIndex.value = NO_SELECTION
 }
 
 // 由 ProseMirror 文本位置反查光标所在 DOM 元素，作为 BasePopover 的避让锚点。
@@ -139,7 +145,7 @@ function handleKeyDown(event: KeyboardEvent) {
     case 'ArrowUp':
       event.preventDefault()
       if (listLength === 0) return
-      selectedIndex.value = selectedIndex.value === 0
+      selectedIndex.value = selectedIndex.value <= 0
         ? listLength - 1
         : selectedIndex.value - 1
       break
@@ -159,6 +165,8 @@ function handleKeyDown(event: KeyboardEvent) {
           close()
           break
         }
+        // 空 query（只打了 '/'）：无选中项，回车不响应 —— 见 NO_SELECTION 注释（#122）
+        if (selectedIndex.value === NO_SELECTION) break
         const cmd = flatCommands.value[selectedIndex.value]
         if (cmd) {
           void executeCommand(cmd)
@@ -201,10 +209,11 @@ function syncQuery(): boolean {
 
   const newQuery = textWithSlash.slice(1)
 
-  // 只在 query 实际变化时重置选中索引（避免 ArrowDown 等非文本操作触发重置）
+  // 只在 query 实际变化时重置选中索引（避免 ArrowDown 等非文本操作触发重置）；
+  // 空 query 重置为「无选中」而非 0 —— 0 会让回车命中首项 /time（#122）
   if (newQuery !== query.value) {
     query.value = newQuery
-    selectedIndex.value = 0
+    selectedIndex.value = newQuery === '' ? NO_SELECTION : 0
   }
 
   // 检测 /template list 切换到模板子视图

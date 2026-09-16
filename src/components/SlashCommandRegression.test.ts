@@ -16,6 +16,14 @@ vi.mock('../utils/imagePicker', () => ({
 type MenuVm = { query: string; visible: boolean }
 
 /**
+ * 每个用例 mount 一个菜单，但菜单在 onMounted 往 document 绑了 keydown 监听器、
+ * onBeforeUnmount 才移除。若不卸载，多个菜单的监听器会叠加——后一个用例 dispatch
+ * Enter 时，前面仍 visible 的菜单也会响应并执行命令（测试污染，非产品缺陷：
+ * 产品里 slash 菜单是单例，不会叠加）。用 afterEach 统一卸载，避免泄漏。
+ */
+let mountedWrapper: { unmount: () => void } | null = null
+
+/**
  * 造一个极简编辑器替身：doc 用纯文本建模（textBetween = 切片），
  * 与 ProseMirror 的语义一致——位置就是字符下标，所以 range/cursor 组合都可验。
  */
@@ -58,6 +66,7 @@ async function openMenu(editor: ReturnType<typeof makeEditor>, range: { from: nu
   }))
   await flushPromises()
   await nextTick()
+  mountedWrapper = wrapper
   return wrapper
 }
 
@@ -77,6 +86,11 @@ describe('regression: /image + Enter must run image, not time', () => {
       configurable: true,
       value: vi.fn()
     })
+  })
+
+  afterEach(() => {
+    mountedWrapper?.unmount()
+    mountedWrapper = null
   })
 
   it('executes image command (not time) when /image typed then Enter pressed', async () => {
@@ -137,6 +151,23 @@ describe('regression: /image + Enter must run image, not time', () => {
 
     expect(openImageFileDialog).toHaveBeenCalled()
     expect(editor.insertContent).not.toHaveBeenCalled()
+  })
+
+  it('只打了 / 就回车：无选中项 ⇒ 不执行任何命令（绝不落到首项 /time）', async () => {
+    // 命令文本可确认（就是 '/'），但 query 为空 ⇒ 无高亮项 ⇒ 回车不响应。
+    // 旧行为：query 空 → 列表全量 + selectedIndex=0 → 执行 /time 插入当前时间。
+    const editor = makeEditor('/', 1)
+    const wrapper = await openMenu(editor, { from: 0, to: 1 })
+
+    pressEnter()
+    await flushPromises()
+    await nextTick()
+
+    expect(editor.insertContent).not.toHaveBeenCalled()
+    expect(editor.deleteRange).not.toHaveBeenCalled()
+    expect(openImageFileDialog).not.toHaveBeenCalled()
+    // 面板保持打开（「空 query 不响应回车」而非「关面板」），用户可继续输入或 Escape
+    expect((wrapper.vm as unknown as MenuVm).visible).toBe(true)
   })
 
   it('range 失效（命令文本已不是 / 开头）时回车只关面板，不执行首项 /time', async () => {
