@@ -32,6 +32,12 @@ onMounted(async () => {
 const visible = ref(false)
 const query = ref('')
 const selectedIndex = ref(0)
+/**
+ * 无选中项（#122）：query 为空时**不得**默认高亮首项 —— 首项是 /time，
+ * 一回车就把当前时间插进块里。空 query ⇒ 无高亮 ⇒ 回车不执行任何命令
+ * （方向键仍可主动选中，那时是用户显式选择，与「默认落到首项」两回事）。
+ */
+const NO_SELECTION = -1
 const position = ref({ x: 0, y: 0 })
 const range = ref<{ from: number; to: number } | null>(null)
 const listRef = ref<HTMLElement | null>(null)
@@ -96,7 +102,7 @@ function handleSlashCommandTrigger(event: Event) {
   anchorPos.value = pos
   range.value = r
   query.value = ''
-  selectedIndex.value = 0
+  selectedIndex.value = NO_SELECTION
 }
 
 // 由 ProseMirror 文本位置反查光标所在 DOM 元素，作为 BasePopover 的避让锚点。
@@ -120,6 +126,10 @@ const anchorElProp = computed<HTMLElement | (() => HTMLElement | null) | undefin
 // 监听键盘事件
 function handleKeyDown(event: KeyboardEvent) {
   if (!visible.value) return
+  // IME 组合期一律不接管：组合中的文本尚未进入文档，query 解析为空，
+  // 此时回车会落到候选列表首项（/time）而把当前时间插进块里（#122）。
+  // 组合键（含确认候选词的回车）交还输入法，组合结束后由 compositionend 同步 query。
+  if (event.isComposing || event.keyCode === 229) return
 
   // 子视图（template list）使用 templateListData 而非 flatCommands
   const listLength = isTemplateListView.value
@@ -135,7 +145,7 @@ function handleKeyDown(event: KeyboardEvent) {
     case 'ArrowUp':
       event.preventDefault()
       if (listLength === 0) return
-      selectedIndex.value = selectedIndex.value === 0
+      selectedIndex.value = selectedIndex.value <= 0
         ? listLength - 1
         : selectedIndex.value - 1
       break
@@ -147,10 +157,16 @@ function handleKeyDown(event: KeyboardEvent) {
           void useTemplateFromList(t.id)
         }
       } else {
-        // 强制从当前编辑器同步 query：避免依赖 editor.on('update') 的绑定时机，
-        // 万一 query 滞后为空，flatCommands 会退化成全部命令，selectedIndex=0 选中
-        // 第一个命令 time 并插入当前时间 "HH:MM"。见下方对 activeEditor 的 watch。
-        updateQuery()
+        // 强制从当前编辑器同步 query：避免依赖 editor.on('update') 的绑定时机。
+        // 同步失败（range 失效 / 编辑器已替换 / 命令文本已不是 '/' 开头）时绝不回车执行——
+        // query 为空会让 flatCommands 退化成全部命令、selectedIndex=0 命中第一个命令
+        // time 并插入当前时间 "HH:MM"（#122）。无法确认命令文本时只关面板。
+        if (!syncQuery()) {
+          close()
+          break
+        }
+        // 空 query（只打了 '/'）：无选中项，回车不响应 —— 见 NO_SELECTION 注释（#122）
+        if (selectedIndex.value === NO_SELECTION) break
         const cmd = flatCommands.value[selectedIndex.value]
         if (cmd) {
           void executeCommand(cmd)
@@ -171,32 +187,43 @@ function handleKeyDown(event: KeyboardEvent) {
   }
 }
 
-// 更新查询文本
-function updateQuery() {
-  if (!visible.value || !range.value) return
+/**
+ * 从当前编辑器同步查询文本，返回 false 表示命令文本无法确认。
+ *
+ * 取 range.from（'/' 所在位置）到光标的整段文本并要求其以 '/' 开头：
+ * 这样 range 失效（编辑器被替换 / 位置漂移）时能当场识别，而不是把空字符串
+ * 当成「无过滤」静默放大成全部命令（首项 /time，见 #122）。
+ */
+function syncQuery(): boolean {
+  if (!visible.value || !range.value) return false
 
   const editor = editorStore.activeEditor
-  if (!editor) return
+  if (!editor) return false
 
-  // 获取当前光标位置后的文本（range.to 是 / 字符之后的位置）
   const { from } = editor.state.selection
-  const startPos = range.value.to
-  const textAfterSlash = editor.state.doc.textBetween(startPos, from)
+  const startPos = range.value.from
+  if (from < startPos) return false
 
-  const newQuery = textAfterSlash
+  const textWithSlash = editor.state.doc.textBetween(startPos, from)
+  if (!textWithSlash.startsWith('/')) return false
 
-  // 只在 query 实际变化时重置选中索引（避免 ArrowDown 等非文本操作触发重置）
+  const newQuery = textWithSlash.slice(1)
+
+  // 只在 query 实际变化时重置选中索引（避免 ArrowDown 等非文本操作触发重置）；
+  // 空 query 重置为「无选中」而非 0 —— 0 会让回车命中首项 /time（#122）
   if (newQuery !== query.value) {
     query.value = newQuery
-    selectedIndex.value = 0
+    selectedIndex.value = newQuery === '' ? NO_SELECTION : 0
   }
 
   // 检测 /template list 切换到模板子视图
-  if (query.value.trim() === 'template list') {
-    isTemplateListView.value = true
-  } else {
-    isTemplateListView.value = false
-  }
+  isTemplateListView.value = query.value.trim() === 'template list'
+  return true
+}
+
+/** 编辑器 update / compositionend 回调：同步失败时忽略（面板状态交由回车路径裁决）。 */
+function updateQuery() {
+  syncQuery()
 }
 
 // 执行命令
@@ -415,6 +442,9 @@ function cancelDeleteTemplate() {
 
 // 监听编辑器更新（用于实时更新查询）
 let editorUpdateListener: (() => void) | null = null
+// 记录实际绑定的编辑器与其 DOM：解绑必须回到同一实例（activeEditor 可能已被换掉）
+let boundEditor: typeof editorStore.activeEditor = null
+let boundEditorDom: HTMLElement | null = null
 
 function bindEditorUpdate() {
   // 先解绑旧监听，避免 activeEditor 变更后重复绑定导致泄漏
@@ -430,14 +460,28 @@ function bindEditorUpdate() {
   }
 
   editor.on('update', editorUpdateListener)
+
+  // IME 组合结束：组合文本此刻才进入文档（组合期 update 不含它），需立即同步 query，
+  // 否则中文输入法下输入命令字母时列表一直是全量、回车即命中首项 /time（#122）。
+  const dom = editor.view?.dom as HTMLElement | undefined
+  if (dom) {
+    dom.addEventListener('compositionend', editorUpdateListener)
+    boundEditorDom = dom
+  }
+  boundEditor = editor
 }
 
 function unbindEditorUpdate() {
-  const editor = editorStore.activeEditor
-  if (editor && editorUpdateListener) {
-    editor.off?.('update', editorUpdateListener)
-    editorUpdateListener = null
+  if (!editorUpdateListener) return
+  if (boundEditor) {
+    boundEditor.off?.('update', editorUpdateListener)
   }
+  if (boundEditorDom) {
+    boundEditorDom.removeEventListener('compositionend', editorUpdateListener)
+  }
+  boundEditor = null
+  boundEditorDom = null
+  editorUpdateListener = null
 }
 
 onMounted(() => {

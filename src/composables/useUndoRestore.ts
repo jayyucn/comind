@@ -30,7 +30,7 @@ import { usePropertyStore } from '../stores/property'
 import type { Block } from '../types/block'
 import type { Property } from '../types/property'
 import type { HistoryEntry } from './useUndoHistory'
-import { blockDocumentEqual, commitNow, redo, undo } from './useUndoHistory'
+import { blockDocumentEqual, canRedo, canUndo, commitNow, redo, undo } from './useUndoHistory'
 import { encodePropertyValue } from '../utils/property-codec'
 
 let clientPromise: Promise<CoreClient> | null = null
@@ -291,9 +291,19 @@ export async function redoAndRestore(pageId: string): Promise<string[] | null> {
 
 /**
  * 撤销/重做编排（共享收口，供 BlockList 与 App 级全局兜底共用）：
- * 退出编辑态 → 封口未成步改动 → 移动游标并恢复。返回受影响块 id（无可撤/可重做返回 null）。
+ * 封口 → **判定有无这一步可走**（无可走即纯 no-op）→ 退出编辑态 → 再封口 → 移动游标并恢复。
+ * 返回受影响块 id（无可撤/可重做返回 null）。
  *
- * 退出编辑态必须先于封口：Editor 卸载时（onBeforeUnmount）把还停在 300ms 落库防抖里的
+ * no-op 守卫（#122）：空历史下按 Ctrl+Z 必须**什么都不发生** —— 原先先 deactivateBlock()
+ * 再判空，栈空时会把正在编辑的块踢出编辑态（光标丢失）却什么也没撤。故判定前移到最前面：
+ * 先 commitNow 把「已进 store 但未成步」的改动变成一步（commitNow 只动历史栈、不动激活态），
+ * 再问 canUndo/canRedo。
+ *
+ * 已知边界（有意接受）：编辑器文本经 300ms 防抖才进 store，故「页面刚载入 → 首次输入后
+ * 300ms 内」按 Ctrl+Z 会因 store 仍是旧内容而判为空、本次无反应（再按一次即生效）。
+ * 与之交换的是「空历史不再打掉编辑态」——后者每次都发生，前者只在半个防抖窗口内。
+ *
+ * 退出编辑态必须先于第二次封口：Editor 卸载时（onBeforeUnmount）把还停在 300ms 落库防抖里的
  * 文本同步进 store；不先同步就恢复，那段未落库文本随后落库会把刚撤掉的内容写回来（#109）。
  * 守卫只退「落在目标页」的编辑态 —— BlockModal 他页块的编辑态不连坐清掉（#109）。
  */
@@ -301,6 +311,9 @@ export async function runUndoOrRedo(
   pageId: string,
   chord: 'undo' | 'redo',
 ): Promise<string[] | null> {
+  commitNow(pageId)
+  if (!(chord === 'undo' ? canUndo(pageId) : canRedo(pageId))) return null
+
   const editorStore = useEditorStore()
   const blockStore = useBlockStore()
   const activeId = editorStore.activeBlockId
@@ -308,6 +321,7 @@ export async function runUndoOrRedo(
     editorStore.deactivateBlock()
     await nextTick()
   }
+  // 第二次封口：承接上一步卸载同步进 store 的文本（回声抑制保证无改动时不重复入栈）
   commitNow(pageId)
   return chord === 'undo' ? undoAndRestore(pageId) : redoAndRestore(pageId)
 }

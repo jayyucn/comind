@@ -249,11 +249,45 @@ function copySelectionToClipboard(): void {
 }
 
 /**
+ * 多选删除的落点（#122）：上方相邻第一个 > 下方相邻第一个 > null（无邻居时由
+ * 调用方的「保留最后一块」兜底，即优先级里的「最后一个空 block」）。
+ *
+ * 必须在删除**前**解析：删除后 blocks 里已无被删块，无从判断相邻关系。
+ * 邻居判定复用 store 的可见块导航（findPrevious/NextVisibleBlock，ADR-0045 折叠口径），
+ * 与单块 Backspace 删除（useBlockEditorLifecycle.handleDelete）同源；连续多选时
+ * 邻居本身可能也在选中集里，故逐级跳过直到找着一个不会被删的块。
+ */
+function resolveDeleteLandingId(selected: string[]): string | null {
+  if (selected.length === 0) return null
+  const selectedSet = new Set(selected)
+  const ordered = sortByDocumentOrderIds(selected, blockStore.blocks)
+  // 上：从文档序首个被删块往上，跳过同样被删的
+  let cursor: string | undefined = ordered[0]
+  while (cursor) {
+    const prev = blockStore.findPreviousVisibleBlock(cursor)
+    if (!prev) break
+    if (!selectedSet.has(prev.id)) return prev.id
+    cursor = prev.id
+  }
+  // 下：从文档序最后一个被删块往下，同上
+  cursor = ordered[ordered.length - 1]
+  while (cursor) {
+    const next = blockStore.findNextVisibleBlock(cursor)
+    if (!next) break
+    if (!selectedSet.has(next.id)) return next.id
+    cursor = next.id
+  }
+  return null
+}
+
+/**
  * 块选区删除编排：Backspace/Delete 与 Ctrl+X 共用同一落库路径。
  * 乐观过滤 + 延迟落库 + 全选删除的保留块兜底（原 Backspace 分支原样上提）。
  */
 async function deleteSelectedBlocks(): Promise<void> {
   const selected = [...selection.anchorIds]
+  // 落点须在删除前解析（删除后已无从判断相邻关系）
+  const landingId = resolveDeleteLandingId(selected)
   // 同步：仅 tree 过滤（store 保留，cleanupAfterDelete 需要这些块数据）
   // 乐观过滤也守「至少留一块」：若移除选中会让 tree 空，则保留最后一块
   // （与 store deleteBlocks 闸门一致），避免瞬时空屏；其内容随后由 store 清空。
@@ -275,6 +309,10 @@ async function deleteSelectedBlocks(): Promise<void> {
         // 全选删除后页面只剩被保留的空 block：清选区并进入编辑态，光标落其内便于续写
         selection.clearSelection()
         editorStore.activateBlock(keptId, 1)
+      } else if (landingId) {
+        // 常规多选删除：激活邻近块（上优先，其次下），与单块 Backspace 同口径（不带光标位）
+        selection.clearSelection()
+        editorStore.activateBlock(landingId)
       }
     })
   }, 0)
