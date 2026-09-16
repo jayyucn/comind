@@ -1,16 +1,16 @@
 <script setup lang="ts">
+import { ref, watch } from 'vue'
+import { useLayoutShell } from '../../composables/useLayoutShell'
 import { useSidebar } from '../../composables/useSidebar'
+import Icon from '../Icons/Icon.vue'
+import SidebarFavorites from './SidebarFavorites.vue'
+import SidebarFooter from './SidebarFooter.vue'
+import SidebarGraphItem from './SidebarGraphItem.vue'
 import SidebarHeader from './SidebarHeader.vue'
 import SidebarIdeas from './SidebarIdeas.vue'
 import SidebarPages from './SidebarPages.vue'
-import SidebarGraphItem from './SidebarGraphItem.vue'
-import SidebarTaskItem from './SidebarTaskItem.vue'
 import SidebarRecent from './SidebarRecent.vue'
-import SidebarFavorites from './SidebarFavorites.vue'
-import SidebarFooter from './SidebarFooter.vue'
-import Icon from '../Icons/Icon.vue'
-import { ref, watch } from 'vue'
-import { useLayoutShell } from '../../composables/useLayoutShell'
+import SidebarTaskItem from './SidebarTaskItem.vue'
 
 const { isCollapsed, toggle } = useSidebar()
 
@@ -22,6 +22,12 @@ watch(sidebarRef, el => { shell.sidebarEl.value = el }, { immediate: true })
 defineProps<{
   canGoBack: boolean
   canGoForward: boolean
+}>()
+
+defineEmits<{
+  (e: 'open-search'): void
+  (e: 'goBack'): void
+  (e: 'goForward'): void
 }>()
 </script>
 
@@ -85,12 +91,6 @@ defineProps<{
     </aside>
   </div>
 </template>
-
-<script lang="ts">
-export default {
-  emits: ['open-search', 'goBack', 'goForward'],
-}
-</script>
 
 <style lang="scss" scoped>
 .sidebar-wrapper {

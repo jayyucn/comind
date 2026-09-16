@@ -25,6 +25,7 @@ const props = withDefaults(defineProps<{
   language?: string
   readonly?: boolean
 }>(), {
+  language: 'plain',
   readonly: false,
 })
 

@@ -256,11 +256,11 @@ function handleMainClick(e: MouseEvent) {
             class="main-content"
             :class="{ 'is-fullwidth-content': isFullWidthPage }"
           >
-            <RouterView v-slot="{ Component, route }">
+            <RouterView v-slot="{ Component, route: currentRoute }">
               <KeepAlive include="IdeasList">
                 <component
                   :is="Component"
-                  :key="route.name === 'ideas-list' ? 'ideas-list' : route.fullPath"
+                  :key="currentRoute.name === 'ideas-list' ? 'ideas-list' : currentRoute.fullPath"
                 />
               </KeepAlive>
             </RouterView>

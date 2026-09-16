@@ -29,6 +29,7 @@ const props = withDefaults(
     placement?: 'bottom' | 'top' | 'left' | 'right'
   }>(),
   {
+    position: () => ({ x: 0, y: 0 }),
     closeOnOverlay: true,
     placement: 'bottom',
     anchorEl: null,

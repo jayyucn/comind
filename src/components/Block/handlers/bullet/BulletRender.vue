@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useContentRenderer, parseHeading } from '../../../../composables/useContentRenderer'
-import { useBlockStore } from '../../../../stores/blocks'
-import SaveErrorBadge from './SaveErrorBadge.vue'
+import { computed } from 'vue';
+import { parseHeading, useContentRenderer } from '../../../../composables/useContentRenderer';
+import { useBlockStore } from '../../../../stores/blocks';
+import SaveErrorBadge from './SaveErrorBadge.vue';
 
 const props = defineProps<{
   content: string
@@ -68,12 +68,16 @@ function handleClick(e: MouseEvent) {
       v-else-if="headingTag"
       :class="['block-heading', headingTag]"
     >
+      <!-- eslint-disable-next-line vue/no-v-html -- 渲染器对所有插值已做 HTML 转义（useContentRenderer.escapeHtmlEntities），受控输出 -->
       <span v-html="headingContent" />
     </component>
+    <!-- vue/no-v-html: 渲染器对所有插值已做 HTML 转义（useContentRenderer.escapeHtmlEntities），受控输出 -->
+    <!-- eslint-disable vue/no-v-html -->
     <span
       v-else
       v-html="normalContent"
     />
+    <!-- eslint-enable vue/no-v-html -->
     <!-- S9: 保存失败指示抽为独立展示组件，重试调度在其内部 -->
     <SaveErrorBadge
       v-if="hasSaveError"

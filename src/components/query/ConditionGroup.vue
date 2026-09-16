@@ -21,7 +21,10 @@ const props = withDefaults(
     /** 跨记录引用候选记录列表（通用，业务无关），由 FilterBuilder 注入。 */
     crossRecordSources?: ReferenceableRecord[]
   }>(),
-  { depth: 1 },
+  { 
+    depth: 1,
+    crossRecordSources: () => [],
+   },
 )
 
 const emit = defineEmits<{ remove: [] }>()

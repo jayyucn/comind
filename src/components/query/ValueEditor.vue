@@ -51,7 +51,11 @@ const props = withDefaults(
   }>(),
   // 注意：type-only defineProps 会把「未传的可选布尔 prop」在运行时默认成 false（而非 undefined），
   // 必须用 withDefaults 显式给定 true，否则默认关闭会误伤 FilterBuilder 等需要引用控件的调用方。
-  { allowRefs: true },
+  {
+    op: 'is',
+    conditionField: '',
+    crossRecordSources: () => [],
+    allowRefs: true },
 )
 
 const model = defineModel<ConditionValue | undefined>()

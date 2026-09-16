@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
-import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
-import BasePopover from './common/BasePopover.vue'
+import { ChevronLeft, ChevronRight } from 'lucide-vue-next';
+import { computed, ref, watch } from 'vue';
+import BasePopover from './common/BasePopover.vue';
 
 const props = withDefaults(defineProps<{
   visible: boolean
@@ -13,6 +13,7 @@ const props = withDefaults(defineProps<{
   /** 区间模式：终点（含），用于高亮整段。 */
   rangeEnd?: string
 }>(), {
+  position: () => ({ x: 0, y: 0 }),
   inline: false,
   rangeStart: '',
   rangeEnd: '',

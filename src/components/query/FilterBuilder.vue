@@ -7,10 +7,10 @@
  * 最终以深拷贝 emit 出合法 ViewQuery（version:1 / filter / sort[] / groupBy）供求值器或持久化消费。
  * 组级 negate 在模型中存在但本 UI 不暴露（v1 约定）。
  */
-import { reactive, ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { Plus, X } from 'lucide-vue-next'
-import type { FieldDescriptor, ReferenceableRecord, Registry, SortRule, ViewQuery } from '../../core/query'
-import ConditionGroup from './ConditionGroup.vue'
+import { Plus, X } from 'lucide-vue-next';
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import type { FieldDescriptor, ReferenceableRecord, Registry, SortRule, ViewQuery } from '../../core/query';
+import ConditionGroup from './ConditionGroup.vue';
 
 const props = withDefaults(
   defineProps<{
@@ -22,7 +22,7 @@ const props = withDefaults(
     /** 是否渲染排序/分组区。页面库高级筛选（popover）置 false 仅保留筛选条件（ADR-0013 D5）；TaskHub 保持默认 true。 */
     showSortGroup?: boolean
   }>(),
-  { showSortGroup: true },
+  { showSortGroup: true, crossRecordSources: () => [] },
 )
 
 const emit = defineEmits<{ 'update:modelValue': [ViewQuery] }>()

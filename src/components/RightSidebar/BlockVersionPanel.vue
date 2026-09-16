@@ -260,11 +260,13 @@ onMounted(async () => {
               <span class="block-bullet">
                 <span class="bullet-dot" />
               </span>
+              <!-- eslint-disable vue/no-v-html -- 渲染器对所有插值已做 HTML 转义（useContentRenderer.escapeHtmlEntities），受控输出 -->
               <div
                 class="block-text"
                 v-html="renderBlockContent(version.snapshot, version.block_id)"
               />
             </div>
+            <!-- eslint-enable vue/no-v-html -->
 
             <div
               v-if="getProperties(version.snapshot).length > 0"
