@@ -45,12 +45,20 @@ export interface UndoTakeover {
 }
 
 /**
- * 撤销/重做接管的四步相同链（#114）：chord 裁决 → scope 解析 → hasStack 门 →
+ * 撤销/重做接管的四步相同链（#114）：chord 裁决 → scope 解析 → **hasStack 门** →
  * preventDefault + stopPropagation。BlockList 的捕获接管与 App 的全局兜底此前
  * 各手写一遍这四步（逐行同构），收口到本函数后各剩一行调用；**scope 解析与
  * dispatch 有意留在调用方**：
  * - scope 解析：BlockList 有实例归属兜底（依赖组件 root/props），App 只认块内焦点；
  * - dispatch：BlockList 带落点闪烁（#109），App 不带（弹窗经响应式自刷）。
+ *
+ * 门是 `hasStack`（页已建撤销栈 = 整页加载过，D6），**不是** `canUndo`/`canRedo`：
+ * 接管发生在「按键瞬间」，而用户最后一段输入往往还停在 300ms 落库防抖或 ~500ms idle
+ * 之内、尚未压栈，此刻 canUndo 恒为 false —— 若在此判 canUndo 会把「刚输入就撤销」误判
+ * 成「无可撤销」而放弃接管，重现 #109 的「无反应落点」。真正该判「有无可撤」的是
+ * `runUndoOrRedo`：它**先 commitNow 把待落库改动封口压栈、再问 canUndo**，无步可走时
+ * 直接 no-op 且**不碰激活态**（#122 第 3 项）。本门只负责「这页要不要接管键盘」，
+ * 不替下游裁决历史是否非空。
  *
  * ⚠️ 让位契约（时序不变量，唯一文档点）：两个 document 捕获监听器靠**注册顺序**
  * 分先后 —— BlockList 挂载时先注册，App 兜底在 App.vue onMounted 后注册、执行
