@@ -10,6 +10,65 @@ vi.mock('../utils/imagePicker', () => ({
   openImageFileDialog: vi.fn().mockResolvedValue(null)
 }))
 
+/**
+ * script setup 的内部状态：测试态下经 wrapper.vm 读取（用 unknown 过渡，避免 any）。
+ */
+type MenuVm = { query: string; visible: boolean }
+
+/**
+ * 造一个极简编辑器替身：doc 用纯文本建模（textBetween = 切片），
+ * 与 ProseMirror 的语义一致——位置就是字符下标，所以 range/cursor 组合都可验。
+ */
+function makeEditor(text: string, cursor: number) {
+  return {
+    state: {
+      selection: { from: cursor },
+      doc: {
+        textBetween: (from: number, to: number) => text.slice(from, to)
+      }
+    },
+    view: { dom: document.createElement('div') },
+    chain: vi.fn().mockReturnThis(),
+    deleteRange: vi.fn().mockReturnThis(),
+    insertContent: vi.fn().mockReturnThis(),
+    setTextSelection: vi.fn().mockReturnThis(),
+    focus: vi.fn().mockReturnThis(),
+    run: vi.fn(),
+    on: vi.fn(),
+    off: vi.fn()
+  }
+}
+
+async function openMenu(editor: ReturnType<typeof makeEditor>, range: { from: number; to: number }) {
+  const wrapper = mount(SlashCommandMenu, {
+    global: {
+      stubs: { Teleport: { template: '<div><slot /></div>' } }
+    }
+  })
+  const editorStore = useEditorStore()
+  editorStore.activeEditor = editor
+  editorStore.activeBlockId = 'block-1'
+
+  document.dispatchEvent(new CustomEvent('slash-command-trigger', {
+    detail: {
+      view: { coordsAtPos: () => ({ left: 0, bottom: 0 }) },
+      position: range.from,
+      range
+    }
+  }))
+  await flushPromises()
+  await nextTick()
+  return wrapper
+}
+
+function pressEnter(composing = false) {
+  const event = new KeyboardEvent('keydown', { key: 'Enter' })
+  if (composing) {
+    Object.defineProperty(event, 'isComposing', { value: true })
+  }
+  document.dispatchEvent(event)
+}
+
 describe('regression: /image + Enter must run image, not time', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -21,55 +80,16 @@ describe('regression: /image + Enter must run image, not time', () => {
   })
 
   it('executes image command (not time) when /image typed then Enter pressed', async () => {
-    const wrapper = mount(SlashCommandMenu, {
-      global: {
-        stubs: { Teleport: { template: '<div><slot /></div>' } }
-      }
-    })
-    const vm = wrapper.vm as any
-    const editorStore = useEditorStore()
-
-    // 模拟一个已经激活、文本为 "/image" 的编辑器
-    const editor = {
-      state: {
-        selection: { from: 6 }, // 光标停在 /image 末尾
-        doc: {
-          textBetween: (from: number, to: number) => {
-            // range.to = 1（'/' 之后），to = 6 → 应返回 "image"
-            if (from === 1 && to === 6) return 'image'
-            return ''
-          }
-        }
-      },
-      chain: vi.fn().mockReturnThis(),
-      deleteRange: vi.fn().mockReturnThis(),
-      insertContent: vi.fn().mockReturnThis(),
-      setTextSelection: vi.fn().mockReturnThis(),
-      focus: vi.fn().mockReturnThis(),
-      run: vi.fn(),
-      on: vi.fn(),
-      off: vi.fn()
-    }
-    editorStore.activeEditor = editor
-    editorStore.activeBlockId = 'block-1'
-
-    // 触发菜单：range = {from:0, to:1}（'/' 在位置 0）
-    document.dispatchEvent(new CustomEvent('slash-command-trigger', {
-      detail: {
-        view: { coordsAtPos: () => ({ left: 0, bottom: 0 }) },
-        position: 0,
-        range: { from: 0, to: 1 }
-      }
-    }))
-    await flushPromises()
-    await nextTick()
+    const editor = makeEditor('/image', 6)
+    const wrapper = await openMenu(editor, { from: 0, to: 1 })
+    const vm = wrapper.vm as unknown as MenuVm
 
     // 复现回归前置条件：编辑器 'update' 监听未把 query 同步为 'image'
     // （模拟 activeEditor 晚于菜单打开就绪，监听器从未绑定）
     expect(vm.query).toBe('')
 
     // 回车
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+    pressEnter()
     await flushPromises()
     await nextTick()
 
@@ -79,5 +99,58 @@ describe('regression: /image + Enter must run image, not time', () => {
     expect(editor.insertContent).not.toHaveBeenCalled()
     // 修复后应解析到 image：deleteRange 被调用（移除 /image 文本）
     expect(editor.deleteRange).toHaveBeenCalled()
+  })
+
+  it('IME 组合期回车不执行任何命令（不插入当前时间）', async () => {
+    // 中文输入法下输入命令字母：文档里只有已提交的 '/'，'img' 仍在组合缓冲区，
+    // 光标停在 '/' 之后 → query 解析为空。组合期回车是「确认候选词」，不能执行命令。
+    const editor = makeEditor('/img', 1)
+    const wrapper = await openMenu(editor, { from: 0, to: 1 })
+
+    pressEnter(true)
+    await flushPromises()
+    await nextTick()
+
+    expect(editor.insertContent).not.toHaveBeenCalled()
+    expect(editor.deleteRange).not.toHaveBeenCalled()
+    expect(openImageFileDialog).not.toHaveBeenCalled()
+    // 面板保持打开，等组合结束后继续正常使用
+    expect((wrapper.vm as unknown as MenuVm).visible).toBe(true)
+  })
+
+  it('IME 组合结束后同步 query，回车命中 image 而非 time', async () => {
+    const editor = makeEditor('/', 1)
+    const wrapper = await openMenu(editor, { from: 0, to: 1 })
+
+    // 组合提交：文本进入文档、光标移到末尾，DOM 派发 compositionend
+    editor.state.selection.from = 4
+    editor.state.doc.textBetween = (from: number, to: number) => '/img'.slice(from, to)
+    editor.view.dom.dispatchEvent(new Event('compositionend'))
+    await nextTick()
+
+    // 组合结束即完成过滤（不等回车补同步），否则列表仍是全量、首项 /time 高亮
+    expect((wrapper.vm as unknown as MenuVm).query).toBe('img')
+
+    pressEnter()
+    await flushPromises()
+    await nextTick()
+
+    expect(openImageFileDialog).toHaveBeenCalled()
+    expect(editor.insertContent).not.toHaveBeenCalled()
+  })
+
+  it('range 失效（命令文本已不是 / 开头）时回车只关面板，不执行首项 /time', async () => {
+    // range 停在上一次触发的位置（指向 'i'），文档已变 → 无法确认命令文本
+    const editor = makeEditor('/image', 6)
+    const wrapper = await openMenu(editor, { from: 1, to: 2 })
+
+    pressEnter()
+    await flushPromises()
+    await nextTick()
+
+    expect(editor.insertContent).not.toHaveBeenCalled()
+    expect(editor.deleteRange).not.toHaveBeenCalled()
+    expect(openImageFileDialog).not.toHaveBeenCalled()
+    expect((wrapper.vm as unknown as MenuVm).visible).toBe(false)
   })
 })

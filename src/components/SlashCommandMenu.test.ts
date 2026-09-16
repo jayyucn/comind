@@ -704,6 +704,30 @@ describe('SlashCommandMenu - Template List Subview', () => {
 })
 
 describe('SlashCommandMenu — priority 命令自动补 Todo', () => {
+  beforeEach(() => {
+    // 本 describe 无外层 beforeEach，需自带编辑器替身：按真实文档建模，
+    // '/' 已落在 doc 内、光标停在其后（回车执行前要能确认命令文本）
+    vi.mocked(useEditorStore).mockReturnValue({
+      activeEditor: {
+        on: vi.fn(),
+        off: vi.fn(),
+        chain: vi.fn().mockReturnThis(),
+        deleteRange: vi.fn().mockReturnThis(),
+        setTextSelection: vi.fn().mockReturnThis(),
+        focus: vi.fn().mockReturnThis(),
+        run: vi.fn(),
+        state: {
+          selection: { from: 1 },
+          doc: { textBetween: (from: number, to: number) => '/'.slice(from, to) }
+        }
+      },
+      activeBlockId: 'block-1',
+      showSlashCommand: vi.fn(),
+      hideSlashCommand: vi.fn(),
+      showQuickPropertyEditor: vi.fn()
+    } as unknown as ReturnType<typeof useEditorStore>)
+  })
+
   it('immediate 优先级命令（如 /high）写入 priority 并调用 ensureTodo', async () => {
     const priorityCmd = {
       id: 'high',
