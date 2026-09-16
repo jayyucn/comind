@@ -20,6 +20,7 @@ import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import BlockList from './BlockList.vue'
 import { useBlockStore } from '../stores/blocks'
+import { useEditorStore } from '../stores/editor'
 import { getCoreClient } from '../wasm/client'
 import type { CrossBlockSelection } from '../composables/useCrossBlockSelection'
 
@@ -533,6 +534,98 @@ describe('BlockList 剪切键分派（Ctrl+X）', () => {
     expect(selection.textRange.value).not.toBeNull()
     expect(store.blocks.find(x => x.id === a.id)?.content).toBe('hello')
     expect(store.blocks.find(x => x.id === b.id)?.content).toBe('world')
+
+    wrapper.unmount()
+  })
+})
+
+/**
+ * 多选删除后的落点（#122 第 2 项）：Ctrl+Click 多选删除后不能「删完就失焦」。
+ * 优先级：上方相邻第一个 > 下方相邻第一个 > 最后一个空 block（全选删除的保留块）。
+ * 夹具与本文件其余组同法（mount + 文档级派发 + provide 写入选区），断言落在
+ * 真实 store 与 editorStore 上；落点解析必须与单块 Backspace 同源，
+ * 故一并钉住「邻居本身也在选中集里」的连续多选。
+ */
+describe('BlockList 多选删除落点（#122）', () => {
+  let extractLinksSpy: MockInstance
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    extractLinksSpy = vi
+      .spyOn(getCoreClient()!, 'extractLinksFromContent')
+      .mockResolvedValue([])
+  })
+
+  afterEach(() => {
+    extractLinksSpy.mockRestore()
+  })
+
+  test('选中后两块：删除后激活上方相邻第一个块', async () => {
+    const store = useBlockStore()
+    const editor = useEditorStore()
+    const pageId = 'page-multidel-land-up'
+    const above = await store.createBlock({ pageId, content: 'above' })
+    const mid = await store.createBlock({ pageId, content: 'mid' })
+    const below = await store.createBlock({ pageId, content: 'below' })
+
+    const wrapper = mountBlockList(pageId)
+    const selection = getSelection(wrapper)
+    selection.toggleBlock(mid.id, pageId)
+    selection.toggleBlock(below.id, pageId)
+
+    dispatchDeleteKey('Backspace')
+    await flushAsync()
+    await flushAsync()
+
+    expect(store.blocks.find(x => x.id === mid.id)).toBeUndefined()
+    expect(store.blocks.find(x => x.id === below.id)).toBeUndefined()
+    expect(editor.activeBlockId).toBe(above.id)
+
+    wrapper.unmount()
+  })
+
+  test('选中前两块（上方无块）：落到下方相邻第一个块', async () => {
+    const store = useBlockStore()
+    const editor = useEditorStore()
+    const pageId = 'page-multidel-land-down'
+    const a = await store.createBlock({ pageId, content: 'a' })
+    const b = await store.createBlock({ pageId, content: 'b' })
+    const c = await store.createBlock({ pageId, content: 'c' })
+
+    const wrapper = mountBlockList(pageId)
+    const selection = getSelection(wrapper)
+    selection.toggleBlock(a.id, pageId)
+    selection.toggleBlock(b.id, pageId)
+
+    dispatchDeleteKey('Backspace')
+    await flushAsync()
+    await flushAsync()
+
+    expect(store.blocks.find(x => x.id === a.id)).toBeUndefined()
+    expect(store.blocks.find(x => x.id === b.id)).toBeUndefined()
+    expect(editor.activeBlockId).toBe(c.id)
+
+    wrapper.unmount()
+  })
+
+  test('全选删除：保留最后一块并激活（优先级 3 不回归）', async () => {
+    const store = useBlockStore()
+    const editor = useEditorStore()
+    const pageId = 'page-multidel-land-all'
+    const a = await store.createBlock({ pageId, content: 'a' })
+    const b = await store.createBlock({ pageId, content: 'b' })
+
+    const wrapper = mountBlockList(pageId)
+    const selection = getSelection(wrapper)
+    selection.selectAll(pageId)
+
+    dispatchDeleteKey('Backspace')
+    await flushAsync()
+    await flushAsync()
+
+    expect(store.blocks.find(x => x.id === a.id)).toBeUndefined()
+    expect(store.blocks.find(x => x.id === b.id)).toBeDefined()
+    expect(editor.activeBlockId).toBe(b.id)
 
     wrapper.unmount()
   })
