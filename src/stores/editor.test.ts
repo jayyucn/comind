@@ -136,7 +136,8 @@ describe('useEditorStore', () => {
       expect(store.propertyEditor).toEqual({
         visible: true,
         blockId: 'block-1',
-        initialKey: 'priority'
+        initialKey: 'priority',
+        position: null
       })
     })
 
@@ -146,8 +147,15 @@ describe('useEditorStore', () => {
       expect(store.propertyEditor).toEqual({
         visible: true,
         blockId: 'block-1',
-        initialKey: null
+        initialKey: null,
+        position: null
       })
+    })
+
+    test('showPropertyEditor 记录浮层锚点', () => {
+      const store = useEditorStore()
+      store.showPropertyEditor('block-1', 'tags', { x: 120, y: 48 })
+      expect(store.propertyEditor?.position).toEqual({ x: 120, y: 48 })
     })
 
     test('hidePropertyEditor 隐藏属性编辑器', () => {

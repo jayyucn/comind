@@ -85,15 +85,16 @@ function getLabel(key: string, value: Property['value']): string {
   }
 }
 
-/** 打开属性编辑菜单：内置属性走快捷菜单，自定义属性走完整属性编辑器 */
+/** 打开属性编辑菜单：内置属性走快捷菜单，自定义属性走完整属性编辑器（同一锚点约定） */
 function openMenu(prop: Property, rect: DOMRect) {
+  const position = {
+    x: rect.left,
+    y: rect.bottom + 4
+  }
   if (isBuiltIn(prop.key)) {
-    editorStore.showQuickPropertyEditor(props.blockId, prop.key, {
-      x: rect.left,
-      y: rect.bottom + 4
-    })
+    editorStore.showQuickPropertyEditor(props.blockId, prop.key, position)
   } else {
-    editorStore.showPropertyEditor(props.blockId, prop.key)
+    editorStore.showPropertyEditor(props.blockId, prop.key, position)
   }
 }
 

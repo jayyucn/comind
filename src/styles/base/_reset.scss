@@ -33,6 +33,19 @@ body {
   width: 100%;
 }
 
+// 原生控件的主题：浏览器自己绘制的那部分（select 展开的选项列表、日期日历面板与
+// 日历图标、滚动条、自动填充底色、数字框的步进按钮）读不到 CSS 变量，只认
+// color-scheme。全局唯一收口在此 —— 组件级再写一遍既是重复，也会因为更靠近元素
+// 而覆盖这里。刻意不写 `light dark`：那会让 UA 按系统偏好二选一，而本应用的主题
+// 由应用内开关（data-theme）决定，两者不一致时原生弹层就会用错配色。
+html {
+  color-scheme: light;
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+}
+
 // TipTap editor 基础样式
 .tiptap {
   outline: none;

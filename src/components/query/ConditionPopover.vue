@@ -234,7 +234,6 @@ onMounted(() => {
   outline: none;
   cursor: pointer;
   width: auto;
-  color-scheme: light dark;
 }
 /* 字段 select：加粗 + 类型图标前缀（通过 CSS ::before 模拟） */
 .cond-field {

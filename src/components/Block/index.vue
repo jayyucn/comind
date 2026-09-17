@@ -92,6 +92,19 @@ const {
   statusClass,
 } = useBlockPropertySync(blockId)
 
+// 是否有「行尾右侧 chips」属性（与 PropertyDisplay variant="chips" 的可见性判定一致：
+// bottom-of-block 内置属性 + 所有自定义属性，排除 hidden / deadline / scheduled）。
+// 用于给 .block-row 铺上与 chips 同色的极淡背景（视觉连通），仅非 hover 态。
+const hasRightProps = computed(() => {
+  const all = propertyStore.getBlockProperties(blockId.value)
+  return all.some(p => {
+    if (p.isHidden) return false
+    if (p.key === 'deadline' || p.key === 'scheduled') return false
+    const def = propertyStore.getPropertyDef(p.key)
+    return def?.displayPosition === 'bottom-of-block' || !def?.isBuiltIn
+  })
+})
+
 const hasSelectedAncestor = computed(() => {
   if (!selection) return false
   let currentParentId = block.value.parentId
@@ -507,7 +520,7 @@ watch(isActive, (active) => {
 <template>
   <div
     class="block"
-    :class="[priorityClass, statusClass, { active: isActive, 'cb-selected': isSelected && !hasSelectedAncestor }]"
+    :class="[priorityClass, statusClass, { active: isActive, 'cb-selected': isSelected && !hasSelectedAncestor, 'has-right-props': hasRightProps }]"
     :data-block-id="blockId"
     :style="{ '--block-indent': indentWidth }"
     @mousedown="onBlockMousedown"
@@ -615,14 +628,28 @@ watch(isActive, (active) => {
           />
         </div>
       </div>
+
+      <!-- 行内右侧属性列：常规 chips 作为行尾 flex 项，宽度自适应、换行撑高行，不被裁剪 -->
+      <div
+        class="block-row-properties"
+        @mousedown="onPropertyMousedown"
+      >
+        <PropertyDisplay
+          :block-id="blockId"
+          variant="chips"
+        />
+      </div>
     </div>
 
-    <!-- 属区显示区 -->
+    <!-- 属性带（content 下方）：书笔记来源行原位保留；无属性时为 #94 命中带 -->
     <div
       class="block-properties"
       @mousedown="onPropertyMousedown"
     >
-      <PropertyDisplay :block-id="blockId" />
+      <PropertyDisplay
+        :block-id="blockId"
+        variant="book-note"
+      />
     </div>
 
     <!--
@@ -644,6 +671,3 @@ watch(isActive, (active) => {
     />
   </div>
 </template>
-
-<style scoped lang="scss">
-</style>

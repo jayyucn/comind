@@ -163,7 +163,7 @@ function handleDocMouseUp(e: MouseEvent) {
     const bid = blockEl?.dataset.blockId ?? null
     if (bid && blockStore.getBlock(bid)?.pageId === props.pageId) {
       lastClickedBlockId = bid
-      lastClickedInPropertyArea = !!mouseTarget.closest('.block-properties')
+      lastClickedInPropertyArea = !!mouseTarget.closest('.block-properties, .block-row-properties')
     } else {
       // 点击非本页区域（sidebar、弹层、留白等）→ 清标记，避免误判
       lastClickedBlockId = null
@@ -428,7 +428,7 @@ function handleDocKeyDownCapture(e: KeyboardEvent) {
     && blockStore.getBlock(activeId)?.pageId === props.pageId
   const inPropertyArea = fallbackBlockId
     ? lastClickedInPropertyArea
-    : !!target?.closest('.block-properties')
+    : !!target?.closest('.block-properties, .block-row-properties')
   if (activeInPage || selection.anchorIds.size > 0 || inPropertyArea) {
     selection.selectAll(props.pageId, rootBlockId.value)
   }

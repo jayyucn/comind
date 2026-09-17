@@ -23,6 +23,36 @@
   line-height: $leading-snug;
 }
 
+// 块行允许换行：chips（.block-row-properties）宽度随内容，与 flex:1 的正文同处一行；
+// 留 wrap 只作极端超宽的兜底（正文基底为 0 且可收缩，实际几乎不触发）。
+// 限定 .block 直属行，避免波及 IdeasSnapshotNode 等复用 .block-row 类名的场景。
+.block > .block-row {
+  flex-wrap: wrap;
+}
+
+// 有右侧属性（chips）的块：非 hover 态给整行铺上与 chips(.property-display) 同色的
+// 极淡背景，靠「连通性」表达「文字 + 右侧属性同属一块」（与 hover 圈设计意图一致）。
+// 颜色刻意与 chips 一样写死 rgba(0,0,0,.02)，不做主题自适应：
+// 要的就是「几乎不可见的微暗纱」。若改成 ink 派生，深色主题下 --color-ink 变亮、
+// 会翻成微亮纱而过显，与「弱化、靠连通性表达归属」的意图相反。
+// 必须写在 .block > .block-row:hover 之前：两者特异性相同（0,3,0），靠源码顺序让
+// hover 态的 5% ink 在悬停时胜出，非 hover 才回落到 2% 同色底。
+.block.has-right-props > .block-row {
+  background: var(--surface-faint);
+}
+
+// 行带背景圈：文字与右侧 chips 同处一个极淡背景盒，靠「连通性」表达归属
+// （chips 视觉位置虽经负 margin 挂进 gutter，仍在行盒 border-box 内，圈得住）。
+// 用 ink 派生而非现成 --bg-hover：后者两主题都太深，不符合「弱化」要求；
+// ink 2%/5% 在浅色主题为微暗纱、深色主题为微亮纱，自动适配。
+
+
+.block > .block-row:hover {
+  border-radius: $radius-xs;
+  background: color-mix(in srgb, var(--color-ink) 5%, transparent);
+  transition: background 120ms ease;
+}
+
 .block-indent {
   flex-shrink: 0;
   height: 100%;
@@ -470,14 +500,126 @@
   color: color-mix(in srgb, var(--color-error)30%, var(--bg-base));
 }
 
-// 属性显示区域
+// 属性显示区（文档流带，位于行下方）：书笔记来源行（.book-note-source）原位保留。
+// 不再保留 min-height（原 #94 的「恒存可点带」已撤销）：有属性时随内容自然撑高，
+// 无属性时塌成 0 高度，不额外占位。
 .block-properties {
-  // 最小高度：无属性块上该区域会塌成 0 高度，「块下方」于是完全不可命中，
-  // 块选区的 Ctrl/Cmd+Click 命中面只剩内容区（#94）。给一个恒存在的可点带，
-  // 使「整块行都是块选区命中面」在几何上真正成立。
-  min-height: $space-2;
   margin-left: calc(var(--indent-depth, 0) * var(--block-indent-width) + 20px);
   padding-right: $space-2;
+}
+
+// 行内右侧属性列（常规属性 chips）：.block-row 的行尾 flex 项，贴内容行右端。
+// 宽度随内容自适应（width:auto），上限 min(420px, 45% 行宽) —— 正文至少留 55%。
+// 刻意不用 gutter 方案：gutter 按 (100cqw − --max-width)/2 算右侧留白，前提是内容列
+// 居中定宽；而 meta.fullWidth 路由（.main-content 去 max-width，内容铺满）下会算出假
+// 留白，把 chips 推出内容列之外被裁掉（/ideas 实测）。贴行右端对两种布局都成立。
+.block-row-properties {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  width: auto;
+  min-width: 0;
+  max-width: min(420px, 45%);
+  margin-right: 0;
+  // 撑满行高：容器与行带同高，chips 盒在其中垂直居中
+  align-self: stretch;
+}
+
+// 只有真有 chips 时才给左间距。不能用 :empty —— PropertyDisplay 的 v-if 分支全不
+// 渲染时仍会留注释节点，容器不算空。
+.block-row-properties:has(> .property-display) {
+  padding-left: $space-2;
+}
+
+// chips 盒与行带对齐：清掉 PropertyDisplay scoped 的 margin-top/padding 造成的下沉。
+// 不用 height:100% —— 父高不定时百分比高度会退化为 auto，撑不满。
+.block-row-properties > .property-display {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 0;
+  padding: 0 $space-2;
+  // 不在此限宽：宽度预算统一由 .block-row-properties 的 max-width 管（一处上限）
+  max-width: 100%;
+}
+
+// 行内 chips 两列网格：固定 2 个（由 PropertyDisplay 的 hiddenCount 计算），列宽按内容，
+// 装不下的整 chip 折进「+N」徽标。刻意不随正文行数放量——chips 只占一行。
+// 刻意不用 flex + 百分比 flex-basis：容器是 width:auto（按内容收缩），而百分比基数
+// 要等容器宽、容器宽又要等内容 ⇒ 循环依赖。浏览器解出的容器比 chip 实际所需宽出
+// 56px，chip 反被压扁到只剩图标（实测单 chip 24px 装 70px 内容，「工作」被
+// text-overflow 截成「…」；两个 chip 时 57.2px 同样截断）。网格的 max-content 轨道
+// 没有这个循环：容器宽 = 两列内容宽之和，随内容自然生长。内容超宽时容器被 max-width
+// 钳住、两列等比收缩，由 .property-value 的 ellipsis 兜底。
+// 三级选择器压过 PropertyDisplay scoped 的 .property-list[data-v]（同特异性时组件
+// 样式注入在后会赢，不能依赖顺序）。
+.block-row-properties > .property-display > .property-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, max-content));
+  column-gap: 0;
+  row-gap: 0;
+  align-content: center;
+  overflow: hidden;
+}
+
+.block-row-properties .property-item {
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.block-row-properties .property-key {
+  flex-shrink: 0;
+}
+
+.block-row-properties .property-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// +N 徽标：与 chip 同风格的弱化按钮
+.block-row-properties .chips-more-badge {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-none);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.block-row-properties .chips-more-badge:hover {
+  background: var(--accent-08, rgba(59, 130, 246, 0.08));
+  color: var(--accent);
+}
+
+// 收纳浮层（Teleport 到 body）：纵向排列，每个属性独占一行 —— 逐行扫读，且删除按钮
+// 天然对齐到同一右边界。刻意不用横向 wrap：短属性会两两并排、每行 item 宽度参差，
+// × 也跟着参差，读起来像一坨标签而不是一份清单。
+// 注：不写 flex-wrap —— 基础规则（PropertyDisplay scoped 的 .property-list）已是 wrap，
+// 且浮层高度由内容撑开（无确定主轴尺寸），column 下不会触发换列。
+.property-list--full {
+  flex-direction: column;
+  max-width: 320px;
+  padding: var(--space-2) var(--space-1);
+}
+
+.property-list--full .property-item {
+  white-space: nowrap;
+}
+
+.property-list--full .property-value {
+  display: inline-block;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
 }
 
 // 跨 Block 选中遮罩

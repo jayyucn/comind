@@ -124,18 +124,24 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
-  /** 属性编辑器状态 */
+  /** 属性编辑器状态（弹出位置与 quickPropertyEditor 同约定：来自触发元素矩形） */
   const propertyEditor = ref<{
     visible: boolean
     blockId: string | null
     initialKey: string | null
+    position: { x: number; y: number } | null
   } | null>(null)
 
-  function showPropertyEditor(blockId: string, initialKey?: string) {
+  function showPropertyEditor(
+    blockId: string,
+    initialKey?: string,
+    position?: { x: number; y: number }
+  ) {
     propertyEditor.value = {
       visible: true,
       blockId,
-      initialKey: initialKey ?? null
+      initialKey: initialKey ?? null,
+      position: position ?? null
     }
   }
 

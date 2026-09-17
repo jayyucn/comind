@@ -172,8 +172,6 @@ watch(
   flex-direction: column;
   gap: 14px;
   width: 100%;
-  // 让原生 select/date 控件跟随主题渲染（浏览器原生弹层在暗色下也变暗）
-  color-scheme: light dark;
 }
 
 .qb-section {

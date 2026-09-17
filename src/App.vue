@@ -376,6 +376,13 @@ function handleMainClick(e: MouseEvent) {
   overflow-x: hidden;
   min-width: 0;
   min-height: 0;
+  // 曾是容器查询锚点：块属性列（.block-row-properties）据此用 100cqw 算右侧 gutter。
+  // chips 现已改为贴内容行右端（不用 gutter，见 _block.scss），此处暂无消费者；
+  // 保留而未删是因为移除 inline-size containment 会改变 abs/fixed 后代的包含块
+  // 语义，需单独验证后再动。
+  // 注意：该 containment 会把本元素变成 abs/fixed 后代的包含块——
+  // 浮层一律 Teleport 到 body（ADR-0032），不受影响。
+  container-type: inline-size;
 }
 
 .top-right-controls {

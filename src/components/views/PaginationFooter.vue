@@ -101,7 +101,6 @@ function onSizeChange(e: Event) {
   font-size: var(--text-xs);
   font-family: inherit;
   cursor: pointer;
-  color-scheme: light dark;
 
   &:hover {
     border-color: var(--accent);

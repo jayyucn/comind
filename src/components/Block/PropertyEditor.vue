@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useEditorStore } from '../../stores/editor'
 import { usePropertyStore } from '../../stores/property'
-import type { PropertyValue, PropertyType } from '../../types/property'
+import type { PropertyType, PropertyValue } from '../../types/property'
+import BasePopover from '../common/BasePopover.vue'
 
 const editorStore = useEditorStore()
 const propertyStore = usePropertyStore()
@@ -29,6 +30,44 @@ const currentArrayValue = computed<string[]>({
   get: () => Array.isArray(currentValue.value) ? currentValue.value : [],
   set: (val) => { currentValue.value = val }
 })
+
+/** 类型的展示文案（编辑模式下类型是纯文本，不再走 select 的 option 文案） */
+const typeLabel = computed(
+  () => propertyTypes.find(t => t.type === selectedType.value)?.label ?? selectedType.value,
+)
+
+// 默认焦点的候选元素（各 v-if 分支同时只挂一个，同一 ref 名可跨分支复用）
+const panelRoot = ref<HTMLElement | null>(null)
+const nameInput = ref<HTMLInputElement | null>(null)
+const valueInput = ref<HTMLInputElement | null>(null)
+const tagInput = ref<HTMLInputElement | null>(null)
+const booleanOptions = ref<HTMLElement | null>(null)
+
+/** 打开时的默认焦点：新建模式落「属性名称」，编辑模式落「值」——值的元素随类型而变
+ *  （文本/数字/日期共用一个 input，布尔取已选中的单选框，数组取标签输入框）。 */
+function resolveFocusTarget(): HTMLElement | null {
+  if (!initialKey.value) return nameInput.value
+  if (selectedType.value === 'boolean') {
+    const radios = booleanOptions.value?.querySelectorAll<HTMLInputElement>('input[type="radio"]')
+    if (!radios?.length) return null
+    return Array.from(radios).find(r => r.checked) ?? radios[0]
+  }
+  if (selectedType.value === 'array') return tagInput.value
+  return valueInput.value
+}
+
+/**
+ * 等渲染落地再 focus —— 面板随 v-if 挂载，调用时 DOM 还不存在。
+ * `isConnected` 守卫是必需的：Page 与 Ideas 各自常驻一个本组件（KeepAlive 下可能同时存活），
+ * 未激活实例的 Teleport 内容不在文档里，抢 focus 会把焦点从真正打开的那份抢走。
+ */
+function focusInitialField() {
+  nextTick(() => {
+    const root = panelRoot.value
+    if (!root?.isConnected) return
+    resolveFocusTarget()?.focus()
+  })
+}
 
 const canSave = computed(() => {
   if (!customKey.value.trim()) return false
@@ -65,6 +104,12 @@ function close() {
   arrayInput.value = ''
 }
 
+/** 浮层锚点（触发元素矩形）；生产调用方均会传，缺省时退化为视口居中 */
+const position = computed(() => editorStore.propertyEditor?.position ?? null)
+const popoverPosition = computed(
+  () => position.value ?? { x: window.innerWidth / 2, y: window.innerHeight / 2 },
+)
+
 function addArrayItem() {
   const val = arrayInput.value.trim()
   if (val && !currentArrayValue.value.includes(val)) {
@@ -96,222 +141,230 @@ async function save() {
 watch(visible, (val) => {
   if (val) {
     open()
+    focusInitialField()
   }
 }, { immediate: true })
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="fade">
-      <div
-        v-if="visible"
-        class="property-editor-overlay"
-        @click.self="close"
-      >
-        <div class="property-editor-dialog">
-          <div class="dialog-header">
-            <h3>{{ initialKey ? '编辑自定义属性' : '添加自定义属性' }}</h3>
-            <button
-              class="close-btn"
-              @click="close"
+  <!-- 面板外框与关闭行为（Teleport / overlay 点击 / Escape）由 BasePopover 统一提供，
+       这里只管表单本体；锚点用触发元素矩形（同 PropertyQuickEditor）。 -->
+  <BasePopover
+    :visible="visible"
+    :position="popoverPosition"
+    @close="close"
+  >
+    <div
+      ref="panelRoot"
+      class="property-editor-panel"
+    >
+      <div class="dialog-header">
+        <h3>{{ initialKey ? '编辑自定义属性' : '添加自定义属性' }}</h3>
+      </div>
+      
+      <div class="dialog-body">
+        <!-- 名称：编辑模式下 key 不可改，展示为纯文本 -->
+        <div class="form-group">
+          <label>属性名称</label>
+          <input
+            v-if="!initialKey"
+            ref="nameInput"
+            v-model="customKey"
+            type="text"
+            placeholder="输入属性名称"
+          >
+          <span
+            v-else
+            class="form-static"
+          >{{ customKey }}</span>
+        </div>
+
+        <div class="form-group">
+          <label>类型</label>
+          <select
+            v-if="!initialKey"
+            v-model="selectedType"
+          >
+            <option
+              v-for="t in propertyTypes"
+              :key="t.type"
+              :value="t.type"
             >
-              ×
-            </button>
-          </div>
+              {{ t.label }}
+            </option>
+          </select>
+          <span
+            v-else
+            class="form-static"
+          >{{ typeLabel }}</span>
+        </div>
+
+        <div class="form-group">
+          <label>值</label>
           
-          <div class="dialog-body">
-            <div class="form-group">
-              <label>属性名称</label>
+          <!-- Boolean -->
+          <div
+            v-if="selectedType === 'boolean'"
+            ref="booleanOptions"
+            class="boolean-options"
+          >
+            <label class="boolean-option">
               <input
-                v-model="customKey"
-                type="text"
-                placeholder="输入属性名称"
-                :disabled="!!initialKey"
-              >
-            </div>
-
-            <div class="form-group">
-              <label>类型</label>
-              <select
-                v-model="selectedType"
-                :disabled="!!initialKey"
-              >
-                <option
-                  v-for="t in propertyTypes"
-                  :key="t.type"
-                  :value="t.type"
-                >
-                  {{ t.label }}
-                </option>
-              </select>
-            </div>
-
-            <div class="form-group">
-              <label>值</label>
-              
-              <!-- Boolean -->
-              <div
-                v-if="selectedType === 'boolean'"
-                class="boolean-options"
-              >
-                <label class="boolean-option">
-                  <input
-                    v-model="currentValue"
-                    type="radio"
-                    :value="true"
-                  >
-                  <span>是</span>
-                </label>
-                <label class="boolean-option">
-                  <input
-                    v-model="currentValue"
-                    type="radio"
-                    :value="false"
-                  >
-                  <span>否</span>
-                </label>
-              </div>
-
-              <!-- Date -->
-              <input
-                v-else-if="selectedType === 'date'"
                 v-model="currentValue"
-                type="date"
+                type="radio"
+                :value="true"
               >
-
-              <!-- Number -->
+              <span>是</span>
+            </label>
+            <label class="boolean-option">
               <input
-                v-else-if="selectedType === 'number'"
-                v-model.number="currentValue"
-                type="number"
-              >
-
-              <!-- Array (tags) -->
-              <div
-                v-else-if="selectedType === 'array'"
-                class="array-input"
-              >
-                <input
-                  v-model="arrayInput"
-                  placeholder="输入标签，回车添加"
-                  @keydown.enter.prevent="addArrayItem"
-                >
-                <div class="array-items">
-                  <span
-                    v-for="(item, idx) in currentArrayValue"
-                    :key="idx"
-                    class="array-item"
-                  >
-                    {{ item }}
-                    <button
-                      class="remove-btn"
-                      @click="removeArrayItem(idx)"
-                    >×</button>
-                  </span>
-                </div>
-              </div>
-
-              <!-- Default: string -->
-              <input
-                v-else
                 v-model="currentValue"
-                type="text"
-                placeholder="输入值"
+                type="radio"
+                :value="false"
               >
+              <span>否</span>
+            </label>
+          </div>
+
+          <!-- Date -->
+          <input
+            v-else-if="selectedType === 'date'"
+            ref="valueInput"
+            v-model="currentValue"
+            type="date"
+          >
+
+          <!-- Number -->
+          <input
+            v-else-if="selectedType === 'number'"
+            ref="valueInput"
+            v-model.number="currentValue"
+            type="number"
+          >
+
+          <!-- Array (tags) -->
+          <div
+            v-else-if="selectedType === 'array'"
+            class="array-input"
+          >
+            <input
+              ref="tagInput"
+              v-model="arrayInput"
+              placeholder="输入标签，回车添加"
+              @keydown.enter.prevent="addArrayItem"
+            >
+            <div class="array-items">
+              <span
+                v-for="(item, idx) in currentArrayValue"
+                :key="idx"
+                class="array-item"
+              >
+                {{ item }}
+                <button
+                  class="remove-btn"
+                  @click="removeArrayItem(idx)"
+                >×</button>
+              </span>
             </div>
           </div>
 
-          <div class="dialog-footer">
-            <button
-              class="btn btn-secondary"
-              @click="close"
-            >
-              取消
-            </button>
-            <button
-              class="btn btn-primary"
-              :disabled="!canSave"
-              @click="save"
-            >
-              保存
-            </button>
-          </div>
+          <!-- Default: string -->
+          <input
+            v-else
+            ref="valueInput"
+            v-model="currentValue"
+            type="text"
+            placeholder="输入值"
+          >
         </div>
       </div>
-    </Transition>
-  </Teleport>
+
+      <div class="dialog-footer">
+        <button
+          class="btn btn-secondary"
+          @click="close"
+        >
+          取消
+        </button>
+        <button
+          class="btn btn-primary"
+          :disabled="!canSave"
+          @click="save"
+        >
+          保存
+        </button>
+      </div>
+    </div>
+  </BasePopover>
 </template>
 
 <style scoped>
-.property-editor-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-dialog);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--overlay);
-  backdrop-filter: blur(4px);
-}
-
-.property-editor-dialog {
-  background: var(--color-paper);
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  padding: 24px;
-  min-width: 400px;
-  max-width: 90vw;
-  box-shadow: var(--shadow-modal);
+/* 面板外框（背景 / 边框 / 圆角 / 阴影 / Teleport / overlay 关闭）由 BasePopover 提供，
+   这里只管表单排版。定宽是必须的：输入框是 width:100%，面板交给内容撑宽会构成
+   「百分比尺寸 ↔ auto 宽容器」的循环依赖。 */
+.property-editor-panel {
+  box-sizing: border-box;
+  width: 300px;
+  padding: 12px;
 }
 
 .dialog-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 
 .dialog-header h3 {
   margin: 0;
   font-size: var(--heading-5);
   font-weight: var(--font-semibold);
-  color: var(--color-ink);
+  color: var(--text-primary);
 }
 
-.close-btn {
-  background: none;
-  border: none;
-  font-size: var(--text-2xl);
-  cursor: pointer;
-  padding: 4px 8px;
-  color: var(--color-ink-secondary);
-  transition: color 120ms ease;
-}
-
-.close-btn:hover {
-  color: var(--color-ink);
-}
-
+/* 表单项：标签在左、字段在右，同处一行（面板窄，竖排会让三行字段各自占两行高度） */
 .form-group {
-  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
 }
 
-.form-group label {
-  display: block;
-  margin-bottom: 8px;
+/* 子组合器是有意的：字段标签只取直接子级，不波及单选框的 <label class="boolean-option">
+   （它在 .boolean-options 里），否则 display 会被这里压掉。
+   定宽 + 右对齐：三个标签右边缘对齐，右侧字段的左边缘因此天然对齐。 */
+.form-group > label {
+  flex: 0 0 60px;
+  text-align: right;
   font-weight: var(--font-medium);
   font-size: var(--text-sm);
-  color: var(--color-ink);
+  color: var(--text-primary);
+}
+
+/* 编辑模式下「属性名称 / 类型」是只读信息，以纯文本展示（不再是输入控件）。
+   flex:1 与输入框同宽，overflow-wrap 让长 key 换行而不是撑破面板。 */
+.form-static {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
 }
 
 .form-group input,
 .form-group select {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: 8px 12px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border);
   border-radius: 6px;
   font-size: var(--text-sm);
-  color: var(--color-ink);
+  color: var(--text-primary);
+  /* 必须给不透明底，不能用 transparent：原生 <select> 展开的选项列表是浏览器自绘的
+     独立弹层，它的底色取自元素自身的 background-color —— 透明时弹层无处可透，会回退
+     成不透明浅色，而文字色仍是 --text-primary（暗色主题下是浅色），于是「浅底浅字」。
+     color-scheme 管不了这一层（那只管日历面板、滚动条、步进按钮等 UA 内绘制）。
+     --bg-base 与面板底色相同，所以闭合态观感与透明时一模一样。 */
   background: var(--bg-base);
   transition: border-color 150ms ease;
 }
@@ -319,12 +372,15 @@ watch(visible, (val) => {
 .form-group input:focus,
 .form-group select:focus {
   outline: none;
-  border-color: var(--color-accent);
+  border-color: var(--accent);
 }
 
+/* 收音机选项（是 / 否）：与上面的字段标签同处一行，占满标签右侧的剩余宽度 */
 .boolean-options {
   display: flex;
-  gap: 24px;
+  flex: 1;
+  min-width: 0;
+  gap: 16px;
 }
 
 .boolean-option {
@@ -333,6 +389,18 @@ watch(visible, (val) => {
   gap: 8px;
   cursor: pointer;
   font-size: var(--text-sm);
+}
+
+/* 标签输入组（array 分支）：占据标签右侧的剩余宽度 */
+.array-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* array 分支的输入框是 .array-input 的子级（非 flex 容器），拿不到上面的 flex:1，
+   需显式撑满（全局 box-sizing: border-box，100% 含内边距，不会溢出） */
+.array-input input {
+  width: 100%;
 }
 
 .array-items {
@@ -358,14 +426,14 @@ watch(visible, (val) => {
   cursor: pointer;
   font-size: var(--text-sm);
   padding: 0 4px;
-  color: var(--color-ink-secondary);
+  color: var(--text-secondary);
 }
 
 .dialog-footer {
   display: flex;
   justify-content: flex-end;
-  gap: 12px;
-  margin-top: 24px;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .btn {
@@ -380,36 +448,25 @@ watch(visible, (val) => {
 
 .btn-secondary {
   background: transparent;
-  color: var(--color-ink-secondary);
-  border: 1px solid var(--color-border-light);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
 }
 
 .btn-secondary:hover {
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--surface-faint);
 }
 
 .btn-primary {
-  background: var(--color-accent);
+  background: var(--accent);
   color: var(--color-white);
 }
 
 .btn-primary:hover {
-  background: var(--color-accent-deep);
+  background: var(--accent-hover);
 }
 
 .btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-/* 过渡动画 */
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 180ms ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
 }
 </style>

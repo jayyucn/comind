@@ -323,7 +323,7 @@ async function executeCommand(command: Command) {
   // 特殊处理属性命令
   if (command.id === 'property') {
     if (blockId) {
-      editorStore.showPropertyEditor(blockId)
+      editorStore.showPropertyEditor(blockId, undefined, position.value)
     }
     return
   }
