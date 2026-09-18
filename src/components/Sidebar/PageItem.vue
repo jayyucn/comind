@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { BookOpen, Droplet, FilePen } from 'lucide-vue-next';
+import { BookOpen, Droplet, FilePen, Tag } from 'lucide-vue-next';
 import type { Page } from '../../types/page';
 
 const props = withDefaults(defineProps<{
@@ -46,6 +46,7 @@ const typeIcon = computed(() => {
   switch (props.page.type) {
     case 'ideas': return Droplet
     case 'book': return BookOpen
+    case 'tag': return Tag // Supertag 落地页（#129）；正常已被列表层过滤，这里是兜底
     default: return FilePen // normal
   }
 })

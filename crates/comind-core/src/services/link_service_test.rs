@@ -107,4 +107,32 @@ mod tests {
 
         Ok(())
     }
+
+    /// 内容重同步保留系统保留关系类型（tag/extend），只重建内容派生链接
+    /// （#130/#132 修复：否则任何一次 block 保存都会抹掉已贴的标签/继承链接）。
+    #[test]
+    fn test_sync_links_preserves_reserved_relationship_types() -> Result<(), Box<dyn Error>> {
+        let mut adapter = create_test_adapter()?;
+
+        let page = PageService::create(&mut adapter, "", "Page", None, None, None, None, None)?;
+        let block = BlockService::create(&mut adapter, &page.id, None, "Content", "{}", "bullet", None)?;
+        let tag_page = PageService::create(&mut adapter, "", "Book", None, None, None, None, None)?;
+        let parent_tag = PageService::create(&mut adapter, "", "Media", None, None, None, None, None)?;
+        let content_target = PageService::create(&mut adapter, "", "Note", None, None, None, None, None)?;
+
+        LinkService::create(&mut adapter, &block.id, &tag_page.id, "Book", Some("tag"))?;
+        LinkService::create(&mut adapter, &block.id, &parent_tag.id, "Media", Some("extend"))?;
+        LinkService::create(&mut adapter, &block.id, &content_target.id, "Note", None)?;
+
+        // 内容重同步为空集：只应清掉非保留链接（content_target），保留 tag / extend
+        LinkService::sync_links_for_block(&mut adapter, &block.id, &[])?;
+
+        let links = LinkService::get_by_source_block_id(&mut adapter, &block.id)?;
+        assert_eq!(links.len(), 2, "应保留 tag/extend 两条，实际 {}", links.len());
+        assert!(links.iter().any(|l| l.relationship_type.as_deref() == Some("tag")));
+        assert!(links.iter().any(|l| l.relationship_type.as_deref() == Some("extend")));
+        assert!(!links.iter().any(|l| l.target_page_id == content_target.id));
+
+        Ok(())
+    }
 }

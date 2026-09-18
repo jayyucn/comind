@@ -31,6 +31,7 @@ import './handlers/embed'
 import './handlers/image'
 import PropertyDisplay from './PropertyDisplay.vue'
 import PropertyInline from './PropertyInline.vue'
+import TagFieldsPanel from './TagFieldsPanel.vue'
 
 import type { EditorView } from '@codemirror/view'
 import type { Editor } from '@tiptap/core'
@@ -650,6 +651,8 @@ watch(isActive, (active) => {
         :block-id="blockId"
         variant="book-note"
       />
+      <!-- Supertag 注入字段（#131，派生不物化）：仅当该块贴了带模板的标签时渲染 -->
+      <TagFieldsPanel :block-id="blockId" />
     </div>
 
     <!--

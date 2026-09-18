@@ -16,7 +16,7 @@ import {
 import type { QueryContext, ViewQuery } from '../../core/query'
 import { parseLayoutConfig, type CalendarConfig, type GalleryConfig, type TableConfig } from '../../core/view'
 import type { ViewTypeOption } from '../../core/view/management'
-import { usePageStore } from '../../stores/pages'
+import { usePageStore, isListablePage } from '../../stores/pages'
 import { useScreenViewStore } from '../../stores/screenView'
 import { openReaderWindow } from '../../composables/useReaderWindow'
 import { importEpub } from '../../services/book-import'
@@ -92,7 +92,8 @@ const crossRecordSources = computed(() =>
 
 // 数据
 const allPages = computed<Page[]>(() => {
-  let pages = [...pageStore.pages]
+  // tag page 不在普通页面库列表展示（#129 / ADR-0049 D1）
+  let pages = [...pageStore.pages].filter(isListablePage)
   if (searchQuery.value.trim()) {
     const q = searchQuery.value.toLowerCase()
     pages = pages.filter(p => p.title.toLowerCase().includes(q))

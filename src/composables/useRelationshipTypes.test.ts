@@ -219,4 +219,25 @@ describe('validateRelationshipTypeInput', () => {
   it('strength 非法值返回错误', () => {
     expect(validateRelationshipTypeInput({ type: 'new', inverse: null, label: 'x', inverseLabel: 'x', description: null, color: '#000', group: 'custom', strength: 'invalid' as any }, existing)).toMatch(/strength/i)
   })
+
+  describe('保留关系类型 (R2 / #130)', () => {
+    it("type='tag' 被拦截", () => {
+      expect(validateRelationshipTypeInput({ type: 'tag', inverse: null, label: 'x', inverseLabel: 'x', description: null, color: '#000', group: 'custom', strength: 'medium' }, existing)).toMatch(/保留/)
+    })
+
+    it("type='extend' 被拦截", () => {
+      expect(validateRelationshipTypeInput({ type: 'extend', inverse: null, label: 'x', inverseLabel: 'x', description: null, color: '#000', group: 'custom', strength: 'medium' }, existing)).toMatch(/保留/)
+    })
+
+    it('拦截优先于正则/重复校验', () => {
+      expect(validateRelationshipTypeInput({ type: 'tag', inverse: null, label: '', inverseLabel: '', description: null, color: 'red', group: 'custom', strength: 'invalid' as any }, existing)).toMatch(/保留/)
+    })
+
+    it('load 后 items/all 均不含 tag/extend（结构性确认 R2）', async () => {
+      const { load, items, all } = useRelationshipTypes()
+      await load()
+      expect(items.value.some(r => r.type === 'tag' || r.type === 'extend')).toBe(false)
+      expect(all.value.some(r => r.type === 'tag' || r.type === 'extend')).toBe(false)
+    })
+  })
 })

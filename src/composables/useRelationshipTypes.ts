@@ -18,10 +18,19 @@ export interface RelationshipTypeInput {
 
 const VALID_STRENGTHS: readonly Strength[] = ['strong', 'medium', 'weak']
 
+/**
+ * 系统保留关系类型（Supertag / ADR-0049 D4、#130 R2）。
+ * 不进用户注册表，UI 创建关系时在此显式拦截；仅 useTagStore 可程序化写入。
+ */
+export const RESERVED_RELATIONSHIP_TYPES = ['tag', 'extend'] as const
+
 export function validateRelationshipTypeInput(
   input: RelationshipTypeInput,
   existing: Pick<RelationshipType, 'type' | 'deleted'>[]
 ): string | null {
+  if ((RESERVED_RELATIONSHIP_TYPES as readonly string[]).includes(input.type)) {
+    return 'tag/extend 为系统保留关系类型，不可由用户创建'
+  }
   if (!TYPE_REGEX.test(input.type)) return 'type 格式不符：仅小写字母、数字、`-`，且首字符为字母'
   if (!input.label.trim()) return 'label 必填'
   if (!input.inverseLabel.trim()) return 'inverseLabel 必填'

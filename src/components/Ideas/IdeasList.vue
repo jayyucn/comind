@@ -10,6 +10,7 @@ import BlockList from '../BlockList.vue'
 import PageTitle from '../common/PageTitle.vue'
 import RelationshipMenu from '../RelationshipMenu.vue'
 import SlashCommandMenu from '../SlashCommandMenu.vue'
+import TagSelectMenu from '../TagSelectMenu.vue'
 import IdeasHistoryList from './IdeasHistoryList.vue'
 
 defineOptions({ name: 'IdeasList' })
@@ -88,6 +89,7 @@ const todayTitle = computed(() => {
   </div>
 
   <SlashCommandMenu />
+  <TagSelectMenu />
   <PropertyQuickEditor />
   <PropertyEditor />
 </template>

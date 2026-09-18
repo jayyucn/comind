@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import { usePageStore } from './pages'
+import { usePageStore, isListablePage, isListableLinkTarget } from './pages'
+import type { Page } from '../types/page'
 
 // Mock the WASM core client — the store delegates all persistence to it.
 // vi.hoisted ensures the mock object exists before vi.mock is evaluated.
@@ -639,5 +640,65 @@ describe('usePageStore', () => {
 
       expect(store.ideasSnapshots['p2']).toBeNull()
     })
+  })
+})
+
+describe('createTagPage（#129 / ADR-0049 D1）', () => {
+  test('创建标签落地页 type 为 tag', async () => {
+    const store = usePageStore()
+    const page = await store.createTagPage('测试标签')
+
+    expect(page.title).toBe('测试标签')
+    expect(page.type).toBe('tag')
+    expect(store.pages[0].id).toBe(page.id)
+  })
+
+  test('空标题抛错（继承 createPage 校验）', async () => {
+    const store = usePageStore()
+    await expect(store.createTagPage('   ')).rejects.toThrow()
+  })
+
+  test('标题已存在时幂等复用（不重复创建）', async () => {
+    const store = usePageStore()
+    const first = await store.createTagPage('复用标签')
+    const second = await store.createTagPage('复用标签')
+
+    expect(second.id).toBe(first.id)
+    expect(store.pages).toHaveLength(1)
+  })
+})
+
+describe('isListablePage / isListableLinkTarget（#129 列表/选择器过滤）', () => {
+  function makePage(type: Page['type'], deleted = false): Page {
+    return {
+      id: `p-${type}-${Math.random()}`,
+      blockId: null,
+      title: 'x',
+      type,
+      icon: null,
+      cover: null,
+      aliases: [],
+      filePath: null,
+      childrenCount: 0,
+      wordCount: 0,
+      createdAt: 0,
+      updatedAt: 0,
+      deleted,
+      deletedAt: null,
+    }
+  }
+
+  test('isListablePage：tag 不可列，其余可列', () => {
+    expect(isListablePage(makePage('tag'))).toBe(false)
+    expect(isListablePage(makePage('normal'))).toBe(true)
+    expect(isListablePage(makePage('ideas'))).toBe(true)
+    expect(isListablePage(makePage('book'))).toBe(true)
+  })
+
+  test('isListableLinkTarget：tag 不可选，已删除页不可选', () => {
+    expect(isListableLinkTarget(makePage('tag'))).toBe(false)
+    expect(isListableLinkTarget(makePage('normal', true))).toBe(false)
+    expect(isListableLinkTarget(makePage('normal', false))).toBe(true)
+    expect(isListableLinkTarget(makePage('book', false))).toBe(true)
   })
 })

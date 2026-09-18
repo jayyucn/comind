@@ -9,6 +9,7 @@ import { RelationshipTriggerExtension } from '../extensions/RelationshipTriggerE
 import EnterAsBlockExtension from '../extensions/EnterAsBlockExtension'
 import BracketPairExtension from '../extensions/BracketPairExtension'
 import { SlashCommandExtension } from '../extensions/SlashCommandExtension'
+import { TagInputExtension } from '../extensions/TagInputExtension'
 import { HeadingPreviewExtension } from '../extensions/HeadingPreviewExtension'
 import { DateRefExtension } from '../extensions/DateRefExtension'
 import { DateRefTriggerExtension } from '../extensions/DateRefTriggerExtension'
@@ -87,6 +88,7 @@ const editor = shallowRef(useEditor({
       undoRedo: false,
     }),
     SlashCommandExtension,
+    TagInputExtension,
     EnterAsBlockExtension,
     WikiLinkExtension,
     WikiLinkTriggerExtension,

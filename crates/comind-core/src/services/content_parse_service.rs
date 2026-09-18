@@ -271,9 +271,9 @@ impl ContentParseService {
             drafts.iter().filter(|d| !d.is_external).collect();
 
         if internal_drafts.is_empty() {
-            // No internal links → delete all existing links for this block
-            LinkService::delete_by_source_block_id(storage, block_id)?;
-            return Ok(vec![]);
+            // 无内容派生链接：重建为空集（保留系统保留类型 tag/extend，见 LinkService::sync_links_for_block）。
+            // 不能直接 delete_by_source_block_id —— 那会连程序化写入的 tag/extend 一并抹掉。
+            return LinkService::sync_links_for_block(storage, block_id, &[]);
         }
 
         let mut new_links = Vec::new();

@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { initCoreClient } from '../wasm/client'
 import type { SearchResult } from '../types/search'
 import { pushModal, popModal } from '../composables/useModalKeyboard'
+import { usePageStore } from '../stores/pages'
 
 let clientPromise: ReturnType<typeof initCoreClient> | null = null
 
@@ -23,6 +24,7 @@ const emit = defineEmits<{
 }>()
 
 const router = useRouter()
+const pageStore = usePageStore()
 const searchInput = ref<HTMLInputElement | null>(null)
 const query = ref('')
 const selectedIndex = ref(0)
@@ -122,7 +124,9 @@ watch(query, () => {
 })
 
 const groupedResults = computed(() => {
-  const pages = results.value.filter(r => r.type === 'page')
+  // tag page 不在页搜索结果展示（#129 / ADR-0049 D1）：经 pageStore 查 type 排除
+  // （r.type==='page' 时 pageId 理应存在，此空值收窄只为满足类型）
+  const pages = results.value.filter(r => r.type === 'page' && !!r.pageId && pageStore.getPage(r.pageId)?.type !== 'tag')
   const blocks = results.value.filter(r => r.type === 'block')
   return { pages, blocks }
 })

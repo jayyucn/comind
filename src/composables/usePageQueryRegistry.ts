@@ -108,6 +108,8 @@ const TYPE_OPTIONS: Option[] = [
   { id: 'ideas', label: '灵感' },
   // 书 Page（票 01 导入生成）：书房 tab 查询 type=book 及表格类型列展示需要
   { id: 'book', label: '书' },
+  // tag：Supertag 标签落地页（#129 / ADR-0049 D1）；列表默认隐藏，但高级查询仍可按 type=tag 定位
+  { id: 'tag', label: '标签' },
 ]
 
 function asPage(item: unknown): Page {

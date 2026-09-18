@@ -14,7 +14,7 @@ export interface Page {
   id: string
   block_id: string | null
   title: string
-  type: 'normal' | 'ideas' | 'book'
+  type: 'normal' | 'ideas' | 'book' | 'tag'
   icon: string | null
   cover: string | null
   aliases: string
@@ -118,7 +118,7 @@ export interface BlockUpdate {
 export interface PageUpdate {
   id?: string
   title: string
-  type: 'normal' | 'ideas' | 'book'
+  type: 'normal' | 'ideas' | 'book' | 'tag'
   icon?: string | null
   cover?: string | null
   /** JSON 字符串数组（如 '["作者"]'）——Rust 端两侧 save_page 均按 String 反序列化 */

@@ -8,6 +8,16 @@ import { parseIdeasSnapshotContent, type IdeasSnapshotData } from '../utils/idea
 
 import type { CoreClient } from '../wasm/client'
 
+/**
+ * tag page 仍是合法页（落库、路由、链接、图谱都要用），但不应在普通导航列表展示
+ * （#129 / ADR-0049 D1：打标签走专用入口，不在侧栏/最近/收藏/页面库/页搜索出现）。
+ * 列表层统一走下面两个纯函数，绝不动 pageStore.pages 本身。
+ */
+export const isListablePage = (p: Page): boolean => p.type !== 'tag'
+
+/** 链接选择器（如 [[ ]] wiki 选择器）中可选的页：未删除且非 tag 页。 */
+export const isListableLinkTarget = (p: Page): boolean => !p.deleted && p.type !== 'tag'
+
 let coreClientPromise: Promise<CoreClient> | null = null
 
 async function getClient() {
@@ -185,7 +195,7 @@ export const usePageStore = defineStore('pages', () => {
     await blockStore.ensurePageBlocks(pageId)
   }
 
-  async function createPage(title: string, type: 'normal' | 'ideas' = 'normal'): Promise<Page> {
+  async function createPage(title: string, type: 'normal' | 'ideas' | 'tag' = 'normal'): Promise<Page> {
     const trimmedTitle = title.trim()
     if (!trimmedTitle) {
       throw new Error('Page title cannot be empty')
@@ -217,6 +227,15 @@ export const usePageStore = defineStore('pages', () => {
     
     pages.value.push(page)
     return page
+  }
+
+  /**
+   * 创建 Supertag 标签落地页（#129 / ADR-0049 D1）。
+   * tag page 与普通页共享落库/路由/链接/图谱机制，仅在 UI 列表层隐藏（见 isListablePage）。
+   * 打标签的入口在后续 R2 由 useTagStore 程序化建，不走通用 [[ ]] 选择器。
+   */
+  async function createTagPage(title: string): Promise<Page> {
+    return createPage(title, 'tag')
   }
 
   function getPage(pageId: string): Page | undefined {
@@ -378,5 +397,5 @@ export const usePageStore = defineStore('pages', () => {
     }
   }
 
-  return { pages, currentPageId, loading, trashPages, loadAllPages, ensurePagesLoaded, ensureTodayIdeasPage, getIdeasSnapshot, loadIdeasSnapshotMonths, loadIdeasSnapshotsByMonth, ideasSnapshots, ideasMonths, ideasHistoryPages, setCurrentPage, openPage, createPage, getPage, getPageByTitle, getOrCreatePageByTitle, renamePage, mergePage, deletePage, loadTrashPages, softDeletePage, restorePage, permanentDeletePage, onRemovePageFromHistory }
+  return { pages, currentPageId, loading, trashPages, loadAllPages, ensurePagesLoaded, ensureTodayIdeasPage, getIdeasSnapshot, loadIdeasSnapshotMonths, loadIdeasSnapshotsByMonth, ideasSnapshots, ideasMonths, ideasHistoryPages, setCurrentPage, openPage, createPage, createTagPage, getPage, getPageByTitle, getOrCreatePageByTitle, renamePage, mergePage, deletePage, loadTrashPages, softDeletePage, restorePage, permanentDeletePage, onRemovePageFromHistory }
 })

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue';
 import { popModal, pushModal } from '../composables/useModalKeyboard';
-import { usePageStore } from '../stores/pages';
+import { usePageStore, isListableLinkTarget } from '../stores/pages';
 import BasePopover from './common/BasePopover.vue';
 
 const props = defineProps<{
@@ -47,13 +47,13 @@ watch(() => props.query, () => {
 const filteredPages = computed(() => {
   if (!props.query) {
     return pageStore.pages
-      .filter(p => !p.deleted)
+      .filter(isListableLinkTarget)
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .slice(0, 10);
   }
   const q = props.query.toLowerCase();
   return pageStore.pages
-    .filter(p => !p.deleted && p.title.toLowerCase().includes(q))
+    .filter(p => isListableLinkTarget(p) && p.title.toLowerCase().includes(q))
     .sort((a, b) => {
       const aTitle = a.title.toLowerCase();
       const bTitle = b.title.toLowerCase();

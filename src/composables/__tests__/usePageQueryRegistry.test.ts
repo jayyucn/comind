@@ -72,7 +72,7 @@ describe('Page 字段描述符注册表', () => {
     registerPageBuiltinFields(registry)
     const type = registry.get(PAGE_ENTITY, 'type')!
     expect(type.type).toBe('select')
-    expect(type.options?.map((o) => o.id).sort()).toEqual(['book', 'ideas', 'normal'])
+    expect(type.options?.map((o) => o.id).sort()).toEqual(['book', 'ideas', 'normal', 'tag'])
   })
 })
 

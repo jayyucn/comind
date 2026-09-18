@@ -51,7 +51,7 @@ export interface SelectorEdge {
 export interface SelectorNode {
   id: string
   title: string
-  type: 'normal' | 'ideas' | 'book'
+  type: 'normal' | 'ideas' | 'book' | 'tag'
   updatedAt: number
   createdAt: number
   deleted: boolean

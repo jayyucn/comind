@@ -1,6 +1,6 @@
 // composables/useFavorites.ts
 import { ref, computed, watch } from 'vue'
-import { usePageStore } from '../stores/pages'
+import { usePageStore, isListablePage } from '../stores/pages'
 import type { Page } from '../types/page'
 
 const STORAGE_KEY = 'comind:favorites'
@@ -45,11 +45,11 @@ export function useFavorites() {
     }
   })
 
-  // 收藏的 Page 列表（按收藏顺序）
+  // 收藏的 Page 列表（按收藏顺序）；tag page 不在收藏列表展示（#129）
   const favoritePages = computed(() => {
     return favoriteIds.value
       .map(id => pageStore.getPage(id))
-      .filter((page): page is Page => page !== undefined)
+      .filter((page): page is Page => page !== undefined && isListablePage(page))
   })
 
   function isFavorite(pageId: string): boolean {

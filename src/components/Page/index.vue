@@ -6,6 +6,8 @@ import Backlinks from '../Backlinks.vue'
 import Toc from './Toc.vue'
 import ConfirmDialog from '../ConfirmDialog.vue'
 import SlashCommandMenu from '../SlashCommandMenu.vue'
+import TagSelectMenu from '../TagSelectMenu.vue'
+import TagTemplateEditor from '../TagTemplateEditor.vue'
 import PropertyQuickEditor from '../Block/PropertyQuickEditor.vue'
 import PropertyEditor from '../Block/PropertyEditor.vue'
 import RelationshipMenu from '../RelationshipMenu.vue'
@@ -91,6 +93,9 @@ function handleOpenReader(): void {
   const bookId = resolvedPageId.value
   if (bookId) openReaderWindow(bookId)
 }
+
+/** 标签页（#131）：正文顶部显示字段模板编辑器 */
+const isTagPage = computed(() => resolvedPage.value?.type === 'tag')
 
 const isEditingTitle = ref(false)
 const editingTitle = ref('')
@@ -256,6 +261,12 @@ function handleCancelMerge() {
           </div>
         </div>
 
+        <!-- 标签页：字段模板编辑器（#131 / ADR-0049 D5，默认折叠） -->
+        <TagTemplateEditor
+          v-if="isTagPage"
+          :tag-page-id="resolvedPageId"
+        />
+
         <!-- 正文：历史 ideas 页走快照只读渲染；其余（今日 ideas / 普通页 / 书页）走活数据 BlockList -->
         <IdeasSnapshotPage
           v-if="isSnapshotIdeasPage"
@@ -288,6 +299,7 @@ function handleCancelMerge() {
     </ConfirmDialog>
 
     <SlashCommandMenu />
+    <TagSelectMenu />
     <PropertyQuickEditor />
     <PropertyEditor />
     <RelationshipMenu :menu="relMenu" />

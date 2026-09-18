@@ -1,6 +1,6 @@
 // composables/useRecent.ts
 import { computed, ref, watch } from 'vue'
-import { usePageStore } from '../stores/pages'
+import { usePageStore, isListablePage } from '../stores/pages'
 
 const STORAGE_KEY = 'comind:sidebar-recent-collapsed'
 const isExpanded = ref(true)
@@ -16,9 +16,10 @@ if (typeof window !== 'undefined') {
 export function useRecent() {
   const pageStore = usePageStore()
 
-  // 按 Page.updatedAt 降序排列，最多 5 条
+  // 按 Page.updatedAt 降序排列，最多 5 条；tag page 不在最近列表展示（#129）
   const recentPages = computed(() => {
     return [...pageStore.pages]
+      .filter(isListablePage)
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
       .slice(0, 5)
   })
