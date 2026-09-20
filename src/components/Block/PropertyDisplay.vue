@@ -6,6 +6,7 @@ import { useBlockStore } from '../../stores/blocks'
 import { useEditorStore } from '../../stores/editor'
 import { usePropertyStore } from '../../stores/property'
 import type { Property } from '../../types/property'
+import { isSystemField } from '../../types/tag'
 import { isTauriEnvironment } from '../../wasm/tauri-platform'
 import BasePopover from '../common/BasePopover.vue'
 import { Icon } from '../Icons'
@@ -29,8 +30,9 @@ const visibleProperties = computed<Property[]>(() => {
     // T14: deadline/scheduled 已内联为 dateRef，不在属性面板展示
     if (prop.key === 'deadline' || prop.key === 'scheduled') return false
     const def = propertyStore.getPropertyDef(prop.key)
-    // 显示内置属性（displayPosition === 'bottom-of-block'）和所有自定义属性
-    return def?.displayPosition === 'bottom-of-block' || !def?.isBuiltIn
+    // 显示内置属性（displayPosition === 'bottom-of-block'）和所有自定义属性；
+    // 「是否系统字段」由所属 Tag 的 isSystem 承载（ADR-0049 D5）
+    return def?.displayPosition === 'bottom-of-block' || !isSystemField(prop.key)
   })
 })
 
@@ -89,8 +91,7 @@ async function jumpToSource(): Promise<void> {
 const hoveredPropertyId = ref<string | null>(null)
 
 function isBuiltIn(key: string): boolean {
-  const def = propertyStore.getPropertyDef(key)
-  return def?.isBuiltIn ?? false
+  return isSystemField(key)
 }
 
 function editProperty(prop: Property, event: MouseEvent) {

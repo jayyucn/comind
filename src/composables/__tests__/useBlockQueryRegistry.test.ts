@@ -59,8 +59,9 @@ describe('Block 字段描述符注册表', () => {
     registerBlockBuiltinFields(registry)
     const keys = registry.list(BLOCK_ENTITY).map((f) => f.key).sort()
     expect(keys).toEqual([
-      'area', 'content', 'created_at', 'dateRefDate', 'dateRefKind', 'deadline', 'done',
-      'page', 'priority', 'project', 'schedule', 'status', 'updatedAt',
+      'area', 'book', 'cfi', 'chapter', 'content', 'created_at', 'dateRefDate', 'dateRefKind',
+      'deadline', 'done', 'language', 'page', 'part', 'priority', 'project', 'quote',
+      'schedule', 'sourceBlockId', 'sourcePageId', 'status', 'updatedAt',
     ])
 
     const status = registry.get(BLOCK_ENTITY, 'status')!
@@ -75,6 +76,16 @@ describe('Block 字段描述符注册表', () => {
     const date = registry.get(BLOCK_ENTITY, 'dateRefDate')!
     expect(date.type).toBe('date')
     expect(date.dateBucket).toBe('day')
+  })
+
+  it('系统书笔记字段（book 等）统一注册为 text 可查询字段（ADR-0049 D4）', () => {
+    const registry = createRegistry()
+    registerBlockBuiltinFields(registry)
+    const book = registry.get(BLOCK_ENTITY, 'book')!
+    expect(book.type).toBe('text')
+    expect(book.label).toBe('书名')
+    const quote = registry.get(BLOCK_ENTITY, 'quote')!
+    expect(quote.type).toBe('text')
   })
 
   it('subscribe 在注册/注销时触发（UI 跟随依据）', () => {

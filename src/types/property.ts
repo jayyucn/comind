@@ -1,4 +1,4 @@
-import { TASK_PRIORITY_ICONS, TASK_STATUS_ICONS } from "../components/Icons"
+import { SYSTEM_TAGS } from './tag'
 
 /**
  * 属性类型
@@ -16,21 +16,25 @@ export interface ClosedValue {
 }
 
 /**
- * 属性定义（元数据）
- * 全局配置，描述一个属性的元信息
+ * 字段定义（元数据）
+ * 全局配置，描述一个字段的元信息。系统字段由 SYSTEM_TAGS 分组定义（ADR-0049 D1/D3）。
  */
-export interface PropertyDefinition {
+export interface FieldDefinition {
   key: string
   title: string
   type: PropertyType
   closedValues?: ClosedValue[]
-  isBuiltIn?: boolean
   description?: string
 
-  // 新增配置字段
+  // 纯渲染语义：不再承担「是否系统字段」职责（系统语义由所属 Tag.isSystem 承载，见 isSystemField）
   displayPosition?: 'between-bullet-content' | 'right-of-content' | 'bottom-of-block'
   displayStyle?: 'icon-text' | 'icon' | 'text'
 }
+
+/**
+ * @deprecated 使用 FieldDefinition（ADR-0049 D2 改名）
+ */
+export type PropertyDefinition = FieldDefinition
 
 /**
  * 属性值映射（类型安全）
@@ -82,124 +86,20 @@ export interface PropertyRecord {
 }
 
 /**
- * 内置属性定义
+ * 内置字段定义：由 SYSTEM_TAGS 展平（单一来源，见 ADR-0049 D3）。
  */
-export const BUILT_IN_PROPERTIES: PropertyDefinition[] = [
-  {
-    key: 'status',
-    title: '状态',
-    type: 'string',
-    isBuiltIn: true,
-    displayPosition: 'between-bullet-content',
-    displayStyle: 'icon',
-    closedValues: [
-      { value: 'Todo', label: '待办', icon: TASK_STATUS_ICONS.Todo },
-      { value: 'Doing', label: '进行中', icon: TASK_STATUS_ICONS.Doing },
-      { value: 'Done', label: '已完成', icon: TASK_STATUS_ICONS.Done },
-      { value: 'Canceled', label: '已取消', icon: TASK_STATUS_ICONS.Canceled },
-    ],
-  },
-  {
-    key: 'priority',
-    title: '优先级',
-    type: 'string',
-    isBuiltIn: true,
-    displayPosition: 'right-of-content',
-    displayStyle: 'icon',
-    closedValues: [
-      { value: 'Low', label: '低', description: '不紧急不重要', icon: TASK_PRIORITY_ICONS.Low },
-      { value: 'Medium', label: '中', description: '重要不紧急', icon: TASK_PRIORITY_ICONS.Medium },
-      { value: 'High', label: '高', description: '紧急不重要', icon: TASK_PRIORITY_ICONS.High },
-      { value: 'Urgent', label: '急', description: '紧急且重要', icon: TASK_PRIORITY_ICONS.Urgent },
-    ],
-  },
-  {
-    key: 'project',
-    title: '项目',
-    type: 'string',
-    isBuiltIn: true,
-    displayPosition: 'bottom-of-block',
-    displayStyle: 'icon-text',
-  },
-  {
-    key: 'area',
-    title: '领域',
-    type: 'string',
-    isBuiltIn: true,
-    displayPosition: 'bottom-of-block',
-    displayStyle: 'icon-text',
-  },
-  {
-    // 书笔记四件套（票 06 / ADR-0040 D3/D7）：阅读器高亮升格为 Block 时写入。
-    // book/chapter/quote 展示于 block 属性区（其他端语义：脱离书文件可读）；
-    // cfi 是「跳回原文」的数据源，系统属性不渲染（同 language）。
-    key: 'book',
-    title: '书名',
-    type: 'string',
-    isBuiltIn: true,
-    displayPosition: 'bottom-of-block',
-    displayStyle: 'icon-text',
-  },
-  {
-    key: 'part',
-    title: '部/卷',
-    type: 'string',
-    isBuiltIn: true,
-    // 系统属性：章节的双层父级，由 PropertyDisplay 紧凑展示，不进入属性列表
-  },
-  {
-    key: 'chapter',
-    title: '章节',
-    type: 'string',
-    isBuiltIn: true,
-    displayPosition: 'bottom-of-block',
-    displayStyle: 'icon-text',
-  },
-  {
-    key: 'cfi',
-    title: '原文锚点',
-    type: 'string',
-    isBuiltIn: true,
-    // 系统属性：不设 displayPosition → 默认不显示，也不出现在属性列表（PropertyDisplay 过滤）
-  },
-  {
-    key: 'quote',
-    title: '原文',
-    type: 'string',
-    isBuiltIn: true,
-    displayPosition: 'bottom-of-block',
-    displayStyle: 'icon-text',
-  },
-  {
-    key: 'sourceBlockId',
-    title: '来源块 ID',
-    type: 'string',
-    isBuiltIn: true,
-  }, {
-    key: 'sourcePageId',
-    title: '来源页面 ID',
-    type: 'string',
-    isBuiltIn: true,
-  },
-  {
-    key: 'language',
-    title: '语言',
-    type: 'string',
-    isBuiltIn: true,
-    // 系统属性：不设 displayPosition → 默认不显示，也不出现在属性列表（PropertyDisplay 过滤）
-  },
-]
+export const BUILT_IN_PROPERTIES: FieldDefinition[] = SYSTEM_TAGS.flatMap((s) => s.fields)
 
 /**
- * 获取属性定义
+ * 获取字段定义
  */
-export function getPropertyDefinition(key: string): PropertyDefinition | undefined {
-  return BUILT_IN_PROPERTIES.find(p => p.key === key)
+export function getPropertyDefinition(key: string): FieldDefinition | undefined {
+  return BUILT_IN_PROPERTIES.find((p) => p.key === key)
 }
 
 /**
- * 获取所有属性定义
+ * 获取所有字段定义
  */
-export function getAllPropertyDefinitions(): PropertyDefinition[] {
+export function getAllPropertyDefinitions(): FieldDefinition[] {
   return [...BUILT_IN_PROPERTIES]
 }

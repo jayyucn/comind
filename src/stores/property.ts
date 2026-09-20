@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { initCoreClient } from '../wasm/client'
-import type { Property, PropertyDefinition, PropertyValue, PropertyType } from '../types/property'
+import type { Property, FieldDefinition, PropertyValue, PropertyType } from '../types/property'
 import { getAllPropertyDefinitions, getPropertyDefinition } from '../types/property'
 import { useBlockStore } from './blocks'
 import { useBlockCardStore } from './blockCard'
@@ -40,10 +40,10 @@ export const usePropertyStore = defineStore('property', () => {
   const ensureTodoInFlight = new Set<string>()
 
   // Getters
-  const builtInProperties = computed<PropertyDefinition[]>(() => getAllPropertyDefinitions())
+  const builtInProperties = computed<FieldDefinition[]>(() => getAllPropertyDefinitions())
 
   // Actions
-  function getPropertyDef(key: string): PropertyDefinition | undefined {
+  function getPropertyDef(key: string): FieldDefinition | undefined {
     return getPropertyDefinition(key)
   }
 

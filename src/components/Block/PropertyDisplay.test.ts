@@ -37,8 +37,8 @@ describe('PropertyDisplay', () => {
         { id: 'p2', key: 'project', value: 'Test Project', type: 'string' }
       ]),
       getPropertyDef: vi.fn((key: string) => {
-        if (key === 'area') return { key: 'area', title: '领域', isBuiltIn: true, displayPosition: 'bottom-of-block' }
-        if (key === 'project') return { key: 'project', title: '项目', isBuiltIn: true, displayPosition: 'bottom-of-block' }
+        if (key === 'area') return { key: 'area', title: '领域', displayPosition: 'bottom-of-block' }
+        if (key === 'project') return { key: 'project', title: '项目', displayPosition: 'bottom-of-block' }
         return undefined
       })
     }
@@ -64,8 +64,8 @@ describe('PropertyDisplay', () => {
         { id: 'p2', key: 'project', value: 'Test Project', type: 'string', isHidden: true }
       ]),
       getPropertyDef: vi.fn((key: string) => {
-        if (key === 'area') return { key: 'area', title: '领域', isBuiltIn: true, displayPosition: 'bottom-of-block' }
-        if (key === 'project') return { key: 'project', title: '项目', isBuiltIn: true, displayPosition: 'bottom-of-block' }
+        if (key === 'area') return { key: 'area', title: '领域', displayPosition: 'bottom-of-block' }
+        if (key === 'project') return { key: 'project', title: '项目', displayPosition: 'bottom-of-block' }
         return undefined
       })
     }
@@ -88,7 +88,7 @@ describe('PropertyDisplay', () => {
         { id: 'p1', key: 'area', value: '个人', type: 'string' }
       ]),
       getPropertyDef: vi.fn().mockReturnValue({
-        key: 'area', title: '领域', isBuiltIn: true, displayPosition: 'bottom-of-block'
+        key: 'area', title: '领域', displayPosition: 'bottom-of-block'
       })
     }
     vi.mocked(usePropertyStore).mockReturnValue(mockStore as any)
@@ -108,7 +108,7 @@ describe('PropertyDisplay', () => {
         { id: 'p2', key: 'custom-key', value: 'foo', type: 'string' }
       ]),
       getPropertyDef: vi.fn((key: string) => {
-        if (key === 'language') return { key: 'language', title: '语言', isBuiltIn: true }
+        if (key === 'language') return { key: 'language', title: '语言' }
         return undefined
       })
     }

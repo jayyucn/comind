@@ -21,6 +21,7 @@ import { useBlockRelationshipCleanup } from '../../composables/useBlockRelations
 import { useBlockStore } from '../../stores/blocks'
 import { useEditorStore } from '../../stores/editor'
 import { usePropertyStore } from '../../stores/property'
+import { isSystemField } from '../../types/tag'
 import BlockDraggableList from './components/BlockDraggableList.vue'
 import { useBlockCollapse } from './composables/useBlockCollapse'
 import { useBlockEditorLifecycle } from './composables/useBlockEditorLifecycle'
@@ -101,7 +102,7 @@ const hasRightProps = computed(() => {
     if (p.isHidden) return false
     if (p.key === 'deadline' || p.key === 'scheduled') return false
     const def = propertyStore.getPropertyDef(p.key)
-    return def?.displayPosition === 'bottom-of-block' || !def?.isBuiltIn
+    return def?.displayPosition === 'bottom-of-block' || !isSystemField(p.key)
   })
 })
 

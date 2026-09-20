@@ -47,7 +47,6 @@ function mountWith(key: string, value: string) {
     key,
     title: key === 'status' ? '状态' : '优先级',
     type: 'string',
-    isBuiltIn: true,
     displayPosition: 'between-bullet-content',
     displayStyle: 'icon',
     closedValues: [{ value, label: String(value), icon: `status-todo` }],

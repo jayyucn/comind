@@ -12,7 +12,8 @@ import { computed, watch } from 'vue'
 import { createRegistry, type Registry, type FieldDescriptor, type FieldType, type Option } from '../core/query'
 import type { BoardConfig, CalendarConfig, GalleryConfig, LayoutConfig, QuadrantConfig, TableConfig, ViewKind } from '../core/view'
 import type { BlockCard } from '../wasm/types'
-import { BUILT_IN_PROPERTIES, type PropertyDefinition, type PropertyType } from '../types/property'
+import { SYSTEM_TAGS, isSystemField } from '../types/tag'
+import { type FieldDefinition, type PropertyType } from '../types/property'
 import { useBlockCardStore } from '../stores/blockCard'
 
 /** 引擎命名空间：所有 Block 字段注册于此。 */
@@ -68,10 +69,15 @@ export function blockDefaultConfig(kind: ViewKind): LayoutConfig {
   }
 }
 
-/** 内置字段 key 集合，用于区分「内置」与「自定义」字段。 */
+/** 引擎字段 key（非属性字段，查询引擎内建原语）。 */
+const ENGINE_FIELD_KEYS = [
+  'dateRefKind', 'dateRefDate', 'content', 'page', 'done', 'deadline', 'schedule', 'updatedAt', 'created_at',
+] as const
+
+/** 内置字段 key 集合：系统 Tag 属性字段 + 引擎字段，用于区分「内置」与「自定义」字段（ADR-0049 D4）。 */
 const BUILTIN_KEYS = new Set<string>([
-  'status', 'priority', 'project', 'area', 'dateRefKind', 'dateRefDate',
-  'content', 'page', 'done', 'deadline', 'schedule', 'updatedAt', 'created_at',
+  ...SYSTEM_TAGS.flatMap((s) => s.fields.map((f) => f.key)),
+  ...ENGINE_FIELD_KEYS,
 ])
 
 /** dateRef.kind 的合法取值（与 property.ts normalizeKind 对齐）。 */
@@ -102,8 +108,9 @@ function toLocalDatetime(ts: number): string {
 
 /** 注册 Block 全部内置字段描述符到注册表。 */
 export function registerBlockBuiltinFields(registry: Registry): void {
-  const statusDef = BUILT_IN_PROPERTIES.find((p) => p.key === 'status')
-  const priorityDef = BUILT_IN_PROPERTIES.find((p) => p.key === 'priority')
+  const systemFields = SYSTEM_TAGS.flatMap((s) => s.fields)
+  const statusDef = systemFields.find((f) => f.key === 'status')
+  const priorityDef = systemFields.find((f) => f.key === 'priority')
 
   registry.register(BLOCK_ENTITY, {
     key: 'status',
@@ -129,19 +136,16 @@ export function registerBlockBuiltinFields(registry: Registry): void {
     get: (item) => asCard(item).properties?.['priority'],
   })
 
-  registry.register(BLOCK_ENTITY, {
-    key: 'project',
-    label: '项目',
-    type: 'text',
-    get: (item) => asCard(item).properties?.['project'],
-  })
-
-  registry.register(BLOCK_ENTITY, {
-    key: 'area',
-    label: '领域',
-    type: 'text',
-    get: (item) => asCard(item).properties?.['area'],
-  })
+  // 其余系统属性字段（project/area + 书笔记八件套）统一注册为 text（ADR-0049 D4 全量统一）
+  for (const field of systemFields) {
+    if (field.key === 'status' || field.key === 'priority') continue
+    registry.register(BLOCK_ENTITY, {
+      key: field.key,
+      label: field.title,
+      type: 'text',
+      get: (item) => asCard(item).properties?.[field.key],
+    })
+  }
 
   // 一个 block 可有多个 date_ref，kind 取所有出现过的 kind 集合（multiSelect 语义）
   registry.register(BLOCK_ENTITY, {
@@ -245,7 +249,7 @@ export function registerBlockBuiltinFields(registry: Registry): void {
   })
 }
 
-/** PropertyDefinition.type → 引擎 FieldType 映射。 */
+/** FieldDefinition.type → 引擎 FieldType 映射。 */
 const TYPE_MAP: Record<PropertyType, FieldType> = {
   string: 'text',
   number: 'number',
@@ -255,8 +259,8 @@ const TYPE_MAP: Record<PropertyType, FieldType> = {
   page: 'text',
 }
 
-/** 把 PropertyDefinition 转为引擎字段描述符（自定义 property 用）。 */
-export function buildBlockFieldDescriptor(def: PropertyDefinition): FieldDescriptor {
+/** 把 FieldDefinition 转为引擎字段描述符（自定义 property 用）。 */
+export function buildBlockFieldDescriptor(def: FieldDefinition): FieldDescriptor {
   const fieldType = TYPE_MAP[def.type] ?? 'text'
   const descriptor: FieldDescriptor = {
     key: def.key,
@@ -281,7 +285,7 @@ function inferPropertyType(value: unknown): PropertyType {
  * 按 diff 同步自定义 property 字段：defs 中新增的注册、消失的注销。
  * 只动非内置字段，内置字段不受影响。
  */
-export function syncBlockCustomProperties(registry: Registry, defs: PropertyDefinition[]): void {
+export function syncBlockCustomProperties(registry: Registry, defs: FieldDefinition[]): void {
   const desired = new Map(defs.map((d) => [d.key, d]))
 
   // 注销已消失的自定义字段
@@ -320,12 +324,12 @@ export function useBlockQueryRegistry() {
   const registry = getBlockRegistry()
   const blockCardStore = useBlockCardStore()
 
-  const customDefs = computed<PropertyDefinition[]>(() => {
+  const customDefs = computed<FieldDefinition[]>(() => {
     const keys = new Map<string, PropertyType>()
     for (const card of blockCardStore.cards) {
       const props = (card.properties ?? {}) as Record<string, unknown>
       for (const [k, v] of Object.entries(props)) {
-        if (BUILT_IN_PROPERTIES.some((b) => b.key === k)) continue
+        if (isSystemField(k)) continue
         if (!keys.has(k)) keys.set(k, inferPropertyType(v))
       }
     }

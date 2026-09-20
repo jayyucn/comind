@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { usePropertyStore } from '../../stores/property'
 import { useEditorStore } from '../../stores/editor'
 import type { Property } from '../../types/property'
+import { isSystemField } from '../../types/tag'
 import { Icon } from '../Icons'
 
 interface Props {
@@ -42,8 +43,7 @@ function clearLongPress() {
 }
 
 function isBuiltIn(key: string): boolean {
-  const def = propertyStore.getPropertyDef(key)
-  return def?.isBuiltIn ?? false
+  return isSystemField(key)
 }
 
 function getIcon(key: string, value: Property['value']): string | null {
