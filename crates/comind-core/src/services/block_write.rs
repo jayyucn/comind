@@ -113,7 +113,7 @@ impl BlockWriteService {
                 let props =
                     PropertyService::get_by_block_id(storage, &res.block.id).unwrap_or_default();
                 sync_changes
-                    .entry(SyncTable::Property)
+                    .entry(SyncTable::FieldValue)
                     .or_insert_with(Vec::new)
                     .extend(props.iter().map(|p| p.id.clone()));
                 let notifs =
@@ -241,7 +241,7 @@ impl BlockWriteService {
             .extend(links.iter().map(|l| l.id.clone()));
         let props = PropertyService::get_by_block_id(storage, block_id)?;
         sync_changes
-            .entry(SyncTable::Property)
+            .entry(SyncTable::FieldValue)
             .or_insert_with(Vec::new)
             .extend(props.iter().map(|p| p.id.clone()));
 
@@ -449,7 +449,7 @@ mod tests {
         );
         // Keys present even when the collected sets are empty (empty tables).
         assert!(sync.contains_key(&SyncTable::Link));
-        assert!(sync.contains_key(&SyncTable::Property));
+        assert!(sync.contains_key(&SyncTable::FieldValue));
     }
 
     #[test]

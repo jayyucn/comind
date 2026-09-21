@@ -69,6 +69,22 @@ comind 的属性/字段系统分三层，目前靠硬编码与扁平数组粘合
 8. `crates/comind-core/src/storage/`：SQLite / SQL.js 双实现加 `tag` 表 + `FieldDefinition` 表 + `FieldValue` 表（Property 重构为 FieldValue），block 增加 `tags` 字段。
 9. `crates/comind-core/src/services/batch.rs`：新增 tag / field_definition / field_value 的 create / update / delete op（沿用 ADR-0048 单源分派）。
 
+## 落地补充：Property 表冻结与 sync 登记语义（2026-09-21 grill-up 锚定）
+
+**本质需求（锚点）**：**FieldValue 是唯一事实源，任何代码路径不得再读写 Property 表**——不变量落在代码层（登记语义 / 收敛审查），Property 表本体的 DROP 是次要的，留待 `block_version`（唯一残留读写方，已裁定待删模块）删除后一并处理。
+
+**sync 登记语义**：凡登记派生属性行的 sync 变更，目标表一律为 `(SyncTable::FieldValue, id)`，其中 `id` 必须是 **FieldValue 行 id**（即 `PropertyService` 适配层返回的合成 id）；`(SyncTable::FieldDefinition, fd_id)` 仅在 FieldDefinition 实际发生写动的路径（property op 的 `save_shape` 返回）登记。冻结的 `SyncTable::Property` variant 本轮保留（已同步设备的存量 payload 兼容），但**不得再产生新登记**。
+
+**已修复的五处错位**（此前把 FieldValue 的 id 登记成 Property 表，或 delete 路径直连冻结表，导致 FieldValue 变更的 sync 登记丢失）：
+
+1. `batch.rs` block create 派生收集 → `(FieldValue, id)`
+2. `batch.rs` block update 派生收集 → `(FieldValue, id)`
+3. `batch.rs` block delete 派生收集（原直连 `storage.properties()`）→ `PropertyService::get_by_block_id` + `(FieldValue, id)`
+4. `block_write.rs` save-block-tree 派生收集 → `(FieldValue, id)`
+5. `block_write.rs` delete cascade 派生收集 → `(FieldValue, id)`
+
+**待办（勿直接实施，需先裁口径）**：`block_version` 模块删除后 → 删 `SyncTable::Property` variant（`all()` 同步移除）、删 `PropertyRepository` trait 及三适配器 impl、DROP `Property` 表（双端 DDL + 迁移）。
+
 ## 非目标
 
 - 既有 `tag.rs` / `TagParse` / `tag_service.rs`（文本 `#tag` 解析）定位为 Tag 的**解析层**，本 ADR 不动它们（见 D7）；不实现自动化 / AI 绑定、打标 UI 交互、Page 级属性（另立 ADR）。

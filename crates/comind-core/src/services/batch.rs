@@ -97,7 +97,8 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
                 sync.push((SyncTable::Link, l.id));
             }
             for p in PropertyService::get_by_block_id(storage, &created.id).unwrap_or_default() {
-                sync.push((SyncTable::Property, p.id));
+                // ADR-0049：属性已切 FieldValue，id 是 FieldValue 行 id，登记不得再指 Property 表
+                sync.push((SyncTable::FieldValue, p.id));
             }
             for n in storage
                 .notifications()
@@ -128,7 +129,8 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
                 sync.push((SyncTable::Link, l.id));
             }
             for p in PropertyService::get_by_block_id(storage, &updated.id).unwrap_or_default() {
-                sync.push((SyncTable::Property, p.id));
+                // ADR-0049：属性已切 FieldValue，id 是 FieldValue 行 id，登记不得再指 Property 表
+                sync.push((SyncTable::FieldValue, p.id));
             }
             for n in storage
                 .notifications()
@@ -158,12 +160,10 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
             {
                 sync.push((SyncTable::Link, l.id));
             }
-            for p in storage
-                .properties()
-                .get_by_block_id(&id)
-                .unwrap_or_default()
-            {
-                sync.push((SyncTable::Property, p.id));
+            // ADR-0049：属性软删的是 FieldValue 行（Property 表冻结），
+            // 必须在 BlockService::delete 之前经适配层收集存活行 id
+            for p in PropertyService::get_by_block_id(storage, &id).unwrap_or_default() {
+                sync.push((SyncTable::FieldValue, p.id));
             }
             for n in storage
                 .notifications()
