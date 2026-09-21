@@ -1,7 +1,7 @@
 use crate::{
     types::{Block, BlockRenderData, Link, PageWithBlocks, RenderSegment},
     storage::repository,
-    services::DateRefService,
+    services::{DateRefService, PropertyService, TagService},
 };
 use std::collections::HashMap;
 use std::error::Error;
@@ -30,7 +30,17 @@ pub fn build_segments_for_block(
         rel_cache.insert(rt.r#type.clone(), (rt.label.clone(), rt.color.clone()));
     }
 
-    build_segments(block, &links, &id_to_title, &rel_cache)
+    let tag_cache = build_tag_cache(storage);
+    build_segments(block, &links, &id_to_title, &rel_cache, &tag_cache)
+}
+
+/// title → (tag id, is_system) 查找表（渲染 chip 用；缺行时 chip 仍渲染、id 置空）。
+fn build_tag_cache(storage: &mut dyn repository::StorageAdapter) -> HashMap<String, (String, bool)> {
+    repository::TagRepository::get_all(storage.tags())
+        .unwrap_or_default()
+        .into_iter()
+        .map(|t| (t.title, (t.id, t.is_system)))
+        .collect()
 }
 
 /// Builds a `PageWithBlocks` response for `get_page_with_blocks`.
@@ -93,8 +103,10 @@ pub fn build_page_with_blocks(
         rel_cache.insert(rt.r#type.clone(), (rt.label.clone(), rt.color.clone()));
     }
 
-    let all_properties =
-        repository::PropertyRepository::get_by_block_ids(storage.properties(), &block_ids)?;
+    let tag_cache = build_tag_cache(storage);
+
+    // ADR-0049 D6：内置字段已切 FieldValue，properties 经适配层合成 Property 形状
+    let all_properties = PropertyService::get_by_block_ids(storage, &block_ids)?;
     let mut props_by_block: HashMap<String, Vec<_>> = HashMap::new();
     for prop in all_properties {
         props_by_block
@@ -109,7 +121,7 @@ pub fn build_page_with_blocks(
 
         let segments = if block.r#type == "bullet" || block.r#type == "property" {
             let links = links_by_block.get(&block.id).map(|v| v.as_slice()).unwrap_or(&[]);
-            build_segments(block, links, &id_to_title, &rel_cache)?
+            build_segments(block, links, &id_to_title, &rel_cache, &tag_cache)?
         } else {
             Vec::new()
         };
@@ -166,6 +178,7 @@ fn build_segments(
     links: &[Link],
     id_to_title: &HashMap<String, String>,
     rel_cache: &HashMap<String, (String, String)>,
+    tag_cache: &HashMap<String, (String, bool)>,
 ) -> Result<Vec<RenderSegment>, Box<dyn Error>> {
     let content = &block.content;
     let mut anchors: Vec<(usize, RenderSegment)> = Vec::new();
@@ -269,6 +282,24 @@ fn build_segments(
         }
     }
 
+    // --- 3. Inline tags `#foo`（grill 决策 #4）---
+    for (byte_start, byte_end, title) in TagService::extract_tag_spans(content) {
+        // 与 dateRef 同款：UTF-16 索引（JS slice 语义）
+        let char_start = byte_to_utf16_idx(content, byte_start);
+        let char_end = byte_to_utf16_idx(content, byte_end);
+        let (tag_id, is_system) = tag_cache
+            .get(&title)
+            .cloned()
+            .unwrap_or_else(|| (String::new(), false));
+        anchors.push((char_start, RenderSegment::Tag {
+            start: char_start,
+            end: char_end,
+            title,
+            tag_id,
+            is_system,
+        }));
+    }
+
     // Sort, fill gaps
     anchors.sort_by_key(|(s, _)| *s);
     let char_len = utf16_len(content);
@@ -284,6 +315,7 @@ fn build_segments(
             RenderSegment::Link { end, .. } => *end,
             RenderSegment::TypedLink { end, .. } => *end,
             RenderSegment::ExternalLink { end, .. } => *end,
+            RenderSegment::Tag { end, .. } => *end,
             RenderSegment::DateRef { end, .. } => {
                 // dateRef 语法（`@ISO [emoji] [|params]`）之后的空白是分隔符，
                 // 不属于任何文本段：跳过它们，避免后续 Text 段带前导空格。

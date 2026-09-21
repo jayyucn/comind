@@ -306,6 +306,12 @@
   }
 }
 
+// 系统 tag（ADR-0049 grill 决策 #4）：与用户 tag 区分的中性样式
+.block-tag--system {
+  color: var(--text-secondary);
+  background: var(--bg-base2);
+}
+
 // 关系类型标签：((type))[[X]] 中的 ((type)) 部分
 // 颜色由内联 style="--rel-color:..." 注入
 .rel-type-label {

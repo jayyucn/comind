@@ -74,7 +74,8 @@ impl BlockService {
             updated_at: now,
             version: 0,
             deleted_at: None,
-            tags: Vec::new(),
+            // content 联动（grill 决策 #1）：新建块同样派生 tags
+            tags: TagService::resolve_tag_ids_for_content(storage, content)?,
         };
 
         let block = repository::BlockRepository::create(storage.blocks(), &block)?;

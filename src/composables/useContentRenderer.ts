@@ -127,6 +127,21 @@ function renderContentToHtml(input: RenderInput): string {
         break
       }
 
+      case 'tag': {
+        // ADR-0049 grill 决策 #4：inline `#foo` 结构化 chip。点击无行为（无 data-page，
+        // 不接入链接跳转）；is_system 加系统修饰类。text 段的 TAG_TRIGGER_REGEX 兜底
+        // 不会重复命中 —— `#foo` 已被 Rust 划入本段，不再是 text。
+        const title = escapeHtmlEntities(seg.title)
+        const raw = escapeHtmlEntities(content.slice(seg.start, seg.end))
+        const systemCls = seg.is_system ? ' block-tag--system' : ''
+        const tagId = seg.tag_id ? ` data-tag-id="${escapeHtmlEntities(seg.tag_id)}"` : ''
+        parts.push(
+          `<span class="${CSS_CLASSES.blockTag}${systemCls}"` +
+          `${tagId} data-tag-title="${title}">${raw}</span>`
+        )
+        break
+      }
+
       case 'date_ref': {
         const kind = escapeHtmlEntities(seg.kind)
         const iso = escapeHtmlEntities(seg.iso)

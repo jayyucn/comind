@@ -1244,6 +1244,31 @@ impl FieldValueRepository for SqlJsAdapter {
         Ok(result.into_iter().map(|r| row_to_field_value_js(&r)).collect())
     }
 
+    fn get_all(&self) -> Result<Vec<FieldValue>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, &format!("SELECT {} FROM FieldValue WHERE deleted_at IS NULL ORDER BY seq", field_value_select_cols()), &[])?;
+        Ok(result.into_iter().map(|r| row_to_field_value_js(&r)).collect())
+    }
+
+    fn get_by_field_definition_id(&self, field_definition_id: &str) -> Result<Vec<FieldValue>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, &format!("SELECT {} FROM FieldValue WHERE field_definition_id = ? AND deleted_at IS NULL ORDER BY seq", field_value_select_cols()), &[field_definition_id])?;
+        Ok(result.into_iter().map(|r| row_to_field_value_js(&r)).collect())
+    }
+
+    fn get_by_id_including_deleted(&self, id: &str) -> Result<Option<FieldValue>, Box<dyn std::error::Error>> {
+        let result = Self::query(&self.db, &format!("SELECT {} FROM FieldValue WHERE id = ?", field_value_select_cols()), &[id])?;
+        if result.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(row_to_field_value_js(&result[0])))
+        }
+    }
+
+    fn undelete(&mut self, id: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let now = chrono::Utc::now().timestamp_millis();
+        Self::run_with_params(&self.db, "UPDATE FieldValue SET deleted_at = NULL, version = version + 1, updated_at = ? WHERE id = ?", &[&now.to_string(), id])?;
+        Ok(())
+    }
+
     fn create(&mut self, fv: &FieldValue) -> Result<FieldValue, Box<dyn std::error::Error>> {
         Self::run_with_params(&self.db, "INSERT INTO FieldValue (id, block_id, field_definition_id, value_json, value_type, seq, created_at, updated_at, version, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)", &[
             &fv.id, &fv.block_id, &fv.field_definition_id, &fv.value_json, &fv.value_type,

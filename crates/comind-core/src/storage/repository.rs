@@ -102,6 +102,12 @@ pub trait FieldValueRepository {
     fn get_by_id(&self, id: &str) -> Result<FieldValue, Box<dyn Error>>;
     fn get_by_block_id(&self, block_id: &str) -> Result<Vec<FieldValue>, Box<dyn Error>>;
     fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<FieldValue>, Box<dyn Error>>;
+    fn get_all(&self) -> Result<Vec<FieldValue>, Box<dyn Error>>;
+    fn get_by_field_definition_id(&self, field_definition_id: &str) -> Result<Vec<FieldValue>, Box<dyn Error>>;
+    /// 含软删行（撤销恢复按 id 复活用）。
+    fn get_by_id_including_deleted(&self, id: &str) -> Result<Option<FieldValue>, Box<dyn Error>>;
+    /// 撤销软删。
+    fn undelete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
     fn create(&mut self, fv: &FieldValue) -> Result<FieldValue, Box<dyn Error>>;
     fn update(&mut self, fv: &FieldValue) -> Result<FieldValue, Box<dyn Error>>;
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;

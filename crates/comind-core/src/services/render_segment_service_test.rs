@@ -504,4 +504,62 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_tag_segment_rendering() -> Result<(), Box<dyn Error>> {
+        let mut adapter = SQLiteAdapter::open_in_memory()?;
+
+        let page = PageService::create(&mut adapter, "", "TagPage", None, None, None, None, None)?;
+
+        // content 同时含用户 tag 与系统 tag：联动在 create 即派生
+        let block = BlockService::create(
+            &mut adapter, &page.id, None,
+            "note #rust and #系统任务 end",
+            "{}", "bullet", None,
+        )?;
+
+        // 联动派生：block.tags 应含 2 个 id（自动建 rust + 命中系统任务）
+        assert_eq!(block.tags.len(), 2, "create should derive tags from content");
+
+        let segments = build_segments_for_block(&mut adapter, &block)?;
+        let tag_segs: Vec<&crate::types::RenderSegment> = segments.iter()
+            .filter(|s| matches!(s, RenderSegment::Tag { .. }))
+            .collect();
+        assert_eq!(tag_segs.len(), 2, "should have 2 tag segments, got {:?}", segments);
+
+        // 系统标记：#系统任务 → is_system = true；#rust → false
+        let mut saw_system = false;
+        let mut saw_user = false;
+        for seg in &tag_segs {
+            if let RenderSegment::Tag { title, tag_id, is_system, start, end } = seg {
+                if title == "系统任务" {
+                    assert!(*is_system);
+                    assert_eq!(tag_id, "sys-tag-system-task");
+                    saw_system = true;
+                } else {
+                    assert_eq!(title, "rust");
+                    assert!(!(*is_system));
+                    assert!(!tag_id.is_empty());
+                    saw_user = true;
+                }
+                // chip 覆盖 `#title` 全段（含 # 号）
+                assert!(end > start);
+            }
+        }
+        assert!(saw_system && saw_user);
+
+        // 覆盖完整性：segments 无缝覆盖整段 content（UTF-16）
+        let mut covered = 0usize;
+        for seg in &segments {
+            let (s0, e0) = match seg {
+                RenderSegment::Text { start, end } => (*start, *end),
+                RenderSegment::Tag { start, end, .. } => (*start, *end),
+                _ => continue,
+            };
+            assert_eq!(s0, covered, "gap before {}", s0);
+            covered = e0;
+        }
+        assert_eq!(covered, block.content.chars().map(|c| c.len_utf16()).sum::<usize>());
+        Ok(())
+    }
 }

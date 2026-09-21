@@ -76,6 +76,9 @@ export function segmentVisibleText(content: string, seg: RenderSegment): string 
     case 'date_ref':
       // 渲染器直接显示存储原文，长度天然一致
       return content.slice(seg.start, seg.end)
+    case 'tag':
+      // inline `#foo` chip：显示存储原文（含 # 号），长度天然一致
+      return content.slice(seg.start, seg.end)
   }
 }
 

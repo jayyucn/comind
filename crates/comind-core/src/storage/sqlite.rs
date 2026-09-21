@@ -18,7 +18,7 @@ use crate::storage::entity::tag::{tag_create, tag_delete, tag_get_all, tag_get_b
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::field_definition::{field_definition_create, field_definition_delete, field_definition_get_all, field_definition_get_by_id, field_definition_get_by_id_including_deleted, field_definition_get_by_key, field_definition_soft_delete_at, field_definition_undelete, field_definition_update};
 #[cfg(not(target_arch = "wasm32"))]
-use crate::storage::entity::field_value::{field_value_create, field_value_delete, field_value_delete_by_block_id, field_value_get_by_block_id, field_value_get_by_block_ids, field_value_get_by_id, field_value_restore_by_field_definition, field_value_soft_delete_by_field_definition, field_value_update};
+use crate::storage::entity::field_value::{field_value_create, field_value_delete, field_value_delete_by_block_id, field_value_get_by_block_id, field_value_get_all, field_value_get_by_block_ids, field_value_get_by_field_definition_id, field_value_get_by_id_including_deleted, field_value_undelete, field_value_get_by_id, field_value_restore_by_field_definition, field_value_soft_delete_by_field_definition, field_value_update};
 use crate::storage::entity::relationship_type::{relationship_type_create, relationship_type_delete, relationship_type_get_all, relationship_type_get_by_id, relationship_type_get_by_type, relationship_type_update};
 use crate::storage::entity::template::{template_create, template_delete, template_get_all, template_get_by_id, template_get_by_name, template_update};
 use crate::storage::entity::search::{search_index_delete, search_index_search, search_index_upsert};
@@ -1117,6 +1117,22 @@ impl FieldValueRepository for SQLiteAdapter {
         field_value_get_by_block_ids(&self.conn, block_ids)
     }
 
+    fn get_all(&self) -> Result<Vec<FieldValue>, Box<dyn Error>> {
+        field_value_get_all(&self.conn)
+    }
+
+    fn get_by_field_definition_id(&self, field_definition_id: &str) -> Result<Vec<FieldValue>, Box<dyn Error>> {
+        field_value_get_by_field_definition_id(&self.conn, field_definition_id)
+    }
+
+    fn get_by_id_including_deleted(&self, id: &str) -> Result<Option<FieldValue>, Box<dyn Error>> {
+        field_value_get_by_id_including_deleted(&self.conn, id)
+    }
+
+    fn undelete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
+        field_value_undelete(&self.conn, id)
+    }
+
     fn create(&mut self, fv: &FieldValue) -> Result<FieldValue, Box<dyn Error>> {
         field_value_create(&self.conn, fv)?;
         Ok(fv.clone())
@@ -1758,6 +1774,22 @@ impl<'a> FieldValueRepository for TxContext<'a> {
 
     fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<FieldValue>, Box<dyn Error>> {
         field_value_get_by_block_ids(&self.conn, block_ids)
+    }
+
+    fn get_all(&self) -> Result<Vec<FieldValue>, Box<dyn Error>> {
+        field_value_get_all(&self.conn)
+    }
+
+    fn get_by_field_definition_id(&self, field_definition_id: &str) -> Result<Vec<FieldValue>, Box<dyn Error>> {
+        field_value_get_by_field_definition_id(&self.conn, field_definition_id)
+    }
+
+    fn get_by_id_including_deleted(&self, id: &str) -> Result<Option<FieldValue>, Box<dyn Error>> {
+        field_value_get_by_id_including_deleted(&self.conn, id)
+    }
+
+    fn undelete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
+        field_value_undelete(&self.conn, id)
     }
 
     fn create(&mut self, fv: &FieldValue) -> Result<FieldValue, Box<dyn Error>> {

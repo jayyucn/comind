@@ -133,6 +133,55 @@ pub fn field_value_get_by_block_ids<E: Executor>(
     exec.query_map(&sql, &params, |row| row_to_field_value_native(row)).map_err(bx)
 }
 
+/// 全部存活值（projection / 快照用）。
+#[cfg(not(target_arch = "wasm32"))]
+pub fn field_value_get_all<E: Executor>(exec: &E) -> Result<Vec<FieldValue>, Box<dyn Error>> {
+    let sql = format!(
+        "SELECT {} FROM FieldValue WHERE deleted_at IS NULL ORDER BY seq",
+        field_value_select_cols()
+    );
+    let params: Vec<&dyn ToSql> = vec![];
+    exec.query_map(&sql, &params, |row| row_to_field_value_native(row)).map_err(bx)
+}
+
+/// 按字段定义反查全部存活值（query_block_ids_by_key_value 的数据源）。
+#[cfg(not(target_arch = "wasm32"))]
+pub fn field_value_get_by_field_definition_id<E: Executor>(
+    exec: &E,
+    field_definition_id: &str,
+) -> Result<Vec<FieldValue>, Box<dyn Error>> {
+    let sql = format!(
+        "SELECT {} FROM FieldValue WHERE field_definition_id = ?1 AND deleted_at IS NULL ORDER BY seq",
+        field_value_select_cols()
+    );
+    let params: Vec<&dyn ToSql> = vec![&field_definition_id];
+    exec.query_map(&sql, &params, |row| row_to_field_value_native(row)).map_err(bx)
+}
+
+/// 含软删行（撤销恢复按 id 复活用）。
+#[cfg(not(target_arch = "wasm32"))]
+pub fn field_value_get_by_id_including_deleted<E: Executor>(
+    exec: &E,
+    id: &str,
+) -> Result<Option<FieldValue>, Box<dyn Error>> {
+    let sql = format!("SELECT {} FROM FieldValue WHERE id = ?1", field_value_select_cols());
+    let params: Vec<&dyn ToSql> = vec![&id];
+    let rows = exec.query_map(&sql, &params, |row| row_to_field_value_native(row)).map_err(bx)?;
+    Ok(rows.into_iter().next())
+}
+
+/// 撤销软删（与 delete 的盖戳方式对称，只清 deleted_at）。
+#[cfg(not(target_arch = "wasm32"))]
+pub fn field_value_undelete<E: Executor>(exec: &E, id: &str) -> Result<(), Box<dyn Error>> {
+    let now = chrono::Utc::now().timestamp_millis();
+    let params: Vec<&dyn ToSql> = vec![&id, &now];
+    exec.execute(
+        "UPDATE FieldValue SET deleted_at = NULL, version = version + 1, updated_at = ?2 WHERE id = ?1",
+        &params,
+    )?;
+    Ok(())
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub fn field_value_create<E: Executor>(exec: &E, fv: &FieldValue) -> Result<(), Box<dyn Error>> {
     let params = field_value_params(fv);

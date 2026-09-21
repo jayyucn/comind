@@ -320,6 +320,8 @@ export type RenderSegment =
   | { type: 'typed_link'; start: number; end: number; target_page_title: string; display_text: string; relationship_type: string; rel_label: string; rel_color: string }
   | { type: 'external_link'; start: number; end: number; url: string }
   | { type: 'date_ref'; start: number; end: number; kind: string; iso: string; recurrence: string; lead_minutes: number; is_overdue: boolean }
+  // ADR-0049 grill 决策 #4：inline `#foo` 结构化渲染（点击无行为；is_system 驱动系统样式）
+  | { type: 'tag'; start: number; end: number; title: string; tag_id: string; is_system: boolean }
 
 /** Input to the content renderer: block content + pre-computed render segments */
 export interface RenderInput {

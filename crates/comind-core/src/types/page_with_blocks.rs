@@ -74,4 +74,16 @@ pub enum RenderSegment {
         lead_minutes: i64,
         is_overdue: bool,
     },
+
+    /// Inline tag `#foo`（grill 决策 #4：渲染成 chip，本轮点击无行为）。
+    /// `tag_id` 为空 = content 中有 `#foo` 但 Tag 行缺失（理论上不该发生，
+    /// update 联动会自动建）；`is_system` 驱动系统样式渲染。
+    #[serde(rename = "tag")]
+    Tag {
+        start: usize,
+        end: usize,
+        title: String,
+        tag_id: String,
+        is_system: bool,
+    },
 }

@@ -17,14 +17,31 @@ impl TagService {
     /// `#工作。(#重点)` 吸成一个 token，硬标点必须直接排除出字符集；`.` `-` `_` `/`
     /// 属软字符（子路径风格 `#a.b` 保留），仅尾部 `.` 剥离（`#rust.` → `rust`）。
     pub fn extract_tags(content: &str) -> Vec<String> {
+        Self::extract_tag_spans(content)
+            .into_iter()
+            .map(|(_, _, title)| title)
+            .collect()
+    }
+
+    /// 位置感知版 `extract_tags`：返回 `(字节起始, 字节结束, title)`（span 含 `#` 本身），
+    /// 供 render_segment_service 定位 `#foo` 渲染 chip。
+    pub fn extract_tag_spans(content: &str) -> Vec<(usize, usize, String)> {
         static RE: OnceLock<Regex> = OnceLock::new();
         let re = RE.get_or_init(|| {
             Regex::new(r#"#([^\s#。，！？；：、（）【】《》「」『』(){}\[\]<>,;:!?"']+)"#)
                 .unwrap()
         });
         re.captures_iter(content)
-            .map(|c| c[1].trim_end_matches('.').to_string())
-            .filter(|t| !t.is_empty())
+            .filter_map(|c| {
+                let title = c[1].trim_end_matches('.');
+                if title.is_empty() {
+                    return None;
+                }
+                // span 截到剥离尾部 `.` 之后的真实 tag 末尾
+                let group = c.get(1).unwrap();
+                let title_end = group.start() + title.len();
+                Some((group.start() - 1, title_end, title.to_string()))
+            })
             .collect()
     }
 
