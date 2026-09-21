@@ -89,3 +89,15 @@ comind 的属性/字段系统分三层，目前靠硬编码与扁平数组粘合
 
 - 既有 `tag.rs` / `TagParse` / `tag_service.rs`（文本 `#tag` 解析）定位为 Tag 的**解析层**，本 ADR 不动它们（见 D7）；不实现自动化 / AI 绑定、打标 UI 交互、Page 级属性（另立 ADR）。
 - 不重设计 Registry / FieldDescriptor / ViewQuery 协议（ADR-0007 / 0023 语义不变）。
+
+## 后续方向锚定：tag 挂载驱动字段（2026-09-21 grill-up，正式方案另立 ADR）
+
+数据层已完成「Tag 替换属性」（定义层 = 系统 Tag + FieldDefinition，值层 = FieldValue）；本段锚定的是**交互层**的演进方向——即上面「非目标」中「打标 UI 交互另立 ADR」的口径预裁：
+
+**本质需求（锚点）**：**字段的可见性与可编辑性由块的 tag 挂载状态唯一决定**——用户心智里只有 tag 一个概念（tag = 字段模板 = 值容器，Tana 模式）；字段必须挂在 tag 下，**禁止无 tag 裸属性**（现有 PropertyEditor 任意 key 写值入口取消，改为「选 tag → 编辑其字段」）。
+
+**配套裁定**：写值自动补 tag——`ensureTodo` 等给块写 status/priority 时，若块未挂 `#task` 则自动在 content 补 `#task`（content 联动派生 tags，块上出现 chip）；仅发生在**显式写值**时，摘 tag 后的静默路径不回补（与决策 #7「摘 tag 值保留」的交互以此为准）。
+
+**反证**：属性面板保留（双轨仍在）、content inline 属性语法（Logseq 式，与 block 模型冲突）、隐式容器 tag（心智仍是两套）均无法同时达成「概念统一」与「消除值无主状态」。
+
+**待 grilling 的落地方案清单（勿直接实施）**：① content 自动插字的位置选择与撤销栈交互（setProperty 走 batch op 时 content 变更是否入栈）；② PropertyDisplay/Editor/Inline/QuickEditor 四组件改为按块所属 tag 的 fields 驱动的 UI 落法（含 tag chip 点击编辑的交互）；③ 存量无 tag 属性值的数据迁移口径（回填 tag 或隐式 tag）；④ TaskHub 只展示已挂 tag 块的过滤语义确认。以上确定后另立 ADR（建议 ADR-0050）。
