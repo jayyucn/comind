@@ -1,4 +1,5 @@
 use crate::{
+    services::PropertyService,
     types::{Block, Page, PageSnapshot, Property},
     storage::{repository, StorageAdapter},
 };
@@ -73,7 +74,8 @@ impl SnapshotService {
         let props = if block_ids.is_empty() {
             Vec::new()
         } else {
-            repository::PropertyRepository::get_by_block_ids(storage.properties(), &block_ids)?
+            // ADR-0049 D6：内置字段已切 FieldValue，经适配层合成 Property 形状
+            PropertyService::get_by_block_ids(storage, &block_ids)?
         };
 
         let mut properties: HashMap<String, Vec<Property>> = HashMap::new();

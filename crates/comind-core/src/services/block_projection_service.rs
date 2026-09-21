@@ -1,4 +1,5 @@
 use crate::{
+    services::PropertyService,
     types::{BlockCard, DateRefLite, Property},
     storage::{repository, StorageAdapter},
 };
@@ -23,7 +24,8 @@ pub fn get_blocks_projection(
     let blocks = repository::BlockRepository::get_all(storage.blocks())?;
 
     // 2. All non-deleted properties — indexed by block_id
-    let properties = repository::PropertyRepository::get_all(storage.properties())?;
+    // ADR-0049 D6：内置字段已切 FieldValue，经适配层合成 Property 形状
+    let properties = PropertyService::get_all(storage)?;
     let mut props_map: HashMap<String, Vec<Property>> = HashMap::new();
     for p in properties {
         props_map.entry(p.block_id.clone()).or_default().push(p);
