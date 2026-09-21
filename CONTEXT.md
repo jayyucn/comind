@@ -65,6 +65,15 @@ Get-or-create pattern. Returns the existing entity if present; creates and retur
 ### Field Descriptor (字段描述符)
 The unit through which a business entity exposes a filterable field to the query system. Carries a key, label, data type, and a way to read the field's value from an item. Business code registers Field Descriptors; the query engine knows entities only through them. An `Option` may carry a `color` for rendering (e.g. select option labels); the evaluator ignores it.
 
+### Tag (标签)
+A category label declared inside a Block's content via `#title` syntax; `block.tags` is a **derived cache** recomputed from content on every write (打标 = content 输入，无独立 UI 入口). Titles match exactly (`#Foo` ≠ `#foo`); unknown titles auto-create a user Tag. A Tag may carry a **field template** (`field_ids` → Tag Field definitions). **System Tags** (`is_system`, e.g. `#task`, `#书笔记`) are built-in templates seeded at migration; deleting/renaming them is rejected. Un-tagging (removing the text) keeps already-filled field values — re-tagging restores them. The Tag chip renders inline from structured render segments. See ADR-0049. _Avoid_: 属性, property, folder, category entity.
+
+### Tag Field (tag 字段)
+A single field in a Tag's field template, carried by `FieldDefinition` (key / title / type / closedValues); its per-Block value lives in `FieldValue` (implementation name; to be renamed `TagFieldValue` — the "property" naming is retiring). Fields become visible and editable on a Block **because the Block carries the Tag** (挂载即显示) — there is no independent "property" entry point. Programmatic writers (e.g. TaskHub `ensureTodo`) perform "ensure the Tag is in content + write field value" as one atomic intent. See ADR-0049 (方向锚定段) and the forthcoming ADR-0050. _Avoid_: 属性, property, attribute.
+
+### Property (属性) — RETIRING
+The legacy concept of block-level key–value data (`Property` table: `block_id` / `key` / `value`), superseded by **Tag Field**. The table is frozen; a compatibility adapter (`PropertyService`) serves the legacy JSON shape over FieldValue during transition and will be deleted; UI naming (`PropertyDisplay` etc.) migrates away. Do not use "属性/property" for new concepts — say **Tag Field**. See ADR-0049 (落地补充 + 方向锚定段). _Avoid_: using Property and Tag Field interchangeably.
+
 ### Condition (条件)
 A single predicate in a query: field + operator + value.
 

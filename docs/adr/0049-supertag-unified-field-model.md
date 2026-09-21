@@ -90,14 +90,17 @@ comind 的属性/字段系统分三层，目前靠硬编码与扁平数组粘合
 - 既有 `tag.rs` / `TagParse` / `tag_service.rs`（文本 `#tag` 解析）定位为 Tag 的**解析层**，本 ADR 不动它们（见 D7）；不实现自动化 / AI 绑定、打标 UI 交互、Page 级属性（另立 ADR）。
 - 不重设计 Registry / FieldDescriptor / ViewQuery 协议（ADR-0007 / 0023 语义不变）。
 
-## 后续方向锚定：tag 挂载驱动字段（2026-09-21 grill-up，正式方案另立 ADR）
+## 后续方向锚定：tag 本位，属性概念退役（2026-09-21 初稿 → 2026-09-22 用户纠正后重写；正式方案另立 ADR）
 
-数据层已完成「Tag 替换属性」（定义层 = 系统 Tag + FieldDefinition，值层 = FieldValue）；本段锚定的是**交互层**的演进方向——即上面「非目标」中「打标 UI 交互另立 ADR」的口径预裁：
+> **⚠️ 撤回声明（2026-09-22）**：本段 2026-09-21 初版锚定的是「tag 挂载驱动字段 + 禁止裸属性 + **写值自动补 tag**」——其中「写值自动补 tag」是**属性本位思维的补丁**（把属性写入当主体、tag 当附属），与「Tag 跟属性是两个东西，属性是要移除的东西」的用户裁定相悖，三项表述全部作废。否决理由存档：任何「写属性时顺手补 tag」的设计都在延续属性概念的独立性，而非移除它；正确的主从关系是 tag 本位（tag 是唯一入口，字段值因 tag 挂载而存在）。下文为重写后的锚点。
 
-**本质需求（锚点）**：**字段的可见性与可编辑性由块的 tag 挂载状态唯一决定**——用户心智里只有 tag 一个概念（tag = 字段模板 = 值容器，Tana 模式）；字段必须挂在 tag 下，**禁止无 tag 裸属性**（现有 PropertyEditor 任意 key 写值入口取消，改为「选 tag → 编辑其字段」）。
+**终态模型（锚点）**：**属性概念退役，tag 本位**——
 
-**配套裁定**：写值自动补 tag——`ensureTodo` 等给块写 status/priority 时，若块未挂 `#task` 则自动在 content 补 `#task`（content 联动派生 tags，块上出现 chip）；仅发生在**显式写值**时，摘 tag 后的静默路径不回补（与决策 #7「摘 tag 值保留」的交互以此为准）。
+- 概念层：块上只有 **tag（分类）+ tag 携带的字段（值）**，不存在独立的「属性」入口。
+- 交互层：打 `#task` → 块上出现该 tag 的字段编辑区（**挂载即显示**，无值字段以空占位可填）→ 填值。值的写入天然发生在字段编辑器里；**没有「写值自动补 tag」的补丁逻辑**。
+- 程序化写值（TaskHub `ensureTodo` 等）：形态为「**确保 `#task` 在 content + 写字段值**」的原子操作——tag 本位的挂载前置，而非属性补丁；行为上与被否决的「自动补 tag」等效，语义归属不同（主体是挂载，不是写值）。
+- 数据层：`FieldValue` / `FieldDefinition` 保留为实现载体并**最终改名去属性化**（`TagFieldValue` / `TagFieldDefinition` 方向，具体名待定）；`PropertyService` 的 Property 形状适配层为过渡期兼容而存在，**最终删除**；`Property` 表已冻结，随 `block_version` 删除一并清理（见上方「落地补充」段）。
 
-**反证**：属性面板保留（双轨仍在）、content inline 属性语法（Logseq 式，与 block 模型冲突）、隐式容器 tag（心智仍是两套）均无法同时达成「概念统一」与「消除值无主状态」。
+**反证**：属性面板保留（属性概念未退役）、content inline 属性语法（Logseq 式，与 block 模型冲突）、隐式容器 tag（心智仍是两套）、写值自动补 tag（属性本位补丁，见撤回声明）均无法达成「属性概念彻底退役、tag 是唯一结构化数据入口」。
 
-**待 grilling 的落地方案清单（勿直接实施）**：① content 自动插字的位置选择与撤销栈交互（setProperty 走 batch op 时 content 变更是否入栈）；② PropertyDisplay/Editor/Inline/QuickEditor 四组件改为按块所属 tag 的 fields 驱动的 UI 落法（含 tag chip 点击编辑的交互）；③ 存量无 tag 属性值的数据迁移口径（回填 tag 或隐式 tag）；④ TaskHub 只展示已挂 tag 块的过滤语义确认。以上确定后另立 ADR（建议 ADR-0050）。
+**待 grilling 的落地方案清单（勿直接实施，正式方案另立 ADR-0050）**：① 存量无 tag 属性值的迁移口径；② TaskHub 过滤源切换（`status` 值存在 → `tags` 含 `#task`）；③ tag chip 点击行为（是否翻转 D6 决策 #4「本轮无点击行为」→ 点击编辑该 tag 字段）；④ `ensureTodo` 原子操作的撤销栈边界（属性编辑现状不入 ADR-0046 撤销栈）；⑤ 数据层改名与适配层删除的分阶段路线。
