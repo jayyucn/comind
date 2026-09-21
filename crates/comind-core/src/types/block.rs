@@ -21,6 +21,11 @@ pub struct Block {
     /// 软删除时间戳（毫秒）。NULL = 未删除。同步时传播删除操作。
     #[serde(default)]
     pub deleted_at: Option<i64>,
+    /// 反规范化：本块直接打上的 Tag id 列表（ADR-0049 D6）。
+    /// 与 FieldValue（按字段物化的值）互为冗余，用于快速读取块所属 Tag；
+    /// 真值由 TagService 在打标时同步维护两者。
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 fn default_timestamp() -> i64 {
@@ -59,6 +64,7 @@ impl Block {
             updated_at: now,
             version: 0,
             deleted_at: None,
+            tags: Vec::new(),
         }
     }
 }

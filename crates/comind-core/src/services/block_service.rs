@@ -1,7 +1,7 @@
 use crate::{
     types::{Block, BlockTree},
     storage::{repository, StorageAdapter},
-    services::{DateRefService, ContentParseService, PropertyService},
+    services::{DateRefService, ContentParseService, PropertyService, TagService},
 };
 use rand::Rng;
 use std::collections::HashMap;
@@ -74,6 +74,7 @@ impl BlockService {
             updated_at: now,
             version: 0,
             deleted_at: None,
+            tags: Vec::new(),
         };
 
         let block = repository::BlockRepository::create(storage.blocks(), &block)?;
@@ -117,6 +118,11 @@ impl BlockService {
         }
         block.updated_at = chrono::Utc::now().timestamp_millis();
 
+        // content 联动（grill 决策 #1）：`#foo` 是打标的唯一入口 —— 每次内容编辑
+        // 重算派生集写入 Block.tags（命中/自动建/复活软删行，见 TagService）。
+        // 摘标 = 从 content 删字；FieldValue 保留不动（grill 决策 #7）。
+        block.tags = TagService::resolve_tag_ids_for_content(storage, &block.content)?;
+
         let block = repository::BlockRepository::update(storage.blocks(), &block)?;
         DateRefService::sync_date_refs_for_block(storage, &block.id, &block.content)?;
         // 方案 A：非 recurring 通知随 block 改时间原地改期（仅当 iso 真的变化）
@@ -136,6 +142,22 @@ impl BlockService {
             eprintln!("[BlockService::update] sync_properties_for_block failed for block {}: {}", block.id, e);
         }
         Ok(block)
+    }
+
+    /// ADR-0049 D6：仅更新 `Block.tags`（反规范化 tag id 数组）。
+    /// 供 `block/set_tags` batch op 使用；常规内容编辑路径的 tags 派生在
+    /// [`Self::update`] 内经 `TagService::resolve_tag_ids_for_content` 完成。
+    /// 刻意不走 [`Self::update`]：只改 tags 时不触发 date_refs / 通知改期 /
+    /// links / properties 等内容派生同步。
+    pub fn update_tags(
+        storage: &mut dyn StorageAdapter,
+        id: &str,
+        tags: Vec<String>,
+    ) -> Result<Block, Box<dyn Error>> {
+        let mut block = repository::BlockRepository::get_by_id(storage.blocks(), id)?;
+        block.tags = tags;
+        block.updated_at = chrono::Utc::now().timestamp_millis();
+        repository::BlockRepository::update(storage.blocks(), &block)
     }
 
     pub fn delete(

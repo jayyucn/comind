@@ -135,6 +135,7 @@ mod wasm_impl {
                 updated_at: u.updated_at,
                 version: 0,
                 deleted_at: None,
+                tags: Vec::new(),
             })
             .collect();
 

@@ -71,6 +71,56 @@ pub trait RelationshipTypeRepository {
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
 }
 
+pub trait TagRepository {
+    fn get_by_id(&self, id: &str) -> Result<Tag, Box<dyn Error>>;
+    fn get_by_title(&self, title: &str) -> Result<Option<Tag>, Box<dyn Error>>;
+    /// 含软删行（title UNIQUE 被软删行占用时的查找，联动复挂用）。
+    fn get_by_title_including_deleted(&self, title: &str) -> Result<Option<Tag>, Box<dyn Error>>;
+    /// 撤销软删（grill 决策 #7：复挂复活，不重建）。
+    fn undelete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
+    fn get_all(&self) -> Result<Vec<Tag>, Box<dyn Error>>;
+    fn create(&mut self, tag: &Tag) -> Result<Tag, Box<dyn Error>>;
+    fn update(&mut self, tag: &Tag) -> Result<Tag, Box<dyn Error>>;
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
+}
+
+pub trait FieldDefinitionRepository {
+    fn get_by_id(&self, id: &str) -> Result<FieldDefinition, Box<dyn Error>>;
+    fn get_by_key(&self, key: &str) -> Result<Option<FieldDefinition>, Box<dyn Error>>;
+    fn get_all(&self) -> Result<Vec<FieldDefinition>, Box<dyn Error>>;
+    fn create(&mut self, fd: &FieldDefinition) -> Result<FieldDefinition, Box<dyn Error>>;
+    fn update(&mut self, fd: &FieldDefinition) -> Result<FieldDefinition, Box<dyn Error>>;
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
+    /// 级联软删入口：以显式戳软删定义本体（D9 + undo 裁定，见 entity 注释）。
+    fn soft_delete_at(&mut self, id: &str, now: i64) -> Result<(), Box<dyn Error>>;
+    /// 含软删行读取（撤销路径专用）。
+    fn get_by_id_including_deleted(&self, id: &str) -> Result<FieldDefinition, Box<dyn Error>>;
+    fn undelete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
+}
+
+pub trait FieldValueRepository {
+    fn get_by_id(&self, id: &str) -> Result<FieldValue, Box<dyn Error>>;
+    fn get_by_block_id(&self, block_id: &str) -> Result<Vec<FieldValue>, Box<dyn Error>>;
+    fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<FieldValue>, Box<dyn Error>>;
+    fn create(&mut self, fv: &FieldValue) -> Result<FieldValue, Box<dyn Error>>;
+    fn update(&mut self, fv: &FieldValue) -> Result<FieldValue, Box<dyn Error>>;
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
+    fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>>;
+    /// 级联软删：按定义软删其全部值，整批共享 `now` 以便精确 undo。
+    /// 返回**实际受影响的行数**（ADR D9：「删除前告知受影响条目数」）。
+    fn soft_delete_by_field_definition(
+        &mut self,
+        field_definition_id: &str,
+        now: i64,
+    ) -> Result<usize, Box<dyn Error>>;
+    /// 复活某一批次（删除戳 == `deleted_at`）的值。
+    fn restore_by_field_definition(
+        &mut self,
+        field_definition_id: &str,
+        deleted_at: i64,
+    ) -> Result<(), Box<dyn Error>>;
+}
+
 pub trait TemplateRepository {
     fn get_by_id(&self, id: &str) -> Result<UserTemplate, Box<dyn Error>>;
     fn get_by_name(&self, name: &str) -> Result<Option<UserTemplate>, Box<dyn Error>>;
@@ -202,6 +252,9 @@ pub trait StorageAdapter {
     fn links(&mut self) -> &mut dyn LinkRepository;
     fn properties(&mut self) -> &mut dyn PropertyRepository;
     fn relationship_types(&mut self) -> &mut dyn RelationshipTypeRepository;
+    fn tags(&mut self) -> &mut dyn TagRepository;
+    fn field_definitions(&mut self) -> &mut dyn FieldDefinitionRepository;
+    fn field_values(&mut self) -> &mut dyn FieldValueRepository;
     fn templates(&mut self) -> &mut dyn TemplateRepository;
     fn search(&mut self) -> &mut dyn SearchRepository;
     fn block_versions(&mut self) -> &mut dyn BlockVersionRepository;

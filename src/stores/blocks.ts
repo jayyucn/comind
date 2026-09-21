@@ -285,6 +285,7 @@ export const useBlockStore = defineStore('blocks', () => {
           type: brd.block.type as Block['type'],
           renderSegments: brd.render_segments || [],
           properties: brd.properties ?? {},
+          tags: brd.block.tags ?? [],
           createdAt: brd.block.created_at,
           updatedAt: brd.block.updated_at
         })),
@@ -305,6 +306,7 @@ export const useBlockStore = defineStore('blocks', () => {
           type: rustBlock.type as Block['type'],
           renderSegments: undefined,
           properties: [],
+          tags: rustBlock.tags ?? [],
           createdAt: rustBlock.created_at,
           updatedAt: rustBlock.updated_at
         })),

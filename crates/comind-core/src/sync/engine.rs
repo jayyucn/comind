@@ -649,6 +649,31 @@ mod tests {
         }
     }
 
+    /// ADR-0049 D6 验收：Tag / FieldDefinition / FieldValue 三张新表必须能被同步层
+    /// 正确导出 —— 即具备 `id` / `version` / `deleted_at` 与
+    /// `COALESCE(updated_at, created_at)` 这四列。
+    ///
+    /// **为什么单独立这条**：上面那条遍历 `SyncTable::all()`，而新表排在末位，
+    /// 断言会在中途的表先行失败早退 ⇒ 新表实际永远跑不到。故此处显式单独校验。
+    #[tokio::test]
+    async fn test_full_sync_export_covers_adr0049_tables() {
+        let engine = create_test_engine();
+
+        for &table in &[SyncTable::Tag, SyncTable::FieldDefinition, SyncTable::FieldValue] {
+            let result = engine.export_full(table, 100).await;
+            assert!(
+                result.is_ok(),
+                "{:?} 导出失败 —— 新表若缺 id/version/deleted_at/updated_at 四同步列即此错: {:?}",
+                table,
+                result.err()
+            );
+        }
+
+        // 系统 12 字段已 seed，FieldDefinition 应确有行被导出（而非空表静默通过）
+        let defs = engine.export_full(SyncTable::FieldDefinition, 100).await.unwrap();
+        assert!(!defs.is_empty(), "FieldDefinition 应导出 seed 的系统 12 字段");
+    }
+
     #[tokio::test]
     async fn test_lww_incoming_newer_updates_existing() {
         let engine = create_test_engine();

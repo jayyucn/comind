@@ -117,6 +117,7 @@ impl BlockVersionService {
             updated_at: now,
             version: block.version,
             deleted_at: block.deleted_at.clone(),
+            tags: block.tags.clone(),
         };
         
         storage.transaction(|tx| {

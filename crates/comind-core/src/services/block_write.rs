@@ -325,6 +325,7 @@ mod tests {
             updated_at: 1,
             version: 0,
             deleted_at: None,
+            tags: Vec::new(),
         }
     }
 

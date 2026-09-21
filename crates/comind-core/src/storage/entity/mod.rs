@@ -13,3 +13,6 @@ pub mod property;
 pub mod relationship_type;
 pub mod template;
 pub mod search;
+pub mod tag;
+pub mod field_definition;
+pub mod field_value;

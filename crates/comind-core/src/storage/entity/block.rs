@@ -15,7 +15,7 @@ use crate::storage::executor::Executor;
 /// 注意：列序与 `row_to_block_native` 的位置索引必须一一对应。
 pub const BLOCK_COLS: &[&str] = &[
     "id", "page_id", "parent_id", "pos", "content", "format", "type",
-    "created_at", "updated_at", "version", "deleted_at",
+    "created_at", "updated_at", "version", "deleted_at", "tags",
 ];
 
 pub fn block_select_cols() -> String {
@@ -45,6 +45,9 @@ pub fn row_to_block_native(row: &rusqlite::Row) -> Result<Block, rusqlite::Error
         updated_at: row.get(8)?,
         version: row.get(9)?,
         deleted_at: row.get(10)?,
+        tags: row.get::<_, String>(11).ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default(),
     })
 }
 
@@ -67,6 +70,7 @@ pub fn row_to_block_js(row: &HashMap<String, String>) -> Block {
         updated_at: row.get("updated_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
         version: row.get("version").map(|s| s.parse::<i64>().unwrap_or(0)).unwrap_or(0),
         deleted_at: row.get("deleted_at").map(|s| s.parse::<i64>().ok()).unwrap_or(None),
+        tags: row.get("tags").and_then(|s| serde_json::from_str(s).ok()).unwrap_or_default(),
     }
 }
 
@@ -75,14 +79,6 @@ pub fn row_to_block_js(row: &HashMap<String, String>) -> Block {
 #[cfg(not(target_arch = "wasm32"))]
 fn bx(e: rusqlite::Error) -> Box<dyn Error> {
     Box::new(e)
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn block_params(b: &Block) -> Vec<&dyn ToSql> {
-    vec![
-        &b.id, &b.page_id, &b.parent_id, &b.pos, &b.content, &b.format,
-        &b.r#type, &b.created_at, &b.updated_at, &b.version, &b.deleted_at,
-    ]
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -166,16 +162,22 @@ pub fn block_undelete_by_id<E: Executor>(exec: &E, id: &str) -> Result<Block, Bo
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn block_insert<E: Executor>(exec: &E, b: &Block) -> Result<(), Box<dyn Error>> {
-    let params = block_params(b);
+    let tags_json = serde_json::to_string(&b.tags).unwrap_or_else(|_| "[]".to_string());
+    let params: Vec<&dyn ToSql> = vec![
+        &b.id, &b.page_id, &b.parent_id, &b.pos, &b.content, &b.format,
+        &b.r#type, &b.created_at, &b.updated_at, &b.version, &b.deleted_at, &tags_json,
+    ];
     exec.execute(&block_insert_sql(), &params)?;
     Ok(())
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn block_update<E: Executor>(exec: &E, b: &Block) -> Result<(), Box<dyn Error>> {
-    let sql = "UPDATE Block SET page_id = ?2, parent_id = ?3, pos = ?4, content = ?5, format = ?6, type = ?7, updated_at = ?8, version = version + 1 WHERE id = ?1";
+    let tags_json = serde_json::to_string(&b.tags).unwrap_or_else(|_| "[]".to_string());
+    let sql = "UPDATE Block SET page_id = ?2, parent_id = ?3, pos = ?4, content = ?5, format = ?6, type = ?7, tags = ?8, updated_at = ?9, version = version + 1 WHERE id = ?1";
     let params: Vec<&dyn ToSql> = vec![
-        &b.id, &b.page_id, &b.parent_id, &b.pos, &b.content, &b.format, &b.r#type, &b.updated_at,
+        &b.id, &b.page_id, &b.parent_id, &b.pos, &b.content, &b.format, &b.r#type,
+        &tags_json, &b.updated_at,
     ];
     exec.execute(sql, &params)?;
     Ok(())

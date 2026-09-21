@@ -11,6 +11,8 @@ export interface Block {
   renderSegments?: import('../wasm/types').RenderSegment[]
   /** Block properties resolved from Property table by Rust (4.2). Stored as raw Rust Property[]. */
   properties?: import('../wasm/types').Property[]
+  /** ADR-0049 D6：用户 tag id 列表（反规范化，落 Block.tags 列）。 */
+  tags?: string[]
   createdAt: number
   updatedAt: number
 }

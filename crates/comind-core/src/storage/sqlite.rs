@@ -13,6 +13,12 @@ use crate::storage::entity::page::{page_get_by_id, page_get_by_title_including_d
 use crate::storage::entity::link::{link_get_by_id, link_get_by_source_block_id, link_get_by_source_block_ids, link_get_by_target_page_id, link_insert, link_create_many, link_delete, link_delete_by_source_block_id, link_delete_by_target_page_id};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::property::{property_create, property_delete, property_delete_by_block_id, property_get_all, property_get_by_block_id, property_get_by_block_id_and_key, property_get_by_block_ids, property_get_by_id, property_query_block_ids_by_key_value, property_update, property_upsert};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::storage::entity::tag::{tag_create, tag_delete, tag_get_all, tag_get_by_id, tag_get_by_title, tag_get_by_title_including_deleted, tag_undelete, tag_update};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::storage::entity::field_definition::{field_definition_create, field_definition_delete, field_definition_get_all, field_definition_get_by_id, field_definition_get_by_id_including_deleted, field_definition_get_by_key, field_definition_soft_delete_at, field_definition_undelete, field_definition_update};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::storage::entity::field_value::{field_value_create, field_value_delete, field_value_delete_by_block_id, field_value_get_by_block_id, field_value_get_by_block_ids, field_value_get_by_id, field_value_restore_by_field_definition, field_value_soft_delete_by_field_definition, field_value_update};
 use crate::storage::entity::relationship_type::{relationship_type_create, relationship_type_delete, relationship_type_get_all, relationship_type_get_by_id, relationship_type_get_by_type, relationship_type_update};
 use crate::storage::entity::template::{template_create, template_delete, template_get_all, template_get_by_id, template_get_by_name, template_update};
 use crate::storage::entity::search::{search_index_delete, search_index_search, search_index_upsert};
@@ -111,6 +117,7 @@ impl SQLiteAdapter {
                 updated_at      INTEGER NOT NULL,
                 version         INTEGER NOT NULL DEFAULT 0,
                 deleted_at      INTEGER,
+                tags            TEXT NOT NULL DEFAULT '[]',
                 FOREIGN KEY (page_id) REFERENCES Page(id)
             );
             
@@ -204,6 +211,8 @@ impl SQLiteAdapter {
                 payload         TEXT NOT NULL,
                 created_at      INTEGER NOT NULL,
                 updated_at      INTEGER NOT NULL,
+                version         INTEGER NOT NULL DEFAULT 0,
+                deleted_at      INTEGER,
                 FOREIGN KEY (block_id) REFERENCES Block(id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_notifications_status ON Notification(status);
@@ -293,6 +302,53 @@ impl SQLiteAdapter {
                 created_at      INTEGER NOT NULL
             );
 
+            -- ADR-0049 D6：用户 Tag 模板（字段模板实体）。系统 Tag 不落库（编译期常量）。
+            CREATE TABLE IF NOT EXISTS Tag (
+                id              TEXT PRIMARY KEY,
+                title           TEXT NOT NULL UNIQUE,
+                field_ids       TEXT NOT NULL DEFAULT '[]',
+                extends         TEXT NOT NULL DEFAULT '[]',
+                created_at      INTEGER NOT NULL,
+                updated_at      INTEGER NOT NULL,
+                version         INTEGER NOT NULL DEFAULT 0,
+                deleted_at      INTEGER,
+                is_system       INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_tag_title ON Tag(title);
+
+            -- ADR-0049 D3/D6/D9：字段定义。系统 12 字段 seed 进本表（固定 uuid，is_system=1）。
+            CREATE TABLE IF NOT EXISTS FieldDefinition (
+                id              TEXT PRIMARY KEY,
+                key             TEXT NOT NULL UNIQUE,
+                title           TEXT NOT NULL,
+                type            TEXT NOT NULL,
+                closed_values   TEXT,
+                is_system       INTEGER NOT NULL DEFAULT 0,
+                created_at      INTEGER NOT NULL,
+                updated_at      INTEGER NOT NULL,
+                version         INTEGER NOT NULL DEFAULT 0,
+                deleted_at      INTEGER
+            );
+            CREATE INDEX IF NOT EXISTS idx_fielddef_key ON FieldDefinition(key);
+
+            -- ADR-0049 D6/D9：字段值。重构自 Property，强引用 FieldDefinition（无定义即无值）。
+            CREATE TABLE IF NOT EXISTS FieldValue (
+                id                      TEXT PRIMARY KEY,
+                block_id                TEXT NOT NULL,
+                field_definition_id     TEXT NOT NULL,
+                value_json              TEXT NOT NULL,
+                value_type              TEXT NOT NULL,
+                seq                     INTEGER NOT NULL DEFAULT 0,
+                created_at              INTEGER NOT NULL,
+                updated_at              INTEGER NOT NULL,
+                version                 INTEGER NOT NULL DEFAULT 0,
+                deleted_at              INTEGER,
+                FOREIGN KEY (block_id) REFERENCES Block(id) ON DELETE CASCADE,
+                FOREIGN KEY (field_definition_id) REFERENCES FieldDefinition(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_fieldvalue_block_id ON FieldValue(block_id);
+            CREATE INDEX IF NOT EXISTS idx_fieldvalue_fielddef ON FieldValue(field_definition_id);
+
             CREATE INDEX IF NOT EXISTS idx_page_blockId        ON Page(block_id);
             CREATE INDEX IF NOT EXISTS idx_page_type           ON Page(type);
             CREATE INDEX IF NOT EXISTS idx_page_updatedAt      ON Page(updated_at);
@@ -315,6 +371,10 @@ impl SQLiteAdapter {
         Self::migrate_date_ref_event_ts(conn)?;
         Self::migrate_add_version_and_deleted_at(conn)?;
         Self::seed_notification_config(conn)?;
+        Self::seed_system_field_definitions(conn)?;
+        Self::migrate_add_block_tags_column(conn)?;
+        Self::migrate_add_tag_is_system(conn)?;
+        Self::seed_system_tags(conn)?;
         Self::migrate_rename_task_view_to_screen_view(conn)?;
         Self::migrate_add_screen_view_config(conn)?;
         Self::migrate_add_screen_view_entity(conn)?;
@@ -485,6 +545,46 @@ impl SQLiteAdapter {
         if !has("UserTemplate", "deleted_at") {
             conn.execute("ALTER TABLE UserTemplate ADD COLUMN deleted_at INTEGER", [])?;
         }
+        // Notification 此前漏在该清单之外 —— 而它早在 SyncTable 里，导致同步全量导出
+        // 报 "no such column: deleted_at"（补齐四同步列中的最后两列；另两列建表即有）。
+        if !has("Notification", "version") {
+            conn.execute("ALTER TABLE Notification ADD COLUMN version INTEGER NOT NULL DEFAULT 0", [])?;
+        }
+        if !has("Notification", "deleted_at") {
+            conn.execute("ALTER TABLE Notification ADD COLUMN deleted_at INTEGER", [])?;
+        }
+        Ok(())
+    }
+
+    fn migrate_add_block_tags_column(conn: &rusqlite::Connection) -> Result<(), Box<dyn Error>> {
+        // 幂等：老库 Block 表可能无 tags 列（CREATE TABLE IF NOT EXISTS 对已存在表是 no-op）。
+        let has_column: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('Block') WHERE name = 'tags'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|c| c > 0)
+            .unwrap_or(false);
+        if !has_column {
+            conn.execute("ALTER TABLE Block ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'", [])?;
+        }
+        Ok(())
+    }
+
+    fn migrate_add_tag_is_system(conn: &rusqlite::Connection) -> Result<(), Box<dyn Error>> {
+        // grill 决策 #5：系统 tag 落库。幂等：老库 Tag 表补 is_system 列。
+        let has_column: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('Tag') WHERE name = 'is_system'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|c| c > 0)
+            .unwrap_or(false);
+        if !has_column {
+            conn.execute("ALTER TABLE Tag ADD COLUMN is_system INTEGER NOT NULL DEFAULT 0", [])?;
+        }
         Ok(())
     }
 
@@ -495,6 +595,63 @@ pub fn seed_notification_config(conn: &rusqlite::Connection) -> Result<(), Box<d
              WHERE NOT EXISTS (SELECT 1 FROM notification_config)",
             [],
         )?;
+        Ok(())
+    }
+
+    /// ADR-0049 D3/D6：seed 系统 12 字段进 FieldDefinition 表（固定 id，seed 行不可删）。
+    /// 幂等：按 `key` 存在性跳过，绝不覆盖已存在的行（含用户误建的同位 key）。
+    pub fn seed_system_field_definitions(conn: &rusqlite::Connection) -> Result<(), Box<dyn Error>> {
+        for fd in system_field_definitions() {
+            let exists: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM FieldDefinition WHERE key = ?1",
+                    [&fd.key],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map(|c| c > 0)
+                .unwrap_or(false);
+            if !exists {
+                field_definition_create(conn, &fd)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// grill 决策 #5：系统 tag 落库（固定 id、is_system=1、field_ids 指向系统字段）。
+    /// 幂等：按 id 存在性跳过。title 必须与 TS `SYSTEM_TAGS` 对齐（#foo 精确匹配靠它）。
+    pub fn seed_system_tags(conn: &rusqlite::Connection) -> Result<(), Box<dyn Error>> {
+        // 系统 tag 的 field_ids 从已 seed 的系统字段（固定 uuid）按 key 解析，不二次硬编码 uuid。
+        let key_to_id: std::collections::HashMap<String, String> = system_field_definitions()
+            .into_iter()
+            .map(|fd| (fd.key, fd.id))
+            .collect();
+        let system_tags: &[(&str, &str, &[&str])] = &[
+            ("sys-tag-system-task", "系统任务", &["status", "priority", "project", "area"]),
+            (
+                "sys-tag-system-book-note",
+                "系统书笔记",
+                &["book", "part", "chapter", "cfi", "quote", "sourceBlockId", "sourcePageId", "language"],
+            ),
+        ];
+        for (id, title, field_keys) in system_tags {
+            let exists: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM Tag WHERE id = ?1",
+                    [id],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map(|c| c > 0)
+                .unwrap_or(false);
+            if exists {
+                continue;
+            }
+            let field_ids: Vec<String> = field_keys
+                .iter()
+                .filter_map(|k| key_to_id.get(*k).cloned())
+                .collect();
+            let tag = Tag::seed(id, title, field_ids);
+            tag_create(conn, &tag)?;
+        }
         Ok(())
     }
 }
@@ -871,6 +1028,130 @@ impl ScreenViewRepository for SQLiteAdapter {
     }
 }
 
+impl TagRepository for SQLiteAdapter {
+    fn get_by_id(&self, id: &str) -> Result<Tag, Box<dyn Error>> {
+        tag_get_by_id(&self.conn, id)
+    }
+
+    fn get_by_title(&self, title: &str) -> Result<Option<Tag>, Box<dyn Error>> {
+        tag_get_by_title(&self.conn, title)
+    }
+
+    fn get_by_title_including_deleted(&self, title: &str) -> Result<Option<Tag>, Box<dyn Error>> {
+        tag_get_by_title_including_deleted(&self.conn, title)
+    }
+
+    fn undelete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
+        tag_undelete(&self.conn, id)
+    }
+
+    fn get_all(&self) -> Result<Vec<Tag>, Box<dyn Error>> {
+        tag_get_all(&self.conn)
+    }
+
+    fn create(&mut self, tag: &Tag) -> Result<Tag, Box<dyn Error>> {
+        tag_create(&self.conn, tag)?;
+        Ok(tag.clone())
+    }
+
+    fn update(&mut self, tag: &Tag) -> Result<Tag, Box<dyn Error>> {
+        tag_update(&self.conn, tag)?;
+        Ok(tag.clone())
+    }
+
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
+        tag_delete(&self.conn, id)
+    }
+}
+
+impl FieldDefinitionRepository for SQLiteAdapter {
+    fn get_by_id(&self, id: &str) -> Result<FieldDefinition, Box<dyn Error>> {
+        field_definition_get_by_id(&self.conn, id)
+    }
+
+    fn get_by_key(&self, key: &str) -> Result<Option<FieldDefinition>, Box<dyn Error>> {
+        field_definition_get_by_key(&self.conn, key)
+    }
+
+    fn get_all(&self) -> Result<Vec<FieldDefinition>, Box<dyn Error>> {
+        field_definition_get_all(&self.conn)
+    }
+
+    fn create(&mut self, fd: &FieldDefinition) -> Result<FieldDefinition, Box<dyn Error>> {
+        field_definition_create(&self.conn, fd)?;
+        Ok(fd.clone())
+    }
+
+    fn update(&mut self, fd: &FieldDefinition) -> Result<FieldDefinition, Box<dyn Error>> {
+        field_definition_update(&self.conn, fd)?;
+        Ok(fd.clone())
+    }
+
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
+        field_definition_delete(&self.conn, id)
+    }
+
+    fn soft_delete_at(&mut self, id: &str, now: i64) -> Result<(), Box<dyn Error>> {
+        field_definition_soft_delete_at(&self.conn, id, now)
+    }
+
+    fn get_by_id_including_deleted(&self, id: &str) -> Result<FieldDefinition, Box<dyn Error>> {
+        field_definition_get_by_id_including_deleted(&self.conn, id)
+    }
+
+    fn undelete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
+        field_definition_undelete(&self.conn, id)
+    }
+}
+
+impl FieldValueRepository for SQLiteAdapter {
+    fn get_by_id(&self, id: &str) -> Result<FieldValue, Box<dyn Error>> {
+        field_value_get_by_id(&self.conn, id)
+    }
+
+    fn get_by_block_id(&self, block_id: &str) -> Result<Vec<FieldValue>, Box<dyn Error>> {
+        field_value_get_by_block_id(&self.conn, block_id)
+    }
+
+    fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<FieldValue>, Box<dyn Error>> {
+        field_value_get_by_block_ids(&self.conn, block_ids)
+    }
+
+    fn create(&mut self, fv: &FieldValue) -> Result<FieldValue, Box<dyn Error>> {
+        field_value_create(&self.conn, fv)?;
+        Ok(fv.clone())
+    }
+
+    fn update(&mut self, fv: &FieldValue) -> Result<FieldValue, Box<dyn Error>> {
+        field_value_update(&self.conn, fv)?;
+        Ok(fv.clone())
+    }
+
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
+        field_value_delete(&self.conn, id)
+    }
+
+    fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>> {
+        field_value_delete_by_block_id(&self.conn, block_id)
+    }
+
+    fn soft_delete_by_field_definition(
+        &mut self,
+        field_definition_id: &str,
+        now: i64,
+    ) -> Result<usize, Box<dyn Error>> {
+        field_value_soft_delete_by_field_definition(&self.conn, field_definition_id, now)
+    }
+
+    fn restore_by_field_definition(
+        &mut self,
+        field_definition_id: &str,
+        deleted_at: i64,
+    ) -> Result<(), Box<dyn Error>> {
+        field_value_restore_by_field_definition(&self.conn, field_definition_id, deleted_at)
+    }
+}
+
 impl StorageAdapter for SQLiteAdapter {
     fn blocks(&mut self) -> &mut dyn BlockRepository {
         self
@@ -891,7 +1172,19 @@ impl StorageAdapter for SQLiteAdapter {
     fn relationship_types(&mut self) -> &mut dyn RelationshipTypeRepository {
         self
     }
-    
+
+    fn tags(&mut self) -> &mut dyn TagRepository {
+        self
+    }
+
+    fn field_definitions(&mut self) -> &mut dyn FieldDefinitionRepository {
+        self
+    }
+
+    fn field_values(&mut self) -> &mut dyn FieldValueRepository {
+        self
+    }
+
     fn templates(&mut self) -> &mut dyn TemplateRepository {
         self
     }
@@ -1378,6 +1671,130 @@ impl<'a> RelationshipTypeRepository for TxContext<'a> {
     }
 }
 
+impl<'a> TagRepository for TxContext<'a> {
+    fn get_by_id(&self, id: &str) -> Result<Tag, Box<dyn Error>> {
+        tag_get_by_id(&self.conn, id)
+    }
+
+    fn get_by_title(&self, title: &str) -> Result<Option<Tag>, Box<dyn Error>> {
+        tag_get_by_title(&self.conn, title)
+    }
+
+    fn get_by_title_including_deleted(&self, title: &str) -> Result<Option<Tag>, Box<dyn Error>> {
+        tag_get_by_title_including_deleted(&self.conn, title)
+    }
+
+    fn undelete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
+        tag_undelete(&self.conn, id)
+    }
+
+    fn get_all(&self) -> Result<Vec<Tag>, Box<dyn Error>> {
+        tag_get_all(&self.conn)
+    }
+
+    fn create(&mut self, tag: &Tag) -> Result<Tag, Box<dyn Error>> {
+        tag_create(&self.conn, tag)?;
+        Ok(tag.clone())
+    }
+
+    fn update(&mut self, tag: &Tag) -> Result<Tag, Box<dyn Error>> {
+        tag_update(&self.conn, tag)?;
+        Ok(tag.clone())
+    }
+
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
+        tag_delete(&self.conn, id)
+    }
+}
+
+impl<'a> FieldDefinitionRepository for TxContext<'a> {
+    fn get_by_id(&self, id: &str) -> Result<FieldDefinition, Box<dyn Error>> {
+        field_definition_get_by_id(&self.conn, id)
+    }
+
+    fn get_by_key(&self, key: &str) -> Result<Option<FieldDefinition>, Box<dyn Error>> {
+        field_definition_get_by_key(&self.conn, key)
+    }
+
+    fn get_all(&self) -> Result<Vec<FieldDefinition>, Box<dyn Error>> {
+        field_definition_get_all(&self.conn)
+    }
+
+    fn create(&mut self, fd: &FieldDefinition) -> Result<FieldDefinition, Box<dyn Error>> {
+        field_definition_create(&self.conn, fd)?;
+        Ok(fd.clone())
+    }
+
+    fn update(&mut self, fd: &FieldDefinition) -> Result<FieldDefinition, Box<dyn Error>> {
+        field_definition_update(&self.conn, fd)?;
+        Ok(fd.clone())
+    }
+
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
+        field_definition_delete(&self.conn, id)
+    }
+
+    fn soft_delete_at(&mut self, id: &str, now: i64) -> Result<(), Box<dyn Error>> {
+        field_definition_soft_delete_at(&self.conn, id, now)
+    }
+
+    fn get_by_id_including_deleted(&self, id: &str) -> Result<FieldDefinition, Box<dyn Error>> {
+        field_definition_get_by_id_including_deleted(&self.conn, id)
+    }
+
+    fn undelete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
+        field_definition_undelete(&self.conn, id)
+    }
+}
+
+impl<'a> FieldValueRepository for TxContext<'a> {
+    fn get_by_id(&self, id: &str) -> Result<FieldValue, Box<dyn Error>> {
+        field_value_get_by_id(&self.conn, id)
+    }
+
+    fn get_by_block_id(&self, block_id: &str) -> Result<Vec<FieldValue>, Box<dyn Error>> {
+        field_value_get_by_block_id(&self.conn, block_id)
+    }
+
+    fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<FieldValue>, Box<dyn Error>> {
+        field_value_get_by_block_ids(&self.conn, block_ids)
+    }
+
+    fn create(&mut self, fv: &FieldValue) -> Result<FieldValue, Box<dyn Error>> {
+        field_value_create(&self.conn, fv)?;
+        Ok(fv.clone())
+    }
+
+    fn update(&mut self, fv: &FieldValue) -> Result<FieldValue, Box<dyn Error>> {
+        field_value_update(&self.conn, fv)?;
+        Ok(fv.clone())
+    }
+
+    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
+        field_value_delete(&self.conn, id)
+    }
+
+    fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>> {
+        field_value_delete_by_block_id(&self.conn, block_id)
+    }
+
+    fn soft_delete_by_field_definition(
+        &mut self,
+        field_definition_id: &str,
+        now: i64,
+    ) -> Result<usize, Box<dyn Error>> {
+        field_value_soft_delete_by_field_definition(&self.conn, field_definition_id, now)
+    }
+
+    fn restore_by_field_definition(
+        &mut self,
+        field_definition_id: &str,
+        deleted_at: i64,
+    ) -> Result<(), Box<dyn Error>> {
+        field_value_restore_by_field_definition(&self.conn, field_definition_id, deleted_at)
+    }
+}
+
 impl<'a> TemplateRepository for TxContext<'a> {
     fn get_by_id(&self, id: &str) -> Result<UserTemplate, Box<dyn Error>> {
         template_get_by_id(&self.conn, id)
@@ -1469,6 +1886,18 @@ impl<'a> StorageAdapter for TxContext<'a> {
     }
 
     fn relationship_types(&mut self) -> &mut dyn RelationshipTypeRepository {
+        self
+    }
+
+    fn tags(&mut self) -> &mut dyn TagRepository {
+        self
+    }
+
+    fn field_definitions(&mut self) -> &mut dyn FieldDefinitionRepository {
+        self
+    }
+
+    fn field_values(&mut self) -> &mut dyn FieldValueRepository {
         self
     }
 

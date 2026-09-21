@@ -16,6 +16,13 @@ import type {
   Notification, DateRefRecord, IncompleteTask, BlockCard, SavedFilterRust, ScreenViewRust,
   NotificationSettings, PageWithBlocks, BookHighlightRust, BookProgressRust
 } from './types'
+import type {
+  PersistedTag, PersistedFieldDefinition, PersistedFieldValue,
+  CreateTagParams, UpdateTagParams,
+  CreateFieldDefinitionParams, UpdateFieldDefinitionParams,
+  CreateFieldValueParams, UpdateFieldValueParams,
+  DeleteFieldDefinitionResult
+} from '../types/tag-persisted'
 
 export interface CoreClient {
   getBlock(blockId: string): Promise<Block>
@@ -51,6 +58,28 @@ export interface CoreClient {
   getRelationshipTypes(): Promise<RelationshipType[]>
 
   getTemplates(): Promise<UserTemplate[]>
+
+  /** ADR-0049 D6：打标/摘标唯一写入口（只改 Block.tags，不动内容派生）。 */
+  setBlockTags(blockId: string, tags: string[]): Promise<Block>
+
+  // ---- ADR-0049 D6：Tag 统一字段模型（落库持久化形） ----
+  // 全部走 execute_batch（ADR-0048 单源分派），故两侧实现形状一致。
+  getTags(): Promise<PersistedTag[]>
+  createTag(params: CreateTagParams): Promise<PersistedTag>
+  updateTag(params: UpdateTagParams): Promise<PersistedTag>
+  /** 软删 Tag；block.tags 中的悬空引用保留不动（undo 可完整还原） */
+  deleteTag(id: string): Promise<void>
+
+  getFieldDefinitions(): Promise<PersistedFieldDefinition[]>
+  createFieldDefinition(params: CreateFieldDefinitionParams): Promise<PersistedFieldDefinition>
+  updateFieldDefinition(params: UpdateFieldDefinitionParams): Promise<PersistedFieldDefinition>
+  /** 级联软删引用它的 FieldValue；系统 seed 行会被 Rust 拒绝 */
+  deleteFieldDefinition(id: string): Promise<DeleteFieldDefinitionResult>
+
+  getFieldValues(blockId: string): Promise<PersistedFieldValue[]>
+  createFieldValue(params: CreateFieldValueParams): Promise<PersistedFieldValue>
+  updateFieldValue(params: UpdateFieldValueParams): Promise<PersistedFieldValue>
+  deleteFieldValue(id: string): Promise<void>
 
   search(query: string): Promise<SearchResult[]>
 
@@ -303,6 +332,76 @@ class TauriClient implements CoreClient {
 
   async getTemplates(): Promise<UserTemplate[]> {
     return invoke('get_templates')
+  }
+
+  async setBlockTags(blockId: string, tags: string[]): Promise<Block> {
+    const results = await this.executeBatch([
+      { entity: 'block', action: 'set_tags', params: { id: blockId, tags } },
+    ])
+    const first = Array.isArray(results) ? results[0] : results
+    return first as unknown as Block
+  }
+
+  // ---- ADR-0049 D6：Tag 统一字段模型（均走 execute_batch 单源分派） ----
+  async getTags(): Promise<PersistedTag[]> {
+    const results = await this.executeBatch([{ entity: 'tag', action: 'get', params: {} }])
+    const first = Array.isArray(results) ? results[0] : results
+    return (first as unknown as PersistedTag[]) ?? []
+  }
+
+  async createTag(params: CreateTagParams): Promise<PersistedTag> {
+    const results = await this.executeBatch([{ entity: 'tag', action: 'create', params }])
+    return (Array.isArray(results) ? results[0] : results) as unknown as PersistedTag
+  }
+
+  async updateTag(params: UpdateTagParams): Promise<PersistedTag> {
+    const results = await this.executeBatch([{ entity: 'tag', action: 'update', params }])
+    return (Array.isArray(results) ? results[0] : results) as unknown as PersistedTag
+  }
+
+  async deleteTag(id: string): Promise<void> {
+    await this.executeBatch([{ entity: 'tag', action: 'delete', params: { id } }])
+  }
+
+  async getFieldDefinitions(): Promise<PersistedFieldDefinition[]> {
+    const results = await this.executeBatch([{ entity: 'field_definition', action: 'get', params: {} }])
+    const first = Array.isArray(results) ? results[0] : results
+    return (first as unknown as PersistedFieldDefinition[]) ?? []
+  }
+
+  async createFieldDefinition(params: CreateFieldDefinitionParams): Promise<PersistedFieldDefinition> {
+    const results = await this.executeBatch([{ entity: 'field_definition', action: 'create', params }])
+    return (Array.isArray(results) ? results[0] : results) as unknown as PersistedFieldDefinition
+  }
+
+  async updateFieldDefinition(params: UpdateFieldDefinitionParams): Promise<PersistedFieldDefinition> {
+    const results = await this.executeBatch([{ entity: 'field_definition', action: 'update', params }])
+    return (Array.isArray(results) ? results[0] : results) as unknown as PersistedFieldDefinition
+  }
+
+  async deleteFieldDefinition(id: string): Promise<DeleteFieldDefinitionResult> {
+    const results = await this.executeBatch([{ entity: 'field_definition', action: 'delete', params: { id } }])
+    return (Array.isArray(results) ? results[0] : results) as unknown as DeleteFieldDefinitionResult
+  }
+
+  async getFieldValues(blockId: string): Promise<PersistedFieldValue[]> {
+    const results = await this.executeBatch([{ entity: 'field_value', action: 'get', params: { block_id: blockId } }])
+    const first = Array.isArray(results) ? results[0] : results
+    return (first as unknown as PersistedFieldValue[]) ?? []
+  }
+
+  async createFieldValue(params: CreateFieldValueParams): Promise<PersistedFieldValue> {
+    const results = await this.executeBatch([{ entity: 'field_value', action: 'create', params }])
+    return (Array.isArray(results) ? results[0] : results) as unknown as PersistedFieldValue
+  }
+
+  async updateFieldValue(params: UpdateFieldValueParams): Promise<PersistedFieldValue> {
+    const results = await this.executeBatch([{ entity: 'field_value', action: 'update', params }])
+    return (Array.isArray(results) ? results[0] : results) as unknown as PersistedFieldValue
+  }
+
+  async deleteFieldValue(id: string): Promise<void> {
+    await this.executeBatch([{ entity: 'field_value', action: 'delete', params: { id } }])
   }
 
   async search(query: string): Promise<SearchResult[]> {
@@ -673,6 +772,76 @@ class WasmClientAdapter implements CoreClient {
     // 因此外层 results 是 [[template1, template2, ...]]，需要取首元素。
     const first = Array.isArray(results) ? results[0] : results
     return (first as unknown as UserTemplate[]) || []
+  }
+
+  async setBlockTags(blockId: string, tags: string[]): Promise<Block> {
+    const results = await this.executeBatch([
+      { entity: 'block', action: 'set_tags', params: { id: blockId, tags } },
+    ])
+    const first = Array.isArray(results) ? results[0] : results
+    return first as unknown as Block
+  }
+
+  // ---- ADR-0049 D6：Tag 统一字段模型（均走 execute_batch 单源分派） ----
+  async getTags(): Promise<PersistedTag[]> {
+    const results = await this.executeBatch([{ entity: 'tag', action: 'get', params: {} }])
+    const first = Array.isArray(results) ? results[0] : results
+    return (first as unknown as PersistedTag[]) ?? []
+  }
+
+  async createTag(params: CreateTagParams): Promise<PersistedTag> {
+    const results = await this.executeBatch([{ entity: 'tag', action: 'create', params }])
+    return (Array.isArray(results) ? results[0] : results) as unknown as PersistedTag
+  }
+
+  async updateTag(params: UpdateTagParams): Promise<PersistedTag> {
+    const results = await this.executeBatch([{ entity: 'tag', action: 'update', params }])
+    return (Array.isArray(results) ? results[0] : results) as unknown as PersistedTag
+  }
+
+  async deleteTag(id: string): Promise<void> {
+    await this.executeBatch([{ entity: 'tag', action: 'delete', params: { id } }])
+  }
+
+  async getFieldDefinitions(): Promise<PersistedFieldDefinition[]> {
+    const results = await this.executeBatch([{ entity: 'field_definition', action: 'get', params: {} }])
+    const first = Array.isArray(results) ? results[0] : results
+    return (first as unknown as PersistedFieldDefinition[]) ?? []
+  }
+
+  async createFieldDefinition(params: CreateFieldDefinitionParams): Promise<PersistedFieldDefinition> {
+    const results = await this.executeBatch([{ entity: 'field_definition', action: 'create', params }])
+    return (Array.isArray(results) ? results[0] : results) as unknown as PersistedFieldDefinition
+  }
+
+  async updateFieldDefinition(params: UpdateFieldDefinitionParams): Promise<PersistedFieldDefinition> {
+    const results = await this.executeBatch([{ entity: 'field_definition', action: 'update', params }])
+    return (Array.isArray(results) ? results[0] : results) as unknown as PersistedFieldDefinition
+  }
+
+  async deleteFieldDefinition(id: string): Promise<DeleteFieldDefinitionResult> {
+    const results = await this.executeBatch([{ entity: 'field_definition', action: 'delete', params: { id } }])
+    return (Array.isArray(results) ? results[0] : results) as unknown as DeleteFieldDefinitionResult
+  }
+
+  async getFieldValues(blockId: string): Promise<PersistedFieldValue[]> {
+    const results = await this.executeBatch([{ entity: 'field_value', action: 'get', params: { block_id: blockId } }])
+    const first = Array.isArray(results) ? results[0] : results
+    return (first as unknown as PersistedFieldValue[]) ?? []
+  }
+
+  async createFieldValue(params: CreateFieldValueParams): Promise<PersistedFieldValue> {
+    const results = await this.executeBatch([{ entity: 'field_value', action: 'create', params }])
+    return (Array.isArray(results) ? results[0] : results) as unknown as PersistedFieldValue
+  }
+
+  async updateFieldValue(params: UpdateFieldValueParams): Promise<PersistedFieldValue> {
+    const results = await this.executeBatch([{ entity: 'field_value', action: 'update', params }])
+    return (Array.isArray(results) ? results[0] : results) as unknown as PersistedFieldValue
+  }
+
+  async deleteFieldValue(id: string): Promise<void> {
+    await this.executeBatch([{ entity: 'field_value', action: 'delete', params: { id } }])
   }
 
   async search(query: string): Promise<SearchResult[]> {

@@ -6,6 +6,8 @@ export interface Block {
   content: string
   format: string
   type: string
+  /** ADR-0049 D6：反规范化 tag id 数组（旧二进制不返回该字段，故 optional）。 */
+  tags?: string[]
   created_at: number
   updated_at: number
 }
@@ -126,10 +128,13 @@ export interface PageUpdate {
 }
 
 export interface BatchOperation {
+  // 'tag' / 'field_definition' / 'field_value'：ADR-0049 D6 的 Tag 统一字段模型
   entity: 'block' | 'page' | 'link' | 'property' | 'relationship_type' | 'template'
+    | 'tag' | 'field_definition' | 'field_value'
   // 'set' 仅用于 property（Rust execute_batch 的 ("property", "set") 分支）；
-  // 'undelete' 仅用于 block（撤销恢复：精确复活软删块，见 useUndoRestore）
-  action: 'create' | 'update' | 'delete' | 'get' | 'set' | 'sync_by_block' | 'undelete'
+  // 'undelete' 仅用于 block（撤销恢复：精确复活软删块，见 useUndoRestore）；
+  // 'set_tags' 仅用于 block（grill 决策 #8：未来批量打标的写入口）
+  action: 'create' | 'update' | 'delete' | 'get' | 'set' | 'sync_by_block' | 'undelete' | 'set_tags'
   params: Record<string, unknown>
 }
 

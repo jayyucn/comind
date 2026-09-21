@@ -14,6 +14,9 @@ pub enum SyncTable {
     Template,
     Notification,
     NotificationConfig,
+    Tag,
+    FieldDefinition,
+    FieldValue,
 }
 
 impl SyncTable {
@@ -28,6 +31,9 @@ impl SyncTable {
             SyncTable::Template => "UserTemplate",
             SyncTable::Notification => "Notification",
             SyncTable::NotificationConfig => "NotificationConfig",
+            SyncTable::Tag => "Tag",
+            SyncTable::FieldDefinition => "FieldDefinition",
+            SyncTable::FieldValue => "FieldValue",
         }
     }
 
@@ -42,6 +48,9 @@ impl SyncTable {
             SyncTable::DateRef,
             SyncTable::Notification,
             SyncTable::NotificationConfig,
+            SyncTable::Tag,
+            SyncTable::FieldDefinition,
+            SyncTable::FieldValue,
         ]
     }
 }
