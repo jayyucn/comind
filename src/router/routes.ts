@@ -9,6 +9,10 @@ import GraphPage from '../components/GraphView/GraphPage.vue'
 // backlog 排队（与 GraphPage 同一根因），实测从点滴首次切到页面库卡 ~2.7s。
 // PagesLibrary 不含重依赖，静态引入对首屏无影响。
 import PagesLibrary from '../components/PagesLibrary/PagesLibrary.vue'
+// 标签页（管理页 + 聚合页）同样静态引入：与 PagesLibrary 同级的导航入口页，体量小、无重依赖，
+// 懒 chunk 的 dev 首访排队收益为负（同 GraphPage/PagesLibrary 根因，见上）。
+import TagsLibrary from '../components/Tags/TagsLibrary.vue'
+import TagAggregatePage from '../components/Tags/TagAggregatePage.vue'
 
 /**
  * 路由配置
@@ -71,6 +75,21 @@ const routes: RouteRecordRaw[] = [
     path: '/tasks',
     name: 'tasks',
     component: () => import('../components/TaskHub/TaskHub.vue'),
+    meta: { fullWidth: true, hideRightSidebarToggle: true },
+  },
+  // 标签管理页（ADR-0050 D5）：列表 + 详情，含显式新建 / 字段模板编辑 / 单父继承区
+  {
+    path: '/tags',
+    name: 'tags-library',
+    component: TagsLibrary,
+    meta: { fullWidth: true, hideRightSidebarToggle: true },
+  },
+  // 标签聚合页（ADR-0050 D7）：形态对齐 Query Page（表格/看板/日历 + 统计卡 + per-tag 视图配置）
+  {
+    path: '/tags/:tagId',
+    name: 'tag-aggregate',
+    component: TagAggregatePage,
+    props: true,
     meta: { fullWidth: true, hideRightSidebarToggle: true },
   },
   // 阅读器独立窗口专用路由（票 03 / ADR-0040 D4）：由 useReaderWindow 以 Tauri

@@ -27,13 +27,19 @@ import BasePopover from './BasePopover.vue'
 
 const props = defineProps<{
   entityKey: string
+  /**
+   * 命名视图（Screen→Tab）namespace 覆盖：缺省与 entityKey 同值。
+   * 用于「同一查询实体、多套独立视图配置」的页面（tag 聚合页 = 每个标签一套配置），
+   * 避免与同实体的其它页面（任务中心）争抢同一个 screen_view 命名空间。
+   */
+  screenViewKey?: string
   viewTypes: ViewTypeOption[]
   defaultViewName?: string
   defaultViewType?: string
 }>()
 
-// 实体级两级（Screen→Tab）命名视图 store（按 entityKey 隔离，与后端 screen_view.entity 对齐）
-const store = useScreenViewStore(props.entityKey, {
+// 实体级两级（Screen→Tab）命名视图 store（按 namespace 隔离，与后端 screen_view.entity 对齐）
+const store = useScreenViewStore(props.screenViewKey ?? props.entityKey, {
   defaultViewName: props.defaultViewName,
   defaultViewType: props.defaultViewType,
 })

@@ -17,8 +17,8 @@ import type {
   NotificationSettings, PageWithBlocks, BookHighlightRust, BookProgressRust
 } from './types'
 import type {
-  PersistedTag, PersistedFieldDefinition, PersistedFieldValue,
-  CreateTagParams, UpdateTagParams,
+  PersistedTag, PersistedTagTreeEntry, PersistedFieldDefinition, PersistedFieldValue,
+  CreateTagParams, UpdateTagParams, SetTagParentParams,
   CreateFieldDefinitionParams, UpdateFieldDefinitionParams,
   CreateFieldValueParams, UpdateFieldValueParams,
   DeleteFieldDefinitionResult
@@ -62,11 +62,15 @@ export interface CoreClient {
   /** ADR-0049 D6：打标/摘标唯一写入口（只改 Block.tags，不动内容派生）。 */
   setBlockTags(blockId: string, tags: string[]): Promise<Block>
 
-  // ---- ADR-0049 D6：Tag 统一字段模型（落库持久化形） ----
+  // ---- ADR-0049 D6：Tag 统一字段模型（落库持久化形）；ADR-0050 D10 单父 + 解析 ----
   // 全部走 execute_batch（ADR-0048 单源分派），故两侧实现形状一致。
   getTags(): Promise<PersistedTag[]>
+  /** 标签树读接口：原始行 + 解析后有效字段 + 后代闭包（解析单源在 Rust，前端不得重实现） */
+  getTagTree(): Promise<PersistedTagTreeEntry[]>
   createTag(params: CreateTagParams): Promise<PersistedTag>
   updateTag(params: UpdateTagParams): Promise<PersistedTag>
+  /** 单父槽位：null / 空串 → 清空回顶级；成环与系统 tag 由 Rust 侧拒绝 */
+  setTagParent(params: SetTagParentParams): Promise<PersistedTag>
   /** 软删 Tag；block.tags 中的悬空引用保留不动（undo 可完整还原） */
   deleteTag(id: string): Promise<void>
 
@@ -349,6 +353,12 @@ class TauriClient implements CoreClient {
     return (first as unknown as PersistedTag[]) ?? []
   }
 
+  async getTagTree(): Promise<PersistedTagTreeEntry[]> {
+    const results = await this.executeBatch([{ entity: 'tag', action: 'tree', params: {} }])
+    const first = Array.isArray(results) ? results[0] : results
+    return (first as unknown as PersistedTagTreeEntry[]) ?? []
+  }
+
   async createTag(params: CreateTagParams): Promise<PersistedTag> {
     const results = await this.executeBatch([{ entity: 'tag', action: 'create', params }])
     return (Array.isArray(results) ? results[0] : results) as unknown as PersistedTag
@@ -356,6 +366,11 @@ class TauriClient implements CoreClient {
 
   async updateTag(params: UpdateTagParams): Promise<PersistedTag> {
     const results = await this.executeBatch([{ entity: 'tag', action: 'update', params }])
+    return (Array.isArray(results) ? results[0] : results) as unknown as PersistedTag
+  }
+
+  async setTagParent(params: SetTagParentParams): Promise<PersistedTag> {
+    const results = await this.executeBatch([{ entity: 'tag', action: 'set_parent', params }])
     return (Array.isArray(results) ? results[0] : results) as unknown as PersistedTag
   }
 
@@ -789,6 +804,12 @@ class WasmClientAdapter implements CoreClient {
     return (first as unknown as PersistedTag[]) ?? []
   }
 
+  async getTagTree(): Promise<PersistedTagTreeEntry[]> {
+    const results = await this.executeBatch([{ entity: 'tag', action: 'tree', params: {} }])
+    const first = Array.isArray(results) ? results[0] : results
+    return (first as unknown as PersistedTagTreeEntry[]) ?? []
+  }
+
   async createTag(params: CreateTagParams): Promise<PersistedTag> {
     const results = await this.executeBatch([{ entity: 'tag', action: 'create', params }])
     return (Array.isArray(results) ? results[0] : results) as unknown as PersistedTag
@@ -796,6 +817,11 @@ class WasmClientAdapter implements CoreClient {
 
   async updateTag(params: UpdateTagParams): Promise<PersistedTag> {
     const results = await this.executeBatch([{ entity: 'tag', action: 'update', params }])
+    return (Array.isArray(results) ? results[0] : results) as unknown as PersistedTag
+  }
+
+  async setTagParent(params: SetTagParentParams): Promise<PersistedTag> {
+    const results = await this.executeBatch([{ entity: 'tag', action: 'set_parent', params }])
     return (Array.isArray(results) ? results[0] : results) as unknown as PersistedTag
   }
 

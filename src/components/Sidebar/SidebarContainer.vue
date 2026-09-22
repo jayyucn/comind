@@ -10,6 +10,7 @@ import SidebarHeader from './SidebarHeader.vue'
 import SidebarIdeas from './SidebarIdeas.vue'
 import SidebarPages from './SidebarPages.vue'
 import SidebarRecent from './SidebarRecent.vue'
+import SidebarTagItem from './SidebarTagItem.vue'
 import SidebarTaskItem from './SidebarTaskItem.vue'
 
 const { isCollapsed, toggle } = useSidebar()
@@ -79,6 +80,7 @@ defineEmits<{
         <SidebarPages />
         <SidebarGraphItem />
         <SidebarTaskItem />
+        <SidebarTagItem />
 
         <!-- 最近列表（固定高度，不滚动） -->
         <SidebarRecent />

@@ -10,8 +10,10 @@ fn default_timestamp() -> i64 {
 /// 系统 Tag 与用户 Tag **共用本表**：系统 tag 由 seed 写入固定 id 行（`is_system = 1`，
 /// 拒删拒改名），用户 tag 由 content `#foo` 联动自动建（`is_system = 0`）。
 ///
-/// - `field_ids`：物化后的字段定义 id 列表（含继承展开后的最终集合）。
-/// - `extends`：多继承父 Tag id 列表；创建/更新时展开父字段进 `field_ids`（D8）。
+/// - `field_ids`：**自身**字段定义 id 列表（不含继承）。
+///   继承不物化，由 `TagService::effective_field_ids` 读取侧解析（ADR-0050 D10）。
+/// - `parent_id`：单父槽位（nullable）。继承链唯一真相源；成环由
+///   `TagService::set_parent` 拒绝（ADR-0050 D10）。
 ///
 /// 术语说明：本类型是「字段模板」实体，与文本 `#tag` 语法解析（`TagParse` /
 /// `tag_service`）同属 Tag 概念；联动后「文本 → Tag」不再是独立解析层，
@@ -21,12 +23,12 @@ pub struct Tag {
     pub id: String,
     /// 全局唯一标题（D6：Tag 以 title 为唯一标识，无 key 列）。
     pub title: String,
-    /// 该模板包含的字段定义 id（物化后最终集合，含继承展开）。
+    /// 该模板**自身**包含的字段定义 id（继承不在其中，见 D10）。
     #[serde(default)]
     pub field_ids: Vec<String>,
-    /// 多继承父 Tag id（创建/更新时展开父字段进 field_ids）。
+    /// 单父 Tag id（None = 顶级标签）。
     #[serde(default)]
-    pub extends: Vec<String>,
+    pub parent_id: Option<String>,
     /// 系统 tag 标记（seed 行 = true，拒删拒改名）。
     #[serde(default)]
     pub is_system: bool,
@@ -48,7 +50,21 @@ pub struct TagCreateOptions {
     #[serde(default)]
     pub field_ids: Vec<String>,
     #[serde(default)]
-    pub extends: Vec<String>,
+    pub parent_id: Option<String>,
+}
+
+/// 标签树读接口的行（ADR-0050 D10）：原始行 + 读取侧解析结果。
+///
+/// - `effective_field_ids`：自身 > 直接父 > 更近祖先（同名近者胜）合成的字段集合。
+/// - `descendant_ids`：后代标签 id 闭包（**不含自身**）；成员向上聚合时 `自身 + 闭包`。
+///
+/// 解析单源在 Rust；TS 侧只消费，不得重实现（避免双源漂移）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TagTreeEntry {
+    #[serde(flatten)]
+    pub tag: Tag,
+    pub effective_field_ids: Vec<String>,
+    pub descendant_ids: Vec<String>,
 }
 
 impl Tag {
@@ -59,7 +75,7 @@ impl Tag {
             id: Uuid::new_v4().to_string(),
             title: options.title,
             field_ids: options.field_ids,
-            extends: options.extends,
+            parent_id: options.parent_id,
             is_system: false,
             created_at: now,
             updated_at: now,
@@ -75,7 +91,7 @@ impl Tag {
             id: id.to_string(),
             title: title.to_string(),
             field_ids,
-            extends: Vec::new(),
+            parent_id: None,
             is_system: true,
             created_at: now,
             updated_at: now,

@@ -1,0 +1,73 @@
+<script setup lang="ts">
+import { useRouter, useRoute } from 'vue-router'
+import { Tags } from 'lucide-vue-next'
+
+const router = useRouter()
+const route = useRoute()
+
+// 管理页与聚合页同属标签体系，两条路由都点亮（侧栏只此一个入口）
+const isActive = () => route.name === 'tags-library' || route.name === 'tag-aggregate'
+
+function handleClick() {
+  router.push('/tags')
+}
+</script>
+
+<template>
+  <div
+    class="nav-item tag-nav"
+    :class="{ active: isActive() }"
+    @click="handleClick"
+  >
+    <span class="nav-icon">
+      <Tags
+        :size="16"
+        :stroke-width="1.75"
+      />
+    </span>
+    <span class="nav-label">标签</span>
+  </div>
+</template>
+
+<style scoped>
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--text-secondary);
+  transition: background 80ms ease, color 80ms ease;
+}
+
+.nav-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.nav-item.active {
+  color: var(--text-primary);
+  font-weight: var(--font-semibold);
+  background: var(--accent-bg, rgba(99, 102, 241, 0.08));
+}
+
+.nav-item.active .nav-icon {
+  color: var(--accent);
+}
+
+.nav-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.nav-label {
+  flex: 1;
+  min-width: 0;
+}
+</style>

@@ -8,6 +8,7 @@ import {
   useDateTimePickerPanel
 } from '../../../composables/useDateTimePickerPanel'
 import { useNavigateToPage } from '../../../composables/useNavigateToPage'
+import { useNavigateToTag } from '../../../composables/useNavigateToTag'
 import { useRelationshipMenu } from '../../../composables/useRelationshipMenu'
 import { blockOffsetFromPoint, caretBlockOffsetFromDomSelection } from '../../../services/selection-geometry'
 import type { useBlockStore } from '../../../stores/blocks'
@@ -39,6 +40,7 @@ import { renderedOffsetToEncodedOffset } from '../../../services/render-text'
  *
  * 内部调用：
  * - `useNavigateToPage` — wiki-link 导航
+ * - `useNavigateToTag` — inline `#tag` chip 导航到标签聚合页（ADR-0050 D7）
  * - `useRelationshipMenu` — rel-type-label 切换菜单
  * - `useDateTimePickerPanel` — date-ref 编辑面板
  * - `useDateRefClickListener` — 全局 date-ref 点击监听
@@ -76,6 +78,7 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
 
   // ── 内部依赖的 composables ──
   const { navigateToPage } = useNavigateToPage()
+  const { navigateToTag } = useNavigateToTag()
   const relMenu = useRelationshipMenu()
   const { open: openDateRefPanel } = useDateTimePickerPanel()
 
@@ -282,12 +285,13 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     const target = e.target as HTMLElement
     // 仅响应左键（右键/中键留给上下文菜单等，避免误启动选区/激活）
     if (e.button !== 0) return
-    // .block-link 与 .rel-type-label 与 .date-ref 都由 handleContentClick 处理点击，
+    // .block-link 与 .rel-type-label 与 .date-ref 与 .block-tag 都由 handleContentClick 处理点击，
     // 不要让 mousedown 触发激活导致 BulletRender 被替换、
     // 进而让后续 click 事件落在新挂载的 Editor 上。
     if (target.closest('.block-link')) return
     if (target.closest('.rel-type-label')) return
     if (target.closest('.date-ref')) return
+    if (target.closest('.block-tag')) return
 
     if (e.ctrlKey || e.metaKey) {
       if (selection) {
@@ -445,7 +449,19 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     }
 
     const link = target.closest('.block-link') as HTMLElement | null
-    if (!link) return
+    if (!link) {
+      // ADR-0050 D7：inline `#tag` chip 点击 → 该 tag 的聚合页。结构化 Tag 段渲染的是裸
+      // `.block-tag`（无 data-page，故不走上面的 wiki-link 分支）；data-tag-id 缺失
+      // （渲染快照里查无此 tag）时保持既有无行为，不误入任何跳转。
+      const tagChip = target.closest('.block-tag') as HTMLElement | null
+      const tagId = tagChip?.dataset.tagId
+      if (tagId) {
+        navigateToTag(tagId).catch(err => {
+          console.error('标签导航失败:', err)
+        })
+      }
+      return
+    }
 
     if (link.dataset.external) {
       window.open(link.dataset.external, '_blank', 'noopener,noreferrer')

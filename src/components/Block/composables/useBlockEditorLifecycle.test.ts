@@ -20,6 +20,18 @@ vi.mock('../../../composables/useNavigateToPage', () => ({
   })
 }))
 
+// ADR-0050 D7：inline `#tag` chip 点击走独立的标签导航工具（同样依赖 useRouter）
+const { navigateToTagMock } = vi.hoisted(() => ({
+  navigateToTagMock: vi.fn().mockResolvedValue(undefined)
+}))
+
+vi.mock('../../../composables/useNavigateToTag', () => ({
+  useNavigateToTag: () => ({
+    navigateToTag: navigateToTagMock,
+    navigateToTagLibrary: vi.fn().mockResolvedValue(undefined)
+  })
+}))
+
 // useRelationshipMenu 内部依赖 useRelationshipTypes，mock 掉以隔离
 // 暴露 relMenuMock 供 handleContentClick rel-type-label 测试断言
 const { relMenuMock } = vi.hoisted(() => ({
@@ -271,6 +283,19 @@ describe('useBlockEditorLifecycle', () => {
       expect(setCoordsSpy).not.toHaveBeenCalled()
     })
 
+    it('skips when clicking .block-tag（chip 需存活到 click 才能导航，ADR-0050 D7）', () => {
+      const { lifecycle, editorStore } = setup()
+      const setCoordsSpy = vi.spyOn(editorStore, 'setClickCoords').mockImplementation(() => {})
+      const e = {
+        target: { closest: (sel: string) => sel === '.block-tag' ? {} : null },
+        ctrlKey: false, metaKey: false,
+        clientX: 100, clientY: 200,
+        preventDefault: () => {}
+      } as any
+      lifecycle.handleContentMousedown(e)
+      expect(setCoordsSpy).not.toHaveBeenCalled()
+    })
+
     // ── 起点在激活块：手势必须与非激活块同构 ──
     // 旧实现「已激活的 block 交给 ProseMirror 原生处理光标定位」直接 return，
     // 文本追踪根本不启动 → ProseMirror 独占拖拽，comind 无从接管（拖不出本块）。
@@ -485,6 +510,40 @@ describe('useBlockEditorLifecycle', () => {
       expect(navigateToPageMock).not.toHaveBeenCalled()
       expect(openSpy).not.toHaveBeenCalled()
       expect(relMenuMock.openSwitch).not.toHaveBeenCalled()
+    })
+
+    // ── inline `#tag` chip（ADR-0050 D7）──
+
+    /** 结构化 Tag 段渲染出的裸 chip（有 data-tag-id、无 data-page） */
+    function tagChip(dataset: Record<string, string>): any {
+      const chip: any = { dataset }
+      chip.closest = (sel: string) => sel === '.block-tag' ? chip : null
+      return chip
+    }
+
+    it('navigates to tag aggregate page on inline tag chip click', () => {
+      const { lifecycle } = setup()
+      const e = {
+        target: tagChip({ tagId: 't-1', tagTitle: '项目' }),
+        preventDefault: () => {},
+        stopPropagation: () => {}
+      } as any
+      lifecycle.handleContentClick(e)
+      expect(navigateToTagMock).toHaveBeenCalledWith('t-1')
+      // 不得误入 wiki-link 分支
+      expect(navigateToPageMock).not.toHaveBeenCalled()
+    })
+
+    it('no-op on tag chip without data-tag-id (渲染快照查无此 tag)', () => {
+      const { lifecycle } = setup()
+      const e = {
+        target: tagChip({ tagTitle: '未落库' }),
+        preventDefault: () => {},
+        stopPropagation: () => {}
+      } as any
+      lifecycle.handleContentClick(e)
+      expect(navigateToTagMock).not.toHaveBeenCalled()
+      expect(navigateToPageMock).not.toHaveBeenCalled()
     })
   })
 

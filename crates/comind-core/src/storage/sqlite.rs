@@ -303,6 +303,7 @@ impl SQLiteAdapter {
             );
 
             -- ADR-0049 D6：用户 Tag 模板（字段模板实体）。系统 Tag 不落库（编译期常量）。
+            -- ADR-0050 D10：parent_id 单父槽位（NULL = 顶级）；extends 列留作历史列（不再读写）。
             CREATE TABLE IF NOT EXISTS Tag (
                 id              TEXT PRIMARY KEY,
                 title           TEXT NOT NULL UNIQUE,
@@ -312,7 +313,8 @@ impl SQLiteAdapter {
                 updated_at      INTEGER NOT NULL,
                 version         INTEGER NOT NULL DEFAULT 0,
                 deleted_at      INTEGER,
-                is_system       INTEGER NOT NULL DEFAULT 0
+                is_system       INTEGER NOT NULL DEFAULT 0,
+                parent_id       TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_tag_title ON Tag(title);
 
@@ -379,7 +381,22 @@ impl SQLiteAdapter {
         Self::migrate_add_screen_view_config(conn)?;
         Self::migrate_add_screen_view_entity(conn)?;
         Self::migrate_add_screen_view_parent_id(conn)?;
+        Self::migrate_add_tag_parent_id(conn)?;
 
+        Ok(())
+    }
+
+    fn migrate_add_tag_parent_id(conn: &rusqlite::Connection) -> Result<(), Box<dyn Error>> {
+        // 加 parent_id 列（单父槽位，NULL = 顶级标签；ADR-0050 D10）。
+        // 幂等：列不存在才 ALTER ADD；存量行（含系统 seed 行）parent_id 为 NULL = 顶级。
+        let has_column: bool = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('Tag') WHERE name = 'parent_id'",
+            [],
+            |row| row.get::<_, i64>(0),
+        ).map(|c| c > 0).unwrap_or(false);
+        if !has_column {
+            conn.execute("ALTER TABLE Tag ADD COLUMN parent_id TEXT", [])?;
+        }
         Ok(())
     }
 

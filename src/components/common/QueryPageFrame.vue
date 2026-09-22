@@ -30,6 +30,12 @@ const props = defineProps<{
   subtitle: string
   /** screen_view 命名空间（NamedViewBar / 命名视图 store）。兼作查询引擎实体命名空间（ADR-0023 D3）。 */
   entityKey: string
+  /**
+   * 命名视图 namespace 覆盖（缺省与 entityKey 同值）：同一查询实体要**多套独立视图配置**时用
+   * （tag 聚合页按标签各持一套配置，且不与任务中心争抢同一个 screen_view 命名空间）。
+   * 只影响命名视图落库键；字段注册表 / 芯片行的实体命名空间仍用 entityKey。
+   */
+  screenViewKey?: string
   /** 该实体可选的视图类型（注入 NamedViewBar；同时决定外壳渲染哪几个视图，类型创建后固定）。 */
   viewTypes: ViewTypeOption[]
   defaultViewName?: string
@@ -71,8 +77,8 @@ const emit = defineEmits<{
   'update:search': [value: string]
 }>()
 
-// 命名视图 store（按 entityKey 隔离；NamedViewBar 内部同 key 单例复用）
-const store = useScreenViewStore(props.entityKey, {
+// 命名视图 store（按 namespace 隔离；NamedViewBar 内部同 key 单例复用）
+const store = useScreenViewStore(props.screenViewKey ?? props.entityKey, {
   defaultViewName: props.defaultViewName,
   defaultViewType: props.defaultViewType,
 })
@@ -188,14 +194,21 @@ function onRemoveGlobal(key: string) {
 
 <template>
   <div class="query-page-frame">
+    <!-- 面包屑（可选）：需位于大标题之上的导航，由消费方注入（如标签聚合页「标签 / #x」） -->
+    <slot name="breadcrumb" />
+
     <PageTitle
       :title="title"
       :subtitle="subtitle"
     />
 
+    <!-- 标题下扩展区（可选）：大标题与视图管理条之间的自有内容（如标签聚合页的统计卡） -->
+    <slot name="heading-extra" />
+
     <!-- 视图管理（Screen→Tab 两级 + 查询工具条 + 未保存提示均内聚于 NamedViewBar） -->
     <NamedViewBar
       :entity-key="entityKey"
+      :screen-view-key="screenViewKey"
       :view-types="viewTypes"
       :default-view-name="defaultViewName"
       :default-view-type="defaultViewType"

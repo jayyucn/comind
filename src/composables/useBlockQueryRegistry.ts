@@ -259,9 +259,19 @@ const TYPE_MAP: Record<PropertyType, FieldType> = {
   page: 'text',
 }
 
+/**
+ * 字段类型 → 引擎 FieldType（未知/新增类型保守回落 text）。
+ *
+ * 消费点：编译期常量形 `FieldDefinition`（`buildBlockFieldDescriptor`）与落库形
+ * `PersistedFieldDefinition`（tag 聚合页按 tag 字段模板建列）共用同一映射，避免双源漂移。
+ */
+export function fieldTypeOf(type: string): FieldType {
+  return TYPE_MAP[type as PropertyType] ?? 'text'
+}
+
 /** 把 FieldDefinition 转为引擎字段描述符（自定义 property 用）。 */
 export function buildBlockFieldDescriptor(def: FieldDefinition): FieldDescriptor {
-  const fieldType = TYPE_MAP[def.type] ?? 'text'
+  const fieldType = fieldTypeOf(def.type)
   const descriptor: FieldDescriptor = {
     key: def.key,
     label: def.title,

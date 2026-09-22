@@ -31,6 +31,7 @@ import './handlers/code'
 import './handlers/embed'
 import './handlers/image'
 import PropertyDisplay from './PropertyDisplay.vue'
+import BlockTagFields from './BlockTagFields.vue'
 import PropertyInline from './PropertyInline.vue'
 
 import type { EditorView } from '@codemirror/view'
@@ -650,6 +651,11 @@ watch(isActive, (active) => {
       <PropertyDisplay
         :block-id="blockId"
         variant="book-note"
+      />
+      <!-- Tag 本位字段区（ADR-0050 D1「挂载即显示」）：只渲染该块已挂标签的有效字段 -->
+      <BlockTagFields
+        :block-id="blockId"
+        :tag-ids="block.tags ?? []"
       />
     </div>
 

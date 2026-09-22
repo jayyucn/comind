@@ -24,7 +24,7 @@ use crate::{
     storage::{repository, StorageAdapter},
     types::{
         Block, FieldValue, FieldValueCreateOptions, Link, Page, Property, RelationshipType,
-        SyncTable, TagCreateOptions, UserTemplate,
+        SyncTable, TagCreateOptions, TagTreeEntry, UserTemplate,
     },
 };
 use serde_json::{json, Value};
@@ -523,13 +523,28 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
             })
         }
 
-        // ---- tag ---- （ADR-0049 D6/D8）
-        // 裁定：走 TagService 而非裸 repo —— extends 的**物化继承**发生在 service
-        // 层（materialize_extends），若此处直连 repo 写入，会绕开物化而静默漂移
-        // field_ids（与 ADR-0048 指出的「两份分派表漂移」同构）。
+        // ---- tag ---- （ADR-0049 D6；ADR-0050 D10 单父 + 读取侧继承解析）
+        // 裁定：走 TagService 而非裸 repo —— 有效字段解析与环守卫都在 service 层，
+        // 若此处直连 repo 写入，会绕开守卫而静默漂移（与 ADR-0048「两份分派表漂移」同构）。
         ("tag", "get") => {
             let tags = TagService::get_all(storage)?;
             Ok(OpEffect::plain(serde_json::to_value(tags)?))
+        }
+        ("tag", "tree") => {
+            // 标签树读接口（ADR-0050 D10）：原始行 + 解析后有效字段 + 后代闭包。
+            // 解析单源在 Rust，TS 侧不得重实现（避免双源漂移）。
+            let tags = TagService::get_all(storage)?;
+            let mut entries: Vec<TagTreeEntry> = Vec::new();
+            for tag in tags {
+                let effective_field_ids = TagService::effective_field_ids(storage, &tag.id)?;
+                let descendant_ids = TagService::descendant_tag_ids(storage, &tag.id)?;
+                entries.push(TagTreeEntry {
+                    tag,
+                    effective_field_ids,
+                    descendant_ids,
+                });
+            }
+            Ok(OpEffect::plain(serde_json::to_value(entries)?))
         }
         ("tag", "create") => {
             let created = TagService::create(
@@ -537,7 +552,8 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
                 TagCreateOptions {
                     title: str_param(&params, "title").to_string(),
                     field_ids: str_array_param(&params, "field_ids"),
-                    extends: str_array_param(&params, "extends"),
+                    // 可选父：缺失 / null → 顶级（ADR-0050 D10）
+                    parent_id: optional_str_param(&params, "parent_id"),
                 },
             )?;
             Ok(OpEffect {
@@ -550,14 +566,23 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
             let id = str_param(&params, "id").to_string();
             // 仅当入参显式给出时才覆盖对应字段（None = 保持不变）。
             let field_ids = optional_str_array_param(&params, "field_ids");
-            let extends = optional_str_array_param(&params, "extends");
             let updated = TagService::update(
                 storage,
                 &id,
                 params.get("title").and_then(|v| v.as_str()),
                 field_ids,
-                extends,
             )?;
+            Ok(OpEffect {
+                value: serde_json::to_value(&updated)?,
+                sync: vec![(SyncTable::Tag, updated.id)],
+                page_ids: Vec::new(),
+            })
+        }
+        ("tag", "set_parent") => {
+            // 单父槽位（ADR-0050 D10）：缺失 / null → 清空回顶级；成环由服务层拒绝。
+            let id = str_param(&params, "id").to_string();
+            let parent = optional_str_param(&params, "parent_id");
+            let updated = TagService::set_parent(storage, &id, parent.as_deref())?;
             Ok(OpEffect {
                 value: serde_json::to_value(&updated)?,
                 sync: vec![(SyncTable::Tag, updated.id)],
@@ -698,6 +723,15 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
 
 fn str_param<'a>(params: &'a Value, key: &str) -> &'a str {
     params.get(key).and_then(|v| v.as_str()).unwrap_or_default()
+}
+
+/// 可选字符串参数：**缺失 / null / 空串 → None**（单父槽位等「无」语义参用）。
+fn optional_str_param(params: &Value, key: &str) -> Option<String> {
+    params
+        .get(key)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
 }
 
 /// 字符串数组参数：**缺失或 null → 空数组**（用于 create 的缺省值）。

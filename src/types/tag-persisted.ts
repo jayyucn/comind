@@ -16,10 +16,12 @@ export interface PersistedTag {
   id: string
   /** 全局唯一标题 */
   title: string
-  /** 字段定义 id 列表（含继承展开后的最终集合） */
+  /** 字段定义 id 列表（**仅自身**字段；继承不物化，ADR-0050 D10） */
   field_ids: string[]
-  /** 多继承父 Tag id */
-  extends: string[]
+  /** 单父 Tag id（null = 顶级标签；ADR-0050 D10） */
+  parent_id: string | null
+  /** 系统 seed 行标记（拒删 / 拒改名 / 拒改父；ADR-0049 grill 决策 #5/#9） */
+  is_system: boolean
   created_at: number
   updated_at: number
   version: number
@@ -64,14 +66,32 @@ export interface PersistedFieldValue {
 export type CreateTagParams = {
   title: string
   field_ids?: string[]
-  extends?: string[]
+  /** 可选父标签（缺失 / null → 顶级） */
+  parent_id?: string | null
 }
 
 export type UpdateTagParams = {
   id: string
   title?: string
   field_ids?: string[]
-  extends?: string[]
+}
+
+export type SetTagParentParams = {
+  id: string
+  /** null / 缺失 → 清空回顶级 */
+  parent_id?: string | null
+}
+
+/**
+ * 标签树读接口行（ADR-0050 D10）：`PersistedTag` + Rust 侧解析结果。
+ *
+ * `effective_field_ids` = 自身 > 直接父 > 更近祖先（同名近者胜）；
+ * `descendant_ids` = 后代标签闭包（**不含自身**）→ 成员命中集合 = `[id, ...descendant_ids]`。
+ * 解析单源在 Rust，前端只消费。
+ */
+export interface PersistedTagTreeEntry extends PersistedTag {
+  effective_field_ids: string[]
+  descendant_ids: string[]
 }
 
 export type CreateFieldDefinitionParams = {

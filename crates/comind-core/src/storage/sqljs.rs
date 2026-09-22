@@ -208,7 +208,7 @@ impl SqlJsAdapter {
         Self::exec(db, "CREATE TABLE IF NOT EXISTS page_snapshots (page_id TEXT PRIMARY KEY, date TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, content_json TEXT NOT NULL, created_at INTEGER NOT NULL);")?;
 
         // ADR-0049 D6：Tag 统一字段模型 —— 三张新表（与 sqlite.rs init_schema 逐列一致）。
-        Self::exec(db, "CREATE TABLE IF NOT EXISTS Tag (id TEXT PRIMARY KEY, title TEXT NOT NULL UNIQUE, field_ids TEXT NOT NULL DEFAULT '[]', extends TEXT NOT NULL DEFAULT '[]', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 0, deleted_at INTEGER, is_system INTEGER NOT NULL DEFAULT 0);")?;
+        Self::exec(db, "CREATE TABLE IF NOT EXISTS Tag (id TEXT PRIMARY KEY, title TEXT NOT NULL UNIQUE, field_ids TEXT NOT NULL DEFAULT '[]', extends TEXT NOT NULL DEFAULT '[]', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 0, deleted_at INTEGER, is_system INTEGER NOT NULL DEFAULT 0, parent_id TEXT);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_tag_title ON Tag(title);")?;
         Self::exec(db, "CREATE TABLE IF NOT EXISTS FieldDefinition (id TEXT PRIMARY KEY, key TEXT NOT NULL UNIQUE, title TEXT NOT NULL, type TEXT NOT NULL, closed_values TEXT, is_system INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 0, deleted_at INTEGER);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_fielddef_key ON FieldDefinition(key);")?;
@@ -225,6 +225,7 @@ impl SqlJsAdapter {
         Self::seed_system_field_definitions(db)?;
         Self::migrate_add_block_tags_column(db)?;
         Self::migrate_add_tag_is_system(db)?;
+        Self::migrate_add_tag_parent_id(db)?;
         Self::seed_system_tags(db)?;
 
         Ok(())
@@ -282,6 +283,19 @@ impl SqlJsAdapter {
         Ok(())
     }
 
+    /// 幂等：老库 Tag 表补 parent_id 列（单父槽位，NULL = 顶级；ADR-0050 D10）。
+    /// 与 sqlite `migrate_add_tag_parent_id` 逐行对称。
+    fn migrate_add_tag_parent_id(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        let has_column = |table: &str, col: &str| -> bool {
+            let rows = Self::query(db, &format!("PRAGMA table_info('{}');", table), &[]).unwrap_or_default();
+            rows.iter().any(|r| r.values().any(|v| v == col))
+        };
+        if !has_column("Tag", "parent_id") {
+            Self::exec(db, "ALTER TABLE Tag ADD COLUMN parent_id TEXT;")?;
+        }
+        Ok(())
+    }
+
     /// 与 sqlite `seed_system_tags` 逐行对称（grill 决策 #5）。幂等：按 `id` 存在性跳过。
     fn seed_system_tags(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
         let key_to_id: std::collections::HashMap<String, String> = system_field_definitions()
@@ -307,12 +321,12 @@ impl SqlJsAdapter {
                 .collect();
             let tag = Tag::seed(id, title, field_ids);
             let field_ids_json = serde_json::to_string(&tag.field_ids).unwrap_or_else(|_| "[]".to_string());
-            let extends_json = serde_json::to_string(&tag.extends).unwrap_or_else(|_| "[]".to_string());
+            // `extends` 列原地保留但不再读写（ADR-0050 D10：继承改单父 `parent_id` + 读时解析）
             Self::run_with_params(
                 db,
-                "INSERT INTO Tag (id, title, field_ids, extends, created_at, updated_at, version, deleted_at, is_system) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 1)",
+                "INSERT INTO Tag (id, title, field_ids, created_at, updated_at, version, deleted_at, is_system, parent_id) VALUES (?, ?, ?, ?, ?, ?, NULL, 1, NULL)",
                 &[
-                    &tag.id, &tag.title, &field_ids_json, &extends_json,
+                    &tag.id, &tag.title, &field_ids_json,
                     &tag.created_at.to_string(), &tag.updated_at.to_string(), &tag.version.to_string(),
                 ],
             )?;
@@ -1120,20 +1134,21 @@ impl TagRepository for SqlJsAdapter {
 
     fn create(&mut self, tag: &Tag) -> Result<Tag, Box<dyn std::error::Error>> {
         let field_ids_json = serde_json::to_string(&tag.field_ids).unwrap_or_else(|_| "[]".to_string());
-        let extends_json = serde_json::to_string(&tag.extends).unwrap_or_else(|_| "[]".to_string());
         let is_system_str = if tag.is_system { "1" } else { "0" };
-        Self::run_with_params(&self.db, "INSERT INTO Tag (id, title, field_ids, extends, created_at, updated_at, version, deleted_at, is_system) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?)", &[
-            &tag.id, &tag.title, &field_ids_json, &extends_json,
-            &tag.created_at.to_string(), &tag.updated_at.to_string(), &tag.version.to_string(), &is_system_str
+        // NULLIF(?, '')：TS 侧传空串即落 NULL，与原生适配器的 Option → NULL 落盘一致（ADR-0050 D10）。
+        let parent_id_str = tag.parent_id.clone().unwrap_or_default();
+        Self::run_with_params(&self.db, "INSERT INTO Tag (id, title, field_ids, created_at, updated_at, version, deleted_at, is_system, parent_id) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, NULLIF(?, ''))", &[
+            &tag.id, &tag.title, &field_ids_json,
+            &tag.created_at.to_string(), &tag.updated_at.to_string(), &tag.version.to_string(), &is_system_str, &parent_id_str
         ])?;
         Ok(tag.clone())
     }
 
     fn update(&mut self, tag: &Tag) -> Result<Tag, Box<dyn std::error::Error>> {
         let field_ids_json = serde_json::to_string(&tag.field_ids).unwrap_or_else(|_| "[]".to_string());
-        let extends_json = serde_json::to_string(&tag.extends).unwrap_or_else(|_| "[]".to_string());
-        Self::run_with_params(&self.db, "UPDATE Tag SET title = ?, field_ids = ?, extends = ?, updated_at = ?, version = version + 1 WHERE id = ?", &[
-            &tag.title, &field_ids_json, &extends_json, &tag.updated_at.to_string(), &tag.id
+        let parent_id_str = tag.parent_id.clone().unwrap_or_default();
+        Self::run_with_params(&self.db, "UPDATE Tag SET title = ?, field_ids = ?, parent_id = NULLIF(?, ''), updated_at = ?, version = version + 1 WHERE id = ?", &[
+            &tag.title, &field_ids_json, &parent_id_str, &tag.updated_at.to_string(), &tag.id
         ])?;
         Ok(tag.clone())
     }

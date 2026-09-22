@@ -360,7 +360,7 @@ fn test_tag_batch_crud_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
         &[json!({
             "entity": "tag",
             "action": "create",
-            "params": { "title": "MyTag", "field_ids": ["f1"], "extends": [] }
+            "params": { "title": "MyTag", "field_ids": ["f1"] }
         })],
     )?;
     let tag_id = created[0].value["id"].as_str().expect("tag id").to_string();
@@ -387,7 +387,7 @@ fn test_tag_batch_crud_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
         "create 的 tag 应出现在 get 列表里"
     );
 
-    // update 只给 title → field_ids/extends 缺省视为「不改动」
+    // update 只给 title → field_ids 缺省视为「不改动」
     let updated = apply_batch(
         &mut adapter,
         &[json!({
@@ -410,14 +410,14 @@ fn test_tag_batch_crud_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-fn test_tag_batch_create_materializes_extends() -> Result<(), Box<dyn std::error::Error>> {
+fn test_tag_batch_parent_tree_and_cycle_guard() -> Result<(), Box<dyn std::error::Error>> {
     let mut adapter = SQLiteAdapter::open_in_memory()?;
 
     let parent = apply_batch(
         &mut adapter,
         &[json!({
             "entity": "tag", "action": "create",
-            "params": { "title": "Parent", "field_ids": ["f1"], "extends": [] }
+            "params": { "title": "Parent", "field_ids": ["f1"] }
         })],
     )?;
     let parent_id = parent[0].value["id"].as_str().unwrap().to_string();
@@ -426,14 +426,58 @@ fn test_tag_batch_create_materializes_extends() -> Result<(), Box<dyn std::error
         &mut adapter,
         &[json!({
             "entity": "tag", "action": "create",
-            "params": { "title": "Child", "field_ids": [], "extends": [parent_id] }
+            "params": { "title": "Child", "field_ids": ["f2"], "parent_id": parent_id }
         })],
     )?;
+    let child_id = child[0].value["id"].as_str().unwrap().to_string();
     assert_eq!(
         child[0].value["field_ids"],
-        json!(["f1"]),
-        "extends 必须在 batch 路径上完成物化（D8）—— 直连 repo 会丢掉这一步"
+        json!(["f2"]),
+        "继承不物化：field_ids 只含自身字段（ADR-0050 D10）"
     );
+    assert_eq!(child[0].value["parent_id"], json!(parent_id));
+
+    // tree 读接口：解析单源在 Rust —— 有效字段（自身 > 直接父）+ 后代闭包
+    let tree = apply_batch(
+        &mut adapter,
+        &[json!({ "entity": "tag", "action": "tree", "params": {} })],
+    )?;
+    let entries = tree[0].value.as_array().unwrap();
+    let child_entry = entries
+        .iter()
+        .find(|e| e["id"] == json!(child_id))
+        .expect("child 必须在 tree 中");
+    assert_eq!(child_entry["effective_field_ids"], json!(["f2", "f1"]));
+    assert_eq!(child_entry["descendant_ids"], json!([]));
+
+    let parent_entry = entries
+        .iter()
+        .find(|e| e["id"] == json!(parent_id))
+        .expect("parent 必须在 tree 中");
+    assert_eq!(parent_entry["effective_field_ids"], json!(["f1"]));
+    assert_eq!(
+        parent_entry["descendant_ids"],
+        json!([child_id]),
+        "后代闭包不含自身、只含后代"
+    );
+
+    // 成环：把父挂到自己的后代下 → 整批拒绝（事务回滚）
+    let cycle = apply_batch(
+        &mut adapter,
+        &[json!({
+            "entity": "tag", "action": "set_parent",
+            "params": { "id": parent_id, "parent_id": child_id }
+        })],
+    );
+    assert!(cycle.is_err(), "环卫兵必须在 batch 路径上生效");
+
+    // 清空父（缺失 parent_id → 顶级）
+    let cleared = apply_batch(
+        &mut adapter,
+        &[json!({ "entity": "tag", "action": "set_parent", "params": { "id": child_id } })],
+    )?;
+    assert!(cleared[0].value["parent_id"].is_null());
+
     Ok(())
 }
 

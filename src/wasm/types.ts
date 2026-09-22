@@ -133,8 +133,11 @@ export interface BatchOperation {
     | 'tag' | 'field_definition' | 'field_value'
   // 'set' 仅用于 property（Rust execute_batch 的 ("property", "set") 分支）；
   // 'undelete' 仅用于 block（撤销恢复：精确复活软删块，见 useUndoRestore）；
-  // 'set_tags' 仅用于 block（grill 决策 #8：未来批量打标的写入口）
+  // 'set_tags' 仅用于 block（grill 决策 #8：未来批量打标的写入口）；
+  // 'tree' 仅用于 tag（标签树读接口：原始行 + 解析字段 + 后代闭包，ADR-0050 D10）；
+  // 'set_parent' 仅用于 tag（单父槽位，成环由 Rust 拒绝）
   action: 'create' | 'update' | 'delete' | 'get' | 'set' | 'sync_by_block' | 'undelete' | 'set_tags'
+    | 'tree' | 'set_parent'
   params: Record<string, unknown>
 }
 
