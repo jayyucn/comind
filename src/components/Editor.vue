@@ -4,6 +4,7 @@ import { useEditor, EditorContent } from '@tiptap/vue-3'
 import type { EditorView } from '@tiptap/pm/view'
 import StarterKit from '@tiptap/starter-kit'
 import { WikiLinkExtension } from '../extensions/WikiLinkExtension'
+import { InlineTagExtension } from '../extensions/InlineTagExtension'
 import { WikiLinkTriggerExtension, notifyWikiLinkMenuSelect, closeWikiLinkMenuByEditor, findWikiLinkAtCursor } from '../extensions/WikiLinkTriggerExtension'
 import { RelationshipTriggerExtension } from '../extensions/RelationshipTriggerExtension'
 import EnterAsBlockExtension from '../extensions/EnterAsBlockExtension'
@@ -89,6 +90,7 @@ const editor = shallowRef(useEditor({
     SlashCommandExtension,
     EnterAsBlockExtension,
     WikiLinkExtension,
+    InlineTagExtension,
     WikiLinkTriggerExtension,
     RelationshipTriggerExtension,
     BracketPairExtension,

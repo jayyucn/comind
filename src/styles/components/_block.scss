@@ -312,6 +312,33 @@
   background: var(--bg-base2);
 }
 
+// lucide `hash` 图标（24×24 描边），仅作 mask 源，颜色由 background-color 决定
+$icon-hash: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='4' y1='9' x2='20' y2='9'/%3E%3Cline x1='4' y1='15' x2='20' y2='15'/%3E%3Cline x1='10' y1='3' x2='8' y2='21'/%3E%3Cline x1='16' y1='3' x2='14' y2='21'/%3E%3C/svg%3E");
+
+// inline tag 的 `#` 号 → 图标。渲染态（useContentRenderer）与编辑态
+// （InlineTagExtension 的 Decoration）共用本类，样式只此一份。
+// `#` 字符仍留在 DOM 文本里（textContent 长度不变 → render-text 的 tag 段仍是
+// 明文单元，选区/光标偏移换算不受影响），只是字形被置透明。
+// 着色用 currentColor：渲染态自动取 .block-tag / .block-tag--system 的文本色，
+// 编辑态自动取正文色 —— 故不能用 `color: transparent` 隐字形（会把 currentColor
+// 一起变透明，background-color 随之失效），改用 -webkit-text-fill-color。
+.tag-hash {
+  display: inline-block;
+  width: 0.68em;
+  height: 0.72em;
+  vertical-align: middle;
+  background-color: currentColor;
+  -webkit-text-fill-color: transparent;
+  -webkit-mask-image: $icon-hash;
+  mask-image: $icon-hash;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
 // 关系类型标签：((type))[[X]] 中的 ((type)) 部分
 // 颜色由内联 style="--rel-color:..." 注入
 .rel-type-label {

@@ -27,10 +27,14 @@ describe('useContentRenderer — 回退路径（无 segments）', () => {
     expect(renderContentToHtml({ segments: [], content: '&' })).toBe('&amp;')
   })
 
-  it('#tag 渲染为 block-link block-tag span', () => {
+  it('#tag 渲染为 block-link block-tag span，`#` 号包成 tag-hash（图标位，字符仍在文本里）', () => {
     const html = renderContentToHtml({ segments: [], content: '这是 #标签' })
     expect(html).toContain('block-tag')
     expect(html).toContain('data-page="标签"')
+    // `#` 字形由 CSS 换成图标，但字符必须留在 DOM 文本里 ——
+    // services/render-text 的 tag 段靠它维持「可见长度 ≡ 存储长度」的明文对应
+    expect(html).toContain('<span class="tag-hash">#</span>')
+    expect(html.replace(/<[^>]*>/g, '')).toBe('这是 #标签')
   })
 
   it('#tag 中文标签', () => {
@@ -649,11 +653,49 @@ describe('segmentVisibleText 与渲染输出同源（#93）', () => {
         textSeg(28, 29),
       ],
     },
+    {
+      name: 'tag 显示存储原文（`#` 包成图标位后字符仍在文本里）',
+      content: '前置 #标签 后置',
+      segments: [
+        textSeg(0, 3),
+        { type: 'tag', start: 3, end: 6, title: '标签', tag_id: 't1', is_system: false },
+        textSeg(6, 9),
+      ],
+    },
   ]
 
   it.each(cases)('$name', ({ content, segments }) => {
     const html = renderContentToHtml({ content, segments, blockId: 'b1' })
     const visible = segments.map(seg => segmentVisibleText(content, seg)).join('')
     expect(htmlToText(html)).toBe(visible)
+  })
+})
+
+/**
+ * Rust 端 `render_segments` 给出的结构化 `tag` 段（ADR-0049）：
+ * 与 text 段兜底渲染一样把 `#` 包成 `.tag-hash`，另带 data-tag-id 与系统变体类。
+ */
+describe('结构化 tag 段（Rust render_segments 提供 segments 时）', () => {
+  it('用户 tag：`#` 包成 tag-hash，tag 名保留，去标签即原文', () => {
+    const content = '前置 #标签'
+    const segments: RenderSegment[] = [
+      { type: 'text', start: 0, end: 3 },
+      { type: 'tag', start: 3, end: 6, title: '标签', tag_id: 't1', is_system: false },
+    ]
+    const html = renderContentToHtml({ content, segments, blockId: 'b1' })
+    expect(html).toContain('data-tag-id="t1"')
+    expect(html).toContain('<span class="tag-hash">#</span>标签')
+    expect(html.replace(/<[^>]*>/g, '')).toBe(content)
+  })
+
+  it('系统 tag 带 block-tag--system 修饰类', () => {
+    const content = '#系统'
+    const segments: RenderSegment[] = [
+      { type: 'tag', start: 0, end: 3, title: '系统', tag_id: 't2', is_system: true },
+    ]
+    const html = renderContentToHtml({ content, segments, blockId: 'b1' })
+    expect(html).toContain('block-tag--system')
+    expect(html).toContain('<span class="tag-hash">#</span>系统')
+    expect(html.replace(/<[^>]*>/g, '')).toBe(content)
   })
 })

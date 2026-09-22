@@ -10,7 +10,18 @@ const CSS_CLASSES = {
 
 const TAG_PATTERN = '([\\p{L}_][\\p{L}\\p{N}_]*(?:\\/[\\p{L}_][\\p{L}\\p{N}_]*)*)'
 // 排除 `"`（data-page 属性值内）与 `[`（[[...]] 内），避免 #tag 与 wiki link 互相污染
-const TAG_TRIGGER_REGEX = new RegExp(`(?<![\\/|>|@"[])#${TAG_PATTERN}`, 'gu')
+// 导出 source 供编辑态（`InlineTagExtension`）复用，两边各持独立实例避免 lastIndex 互踩
+export const TAG_TRIGGER_SOURCE = `(?<![\\/|>|@"[])#${TAG_PATTERN}`
+const TAG_TRIGGER_REGEX = new RegExp(TAG_TRIGGER_SOURCE, 'gu')
+
+/**
+ * inline tag 的 `#` 号包装。渲染态（本模块）与编辑态（`InlineTagExtension` 的
+ * Decoration）共用同一个类名，图标样式只写一次（`_block.scss` 的 `.tag-hash`）。
+ *
+ * `#` 字符仍留在 DOM 文本里 —— `services/render-text` 的 tag 段据此继续走
+ * 「明文单元：可见长度 ≡ 存储长度，逐字对应」，故图标替换不影响选区/光标偏移换算。
+ */
+const TAG_HASH_HTML = '<span class="tag-hash">#</span>'
 
 function escapeHtmlEntities(text: string): string {
   return text
@@ -57,7 +68,7 @@ function renderTextSegmentWithTags(text: string): string {
     })
     .replace(TAG_TRIGGER_REGEX, (_, tag) => {
       if (tag.includes('.')) return `#${tag}`
-      return `<span class="${CSS_CLASSES.blockLink} ${CSS_CLASSES.blockTag}" data-page="${escapeHtmlEntities(tag)}">#${escapeHtmlEntities(tag)}</span>`
+      return `<span class="${CSS_CLASSES.blockLink} ${CSS_CLASSES.blockTag}" data-page="${escapeHtmlEntities(tag)}">${TAG_HASH_HTML}${escapeHtmlEntities(tag)}</span>`
     })
 }
 
@@ -132,12 +143,16 @@ function renderContentToHtml(input: RenderInput): string {
         // 不接入链接跳转）；is_system 加系统修饰类。text 段的 TAG_TRIGGER_REGEX 兜底
         // 不会重复命中 —— `#foo` 已被 Rust 划入本段，不再是 text。
         const title = escapeHtmlEntities(seg.title)
-        const raw = escapeHtmlEntities(content.slice(seg.start, seg.end))
+        // 段原文以 `#` 起头（`#foo`）；`#` 单独包成 tag-hash 供 CSS 换成图标，
+        // 字符本身留在文本里，偏移换算（render-text 的 tag 段）不受影响
+        const rawText = content.slice(seg.start, seg.end)
+        const raw = escapeHtmlEntities(rawText)
+        const body = rawText.startsWith('#') ? `${TAG_HASH_HTML}${escapeHtmlEntities(rawText.slice(1))}` : raw
         const systemCls = seg.is_system ? ' block-tag--system' : ''
         const tagId = seg.tag_id ? ` data-tag-id="${escapeHtmlEntities(seg.tag_id)}"` : ''
         parts.push(
           `<span class="${CSS_CLASSES.blockTag}${systemCls}"` +
-          `${tagId} data-tag-title="${title}">${raw}</span>`
+          `${tagId} data-tag-title="${title}">${body}</span>`
         )
         break
       }
