@@ -324,14 +324,20 @@ $icon-hash: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' vi
 // 一起变透明，background-color 随之失效），改用 -webkit-text-fill-color。
 .tag-hash {
   display: inline-block;
-  // 尺寸按「图标墨迹 = `#` 字形墨迹」反算：lucide 的 24 网格里墨迹占 20/24，
-  // 故框边长 = 目标墨迹 ÷ 0.833。浏览器实测（45px 定标，避开小字号 hinting 取整）
-  // `#` 的墨迹为 0.622em 宽 × 0.689em 高，而图标墨迹是正方形 —— 取 0.84em
-  // ⇒ 墨迹 0.70em 见方：高度与字形差 +1.6%，宽度放宽约 12% 用于补偿描边比字形线条细。
-  width: 0.84em;
-  height: 0.84em;
-  // 框中心对齐 `#` 墨迹中心（实测基线上方 0.345em）⇒ 框底下沉到基线下方 0.075em
-  vertical-align: -0.07em;
+  // 尺寸以「图标墨迹 ≈ `#` 字形墨迹」为基准：lucide 的 24 网格里墨迹占 20/24，
+  // 故框边长 = 目标墨迹 ÷ 0.833。真机 canvas 45px 定标（避开小字号 hinting 取整）
+  // 实测 `#` 墨迹高 0.733em（Noto Sans SC，desc≈0）。取 0.98em ⇒ 墨迹 0.817em，
+  // 比字形高 11.5% —— 略放大以补偿 mask 描边细于字形线条，使图标比原 `#` 稍醒目。
+  width: 0.98em;
+  height: 0.98em;
+  // 垂直对位用真机实测式，勿用「框中心 = height/2 + vertical-align」推算 —— inline-block
+  // 在 overflow 可见时对外呈现的基线是其内部行盒基线（不是框底），故框顶位置只由
+  // vertical-align 决定、height 变大只会让框向下延伸：
+  //     框中心(基线上方, em) = 1.1115 + vertical-align − height/2
+  // K=1.1115 为真机实测拟合值（Noto Sans SC；随字体栈与行高上下文变化）。
+  // 取 height 0.98em、vertical-align -0.25em ⇒ 中心 0.372em，对齐 `#` 墨迹中心 0.367em。
+  // 注意：改 height 必须联动改本值 —— Δ中心 = Δvertical-align − Δheight/2。
+  vertical-align: -0.25em;
   background-color: currentColor;
   -webkit-text-fill-color: transparent;
   -webkit-mask-image: $icon-hash;
