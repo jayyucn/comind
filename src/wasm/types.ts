@@ -230,6 +230,7 @@ export interface BlockCard {
   content_preview: string
   properties: Record<string, unknown>   // HashMap<String, Value> → Record
   date_refs: DateRefLite[]
+  tags?: string[]                        // content 派生 tag id 缓存（ADR-0049/0050，旧 payload 可能缺省）
   updated_at: number
   created_at: number
 }

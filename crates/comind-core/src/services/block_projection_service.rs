@@ -66,6 +66,7 @@ pub fn get_blocks_projection(
                 content_preview: preview,
                 properties: props,
                 date_refs: dates,
+                tags: b.tags,
                 updated_at: b.updated_at,
                 created_at: b.created_at,
             }
