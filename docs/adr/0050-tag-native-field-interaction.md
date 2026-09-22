@@ -1,6 +1,6 @@
 # ADR-0050: Tag 本位字段交互与 Tag 聚合页
 
-> **状态：已定稿（D1–D10，未实施）**。上游决议见 ADR-0049「方向决议：tag 本位，属性概念退役」段与 CONTEXT.md 词条 **Tag / Tag Field / Property (RETIRING)**。
+> **状态：D1–D10 已定稿；阶段 1（D1 / D5 / D7 / D10 + chip 点击导航）已实施（`b955b79`），阶段 2（D2 / D4）与阶段 3（D8）待实施**。上游决议见 ADR-0049「方向决议：tag 本位，属性概念退役」段与 CONTEXT.md 词条 **Tag / Tag Field / Property (RETIRING)**。
 
 ## Context
 
@@ -58,11 +58,13 @@ TaskHub `ensureTodo` 等程序化路径：先确保 `#task` 在 content，再写
 | 统计卡 成员(count) / 工时合计(sum) / 平均工时(avg) | **口径：自动出全**——成员数(count)恒显；数值字段自动出 sum+avg 卡（如工时），非数值字段（select/date）不出统计卡，零配置。对过滤后卡片客户端求值（单 tag 块数量级小）；数值字段 = TagFieldDefinition type == number |  |
 | 工具栏 筛选 / 分组 / 排序 / 显示字段 | QueryToolbar 既有 scope（「显示字段」= per-tab 列显示，TaskHub 字段管理同款） | ✅ 复用 |
 | 表格列：内容 | `content_preview` | ✅ |
-| 表格列：**来源页** | `BlockCard.page_id` 已有；页标题经 TS pages store 映射；点击跳源页面 | 缺标题映射（轻量） |
+| 表格列：**来源页** | `BlockCard.page_id` 已有；页标题经 TS pages store 映射；点击跳源页面 | ✅ 阶段 1 已补（唯一轻量数据缺口，只读列） |
 | 表格列：状态(chip) / 截止 / 工时 | `properties` / `date_refs` + 字段类型渲染 | ✅ TableView 已有 |
 | 数据过滤「tags 含此 tag」 | 投影需有 tags 数据源：`BlockCard.tags: Vec<String>` 已加（`280b2b8`，D4 TaskHub 过滤切换同样依赖，一处扩展两处受益） | ✅ |
 
 视图配置（筛选/分组/排序/显示字段）按 tag 维度持久化，沿用 TaskHub per-tab 配置先例。
+
+阶段 1 实施形态：字段注册表按该 tag 的**有效字段**（Rust 解析结果）动态构造且限定在聚合页内（不并入任务中心注册表）；视图配置命名空间取 `tag:<tagId>`，与任务列表互不争抢；列模板在有效字段就绪前不回落到持久化配置，避免把未解析完的列集写库。
 
 ### D8：数据层改名 —— Tag 前缀直改
 `FieldDefinition` → **`TagFieldDefinition`**，`FieldValue` → **`TagFieldValue`**——与现名一一对应加前缀，语义即「tag 模板里的字段 / 其值」，迁移机械可脚本化（Rust 类型 + 表名 + TS 类型 + serde rename 评估）。
@@ -81,7 +83,8 @@ TaskHub `ensureTodo` 等程序化路径：先确保 `#task` 在 content，再写
 4. **继承模板不写入成员**：继承只影响模板合成与查询可见性，不给任何块写任何东西。
 
 ### D9：三阶段实施
-- **阶段 1**：UI tag 驱动 + 继承全套——挂载即显示（D1，字段集合走 effective 解析）、chip 点击导航聚合页（D7）、标签管理页（D5，含新建/删除/字段模板编辑/继承区）、`parent_id` 迁移 + 环守卫 + `effective_field_ids` 解析器 + descendant 闭包（D10）。
+- **阶段 1（已实施，`b955b79`）**：UI tag 驱动 + 继承全套——挂载即显示（D1，字段集合走 effective 解析）、chip 点击导航聚合页（D7）、标签管理页（D5，含新建/删除/字段模板编辑/继承区）、`parent_id` 迁移 + 环守卫 + `effective_field_ids` 解析器 + descendant 闭包（D10）。
+  - 实施形态：`/tags`（管理页）与 `/tags/:tagId`（聚合页）两条独立路由，聚合页复用查询页外壳与既有三视图栈；解析与闭包经 `tag tree` 单次读接口暴露（`parent_id` + `effective_field_ids` + `descendant_ids`），前端只做缓存与投影。删除用户标签前告知影响（成员数 / 来源页数 / 子标签失去继承 + 值保留可复挂恢复）。
 - **阶段 2**：TaskHub 过滤源切 tags + descendant 闭包消费（D4）+ `ensureTodo` 原子化（D2）。
 - **阶段 3**：数据层改名（D8）+ PropertyService 适配层删除 + UI 命名迁移（Property* 组件退役）。
 每阶段可独立提交、独立验证（vue-tsc / lint / vitest 门禁）。
@@ -89,4 +92,3 @@ TaskHub `ensureTodo` 等程序化路径：先确保 `#task` 在 content，再写
 ## 开放问题
 
 - `TagFieldDefinition` / `TagFieldValue` 表名是否随 Rust 类型同步改（含 serde rename 对已同步设备 payload 的兼容评估）。
-- chip 点击导航的路由/页面注册形态（聚合页与 TaskHub/PagesLibrary 的页面体系归口）——实施期定。
