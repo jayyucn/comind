@@ -312,8 +312,11 @@
   background: var(--bg-base2);
 }
 
-// lucide `hash` 图标（24×24 描边），仅作 mask 源，颜色由 background-color 决定
-$icon-hash: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='4' y1='9' x2='20' y2='9'/%3E%3Cline x1='4' y1='15' x2='20' y2='15'/%3E%3Cline x1='10' y1='3' x2='8' y2='21'/%3E%3Cline x1='16' y1='3' x2='14' y2='21'/%3E%3C/svg%3E");
+// lucide `hash` 图标（24×24 描边），仅作 mask 源，颜色由 background-color 决定。
+// stroke-width 取 2.6（lucide 默认 2）：墨迹面积 ∝ size² × stroke，加粗是不占布局的
+// 提重手段（放大受行高约束，加粗不受），是「比字形醒目」的主要杠杆。
+// 上限约 2.8：再粗则相邻横线的净间隙 <2px，小字号会糊成一团。
+$icon-hash: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='4' y1='9' x2='20' y2='9'/%3E%3Cline x1='4' y1='15' x2='20' y2='15'/%3E%3Cline x1='10' y1='3' x2='8' y2='21'/%3E%3Cline x1='16' y1='3' x2='14' y2='21'/%3E%3C/svg%3E");
 
 // inline tag 的 `#` 号 → 图标。渲染态（useContentRenderer）与编辑态
 // （InlineTagExtension 的 Decoration）共用本类，样式只此一份。
@@ -324,20 +327,23 @@ $icon-hash: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' vi
 // 一起变透明，background-color 随之失效），改用 -webkit-text-fill-color。
 .tag-hash {
   display: inline-block;
-  // 尺寸以「图标墨迹 ≈ `#` 字形墨迹」为基准：lucide 的 24 网格里墨迹占 20/24，
-  // 故框边长 = 目标墨迹 ÷ 0.833。真机 canvas 45px 定标（避开小字号 hinting 取整）
-  // 实测 `#` 墨迹高 0.733em（Noto Sans SC，desc≈0）。取 0.98em ⇒ 墨迹 0.817em，
-  // 比字形高 11.5% —— 略放大以补偿 mask 描边细于字形线条，使图标比原 `#` 稍醒目。
-  width: 0.98em;
-  height: 0.98em;
+  // 尺寸定标以「图标外接高度 vs `#` 字形外接高度」为口径 —— 高度才是感知「大不大」的
+  // 主维度；墨迹面积会被描边粗细放大（sw2 等高时面积就已比字形大 27%），拿它说事会
+  // 高估观感差异（实测教训：面积 +60% 的档位用户仍反馈「跟字符差不多」）。
+  // 真机实测（Noto Sans SC，canvas 大字号定标）`#` 字形墨迹 0.73em 高 × 0.56em 宽。
+  // 取框 1.12em ⇒ 图标墨迹约 0.86em（含 round cap 外扩），比字形高约 30%。
+  // 阈值经验：+12% 量级在 14.4px 下不可感知，要到 +25~35% 才看得出。
+  width: 1.12em;
+  height: 1.12em;
   // 垂直对位用真机实测式，勿用「框中心 = height/2 + vertical-align」推算 —— inline-block
   // 在 overflow 可见时对外呈现的基线是其内部行盒基线（不是框底），故框顶位置只由
   // vertical-align 决定、height 变大只会让框向下延伸：
   //     框中心(基线上方, em) = 1.1115 + vertical-align − height/2
   // K=1.1115 为真机实测拟合值（Noto Sans SC；随字体栈与行高上下文变化）。
-  // 取 height 0.98em、vertical-align -0.25em ⇒ 中心 0.372em，对齐 `#` 墨迹中心 0.367em。
+  // 取 height 1.12em ⇒ vertical-align = 0.364 − 1.1115 + 0.56 = −0.1875em，中心 0.364em
+  // 对齐 `#` 墨迹中心。
   // 注意：改 height 必须联动改本值 —— Δ中心 = Δvertical-align − Δheight/2。
-  vertical-align: -0.25em;
+  vertical-align: -0.1875em;
   background-color: currentColor;
   -webkit-text-fill-color: transparent;
   -webkit-mask-image: $icon-hash;
