@@ -1,6 +1,6 @@
 ﻿# ADR-0049: Tag 统一字段模型——系统内置 Tag + FieldDefinition 改名 + FieldValue 值层
 
-- Status: proposed（草案，待 grilling 评审）
+- Status: accepted（已定稿并落地；实现进度见「落地补充」与 ADR-0050）
 - Date: 2026-09-21
 - Supersedes: 历史 `feat-supertag-131-132-135` 分支上的旧「超级标签分类层」方向（标签=page + Link relationshipType 扩展；对应旧 ADR-0049 已于 main 上删除）。**本 ADR 改为 Tag 一等实体 + 系统内置建模，不沿用旧「以现有原语扩展、不新建子系统」路线。**
 - Related: ADR-0008（字段引用值）、ADR-0023（查询页外壳 / 字段描述符协议）、ADR-0040（书笔记属性）、ADR-0048（batch 分派单源）
@@ -31,7 +31,7 @@ comind 的属性/字段系统分三层，目前靠硬编码与扁平数组粘合
 
 ## Decision
 
-| # | 决策点 | 裁定（草案） |
+| # | 决策点 | 裁定 |
 |---|---|---|
 | D1 | 统一类型 | 新增 `Tag`：`{ key, title, fields, isSystem?: boolean, extends?: string[] }`。TS 于 `src/types/tag.ts`，Rust 于 `crates/comind-core/src/types/tag.rs`（serde 序列化，`is_system` / `extends` snake_case）。系统 Tag 编译期内嵌 `fields: FieldDefinition[]`（完整定义），用户 Tag 落库后引用 `fieldIds: string[]`（字段独立成表，见 D6/D9） |
 | D2 | 改名 | `PropertyDefinition` → **`FieldDefinition`**（定义层 / 注册层 / 渲染层全量替换）；`property.ts` 保留一行 `export type PropertyDefinition = FieldDefinition` deprecated 别名过渡，避免存量调用点一次性爆炸；`getPropertyDefinition` / `getAllPropertyDefinitions` 函数名不变（返回 `FieldDefinition[]`） |
@@ -69,9 +69,9 @@ comind 的属性/字段系统分三层，目前靠硬编码与扁平数组粘合
 8. `crates/comind-core/src/storage/`：SQLite / SQL.js 双实现加 `tag` 表 + `FieldDefinition` 表 + `FieldValue` 表（Property 重构为 FieldValue），block 增加 `tags` 字段。
 9. `crates/comind-core/src/services/batch.rs`：新增 tag / field_definition / field_value 的 create / update / delete op（沿用 ADR-0048 单源分派）。
 
-## 落地补充：Property 表冻结与 sync 登记语义（2026-09-21 grill-up 锚定）
+## 落地补充：Property 表冻结与 sync 登记语义
 
-**本质需求（锚点）**：**FieldValue 是唯一事实源，任何代码路径不得再读写 Property 表**——不变量落在代码层（登记语义 / 收敛审查），Property 表本体的 DROP 是次要的，留待 `block_version`（唯一残留读写方，已裁定待删模块）删除后一并处理。
+**不变量**：**FieldValue 是唯一事实源，任何代码路径不得再读写 Property 表**——不变量落在代码层（登记语义 / 收敛审查），Property 表本体的 DROP 是次要的，留待 `block_version`（唯一残留读写方，待删除模块）删除后一并处理。
 
 **sync 登记语义**：凡登记派生属性行的 sync 变更，目标表一律为 `(SyncTable::FieldValue, id)`，其中 `id` 必须是 **FieldValue 行 id**（即 `PropertyService` 适配层返回的合成 id）；`(SyncTable::FieldDefinition, fd_id)` 仅在 FieldDefinition 实际发生写动的路径（property op 的 `save_shape` 返回）登记。冻结的 `SyncTable::Property` variant 本轮保留（已同步设备的存量 payload 兼容），但**不得再产生新登记**。
 
@@ -83,24 +83,24 @@ comind 的属性/字段系统分三层，目前靠硬编码与扁平数组粘合
 4. `block_write.rs` save-block-tree 派生收集 → `(FieldValue, id)`
 5. `block_write.rs` delete cascade 派生收集 → `(FieldValue, id)`
 
-**待办（勿直接实施，需先裁口径）**：`block_version` 模块删除后 → 删 `SyncTable::Property` variant（`all()` 同步移除）、删 `PropertyRepository` trait 及三适配器 impl、DROP `Property` 表（双端 DDL + 迁移）。
+**待办**：`block_version` 模块删除后 → 删 `SyncTable::Property` variant（`all()` 同步移除）、删 `PropertyRepository` trait 及三适配器 impl、DROP `Property` 表（双端 DDL + 迁移）。
 
 ## 非目标
 
 - 既有 `tag.rs` / `TagParse` / `tag_service.rs`（文本 `#tag` 解析）定位为 Tag 的**解析层**，本 ADR 不动它们（见 D7）；不实现自动化 / AI 绑定、打标 UI 交互、Page 级属性（另立 ADR）。
 - 不重设计 Registry / FieldDescriptor / ViewQuery 协议（ADR-0007 / 0023 语义不变）。
 
-## 后续方向锚定：tag 本位，属性概念退役（2026-09-21 初稿 → 2026-09-22 用户纠正后重写；正式方案另立 ADR）
+## 方向决议：tag 本位，属性概念退役（正式方案见 ADR-0050）
 
-> **⚠️ 撤回声明（2026-09-22）**：本段 2026-09-21 初版锚定的是「tag 挂载驱动字段 + 禁止裸属性 + **写值自动补 tag**」——其中「写值自动补 tag」是**属性本位思维的补丁**（把属性写入当主体、tag 当附属），与「Tag 跟属性是两个东西，属性是要移除的东西」的用户裁定相悖，三项表述全部作废。否决理由存档：任何「写属性时顺手补 tag」的设计都在延续属性概念的独立性，而非移除它；正确的主从关系是 tag 本位（tag 是唯一入口，字段值因 tag 挂载而存在）。下文为重写后的锚点。
+> **已否决提案存档**：本段曾一度提出「tag 挂载驱动字段 + 禁止裸属性 + **写值自动补 tag**」方向，后否决。否决理由：「写值自动补 tag」仍把属性写入当主体、tag 当附属，延续的是属性概念的独立性而非移除它；正确的主从关系是 tag 本位——tag 是唯一入口，字段值因 tag 挂载而存在。三项表述全部作废，以下方终态模型为准。
 
-**终态模型（锚点）**：**属性概念退役，tag 本位**——
+**终态模型**：**属性概念退役，tag 本位**——
 
 - 概念层：块上只有 **tag（分类）+ tag 携带的字段（值）**，不存在独立的「属性」入口。
 - 交互层：打 `#task` → 块上出现该 tag 的字段编辑区（**挂载即显示**，无值字段以空占位可填）→ 填值。值的写入天然发生在字段编辑器里；**没有「写值自动补 tag」的补丁逻辑**。
 - 程序化写值（TaskHub `ensureTodo` 等）：形态为「**确保 `#task` 在 content + 写字段值**」的原子操作——tag 本位的挂载前置，而非属性补丁；行为上与被否决的「自动补 tag」等效，语义归属不同（主体是挂载，不是写值）。
 - 数据层：`FieldValue` / `FieldDefinition` 保留为实现载体并**最终改名去属性化**（`TagFieldValue` / `TagFieldDefinition` 方向，具体名待定）；`PropertyService` 的 Property 形状适配层为过渡期兼容而存在，**最终删除**；`Property` 表已冻结，随 `block_version` 删除一并清理（见上方「落地补充」段）。
 
-**反证**：属性面板保留（属性概念未退役）、content inline 属性语法（Logseq 式，与 block 模型冲突）、隐式容器 tag（心智仍是两套）、写值自动补 tag（属性本位补丁，见撤回声明）均无法达成「属性概念彻底退役、tag 是唯一结构化数据入口」。
+**已否决替代方案**：属性面板保留（属性概念未退役）、content inline 属性语法（Logseq 式，与 block 模型冲突）、隐式容器 tag（心智仍是两套）、写值自动补 tag（属性本位补丁，见上方否决记录）——均无法达成「属性概念彻底退役、tag 是唯一结构化数据入口」。
 
-**待 grilling 的落地方案清单（勿直接实施，正式方案另立 ADR-0050）**：① 存量无 tag 属性值的迁移口径；② TaskHub 过滤源切换（`status` 值存在 → `tags` 含 `#task`）；③ tag chip 点击行为（是否翻转 D6 决策 #4「本轮无点击行为」→ 点击编辑该 tag 字段）；④ `ensureTodo` 原子操作的撤销栈边界（属性编辑现状不入 ADR-0046 撤销栈）；⑤ 数据层改名与适配层删除的分阶段路线。
+**落地方案**：①~⑤ 已全部在 ADR-0050 定稿——① 存量无 tag 属性值无需迁移（孤儿值保留、UI 不可见，手动打 tag 后恢复）；② TaskHub 过滤源切 `tags`；③ tag chip 点击 → 导航 tag 聚合页；④ 程序化写值不入撤销栈（维持 ADR-0046 边界）；⑤ 数据层改名 `TagFieldValue` / `TagFieldDefinition` + 适配层删除，三阶段实施。
