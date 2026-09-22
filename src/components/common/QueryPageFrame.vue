@@ -1,17 +1,17 @@
 <script setup lang="ts" generic="T">
 import { computed, ref } from 'vue'
 import type { CellRegistry } from '../../components/views/types'
-import type { FieldDescriptor, Group, ReferenceableRecord, Registry, SortRule, ViewQuery } from '../../core/query'
-import type { ViewTypeOption } from '../../core/view/management'
-import type { BoardConfig, CalendarConfig, GalleryConfig, QuadrantConfig, TableColumnConfig, TableConfig } from '../../core/view'
 import { useChipBarOrchestration } from '../../composables/useChipBarOrchestration'
+import type { FieldDescriptor, Group, ReferenceableRecord, Registry, SortRule, ViewQuery } from '../../core/query'
+import type { BoardConfig, CalendarConfig, GalleryConfig, QuadrantConfig, TableColumnConfig, TableConfig } from '../../core/view'
+import type { ViewTypeOption } from '../../core/view/management'
 import { useScreenViewStore } from '../../stores/screenView'
+import FieldManagerPanel from '../query/FieldManagerPanel.vue'
+import QueryChipBar from '../query/QueryChipBar.vue'
+import QueryToolbar from '../query/QueryToolbar.vue'
 import BasePopover from './BasePopover.vue'
 import NamedViewBar from './NamedViewBar.vue'
 import PageTitle from './PageTitle.vue'
-import QueryChipBar from '../query/QueryChipBar.vue'
-import FieldManagerPanel from '../query/FieldManagerPanel.vue'
-import QueryToolbar from '../query/QueryToolbar.vue'
 
 defineOptions({ name: 'QueryPageFrame' })
 
@@ -286,13 +286,15 @@ function onRemoveGlobal(key: string) {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  border-left: 1px solid var(--border);
-  border-right: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
+  border: 1px solid var(--border);
+  // border-left: 1px solid var(--border);
+  // border-right: 1px solid var(--border);
+  // border-bottom: 1px solid var(--border);
   padding: 12px 16px;
   margin-bottom: var(--space-4);
-  border-bottom-left-radius: var(--radius-md);
-  border-bottom-right-radius: var(--radius-md);
+  border-radius: var(--radius-md);
+  // border-bottom-left-radius: var(--radius-md);
+  // border-bottom-right-radius: var(--radius-md);
 }
 
 .view-empty {

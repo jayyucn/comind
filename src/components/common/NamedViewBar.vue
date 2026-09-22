@@ -585,9 +585,9 @@ onBeforeUnmount(() => {
   height: 42px;
   padding: 0 10px;
   margin-top: var(--space-4);
-  border: 1px solid var(--border);
-  border-top-left-radius: var(--radius-md);
-  border-top-right-radius: var(--radius-md);
+  // border: 1px solid var(--border);
+  // border-top-left-radius: var(--radius-md);
+  // border-top-right-radius: var(--radius-md);
   background: var(--bg-base2);
   flex-shrink: 0;
 }

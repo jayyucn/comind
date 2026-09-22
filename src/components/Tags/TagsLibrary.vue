@@ -15,15 +15,15 @@
  * - 字段定义是全局共享的，故只有**自身声明**的字段可在此编辑（继承方无权改他人定义）。
  * - 进聚合页的入口在本页右栏标题行（`/tags/:tagId`）。
  */
-import { computed, onMounted, ref } from 'vue'
 import { Plus, Search, X } from 'lucide-vue-next'
-import type { PersistedFieldDefinition, PersistedTag } from '../../types/tag-persisted'
+import { computed, onMounted, ref } from 'vue'
+import { useNavigateToTag } from '../../composables/useNavigateToTag'
 import { useBlockCardStore } from '../../stores/blockCard'
 import { useTagsStore } from '../../stores/tags'
-import { useNavigateToTag } from '../../composables/useNavigateToTag'
+import type { PersistedFieldDefinition, PersistedTag } from '../../types/tag-persisted'
 import BasePopover from '../common/BasePopover.vue'
-import ConfirmDialog from '../ConfirmDialog.vue'
 import PageTitle from '../common/PageTitle.vue'
+import ConfirmDialog from '../ConfirmDialog.vue'
 
 const tagsStore = useTagsStore()
 const blockCardStore = useBlockCardStore()
@@ -346,49 +346,52 @@ async function submitAddField() {
     <PageTitle
       title="标签"
       :subtitle="statsSubtitle"
-    >
-      <template #actions>
-        <label class="tag-search">
-          <Search
-            class="tag-search-icon"
-            :size="14"
-          />
-          <input
-            v-model="searchQuery"
-            class="tag-search-input"
-            type="text"
-            placeholder="搜索标签"
-          >
-        </label>
-        <button
-          class="tag-create-btn"
-          type="button"
-          @click="openCreatePopover"
-        >
-          <Plus :size="14" />
-          新建标签
-        </button>
-      </template>
-    </PageTitle>
+    />
 
     <div class="tags-body">
       <!-- 左栏：筛选胶囊 + 行列表 -->
       <aside class="tag-list">
-        <div class="tag-filter-chips">
-          <button
-            v-for="chip in filterChips"
-            :key="chip.key"
-            type="button"
-            class="tag-filter-chip"
-            :class="{ 'tag-filter-chip--active': filterMode === chip.key }"
-            @click="filterMode = chip.key"
-          >
-            {{ chip.label }}
-            <span
-              v-if="chip.count !== null"
-              class="tag-filter-count"
-            >{{ chip.count }}</span>
-          </button>
+        <!-- 筛选胶囊靠左，搜索 / 新建靠右同一行 -->
+        <div class="tag-filter-bar">
+          <div class="tag-filter-chips">
+            <button
+              v-for="chip in filterChips"
+              :key="chip.key"
+              type="button"
+              class="tag-filter-chip"
+              :class="{ 'tag-filter-chip--active': filterMode === chip.key }"
+              @click="filterMode = chip.key"
+            >
+              {{ chip.label }}
+              <span
+                v-if="chip.count !== null"
+                class="tag-filter-count"
+              >{{ chip.count }}</span>
+            </button>
+          </div>
+
+          <div class="tag-list-actions">
+            <label class="tag-search">
+              <Search
+                class="tag-search-icon"
+                :size="14"
+              />
+              <input
+                v-model="searchQuery"
+                class="tag-search-input"
+                type="text"
+                placeholder="搜索标签"
+              >
+            </label>
+            <button
+              class="tag-create-btn"
+              type="button"
+              @click="openCreatePopover"
+            >
+              <Plus :size="14" />
+              新建标签
+            </button>
+          </div>
         </div>
 
         <div class="tag-rows">
@@ -735,7 +738,7 @@ async function submitAddField() {
   margin-top: var(--space-5);
 }
 
-/* ── 顶栏：搜索 / 新建 ── */
+/* ── 顶栏：搜索 / 新建（与筛选胶囊同行，靠右） ── */
 .tag-search {
   display: inline-flex;
   align-items: center;
@@ -795,9 +798,26 @@ async function submitAddField() {
   gap: var(--space-4);
 }
 
+/* 筛选行：胶囊群靠左（可换行收缩），搜索 / 新建由 margin-left 推到最右 */
+.tag-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
 .tag-filter-chips {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
+}
+
+/* margin-left: auto 把搜索 / 新建推到筛选行的最右 */
+.tag-list-actions {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
 }
 
 .tag-filter-chip {
@@ -923,6 +943,7 @@ async function submitAddField() {
   padding: var(--space-5);
   background: var(--surface-muted);
   border: 1px solid var(--border);
+  border-radius: var(--radius-md);
 }
 
 .tag-detail-head {
