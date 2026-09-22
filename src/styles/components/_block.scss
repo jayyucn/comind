@@ -324,9 +324,14 @@ $icon-hash: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' vi
 // 一起变透明，background-color 随之失效），改用 -webkit-text-fill-color。
 .tag-hash {
   display: inline-block;
-  width: 0.68em;
-  height: 0.72em;
-  vertical-align: middle;
+  // 尺寸按「图标墨迹 = `#` 字形墨迹」反算：lucide 的 24 网格里墨迹占 20/24，
+  // 故框边长 = 目标墨迹 ÷ 0.833。浏览器实测（45px 定标，避开小字号 hinting 取整）
+  // `#` 的墨迹为 0.622em 宽 × 0.689em 高，而图标墨迹是正方形 —— 取 0.84em
+  // ⇒ 墨迹 0.70em 见方：高度与字形差 +1.6%，宽度放宽约 12% 用于补偿描边比字形线条细。
+  width: 0.84em;
+  height: 0.84em;
+  // 框中心对齐 `#` 墨迹中心（实测基线上方 0.345em）⇒ 框底下沉到基线下方 0.075em
+  vertical-align: -0.07em;
   background-color: currentColor;
   -webkit-text-fill-color: transparent;
   -webkit-mask-image: $icon-hash;
