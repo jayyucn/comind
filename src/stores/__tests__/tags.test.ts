@@ -19,6 +19,7 @@ const { mockInitCoreClient, mockClient } = vi.hoisted(() => {
     deleteTag: vi.fn(),
     setTagParent: vi.fn(),
     createFieldDefinition: vi.fn(),
+    updateFieldDefinition: vi.fn(),
     deleteFieldDefinition: vi.fn(),
     getBlockCards: vi.fn(),
   }
@@ -329,5 +330,22 @@ describe('tags store', () => {
 
     expect(mockClient.updateTag).toHaveBeenCalledWith({ id: 't1', field_ids: ['f9'] })
     expect(mockClient.deleteFieldDefinition).not.toHaveBeenCalled()
+  })
+
+  it('updateFieldDefinition 改定义本身（标题/类型/候选值）并重读', async () => {
+    mockClient.getTagTree.mockResolvedValue([treeEntry({ id: 't1', title: '项目' })])
+    mockClient.updateFieldDefinition.mockResolvedValue(fieldDef({ id: 'def-1', title: '预计工时' }))
+
+    const store = useTagsStore()
+    await store.ensureLoaded()
+    await store.updateFieldDefinition({ id: 'def-1', title: '预计工时', type: 'number' })
+
+    expect(mockClient.updateFieldDefinition).toHaveBeenCalledWith({
+      id: 'def-1',
+      title: '预计工时',
+      type: 'number',
+    })
+    // 写后重读（force），避免本地合并漂移
+    expect(mockClient.getTagTree).toHaveBeenCalledTimes(2)
   })
 })

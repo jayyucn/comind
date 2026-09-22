@@ -8,6 +8,7 @@ import type {
   PersistedFieldDefinition,
   CreateTagParams,
   UpdateTagParams,
+  UpdateFieldDefinitionParams,
 } from '../types/tag-persisted'
 import type { BlockCard } from '../wasm/types'
 import { useBlockStore } from './blocks'
@@ -70,7 +71,7 @@ export const useTagsStore = defineStore('tags', () => {
   )
 
   /** 全部存活 tag（含系统 tag 行，用 is_system 区分）。 */
-  const userTags = computed(() => tags.value.filter((t) => !t.deleted_at))
+  const allTags = computed(() => tags.value.filter((t) => !t.deleted_at))
 
   // Actions
 
@@ -157,7 +158,7 @@ export const useTagsStore = defineStore('tags', () => {
   }
 
   function childTags(tagId: string): PersistedTag[] {
-    return userTags.value.filter((t) => t.parent_id === tagId)
+    return allTags.value.filter((t) => t.parent_id === tagId)
   }
 
   /**
@@ -166,7 +167,7 @@ export const useTagsStore = defineStore('tags', () => {
    */
   function parentCandidates(tagId: string): PersistedTag[] {
     const blocked = new Set(memberTagIds(tagId))
-    return userTags.value.filter((t) => !blocked.has(t.id))
+    return allTags.value.filter((t) => !blocked.has(t.id))
   }
 
   /** 成员块投影（direct = 直系；aggregate = 自身 + 后代闭包）。 */
@@ -196,12 +197,12 @@ export const useTagsStore = defineStore('tags', () => {
 
   /** 「最近使用」筛选用：按 lastUsedAt 降序（无成员的排最后）。 */
   function recentTags(): PersistedTag[] {
-    return [...userTags.value].sort((a, b) => lastUsedAt(b.id) - lastUsedAt(a.id))
+    return [...allTags.value].sort((a, b) => lastUsedAt(b.id) - lastUsedAt(a.id))
   }
 
   /** 「未使用」筛选用：直系成员数为 0。 */
   function unusedTags(): PersistedTag[] {
-    return userTags.value.filter((t) => memberCards(t.id).length === 0)
+    return allTags.value.filter((t) => memberCards(t.id).length === 0)
   }
 
   /** 解析 block 已打的 tag（软删/不存在的 id 静默过滤 —— 悬空引用保留在 block.tags 上）。 */
@@ -272,6 +273,19 @@ export const useTagsStore = defineStore('tags', () => {
   }
 
   /**
+   * 改写字段定义（标题 / 类型 / 候选值）。**只传要改的字段**；`closed_values` 显式传 null
+   * 表示清空候选值（降为非选项型，用于「下拉选择 → 文本/数值」的降级）。
+   *
+   * 注意：定义是**全局共享**的（可被多个标签引用），改一处所有引用方同步生效 ——
+   * 故 UI 只允许从「声明它的那个标签」发起编辑（继承方无权改了他人的定义）。
+   */
+  async function updateFieldDefinition(params: UpdateFieldDefinitionParams): Promise<void> {
+    const client = await getClient()
+    await client.updateFieldDefinition(params)
+    await ensureLoaded(true)
+  }
+
+  /**
    * 从标签移除字段：**只解除引用，不删 FieldDefinition**（定义可能被其他标签复用；
    * 删定义会级联清值，那是另一条路径，不在本操作语义内）。
    */
@@ -287,7 +301,7 @@ export const useTagsStore = defineStore('tags', () => {
     tags,
     loaded,
     loading,
-    userTags,
+    allTags,
     ensureLoaded,
     getTagById,
     getFieldDefinition,
@@ -312,5 +326,6 @@ export const useTagsStore = defineStore('tags', () => {
     setOwnFields,
     addFieldToTag,
     removeFieldFromTag,
+    updateFieldDefinition,
   }
 })

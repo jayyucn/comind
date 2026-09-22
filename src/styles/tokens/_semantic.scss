@@ -12,6 +12,11 @@
   --bg-active: #{$color-stone-300};
   --surface-faint: rgba(0, 0, 0, 0.04);
 
+  // 弱底面板：比 --bg-base 沉一档、比 --bg-hover 浅一档的两级灰面
+  // （列表行 / 详情面板用 muted；胶囊这类需要更明显填充的控件用 subtle）
+  --surface-muted: #{$color-stone-50};
+  --surface-subtle: #{$color-stone-100};
+
   // 文字层级（适用于浅色背景）
   --text-primary: #{$color-stone-900};
   --text-secondary: #{$color-stone-600};
@@ -180,6 +185,10 @@
   --bg-sidebar: #222225;
   --bg-hover: #2E2E32;
   --bg-active: #3A3A3F;
+
+  // 暗色两级弱底：muted 自 --bg-base 上浮一档，subtle 接近 --bg-hover
+  --surface-muted: #1F1F22;
+  --surface-subtle: #2A2A2E;
 
   --text-primary: #E4E4E7;
   --text-secondary: #A1A1AA;
