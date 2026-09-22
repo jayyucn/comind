@@ -26,8 +26,23 @@ TaskHub `ensureTodo` 等程序化路径：先确保 `#task` 在 content，再写
 ### D6（已定）：撤销栈维持 ADR-0046 边界
 程序化写值（含确保挂载的 content 变更）不入撤销栈——用户直觉：任务操作不是打字；手动 content 编辑（含删 `#task` 字样）照常可撤销。
 
-### D7（已定，细节待设计稿）：tag 聚合页 = 独立新页面，形态对齐 Query Page
-点击 chip → 导航到该 tag 的聚合页面。页面**新建**，整体形态与 Query Page 类似（标题 / 工具栏 / 视图区结构），但为 tag 场景专用（展示该 tag 下全部块及其字段值）。用户已提供设计稿（Ardot canvas 727231245599964，待读取后细化）；具体是否复用 Query Page Frame 内核 + 定制壳，依设计稿定。
+### D7（设计稿已收，结构定稿）：tag 聚合页 = 独立新页面，形态对齐 Query Page
+
+点击 chip → 导航到该 tag 的聚合页面，独立新页面。设计稿（`#项目` 示例）自上而下五段，逐段映射实现载体：
+
+| 设计稿元素 | 实现映射 | 现状 |
+|---|---|---|
+| 面包屑「标签 / #项目」 | 返回标签管理（D5）的导航 | 新 UI |
+| 大标题 `#项目` + 副标题「24 个成员 · 来自 9 个页面」 | 成员数 = 挂该 tag 的块数；来源页数 = 成员块去重 page_id 计数 | 由投影派生 |
+| 视图切换 表格 / 看板 / 日历 | `viewKind` 三枚举已有 | ✅ 直接复用 |
+| 统计卡 成员(count) / 工时合计(sum) / 平均工时(avg) | **口径已定：自动出全**——成员数(count)恒显；数值字段自动出 sum+avg 卡（如工时），非数值字段（select/date）不出统计卡，零配置。对过滤后卡片客户端求值（单 tag 块数量级小） | **缺口②：数值字段识别（FieldDefinition type == number）** |
+| 工具栏 筛选 / 分组 / 排序 / 显示字段 | QueryToolbar 既有 scope（「显示字段」= per-tab 列显示，TaskHub 字段管理同款） | ✅ 复用 |
+| 表格列：内容 | `content_preview` | ✅ |
+| 表格列：**来源页** | `BlockCard.page_id` 已有；页标题经 TS pages store 映射；点击跳源页面 | 缺标题映射（轻量） |
+| 表格列：状态(chip) / 截止 / 工时 | `properties` / `date_refs` + 字段类型渲染 | ✅ TableView 已有 |
+| 数据过滤「tags 含此 tag」 | **`BlockCard` 无 tags 字段——缺口①**：投影需加 `tags: Vec<String>`（D4 TaskHub 过滤切换同样依赖，一处扩展两处受益） | 需 Rust 投影扩展 |
+
+视图配置（筛选/分组/排序/显示字段）按 tag 维度持久化，沿用 TaskHub per-tab 配置先例。
 
 ### D8（已定）：数据层改名 —— Tag 前缀直改
 `FieldDefinition` → **`TagFieldDefinition`**，`FieldValue` → **`TagFieldValue`**——与现名一一对应加前缀，语义即「tag 模板里的字段 / 其值」，迁移机械可脚本化（Rust 类型 + 表名 + TS 类型 + serde rename 评估）。
@@ -40,6 +55,5 @@ TaskHub `ensureTodo` 等程序化路径：先确保 `#task` 在 content，再写
 
 ## 开放问题
 
-- 聚合页设计稿细节（待用户提供截图后细化 D7）。
-- 聚合页数据源：复用 blockCard 投影 + tags 过滤，还是新投影。
+- D5 标签管理页设计稿（截图待用户重发，收到后细化）。
 - `TagFieldDefinition` / `TagFieldValue` 表名是否随 Rust 类型同步改（含 serde rename 对已同步设备 payload 的兼容评估）。
