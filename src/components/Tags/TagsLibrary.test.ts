@@ -479,6 +479,40 @@ describe('TagsLibrary（标签管理页）', () => {
     })
   })
 
+  it('挑父标签候选行带色点（有色实心 / 无色空心，与左栏行同一形态）', async () => {
+    // 本例局部给 IDEA 上色：候选两态各占其一
+    mockClient.getTagTree.mockResolvedValue([
+      SYSTEM_TASK,
+      { ...PROJECT, color: '--tag-color-3' },
+      DEV_TASK,
+      { ...IDEA, color: '--tag-color-5' },
+    ])
+    mockClient.setTagParent.mockResolvedValue(SYSTEM_TASK)
+    const wrapper = await mountPage()
+    await wrapper.find('.tag-row--t-project').trigger('click')
+    await flushPromises()
+
+    await wrapper.find('.tag-parent-add').trigger('click')
+    await flushPromises()
+
+    const panel = document.body.querySelector('.tag-parent-panel') as HTMLElement
+    const options = Array.from(panel.querySelectorAll('.tag-parent-option'))
+    const sysDot = options
+      .find((o) => o.textContent?.includes('系统任务'))!
+      .querySelector('.tag-color-dot') as HTMLElement
+    expect(sysDot.className).toContain('tag-color-dot--empty')
+    expect(sysDot.getAttribute('style')).toBeNull()
+    const ideaDot = options
+      .find((o) => o.textContent?.includes('灵感碎片'))!
+      .querySelector('.tag-color-dot') as HTMLElement
+    expect(ideaDot.className).not.toContain('tag-color-dot--empty')
+    expect(ideaDot.getAttribute('style')).toContain('var(--tag-color-5)')
+
+    // 面板处于打开态：必须随卸载移除，否则遗留的 Teleport 节点会被
+    // 后续测试的 document.body.querySelector 先抓到（本文件无全局清理）。
+    wrapper.unmount()
+  })
+
   it('已有父时也可更换父标签（候选排除自身与后代）；按钮措辞随之改为「更换」', async () => {
     mockClient.setTagParent.mockResolvedValue(SYSTEM_TASK)
     const wrapper = await mountPage()

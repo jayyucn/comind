@@ -708,6 +708,11 @@ async function submitAddField() {
           class="tag-parent-option"
           @click="onPickParent(candidate.id)"
         >
+          <span
+            class="tag-color-dot"
+            :class="{ 'tag-color-dot--empty': isColorless(candidate.color) }"
+            :style="tagDotStyle(candidate.color)"
+          />
           {{ candidate.title }}
         </button>
       </div>
@@ -1288,6 +1293,9 @@ async function submitAddField() {
 }
 
 .tag-parent-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   padding: var(--space-1) var(--space-2);
   font-size: var(--text-sm);
   text-align: left;
