@@ -108,14 +108,18 @@ const cellRegistry: CellRegistry = {
 }
 
 // ── 布局配置（持久化优先，回退本页默认）──
-/** 表格默认列：内容 + 来源页 + 该 tag 的全部有效字段（ADR-0050 D7）。 */
+/**
+ * 表格默认列：内容 + 来源页 + 该 tag 的全部有效字段（ADR-0050 D7）。
+ * 列宽是比例模式（ADR-0013）的权重基准：内容列 720 吸收剩余空间、来源页 140、字段列 110 紧凑 ——
+ * 对齐设计稿「内容占大半、元数据列贴右」的比例。只对未持久化 config 的视图生效，已存视图仍按自身 config。
+ */
 const tagTableDefault = computed<TableConfig>(() => ({
   viewKind: 'table',
   version: 1,
   columns: [
-    { key: 'content', role: 'primary', cell: 'block-content' },
-    { key: 'page', cell: 'source-page' },
-    ...tagFieldDefs.value.map((d) => ({ key: d.key })),
+    { key: 'content', role: 'primary', cell: 'block-content', width: 720 },
+    { key: 'page', cell: 'source-page', width: 140 },
+    ...tagFieldDefs.value.map((d) => ({ key: d.key, width: 110 })),
   ],
 }))
 

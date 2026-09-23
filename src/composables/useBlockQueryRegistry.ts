@@ -95,6 +95,15 @@ const PRIORITY_COLORS: Record<string, string> = {
   Urgent: '#DC2626',
 }
 
+/**
+ * 状态选项配色（与 PRIORITY_COLORS 同款：配色上提为字段元数据，通用表格零业务代码）。
+ * 只给「进行中」一个主题强调色——它是唯一的活动态；待办/已完成/已取消留空，
+ * 由渲染侧回落为中性值胶囊（--surface-subtle 底 + tertiary 字）。
+ */
+const STATUS_COLORS: Record<string, string> = {
+  Doing: 'var(--accent)',
+}
+
 function asCard(item: unknown): BlockCard {
   return item as BlockCard
 }
@@ -116,7 +125,11 @@ export function registerBlockBuiltinFields(registry: Registry): void {
     key: 'status',
     label: '状态',
     type: 'select',
-    options: (statusDef?.closedValues ?? []).map((c) => ({ id: String(c.value), label: c.label })),
+    options: (statusDef?.closedValues ?? []).map((c) => ({
+      id: String(c.value),
+      label: c.label,
+      color: STATUS_COLORS[String(c.value)],
+    })),
     // 显式排序顺序：Doing 优先（进行中的任务最相关），终止态（Done/Canceled）沉底
     sortOrder: ['Doing', 'Todo', 'Done', 'Canceled'],
     get: (item) => asCard(item).properties?.['status'],

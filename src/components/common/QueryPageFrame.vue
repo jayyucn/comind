@@ -282,19 +282,15 @@ function onRemoveGlobal(key: string) {
   padding: 0 var(--space-8);
 }
 
+/* 主内容区不自带边框：视图自身即卡片（表格描边圆角、看板列、日历格），
+   外壳再框一层会让卡片落进框里形成「框里套卡」。卡片外的内边距间隙透出 --color-paper 页面底，
+   卡片即浮于页面之上（对齐聚合页设计稿）。 */
 .lib-body {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  border: 1px solid var(--border);
-  // border-left: 1px solid var(--border);
-  // border-right: 1px solid var(--border);
-  // border-bottom: 1px solid var(--border);
   padding: 12px 16px;
   margin-bottom: var(--space-4);
-  border-radius: var(--radius-md);
-  // border-bottom-left-radius: var(--radius-md);
-  // border-bottom-right-radius: var(--radius-md);
 }
 
 .view-empty {

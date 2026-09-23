@@ -107,15 +107,13 @@ describe('TableView (generic, field-driven)', () => {
     expect(headers.some((h) => h.includes('页面'))).toBe(true)
   })
 
-  // ── Header icons (lucide type icons) ──
-  it('renders a type icon in each column header (Link2 for link role)', () => {
+  // ── 表头只有字段名（无类型图标）：对齐聚合页设计稿，2026-09-23 ──
+  it('renders header labels without type icons', () => {
     const wrapper = mountTable({ items: [makeCard({ block_id: 'b1' })] })
-    // 数据列（boolean/text/select/date）表头都有 svg 图标
-    for (const key of ['status', 'content', 'priority', 'deadline']) {
-      expect(wrapper.find(`thead .col-${key} svg`).exists()).toBe(true)
+    for (const key of ['status', 'content', 'priority', 'deadline', 'page']) {
+      expect(wrapper.find(`thead .col-${key} svg`).exists()).toBe(false)
     }
-    // link 角色列（page）也有图标
-    expect(wrapper.find('thead .col-page svg').exists()).toBe(true)
+    expect(wrapper.find('thead .col-content .th-label').text()).toContain('内容')
   })
 
   // ── Sort icon ──
@@ -154,10 +152,30 @@ describe('TableView (generic, field-driven)', () => {
     expect(labels).toContain('急')
   })
 
-  // ── Priority colored dot (Option.color lifted to metadata) ──
-  it('renders color dot for prioritized item', () => {
+  // ── select 有值态：值胶囊（配色由 Option.color 元数据给出） ──
+  it('renders a tinted value chip for a colored select option', () => {
     const wrapper = mountTable({ items: [makeCard({ properties: { priority: 'High' } })] })
-    expect(wrapper.find('.color-dot').exists()).toBe(true)
+    const chip = wrapper.find('tbody .col-priority .cell-chip')
+    expect(chip.exists()).toBe(true)
+    expect(chip.text()).toBe('高')
+    // 配色（字段元数据）内联到胶囊：文字取该色、底色为该色 10% 淡染（jsdom 会把 hex 规范化成 rgb()）
+    expect(chip.attributes('style')).toContain('rgb(245, 158, 11)')
+    expect(chip.attributes('style')).toContain('color-mix')
+    // 胶囊底已承担配色，单元格内不再叠加色点（色点仅保留在选项菜单里）
+    expect(wrapper.find('tbody .col-priority .color-dot').exists()).toBe(false)
+  })
+
+  // 无配色的选项 → 中性胶囊（走 .cell-chip 的 token 默认，不内联任何样式）
+  it('renders a neutral value chip when the option has no color', () => {
+    const cfg: TableConfig = { viewKind: 'table', version: 1, columns: [{ key: 'status' }] }
+    const wrapper = mountTable({
+      items: [makeCard({ properties: { status: 'Doing' } })],
+      config: cfg,
+    })
+    const chip = wrapper.find('tbody .col-status .cell-chip')
+    expect(chip.exists()).toBe(true)
+    expect(chip.text()).toBe('进行中')
+    expect(chip.attributes('style')).toBeUndefined()
   })
 
   // ── Project ──

@@ -1,15 +1,5 @@
 <script setup lang="ts" generic="T">
-import {
-  Calendar,
-  CheckSquare,
-  ChevronDown,
-  Hash,
-  Link2,
-  ListChecks,
-  ListFilter,
-  MapPin,
-  Type,
-} from 'lucide-vue-next';
+import { ChevronDown, MapPin } from 'lucide-vue-next';
 import type { Component } from 'vue';
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import type { FieldDescriptor, Group, Option, SortRule } from '../../core/query';
@@ -154,19 +144,6 @@ function idOf(item: T): string {
 
 function fieldOf(key: string): FieldDescriptor | undefined {
   return props.fields.find((f) => f.key === key)
-}
-
-/** 表头类型图标（lucide）：link 角色列 → Link2；其余按字段类型映射；未知类型不渲染。 */
-function headerIconOf(col: TableColumnConfig) {
-  if (col.role === 'link') return Link2
-  const type = fieldOf(col.key)?.type
-  if (type === 'text') return Type
-  if (type === 'number') return Hash
-  if (type === 'date' || type === 'datetime') return Calendar
-  if (type === 'select') return ListFilter
-  if (type === 'multiSelect') return ListChecks
-  if (type === 'boolean') return CheckSquare
-  return undefined
 }
 
 /** 自定义单元格：列配置含 cell 且注册表命中 → 接管整格渲染（opt-in，ADR-0010）。否则回退内置 type/role 链。 */
@@ -524,6 +501,22 @@ function selectedColor(options: Option[], value: unknown): string | undefined {
   return options.find((o) => o.id === value)?.color
 }
 
+/** select 单元格当前值的选项配色（无配色 → undefined，渲染为中性胶囊）。 */
+function selectedOptionColor(item: T, col: TableColumnConfig): string | undefined {
+  return selectedColor(resolveOptions(fieldOf(col.key)), valueOf(item, col))
+}
+
+/**
+ * 值胶囊内联样式：有选项配色时底色取该色 10% 淡染、文字取该色；无配色返回 undefined，
+ * 走 .cell-chip 的 token 默认（中性底 + tertiary 字）。
+ * 配色可能形如 `var(--accent)`（字段元数据给出的是 token 而非字面色值），故底色用 color-mix 现算。
+ */
+function chipStyle(item: T, col: TableColumnConfig): Record<string, string> | undefined {
+  const color = selectedOptionColor(item, col)
+  if (!color) return undefined
+  return { color, background: `color-mix(in srgb, ${color} 10%, transparent)` }
+}
+
 /** 分组计数显示全量组内条数（ADR-0024：计数反映查询结果而非当前页切片）。 */
 function groupTotal(key: string): number {
   return sections.value.find((s) => s.key === key)?.items.length ?? 0
@@ -570,12 +563,6 @@ function groupTotal(key: string): number {
                   :style="{ width: columnWidth(col), textAlign: col.align }"
                 >
                   <div class="th-inner">
-                    <component
-                      :is="headerIconOf(col)"
-                      v-if="headerIconOf(col)"
-                      class="col-header-icon"
-                      :size="12"
-                    />
                     <button
                       type="button"
                       class="th-label"
@@ -655,7 +642,8 @@ function groupTotal(key: string): number {
                     >{{ Boolean(valueOf(item, col)) ? '✓' : '' }}</span>
                   </template>
 
-                  <!-- select：整个 cell 为点击区域（去边框、无 padding）；ChevronDown 常驻渲染，
+                  <!-- select：整个 cell 为点击区域（去边框、无 padding）；有值时渲染为值胶囊
+                  （无配色 → 中性底，有配色 → 该色淡染），ChevronDown 常驻渲染，
                   仅 hover / 菜单打开（.open）时显示（CSS 控制），靠右对齐；.empty 仅作空态标记 -->
                   <template v-else-if="fieldOf(col.key)?.type === 'select'">
                     <span
@@ -668,14 +656,12 @@ function groupTotal(key: string): number {
                       :title="optionLabel(resolveOptions(fieldOf(col.key)), valueOf(item, col))"
                     >
                       <span
-                        v-if="selectedColor(resolveOptions(fieldOf(col.key)), valueOf(item, col))"
-                        class="color-dot"
-                        :style="{ background: selectedColor(resolveOptions(fieldOf(col.key)), valueOf(item, col)) }"
-                      />
-                      <span
                         v-if="!isSelectEmpty(item, col)"
-                        class="cell-select-label"
-                      >{{ optionLabel(resolveOptions(fieldOf(col.key)), valueOf(item, col)) }}</span>
+                        class="cell-chip"
+                        :style="chipStyle(item, col)"
+                      >
+                        <span class="cell-select-label">{{ optionLabel(resolveOptions(fieldOf(col.key)), valueOf(item, col)) }}</span>
+                      </span>
                       <ChevronDown
                         :size="14"
                         class="cell-select-chevron"
@@ -877,7 +863,14 @@ function groupTotal(key: string): number {
   table-layout: fixed;
   font-size: var(--text-sm);
 
-  /* 列宽由 JS 精确计算（ADR-0013 比例模式）：content-box 会把 border-right 加在宽度之外
+  /* 卡片化：表格自身即卡片（1px 描边 + 圆角）。用 outline 而非 border ——
+     border 会让 fixed 布局的表格宽变成「JS 算出的列宽之和 + 边框」，横向溢出 2px；
+     outline 不参与布局且同样跟随圆角，描边落在表格盒内（offset -1px）不被滚动容器裁切。 */
+  outline: 1px solid var(--border);
+  outline-offset: -1px;
+  border-radius: var(--radius-sm);
+
+  /* 列宽由 JS 精确计算（ADR-0013 比例模式）：content-box 会把边框加在宽度之外
      导致每列 +1px、总和超出表格宽。border-box 让列宽含边框，总和恰为表格宽。 */
   th,
   td {
@@ -888,34 +881,36 @@ function groupTotal(key: string): number {
     position: sticky;
     top: 0;
     z-index: 2;
-    background: var(--bg-base2);
 
+    /* 底色落在 th 而非 thead：只有 th 的圆角能裁掉底色，卡片上缘两角才不漏方角 */
     th {
       padding: 0;
-      text-align: center;
+      background: var(--surface-muted);
       font-weight: var(--font-medium);
-      color: var(--text-tertiary);
-      border-bottom: 1px solid var(--border-color, var(--app-split));
-      border-right: 1px solid var(--border-color, var(--app-split));
+      color: var(--text-secondary);
       white-space: nowrap;
-      font-size: var(--text-xs);
+      // 字号与数据格同级（表头靠浅字色与数据区分，不再靠缩小字号）
+      font-size: var(--text-sm);
       text-transform: uppercase;
       letter-spacing: 0.05em;
+      // 表头与数据格同侧起排（UA 表默认居中，须显式左对齐；列显式 align 由内联样式覆盖）
+      text-align: left;
+
+      &:first-child {
+        border-top-left-radius: var(--radius-sm);
+      }
+
+      &:last-child {
+        border-top-right-radius: var(--radius-sm);
+      }
     }
 
     /* 包裹层：th 是 table-cell，其 sticky/relative 对绝对定位子元素的包含块行为不可靠，
        故用普通块级 .th-inner 作 resizer 的锚点（ADR-0013 修复：手柄曾锚到 sticky thead 跑到整表最右）。 */
     .th-inner {
       position: relative;
-      padding: 8px 10px;
+      padding: 7px 12px;
       height: 100%;
-    }
-
-    /* 表头类型图标（lucide，12px）：跟随表头文字色（--text-tertiary），与标题基线对齐 */
-    .col-header-icon {
-      vertical-align: -1.5px;
-      margin-right: 4px;
-      opacity: 0.85;
     }
 
     /* 表头标题按钮：点击唤起列菜单（对齐/隐藏/重置列宽）。reset 原生 button 样式，
@@ -957,8 +952,13 @@ function groupTotal(key: string): number {
   }
 
   tbody tr {
-    border-bottom: 1px solid var(--border-color, var(--app-split));
+    // 行分隔线：比卡片描边（--border）浅一档，避免与卡片外框争视觉重量
+    border-bottom: 1px solid var(--surface-subtle);
     cursor: pointer;
+
+    &:last-child {
+      border-bottom: none;
+    }
 
     &.is-done {
       opacity: 0.55;
@@ -970,9 +970,8 @@ function groupTotal(key: string): number {
   }
 
   td {
-    padding: 8px 10px;
+    padding: 13px 12px;
     vertical-align: middle;
-    border-right: 1px solid var(--border-color, var(--app-split));
     transition: background 80ms ease;
 
     &:hover {
@@ -996,12 +995,6 @@ function groupTotal(key: string): number {
 .cell-link {
   text-align: center;
   width: 40px;
-}
-
-/* 末列右缘不画分割线（表格右缘即容器边界）。 */
-.data-table th:last-child,
-.data-table td:last-child {
-  border-right: none;
 }
 
 .link-btn {
@@ -1057,16 +1050,26 @@ function groupTotal(key: string): number {
   font-family: inherit;
   cursor: pointer;
 
-  /* 只读态（FieldDescriptor.editable=false）：去掉指针暗示 */
+  /* 只读态（FieldDescriptor.editable=false）：去掉指针暗示
+     （字色由值胶囊自持，不再随容器态变化） */
   &.readonly {
     cursor: default;
-    color: var(--text-secondary);
   }
+}
 
-  /* 菜单打开时高亮（select 字段点击 cell 后） */
-  &.open {
-    color: var(--accent);
-  }
+/* 值胶囊（select 有值态）：中性底 + tertiary 字；选项带配色时由内联样式改为该色淡染。
+   高度 = line-height 18 + 上下 padding 2 → 22px（行高 51px 时上下各留约 14px）。 */
+.cell-chip {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-subtle);
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  line-height: 18px;
 }
 
 /* 下拉箭头：靠右（margin-left:auto）；默认隐藏（未交互不显示），
@@ -1240,14 +1243,12 @@ function groupTotal(key: string): number {
 .cell-deadline {
   font-size: var(--text-xs);
   white-space: nowrap;
+  color: var(--text-secondary);
 
+  /* 仅过期（role='overdue-date' 且已过日）用错误色提示；未过期不再整列标黄 */
   &.overdue {
     color: var(--error, #DC2626);
     font-weight: var(--font-semibold);
-  }
-
-  &:not(.overdue) {
-    color: var(--warning, #D97706);
   }
 }
 </style>
