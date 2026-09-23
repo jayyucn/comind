@@ -34,12 +34,15 @@ pub fn build_segments_for_block(
     build_segments(block, &links, &id_to_title, &rel_cache, &tag_cache)
 }
 
-/// title → (tag id, is_system) 查找表（渲染 chip 用；缺行时 chip 仍渲染、id 置空）。
-fn build_tag_cache(storage: &mut dyn repository::StorageAdapter) -> HashMap<String, (String, bool)> {
+/// title → (tag id, is_system, color) 查找表（渲染 chip 用；缺行时 chip 仍渲染、id/color 置空）。
+/// `color` 是调色板 token 名（ADR-0050 D11），空串 = 无色 —— 交给前端落回 CSS 默认色。
+fn build_tag_cache(
+    storage: &mut dyn repository::StorageAdapter,
+) -> HashMap<String, (String, bool, String)> {
     repository::TagRepository::get_all(storage.tags())
         .unwrap_or_default()
         .into_iter()
-        .map(|t| (t.title, (t.id, t.is_system)))
+        .map(|t| (t.title, (t.id, t.is_system, t.color)))
         .collect()
 }
 
@@ -178,7 +181,7 @@ fn build_segments(
     links: &[Link],
     id_to_title: &HashMap<String, String>,
     rel_cache: &HashMap<String, (String, String)>,
-    tag_cache: &HashMap<String, (String, bool)>,
+    tag_cache: &HashMap<String, (String, bool, String)>,
 ) -> Result<Vec<RenderSegment>, Box<dyn Error>> {
     let content = &block.content;
     let mut anchors: Vec<(usize, RenderSegment)> = Vec::new();
@@ -287,16 +290,17 @@ fn build_segments(
         // 与 dateRef 同款：UTF-16 索引（JS slice 语义）
         let char_start = byte_to_utf16_idx(content, byte_start);
         let char_end = byte_to_utf16_idx(content, byte_end);
-        let (tag_id, is_system) = tag_cache
+        let (tag_id, is_system, color) = tag_cache
             .get(&title)
             .cloned()
-            .unwrap_or_else(|| (String::new(), false));
+            .unwrap_or_else(|| (String::new(), false, String::new()));
         anchors.push((char_start, RenderSegment::Tag {
             start: char_start,
             end: char_end,
             title,
             tag_id,
             is_system,
+            color,
         }));
     }
 

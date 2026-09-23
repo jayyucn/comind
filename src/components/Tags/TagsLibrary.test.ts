@@ -279,9 +279,65 @@ describe('TagsLibrary（标签管理页）', () => {
     expect(wrapper.find('.tag-parent-clear').exists()).toBe(false)
     expect(wrapper.findAll('.tag-field-remove')).toHaveLength(0)
     expect(wrapper.findAll('.tag-field-row--editable')).toHaveLength(0)
-    // 身份同属只读面（D11/D5）：描述渲染成文本，不给可点入口
+    // 身份同属只读面（D11/D5）：描述渲染成文本、选色器不给可点触发点
     expect(wrapper.find('.tag-desc').classes()).toContain('tag-desc--readonly')
     expect(wrapper.find('input.tag-desc').exists()).toBe(false)
+    expect(wrapper.find('button.tag-color-trigger').exists()).toBe(false)
+  })
+
+  // ── 身份第三要素：颜色（ADR-0050 D11） ──
+
+  it('右栏选色：emit pick → setIdentity → updateTag 只发 color', async () => {
+    mockClient.updateTag.mockResolvedValue(PROJECT)
+    const wrapper = await mountPage()
+    await wrapper.find('.tag-row--t-project').trigger('click')
+    await flushPromises()
+
+    await wrapper.find('.tag-detail-color .tag-color-trigger').trigger('click')
+    const panel = document.body.querySelector('.tag-color-panel') as HTMLElement
+    expect(panel).toBeTruthy()
+    const swatch = Array.from(panel.querySelectorAll('.tag-color-swatch')).find(
+      (s) => s.getAttribute('aria-label') === '青绿',
+    ) as HTMLElement
+    swatch.click()
+    await flushPromises()
+
+    expect(mockClient.updateTag).toHaveBeenCalledWith({ id: 't-project', color: '--tag-color-3' })
+  })
+
+  it('左栏行色点：有色为实心点、无色为空心环（两者判据同源）', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      SYSTEM_TASK,
+      { ...PROJECT, color: '--tag-color-7' },
+      DEV_TASK,
+      IDEA,
+    ])
+    const wrapper = await mountPage()
+
+    const colored = wrapper.find('.tag-row--t-project .tag-color-dot')
+    expect(colored.attributes('style')).toContain('var(--tag-color-7)')
+    expect(colored.classes()).not.toContain('tag-color-dot--empty')
+
+    // 开发任务未设色 → 空心环，且不带内联背景
+    const colorless = wrapper.find('.tag-row--t-dev .tag-color-dot')
+    expect(colorless.classes()).toContain('tag-color-dot--empty')
+    expect(colorless.attributes('style')).toBeUndefined()
+  })
+
+  it('继承区父标签带色点（与左栏行同一形态）', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      SYSTEM_TASK,
+      { ...PROJECT, color: '--tag-color-2' },
+      DEV_TASK,
+      IDEA,
+    ])
+    const wrapper = await mountPage()
+    await wrapper.find('.tag-row--t-dev').trigger('click')
+    await flushPromises()
+
+    const dot = wrapper.find('.tag-parent-label .tag-color-dot')
+    expect(dot.exists()).toBe(true)
+    expect(dot.attributes('style')).toContain('var(--tag-color-2)')
   })
 
   // ── 身份（描述）与「一步到达」预选（ADR-0050 D11 / D12） ──

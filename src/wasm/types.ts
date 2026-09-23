@@ -325,7 +325,8 @@ export type RenderSegment =
   | { type: 'external_link'; start: number; end: number; url: string }
   | { type: 'date_ref'; start: number; end: number; kind: string; iso: string; recurrence: string; lead_minutes: number; is_overdue: boolean }
   // ADR-0049 grill 决策 #4：inline `#foo` 结构化渲染（点击无行为；is_system 驱动系统样式）
-  | { type: 'tag'; start: number; end: number; title: string; tag_id: string; is_system: boolean }
+  // color = 调色板 token 名（如 `--tag-color-3`，ADR-0050 D11），空串 = 无色。
+  | { type: 'tag'; start: number; end: number; title: string; tag_id: string; is_system: boolean; color: string }
 
 /** Input to the content renderer: block content + pre-computed render segments */
 export interface RenderInput {

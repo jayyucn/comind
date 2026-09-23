@@ -78,6 +78,10 @@ pub enum RenderSegment {
     /// Inline tag `#foo`（grill 决策 #4：渲染成 chip，本轮点击无行为）。
     /// `tag_id` 为空 = content 中有 `#foo` 但 Tag 行缺失（理论上不该发生，
     /// update 联动会自动建）；`is_system` 驱动系统样式渲染。
+    ///
+    /// `color` = Tag 的**调色板 token 名**（如 `--tag-color-3`，ADR-0050 D11），空串 = 无色。
+    /// 随段下发而非让前端拿 `tag_id` 回查：渲染器是纯函数（`useContentRenderer`），
+    /// 回查会把 store 依赖拖进渲染路径；且此处与 `is_system` 同一次查找，无额外成本。
     #[serde(rename = "tag")]
     Tag {
         start: usize,
@@ -85,5 +89,6 @@ pub enum RenderSegment {
         title: String,
         tag_id: String,
         is_system: bool,
+        color: String,
     },
 }

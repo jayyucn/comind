@@ -1,5 +1,6 @@
 import type { RenderInput } from '../wasm/types'
 import { WIKI_LINK_REGEX, resolveRelationshipLabel, wikiLinkDisplay } from '../services/render-text'
+import { tagChipStyle } from '../utils/tag-color'
 
 const CSS_CLASSES = {
   blockLink: 'block-link',
@@ -29,6 +30,19 @@ function escapeHtmlEntities(text: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
+}
+
+/**
+ * tag chip 的内联 `style` 属性（含前导空格；无色返回空串）。
+ *
+ * 色值来自存储、又要拼进 HTML 属性 —— 故一律经 `tagChipStyle` 的**白名单**收口
+ * （ADR-0050 D11），只有名单内的调色板 token 能进来，不给 CSS 注入留面。
+ */
+function tagStyleAttr(color: string | undefined): string {
+  const style = tagChipStyle(color)
+  if (!style) return ''
+  const decls = Object.entries(style).map(([prop, value]) => `${prop}:${value}`).join(';')
+  return ` style="${decls}"`
 }
 
 export interface HeadingParseResult {
@@ -150,9 +164,12 @@ function renderContentToHtml(input: RenderInput): string {
         const body = rawText.startsWith('#') ? `${TAG_HASH_HTML}${escapeHtmlEntities(rawText.slice(1))}` : raw
         const systemCls = seg.is_system ? ' block-tag--system' : ''
         const tagId = seg.tag_id ? ` data-tag-id="${escapeHtmlEntities(seg.tag_id)}"` : ''
+        // 标签色（ADR-0050 D11）：空串 / 非法值 → 无内联样式，落回 `.block-tag` 的默认色
+        // （`--color-tag`，即调色板第 1 位）。系统 tag 在 Rust 侧拒写颜色，故
+        // `.block-tag--system` 的中性色不会被覆盖。
         parts.push(
           `<span class="${CSS_CLASSES.blockTag}${systemCls}"` +
-          `${tagId} data-tag-title="${title}">${body}</span>`
+          `${tagId}${tagStyleAttr(seg.color)} data-tag-title="${title}">${body}</span>`
         )
         break
       }

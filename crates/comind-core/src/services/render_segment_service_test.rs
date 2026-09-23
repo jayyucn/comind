@@ -3,10 +3,10 @@ mod tests {
     use crate::{
         services::{
             render_segment_service::build_segments_for_block,
-            BlockService, LinkService, PageService, RelationshipTypeService,
+            BlockService, LinkService, PageService, RelationshipTypeService, TagService,
         },
         storage::sqlite::SQLiteAdapter,
-        types::{RenderSegment},
+        types::{RenderSegment, TagUpdateOptions},
     };
     use std::error::Error;
 
@@ -531,7 +531,7 @@ mod tests {
         let mut saw_system = false;
         let mut saw_user = false;
         for seg in &tag_segs {
-            if let RenderSegment::Tag { title, tag_id, is_system, start, end } = seg {
+            if let RenderSegment::Tag { title, tag_id, is_system, color, start, end } = seg {
                 if title == "系统任务" {
                     assert!(*is_system);
                     assert_eq!(tag_id, "sys-tag-system-task");
@@ -542,6 +542,8 @@ mod tests {
                     assert!(!tag_id.is_empty());
                     saw_user = true;
                 }
+                // 两者都没设过颜色 → 段上应是空串（前端据此落回 CSS 默认色；ADR-0050 D11）
+                assert_eq!(color, "", "unset color should serialize as empty string");
                 // chip 覆盖 `#title` 全段（含 # 号）
                 assert!(end > start);
             }
@@ -560,6 +562,45 @@ mod tests {
             covered = e0;
         }
         assert_eq!(covered, block.content.chars().map(|c| c.len_utf16()).sum::<usize>());
+        Ok(())
+    }
+
+    /// 标签色随段下发（ADR-0050 D11）：chip 要自证身份就得拿到调色板 token 名，而渲染器
+    /// 是纯函数（拿不到 store）⇒ 必须由后端在同一趟 tag 查找里带上。
+    #[test]
+    fn test_tag_segment_carries_palette_color() -> Result<(), Box<dyn Error>> {
+        let mut adapter = SQLiteAdapter::open_in_memory()?;
+        let page = PageService::create(&mut adapter, "", "ColorPage", None, None, None, None, None)?;
+        let block = BlockService::create(
+            &mut adapter, &page.id, None,
+            "a #colored and b #plain end",
+            "{}", "bullet", None,
+        )?;
+
+        // 只给其中一个上色 —— 另一个留空以验证「无色」不会被误填成默认色
+        let colored = TagService::get_by_title(&mut adapter, "colored")?
+            .ok_or("`colored` should be auto-created by content linkage")?;
+        TagService::update(&mut adapter, &colored.id, TagUpdateOptions {
+            color: Some("--tag-color-3"),
+            ..Default::default()
+        })?;
+
+        let segments = build_segments_for_block(&mut adapter, &block)?;
+        let mut seen: Vec<(String, String)> = segments.iter()
+            .filter_map(|s| match s {
+                RenderSegment::Tag { title, color, .. } => Some((title.clone(), color.clone())),
+                _ => None,
+            })
+            .collect();
+        seen.sort();
+
+        assert_eq!(
+            seen,
+            vec![
+                ("colored".to_string(), "--tag-color-3".to_string()),
+                ("plain".to_string(), String::new()),
+            ]
+        );
         Ok(())
     }
 }

@@ -24,7 +24,9 @@ import type { PersistedFieldDefinition, PersistedTag } from '../../types/tag-per
 import BasePopover from '../common/BasePopover.vue'
 import PageTitle from '../common/PageTitle.vue'
 import ConfirmDialog from '../ConfirmDialog.vue'
+import TagColorPicker from './TagColorPicker.vue'
 import TagDescriptionField from './TagDescriptionField.vue'
+import { isTagColorToken, tagDotStyle } from '../../utils/tag-color'
 
 /**
  * 预选标签（ADR-0050 D12「一步到达」）：聚合页的「设置」入口经 `/tags?tag=<id>` 传入，
@@ -135,6 +137,21 @@ const isSystemTag = computed(() => !!selectedTag.value?.is_system)
 async function onSaveDescription(value: string) {
   if (!selectedTag.value) return
   await tagsStore.setIdentity(selectedTag.value.id, { description: value })
+}
+
+/** 身份写入口之三：颜色。`null` = 选了「无色」→ 发空串（D11：空串是有效值）。 */
+async function onPickColor(color: string | null) {
+  if (!selectedTag.value) return
+  await tagsStore.setIdentity(selectedTag.value.id, { color: color ?? '' })
+}
+
+/**
+ * 色点是否显示为「无色」空心环。判据必须与 `tagDotStyle` **同一个**（`isTagColorToken`）——
+ * 否则未白名单的历史色值会出现「有类无色 / 无色无类」错配，最坏情况是渲染成一个
+ * 既无背景又无边框的不可见点。
+ */
+function isColorless(color: string): boolean {
+  return !isTagColorToken(color)
 }
 
 /** 进该标签的聚合页（D7）。 */
@@ -439,6 +456,12 @@ async function submitAddField() {
             @keydown.enter="selectedTagId = tag.id"
           >
             <span class="tag-row-label">
+              <!-- 标签色（ADR-0050 D11）：色点在左，标题胶囊保持中性 —— 整行染色会盖过层级 -->
+              <span
+                class="tag-color-dot"
+                :class="{ 'tag-color-dot--empty': isColorless(tag.color) }"
+                :style="tagDotStyle(tag.color)"
+              />
               <span class="tag-row-title">#{{ tag.title }}</span>
               <span
                 v-if="tag.is_system"
@@ -485,6 +508,15 @@ async function submitAddField() {
               :value="selectedTag.description"
               :readonly="isSystemTag"
               @save="onSaveDescription"
+            />
+          </div>
+          <!-- 身份的第三要素：颜色。选色器自带色点，详情标题不再重复放点 -->
+          <div class="tag-detail-color">
+            <span class="tag-detail-color-label">颜色</span>
+            <TagColorPicker
+              :value="selectedTag.color"
+              :readonly="isSystemTag"
+              @pick="onPickColor"
             />
           </div>
           <p
@@ -551,7 +583,14 @@ async function submitAddField() {
             v-if="parentTag"
             class="tag-parent-card"
           >
-            <span class="tag-parent-chip">#{{ parentTag.title }}</span>
+            <span class="tag-parent-label">
+              <span
+                class="tag-color-dot"
+                :class="{ 'tag-color-dot--empty': isColorless(parentTag.color) }"
+                :style="tagDotStyle(parentTag.color)"
+              />
+              <span class="tag-parent-chip">#{{ parentTag.title }}</span>
+            </span>
             <button
               v-if="!isSystemTag"
               type="button"
@@ -922,6 +961,19 @@ async function submitAddField() {
   min-width: 0;
 }
 
+/* 标签色点（ADR-0050 D11）：无色渲染成空心环，与「有色实心点」一眼可分。
+   有色的填充由 `tagDotStyle` 内联给出；无色时 `--empty` 补边框 —— 两者判据同源。 */
+.tag-color-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.tag-color-dot--empty {
+  border: 1px solid var(--border-strong);
+}
+
 .tag-row-title {
   display: inline-flex;
   align-items: center;
@@ -1025,6 +1077,19 @@ async function submitAddField() {
 /* 身份条：紧跟副标题，处于「标题组」与「字段模板」之间（ADR-0050 D11/D12） */
 .tag-detail-desc {
   margin-top: var(--space-2);
+}
+
+/* 身份第三要素（颜色）：标签与选色器色点同行 */
+.tag-detail-color {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.tag-detail-color-label {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
 }
 
 .tag-system-note {
@@ -1143,6 +1208,13 @@ async function submitAddField() {
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+}
+
+.tag-parent-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
 }
 
 .tag-parent-chip {

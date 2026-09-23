@@ -658,7 +658,7 @@ describe('segmentVisibleText 与渲染输出同源（#93）', () => {
       content: '前置 #标签 后置',
       segments: [
         textSeg(0, 3),
-        { type: 'tag', start: 3, end: 6, title: '标签', tag_id: 't1', is_system: false },
+        { type: 'tag', start: 3, end: 6, title: '标签', tag_id: 't1', is_system: false, color: '' },
         textSeg(6, 9),
       ],
     },
@@ -680,7 +680,7 @@ describe('结构化 tag 段（Rust render_segments 提供 segments 时）', () =
     const content = '前置 #标签'
     const segments: RenderSegment[] = [
       { type: 'text', start: 0, end: 3 },
-      { type: 'tag', start: 3, end: 6, title: '标签', tag_id: 't1', is_system: false },
+      { type: 'tag', start: 3, end: 6, title: '标签', tag_id: 't1', is_system: false, color: '' },
     ]
     const html = renderContentToHtml({ content, segments, blockId: 'b1' })
     expect(html).toContain('data-tag-id="t1"')
@@ -691,11 +691,46 @@ describe('结构化 tag 段（Rust render_segments 提供 segments 时）', () =
   it('系统 tag 带 block-tag--system 修饰类', () => {
     const content = '#系统'
     const segments: RenderSegment[] = [
-      { type: 'tag', start: 0, end: 3, title: '系统', tag_id: 't2', is_system: true },
+      { type: 'tag', start: 0, end: 3, title: '系统', tag_id: 't2', is_system: true, color: '' },
     ]
     const html = renderContentToHtml({ content, segments, blockId: 'b1' })
     expect(html).toContain('block-tag--system')
     expect(html).toContain('<span class="tag-hash">#</span>系统')
     expect(html.replace(/<[^>]*>/g, '')).toBe(content)
+  })
+
+  // ── 标签色（ADR-0050 D11）：chip 自证身份，色值随段下发 ──
+
+  it('带色的 tag：文字取该色 + 底色 10% 淡染（color-mix 现算）', () => {
+    const content = '#项目'
+    const segments: RenderSegment[] = [
+      { type: 'tag', start: 0, end: 3, title: '项目', tag_id: 't1', is_system: false, color: '--tag-color-3' },
+    ]
+    const html = renderContentToHtml({ content, segments, blockId: 'b1' })
+    expect(html).toContain(
+      'style="color:var(--tag-color-3);background:color-mix(in srgb, var(--tag-color-3) 10%, transparent)"',
+    )
+    // 加样式不得改变可见文本（选区/偏移换算依赖 textContent）
+    expect(html.replace(/<[^>]*>/g, '')).toBe(content)
+  })
+
+  it('无色（空串）不带内联样式 —— 落回 .block-tag 的默认色', () => {
+    const segments: RenderSegment[] = [
+      { type: 'tag', start: 0, end: 3, title: '项目', tag_id: 't1', is_system: false, color: '' },
+    ]
+    const html = renderContentToHtml({ content: '#项目', segments, blockId: 'b1' })
+    expect(html).not.toContain('style=')
+  })
+
+  it('未白名单的色值不进 HTML（存储是不可信输入，防 CSS 注入）', () => {
+    const segments: RenderSegment[] = [
+      {
+        type: 'tag', start: 0, end: 3, title: '项目', tag_id: 't1', is_system: false,
+        color: 'red;}</style><img src=x onerror=alert(1)>',
+      },
+    ]
+    const html = renderContentToHtml({ content: '#项目', segments, blockId: 'b1' })
+    expect(html).not.toContain('style=')
+    expect(html).not.toContain('<img')
   })
 })
