@@ -60,6 +60,27 @@ describe('distributeColumnWidths (比例模式，ADR-0013)', () => {
     out.forEach((w, i) => expect(Math.abs(w - raws[i])).toBeLessThanOrEqual(1))
   })
 
+  it('never overshoots the budget for any column count or baseline mix (deterministic fuzz)', () => {
+    // 不变量：整数列宽和恰为 W、各列 ≥ 下限 —— 对任意列数与基准宽组合都成立。
+    // 定 seed，失败可复现。
+    let seed = 20260923
+    const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648
+    for (let iter = 0; iter < 2000; iter++) {
+      const n = 1 + Math.floor(rnd() * 24)
+      const budget = Math.floor(rnd() * 1800)
+      const min = 40 + Math.floor(rnd() * 30)
+      const colPxs = Array.from({ length: n }, () => 30 + Math.floor(rnd() * 400))
+      const out = distributeColumnWidths(colPxs, budget, min)
+      const W = Math.max(Math.round(budget), n * min)
+      const sum = out.reduce((a, b) => a + b, 0)
+      const detail = { iter, n, budget, min, colPxs, out, sum, W }
+      expect(`#${iter} n=${n} budget=${budget} min=${min} sum=${sum} W=${W}`).toBe(
+        `#${iter} n=${n} budget=${budget} min=${min} sum=${W} W=${W}`,
+      )
+      expect(out.every((w) => Number.isInteger(w) && w >= min), JSON.stringify(detail)).toBe(true)
+    }
+  })
+
   it('handles empty columns', () => {
     expect(distributeColumnWidths([], 1000)).toEqual([])
   })
