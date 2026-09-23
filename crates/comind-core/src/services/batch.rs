@@ -24,7 +24,7 @@ use crate::{
     storage::{repository, StorageAdapter},
     types::{
         Block, FieldValue, FieldValueCreateOptions, Link, Page, Property, RelationshipType,
-        SyncTable, TagCreateOptions, TagTreeEntry, UserTemplate,
+        SyncTable, TagCreateOptions, TagTreeEntry, TagUpdateOptions, UserTemplate,
     },
 };
 use serde_json::{json, Value};
@@ -566,11 +566,18 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
             let id = str_param(&params, "id").to_string();
             // 仅当入参显式给出时才覆盖对应字段（None = 保持不变）。
             let field_ids = optional_str_array_param(&params, "field_ids");
+            // 身份字段（ADR-0050 D11）：缺失 / null = 保持不变；空串 = 清空（未填写 / 无色）。
+            let description = clearable_str_param(&params, "description");
+            let color = clearable_str_param(&params, "color");
             let updated = TagService::update(
                 storage,
                 &id,
-                params.get("title").and_then(|v| v.as_str()),
-                field_ids,
+                TagUpdateOptions {
+                    title: params.get("title").and_then(|v| v.as_str()),
+                    field_ids,
+                    description: description.as_deref(),
+                    color: color.as_deref(),
+                },
             )?;
             Ok(OpEffect {
                 value: serde_json::to_value(&updated)?,
@@ -732,6 +739,14 @@ fn optional_str_param(params: &Value, key: &str) -> Option<String> {
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string())
+}
+
+/// 可清空字符串参数：**缺失 / null → None（保持不变）**；**空串 → Some("")（清空）**。
+///
+/// 与 `optional_str_param` 的区别：后者把空串折成 `None`（「无」语义参，如单父槽位），
+/// 而本函数里空串是**有意义的值** —— `description` 未填写 / `color` 无色（ADR-0050 D11）。
+fn clearable_str_param(params: &Value, key: &str) -> Option<String> {
+    params.get(key).and_then(|v| v.as_str()).map(|s| s.to_string())
 }
 
 /// 字符串数组参数：**缺失或 null → 空数组**（用于 create 的缺省值）。

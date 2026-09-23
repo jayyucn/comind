@@ -71,6 +71,8 @@ function treeEntry(
   return {
     field_ids: [],
     parent_id: null,
+    description: '',
+    color: '',
     is_system: false,
     created_at: 1,
     updated_at: 1,

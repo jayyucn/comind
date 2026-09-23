@@ -14,6 +14,9 @@ use crate::storage::executor::Executor;
 ///
 /// - `field_ids`：**自身**字段定义 id 列表，落库为 JSON TEXT（继承不物化，ADR-0050 D10）。
 /// - `parent_id`：单父 Tag id，NULL = 顶级标签（ADR-0050 D10，末尾追加不位移既有索引）。
+/// - `description` / `color`：标签身份三要素之二 / 之三（ADR-0050 D11）。均为
+///   `NOT NULL DEFAULT ''`，空串 = 未填写 / 无色 —— **不用 NULL**（sql.js 路径
+///   NULL 与空串不可区分，而这里空串是有效值）。
 ///
 /// 历史列 `extends`（ADR-0049 D8 多继承）已退役：DB 列原地保留（NOT NULL DEFAULT '[]'），
 /// 但不再读写（ADR-0050 D10 单父 + 读取侧解析）。
@@ -23,6 +26,9 @@ pub const TAG_COLS: &[&str] = &[
     "is_system",
     // 末尾追加（ADR-0050 D10）
     "parent_id",
+    // 末尾追加（ADR-0050 D11：标签身份三要素之二 / 之三；空串 = 未填写 / 无色）
+    "description",
+    "color",
 ];
 
 pub fn tag_select_cols() -> String {
@@ -53,6 +59,8 @@ pub fn row_to_tag_native(row: &rusqlite::Row) -> Result<Tag, rusqlite::Error> {
         deleted_at: row.get(6)?,
         is_system: row.get::<_, i64>(7)? != 0,
         parent_id: row.get::<_, Option<String>>(8)?,
+        description: row.get(9)?,
+        color: row.get(10)?,
     })
 }
 
@@ -67,6 +75,9 @@ pub fn row_to_tag_js(row: &HashMap<String, String>) -> Tag {
             .and_then(|s| serde_json::from_str(s).ok())
             .unwrap_or_default(),
         parent_id: row.get("parent_id").filter(|s| !s.is_empty()).cloned(),
+        // 空串是有效值（未填写 / 无色），不做「空串 → 缺失」归一化（ADR-0050 D11）
+        description: row.get("description").cloned().unwrap_or_default(),
+        color: row.get("color").cloned().unwrap_or_default(),
         created_at: row.get("created_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
         updated_at: row.get("updated_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
         version: row.get("version").map(|s| s.parse::<i64>().unwrap_or(0)).unwrap_or(0),
@@ -160,6 +171,8 @@ pub fn tag_create<E: Executor>(exec: &E, t: &Tag) -> Result<(), Box<dyn Error>> 
         &t.deleted_at,
         &is_system_i64,
         &t.parent_id,
+        &t.description,
+        &t.color,
     ];
     exec.execute(&tag_insert_sql(), &params)?;
     Ok(())
@@ -168,14 +181,16 @@ pub fn tag_create<E: Executor>(exec: &E, t: &Tag) -> Result<(), Box<dyn Error>> 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn tag_update<E: Executor>(exec: &E, t: &Tag) -> Result<(), Box<dyn Error>> {
     let field_ids_json = vec_to_json(&t.field_ids);
-    let sql = "UPDATE Tag SET title = ?2, field_ids = ?3, parent_id = ?4, updated_at = ?5, version = version + 1 \
-               WHERE id = ?1";
+    let sql = "UPDATE Tag SET title = ?2, field_ids = ?3, parent_id = ?4, updated_at = ?5, \
+               description = ?6, color = ?7, version = version + 1 WHERE id = ?1";
     let params: Vec<&dyn ToSql> = vec![
         &t.id,
         &t.title,
         &field_ids_json,
         &t.parent_id,
         &t.updated_at,
+        &t.description,
+        &t.color,
     ];
     exec.execute(sql, &params)?;
     Ok(())
@@ -203,6 +218,8 @@ mod tests {
         m.insert("title".to_string(), "Project".to_string());
         m.insert("field_ids".to_string(), "[\"f1\",\"f2\"]".to_string());
         m.insert("parent_id".to_string(), "t0".to_string());
+        m.insert("description".to_string(), "项目标签".to_string());
+        m.insert("color".to_string(), "--tag-color-3".to_string());
         m.insert("created_at".to_string(), "1".to_string());
         m.insert("updated_at".to_string(), "2".to_string());
         m.insert("version".to_string(), "3".to_string());
@@ -212,6 +229,8 @@ mod tests {
         assert_eq!(t.title, "Project");
         assert_eq!(t.field_ids, vec!["f1".to_string(), "f2".to_string()]);
         assert_eq!(t.parent_id.as_deref(), Some("t0"));
+        assert_eq!(t.description, "项目标签");
+        assert_eq!(t.color, "--tag-color-3");
         assert_eq!(t.version, 3);
         assert_eq!(t.deleted_at, None);
     }
@@ -239,9 +258,40 @@ mod tests {
     }
 
     #[test]
-    fn tag_cols_keeps_parent_id_last() {
-        // 位置索引契约：原生 rusqlite 按 TAG_COLS 位置读取，末尾追加才不位移既有索引
-        assert_eq!(TAG_COLS.last().copied(), Some("parent_id"));
+    fn row_to_tag_js_empty_identity_is_a_value_not_absence() {
+        // ADR-0050 D11：description / color 的空串是「未填写 / 无色」，不与「缺失」同义
+        let mut m = HashMap::new();
+        m.insert("id".to_string(), "t4".to_string());
+        m.insert("description".to_string(), String::new());
+        m.insert("color".to_string(), String::new());
+        let t = row_to_tag_js(&m);
+        assert_eq!(t.description, "");
+        assert_eq!(t.color, "");
+        // 老库补列之前的行：列整个缺失，同样落成空串
+        let t2 = row_to_tag_js(&HashMap::new());
+        assert_eq!(t2.description, "");
+        assert_eq!(t2.color, "");
+    }
+
+    #[test]
+    fn tag_cols_keeps_stable_prefix_and_appends_at_tail() {
+        // 位置索引契约：原生 rusqlite 按 TAG_COLS 位置读取，新列只许末尾追加、不位移既有索引
+        assert_eq!(
+            &TAG_COLS[..9],
+            &[
+                "id",
+                "title",
+                "field_ids",
+                "created_at",
+                "updated_at",
+                "version",
+                "deleted_at",
+                "is_system",
+                "parent_id"
+            ]
+        );
+        // ADR-0050 D11：标签身份三要素之二 / 之三
+        assert_eq!(&TAG_COLS[9..], &["description", "color"]);
         assert!(!TAG_COLS.contains(&"extends"), "extends 列已退役（ADR-0050 D10）");
     }
 }

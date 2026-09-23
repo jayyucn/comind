@@ -400,6 +400,44 @@ fn test_tag_batch_crud_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
         updated[0].value["field_ids"][0], "f1",
         "未显式给出的字段必须保持不变"
     );
+    assert_eq!(
+        created[0].value["description"], "",
+        "create 不带身份字段 → 落空串（ADR-0050 D11）"
+    );
+    assert_eq!(created[0].value["color"], "");
+
+    // 身份字段（ADR-0050 D11）经 batch JSON 的三种语义：给值 = 写、不给 = 保持、空串 = 清空
+    let identity = apply_batch(
+        &mut adapter,
+        &[json!({
+            "entity": "tag", "action": "update",
+            "params": { "id": tag_id, "description": "改后的描述", "color": "--tag-color-3" }
+        })],
+    )?;
+    assert_eq!(identity[0].value["description"], "改后的描述");
+    assert_eq!(identity[0].value["color"], "--tag-color-3");
+
+    // 只给 description → color 保持不变（缺失 ≠ 清空）
+    let partial = apply_batch(
+        &mut adapter,
+        &[json!({
+            "entity": "tag", "action": "update",
+            "params": { "id": tag_id, "description": "再改" }
+        })],
+    )?;
+    assert_eq!(partial[0].value["description"], "再改");
+    assert_eq!(partial[0].value["color"], "--tag-color-3");
+
+    // 空串 = 清空（`clearable_str_param` 与 `optional_str_param` 的分界点）
+    let cleared = apply_batch(
+        &mut adapter,
+        &[json!({
+            "entity": "tag", "action": "update",
+            "params": { "id": tag_id, "description": "", "color": "" }
+        })],
+    )?;
+    assert_eq!(cleared[0].value["description"], "");
+    assert_eq!(cleared[0].value["color"], "");
 
     let del = apply_batch(
         &mut adapter,

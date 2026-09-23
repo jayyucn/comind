@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 
 use crate::{
     storage::{repository, StorageAdapter},
-    types::{Tag, TagCreateOptions},
+    types::{Tag, TagCreateOptions, TagUpdateOptions},
 };
 
 pub struct TagService;
@@ -76,21 +76,30 @@ impl TagService {
         repository::TagRepository::create(storage.tags(), &tag)
     }
 
-    /// 更新 Tag 的标题 / 自身字段集合（父关系走 `set_parent`）。
+    /// 更新 Tag 的标题 / 自身字段集合 / 身份字段（父关系走 `set_parent`）。
+    ///
+    /// 入参走 `TagUpdateOptions`：各字段语义一致 —— `None` = 保持不变；`description` /
+    /// `color` 的**空串是有效值**（未填写 / 无色，ADR-0050 D11），可借此清空；两者落库
+    /// 均为 `NOT NULL DEFAULT ''`，不出现 `NULL`。
     pub fn update(
         storage: &mut dyn StorageAdapter,
         id: &str,
-        title: Option<&str>,
-        field_ids: Option<Vec<String>>,
+        options: TagUpdateOptions<'_>,
     ) -> Result<Tag, Box<dyn Error>> {
         let mut tag = repository::TagRepository::get_by_id(storage.tags(), id)?;
         Self::reject_system_tag(&tag, "update")?;
 
-        if let Some(t) = title {
+        if let Some(t) = options.title {
             tag.title = t.to_string();
         }
-        if let Some(f) = field_ids {
+        if let Some(f) = options.field_ids {
             tag.field_ids = f;
+        }
+        if let Some(d) = options.description {
+            tag.description = d.to_string();
+        }
+        if let Some(c) = options.color {
+            tag.color = c.to_string();
         }
         tag.updated_at = chrono::Utc::now().timestamp_millis();
 
@@ -365,14 +374,77 @@ mod tests {
         let err = TagService::delete(&mut storage, "sys-tag-system-task").unwrap_err();
         assert!(err.to_string().contains("cannot delete system tag"));
 
-        let err = TagService::update(&mut storage, "sys-tag-system-task", Some("新名"), None)
-            .unwrap_err();
+        let err = TagService::update(
+            &mut storage,
+            "sys-tag-system-task",
+            TagUpdateOptions {
+                title: Some("新名"),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
         assert!(err.to_string().contains("cannot update system tag"));
 
         // 系统 tag 也拒改父（seed 行拒删拒改名，语义一致）
         let err = TagService::set_parent(&mut storage, "sys-tag-system-task", Some("whatever"))
             .unwrap_err();
         assert!(err.to_string().contains("cannot set parent of system tag"));
+    }
+
+    // ── ADR-0050 D11：标签身份三要素（description / color） ──────────
+
+    #[test]
+    fn update_writes_identity_and_blank_string_clears_it() {
+        use crate::storage::repository::TagRepository;
+
+        let mut storage = crate::storage::sqlite::SQLiteAdapter::open_in_memory().unwrap();
+        let id = make_tag(&mut storage, "工作", &[], None);
+
+        // 写入
+        let written = TagService::update(
+            &mut storage,
+            &id,
+            TagUpdateOptions {
+                description: Some("工作相关的块"),
+                color: Some("--tag-color-3"),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(written.description, "工作相关的块");
+        assert_eq!(written.color, "--tag-color-3");
+
+        // 落库往返（native 位置索引 + UPDATE 参数顺序）
+        let reread = TagRepository::get_by_id(storage.tags(), &id).unwrap();
+        assert_eq!(reread.description, "工作相关的块");
+        assert_eq!(reread.color, "--tag-color-3");
+
+        // 未传 = 保持不变（只改标题不动身份）
+        let kept = TagService::update(
+            &mut storage,
+            &id,
+            TagUpdateOptions {
+                title: Some("工作2"),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(kept.description, "工作相关的块");
+        assert_eq!(kept.color, "--tag-color-3");
+
+        // 空串 = 清空（空串是有效值，不与「未传」混同；ADR-0050 D11）
+        let cleared = TagService::update(
+            &mut storage,
+            &id,
+            TagUpdateOptions {
+                description: Some(""),
+                color: Some(""),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(cleared.description, "");
+        assert_eq!(cleared.color, "");
     }
 
     // ── ADR-0050 D10：单父 + 环守卫 + 读取侧有效字段解析 + 后代闭包 ──────
@@ -471,8 +543,10 @@ mod tests {
         TagService::update(
             &mut storage,
             &p,
-            None,
-            Some(vec!["f1".to_string(), "f2".to_string()]),
+            TagUpdateOptions {
+                field_ids: Some(vec!["f1".to_string(), "f2".to_string()]),
+                ..Default::default()
+            },
         )
         .unwrap();
         assert_eq!(

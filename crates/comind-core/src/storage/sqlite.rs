@@ -304,6 +304,7 @@ impl SQLiteAdapter {
 
             -- ADR-0049 D6：用户 Tag 模板（字段模板实体）。系统 Tag 不落库（编译期常量）。
             -- ADR-0050 D10：parent_id 单父槽位（NULL = 顶级）；extends 列留作历史列（不再读写）。
+            -- ADR-0050 D11：description / color 标签身份；空串 = 未填写 / 无色（不用 NULL）。
             CREATE TABLE IF NOT EXISTS Tag (
                 id              TEXT PRIMARY KEY,
                 title           TEXT NOT NULL UNIQUE,
@@ -314,7 +315,9 @@ impl SQLiteAdapter {
                 version         INTEGER NOT NULL DEFAULT 0,
                 deleted_at      INTEGER,
                 is_system       INTEGER NOT NULL DEFAULT 0,
-                parent_id       TEXT
+                parent_id       TEXT,
+                description     TEXT NOT NULL DEFAULT '',
+                color           TEXT NOT NULL DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS idx_tag_title ON Tag(title);
 
@@ -382,6 +385,7 @@ impl SQLiteAdapter {
         Self::migrate_add_screen_view_entity(conn)?;
         Self::migrate_add_screen_view_parent_id(conn)?;
         Self::migrate_add_tag_parent_id(conn)?;
+        Self::migrate_add_tag_identity(conn)?;
 
         Ok(())
     }
@@ -396,6 +400,32 @@ impl SQLiteAdapter {
         ).map(|c| c > 0).unwrap_or(false);
         if !has_column {
             conn.execute("ALTER TABLE Tag ADD COLUMN parent_id TEXT", [])?;
+        }
+        Ok(())
+    }
+
+    fn migrate_add_tag_identity(conn: &rusqlite::Connection) -> Result<(), Box<dyn Error>> {
+        // 加 description / color 两列（标签身份三要素，ADR-0050 D11）。
+        // 幂等：逐列判存在才 ALTER ADD。`NOT NULL DEFAULT ''` 让存量行（含系统 seed 行）
+        // 落到「未填写 / 无色」，与读取侧的空串语义一致。
+        for col in ["description", "color"] {
+            let has_column: bool = conn
+                .query_row(
+                    &format!(
+                        "SELECT COUNT(*) FROM pragma_table_info('Tag') WHERE name = '{}'",
+                        col
+                    ),
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map(|c| c > 0)
+                .unwrap_or(false);
+            if !has_column {
+                conn.execute(
+                    &format!("ALTER TABLE Tag ADD COLUMN {} TEXT NOT NULL DEFAULT ''", col),
+                    [],
+                )?;
+            }
         }
         Ok(())
     }
@@ -2252,6 +2282,32 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 2, "both book tables must exist after migration");
+    }
+
+    #[test]
+    fn tag_identity_migration_is_idempotent_on_old_db() {
+        let adapter = SQLiteAdapter::open_in_memory().unwrap();
+        // 模拟老库：升级前的库没有 description / color 两列
+        adapter
+            .conn
+            .execute_batch(
+                "ALTER TABLE Tag DROP COLUMN description; ALTER TABLE Tag DROP COLUMN color;",
+            )
+            .unwrap();
+        // 新代码 open 时重跑 init_schema：补列且不炸
+        SQLiteAdapter::init_schema(&adapter.conn).unwrap();
+        // 幂等：重复执行为 no-op
+        SQLiteAdapter::init_schema(&adapter.conn).unwrap();
+
+        let cols: i64 = adapter
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('Tag') WHERE name IN ('description','color')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(cols, 2, "both identity columns must exist after migration");
     }
 
     #[test]

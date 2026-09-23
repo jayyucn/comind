@@ -20,6 +20,10 @@ export interface PersistedTag {
   field_ids: string[]
   /** 单父 Tag id（null = 顶级标签；ADR-0050 D10） */
   parent_id: string | null
+  /** 标签身份三要素之二：单行描述；空串 = 未填写（ADR-0050 D11） */
+  description: string
+  /** 标签身份三要素之三：调色板 token 名（如 `--tag-color-3`）；空串 = 无色（ADR-0050 D11） */
+  color: string
   /** 系统 seed 行标记（拒删 / 拒改名 / 拒改父；ADR-0049 grill 决策 #5/#9） */
   is_system: boolean
   created_at: number
@@ -74,6 +78,10 @@ export type UpdateTagParams = {
   id: string
   title?: string
   field_ids?: string[]
+  /** 缺失 = 保持不变；**空串 = 清空**（未填写，ADR-0050 D11） */
+  description?: string
+  /** 同上；空串 = 无色 */
+  color?: string
 }
 
 export type SetTagParentParams = {

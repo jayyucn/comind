@@ -55,13 +55,20 @@ export const useTagsStore = defineStore('tags', () => {
   const loading = ref(false)
 
   // Getters
-  /** 原始行投影（单源是 `entries`，避免两处数据分叉）。 */
+  /**
+   * 原始行投影（单源是 `entries`，避免两处数据分叉）。
+   *
+   * ⚠️ 手工逐字段投影：给 `Tag` 加列时必须同步这里，否则新列会被静默丢弃
+   * （`entries` 的行是 `PersistedTagTreeEntry`，比 `PersistedTag` 多两个解析字段）。
+   */
   const tags = computed<PersistedTag[]>(() =>
     entries.value.map((e) => ({
       id: e.id,
       title: e.title,
       field_ids: e.field_ids,
       parent_id: e.parent_id,
+      description: e.description,
+      color: e.color,
       is_system: e.is_system,
       created_at: e.created_at,
       updated_at: e.updated_at,
@@ -252,6 +259,26 @@ export const useTagsStore = defineStore('tags', () => {
   }
 
   /**
+   * 设置标签身份（描述 / 颜色；ADR-0050 D11）。**只传要改的字段**；传空串表示清空 ——
+   * 空串是**有效值**（未填写 / 无色），必须原样发出，不得按「未改」省略。
+   *
+   * 身份与模板的编辑面边界见 ADR-0050 D12：身份可多入口（管理页右栏 + 聚合页标题区），
+   * 模板（字段模板 / 父标签）只在管理页右栏。
+   */
+  async function setIdentity(
+    tagId: string,
+    identity: { description?: string; color?: string },
+  ): Promise<PersistedTag> {
+    const client = await getClient()
+    const params: UpdateTagParams = { id: tagId }
+    if (identity.description !== undefined) params.description = identity.description
+    if (identity.color !== undefined) params.color = identity.color
+    const updated = await client.updateTag(params)
+    await ensureLoaded(true)
+    return updated
+  }
+
+  /**
    * 给标签添加字段：建 FieldDefinition（key 全局唯一）+ 追加进自身 field_ids。
    * key 只是存储标识，不进用户视野（用户看到的是 title / type）。
    */
@@ -324,6 +351,7 @@ export const useTagsStore = defineStore('tags', () => {
     deleteTag,
     setParent,
     setOwnFields,
+    setIdentity,
     addFieldToTag,
     removeFieldFromTag,
     updateFieldDefinition,

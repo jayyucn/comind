@@ -1,6 +1,6 @@
 # ADR-0050: Tag 本位字段交互与 Tag 聚合页
 
-> **状态：D1–D10 已定稿；阶段 1（D1 / D5 / D7 / D10 + chip 点击导航）已实施（`b955b79`），阶段 2（D2 / D4）与阶段 3（D8）待实施**。上游决议见 ADR-0049「方向决议：tag 本位，属性概念退役」段与 CONTEXT.md 词条 **Tag / Tag Field / Property (RETIRING)**。
+> **状态：D1–D12 已定稿（D5 / D7 已修订，见段内标注）；阶段 1（D1 / D5 / D7 / D10 + chip 点击导航）已实施（`b955b79`），阶段 2（D2 / D4）、阶段 3（D8）、阶段 4（D5 / D7 修订 + D11 / D12）待实施**。上游决议见 ADR-0049「方向决议：tag 本位，属性概念退役」段与 CONTEXT.md 词条 **Tag / Tag Field / Property (RETIRING)**。
 
 ## Context
 
@@ -39,6 +39,8 @@ TaskHub `ensureTodo` 等程序化路径：先确保 `#task` 在 content，再写
 | 页面元素 | 实现映射 |
 |---|---|
 | #标题 + 「11 个成员 · 来自 4 个页面」 | 同左栏口径（直系成员数 + 去重 page_id） |
+| 标签颜色（调色板） | 标签身份三要素之三（D11）：固定调色板选色 + 可清除（选中即写，无确认步骤）；色值存 design token 名，与聚合页标题 / 成员块内联 chip 同源 |
+| 描述（「添加描述」占位 / 描述文本） | 标签身份三要素之二（D11）：单行文本；系统标签只读（沿用本表「系统标签右栏只读」约束） |
 | 字段模板：状态·下拉选择〔继承←项目〕/ 日期·日期〔自身〕/ + 添加字段 | 行=FieldDefinition（key/title/type）；badge 区分继承字段（解析器产出，见 D10）与自身字段；+ 添加字段 = 建 FieldDefinition + 追加 `Tag.field_ids`（用户 tag 同样支持） |
 | 继承区：#项目 × / + 添加父标签 | **单父槽位**（D10）：已有父时按钮为更换/清除；环守卫拒绝成环 |
 | 删除标签…（红字） | `TagService::delete`（is_system 拒删守卫延续 ADR-0049 决策 #9）；成员块值保留（决策 #7） |
@@ -55,7 +57,7 @@ TaskHub `ensureTodo` 等程序化路径：先确保 `#task` 在 content，再写
 | 面包屑「标签 / #项目」 | 返回标签管理（D5）的导航 | 新 UI |
 | 大标题 `#项目` + 副标题「24 个成员 · 来自 9 个页面」 | 成员数 = 挂该 tag 的块数；来源页数 = 成员块去重 page_id 计数 | 由投影派生 |
 | 视图切换 表格 / 看板 / 日历 | `viewKind` 三枚举已有 | ✅ 直接复用 |
-| 统计卡 成员(count) / 工时合计(sum) / 平均工时(avg) | **口径：自动出全**——成员数(count)恒显；数值字段自动出 sum+avg 卡（如工时），非数值字段（select/date）不出统计卡，零配置。对过滤后卡片客户端求值（单 tag 块数量级小）；数值字段 = TagFieldDefinition type == number |  |
+| 标题区 标签颜色 + 描述 | 标签身份三要素（D11）在聚合页的展示与就地编辑；空态显示占位。原统计卡已移除（见下方「D7 修订」） | 新 UI |
 | 工具栏 筛选 / 分组 / 排序 / 显示字段 | QueryToolbar 既有 scope（「显示字段」= per-tab 列显示，TaskHub 字段管理同款） | ✅ 复用 |
 | 表格列：内容 | `content_preview` | ✅ |
 | 表格列：**来源页** | `BlockCard.page_id` 已有；页标题经 TS pages store 映射；点击跳源页面 | ✅ 阶段 1 已补（唯一轻量数据缺口，只读列） |
@@ -65,6 +67,19 @@ TaskHub `ensureTodo` 等程序化路径：先确保 `#task` 在 content，再写
 视图配置（筛选/分组/排序/显示字段）按 tag 维度持久化，沿用 TaskHub per-tab 配置先例。
 
 阶段 1 实施形态：字段注册表按该 tag 的**有效字段**（Rust 解析结果）动态构造且限定在聚合页内（不并入任务中心注册表）；视图配置命名空间取 `tag:<tagId>`，与任务列表互不争抢；列模板在有效字段就绪前不回落到持久化配置，避免把未解析完的列集写库。
+
+#### D7 修订：统计卡移除 + 设置入口
+
+**统计卡移除（原「零配置自动出全」口径反转）。** 该口径有两点缺陷，实测中同时成立：
+
+1. **命中率近零**：系统 12 个字段全为 `string` 型（`crates/comind-core/src/types/field_definition.rs:91-114`），故系统 tag 上数值卡恒不出，统计区退化为一张「成员数」卡 —— 它与副标题「N 个成员 · 来自 M 个页面」逐字重复，零信息增量。用户 tag 上还须同时满足「有 number 字段」与「至少一人填过」才出不重复的卡。
+2. **无值即出卡**：`avg` 的分母取有值成员数、且卡片不显示样本量；0 人填时按 `0` 输出 —— 「合计 0 / 平均 0」被读作「该指标为 0」而非「无人填过」，属编造数据；部分人填时「平均 12」也无法判断是几人平均。
+
+更根本的是**规则本身猜不出意图**：「按字段类型自动出卡」无从判断某个 number 字段是否该 tag 的核心指标。故整块移除，不修口径。
+
+后续形态（若需要）：统计能力回归的前提是「成员多到一屏看不完」；实现方式为在视图配置中**显式指定统计字段**（随 per-tab 配置持久化、可随筛选变化），而非零配置自动出全。
+
+**设置入口。** 面包屑「标签 / #x」（已实施）保持为返回管理页的导航，语义不变；另设**设置入口** —— 跳转 `/tags` 并**选中当前 tag 的详情**（区别于面包屑的「仅到列表」）。入口形态与边界见 D12。
 
 ### D8：数据层改名 —— Tag 前缀直改
 `FieldDefinition` → **`TagFieldDefinition`**，`FieldValue` → **`TagFieldValue`**——与现名一一对应加前缀，语义即「tag 模板里的字段 / 其值」，迁移机械可脚本化（Rust 类型 + 表名 + TS 类型 + serde rename 评估）。
@@ -89,6 +104,42 @@ TaskHub `ensureTodo` 等程序化路径：先确保 `#task` 在 content，再写
 - **阶段 3**：数据层改名（D8）+ PropertyService 适配层删除 + UI 命名迁移（Property* 组件退役）。
 每阶段可独立提交、独立验证（vue-tsc / lint / vitest 门禁）。
 
+### D11：标签身份三要素 —— title + description + color
+
+Tag 从「字段模板」升为「有身份的实体」：除既有 `title` 外，新增 `description`（单行文本）与 `color`（调色板选色，可空 = 无色）。
+
+**数据层**：
+- `Tag` 表新增两列 —— `description TEXT NOT NULL DEFAULT ''`、`color TEXT NOT NULL DEFAULT ''`（`''` = 无色）；双端（SQLite / SqlJs）幂等迁移，与既有的 `parent_id` 同款。
+- **两列均不用 NULL**：sql.js 路径 NULL 与空串不可区分（`row_to_tag_js` 已为 `parent_id` 写「空串 → None」归一化），而此处空串是**有意义的值**；且 `batch.rs` 既有的 `optional_str_param` 会把空串折成 `None`，无法表达「清空」。故写入侧统一为「**缺失 / null = 保持不变，空串 = 清空**」单语义，两字段共用一个参数助手，无三态。
+- Rust `Tag` struct 同步加字段（`#[serde(default)]` 保证旧 payload 可反序列化）；更新入参经 `TagService::update` 扩展承载。
+- `src/types/tag-persisted.ts` 的 `PersistedTag` / `UpdateTagParams` 同步；`CreateTagParams` **不加**这两字段 —— 新建弹层（D5）只收标题 + 父标签，无消费方。
+
+**颜色存储形态**：存 **design token 名**（如 `--tag-color-3`），不存 hex —— 沿用「组件样式只用 `var(--*)`、禁硬编码色值」铁律。调色板为一组固定 `--tag-color-*` token（亮/暗各一份定义），取值集为「无色 + N 色」。
+
+**消费面（一个色值贯穿所有出现点，单源）**：
+
+| 出现点 | 载体 |
+|---|---|
+| 成员块内联 `#tag` chip | `composables/useContentRenderer.ts` 生成的 `.block-tag`（渲染态）与 `InlineTagExtension` Decoration（编辑态）—— 两态共用同一类名，色只写一次（先例：`.tag-hash` 图标） |
+| 聚合页标题区 | `TagAggregateBody.vue` |
+| 管理页列表行 / 详情标题 / 继承区父标签 chip | `TagsLibrary.vue` |
+
+描述与颜色有**两处编辑入口**（管理页右栏详情见 D5、聚合页标题区），但为**同一份数据、同一组写入原语**，不引入第二份状态；两处可编辑性约束一致（系统标签只读）。
+
+### D12：设置入口 = 模板编辑单点 + 一步到达
+
+标签设置按变更影响半径分两类，边界如下：
+
+| 类别 | 内容 | 编辑面 |
+|---|---|---|
+| **身份**（D11） | 描述、颜色 | 管理页右栏详情 **+** 聚合页标题区（两处均可改） |
+| **模板** | 字段模板增删（`Tag.field_ids`）、父标签继承（`parent_id`） | **仅管理页右栏详情**（D5），不重复实现 |
+
+聚合页对模板类只提供**入口**，不复制编辑 UI：入口 = 跳转 `/tags` 并选中当前 tag。
+
+理由：模板编辑牵动三类约束 —— 字段定义全局共享（改它等于改所有引用方）、系统标签只读、继承环守卫；两处实现必然漂移。身份类不同，它只影响本 tag 自身的展示，故可多入口。
+
 ## 开放问题
 
 - `TagFieldDefinition` / `TagFieldValue` 表名是否随 Rust 类型同步改（含 serde rename 对已同步设备 payload 的兼容评估）。
+- 调色板的 token 组（`--tag-color-*` 的色数、亮/暗是否共用色值）与现存常量 `--color-tag`（`src/styles/tokens/_semantic.scss:162`）的关系：沿用，还是收敛为同一组。

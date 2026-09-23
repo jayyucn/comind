@@ -37,6 +37,8 @@ function treeEntry(
   return {
     field_ids: [],
     parent_id: null,
+    description: '',
+    color: '',
     is_system: false,
     created_at: 1,
     updated_at: 1,
@@ -293,6 +295,24 @@ describe('tags store', () => {
 
     await store.setParent('c', null)
     expect(mockClient.setTagParent).toHaveBeenLastCalledWith({ id: 'c', parent_id: null })
+  })
+
+  it('setIdentity 只发要改的身份字段（空串 = 清空，原样发出）', async () => {
+    mockClient.updateTag.mockResolvedValue(treeEntry({ id: 'c', title: '工作' }))
+
+    const store = useTagsStore()
+    await store.setIdentity('c', { description: '工作相关的块', color: '--tag-color-3' })
+    expect(mockClient.updateTag).toHaveBeenCalledWith({
+      id: 'c',
+      description: '工作相关的块',
+      color: '--tag-color-3',
+    })
+
+    // 空串是有效值（清空，ADR-0050 D11）—— 必须原样发出，不能被「省略未改字段」吃掉。
+    // toHaveBeenLastCalledWith 是深比较：若 description 也被带上，这一条会红。
+    await store.setIdentity('c', { color: '' })
+    expect(mockClient.updateTag).toHaveBeenLastCalledWith({ id: 'c', color: '' })
+    expect(mockClient.getTagTree).toHaveBeenCalled()
   })
 
   it('deleteTag 走 client 并重读', async () => {
