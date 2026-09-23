@@ -289,7 +289,7 @@ function onRemoveGlobal(key: string) {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 12px 16px;
+  padding: 12px 0;
   margin-bottom: var(--space-4);
 }
 
