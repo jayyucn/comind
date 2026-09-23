@@ -211,6 +211,9 @@ function colPxOf(col: TableColumnConfig): number {
 // 必须由 JS 计算（见 tableWidths.ts）。jsdom/SSR 无 ResizeObserver → 退化为全下限（每列 40px）。
 const rootEl = ref<HTMLElement | null>(null)
 const containerWidth = ref(0)
+/** 表格自身左右描边宽之和：`separate` 模式下表框不参与列宽分配，但计入表格的 used width，
+    故须从列宽预算里扣掉（见 tableWidth / colWidths）。 */
+const TABLE_BORDER_X = 2
 let ro: ResizeObserver | null = null
 function observeContainer() {
   const scroll = rootEl.value?.querySelector<HTMLElement>('.table-scroll') ?? null
@@ -224,18 +227,24 @@ function observeContainer() {
   }
 }
 onMounted(observeContainer)
-/** 各列渲染像素宽：min + 剩余空间按 (基准宽 - min) 权重分配；末列吸收误差（总和 = 表格宽）。 */
-const colWidths = computed<Record<string, number>>(() => {
-  const cs = columns.value
-  const arr = distributeColumnWidths(cs.map((c) => colPxOf(c)), containerWidth.value, MIN_COL_WIDTH)
-  return Object.fromEntries(cs.map((c, i) => [c.key, arr[i]]))
-})
-/** 表格宽 = max(容器宽, 各列下限之和)；容器更窄时表格宽保持下限之和 → .table-scroll 横向滚动。 */
+/**
+ * 表格 border-box 宽 = max(容器宽, 各列下限之和 + 描边)；容器更窄时保持下限和 + 描边 → .table-scroll 横向滚动。
+ *
+ * fixed 布局的 used width 是 `max(声明宽, 列宽和 + 表格边框)`：`separate` 模式下表格边框不参与列宽分配，
+ * 若声明宽被列宽和填满，used width 就多出 1~2px，表格右缘越过 .table-scroll（overflow: auto）的可视区
+ * → 右侧描边被裁掉（左侧仍可见）。故列宽预算扣掉描边（见 colWidths），下限分支也补偿同样的量。
+ */
 const tableWidth = computed<number>(() => {
   const n = columns.value.length
-  return Math.max(containerWidth.value, n * MIN_COL_WIDTH)
+  return Math.max(containerWidth.value, n * MIN_COL_WIDTH + TABLE_BORDER_X)
 })
 const tableStyle = computed<Record<string, string>>(() => ({ width: `${tableWidth.value}px` }))
+/** 各列渲染像素宽：预算 = 表格宽 − 描边（列宽和 ≤ 预算；fixed 布局再把差额摊回各列，不留白）。 */
+const colWidths = computed<Record<string, number>>(() => {
+  const cs = columns.value
+  const arr = distributeColumnWidths(cs.map((c) => colPxOf(c)), tableWidth.value - TABLE_BORDER_X, MIN_COL_WIDTH)
+  return Object.fromEntries(cs.map((c, i) => [c.key, arr[i]]))
+})
 
 /**
  * 单列渲染宽：colWidths 中的像素值（四舍五入）。表格宽与各列宽都由 JS 计算，

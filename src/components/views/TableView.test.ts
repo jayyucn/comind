@@ -116,6 +116,19 @@ describe('TableView (generic, field-driven)', () => {
     expect(wrapper.find('thead .col-content .th-label').text()).toContain('内容')
   })
 
+  // ── 列宽预算必须扣掉表格自身描边（jsdom 无布局 → 列宽退化到下限，正好钉住两处预算的一致性）──
+  // 若列宽和 + 描边 > 表格声明宽，fixed 布局的 used width 取「列宽和 + 边框」，
+  // 表格右缘越出 .table-scroll（overflow: auto）可视区 → 右侧描边被裁，而左侧仍可见。
+  it('keeps column widths within the table width minus its own border', () => {
+    const wrapper = mountTable({ items: [makeCard()] })
+    const tableW = Number.parseFloat((wrapper.find('table').element as HTMLElement).style.width)
+    const colsW = wrapper
+      .findAll('thead th')
+      .reduce((sum, th) => sum + Number.parseFloat((th.element as HTMLElement).style.width || '0'), 0)
+    expect(tableW).toBeGreaterThan(0)
+    expect(colsW + 2).toBe(tableW) // 2 = 表格左右各 1px 描边
+  })
+
   // ── Sort icon ──
   it('shows asc icon for priority sort', () => {
     const wrapper = mountTable({ sort: [{ field: 'priority', dir: 'asc' }] })
