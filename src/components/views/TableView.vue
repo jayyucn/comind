@@ -859,15 +859,19 @@ function groupTotal(key: string): number {
 
 .data-table {
   width: 100%;
-  border-collapse: collapse;
+  /* 用 separate 而非 collapse：Chrome 忽略 collapse 表格的 border-radius（四角会是直角）。
+     border-spacing: 0 保证单元格之间无缝隙；副作用是 separate 模式不绘制 tr / row group 的边框，
+     行分隔线因此必须画在 td 上（见下方 td 规则）。 */
+  border-collapse: separate;
+  border-spacing: 0;
   table-layout: fixed;
   font-size: var(--text-sm);
 
-  /* 卡片化：表格自身即卡片（1px 描边 + 圆角）。用 outline 而非 border ——
-     border 会让 fixed 布局的表格宽变成「JS 算出的列宽之和 + 边框」，横向溢出 2px；
-     outline 不参与布局且同样跟随圆角，描边落在表格盒内（offset -1px）不被滚动容器裁切。 */
-  outline: 1px solid var(--border);
-  outline-offset: -1px;
+  /* 卡片化：表格自身即卡片（1px 描边 + 圆角）。必须用 border 而非 outline ——
+     thead 是 sticky（属于定位后代），按 CSS 绘制顺序画在表格自身的 outline 之上，
+     表头灰底会把卡片上缘（及左右上角）那 1px 描边吃掉；border 是表格盒子的一部分，
+     子元素背景盖不住它。表格宽由 JS 定成像素且 box-sizing: border-box，border 不额外撑宽。 */
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 
   /* 列宽由 JS 精确计算（ADR-0013 比例模式）：content-box 会把边框加在宽度之外
@@ -952,13 +956,7 @@ function groupTotal(key: string): number {
   }
 
   tbody tr {
-    // 行分隔线：比卡片描边（--border）浅一档，避免与卡片外框争视觉重量
-    border-bottom: 1px solid var(--surface-subtle);
     cursor: pointer;
-
-    &:last-child {
-      border-bottom: none;
-    }
 
     &.is-done {
       opacity: 0.55;
@@ -973,10 +971,18 @@ function groupTotal(key: string): number {
     padding: 13px 12px;
     vertical-align: middle;
     transition: background 80ms ease;
+    // 行分隔线：比卡片描边（--border）浅一档，避免与卡片外框争视觉重量。
+    // 画在单元格上而非 tr 上 —— separate 模式下 tr / row group 的边框不参与绘制。
+    border-bottom: 1px solid var(--surface-subtle);
 
     &:hover {
       background: var(--bg-hover);
     }
+  }
+
+  /* 末行不画分隔线：卡片下缘由表格自身的描边收口 */
+  tbody tr:last-child td {
+    border-bottom: none;
   }
 }
 
