@@ -20,13 +20,14 @@ vi.mock('sortablejs', () => ({
   },
 }))
 
-// ── CoreClient mock：仅需 reorderScreenViews（本测试不触发 load） ──
-const { mockReorderScreenViews } = vi.hoisted(() => ({
+// ── CoreClient mock：仅需 reorderScreenViews（load 不触发）+ updateTab（保存路径） ──
+const { mockReorderScreenViews, mockUpdateTab } = vi.hoisted(() => ({
   mockReorderScreenViews: vi.fn(),
+  mockUpdateTab: vi.fn(),
 }))
 
 vi.mock('../../wasm/client', () => ({
-  initCoreClient: vi.fn(async () => ({ reorderScreenViews: mockReorderScreenViews })),
+  initCoreClient: vi.fn(async () => ({ reorderScreenViews: mockReorderScreenViews, updateTab: mockUpdateTab })),
   getCoreClient: vi.fn(),
 }))
 
@@ -220,5 +221,143 @@ describe('NamedViewBar tabs drag reorder (ADR-0044)', () => {
     } finally {
       fakeSortable.ghost = null
     }
+  })
+})
+
+describe('NamedViewBar 分段控件（2026-09-23 改造）', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    capturedOptions.current = null
+  })
+
+  it('Tab 条是纯文字分段控件：无类型图标 / 无拖拽 grip，Screen 触发器隐藏', () => {
+    setupStore()
+    const wrapper = mountBar()
+
+    expect(wrapper.find('.screen-trigger').exists()).toBe(false)
+    expect(wrapper.find('.tab-row').exists()).toBe(true)
+    expect(wrapper.findAll('.tab')).toHaveLength(3)
+    // tab 内只剩名称文本（未命名 tab 回退为类型名）
+    expect(wrapper.find('.tab .ico').exists()).toBe(false)
+    expect(wrapper.find('.tab .nvb-grip').exists()).toBe(false)
+    expect(wrapper.find('.tab .name').text()).toBe('表格')
+
+    wrapper.unmount()
+  })
+})
+
+// ── 脏态操作（清除 / 保存）：用户报告「无法激活」的回归网 ──
+// 三层：① 脏态确实渲染两个 action（门是 dirtyHint → diffQueryParts）；
+// ② 点击真的落到 store 动作上（Sortable filter 与组件守卫都可能把它静默吃掉）；
+// ③ 拖拽守卫是「结束时间窗」而非常真标志——常真标志一旦因 onEnd 未触发而卡住，
+//    两个按钮会永久静默失效且没有任何视觉线索（与「无法激活」同形）。
+function dirtyQuery() {
+  return {
+    version: 1,
+    filter: { combinator: 'and', children: [{ field: 'status', op: 'eq', value: 'Todo' }] },
+    sort: [],
+    groupBy: null,
+  } as never
+}
+
+describe('NamedViewBar 脏态操作（清除 / 保存）', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    capturedOptions.current = null
+    mockReorderScreenViews.mockResolvedValue(undefined)
+  })
+
+  async function mountDirty() {
+    const store = setupStore()
+    const wrapper = mountBar()
+    await flushPromises()
+    store.setWorkingQuery(dirtyQuery())
+    await flushPromises()
+    return { store, wrapper }
+  }
+
+  it('脏态渲染 清除/保存；点「清除」回到已提交查询，提示与按钮随之消失', async () => {
+    const { store, wrapper } = await mountDirty()
+
+    expect(wrapper.find('.tab-hint').text()).toBe('你调整了筛选')
+    expect(wrapper.findAll('.tab .action').map((a) => a.text())).toEqual(['清除', '保存'])
+
+    await wrapper.findAll('.tab .action')[0].trigger('click')
+    await flushPromises()
+
+    expect(store.workingQuery).toEqual(EMPTY_QUERY)
+    expect(store.dirtyByTab.has('t1')).toBe(false)
+    expect(wrapper.find('.tab .action').exists()).toBe(false)
+    expect(wrapper.find('.tab-hint').exists()).toBe(false)
+
+    wrapper.unmount()
+  })
+
+  it('点「保存」以 workingQuery 序列化落库，回流覆盖本地已提交查询', async () => {
+    const { store, wrapper } = await mountDirty()
+    mockUpdateTab.mockImplementation(async (id: string, name: string, vt: string, qj: string, cfg: string) =>
+      makeTab({ id, name, view_type: vt, query_json: qj, config: cfg }),
+    )
+
+    await wrapper.findAll('.tab .action')[1].trigger('click')
+    await flushPromises()
+
+    expect(mockUpdateTab).toHaveBeenCalledWith('t1', '', 'table', JSON.stringify(dirtyQuery()), '{}')
+    expect(store.dirtyByTab.has('t1')).toBe(false)
+    expect(wrapper.find('.tab .action').exists()).toBe(false)
+
+    wrapper.unmount()
+  })
+
+  it('拖拽守卫是结束时间窗：未拖过立即可用、拖后窗口内静默、窗口外自动恢复（不粘死）', async () => {
+    const { store, wrapper } = await mountDirty()
+
+    /** 点「清除」并返回本次是否真的生效（脏标被清 = 动作跑到了）。 */
+    const clickClear = async () => {
+      await wrapper.findAll('.tab .action')[0].trigger('click')
+      await flushPromises()
+      const fired = !store.dirtyByTab.has('t1')
+      if (fired) {
+        // 真实 discardActiveTab 已清掉脏态 → 重建，保证按钮始终在场
+        store.setWorkingQuery(dirtyQuery())
+        await flushPromises()
+      }
+      return fired
+    }
+
+    // 从未拖拽过（dragEndedAt = 0）→ 不得被读成「刚拖完」
+    expect(await clickClear()).toBe(true)
+
+    // 拖拽结束 → 抑制窗内点击静默
+    ;(capturedOptions.current!.onEnd as () => void)()
+    expect(await clickClear()).toBe(false)
+
+    // 越过抑制窗（DRAG_CLICK_SUPPRESS_MS = 200）后自动恢复，无需任何清理回调兜底
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    expect(await clickClear()).toBe(true)
+
+    wrapper.unmount()
+  })
+
+  it('拖拽只 onStart 未 onEnd（onEnd 丢失）时点击仍可用 —— 守卫不可能粘死', async () => {
+    const { store, wrapper } = await mountDirty()
+
+    // 起拖后 onEnd 永不触发。旧实现（常真 isDragging，只在 onEnd 复位）会在此永久冻结
+    // tab 点击 / ⋯ / 清除 / 保存，且零视觉线索——本用例就是该失效形态的回归网。
+    ;(capturedOptions.current!.onStart as () => void)()
+    await flushPromises()
+
+    await wrapper.findAll('.tab .action')[0].trigger('click')
+    await flushPromises()
+    expect(store.dirtyByTab.has('t1')).toBe(false)
+    expect(wrapper.find('.tab .action').exists()).toBe(false)
+
+    // 收尾：补一次 onEnd 卸掉幽灵块 Y 轴锁，避免 document 监听泄漏到后续用例
+    ;(capturedOptions.current!.onEnd as () => void)()
+    await flushPromises()
+
+    wrapper.unmount()
   })
 })

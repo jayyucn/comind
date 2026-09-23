@@ -139,18 +139,22 @@ function openFieldsPanel(e: MouseEvent) {
   fieldsPanelOpen.value = true
 }
 
+// 列管理动作的统一约定：transform 的基准是**本页当前实际渲染的配置**（props.tableConfig）。
+// 不传的话 store 只能按「持久化 config ?? 实体 defaultConfig ?? 空列集」推断 —— 未注入 defaultConfig
+// 的命名空间（tag 聚合页：列模板由 tag 字段异步派生）会退化成空列集，一次列宽拖拽就把
+// `{"columns":[]}` 落库，渲染层随即失去自己的默认列回退（表格零列，看着像数据被清空）。
 function onToggleVisibility(key: string, visible: boolean) {
   store.patchActiveTabConfig((cfg) => ({
     ...cfg,
     columns: cfg.columns.map((c) => (c.key === key ? { ...c, visible } : c)),
-  }))
+  }), props.tableConfig)
 }
 
 function onReorder(keys: string[]) {
   store.patchActiveTabConfig((cfg) => {
     const map = new Map(cfg.columns.map((c) => [c.key, c]))
     return { ...cfg, columns: keys.map((k) => map.get(k)).filter((c): c is TableColumnConfig => !!c) }
-  })
+  }, props.tableConfig)
 }
 
 // 列宽拖拽缩放（ADR-0013 边界联动）：一次性写回本列与相邻下一列的变更，保持总宽恒定。
@@ -161,7 +165,7 @@ function onColumnResize(changes: { key: string; width: number }[]) {
       ...cfg,
       columns: cfg.columns.map((c) => (widths.has(c.key) ? { ...c, width: widths.get(c.key)! } : c)),
     }
-  })
+  }, props.tableConfig)
 }
 
 // 表头菜单：列对齐（左/中/右）→ 写回 TableColumnConfig.align
@@ -169,7 +173,7 @@ function onColumnAlign(key: string, align: 'left' | 'center' | 'right') {
   store.patchActiveTabConfig((cfg) => ({
     ...cfg,
     columns: cfg.columns.map((c) => (c.key === key ? { ...c, align } : c)),
-  }))
+  }), props.tableConfig)
 }
 
 // 表头菜单：重置列宽 → 清除该列 width（undefined 在序列化时被丢弃，回落到组件默认列宽）
@@ -177,19 +181,31 @@ function onColumnReset(key: string) {
   store.patchActiveTabConfig((cfg) => ({
     ...cfg,
     columns: cfg.columns.map((c) => (c.key === key ? { ...c, width: undefined } : c)),
-  }))
+  }), props.tableConfig)
 }
 
 function onAddGlobal(key: string) {
   store.patchAllTabConfigs((cfg) => {
     if (cfg.columns.some((c) => c.key === key)) return cfg
     return { ...cfg, columns: [...cfg.columns, { key, visible: true }] }
-  })
+  }, props.tableConfig)
 }
 
 function onRemoveGlobal(key: string) {
-  store.patchAllTabConfigs((cfg) => ({ ...cfg, columns: cfg.columns.filter((c) => c.key !== key) }))
+  store.patchAllTabConfigs((cfg) => ({ ...cfg, columns: cfg.columns.filter((c) => c.key !== key) }), props.tableConfig)
 }
+
+/**
+ * 字段面板的「已用字段」= 本页**实际渲染**的列。
+ * 表格在场时以 `props.tableConfig` 为准（与 TableView 渲染的是同一份）；
+ * 非表格视图退回 `store.activeTabColumns`（旧行为，block/page 命名空间有 defaultConfig 兜底）。
+ * 不能一律用 `store.activeTabColumns`：它按 store 侧回退解析，未注入 defaultConfig 的命名空间
+ * （tag 聚合页，tab config 为空串）会得到空列集 —— 面板会显示「一个字段都没用」，
+ * 而表格其实渲染着整份 tag 字段模板（真机实证 2026-09-23）。
+ */
+const activeColumns = computed<TableColumnConfig[]>(
+  () => props.tableConfig?.columns ?? store.activeTabColumns,
+)
 </script>
 
 <template>
@@ -236,7 +252,7 @@ function onRemoveGlobal(key: string) {
     >
       <FieldManagerPanel
         :fields="fields"
-        :columns="store.activeTabColumns"
+        :columns="activeColumns"
         @toggle-visibility="onToggleVisibility"
         @reorder="onReorder"
         @add-global="onAddGlobal"

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import type { LayoutConfig, ViewKind } from '../../core/view'
+import type { LayoutConfig, TableConfig, ViewKind } from '../../core/view'
 import type { ScreenViewRust } from '../../wasm/types'
 
 const {
@@ -616,6 +616,77 @@ describe('screenView store (two-level Screen→Tab)', () => {
       store.currentScreenId = 's1'
       store.currentTabId = 't1'
       expect(store.activeTabColumns).toEqual([])
+    })
+  })
+
+  // ── 列配置写回的基准（2026-09-23 修复）──
+  /**
+   * tag 聚合页命名空间（`tag:<id>`）未注入 defaultConfig —— 列模板由 tag 字段异步派生，
+   * store 侧无从得知。此时写侧若以「空列集」为 transform 基准，`columns.map(...)` 会在空数组上
+   * 跑一遍并把 `{"columns":[]}` 落库；渲染层拿到非 null 的解析结果后不再回退自己的默认列，
+   * 表格随即零列（表现为「拖一次列宽后数据被清空」，且刷新不恢复）。
+   * 故写侧新增 `base` 参数：由消费方传入其当前实际渲染的配置。
+   */
+  describe('列配置写回基准（无 defaultConfig 的命名空间）', () => {
+    const TAG_BASE = {
+      viewKind: 'table',
+      version: 1,
+      columns: [
+        { key: 'content', role: 'primary', width: 720 },
+        { key: 'page', width: 140 },
+        { key: 'amount', width: 110 },
+      ],
+    } as TableConfig
+
+    function setupTagStore() {
+      const store = useScreenViewStore('tag:demo')
+      store.views = [
+        makeScreen({ id: 's1' }),
+        // tag 页按设计让 tab 的 config 落空串（TagAggregateBody：不注入 defaultConfig）
+        makeTab({ id: 't1', parent_id: 's1', view_type: 'table', config: '' }),
+        makeTab({ id: 't2', parent_id: 's1', view_type: 'table', config: '' }),
+      ]
+      store.currentScreenId = 's1'
+      store.currentTabId = 't1'
+      return store
+    }
+
+    it('带 base：列宽写回保留生效列（不落 columns:[]，渲染层回退链不被破坏）', async () => {
+      const store = setupTagStore()
+      await store.patchActiveTabConfig(
+        (cfg) => ({
+          ...cfg,
+          columns: cfg.columns.map((c) => (c.key === 'content' ? { ...c, width: 318 } : c)),
+        }),
+        TAG_BASE,
+      )
+
+      expect(mockUpdateTab).toHaveBeenCalledTimes(1)
+      const written = JSON.parse(mockUpdateTab.mock.calls[0][4])
+      expect(written.columns.map((c: { key: string }) => c.key)).toEqual(['content', 'page', 'amount'])
+      expect(written.columns[0].width).toBe(318)
+      // 写回后解析出的列仍非空 —— 这正是「表格零列」的抗体
+      expect(store.activeTabColumns).toHaveLength(3)
+    })
+
+    it('不带 base：无 defaultConfig 时基准是空列集（故消费方必须显式传 base）', async () => {
+      const store = setupTagStore()
+      await store.patchActiveTabConfig((cfg) => cfg)
+      expect(JSON.parse(mockUpdateTab.mock.calls[0][4]).columns).toEqual([])
+    })
+
+    it('带 base：patchAllTabConfigs（字段面板全局增删）逐 tab 保留生效列', async () => {
+      const store = setupTagStore()
+      await store.patchAllTabConfigs(
+        (cfg) => ({ ...cfg, columns: [...cfg.columns, { key: 'newField', visible: true }] }),
+        TAG_BASE,
+      )
+
+      expect(mockUpdateTab.mock.calls.map((c) => c[0])).toEqual(['t1', 't2'])
+      for (const call of mockUpdateTab.mock.calls) {
+        const cols = JSON.parse(call[4]).columns as { key: string }[]
+        expect(cols.map((c) => c.key)).toEqual(['content', 'page', 'amount', 'newField'])
+      }
     })
   })
 })

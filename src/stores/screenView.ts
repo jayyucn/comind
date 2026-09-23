@@ -247,22 +247,32 @@ function makeScreenViewStore(
         delete drafts.value[tab.id]
       }
 
-      /** 解析某 tab 的表格布局配置；空/损坏时回退 seed 默认（与 store 初始化一致），再不行用空列集。 */
-      function resolveTableConfig(tab: ScreenViewRust): TableConfig {
+      /**
+       * 解析某 tab 的表格布局配置：持久化 config 优先 → 实体注册点注入的 defaultConfig →
+       * 消费方传入的基准 `base`（= 该页当前实际渲染用的那份配置）→ 空列集。
+       *
+       * `base` 是必需的兜底：未注入 defaultConfig 的命名空间（如 tag 聚合页 —— 列模板由 tag 字段
+       * 异步派生，store 无从得知）会落到「空列集」，而写侧以本函数的返回值为 transform 基准，
+       * 于是 `columns.map(...)` 在空数组上跑一遍就把 `{"columns":[]}` 落库；渲染层拿到非 null 的
+       * 解析结果后不再回退自己的默认列 ⇒ 表格零列，看起来像「数据被清空」（且刷新不恢复）。
+       */
+      function resolveTableConfig(tab: ScreenViewRust, base?: TableConfig): TableConfig {
         const parsed = parseLayoutConfig(tab.config, 'table') as TableConfig | null
         if (parsed) return parsed
         if (defaultConfig) return defaultConfig('table') as TableConfig
+        if (base) return base
         return { viewKind: 'table', version: 1, columns: [] }
       }
 
       /**
        * 仅改当前激活 tab 的 TableConfig（per-tab 显示/隐藏 + 排序，ADR-0011）。
        * transform 接收当前生效配置，返回新配置；持久化并经 updateTab 回流本地。
+       * @param base 消费方当前实际渲染的配置（无持久化 config 时作为 transform 基准，见 resolveTableConfig）
        */
-      async function patchActiveTabConfig(transform: (cfg: TableConfig) => TableConfig) {
+      async function patchActiveTabConfig(transform: (cfg: TableConfig) => TableConfig, base?: TableConfig) {
         const tab = currentTab.value
         if (!tab) return
-        const next = transform(resolveTableConfig(tab))
+        const next = transform(resolveTableConfig(tab, base))
         const client = await getClient()
         const updated = await client.updateTab(tab.id, tab.name, tab.view_type, tab.query_json, JSON.stringify(next))
         const idx = views.value.findIndex((v) => v.id === tab.id)
@@ -273,18 +283,24 @@ function makeScreenViewStore(
        * 改当前 Screen 下所有 table 类型 tab 的 TableConfig（全局增/删字段，ADR-0011）。
        * 非 table tab（board/calendar 无 columns）跳过；持久化并回流本地。
        */
-      async function patchAllTabConfigs(transform: (cfg: TableConfig) => TableConfig) {
+      async function patchAllTabConfigs(transform: (cfg: TableConfig) => TableConfig, base?: TableConfig) {
         const client = await getClient()
         for (const tab of currentTabs.value) {
           if (tab.view_type !== 'table') continue
-          const next = transform(resolveTableConfig(tab))
+          const next = transform(resolveTableConfig(tab, base))
           const updated = await client.updateTab(tab.id, tab.name, tab.view_type, tab.query_json, JSON.stringify(next))
           const idx = views.value.findIndex((v) => v.id === tab.id)
           if (idx !== -1) views.value[idx] = updated
         }
       }
 
-      /** 当前激活 tab 的表格列配置（经 resolveTableConfig 回退 seed 默认，与 patch 写入一致，ADR-0011）。 */
+      /**
+       * 当前激活 tab 的表格列配置（经 resolveTableConfig 回退，与 patch 写入同源，ADR-0011）。
+       *
+       * ⚠️ 这是 **store 侧回退** 的结果：未注入 defaultConfig 的命名空间（tag 聚合页）会得到空列集。
+       * 需要「用户实际看到的列」时，消费方应改用自己传给视图的那份配置（如 QueryPageFrame 的
+       * `props.tableConfig`），不要拿本值驱动渲染 / 字段面板。
+       */
       const activeTabColumns = computed<TableColumnConfig[]>(() =>
         currentTab.value ? resolveTableConfig(currentTab.value).columns : [],
       )

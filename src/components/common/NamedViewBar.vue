@@ -2,16 +2,13 @@
 import {
   ChevronDown,
   Copy,
-  GripVertical,
   MoreVertical,
   Pencil,
   Plus,
   Star,
-  Table,
   Trash2
 } from 'lucide-vue-next'
 import Sortable from 'sortablejs'
-import type { Component } from 'vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   canDeleteScreen,
@@ -44,15 +41,15 @@ const store = useScreenViewStore(props.screenViewKey ?? props.entityKey, {
   defaultViewType: props.defaultViewType,
 })
 
-function viewTypeIcon(type: string): Component {
-  return props.viewTypes.find((v) => v.key === type)?.icon ?? Table
-}
 function typeLabel(t: string): string {
   return props.viewTypes.find((v) => v.key === t)?.label ?? t
 }
 function tabName(t: ScreenViewRust): string {
   return t.name || typeLabel(t.view_type)
 }
+
+// Screen 下拉入口暂时隐藏（逻辑与样式保留，置 true 即恢复；Tab 条改为分段控件后视觉主体让位给 tab）
+const SHOW_SCREEN_TRIGGER = false
 
 // ── Screen 下拉 ──
 const showScreenPop = ref(false)
@@ -215,7 +212,15 @@ const tabRowEl = ref<HTMLElement | null>(null)
 // 本地 mirror：避免 Vue 响应式（currentTabs computed）与 Sortable 直接互搏 DOM；
 // onEnd 后 store.reorderTabs 更新真相，watch 同步回 localTabs（顺序已一致，v-for patch 为 no-op）。
 const localTabs = ref<ScreenViewRust[]>([])
-const isDragging = ref(false)
+// 拖拽与点击的分界：用「拖拽结束时间戳」判定，而不是常真布尔。force-fallback 下 Sortable 的
+// onEnd 在「指针在窗口外松开」「拖拽中元素被 v-for 替换」等情形不保证触发，而常真标志会让
+// tab 点击 / ⋯ / 清除 / 保存 全部静默失效且没有任何视觉线索（ADR-0044 的「拖拽期间冻结 click」仍保留）。
+const DRAG_CLICK_SUPPRESS_MS = 200
+let dragEndedAt = 0
+/** 本次 click 是否属于刚结束的拖拽残留（拖拽结束后的抑制窗口内）。 */
+function dragJustEnded(): boolean {
+  return Date.now() - dragEndedAt < DRAG_CLICK_SUPPRESS_MS
+}
 let sortable: Sortable | null = null
 
 // 预览块（fallback 克隆）Y 轴锁：横向 tab 条上克隆体仅 X 跟随鼠标。
@@ -266,7 +271,7 @@ function readTabOrder(): string[] {
 
 function handleDragEnd() {
   detachGhostYLock()
-  isDragging.value = false
+  dragEndedAt = Date.now()
   const ids = readTabOrder()
   if (ids.length) void store.reorderTabs(ids)
 }
@@ -284,7 +289,6 @@ onMounted(() => {
     ghostClass: 'nvb-ghost',
     chosenClass: 'nvb-chosen',
     onStart: () => {
-      isDragging.value = true
       attachGhostYLock()
     },
     onEnd: handleDragEnd,
@@ -299,8 +303,9 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="named-view-bar">
-    <!-- Screen 下拉触发器 -->
+    <!-- Screen 下拉触发器（暂时隐藏：SHOW_SCREEN_TRIGGER） -->
     <button
+      v-if="SHOW_SCREEN_TRIGGER"
       ref="screenTriggerRef"
       class="screen-trigger"
       :class="{ open: showScreenPop }"
@@ -329,17 +334,8 @@ onBeforeUnmount(() => {
         :data-id="t.id"
         class="tab"
         :class="{ active: t.id === store.currentTabId }"
-        @click="renamingTabId ? null : (isDragging ? null : store.selectTab(t.id))"
+        @click="renamingTabId ? null : (dragJustEnded() ? null : store.selectTab(t.id))"
       >
-        <GripVertical
-          :size="13"
-          class="nvb-grip"
-        />
-        <component
-          :is="viewTypeIcon(t.view_type)"
-          :size="13"
-          class="ico"
-        />
         <input
           v-if="renamingTabId === t.id"
           id="tabRenameInput"
@@ -356,13 +352,13 @@ onBeforeUnmount(() => {
             <span class="tab-hint">你调整了{{ dirtyHint }}</span>
             <button
               class="action"
-              @click.stop="isDragging ? null : store.discardActiveTab()"
+              @click.stop="dragJustEnded() ? null : store.discardActiveTab()"
             >
               清除
             </button>
             <button
               class="action"
-              @click.stop="isDragging ? null : store.saveActiveTab()"
+              @click.stop="dragJustEnded() ? null : store.saveActiveTab()"
             >
               保存
             </button>
@@ -376,10 +372,9 @@ onBeforeUnmount(() => {
             <span
               v-else
               class="kebab"
-              :class="{ on: t.id === store.currentTabId }"
-              @click.stop="isDragging ? null : openTabMenu(t.id, $event)"
+              @click.stop="dragJustEnded() ? null : openTabMenu(t.id, $event)"
             >
-              <MoreVertical :size="14" />
+              <MoreVertical :size="13" />
             </span>
           </template>
         </template>
@@ -581,9 +576,11 @@ onBeforeUnmount(() => {
 .named-view-bar {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   height: 42px;
-  padding: 0 10px;
+  // 不留水平内边距：本条的横向内容（分段控件 / 右侧工具栏）需与主内容区的卡片同缘
+  // （QueryPageFrame 已用 padding: 0 var(--space-8) 提供外缘；再加内边距会让两者各错 10px）
+  padding: 0;
   margin-top: var(--space-4);
   // border: 1px solid var(--border);
   // border-top-left-radius: var(--radius-md);
@@ -626,15 +623,31 @@ onBeforeUnmount(() => {
   }
 }
 
+/* 分段轨道：浅灰底 + 内嵌激活胶囊（设计稿 2026-09-23 实测：轨道 --surface-subtle / 胶囊白 / 无描边无阴影） */
 .tab-row {
+  // 激活胶囊底。浅色 = --bg-base（白，与设计稿一致）；暗色下 --bg-base 比轨道更暗，
+  // 会读成「凹坑」，故抬一档用 --bg-active。
+  --nvb-thumb: var(--bg-base);
+
   display: flex;
   align-items: center;
+  gap: 3px;
+  padding: 2px;
   flex: none;
   max-width: 55%;
+  border-radius: var(--radius-sm, 6px);
   overflow-x: auto;
-  align-self: stretch;
   overflow-y: hidden;
-  background: var(--bg-active);
+  background: var(--surface-subtle);
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+[data-theme='dark'] .tab-row {
+  --nvb-thumb: var(--bg-active);
 }
 
 .tab {
@@ -642,21 +655,22 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 4px;
   white-space: nowrap;
-  padding: 0 10px 0 22px;
-  height: 100%;
+  // 左右对称内边距 0.9em（对齐参考图实测比例）；右侧同时容下 hover 才淡入的 ⋯
+  padding: 0 11px;
+  height: 26px;
+  border-radius: calc(var(--radius-sm, 6px) - 2px);
   cursor: grab;
   user-select: none;
   position: relative;
-  background: var(--bg-base2);
-  color: var(--text-tertiary);
+  background: transparent;
+  color: var(--text-secondary);
   font-size: var(--text-xs, 0.75rem);
   font-weight: 500;
   transition: color 80ms ease, background 80ms ease;
 
   &:hover {
-    color: var(--text-secondary);
+    color: var(--text-primary);
     background: var(--bg-hover);
-    border-radius: 0;
   }
 
   &:active {
@@ -664,56 +678,17 @@ onBeforeUnmount(() => {
   }
 
   &.active {
-    background: transparent;
+    background: var(--nvb-thumb);
     color: var(--text-primary);
-    border-bottom-left-radius: 0;
-    border-bottom-right-radius: 0;
-  }
-
-  &.active::after {
-    content: '';
-    position: absolute;
-    left: 8px;
-    right: 8px;
-    bottom: -1px;
-    height: 2px;
-    // background: var(--accent);
-    border-radius: 2px;
-    box-shadow: 0 0 8px rgba(129, 140, 248, 0.55);
-  }
-
-  .ico {
-    color: inherit;
-    opacity: 0.9;
-  }
-
-  &.active .ico {
-    color: var(--accent);
-    opacity: 1;
   }
 
   // ── 拖拽相关（ADR-0044） ──
-  // 可发现性：hover 时左侧淡入 grip，纯视觉提示、不占布局
-  .nvb-grip {
-    position: absolute;
-    left: 6px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: var(--text-tertiary);
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 100ms ease;
-  }
-
-  &:hover .nvb-grip {
-    opacity: 0.55;
-  }
-
-  // 浮动克隆（force-fallback）：外观与 .tab 完全一致，无阴影/半透明/缩放
+  // 浮动克隆（force-fallback）：外观与激活胶囊一致、无阴影。
+  // 不再声明 opacity：Sortable 会给克隆体写内联 opacity: 0.8，普通声明压不过内联样式
+  // （要压需 !important，暂不为此引入）。
   &.nvb-drag {
-    background: var(--bg-base);
+    background: var(--nvb-thumb);
     box-shadow: none;
-    opacity: 1;
   }
 
   // 落点占位：中性 gap，隐藏内部内容，仅示落点
@@ -727,10 +702,12 @@ onBeforeUnmount(() => {
     }
   }
 
-  // 拖拽起点：仅极轻强调
-  &.nvb-chosen {
-    background: var(--bg-base2);
-    // box-shadow: inset 0 0 0 1px var(--accent);
+  // 拖拽起点。必须排除克隆体：克隆体是源元素深克隆、同时带 chosen 与 drag 两个类，同权重时后写的这条会赢，
+  // 于是浮动块拿到 --bg-hover（灰）而不是 --nvb-thumb（胶囊色）。
+  // 注：fallback 模式下原始元素同时带 ghostClass，`.nvb-ghost` 的 transparent !important 恒压过这条，
+  // 故它当前不显形；保留是给「关掉 forceFallback 时作拖拽起点标记」用。
+  &.nvb-chosen:not(.nvb-drag) {
+    background: var(--bg-hover);
   }
 
 
@@ -758,6 +735,11 @@ onBeforeUnmount(() => {
   border-radius: 50%;
   background: var(--accent);
   flex: none;
+  // 占用 .tab 右侧预留位（与 ⋯ 同位，二者互斥渲染），不参与内容宽度
+  position: absolute;
+  right: 3px;
+  top: 50%;
+  transform: translateY(-50%);
   animation: nvb-pulse 1.8s ease-in-out infinite;
 }
 
@@ -775,16 +757,25 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  height: 18px;
+  width: 12px;
+  height: 16px;
   border-radius: 4px;
   color: var(--text-tertiary);
   opacity: 0;
+  // 隐形时不可点：否则这个 12×16 的透明盒子会盖在 tab 右缘，抢走本该落在 tab 上的点击
+  pointer-events: none;
   transition: all 80ms ease;
+  // 占用 .tab 右侧预留位（与 .dot 同位，二者互斥渲染），不参与内容宽度
+  position: absolute;
+  right: 1px;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: pointer;
 
-  &.on,
+  // 仅 hover 时淡入（不随激活态常驻）
   .tab:hover & {
     opacity: 1;
+    pointer-events: auto;
   }
 
   &:hover {
@@ -809,10 +800,12 @@ onBeforeUnmount(() => {
   color: var(--accent);
   background: none;
   border: none;
-  padding: 0 2px;
+  // 纵向撑满 .tab 的 26px：文字行高只有 12px，若按内容取盒则上下各留 7px 死区，
+  // 落进死区的点击会命中 .tab（selectTab 对当前 tab 早返回）→ 表现成「点了没反应」
+  padding: 7px 4px;
   white-space: nowrap;
   transition: color 80ms ease;
-  margin-left: 8px;
+  margin-left: 6px;
 
   &:hover {
     color: var(--accent-hover, #6366f1);
@@ -825,9 +818,10 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  // 与分段胶囊同高同圆角档，读作轨道外侧的兄弟控件
   width: 26px;
   height: 26px;
-  border-radius: var(--radius-sm, 6px);
+  border-radius: calc(var(--radius-sm, 6px) - 2px);
   border: none;
   background: transparent;
   color: var(--text-tertiary);
