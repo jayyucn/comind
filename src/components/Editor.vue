@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, watch, shallowRef, ref } from 'vue'
+import { computed, onBeforeUnmount, watch, shallowRef, ref } from 'vue'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import type { EditorView } from '@tiptap/pm/view'
 import StarterKit from '@tiptap/starter-kit'
@@ -14,6 +14,7 @@ import { HeadingPreviewExtension } from '../extensions/HeadingPreviewExtension'
 import { DateRefExtension } from '../extensions/DateRefExtension'
 import { DateRefTriggerExtension } from '../extensions/DateRefTriggerExtension'
 import { usePageStore } from '../stores/pages'
+import { useTagsStore } from '../stores/tags'
 import { useDateTimePickerPanel } from '../composables/useDateTimePickerPanel'
 import { useRelationshipMenu } from '../composables/useRelationshipMenu'
 import { debounce } from '../utils/debounce'
@@ -79,6 +80,23 @@ const kindSelectorView = ref<EditorView | null>(null)
 const relMenu = useRelationshipMenu()
 const { open: openDateRefPanel } = useDateTimePickerPanel()
 
+const tagsStore = useTagsStore()
+
+/** `title → tag` 索引：装饰重建时 O(1) 查表（`allTags` 变化才重算，不是每次打字都遍历）。 */
+const tagsByTitle = computed(() => new Map(tagsStore.allTags.map((t) => [t.title, t])))
+
+/**
+ * 编辑态 `#tag` 的着色解析器（ADR-0050 D11）：`InlineTagExtension` 不碰 Pinia，
+ * 由宿主注入闭包 —— 闭包每次重建装饰都求值，故标签改色后无需重启编辑器。
+ *
+ * 标签树的加载不在此处触发：`BlockTagFields`（每个块都挂）已在 mounted 里
+ * `ensureLoaded()`；本组件的 `tagsByTitle` watch 负责在它到位后补一次重绘。
+ */
+function resolveInlineTag(title: string) {
+  const tag = tagsByTitle.value.get(title)
+  return tag ? { color: tag.color, is_system: tag.is_system } : undefined
+}
+
 const editor = shallowRef(useEditor({
   extensions: [
     StarterKit.configure({
@@ -90,7 +108,8 @@ const editor = shallowRef(useEditor({
     SlashCommandExtension,
     EnterAsBlockExtension,
     WikiLinkExtension,
-    InlineTagExtension,
+    // 编辑态 `#tag` 胶囊与渲染态同形（ADR-0050 D11），色由宿主解析后注入
+    InlineTagExtension.configure({ resolve: resolveInlineTag }),
     WikiLinkTriggerExtension,
     RelationshipTriggerExtension,
     BracketPairExtension,
@@ -244,6 +263,15 @@ watch(
     }
   }
 )
+
+// 标签树是**异步**加载的，而 store 变化不产生 ProseMirror transaction ⇒ 装饰不会自己重算。
+// 不补这一枪，首次打开块时 `#tag` 会停在无色，直到用户敲下一个键才「回色」。
+// 空 transaction 无 step ⇒ 不改文档、不进撤销栈，也不触发 onUpdate（TipTap 仅在
+// docChanged 时才 emit update），只是逼一次 view update 重新求值 decorations。
+watch(tagsByTitle, () => {
+  const e = editor.value
+  if (e) e.view.dispatch(e.state.tr)
+})
 
 watch(
   () => props.content,

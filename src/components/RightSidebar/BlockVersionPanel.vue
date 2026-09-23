@@ -571,7 +571,8 @@ onMounted(async () => {
 :deep(.block-tag) {
   color: var(--color-tag);
   background: var(--tag-10);
-  padding: 0 2px;
+  // 与 _block.scss 的 .block-tag 保持同步（版本预览是 v-html，须 :deep 复制一份）
+  padding: 0 var(--space-1);
   border-radius: var(--radius-sm);
   font-size: 0.9em;
 }

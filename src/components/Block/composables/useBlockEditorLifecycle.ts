@@ -288,10 +288,15 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     // .block-link 与 .rel-type-label 与 .date-ref 与 .block-tag 都由 handleContentClick 处理点击，
     // 不要让 mousedown 触发激活导致 BulletRender 被替换、
     // 进而让后续 click 事件落在新挂载的 Editor 上。
-    if (target.closest('.block-link')) return
-    if (target.closest('.rel-type-label')) return
-    if (target.closest('.date-ref')) return
-    if (target.closest('.block-tag')) return
+    // 本守卫只在**渲染态**生效：块激活后编辑器（.ProseMirror）在场，inline tag /
+    // date-ref / wiki link 的编辑态装饰同样挂着这些类名 —— 此时提前 return 会跳过
+    // 下方的 startTextTracking，从装饰字符内起拖将无法跨块选区（ADR-0035 老 bug 形态）。
+    if (!target.closest('.ProseMirror')) {
+      if (target.closest('.block-link')) return
+      if (target.closest('.rel-type-label')) return
+      if (target.closest('.date-ref')) return
+      if (target.closest('.block-tag')) return
+    }
 
     if (e.ctrlKey || e.metaKey) {
       if (selection) {

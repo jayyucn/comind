@@ -296,6 +296,24 @@ describe('useBlockEditorLifecycle', () => {
       expect(setCoordsSpy).not.toHaveBeenCalled()
     })
 
+    it('编辑态（.ProseMirror 在场）命中 .block-tag 不再提前 return —— 放行文本选区追踪', () => {
+      // 块激活后 inline tag 装饰也挂着 .block-tag；守卫若照旧吞掉 mousedown，
+      // 从装饰字符内起拖将无法跨块选区（ADR-0035 老 bug 形态）。
+      const { lifecycle, editorStore } = setup()
+      const setCoordsSpy = vi.spyOn(editorStore, 'setClickCoords').mockImplementation(() => {})
+      const e = {
+        target: {
+          closest: (sel: string) => (sel === '.ProseMirror' || sel === '.block-tag') ? {} : null,
+        },
+        button: 0,
+        ctrlKey: false, metaKey: false,
+        clientX: 100, clientY: 200,
+        preventDefault: () => {}
+      } as any
+      lifecycle.handleContentMousedown(e)
+      expect(setCoordsSpy).toHaveBeenCalledWith(100, 200)
+    })
+
     // ── 起点在激活块：手势必须与非激活块同构 ──
     // 旧实现「已激活的 block 交给 ProseMirror 原生处理光标定位」直接 return，
     // 文本追踪根本不启动 → ProseMirror 独占拖拽，comind 无从接管（拖不出本块）。

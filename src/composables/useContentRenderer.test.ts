@@ -27,13 +27,14 @@ describe('useContentRenderer — 回退路径（无 segments）', () => {
     expect(renderContentToHtml({ segments: [], content: '&' })).toBe('&amp;')
   })
 
-  it('#tag 渲染为 block-link block-tag span，`#` 号包成 tag-hash（图标位，字符仍在文本里）', () => {
+  it('#tag 渲染为 block-link block-tag span，`#` 按字面渲染（与编辑态同形，ADR-0050 D11）', () => {
     const html = renderContentToHtml({ segments: [], content: '这是 #标签' })
     expect(html).toContain('block-tag')
     expect(html).toContain('data-page="标签"')
-    // `#` 字形由 CSS 换成图标，但字符必须留在 DOM 文本里 ——
+    // `#` 字符留在 DOM 文本里 ——
     // services/render-text 的 tag 段靠它维持「可见长度 ≡ 存储长度」的明文对应
-    expect(html).toContain('<span class="tag-hash">#</span>')
+    expect(html).toContain('>#标签</span>')
+    expect(html).not.toContain('tag-hash')
     expect(html.replace(/<[^>]*>/g, '')).toBe('这是 #标签')
   })
 
@@ -673,10 +674,10 @@ describe('segmentVisibleText 与渲染输出同源（#93）', () => {
 
 /**
  * Rust 端 `render_segments` 给出的结构化 `tag` 段（ADR-0049）：
- * 与 text 段兜底渲染一样把 `#` 包成 `.tag-hash`，另带 data-tag-id 与系统变体类。
+ * `#` 按字面渲染（与编辑态同形，ADR-0050 D11），另带 data-tag-id 与系统变体类。
  */
 describe('结构化 tag 段（Rust render_segments 提供 segments 时）', () => {
-  it('用户 tag：`#` 包成 tag-hash，tag 名保留，去标签即原文', () => {
+  it('用户 tag：`#` 字面保留，tag 名保留，去标签即原文', () => {
     const content = '前置 #标签'
     const segments: RenderSegment[] = [
       { type: 'text', start: 0, end: 3 },
@@ -684,7 +685,7 @@ describe('结构化 tag 段（Rust render_segments 提供 segments 时）', () =
     ]
     const html = renderContentToHtml({ content, segments, blockId: 'b1' })
     expect(html).toContain('data-tag-id="t1"')
-    expect(html).toContain('<span class="tag-hash">#</span>标签')
+    expect(html).toContain('#标签</span>')
     expect(html.replace(/<[^>]*>/g, '')).toBe(content)
   })
 
@@ -695,7 +696,7 @@ describe('结构化 tag 段（Rust render_segments 提供 segments 时）', () =
     ]
     const html = renderContentToHtml({ content, segments, blockId: 'b1' })
     expect(html).toContain('block-tag--system')
-    expect(html).toContain('<span class="tag-hash">#</span>系统')
+    expect(html).toContain('#系统</span>')
     expect(html.replace(/<[^>]*>/g, '')).toBe(content)
   })
 
