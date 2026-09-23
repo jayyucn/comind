@@ -239,7 +239,8 @@ const tableWidth = computed<number>(() => {
   return Math.max(containerWidth.value, n * MIN_COL_WIDTH + TABLE_BORDER_X)
 })
 const tableStyle = computed<Record<string, string>>(() => ({ width: `${tableWidth.value}px` }))
-/** 各列渲染像素宽：预算 = 表格宽 − 描边（列宽和 ≤ 预算；fixed 布局再把差额摊回各列，不留白）。 */
+/** 各列渲染像素宽：预算 = 表格宽 − 描边；整数和恰为预算（由 tableWidths 在整数层收口）。
+    渲染层不得再引入取整 —— 逐列四舍五入会让小数列各自进位并累计，令「列宽和 + 描边」超过声明宽。 */
 const colWidths = computed<Record<string, number>>(() => {
   const cs = columns.value
   const arr = distributeColumnWidths(cs.map((c) => colPxOf(c)), tableWidth.value - TABLE_BORDER_X, MIN_COL_WIDTH)
@@ -247,12 +248,13 @@ const colWidths = computed<Record<string, number>>(() => {
 })
 
 /**
- * 单列渲染宽：colWidths 中的像素值（四舍五入）。表格宽与各列宽都由 JS 计算，
- * 容器变化时按权重等比伸缩；拖拽边界联动改基准像素 → 权重随之更新，无需切换模式。
+ * 单列渲染宽：colWidths 中的**整数**像素值（契约保证整数且总和恰为预算，故此处不再取整）。
+ * 表格宽与各列宽都由 JS 计算，容器变化时按权重等比伸缩；
+ * 拖拽边界联动改基准像素 → 权重随之更新，无需切换模式。
  */
 function columnWidth(col: TableColumnConfig): string | undefined {
   const w = colWidths.value[col.key]
-  return w != null ? `${Math.round(w)}px` : undefined
+  return w != null ? `${w}px` : undefined
 }
 
 // ── 表头拖拽缩放（边界联动，ADR-0013）：每条分隔线只改左右两列，一增一减、总宽恒定，其余列不动。
