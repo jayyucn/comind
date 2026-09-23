@@ -984,6 +984,16 @@ function groupTotal(key: string): number {
   tbody tr:last-child td {
     border-bottom: none;
   }
+
+  /* 末行两角与卡片下圆角同心（半径 − 1px 边框厚）：border-radius 不裁切子元素，
+     而 hover 时 td 背景（--bg-hover，亮色下 #E7E5E4）是矩形，不补这两条会把卡片下缘两角填成直角。 */
+  tbody tr:last-child td:first-child {
+    border-bottom-left-radius: calc(var(--radius-sm) - 1px);
+  }
+
+  tbody tr:last-child td:last-child {
+    border-bottom-right-radius: calc(var(--radius-sm) - 1px);
+  }
 }
 
 .cell-text {
