@@ -41,4 +41,11 @@ describe('useNavigateToTag', () => {
 
     expect(mockPush).toHaveBeenCalledWith('/tags')
   })
+
+  test('navigateToTagLibrary 带 tagId 时经 ?tag= 指定要选中的标签（D12 一步到达）', async () => {
+    const { navigateToTagLibrary } = useNavigateToTag()
+    await navigateToTagLibrary('t-project')
+
+    expect(mockPush).toHaveBeenCalledWith({ path: '/tags', query: { tag: 't-project' } })
+  })
 })

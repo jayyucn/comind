@@ -152,8 +152,12 @@ describe('TagsLibrary（标签管理页）', () => {
     mockInitCoreClient.mockResolvedValue(mockClient)
   })
 
-  async function mountPage() {
-    const wrapper = mount(TagsLibrary, { attachTo: document.body })
+  async function mountPage(selectTagId?: string) {
+    const wrapper = mount(TagsLibrary, {
+      // 预选提示（ADR-0050 D12）走 props 而非读 route —— 本文件因此无需装路由。
+      props: selectTagId ? { selectTagId } : {},
+      attachTo: document.body,
+    })
     await flushPromises()
     return wrapper
   }
@@ -256,6 +260,12 @@ describe('TagsLibrary（标签管理页）', () => {
   })
 
   it('系统标签右栏只读：字段/继承/删除一律不给写入口', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      { ...SYSTEM_TASK, description: '内置定义' },
+      PROJECT,
+      DEV_TASK,
+      IDEA,
+    ])
     const wrapper = await mountPage()
     await wrapper.find('.tag-row--sys-tag-system-task').trigger('click')
     await flushPromises()
@@ -269,6 +279,61 @@ describe('TagsLibrary（标签管理页）', () => {
     expect(wrapper.find('.tag-parent-clear').exists()).toBe(false)
     expect(wrapper.findAll('.tag-field-remove')).toHaveLength(0)
     expect(wrapper.findAll('.tag-field-row--editable')).toHaveLength(0)
+    // 身份同属只读面（D11/D5）：描述渲染成文本，不给可点入口
+    expect(wrapper.find('.tag-desc').classes()).toContain('tag-desc--readonly')
+    expect(wrapper.find('input.tag-desc').exists()).toBe(false)
+  })
+
+  // ── 身份（描述）与「一步到达」预选（ADR-0050 D11 / D12） ──
+
+  it('右栏描述就地编辑 → 经 setIdentity 落库', async () => {
+    mockClient.updateTag.mockResolvedValue(PROJECT)
+    const wrapper = await mountPage()
+    await wrapper.find('.tag-row--t-project').trigger('click')
+    await flushPromises()
+
+    await wrapper.find('.tag-desc').trigger('click')
+    await wrapper.find('input.tag-desc').setValue('与产品路线图对齐')
+    await wrapper.find('input.tag-desc').trigger('keydown.enter')
+    await flushPromises()
+
+    expect(mockClient.updateTag).toHaveBeenCalledWith({
+      id: 't-project',
+      description: '与产品路线图对齐',
+    })
+  })
+
+  it('selectTagId 传入时右栏直接选中该标签（预选覆盖默认的成员数首位）', async () => {
+    // 无提示时默认选成员数最多的 项目；提示应把它换成 开发任务
+    const wrapper = await mountPage('t-dev')
+    expect(wrapper.find('.tag-detail-title').text()).toBe('#开发任务')
+  })
+
+  it('selectTagId 变化时重新选中（同路由只换 query 不重新挂载）', async () => {
+    const wrapper = await mountPage('t-project')
+    expect(wrapper.find('.tag-detail-title').text()).toBe('#项目')
+
+    await wrapper.setProps({ selectTagId: 't-idea' })
+    await flushPromises()
+
+    expect(wrapper.find('.tag-detail-title').text()).toBe('#灵感碎片')
+  })
+
+  it('保存描述后的标签树整体重读不会把选中态拽回提示值', async () => {
+    mockClient.updateTag.mockResolvedValue(PROJECT)
+    const wrapper = await mountPage('t-project')
+    await wrapper.find('.tag-row--t-dev').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.tag-detail-title').text()).toBe('#开发任务')
+
+    // setIdentity 会 ensureLoaded(true) → 标签树换新数组重读；若预选提示写成了
+    // 「监听标签树」，选中态会在这里被拽回 t-project —— 本断言钉住它不回流。
+    await wrapper.find('.tag-desc').trigger('click')
+    await wrapper.find('input.tag-desc').setValue('补测试')
+    await wrapper.find('input.tag-desc').trigger('keydown.enter')
+    await flushPromises()
+
+    expect(wrapper.find('.tag-detail-title').text()).toBe('#开发任务')
   })
 
   // ── 写：新建 / 设父 / 删除 / 字段模板 ──

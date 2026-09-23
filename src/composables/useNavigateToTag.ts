@@ -19,8 +19,15 @@ export function useNavigateToTag() {
     await router.push(`/tags/${encodeURIComponent(tagId)}`)
   }
 
-  /** 导航到标签管理页。 */
-  async function navigateToTagLibrary(): Promise<void> {
+  /**
+   * 导航到标签管理页。传 `tagId` 时经 `?tag=` 指定要选中的标签（D12 设置入口的
+   * 「一步到达」语义）—— 由路由 props 映射成管理页入参，管理页无须读 route。
+   */
+  async function navigateToTagLibrary(tagId?: string): Promise<void> {
+    if (tagId) {
+      await router.push({ path: '/tags', query: { tag: tagId } })
+      return
+    }
     await router.push('/tags')
   }
 

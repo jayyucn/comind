@@ -82,6 +82,11 @@ const routes: RouteRecordRaw[] = [
     path: '/tags',
     name: 'tags-library',
     component: TagsLibrary,
+    // 「一步到达」入口（ADR-0050 D12）：?tag=<id> 指定要选中的标签。走路由 props
+    // 而非组件内读 route —— 管理页因此不依赖 vue-router 注入，单测可直接传 prop。
+    props: (route) => ({
+      selectTagId: typeof route.query.tag === 'string' ? route.query.tag : undefined,
+    }),
     meta: { fullWidth: true, hideRightSidebarToggle: true },
   },
   // 标签聚合页（ADR-0050 D7）：形态对齐 Query Page（表格/看板/日历 + 统计卡 + per-tag 视图配置）

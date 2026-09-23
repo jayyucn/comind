@@ -16,7 +16,7 @@
  * - 进聚合页的入口在本页右栏标题行（`/tags/:tagId`）。
  */
 import { Plus, Search, X } from 'lucide-vue-next'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useNavigateToTag } from '../../composables/useNavigateToTag'
 import { useBlockCardStore } from '../../stores/blockCard'
 import { useTagsStore } from '../../stores/tags'
@@ -24,6 +24,15 @@ import type { PersistedFieldDefinition, PersistedTag } from '../../types/tag-per
 import BasePopover from '../common/BasePopover.vue'
 import PageTitle from '../common/PageTitle.vue'
 import ConfirmDialog from '../ConfirmDialog.vue'
+import TagDescriptionField from './TagDescriptionField.vue'
+
+/**
+ * 预选标签（ADR-0050 D12「一步到达」）：聚合页的「设置」入口经 `/tags?tag=<id>` 传入，
+ * 由路由 props 映射成入参 —— 组件不读 route，选中逻辑因此可脱路由单测。
+ *
+ * 语义是**选中提示**而非受控值：到达后用户仍可自由点其它标签（URL 不变，不反向回写）。
+ */
+const props = defineProps<{ selectTagId?: string }>()
 
 const tagsStore = useTagsStore()
 const blockCardStore = useBlockCardStore()
@@ -35,12 +44,27 @@ const searchQuery = ref('')
 const filterMode = ref<FilterMode>('all')
 const selectedTagId = ref<string | null>(null)
 
+/** 应用「预选提示」：仅在提示能解析成真实标签时才改写选中态（否则交由下面的默认选中兜底）。 */
+function applySelectHint() {
+  const hint = props.selectTagId
+  if (hint && tagsStore.getTagById(hint)) selectedTagId.value = hint
+}
+
 onMounted(async () => {
   await Promise.all([tagsStore.ensureLoaded(), blockCardStore.getCards()])
+  applySelectHint()
   if (!selectedTagId.value && tagsStore.allTags.length) {
     selectedTagId.value = sortedByMembers(tagsStore.allTags)[0].id
   }
 })
+
+// 路由 props 可在不重新挂载的情况下变化（同路由只换 query）→ 提示需随之重放。
+// 只在 `selectTagId` 自身变化时触发：不监听标签树，避免保存描述后的整体重读把用户
+// 刚点开的标签拽回提示值。
+watch(
+  () => props.selectTagId,
+  () => applySelectHint(),
+)
 
 // ── 左栏：统计与列表 ──────────────────────────────────────────
 
@@ -103,6 +127,15 @@ const selectedTag = computed(() =>
 
 /** 系统标签（内置定义）→ 右栏全部写入口收起，只留只读呈现。 */
 const isSystemTag = computed(() => !!selectedTag.value?.is_system)
+
+/**
+ * 身份写入口（ADR-0050 D11/D12）：与聚合页标题区共用 `setIdentity` 与同一个字段组件，
+ * 空串 = 清空描述。
+ */
+async function onSaveDescription(value: string) {
+  if (!selectedTag.value) return
+  await tagsStore.setIdentity(selectedTag.value.id, { description: value })
+}
 
 /** 进该标签的聚合页（D7）。 */
 function openAggregatePage() {
@@ -446,6 +479,14 @@ async function submitAddField() {
           <p class="tag-detail-meta">
             {{ detailSummary.count }} 个成员 · 来自 {{ detailSummary.pageCount }} 个页面
           </p>
+          <!-- 身份（ADR-0050 D11）：描述位于标题/副标题之下、字段模板之上（D12 顺序） -->
+          <div class="tag-detail-desc">
+            <TagDescriptionField
+              :value="selectedTag.description"
+              :readonly="isSystemTag"
+              @save="onSaveDescription"
+            />
+          </div>
           <p
             v-if="isSystemTag"
             class="tag-system-note"
@@ -979,6 +1020,11 @@ async function submitAddField() {
   margin: var(--space-1) 0 0;
   font-size: var(--text-xs);
   color: var(--text-secondary);
+}
+
+/* 身份条：紧跟副标题，处于「标题组」与「字段模板」之间（ADR-0050 D11/D12） */
+.tag-detail-desc {
+  margin-top: var(--space-2);
 }
 
 .tag-system-note {
