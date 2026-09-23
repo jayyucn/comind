@@ -879,7 +879,10 @@ function groupTotal(key: string): number {
   /* 卡片化：表格自身即卡片（1px 描边 + 圆角）。必须用 border 而非 outline ——
      thead 是 sticky（属于定位后代），按 CSS 绘制顺序画在表格自身的 outline 之上，
      表头灰底会把卡片上缘（及左右上角）那 1px 描边吃掉；border 是表格盒子的一部分，
-     子元素背景盖不住它。表格宽由 JS 定成像素且 box-sizing: border-box，border 不额外撑宽。 */
+     子元素背景盖不住它。
+     ⚠ 改这里的描边宽必须同步 JS 的 TABLE_BORDER_X：separate 模式下表格边框计入
+     fixed 布局的 used width，列宽预算要扣掉它（见 tableWidth），否则表格右缘越界
+     被滚动容器裁掉 —— 左侧描边还在，看起来就是「只有右边没线」。 */
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 
