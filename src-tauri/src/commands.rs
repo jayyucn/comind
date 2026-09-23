@@ -764,8 +764,9 @@ pub async fn save_block_tree(
 
     let adapter_arc = db.adapter_arc();
     let mut adapter = adapter_arc.lock().await;
+    // 整树保存 = 提交动作（load/restore），允许按 content 自动建/复活标签。
     let outcome =
-        BlockWriteService::save_blocks(&mut *adapter, blocks).map_err(|e| e.to_string())?;
+        BlockWriteService::save_blocks(&mut *adapter, blocks, true).map_err(|e| e.to_string())?;
     drop(adapter);
 
     let sync_server_clone = sync_server.inner().clone();

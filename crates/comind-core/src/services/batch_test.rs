@@ -82,7 +82,7 @@ fn test_block_update_via_batch() -> Result<(), Box<dyn Error>> {
         "{}",
         "bullet",
         Some("blk1"),
-    )?;
+     true)?;
 
     apply_batch(
         &mut adapter,
@@ -105,7 +105,7 @@ fn test_block_delete_cascades_property() -> Result<(), Box<dyn Error>> {
         "{}",
         "bullet",
         Some("blk1"),
-    )?;
+     true)?;
     PropertyService::create(&mut adapter, "blk1", "status", "todo", "string", 0, 0, 1)?;
 
     apply_batch(
@@ -132,7 +132,7 @@ fn test_block_undelete_revive_then_noop() -> Result<(), Box<dyn Error>> {
         "{}",
         "bullet",
         Some("blk1"),
-    )?;
+     true)?;
     BlockService::delete(&mut adapter, "blk1")?;
 
     let op = json!({"entity": "block", "action": "undelete", "params": {"id": "blk1"}});
@@ -158,7 +158,7 @@ fn test_property_set_upsert_revives_soft_deleted() -> Result<(), Box<dyn Error>>
         "{}",
         "bullet",
         Some("blk1"),
-    )?;
+     true)?;
     let prop = PropertyService::create(&mut adapter, "blk1", "status", "todo", "string", 0, 0, 1)?;
     PropertyService::delete(&mut adapter, &prop.id)?; // 软删
 

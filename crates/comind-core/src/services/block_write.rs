@@ -34,9 +34,13 @@ impl BlockWriteService {
     /// - page touch + word_count recount (`PageService::recount_word_count`) is
     ///   best-effort and in-transaction;
     /// - per-block id is reported under `SyncTable::Block`.
+    /// `create_missing_tags`：是否允许按 content 自动建/复活标签（ADR-0050 content 联动）。
+    /// 编辑器防抖打字保存传 `false`（否则 `#f`、`#fo` 中间前缀会各建一个垃圾标签），
+    /// 提交动作（blur / 拆分 / 粘贴 / 整树保存）传 `true` —— 与 `[[page]]` 的创建语义对齐。
     pub fn save_blocks<S: TransactionalStorageAdapter>(
         adapter: &mut S,
         blocks: Vec<Block>,
+        create_missing_tags: bool,
     ) -> Result<SaveOutcome, Box<dyn Error>> {
         adapter.transaction(|storage| {
             let mut results = Vec::new();
@@ -61,6 +65,7 @@ impl BlockWriteService {
                             Some(&block.r#type),
                             block.parent_id.as_deref(),
                             Some(block.pos),
+                            create_missing_tags,
                         )?;
                         // `update` 的 parent_id 为 None 表示「不修改」，无法表达「移到根级」；
                         // 保存路径下 parent_id 是权威值，与库中不一致时显式写回（含清空为 NULL）。
@@ -82,6 +87,7 @@ impl BlockWriteService {
                         &block.format,
                         &block.r#type,
                         Some(&block.id),
+                        create_missing_tags,
                     )?,
                 };
 
@@ -312,6 +318,14 @@ mod tests {
     use super::*;
     use crate::storage::{repository, StorageAdapter, SQLiteAdapter};
 
+    /// 测试默认走提交语义（create_missing_tags = true）；建签门控由专用用例覆盖。
+    fn save(
+        adapter: &mut SQLiteAdapter,
+        blocks: Vec<Block>,
+    ) -> Result<SaveOutcome, Box<dyn Error>> {
+        BlockWriteService::save_blocks(adapter, blocks, true)
+    }
+
     fn block(id: &str, page_id: &str, parent_id: Option<&str>, pos: i64) -> Block {
         Block {
             id: id.to_string(),
@@ -349,12 +363,50 @@ mod tests {
             .id
     }
 
+    /// 建签门穿透 save_blocks：打字保存（false）不建 `#f` 这类中间标签，
+    /// 提交保存（true）才建。内容联动派生的 Block.tags 随之有无。
+    #[test]
+    fn save_blocks_gates_tag_creation_on_create_missing() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let p1 = seed_page(&mut adapter, "p1");
+
+        // 打字中间态：#f 未建
+        BlockWriteService::save_blocks(
+            &mut adapter,
+            vec![block_with_content("b1", &p1, None, 1000, "hello #f")],
+            false,
+        )
+        .unwrap();
+        assert!(
+            repository::TagRepository::get_by_title(adapter.tags(), "f")
+                .unwrap()
+                .is_none()
+        );
+        assert!(BlockService::get_by_id(&mut adapter, "b1").unwrap().tags.is_empty());
+
+        // 提交态：#foo 建行并链接
+        BlockWriteService::save_blocks(
+            &mut adapter,
+            vec![block_with_content("b1", &p1, None, 1000, "hello #foo")],
+            true,
+        )
+        .unwrap();
+        let tags = BlockService::get_by_id(&mut adapter, "b1").unwrap().tags;
+        assert_eq!(tags.len(), 1);
+        assert_eq!(
+            repository::TagRepository::get_by_id(adapter.tags(), &tags[0])
+                .unwrap()
+                .title,
+            "foo"
+        );
+    }
+
     #[test]
     fn save_blocks_writes_and_builds_outcome() {
         let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
         let p1 = seed_page(&mut adapter, "p1");
 
-        let outcome = BlockWriteService::save_blocks(
+        let outcome = save(
             &mut adapter,
             vec![block("b1", &p1, None, 1000), block("b2", &p1, Some("b1"), 1000)],
         )
@@ -384,7 +436,7 @@ mod tests {
         let p1 = seed_page(&mut adapter, "p1");
 
         // b2 先落在 b1 之下
-        BlockWriteService::save_blocks(
+        save(
             &mut adapter,
             vec![block("b1", &p1, None, 1000), block("b2", &p1, Some("b1"), 1000)],
         )
@@ -396,7 +448,7 @@ mod tests {
 
         // 再以 parent_id = None 保存（拖回根级）
         let outcome =
-            BlockWriteService::save_blocks(&mut adapter, vec![block("b2", &p1, None, 2000)]).unwrap();
+            save(&mut adapter, vec![block("b2", &p1, None, 2000)]).unwrap();
 
         assert!(outcome.results[0].block.parent_id.is_none());
         // 回归：`BlockService::update` 的 None 语义是「不修改」，保存路径必须显式补写 NULL，
@@ -416,7 +468,7 @@ mod tests {
         adapter.blocks().delete("dup").unwrap();
 
         // First block is valid; the dup block forces a mid-transaction failure.
-        let err = BlockWriteService::save_blocks(
+        let err = save(
             &mut adapter,
             vec![block("b1", &p1, None, 1000), block("dup", &p1, None, 600)],
         )
@@ -434,7 +486,7 @@ mod tests {
     fn delete_block_cascade_removes_block_and_reports() {
         let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
         let p1 = seed_page(&mut adapter, "p1");
-        BlockWriteService::save_blocks(
+        save(
             &mut adapter,
             vec![block("b1", &p1, None, 1000)],
         )
@@ -456,7 +508,7 @@ mod tests {
     fn delete_block_cascade_missing_id_errors_without_side_effects() {
         let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
         let p1 = seed_page(&mut adapter, "p1");
-        BlockWriteService::save_blocks(
+        save(
             &mut adapter,
             vec![block("b1", &p1, None, 1000)],
         )
@@ -473,7 +525,7 @@ mod tests {
     fn delete_page_cascade_removes_whole_tree() {
         let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
         let p1 = seed_page(&mut adapter, "p1");
-        BlockWriteService::save_blocks(
+        save(
             &mut adapter,
             vec![block("b1", &p1, None, 1000), block("b2", &p1, Some("b1"), 1000)],
         )
@@ -499,7 +551,7 @@ mod tests {
         let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
         let p1 = seed_page(&mut adapter, "p1");
 
-        BlockWriteService::save_blocks(
+        save(
             &mut adapter,
             vec![
                 block_with_content("b1", &p1, None, 1000, "你好 hello"),
@@ -517,7 +569,7 @@ mod tests {
     fn delete_block_cascade_recounts_page_word_count() {
         let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
         let p1 = seed_page(&mut adapter, "p1");
-        BlockWriteService::save_blocks(
+        save(
             &mut adapter,
             vec![
                 block_with_content("b1", &p1, None, 1000, "你好 hello"),
@@ -537,7 +589,7 @@ mod tests {
         let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
         let p1 = seed_page(&mut adapter, "p1");
         // 一棵三层树：b1 -> b2 -> b3
-        BlockWriteService::save_blocks(
+        save(
             &mut adapter,
             vec![
                 block("b1", &p1, None, 1000),
@@ -579,7 +631,7 @@ mod tests {
     fn undelete_blocks_missing_id_errors_without_side_effects() {
         let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
         let p1 = seed_page(&mut adapter, "p1");
-        BlockWriteService::save_blocks(
+        save(
             &mut adapter,
             vec![block("b1", &p1, None, 1000)],
         )
@@ -595,7 +647,7 @@ mod tests {
     fn undelete_blocks_single_block() {
         let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
         let p1 = seed_page(&mut adapter, "p1");
-        BlockWriteService::save_blocks(
+        save(
             &mut adapter,
             vec![block("b1", &p1, None, 1000), block("b2", &p1, None, 2000)],
         )
@@ -617,7 +669,7 @@ mod tests {
     fn undelete_blocks_noop_on_live_block() {
         let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
         let p1 = seed_page(&mut adapter, "p1");
-        BlockWriteService::save_blocks(
+        save(
             &mut adapter,
             vec![block("b1", &p1, None, 1000)],
         )
@@ -639,7 +691,7 @@ mod tests {
         let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
         let p1 = seed_page(&mut adapter, "p1");
         // b1 为父，b2/b3 为其子。块级级联删除只删 b1 自身，子节点仍 live（仅被祖先隐藏）。
-        BlockWriteService::save_blocks(
+        save(
             &mut adapter,
             vec![
                 block("b1", &p1, None, 1000),
@@ -673,7 +725,7 @@ mod tests {
         let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
         let pa = seed_page(&mut adapter, "pa");
         let pb = seed_page(&mut adapter, "pb");
-        BlockWriteService::save_blocks(
+        save(
             &mut adapter,
             vec![block("a1", &pa, None, 1000), block("b1", &pb, None, 1000)],
         )

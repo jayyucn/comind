@@ -33,7 +33,11 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'save', content: string): void
+  /**
+   * `commitTags`：本次保存是否为提交动作（blur/unmount = true，防抖打字 = false）。
+   * 打字中间态（#f、#fo）不得建标签 —— 与 [[page]] 的创建语义对齐（ADR-0050）。
+   */
+  (e: 'save', content: string, commitTags?: boolean): void
   (e: 'split', cursorPos: number): void
   (e: 'merge'): void
   (e: 'delete'): void
@@ -55,7 +59,7 @@ let syncing = false
 let savedFromOutside = false
 
 const debouncedEmitSave = debounce((content: string) => {
-  emit('save', content)
+  emit('save', content, false)
 }, 300)
 
 function cancelDebouncedSave() {
@@ -144,7 +148,8 @@ const editor = shallowRef(useEditor({
         closeWikiLinkMenuByEditor()
       }
       try {
-        emit('save', editor.value.getText())
+        // blur = 提交动作：允许把打字期间攒下的 #tag 建出来（ADR-0050 建签门）
+        emit('save', editor.value.getText(), true)
       } catch {
         // schema 可能在卸载阶段已为 null，跳过保存
       }
@@ -290,12 +295,12 @@ watch(
 onBeforeUnmount(() => {
   // 1. 取消 pending 的防抖保存，避免 destroy 后异步触发 emit('save')
   cancelDebouncedSave()
-  // 2. 如果有未保存内容，立即同步保存
+  // 2. 如果有未保存内容，立即同步保存（卸载 = 提交动作，允许建签）
   if (editor.value && !savedFromOutside) {
     try {
       const text = editor.value.getText()
       if (text) {
-        emit('save', text)
+        emit('save', text, true)
       }
     } catch {
       // schema 可能在卸载阶段已为 null，跳过保存

@@ -691,6 +691,67 @@ describe('saveErrors / retrySave - 保存失败状态与重试', () => {
     saveSpy.mockRestore()
   })
 
+  // ── 建签门（ADR-0050）：打字中间态不建 #f/#fo 垃圾标签，与 [[page]] 同一提交语义 ──
+
+  test('打字保存（commitTags: false）payload 带 create_missing_tags: false', async () => {
+    const store = useBlockStore()
+    const block = await store.createBlock({ pageId: 'page-gate-1', content: 'Base' })
+    const client = await initTestCore()
+    const spy = vi.spyOn(client, 'saveBlockTree')
+
+    await store.updateBlockContent(block.id, 'Base #f', { commitTags: false })
+    await store.flushSave(block.id)
+
+    expect(spy).toHaveBeenCalled()
+    const payload = spy.mock.calls.at(-1)![0][0] as { create_missing_tags?: boolean }
+    expect(payload.create_missing_tags).toBe(false)
+    spy.mockRestore()
+  })
+
+  test('commit 保存（默认）payload 带 create_missing_tags: true', async () => {
+    const store = useBlockStore()
+    const block = await store.createBlock({ pageId: 'page-gate-2', content: 'Base' })
+    const client = await initTestCore()
+    const spy = vi.spyOn(client, 'saveBlockTree')
+
+    await store.updateBlockContent(block.id, 'Base #foo')
+    await store.flushSave(block.id)
+
+    const payload = spy.mock.calls.at(-1)![0][0] as { create_missing_tags?: boolean }
+    expect(payload.create_missing_tags).toBe(true)
+    spy.mockRestore()
+  })
+
+  test('内容未变的 commit：上一轮跳过建签时恰好补一次 true 保存，之后不再补', async () => {
+    const store = useBlockStore()
+    const block = await store.createBlock({ pageId: 'page-gate-3', content: 'Base' })
+    const client = await initTestCore()
+    const spy = vi.spyOn(client, 'saveBlockTree')
+
+    // 打字：false 落库（建签被跳过）
+    await store.updateBlockContent(block.id, 'Base #tag', { commitTags: false })
+    await store.flushSave(block.id)
+    const callsAfterTyping = spy.mock.calls.length
+
+    // blur：内容未变 —— 因上一轮 false，必须补一次 true 保存
+    await store.updateBlockContent(block.id, 'Base #tag')
+    await store.flushSave(block.id)
+    expect(spy.mock.calls.length).toBe(callsAfterTyping + 1)
+    const payload = spy.mock.calls.at(-1)![0][0] as { content: string; create_missing_tags?: boolean }
+    expect(payload.content).toBe('Base #tag')
+    expect(payload.create_missing_tags).toBe(true)
+
+    // 下一轮「打字 + blur」周期同样恰好补一次（flushSave 无 pending 也补跑 _doSave
+    // 是既有行为，故以周期计数断言，而非断言零保存）
+    await store.updateBlockContent(block.id, 'Base #tag2', { commitTags: false })
+    await store.flushSave(block.id)
+    const callsAfterTyping2 = spy.mock.calls.length
+    await store.updateBlockContent(block.id, 'Base #tag2')
+    await store.flushSave(block.id)
+    expect(spy.mock.calls.length).toBe(callsAfterTyping2 + 1)
+    spy.mockRestore()
+  })
+
   test('批量删除空数组无操作', async () => {
     const store = useBlockStore()
     const pageId = 'page-empty-delete'

@@ -21,7 +21,7 @@ mod tests {
             // content with embedded link pattern [[Target]]
             "hello [[Target Page|alias]] world ((relates))[[Target Page]] tail @2026-08-15",
             "{}", "bullet", None,
-        )?;
+        true)?;
 
         // ── Setup: target page ──
         let target_page = PageService::create(&mut adapter, "", "Target Page", None, None, None, None, None)?;
@@ -101,7 +101,7 @@ mod tests {
         let code_block = BlockService::create(
             &mut adapter, &src_page.id, None,
             "print('hello')", "{}", "code", None,
-        )?;
+        true)?;
         let empty = build_segments_for_block(&mut adapter, &code_block)?;
         assert!(empty.is_empty(), "code block should return empty segments");
 
@@ -109,7 +109,7 @@ mod tests {
         let plain_block = BlockService::create(
             &mut adapter, &src_page.id, None,
             "just some plain text", "{}", "bullet", None,
-        )?;
+        true)?;
         let plain_segs = build_segments_for_block(&mut adapter, &plain_block)?;
         assert_eq!(plain_segs.len(), 1);
         assert!(matches!(plain_segs[0], RenderSegment::Text { .. }));
@@ -136,7 +136,7 @@ mod tests {
             &mut adapter, &page.id, None,
             "这是测试内容 @2026-08-09 📅",
             "{}", "bullet", None,
-        )?;
+        true)?;
 
         let segments = build_segments_for_block(&mut adapter, &block)?;
 
@@ -191,7 +191,7 @@ mod tests {
             &mut adapter, &page.id, None,
             "((relates))[[Target]] @2026-08-15",
             "{}", "property", None,
-        )?;
+        true)?;
 
         LinkService::create(
             &mut adapter, &block.id, &target.id, "Target",
@@ -218,7 +218,7 @@ mod tests {
             &mut adapter, &page.id, None,
             "任务 @2026-08-15T14:00 ⏰|weekly|15",
             "{}", "bullet", None,
-        )?;
+        true)?;
 
         let segments = build_segments_for_block(&mut adapter, &block)?;
 
@@ -251,7 +251,7 @@ mod tests {
             &mut adapter, &page.id, None,
             "@2026-08-09 ⏰ 2026",
             "{}", "bullet", None,
-        )?;
+        true)?;
 
         let segments = build_segments_for_block(&mut adapter, &block)?;
 
@@ -294,7 +294,7 @@ mod tests {
             &mut adapter, &page.id, None,
             "截止日期 @2099-12-31 ⏰",
             "{}", "bullet", None,
-        )?;
+        true)?;
 
         let segments = build_segments_for_block(&mut adapter, &block)?;
         let date_ref = segments.iter().find_map(|s| match s {
@@ -317,7 +317,7 @@ mod tests {
             &mut adapter, &page.id, None,
             "过期任务 @2000-01-01 ⏰",
             "{}", "bullet", None,
-        )?;
+        true)?;
 
         let segments = build_segments_for_block(&mut adapter, &block)?;
         let date_ref = segments.iter().find_map(|s| match s {
@@ -340,7 +340,7 @@ mod tests {
             &mut adapter, &page.id, None,
             "过去的日程 @2000-01-01 📅",
             "{}", "bullet", None,
-        )?;
+        true)?;
 
         let segments = build_segments_for_block(&mut adapter, &block)?;
         let date_ref = segments.iter().find_map(|s| match s {
@@ -363,7 +363,7 @@ mod tests {
             &mut adapter, &page.id, None,
             "这里有个 [[不存在的页面]] 链接",
             "{}", "bullet", None,
-        )?;
+        true)?;
 
         // Create a link to a non-existent page ID
         LinkService::create(
@@ -391,7 +391,7 @@ mod tests {
             &mut adapter, &page.id, None,
             "",
             "{}", "bullet", None,
-        )?;
+        true)?;
 
         let segments = build_segments_for_block(&mut adapter, &block)?;
         assert!(segments.is_empty(), "empty content should produce empty segments");
@@ -410,7 +410,7 @@ mod tests {
             &mut adapter, &page.id, None,
             content,
             "{}", "bullet", None,
-        )?;
+        true)?;
 
         LinkService::create(
             &mut adapter, &block.id, &target.id, "T", None,
@@ -447,7 +447,7 @@ mod tests {
             &mut adapter, &page.id, None,
             "@2026-08-09 ⏰   2026",
             "{}", "bullet", None,
-        )?;
+        true)?;
 
         let segments = build_segments_for_block(&mut adapter, &block)?;
 
@@ -480,7 +480,7 @@ mod tests {
             &mut adapter, &page.id, None,
             "@2026-08-09 ⏰ [[T]]",
             "{}", "bullet", None,
-        )?;
+        true)?;
 
         LinkService::create(
             &mut adapter, &block.id, &target.id, "T", None,
@@ -516,7 +516,7 @@ mod tests {
             &mut adapter, &page.id, None,
             "note #rust and #系统任务 end",
             "{}", "bullet", None,
-        )?;
+        true)?;
 
         // 联动派生：block.tags 应含 2 个 id（自动建 rust + 命中系统任务）
         assert_eq!(block.tags.len(), 2, "create should derive tags from content");
@@ -575,7 +575,7 @@ mod tests {
             &mut adapter, &page.id, None,
             "a #colored and b #plain end",
             "{}", "bullet", None,
-        )?;
+        true)?;
 
         // 只给其中一个上色 —— 另一个留空以验证「无色」不会被误填成默认色
         let colored = TagService::get_by_title(&mut adapter, "colored")?

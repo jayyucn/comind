@@ -94,6 +94,10 @@ mod wasm_impl {
         content: String,
         format: String,
         r#type: String,
+        /// 是否允许按 content 自动建/复活标签（提交时点 = true；编辑器防抖打字保存 = false，
+        /// 否则 `#f`、`#fo` 中间前缀会各建一个垃圾标签）。缺省 true 保持旧调用方行为。
+        #[serde(default = "default_true")]
+        create_missing_tags: bool,
         #[serde(default = "default_timestamp")]
         created_at: i64,
         #[serde(default = "default_timestamp")]
@@ -102,6 +106,10 @@ mod wasm_impl {
 
     fn default_timestamp() -> i64 {
         chrono::Utc::now().timestamp_millis()
+    }
+
+    fn default_true() -> bool {
+        true
     }
 
     #[wasm_bindgen]
@@ -121,6 +129,9 @@ mod wasm_impl {
             )));
         }
 
+        // 同一调用内的块共享一个建签门（前端 _doSave 每次只提交一个块；
+        // 多块调用按「全为提交语义」才放行，保守不误建）。
+        let create_missing_tags = updates.iter().all(|u| u.create_missing_tags);
         let blocks: Vec<Block> = updates
             .into_iter()
             .map(|u| Block {
@@ -144,7 +155,7 @@ mod wasm_impl {
             // + page touch, aligned with the Tauri path. Transaction is the
             // pass-through no-op (Q7). Sync has no peer on web — sync_changes
             // are dropped here.
-            let outcome = BlockWriteService::save_blocks(adapter, blocks)?;
+            let outcome = BlockWriteService::save_blocks(adapter, blocks, create_missing_tags)?;
             Ok(serde_json::to_string(&outcome.results).unwrap_or_else(|_| "[]".to_string()))
         })
     }

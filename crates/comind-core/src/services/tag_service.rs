@@ -165,16 +165,21 @@ impl TagService {
 
     // ── content 联动（grill 决策 #1：content 唯一打标入口） ─────────
 
-    /// 把 content 里的 `#foo` 解析成 tag id 列表（含自动建/复活），供
-    /// `BlockService::update` 派生写入 `Block.tags`。
+    /// 把 content 里的 `#foo` 解析成 tag id 列表，供块写入路径派生 `Block.tags`。
     ///
-    /// - 命中已有行（含系统 tag）→ 直接用其 id；
-    /// - 命中**软删行** → 复活（title UNIQUE 被软删行占用，重建必撞约束；
-    ///   与「悬空引用保留、复挂复活」同一精神）；
-    /// - 未命中 → 自动建用户 tag（grill 决策 #2，title 精确匹配 #3）。
+    /// - 命中已有行（含系统 tag）→ 直接用其 id（**恒链接**，与建签门无关 ——
+    ///   打字中间态也要能挂上既有标签）；
+    /// - `create_missing = true`（提交时点）→ 命中**软删行**则复活（title UNIQUE
+    ///   被软删行占用，重建必撞约束；与「悬空引用保留、复挂复活」同一精神），
+    ///   未命中则自动建用户 tag（grill 决策 #2，title 精确匹配 #3）；
+    /// - `create_missing = false`（编辑器防抖打字保存）→ 未命中/软删一律跳过。
+    ///   否则逐字保存会把 `#f`、`#fo` 这类中间前缀各建一个垃圾标签 ——
+    ///   与 `[[page]]` 同一提交语义：页面/标签只在提交动作（blur / 拆分 / 粘贴）创建，
+    ///   Rust 保存路径永不建。
     pub fn resolve_tag_ids_for_content(
         storage: &mut dyn StorageAdapter,
         content: &str,
+        create_missing: bool,
     ) -> Result<Vec<String>, Box<dyn Error>> {
         let mut ids: Vec<String> = Vec::new();
         let mut seen_titles: HashSet<String> = HashSet::new();
@@ -187,6 +192,9 @@ impl TagService {
                 repository::TagRepository::get_by_title(storage.tags(), &title)?
             {
                 ids.push(existing.id);
+                continue;
+            }
+            if !create_missing {
                 continue;
             }
             // 软删行占位 → 复活而非重建
@@ -323,18 +331,18 @@ mod tests {
         let mut storage = crate::storage::sqlite::SQLiteAdapter::open_in_memory().unwrap();
 
         // ① 未命中 → 自动建
-        let ids1 = TagService::resolve_tag_ids_for_content(&mut storage, "hello #rust").unwrap();
+        let ids1 = TagService::resolve_tag_ids_for_content(&mut storage, "hello #rust", true).unwrap();
         assert_eq!(ids1.len(), 1);
         let created = TagRepository::get_by_id(storage.tags(), &ids1[0]).unwrap();
         assert_eq!(created.title, "rust");
         assert!(!created.is_system);
 
         // ② 再跑同一 content → 复用同一 id（不重建）
-        let ids2 = TagService::resolve_tag_ids_for_content(&mut storage, "hello #rust").unwrap();
+        let ids2 = TagService::resolve_tag_ids_for_content(&mut storage, "hello #rust", true).unwrap();
         assert_eq!(ids1, ids2);
 
         // ③ 系统标题精确命中系统 seed 行（不新建）
-        let ids3 = TagService::resolve_tag_ids_for_content(&mut storage, "#系统任务").unwrap();
+        let ids3 = TagService::resolve_tag_ids_for_content(&mut storage, "#系统任务", true).unwrap();
         assert_eq!(ids3.len(), 1);
         let sys = TagRepository::get_by_id(storage.tags(), &ids3[0]).unwrap();
         assert_eq!(sys.id, "sys-tag-system-task");
@@ -342,7 +350,7 @@ mod tests {
         assert_eq!(sys.field_ids.len(), 4);
 
         // ④ 未知系统样名 #不存在系统tag 不会误命中（精确匹配）
-        let ids4 = TagService::resolve_tag_ids_for_content(&mut storage, "#系统任").unwrap();
+        let ids4 = TagService::resolve_tag_ids_for_content(&mut storage, "#系统任", true).unwrap();
         assert_eq!(ids4.len(), 1);
         assert_ne!(ids4[0], "sys-tag-system-task");
     }
@@ -351,7 +359,7 @@ mod tests {
     fn resolve_revives_soft_deleted_tag() {
         let mut storage = crate::storage::sqlite::SQLiteAdapter::open_in_memory().unwrap();
 
-        let ids1 = TagService::resolve_tag_ids_for_content(&mut storage, "#读书").unwrap();
+        let ids1 = TagService::resolve_tag_ids_for_content(&mut storage, "#读书", true).unwrap();
         TagService::delete(&mut storage, &ids1[0]).unwrap();
         assert!(
             crate::storage::repository::TagRepository::get_by_title(storage.tags(), "读书")
@@ -360,11 +368,45 @@ mod tests {
         );
 
         // 复挂 → 复活同一行（title UNIQUE 占位，重建必撞约束）
-        let ids2 = TagService::resolve_tag_ids_for_content(&mut storage, "#读书").unwrap();
+        let ids2 = TagService::resolve_tag_ids_for_content(&mut storage, "#读书", true).unwrap();
         assert_eq!(ids1, ids2);
         let revived =
             crate::storage::repository::TagRepository::get_by_id(storage.tags(), &ids2[0]).unwrap();
         assert!(revived.deleted_at.is_none());
+    }
+
+    /// 建签门（create_missing = false）：打字中间态不得产生标签。
+    /// 编辑器防抖保存会带着 `#f`、`#fo` 这类前缀逐次落库 —— 未命中行必须跳过，
+    /// 软删行不得被中间态复活；已有行仍恒链接（否则打字期间 chip 会丢色/丢关联）。
+    #[test]
+    fn resolve_with_create_missing_false_never_creates_or_revives() {
+        use crate::storage::repository::TagRepository;
+
+        let mut storage = crate::storage::sqlite::SQLiteAdapter::open_in_memory().unwrap();
+
+        // ① 未命中 → 跳过，不建行
+        let ids = TagService::resolve_tag_ids_for_content(&mut storage, "hello #rust", false).unwrap();
+        assert!(ids.is_empty());
+        assert!(TagRepository::get_by_title(storage.tags(), "rust").unwrap().is_none());
+
+        // ② 软删行 → 不复活
+        let ids1 = TagService::resolve_tag_ids_for_content(&mut storage, "#读书", true).unwrap();
+        TagService::delete(&mut storage, &ids1[0]).unwrap();
+        let ids2 = TagService::resolve_tag_ids_for_content(&mut storage, "#读书", false).unwrap();
+        assert!(ids2.is_empty());
+        assert!(
+            TagRepository::get_by_title_including_deleted(storage.tags(), "读书")
+                .unwrap()
+                .unwrap()
+                .deleted_at
+                .is_some()
+        );
+
+        // ③ 已有行 → 恒链接（门只关「建」，不关「链接」）
+        let ids3 = TagService::resolve_tag_ids_for_content(&mut storage, "#读书", true).unwrap();
+        assert_eq!(ids1, ids3);
+        let ids4 = TagService::resolve_tag_ids_for_content(&mut storage, "再看 #读书", false).unwrap();
+        assert_eq!(ids3, ids4);
     }
 
     #[test]

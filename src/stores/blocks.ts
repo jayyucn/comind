@@ -437,6 +437,14 @@ export const useBlockStore = defineStore('blocks', () => {
   /** S9: blockId → save failure flag. UI shows red dot in rendered state. */
   const saveErrors = ref<Record<string, boolean>>({})
 
+  // ── 标签建签门（ADR-0050 content 联动，与 [[page]] 同一提交语义）──
+  // 打字中间态（#f、#fo）不得建标签：防抖打字保存以 create_missing_tags=false 落库，
+  // 提交动作（blur / 拆分 / 粘贴 / 合并等）置位 pendingCommitTags 后以 true 落库。
+  /** 待提交建签的 blockId 集合：_doSave 消费后清除。 */
+  const pendingCommitTags = new Set<string>()
+  /** blockId → 最近一次落库是否跳过了建签。内容未变的 commit 由此判断要不要补一次保存。 */
+  const lastSaveSkippedCreation = new Map<string, boolean>()
+
   let syncDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
   function _triggerSyncDebounced() {
@@ -455,6 +463,9 @@ export const useBlockStore = defineStore('blocks', () => {
     }
 
     const client = await getClient()
+    // 建签门：blur/拆分等提交动作置位过 pendingCommitTags → 允许建；
+    // 纯打字防抖保存未置位 → false，`#f`、`#fo` 中间前缀不落标签表（ADR-0050）。
+    const createMissingTags = pendingCommitTags.has(block.id)
     const blockUpdate = {
       id: currentBlock.id,
       page_id: currentBlock.pageId,
@@ -464,7 +475,8 @@ export const useBlockStore = defineStore('blocks', () => {
       format: JSON.stringify(currentBlock.format || {}),
       type: currentBlock.type,
       created_at: currentBlock.createdAt,
-      updated_at: Date.now()
+      updated_at: Date.now(),
+      create_missing_tags: createMissingTags
     }
 
     try {
@@ -488,6 +500,10 @@ export const useBlockStore = defineStore('blocks', () => {
           blocks.value[idx] = { ...blocks.value[idx], id: savedBlock.id }
         }
       }
+
+      // 建签门状态收口：已消费的提交意图清除（失败路径不清，重试仍带）。
+      pendingCommitTags.delete(currentBlock.id)
+      pendingCommitTags.delete(savedBlock.id)
 
       const saved = savedBlock.id !== currentBlock.id
         ? { ...currentBlock, id: savedBlock.id }
@@ -1332,16 +1348,45 @@ export const useBlockStore = defineStore('blocks', () => {
     await deleteBlocks([blockId])
   }
 
-  /** 更新 Block 内容 */
-  async function updateBlockContent(blockId: string, content: string) {
+  /**
+   * 更新 Block 内容。
+   *
+   * `opts.commitTags`（默认 **true** = 提交动作）决定本次落库是否允许 Rust 侧按
+   * content 自动建/复活标签（ADR-0050 content 联动）。唯一传 false 的是编辑器
+   * 防抖打字保存 —— 否则 `#f`、`#fo` 这类中间前缀会各建一个垃圾标签，与
+   * `[[page]]` 不建中间页同一道理。
+   */
+  async function updateBlockContent(blockId: string, content: string, opts?: { commitTags?: boolean }) {
     const block = blocks.value.find(b => b.id === blockId)
     if (!block) return
+
+    const commitTags = opts?.commitTags ?? true
+    if (commitTags) {
+      pendingCommitTags.add(blockId)
+    }
 
     // 内容无变化守卫：编辑器 blur/unmount 等路径会无条件提交当前文本（handleSave），
     // 若与已存内容相同仍继续会重打 updatedAt 并触发落库（Rust update 无条件
     // updated_at=now + version+1）——只点进点出不改字也会刷新「更新时间」。
     // 相同内容直接返回：不重打时间戳、不调度保存（flushSave 无 pending 即空转）。
-    if (block.content === content) return
+    // 例外：commit 且上一轮落库跳过了建签 —— 存量 content 里的新 tag 还没建，
+    // 必须补一次 commit 保存（仅此一次，落库后 lastSaveSkippedCreation 翻回 false）。
+    if (block.content === content) {
+      if (commitTags && lastSaveSkippedCreation.get(blockId) === true) {
+        // 存量 content 里的新 tag 还没建：补一次 commit 保存（保持置位由 _doSave 消费）；
+        // 记账立即翻回 false —— 无论这次保存成败，不再重复补（防每次 blur 都补）。
+        lastSaveSkippedCreation.set(blockId, false)
+        _scheduleSave(block)
+      } else {
+        // 无需建签的提交：丢弃意图，防止泄漏到下一轮打字保存（那会让打字误带 true）
+        pendingCommitTags.delete(blockId)
+      }
+      return
+    }
+
+    // 建签门记账：本 content 版本落库时是否跳过建签（在意图侧记，不在 _doSave 记 ——
+    // flushSave 无 pending 也会补跑 _doSave，那种「重复落库」不得翻转此状态）。
+    lastSaveSkippedCreation.set(blockId, !commitTags)
 
     block.content = content
     block.updatedAt = Date.now()

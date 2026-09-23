@@ -89,6 +89,7 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
                 &block.format,
                 &block.r#type,
                 Some(&block.id),
+                true,
             )?;
             // S8：BlockService::create 内部已同步 dateRef/link/property，
             // 此处只收集派生行 id 供 sync（与 Tauri 旧实现一致）。
@@ -114,6 +115,8 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
             })
         }
         ("block", "update") => {
+            // 显式 op 更新 = 提交动作，允许按 content 自动建/复活标签
+            // （编辑器打字路径走 save_block_tree，携带 create_missing_tags=false）。
             let block: Block = serde_json::from_value(params)?;
             let updated = BlockService::update(
                 storage,
@@ -123,6 +126,7 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
                 Some(&block.r#type),
                 block.parent_id.as_deref(),
                 Some(block.pos),
+                true,
             )?;
             let mut sync = vec![(SyncTable::Block, updated.id.clone())];
             for l in LinkService::get_by_source_block_id(storage, &updated.id).unwrap_or_default() {

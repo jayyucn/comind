@@ -258,7 +258,7 @@ mod tests {
     fn setup_block(storage: &mut SQLiteAdapter, content: &str) -> String {
         // page 需要一个宿主 block_id（page 同时是一个 block）
         let page = PageService::create(storage, "", "Test Page", None, None, None, None, None).unwrap();
-        let block = BlockService::create(storage, &page.id, None, content, "{}", "bullet", None).unwrap();
+        let block = BlockService::create(storage, &page.id, None, content, "{}", "bullet", None, true).unwrap();
         block.id
     }
 
@@ -290,7 +290,7 @@ mod tests {
         seed_notification(&mut storage, &block_id, "deadline", "2026-07-25T09:00");
         // new 内容删掉 schedule，保留 deadline（走 BlockService::update，它会 sync + reschedule）
         let new = "task @2026-07-25 ⏰";
-        BlockService::update(&mut storage, &block_id, Some(new), None, None, None, None).unwrap();
+        BlockService::update(&mut storage, &block_id, Some(new), None, None, None, None, true).unwrap();
         // schedule 通知已删，deadline 通知仍在
         let remaining = NotificationRepository::get_by_block_id(&storage, &block_id).unwrap();
         assert_eq!(remaining.len(), 1, "only deadline notification should remain");
@@ -324,7 +324,7 @@ mod tests {
         seed_notification(&mut storage, &block_id, "schedule", "2026-07-20T14:00");
         // 改时间（非删除）：通知应保留并改期，不应被删
         let new = "task @2026-07-21T15:00 📅";
-        BlockService::update(&mut storage, &block_id, Some(new), None, None, None, None).unwrap();
+        BlockService::update(&mut storage, &block_id, Some(new), None, None, None, None, true).unwrap();
         let remaining = NotificationRepository::get_by_block_id(&storage, &block_id).unwrap();
         assert_eq!(remaining.len(), 1, "notification should be kept (rescheduled, not deleted)");
         assert_eq!(remaining[0].kind, "schedule");

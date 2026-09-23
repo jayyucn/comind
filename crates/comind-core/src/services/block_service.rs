@@ -46,6 +46,8 @@ impl BlockService {
         repository::BlockRepository::undelete(storage.blocks(), id)
     }
 
+    /// `create_missing_tags`：是否按 content 自动建/复活标签。新建块默认是提交动作
+    /// （粘贴/功能区分块）→ true；唯一例外是 `save_blocks` 以 false 落库打字中的新块。
     pub fn create(
         storage: &mut dyn StorageAdapter,
         page_id: &str,
@@ -54,6 +56,7 @@ impl BlockService {
         format: &str,
         r#type: &str,
         id: Option<&str>,
+        create_missing_tags: bool,
     ) -> Result<Block, Box<dyn Error>> {
         let now = chrono::Utc::now().timestamp_millis();
         let pos = if let Some(pid) = parent_id {
@@ -74,8 +77,9 @@ impl BlockService {
             updated_at: now,
             version: 0,
             deleted_at: None,
-            // content 联动（grill 决策 #1）：新建块同样派生 tags
-            tags: TagService::resolve_tag_ids_for_content(storage, content)?,
+            // 新建块同样派生 tags。新建 = 提交动作（粘贴/功能区分块），
+            // 但 save_blocks 打字落库的新块会显式传 false。
+            tags: TagService::resolve_tag_ids_for_content(storage, content, create_missing_tags)?,
         };
 
         let block = repository::BlockRepository::create(storage.blocks(), &block)?;
@@ -98,6 +102,7 @@ impl BlockService {
         r#type: Option<&str>,
         parent_id: Option<&str>,
         pos: Option<i64>,
+        create_missing_tags: bool,
     ) -> Result<Block, Box<dyn Error>> {
         let mut block = repository::BlockRepository::get_by_id(storage.blocks(), id)?;
         let old_content = block.content.clone();
@@ -120,9 +125,10 @@ impl BlockService {
         block.updated_at = chrono::Utc::now().timestamp_millis();
 
         // content 联动（grill 决策 #1）：`#foo` 是打标的唯一入口 —— 每次内容编辑
-        // 重算派生集写入 Block.tags（命中/自动建/复活软删行，见 TagService）。
+        // 重算派生集写入 Block.tags（恒链接既有行；软删复活/自动建仅限提交时点，
+        // 见 TagService —— 打字中间态不建 `#f`、`#fo` 垃圾标签）。
         // 摘标 = 从 content 删字；FieldValue 保留不动（grill 决策 #7）。
-        block.tags = TagService::resolve_tag_ids_for_content(storage, &block.content)?;
+        block.tags = TagService::resolve_tag_ids_for_content(storage, &block.content, create_missing_tags)?;
 
         let block = repository::BlockRepository::update(storage.blocks(), &block)?;
         DateRefService::sync_date_refs_for_block(storage, &block.id, &block.content)?;

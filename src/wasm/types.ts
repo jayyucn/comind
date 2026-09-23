@@ -115,6 +115,8 @@ export interface BlockUpdate {
   type: string
   created_at?: number
   updated_at?: number
+  /** 是否允许 Rust 侧按 content 自动建/复活标签。缺省 true；编辑器防抖打字保存传 false（堵 #f/#fo 垃圾标签）。 */
+  create_missing_tags?: boolean
 }
 
 export interface PageUpdate {

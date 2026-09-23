@@ -93,13 +93,18 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
   )
 
   // ── 保存 / 同步 ──
-  /** 保存内容到 store 并立即 flush 到后端，确保 renderSegments 已写回 */
-  async function handleSave(content: string) {
+  /**
+   * 保存内容到 store 并立即 flush 到后端，确保 renderSegments 已写回。
+   *
+   * `commitTags`（默认 true = 提交动作）透传给建签门：Editor 的防抖打字保存传 false，
+   * `#f`、`#fo` 这类中间前缀不落标签表；blur / 拆分 / 缩进等 withContentSync 操作走 true。
+   */
+  async function handleSave(content: string, commitTags = true) {
     // 编辑态显示中文 label → 存储英文 type（encode）
     // 快照保证改名后未编辑的 label 也能还原为原始 type
     const snapshot = takeRelationshipSnapshot(blockId.value)
     const stored = encodeRelationshipContent(content, snapshot)
-    await blockStore.updateBlockContent(blockId.value, stored)
+    await blockStore.updateBlockContent(blockId.value, stored, { commitTags })
     // 方案 A: 立即 flush，确保 renderSegments 已写回，
     // 避免后续 deactivateBlock 时渲染组件因 renderSegments=undefined 闪现纯文本。
     await blockStore.flushSave(blockId.value)

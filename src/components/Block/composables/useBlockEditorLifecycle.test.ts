@@ -111,11 +111,14 @@ describe('useBlockEditorLifecycle', () => {
   }
 
   describe('handleSave', () => {
-    it('calls blockStore.updateBlockContent', async () => {
+    it('calls blockStore.updateBlockContent（默认 commitTags: true = 提交动作）', async () => {
       const { lifecycle, blockStore } = setup()
       const spy = vi.spyOn(blockStore, 'updateBlockContent').mockResolvedValue(undefined)
       await lifecycle.handleSave('new content')
-      expect(spy).toHaveBeenCalledWith('b1', 'new content')
+      expect(spy).toHaveBeenCalledWith('b1', 'new content', { commitTags: true })
+      // 编辑器防抖打字保存显式传 false（建签门：#f/#fo 中间态不落标签表）
+      await lifecycle.handleSave('typing #f', false)
+      expect(spy).toHaveBeenLastCalledWith('b1', 'typing #f', { commitTags: false })
     })
   })
 
