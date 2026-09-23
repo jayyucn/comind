@@ -5,14 +5,15 @@
  * tags / blockCard / pages / screenView 四个真 store + 真查询引擎 + 真 QueryPageFrame/TableView
  * 全真（先例：`TagsLibrary.test.ts` 的边界 mock × `TaskHub.test.ts` 的页面级 mount）。
  *
- * 覆盖：聚合口径（自身 + 后代闭包）、副标题、零配置统计卡（成员恒显 / 数值字段 sum+avg /
- * 非数值不出）、按 tag 有效字段生成的默认列、来源页标题映射、搜索过滤。
+ * 覆盖：聚合口径（自身 + 后代闭包）、副标题、身份条（描述展示 / 就地编辑落库 / 系统标签只读 /
+ * 设置入口带 tagId）、按 tag 有效字段生成的默认列、来源页标题映射、搜索过滤。
  * Rust 侧的解析与闭包另由 `cargo test -p comind-core` 覆盖。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises } from '@vue/test-utils'
 import TagAggregatePage from './TagAggregatePage.vue'
+import FieldManagerPanel from '../query/FieldManagerPanel.vue'
 import type { PersistedTagTreeEntry, PersistedFieldDefinition } from '../../types/tag-persisted'
 import type { BlockCard, ScreenViewRust } from '../../wasm/types'
 
@@ -26,11 +27,15 @@ const { mockInitCoreClient, mockClient, navigateToTagLibraryMock } = vi.hoisted(
     getScreenViews: vi.fn(),
     createScreen: vi.fn(),
     createTab: vi.fn(),
+    // 身份写入口（ADR-0050 D11）：聚合页标题区的描述编辑经 store `setIdentity` 打到这里。
+    updateTag: vi.fn(),
     // PageDrawer 内的 Page 挂载会拉该页块 / 属性、并触发一次自动保存；不桩会漏出未处理
     // rejection（非断言失败，但污染信号）。
     getBlocksByPage: vi.fn().mockResolvedValue([]),
     getProperties: vi.fn().mockResolvedValue([]),
     saveBlockTree: vi.fn().mockResolvedValue([{}]),
+    // 成员页块加载（内容列 chip 着色的前提）：loadMultiPageBlocks 单次 IPC 取多页
+    getPagesWithBlocks: vi.fn().mockResolvedValue([]),
   },
   navigateToTagLibraryMock: vi.fn().mockResolvedValue(undefined),
 }))
@@ -222,6 +227,13 @@ describe('TagAggregatePage（tag 聚合页）', () => {
     expect(contents.join(' ')).not.toContain('无关块')
   })
 
+  it('挂载即拉成员来源页的块（内容列 #tag chip 着色依赖 renderSegments）', async () => {
+    // 不加载成员页时 BulletRender 按 block-id 回查 blockStore 落空 → 无色兜底；
+    // 成员 a@page-1 + b@page-2（无关块 c 不算）→ 单次 IPC 取两页。
+    await mountPage()
+    expect(mockClient.getPagesWithBlocks).toHaveBeenCalledWith(['page-1', 'page-2'])
+  })
+
   it('默认列 = 内容 + 来源页 + 该 tag 的全部有效字段', async () => {
     const wrapper = await mountPage()
     const headers = texts(wrapper, 'th')
@@ -231,41 +243,119 @@ describe('TagAggregatePage（tag 聚合页）', () => {
     expect(wrapper.find('.col-f-budget').exists()).toBe(true)
   })
 
+  it('字段面板候选池 = 内容 + 来源页 + 该 tag 有效字段（全量内置字段不进候选）', async () => {
+    const wrapper = await mountPage()
+    await wrapper.find('button.hdr-btn[title="字段管理"]').trigger('click')
+    await flushPromises()
+
+    const panel = wrapper.findComponent(FieldManagerPanel)
+    expect(panel.exists()).toBe(true)
+    // 注册表为撑起看板 groupBy='status' / 日历 dateRefKind='deadline' 仍持全部内置字段，
+    // 但候选池限本页列模板来源 —— 否则无字段的 tag 会列出 19 个无关内置字段。
+    expect(panel.props('candidateFields')?.map((f: { key: string }) => f.key)).toEqual([
+      'content',
+      'page',
+      'f-owner',
+      'f-budget',
+    ])
+  })
+
   it('来源页列把 page_id 映射为页标题', async () => {
     const wrapper = await mountPage()
     const pages = texts(wrapper, '.source-page-cell')
     expect(pages).toEqual(expect.arrayContaining(['项目页', '开发页']))
   })
 
-  it('统计卡：成员恒显；数值字段自动出合计与平均；非数值字段不出卡', async () => {
+  it('身份条：展示标签描述', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      SYSTEM_TASK,
+      { ...PROJECT, description: '与产品路线图对齐' },
+      DEV_TASK,
+    ])
     const wrapper = await mountPage()
-    const labels = texts(wrapper, '.tag-stat-label')
-    expect(labels).toContain('成员')
-    expect(labels).toContain('预算合计')
-    expect(labels).toContain('平均预算')
-    // 负责人是 string → 不出统计卡
-    expect(labels.join(' ')).not.toContain('负责人')
-
-    const values = texts(wrapper, '.tag-stat-value')
-    // 成员 2（聚合） / 预算 10 + 6 = 16 / 平均 8
-    expect(values).toEqual(expect.arrayContaining(['2', '16', '8']))
+    expect(wrapper.find('.tag-desc').text()).toBe('与产品路线图对齐')
   })
 
-  it('成员数为 0 的 tag 仍渲染成员统计卡（恒显）', async () => {
-    const wrapper = await mountPage('t-dev')
-    // 开发任务：自身 1 个成员（补测试），有效字段 工时(number) + 负责人(string)
-    expect(wrapper.text()).toContain('1 个成员 · 来自 1 个页面')
-    expect(texts(wrapper, '.tag-stat-label')).toEqual(
-      expect.arrayContaining(['成员', '工时合计', '平均工时']),
-    )
-    expect(texts(wrapper, '.tag-stat-value')).toEqual(expect.arrayContaining(['1', '6', '6']))
+  it('身份条：描述就地编辑 → 经 setIdentity 落库；空串 = 清空（不是「未改」）', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      SYSTEM_TASK,
+      { ...PROJECT, description: '与产品路线图对齐' },
+      DEV_TASK,
+    ])
+    const wrapper = await mountPage()
+
+    // 展示态是可点按钮 → 编辑态换 input
+    await wrapper.find('.tag-desc').trigger('click')
+    const input = wrapper.find('input.tag-desc')
+    expect(input.exists()).toBe(true)
+
+    // 落库前 trim
+    await input.setValue('  产品线路线图  ')
+    await input.trigger('keydown.enter')
+    await flushPromises()
+    expect(mockClient.updateTag).toHaveBeenCalledWith({ id: 't-project', description: '产品线路线图' })
+
+    // 清空：草稿置空白 → 发空串（ADR-0050 D11：空串是有效值）
+    await wrapper.find('.tag-desc').trigger('click')
+    await wrapper.find('input.tag-desc').setValue('   ')
+    await wrapper.find('input.tag-desc').trigger('keydown.enter')
+    await flushPromises()
+    expect(mockClient.updateTag).toHaveBeenLastCalledWith({ id: 't-project', description: '' })
+  })
+
+  it('身份条：系统标签的描述只读（不渲染可点入口，避免静默失败）', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      { ...SYSTEM_TASK, description: '内置定义' },
+      PROJECT,
+      DEV_TASK,
+    ])
+    const wrapper = await mountPage(SYSTEM_TASK.id)
+    const desc = wrapper.find('.tag-desc')
+    expect(desc.classes()).toContain('tag-desc--readonly')
+    expect(desc.text()).toBe('内置定义')
+    expect(wrapper.find('input.tag-desc').exists()).toBe(false)
+    // 选色器同属只读面：不渲染可点触发点
+    expect(wrapper.find('button.tag-color-trigger').exists()).toBe(false)
+    expect(wrapper.find('.tag-identity .tag-color-trigger--readonly').exists()).toBe(true)
+  })
+
+  it('身份条：选色 → 经 setIdentity 落库；色点反映当前色', async () => {
+    mockClient.updateTag.mockResolvedValue(PROJECT)
+    mockClient.getTagTree.mockResolvedValue([
+      SYSTEM_TASK,
+      { ...PROJECT, color: '--tag-color-6' },
+      DEV_TASK,
+    ])
+    const wrapper = await mountPage()
+
+    const trigger = wrapper.find('.tag-identity .tag-color-trigger')
+    expect(trigger.attributes('style')).toContain('var(--tag-color-6)')
+
+    await trigger.trigger('click')
+    const panel = document.body.querySelector('.tag-color-panel') as HTMLElement
+    expect(panel).toBeTruthy()
+    const swatch = Array.from(panel.querySelectorAll('.tag-color-swatch')).find(
+      (s) => s.getAttribute('aria-label') === '玫红',
+    ) as HTMLElement
+    swatch.click()
+    await flushPromises()
+
+    expect(mockClient.updateTag).toHaveBeenCalledWith({ id: 't-project', color: '--tag-color-7' })
+  })
+
+  it('身份条：「设置」入口带 tagId 跳标签管理页（D12 一步到达）', async () => {
+    const wrapper = await mountPage()
+    await wrapper.find('.tag-settings').trigger('click')
+    expect(navigateToTagLibraryMock).toHaveBeenCalledWith('t-project')
   })
 
   it('面包屑「标签 / #项目」点击返回标签管理页', async () => {
     const wrapper = await mountPage()
     expect(wrapper.find('.tag-crumb-current').text()).toBe('#项目')
     await wrapper.find('.tag-crumb-link').trigger('click')
-    expect(navigateToTagLibraryMock).toHaveBeenCalled()
+    // 零参断言：面包屑必须 `navigateToTagLibrary()` 显式空调用 —— 写成 `@click="fn"` 时
+    // Vue 会把 MouseEvent 当 tagId 传进去，跳转结果从 `/tags` 变成 `?tag=[object MouseEvent]`。
+    expect(navigateToTagLibraryMock).toHaveBeenCalledWith()
   })
 
   it('点击来源页单元格打开该成员块所属页面的抽屉', async () => {
@@ -280,15 +370,14 @@ describe('TagAggregatePage（tag 聚合页）', () => {
     expect(drawer.props('pageId')).toBe('page-1')
   })
 
-  it('搜索只收窄表格，不改统计值', async () => {
+  it('搜索只收窄表格，不改副标题口径', async () => {
     const wrapper = await mountPage()
     const frame = wrapper.findComponent({ name: 'QueryPageFrame' })
     frame.vm.$emit('update:search', '补测试')
     await flushPromises()
 
     expect(texts(wrapper, '.col-content').join(' ')).not.toContain('重构表格')
-    // 统计卡口径 = 该 tag 的成员集合，与搜索无关
+    // 副标题口径 = 该 tag 的成员集合，与搜索无关
     expect(wrapper.text()).toContain('2 个成员 · 来自 2 个页面')
-    expect(texts(wrapper, '.tag-stat-value')).toEqual(expect.arrayContaining(['2', '16', '8']))
   })
 })

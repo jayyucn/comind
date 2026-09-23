@@ -3,7 +3,7 @@ import { h } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { Table } from 'lucide-vue-next'
-import { createRegistry } from '../../core/query'
+import { createRegistry, type FieldDescriptor } from '../../core/query'
 import type { CalendarConfig, TableConfig } from '../../core/view'
 import { useScreenViewStore } from '../../stores/screenView'
 import type { ScreenViewRust } from '../../wasm/types'
@@ -88,7 +88,7 @@ type ViewCtx = {
 }
 
 /** 挂载外壳并从 `#table` slot 抓取 viewContext（消费方就是这样拿到列管理动作的）。 */
-async function mountFrame() {
+async function mountFrame(extraProps: Record<string, unknown> = {}) {
   const captured: { ctx?: ViewCtx } = {}
   const wrapper = mount(QueryPageFrame, {
     props: {
@@ -106,6 +106,7 @@ async function mountFrame() {
       groupBy: null,
       tableConfig: TAG_BASE,
       calendarConfig: { viewKind: 'calendar', version: 1 } as unknown as CalendarConfig,
+      ...extraProps,
     },
     slots: {
       table: (params: unknown) => {
@@ -184,5 +185,28 @@ describe('QueryPageFrame 列管理动作的写回基准', () => {
     const panel = wrapper.findComponent(FieldManagerPanel)
     expect(panel.exists()).toBe(true)
     expect(panel.props('columns').map((c) => c.key)).toEqual(['content', 'page', 'amount'])
+  })
+
+  it('candidateFields 只收窄面板的候选池，视图/查询层的 fields 不动', async () => {
+    setupStore()
+    const full: FieldDescriptor[] = [
+      { key: 'content', label: '内容', type: 'text', get: () => '' },
+      { key: 'page', label: '来源页', type: 'text', get: () => '' },
+      { key: 'status', label: '状态', type: 'select', get: () => '' },
+      { key: 'amount', label: '金额', type: 'number', get: () => '' },
+    ]
+    const { wrapper } = await mountFrame({
+      fields: full,
+      candidateFields: full.filter((f) => f.key !== 'status'),
+    })
+
+    await wrapper.find('button.hdr-btn[title="字段管理"]').trigger('click')
+    await flushPromises()
+
+    const panel = wrapper.findComponent(FieldManagerPanel)
+    // 候选池已收窄（status 属全量字段池但不属本页列语义）
+    expect(panel.props('candidateFields')?.map((f) => f.key)).toEqual(['content', 'page', 'amount'])
+    // fields 保留全量：看板按 groupBy、日历按 dateRefKind 解析描述符都依赖它
+    expect(panel.props('fields').map((f) => f.key)).toEqual(['content', 'page', 'status', 'amount'])
   })
 })

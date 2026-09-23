@@ -26,9 +26,12 @@ import type { TableColumnConfig } from '../../core/view'
  *      · 拖拽（VueDraggable / force-fallback）= per-tab 排序（emit reorder）
  *      · 👁 = per-tab 显示/隐藏（emit toggle-visibility；字段仍留第一组）
  *      · 编辑开关开时追加 🗑 = 全局移除（emit remove-global，字段移入第二组）
- *  - 第二组「候选字段」：props.fields 中不在 columns 的字段；编辑开关开时可见。
+ *  - 第二组「候选字段」：候选字段池中不在 columns 的字段；编辑开关开时可见。
  *      · + = 全局新增（emit add-global）
  *  - 顶部搜索框同时过滤两组（按字段 label）；搜索态下禁用拖拽（v-show 隐藏非命中项）。
+ *
+ * 两个字段池的分工：`fields` = 全量字段池（「已用字段」行的名称/图标解析用），
+ * `candidateFields` = 候选来源（缺省即 `fields`；页面可收窄成自己语义内的字段，见下）。
  *
  * 拖拽数据源为本地 `localActive`：VueDraggable 直接重排它，持久化真相仍在
  * props.columns（消费方经 store 回流后同步回本地，避免 props 被组件内改写）。
@@ -36,6 +39,14 @@ import type { TableColumnConfig } from '../../core/view'
 const props = defineProps<{
   /** 实体全量字段池（有序，来自消费方注入）。 */
   fields: FieldDescriptor[]
+  /**
+   * 候选字段池（有序，缺省 = `fields`）——「已用字段」之外**可被添加**的字段来源。
+   * 消费方收窄它即可让面板只暴露自身语义内的字段（先例：tag 聚合页的列模板只由
+   * 「内容 + 来源页 + 该 tag 的有效字段」构成，故候选限同三者；而该页注册表为撑起
+   * 看板分组/日历落格仍持有全部内置字段，不能整份当候选）。`fields` 不受影响，
+   * 故收窄候选不改变既有列的名称/图标解析。
+   */
+  candidateFields?: FieldDescriptor[]
   /** 当前 tab 的表格列配置（有序，含 visible 标记）。 */
   columns: TableColumnConfig[]
 }>()
@@ -60,8 +71,10 @@ const activeKeys = computed(() => new Set(props.columns.map((c) => c.key)))
 const activeList = computed(() =>
   props.columns.map((c) => ({ column: c, field: props.fields.find((f) => f.key === c.key) })),
 )
-// 候选 = 全量字段池减去已用（保持 props.fields 注册顺序，ADR-0011 Round-4）
-const candidateList = computed(() => props.fields.filter((f) => !activeKeys.value.has(f.key)))
+// 候选 = 候选池减去已用（保持传入顺序，ADR-0011 Round-4）
+const candidateList = computed(() =>
+  (props.candidateFields ?? props.fields).filter((f) => !activeKeys.value.has(f.key)),
+)
 const filteredCandidates = computed(() =>
   candidateList.value.filter((f) => !q.value || f.label.toLowerCase().includes(q.value)),
 )

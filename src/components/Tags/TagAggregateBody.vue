@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { CalendarDays, ChevronRight, Columns, Table } from 'lucide-vue-next'
-import { computed, markRaw, onMounted, ref } from 'vue'
+import { computed, markRaw, onMounted, ref, watch } from 'vue'
 import { createQueryEngine, createRegistry, type FieldDescriptor, type ViewQuery } from '../../core/query'
 import { parseLayoutConfig, type BoardConfig, type CalendarConfig, type TableConfig } from '../../core/view'
 import type { ViewTypeOption } from '../../core/view/management'
@@ -12,6 +12,7 @@ import {
 } from '../../composables/useBlockQueryRegistry'
 import { useNavigateToTag } from '../../composables/useNavigateToTag'
 import { useBlockCardStore } from '../../stores/blockCard'
+import { useBlockStore } from '../../stores/blocks'
 import { useEditorStore } from '../../stores/editor'
 import { usePropertyStore } from '../../stores/property'
 import { useScreenViewStore } from '../../stores/screenView'
@@ -27,6 +28,8 @@ import TableView from '../views/TableView.vue'
 import BoardView from '../views/BoardView.vue'
 import CalendarView from '../views/CalendarView.vue'
 import type { CellRegistry } from '../views/types'
+import TagColorPicker from './TagColorPicker.vue'
+import TagDescriptionField from './TagDescriptionField.vue'
 
 /**
  * tag 聚合页本体（ADR-0050 D7）。
@@ -94,6 +97,16 @@ for (const def of tagFieldDefs.value) {
 }
 const registryFields: FieldDescriptor[] = registry.list(BLOCK_ENTITY)
 
+/**
+ * 字段面板的候选池（ADR-0050 D7）：本页列模板只由「内容 + 来源页 + 该 tag 的有效字段」构成，
+ * 故候选限同三者。注册表本身必须保留全部内置字段 —— 看板按 `groupBy='status'` 建分组列、
+ * 日历按 `dateRefKind='deadline'` 落格都靠这些描述符；但那些字段不属于本页的列语义，
+ * 混进候选会让一个无字段的 tag 列出 19 个无关内置字段（真机实证 2026-09-23）。
+ * 顺序沿用注册顺序（内容 / 来源页在前，tag 字段在后）。
+ */
+const columnFieldKeys = new Set(['content', 'page', ...tagFieldDefs.value.map((d) => d.key)])
+const candidateFields: FieldDescriptor[] = registryFields.filter((f) => columnFieldKeys.has(f.key))
+
 const blockEngine = createQueryEngine<BlockCard>(BLOCK_ENTITY)
 
 const viewTypes: ViewTypeOption[] = [
@@ -150,23 +163,20 @@ const groups = computed(() => blockEngine.run(searchedCards.value, viewQuery.val
 const flatCards = computed<BlockCard[]>(() => groups.value.flatMap((g) => g.items))
 const grouped = computed(() => viewQuery.value.groupBy !== null)
 
-// ── 统计卡（ADR-0050 D7：零配置自动出全）──
-// 成员数恒显；数值字段自动出「合计 / 平均」两卡；select/date/text 不出卡。
-// 口径 = 该 tag 的成员集合（与副标题同源），故搜索/筛选不改变统计值。
-const numericStats = computed(() =>
-  tagFieldDefs.value
-    .filter((d) => d.type === 'number')
-    .map((d) => {
-      const values = memberCards.value
-        .map((c) => c.properties?.[d.key])
-        .filter((v): v is number => typeof v === 'number')
-      const sum = values.reduce((a, b) => a + b, 0)
-      return { key: d.key, label: d.title, sum, avg: values.length > 0 ? sum / values.length : 0 }
-    }),
-)
+// ── 身份（ADR-0050 D11）──
+// 身份三要素在标题区自证并就地编辑：色点（颜色）+ 描述。写入口与标签管理页右栏同一个
+// （`setIdentity`），符合 D12「身份可多入口、同一份数据同一组原语」。
+const description = computed(() => tag.value?.description ?? '')
+const tagColor = computed(() => tag.value?.color ?? '')
+const isSystemTag = computed(() => !!tag.value?.is_system)
 
-function formatNumber(n: number): string {
-  return Number.isInteger(n) ? String(n) : n.toFixed(2)
+async function saveDescription(value: string) {
+  await tagsStore.setIdentity(props.tagId, { description: value })
+}
+
+/** 选色器给 `null` = 选了「无色」→ 发空串（D11：空串是有效值，不是「未改」）。 */
+async function saveColor(color: string | null) {
+  await tagsStore.setIdentity(props.tagId, { color: color ?? '' })
 }
 
 // ── 交互 ──
@@ -194,6 +204,17 @@ function handleOpenBlock(blockId: string) {
   editorStore.openBlockModal(blockId)
 }
 
+// ── 成员页块加载（内容列 `#tag` chip 着色的前提，ADR-0050 D11 消费面）──
+// BulletRender 按 block-id 回查 blockStore 取 renderSegments；聚合页若不加载成员页，
+// 内容列 chip 永远落到无色正则兜底（颜色 / 系统中性样式全丢）。
+// loadMultiPageBlocks 单次 IPC 取多页（含 render_segments），isPageFullyLoaded
+// 缓存令重复触发为空转；成员集合变化（打标/摘标）经 key 去重后自动补载新页。
+const blockStore = useBlockStore()
+const memberPageKey = computed(() => memberCards.value.map((c) => c.page_id).join(','))
+watch(memberPageKey, (key) => {
+  if (key) void blockStore.loadMultiPageBlocks(key.split(','))
+}, { immediate: true })
+
 onMounted(async () => {
   await screenViewStore.load()
 })
@@ -208,6 +229,7 @@ onMounted(async () => {
     :screen-view-key="screenViewKey"
     :view-types="viewTypes"
     :fields="registryFields"
+    :candidate-fields="candidateFields"
     :registry="registry"
     :items="flatCards"
     :groups="groups"
@@ -225,7 +247,7 @@ onMounted(async () => {
         <button
           class="tag-crumb-link"
           type="button"
-          @click="navigateToTagLibrary"
+          @click="navigateToTagLibrary()"
         >
           标签
         </button>
@@ -238,27 +260,25 @@ onMounted(async () => {
     </template>
 
     <template #heading-extra>
-      <div class="tag-stats">
-        <div class="tag-stat">
-          <span class="tag-stat-value">{{ summary.count }}</span>
-          <span class="tag-stat-label">成员</span>
-        </div>
-        <div
-          v-for="s in numericStats"
-          :key="s.key"
-          class="tag-stat"
+      <!-- 身份条（ADR-0050 D11）：颜色 + 描述在左、模板设置入口在右（D12） -->
+      <div class="tag-identity">
+        <TagColorPicker
+          :value="tagColor"
+          :readonly="isSystemTag"
+          @pick="saveColor"
+        />
+        <TagDescriptionField
+          :value="description"
+          :readonly="isSystemTag"
+          @save="saveDescription"
+        />
+        <button
+          type="button"
+          class="tag-settings"
+          @click="navigateToTagLibrary(tagId)"
         >
-          <span class="tag-stat-value">{{ formatNumber(s.sum) }}</span>
-          <span class="tag-stat-label">{{ s.label }}合计</span>
-        </div>
-        <div
-          v-for="s in numericStats"
-          :key="`avg-${s.key}`"
-          class="tag-stat"
-        >
-          <span class="tag-stat-value">{{ formatNumber(s.avg) }}</span>
-          <span class="tag-stat-label">平均{{ s.label }}</span>
-        </div>
+          设置
+        </button>
       </div>
     </template>
 
@@ -341,32 +361,35 @@ onMounted(async () => {
   color: var(--text-secondary);
 }
 
-.tag-stats {
+/*
+ * 身份条：色点 + 描述与标题/副标题左缘对齐（PageTitle 自带 --space-4 水平内边距，
+ * 外壳已给 --space-8，此处补同一份额外缩进），设置入口右贴边。
+ * 居中对齐而非 flex-start：描述可能换行，色点与「设置」跟着它居中比贴顶更稳。
+ */
+.tag-identity {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-2);
-  padding-bottom: var(--space-3);
+  padding: 0 var(--space-4) var(--space-3);
+  margin-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border);
 }
 
-.tag-stat {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 76px;
-  padding: var(--space-2) var(--space-3);
+.tag-settings {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: var(--space-1) var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: var(--bg-base2);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
 }
 
-.tag-stat-value {
-  font-size: var(--text-lg);
-  font-weight: var(--font-semibold);
+.tag-settings:hover {
+  background: var(--bg-hover);
   color: var(--text-primary);
-}
-
-.tag-stat-label {
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
 }
 </style>

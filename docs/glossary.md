@@ -47,13 +47,13 @@
 ## F
 
 **字段管理面板 (Field Management Panel)**
-`QueryToolbar.vue` 最右侧「字段」按钮（`emit('fields')`）触发的 popover 内容，由消费方（`QueryToolbar` 上层、持有 `config` 的那层）经由 `BasePopover` 持有并渲染。面板本身是通用组件 `FieldManagerPanel.vue`（接收 `fields`/`activeFields`/`candidateFields`/`currentTabVisibleKeys`，emit `toggleVisibility`/`reorder`/`addGlobal`/`removeGlobal` 意图），不持有任何持久化逻辑；跨 Tab 的「全局」语义由消费方实现。分两段：编辑开关关时仅显示第一组（per-tab 显示/隐藏 + 拖拽排序）；开关开时出现第二组的 `+` 与每行的删除，对应全局增/删。见 ADR-0031。
+`QueryToolbar.vue` 最右侧「字段」按钮（`emit('fields')`）触发的 popover 内容，由消费方（`QueryToolbar` 上层、持有 `config` 的那层）经由 `BasePopover` 持有并渲染。面板本身是通用组件 `FieldManagerPanel.vue`（接收 `fields`/`candidateFields`/`columns`，emit `toggle-visibility`/`reorder`/`add-global`/`remove-global` 意图），不持有任何持久化逻辑；跨 Tab 的「全局」语义由消费方实现。分两段：编辑开关关时仅显示第一组（per-tab 显示/隐藏 + 拖拽排序）；开关开时出现第二组的 `+` 与每行的删除，对应全局增/删。见 ADR-0031。
 
 **在用字段集 (Active Field Set)**
 字段管理面板的第一组：当前属于本表的字段（出现在 ≥1 个 Tab 的 `TableConfig.columns` 中，全局操作后各 Tab 一致）。每行 `⋮⋮`(per-tab 拖拽排序) + 字段图标 + 字段名 + 👁(per-tab 显示/隐藏)；编辑开关开时 👁 右侧追加 🗑(全局移除)。👁 关的字段仍保留在第一组（全局仍在用），仅当前 Tab 暂不渲染。
 
 **候选字段池 (Candidate Field Pool)**
-字段管理面板的第二组：在 `props.fields` 中但不在「在用字段集」的字段。仅编辑开关开时显示。每行 字段图标 + 字段名 + `+`(全局新增：加入所有 Tab 的 `columns` 并默认 👁 开)，无拖拽、无 👁。按 `props.fields` 注册顺序排序。
+字段管理面板的第二组：在**候选池**中但不在「在用字段集」的字段。仅编辑开关开时显示。每行 字段图标 + 字段名 + `+`(全局新增：加入所有 Tab 的 `columns` 并默认 👁 开)，无拖拽、无 👁。按传入顺序排序。候选池缺省即全量字段池，页面可经 `candidateFields` 收窄成自身列语义内的字段 —— tag 聚合页即「内容 + 来源页 + 该 tag 的有效字段」（该页注册表为撑起看板 `groupBy` / 日历 `dateRefKind` 仍持全部内置字段，故不能整份当候选）。见 ADR-0031、ADR-0050 D7。
 
 **per-tab 显示/隐藏 (per-tab Show/Hide)**
 字段管理面板中 👁 开关的语义：仅影响**当前 Tab** 的 `TableConfig.columns` 是否包含该字段，不改变全局在用集（区别于全局增/删）。关时整行置灰、眼睛图标呈斜杠态，字段可一键重新打开。

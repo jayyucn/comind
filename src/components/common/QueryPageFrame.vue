@@ -42,6 +42,14 @@ const props = defineProps<{
   defaultViewType?: string
   /** 可筛选/排序/分组的字段清单（QueryChipBar + 三个视图）。 */
   fields: FieldDescriptor[]
+  /**
+   * 字段管理面板的**候选字段池**（缺省 = `fields`）——本页列模板允许出现的字段。
+   * 页面（先例：tag 聚合页）的列模板只由固定子集派生时注入它，避免面板把与页面无关的
+   * 全量字段列为候选（无字段的 tag 曾列出 19 个无关内置字段）。
+   * 只影响面板；`fields` 不动 —— 看板按 groupBy、日历按 dateRefKind 解析描述符，
+   * 收窄 `fields` 会让看板退化成单列、日历失去落格字段。
+   */
+  candidateFields?: FieldDescriptor[]
   /** 字段注册表（QueryChipBar 高级筛选需要）。 */
   registry: Registry
   /** 跨记录引用候选记录列表（业务无关，从业务层注入；缺省时 recordRef 不暴露）。 */
@@ -252,6 +260,7 @@ const activeColumns = computed<TableColumnConfig[]>(
     >
       <FieldManagerPanel
         :fields="fields"
+        :candidate-fields="candidateFields"
         :columns="activeColumns"
         @toggle-visibility="onToggleVisibility"
         @reorder="onReorder"

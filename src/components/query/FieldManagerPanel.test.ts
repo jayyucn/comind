@@ -19,7 +19,9 @@ const COLUMNS: TableColumnConfig[] = [
   { key: 'createdAt' },
 ]
 
-function mountPanel(props: Partial<{ fields: FieldDescriptor[]; columns: TableColumnConfig[] }> = {}) {
+function mountPanel(
+  props: Partial<{ fields: FieldDescriptor[]; candidateFields: FieldDescriptor[]; columns: TableColumnConfig[] }> = {},
+) {
   return mount(FieldManagerPanel, {
     props: { fields: FIELDS, columns: COLUMNS, ...props },
   })
@@ -107,6 +109,24 @@ describe('FieldManagerPanel', () => {
     // 所有字段均已作为列 → 候选组为空，应渲染空态文案
     const allCols = FIELDS.map((f) => ({ key: f.key }))
     const w = mountPanel({ columns: allCols })
+    await w.find('[data-testid="fm-edit"]').setValue(true)
+    expect(w.findAll('[data-testid="fm-candidate-row"]')).toHaveLength(0)
+    expect(w.text()).toContain('无候选字段')
+  })
+
+  it('候选池可被 candidateFields 收窄（已在 fields 但不在池内的字段不进候选）', async () => {
+    // 池只给「类型」；优先级在 fields 里但不在池内 → 不得出现（区分力：回退用 fields 时会多出优先级）
+    const w = mountPanel({ candidateFields: [FIELDS[1]] })
+    await w.find('[data-testid="fm-edit"]').setValue(true)
+    const cand = w.findAll('[data-testid="fm-candidate-row"]')
+    expect(cand).toHaveLength(1)
+    expect(cand[0].text()).toContain('类型')
+    // 已用字段的名称解析不受候选池影响（走 fields）
+    expect(w.findAll('[data-testid="fm-active-row"]')[0].text()).toContain('标题')
+  })
+
+  it('候选池收窄到「全为已用字段」时显示空态（tag 页列模板字段即全用）', async () => {
+    const w = mountPanel({ candidateFields: [FIELDS[0]] })
     await w.find('[data-testid="fm-edit"]').setValue(true)
     expect(w.findAll('[data-testid="fm-candidate-row"]')).toHaveLength(0)
     expect(w.text()).toContain('无候选字段')

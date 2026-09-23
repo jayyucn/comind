@@ -39,7 +39,7 @@ TaskHub `ensureTodo` 等程序化路径：先确保 `#task` 在 content，再写
 | 页面元素 | 实现映射 |
 |---|---|
 | #标题 + 「11 个成员 · 来自 4 个页面」 | 同左栏口径（直系成员数 + 去重 page_id） |
-| 标签颜色（调色板） | 标签身份三要素之三（D11）：固定调色板选色 + 可清除（选中即写，无确认步骤）；色值存 design token 名，与聚合页标题 / 成员块内联 chip 同源 |
+| 标签颜色（调色板） | 标签身份三要素之三（D11）：8 色固定调色板（`--tag-color-1..8`）+ 可清除（选中即写，无确认步骤；点当前色不落库）；色值存 design token 名，与聚合页身份条 / 成员块内联 chip 同源。系统标签只读——写入侧 Rust `reject_system_tag` 拒之，故 UI 不给可点入口（给了就是「点了没反应且无提示」的静默失败） |
 | 描述（「添加描述」占位 / 描述文本） | 标签身份三要素之二（D11）：单行文本；系统标签只读（沿用本表「系统标签右栏只读」约束） |
 | 字段模板：状态·下拉选择〔继承←项目〕/ 日期·日期〔自身〕/ + 添加字段 | 行=FieldDefinition（key/title/type）；badge 区分继承字段（解析器产出，见 D10）与自身字段；+ 添加字段 = 建 FieldDefinition + 追加 `Tag.field_ids`（用户 tag 同样支持） |
 | 继承区：#项目 × / + 添加父标签 | **单父槽位**（D10）：已有父时按钮为更换/清除；环守卫拒绝成环 |
@@ -79,7 +79,11 @@ TaskHub `ensureTodo` 等程序化路径：先确保 `#task` 在 content，再写
 
 后续形态（若需要）：统计能力回归的前提是「成员多到一屏看不完」；实现方式为在视图配置中**显式指定统计字段**（随 per-tab 配置持久化、可随筛选变化），而非零配置自动出全。
 
+**身份条。** 标题区之下设一行承载 tag 身份与模板入口：描述字段 + 颜色选色器 + 「设置」按钮。前两者与管理页右栏（D5）**同一组件、同一写入原语**，在聚合页侧只是**消费方**，不持有真相、不引入第二份状态；「设置」为模板类入口（见下）。系统标签整行身份只读（描述 / 颜色不可点），设置入口保留——模板本就不许改，但仍需能跳过去看到。
+
 **设置入口。** 面包屑「标签 / #x」（已实施）保持为返回管理页的导航，语义不变；另设**设置入口** —— 跳转 `/tags` 并**选中当前 tag 的详情**（区别于面包屑的「仅到列表」）。入口形态与边界见 D12。
+
+**字段面板的候选池边界。** 聚合页的列模板只由「内容 + 来源页 + 该 tag 的有效字段」构成，故字段面板的候选池（`candidateFields`）限同三者 —— 否则一个无字段的 tag 会把全量内置字段列成候选。注册表本身仍持全量内置字段：看板按 `groupBy='status'` 建分组列、日历按 `dateRefKind='deadline'` 落格均依赖这些描述符，收窄 `fields` 会让两者退化。筛选 / 排序 / 分组三个菜单沿用全量字段池（查询层按 block 属性筛选是数据事实）。
 
 ### D8：数据层改名 —— Tag 前缀直改
 `FieldDefinition` → **`TagFieldDefinition`**，`FieldValue` → **`TagFieldValue`**——与现名一一对应加前缀，语义即「tag 模板里的字段 / 其值」，迁移机械可脚本化（Rust 类型 + 表名 + TS 类型 + serde rename 评估）。
@@ -114,15 +118,21 @@ Tag 从「字段模板」升为「有身份的实体」：除既有 `title` 外�
 - Rust `Tag` struct 同步加字段（`#[serde(default)]` 保证旧 payload 可反序列化）；更新入参经 `TagService::update` 扩展承载。
 - `src/types/tag-persisted.ts` 的 `PersistedTag` / `UpdateTagParams` 同步；`CreateTagParams` **不加**这两字段 —— 新建弹层（D5）只收标题 + 父标签，无消费方。
 
-**颜色存储形态**：存 **design token 名**（如 `--tag-color-3`），不存 hex —— 沿用「组件样式只用 `var(--*)`、禁硬编码色值」铁律。调色板为一组固定 `--tag-color-*` token（亮/暗各一份定义），取值集为「无色 + N 色」。
+**颜色存储形态**：存 **design token 名**（如 `--tag-color-3`），不存 hex —— 沿用「组件样式只用 `var(--*)`、禁硬编码色值」铁律。调色板定为 **8 色**（`--tag-color-1..8`），取值集 =「无色（`''`）+ 8 色」；色值只在 `src/styles/tokens/_semantic.scss` 的亮 / 暗两个色块各定义一次，TS 侧名单（`src/utils/tag-color.ts`）是唯一消费入口，其单测直接读该 SCSS 双向比对以防两份名单漂移（漂移表现为色点渲染成透明点 / 已选色点不回来）。
+
+亮色取 600/700 号段、暗色取 400 号段：chip 以该色**作文字色**，故须各自在亮底 / 暗底上过 WCAG AA（实测亮 4.5–5.9、暗 6.5–10）。第 1 位与既有默认色同源，且 `--color-tag` **收敛为其别名**（`var(--tag-color-1)`）——单源无重复；又因「无色」与「选色 1」观感一致，全部既存 tag（`color=''`）零观感变化，`.block-tag` 等既有消费点零改动。
+
+**消费纪律**：色值来自存储（跨设备同步 / 旧版本 / 手改 DB 都可能给出任意串）且要拼进内联 `style`，故一律经白名单校验（`isTagColorToken`）后才进 HTML 属性，不白名单即留 CSS 注入面；未通过者按**无色**处理（落回 `--color-tag` 默认）。同一判据必须同时驱动「是否给出样式」与「空心环 / 实心点」的形态判断，否则历史非法值会出现「有类无色 / 无色无类」错配，最坏渲染成既无背景又无边框的不可见点。
 
 **消费面（一个色值贯穿所有出现点，单源）**：
 
 | 出现点 | 载体 |
 |---|---|
-| 成员块内联 `#tag` chip | `composables/useContentRenderer.ts` 生成的 `.block-tag`（渲染态）与 `InlineTagExtension` Decoration（编辑态）—— 两态共用同一类名，色只写一次（先例：`.tag-hash` 图标） |
+| 成员块内联 `#tag` chip | **两态同形**，均为 `.block-tag` 胶囊、`#` 按字面渲染（切换编辑/渲染零抖动）。渲染态 = `useContentRenderer.ts` 产出，色**随 Rust `RenderSegment::Tag` 的 `color` 字段下发**（与 `is_system` 走同一次 tag 查找，无额外成本；渲染器是纯函数，若改用 `tag_id` 回查 store 会把状态依赖拖进渲染路径）。编辑态 = `InlineTagExtension` 的**单层 Decoration 盖住整个 `#tag`**，色由宿主（`Editor.vue`）注入 `title → info` 解析闭包（扩展不碰 Pinia；标签树异步到位后由宿主 dispatch 空 transaction 逼装饰重算）。`#` 不换成图标是**硬约束**：ProseMirror inline decoration 是扁平区间（渲染前 `removeOverlap` 强制消解部分重叠），同起点的「图标 + 胶囊」两层会被截断合并成同一元素，mask 图标与胶囊底色抢同一个 `background`，物理不可达 |
 | 聚合页标题区 | `TagAggregateBody.vue` |
 | 管理页列表行 / 详情标题 / 继承区父标签 chip | `TagsLibrary.vue` |
+
+编辑态 chip 与 `useBlockEditorLifecycle.handleContentMousedown` 的 `.block-tag` 早退守卫相交：守卫须按「目标不在 `.ProseMirror` 内」收窄为渲染态专用，否则块激活后从 chip 字符内起拖会跳过 ADR-0035 的文本选区跟踪、拖不出本块。
 
 描述与颜色有**两处编辑入口**（管理页右栏详情见 D5、聚合页标题区），但为**同一份数据、同一组写入原语**，不引入第二份状态；两处可编辑性约束一致（系统标签只读）。
 
@@ -142,4 +152,3 @@ Tag 从「字段模板」升为「有身份的实体」：除既有 `title` 外�
 ## 开放问题
 
 - `TagFieldDefinition` / `TagFieldValue` 表名是否随 Rust 类型同步改（含 serde rename 对已同步设备 payload 的兼容评估）。
-- 调色板的 token 组（`--tag-color-*` 的色数、亮/暗是否共用色值）与现存常量 `--color-tag`（`src/styles/tokens/_semantic.scss:162`）的关系：沿用，还是收敛为同一组。
