@@ -40,6 +40,8 @@ export interface PersistedFieldDefinition {
   type: string
   /** 选项型字段的候选值；非选项型为 null */
   closed_values: string[] | null
+  /** 字段默认值：JSON 文本（与 PersistedFieldValue.value_json 同形，按 type 反序列化）；null = 无默认 */
+  default_value: string | null
   is_system: boolean
   created_at: number
   updated_at: number
@@ -107,6 +109,8 @@ export type CreateFieldDefinitionParams = {
   title: string
   type: string
   closed_values?: string[] | null
+  /** 字段默认值（JSON 文本）；缺省 = 无默认 */
+  default_value?: string | null
 }
 
 export type UpdateFieldDefinitionParams = {
@@ -115,6 +119,8 @@ export type UpdateFieldDefinitionParams = {
   type?: string
   /** 显式传 null 表示清空候选值（降为非选项型）；不传则保持原值 */
   closed_values?: string[] | null
+  /** 显式传 null / 空 = 清空默认；不传则保持原值 */
+  default_value?: string | null
 }
 
 export type CreateFieldValueParams = {

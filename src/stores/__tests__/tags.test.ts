@@ -62,6 +62,7 @@ function fieldDef(
     updated_at: 1,
     version: 0,
     deleted_at: null,
+    default_value: null,
     ...over,
   }
 }
@@ -367,5 +368,23 @@ describe('tags store', () => {
     })
     // 写后重读（force），避免本地合并漂移
     expect(mockClient.getTagTree).toHaveBeenCalledTimes(2)
+  })
+
+  it('updateFieldDefinition 透传 default_value：非空 → JSON 文本落库；null → 清除（写入后重读）', async () => {
+    mockClient.getTagTree.mockResolvedValue([treeEntry({ id: 't1', title: '项目' })])
+    mockClient.updateFieldDefinition.mockResolvedValue(fieldDef({ id: 'def-1', title: '工时' }))
+
+    const store = useTagsStore()
+    await store.ensureLoaded()
+
+    // 数值字段的默认值在 UI 侧编码为 JSON 文本（与 PersistedFieldValue.value_json 同形），
+    // store 只做透传，不解码 —— 编码/解码职责在组件。
+    await store.updateFieldDefinition({ id: 'def-1', default_value: '"8"' })
+    expect(mockClient.updateFieldDefinition).toHaveBeenLastCalledWith({ id: 'def-1', default_value: '"8"' })
+    expect(mockClient.getTagTree).toHaveBeenCalledTimes(2)
+
+    // 清除：显式 null（空串语义同 null，由 batch 层 optional_str_param 归一）
+    await store.updateFieldDefinition({ id: 'def-1', default_value: null })
+    expect(mockClient.updateFieldDefinition).toHaveBeenLastCalledWith({ id: 'def-1', default_value: null })
   })
 })

@@ -19,6 +19,8 @@ const props = defineProps<{
   value: string
   /** 只读（系统标签） */
   readonly?: boolean
+  /** 内联模式：直接渲染选色面板（不弹窗），用于标签管理面板（ADR-0050 D14） */
+  inline?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -44,55 +46,95 @@ function choose(token: string | null) {
 </script>
 
 <template>
-  <button
-    v-if="!readonly"
-    ref="triggerEl"
-    type="button"
-    class="tag-color-trigger"
-    :class="{ 'tag-color-trigger--empty': !selected, 'tag-color-trigger--open': open }"
-    :style="dotStyle"
-    :aria-label="selected ? '更改标签颜色' : '设置标签颜色'"
-    :title="selected ? '更改标签颜色' : '设置标签颜色'"
-    @click="open = !open"
-  />
+  <!-- 内联模式（ADR-0050 D14）：直接渲染选色面板，不弹窗，嵌入管理面板 -->
+  <div
+    v-if="inline && !readonly"
+    class="tag-color-panel"
+  >
+    <button
+      type="button"
+      class="tag-color-none"
+      :class="{ 'tag-color-none--active': !selected }"
+      @click="choose(null)"
+    >
+      无色
+    </button>
+    <div class="tag-color-grid">
+      <button
+        v-for="option in TAG_COLORS"
+        :key="option.token"
+        type="button"
+        class="tag-color-swatch"
+        :class="{ 'tag-color-swatch--active': option.token === selected }"
+        :style="{ background: `var(${option.token})` }"
+        :aria-label="option.label"
+        :title="option.label"
+        :aria-pressed="option.token === selected"
+        @click="choose(option.token)"
+      />
+    </div>
+  </div>
+  <!-- 内联 + 只读：静态色点（系统标签无写入口） -->
   <span
-    v-else
+    v-else-if="inline && readonly"
     class="tag-color-trigger tag-color-trigger--readonly"
     :class="{ 'tag-color-trigger--empty': !selected }"
     :style="dotStyle"
     aria-hidden="true"
   />
 
-  <BasePopover
-    :visible="open"
-    :anchor-el="triggerEl"
-    @close="open = false"
-  >
-    <div class="tag-color-panel">
-      <button
-        type="button"
-        class="tag-color-none"
-        :class="{ 'tag-color-none--active': !selected }"
-        @click="choose(null)"
-      >
-        无色
-      </button>
-      <div class="tag-color-grid">
+  <!-- 弹窗模式（聚合页标题区沿用） -->
+  <template v-else>
+    <button
+      v-if="!readonly"
+      ref="triggerEl"
+      type="button"
+      class="tag-color-trigger"
+      :class="{ 'tag-color-trigger--empty': !selected, 'tag-color-trigger--open': open }"
+      :style="dotStyle"
+      :aria-label="selected ? '更改标签颜色' : '设置标签颜色'"
+      :title="selected ? '更改标签颜色' : '设置标签颜色'"
+      @click="open = !open"
+    />
+    <span
+      v-else
+      class="tag-color-trigger tag-color-trigger--readonly"
+      :class="{ 'tag-color-trigger--empty': !selected }"
+      :style="dotStyle"
+      aria-hidden="true"
+    />
+
+    <BasePopover
+      :visible="open"
+      :anchor-el="triggerEl"
+      @close="open = false"
+    >
+      <div class="tag-color-panel">
         <button
-          v-for="option in TAG_COLORS"
-          :key="option.token"
           type="button"
-          class="tag-color-swatch"
-          :class="{ 'tag-color-swatch--active': option.token === selected }"
-          :style="{ background: `var(${option.token})` }"
-          :aria-label="option.label"
-          :title="option.label"
-          :aria-pressed="option.token === selected"
-          @click="choose(option.token)"
-        />
+          class="tag-color-none"
+          :class="{ 'tag-color-none--active': !selected }"
+          @click="choose(null)"
+        >
+          无色
+        </button>
+        <div class="tag-color-grid">
+          <button
+            v-for="option in TAG_COLORS"
+            :key="option.token"
+            type="button"
+            class="tag-color-swatch"
+            :class="{ 'tag-color-swatch--active': option.token === selected }"
+            :style="{ background: `var(${option.token})` }"
+            :aria-label="option.label"
+            :title="option.label"
+            :aria-pressed="option.token === selected"
+            @click="choose(option.token)"
+          />
+        </div>
       </div>
-    </div>
-  </BasePopover>
+    </BasePopover>
+  </template>
 </template>
 
 <style lang="scss" scoped>

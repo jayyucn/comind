@@ -210,7 +210,7 @@ impl SqlJsAdapter {
         // ADR-0049 D6：Tag 统一字段模型 —— 三张新表（与 sqlite.rs init_schema 逐列一致）。
         Self::exec(db, "CREATE TABLE IF NOT EXISTS Tag (id TEXT PRIMARY KEY, title TEXT NOT NULL UNIQUE, field_ids TEXT NOT NULL DEFAULT '[]', extends TEXT NOT NULL DEFAULT '[]', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 0, deleted_at INTEGER, is_system INTEGER NOT NULL DEFAULT 0, parent_id TEXT, description TEXT NOT NULL DEFAULT '', color TEXT NOT NULL DEFAULT '');")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_tag_title ON Tag(title);")?;
-        Self::exec(db, "CREATE TABLE IF NOT EXISTS FieldDefinition (id TEXT PRIMARY KEY, key TEXT NOT NULL UNIQUE, title TEXT NOT NULL, type TEXT NOT NULL, closed_values TEXT, is_system INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 0, deleted_at INTEGER);")?;
+        Self::exec(db, "CREATE TABLE IF NOT EXISTS FieldDefinition (id TEXT PRIMARY KEY, key TEXT NOT NULL UNIQUE, title TEXT NOT NULL, type TEXT NOT NULL, closed_values TEXT, is_system INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 0, deleted_at INTEGER, default_value TEXT);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_fielddef_key ON FieldDefinition(key);")?;
         Self::exec(db, "CREATE TABLE IF NOT EXISTS FieldValue (id TEXT PRIMARY KEY, block_id TEXT NOT NULL, field_definition_id TEXT NOT NULL, value_json TEXT NOT NULL, value_type TEXT NOT NULL, seq INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 0, deleted_at INTEGER);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_fieldvalue_block_id ON FieldValue(block_id);")?;
@@ -228,6 +228,7 @@ impl SqlJsAdapter {
         Self::migrate_add_tag_parent_id(db)?;
         Self::migrate_add_tag_identity(db)?;
         Self::seed_system_tags(db)?;
+        Self::migrate_add_field_definition_default_value(db)?;
 
         Ok(())
     }
@@ -311,6 +312,19 @@ impl SqlJsAdapter {
                     &format!("ALTER TABLE Tag ADD COLUMN {} TEXT NOT NULL DEFAULT '';", col),
                 )?;
             }
+        }
+        Ok(())
+    }
+
+    /// 幂等：老库 FieldDefinition 表补 default_value 列（JSON 文本；NULL = 无默认，ADR-0050 D13）。
+    /// 与 sqlite `migrate_add_field_definition_default_value` 逐行对称。
+    fn migrate_add_field_definition_default_value(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        let has_column = |table: &str, col: &str| -> bool {
+            let rows = Self::query(db, &format!("PRAGMA table_info('{}');", table), &[]).unwrap_or_default();
+            rows.iter().any(|r| r.values().any(|v| v == col))
+        };
+        if !has_column("FieldDefinition", "default_value") {
+            Self::exec(db, "ALTER TABLE FieldDefinition ADD COLUMN default_value TEXT;")?;
         }
         Ok(())
     }
@@ -1207,9 +1221,10 @@ impl FieldDefinitionRepository for SqlJsAdapter {
     fn create(&mut self, fd: &FieldDefinition) -> Result<FieldDefinition, Box<dyn std::error::Error>> {
         let closed_values_json = serde_json::to_string(&fd.closed_values).unwrap_or_else(|_| "null".to_string());
         let is_system = if fd.is_system { "1" } else { "0" };
-        Self::run_with_params(&self.db, "INSERT INTO FieldDefinition (id, key, title, type, closed_values, is_system, created_at, updated_at, version, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)", &[
+        Self::run_with_params(&self.db, "INSERT INTO FieldDefinition (id, key, title, type, closed_values, is_system, created_at, updated_at, version, deleted_at, default_value) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)", &[
             &fd.id, &fd.key, &fd.title, &fd.r#type, &closed_values_json, is_system,
-            &fd.created_at.to_string(), &fd.updated_at.to_string(), &fd.version.to_string()
+            &fd.created_at.to_string(), &fd.updated_at.to_string(), &fd.version.to_string(),
+            fd.default_value.as_deref().unwrap_or("")
         ])?;
         Ok(fd.clone())
     }
@@ -1217,8 +1232,9 @@ impl FieldDefinitionRepository for SqlJsAdapter {
     fn update(&mut self, fd: &FieldDefinition) -> Result<FieldDefinition, Box<dyn std::error::Error>> {
         let closed_values_json = serde_json::to_string(&fd.closed_values).unwrap_or_else(|_| "null".to_string());
         let is_system = if fd.is_system { "1" } else { "0" };
-        Self::run_with_params(&self.db, "UPDATE FieldDefinition SET key = ?, title = ?, type = ?, closed_values = ?, is_system = ?, updated_at = ?, version = version + 1 WHERE id = ?", &[
+        Self::run_with_params(&self.db, "UPDATE FieldDefinition SET key = ?, title = ?, type = ?, closed_values = ?, is_system = ?, default_value = ?, updated_at = ?, version = version + 1 WHERE id = ?", &[
             &fd.key, &fd.title, &fd.r#type, &closed_values_json, is_system,
+            fd.default_value.as_deref().unwrap_or(""),
             &fd.updated_at.to_string(), &fd.id
         ])?;
         Ok(fd.clone())

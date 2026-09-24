@@ -15,7 +15,7 @@
  * - 字段定义是全局共享的，故只有**自身声明**的字段可在此编辑（继承方无权改他人定义）。
  * - 进聚合页的入口在本页右栏标题行（`/tags/:tagId`）。
  */
-import { Plus, Search, X } from 'lucide-vue-next'
+import { ChevronRight, Plus, Search, X } from 'lucide-vue-next'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useNavigateToTag } from '../../composables/useNavigateToTag'
 import { useBlockCardStore } from '../../stores/blockCard'
@@ -291,6 +291,66 @@ async function submitFieldEdit() {
   fieldEditorOpen.value = false
 }
 
+// ── 字段行：展开/折叠（ADR-0050 D14）+ 默认值编辑（ADR-0050 D13） ──
+
+/** 当前展开的行（手风琴：至多一行展开）。 */
+const expandedFieldId = ref<string | null>(null)
+/** 展开行内默认值输入框的草稿（按类型归一为字符串）。 */
+const defaultDraft = ref('')
+
+/** 默认值落库形态 = JSON 文本（与 PersistedFieldValue.value_json 同形）；读回时反序列化为字符串。 */
+function decodeDefault(jsonText: string | null | undefined): string {
+  if (!jsonText) return ''
+  try {
+    const v = JSON.parse(jsonText)
+    return v == null ? '' : String(v)
+  } catch {
+    return ''
+  }
+}
+
+/** 输入草稿 → JSON 文本；空串 / 非法数字 → null（即「无默认」）。 */
+function encodeDefault(type: string, raw: string | number): string | null {
+  // 数值输入框由 Vue v-model 直接赋 number（而非字符串）→ 入参可能是 number，
+  // 统一归一为字符串再判空 / 转 JSON，避免 raw.trim 在 number 上抛错。
+  const trimmed = String(raw ?? '').trim()
+  if (!trimmed) return null
+  if (type === 'number') {
+    const n = Number(trimmed)
+    return Number.isNaN(n) ? null : JSON.stringify(n)
+  }
+  return JSON.stringify(trimmed)
+}
+
+function toggleExpand(row: { def: PersistedFieldDefinition; origin: PersistedTag | undefined }) {
+  if (expandedFieldId.value === row.def.id) {
+    expandedFieldId.value = null
+    return
+  }
+  expandedFieldId.value = row.def.id
+  defaultDraft.value = decodeDefault(row.def.default_value)
+}
+
+/** 仅自身声明的字段可设默认（继承字段的定义归祖先，改它 = 改所有引用方）。 */
+function canSetDefault(origin: PersistedTag | undefined): boolean {
+  return isOwnField(origin) && !isSystemTag.value
+}
+
+function defaultValueDisplay(row: { def: PersistedFieldDefinition }): string {
+  const v = decodeDefault(row.def.default_value)
+  return v ? `默认：${v}` : '无默认'
+}
+
+async function saveDefault(row: { def: PersistedFieldDefinition }) {
+  const encoded = encodeDefault(row.def.type, defaultDraft.value)
+  await tagsStore.updateFieldDefinition({ id: row.def.id, default_value: encoded })
+}
+
+async function clearDefault(row: { def: PersistedFieldDefinition }) {
+  defaultDraft.value = ''
+  await tagsStore.updateFieldDefinition({ id: row.def.id, default_value: null })
+}
+
 // ── 继承区：父标签选择弹层（BasePopover） ──────────────────────
 
 const parentPickerOpen = ref(false)
@@ -510,12 +570,13 @@ async function submitAddField() {
               @save="onSaveDescription"
             />
           </div>
-          <!-- 身份的第三要素：颜色。选色器自带色点，详情标题不再重复放点 -->
+          <!-- 身份的第三要素：颜色。管理面板内联渲染选色面板（不弹窗，ADR-0050 D14） -->
           <div class="tag-detail-color">
             <span class="tag-detail-color-label">颜色</span>
             <TagColorPicker
               :value="selectedTag.color"
               :readonly="isSystemTag"
+              inline
               @pick="onPickColor"
             />
           </div>
@@ -534,31 +595,116 @@ async function submitAddField() {
               v-for="row in detailFields"
               :key="row.def.id"
               class="tag-field-row"
-              :class="{ 'tag-field-row--editable': canEditField(row.origin) }"
-              :role="canEditField(row.origin) ? 'button' : undefined"
-              :tabindex="canEditField(row.origin) ? 0 : undefined"
-              @click="canEditField(row.origin) && openFieldEditor($event, row.def)"
-              @keydown.enter="canEditField(row.origin) && openFieldEditor($event, row.def)"
+              :class="{ 'tag-field-row--editable': canEditField(row.origin), 'tag-field-row--expanded': expandedFieldId === row.def.id }"
             >
-              <span class="tag-field-name">{{ row.def.title }} · {{ typeLabel(row.def) }}</span>
-              <span class="tag-field-actions">
+              <div class="tag-field-top">
+                <!-- 头部：点击展开/折叠（D14），露出默认值编辑（D13） -->
                 <button
-                  v-if="canEditField(row.origin)"
                   type="button"
-                  class="tag-field-remove"
-                  @click.stop="onRemoveField(row.def.id)"
+                  class="tag-field-head"
+                  :class="{ 'tag-field-head--editable': canEditField(row.origin) }"
+                  @click="toggleExpand(row)"
                 >
-                  移除
+                  <span class="tag-field-name">{{ row.def.title }} · {{ typeLabel(row.def) }}</span>
+                  <span class="tag-field-default-hint">{{ defaultValueDisplay(row) }}</span>
+                  <ChevronRight
+                    class="tag-field-chevron"
+                    :class="{ 'tag-field-chevron--open': expandedFieldId === row.def.id }"
+                    :size="14"
+                  />
                 </button>
-                <span
-                  v-if="isOwnField(row.origin)"
-                  class="tag-field-badge"
-                >自身</span>
-                <span
-                  v-else
-                  class="tag-field-badge tag-field-badge--inherited"
-                >继承 ← {{ row.origin?.title }}</span>
-              </span>
+                <span class="tag-field-actions">
+                  <button
+                    v-if="canEditField(row.origin)"
+                    type="button"
+                    class="tag-field-edit"
+                    @click.stop="openFieldEditor($event, row.def)"
+                  >
+                    编辑
+                  </button>
+                  <button
+                    v-if="canEditField(row.origin)"
+                    type="button"
+                    class="tag-field-remove"
+                    @click.stop="onRemoveField(row.def.id)"
+                  >
+                    移除
+                  </button>
+                  <span
+                    v-if="isOwnField(row.origin)"
+                    class="tag-field-badge"
+                  >自身</span>
+                  <span
+                    v-else
+                    class="tag-field-badge tag-field-badge--inherited"
+                  >继承 ← {{ row.origin?.title }}</span>
+                </span>
+              </div>
+              <!-- 展开面板：默认值编辑（仅自身声明字段可写；继承字段只读） -->
+              <div
+                v-if="expandedFieldId === row.def.id"
+                class="tag-field-default"
+              >
+                <label class="tag-field-default-label">默认值</label>
+                <input
+                  v-if="row.def.type === 'string' && !row.def.closed_values?.length"
+                  v-model="defaultDraft"
+                  class="tag-field-default-input"
+                  type="text"
+                  placeholder="无默认"
+                >
+                <input
+                  v-else-if="row.def.type === 'number'"
+                  v-model="defaultDraft"
+                  class="tag-field-default-input"
+                  type="number"
+                  placeholder="无默认"
+                >
+                <input
+                  v-else-if="row.def.type === 'date'"
+                  v-model="defaultDraft"
+                  class="tag-field-default-input"
+                  type="date"
+                >
+                <select
+                  v-else-if="row.def.closed_values?.length"
+                  v-model="defaultDraft"
+                  class="tag-field-default-input"
+                >
+                  <option value="">
+                    无默认
+                  </option>
+                  <option
+                    v-for="opt in row.def.closed_values"
+                    :key="opt"
+                    :value="opt"
+                  >
+                    {{ opt }}
+                  </option>
+                </select>
+                <div class="tag-field-default-actions">
+                  <button
+                    v-if="canSetDefault(row.origin)"
+                    type="button"
+                    class="tag-field-default-save"
+                    @click="saveDefault(row)"
+                  >
+                    保存默认
+                  </button>
+                  <button
+                    v-if="canSetDefault(row.origin)"
+                    type="button"
+                    class="tag-field-default-clear"
+                    @click="clearDefault(row)"
+                  >
+                    清除
+                  </button>
+                  <span
+                    v-else
+                    class="tag-field-default-readonly"
+                  >继承字段的默认值由「{{ row.origin?.title }}」定义</span>
+                </div>
+              </div>
             </div>
             <p
               v-if="!detailFields.length"
@@ -1118,27 +1264,50 @@ async function submitAddField() {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  /* 字段多时限制高度、内部滚动（需求 #3） */
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: var(--space-1);
 }
 
 .tag-field-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
   gap: var(--space-2);
-  min-height: 36px;
-  padding: 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
   font-size: var(--text-sm);
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 
-  /* 只有自身声明的字段可点开编辑（继承字段 / 系统标签仍是静态行） */
-  &--editable {
-    cursor: pointer;
+  /* 展开行高亮（编辑入口仍在「编辑」按钮，继承/系统字段为静态行） */
+  &--expanded {
+    border-color: var(--accent-40);
+  }
+}
 
-    &:hover {
-      border-color: var(--accent-40);
-    }
+.tag-field-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.tag-field-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+
+  &--editable:hover {
+    color: var(--accent-hover);
   }
 }
 
@@ -1147,6 +1316,107 @@ async function submitAddField() {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.tag-field-default-hint {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tag-field-chevron {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  transition: transform 0.15s ease;
+
+  &--open {
+    transform: rotate(90deg);
+  }
+}
+
+/* 展开面板：默认值编辑 */
+.tag-field-default {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+
+.tag-field-default-label {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.tag-field-default-input {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  background: var(--bg-base2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px var(--space-2);
+}
+
+.tag-field-default-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.tag-field-default-save {
+  height: 26px;
+  padding: 0 var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--color-white);
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--accent-hover);
+  }
+}
+
+.tag-field-default-clear {
+  height: 26px;
+  padding: 0 var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--error);
+  }
+}
+
+.tag-field-default-readonly {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.tag-field-edit {
+  visibility: hidden;
+  padding: 0;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--accent);
+  }
+}
+
+.tag-field-row:hover .tag-field-edit {
+  visibility: visible;
 }
 
 .tag-field-actions {

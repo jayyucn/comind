@@ -24,6 +24,10 @@ pub struct FieldDefinition {
     /// 选项型字段的候选值（select / multi-select）；非选项型为 None，落库为 JSON TEXT。
     #[serde(default)]
     pub closed_values: Option<Vec<String>>,
+    /// 字段默认值：JSON 文本（与 `FieldValue.value_json` 同形，按 `type` 反序列化）；
+    /// None = 无默认。打标时按此值为新成员块自动建 FieldValue（ADR-0050 D13）。
+    #[serde(default)]
+    pub default_value: Option<String>,
     /// 系统字段 seed 进表后标记，seed 行不可删（D3）。
     #[serde(default)]
     pub is_system: bool,
@@ -44,6 +48,9 @@ pub struct FieldDefinitionCreateOptions {
     pub r#type: String,
     #[serde(default)]
     pub closed_values: Option<Vec<String>>,
+    /// 字段默认值（JSON 文本）；建定义时一般留 None，随后经 UpdateFieldDefinition 设置。
+    #[serde(default)]
+    pub default_value: Option<String>,
     #[serde(default)]
     pub is_system: bool,
 }
@@ -57,6 +64,7 @@ impl FieldDefinition {
             title: options.title,
             r#type: options.r#type,
             closed_values: options.closed_values,
+            default_value: options.default_value,
             is_system: options.is_system,
             created_at: now,
             updated_at: now,
@@ -76,6 +84,7 @@ impl FieldDefinition {
             title: title.to_string(),
             r#type: r#type.to_string(),
             closed_values,
+            default_value: None,
             is_system: true,
             created_at: now,
             updated_at: now,

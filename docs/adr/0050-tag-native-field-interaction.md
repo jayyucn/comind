@@ -149,6 +149,26 @@ Tag 从「字段模板」升为「有身份的实体」：除既有 `title` 外�
 
 理由：模板编辑牵动三类约束 —— 字段定义全局共享（改它等于改所有引用方）、系统标签只读、继承环守卫；两处实现必然漂移。身份类不同，它只影响本 tag 自身的展示，故可多入口。
 
+### D13：字段默认值 —— 存于字段定义，打标时自动填入
+
+`FieldDefinition` 新增 `default_value TEXT` 列，取值为 **JSON 文本**，形态与 `FieldValue.value_json` 一致（`number` 存 `8`，`string` 存 `"8"`）；`NULL` / 空串语义相同 —— 无默认。
+
+**双写入路径**：`storage/entity/field_definition.rs` 只覆盖 native，`storage/sqljs.rs` 是另一份独立实现（含各自的 `CREATE TABLE` 与 `ALTER TABLE` 迁移）。新增列必须在两处同步，否则浏览器侧保存默认值会静默失效。存量库靠幂等迁移 `migrate_add_field_definition_default_value`（`pragma_table_info` 守卫）；注意 `open_in_memory` 只建表不跑迁移，故 `CREATE TABLE` 内也必须带该列。
+
+**写入**：`field_definition` 的 create / update 两个 batch op 透传 `default_value`；update 用「请求含该键才写」的语义，因此传空串可显式清除。
+
+**生效时机**：仅在区块**新获得**某个标签时填入，取差集 `(打标后的 tags) − (打标前的 tags)`，由 `TagService::apply_field_defaults_for_new_tags` 执行：遍历这些标签的有效字段（D10 继承链），跳过已有 `FieldValue` 的字段，其余按 `default_value` 落一条 `FieldValue`。重复打同一个标签、或单纯保存区块内容，都不会覆写已存在的手写值。接入点是 `block/set_tags` batch op —— 同步侧在此登记新建的 `FieldValue`。
+
+理由：默认值若只存不用，就是给用户看的装饰，因此选择了「落到 `FieldValue`」而非「仅作字段定义属性」。限制在差集而非「每次保存都补」，是为了保证幂等 —— 否则用户清掉某个默认值后，一次无关保存又会把它写回来。自动填入失败不影响打标本身（错误只做诊断输出）。
+
+### D14：字段面板呈现 —— 内联取色 + 行展开折叠
+
+管理页右栏（D5）的字段模板区调整三点：
+
+1. **取色器内联**：`TagColorPicker` 增 `inline` prop；内联态直接渲染调色面板，不走 BasePopover，面板在不离开右栏的前提下完成取色（ADR-0009 D8 要求浮层 Teleport 的原由在此不适用 —— 它没有被 `transform` 祖先困住的布局前提）。
+2. **字段行展开折叠**：字段头部是唯一的展开开关，点击在该行内展开默认值编辑区（按类型出 text / number / date / select 控件）；继承而来的字段只读，只提示「默认值由源标签定义」。字段的「编辑 / 移除」仍各自独立按钮，不再由点击行触发 —— 行点击语义收缩为单一用途。
+3. **列表限高滚动**：`.tag-fields` 限 `max-height` + `overflow-y: auto`，字段数增长时不撑破右栏。
+
 ## 开放问题
 
 - `TagFieldDefinition` / `TagFieldValue` 表名是否随 Rust 类型同步改（含 serde rename 对已同步设备 payload 的兼容评估）。

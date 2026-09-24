@@ -72,6 +72,7 @@ function fieldDef(
     updated_at: 1,
     version: 0,
     deleted_at: null,
+    default_value: null,
     ...over,
   }
 }
@@ -287,19 +288,21 @@ describe('TagsLibrary（标签管理页）', () => {
 
   // ── 身份第三要素：颜色（ADR-0050 D11） ──
 
-  it('右栏选色：emit pick → setIdentity → updateTag 只发 color', async () => {
+  it('右栏选色（内联面板不弹窗）：点色块 → emit pick → setIdentity → updateTag 只发 color', async () => {
     mockClient.updateTag.mockResolvedValue(PROJECT)
     const wrapper = await mountPage()
     await wrapper.find('.tag-row--t-project').trigger('click')
     await flushPromises()
 
-    await wrapper.find('.tag-detail-color .tag-color-trigger').trigger('click')
-    const panel = document.body.querySelector('.tag-color-panel') as HTMLElement
-    expect(panel).toBeTruthy()
-    const swatch = Array.from(panel.querySelectorAll('.tag-color-swatch')).find(
-      (s) => s.getAttribute('aria-label') === '青绿',
-    ) as HTMLElement
-    swatch.click()
+    // 内联模式（ADR-0050 D14）：面板直接嵌在 .tag-detail-color，不弹窗、不 Teleport，
+    // 故从页面内（而非 document.body）取面板。
+    const panel = wrapper.find('.tag-detail-color .tag-color-panel')
+    expect(panel.exists()).toBe(true)
+    const swatch = Array.from(panel.findAll('.tag-color-swatch')).find(
+      (s) => s.attributes('aria-label') === '青绿',
+    )
+    expect(swatch, '应含「青绿」色块').toBeTruthy()
+    await swatch!.trigger('click')
     await flushPromises()
 
     expect(mockClient.updateTag).toHaveBeenCalledWith({ id: 't-project', color: '--tag-color-3' })
@@ -630,7 +633,8 @@ describe('TagsLibrary（标签管理页）', () => {
     const editable = wrapper.findAll('.tag-field-row--editable')
     expect(editable).toHaveLength(1)
     expect(editable[0].text()).toContain('工时')
-    await editable[0].trigger('click')
+    // 字段定义编辑器由「编辑」按钮打开（行头部点击改作展开/折叠默认值编辑器）
+    await editable[0].find('.tag-field-edit').trigger('click')
     await flushPromises()
 
     const body = document.body
@@ -669,7 +673,8 @@ describe('TagsLibrary（标签管理页）', () => {
     await wrapper.find('.tag-row--t-project').trigger('click')
     await flushPromises()
 
-    await wrapper.find('.tag-field-row--editable').trigger('click')
+    // 字段定义编辑器由「编辑」按钮打开（行头部点击改作展开/折叠默认值编辑器）
+    await wrapper.find('.tag-field-row--editable').find('.tag-field-edit').trigger('click')
     await flushPromises()
 
     const body = document.body
@@ -698,12 +703,65 @@ describe('TagsLibrary（标签管理页）', () => {
     await wrapper.find('.tag-row--t-idea').trigger('click')
     await flushPromises()
 
-    await wrapper.find('.tag-field-row--editable').trigger('click')
+    // 字段定义编辑器由「编辑」按钮打开（行头部点击改作展开/折叠默认值编辑器）
+    await wrapper.find('.tag-field-row--editable').find('.tag-field-edit').trigger('click')
     await flushPromises()
 
     const typeSelect = document.body.querySelector('.tag-field-edit-type') as HTMLSelectElement
     expect(typeSelect.value).toBe('boolean')
     // 兜底项在，且显示名取自同一张表
     expect(Array.from(typeSelect.options).map((o) => o.textContent?.trim())).toContain('是/否')
+  })
+
+  it('字段模板：点自身字段头部 → 展开默认值编辑器，数值型填值保存 → updateFieldDefinition 带 default_value(JSON 文本)', async () => {
+    mockClient.updateFieldDefinition.mockResolvedValue(fieldDef({ id: 'f-estimate', title: '预计工时' }))
+    const wrapper = await mountPage()
+    await wrapper.find('.tag-row--t-dev').trigger('click')
+    await flushPromises()
+
+    // 开发任务自身只有 工时（编辑态、数值型）→ 行头部可点展开默认值编辑器
+    const editableRow = wrapper.find('.tag-field-row--editable')
+    await editableRow.find('.tag-field-head').trigger('click')
+    await flushPromises()
+
+    // 展开面板出现，且按字段类型渲染数值输入框
+    const panel = wrapper.find('.tag-field-default')
+    expect(panel.exists()).toBe(true)
+    const input = panel.find('input.tag-field-default-input')
+    expect(input.attributes('type')).toBe('number')
+
+    await input.setValue('8')
+    await flushPromises()
+    // 保存入口在展开面板内（默认值为本标签自身声明时才可写）
+    await editableRow.find('.tag-field-default-save').trigger('click')
+    await flushPromises()
+
+    // 数值经 encodeDefault 编码为 JSON 文本「8」（JSON.stringify(8)，1 个字符），与
+    // PersistedFieldValue.value_json 同形；store 透传。
+    expect(mockClient.updateFieldDefinition).toHaveBeenLastCalledWith({ id: 'f-estimate', default_value: '8' })
+    expect(mockClient.getTagTree).toHaveBeenCalled()
+  })
+
+  it('字段模板：再点头部落默认值编辑器；继承字段不给保存入口（只读提示）', async () => {
+    const wrapper = await mountPage()
+    await wrapper.find('.tag-row--t-dev').trigger('click')
+    await flushPromises()
+
+    // 自身字段展开后再次点头部折叠
+    const editableRow = wrapper.find('.tag-field-row--editable')
+    await editableRow.find('.tag-field-head').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.tag-field-default').exists()).toBe(true)
+    await editableRow.find('.tag-field-head').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.tag-field-default').exists()).toBe(false)
+
+    // 继承字段（负责人 ← 项目）：可展开，但面板只读，无「保存默认」按钮
+    const inheritedRow = wrapper.findAll('.tag-field-row').find((r) => r.text().includes('继承 ← 项目'))!
+    await inheritedRow.find('.tag-field-head').trigger('click')
+    await flushPromises()
+    expect(inheritedRow.find('.tag-field-default').exists()).toBe(true)
+    expect(inheritedRow.find('.tag-field-default-save').exists()).toBe(false)
+    expect(inheritedRow.find('.tag-field-default-readonly').text()).toContain('继承字段的默认值')
   })
 })

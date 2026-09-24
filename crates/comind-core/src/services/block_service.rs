@@ -128,9 +128,25 @@ impl BlockService {
         // 重算派生集写入 Block.tags（恒链接既有行；软删复活/自动建仅限提交时点，
         // 见 TagService —— 打字中间态不建 `#f`、`#fo` 垃圾标签）。
         // 摘标 = 从 content 删字；FieldValue 保留不动（grill 决策 #7）。
+        let old_tags = block.tags.clone();
         block.tags = TagService::resolve_tag_ids_for_content(storage, &block.content, create_missing_tags)?;
+        // 仅对新获得 tag 打默认（ADR-0050 D13），差集保证不冲掉手写值。
+        let new_tag_ids: Vec<String> = block
+            .tags
+            .iter()
+            .filter(|t| !old_tags.contains(t))
+            .cloned()
+            .collect();
 
         let block = repository::BlockRepository::update(storage.blocks(), &block)?;
+        if let Err(e) =
+            TagService::apply_field_defaults_for_new_tags(storage, &block.id, &new_tag_ids)
+        {
+            eprintln!(
+                "[BlockService::update] apply_field_defaults failed for block {}: {}",
+                block.id, e
+            );
+        }
         DateRefService::sync_date_refs_for_block(storage, &block.id, &block.content)?;
         // 方案 A：非 recurring 通知随 block 改时间原地改期（仅当 iso 真的变化）
         if content.is_some() {

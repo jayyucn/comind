@@ -208,10 +208,34 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
             // ADR-0049 D6：打标/摘标唯一写入口 —— 只改 Block.tags，不触碰内容派生。
             let id = str_param(&params, "id").to_string();
             let tags = str_array_param(&params, "tags");
+            // 新获得 tag 差集（旧 tags − 新 tags 的补集）；用于「打标自动填默认」（ADR-0050 D13）。
+            let old_tags = repository::BlockRepository::get_by_id(storage.blocks(), &id)
+                .map(|b| b.tags)
+                .unwrap_or_default();
+            let new_tag_ids: Vec<String> = tags
+                .iter()
+                .filter(|t| !old_tags.contains(t))
+                .cloned()
+                .collect();
             let updated = BlockService::update_tags(storage, &id, tags)?;
+            // 打标自动填默认：仅对新获得 tag，不冲掉手写值（ADR-0050 D13）。
+            let created = TagService::apply_field_defaults_for_new_tags(
+                storage,
+                &updated.id,
+                &new_tag_ids,
+            )
+            .unwrap_or_else(|e| {
+                eprintln!(
+                    "[batch set_tags] apply_field_defaults failed for block {}: {}",
+                    updated.id, e
+                );
+                Vec::new()
+            });
+            let mut sync = vec![(SyncTable::Block, updated.id.clone())];
+            sync.extend(created.into_iter().map(|fid| (SyncTable::FieldValue, fid)));
             Ok(OpEffect {
                 value: serde_json::to_value(&updated)?,
-                sync: vec![(SyncTable::Block, updated.id.clone())],
+                sync,
                 page_ids: vec![updated.page_id],
             })
         }
@@ -624,6 +648,7 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
                     title: str_param(&params, "title").to_string(),
                     r#type: str_param(&params, "type").to_string(),
                     closed_values: optional_str_array_param(&params, "closed_values"),
+                    default_value: optional_str_param(&params, "default_value"),
                     is_system: params
                         .get("is_system")
                         .and_then(|v| v.as_bool())
@@ -651,6 +676,10 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
             // 键存在才改动：显式 null → 清空候选值（非选项型）；缺失 → 原样保留。
             if params.get("closed_values").is_some() {
                 fd.closed_values = optional_str_array_param(&params, "closed_values");
+            }
+            // 键存在才改动：显式 null / 空串 → 清空默认（无默认）；缺失 → 原样保留。
+            if params.get("default_value").is_some() {
+                fd.default_value = optional_str_param(&params, "default_value");
             }
             let updated =
                 repository::FieldDefinitionRepository::update(storage.field_definitions(), &fd)?;

@@ -332,7 +332,8 @@ impl SQLiteAdapter {
                 created_at      INTEGER NOT NULL,
                 updated_at      INTEGER NOT NULL,
                 version         INTEGER NOT NULL DEFAULT 0,
-                deleted_at      INTEGER
+                deleted_at      INTEGER,
+                default_value   TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_fielddef_key ON FieldDefinition(key);
 
@@ -380,6 +381,7 @@ impl SQLiteAdapter {
         Self::migrate_add_block_tags_column(conn)?;
         Self::migrate_add_tag_is_system(conn)?;
         Self::seed_system_tags(conn)?;
+        Self::migrate_add_field_definition_default_value(conn)?;
         Self::migrate_rename_task_view_to_screen_view(conn)?;
         Self::migrate_add_screen_view_config(conn)?;
         Self::migrate_add_screen_view_entity(conn)?;
@@ -631,6 +633,22 @@ impl SQLiteAdapter {
             .unwrap_or(false);
         if !has_column {
             conn.execute("ALTER TABLE Tag ADD COLUMN is_system INTEGER NOT NULL DEFAULT 0", [])?;
+        }
+        Ok(())
+    }
+
+    fn migrate_add_field_definition_default_value(conn: &rusqlite::Connection) -> Result<(), Box<dyn Error>> {
+        // ADR-0050 D13：字段默认值。幂等：老库 FieldDefinition 表补 default_value 列（JSON TEXT，NULL = 无默认）。
+        let has_column: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('FieldDefinition') WHERE name = 'default_value'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|c| c > 0)
+            .unwrap_or(false);
+        if !has_column {
+            conn.execute("ALTER TABLE FieldDefinition ADD COLUMN default_value TEXT", [])?;
         }
         Ok(())
     }

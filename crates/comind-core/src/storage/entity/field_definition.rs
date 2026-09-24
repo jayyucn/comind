@@ -16,7 +16,7 @@ use crate::storage::executor::Executor;
 /// - `is_system`：布尔，落库为 0/1 整型（SQLite 无原生布尔）。
 pub const FIELD_DEFINITION_COLS: &[&str] = &[
     "id", "key", "title", "type", "closed_values", "is_system",
-    "created_at", "updated_at", "version", "deleted_at",
+    "created_at", "updated_at", "version", "deleted_at", "default_value",
 ];
 
 pub fn field_definition_select_cols() -> String {
@@ -46,6 +46,7 @@ pub fn row_to_field_definition_native(row: &rusqlite::Row) -> Result<FieldDefini
         updated_at: row.get(7)?,
         version: row.get(8)?,
         deleted_at: row.get(9)?,
+        default_value: row.get(10)?,
     })
 }
 
@@ -77,6 +78,10 @@ pub fn row_to_field_definition_js(row: &HashMap<String, String>) -> FieldDefinit
         updated_at: row.get("updated_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
         version: row.get("version").map(|s| s.parse::<i64>().unwrap_or(0)).unwrap_or(0),
         deleted_at: row.get("deleted_at").map(|s| s.parse::<i64>().ok()).unwrap_or(None),
+        default_value: row
+            .get("default_value")
+            .cloned()
+            .and_then(|s| if s.is_empty() { None } else { Some(s) }),
     }
 }
 
@@ -145,6 +150,7 @@ pub fn field_definition_create<E: Executor>(exec: &E, fd: &FieldDefinition) -> R
         &fd.updated_at,
         &fd.version,
         &fd.deleted_at,
+        &fd.default_value,
     ];
     exec.execute(&field_definition_insert_sql(), &params)?;
     Ok(())
@@ -154,7 +160,7 @@ pub fn field_definition_create<E: Executor>(exec: &E, fd: &FieldDefinition) -> R
 pub fn field_definition_update<E: Executor>(exec: &E, fd: &FieldDefinition) -> Result<(), Box<dyn Error>> {
     let closed_values_json = closed_values_to_sql(&fd.closed_values);
     let is_system_i64 = if fd.is_system { 1i64 } else { 0i64 };
-    let sql = "UPDATE FieldDefinition SET key = ?2, title = ?3, type = ?4, closed_values = ?5, is_system = ?6, updated_at = ?7, version = version + 1 \
+    let sql = "UPDATE FieldDefinition SET key = ?2, title = ?3, type = ?4, closed_values = ?5, is_system = ?6, default_value = ?7, updated_at = ?8, version = version + 1 \
                WHERE id = ?1";
     let params: Vec<&dyn ToSql> = vec![
         &fd.id,
@@ -163,6 +169,7 @@ pub fn field_definition_update<E: Executor>(exec: &E, fd: &FieldDefinition) -> R
         &fd.r#type,
         &closed_values_json,
         &is_system_i64,
+        &fd.default_value,
         &fd.updated_at,
     ];
     exec.execute(sql, &params)?;

@@ -616,3 +616,80 @@ fn test_field_definition_delete_rejects_system_seed_row() -> Result<(), Box<dyn 
     assert!(res.is_err(), "系统 seed 行不可删（ADR D3）");
     Ok(())
 }
+
+#[test]
+fn test_set_tags_auto_fills_field_defaults_for_new_tags() -> Result<(), Box<dyn std::error::Error>> {
+    use crate::services::{FieldDefinitionService, TagService};
+    use crate::storage::repository::{FieldValueRepository, StorageAdapter};
+    use crate::types::field_definition::FieldDefinitionCreateOptions;
+    use crate::types::tag::TagCreateOptions;
+
+    let mut adapter = SQLiteAdapter::open_in_memory()?;
+    let page = PageService::create(&mut adapter, "", "Page", None, None, None, None, None)?;
+    BlockService::create(
+        &mut adapter, &page.id, None, "task", "{}", "bullet", Some("blk1"), true,
+    )?;
+
+    // 建一个带默认值的数值字段定义（default_value 落库为 JSON 文本「8」）
+    let fd = FieldDefinitionService::create(
+        &mut adapter,
+        FieldDefinitionCreateOptions {
+            key: "f-estimate".to_string(),
+            title: "工时".to_string(),
+            r#type: "number".to_string(),
+            closed_values: None,
+            default_value: Some("8".to_string()),
+            is_system: false,
+        },
+    )?;
+
+    // 建拥有该字段的标签（自身字段，无父 → 有效字段 = [fd.id]）
+    let tag = TagService::create(
+        &mut adapter,
+        TagCreateOptions {
+            title: "项目".to_string(),
+            field_ids: vec![fd.id.clone()],
+            parent_id: None,
+        },
+    )?;
+
+    // 打标：set_tags 应自动填入默认值，且只对新获得的 tag 生效（ADR-0050 D13）
+    let effects = apply_batch(
+        &mut adapter,
+        &[json!({
+            "entity": "block",
+            "action": "set_tags",
+            "params": { "id": "blk1", "tags": [tag.id] }
+        })],
+    )?;
+
+    // ① block 上出现一条 FieldValue：值 = 默认值（JSON 文本）、类型 = 字段 type
+    let values = FieldValueRepository::get_by_block_id(adapter.field_values(), "blk1")?;
+    assert_eq!(values.len(), 1, "打标应自动填一条默认 FieldValue");
+    assert_eq!(values[0].field_definition_id, fd.id);
+    assert_eq!(values[0].value_json, "8");
+    assert_eq!(values[0].value_type, "number");
+
+    // ② sync 向量含新建的 FieldValue 行（供 Tauri/WASM 同步通知）
+    assert!(
+        effects[0]
+            .sync
+            .iter()
+            .any(|(t, id)| *t == SyncTable::FieldValue && *id == values[0].id),
+        "set_tags 必须把新建的 FieldValue 登记进 sync"
+    );
+
+    // ③ 幂等：重打相同 tag（已含）不再产生新 FieldValue，不冲掉既有值
+    apply_batch(
+        &mut adapter,
+        &[json!({
+            "entity": "block",
+            "action": "set_tags",
+            "params": { "id": "blk1", "tags": [tag.id] }
+        })],
+    )?;
+    let values2 = FieldValueRepository::get_by_block_id(adapter.field_values(), "blk1")?;
+    assert_eq!(values2.len(), 1, "重打相同 tag 不应重复填默认");
+
+    Ok(())
+}

@@ -5,8 +5,9 @@ use std::sync::OnceLock;
 
 use crate::{
     storage::{repository, StorageAdapter},
-    types::{Tag, TagCreateOptions, TagUpdateOptions},
+    types::{FieldValue, Tag, TagCreateOptions, TagUpdateOptions},
 };
+use uuid::Uuid;
 
 pub struct TagService;
 
@@ -295,6 +296,75 @@ impl TagService {
         }
         Ok(out)
     }
+
+    /// 打标时自动填入默认值（ADR-0050 D13）：对 `block_id` 新获得的每个 tag，取其有效字段中
+    /// 带 `default_value` 的字段；若该 block 尚无对应 FieldValue，则按 default_value（JSON 文本）
+    /// 与字段 `type` 自动建一行。
+    ///
+    /// - **幂等**：只填「尚无值」的字段，绝不覆盖手写值 —— 重打标 / 编辑内容触发重算都不冲掉既有数据。
+    /// - **仅对新获得 tag 生效**：`new_tag_ids` 由调用方用「新 tags − 旧 tags」算出，避免对整条
+    ///   继承链每次保存都全量重填（开销 + 副作用）。
+    /// - 返回本次新建的 FieldValue id 列表，供调用方登记同步。
+    pub fn apply_field_defaults_for_new_tags(
+        storage: &mut dyn StorageAdapter,
+        block_id: &str,
+        new_tag_ids: &[String],
+    ) -> Result<Vec<String>, Box<dyn Error>> {
+        if new_tag_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        // 既有 FieldValue（按 field_definition_id）去重，保证不覆盖手写值。
+        let existing: HashSet<String> = repository::FieldValueRepository::get_by_block_id(
+            storage.field_values(),
+            block_id,
+        )?
+        .into_iter()
+        .map(|fv| fv.field_definition_id)
+        .collect();
+        let mut filled: HashSet<String> = existing;
+        let mut created_ids: Vec<String> = Vec::new();
+
+        for tag_id in new_tag_ids {
+            let effective = match Self::effective_field_ids(storage, tag_id) {
+                Ok(ids) => ids,
+                Err(_) => continue,
+            };
+            for fd_id in effective {
+                if filled.contains(&fd_id) {
+                    continue;
+                }
+                let fd = match repository::FieldDefinitionRepository::get_by_id(
+                    storage.field_definitions(),
+                    &fd_id,
+                ) {
+                    Ok(d) => d,
+                    Err(_) => continue,
+                };
+                // 空 / 未设默认 → 跳过该字段（不打默认值就是不打）
+                let default = match &fd.default_value {
+                    Some(d) if !d.is_empty() => d.clone(),
+                    _ => continue,
+                };
+                let now = chrono::Utc::now().timestamp_millis();
+                let fv = FieldValue {
+                    id: Uuid::new_v4().to_string(),
+                    block_id: block_id.to_string(),
+                    field_definition_id: fd_id.clone(),
+                    value_json: default,
+                    value_type: fd.r#type.clone(),
+                    seq: 0,
+                    created_at: now,
+                    updated_at: now,
+                    version: 0,
+                    deleted_at: None,
+                };
+                repository::FieldValueRepository::create(storage.field_values(), &fv)?;
+                filled.insert(fd_id);
+                created_ids.push(fv.id);
+            }
+        }
+        Ok(created_ids)
+    }
 }
 
 #[cfg(test)]
@@ -550,6 +620,7 @@ mod tests {
                     title: "工时".to_string(),
                     r#type: "number".to_string(),
                     closed_values: None,
+                    default_value: None,
                     is_system: false,
                 },
             )

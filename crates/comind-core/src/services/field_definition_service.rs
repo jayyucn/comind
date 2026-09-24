@@ -147,6 +147,7 @@ mod tests {
                 title: "My Field".to_string(),
                 r#type: "text".to_string(),
                 closed_values: None,
+                default_value: None,
                 is_system: false,
             },
         )
