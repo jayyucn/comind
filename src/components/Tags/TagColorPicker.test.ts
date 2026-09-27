@@ -69,8 +69,9 @@ describe('TagColorPicker（标签色选色器）', () => {
     const wrapper = mountPicker({ value: '--tag-color-5' })
     const panel = await openPanel(wrapper)
 
-    expect(panel.querySelector('.tag-color-none')).toBeTruthy()
-    expect(panel.querySelectorAll('.tag-color-swatch')).toHaveLength(TAG_COLORS.length)
+    expect(panel.querySelector('.tag-color-swatch--none')).toBeTruthy()
+    // 无色档（Ban 图标）也复用 .tag-color-swatch，总数 = 全量调色板 + 1
+    expect(panel.querySelectorAll('.tag-color-swatch')).toHaveLength(TAG_COLORS.length + 1)
 
     const active = panel.querySelectorAll('.tag-color-swatch--active')
     expect(active).toHaveLength(1)
@@ -92,7 +93,7 @@ describe('TagColorPicker（标签色选色器）', () => {
     const wrapper = mountPicker({ value: '--tag-color-3' })
     const panel = await openPanel(wrapper)
 
-    ;(panel.querySelector('.tag-color-none') as HTMLElement).click()
+    ;(panel.querySelector('.tag-color-swatch--none') as HTMLElement).click()
 
     expect(wrapper.emitted('pick')).toEqual([[null]])
     wrapper.unmount()
@@ -112,7 +113,7 @@ describe('TagColorPicker（标签色选色器）', () => {
     const wrapper = mountPicker({ value: '' })
     const panel = await openPanel(wrapper)
 
-    ;(panel.querySelector('.tag-color-none') as HTMLElement).click()
+    ;(panel.querySelector('.tag-color-swatch--none') as HTMLElement).click()
 
     expect(wrapper.emitted('pick')).toBeUndefined()
     wrapper.unmount()

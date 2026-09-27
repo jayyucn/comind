@@ -10,9 +10,10 @@
  * UI 若照给可点入口就是「点了没反应且无提示」的静默失败 —— 故只读时不渲染可点元素，
  * 只留一个不可交互的色点。
  */
-import { computed, ref } from 'vue'
-import { TAG_COLORS, isTagColorToken, tagDotStyle } from '../../utils/tag-color'
-import BasePopover from '../common/BasePopover.vue'
+import { Ban } from 'lucide-vue-next';
+import { computed, ref } from 'vue';
+import { TAG_COLORS, isTagColorToken, tagDotStyle } from '../../utils/tag-color';
+import BasePopover from '../common/BasePopover.vue';
 
 const props = defineProps<{
   /** 当前色（调色板 token 名）；空串 / 非法值 = 无色 */
@@ -51,15 +52,18 @@ function choose(token: string | null) {
     v-if="inline && !readonly"
     class="tag-color-panel"
   >
-    <button
-      type="button"
-      class="tag-color-none"
-      :class="{ 'tag-color-none--active': !selected }"
-      @click="choose(null)"
-    >
-      无色
-    </button>
     <div class="tag-color-grid">
+      <button
+        type="button"
+        class="tag-color-swatch tag-color-swatch--none"
+        :class="{ 'tag-color-swatch--active': !selected }"
+        aria-label="无色"
+        title="无色"
+        :aria-pressed="!selected"
+        @click="choose(null)"
+      >
+        <Ban :size="20" />
+      </button>
       <button
         v-for="option in TAG_COLORS"
         :key="option.token"
@@ -110,15 +114,18 @@ function choose(token: string | null) {
       @close="open = false"
     >
       <div class="tag-color-panel">
-        <button
-          type="button"
-          class="tag-color-none"
-          :class="{ 'tag-color-none--active': !selected }"
-          @click="choose(null)"
-        >
-          无色
-        </button>
         <div class="tag-color-grid">
+          <button
+            type="button"
+            class="tag-color-swatch tag-color-swatch--none"
+            :class="{ 'tag-color-swatch--active': !selected }"
+            aria-label="无色"
+            title="无色"
+            :aria-pressed="!selected"
+            @click="choose(null)"
+          >
+            <Ban :size="20" />
+          </button>
           <button
             v-for="option in TAG_COLORS"
             :key="option.token"
@@ -162,36 +169,14 @@ function choose(token: string | null) {
   cursor: default;
 }
 
+/* 面板只含一行色点：宽度自适应内容，不换行 */
 .tag-color-panel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  width: 168px;
-}
-
-.tag-color-none {
-  padding: var(--space-1) var(--space-2);
-  font: inherit;
-  font-size: var(--text-sm);
-  text-align: left;
-  color: var(--text-primary);
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-
-.tag-color-none:hover {
-  background: var(--bg-hover);
-}
-
-.tag-color-none--active {
-  color: var(--accent);
+  width: max-content;
 }
 
 .tag-color-grid {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: var(--space-2);
 }
 
@@ -202,6 +187,16 @@ function choose(token: string | null) {
   border: none;
   border-radius: 50%;
   cursor: pointer;
+}
+
+/* 无色档：空心环 + Ban 图标居中，观感与色点一致 */
+.tag-color-swatch--none {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-strong);
 }
 
 /* 选中环用 outline：任何底色上都可见，且不参与布局（不会把色点挤小） */
