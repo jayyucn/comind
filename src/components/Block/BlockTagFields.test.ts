@@ -154,6 +154,29 @@ describe('BlockTagFields（块级 Tag 字段区）', () => {
     expect(wrapper.findAll('.block-tag-field-row')).toHaveLength(1)
   })
 
+  it('已在内联槽渲染的字段（status / between-bullet-content）不在下方字段区重复列文字', async () => {
+    // 块挂 系统任务 → 有效字段 [status]；status 由 PropertyInline 以图标呈现在 bullet 与内容之间，
+    // 下方字段区必须去重排除，否则出现「状态: 值」冗余文本。
+    const wrapper = await mountFields('b1', ['sys-tag-system-task'])
+    // 标签已挂 → 容器仍在
+    expect(wrapper.find('.block-tag-fields').exists()).toBe(true)
+    // 但 status 已被排除
+    expect(wrapper.findAll('.block-tag-field-row')).toHaveLength(0)
+    expect(wrapper.find('.block-tag-fields').text()).not.toContain('状态')
+  })
+
+  it('无 displayPosition 的自定义字段仍保留在下方字段区（不过度去重）', async () => {
+    // priority（right-of-content，但被 PropertyInline 显式排除出右侧槽）等同理应保留；
+    // 此处用自定义字段验证「未声明 displayPosition 的字段不被误删」。
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-custom', title: '自定义', field_ids: ['f-owner'], effective_field_ids: ['f-owner'] }),
+    ])
+
+    const wrapper = await mountFields('b1', ['t-custom'])
+    expect(wrapper.findAll('.block-tag-field-row')).toHaveLength(1)
+    expect(wrapper.find('.block-tag-field-title').text()).toBe('负责人')
+  })
+
   it('点击字段打开既有快捷编辑器（位置来自触发元素）', async () => {
     const wrapper = await mountFields('b1', ['t-dev'])
     const editorStore = useEditorStore()

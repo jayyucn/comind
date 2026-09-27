@@ -8,6 +8,7 @@ import { decodePropertyValue } from '../utils/property-codec'
 import { initCoreClient, isTauriEnvironment, triggerSync } from '../wasm/client'
 import { useBlockCardStore } from './blockCard'
 import { usePropertyStore } from './property'
+import { useTagsStore } from './tags'
 
 import {
   calcInsertPos,
@@ -455,6 +456,17 @@ export const useBlockStore = defineStore('blocks', () => {
     }, 5000)
   }
 
+  /**
+   * 系统任务 tag 的持久化 id：is_system 且其有效字段中含 key==='status'。
+   * 用字段特征而不是硬编码 id / title，避免 seed id 或本地化标题变动导致失配。
+   */
+  function systemTaskTagId(): string | undefined {
+    const tagsStore = useTagsStore()
+    return tagsStore.allTags.find((t) =>
+      t.is_system && tagsStore.effectiveFieldDefinitions(t.id).some((d) => d.key === 'status'),
+    )?.id
+  }
+
   async function _doSave(block: Block): Promise<void> {
     const currentBlock = blocks.value.find(b => b.id === block.id)
     if (!currentBlock) {
@@ -524,6 +536,24 @@ export const useBlockStore = defineStore('blocks', () => {
       if (saveResult.render_segments && saveResult.render_segments.length > 0) {
         if (currentBlock.content === saveResult.block.content) {
           currentBlock.renderSegments = saveResult.render_segments
+        }
+      }
+
+      // 回写 Rust 派生的 block.tags（content 中 `#tag` 引用 → 标签归属由 Rust 解析并写入）。
+      // 不回写则本地 block.tags 永远停留在输入前的值，块下字段展示区（BlockTagFields 读
+      // block.tags）在输入 #tag 后不刷新，需手动切页 / 重开才更新。
+      if (savedBlock.tags) {
+        currentBlock.tags = savedBlock.tags
+      }
+
+      // 引用了系统任务 tag 但尚无 status 属性 → 自动补 Todo，使 status 任务图标自动展示。
+      // ensureTodo 幂等（已有 status 直接跳过）且并发安全（ensureTodoInFlight 守卫），
+      // fire-and-forget：失败不影响本次保存落库。
+      const taskTagId = systemTaskTagId()
+      if (taskTagId && currentBlock.tags?.includes(taskTagId)) {
+        const propertyStore = usePropertyStore()
+        if (!propertyStore.getBlockProperty(currentBlock.id, 'status')) {
+          void propertyStore.ensureTodo(currentBlock.id).catch(() => {})
         }
       }
 

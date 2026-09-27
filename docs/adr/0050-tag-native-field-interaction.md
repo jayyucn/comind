@@ -172,6 +172,22 @@ Tag 从「字段模板」升为「有身份的实体」：除既有 `title` 外�
    - 「切成枚举」是两步写：选项还没补时**不落库**（`pendingSelectId` 本地挂起并直接打开选项面板），补第一个选项时才一次写完 `type: 'string'` + `closed_values`；反之清空选项即降级为文本。空选项的枚举无意义，先落库会让类型显示回退成文本，看着像没改。
 3. **列表限高滚动**：`.tag-fields` 限 `max-height` + `overflow-y: auto`，字段数增长时不撑破右栏。
 
+### D15：块下标签字段区展示治理（去重 + 全局字段展示偏好）
+
+**Context**：`BlockTagFields`（块 content 下方「Tag 本位字段区」，D1 挂载即显示）当前将所有字段一律渲染为「标题: 值」纯文本 + `—` 占位，既不读 `displayStyle` / `displayPosition`，也无任何显隐控制。后果：① 字段在多处重复展示（如 `status` 已在 `PropertyInline` 内联槽以任务图标渲染，下方字段区又出「状态: 进行中」纯文本）；② 用户无法控制该区域整体是否显示、单个字段是否显示、以及以何种形态显示。
+
+**决策**：
+
+1. **按 `displayPosition` 自动去重（已实施，最小变更）**：`BlockTagFields` 渲染前剔除已由 `PropertyInline` 在**内联槽真正渲染**的字段，下方字段区不再重复。`PropertyInline` 实际只渲染 `displayPosition === 'between-bullet-content'` 的字段（如 `status`，以任务图标呈现在 bullet 与内容之间），故下方仅排除该类。`right-of-content` 当前仅 `priority`，而它已被 `PropertyInline` 显式排除出右侧槽（入口移至斜杠命令面板），并不在 inline 渲染，因此**必须保留在下方、不能一并排除**——去重不能简单按 `displayPosition` 枚举一刀切，必须对齐 `PropertyInline` 的真实渲染集。`bottom-of-block` 与未声明 `displayPosition`（自定义 tag 模板字段）始终留在下方字段区。判定经 `getPropertyDefinition(key)` 反查编译期 `FieldDefinition`（`PersistedFieldDefinition` 不持久化 `displayStyle` / `displayPosition`，见 `tag-persisted.ts:6`）。
+2. **全局总开关**：新增全局偏好控制 `BlockTagFields` 区域整体是否渲染。**（待实施，超出本次诉求）**
+3. **每字段展示偏好（全局，按 field key）**：偏好 map 以 field key 为键，值为 `{ hidden?: boolean, displayStyleOverride?: 'icon' | 'icon-text' | 'text' }`。`hidden` 控制该字段在下方字段区是否出现；`displayStyleOverride` 复用既有 `displayStyle` 枚举，决定以图标 / 图标+文字 / 文字三种形态之一呈现。**（待实施，超出本次诉求）**
+4. **持久化归属 = 全局用户偏好（按字段 key）**：不按 tag、不按 block 实例。理由：下方字段区的字段是「块所挂标签的有效字段并集」，按 tag 会在多 tag 同名 / 合并时产生冲突，按 block 粒度过细且存储与 UI 成本过高；按字段 key 的全局映射无歧义、一处配置全仓生效。**（待实施，与第 2/3 条同批）**
+5. **展示形态升级**：下方字段区从纯文本升级为三态渲染（图标 / 图标+文字 / 文字），复用 `PropertyDisplay` / `PropertyInline` 已有的 `getIcon` / `getLabel` 与 `displayStyle` 判定逻辑，不另造渲染器。**（待实施，与第 2/3 条同批）**
+
+**已否决替代方案**：按「系统字段 → 独立 UI / 自定义字段 → 按类型 UI」分流的渲染器注册表。展示元数据本就统一按 `FieldDefinition`（`displayStyle` / `displayPosition`），不存在系统 / 自定义分流需求；去重与可控可见性由本决策覆盖，双轨注册表会重复既有统一机制且解决不了真实问题（信息重复展示 + 可见性不可控）。
+
+**实施形态**：第 1 条（去重）已落地于 `src/components/Block/BlockTagFields.vue`（`fields` computed 经 `getPropertyDefinition` 反查，排除 `between-bullet-content`），配套断言见 `BlockTagFields.test.ts`。第 2–5 条（全局偏好 / 每字段显隐 / 三态渲染）为后续增量，待用户明确要求「可控可见性」时再开轻量 store（如 `useFieldDisplayPrefs`）与配置入口；本次仅解决「重复文字字段」诉求，不在下方引入图标渲染或偏好存储。
+
 ## 开放问题
 
 - `TagFieldDefinition` / `TagFieldValue` 表名是否随 Rust 类型同步改（含 serde rename 对已同步设备 payload 的兼容评估）。

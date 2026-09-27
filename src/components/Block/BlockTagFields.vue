@@ -14,6 +14,7 @@
  */
 import { computed, onMounted } from 'vue'
 import type { PersistedFieldDefinition } from '../../types/tag-persisted'
+import { getPropertyDefinition } from '../../types/property'
 import { useEditorStore } from '../../stores/editor'
 import { usePropertyStore } from '../../stores/property'
 import { useTagsStore } from '../../stores/tags'
@@ -36,13 +37,27 @@ onMounted(() => {
 /** 该块已挂标签（软删 / 悬空 id 由 store 静默过滤）。 */
 const tags = computed(() => tagsStore.resolveTags(props.tagIds))
 
-/** 有效字段并集（去重按字段定义 id，保持首次出现顺序）。 */
+/**
+ * 有效字段并集（去重按字段定义 id，保持首次出现顺序）。
+ *
+ * 已在 block 内联槽真正渲染的字段，下方不再重复列文字，避免同物两渲染：
+ * 例如 `status` 以任务图标呈现在 bullet 与内容之间（`displayPosition: 'between-bullet-content'`，
+ * 由 `PropertyInline` 渲染），在下方再列 `状态: 进行中` 纯文本即冗余。
+ *
+ * 判定口径 = 编译期 `FieldDefinition.displayPosition`（`PersistedFieldDefinition` 不持久化该字段，
+ * 见 `tag-persisted.ts:6`），经 `getPropertyDefinition(key)` 反查。
+ * 仅 `between-bullet-content` 会被 `PropertyInline` 真正渲染；`right-of-content` 当前仅 `priority`，
+ * 而它已被 `PropertyInline` 显式排除出右侧槽（入口移至斜杠命令面板），并不在 inline 渲染，
+ * 故必须保留在下方、不能一并排除。
+ */
 const fields = computed<PersistedFieldDefinition[]>(() => {
   const seen = new Set<string>()
   const out: PersistedFieldDefinition[] = []
   for (const tag of tags.value) {
     for (const def of tagsStore.effectiveFieldDefinitions(tag.id)) {
       if (seen.has(def.id)) continue
+      const compileDef = getPropertyDefinition(def.key)
+      if (compileDef?.displayPosition === 'between-bullet-content') continue
       seen.add(def.id)
       out.push(def)
     }
