@@ -269,13 +269,30 @@ export const useTagsStore = defineStore('tags', () => {
     tagId: string,
     identity: { description?: string; color?: string },
   ): Promise<PersistedTag> {
-    const client = await getClient()
-    const params: UpdateTagParams = { id: tagId }
-    if (identity.description !== undefined) params.description = identity.description
-    if (identity.color !== undefined) params.color = identity.color
-    const updated = await client.updateTag(params)
-    await ensureLoaded(true)
-    return updated
+    // 乐观更新：身份是单行标量（不涉及继承解析），先改本地让 UI 立即反馈，
+    // 落库 + 整体重读在后台收口（整体重读仍是唯一真相，本地改动会被覆盖对齐）。
+    const entry = entryById(tagId)
+    const prev = entry ? { description: entry.description, color: entry.color } : null
+    if (entry) {
+      if (identity.description !== undefined) entry.description = identity.description
+      if (identity.color !== undefined) entry.color = identity.color
+    }
+    try {
+      const client = await getClient()
+      const params: UpdateTagParams = { id: tagId }
+      if (identity.description !== undefined) params.description = identity.description
+      if (identity.color !== undefined) params.color = identity.color
+      const updated = await client.updateTag(params)
+      await ensureLoaded(true)
+      return updated
+    } catch (err) {
+      // 写失败 → 回滚本地乐观值，避免 UI 与落库真相漂移
+      if (entry && prev) {
+        entry.description = prev.description
+        entry.color = prev.color
+      }
+      throw err
+    }
   }
 
   /**
