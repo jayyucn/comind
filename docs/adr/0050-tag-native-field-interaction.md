@@ -188,6 +188,20 @@ Tag 从「字段模板」升为「有身份的实体」：除既有 `title` 外�
 
 **实施形态**：第 1 条（去重）已落地于 `src/components/Block/BlockTagFields.vue`（`fields` computed 经 `getPropertyDefinition` 反查，排除 `between-bullet-content`），配套断言见 `BlockTagFields.test.ts`。第 2–5 条（全局偏好 / 每字段显隐 / 三态渲染）为后续增量，待用户明确要求「可控可见性」时再开轻量 store（如 `useFieldDisplayPrefs`）与配置入口；本次仅解决「重复文字字段」诉求，不在下方引入图标渲染或偏好存储。
 
+### D16：保存回写派生 block.tags + 系统任务 tag 自动 ensureTodo
+
+**Context**：`_doSave` 保存成功后只回写 `renderSegments` / `id`，漏回写 Rust 从 content `#tag` 引用派生的 `block.tags`。`BlockTagFields`（D1 挂载即显示）读 `block.tags`，故在块内输入 `#tag` 后下方字段区不刷新，需手动切页 / 重开才更新；`#task` 等系统任务 tag 也不会因引用而自动建 `status` 属性，status 任务图标（由 `status` 属性驱动，非 tag 引用）因此不出现。
+
+**决策**：
+1. **保存回写派生 tags**：`_doSave` 在 `savedBlock.tags` 存在时写回 `currentBlock.tags = savedBlock.tags`。tags 是 content 引用经 Rust 解析的产物，本地 store 必须镜像该解析结果，否则 UI 滞后于输入。
+2. **系统任务 tag 自动 ensureTodo**：新增 `systemTaskTagId()`，按「`is_system` 且其有效字段中含 `key==='status'`」稳健识别系统任务 tag（不硬编码 id / 标题，避免 seed id 或本地化标题变动失配）。块引用该 tag 且无 `status` 属性时，`fire-and-forget` 调 `ensureTodo`（幂等 + `ensureTodoInFlight` 并发守卫），失败不影响本次保存落库。
+
+**理由**：① tags 真相在 Rust 侧（content 解析 → 标签归属），JS 重算只会漂移；回写是让 store 与真相一致的最小动作。② status 图标依赖 `status` 属性而非 tag 引用，原仅「内容含 dateRef」或 TaskHub 新增流程建属性；普通引用系统任务 tag 不会触发，故保存时兜底补建（D2 意图的落地：挂载即确保属性就位）。
+
+**已否决替代方案**：① JS 侧重解析 content 算 tags —— 重复 Rust 逻辑、双份真相、漂移风险；② 硬编码系统任务 tag 的 id / 标题判定 —— seed id 或本地化标题一变即失配。
+
+**实施形态**：落点 `src/stores/blocks.ts`（`_doSave` 回写 + `systemTaskTagId` + ensureTodo 兜底）；回归见 `src/stores/blocks.tags-sync.test.ts`（3 例：tags 回写 / 自动 ensureTodo / 已有 status 不重复）。已随 `08bc027` 提交。
+
 ## 开放问题
 
 - `TagFieldDefinition` / `TagFieldValue` 表名是否随 Rust 类型同步改（含 serde rename 对已同步设备 payload 的兼容评估）。
