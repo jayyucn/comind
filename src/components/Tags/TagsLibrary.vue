@@ -81,7 +81,9 @@ watch(
 const statsSubtitle = computed(() => {
   const all = tagsStore.allTags
   const withParent = all.filter((t) => !!t.parent_id).length
-  const members = all.reduce((sum, t) => sum + tagsStore.memberSummary(t.id).count, 0)
+  // 直系成员计数走 store 的单遍扫描缓存（Map 查表），避免逐标签全量过滤 cards
+  const counts = tagsStore.directMemberCount
+  const members = all.reduce((sum, t) => sum + (counts.get(t.id) ?? 0), 0)
   return `${all.length} 个标签 · ${withParent} 个带父标签 · ${members} 个成员`
 })
 
@@ -94,7 +96,8 @@ const filterChips = computed<Array<{ key: FilterMode; label: string; count: numb
 )
 
 function memberCount(tagId: string): number {
-  return tagsStore.memberSummary(tagId).count
+  // O(1) 查表（store 单遍扫描缓存），供排序比较器与逐行渲染反复调用
+  return tagsStore.directMemberCount.get(tagId) ?? 0
 }
 
 /** 有效字段数（含继承）——即该标签下真正可填的字段数量。 */
@@ -752,7 +755,11 @@ async function submitAddField() {
               class="tag-detail-open"
               @click="openAggregatePage"
             >
-              查看成员 →
+              查看成员
+              <ArrowRight
+                class="tag-detail-open-arrow"
+                :size="13"
+              />
             </button>
           </div>
           <p class="tag-detail-meta">
@@ -1447,19 +1454,37 @@ async function submitAddField() {
   color: var(--text-primary);
 }
 
-/* 进聚合页（D7）的唯一入口 */
+/* 进聚合页（D7）的唯一入口：ghost 胶囊按钮，悬停时箭头右移示意跳转 */
 .tag-detail-open {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   flex-shrink: 0;
-  padding: 0;
+  height: 26px;
+  padding: 0 var(--space-2);
   font-size: var(--text-xs);
+  font-weight: var(--font-medium);
   color: var(--accent);
-  background: transparent;
-  border: none;
+  background: var(--bg-base2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast),
+    background var(--transition-fast);
 
   &:hover {
     color: var(--accent-hover);
+    background: var(--bg-hover);
+    border-color: var(--accent);
+
+    .tag-detail-open-arrow {
+      transform: translateX(2px);
+    }
   }
+}
+
+.tag-detail-open-arrow {
+  transition: transform var(--transition-fast);
 }
 
 .tag-detail-meta {

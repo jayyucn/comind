@@ -116,7 +116,6 @@ export const useTagsStore = defineStore('tags', () => {
   }
 
   // ── 继承与成员（读侧，解析结果来自 Rust） ────────────────────
-
   /** 有效字段集合（自身 > 直接父 > 更近祖先）。 */
   function effectiveFieldIds(tagId: string): string[] {
     return entryById(tagId)?.effective_field_ids ?? []
@@ -177,6 +176,33 @@ export const useTagsStore = defineStore('tags', () => {
     return allTags.value.filter((t) => !blocked.has(t.id))
   }
 
+  /**
+   * 直系成员计数（单遍扫描 cards 投影，O(卡片数)）—— 列表 / 排序 / 统计的热路径缓存。
+   * 逐标签调用 `memberCards` 是 O(标签数×卡片数)，标签树任何一行变化都会触发整页重算，
+   * 选色这类轻写也会卡顿；这里一次算好，查表 O(1)。
+   */
+  const directMemberCount = computed<Map<string, number>>(() => {
+    const map = new Map<string, number>()
+    for (const c of useBlockCardStore().cards) {
+      for (const t of new Set(c.tags ?? [])) {
+        map.set(t, (map.get(t) ?? 0) + 1)
+      }
+    }
+    return map
+  })
+
+  /** 直系成员最近使用时间（单遍扫描）：tag → 直系成员块 max(updated_at)；无成员 → 无键。 */
+  const directLastUsedAt = computed<Map<string, number>>(() => {
+    const map = new Map<string, number>()
+    for (const c of useBlockCardStore().cards) {
+      if (!c.updated_at) continue
+      for (const t of new Set(c.tags ?? [])) {
+        if (c.updated_at > (map.get(t) ?? 0)) map.set(t, c.updated_at)
+      }
+    }
+    return map
+  })
+
   /** 成员块投影（direct = 直系；aggregate = 自身 + 后代闭包）。 */
   function memberCards(tagId: string, mode: MemberMode = 'direct'): BlockCard[] {
     const ids = new Set(mode === 'direct' ? [tagId] : memberTagIds(tagId))
@@ -199,7 +225,7 @@ export const useTagsStore = defineStore('tags', () => {
 
   /** 最近使用时间 = 直系成员块的 max(updated_at)；无成员 → 0。 */
   function lastUsedAt(tagId: string): number {
-    return memberCards(tagId).reduce((max, c) => Math.max(max, c.updated_at ?? 0), 0)
+    return directLastUsedAt.value.get(tagId) ?? 0
   }
 
   /** 「最近使用」筛选用：按 lastUsedAt 降序（无成员的排最后）。 */
@@ -209,7 +235,7 @@ export const useTagsStore = defineStore('tags', () => {
 
   /** 「未使用」筛选用：直系成员数为 0。 */
   function unusedTags(): PersistedTag[] {
-    return allTags.value.filter((t) => memberCards(t.id).length === 0)
+    return allTags.value.filter((t) => (directMemberCount.value.get(t.id) ?? 0) === 0)
   }
 
   /** 解析 block 已打的 tag（软删/不存在的 id 静默过滤 —— 悬空引用保留在 block.tags 上）。 */
@@ -359,6 +385,7 @@ export const useTagsStore = defineStore('tags', () => {
     parentCandidates,
     memberCards,
     memberSummary,
+    directMemberCount,
     lastUsedAt,
     recentTags,
     unusedTags,

@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { parseHeading, useContentRenderer } from '../../../../composables/useContentRenderer';
 import { useBlockStore } from '../../../../stores/blocks';
+import { useTagsStore } from '../../../../stores/tags';
 import SaveErrorBadge from './SaveErrorBadge.vue';
 
 const props = defineProps<{
@@ -16,6 +17,7 @@ const emit = defineEmits<{
 
 const { renderContentToHtml } = useContentRenderer()
 const blockStore = useBlockStore()
+const tagsStore = useTagsStore()
 
 const hasSaveError = computed(() => {
   if (!props.blockId) return false
@@ -35,18 +37,39 @@ const segments = computed(() => {
   return blockStore.getBlock(props.blockId)?.renderSegments
 })
 
+/**
+ * 渲染态标签色动态解析（ADR-0050 D11）：色真相在 tagsStore，渲染时实时取 ——
+ * 标签改色后已渲染 chip 即时换色，不等 renderSegments 快照重建。与编辑态
+ * `resolveInlineTag` 同构（渲染器不碰 Pinia，宿主注入闭包；闭包在 computed 内求值，
+ * 对 tagsStore 的读取被依赖收集，改色即触发重渲）。
+ *
+ * - 标签树未就绪 → undefined：渲染器回退 seg.color 快照（加载窗口内不整批脱色）；
+ *   树加载（`BlockTagFields` 挂载即 ensureLoaded）到位后重渲为实时色。
+ * - 树就绪：id 优先、title 兜底（与 Rust tag_cache 按 title 命中同口径）；
+ *   查无（已删）→ ''（无色，与 Rust 缺行时 id/color 置空的兜底一致）。
+ */
+function resolveTagColor(tagId: string, title: string): string | undefined {
+  if (!tagsStore.loaded) return undefined
+  const byId = tagId ? tagsStore.getTagById(tagId) : undefined
+  if (byId && !byId.deleted_at) return byId.color
+  const byTitle = tagsStore.allTags.find((t) => t.title === title)
+  return byTitle?.color ?? ''
+}
+
 const headingContent = computed(() => {
   if (!heading.value) return ''
   const segs = segments.value
-  return segs ? renderContentToHtml({ segments: segs, content: heading.value.title, blockId: props.blockId ?? '' })
-              : renderContentToHtml({ segments: [], content: heading.value.title, blockId: props.blockId ?? '' })
+  const input = { content: heading.value.title, blockId: props.blockId ?? '', resolveTagColor }
+  return segs ? renderContentToHtml({ ...input, segments: segs })
+              : renderContentToHtml({ ...input, segments: [] })
 })
 
 const normalContent = computed(() => {
   if (heading.value) return ''
   const segs = segments.value
-  return segs ? renderContentToHtml({ segments: segs, content: props.content, blockId: props.blockId ?? '' })
-              : renderContentToHtml({ segments: [], content: props.content, blockId: props.blockId ?? '' })
+  const input = { content: props.content, blockId: props.blockId ?? '', resolveTagColor }
+  return segs ? renderContentToHtml({ ...input, segments: segs })
+              : renderContentToHtml({ ...input, segments: [] })
 })
 
 function handleClick(e: MouseEvent) {

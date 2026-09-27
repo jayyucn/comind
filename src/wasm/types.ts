@@ -335,6 +335,14 @@ export interface RenderInput {
   content: string
   segments: RenderSegment[]
   blockId: string
+  /**
+   * 渲染态标签色动态解析（ADR-0050 D11）：色真相在 tags store，渲染时实时取，
+   * 标签改色即响应（与编辑态 InlineTagExtension 的 resolve 闭包同构，渲染器不碰 Pinia）。
+   * - 命中 → 返回当前色（空串 = 无色）
+   * - undefined → 暂无法解析（如标签树未就绪）→ 回退段内快照色 `seg.color`
+   * 省缺此字段 = 沿用快照色（行为与动态解析引入前一致）。
+   */
+  resolveTagColor?: (tagId: string, title: string) => string | undefined
 }
 
 /** 4.3: Link draft parsed from block content by Rust ContentParseService */

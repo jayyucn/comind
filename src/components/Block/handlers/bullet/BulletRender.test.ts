@@ -3,6 +3,8 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import BulletRender from './BulletRender.vue'
 import { useBlockStore } from '../../../../stores/blocks'
+import { useTagsStore } from '../../../../stores/tags'
+import type { PersistedTagTreeEntry } from '../../../../types/tag-persisted'
 
 beforeEach(() => {
   setActivePinia(createPinia())
@@ -194,5 +196,78 @@ describe('BulletRender content-disappear bug', () => {
     // content.slice(0, 5) = '' → shows nothing!
 
     // This confirms the bug: stale segments + changed content = wrong output
+  })
+})
+
+/**
+ * 标签改色 → 渲染态 chip 即时换色（ADR-0050 D11 动态取色）。
+ *
+ * 复现原 bug：`setIdentity({color})` 只更新 tagsStore + 落库，已加载块的
+ * renderSegments 快照（tag 段内嵌构建时的 color）不重建 → 改色后渲染态 chip
+ * 停留旧色直到重载。修复后 BulletRender 经 resolveTagColor 实时解析，
+ * 对 tagsStore 的读取在 computed 内被依赖收集，改色即重渲。
+ */
+describe('标签改色 → 渲染态 chip 即时换色', () => {
+  function seedTag(overrides: Partial<PersistedTagTreeEntry> = {}): PersistedTagTreeEntry {
+    return {
+      id: 't1', title: '项目', field_ids: [], parent_id: null, description: '',
+      color: '--tag-color-1', is_system: false,
+      created_at: 0, updated_at: 0, version: 1, deleted_at: null,
+      effective_field_ids: [], descendant_ids: [],
+      ...overrides,
+    }
+  }
+
+  test('改色后 chip 内联样式更新，renderSegments 快照不动', async () => {
+    const store = useBlockStore()
+    const tagsStore = useTagsStore()
+
+    // 标签树就绪：#项目 = t1，旧色 --tag-color-1
+    tagsStore.entries = [seedTag()]
+    tagsStore.loaded = true
+
+    const block = await store.createBlock({ pageId: 'page-1', content: '#项目' })
+    const blockInStore = store.getBlock(block.id)!
+    // 模拟 Rust 快照：tag 段内嵌旧色
+    blockInStore.renderSegments = [
+      { type: 'tag', start: 0, end: 3, title: '项目', tag_id: 't1', is_system: false, color: '--tag-color-1' },
+    ]
+
+    const wrapper = mount(BulletRender, {
+      props: { content: blockInStore.content, blockId: blockInStore.id },
+    })
+    expect(wrapper.html()).toContain('color:var(--tag-color-1)')
+
+    // 改色（与 setIdentity 乐观更新同款：直接改 store 行）—— renderSegments 不重建
+    tagsStore.entries[0].color = '--tag-color-5'
+    await flushPromises()
+
+    expect(wrapper.html()).toContain('color:var(--tag-color-5)')
+    expect(wrapper.html()).not.toContain('color:var(--tag-color-1)')
+  })
+
+  test('标签树未就绪（loaded=false）：回退段内快照色，加载后重渲为实时色', async () => {
+    const store = useBlockStore()
+    const tagsStore = useTagsStore()
+
+    const block = await store.createBlock({ pageId: 'page-1', content: '#项目' })
+    const blockInStore = store.getBlock(block.id)!
+    blockInStore.renderSegments = [
+      { type: 'tag', start: 0, end: 3, title: '项目', tag_id: 't1', is_system: false, color: '--tag-color-1' },
+    ]
+
+    const wrapper = mount(BulletRender, {
+      props: { content: blockInStore.content, blockId: blockInStore.id },
+    })
+    // 未就绪 → 快照兜底，不整批脱色
+    expect(wrapper.html()).toContain('color:var(--tag-color-1)')
+
+    // 树加载到位（BlockTagFields 挂载即 ensureLoaded 的落位时刻）→ 实时色
+    tagsStore.entries = [seedTag({ color: '--tag-color-5' })]
+    tagsStore.loaded = true
+    await flushPromises()
+
+    expect(wrapper.html()).toContain('color:var(--tag-color-5)')
+    expect(wrapper.html()).not.toContain('color:var(--tag-color-1)')
   })
 })

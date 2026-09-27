@@ -734,4 +734,53 @@ describe('结构化 tag 段（Rust render_segments 提供 segments 时）', () =
     expect(html).not.toContain('style=')
     expect(html).not.toContain('<img')
   })
+
+  // ── 动态取色（resolveTagColor，ADR-0050 D11）：色真相在 tags store，
+  //    渲染时实时解析 → 标签改色即响应；段内快照只作「未就绪」兜底。 ──
+
+  it('resolveTagColor 命中：chip 用解析色，不用段内快照色', () => {
+    const segments: RenderSegment[] = [
+      { type: 'tag', start: 0, end: 3, title: '项目', tag_id: 't1', is_system: false, color: '--tag-color-1' },
+    ]
+    const html = renderContentToHtml({
+      content: '#项目', segments, blockId: 'b1',
+      resolveTagColor: (id, title) => {
+        expect(id).toBe('t1')
+        expect(title).toBe('项目')
+        return '--tag-color-5'
+      },
+    })
+    expect(html).toContain('color:var(--tag-color-5)')
+    expect(html).not.toContain('--tag-color-1')
+  })
+
+  it('resolveTagColor 返回 undefined（标签树未就绪）：回退段内快照色', () => {
+    const segments: RenderSegment[] = [
+      { type: 'tag', start: 0, end: 3, title: '项目', tag_id: 't1', is_system: false, color: '--tag-color-3' },
+    ]
+    const html = renderContentToHtml({
+      content: '#项目', segments, blockId: 'b1',
+      resolveTagColor: () => undefined,
+    })
+    expect(html).toContain('color:var(--tag-color-3)')
+  })
+
+  it('resolveTagColor 返回空串（查无/已删）：无色，不带内联样式', () => {
+    const segments: RenderSegment[] = [
+      { type: 'tag', start: 0, end: 3, title: '项目', tag_id: 't1', is_system: false, color: '--tag-color-3' },
+    ]
+    const html = renderContentToHtml({
+      content: '#项目', segments, blockId: 'b1',
+      resolveTagColor: () => '',
+    })
+    expect(html).not.toContain('style=')
+  })
+
+  it('省缺 resolveTagColor：沿用段内快照色（行为与引入前一致）', () => {
+    const segments: RenderSegment[] = [
+      { type: 'tag', start: 0, end: 3, title: '项目', tag_id: 't1', is_system: false, color: '--tag-color-2' },
+    ]
+    const html = renderContentToHtml({ content: '#项目', segments, blockId: 'b1' })
+    expect(html).toContain('color:var(--tag-color-2)')
+  })
 })

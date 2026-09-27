@@ -171,6 +171,7 @@ function choose(token: string | null) {
 
 /* 面板只含一行色点：宽度自适应内容，不换行 */
 .tag-color-panel {
+  padding: var(--space-1);
   width: max-content;
 }
 

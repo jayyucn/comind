@@ -79,6 +79,16 @@ vi.mock('../../stores/blocks', () => ({
   }),
 }))
 
+// BulletRender 渲染态标签色经 tags store 实时解析（ADR-0050 D11 动态取色）——
+// 最小 stub：树「就绪」但查无此 tag → chip 落回无色默认，不影响本测试关注点。
+vi.mock('../../stores/tags', () => ({
+  useTagsStore: () => ({
+    loaded: true,
+    getTagById: () => undefined,
+    allTags: [],
+  }),
+}))
+
 vi.mock('../../stores/pages', () => ({
   usePageStore: () => ({
     getPage: (id: string) => (id ? { id, title: '我的项目' } : undefined),

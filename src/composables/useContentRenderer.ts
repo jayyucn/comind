@@ -154,12 +154,15 @@ function renderContentToHtml(input: RenderInput): string {
         const body = escapeHtmlEntities(rawText)
         const systemCls = seg.is_system ? ' block-tag--system' : ''
         const tagId = seg.tag_id ? ` data-tag-id="${escapeHtmlEntities(seg.tag_id)}"` : ''
-        // 标签色（ADR-0050 D11）：空串 / 非法值 → 无内联样式，落回 `.block-tag` 的默认色
-        // （`--color-tag`，即调色板第 1 位）。系统 tag 在 Rust 侧拒写颜色，故
-        // `.block-tag--system` 的中性色不会被覆盖。
+        // 标签色（ADR-0050 D11）：宿主注入 resolveTagColor 时以实时解析为准（标签改色
+        // 即响应，快照只作未就绪兜底）；否则沿用段内快照。空串 / 非法值 → 无内联样式，
+        // 落回 `.block-tag` 的默认色（`--color-tag`，即调色板第 1 位）。系统 tag 在
+        // Rust 侧拒写颜色，故 `.block-tag--system` 的中性色不会被覆盖。
+        const resolved = input.resolveTagColor?.(seg.tag_id, seg.title)
+        const color = resolved !== undefined ? resolved : seg.color
         parts.push(
           `<span class="${CSS_CLASSES.blockTag}${systemCls}"` +
-          `${tagId}${tagStyleAttr(seg.color)} data-tag-title="${title}">${body}</span>`
+          `${tagId}${tagStyleAttr(color)} data-tag-title="${title}">${body}</span>`
         )
         break
       }
