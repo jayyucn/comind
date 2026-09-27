@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { useRouter, useRoute } from 'vue-router'
-import { Tags } from 'lucide-vue-next'
+import { Hash } from 'lucide-vue-next'
+import { useRoute, useRouter } from 'vue-router'
 
 const router = useRouter()
 const route = useRoute()
@@ -20,7 +20,7 @@ function handleClick() {
     @click="handleClick"
   >
     <span class="nav-icon">
-      <Tags
+      <Hash
         :size="16"
         :stroke-width="1.75"
       />
