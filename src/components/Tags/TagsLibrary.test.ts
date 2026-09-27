@@ -242,11 +242,25 @@ describe('TagsLibrary（标签管理页）', () => {
     expect(detail).toContain('2 个成员')
     expect(detail).toContain('来自 2 个页面')
 
-    const fieldRows = texts(wrapper, '.tag-detail .tag-field-row')
+    const fieldRows = texts(wrapper, '.tag-detail .tag-field-row:not(.tag-field-row--head)')
+    expect(fieldRows).toHaveLength(2)
     expect(fieldRows[0]).toContain('工时')
     expect(fieldRows[0]).toContain('自身')
     expect(fieldRows[1]).toContain('负责人')
-    expect(fieldRows[1]).toContain('继承 ← 项目')
+    // 来源列只写祖先标签名 —— 不再拼「继承 ←」（列名已说明语义）
+    expect(fieldRows[1]).toContain('项目')
+    expect(fieldRows[1]).not.toContain('继承 ←')
+  })
+
+  it('字段模块带四列表头：字段 / 类型 / 默认 / 来源', async () => {
+    const wrapper = await mountPage()
+    await wrapper.find('.tag-row--t-dev').trigger('click')
+    await flushPromises()
+
+    const cells = texts(wrapper, '.tag-field-row--head .tag-field-cell')
+    expect(cells.slice(0, 4)).toEqual(['字段', '类型', '默认', '来源'])
+    // 数据行与表头同列数（表头不含「编辑」类入口）
+    expect(wrapper.find('.tag-detail').text()).not.toContain('编辑')
   })
 
   it('右栏提供进该标签聚合页的入口', async () => {
@@ -280,6 +294,9 @@ describe('TagsLibrary（标签管理页）', () => {
     expect(wrapper.find('.tag-parent-clear').exists()).toBe(false)
     expect(wrapper.findAll('.tag-field-remove')).toHaveLength(0)
     expect(wrapper.findAll('.tag-field-row--editable')).toHaveLength(0)
+    // 字段四列全部只读：无类型下拉、无就地改名入口
+    expect(wrapper.findAll('.tag-field-type-select')).toHaveLength(0)
+    expect(wrapper.findAll('.tag-field-name--editable')).toHaveLength(0)
     // 身份同属只读面（D11/D5）：描述渲染成文本、选色器不给可点触发点
     expect(wrapper.find('.tag-desc').classes()).toContain('tag-desc--readonly')
     expect(wrapper.find('input.tag-desc').exists()).toBe(false)
@@ -623,117 +640,273 @@ describe('TagsLibrary（标签管理页）', () => {
     expect(mockClient.deleteTag).not.toHaveBeenCalled()
   })
 
-  it('字段模板：点自身字段行 → 改标题/类型/候选值 → 调 updateFieldDefinition', async () => {
+  it('字段名点一下变输入框且文本全选 → 回车就地改名（已无「编辑」按钮）', async () => {
     mockClient.updateFieldDefinition.mockResolvedValue(fieldDef({ id: 'f-estimate', title: '预计工时' }))
     const wrapper = await mountPage()
     await wrapper.find('.tag-row--t-dev').trigger('click')
     await flushPromises()
 
-    // 开发任务自身只有 工时（可编辑）；负责人是继承来的 → 不可点
-    const editable = wrapper.findAll('.tag-field-row--editable')
-    expect(editable).toHaveLength(1)
-    expect(editable[0].text()).toContain('工时')
-    // 字段定义编辑器由「编辑」按钮打开（行头部点击改作展开/折叠默认值编辑器）
-    await editable[0].find('.tag-field-edit').trigger('click')
+    // 开发任务自身只有 工时（可编辑）；负责人是继承来的 → 整行只读
+    expect(wrapper.findAll('.tag-field-row--editable')).toHaveLength(1)
+    expect(findButton(wrapper, '编辑')).toBeUndefined()
+
+    await wrapper.find('.tag-field-name--editable').trigger('click')
     await flushPromises()
 
-    const body = document.body
-    const titleInput = body.querySelector('.tag-field-edit-title') as HTMLInputElement
-    expect(titleInput.value).toBe('工时')
-    titleInput.value = '预计工时'
-    titleInput.dispatchEvent(new Event('input'))
+    const input = wrapper.find('input.tag-field-name-input')
+    expect(input.exists()).toBe(true)
+    expect((input.element as HTMLInputElement).value).toBe('工时')
+    // 挂载即聚焦并全选：点开就能直接覆写，不必先删整段
+    expect(document.activeElement).toBe(input.element)
+    expect((input.element as HTMLInputElement).selectionStart).toBe(0)
+    expect((input.element as HTMLInputElement).selectionEnd).toBe('工时'.length)
 
-    const typeSelect = body.querySelector('.tag-field-edit-type') as HTMLSelectElement
-    expect(typeSelect.value).toBe('number')
-    typeSelect.value = 'select'
-    typeSelect.dispatchEvent(new Event('change'))
-    await flushPromises()
-
-    const options = body.querySelector('.tag-field-edit-options') as HTMLInputElement
-    expect(options).toBeTruthy()
-    options.value = '1, 2, 3'
-    options.dispatchEvent(new Event('input'))
-    await flushPromises()
-
-    ;(body.querySelector('.tag-field-confirm') as HTMLButtonElement).click()
+    await input.setValue('预计工时')
+    await input.trigger('keydown.enter')
     await flushPromises()
 
     expect(mockClient.updateFieldDefinition).toHaveBeenCalledWith({
       id: 'f-estimate',
       title: '预计工时',
-      type: 'string',
-      closed_values: ['1', '2', '3'],
     })
+    // 回车后退出编辑态
+    expect(wrapper.find('input.tag-field-name-input').exists()).toBe(false)
   })
 
-  it('字段模板：下拉选择降级为数值时显式清空候选值', async () => {
-    mockClient.updateFieldDefinition.mockResolvedValue(fieldDef({ id: 'f-owner', title: '负责人' }))
+  it('类型列切成「枚举」→ 打开默认列的选项面板，补第一个选项才落库（此前不写）', async () => {
+    mockClient.updateFieldDefinition.mockResolvedValue(fieldDef({ id: 'f-estimate', title: '工时' }))
     const wrapper = await mountPage()
-    // 项目自身声明了 负责人（下拉选择）
+    await wrapper.find('.tag-row--t-dev').trigger('click')
+    await flushPromises()
+
+    // 写后整体重读 —— 让后端真的把选项落实，面板内容才跟得上
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-status', title: '状态', is_system: true }),
+      fieldDef({ id: 'f-owner', title: '负责人', closed_values: ['张三', '李四'] }),
+      fieldDef({ id: 'f-estimate', title: '工时', type: 'string', closed_values: ['1'] }),
+      fieldDef({ id: 'f-pinned', title: '置顶', type: 'boolean' }),
+    ])
+
+    const typeSelect = wrapper.find('select.tag-field-type-select')
+    expect((typeSelect.element as HTMLSelectElement).value).toBe('number')
+
+    // 切成「枚举」：选项还没补 → 不落库（空选项的枚举无意义，落了会显示回文本）
+    await typeSelect.setValue('select')
+    await flushPromises()
+    expect(mockClient.updateFieldDefinition).not.toHaveBeenCalled()
+
+    const panel = document.body.querySelector('.tag-enum-panel') as HTMLElement
+    expect(panel, '切成枚举应直接打开选项面板').toBeTruthy()
+    const addInput = panel.querySelector('.tag-enum-input--new') as HTMLInputElement
+    addInput.value = '1'
+    addInput.dispatchEvent(new Event('input'))
+    await flushPromises()
+    addInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+
+    // 挂起态的第一个选项把 type 一并写死
+    expect(mockClient.updateFieldDefinition).toHaveBeenCalledWith({
+      id: 'f-estimate',
+      type: 'string',
+      closed_values: ['1'],
+    })
+    // 面板处于打开态：必须随卸载移除，否则遗留的 Teleport 节点会被后续测试的
+    // document.body.querySelector 先抓到（本文件无全局清理）。
+    wrapper.unmount()
+  })
+
+  it('枚举选项改成重名 → 不落库（两个同名选项选不出来）', async () => {
+    const wrapper = await mountPage()
     await wrapper.find('.tag-row--t-project').trigger('click')
     await flushPromises()
 
-    // 字段定义编辑器由「编辑」按钮打开（行头部点击改作展开/折叠默认值编辑器）
-    await wrapper.find('.tag-field-row--editable').find('.tag-field-edit').trigger('click')
+    await wrapper.find('.tag-field-default--enum').trigger('click')
+    await flushPromises()
+    const panel = document.body.querySelector('.tag-enum-panel') as HTMLElement
+    ;(panel.querySelectorAll('button[aria-label="改选项名"]')[0] as HTMLButtonElement).click()
     await flushPromises()
 
-    const body = document.body
-    const typeSelect = body.querySelector('.tag-field-edit-type') as HTMLSelectElement
-    expect(typeSelect.value).toBe('select')
-    typeSelect.value = 'number'
-    typeSelect.dispatchEvent(new Event('change'))
+    const input = panel.querySelector(
+      'input.tag-enum-input:not(.tag-enum-input--new)',
+    ) as HTMLInputElement
+    input.value = '李四' // 与第二个选项重名
+    input.dispatchEvent(new Event('input'))
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     await flushPromises()
 
-    // 非选项型不再渲染候选值输入框
-    expect(body.querySelector('.tag-field-edit-options')).toBeFalsy()
+    expect(mockClient.updateFieldDefinition).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
 
-    ;(body.querySelector('.tag-field-confirm') as HTMLButtonElement).click()
+  it('移除字段时顺手收起它的选项面板（锚点行被摘掉，不留无锚浮层）', async () => {
+    const wrapper = await mountPage()
+    await wrapper.find('.tag-row--t-project').trigger('click')
     await flushPromises()
 
+    await wrapper.find('.tag-field-default--enum').trigger('click')
+    await flushPromises()
+    expect(document.body.querySelector('.tag-enum-panel')).toBeTruthy()
+
+    await wrapper.find('.tag-field-remove').trigger('click')
+    await flushPromises()
+    expect(document.body.querySelector('.tag-enum-panel')).toBeFalsy()
+  })
+
+  it('切成枚举后没补选项就关面板 → 放弃这次切换（不落库，类型显示回原值）', async () => {
+    const wrapper = await mountPage()
+    await wrapper.find('.tag-row--t-dev').trigger('click')
+    await flushPromises()
+
+    const typeSelect = wrapper.find('select.tag-field-type-select')
+    expect((typeSelect.element as HTMLSelectElement).value).toBe('number')
+    await typeSelect.setValue('select')
+    await flushPromises()
+    expect((typeSelect.element as HTMLSelectElement).value).toBe('select')
+
+    // Escape 关面板（BasePopover 的关闭路径）→ 挂起态一并放弃
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await flushPromises()
+
+    expect(document.body.querySelector('.tag-enum-panel')).toBeFalsy()
+    expect(mockClient.updateFieldDefinition).not.toHaveBeenCalled()
+    expect((typeSelect.element as HTMLSelectElement).value).toBe('number')
+  })
+
+  it('枚举字段：默认列的下拉里可增 / 改 / 删选项，点选项即设为默认值', async () => {
+    mockClient.updateFieldDefinition.mockResolvedValue(fieldDef({ id: 'f-owner', title: '负责人' }))
+    const wrapper = await mountPage()
+    // 项目自身声明了 负责人（枚举：张三 / 李四）
+    await wrapper.find('.tag-row--t-project').trigger('click')
+    await flushPromises()
+
+    // 默认列是下拉触发器，不是就地输入框
+    const trigger = wrapper.find('.tag-field-default--enum')
+    expect(trigger.exists()).toBe(true)
+    await trigger.trigger('click')
+    await flushPromises()
+
+    const panel = document.body.querySelector('.tag-enum-panel') as HTMLElement
+    expect(panel).toBeTruthy()
+    const options = Array.from(panel.querySelectorAll('.tag-enum-option:not(.tag-enum-option--none)'))
+    expect(options.map((o) => o.textContent?.trim())).toEqual(['张三', '李四'])
+
+    // 点选项 = 设为默认值（JSON 文本形态，与 FieldValue.value_json 同形）
+    ;(options[1] as HTMLButtonElement).click()
+    await flushPromises()
+    expect(mockClient.updateFieldDefinition).toHaveBeenLastCalledWith({
+      id: 'f-owner',
+      default_value: '"李四"',
+    })
+
+    // 改：铅笔 → 输入框（挂载即全选）→ 回车落库
+    await wrapper.find('.tag-field-default--enum').trigger('click')
+    await flushPromises()
+    const renamePanel = document.body.querySelector('.tag-enum-panel') as HTMLElement
+    ;(renamePanel.querySelectorAll('button[aria-label="改选项名"]')[0] as HTMLButtonElement).click()
+    await flushPromises()
+    const renameInput = renamePanel.querySelector(
+      'input.tag-enum-input:not(.tag-enum-input--new)',
+    ) as HTMLInputElement
+    expect(renameInput.value).toBe('张三')
+    renameInput.value = '张三丰'
+    renameInput.dispatchEvent(new Event('input'))
+    renameInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+    expect(mockClient.updateFieldDefinition).toHaveBeenLastCalledWith({
+      id: 'f-owner',
+      closed_values: ['张三丰', '李四'],
+    })
+
+    // 写后整体重读 —— 让后端真的把「删掉李四」落实，下一步的「增」才接得上
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-status', title: '状态', is_system: true }),
+      fieldDef({ id: 'f-owner', title: '负责人', closed_values: ['张三'] }),
+      fieldDef({ id: 'f-estimate', title: '工时', type: 'number' }),
+      fieldDef({ id: 'f-pinned', title: '置顶', type: 'boolean' }),
+    ])
+
+    // 删：× 移除该选项（最后一项不给删）
+    const deletePanel = document.body.querySelector('.tag-enum-panel') as HTMLElement
+    ;(deletePanel.querySelectorAll('button[aria-label="删除选项"]')[1] as HTMLButtonElement).click()
+    await flushPromises()
+    expect(mockClient.updateFieldDefinition).toHaveBeenLastCalledWith({
+      id: 'f-owner',
+      closed_values: ['张三'],
+    })
+
+    // 增：底部输入框回车追加（已是枚举 → 只写 closed_values）
+    const addPanel = document.body.querySelector('.tag-enum-panel') as HTMLElement
+    const addInput = addPanel.querySelector('.tag-enum-input--new') as HTMLInputElement
+    addInput.value = '王五'
+    addInput.dispatchEvent(new Event('input'))
+    await flushPromises()
+    addInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+    expect(mockClient.updateFieldDefinition).toHaveBeenLastCalledWith({
+      id: 'f-owner',
+      closed_values: ['张三', '王五'],
+    })
+    wrapper.unmount()
+  })
+
+  it('类型下拉：枚举降级为数值时显式清空选项', async () => {
+    mockClient.updateFieldDefinition.mockResolvedValue(fieldDef({ id: 'f-owner', title: '负责人' }))
+    const wrapper = await mountPage()
+    // 项目自身声明了 负责人（枚举）
+    await wrapper.find('.tag-row--t-project').trigger('click')
+    await flushPromises()
+
+    // 写后整体重读 —— 让后端真的把「降级」落实（选项清空）再验渲染
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-status', title: '状态', is_system: true }),
+      fieldDef({ id: 'f-owner', title: '负责人', type: 'number', closed_values: null }),
+      fieldDef({ id: 'f-estimate', title: '工时', type: 'number' }),
+      fieldDef({ id: 'f-pinned', title: '置顶', type: 'boolean' }),
+    ])
+
+    const typeSelect = wrapper.find('select.tag-field-type-select')
+    expect((typeSelect.element as HTMLSelectElement).value).toBe('select')
+    await typeSelect.setValue('number')
+    await flushPromises()
+
+    // 非枚举型不再渲染选项面板触发器
+    expect(wrapper.find('.tag-field-default--enum').exists()).toBe(false)
+    expect((typeSelect.element as HTMLSelectElement).value).toBe('number')
     expect(mockClient.updateFieldDefinition).toHaveBeenCalledWith({
       id: 'f-owner',
-      title: '负责人',
       type: 'number',
       closed_values: null,
     })
   })
 
-  it('字段模板：历史遗留类型（不在点选表内）不会被显示成别的类型', async () => {
+  it('类型下拉：历史遗留类型（不在点选表内）不会被显示成别的类型', async () => {
     const wrapper = await mountPage()
     await wrapper.find('.tag-row--t-idea').trigger('click')
     await flushPromises()
 
-    // 字段定义编辑器由「编辑」按钮打开（行头部点击改作展开/折叠默认值编辑器）
-    await wrapper.find('.tag-field-row--editable').find('.tag-field-edit').trigger('click')
-    await flushPromises()
-
-    const typeSelect = document.body.querySelector('.tag-field-edit-type') as HTMLSelectElement
-    expect(typeSelect.value).toBe('boolean')
+    const typeSelect = wrapper.find('select.tag-field-type-select')
+    expect((typeSelect.element as HTMLSelectElement).value).toBe('boolean')
     // 兜底项在，且显示名取自同一张表
-    expect(Array.from(typeSelect.options).map((o) => o.textContent?.trim())).toContain('是/否')
+    expect(
+      Array.from((typeSelect.element as HTMLSelectElement).options).map((o) => o.textContent?.trim()),
+    ).toContain('是/否')
   })
 
-  it('字段模板：点自身字段头部 → 展开默认值编辑器，数值型填值保存 → updateFieldDefinition 带 default_value(JSON 文本)', async () => {
-    mockClient.updateFieldDefinition.mockResolvedValue(fieldDef({ id: 'f-estimate', title: '预计工时' }))
+  it('默认列点一下变控件：数值型填值回车 → updateFieldDefinition 带 default_value(JSON 文本)', async () => {
+    mockClient.updateFieldDefinition.mockResolvedValue(fieldDef({ id: 'f-estimate', title: '工时' }))
     const wrapper = await mountPage()
     await wrapper.find('.tag-row--t-dev').trigger('click')
     await flushPromises()
 
-    // 开发任务自身只有 工时（编辑态、数值型）→ 行头部可点展开默认值编辑器
-    const editableRow = wrapper.find('.tag-field-row--editable')
-    await editableRow.find('.tag-field-head').trigger('click')
+    await wrapper.find('.tag-field-default--editable').trigger('click')
     await flushPromises()
 
-    // 展开面板出现，且按字段类型渲染数值输入框
-    const panel = wrapper.find('.tag-field-default')
-    expect(panel.exists()).toBe(true)
-    const input = panel.find('input.tag-field-default-input')
+    // 按字段类型出控件（工时 = 数值型）
+    const input = wrapper.find('input.tag-field-default-input')
     expect(input.attributes('type')).toBe('number')
 
     await input.setValue('8')
-    await flushPromises()
-    // 保存入口在展开面板内（默认值为本标签自身声明时才可写）
-    await editableRow.find('.tag-field-default-save').trigger('click')
+    await input.trigger('keydown.enter')
     await flushPromises()
 
     // 数值经 encodeDefault 编码为 JSON 文本「8」（JSON.stringify(8)，1 个字符），与
@@ -742,26 +915,44 @@ describe('TagsLibrary（标签管理页）', () => {
     expect(mockClient.getTagTree).toHaveBeenCalled()
   })
 
-  it('字段模板：再点头部落默认值编辑器；继承字段不给保存入口（只读提示）', async () => {
+  it('来源列最多 5 个字：截断的行 hover 显示完整标签名', async () => {
+    // 项目改名到 7 个字 —— 开发任务继承来的 负责人 来源列必然放不下
+    mockClient.getTagTree.mockResolvedValue([
+      SYSTEM_TASK,
+      { ...PROJECT, title: '产品路线图规划' },
+      DEV_TASK,
+      IDEA,
+    ])
     const wrapper = await mountPage()
     await wrapper.find('.tag-row--t-dev').trigger('click')
     await flushPromises()
 
-    // 自身字段展开后再次点头部折叠
-    const editableRow = wrapper.find('.tag-field-row--editable')
-    await editableRow.find('.tag-field-head').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('.tag-field-default').exists()).toBe(true)
-    await editableRow.find('.tag-field-head').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('.tag-field-default').exists()).toBe(false)
+    const inheritedRow = wrapper
+      .findAll('.tag-field-row:not(.tag-field-row--head)')
+      .find((r) => r.text().includes('负责人'))!
+    const origin = inheritedRow.find('.tag-field-origin-title')
+    expect(origin.text()).toBe('产品路线图…')
+    // 只有截断的行才挂 title —— 没截断还弹 tip 是噪音
+    expect(origin.attributes('title')).toBe('产品路线图规划')
+  })
 
-    // 继承字段（负责人 ← 项目）：可展开，但面板只读，无「保存默认」按钮
-    const inheritedRow = wrapper.findAll('.tag-field-row').find((r) => r.text().includes('继承 ← 项目'))!
-    await inheritedRow.find('.tag-field-head').trigger('click')
+  it('继承字段整行只读：无类型下拉、无改名/改默认入口', async () => {
+    const wrapper = await mountPage()
+    await wrapper.find('.tag-row--t-dev').trigger('click')
     await flushPromises()
-    expect(inheritedRow.find('.tag-field-default').exists()).toBe(true)
-    expect(inheritedRow.find('.tag-field-default-save').exists()).toBe(false)
-    expect(inheritedRow.find('.tag-field-default-readonly').text()).toContain('继承字段的默认值')
+
+    const inheritedRow = wrapper
+      .findAll('.tag-field-row:not(.tag-field-row--head)')
+      .find((r) => r.text().includes('负责人'))!
+    // 定义归祖先（项目），改它等于改所有引用方
+    expect(inheritedRow.find('.tag-field-type-select').exists()).toBe(false)
+    expect(inheritedRow.find('.tag-field-name--editable').exists()).toBe(false)
+
+    // 默认值只读：点击不进编辑态（候选值型也不会冒出 `<select>`）
+    await inheritedRow.find('.tag-field-default').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.tag-field-default-input').exists()).toBe(false)
+    expect(wrapper.find('.tag-field-name-input').exists()).toBe(false)
+    expect(mockClient.updateFieldDefinition).not.toHaveBeenCalled()
   })
 })
