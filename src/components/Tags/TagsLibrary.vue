@@ -887,11 +887,6 @@ async function submitAddField() {
                   <template v-if="isOwnField(row.origin)">自身</template>
                   <template v-else>
                     <span
-                      class="tag-color-dot"
-                      :class="{ 'tag-color-dot--empty': isColorless(row.origin?.color ?? '') }"
-                      :style="tagDotStyle(row.origin?.color ?? '')"
-                    />
-                    <span
                       class="tag-field-origin-title"
                       :title="isOriginTruncated(row.origin?.title) ? row.origin?.title : undefined"
                     >{{ row.origin?.title ? originText(row.origin.title) : '—' }}</span>
@@ -1420,6 +1415,8 @@ async function submitAddField() {
 /* ── 右栏 ── */
 .tag-detail {
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
   /* 字段模板是四列表格（字段 | 类型 | 默认 | 来源）→ 右栏需比常规详情宽些才不挤 */
   width: 420px;
   overflow: auto;
@@ -1427,6 +1424,13 @@ async function submitAddField() {
   background: var(--surface-muted);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
+}
+
+/* 字段列表之外的区块保持自然高度（不被压缩）：只有字段列表可收缩 ——
+   其最大高度即「留给下方继承区 + 删除标签按钮之后的剩余高度」，
+   保证最底部的 tag-delete 始终完整可见。 */
+.tag-detail > * {
+  flex-shrink: 0;
 }
 
 .tag-detail-head {
@@ -1503,8 +1507,9 @@ async function submitAddField() {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  /* 字段多时限制高度、内部滚动（需求 #3） */
-  max-height: 280px;
+  /* 最大高度不再写死：字段多时收缩、内部滚动，把下方（继承 / 删除）留在面板内（需求 #3） */
+  flex-shrink: 1;
+  min-height: 0;
   overflow-y: auto;
   padding-right: var(--space-1);
 }
@@ -1520,11 +1525,14 @@ async function submitAddField() {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 
-  /* 表头不是数据行：去掉行框，只留列名 */
+  /* 表头不是数据行：去掉行框，只留列名；吸顶不随列表滚动，行从其下滑过 */
   &--head {
-    padding: 0 var(--space-3);
+    position: sticky;
+    top: 0;
+    padding: 0 var(--space-3) var(--space-1);
     color: var(--text-tertiary);
-    background: transparent;
+    /* 不透明底遮住滚过的行 —— 与右栏底色同源 */
+    background: var(--surface-muted);
     border: none;
   }
 }
@@ -1631,12 +1639,11 @@ async function submitAddField() {
   }
 }
 
-/* ── 列：来源（自身 / 声明它的祖先标签）—— 窄列，色点 + 名字整体居中 ── */
+/* ── 列：来源（自身 / 声明它的祖先标签）—— 窄列，名字居中 ── */
 .tag-field-origin {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-1);
   min-width: 0;
   color: var(--text-tertiary);
 
