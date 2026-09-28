@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue';
 import { popModal, pushModal } from '../composables/useModalKeyboard';
-import { usePageStore } from '../stores/pages';
+import { useTagsStore } from '../stores/tags';
 import BasePopover from './common/BasePopover.vue';
 
 const props = defineProps<{
@@ -20,40 +20,38 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: 'select', pageName: string): void;
+  (e: 'select', tagName: string): void;
   (e: 'close'): void;
 }>();
 
-const pageStore = usePageStore();
+const tagsStore = useTagsStore();
 const selectedIndex = ref(0);
 
 watch(() => props.visible, (isVisible) => {
   if (isVisible) {
-    pushModal('wiki-link-menu')
-    selectedIndex.value = 0
+    pushModal('tag-menu');
+    selectedIndex.value = 0;
   } else {
-    popModal('wiki-link-menu')
+    popModal('tag-menu');
   }
-})
+});
 
 onUnmounted(() => {
-  popModal('wiki-link-menu')
-})
+  popModal('tag-menu');
+});
 
 watch(() => props.query, () => {
-  selectedIndex.value = 0
-})
+  selectedIndex.value = 0;
+});
 
-const filteredPages = computed(() => {
-  if (!props.query) {
-    return pageStore.pages
-      .filter(p => !p.deleted)
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-      .slice(0, 10);
+const filteredTags = computed(() => {
+  if (!props.query.trim()) {
+    // 最近使用标签（lastUsedAt 降序）
+    return tagsStore.recentTags().slice(0, 10);
   }
   const q = props.query.toLowerCase();
-  return pageStore.pages
-    .filter(p => !p.deleted && p.title.toLowerCase().includes(q))
+  return tagsStore.allTags
+    .filter((t) => !t.deleted_at && t.title.toLowerCase().includes(q))
     .sort((a, b) => {
       const aTitle = a.title.toLowerCase();
       const bTitle = b.title.toLowerCase();
@@ -63,32 +61,34 @@ const filteredPages = computed(() => {
       const aStartsWith = aTitle.startsWith(q) ? 0 : 1;
       const bStartsWith = bTitle.startsWith(q) ? 0 : 1;
       if (aStartsWith !== bStartsWith) return aStartsWith - bStartsWith;
-      return b.updatedAt - a.updatedAt;
+      return 0;
     })
     .slice(0, 10);
 });
 
 const menuItems = computed(() => {
   const items: Array<{
-    type: 'page' | 'create';
+    type: 'tag' | 'create';
     title: string;
-    pageId?: string;
+    color?: string;
   }> = [];
 
-  filteredPages.value.forEach(page => {
+  filteredTags.value.forEach((tag) => {
     items.push({
-      type: 'page',
-      title: page.title,
-      pageId: page.id
+      type: 'tag',
+      title: tag.title,
+      color: tag.color,
     });
   });
 
   if (props.query.trim()) {
-    const exists = filteredPages.value.some(p => p.title.toLowerCase() === props.query.toLowerCase());
+    const exists = filteredTags.value.some(
+      (t) => t.title.toLowerCase() === props.query.toLowerCase()
+    );
     if (!exists) {
       items.push({
         type: 'create',
-        title: props.query.trim()
+        title: props.query.trim(),
       });
     }
   }
@@ -114,11 +114,10 @@ function selectPrev() {
 
 function confirmSelect() {
   if (menuItems.value.length === 0 || !menuItems.value[selectedIndex.value]) {
-    emit('close')
-    return
+    emit('close');
+    return;
   }
-  
-  selectItem(menuItems.value[selectedIndex.value])
+  selectItem(menuItems.value[selectedIndex.value]);
 }
 
 function close() {
@@ -136,29 +135,39 @@ defineExpose({ selectNext, selectPrev, confirmSelect, close });
     placement="bottom"
     @close="emit('close')"
   >
-    <div class="wiki-link-menu">
-      <div class="wlm-body">
+    <div class="tag-menu">
+      <div class="tm-body">
         <div
           v-if="menuItems.length === 0"
-          class="wlm-empty"
+          class="tm-empty"
         >
-          <span v-if="!query">No pages yet</span>
-          <span v-else>No pages found</span>
+          <span v-if="!query">No tags yet</span>
+          <span v-else>No tags found</span>
         </div>
         <div
           v-for="(item, index) in menuItems"
-          :key="item.type === 'page' ? item.pageId : `create-${item.title}`"
-          class="wlm-item"
-          :class="{ 
+          :key="item.type === 'tag' ? `tag-${item.title}` : `create-${item.title}`"
+          class="tm-item"
+          :class="{
             active: selectedIndex === index,
-            'wlm-create': item.type === 'create'
+            'tm-create': item.type === 'create',
           }"
           @mousedown.prevent
           @click="selectItem(item)"
           @mouseenter="selectedIndex = index"
         >
-          <span class="wlm-icon">{{ item.type === 'create' ? '+' : '📄' }}</span>
-          <span class="wlm-title">{{ item.type === 'create' ? `Create "${item.title}"` : item.title }}</span>
+          <span
+            v-if="item.type === 'create'"
+            class="tm-icon"
+          >+</span>
+          <span
+            v-else
+            class="tm-dot"
+            :style="{ background: item.color ? `var(${item.color})` : 'var(--text-tertiary)' }"
+          />
+          <span class="tm-title">{{
+            item.type === 'create' ? `Create "#${item.title}"` : item.title
+          }}</span>
         </div>
       </div>
     </div>
@@ -166,7 +175,7 @@ defineExpose({ selectNext, selectPrev, confirmSelect, close });
 </template>
 
 <style scoped>
-.wiki-link-menu {
+.tag-menu {
   width: 320px;
   max-height: 360px;
   background: var(--bg-base);
@@ -178,13 +187,13 @@ defineExpose({ selectNext, selectPrev, confirmSelect, close });
   border: 1px solid var(--border);
 }
 
-.wlm-body {
+.tm-body {
   flex: 1;
   overflow-y: auto;
   padding: 4px;
 }
 
-.wlm-empty {
+.tm-empty {
   padding: 16px;
   color: var(--text-tertiary);
   font-style: italic;
@@ -192,7 +201,7 @@ defineExpose({ selectNext, selectPrev, confirmSelect, close });
   font-size: var(--text-sm);
 }
 
-.wlm-item {
+.tm-item {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -203,19 +212,19 @@ defineExpose({ selectNext, selectPrev, confirmSelect, close });
   transition: background-color 0.15s;
 }
 
-.wlm-item:hover {
+.tm-item:hover {
   background: var(--bg-hover);
 }
 
-.wlm-item.active {
+.tm-item.active {
   background: var(--accent-subtle);
 }
 
-.wlm-item.wlm-create {
+.tm-item.tm-create {
   color: var(--accent);
 }
 
-.wlm-icon {
+.tm-icon {
   flex-shrink: 0;
   width: 18px;
   height: 18px;
@@ -225,15 +234,22 @@ defineExpose({ selectNext, selectPrev, confirmSelect, close });
   font-size: var(--text-sm);
 }
 
-.wlm-title {
+.tm-dot {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.tm-title {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text-primary, #1C1917);
+  color: var(--text-primary, #1c1917);
 }
 
-.wlm-item.wlm-create .wlm-title {
-  color: var(--accent-color, #2563EB);
+.tm-item.tm-create .tm-title {
+  color: var(--accent-color, #2563eb);
 }
 </style>

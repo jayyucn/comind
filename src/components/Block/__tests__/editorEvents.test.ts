@@ -13,6 +13,12 @@ function makeCtx(overrides: Partial<EditorEventCtx> = {}): EditorEventCtx {
     menuQuery: ref(''),
     menuRef: ref({ confirmSelect: vi.fn(), close: vi.fn(), selectNext: vi.fn(), selectPrev: vi.fn() }),
     menuAnchorEl: ref(null),
+    tagMenuVisible: ref(false),
+    tagMenuPosition: ref({ x: 0, y: 0 }),
+    tagMenuRange: ref({ from: 0, to: 0 }),
+    tagMenuQuery: ref(''),
+    tagMenuRef: ref({ confirmSelect: vi.fn(), close: vi.fn(), selectNext: vi.fn(), selectPrev: vi.fn() }),
+    tagMenuAnchorEl: ref(null),
     kindSelectorVisible: ref(false),
     kindSelectorPosition: ref({ left: 0, top: 0, bottom: 0 }),
     kindSelectorRange: ref({ from: 0, to: 0 }),
@@ -20,6 +26,7 @@ function makeCtx(overrides: Partial<EditorEventCtx> = {}): EditorEventCtx {
     relMenu: { open: vi.fn(), close: vi.fn() },
     openDateRefPanel: vi.fn(),
     closeWikiLinkMenuByEditor: vi.fn(),
+    closeTagMenuByEditor: vi.fn(),
     ...overrides,
   }
 }
@@ -173,7 +180,7 @@ describe('createEditorEvents — 声明式事件表', () => {
     expect(ctx.kindSelectorVisible.value).toBe(false)
   })
 
-  it('返回的事件表恰好覆盖 14 个 handler', () => {
+  it('返回的事件表恰好覆盖 handler（含 tag 菜单）', () => {
     const ctx = makeCtx()
     const events = createEditorEvents(ctx)
     expect(Object.keys(events)).toEqual([
@@ -184,6 +191,13 @@ describe('createEditorEvents — 声明式事件表', () => {
       'wiki-link-menu-escape',
       'wiki-link-menu-arrowdown',
       'wiki-link-menu-arrowup',
+      'tag-trigger',
+      'tag-update',
+      'tag-close',
+      'tag-menu-enter',
+      'tag-menu-escape',
+      'tag-menu-arrowdown',
+      'tag-menu-arrowup',
       'enter-as-block',
       'relationship-trigger',
       'relationship-close',
@@ -192,5 +206,46 @@ describe('createEditorEvents — 声明式事件表', () => {
       'dateRefKindSelect',
       'dateRefKindSelectClose',
     ])
+  })
+
+  it('tag-trigger 设置 tag 菜单状态', () => {
+    const ctx = makeCtx()
+    const { dom } = setup(ctx)
+    const fakeView = { coordsAtPos: () => ({ left: 10, bottom: 20 }) }
+    dom.dispatchEvent(new CustomEvent('tag-trigger', {
+      detail: { view: fakeView, position: 5, range: { from: 1, to: 3 }, query: 'foo' },
+    }))
+    expect(ctx.tagMenuVisible.value).toBe(true)
+    expect(ctx.tagMenuQuery.value).toBe('foo')
+    expect(ctx.tagMenuRange.value).toEqual({ from: 1, to: 3 })
+    expect(ctx.tagMenuPosition.value).toEqual({ x: 10, y: 28 })
+  })
+
+  it('tag-update 更新查询', () => {
+    const ctx = makeCtx()
+    const { dom } = setup(ctx)
+    dom.dispatchEvent(new CustomEvent('tag-update', { detail: { query: 'bar' } }))
+    expect(ctx.tagMenuQuery.value).toBe('bar')
+  })
+
+  it('tag-close 关闭 tag 菜单并通知扩展', () => {
+    const ctx = makeCtx()
+    ctx.tagMenuVisible.value = true
+    const { dom } = setup(ctx)
+    dom.dispatchEvent(new CustomEvent('tag-close', {}))
+    expect(ctx.tagMenuVisible.value).toBe(false)
+  })
+
+  it('tag-menu-enter/escape/arrowdown/arrowup 委托给 tagMenuRef', () => {
+    const ctx = makeCtx()
+    const { dom } = setup(ctx)
+    dom.dispatchEvent(new CustomEvent('tag-menu-enter', {}))
+    dom.dispatchEvent(new CustomEvent('tag-menu-escape', {}))
+    dom.dispatchEvent(new CustomEvent('tag-menu-arrowdown', {}))
+    dom.dispatchEvent(new CustomEvent('tag-menu-arrowup', {}))
+    expect(ctx.tagMenuRef.value?.confirmSelect).toHaveBeenCalled()
+    expect(ctx.tagMenuRef.value?.close).toHaveBeenCalled()
+    expect(ctx.tagMenuRef.value?.selectNext).toHaveBeenCalled()
+    expect(ctx.tagMenuRef.value?.selectPrev).toHaveBeenCalled()
   })
 })

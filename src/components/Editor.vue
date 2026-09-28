@@ -6,6 +6,7 @@ import StarterKit from '@tiptap/starter-kit'
 import { WikiLinkExtension } from '../extensions/WikiLinkExtension'
 import { InlineTagExtension } from '../extensions/InlineTagExtension'
 import { WikiLinkTriggerExtension, notifyWikiLinkMenuSelect, closeWikiLinkMenuByEditor, findWikiLinkAtCursor } from '../extensions/WikiLinkTriggerExtension'
+import { InlineTagTriggerExtension, notifyTagMenuSelect, closeTagMenuByEditor, findTagAtCursor } from '../extensions/InlineTagTriggerExtension'
 import { RelationshipTriggerExtension } from '../extensions/RelationshipTriggerExtension'
 import EnterAsBlockExtension from '../extensions/EnterAsBlockExtension'
 import BracketPairExtension from '../extensions/BracketPairExtension'
@@ -19,6 +20,7 @@ import { useDateTimePickerPanel } from '../composables/useDateTimePickerPanel'
 import { useRelationshipMenu } from '../composables/useRelationshipMenu'
 import { debounce } from '../utils/debounce'
 import PageLinkMenu from './PageLinkMenu.vue'
+import TagMenu from './TagMenu.vue'
 import DateRefKindSelector from './DateRefKindSelector.vue'
 import type { DateRefClickPayload } from '../extensions/DateRefExtension'
 import type { DateRefKind } from '../utils/date-ref'
@@ -75,6 +77,14 @@ const menuAnchorEl = ref<HTMLElement | null>(null)
 const menuQuery = ref('')
 const menuRef = ref<InstanceType<typeof PageLinkMenu> | null>(null)
 
+// tag 菜单（#tag 选择，类比 wiki-link）
+const tagMenuVisible = ref(false)
+const tagMenuPosition = ref({ x: 0, y: 0 })
+const tagMenuRange = ref({ from: 0, to: 0 })
+const tagMenuAnchorEl = ref<HTMLElement | null>(null)
+const tagMenuQuery = ref('')
+const tagMenuRef = ref<InstanceType<typeof TagMenu> | null>(null)
+
 // DateRef kind 选择器状态
 const kindSelectorVisible = ref(false)
 const kindSelectorPosition = ref({ left: 0, top: 0, bottom: 0 })
@@ -115,6 +125,8 @@ const editor = shallowRef(useEditor({
     // 编辑态 `#tag` 胶囊与渲染态同形（ADR-0050 D11），色由宿主解析后注入
     InlineTagExtension.configure({ resolve: resolveInlineTag }),
     WikiLinkTriggerExtension,
+    // 编辑态 `#tag` 选择菜单触发（类比 wiki-link trigger，ADR-0050）
+    InlineTagTriggerExtension,
     RelationshipTriggerExtension,
     BracketPairExtension,
     HeadingPreviewExtension,
@@ -146,6 +158,12 @@ const editor = shallowRef(useEditor({
         }
         menuVisible.value = false
         closeWikiLinkMenuByEditor()
+      }
+      // tag 菜单仍打开时（用户未取消），失焦即关闭；
+      // 缺失标签由下方 emit('save', text, true) 的建签门（create_missing=true）补建，无需在此重复创建
+      if (tagMenuVisible.value) {
+        tagMenuVisible.value = false
+        closeTagMenuByEditor()
       }
       try {
         // blur = 提交动作：允许把打字期间攒下的 #tag 建出来（ADR-0050 建签门）
@@ -199,6 +217,40 @@ async function handleWikiLinkSelect(pageName: string) {
   closeWikiLinkMenuByEditor()
 }
 
+// 模板驱动的 tag 选择（由 TagMenu @select 触发）：确保标签实体存在并把
+// 光标处的 #partial 补全为该标签名（类比 handleWikiLinkSelect 的 [[page]] 补全）。
+async function handleTagSelect(tagName: string) {
+  if (!editor.value) return
+
+  notifyTagMenuSelect()
+
+  const tagsStore = useTagsStore()
+  if (!tagsStore.allTags.some((t) => t.title.toLowerCase() === tagName.toLowerCase())) {
+    await tagsStore.createTag({ title: tagName })
+  }
+
+  const { state } = editor.value
+  const cursorPos = state.selection.from
+  const result = findTagAtCursor(state.doc, cursorPos)
+  const from = result.range?.from ?? cursorPos
+  const to = result.range?.to ?? cursorPos
+
+  editor.value.chain()
+    .deleteRange({ from, to })
+    .insertContent(`#${tagName}`)
+    .setTextSelection(from + tagName.length + 1)
+    .focus()
+    .run()
+
+  tagMenuVisible.value = false
+  closeTagMenuByEditor()
+}
+
+function closeTagMenu() {
+  tagMenuVisible.value = false
+  closeTagMenuByEditor()
+}
+
 function handleKindSelect(kind: DateRefKind) {
   kindSelectorVisible.value = false
   const view = kindSelectorView.value
@@ -246,6 +298,12 @@ const events = createEditorEvents({
   menuQuery,
   menuRef,
   menuAnchorEl,
+  tagMenuVisible,
+  tagMenuPosition,
+  tagMenuRange,
+  tagMenuQuery,
+  tagMenuRef,
+  tagMenuAnchorEl,
   kindSelectorVisible,
   kindSelectorPosition,
   kindSelectorRange,
@@ -256,6 +314,7 @@ const events = createEditorEvents({
     source: string
   ) => void,
   closeWikiLinkMenuByEditor,
+  closeTagMenuByEditor,
 })
 useDomEvents(() => editor.value?.view?.dom ?? null, () => events)
 
@@ -404,6 +463,16 @@ defineExpose({ syncContent, focus, focusAtCoords, getText: () => editor.value?.g
       :query="menuQuery"
       @select="handleWikiLinkSelect"
       @close="closeWikiLinkMenu"
+    />
+    <TagMenu
+      ref="tagMenuRef"
+      :visible="tagMenuVisible"
+      :position="tagMenuPosition"
+      :anchor-el="tagMenuAnchorEl"
+      :range="tagMenuRange"
+      :query="tagMenuQuery"
+      @select="handleTagSelect"
+      @close="closeTagMenu"
     />
     <DateRefKindSelector
       :visible="kindSelectorVisible"

@@ -29,6 +29,14 @@ export interface WikiLinkMenuApi {
   selectPrev: () => void
 }
 
+/** TagMenu 暴露的实例方法（供 DOM 事件表调用） */
+export interface TagMenuApi {
+  confirmSelect: () => void
+  close: () => void
+  selectNext: () => void
+  selectPrev: () => void
+}
+
 /** date-ref 面板打开配置（DateRefClickPayload + 弹出位置） */
 export type DateRefPanelConfig = DateRefClickPayload & { position: { x: number; y: number } }
 
@@ -43,6 +51,14 @@ export interface EditorEventCtx {
   menuRef: Ref<WikiLinkMenuApi | null>
   /** wiki-link 菜单锚点（光标所在 DOM 元素），供 PageLinkMenu 内的 BasePopover 避让/翻转（ADR-0038）。 */
   menuAnchorEl: Ref<HTMLElement | null>
+  // ── tag 菜单（#tag 选择，类比 wiki-link）──
+  tagMenuVisible: Ref<boolean>
+  tagMenuPosition: Ref<{ x: number; y: number }>
+  tagMenuRange: Ref<{ from: number; to: number }>
+  tagMenuQuery: Ref<string>
+  tagMenuRef: Ref<TagMenuApi | null>
+  /** tag 菜单锚点（光标所在 DOM 元素），供 TagMenu 内的 BasePopover 避让/翻转（ADR-0038）。 */
+  tagMenuAnchorEl: Ref<HTMLElement | null>
   kindSelectorVisible: Ref<boolean>
   kindSelectorPosition: Ref<{ left: number; top: number; bottom: number }>
   kindSelectorRange: Ref<{ from: number; to: number }>
@@ -52,6 +68,7 @@ export interface EditorEventCtx {
   relMenu: RelationshipMenuApi
   openDateRefPanel: (cfg: DateRefPanelConfig, source: string) => void
   closeWikiLinkMenuByEditor: () => void
+  closeTagMenuByEditor: () => void
 }
 
 /**
@@ -244,6 +261,59 @@ export function createEditorEvents(ctx: EditorEventCtx): Record<string, (e: Even
     ctx.menuRef.value?.selectPrev()
   }
 
+  // ── tag 菜单（#tag 选择，类比 wiki-link）──────────────────────
+
+  function handleTagTrigger(event: Event) {
+    const customEvent = event as CustomEvent<{
+      view: EditorView
+      position: number
+      range: { from: number; to: number }
+      query: string
+    }>
+
+    const { view, position, range, query } = customEvent.detail
+    const coords = view.coordsAtPos(position)
+
+    try {
+      const node = view.domAtPos(position).node
+      ctx.tagMenuAnchorEl.value =
+        node.nodeType === Node.TEXT_NODE ? node.parentElement : (node as HTMLElement)
+    } catch {
+      ctx.tagMenuAnchorEl.value = null
+    }
+
+    ctx.tagMenuPosition.value = { x: coords.left, y: coords.bottom + 8 }
+    ctx.tagMenuRange.value = range
+    ctx.tagMenuQuery.value = query
+    ctx.tagMenuVisible.value = true
+  }
+
+  function handleTagUpdate(event: Event) {
+    const customEvent = event as CustomEvent<{ query: string }>
+    ctx.tagMenuQuery.value = customEvent.detail.query
+  }
+
+  function handleTagClose() {
+    ctx.tagMenuVisible.value = false
+    ctx.closeTagMenuByEditor()
+  }
+
+  function handleTagMenuEnter() {
+    ctx.tagMenuRef.value?.confirmSelect()
+  }
+
+  function handleTagMenuEscape() {
+    ctx.tagMenuRef.value?.close()
+  }
+
+  function handleTagMenuArrowDown() {
+    ctx.tagMenuRef.value?.selectNext()
+  }
+
+  function handleTagMenuArrowUp() {
+    ctx.tagMenuRef.value?.selectPrev()
+  }
+
   function handleEnterAsBlock(event: Event) {
     const customEvent = event as CustomEvent<{ type: string; pos?: number; x?: number }>
     switch (customEvent.detail.type) {
@@ -295,6 +365,13 @@ export function createEditorEvents(ctx: EditorEventCtx): Record<string, (e: Even
     'wiki-link-menu-escape': handleWikiLinkMenuEscape,
     'wiki-link-menu-arrowdown': handleWikiLinkMenuArrowDown,
     'wiki-link-menu-arrowup': handleWikiLinkMenuArrowUp,
+    'tag-trigger': handleTagTrigger,
+    'tag-update': handleTagUpdate,
+    'tag-close': handleTagClose,
+    'tag-menu-enter': handleTagMenuEnter,
+    'tag-menu-escape': handleTagMenuEscape,
+    'tag-menu-arrowdown': handleTagMenuArrowDown,
+    'tag-menu-arrowup': handleTagMenuArrowUp,
     'enter-as-block': handleEnterAsBlock,
     'relationship-trigger': handleRelationshipTrigger,
     'relationship-close': handleRelationshipClose,
