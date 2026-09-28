@@ -8,7 +8,7 @@
  *
  * 本文件补齐 #92 验收线剩余三项：
  * 1. 手势——单击 vs 拖拽（4px 阈值）、内容区起点（文本拖拽）vs 属性区起点（块选区）；
- * 2. 按键分发——`Ctrl+A`（捕获阶段 + body 焦点回退）/ `Ctrl+C`（文本选区优先）/
+ * 2. 按键分发——`Ctrl+Shift+A`（捕获阶段 + body 焦点回退）/ `Ctrl+C`（文本选区优先）/
  *    `Enter`、`Tab`、`Shift+Tab`（仅无编辑态块）/ `Escape`；
  * 3. 粘贴分发——内部 MIME / 外部源拆分 / Shift+V 纯文本标志消费（归属守卫见 paste-guard）；
  * 4. 编排豁免门——侧边栏（`isInSidebar`）与可编辑输入区（`isInEditableInput`）。
@@ -375,8 +375,8 @@ describe('BlockList 手势编排（#92）', () => {
 // 二、按键分发
 // ══════════════════════════════════════════════════════════════════
 
-describe('BlockList Ctrl+A 捕获分派（#92）', () => {
-  test('块内上下文（激活块内）+ Ctrl+A：捕获阶段拦截并全选本页块（阻止浏览器整页全选）', async () => {
+describe('BlockList Ctrl+Shift+A 捕获分派（#92）', () => {
+  test('块内上下文（激活块内）+ Ctrl+Shift+A：捕获阶段拦截并全选本页块（阻止浏览器整页全选）', async () => {
     const store = useBlockStore()
     const editor = useEditorStore()
     const pageId = 'page-ctrla-inblock'
@@ -386,12 +386,12 @@ describe('BlockList Ctrl+A 捕获分派（#92）', () => {
 
     const wrapper = await mountBlockList(pageId)
     const selection = getSelection(wrapper)
-    // 激活块：Ctrl+A 的接管条件之一（激活块 / 块选区 / 属性区），也是真实上下文
+    // 激活块：真实编辑器上下文
     editor.activateBlock(a.id)
     await nextTick()
 
     const contentEl = blockEl(a.id).querySelector('.block-content')!
-    const ev = dispatchKey('a', { ctrl: true }, contentEl)
+    const ev = dispatchKey('a', { ctrl: true, shift: true }, contentEl)
 
     expect(ev.defaultPrevented).toBe(true)
     expect(Array.from(selection.anchorIds).sort()).toEqual([a.id, b.id].sort())
@@ -399,7 +399,7 @@ describe('BlockList Ctrl+A 捕获分派（#92）', () => {
     wrapper.unmount()
   })
 
-  test('焦点已落回 body（点击属性区后）：回退最近点击上下文，仍全选', async () => {
+  test('焦点已落回 body（点击属性区后）：回退最近点击上下文，Ctrl+Shift+A 仍全选', async () => {
     const store = useBlockStore()
     const pageId = 'page-ctrla-bodyfallback'
 
@@ -409,11 +409,11 @@ describe('BlockList Ctrl+A 捕获分派（#92）', () => {
     const wrapper = await mountBlockList(pageId)
     const selection = getSelection(wrapper)
 
-    // 属性区/bullet 不可聚焦 → 点击后焦点落回 body；mouseup 记录 lastClicked* 供回退
+    // 属性区/bullet 不可聚焦 → 点击后焦点落回 body；mouseup 记录 lastClicked 供回退
     dispatchMouse('mouseup', blockEl(a.id).querySelector('.block-properties')!, 0, 0)
     expect(document.activeElement).not.toBe(blockEl(a.id))
 
-    const ev = dispatchKey('a', { ctrl: true }, document.body)
+    const ev = dispatchKey('a', { ctrl: true, shift: true }, document.body)
 
     expect(ev.defaultPrevented).toBe(true)
     expect(Array.from(selection.anchorIds).sort()).toEqual([a.id, b.id].sort())
@@ -421,7 +421,29 @@ describe('BlockList Ctrl+A 捕获分派（#92）', () => {
     wrapper.unmount()
   })
 
-  test('上下文不在 BlockList（树外元素）：不接管（交 App.vue 全局兜底）', async () => {
+  test('纯 Ctrl+A（无 Shift）：不拦截，交还 TipTap 原生（块内全文选择），不进入块选区', async () => {
+    const store = useBlockStore()
+    const editor = useEditorStore()
+    const pageId = 'page-ctrla-plain'
+
+    const a = await store.createBlock({ pageId, content: 'aaa' })
+    await store.createBlock({ pageId, content: 'bbb' })
+
+    const wrapper = await mountBlockList(pageId)
+    const selection = getSelection(wrapper)
+    editor.activateBlock(a.id)
+    await nextTick()
+
+    const contentEl = blockEl(a.id).querySelector('.block-content')!
+    const ev = dispatchKey('a', { ctrl: true }, contentEl)
+
+    expect(ev.defaultPrevented).toBe(false)
+    expect(selection.anchorIds.size).toBe(0)
+
+    wrapper.unmount()
+  })
+
+  test('上下文不在 BlockList（树外元素）：Ctrl+Shift+A 不接管（交 App.vue 全局兜底）', async () => {
     const store = useBlockStore()
     const pageId = 'page-ctrla-outside'
 
@@ -433,7 +455,7 @@ describe('BlockList Ctrl+A 捕获分派（#92）', () => {
     const outside = document.createElement('div')
     document.body.appendChild(outside)
 
-    const ev = dispatchKey('a', { ctrl: true }, outside)
+    const ev = dispatchKey('a', { ctrl: true, shift: true }, outside)
 
     expect(ev.defaultPrevented).toBe(false)
     expect(selection.anchorIds.size).toBe(0)

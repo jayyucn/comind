@@ -132,10 +132,9 @@ function handleDocMouseMove(e: MouseEvent) {
 /**
  * 最近一次点击交互的 block 及是否位于属性区。
  * 属性区/bullet 等不可聚焦元素点击后焦点落回 body，keydown 的 e.target 不再是
- * BlockList 内元素——Ctrl+A 等接管需回退到该状态判断 BlockList 上下文。
+ * BlockList 内元素——Ctrl+Shift+A 等接管需回退到该状态判断 BlockList 上下文。
  */
 let lastClickedBlockId: string | null = null
-let lastClickedInPropertyArea = false
 
 /**
  * 点击位置是否在当前块选区（anchorIds，含选中块的后代子树）内。
@@ -156,18 +155,16 @@ function isInSelectedArea(target: HTMLElement): boolean {
 }
 
 function handleDocMouseUp(e: MouseEvent) {
-  // 记录最近点击交互（供 Ctrl+A 焦点丢失到 body 时回退判断上下文）
+  // 记录最近点击交互（供 Ctrl+Shift+A 焦点丢失到 body 时回退判断上下文）
   const mouseTarget = e.target as HTMLElement | null
   if (mouseTarget && typeof mouseTarget.closest === 'function') {
     const blockEl = mouseTarget.closest('[data-block-id]') as HTMLElement | null
     const bid = blockEl?.dataset.blockId ?? null
     if (bid && blockStore.getBlock(bid)?.pageId === props.pageId) {
       lastClickedBlockId = bid
-      lastClickedInPropertyArea = !!mouseTarget.closest('.block-properties, .block-row-properties')
     } else {
       // 点击非本页区域（sidebar、弹层、留白等）→ 清标记，避免误判
       lastClickedBlockId = null
-      lastClickedInPropertyArea = false
     }
   }
   // 文本选区拖拽结束：固化选区
@@ -221,7 +218,7 @@ function isInSidebar(e: { target: EventTarget | null }): boolean {
  * 事件目标是否在可编辑输入区（input/textarea/非 TipTap contenteditable）内。
  * 这些区域保留控件自身的键盘/粘贴默认行为（全选文本、删字符、粘贴文本），
  * 不被 BlockList 的主文档接管劫持（如 SearchPanel 搜索框、BlockTaskItem 编辑、PageItem 重命名）。
- * TipTap 编辑区（.ProseMirror）不豁免——Ctrl+A/Backspace 等由 BlockList 接管。
+ * TipTap 编辑区（.ProseMirror）不豁免——Ctrl+Shift+A/Backspace 等由 BlockList 接管。
  */
 function isInEditableInput(e: { target: EventTarget | null }): boolean {
   const target = e.target as HTMLElement | null
@@ -396,16 +393,20 @@ async function handleDocKeyDown(e: KeyboardEvent) {
 }
 
 /**
- * 捕获阶段拦截 Ctrl+A：在 ProseMirror（TipTap）处理之前屏蔽单 block 内容全选
- * （ProseMirror 的 Mod-a → selectAll 在目标阶段执行，冒泡阶段拦截已晚于它）。
- * 仅处理 BlockList 区域：激活块 / 块选区 / 本页属性区（含空白）→ 全选 Blocklist；
- * 冻结态与其余情况仅屏蔽浏览器默认（整页文本全选）。非 BlockList 区域交由 App.vue 全局兜底。
+ * 捕获阶段拦截 Ctrl/Cmd+Shift+A：在 ProseMirror（TipTap）处理之前把整页块固化为块选区。
+ * 纯 Ctrl/Cmd+A **不**在此拦截 —— 交还 TipTap 原生行为（块内全文选择，再按一次选全文档），
+ * 即「还原为原来的 tiptap 内部行为」。
+ * 仅处理 BlockList 区域：命中本页块（激活块 / 块选区 / 本页属性区含空白）→ 全选本页块；
+ * 非 BlockList 区域交由 App.vue 全局兜底。
  *
  * 注意：keydown 的 e.target 是焦点元素。点击属性区/bullet 等不可聚焦元素后焦点落回 body，
  * 此时回退用 lastClickedBlockId 判断 BlockList 上下文。
  */
 function handleDocKeyDownCapture(e: KeyboardEvent) {
-  if ((e.key !== 'a' && e.key !== 'A') || !(e.ctrlKey || e.metaKey)) return
+  // 仅 Ctrl/Cmd+Shift+A 接管为「全选本页块」；
+  // 纯 Ctrl/Cmd+A 交还 TipTap 原生（块内全文选择），不拦截。
+  const isSelectAllBlocks = (e.key === 'a' || e.key === 'A') && (e.ctrlKey || e.metaKey) && e.shiftKey
+  if (!isSelectAllBlocks) return
   if (isInSidebar(e)) return
   const target = e.target as HTMLElement | null
   // 焦点丢失到 body/document（点击不可聚焦元素后）：回退到最近一次点击的 block 判断上下文
@@ -419,19 +420,11 @@ function handleDocKeyDownCapture(e: KeyboardEvent) {
   if (!ctxBlockId) return // 非 BlockList 区域交由 App.vue 全局兜底
   const ctxBlock = blockStore.getBlock(ctxBlockId)
   if (!ctxBlock || ctxBlock.pageId !== props.pageId) return
-  // 输入框/非 TipTap contenteditable（含 CodeMirror 编辑区）保留控件自身 Ctrl+A
+  // 输入框/非 TipTap contenteditable（含 CodeMirror 编辑区）保留控件自身 Ctrl(+Shift)+A
   if (isInEditableInput(e)) return
   e.preventDefault()
   e.stopPropagation()
-  const activeId = editorStore.activeBlockId
-  const activeInPage = !!activeId
-    && blockStore.getBlock(activeId)?.pageId === props.pageId
-  const inPropertyArea = fallbackBlockId
-    ? lastClickedInPropertyArea
-    : !!target?.closest('.block-properties, .block-row-properties')
-  if (activeInPage || selection.anchorIds.size > 0 || inPropertyArea) {
-    selection.selectAll(props.pageId, rootBlockId.value)
-  }
+  selection.selectAll(props.pageId, rootBlockId.value)
 }
 
 /**
@@ -442,7 +435,7 @@ function handleDocKeyDownCapture(e: KeyboardEvent) {
  * `undoRedo:false` / CodeMirrorEditor 去 `history()`+`historyKeymap`）—— 接管与禁用
  * 是一对，中间态会让两个栈互抢（D7 拒绝分阶段）。
  *
- * 豁免面比 Ctrl+A 窄：原生输入控件（搜索框 / 重命名）保留浏览器自身撤销；CodeMirror
+ * 豁免面比 Ctrl+Shift+A 窄：原生输入控件（搜索框 / 重命名）保留浏览器自身撤销；CodeMirror
  * 编辑区同样是 contenteditable 但不豁免，它归统一栈。**本实例不接管的落点**（不 preventDefault，
  * 交还原生行为）见 resolveUndoScopePage —— 无栈页块与列表外目标两类（#109 已裁定的边界）。
  */
