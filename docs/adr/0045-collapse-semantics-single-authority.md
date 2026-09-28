@@ -60,7 +60,7 @@
 ### ④ 已成立、不再改动的既有口径（明确记录，防回改）
 
 - **复制/剪切无视 `collapsed`，取完整子树**：`block-clipboard.ts:22`，ADR-0025 D8/D10。故「选区含隐藏块」在数据侧是**有意**的。
-- **Ctrl+A 与拖拽扩展选区把隐藏块纳入 `anchorIds`**：`useCrossBlockSelection.ts:226-236`、`:126-181`。语义侧含隐藏子树、视觉侧不含（高亮被 `hasSelectedAncestor` 抑制 / 被裁剪），这是**有意差异**，不得当成 bug 顺手"修平"。
+- **Ctrl+Shift+A 与拖拽扩展选区把隐藏块纳入 `anchorIds`**：`useCrossBlockSelection.ts:226-236`、`:126-181`。语义侧含隐藏子树、视觉侧不含（高亮被 `hasSelectedAncestor` 抑制 / 被裁剪），这是**有意差异**，不得当成 bug 顺手"修平"。
 - **Enter 拆分不进折叠块**：`insertBlockAtCursor` 的 `hasExpandedChildren`（`blocks.ts:680-692`）已在处理，属正常。
 - **粘贴以锚点块的 `parentId` 落兄弟位**：`blocks.ts:1372-1389`，可见，属正常。
 

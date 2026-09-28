@@ -220,7 +220,7 @@ export function useCrossBlockSelection() {
   }
 
   /**
-   * Ctrl+A 全选页面所有 Block（含后代子树），固化到块选区。
+   * Ctrl+Shift+A 全选页面所有 Block（含后代子树），固化到块选区。
    * excludeRootId：页面根 Block 不参与渲染/选区（与 buildTree 一致）。
    */
   function selectAll(pageId: string, excludeRootId: string | null = null) {

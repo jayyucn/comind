@@ -1001,7 +1001,7 @@ export const useBlockStore = defineStore('blocks', () => {
    * - 有展开的子 Block → 第一个子 Block
    * - 否则（无子节点 / 已折叠）→ 下一个兄弟；没有则上溯到最近一个有后继兄弟的祖先
    *
-   * 注意：选区「成员资格」不走这里（Ctrl+A / 拖拽扩展有意包含隐藏块，见 ADR-0045 ④）。
+   * 注意：选区「成员资格」不走这里（Ctrl+Shift+A / 拖拽扩展有意包含隐藏块，见 ADR-0045 ④）。
    */
   function findNextVisibleBlock(blockId: string): Block | undefined {
     const block = blocks.value.find(b => b.id === blockId)

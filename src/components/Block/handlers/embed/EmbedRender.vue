@@ -75,7 +75,7 @@ function isInEditableInput(e: { target: EventTarget | null }): boolean {
 function handleDocKeyDown(e: KeyboardEvent) {
   if (!isClicked.value || e.key !== 'Backspace') return
   if (isInEditableInput(e)) return
-  // 已被 BlockList 消费（如 Ctrl+A 全选后删除）时不重复处理
+  // 已被 BlockList 消费（如 Ctrl+Shift+A 全选后删除）时不重复处理
   if (e.defaultPrevented) return
   e.preventDefault()
   e.stopPropagation()
