@@ -187,27 +187,33 @@ describe('TagsLibrary（标签管理页）', () => {
     expect(chips[2]).toBe('未使用 1')
   })
 
-  it('行按直系成员数降序，且字段数是有效口径（含继承）', async () => {
+  it('「全部」默认树状：根按成员数降序，子标签缩进嵌套在父下', async () => {
     const wrapper = await mountPage()
     const rows = texts(wrapper, '.tag-row')
 
-    expect(rows).toHaveLength(4)
+    // 树序：根（项目3 / 系统任务1 / 灵感碎片0），开发任务作为 项目 的子嵌套其后
     expect(rows[0]).toContain('#项目')
     expect(rows[0]).toContain('3 个成员')
-    expect(rows[0]).toContain('1 个字段')
     expect(rows[1]).toContain('#开发任务')
     expect(rows[1]).toContain('2 个成员')
-    // 开发任务自身只有 1 个字段（工时），有效字段 2 个（+ 继承自项目的负责人）
-    expect(rows[1]).toContain('2 个字段')
     expect(rows[2]).toContain('#系统任务')
     expect(rows[3]).toContain('#灵感碎片')
+
+    // 层级用 depth 类表达：子（开发任务）带 depth-1，根（项目）不带
+    expect(wrapper.find('.tag-row--t-dev').classes()).toContain('tag-row--depth-1')
+    expect(wrapper.find('.tag-row--t-project').classes()).not.toContain('tag-row--depth-1')
+
+    // 左栏不再展示「字段数」列
+    expect(wrapper.find('.tag-rows').text()).not.toContain('个字段')
   })
 
-  it('来源列区分 顶级标签 / ← 父名 / 未使用', async () => {
+  it('「全部」树状中子标签经层级类缩进，且左栏已无「来源」列', async () => {
     const wrapper = await mountPage()
-    expect(wrapper.find('.tag-row--t-project .tag-row-source').text()).toBe('顶级标签')
-    expect(wrapper.find('.tag-row--t-dev .tag-row-source').text()).toBe('← 项目')
-    expect(wrapper.find('.tag-row--t-idea .tag-row-source').text()).toBe('未使用')
+    // 开发任务是 项目 的子 → 带 depth-1；父 项目 是根 depth-0
+    expect(wrapper.find('.tag-row--t-project').classes()).toContain('tag-row--depth-0')
+    expect(wrapper.find('.tag-row--t-dev').classes()).toContain('tag-row--depth-1')
+    // 顶级标签 / ← 父名 / 未使用 这类来源徽标不再展示
+    expect(wrapper.find('.tag-row-source').exists()).toBe(false)
   })
 
   it('「未使用」筛选只留直系成员为 0 的标签', async () => {
@@ -220,14 +226,16 @@ describe('TagsLibrary（标签管理页）', () => {
     expect(rows[0]).toContain('#灵感碎片')
   })
 
-  it('搜索按标题过滤', async () => {
+  it('树状下搜索按标题过滤，并保留命中节点的祖先链', async () => {
     const wrapper = await mountPage()
     await wrapper.find('.tag-search-input').setValue('开发')
     await flushPromises()
 
     const rows = texts(wrapper, '.tag-row')
-    expect(rows).toHaveLength(1)
-    expect(rows[0]).toContain('#开发任务')
+    // 开发任务 命中，其父 项目 作为祖先链一并保留（否则子节点孤立缩进）；其余根被过滤
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toContain('#项目')
+    expect(rows[1]).toContain('#开发任务')
   })
 
   // ── 详情 ──

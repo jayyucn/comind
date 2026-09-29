@@ -10,7 +10,10 @@
         "*.ts": "${capture}.test.ts, ${capture}.spec.ts"
     },
     "editor.codeActionsOnSave": {
-        "source.organizeImports": "explicit"
+        "source.organizeImports": "explicit",
+        "source.fixAll.eslint": "explicit",
+        "source.removeUnusedImports": "explicit",
+        "source.sortImports": "explicit",
     },
     "npm.exclude": [
         "**/node_modules/**",

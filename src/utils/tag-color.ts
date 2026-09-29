@@ -12,20 +12,24 @@
  * 调色板：**token 名 + 展示名**，数组顺序即选色器里的展示顺序。
  *
  * 第 1 位就是默认色 `--color-tag` 的取值来源（后者被收敛为它的别名），故「无色」
- * （`color = ''`）与「选色 1」观感一致 —— 既有 tag 保持原貌。
+ * （`color = ''`）与「选色 1」观感一致。10 色为柔和语义色板（灰=默认 / 红=重要 / 橙=待办 /
+ * 琥珀=提醒 / 绿=完成 / 青=信息 / 蓝=概念 / 紫=思考 / 粉=个人），避开 indigo 强调色系
+ * （全板距 `--color-accent` 最近为蓝 20.6°、紫 24.1°，柔和蓝紫 vs 鲜艳强调色可辨）。
  *
  * 展示名只服务无障碍（`aria-label` / tooltip）：色点本身无法被读屏描述，而 token 名
  * 是开发者语汇，不能直接给用户看。
  */
 export const TAG_COLORS = [
-  { token: '--tag-color-1', label: '靛蓝' },
-  { token: '--tag-color-2', label: '天蓝' },
-  { token: '--tag-color-3', label: '青绿' },
-  { token: '--tag-color-4', label: '草绿' },
-  { token: '--tag-color-5', label: '琥珀' },
-  { token: '--tag-color-6', label: '橙色' },
-  { token: '--tag-color-7', label: '玫红' },
-  { token: '--tag-color-8', label: '紫色' },
+  { token: '--tag-color-1', label: '灰色' },
+  { token: '--tag-color-2', label: '红色' },
+  { token: '--tag-color-3', label: '橙色' },
+  { token: '--tag-color-4', label: '琥珀色' },
+  { token: '--tag-color-5', label: '黄绿色' },
+  { token: '--tag-color-6', label: '绿色' },
+  { token: '--tag-color-7', label: '青色' },
+  { token: '--tag-color-8', label: '蓝色' },
+  { token: '--tag-color-9', label: '紫色' },
+  { token: '--tag-color-10', label: '洋红色' },
 ] as const
 
 export type TagColorToken = (typeof TAG_COLORS)[number]['token']
@@ -62,5 +66,5 @@ export function tagChipStyle(color: string | null | undefined): Record<string, s
  */
 export function tagDotStyle(color: string | null | undefined): Record<string, string> | undefined {
   if (!isTagColorToken(color)) return undefined
-  return { background: `var(${color})` }
+  return { color: `var(${color})` }
 }

@@ -75,7 +75,7 @@ describe('TagColorPicker（标签色选色器）', () => {
 
     const active = panel.querySelectorAll('.tag-color-swatch--active')
     expect(active).toHaveLength(1)
-    expect(swatchByLabel(panel, '琥珀').classList).toContain('tag-color-swatch--active')
+    expect(swatchByLabel(panel, '绿色').classList).toContain('tag-color-swatch--active')
     wrapper.unmount()
   })
 
@@ -83,7 +83,7 @@ describe('TagColorPicker（标签色选色器）', () => {
     const wrapper = mountPicker({ value: '' })
     const panel = await openPanel(wrapper)
 
-    swatchByLabel(panel, '青绿').click()
+    swatchByLabel(panel, '橙色').click()
 
     expect(wrapper.emitted('pick')).toEqual([['--tag-color-3']])
     wrapper.unmount()

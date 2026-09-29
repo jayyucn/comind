@@ -8,7 +8,9 @@
  * 系统标签只读（D5「系统标签右栏只读」延伸至此）：Rust 侧 `reject_system_tag` 已拒写，
  * UI 若照给可点入口就是「点了没反应且无提示」的静默失败 —— 故只读时不渲染可点元素。
  */
-import { nextTick, ref, watch } from 'vue'
+import { nextTick, ref, watch } from 'vue';
+
+const TAG_DESCRIPTION_PLACEHOLDER = '+ 添加描述'
 
 const props = defineProps<{
   /** 当前描述；空串 = 未填写 */
@@ -64,7 +66,7 @@ watch(
     v-model="draft"
     class="tag-desc"
     type="text"
-    placeholder="添加描述"
+    :placeholder="TAG_DESCRIPTION_PLACEHOLDER"
     @keydown.enter.prevent="commit"
     @keydown.esc.prevent="cancel"
     @blur="commit"
@@ -76,7 +78,7 @@ watch(
     :class="{ 'tag-desc--empty': !value }"
     @click="startEdit"
   >
-    {{ value || '添加描述' }}
+    {{ value || TAG_DESCRIPTION_PLACEHOLDER }}
   </button>
   <span
     v-else-if="value"
@@ -118,9 +120,7 @@ watch(
 
 input.tag-desc {
   width: 100%;
-  padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-1);
   background: var(--bg-base);
   color: var(--text-primary);
 }

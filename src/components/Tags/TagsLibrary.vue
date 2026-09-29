@@ -18,9 +18,9 @@
  * - 字段定义是全局共享的，故只有**自身声明**的字段可在此编辑（继承方无权改他人定义）。
  * - 进聚合页的入口在本页右栏标题行（`/tags/:tagId`）。
  */
-import { ChevronDown, Pencil, Plus, Search, X } from 'lucide-vue-next'
+import { ChevronDown, CornerUpRight, Pencil, Plus, Search, X } from 'lucide-vue-next'
 import type { ObjectDirective } from 'vue'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useNavigateToTag } from '../../composables/useNavigateToTag'
 import { useBlockCardStore } from '../../stores/blockCard'
 import { useTagsStore } from '../../stores/tags'
@@ -90,19 +90,14 @@ const statsSubtitle = computed(() => {
 const filterChips = computed<Array<{ key: FilterMode; label: string; count: number | null }>>(
   () => [
     { key: 'all', label: '全部', count: tagsStore.allTags.length },
-    { key: 'recent', label: '最近使用', count: null },
-    { key: 'unused', label: '未使用', count: tagsStore.unusedTags().length },
+    { key: 'recent', label: '最近', count: null },
+    { key: 'unused', label: '未用', count: tagsStore.unusedTags().length },
   ],
 )
 
 function memberCount(tagId: string): number {
   // O(1) 查表（store 单遍扫描缓存），供排序比较器与逐行渲染反复调用
   return tagsStore.directMemberCount.get(tagId) ?? 0
-}
-
-/** 有效字段数（含继承）——即该标签下真正可填的字段数量。 */
-function fieldCount(tagId: string): number {
-  return tagsStore.effectiveFieldIds(tagId).length
 }
 
 /** 按直系成员数降序，同数按标题——常用标签浮在上面。 */
@@ -112,25 +107,120 @@ function sortedByMembers(list: PersistedTag[]): PersistedTag[] {
   )
 }
 
-const filteredTags = computed<PersistedTag[]>(() => {
+/** 树节点：标签 + 在「全部」树里的缩进层级（0 = 根）。 */
+interface TagNode {
+  tag: PersistedTag
+  depth: number
+}
+
+/**
+ * 左栏渲染清单：
+ * - 「全部」→ 树状：根按成员数降序，子标签递归嵌套在父下（depth 即层级）。
+ * - 「最近使用」/「未使用」→ 扁平：分别按最近使用序 / 成员数降序，不体现层级。
+ * 搜索在任意模式下按标题过滤；树状下保留命中节点的祖先链，避免子节点孤立缩进。
+ */
+const displayTags = computed<TagNode[]>(() => {
   const q = searchQuery.value.trim().toLowerCase()
-  const base =
-    filterMode.value === 'recent'
-      ? tagsStore.recentTags()
-      : filterMode.value === 'unused'
-        ? tagsStore.unusedTags()
-        : tagsStore.allTags
-  const list = q ? base.filter((t) => t.title.toLowerCase().includes(q)) : [...base]
-  // 「最近使用」按成员块 recent 序（store 已排）；其余按成员数降序
-  return filterMode.value === 'recent' ? list : sortedByMembers(list)
+  const matches = (t: PersistedTag) => !q || t.title.toLowerCase().includes(q)
+
+  if (filterMode.value !== 'all') {
+    // 「最近使用」按成员块 recent 序（store 已排）；其余按成员数降序 —— 均扁平
+    const base =
+      filterMode.value === 'recent' ? tagsStore.recentTags() : tagsStore.unusedTags()
+    const list = q ? base.filter(matches) : [...base]
+    const sorted = filterMode.value === 'recent' ? list : sortedByMembers(list)
+    return sorted.map((tag) => ({ tag, depth: 0 }))
+  }
+
+  // 树状：先确定「可见」集合（命中，或命中节点的某个祖先）
+  const visible = new Set<string>()
+  if (q) {
+    for (const t of tagsStore.allTags) {
+      if (!matches(t)) continue
+      let cur: PersistedTag | undefined = t
+      while (cur) {
+        visible.add(cur.id)
+        cur = cur.parent_id ? tagsStore.getTagById(cur.parent_id) : undefined
+      }
+    }
+  }
+  const isVisible = (t: PersistedTag) => !q || visible.has(t.id)
+  const childrenOf = (pid: string | null) =>
+    tagsStore.allTags
+      .filter((t) => (t.parent_id ?? null) === (pid ?? null) && isVisible(t))
+      .sort((a, b) => memberCount(b.id) - memberCount(a.id) || a.title.localeCompare(b.title))
+
+  const out: TagNode[] = []
+  const walk = (pid: string | null, depth: number) => {
+    for (const t of childrenOf(pid)) {
+      out.push({ tag: t, depth })
+      walk(t.id, depth + 1)
+    }
+  }
+  walk(null, 0)
+  return out
 })
 
-/** 来源徽标：未使用 → 无成员；有父 → ← 父名；否则顶级标签。 */
-function sourceLabel(tag: PersistedTag): string {
-  if (memberCount(tag.id) === 0) return '未使用'
-  const parent = tagsStore.parentTagOf(tag.id)
-  return parent ? `← ${parent.title}` : '顶级标签'
+// ── 左右栏可拖拽分隔（split pane） ─────────────────────────────
+//
+// 右栏详情宽度由用户拖拽决定（字段模板是四列表格，宽窄因人而异）；左栏 `flex:1` 吃剩余。
+// 宽度存 localStorage，重载后保持上次的偏好。
+
+const MIN_DETAIL_W = 600
+const MAX_DETAIL_W = 800
+// `.tags-body` 的 gap（var(--space-4)=16px）落在 resizer 与右栏之间，外加 resizer 自身宽 6px
+const RESIZE_OFFSET = 16 + 6
+const detailWidthKey = 'comind.tags.detail-width'
+
+const detailWidth = ref<number>(loadDetailWidth())
+
+function loadDetailWidth(): number {
+  const saved = Number(localStorage.getItem(detailWidthKey))
+  return saved >= MIN_DETAIL_W && saved <= MAX_DETAIL_W ? saved : 600
 }
+
+let resizing = false
+
+function startResize(e: MouseEvent | TouchEvent) {
+  resizing = true
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+  window.addEventListener('mousemove', onResize)
+  window.addEventListener('mouseup', stopResize)
+  window.addEventListener('touchmove', onResize, { passive: false })
+  window.addEventListener('touchend', stopResize)
+  e.preventDefault()
+}
+
+function onResize(e: MouseEvent | TouchEvent) {
+  if (!resizing) return
+  const clientX =
+    'touches' in e ? (e as TouchEvent).touches[0].clientX : (e as MouseEvent).clientX
+  const bodyEl = document.querySelector('.tags-body')
+  const rect = bodyEl?.getBoundingClientRect()
+  if (!rect) return
+  const next = Math.max(
+    MIN_DETAIL_W,
+    Math.min(MAX_DETAIL_W, Math.round(rect.right - clientX - RESIZE_OFFSET)),
+  )
+  detailWidth.value = next
+  // 触屏拖动若不做 preventDefault，页面会跟着滚
+  if ('touches' in e) e.preventDefault()
+}
+
+function stopResize() {
+  if (!resizing) return
+  resizing = false
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+  window.removeEventListener('mousemove', onResize)
+  window.removeEventListener('mouseup', stopResize)
+  window.removeEventListener('touchmove', onResize)
+  window.removeEventListener('touchend', stopResize)
+  localStorage.setItem(detailWidthKey, String(detailWidth.value))
+}
+
+onUnmounted(stopResize)
 
 // ── 右栏：详情 ────────────────────────────────────────────────
 
@@ -652,10 +742,34 @@ async function submitAddField() {
 
 <template>
   <div class="tags-page">
-    <PageTitle
-      title="标签"
-      :subtitle="statsSubtitle"
-    />
+    <div class="tags-header">
+      <PageTitle
+        title="标签"
+        :subtitle="statsSubtitle"
+      />
+      <div class="tag-list-actions">
+        <label class="tag-search ">
+          <Search
+            class="tag-search-icon"
+            :size="14"
+          />
+          <input
+            v-model="searchQuery"
+            class="tag-search-input"
+            type="text"
+            placeholder="搜索标签"
+          >
+        </label>
+        <button
+          class="tag-create-btn"
+          type="button"
+          @click="openCreatePopover"
+        >
+          <Plus :size="14" />
+          新建标签
+        </button>
+      </div>
+    </div>
 
     <div class="tags-body">
       <!-- 左栏：筛选胶囊 + 行列表 -->
@@ -678,64 +792,36 @@ async function submitAddField() {
               >{{ chip.count }}</span>
             </button>
           </div>
-
-          <div class="tag-list-actions">
-            <label class="tag-search">
-              <Search
-                class="tag-search-icon"
-                :size="14"
-              />
-              <input
-                v-model="searchQuery"
-                class="tag-search-input"
-                type="text"
-                placeholder="搜索标签"
-              >
-            </label>
-            <button
-              class="tag-create-btn"
-              type="button"
-              @click="openCreatePopover"
-            >
-              <Plus :size="14" />
-              新建标签
-            </button>
-          </div>
         </div>
 
         <div class="tag-rows">
           <div
-            v-for="tag in filteredTags"
-            :key="tag.id"
+            v-for="node in displayTags"
+            :key="node.tag.id"
             class="tag-row"
-            :class="[`tag-row--${tag.id}`, { 'tag-row--active': selectedTagId === tag.id }]"
+            :class="[`tag-row--${node.tag.id}`, `tag-row--depth-${node.depth}`, { 'tag-row--active': selectedTagId === node.tag.id }]"
+            :style="node.depth ? { paddingLeft: `calc(var(--space-3) + ${node.depth} * var(--space-4))` } : undefined"
             role="button"
             tabindex="0"
-            @click="selectedTagId = tag.id"
-            @keydown.enter="selectedTagId = tag.id"
+            @click="selectedTagId = node.tag.id"
+            @keydown.enter="selectedTagId = node.tag.id"
           >
             <span class="tag-row-label">
               <!-- 标签色（ADR-0050 D11）：色点在左，标题胶囊保持中性 —— 整行染色会盖过层级 -->
               <span
-                class="tag-color-dot"
-                :class="{ 'tag-color-dot--empty': isColorless(tag.color) }"
-                :style="tagDotStyle(tag.color)"
-              />
-              <span class="tag-row-title">#{{ tag.title }}</span>
+                class="tag-row-title"
+                :style="tagDotStyle(node.tag.color)"
+              >#{{ node.tag.title }}</span>
+              <!-- 系统标签额外标记（右栏只读的同义提示） -->
               <span
-                v-if="tag.is_system"
+                v-if="node.tag.is_system"
                 class="tag-row-system"
               >系统</span>
             </span>
-            <span class="tag-row-meta tag-row-members">{{ memberCount(tag.id) }} 个成员</span>
-            <span class="tag-row-meta">{{ fieldCount(tag.id) }} 个字段</span>
-            <span
-              class="tag-row-source"
-              :class="{ 'tag-row-source--inherited': !!tag.parent_id }"
-            >{{ sourceLabel(tag) }}</span>
+            <span class="tag-row-meta tag-row-members">{{ memberCount(node.tag.id) }} 个成员</span>
           </div>
           <p
-            v-if="!filteredTags.length"
+            v-if="!displayTags.length"
             class="tag-list-empty"
           >
             没有匹配的标签
@@ -743,22 +829,40 @@ async function submitAddField() {
         </div>
       </aside>
 
+      <!-- 拖拽分隔：按住调整左右栏宽度（右栏 = 详情，左栏 flex 吃剩余） -->
+      <div
+        class="tag-resizer"
+        :class="{ 'tag-resizer--active': resizing }"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="调整左右栏宽度"
+        @mousedown.prevent="startResize"
+        @touchstart.passive="startResize"
+      />
+
       <!-- 右栏：详情 -->
-      <section class="tag-detail">
+      <section
+        class="tag-detail"
+        :style="{ width: detailWidth + 'px' }"
+      >
         <template v-if="selectedTag">
           <div class="tag-detail-head">
-            <h2 class="tag-detail-title">
+            <h2
+              class="tag-detail-title"
+              :style="tagDotStyle(selectedTag.color)"
+            >
               #{{ selectedTag.title }}
             </h2>
             <button
               type="button"
               class="tag-detail-open"
+              aria-label="查看成员"
+              title="查看成员"
               @click="openAggregatePage"
             >
-              查看成员
-              <ArrowRight
+              <CornerUpRight
                 class="tag-detail-open-arrow"
-                :size="13"
+                :size="16"
               />
             </button>
           </div>
@@ -1201,6 +1305,16 @@ async function submitAddField() {
   padding: 0 var(--space-8) var(--space-7);
 }
 
+.tags-header {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-6);
+  padding-bottom: var(--space-4);
+  .tag-list-actions {
+    padding-top: var(--space-8);
+  }
+}
+
 .tags-body {
   flex: 1;
   min-height: 0;
@@ -1272,14 +1386,33 @@ async function submitAddField() {
 /* 筛选行：胶囊群靠左（可换行收缩），搜索 / 新建由 margin-left 推到最右 */
 .tag-filter-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
 }
 
 .tag-filter-chips {
+  --nvb-thumb: var(--bg-base);
+
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
+  align-items: center;
+  gap: 3px;
+  padding: 2px;
+  flex: none;
+  max-width: 55%;
+  border-radius: var(--radius-sm, 6px);
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: var(--surface-subtle);
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+[data-theme='dark'] .tag-filter-chips {
+  --nvb-thumb: var(--bg-active);
 }
 
 /* margin-left: auto 把搜索 / 新建推到筛选行的最右 */
@@ -1294,23 +1427,33 @@ async function submitAddField() {
 .tag-filter-chip {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
-  height: 28px;
-  padding: 0 var(--space-3);
-  font-size: var(--text-sm);
+  gap: 4px;
+  white-space: nowrap;
+  // 左右对称内边距 0.9em（对齐参考图实测比例）；右侧同时容下 hover 才淡入的 ⋯
+  padding: 0 11px;
+  height: 26px;
+  border-radius: calc(var(--radius-sm, 6px) - 2px);
+  cursor: grab;
+  user-select: none;
+  position: relative;
+  background: transparent;
   color: var(--text-secondary);
-  background: var(--surface-subtle);
-  border: none;
-  border-radius: 999px;
-  cursor: pointer;
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: 500;
+  transition: color 80ms ease, background 80ms ease;
 
   &:hover {
     color: var(--text-primary);
+    background: var(--bg-hover);
   }
 
-  &--active {
-    color: var(--accent-hover);
-    background: var(--accent-subtle);
+  &:active {
+    cursor: grabbing;
+  }
+
+  &.tag-filter-chip--active {
+    background: var(--nvb-thumb);
+    color: var(--text-primary);
   }
 }
 
@@ -1329,14 +1472,13 @@ async function submitAddField() {
 
 .tag-row {
   display: grid;
-  // 标题胶囊自适应 + 成员数 / 字段数两列定宽 + 来源列吃余量
-  grid-template-columns: auto 102px 102px 1fr;
+  // 标题胶囊（1fr 吃余量，左对齐）+ 成员数定宽右对齐
+  grid-template-columns: 1fr 102px;
   column-gap: var(--space-3);
   align-items: center;
-  min-height: 52px;
-  padding: 0 var(--space-3);
+  min-height: 30px;
+  padding: 0 var(--space-6) 0 var(--space-3);
   font-size: var(--text-sm);
-  background: var(--surface-muted);
   border-radius: var(--radius-md);
   cursor: pointer;
 
@@ -1348,22 +1490,11 @@ async function submitAddField() {
 .tag-row-label {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
   min-width: 0;
 }
 
 /* 标签色点（ADR-0050 D11）：无色渲染成空心环，与「有色实心点」一眼可分。
    有色的填充由 `tagDotStyle` 内联给出；无色时 `--empty` 补边框 —— 两者判据同源。 */
-.tag-color-dot {
-  flex-shrink: 0;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-.tag-color-dot--empty {
-  border: 1px solid var(--border-strong);
-}
 
 .tag-row-title {
   display: inline-flex;
@@ -1372,13 +1503,12 @@ async function submitAddField() {
   padding: 0 var(--space-2);
   color: var(--text-primary);
   white-space: nowrap;
-  background: var(--bg-base);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  // background: var(--bg-base);
+  // border: 1px solid var(--border);
+  // border-radius: var(--radius-sm);
 }
 
-.tag-row-system,
-.tag-row-source {
+.tag-row-system {
   color: var(--text-tertiary);
   white-space: nowrap;
 }
@@ -1386,15 +1516,7 @@ async function submitAddField() {
 .tag-row-meta {
   color: var(--text-secondary);
   white-space: nowrap;
-}
-
-.tag-row-source {
-  overflow: hidden;
-  text-overflow: ellipsis;
-
-  &--inherited {
-    color: var(--accent);
-  }
+  text-align: right;
 }
 
 .tag-row--active {
@@ -1419,13 +1541,45 @@ async function submitAddField() {
   color: var(--text-tertiary);
 }
 
+/* ── 拖拽分隔 ── */
+.tag-resizer {
+  flex-shrink: 0;
+  align-self: stretch;
+  width: 6px;
+  user-select: none;
+  cursor: col-resize;
+  position: relative;
+  // 命中盒 6px，但视觉只有 1px 线 —— 既好点又不喧宾夺主
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 1px;
+    background: var(--border);
+    transition: background var(--transition-fast);
+  }
+
+  &:hover::after,
+  &--active::after {
+    background: var(--accent);
+  }
+
+  // 拖拽中给一层全高的浅色热区提示（仅视觉，不挡命中盒）
+  &--active {
+    background: var(--bg-hover);
+  }
+}
+
 /* ── 右栏 ── */
 .tag-detail {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  /* 字段模板是四列表格（字段 | 类型 | 默认 | 来源）→ 右栏需比常规详情宽些才不挤 */
-  width: 420px;
+  /* 字段模板是四列表格（字段 | 类型 | 默认 | 来源）→ 右栏需比常规详情宽些才不挤；
+     具体宽度由用户拖拽决定（`.tag-resizer`），落库到 localStorage */
   overflow: auto;
   padding: var(--space-5);
   background: var(--surface-muted);
@@ -1454,19 +1608,19 @@ async function submitAddField() {
   color: var(--text-primary);
 }
 
-/* 进聚合页（D7）的唯一入口：ghost 胶囊按钮，悬停时箭头右移示意跳转 */
+/* 进聚合页（D7）的唯一入口：方形 ghost 图标按钮，悬停时箭头右移示意跳转。
+   图标用 lucide 矢量（CornerUpRight = 向右上外跳），继承 currentColor，暗色模式自适应。 */
 .tag-detail-open {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
+  justify-content: center;
   flex-shrink: 0;
-  height: 26px;
-  padding: 0 var(--space-2);
-  font-size: var(--text-xs);
-  font-weight: var(--font-medium);
-  color: var(--accent);
-  background: var(--bg-base2);
-  border: 1px solid var(--border);
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: color var(--transition-fast), border-color var(--transition-fast),
@@ -1475,7 +1629,7 @@ async function submitAddField() {
   &:hover {
     color: var(--accent-hover);
     background: var(--bg-hover);
-    border-color: var(--accent);
+    border-color: var(--accent-40);
 
     .tag-detail-open-arrow {
       transform: translateX(2px);

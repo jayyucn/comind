@@ -44,7 +44,7 @@ describe('tag-color（标签配色单源）', () => {
       expect(isTagColorToken(token)).toBe(true)
     }
     // 空串是**有效存储值**（无色），但不是调色板 token —— 必须落回默认样式
-    for (const bad of ['', '#6366F1', '--color-tag', '--tag-color-9', '--tag-color-', null, undefined, 3, {}]) {
+    for (const bad of ['', '#6366F1', '--color-tag', '--tag-color-', null, undefined, 3, {}]) {
       expect(isTagColorToken(bad), String(bad)).toBe(false)
     }
   })

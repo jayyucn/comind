@@ -160,18 +160,23 @@
   --color-highlight: #{$color-indigo-200};
   --color-white: #FFFFFF;
   // 标签调色板（ADR-0050 D11）：存库的是这些 **token 名**（非 hex），故本表是唯一真相。
-  // 亮色：第 1 位保持既有 indigo-500（默认观感不变），2–8 取 600/700 号段 —— chip 拿它
-  // 当文字色，须在白底上过 AA（实测对比度 4.5–5.9）。
-  --tag-color-1: #{$color-indigo-500}; // indigo-500，与既有默认色同源
-  --tag-color-2: #0369A1; // sky-700
-  --tag-color-3: #0F766E; // teal-700
-  --tag-color-4: #15803D; // green-700
-  --tag-color-5: #B45309; // amber-700
-  --tag-color-6: #C2410C; // orange-700
-  --tag-color-7: #E11D48; // rose-600
-  --tag-color-8: #9333EA; // purple-600
+  // 柔和语义色板：9 色各带用途（灰=默认 / 红=重要 / 橙=待办 / 琥珀=提醒 / 绿=完成 /
+  // 青=信息 / 蓝=概念 / 紫=思考 / 粉=个人）。色值 = 基准色固定色相/饱和度按需调亮派生：
+  // 亮主题取降亮版（白底对比度 ≈5.0），暗主题取升亮版（暗底对比度 ≈5.5）。
+  // 全板相邻色相间距除 橙↔琥珀 18.1° 外均 ≥27°；距强调色 indigo-500 最近为蓝 20.6°、
+  // 紫 24.1°（柔和蓝紫 vs 鲜艳强调色，视觉可辨）。
+  --tag-color-1: #9CA3AF; // 灰（基准 #64748B 派生，中性 · 默认色）
+  --tag-color-2: #EF4444; // 红（基准 #DC5B60 派生，358°）
+  --tag-color-3: #F97316; // 橙（基准 #D97732 派生，25°）
+  --tag-color-4: #F69E0B; // 琥珀色（基准 #B88A17 派生，43°）
+  --tag-color-5: #84CC16; // 绿（基准 #359568 派生，152°）
+  --tag-color-6: #10B981; // 青（基准 #258F9C 派生，187°）
+  --tag-color-7: #06B6D4; // 蓝（基准 #4779D0 派生，218°）
+  --tag-color-8: #3B82F6; // 紫（基准 #8963C7 派生，263°）
+  --tag-color-9: #8B5CF6; // 粉（基准 #C45C91 派生，329°）
+  --tag-color-10: #EC4899;
   // 默认色收敛为调色板第 1 位的**别名**：单源无重复，且「无色」（color = ''）与「选色 1」
-  // 观感一致 —— 既有 tag 全部保持原貌。消费点（`.block-tag` 等）因此无需改动。
+  // 观感一致。消费点（`.block-tag` 等）因此无需改动。
   --color-tag: var(--tag-color-1);
   --color-external: #{$color-external};
   --color-scrollbar: #{$color-stone-400};
@@ -256,16 +261,7 @@
   --color-surface: #2E2E32;
   --color-highlight: rgba(129, 140, 248, 0.25);
   --color-white: #FFFFFF;
-  // 标签调色板（ADR-0050 D11）：暗色取 400 号段，在 --bg-base 上对比度 6.5–10。
-  --tag-color-1: #{$color-indigo-400}; // indigo-400，与既有默认色同源
-  --tag-color-2: #38BDF8; // sky-400
-  --tag-color-3: #2DD4BF; // teal-400
-  --tag-color-4: #4ADE80; // green-400
-  --tag-color-5: #FBBF24; // amber-400
-  --tag-color-6: #FB923C; // orange-400
-  --tag-color-7: #FB7185; // rose-400
-  --tag-color-8: #C084FC; // purple-400
-  --color-tag: var(--tag-color-1);
+
   --color-external: #94A3B8;
   --color-scrollbar: #4A4A50;
   --color-error: #{$color-error};

@@ -40,7 +40,7 @@ comind 的属性/字段系统分三层，目前靠硬编码与扁平数组粘合
 | D5 | 渲染过滤统一 | `PropertyDisplay` 过滤依据从"`displayPosition` + `isBuiltIn`"统一为"所属 tag 的 `isSystem`"；`isBuiltIn(key)` helper 改为查所属 tag。`displayPosition` 保留为纯渲染语义，不再承担"是否系统字段"职责 |
 | D6 | 用户 tag 持久化 | 用户 tag 落 SQLite 新表 `tag`（id / title **全局唯一** / fieldIds / extends / created_at / updated_at，**无 key、无 is_system**）；字段独立成表 `FieldDefinition`（key **全局唯一** / title / type / closedValues / is_system，系统 12 字段 seed 进表、seed 行不可删）；block↔tag 用 **block 的 `tags` 字段**（tag id 数组，无独立关联表）。CRUD 扩展既有 `TagService`（`extract_tags` 保持纯函数，CRUD 走 Repository 注入）+ `SyncTable` 同步 |
 | D7 | 术语统一 | 统一用 `Tag` 一词：新实体 `Tag`（字段模板）与既有文本 `#tag` 语法解析**同属 Tag 概念**。既有 `tag_parse.rs`（原 `tag.rs`，含 `TagParse`）定位为"文本 `#tag` → Tag 实体"的**解析层**，**保留不动**（纯函数、无 UI 依赖）；新实体类型用 `tag.rs`（Rust）/ `tag.ts`（TS）。存储表用 `tag`（不再用 `block_tag` 关联表） |
-| D8 | 继承 | `extends: string[]` **多继承**；**物化继承**——创建 / 更新 tag 时把父 tag 的字段 id 展开合并进 `fieldIds`；多父冲突 = 后父覆盖前父、子覆盖所有父；DFS 环检测拒绝。**本次实现**（不再预留） |
+| D8 | 继承 | **多继承（已推翻 → ADR-0050 D10）**：原方案 `extends: string[]` 多继承 + 物化合并（创建/更新时把父字段 id 并入 `fieldIds`，多父冲突=后父覆盖前父、子覆盖所有父，DFS 环检测拒绝）。ADR-0050 D10 改为**单父树**（`Tag.parent_id` 一列）+ **惰性解析** `effective_field_ids(tag)=自身>直接父>更近祖先`，多继承与物化合并均取消。 |
 | D9 | 值层升格 FieldValue | `Property` 表重构为 `FieldValue`：`{ id, block_id（MVP 单宿主）, field_definition_id（外键引用）, value（按类型存储 typed）, 多值序号, 时间戳 }`，取代扁平 `value:TEXT` + 内联 `type`。**强 schema**：值必须引用现存定义，无孤儿 / 游离值；删 FieldDefinition → 该字段值**级联清除**（不可逆，删除前告知受影响条目数）；删选项 → 停用、已填值保留标「未知选项」 |
 | D10 | MVP 范围 | 本 ADR 裁定「内置字段 = 系统 Tag + 统一类型 + 改名 + 用户 tag 落库 + FieldValue 值层 + 继承」。自动化 / AI 绑定、打标 UI 交互、Page 级属性另立 ADR；FieldValue 宿主 MVP 只 Block |
 
