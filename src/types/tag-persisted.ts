@@ -42,6 +42,11 @@ export interface PersistedFieldDefinition {
   closed_values: string[] | null
   /** 字段默认值：JSON 文本（与 PersistedFieldValue.value_json 同形，按 type 反序列化）；null = 无默认 */
   default_value: string | null
+  /**
+   * 块属性展示的隐藏规则（ADR-0050 D18）：never / when_empty / when_not_empty /
+   * when_default / always。定义级全局共享，作用于块级字段区（BlockTagFields）。
+   */
+  hide_when: string
   is_system: boolean
   created_at: number
   updated_at: number
@@ -121,6 +126,8 @@ export type UpdateFieldDefinitionParams = {
   closed_values?: string[] | null
   /** 显式传 null / 空 = 清空默认；不传则保持原值 */
   default_value?: string | null
+  /** 隐藏规则（ADR-0050 D18）；Rust 侧按白名单归一，未知值回落 never */
+  hide_when?: string
 }
 
 export type CreateFieldValueParams = {

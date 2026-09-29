@@ -333,7 +333,8 @@ impl SQLiteAdapter {
                 updated_at      INTEGER NOT NULL,
                 version         INTEGER NOT NULL DEFAULT 0,
                 deleted_at      INTEGER,
-                default_value   TEXT
+                default_value   TEXT,
+                hide_when       TEXT NOT NULL DEFAULT 'never'
             );
             CREATE INDEX IF NOT EXISTS idx_fielddef_key ON FieldDefinition(key);
 
@@ -382,6 +383,7 @@ impl SQLiteAdapter {
         Self::migrate_add_tag_is_system(conn)?;
         Self::seed_system_tags(conn)?;
         Self::migrate_add_field_definition_default_value(conn)?;
+        Self::migrate_add_field_definition_hide_when(conn)?;
         Self::migrate_rename_task_view_to_screen_view(conn)?;
         Self::migrate_add_screen_view_config(conn)?;
         Self::migrate_add_screen_view_entity(conn)?;
@@ -649,6 +651,26 @@ impl SQLiteAdapter {
             .unwrap_or(false);
         if !has_column {
             conn.execute("ALTER TABLE FieldDefinition ADD COLUMN default_value TEXT", [])?;
+        }
+        Ok(())
+    }
+
+    fn migrate_add_field_definition_hide_when(conn: &rusqlite::Connection) -> Result<(), Box<dyn Error>> {
+        // ADR-0050 D18：块属性展示的隐藏规则。幂等：老库 FieldDefinition 表补 hide_when 列
+        // （TEXT，'never' = 不隐藏；带 DEFAULT 使存量行直接落 'never'）。
+        let has_column: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('FieldDefinition') WHERE name = 'hide_when'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|c| c > 0)
+            .unwrap_or(false);
+        if !has_column {
+            conn.execute(
+                "ALTER TABLE FieldDefinition ADD COLUMN hide_when TEXT NOT NULL DEFAULT 'never'",
+                [],
+            )?;
         }
         Ok(())
     }

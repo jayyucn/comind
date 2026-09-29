@@ -47,6 +47,7 @@ impl PropertyService {
             },
             closed_values: None,
             default_value: None,
+            hide_when: "never".to_string(),
             is_system: false,
             created_at: now,
             updated_at: now,

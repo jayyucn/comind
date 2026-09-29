@@ -59,6 +59,7 @@ vi.mock('../stores/tags', () => {
     type: 'string',
     closed_values: null,
     default_value: null,
+    hide_when: 'never',
     is_system: true,
     created_at: 0,
     updated_at: 0,

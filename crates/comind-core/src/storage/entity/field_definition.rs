@@ -16,7 +16,7 @@ use crate::storage::executor::Executor;
 /// - `is_system`：布尔，落库为 0/1 整型（SQLite 无原生布尔）。
 pub const FIELD_DEFINITION_COLS: &[&str] = &[
     "id", "key", "title", "type", "closed_values", "is_system",
-    "created_at", "updated_at", "version", "deleted_at", "default_value",
+    "created_at", "updated_at", "version", "deleted_at", "default_value", "hide_when",
 ];
 
 pub fn field_definition_select_cols() -> String {
@@ -47,6 +47,7 @@ pub fn row_to_field_definition_native(row: &rusqlite::Row) -> Result<FieldDefini
         version: row.get(8)?,
         deleted_at: row.get(9)?,
         default_value: row.get(10)?,
+        hide_when: crate::types::field_definition::normalize_hide_when(&row.get::<_, String>(11)?),
     })
 }
 
@@ -82,6 +83,9 @@ pub fn row_to_field_definition_js(row: &HashMap<String, String>) -> FieldDefinit
             .get("default_value")
             .cloned()
             .and_then(|s| if s.is_empty() { None } else { Some(s) }),
+        hide_when: crate::types::field_definition::normalize_hide_when(
+            &row.get("hide_when").cloned().unwrap_or_default(),
+        ),
     }
 }
 
@@ -151,6 +155,7 @@ pub fn field_definition_create<E: Executor>(exec: &E, fd: &FieldDefinition) -> R
         &fd.version,
         &fd.deleted_at,
         &fd.default_value,
+        &fd.hide_when,
     ];
     exec.execute(&field_definition_insert_sql(), &params)?;
     Ok(())
@@ -160,7 +165,7 @@ pub fn field_definition_create<E: Executor>(exec: &E, fd: &FieldDefinition) -> R
 pub fn field_definition_update<E: Executor>(exec: &E, fd: &FieldDefinition) -> Result<(), Box<dyn Error>> {
     let closed_values_json = closed_values_to_sql(&fd.closed_values);
     let is_system_i64 = if fd.is_system { 1i64 } else { 0i64 };
-    let sql = "UPDATE FieldDefinition SET key = ?2, title = ?3, type = ?4, closed_values = ?5, is_system = ?6, default_value = ?7, updated_at = ?8, version = version + 1 \
+    let sql = "UPDATE FieldDefinition SET key = ?2, title = ?3, type = ?4, closed_values = ?5, is_system = ?6, default_value = ?7, hide_when = ?8, updated_at = ?9, version = version + 1 \
                WHERE id = ?1";
     let params: Vec<&dyn ToSql> = vec![
         &fd.id,
@@ -170,6 +175,7 @@ pub fn field_definition_update<E: Executor>(exec: &E, fd: &FieldDefinition) -> R
         &closed_values_json,
         &is_system_i64,
         &fd.default_value,
+        &fd.hide_when,
         &fd.updated_at,
     ];
     exec.execute(sql, &params)?;
@@ -259,6 +265,8 @@ mod tests {
         assert!(fd.is_system);
         assert_eq!(fd.version, 5);
         assert_eq!(fd.deleted_at, None);
+        // 旧 JSON 行缺 hide_when → 归一为 never（隐藏规则不误伤既有数据）
+        assert_eq!(fd.hide_when, "never");
     }
 
     #[test]
@@ -271,5 +279,11 @@ mod tests {
         assert!(!fd.is_system);
         assert_eq!(fd.version, 0);
         assert_eq!(fd.deleted_at, None);
+        assert_eq!(fd.hide_when, "never");
+        // 白名单外的脏值回落 never，不静默放行
+        m.insert("hide_when".to_string(), "bogus".to_string());
+        assert_eq!(row_to_field_definition_js(&m).hide_when, "never");
+        m.insert("hide_when".to_string(), "when_empty".to_string());
+        assert_eq!(row_to_field_definition_js(&m).hide_when, "when_empty");
     }
 }

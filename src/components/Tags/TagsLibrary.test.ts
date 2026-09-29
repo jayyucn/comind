@@ -73,6 +73,7 @@ function fieldDef(
     version: 0,
     deleted_at: null,
     default_value: null,
+    hide_when: 'never',
     ...over,
   }
 }
@@ -260,15 +261,45 @@ describe('TagsLibrary（标签管理页）', () => {
     expect(fieldRows[1]).not.toContain('继承 ←')
   })
 
-  it('字段模块带四列表头：字段 / 类型 / 默认 / 来源', async () => {
+  it('字段模块带五列表头：字段 / 类型 / 默认 / 来源 / 隐藏', async () => {
     const wrapper = await mountPage()
     await wrapper.find('.tag-row--t-dev').trigger('click')
     await flushPromises()
 
     const cells = texts(wrapper, '.tag-field-row--head .tag-field-cell')
-    expect(cells.slice(0, 4)).toEqual(['字段', '类型', '默认', '来源'])
+    expect(cells.slice(0, 5)).toEqual(['字段', '类型', '默认', '来源', '隐藏'])
     // 数据行与表头同列数（表头不含「编辑」类入口）
     expect(wrapper.find('.tag-detail').text()).not.toContain('编辑')
+  })
+
+  // ── 隐藏列（ADR-0050 D18）──
+
+  it('隐藏列：可编辑字段是下拉，切换即以 hide_when 落库', async () => {
+    mockClient.updateFieldDefinition.mockResolvedValue(fieldDef({ id: 'f-estimate', title: '工时' }))
+    const wrapper = await mountPage()
+    await wrapper.find('.tag-row--t-dev').trigger('click')
+    await flushPromises()
+
+    // 只有自身声明的 工时 行有下拉；继承的 负责人 行是只读文本
+    const editableRow = wrapper
+      .findAll('.tag-field-row:not(.tag-field-row--head)')
+      .find((r) => r.text().includes('工时'))!
+    const inheritedRow = wrapper
+      .findAll('.tag-field-row:not(.tag-field-row--head)')
+      .find((r) => r.text().includes('负责人'))!
+    const select = editableRow.find('select.tag-field-hide-select')
+    expect(select.exists()).toBe(true)
+    expect((select.element as HTMLSelectElement).value).toBe('never')
+    expect(inheritedRow.find('select.tag-field-hide-select').exists()).toBe(false)
+    expect(inheritedRow.find('.tag-field-hide').text()).toBe('从不')
+
+    await select.setValue('when_empty')
+    await flushPromises()
+
+    expect(mockClient.updateFieldDefinition).toHaveBeenCalledWith({
+      id: 'f-estimate',
+      hide_when: 'when_empty',
+    })
   })
 
   it('右栏提供进该标签聚合页的入口', async () => {

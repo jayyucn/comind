@@ -5,6 +5,28 @@ fn default_timestamp() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
 
+/// 「隐藏」规则的合法取值（ADR-0050 D18）。落库为 TEXT，未知 / 缺失一律归一为 `"never"`。
+pub const FIELD_HIDE_WHEN_VALUES: &[&str] = &[
+    "never",
+    "when_empty",
+    "when_not_empty",
+    "when_default",
+    "always",
+];
+
+/// 白名单归一：不在取值表内的输入（历史脏数据 / 恶意参数）回落 `"never"`，绝不静默放行。
+pub fn normalize_hide_when(s: &str) -> String {
+    if FIELD_HIDE_WHEN_VALUES.contains(&s) {
+        s.to_string()
+    } else {
+        "never".to_string()
+    }
+}
+
+fn default_hide_when() -> String {
+    "never".to_string()
+}
+
 /// 字段定义实体（ADR-0049 D3 / D6 / D9）。
 ///
 /// 系统 12 字段 seed 进本表（固定 uuid id，`is_system = true`，seed 行不可删）；
@@ -28,6 +50,10 @@ pub struct FieldDefinition {
     /// None = 无默认。打标时按此值为新成员块自动建 FieldValue（ADR-0050 D13）。
     #[serde(default)]
     pub default_value: Option<String>,
+    /// 块属性展示的隐藏规则（ADR-0050 D18）：never / when_empty / when_not_empty /
+    /// when_default / always。作用于块级字段区（BlockTagFields）；定义级全局共享。
+    #[serde(default = "default_hide_when")]
+    pub hide_when: String,
     /// 系统字段 seed 进表后标记，seed 行不可删（D3）。
     #[serde(default)]
     pub is_system: bool,
@@ -65,6 +91,7 @@ impl FieldDefinition {
             r#type: options.r#type,
             closed_values: options.closed_values,
             default_value: options.default_value,
+            hide_when: "never".to_string(),
             is_system: options.is_system,
             created_at: now,
             updated_at: now,
@@ -85,6 +112,7 @@ impl FieldDefinition {
             r#type: r#type.to_string(),
             closed_values,
             default_value: None,
+            hide_when: "never".to_string(),
             is_system: true,
             created_at: now,
             updated_at: now,

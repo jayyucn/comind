@@ -54,6 +54,8 @@ function fieldDef(
     updated_at: 1,
     version: 0,
     deleted_at: null,
+    default_value: null,
+    hide_when: 'never',
     ...over,
   }
 }
@@ -190,5 +192,69 @@ describe('BlockTagFields（块级 Tag 字段区）', () => {
   it('悬空 / 软删 tag id 不产生字段区', async () => {
     const wrapper = await mountFields('b1', ['no-such-tag'])
     expect(wrapper.find('.block-tag-fields').exists()).toBe(false)
+  })
+
+  // ── 隐藏规则（ADR-0050 D18，定义级共享，逐块判定）──
+
+  it('隐藏规则 when_empty：未填的字段行消失，已填的照常显示', async () => {
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-owner', key: 'owner', title: '负责人', hide_when: 'when_empty' }),
+      fieldDef({ id: 'f-estimate', key: 'estimate', title: '工时', type: 'number' }),
+    ])
+    mockClient.getProperties.mockResolvedValue([
+      { id: 'p1', block_id: 'b1', key: 'estimate', value: '3', type: 'number', sort_order: 0, is_hidden: 0, is_deleted: 0, schema_version: 1, created_at: 1, updated_at: 1 },
+    ])
+    const wrapper = await mountFields('b1', ['t-dev'])
+    await usePropertyStore().loadBlockProperties('b1')
+    await flushPromises()
+
+    const titles = wrapper
+      .findAll('.block-tag-field-row')
+      .map((r) => r.find('.block-tag-field-title').text())
+    // 负责人（未填 + 为空时隐藏）消失；工时（已填 + 无规则）保留
+    expect(titles).toEqual(['工时'])
+  })
+
+  it('隐藏规则 always / when_default：恒隐 / 等于默认才隐（未填不算等于默认）', async () => {
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-owner', key: 'owner', title: '负责人', hide_when: 'always' }),
+      fieldDef({
+        id: 'f-estimate',
+        key: 'estimate',
+        title: '工时',
+        type: 'number',
+        hide_when: 'when_default',
+        default_value: '8',
+      }),
+    ])
+    // estimate 未填：即便默认是 8 也不算「等于默认」→ 占位行保留
+    const wrapper = await mountFields('b1', ['t-dev'])
+    await usePropertyStore().loadBlockProperties('b1')
+    await flushPromises()
+
+    let titles = wrapper
+      .findAll('.block-tag-field-row')
+      .map((r) => r.find('.block-tag-field-title').text())
+    expect(titles).toEqual(['工时'])
+
+    // 填的值等于默认 8 → 行消失
+    mockClient.getProperties.mockResolvedValue([
+      { id: 'p1', block_id: 'b1', key: 'estimate', value: '8', type: 'number', sort_order: 0, is_hidden: 0, is_deleted: 0, schema_version: 1, created_at: 1, updated_at: 1 },
+    ])
+    const wrapper2 = await mountFields('b1', ['t-dev'])
+    await usePropertyStore().loadBlockProperties('b1')
+    await flushPromises()
+    titles = wrapper2.findAll('.block-tag-field-row').map((r) => r.find('.block-tag-field-title').text())
+    expect(titles).toEqual([])
+
+    // 填的值不等于默认 → 行保留
+    mockClient.getProperties.mockResolvedValue([
+      { id: 'p2', block_id: 'b1', key: 'estimate', value: '3', type: 'number', sort_order: 0, is_hidden: 0, is_deleted: 0, schema_version: 1, created_at: 1, updated_at: 1 },
+    ])
+    const wrapper3 = await mountFields('b1', ['t-dev'])
+    await usePropertyStore().loadBlockProperties('b1')
+    await flushPromises()
+    titles = wrapper3.findAll('.block-tag-field-row').map((r) => r.find('.block-tag-field-title').text())
+    expect(titles).toEqual(['工时'])
   })
 })

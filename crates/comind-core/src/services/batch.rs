@@ -681,6 +681,10 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
             if params.get("default_value").is_some() {
                 fd.default_value = optional_str_param(&params, "default_value");
             }
+            // 隐藏规则（ADR-0050 D18）：键存在才改动；白名单外的值归一为 never，不静默放行。
+            if let Some(h) = params.get("hide_when").and_then(|v| v.as_str()) {
+                fd.hide_when = crate::types::field_definition::normalize_hide_when(h);
+            }
             let updated =
                 repository::FieldDefinitionRepository::update(storage.field_definitions(), &fd)?;
             Ok(OpEffect {

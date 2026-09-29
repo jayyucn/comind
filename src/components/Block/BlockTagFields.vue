@@ -9,12 +9,15 @@
  * - **不重复列标签名** —— 标签名已由 content 内联 chip 呈现（`#foo`），此处再列一遍
  *   等于同物两渲染；且那处 chip 可点击导航（D7）而此处不会，行为不一致更糟。
  * - 字段模板（增删字段）不在块上改 —— 那是标签管理页的职责。
+ * - 字段定义的「隐藏」规则（ADR-0050 D18）在此生效：符合条件（为空 / 非空 /
+ *   等于默认 / 总是）的字段行不渲染 —— 判据单源 `utils/field-hide`。
  *
  * 值读写仍走 property store（PropertyService 适配层）；数据层去属性化改名属阶段 3。
  */
 import { computed, onMounted } from 'vue'
 import type { PersistedFieldDefinition } from '../../types/tag-persisted'
 import { getPropertyDefinition } from '../../types/property'
+import { decodeDefaultJson, isFieldHiddenByRule, normalizeHideWhen } from '../../utils/field-hide'
 import { useEditorStore } from '../../stores/editor'
 import { usePropertyStore } from '../../stores/property'
 import { useTagsStore } from '../../stores/tags'
@@ -58,12 +61,38 @@ const fields = computed<PersistedFieldDefinition[]>(() => {
       if (seen.has(def.id)) continue
       const compileDef = getPropertyDefinition(def.key)
       if (compileDef?.displayPosition === 'between-bullet-content') continue
+      if (isHiddenByRule(def)) continue
       seen.add(def.id)
       out.push(def)
     }
   }
   return out
 })
+
+/** 该块此字段的值形态：未填（无行 / 空串 / 空数组）→ null。 */
+function rawValueOf(def: PersistedFieldDefinition): string | null {
+  const prop = propertyStore.getBlockProperty(props.blockId, def.key)
+  const v = prop?.value
+  if (v === null || v === undefined || v === '') return null
+  if (Array.isArray(v) && !v.length) return null
+  return String(v)
+}
+
+/**
+ * 隐藏规则判定（ADR-0050 D18，定义级共享）：规则单源在 `utils/field-hide`，
+ * 这里只负责从 property store 取值喂给它。注意这个判定是**逐块**的——
+ * 「为空时隐藏」下同一字段在 A 块消失、在 B 块照常显示。
+ */
+function isHiddenByRule(def: PersistedFieldDefinition): boolean {
+  if (normalizeHideWhen(def.hide_when) === 'never') return false
+  const value = rawValueOf(def)
+  return isFieldHiddenByRule(
+    def.hide_when,
+    value !== null,
+    value ?? '',
+    decodeDefaultJson(def.default_value),
+  )
+}
 
 /** 当前值文本（选项型取 label，数组拼接，其余原样）；无值 → null（渲染占位）。 */
 function valueText(def: PersistedFieldDefinition): string | null {

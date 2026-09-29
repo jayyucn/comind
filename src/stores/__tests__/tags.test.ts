@@ -63,6 +63,7 @@ function fieldDef(
     version: 0,
     deleted_at: null,
     default_value: null,
+    hide_when: 'never',
     ...over,
   }
 }

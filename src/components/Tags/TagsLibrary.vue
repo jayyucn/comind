@@ -4,8 +4,9 @@
  * 行 = 标题胶囊 · 成员数 · 字段数 · 来源）+ 右栏详情（成员与来源页统计 / 字段模板四列表 /
  * 单父继承区 / 删除标签）。
  *
- * 字段模板是四列表（字段 | 类型 | 默认 | 来源）：前三列就地编辑（点一下变控件 / 类型下拉），
- * 第四列只读（自身 / 声明它的祖先标签）—— 没有「编辑」按钮与展开面板（ADR-0050 D14）。
+ * 字段模板是五列表（字段 | 类型 | 默认 | 来源 | 隐藏）：前三列就地编辑（点一下变控件 / 类型下拉），
+ * 第四列只读（自身 / 声明它的祖先标签），第五列「隐藏」为下拉（ADR-0050 D18，定义级共享）——
+ * 没有「编辑」按钮与展开面板（ADR-0050 D14）。
  *
  * 边界与归属：
  * - 打标入口不在此页 —— 建实体 ≠ 打标，打标仍唯一走 content `#名`（ADR-0049 D6）。
@@ -30,6 +31,8 @@ import type {
   UpdateFieldDefinitionParams,
 } from '../../types/tag-persisted'
 import { isTagColorToken, tagDotStyle } from '../../utils/tag-color'
+import { FIELD_HIDE_LABELS, FIELD_HIDE_OPTIONS, normalizeHideWhen } from '../../utils/field-hide'
+import type { FieldHideValue } from '../../utils/field-hide'
 import BasePopover from '../common/BasePopover.vue'
 import PageTitle from '../common/PageTitle.vue'
 import ConfirmDialog from '../ConfirmDialog.vue'
@@ -338,10 +341,10 @@ async function onRemoveField(fieldDefinitionId: string) {
   await tagsStore.removeFieldFromTag(selectedTag.value.id, fieldDefinitionId)
 }
 
-// ── 字段行：四列就地编辑（ADR-0050 D14） ───────────────────────
+// ── 字段行：五列就地编辑（ADR-0050 D14 + D15） ─────────────────
 //
-// 表头四列（字段 | 类型 | 默认 | 来源）里前三列都可就地改：字段名 / 默认是「点一下变控件」，
-// 类型是下拉。同一时刻至多一个单元格处于编辑态；继承字段的定义归祖先 → 整行只读。
+// 表头五列（字段 | 类型 | 默认 | 来源 | 隐藏）里前三列都可就地改：字段名 / 默认是「点一下变控件」，
+// 类型与隐藏是下拉。同一时刻至多一个单元格处于编辑态；继承字段的定义归祖先 → 整行只读。
 
 /** 就地编辑态：至多一个 (字段, 单元格)。 */
 const editingFieldId = ref<string | null>(null)
@@ -470,6 +473,22 @@ async function onChangeType(def: PersistedFieldDefinition, next: string, anchor?
 /** 「默认」列是否走枚举选项面板（选项就长在这个下拉里，含增 / 删 / 改）。 */
 function isEnumRow(row: FieldRow): boolean {
   return canEditField(row.origin) && typeValueOf(row.def) === 'select'
+}
+
+// ── 隐藏列（ADR-0050 D18）：下拉就地切换，定义级全局共享 ────────
+
+/** 行的隐藏规则取值（历史脏值归一为 never，下拉不会因此显示空白）。 */
+function hideValueOf(def: PersistedFieldDefinition): string {
+  return normalizeHideWhen(def.hide_when)
+}
+
+/**
+ * 隐藏规则落库：与取值相同不写（原生 select 的 change 只在值变化时触发，
+ * 断言是防程序化 setValue 的重复写入）。定义级共享 → 改的是定义本身。
+ */
+async function onChangeHide(def: PersistedFieldDefinition, next: string) {
+  if (normalizeHideWhen(def.hide_when) === next) return
+  await tagsStore.updateFieldDefinition({ id: def.id, hide_when: next })
 }
 
 // ── 枚举选项面板（挂在「默认」列，BasePopover） ──────────────────
@@ -898,13 +917,14 @@ async function submitAddField() {
             字段模板
           </h3>
           <div class="tag-fields">
-            <!-- 表头：字段 | 类型 | 默认 | 来源（+ 末尾操作列） -->
+            <!-- 表头：字段 | 类型 | 默认 | 来源 | 隐藏（+ 末尾操作列） -->
             <div class="tag-field-row tag-field-row--head">
               <div class="tag-field-line">
                 <span class="tag-field-cell">字段</span>
                 <span class="tag-field-cell">类型</span>
                 <span class="tag-field-cell">默认</span>
                 <span class="tag-field-cell">来源</span>
+                <span class="tag-field-cell">隐藏</span>
                 <span class="tag-field-cell" />
               </div>
             </div>
@@ -1003,6 +1023,27 @@ async function submitAddField() {
                     >{{ row.origin?.title ? originText(row.origin.title) : '—' }}</span>
                   </template>
                 </span>
+
+                <!-- 隐藏（ADR-0050 D18）：下拉就地切换；继承 / 系统字段只显示规则名 -->
+                <select
+                  v-if="canEditField(row.origin)"
+                  class="tag-field-hide-select"
+                  :value="hideValueOf(row.def)"
+                  :aria-label="`隐藏规则：${row.def.title}`"
+                  @change="onChangeHide(row.def, ($event.target as HTMLSelectElement).value)"
+                >
+                  <option
+                    v-for="opt in FIELD_HIDE_OPTIONS"
+                    :key="opt.value"
+                    :value="opt.value"
+                  >
+                    {{ opt.label }}
+                  </option>
+                </select>
+                <span
+                  v-else
+                  class="tag-field-hide"
+                >{{ FIELD_HIDE_LABELS[hideValueOf(row.def) as FieldHideValue] }}</span>
 
                 <button
                   v-if="canEditField(row.origin)"
@@ -1718,10 +1759,11 @@ async function submitAddField() {
 
 .tag-field-line {
   display: grid;
-  // 字段列自适应 + 类型列收紧到「刚好装下一个类型名」+ 默认/来源吃余量 + 操作列定宽。
+  // 字段列自适应 + 类型列收紧到「刚好装下一个类型名」+ 默认/来源吃余量 + 隐藏列 + 操作列定宽。
   // 类型列宽是唯一的手调位：下拉框 width:100% 跟着它走，改列宽即可，不要两处都写死。
   // 50px = 「枚举」等两字类型 + 原生下拉箭头刚好装下（历史遗留的四字类型会略裁，罕见）。
-  grid-template-columns: minmax(0, 1.2fr) 50px minmax(0, 1fr) minmax(0, 0.9fr) 20px;
+  // 隐藏列取值最长四字（「为默认值时」）→ 与来源列同吃余量。
+  grid-template-columns: minmax(0, 1.1fr) 50px minmax(0, 0.9fr) minmax(0, 0.8fr) minmax(0, 0.8fr) 20px;
   column-gap: var(--space-2);
   align-items: center;
   min-height: 26px;
@@ -1794,6 +1836,29 @@ async function submitAddField() {
 
 /* 只读行没有下拉框 —— 与上面的 select 同列同对齐（居中），否则两态左边缘错开 */
 .tag-field-type {
+  overflow: hidden;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  text-align: center;
+  text-overflow: ellipsis;
+}
+
+/* ── 列：隐藏（下拉就地切换，ADR-0050 D18）—— 窄列，文字居中 ──
+   与类型下拉同形态：width 吃满列，列宽在 .tag-field-line 手调。 */
+.tag-field-hide-select {
+  width: 100%;
+  min-width: 0;
+  text-align: center;
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+  background: var(--bg-base2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  padding: 1px 1px;
+}
+
+/* 只读行（继承 / 系统字段）：与上面的 select 同列同对齐（居中） */
+.tag-field-hide {
   overflow: hidden;
   color: var(--text-secondary);
   white-space: nowrap;
