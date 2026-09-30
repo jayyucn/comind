@@ -79,6 +79,11 @@ pub trait FieldDefinitionRepository {
     /// 含软删行读取（撤销路径专用）。
     fn get_by_id_including_deleted(&self, id: &str) -> Result<FieldDefinition, Box<dyn Error>>;
     fn undelete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
+    /// 被软删的预设字段定义（is_preset=1 且 deleted_at 非空）—— 恢复按钮可见性用。
+    fn get_deleted_presets(&self) -> Result<Vec<FieldDefinition>, Box<dyn Error>>;
+    /// 批量复活被软删的预设（清 deleted_at）；返回被复活 id 列表（sync 登记用）。
+    /// 只动 is_preset=1 且已软删的行，绝不覆盖活跃编辑。
+    fn restore_presets(&mut self) -> Result<Vec<String>, Box<dyn Error>>;
 }
 
 pub trait FieldValueRepository {

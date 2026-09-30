@@ -199,9 +199,9 @@ impl SqlJsAdapter {
         Self::exec(db, "CREATE TABLE IF NOT EXISTS page_snapshots (page_id TEXT PRIMARY KEY, date TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, content_json TEXT NOT NULL, created_at INTEGER NOT NULL);")?;
 
         // ADR-0049 D6：Tag 统一字段模型 —— 三张新表（与 sqlite.rs init_schema 逐列一致）。
-        Self::exec(db, "CREATE TABLE IF NOT EXISTS Tag (id TEXT PRIMARY KEY, title TEXT NOT NULL UNIQUE, field_ids TEXT NOT NULL DEFAULT '[]', extends TEXT NOT NULL DEFAULT '[]', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 0, deleted_at INTEGER, is_system INTEGER NOT NULL DEFAULT 0, parent_id TEXT, description TEXT NOT NULL DEFAULT '', color TEXT NOT NULL DEFAULT '');")?;
+        Self::exec(db, "CREATE TABLE IF NOT EXISTS Tag (id TEXT PRIMARY KEY, title TEXT NOT NULL UNIQUE, field_ids TEXT NOT NULL DEFAULT '[]', extends TEXT NOT NULL DEFAULT '[]', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 0, deleted_at INTEGER, is_system INTEGER NOT NULL DEFAULT 0, parent_id TEXT, description TEXT NOT NULL DEFAULT '', color TEXT NOT NULL DEFAULT '', is_preset INTEGER NOT NULL DEFAULT 0);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_tag_title ON Tag(title);")?;
-        Self::exec(db, "CREATE TABLE IF NOT EXISTS FieldDefinition (id TEXT PRIMARY KEY, key TEXT NOT NULL UNIQUE, title TEXT NOT NULL, type TEXT NOT NULL, closed_values TEXT, is_system INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 0, deleted_at INTEGER, default_value TEXT, hide_when TEXT NOT NULL DEFAULT 'never');")?;
+        Self::exec(db, "CREATE TABLE IF NOT EXISTS FieldDefinition (id TEXT PRIMARY KEY, key TEXT NOT NULL UNIQUE, title TEXT NOT NULL, type TEXT NOT NULL, closed_values TEXT, is_system INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 0, deleted_at INTEGER, default_value TEXT, hide_when TEXT NOT NULL DEFAULT 'never', is_preset INTEGER NOT NULL DEFAULT 0);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_fielddef_key ON FieldDefinition(key);")?;
         Self::exec(db, "CREATE TABLE IF NOT EXISTS FieldValue (id TEXT PRIMARY KEY, block_id TEXT NOT NULL, field_definition_id TEXT NOT NULL, value_json TEXT NOT NULL, value_type TEXT NOT NULL, seq INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 0, deleted_at INTEGER);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_fieldvalue_block_id ON FieldValue(block_id);")?;
@@ -221,34 +221,54 @@ impl SqlJsAdapter {
         Self::seed_system_tags(db)?;
         Self::migrate_add_field_definition_default_value(db)?;
         Self::migrate_add_field_definition_hide_when(db)?;
+        Self::migrate_add_tag_is_preset(db)?;
+        Self::migrate_add_field_definition_is_preset(db)?;
 
         Ok(())
     }
 
     /// ADR-0049 D3/D6：seed 系统 12 字段进 FieldDefinition 表（固定 id，seed 行不可删）。
     /// 与 sqlite `seed_system_field_definitions` 逐行对称；幂等：按 `key` 存在性跳过。
+    /// INSERT 携带 default_value / hide_when（修复此前漏列导致 wasm 侧系统字段首插缺这两列）。
+    /// 已存在的 is_system 行回填 default_value / hide_when（配置拥有权安全；预设字段跳过，避免覆盖用户编辑）。
     fn seed_system_field_definitions(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
         for fd in system_field_definitions() {
             let existing = Self::query(db, "SELECT id FROM FieldDefinition WHERE key = ?1", &[&fd.key])?;
-            if existing.is_empty() {
-                let closed_values_json = serde_json::to_string(&fd.closed_values).unwrap_or_else(|_| "null".to_string());
-                let is_system: &str = if fd.is_system { "1" } else { "0" };
-                Self::run_with_params(
-                    db,
-                    "INSERT INTO FieldDefinition (id, key, title, type, closed_values, is_system, created_at, updated_at, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    &[
-                        &fd.id,
-                        &fd.key,
-                        &fd.title,
-                        &fd.r#type,
-                        &closed_values_json,
-                        is_system,
-                        &fd.created_at.to_string(),
-                        &fd.updated_at.to_string(),
-                        &fd.version.to_string(),
-                    ],
-                )?;
+            if !existing.is_empty() {
+                if fd.is_system {
+                    Self::run_with_params(
+                        db,
+                        "UPDATE FieldDefinition SET default_value = ?, hide_when = ? WHERE key = ?",
+                        &[
+                            &fd.default_value.as_deref().unwrap_or(""),
+                            &fd.hide_when,
+                            &fd.key,
+                        ],
+                    )?;
+                }
+                continue;
             }
+            let closed_values_json = serde_json::to_string(&fd.closed_values).unwrap_or_else(|_| "null".to_string());
+            let is_system: &str = if fd.is_system { "1" } else { "0" };
+            let is_preset: &str = if fd.is_preset { "1" } else { "0" };
+            Self::run_with_params(
+                db,
+                "INSERT INTO FieldDefinition (id, key, title, type, closed_values, is_system, is_preset, created_at, updated_at, version, default_value, hide_when) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                &[
+                    &fd.id,
+                    &fd.key,
+                    &fd.title,
+                    &fd.r#type,
+                    &closed_values_json,
+                    is_system,
+                    is_preset,
+                    &fd.created_at.to_string(),
+                    &fd.updated_at.to_string(),
+                    &fd.version.to_string(),
+                    &fd.default_value.as_deref().unwrap_or(""),
+                    &fd.hide_when,
+                ],
+            )?;
         }
         Ok(())
     }
@@ -337,38 +357,58 @@ impl SqlJsAdapter {
         Ok(())
     }
 
-    /// 与 sqlite `seed_system_tags` 逐行对称（grill 决策 #5）。幂等：按 `id` 存在性跳过。
+    /// 幂等：老库 Tag 表补 is_preset 列（系统标签三态模型，2026-09-30）。
+    /// 与 sqlite `migrate_add_tag_is_preset` 逐行对称。
+    fn migrate_add_tag_is_preset(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        let has_column = |table: &str, col: &str| -> bool {
+            let rows = Self::query(db, &format!("PRAGMA table_info('{}');", table), &[]).unwrap_or_default();
+            rows.iter().any(|r| r.values().any(|v| v == col))
+        };
+        if !has_column("Tag", "is_preset") {
+            Self::exec(db, "ALTER TABLE Tag ADD COLUMN is_preset INTEGER NOT NULL DEFAULT 0;")?;
+        }
+        Ok(())
+    }
+
+    /// 幂等：老库 FieldDefinition 表补 is_preset 列（系统标签三态模型，2026-09-30）。
+    /// 与 sqlite `migrate_add_field_definition_is_preset` 逐行对称。
+    fn migrate_add_field_definition_is_preset(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        let has_column = |table: &str, col: &str| -> bool {
+            let rows = Self::query(db, &format!("PRAGMA table_info('{}');", table), &[]).unwrap_or_default();
+            rows.iter().any(|r| r.values().any(|v| v == col))
+        };
+        if !has_column("FieldDefinition", "is_preset") {
+            Self::exec(db, "ALTER TABLE FieldDefinition ADD COLUMN is_preset INTEGER NOT NULL DEFAULT 0;")?;
+        }
+        Ok(())
+    }
+
+    /// 与 sqlite `seed_system_tags` 逐行对称（grill 决策 #5）。幂等：按 `id` 存在性跳过插入；
+    /// 已存在的行回填 description / color（身份两要素为配置所有，系统标签只读）。
+    /// title 不回填（UNIQUE 约束可能被同名用户标签挡住）。
+    /// db id/title 与标签→字段分组均由 systemFieldSeed.json 派生（`system_tag_seeds()`）。
     fn seed_system_tags(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
-        let key_to_id: std::collections::HashMap<String, String> = system_field_definitions()
-            .into_iter()
-            .map(|fd| (fd.key, fd.id))
-            .collect();
-        let system_tags: &[(&str, &str, &[&str])] = &[
-            ("sys-tag-system-task", "系统任务", &["status", "priority", "project", "area"]),
-            (
-                "sys-tag-system-book-note",
-                "系统书笔记",
-                &["book", "part", "chapter", "cfi", "quote", "sourceBlockId", "sourcePageId", "language"],
-            ),
-        ];
-        for (id, title, field_keys) in system_tags {
-            let existing = Self::query(db, "SELECT id FROM Tag WHERE id = ?1", &[id])?;
+        for (id, title, field_ids, description, color) in system_tag_seeds() {
+            let existing = Self::query(db, "SELECT id FROM Tag WHERE id = ?1", &[id.as_str()])?;
             if !existing.is_empty() {
+                Self::run_with_params(
+                    db,
+                    "UPDATE Tag SET description = ?, color = ? WHERE id = ?",
+                    &[&description, &color, &id],
+                )?;
                 continue;
             }
-            let field_ids: Vec<String> = field_keys
-                .iter()
-                .filter_map(|k| key_to_id.get(*k).cloned())
-                .collect();
-            let tag = Tag::seed(id, title, field_ids);
+            let tag = Tag::seed(&id, &title, field_ids, &description, &color);
             let field_ids_json = serde_json::to_string(&tag.field_ids).unwrap_or_else(|_| "[]".to_string());
             // `extends` 列原地保留但不再读写（ADR-0050 D10：继承改单父 `parent_id` + 读时解析）
+            // 列名显式列出（sql.js 无动态 COLS 拼接），须与 Tag 落库列同步——含 identity 三要素 description / color。
             Self::run_with_params(
                 db,
-                "INSERT INTO Tag (id, title, field_ids, created_at, updated_at, version, deleted_at, is_system, parent_id) VALUES (?, ?, ?, ?, ?, ?, NULL, 1, NULL)",
+                "INSERT INTO Tag (id, title, field_ids, created_at, updated_at, version, deleted_at, is_system, parent_id, description, color) VALUES (?, ?, ?, ?, ?, ?, NULL, 1, NULL, ?, ?)",
                 &[
                     &tag.id, &tag.title, &field_ids_json,
                     &tag.created_at.to_string(), &tag.updated_at.to_string(), &tag.version.to_string(),
+                    &tag.description, &tag.color,
                 ],
             )?;
         }
@@ -1164,6 +1204,45 @@ impl FieldDefinitionRepository for SqlJsAdapter {
         let now = chrono::Utc::now().timestamp_millis();
         Self::run_with_params(&self.db, "UPDATE FieldDefinition SET deleted_at = NULL, version = version + 1, updated_at = ? WHERE id = ?", &[&now.to_string(), id])?;
         Ok(())
+    }
+
+    fn get_deleted_presets(&self) -> Result<Vec<FieldDefinition>, Box<dyn std::error::Error>> {
+        let result = Self::query(
+            &self.db,
+            &format!(
+                "SELECT {} FROM FieldDefinition WHERE is_preset = 1 AND deleted_at IS NOT NULL",
+                field_definition_select_cols()
+            ),
+            &[],
+        )?;
+        Ok(result.into_iter().map(|r| row_to_field_definition_js(&r)).collect())
+    }
+
+    fn restore_presets(&mut self) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        let ids_result = Self::query(
+            &self.db,
+            "SELECT id FROM FieldDefinition WHERE is_preset = 1 AND deleted_at IS NOT NULL",
+            &[],
+        )?;
+        let ids: Vec<String> = ids_result
+            .into_iter()
+            .filter_map(|row| row.get("id").cloned())
+            .collect();
+        if !ids.is_empty() {
+            let now_str = chrono::Utc::now().timestamp_millis().to_string();
+            let placeholders: Vec<&str> = ids.iter().map(|_| "?").collect();
+            let sql = format!(
+                "UPDATE FieldDefinition SET deleted_at = NULL, version = version + 1, updated_at = ? \
+                 WHERE id IN ({})",
+                placeholders.join(", ")
+            );
+            let mut params: Vec<&str> = vec![&now_str];
+            for id in &ids {
+                params.push(id);
+            }
+            Self::run_with_params(&self.db, &sql, &params)?;
+        }
+        Ok(ids)
     }
 }
 

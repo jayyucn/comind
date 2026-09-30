@@ -514,7 +514,7 @@ mod tests {
         // content 同时含用户 tag 与系统 tag：联动在 create 即派生
         let block = BlockService::create(
             &mut adapter, &page.id, None,
-            "note #rust and #系统任务 end",
+            "note #rust and #任务 end",
             "{}", "bullet", None,
         true)?;
 
@@ -527,23 +527,25 @@ mod tests {
             .collect();
         assert_eq!(tag_segs.len(), 2, "should have 2 tag segments, got {:?}", segments);
 
-        // 系统标记：#系统任务 → is_system = true；#rust → false
+        // 系统标记：#任务 → is_system = true；#rust → false
         let mut saw_system = false;
         let mut saw_user = false;
         for seg in &tag_segs {
             if let RenderSegment::Tag { title, tag_id, is_system, color, start, end } = seg {
-                if title == "系统任务" {
+                if title == "任务" {
                     assert!(*is_system);
                     assert_eq!(tag_id, "sys-tag-system-task");
+                    // 系统 tag 由 seed 配置带色（ADR-0050 D11：存 token 名 `--tag-color-N`，非 hex）
+                    assert_eq!(color, "--tag-color-4", "system tag color comes from seed config");
                     saw_system = true;
                 } else {
                     assert_eq!(title, "rust");
                     assert!(!(*is_system));
                     assert!(!tag_id.is_empty());
+                    // 用户 tag 未设色 → 空串（前端据此落回 CSS 默认色；ADR-0050 D11）
+                    assert_eq!(color, "", "user tag without color should serialize as empty string");
                     saw_user = true;
                 }
-                // 两者都没设过颜色 → 段上应是空串（前端据此落回 CSS 默认色；ADR-0050 D11）
-                assert_eq!(color, "", "unset color should serialize as empty string");
                 // chip 覆盖 `#title` 全段（含 # 号）
                 assert!(end > start);
             }

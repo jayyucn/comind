@@ -13,6 +13,8 @@ const { mockInitCoreClient, mockClient } = vi.hoisted(() => {
   const mockClient = {
     getTagTree: vi.fn(),
     getFieldDefinitions: vi.fn(),
+    getDeletedPresetFieldDefinitions: vi.fn().mockResolvedValue([]),
+    restoreBuiltinPresets: vi.fn().mockResolvedValue({ restored: 0 }),
     getProperties: vi.fn(),
   }
   return { mockInitCoreClient: vi.fn(), mockClient }
@@ -60,10 +62,10 @@ function fieldDef(
   }
 }
 
-// 系统任务：自身字段 [状态]；开发任务：自身 [工时]，继承父 项目 的 [负责人]
+// 任务：自身字段 [状态]；开发任务：自身 [工时]，继承父 项目 的 [负责人]
 const SYSTEM_TASK = treeEntry({
   id: 'sys-tag-system-task',
-  title: '系统任务',
+  title: '任务',
   field_ids: ['f-status'],
   is_system: true,
   effective_field_ids: ['f-status'],
@@ -157,7 +159,7 @@ describe('BlockTagFields（块级 Tag 字段区）', () => {
   })
 
   it('已在内联槽渲染的字段（status / between-bullet-content）不在下方字段区重复列文字', async () => {
-    // 块挂 系统任务 → 有效字段 [status]；status 由 PropertyInline 以图标呈现在 bullet 与内容之间，
+    // 块挂 任务 → 有效字段 [status]；status 由 PropertyInline 以图标呈现在 bullet 与内容之间，
     // 下方字段区必须去重排除，否则出现「状态: 值」冗余文本。
     const wrapper = await mountFields('b1', ['sys-tag-system-task'])
     // 标签已挂 → 容器仍在

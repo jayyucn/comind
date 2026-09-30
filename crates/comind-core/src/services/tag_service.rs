@@ -412,15 +412,15 @@ mod tests {
         assert_eq!(ids1, ids2);
 
         // ③ 系统标题精确命中系统 seed 行（不新建）
-        let ids3 = TagService::resolve_tag_ids_for_content(&mut storage, "#系统任务", true).unwrap();
+        let ids3 = TagService::resolve_tag_ids_for_content(&mut storage, "#任务", true).unwrap();
         assert_eq!(ids3.len(), 1);
         let sys = TagRepository::get_by_id(storage.tags(), &ids3[0]).unwrap();
         assert_eq!(sys.id, "sys-tag-system-task");
         assert!(sys.is_system);
-        assert_eq!(sys.field_ids.len(), 4);
+        assert_eq!(sys.field_ids.len(), 2);
 
         // ④ 未知系统样名 #不存在系统tag 不会误命中（精确匹配）
-        let ids4 = TagService::resolve_tag_ids_for_content(&mut storage, "#系统任", true).unwrap();
+        let ids4 = TagService::resolve_tag_ids_for_content(&mut storage, "#任", true).unwrap();
         assert_eq!(ids4.len(), 1);
         assert_ne!(ids4[0], "sys-tag-system-task");
     }
@@ -724,7 +724,7 @@ mod tests {
         let dev = make_tag(&mut storage, "dev", &["f9"], Some("sys-tag-system-task"));
         let fields = TagService::effective_field_ids(&mut storage, &dev).unwrap();
         assert_eq!(fields[0], "f9");
-        assert_eq!(fields.len(), 5); // 自身 1 + 系统任务 4
+        assert_eq!(fields.len(), 3); // 自身 1 + 系统任务 2（project/area 已取消）
     }
 
     #[test]

@@ -4,7 +4,7 @@
  * 行为约定：
  * 1. 保存成功后，Rust 派生的 block.tags 必须回写本地 store，否则 BlockTagFields
  *    （读 block.tags）在输入 #tag 后不刷新。
- * 2. 块引用系统任务 tag 且尚无 status 属性 → 自动 ensureTodo（status 任务图标自动展示）。
+ * 2. 块引用任务 tag 且尚无 status 属性 → 自动 ensureTodo（status 任务图标自动展示）。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
@@ -41,7 +41,7 @@ vi.mock('../stores/property', () => ({
 vi.mock('../stores/tags', () => {
   const allTags = [{
     id: 'sys-tag-system-task',
-    title: '系统任务',
+    title: '任务',
     field_ids: ['fd-status'],
     parent_id: null,
     description: '',
@@ -69,7 +69,7 @@ vi.mock('../stores/tags', () => {
   return {
     useTagsStore: vi.fn(() => ({
       allTags,
-      // 有效字段：含 key==='status' → 命中系统任务 tag 识别
+      // 有效字段：含 key==='status' → 命中任务 tag 识别
       effectiveFieldDefinitions: () => fieldDefs,
     })),
   }
@@ -116,7 +116,7 @@ describe('_doSave — 回写 block.tags', () => {
     expect(blockStore.getBlock(id)?.tags).toEqual([SYSTEM_TASK_ID])
   })
 
-  it('引用系统任务 tag 且无 status → 自动 ensureTodo（status 图标自动展示）', async () => {
+  it('引用任务 tag 且无 status → 自动 ensureTodo（status 图标自动展示）', async () => {
     const blockStore = useBlockStore()
     const id = await seed('旧内容')
 

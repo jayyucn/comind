@@ -22,6 +22,8 @@ const { mockInitCoreClient, mockClient, navigateToTagLibraryMock } = vi.hoisted(
   mockClient: {
     getTagTree: vi.fn(),
     getFieldDefinitions: vi.fn(),
+    getDeletedPresetFieldDefinitions: vi.fn().mockResolvedValue([]),
+    restoreBuiltinPresets: vi.fn().mockResolvedValue({ restored: 0 }),
     getBlockCards: vi.fn(),
     getAllPages: vi.fn(),
     getScreenViews: vi.fn(),
@@ -138,7 +140,7 @@ function screenViews(entity: string): ScreenViewRust[] {
 
 const SYSTEM_TASK = treeEntry({
   id: 'sys-tag-system-task',
-  title: '系统任务',
+  title: '任务',
   field_ids: ['f-status'],
   is_system: true,
   effective_field_ids: ['f-status'],

@@ -29,6 +29,8 @@ pub const TAG_COLS: &[&str] = &[
     // 末尾追加（ADR-0050 D11：标签身份三要素之二 / 之三；空串 = 未填写 / 无色）
     "description",
     "color",
+    // 末尾追加（ADR-0049 系统标签三态模型，2026-09-30：预设标记）
+    "is_preset",
 ];
 
 pub fn tag_select_cols() -> String {
@@ -61,6 +63,7 @@ pub fn row_to_tag_native(row: &rusqlite::Row) -> Result<Tag, rusqlite::Error> {
         parent_id: row.get::<_, Option<String>>(8)?,
         description: row.get(9)?,
         color: row.get(10)?,
+        is_preset: row.get::<_, i64>(11)? != 0,
     })
 }
 
@@ -83,6 +86,7 @@ pub fn row_to_tag_js(row: &HashMap<String, String>) -> Tag {
         version: row.get("version").map(|s| s.parse::<i64>().unwrap_or(0)).unwrap_or(0),
         deleted_at: row.get("deleted_at").map(|s| s.parse::<i64>().ok()).unwrap_or(None),
         is_system: row.get("is_system").map(|s| s == "1").unwrap_or(false),
+        is_preset: row.get("is_preset").map(|s| s == "1").unwrap_or(false),
     }
 }
 
@@ -160,6 +164,7 @@ pub fn tag_create<E: Executor>(exec: &E, t: &Tag) -> Result<(), Box<dyn Error>> 
     // 内联 JSON 序列化：避免返回引用本地序列化变量的 Vec<&dyn ToSql>（悬垂引用）。
     let field_ids_json = vec_to_json(&t.field_ids);
     let is_system_i64: i64 = if t.is_system { 1 } else { 0 };
+    let is_preset_i64: i64 = if t.is_preset { 1 } else { 0 };
     // 参数顺序必须与 TAG_COLS 严格一致（原生按位置绑定）。
     let params: Vec<&dyn ToSql> = vec![
         &t.id,
@@ -173,6 +178,7 @@ pub fn tag_create<E: Executor>(exec: &E, t: &Tag) -> Result<(), Box<dyn Error>> 
         &t.parent_id,
         &t.description,
         &t.color,
+        &is_preset_i64,
     ];
     exec.execute(&tag_insert_sql(), &params)?;
     Ok(())
@@ -290,8 +296,8 @@ mod tests {
                 "parent_id"
             ]
         );
-        // ADR-0050 D11：标签身份三要素之二 / 之三
-        assert_eq!(&TAG_COLS[9..], &["description", "color"]);
+        // ADR-0050 D11：标签身份三要素之二 / 之三 + 三态模型 is_preset
+        assert_eq!(&TAG_COLS[9..], &["description", "color", "is_preset"]);
         assert!(!TAG_COLS.contains(&"extends"), "extends 列已退役（ADR-0050 D10）");
     }
 }

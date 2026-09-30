@@ -14,7 +14,7 @@ use crate::storage::entity::link::{link_get_by_id, link_get_by_source_block_id, 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::tag::{tag_create, tag_delete, tag_get_all, tag_get_by_id, tag_get_by_title, tag_get_by_title_including_deleted, tag_undelete, tag_update};
 #[cfg(not(target_arch = "wasm32"))]
-use crate::storage::entity::field_definition::{field_definition_create, field_definition_delete, field_definition_get_all, field_definition_get_by_id, field_definition_get_by_id_including_deleted, field_definition_get_by_key, field_definition_soft_delete_at, field_definition_undelete, field_definition_update};
+use crate::storage::entity::field_definition::{field_definition_create, field_definition_delete, field_definition_get_all, field_definition_get_by_id, field_definition_get_by_id_including_deleted, field_definition_get_by_key, field_definition_get_deleted_presets, field_definition_restore_presets, field_definition_soft_delete_at, field_definition_undelete, field_definition_update};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::field_value::{field_value_create, field_value_delete, field_value_delete_by_block_id, field_value_get_by_block_id, field_value_get_all, field_value_get_by_block_ids, field_value_get_by_field_definition_id, field_value_get_by_id_including_deleted, field_value_undelete, field_value_get_by_id, field_value_restore_by_field_definition, field_value_soft_delete_by_field_definition, field_value_update};
 use crate::storage::entity::relationship_type::{relationship_type_create, relationship_type_delete, relationship_type_get_all, relationship_type_get_by_id, relationship_type_get_by_type, relationship_type_update};
@@ -282,7 +282,8 @@ impl SQLiteAdapter {
                 is_system       INTEGER NOT NULL DEFAULT 0,
                 parent_id       TEXT,
                 description     TEXT NOT NULL DEFAULT '',
-                color           TEXT NOT NULL DEFAULT ''
+                color           TEXT NOT NULL DEFAULT '',
+                is_preset       INTEGER NOT NULL DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS idx_tag_title ON Tag(title);
 
@@ -299,7 +300,8 @@ impl SQLiteAdapter {
                 version         INTEGER NOT NULL DEFAULT 0,
                 deleted_at      INTEGER,
                 default_value   TEXT,
-                hide_when       TEXT NOT NULL DEFAULT 'never'
+                hide_when       TEXT NOT NULL DEFAULT 'never',
+                is_preset       INTEGER NOT NULL DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS idx_fielddef_key ON FieldDefinition(key);
 
@@ -342,15 +344,20 @@ impl SQLiteAdapter {
         Self::seed_system_field_definitions(conn)?;
         Self::migrate_add_block_tags_column(conn)?;
         Self::migrate_add_tag_is_system(conn)?;
+        // 迁移先行于 seed：seed 的身份回填（description / color）要求两列已存在。
+        // 原先 migrate_add_tag_identity 排在 seed 之后，靠「存在即跳过、不碰身份列」侥幸存活，
+        // 回填引入后即炸（sqljs 侧本就是 migrate 在前，此处对齐）。
+        Self::migrate_add_tag_identity(conn)?;
+        Self::migrate_add_tag_parent_id(conn)?;
         Self::seed_system_tags(conn)?;
         Self::migrate_add_field_definition_default_value(conn)?;
         Self::migrate_add_field_definition_hide_when(conn)?;
+        Self::migrate_add_tag_is_preset(conn)?;
+        Self::migrate_add_field_definition_is_preset(conn)?;
         Self::migrate_rename_task_view_to_screen_view(conn)?;
         Self::migrate_add_screen_view_config(conn)?;
         Self::migrate_add_screen_view_entity(conn)?;
         Self::migrate_add_screen_view_parent_id(conn)?;
-        Self::migrate_add_tag_parent_id(conn)?;
-        Self::migrate_add_tag_identity(conn)?;
 
         Ok(())
     }
@@ -629,6 +636,38 @@ impl SQLiteAdapter {
         Ok(())
     }
 
+    fn migrate_add_tag_is_preset(conn: &rusqlite::Connection) -> Result<(), Box<dyn Error>> {
+        // 系统标签三态模型（2026-09-30）：老库 Tag 表补 is_preset 列。幂等。
+        let has_column: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('Tag') WHERE name = 'is_preset'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|c| c > 0)
+            .unwrap_or(false);
+        if !has_column {
+            conn.execute("ALTER TABLE Tag ADD COLUMN is_preset INTEGER NOT NULL DEFAULT 0", [])?;
+        }
+        Ok(())
+    }
+
+    fn migrate_add_field_definition_is_preset(conn: &rusqlite::Connection) -> Result<(), Box<dyn Error>> {
+        // 系统标签三态模型（2026-09-30）：老库 FieldDefinition 表补 is_preset 列。幂等。
+        let has_column: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('FieldDefinition') WHERE name = 'is_preset'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|c| c > 0)
+            .unwrap_or(false);
+        if !has_column {
+            conn.execute("ALTER TABLE FieldDefinition ADD COLUMN is_preset INTEGER NOT NULL DEFAULT 0", [])?;
+        }
+        Ok(())
+    }
+
 pub fn seed_notification_config(conn: &rusqlite::Connection) -> Result<(), Box<dyn Error>> {
         conn.execute(
             "INSERT INTO notification_config (id, enabled, schedule_enabled, deadline_enabled, overdue_enabled, quiet_hours_start, quiet_hours_end, web_browser_notifications_enabled)
@@ -651,46 +690,46 @@ pub fn seed_notification_config(conn: &rusqlite::Connection) -> Result<(), Box<d
                 )
                 .map(|c| c > 0)
                 .unwrap_or(false);
-            if !exists {
-                field_definition_create(conn, &fd)?;
+            if exists {
+                // 系统字段只读（reject_system_tag / canEditField 拒写）→ 配置拥有权安全，回填
+                // default_value / hide_when，让 JSON 改动对存量库生效（与 tag description/color 回填同构）。
+                // 预设字段用户可改，跳过不覆盖。
+                if fd.is_system {
+                    conn.execute(
+                        "UPDATE FieldDefinition SET default_value = ?2, hide_when = ?3 WHERE key = ?1",
+                        rusqlite::params![&fd.key, &fd.default_value, &fd.hide_when],
+                    )?;
+                }
+                continue;
             }
+            field_definition_create(conn, &fd)?;
         }
         Ok(())
     }
 
     /// grill 决策 #5：系统 tag 落库（固定 id、is_system=1、field_ids 指向系统字段）。
-    /// 幂等：按 id 存在性跳过。title 必须与 TS `SYSTEM_TAGS` 对齐（#foo 精确匹配靠它）。
+    /// 幂等：按 id 存在性跳过插入；已存在的行回填 description / color —— 身份两要素为
+    /// 配置所有（系统标签只读、`reject_system_tag` 拒写），JSON 改动对存量库同样生效。
+    /// title 不回填（UNIQUE 约束可能被同名用户标签挡住）；db id/title 与标签→字段分组均由
+    /// systemFieldSeed.json 派生（`system_tag_seeds()`），不再在 Rust 内硬编码分组字面量。
     pub fn seed_system_tags(conn: &rusqlite::Connection) -> Result<(), Box<dyn Error>> {
-        // 系统 tag 的 field_ids 从已 seed 的系统字段（固定 uuid）按 key 解析，不二次硬编码 uuid。
-        let key_to_id: std::collections::HashMap<String, String> = system_field_definitions()
-            .into_iter()
-            .map(|fd| (fd.key, fd.id))
-            .collect();
-        let system_tags: &[(&str, &str, &[&str])] = &[
-            ("sys-tag-system-task", "系统任务", &["status", "priority", "project", "area"]),
-            (
-                "sys-tag-system-book-note",
-                "系统书笔记",
-                &["book", "part", "chapter", "cfi", "quote", "sourceBlockId", "sourcePageId", "language"],
-            ),
-        ];
-        for (id, title, field_keys) in system_tags {
+        for (id, title, field_ids, description, color) in system_tag_seeds() {
             let exists: bool = conn
                 .query_row(
                     "SELECT COUNT(*) FROM Tag WHERE id = ?1",
-                    [id],
+                    [&id],
                     |row| row.get::<_, i64>(0),
                 )
                 .map(|c| c > 0)
                 .unwrap_or(false);
             if exists {
+                conn.execute(
+                    "UPDATE Tag SET description = ?2, color = ?3 WHERE id = ?1",
+                    rusqlite::params![&id, &description, &color],
+                )?;
                 continue;
             }
-            let field_ids: Vec<String> = field_keys
-                .iter()
-                .filter_map(|k| key_to_id.get(*k).cloned())
-                .collect();
-            let tag = Tag::seed(id, title, field_ids);
+            let tag = Tag::seed(&id, &title, field_ids, &description, &color);
             tag_create(conn, &tag)?;
         }
         Ok(())
@@ -1062,6 +1101,14 @@ impl FieldDefinitionRepository for SQLiteAdapter {
 
     fn undelete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
         field_definition_undelete(&self.conn, id)
+    }
+
+    fn get_deleted_presets(&self) -> Result<Vec<FieldDefinition>, Box<dyn Error>> {
+        field_definition_get_deleted_presets(&self.conn)
+    }
+
+    fn restore_presets(&mut self) -> Result<Vec<String>, Box<dyn Error>> {
+        field_definition_restore_presets(&self.conn)
     }
 }
 
@@ -1664,6 +1711,14 @@ impl<'a> FieldDefinitionRepository for TxContext<'a> {
 
     fn undelete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
         field_definition_undelete(&self.conn, id)
+    }
+
+    fn get_deleted_presets(&self) -> Result<Vec<FieldDefinition>, Box<dyn Error>> {
+        field_definition_get_deleted_presets(&self.conn)
+    }
+
+    fn restore_presets(&mut self) -> Result<Vec<String>, Box<dyn Error>> {
+        field_definition_restore_presets(&self.conn)
     }
 }
 

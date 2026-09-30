@@ -12,7 +12,7 @@
  */
 import { Ban } from 'lucide-vue-next';
 import { computed, ref } from 'vue';
-import { TAG_COLORS, isTagColorToken, tagDotStyle } from '../../utils/tag-color';
+import { TAG_COLORS, isTagColorToken, tagDotFillStyle } from '../../utils/tag-color';
 import BasePopover from '../common/BasePopover.vue';
 
 const props = defineProps<{
@@ -35,8 +35,8 @@ const triggerEl = ref<HTMLElement | null>(null)
 /** 存储值可能是空串、也可能是未白名单的历史值 → 统一收敛成「无色」。 */
 const selected = computed(() => (isTagColorToken(props.value) ? props.value : null))
 
-/** 色点内联样式（无色时不带背景，由 CSS 给空心环）。 */
-const dotStyle = computed(() => tagDotStyle(selected.value))
+/** 色点内联样式：实心填充（无色时不带背景，由 CSS 给空心环）。 */
+const dotStyle = computed(() => tagDotFillStyle(selected.value))
 
 function choose(token: string | null) {
   open.value = false

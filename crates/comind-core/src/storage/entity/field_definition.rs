@@ -17,6 +17,7 @@ use crate::storage::executor::Executor;
 pub const FIELD_DEFINITION_COLS: &[&str] = &[
     "id", "key", "title", "type", "closed_values", "is_system",
     "created_at", "updated_at", "version", "deleted_at", "default_value", "hide_when",
+    "is_preset",
 ];
 
 pub fn field_definition_select_cols() -> String {
@@ -48,6 +49,7 @@ pub fn row_to_field_definition_native(row: &rusqlite::Row) -> Result<FieldDefini
         deleted_at: row.get(9)?,
         default_value: row.get(10)?,
         hide_when: crate::types::field_definition::normalize_hide_when(&row.get::<_, String>(11)?),
+        is_preset: row.get::<_, i64>(12)? != 0,
     })
 }
 
@@ -75,6 +77,7 @@ pub fn row_to_field_definition_js(row: &HashMap<String, String>) -> FieldDefinit
             .parse::<i64>()
             .unwrap_or(0)
             != 0,
+        is_preset: row.get("is_preset").map(|s| s == "1").unwrap_or(false),
         created_at: row.get("created_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
         updated_at: row.get("updated_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
         version: row.get("version").map(|s| s.parse::<i64>().unwrap_or(0)).unwrap_or(0),
@@ -143,6 +146,7 @@ pub fn field_definition_get_all<E: Executor>(exec: &E) -> Result<Vec<FieldDefini
 pub fn field_definition_create<E: Executor>(exec: &E, fd: &FieldDefinition) -> Result<(), Box<dyn Error>> {
     let closed_values_json = closed_values_to_sql(&fd.closed_values);
     let is_system_i64 = if fd.is_system { 1i64 } else { 0i64 };
+    let is_preset_i64 = if fd.is_preset { 1i64 } else { 0i64 };
     let params: Vec<&dyn ToSql> = vec![
         &fd.id,
         &fd.key,
@@ -156,6 +160,7 @@ pub fn field_definition_create<E: Executor>(exec: &E, fd: &FieldDefinition) -> R
         &fd.deleted_at,
         &fd.default_value,
         &fd.hide_when,
+        &is_preset_i64,
     ];
     exec.execute(&field_definition_insert_sql(), &params)?;
     Ok(())
@@ -238,6 +243,50 @@ pub fn field_definition_undelete<E: Executor>(exec: &E, id: &str) -> Result<(), 
         &params,
     )?;
     Ok(())
+}
+
+/// 取被软删的预设字段定义（is_preset != 0 且 deleted_at 非空）—— 供「恢复内置预设」按钮可见性判断。
+#[cfg(not(target_arch = "wasm32"))]
+pub fn field_definition_get_deleted_presets<E: Executor>(
+    exec: &E,
+) -> Result<Vec<FieldDefinition>, Box<dyn Error>> {
+    let sql = format!(
+        "SELECT {} FROM FieldDefinition WHERE is_preset != 0 AND deleted_at IS NOT NULL",
+        field_definition_select_cols()
+    );
+    let params: Vec<&dyn ToSql> = vec![];
+    exec.query_map(&sql, &params, |row| row_to_field_definition_native(row)).map_err(bx)
+}
+
+/// 批量复活被软删的预设字段定义：先精确取出将被复活的 id 列表（用于 sync 登记），
+/// 再按 id 清空 deleted_at。**只动 `is_preset != 0 且已软删` 的行，绝不触碰活跃行**，
+/// 因此不会覆盖任何活跃编辑（ADR-0049 三态模型：预设删后可恢复）。
+#[cfg(not(target_arch = "wasm32"))]
+pub fn field_definition_restore_presets<E: Executor>(
+    exec: &E,
+) -> Result<Vec<String>, Box<dyn Error>> {
+    let ids: Vec<String> = exec
+        .query_map(
+            "SELECT id FROM FieldDefinition WHERE is_preset != 0 AND deleted_at IS NOT NULL",
+            &[],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(bx)?;
+    if !ids.is_empty() {
+        let placeholders: Vec<&str> = ids.iter().map(|_| "?").collect();
+        let sql = format!(
+            "UPDATE FieldDefinition SET deleted_at = NULL, version = version + 1, updated_at = ? \
+             WHERE id IN ({})",
+            placeholders.join(", ")
+        );
+        let now = chrono::Utc::now().timestamp_millis();
+        let mut params: Vec<&dyn ToSql> = vec![&now];
+        for id in &ids {
+            params.push(id);
+        }
+        exec.execute(&sql, &params)?;
+    }
+    Ok(ids)
 }
 
 #[cfg(test)]

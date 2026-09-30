@@ -1,0 +1,136 @@
+{
+  "fields": [
+    {
+      "id": "80000000-0000-4000-8000-000000000001",
+      "key": "status",
+      "title": "状态",
+      "type": "string",
+      "isSystem": true,
+      "isPreset": false,
+      "closedValues": ["Todo", "Doing", "Done", "Canceled"],
+      "defaultValue": "Todo",
+      "hideWhen": "never"
+    },
+    {
+      "id": "80000000-0000-4000-8000-000000000002",
+      "key": "priority",
+      "title": "优先级",
+      "type": "string",
+      "isSystem": true,
+      "isPreset": false,
+      "closedValues": ["Low", "Medium", "High", "Urgent"],
+      "defaultValue": null,
+      "hideWhen": "when_not_empty"
+    },
+    {
+      "id": "80000000-0000-4000-8000-000000000005",
+      "key": "book",
+      "title": "书名",
+      "type": "string",
+      "isSystem": false,
+      "isPreset": true,
+      "defaultValue": null,
+      "hideWhen": "never"
+    },
+    {
+      "id": "80000000-0000-4000-8000-000000000006",
+      "key": "part",
+      "title": "部/卷",
+      "type": "string",
+      "isSystem": false,
+      "isPreset": true,
+      "defaultValue": null,
+      "hideWhen": "never"
+    },
+    {
+      "id": "80000000-0000-4000-8000-000000000007",
+      "key": "chapter",
+      "title": "章节",
+      "type": "string",
+      "isSystem": false,
+      "isPreset": true,
+      "defaultValue": null,
+      "hideWhen": "never"
+    },
+    {
+      "id": "80000000-0000-4000-8000-000000000008",
+      "key": "cfi",
+      "title": "原文锚点",
+      "type": "string",
+      "isSystem": false,
+      "isPreset": true,
+      "defaultValue": null,
+      "hideWhen": "never"
+    },
+    {
+      "id": "80000000-0000-4000-8000-000000000009",
+      "key": "quote",
+      "title": "原文",
+      "type": "string",
+      "isSystem": false,
+      "isPreset": true,
+      "defaultValue": null,
+      "hideWhen": "never"
+    },
+    {
+      "id": "80000000-0000-4000-8000-00000000000a",
+      "key": "sourceBlockId",
+      "title": "来源块 ID",
+      "type": "string",
+      "isSystem": false,
+      "isPreset": true,
+      "defaultValue": null,
+      "hideWhen": "never"
+    },
+    {
+      "id": "80000000-0000-4000-8000-00000000000b",
+      "key": "sourcePageId",
+      "title": "来源页面 ID",
+      "type": "string",
+      "isSystem": false,
+      "isPreset": true,
+      "defaultValue": null,
+      "hideWhen": "never"
+    },
+    {
+      "id": "80000000-0000-4000-8000-00000000000c",
+      "key": "language",
+      "title": "语言",
+      "type": "string",
+      "isSystem": false,
+      "isPreset": true,
+      "defaultValue": null,
+      "hideWhen": "never"
+    }
+  ],
+  "tags": [
+    {
+      "key": "system-task",
+      "title": "任务",
+      "isSystem": true,
+      "description": "系统任务",
+      "color": "--tag-color-4",
+      "fieldIds": [
+        "80000000-0000-4000-8000-000000000001",
+        "80000000-0000-4000-8000-000000000002"
+      ]
+    },
+    {
+      "key": "system-book-note",
+      "title": "书笔记",
+      "isSystem": true,
+      "description": "系统书笔记",
+      "color": "--tag-color-8",
+      "fieldIds": [
+        "80000000-0000-4000-8000-000000000005",
+        "80000000-0000-4000-8000-000000000006",
+        "80000000-0000-4000-8000-000000000007",
+        "80000000-0000-4000-8000-000000000008",
+        "80000000-0000-4000-8000-000000000009",
+        "80000000-0000-4000-8000-00000000000a",
+        "80000000-0000-4000-8000-00000000000b",
+        "80000000-0000-4000-8000-00000000000c"
+      ]
+    }
+  ]
+}

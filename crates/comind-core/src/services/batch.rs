@@ -703,6 +703,25 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
                 page_ids: Vec::new(),
             })
         }
+        ("field_definition", "get_deleted_presets") => {
+            // 恢复按钮可见性：被软删的预设字段定义列表（is_preset=1 且 deleted_at 非空）。
+            let defs = FieldDefinitionService::get_deleted_presets(storage)?;
+            Ok(OpEffect::plain(serde_json::to_value(defs)?))
+        }
+        ("field_definition", "restore_presets") => {
+            // 批量复活被软删的预设（ADR-0049 三态模型：预设删后可恢复）。
+            // 只复活 is_preset=1 且已软删的行，绝不覆盖活跃编辑；返回复活条数。
+            let restored = FieldDefinitionService::restore_presets(storage)?;
+            let sync = restored
+                .iter()
+                .map(|id| (SyncTable::FieldDefinition, id.clone()))
+                .collect();
+            Ok(OpEffect {
+                value: json!({ "restored": restored.len() }),
+                sync,
+                page_ids: Vec::new(),
+            })
+        }
 
         // ---- field_value ---- （ADR-0049 D9）
         ("field_value", "get") => {

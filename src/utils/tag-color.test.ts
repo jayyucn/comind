@@ -13,6 +13,7 @@ import {
   isTagColorToken,
   tagChipStyle,
   tagDotStyle,
+  tagDotFillStyle,
 } from './tag-color'
 
 // `import.meta.url` 经 vitest 变换后不是 file 协议（fileURLToPath 会抛错）→ 按仓库根解析。
@@ -56,8 +57,18 @@ describe('tag-color（标签配色单源）', () => {
     })
   })
 
-  it('tagDotStyle：合法色 → 实心色点', () => {
-    expect(tagDotStyle('--tag-color-7')).toEqual({ background: 'var(--tag-color-7)' })
+  it('tagDotStyle：合法色 → 标题文字染色', () => {
+    expect(tagDotStyle('--tag-color-7')).toEqual({ color: 'var(--tag-color-7)' })
+  })
+
+  it('tagDotFillStyle：合法色 → 色点实心填充（背景取该 token）', () => {
+    expect(tagDotFillStyle('--tag-color-7')).toEqual({ background: 'var(--tag-color-7)' })
+  })
+
+  it('tagDotFillStyle：无色 / 非法值 → undefined（由空心环兜底）', () => {
+    expect(tagDotFillStyle('')).toBeUndefined()
+    expect(tagDotFillStyle('#6366F1')).toBeUndefined()
+    expect(tagDotFillStyle(null)).toBeUndefined()
   })
 
   it('无色（空串）与非法值一律 undefined —— 消费方落回 CSS 默认', () => {

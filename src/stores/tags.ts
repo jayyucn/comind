@@ -51,6 +51,8 @@ export const useTagsStore = defineStore('tags', () => {
   // State
   const entries = ref<PersistedTagTreeEntry[]>([])
   const fieldDefinitions = ref<PersistedFieldDefinition[]>([])
+  /** 被软删的预设字段定义（仅用于「恢复内置预设」按钮可见性判断） */
+  const deletedPresetFieldDefinitions = ref<PersistedFieldDefinition[]>([])
   const loaded = ref(false)
   const loading = ref(false)
 
@@ -70,6 +72,7 @@ export const useTagsStore = defineStore('tags', () => {
       description: e.description,
       color: e.color,
       is_system: e.is_system,
+      is_preset: e.is_preset,
       created_at: e.created_at,
       updated_at: e.updated_at,
       version: e.version,
@@ -80,6 +83,11 @@ export const useTagsStore = defineStore('tags', () => {
   /** 全部存活 tag（含系统 tag 行，用 is_system 区分）。 */
   const allTags = computed(() => tags.value.filter((t) => !t.deleted_at))
 
+  /** 是否存在被软删的预设字段定义 —— 决定「恢复内置预设」按钮是否显示 */
+  const hasDeletedPresets = computed(
+    () => deletedPresetFieldDefinitions.value.length > 0,
+  )
+
   // Actions
 
   /** 拉取标签树 + 字段定义（幂等：已加载则跳过；传 force 强制刷新）。 */
@@ -89,12 +97,14 @@ export const useTagsStore = defineStore('tags', () => {
     loading.value = true
     try {
       const client = await getClient()
-      const [tree, defs] = await Promise.all([
+      const [tree, defs, deletedPresets] = await Promise.all([
         client.getTagTree(),
         client.getFieldDefinitions(),
+        client.getDeletedPresetFieldDefinitions(),
       ])
       entries.value = tree
       fieldDefinitions.value = defs
+      deletedPresetFieldDefinitions.value = deletedPresets
       loaded.value = true
     } finally {
       loading.value = false
@@ -252,6 +262,17 @@ export const useTagsStore = defineStore('tags', () => {
       .filter((t): t is PersistedTag => !!t && !t.deleted_at)
   }
 
+  /**
+   * 批量复活被软删的预设字段定义（ADR-0049 三态模型：预设删后可恢复）。
+   * 只复活 `is_preset=1` 且已软删的行，绝不覆盖活跃编辑。返回本次复活的条数。
+   */
+  async function restoreBuiltinPresets(): Promise<number> {
+    const client = await getClient()
+    const result = await client.restoreBuiltinPresets()
+    await ensureLoaded(true)
+    return result.restored
+  }
+
   // ── 写（写后整体重读，避免本地合并漂移） ──────────────────────
 
   async function createTag(params: CreateTagParams): Promise<PersistedTag> {
@@ -368,6 +389,8 @@ export const useTagsStore = defineStore('tags', () => {
   return {
     entries,
     fieldDefinitions,
+    deletedPresetFieldDefinitions,
+    hasDeletedPresets,
     tags,
     loaded,
     loading,
@@ -399,5 +422,6 @@ export const useTagsStore = defineStore('tags', () => {
     addFieldToTag,
     removeFieldFromTag,
     updateFieldDefinition,
+    restoreBuiltinPresets,
   }
 })

@@ -53,6 +53,10 @@ pub struct Tag {
     /// 软删除时间戳（毫秒）。NULL = 未删除。
     #[serde(default)]
     pub deleted_at: Option<i64>,
+    /// 预设标记（ADR-0049 系统标签三态模型，2026-09-30 修订）：随应用首启分发、用户可改可删、删后可恢复。
+    /// 当前仅域字段使用此标记；标签容器（#任务 / #书笔记）维持 is_system=1，本列恒 0，向前兼容未来真·预设标签。
+    #[serde(default)]
+    pub is_preset: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -107,24 +111,34 @@ impl Tag {
             updated_at: now,
             version: 0,
             deleted_at: None,
+            is_preset: false,
         }
     }
 
     /// 系统 tag seed 构造（固定 id，grill 决策 #5：系统 tag 全套落库）。
-    pub fn seed(id: &str, title: &str, field_ids: Vec<String>) -> Self {
+    /// `description` / `color` 来自 systemFieldSeed.json 的标签配置（ADR-0050 D11：color 为
+    /// 调色板 token 名 `--tag-color-N`，非 hex）。
+    pub fn seed(
+        id: &str,
+        title: &str,
+        field_ids: Vec<String>,
+        description: &str,
+        color: &str,
+    ) -> Self {
         let now = chrono::Utc::now().timestamp_millis();
         Tag {
             id: id.to_string(),
             title: title.to_string(),
             field_ids,
             parent_id: None,
-            description: String::new(),
-            color: String::new(),
+            description: description.to_string(),
+            color: color.to_string(),
             is_system: true,
             created_at: now,
             updated_at: now,
             version: 0,
             deleted_at: None,
+            is_preset: false,
         }
     }
 }
@@ -146,7 +160,7 @@ mod tests {
 
     #[test]
     fn identity_fields_round_trip_through_json() {
-        let mut tag = Tag::seed("t1", "工作", Vec::new());
+        let mut tag = Tag::seed("t1", "工作", Vec::new(), "", "");
         tag.description = "工作相关的块".to_string();
         tag.color = "--tag-color-3".to_string();
 

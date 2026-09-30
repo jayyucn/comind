@@ -95,6 +95,21 @@ impl FieldDefinitionService {
         }
         repository::FieldDefinitionRepository::undelete(storage.field_definitions(), id)
     }
+
+    /// 被软删的预设字段定义列表（「恢复内置预设」按钮可见性判断用）。
+    pub fn get_deleted_presets(
+        storage: &mut dyn StorageAdapter,
+    ) -> Result<Vec<FieldDefinition>, Box<dyn Error>> {
+        repository::FieldDefinitionRepository::get_deleted_presets(storage.field_definitions())
+    }
+
+    /// 批量复活被软删的预设字段定义（ADR-0049 三态模型：预设删后可恢复）。
+    /// 返回被复活的 id 列表，供上层登记 sync。
+    pub fn restore_presets(
+        storage: &mut dyn StorageAdapter,
+    ) -> Result<Vec<String>, Box<dyn Error>> {
+        repository::FieldDefinitionRepository::restore_presets(storage.field_definitions())
+    }
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -182,7 +197,7 @@ mod tests {
     fn seeded_system_field_definitions_are_present_and_not_deletable() {
         let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
 
-        // seed 已注入系统 12 字段
+        // seed 已注入系统 10 字段（project/area 已主动取消）
         let status = FieldDefinitionService::get_by_key(&mut adapter, "status")
             .unwrap()
             .expect("seeded status field");
@@ -196,5 +211,59 @@ mod tests {
         );
         // 未被删除
         assert!(FieldDefinitionService::get_by_id(&mut adapter, &status.id).is_ok());
+    }
+
+    #[test]
+    fn restore_presets_revives_only_soft_deleted_presets() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+
+        // 软删一个预设（book 是 seed 的 is_preset=1 字段）
+        let preset = FieldDefinitionService::get_by_key(&mut adapter, "book")
+            .unwrap()
+            .expect("seeded preset book");
+        repository::FieldDefinitionRepository::soft_delete_at(
+            adapter.field_definitions(),
+            &preset.id,
+            chrono::Utc::now().timestamp_millis(),
+        )
+        .unwrap();
+        assert!(
+            FieldDefinitionService::get_by_id(&mut adapter, &preset.id).is_err(),
+            "预设已软删，常规读不到"
+        );
+
+        // 软删一个用户自建字段（is_preset=0）—— 恢复操作不应触碰它
+        let user_fd = FieldDefinitionService::create(
+            &mut adapter,
+            FieldDefinitionCreateOptions {
+                key: "my-field".to_string(),
+                title: "My Field".to_string(),
+                r#type: "text".to_string(),
+                closed_values: None,
+                default_value: None,
+                is_system: false,
+            },
+        )
+        .unwrap();
+        FieldDefinitionService::delete_with_cascade(&mut adapter, &user_fd.id).unwrap();
+
+        // 批量恢复：只复活预设（book），用户字段保持软删
+        let restored = FieldDefinitionService::restore_presets(&mut adapter).unwrap();
+        assert_eq!(restored, vec![preset.id.clone()]);
+        assert!(
+            FieldDefinitionService::get_by_id(&mut adapter, &preset.id).is_ok(),
+            "预设应被复活"
+        );
+        assert!(
+            FieldDefinitionService::get_by_id(&mut adapter, &user_fd.id).is_err(),
+            "用户自建字段不应被恢复"
+        );
+
+        // 系统字段（status）始终不受影响
+        let status_id = FieldDefinitionService::get_by_key(&mut adapter, "status")
+            .unwrap()
+            .expect("seeded status")
+            .id;
+        assert!(FieldDefinitionService::get_by_id(&mut adapter, &status_id).is_ok());
     }
 }

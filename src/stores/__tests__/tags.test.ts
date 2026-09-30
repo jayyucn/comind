@@ -14,6 +14,8 @@ const { mockInitCoreClient, mockClient } = vi.hoisted(() => {
   const mockClient = {
     getTagTree: vi.fn(),
     getFieldDefinitions: vi.fn(),
+    getDeletedPresetFieldDefinitions: vi.fn().mockResolvedValue([]),
+    restoreBuiltinPresets: vi.fn().mockResolvedValue({ restored: 0 }),
     createTag: vi.fn(),
     updateTag: vi.fn(),
     deleteTag: vi.fn(),
@@ -218,7 +220,7 @@ describe('tags store', () => {
 
   it('tags 投影带 is_system（系统标签拒删守卫在 UI 侧依赖它）', async () => {
     mockClient.getTagTree.mockResolvedValue([
-      treeEntry({ id: 'sys', title: '系统任务', is_system: true }),
+      treeEntry({ id: 'sys', title: '任务', is_system: true }),
       treeEntry({ id: 'u', title: '我的标签' }),
     ])
 

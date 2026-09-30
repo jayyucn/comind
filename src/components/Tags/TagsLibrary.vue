@@ -701,6 +701,15 @@ async function doDeleteTag() {
   selectedTagId.value = rest[0]?.id ?? null
 }
 
+// ── 恢复内置预设（ADR-0049 三态模型：预设删后可恢复） ─────────────
+//
+// 顶层全局按钮：仅当存在被软删的预设字段定义时才出现（store.hasDeletedPresets）。
+// 点击批量复活 is_preset=1 且已软删的行，绝不覆盖活跃编辑。
+
+async function onRestorePresets() {
+  await tagsStore.restoreBuiltinPresets()
+}
+
 // ── 新建标签弹层（BasePopover） ────────────────────────────────
 
 const createOpen = ref(false)
@@ -779,6 +788,15 @@ async function submitAddField() {
             placeholder="搜索标签"
           >
         </label>
+        <button
+          v-if="tagsStore.hasDeletedPresets"
+          class="tag-restore-btn"
+          type="button"
+          title="恢复被删除的内置预设字段"
+          @click="onRestorePresets"
+        >
+          恢复内置预设
+        </button>
         <button
           class="tag-create-btn"
           type="button"
@@ -1411,6 +1429,26 @@ async function submitAddField() {
 
   &:hover {
     background: var(--accent-hover);
+  }
+}
+
+/* 恢复内置预设：次按钮（与「新建标签」同尺寸，但走中性描边，区别于主操作） */
+.tag-restore-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  background: var(--bg-base2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+    border-color: var(--border-strong);
   }
 }
 

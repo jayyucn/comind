@@ -26,6 +26,12 @@ export interface PersistedTag {
   color: string
   /** 系统 seed 行标记（拒删 / 拒改名 / 拒改父；ADR-0049 grill 决策 #5/#9） */
   is_system: boolean
+  /**
+   * 预设标记（ADR-0049 系统标签三态模型，2026-09-30）：随应用首启分发、用户可改可删、删后可恢复。
+   * 当前仅域字段使用；标签容器（#任务 / #书笔记）维持 is_system=1，本列恒 false。
+   * 与 `is_system` 正交：预设 ≠ 系统，仅预设删除后可经「恢复内置预设」复活。
+   */
+  is_preset?: boolean
   created_at: number
   updated_at: number
   version: number
@@ -48,6 +54,11 @@ export interface PersistedFieldDefinition {
    */
   hide_when: string
   is_system: boolean
+  /**
+   * 预设标记（ADR-0049 系统标签三态模型，2026-09-30）：域字段（project/area/book/...）
+   * 落此标记，随应用首启分发、用户可改可删、删后可经「恢复内置预设」复活；系统字段（status/priority）恒 false。
+   */
+  is_preset?: boolean
   created_at: number
   updated_at: number
   version: number

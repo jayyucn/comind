@@ -17,6 +17,8 @@ const { mockInitCoreClient, mockClient, navigateToTagMock } = vi.hoisted(() => {
   const mockClient = {
     getTagTree: vi.fn(),
     getFieldDefinitions: vi.fn(),
+    getDeletedPresetFieldDefinitions: vi.fn().mockResolvedValue([]),
+    restoreBuiltinPresets: vi.fn().mockResolvedValue({ restored: 0 }),
     createTag: vi.fn(),
     updateTag: vi.fn(),
     deleteTag: vi.fn(),
@@ -95,7 +97,7 @@ function makeCard(over: Partial<BlockCard> = {}): BlockCard {
 
 const SYSTEM_TASK = treeEntry({
   id: 'sys-tag-system-task',
-  title: '系统任务',
+  title: '任务',
   field_ids: ['f-status'],
   is_system: true,
   effective_field_ids: ['f-status'],
@@ -141,7 +143,7 @@ describe('TagsLibrary（标签管理页）', () => {
       // 历史遗留类型：不在类型点选表内
       fieldDef({ id: 'f-pinned', title: '置顶', type: 'boolean' }),
     ])
-    // 直系成员数：项目 3 / 开发任务 2 / 系统任务 1 / 灵感碎片 0 —— 互不相同，
+    // 直系成员数：项目 3 / 开发任务 2 / 任务 1 / 灵感碎片 0 —— 互不相同，
     // 让「成员数降序」成为一个可判定的断言（不依赖标题排序的 locale 规则）。
     mockClient.getBlockCards.mockResolvedValue([
       makeCard({ block_id: 'a', page_id: 'page-1', tags: ['t-project'] }),
@@ -192,12 +194,12 @@ describe('TagsLibrary（标签管理页）', () => {
     const wrapper = await mountPage()
     const rows = texts(wrapper, '.tag-row')
 
-    // 树序：根（项目3 / 系统任务1 / 灵感碎片0），开发任务作为 项目 的子嵌套其后
+    // 树序：根（项目3 / 任务1 / 灵感碎片0），开发任务作为 项目 的子嵌套其后
     expect(rows[0]).toContain('#项目')
     expect(rows[0]).toContain('3 个成员')
     expect(rows[1]).toContain('#开发任务')
     expect(rows[1]).toContain('2 个成员')
-    expect(rows[2]).toContain('#系统任务')
+    expect(rows[2]).toContain('#任务')
     expect(rows[3]).toContain('#灵感碎片')
 
     // 层级用 depth 类表达：子（开发任务）带 depth-1，根（项目）不带
@@ -324,7 +326,7 @@ describe('TagsLibrary（标签管理页）', () => {
     await wrapper.find('.tag-row--sys-tag-system-task').trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('.tag-detail').text()).toContain('#系统任务')
+    expect(wrapper.find('.tag-detail').text()).toContain('#任务')
     // 只读说明在，写入口全无 —— 否则点了会撞 Rust reject_system_tag 且无任何提示
     expect(wrapper.find('.tag-system-note').text()).toContain('系统标签')
     expect(findButton(wrapper, '删除标签')).toBeUndefined()
@@ -523,11 +525,11 @@ describe('TagsLibrary（标签管理页）', () => {
     const panel = document.body.querySelector('.tag-parent-panel') as HTMLElement
     expect(panel).toBeTruthy()
     // 项目 的后代是 开发任务 → 候选里不应出现它自己与开发任务
-    expect(panel.textContent).toContain('系统任务')
+    expect(panel.textContent).toContain('任务')
     expect(panel.textContent).not.toContain('开发任务')
     expect(panel.textContent).not.toContain('项目')
     const option = Array.from(panel.querySelectorAll('.tag-parent-option')).find((o) =>
-      o.textContent?.includes('系统任务'),
+      o.textContent?.includes('任务'),
     ) as HTMLButtonElement
     option.click()
     await flushPromises()
@@ -557,7 +559,7 @@ describe('TagsLibrary（标签管理页）', () => {
     const panel = document.body.querySelector('.tag-parent-panel') as HTMLElement
     const options = Array.from(panel.querySelectorAll('.tag-parent-option'))
     const sysDot = options
-      .find((o) => o.textContent?.includes('系统任务'))!
+      .find((o) => o.textContent?.includes('任务'))!
       .querySelector('.tag-color-dot') as HTMLElement
     expect(sysDot.className).toContain('tag-color-dot--empty')
     expect(sysDot.getAttribute('style')).toBeNull()
@@ -586,11 +588,11 @@ describe('TagsLibrary（标签管理页）', () => {
     await flushPromises()
 
     const panel = document.body.querySelector('.tag-parent-panel') as HTMLElement
-    expect(panel.textContent).toContain('系统任务')
+    expect(panel.textContent).toContain('任务')
     expect(panel.textContent).not.toContain('开发任务')
 
     const option = Array.from(panel.querySelectorAll('.tag-parent-option')).find((o) =>
-      o.textContent?.includes('系统任务'),
+      o.textContent?.includes('任务'),
     ) as HTMLButtonElement
     option.click()
     await flushPromises()

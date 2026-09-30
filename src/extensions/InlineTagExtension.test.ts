@@ -65,8 +65,8 @@ describe('InlineTagExtension — 编辑态 `#tag` 胶囊（与渲染态同形，
   })
 
   it('系统 tag 带 block-tag--system 修饰类', () => {
-    tagTable = { 系统任务: { color: '', is_system: true } }
-    const handle = createDecoratedEditor('#系统任务')
+    tagTable = { 任务: { color: '', is_system: true } }
+    const handle = createDecoratedEditor('#任务')
     expect(handle.renderedHTML).toContain('block-tag--system')
     expect(handle.renderedHTML).not.toContain('style=')
     destroyDecoratedEditor(handle)

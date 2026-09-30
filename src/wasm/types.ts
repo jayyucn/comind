@@ -136,9 +136,10 @@ export interface BatchOperation {
   // 'undelete' 仅用于 block（撤销恢复：精确复活软删块，见 useUndoRestore）；
   // 'set_tags' 仅用于 block（grill 决策 #8：未来批量打标的写入口）；
   // 'tree' 仅用于 tag（标签树读接口：原始行 + 解析字段 + 后代闭包，ADR-0050 D10）；
-  // 'set_parent' 仅用于 tag（单父槽位，成环由 Rust 拒绝）
+  // 'set_parent' 仅用于 tag（单父槽位，成环由 Rust 拒绝）；
+  // 'get_deleted_presets' / 'restore_presets' 仅用于 field_definition（ADR-0049 三态：预设删后可恢复）
   action: 'create' | 'update' | 'delete' | 'get' | 'set' | 'sync_by_block' | 'undelete' | 'set_tags'
-    | 'tree' | 'set_parent'
+    | 'tree' | 'set_parent' | 'get_deleted_presets' | 'restore_presets'
   params: Record<string, unknown>
 }
 

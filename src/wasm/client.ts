@@ -80,6 +80,11 @@ export interface CoreClient {
   /** 级联软删引用它的 FieldValue；系统 seed 行会被 Rust 拒绝 */
   deleteFieldDefinition(id: string): Promise<DeleteFieldDefinitionResult>
 
+  /** 被软删的预设字段定义列表（「恢复内置预设」按钮可见性判断用） */
+  getDeletedPresetFieldDefinitions(): Promise<PersistedFieldDefinition[]>
+  /** 批量复活被软删的预设字段定义；返回本次复活的条数 */
+  restoreBuiltinPresets(): Promise<{ restored: number }>
+
   getFieldValues(blockId: string): Promise<PersistedFieldValue[]>
   createFieldValue(params: CreateFieldValueParams): Promise<PersistedFieldValue>
   updateFieldValue(params: UpdateFieldValueParams): Promise<PersistedFieldValue>
@@ -390,6 +395,18 @@ class TauriClient implements CoreClient {
   async deleteFieldDefinition(id: string): Promise<DeleteFieldDefinitionResult> {
     const results = await this.executeBatch([{ entity: 'field_definition', action: 'delete', params: { id } }])
     return (Array.isArray(results) ? results[0] : results) as unknown as DeleteFieldDefinitionResult
+  }
+
+  async getDeletedPresetFieldDefinitions(): Promise<PersistedFieldDefinition[]> {
+    const results = await this.executeBatch([{ entity: 'field_definition', action: 'get_deleted_presets', params: {} }])
+    const first = Array.isArray(results) ? results[0] : results
+    return (first as unknown as PersistedFieldDefinition[]) ?? []
+  }
+
+  async restoreBuiltinPresets(): Promise<{ restored: number }> {
+    const results = await this.executeBatch([{ entity: 'field_definition', action: 'restore_presets', params: {} }])
+    const first = Array.isArray(results) ? results[0] : results
+    return (first as unknown as { restored: number }) ?? { restored: 0 }
   }
 
   async getFieldValues(blockId: string): Promise<PersistedFieldValue[]> {
@@ -817,6 +834,18 @@ class WasmClientAdapter implements CoreClient {
   async deleteFieldDefinition(id: string): Promise<DeleteFieldDefinitionResult> {
     const results = await this.executeBatch([{ entity: 'field_definition', action: 'delete', params: { id } }])
     return (Array.isArray(results) ? results[0] : results) as unknown as DeleteFieldDefinitionResult
+  }
+
+  async getDeletedPresetFieldDefinitions(): Promise<PersistedFieldDefinition[]> {
+    const results = await this.executeBatch([{ entity: 'field_definition', action: 'get_deleted_presets', params: {} }])
+    const first = Array.isArray(results) ? results[0] : results
+    return (first as unknown as PersistedFieldDefinition[]) ?? []
+  }
+
+  async restoreBuiltinPresets(): Promise<{ restored: number }> {
+    const results = await this.executeBatch([{ entity: 'field_definition', action: 'restore_presets', params: {} }])
+    const first = Array.isArray(results) ? results[0] : results
+    return (first as unknown as { restored: number }) ?? { restored: 0 }
   }
 
   async getFieldValues(blockId: string): Promise<PersistedFieldValue[]> {

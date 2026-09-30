@@ -61,10 +61,21 @@ export function tagChipStyle(color: string | null | undefined): Record<string, s
 }
 
 /**
- * 「圆点」形态：实心色点。用于标题类出现点（管理页左栏行、详情标题）—— 那儿把整行文字
- * 染色会盖过层级，一个色点足以自证身份。空串 / 非法值 → `undefined`（不渲染色，只留占位）。
+ * 「标题文字染色」形态：整行文字取该 token 色。用于详情标题（`#标签` 文字着色，
+ * ADR-0050 D11 身份自证）—— 与色点（实心填充，见 `tagDotFillStyle`）是两回事。
+ * 空串 / 非法值 → `undefined`（落回 CSS 默认 `--color-tag`）。
  */
 export function tagDotStyle(color: string | null | undefined): Record<string, string> | undefined {
   if (!isTagColorToken(color)) return undefined
   return { color: `var(${color})` }
+}
+
+/**
+ * 「圆点」形态（实心填充版）：`background` 取该 token 色，用于 `<span>` 色点本身——
+ * `tagDotStyle` 设的是 `color`（文字着色），对一个空圆点是不可见的，色点必须填 `background`。
+ * 空串 / 非法值 → `undefined`（不渲染色，由 `.tag-color-trigger--empty` 的空心环兜底）。
+ */
+export function tagDotFillStyle(color: string | null | undefined): Record<string, string> | undefined {
+  if (!isTagColorToken(color)) return undefined
+  return { background: `var(${color})` }
 }
