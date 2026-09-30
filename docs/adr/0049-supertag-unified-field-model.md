@@ -1,4 +1,4 @@
-﻿# ADR-0049: Tag 统一字段模型——系统内置 Tag + FieldDefinition 改名 + FieldValue 值层
+# ADR-0049: Tag 统一字段模型——系统内置 Tag + FieldDefinition 改名 + FieldValue 值层
 
 - Status: accepted（已定稿并落地；实现进度见「落地补充」与 ADR-0050）
 - Date: 2026-09-21
@@ -34,8 +34,8 @@ comind 的属性/字段系统分三层，目前靠硬编码与扁平数组粘合
 | # | 决策点 | 裁定 |
 |---|---|---|
 | D1 | 统一类型 | 新增 `Tag`：`{ key, title, fields, isSystem?: boolean, extends?: string[] }`。TS 于 `src/types/tag.ts`，Rust 于 `crates/comind-core/src/types/tag.rs`（serde 序列化，`is_system` / `extends` snake_case）。系统 Tag 编译期内嵌 `fields: FieldDefinition[]`（完整定义），用户 Tag 落库后引用 `fieldIds: string[]`（字段独立成表，见 D6/D9） |
-| D2 | 改名 | `PropertyDefinition` → **`FieldDefinition`**（定义层 / 注册层 / 渲染层全量替换）；`property.ts` 保留一行 `export type PropertyDefinition = FieldDefinition` deprecated 别名过渡，避免存量调用点一次性爆炸；`getPropertyDefinition` / `getAllPropertyDefinitions` 函数名不变（返回 `FieldDefinition[]`） |
-| D3 | 系统内置分组 | 新增 `SYSTEM_TAGS: Tag[]` 常量：#系统任务（status / priority / project / area）、#系统书笔记（book / part / chapter / cfi / quote / sourceBlockId / sourcePageId / language）。`BUILT_IN_PROPERTIES` **保留导出名**，内部改为 `SYSTEM_TAGS.flatMap(s => s.fields)` 展平，存量读取零改动。落地后系统字段 seed 进 `FieldDefinition` 表（seed 行不可删），`SYSTEM_TAGS` 引用改走 fieldId |
+| D2 | 改名 | `PropertyDefinition` → **`FieldDefinition`**（定义层 / 注册层 / 渲染层全量替换）；`property.ts` 保留一行 `export type PropertyDefinition = FieldDefinition` deprecated 别名过渡，避免存量调用点一次性爆炸；`getPropertyDefinition` / `getAllPropertyDefinitions` 函数名不变（返回 `FieldDefinition[]`）。**【已被 ADR-0051 D3/D4 推翻（2026-09-30）：deprecated 别名与 `PropertyRecord` 一并删除；两函数改名 `getFieldDefinition` / `getAllFieldDefinitions`】** |
+| D3 | 系统内置分组 | 新增 `SYSTEM_TAGS: Tag[]` 常量：#系统任务（status / priority / project / area）、#系统书笔记（book / part / chapter / cfi / quote / sourceBlockId / sourcePageId / language）。`BUILT_IN_PROPERTIES` **保留导出名**，内部改为 `SYSTEM_TAGS.flatMap(s => s.fields)` 展平，存量读取零改动。**【导出名已被 ADR-0051 D3 推翻（2026-09-30）：改名 `BUILT_IN_FIELDS`】** 落地后系统字段 seed 进 `FieldDefinition` 表（seed 行不可删），`SYSTEM_TAGS` 引用改走 fieldId |
 | D4 | 注册层遍历 | `registerBlockBuiltinFields` 改为遍历 `SYSTEM_TAGS` 的字段注册；`BUILTIN_KEYS` 改为由 `SYSTEM_TAGS` 派生（`new Set(SYSTEM_TAGS.flatMap(s => s.fields.map(f => f.key)))`）。**不改 Registry 接口**（仍按 entityType + key 注册，不引入实体维度） |
 | D5 | 渲染过滤统一 | `PropertyDisplay` 过滤依据从"`displayPosition` + `isBuiltIn`"统一为"所属 tag 的 `isSystem`"；`isBuiltIn(key)` helper 改为查所属 tag。`displayPosition` 保留为纯渲染语义，不再承担"是否系统字段"职责 |
 | D6 | 用户 tag 持久化 | 用户 tag 落 SQLite 新表 `tag`（id / title **全局唯一** / fieldIds / extends / created_at / updated_at，**无 key、无 is_system**）；字段独立成表 `FieldDefinition`（key **全局唯一** / title / type / closedValues / is_system，系统 12 字段 seed 进表、seed 行不可删）；block↔tag 用 **block 的 `tags` 字段**（tag id 数组，无独立关联表）。CRUD 扩展既有 `TagService`（`extract_tags` 保持纯函数，CRUD 走 Repository 注入）+ `SyncTable` 同步 |

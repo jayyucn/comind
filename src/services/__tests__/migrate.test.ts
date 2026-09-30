@@ -24,12 +24,6 @@ function createMockClient(overrides?: Partial<CoreClient>): CoreClient {
     getTemplates: vi.fn(),
     search: vi.fn(),
     executeBatch: vi.fn(),
-    createBlockVersion: vi.fn(),
-    getBlockVersions: vi.fn(),
-    getBlockVersionById: vi.fn(),
-    restoreBlockVersion: vi.fn(),
-    deleteBlockVersion: vi.fn(),
-    cleanupBlockVersions: vi.fn(),
     ...overrides,
   }
 }

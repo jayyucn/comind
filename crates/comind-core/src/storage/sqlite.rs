@@ -12,8 +12,6 @@ use crate::storage::entity::page::{page_get_by_id, page_get_by_title_including_d
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::link::{link_get_by_id, link_get_by_source_block_id, link_get_by_source_block_ids, link_get_by_target_page_id, link_insert, link_create_many, link_delete, link_delete_by_source_block_id, link_delete_by_target_page_id};
 #[cfg(not(target_arch = "wasm32"))]
-use crate::storage::entity::property::{property_create, property_delete, property_delete_by_block_id, property_get_all, property_get_by_block_id, property_get_by_block_id_and_key, property_get_by_block_ids, property_get_by_id, property_query_block_ids_by_key_value, property_update, property_upsert};
-#[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::tag::{tag_create, tag_delete, tag_get_all, tag_get_by_id, tag_get_by_title, tag_get_by_title_including_deleted, tag_undelete, tag_update};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::field_definition::{field_definition_create, field_definition_delete, field_definition_get_all, field_definition_get_by_id, field_definition_get_by_id_including_deleted, field_definition_get_by_key, field_definition_soft_delete_at, field_definition_undelete, field_definition_update};
@@ -22,8 +20,6 @@ use crate::storage::entity::field_value::{field_value_create, field_value_delete
 use crate::storage::entity::relationship_type::{relationship_type_create, relationship_type_delete, relationship_type_get_all, relationship_type_get_by_id, relationship_type_get_by_type, relationship_type_update};
 use crate::storage::entity::template::{template_create, template_delete, template_get_all, template_get_by_id, template_get_by_name, template_update};
 use crate::storage::entity::search::{search_index_delete, search_index_search, search_index_upsert};
-#[cfg(not(target_arch = "wasm32"))]
-use crate::storage::entity::block_version::{block_version_create, block_version_delete, block_version_delete_by_block_id, block_version_delete_older_than, block_version_get_by_block_id, block_version_get_by_id, block_version_get_latest_version};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::entity::notification::{notification_batch_create, notification_create, notification_delete, notification_delete_by_block_and_kind, notification_delete_by_block_id, notification_delete_older_than, notification_find_by_event, notification_get_by_block_id, notification_get_by_block_ids, notification_get_by_id, notification_mark_all_read, notification_query_pending_due, notification_query_recent, notification_query_unread, notification_reschedule, notification_set_snooze, notification_update_payload, notification_update_status};
 #[cfg(not(target_arch = "wasm32"))]
@@ -135,24 +131,6 @@ impl SQLiteAdapter {
                 FOREIGN KEY (target_page_id) REFERENCES Page(id)
             );
             
-            CREATE TABLE IF NOT EXISTS Property (
-                id              TEXT PRIMARY KEY,
-                block_id        TEXT NOT NULL,
-                key             TEXT NOT NULL,
-                value           TEXT NOT NULL,
-                type            TEXT NOT NULL,
-                sort_order      INTEGER NOT NULL DEFAULT 0,
-                is_hidden       INTEGER NOT NULL DEFAULT 0,
-                is_deleted      INTEGER NOT NULL DEFAULT 0,
-                schema_version  INTEGER NOT NULL DEFAULT 1,
-                created_at      INTEGER NOT NULL,
-                updated_at      INTEGER NOT NULL,
-                version         INTEGER NOT NULL DEFAULT 0,
-                deleted_at      INTEGER,
-                UNIQUE(block_id, key),
-                FOREIGN KEY (block_id) REFERENCES Block(id)
-            );
-            
             CREATE TABLE IF NOT EXISTS RelationshipType (
                 id              TEXT PRIMARY KEY,
                 type            TEXT NOT NULL,
@@ -184,19 +162,6 @@ impl SQLiteAdapter {
                 content,
                 title,
                 tokenize = 'unicode61'
-            );
-            
-            CREATE TABLE IF NOT EXISTS BlockVersion (
-                id                      TEXT PRIMARY KEY,
-                block_id                TEXT NOT NULL,
-                version                 INTEGER NOT NULL,
-                snapshot                TEXT NOT NULL,
-                hash                    TEXT NOT NULL,
-                message                 TEXT,
-                source                  TEXT NOT NULL,
-                restored_from_version_id TEXT,
-                created_at              INTEGER NOT NULL,
-                FOREIGN KEY (block_id) REFERENCES Block(id)
             );
             
             CREATE TABLE IF NOT EXISTS Notification (
@@ -363,11 +328,7 @@ impl SQLiteAdapter {
             CREATE INDEX IF NOT EXISTS idx_block_parentId      ON Block(parent_id);
             CREATE INDEX IF NOT EXISTS idx_block_pos           ON Block(pos);
             CREATE INDEX IF NOT EXISTS idx_link_target         ON Link(target_page_id);
-            CREATE INDEX IF NOT EXISTS idx_link_source         ON Link(source_block_id);
-            CREATE INDEX IF NOT EXISTS idx_property_blockId    ON Property(block_id);
-            CREATE INDEX IF NOT EXISTS idx_property_key        ON Property(key);
-            CREATE INDEX IF NOT EXISTS idx_block_version_blockId ON BlockVersion(block_id);
-            CREATE INDEX IF NOT EXISTS idx_block_version_hash ON BlockVersion(hash);"
+            CREATE INDEX IF NOT EXISTS idx_link_source         ON Link(source_block_id);"
         )?;
         
         // SyncState table for WebSocket sync pairing state
@@ -567,13 +528,6 @@ impl SQLiteAdapter {
         }
         if !has("Link", "deleted_at") {
             conn.execute("ALTER TABLE Link ADD COLUMN deleted_at INTEGER", [])?;
-        }
-        if !has("Property", "version") {
-            conn.execute("ALTER TABLE Property ADD COLUMN version INTEGER NOT NULL DEFAULT 0", [])?;
-        }
-        if !has("Property", "deleted_at") {
-            conn.execute("ALTER TABLE Property ADD COLUMN deleted_at INTEGER", [])?;
-            conn.execute("UPDATE Property SET deleted_at = updated_at WHERE is_deleted = 1 AND deleted_at IS NULL", [])?;
         }
         if !has("RelationshipType", "version") {
             conn.execute("ALTER TABLE RelationshipType ADD COLUMN version INTEGER NOT NULL DEFAULT 0", [])?;
@@ -885,55 +839,6 @@ impl LinkRepository for SQLiteAdapter {
     }
 }
 
-impl PropertyRepository for SQLiteAdapter {
-    fn get_all(&self) -> Result<Vec<Property>, Box<dyn Error>> {
-        property_get_all(&self.conn)
-    }
-
-    fn get_by_id(&self, id: &str) -> Result<Property, Box<dyn Error>> {
-        property_get_by_id(&self.conn, id)
-    }
-
-    fn get_by_block_id(&self, block_id: &str) -> Result<Vec<Property>, Box<dyn Error>> {
-        property_get_by_block_id(&self.conn, block_id)
-    }
-
-    fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<Property>, Box<dyn Error>> {
-        property_get_by_block_ids(&self.conn, block_ids)
-    }
-
-    fn get_by_block_id_and_key(&self, block_id: &str, key: &str) -> Result<Option<Property>, Box<dyn Error>> {
-        property_get_by_block_id_and_key(&self.conn, block_id, key)
-    }
-
-    fn query_block_ids_by_key_value(&self, key: &str, values: &[String]) -> Result<Vec<String>, Box<dyn Error>> {
-        property_query_block_ids_by_key_value(&self.conn, key, values)
-    }
-
-    fn create(&mut self, property: &Property) -> Result<Property, Box<dyn Error>> {
-        property_create(&self.conn, property)?;
-        Ok(property.clone())
-    }
-
-    fn upsert(&mut self, property: &Property) -> Result<Property, Box<dyn Error>> {
-        property_upsert(&self.conn, property)?;
-        Ok(property.clone())
-    }
-
-    fn update(&mut self, property: &Property) -> Result<Property, Box<dyn Error>> {
-        property_update(&self.conn, property)?;
-        Ok(property.clone())
-    }
-
-    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        property_delete(&self.conn, id)
-    }
-
-    fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>> {
-        property_delete_by_block_id(&self.conn, block_id)
-    }
-}
-
 impl RelationshipTypeRepository for SQLiteAdapter {
     fn get_by_id(&self, id: &str) -> Result<RelationshipType, Box<dyn Error>> {
         relationship_type_get_by_id(&self.conn, id)
@@ -1029,37 +934,6 @@ impl SQLiteAdapter {
         )?;
         
         Ok(())
-    }
-}
-
-impl BlockVersionRepository for SQLiteAdapter {
-    fn get_by_id(&self, id: &str) -> Result<BlockVersion, Box<dyn Error>> {
-        block_version_get_by_id(&self.conn, id)
-    }
-
-    fn get_by_block_id(&self, block_id: &str) -> Result<Vec<BlockVersion>, Box<dyn Error>> {
-        block_version_get_by_block_id(&self.conn, block_id)
-    }
-
-    fn get_latest_version(&self, block_id: &str) -> Result<Option<BlockVersion>, Box<dyn Error>> {
-        block_version_get_latest_version(&self.conn, block_id)
-    }
-
-    fn create(&mut self, version: &BlockVersion) -> Result<BlockVersion, Box<dyn Error>> {
-        block_version_create(&self.conn, version)?;
-        Ok(version.clone())
-    }
-
-    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        block_version_delete(&self.conn, id)
-    }
-
-    fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>> {
-        block_version_delete_by_block_id(&self.conn, block_id)
-    }
-
-    fn delete_older_than(&mut self, block_id: &str, timestamp: i64) -> Result<(), Box<dyn Error>> {
-        block_version_delete_older_than(&self.conn, block_id, timestamp)
     }
 }
 
@@ -1268,10 +1142,6 @@ impl StorageAdapter for SQLiteAdapter {
         self
     }
     
-    fn properties(&mut self) -> &mut dyn PropertyRepository {
-        self
-    }
-    
     fn relationship_types(&mut self) -> &mut dyn RelationshipTypeRepository {
         self
     }
@@ -1293,10 +1163,6 @@ impl StorageAdapter for SQLiteAdapter {
     }
     
     fn search(&mut self) -> &mut dyn SearchRepository {
-        self
-    }
-    
-    fn block_versions(&mut self) -> &mut dyn BlockVersionRepository {
         self
     }
     
@@ -1697,55 +1563,6 @@ impl<'a> LinkRepository for TxContext<'a> {
     }
 }
 
-impl<'a> PropertyRepository for TxContext<'a> {
-    fn get_all(&self) -> Result<Vec<Property>, Box<dyn Error>> {
-        property_get_all(&self.conn)
-    }
-
-    fn get_by_id(&self, id: &str) -> Result<Property, Box<dyn Error>> {
-        property_get_by_id(&self.conn, id)
-    }
-
-    fn get_by_block_id(&self, block_id: &str) -> Result<Vec<Property>, Box<dyn Error>> {
-        property_get_by_block_id(&self.conn, block_id)
-    }
-
-    fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<Property>, Box<dyn Error>> {
-        property_get_by_block_ids(&self.conn, block_ids)
-    }
-
-    fn get_by_block_id_and_key(&self, block_id: &str, key: &str) -> Result<Option<Property>, Box<dyn Error>> {
-        property_get_by_block_id_and_key(&self.conn, block_id, key)
-    }
-
-    fn query_block_ids_by_key_value(&self, key: &str, values: &[String]) -> Result<Vec<String>, Box<dyn Error>> {
-        property_query_block_ids_by_key_value(&self.conn, key, values)
-    }
-
-    fn create(&mut self, property: &Property) -> Result<Property, Box<dyn Error>> {
-        property_create(&self.conn, property)?;
-        Ok(property.clone())
-    }
-
-    fn upsert(&mut self, property: &Property) -> Result<Property, Box<dyn Error>> {
-        property_upsert(&self.conn, property)?;
-        Ok(property.clone())
-    }
-
-    fn update(&mut self, property: &Property) -> Result<Property, Box<dyn Error>> {
-        property_update(&self.conn, property)?;
-        Ok(property.clone())
-    }
-
-    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        property_delete(&self.conn, id)
-    }
-
-    fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>> {
-        property_delete_by_block_id(&self.conn, block_id)
-    }
-}
-
 impl<'a> RelationshipTypeRepository for TxContext<'a> {
     fn get_by_id(&self, id: &str) -> Result<RelationshipType, Box<dyn Error>> {
         relationship_type_get_by_id(&self.conn, id)
@@ -1956,37 +1773,6 @@ impl<'a> SearchRepository for TxContext<'a> {
     }
 }
 
-impl<'a> BlockVersionRepository for TxContext<'a> {
-    fn get_by_id(&self, id: &str) -> Result<BlockVersion, Box<dyn Error>> {
-        block_version_get_by_id(&self.conn, id)
-    }
-
-    fn get_by_block_id(&self, block_id: &str) -> Result<Vec<BlockVersion>, Box<dyn Error>> {
-        block_version_get_by_block_id(&self.conn, block_id)
-    }
-
-    fn get_latest_version(&self, block_id: &str) -> Result<Option<BlockVersion>, Box<dyn Error>> {
-        block_version_get_latest_version(&self.conn, block_id)
-    }
-
-    fn create(&mut self, version: &BlockVersion) -> Result<BlockVersion, Box<dyn Error>> {
-        block_version_create(&self.conn, version)?;
-        Ok(version.clone())
-    }
-
-    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>> {
-        block_version_delete(&self.conn, id)
-    }
-
-    fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>> {
-        block_version_delete_by_block_id(&self.conn, block_id)
-    }
-
-    fn delete_older_than(&mut self, block_id: &str, timestamp: i64) -> Result<(), Box<dyn Error>> {
-        block_version_delete_older_than(&self.conn, block_id, timestamp)
-    }
-}
-
 impl<'a> StorageAdapter for TxContext<'a> {
     fn blocks(&mut self) -> &mut dyn BlockRepository {
         self
@@ -1997,10 +1783,6 @@ impl<'a> StorageAdapter for TxContext<'a> {
     }
 
     fn links(&mut self) -> &mut dyn LinkRepository {
-        self
-    }
-
-    fn properties(&mut self) -> &mut dyn PropertyRepository {
         self
     }
 
@@ -2025,10 +1807,6 @@ impl<'a> StorageAdapter for TxContext<'a> {
     }
 
     fn search(&mut self) -> &mut dyn SearchRepository {
-        self
-    }
-    
-    fn block_versions(&mut self) -> &mut dyn BlockVersionRepository {
         self
     }
     

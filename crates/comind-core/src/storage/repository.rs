@@ -45,23 +45,6 @@ pub trait LinkRepository {
     fn delete_by_target_page_id(&mut self, target_page_id: &str) -> Result<(), Box<dyn Error>>;
 }
 
-pub trait PropertyRepository {
-    fn get_all(&self) -> Result<Vec<Property>, Box<dyn Error>>;
-    fn get_by_id(&self, id: &str) -> Result<Property, Box<dyn Error>>;
-    fn get_by_block_id(&self, block_id: &str) -> Result<Vec<Property>, Box<dyn Error>>;
-    /// Batch variant — one query for all blocks on a page (avoids N+1 in render path).
-    fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<Property>, Box<dyn Error>>;
-    fn get_by_block_id_and_key(&self, block_id: &str, key: &str) -> Result<Option<Property>, Box<dyn Error>>;
-    /// 反查：按 key + values 查询匹配的 block_id 列表（用于查询未完成任务）
-    fn query_block_ids_by_key_value(&self, key: &str, values: &[String]) -> Result<Vec<String>, Box<dyn Error>>;
-    fn create(&mut self, property: &Property) -> Result<Property, Box<dyn Error>>;
-    fn update(&mut self, property: &Property) -> Result<Property, Box<dyn Error>>;
-    /// Insert or update by (block_id, key) — eliminates read-then-write race.
-    fn upsert(&mut self, property: &Property) -> Result<Property, Box<dyn Error>>;
-    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
-    fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>>;
-}
-
 pub trait RelationshipTypeRepository {
     fn get_by_id(&self, id: &str) -> Result<RelationshipType, Box<dyn Error>>;
     fn get_by_type(&self, r#type: &str) -> Result<Option<RelationshipType>, Box<dyn Error>>;
@@ -140,16 +123,6 @@ pub trait SearchRepository {
     fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchResult>, Box<dyn Error>>;
     fn update_index(&mut self, block_id: &str, content: &str, title: &str) -> Result<(), Box<dyn Error>>;
     fn delete_from_index(&mut self, block_id: &str) -> Result<(), Box<dyn Error>>;
-}
-
-pub trait BlockVersionRepository {
-    fn get_by_id(&self, id: &str) -> Result<BlockVersion, Box<dyn Error>>;
-    fn get_by_block_id(&self, block_id: &str) -> Result<Vec<BlockVersion>, Box<dyn Error>>;
-    fn get_latest_version(&self, block_id: &str) -> Result<Option<BlockVersion>, Box<dyn Error>>;
-    fn create(&mut self, version: &BlockVersion) -> Result<BlockVersion, Box<dyn Error>>;
-    fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;
-    fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn Error>>;
-    fn delete_older_than(&mut self, block_id: &str, timestamp: i64) -> Result<(), Box<dyn Error>>;
 }
 
 pub trait NotificationRepository {
@@ -256,14 +229,12 @@ pub trait StorageAdapter {
     fn blocks(&mut self) -> &mut dyn BlockRepository;
     fn pages(&mut self) -> &mut dyn PageRepository;
     fn links(&mut self) -> &mut dyn LinkRepository;
-    fn properties(&mut self) -> &mut dyn PropertyRepository;
     fn relationship_types(&mut self) -> &mut dyn RelationshipTypeRepository;
     fn tags(&mut self) -> &mut dyn TagRepository;
     fn field_definitions(&mut self) -> &mut dyn FieldDefinitionRepository;
     fn field_values(&mut self) -> &mut dyn FieldValueRepository;
     fn templates(&mut self) -> &mut dyn TemplateRepository;
     fn search(&mut self) -> &mut dyn SearchRepository;
-    fn block_versions(&mut self) -> &mut dyn BlockVersionRepository;
     fn notifications(&mut self) -> &mut dyn NotificationRepository;
     fn date_refs(&mut self) -> &mut dyn DateRefRepository;
     fn saved_filters(&mut self) -> &mut dyn SavedFilterRepository;

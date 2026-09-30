@@ -1,7 +1,7 @@
 use crate::assets::{asset_extension, asset_file_path, is_safe_asset_component, now_millis, read_asset_manifest, write_asset_manifest, AssetMeta};
 use comind_core::{
     services::{
-        build_page_with_blocks, BlockService, BlockVersionService, BlockWriteService,
+        build_page_with_blocks, BlockService, BlockWriteService,
         BookService, DateRefService, FilterService, LinkService, PageService, PropertyService,
         RelationshipTypeService, SnapshotService, TemplateService,
     },
@@ -973,7 +973,7 @@ pub async fn set_property(
         let sync_server_clone = sync_server.inner().clone();
         tokio::spawn(async move {
             sync_server_clone
-                .record_and_notify(SyncTable::Property, vec![block_id_clone])
+                .record_and_notify(SyncTable::FieldValue, vec![block_id_clone])
                 .await;
         });
     }
@@ -992,7 +992,7 @@ pub async fn delete_property(
 
     let result = execute_with_adapter(db, |storage| {
         if let Some(prop) = PropertyService::get_by_block_id_and_key(storage, block_id, key)? {
-            storage.properties().delete(&prop.id)?;
+            PropertyService::delete(storage, &prop.id)?;
         }
 
         if let Ok(block) = storage.blocks().get_by_id(block_id) {
@@ -1018,7 +1018,7 @@ pub async fn delete_property(
         let sync_server_clone = sync_server.inner().clone();
         tokio::spawn(async move {
             sync_server_clone
-                .record_and_notify(SyncTable::Property, vec![block_id_clone])
+                .record_and_notify(SyncTable::FieldValue, vec![block_id_clone])
                 .await;
         });
     }
@@ -1417,77 +1417,6 @@ pub async fn trigger_sync(
     let assets_dir = super::config::get_assets_path(&workspace);
     execute_with_adapter(db, |storage| {
         super::markdown::export_changed(storage, &dir, Some(&assets_dir))
-    })
-    .await
-}
-
-#[tauri::command]
-pub async fn create_block_version(
-    db: State<'_, super::state::DatabaseConnection>,
-    block_id: &str,
-    snapshot: &str,
-    hash: &str,
-    reason: &str,
-    checkpoint_name: Option<String>,
-) -> Result<BlockVersion, String> {
-    execute_with_adapter(db, |storage| {
-        BlockVersionService::create(
-            storage,
-            block_id,
-            snapshot,
-            hash,
-            reason,
-            checkpoint_name.as_deref(),
-            None,
-        )
-    })
-    .await
-}
-
-#[tauri::command]
-pub async fn get_block_versions(
-    db: State<'_, super::state::DatabaseConnection>,
-    block_id: &str,
-) -> Result<Vec<BlockVersion>, String> {
-    execute_with_adapter(db, |storage| BlockVersionService::list(storage, block_id)).await
-}
-
-#[tauri::command]
-pub async fn get_block_version_by_id(
-    db: State<'_, super::state::DatabaseConnection>,
-    id: &str,
-) -> Result<BlockVersion, String> {
-    execute_with_adapter(db, |storage| BlockVersionService::get_by_id(storage, id)).await
-}
-
-#[tauri::command]
-pub async fn restore_block_version(
-    db: State<'_, super::state::DatabaseConnection>,
-    version_id: &str,
-) -> Result<BlockVersion, String> {
-    let adapter_arc = db.adapter_arc();
-    let mut adapter = adapter_arc.lock().await;
-    BlockVersionService::restore(&mut *adapter, version_id).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn cleanup_block_versions(
-    db: State<'_, super::state::DatabaseConnection>,
-    retention_days: i64,
-) -> Result<(), String> {
-    execute_with_adapter(db, |storage| {
-        BlockVersionService::cleanup(storage, retention_days)
-    })
-    .await
-}
-
-#[tauri::command]
-pub async fn delete_block_version(
-    db: State<'_, super::state::DatabaseConnection>,
-    version_id: &str,
-) -> Result<(), String> {
-    execute_with_adapter(db, |storage| {
-        BlockVersionService::delete(storage, version_id)
     })
     .await
 }

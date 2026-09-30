@@ -54,13 +54,12 @@ function makeHighlight(blockId: string | null = null): BookHighlightRust {
   }
 }
 
-/** saveBlockTree 回显：Rust 返回 [{ block: <rust 命名 block>, render_segments, snapshot }] */
+/** saveBlockTree 回显：Rust 返回 [{ block: <rust 命名 block>, render_segments }] */
 function echoSaveBlockTree(list: Array<Record<string, unknown>>) {
   mockClient.saveBlockTree.mockImplementation(async (updates: Array<Record<string, unknown>>) =>
     updates.map(u => ({
       block: { ...u, created_at: u.created_at ?? 1 },
       render_segments: [],
-      snapshot: null,
     })))
   return list
 }

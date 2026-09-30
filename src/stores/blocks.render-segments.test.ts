@@ -36,7 +36,6 @@ function makeSaveResult(blockId: string, content: string, renderSegments: any[] 
     id: blockId,
     block: { id: blockId, content } as any,
     render_segments: renderSegments,
-    snapshot: null,
   }
 }
 

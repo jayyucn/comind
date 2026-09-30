@@ -98,7 +98,6 @@ export interface SearchResult {
 
 export interface BlockSaveResult {
   block: Block
-  snapshot: string
   /** Structured render instructions for block.content.
    *  Built during save to close the edit→render-transition gap.
    *  Absent on old binaries (serde default). */
@@ -173,18 +172,6 @@ export interface ImportResult {
 export interface SyncConfig {
   sync_enabled: boolean
   sync_interval_secs: number
-}
-
-export interface BlockVersion {
-  id: string
-  block_id: string
-  snapshot: string
-  hash: string
-  version: number
-  source: string
-  message: string | null
-  restored_from_version_id: string | null
-  created_at: number
 }
 
 export interface Notification {

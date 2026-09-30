@@ -1,7 +1,6 @@
 import type {
   BatchResult,
   Block,
-  BlockVersion,
   BookHighlightRust, BookProgressRust,
   DateRefRecord,
   Link,
@@ -51,12 +50,6 @@ export interface WasmClient {
   /** 指定月份（yyyy-MM）的全部快照（含 content_json），按 date 倒序，供按月异步渲染 */
   list_ideas_snapshots_by_month(year: number, month: number): Promise<{ page_id: string; date: string; content_json: string }[]>
 
-  create_block_version(blockId: string, snapshot: string, hash: string, reason: string, checkpointName?: string): Promise<BlockVersion>
-  get_block_versions(blockId: string): Promise<BlockVersion[]>
-  get_block_version_by_id(id: string): Promise<BlockVersion>
-  restore_block_version(versionId: string): Promise<BlockVersion>
-  cleanup_block_versions(retentionDays: number): Promise<void>
-  delete_block_version(versionId: string): Promise<void>
   /** 撤销软删除（ADR-0046 D10）：复活块及其下整棵软删子树，返回 sync_changes 的 JSON 串 */
   undelete_blocks(ids_json: string): Promise<string>
 
@@ -288,34 +281,6 @@ export async function initWasmClient(): Promise<WasmClient> {
       const result = await wasmModule.list_ideas_snapshots_by_month(year, month)
       if (result === null || result === undefined) return []
       return parseJsonResult<{ page_id: string; date: string; content_json: string }[]>(result)
-    },
-
-    async create_block_version(blockId: string, snapshot: string, hash: string, reason: string, checkpointName?: string): Promise<BlockVersion> {
-      const result = await wasmModule.create_block_version(blockId, snapshot, hash, reason, checkpointName ?? undefined)
-      return parseJsonResult<BlockVersion>(result)
-    },
-
-    async get_block_versions(blockId: string): Promise<BlockVersion[]> {
-      const result = await wasmModule.get_block_versions(blockId)
-      return parseJsonResult<BlockVersion[]>(result)
-    },
-
-    async get_block_version_by_id(id: string): Promise<BlockVersion> {
-      const result = await wasmModule.get_block_version_by_id(id)
-      return parseJsonResult<BlockVersion>(result)
-    },
-
-    async restore_block_version(versionId: string): Promise<BlockVersion> {
-      const result = await wasmModule.restore_block_version(versionId)
-      return parseJsonResult<BlockVersion>(result)
-    },
-
-    async cleanup_block_versions(retentionDays: number): Promise<void> {
-      await wasmModule.cleanup_block_versions(BigInt(retentionDays))
-    },
-
-    async delete_block_version(versionId: string): Promise<void> {
-      await wasmModule.delete_block_version(versionId)
     },
 
     async undelete_blocks(ids_json: string): Promise<string> {

@@ -15,13 +15,11 @@ use crate::storage::entity::block::{block_select_cols, row_to_block_js};
 use crate::storage::entity::page::{page_select_cols, row_to_page_js};
 #[cfg(target_arch = "wasm32")]
 use crate::storage::entity::link::{link_select_cols, row_to_link_js};
-use crate::storage::entity::property::{property_select_cols, row_to_property_js};
 use crate::storage::entity::relationship_type::{relationship_type_select_cols, row_to_relationship_type_js};
 use crate::storage::entity::tag::{tag_select_cols, row_to_tag_js};
 use crate::storage::entity::field_definition::{field_definition_select_cols, row_to_field_definition_js};
 use crate::storage::entity::field_value::{field_value_select_cols, row_to_field_value_js};
 use crate::storage::entity::template::{template_select_cols, row_to_template_js};
-use crate::storage::entity::block_version::{block_version_select_cols, row_to_block_version_js};
 use crate::storage::entity::notification::{notification_select_cols, row_to_notification_js};
 use crate::storage::entity::saved_filter::{saved_filter_select_cols, row_to_saved_filter_js};
 use crate::storage::entity::screen_view::{screen_view_select_cols, row_to_screen_view_js};
@@ -169,14 +167,10 @@ impl SqlJsAdapter {
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_date_ref_block ON DateRef(block_id);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_date_ref_event_ts ON DateRef(event_ts);")?;
         
-        Self::exec(db, "CREATE TABLE IF NOT EXISTS Property (id TEXT PRIMARY KEY, block_id TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, type TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0, is_hidden INTEGER NOT NULL DEFAULT 0, is_deleted INTEGER NOT NULL DEFAULT 0, schema_version INTEGER NOT NULL DEFAULT 1, version INTEGER NOT NULL DEFAULT 0, deleted_at INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, UNIQUE(block_id, key));")?;
-        
         Self::exec(db, "CREATE TABLE IF NOT EXISTS RelationshipType (id TEXT PRIMARY KEY, type TEXT NOT NULL, inverse TEXT, label TEXT NOT NULL, inverse_label TEXT NOT NULL, color TEXT NOT NULL, `order` INTEGER NOT NULL DEFAULT 0, strength TEXT NOT NULL DEFAULT 'medium', deleted INTEGER NOT NULL DEFAULT 0, builtin INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
         
         Self::exec(db, "CREATE TABLE IF NOT EXISTS UserTemplate (id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL, content TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
         
-        Self::exec(db, "CREATE TABLE IF NOT EXISTS BlockVersion (id TEXT PRIMARY KEY, block_id TEXT NOT NULL, version INTEGER NOT NULL, snapshot TEXT NOT NULL, hash TEXT NOT NULL, message TEXT, source TEXT NOT NULL, restored_from_version_id TEXT, created_at INTEGER NOT NULL);")?;
-
         Self::exec(db, "CREATE TABLE IF NOT EXISTS Notification (id TEXT PRIMARY KEY, block_id TEXT NOT NULL, page_id TEXT NOT NULL, kind TEXT NOT NULL, event_iso TEXT NOT NULL, fired_at INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'unread', snooze_until INTEGER, payload TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 0, deleted_at INTEGER);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_notifications_status ON Notification(status);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_notifications_fired_at ON Notification(fired_at);")?;
@@ -191,9 +185,6 @@ impl SqlJsAdapter {
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_block_pos ON Block(pos);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_link_target ON Link(target_page_id);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_link_source ON Link(source_block_id);")?;
-        Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_property_blockId ON Property(block_id);")?;
-        Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_property_key ON Property(key);")?;
-
         Self::exec(db, "CREATE TABLE IF NOT EXISTS SavedFilter (id TEXT PRIMARY KEY, name TEXT NOT NULL, query_json TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
 
         Self::exec(db, "CREATE TABLE IF NOT EXISTS screen_view (id TEXT PRIMARY KEY, entity TEXT NOT NULL DEFAULT 'block', parent_id TEXT, name TEXT NOT NULL, query_json TEXT NOT NULL, view_type TEXT NOT NULL DEFAULT 'table', group_by TEXT NOT NULL DEFAULT '', is_default INTEGER NOT NULL DEFAULT 0, sort_order INTEGER NOT NULL DEFAULT 0, config TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);")?;
@@ -411,13 +402,6 @@ impl SqlJsAdapter {
         }
         if !has_column("Link", "deleted_at") {
             Self::exec(db, "ALTER TABLE Link ADD COLUMN deleted_at INTEGER;")?;
-        }
-        if !has_column("Property", "version") {
-            Self::exec(db, "ALTER TABLE Property ADD COLUMN version INTEGER NOT NULL DEFAULT 0;")?;
-        }
-        if !has_column("Property", "deleted_at") {
-            Self::exec(db, "ALTER TABLE Property ADD COLUMN deleted_at INTEGER;")?;
-            Self::exec(db, "UPDATE Property SET deleted_at = updated_at WHERE is_deleted = 1 AND deleted_at IS NULL;")?;
         }
         if !has_column("RelationshipType", "version") {
             Self::exec(db, "ALTER TABLE RelationshipType ADD COLUMN version INTEGER NOT NULL DEFAULT 0;")?;
@@ -1041,109 +1025,6 @@ impl DateRefRepository for SqlJsAdapter {
     }
 }
 
-impl PropertyRepository for SqlJsAdapter {
-    fn get_all(&self) -> Result<Vec<Property>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, &format!("SELECT {} FROM Property WHERE is_deleted = 0 AND deleted_at IS NULL", property_select_cols()), &[])?;
-        Ok(result.into_iter().map(|r| row_to_property_js(&r)).collect())
-    }
-
-    fn get_by_id(&self, id: &str) -> Result<Property, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, &format!("SELECT {} FROM Property WHERE id = ? AND deleted_at IS NULL", property_select_cols()), &[id])?;
-        if result.is_empty() {
-            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Property not found")));
-        }
-        Ok(row_to_property_js(&result[0]))
-    }
-
-    fn get_by_block_id(&self, block_id: &str) -> Result<Vec<Property>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, &format!("SELECT {} FROM Property WHERE block_id = ? AND is_deleted = 0 AND deleted_at IS NULL ORDER BY sort_order", property_select_cols()), &[block_id])?;
-        Ok(result.into_iter().map(|r| row_to_property_js(&r)).collect())
-    }
-
-    fn get_by_block_ids(&self, block_ids: &[String]) -> Result<Vec<Property>, Box<dyn std::error::Error>> {
-        if block_ids.is_empty() {
-            return Ok(Vec::new());
-        }
-        let placeholders: Vec<String> = (1..=block_ids.len()).map(|i| format!("?{}", i)).collect();
-        let sql = format!(
-            "SELECT {} FROM Property WHERE block_id IN ({}) AND is_deleted = 0 AND deleted_at IS NULL ORDER BY sort_order",
-            property_select_cols(),
-            placeholders.join(", ")
-        );
-        let params: Vec<&str> = block_ids.iter().map(|s| s.as_str()).collect();
-        let result = Self::query(&self.db, &sql, &params)?;
-        Ok(result.into_iter().map(|r| row_to_property_js(&r)).collect())
-    }
-
-    fn get_by_block_id_and_key(&self, block_id: &str, key: &str) -> Result<Option<Property>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, &format!("SELECT {} FROM Property WHERE block_id = ? AND key = ? AND is_deleted = 0 AND deleted_at IS NULL", property_select_cols()), &[block_id, key])?;
-        if result.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(row_to_property_js(&result[0])))
-        }
-    }
-
-    fn query_block_ids_by_key_value(&self, key: &str, values: &[String]) -> Result<Vec<String>, Box<dyn std::error::Error>> {
-        if values.is_empty() {
-            return Ok(Vec::new());
-        }
-        let placeholders = values.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        let sql = format!(
-            "SELECT DISTINCT block_id FROM Property WHERE key = ? AND value IN ({}) AND is_deleted = 0 AND deleted_at IS NULL",
-            placeholders
-        );
-        let mut params: Vec<&str> = Vec::new();
-        params.push(key);
-        for v in values {
-            params.push(v.as_str());
-        }
-        let rows = Self::query(&self.db, &sql, &params)?;
-        let ids: Vec<String> = rows.into_iter().filter_map(|r| r.get("block_id").map(|v| v.as_str()).map(|s| s.to_string())).collect();
-        Ok(ids)
-    }
-
-    fn create(&mut self, property: &Property) -> Result<Property, Box<dyn std::error::Error>> {
-        Self::run_with_params(&self.db, "INSERT INTO Property (id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, version, deleted_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)", &[
-            &property.id, &property.block_id, &property.key, &property.value, &property.r#type,
-            &property.sort_order.to_string(), &property.is_hidden.to_string(), &property.is_deleted.to_string(),
-            &property.schema_version.to_string(), &property.version.to_string(),
-            &property.created_at.to_string(), &property.updated_at.to_string()
-        ])?;
-        Ok(property.clone())
-    }
-    fn upsert(&mut self, property: &Property) -> Result<Property, Box<dyn std::error::Error>> {
-        Self::run_with_params(&self.db, "INSERT INTO Property (id, block_id, key, value, type, sort_order, is_hidden, is_deleted, schema_version, version, deleted_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?) ON CONFLICT(block_id, key) DO UPDATE SET value = excluded.value, type = excluded.type, updated_at = excluded.updated_at, sort_order = excluded.sort_order, is_hidden = excluded.is_hidden, schema_version = excluded.schema_version, is_deleted = 0, deleted_at = NULL", &[
-            &property.id, &property.block_id, &property.key, &property.value, &property.r#type,
-            &property.sort_order.to_string(), &property.is_hidden.to_string(), &property.is_deleted.to_string(),
-            &property.schema_version.to_string(), &property.version.to_string(),
-            &property.created_at.to_string(), &property.updated_at.to_string()
-        ])?;
-        Ok(property.clone())
-    }
-
-    fn update(&mut self, property: &Property) -> Result<Property, Box<dyn std::error::Error>> {
-        Self::run_with_params(&self.db, "UPDATE Property SET value = ?, type = ?, sort_order = ?, is_hidden = ?, is_deleted = ?, version = version + 1, updated_at = ? WHERE id = ?", &[
-            &property.value, &property.r#type, &property.sort_order.to_string(),
-            &property.is_hidden.to_string(), &property.is_deleted.to_string(),
-            &property.updated_at.to_string(), &property.id
-        ])?;
-        Ok(property.clone())
-    }
-
-    fn delete(&mut self, id: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let now = chrono::Utc::now().timestamp_millis();
-        Self::run_with_params(&self.db, "UPDATE Property SET deleted_at = ?, version = version + 1, updated_at = ? WHERE id = ?", &[&now.to_string(), &now.to_string(), id])?;
-        Ok(())
-    }
-
-    fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let now = chrono::Utc::now().timestamp_millis();
-        Self::run_with_params(&self.db, "UPDATE Property SET deleted_at = ?, version = version + 1, updated_at = ? WHERE block_id = ?", &[&now.to_string(), &now.to_string(), block_id])?;
-        Ok(())
-    }
-}
-
 impl TagRepository for SqlJsAdapter {
     fn get_by_id(&self, id: &str) -> Result<Tag, Box<dyn std::error::Error>> {
         let result = Self::query(&self.db, &format!("SELECT {} FROM Tag WHERE id = ? AND deleted_at IS NULL", tag_select_cols()), &[id])?;
@@ -1697,57 +1578,6 @@ impl SearchRepository for SqlJsAdapter {
 }
 
 #[cfg(target_arch = "wasm32")]
-impl BlockVersionRepository for SqlJsAdapter {
-    fn get_by_id(&self, id: &str) -> Result<BlockVersion, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, &format!("SELECT {} FROM BlockVersion WHERE id = ?", block_version_select_cols()), &[id])?;
-        if result.is_empty() {
-            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "BlockVersion not found")));
-        }
-        Ok(row_to_block_version_js(&result[0]))
-    }
-
-    fn get_by_block_id(&self, block_id: &str) -> Result<Vec<BlockVersion>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, &format!("SELECT {} FROM BlockVersion WHERE block_id = ? ORDER BY version DESC", block_version_select_cols()), &[block_id])?;
-        Ok(result.into_iter().map(|r| row_to_block_version_js(&r)).collect())
-    }
-
-    fn get_latest_version(&self, block_id: &str) -> Result<Option<BlockVersion>, Box<dyn std::error::Error>> {
-        let result = Self::query(&self.db, &format!("SELECT {} FROM BlockVersion WHERE block_id = ? ORDER BY version DESC LIMIT 1", block_version_select_cols()), &[block_id])?;
-        if result.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(row_to_block_version_js(&result[0])))
-        }
-    }
-
-    fn create(&mut self, version: &BlockVersion) -> Result<BlockVersion, Box<dyn std::error::Error>> {
-        let message = version.message.as_deref().unwrap_or("");
-        let restored_from_version_id = version.restored_from_version_id.as_deref().unwrap_or("");
-        Self::run_with_params(&self.db, "INSERT INTO BlockVersion (id, block_id, version, snapshot, hash, message, source, restored_from_version_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", &[
-            &version.id, &version.block_id, &version.version.to_string(),
-            &version.snapshot, &version.hash, message,
-            &version.source, restored_from_version_id, &version.created_at.to_string()
-        ])?;
-        Ok(version.clone())
-    }
-
-    fn delete(&mut self, id: &str) -> Result<(), Box<dyn std::error::Error>> {
-        Self::run_with_params(&self.db, "DELETE FROM BlockVersion WHERE id = ?", &[id])?;
-        Ok(())
-    }
-
-    fn delete_by_block_id(&mut self, block_id: &str) -> Result<(), Box<dyn std::error::Error>> {
-        Self::run_with_params(&self.db, "DELETE FROM BlockVersion WHERE block_id = ?", &[block_id])?;
-        Ok(())
-    }
-
-    fn delete_older_than(&mut self, block_id: &str, timestamp: i64) -> Result<(), Box<dyn std::error::Error>> {
-        Self::run_with_params(&self.db, "DELETE FROM BlockVersion WHERE block_id = ? AND created_at < ?", &[block_id, &timestamp.to_string()])?;
-        Ok(())
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
 impl StorageAdapter for SqlJsAdapter {
     fn blocks(&mut self) -> &mut dyn BlockRepository {
         self
@@ -1758,10 +1588,6 @@ impl StorageAdapter for SqlJsAdapter {
     }
 
     fn links(&mut self) -> &mut dyn LinkRepository {
-        self
-    }
-
-    fn properties(&mut self) -> &mut dyn PropertyRepository {
         self
     }
 
@@ -1789,10 +1615,6 @@ impl StorageAdapter for SqlJsAdapter {
         self
     }
     
-    fn block_versions(&mut self) -> &mut dyn BlockVersionRepository {
-        self
-    }
-
     fn date_refs(&mut self) -> &mut dyn DateRefRepository {
         self
     }

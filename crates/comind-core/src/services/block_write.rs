@@ -1,5 +1,5 @@
 use crate::services::{
-    build_segments_for_block, BlockService, BlockVersionService, LinkService, NotificationService,
+    build_segments_for_block, BlockService, LinkService, NotificationService,
     PageService, PropertyService,
 };
 use crate::storage::{StorageAdapter, TransactionalStorageAdapter};
@@ -25,12 +25,12 @@ pub struct SaveOutcome {
 pub struct BlockWriteService;
 
 impl BlockWriteService {
-    /// Upsert a batch of blocks and build the frontend save results (snapshot +
+    /// Upsert a batch of blocks and build the frontend save results (block +
     /// render segments) plus the sync-changes set, all inside one transaction.
     ///
     /// Behavior preserved from the previous IPC-layer orchestration:
     /// - upsert by existence check (existing → update, missing → create);
-    /// - snapshot and render segments are best-effort (`unwrap_or_default`);
+    /// - render segments are best-effort (`unwrap_or_default`);
     /// - page touch + word_count recount (`PageService::recount_word_count`) is
     ///   best-effort and in-transaction;
     /// - per-block id is reported under `SyncTable::Block`.
@@ -91,11 +91,6 @@ impl BlockWriteService {
                     )?,
                 };
 
-                // Build snapshot inside the transaction (block/properties/links
-                // are just-written; zero extra round-trips beyond the reads here).
-                let snapshot =
-                    BlockVersionService::build_snapshot(storage, &saved_block.id).unwrap_or_default();
-
                 // Render segments built during save so the frontend can restore
                 // link/dateRef rendering immediately after edit→render transition.
                 let render_segments =
@@ -103,7 +98,6 @@ impl BlockWriteService {
 
                 results.push(BlockSaveResult {
                     block: saved_block,
-                    snapshot,
                     render_segments,
                 });
             }
@@ -142,8 +136,8 @@ impl BlockWriteService {
         })
     }
 
-    /// Delete a single block and its cascade (versions → links → properties →
-    /// block), reporting the deleted ids for sync, then page touch.
+    /// Delete a single block and its cascade (links → properties → block),
+    /// reporting the deleted ids for sync, then page touch.
     pub fn delete_block_cascade<S: TransactionalStorageAdapter>(
         adapter: &mut S,
         block_id: &str,
@@ -251,8 +245,6 @@ impl BlockWriteService {
             .or_insert_with(Vec::new)
             .extend(props.iter().map(|p| p.id.clone()));
 
-        // BlockVersion has FK (block_id) RESTRICT — must delete before Block.
-        BlockVersionService::delete_by_block_id(storage, block_id)?;
         LinkService::delete_by_source_block_id(storage, block_id)?;
         PropertyService::delete_by_block_id(storage, block_id)?;
         // BlockService::delete handles dateRef + notification cleanup.
@@ -414,9 +406,6 @@ mod tests {
 
         assert_eq!(outcome.results.len(), 2);
         assert_eq!(outcome.results[0].block.id, "b1");
-        // Snapshot is a real serialized BlockSnapshot, not an empty string.
-        assert!(!outcome.results[0].snapshot.is_empty());
-        assert!(outcome.results[0].snapshot.contains("\"block\""));
 
         // Both blocks reported under SyncTable::Block.
         let blocks_sync = outcome.sync_changes.get(&SyncTable::Block).unwrap();

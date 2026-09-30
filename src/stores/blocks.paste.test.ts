@@ -43,7 +43,7 @@ describe('pasteBlocks（ADR-0025 D6/D7/D8/D11）', () => {
     }
 
     mockSaveBlockTree.mockImplementation(async (updates: Array<{ id: string; content: string }>) => [
-      { id: updates[0].id, block: { id: updates[0].id, content: updates[0].content }, render_segments: [], snapshot: null },
+      { id: updates[0].id, block: { id: updates[0].id, content: updates[0].content }, render_segments: [] },
     ])
     mockSetProperty.mockImplementation(async (blockId: string, key: string, value: string, type: string) => ({
       id: `prop-${blockId}-${key}`,

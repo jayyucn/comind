@@ -12,7 +12,7 @@ function parseJsonResult<T>(result: unknown): T {
 import type {
   Block, Page, Property, Link, RelationshipType, LinkDraft,
   UserTemplate, SearchResult, BlockUpdate, BlockSaveResult, PageUpdate,
-  BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig, BlockVersion,
+  BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig,
   Notification, DateRefRecord, IncompleteTask, BlockCard, SavedFilterRust, ScreenViewRust,
   NotificationSettings, PageWithBlocks, BookHighlightRust, BookProgressRust
 } from './types'
@@ -88,13 +88,6 @@ export interface CoreClient {
   search(query: string): Promise<SearchResult[]>
 
   executeBatch(operations: BatchOperation[]): Promise<BatchResult[]>
-
-  createBlockVersion(blockId: string, snapshot: string, hash: string, reason: string, checkpointName?: string): Promise<BlockVersion>
-  getBlockVersions(blockId: string): Promise<BlockVersion[]>
-  getBlockVersionById(id: string): Promise<BlockVersion>
-  restoreBlockVersion(versionId: string): Promise<BlockVersion>
-  deleteBlockVersion(versionId: string): Promise<void>
-  cleanupBlockVersions(retentionDays: number): Promise<void>
 
   getNotification(id: string): Promise<Notification>
   getNotificationsByBlock(blockId: string): Promise<Notification[]>
@@ -427,31 +420,7 @@ class TauriClient implements CoreClient {
     return invoke('execute_batch', { operations })
   }
 
-  async createBlockVersion(blockId: string, snapshot: string, hash: string, reason: string, checkpointName?: string): Promise<BlockVersion> {
-    return invoke('create_block_version', { blockId, snapshot, hash, reason, checkpointName })
-  }
-
-  async getBlockVersions(blockId: string): Promise<BlockVersion[]> {
-    return invoke('get_block_versions', { blockId })
-  }
-
-  async getBlockVersionById(id: string): Promise<BlockVersion> {
-    return invoke('get_block_version_by_id', { id })
-  }
-
-  async restoreBlockVersion(versionId: string): Promise<BlockVersion> {
-    return invoke('restore_block_version', { versionId })
-  }
-
-  async deleteBlockVersion(versionId: string): Promise<void> {
-      return invoke('delete_block_version', { versionId })
-    }
-
-    async cleanupBlockVersions(retentionDays: number): Promise<void> {
-      return invoke('cleanup_block_versions', { retentionDays })
-    }
-
-    async getNotification(id: string): Promise<Notification> {
+  async getNotification(id: string): Promise<Notification> {
       return invoke('get_notification', { id })
     }
 
@@ -878,30 +847,6 @@ class WasmClientAdapter implements CoreClient {
     const opsJson = JSON.stringify(operations)
     const result = await this.wasm.execute_batch(opsJson)
     return parseJsonResult(result)
-  }
-
-  async createBlockVersion(blockId: string, snapshot: string, hash: string, reason: string, checkpointName?: string): Promise<BlockVersion> {
-    return this.wasm.create_block_version(blockId, snapshot, hash, reason, checkpointName)
-  }
-
-  async getBlockVersions(blockId: string): Promise<BlockVersion[]> {
-    return this.wasm.get_block_versions(blockId)
-  }
-
-  async getBlockVersionById(id: string): Promise<BlockVersion> {
-    return this.wasm.get_block_version_by_id(id)
-  }
-
-  async restoreBlockVersion(versionId: string): Promise<BlockVersion> {
-    return this.wasm.restore_block_version(versionId)
-  }
-
-  async deleteBlockVersion(versionId: string): Promise<void> {
-    await this.wasm.delete_block_version(versionId)
-  }
-
-  async cleanupBlockVersions(retentionDays: number): Promise<void> {
-    await this.wasm.cleanup_block_versions(retentionDays)
   }
 
   async getNotification(id: string): Promise<Notification> {

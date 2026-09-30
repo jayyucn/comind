@@ -1,5 +1,4 @@
 pub mod block;
-pub mod block_version;
 pub mod book;
 pub mod date_ref;
 pub mod link;
@@ -9,7 +8,6 @@ pub mod screen_view;
 pub mod notification_config;
 pub mod page;
 pub mod page_snapshot;
-pub mod property;
 pub mod relationship_type;
 pub mod template;
 pub mod search;

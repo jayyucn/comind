@@ -459,53 +459,6 @@ mod wasm_impl {
         })
     }
 
-    // ---- Block versions（共享 BlockVersionService，与 Tauri commands.rs 同构薄转发） ----
-    #[wasm_bindgen]
-    pub fn create_block_version(
-        block_id: &str,
-        snapshot: &str,
-        hash: &str,
-        reason: &str,
-        checkpoint_name: Option<String>,
-    ) -> Result<JsValue, JsValue> {
-        with_adapter(|adapter| {
-            let version = BlockVersionService::create(
-                adapter,
-                block_id,
-                snapshot,
-                hash,
-                reason,
-                checkpoint_name.as_deref(),
-                None,
-            )?;
-            Ok(to_js_value(version))
-        })
-    }
-
-    #[wasm_bindgen]
-    pub fn get_block_versions(block_id: &str) -> Result<JsValue, JsValue> {
-        with_adapter(|adapter| {
-            let versions = BlockVersionService::list(adapter, block_id)?;
-            Ok(to_js_value(versions))
-        })
-    }
-
-    #[wasm_bindgen]
-    pub fn get_block_version_by_id(id: &str) -> Result<JsValue, JsValue> {
-        with_adapter(|adapter| {
-            let version = BlockVersionService::get_by_id(adapter, id)?;
-            Ok(to_js_value(version))
-        })
-    }
-
-    #[wasm_bindgen]
-    pub fn restore_block_version(version_id: &str) -> Result<JsValue, JsValue> {
-        with_adapter(|adapter| {
-            let version = BlockVersionService::restore(adapter, version_id)?;
-            Ok(to_js_value(version))
-        })
-    }
-
     /// 撤销软删除（ADR-0046 D10）：复活每个请求 id 及其下整棵软删子树，
     /// 返回 `HashMap<SyncTable, Vec<String>>` 的 JSON 串（与 delete_block_cascade 对称）。
     #[wasm_bindgen]
@@ -516,22 +469,6 @@ mod wasm_impl {
             let sync_changes = BlockWriteService::undelete_blocks(adapter, &ids)?;
             serde_json::to_string(&sync_changes)
                 .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
-        })
-    }
-
-    #[wasm_bindgen]
-    pub fn cleanup_block_versions(retention_days: i64) -> Result<JsValue, JsValue> {
-        with_adapter(|adapter| {
-            BlockVersionService::cleanup(adapter, retention_days)?;
-            Ok(to_js_value(json!({"success": true})))
-        })
-    }
-
-    #[wasm_bindgen]
-    pub fn delete_block_version(version_id: &str) -> Result<JsValue, JsValue> {
-        with_adapter(|adapter| {
-            BlockVersionService::delete(adapter, version_id)?;
-            Ok(to_js_value(json!({"success": true})))
         })
     }
 

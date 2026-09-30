@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::error::Error;
 
 /// 属性服务 —— **FieldValue 适配层**（ADR-0049 grill 决策 #6：内置字段读写全切 FieldValue，
-/// Property 表冻结遗留；block_version 模块待删除，不在切换范围）。
+/// Property 表已随 ADR-0051 D7 退役）。
 ///
 /// 对外契约保持 **Property JSON 形状不变**（id/block_id/key/value/type/...），
 /// TS 侧 `getProperties` / `setProperty` / query 投影等消费方零改动。
