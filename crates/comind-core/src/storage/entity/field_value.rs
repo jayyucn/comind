@@ -14,7 +14,8 @@ use crate::storage::executor::Executor;
 /// 二者都源自此处，列序 drift 在结构上不可能。
 ///
 /// 注意：列序与 `row_to_field_value_native` 的位置索引必须一一对应，
-/// 也与 `types/field_value.rs` 中 `FieldValue` 的结构体字段顺序一致。
+/// 也与 `types/field_value.rs` 中 `FieldValue` 的前 10 个字段顺序一致
+/// （末尾的 `key` 是反规范化副本，非落库列，由服务层 join 填充）。
 pub const FIELD_VALUE_COLS: &[&str] = &[
     "id", "block_id", "field_definition_id", "value_json", "value_type", "seq",
     "created_at", "updated_at", "version", "deleted_at",
@@ -46,6 +47,8 @@ pub fn row_to_field_value_native(row: &rusqlite::Row) -> Result<FieldValue, rusq
         updated_at: row.get(7)?,
         version: row.get(8)?,
         deleted_at: row.get(9)?,
+        // 非落库列：由 FieldValueService join 定义表填充
+        key: String::new(),
     })
 }
 
@@ -63,6 +66,8 @@ pub fn row_to_field_value_js(row: &HashMap<String, String>) -> FieldValue {
         updated_at: row.get("updated_at").cloned().unwrap_or_else(|| "0".to_string()).parse::<i64>().unwrap_or(0),
         version: row.get("version").map(|s| s.parse::<i64>().unwrap_or(0)).unwrap_or(0),
         deleted_at: row.get("deleted_at").map(|s| s.parse::<i64>().ok()).unwrap_or(None),
+        // 非落库列：由 FieldValueService join 定义表填充
+        key: String::new(),
     }
 }
 

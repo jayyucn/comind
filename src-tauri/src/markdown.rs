@@ -1,9 +1,9 @@
 use comind_core::{
     services::{
-        BlockService, PageService, PropertyService, RelationshipTypeService, TemplateService,
+        BlockService, FieldValueService, PageService, RelationshipTypeService, TemplateService,
     },
     storage::StorageAdapter,
-    types::{Block, BlockTree, Page, Property, RelationshipType, UserTemplate},
+    types::{Block, BlockTree, FieldValue, Page, RelationshipType, UserTemplate},
 };
 use crate::assets::{rewrite_assets_for_export, rewrite_assets_for_import};
 use regex::Regex;
@@ -73,7 +73,7 @@ struct PageMetadata {
     pub created_at: i64,
     pub updated_at: i64,
     #[serde(default)]
-    pub properties: Vec<Property>,
+    pub properties: Vec<FieldValue>,
 }
 
 fn sanitize_filename(title: &str) -> String {
@@ -128,12 +128,12 @@ fn parse_link(content: &str) -> Vec<(String, Option<String>)> {
     links
 }
 
-fn serialize_block_tree(tree: &BlockTree, properties: &[Property]) -> String {
+fn serialize_block_tree(tree: &BlockTree, properties: &[FieldValue]) -> String {
     let mut lines = Vec::new();
 
     fn dfs(
         tree: &BlockTree,
-        properties: &[Property],
+        properties: &[FieldValue],
         block_ids: &[String],
         depth: usize,
         lines: &mut Vec<String>,
@@ -162,7 +162,7 @@ fn serialize_block_tree(tree: &BlockTree, properties: &[Property]) -> String {
     lines.join("\n")
 }
 
-fn serialize_page_metadata(page: &Page, properties: &[Property]) -> String {
+fn serialize_page_metadata(page: &Page, properties: &[FieldValue]) -> String {
     let metadata = PageMetadata {
         id: page.id.clone(),
         r#type: page.r#type.clone(),
@@ -215,7 +215,7 @@ pub fn export_all(
 
         let mut properties = Vec::new();
         for block_id in &all_block_ids {
-            let props = PropertyService::get_by_block_id(storage, block_id)?;
+            let props = FieldValueService::get_by_block_id(storage, block_id)?;
             properties.extend(props);
         }
 
@@ -306,7 +306,7 @@ pub fn export_changed(
 
         let mut properties = Vec::new();
         for block_id in &all_block_ids {
-            let props = PropertyService::get_by_block_id(storage, block_id)?;
+            let props = FieldValueService::get_by_block_id(storage, block_id)?;
             properties.extend(props);
         }
 
@@ -399,7 +399,7 @@ pub fn import_all(
             if page.deleted == 0 {
                 let blocks = BlockService::get_by_page_id(storage, &page.id)?;
                 for block in &blocks {
-                    PropertyService::delete_by_block_id(storage, &block.id)?;
+                    FieldValueService::delete_by_block_id(storage, &block.id)?;
                     comind_core::services::LinkService::delete_by_source_block_id(
                         storage, &block.id,
                     )?;
@@ -508,7 +508,7 @@ pub fn import_all(
             if strategy == "merge" {
                 let blocks = BlockService::get_by_page_id(storage, &existing.id)?;
                 for block in &blocks {
-                    PropertyService::delete_by_block_id(storage, &block.id)?;
+                    FieldValueService::delete_by_block_id(storage, &block.id)?;
                     comind_core::services::LinkService::delete_by_source_block_id(
                         storage, &block.id,
                     )?;
@@ -608,15 +608,13 @@ pub fn import_all(
         }
 
         for prop in &metadata.properties {
-            PropertyService::create(
+            FieldValueService::create(
                 storage,
                 &prop.block_id,
                 &prop.key,
-                &prop.value,
-                &prop.r#type,
-                prop.sort_order,
-                prop.is_hidden,
-                prop.schema_version,
+                &prop.value_json,
+                &prop.value_type,
+                prop.seq,
             )?;
             properties_imported += 1;
         }

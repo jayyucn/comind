@@ -6,7 +6,7 @@ use std::sync::OnceLock;
 
 use crate::storage::StorageAdapter;
 use crate::services::LinkService;
-use crate::services::PropertyService;
+use crate::services::FieldValueService;
 
 /// 从 content 解析出的链接草稿（尚未查 Page 表获取 target_page_id）
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -19,9 +19,9 @@ pub struct LinkDraft {
     pub inverse_relationship_type: Option<String>,
 }
 
-/// 从 content 解析出的属性草稿
+/// 从 content 解析出的字段值草稿
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PropertyDraft {
+pub struct FieldValueDraft {
     pub key: String,
     pub value: String,
     pub r#type: String, // "boolean" | "date" | "page_ref" | "number" | "list" | "string"
@@ -147,17 +147,17 @@ pub fn extract_links_from_content(content: &str) -> Vec<LinkDraft> {
     results
 }
 
-/// 提取 content 中的属性（`key:: value` 格式，key 以 Unicode 字母或 _ 开头）
-pub fn extract_properties_from_content(content: &str) -> Vec<PropertyDraft> {
-    static RE_PROP: OnceLock<Regex> = OnceLock::new();
-    let prop_re = RE_PROP
+/// 提取 content 中的字段值（`key:: value` 格式，key 以 Unicode 字母或 _ 开头）
+pub fn extract_field_values_from_content(content: &str) -> Vec<FieldValueDraft> {
+    static RE_FIELD_VALUE: OnceLock<Regex> = OnceLock::new();
+    let field_value_re = RE_FIELD_VALUE
         .get_or_init(|| Regex::new(r"(?m)^([\p{L}_][\p{L}\p{N}_]*)::\s*(.+)$").unwrap());
     let mut results = Vec::new();
-    for caps in prop_re.captures_iter(content) {
+    for caps in field_value_re.captures_iter(content) {
         let key = caps.get(1).unwrap().as_str().to_string();
         let raw_value = caps.get(2).unwrap().as_str().trim().to_string();
-        let (inferred_type, value) = infer_property_value(&raw_value);
-        results.push(PropertyDraft {
+        let (inferred_type, value) = infer_field_value(&raw_value);
+        results.push(FieldValueDraft {
             key,
             value,
             r#type: inferred_type.to_string(),
@@ -166,8 +166,8 @@ pub fn extract_properties_from_content(content: &str) -> Vec<PropertyDraft> {
     results
 }
 
-/// 属性值类型推断（含值提取，如 date 保留原始字符串但 type 标记为 "date"）
-fn infer_property_value(raw: &str) -> (&'static str, String) {
+/// 字段值类型推断（含值提取，如 date 保留原始字符串但 type 标记为 "date"）
+fn infer_field_value(raw: &str) -> (&'static str, String) {
     let trimmed = raw.trim();
 
     if trimmed == "true" || trimmed == "false" {
@@ -307,51 +307,48 @@ impl ContentParseService {
         LinkService::sync_links_for_block(storage, block_id, &new_links)
     }
 
-    /// 同步一个 block 的 properties 到存储层。
-    /// 解析 content 中的 `key:: value` 行 → upsert Property 行。
+    /// 同步一个 block 的字段值到存储层。
+    /// 解析 content 中的 `key:: value` 行 → upsert FieldValue 行。
     ///
-    /// 注意：此函数只 upsert content 中派生的属性（`key:: value` 格式）。
-    /// 它不删除「不在 content 中」的属性——因为 UI 独立设置的属性（如 status/priority）
-    /// 本就不在 content 中，误删会导致刷新后图标消失（#property-icon-disappear）。
+    /// 注意：此函数只 upsert content 中派生的字段值（`key:: value` 格式）。
+    /// 它不删除「不在 content 中」的字段值——因为 UI 独立设置的字段值（如 status/priority）
+    /// 本就不在 content 中，误删会导致刷新后图标消失。
     /// 删除操作由 BlockService::delete 统一显式调用。
-    pub fn sync_properties_for_block(
+    pub fn sync_field_values_for_block(
         storage: &mut dyn StorageAdapter,
         block_id: &str,
         content: &str,
-    ) -> Result<Vec<crate::types::Property>, Box<dyn Error>> {
-        let drafts = extract_properties_from_content(content);
+    ) -> Result<Vec<crate::types::FieldValue>, Box<dyn Error>> {
+        let drafts = extract_field_values_from_content(content);
 
-        // Get existing properties (only active ones: deleted_at IS NULL)
-        let existing = PropertyService::get_by_block_id(storage, block_id)?;
+        // Get existing field values (only active ones: deleted_at IS NULL)
+        let existing = FieldValueService::get_by_block_id(storage, block_id)?;
 
         let mut results = Vec::new();
         for draft in &drafts {
-            let existing_prop = existing.iter().find(|p| p.key == draft.key);
-            if let Some(prop) = existing_prop {
-                // Update existing property if value or type changed
-                if prop.value != draft.value || prop.r#type != draft.r#type {
-                    let updated = PropertyService::update(
+            let existing_fv = existing.iter().find(|p| p.key == draft.key);
+            if let Some(fv) = existing_fv {
+                // Update existing field value if value or type changed
+                if fv.value_json != draft.value || fv.value_type != draft.r#type {
+                    let updated = FieldValueService::update(
                         storage,
-                        &prop.id,
+                        &fv.id,
                         Some(&draft.value),
                         Some(&draft.r#type),
-                        None,
                         None,
                     )?;
                     results.push(updated);
                 } else {
-                    results.push(prop.clone());
+                    results.push(fv.clone());
                 }
             } else {
-                let created = PropertyService::create(
+                let created = FieldValueService::create(
                     storage,
                     block_id,
                     &draft.key,
                     &draft.value,
                     &draft.r#type,
                     drafts.len() as i64, // sort_order
-                    0,                   // is_hidden
-                    1,                   // schema_version
                 )?;
                 results.push(created);
             }
@@ -458,11 +455,11 @@ mod tests {
         assert_eq!(links.iter().filter(|l| l.target_title == "A").count(), 1);
     }
 
-    // ---- extract_properties_from_content ----
+    // ---- extract_field_values_from_content ----
 
     #[test]
-    fn test_extract_properties_basic() {
-        let props = extract_properties_from_content("状态:: 进行中\n这是正文");
+    fn test_extract_field_values_basic() {
+        let props = extract_field_values_from_content("状态:: 进行中\n这是正文");
         assert_eq!(props.len(), 1);
         assert_eq!(props[0].key, "状态");
         assert_eq!(props[0].value, "进行中");
@@ -470,16 +467,16 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_properties_with_underscore_key() {
-        let props = extract_properties_from_content("_internal:: yes");
+    fn test_extract_field_values_with_underscore_key() {
+        let props = extract_field_values_from_content("_internal:: yes");
         assert_eq!(props.len(), 1);
         assert_eq!(props[0].key, "_internal");
         assert_eq!(props[0].value, "yes");
     }
 
     #[test]
-    fn test_extract_properties_multiple() {
-        let props = extract_properties_from_content(
+    fn test_extract_field_values_multiple() {
+        let props = extract_field_values_from_content(
             "优先级:: P0\n截止:: 2026-04-20\n完成:: true\n数量:: 42\n标签:: [a, b]\n参考:: [[张三]]",
         );
         assert_eq!(props.len(), 6);
@@ -492,9 +489,9 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_properties_numeric_key_start_fails() {
+    fn test_extract_field_values_numeric_key_start_fails() {
         // Key must start with Unicode letter or _, not digit
-        let props = extract_properties_from_content("123:: bad");
+        let props = extract_field_values_from_content("123:: bad");
         assert_eq!(props.len(), 0);
     }
 

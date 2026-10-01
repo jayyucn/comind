@@ -1,6 +1,6 @@
 use crate::{
-    services::PropertyService,
-    types::{Block, Page, PageSnapshot, Property},
+    services::FieldValueService,
+    types::{Block, FieldValue, Page, PageSnapshot},
     storage::{repository, StorageAdapter},
 };
 use serde::Serialize;
@@ -8,12 +8,12 @@ use std::collections::HashMap;
 use std::error::Error;
 
 /// `page_snapshots.content_json` 的顶层信封：flat blocks + properties map。
-/// 与库内存储同构（字段名直通 Block/Property），渲染端复用既有 `buildTree` + properties 通路。
+/// 与库内存储同构（字段名直通 Block/FieldValue），渲染端复用既有 `buildTree` + properties 通路。
 #[derive(Serialize)]
 struct SnapshotContent {
     blocks: Vec<Block>,
-    /// block_id → 该块未删除属性（当日属性值，如 status/priority）
-    properties: HashMap<String, Vec<Property>>,
+    /// block_id → 该块未删除字段值（当日字段值，如 status/priority）
+    properties: HashMap<String, Vec<FieldValue>>,
 }
 
 /// Ideas 页惰性物化（ADR-0042）：把「标题日期早于今天且尚无快照」的 Ideas 页整页块树
@@ -63,8 +63,8 @@ impl SnapshotService {
         Ok(materialized)
     }
 
-    /// 单页物化：读该页全部未删除块（按 pos 序）与各块未删除属性，序列化为 content_json。
-    /// 只读活数据，不改任何块/属性行。
+    /// 单页物化：读该页全部未删除块（按 pos 序）与各块未删除字段值，序列化为 content_json。
+    /// 只读活数据，不改任何块/字段值行。
     fn materialize_page(
         storage: &mut dyn StorageAdapter,
         page: &Page,
@@ -74,11 +74,11 @@ impl SnapshotService {
         let props = if block_ids.is_empty() {
             Vec::new()
         } else {
-            // ADR-0049 D6：内置字段已切 FieldValue，经适配层合成 Property 形状
-            PropertyService::get_by_block_ids(storage, &block_ids)?
+            // ADR-0049 D6：字段值直接读库内 FieldValue 行（无 Property 中间形状）
+            FieldValueService::get_by_block_ids(storage, &block_ids)?
         };
 
-        let mut properties: HashMap<String, Vec<Property>> = HashMap::new();
+        let mut properties: HashMap<String, Vec<FieldValue>> = HashMap::new();
         for p in props {
             properties.entry(p.block_id.clone()).or_default().push(p);
         }

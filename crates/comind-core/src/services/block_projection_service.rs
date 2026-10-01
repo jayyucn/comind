@@ -1,6 +1,6 @@
 use crate::{
-    services::PropertyService,
-    types::{BlockCard, DateRefLite, Property},
+    services::FieldValueService,
+    types::{BlockCard, DateRefLite, FieldValue},
     storage::{repository, StorageAdapter},
 };
 use regex::Regex;
@@ -23,11 +23,11 @@ pub fn get_blocks_projection(
     // 1. All non-deleted blocks
     let blocks = repository::BlockRepository::get_all(storage.blocks())?;
 
-    // 2. All non-deleted properties — indexed by block_id
-    // ADR-0049 D6：内置字段已切 FieldValue，经适配层合成 Property 形状
-    let properties = PropertyService::get_all(storage)?;
-    let mut props_map: HashMap<String, Vec<Property>> = HashMap::new();
-    for p in properties {
+    // 2. All non-deleted field values — indexed by block_id
+    // ADR-0049 D6：字段值直接读库内 FieldValue 行（无 Property 中间形状）
+    let field_values = FieldValueService::get_all(storage)?;
+    let mut props_map: HashMap<String, Vec<FieldValue>> = HashMap::new();
+    for p in field_values {
         props_map.entry(p.block_id.clone()).or_default().push(p);
     }
 
@@ -52,7 +52,7 @@ pub fn get_blocks_projection(
                 .remove(&b.id)
                 .unwrap_or_default()
                 .into_iter()
-                .map(|p| (p.key, parse_property_value(&p.value)))
+                .map(|p| (p.key, parse_field_value(&p.value_json)))
                 .collect();
 
             let dates: Vec<DateRefLite> = dates_map.remove(&b.id).unwrap_or_default();
@@ -97,9 +97,9 @@ fn make_content_preview(content: &str) -> String {
     }
 }
 
-/// Parse a JSON string property value into `serde_json::Value`.
+/// Parse a JSON string field value into `serde_json::Value`.
 /// Falls back to the raw string as a `Value::String` on parse error.
-fn parse_property_value(json_str: &str) -> Value {
+fn parse_field_value(json_str: &str) -> Value {
     serde_json::from_str(json_str).unwrap_or_else(|_| Value::String(json_str.to_string()))
 }
 
@@ -127,14 +127,14 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_property_value_valid_json() {
-        let v = parse_property_value("\"todo\"");
+    fn test_parse_field_value_valid_json() {
+        let v = parse_field_value("\"todo\"");
         assert_eq!(v, Value::String("todo".to_string()));
     }
 
     #[test]
-    fn test_parse_property_value_fallback() {
-        let v = parse_property_value("not-json");
+    fn test_parse_field_value_fallback() {
+        let v = parse_field_value("not-json");
         assert_eq!(v, Value::String("not-json".to_string()));
     }
 }

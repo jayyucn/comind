@@ -2,7 +2,7 @@ use crate::assets::{asset_extension, asset_file_path, is_safe_asset_component, n
 use comind_core::{
     services::{
         build_page_with_blocks, BlockService, BlockWriteService,
-        BookService, DateRefService, FilterService, LinkService, PageService, PropertyService,
+        BookService, DateRefService, FieldValueService, FilterService, LinkService, PageService,
         RelationshipTypeService, SnapshotService, TemplateService,
     },
     storage::{SQLiteAdapter, StorageAdapter, TransactionalStorageAdapter},
@@ -458,9 +458,9 @@ pub async fn search(
 pub async fn get_properties(
     db: State<'_, super::state::DatabaseConnection>,
     block_id: &str,
-) -> Result<Vec<Property>, String> {
+) -> Result<Vec<FieldValue>, String> {
     execute_with_adapter(db, |storage| {
-        PropertyService::get_by_block_id(storage, block_id)
+        FieldValueService::get_by_block_id(storage, block_id)
     })
     .await
 }
@@ -571,7 +571,7 @@ pub async fn query_incomplete_tasks(
         // 1. 查 status=Todo/Doing 的 block_ids
         let statuses = vec!["Todo".to_string(), "Doing".to_string()];
         let block_ids =
-            PropertyService::query_block_ids_by_key_value(storage, "status", &statuses)?;
+            FieldValueService::query_block_ids_by_key_value(storage, "status", &statuses)?;
         if block_ids.is_empty() {
             return Ok(Vec::new());
         }
@@ -942,13 +942,13 @@ pub async fn set_property(
     key: &str,
     value: &str,
     type_: &str,
-) -> Result<Property, String> {
+) -> Result<FieldValue, String> {
     let block_id_clone = block_id.to_string();
 
     let result = execute_with_adapter(db, |storage| {
         // Use upsert to eliminate read-then-write race condition
         // (two concurrent setProperty calls both seeing existing=None → double INSERT → UNIQUE constraint failure)
-        let result = PropertyService::upsert(storage, block_id, key, value, type_, 0, 0, 1);
+        let result = FieldValueService::upsert(storage, block_id, key, value, type_, 0);
 
         if let Ok(block) = storage.blocks().get_by_id(block_id) {
             let _ = PageService::update(
@@ -991,8 +991,8 @@ pub async fn delete_property(
     let block_id_clone = block_id.to_string();
 
     let result = execute_with_adapter(db, |storage| {
-        if let Some(prop) = PropertyService::get_by_block_id_and_key(storage, block_id, key)? {
-            PropertyService::delete(storage, &prop.id)?;
+        if let Some(prop) = FieldValueService::get_by_block_id_and_key(storage, block_id, key)? {
+            FieldValueService::delete(storage, &prop.id)?;
         }
 
         if let Ok(block) = storage.blocks().get_by_id(block_id) {

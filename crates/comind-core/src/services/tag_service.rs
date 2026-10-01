@@ -383,6 +383,7 @@ impl TagService {
                     updated_at: now,
                     version: 0,
                     deleted_at: None,
+                    key: fd.key.clone(),
                 };
                 repository::FieldValueRepository::create(storage.field_values(), &fv)?;
                 filled.insert(fd_id);

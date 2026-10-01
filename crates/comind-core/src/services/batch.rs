@@ -18,13 +18,13 @@
 
 use crate::{
     services::{
-        BlockService, FieldDefinitionService, LinkService, PageService, PropertyService,
+        BlockService, FieldDefinitionService, FieldValueService, LinkService, PageService,
         RelationshipTypeService, TagService, TemplateService,
     },
     storage::{repository, StorageAdapter},
     types::{
-        Block, FieldValue, FieldValueCreateOptions, Link, Page, Property, RelationshipType,
-        SyncTable, TagCreateOptions, TagTreeEntry, TagUpdateOptions, UserTemplate,
+        Block, FieldValue, FieldValueCreateOptions, Link, Page, RelationshipType, SyncTable,
+        TagCreateOptions, TagTreeEntry, TagUpdateOptions, UserTemplate,
     },
 };
 use serde_json::{json, Value};
@@ -97,7 +97,7 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
             for l in LinkService::get_by_source_block_id(storage, &created.id).unwrap_or_default() {
                 sync.push((SyncTable::Link, l.id));
             }
-            for p in PropertyService::get_by_block_id(storage, &created.id).unwrap_or_default() {
+            for p in FieldValueService::get_by_block_id(storage, &created.id).unwrap_or_default() {
                 // ADR-0049：属性已切 FieldValue，id 是 FieldValue 行 id，登记不得再指 Property 表
                 sync.push((SyncTable::FieldValue, p.id));
             }
@@ -132,7 +132,7 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
             for l in LinkService::get_by_source_block_id(storage, &updated.id).unwrap_or_default() {
                 sync.push((SyncTable::Link, l.id));
             }
-            for p in PropertyService::get_by_block_id(storage, &updated.id).unwrap_or_default() {
+            for p in FieldValueService::get_by_block_id(storage, &updated.id).unwrap_or_default() {
                 // ADR-0049：属性已切 FieldValue，id 是 FieldValue 行 id，登记不得再指 Property 表
                 sync.push((SyncTable::FieldValue, p.id));
             }
@@ -166,7 +166,7 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
             }
             // ADR-0049：属性软删的是 FieldValue 行（Property 表冻结），
             // 必须在 BlockService::delete 之前经适配层收集存活行 id
-            for p in PropertyService::get_by_block_id(storage, &id).unwrap_or_default() {
+            for p in FieldValueService::get_by_block_id(storage, &id).unwrap_or_default() {
                 sync.push((SyncTable::FieldValue, p.id));
             }
             for n in storage
@@ -361,24 +361,15 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
         }
 
         // ---- property ----
-        // grill 决策 #6：property 读写全切 FieldValue（PropertyService 适配层，
-        // 对外保持 Property JSON 形状）。同步登记 SyncTable::FieldValue（+ 自动建
-        // FieldDefinition 时登记 FieldDefinition），不再写 SyncTable::Property。
-        ("property", "create") => {
-            let prop: Property = serde_json::from_value(params)?;
-            let (created, fd_id) = PropertyService::save_shape(storage, &prop)?;
-            Ok(OpEffect {
-                value: serde_json::to_value(&created)?,
-                sync: vec![(SyncTable::FieldValue, created.id), (SyncTable::FieldDefinition, fd_id)],
-                page_ids: Vec::new(),
-            })
-        }
-        ("property", "set") => {
-            // Upsert 语义（#108 验收#1/#5）：属性删除是软删，且块删除级联软删属性后
-            // undelete_blocks 不复活属性 —— 撤销恢复属性必须走 upsert。id / sort_order
-            // 由快照忠实带回（不可重生成 id，否则复活匹配失败）。现走 FieldValue 适配层
-            // （save_shape：按 id 复活/覆盖 → 按 (block,key) 覆盖 → 插入）。
-            let prop_id = str_param(&params, "id");
+        // 字段值读写单源：FieldValueService 直接读写库内 `FieldValue` 行（无 Property
+        // 中间形状），`key` 由服务层 join 定义表填充。同步登记 SyncTable::FieldValue
+        // （+ 自动建 FieldDefinition 时登记 FieldDefinition）。
+        // create / set / update 参数同构（key 定位定义），语义均为保存整行。
+        ("property", "create") | ("property", "set") | ("property", "update") => {
+            // Upsert 语义（#108 验收#1/#5）：字段值删除是软删，且块删除级联软删值后
+            // undelete_blocks 不复活值 —— 撤销恢复必须走 upsert。id / seq 由快照忠实
+            // 带回（不可重生成 id，否则复活匹配失败）。
+            let id = str_param(&params, "id");
             let now = chrono::Utc::now().timestamp_millis();
             let r#type = {
                 let t = str_param(&params, "type");
@@ -388,50 +379,36 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
                     t
                 }
             };
-            let property = Property {
-                id: if prop_id.is_empty() {
-                    PropertyService::generate_id()
+            let fv = FieldValue {
+                id: if id.is_empty() {
+                    uuid::Uuid::new_v4().to_string()
                 } else {
-                    prop_id.to_string()
+                    id.to_string()
                 },
                 block_id: str_param(&params, "block_id").to_string(),
-                key: str_param(&params, "key").to_string(),
-                value: str_param(&params, "value").to_string(),
-                r#type: r#type.to_string(),
-                sort_order: params
+                field_definition_id: String::new(), // save 按 key 解析定义后回填
+                value_json: str_param(&params, "value").to_string(),
+                value_type: r#type.to_string(),
+                seq: params
                     .get("sort_order")
                     .and_then(|v| v.as_i64())
                     .unwrap_or(0),
-                is_hidden: params
-                    .get("is_hidden")
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(0),
-                is_deleted: 0,
-                schema_version: 1,
-                version: 0,
-                deleted_at: None,
                 created_at: now,
                 updated_at: now,
+                version: 0,
+                deleted_at: None,
+                key: str_param(&params, "key").to_string(),
             };
-            let (saved, fd_id) = PropertyService::save_shape(storage, &property)?;
+            let (saved, fd_id) = FieldValueService::save(storage, &fv)?;
             Ok(OpEffect {
                 value: serde_json::to_value(&saved)?,
                 sync: vec![(SyncTable::FieldValue, saved.id), (SyncTable::FieldDefinition, fd_id)],
                 page_ids: Vec::new(),
             })
         }
-        ("property", "update") => {
-            let prop: Property = serde_json::from_value(params)?;
-            let (updated, fd_id) = PropertyService::save_shape(storage, &prop)?;
-            Ok(OpEffect {
-                value: serde_json::to_value(&updated)?,
-                sync: vec![(SyncTable::FieldValue, updated.id), (SyncTable::FieldDefinition, fd_id)],
-                page_ids: Vec::new(),
-            })
-        }
         ("property", "delete") => {
             let id = str_param(&params, "id").to_string();
-            PropertyService::delete(storage, &id)?;
+            FieldValueService::delete(storage, &id)?;
             Ok(OpEffect {
                 value: json!({ "success": true }),
                 sync: vec![(SyncTable::FieldValue, id)],

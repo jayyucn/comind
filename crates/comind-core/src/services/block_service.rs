@@ -1,7 +1,7 @@
 use crate::{
     types::{Block, BlockTree},
     storage::{repository, StorageAdapter},
-    services::{DateRefService, ContentParseService, PropertyService, TagService},
+    services::{DateRefService, ContentParseService, FieldValueService, TagService},
 };
 use rand::Rng;
 use std::collections::HashMap;
@@ -84,12 +84,12 @@ impl BlockService {
 
         let block = repository::BlockRepository::create(storage.blocks(), &block)?;
         DateRefService::sync_date_refs_for_block(storage, &block.id, &block.content)?;
-        // S3: synchronise derived links & properties from content
+        // S3: synchronise derived links & field values from content
         if let Err(e) = ContentParseService::sync_links_for_block(storage, &block.id, &block.content) {
             eprintln!("[BlockService::create] sync_links_for_block failed for block {}: {}", block.id, e);
         }
-        if let Err(e) = ContentParseService::sync_properties_for_block(storage, &block.id, &block.content) {
-            eprintln!("[BlockService::create] sync_properties_for_block failed for block {}: {}", block.id, e);
+        if let Err(e) = ContentParseService::sync_field_values_for_block(storage, &block.id, &block.content) {
+            eprintln!("[BlockService::create] sync_field_values_for_block failed for block {}: {}", block.id, e);
         }
         // content 联动：新建块同样按内容派生 tags，并为其新获得的标签自动填默认值
         // （与 update 路径一致，ADR-0050 D13）。否则「创建即带 #tag」的块漏填默认，
@@ -168,12 +168,12 @@ impl BlockService {
                 &block.content,
             )?;
         }
-        // S3: synchronise derived links & properties from content
+        // S3: synchronise derived links & field values from content
         if let Err(e) = ContentParseService::sync_links_for_block(storage, &block.id, &block.content) {
             eprintln!("[BlockService::update] sync_links_for_block failed for block {}: {}", block.id, e);
         }
-        if let Err(e) = ContentParseService::sync_properties_for_block(storage, &block.id, &block.content) {
-            eprintln!("[BlockService::update] sync_properties_for_block failed for block {}: {}", block.id, e);
+        if let Err(e) = ContentParseService::sync_field_values_for_block(storage, &block.id, &block.content) {
+            eprintln!("[BlockService::update] sync_field_values_for_block failed for block {}: {}", block.id, e);
         }
         Ok(block)
     }
@@ -201,12 +201,12 @@ impl BlockService {
         DateRefService::sync_date_refs_for_block(storage, id, "")?;
         // 整块删除：连同该 block 的所有通知一起硬删除，避免 block 没了但通知残留（孤儿通知、点击跳转 404）。
         storage.notifications().delete_by_block_id(id)?;
-        // Clean up derived links; properties are explicitly deleted below (NOT via
-        // sync_properties_for_block, which now only upserts content-derived props).
+        // Clean up derived links; field values are explicitly deleted below (NOT via
+        // sync_field_values_for_block, which now only upserts content-derived values).
         if let Err(e) = ContentParseService::sync_links_for_block(storage, id, "") {
             eprintln!("[BlockService::delete] sync_links_for_block failed for block {}: {}", id, e);
         }
-        PropertyService::delete_by_block_id(storage, id)?;
+        FieldValueService::delete_by_block_id(storage, id)?;
         repository::BlockRepository::delete(storage.blocks(), id)
     }
 

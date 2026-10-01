@@ -1,7 +1,7 @@
 use crate::{
     types::{Block, BlockRenderData, Link, PageWithBlocks, RenderSegment},
     storage::repository,
-    services::{DateRefService, PropertyService, TagService},
+    services::{DateRefService, FieldValueService, TagService},
 };
 use std::collections::HashMap;
 use std::error::Error;
@@ -108,8 +108,8 @@ pub fn build_page_with_blocks(
 
     let tag_cache = build_tag_cache(storage);
 
-    // ADR-0049 D6：内置字段已切 FieldValue，properties 经适配层合成 Property 形状
-    let all_properties = PropertyService::get_by_block_ids(storage, &block_ids)?;
+    // ADR-0049 D6：字段值直接读库内 FieldValue 行（无 Property 中间形状）
+    let all_properties = FieldValueService::get_by_block_ids(storage, &block_ids)?;
     let mut props_by_block: HashMap<String, Vec<_>> = HashMap::new();
     for prop in all_properties {
         props_by_block

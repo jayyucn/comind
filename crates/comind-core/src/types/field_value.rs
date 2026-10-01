@@ -14,6 +14,11 @@ fn default_timestamp() -> i64 {
 /// - `value_type`：值的类型，落库为 denormalized 副本（来自 `FieldDefinition.r#type`），
 ///   使得值的反序列化不依赖额外 join（D9）。
 /// - `seq`：同一 block 的多个值（如 list / multi-select）的有序序号。
+///
+/// **`key` 不是落库列**：它是 `FieldDefinition.key` 的反规范化副本，由服务层
+/// `FieldValueService` join 定义表后填充（追加于结构体末尾，不参与 DB 列序映射）。
+/// 读路径拿到行后 `key` 恒为有效值；写入路径以 `key` 定位 `FieldDefinition`
+/// （未知 key 自动建定义，与 content `#foo` 自动建 Tag 同一哲学）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FieldValue {
     pub id: String,
@@ -35,6 +40,8 @@ pub struct FieldValue {
     /// 软删除时间戳（毫秒）。NULL = 未删除。
     #[serde(default)]
     pub deleted_at: Option<i64>,
+    /// 所属字段定义的 key（**非落库列**，服务层 join 填充）。
+    pub key: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,6 +68,7 @@ impl FieldValue {
             updated_at: now,
             version: 0,
             deleted_at: None,
+            key: String::new(),
         }
     }
 }

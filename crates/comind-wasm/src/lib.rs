@@ -332,7 +332,7 @@ mod wasm_impl {
     #[wasm_bindgen]
     pub fn get_properties(block_id: &str) -> Result<JsValue, JsValue> {
         with_adapter(|adapter| {
-            let props = PropertyService::get_by_block_id(adapter, block_id)?;
+            let props = FieldValueService::get_by_block_id(adapter, block_id)?;
             Ok(to_js_value(props))
         })
     }
@@ -345,25 +345,21 @@ mod wasm_impl {
         type_: &str,
     ) -> Result<JsValue, JsValue> {
         with_adapter(|adapter| {
-            let existing = PropertyService::get_by_block_id_and_key(adapter, block_id, key)?;
+            let existing = FieldValueService::get_by_block_id_and_key(adapter, block_id, key)?;
             match existing {
-                Some(mut prop) => {
-                    prop.value = value.to_string();
-                    prop.r#type = type_.to_string();
-                    prop.updated_at = chrono::Utc::now().timestamp_millis();
-                    PropertyService::update(
+                Some(prop) => {
+                    let updated = FieldValueService::update(
                         adapter,
                         &prop.id,
                         Some(value),
                         Some(type_),
                         None,
-                        None,
                     )?;
-                    Ok(to_js_value(prop))
+                    Ok(to_js_value(updated))
                 }
                 None => {
                     let created =
-                        PropertyService::create(adapter, block_id, key, value, type_, 0, 0, 1)?;
+                        FieldValueService::create(adapter, block_id, key, value, type_, 0)?;
                     Ok(to_js_value(created))
                 }
             }
@@ -373,9 +369,9 @@ mod wasm_impl {
     #[wasm_bindgen]
     pub fn delete_property(block_id: &str, key: &str) -> Result<JsValue, JsValue> {
         with_adapter(|adapter| {
-            let existing = PropertyService::get_by_block_id_and_key(adapter, block_id, key)?;
+            let existing = FieldValueService::get_by_block_id_and_key(adapter, block_id, key)?;
             if let Some(prop) = existing {
-                PropertyService::delete(adapter, &prop.id)?;
+                FieldValueService::delete(adapter, &prop.id)?;
             }
             Ok(to_js_value(json!({"success": true})))
         })

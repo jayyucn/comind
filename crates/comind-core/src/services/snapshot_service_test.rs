@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::{
-        services::{BlockService, PageService, PropertyService, SnapshotService},
+        services::{BlockService, FieldValueService, PageService, SnapshotService},
         storage::{repository::StorageAdapter, sqlite::SQLiteAdapter},
     };
     use std::error::Error;
@@ -14,7 +14,7 @@ mod tests {
         SQLiteAdapter::open_in_memory()
     }
 
-    /// 建「昨日」ideas 页：一个普通块 + 一个带 status=Todo 属性的任务块。
+    /// 建「昨日」ideas 页：一个普通块 + 一个带 status=Todo 字段值的任务块。
     /// 返回 (page, plain_block_id, task_block_id)。
     fn seed_yesterday_ideas_page(
         adapter: &mut SQLiteAdapter,
@@ -31,18 +31,18 @@ mod tests {
         )?;
         let plain = BlockService::create(adapter, &page.id, None, "昨日笔记", "{}", "bullet", None, true)?;
         let task = BlockService::create(adapter, &page.id, None, "写周报", "{}", "bullet", None, true)?;
-        PropertyService::create(adapter, &task.id, "status", "Todo", "string", 0, 0, 1)?;
+        FieldValueService::create(adapter, &task.id, "status", "Todo", "string", 0)?;
         Ok((page, plain.id, task.id))
     }
 
-    /// 从快照 content_json 中取出 task block 的 status 属性值。
+    /// 从快照 content_json 中取出 task block 的 status 字段值。
     fn snapshot_task_status(snapshot_json: &str, task_id: &str) -> Option<String> {
         let v: serde_json::Value = serde_json::from_str(snapshot_json).ok()?;
         let props = v["properties"].get(task_id)?.as_array()?;
         props
             .iter()
             .find(|p| p["key"] == "status")
-            .map(|p| p["value"].as_str().unwrap_or_default().to_string())
+            .map(|p| p["value_json"].as_str().unwrap_or_default().to_string())
     }
 
     #[test]
@@ -74,23 +74,23 @@ mod tests {
                 .as_array()
                 .expect("properties entry is array")
                 .iter()
-                .any(|p| p["key"] == "status" && p["value"] == "Todo"),
+                .any(|p| p["key"] == "status" && p["value_json"] == "Todo"),
             "快照须含任务块当日 status=Todo"
         );
 
-        // ② 活块数据未被改动：仍可经属性通路查询 & 修改
-        let live = PropertyService::get_by_block_id_and_key(&mut adapter, &task_id, "status")?;
-        assert_eq!(live.unwrap().value, "Todo", "活属性应保持 Todo");
+        // ② 活块数据未被改动：仍可经字段值通路查询 & 修改
+        let live = FieldValueService::get_by_block_id_and_key(&mut adapter, &task_id, "status")?;
+        assert_eq!(live.unwrap().value_json, "Todo", "活字段值应保持 Todo");
         let live_block = BlockService::get_by_page_id(&mut adapter, &page.id)?;
         assert_eq!(live_block.len(), 2, "活块列表应原样保留");
 
-        // 改 status 走属性通路 → 成功（活数据仍可演化）
-        let prop = PropertyService::get_by_block_id_and_key(&mut adapter, &task_id, "status")?;
-        PropertyService::update(&mut adapter, &prop.unwrap().id, Some("Doing"), None, None, None)?;
+        // 改 status 走字段值通路 → 成功（活数据仍可演化）
+        let prop = FieldValueService::get_by_block_id_and_key(&mut adapter, &task_id, "status")?;
+        FieldValueService::update(&mut adapter, &prop.unwrap().id, Some("Doing"), None, None)?;
         assert_eq!(
-            PropertyService::get_by_block_id_and_key(&mut adapter, &task_id, "status")?
+            FieldValueService::get_by_block_id_and_key(&mut adapter, &task_id, "status")?
                 .unwrap()
-                .value,
+                .value_json,
             "Doing"
         );
 

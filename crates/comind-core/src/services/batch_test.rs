@@ -5,11 +5,11 @@
 //! - 整批回滚：任一 op 失败 → 事务内全部不落库（ADR-0046 约束3）
 //! - entity 名 snake_case：`relationship_type` 正常分派（原 WASM `relationshipType`
 //!   静默失败的潜伏 bug 回归钉）
-//! - property set upsert 复活软删行（#108 验收#1/#5）
+//! - field value set upsert 复活软删行（#108 验收#1/#5）
 //! - template 增量契约：create 收 `{id,name,category,content}`、update 收
 //!   `{id,name}`（原 Tauri 全量反序列化必失败 → 桌面端静默回滚的回归钉）
 use crate::{
-    services::{batch::apply_batch, BlockService, PageService, PropertyService, TemplateService},
+    services::{batch::apply_batch, BlockService, FieldValueService, PageService, TemplateService},
     storage::sqlite::SQLiteAdapter,
     storage::TransactionalStorageAdapter,
     types::SyncTable,
@@ -94,7 +94,7 @@ fn test_block_update_via_batch() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
-fn test_block_delete_cascades_property() -> Result<(), Box<dyn Error>> {
+fn test_block_delete_cascades_field_value() -> Result<(), Box<dyn Error>> {
     let mut adapter = SQLiteAdapter::open_in_memory()?;
     let page = PageService::create(&mut adapter, "", "Page", None, None, None, None, None)?;
     BlockService::create(
@@ -106,7 +106,7 @@ fn test_block_delete_cascades_property() -> Result<(), Box<dyn Error>> {
         "bullet",
         Some("blk1"),
      true)?;
-    PropertyService::create(&mut adapter, "blk1", "status", "todo", "string", 0, 0, 1)?;
+    FieldValueService::create(&mut adapter, "blk1", "status", "todo", "string", 0)?;
 
     apply_batch(
         &mut adapter,
@@ -114,8 +114,8 @@ fn test_block_delete_cascades_property() -> Result<(), Box<dyn Error>> {
     )?;
 
     assert!(BlockService::get_by_id(&mut adapter, "blk1").is_err());
-    // S8 级联：属性一并清理（裁定钉：WASM 旧路径缺 dateRef/通知清理，统一走 BlockService::delete）
-    let props = PropertyService::get_by_block_id(&mut adapter, "blk1")?;
+    // S8 级联：字段值一并清理（裁定钉：WASM 旧路径缺 dateRef/通知清理，统一走 BlockService::delete）
+    let props = FieldValueService::get_by_block_id(&mut adapter, "blk1")?;
     assert!(props.is_empty());
     Ok(())
 }
@@ -147,7 +147,7 @@ fn test_block_undelete_revive_then_noop() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
-fn test_property_set_upsert_revives_soft_deleted() -> Result<(), Box<dyn Error>> {
+fn test_field_value_set_upsert_revives_soft_deleted() -> Result<(), Box<dyn Error>> {
     let mut adapter = SQLiteAdapter::open_in_memory()?;
     let page = PageService::create(&mut adapter, "", "Page", None, None, None, None, None)?;
     BlockService::create(
@@ -159,8 +159,8 @@ fn test_property_set_upsert_revives_soft_deleted() -> Result<(), Box<dyn Error>>
         "bullet",
         Some("blk1"),
      true)?;
-    let prop = PropertyService::create(&mut adapter, "blk1", "status", "todo", "string", 0, 0, 1)?;
-    PropertyService::delete(&mut adapter, &prop.id)?; // 软删
+    let prop = FieldValueService::create(&mut adapter, "blk1", "status", "todo", "string", 0)?;
+    FieldValueService::delete(&mut adapter, &prop.id)?; // 软删
 
     // 同 id 同 key upsert → 复活（UNIQUE(block_id,key) 冲突即 UPDATE，#108 验收#1/#5）
     apply_batch(
@@ -178,9 +178,9 @@ fn test_property_set_upsert_revives_soft_deleted() -> Result<(), Box<dyn Error>>
         })],
     )?;
 
-    let revived = PropertyService::get_by_block_id_and_key(&mut adapter, "blk1", "status")?;
+    let revived = FieldValueService::get_by_block_id_and_key(&mut adapter, "blk1", "status")?;
     assert!(revived.is_some());
-    assert_eq!(revived.unwrap().value, "done");
+    assert_eq!(revived.unwrap().value_json, "done");
     Ok(())
 }
 

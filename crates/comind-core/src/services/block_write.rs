@@ -1,6 +1,6 @@
 use crate::services::{
-    build_segments_for_block, BlockService, LinkService, NotificationService,
-    PageService, PropertyService,
+    build_segments_for_block, BlockService, FieldValueService, LinkService, NotificationService,
+    PageService,
 };
 use crate::storage::{StorageAdapter, TransactionalStorageAdapter};
 use crate::types::{Block, BlockSaveResult, SyncTable};
@@ -111,7 +111,7 @@ impl BlockWriteService {
                     .or_insert_with(Vec::new)
                     .extend(links.iter().map(|l| l.id.clone()));
                 let props =
-                    PropertyService::get_by_block_id(storage, &res.block.id).unwrap_or_default();
+                    FieldValueService::get_by_block_id(storage, &res.block.id).unwrap_or_default();
                 sync_changes
                     .entry(SyncTable::FieldValue)
                     .or_insert_with(Vec::new)
@@ -239,14 +239,14 @@ impl BlockWriteService {
             .entry(SyncTable::Link)
             .or_insert_with(Vec::new)
             .extend(links.iter().map(|l| l.id.clone()));
-        let props = PropertyService::get_by_block_id(storage, block_id)?;
+        let props = FieldValueService::get_by_block_id(storage, block_id)?;
         sync_changes
             .entry(SyncTable::FieldValue)
             .or_insert_with(Vec::new)
             .extend(props.iter().map(|p| p.id.clone()));
 
         LinkService::delete_by_source_block_id(storage, block_id)?;
-        PropertyService::delete_by_block_id(storage, block_id)?;
+        FieldValueService::delete_by_block_id(storage, block_id)?;
         // BlockService::delete handles dateRef + notification cleanup.
         BlockService::delete(storage, block_id)?;
 
