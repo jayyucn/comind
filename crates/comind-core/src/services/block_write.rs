@@ -308,7 +308,10 @@ impl BlockWriteService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::{FieldDefinitionService, TagService};
     use crate::storage::{repository, StorageAdapter, SQLiteAdapter};
+    use crate::types::field_definition::FieldDefinitionCreateOptions;
+    use crate::types::tag::{TagCreateOptions};
 
     /// 测试默认走提交语义（create_missing_tags = true）；建签门控由专用用例覆盖。
     fn save(
@@ -443,6 +446,58 @@ mod tests {
         // 回归：`BlockService::update` 的 None 语义是「不修改」，保存路径必须显式补写 NULL，
         // 否则块会静默留在旧父级下（拖回根级 → reload 回退）。
         assert!(BlockService::get_by_id(&mut adapter, "b2").unwrap().parent_id.is_none());
+    }
+
+    /// 回归 #2 核心侧：新获得标签的块，其标签字段默认值应被自动填充为 FieldValue。
+    /// 若此测通过而 UI 仍不显示默认值，则病在「保存后未回读 property store」（前端刷新）。
+    #[test]
+    fn save_block_with_new_tag_fills_field_defaults() {
+        let mut adapter = SQLiteAdapter::open_in_memory().unwrap();
+        let p1 = seed_page(&mut adapter, "p1");
+
+        // 带默认值的字段定义（用非系统 key，避免与 open_in_memory 的 seed 撞 UNIQUE）
+        let fd = FieldDefinitionService::create(
+            &mut adapter,
+            FieldDefinitionCreateOptions {
+                key: "review_state".to_string(),
+                title: "复核状态".to_string(),
+                r#type: "string".to_string(),
+                closed_values: None,
+                default_value: Some("\"待办\"".to_string()),
+                is_system: false,
+            },
+        )
+        .unwrap();
+
+        // 标签携带该字段
+        let tag_id = TagService::create(
+            &mut adapter,
+            TagCreateOptions {
+                title: "工作".to_string(),
+                field_ids: vec![fd.id.clone()],
+                parent_id: None,
+            },
+        )
+        .unwrap()
+        .id;
+
+        // 块内容引用该标签（提交语义 → 建签 + 打默认）
+        let outcome = save(
+            &mut adapter,
+            vec![block_with_content("b1", &p1, None, 1000, "#工作")],
+        )
+        .unwrap();
+        assert_eq!(outcome.results[0].block.tags, vec![tag_id]);
+
+        // 新获得标签 → 自动填默认值，生成 FieldValue
+        let fvs =
+            repository::FieldValueRepository::get_by_block_id(adapter.field_values(), "b1").unwrap();
+        assert_eq!(fvs.len(), 1, "应自动填一个默认值 FieldValue");
+        assert_eq!(fvs[0].field_definition_id, fd.id);
+        // string 类型 value_json 直通存**原文**：default_value 列的 JSON 文本（带引号）
+        // 必须换形为裸文本，否则 UI 显示带引号、PropertyInline 图标匹配（closed_values
+        // 按 === 严格相等）失败。回归：默认值「不要带引号」。
+        assert_eq!(fvs[0].value_json, "待办");
     }
 
     #[test]

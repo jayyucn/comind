@@ -542,8 +542,18 @@ export const useBlockStore = defineStore('blocks', () => {
       // 回写 Rust 派生的 block.tags（content 中 `#tag` 引用 → 标签归属由 Rust 解析并写入）。
       // 不回写则本地 block.tags 永远停留在输入前的值，块下字段展示区（BlockTagFields 读
       // block.tags）在输入 #tag 后不刷新，需手动切页 / 重开才更新。
+      const prevTags = new Set(currentBlock.tags ?? [])
       if (savedBlock.tags) {
         currentBlock.tags = savedBlock.tags
+      }
+      // 块新获得标签 → 回读该块属性。Rust 侧 `apply_field_defaults_for_new_tags` 已在落库时
+      // 为「打标自动填默认」写出 FieldValue，但 property store 不会被保存路径刷新
+      // （只有手动 setProperty 才回读）；不回读，字段区会一直显示占位「—」，看不到默认值
+      // （bug 2 前端侧）。仅在新获得标签时回读，避免每次打字保存都触发整块属性重载。
+      const gainedTag = (savedBlock.tags ?? []).some((t: string) => !prevTags.has(t))
+      if (gainedTag) {
+        const propertyStore = usePropertyStore()
+        void propertyStore.loadBlockProperties(currentBlock.id).catch(() => {})
       }
 
       // 引用了系统任务 tag 但尚无 status 属性 → 自动补 Todo，使 status 任务图标自动展示。

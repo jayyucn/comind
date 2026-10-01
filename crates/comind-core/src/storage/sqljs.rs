@@ -223,6 +223,7 @@ impl SqlJsAdapter {
         Self::migrate_add_field_definition_hide_when(db)?;
         Self::migrate_add_tag_is_preset(db)?;
         Self::migrate_add_field_definition_is_preset(db)?;
+        Self::migrate_strip_string_value_quotes(db)?;
 
         Ok(())
     }
@@ -379,6 +380,40 @@ impl SqlJsAdapter {
         };
         if !has_column("FieldDefinition", "is_preset") {
             Self::exec(db, "ALTER TABLE FieldDefinition ADD COLUMN is_preset INTEGER NOT NULL DEFAULT 0;")?;
+        }
+        Ok(())
+    }
+
+    /// 与 sqlite `migrate_strip_string_value_quotes` 逐行对称：一次性修复默认值填充
+    /// 引号 bug（string/page 型 value_json 被原样写入 default_value 的 JSON 文本）。
+    /// 只修「value_json == 该字段 default_value 且能解析为 JSON 字符串」的行，幂等。
+    fn migrate_strip_string_value_quotes(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        let rows = Self::query(
+            db,
+            "SELECT fv.id, fv.value_json FROM FieldValue fv \
+             JOIN FieldDefinition fd ON fd.id = fv.field_definition_id \
+             WHERE fv.value_type IN ('string', 'page') \
+               AND fd.default_value IS NOT NULL AND fd.default_value != '' \
+               AND fv.value_json = fd.default_value",
+            &[],
+        )?;
+        for row in rows {
+            let id = match row.get("id") {
+                Some(v) => v.clone(),
+                None => continue,
+            };
+            let raw = match row.get("value_json") {
+                Some(v) => v.clone(),
+                None => continue,
+            };
+            // 解析失败（非 JSON 字符串形态，如裸文本/对象）保持原样。
+            if let Ok(unquoted) = serde_json::from_str::<String>(&raw) {
+                Self::run_with_params(
+                    db,
+                    "UPDATE FieldValue SET value_json = ? WHERE id = ?",
+                    &[&unquoted, &id],
+                )?;
+            }
         }
         Ok(())
     }

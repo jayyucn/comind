@@ -69,10 +69,25 @@ impl TagService {
     }
 
     /// 创建 Tag：`field_ids` 只记自身字段（继承不物化，ADR-0050 D10）。
+    ///
+    /// **同名行复用 / 软删行复活**（联动复挂语义，与 `resolve_tag_ids_for_content` 同精神）：
+    /// `title` 上有 UNIQUE 约束，软删行仍占位，重建必撞约束。故
+    /// - 命中**软删**同名行 → 复活原行（保留其 `field_ids` / `parent_id` / 身份等既有配置），不新建；
+    /// - 命中**已 live** 同名行 → 幂等复用，避免重复点击 create 撞 UNIQUE、且不清空既有配置。
+    /// 这样「删除同名标签后再建」与「内容区 `#tag` 复挂」得到一致结果（都回到同一行）。
     pub fn create(
         storage: &mut dyn StorageAdapter,
         options: TagCreateOptions,
     ) -> Result<Tag, Box<dyn Error>> {
+        if let Some(existing) =
+            repository::TagRepository::get_by_title_including_deleted(storage.tags(), &options.title)?
+        {
+            if existing.deleted_at.is_some() {
+                repository::TagRepository::undelete(storage.tags(), &existing.id)?;
+                return repository::TagRepository::get_by_id(storage.tags(), &existing.id);
+            }
+            return Ok(existing);
+        }
         let tag = Tag::new(options);
         repository::TagRepository::create(storage.tags(), &tag)
     }
@@ -345,12 +360,23 @@ impl TagService {
                     Some(d) if !d.is_empty() => d.clone(),
                     _ => continue,
                 };
+                // default_value 列恒为 JSON 文本（UI JSON.stringify / seed serde_json 编码，
+                // ADR-0050 D13）；而 value_json 遵循 property 值编码契约（property-codec）：
+                // string/page 直通存原文，其余类型存 JSON 文本。按字段类型换形——原样照抄
+                // 会让 string 字段填出的值带引号（显示 "Todo"、图标匹配 closed_values 失败）。
+                let value_json = match fd.r#type.as_str() {
+                    "string" | "page" => {
+                        // 解析失败回退原文：兼容历史裸文本默认值（无引号）不炸。
+                        serde_json::from_str::<String>(&default).unwrap_or(default)
+                    }
+                    _ => default,
+                };
                 let now = chrono::Utc::now().timestamp_millis();
                 let fv = FieldValue {
                     id: Uuid::new_v4().to_string(),
                     block_id: block_id.to_string(),
                     field_definition_id: fd_id.clone(),
-                    value_json: default,
+                    value_json,
                     value_type: fd.r#type.clone(),
                     seq: 0,
                     created_at: now,
@@ -443,6 +469,66 @@ mod tests {
         let revived =
             crate::storage::repository::TagRepository::get_by_id(storage.tags(), &ids2[0]).unwrap();
         assert!(revived.deleted_at.is_none());
+    }
+
+    /// 回归 #1：软删后通过显式 `create` 重建同名标签（UI 路径：TagsLibrary 弹层
+    /// createTag）必须**复活**同一行，而非撞 `title` UNIQUE 约束失败。
+    /// 复现：先建 `#读书` → 软删 → 再 `TagService::create("读书")` 应成功且 id 不变。
+    #[test]
+    fn create_revives_soft_deleted_tag_same_title() {
+        use crate::storage::repository::TagRepository;
+
+        let mut storage = crate::storage::sqlite::SQLiteAdapter::open_in_memory().unwrap();
+
+        let ids1 =
+            TagService::resolve_tag_ids_for_content(&mut storage, "#读书", true).unwrap();
+        TagService::delete(&mut storage, &ids1[0]).unwrap();
+        assert!(
+            TagRepository::get_by_title(storage.tags(), "读书")
+                .unwrap()
+                .is_none(),
+            "软删后按 title 查不到（仍占 UNIQUE）"
+        );
+
+        // UI 显式重建同名标签
+        let recreated = TagService::create(
+            &mut storage,
+            TagCreateOptions {
+                title: "读书".to_string(),
+                field_ids: Vec::new(),
+                parent_id: None,
+            },
+        )
+        .unwrap();
+        // 复活同一行：id 不变，deleted_at 清空
+        assert_eq!(recreated.id, ids1[0], "应复活原行而非建新行");
+        assert!(recreated.deleted_at.is_none());
+        let live = TagRepository::get_by_title(storage.tags(), "读书")
+            .unwrap()
+            .expect("复活后应可查到");
+        assert_eq!(live.id, ids1[0]);
+    }
+
+    /// 回归 #1（幂等）：对已 live 的同名标签再 create 应复用既有行，不撞 UNIQUE、不建重复行。
+    #[test]
+    fn create_reuses_live_tag_same_title() {
+        let mut storage = crate::storage::sqlite::SQLiteAdapter::open_in_memory().unwrap();
+        let first =
+            TagService::create(&mut storage, TagCreateOptions {
+                title: "读书".to_string(),
+                field_ids: Vec::new(),
+                parent_id: None,
+            })
+            .unwrap();
+        let second =
+            TagService::create(&mut storage, TagCreateOptions {
+                title: "读书".to_string(),
+                field_ids: vec!["f1".to_string()],
+                parent_id: None,
+            })
+            .unwrap();
+        assert_eq!(first.id, second.id, "live 同名应复用同一行");
+        assert_eq!(second.field_ids, Vec::<String>::new(), "复用不改原有字段集合");
     }
 
     /// 建签门（create_missing = false）：打字中间态不得产生标签。

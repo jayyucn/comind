@@ -91,6 +91,17 @@ impl BlockService {
         if let Err(e) = ContentParseService::sync_properties_for_block(storage, &block.id, &block.content) {
             eprintln!("[BlockService::create] sync_properties_for_block failed for block {}: {}", block.id, e);
         }
+        // content 联动：新建块同样按内容派生 tags，并为其新获得的标签自动填默认值
+        // （与 update 路径一致，ADR-0050 D13）。否则「创建即带 #tag」的块漏填默认，
+        // 表现与「先建空块再打 #tag」不一致（bug 2 核心侧）。
+        if let Err(e) =
+            TagService::apply_field_defaults_for_new_tags(storage, &block.id, &block.tags)
+        {
+            eprintln!(
+                "[BlockService::create] apply_field_defaults failed for block {}: {}",
+                block.id, e
+            );
+        }
         Ok(block)
     }
 

@@ -358,6 +358,7 @@ impl SQLiteAdapter {
         Self::migrate_add_screen_view_config(conn)?;
         Self::migrate_add_screen_view_entity(conn)?;
         Self::migrate_add_screen_view_parent_id(conn)?;
+        Self::migrate_strip_string_value_quotes(conn)?;
 
         Ok(())
     }
@@ -664,6 +665,35 @@ impl SQLiteAdapter {
             .unwrap_or(false);
         if !has_column {
             conn.execute("ALTER TABLE FieldDefinition ADD COLUMN is_preset INTEGER NOT NULL DEFAULT 0", [])?;
+        }
+        Ok(())
+    }
+
+    /// 一次性数据修复（默认值填充引号 bug）：string/page 型 FieldValue 的 value_json 应直通存
+    /// **原文**（property-codec 契约），早期填充误把 default_value 列的 JSON 文本（带引号）原样
+    /// 照抄进 value_json → UI 显示带引号、PropertyInline 图标按 `===` 匹配 closed_values 失败。
+    /// 只修「value_json 与该字段 default_value 完全相同 且 能解析为 JSON 字符串」的行——
+    /// 手写值经 setProperty 正确编码，不可能命中该指纹，不会误伤。幂等（修完即不再匹配）。
+    fn migrate_strip_string_value_quotes(conn: &rusqlite::Connection) -> Result<(), Box<dyn Error>> {
+        let mut stmt = conn.prepare(
+            "SELECT fv.id, fv.value_json FROM FieldValue fv \
+             JOIN FieldDefinition fd ON fd.id = fv.field_definition_id \
+             WHERE fv.value_type IN ('string', 'page') \
+               AND fd.default_value IS NOT NULL AND fd.default_value != '' \
+               AND fv.value_json = fd.default_value",
+        )?;
+        let candidates: Vec<(String, String)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<Result<_, _>>()?;
+        drop(stmt);
+        for (id, raw) in candidates {
+            // 解析失败（非 JSON 字符串形态，如裸文本/对象）保持原样。
+            if let Ok(unquoted) = serde_json::from_str::<String>(&raw) {
+                conn.execute(
+                    "UPDATE FieldValue SET value_json = ?2 WHERE id = ?1",
+                    rusqlite::params![&id, &unquoted],
+                )?;
+            }
         }
         Ok(())
     }
@@ -2181,6 +2211,57 @@ mod tests {
             )
             .unwrap();
         assert_eq!(cols, 2, "both identity columns must exist after migration");
+    }
+
+    #[test]
+    fn strip_string_value_quotes_repairs_filled_defaults_only() {
+        let adapter = SQLiteAdapter::open_in_memory().unwrap();
+        adapter
+            .conn
+            .execute_batch(
+                "INSERT INTO Page (id, title, created_at, updated_at) VALUES ('p1','测试页',1,1);
+                 INSERT INTO Block (id, page_id, created_at, updated_at) VALUES ('b1','p1',1,1);",
+            )
+            .unwrap();
+        // seed 的 status 字段 default_value = JSON 文本 '"Todo"'
+        let status_id: String = adapter
+            .conn
+            .query_row("SELECT id FROM FieldDefinition WHERE key = 'status'", [], |r| r.get(0))
+            .unwrap();
+
+        // 脏行：旧填充 bug 指纹 —— value_json 与 default_value 完全相同（带引号）
+        adapter
+            .conn
+            .execute(
+                "INSERT INTO FieldValue (id, block_id, field_definition_id, value_json, value_type, created_at, updated_at)
+                 VALUES ('fv-dirty', 'b1', ?1, '\"Todo\"', 'string', 1, 1)",
+                [&status_id],
+            )
+            .unwrap();
+        // 对照行：手写值形状（value != default），即使带引号也不得被误伤
+        adapter
+            .conn
+            .execute(
+                "INSERT INTO FieldValue (id, block_id, field_definition_id, value_json, value_type, created_at, updated_at)
+                 VALUES ('fv-hand', 'b1', ?1, '\"手写\"', 'string', 1, 1)",
+                [&status_id],
+            )
+            .unwrap();
+
+        SQLiteAdapter::migrate_strip_string_value_quotes(&adapter.conn).unwrap();
+        // 幂等：重跑不炸不变
+        SQLiteAdapter::migrate_strip_string_value_quotes(&adapter.conn).unwrap();
+
+        let dirty: String = adapter
+            .conn
+            .query_row("SELECT value_json FROM FieldValue WHERE id = 'fv-dirty'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(dirty, "Todo", "填充出的默认值应去掉 JSON 引号（图标/文本显示依赖裸值）");
+        let hand: String = adapter
+            .conn
+            .query_row("SELECT value_json FROM FieldValue WHERE id = 'fv-hand'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(hand, "\"手写\"", "与 default 不匹配的行不得被修复误伤");
     }
 
     #[test]

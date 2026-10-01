@@ -14,6 +14,7 @@ import { SAVE_DEBOUNCE_MS } from '../utils/block-helpers'
 const hoisted = vi.hoisted(() => {
   const ensureTodo = vi.fn(() => Promise.resolve())
   const getBlockProperty = vi.fn(() => undefined)
+  const loadBlockProperties = vi.fn(() => Promise.resolve([]))
   const client = {
     saveBlockTree: vi.fn(),
     executeBatch: vi.fn(() => Promise.resolve()),
@@ -21,7 +22,7 @@ const hoisted = vi.hoisted(() => {
     getOutlinks: vi.fn(() => Promise.resolve([])),
     setProperty: vi.fn(() => Promise.resolve({})),
   }
-  return { ensureTodo, getBlockProperty, client }
+  return { ensureTodo, getBlockProperty, loadBlockProperties, client }
 })
 
 const SYSTEM_TASK_ID = 'sys-tag-system-task'
@@ -35,6 +36,7 @@ vi.mock('../stores/property', () => ({
   usePropertyStore: vi.fn(() => ({
     ensureTodo: hoisted.ensureTodo,
     getBlockProperty: hoisted.getBlockProperty,
+    loadBlockProperties: hoisted.loadBlockProperties,
   })),
 }))
 
@@ -140,5 +142,39 @@ describe('_doSave — 回写 block.tags', () => {
     await flushPromises()
 
     expect(hoisted.ensureTodo).not.toHaveBeenCalled()
+  })
+
+  it('新获得标签 → 回读该块属性（bug 2：打标自动填的默认值需在字段区可见）', async () => {
+    const blockStore = useBlockStore()
+    const id = await seed('旧内容')
+    // 保存返回「派生出系统任务 tag」——块此前无标签，属新获得
+    hoisted.loadBlockProperties.mockClear()
+
+    await blockStore.updateBlockContent(id, '新内容 #任务')
+    vi.advanceTimersByTime(SAVE_DEBOUNCE_MS)
+    await flushPromises()
+
+    // 关键：因块新获得标签，必须回读 property store，否则 Rust 侧已落库的
+    // 字段默认值 FieldValue 不会显示在 BlockTagFields 字段区（一直显示占位「—」）。
+    expect(hoisted.loadBlockProperties).toHaveBeenCalledWith(id)
+  })
+
+  it('未获得新标签（tags 未变）→ 不触发整块属性回读', async () => {
+    const blockStore = useBlockStore()
+    const id = await seed('旧内容 #任务')
+    // 让 saveBlockTree 回显与当前一致的 tags（已含任务 tag，无新增）
+    hoisted.client.saveBlockTree.mockImplementation((updates: { id: string }[]) =>
+      Promise.resolve([{ block: { id: updates[0].id, tags: [SYSTEM_TASK_ID] }, render_segments: [] }]),
+    )
+    // 先把块置为已含任务 tag 的状态
+    blockStore.getBlock(id)!.tags = [SYSTEM_TASK_ID]
+    hoisted.loadBlockProperties.mockClear()
+
+    await blockStore.updateBlockContent(id, '新内容 #任务')
+    vi.advanceTimersByTime(SAVE_DEBOUNCE_MS)
+    await flushPromises()
+
+    // tags 未变化 → 不应触发属性回读（避免每次打字保存都重载整块属性）
+    expect(hoisted.loadBlockProperties).not.toHaveBeenCalled()
   })
 })

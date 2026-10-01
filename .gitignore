@@ -60,3 +60,4 @@ comind-android/
 .vite-t6-cache/
 dist.old-**
 *.txt
+target-debug/
