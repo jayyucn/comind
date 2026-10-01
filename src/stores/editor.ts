@@ -124,20 +124,20 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
-  /** 属性编辑器状态（弹出位置与 quickPropertyEditor 同约定：来自触发元素矩形） */
-  const propertyEditor = ref<{
+  /** 字段值编辑器状态（弹出位置与 quickFieldValueEditor 同约定：来自触发元素矩形） */
+  const fieldValueEditor = ref<{
     visible: boolean
     blockId: string | null
     initialKey: string | null
     position: { x: number; y: number } | null
   } | null>(null)
 
-  function showPropertyEditor(
+  function showFieldValueEditor(
     blockId: string,
     initialKey?: string,
     position?: { x: number; y: number }
   ) {
-    propertyEditor.value = {
+    fieldValueEditor.value = {
       visible: true,
       blockId,
       initialKey: initialKey ?? null,
@@ -145,9 +145,9 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
-  function hidePropertyEditor() {
-    if (propertyEditor.value) {
-      propertyEditor.value.visible = false
+  function hideFieldValueEditor() {
+    if (fieldValueEditor.value) {
+      fieldValueEditor.value.visible = false
     }
   }
 
@@ -253,20 +253,20 @@ export const useEditorStore = defineStore('editor', () => {
     blockModalSnapshotOf.value = null
   }
 
-  /** 快捷属性编辑器状态 */
-  const quickPropertyEditor = ref<{
+  /** 快捷字段值编辑器状态 */
+  const quickFieldValueEditor = ref<{
     visible: boolean
     blockId: string
     key: string
     position: { x: number; y: number } | null
   } | null>(null)
 
-  function showQuickPropertyEditor(
+  function showQuickFieldValueEditor(
     blockId: string,
     key: string,
     position?: { x: number; y: number }
   ) {
-    quickPropertyEditor.value = {
+    quickFieldValueEditor.value = {
       visible: true,
       blockId,
       key,
@@ -274,9 +274,9 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
-  function hideQuickPropertyEditor() {
-    if (quickPropertyEditor.value) {
-      quickPropertyEditor.value.visible = false
+  function hideQuickFieldValueEditor() {
+    if (quickFieldValueEditor.value) {
+      quickFieldValueEditor.value.visible = false
     }
   }
 
@@ -300,12 +300,12 @@ export const useEditorStore = defineStore('editor', () => {
     hideSlashCommand,
     updateSlashQuery,
     updateSlashSelectedIndex,
-    propertyEditor,
-    showPropertyEditor,
-    hidePropertyEditor,
-    quickPropertyEditor,
-    showQuickPropertyEditor,
-    hideQuickPropertyEditor,
+    fieldValueEditor,
+    showFieldValueEditor,
+    hideFieldValueEditor,
+    quickFieldValueEditor,
+    showQuickFieldValueEditor,
+    hideQuickFieldValueEditor,
     dateRefEditor,
     openDateRefEditor,
     closeDateRefEditor,

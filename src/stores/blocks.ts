@@ -1,13 +1,13 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import type { Block, BlockClipPayload } from '../types/block'
-import type { PropertyType, PropertyValue } from '../types/property'
+import type { FieldType, FieldValueData } from '../types/field-definition'
 import { debounce } from '../utils/debounce'
 import { generateUUID } from '../utils/id'
-import { decodePropertyValue } from '../utils/property-codec'
+import { decodeFieldValueData } from '../utils/field-value-codec'
 import { initCoreClient, isTauriEnvironment, triggerSync } from '../wasm/client'
 import { useBlockCardStore } from './blockCard'
-import { usePropertyStore } from './property'
+import { useFieldValueStore } from './fieldValue'
 import { useTagsStore } from './tags'
 
 import {
@@ -546,24 +546,24 @@ export const useBlockStore = defineStore('blocks', () => {
       if (savedBlock.tags) {
         currentBlock.tags = savedBlock.tags
       }
-      // 块新获得标签 → 回读该块属性。Rust 侧 `apply_field_defaults_for_new_tags` 已在落库时
-      // 为「打标自动填默认」写出 FieldValue，但 property store 不会被保存路径刷新
-      // （只有手动 setProperty 才回读）；不回读，字段区会一直显示占位「—」，看不到默认值
+      // 块新获得标签 → 回读该块字段值。Rust 侧 `apply_field_defaults_for_new_tags` 已在落库时
+      // 为「打标自动填默认」写出 FieldValue，但 field-value store 不会被保存路径刷新
+      // （只有手动 setFieldValue 才回读）；不回读，字段区会一直显示占位「—」，看不到默认值
       // （bug 2 前端侧）。仅在新获得标签时回读，避免每次打字保存都触发整块属性重载。
       const gainedTag = (savedBlock.tags ?? []).some((t: string) => !prevTags.has(t))
       if (gainedTag) {
-        const propertyStore = usePropertyStore()
-        void propertyStore.loadBlockProperties(currentBlock.id).catch(() => {})
+        const fieldValueStore = useFieldValueStore()
+        void fieldValueStore.loadBlockFieldValues(currentBlock.id).catch(() => {})
       }
 
-      // 引用了系统任务 tag 但尚无 status 属性 → 自动补 Todo，使 status 任务图标自动展示。
+      // 引用了系统任务 tag 但尚无 status 字段值 → 自动补 Todo，使 status 任务图标自动展示。
       // ensureTodo 幂等（已有 status 直接跳过）且并发安全（ensureTodoInFlight 守卫），
       // fire-and-forget：失败不影响本次保存落库。
       const taskTagId = systemTaskTagId()
       if (taskTagId && currentBlock.tags?.includes(taskTagId)) {
-        const propertyStore = usePropertyStore()
-        if (!propertyStore.getBlockProperty(currentBlock.id, 'status')) {
-          void propertyStore.ensureTodo(currentBlock.id).catch(() => {})
+        const fieldValueStore = useFieldValueStore()
+        if (!fieldValueStore.getBlockFieldValue(currentBlock.id, 'status')) {
+          void fieldValueStore.ensureTodo(currentBlock.id).catch(() => {})
         }
       }
 
@@ -697,8 +697,8 @@ export const useBlockStore = defineStore('blocks', () => {
     const contentLen = block.content.length
 
     // ── 获取原 block 的 status（新 block 也加 todo）────────────────────────
-    const propertyStore = usePropertyStore()
-    const hasSourceStatus = !!propertyStore.getBlockProperty(blockId, 'status')
+    const fieldValueStore = useFieldValueStore()
+    const hasSourceStatus = !!fieldValueStore.getBlockFieldValue(blockId, 'status')
 
     // ── 位置判断 ─────────────────────────────────────────────────────────
     // 空行（contentLen === 0）应视作行尾，插入子节点而非兄弟节点
@@ -772,11 +772,11 @@ export const useBlockStore = defineStore('blocks', () => {
     }
 
     // ── 原 block 有 status 时，新 block 加 Todo ───────────────────────────
-    // 注意：需先 _doSave 将新 block 持久化到数据库，否则 setProperty 会因
-    // FOREIGN KEY 约束失败（property 表引用不存在的 block）
+    // 注意：需先 _doSave 将新 block 持久化到数据库，否则 setFieldValue 会因
+    // FOREIGN KEY 约束失败（field_value 表引用不存在的 block）
     if (newBlock && hasSourceStatus) {
       await _doSave(newBlock)
-      await propertyStore.setProperty(newBlock.id, 'status', 'Todo', 'string')
+      await fieldValueStore.setFieldValue(newBlock.id, 'status', 'Todo', 'string')
     }
 
     return newBlock
@@ -1447,8 +1447,8 @@ export const useBlockStore = defineStore('blocks', () => {
     // block 都会自动成为任务。仅当 block 尚无 status 时补 Todo；
     // 移除 dateRef 时不会反向清除 status（保持任务状态）。
     if (/@\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2})?\s*[📅⏰]/u.test(content)) {
-      const propertyStore = usePropertyStore()
-      await propertyStore.ensureTodo(blockId)
+      const fieldValueStore = useFieldValueStore()
+      await fieldValueStore.ensureTodo(blockId)
     }
   }
 
@@ -1504,8 +1504,8 @@ export const useBlockStore = defineStore('blocks', () => {
    *   子树外部引用保持原样
    * - 层级：完全由 payload.children 决定；顶层根按源顺序作为一组 sibling 依次插入
    * - 落点：有锚点 block → 插在其后；无 → 追加到 fallbackParentId 末尾
-   * - properties：逐条 setProperty 重建（跨页同语义）；先 flushSave 落库再写属性
-   *   （Property 表有 block 外键约束）
+   * - properties：逐条 setFieldValue 重建（跨页同语义）；先 flushSave 落库再写字段值
+   *   （field_value 表有 block 外键约束）
    */
   async function pasteBlocks(
     forest: BlockClipPayload[],
@@ -1551,7 +1551,7 @@ export const useBlockStore = defineStore('blocks', () => {
     }
 
     const created: Block[] = []
-    const propertyJobs: { blockId: string; properties: NonNullable<BlockClipPayload['properties']> }[] = []
+    const fieldValueJobs: { blockId: string; properties: NonNullable<BlockClipPayload['properties']> }[] = []
 
     const insertTree = async (node: BlockClipPayload, parent: string | null, pos: number): Promise<void> => {
       const block = await createBlock({
@@ -1564,7 +1564,7 @@ export const useBlockStore = defineStore('blocks', () => {
         format: node.format ?? {},
       })
       created.push(block)
-      if (node.properties) propertyJobs.push({ blockId: block.id, properties: node.properties })
+      if (node.properties) fieldValueJobs.push({ blockId: block.id, properties: node.properties })
       // 子节点：父为新建块（无既有子节点），直接顺序编号
       for (let i = 0; i < node.children.length; i++) {
         await insertTree(node.children[i], block.id, (i + 1) * 1000)
@@ -1584,19 +1584,19 @@ export const useBlockStore = defineStore('blocks', () => {
       prevPos = pos
     }
 
-    // 3. 先落库再建属性（FK：Property 表引用已存在的 block）
+    // 3. 先落库再建字段值（FK：field_value 表引用已存在的 block）
     for (const b of created) {
       await flushSave(b.id)
     }
-    if (propertyJobs.length > 0) {
-      const propertyStore = usePropertyStore()
-      for (const job of propertyJobs) {
-        for (const [key, prop] of Object.entries(job.properties)) {
-          await propertyStore.setProperty(
+    if (fieldValueJobs.length > 0) {
+      const fieldValueStore = useFieldValueStore()
+      for (const job of fieldValueJobs) {
+        for (const [key, entry] of Object.entries(job.properties)) {
+          await fieldValueStore.setFieldValue(
             job.blockId,
             key,
-            decodePropertyValue(prop.value, prop.type) as PropertyValue,
-            prop.type as PropertyType,
+            decodeFieldValueData(entry.value, entry.type) as FieldValueData,
+            entry.type as FieldType,
           )
         }
       }
@@ -1605,14 +1605,14 @@ export const useBlockStore = defineStore('blocks', () => {
     return created
   }
 
-  /** 更新 Block 属性（使用独立的 properties 表）。
-   *  必须走 propertyStore.setProperty 完整路径：写完数据库后刷新
-   *  propertyStore 内存缓存 + 失效 blockCard，否则 UI 立即重渲染时
+  /** 更新 Block 字段值（使用独立的 field_value 表）。
+   *  必须走 fieldValueStore.setFieldValue 完整路径：写完数据库后刷新
+   *  fieldValueStore 内存缓存 + 失效 blockCard，否则 UI 立即重渲染时
    *  仍读到旧值（如语言切换后退出编辑态"变回去"，刷新才生效）。 */
-  async function updateBlockProperties(blockId: string, properties: Record<string, PropertyValue>) {
-    const propertyStore = usePropertyStore()
-    for (const [key, value] of Object.entries(properties)) {
-      await propertyStore.setProperty(blockId, key, value)
+  async function updateBlockFieldValues(blockId: string, values: Record<string, FieldValueData>) {
+    const fieldValueStore = useFieldValueStore()
+    for (const [key, value] of Object.entries(values)) {
+      await fieldValueStore.setFieldValue(blockId, key, value)
     }
   }
 
@@ -1663,7 +1663,7 @@ export const useBlockStore = defineStore('blocks', () => {
     updateBlockContent,
     updateBlockFormat,
     updateBlockType,
-    updateBlockProperties,
+    updateBlockFieldValues,
     scheduleSave,
     flushSave,
     trashedPageWarnings,

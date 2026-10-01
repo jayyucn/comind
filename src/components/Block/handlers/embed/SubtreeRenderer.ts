@@ -1,8 +1,9 @@
 import { defineComponent, h, type PropType } from 'vue'
 import { useBlockRegistry } from '../../../../composables/useBlockRegistry'
-import { usePropertyStore } from '../../../../stores/property'
+import { useFieldValueStore } from '../../../../stores/fieldValue'
+import { decodeFieldValueData } from '../../../../utils/field-value-codec'
 import type { SubtreeNode } from '../../../../types/block'
-import type { PropertyValue } from '../../../../types/property'
+import type { FieldValueData } from '../../../../types/field-definition'
 
 const SubtreeRenderer = defineComponent({
   name: 'SubtreeRenderer',
@@ -13,7 +14,7 @@ const SubtreeRenderer = defineComponent({
   emits: ['content-click', 'language-change'],
   setup(props, { emit }) {
     const { getHandler } = useBlockRegistry()
-    const propertyStore = usePropertyStore()
+    const fieldValueStore = useFieldValueStore()
 
     function handleContentClick(e: MouseEvent) {
       // 不 stopPropagation：让 click 继续 DOM 冒泡到外层 .embed-card，
@@ -25,11 +26,11 @@ const SubtreeRenderer = defineComponent({
       emit('language-change', lang)
     }
 
-    function getBlockProperties(blockId: string): Record<string, PropertyValue> {
-      const props = propertyStore.getBlockProperties(blockId)
-      const result: Record<string, PropertyValue> = {}
-      for (const prop of props) {
-        result[prop.key] = prop.value
+    function getBlockFieldValuesMap(blockId: string): Record<string, FieldValueData> {
+      const rows = fieldValueStore.getBlockFieldValues(blockId)
+      const result: Record<string, FieldValueData> = {}
+      for (const fv of rows) {
+        result[fv.key] = decodeFieldValueData(fv.value_json, fv.value_type) as FieldValueData
       }
       return result
     }
@@ -74,7 +75,7 @@ const SubtreeRenderer = defineComponent({
           h('div', { class: 'embed-block-content' }, [
             h(handler.renderComponent, {
               content: node.block.content,
-              properties: getBlockProperties(node.block.id),
+              fieldValues: getBlockFieldValuesMap(node.block.id),
               showPlaceholder: false,
               readonly: true,
               key: node.block.id,

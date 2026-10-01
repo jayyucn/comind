@@ -13,13 +13,13 @@ const embedHandler: BlockTypeHandler = {
   setupBlock(ctx) {
     return {
       onContentClick(_e: MouseEvent) {
-        const sourceBlockId = ctx.getProperty('sourceBlockId')
+        const sourceBlockId = ctx.getFieldValue('sourceBlockId')
         if (!sourceBlockId) {
           // 让 EmbedRender placeholder 处理（点击打开 BlockSelector）
           return true
         }
         // 有 source → 导航到源页面
-        const sourcePageId = ctx.getProperty('sourcePageId')
+        const sourcePageId = ctx.getFieldValue('sourcePageId')
         if (sourcePageId) {
           const sourcePage = ctx.pageStore.pages.find(
             (p: { id: string; title: string }) => p.id === sourcePageId

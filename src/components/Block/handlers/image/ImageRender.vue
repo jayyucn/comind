@@ -28,13 +28,13 @@ const props = withDefaults(
     content: string
     showPlaceholder?: boolean
     showFullPlaceholder?: boolean
-    properties?: Record<string, unknown>
+    fieldValues?: Record<string, unknown>
     language?: string
   }>(),
   {
     showPlaceholder: false,
     showFullPlaceholder: false,
-    properties: () => ({}),
+    fieldValues: () => ({}),
     language: undefined,
   },
 )

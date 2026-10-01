@@ -75,7 +75,7 @@ describe('Ideas 页快照读取守卫（Seam ② store 级）', () => {
     expect(historySnapshot!.blocks.length).toBeGreaterThanOrEqual(1)
     const taskProps = historySnapshot!.properties[taskBlockId]
     expect(taskProps).toBeDefined()
-    expect(taskProps.some(p => p.key === 'status' && p.value === 'Todo')).toBe(true)
+    expect(taskProps.some(p => p.key === 'status' && p.value_json === 'Todo')).toBe(true)
 
     // ── 今日页：读取为 null（页面渲染仍走活数据）──
     expect(await pageStore.getIdeasSnapshot(todayPage.id)).toBeNull()

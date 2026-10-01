@@ -3,7 +3,7 @@ import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises } from '@vue/test-utils'
 import SlashCommandMenu from './SlashCommandMenu.vue'
 import { useEditorStore } from '../stores/editor'
-import { usePropertyStore } from '../stores/property'
+import { useFieldValueStore } from '../stores/fieldValue'
 import { useSlashCommands, buildTemplateCommands, executeTemplateCommand } from '../composables/useSlashCommands'
 import { useTemplateRegistry } from '../composables/useTemplateRegistry'
 import { useUserTemplatesStore } from '../stores/user-templates'
@@ -13,8 +13,8 @@ vi.mock('../stores/editor', () => ({
   useEditorStore: vi.fn()
 }))
 
-vi.mock('../stores/property', () => ({
-  usePropertyStore: vi.fn()
+vi.mock('../stores/fieldValue', () => ({
+  useFieldValueStore: vi.fn()
 }))
 
 vi.mock('../stores/user-templates', () => ({
@@ -98,15 +98,15 @@ describe('SlashCommandMenu', () => {
       activeBlockId: 'block-1',
       showSlashCommand: vi.fn(),
       hideSlashCommand: vi.fn(),
-      showQuickPropertyEditor: vi.fn()
+      showQuickFieldValueEditor: vi.fn()
     }
     vi.mocked(useEditorStore).mockReturnValue(mockEditorStore as any)
     
-    const mockPropertyStore = {
-      setProperty: vi.fn(),
+    const mockFieldValueStore = {
+      setFieldValue: vi.fn(),
       ensureTodo: vi.fn().mockResolvedValue(undefined)
     }
-    vi.mocked(usePropertyStore).mockReturnValue(mockPropertyStore as any)
+    vi.mocked(useFieldValueStore).mockReturnValue(mockFieldValueStore as any)
 
     const mockTemplateRegistry = {
       all: { value: [] },
@@ -330,11 +330,11 @@ describe('SlashCommandMenu - Template List Subview', () => {
     }
     vi.mocked(useEditorStore).mockReturnValue(mockEditorStore as any)
     
-    const mockPropertyStore = {
-      setProperty: vi.fn(),
+    const mockFieldValueStore = {
+      setFieldValue: vi.fn(),
       ensureTodo: vi.fn().mockResolvedValue(undefined)
     }
-    vi.mocked(usePropertyStore).mockReturnValue(mockPropertyStore as any)
+    vi.mocked(useFieldValueStore).mockReturnValue(mockFieldValueStore as any)
 
     const mockTemplates = createMockTemplates()
     const mockTemplateRegistry = {
@@ -388,7 +388,9 @@ describe('SlashCommandMenu - Template List Subview', () => {
       state: { 
         selection: { from: 13 },
         doc: { textBetween: vi.fn().mockReturnValue('template list') }
-      }
+      },
+      on: vi.fn(),
+      off: vi.fn()
     }
 
     // 需要触发更新查询的机制 - 通过编辑器更新事件
@@ -724,8 +726,12 @@ describe('SlashCommandMenu — priority 命令自动补 Todo', () => {
       activeBlockId: 'block-1',
       showSlashCommand: vi.fn(),
       hideSlashCommand: vi.fn(),
-      showQuickPropertyEditor: vi.fn()
+      showQuickFieldValueEditor: vi.fn()
     } as unknown as ReturnType<typeof useEditorStore>)
+    vi.mocked(useFieldValueStore).mockReturnValue({
+      setFieldValue: vi.fn(),
+      ensureTodo: vi.fn().mockResolvedValue(undefined)
+    } as any)
   })
 
   it('immediate 优先级命令（如 /high）写入 priority 并调用 ensureTodo', async () => {
@@ -736,8 +742,8 @@ describe('SlashCommandMenu — priority 命令自动补 Todo', () => {
       group: '属性',
       icon: '🔴',
       action: () => {},
-      propertyKey: 'priority',
-      propertyValue: 'High',
+      fieldKey: 'priority',
+      fieldValue: 'High',
       immediate: true
     }
     vi.mocked(useSlashCommands).mockReturnValue({
@@ -765,8 +771,8 @@ describe('SlashCommandMenu — priority 命令自动补 Todo', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
     await flushPromises()
 
-    const store = vi.mocked(usePropertyStore())
-    expect(store.setProperty).toHaveBeenCalledWith('block-1', 'priority', 'High')
+    const store = vi.mocked(useFieldValueStore())
+    expect(store.setFieldValue).toHaveBeenCalledWith('block-1', 'priority', 'High')
     expect(store.ensureTodo).toHaveBeenCalledWith('block-1')
   })
 })

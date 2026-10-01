@@ -28,15 +28,15 @@ const hoisted = vi.hoisted(() => {
     const prop = {
       id,
       block_id: blockId,
+      field_definition_id: `fd-${key}`,
       key,
-      value: valueStr,
-      type,
-      sort_order: 0,
-      is_hidden: 0,
-      is_deleted: 0,
-      schema_version: 0,
+      value_json: valueStr,
+      value_type: type,
+      seq: 0,
       created_at: Date.now(),
       updated_at: Date.now(),
+      version: 0,
+      deleted_at: null,
     }
     const arr = propsByBlock.get(blockId) ?? []
     const idx = arr.findIndex((p) => p.key === key)

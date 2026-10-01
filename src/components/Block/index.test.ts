@@ -28,7 +28,7 @@ import { getCoreClient } from '../../wasm/client'
 import { cleanupRelationshipTypes, cleanupPages } from '../../../tests/core-client'
 import type { TreeNode } from '../../types/block'
 import { useEditorStore } from '../../stores/editor'
-import { usePropertyStore } from '../../stores/property'
+import { useFieldValueStore } from '../../stores/fieldValue'
 
 vi.mock('../../storage/indexedDB', () => ({
   storage: {
@@ -428,9 +428,9 @@ describe('characterization: render', () => {
     wrapper.unmount()
   })
 
-  it('applies priority class based on priority property', async () => {
+  it('applies priority class based on priority field value', async () => {
     const blockStore = useBlockStore()
-    const propertyStore = usePropertyStore()
+    const fieldValueStore = useFieldValueStore()
     blockStore.blocks = [{
       id: 'block-1', pageId: 'page-1', parentId: null, pos: 0,
       content: '', format: {}, type: 'bullet',
@@ -446,10 +446,9 @@ describe('characterization: render', () => {
       global: { stubs: { BulletRender: StubBulletRender } }
     })
     await flushPromises()
-    propertyStore.propertiesByBlock.set('block-1', [{
-      id: 'p1', blockId: 'block-1', key: 'priority', value: 'High',
-      type: 'string' as const, sortOrder: 0, isHidden: false, isDeleted: false,
-      schemaVersion: 1, createdAt: 0, updatedAt: 0
+    fieldValueStore.fieldValuesByBlock.set('block-1', [{
+      id: 'p1', block_id: 'block-1', field_definition_id: 'fd-priority', key: 'priority', value_json: 'High',
+      value_type: 'string', seq: 0, created_at: 0, updated_at: 0, version: 0, deleted_at: null
     }])
     await flushPromises()
     expect(wrapper.find('.block').classes()).toContain('priority-high')
@@ -565,7 +564,7 @@ describe('characterization: save', () => {
     expect(editor.exists()).toBe(true)
     editor.vm.$emit('save', 'new content')
     await flushPromises()
-    expect(updateSpy).toHaveBeenCalledWith('b1', 'new content')
+    expect(updateSpy).toHaveBeenCalledWith('b1', 'new content', { commitTags: true })
     wrapper.unmount()
   })
 })
@@ -743,7 +742,7 @@ describe('块选区命中面：Ctrl/Cmd+Click 覆盖整块行非内容区', () =
 
   let blockStore: ReturnType<typeof useBlockStore>
   let pageStore: ReturnType<typeof usePageStore>
-  let propertyStore: ReturnType<typeof usePropertyStore>
+  let fieldValueStore: ReturnType<typeof useFieldValueStore>
   let selectionStub: {
     toggleBlock: ReturnType<typeof vi.fn>
     isBlockSelected: ReturnType<typeof vi.fn>
@@ -792,7 +791,7 @@ describe('块选区命中面：Ctrl/Cmd+Click 覆盖整块行非内容区', () =
     }]
     pageStore = usePageStore()
     Object.defineProperty(pageStore, 'currentPageId', { value: PAGE_ID, configurable: true })
-    propertyStore = usePropertyStore()
+    fieldValueStore = useFieldValueStore()
     selectionStub = {
       toggleBlock: vi.fn(),
       isBlockSelected: vi.fn(() => false),
@@ -853,12 +852,11 @@ describe('块选区命中面：Ctrl/Cmd+Click 覆盖整块行非内容区', () =
   it('Ctrl+Click 自交互元素（属性 chip）→ 不切换，保留 chip 自身语义', async () => {
     const wrapper = mountBlock()
     await flushPromises()
-    // 挂载后再注入属性：loadBlockProperties 会整体替换 propertiesByBlock 的 Map，
+    // 挂载后再注入字段值：loadBlockFieldValues 会整体替换 fieldValuesByBlock 的 Map，
     // 挂载前 set 进去的条目会被丢掉
-    propertyStore.propertiesByBlock.set(BLOCK_ID, [{
-      id: 'prop-1', blockId: BLOCK_ID, key: 'foo', value: 'bar',
-      type: 'string' as const, sortOrder: 0, isHidden: false, isDeleted: false,
-      schemaVersion: 1, createdAt: 0, updatedAt: 0
+    fieldValueStore.fieldValuesByBlock.set(BLOCK_ID, [{
+      id: 'fv-1', block_id: BLOCK_ID, field_definition_id: 'fd-foo', key: 'foo', value_json: 'bar',
+      value_type: 'string', seq: 0, created_at: 0, updated_at: 0, version: 0, deleted_at: null
     }])
     await flushPromises()
     const chip = wrapper.find('.property-item')

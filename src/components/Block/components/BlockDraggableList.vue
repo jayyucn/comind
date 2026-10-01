@@ -85,7 +85,7 @@ defineExpose({
     filter=".bullet-chevron"
     :prevent-on-filter="false"
     :fallback-tolerance="5"
-    :animation="200"
+    :animation="300"
     :invert-swap="true"
     :inverted-swap-threshold="0.5"
     :swap-threshold="0.65"

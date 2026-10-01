@@ -6,7 +6,7 @@ import { buildTemplateCommands, executeTemplateCommand, filterCommands, groupCom
 import { useTemplateRegistry } from '../composables/useTemplateRegistry'
 import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
-import { usePropertyStore } from '../stores/property'
+import { useFieldValueStore } from '../stores/fieldValue'
 import { useUserTemplatesStore } from '../stores/user-templates'
 import BasePopover from './common/BasePopover.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
@@ -17,7 +17,7 @@ import type { Command } from '../types/command'
 import { getCoreClient } from '../wasm/client'
 
 const editorStore = useEditorStore()
-const propertyStore = usePropertyStore()
+const fieldValueStore = useFieldValueStore()
 const blockStore = useBlockStore()
 const { commands } = useSlashCommands()
 const templateRegistry = useTemplateRegistry()
@@ -265,30 +265,30 @@ async function executeCommand(command: Command) {
     .focus()
     .run()
 
-  // 处理属性命令
-  if (command.propertyKey && blockId) {
-    // 清除属性（如 /clear-priority 删除 priority）
-    if (command.clearProperty) {
-      const target = propertyStore
-        .getBlockProperties(blockId)
-        .find(p => p.key === command.propertyKey)
+  // 处理字段值命令
+  if (command.fieldKey && blockId) {
+    // 清除字段值（如 /clear-priority 删除 priority）
+    if (command.clearFieldValue) {
+      const target = fieldValueStore
+        .getBlockFieldValues(blockId)
+        .find(fv => fv.key === command.fieldKey)
       if (target) {
-        await propertyStore.deleteProperty(target.id, blockId)
+        await fieldValueStore.deleteFieldValue(target.id, blockId)
       }
       return
     }
 
-    // 立即执行设置属性（如 /todo, /done、/high、/medium、/low 等）
-    if (command.immediate && command.propertyValue) {
-      await propertyStore.setProperty(
+    // 立即执行设置字段值（如 /todo, /done、/high、/medium、/low 等）
+    if (command.immediate && command.fieldValue) {
+      await fieldValueStore.setFieldValue(
         blockId,
-        command.propertyKey,
-        command.propertyValue as string
+        command.fieldKey,
+        command.fieldValue as string
       )
       // 设置优先级（与 /schedule 一致）：block 尚无 status 时自动补 Todo
-      if (command.propertyKey === 'priority') {
-        // fire-and-forget：补 Todo 失败不影响属性写入，避免未处理异常阻断编辑
-        propertyStore.ensureTodo(blockId).catch(() => {})
+      if (command.fieldKey === 'priority') {
+        // fire-and-forget：补 Todo 失败不影响字段值写入，避免未处理异常阻断编辑
+        fieldValueStore.ensureTodo(blockId).catch(() => {})
       }
       return
     }
@@ -298,16 +298,16 @@ async function executeCommand(command: Command) {
       let value: string = argument
 
       // 对于日期类型进行特殊处理
-      if (command.propertyKey === 'deadline' || command.propertyKey === 'scheduled') {
+      if (command.fieldKey === 'deadline' || command.fieldKey === 'scheduled') {
         const parsedDate = await getCoreClient()!.parseDateInput(argument)
         if (parsedDate) {
           value = parsedDate
         }
       }
 
-      await propertyStore.setProperty(
+      await fieldValueStore.setFieldValue(
         blockId,
-        command.propertyKey,
+        command.fieldKey,
         value
       )
       return
@@ -315,15 +315,15 @@ async function executeCommand(command: Command) {
 
     // 打开编辑器（如 /status, /priority, /deadline 不带参数）
     if (command.openEditor) {
-      editorStore.showQuickPropertyEditor(blockId, command.propertyKey, position.value)
+      editorStore.showQuickFieldValueEditor(blockId, command.fieldKey, position.value)
       return
     }
   }
 
-  // 特殊处理属性命令
-  if (command.id === 'property') {
+  // 特殊处理「新增字段值」命令
+  if (command.id === 'field_value') {
     if (blockId) {
-      editorStore.showPropertyEditor(blockId, undefined, position.value)
+      editorStore.showFieldValueEditor(blockId, undefined, position.value)
     }
     return
   }

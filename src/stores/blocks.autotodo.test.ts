@@ -29,8 +29,8 @@ vi.mock('../wasm/client', () => ({
   initCoreClient: vi.fn(() => Promise.resolve(hoisted.client)),
 }))
 
-vi.mock('../stores/property', () => ({
-  usePropertyStore: vi.fn(() => ({
+vi.mock('../stores/fieldValue', () => ({
+  useFieldValueStore: vi.fn(() => ({
     ensureTodo: hoisted.ensureTodo,
   })),
 }))

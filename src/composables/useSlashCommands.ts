@@ -235,8 +235,8 @@ export const commands: Command[] = [
     group: '任务',
     icon: TASK_STATUS_ICONS.Todo,
     action: () => {},
-    propertyKey: 'status',
-    propertyValue: 'Todo',
+    fieldKey: 'status',
+    fieldValue: 'Todo',
     immediate: true
   },
   {
@@ -246,8 +246,8 @@ export const commands: Command[] = [
     group: '任务',
     icon: TASK_STATUS_ICONS.Doing,
     action: () => {},
-    propertyKey: 'status',
-    propertyValue: 'Doing',
+    fieldKey: 'status',
+    fieldValue: 'Doing',
     immediate: true
   },
   {
@@ -257,8 +257,8 @@ export const commands: Command[] = [
     group: '任务',
     icon: TASK_STATUS_ICONS.Done,
     action: () => {},
-    propertyKey: 'status',
-    propertyValue: 'Done',
+    fieldKey: 'status',
+    fieldValue: 'Done',
     immediate: true
   },
 
@@ -270,8 +270,8 @@ export const commands: Command[] = [
     group: '属性',
     icon: TASK_PRIORITY_ICONS.Urgent,
     action: () => {},
-    propertyKey: 'priority',
-    propertyValue: 'Urgent',
+    fieldKey: 'priority',
+    fieldValue: 'Urgent',
     immediate: true
   },
   {
@@ -281,8 +281,8 @@ export const commands: Command[] = [
     group: '属性',
     icon: TASK_PRIORITY_ICONS.High,
     action: () => {},
-    propertyKey: 'priority',
-    propertyValue: 'High',
+    fieldKey: 'priority',
+    fieldValue: 'High',
     immediate: true
   },
   {
@@ -292,8 +292,8 @@ export const commands: Command[] = [
     group: '属性',
     icon: TASK_PRIORITY_ICONS.Medium,
     action: () => {},
-    propertyKey: 'priority',
-    propertyValue: 'Medium',
+    fieldKey: 'priority',
+    fieldValue: 'Medium',
     immediate: true
   },
   {
@@ -303,8 +303,8 @@ export const commands: Command[] = [
     group: '属性',
     icon: TASK_PRIORITY_ICONS.Low,
     action: () => {},
-    propertyKey: 'priority',
-    propertyValue: 'Low',
+    fieldKey: 'priority',
+    fieldValue: 'Low',
     immediate: true
   },
   // 属性编辑（打开编辑器）
@@ -315,7 +315,7 @@ export const commands: Command[] = [
     group: '属性',
     icon: '📋',
     action: () => {},
-    propertyKey: 'status',
+    fieldKey: 'status',
     openEditor: true
   },
   {
@@ -325,7 +325,7 @@ export const commands: Command[] = [
     group: '属性',
     icon: '🔴',
     action: () => {},
-    propertyKey: 'priority',
+    fieldKey: 'priority',
     openEditor: true
   },
   // 清除优先级（删除 priority 属性，由 SlashCommandMenu.vue 处理）
@@ -336,8 +336,8 @@ export const commands: Command[] = [
     group: '属性',
     icon: '🚫',
     action: () => {},
-    propertyKey: 'priority',
-    clearProperty: true
+    fieldKey: 'priority',
+    clearFieldValue: true
   },
   // deadline 和 scheduled 已移至"日期时间"分组，作为 dateRef 插入命令
   // 不再作为属性命令（属性面板仍可设置 deadline/scheduled 属性）
@@ -348,7 +348,7 @@ export const commands: Command[] = [
     group: '属性',
     icon: '📁',
     action: () => {},
-    propertyKey: 'project',
+    fieldKey: 'project',
     openEditor: true,
     acceptArgument: true
   },
@@ -359,7 +359,7 @@ export const commands: Command[] = [
     group: '属性',
     icon: '🌐',
     action: () => {},
-    propertyKey: 'area',
+    fieldKey: 'area',
     openEditor: true,
     acceptArgument: true
   },
@@ -516,7 +516,7 @@ export const commands: Command[] = [
     }
   },
   {
-    id: 'property',
+    id: 'field_value',
     name: 'Add property',
     alias: ['属性', 'prop'],
     group: '属性',

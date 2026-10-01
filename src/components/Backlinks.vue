@@ -4,13 +4,13 @@ import { usePageStore } from '../stores/pages'
 import { useEditorStore } from '../stores/editor'
 import { useNavigateToPage } from '../composables/useNavigateToPage'
 import { useBlockStore } from '../stores/blocks'
-import { usePropertyStore } from '../stores/property'
+import { useFieldValueStore } from '../stores/fieldValue'
 import { useBlockRegistry } from '../composables/useBlockRegistry'
 import { buildDocumentOrder } from '../utils/block-helpers'
 import type { Block } from '../types/block'
-import type { PropertyValue } from '../types/property'
-import PropertyInline from './Block/PropertyInline.vue'
-import PropertyDisplay from './Block/PropertyDisplay.vue'
+import type { FieldValueData } from '../types/field-definition'
+import { decodeFieldValueData } from '../utils/field-value-codec'
+import BlockTagFields from './Block/BlockTagFields.vue'
 
 const props = withDefaults(defineProps<{
   pageId?: string
@@ -21,7 +21,7 @@ const props = withDefaults(defineProps<{
 const pageStore = usePageStore()
 const editorStore = useEditorStore()
 const blockStore = useBlockStore()
-const propertyStore = usePropertyStore()
+const fieldValueStore = useFieldValueStore()
 const { navigateToPage } = useNavigateToPage()
 const { getHandler } = useBlockRegistry()
 
@@ -131,10 +131,10 @@ async function loadBacklinks() {
     // 按页面标题字母序排序
     groups.sort((a, b) => a.sourcePageTitle.localeCompare(b.sourcePageTitle))
 
-    // 7. 加载所有块的属性（PropertyDisplay/PropertyInline 需要）
+    // 7. 加载所有块的字段值（BlockTagFields 需要）
     const allBlockIds = groups.flatMap(g => g.items.map(i => i.block.id))
     await Promise.allSettled(
-      allBlockIds.map(id => propertyStore.loadBlockProperties(id))
+      allBlockIds.map(id => fieldValueStore.loadBlockFieldValues(id))
     )
 
     groupedBacklinks.value = groups
@@ -188,18 +188,18 @@ async function handleGroupClick(sourcePageId: string) {
   }
 }
 
-function getBlockPropertiesMap(blockId: string): Record<string, PropertyValue> {
-  const props = propertyStore.getBlockProperties(blockId)
-  const result: Record<string, PropertyValue> = {}
-  for (const prop of props) {
-    result[prop.key] = prop.value
+function getBlockFieldValuesMap(blockId: string): Record<string, FieldValueData> {
+  const rows = fieldValueStore.getBlockFieldValues(blockId)
+  const result: Record<string, FieldValueData> = {}
+  for (const fv of rows) {
+    result[fv.key] = decodeFieldValueData(fv.value_json, fv.value_type) as FieldValueData
   }
   return result
 }
 
 function getBlockLanguage(blockId: string): string | undefined {
-  const prop = propertyStore.getBlockProperty(blockId, 'language')
-  return prop?.value as string | undefined
+  const fv = fieldValueStore.getBlockFieldValue(blockId, 'language')
+  return fv ? (decodeFieldValueData(fv.value_json, fv.value_type) as string) : undefined
 }
 
 // 监听 targetPageId 变化，重新加载 Backlinks
@@ -274,10 +274,10 @@ watch(
                   <span class="bullet-dot" />
                 </span>
 
-                <!-- PropertyInline: between-bullet-content -->
-                <PropertyInline
+                <!-- 内联槽: between -->
+                <BlockTagFields
                   :block-id="item.link.sourceBlockId"
-                  position="between-bullet-content"
+                  variant="between"
                 />
 
                 <!-- 块内容：renderComponent（readonly） -->
@@ -286,7 +286,7 @@ watch(
                   v-if="getHandler(item.block.type)"
                   :block-id="item.link.sourceBlockId"
                   :content="item.block.content"
-                  :properties="getBlockPropertiesMap(item.link.sourceBlockId)"
+                  :field-values="getBlockFieldValuesMap(item.link.sourceBlockId)"
                   :language="getBlockLanguage(item.link.sourceBlockId)"
                   :readonly="true"
                   @content-click="handleContentClick"
@@ -296,18 +296,21 @@ watch(
                   class="backlink-text-fallback"
                 >{{ item.block.content || '空块' }}</span>
 
-                <!-- PropertyInline: right-of-content -->
-                <PropertyInline
+                <!-- 内联槽: right -->
+                <BlockTagFields
                   :block-id="item.link.sourceBlockId"
-                  position="right-of-content"
+                  variant="right"
                 />
 
-                <!-- PropertyDisplay（下方属性区，stopPropagation） -->
+                <!-- 下方字段区（stopPropagation） -->
                 <div
                   class="backlink-properties"
                   @click.stop
                 >
-                  <PropertyDisplay :block-id="item.link.sourceBlockId" />
+                  <BlockTagFields
+                    :block-id="item.link.sourceBlockId"
+                    variant="all"
+                  />
                 </div>
               </div>
             </div>

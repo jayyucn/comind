@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>编辑器动效手感对比 Demo · Motion Feel</title>
+<style>
+  :root {
+    --bg-base: #1a1b1e;
+    --bg-base2: #212327;
+    --bg-elev: #2a2d32;
+    --border: #353941;
+    --text: #e6e7ea;
+    --text-dim: #9aa0aa;
+    --text-tertiary: #6b7280;
+    --accent: #6ea8fe;
+    --accent-dim: #3a567f;
+    --tag-bg: #2d3b52;
+    --tag-fg: #9ec1ff;
+    --ref-bg: #2f3a2d;
+    --ref-fg: #a6d68a;
+    --danger: #e57373;
+
+    /* 全局可调参数（仅作用于右栏「轻动效」） */
+    --dur: 180ms;
+    --ease: cubic-bezier(.22, 1, .36, 1);
+    --pop: 1;      /* 位移/缩放强度倍率 */
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg-base);
+    color: var(--text);
+    font: 14px/1.5 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  header {
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-base2);
+  }
+  header h1 { margin: 0 0 2px; font-size: 16px; font-weight: 600; }
+  header p { margin: 0; color: var(--text-dim); font-size: 12px; }
+
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 20px; align-items: center;
+    padding: 12px 24px; border-bottom: 1px solid var(--border);
+    background: var(--bg-base2);
+  }
+  .ctl { display: flex; flex-direction: column; gap: 4px; }
+  .ctl label { font-size: 11px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: .04em; }
+  .ctl .val { color: var(--accent); font-variant-numeric: tabular-nums; }
+  input[type="range"] { width: 160px; accent-color: var(--accent); }
+  select {
+    background: var(--bg-elev); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 4px 8px; font: inherit;
+  }
+  .hint { color: var(--text-tertiary); font-size: 12px; margin-left: auto; }
+
+  main {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+    height: calc(100vh - 150px);
+  }
+  .col { padding: 18px 24px; overflow-y: auto; }
+  .col.left { border-right: 1px solid var(--border); }
+  .col h2 { margin: 0 0 4px; font-size: 13px; font-weight: 600; }
+  .col .sub { margin: 0 0 14px; font-size: 12px; color: var(--text-tertiary); }
+  .col.left h2 { color: var(--text-dim); }
+  .col.right h2 { color: var(--accent); }
+
+  .panel { margin-bottom: 22px; }
+  .panel-title { font-size: 12px; color: var(--text-dim); margin-bottom: 8px; font-weight: 600; letter-spacing: .02em; }
+
+  .btn {
+    background: var(--bg-elev); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font: inherit; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent-dim); }
+  .btn.primary { background: var(--accent-dim); border-color: var(--accent); color: #fff; }
+
+  .block-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+  .block {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--bg-base2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px;
+  }
+  .block .handle { cursor: grab; color: var(--text-tertiary); user-select: none; padding: 0 2px; }
+  .block .handle:active { cursor: grabbing; }
+  .block .body { flex: 1; }
+  .block .del {
+    background: transparent; border: none; color: var(--text-tertiary); cursor: pointer;
+    font-size: 16px; line-height: 1; padding: 2px 6px; border-radius: 6px;
+  }
+  .block .del:hover { color: var(--danger); background: rgba(229,115,115,.12); }
+  .block.dragging { opacity: .35; }
+  .drop-line { height: 2px; background: var(--accent); border-radius: 2px; margin: -3px 0; }
+
+  /* 轻动效列：过渡态基础（被 JS 用 WAAPI 覆盖更细粒度；此处给底色/边框一个兜底过渡） */
+  .right .block { transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease); }
+
+  /* 内容插入区 */
+  .editor-line {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    background: var(--bg-base2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; min-height: 38px;
+  }
+  .editor-input {
+    flex: 1; min-width: 120px; background: transparent; border: none; outline: none;
+    color: var(--text); font: inherit;
+  }
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border-radius: 999px; font-size: 13px; white-space: nowrap;
+  }
+  .chip.tag { background: var(--tag-bg); color: var(--tag-fg); }
+  .chip.ref { background: var(--ref-bg); color: var(--ref-fg); }
+  .chip .x { cursor: pointer; opacity: .6; }
+  .chip .x:hover { opacity: 1; }
+  .slash-menu {
+    margin-top: 6px; background: var(--bg-elev); border: 1px solid var(--border);
+    border-radius: 8px; padding: 4px; display: none;
+  }
+  .slash-menu.open { display: block; }
+  .slash-item { padding: 6px 10px; border-radius: 6px; cursor: pointer; display: flex; gap: 8px; }
+  .slash-item:hover, .slash-item.active { background: var(--accent-dim); }
+  .slash-item .k { color: var(--text-tertiary); font-size: 11px; }
+  .ghost-hint { color: var(--text-tertiary); font-size: 12px; margin-top: 6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>编辑器动效手感对比 Demo</h1>
+  <p>左栏 = 现状（无反馈，凭空出现/消失）· 右栏 = 轻动效提案（可调参数）。对照同一动作，定你想要的「手感」。</p>
+</header>
+
+<div class="controls">
+  <div class="ctl">
+    <label>时长 Duration · <span class="val" id="durVal">180ms</span></label>
+    <input type="range" id="dur" min="60" max="400" step="10" value="180" />
+  </div>
+  <div class="ctl">
+    <label>缓动 Easing</label>
+    <select id="ease">
+      <option value="cubic-bezier(.22,1,.36,1)">ease-out-soft（推荐）</option>
+      <option value="ease-out">ease-out</option>
+      <option value="ease-in-out">ease-in-out</option>
+      <option value="cubic-bezier(.34,1.56,.64,1)">spring（轻微回弹）</option>
+      <option value="linear">linear</option>
+    </select>
+  </div>
+  <div class="ctl">
+    <label>强度 Intensity · <span class="val" id="popVal">1.0×</span></label>
+    <input type="range" id="pop" min="0" max="20" step="1" value="10" />
+  </div>
+  <div class="hint">调完手感 → 告诉我参数，我据此定系统范围（见 ADR-0052）。</div>
+</div>
+
+<main>
+  <!-- 左：静止 -->
+  <section class="col left">
+    <h2>静止（现状）</h2>
+    <p class="sub">动作即时生效，无过渡。对照基准。</p>
+
+    <div class="panel">
+      <div class="panel-title">① Block 增 / 删 / 拖</div>
+      <button class="btn primary" data-act="insert" data-side="left">+ 插入 block</button>
+      <div class="block-list" data-list="left"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">② 内容插入（Enter 确认）</div>
+      <div class="editor-line" data-editor="left">
+        <input class="editor-input" placeholder="试试 #foo 或 / 或 [[page]] 然后回车" />
+      </div>
+      <div class="slash-menu" data-slash="left"></div>
+    </div>
+  </section>
+
+  <!-- 右：轻动效 -->
+  <section class="col right">
+    <h2>轻动效（提案）</h2>
+    <p class="sub">插入下滑淡入、删除收起、拖拽 FLIP、内容插入变形。</p>
+
+    <div class="panel">
+      <div class="panel-title">① Block 增 / 删 / 拖</div>
+      <button class="btn primary" data-act="insert" data-side="right">+ 插入 block</button>
+      <div class="block-list" data-list="right"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">② 内容插入（Enter 确认）</div>
+      <div class="editor-line" data-editor="right">
+        <input class="editor-input" placeholder="试试 #foo 或 / 或 [[page]] 然后回车" />
+      </div>
+      <div class="slash-menu" data-slash="right"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+// ===== 全局可调参数（仅右栏使用） =====
+const cfg = { dur: 180, ease: 'cubic-bezier(.22,1,.36,1)', pop: 1 };
+const root = document.documentElement;
+function applyCfg() {
+  root.style.setProperty('--dur', cfg.dur + 'ms');
+  root.style.setProperty('--ease', cfg.ease);
+  root.style.setProperty('--pop', cfg.pop);
+}
+const durEl = document.getElementById('dur');
+const durVal = document.getElementById('durVal');
+const easeEl = document.getElementById('ease');
+const popEl = document.getElementById('pop');
+const popVal = document.getElementById('popVal');
+durEl.addEventListener('input', () => { cfg.dur = +durEl.value; durVal.textContent = cfg.dur + 'ms'; applyCfg(); });
+easeEl.addEventListener('change', () => { cfg.ease = easeEl.value; applyCfg(); });
+popEl.addEventListener('input', () => { cfg.pop = +popEl.value / 10; popVal.textContent = cfg.pop.toFixed(1) + '×'; applyCfg(); });
+applyCfg();
+
+// ===== Block 列表 =====
+let blockSeq = 0;
+function makeBlock(side) {
+  const el = document.createElement('div');
+  el.className = 'block';
+  el.draggable = true;
+  blockSeq++;
+  el.innerHTML =
+    '<span class="handle" title="拖拽排序">⋮⋮</span>' +
+    '<span class="body">Block ' + blockSeq + '</span>' +
+    '<button class="del" title="删除">×</button>';
+  el.querySelector('.del').addEventListener('click', () => removeBlock(side, el));
+  wireDrag(side, el);
+  return el;
+}
+function addBlock(side, animate) {
+  const list = document.querySelector('[data-list="' + side + '"]');
+  const el = makeBlock(side);
+  if (animate) {
+    list.prepend(el);
+    enterAnim(el);
+  } else {
+    list.prepend(el);
+  }
+}
+function removeBlock(side, el) {
+  if (side === 'right') {
+    el.animate(
+      [
+        { opacity: 1, transform: 'translateY(0) scale(1)' },
+        { opacity: 0, transform: 'translateY(0) scale(.96)' }
+      ],
+      { duration: cfg.dur, easing: cfg.ease, fill: 'both' }
+    ).onfinish = () => el.remove();
+    // 其余兄弟 FLIP 上移
+    flipSiblings(el);
+  } else {
+    el.remove();
+  }
+}
+function enterAnim(el) {
+  const dy = -10 * cfg.pop;
+  el.animate(
+    [
+      { opacity: 0, transform: 'translateY(' + dy + 'px) scale(.98)' },
+      { opacity: 1, transform: 'translateY(0) scale(1)' }
+    ],
+    { duration: cfg.dur, easing: cfg.ease, fill: 'both' }
+  );
+}
+// FLIP：记录 before，执行 mutate，对仍在 DOM 中的兄弟做位移补间
+function flip(list, mutate) {
+  const els = [...list.querySelectorAll('.block')];
+  const before = new Map(els.map(e => [e, e.getBoundingClientRect().top]));
+  mutate();
+  [...list.querySelectorAll('.block')].forEach(e => {
+    if (!before.has(e)) return;
+    const dy = before.get(e) - e.getBoundingClientRect().top;
+    if (dy) {
+      e.animate(
+        [{ transform: 'translateY(' + dy + 'px)' }, { transform: 'translateY(0)' }],
+        { duration: cfg.dur, easing: cfg.ease }
+      );
+    }
+  });
+}
+function flipSiblings(removedEl) {
+  const list = removedEl.parentElement;
+  flip(list, () => {}); // 已在删除动画前记录位置不便，这里做轻量补偿
+}
+
+// ===== 拖拽（DnD + FLIP） =====
+let dragEl = null;
+let dropLine = null;
+function wireDrag(side, el) {
+  el.addEventListener('dragstart', e => {
+    dragEl = el; el.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  el.addEventListener('dragend', () => {
+    el.classList.remove('dragging');
+    if (dropLine) { dropLine.remove(); dropLine = null; }
+    dragEl = null;
+  });
+}
+function getAfter(list, y) {
+  const items = [...list.querySelectorAll('.block:not(.dragging)')];
+  let closest = null, closestOffset = -Infinity;
+  items.forEach(it => {
+    const box = it.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > closestOffset) { closestOffset = offset; closest = it; }
+  });
+  return closest;
+}
+document.querySelectorAll('[data-list]').forEach(list => {
+  list.addEventListener('dragover', e => {
+    e.preventDefault();
+    if (!dragEl) return;
+    const after = getAfter(list, e.clientY);
+    if (!dropLine) { dropLine = document.createElement('div'); dropLine.className = 'drop-line'; }
+    if (after) list.insertBefore(dropLine, after);
+    else list.appendChild(dropLine);
+  });
+  list.addEventListener('drop', e => {
+    e.preventDefault();
+    if (!dragEl) return;
+    const side = list.dataset.list;
+    const target = dropLine ? dropLine : getAfter(list, e.clientY);
+    const moving = dragEl;
+    flip(list, () => {
+      if (target && target !== moving) list.insertBefore(moving, target);
+      else if (!target) list.appendChild(moving);
+    });
+    if (dropLine) { dropLine.remove(); dropLine = null; }
+  });
+});
+
+document.querySelectorAll('[data-act="insert"]').forEach(b =>
+  b.addEventListener('click', () => addBlock(b.dataset.side, b.dataset.side === 'right'))
+);
+
+// 预置几个 block
+['left', 'right'].forEach(s => { addBlock(s, false); addBlock(s, false); addBlock(s, false); });
+
+// ===== 内容插入（#foo / / / [[page]]） =====
+const SLASH_CMDS = [
+  { key: 'h1', label: '标题 1', run: '插入「标题 1」块' },
+  { key: 'todo', label: '待办', run: '插入「待办」块' },
+  { key: 'code', label: '代码块', run: '插入「代码块」' },
+];
+function commitContent(side, raw) {
+  const editor = document.querySelector('[data-editor="' + side + '"]');
+  const input = editor.querySelector('.editor-input');
+  const slash = document.querySelector('[data-slash="' + side + '"]');
+  slash.classList.remove('open'); slash.innerHTML = '';
+  const text = raw.trim();
+  if (!text) return;
+
+  let chip = null, kind = null, label = text;
+  if (text.startsWith('#')) { kind = 'tag'; label = text.slice(1); }
+  else if (text.startsWith('[[') && text.endsWith(']]')) { kind = 'ref'; label = text.slice(2, -2); }
+  else if (text === '/' || text.startsWith('/')) {
+    // 斜杠命令：弹出菜单（在 right 列用动效，left 列直接插入首条）
+    if (side === 'left') {
+      appendResult(side, 'slash', SLASH_CMDS[0].run, false);
+    } else {
+      openSlash(side);
+    }
+    input.value = '';
+    return;
+  } else {
+    kind = 'text';
+  }
+
+  if (kind === 'text') {
+    appendResult(side, 'text', label, side === 'right');
+  } else {
+    appendResult(side, kind, label, side === 'right');
+  }
+  input.value = '';
+}
+function appendResult(side, kind, label, animate) {
+  const editor = document.querySelector('[data-editor="' + side + '"]');
+  const chip = document.createElement('span');
+  if (kind === 'tag') { chip.className = 'chip tag'; chip.innerHTML = '#' + escapeHtml(label) + ' <span class="x">×</span>'; }
+  else if (kind === 'ref') { chip.className = 'chip ref'; chip.innerHTML = '[[' + escapeHtml(label) + ']] <span class="x">×</span>'; }
+  else if (kind === 'slash') { chip.className = 'chip'; chip.style.background = 'var(--bg-elev)'; chip.innerHTML = escapeHtml(label) + ' <span class="x">×</span>'; }
+  else { chip.className = 'chip'; chip.style.background = 'var(--bg-elev)'; chip.innerHTML = escapeHtml(label) + ' <span class="x">×</span>'; }
+  chip.querySelector('.x').addEventListener('click', () => {
+    if (animate) {
+      chip.animate([{opacity:1},{opacity:0, transform:'scale(.9)'}], {duration:cfg.dur, easing:cfg.ease, fill:'both'}).onfinish=()=>chip.remove();
+    } else chip.remove();
+  });
+  editor.appendChild(chip);
+  if (animate) {
+    chip.animate(
+      [
+        { opacity: 0, transform: 'translateY(' + (-6 * cfg.pop) + 'px) scale(.85)' },
+        { opacity: 1, transform: 'translateY(0) scale(1)' }
+      ],
+      { duration: cfg.dur, easing: cfg.ease, fill: 'both' }
+    );
+  }
+}
+function openSlash(side) {
+  const slash = document.querySelector('[data-slash="' + side + '"]');
+  slash.innerHTML = SLASH_CMDS.map((c, i) =>
+    '<div class="slash-item' + (i===0?' active':'') + '" data-i="' + i + '"><span>' + c.label + '</span><span class="k">/' + c.key + '</span></div>'
+  ).join('');
+  slash.classList.add('open');
+  if (side === 'right') {
+    slash.animate([{opacity:0, transform:'translateY(-4px)'},{opacity:1, transform:'translateY(0)'}], {duration:cfg.dur, easing:cfg.ease, fill:'both'});
+  }
+  slash.querySelectorAll('.slash-item').forEach(it => {
+    it.addEventListener('click', () => {
+      const c = SLASH_CMDS[+it.dataset.i];
+      appendResult(side, 'slash', c.run, side === 'right');
+      slash.classList.remove('open'); slash.innerHTML = '';
+    });
+  });
+}
+function escapeHtml(s){ return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+document.querySelectorAll('.editor-input').forEach(inp => {
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      const side = inp.closest('[data-editor]').dataset.editor;
+      commitContent(side, inp.value);
+    }
+  });
+});
+</script>
+</body>
+</html>

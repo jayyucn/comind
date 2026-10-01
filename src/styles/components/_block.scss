@@ -272,6 +272,44 @@
   }
 }
 
+// ===== Motion：编辑器「创造/变换内容」反馈（ADR-0052 锁定参数） =====
+// 机制：token 驱动的纯 CSS 动画，挂在「创建/变换」瞬间的元素上（block 挂载、#tag / [[page]] chip 生成）。
+// 不依赖 Vue <Transition>，避免与 Sortable 的 DOM 操作冲突；删除动画需在运行 app 中单独验证 <Transition> 共存。
+// keyed 复用保证内容更新不会重播动画，仅在新节点挂载时播放一次。
+
+@keyframes block-enter {
+  from {
+    opacity: 0;
+    transform: translateY(calc(-1 * var(--motion-distance))) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes motion-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.85) translateY(calc(-0.4 * var(--motion-distance)));
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+// block 插入：新节点挂载即播放一次
+.block {
+  animation: block-enter var(--motion-duration) var(--motion-ease) both;
+}
+
+// 内容插入 chip：#tag / [[page]] 等生成时的 pop-in
+.block-tag,
+.block-link {
+  animation: motion-pop var(--motion-duration) var(--motion-ease) both;
+}
+
 // Link & Tag styles
 .block-link {
   color: var(--color-accent);

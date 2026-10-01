@@ -46,17 +46,17 @@ describe('pasteBlocks（ADR-0025 D6/D7/D8/D11）', () => {
       { id: updates[0].id, block: { id: updates[0].id, content: updates[0].content }, render_segments: [] },
     ])
     mockSetProperty.mockImplementation(async (blockId: string, key: string, value: string, type: string) => ({
-      id: `prop-${blockId}-${key}`,
+      id: `fv-${blockId}-${key}`,
       block_id: blockId,
+      field_definition_id: `fd-${key}`,
       key,
-      value: String(value),
-      type,
-      sort_order: 0,
-      is_hidden: 0,
-      is_deleted: 0,
-      schema_version: 1,
+      value_json: String(value),
+      value_type: type,
+      seq: 0,
       created_at: 0,
       updated_at: 0,
+      version: 0,
+      deleted_at: null,
     }))
     mockGetProperties.mockResolvedValue([])
 

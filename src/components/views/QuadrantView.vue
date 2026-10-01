@@ -15,7 +15,7 @@ import Icon from '../Icons/Icon.vue'
  *   右上 Urgent  重要且紧急 → 立即做
  *   左下 Low     不重要不紧急 → 减少
  *   右下 High    不重要但紧急 → 委托
- * 拖拽卡片到另一象限即改写其 priority（复用消费方 onCellChange → propertyStore.setProperty）。
+ * 拖拽卡片到另一象限即改写其 priority（复用消费方 onCellChange → fieldValueStore.setFieldValue）。
  * 系统默认筛选（组件内置，无需 tab 存储 query）：含 priority 且 status 命中——
  * status 是 Todo / 是 Doing /（是 Done 且 updatedAt 在昨天及之后）；无 priority 或久前完成的 Done 不显示。
  * 系统默认排序：status asc → updatedAt desc；工具栏设了排序规则时按规则（复用引擎 sortItems）。

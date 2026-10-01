@@ -6,8 +6,8 @@ import Backlinks from '../Backlinks.vue'
 import Toc from './Toc.vue'
 import ConfirmDialog from '../ConfirmDialog.vue'
 import SlashCommandMenu from '../SlashCommandMenu.vue'
-import PropertyQuickEditor from '../Block/PropertyQuickEditor.vue'
-import PropertyEditor from '../Block/PropertyEditor.vue'
+import FieldValueQuickEditor from '../Block/FieldValueQuickEditor.vue'
+import FieldValueEditor from '../Block/FieldValueEditor.vue'
 import RelationshipMenu from '../RelationshipMenu.vue'
 import IdeasSnapshotPage from '../Ideas/IdeasSnapshotPage.vue'
 import { usePageStore } from '../../stores/pages'
@@ -288,8 +288,8 @@ function handleCancelMerge() {
     </ConfirmDialog>
 
     <SlashCommandMenu />
-    <PropertyQuickEditor />
-    <PropertyEditor />
+    <FieldValueQuickEditor />
+    <FieldValueEditor />
     <RelationshipMenu :menu="relMenu" />
 
     <!-- 重命名确认弹窗 -->

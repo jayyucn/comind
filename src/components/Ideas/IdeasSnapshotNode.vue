@@ -12,8 +12,9 @@ import BulletRender from '../Block/handlers/bullet/BulletRender.vue'
 import { Icon } from '../Icons'
 import { useEditorStore } from '../../stores/editor'
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
-import { getPropertyDefinition } from '../../types/property'
-import type { Property } from '../../types/property'
+import { getFieldDefinition } from '../../types/field-definition'
+import type { FieldValue } from '../../types/field-value'
+import { decodeFieldValueData } from '../../utils/field-value-codec'
 import type { TreeNode } from '../../types/block'
 import {
   SNAPSHOT_MODAL_KEY,
@@ -42,10 +43,15 @@ const { navigateToPage } = useNavigateToPage()
 const blockId = computed(() => props.node.id)
 
 // ── 快照属性 → 行级语义（与活 useBlockPropertySync 的 priorityClass/statusClass 一致）──
-const blockProps = computed<Property[]>(() => propsMap.getBlockProps(blockId.value))
+const blockProps = computed<FieldValue[]>(() => propsMap.getBlockProps(blockId.value))
 
-const getPropValue = (key: string): string | undefined =>
-  blockProps.value.find(p => p.key === key)?.value as string | undefined
+/** 字段值行 → 内存值（解码 value_json） */
+const dataOf = (fv: FieldValue): unknown => decodeFieldValueData(fv.value_json, fv.value_type)
+
+const getPropValue = (key: string): string | undefined => {
+  const fv = blockProps.value.find(p => p.key === key)
+  return fv ? String(dataOf(fv)) : undefined
+}
 
 const priorityClass = computed(() => {
   const v = getPropValue('priority')
@@ -62,11 +68,11 @@ const statusClass = computed(() => {
 /** between-bullet-content 且封闭值含图标的属性 → 静态图标 chip（如 status） */
 const betweenChips = computed<{ icon: string; title: string }[]>(() => {
   const chips: { icon: string; title: string }[] = []
-  for (const prop of blockProps.value) {
-    if (prop.isHidden || prop.isDeleted) continue
-    const def = getPropertyDefinition(prop.key)
+  for (const fv of blockProps.value) {
+    if (fv.deleted_at !== null) continue
+    const def = getFieldDefinition(fv.key)
     if (!def || def.displayPosition !== 'between-bullet-content') continue
-    const cv = def.closedValues?.find(c => c.value === prop.value)
+    const cv = def.closedValues?.find(c => c.value === dataOf(fv))
     if (cv?.icon) chips.push({ icon: cv.icon, title: cv.label ?? '' })
   }
   return chips

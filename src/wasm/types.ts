@@ -1,3 +1,5 @@
+import type { FieldValue } from '../types/field-value'
+
 export interface Block {
   id: string
   page_id: string
@@ -27,20 +29,6 @@ export interface Page {
   created_at: number
   updated_at: number
   deleted_at?: number | null
-}
-
-export interface Property {
-  id: string
-  block_id: string
-  key: string
-  value: string
-  type: string
-  sort_order: number
-  is_hidden: number
-  is_deleted: number
-  schema_version: number
-  created_at: number
-  updated_at: number
 }
 
 export interface Link {
@@ -304,8 +292,8 @@ export interface BlockRenderData {
   block: Block
   children: string[]
   render_segments: RenderSegment[]
-  /** Block properties resolved from Property table by Rust (zero extra IPC). */
-  properties: Property[]
+  /** Block 字段值，由 Rust 一并解析（零额外 IPC）。 */
+  properties: FieldValue[]
 }
 
 export type RenderSegment =

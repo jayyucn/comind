@@ -111,7 +111,7 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
   }
 
   async function handleLanguageChange(lang: string) {
-    await blockStore.updateBlockProperties(blockId.value, { language: lang })
+    await blockStore.updateBlockFieldValues(blockId.value, { language: lang })
   }
 
   /** 同步 block 未保存内容到 store */

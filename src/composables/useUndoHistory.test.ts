@@ -1,16 +1,16 @@
 /**
  * useUndoHistory 单测（issue #107 / ADR-0046 T2）。
- * 五类：捕获触发 / idle 合并 / 预算裁切 / 派生字段剔除 / 页面隔离(+属性归因)。
+ * 五类：捕获触发 / idle 合并 / 预算裁切 / 派生字段剔除 / 页面隔离(+字段值归因)。
  * 用假定时器把 idle 窗口注入到极短，保证确定性。
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick } from 'vue'
 import { useBlockStore } from '../stores/blocks'
-import { usePropertyStore } from '../stores/property'
+import { useFieldValueStore } from '../stores/fieldValue'
 import type { Block } from '../types/block'
 import type { RenderSegment } from '../wasm/types'
-import type { Property as RawProperty } from '../types/property'
+import type { FieldValue } from '../types/field-value'
 import {
   ensureStack,
   commitNow,
@@ -40,19 +40,19 @@ function makeBlock(id: string, pageId: string, over: Partial<Block> = {}): Block
   }
 }
 
-function makeProp(blockId: string, key: string, value: unknown, type: RawProperty['type'] = 'string'): RawProperty {
+function makeProp(blockId: string, key: string, value: unknown, type: FieldValue['value_type'] = 'string'): FieldValue {
   return {
     id: `prop-${key}`,
-    blockId,
+    block_id: blockId,
+    field_definition_id: `fd-${key}`,
     key,
-    value,
-    type,
-    sortOrder: 0,
-    isHidden: 0,
-    isDeleted: 0,
-    schemaVersion: 1,
-    createdAt: 0,
-    updatedAt: 0,
+    value_json: typeof value === 'string' ? value : JSON.stringify(value),
+    value_type: type,
+    seq: 0,
+    created_at: 0,
+    updated_at: 0,
+    version: 0,
+    deleted_at: null,
   }
 }
 
@@ -177,15 +177,15 @@ describe('预算裁切', () => {
 })
 
 describe('派生字段剔除', () => {
-  it('renderSegments/properties 不入栈；format 深拷贝且引用独立；属性进 envelope', async () => {
+  it('renderSegments/properties 不入栈；format 深拷贝且引用独立；字段值进 envelope', async () => {
     const blockStore = useBlockStore()
-    const propertyStore = usePropertyStore()
+    const fieldValueStore = useFieldValueStore()
     const block = makeBlock('b1', 'p1', { content: 'c', format: { collapsed: false } })
     const seg: RenderSegment = { kind: 'text', text: 'x' } as RenderSegment
     block.renderSegments = [seg]
     block.properties = [makeProp('b1', 'k', 'v')]
     blockStore.blocks = [block]
-    propertyStore.propertiesByBlock = new Map([
+    fieldValueStore.fieldValuesByBlock = new Map([
       ['b1', [makeProp('b1', 'status', 'Todo')]],
     ])
     ensureStack('p1')
@@ -205,51 +205,51 @@ describe('派生字段剔除', () => {
     blockStore.blocks[0].format.collapsed = false
     expect(sb.format).toEqual({ collapsed: true })
 
-    // 属性被捕获进 envelope
-    expect(latest.properties['b1']?.[0]?.value).toBe('Todo')
+    // 字段值被捕获进 envelope
+    expect(latest.properties['b1']?.[0]?.value_json).toBe('Todo')
   })
 
-  it('属性信封不含服务端时间戳；仅时间戳漂移不算改动（否则截断 redo 尾）', async () => {
+  it('字段值信封不含服务端时间戳；仅时间戳漂移不算改动（否则截断 redo 尾）', async () => {
     const blockStore = useBlockStore()
-    const propertyStore = usePropertyStore()
+    const fieldValueStore = useFieldValueStore()
     blockStore.blocks = [makeBlock('b1', 'p1')]
-    propertyStore.propertiesByBlock = new Map([['b1', [makeProp('b1', 'status', 'Todo')]]])
+    fieldValueStore.fieldValuesByBlock = new Map([['b1', [makeProp('b1', 'status', 'Todo')]]])
     ensureStack('p1')
 
-    // 一次真实属性改动 → 入栈
-    propertyStore.propertiesByBlock = new Map([['b1', [makeProp('b1', 'status', 'Done')]]])
+    // 一次真实字段值改动 → 入栈
+    fieldValueStore.fieldValuesByBlock = new Map([['b1', [makeProp('b1', 'status', 'Done')]]])
     await flushChange()
     expect(_debugStats().stackSizes['p1']).toBe(2)
     // 取最新快照（undo 取值 → redo 复位游标，勿把游标停在旧快照上）
     undo('p1')
     const latest = redo('p1')!
-    expect(latest.properties['b1']?.[0]?.updatedAt).toBe(0)
+    expect(latest.properties['b1']?.[0]?.updated_at).toBe(0)
 
-    // 模拟撤销「删块」后复活块重挂载：loadBlockProperties 从 DB 重读同一属性，
+    // 模拟撤销「删块」后复活块重挂载：loadBlockFieldValues 从 DB 重读同一字段值，
     // 语义不变、只有 updated_at 比快照新（恢复批次的 property set 刚刷过它）。
-    const reread = { ...makeProp('b1', 'status', 'Done'), updatedAt: 9_999 }
-    propertyStore.propertiesByBlock = new Map([['b1', [reread]]])
+    const reread = { ...makeProp('b1', 'status', 'Done'), updated_at: 9_999 }
+    fieldValueStore.fieldValuesByBlock = new Map([['b1', [reread]]])
     await flushChange()
     expect(_debugStats().stackSizes['p1']).toBe(2)
   })
 
   /**
-   * 信封完整性（前提哨兵的另一端）：**store 里所有有属性的块都必须进信封**，一个不漏。
+   * 信封完整性（前提哨兵的另一端）：**store 里所有有字段值的块都必须进信封**，一个不漏。
    *
-   * 漏一个 = 撤销「删块」后该块的属性永久丢失（恢复批次靠信封重设属性，DB 行已被级联软删）。
-   * 空数组的条目（`loadBlockProperties` 对无属性块也会写键）则**不必**进信封 —— 那是
+   * 漏一个 = 撤销「删块」后该块的字段值永久丢失（恢复批次靠信封重设字段值，DB 行已被级联软删）。
+   * 空数组的条目（`loadBlockFieldValues` 对无字段值块也会写键）则**不必**进信封 —— 那是
    * D11 的省流优化（真机省 48.5%），不是漏项；故这里断言的是**精确集合**，两头都锁住。
    * 会变红的情形：给 `propEnvelope` 加过滤 / 换数据源 / 把 `length > 0` 判断写窄。
    */
-  it('信封覆盖 store 中所有有属性的块（多块场景，且只收它们）', async () => {
+  it('信封覆盖 store 中所有有字段值的块（多块场景，且只收它们）', async () => {
     const blockStore = useBlockStore()
-    const propertyStore = usePropertyStore()
+    const fieldValueStore = useFieldValueStore()
     blockStore.blocks = [
       makeBlock('b1', 'p1'),
       makeBlock('b2', 'p1'),
       makeBlock('b3', 'p1'),
     ]
-    propertyStore.propertiesByBlock = new Map([
+    fieldValueStore.fieldValuesByBlock = new Map([
       ['b1', [makeProp('b1', 'status', 'Todo')]],
       ['b2', [makeProp('b2', 'priority', 'High')]],
       ['b3', []],
@@ -262,7 +262,7 @@ describe('派生字段剔除', () => {
     const latest = redo('p1')!
 
     expect(Object.keys(latest.properties).sort()).toEqual(['b1', 'b2'])
-    expect(latest.properties['b2']?.[0]?.value).toBe('High')
+    expect(latest.properties['b2']?.[0]?.value_json).toBe('High')
   })
 })
 
@@ -295,20 +295,20 @@ describe('页面隔离', () => {
     expect(canRedo('pB')).toBe(false)
   })
 
-  it('属性变更归因到所属页 ⇒ 改块属性也入栈', async () => {
+  it('字段值变更归因到所属页 ⇒ 改块字段值也入栈', async () => {
     const blockStore = useBlockStore()
-    const propertyStore = usePropertyStore()
+    const fieldValueStore = useFieldValueStore()
     blockStore.blocks = [makeBlock('a1', 'pA', { content: 'c' })]
-    propertyStore.propertiesByBlock = new Map([['a1', []]])
+    fieldValueStore.fieldValuesByBlock = new Map([['a1', []]])
     ensureStack('pA')
 
-    // 模拟 setProperty 写路径：以新 Map 替换该 block 的属性
-    propertyStore.propertiesByBlock = new Map([['a1', [makeProp('a1', 'status', 'Done')]]])
+    // 模拟 setFieldValue 写路径：以新 Map 替换该 block 的字段值
+    fieldValueStore.fieldValuesByBlock = new Map([['a1', [makeProp('a1', 'status', 'Done')]]])
     await flushChange()
 
     expect(canUndo('pA')).toBe(true)
     const snap = undo('pA')!
-    // 撤销回无属性状态
+    // 撤销回无字段值状态
     expect(snap.properties['a1']).toBeUndefined()
   })
 })

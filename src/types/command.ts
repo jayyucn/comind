@@ -21,14 +21,14 @@ export interface Command {
   icon: string
   action: (props: CommandProps) => void
 
-  // 属性命令相关
-  propertyKey?: string
-  propertyValue?: string | string[]
+  // 字段值命令相关
+  fieldKey?: string
+  fieldValue?: string | string[]
   immediate?: boolean
   openEditor?: boolean
   acceptArgument?: boolean
-  /** 清除 propertyKey 对应的属性（如 /clear-priority 删除 priority） */
-  clearProperty?: boolean
+  /** 清除 fieldKey 对应的字段值（如 /clear-priority 删除 priority） */
+  clearFieldValue?: boolean
   convertBlockType?: Block['type']
 }
 

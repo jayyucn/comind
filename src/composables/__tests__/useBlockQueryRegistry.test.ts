@@ -17,25 +17,25 @@ function dr(kind: string, dateDay: string) {
 const cards: BlockCard[] = [
   {
     block_id: 'a', page_id: 'p1', parent_id: null, content_preview: 'A',
-    properties: { status: 'Done', priority: 'High', project: 'P1', area: 'A1', estimate: 5 },
+    properties: { status: 'Done', priority: 'High', book: 'P1', area: 'A1', estimate: 5 },
     date_refs: [dr('deadline', '2026-01-10')],
     updated_at: new Date('2026-01-02T12:00:00').getTime(), created_at: 1,
   },
   {
     block_id: 'b', page_id: 'p1', parent_id: null, content_preview: 'B',
-    properties: { status: 'Todo', priority: 'Low', project: 'P1', area: 'A2', estimate: 3 },
+    properties: { status: 'Todo', priority: 'Low', book: 'P1', area: 'A2', estimate: 3 },
     date_refs: [],
     updated_at: new Date('2026-03-04T12:00:00').getTime(), created_at: 2,
   },
   {
     block_id: 'c', page_id: 'p2', parent_id: null, content_preview: 'C',
-    properties: { status: 'Doing', priority: 'Medium', project: 'P2', area: 'A1', estimate: 2 },
+    properties: { status: 'Doing', priority: 'Medium', book: 'P2', area: 'A1', estimate: 2 },
     date_refs: [dr('schedule', '2026-03-01')],
     updated_at: new Date('2026-02-03T12:00:00').getTime(), created_at: 3,
   },
   {
     block_id: 'd', page_id: 'p2', parent_id: null, content_preview: 'D',
-    properties: { status: 'Done', priority: 'Urgent', project: 'P2', area: 'A2', estimate: 8 },
+    properties: { status: 'Done', priority: 'Urgent', book: 'P2', area: 'A2', estimate: 8 },
     date_refs: [],
     updated_at: new Date('2026-04-05T12:00:00').getTime(), created_at: 4,
   },
@@ -59,8 +59,8 @@ describe('Block 字段描述符注册表', () => {
     registerBlockBuiltinFields(registry)
     const keys = registry.list(BLOCK_ENTITY).map((f) => f.key).sort()
     expect(keys).toEqual([
-      'area', 'book', 'cfi', 'chapter', 'content', 'created_at', 'dateRefDate', 'dateRefKind',
-      'deadline', 'done', 'language', 'page', 'part', 'priority', 'project', 'quote',
+      'book', 'cfi', 'chapter', 'content', 'created_at', 'dateRefDate', 'dateRefKind',
+      'deadline', 'done', 'language', 'page', 'part', 'priority', 'quote',
       'schedule', 'sourceBlockId', 'sourcePageId', 'status', 'updatedAt',
     ])
 
@@ -116,9 +116,9 @@ describe('Block 列表按 ViewQuery 过滤（经 evaluate）', () => {
     expect(ids(blockEngine.filterSort(cards, q, registry))).toEqual(['a', 'd'])
   })
 
-  it('按 text 字段 project 包含 P1', () => {
+  it('按 text 字段 book 包含 P1', () => {
     const registry = setup()
-    const q = vq({ combinator: 'and', children: [cond('project', 'is', 'P1')] })
+    const q = vq({ combinator: 'and', children: [cond('book', 'is', 'P1')] })
     expect(ids(blockEngine.filterSort(cards, q, registry)).sort()).toEqual(['a', 'b'])
   })
 
@@ -138,7 +138,7 @@ describe('Block 列表按 ViewQuery 过滤（经 evaluate）', () => {
     const registry = setup()
     const q = vq({
       combinator: 'and',
-      children: [cond('status', 'is', 'Done'), cond('project', 'is', 'P2')],
+      children: [cond('status', 'is', 'Done'), cond('book', 'is', 'P2')],
     })
     expect(ids(blockEngine.filterSort(cards, q, registry))).toEqual(['d'])
   })

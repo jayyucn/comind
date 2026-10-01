@@ -9,8 +9,8 @@ export interface Block {
   /** Pre-computed render segments from Rust (S10). Array of structured instructions
    *  for rendering content. Empty for code/image/embed/query types. */
   renderSegments?: import('../wasm/types').RenderSegment[]
-  /** Block properties resolved from Property table by Rust (4.2). Stored as raw Rust Property[]. */
-  properties?: import('../wasm/types').Property[]
+  /** Block 字段值，由 Rust 一并解析（4.2）。存库内 FieldValue 行原形。 */
+  properties?: import('../types/field-value').FieldValue[]
   /** ADR-0049 D6：用户 tag id 列表（反规范化，落 Block.tags 列）。 */
   tags?: string[]
   createdAt: number

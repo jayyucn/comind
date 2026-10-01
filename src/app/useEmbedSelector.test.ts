@@ -6,7 +6,7 @@ const editorStore = {
 }
 const blockStore = {
   updateBlockType: vi.fn(() => Promise.resolve()),
-  updateBlockProperties: vi.fn(() => Promise.resolve()),
+  updateBlockFieldValues: vi.fn(() => Promise.resolve()),
 }
 
 vi.mock('../stores/editor', () => ({ useEditorStore: () => editorStore }))
@@ -18,7 +18,7 @@ beforeEach(() => {
   editorStore.blockSelector = null
   editorStore.closeBlockSelector.mockClear()
   blockStore.updateBlockType.mockClear()
-  blockStore.updateBlockProperties.mockClear()
+  blockStore.updateBlockFieldValues.mockClear()
 })
 
 describe('useEmbedSelector', () => {
@@ -34,7 +34,7 @@ describe('useEmbedSelector', () => {
     const { handleSelect } = useEmbedSelector()
     await handleSelect('s', 'p')
     expect(blockStore.updateBlockType).toHaveBeenCalledWith('t1', 'embed')
-    expect(blockStore.updateBlockProperties).toHaveBeenCalledWith('t1', {
+    expect(blockStore.updateBlockFieldValues).toHaveBeenCalledWith('t1', {
       sourceBlockId: 's',
       sourcePageId: 'p',
     })

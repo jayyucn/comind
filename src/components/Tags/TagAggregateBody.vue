@@ -14,11 +14,11 @@ import { useNavigateToTag } from '../../composables/useNavigateToTag'
 import { useBlockCardStore } from '../../stores/blockCard'
 import { useBlockStore } from '../../stores/blocks'
 import { useEditorStore } from '../../stores/editor'
-import { usePropertyStore } from '../../stores/property'
+import { useFieldValueStore } from '../../stores/fieldValue'
 import { useScreenViewStore } from '../../stores/screenView'
 import { useTagsStore } from '../../stores/tags'
 import type { PersistedFieldDefinition } from '../../types/tag-persisted'
-import type { PropertyType, PropertyValue } from '../../types/property'
+import type { FieldType, FieldValueData } from '../../types/field-definition'
 import type { BlockCard } from '../../wasm/types'
 import QueryPageFrame from '../common/QueryPageFrame.vue'
 import PageDrawer from '../Page/PageDrawer.vue'
@@ -46,7 +46,7 @@ const props = defineProps<{ tagId: string }>()
 
 const tagsStore = useTagsStore()
 const blockCardStore = useBlockCardStore()
-const propertyStore = usePropertyStore()
+const fieldValueStore = useFieldValueStore()
 const editorStore = useEditorStore()
 const { navigateToTagLibrary } = useNavigateToTag()
 
@@ -90,9 +90,9 @@ const pageField = registry.get(BLOCK_ENTITY, 'page')
 if (pageField) registry.register(BLOCK_ENTITY, { ...pageField, label: '来源页' })
 
 /** 列 key → 落库类型（单元格写入时显式传参，避免按值推断改变字段型别）。 */
-const propertyTypeByKey = new Map<string, PropertyType>()
+const fieldTypeByKey = new Map<string, FieldType>()
 for (const def of tagFieldDefs.value) {
-  propertyTypeByKey.set(def.key, def.type as PropertyType)
+  fieldTypeByKey.set(def.key, def.type as FieldType)
   registry.register(BLOCK_ENTITY, toDescriptor(def))
 }
 const registryFields: FieldDescriptor[] = registry.list(BLOCK_ENTITY)
@@ -182,7 +182,7 @@ async function saveColor(color: string | null) {
 // ── 交互 ──
 /** 单元格编辑：按字段声明类型写入（TableView 零业务代码，由字段元数据驱动；ADR-0007）。 */
 async function handleCellChange(blockId: string, key: string, value: unknown) {
-  await propertyStore.setProperty(blockId, key, value as PropertyValue, propertyTypeByKey.get(key))
+  await fieldValueStore.setFieldValue(blockId, key, value as FieldValueData, fieldTypeByKey.get(key))
   await blockCardStore.getCards()
 }
 

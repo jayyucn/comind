@@ -3,7 +3,7 @@
  *
  * 把 Block 的可筛字段接入无头引擎的 {@link Registry}（entityType = 'block'）：
  * - 内置字段：status / priority（select）/ project / area（text）/ dateRefKind（multiSelect）/ dateRefDate（date）
- * - 用户自定义 property：从 blockCardStore.cards 派生非内置 property 键，运行时注册/注销，
+ * - 用户自定义字段：从 blockCardStore.cards 派生非内置字段键，运行时注册/注销，
  *   注册表 subscribe 暴露响应式订阅，FilterBuilder 自动跟随字段变化
  *
  * 与旧系统（useBlockQuery / BlockQuery / TaskFilterBar）完全解耦并存，本模块不依赖 Vue 组件。
@@ -13,7 +13,7 @@ import { createRegistry, type Registry, type FieldDescriptor, type FieldType, ty
 import type { BoardConfig, CalendarConfig, GalleryConfig, LayoutConfig, QuadrantConfig, TableConfig, ViewKind } from '../core/view'
 import type { BlockCard } from '../wasm/types'
 import { SYSTEM_TAGS, isSystemField } from '../types/tag'
-import { type FieldDefinition, type PropertyType } from '../types/property'
+import { type FieldDefinition, type FieldType as DomainFieldType } from '../types/field-definition'
 import { useBlockCardStore } from '../stores/blockCard'
 
 /** 引擎命名空间：所有 Block 字段注册于此。 */
@@ -69,18 +69,18 @@ export function blockDefaultConfig(kind: ViewKind): LayoutConfig {
   }
 }
 
-/** 引擎字段 key（非属性字段，查询引擎内建原语）。 */
+/** 引擎字段 key（非字段定义字段，查询引擎内建原语）。 */
 const ENGINE_FIELD_KEYS = [
   'dateRefKind', 'dateRefDate', 'content', 'page', 'done', 'deadline', 'schedule', 'updatedAt', 'created_at',
 ] as const
 
-/** 内置字段 key 集合：系统 Tag 属性字段 + 引擎字段，用于区分「内置」与「自定义」字段（ADR-0049 D4）。 */
+/** 内置字段 key 集合：系统 Tag 字段 + 引擎字段，用于区分「内置」与「自定义」字段（ADR-0049 D4）。 */
 const BUILTIN_KEYS = new Set<string>([
   ...SYSTEM_TAGS.flatMap((s) => s.fields.map((f) => f.key)),
   ...ENGINE_FIELD_KEYS,
 ])
 
-/** dateRef.kind 的合法取值（与 property.ts normalizeKind 对齐）。 */
+/** dateRef.kind 的合法取值（与 fieldValue store 的 normalizeKind 对齐）。 */
 const DATE_REF_KINDS: Option[] = [
   { id: 'schedule', label: '计划' },
   { id: 'deadline', label: '截止' },
@@ -149,7 +149,7 @@ export function registerBlockBuiltinFields(registry: Registry): void {
     get: (item) => asCard(item).properties?.['priority'],
   })
 
-  // 其余系统属性字段（project/area + 书笔记八件套）统一注册为 text（ADR-0049 D4 全量统一）
+  // 其余系统字段（project/area + 书笔记八件套）统一注册为 text（ADR-0049 D4 全量统一）
   for (const field of systemFields) {
     if (field.key === 'status' || field.key === 'priority') continue
     registry.register(BLOCK_ENTITY, {
@@ -263,7 +263,7 @@ export function registerBlockBuiltinFields(registry: Registry): void {
 }
 
 /** FieldDefinition.type → 引擎 FieldType 映射。 */
-const TYPE_MAP: Record<PropertyType, FieldType> = {
+const TYPE_MAP: Record<DomainFieldType, FieldType> = {
   string: 'text',
   number: 'number',
   boolean: 'boolean',
@@ -279,10 +279,10 @@ const TYPE_MAP: Record<PropertyType, FieldType> = {
  * `PersistedFieldDefinition`（tag 聚合页按 tag 字段模板建列）共用同一映射，避免双源漂移。
  */
 export function fieldTypeOf(type: string): FieldType {
-  return TYPE_MAP[type as PropertyType] ?? 'text'
+  return TYPE_MAP[type as DomainFieldType] ?? 'text'
 }
 
-/** 把 FieldDefinition 转为引擎字段描述符（自定义 property 用）。 */
+/** 把 FieldDefinition 转为引擎字段描述符（自定义字段用）。 */
 export function buildBlockFieldDescriptor(def: FieldDefinition): FieldDescriptor {
   const fieldType = fieldTypeOf(def.type)
   const descriptor: FieldDescriptor = {
@@ -297,15 +297,15 @@ export function buildBlockFieldDescriptor(def: FieldDefinition): FieldDescriptor
   return descriptor
 }
 
-/** 自定义 property 值 → 引擎类型推断（保守：数字/布尔/其余归 string，由 TYPE_MAP 映射到 text）。 */
-function inferPropertyType(value: unknown): PropertyType {
+/** 自定义字段值 → 引擎类型推断（保守：数字/布尔/其余归 string，由 TYPE_MAP 映射到 text）。 */
+function inferPropertyType(value: unknown): DomainFieldType {
   if (typeof value === 'number') return 'number'
   if (typeof value === 'boolean') return 'boolean'
   return 'string'
 }
 
 /**
- * 按 diff 同步自定义 property 字段：defs 中新增的注册、消失的注销。
+ * 按 diff 同步自定义字段：defs 中新增的注册、消失的注销。
  * 只动非内置字段，内置字段不受影响。
  */
 export function syncBlockCustomProperties(registry: Registry, defs: FieldDefinition[]): void {
@@ -340,7 +340,7 @@ export function getBlockRegistry(): Registry {
 /**
  * 组合根注册 composable：
  * - 返回单例注册表与 entityType
- * - 从 blockCardStore.cards 派生非内置 property 定义，运行时注册/注销，
+ * - 从 blockCardStore.cards 派生非内置字段定义，运行时注册/注销，
  *   FilterBuilder 经 registry.subscribe 自动跟随字段变化
  */
 export function useBlockQueryRegistry() {
@@ -348,7 +348,7 @@ export function useBlockQueryRegistry() {
   const blockCardStore = useBlockCardStore()
 
   const customDefs = computed<FieldDefinition[]>(() => {
-    const keys = new Map<string, PropertyType>()
+    const keys = new Map<string, DomainFieldType>()
     for (const card of blockCardStore.cards) {
       const props = (card.properties ?? {}) as Record<string, unknown>
       for (const [k, v] of Object.entries(props)) {

@@ -2,9 +2,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises } from '@vue/test-utils'
 import { useEditorStore } from '../../stores/editor'
-import { usePropertyStore } from '../../stores/property'
+import { useFieldValueStore } from '../../stores/fieldValue'
 import { useBlockCardStore } from '../../stores/blockCard'
-import PropertyQuickEditor from './PropertyQuickEditor.vue'
+import FieldValueQuickEditor from './FieldValueQuickEditor.vue'
 
 // 用占位 stub 替代 Teleport 弹层，使内容直接在 wrapper 内可查询
 const BasePopoverStub = {
@@ -12,18 +12,33 @@ const BasePopoverStub = {
   template: '<div v-if="visible" data-testid="popover"><slot /></div>',
 }
 
+// 字段定义单源被 mock：project/area 已从 systemFieldSeed 移除，但 quick editor 的
+// 「搜索列表」分支仍按 project/area 分派，故注入测试用定义以覆盖该分支。
+const { FIELD_DEFS } = vi.hoisted(() => ({
+  FIELD_DEFS: [
+    { key: 'status', title: '状态', type: 'string', closedValues: [{ value: 'Todo', label: '待办' }] },
+    { key: 'priority', title: '优先级', type: 'string', closedValues: [{ value: 'High', label: '高' }] },
+    { key: 'project', title: '项目', type: 'string' },
+    { key: 'area', title: '领域', type: 'string' },
+  ],
+}))
+
+vi.mock('../../types/field-definition', () => ({
+  getAllFieldDefinitions: () => FIELD_DEFS,
+  getFieldDefinition: (k: string) => FIELD_DEFS.find((f) => f.key === k),
+}))
 vi.mock('../../stores/editor', () => ({ useEditorStore: vi.fn() }))
-vi.mock('../../stores/property', () => ({ usePropertyStore: vi.fn() }))
+vi.mock('../../stores/fieldValue', () => ({ useFieldValueStore: vi.fn() }))
 vi.mock('../../stores/blockCard', () => ({ useBlockCardStore: vi.fn() }))
 
 const editorStoreMock = {
-  quickPropertyEditor: {
+  quickFieldValueEditor: {
     visible: true,
     blockId: 'block-1',
     key: 'project',
     position: { x: 0, y: 0 },
   },
-  hideQuickPropertyEditor: vi.fn(),
+  hideQuickFieldValueEditor: vi.fn(),
 }
 
 type CardLike = { block_id: string; properties: Record<string, unknown> }
@@ -31,11 +46,14 @@ type CardLike = { block_id: string; properties: Record<string, unknown> }
 function mockStores(overrides: { cards?: CardLike[]; currentValue?: string } = {}) {
   const cards = overrides.cards ?? []
   vi.mocked(useEditorStore).mockReturnValue(editorStoreMock as unknown as ReturnType<typeof useEditorStore>)
-  vi.mocked(usePropertyStore).mockReturnValue({
-    getBlockProperty: vi.fn().mockReturnValue({ value: overrides.currentValue ?? 'Beta', type: 'string' }),
-    setProperty: vi.fn().mockResolvedValue({}),
+  vi.mocked(useFieldValueStore).mockReturnValue({
+    getBlockFieldValue: vi.fn().mockReturnValue({
+      value_json: overrides.currentValue ?? 'Beta',
+      value_type: 'string',
+    }),
+    setFieldValue: vi.fn().mockResolvedValue({}),
     ensureTodo: vi.fn().mockResolvedValue(undefined),
-  } as unknown as ReturnType<typeof usePropertyStore>)
+  } as unknown as ReturnType<typeof useFieldValueStore>)
   vi.mocked(useBlockCardStore).mockReturnValue({
     cards,
     getCards: vi.fn().mockResolvedValue(cards),
@@ -43,7 +61,7 @@ function mockStores(overrides: { cards?: CardLike[]; currentValue?: string } = {
 }
 
 function mountEditor() {
-  return mount(PropertyQuickEditor, {
+  return mount(FieldValueQuickEditor, {
     global: { stubs: { BasePopover: BasePopoverStub } },
   })
 }
@@ -61,7 +79,7 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-describe('PropertyQuickEditor — project/area 搜索列表分支', () => {
+describe('FieldValueQuickEditor — project/area 搜索列表分支', () => {
   it('按使用次数降序渲染已有项目，并高亮当前值', () => {
     mockStores({
       cards: [
@@ -100,9 +118,9 @@ describe('PropertyQuickEditor — project/area 搜索列表分支', () => {
 
     await wrapper.findAll('.project-option')[1].trigger('click')
 
-    const setProperty = vi.mocked(usePropertyStore()).setProperty
-    expect(setProperty).toHaveBeenCalledWith('block-1', 'project', 'Beta', 'string')
-    expect(editorStoreMock.hideQuickPropertyEditor).toHaveBeenCalled()
+    const setFieldValue = vi.mocked(useFieldValueStore()).setFieldValue
+    expect(setFieldValue).toHaveBeenCalledWith('block-1', 'project', 'Beta', 'string')
+    expect(editorStoreMock.hideQuickFieldValueEditor).toHaveBeenCalled()
   })
 
   it('无匹配时回车以输入内容创建新项目', async () => {
@@ -113,8 +131,8 @@ describe('PropertyQuickEditor — project/area 搜索列表分支', () => {
     await input.setValue('NewProj')
     await input.trigger('keydown', { key: 'Enter' })
 
-    const setProperty = vi.mocked(usePropertyStore()).setProperty
-    expect(setProperty).toHaveBeenCalledWith('block-1', 'project', 'NewProj', 'string')
+    const setFieldValue = vi.mocked(useFieldValueStore()).setFieldValue
+    expect(setFieldValue).toHaveBeenCalledWith('block-1', 'project', 'NewProj', 'string')
   })
 
   it('高亮列表项后回车选中该项而非输入内容', async () => {
@@ -126,8 +144,8 @@ describe('PropertyQuickEditor — project/area 搜索列表分支', () => {
     await input.trigger('keydown', { key: 'ArrowDown' })
     await input.trigger('keydown', { key: 'Enter' })
 
-    const setProperty = vi.mocked(usePropertyStore()).setProperty
-    expect(setProperty).toHaveBeenCalledWith('block-1', 'project', 'Alpha', 'string')
+    const setFieldValue = vi.mocked(useFieldValueStore()).setFieldValue
+    expect(setFieldValue).toHaveBeenCalledWith('block-1', 'project', 'Alpha', 'string')
   })
 
   it('无任何已有项目时显示创建提示', () => {
@@ -138,7 +156,7 @@ describe('PropertyQuickEditor — project/area 搜索列表分支', () => {
   })
 
   it('area 同样走搜索列表分支，图标为 🌐 且数据来自 area 值', async () => {
-    editorStoreMock.quickPropertyEditor = {
+    editorStoreMock.quickFieldValueEditor = {
       visible: true,
       blockId: 'block-1',
       key: 'area',
@@ -165,11 +183,11 @@ describe('PropertyQuickEditor — project/area 搜索列表分支', () => {
 
     // 点击列表项保存到 area
     await wrapper.findAll('.project-option')[0].trigger('click')
-    expect(vi.mocked(usePropertyStore()).setProperty).toHaveBeenCalledWith('block-1', 'area', '研发', 'string')
+    expect(vi.mocked(useFieldValueStore()).setFieldValue).toHaveBeenCalledWith('block-1', 'area', '研发', 'string')
   })
 
   it('非搜索列表型内置属性不受影响（status 走 closedValues 下拉）', () => {
-    editorStoreMock.quickPropertyEditor = {
+    editorStoreMock.quickFieldValueEditor = {
       visible: true,
       blockId: 'block-1',
       key: 'status',
@@ -183,9 +201,9 @@ describe('PropertyQuickEditor — project/area 搜索列表分支', () => {
   })
 })
 
-describe('PropertyQuickEditor — 设置优先级自动补 Todo', () => {
+describe('FieldValueQuickEditor — 设置优先级自动补 Todo', () => {
   it('选择优先级后调用 ensureTodo（与 /schedule 一致）', async () => {
-    editorStoreMock.quickPropertyEditor = {
+    editorStoreMock.quickFieldValueEditor = {
       visible: true,
       blockId: 'block-1',
       key: 'priority',
@@ -198,13 +216,13 @@ describe('PropertyQuickEditor — 设置优先级自动补 Todo', () => {
     await wrapper.find('.quick-option').trigger('click')
     await flushPromises()
 
-    const store = vi.mocked(usePropertyStore())
-    expect(store.setProperty).toHaveBeenCalledWith('block-1', 'priority', expect.anything(), 'string')
+    const store = vi.mocked(useFieldValueStore())
+    expect(store.setFieldValue).toHaveBeenCalledWith('block-1', 'priority', expect.anything(), 'string')
     expect(store.ensureTodo).toHaveBeenCalledWith('block-1')
   })
 
   it('非优先级属性不调用 ensureTodo', async () => {
-    editorStoreMock.quickPropertyEditor = {
+    editorStoreMock.quickFieldValueEditor = {
       visible: true,
       blockId: 'block-1',
       key: 'project',
@@ -216,6 +234,6 @@ describe('PropertyQuickEditor — 设置优先级自动补 Todo', () => {
     await wrapper.findAll('.project-option')[0].trigger('click')
     await flushPromises()
 
-    expect(vi.mocked(usePropertyStore()).ensureTodo).not.toHaveBeenCalled()
+    expect(vi.mocked(useFieldValueStore()).ensureTodo).not.toHaveBeenCalled()
   })
 })

@@ -4,8 +4,8 @@ import { useBlockStore } from '@/stores/blocks'
 import { computed, onMounted, ref } from 'vue'
 import { usePageStore } from '../../stores/pages'
 import type { Page } from '../../types/page'
-import PropertyEditor from '../Block/PropertyEditor.vue'
-import PropertyQuickEditor from '../Block/PropertyQuickEditor.vue'
+import FieldValueEditor from '../Block/FieldValueEditor.vue'
+import FieldValueQuickEditor from '../Block/FieldValueQuickEditor.vue'
 import BlockList from '../BlockList.vue'
 import PageTitle from '../common/PageTitle.vue'
 import RelationshipMenu from '../RelationshipMenu.vue'
@@ -88,8 +88,8 @@ const todayTitle = computed(() => {
   </div>
 
   <SlashCommandMenu />
-  <PropertyQuickEditor />
-  <PropertyEditor />
+  <FieldValueQuickEditor />
+  <FieldValueEditor />
 </template>
 
 <style lang="scss" scoped>

@@ -4,7 +4,7 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useBlockStore } from './blocks'
-import { usePropertyStore } from './property'
+import { useFieldValueStore } from './fieldValue'
 
 // Mock core client —— 周期推进的日期计算本体在 Rust（S6），wasm 适配层无实现；
 // 这里按用例数据在 mock 中复刻 Rust 契约（daily +1d / weekly +7d / monthly 取月末钳制）。
@@ -41,15 +41,15 @@ const { mockClient } = vi.hoisted(() => {
     setProperty: vi.fn(() => Promise.resolve({
       id: 'prop-1',
       block_id: 'block-1',
+      field_definition_id: 'fd-1',
       key: 'status',
-      value: 'Todo',
-      type: 'string',
-      sort_order: 0,
-      is_hidden: 0,
-      is_deleted: 0,
-      schema_version: 0,
+      value_json: 'Todo',
+      value_type: 'string',
+      seq: 0,
       created_at: Date.now(),
       updated_at: Date.now(),
+      version: 0,
+      deleted_at: null,
     })),
     getDateRefsByBlock: vi.fn(async (blockId: string) => dateRefsByBlock[blockId] ?? []),
     calculateNextRecurrence: vi.fn(async (iso: string, rule: string) => nextIso(iso, rule)),
@@ -91,7 +91,7 @@ describe('T11 — 自动推进 dateRef（Done 语义）', () => {
       updateBlockContent: mockUpdateBlockContent,
     })
 
-    const store = usePropertyStore()
+    const store = useFieldValueStore()
     
     // setProperty 内部会调用 advanceDateRefInBlock
     // 由于 mock 不触发真实逻辑，直接测试 advanceDateRefInBlock
@@ -123,7 +123,7 @@ describe('T11 — 自动推进 dateRef（Done 语义）', () => {
       updateBlockContent: mockUpdateBlockContent,
     })
 
-    const store = usePropertyStore()
+    const store = useFieldValueStore()
     // @ts-ignore
     await store.advanceDateRefInBlock?.('block-2')
 
@@ -151,7 +151,7 @@ describe('T11 — 自动推进 dateRef（Done 语义）', () => {
       updateBlockContent: mockUpdateBlockContent,
     })
 
-    const store = usePropertyStore()
+    const store = useFieldValueStore()
     // @ts-ignore
     await store.advanceDateRefInBlock?.('block-3')
 
@@ -180,7 +180,7 @@ describe('T11 — 自动推进 dateRef（Done 语义）', () => {
       updateBlockContent: mockUpdateBlockContent,
     })
 
-    const store = usePropertyStore()
+    const store = useFieldValueStore()
     // @ts-ignore
     await store.advanceDateRefInBlock?.('block-4')
 
@@ -205,7 +205,7 @@ describe('T11 — 自动推进 dateRef（Done 语义）', () => {
       updateBlockContent: mockUpdateBlockContent,
     })
 
-    const store = usePropertyStore()
+    const store = useFieldValueStore()
     // @ts-ignore
     await store.advanceDateRefInBlock?.('block-5')
 
@@ -218,7 +218,7 @@ describe('T11 — 自动推进 dateRef（Done 语义）', () => {
       updateBlockContent: vi.fn(),
     })
 
-    const store = usePropertyStore()
+    const store = useFieldValueStore()
     // @ts-ignore
     await store.advanceDateRefInBlock?.('non-existent')
 

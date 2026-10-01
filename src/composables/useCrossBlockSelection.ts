@@ -16,11 +16,12 @@
  */
 import { computed, ref } from 'vue'
 import { useBlockStore } from '../stores/blocks'
-import { usePropertyStore } from '../stores/property'
+import { useFieldValueStore } from '../stores/fieldValue'
 import { useBlockRelationshipCleanup } from './useBlockRelationshipCleanup'
 import { sortByDocumentOrderIds } from '../utils/block-helpers'
 import type { Block } from '../types/block'
-import type { Property, PropertyType } from '../types/property'
+import type { FieldValue } from '../types/field-value'
+import { decodeFieldValueData } from '../utils/field-value-codec'
 
 import { COMIND_BLOCK_MIME, serializeBlocks, writeClipboardPayload } from '../services/block-clipboard'
 // 内部剪贴板格式 MIME 单一来源（ADR-0025 D5）；此处仅转发供既有导入方使用
@@ -57,7 +58,7 @@ export function useCrossBlockSelection() {
 
   const dragStartBlockId = ref<string | null>(null)
   const isDragging = ref(false)
-  /** 本次追踪是否起始于属性区（ADR-0035 D6）：属性区起点仅做块选区、不激活编辑器 */
+  /** 本次追踪是否起始于字段区（ADR-0035 D6）：字段区起点仅做块选区、不激活编辑器 */
   const trackingFromProperty = ref(false)
   /** 文本选区拖拽状态（ADR-0035 D1）：内容区起点 */
   const textDragAnchor = ref<BlockOffset | null>(null)
@@ -398,31 +399,20 @@ export function useCrossBlockSelection() {
       .filter((b): b is Block => !!b && !isUnderAnchor(b))
   }
 
-  /** 属性随行（D11）：propertyStore 实时缓存优先，回退页面载入时的 on-block 快照 */
+  /** 字段值随行（D11）：fieldValueStore 实时缓存优先，回退页面载入时的 on-block 快照 */
   function blockPropsRecord(block: Block): Record<string, { value: string; type: string }> | null {
-    const propertyStore = usePropertyStore()
-    let props: Property[] = propertyStore.getBlockProperties(block.id)
+    const fieldValueStore = useFieldValueStore()
+    let props: FieldValue[] = fieldValueStore.getBlockFieldValues(block.id)
     if (props.length === 0 && block.properties && block.properties.length > 0) {
-      props = block.properties.map(p => ({
-        id: p.id,
-        blockId: p.block_id,
-        key: p.key,
-        value: p.value,
-        type: p.type as PropertyType,
-        sortOrder: p.sort_order,
-        isHidden: p.is_hidden === 1,
-        isDeleted: p.is_deleted === 1,
-        schemaVersion: p.schema_version,
-        createdAt: p.created_at,
-        updatedAt: p.updated_at,
-      }))
+      props = block.properties
     }
     if (props.length === 0) return null
     const record: Record<string, { value: string; type: string }> = {}
     for (const p of props) {
+      const value = decodeFieldValueData(p.value_json, p.value_type)
       record[p.key] = {
-        value: typeof p.value === 'string' ? p.value : JSON.stringify(p.value),
-        type: p.type,
+        value: typeof value === 'string' ? value : JSON.stringify(value),
+        type: p.value_type,
       }
     }
     return record

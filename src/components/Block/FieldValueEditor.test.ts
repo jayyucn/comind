@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import PropertyEditor from './PropertyEditor.vue'
+import FieldValueEditor from './FieldValueEditor.vue'
 
 // 可变状态：新建/编辑两种模式由各用例切换（组件只读它）
 const hoisted = vi.hoisted(() => ({
@@ -12,66 +12,57 @@ const hoisted = vi.hoisted(() => ({
     initialKey: null as string | null,
     position: null as { x: number; y: number } | null
   },
-  // 编辑模式读到的存量属性：默认用布尔值，顺带覆盖「焦点落在已选中的单选框」这条分支
-  existingProperty: {
-    id: 'prop-1',
-    blockId: 'test-block-id',
+  // 编辑模式读到的存量字段值行：默认用布尔值，顺带覆盖「焦点落在已选中的单选框」这条分支
+  existingField: {
+    id: 'fv-1',
+    block_id: 'test-block-id',
+    field_definition_id: 'fd-1',
     key: '测试',
-    value: true as unknown,
-    type: 'boolean'
+    value_json: 'true' as string,
+    value_type: 'boolean' as string,
+    seq: 0,
+    created_at: 0,
+    updated_at: 0,
+    version: 0,
+    deleted_at: null as number | null
   }
 }))
 
 // Mock editor store
 vi.mock('../../stores/editor', () => ({
   useEditorStore: () => ({
-    propertyEditor: hoisted.editor,
-    hidePropertyEditor: vi.fn(),
-    showPropertyEditor: vi.fn()
+    fieldValueEditor: hoisted.editor,
+    hideFieldValueEditor: vi.fn(),
+    showFieldValueEditor: vi.fn()
   })
 }))
 
-// Mock property store
-vi.mock('../../stores/property', () => ({
-  usePropertyStore: () => ({
-    builtInProperties: [
-      { key: 'status', title: '状态', type: 'string', closedValues: [
-        { value: 'Todo', label: '待办', icon: '📋' }
-      ]},
-      { key: 'priority', title: '优先级', type: 'string' }
-    ],
-    getPropertyDef: (key: string) => {
-      if (key === 'status') return {
-        key: 'status',
-        title: '状态',
-        type: 'string',
-        closedValues: [{ value: 'Todo', label: '待办', icon: '📋' }]
-      }
-      return undefined
-    },
-    getBlockProperty: () => hoisted.existingProperty,
-    setProperty: vi.fn().mockResolvedValue({ id: 'prop-1' })
+// Mock field value store
+vi.mock('../../stores/fieldValue', () => ({
+  useFieldValueStore: () => ({
+    getBlockFieldValue: () => hoisted.existingField,
+    setFieldValue: vi.fn().mockResolvedValue({ id: 'fv-1' })
   })
 }))
 
 /** 挂到 document 上：默认焦点断言需要 document.activeElement（游离节点 focus 不生效） */
 function mountAttached() {
-  return mount(PropertyEditor, {
+  return mount(FieldValueEditor, {
     attachTo: document.body,
     global: { stubs: { Teleport: true } }
   })
 }
 
-describe('PropertyEditor', () => {
+describe('FieldValueEditor', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     hoisted.editor.initialKey = null
-    hoisted.existingProperty.type = 'boolean'
-    hoisted.existingProperty.value = true
+    hoisted.existingField.value_type = 'boolean'
+    hoisted.existingField.value_json = 'true'
   })
 
   it('renders property editor dialog', () => {
-    const wrapper = mount(PropertyEditor, {
+    const wrapper = mount(FieldValueEditor, {
       global: {
         stubs: {
           Teleport: true
@@ -84,7 +75,7 @@ describe('PropertyEditor', () => {
   })
 
   it('shows property type dropdown', () => {
-    const wrapper = mount(PropertyEditor, {
+    const wrapper = mount(FieldValueEditor, {
       global: {
         stubs: {
           Teleport: true
@@ -132,8 +123,8 @@ describe('PropertyEditor', () => {
 
   it('编辑模式：默认聚焦值对应的控件（数组 → 标签输入框）', async () => {
     hoisted.editor.initialKey = '标签'
-    hoisted.existingProperty.type = 'array'
-    hoisted.existingProperty.value = ['a', 'b']
+    hoisted.existingField.value_type = 'array'
+    hoisted.existingField.value_json = '["a","b"]'
     const wrapper = mountAttached()
     await nextTick()
 

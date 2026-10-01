@@ -10,12 +10,13 @@ function parseJsonResult<T>(result: unknown): T {
   return result as T
 }
 import type {
-  Block, Page, Property, Link, RelationshipType, LinkDraft,
+  Block, Page, Link, RelationshipType, LinkDraft,
   UserTemplate, SearchResult, BlockUpdate, BlockSaveResult, PageUpdate,
   BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig,
   Notification, DateRefRecord, IncompleteTask, BlockCard, SavedFilterRust, ScreenViewRust,
   NotificationSettings, PageWithBlocks, BookHighlightRust, BookProgressRust
 } from './types'
+import type { FieldValue } from '../types/field-value'
 import type {
   PersistedTag, PersistedTagTreeEntry, PersistedFieldDefinition, PersistedFieldValue,
   CreateTagParams, UpdateTagParams, SetTagParentParams,
@@ -51,8 +52,8 @@ export interface CoreClient {
   getBacklinks(pageId: string): Promise<Link[]>
   getOutlinks(pageId: string): Promise<Link[]>
 
-  getProperties(blockId: string): Promise<Property[]>
-  setProperty(blockId: string, key: string, value: string, type: string): Promise<Property>
+  getProperties(blockId: string): Promise<FieldValue[]>
+  setProperty(blockId: string, key: string, value: string, type: string): Promise<FieldValue>
   deleteProperty(blockId: string, key: string): Promise<void>
 
   getRelationshipTypes(): Promise<RelationshipType[]>
@@ -316,11 +317,11 @@ class TauriClient implements CoreClient {
     return invoke('get_outlinks', { pageId })
   }
 
-  async getProperties(blockId: string): Promise<Property[]> {
+  async getProperties(blockId: string): Promise<FieldValue[]> {
     return invoke('get_properties', { blockId })
   }
 
-  async setProperty(blockId: string, key: string, value: string, type: string): Promise<Property> {
+  async setProperty(blockId: string, key: string, value: string, type: string): Promise<FieldValue> {
     return invoke('set_property', { blockId, key, value, type })
   }
 
@@ -746,11 +747,11 @@ class WasmClientAdapter implements CoreClient {
     return this.wasm.get_outlinks(pageId)
   }
 
-  async getProperties(blockId: string): Promise<Property[]> {
+  async getProperties(blockId: string): Promise<FieldValue[]> {
     return this.wasm.get_properties(blockId)
   }
 
-  async setProperty(blockId: string, key: string, value: string, type: string): Promise<Property> {
+  async setProperty(blockId: string, key: string, value: string, type: string): Promise<FieldValue> {
     return this.wasm.set_property(blockId, key, value, type)
   }
 

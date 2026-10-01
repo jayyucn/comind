@@ -54,15 +54,15 @@ describe('parseIdeasSnapshotContent（snake content_json → camel 渲染数据�
     properties: {
       'b-top': [
         {
-          id: 'pr-1', block_id: 'b-top', key: 'status', value: 'Todo', type: 'string',
-          sort_order: 0, is_hidden: 0, is_deleted: 0, schema_version: 1,
+          id: 'pr-1', block_id: 'b-top', field_definition_id: 'fd-status',
+          key: 'status', value_json: 'Todo', value_type: 'string', seq: 0,
           created_at: 1, updated_at: 2, version: 0, deleted_at: null,
         },
       ],
     },
   })
 
-  it('映射为 camelCase Block[] + 属性 map', () => {
+  it('映射为 camelCase Block[] + 字段值 map（FieldValue 原形直通）', () => {
     const data = parseIdeasSnapshotContent(raw)
     expect(data).not.toBeNull()
     expect(data!.blocks).toHaveLength(2)
@@ -76,9 +76,9 @@ describe('parseIdeasSnapshotContent（snake content_json → camel 渲染数据�
     const props = data!.properties['b-top']
     expect(props).toHaveLength(1)
     expect(props[0].key).toBe('status')
-    expect(props[0].value).toBe('Todo')
-    expect(props[0].blockId).toBe('b-top')
-    expect(props[0].isHidden).toBe(false)
+    expect(props[0].value_json).toBe('Todo')
+    expect(props[0].value_type).toBe('string')
+    expect(props[0].block_id).toBe('b-top')
   })
 
   it('非法 JSON / 缺 blocks → null', () => {

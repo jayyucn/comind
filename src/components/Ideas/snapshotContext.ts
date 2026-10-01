@@ -1,5 +1,5 @@
 // Ideas 快照只读渲染的共享注入上下文（IdeasSnapshotPage → IdeasSnapshotNode）
-import type { Property } from '../../types/property'
+import type { FieldValue } from '../../types/field-value'
 
 /** 折叠状态控制器（页面级共享） */
 export interface SnapshotTreeState {
@@ -13,7 +13,7 @@ export const SNAPSHOT_TREE_KEY = Symbol('ideasSnapshotTree')
 export const SNAPSHOT_MODAL_KEY = Symbol('ideasSnapshotModal')
 
 export interface SnapshotPropsMap {
-  /** blockId → 该块当日属性（快照 properties map） */
-  propsByBlock: Record<string, Property[]>
-  getBlockProps(blockId: string): Property[]
+  /** blockId → 该块当日字段值（快照 properties map） */
+  propsByBlock: Record<string, FieldValue[]>
+  getBlockProps(blockId: string): FieldValue[]
 }

@@ -1,6 +1,7 @@
 export type { Block } from './block'
 export type { Page } from './page'
 export type { Link } from './link'
-export type { Property } from './property'
+export type { FieldValue } from './field-value'
+export type { FieldDefinition, FieldType, FieldValueData, FieldValueDataMap } from './field-definition'
 export type { RelationshipType, Strength } from './relationship-type'
 export type { SearchResult } from './search'

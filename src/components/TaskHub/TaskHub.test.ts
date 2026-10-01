@@ -5,7 +5,7 @@
  * 1. handleQuadrantAdd 改调 pageStore.ensureTodayIdeasPage 获取今日 Ideas 页，
  *    不再 getOrCreatePageByTitle('任务收集') 创建/复用普通容器页。
  * 2. 新任务块以 parentId=null 落今日 Ideas 页根级（saveBlockTree 载荷 page_id=今日 Ideas 页、parent_id=null）。
- * 3. 保留 createBlock → flushSave → setProperty(status/priority) 链：先落 block 行再写属性。
+ * 3. 保留 createBlock → flushSave → setFieldValue(status/priority) 链：先落 block 行再写字段值。
  *
  * 测试跑在真实 comind-core（sqljs 内存库）上（先例：Block/index.test.ts）：
  * FK 约束真实生效——若 flushSave 先于 setProperty 的顺序被破坏，会抛 FOREIGN KEY 失败使用例失败。
@@ -17,7 +17,8 @@ import { defineComponent, h } from 'vue'
 import TaskHub from './TaskHub.vue'
 import { usePageStore } from '../../stores/pages'
 import { useBlockStore } from '../../stores/blocks'
-import { usePropertyStore } from '../../stores/property'
+import { useFieldValueStore } from '../../stores/fieldValue'
+import { decodeFieldValueData } from '../../utils/field-value-codec'
 import { getTestCore } from '../../../tests/core-client'
 
 // jsdom 无 matchMedia；CodeMirrorEditor→useTheme 在模块级求值会调用它（先例：Block/index.test.ts）。
@@ -195,29 +196,29 @@ describe('TaskHub — 四象限新增任务落点', () => {
     wrapper.unmount()
   })
 
-  it('保留 createBlock → flushSave → setProperty 链：先落 block 行再写 status/priority 属性', async () => {
+  it('保留 createBlock → flushSave → setFieldValue 链：先落 block 行再写 status/priority 字段值', async () => {
     const client = getTestCore()!
     const blockStore = useBlockStore()
-    const propertyStore = usePropertyStore()
+    const fieldValueStore = useFieldValueStore()
     const saveTreeSpy = vi.spyOn(client, 'saveBlockTree')
     const setPropertySpy = vi.spyOn(client, 'setProperty')
 
     const { wrapper } = await addFromQuadrant('High', '四象限新增-FK链验证')
 
-    // 顺序：block 行必须先于属性写入（真实 sqlite 外键约束下乱序会直接失败）
+    // 顺序：block 行必须先于字段值写入（真实 sqlite 外键约束下乱序会直接失败）
     expect(saveTreeSpy).toHaveBeenCalled()
     expect(setPropertySpy).toHaveBeenCalledTimes(2)
     expect(saveTreeSpy.mock.invocationCallOrder[0]).toBeLessThan(setPropertySpy.mock.invocationCallOrder[0])
 
     // status=Todo、priority=象限值真实落库（store 本地态 + 真实 DB 双确认）
     const block = blockStore.blocks.find((b) => b.content === '四象限新增-FK链验证')!
-    const localProps = propertyStore.getBlockProperties(block.id)
-    const localKv = Object.fromEntries(localProps.map((p) => [p.key, p.value]))
+    const localValues = fieldValueStore.getBlockFieldValues(block.id)
+    const localKv = Object.fromEntries(localValues.map((p) => [p.key, decodeFieldValueData(p.value_json, p.value_type)]))
     expect(localKv['status']).toBe('Todo')
     expect(localKv['priority']).toBe('High')
 
-    const props = await client.getProperties(block.id)
-    const kv = Object.fromEntries(props.map((p) => [p.key, p.value]))
+    const values = await client.getProperties(block.id)
+    const kv = Object.fromEntries(values.map((p) => [p.key, decodeFieldValueData(p.value_json, p.value_type)]))
     expect(kv['status']).toBe('Todo')
     expect(kv['priority']).toBe('High')
 

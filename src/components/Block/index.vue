@@ -20,19 +20,17 @@ import { useBlockRegistry } from '../../composables/useBlockRegistry'
 import { useBlockRelationshipCleanup } from '../../composables/useBlockRelationshipCleanup'
 import { useBlockStore } from '../../stores/blocks'
 import { useEditorStore } from '../../stores/editor'
-import { usePropertyStore } from '../../stores/property'
+import { useFieldValueStore } from '../../stores/fieldValue'
 import { isSystemField } from '../../types/tag'
 import BlockDraggableList from './components/BlockDraggableList.vue'
 import { useBlockCollapse } from './composables/useBlockCollapse'
 import { useBlockEditorLifecycle } from './composables/useBlockEditorLifecycle'
-import { useBlockPropertySync } from './composables/useBlockPropertySync'
+import { useBlockFieldValueSync } from './composables/useBlockFieldValueSync'
 import './handlers/bullet'
 import './handlers/code'
 import './handlers/embed'
 import './handlers/image'
-import PropertyDisplay from './PropertyDisplay.vue'
 import BlockTagFields from './BlockTagFields.vue'
-import PropertyInline from './PropertyInline.vue'
 
 import type { EditorView } from '@codemirror/view'
 import type { Editor } from '@tiptap/core'
@@ -59,7 +57,7 @@ const props = defineProps<{
 
 const editorStore = useEditorStore()
 const blockStore = useBlockStore()
-const propertyStore = usePropertyStore()
+const fieldValueStore = useFieldValueStore()
 const pageStore = usePageStore()
 const { getHandler } = useBlockRegistry()
 const relationshipCleanup = useBlockRelationshipCleanup()
@@ -85,25 +83,24 @@ const childrenModel = computed<TreeNode[]>({
   set: children => { nodeRef.value.children = children },
 })
 
-// ── 属性读取 / 优先级 CSS 类（由 useBlockPropertySync 统一管理）──
+// ── 字段值读取 / 优先级 CSS 类（由 useBlockFieldValueSync 统一管理）──
 const {
-  getProperty: getBlockProperty,
-  getPropertiesMap: getBlockPropertiesMap,
-  setProperty,
+  getFieldValue: getBlockFieldValue,
+  getFieldValuesMap: getBlockFieldValuesMap,
+  setFieldValue,
   priorityClass,
   statusClass,
-} = useBlockPropertySync(blockId)
+} = useBlockFieldValueSync(blockId)
 
-// 是否有「行尾右侧 chips」属性（与 PropertyDisplay variant="chips" 的可见性判定一致：
-// bottom-of-block 内置属性 + 所有自定义属性，排除 hidden / deadline / scheduled）。
+// 是否有「行尾右侧 chips」字段（与 BlockTagFields variant="chips" 的可见性判定一致：
+// bottom-of-block 内置字段 + 所有自定义字段，排除 deadline / scheduled）。
 // 用于给 .block-row 铺上与 chips 同色的极淡背景（视觉连通），仅非 hover 态。
 const hasRightProps = computed(() => {
-  const all = propertyStore.getBlockProperties(blockId.value)
-  return all.some(p => {
-    if (p.isHidden) return false
-    if (p.key === 'deadline' || p.key === 'scheduled') return false
-    const def = propertyStore.getPropertyDef(p.key)
-    return def?.displayPosition === 'bottom-of-block' || !isSystemField(p.key)
+  const all = fieldValueStore.getBlockFieldValues(blockId.value)
+  return all.some((fv) => {
+    if (fv.key === 'deadline' || fv.key === 'scheduled') return false
+    const def = fieldValueStore.getFieldDef(fv.key)
+    return def?.displayPosition === 'bottom-of-block' || !isSystemField(fv.key)
   })
 })
 
@@ -236,12 +233,12 @@ const setupCtx: BlockSetupContext = {
   blockId,
   block,
   pageId: props.pageId,
-  getProperty: getBlockProperty,
-  getPropertiesMap: getBlockPropertiesMap,
-  setProperty,
+  getFieldValue: getBlockFieldValue,
+  getFieldValuesMap: getBlockFieldValuesMap,
+  setFieldValue,
   blockStore,
   editorStore,
-  propertyStore,
+  fieldValueStore,
   pageStore,
   navigateToPage,
 }
@@ -310,20 +307,20 @@ async function handleDeleteBetweenProperty(e: Event) {
     return
   }
   
-  const blockProps = propertyStore.getBlockProperties(blockId.value)
+  const blockFields = fieldValueStore.getBlockFieldValues(blockId.value)
 
-  // 查找 between 位置的属性（status/priority）
-  const betweenProps = blockProps.filter(prop => {
-    const def = propertyStore.getPropertyDef(prop.key)
+  // 查找 between 位置的字段值（status/priority）
+  const betweenFields = blockFields.filter(fv => {
+    const def = fieldValueStore.getFieldDef(fv.key)
     return def?.displayPosition === 'between-bullet-content'
   })
 
-  if (betweenProps.length > 0) {
+  if (betweenFields.length > 0) {
     // 阻止默认的 merge 行为
     customEvent.preventDefault()
     
-    // 删除属性
-    await propertyStore.deleteProperty(betweenProps[0].id, blockId.value)
+    // 删除字段值
+    await fieldValueStore.deleteFieldValue(betweenFields[0].id, blockId.value)
   }
 }
 
@@ -475,8 +472,8 @@ function onBlockMousedown(e: MouseEvent) {
   e.preventDefault()
 }
 
-/** 属性区 mousedown：作为块选区起点（ADR-0035 D6），只做块选区、不激活编辑器 */
-function onPropertyMousedown(e: MouseEvent) {
+/** 字段区 mousedown：作为块选区起点（ADR-0035 D6），只做块选区、不激活编辑器 */
+function onFieldValueMousedown(e: MouseEvent) {
   if (e.button !== 0) return
   // Ctrl/Cmd+Click 交给块级命中面 onBlockMousedown 统一接管（其命中面覆盖本区域）
   if (e.ctrlKey || e.metaKey) return
@@ -567,10 +564,10 @@ watch(isActive, (active) => {
         </span>
 
         <div class="block-body">
-          <!-- Between 属性显示 -->
-          <PropertyInline
+          <!-- Between 字段值显示 -->
+          <BlockTagFields
             :block-id="blockId"
-            position="between-bullet-content"
+            variant="between"
           />
 
           <!-- 内容区 -->
@@ -585,8 +582,8 @@ watch(isActive, (active) => {
               :block-id="blockId"
               :content="editContent"
               :show-full-placeholder="isSingleEmptyBlock"
-              :properties="getBlockPropertiesMap()"
-              :language="getBlockProperty('language')"
+              :field-values="getBlockFieldValuesMap()"
+              :language="getBlockFieldValue('language')"
               @save="handleSave"
               @split="handleSplit"
               @merge="handleMerge"
@@ -607,8 +604,8 @@ watch(isActive, (active) => {
               v-else-if="handler"
               :block-id="blockId"
               :content="block.content"
-              :properties="getBlockPropertiesMap()"
-              :language="getBlockProperty('language')"
+              :field-values="getBlockFieldValuesMap()"
+              :language="getBlockFieldValue('language')"
               :show-placeholder="isSingleEmptyBlock"
               :readonly="true"
               @content-click="onContentClick"
@@ -623,32 +620,32 @@ watch(isActive, (active) => {
             </div>
           </div>
 
-          <!-- Right 属性显示 -->
-          <PropertyInline
+          <!-- Right 字段值显示 -->
+          <BlockTagFields
             :block-id="blockId"
-            position="right-of-content"
+            variant="right"
           />
         </div>
       </div>
 
-      <!-- 行内右侧属性列：常规 chips 作为行尾 flex 项，宽度自适应、换行撑高行，不被裁剪 -->
+      <!-- 行内右侧字段列：常规 chips 作为行尾 flex 项，宽度自适应、换行撑高行，不被裁剪 -->
       <div
         class="block-row-properties"
-        @mousedown="onPropertyMousedown"
+        @mousedown="onFieldValueMousedown"
       >
-        <PropertyDisplay
+        <BlockTagFields
           :block-id="blockId"
           variant="chips"
         />
       </div>
     </div>
 
-    <!-- 属性带（content 下方）：书笔记来源行原位保留；无属性时为 #94 命中带 -->
+    <!-- 字段带（content 下方）：书笔记来源行原位保留；无字段时为 #94 命中带 -->
     <div
       class="block-properties"
-      @mousedown="onPropertyMousedown"
+      @mousedown="onFieldValueMousedown"
     >
-      <PropertyDisplay
+      <BlockTagFields
         :block-id="blockId"
         variant="book-note"
       />
@@ -656,6 +653,7 @@ watch(isActive, (active) => {
       <BlockTagFields
         :block-id="blockId"
         :tag-ids="block.tags ?? []"
+        variant="list"
       />
     </div>
 

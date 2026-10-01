@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { computed } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import { useBlockStore } from '../stores/blocks'
-import { usePropertyStore } from '../stores/property'
+import { useFieldValueStore } from '../stores/fieldValue'
 import { useCrossBlockSelection, COMIND_BLOCK_MIME } from './useCrossBlockSelection'
 import { getCoreClient } from '../wasm/client'
 
@@ -116,7 +116,7 @@ describe('useCrossBlockSelection', () => {
       expect(selection.trackingFromProperty.value).toBe(false)
     })
 
-    test('startTracking(blockId, true) 标记属性区起点', async () => {
+    test('startTracking(blockId, true) 标记字段区起点', async () => {
       const selection = useCrossBlockSelection()
       const pageId = 'page-1'
       const block = await blockStore.createBlock({ pageId, content: 'Block' })
@@ -762,15 +762,16 @@ describe('useCrossBlockSelection', () => {
       expect(payload.blocks[0].children[0].id).toBe(child.id)
     })
 
-    test('属性随行：propertyStore 实时缓存为权威（D11）', async () => {
+    test('字段值随行：fieldValueStore 实时缓存为权威（D11）', async () => {
       const selection = useCrossBlockSelection()
       const pageId = 'page-1'
 
-      const block = await blockStore.createBlock({ pageId, content: '带属性' })
-      const propertyStore = usePropertyStore()
-      propertyStore.propertiesByBlock.set(block.id, [{
-        id: 'p1', blockId: block.id, key: 'status', value: 'Todo', type: 'string',
-        sortOrder: 0, isHidden: false, isDeleted: false, schemaVersion: 1, createdAt: 0, updatedAt: 0
+      const block = await blockStore.createBlock({ pageId, content: '带字段值' })
+      const fieldValueStore = useFieldValueStore()
+      fieldValueStore.fieldValuesByBlock.set(block.id, [{
+        id: 'p1', block_id: block.id, field_definition_id: 'fd-status', key: 'status',
+        value_json: 'Todo', value_type: 'string', seq: 0,
+        created_at: 0, updated_at: 0, version: 0, deleted_at: null
       }])
 
       selection.anchorIds.add(block.id)
@@ -784,11 +785,12 @@ describe('useCrossBlockSelection', () => {
       const selection = useCrossBlockSelection()
       const pageId = 'page-1'
 
-      const block = await blockStore.createBlock({ pageId, content: '快照属性' })
+      const block = await blockStore.createBlock({ pageId, content: '快照字段值' })
       const b = blockStore.blocks.find(x => x.id === block.id)!
       b.properties = [{
-        id: 'p2', block_id: block.id, key: 'priority', value: 'high', type: 'string',
-        sort_order: 0, is_hidden: 0, is_deleted: 0, schema_version: 1, created_at: 0, updated_at: 0
+        id: 'p2', block_id: block.id, field_definition_id: 'fd-priority', key: 'priority',
+        value_json: 'high', value_type: 'string', seq: 0,
+        created_at: 0, updated_at: 0, version: 0, deleted_at: null
       }]
 
       selection.anchorIds.add(block.id)

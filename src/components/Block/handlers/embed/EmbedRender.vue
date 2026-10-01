@@ -2,9 +2,10 @@
 import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useBlockStore } from '../../../../stores/blocks'
 import { usePageStore } from '../../../../stores/pages'
-import { usePropertyStore } from '../../../../stores/property'
+import { useFieldValueStore } from '../../../../stores/fieldValue'
 import { useEditorStore } from '../../../../stores/editor'
 import { useNavigateToPage } from '../../../../composables/useNavigateToPage'
+import { decodeFieldValueData } from '../../../../utils/field-value-codec'
 import SubtreeRenderer from './SubtreeRenderer'
 import type { SubtreeNode } from '../../../../types/block'
 import type { Block } from '../../../../types/block'
@@ -12,7 +13,7 @@ import type { Block } from '../../../../types/block'
 const props = defineProps<{
   content: string
   showPlaceholder?: boolean
-  properties: Record<string, unknown>
+  fieldValues: Record<string, unknown>
   blockId: string
 }>()
 
@@ -23,20 +24,20 @@ const emit = defineEmits<{
 
 const blockStore = useBlockStore()
 const pageStore = usePageStore()
-const propertyStore = usePropertyStore()
+const fieldValueStore = useFieldValueStore()
 const editorStore = useEditorStore()
 const { navigateToPage } = useNavigateToPage()
 
 const MAX_EMBED_DEPTH = 3
 
-// 直接从 propertyStore 响应式读取，确保 setProperty 后能立即更新（不依赖 props.properties 传递链）
+// 直接从 fieldValueStore 响应式读取，确保 setFieldValue 后能立即更新（不依赖 props.properties 传递链）
 const sourceBlockId = computed(() => {
-  const p = propertyStore.getBlockProperty(props.blockId, 'sourceBlockId')
-  return (p?.value as string) || ''
+  const p = fieldValueStore.getBlockFieldValue(props.blockId, 'sourceBlockId')
+  return (p ? (decodeFieldValueData(p.value_json, p.value_type) as string) : '') || ''
 })
 const sourcePageId = computed(() => {
-  const p = propertyStore.getBlockProperty(props.blockId, 'sourcePageId')
-  return (p?.value as string) || ''
+  const p = fieldValueStore.getBlockFieldValue(props.blockId, 'sourcePageId')
+  return (p ? (decodeFieldValueData(p.value_json, p.value_type) as string) : '') || ''
 })
 const remoteBlock = ref<Block | null>(null)
 const remoteBlocks = ref<Block[]>([])
@@ -70,7 +71,7 @@ function isInEditableInput(e: { target: EventTarget | null }): boolean {
 
 /**
  * embed 选中态下按 Backspace → 清空当前 block，恢复成空的 bullet block：
- * 删掉 embed 专属属性（sourceBlockId/sourcePageId）+ type 改 bullet + content 置空。
+ * 删掉 embed 专属字段值（sourceBlockId/sourcePageId）+ type 改 bullet + content 置空。
  */
 function handleDocKeyDown(e: KeyboardEvent) {
   if (!isClicked.value || e.key !== 'Backspace') return
@@ -86,11 +87,11 @@ function handleDocKeyDown(e: KeyboardEvent) {
 async function clearToBullet() {
   const block = blockStore.blocks.find(b => b.id === props.blockId)
   if (!block) return
-  // 1. 删除 embed 专属属性（deleteProperty 内部已刷新缓存）
-  const propsList = propertyStore.getBlockProperties(props.blockId)
+  // 1. 删除 embed 专属字段值（deleteFieldValue 内部已刷新缓存）
+  const propsList = fieldValueStore.getBlockFieldValues(props.blockId)
   for (const p of propsList) {
     if (p.key === 'sourceBlockId' || p.key === 'sourcePageId') {
-      await propertyStore.deleteProperty(p.id, props.blockId)
+      await fieldValueStore.deleteFieldValue(p.id, props.blockId)
     }
   }
   // 2. 恢复成空 bullet：改类型会触发 Block 重建（EmbedRender 卸载并移除监听）
@@ -159,9 +160,9 @@ function detectCircular(targetId: string, depth: number = 0): boolean {
 
 function getBlockPropertyValue(blockId: string, key: string): string | undefined {
   const prop = blockStore.blocks.find(b => b.id === blockId) 
-    ? propertyStore.getBlockProperty(blockId, key)
+    ? fieldValueStore.getBlockFieldValue(blockId, key)
     : undefined
-  return prop?.value as string | undefined
+  return prop ? (decodeFieldValueData(prop.value_json, prop.value_type) as string) : undefined
 }
 
 const circularDetected = computed(() => {

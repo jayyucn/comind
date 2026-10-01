@@ -1,24 +1,25 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { useEditorStore } from '../../stores/editor'
-import { usePropertyStore } from '../../stores/property'
-import type { PropertyType, PropertyValue } from '../../types/property'
+import { useFieldValueStore } from '../../stores/fieldValue'
+import type { FieldType, FieldValueData } from '../../types/field-definition'
+import { decodeFieldValueData } from '../../utils/field-value-codec'
 import BasePopover from '../common/BasePopover.vue'
 
 const editorStore = useEditorStore()
-const propertyStore = usePropertyStore()
+const fieldValueStore = useFieldValueStore()
 
-const visible = computed(() => editorStore.propertyEditor?.visible ?? false)
-const blockId = computed(() => editorStore.propertyEditor?.blockId ?? '')
-const initialKey = computed(() => editorStore.propertyEditor?.initialKey ?? null)
+const visible = computed(() => editorStore.fieldValueEditor?.visible ?? false)
+const blockId = computed(() => editorStore.fieldValueEditor?.blockId ?? '')
+const initialKey = computed(() => editorStore.fieldValueEditor?.initialKey ?? null)
 
-// 自定义属性的状态
+// 自定义字段的状态
 const customKey = ref<string>('')
-const selectedType = ref<PropertyType>('string')
-const currentValue = ref<PropertyValue>('')
+const selectedType = ref<FieldType>('string')
+const currentValue = ref<FieldValueData>('')
 const arrayInput = ref('')
 
-const propertyTypes: { type: PropertyType; label: string }[] = [
+const fieldTypes: { type: FieldType; label: string }[] = [
   { type: 'string', label: '文本' },
   { type: 'number', label: '数字' },
   { type: 'boolean', label: '布尔值' },
@@ -33,7 +34,7 @@ const currentArrayValue = computed<string[]>({
 
 /** 类型的展示文案（编辑模式下类型是纯文本，不再走 select 的 option 文案） */
 const typeLabel = computed(
-  () => propertyTypes.find(t => t.type === selectedType.value)?.label ?? selectedType.value,
+  () => fieldTypes.find(t => t.type === selectedType.value)?.label ?? selectedType.value,
 )
 
 // 默认焦点的候选元素（各 v-if 分支同时只挂一个，同一 ref 名可跨分支复用）
@@ -80,10 +81,10 @@ function open() {
   if (initialKey.value) {
     // 编辑模式
     customKey.value = initialKey.value
-    const existing = propertyStore.getBlockProperty(blockId.value, initialKey.value)
+    const existing = fieldValueStore.getBlockFieldValue(blockId.value, initialKey.value)
     if (existing) {
-      selectedType.value = existing.type
-      currentValue.value = existing.value
+      selectedType.value = existing.value_type as FieldType
+      currentValue.value = decodeFieldValueData(existing.value_json, existing.value_type) as FieldValueData
     } else {
       currentValue.value = selectedType.value === 'array' ? [] : ''
     }
@@ -97,7 +98,7 @@ function open() {
 }
 
 function close() {
-  editorStore.hidePropertyEditor()
+  editorStore.hideFieldValueEditor()
   customKey.value = ''
   selectedType.value = 'string'
   currentValue.value = ''
@@ -105,7 +106,7 @@ function close() {
 }
 
 /** 浮层锚点（触发元素矩形）；生产调用方均会传，缺省时退化为视口居中 */
-const position = computed(() => editorStore.propertyEditor?.position ?? null)
+const position = computed(() => editorStore.fieldValueEditor?.position ?? null)
 const popoverPosition = computed(
   () => position.value ?? { x: window.innerWidth / 2, y: window.innerHeight / 2 },
 )
@@ -126,7 +127,7 @@ async function save() {
   if (!canSave.value || !blockId.value) return
 
   try {
-    await propertyStore.setProperty(
+    await fieldValueStore.setFieldValue(
       blockId.value,
       customKey.value.trim(),
       currentValue.value,
@@ -134,7 +135,7 @@ async function save() {
     )
     close()
   } catch (error) {
-    console.error('Failed to save property:', error)
+    console.error('Failed to save field value:', error)
   }
 }
 
@@ -186,7 +187,7 @@ watch(visible, (val) => {
             v-model="selectedType"
           >
             <option
-              v-for="t in propertyTypes"
+              v-for="t in fieldTypes"
               :key="t.type"
               :value="t.type"
             >

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { SYSTEM_TAGS, getFieldTag, isSystemField } from './tag'
-import { BUILT_IN_PROPERTIES, getPropertyDefinition, getAllPropertyDefinitions } from './property'
+import { BUILT_IN_FIELDS, getFieldDefinition, getAllFieldDefinitions } from './field-definition'
 import seedJson from './systemFieldSeed.json'
 
 describe('SYSTEM_TAGS（系统内置 Tag 单一来源）', () => {
@@ -28,28 +28,28 @@ describe('SYSTEM_TAGS（系统内置 Tag 单一来源）', () => {
   })
 })
 
-describe('BUILT_IN_PROPERTIES（由 SYSTEM_TAGS 展平）', () => {
+describe('BUILT_IN_FIELDS（由 SYSTEM_TAGS 展平）', () => {
   it('展平为 10 个内置字段', () => {
-    expect(BUILT_IN_PROPERTIES.length).toBe(10)
+    expect(BUILT_IN_FIELDS.length).toBe(10)
   })
 
   it('与 SYSTEM_TAGS.flatMap 完全一致（单一来源）', () => {
-    expect(BUILT_IN_PROPERTIES).toEqual(SYSTEM_TAGS.flatMap((t) => t.fields))
+    expect(BUILT_IN_FIELDS).toEqual(SYSTEM_TAGS.flatMap((t) => t.fields))
   })
 
   it('status 保留 closedValues 与 displayPosition', () => {
-    const status = getPropertyDefinition('status')!
+    const status = getFieldDefinition('status')!
     expect(status.title).toBe('状态')
     expect(status.closedValues).toHaveLength(4)
     expect(status.displayPosition).toBe('between-bullet-content')
   })
 
-  it('getPropertyDefinition 未命中返回 undefined', () => {
-    expect(getPropertyDefinition('non-existent')).toBeUndefined()
+  it('getFieldDefinition 未命中返回 undefined', () => {
+    expect(getFieldDefinition('non-existent')).toBeUndefined()
   })
 
-  it('getAllPropertyDefinitions 返回全部 10 字段', () => {
-    expect(getAllPropertyDefinitions()).toHaveLength(10)
+  it('getAllFieldDefinitions 返回全部 10 字段', () => {
+    expect(getAllFieldDefinitions()).toHaveLength(10)
   })
 })
 

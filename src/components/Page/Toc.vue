@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 通用 TOC 浮层（替代原 BookNotesOutline）：
 // - 普通页：扫描标题块（content `#{1,6} ` 前缀或 format.type==='heading'），按 level 嵌套成文档大纲；
-// - 书页：复用 part/chapter/cfi 属性投影（book-notes-group）；
+// - 书页：复用 part/chapter/cfi 字段值投影（book-notes-group）；
 // - 点击行 dispatch navigate-to-block（Page/index.vue 监听滚动+高亮）；
 //   书源叶子节点带 cfi 时显示「原文」跳回阅读器。
 // 浮层 Teleport 到 body，固定定位在左侧留白带，窄屏自动隐藏，可收起。
@@ -13,7 +13,8 @@ import { openReaderWindow } from '../../composables/useReaderWindow'
 import { groupBookNotesByChapter, type BookNoteMeta } from '../../services/book-notes-group'
 import { useBlockStore } from '../../stores/blocks'
 import { usePageStore } from '../../stores/pages'
-import { usePropertyStore } from '../../stores/property'
+import { useFieldValueStore } from '../../stores/fieldValue'
+import { decodeFieldValueData } from '../../utils/field-value-codec'
 import type { Block, TreeNode } from '../../types/block'
 import { isTauriEnvironment } from '../../wasm/tauri-platform'
 import { useLayoutShell } from '../../composables/useLayoutShell'
@@ -26,7 +27,7 @@ const props = defineProps<{
 
 const pageStore = usePageStore()
 const blockStore = useBlockStore()
-const propertyStore = usePropertyStore()
+const fieldValueStore = useFieldValueStore()
 const shell = useLayoutShell()
 
 const page = computed(() => pageStore.getPage(props.pageId) ?? null)
@@ -38,8 +39,8 @@ const tree = computed<TreeNode[]>(() =>
 )
 
 function propValue(blockId: string, key: string): string {
-  const p = propertyStore.getBlockProperties(blockId).find(x => x.key === key && !x.isDeleted)
-  return p ? String(p.value) : ''
+  const p = fieldValueStore.getBlockFieldValues(blockId).find(x => x.key === key && x.deleted_at === null)
+  return p ? String(decodeFieldValueData(p.value_json, p.value_type)) : ''
 }
 
 /** 文档序展开（DFS 前序）：普通页大纲只需块序，与块树父子关系无关 */
@@ -102,7 +103,7 @@ const headingNodes = computed<TocNode[]>(() => {
   return roots
 })
 
-// 书页：复用 part/chapter 属性投影（结构化数据由阅读器固化，侧不解析 TOC）
+// 书页：复用 part/chapter 字段值投影（结构化数据由阅读器固化，侧不解析 TOC）
 const bookNodes = computed<TocNode[]>(() => {
   const notes: BookNoteMeta[] = tree.value.map(n => ({
     blockId: n.id,
@@ -130,12 +131,12 @@ const bookNodes = computed<TocNode[]>(() => {
 
 const nodes = computed<TocNode[]>(() => (isBook.value ? bookNodes.value : headingNodes.value))
 
-/** 书页需属性到位才能分组；属性拉取仅书页触发，普通页不额外加载 */
+/** 书页需字段值到位才能分组；字段值拉取仅书页触发，普通页不额外加载 */
 const noteIds = computed(() => tree.value.map(n => n.id))
 watch(
   noteIds,
   ids => {
-    if (isBook.value && ids.length > 0) void propertyStore.loadMultiBlockProperties(ids)
+    if (isBook.value && ids.length > 0) void fieldValueStore.loadMultiBlockFieldValues(ids)
   },
   { immediate: true },
 )

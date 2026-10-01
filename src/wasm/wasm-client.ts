@@ -5,10 +5,11 @@ import type {
   DateRefRecord,
   Link,
   Notification,
-  Page, Property,
+  Page,
   RelationshipType,
   SearchResult
 } from './types'
+import type { FieldValue } from '../types/field-value'
 
 export interface WasmClient {
   get_block(blockId: string): Promise<Block>
@@ -25,8 +26,8 @@ export interface WasmClient {
 
   get_outlinks(pageId: string): Promise<Link[]>
 
-  get_properties(blockId: string): Promise<Property[]>
-  set_property(blockId: string, key: string, value: string, type: string): Promise<Property>
+  get_properties(blockId: string): Promise<FieldValue[]>
+  set_property(blockId: string, key: string, value: string, type: string): Promise<FieldValue>
   delete_property(blockId: string, key: string): Promise<void>
 
   get_relationship_types(): Promise<RelationshipType[]>
@@ -195,14 +196,14 @@ export async function initWasmClient(): Promise<WasmClient> {
       return parseJsonResult<Link[]>(result)
     },
 
-    async get_properties(blockId: string): Promise<Property[]> {
+    async get_properties(blockId: string): Promise<FieldValue[]> {
       const result = await wasmModule.get_properties(blockId)
-      return parseJsonResult<Property[]>(result)
+      return parseJsonResult<FieldValue[]>(result)
     },
 
-    async set_property(blockId: string, key: string, value: string, type: string): Promise<Property> {
+    async set_property(blockId: string, key: string, value: string, type: string): Promise<FieldValue> {
       const result = await wasmModule.set_property(blockId, key, value, type)
-      return parseJsonResult<Property>(result)
+      return parseJsonResult<FieldValue>(result)
     },
 
     async delete_property(blockId: string, key: string): Promise<void> {

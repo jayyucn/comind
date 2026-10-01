@@ -123,9 +123,9 @@ describe('useBlockEditorLifecycle', () => {
   })
 
   describe('handleLanguageChange', () => {
-    it('calls blockStore.updateBlockProperties with language', async () => {
+    it('calls blockStore.updateBlockFieldValues with language', async () => {
       const { lifecycle, blockStore } = setup()
-      const spy = vi.spyOn(blockStore, 'updateBlockProperties').mockResolvedValue(undefined)
+      const spy = vi.spyOn(blockStore, 'updateBlockFieldValues').mockResolvedValue(undefined)
       await lifecycle.handleLanguageChange('python')
       expect(spy).toHaveBeenCalledWith('b1', { language: 'python' })
     })

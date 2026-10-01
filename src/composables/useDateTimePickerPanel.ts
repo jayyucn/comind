@@ -9,7 +9,7 @@
 import { computed, onMounted, onBeforeUnmount } from 'vue'
 import { useEditorStore } from '../stores/editor'
 import { useBlockStore } from '../stores/blocks'
-import { usePropertyStore } from '../stores/property'
+import { useFieldValueStore } from '../stores/fieldValue'
 import { DATE_REF_CLICK_EVENT } from '../extensions/DateRefExtension'
 import { serializeDateRef, DATE_REF_AT_REGEX, padDateRefUnit } from '../utils/date-ref'
 import type { DateRefKind, RecurrenceRule } from '../utils/date-ref'
@@ -232,8 +232,8 @@ export function useDateTimePickerPanel() {
     // 若 block 尚未有任何 status（Todo/Doing/Done/Canceled），则补一个 Todo。
     // ref 类型不触发此行为（纯日期引用，不是任务标记）。
     if (inserted && blockId && (value.kind === 'schedule' || value.kind === 'deadline')) {
-      const propertyStore = usePropertyStore()
-      await propertyStore.ensureTodo(blockId)
+      const fieldValueStore = useFieldValueStore()
+      await fieldValueStore.ensureTodo(blockId)
     }
 
     close()

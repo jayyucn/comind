@@ -1,7 +1,7 @@
 /**
  * useUndoHistory —— ADR-0046 撤销历史栈核心（T2 / issue #107）。
  *
- * 机制：整页快照（memento，D8）。观测点：监听权威状态 `blocks` 数组 + 属性表
+ * 机制：整页快照（memento，D8）。观测点：监听权威状态 `blocks` 数组 + 字段值表
  * （D9），按页面隔离（Map<pageId, HistoryStack>，D6）。~500ms idle 合并窗口
  * （D3 自动满足：一次结构操作的多次写入落在同一响应式批次，天然合成一步）。
  *
@@ -9,20 +9,20 @@
  * 不落库（D5 结构性必然）；不含页面级元数据（D4③）。
  *
  * 归因口径：每页挂一个「派生签名」看门狗（源 = 该页 blocks 的内容签名 + 该页
- * 属性签名），而非对全局 `blocks` 挂一个 deep watch。背景加载别的页（其它页块
+ * 字段值签名），而非对全局 `blocks` 挂一个 deep watch。背景加载别的页（其它页块
  * push 进共享 `blocks` 数组）不会改变当前页签名 → 不会误触发、不会产生重复快照。
  * 签名只用于「哪页变了」的归因，不是「新旧快照判重」的 dedupe（本票禁 dedupe）。
  */
 import { watch, type WatchStopHandle } from 'vue'
 import { useBlockStore } from '../stores/blocks'
-import { usePropertyStore } from '../stores/property'
+import { useFieldValueStore } from '../stores/fieldValue'
 import type { Block } from '../types/block'
-import type { Property } from '../types/property'
+import type { FieldValue } from '../types/field-value'
 
-/** 单页快照信封：正文 + 结构 + format(含折叠) + 属性表（D11） */
+/** 单页快照信封：正文 + 结构 + format(含折叠) + 字段值表（D11） */
 export interface HistoryEntry {
   blocks: Block[]
-  properties: Record<string, Property[]>
+  properties: Record<string, FieldValue[]>
 }
 
 const DEFAULT_IDLE_MS = 500
@@ -80,7 +80,7 @@ function deepClonePlain<T>(value: T): T {
  * 文档态投影（#113）：信封字段清单的**唯一书写处** —— 快照信封（cloneBlockSlim）、
  * 恢复 diff（blockDocumentEqual）、op 哨兵测试都从这里派生。新增文档态字段只改这里，
  * 三处自动跟进；类型化对象字面量保证拼错/漏字段编译期报错。
- * 时间戳（createdAt/updatedAt）不承载恢复语义，有意不在投影内（与属性信封归零同理）。
+ * 时间戳（createdAt/updatedAt）不承载恢复语义，有意不在投影内（与字段值信封归零同理）。
  */
 export function documentState(b: Block): Pick<Block, 'id' | 'pageId' | 'parentId' | 'pos' | 'content' | 'format' | 'type'> {
   return {
@@ -106,14 +106,14 @@ export function blockDocumentEqual(a: Block, b: Block): boolean {
   return JSON.stringify(documentState(a)) === JSON.stringify(documentState(b))
 }
 
-function cloneProperty(p: Property): Property {
-  // createdAt/updatedAt 归一化为 0：服务端写入的时间戳不承载恢复语义，却会漂移 ——
-  // 撤销「删块」后复活块的组件重挂载，useBlockPropertySync.onMounted 会
-  // loadBlockProperties 从 DB 重读，而恢复批次的 property set 刚刷过 updated_at。
-  // 若签名含该字段，「同一状态」会被判成一次新改动 ⇒ 推入一份近似重复的快照并截断
-  // redo 尾（2026-09-15 实机：删块 → Ctrl+Z 后约 500ms 起 Ctrl+Shift+Z 变 null；
-  // 实测唯一漂移字节 = 属性行的 updatedAt）。信封只承载恢复所需字段，故归零。
-  return { ...p, value: deepClonePlain(p.value), createdAt: 0, updatedAt: 0 }
+function cloneProperty(p: FieldValue): FieldValue {
+  // created_at/updated_at 归一化为 0：服务端写入的时间戳不承载恢复语义，却会漂移 ——
+  // 撤销「删块」后复活块的组件重挂载，会从 DB 重读字段值，而恢复批次的字段值 set
+  // 刚刷过 updated_at。若签名含该字段，「同一状态」会被判成一次新改动 ⇒ 推入一份近似
+  // 重复的快照并截断 redo 尾（2026-09-15 实机：删块 → Ctrl+Z 后约 500ms 起
+  // Ctrl+Shift+Z 变 null；实测唯一漂移字节 = 字段值行的 updated_at）。
+  // 信封只承载恢复所需字段，故归零。
+  return { ...p, created_at: 0, updated_at: 0 }
 }
 
 // ---- 字节预算（D5：32MB 上限，超限裁最旧）----
@@ -128,27 +128,27 @@ function byteSize(snap: HistoryEntry): number {
 }
 
 /**
- * ⚠️ 本函数**只读客户端缓存**（`propertyStore`），不查 DB。其安全前提是「页面每个块只要渲染
- * 就会被挂载、挂载即**无条件**加载属性」（`useBlockPropertySync.onMounted` → `loadBlockProperties`），
- * 因此缓存对本页块是**完备**的 —— 若前提不成立，信封会缺块，撤销「删块」时该块属性随级联软删
- * **永久丢失**（DB 行已被 `PropertyService::delete_by_block_id` 软删）。
+ * ⚠️ 本函数**只读客户端缓存**（`fieldValueStore`），不查 DB。其安全前提是「页面每个块只要渲染
+ * 就会被挂载、挂载即**无条件**加载字段值」（挂载 → `loadBlockFieldValues`），
+ * 因此缓存对本页块是**完备**的 —— 若前提不成立，信封会缺块，撤销「删块」时该块字段值随级联软删
+ * **永久丢失**（DB 行已被 `FieldValueService::delete_by_block_id` 软删）。
  *
  * 该前提已钉成两条可执行哨兵（2026-09-15 grill-up 核查后加，此前是一条**未验证的推测**）：
- * - 前提侧：`BlockList.undo-redo.test.ts` H 组「页面块集合 ⊆ propertyStore 键集合」
- * - 信封侧：`useUndoHistory.test.ts`「信封覆盖 store 中所有有属性的块」
+ * - 前提侧：`BlockList.undo-redo.test.ts` H 组「页面块集合 ⊆ fieldValueStore 键集合」
+ * - 信封侧：`useUndoHistory.test.ts`「信封覆盖 store 中所有有字段值的块」
  * 任一变红 ⇒ 前提被破坏（虚拟滚动 / 懒渲染 / 条件加载 / 缓存驱逐），**那时才需要**动 Rust
- * （让 `undelete_blocks` 顺带复活属性行，须先过 ADR-0046 D10）。现状核查结论：无虚拟滚动
+ * （让 `undelete_blocks` 顺带复活字段值行，须先过 ADR-0046 D10）。现状核查结论：无虚拟滚动
  * （`v-for` 全量渲染）、折叠是 `display: none` 不卸载、`clearBlockCache` 生产零调用、
  * 删块入口只在 `BlockList` ⇒ 不可达，故**未**改 T1 语义。
  */
 
-/** 属性信封（D11）：{ blockId → 属性深拷贝[] }。captureEntry 与 propSig 的**单一真源** ——
+/** 字段值信封（D11）：{ blockId → 字段值深拷贝[] }。captureEntry 与 propSig 的**单一真源** ——
  *  两处必须逐字节一致，否则「签名变了 ⇔ 快照会变」不成立（Spec #7）。 */
-function propEnvelope(pageBlocks: Block[]): Record<string, Property[]> {
-  const propertyStore = usePropertyStore()
-  const properties: Record<string, Property[]> = {}
+function propEnvelope(pageBlocks: Block[]): Record<string, FieldValue[]> {
+  const fieldValueStore = useFieldValueStore()
+  const properties: Record<string, FieldValue[]> = {}
   for (const b of pageBlocks) {
-    const props = propertyStore.propertiesByBlock.get(b.id)
+    const props = fieldValueStore.fieldValuesByBlock.get(b.id)
     if (props && props.length > 0) properties[b.id] = props.map(cloneProperty)
   }
   return properties
@@ -172,7 +172,7 @@ function blockSig(pageId: string): string {
   return JSON.stringify(blockStore.getBlocksByPage(pageId).map(cloneBlockSlim))
 }
 
-/** 该页属性的签名。与 captureEntry 共用 propEnvelope（Spec #7：单一真源）。 */
+/** 该页字段值的签名。与 captureEntry 共用 propEnvelope（Spec #7：单一真源）。 */
 function propSig(pageId: string): string {
   return JSON.stringify(propEnvelope(useBlockStore().getBlocksByPage(pageId)))
 }

@@ -1,12 +1,12 @@
-import type { PropertyType, PropertyValue } from '../types/property'
+import type { FieldType, FieldValueData } from '../types/field-definition'
 
 /**
- * 格式化和验证属性值
+ * 格式化和验证字段值
  */
-export function formatPropertyValue(
-  value: PropertyValue,
-  type: PropertyType
-): PropertyValue | null {
+export function formatFieldValueData(
+  value: FieldValueData,
+  type: FieldType
+): FieldValueData | null {
   try {
     switch (type) {
       case 'string':
@@ -62,7 +62,7 @@ export function formatPropertyValue(
 /**
  * 推断值类型（根据字符串）
  */
-export function inferPropertyType(value: string): PropertyType {
+export function inferFieldType(value: string): FieldType {
   const trimmed = value.trim()
 
   if (trimmed === 'true' || trimmed === 'false') return 'boolean'

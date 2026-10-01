@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { PropertyValue } from '@/types/property'
+import type { FieldValueData } from '@/types/field-definition'
 import { CalendarDays, Columns, LayoutGrid, Table } from 'lucide-vue-next'
 import { computed, markRaw, onMounted, ref } from 'vue'
 import { createQueryEngine } from '../../core/query'
@@ -11,7 +11,7 @@ import { useBlockCardStore } from '../../stores/blockCard'
 import { useBlockStore } from '../../stores/blocks'
 import { useEditorStore } from '../../stores/editor'
 import { usePageStore } from '../../stores/pages'
-import { usePropertyStore } from '../../stores/property'
+import { useFieldValueStore } from '../../stores/fieldValue'
 import { useScreenViewStore } from '../../stores/screenView'
 import type { BlockCard } from '../../wasm/types'
 import QueryPageFrame from '../common/QueryPageFrame.vue'
@@ -27,13 +27,13 @@ const blockCardStore = useBlockCardStore()
 // 命名视图 store（与 QueryPageFrame 内部同 key 单例共享；此处仅读取 currentViewType/currentTab）。
 // 首建注入实体默认布局（blockDefaultConfig）——seed/create 时写入 Block 正确的 config（ADR-0023 上游修复）。
 const screenViewStore = useScreenViewStore('block', { defaultConfig: blockDefaultConfig })
-const propertyStore = usePropertyStore()
+const fieldValueStore = useFieldValueStore()
 // 四象限新增任务：block 经编辑器 store 创建（走既有 _scheduleSave 通路），页面自动建/复用
 const blockStore = useBlockStore()
 const pageStore = usePageStore()
 const editorStore = useEditorStore()
 
-// 通用查询引擎注册表（组合根单例，内置字段 + 自定义 property 已注册）
+// 通用查询引擎注册表（组合根单例，内置字段 + 自定义字段已注册）
 const registry = getBlockRegistry()
 // 统一引擎：实体类型在工厂创建时绑定（ADR-0022 Q7）
 const blockEngine = createQueryEngine<BlockCard>(BLOCK_ENTITY)
@@ -84,7 +84,7 @@ const quadrantConfig = computed<QuadrantConfig | undefined>(() => {
 })
 
 // 数据源：排除 status 为空的 blocks（普通非任务段落），再做搜索子串过滤
-// （与 PagesLibrary 对 title 过滤同构；status 以 property 存于 card.properties['status']）
+// （与 PagesLibrary 对 title 过滤同构；status 以字段值存于 card.properties['status']）
 const searchedCards = computed<BlockCard[]>(() => {
   const q = searchQuery.value.trim().toLowerCase()
   return blockCardStore.cards.filter((c) => {
@@ -113,7 +113,7 @@ onMounted(async () => {
 
 // Handle status change from child views
 async function handleStatusChange(blockId: string, newStatus: string) {
-  await propertyStore.setProperty(blockId, 'status', newStatus)
+  await fieldValueStore.setFieldValue(blockId, 'status', newStatus)
   await refresh()
 }
 
@@ -129,15 +129,15 @@ async function handleQuadrantAdd(priority: string, title: string) {
     await blockStore.loadPageBlocks(page.id)
   }
   const block = await blockStore.createBlock({ pageId: page.id, content: title })
-  // createBlock 落库是防抖的；block_properties.block_id 外键依赖 block 行先存在，
-  // 必须先 flushSave 强制持久化，否则紧跟的 setProperty 触发 FOREIGN KEY constraint failed
+  // createBlock 落库是防抖的；field_value.block_id 外键依赖 block 行先存在，
+  // 必须先 flushSave 强制持久化，否则紧跟的 setFieldValue 触发 FOREIGN KEY constraint failed
   await blockStore.flushSave(block.id)
-  await propertyStore.setProperty(block.id, 'status', 'Todo')
-  await propertyStore.setProperty(block.id, 'priority', priority)
+  await fieldValueStore.setFieldValue(block.id, 'status', 'Todo')
+  await fieldValueStore.setFieldValue(block.id, 'priority', priority)
   await refresh()
 }
 
-// 通用表格单元格编辑：done/status 走状态更新，其余走属性更新（TableView 零任务代码，由字段元数据驱动；ADR-0007）
+// 通用表格单元格编辑：done/status 走状态更新，其余走字段值更新（TableView 零任务代码，由字段元数据驱动；ADR-0007）
 async function onCellChange(blockId: string, key: string, value: unknown) {
   if (key === 'done') {
     await handleStatusChange(blockId, value ? 'Done' : 'Todo')
@@ -147,11 +147,11 @@ async function onCellChange(blockId: string, key: string, value: unknown) {
     await handleStatusChange(blockId, String(value))
     return
   }
-  await propertyStore.setProperty(blockId, key, value as PropertyValue)
+  await fieldValueStore.setFieldValue(blockId, key, value as FieldValueData)
   // 设置优先级（与 /schedule 一致）：block 尚无 status 时自动补 Todo
   if (key === 'priority') {
-    // fire-and-forget：补 Todo 失败不影响属性写入与卡片刷新，避免未处理异常阻断编辑
-    propertyStore.ensureTodo(blockId).catch(() => {})
+    // fire-and-forget：补 Todo 失败不影响字段值写入与卡片刷新，避免未处理异常阻断编辑
+    fieldValueStore.ensureTodo(blockId).catch(() => {})
   }
   await refresh()
 }

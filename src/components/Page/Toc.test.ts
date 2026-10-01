@@ -9,16 +9,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
 import type { Block } from '../../types/block'
-import type { Property } from '../../wasm/types'
+import type { FieldValue } from '../../types/field-value'
 
 const {
-  mockGetPage, mockBlocks, mockPropMap, mockLoadMultiBlockProperties,
+  mockGetPage, mockBlocks, mockPropMap, mockLoadMultiBlockFieldValues,
   mockOpenReaderWindow, mockIsTauri,
 } = vi.hoisted(() => ({
   mockGetPage: vi.fn(),
   mockBlocks: { value: [] as Block[] },
-  mockPropMap: new Map<string, Property[]>(),
-  mockLoadMultiBlockProperties: vi.fn(async () => {}),
+  mockPropMap: new Map<string, FieldValue[]>(),
+  mockLoadMultiBlockFieldValues: vi.fn(async () => {}),
   mockOpenReaderWindow: vi.fn(async () => {}),
   mockIsTauri: vi.fn(() => false),
 }))
@@ -29,10 +29,10 @@ vi.mock('../../stores/pages', () => ({
 vi.mock('../../stores/blocks', () => ({
   useBlockStore: () => ({ blocks: mockBlocks.value }),
 }))
-vi.mock('../../stores/property', () => ({
-  usePropertyStore: () => ({
-    getBlockProperties: (blockId: string) => mockPropMap.get(blockId) ?? [],
-    loadMultiBlockProperties: mockLoadMultiBlockProperties,
+vi.mock('../../stores/fieldValue', () => ({
+  useFieldValueStore: () => ({
+    getBlockFieldValues: (blockId: string) => mockPropMap.get(blockId) ?? [],
+    loadMultiBlockFieldValues: mockLoadMultiBlockFieldValues,
   }),
 }))
 vi.mock('../../composables/useReaderWindow', () => ({
@@ -57,12 +57,12 @@ function makeBlock(
 }
 
 function setProps(blockId: string, p: { part?: string; chapter?: string; cfi?: string }): void {
-  const props: Property[] = [
-    ...(p.part ? [{ id: `${blockId}-part`, block_id: blockId, key: 'part', value: p.part, type: 'string', sort_order: 0, is_hidden: 0, is_deleted: 0, schema_version: 1, created_at: 0, updated_at: 0 }] : []),
-    ...(p.chapter ? [{ id: `${blockId}-ch`, block_id: blockId, key: 'chapter', value: p.chapter, type: 'string', sort_order: 0, is_hidden: 0, is_deleted: 0, schema_version: 1, created_at: 0, updated_at: 0 }] : []),
-    ...(p.cfi ? [{ id: `${blockId}-cfi`, block_id: blockId, key: 'cfi', value: p.cfi, type: 'string', sort_order: 0, is_hidden: 0, is_deleted: 0, schema_version: 1, created_at: 0, updated_at: 0 }] : []),
+  const values: FieldValue[] = [
+    ...(p.part ? [{ id: `${blockId}-part`, block_id: blockId, field_definition_id: 'fd-part', key: 'part', value_json: p.part, value_type: 'string', seq: 0, created_at: 0, updated_at: 0, version: 0, deleted_at: null }] : []),
+    ...(p.chapter ? [{ id: `${blockId}-ch`, block_id: blockId, field_definition_id: 'fd-chapter', key: 'chapter', value_json: p.chapter, value_type: 'string', seq: 0, created_at: 0, updated_at: 0, version: 0, deleted_at: null }] : []),
+    ...(p.cfi ? [{ id: `${blockId}-cfi`, block_id: blockId, field_definition_id: 'fd-cfi', key: 'cfi', value_json: p.cfi, value_type: 'string', seq: 0, created_at: 0, updated_at: 0, version: 0, deleted_at: null }] : []),
   ]
-  mockPropMap.set(blockId, props)
+  mockPropMap.set(blockId, values)
 }
 
 // 浮层 Teleport 到 body，断言统一查 document.body
@@ -128,8 +128,8 @@ describe('Toc — 书源（type=book）', () => {
     expect(sectionRows[1].textContent).toContain('1.2')
     expect(sectionRows[2].textContent).toContain('2.1')
 
-    // 书页挂载即触发属性拉取
-    expect(mockLoadMultiBlockProperties).toHaveBeenCalled()
+    // 书页挂载即触发字段值拉取
+    expect(mockLoadMultiBlockFieldValues).toHaveBeenCalled()
   })
 
   it('点击章/节行 dispatch navigate-to-block 定位到对应块', async () => {
@@ -218,8 +218,8 @@ describe('Toc — 普通源（type=doc，heading 大纲）', () => {
     const subRows = qa('.toc-children .toc-row')
     expect(subRows.length).toBe(2)
 
-    // 普通页不触发属性拉取
-    expect(mockLoadMultiBlockProperties).not.toHaveBeenCalled()
+    // 普通页不触发字段值拉取
+    expect(mockLoadMultiBlockFieldValues).not.toHaveBeenCalled()
     // heading 无 cfi → 无「原文」按钮
     expect(q('.jump-btn')).toBeNull()
 

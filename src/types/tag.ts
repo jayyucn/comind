@@ -1,5 +1,5 @@
 import { TASK_PRIORITY_ICONS, TASK_STATUS_ICONS } from '../components/Icons'
-import type { FieldDefinition } from './property'
+import type { FieldDefinition } from './field-definition'
 import seedJson from './systemFieldSeed.json'
 
 /**
@@ -94,7 +94,7 @@ const FIELD_UI: Record<string, FieldUiOverlay> = {
 /**
  * 系统内置 Tag：内置契约字段的单一结构来源（ADR-0049 D3 修订）。
  * 字段 key/title/type 由 systemFieldSeed.json 派生，展示层由 FIELD_UI 覆盖。
- * 新增内置字段只改 systemFieldSeed.json 一处，定义层（BUILT_IN_PROPERTIES）、
+ * 新增内置字段只改 systemFieldSeed.json 一处，定义层（BUILT_IN_FIELDS）、
  * 注册层（BUILTIN_KEYS）、渲染层（isSystemField）自动跟随。
  */
 export const SYSTEM_TAGS: Tag[] = seed.tags.map((tag) => ({

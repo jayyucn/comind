@@ -23,15 +23,15 @@ const hoisted = vi.hoisted(() => {
     const prop = {
       id,
       block_id: blockId,
+      field_definition_id: `fd-${key}`,
       key,
-      value: valueStr,
-      type,
-      sort_order: 0,
-      is_hidden: 0,
-      is_deleted: 0,
-      schema_version: 0,
+      value_json: valueStr,
+      value_type: type,
+      seq: 0,
       created_at: Date.now(),
       updated_at: Date.now(),
+      version: 0,
+      deleted_at: null,
     }
     const arr = propsByBlock.get(blockId) ?? []
     const idx = arr.findIndex((p) => p.key === key)
@@ -85,7 +85,7 @@ vi.mock('../stores/blocks', () => ({
 }))
 
 import { useDateTimePickerPanel } from './useDateTimePickerPanel'
-import { usePropertyStore } from '../stores/property'
+import { useFieldValueStore } from '../stores/fieldValue'
 
 beforeEach(() => {
   setActivePinia(createPinia())
@@ -151,10 +151,10 @@ describe('handleConfirm — 自动标记 Todo', () => {
 
   it('已有 status（如 Done）时不降级为 Todo', async () => {
     const panel = useDateTimePickerPanel()
-    const propertyStore = usePropertyStore()
+    const fieldValueStore = useFieldValueStore()
 
     // 先通过 store 设置 status=Done（会写回 propsByBlock 并刷新内存）
-    await propertyStore.setProperty('b3', 'status', 'Done', 'string')
+    await fieldValueStore.setFieldValue('b3', 'status', 'Done', 'string')
     // 仅关心本次 handleConfirm 是否"补" Todo
     hoisted.setProperty.mockClear()
 

@@ -1,34 +1,35 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
 import { useEditorStore } from '../../stores/editor'
-import { usePropertyStore } from '../../stores/property'
+import { useFieldValueStore } from '../../stores/fieldValue'
 import { useBlockCardStore } from '../../stores/blockCard'
-import type { PropertyValue } from '../../types/property'
-import { getAllPropertyDefinitions } from '../../types/property'
+import type { FieldValueData } from '../../types/field-definition'
+import { getAllFieldDefinitions } from '../../types/field-definition'
+import { decodeFieldValueData } from '../../utils/field-value-codec'
 import { Icon } from '../Icons'
 import BasePopover from '@/components/common/BasePopover.vue'
 
 const editorStore = useEditorStore()
-const propertyStore = usePropertyStore()
+const fieldValueStore = useFieldValueStore()
 const blockCardStore = useBlockCardStore()
 
-const builtInProperties = getAllPropertyDefinitions()
+const builtInFields = getAllFieldDefinitions()
 
-const visible = computed(() => editorStore.quickPropertyEditor?.visible ?? false)
-const blockId = computed(() => editorStore.quickPropertyEditor?.blockId ?? '')
-const key = computed(() => editorStore.quickPropertyEditor?.key ?? '')
-const position = computed(() => editorStore.quickPropertyEditor?.position ?? null)
+const visible = computed(() => editorStore.quickFieldValueEditor?.visible ?? false)
+const blockId = computed(() => editorStore.quickFieldValueEditor?.blockId ?? '')
+const key = computed(() => editorStore.quickFieldValueEditor?.key ?? '')
+const position = computed(() => editorStore.quickFieldValueEditor?.position ?? null)
 
 const textInputRef = ref<HTMLInputElement | null>(null)
 const tagInputRef = ref<HTMLInputElement | null>(null)
 
 const currentDef = computed(() => {
-  return builtInProperties.find(p => p.key === key.value)
+  return builtInFields.find(p => p.key === key.value)
 })
 
 const currentValue = computed(() => {
-  const prop = propertyStore.getBlockProperty(blockId.value, key.value)
-  return prop?.value ?? ''
+  const fv = fieldValueStore.getBlockFieldValue(blockId.value, key.value)
+  return fv ? decodeFieldValueData(fv.value_json, fv.value_type) : ''
 })
 
 const tagList = computed(() => {
@@ -146,14 +147,14 @@ function handlePickerKeydown(e: KeyboardEvent) {
   }
 }
 
-async function saveValue(value: PropertyValue) {
-  await propertyStore.setProperty(blockId.value, key.value, value, currentDef.value?.type)
+async function saveValue(value: FieldValueData) {
+  await fieldValueStore.setFieldValue(blockId.value, key.value, value, currentDef.value?.type)
   // 设置优先级（与 /schedule 一致）：block 尚无 status 时自动补 Todo
   if (key.value === 'priority') {
-    // fire-and-forget：自动补 Todo 失败绝不影响属性写入与面板关闭，避免未处理异常阻断编辑
-    propertyStore.ensureTodo(blockId.value).catch(() => {})
+    // fire-and-forget：自动补 Todo 失败绝不影响字段值写入与面板关闭，避免未处理异常阻断编辑
+    fieldValueStore.ensureTodo(blockId.value).catch(() => {})
   }
-  editorStore.hideQuickPropertyEditor()
+  editorStore.hideQuickFieldValueEditor()
 }
 
 // 无锚点时回退到视口居中，保持原 quick-editor 居中行为（生产调用方均会传 position）
@@ -192,7 +193,7 @@ function isSvgIcon(icon: string): boolean {
   <BasePopover
     :visible="visible && !!currentDef"
     :position="popoverPosition"
-    @close="editorStore.hideQuickPropertyEditor()"
+    @close="editorStore.hideQuickFieldValueEditor()"
   >
     <template v-if="currentDef">
       <!-- Closed Values Dropdown (status, priority) -->
