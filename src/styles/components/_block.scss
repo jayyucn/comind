@@ -555,6 +555,13 @@
   padding-right: $space-2;
 }
 
+// 子任务进度条（block 下方）：位于 block 内容与子节点列表之间；
+// 左侧对齐到上方任务图标右缘由 Block/index.vue 的 inline margin-left 提供（随 depth 变化）。
+.block-child-task-progress {
+  margin-top: var(--space-1);
+  margin-bottom: var(--space-1);
+}
+
 // 行内右侧属性列（常规属性 chips）：.block-row 的行尾 flex 项，贴内容行右端。
 // 宽度随内容自适应（width:auto），上限 min(420px, 45% 行宽) —— 正文至少留 55%。
 // 刻意不用 gutter 方案：gutter 按 (100cqw − --max-width)/2 算右侧留白，前提是内容列

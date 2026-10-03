@@ -31,8 +31,11 @@ import { sortByDocumentOrderIds } from '../utils/block-helpers'
 import { resolveUndoScopeBlockPage, takeOverUndoRedo } from '../utils/undo-chord'
 import BlockDraggableList from './Block/components/BlockDraggableList.vue'
 import BlockDropIndicator from './Block/components/BlockDropIndicator.vue'
+import TaskProgressBar from './Block/components/TaskProgressBar.vue'
 import type { DragEndIntent } from './Block/composables/useBlockDragDrop'
 import { applyDropTarget, useSharedDropIndicator } from './Block/composables/useBlockDragDrop'
+import { useChildTaskProgress } from './Block/composables/useTaskProgress'
+import { useParentTaskStatusSync } from './Block/composables/useParentTaskStatusSync'
 
 const props = defineProps<{
   /** 页面 ID，用于过滤 Block */
@@ -59,6 +62,15 @@ const tree = ref<TreeNode[]>([])
 function syncFromStore() {
   tree.value = buildTree(blockStore.blocks, props.pageId, rootBlockId.value)
 }
+
+// ── 根级任务进度（需求 2）：顶层 block 是页面根 block 的子 block，
+//    其中含任务项（status 字段，Canceled 除外）时，进度条显示在列表顶部。
+//    纯派生 computed：删除最后一个 block 后树重建为空 → 进度条自动移除（需求 4）。──
+const { progress: rootTaskProgress } = useChildTaskProgress(tree)
+
+// ── 父任务状态自动同步（需求 5）：任务 block 的子任务全完成 → 父自动 Done；
+//    出现未完成子任务（含全部完成后新建）→ 父自动 Doing。防抖 watch 驱动。──
+useParentTaskStatusSync(() => props.pageId)
 
 // ── 拖拽结束：先按落位意图校正 tree（Sortable 的吸附结果不等同于判定意图），再同步回 store ──
 function handleDragEnd(intent?: DragEndIntent | null) {
@@ -758,6 +770,14 @@ onBeforeUnmount(() => {
     ref="rootEl"
     class="block-list"
   >
+    <!-- 根级任务进度条：顶层 block（页面根 block 的子 block）含任务项时显示在列表顶部 -->
+    <TaskProgressBar
+      v-if="rootTaskProgress"
+      :done="rootTaskProgress.done"
+      :total="rootTaskProgress.total"
+      class="block-list-task-progress"
+    />
+
     <!-- 根级拖拽列表：与 Block 子级列表共用同一实现（BlockDraggableList），
          接线只有一份，避免两处配置漂移。落库由 @drag-end 统一接管。 -->
     <BlockDraggableList
@@ -811,6 +831,12 @@ onBeforeUnmount(() => {
   padding-left: 0;
   padding-bottom: 40px;
   min-height: 100px;
+}
+
+/* 根级任务进度条（列表顶部）：左侧对齐根级内容列（bullet 20px + 状态图标 24px），
+   与首块的任务图标右缘同列；与下方列表间隔一个 space-3，悬浮于列表之上 */
+.block-list-task-progress {
+  margin: var(--space-2) 0 var(--space-3) 44px;
 }
 
 .block-list-padding {

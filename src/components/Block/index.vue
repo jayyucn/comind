@@ -23,9 +23,11 @@ import { useEditorStore } from '../../stores/editor'
 import { useFieldValueStore } from '../../stores/fieldValue'
 import { isSystemField } from '../../types/tag'
 import BlockDraggableList from './components/BlockDraggableList.vue'
+import TaskProgressBar from './components/TaskProgressBar.vue'
 import { useBlockCollapse } from './composables/useBlockCollapse'
 import { useBlockEditorLifecycle } from './composables/useBlockEditorLifecycle'
 import { useBlockFieldValueSync } from './composables/useBlockFieldValueSync'
+import { useChildTaskProgress } from './composables/useTaskProgress'
 import './handlers/bullet'
 import './handlers/code'
 import './handlers/embed'
@@ -188,6 +190,15 @@ const childrenContainerClass = computed(() => ({
   'is-collapsed': collapsed.value,
   'is-animating': isAnimating.value,
 }))
+
+// ── 子任务进度：子 block 含任务项（status 字段，Canceled 除外）时显示进度条 ──
+const { progress: childTaskProgress } = useChildTaskProgress(childrenModel)
+
+/**
+ * 进度条左侧对齐到上方任务图标右缘（grill 意见）：
+ * 行内偏移 = 缩进(depth × --block-indent-width) + bullet(20px) + 状态图标(24px)。
+ */
+const taskProgressLeft = computed(() => `calc(${props.depth} * var(--block-indent-width) + 44px)`)
 
 // ── 编辑器生命周期（由 useBlockEditorLifecycle 统一管理） ──
 // 原 ~300 行 save/split/merge/delete/indent/outdent/move/exit/click/mousedown
@@ -656,6 +667,16 @@ watch(isActive, (active) => {
         variant="list"
       />
     </div>
+
+    <!-- 子任务进度条：子 block 含任务项（status 字段）时显示在 block 下方；
+         Canceled 不参与，全部删除后随树重建自动消失 -->
+    <TaskProgressBar
+      v-if="childTaskProgress"
+      :done="childTaskProgress.done"
+      :total="childTaskProgress.total"
+      class="block-child-task-progress"
+      :style="{ marginLeft: taskProgressLeft }"
+    />
 
     <!--
       子节点列表（BlockDraggableList：拖拽接线 + 折叠动画容器）
