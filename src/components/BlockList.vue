@@ -211,10 +211,10 @@ function handleDocMouseUp(e: MouseEvent) {
     selection.finalizeSelection()
   } else {
     const blockId = selection.dragStartBlockId.value
-    const fromProperty = selection.trackingFromProperty.value
+    const fromFieldValue = selection.trackingFromFieldValue.value
     selection.clearTracking()
-    // 属性区起点（ADR-0035 D6）只做块选区，单击不激活编辑器
-    if (!fromProperty) {
+    // 字段区起点（ADR-0035 D6）只做块选区，单击不激活编辑器
+    if (!fromFieldValue) {
       editorStore.activateBlock(blockId)
     }
   }

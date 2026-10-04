@@ -22,7 +22,7 @@ import type { FieldValue } from '../types/field-value'
 /** 单页快照信封：正文 + 结构 + format(含折叠) + 字段值表（D11） */
 export interface HistoryEntry {
   blocks: Block[]
-  properties: Record<string, FieldValue[]>
+  fieldValues: Record<string, FieldValue[]>
 }
 
 const DEFAULT_IDLE_MS = 500
@@ -106,7 +106,7 @@ export function blockDocumentEqual(a: Block, b: Block): boolean {
   return JSON.stringify(documentState(a)) === JSON.stringify(documentState(b))
 }
 
-function cloneProperty(p: FieldValue): FieldValue {
+function cloneFieldValue(p: FieldValue): FieldValue {
   // created_at/updated_at 归一化为 0：服务端写入的时间戳不承载恢复语义，却会漂移 ——
   // 撤销「删块」后复活块的组件重挂载，会从 DB 重读字段值，而恢复批次的字段值 set
   // 刚刷过 updated_at。若签名含该字段，「同一状态」会被判成一次新改动 ⇒ 推入一份近似
@@ -142,22 +142,22 @@ function byteSize(snap: HistoryEntry): number {
  * 删块入口只在 `BlockList` ⇒ 不可达，故**未**改 T1 语义。
  */
 
-/** 字段值信封（D11）：{ blockId → 字段值深拷贝[] }。captureEntry 与 propSig 的**单一真源** ——
+/** 字段值信封（D11）：{ blockId → 字段值深拷贝[] }。captureEntry 与 fieldValueSig 的**单一真源** ——
  *  两处必须逐字节一致，否则「签名变了 ⇔ 快照会变」不成立（Spec #7）。 */
-function propEnvelope(pageBlocks: Block[]): Record<string, FieldValue[]> {
+function fieldValueEnvelope(pageBlocks: Block[]): Record<string, FieldValue[]> {
   const fieldValueStore = useFieldValueStore()
-  const properties: Record<string, FieldValue[]> = {}
+  const fieldValues: Record<string, FieldValue[]> = {}
   for (const b of pageBlocks) {
-    const props = fieldValueStore.fieldValuesByBlock.get(b.id)
-    if (props && props.length > 0) properties[b.id] = props.map(cloneProperty)
+    const rows = fieldValueStore.fieldValuesByBlock.get(b.id)
+    if (rows && rows.length > 0) fieldValues[b.id] = rows.map(cloneFieldValue)
   }
-  return properties
+  return fieldValues
 }
 
 // ---- 快照捕获 ----
 function captureEntry(pageId: string): HistoryEntry {
   const pageBlocks = useBlockStore().getBlocksByPage(pageId)
-  return { blocks: pageBlocks.map(cloneBlockSlim), properties: propEnvelope(pageBlocks) }
+  return { blocks: pageBlocks.map(cloneBlockSlim), fieldValues: fieldValueEnvelope(pageBlocks) }
 }
 
 // ---- 归因签名（哪页变了，非 dedupe）----
@@ -172,9 +172,9 @@ function blockSig(pageId: string): string {
   return JSON.stringify(blockStore.getBlocksByPage(pageId).map(cloneBlockSlim))
 }
 
-/** 该页字段值的签名。与 captureEntry 共用 propEnvelope（Spec #7：单一真源）。 */
-function propSig(pageId: string): string {
-  return JSON.stringify(propEnvelope(useBlockStore().getBlocksByPage(pageId)))
+/** 该页字段值的签名。与 captureEntry 共用 fieldValueEnvelope（Spec #7：单一真源）。 */
+function fieldValueSig(pageId: string): string {
+  return JSON.stringify(fieldValueEnvelope(useBlockStore().getBlocksByPage(pageId)))
 }
 
 // ---- 公开 API ----
@@ -188,7 +188,7 @@ export function ensureStack(pageId: string): void {
   totalBytes += byteSize(snap)
 
   const stopB = watch(() => blockSig(pageId), () => schedule(pageId))
-  const stopP = watch(() => propSig(pageId), () => schedule(pageId))
+  const stopP = watch(() => fieldValueSig(pageId), () => schedule(pageId))
   stopHandles.set(pageId, [stopB, stopP])
 }
 

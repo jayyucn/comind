@@ -34,26 +34,10 @@ vi.mock('../stores/blocks', () => ({
   }))
 }))
 
-vi.mock('../stores/property', () => ({
-  usePropertyStore: vi.fn(() => ({
-    loadBlockProperties: vi.fn().mockResolvedValue([]),
-    getBlockProperties: vi.fn(() => []),
-    getBlockProperty: vi.fn(() => undefined)
-  }))
-}))
-
 vi.mock('../composables/useBlockRegistry', () => ({
   useBlockRegistry: vi.fn(() => ({
     getHandler: vi.fn(() => undefined)
   }))
-}))
-
-vi.mock('./Block/PropertyInline.vue', () => ({
-  default: { template: '<span class="property-inline-stub" />' }
-}))
-
-vi.mock('./Block/PropertyDisplay.vue', () => ({
-  default: { template: '<div class="property-display-stub" />' }
 }))
 
 vi.mock('../utils/block-helpers', () => ({

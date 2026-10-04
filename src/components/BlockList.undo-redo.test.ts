@@ -1453,7 +1453,7 @@ describe('G. 落点：闪烁 + 光标', () => {
 
 describe('H. 前提哨兵：快照属性数据源的覆盖完备性', () => {
   /**
-   * 这条**不是**功能断言，是**前提哨兵** —— 钉住 `useUndoHistory.propEnvelope` 的安全性前提。
+   * 这条**不是**功能断言，是**前提哨兵** —— 钉住 `useUndoHistory.fieldValueEnvelope` 的安全性前提。
    *
    * 信封只读 `fieldValueStore.fieldValuesByBlock`（不用 DB 兜底，见其注释「为什么信封只读缓存」），
    * 这份数据之所以够用，全靠「页面每个块只要渲染就会被挂载、挂载即**无条件**加载字段值」

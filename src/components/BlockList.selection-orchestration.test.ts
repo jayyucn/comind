@@ -330,7 +330,7 @@ describe('BlockList 手势编排（#92）', () => {
 
     // 起点区分：属性区起点 → 块选区追踪，无文本拖拽锚点
     expect(selection.dragStartBlockId.value).toBe(a.id)
-    expect(selection.trackingFromProperty.value).toBe(true)
+    expect(selection.trackingFromFieldValue.value).toBe(true)
     expect(selection.textDragAnchor.value).toBeNull()
 
     const q = pointAt(b.id)

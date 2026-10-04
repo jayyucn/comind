@@ -4,7 +4,7 @@
  * 给定目标快照（来自 useUndoHistory 的 undo/redo 返回的 HistoryEntry），计算
  * 「当前 store 状态 vs 目标快照」的差异，并一次性落库：
  *  - 目标有、当前无（被软删）  → 精确 undelete op 复活（在 executeBatch 事务内）+ block update 还原字段
- *                              + 该块字段值**无条件**重设（删除级联软删了字段值行，见 reviveProps）
+ *                              + 该块字段值**无条件**重设（删除级联软删了字段值行，见 reviveFieldValues）
  *  - 目标有、当前有但不同      → block update
  *  - 当前有、目标无            → block delete（batch，级联清理 link + property）
  *  - 字段值：按 key 对齐       → property set / delete（并入同一批；复活块除外，见上）
@@ -41,7 +41,7 @@ async function getClient(): Promise<CoreClient> {
   return client
 }
 
-function propValueEqual(a: FieldValue, b: FieldValue): boolean {
+function fieldValueEqual(a: FieldValue, b: FieldValue): boolean {
   return a.value_type === b.value_type && a.value_json === b.value_json
 }
 
@@ -61,7 +61,7 @@ function blockUpdateOp(b: Block): BatchOperation {
   }
 }
 
-function propSetOp(p: FieldValue): BatchOperation {
+function fieldValueSetOp(p: FieldValue): BatchOperation {
   return {
     entity: 'property',
     action: 'set',
@@ -76,12 +76,12 @@ function propSetOp(p: FieldValue): BatchOperation {
   }
 }
 
-function propDeleteOp(p: FieldValue): BatchOperation {
+function fieldValueDeleteOp(p: FieldValue): BatchOperation {
   return { entity: 'property', action: 'delete', params: { id: p.id } }
 }
 
 /**
- * 复活块的字段值必须**无条件重设**，不走 alignProps 的相等短路。
+ * 复活块的字段值必须**无条件重设**，不走 alignFieldValues 的相等短路。
  *
  * 成因：Rust 侧删块时级联软删其字段值行（`delete_block_cascade` →
  * `FieldValueService::delete_by_block_id`），而 T1 的
@@ -90,42 +90,42 @@ function propDeleteOp(p: FieldValue): BatchOperation {
  * 由本处的 `property set` 承担：upsert 的 `ON CONFLICT(block_id, key)`
  * 会把 `deleted_at` 清回 NULL，即同一条字段值行原地复活（不撞 PK）。
  *
- * 为什么不复用 alignProps：它的相等判定以「客户端字段值缓存 = DB 现状」为前提，而
+ * 为什么不复用 alignFieldValues：它的相等判定以「客户端字段值缓存 = DB 现状」为前提，而
  * `deleteBlocks` 只从 store 移块、**不清理 fieldValueStore** —— 删除后缓存里仍是旧值，
  * 对复活块而言缓存与 DB 已经脱节，「目标 == 缓存」不再蕴含「DB 行仍 live」。
  * 2026-09-15 真机实证：块 undelete 复活（updated_at 1789433521627）比其字段值行的
  * deleted_at（1789433518288）晚 3.3s，恢复批次里一个 property op 都没有。
  */
-function reviveProps(targetProps: FieldValue[], propOps: BatchOperation[]): boolean {
-  for (const tp of targetProps) propOps.push(propSetOp(tp))
-  return targetProps.length > 0
+function reviveFieldValues(targetFieldValues: FieldValue[], fieldValueOps: BatchOperation[]): boolean {
+  for (const tp of targetFieldValues) fieldValueOps.push(fieldValueSetOp(tp))
+  return targetFieldValues.length > 0
 }
 
 /**
  * 按 key 对齐某块的字段值：目标有而当前无 / 值不同 → set；当前有而目标无 → delete。
- * 生成的操作 push 进 propOps；返回**是否产生了任何字段值操作**（供调用方判定该块是否受影响，
- * 不再靠 propOps 长度差这种隐式协议）。
+ * 生成的操作 push 进 fieldValueOps；返回**是否产生了任何字段值操作**（供调用方判定该块是否受影响，
+ * 不再靠 fieldValueOps 长度差这种隐式协议）。
  */
-function alignProps(
+function alignFieldValues(
   blockId: string,
-  targetProps: FieldValue[],
+  targetFieldValues: FieldValue[],
   fieldValueStore: ReturnType<typeof useFieldValueStore>,
-  propOps: BatchOperation[],
+  fieldValueOps: BatchOperation[],
 ): boolean {
   // Pinia store 代理已解包 ref：fieldValuesByBlock 直接当 Map 用（与 useUndoHistory 同口径）
-  const currentProps = fieldValueStore.fieldValuesByBlock.get(blockId) ?? []
-  const currentByKey = new Map(currentProps.map((p) => [p.key, p]))
-  const targetByKey = new Map(targetProps.map((p) => [p.key, p]))
+  const currentFieldValues = fieldValueStore.fieldValuesByBlock.get(blockId) ?? []
+  const currentByKey = new Map(currentFieldValues.map((p) => [p.key, p]))
+  const targetByKey = new Map(targetFieldValues.map((p) => [p.key, p]))
 
-  const before = propOps.length
-  for (const tp of targetProps) {
+  const before = fieldValueOps.length
+  for (const tp of targetFieldValues) {
     const cp = currentByKey.get(tp.key)
-    if (!cp || !propValueEqual(cp, tp)) propOps.push(propSetOp(tp))
+    if (!cp || !fieldValueEqual(cp, tp)) fieldValueOps.push(fieldValueSetOp(tp))
   }
-  for (const cp of currentProps) {
-    if (!targetByKey.has(cp.key)) propOps.push(propDeleteOp(cp))
+  for (const cp of currentFieldValues) {
+    if (!targetByKey.has(cp.key)) fieldValueOps.push(fieldValueDeleteOp(cp))
   }
-  return propOps.length > before
+  return fieldValueOps.length > before
 }
 
 /**
@@ -149,7 +149,7 @@ export async function restoreEntry(pageId: string, snapshot: HistoryEntry): Prom
   // 真正回滚 = 把这组副本赋回 store（见 catch），对象身份整体替换 → 结构签名变化
   // → BlockList 自动重建树，无需任何 bump（#118 D2）。
   const rollbackBlocks = blockStore.blocks.map((b) => ({ ...b }))
-  const rollbackProps = new Map(
+  const rollbackFieldValues = new Map(
     [...fieldValueStore.fieldValuesByBlock.entries()].map(([k, v]) => [k, v.map((p) => ({ ...p }))]),
   )
 
@@ -158,18 +158,18 @@ export async function restoreEntry(pageId: string, snapshot: HistoryEntry): Prom
   const revivedIds: string[] = []
   const blockUpdateOps: BatchOperation[] = []
   const blockDeleteOps: BatchOperation[] = []
-  const propOps: BatchOperation[] = []
+  const fieldValueOps: BatchOperation[] = []
 
   for (const target of snapshot.blocks) {
     const current = currentById.get(target.id)
-    const targetProps = snapshot.properties[target.id] ?? []
+    const targetFieldValues = snapshot.fieldValues[target.id] ?? []
     if (!current) {
       // 被软删 → 复活（清 deleted_at）+ 还原字段
       revivedIds.push(target.id)
       blockUpdateOps.push(blockUpdateOp(target))
       affected.add(target.id)
-      // 字段值行一并复活（级联软删的对称恢复，见 reviveProps 注）
-      if (reviveProps(targetProps, propOps)) affected.add(target.id)
+      // 字段值行一并复活（级联软删的对称恢复，见 reviveFieldValues 注）
+      if (reviveFieldValues(targetFieldValues, fieldValueOps)) affected.add(target.id)
     } else {
       // 块字段 diff（#113）：从信封真源派生（useUndoHistory.blockDocumentEqual），
       // 不再手工枚举字段清单——新增文档态字段改 documentState 一处即自动进 diff。
@@ -178,7 +178,7 @@ export async function restoreEntry(pageId: string, snapshot: HistoryEntry): Prom
         affected.add(target.id)
       }
       // 字段值对齐（无论块是否变化，目标快照里该块的字段值即为期望态）
-      if (alignProps(target.id, targetProps, fieldValueStore, propOps)) {
+      if (alignFieldValues(target.id, targetFieldValues, fieldValueStore, fieldValueOps)) {
         affected.add(target.id)
       }
     }
@@ -199,17 +199,17 @@ export async function restoreEntry(pageId: string, snapshot: HistoryEntry): Prom
     ...snapshot.blocks.map((b) => ({ ...b })),
   ]
 
-  const nextProps = new Map(fieldValueStore.fieldValuesByBlock)
+  const nextFieldValues = new Map(fieldValueStore.fieldValuesByBlock)
   for (const target of snapshot.blocks) {
-    nextProps.set(
+    nextFieldValues.set(
       target.id,
-      (snapshot.properties[target.id] ?? []).map((p) => ({ ...p })),
+      (snapshot.fieldValues[target.id] ?? []).map((p) => ({ ...p })),
     )
   }
   for (const current of currentBlocks) {
-    if (!targetById.has(current.id)) nextProps.delete(current.id)
+    if (!targetById.has(current.id)) nextFieldValues.delete(current.id)
   }
-  fieldValueStore.fieldValuesByBlock = nextProps
+  fieldValueStore.fieldValuesByBlock = nextFieldValues
 
   // ---- 落库：undelete 作为 op 并入单次 executeBatch（单一事务）----
   // 精确复活「当前软删、且明确列于快照」的块（不级联，故不产生 stray）。undelete op
@@ -221,7 +221,7 @@ export async function restoreEntry(pageId: string, snapshot: HistoryEntry): Prom
     ...undeleteOps,
     ...blockUpdateOps,
     ...blockDeleteOps,
-    ...propOps,
+    ...fieldValueOps,
   ]
   try {
     const client = await getClient()
@@ -232,7 +232,7 @@ export async function restoreEntry(pageId: string, snapshot: HistoryEntry): Prom
     // 回滚 reactive 状态：赋回回滚快照 = 对象身份整体替换 → 结构签名（#118 D2）变化
     // → BlockList 自动重建树，回滚在 UI 层即时生效，无需 bump。
     blockStore.blocks = rollbackBlocks
-    fieldValueStore.fieldValuesByBlock = rollbackProps
+    fieldValueStore.fieldValuesByBlock = rollbackFieldValues
     console.error('[restoreEntry] commit failed, rolled back reactive state:', error)
     throw error
   }

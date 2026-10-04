@@ -45,7 +45,7 @@ function makeBlock(id: string, pageId: string, overrides: Partial<Block> = {}): 
   }
 }
 
-function makeProp(
+function makeFieldValue(
   id: string,
   blockId: string,
   key: string,
@@ -69,9 +69,9 @@ function makeProp(
 
 function entry(
   blocks: Block[],
-  properties: Record<string, FieldValue[]> = {},
+  fieldValues: Record<string, FieldValue[]> = {},
 ): HistoryEntry {
-  return { blocks, properties }
+  return { blocks, fieldValues }
 }
 
 beforeEach(() => {
@@ -158,7 +158,7 @@ describe('删除撤销（含子树级联）', () => {
           makeBlock('B', 'p1', { parentId: 'A', pos: 1, content: 'child' }),
           makeBlock('C', 'p1', { parentId: 'B', pos: 2, content: 'grandchild' }),
         ],
-        { B: [makeProp('pB', 'B', 'status', 'Todo', 'string')] },
+        { B: [makeFieldValue('pB', 'B', 'status', 'Todo', 'string')] },
       ),
     )
 
@@ -194,7 +194,7 @@ describe('删除撤销：字段值行必须随块一并复活（生产删除路�
       makeBlock('A', 'p1', { parentId: null, pos: 0 }),
       makeBlock('B', 'p1', { parentId: 'A', pos: 1, content: 'child' }),
     ]
-    ps.fieldValuesByBlock = new Map([['B', [makeProp('pB', 'B', 'project', 'CoMind')]]])
+    ps.fieldValuesByBlock = new Map([['B', [makeFieldValue('pB', 'B', 'project', 'CoMind')]]])
 
     // 生产删除路径：store 移块，但**不清理 fieldValueStore** —— 与 Rust 侧
     // delete_block_cascade → FieldValueService::delete_by_block_id 的级联软删不对称。
@@ -209,7 +209,7 @@ describe('删除撤销：字段值行必须随块一并复活（生产删除路�
           makeBlock('A', 'p1', { parentId: null, pos: 0 }),
           makeBlock('B', 'p1', { parentId: 'A', pos: 1, content: 'child' }),
         ],
-        { B: [makeProp('pB', 'B', 'project', 'CoMind')] },
+        { B: [makeFieldValue('pB', 'B', 'project', 'CoMind')] },
       ),
     )
 
@@ -350,15 +350,15 @@ describe('字段值撤销', () => {
       [
         'x',
         [
-          makeProp('pid1', 'x', 'status', 'Doing', 'string'),
-          makeProp('pid2', 'x', 'priority', 'High', 'string'),
+          makeFieldValue('pid1', 'x', 'status', 'Doing', 'string'),
+          makeFieldValue('pid2', 'x', 'priority', 'High', 'string'),
         ],
       ],
     ])
 
     await restoreEntry(
       'p1',
-      entry([makeBlock('x', 'p1')], { x: [makeProp('pid1', 'x', 'status', 'Todo', 'string')] }),
+      entry([makeBlock('x', 'p1')], { x: [makeFieldValue('pid1', 'x', 'status', 'Todo', 'string')] }),
     )
 
     const ops = hoisted.client.executeBatch.mock.calls[0][0] as Array<{
@@ -387,7 +387,7 @@ describe('新增块撤销（absent → 软删）', () => {
     ]
     const ps = useFieldValueStore()
     ps.fieldValuesByBlock = new Map([
-      ['extra', [makeProp('pExtra', 'extra', 'status', 'Todo', 'string')]],
+      ['extra', [makeFieldValue('pExtra', 'extra', 'status', 'Todo', 'string')]],
     ])
 
     await restoreEntry('p1', entry([makeBlock('A', 'p1', { parentId: null, pos: 0 })]))
@@ -513,11 +513,11 @@ describe('返回受影响块 id', () => {
     const bs = useBlockStore()
     bs.blocks = [makeBlock('x', 'p1')]
     const ps = useFieldValueStore()
-    ps.fieldValuesByBlock = new Map([['x', [makeProp('pid1', 'x', 'status', 'Doing')]]])
+    ps.fieldValuesByBlock = new Map([['x', [makeFieldValue('pid1', 'x', 'status', 'Doing')]]])
 
     const ids = await restoreEntry(
       'p1',
-      entry([makeBlock('x', 'p1')], { x: [makeProp('pid1', 'x', 'status', 'Todo')] }),
+      entry([makeBlock('x', 'p1')], { x: [makeFieldValue('pid1', 'x', 'status', 'Todo')] }),
     )
 
     expect(ids).toEqual(['x'])

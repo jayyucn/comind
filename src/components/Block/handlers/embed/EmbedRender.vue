@@ -30,7 +30,7 @@ const { navigateToPage } = useNavigateToPage()
 
 const MAX_EMBED_DEPTH = 3
 
-// 直接从 fieldValueStore 响应式读取，确保 setFieldValue 后能立即更新（不依赖 props.properties 传递链）
+// 直接从 fieldValueStore 响应式读取，确保 setFieldValue 后能立即更新（不依赖 props.fieldValues 传递链）
 const sourceBlockId = computed(() => {
   const p = fieldValueStore.getBlockFieldValue(props.blockId, 'sourceBlockId')
   return (p ? (decodeFieldValueData(p.value_json, p.value_type) as string) : '') || ''

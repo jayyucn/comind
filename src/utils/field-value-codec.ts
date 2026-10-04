@@ -3,7 +3,7 @@
  *
  * 契约：DB 里 field_value.value_json 恒为字符串；string/page 类型直通存原文，
  * 其余类型（number/boolean/date/array）以 JSON 编码。规则此前散落 4 处
- * （property.ts ×2、useUndoRestore.ts、blocks.ts），且语义组合互不相同
+ * （field-value.ts ×2、useUndoRestore.ts、blocks.ts），且语义组合互不相同
  * （按值/按 type、容错/throw）——本模块收编为单源，裁定「读容错写严格」：
  *
  * - 编码按 **type** 判别（不再按「值是否 string」）：number 字段传字符串

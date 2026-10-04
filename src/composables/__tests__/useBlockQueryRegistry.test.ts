@@ -3,7 +3,7 @@ import { createRegistry, type Condition, type ConditionGroup, type ViewQuery } f
 import {
   BLOCK_ENTITY,
   registerBlockBuiltinFields,
-  syncBlockCustomProperties,
+  syncBlockCustomFields,
 } from '../useBlockQueryRegistry'
 import { createQueryEngine } from '../../core/query'
 import type { BlockCard } from '../../wasm/types'
@@ -162,24 +162,24 @@ describe('Block 列表按 ViewQuery 过滤（经 evaluate）', () => {
 
   it('按自定义数值字段 estimate gt 过滤', () => {
     const registry = setup()
-    syncBlockCustomProperties(registry, [{ key: 'estimate', title: '估算', type: 'number' }])
+    syncBlockCustomFields(registry, [{ key: 'estimate', title: '估算', type: 'number' }])
     const q = vq({ combinator: 'and', children: [cond('estimate', 'gt', 4)] })
     expect(ids(blockEngine.filterSort(cards, q, registry)).sort()).toEqual(['a', 'd'])
   })
 
   it('自定义 property 注销后条件不再匹配', () => {
     const registry = setup()
-    syncBlockCustomProperties(registry, [{ key: 'estimate', title: '估算', type: 'number' }])
+    syncBlockCustomFields(registry, [{ key: 'estimate', title: '估算', type: 'number' }])
     let q = vq({ combinator: 'and', children: [cond('estimate', 'gt', 4)] })
     expect(ids(blockEngine.filterSort(cards, q, registry)).sort()).toEqual(['a', 'd'])
-    syncBlockCustomProperties(registry, []) // 全部注销
+    syncBlockCustomFields(registry, []) // 全部注销
     q = vq({ combinator: 'and', children: [cond('estimate', 'gt', 4)] })
     expect(ids(blockEngine.filterSort(cards, q, registry))).toEqual([])
   })
 
   it('多键排序（按 estimate 升序，空值恒末位）', () => {
     const registry = setup()
-    syncBlockCustomProperties(registry, [{ key: 'estimate', title: '估算', type: 'number' }])
+    syncBlockCustomFields(registry, [{ key: 'estimate', title: '估算', type: 'number' }])
     const q = vq(emptyFilter, [{ field: 'estimate', dir: 'asc' }])
     // c(2) < b(3) < a(5) < d(8)；全部有 estimate 值
     expect(ids(blockEngine.filterSort(cards, q, registry))).toEqual(['c', 'b', 'a', 'd'])

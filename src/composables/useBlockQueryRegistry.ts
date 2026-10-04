@@ -298,7 +298,7 @@ export function buildBlockFieldDescriptor(def: FieldDefinition): FieldDescriptor
 }
 
 /** 自定义字段值 → 引擎类型推断（保守：数字/布尔/其余归 string，由 TYPE_MAP 映射到 text）。 */
-function inferPropertyType(value: unknown): DomainFieldType {
+function inferFieldType(value: unknown): DomainFieldType {
   if (typeof value === 'number') return 'number'
   if (typeof value === 'boolean') return 'boolean'
   return 'string'
@@ -308,7 +308,7 @@ function inferPropertyType(value: unknown): DomainFieldType {
  * 按 diff 同步自定义字段：defs 中新增的注册、消失的注销。
  * 只动非内置字段，内置字段不受影响。
  */
-export function syncBlockCustomProperties(registry: Registry, defs: FieldDefinition[]): void {
+export function syncBlockCustomFields(registry: Registry, defs: FieldDefinition[]): void {
   const desired = new Map(defs.map((d) => [d.key, d]))
 
   // 注销已消失的自定义字段
@@ -353,7 +353,7 @@ export function useBlockQueryRegistry() {
       const props = (card.properties ?? {}) as Record<string, unknown>
       for (const [k, v] of Object.entries(props)) {
         if (isSystemField(k)) continue
-        if (!keys.has(k)) keys.set(k, inferPropertyType(v))
+        if (!keys.has(k)) keys.set(k, inferFieldType(v))
       }
     }
     return [...keys.entries()].map(([key, type]) => ({ key, title: key, type }))
@@ -361,7 +361,7 @@ export function useBlockQueryRegistry() {
 
   watch(
     customDefs,
-    (defs) => syncBlockCustomProperties(registry, defs),
+    (defs) => syncBlockCustomFields(registry, defs),
     { immediate: true, deep: true },
   )
 

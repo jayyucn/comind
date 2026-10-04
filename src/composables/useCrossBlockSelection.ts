@@ -11,7 +11,7 @@
  * - `{ kind: 'block', ids, phase: 'committed' }`     块选区已固化（对外视图 anchorIds）
  * - `{ kind: 'text', range }`                        跨块文本选区（对外视图 textRange）
  *
- * 手势临时量（dragStartBlockId / isDragging / trackingFromProperty / textDrag*）不参与
+ * 手势临时量（dragStartBlockId / isDragging / trackingFromFieldValue / textDrag*）不参与
  * 选区互斥，单独保存；isDragging 由外部消费者（BlockList）在 mousemove 中设置。
  */
 import { computed, ref } from 'vue'
@@ -59,7 +59,7 @@ export function useCrossBlockSelection() {
   const dragStartBlockId = ref<string | null>(null)
   const isDragging = ref(false)
   /** 本次追踪是否起始于字段区（ADR-0035 D6）：字段区起点仅做块选区、不激活编辑器 */
-  const trackingFromProperty = ref(false)
+  const trackingFromFieldValue = ref(false)
   /** 文本选区拖拽状态（ADR-0035 D1）：内容区起点 */
   const textDragAnchor = ref<BlockOffset | null>(null)
   /** 文本拖拽起始屏幕坐标（用于与单击区分的最小位移阈值） */
@@ -111,17 +111,17 @@ export function useCrossBlockSelection() {
   function clearTracking() {
     dragStartBlockId.value = null
     isDragging.value = false
-    trackingFromProperty.value = false
+    trackingFromFieldValue.value = false
     // 仅中断「拖拽中」的块选区；已固化选区与文本选区不受清追踪影响
     const s = state.value
     if (s.kind === 'block' && s.phase === 'tracking') transition({ kind: 'none' })
   }
 
-  function startTracking(blockId: string, fromProperty = false) {
+  function startTracking(blockId: string, fromFieldValue = false) {
     // 块选区手势开始：清掉已固化选区与文本选区（此刻尚未产生选区，故归一为「无选区」）
     transition({ kind: 'block', ids: new Set(), phase: 'tracking' })
     dragStartBlockId.value = blockId
-    trackingFromProperty.value = fromProperty
+    trackingFromFieldValue.value = fromFieldValue
   }
 
   function computeRange(targetBlockId: string, pageId: string): Set<string> {
@@ -186,7 +186,7 @@ export function useCrossBlockSelection() {
     transition({ kind: 'block', ids: new Set(idsOf('tracking')), phase: 'committed' })
     isDragging.value = false
     dragStartBlockId.value = null
-    trackingFromProperty.value = false
+    trackingFromFieldValue.value = false
   }
 
   function toggleBlock(blockId: string, pageId: string) {
@@ -445,7 +445,7 @@ export function useCrossBlockSelection() {
   return {
     dragStartBlockId,
     isDragging,
-    trackingFromProperty,
+    trackingFromFieldValue,
     selectedIds,
     anchorIds,
     textDragAnchor,

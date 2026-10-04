@@ -73,6 +73,8 @@ describe('Ideas 页快照读取守卫（Seam ② store 级）', () => {
     const historySnapshot = await pageStore.getIdeasSnapshot(yesterdayPage.id)
     expect(historySnapshot).not.toBeNull()
     expect(historySnapshot!.blocks.length).toBeGreaterThanOrEqual(1)
+    // IdeasSnapshotData.properties 是 content_json 的存储格式契约（snake_case 直通库），
+    // 不随 useUndoHistory 的 HistoryEntry.fieldValues 改名而变
     const taskProps = historySnapshot!.properties[taskBlockId]
     expect(taskProps).toBeDefined()
     expect(taskProps.some(p => p.key === 'status' && p.value_json === 'Todo')).toBe(true)

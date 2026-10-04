@@ -105,15 +105,15 @@ describe('useCrossBlockSelection', () => {
     })
   })
 
-  describe('trackingFromProperty', () => {
-    test('startTracking 默认 fromProperty=false', async () => {
+  describe('trackingFromFieldValue', () => {
+    test('startTracking 默认 fromFieldValue=false', async () => {
       const selection = useCrossBlockSelection()
       const pageId = 'page-1'
       const block = await blockStore.createBlock({ pageId, content: 'Block' })
 
       selection.startTracking(block.id)
 
-      expect(selection.trackingFromProperty.value).toBe(false)
+      expect(selection.trackingFromFieldValue.value).toBe(false)
     })
 
     test('startTracking(blockId, true) 标记字段区起点', async () => {
@@ -123,10 +123,10 @@ describe('useCrossBlockSelection', () => {
 
       selection.startTracking(block.id, true)
 
-      expect(selection.trackingFromProperty.value).toBe(true)
+      expect(selection.trackingFromFieldValue.value).toBe(true)
     })
 
-    test('clearTracking 重置 trackingFromProperty', async () => {
+    test('clearTracking 重置 trackingFromFieldValue', async () => {
       const selection = useCrossBlockSelection()
       const pageId = 'page-1'
       const block = await blockStore.createBlock({ pageId, content: 'Block' })
@@ -134,10 +134,10 @@ describe('useCrossBlockSelection', () => {
       selection.startTracking(block.id, true)
       selection.clearTracking()
 
-      expect(selection.trackingFromProperty.value).toBe(false)
+      expect(selection.trackingFromFieldValue.value).toBe(false)
     })
 
-    test('finalizeSelection 重置 trackingFromProperty', async () => {
+    test('finalizeSelection 重置 trackingFromFieldValue', async () => {
       const selection = useCrossBlockSelection()
       const pageId = 'page-1'
       const block = await blockStore.createBlock({ pageId, content: 'Block' })
@@ -147,7 +147,7 @@ describe('useCrossBlockSelection', () => {
       selection.isDragging.value = true
       selection.finalizeSelection()
 
-      expect(selection.trackingFromProperty.value).toBe(false)
+      expect(selection.trackingFromFieldValue.value).toBe(false)
     })
   })
 
@@ -1012,7 +1012,7 @@ describe('useCrossBlockSelection', () => {
 
       expect(selection.dragStartBlockId.value).toBeNull()
       expect(selection.isDragging.value).toBe(false)
-      expect(selection.trackingFromProperty.value).toBe(false)
+      expect(selection.trackingFromFieldValue.value).toBe(false)
       expect(selection.textDragAnchor.value).toBeNull()
       expect(selection.anchorIds.has(block.id)).toBe(true)
     })

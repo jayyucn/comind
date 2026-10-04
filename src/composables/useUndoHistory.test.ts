@@ -40,7 +40,7 @@ function makeBlock(id: string, pageId: string, over: Partial<Block> = {}): Block
   }
 }
 
-function makeProp(blockId: string, key: string, value: unknown, type: FieldValue['value_type'] = 'string'): FieldValue {
+function makeFieldValue(blockId: string, key: string, value: unknown, type: FieldValue['value_type'] = 'string'): FieldValue {
   return {
     id: `prop-${key}`,
     block_id: blockId,
@@ -183,10 +183,10 @@ describe('派生字段剔除', () => {
     const block = makeBlock('b1', 'p1', { content: 'c', format: { collapsed: false } })
     const seg: RenderSegment = { kind: 'text', text: 'x' } as RenderSegment
     block.renderSegments = [seg]
-    block.properties = [makeProp('b1', 'k', 'v')]
+    block.properties = [makeFieldValue('b1', 'k', 'v')]
     blockStore.blocks = [block]
     fieldValueStore.fieldValuesByBlock = new Map([
-      ['b1', [makeProp('b1', 'status', 'Todo')]],
+      ['b1', [makeFieldValue('b1', 'status', 'Todo')]],
     ])
     ensureStack('p1')
 
@@ -206,28 +206,28 @@ describe('派生字段剔除', () => {
     expect(sb.format).toEqual({ collapsed: true })
 
     // 字段值被捕获进 envelope
-    expect(latest.properties['b1']?.[0]?.value_json).toBe('Todo')
+    expect(latest.fieldValues['b1']?.[0]?.value_json).toBe('Todo')
   })
 
   it('字段值信封不含服务端时间戳；仅时间戳漂移不算改动（否则截断 redo 尾）', async () => {
     const blockStore = useBlockStore()
     const fieldValueStore = useFieldValueStore()
     blockStore.blocks = [makeBlock('b1', 'p1')]
-    fieldValueStore.fieldValuesByBlock = new Map([['b1', [makeProp('b1', 'status', 'Todo')]]])
+    fieldValueStore.fieldValuesByBlock = new Map([['b1', [makeFieldValue('b1', 'status', 'Todo')]]])
     ensureStack('p1')
 
     // 一次真实字段值改动 → 入栈
-    fieldValueStore.fieldValuesByBlock = new Map([['b1', [makeProp('b1', 'status', 'Done')]]])
+    fieldValueStore.fieldValuesByBlock = new Map([['b1', [makeFieldValue('b1', 'status', 'Done')]]])
     await flushChange()
     expect(_debugStats().stackSizes['p1']).toBe(2)
     // 取最新快照（undo 取值 → redo 复位游标，勿把游标停在旧快照上）
     undo('p1')
     const latest = redo('p1')!
-    expect(latest.properties['b1']?.[0]?.updated_at).toBe(0)
+    expect(latest.fieldValues['b1']?.[0]?.updated_at).toBe(0)
 
     // 模拟撤销「删块」后复活块重挂载：loadBlockFieldValues 从 DB 重读同一字段值，
     // 语义不变、只有 updated_at 比快照新（恢复批次的 property set 刚刷过它）。
-    const reread = { ...makeProp('b1', 'status', 'Done'), updated_at: 9_999 }
+    const reread = { ...makeFieldValue('b1', 'status', 'Done'), updated_at: 9_999 }
     fieldValueStore.fieldValuesByBlock = new Map([['b1', [reread]]])
     await flushChange()
     expect(_debugStats().stackSizes['p1']).toBe(2)
@@ -239,7 +239,7 @@ describe('派生字段剔除', () => {
    * 漏一个 = 撤销「删块」后该块的字段值永久丢失（恢复批次靠信封重设字段值，DB 行已被级联软删）。
    * 空数组的条目（`loadBlockFieldValues` 对无字段值块也会写键）则**不必**进信封 —— 那是
    * D11 的省流优化（真机省 48.5%），不是漏项；故这里断言的是**精确集合**，两头都锁住。
-   * 会变红的情形：给 `propEnvelope` 加过滤 / 换数据源 / 把 `length > 0` 判断写窄。
+   * 会变红的情形：给 `fieldValueEnvelope` 加过滤 / 换数据源 / 把 `length > 0` 判断写窄。
    */
   it('信封覆盖 store 中所有有字段值的块（多块场景，且只收它们）', async () => {
     const blockStore = useBlockStore()
@@ -250,8 +250,8 @@ describe('派生字段剔除', () => {
       makeBlock('b3', 'p1'),
     ]
     fieldValueStore.fieldValuesByBlock = new Map([
-      ['b1', [makeProp('b1', 'status', 'Todo')]],
-      ['b2', [makeProp('b2', 'priority', 'High')]],
+      ['b1', [makeFieldValue('b1', 'status', 'Todo')]],
+      ['b2', [makeFieldValue('b2', 'priority', 'High')]],
       ['b3', []],
     ])
     ensureStack('p1')
@@ -261,8 +261,8 @@ describe('派生字段剔除', () => {
     undo('p1')
     const latest = redo('p1')!
 
-    expect(Object.keys(latest.properties).sort()).toEqual(['b1', 'b2'])
-    expect(latest.properties['b2']?.[0]?.value_json).toBe('High')
+    expect(Object.keys(latest.fieldValues).sort()).toEqual(['b1', 'b2'])
+    expect(latest.fieldValues['b2']?.[0]?.value_json).toBe('High')
   })
 })
 
@@ -303,13 +303,13 @@ describe('页面隔离', () => {
     ensureStack('pA')
 
     // 模拟 setFieldValue 写路径：以新 Map 替换该 block 的字段值
-    fieldValueStore.fieldValuesByBlock = new Map([['a1', [makeProp('a1', 'status', 'Done')]]])
+    fieldValueStore.fieldValuesByBlock = new Map([['a1', [makeFieldValue('a1', 'status', 'Done')]]])
     await flushChange()
 
     expect(canUndo('pA')).toBe(true)
     const snap = undo('pA')!
     // 撤销回无字段值状态
-    expect(snap.properties['a1']).toBeUndefined()
+    expect(snap.fieldValues['a1']).toBeUndefined()
   })
 })
 
