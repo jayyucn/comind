@@ -9,8 +9,8 @@
  * 左侧由父级对齐到上方任务图标右缘、图标 + 计数 + 百分比、渐变填充、
  * 全部完成时转绿换勾。布局归属由父级 class / inline style 控制。
  */
-import { CheckCircle2, ListChecks } from 'lucide-vue-next'
-import { computed } from 'vue'
+import { CheckCircle2, ListChecks } from 'lucide-vue-next';
+import { computed } from 'vue';
 
 const props = defineProps<{
   done: number
@@ -112,17 +112,17 @@ const isComplete = computed(() => props.total > 0 && props.done >= props.total)
   opacity: 0.72;
 }
 
-/* 全部完成：图标与数字转绿（--tag-color-5，与状态 Done 同色系）、填充渐变转绿 */
+/* 全部完成：图标与数字转绿（--success，与 status-done 任务图标同色）、填充渐变转绿 */
 .task-progress.is-complete .task-progress-icon,
 .task-progress.is-complete .task-progress-label {
-  color: var(--tag-color-5);
+  color: var(--success);
 }
 
 .task-progress.is-complete .task-progress-fill {
   background: linear-gradient(
     90deg,
-    var(--tag-color-5),
-    color-mix(in srgb, var(--tag-color-5) 60%, #ffffff)
+    var(--success),
+    color-mix(in srgb, var(--success) 60%, #ffffff)
   );
 }
 </style>

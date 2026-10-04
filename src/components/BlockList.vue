@@ -34,8 +34,8 @@ import BlockDropIndicator from './Block/components/BlockDropIndicator.vue'
 import TaskProgressBar from './Block/components/TaskProgressBar.vue'
 import type { DragEndIntent } from './Block/composables/useBlockDragDrop'
 import { applyDropTarget, useSharedDropIndicator } from './Block/composables/useBlockDragDrop'
-import { useChildTaskProgress } from './Block/composables/useTaskProgress'
 import { useParentTaskStatusSync } from './Block/composables/useParentTaskStatusSync'
+import { useChildTaskProgress } from './Block/composables/useTaskProgress'
 
 const props = defineProps<{
   /** 页面 ID，用于过滤 Block */
@@ -833,10 +833,10 @@ onBeforeUnmount(() => {
   min-height: 100px;
 }
 
-/* 根级任务进度条（列表顶部）：左侧对齐根级内容列（bullet 20px + 状态图标 24px），
-   与首块的任务图标右缘同列；与下方列表间隔一个 space-3，悬浮于列表之上 */
+/* 根级任务进度条（列表顶部）：左缘对齐根级 block 的 bullet 圆点左缘
+   （bullet 列宽 20px − 圆点 6px 后居中 → 左缘 7px）；与下方列表间隔一个 space-3 */
 .block-list-task-progress {
-  margin: var(--space-2) 0 var(--space-3) 44px;
+  margin: var(--space-2) 0 var(--space-3) 0px;
 }
 
 .block-list-padding {
