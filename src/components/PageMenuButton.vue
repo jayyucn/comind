@@ -275,7 +275,7 @@ function handleNavigateToSettings() {
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-xs);
-  transition: background 120ms ease, color 120ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 
 .menu-trigger:hover {
@@ -304,7 +304,7 @@ function handleNavigateToSettings() {
   color: var(--color-ink);
   font-family: inherit;
   text-align: left;
-  transition: background 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out);
   white-space: nowrap;
 }
 
@@ -358,7 +358,7 @@ function handleNavigateToSettings() {
   cursor: pointer;
   border-radius: var(--radius-sm);
   color: var(--text-tertiary);
-  transition: background 80ms ease, color 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
   flex-shrink: 0;
 }
 
@@ -374,7 +374,7 @@ function handleNavigateToSettings() {
 }
 
 .arrow-icon {
-  transition: transform 150ms ease;
+  transition: transform var(--dur-fast) var(--ease-out);
   flex-shrink: 0;
 }
 
@@ -398,7 +398,7 @@ function handleNavigateToSettings() {
 
 .submenu-enter-active,
 .submenu-leave-active {
-  transition: opacity 100ms ease, height 100ms ease;
+  transition: opacity var(--dur-fast) var(--ease-out), height var(--dur-fast) var(--ease-in-out);
 }
 
 .submenu-enter-from,

@@ -272,7 +272,7 @@ onMounted(() => {
   cursor: pointer;
   border-radius: var(--radius-xs);
   padding: 0;
-  transition: background 0.12s;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
 .notification-bell-btn:hover {
@@ -338,7 +338,7 @@ onMounted(() => {
     font-size: var(--text-xs);
     border-radius: 4px;
     cursor: pointer;
-    transition: opacity 0.12s;
+    transition: opacity var(--dur-fast) var(--ease-out);
   }
 }
 
@@ -382,7 +382,7 @@ onMounted(() => {
   gap: 10px;
   padding: 10px 16px;
   cursor: pointer;
-  transition: background 0.12s;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
 .notification-item:hover {
@@ -432,7 +432,7 @@ onMounted(() => {
   align-items: center;
   gap: 4px;
   opacity: 0;
-  transition: opacity 0.12s;
+  transition: opacity var(--dur-fast) var(--ease-out);
 }
 
 .notification-item:hover .notification-actions {
@@ -451,7 +451,7 @@ onMounted(() => {
   cursor: pointer;
   border-radius: 4px;
   padding: 0;
-  transition: all 0.12s;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 
 .action-btn:hover {
@@ -503,7 +503,7 @@ onMounted(() => {
   text-align: left;
   cursor: pointer;
   border-radius: 4px;
-  transition: background 0.12s;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
 .snooze-option:hover {

@@ -182,6 +182,14 @@
   --color-scrollbar: #{$color-stone-400};
   --color-error: #{$color-error};
 
+  // 动效（对应 primitives 的 $dur-*/$ease-*，供组件 scoped 样式使用；禁止组件内硬编码时长/缓动，见 ADR-0053）
+  --dur-fast: #{$dur-fast};
+  --dur-base: #{$dur-base};
+  --dur-slow: #{$dur-slow};
+  --ease-out: #{$ease-out};
+  --ease-in: #{$ease-in};
+  --ease-in-out: #{$ease-in-out};
+
   // Z-index 层级（对应 primitives 的 $z-*，供组件 scoped 样式使用；禁止组件内硬编码 z-index）
   --z-base: #{$z-base};
   --z-sticky: #{$z-sticky};

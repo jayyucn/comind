@@ -467,9 +467,9 @@ onBeforeUnmount(() => {
   color: var(--text-tertiary);
   border-radius: var(--radius-sm);
   transition:
-    background-color 0.12s ease,
-    color 0.12s ease,
-    transform 0.08s ease;
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -547,16 +547,25 @@ onBeforeUnmount(() => {
   }
 }
 
-.block-modal-enter-active,
-.block-modal-leave-active {
-  transition: opacity 0.18s ease;
+// 弹层家族统一编排（ADR-0053）：遮罩淡入淡出；面板 slow 入（上浮+缩放）/ base 出（快而轻）
+.block-modal-enter-active {
+  transition: opacity var(--dur-slow) var(--ease-out);
 }
 
-.block-modal-enter-active .block-modal,
+.block-modal-leave-active {
+  transition: opacity var(--dur-base) var(--ease-in);
+}
+
+.block-modal-enter-active .block-modal {
+  transition:
+    transform var(--dur-slow) var(--ease-out),
+    opacity var(--dur-slow) var(--ease-out);
+}
+
 .block-modal-leave-active .block-modal {
   transition:
-    transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
-    opacity 0.18s ease;
+    transform var(--dur-base) var(--ease-in),
+    opacity var(--dur-base) var(--ease-in);
 }
 
 .block-modal-enter-from,
@@ -564,9 +573,13 @@ onBeforeUnmount(() => {
   opacity: 0;
 }
 
-.block-modal-enter-from .block-modal,
+.block-modal-enter-from .block-modal {
+  transform: translateY(4px) scale(0.97);
+  opacity: 0;
+}
+
 .block-modal-leave-to .block-modal {
-  transform: translateY(12px) scale(0.97);
+  transform: translateY(2px) scale(0.98);
   opacity: 0;
 }
 

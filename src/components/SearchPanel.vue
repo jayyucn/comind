@@ -297,7 +297,7 @@ function getResultTypeLabel(result: SearchResult): string {
   background: var(--bg-sidebar);
   color: var(--text-primary);
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color var(--dur-base) var(--ease-out);
 
   &:focus {
     border-color: var(--accent);
@@ -351,7 +351,7 @@ function getResultTypeLabel(result: SearchResult): string {
   gap: 12px;
   padding: 10px 16px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background var(--dur-fast) var(--ease-out);
 
   &:hover,
   &.active {

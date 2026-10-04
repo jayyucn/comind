@@ -689,7 +689,7 @@ watch(
   gap: 8px;
   padding: 8px 12px;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
 .slash-command-item.selected {

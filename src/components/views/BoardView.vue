@@ -296,7 +296,7 @@ function onDragEnd() {
   border: 1px solid var(--border-color, var(--app-split));
   border-radius: 8px;
   cursor: grab;
-  transition: box-shadow 100ms ease, border-color 100ms ease, opacity 100ms ease;
+  transition: box-shadow var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
 
   &:hover {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);

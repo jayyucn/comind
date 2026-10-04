@@ -641,7 +641,7 @@ function onCardClick(item: T) {
   border-radius: var(--radius-md, 10px);
   background: var(--bg-base);
   overflow: hidden;
-  transition: box-shadow 120ms ease, background 120ms ease;
+  transition: box-shadow var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
 }
 
 /* 四象限柔染背景 + 同色顶边强调；改用 rgba 叠色（不依赖 color-mix），
@@ -747,7 +747,7 @@ function onCardClick(item: T) {
   cursor: grab;
   // 触屏下让 Pointer Events 接管手势（禁用浏览器原生滚动/缩放抢占），鼠标无影响
   touch-action: none;
-  transition: box-shadow 120ms ease, border-color 120ms ease, opacity 120ms ease, transform 120ms ease;
+  transition: box-shadow var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
 
   &:hover {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
@@ -881,7 +881,7 @@ function onCardClick(item: T) {
   font-size: var(--text-xs);
   font-family: inherit;
   cursor: pointer;
-  transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
+  transition: border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
 
   &:hover,
   &.active {

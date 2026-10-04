@@ -229,7 +229,7 @@ onBeforeUnmount(() => {
   color: var(--text-primary);
   font-size: 14px;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 .lb-btn:hover {
   background: var(--bg-hover);

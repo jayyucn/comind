@@ -372,7 +372,7 @@ function clearValue() {
   font-family: inherit;
   cursor: pointer;
   outline: none;
-  transition: border-color var(--transition-base);
+  transition: border-color var(--dur-base) var(--ease-out);
 
   &:hover,
   &.open {
@@ -458,7 +458,7 @@ function clearValue() {
   font-size: var(--text-xs);
   cursor: pointer;
   outline: none;
-  transition: border-color var(--transition-base), background var(--transition-base);
+  transition: border-color var(--dur-base) var(--ease-out), background var(--dur-base) var(--ease-out);
 
   &:hover {
     border-color: var(--accent);

@@ -108,7 +108,7 @@ html[data-theme="dark"] {
 a {
   color: var(--link);
   text-decoration: none;
-  @include transition-base;
+  transition: color var(--dur-fast) var(--ease-out);
 
   &:hover {
     color: var(--link-hover);
@@ -159,4 +159,18 @@ h1, h2, h3, h4, h5, h6 {
 user-select-none,
 .no-select {
   user-select: none;
+}
+
+// 无障碍：用户偏好减少动效时，全局压平过渡与循环动画（ADR-0053）。
+// 不删 transform/opacity 终态，仅去掉过程感；JS 侧时序闸门（如折叠 200ms）不受影响——
+// 提前闸门只会让 display:none 更早生效，视觉上仍是瞬时切换，安全。
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

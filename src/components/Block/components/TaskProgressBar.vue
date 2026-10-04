@@ -98,7 +98,7 @@ const isComplete = computed(() => props.total > 0 && props.done >= props.total)
   height: 100%;
   border-radius: 999px;
   background: linear-gradient(90deg, var(--accent), var(--accent-hover));
-  transition: width 0.2s ease;
+  transition: width var(--dur-base) var(--ease-in-out);
 }
 
 .task-progress-label {

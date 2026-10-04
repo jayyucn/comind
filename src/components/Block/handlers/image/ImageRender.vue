@@ -735,7 +735,7 @@ defineExpose({
   color: var(--text-primary);
   font-size: 14px;
   cursor: pointer;
-  transition: background 0.12s ease;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 .tb-btn:hover {
   background: var(--bg-hover);

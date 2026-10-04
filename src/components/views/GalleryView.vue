@@ -194,7 +194,7 @@ watch(
   background: var(--bg-base2);
   overflow: hidden;
   cursor: pointer;
-  transition: border-color 100ms ease, transform 100ms ease, box-shadow 100ms ease;
+  transition: border-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
 
   &:hover {
     border-color: var(--accent);

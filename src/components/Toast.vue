@@ -109,7 +109,7 @@ function dismiss(id: string) {
   cursor: pointer;
   border-radius: 4px;
   padding: 0;
-  transition: background 0.12s;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
 .toast-close:hover {
@@ -117,9 +117,13 @@ function dismiss(id: string) {
   color: var(--text-primary);
 }
 
-.toast-enter-active,
+/* 编排（ADR-0053）：base 入 / fast 出 */
+.toast-enter-active {
+  transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out);
+}
+
 .toast-leave-active {
-  transition: all 0.2s ease;
+  transition: opacity var(--dur-fast) var(--ease-in), transform var(--dur-fast) var(--ease-in);
 }
 
 .toast-enter-from {

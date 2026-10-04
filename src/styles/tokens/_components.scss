@@ -19,20 +19,13 @@ $date-ref-overdue-bg: rgba(220, 38, 38, 0.08);
   --block-chevron-size: 8px;
   --block-chevron-opacity: 0.40;
   --block-indent-width: 24px;
-  --block-transition-collapse: #{$transition-collapse};
 
   // Motion — 编辑器「创造/变换内容」反馈（ADR-0052 锁定参数：300ms / 2.0× / ease-out-soft）
   // 单一事实源：所有「回应感」动效都读这组 token，禁止在组件里写死 ms/缓动。
   --motion-duration: 300ms;
-  --motion-ease: cubic-bezier(0.22, 1, 0.36, 1); // ease-out-soft：入场减速收尾，无回弹
+  --motion-ease: #{$ease-out}; // ease-out-soft：入场减速收尾，无回弹（曲线源 = primitives $ease-out）
   --motion-intensity: 2; // 位移/缩放幅度倍率（2.0×）
   --motion-distance: calc(10px * var(--motion-intensity)); // 20px @ 2.0×
-
-  // 修复：_mixins.scss 引用的 --transition-* CSS 变量此前从未定义（只有 SCSS 变量 $transition-*），
-  // 导致 transition-base/fast/slow 三个 mixin 静默失效。此处补齐映射，值沿用 primitives，不改变既有观感。
-  --transition-fast: #{$transition-fast};
-  --transition-base: #{$transition-base};
-  --transition-slow: #{$transition-slow};
 
   // Header
   --graph-header-height: 48px;

@@ -322,7 +322,7 @@ function handleLanguageChange(lang: string) {
   border-radius: 6px;
   overflow: hidden;
   cursor: pointer;
-  transition: border-color 0.15s ease, background-color 0.15s ease;
+  transition: border-color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
 }
 
 /* hover 仅作"预览"提示（轻微边框色）；selected 是持续选中态，叠加底色区分 */
@@ -364,7 +364,7 @@ function handleLanguageChange(lang: string) {
   /* 常驻可见，让"click to jump"的语义始终传达出来 */
   opacity: 0.5;
   color: var(--text-secondary);
-  transition: opacity 0.15s ease, color 0.15s ease;
+  transition: opacity var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
   flex-shrink: 0;
 }
 

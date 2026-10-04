@@ -347,7 +347,7 @@ watch(
   padding: var(--space-3) 0;
   cursor: pointer;
   border-radius: var(--radius-md);
-  transition: background 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
 .backlinks-title {
@@ -376,7 +376,7 @@ watch(
   padding: 2px var(--space-1);
   /* 展开 + 非 hover 时隐藏；hover 或折叠时可见 */
   opacity: 0;
-  transition: opacity 120ms ease;
+  transition: opacity var(--dur-fast) var(--ease-out);
 }
 
 .backlinks-header:hover .backlinks-toggle,
@@ -393,7 +393,7 @@ watch(
 .backlinks-body-wrapper {
   display: grid;
   grid-template-rows: 1fr;
-  transition: grid-template-rows 200ms ease;
+  transition: grid-template-rows var(--dur-base) var(--ease-in-out);
   overflow: hidden;
   /* body 相对 header 向右缩进 24px（与 backlink-block-list 对齐） */
   padding-left: 24px;
@@ -435,7 +435,7 @@ watch(
   padding: var(--space-2) 0;
   cursor: pointer;
   border-radius: var(--radius-md);
-  transition: background 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
 .backlink-group-header:hover {
@@ -470,7 +470,7 @@ watch(
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-md);
   cursor: pointer;
-  transition: background 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
 .backlink-block:hover {

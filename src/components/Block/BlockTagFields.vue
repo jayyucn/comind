@@ -603,7 +603,7 @@ function openFieldRow(event: Event, def: PersistedFieldDefinition) {
   cursor: pointer;
   padding: 2px 6px;
   padding-right: 20px;
-  transition: background 120ms ease;
+  transition: background var(--dur-fast) var(--ease-out);
   font-size: var(--text-sm);
   position: relative;
   /* 确保内部所有元素的基线对齐 */
@@ -666,7 +666,7 @@ function openFieldRow(event: Event, def: PersistedFieldDefinition) {
   border-radius: 4px;
   font-size: var(--text-sm);
   color: var(--text-secondary);
-  transition: background 120ms ease, color 120ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 
 .book-note-source.can-jump {
@@ -725,7 +725,7 @@ function openFieldRow(event: Event, def: PersistedFieldDefinition) {
   // 浮层内的 item 例外（× 常驻），见 .property-list--full 规则。
   padding-right: 4px;
   border-radius: 4px;
-  transition: background 120ms ease;
+  transition: background var(--dur-fast) var(--ease-out);
   position: relative;
 }
 
@@ -766,7 +766,7 @@ function openFieldRow(event: Event, def: PersistedFieldDefinition) {
   color: #9ca3af;
   padding: 0 4px;
   border-radius: 4px;
-  transition: color 120ms ease, background 120ms ease;
+  transition: color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
 }
 
 .delete-button:hover {

@@ -50,7 +50,7 @@
 .block > .block-row:hover {
   border-radius: $radius-xs;
   background: color-mix(in srgb, var(--color-ink) 5%, transparent);
-  transition: background 120ms ease;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
 .block-indent {
@@ -70,7 +70,7 @@
   opacity: 0.12;
   pointer-events: none;
   z-index: 0;
-  transition: opacity 200ms ease-out;
+  transition: opacity var(--dur-base) var(--ease-out);
 }
 
 .block-children:not(.has-children)::before {
@@ -97,7 +97,7 @@
   border-radius: 50%;
   background: var(--block-bullet-color);
   opacity: var(--block-bullet-opacity);
-  transition: opacity 150ms ease-out, transform 150ms ease-out, box-shadow 150ms ease-out;
+  transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
   flex-shrink: 0;
 }
 
@@ -123,7 +123,7 @@
   color: var(--block-bullet-color);
   opacity: 0;
   cursor: pointer;
-  transition: transform 180ms ease-out, opacity 150ms ease-out;
+  transition: transform var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
   flex-shrink: 0;
 
   svg {
@@ -233,9 +233,9 @@
   transform: translateY(0);
   min-height: 0;
   transition:
-    max-height var(--block-transition-collapse),
-    opacity 200ms ease-out,
-    transform 250ms ease-out;
+    max-height var(--dur-base) var(--ease-in-out),
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
 
   &.is-collapsed {
     max-height: 0;
@@ -263,8 +263,8 @@
   transform: translateX(0);
   margin-top: 2px;
   transition:
-    opacity 200ms ease-out,
-    transform 200ms ease-out;
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
 
   .block-children.is-collapsed>& {
     opacity: 0;
@@ -314,7 +314,7 @@
 .block-link {
   color: var(--color-accent);
   cursor: pointer;
-  transition: color 0.15s;
+  transition: color var(--dur-fast) var(--ease-out);
 
   &:hover {
     color: var(--accent-hover);
@@ -388,7 +388,7 @@
   cursor: pointer;
   font-size: 0.9em;
   line-height: $leading-snug;
-  transition: background 120ms ease;
+  transition: background var(--dur-fast) var(--ease-out);
 
   &:hover {
     filter: brightness(0.95);
@@ -644,7 +644,7 @@
   cursor: pointer;
   padding: 2px 6px;
   border-radius: 4px;
-  transition: color 120ms ease, background 120ms ease;
+  transition: color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
 }
 
 .block-row-properties .chips-more-badge:hover {

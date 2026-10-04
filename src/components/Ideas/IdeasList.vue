@@ -106,7 +106,7 @@ const todayTitle = computed(() => {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  animation: fadeIn 200ms ease-out;
+  animation: fadeIn var(--dur-base) var(--ease-out);
 }
 
 .today-panel {
@@ -195,16 +195,6 @@ const todayTitle = computed(() => {
 
 .skeleton-line.short {
   width: 60%;
-}
-
-@keyframes shimmer {
-  0% {
-    background-position: 200% 0;
-  }
-
-  100% {
-    background-position: -200% 0;
-  }
 }
 
 @keyframes fadeIn {

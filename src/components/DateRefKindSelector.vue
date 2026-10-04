@@ -85,7 +85,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown, true))
   font-family: inherit;
   font-size: var(--text-sm);
   color: var(--text-primary);
-  transition: background var(--transition-fast);
+  transition: background var(--dur-fast) var(--ease-out);
 
   &:hover,
   &--active {

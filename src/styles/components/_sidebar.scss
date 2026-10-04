@@ -10,7 +10,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transition: width 200ms ease, opacity 200ms ease, transform 200ms ease;
+  transition: width var(--dur-base) var(--ease-in-out), opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out);
 }
 
 .sidebar-header {
@@ -52,7 +52,9 @@
   color: var(--text-secondary);
   font-size: var(--text-sm);
   cursor: pointer;
-  @include transition-base;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
   @include text-ellipsis;
 
   &:hover {

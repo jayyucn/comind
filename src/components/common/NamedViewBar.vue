@@ -602,7 +602,7 @@ onBeforeUnmount(() => {
   color: var(--text-primary);
   font: 600 var(--text-sm, 0.875rem)/1 var(--font-sans, sans-serif);
   cursor: pointer;
-  transition: background 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out);
 
   &:hover,
   &.open {
@@ -611,7 +611,7 @@ onBeforeUnmount(() => {
 
   .chev {
     color: var(--text-tertiary);
-    transition: transform 80ms ease;
+    transition: transform var(--dur-fast) var(--ease-out);
   }
 
   &.open .chev {
@@ -666,7 +666,7 @@ onBeforeUnmount(() => {
   color: var(--text-secondary);
   font-size: var(--text-xs, 0.75rem);
   font-weight: 500;
-  transition: color 80ms ease, background 80ms ease;
+  transition: color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
 
   &:hover {
     color: var(--text-primary);
@@ -764,7 +764,7 @@ onBeforeUnmount(() => {
   opacity: 0;
   // 隐形时不可点：否则这个 12×16 的透明盒子会盖在 tab 右缘，抢走本该落在 tab 上的点击
   pointer-events: none;
-  transition: all 80ms ease;
+  transition: opacity var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
   // 占用 .tab 右侧预留位（与 .dot 同位，二者互斥渲染），不参与内容宽度
   position: absolute;
   right: 1px;
@@ -804,7 +804,7 @@ onBeforeUnmount(() => {
   // 落进死区的点击会命中 .tab（selectTab 对当前 tab 早返回）→ 表现成「点了没反应」
   padding: 7px 4px;
   white-space: nowrap;
-  transition: color 80ms ease;
+  transition: color var(--dur-fast) var(--ease-out);
   margin-left: 6px;
 
   &:hover {
@@ -826,7 +826,7 @@ onBeforeUnmount(() => {
   background: transparent;
   color: var(--text-tertiary);
   cursor: pointer;
-  transition: all 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 
   &:hover {
     background: var(--bg-hover);
@@ -863,7 +863,7 @@ onBeforeUnmount(() => {
   padding: 6px 8px;
   border-radius: var(--radius-sm, 6px);
   cursor: pointer;
-  transition: background 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out);
 
   &:hover {
     background: var(--bg-hover);
@@ -904,7 +904,7 @@ onBeforeUnmount(() => {
     color: var(--text-tertiary);
     cursor: pointer;
     opacity: 0;
-    transition: all 80ms ease;
+    transition: opacity var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
     flex: none;
 
     .screen-item:hover & {
@@ -958,7 +958,7 @@ onBeforeUnmount(() => {
   color: var(--accent);
   cursor: pointer;
   font: 500 var(--text-xs, 0.75rem)/1 var(--font-sans, sans-serif);
-  transition: background 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out);
 
   &:hover {
     background: var(--accent-subtle, rgba(129, 140, 248, 0.08));
@@ -998,7 +998,7 @@ onBeforeUnmount(() => {
   cursor: pointer;
   font: 500 var(--text-xs, 0.75rem)/1 var(--font-sans, sans-serif);
   text-align: left;
-  transition: all 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
 
   &:hover:not(:disabled) {
     background: var(--bg-hover);
@@ -1073,7 +1073,7 @@ onBeforeUnmount(() => {
     padding: 0 11px;
     font: 400 var(--text-sm, 0.875rem)/1 var(--font-sans, sans-serif);
     outline: none;
-    transition: all 80ms ease;
+    transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
 
     &:focus {
       border-color: var(--accent);
@@ -1099,7 +1099,7 @@ onBeforeUnmount(() => {
   cursor: pointer;
   color: var(--text-tertiary);
   background: var(--bg-base2);
-  transition: all 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
 
   &:hover {
     border-color: var(--border-strong, #4a4a50);
@@ -1133,7 +1133,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border-light, #3a3a3f);
   background: transparent;
   color: var(--text-secondary);
-  transition: all 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
   white-space: nowrap;
 
   &:hover {

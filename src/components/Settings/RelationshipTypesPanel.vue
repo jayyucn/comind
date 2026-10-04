@@ -487,7 +487,7 @@ function moveDown(id: string): void {
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: 6px;
-  transition: opacity 150ms ease;
+  transition: opacity var(--dur-fast) var(--ease-out);
 }
 
 .rel-row--editing {

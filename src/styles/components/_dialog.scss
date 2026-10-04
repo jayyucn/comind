@@ -86,7 +86,7 @@
   font-size: var(--text-xs);
   font-family: inherit;
   cursor: pointer;
-  transition: background 120ms ease, box-shadow 120ms ease;
+  transition: background var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
 }
 
 .dialog-actions .btn-cancel {
@@ -120,12 +120,32 @@
   background: #b91c1c;
 }
 
-// 淡入淡出过渡
-.fade-enter-active,
+// 弹层家族统一编排（ADR-0053）：遮罩淡入淡出；卡片 slow 入（上浮+缩放）/ base 出（快而轻）
+.fade-enter-active {
+  transition: opacity var(--dur-slow) var(--ease-out);
+}
 .fade-leave-active {
-  transition: opacity 160ms ease;
+  transition: opacity var(--dur-base) var(--ease-in);
+}
+.fade-enter-active .dialog-card {
+  transition:
+    transform var(--dur-slow) var(--ease-out),
+    opacity var(--dur-slow) var(--ease-out);
+}
+.fade-leave-active .dialog-card {
+  transition:
+    transform var(--dur-base) var(--ease-in),
+    opacity var(--dur-base) var(--ease-in);
 }
 .fade-enter-from,
 .fade-leave-to {
+  opacity: 0;
+}
+.fade-enter-from .dialog-card {
+  transform: translateY(4px) scale(0.97);
+  opacity: 0;
+}
+.fade-leave-to .dialog-card {
+  transform: translateY(2px) scale(0.98);
   opacity: 0;
 }

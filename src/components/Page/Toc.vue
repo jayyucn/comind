@@ -415,7 +415,7 @@ watch(
   // 展开/自身折叠时宽度做过渡（40 ↔ 实测宽度）；
   // 但实测驱动（侧栏折叠、窗口缩放）由 is-tracking 关掉，
   // 让 TOC 逐帧跟随侧栏动画而不过渡拖影。
-  transition: width 220ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: width var(--dur-base) var(--ease-in-out);
 
   &.is-tracking {
     transition: none;
@@ -468,7 +468,8 @@ watch(
   color: var(--text-tertiary);
   cursor: pointer;
   border-radius: var(--radius-sm);
-  transition: background 120ms ease, color 120ms ease, transform 120ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
 
   &:hover {
     background: var(--bg-hover);
@@ -511,7 +512,7 @@ watch(
 // 收起的动画正是「内容被裁切着淡出」；内容瞬间消失会让收起变回硬切。
 .toc-fade-enter-active,
 .toc-fade-leave-active {
-  transition: opacity 150ms ease;
+  transition: opacity var(--dur-fast) var(--ease-out);
 }
 
 .toc-fade-enter-from,
@@ -521,7 +522,7 @@ watch(
 
 .toc-list-enter-active,
 .toc-list-leave-active {
-  transition: opacity 160ms ease;
+  transition: opacity var(--dur-base) var(--ease-out);
 }
 
 .toc-list-enter-from,

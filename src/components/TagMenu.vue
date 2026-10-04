@@ -209,7 +209,7 @@ defineExpose({ selectNext, selectPrev, confirmSelect, close });
   cursor: pointer;
   border-radius: 4px;
   font-size: var(--text-sm);
-  transition: background-color 0.15s;
+  transition: background-color var(--dur-fast) var(--ease-out);
 }
 
 .tm-item:hover {

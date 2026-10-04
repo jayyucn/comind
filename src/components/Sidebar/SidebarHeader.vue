@@ -93,7 +93,7 @@ async function handleMouseDown() {
   justify-content: center;
   border-radius: 6px;
   color: var(--text-tertiary);
-  transition: background 100ms ease, color 100ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 
 .nav-btn:hover:not(:disabled) {

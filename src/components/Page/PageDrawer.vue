@@ -111,7 +111,7 @@ onMounted(() => {
   color: var(--text-tertiary);
   padding: 4px;
   border-radius: var(--radius-sm);
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 
   &:hover {
     background-color: var(--bg-hover);
@@ -125,9 +125,13 @@ onMounted(() => {
   overflow: auto;
 }
 
-.page-drawer-enter-active,
+// 抽屉编排（ADR-0053）：遮罩 slow 入 / base 出；面板同拍滑入滑出，出场更快更急
+.page-drawer-enter-active {
+  transition: opacity var(--dur-slow) var(--ease-out);
+}
+
 .page-drawer-leave-active {
-  transition: opacity 0.2s ease;
+  transition: opacity var(--dur-base) var(--ease-in);
 }
 
 .page-drawer-enter-from,
@@ -135,9 +139,12 @@ onMounted(() => {
   opacity: 0;
 }
 
-.page-drawer-enter-active .page-drawer,
+.page-drawer-enter-active .page-drawer {
+  transition: transform var(--dur-slow) var(--ease-out);
+}
+
 .page-drawer-leave-active .page-drawer {
-  transition: transform 0.25s ease;
+  transition: transform var(--dur-base) var(--ease-in);
 }
 
 .page-drawer-enter-from .page-drawer,

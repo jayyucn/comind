@@ -327,7 +327,7 @@ function isSvgIcon(icon: string): boolean {
   gap: 8px;
   padding: 10px 12px;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
 .quick-option:hover {

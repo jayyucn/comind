@@ -906,7 +906,7 @@ onUnmounted(() => {
   color: var(--text-secondary);
   font-family: inherit;
   text-align: left;
-  transition: background 80ms ease, color 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 
 .nav-item:hover {
@@ -953,7 +953,7 @@ onUnmounted(() => {
   justify-content: center;
   border-radius: 6px;
   color: var(--text-tertiary);
-  transition: background 80ms ease, color 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 
 .close-btn:hover {
@@ -1058,7 +1058,7 @@ onUnmounted(() => {
   font-size: var(--text-xs);
   color: var(--text-tertiary);
   font-family: inherit;
-  transition: background 80ms ease, color 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 
 .theme-option:hover,
@@ -1074,14 +1074,25 @@ onUnmounted(() => {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
-.settings-modal-enter-active,
-.settings-modal-leave-active {
-  transition: opacity 180ms ease;
+/* 弹层家族统一编排（ADR-0053）：遮罩淡入淡出；面板 slow 入（上浮+缩放）、base 出（快而轻） */
+.settings-modal-enter-active {
+  transition: opacity var(--dur-slow) var(--ease-out);
 }
 
-.settings-modal-enter-active .settings-modal,
+.settings-modal-leave-active {
+  transition: opacity var(--dur-base) var(--ease-in);
+}
+
+.settings-modal-enter-active .settings-modal {
+  transition:
+    transform var(--dur-slow) var(--ease-out),
+    opacity var(--dur-slow) var(--ease-out);
+}
+
 .settings-modal-leave-active .settings-modal {
-  transition: transform 180ms ease;
+  transition:
+    transform var(--dur-base) var(--ease-in),
+    opacity var(--dur-base) var(--ease-in);
 }
 
 .settings-modal-enter-from,
@@ -1090,7 +1101,13 @@ onUnmounted(() => {
 }
 
 .settings-modal-enter-from .settings-modal {
-  transform: translateY(8px);
+  transform: translateY(4px) scale(0.97);
+  opacity: 0;
+}
+
+.settings-modal-leave-to .settings-modal {
+  transform: translateY(2px) scale(0.98);
+  opacity: 0;
 }
 
 .db-path-container {
@@ -1155,7 +1172,7 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  transition: background 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
 .db-path-btn:hover {
@@ -1201,7 +1218,7 @@ onUnmounted(() => {
   color: var(--text-secondary);
   font-family: inherit;
   align-self: flex-start;
-  transition: background 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
 .sync-toggle:hover {
@@ -1355,11 +1372,6 @@ onUnmounted(() => {
   animation: spin 1s linear infinite;
 }
 
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
 .quiet-hours-container {
   width: 100%;
   display: flex;
@@ -1466,7 +1478,7 @@ onUnmounted(() => {
   color: white;
   font-family: inherit;
   align-self: flex-start;
-  transition: opacity 80ms ease;
+  transition: opacity var(--dur-fast) var(--ease-out);
 }
 
 .device-sync-qr-btn:hover:not(:disabled) {
@@ -1526,7 +1538,7 @@ onUnmounted(() => {
   font-size: var(--text-xs);
   color: var(--text-secondary);
   font-family: inherit;
-  transition: background 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
 .device-sync-resync-btn:hover:not(:disabled) {
@@ -1588,7 +1600,7 @@ onUnmounted(() => {
   font-size: var(--text-xs);
   color: var(--text-tertiary);
   font-family: inherit;
-  transition: background 80ms ease, color 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 
 .paired-device-unpair-btn:hover {
@@ -1650,7 +1662,7 @@ onUnmounted(() => {
   justify-content: center;
   border-radius: 6px;
   color: var(--text-tertiary);
-  transition: background 80ms ease, color 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 
 .qr-modal-close:hover {
@@ -1707,12 +1719,12 @@ onUnmounted(() => {
 
 .qr-modal-enter-active,
 .qr-modal-leave-active {
-  transition: opacity 180ms ease;
+  transition: opacity var(--dur-base) var(--ease-out);
 }
 
 .qr-modal-enter-active .qr-modal,
 .qr-modal-leave-active .qr-modal {
-  transition: transform 180ms ease;
+  transition: transform var(--dur-base) var(--ease-out);
 }
 
 .qr-modal-enter-from,

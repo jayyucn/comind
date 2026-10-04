@@ -247,11 +247,6 @@ onMounted(loadMonths)
   width: 60%;
 }
 
-@keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-
 // 错误态
 .error-state {
   flex: 1;
@@ -276,7 +271,7 @@ onMounted(loadMonths)
   border-radius: 6px;
   padding: 4px 12px;
   cursor: pointer;
-  transition: background var(--transition-base, 0.15s), border-color var(--transition-base, 0.15s);
+  transition: background var(--dur-base) var(--ease-out), border-color var(--dur-base) var(--ease-out);
 
   &:hover {
     background: var(--bg-hover, #F0F0F0);

@@ -648,7 +648,7 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
 .code-toggle-chevron {
   display: inline-block;
   font-size: 10px;
-  transition: transform 0.18s ease;
+  transition: transform var(--dur-base) var(--ease-out);
 }
 
 .code-toggle-chevron.is-collapsed {
@@ -663,7 +663,7 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
   gap: var(--space-1, 4px);
   opacity: 0;
   visibility: hidden;
-  transition: opacity 0.2s, visibility 0.2s;
+  transition: opacity var(--dur-base), visibility var(--dur-base);
 }
 
 .code-editor-wrapper:hover .code-toolbar {
@@ -682,7 +682,7 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
   color: var(--text-secondary);
   font-size: var(--text-xs);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background var(--dur-fast), color var(--dur-fast);
 }
 
 .code-toolbar-btn:hover {
@@ -765,7 +765,7 @@ defineExpose({ syncContent, focus, getText, markSaved, getEditor })
   font-size: var(--text-sm);
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background var(--dur-base);
 }
 
 .lang-item:hover {

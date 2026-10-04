@@ -155,7 +155,7 @@ function handleResizeStart(e: MouseEvent) {
   background: transparent;
   cursor: pointer;
   color: var(--text-tertiary);
-  transition: background 80ms ease, color 80ms ease, border-color 120ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
   border-bottom: 1px solid transparent;
 
   &:hover {
@@ -189,7 +189,7 @@ function handleResizeStart(e: MouseEvent) {
 
 .right-sidebar-enter-active,
 .right-sidebar-leave-active {
-  transition: width 200ms ease, opacity 200ms ease;
+  transition: width var(--dur-base) var(--ease-in-out), opacity var(--dur-base) var(--ease-out);
 }
 
 .right-sidebar-enter-from,

@@ -984,7 +984,7 @@ function groupTotal(key: string): number {
   td {
     padding: 13px 12px;
     vertical-align: middle;
-    transition: background 80ms ease;
+    transition: background var(--dur-fast) var(--ease-out);
     // 行分隔线：比卡片描边（--border）浅一档，避免与卡片外框争视觉重量。
     // 画在单元格上而非 tr 上 —— separate 模式下 tr / row group 的边框不参与绘制。
     border-bottom: 1px solid var(--surface-subtle);
@@ -1110,7 +1110,7 @@ function groupTotal(key: string): number {
   color: var(--text-tertiary);
   flex-shrink: 0;
   opacity: 0;
-  transition: opacity 80ms ease;
+  transition: opacity var(--dur-fast) var(--ease-out);
 
   .cell-select:hover &,
   .cell-select.open & {

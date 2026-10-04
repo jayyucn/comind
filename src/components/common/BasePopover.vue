@@ -12,7 +12,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
  *   空间不足自动翻到对侧、仍放不下再贴视口边；打开期间监听 scroll/resize 实时跟随。
  * - 遗留点模式：`position:{x,y}`，仅做视口收边，行为保持与 ADR-0009 完全一致。
  *
- * 样式复用项目令牌：--bg-base / --border / --radius-md / --shadow-modal / --transition-base。
+ * 样式复用项目令牌：--bg-base / --border / --radius-md / --shadow-modal / --dur-base / --ease-out。
  */
 const props = withDefaults(
   defineProps<{
@@ -317,14 +317,22 @@ onBeforeUnmount(() => {
   overflow: auto;
 }
 
-.base-popover-fade-enter-active,
-.base-popover-fade-leave-active {
-  transition: opacity var(--transition-base), transform var(--transition-base);
+/* 轻弹层编排（ADR-0053）：base 入 / fast 出（出场永远比入场快） */
+.base-popover-fade-enter-active {
+  transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out);
 }
 
-.base-popover-fade-enter-from,
+.base-popover-fade-leave-active {
+  transition: opacity var(--dur-fast) var(--ease-in), transform var(--dur-fast) var(--ease-in);
+}
+
+.base-popover-fade-enter-from {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
 .base-popover-fade-leave-to {
   opacity: 0;
-  transform: translateY(-6px);
+  transform: translateY(-2px);
 }
 </style>

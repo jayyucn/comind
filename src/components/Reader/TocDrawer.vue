@@ -73,7 +73,7 @@ const emit = defineEmits<{
   background: var(--reader-bg);
   border-right: 1px solid var(--reader-border);
   overflow: hidden;
-  transition: width 160ms ease;
+  transition: width var(--dur-base) var(--ease-in-out);
 
   &.collapsed {
     // 折叠后只保留「目录」按钮：容器收缩至仅容纳按钮，去背景/边框/标题/列表。
@@ -118,7 +118,7 @@ const emit = defineEmits<{
   color: var(--reader-text-muted);
   font-size: var(--text-sm);
   font-weight: var(--font-semibold);
-  transition: all 100ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 
   &:hover {
     background: var(--bg-hover);
@@ -152,7 +152,7 @@ const emit = defineEmits<{
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  transition: background 100ms ease;
+  transition: background var(--dur-fast) var(--ease-out);
 
   &:hover:not(:disabled) {
     background: var(--bg-hover);

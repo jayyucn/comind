@@ -308,7 +308,7 @@ function handleCancelMerge() {
 
 <style lang="scss" scoped>
 :deep(.navigate-highlight) {
-  animation: navigate-pulse 2s ease-out;
+  animation: navigate-pulse var(--dur-slow) var(--ease-out);
 }
 
 // 书 Page 标题下的「开始阅读」入口（票 03 / ADR-0040 D4：唤起独立阅读器窗口）
@@ -322,7 +322,8 @@ function handleCancelMerge() {
   color: var(--text-secondary);
   font-size: var(--text-sm);
   cursor: pointer;
-  transition: all 120ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
 
   &:hover {
     border-color: var(--accent);

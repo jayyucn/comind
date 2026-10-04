@@ -3,11 +3,11 @@ import type { Ref } from 'vue'
 import { useBlockStore } from '../../../stores/blocks'
 import type { TreeNode } from '../../../types/block'
 
-// 必须与 `$transition-collapse`（src/styles/tokens/_primitives.scss）保持一致：
+// 必须与折叠过渡时长保持一致（--dur-base，src/styles/tokens/_primitives.scss 的 $dur-base）：
 // 动画期间 `is-animating` 既是 chevron 的防重入闸门，也是 `.block-children` 上
 // `display: none`（折叠 = 布局移除，ADR-0045 D1）的时序闸门。取小了会把折叠动画的
 // 尾巴削掉（提前 display:none）。
-const COLLAPSE_ANIMATION_DURATION = 300 // ms
+const COLLAPSE_ANIMATION_DURATION = 200 // ms
 
 /**
  * Block 折叠 composable

@@ -180,7 +180,7 @@ onBeforeUnmount(() => {
   border-radius: var(--radius-md);
   font-size: var(--text-base);
   color: var(--text-secondary);
-  transition: all 100ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 
   &:hover:not(:disabled) {
     background: var(--bg-hover);
@@ -206,7 +206,7 @@ onBeforeUnmount(() => {
   border-radius: var(--radius-md);
   font-size: var(--text-xs);
   color: var(--text-secondary);
-  transition: all 100ms ease;
+  transition: border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 
   &:hover {
     border-color: var(--border-strong);

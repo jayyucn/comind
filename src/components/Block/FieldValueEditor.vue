@@ -367,7 +367,7 @@ watch(visible, (val) => {
      color-scheme 管不了这一层（那只管日历面板、滚动条、步进按钮等 UA 内绘制）。
      --bg-base 与面板底色相同，所以闭合态观感与透明时一模一样。 */
   background: var(--bg-base);
-  transition: border-color 150ms ease;
+  transition: border-color var(--dur-fast) var(--ease-out);
 }
 
 .form-group input:focus,
@@ -444,7 +444,7 @@ watch(visible, (val) => {
   cursor: pointer;
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
-  transition: background 120ms ease;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
 .btn-secondary {

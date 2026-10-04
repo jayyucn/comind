@@ -120,7 +120,8 @@ defineEmits<{
   justify-content: center;
   border-radius: var(--radius-sm);
   color: var(--text-tertiary);
-  transition: background 100ms ease, color 100ms ease, left 200ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out),
+    left var(--dur-base) var(--ease-in-out);
   z-index: var(--z-dropdown);
 }
 
@@ -152,7 +153,7 @@ defineEmits<{
   border-radius: var(--radius-sm);
   background: var(--bg-hover);
   cursor: pointer;
-  transition: background 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
 .search-trigger:hover {

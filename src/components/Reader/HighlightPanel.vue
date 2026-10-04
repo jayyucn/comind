@@ -348,7 +348,7 @@ async function submitNote(text: string): Promise<void> {
   background: var(--reader-bg);
   border-left: 1px solid var(--reader-border);
   overflow: hidden;
-  transition: width 160ms ease;
+  transition: width var(--dur-base) var(--ease-in-out);
 
   &.collapsed {
     width: 0;
@@ -385,7 +385,7 @@ async function submitNote(text: string): Promise<void> {
   justify-content: center;
   border-radius: var(--radius-md);
   color: var(--reader-text-muted);
-  transition: all 100ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 
   &:hover {
     background: var(--bg-hover);
@@ -493,7 +493,7 @@ async function submitNote(text: string): Promise<void> {
   border-radius: var(--radius-sm);
   font-size: var(--text-xs);
   color: var(--reader-text-muted);
-  transition: all 100ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
   white-space: nowrap;
 
   &:hover {

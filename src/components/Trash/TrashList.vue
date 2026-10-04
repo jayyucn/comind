@@ -172,7 +172,7 @@ function formatDate(timestamp: number): string {
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  transition: background 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
 .trash-item:hover {
@@ -216,7 +216,8 @@ function formatDate(timestamp: number): string {
   font-size: var(--text-xs);
   color: var(--text-secondary);
   font-family: inherit;
-  transition: all 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
 }
 
 .action-btn:hover {

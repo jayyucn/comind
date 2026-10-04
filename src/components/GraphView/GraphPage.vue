@@ -228,7 +228,7 @@ watch(graphViewRef, () => {
 
 .graph-page :deep(.graph-view-body) {
   padding-left: v-bind(sidebarWidth);
-  transition: padding-left 200ms ease;
+  transition: padding-left var(--dur-base) var(--ease-in-out);
 }
 .graph-page :deep(.graph-view-body) {
 }

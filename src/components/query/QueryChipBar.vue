@@ -513,7 +513,7 @@ defineExpose({
   /* border-bottom: 1px solid var(--border); */
   background: var(--bg-base2);
   opacity: 0;
-  transition: opacity 160ms ease;
+  transition: opacity var(--dur-base) var(--ease-out);
 }
 .chipbar-wrap.is-open .chip-bar {
   opacity: 1;
@@ -584,7 +584,7 @@ defineExpose({
 .chipbar-wrap {
   display: grid;
   grid-template-rows: 0fr;
-  transition: grid-template-rows 220ms ease;
+  transition: grid-template-rows var(--dur-base) var(--ease-in-out);
   position: relative;
 }
 .chipbar-wrap.is-open {

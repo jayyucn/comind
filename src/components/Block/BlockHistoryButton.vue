@@ -43,7 +43,7 @@ const buttonClass = computed(() => ({
   color: var(--text-muted, #9ca3af);
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+  transition: opacity var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 
   &:hover,
   &.is-hovered {

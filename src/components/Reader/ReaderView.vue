@@ -531,7 +531,7 @@ watch(typography, applyTypography)
   justify-content: center;
   border-radius: var(--radius-md);
   color: var(--reader-text-muted);
-  transition: all 100ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 
   &:hover:not(:disabled) {
     background: var(--bg-hover);
@@ -564,7 +564,7 @@ watch(typography, applyTypography)
   align-items: center;
   justify-content: center;
   color: var(--text-tertiary);
-  transition: all 100ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
   flex-shrink: 0;
 
   &:hover {

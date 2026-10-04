@@ -1519,7 +1519,7 @@ async function submitAddField() {
   color: var(--text-secondary);
   font-size: var(--text-xs, 0.75rem);
   font-weight: 500;
-  transition: color 80ms ease, background 80ms ease;
+  transition: color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
 
   &:hover {
     color: var(--text-primary);
@@ -1638,7 +1638,7 @@ async function submitAddField() {
     transform: translateX(-50%);
     width: 1px;
     background: var(--border);
-    transition: background var(--transition-fast);
+    transition: background var(--dur-fast) var(--ease-out);
   }
 
   &:hover::after,
@@ -1702,8 +1702,8 @@ async function submitAddField() {
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: color var(--transition-fast), border-color var(--transition-fast),
-    background var(--transition-fast);
+  transition: color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
 
   &:hover {
     color: var(--accent-hover);
@@ -1717,7 +1717,7 @@ async function submitAddField() {
 }
 
 .tag-detail-open-arrow {
-  transition: transform var(--transition-fast);
+  transition: transform var(--dur-fast) var(--ease-out);
 }
 
 .tag-detail-meta {

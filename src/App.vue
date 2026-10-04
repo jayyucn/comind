@@ -444,7 +444,7 @@ function handleMainClick(e: MouseEvent) {
   align-items: center;
   justify-content: center;
   color: var(--text-tertiary);
-  transition: all 100ms ease;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
   flex-shrink: 0;
   position: relative;
 }

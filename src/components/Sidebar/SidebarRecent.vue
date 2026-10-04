@@ -116,7 +116,7 @@ function handleCancelRename() {
   font-weight: var(--font-semibold);
   color: var(--text-tertiary);
   line-height: var(--leading-snug);
-  transition: color 80ms ease;
+  transition: color var(--dur-fast) var(--ease-out);
 }
 
 .expand-icon {

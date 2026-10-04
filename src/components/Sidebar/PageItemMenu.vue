@@ -160,7 +160,8 @@ onUnmounted(() => {
   color: var(--text-tertiary);
   opacity: 0;
   overflow: hidden;
-  transition: all 80ms ease;
+  transition: width var(--dur-fast) var(--ease-in-out), opacity var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
   flex-shrink: 0;
 }
 
@@ -203,7 +204,7 @@ onUnmounted(() => {
   color: var(--text-primary);
   font-family: inherit;
   text-align: left;
-  transition: background 80ms ease;
+  transition: background var(--dur-fast) var(--ease-out);
   white-space: nowrap;
 }
 
@@ -221,7 +222,7 @@ onUnmounted(() => {
 
 .menu-enter-active,
 .menu-leave-active {
-  transition: opacity 120ms ease, transform 120ms ease;
+  transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
 }
 
 .menu-enter-from,

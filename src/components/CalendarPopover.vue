@@ -343,7 +343,7 @@ watch(
   background-position: right 5px center;
   background-size: 10px;
   min-width: 72px;
-  transition: border-color var(--transition-base);
+  transition: border-color var(--dur-base) var(--ease-out);
 
   &:hover { border-color: var(--border-strong); }
   &:focus { border-color: var(--accent); box-shadow: var(--shadow-focus); }
@@ -373,7 +373,7 @@ watch(
   cursor: pointer;
   border-radius: var(--radius-sm);
   padding: 0;
-  transition: background var(--transition-base);
+  transition: background var(--dur-base) var(--ease-out);
 
   &:hover { background: var(--bg-hover); color: var(--text-primary); }
 
@@ -418,7 +418,7 @@ watch(
   border-radius: 50%;
   font-size: var(--text-xs);
   padding: 0;
-  transition: background var(--transition-base), color var(--transition-base);
+  transition: background var(--dur-base) var(--ease-out), color var(--dur-base) var(--ease-out);
 
   &:hover { background: var(--bg-hover); }
 }

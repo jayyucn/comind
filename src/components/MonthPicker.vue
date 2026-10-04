@@ -156,7 +156,7 @@ function selectMonth(index: number) {
   cursor: pointer;
   border-radius: var(--radius-sm);
   padding: 0;
-  transition: background var(--transition-base), color var(--transition-base);
+  transition: background var(--dur-base) var(--ease-out), color var(--dur-base) var(--ease-out);
 
   &:hover:not(:disabled) {
     background: var(--bg-hover);
@@ -198,7 +198,7 @@ function selectMonth(index: number) {
   font-weight: 600;
   padding: 0;
   font-family: inherit;
-  /* transition: background var(--transition-base), border-color var(--transition-base); */
+  /* transition: background var(--dur-base) var(--ease-out), border-color var(--dur-base) var(--ease-out); */
 
   &:hover:not(:disabled) {
     /* background: var(--bg-hover); */
@@ -234,7 +234,7 @@ function selectMonth(index: number) {
   font-weight: var(--font-normal);
   padding: 0;
   font-family: inherit;
-  transition: background var(--transition-base), color var(--transition-base);
+  transition: background var(--dur-base) var(--ease-out), color var(--dur-base) var(--ease-out);
 
   &:hover:not(:disabled) {
     background: var(--bg-hover);

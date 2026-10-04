@@ -208,7 +208,7 @@ function openDetail() {
 .snapshot-block .bullet-dot {
   cursor: pointer;
   border-radius: 50%;
-  transition: background-color 0.12s ease;
+  transition: background-color var(--dur-fast) var(--ease-out);
 }
 
 .snapshot-block .bullet-dot:hover {
