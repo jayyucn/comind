@@ -51,48 +51,57 @@ const todayTitle = computed(() => {
 </script>
 
 <template>
-  <div class="ideas-page-root">
-    <div class="ideas-split-view">
-      <!-- 今日面板：Rust 端幂等创建，保证一定存在；loading 期间显示骨架屏 -->
-      <div class="today-panel">
-        <div
-          v-if="todayPage"
-          class="today-card"
-        >
-          <div class="today-header">
-            <PageTitle :title="todayTitle" />
+  <!-- 单根壳：页面路由转场（App.vue page-route）要求 Transition 内组件为单根，
+       本页原有的 3 个全局编辑器/菜单实例收进壳内；壳不改变布局（height:100% 直通）。 -->
+  <div class="ideas-route-shell">
+    <div class="ideas-page-root">
+      <div class="ideas-split-view">
+        <!-- 今日面板：Rust 端幂等创建，保证一定存在；loading 期间显示骨架屏 -->
+        <div class="today-panel">
+          <div
+            v-if="todayPage"
+            class="today-card"
+          >
+            <div class="today-header">
+              <PageTitle :title="todayTitle" />
+            </div>
+            <div class="today-body">
+              <BlockList :page-id="todayPage.id" />
+            </div>
+            <RelationshipMenu :menu="relMenu" />
           </div>
-          <div class="today-body">
-            <BlockList :page-id="todayPage.id" />
+          <div
+            v-else-if="loadingToday"
+            class="today-card is-loading"
+          >
+            <div class="skeleton-header">
+              <div class="skeleton-badge" />
+              <div class="skeleton-date" />
+            </div>
+            <div class="skeleton-body">
+              <div class="skeleton-line" />
+              <div class="skeleton-line short" />
+              <div class="skeleton-line" />
+            </div>
           </div>
-          <RelationshipMenu :menu="relMenu" />
         </div>
-        <div
-          v-else-if="loadingToday"
-          class="today-card is-loading"
-        >
-          <div class="skeleton-header">
-            <div class="skeleton-badge" />
-            <div class="skeleton-date" />
-          </div>
-          <div class="skeleton-body">
-            <div class="skeleton-line" />
-            <div class="skeleton-line short" />
-            <div class="skeleton-line" />
-          </div>
-        </div>
+
+        <IdeasHistoryList />
       </div>
-
-      <IdeasHistoryList />
     </div>
-  </div>
 
-  <SlashCommandMenu />
-  <FieldValueQuickEditor />
-  <FieldValueEditor />
+    <SlashCommandMenu />
+    <FieldValueQuickEditor />
+    <FieldValueEditor />
+  </div>
 </template>
 
 <style lang="scss" scoped>
+// 单根壳：只做高度直通，不改布局（.ideas-page-root 仍以 height:100% 撑满）
+.ideas-route-shell {
+  height: 100%;
+}
+
 .ideas-page-root {
   display: flex;
   flex-direction: column;

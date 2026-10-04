@@ -35,9 +35,20 @@ onMounted(async () => {
 </script>
 
 <template>
-  <TagAggregateBody
-    v-if="ready"
-    :key="tagId"
-    :tag-id="tagId"
-  />
+  <!-- 单根壳：页面路由转场（App.vue page-route）要求 Transition 内组件恒为元素根；
+       ready 前的 v-if 注释节点会让 Transition 视作 non-element root 并告警。 -->
+  <div class="tag-aggregate-route-shell">
+    <TagAggregateBody
+      v-if="ready"
+      :key="tagId"
+      :tag-id="tagId"
+    />
+  </div>
 </template>
+
+<style lang="scss" scoped>
+// 单根壳：只做高度直通，不改布局（TagAggregateBody 的撑满逻辑不受影响）
+.tag-aggregate-route-shell {
+  height: 100%;
+}
+</style>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useEmbedSelector } from './app/useEmbedSelector'
 import { useGlobalHotkeys } from './app/useGlobalHotkeys'
@@ -56,6 +56,22 @@ const sidebarEl = ref<HTMLElement | null>(null)
 const contentBodyEl = ref<HTMLElement | null>(null)
 const pageMainContentEl = ref<HTMLElement | null>(null)
 provideLayoutShell({ sidebarEl, contentBodyEl, pageMainContentEl })
+
+// 页面转场（ADR-0053 D8）：路由变化时对主内容区重放一次浮入动画（enter-only，200ms）。
+// 旧页硬切（出场≈瞬时）、新页浮入——不用 <Transition> 包 RouterView 的原因见模板注释。
+// 类常驻不移除：animation 默认 fill:none，播完无残留；remove + reflow + add 即可在下次导航重放。
+const mainContentEl = ref<HTMLElement | null>(null)
+watch(
+  () => route.fullPath,
+  async () => {
+    await nextTick()
+    const el = mainContentEl.value
+    if (!el) return
+    el.classList.remove('page-route-in')
+    void el.offsetWidth // 强制 reflow，连续导航间也能重放动画
+    el.classList.add('page-route-in')
+  },
+)
 
 // 阅读器独立窗口（票 03 / ADR-0040 D4：Tauri WebviewWindow 直开 /reader/:bookId）：
 // 不渲染主窗口壳（Sidebar/右侧栏/全局浮层），ReaderView 自带顶栏与窗口控制。
@@ -253,10 +269,15 @@ function handleMainClick(e: MouseEvent) {
           class="content-body"
         >
           <main
+            ref="mainContentEl"
             class="main-content"
             :class="{ 'is-fullwidth-content': isFullWidthPage }"
           >
             <RouterView v-slot="{ Component, route: currentRoute }">
+              <!-- 页面转场（ADR-0053 D8）：enter-only 动画（page-route-in 类，script 中的 route watch 触发）。
+                   不用 <Transition> 包 RouterView：多数路由组件是 fragment / v-if 注释根，
+                   Transition+KeepAlive 下会渲染失败（non-element root，主内容空白），
+                   且 out-in 的挂载延迟拖慢高频切换。 -->
               <KeepAlive include="IdeasList">
                 <component
                   :is="Component"
@@ -347,6 +368,24 @@ function handleMainClick(e: MouseEvent) {
   overflow: hidden;
   min-width: 0;
   position: relative;
+}
+
+// 页面转场（ADR-0053 D8）：enter-only 浮入。旧页硬切（出场≈瞬时），新页 200ms 浮入，
+// 柔和感交给 ease-out 曲线。动画挂在 .main-content 上，对 fragment 根的路由组件天然免疫。
+.main-content.page-route-in {
+  animation: page-route-in var(--dur-base) var(--ease-out);
+}
+
+@keyframes page-route-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .sticky-header {
