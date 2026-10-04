@@ -230,6 +230,135 @@ chip 以该色**作文字色**，故每色在亮/暗主题各给一值：亮主�
 - status 双出问题随「默认不展示」自然消失；D15 §1 的渲染前去重逻辑不再需要。
 - 拖拽分隔条与树形左栏均属展示层，不触及 Rust schema；schema 变更仅 `block_display` 一列。
 
+### D19：字段值单一权威展示位
+
+**Status**：accepted（锚定诊断；具体归属侧待实施）
+
+**Context**：D15 §1 的渲染前去重只对齐了**内联槽**（`between` / `right`），未对齐 `chips` 列，导致块上同一个字段值存在两个权威展示位。取证（`BlockTagFields.vue`）：
+
+- `displayRows`（`chips` / `all` 消费）口径 = `bottom-of-block` 内置字段 + **全部自定义字段**（`!isSystemField`），排除 `deadline` / `scheduled`。
+- `fields`（`list` 消费）口径 = 该块所挂标签的有效字段并集，**仅**排除 `between-bullet-content`。
+- 两者筛选口径不同 ⇒ 一个「标签模板内声明、且已填值」的自定义字段，在行尾 chips 与 content 下方字段区各渲染一次；改值需盯两处确认，视觉上还要判断二者是否同一事实。
+
+同时 `right` 内联槽已恒空：`inlineRows` 显式 `.filter(fv => fv.key !== 'priority')`，而全仓 `right-of-content` 仅 `priority` 一个字段（`tag.ts` FIELD_UI），该容器不渲染任何内容。
+
+**决策**：
+
+1. **不变量：块上每个字段值有且只有一个权威展示位。** 判据不是布局偏好，而是「同一事实两个权威源」——重复会让改值需要两处确认、且读者需自行推断两处是否同物。
+2. **行尾 `chips` 列的存废是下游问题，不是本决策的答案。** 反证：单删 `chips` 列不消除重复（行内速览能力一并丢失，重复只是转移到「只能去下方找」）；单删 `list` 区则丢失模板字段的 `—` 占位与空字段引导（与 D1「挂载即显示」冲突）。故先定不变量，再定归属侧。
+3. **归属侧按 `displayPosition` 分类落定**（实施时确认，见「实施形态」）：`between`内联槽独占 `between-bullet-content`，`chips` 列独占 `bottom-of-block`，`list` 区独占无行内渲染位的其余（`right-of-content` 的 priority + 无 `displayPosition` 的模板字段）。分类依据取编译期 `FieldDefinition.displayPosition` 这一既有单源，不新造判据。
+4. **`right` 槽恒空代码清理**：`index.vue` 与 `Backlinks.vue` 的 `right` 变体容器、`BlockTagFields` 的 `right` 分支与 `inlineRows` 的 `priority` 排除一并移除。零行为变化（已恒空），纯减一层误导——留着会让读者以为存在行内优先级渲染位。
+5. **D17 是本不变量的一条替代解**（未采纳）：其「`block_display` 默认不展示」也能使双出消失，但需新增持久化列。`hide_when` 已是同类控制列且含 `always`（详见「实施前置核查」），三条路径的成本对比见该节。
+
+**已否决替代方案**：
+
+- **直接删除行尾 `chips` 列**（诉求的原始形态）：把「去重缺陷」与「布局取舍」捆成一个是否题，删列只掩盖重复而不消除重复，且牺牲行内速览。 —— **此否决已被 D20 推翻**：后续核查证明该列的两个价值（行内速览、字段名）均被下方字段区完整覆盖且后者更准，删除不构成净损失。
+- **扩展 D15 §1 去重逻辑、把 `chips` 消费的自定义字段从 `fields` 中剔除**：让行内 chips 独占自定义字段、下方字段区只剩内置字段。但两处筛选口径的差异（`有值` vs `模板内即显示`）本身承载不同语义（速览 vs 引导填写），强行对齐会牺牲 D1 的空字段引导。
+
+**后果 / 待办**：
+
+- 已实施（见下方「实施形态」）：不变量以`displayPosition` 分类落为消费侧去重，未新增任何
+  schema 变更；恒空 `right` 槽已清理。
+- **后续修正见 D20**：本段预设的「chips 列保留」前提不成立，该列已下线；块内字段展示统一由
+  下方字段区承担。
+
+**实施形态（2026-10-04）**：
+
+不变量落为**消费侧去重谓词**，不动 schema：
+
+1. **去重谓词**（`BlockTagFields.vue` `fields` computed）：排除面从仅
+   `between-bullet-content` 扩为 `between-bullet-content` + `bottom-of-block`，即下方字段区
+   不再重复 chips 列已渲染的字段。`right-of-content`（priority）仍保留在下方——它无行内渲染位。
+   该式只作用于 `list` 变体；`chips` / `all` 共用的 `displayRows` 未改（`all` 由
+   `Backlinks.vue` 消费，不在块行内，无本问题）。
+2. **恒空 `right` 槽清理**：`index.vue` 与 `Backlinks.vue` 两处 `variant="right"` 调用点删除；
+   组件内 `variant` 联合类型去掉 `right`、模板 `v-if` 收为 `between`、随之恒假的删除按钮删除；
+   `inlineRows` 与 `betweenRows` 合并为一个（原先前者只是后者加 `right` 分支的别名）。
+3. **回归网**：`BlockTagFields.test.ts` 三例——① `bottom-of-block` 字段不再出现在下方字段区；
+   ② 混合标签（`book` + `owner`）下 chips 与下方字段区字段集合不相交（交叉断言）；
+   ③ `priority` 仍留在下方。有效性已用「回退谓词 ⇒ 该例转红」逐例验过（避免假绿）。
+
+**验证**：`vue-tsc -b` exit=0；`BlockTagFields.test.ts` 19 例全绿；改动文件 eslint 0 error。
+全量 vitest 8 文件 12 例红，经对照实验（把三个改动文件 `git checkout HEAD --` 回到未改状态）
+确认为既存基线——未改状态下同样 5 文件 9 例红，其中 `BlockList.task-progress.test.ts` 的
+`client.getTagTree is not a function` 属 mock 夹具缺口（该 mock 只定义了 `getProperties` /
+`setProperty`），`TagsLibrary.test.ts` 的 `最近` vs `最近使用` 属源码与断言文案不一致
+（`TagsLibrary.vue:96`）。两者均与本次改动无交集。
+
+
+**实施前置核查（2026-10-04，结论改写方案成本）**：
+
+`hide_when`（D18 隐藏规则）已是**持久化到Rust 的字段定义级展示控制列**，且双存储路径齐备——
+native（`storage/sqlite.rs:303` CREATE TABLE + `:620` 迁移）与 wasm（`storage/sqljs.rs:204` CREATE TABLE
++ `:347` 迁移 + SELECT / INSERT / UPDATE 全部携带）均已落地，配套消费侧基础设施完整：
+`utils/field-hide.ts` 是判定单源（`FIELD_HIDE_VALUES` / `normalizeHideWhen` / `isFieldHiddenByRule`），
+`TagsLibrary.vue` 管理页有第五列下拉就地编辑，`BlockTagFields.vue:356` 为块级消费方。
+
+其取值表已含 `always`（=永不展示），即 D17 §2 所需的「可关闭展示」语义**已存在**。故D17 §2
+新增 `block_display` 列的必要性需重估：三条候选路径 ——
+
+1. **复用 `hide_when`（零schema 变更）**：`always` 承担「不在块字段区展示」。代价是语义叠加 ——
+   「因值条件隐藏」与「因配置不展示」共用一列，下拉里 `always` 的字面意思（总是隐藏）与
+   「该字段不参与块级展示」这一配置意图不完全等价，且改展示位归属需动既有列的取值空间。
+2. **新增 `block_display` 列（D17 原案）**：语义独立、可反向恢复；但触发 `comind-core-add-column`
+   全流程（native + sqljs 双CREATE TABLE /迁移、sqljs SELECT / INSERT / UPDATE、wasm32 check、
+   wasm:build）。
+3. ~~**先只做 D19 去重，`block_display` 暂缓**~~ —— **已采纳并实施**（见「实施形态」）：
+   不依赖任何 schema 变更即消除了重复渲染。展示配置（路径 1 / 2）留待独立议题。
+
+### D20：行内 chips 列下线，块内字段展示收敛到单一位
+
+**Status**：accepted（已实施）
+
+**Context**：D19 的去重按`displayPosition` 枚举分类实施后，实测仍存在重复，且暴露两层缺陷：
+
+1. **分类维度错**：D19 只把 `bottom-of-block` 划给 chips，而自定义字段（`isSystem=false`、
+   无 `displayPosition`）同时落在两处筛选谓词内—— `displayRows` 的 `!isSystemField` 收它、
+   `fields` 排不掉它，**必然双现**。这是谓词的分类维度问题，不是漏判单个字段。
+2. **标题失真**：chips 侧 `defOf` 只查系统 seed 派生的 `BUILT_IN_FIELDS`，自定义字段查不到
+   定义，`titleOf` 的 `?? key` 回退 ⇒ 同一字段在 chips 侧显示 **field id**、在下方字段区显示
+   真名。实测并存的形态：行尾 `f-muov2k…: 生活` 与下方 `分类: 生活`。
+
+去重后该列已无独立价值 —— 逐项对照：行内速览（下方也渲染已填值）、字段名（下方**更准**）、
+空值引导（已由下方 `—` 占位独占）。而它仍在付成本：撑高块行、占 420px 宽度预算、
+整行铺背景纱。
+
+**决策**：
+
+1. **行内 chips 列下线**（`BlockTagFields` 的 `chips` 变体 + `index.vue` 的 `.block-row-properties`
+   容器 + `hasRightProps` 判定）。块内字段展示统一由 `list`（content 下方字段区）承担。
+2. **下方字段区不再排除 `bottom-of-block`**：它成了块内唯一展示位，域字段与自定义字段都在此
+   列出。唯一排除项回到 `between-bullet-content`（status 以图标呈现，形态不同）。
+3. **「+N」收纳机制随之移除**：`all` 变体（`Backlinks` 消费）改为全量平铺。
+4. **行为守卫不因删渲染位而失效**：`SELF_INTERACTIVE_SELECTOR`（`index.vue`）中的
+   `.property-item` / `.property-inline-item` 分支仍有效（分别由 `all` 变体与 `between`
+   内联槽产出），仅行内 chips 一处消失，故选择器保持原样。
+
+**已否决替代方案**：
+
+- **保留 chips 列并修两处缺陷**（谓词去掉 `!isSystemField` + 标题按 `field_definition_id` 反查
+  `tagsStore`）：仍留两类字段在两处，且要养两套标题取法（编译期反查 vs 持久化定义），
+  同一字段仍可能因两套数据源而标题不一致。
+- **锚到 `.block-content` 替代测试里的 chip**：块内容区本身要接 Ctrl+Click 切块，不属自交互
+  元素，改锚等于换了一条不变量。改为锚 `.property-inline-item`（`between` 槽产出，仍在守卫内）。
+
+**后果 / 待办**：
+
+- 块行不再有右侧字段列，行高回落；`.block.has-right-props` 铺底规则与 `.block-row` 的
+  `flex-wrap` 一并移除（后者的存在理由仅是 chips 宽度自适应）。
+- `App.vue` 的容器查询注释更新（该锚点已无消费者，但 `inline-size: containment` 保留不动——
+  移除会改变 abs/fixed 后代的包含块语义，需单独验证）。
+
+**实施形态（2026-10-04）**：改动 6 文件（`BlockTagFields.vue` / `index.vue` / `Backlinks.vue` /
+`App.vue` / 两个测试文件）。SCSS 删 137 行（`.block-row-properties` 全族 + `has-right-props`
+铺底 + `flex-wrap`）。回归：`BlockTagFields.test.ts` 21 例（含新增「自定义字段是最高频场景，
+其值只在下方出现一次」的复现用例）、`Block/index.test.ts` 23 例（守卫用例换锚并用「移出守卫
+选择器 ⇒ 转红」验证仍有效）。`vue-tsc -b` exit=0、eslint 0 error、全量 vitest 8 文件 12 例红
+与改动前基线逐字一致（零净增）。
+
 ## 开放问题
 
 - `TagFieldDefinition` / `TagFieldValue` 表名是否随 Rust 类型同步改（含 serde rename 对已同步设备 payload 的兼容评估）。
+- D17 §2 的展示配置是否仍需要独立列，抑或复用 `hide_when` 的 `always`（见 D19 实施前置核查）。
+- `book-note` 来源行与下方字段区在 `quote` 存在时都展示 book / chapter，是否需去重
+  （D20 后`book-note` 仍是独立渲染位，见 D20 决策 1 的连带面）。

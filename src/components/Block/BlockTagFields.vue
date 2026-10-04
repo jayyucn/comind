@@ -4,11 +4,14 @@
  *
  * 单一载体承载块字段值的全部渲染位（原 `PropertyInline` / `PropertyDisplay` 的职责）：
  * - `between`：bullet 与内容之间的内联槽（如 status 任务图标）
- * - `right`：内容右侧内联槽（`priority` 入口已移至斜杠命令面板，故实际为空）
- * - `chips`：块行尾右侧 chips 列（超出 2 个按序折进「+N」浮层）
  * - `book-note`：书笔记来源行（Pin + 章节 + 原文引用）
  * - `all`：完整字段列表（Backlinks 等）
  * - `list`：content 下方「挂载即显示」的 Tag 字段区（含空占位、隐藏规则）
+ *
+ * 块上每个字段值有且只有一个权威展示位（ADR-0050 D19 / D20）：行内 chips 列已下线，
+ * 块内字段展示统一由 `list` 承担——它按标签模板驱动、标题取自持久化定义，
+ * 比编译期反查更准（自定义字段不会退化成显示 field id）。`between` 内联槽独占
+ * `between-bullet-content`（status 以图标呈现，形态不同，不在本区列文本）。
  *
  * `list` 变体是**唯一 tag 本位**的一支：字段集合来自该块已挂标签的有效字段并集
  * （解析单源在 Rust：`effective_field_ids`），无值字段以空占位呈现；其余变体沿用
@@ -32,14 +35,13 @@ import { isSystemField } from '../../types/tag'
 import { decodeFieldValueData } from '../../utils/field-value-codec'
 import { decodeDefaultJson, isFieldHiddenByRule, normalizeHideWhen } from '../../utils/field-hide'
 import { isTauriEnvironment } from '../../wasm/tauri-platform'
-import BasePopover from '../common/BasePopover.vue'
 import { Icon } from '../Icons'
 
 const props = withDefaults(defineProps<{
   blockId: string
   /** 该块已挂的 tag id（来自 Block.tags 派生缓存）；仅 `list` 变体消费。 */
   tagIds?: string[]
-  variant?: 'between' | 'right' | 'chips' | 'book-note' | 'all' | 'list'
+  variant?: 'between' | 'book-note' | 'all' | 'list'
 }>(), {
   tagIds: () => [],
   variant: 'list',
@@ -78,13 +80,14 @@ function rowsAt(position: string): FieldValue[] {
   return rows.value.filter((fv) => defOf(fv.key)?.displayPosition === position)
 }
 
-const betweenRows = computed<FieldValue[]>(() => rowsAt('between-bullet-content'))
-
-/** 内联槽行：`right` 变体排除 priority（编辑器入口移至斜杠命令面板） */
-const inlineRows = computed<FieldValue[]>(() => {
-  if (props.variant === 'between') return betweenRows.value
-  return rowsAt('right-of-content').filter((fv) => fv.key !== 'priority')
-})
+/**
+ * 内联槽行（`between` 变体，bullet 与内容之间）。
+ *
+ * 原先这里还有一个 `right` 分支（`right-of-content` 剔除 priority），但该 position
+ * 全仓仅 `priority` 一个字段，而它已被排除 ⇒ `right` 槽恒不渲染任何内容。故连同
+ * `right` 变体一并移除（ADR-0050 D19 决策 3）；`priority` 的权威展示位在下方字段区。
+ */
+const inlineRows = computed<FieldValue[]>(() => rowsAt('between-bullet-content'))
 
 /**
  * chips / all 变体的可见行：bottom-of-block 内置字段 + 全部自定义字段，
@@ -224,47 +227,15 @@ function onInlineClick(fv: FieldValue, event: MouseEvent) {
   openEditor(fv.key, event.currentTarget as HTMLElement)
 }
 
-// ── chips 收纳：只显示前 CHIPS_PER_LINE 个 ──────────────────
-// 装不下的整 chip 按序折进「+N」徽标，点开 BasePopover 看这些被收纳的字段。
-// 刻意不随块内文本行数放量（曾按「行数 × 每行个数」放开）：chips 是行尾的附属信息，
-// 不该因为正文写了三行就摊开三行 chip。
+// ── 悬浮提示 ────────────────────────────────────────────────
+// 块行尾 chips 渲染位已下线（ADR-0050 D20）：行内速览由 content 下方字段区承担，
+// 它按标签模板驱动、标题取自持久化定义，比行内的编译期反查更准。
+// 「+N」徽标与收纳浮层随之移除，`all` 变体（Backlinks 消费）改为全量平铺。
 
-/** 行内显示的 chip 个数上限（与 _block.scss 的 grid-template-columns: repeat(2, …) 成对，改一处必改另一处） */
-const CHIPS_PER_LINE = 2
-/** chip 内文字超过此字数即截断，全文由 title 承载 */
-const MAX_CHIP_TEXT = 8
-
-const moreBadgeRef = ref<HTMLElement | null>(null)
-const moreVisible = ref(false)
-
-/** 单一真相：行内显示前 N 个，其余全部进「+N」浮层（浮层不再重复展示已显示的那些） */
-const visibleChips = computed(() => displayRows.value.slice(0, CHIPS_PER_LINE))
-const hiddenFields = computed(() => displayRows.value.slice(CHIPS_PER_LINE))
-const hiddenCount = computed(() => hiddenFields.value.length)
-
-function pickFromPopover(fv: FieldValue, event: MouseEvent): void {
-  moreVisible.value = false
-  openEditor(fv.key, event.currentTarget as HTMLElement)
-}
-
-/** 浮层内删除：删到没有剩余收纳项时徽标会消失（浮层锚点随之没了），顺手收起浮层 */
-function deleteFromPopover(fv: FieldValue, event: MouseEvent): void {
-  deleteRow(fv, event)
-  if (hiddenFields.value.length <= 1) moreVisible.value = false
-}
-
-/** 超长即截断到 MAX_CHIP_TEXT 字，全文由 title 承载 */
-function truncateText(text: string): string {
-  if (props.variant !== 'chips') return text
-  return text.length > MAX_CHIP_TEXT ? `${text.slice(0, MAX_CHIP_TEXT)}…` : text
-}
-
-/** chips 的悬浮提示给「字段名: 值」全量；其它变体维持原来只对 quote 给全文的行为 */
+/** 悬浮提示：quote 给全文，其余给「字段名: 值」 */
 function chipTitleAttr(fv: FieldValue): string | undefined {
   const value = dataOf(fv)
-  if (props.variant !== 'chips') {
-    return fv.key === 'quote' ? String(value) : undefined
-  }
+  if (fv.key === 'quote') return String(value)
   // project/area 不渲染字段名，提示里也不重复
   if (fv.key === 'project' || fv.key === 'area') return String(value)
   return `${titleOf(fv.key)}: ${getLabel(fv.key, value)}`
@@ -313,15 +284,13 @@ async function jumpToSource(): Promise<void> {
 /**
  * 有效字段并集（去重按字段定义 id，保持首次出现顺序）。
  *
- * 已在块内联槽真正渲染的字段，下方不再重复列文字，避免同物两渲染：
- * 例如 `status` 以任务图标呈现在 bullet 与内容之间（`displayPosition: 'between-bullet-content'`，
- * 由 `between` 变体渲染），在下方再列 `状态: 进行中` 纯文本即冗余。
+ * 本区是块内**唯一**的字段展示位（ADR-0050 D20：行内 chips 列已下线），故模板内
+ * 所有字段都在此列出——包括 `bottom-of-block` 域字段与无 `displayPosition` 的自定义字段。
  *
- * 判定口径 = 编译期 `FieldDefinition.displayPosition`（`PersistedFieldDefinition` 不持久化该字段，
- * 见 `tag-persisted.ts:6`），经 `getFieldDefinition(key)` 反查。
- * 仅 `between-bullet-content` 会被内联槽真正渲染；`right-of-content` 当前仅 `priority`，
- * 而它已被内联槽显式排除出右侧（入口移至斜杠命令面板），并不在 inline 渲染，
- * 故必须保留在下方、不能一并排除。
+ * 唯一排除项是 `between-bullet-content`（`status` 任务图标）：它由bullet 与内容之间的
+ * 内联槽渲染，属另一种视觉形态（图标而非「标题: 值」文本），在本区再列一行是同物两渲染。
+ * 该判定经 `getFieldDefinition(key)` 反查编译期 `FieldDefinition.displayPosition`
+ * （`PersistedFieldDefinition` 不持久化该字段，见 `tag-persisted.ts:6`）。
  */
 const fields = computed<PersistedFieldDefinition[]>(() => {
   const seen = new Set<string>()
@@ -382,9 +351,9 @@ function openFieldRow(event: Event, def: PersistedFieldDefinition) {
 </script>
 
 <template>
-  <!-- 内联槽：between（bullet 与内容之间） / right（内容右侧） -->
+  <!-- 内联槽：between（bullet 与内容之间） -->
   <div
-    v-if="variant === 'between' || variant === 'right'"
+    v-if="variant === 'between'"
     class="property-inline"
   >
     <div
@@ -421,14 +390,6 @@ function openFieldRow(event: Event, def: PersistedFieldDefinition) {
       <template v-else>
         <span>{{ getLabel(fv.key, dataOf(fv)) }}</span>
       </template>
-      <button
-        v-if="variant === 'right' && hoveredId === fv.id"
-        class="delete-button"
-        title="删除字段值"
-        @click.stop="deleteRow(fv, $event)"
-      >
-        ×
-      </button>
     </div>
   </div>
 
@@ -455,14 +416,14 @@ function openFieldRow(event: Event, def: PersistedFieldDefinition) {
     >{{ quote }}</span>
   </div>
 
-  <!-- chips / all：字段列表（chips 变体收纳进「+N」浮层） -->
+  <!-- all：完整字段列表（Backlinks 消费；块行内已无此渲染位，ADR-0050 D20） -->
   <div
-    v-else-if="(variant === 'chips' || variant === 'all') && !isBookNote && displayRows.length > 0"
+    v-else-if="variant === 'all' && !isBookNote && displayRows.length > 0"
     class="property-display"
   >
     <div class="property-list">
       <div
-        v-for="fv in variant === 'chips' ? visibleChips : displayRows"
+        v-for="fv in displayRows"
         :key="fv.id"
         class="property-item"
         :class="{ 'built-in': isSystemField(fv.key), 'quote-item': fv.key === 'quote' }"
@@ -475,7 +436,7 @@ function openFieldRow(event: Event, def: PersistedFieldDefinition) {
         <span
           v-if="fv.key !== 'project' && fv.key !== 'area'"
           class="property-key"
-        >{{ truncateText(titleOf(fv.key)) }}:</span>
+        >{{ titleOf(fv.key) }}:</span>
         <span class="property-value">
           <template v-if="getIcon(fv.key, dataOf(fv))">
             <Icon
@@ -484,10 +445,10 @@ function openFieldRow(event: Event, def: PersistedFieldDefinition) {
             />
             <span v-else>{{ getIcon(fv.key, dataOf(fv)) }}</span>
             <span v-if="getLabel(fv.key, dataOf(fv)) && defOf(fv.key)?.displayStyle !== 'icon'">
-              {{ truncateText(getLabel(fv.key, dataOf(fv))) }}
+              {{ getLabel(fv.key, dataOf(fv)) }}
             </span>
           </template>
-          <span v-else>{{ truncateText(getLabel(fv.key, dataOf(fv))) }}</span>
+          <span v-else>{{ getLabel(fv.key, dataOf(fv)) }}</span>
         </span>
         <button
           v-if="hoveredId === fv.id"
@@ -499,67 +460,6 @@ function openFieldRow(event: Event, def: PersistedFieldDefinition) {
         </button>
       </div>
     </div>
-
-    <!-- 「+N」刻意放在 .property-list 之外：网格固定 2 列，徽标留在网格里会占掉一个
-         格位、把块行多撑一行（实测行高 47.2 → 65.2）。作为 .property-display 的 flex
-         兄弟，它贴在 chips 块右侧、垂直居中，行高不变。 -->
-    <button
-      v-if="variant === 'chips' && hiddenCount > 0"
-      ref="moreBadgeRef"
-      class="chips-more-badge"
-      type="button"
-      :title="`还有 ${hiddenCount} 个字段`"
-      @click.stop="moreVisible = !moreVisible"
-    >
-      +{{ hiddenCount }}
-    </button>
-
-    <!-- 收纳浮层：只列被折叠的字段（行内已显示的那 2 个不重复出现），Teleport 到 body（ADR-0032），
-         item 纵向逐行排列（见 _block.scss 的 .property-list--full），点击编辑 -->
-    <BasePopover
-      v-if="variant === 'chips'"
-      :visible="moreVisible"
-      :anchor-el="moreBadgeRef"
-      placement="bottom"
-      @close="moreVisible = false"
-    >
-      <div class="property-list property-list--full">
-        <div
-          v-for="fv in hiddenFields"
-          :key="fv.id"
-          class="property-item"
-          :class="{ 'built-in': isSystemField(fv.key), 'quote-item': fv.key === 'quote' }"
-          :title="fv.key === 'quote' ? String(dataOf(fv)) : undefined"
-          @click.stop="pickFromPopover(fv, $event)"
-        >
-          <span
-            v-if="fv.key !== 'project' && fv.key !== 'area'"
-            class="property-key"
-          >{{ titleOf(fv.key) }}:</span>
-          <span class="property-value">
-            <template v-if="getIcon(fv.key, dataOf(fv))">
-              <Icon
-                v-if="isSvgIcon(getIcon(fv.key, dataOf(fv)) as string)"
-                :name="getIcon(fv.key, dataOf(fv)) as string"
-              />
-              <span v-else>{{ getIcon(fv.key, dataOf(fv)) }}</span>
-              <span v-if="getLabel(fv.key, dataOf(fv)) && defOf(fv.key)?.displayStyle !== 'icon'">
-                {{ getLabel(fv.key, dataOf(fv)) }}
-              </span>
-            </template>
-            <span v-else>{{ getLabel(fv.key, dataOf(fv)) }}</span>
-          </span>
-          <!-- 面板是这些字段的唯一入口（行内只到第 2 个），所以 × 常驻可见而非 hover 才出 -->
-          <button
-            class="delete-button"
-            title="删除字段值"
-            @click.stop="deleteFromPopover(fv, $event)"
-          >
-            ×
-          </button>
-        </div>
-      </div>
-    </BasePopover>
   </div>
 
   <!-- list：content 下方「挂载即显示」的 Tag 字段区 -->
@@ -646,10 +546,8 @@ function openFieldRow(event: Event, def: PersistedFieldDefinition) {
   padding: 4px 8px;
   border-radius: 4px;
   // 刻意不设 max-width：本类名同时被书笔记来源行（.property-display.book-note-source）
-  // 复用，在此限宽会把来源行框成 240px 窄条、长原文引用竖着堆成几百像素高（实测 426px）；
-  // 行内 chips 的宽度预算由 .block-row-properties 的 max-width 一处管（见 _block.scss）。
-  // 与「带右侧字段的块行」背景同源（同为写死的 rgba(0,0,0,.02)），
-  // 二者靠同色表达视觉连通。刻意不做主题自适应：要的就是几乎不可见的微暗纱。
+  // 复用，在此限宽会把来源行框成 240px 窄条、长原文引用竖着堆成几百像素高（实测 426px）。
+  // 刻意不做主题自适应：几乎不可见的微暗纱。
   background-color: var(--surface-faint);
 }
 

@@ -21,7 +21,7 @@ import { useBlockRelationshipCleanup } from '../../composables/useBlockRelations
 import { useBlockStore } from '../../stores/blocks'
 import { useEditorStore } from '../../stores/editor'
 import { useFieldValueStore } from '../../stores/fieldValue'
-import { isSystemField } from '../../types/tag'
+import BlockTagFields from './BlockTagFields.vue'
 import BlockDraggableList from './components/BlockDraggableList.vue'
 import TaskProgressBar from './components/TaskProgressBar.vue'
 import { useBlockCollapse } from './composables/useBlockCollapse'
@@ -32,7 +32,6 @@ import './handlers/bullet'
 import './handlers/code'
 import './handlers/embed'
 import './handlers/image'
-import BlockTagFields from './BlockTagFields.vue'
 
 import type { EditorView } from '@codemirror/view'
 import type { Editor } from '@tiptap/core'
@@ -93,18 +92,6 @@ const {
   priorityClass,
   statusClass,
 } = useBlockFieldValueSync(blockId)
-
-// 是否有「行尾右侧 chips」字段（与 BlockTagFields variant="chips" 的可见性判定一致：
-// bottom-of-block 内置字段 + 所有自定义字段，排除 deadline / scheduled）。
-// 用于给 .block-row 铺上与 chips 同色的极淡背景（视觉连通），仅非 hover 态。
-const hasRightProps = computed(() => {
-  const all = fieldValueStore.getBlockFieldValues(blockId.value)
-  return all.some((fv) => {
-    if (fv.key === 'deadline' || fv.key === 'scheduled') return false
-    const def = fieldValueStore.getFieldDef(fv.key)
-    return def?.displayPosition === 'bottom-of-block' || !isSystemField(fv.key)
-  })
-})
 
 const hasSelectedAncestor = computed(() => {
   if (!selection) return false
@@ -530,7 +517,7 @@ watch(isActive, (active) => {
 <template>
   <div
     class="block"
-    :class="[priorityClass, statusClass, { active: isActive, 'cb-selected': isSelected && !hasSelectedAncestor, 'has-right-props': hasRightProps }]"
+    :class="[priorityClass, statusClass, { active: isActive, 'cb-selected': isSelected && !hasSelectedAncestor }]"
     :data-block-id="blockId"
     :style="{ '--block-indent': indentWidth }"
     @mousedown="onBlockMousedown"
@@ -630,24 +617,7 @@ watch(isActive, (active) => {
               <span class="block-placeholder">{{ block.type }} (not registered)</span>
             </div>
           </div>
-
-          <!-- Right 字段值显示 -->
-          <BlockTagFields
-            :block-id="blockId"
-            variant="right"
-          />
         </div>
-      </div>
-
-      <!-- 行内右侧字段列：常规 chips 作为行尾 flex 项，宽度自适应、换行撑高行，不被裁剪 -->
-      <div
-        class="block-row-properties"
-        @mousedown="onFieldValueMousedown"
-      >
-        <BlockTagFields
-          :block-id="blockId"
-          variant="chips"
-        />
       </div>
     </div>
 

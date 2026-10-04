@@ -2,10 +2,10 @@
  * 块字段渲染载体测试（ADR-0050 D1「挂载即显示」+ ADR-0051 D6 职责全迁）。
  *
  * 接缝：只 mock `src/wasm/client` 边界；tags / fieldValue / editor 三个真 store 全真。
- * 覆盖 `list` / `between` / `chips` / `book-note` 四种 variant：
- * - `list`：Tag 字段区（有效字段并集、空占位、隐藏规则、status 去重）
+ * 覆盖 `list` / `between` / `all` / `book-note` 四种 variant：
+ * - `list`：Tag 字段区（有效字段并集、空占位、隐藏规则、去重）
  * - `between`：内联槽（status 图标、单击循环、长按弹快捷编辑器）
- * - `chips`：行尾 chips（前 2 个 + 「+N」浮层）
+ * - `all`：完整字段列表（Backlinks 消费，全量平铺）
  * - `book-note`：书笔记来源行
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -204,6 +204,108 @@ describe('BlockTagFields（块字段渲染载体）', () => {
     expect(wrapper.find('.block-tag-field-title').text()).toBe('负责人')
   })
 
+  // ── 单一权威展示位（ADR-0050 D19 / D20）────────────────────────
+
+  it('块内不再有行内 chips 渲染位：chips 变体已下线', () => {
+    //行内速览能力由下方字段区承担（它按标签模板驱动、标题取自持久化定义）。
+    // 锁住「variant联合类型不再含 chips」这一事实：残留调用点会在类型检查报错。
+    const variants = (BlockTagFields as unknown as { props: { variant: { default: string } } }).props
+    expect(variants.variant.default).toBe('list')
+  })
+
+  it('自定义字段是最高频场景：其值只在下方字段区出现一次', async () => {
+    // 复现「分类: 生活」双现：自定义字段（isSystem=false、无 displayPosition）
+    // 曾经同时被行尾 chips 与下方字段区渲染。
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({
+        id: 't-cat',
+        title: '日常',
+        field_ids: ['f-cat'],
+        effective_field_ids: ['f-cat'],
+      }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-cat', key: 'f-muov2k', title: '分类' }),
+    ])
+    useFieldValueStore().fieldValuesByBlock.set('b1', [
+      fv({ id: 'v1', block_id: 'b1', key: 'f-muov2k', value_json: '生活' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-cat'])
+    // 标题取自持久化定义（「分类」）而非 field id
+    expect(wrapper.find('.block-tag-field-title').text()).toBe('分类')
+    expect(wrapper.find('.block-tag-field-value').text()).toBe('生活')
+    // 整个块内该字段只渲染一行
+    expect(wrapper.findAll('.block-tag-field-row')).toHaveLength(1)
+  })
+
+  it('标签模板内所有字段（含bottom-of-block 域字段）都在下方字段区列出', async () => {
+    // D20 删除了行内 chips，故下方字段区不再排除 bottom-of-block——
+    // 它是块内唯一的字段展示位，域字段也必须在此可见。
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({
+        id: 't-book',
+        title: '书笔记',
+        field_ids: ['f-book', 'f-chapter'],
+        effective_field_ids: ['f-book', 'f-chapter'],
+      }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-book', key: 'book', title: '书名' }),
+      fieldDef({ id: 'f-chapter', key: 'chapter', title: '章节' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-book'])
+    const titles = wrapper.findAll('.block-tag-field-title').map((n) => n.text())
+    expect(titles).toEqual(['书名', '章节'])
+  })
+
+  it('status 仍不在下方字段区重复（between 内联槽独占）', async () => {
+    // status 以任务图标呈现在 bullet 与内容之间，是它的权威位
+    const wrapper = await mountList('b1', ['sys-tag-system-task'])
+    expect(wrapper.findAll('.block-tag-field-row')).toHaveLength(0)
+  })
+
+  it('priority（right-of-content，无行内渲染位）仍保留在下方字段区', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({
+        id: 't-task',
+        title: '任务',
+        field_ids: ['f-status', 'f-priority'],
+        effective_field_ids: ['f-status', 'f-priority'],
+      }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-status', key: 'status', title: '状态', is_system: true }),
+      fieldDef({ id: 'f-priority', key: 'priority', title: '优先级', is_system: true }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-task'])
+    // status 走 between 内联槽被排除；priority 无行内渲染位 → 必须留下
+    const titles = wrapper.findAll('.block-tag-field-title').map((n) => n.text())
+    expect(titles).toEqual(['优先级'])
+  })
+
+  it('priority（right-of-content，无行内渲染位）仍保留在下方字段区', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({
+        id: 't-task',
+        title: '任务',
+        field_ids: ['f-status', 'f-priority'],
+        effective_field_ids: ['f-status', 'f-priority'],
+      }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-status', key: 'status', title: '状态', is_system: true }),
+      fieldDef({ id: 'f-priority', key: 'priority', title: '优先级', is_system: true }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-task'])
+    // status 走 between 内联槽被排除；priority 无行内渲染位 → 必须留下
+    const titles = wrapper.findAll('.block-tag-field-title').map((n) => n.text())
+    expect(titles).toEqual(['优先级'])
+  })
+
   it('点击字段打开既有快捷字段值编辑器（位置来自触发元素）', async () => {
     const wrapper = await mountList('b1', ['t-dev'])
     const editorStore = useEditorStore()
@@ -335,11 +437,11 @@ describe('BlockTagFields（块字段渲染载体）', () => {
     }
   })
 
-  // ── chips 变体：行尾 chips（原 PropertyDisplay variant="chips"）──
+  // ── all 变体：完整字段列表（Backlinks 消费）──
 
-  it('chips：只显示前 2 个字段，其余折进「+N」徽标与浮层', async () => {
+  it('all：全量平铺，无「+N」收纳徽标（行内 chips 下线后不再需要收纳）', async () => {
     const wrapper = mount(BlockTagFields, {
-      props: { blockId: 'b1', variant: 'chips' },
+      props: { blockId: 'b1', variant: 'all' },
     })
     useFieldValueStore().fieldValuesByBlock.set('b1', [
       fv({ id: 'v1', block_id: 'b1', key: 'book', value_json: '测试书' }),
@@ -348,19 +450,10 @@ describe('BlockTagFields（块字段渲染载体）', () => {
     ])
     await flushPromises()
 
-    // 行内只显示前 2 个
-    expect(wrapper.findAll('.property-item')).toHaveLength(2)
-
-    const badge = wrapper.find('.chips-more-badge')
-    expect(badge.exists()).toBe(true)
-    expect(badge.text()).toBe('+1')
-
-    // 点开徽标 → 浮层（Teleport 到 body）展示被收纳的第 3 个
-    await badge.trigger('click')
-    await flushPromises()
-    const panel = document.body.querySelector('.property-list--full')
-    expect(panel).not.toBeNull()
-    expect(panel!.textContent).toContain('备注值')
+    // 三个字段全部平铺，不再折进浮层
+    expect(wrapper.findAll('.property-item')).toHaveLength(3)
+    expect(wrapper.find('.chips-more-badge').exists()).toBe(false)
+    expect(wrapper.text()).toContain('备注值')
 
     wrapper.unmount()
   })

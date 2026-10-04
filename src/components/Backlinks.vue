@@ -296,12 +296,6 @@ watch(
                   class="backlink-text-fallback"
                 >{{ item.block.content || '空块' }}</span>
 
-                <!-- 内联槽: right -->
-                <BlockTagFields
-                  :block-id="item.link.sourceBlockId"
-                  variant="right"
-                />
-
                 <!-- 下方字段区（stopPropagation） -->
                 <div
                   class="backlink-properties"

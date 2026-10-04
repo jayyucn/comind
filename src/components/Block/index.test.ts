@@ -849,19 +849,24 @@ describe('块选区命中面：Ctrl/Cmd+Click 覆盖整块行非内容区', () =
     wrapper.unmount()
   })
 
-  it('Ctrl+Click 自交互元素（属性 chip）→ 不切换，保留 chip 自身语义', async () => {
+  it('Ctrl+Click 自交互元素（字段内联项）→ 不切换，保留其自身语义', async () => {
     const wrapper = mountBlock()
     await flushPromises()
     // 挂载后再注入字段值：loadBlockFieldValues 会整体替换 fieldValuesByBlock 的 Map，
     // 挂载前 set 进去的条目会被丢掉
     fieldValueStore.fieldValuesByBlock.set(BLOCK_ID, [{
-      id: 'fv-1', block_id: BLOCK_ID, field_definition_id: 'fd-foo', key: 'foo', value_json: 'bar',
+      id: 'fv-1', block_id: BLOCK_ID, field_definition_id: 'fd-status', key: 'status', value_json: '"Doing"',
       value_type: 'string', seq: 0, created_at: 0, updated_at: 0, version: 0, deleted_at: null
     }])
     await flushPromises()
-    const chip = wrapper.find('.property-item')
-    expect(chip.exists()).toBe(true)
-    await chip.trigger('mousedown', { ctrlKey: true })
+    // 锚点从行内属性 chip 改为字段内联项（.property-inline-item）：行内 chips 渲染位
+    // 已随 ADR-0050 D20 下线，而块内容区（.block-content）本身要接Ctrl+Click 切块、
+    // 不属自交互元素。验的是同一条不变量——落在 SELF_INTERACTIVE_SELECTOR 里的元素
+    // 上 Ctrl+Click 不得触发块切换（守卫见 index.vue）。用 status：它是
+    // between-bullet-content 内联槽渲染的字段，定义来自系统 seed，无需 RPC 即可取到。
+    const inline = wrapper.find('.property-inline-item')
+    expect(inline.exists()).toBe(true)
+    await inline.trigger('mousedown', { ctrlKey: true })
     expect(selectionStub.toggleBlock).not.toHaveBeenCalled()
     wrapper.unmount()
   })
