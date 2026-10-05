@@ -504,6 +504,30 @@ function onCardClick(item: T) {
           </button>
         </header>
         <div class="q-cards">
+          <div
+            v-if="addingFor === q.priority"
+            class="q-add-box"
+          >
+            <Icon
+              name="status-todo"
+              :size="15"
+            />
+            <input
+              :ref="setAddInputRef"
+              v-model="addDraft"
+              class="q-add-input"
+              placeholder="输入任务标题"
+              @keydown.enter.prevent="commitAdd()"
+              @keydown.esc.prevent="cancelAdd()"
+              @blur="cancelAdd()"
+            >
+          </div>
+          <div
+            v-if="addingFor === q.priority"
+            class="q-add-hint"
+          >
+            回车添加 · Esc 收起 · 可连续录入
+          </div>
           <article
             v-for="card in buckets[q.priority]"
             :key="idOf(card)"
@@ -572,30 +596,6 @@ function onCardClick(item: T) {
               </div>
             </div>
           </article>
-          <div
-            v-if="addingFor === q.priority"
-            class="q-add-box"
-          >
-            <Icon
-              name="status-todo"
-              :size="15"
-            />
-            <input
-              :ref="setAddInputRef"
-              v-model="addDraft"
-              class="q-add-input"
-              placeholder="输入任务标题"
-              @keydown.enter.prevent="commitAdd()"
-              @keydown.esc.prevent="cancelAdd()"
-              @blur="cancelAdd()"
-            >
-          </div>
-          <div
-            v-if="addingFor === q.priority"
-            class="q-add-hint"
-          >
-            回车添加 · Esc 收起 · 可连续录入
-          </div>
           <!-- 空态：主角按钮引导新增，兼顾拖拽落格提示 -->
           <div
             v-if="!buckets[q.priority].length && addingFor !== q.priority"
@@ -700,6 +700,7 @@ function onCardClick(item: T) {
 .q-head {
   display: flex;
   align-items: center;
+  background: var(--surface-muted);
   gap: 7px;
   padding: 10px 14px 8px;
 }
