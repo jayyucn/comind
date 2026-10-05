@@ -112,17 +112,21 @@ const isComplete = computed(() => props.total > 0 && props.done >= props.total)
   opacity: 0.72;
 }
 
-/* 全部完成：图标与数字转绿（--success，与 status-done 任务图标同色）、填充渐变转绿 */
+/* 全部完成：图标与数字转绿（--success，与 status-done 任务图标同色） */
 .task-progress.is-complete .task-progress-icon,
 .task-progress.is-complete .task-progress-label {
   color: var(--success);
 }
 
+/* 全部完成：填充转 success 家族，亮度取「surface 级」（对页面底 ~3.8:1）——
+   填充本身是信号，需自亮；压过文本级 success（暗色 9.8:1 太抢）与
+   徽章容器级（1.55:1 太隐）之间。亮色 --success 本就是 surface 级，直接用；
+   暗色 success 是为小图标可读性提亮的文本级，与 --bg-base 混合压档。 */
 .task-progress.is-complete .task-progress-fill {
-  background: linear-gradient(
-    90deg,
-    var(--success),
-    color-mix(in srgb, var(--success) 60%, #ffffff)
-  );
+  background: var(--success);
+}
+
+[data-theme='dark'] .task-progress.is-complete .task-progress-fill {
+  background: color-mix(in srgb, var(--success) 55%, var(--bg-base));
 }
 </style>
