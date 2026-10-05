@@ -180,3 +180,81 @@ describe('QuadrantView 子任务显示（最多 3 层）', () => {
     w.unmount()
   })
 })
+
+describe('QuadrantView 新增任务插入动效', () => {
+  function oneItem() {
+    return [
+      { block_id: 'b1', content_preview: '任务A', properties: { status: 'Todo', priority: 'Medium' }, date_refs: [] },
+    ]
+  }
+
+  it('本视图上抛新增后，回流的卡片带 enter 入场类', async () => {
+    const w = mountView({ items: oneItem(), idKey: 'block_id' })
+    const medium = sectionWithPriority(w, 'Medium')
+    ;(medium.querySelector('.q-add-head') as HTMLElement).click()
+    await nextTick()
+    const input = w.find('.q-add-input')
+    await input.setValue('新任务')
+    await input.trigger('keydown.enter')
+    expect(w.emitted('addItem')![0]).toEqual(['Medium', '新任务'])
+
+    // 消费方建块后刷新回流新卡片
+    await w.setProps({
+      items: [
+        ...oneItem(),
+        { block_id: 'b2', content_preview: '新任务', properties: { status: 'Todo', priority: 'Medium' }, date_refs: [] },
+      ],
+    })
+    expect(cardWithText(w, '新任务').classList.contains('enter')).toBe(true)
+    w.unmount()
+  })
+
+  it('非本视图新增（如切换查询）出现的卡片不动画', async () => {
+    const w = mountView({ items: oneItem(), idKey: 'block_id' })
+    await w.setProps({
+      items: [
+        ...oneItem(),
+        { block_id: 'b9', content_preview: '外部任务', properties: { status: 'Todo', priority: 'Low' }, date_refs: [] },
+      ],
+    })
+    expect(cardWithText(w, '外部任务').classList.contains('enter')).toBe(false)
+    w.unmount()
+  })
+})
+
+describe('QuadrantView 状态图标交互', () => {
+  it('点击卡片状态图标循环切换并 emit cellChange(status)，不打开弹窗', async () => {
+    const w = mountView({ items: makeItems(), idKey: 'block_id' })
+    await fire(cardWithText(w, '任务A').querySelector('.q-status-btn') as HTMLElement, 'click')
+    expect(w.emitted('cellChange')![0]).toEqual(['b1', 'status', 'Doing'])
+    expect(w.emitted('openBlock')).toBeUndefined()
+    w.unmount()
+  })
+
+  it('Done 环回首个状态 Todo', async () => {
+    const w = mountView({
+      items: [
+        { block_id: 'd1', content_preview: '已完成任务', properties: { status: 'Done', priority: 'Urgent' }, date_refs: [], updated_at: Date.now() },
+      ],
+      idKey: 'block_id',
+    })
+    await fire(cardWithText(w, '已完成任务').querySelector('.q-status-btn') as HTMLElement, 'click')
+    expect(w.emitted('cellChange')![0]).toEqual(['d1', 'status', 'Todo'])
+    w.unmount()
+  })
+
+  it('点击子任务状态图标切换状态，不打开子任务弹窗', async () => {
+    const w = mountView({
+      items: [
+        { block_id: 'a', parent_id: '', content_preview: '父任务', properties: { status: 'Todo', priority: 'Medium' }, date_refs: [] },
+        { block_id: 'b', parent_id: 'a', content_preview: '子任务', properties: { status: 'Todo' }, date_refs: [] },
+      ],
+      idKey: 'block_id',
+    })
+    const sub = cardWithText(w, '父任务').querySelector('.q-subtask') as HTMLElement
+    await fire(sub.querySelector('.q-status-btn') as HTMLElement, 'click')
+    expect(w.emitted('cellChange')![0]).toEqual(['b', 'status', 'Doing'])
+    expect(w.emitted('openBlock')).toBeUndefined()
+    w.unmount()
+  })
+})
