@@ -1,10 +1,7 @@
 <script setup lang="ts">
 import {
-  AlertTriangle,
-  ArrowDown,
   ArrowLeft,
   ArrowRight,
-  ArrowUp,
   Bell,
   Calendar,
   Droplet,
@@ -30,13 +27,14 @@ import {
   Undo2,
   X
 } from 'lucide-vue-next'
-import { computed } from 'vue'
+import { computed, defineComponent, h } from 'vue'
 import type { Component } from 'vue'
 import StatusArchived from './StatusIcons/StatusArchived.vue'
 import StatusCanceled from './StatusIcons/StatusCanceled.vue'
 import StatusDoing from './StatusIcons/StatusDoing.vue'
 import StatusDone from './StatusIcons/StatusDone.vue'
 import StatusTodo from './StatusIcons/StatusTodo.vue'
+import PriorityQuadrant from './PriorityIcons/PriorityQuadrant.vue'
 
 const STATUS_ICONS: Record<string, Component> = {
   'status-todo': StatusTodo,
@@ -59,15 +57,53 @@ const STATUS_DEFAULT_COLORS: Record<string, string> = {
   'status-archived': 'var(--text-secondary)',
 }
 
-const PRIORITY_ICONS: Record<string, Component> = {
-  'priority-low': ArrowDown,
-  'priority-medium': Minus,
-  'priority-high': ArrowUp,
-  'priority-urgent': AlertTriangle,
+/**
+ * 优先级图标（ADR-0054 D3）：统一图元 = 2×2 象限方格，四档仅点亮格不同。
+ *
+ * 旧实现（ArrowDown / Minus / ArrowUp / AlertTriangle）与 Jira 旧图标同类
+ * —— 前三个同属横线族、仅靠长度与方向微差分档，在小尺寸与色觉障碍下并档。
+ *
+ * 点亮格即象限位置，**位置本身携带语义**，读者无需记图例。
+ *
+ * 轴向（ADR-0054 D1）：**横轴 = 紧急（向右递增）、纵轴 = 重要（向上递增）**
+ * —— 与 `QuadrantView` 的网格布局同一套读法（同一字段禁止两种轴向）：
+ *   Urgent  重要且紧急 → 右上
+ *   Medium  重要但不紧急 → 左上
+ *   High    不重要但紧急 → 右下
+ *   Low     不重要且不紧急 → 左下
+ */
+const PRIORITY_QUADRANT: Record<string, 'tl' | 'tr' | 'bl' | 'br'> = {
+  'priority-urgent': 'tr',
+  'priority-medium': 'tl',
+  'priority-high': 'br',
+  'priority-low': 'bl',
 }
 
 /**
- * 优先级图标默认语义色：与 block 底色 / 左侧色条共用同一组 --priority-*-fg，
+ * 按档位包装象限网格图标。
+ *
+ * ⚠️ 必须透传 attrs：`h()` 的第二个参数是**硬编码 props**，`color` / `size` /
+ * strokeWidth 等由本组件模板通过 attrs 传入，若不展开就会丢失 —— 表现为
+ * priority 图标退回 `currentColor`（文字色），四档看起来没有对应颜色。
+ */
+function priorityIcon(key: string): Component {
+  return defineComponent({
+    inheritAttrs: false,
+    setup(_props, { attrs }) {
+      return () => h(PriorityQuadrant, { ...attrs, quadrant: PRIORITY_QUADRANT[key] })
+    },
+  })
+}
+
+const PRIORITY_ICONS: Record<string, Component> = {
+  'priority-low': priorityIcon('priority-low'),
+  'priority-medium': priorityIcon('priority-medium'),
+  'priority-high': priorityIcon('priority-high'),
+  'priority-urgent': priorityIcon('priority-urgent'),
+}
+
+/**
+ * 优先级图标默认语义色：点承载颜色通道（--priority-*-fg），
  * 使斜杠命令面板与快捷属性菜单里的四档一眼可辨。
  * 调用处若显式传 `color` 则覆盖此默认值。
  */

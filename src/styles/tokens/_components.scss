@@ -52,17 +52,17 @@ $date-ref-overdue-bg: rgba(220, 38, 38, 0.08);
   //字号
   --font-size-page-title: 2rem;
 
-  // 优先级色相：与 useBlockQueryRegistry 的 PRIORITY_COLORS（ADR-0007）一致，
-  // 供图标描边、左侧色条、四象限 tint 共用
+  // 优先级色相：与 useBlockQueryRegistry 的 PRIORITY_COLORS 严格一致，
+  // 供块行象限网格图标的点、四象限tint、表格圆点共用。
+  // 按档位固定：Urgent 红 · High 橙 · Medium 蓝 · Low 灰。
+  // 象限轴向（横轴=重要 / 纵轴=紧急）只决定图标点亮哪一格，不改色板。
   --priority-low-fg: #9CA3AF;
   --priority-medium-fg: #3B82F6;
   --priority-high-fg: #F59E0B;
   --priority-urgent-fg: #DC2626;
 
-  // 优先级底色：Low 不上底色（四档全上等于全没上），强度由「底色混合比 + 左侧色条」两级表达
-  --priority-medium-bg: color-mix(in srgb, var(--priority-medium-fg) 5%, var(--bg-base));
-  --priority-high-bg: color-mix(in srgb, var(--priority-high-fg) 9%, var(--bg-base));
-  --priority-urgent-bg: color-mix(in srgb, var(--priority-urgent-fg) 14%, var(--bg-base));
+  // 优先级底色 token 已随块行底色一并删除（ADR-0054 D2）——
+  // 四档分档改由行内象限网格图标的点亮位置承担，fg 保留为点与着色通道。
 
   // 选中状态
   // ::selection（文本选中）需要足够强的高亮；激活 block 的底色必须弱到不吞掉优先级底色，
@@ -103,10 +103,6 @@ $date-ref-overdue-bg: rgba(220, 38, 38, 0.08);
   --error: #F87171;
   --info: #818CF8;
 
-  // 暗底上同比例混色更暗，需上调混合比才能保持可辨
-  --priority-medium-bg: color-mix(in srgb, var(--priority-medium-fg) 12%, var(--bg-base));
-  --priority-high-bg: color-mix(in srgb, var(--priority-high-fg) 18%, var(--bg-base));
-  --priority-urgent-bg: color-mix(in srgb, var(--priority-urgent-fg) 26%, var(--bg-base));
 
   --selection-bg: rgba(129, 140, 248, 0.55);
   --block-active-bg: rgba(129, 140, 248, 0.20);

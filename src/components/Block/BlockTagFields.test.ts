@@ -266,7 +266,7 @@ describe('BlockTagFields（块字段渲染载体）', () => {
     expect(wrapper.findAll('.block-tag-field-row')).toHaveLength(0)
   })
 
-  it('priority（right-of-content，无行内渲染位）仍保留在下方字段区', async () => {
+  it('priority 同时有行内展示位与下方录入面，两处并存（ADR-0054 D4）', async () => {
     mockClient.getTagTree.mockResolvedValue([
       treeEntry({
         id: 't-task',
@@ -281,12 +281,13 @@ describe('BlockTagFields（块字段渲染载体）', () => {
     ])
 
     const wrapper = await mountList('b1', ['t-task'])
-    // status 走 between 内联槽被排除；priority 无行内渲染位 → 必须留下
+    // status 走 between 内联槽被排除；priority 虽有 right 行内展示位（只读），
+    // 但本区是唯一可写入口 ⇒ 必须继续渲染 priority，不适用去重规则
     const titles = wrapper.findAll('.block-tag-field-title').map((n) => n.text())
     expect(titles).toEqual(['优先级'])
   })
 
-  it('priority（right-of-content，无行内渲染位）仍保留在下方字段区', async () => {
+  it('priority 同时有行内展示位与下方录入面，两处并存（ADR-0054 D4）', async () => {
     mockClient.getTagTree.mockResolvedValue([
       treeEntry({
         id: 't-task',
@@ -301,7 +302,8 @@ describe('BlockTagFields（块字段渲染载体）', () => {
     ])
 
     const wrapper = await mountList('b1', ['t-task'])
-    // status 走 between 内联槽被排除；priority 无行内渲染位 → 必须留下
+    // status 走 between 内联槽被排除；priority 虽有 right 行内展示位（只读），
+    // 但本区是唯一可写入口 ⇒ 必须继续渲染 priority，不适用去重规则
     const titles = wrapper.findAll('.block-tag-field-title').map((n) => n.text())
     expect(titles).toEqual(['优先级'])
   })

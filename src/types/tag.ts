@@ -73,10 +73,15 @@ const FIELD_UI: Record<string, FieldUiOverlay> = {
     displayPosition: 'right-of-content',
     displayStyle: 'icon',
     closedValues: [
-      { value: 'Low', label: '低', description: '不紧急不重要', icon: TASK_PRIORITY_ICONS.Low },
-      { value: 'Medium', label: '中', description: '重要不紧急', icon: TASK_PRIORITY_ICONS.Medium },
-      { value: 'High', label: '高', description: '紧急不重要', icon: TASK_PRIORITY_ICONS.High },
-      { value: 'Urgent', label: '急', description: '紧急且重要', icon: TASK_PRIORITY_ICONS.Urgent },
+      // 顺序 = 优先级顺序（ADR-0054 D1），与注册表 sortOrder 一致：
+      // Urgent(重要且紧急) > Medium(重要不紧急) > High(不重要但紧急) > Low(都不重要)。
+      // label 取建议动作的单字缩写而非等级字面：旧版「中/高/急/低」是单轴等级词，
+      // 与 description 的象限义冲突（Medium=重要不紧急却标「中」）。
+      // 值本身（裸字符串）不动 —— 已随 seed 落库，属存量数据，仅改展示 label 与顺序。
+      { value: 'Urgent', label: '立', description: '重要且紧急', icon: TASK_PRIORITY_ICONS.Urgent },
+      { value: 'Medium', label: '排', description: '重要不紧急', icon: TASK_PRIORITY_ICONS.Medium },
+      { value: 'High', label: '委', description: '不重要但紧急', icon: TASK_PRIORITY_ICONS.High },
+      { value: 'Low', label: '减', description: '不重要不紧急', icon: TASK_PRIORITY_ICONS.Low },
     ],
   },
   project: { displayPosition: 'bottom-of-block', displayStyle: 'icon-text' },

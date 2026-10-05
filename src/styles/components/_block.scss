@@ -484,37 +484,17 @@
   }
 }
 
-// 优先级背景色（只覆盖文本区域，不含 bullet 圆点与 status 图标）
-// Low 不上底色：四档全上等于全没上。强度由「底色混合比 + 左侧色条」两级表达 ——
-// 底色是扫描时才起作用的弱信号，色条是折叠 / 窄行时仍存在的强信号。
-// 不用渐变：渐变观感随文本长度漂移，同一优先级短行与长行显示不一致。
-.block.priority-medium .block-content,
-.block.priority-high .block-content,
-.block.priority-urgent .block-content {
-  border-radius: $radius-md;
-}
-
-.block.priority-medium .block-content {
-  background: var(--priority-medium-bg);
-}
-
-.block.priority-high .block-content {
-  background: var(--priority-high-bg);
-  box-shadow: inset 2px 0 0 var(--priority-high-fg);
-}
-
-.block.priority-urgent .block-content {
-  background: var(--priority-urgent-bg);
-  box-shadow: inset 3px 0 0 var(--priority-urgent-fg);
-}
-
-// 让位规则：Done / Canceled 同为终态，都不该仍带紧急底色
-// 必须写在 priority 规则之后 —— 同特异性（0,3,0），后者胜
-.block.status-done .block-content,
-.block.status-canceled .block-content {
-  background: transparent;
-  box-shadow: none;
-}
+// 优先级底色与左侧色条已下线（ADR-0054 D2）。
+//
+// 原方案把分档压在底色混合比上，实测三个问题（ΔE 为 CIE76，JND≈2.3）：
+//   ① Medium 亮色 ΔE 4.00 / 对比度 1.057 —— 贴着白，等于没上色；
+//   ② 注释宣称「底色 + 左色条两级表达」，但色条 inset 只有 High(2px)/Urgent(3px)，
+//      Medium 的色条宽度为 0，实际退化为纯底色一级，而那一级在亮色下不可见；
+//   ③ 暗色叠加 --block-active-bg 后 Urgent 信号衰减 34.8%，与 token 注释声明的
+//      「激活底色必须弱到不吞掉优先级底色」直接背离。
+//
+// 分档现由行内象限网格图标承担（`.property-inline--right`，size 20），
+// 颜色走 --priority-*-fg；--priority-*-bg 四个 token 已一并删除。
 
 // 已完成（Done）block 文本加删除线并弱化
 .block.status-done .block-text {

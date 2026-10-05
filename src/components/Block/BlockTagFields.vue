@@ -41,7 +41,7 @@ const props = withDefaults(defineProps<{
   blockId: string
   /** 该块已挂的 tag id（来自 Block.tags 派生缓存）；仅 `list` 变体消费。 */
   tagIds?: string[]
-  variant?: 'between' | 'book-note' | 'all' | 'list'
+  variant?: 'between' | 'right' | 'book-note' | 'all' | 'list'
 }>(), {
   tagIds: () => [],
   variant: 'list',
@@ -81,13 +81,19 @@ function rowsAt(position: string): FieldValue[] {
 }
 
 /**
- * 内联槽行（`between` 变体，bullet 与内容之间）。
+ * 内联槽行，按变体分流：`between` = bullet 与内容之间（status 任务图标）；
+ * `right` = 内容行尾（priority 象限网格图标，ADR-0054 D3 恢复此槽）。
  *
- * 原先这里还有一个 `right` 分支（`right-of-content` 剔除 priority），但该 position
- * 全仓仅 `priority` 一个字段，而它已被排除 ⇒ `right` 槽恒不渲染任何内容。故连同
- * `right` 变体一并移除（ADR-0050 D19 决策 3）；`priority` 的权威展示位在下方字段区。
+ * `right` 槽此前以「恒空」为由移除（ADR-0050 D19 决策 4）：当时
+ * `right-of-content` 全仓仅 priority 一个字段，而整行底色已承担扫描级信号，
+ * 行内位被认为多余。ADR-0054 去掉底色后块行缺失扫描级展示位，故恢复。
+ *
+ * 两个内联槽分属不同字段、位置不同不构成重复；`list` 区（录入面）仍渲染
+ * priority —— 它是唯一可写入口，与只读展示位职责不同、不互斥。
  */
-const inlineRows = computed<FieldValue[]>(() => rowsAt('between-bullet-content'))
+const inlineRows = computed<FieldValue[]>(() =>
+  rowsAt(props.variant === 'right' ? 'right-of-content' : 'between-bullet-content')
+)
 
 /**
  * chips / all 变体的可见行：bottom-of-block 内置字段 + 全部自定义字段，
@@ -284,11 +290,15 @@ async function jumpToSource(): Promise<void> {
 /**
  * 有效字段并集（去重按字段定义 id，保持首次出现顺序）。
  *
- * 本区是块内**唯一**的字段展示位（ADR-0050 D20：行内 chips 列已下线），故模板内
+ * 本区是块内**唯一的字段录入面**（ADR-0050 D20：行内 chips 列已下线），故模板内
  * 所有字段都在此列出——包括 `bottom-of-block` 域字段与无 `displayPosition` 的自定义字段。
  *
- * 唯一排除项是 `between-bullet-content`（`status` 任务图标）：它由bullet 与内容之间的
+ * 排除项只有 `between-bullet-content`（`status` 任务图标）：它由 bullet 与内容之间的
  * 内联槽渲染，属另一种视觉形态（图标而非「标题: 值」文本），在本区再列一行是同物两渲染。
+ *
+ * `right-of-content`（`priority`）**不排除** —— ADR-0054 D4 明确：本区是录入面
+ * （唯一可写入口，点击唤起快速编辑器），行内`right` 槽是只读展示位，两者职责不同、
+ * 不互斥，不构成 ADR-0050 D19 意义上的「同物两渲染」。
  * 该判定经 `getFieldDefinition(key)` 反查编译期 `FieldDefinition.displayPosition`
  * （`PersistedFieldDefinition` 不持久化该字段，见 `tag-persisted.ts:6`）。
  */
@@ -351,10 +361,12 @@ function openFieldRow(event: Event, def: PersistedFieldDefinition) {
 </script>
 
 <template>
-  <!-- 内联槽：between（bullet 与内容之间） -->
+  <!-- 内联槽：between（bullet 与内容之间，status 任务图标）
+       / right（内容行尾，priority 象限网格图标，ADR-0054 D3） -->
   <div
-    v-if="variant === 'between'"
+    v-if="variant === 'between' || variant === 'right'"
     class="property-inline"
+    :class="`property-inline--${variant}`"
   >
     <div
       v-for="fv in inlineRows"
@@ -377,6 +389,7 @@ function openFieldRow(event: Event, def: PersistedFieldDefinition) {
           <Icon
             v-if="isSvgIcon(getIcon(fv.key, dataOf(fv)) as string)"
             :name="getIcon(fv.key, dataOf(fv)) as string"
+            :size="variant === 'right' ? 20 : undefined"
           />
           <span v-else>{{ getIcon(fv.key, dataOf(fv)) }}</span>
         </span>
@@ -495,6 +508,19 @@ function openFieldRow(event: Event, def: PersistedFieldDefinition) {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* 内容行尾槽（priority 象限网格图标，ADR-0054 D3）：
+   与 `between` 槽同为内联位置差异，靠 margin-left 推到行尾。
+   尺寸 20 —— 实测 16px 在十字轴图元下轴线与点开始粘连，20px 是清晰可辨的下限。 */
+.property-inline--right {
+  margin-left: auto;
+  padding-left: 10px;
+}
+
+.property-inline--right :deep(.property-icon) {
+  /* 图标尺寸由组件 default size=20 决定，此处仅对齐基线 */
+  line-height: 1;
 }
 
 .property-inline-item {

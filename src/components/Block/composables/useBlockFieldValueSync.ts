@@ -57,6 +57,14 @@ export function useBlockFieldValueSync(blockId: Ref<string>) {
     return fv === undefined ? undefined : (dataOf(fv) as string | undefined)
   })
 
+  /**
+   * priority → CSS 类名。
+   *
+   * ⚠️ ADR-0054 D2 后**已无 CSS 消费**：块行底色与左侧色条规则已从 `_block.scss`
+   * 删除，分档改由行内象限网格图标（`.property-inline--right`）承担。
+   * 此处保留派生，供后续需要按档位加样式（如折叠态标记）时复用；
+   * 若确认无此需求，可连同`IconsSnapshotNode` 的同名派生一并删除。
+   */
   const priorityClass = computed(() => {
     if (!blockPriority.value) return ''
     return `priority-${blockPriority.value.toLowerCase()}`

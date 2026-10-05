@@ -617,6 +617,13 @@ watch(isActive, (active) => {
               <span class="block-placeholder">{{ block.type }} (not registered)</span>
             </div>
           </div>
+
+          <!-- 内容行尾内联槽：priority 象限网格图标（ADR-0054 D3/D4 恢复）。
+               只读展示位 —— 与下方字段区（录入面）职责不同，不互斥。 -->
+          <BlockTagFields
+            :block-id="blockId"
+            variant="right"
+          />
         </div>
       </div>
     </div>

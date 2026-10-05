@@ -87,7 +87,17 @@ const DATE_REF_KINDS: Option[] = [
   { id: 'ref', label: '参考' },
 ]
 
-/** 优先级选项配色（上提为字段元数据，使通用表格无需写死 P0–P3 颜色；ADR-0007）。 */
+/**
+ * 优先级选项配色（上提为字段元数据，使通用表格无需写死 P0–P3 颜色；ADR-0007）。
+ *
+ * **取值与 `--priority-*-fg`（`_components.scss`）严格一致**：前者供 TableView /
+ * BoardView 的圆点与徽章着色，后者供块行象限网格图标着色，两处不同色会造成
+ * 同一字段在编辑器与视图里读作不同档。
+ *
+ * 色相沿用既有等级配色：Urgent 红（重要且紧急）· High 橙（不重要但紧急）· Medium 蓝
+ * （重要不紧急）· Low 灰（都不重要）。**按档位固定，不随象限轴向变动** ——
+ * 颜色是档位标识，轴向只决定图标点亮哪一格。
+ */
 const PRIORITY_COLORS: Record<string, string> = {
   Low: '#9CA3AF',
   Medium: '#3B82F6',
@@ -144,7 +154,9 @@ export function registerBlockBuiltinFields(registry: Registry): void {
       label: c.label,
       color: PRIORITY_COLORS[String(c.value)],
     })),
-    // 显式排序顺序：asc = 急→低（最重要在前，与 status 的「asc 给最相关」同构）
+    // 显式排序顺序（ADR-0054 D1）：先按「重要」分档，重要者同级内再按「紧急」排。
+    // Urgent(重要且紧急) > High(不重要但紧急) > Medium(重要不紧急) > Low(都不重要)
+    //⇒ 图标横轴 = 重要、纵轴 = 紧急，High 与 Medium 因此落在左上 / 右下。
     sortOrder: ['Urgent', 'High', 'Medium', 'Low'],
     get: (item) => asCard(item).properties?.['priority'],
   })

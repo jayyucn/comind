@@ -1,16 +1,18 @@
 <script setup lang="ts" generic="T">
 import { computed, nextTick, ref } from 'vue'
-import type { QuadrantConfig } from '../../core/view'
+import type { Registry, SortRule } from '../../core/query'
 import { sortItems } from '../../core/query'
-import type { SortRule, Registry } from '../../core/query'
-import type { BlockCard } from '../../wasm/types'
+import type { QuadrantConfig } from '../../core/view'
 import { resolveRelativeExpr } from '../../utils/date-parser'
+import type { BlockCard } from '../../wasm/types'
 import BulletRender from '../Block/handlers/bullet/BulletRender.vue'
 import Icon from '../Icons/Icon.vue'
 
 /**
  * 任务四象限视图（艾森豪威尔矩阵）。
- * 卡片按 priority 四值落格，行=重要/不重要（上→下）、列=不紧急/不紧急（左→右）：
+ * 卡片按 priority 四值落格。**轴向：列 = 紧急（左→右递增）、行 = 重要（上→下递增）**
+ * —— 与块行象限网格图标（`Icons/PriorityIcons/PriorityQuadrant.vue`）同一套读法，
+ * 同一字段禁止两种轴向：
  *   左上 Medium  重要不紧急 → 计划做
  *   右上 Urgent  重要且紧急 → 立即做
  *   左下 Low     不重要不紧急 → 减少
@@ -133,12 +135,23 @@ interface Quadrant {
   tint: string
 }
 // tint 取项目内置优先级配色（useBlockQueryRegistry 的 PRIORITY_COLORS），
-// 与表格/看板中优先级圆点、block 背景染色同色系，保证视觉一致（内联以零业务耦合）。
+// 与表格/看板圆点、块行象限网格图标共用同一组 --priority-*-fg，保证跨视图同档同色
+// （内联以零业务耦合）。色板按档位固定：Urgent 红 / High 橙 / Medium 蓝 / Low 灰。
+// 色板按档位固定，不随象限轴向变动 —— 轴向只决定块行图标点亮哪一格。
+// **数组顺序即屏幕位置**：`grid-template-columns: 1fr 1fr` + 先横后纵展开为
+// 数组第1 项 → 左上、第 2 项 → 右上、第 3 项 → 左下、第 4 项 → 右下。
+// 轴向：列 = 紧急（左→右递增）、行 = 重要（上→下递增），与块行象限网格图标
+// （Icons/PriorityIcons/PriorityQuadrant.vue）同一套读法。
+//   左上 Medium 重要不紧急（重要 + 不紧急）
+//   右上 Urgent 重要且紧急（重要 + 紧急）
+//   左下 Low    不重要不紧急（不重要 + 不紧急）
+//   右下 High   不重要但紧急（不重要 + 紧急）
+// ⚠️ 改此顺序必须同步块行图标的 PRIORITY_QUADRANT，否则两处格位会相反。
 const QUADRANTS: Quadrant[] = [
-  { priority: 'Medium', title: '重要不紧急', action: '计划做', tint: '#3B82F6' },
-  { priority: 'Urgent', title: '重要且紧急', action: '立即做', tint: '#DC2626' },
-  { priority: 'Low', title: '不重要不紧急', action: '减少', tint: '#9CA3AF' },
-  { priority: 'High', title: '不重要但紧急', action: '委托', tint: '#F59E0B' },
+  { priority: 'Medium', title: '重要不紧急', action: '计划做', tint: 'var(--priority-medium-fg)' },
+  { priority: 'Urgent', title: '重要且紧急', action: '立即做', tint: 'var(--priority-urgent-fg)' },
+  { priority: 'Low', title: '不重要不紧急', action: '减少', tint: 'var(--priority-low-fg)' },
+  { priority: 'High', title: '不重要但紧急', action: '委托', tint: 'var(--priority-high-fg)' },
 ]
 const QUADRANT_KEYS = QUADRANTS.map((q) => q.priority)
 
@@ -622,7 +635,8 @@ function onCardClick(item: T) {
   background: var(--border);
 }
 
-/* 2×2 网格：行=重要/不重要（上→下），列=不紧急/紧急（左→右） */
+/* 2×2 网格：行=重要（上→下递减），列=紧急（左→右递增）。
+   格子内容顺序由 QUADRANTS 数组决定（先横后纵），故数组须与上方注释的格位一致。 */
 .q-grid {
   grid-column: 2;
   grid-row: 1;
