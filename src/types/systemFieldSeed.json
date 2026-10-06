@@ -19,7 +19,7 @@
       "isSystem": true,
       "isPreset": false,
       "closedValues": ["Low", "Medium", "High", "Urgent"],
-      "defaultValue": null,
+      "defaultValue": "Low",
       "hideWhen": "when_not_empty"
     },
     {

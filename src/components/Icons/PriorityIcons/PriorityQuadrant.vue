@@ -71,10 +71,13 @@ const cells = computed(() => {
     :stroke-width="strokeWidth"
     stroke-linejoin="round"
   >
-    <!-- 四格轮廓完全一致；仅点亮格实心，其余描边并降不透明度 -->
+    <!-- 四格轮廓完全一致；仅点亮格实心，其余描边并降不透明度。
+         pq-lit / pq-frame 供消费方降层级时定位：栅格（frame）是「点亮格位置」的
+         参照系必须保持，强度只压点亮格（lit）——见 ADR-0054 D6 -->
     <rect
       v-for="c in cells"
       :key="c.key"
+      :class="c.key === quadrant ? 'pq-lit' : 'pq-frame'"
       :x="c.x"
       :y="c.y"
       :width="c.size"

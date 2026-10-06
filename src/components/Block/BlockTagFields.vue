@@ -30,10 +30,10 @@ import { useTagsStore } from '../../stores/tags'
 import type { FieldDefinition } from '../../types/field-definition'
 import { getFieldDefinition } from '../../types/field-definition'
 import type { FieldValue } from '../../types/field-value'
-import type { PersistedFieldDefinition } from '../../types/tag-persisted'
 import { isSystemField } from '../../types/tag'
-import { decodeFieldValueData } from '../../utils/field-value-codec'
+import type { PersistedFieldDefinition } from '../../types/tag-persisted'
 import { decodeDefaultJson, isFieldHiddenByRule, normalizeHideWhen } from '../../utils/field-hide'
+import { decodeFieldValueData } from '../../utils/field-value-codec'
 import { isTauriEnvironment } from '../../wasm/tauri-platform'
 import { Icon } from '../Icons'
 
@@ -376,6 +376,8 @@ function openFieldRow(event: Event, def: PersistedFieldDefinition) {
         'built-in': isSystemField(fv.key),
         'icon-only': defOf(fv.key)?.displayStyle === 'icon'
       }"
+      :data-field="fv.key"
+      :data-value="String(dataOf(fv))"
       @mouseenter="hoveredId = fv.id"
       @mouseleave="hoveredId = null"
       @pointerdown="onPointerDown(fv, $event)"
@@ -389,7 +391,7 @@ function openFieldRow(event: Event, def: PersistedFieldDefinition) {
           <Icon
             v-if="isSvgIcon(getIcon(fv.key, dataOf(fv)) as string)"
             :name="getIcon(fv.key, dataOf(fv)) as string"
-            :size="variant === 'right' ? 20 : undefined"
+            :size="variant === 'right' ? 14 : undefined"
           />
           <span v-else>{{ getIcon(fv.key, dataOf(fv)) }}</span>
         </span>
@@ -512,15 +514,41 @@ function openFieldRow(event: Event, def: PersistedFieldDefinition) {
 
 /* 内容行尾槽（priority 象限网格图标，ADR-0054 D3）：
    与 `between` 槽同为内联位置差异，靠 margin-left 推到行尾。
-   尺寸 20 —— 实测 16px 在十字轴图元下轴线与点开始粘连，20px 是清晰可辨的下限。 */
+   尺寸 18 —— 旧注释的「20px 下限」实测对象是已被 ADR 否决的十字轴图元，
+   对现用的 2×2 方格不成立；18 为按 D5#1（灰度下位置可辨）复核后的取值。
+   本槽同时承担降层级（ADR-0054 D6）：强度只压点亮格，栅格（参照系）保持不变。 */
 .property-inline--right {
   margin-left: auto;
   padding-left: 10px;
 }
 
+/* 整体减重：让图标比正文轻，不再与正文字号争视觉重量 */
+.property-inline--right .property-inline-item {
+  opacity: 0.7;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+/* hover 澄清而非膨胀：恢复到全不透明，取消 `between` 槽沿用的 scale(1.15) 放大 */
+.property-inline--right .property-inline-item:hover {
+  transform: none;
+  opacity: 1;
+}
+
+/* 默认档 Low 不是信号、是「背景态」（新建任务默认即 Low，出现频率最高）：
+   只压暗点亮格 —— 栅格照旧，位置读数不受影响 */
+.property-inline--right .property-inline-item[data-field='priority'][data-value='Low'] :deep(.pq-lit) {
+  opacity: 0.4;
+}
+
+/* hover 恢复 Low 的可辨性，保住「可点击编辑」的发现性 */
+.property-inline--right .property-inline-item[data-field='priority'][data-value='Low']:hover :deep(.pq-lit) {
+  opacity: 1;
+}
+
 .property-inline--right :deep(.property-icon) {
-  /* 图标尺寸由组件 default size=20 决定，此处仅对齐基线 */
+  /* 图标尺寸由上方 Icon 的 :size 传入（本槽为 14），此处仅对齐基线 */
   line-height: 1;
+  opacity: 0.8;
 }
 
 .property-inline-item {

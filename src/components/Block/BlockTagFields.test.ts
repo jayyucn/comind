@@ -439,6 +439,56 @@ describe('BlockTagFields（块字段渲染载体）', () => {
     }
   })
 
+  // ── right 变体：行尾 priority 槽的降层级契约（ADR-0054 D6）──
+
+  function mountRight(blockId: string, rows: FieldValue[]) {
+    useFieldValueStore().fieldValuesByBlock.set(blockId, rows)
+    return mount(BlockTagFields, { props: { blockId, variant: 'right' } })
+  }
+
+  it('right：priority 走行尾槽，尺寸 18（而非 between 槽的默认尺寸）', () => {
+    const wrapper = mountRight('b1', [
+      fv({ id: 'v1', block_id: 'b1', key: 'priority', value_json: 'Low' }),
+    ])
+    expect(wrapper.find('.property-inline--right').exists()).toBe(true)
+    expect(wrapper.findAll('.property-inline-item')).toHaveLength(1)
+
+    const svg = wrapper.find('.property-inline-item svg')
+    expect(svg.attributes('width')).toBe('18')
+    expect(svg.attributes('height')).toBe('18')
+  })
+
+  it('right：item 暴露 data-field/data-value，供按档位降层级定位', () => {
+    const low = mountRight('b1', [
+      fv({ id: 'v1', block_id: 'b1', key: 'priority', value_json: 'Low' }),
+    ])
+    const item = low.find('.property-inline-item')
+    expect(item.attributes('data-field')).toBe('priority')
+    expect(item.attributes('data-value')).toBe('Low')
+
+    const urgent = mountRight('b2', [
+      fv({ id: 'v2', block_id: 'b2', key: 'priority', value_json: 'Urgent' }),
+    ])
+    expect(urgent.find('.property-inline-item').attributes('data-value')).toBe('Urgent')
+  })
+
+  it('right：点亮格与栅格各有锚点 —— 栅格是位置参照系，强度只压点亮格', () => {
+    const wrapper = mountRight('b1', [
+      fv({ id: 'v1', block_id: 'b1', key: 'priority', value_json: 'Low' }),
+    ])
+    // 2×2 方格：恰一个点亮格 + 三个栅格；栅格必须保持，否则实心块失去参照系
+    expect(wrapper.findAll('.pq-lit')).toHaveLength(1)
+    expect(wrapper.findAll('.pq-frame')).toHaveLength(3)
+  })
+
+  it('between：status 尺寸不受行尾槽改动影响（仍走组件默认 24）', () => {
+    const wrapper = mountBetween('b1', [
+      fv({ id: 'v1', block_id: 'b1', key: 'status', value_json: 'Todo' }),
+    ])
+    expect(wrapper.find('.property-inline--right').exists()).toBe(false)
+    expect(wrapper.find('.property-inline-item svg').attributes('width')).toBe('24')
+  })
+
   // ── all 变体：完整字段列表（Backlinks 消费）──
 
   it('all：全量平铺，无「+N」收纳徽标（行内 chips 下线后不再需要收纳）', async () => {

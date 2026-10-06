@@ -42,6 +42,12 @@ function makeFieldValue(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   setActivePinia(createPinia())
   vi.clearAllMocks()
+  // clearAllMocks 不清除 mockImplementation；显式复位这两个 client 方法，
+  // 避免前一个用例的 mockResolvedValue 泄漏到下一个（getProperties 尤其影响字段缓存）。
+  vi.mocked(mockClient.getProperties).mockReset()
+  vi.mocked(mockClient.getProperties).mockResolvedValue([] as never)
+  vi.mocked(mockClient.setProperty).mockReset()
+  vi.mocked(mockClient.setProperty).mockResolvedValue({} as never)
 })
 
 describe('useFieldValueStore', () => {
@@ -144,6 +150,38 @@ describe('useFieldValueStore', () => {
       expect(result).toMatchObject({ id: 'prop-1', key: 'priority', value_json: 'medium', value_type: 'string' })
       // codec 单源（#117）：string 类型直通，不 JSON 编码
       expect(mockClient.setProperty).toHaveBeenCalledWith('block-1', 'priority', 'medium', 'string')
+    })
+
+    test('块首次获得 status（创建任务）→ 一并补默认 priority=Low', async () => {
+      const store = useFieldValueStore()
+      await store.setFieldValue('block-1', 'status', 'Todo', 'string')
+
+      expect(mockClient.setProperty).toHaveBeenCalledWith('block-1', 'status', 'Todo', 'string')
+      expect(mockClient.setProperty).toHaveBeenCalledWith('block-1', 'priority', 'Low', 'string')
+    })
+
+    test('块已有 priority → 首次获得 status 时不覆盖手写值', async () => {
+      vi.mocked(mockClient.getProperties).mockResolvedValue([
+        makeFieldValue({ key: 'priority', value_json: 'High' }),
+      ] as never)
+      const store = useFieldValueStore()
+      await store.loadBlockFieldValues('block-1')
+
+      await store.setFieldValue('block-1', 'status', 'Todo', 'string')
+
+      expect(mockClient.setProperty).not.toHaveBeenCalledWith('block-1', 'priority', 'Low', 'string')
+    })
+
+    test('块已有 status（状态切换，非创建）→ 不补 priority', async () => {
+      vi.mocked(mockClient.getProperties).mockResolvedValue([
+        makeFieldValue({ key: 'status', value_json: 'Doing' }),
+      ] as never)
+      const store = useFieldValueStore()
+      await store.loadBlockFieldValues('block-1')
+
+      await store.setFieldValue('block-1', 'status', 'Done', 'string')
+
+      expect(mockClient.setProperty).not.toHaveBeenCalledWith('block-1', 'priority', 'Low', 'string')
     })
   })
 

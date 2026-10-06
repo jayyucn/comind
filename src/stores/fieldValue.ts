@@ -90,6 +90,11 @@ export const useFieldValueStore = defineStore('fieldValue', () => {
   ): Promise<FieldValue> {
     const client = await getClient()
     const fieldType = type || inferType(value)
+    // 块首次成为任务（status 由无到有）——写入前先记状态，供下方补默认 priority。
+    // seed 里 priority 的 defaultValue 只覆盖「打任务标签后由 Rust 自动填默认」这一路径；
+    // /todo、/status 快速编辑器、/schedule、/deadline 等直接写 status 的路径不经打标，
+    // 故在 status 写入收口处统一补齐（与下方 Done→advanceDateRef 同属 status 驱动的副作用）。
+    const becomesTask = key === 'status' && !!value && !getBlockFieldValue(blockId, 'status')
     // codec 单源（#117）：按 type 判别（string/page 直通，其余 JSON 编码），
     // 不再按「值是否 string」——number 字段传字符串不再静默变型
     const valueJson = encodeFieldValueData(value, fieldType)
@@ -101,6 +106,12 @@ export const useFieldValueStore = defineStore('fieldValue', () => {
     // T11: 自动推进 dateRef（Done 语义）
     if (key === 'status' && value === 'Done') {
       await advanceDateRefInBlock(blockId)
+    }
+
+    // 创建任务默认带 priority=Low（与 seed 默认值同值，单点兜底全部 status 写入路径）。
+    // 幂等：仅在该块尚无 priority 时补，绝不覆盖用户手写值。
+    if (becomesTask && !getBlockFieldValue(blockId, 'priority')) {
+      await setFieldValue(blockId, 'priority', 'Low', 'string')
     }
 
     const blockCardStore = useBlockCardStore()
@@ -158,6 +169,7 @@ export const useFieldValueStore = defineStore('fieldValue', () => {
    *
    * 用于：为带 schedule/deadline 的 block 自动成为任务。
    * 注意：不会因移除 dateRef 而清除 status（保持任务状态，见需求约束）。
+   * 经 setFieldValue 写入收口，故「首次成为任务」时也会一并补默认 priority=Low（见该方法）。
    */
   async function ensureTodo(blockId: string): Promise<void> {
     if (ensureTodoInFlight.has(blockId)) return

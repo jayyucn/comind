@@ -2,25 +2,25 @@
 import type { FieldValueData } from '@/types/field-definition'
 import { CalendarDays, Columns, LayoutGrid, Table } from 'lucide-vue-next'
 import { computed, markRaw, onMounted, ref } from 'vue'
-import { createQueryEngine } from '../../core/query'
-import { blockDefaultConfig, BLOCK_ENTITY, getBlockRegistry } from '../../composables/useBlockQueryRegistry'
+import { BLOCK_ENTITY, blockDefaultConfig, getBlockRegistry } from '../../composables/useBlockQueryRegistry'
 import type { ViewQuery } from '../../core/query'
+import { createQueryEngine } from '../../core/query'
 import { parseLayoutConfig, type BoardConfig, type CalendarConfig, type QuadrantConfig, type TableConfig } from '../../core/view'
 import type { ViewTypeOption } from '../../core/view/management'
 import { useBlockCardStore } from '../../stores/blockCard'
 import { useBlockStore } from '../../stores/blocks'
 import { useEditorStore } from '../../stores/editor'
-import { usePageStore } from '../../stores/pages'
 import { useFieldValueStore } from '../../stores/fieldValue'
+import { usePageStore } from '../../stores/pages'
 import { useScreenViewStore } from '../../stores/screenView'
 import type { BlockCard } from '../../wasm/types'
 import QueryPageFrame from '../common/QueryPageFrame.vue'
 import PageDrawer from '../Page/PageDrawer.vue'
 import BlockContentCell from '../views/BlockContentCell.vue'
-import TableView from '../views/TableView.vue'
 import BoardView from '../views/BoardView.vue'
 import CalendarView from '../views/CalendarView.vue'
 import QuadrantView from '../views/QuadrantView.vue'
+import TableView from '../views/TableView.vue'
 import type { CellRegistry } from '../views/types'
 
 const blockCardStore = useBlockCardStore()
@@ -45,7 +45,7 @@ const blockViewTypes: ViewTypeOption[] = [
   { key: 'table', label: '表格', icon: Table },
   { key: 'board', label: '看板', icon: Columns },
   { key: 'calendar', label: '日历', icon: CalendarDays },
-  { key: 'quadrant', label: '四象限', icon: LayoutGrid },
+  { key: 'quadrant', label: '矩阵', icon: LayoutGrid },
 ]
 
 // 自定义单元格注册表（ADR-0010）：content 列用富预览组件接管渲染。组件须 markRaw 避免被 Vue 误设为响应式。
@@ -132,8 +132,10 @@ async function handleQuadrantAdd(priority: string, title: string) {
   // createBlock 落库是防抖的；field_value.block_id 外键依赖 block 行先存在，
   // 必须先 flushSave 强制持久化，否则紧跟的 setFieldValue 触发 FOREIGN KEY constraint failed
   await blockStore.flushSave(block.id)
-  await fieldValueStore.setFieldValue(block.id, 'status', 'Todo')
+  // 先写 priority 再写 status：status 写入收口会为「首次成为任务」的块补默认 priority=Low，
+  // 若先写 status 会多出一次 Low 写入再被象限值覆盖；先落象限值即命中「已有 priority」而跳过默认。
   await fieldValueStore.setFieldValue(block.id, 'priority', priority)
+  await fieldValueStore.setFieldValue(block.id, 'status', 'Todo')
   await refresh()
 }
 
