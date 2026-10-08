@@ -11,9 +11,9 @@ function last(w: ReturnType<typeof mount>): Emitted {
 }
 
 describe('DatePicker', () => {
-  it('single: 默认占位符「选择日期」', () => {
+  it('single: 默认占位符「选择或输入日期」', () => {
     const w = mount(DatePicker, { props: { mode: 'single' } })
-    expect(w.find('[data-testid="dp-trigger"]').text()).toContain('选择日期')
+    expect(w.find('[data-testid="dp-trigger"]').text()).toContain('选择或输入日期')
   })
 
   it('single: 点击触发器展开日历，选一天 emit 该日期并收起', async () => {

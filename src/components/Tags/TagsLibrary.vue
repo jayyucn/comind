@@ -32,10 +32,11 @@ import type {
   PersistedTag,
   UpdateFieldDefinitionParams,
 } from '../../types/tag-persisted'
-import { isTagColorToken, tagDotStyle } from '../../utils/tag-color'
-import { FIELD_HIDE_LABELS, FIELD_HIDE_OPTIONS, normalizeHideWhen } from '../../utils/field-hide'
 import type { FieldHideValue } from '../../utils/field-hide'
+import { FIELD_HIDE_LABELS, FIELD_HIDE_OPTIONS, normalizeHideWhen } from '../../utils/field-hide'
+import { isTagColorToken, tagDotStyle } from '../../utils/tag-color'
 import BasePopover from '../common/BasePopover.vue'
+import DatePicker from '../common/DatePicker.vue'
 import PageTitle from '../common/PageTitle.vue'
 import ConfirmDialog from '../ConfirmDialog.vue'
 import TagColorPicker from './TagColorPicker.vue'
@@ -488,6 +489,13 @@ async function commitDefault(def: PersistedFieldDefinition) {
   await tagsStore.updateFieldDefinition({ id: def.id, default_value: encoded })
 }
 
+/** 日期字段的默认值：日历选定 / 清除即落库，复用 commitDefault 的编码与空写归一
+ *  （DatePicker 无 blur/Enter 语义，交互与枚举型「点一下即落库」同构）。 */
+async function commitDateDefault(def: PersistedFieldDefinition, value: string | [string, string] | undefined) {
+  defaultDraft.value = typeof value === 'string' ? value : ''
+  await commitDefault(def)
+}
+
 /** 枚举字段的默认值：点选项即落库（与输入框同一条 JSON 文本形态）。 */
 async function pickEnumDefault(value: string) {
   const def = enumDef.value
@@ -680,11 +688,9 @@ function parseOptions(raw: string): string[] | null {
   return values.length ? values : null
 }
 
-/** 默认编辑框的原生类型（枚举型不走这里 —— 它走「默认」列的选项面板）。 */
+/** 默认编辑框的原生类型（枚举型走选项面板、日期型走 DatePicker —— 都不经此）。 */
 function defaultInputType(def: PersistedFieldDefinition): string {
-  if (def.type === 'number') return 'number'
-  if (def.type === 'date') return 'date'
-  return 'text'
+  return def.type === 'number' ? 'number' : 'text'
 }
 
 /** 默认列显示文本：无默认 → 破折号（窄列里不写「无默认」四个字）。 */
@@ -1148,9 +1154,16 @@ async function submitAddField() {
                   class="tag-field-type"
                 >{{ typeLabel(row.def) }}</span>
 
-                <!-- 默认：枚举型走选项面板（选项就在里面，可增/删/改），其余点一下变控件 -->
+                <!-- 默认：日期型走统一日历组件（选定/清除即落库）、枚举型走选项面板，
+                     其余点一下变控件。只读行不给出可点入口，落回下方的静态文本。 -->
+                <DatePicker
+                  v-if="row.def.type === 'date' && canEditField(row)"
+                  class="tag-field-default-date"
+                  :model-value="decodeDefault(row.def.default_value)"
+                  @update:model-value="commitDateDefault(row.def, $event)"
+                />
                 <input
-                  v-if="isEditing(row.def.id, 'default')"
+                  v-else-if="isEditing(row.def.id, 'default')"
                   v-focus-select
                   class="tag-field-default-input"
                   :type="defaultInputType(row.def)"
@@ -2286,6 +2299,21 @@ async function submitAddField() {
 .tag-field-default-caret {
   flex-shrink: 0;
   color: var(--text-tertiary);
+}
+
+/* 日期字段的「默认」列：DatePicker 常驻（选定即落库，无编辑态），
+   故把它的触发按钮压成与枚举触发器同观感 —— 窄列、居中、小字号 */
+.tag-field-default-date {
+  width: 100%;
+  min-width: 0;
+}
+
+.tag-field-default-date :deep(.dp-trigger) {
+  width: 100%;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: 1px var(--space-1);
+  font-size: var(--text-xs);
 }
 
 /* 宽度随选项内容自适应：选项名多是两三字，定宽会让「文字 ↔ 操作图标」之间空一大片。

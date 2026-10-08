@@ -5,6 +5,7 @@ import { useFieldValueStore } from '../../stores/fieldValue'
 import type { FieldType, FieldValueData } from '../../types/field-definition'
 import { decodeFieldValueData } from '../../utils/field-value-codec'
 import BasePopover from '../common/BasePopover.vue'
+import DatePicker from '../common/DatePicker.vue'
 
 const editorStore = useEditorStore()
 const fieldValueStore = useFieldValueStore()
@@ -45,7 +46,8 @@ const tagInput = ref<HTMLInputElement | null>(null)
 const booleanOptions = ref<HTMLElement | null>(null)
 
 /** 打开时的默认焦点：新建模式落「属性名称」，编辑模式落「值」——值的元素随类型而变
- *  （文本/数字/日期共用一个 input，布尔取已选中的单选框，数组取标签输入框）。 */
+ *  （文本/数字共用一个 input，布尔取已选中的单选框，数组取标签输入框；
+ *  日期改用 DatePicker，其取值靠点击触发按钮展开，无默认焦点）。 */
 function resolveFocusTarget(): HTMLElement | null {
   if (!initialKey.value) return nameInput.value
   if (selectedType.value === 'boolean') {
@@ -121,6 +123,11 @@ function addArrayItem() {
 
 function removeArrayItem(idx: number) {
   currentArrayValue.value = currentArrayValue.value.filter((_, i) => i !== idx)
+}
+
+/** DatePicker（single）回传收窄：清除时为 undefined，落库空串与原生 date input 一致。 */
+function setDateValue(v: string | [string, string] | undefined) {
+  currentValue.value = typeof v === 'string' ? v : ''
 }
 
 async function save() {
@@ -228,12 +235,12 @@ watch(visible, (val) => {
           </div>
 
           <!-- Date -->
-          <input
+          <DatePicker
             v-else-if="selectedType === 'date'"
-            ref="valueInput"
-            v-model="currentValue"
-            type="date"
-          >
+            class="date-field"
+            :model-value="typeof currentValue === 'string' ? currentValue : ''"
+            @update:model-value="setDateValue"
+          />
 
           <!-- Number -->
           <input
@@ -374,6 +381,13 @@ watch(visible, (val) => {
 .form-group select:focus {
   outline: none;
   border-color: var(--accent);
+}
+
+/* 日期字段（DatePicker）：与上面的输入框同处标签右侧、占满剩余宽度，
+   否则内容宽度会把面板挤窄（.form-group 是 flex 行） */
+.date-field {
+  flex: 1;
+  min-width: 0;
 }
 
 /* 收音机选项（是 / 否）：与上面的字段标签同处一行，占满标签右侧的剩余宽度 */

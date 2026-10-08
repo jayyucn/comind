@@ -23,10 +23,10 @@
  * - v-model（modelValue / update:modelValue）
  * - 取值通过 modelValue 传入，选择通过 update:modelValue 回传。
  */
-import { computed, nextTick, ref, watch } from 'vue'
 import { Calendar } from 'lucide-vue-next'
-import CalendarPopover from '../CalendarPopover.vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { formatRelativeExpr, parseRelativeDate, relativeDateShortcuts } from '../../utils/date-parser'
+import CalendarPopover from '../CalendarPopover.vue'
 
 export type DatePickerValue = string | [string, string] | undefined
 
@@ -67,7 +67,7 @@ const rangeTuple = computed<[string, string]>(() => {
 
 /* —— 展示文本 —— */
 const placeholderText = computed(() =>
-  props.placeholder || (props.mode === 'single' ? '选择日期' : '选择日期范围'),
+  props.placeholder || (props.mode === 'single' ? '选择或输入日期' : '选择或输入日期范围'),
 )
 const hasValue = computed(() =>
   props.mode === 'single' ? !!singleValue.value : !!(rangeTuple.value[0] || rangeTuple.value[1]),
@@ -364,19 +364,20 @@ function clearValue() {
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
-  border: 1px solid var(--border);
+  border: none;
+  outline: none;
   border-radius: var(--radius-sm);
   background: var(--bg-base);
   color: var(--text-primary);
   font-size: var(--text-sm);
   font-family: inherit;
   cursor: pointer;
-  outline: none;
-  transition: border-color var(--dur-base) var(--ease-out);
+  transition: background var(--dur-base) var(--ease-out);
 
+  /* 无边框后改用底色深浅承接 hover / 展开反馈 */
   &:hover,
   &.open {
-    border-color: var(--accent);
+    background: var(--bg-hover);
   }
 }
 

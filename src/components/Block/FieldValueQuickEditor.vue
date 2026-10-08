@@ -8,6 +8,7 @@ import { getAllFieldDefinitions } from '../../types/field-definition'
 import { decodeFieldValueData } from '../../utils/field-value-codec'
 import { Icon } from '../Icons'
 import BasePopover from '@/components/common/BasePopover.vue'
+import DatePicker from '@/components/common/DatePicker.vue'
 
 const editorStore = useEditorStore()
 const fieldValueStore = useFieldValueStore()
@@ -44,9 +45,9 @@ function handleSelectClosedValue(value: string) {
   saveValue(value)
 }
 
-function handleDateChange(e: Event) {
-  const target = e.target as HTMLInputElement
-  saveValue(target.value)
+/** DatePicker（single）回传收窄：清除时为 undefined，落库空串与原生 date input 一致。 */
+function handleDateChange(v: string | [string, string] | undefined) {
+  saveValue(typeof v === 'string' ? v : '')
 }
 
 function addTag() {
@@ -228,13 +229,12 @@ function isSvgIcon(icon: string): boolean {
 
       <!-- Date Picker -->
       <template v-else-if="currentDef.type === 'date'">
-        <input
-          type="date"
-          class="date-input"
-          :value="currentValue as string"
-          @change.stop="handleDateChange"
-          @click.stop
-        >
+        <div class="date-editor">
+          <DatePicker
+            :model-value="typeof currentValue === 'string' ? currentValue : ''"
+            @update:model-value="handleDateChange"
+          />
+        </div>
       </template>
 
       <!-- Tags Input -->
@@ -363,7 +363,6 @@ function isSvgIcon(icon: string): boolean {
   color: #9ca3af;
 }
 
-.date-input,
 .text-input {
   width: 100%;
   padding: 10px 12px;
@@ -373,6 +372,11 @@ function isSvgIcon(icon: string): boolean {
   font-size: var(--text-sm);
   color: var(--text-primary);
   box-sizing: border-box;
+}
+
+/* 日期字段：与 .tags-editor 同一内边距节奏，避免触发按钮贴住弹层边角 */
+.date-editor {
+  padding: 8px 12px;
 }
 
 .tags-editor {
