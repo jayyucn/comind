@@ -1,6 +1,6 @@
 # ADR-0050: Tag 本位字段交互与 Tag 聚合页
 
-> **状态：D1–D12 已定稿（D5 / D7 已修订，见段内标注）；阶段 1（D1 / D5 / D7 / D10 + chip 点击导航）已实施（`b955b79`），阶段 2（D2 / D4）、阶段 3（D8）、阶段 4（D5 / D7 修订 + D11 / D12）待实施**。上游决议见 ADR-0049「方向决议：tag 本位，属性概念退役」段与 CONTEXT.md 词条 **Tag / Tag Field / Property (RETIRING)**。
+> **状态：D1–D20 已定稿（D5 / D7 / D10 已修订，见段内标注）；阶段 1（D1 / D5 / D7 / D10 + chip 点击导航）已实施（`b955b79`）；阶段 2（D2 / D4）已实施（2026-10-07，见 D9）；D11 / D12 / D18 与 D17 §1/§3（继承树）、D19 / D20 均已实施；阶段 3（D8 改名）待按 D8 审计推进**。上游决议见 ADR-0049「方向决议：tag 本位，属性概念退役」段与 CONTEXT.md 词条 **Tag / Tag Field / Property (RETIRING)**。
 
 ## Context
 
@@ -88,6 +88,19 @@ TaskHub `ensureTodo` 等程序化路径：先确保 `#task` 在 content，再写
 ### D8：数据层改名 —— Tag 前缀直改
 `FieldDefinition` → **`TagFieldDefinition`**，`FieldValue` → **`TagFieldValue`**——与现名一一对应加前缀，语义即「tag 模板里的字段 / 其值」，迁移机械可脚本化（Rust 类型 + 表名 + TS 类型 + serde rename 评估）。
 
+**实施前置核查（2026-10-07，审计结论改写成本结构）**：
+
+全仓 `Property` 残留 = Rust 34 处 + TS 215 处，按改名风险分三档：
+
+1. **持久化面（禁改 / 只能加别名）**：
+   - `block.type == "property"`（`render_segment_service.rs:15/76/125`）：**库内数据**的 block 类型值，历史 property 块行永久存在 —— 字面值永久保留；
+   - batch op entity 字符串 `("property", "create"/"set"/"update"/"delete")`（`batch.rs:368/409`）：同步队列里的 op 载荷键，历史 op 回放必须可解析 —— 只能**新增** `"field_value"` 别名双读，不可替换；
+   - `FieldDefinition` / `FieldValue` 表名（`sqlite.rs` / `sqljs.rs`）：已同步设备的库文件持有旧表名，改表名 = 双端 `ALTER TABLE RENAME` 迁移 + serde 兼容评估 —— 即本 ADR 开放问题，**维持开放**。
+2. **契约面（双端同步改、无持久化）**：wasm 命令名 `set_property` / `delete_property`（`comind-wasm/lib.rs:341/370`）↔ `client.ts` 方法名 —— 改名收益纯命名美学，代价是 JS/Rust/测试三处同步发版，且无任何行为差异。
+3. **UI/内部面（安全、机械）**：TS 侧 215 处的大头 —— `PropertyInline` / `PropertyDisplay` 等组件名、`utils/property-codec.ts` 文件与导出名、注释与测试名。改名零行为变化，但触点面广（Block 域十余文件）。
+
+**结论**：D8 的字面全量改名（Rust 类型加 `Tag` 前缀 + 表名迁移）在开放问题未裁决前**不实施**。建议拆解：3a = UI/内部面机械改名（独立纯命名 PR，随时可做）；3b = 契约面（双端同发，低收益）；3c = 表名（随开放问题裁决）。在 3c 落定前，`property` 命名在持久化面作为**兼容别名永久保留**。本核查即阶段 3 的现状交付；3a/3b/3c 的取舍待裁决后另立工单。
+
 ### D10：父标签继承 —— 对齐 Tana Extend，单父树 + 向上聚合
 
 **Tana 参考**（官方文章 "When to use Extend in supertags" 与产品文档）：
@@ -101,10 +114,36 @@ TaskHub `ensureTodo` 等程序化路径：先确保 `#task` 在 content，再写
 3. **成员向上聚合**：聚合页 / 过滤（含 D4 TaskHub）的 tag 命中集合 = **自身 + 全部后代 tag（descendant 闭包）的成员**；管理页列表「N 个成员」显示**直系数**（非含后代的聚合数）。TaskHub 由此获得「extends #task 的自定义 tag 也进任务列表」的 Tana 语义。
 4. **继承模板不写入成员**：继承只影响模板合成与查询可见性，不给任何块写任何东西。
 
+**D10 修订（2026-10-07）：字段复用与层级解耦**
+
+背景：`FieldDefinition` 建模上本就是全局共享行（可被多个标签引用，改一处同步生效），但「添加字段」入口每次都新建定义，跨域复用模板只能手动重抄——抄出来的是同名不同 id 的独立定义，值不互通、改名不同步。
+
+修订决策：
+1. **字段模板复用与单父层级解耦**。层级（单父 `parent_id`）只保留成员聚合职责（本决策第 3 条不变），不再是字段复用的唯一通道。
+2. **第一步 = 字段级引用**：「添加字段」入口增加「引用已有定义」（从其他标签借字段，而非必新建）。字段按定义引用组合：同名即同一定义、处处同步。零模型改动、零迁移；同名消解问题在此路径下不存在（同名就是同一行）。
+3. **tag 级组合列后置**：仅当出现真实的「整组活引用」需求（组合一个标签后，其后续新增字段自动跟进）时，再引入 `composed_ids`（只借字段、不动成员）。届时需处理同名消解裁决与悬空组合引用（可复用既有「悬空引用保留、读侧过滤」语义）。
+4. **多父 DAG 否决**：成员多维归属（一个标签同时属于两个聚合闭包）是 DAG 相对单父的唯一增量，而块的多标签能力已覆盖其大部分场景；其剩余价值仅为「分类完整性保证」（打了子标签必然被父聚合命中、不依赖手动补打），若该需求成真，单独立项，不与字段复用捆绑。维持单父避免两条祖先链的同名消解与 descendant 闭包多链化。
+
+生效顺序：第 2 条先行实施；第 3 / 4 条为方向决议，不排期。
+
+**D10 修订增补（2026-10-07）：字段引用实施决策**
+
+第 2 条（字段级引用）的实施口径：
+
+1. **入口 = 搜索合一式弹层**：现有「+ 添加字段」弹层顶部加搜索框，输入即过滤全部候选定义，点击即引用；无命中时出现「新建」表单（沿用现有 标题 / 类型 / 枚举候选值 表单）。单一入口同时覆盖「引用」与「新建」两种意图。入口仍在标签管理页右栏，D12 模板单点不变。
+2. **候选范围**：全部存活 FieldDefinition——含 `is_system` 系统字段（status/priority 可不经继承直接引用）、含孤儿定义（见 CONTEXT.md 词条）；排除本标签有效字段集已含的（自身已声明 ∪ 继承已覆盖），防止冗余声明与继承/引用双通道重叠。
+3. **编辑权**：字段行可编辑判据 = 本标签已声明该定义（`field_ids` 含之）**且**定义非 `is_system`。引用方与首个声明方同权就地编辑（定义全局共享、改一处处处同步）；继承行（未声明）依旧只读。此规则取代旧注释「只允许从声明它的那个标签发起编辑」——定义被多方引用成为常态后，「那个标签」无主。`is_system` 定义在任何标签的表中恒只读（与现状一致）。
+4. **来源列三态**：自身 / 引用←X / 继承←X。X = 首个声明者（存活标签中 `created_at` 最早且 `field_ids` 含该定义者；全无其他声明者即自身）。前端计算，不给 FieldDefinition 加 owner 列。
+5. **Rust 零改动**：引用 = `setOwnFields` 追加定义 id；`effective_field_ids`、块级并集去重（`BlockTagFields` 按定义 id）、打标默认值回填、聚合页列全部自动生效。同步落库走既有 `updateTag` 路径。
+6. **移除语义不变**：× 统一只解除声明、不删定义（孤儿定义保留可复引）。
+
 ### D9：三阶段实施
 - **阶段 1（已实施，`b955b79`）**：UI tag 驱动 + 继承全套——挂载即显示（D1，字段集合走 effective 解析）、chip 点击导航聚合页（D7）、标签管理页（D5，含新建/删除/字段模板编辑/继承区）、`parent_id` 迁移 + 环守卫 + `effective_field_ids` 解析器 + descendant 闭包（D10）。
   - 实施形态：`/tags`（管理页）与 `/tags/:tagId`（聚合页）两条独立路由，聚合页复用查询页外壳与既有三视图栈；解析与闭包经 `tag tree` 单次读接口暴露（`parent_id` + `effective_field_ids` + `descendant_ids`），前端只做缓存与投影。删除用户标签前告知影响（成员数 / 来源页数 / 子标签失去继承 + 值保留可复挂恢复）。
-- **阶段 2**：TaskHub 过滤源切 tags + descendant 闭包消费（D4）+ `ensureTodo` 原子化（D2）。
+- **阶段 2（已实施，2026-10-07）**：TaskHub 过滤源切 tags + descendant 闭包消费（D4）+ ensureTodo 原子化收尾（D2）。
+  - D4：`TaskHub.vue` 过滤谓词从「status 非空」切为「`card.tags` ∩ 任务命中集合」；命中集合 = `systemTaskTagId()` + `memberTagIds` 后代闭包（extends #task 的自定义 tag 也进任务列表）。标签树未就绪 / 无系统任务 tag 时降级回「status 非空」旧口径（不空列表）。
+  - D2：`fieldValue.ensureTodo` 挂载前置——`ensureTaskTagMounted` 保证 content 含 `#任务` 字面（已挂载 / 文本已含则不动 content；追加后 `flushSave` 强制落库，Rust 保存时派生 `Block.tags`），随后才写 status；块缺失中止（无半态），标签树无系统任务 tag 时降级直写。象限新增流改为「先写象限 priority → ensureTodo（挂载 + status）」，避开默认 Low 的多余写入。
+  - 回归：`TaskHub.test.ts`（D2 挂载：content 文本 + store tags 双确认；WASM 端 `getBlockCards` 恒空、`getBlocksByPage` 不带 tags，DB 侧取证面缺失）+ `TaskHub.d4filter.test.ts`（过滤口径 2 例，mock client 控制投影）。
 - **阶段 3**：数据层改名（D8）+ PropertyService 适配层删除 + UI 命名迁移（Property* 组件退役）。
 每阶段可独立提交、独立验证（vue-tsc / lint / vitest 门禁）。
 
@@ -206,7 +245,7 @@ chip 以该色**作文字色**，故每色在亮/暗主题各给一值：亮主�
 
 ### D17：标签管理页重构 + 字段展示配置挂字段定义（取代 D15 展示治理）
 
-**Status**：accepted（方向已锚定，待实施）
+**Status**：accepted（§1 左栏继承树 + 拖拽分隔条、§3 右栏继承树可视化已实施；§2 展示配置列按 D19 实施前置核查缓议）
 
 **Context**：D15 的展示治理（消费侧全局 localStorage 偏好 + 渲染前去重）实施后废弃，代码丢弃。重新审视问题本源：① 真正的空间瓶颈在标签管理页右栏——字段模板四列表、枚举选项、继承信息全挤在一个窄面板里；② 展示控制应该属于字段模板的一部分（模板语义），而非消费侧全局偏好。曾考虑以「字段管理弹窗」扩容，被否决：弹窗阻断左栏标签切换流，治标不治本。
 
@@ -358,7 +397,7 @@ native（`storage/sqlite.rs:303` CREATE TABLE + `:620` 迁移）与 wasm（`stor
 
 ## 开放问题
 
-- `TagFieldDefinition` / `TagFieldValue` 表名是否随 Rust 类型同步改（含 serde rename 对已同步设备 payload 的兼容评估）。
+- `TagFieldDefinition` / `TagFieldValue` 表名是否随 Rust 类型同步改（含 serde rename 对已同步设备 payload 的兼容评估）—— **D8 实施前置核查（2026-10-07）已给出三档拆解（3a/3b/3c），表名档（3c）维持开放，待裁决**。
 - D17 §2 的展示配置是否仍需要独立列，抑或复用 `hide_when` 的 `always`（见 D19 实施前置核查）。
 - `book-note` 来源行与下方字段区在 `quote` 存在时都展示 book / chapter，是否需去重
   （D20 后`book-note` 仍是独立渲染位，见 D20 决策 1 的连带面）。

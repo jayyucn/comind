@@ -1664,6 +1664,7 @@ export const useBlockStore = defineStore('blocks', () => {
     updateBlockFormat,
     updateBlockType,
     updateBlockFieldValues,
+    systemTaskTagId,
     scheduleSave,
     flushSave,
     trashedPageWarnings,

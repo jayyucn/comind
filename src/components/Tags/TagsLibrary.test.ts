@@ -6,7 +6,7 @@
  * 解析结果（有效字段 / 后代闭包）由 mock 按 Rust 契约喂入 —— 本测试只验页面消费与写意图，
  * Rust 侧解析与环守卫另由 `cargo test -p comind-core` 覆盖。
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises } from '@vue/test-utils'
 import type { PersistedTagTreeEntry, PersistedFieldDefinition } from '../../types/tag-persisted'
@@ -156,12 +156,23 @@ describe('TagsLibrary（标签管理页）', () => {
     mockInitCoreClient.mockResolvedValue(mockClient)
   })
 
+  // 弹层 Teleport 到 body：先 unmount（走组件卸载路径，BasePopover 摘掉 document 监听、
+  // Transition 正常收尾），再清场 —— 直接抹 innerHTML 会留下活实例，其后续更新对已剥离
+  // 节点做 Transition leave 会抛错并打断 Vue 更新队列，殃及下例。
+  const mountedWrappers: Array<ReturnType<typeof mount>> = []
+
+  afterEach(() => {
+    for (const w of mountedWrappers.splice(0)) w.unmount()
+    document.body.innerHTML = ''
+  })
+
   async function mountPage(selectTagId?: string) {
     const wrapper = mount(TagsLibrary, {
       // 预选提示（ADR-0050 D12）走 props 而非读 route —— 本文件因此无需装路由。
       props: selectTagId ? { selectTagId } : {},
       attachTo: document.body,
     })
+    mountedWrappers.push(wrapper)
     await flushPromises()
     return wrapper
   }
@@ -258,9 +269,34 @@ describe('TagsLibrary（标签管理页）', () => {
     expect(fieldRows[0]).toContain('工时')
     expect(fieldRows[0]).toContain('自身')
     expect(fieldRows[1]).toContain('负责人')
-    // 来源列只写祖先标签名 —— 不再拼「继承 ←」（列名已说明语义）
-    expect(fieldRows[1]).toContain('项目')
-    expect(fieldRows[1]).not.toContain('继承 ←')
+    // 来源列三态（ADR-0050 D10 修订增补 #4）：继承行显式拼「继承←祖先」
+    expect(fieldRows[1]).toContain('继承←项目')
+  })
+
+  it('来源列三态：引用字段显示「引用←首个声明者」，且系统定义行仍只读', async () => {
+    // 开发任务引用了系统任务的 状态（首个声明者 = 任务，created_at 并列按 id 兜底排序）
+    mockClient.getTagTree.mockResolvedValue([
+      SYSTEM_TASK,
+      PROJECT,
+      {
+        ...DEV_TASK,
+        field_ids: ['f-estimate', 'f-status'],
+        effective_field_ids: ['f-estimate', 'f-owner', 'f-status'],
+      },
+      IDEA,
+    ])
+    const wrapper = await mountPage()
+    await wrapper.find('.tag-row--t-dev').trigger('click')
+    await flushPromises()
+
+    const refRow = wrapper
+      .findAll('.tag-field-row:not(.tag-field-row--head)')
+      .find((r) => r.text().includes('状态'))!
+    expect(refRow.text()).toContain('引用←任务')
+    // 修订增补 #3：is_system 定义在任何表中恒只读 —— 引用方也无类型下拉
+    expect(refRow.find('.tag-field-type-select').exists()).toBe(false)
+    // 引用来源超过 5 字截断后才挂 title：这里「任务」2 字，不应有 tip
+    expect(refRow.find('.tag-field-origin-title').attributes('title')).toBeUndefined()
   })
 
   it('字段模块带五列表头：字段 / 类型 / 默认 / 来源 / 隐藏', async () => {
@@ -643,7 +679,7 @@ describe('TagsLibrary（标签管理页）', () => {
     expect(document.body.querySelector('.dialog-card')).toBeFalsy()
   })
 
-  it('添加字段：先建字段定义、再追加进该标签自身字段', async () => {
+  it('添加字段（新建路径）：先建字段定义、再追加进该标签自身字段', async () => {
     mockClient.createFieldDefinition.mockResolvedValue(fieldDef({ id: 'def-new', title: '截止' }))
     const wrapper = await mountPage()
     await wrapper.find('.tag-row--t-dev').trigger('click')
@@ -652,7 +688,12 @@ describe('TagsLibrary（标签管理页）', () => {
     await wrapper.find('.tag-add-field').trigger('click')
     await flushPromises()
 
+    // 搜索合一式：打开先见候选列表，经「手动新建字段」进入新建表单
     const body = document.body
+    expect(body.querySelector('.tag-field-candidates')).toBeTruthy()
+    ;(body.querySelector('.tag-field-create-toggle') as HTMLButtonElement).click()
+    await flushPromises()
+
     const titleInput = body.querySelector('.tag-field-title-input') as HTMLInputElement
     titleInput.value = '截止'
     titleInput.dispatchEvent(new Event('input'))
@@ -667,6 +708,105 @@ describe('TagsLibrary（标签管理页）', () => {
       id: 't-dev',
       field_ids: ['f-estimate', 'def-new'],
     })
+  })
+
+  it('添加字段（引用路径）：候选 = 全部存活定义 − 有效字段已含项，点行即引用不新建定义', async () => {
+    const wrapper = await mountPage()
+    await wrapper.find('.tag-row--t-dev').trigger('click')
+    await flushPromises()
+
+    await wrapper.find('.tag-add-field').trigger('click')
+    await flushPromises()
+
+    const body = document.body
+    const rows = [...body.querySelectorAll('.tag-field-candidate')].filter(
+      (el) => !el.classList.contains('tag-field-candidate--create'),
+    )
+    const titles = rows.map((el) => el.querySelector('.tag-field-candidate-title')?.textContent)
+    // t-dev 有效字段 = 工时（自身）+ 负责人（继承）→ 候选只剩 状态（系统）与 置顶
+    expect(titles).toEqual(['状态', '置顶'])
+    // 系统字段带「系统」徽标；被引用的定义带声明方数元信息
+    expect(body.querySelector('.tag-field-candidate-badge')?.textContent).toBe('系统')
+    expect(body.textContent).toContain('1 个标签')
+
+    mockClient.updateTag.mockClear()
+    ;(rows[0] as HTMLButtonElement).click()
+    await flushPromises()
+
+    expect(mockClient.createFieldDefinition).not.toHaveBeenCalled()
+    expect(mockClient.updateTag).toHaveBeenCalledWith({
+      id: 't-dev',
+      field_ids: ['f-estimate', 'f-status'],
+    })
+  })
+
+  it('引用候选含孤儿定义（无任何标签声明仍可复引）', async () => {
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-status', title: '状态', is_system: true }),
+      fieldDef({ id: 'f-owner', title: '负责人', type: 'string', closed_values: ['张三', '李四'] }),
+      fieldDef({ id: 'f-estimate', title: '工时', type: 'number' }),
+      fieldDef({ id: 'f-ghost', title: '弃用字段' }),
+    ])
+    const wrapper = await mountPage()
+    await wrapper.find('.tag-row--t-dev').trigger('click')
+    await flushPromises()
+
+    await wrapper.find('.tag-add-field').trigger('click')
+    await flushPromises()
+
+    const body = document.body
+    expect(body.textContent).toContain('弃用字段')
+    expect(body.textContent).toContain('未被使用')
+  })
+
+  it('搜索合一式：过滤候选；无精确命中出「新建」行，回车引用首个候选', async () => {
+    const wrapper = await mountPage()
+    await wrapper.find('.tag-row--t-dev').trigger('click')
+    await flushPromises()
+
+    await wrapper.find('.tag-add-field').trigger('click')
+    await flushPromises()
+
+    const body = document.body
+    const search = body.querySelector('.tag-field-search-input') as HTMLInputElement
+    search.value = '状'
+    search.dispatchEvent(new Event('input'))
+    await flushPromises()
+
+    // 「状」子串过滤后只剩 状态；无精确命中 → 同时出「新建」行（回车优先引用候选）
+    const rows = [...body.querySelectorAll('.tag-field-candidate')].filter(
+      (el) => !el.classList.contains('tag-field-candidate--create'),
+    )
+    expect(rows).toHaveLength(1)
+    expect(rows[0].textContent).toContain('状态')
+    expect(body.textContent).toContain('新建「状」')
+
+    search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+
+    expect(mockClient.createFieldDefinition).not.toHaveBeenCalled()
+    expect(mockClient.updateTag).toHaveBeenCalledWith({
+      id: 't-dev',
+      field_ids: ['f-estimate', 'f-status'],
+    })
+  })
+
+  it('搜索词命中有效字段已覆盖的定义 → 提示已在该标签中，不出「新建」行', async () => {
+    const wrapper = await mountPage()
+    await wrapper.find('.tag-row--t-dev').trigger('click')
+    await flushPromises()
+
+    await wrapper.find('.tag-add-field').trigger('click')
+    await flushPromises()
+
+    const body = document.body
+    const search = body.querySelector('.tag-field-search-input') as HTMLInputElement
+    search.value = '工时'
+    search.dispatchEvent(new Event('input'))
+    await flushPromises()
+
+    expect(body.textContent).toContain('已在该标签中')
+    expect(body.textContent).not.toContain('新建「工时」')
   })
 
   it('移除字段：只从该标签解除引用（不删字段定义）', async () => {
@@ -995,5 +1135,55 @@ describe('TagsLibrary（标签管理页）', () => {
     expect(wrapper.find('.tag-field-default-input').exists()).toBe(false)
     expect(wrapper.find('.tag-field-name-input').exists()).toBe(false)
     expect(mockClient.updateFieldDefinition).not.toHaveBeenCalled()
+  })
+
+  // ── 继承树只读可视化（ADR-0050 D17 §3）──
+
+  it('继承树：有祖先时呈现祖先链 + 字段贡献，节点点击本页选中该标签', async () => {
+    const wrapper = await mountPage()
+    await wrapper.find('.tag-row--t-dev').trigger('click')
+    await flushPromises()
+
+    const tree = wrapper.find('.tag-inherit-tree')
+    expect(tree.exists()).toBe(true)
+    expect(tree.text()).toContain('#项目')
+    // 项目向 开发任务 贡献 负责人（继承字段按最近声明祖先归组）
+    expect(tree.text()).toContain('贡献：负责人')
+
+    // 节点可点击跳转 = 本页选中：右栏详情切到 项目
+    await tree.find('.tag-inherit-node-btn').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.tag-detail-title').text()).toContain('#项目')
+  })
+
+  it('继承树：本标签自行声明的字段在祖先节点标注「被本标签覆盖」', async () => {
+    // 开发任务同时自行声明 负责人（覆盖项目的声明）—— 自身声明优先级更高
+    mockClient.getTagTree.mockResolvedValue([
+      SYSTEM_TASK,
+      PROJECT,
+      {
+        ...DEV_TASK,
+        field_ids: ['f-estimate', 'f-owner'],
+        effective_field_ids: ['f-estimate', 'f-owner'],
+      },
+      IDEA,
+    ])
+    const wrapper = await mountPage()
+    await wrapper.find('.tag-row--t-dev').trigger('click')
+    await flushPromises()
+
+    const tree = wrapper.find('.tag-inherit-tree')
+    expect(tree.exists()).toBe(true)
+    expect(tree.text()).toContain('被本标签覆盖：负责人')
+    // 负责人已由本标签声明 → 不再计入项目的「贡献」
+    expect(tree.text()).not.toContain('贡献：负责人')
+  })
+
+  it('继承树：顶级标签（无祖先）不渲染', async () => {
+    const wrapper = await mountPage()
+    await wrapper.find('.tag-row--t-project').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.tag-inherit-tree').exists()).toBe(false)
   })
 })

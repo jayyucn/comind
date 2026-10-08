@@ -6,6 +6,7 @@ import type { FieldDefinition, FieldType, FieldValueData } from '../types/field-
 import { getAllFieldDefinitions, getFieldDefinition } from '../types/field-definition'
 import { useBlockStore } from './blocks'
 import { useBlockCardStore } from './blockCard'
+import { useTagsStore } from './tags'
 import { serializeDateRef, type DateRefKind } from '../utils/date-ref'
 import { encodeFieldValueData } from '../utils/field-value-codec'
 import type { RecurrenceRule } from '../utils/date-ref'
@@ -164,12 +165,44 @@ export const useFieldValueStore = defineStore('fieldValue', () => {
   }
 
   /**
+   * 确保系统任务 tag 已挂载（ADR-0050 D2 原子意图的挂载前置）。
+   *
+   * 挂载 = content 含 `#任务` 文本（Rust 保存时从 content 派生 `Block.tags`，打标唯一入口）。
+   * 已挂载（tags 缓存命中，或 content 文本已含字面——防缓存滞后重复插入）→ 不动 content。
+   * 返回值：`'mounted'` 已挂载 / `'degraded'` 标签树无系统任务 tag（未 seed，降级直写）/
+   * `'missing'` 块不存在（中止，不写值）。
+   */
+  async function ensureTaskTagMounted(blockId: string): Promise<'mounted' | 'degraded' | 'missing'> {
+    const blockStore = useBlockStore()
+    const tagsStore = useTagsStore()
+    await tagsStore.ensureLoaded()
+    const taskTagId = blockStore.systemTaskTagId()
+    if (!taskTagId) return 'degraded'
+    const block = blockStore.getBlock(blockId)
+    if (!block) return 'missing'
+    if (block.tags?.includes(taskTagId)) return 'mounted'
+    const tag = tagsStore.getTagById(taskTagId)
+    if (!tag) return 'degraded'
+    const literal = `#${tag.title}`
+    if ((block.content ?? '').includes(literal)) return 'mounted'
+    const next = block.content ? `${block.content} ${literal}` : literal
+    await blockStore.updateBlockContent(blockId, next)
+    // 强制落库：tags 由 Rust 在 save_block_tree 时从 content 派生，先于 status 写入完成挂载
+    await blockStore.flushSave(blockId)
+    return 'mounted'
+  }
+
+  /**
    * 自动将 block 标记为 Todo 任务：仅当 block 尚未有任何 status
    * （Todo/Doing/Done/Canceled）时才补一个 Todo。
    *
    * 用于：为带 schedule/deadline 的 block 自动成为任务。
    * 注意：不会因移除 dateRef 而清除 status（保持任务状态，见需求约束）。
    * 经 setFieldValue 写入收口，故「首次成为任务」时也会一并补默认 priority=Low（见该方法）。
+   *
+   * D2（ADR-0050）原子意图：先确保系统任务 tag 挂载，再写 status——挂载失败（块缺失）
+   * 不写值，避免「有值无挂载」的半态；D4 过滤按 tags 后，未挂载的块不会出现在任务列表。
+   * 标签树无系统任务 tag 时降级为旧口径（直接写 status）。
    */
   async function ensureTodo(blockId: string): Promise<void> {
     if (ensureTodoInFlight.has(blockId)) return
@@ -177,6 +210,8 @@ export const useFieldValueStore = defineStore('fieldValue', () => {
     if (existing) return
     ensureTodoInFlight.add(blockId)
     try {
+      const mounted = await ensureTaskTagMounted(blockId)
+      if (mounted === 'missing') return
       await setFieldValue(blockId, 'status', 'Todo', 'string')
     } finally {
       ensureTodoInFlight.delete(blockId)

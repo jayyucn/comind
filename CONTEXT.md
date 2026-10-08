@@ -71,6 +71,15 @@ A category label declared inside a Block's content via `#title` syntax; `block.t
 ### Tag Field (tag 字段)
 A single field in a Tag's field template — the definition body carried by `TagFieldDefinition` (key / title / type / closedValues / default_value). `TagFieldDefinition` is the ADR-0050 D8 target name for what code currently calls `FieldDefinition` (rename pending stage 3). Its per-Block value is a `TagFieldValue` (target name for current `FieldValue`), referenced from the block by `field_definition_id`. Distinct-but-key-linked concepts: **Tag Field / `TagFieldDefinition`** is the definition in the template; **Field Descriptor** (see separate entry) is the query-engine-facing projection the query engine consumes — the Descriptor is derived from the Tag Field, they share a `key` but are not the same object. Fields become visible and editable on a Block **because the Block carries the Tag** (挂载即显示) — there is no independent "property" entry point. Programmatic writers (e.g. TaskHub `ensureTodo`) perform "ensure the Tag is in content + write field value" as one atomic intent. See ADR-0049 (方向锚定段) and ADR-0050. _Avoid_: 属性, property, attribute.
 
+### Field Declaration (字段声明)
+The fact that a Tag's `field_ids` contains a FieldDefinition id — the unit of "this Tag's template carries this field". A declaration has one of two origins: created fresh via the add-field form, or brought in via **Field Reference** (see separate entry); the model does not distinguish them, only the UI does. Effective field resolution treats all declarations identically: own declarations (declared or referenced) outrank inherited ones. See ADR-0050 D10 (修订). _Avoid_: 自建 as a model concept — it is a UI origin, not a model state.
+
+### Field Reference (字段引用)
+Declaring an **existing** FieldDefinition into a Tag's field template instead of creating a new one. The definition is globally shared with no owner: editing it from any declaring Tag propagates everywhere, and same name always means same definition (no duplicate-title drift). Candidate scope when referencing: all live definitions (system and orphan ones included), minus those the Tag's effective field set already covers. _Avoid_: 导入, 复制, mixin — the reference is a live shared definition, not a copy.
+
+### Orphan Definition (孤儿字段定义)
+A live FieldDefinition that no surviving Tag declares. Removing a field from a Tag's template only un-declares it (never deletes the definition), so orphan definitions remain referenceable from any Tag's add-field candidates. _Avoid_: 删除字段 — no UI path deletes a definition.
+
 ### Fields Pool (字段全量池 / `fields`)
 The full set of **Tag Field** definitions a screen or registry holds. For a tag context it is parsed only from *used* field rows (the fields actually referenced), not every definition in the `TagFieldDefinition` table. The registry keeps the complete built-in field set so board grouping (`groupBy='status'`) and calendar (`dateRefKind='deadline'`) still resolve their descriptors. See ADR-0050 D7. _Avoid_: candidate pool, field list.
 

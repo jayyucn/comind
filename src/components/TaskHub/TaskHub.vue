@@ -13,6 +13,7 @@ import { useEditorStore } from '../../stores/editor'
 import { useFieldValueStore } from '../../stores/fieldValue'
 import { usePageStore } from '../../stores/pages'
 import { useScreenViewStore } from '../../stores/screenView'
+import { useTagsStore } from '../../stores/tags'
 import type { BlockCard } from '../../wasm/types'
 import QueryPageFrame from '../common/QueryPageFrame.vue'
 import PageDrawer from '../Page/PageDrawer.vue'
@@ -32,6 +33,8 @@ const fieldValueStore = useFieldValueStore()
 const blockStore = useBlockStore()
 const pageStore = usePageStore()
 const editorStore = useEditorStore()
+// D4：任务命中集合依赖标签树（systemTaskTagId / memberTagIds 读 tags store）
+const tagsStore = useTagsStore()
 
 // 通用查询引擎注册表（组合根单例，内置字段 + 自定义字段已注册）
 const registry = getBlockRegistry()
@@ -83,13 +86,28 @@ const quadrantConfig = computed<QuadrantConfig | undefined>(() => {
   return (parseLayoutConfig(currentTab.value?.config, 'quadrant') as QuadrantConfig | null) ?? (blockDefaultConfig('quadrant') as QuadrantConfig)
 })
 
-// 数据源：排除 status 为空的 blocks（普通非任务段落），再做搜索子串过滤
+// D4（ADR-0050）：任务命中集合 = 系统 task tag 自身 + 后代闭包（memberTagIds）——
+// extends #task 的自定义 tag（如 #开发任务）也进任务列表（Tana 向上聚合语义）。
+// 标签树未就绪 / 无系统任务 tag → null，过滤降级回「status 非空」旧口径（不空列表）。
+const taskHitTagIds = computed<Set<string> | null>(() => {
+  const taskTagId = blockStore.systemTaskTagId()
+  if (!taskTagId) return null
+  return new Set(tagsStore.memberTagIds(taskTagId))
+})
+
+// 数据源：按 D4 口径过滤任务（tags 命中，或降级 status 非空），再做搜索子串过滤
 // （与 PagesLibrary 对 title 过滤同构；status 以字段值存于 card.properties['status']）
 const searchedCards = computed<BlockCard[]>(() => {
   const q = searchQuery.value.trim().toLowerCase()
+  const hitIds = taskHitTagIds.value
   return blockCardStore.cards.filter((c) => {
-    const status = c.properties?.['status']
-    if (status === undefined || status === null || status === '') return false
+    if (hitIds) {
+      // D4 主口径：挂了任务闭包内 tag 的块才是任务（悬空 / 软删 tag id 自然不命中）
+      if (!(c.tags ?? []).some((t) => hitIds.has(t))) return false
+    } else {
+      const status = c.properties?.['status']
+      if (status === undefined || status === null || status === '') return false
+    }
     if (!q) return true
     return (c.content_preview ?? '').toLowerCase().includes(q)
   })
@@ -107,7 +125,9 @@ async function refresh() {
 }
 
 onMounted(async () => {
-  await screenViewStore.load()
+  // 标签树与视图配置并行加载：taskHitTagIds 依赖 systemTaskTagId（读 tags store），
+  // 未就绪时该 computed 返回 null → 谓词走降级口径，树到位后自动切回 tags 口径。
+  await Promise.all([screenViewStore.load(), tagsStore.ensureLoaded()])
   await refresh()
 })
 
@@ -132,10 +152,11 @@ async function handleQuadrantAdd(priority: string, title: string) {
   // createBlock 落库是防抖的；field_value.block_id 外键依赖 block 行先存在，
   // 必须先 flushSave 强制持久化，否则紧跟的 setFieldValue 触发 FOREIGN KEY constraint failed
   await blockStore.flushSave(block.id)
-  // 先写 priority 再写 status：status 写入收口会为「首次成为任务」的块补默认 priority=Low，
-  // 若先写 status 会多出一次 Low 写入再被象限值覆盖；先落象限值即命中「已有 priority」而跳过默认。
+  // 先写象限 priority（避开 ensureTodo「首次成为任务补默认 Low」的多写一次），
+  // 再 ensureTodo —— D2 原子意图：确保 #任务 挂载进 content + status=Todo。
+  // 挂载必须在写 status 前完成：D4 过滤按 tags，未挂载的块写完 status 也不入列。
   await fieldValueStore.setFieldValue(block.id, 'priority', priority)
-  await fieldValueStore.setFieldValue(block.id, 'status', 'Todo')
+  await fieldValueStore.ensureTodo(block.id)
   await refresh()
 }
 

@@ -5,12 +5,14 @@
  * 单父继承区 / 删除标签）。
  *
  * 字段模板是五列表（字段 | 类型 | 默认 | 来源 | 隐藏）：前三列就地编辑（点一下变控件 / 类型下拉），
- * 第四列只读（自身 / 声明它的祖先标签），第五列「隐藏」为下拉（ADR-0050 D18，定义级共享）——
+ * 第四列只读三态（自身 / 引用←首个声明者 / 继承←祖先，ADR-0050 D10 修订增补 #4），
+ * 第五列「隐藏」为下拉（ADR-0050 D18，定义级共享）——
  * 没有「编辑」按钮与展开面板（ADR-0050 D14）。
  *
  * 边界与归属：
  * - 打标入口不在此页 —— 建实体 ≠ 打标，打标仍唯一走 content `#名`（ADR-0049 D6）。
- * - 「新建标签」= 标题 + 可选父标签；「+ 添加字段」= 建字段定义 + 追加该标签自身字段。
+ * - 「新建标签」= 标题 + 可选父标签；「+ 添加字段」= 搜索合一式弹层 —— 引用已有
+ *   FieldDefinition（不新建定义）或新建（ADR-0050 D10 修订增补）。
  * - 成员口径：管理页用**直系数**（ADR-0050 D10 #3）；含后代的聚合口径只在 tag 聚合页用。
  * - 字段数口径：**有效字段数**（含继承，即该标签下真正可填的字段数量）。
  * - 继承解析（有效字段集合）单源在 Rust，本页只消费 store 的解析结果。
@@ -21,7 +23,7 @@
  */
 import { ChevronDown, CornerUpRight, Pencil, Plus, Search, X } from 'lucide-vue-next'
 import type { ObjectDirective } from 'vue'
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useNavigateToTag } from '../../composables/useNavigateToTag'
 import { useBlockCardStore } from '../../stores/blockCard'
 import { useTagsStore } from '../../stores/tags'
@@ -272,14 +274,22 @@ const detailSummary = computed(() =>
     : { count: 0, pageCount: 0 },
 )
 
-/** 字段模板行：有效字段（含继承）+ 来源标签（自身 / 继承自哪个祖先）。 */
-const detailFields = computed(() => {
+/** 字段模板行：有效字段（含继承）+ 来源三态（自身 / 引用←首个声明者 / 继承←祖先）。 */
+const detailFields = computed<FieldRow[]>(() => {
   const tag = selectedTag.value
-  if (!tag) return [] as Array<{ def: PersistedFieldDefinition; origin: PersistedTag | undefined }>
-  return tagsStore.effectiveFieldDefinitions(tag.id).map((def) => ({
-    def,
-    origin: tagsStore.fieldOrigin(tag.id, def.id),
-  }))
+  if (!tag) return []
+  return tagsStore.effectiveFieldDefinitions(tag.id).map((def) => {
+    const origin = tagsStore.fieldOrigin(tag.id, def.id)
+    const isOwn = !!origin && origin.id === tag.id
+    if (isOwn) {
+      const first = tagsStore.firstDeclarerOf(def.id)
+      if (first && first.id !== tag.id) {
+        return { def, origin, isOwn, kind: 'ref' as const, originTitle: first.title }
+      }
+      return { def, origin, isOwn, kind: 'own' as const, originTitle: '' }
+    }
+    return { def, origin, isOwn, kind: 'inherited' as const, originTitle: origin?.title ?? '' }
+  })
 })
 
 /** 字段类型显示名（`select` 是由 closed_values 派生的伪类型）。 */
@@ -302,16 +312,6 @@ function typeLabel(def: PersistedFieldDefinition): string {
   return TYPE_LABELS[def.closed_values?.length ? 'select' : def.type] ?? def.type
 }
 
-/** 该字段是否由本标签自己声明（决定能否从本标签移除 / 编辑其定义）。 */
-function isOwnField(origin: PersistedTag | undefined): boolean {
-  return !!origin && !!selectedTag.value && origin.id === selectedTag.value.id
-}
-
-/** 可编辑 = 自身声明 + 非系统标签（继承字段的定义归祖先，改它等于改所有引用方）。 */
-function canEditField(origin: PersistedTag | undefined): boolean {
-  return isOwnField(origin) && !isSystemTag.value
-}
-
 const parentTag = computed(() =>
   selectedTag.value ? tagsStore.parentTagOf(selectedTag.value.id) : undefined,
 )
@@ -319,6 +319,43 @@ const parentTag = computed(() =>
 const parentCandidates = computed(() =>
   selectedTag.value ? tagsStore.parentCandidates(selectedTag.value.id) : [],
 )
+
+// ── 继承树只读可视化（ADR-0050 D17 §3）─────────────────────────
+
+/**
+ * 祖先链（最近祖先在前，至根）+ 各祖先的字段贡献 / 被覆盖：
+ * - 贡献 = 本标签未声明（继承而来）的有效字段，按 fieldOrigin（父链上最近的声明祖先）归组；
+ * - 被覆盖 = 该祖先声明、但本标签也自行声明的字段（自身声明优先级更高，D10 解析序）。
+ * 树内只读，节点点击仅做本页选中跳转。
+ */
+const inheritChain = computed(() => {
+  const tag = selectedTag.value
+  if (!tag) return []
+  const chain: Array<{ tag: PersistedTag; contributed: string[]; covered: string[] }> = []
+  const visited = new Set<string>([tag.id])
+  let cursor = tagsStore.parentTagOf(tag.id)
+  while (cursor && !visited.has(cursor.id)) {
+    visited.add(cursor.id)
+    chain.push({ tag: cursor, contributed: [], covered: [] })
+    cursor = tagsStore.parentTagOf(cursor.id)
+  }
+  if (!chain.length) return []
+  const byOrigin = new Map<string, string[]>()
+  for (const row of detailFields.value) {
+    if (row.isOwn || !row.origin) continue
+    const list = byOrigin.get(row.origin.id) ?? []
+    list.push(row.def.title)
+    byOrigin.set(row.origin.id, list)
+  }
+  for (const node of chain) {
+    node.contributed = byOrigin.get(node.tag.id) ?? []
+    node.covered = node.tag.field_ids
+      .filter((id) => tag.field_ids.includes(id))
+      .map((id) => tagsStore.getFieldDefinition(id)?.title ?? '')
+      .filter(Boolean)
+  }
+  return chain
+})
 
 /** 单父槽位：已有父时按钮语义是「换掉它」，措辞须随之改（否则像是要再加一个父）。 */
 const parentActionLabel = computed(() => (parentTag.value ? '更换父标签' : '+ 添加父标签'))
@@ -395,12 +432,31 @@ function isEditing(fieldId: string, cell: 'name' | 'default'): boolean {
   return editingFieldId.value === fieldId && editingCell.value === cell
 }
 
-/** 字段行的形状（有效字段定义 + 声明它的标签）——单元格编辑的判据都挂在 origin 上。 */
-type FieldRow = { def: PersistedFieldDefinition; origin: PersistedTag | undefined }
+/**
+ * 字段行的形状（有效字段定义 + 来源三态）——单元格编辑的判据挂在行上。
+ * 来源三态（ADR-0050 D10 修订增补 #4）：
+ * - `own`：本标签声明且自己就是首个声明者 → 「自身」；
+ * - `ref`：本标签声明但有人更早声明 → 「引用←X」（X = 首个声明者）；
+ * - `inherited`：沿父链继承 → 「继承←X」（X = 父链上最近的声明祖先）。
+ */
+type FieldRow = {
+  def: PersistedFieldDefinition
+  origin: PersistedTag | undefined
+  isOwn: boolean
+  kind: 'own' | 'ref' | 'inherited'
+  originTitle: string
+}
 
-/** 单元格进编辑态：定义归祖先 / 系统标签 → 整行只读，点击不生效（改它等于改所有引用方）。 */
+/** 可编辑（ADR-0050 D10 修订增补 #3）= 本标签已声明该定义，且定义非 `is_system`
+ *  （系统定义在任何表中恒只读）；系统标签整栏只读另有 isSystemTag 门。
+ *  引用方与首个声明方同权——定义全局共享，改一处处处同步；继承行（未声明）只读。 */
+function canEditField(row: FieldRow): boolean {
+  return !isSystemTag.value && row.isOwn && !row.def.is_system
+}
+
+/** 单元格进编辑态：定义归祖先 / 系统字段 → 整行只读，点击不生效（改它等于改所有引用方）。 */
 function startEdit(row: FieldRow, cell: 'name' | 'default') {
-  if (!canEditField(row.origin)) return
+  if (!canEditField(row)) return
   if (cell === 'name') {
     nameDraft.value = row.def.title
   } else {
@@ -472,7 +528,7 @@ async function onChangeType(def: PersistedFieldDefinition, next: string, anchor?
 
 /** 「默认」列是否走枚举选项面板（选项就长在这个下拉里，含增 / 删 / 改）。 */
 function isEnumRow(row: FieldRow): boolean {
-  return canEditField(row.origin) && typeValueOf(row.def) === 'select'
+  return canEditField(row) && typeValueOf(row.def) === 'select'
 }
 
 // ── 隐藏列（ADR-0050 D18）：下拉就地切换，定义级全局共享 ────────
@@ -735,11 +791,14 @@ async function submitCreateTag() {
   createOpen.value = false
 }
 
-// ── 添加字段弹层（BasePopover） ────────────────────────────────
+// ── 添加字段弹层（搜索合一式：引用已有定义或新建，ADR-0050 D10 修订增补） ──
 
 const addFieldOpen = ref(false)
 const addFieldAnchor = ref<HTMLElement | null>(null)
 const addFieldPos = ref({ x: 0, y: 0 })
+const addFieldQuery = ref('')
+const creatingNew = ref(false)
+const addFieldSearchInput = ref<HTMLInputElement | null>(null)
 const newFieldTitle = ref('')
 const newFieldType = ref('string')
 const newFieldOptions = ref('')
@@ -749,10 +808,106 @@ function openAddFieldPopover(e: MouseEvent) {
   const rect = el.getBoundingClientRect()
   addFieldAnchor.value = el
   addFieldPos.value = { x: rect.left, y: rect.bottom + 4 }
+  addFieldQuery.value = ''
+  creatingNew.value = false
   newFieldTitle.value = ''
   newFieldType.value = 'string'
   newFieldOptions.value = ''
   addFieldOpen.value = true
+  nextTick(() => addFieldSearchInput.value?.focus())
+}
+
+/** 每个定义的声明方数（候选行的「N 个标签」元信息；孤儿定义 = 0）。 */
+const fieldUsage = computed<Map<string, number>>(() => {
+  const map = new Map<string, number>()
+  for (const t of tagsStore.allTags) {
+    for (const id of t.field_ids) map.set(id, (map.get(id) ?? 0) + 1)
+  }
+  return map
+})
+
+interface FieldCandidate {
+  def: PersistedFieldDefinition
+  typeLabel: string
+  usage: number
+  isSystem: boolean
+}
+
+/**
+ * 引用候选（ADR-0050 D10 修订增补 #2）：全部存活定义——含系统字段与孤儿定义，
+ * 排除本标签有效字段集（自身已声明 ∪ 继承已覆盖）已含的，防冗余声明与双通道重叠。
+ */
+const fieldCandidates = computed<FieldCandidate[]>(() => {
+  const tag = selectedTag.value
+  if (!tag) return []
+  const covered = new Set(tagsStore.effectiveFieldIds(tag.id))
+  return tagsStore.fieldDefinitions
+    .filter((d) => !d.deleted_at && !covered.has(d.id))
+    .map((d) => ({
+      def: d,
+      typeLabel: typeLabel(d),
+      usage: fieldUsage.value.get(d.id) ?? 0,
+      isSystem: d.is_system,
+    }))
+})
+
+const filteredCandidates = computed<FieldCandidate[]>(() => {
+  const q = addFieldQuery.value.trim().toLowerCase()
+  if (!q) return fieldCandidates.value
+  return fieldCandidates.value.filter((c) => c.def.title.toLowerCase().includes(q))
+})
+
+/** 搜索词精确命中任一存活定义（含已被本标签覆盖的）→ 不出「新建」行，避免重名定义。 */
+const queryExactHit = computed(() => {
+  const q = addFieldQuery.value.trim().toLowerCase()
+  if (!q) return false
+  return tagsStore.fieldDefinitions.some(
+    (d) => !d.deleted_at && d.title.trim().toLowerCase() === q,
+  )
+})
+
+/** 精确命中且该定义已在有效字段集里 → 提示「已在该标签中」。 */
+const coveredHint = computed(() => {
+  if (!queryExactHit.value) return false
+  const tag = selectedTag.value
+  if (!tag) return false
+  const q = addFieldQuery.value.trim().toLowerCase()
+  const covered = tagsStore.effectiveFieldIds(tag.id)
+  return tagsStore.fieldDefinitions.some(
+    (d) => !d.deleted_at && d.title.trim().toLowerCase() === q && covered.includes(d.id),
+  )
+})
+
+const canCreateFromQuery = computed(
+  () => !!addFieldQuery.value.trim() && !queryExactHit.value,
+)
+
+/** 引用候选行：声明既有定义进本标签（不新建定义）。 */
+async function pickCandidate(def: PersistedFieldDefinition) {
+  const tag = selectedTag.value
+  if (!tag) return
+  await tagsStore.referenceField(tag.id, def.id)
+  addFieldOpen.value = false
+}
+
+function startCreate() {
+  creatingNew.value = true
+  if (!newFieldTitle.value.trim()) newFieldTitle.value = addFieldQuery.value.trim()
+}
+
+function backToPick() {
+  creatingNew.value = false
+}
+
+/** 回车语义：有候选引用首个；无候选且可新建 → 转新建表单（标题预填搜索词）。 */
+function onSearchEnter() {
+  if (creatingNew.value) return
+  const first = filteredCandidates.value[0]
+  if (first) {
+    pickCandidate(first.def)
+  } else if (canCreateFromQuery.value) {
+    startCreate()
+  }
 }
 
 async function submitAddField() {
@@ -950,7 +1105,7 @@ async function submitAddField() {
               v-for="row in detailFields"
               :key="row.def.id"
               class="tag-field-row"
-              :class="{ 'tag-field-row--editable': canEditField(row.origin) }"
+              :class="{ 'tag-field-row--editable': canEditField(row) }"
             >
               <div class="tag-field-line">
                 <!-- 字段名：点一下变输入框（挂载即全选）；继承字段的定义归祖先 → 只读 -->
@@ -968,14 +1123,14 @@ async function submitAddField() {
                 <span
                   v-else
                   class="tag-field-name"
-                  :class="{ 'tag-field-name--editable': canEditField(row.origin) }"
-                  :title="canEditField(row.origin) ? '点击改名' : undefined"
+                  :class="{ 'tag-field-name--editable': canEditField(row) }"
+                  :title="canEditField(row) ? '点击改名' : undefined"
                   @click="startEdit(row, 'name')"
                 >{{ row.def.title }}</span>
 
                 <!-- 类型：下拉就地切换（继承 / 系统字段只显示类型名） -->
                 <select
-                  v-if="canEditField(row.origin)"
+                  v-if="canEditField(row)"
                   class="tag-field-type-select"
                   :value="typeValueOf(row.def)"
                   @change="onChangeType(row.def, ($event.target as HTMLSelectElement).value, $event.target as HTMLElement)"
@@ -1023,28 +1178,28 @@ async function submitAddField() {
                 <span
                   v-else
                   class="tag-field-default"
-                  :class="{ 'tag-field-default--editable': canEditField(row.origin) }"
-                  :title="canEditField(row.origin) ? '点击设默认值' : undefined"
+                  :class="{ 'tag-field-default--editable': canEditField(row) }"
+                  :title="canEditField(row) ? '点击设默认值' : undefined"
                   @click="startEdit(row, 'default')"
                 >{{ defaultText(row.def) }}</span>
 
-                <!-- 来源：自身 / 声明它的祖先标签（不再写「继承 ←」—— 列名已说明语义） -->
+                <!-- 来源：三态（ADR-0050 D10 修订增补 #4）——自身 / 引用←首个声明者 / 继承←祖先 -->
                 <span
                   class="tag-field-origin"
-                  :class="{ 'tag-field-origin--inherited': !isOwnField(row.origin) }"
+                  :class="{ 'tag-field-origin--inherited': row.kind !== 'own' }"
                 >
-                  <template v-if="isOwnField(row.origin)">自身</template>
+                  <template v-if="row.kind === 'own'">自身</template>
                   <template v-else>
-                    <span
+                    {{ row.kind === 'ref' ? '引用←' : '继承←' }}<span
                       class="tag-field-origin-title"
-                      :title="isOriginTruncated(row.origin?.title) ? row.origin?.title : undefined"
-                    >{{ row.origin?.title ? originText(row.origin.title) : '—' }}</span>
+                      :title="isOriginTruncated(row.originTitle) ? row.originTitle : undefined"
+                    >{{ row.originTitle ? originText(row.originTitle) : '—' }}</span>
                   </template>
                 </span>
 
                 <!-- 隐藏（ADR-0050 D18）：下拉就地切换；继承 / 系统字段只显示规则名 -->
                 <select
-                  v-if="canEditField(row.origin)"
+                  v-if="canEditField(row)"
                   class="tag-field-hide-select"
                   :value="hideValueOf(row.def)"
                   :aria-label="`隐藏规则：${row.def.title}`"
@@ -1064,7 +1219,7 @@ async function submitAddField() {
                 >{{ FIELD_HIDE_LABELS[hideValueOf(row.def) as FieldHideValue] }}</span>
 
                 <button
-                  v-if="canEditField(row.origin)"
+                  v-if="canEditField(row)"
                   type="button"
                   class="tag-field-remove"
                   aria-label="移除字段"
@@ -1133,6 +1288,46 @@ async function submitAddField() {
           >
             {{ parentActionLabel }}
           </button>
+
+          <!-- 继承树只读可视化（ADR-0050 D17 §3）：祖先链 + 各祖先的字段贡献 / 被覆盖。
+               节点点击 = 本页选中该标签；树内不提供编辑，父标签修改仍走上方单父槽位。 -->
+          <div
+            v-if="inheritChain.length"
+            class="tag-inherit-tree"
+          >
+            <div class="tag-inherit-tree-title">
+              继承树
+            </div>
+            <div
+              v-for="node in inheritChain"
+              :key="node.tag.id"
+              class="tag-inherit-node"
+            >
+              <button
+                type="button"
+                class="tag-inherit-node-btn"
+                :title="`查看 #${node.tag.title}`"
+                @click="selectedTagId = node.tag.id"
+              >
+                <span
+                  class="tag-color-dot"
+                  :class="{ 'tag-color-dot--empty': isColorless(node.tag.color) }"
+                  :style="tagDotStyle(node.tag.color)"
+                />
+                <span class="tag-inherit-node-name">#{{ node.tag.title }}</span>
+              </button>
+              <span
+                v-if="node.contributed.length"
+                class="tag-inherit-node-fields"
+              >贡献：{{ node.contributed.join(' / ') }}</span>
+              <span
+                v-if="node.covered.length"
+                class="tag-inherit-node-covered"
+                title="这些字段本标签已自行声明，生效优先级高于祖先"
+              >被本标签覆盖：{{ node.covered.join(' / ') }}</span>
+            </div>
+          </div>
+
           <p class="tag-inherit-note">
             继承字段不写入成员；同名字段以「自身 &gt; 直接父 &gt; 更远祖先」生效，成环请求会被拒绝。
           </p>
@@ -1310,7 +1505,7 @@ async function submitAddField() {
       </div>
     </BasePopover>
 
-    <!-- 添加字段 -->
+    <!-- 添加字段：搜索合一式（引用已有定义或新建，ADR-0050 D10 修订增补） -->
     <BasePopover
       :visible="addFieldOpen"
       :position="addFieldPos"
@@ -1318,38 +1513,124 @@ async function submitAddField() {
       @close="addFieldOpen = false"
     >
       <div class="tag-field-panel">
-        <input
-          v-model="newFieldTitle"
-          class="tag-field-title-input"
-          type="text"
-          placeholder="字段标题"
-        >
-        <select
-          v-model="newFieldType"
-          class="tag-field-type-select"
-        >
-          <option
-            v-for="opt in FIELD_TYPE_OPTIONS"
-            :key="opt.value"
-            :value="opt.value"
+        <label class="tag-field-search">
+          <Search
+            class="tag-field-search-icon"
+            :size="13"
+          />
+          <input
+            ref="addFieldSearchInput"
+            v-model="addFieldQuery"
+            class="tag-field-search-input"
+            type="text"
+            placeholder="搜索或新建字段"
+            @keydown.enter.prevent="onSearchEnter"
           >
-            {{ opt.label }}
-          </option>
-        </select>
-        <input
-          v-if="newFieldType === 'select'"
-          v-model="newFieldOptions"
-          class="tag-field-options"
-          type="text"
-          placeholder="候选值，逗号分隔"
+        </label>
+
+        <div
+          v-if="creatingNew"
+          class="tag-field-create"
         >
-        <button
-          type="button"
-          class="tag-field-confirm"
-          @click="submitAddField"
-        >
-          添加字段
-        </button>
+          <div class="tag-field-create-label">
+            新建字段
+          </div>
+          <input
+            v-model="newFieldTitle"
+            class="tag-field-title-input"
+            type="text"
+            placeholder="字段标题"
+            @keydown.enter.prevent="submitAddField"
+          >
+          <select
+            v-model="newFieldType"
+            class="tag-field-type-select"
+          >
+            <option
+              v-for="opt in FIELD_TYPE_OPTIONS"
+              :key="opt.value"
+              :value="opt.value"
+            >
+              {{ opt.label }}
+            </option>
+          </select>
+          <input
+            v-if="newFieldType === 'select'"
+            v-model="newFieldOptions"
+            class="tag-field-options"
+            type="text"
+            placeholder="候选值，逗号分隔"
+          >
+          <div class="tag-field-create-actions">
+            <button
+              type="button"
+              class="tag-field-back"
+              @click="backToPick"
+            >
+              返回
+            </button>
+            <button
+              type="button"
+              class="tag-field-confirm"
+              :disabled="!newFieldTitle.trim()"
+              @click="submitAddField"
+            >
+              添加字段
+            </button>
+          </div>
+        </div>
+
+        <template v-else>
+          <div class="tag-field-candidates">
+            <button
+              v-for="row in filteredCandidates"
+              :key="row.def.id"
+              type="button"
+              class="tag-field-candidate"
+              @click="pickCandidate(row.def)"
+            >
+              <span class="tag-field-candidate-title">{{ row.def.title }}</span>
+              <span class="tag-field-candidate-meta">
+                <span
+                  v-if="row.isSystem"
+                  class="tag-field-candidate-badge"
+                >系统</span>
+                {{ row.typeLabel }} · {{ row.usage > 0 ? `${row.usage} 个标签` : '未被使用' }}
+              </span>
+            </button>
+
+            <div
+              v-if="coveredHint"
+              class="tag-field-candidates-empty"
+            >
+              「{{ addFieldQuery.trim() }}」已在该标签中
+            </div>
+            <button
+              v-else-if="canCreateFromQuery"
+              type="button"
+              class="tag-field-candidate tag-field-candidate--create"
+              @click="startCreate"
+            >
+              <Plus :size="13" />
+              <span class="tag-field-candidate-title">新建「{{ addFieldQuery.trim() }}」</span>
+            </button>
+            <div
+              v-else-if="!filteredCandidates.length"
+              class="tag-field-candidates-empty"
+            >
+              全部可用字段已添加
+            </div>
+          </div>
+          <button
+            v-if="!addFieldQuery.trim()"
+            type="button"
+            class="tag-field-create-toggle"
+            @click="startCreate"
+          >
+            <Plus :size="13" />
+            手动新建字段
+          </button>
+        </template>
       </div>
     </BasePopover>
   </div>
@@ -2137,6 +2418,62 @@ async function submitAddField() {
   border-radius: var(--radius-sm);
 }
 
+/* 继承树只读可视化（ADR-0050 D17 §3）：祖先链单轨 + 字段贡献 / 被覆盖 */
+.tag-inherit-tree {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+  padding: var(--space-2);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.tag-inherit-tree-title {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.tag-inherit-node {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: var(--space-3);
+  border-left: 1px solid var(--border);
+}
+
+.tag-inherit-node-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  align-self: flex-start;
+  transition: color var(--dur-fast) var(--ease-out);
+
+  &:hover {
+    color: var(--accent);
+  }
+}
+
+.tag-inherit-node-fields,
+.tag-inherit-node-covered {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-inherit-node-covered {
+  opacity: 0.75;
+}
+
 .tag-parent-label {
   display: inline-flex;
   align-items: center;
@@ -2257,5 +2594,180 @@ async function submitAddField() {
   &:hover {
     background: var(--accent-hover);
   }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+    background: var(--accent);
+  }
+}
+
+/* ── 添加字段弹层：搜索合一式（ADR-0050 D10 修订增补）──
+   搜索引用已有定义（候选 = 全部存活定义 − 有效字段已含项），无命中转新建。 */
+.tag-field-panel {
+  width: 264px;
+  padding: var(--space-2);
+}
+
+.tag-field-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  background: var(--bg-base2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: border-color var(--dur-fast) var(--ease-out);
+
+  &:focus-within {
+    border-color: var(--accent);
+  }
+}
+
+.tag-field-search-icon {
+  flex: none;
+  color: var(--text-tertiary);
+}
+
+.tag-field-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  outline: none;
+
+  &::placeholder {
+    color: var(--text-tertiary);
+  }
+}
+
+.tag-field-candidates {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 228px;
+  overflow-y: auto;
+}
+
+.tag-field-candidate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 30px;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-sm);
+  text-align: left;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
+
+  &:hover {
+    background: var(--bg-hover);
+  }
+}
+
+.tag-field-candidate-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-field-candidate-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  max-width: 62%;
+  overflow: hidden;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-field-candidate-badge {
+  flex: none;
+  padding: 0 4px;
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--text-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.tag-field-candidate--create {
+  color: var(--accent);
+
+  &:hover {
+    color: var(--accent-hover);
+  }
+}
+
+.tag-field-candidates-empty {
+  padding: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+.tag-field-create-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--accent);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--accent-hover);
+  }
+}
+
+.tag-field-create {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.tag-field-create-label {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.tag-field-create-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.tag-field-back {
+  padding: 0;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--text-primary);
+  }
+}
+
+.tag-field-create .tag-field-confirm {
+  flex: 1;
 }
 </style>

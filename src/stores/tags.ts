@@ -364,11 +364,43 @@ export const useTagsStore = defineStore('tags', () => {
   }
 
   /**
+   * 引用已有字段定义：把既有 FieldDefinition 声明进本标签（ADR-0050 D10 修订增补）。
+   * 不新建定义；幂等（已声明直接返回）。定义全局共享 —— 引用方与首个声明方同权编辑。
+   */
+  async function referenceField(tagId: string, fieldDefinitionId: string): Promise<void> {
+    const tag = getTagById(tagId)
+    if (!tag) throw new Error(`tag not found: ${tagId}`)
+    if (tag.field_ids.includes(fieldDefinitionId)) return
+    await setOwnFields(tagId, [...tag.field_ids, fieldDefinitionId])
+  }
+
+  /**
+   * 首个声明者：存活标签中 `created_at` 最早且 `field_ids` 含该定义者（created_at 相同
+   * 按 id 兜底排序保证确定性）。来源列三态（ADR-0050 D10 修订增补 #4）用它判定
+   * 「自身声明」与「引用←X」——不给 FieldDefinition 加 owner 列。
+   */
+  function firstDeclarerOf(fieldDefinitionId: string): PersistedTag | undefined {
+    let best: PersistedTag | undefined
+    for (const t of allTags.value) {
+      if (!t.field_ids.includes(fieldDefinitionId)) continue
+      if (
+        !best ||
+        t.created_at < best.created_at ||
+        (t.created_at === best.created_at && t.id < best.id)
+      ) {
+        best = t
+      }
+    }
+    return best
+  }
+
+  /**
    * 改写字段定义（标题 / 类型 / 候选值）。**只传要改的字段**；`closed_values` 显式传 null
    * 表示清空候选值（降为非选项型，用于「下拉选择 → 文本/数值」的降级）。
    *
    * 注意：定义是**全局共享**的（可被多个标签引用），改一处所有引用方同步生效 ——
-   * 故 UI 只允许从「声明它的那个标签」发起编辑（继承方无权改了他人的定义）。
+   * 编辑权判据见 ADR-0050 D10 修订增补 #3：本标签已声明该定义（`field_ids` 含之）
+   * 且定义非 `is_system` 即可就地编辑，引用方与首个声明方同权；继承行（未声明）只读。
    */
   async function updateFieldDefinition(params: UpdateFieldDefinitionParams): Promise<void> {
     const client = await getClient()
@@ -404,6 +436,7 @@ export const useTagsStore = defineStore('tags', () => {
     memberTagIds,
     parentTagOf,
     fieldOrigin,
+    firstDeclarerOf,
     childTags,
     parentCandidates,
     memberCards,
@@ -420,6 +453,7 @@ export const useTagsStore = defineStore('tags', () => {
     setOwnFields,
     setIdentity,
     addFieldToTag,
+    referenceField,
     removeFieldFromTag,
     updateFieldDefinition,
     restoreBuiltinPresets,
