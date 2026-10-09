@@ -47,6 +47,7 @@ impl FieldValueService {
             closed_values: None,
             default_value: None,
             hide_when: "never".to_string(),
+            display_form_override: "auto".to_string(),
             is_system: false,
             is_preset: false,
             created_at: now,

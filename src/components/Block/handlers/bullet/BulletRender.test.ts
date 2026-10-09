@@ -262,7 +262,7 @@ describe('标签改色 → 渲染态 chip 即时换色', () => {
     // 未就绪 → 快照兜底，不整批脱色
     expect(wrapper.html()).toContain('color:var(--tag-color-1)')
 
-    // 树加载到位（BlockTagFields 挂载即 ensureLoaded 的落位时刻）→ 实时色
+    // 树加载到位（BlockFieldZone 挂载即 ensureLoaded 的落位时刻）→ 实时色
     tagsStore.entries = [seedTag({ color: '--tag-color-5' })]
     tagsStore.loaded = true
     await flushPromises()

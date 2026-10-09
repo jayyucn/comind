@@ -17,7 +17,7 @@ use crate::storage::executor::Executor;
 pub const FIELD_DEFINITION_COLS: &[&str] = &[
     "id", "key", "title", "type", "closed_values", "is_system",
     "created_at", "updated_at", "version", "deleted_at", "default_value", "hide_when",
-    "is_preset",
+    "is_preset", "display_form_override",
 ];
 
 pub fn field_definition_select_cols() -> String {
@@ -50,6 +50,9 @@ pub fn row_to_field_definition_native(row: &rusqlite::Row) -> Result<FieldDefini
         default_value: row.get(10)?,
         hide_when: crate::types::field_definition::normalize_hide_when(&row.get::<_, String>(11)?),
         is_preset: row.get::<_, i64>(12)? != 0,
+        display_form_override: crate::types::field_definition::normalize_display_form_override(
+            &row.get::<_, String>(13)?,
+        ),
     })
 }
 
@@ -88,6 +91,9 @@ pub fn row_to_field_definition_js(row: &HashMap<String, String>) -> FieldDefinit
             .and_then(|s| if s.is_empty() { None } else { Some(s) }),
         hide_when: crate::types::field_definition::normalize_hide_when(
             &row.get("hide_when").cloned().unwrap_or_default(),
+        ),
+        display_form_override: crate::types::field_definition::normalize_display_form_override(
+            &row.get("display_form_override").cloned().unwrap_or_default(),
         ),
     }
 }
@@ -161,6 +167,7 @@ pub fn field_definition_create<E: Executor>(exec: &E, fd: &FieldDefinition) -> R
         &fd.default_value,
         &fd.hide_when,
         &is_preset_i64,
+        &fd.display_form_override,
     ];
     exec.execute(&field_definition_insert_sql(), &params)?;
     Ok(())
@@ -170,7 +177,7 @@ pub fn field_definition_create<E: Executor>(exec: &E, fd: &FieldDefinition) -> R
 pub fn field_definition_update<E: Executor>(exec: &E, fd: &FieldDefinition) -> Result<(), Box<dyn Error>> {
     let closed_values_json = closed_values_to_sql(&fd.closed_values);
     let is_system_i64 = if fd.is_system { 1i64 } else { 0i64 };
-    let sql = "UPDATE FieldDefinition SET key = ?2, title = ?3, type = ?4, closed_values = ?5, is_system = ?6, default_value = ?7, hide_when = ?8, updated_at = ?9, version = version + 1 \
+    let sql = "UPDATE FieldDefinition SET key = ?2, title = ?3, type = ?4, closed_values = ?5, is_system = ?6, default_value = ?7, hide_when = ?8, display_form_override = ?9, updated_at = ?10, version = version + 1 \
                WHERE id = ?1";
     let params: Vec<&dyn ToSql> = vec![
         &fd.id,
@@ -181,6 +188,7 @@ pub fn field_definition_update<E: Executor>(exec: &E, fd: &FieldDefinition) -> R
         &is_system_i64,
         &fd.default_value,
         &fd.hide_when,
+        &fd.display_form_override,
         &fd.updated_at,
     ];
     exec.execute(sql, &params)?;
@@ -329,10 +337,17 @@ mod tests {
         assert_eq!(fd.version, 0);
         assert_eq!(fd.deleted_at, None);
         assert_eq!(fd.hide_when, "never");
+        // 旧 JSON 行缺 display_form_override → 归一为 auto（跟随类型默认，D21）
+        assert_eq!(fd.display_form_override, "auto");
         // 白名单外的脏值回落 never，不静默放行
         m.insert("hide_when".to_string(), "bogus".to_string());
         assert_eq!(row_to_field_definition_js(&m).hide_when, "never");
         m.insert("hide_when".to_string(), "when_empty".to_string());
         assert_eq!(row_to_field_definition_js(&m).hide_when, "when_empty");
+        // display_form_override 同样白名单归一（D21 决策 5）
+        m.insert("display_form_override".to_string(), "bogus".to_string());
+        assert_eq!(row_to_field_definition_js(&m).display_form_override, "auto");
+        m.insert("display_form_override".to_string(), "chip".to_string());
+        assert_eq!(row_to_field_definition_js(&m).display_form_override, "chip");
     }
 }

@@ -2,7 +2,7 @@
  * 字段「隐藏」规则单源（ADR-0050 D18）。
  *
  * 规则存字段定义级（`PersistedFieldDefinition.hide_when`，全局共享），作用面 =
- * **块属性展示**（`BlockTagFields.vue`）：符合条件的字段行不渲染。两个消费方：
+ * **块属性展示**（`BlockFieldZone.vue`）：符合条件的字段行不渲染。两个消费方：
  * - 标签管理页字段模板的「隐藏」列（下拉编辑 + 只读显示）→ 取值表 / 显示名 / 归一化；
  * - 块级字段区 → `isFieldHiddenByRule` 判定。
  */

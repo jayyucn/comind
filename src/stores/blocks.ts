@@ -540,7 +540,7 @@ export const useBlockStore = defineStore('blocks', () => {
       }
 
       // 回写 Rust 派生的 block.tags（content 中 `#tag` 引用 → 标签归属由 Rust 解析并写入）。
-      // 不回写则本地 block.tags 永远停留在输入前的值，块下字段展示区（BlockTagFields 读
+      // 不回写则本地 block.tags 永远停留在输入前的值，块下字段展示区（BlockFieldZone 读
       // block.tags）在输入 #tag 后不刷新，需手动切页 / 重开才更新。
       const prevTags = new Set(currentBlock.tags ?? [])
       if (savedBlock.tags) {

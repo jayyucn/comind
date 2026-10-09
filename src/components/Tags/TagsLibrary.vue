@@ -34,6 +34,10 @@ import type {
 } from '../../types/tag-persisted'
 import type { FieldHideValue } from '../../utils/field-hide'
 import { FIELD_HIDE_LABELS, FIELD_HIDE_OPTIONS, normalizeHideWhen } from '../../utils/field-hide'
+import {
+  normalizeDisplayFormOverride,
+  type DisplayFormOverride,
+} from '../../utils/field-display-form'
 import { isTagColorToken, tagDotStyle } from '../../utils/tag-color'
 import BasePopover from '../common/BasePopover.vue'
 import DatePicker from '../common/DatePicker.vue'
@@ -553,6 +557,32 @@ function hideValueOf(def: PersistedFieldDefinition): string {
 async function onChangeHide(def: PersistedFieldDefinition, next: string) {
   if (normalizeHideWhen(def.hide_when) === next) return
   await tagsStore.updateFieldDefinition({ id: def.id, hide_when: next })
+}
+
+// ── 形态列（ADR-0050 D21 决策 5/6）：下拉就地切换，定义级全局共享 ──
+
+/** 形态选项（单维枚举，auto = 跟随类型默认映射）。 */
+const FIELD_FORM_OPTIONS: { value: DisplayFormOverride; label: string }[] = [
+  { value: 'auto', label: '跟随类型' },
+  { value: 'chip', label: '胶囊' },
+  { value: 'icon', label: '图标' },
+  { value: 'icon-text', label: '图标+文字' },
+  { value: 'text', label: '文字' },
+]
+
+const FIELD_FORM_LABELS: Record<DisplayFormOverride, string> = Object.fromEntries(
+  FIELD_FORM_OPTIONS.map((o) => [o.value, o.label]),
+) as Record<DisplayFormOverride, string>
+
+/** 行的形态覆盖取值（历史脏值归一为 auto，下拉不会因此显示空白）。 */
+function formValueOf(def: PersistedFieldDefinition): DisplayFormOverride {
+  return normalizeDisplayFormOverride(def.display_form_override)
+}
+
+/** 形态覆盖落库：同值不写；定义级共享 → 改的是定义本身。 */
+async function onChangeForm(def: PersistedFieldDefinition, next: string) {
+  if (normalizeDisplayFormOverride(def.display_form_override) === next) return
+  await tagsStore.updateFieldDefinition({ id: def.id, display_form_override: next })
 }
 
 // ── 枚举选项面板（挂在「默认」列，BasePopover） ──────────────────
@@ -1104,6 +1134,7 @@ async function submitAddField() {
                 <span class="tag-field-cell">默认</span>
                 <span class="tag-field-cell">来源</span>
                 <span class="tag-field-cell">隐藏</span>
+                <span class="tag-field-cell">形态</span>
                 <span class="tag-field-cell" />
               </div>
             </div>
@@ -1230,6 +1261,27 @@ async function submitAddField() {
                   v-else
                   class="tag-field-hide"
                 >{{ FIELD_HIDE_LABELS[hideValueOf(row.def) as FieldHideValue] }}</span>
+
+                <!-- 形态（ADR-0050 D21 决策 5/6）：下拉就地切换；继承 / 系统字段只显示形态名 -->
+                <select
+                  v-if="canEditField(row)"
+                  class="tag-field-form-select"
+                  :value="formValueOf(row.def)"
+                  :aria-label="`展示形态：${row.def.title}`"
+                  @change="onChangeForm(row.def, ($event.target as HTMLSelectElement).value)"
+                >
+                  <option
+                    v-for="opt in FIELD_FORM_OPTIONS"
+                    :key="opt.value"
+                    :value="opt.value"
+                  >
+                    {{ opt.label }}
+                  </option>
+                </select>
+                <span
+                  v-else
+                  class="tag-field-form"
+                >{{ FIELD_FORM_LABELS[formValueOf(row.def)] }}</span>
 
                 <button
                   v-if="canEditField(row)"
@@ -2091,11 +2143,11 @@ async function submitAddField() {
 
 .tag-field-line {
   display: grid;
-  // 字段列自适应 + 类型列收紧到「刚好装下一个类型名」+ 默认/来源吃余量 + 隐藏列 + 操作列定宽。
+  // 字段列自适应 + 类型列收紧到「刚好装下一个类型名」+ 默认/来源/隐藏/形态吃余量 + 操作列定宽。
   // 类型列宽是唯一的手调位：下拉框 width:100% 跟着它走，改列宽即可，不要两处都写死。
   // 50px = 「枚举」等两字类型 + 原生下拉箭头刚好装下（历史遗留的四字类型会略裁，罕见）。
-  // 隐藏列取值最长四字（「为默认值时」）→ 与来源列同吃余量。
-  grid-template-columns: minmax(0, 1.1fr) 50px minmax(0, 0.9fr) minmax(0, 0.8fr) minmax(0, 0.8fr) 20px;
+  // 隐藏列取值最长四字（「为默认值时」）→ 与来源列同吃余量；形态列取值最长四字（「图标+文字」）。
+  grid-template-columns: minmax(0, 1.1fr) 50px minmax(0, 0.9fr) minmax(0, 0.8fr) minmax(0, 0.8fr) minmax(0, 0.8fr) 20px;
   column-gap: var(--space-2);
   align-items: center;
   min-height: 26px;
@@ -2191,6 +2243,29 @@ async function submitAddField() {
 
 /* 只读行（继承 / 系统字段）：与上面的 select 同列同对齐（居中） */
 .tag-field-hide {
+  overflow: hidden;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  text-align: center;
+  text-overflow: ellipsis;
+}
+
+/* ── 列：形态（下拉就地切换，ADR-0050 D21 决策 5）—— 窄列，文字居中 ──
+   与隐藏列同形态：width 吃满列，列宽在 .tag-field-line 手调。 */
+.tag-field-form-select {
+  width: 100%;
+  min-width: 0;
+  text-align: center;
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+  background: var(--bg-base2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  padding: 1px 1px;
+}
+
+/* 只读行（继承 / 系统字段）：与上面的 select 同列同对齐（居中） */
+.tag-field-form {
   overflow: hidden;
   color: var(--text-secondary);
   white-space: nowrap;

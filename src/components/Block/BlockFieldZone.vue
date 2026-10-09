@@ -1,28 +1,38 @@
 <script setup lang="ts">
 /**
- * 块字段渲染载体（ADR-0050 D1「挂载即显示」＋ ADR-0051 D6 职责全迁）。
+ * 块字段区渲染载体（ADR-0050 D1「挂载即显示」＋ ADR-0051 D6 职责全迁 + D21 形态体系）。
  *
- * 单一载体承载块字段值的全部渲染位（原 `PropertyInline` / `PropertyDisplay` 的职责）：
+ * 命名（D21 实施，2026-10-08）：原 `BlockTagFields` 更名为 `BlockFieldZone`——
+ * Tag 在字段模型里只承担「聚合字段」的角色（模板声明 + 有效字段并集解析），
+ * 本组件渲染的是**块的（聚合后）字段**，与 tag 本体无关。
+ *
+ * 单一载体承载块字段值的全部渲染位：
  * - `between`：bullet 与内容之间的内联槽（如 status 任务图标）
+ * - `right`：内容行尾内联槽（priority 象限网格图标，ADR-0054 D3）
  * - `book-note`：书笔记来源行（Pin + 章节 + 原文引用）
  * - `all`：完整字段列表（Backlinks 等）
- * - `list`：content 下方「挂载即显示」的 Tag 字段区（含空占位、隐藏规则）
+ * - `list`：content 下方「挂载即显示」的块字段区（含空占位、隐藏规则）
  *
  * 块上每个字段值有且只有一个权威展示位（ADR-0050 D19 / D20）：行内 chips 列已下线，
- * 块内字段展示统一由 `list` 承担——它按标签模板驱动、标题取自持久化定义，
- * 比编译期反查更准（自定义字段不会退化成显示 field id）。`between` 内联槽独占
- * `between-bullet-content`（status 以图标呈现，形态不同，不在本区列文本）。
+ * 块内字段展示统一由 `list` 承担——它按标签模板驱动、标题取自持久化定义。
  *
- * `list` 变体是**唯一 tag 本位**的一支：字段集合来自该块已挂标签的有效字段并集
- * （解析单源在 Rust：`effective_field_ids`），无值字段以空占位呈现；其余变体沿用
- * 「块上已有字段值行 → 按字段定义渲染」的既有口径（与迁移前完全一致）。
+ * **D21 形态体系**：`list` / `all` 共用同一形态注册表（`utils/field-display-form.ts`），
+ * 每字段按「用户覆盖 > 编译期 displayStyle > 类型默认映射」解析形态
+ * （chip / icon / icon-text / text）；chip 形态无值出虚线 ghost 胶囊（点击即录入），
+ * `hide_when` 规则命中优先于一切形态（D21 决策 1/5/7/9）。
+ *
+ * `list` 变体以**标签本位为主、孤儿值兜底**：字段集合 = 该块已挂标签的有效字段并集
+ * （解析单源在 Rust：`effective_field_ids`）∪ 孤儿字段（块上已有值、但其 key 不在
+ * 任何已挂标签的有效字段并集中——删 tag / 去 tag 后悬空保留的值，弱区分样式标注
+ * 以断链图标（Unlink）标注「未关联标签」仍可见可编辑）；其余变体沿用「块上已有字段值行 → 按字段定义渲染」的口径。
  *
  * 值读写走 fieldValue store；行内存储形态是库内 `FieldValue` 原形，读取端统一经
  * `decodeFieldValueData` 还原内存值。
  */
-import { Pin } from 'lucide-vue-next'
+import { Pin, Unlink } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import { openReaderWindow } from '../../composables/useReaderWindow'
+import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import { useBlockStore } from '../../stores/blocks'
 import { useEditorStore } from '../../stores/editor'
 import { useFieldValueStore } from '../../stores/fieldValue'
@@ -33,9 +43,11 @@ import type { FieldValue } from '../../types/field-value'
 import { isSystemField } from '../../types/tag'
 import type { PersistedFieldDefinition } from '../../types/tag-persisted'
 import { decodeDefaultJson, isFieldHiddenByRule, normalizeHideWhen } from '../../utils/field-hide'
+import { resolveDisplayForm, type DisplayFormKind } from '../../utils/field-display-form'
 import { decodeFieldValueData } from '../../utils/field-value-codec'
 import { isTauriEnvironment } from '../../wasm/tauri-platform'
 import { Icon } from '../Icons'
+import DatePicker, { type DatePickerValue } from '../common/DatePicker.vue'
 
 const props = withDefaults(defineProps<{
   blockId: string
@@ -51,6 +63,7 @@ const tagsStore = useTagsStore()
 const fieldValueStore = useFieldValueStore()
 const editorStore = useEditorStore()
 const blockStore = useBlockStore()
+const { navigateToPage } = useNavigateToPage()
 
 onMounted(() => {
   if (props.variant !== 'list') return
@@ -73,6 +86,11 @@ const rows = computed<FieldValue[]>(() => fieldValueStore.getBlockFieldValues(pr
 
 function defOf(key: string): FieldDefinition | undefined {
   return getFieldDefinition(key)
+}
+
+/** 持久化定义（用户覆盖列的唯一来源）；`all` 变体无 tagIds，只能按 key 反查。 */
+function persistedDefOf(key: string): PersistedFieldDefinition | undefined {
+  return tagsStore.fieldDefinitions.find((d) => d.key === key)
 }
 
 /** 按 displayPosition 取行（内联槽用） */
@@ -233,11 +251,6 @@ function onInlineClick(fv: FieldValue, event: MouseEvent) {
   openEditor(fv.key, event.currentTarget as HTMLElement)
 }
 
-// ── 悬浮提示 ────────────────────────────────────────────────
-// 块行尾 chips 渲染位已下线（ADR-0050 D20）：行内速览由 content 下方字段区承担，
-// 它按标签模板驱动、标题取自持久化定义，比行内的编译期反查更准。
-// 「+N」徽标与收纳浮层随之移除，`all` 变体（Backlinks 消费）改为全量平铺。
-
 /** 悬浮提示：quote 给全文，其余给「字段名: 值」 */
 function chipTitleAttr(fv: FieldValue): string | undefined {
   const value = dataOf(fv)
@@ -285,10 +298,10 @@ async function jumpToSource(): Promise<void> {
   await openReaderWindow(bookPageId, { jumpCfi: cfi })
 }
 
-// ── list 变体：Tag 字段区 ───────────────────────────────────
+// ── list 变体：块字段区 ─────────────────────────────────────
 
 /**
- * 有效字段并集（去重按字段定义 id，保持首次出现顺序）。
+ * list 变体字段集合 = 标签驱动字段 ∪ 孤儿字段（见下方 `fields` 合成处）。
  *
  * 本区是块内**唯一的字段录入面**（ADR-0050 D20：行内 chips 列已下线），故模板内
  * 所有字段都在此列出——包括 `bottom-of-block` 域字段与无 `displayPosition` 的自定义字段。
@@ -302,19 +315,81 @@ async function jumpToSource(): Promise<void> {
  * 该判定经 `getFieldDefinition(key)` 反查编译期 `FieldDefinition.displayPosition`
  * （`PersistedFieldDefinition` 不持久化该字段，见 `tag-persisted.ts:6`）。
  */
-const fields = computed<PersistedFieldDefinition[]>(() => {
+/**
+ * 标签有效字段并集（仅排除 between 内联槽；隐藏规则在下游 `fields` 与 `orphanFields`
+ * 各自分别应用，故此处保留全量，使 `tagDrivenKeys` 能兜底——被隐藏规则拦掉的标签驱动
+ * 字段不应被误判为孤儿值重新拉回展示）。
+ */
+const tagDrivenDefs = computed<PersistedFieldDefinition[]>(() => {
   const seen = new Set<string>()
   const out: PersistedFieldDefinition[] = []
   for (const tag of tags.value) {
     for (const def of tagsStore.effectiveFieldDefinitions(tag.id)) {
       if (seen.has(def.id)) continue
       if (defOf(def.key)?.displayPosition === 'between-bullet-content') continue
-      if (isHiddenByRule(def)) continue
       seen.add(def.id)
       out.push(def)
     }
   }
   return out
+})
+
+/** 标签驱动字段 key 全集（含被隐藏规则拦掉的）——用于剔除孤儿值，避免隐藏字段复活 */
+const tagDrivenKeys = computed<Set<string>>(() => new Set(tagDrivenDefs.value.map((d) => d.key)))
+
+/**
+ * 孤儿字段（选项 A：删 tag / 去 tag 后让悬空值可见）。
+ * 定义：该块已有 FieldValue 行，但其 key 不在当前 tag 有效字段并集中。
+ * 删 tag 不删 FieldValue（`TagService::delete` 仅软删 tag 行），这些值原被 list 变体
+ * 「tag 本位门控」整段隐身——A 改动把它们拉回录入面，弱区分样式以 Unlink 断链图标标注，
+ * 仍可被查看与编辑（重新打同 tag 即回到正常态）。
+ *
+ * 排除项与 list 变体一致：deadline/scheduled 内联为 dateRef、between 内联槽、隐藏规则命中。
+ */
+const orphanFields = computed<PersistedFieldDefinition[]>(() => {
+  const seen = new Set<string>()
+  const out: PersistedFieldDefinition[] = []
+  for (const fv of rows.value) {
+    if (tagDrivenKeys.value.has(fv.key)) continue
+    if (seen.has(fv.key)) continue
+    if (fv.key === 'deadline' || fv.key === 'scheduled') continue
+    if (defOf(fv.key)?.displayPosition === 'between-bullet-content') continue
+    const def = persistedDefOf(fv.key) ?? synthFieldDef(fv.key)
+    if (isHiddenByRule(def)) continue
+    seen.add(fv.key)
+    out.push(def)
+  }
+  return out
+})
+
+/** 孤儿 key 集合（模板弱区分样式判定用） */
+const orphanKeySet = computed<Set<string>>(() => new Set(orphanFields.value.map((d) => d.key)))
+
+/** 兜底合成最小定义（key 在库中无任何定义时的极端兜底；正常孤儿字段都有 persistedDefOf） */
+function synthFieldDef(key: string): PersistedFieldDefinition {
+  return {
+    id: key,
+    key,
+    title: key,
+    type: 'string',
+    closed_values: null,
+    default_value: null,
+    hide_when: 'never',
+    is_system: false,
+    created_at: 0,
+    updated_at: 0,
+    version: 1,
+    deleted_at: null,
+  }
+}
+
+/**
+ * list 变体可见字段 = 标签驱动字段（过隐藏规则）∪ 孤儿字段（过隐藏规则）。
+ * 见上方各 computed 说明；孤儿字段不重复计入已声明的标签驱动字段。
+ */
+const fields = computed<PersistedFieldDefinition[]>(() => {
+  const tagFields = tagDrivenDefs.value.filter((d) => !isHiddenByRule(d))
+  return [...tagFields, ...orphanFields.value]
 })
 
 /** 该块此字段的值形态：未填（无行 / 空串 / 空数组）→ null。 */
@@ -354,9 +429,125 @@ function valueText(def: PersistedFieldDefinition): string | null {
   return closed ? String(closed) : String(value)
 }
 
+/** date 类型字段的当前值（'YYYY-MM-DD' | undefined），供 DatePicker 绑定。 */
+function dateValue(def: PersistedFieldDefinition): string | undefined {
+  const fv = fieldValueStore.getBlockFieldValue(props.blockId, def.key)
+  if (!fv) return undefined
+  const v = dataOf(fv)
+  return typeof v === 'string' && v ? v : undefined
+}
+
+/**
+ * date 字段取值回调（DatePicker single 模式）：选日期 → 落库为 date 类型；
+ * 清除（undefined / 空串）→ 删行（field-value 以「无行」表示空）。
+ */
+async function onDateChange(def: PersistedFieldDefinition, value: DatePickerValue) {
+  if (value === undefined || value === '') {
+    const fv = fieldValueStore.getBlockFieldValue(props.blockId, def.key)
+    if (fv) await fieldValueStore.deleteFieldValue(fv.id, props.blockId)
+    return
+  }
+  if (typeof value === 'string') {
+    await fieldValueStore.setFieldValue(props.blockId, def.key, value, 'date')
+  }
+}
+
+// ── D21 形态解析与分派 ──────────────────────────────────────
+
+/** 布尔值的图标字符（icon 形态下值即 ✓/✗，无需额外图标资源） */
+function iconCharOf(def: PersistedFieldDefinition): string | null {
+  if (def.type === 'boolean') {
+    return rawValueOf(def) === 'true' ? '✓' : '✗'
+  }
+  const value = rawValueOf(def)
+  if (value === null) return null
+  return getIcon(def.key, value)
+}
+
+/**
+ * list 变体的逐字段有效形态（D21 决策 1/5/6）：
+ * 解析单源 `resolveDisplayForm`（用户覆盖 > 编译期 displayStyle > 类型默认），
+ * 叠加一条渲染兜底——icon / icon-text 无可用图标字符时回落 text，
+ * 避免渲染出空图标位。
+ */
+const formByDefId = computed<Record<string, DisplayFormKind>>(() => {
+  const out: Record<string, DisplayFormKind> = {}
+  for (const def of fields.value) {
+    let form = resolveDisplayForm(def)
+    if ((form === 'icon' || form === 'icon-text') && iconCharOf(def) === null) {
+      form = 'text'
+    }
+    out[def.id] = form
+  }
+  return out
+})
+
+function formOf(def: PersistedFieldDefinition): DisplayFormKind {
+  return formByDefId.value[def.id] ?? 'text'
+}
+
+/**
+ * chip 形态的值序列：array → 每值一枚（chip 序列，D21 决策 1）；
+ * 标量 → 单枚（选项型取 label）；无值 → null（渲染 ghost 胶囊，决策 7）。
+ */
+function chipValues(def: PersistedFieldDefinition): string[] | null {
+  const fv = fieldValueStore.getBlockFieldValue(props.blockId, def.key)
+  if (!fv) return null
+  const value = dataOf(fv)
+  if (value === null || value === undefined || value === '') return null
+  if (Array.isArray(value)) return value.length ? value.map(String) : null
+  const closed = def.closed_values?.find((v) => String(v) === String(value))
+  return [closed ? String(closed) : String(value)]
+}
+
+/** chip / icon 行的点击：page 类型跳转目标页（对齐 [[page]] 导航语义），其余唤起编辑器 */
+function onFieldActivate(event: Event, def: PersistedFieldDefinition, value?: string) {
+  if (def.type === 'page' && value) {
+    void navigateToPage(value)
+    return
+  }
+  openFieldRow(event, def)
+}
+
 /** 点击 / Enter 唤起该字段的快速编辑器（锚点 = 行元素矩形）；参数取 Event 以兼容键盘触发。 */
 function openFieldRow(event: Event, def: PersistedFieldDefinition) {
+  // date 字段的值区已挂 DatePicker（single 模式）作为专属编辑器，不再弹通用编辑器。
+  if (def.type === 'date') return
   editorStore.showQuickFieldValueEditor(props.blockId, def.key, editorPosition(event.currentTarget as HTMLElement))
+}
+
+/** all 变体的图标字符：布尔值即 ✓/✗（与 list 的 iconCharOf 同语义），其余走编译期 getIcon。 */
+function allIconCharOf(fv: FieldValue): string | null {
+  const value = dataOf(fv)
+  if (value === true) return '✓'
+  if (value === false) return '✗'
+  return getIcon(fv.key, value)
+}
+
+/**
+ * all 变体的逐字段形态：编译期定义 + 持久化覆盖列合并解析（D21 决策 9——
+ * 与 list 共用同一注册表）；icon / icon-text 无可用图标字符时回落 text，
+ * 与 list 变体的渲染兜底保持一致，避免同一字段跨变体两种形态。
+ */
+function allFormOf(fv: FieldValue): DisplayFormKind {
+  let form: DisplayFormKind = 'text'
+  const persisted = persistedDefOf(fv.key)
+  if (persisted) {
+    form = resolveDisplayForm(persisted)
+  } else {
+    const compiled = defOf(fv.key)
+    if (compiled) {
+      form = resolveDisplayForm({
+        type: compiled.type,
+        closedValues: compiled.closedValues,
+        displayStyle: compiled.displayStyle,
+      })
+    }
+  }
+  if ((form === 'icon' || form === 'icon-text') && allIconCharOf(fv) === null) {
+    form = 'text'
+  }
+  return form
 }
 </script>
 
@@ -431,75 +622,174 @@ function openFieldRow(event: Event, def: PersistedFieldDefinition) {
     >{{ quote }}</span>
   </div>
 
-  <!-- all：完整字段列表（Backlinks 消费；块行内已无此渲染位，ADR-0050 D20） -->
+  <!-- all：完整字段列表（Backlinks 消费；D21 决策 9：与 list 共用形态注册表） -->
   <div
     v-else-if="variant === 'all' && !isBookNote && displayRows.length > 0"
     class="property-display"
   >
     <div class="property-list">
-      <div
+      <template
         v-for="fv in displayRows"
         :key="fv.id"
-        class="property-item"
-        :class="{ 'built-in': isSystemField(fv.key), 'quote-item': fv.key === 'quote' }"
-        :title="chipTitleAttr(fv)"
-        @mouseenter="hoveredId = fv.id"
-        @mouseleave="hoveredId = null"
-        @click.stop="openEditor(fv.key, $event.currentTarget as HTMLElement)"
       >
-        <!-- project/area 直接以图标+名称展示，不渲染字段名 -->
+        <!-- chip 形态（all 变体） -->
         <span
-          v-if="fv.key !== 'project' && fv.key !== 'area'"
-          class="property-key"
-        >{{ titleOf(fv.key) }}:</span>
-        <span class="property-value">
-          <template v-if="getIcon(fv.key, dataOf(fv))">
-            <Icon
-              v-if="isSvgIcon(getIcon(fv.key, dataOf(fv)) as string)"
-              :name="getIcon(fv.key, dataOf(fv)) as string"
-            />
-            <span v-else>{{ getIcon(fv.key, dataOf(fv)) }}</span>
-            <span v-if="getLabel(fv.key, dataOf(fv)) && defOf(fv.key)?.displayStyle !== 'icon'">
-              {{ getLabel(fv.key, dataOf(fv)) }}
-            </span>
-          </template>
-          <span v-else>{{ getLabel(fv.key, dataOf(fv)) }}</span>
-        </span>
-        <button
-          v-if="hoveredId === fv.id"
-          class="delete-button"
-          title="删除字段值"
-          @click.stop="deleteRow(fv, $event)"
+          v-if="allFormOf(fv) === 'chip'"
+          class="property-item block-field-zone-chip"
+          :class="{ 'block-field-zone-chip--ghost': dataOf(fv) === null || dataOf(fv) === '' }"
+          :title="chipTitleAttr(fv)"
+          @click.stop="openEditor(fv.key, $event.currentTarget as HTMLElement)"
         >
-          ×
-        </button>
-      </div>
+          <span class="bfz-chip-title">{{ titleOf(fv.key) }}</span>
+          <span class="bfz-chip-value">{{ getLabel(fv.key, dataOf(fv)) }}</span>
+        </span>
+        <!-- icon / icon-text 形态（决策 9：与 list 同语义，boolean 值即 ✓/✗） -->
+        <span
+          v-else-if="allFormOf(fv) === 'icon'"
+          class="property-item block-field-zone-row--icon"
+          :title="chipTitleAttr(fv)"
+          @click.stop="openEditor(fv.key, $event.currentTarget as HTMLElement)"
+        >
+          <span class="property-icon">{{ allIconCharOf(fv) }}</span>
+        </span>
+        <span
+          v-else-if="allFormOf(fv) === 'icon-text'"
+          class="property-item block-field-zone-row--icon"
+          :title="chipTitleAttr(fv)"
+          @click.stop="openEditor(fv.key, $event.currentTarget as HTMLElement)"
+        >
+          <span class="property-icon">{{ allIconCharOf(fv) }}</span>
+          <span class="property-value">{{ getLabel(fv.key, dataOf(fv)) }}</span>
+        </span>
+        <!-- text 形态（既有 item 渲染） -->
+        <div
+          v-else
+          class="property-item"
+          :class="{ 'built-in': isSystemField(fv.key), 'quote-item': fv.key === 'quote' }"
+          :title="chipTitleAttr(fv)"
+          @mouseenter="hoveredId = fv.id"
+          @mouseleave="hoveredId = null"
+          @click.stop="openEditor(fv.key, $event.currentTarget as HTMLElement)"
+        >
+          <!-- project/area 直接以图标+名称展示，不渲染字段名 -->
+          <span
+            v-if="fv.key !== 'project' && fv.key !== 'area'"
+            class="property-key"
+          >{{ titleOf(fv.key) }}:</span>
+          <span class="property-value">
+            <template v-if="getIcon(fv.key, dataOf(fv))">
+              <Icon
+                v-if="isSvgIcon(getIcon(fv.key, dataOf(fv)) as string)"
+                :name="getIcon(fv.key, dataOf(fv)) as string"
+              />
+              <span v-else>{{ getIcon(fv.key, dataOf(fv)) }}</span>
+              <span v-if="getLabel(fv.key, dataOf(fv)) && defOf(fv.key)?.displayStyle !== 'icon'">
+                {{ getLabel(fv.key, dataOf(fv)) }}
+              </span>
+            </template>
+            <span v-else>{{ getLabel(fv.key, dataOf(fv)) }}</span>
+          </span>
+          <button
+            v-if="hoveredId === fv.id"
+            class="delete-button"
+            title="删除字段值"
+            @click.stop="deleteRow(fv, $event)"
+          >
+            ×
+          </button>
+        </div>
+      </template>
     </div>
   </div>
 
-  <!-- list：content 下方「挂载即显示」的 Tag 字段区 -->
+  <!-- list：content 下方「挂载即显示」的块字段区（D21 形态分派 + 两列对齐网格）。
+       布局对齐 Tana 式字段表：左列字段名（定宽）、右列值区（值前圆点 / chip / 图标）。 -->
   <div
-    v-else-if="variant === 'list' && tags.length"
-    class="block-tag-fields"
+    v-else-if="variant === 'list' && (tags.length || orphanFields.length)"
+    class="block-field-zone"
   >
     <div
       v-for="def in fields"
       :key="def.id"
-      class="block-tag-field-row"
-      role="button"
-      tabindex="0"
+      class="block-field-zone-row"
+      :role="def.type === 'date' ? undefined : 'button'"
+      :tabindex="def.type === 'date' ? undefined : 0"
+      :class="{ 'block-field-zone-row--orphan': orphanKeySet.has(def.key), 'block-field-zone-row--date': def.type === 'date' }"
+      :data-field="def.key"
       @click="openFieldRow($event, def)"
       @keydown.enter="openFieldRow($event, def)"
     >
-      <span class="block-tag-field-title">{{ def.title }}</span>
-      <span
-        v-if="valueText(def) !== null"
-        class="block-tag-field-value"
-      >{{ valueText(def) }}</span>
-      <span
-        v-else
-        class="block-tag-field-placeholder"
-      >—</span>
+      <span class="block-field-zone-title">
+        {{ def.title }}
+        <span
+          v-if="orphanKeySet.has(def.key)"
+          class="block-field-zone-orphan-tag"
+          title="未关联标签"
+        >
+          <Unlink :size="12" />
+        </span>
+      </span>
+      <span class="block-field-zone-value">
+        <!-- date 类型字段：值区直接挂 DatePicker（single），点击唤起日历录入；
+             自带 @click.stop 不触发整行快速编辑器，清除走删行语义。 -->
+        <template v-if="def.type === 'date'">
+          <DatePicker
+            :model-value="dateValue(def)"
+            mode="single"
+            placeholder="选择日期"
+            @update:model-value="onDateChange(def, $event)"
+          />
+        </template>
+
+        <!-- chip 形态：枚举 / date / array（chip 序列）/ page（引用 chip）/ number（徽章）。
+             字段名已在左列，chip 本体不再内嵌标题。 -->
+        <template v-else-if="formOf(def) === 'chip'">
+          <template v-if="chipValues(def)">
+            <span
+              v-for="(v, i) in chipValues(def)"
+              :key="i"
+              class="block-field-zone-chip"
+              :class="{ 'block-field-zone-chip--page': def.type === 'page' }"
+              :data-field="def.key"
+              @click.stop="onFieldActivate($event, def, v)"
+              @keydown.enter.stop="onFieldActivate($event, def, v)"
+            >
+              <span class="bfz-chip-value">{{ v }}</span>
+            </span>
+          </template>
+          <!-- 无值：虚线 ghost 胶囊，点击即录入（D21 决策 7） -->
+          <span
+            v-else
+            class="block-field-zone-chip block-field-zone-chip--ghost"
+            :data-field="def.key"
+            @click.stop="openFieldRow($event, def)"
+            @keydown.enter.stop="openFieldRow($event, def)"
+          >
+            <span class="bfz-chip-value bfz-chip-value--ghost">未填</span>
+          </span>
+        </template>
+
+        <!-- icon / icon-text 形态：boolean 值即 ✓/✗；icon-text 才带值文本 -->
+        <template v-else-if="formOf(def) === 'icon' || formOf(def) === 'icon-text'">
+          <span class="property-icon">{{ iconCharOf(def) }}</span>
+          <span
+            v-if="formOf(def) === 'icon-text'"
+            class="block-field-zone-text"
+          >{{ valueText(def) ?? '—' }}</span>
+        </template>
+
+        <!-- text 形态：值前圆点标记（对齐参考布局），无值出「—」占位 -->
+        <template v-else>
+          <span
+            v-if="valueText(def) !== null"
+            class="block-field-zone-text"
+          >{{ valueText(def) }}</span>
+          <span
+            v-else
+            class="block-field-zone-placeholder"
+          >—</span>
+        </template>
+      </span>
     </div>
   </div>
 </template>
@@ -726,39 +1016,145 @@ function openFieldRow(event: Event, def: PersistedFieldDefinition) {
   background: rgba(0, 0, 0, 0.05);
 }
 
-/* ── list 变体（Tag 字段区） ── */
-.block-tag-fields {
+/* ── list 变体（块字段区，D21 形态分派 + 两列对齐网格） ── */
+/* 布局对齐 Tana 式字段表：每行 = 左列字段名（定宽 6em，超长省略）+ 右列值区。
+   定宽而非 max-content——独立行的 track 各自求解时 max-content 会对不齐。 */
+.block-field-zone {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: var(--space-1) 0;
+  gap: 1px;
+  padding: 2px 0;
 }
 
-.block-tag-field-row {
-  display: flex;
+.block-field-zone-row {
+  display: grid;
+  grid-template-columns: 6em minmax(0, 1fr);
+  column-gap: var(--space-3, 12px);
   align-items: baseline;
-  gap: var(--space-2);
   font-size: var(--text-sm);
   cursor: pointer;
   border-radius: var(--radius-sm);
-  padding: 1px var(--space-1);
+  padding: 2px 6px;
 
-  &:hover {
-    background: var(--bg-base2);
+  /* 行 hover 底只给「真可点」的行：整行点一下开快速编辑器。
+     date 行不是点击目标（openFieldRow 对 date 提前 return，编辑由内嵌 DatePicker 独占），
+     故排除其行 hover，避免「行底 + 控件 hover」在暗色下并档糊成一片。 */
+  &:not(.block-field-zone-row--date):hover {
+    background: var(--surface-subtle);
   }
 }
 
-.block-tag-field-title {
-  color: var(--text-tertiary);
-  font-size: var(--text-xs);
-  min-width: 4em;
+/* date 行非按钮：光标回默认，焦点交给内嵌的 DatePicker 触发器（原生 button）。 */
+.block-field-zone-row--date {
+  cursor: default;
 }
 
-.block-tag-field-value {
+.block-field-zone-title {
+  color: var(--text-secondary);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 孤儿字段（选项 A）：删 tag / 去 tag 后悬空值——弱区分样式让值可见可编辑。
+   标题降权 + 尾部 Unlink 断链图标（12px，--text-tertiary），不抢正常字段的视觉权重。 */
+.block-field-zone-row--orphan .block-field-zone-title {
+  color: var(--text-tertiary);
+}
+
+.block-field-zone-orphan-tag {
+  display: inline-flex;
+  color: var(--text-tertiary);
+  margin-left: 6px;
+  flex: none;
+  opacity: 0.85;
+  vertical-align: middle;
+}
+
+/* 右列值区：多值（chip 序列）折行排布 */
+.block-field-zone-value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  min-width: 0;
+}
+
+/* text 形态的值行：值前小圆点标记（对齐参考布局的 bullet 节奏） */
+.block-field-zone-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-primary);
+  min-width: 0;
+
+  &::before {
+    flex: none;
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: var(--text-tertiary);
+    content: '';
+  }
+}
+
+.block-field-zone-placeholder {
+  color: var(--text-tertiary);
+}
+
+.block-field-zone-row .property-icon {
+  margin-right: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+  line-height: var(--leading-none);
+}
+
+/* chip 形态（D21 决策 5）：描边幽灵款——1px 中性描边 + 透明底，不与 block-tag /
+   date-ref 的实底胶囊争层级（字段值退后，色环仍只留给 tag 一家）；hover 才补淡底。
+   list 变体下 chip 不内嵌字段名（左列已示），all 变体的 chip 仍带 .bfz-chip-title。 */
+.block-field-zone-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0 7px;
+  font-size: var(--text-sm);
+  line-height: calc(var(--leading-normal) * var(--text-sm));
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+
+  &:hover {
+    background: var(--surface-subtle);
+    border-color: var(--border-strong);
+  }
+}
+
+/* page 引用 chip：强调色值文本（对齐 [[page]] 的 block-link 语义） */
+.block-field-zone-chip--page .bfz-chip-value {
+  color: var(--accent);
+}
+
+.bfz-chip-title {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.bfz-chip-value {
   color: var(--text-primary);
 }
 
-.block-tag-field-placeholder {
-  color: var(--text-tertiary);
+/* 无值 ghost（D21 决策 7）：与填充 chip 同构、虚线示缺，点击即录入。
+   填充侧改描边款后，虚线/实线的对比不再倒挂——虚线=空位，实线=有值。 */
+.block-field-zone-chip--ghost {
+  border-style: dashed;
+
+  .bfz-chip-title,
+  .bfz-chip-value--ghost {
+    color: var(--text-tertiary);
+  }
 }
 </style>

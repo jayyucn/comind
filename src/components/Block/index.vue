@@ -21,7 +21,7 @@ import { useBlockRelationshipCleanup } from '../../composables/useBlockRelations
 import { useBlockStore } from '../../stores/blocks'
 import { useEditorStore } from '../../stores/editor'
 import { useFieldValueStore } from '../../stores/fieldValue'
-import BlockTagFields from './BlockTagFields.vue'
+import BlockFieldZone from './BlockFieldZone.vue'
 import BlockDraggableList from './components/BlockDraggableList.vue'
 import TaskProgressBar from './components/TaskProgressBar.vue'
 import { useBlockCollapse } from './composables/useBlockCollapse'
@@ -442,7 +442,7 @@ function onContentClick(e: MouseEvent) {
 
 /** 内容区以外的「自交互」元素：保留自身点击语义，Ctrl/Cmd+Click 不接管 */
 const SELF_INTERACTIVE_SELECTOR =
-  '.block-link, .rel-type-label, .date-ref, .property-item, .property-inline-item'
+  '.block-link, .rel-type-label, .date-ref, .property-item, .property-inline-item, .block-field-zone-hide, .block-field-zone-restore'
 
 /**
  * 块选区命中面（ADR-0035 D6）：`Ctrl/Cmd+Click` 在**整块行内、内容区以外**的任意
@@ -476,6 +476,18 @@ function onFieldValueMousedown(e: MouseEvent) {
   // Ctrl/Cmd+Click 交给块级命中面 onBlockMousedown 统一接管（其命中面覆盖本区域）
   if (e.ctrlKey || e.metaKey) return
   selection?.startTracking(blockId.value, true)
+}
+
+// ── 字段区显隐（ADR-0050 D21 决策 3 / 8）────────────────────
+
+/** 字段区隐藏态：唯一权威 = block.format.fields_hidden，读写直连 store 不留本地副本（与折叠态同构）。 */
+const fieldsHidden = computed(() => block.value?.format?.fields_hidden === true)
+
+/** 已挂标签才谈得上隐藏字段区（未挂标签的块本就无字段区）。 */
+const hasFieldZone = computed(() => (block.value?.tags?.length ?? 0) > 0)
+
+function setFieldsHidden(hidden: boolean) {
+  void blockStore.updateBlockFormat(blockId.value, { fields_hidden: hidden })
 }
 
 async function onLanguageChange(lang: string) {
@@ -563,7 +575,7 @@ watch(isActive, (active) => {
 
         <div class="block-body">
           <!-- Between 字段值显示 -->
-          <BlockTagFields
+          <BlockFieldZone
             :block-id="blockId"
             variant="between"
           />
@@ -620,7 +632,7 @@ watch(isActive, (active) => {
 
           <!-- 内容行尾内联槽：priority 象限网格图标（ADR-0054 D3/D4 恢复）。
                只读展示位 —— 与下方字段区（录入面）职责不同，不互斥。 -->
-          <BlockTagFields
+          <BlockFieldZone
             :block-id="blockId"
             variant="right"
           />
@@ -633,17 +645,46 @@ watch(isActive, (active) => {
       class="block-properties"
       @mousedown="onFieldValueMousedown"
     >
-      <BlockTagFields
+      <BlockFieldZone
         :block-id="blockId"
         variant="book-note"
       />
-      <!-- Tag 本位字段区（ADR-0050 D1「挂载即显示」）：只渲染该块已挂标签的有效字段 -->
-      <BlockTagFields
-        :block-id="blockId"
-        :tag-ids="block.tags ?? []"
-        variant="list"
-      />
+      <!-- 块字段区（ADR-0050 D1「挂载即显示」）：只渲染该块已挂标签的有效字段；
+           fieldsHidden（D21 决策 3，block.format.fieldsHidden）为真时整区不渲染 -->
+      <div
+        v-if="!fieldsHidden"
+        class="block-field-zone-wrap"
+      >
+        <BlockFieldZone
+          :block-id="blockId"
+          :tag-ids="block.tags ?? []"
+          variant="list"
+        />
+        <!-- 隐藏开关（D21 决策 8）：hover 字段带时淡入，平时无痕 -->
+        <button
+          v-if="hasFieldZone"
+          type="button"
+          class="block-field-zone-hide"
+          aria-label="隐藏字段区"
+          @mousedown.stop
+          @click.stop="setFieldsHidden(true)"
+        >
+          ×
+        </button>
+      </div>
     </div>
+
+    <!-- 恢复入口（D21 决策 8）：绝对定位到块下方间隙、不占布局高度；
+         平时无痕（opacity:0 + pointer-events:none），块行 hover 时淡入 -->
+    <button
+      v-if="fieldsHidden"
+      type="button"
+      class="block-field-zone-restore"
+      @mousedown.stop
+      @click.stop="setFieldsHidden(false)"
+    >
+      显示字段区
+    </button>
 
     <!-- 子任务进度条：子 block 含任务项（status 字段）时显示在 block 下方；
          Canceled 不参与，全部删除后随树重建自动消失 -->

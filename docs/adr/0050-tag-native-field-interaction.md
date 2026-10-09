@@ -1,6 +1,6 @@
 # ADR-0050: Tag 本位字段交互与 Tag 聚合页
 
-> **状态：D1–D21 已定稿（D21 待实施；D5 / D7 / D10 已修订，见段内标注）；阶段 1（D1 / D5 / D7 / D10 + chip 点击导航）已实施（`b955b79`）；阶段 2（D2 / D4）已实施（2026-10-07，见 D9）；D11 / D12 / D18 与 D17 §1/§3（继承树）、D19 / D20 均已实施；阶段 3（D8 改名）待按 D8 审计推进**。上游决议见 ADR-0049「方向决议：tag 本位，属性概念退役」段与 CONTEXT.md 词条 **Tag / Tag Field / Property (RETIRING)**。
+> **状态：D1–D21 已定稿（D21 已实施；D5 / D7 / D10 已修订，见段内标注）；阶段 1（D1 / D5 / D7 / D10 + chip 点击导航）已实施（`b955b79`）；阶段 2（D2 / D4）已实施（2026-10-07，见 D9）；D11 / D12 / D18 与 D17 §1/§3（继承树）、D19 / D20 均已实施；阶段 3（D8 改名）待按 D8 审计推进**。上游决议见 ADR-0049「方向决议：tag 本位，属性概念退役」段与 CONTEXT.md 词条 **Tag / Tag Field / Property (RETIRING)**。
 
 ## Context
 
@@ -397,7 +397,16 @@ native（`storage/sqlite.rs:303` CREATE TABLE + `:620` 迁移）与 wasm（`stor
 
 ### D21：块字段区字段驱动形态体系（类型默认形态 + 逐字段覆盖 + 块级整区隐藏）
 
-**Status**：accepted（待实施）
+**Status**：accepted（已实施，2026-10-09；组件 `BlockFieldZone.vue`，原 `BlockTagFields` 更名——Tag 只承担聚合字段的角色，块字段区渲染的是块的聚合字段）
+
+**实施形态（2026-10-09）**：
+
+- 形态解析单源：`src/utils/field-display-form.ts`（`typeDefaultForm` / `normalizeDisplayFormOverride` / `resolveDisplayForm`，覆盖优先级 = 用户覆盖 > 编译期 displayStyle > 类型默认；icon / icon-text 无可用图标字符时渲染兜底回落 text）。
+- Rust 列 ×1：`FieldDefinition.display_form_override`（`hide_when` 同构全触点：COLS / 双轨行映射 / create / update / batch 处理器白名单归一、sqlite + sqljs 双 CREATE TABLE 与幂等迁移、wasm32 check、`wasm:build`）。块隐藏态走 `block.format.fields_hidden` JSON 键（折叠态同通道），Rust 零改动。
+- 渲染分派：`BlockFieldZone.vue` `list` 变体按形态出 chip（数组为 chip 序列、page 为引用 chip 点击导航）/ ghost（无值虚线，点击即录入）/ icon（boolean 值即 ✓/✗）/ text；`all` 变体经同一注册表分派（编译期定义 + 持久化覆盖合并解析）。
+- 配置面：`TagsLibrary.vue` 字段模板第六列「形态」（跟随类型 / 胶囊 / 图标 / 图标+文字 / 文字），继承 / 系统字段只读沿用 `canEditField`。
+- 显隐交互：`block.format.fieldsHidden` 为真时整区不渲染；隐藏开关挂字段带右上（`.block-properties:hover` 淡入），恢复入口绝对定位到块下方间隙（`.block-row:hover` 淡入、一般兄弟组合器），两者平时 `opacity:0 + pointer-events:none`（可点性铁律）。
+- 回归：`field-display-form.test.ts`（12 例）、`BlockFieldZone.test.ts`（29 例，含 D21 分派与 ghost；旧 right 槽「尺寸 18」预期系测试侧规格漂移，随实现修正为 14）、`blocks.fields-hidden.test.ts`（2 例）。
 
 **Context**：D20 收敛后，块字段区（`BlockTagFields` `list` 变体）是块内唯一字段录入面，但所有字段一律渲染为「标题: 值」纯文本行 + `—` 空占位：竖向逐行堆叠使块显著增高；形态上无法区分枚举、日期、页面引用等值类型，扫读时关键值不可辨。D17 §2 预设的「字段级显隐配置（默认不展示）」与 D1「挂载即显示、空字段引导录入」的录入面定位相互矛盾——字段不显式开启就永远不出现在录入面，空字段引导无从谈起；且字段级显隐与「整个字段区不要了」的诉求不在同一粒度。
 
@@ -405,8 +414,13 @@ native（`storage/sqlite.rs:303` CREATE TABLE + `:620` 迁移）与 wasm（`stor
 
 1. **类型 → 默认形态映射（单源注册表）**：字段表现形态由字段类型决定，映射表单源收口（候选落点 `utils/field-display-form.ts`）：`string` + `closed_values`（枚举）→ 值 chip（色源复用既有 token 通道）；纯 `string` → 文字形态（「标题: 值」）；`number` → 数字徽章；`boolean` → ✓/✗ 图标；`date` → 日期胶囊（对齐 dateRef 既有形态）；`array` → 值 chip 序列；`page` → 页面引用 chip（点击跳转，对齐 `[[page]]` 导航语义）。系统字段沿用各自专属形态（status = between 槽任务图标、priority = right 槽象限网格、deadline / scheduled = dateRef），不在下方字段区重复（现状不变）。
 2. **逐字段形态覆盖**：字段定义持久化列承载形态覆盖（取代 D17 §2 的「是否展示」语义）；未设置时跟随类型默认映射。配置入口在字段管理表（D14 四列就地编辑表）新增一列，编辑交互对齐既有单元格就地编辑约定。
-3. **整区隐藏按块逐块控制**：块级持久化隐藏态（持久化列，走 `comind-core-add-column` 全流程），隐藏后该块不渲染字段区。它是块数据的一部分，不是 UI 临时态。
+3. **整区隐藏按块逐块控制**：块级持久化隐藏态，存于 `block.format` JSON（`fields_hidden` 键，与折叠态 `collapsed` 同通道），Rust 侧零改动；隐藏后该块不渲染字段区。它是块数据的一部分，不是 UI 临时态。
 4. **D1「挂载即显示」保持为默认**：字段区默认渲染（作为唯一录入面）；整区隐藏是用户显式动作的结果，不是新字段的默认行为。
+5. **形态覆盖取值空间（单维枚举）**：`display_form_override = 'auto' | 'icon' | 'icon-text' | 'text' | 'chip'`；`auto`（缺省）跟随类型默认映射，不设两维矩阵与自由组合。`chip` 为胶囊化形态，底色一律取中性 surface token——色环只留给 tag 一家（沿用「存 token 名不存 hex」铁律，不扩 `--tag-color-*` 消费面）。
+6. **系统字段不可配**：系统字段的形态与其无值表现由编译期覆盖层（`tag.ts`）定死，不进字段管理表；用户字段可逐字段覆盖（继承字段定义归祖先，只读判据沿用 D14 既有约定）。
+7. **无值表现**：自定义字段按类型默认映射出无值形态（如枚举 / 日期类型的虚线 ghost 胶囊，点击即录入）；与 D18 `hide_when` 条件隐藏机制并存——规则命中优先于默认形态。
+8. **隐藏 / 恢复交互（hover 门控）**：隐藏触发 = 字段区 hover 淡入的 ×；恢复 = 块 hover 时在该块与相邻块之间的间隙淡入轻量入口。两条入口平时均不可见（与折叠 chevron 同一交互习惯），块静息态与普通块无异——不设常驻 ghost 占位，不进 BlockModal。
+9. **`all` 变体同步**：Backlinks 消费的 `all` 变体与 `list` 共用同一形态注册表与渲染分派；同一字段值跨变体形态一致（D19「同物两渲染」教训的延伸）。
 
 **对既有决策的修订**：
 
@@ -420,12 +434,12 @@ native（`storage/sqlite.rs:303` CREATE TABLE + `:620` 迁移）与 wasm（`stor
 - **字段级显隐（per-field hidden，D17 §2 原案）**：与块级整区隐藏粒度重叠；多 tag 块的字段并集做字段级显隐需另裁决冲突规则，块级开关无此问题。
 - **折叠摘要行（默认收起、点击展开）**：录入面从一跳变两跳，与 D1 直接冲突。
 
-**后果 / 待办**（实施前须经方案压测，勿直接实施）：
+**后果 / 待办**：
 
-- Rust 加列 ×2（字段定义形态覆盖列 + 块隐藏态列），各走 `comind-core-add-column` 全流程（native + sqljs 双 CREATE TABLE、sqljs 读写、wasm32 check、`wasm:build`）。
-- 块级隐藏后的**恢复入口**未定（候选：块 hover 轻量入口 / 块菜单项）。
-- 各类型形态的具体视觉规格（chip 底色 / 边框、日期格式、page 引用样式）未定。
-- `BlockTagFields` `list` 变体按形态分派渲染；`all` 变体（Backlinks 消费）是否同步升级未定。
+- Rust 加列 ×1：字段定义表 `display_form_override` 列（`hide_when` 同构，5 触点 + 迁移：native + sqljs 双 CREATE TABLE、sqljs 读写、wasm32 check、`wasm:build`）。块隐藏态走 `format` JSON，Rust 零改动。
+- 字段管理表加「形态」第六列（现为五列：字段 | 类型 | 默认 | 来源 | 隐藏），grid 列宽模板同步一档；枚举选项下拉面板形态对齐 D14 既有约定。
+- 块间间隙恢复入口的落点在 BlockList 布局层，需与块拖拽落点指示区互斥；hover 显隐走「隐形元素 `pointer-events: none`、hover 淡入可点」既有铁律。
+- 各类型形态的具体视觉规格（chip 内边距 / 圆角档位、日期格式、page 引用样式）按既有 token 与截图迭代惯例在实施中收敛。
 
 ## 开放问题
 

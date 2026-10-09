@@ -662,6 +662,11 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
             if let Some(h) = params.get("hide_when").and_then(|v| v.as_str()) {
                 fd.hide_when = crate::types::field_definition::normalize_hide_when(h);
             }
+            // 展示形态覆盖（ADR-0050 D21 决策 5）：键存在才改动；白名单外的值归一为 auto。
+            if let Some(f) = params.get("display_form_override").and_then(|v| v.as_str()) {
+                fd.display_form_override =
+                    crate::types::field_definition::normalize_display_form_override(f);
+            }
             let updated =
                 repository::FieldDefinitionRepository::update(storage.field_definitions(), &fd)?;
             Ok(OpEffect {

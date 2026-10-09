@@ -2,7 +2,7 @@
  * _doSave 回写 block.tags 回归测试（covers 输入 block 后字段展示区不刷新的根因）
  *
  * 行为约定：
- * 1. 保存成功后，Rust 派生的 block.tags 必须回写本地 store，否则 BlockTagFields
+ * 1. 保存成功后，Rust 派生的 block.tags 必须回写本地 store，否则 BlockFieldZone
  *    （读 block.tags）在输入 #tag 后不刷新。
  * 2. 块引用任务 tag 且尚无 status 字段值 → 自动 ensureTodo（status 任务图标自动展示）。
  */
@@ -155,7 +155,7 @@ describe('_doSave — 回写 block.tags', () => {
     await flushPromises()
 
     // 关键：因块新获得标签，必须回读 field-value store，否则 Rust 侧已落库的
-    // 字段默认值 FieldValue 不会显示在 BlockTagFields 字段区（一直显示占位「—」）。
+    // 字段默认值 FieldValue 不会显示在 BlockFieldZone 字段区（一直显示占位「—」）。
     expect(hoisted.loadBlockFieldValues).toHaveBeenCalledWith(id)
   })
 

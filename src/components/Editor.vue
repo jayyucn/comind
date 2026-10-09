@@ -103,7 +103,7 @@ const tagsByTitle = computed(() => new Map(tagsStore.allTags.map((t) => [t.title
  * 编辑态 `#tag` 的着色解析器（ADR-0050 D11）：`InlineTagExtension` 不碰 Pinia，
  * 由宿主注入闭包 —— 闭包每次重建装饰都求值，故标签改色后无需重启编辑器。
  *
- * 标签树的加载不在此处触发：`BlockTagFields`（每个块都挂）已在 mounted 里
+ * 标签树的加载不在此处触发：`BlockFieldZone`（每个块都挂）已在 mounted 里
  * `ensureLoaded()`；本组件的 `tagsByTitle` watch 负责在它到位后补一次重绘。
  */
 function resolveInlineTag(title: string) {

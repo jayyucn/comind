@@ -50,9 +50,14 @@ export interface PersistedFieldDefinition {
   default_value: string | null
   /**
    * 块属性展示的隐藏规则（ADR-0050 D18）：never / when_empty / when_not_empty /
-   * when_default / always。定义级全局共享，作用于块级字段区（BlockTagFields）。
+   * when_default / always。定义级全局共享，作用于块级字段区（BlockFieldZone）。
    */
   hide_when: string
+  /**
+   * 块字段区展示形态的用户覆盖（ADR-0050 D21 决策 5）：auto / icon / icon-text /
+   * text / chip。`auto` = 跟随类型默认映射；系统字段不可配，恒 `auto`（决策 6）。
+   */
+  display_form_override?: string | null
   is_system: boolean
   /**
    * 预设标记（ADR-0049 系统标签三态模型，2026-09-30）：域字段（project/area/book/...）
@@ -139,6 +144,8 @@ export type UpdateFieldDefinitionParams = {
   default_value?: string | null
   /** 隐藏规则（ADR-0050 D18）；Rust 侧按白名单归一，未知值回落 never */
   hide_when?: string
+  /** 展示形态覆盖（ADR-0050 D21 决策 5）；Rust 侧按白名单归一，未知值回落 auto */
+  display_form_override?: string
 }
 
 export type CreateFieldValueParams = {

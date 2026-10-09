@@ -301,7 +301,8 @@ impl SQLiteAdapter {
                 deleted_at      INTEGER,
                 default_value   TEXT,
                 hide_when       TEXT NOT NULL DEFAULT 'never',
-                is_preset       INTEGER NOT NULL DEFAULT 0
+                is_preset       INTEGER NOT NULL DEFAULT 0,
+                display_form_override TEXT NOT NULL DEFAULT 'auto'
             );
             CREATE INDEX IF NOT EXISTS idx_fielddef_key ON FieldDefinition(key);
 
@@ -352,6 +353,7 @@ impl SQLiteAdapter {
         Self::seed_system_tags(conn)?;
         Self::migrate_add_field_definition_default_value(conn)?;
         Self::migrate_add_field_definition_hide_when(conn)?;
+        Self::migrate_add_field_definition_display_form_override(conn)?;
         Self::migrate_add_tag_is_preset(conn)?;
         Self::migrate_add_field_definition_is_preset(conn)?;
         Self::migrate_rename_task_view_to_screen_view(conn)?;
@@ -631,6 +633,28 @@ impl SQLiteAdapter {
         if !has_column {
             conn.execute(
                 "ALTER TABLE FieldDefinition ADD COLUMN hide_when TEXT NOT NULL DEFAULT 'never'",
+                [],
+            )?;
+        }
+        Ok(())
+    }
+
+    fn migrate_add_field_definition_display_form_override(
+        conn: &rusqlite::Connection,
+    ) -> Result<(), Box<dyn Error>> {
+        // ADR-0050 D21：块字段区展示形态的用户覆盖。幂等：老库 FieldDefinition 表补
+        // display_form_override 列（TEXT，'auto' = 跟随类型默认映射；带 DEFAULT 使存量行直接落 'auto'）。
+        let has_column: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('FieldDefinition') WHERE name = 'display_form_override'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|c| c > 0)
+            .unwrap_or(false);
+        if !has_column {
+            conn.execute(
+                "ALTER TABLE FieldDefinition ADD COLUMN display_form_override TEXT NOT NULL DEFAULT 'auto'",
                 [],
             )?;
         }

@@ -10,7 +10,7 @@ import { buildDocumentOrder } from '../utils/block-helpers'
 import type { Block } from '../types/block'
 import type { FieldValueData } from '../types/field-definition'
 import { decodeFieldValueData } from '../utils/field-value-codec'
-import BlockTagFields from './Block/BlockTagFields.vue'
+import BlockFieldZone from './Block/BlockFieldZone.vue'
 
 const props = withDefaults(defineProps<{
   pageId?: string
@@ -131,7 +131,7 @@ async function loadBacklinks() {
     // 按页面标题字母序排序
     groups.sort((a, b) => a.sourcePageTitle.localeCompare(b.sourcePageTitle))
 
-    // 7. 加载所有块的字段值（BlockTagFields 需要）
+    // 7. 加载所有块的字段值（BlockFieldZone 需要）
     const allBlockIds = groups.flatMap(g => g.items.map(i => i.block.id))
     await Promise.allSettled(
       allBlockIds.map(id => fieldValueStore.loadBlockFieldValues(id))
@@ -275,7 +275,7 @@ watch(
                 </span>
 
                 <!-- 内联槽: between -->
-                <BlockTagFields
+                <BlockFieldZone
                   :block-id="item.link.sourceBlockId"
                   variant="between"
                 />
@@ -301,7 +301,7 @@ watch(
                   class="backlink-properties"
                   @click.stop
                 >
-                  <BlockTagFields
+                  <BlockFieldZone
                     :block-id="item.link.sourceBlockId"
                     variant="all"
                   />

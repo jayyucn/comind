@@ -27,6 +27,24 @@ fn default_hide_when() -> String {
     "never".to_string()
 }
 
+/// 「展示形态」用户覆盖的合法取值（ADR-0050 D21 决策 5）。落库为 TEXT，
+/// 未知 / 缺失 / 空一律归一为 `"auto"`（跟随类型默认映射）。
+pub const FIELD_DISPLAY_FORM_OVERRIDE_VALUES: &[&str] =
+    &["auto", "icon", "icon-text", "text", "chip"];
+
+/// 白名单归一：不在取值表内的输入回落 `"auto"`，绝不静默放行。
+pub fn normalize_display_form_override(s: &str) -> String {
+    if FIELD_DISPLAY_FORM_OVERRIDE_VALUES.contains(&s) {
+        s.to_string()
+    } else {
+        "auto".to_string()
+    }
+}
+
+fn default_display_form_override() -> String {
+    "auto".to_string()
+}
+
 /// 字段定义实体（ADR-0049 D3 / D6 / D9）。
 ///
 /// 系统 12 字段 seed 进本表（固定 uuid id，`is_system = true`，seed 行不可删）；
@@ -54,6 +72,10 @@ pub struct FieldDefinition {
     /// when_default / always。作用于块级字段区（BlockTagFields）；定义级全局共享。
     #[serde(default = "default_hide_when")]
     pub hide_when: String,
+    /// 块字段区展示形态的用户覆盖（ADR-0050 D21 决策 5）：auto / icon / icon-text /
+    /// text / chip。`auto` = 跟随类型默认映射；系统字段不可配，恒 `auto`（决策 6）。
+    #[serde(default = "default_display_form_override")]
+    pub display_form_override: String,
     /// 系统字段 seed 进表后标记，seed 行不可删（D3）。
     #[serde(default)]
     pub is_system: bool,
@@ -96,6 +118,7 @@ impl FieldDefinition {
             closed_values: options.closed_values,
             default_value: options.default_value,
             hide_when: "never".to_string(),
+            display_form_override: "auto".to_string(),
             is_system: options.is_system,
             created_at: now,
             updated_at: now,
@@ -189,6 +212,7 @@ pub fn system_field_definitions() -> Vec<FieldDefinition> {
                 .as_ref()
                 .map(|v| serde_json::to_string(v).unwrap_or_else(|_| "null".to_string())),
             hide_when: normalize_hide_when(&f.hide_when),
+            display_form_override: "auto".to_string(),
             is_system: f.is_system,
             is_preset: f.is_preset,
             created_at: now,

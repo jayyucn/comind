@@ -1,11 +1,14 @@
 /**
- * 块字段渲染载体测试（ADR-0050 D1「挂载即显示」+ ADR-0051 D6 职责全迁）。
+ * 块字段区渲染载体测试（ADR-0050 D1「挂载即显示」+ ADR-0051 D6 职责全迁 + D21 形态体系）。
+ *
+ * 命名（D21 实施）：原 BlockTagFields.test.ts 更名——Tag 只承担聚合字段的角色，
+ * 本载体渲染块的（聚合后）字段区。
  *
  * 接缝：只 mock `src/wasm/client` 边界；tags / fieldValue / editor 三个真 store 全真。
  * 覆盖 `list` / `between` / `all` / `book-note` 四种 variant：
- * - `list`：Tag 字段区（有效字段并集、空占位、隐藏规则、去重）
+ * - `list`：块字段区（有效字段并集、D21 形态分派、ghost、隐藏规则、去重）
  * - `between`：内联槽（status 图标、单击循环、长按弹快捷编辑器）
- * - `all`：完整字段列表（Backlinks 消费，全量平铺）
+ * - `all`：完整字段列表（Backlinks 消费，全量平铺 + 形态注册表）
  * - `book-note`：书笔记来源行
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -106,10 +109,18 @@ const DEV_TASK = treeEntry({
   effective_field_ids: ['f-estimate', 'f-owner'],
 })
 
-describe('BlockTagFields（块字段渲染载体）', () => {
-  let BlockTagFields: typeof import('./BlockTagFields.vue').default
+/** 行标题统一取值：text 行在 .block-field-zone-title，chip 行在 .bfz-chip-title */
+function rowTitle(row: { find: (sel: string) => { text: () => string; exists: () => boolean } }): string {
+  const t = row.find('.block-field-zone-title')
+  if (t.exists()) return t.text()
+  return row.find('.bfz-chip-title').text()
+}
+
+describe('BlockFieldZone（块字段区渲染载体）', () => {
+  let BlockFieldZone: typeof import('./BlockFieldZone.vue').default
   let useFieldValueStore: typeof import('../../stores/fieldValue').useFieldValueStore
   let useEditorStore: typeof import('../../stores/editor').useEditorStore
+  let useTagsStore: typeof import('../../stores/tags').useTagsStore
 
   beforeEach(async () => {
     vi.resetModules()
@@ -121,9 +132,10 @@ describe('BlockTagFields（块字段渲染载体）', () => {
       getCoreClient: vi.fn(),
     }))
 
-    BlockTagFields = (await import('./BlockTagFields.vue')).default
+    BlockFieldZone = (await import('./BlockFieldZone.vue')).default
     useFieldValueStore = (await import('../../stores/fieldValue')).useFieldValueStore
     useEditorStore = (await import('../../stores/editor')).useEditorStore
+    useTagsStore = (await import('../../stores/tags')).useTagsStore
 
     mockClient.getTagTree.mockResolvedValue([SYSTEM_TASK, PROJECT, DEV_TASK])
     mockClient.getFieldDefinitions.mockResolvedValue([
@@ -140,29 +152,30 @@ describe('BlockTagFields（块字段渲染载体）', () => {
   })
 
   async function mountList(blockId: string, tagIds: string[]) {
-    const wrapper = mount(BlockTagFields, { props: { blockId, tagIds } })
+    const wrapper = mount(BlockFieldZone, { props: { blockId, tagIds } })
     await flushPromises()
     return wrapper
   }
 
-  // ── list 变体：Tag 字段区（ADR-0050 D1）──────────────────────
+  // ── list 变体：块字段区（ADR-0050 D1）──────────────────────
 
   it('未挂标签的块不渲染字段区（挂载即显示的另一面）', async () => {
     const wrapper = await mountList('b1', [])
-    expect(wrapper.find('.block-tag-fields').exists()).toBe(false)
+    expect(wrapper.find('.block-field-zone').exists()).toBe(false)
   })
 
-  it('挂标签后出现该标签的有效字段，无值字段以空占位可填', async () => {
+  it('挂标签后出现该标签的有效字段；number 默认 chip、纯 string 默认 text（D21 类型映射）', async () => {
     const wrapper = await mountList('b1', ['t-dev'])
-    const rows = wrapper.findAll('.block-tag-field-row')
-    expect(rows.map((r) => r.find('.block-tag-field-title').text())).toEqual(['工时', '负责人'])
-    // 两行都还没有值 → 占位
-    expect(wrapper.findAll('.block-tag-field-placeholder')).toHaveLength(2)
+    const rows = wrapper.findAll('.block-field-zone-row')
+    expect(rows.map(rowTitle)).toEqual(['工时', '负责人'])
+    // 工时（number）走 chip 形态且无值 → ghost；负责人（纯 string）走 text 行占位
+    expect(wrapper.find('.block-field-zone-chip--ghost').exists()).toBe(true)
+    expect(wrapper.findAll('.block-field-zone-placeholder')).toHaveLength(1)
     // 标签身份由 content 内联 chip 呈现；字段区只出字段，不重复标签名
-    expect(wrapper.find('.block-tag-fields').text()).not.toContain('#开发任务')
+    expect(wrapper.find('.block-field-zone').text()).not.toContain('#开发任务')
   })
 
-  it('已有值显示值本身，未填字段仍留占位', async () => {
+  it('已有值：number 以 chip 呈现，未填 string 字段仍留占位', async () => {
     mockClient.getProperties.mockResolvedValue([
       fv({ id: 'v1', block_id: 'b1', key: 'estimate', value_json: '3', value_type: 'number' }),
     ])
@@ -170,9 +183,8 @@ describe('BlockTagFields（块字段渲染载体）', () => {
     await useFieldValueStore().loadBlockFieldValues('b1')
     await flushPromises()
 
-    const rows = wrapper.findAll('.block-tag-field-row')
-    expect(rows[0].text()).toContain('3')
-    expect(rows[1].find('.block-tag-field-placeholder').exists()).toBe(true)
+    expect(wrapper.find('.block-field-zone-chip .bfz-chip-value').text()).toBe('3')
+    expect(wrapper.find('.block-field-zone-placeholder').exists()).toBe(true)
   })
 
   it('多标签字段去重：同一字段只渲染一个编辑位', async () => {
@@ -182,16 +194,16 @@ describe('BlockTagFields（块字段渲染载体）', () => {
     ])
 
     const wrapper = await mountList('b1', ['a', 'b'])
-    expect(wrapper.findAll('.block-tag-field-row')).toHaveLength(1)
+    expect(wrapper.findAll('.block-field-zone-row')).toHaveLength(1)
   })
 
   it('已在内联槽渲染的字段（status / between-bullet-content）不在下方字段区重复列文字', async () => {
     const wrapper = await mountList('b1', ['sys-tag-system-task'])
     // 标签已挂 → 容器仍在
-    expect(wrapper.find('.block-tag-fields').exists()).toBe(true)
+    expect(wrapper.find('.block-field-zone').exists()).toBe(true)
     // 但 status 已被排除
-    expect(wrapper.findAll('.block-tag-field-row')).toHaveLength(0)
-    expect(wrapper.find('.block-tag-fields').text()).not.toContain('状态')
+    expect(wrapper.findAll('.block-field-zone-row')).toHaveLength(0)
+    expect(wrapper.find('.block-field-zone').text()).not.toContain('状态')
   })
 
   it('无 displayPosition 的自定义字段仍保留在下方字段区（不过度去重）', async () => {
@@ -200,8 +212,178 @@ describe('BlockTagFields（块字段渲染载体）', () => {
     ])
 
     const wrapper = await mountList('b1', ['t-custom'])
-    expect(wrapper.findAll('.block-tag-field-row')).toHaveLength(1)
-    expect(wrapper.find('.block-tag-field-title').text()).toBe('负责人')
+    expect(wrapper.findAll('.block-field-zone-row')).toHaveLength(1)
+    expect(wrapper.find('.block-field-zone-title').text()).toBe('负责人')
+  })
+
+  // ── D21 形态分派（决策 1 / 5 / 7）────────────────────────────
+
+  it('枚举字段（closed_values）默认 chip：值取选项原文，有值不出 ghost', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-r', title: '评级', field_ids: ['f-rating'], effective_field_ids: ['f-rating'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-rating', key: 'rating', title: '评级', closed_values: ['S', 'A', 'B'] }),
+    ])
+    mockClient.getProperties.mockResolvedValue([
+      fv({ id: 'v1', block_id: 'b1', key: 'rating', value_json: 'A' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-r'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    const chip = wrapper.find('.block-field-zone-chip')
+    expect(chip.exists()).toBe(true)
+    // 两列网格布局（2026-10-09）：字段名在行左列，chip 本体不再内嵌标题
+    expect(chip.find('.bfz-chip-title').exists()).toBe(false)
+    expect(chip.find('.bfz-chip-value').text()).toBe('A')
+    expect(chip.classes()).not.toContain('block-field-zone-chip--ghost')
+  })
+
+  it('chip 字段无值 → 虚线 ghost 胶囊「未填」，点击即录入（决策 7）', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-r', title: '评级', field_ids: ['f-rating'], effective_field_ids: ['f-rating'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-rating', key: 'rating', title: '评级', closed_values: ['S', 'A'] }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-r'])
+    const ghost = wrapper.find('.block-field-zone-chip--ghost')
+    expect(ghost.exists()).toBe(true)
+    expect(ghost.text()).toContain('未填')
+
+    const editorStore = useEditorStore()
+    await ghost.trigger('click')
+    expect(editorStore.quickFieldValueEditor?.blockId).toBe('b1')
+    expect(editorStore.quickFieldValueEditor?.key).toBe('rating')
+  })
+
+  it('boolean 字段默认 icon 形态：值即 ✓ / ✗', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-d', title: '完成', field_ids: ['f-done'], effective_field_ids: ['f-done'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-done', key: 'done', title: '完成', type: 'boolean' }),
+    ])
+    mockClient.getProperties.mockResolvedValue([
+      fv({ id: 'v1', block_id: 'b1', key: 'done', value_json: 'true', value_type: 'boolean' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-d'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    expect(wrapper.find('.block-field-zone-row .property-icon').text()).toBe('✓')
+  })
+
+  it('display_form_override 覆盖类型默认：枚举字段被覆写为 text 时走文字行（决策 5）', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-r', title: '评级', field_ids: ['f-rating'], effective_field_ids: ['f-rating'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-rating', key: 'rating', title: '评级', closed_values: ['S', 'A'], display_form_override: 'text' }),
+    ])
+    mockClient.getProperties.mockResolvedValue([
+      fv({ id: 'v1', block_id: 'b1', key: 'rating', value_json: 'A' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-r'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    expect(wrapper.find('.block-field-zone-chip').exists()).toBe(false)
+    expect(wrapper.find('.block-field-zone-title').text()).toBe('评级')
+    expect(wrapper.find('.block-field-zone-value').text()).toBe('A')
+  })
+
+  it('chip 点击唤起既有快捷字段值编辑器', async () => {
+    const wrapper = await mountList('b1', ['t-dev'])
+    const editorStore = useEditorStore()
+
+    await wrapper.find('.block-field-zone-chip').trigger('click')
+
+    expect(editorStore.quickFieldValueEditor?.blockId).toBe('b1')
+    expect(editorStore.quickFieldValueEditor?.key).toBe('estimate')
+  })
+
+  // ── date 类型字段值区挂 DatePicker（single）───────────────────
+
+  it('date 字段已有值：值区渲染 DatePicker 触发器，显示日期原文', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-ev', title: '事件', field_ids: ['f-date'], effective_field_ids: ['f-date'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-date', key: 'duedate', title: '到期日', type: 'date' }),
+    ])
+    mockClient.getProperties.mockResolvedValue([
+      fv({ id: 'v1', block_id: 'b1', key: 'duedate', value_json: '"2026-09-06"', value_type: 'date' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-ev'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    // 日期字段不走 chip / text，直接挂 DatePicker
+    expect(wrapper.find('.block-field-zone-chip').exists()).toBe(false)
+    expect(wrapper.find('.dp-trigger').exists()).toBe(true)
+    expect(wrapper.find('.dp-text').text()).toBe('2026-09-06')
+  })
+
+  it('date 字段未填：值区仍渲染 DatePicker（占位），点击唤起日历且不弹通用编辑器', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-ev', title: '事件', field_ids: ['f-date'], effective_field_ids: ['f-date'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-date', key: 'duedate', title: '到期日', type: 'date' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-ev'])
+    const editorStore = useEditorStore()
+
+    expect(wrapper.find('.dp-trigger').exists()).toBe(true)
+    // 未填 → 占位文案，而非 ghost chip「未填」
+    expect(wrapper.find('.block-field-zone-chip--ghost').exists()).toBe(false)
+
+    // DatePicker 触发器自带 @click.stop，点击不应触发整行快速编辑器
+    await wrapper.find('.dp-trigger').trigger('click')
+    expect(editorStore.quickFieldValueEditor).toBeNull()
+    // 日历面板 Teleport 到 body 展开
+    expect(document.body.querySelector('.dp-panel')).not.toBeNull()
+  })
+
+  it('date 字段经 DatePicker 选日期落库为 date 类型', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-ev', title: '事件', field_ids: ['f-date'], effective_field_ids: ['f-date'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-date', key: 'duedate', title: '到期日', type: 'date' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-ev'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    const fieldValueStore = useFieldValueStore()
+    const spy = vi.spyOn(fieldValueStore, 'setFieldValue').mockResolvedValue(undefined as never)
+
+    // 打开日历（真实 DOM：面板 Teleport 到 body），点击「今日」快捷值
+    await wrapper.find('.dp-trigger').trigger('click')
+    await flushPromises()
+    const shortcut = document.body.querySelector('.dp-shortcut[data-shortcut="today"]') as HTMLElement | null
+    expect(shortcut).not.toBeNull()
+    shortcut!.click()
+    await flushPromises()
+
+    expect(spy).toHaveBeenCalledTimes(1)
+    const [bid, key, val, type] = spy.mock.calls[0]
+    expect(bid).toBe('b1')
+    expect(key).toBe('duedate')
+    expect(type).toBe('date')
+    expect(typeof val).toBe('string')
+    expect(/^\d{4}-\d{2}-\d{2}$/.test(val as string)).toBe(true)
+    wrapper.unmount()
   })
 
   // ── 单一权威展示位（ADR-0050 D19 / D20）────────────────────────
@@ -209,7 +391,7 @@ describe('BlockTagFields（块字段渲染载体）', () => {
   it('块内不再有行内 chips 渲染位：chips 变体已下线', () => {
     //行内速览能力由下方字段区承担（它按标签模板驱动、标题取自持久化定义）。
     // 锁住「variant联合类型不再含 chips」这一事实：残留调用点会在类型检查报错。
-    const variants = (BlockTagFields as unknown as { props: { variant: { default: string } } }).props
+    const variants = (BlockFieldZone as unknown as { props: { variant: { default: string } } }).props
     expect(variants.variant.default).toBe('list')
   })
 
@@ -233,10 +415,10 @@ describe('BlockTagFields（块字段渲染载体）', () => {
 
     const wrapper = await mountList('b1', ['t-cat'])
     // 标题取自持久化定义（「分类」）而非 field id
-    expect(wrapper.find('.block-tag-field-title').text()).toBe('分类')
-    expect(wrapper.find('.block-tag-field-value').text()).toBe('生活')
+    expect(wrapper.find('.block-field-zone-title').text()).toBe('分类')
+    expect(wrapper.find('.block-field-zone-value').text()).toBe('生活')
     // 整个块内该字段只渲染一行
-    expect(wrapper.findAll('.block-tag-field-row')).toHaveLength(1)
+    expect(wrapper.findAll('.block-field-zone-row')).toHaveLength(1)
   })
 
   it('标签模板内所有字段（含bottom-of-block 域字段）都在下方字段区列出', async () => {
@@ -256,14 +438,14 @@ describe('BlockTagFields（块字段渲染载体）', () => {
     ])
 
     const wrapper = await mountList('b1', ['t-book'])
-    const titles = wrapper.findAll('.block-tag-field-title').map((n) => n.text())
+    const titles = wrapper.findAll('.block-field-zone-row').map(rowTitle)
     expect(titles).toEqual(['书名', '章节'])
   })
 
   it('status 仍不在下方字段区重复（between 内联槽独占）', async () => {
     // status 以任务图标呈现在 bullet 与内容之间，是它的权威位
     const wrapper = await mountList('b1', ['sys-tag-system-task'])
-    expect(wrapper.findAll('.block-tag-field-row')).toHaveLength(0)
+    expect(wrapper.findAll('.block-field-zone-row')).toHaveLength(0)
   })
 
   it('priority 同时有行内展示位与下方录入面，两处并存（ADR-0054 D4）', async () => {
@@ -283,49 +465,18 @@ describe('BlockTagFields（块字段渲染载体）', () => {
     const wrapper = await mountList('b1', ['t-task'])
     // status 走 between 内联槽被排除；priority 虽有 right 行内展示位（只读），
     // 但本区是唯一可写入口 ⇒ 必须继续渲染 priority，不适用去重规则
-    const titles = wrapper.findAll('.block-tag-field-title').map((n) => n.text())
+    const titles = wrapper.findAll('.block-field-zone-row').map(rowTitle)
     expect(titles).toEqual(['优先级'])
-  })
-
-  it('priority 同时有行内展示位与下方录入面，两处并存（ADR-0054 D4）', async () => {
-    mockClient.getTagTree.mockResolvedValue([
-      treeEntry({
-        id: 't-task',
-        title: '任务',
-        field_ids: ['f-status', 'f-priority'],
-        effective_field_ids: ['f-status', 'f-priority'],
-      }),
-    ])
-    mockClient.getFieldDefinitions.mockResolvedValue([
-      fieldDef({ id: 'f-status', key: 'status', title: '状态', is_system: true }),
-      fieldDef({ id: 'f-priority', key: 'priority', title: '优先级', is_system: true }),
-    ])
-
-    const wrapper = await mountList('b1', ['t-task'])
-    // status 走 between 内联槽被排除；priority 虽有 right 行内展示位（只读），
-    // 但本区是唯一可写入口 ⇒ 必须继续渲染 priority，不适用去重规则
-    const titles = wrapper.findAll('.block-tag-field-title').map((n) => n.text())
-    expect(titles).toEqual(['优先级'])
-  })
-
-  it('点击字段打开既有快捷字段值编辑器（位置来自触发元素）', async () => {
-    const wrapper = await mountList('b1', ['t-dev'])
-    const editorStore = useEditorStore()
-
-    await wrapper.find('.block-tag-field-row').trigger('click')
-
-    expect(editorStore.quickFieldValueEditor?.blockId).toBe('b1')
-    expect(editorStore.quickFieldValueEditor?.key).toBe('estimate')
   })
 
   it('悬空 / 软删 tag id 不产生字段区', async () => {
     const wrapper = await mountList('b1', ['no-such-tag'])
-    expect(wrapper.find('.block-tag-fields').exists()).toBe(false)
+    expect(wrapper.find('.block-field-zone').exists()).toBe(false)
   })
 
-  // ── 隐藏规则（ADR-0050 D18，定义级共享，逐块判定）──
+  // ── 隐藏规则（ADR-0050 D18，定义级共享，逐块判定；D21 决策 7：规则优先于形态）──
 
-  it('隐藏规则 when_empty：未填的字段行消失，已填的照常显示', async () => {
+  it('隐藏规则 when_empty：未填的字段行消失（含 chip 形态），已填的照常显示', async () => {
     mockClient.getFieldDefinitions.mockResolvedValue([
       fieldDef({ id: 'f-owner', key: 'owner', title: '负责人', hide_when: 'when_empty' }),
       fieldDef({ id: 'f-estimate', key: 'estimate', title: '工时', type: 'number' }),
@@ -337,9 +488,7 @@ describe('BlockTagFields（块字段渲染载体）', () => {
     await useFieldValueStore().loadBlockFieldValues('b1')
     await flushPromises()
 
-    const titles = wrapper
-      .findAll('.block-tag-field-row')
-      .map((r) => r.find('.block-tag-field-title').text())
+    const titles = wrapper.findAll('.block-field-zone-row').map(rowTitle)
     // 负责人（未填 + 为空时隐藏）消失；工时（已填 + 无规则）保留
     expect(titles).toEqual(['工时'])
   })
@@ -356,14 +505,12 @@ describe('BlockTagFields（块字段渲染载体）', () => {
         default_value: '8',
       }),
     ])
-    // estimate 未填：即便默认是 8 也不算「等于默认」→ 占位行保留
+    // estimate 未填：即便默认是 8 也不算「等于默认」→ ghost 保留
     const wrapper = await mountList('b1', ['t-dev'])
     await useFieldValueStore().loadBlockFieldValues('b1')
     await flushPromises()
 
-    let titles = wrapper
-      .findAll('.block-tag-field-row')
-      .map((r) => r.find('.block-tag-field-title').text())
+    let titles = wrapper.findAll('.block-field-zone-row').map(rowTitle)
     expect(titles).toEqual(['工时'])
 
     // 填的值等于默认 8 → 行消失
@@ -373,7 +520,7 @@ describe('BlockTagFields（块字段渲染载体）', () => {
     const wrapper2 = await mountList('b1', ['t-dev'])
     await useFieldValueStore().loadBlockFieldValues('b1')
     await flushPromises()
-    titles = wrapper2.findAll('.block-tag-field-row').map((r) => r.find('.block-tag-field-title').text())
+    titles = wrapper2.findAll('.block-field-zone-row').map(rowTitle)
     expect(titles).toEqual([])
 
     // 填的值不等于默认 → 行保留
@@ -383,7 +530,7 @@ describe('BlockTagFields（块字段渲染载体）', () => {
     const wrapper3 = await mountList('b1', ['t-dev'])
     await useFieldValueStore().loadBlockFieldValues('b1')
     await flushPromises()
-    titles = wrapper3.findAll('.block-tag-field-row').map((r) => r.find('.block-tag-field-title').text())
+    titles = wrapper3.findAll('.block-field-zone-row').map(rowTitle)
     expect(titles).toEqual(['工时'])
   })
 
@@ -391,7 +538,7 @@ describe('BlockTagFields（块字段渲染载体）', () => {
 
   function mountBetween(blockId: string, rows: FieldValue[]) {
     useFieldValueStore().fieldValuesByBlock.set(blockId, rows)
-    return mount(BlockTagFields, { props: { blockId, variant: 'between' } })
+    return mount(BlockFieldZone, { props: { blockId, variant: 'between' } })
   }
 
   it('between：以内联槽渲染 status 图标', () => {
@@ -443,10 +590,10 @@ describe('BlockTagFields（块字段渲染载体）', () => {
 
   function mountRight(blockId: string, rows: FieldValue[]) {
     useFieldValueStore().fieldValuesByBlock.set(blockId, rows)
-    return mount(BlockTagFields, { props: { blockId, variant: 'right' } })
+    return mount(BlockFieldZone, { props: { blockId, variant: 'right' } })
   }
 
-  it('right：priority 走行尾槽，尺寸 18（而非 between 槽的默认尺寸）', () => {
+  it('right：priority 走行尾槽，尺寸 14（与实现及注释一致；旧预期 18 是测试侧规格漂移）', () => {
     const wrapper = mountRight('b1', [
       fv({ id: 'v1', block_id: 'b1', key: 'priority', value_json: 'Low' }),
     ])
@@ -454,8 +601,8 @@ describe('BlockTagFields（块字段渲染载体）', () => {
     expect(wrapper.findAll('.property-inline-item')).toHaveLength(1)
 
     const svg = wrapper.find('.property-inline-item svg')
-    expect(svg.attributes('width')).toBe('18')
-    expect(svg.attributes('height')).toBe('18')
+    expect(svg.attributes('width')).toBe('14')
+    expect(svg.attributes('height')).toBe('14')
   })
 
   it('right：item 暴露 data-field/data-value，供按档位降层级定位', () => {
@@ -489,10 +636,10 @@ describe('BlockTagFields（块字段渲染载体）', () => {
     expect(wrapper.find('.property-inline-item svg').attributes('width')).toBe('24')
   })
 
-  // ── all 变体：完整字段列表（Backlinks 消费）──
+  // ── all 变体：完整字段列表（Backlinks 消费；D21 决策 9 共用注册表）──
 
   it('all：全量平铺，无「+N」收纳徽标（行内 chips 下线后不再需要收纳）', async () => {
-    const wrapper = mount(BlockTagFields, {
+    const wrapper = mount(BlockFieldZone, {
       props: { blockId: 'b1', variant: 'all' },
     })
     useFieldValueStore().fieldValuesByBlock.set('b1', [
@@ -510,6 +657,49 @@ describe('BlockTagFields（块字段渲染载体）', () => {
     wrapper.unmount()
   })
 
+  it('all：持久化定义含 closed_values 的字段按 chip 形态渲染（决策 9：与 list 同一注册表）', async () => {
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-rating', key: 'rating', title: '评级', closed_values: ['S', 'A'] }),
+    ])
+    await useTagsStore().ensureLoaded()
+    useFieldValueStore().fieldValuesByBlock.set('b1', [
+      fv({ id: 'v1', block_id: 'b1', key: 'rating', value_json: 'S' }),
+    ])
+
+    const wrapper = mount(BlockFieldZone, {
+      props: { blockId: 'b1', variant: 'all' },
+    })
+    await flushPromises()
+
+    const chip = wrapper.find('.property-item.block-field-zone-chip')
+    expect(chip.exists()).toBe(true)
+    expect(chip.find('.bfz-chip-value').text()).toBe('S')
+
+    wrapper.unmount()
+  })
+
+  it('all：boolean 字段与 list 同形态出 ✓/✗，不落回文字（决策 9 跨变体一致）', async () => {
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-done', key: 'done', title: '完成', type: 'boolean' }),
+    ])
+    await useTagsStore().ensureLoaded()
+    useFieldValueStore().fieldValuesByBlock.set('b1', [
+      fv({ id: 'v1', block_id: 'b1', key: 'done', value_json: 'true', value_type: 'boolean' }),
+    ])
+
+    const wrapper = mount(BlockFieldZone, {
+      props: { blockId: 'b1', variant: 'all' },
+    })
+    await flushPromises()
+
+    const iconItem = wrapper.find('.property-item.block-field-zone-row--icon')
+    expect(iconItem.exists()).toBe(true)
+    expect(iconItem.find('.property-icon').text()).toBe('✓')
+    expect(wrapper.text()).not.toContain('true')
+
+    wrapper.unmount()
+  })
+
   // ── book-note 变体：书笔记来源行（原 PropertyDisplay.book）──
 
   it('book-note：存在 quote 字段值时渲染书笔记来源行（Pin + 章节 + 原文引用）', async () => {
@@ -519,7 +709,7 @@ describe('BlockTagFields（块字段渲染载体）', () => {
       fv({ id: 'v3', block_id: 'b1', key: 'quote', value_json: '原文摘录一句' }),
       fv({ id: 'v4', block_id: 'b1', key: 'cfi', value_json: 'epubcfi(/6/4!' }),
     ])
-    const wrapper = mount(BlockTagFields, {
+    const wrapper = mount(BlockFieldZone, {
       props: { blockId: 'b1', variant: 'book-note' },
     })
     await flushPromises()

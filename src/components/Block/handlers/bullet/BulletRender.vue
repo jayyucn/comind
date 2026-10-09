@@ -44,7 +44,7 @@ const segments = computed(() => {
  * 对 tagsStore 的读取被依赖收集，改色即触发重渲）。
  *
  * - 标签树未就绪 → undefined：渲染器回退 seg.color 快照（加载窗口内不整批脱色）；
- *   树加载（`BlockTagFields` 挂载即 ensureLoaded）到位后重渲为实时色。
+ *   树加载（`BlockFieldZone` 挂载即 ensureLoaded）到位后重渲为实时色。
  * - 树就绪：id 优先、title 兜底（与 Rust tag_cache 按 title 命中同口径）；
  *   查无（已删）→ ''（无色，与 Rust 缺行时 id/color 置空的兜底一致）。
  */

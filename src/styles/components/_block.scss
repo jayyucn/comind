@@ -516,6 +516,90 @@
   padding-right: $space-2;
 }
 
+// ── 字段区显隐（ADR-0050 D21 决策 8）：hover 门控，平时无痕 ──
+
+// 字段区包裹层：隐藏开关的定位参照。
+.block-field-zone-wrap {
+  position: relative;
+}
+
+// 隐藏开关：挂在字段区右上。隐形元素 pointer-events:none，淡入/可点写在同一条规则（可点性铁律）。
+// 透明底 + hover 才补淡底——实底小块在静息块面上是一颗突兀的钉子。
+.block-field-zone-hide {
+  position: absolute;
+  top: 2px;
+  right: 0;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+
+  &:hover {
+    color: var(--text-primary);
+    background: var(--surface-subtle);
+  }
+}
+
+// 淡入挂 .block-properties:hover（字段带），不挂 .block:hover —— 后者会随子块 hover 向上冒泡
+// （同 .block-row:hover 的既有选择理由）。
+.block-properties:hover .block-field-zone-hide {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+// 恢复入口：绝对定位到块下方（top:100% 落进块间间隙），不占布局高度 —— 静息态与普通块无异。
+// 视觉语言与 ghost chip 同构：虚线描边 = 「这里有个被藏起来的东西」，hover 补淡底。
+// 淡入挂 .block-row:hover + 一般兄弟组合器（恢复钮与 .block-row 同为 .block 的直接子元素）；
+// 自身 :hover 兜底 —— 指针从行底滑入按钮（越出行界）后由它接管，避免 hover 链断裂闪烁。
+.block-field-zone-restore {
+  position: absolute;
+  top: 100%;
+  left: calc(var(--indent-depth, 0) * var(--block-indent-width) + 20px);
+  margin-top: -14px;
+  border: 1px dashed var(--border-color);
+  background: var(--bg-base);
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  line-height: 18px;
+  opacity: 0;
+  pointer-events: none;
+  z-index: var(--z-base);
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+
+  &:hover {
+    color: var(--text-primary);
+    background: var(--surface-subtle);
+    border-color: var(--border-strong);
+  }
+}
+
+.block-row:hover ~ .block-field-zone-restore,
+.block-field-zone-restore:hover {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 // 子任务进度条（block 下方）：位于 block 内容与子节点列表之间；
 // 左侧对齐到上方任务图标右缘由 Block/index.vue 的 inline margin-left 提供（随 depth 变化）。
 .block-child-task-progress {
