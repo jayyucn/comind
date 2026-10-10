@@ -117,6 +117,62 @@ impl SyncEngine {
     }
 }
 
+/// 把 `serde_json::Value` 转成可写入 SQLite 的参数。
+///
+/// 所有同步表列都是 TEXT / INTEGER；JSON 数组与对象无法原生存储，
+/// 必须序列化成 JSON 文本落到 TEXT 列，否则会被静默写成空串 `""`（#139）。
+/// `Null` / `Bool` / `Number` / `String` 走各自原生映射，行为不变。
+fn value_to_sql(v: &serde_json::Value) -> Box<dyn ToSql> {
+    match v {
+        serde_json::Value::Null => Box::new(Option::<String>::None) as Box<dyn ToSql>,
+        serde_json::Value::Bool(b) => Box::new(*b) as Box<dyn ToSql>,
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Box::new(i) as Box<dyn ToSql>
+            } else if let Some(f) = n.as_f64() {
+                Box::new(f) as Box<dyn ToSql>
+            } else {
+                Box::new(0i64) as Box<dyn ToSql>
+            }
+        }
+        serde_json::Value::String(s) => Box::new(s.clone()) as Box<dyn ToSql>,
+        // 数组 / 对象：序列化为 JSON 文本（`Tag.field_ids`、`FieldValue` 多选值等），
+        // 确保同步路径上真正 round-trip，而非被丢弃为空串。
+        serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
+            Box::new(serde_json::to_string(v).unwrap_or_default()) as Box<dyn ToSql>
+        }
+    }
+}
+
+/// 把 SQLite TEXT 列读回 `serde_json::Value`。
+///
+/// 若该文本是 JSON 数组 / 对象（即 `value_to_sql` 序列化后落库的形态），
+/// 重新解析回对应的 JSON 类型，保证数组 / 对象在同步路径上 round-trip；
+/// 其余（含 `"hello"` 这类 JSON 字符串、普通文本、数字文本、解析失败）
+/// 保持字符串形态，不破坏既有的 `value_json` 等列语义。
+fn text_to_json(bytes: &[u8]) -> serde_json::Value {
+    let s = String::from_utf8_lossy(bytes);
+    let trimmed = s.trim();
+    if trimmed.starts_with('[') || trimmed.starts_with('{') {
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&s) {
+            return parsed;
+        }
+    }
+    serde_json::Value::String(s.into_owned())
+}
+
+/// 把 SQLite 列值读回 `serde_json::Value`（`TEXT` 列经 `text_to_json` 还原数组 / 对象）。
+/// 抽出以消除 `export_full_sync` 与 `fetch_row_payloads_sync` 中两份相同的 5 分支 match。
+fn value_ref_to_json(v: ValueRef) -> serde_json::Value {
+    match v {
+        ValueRef::Null => json!(null),
+        ValueRef::Integer(i) => json!(i),
+        ValueRef::Real(r) => json!(r),
+        ValueRef::Text(t) => text_to_json(t),
+        ValueRef::Blob(_) => json!(null),
+    }
+}
+
 fn handle_message_sync(
     adapter: &mut super::super::storage::sqlite::SQLiteAdapter,
     client_id: &str,
@@ -192,14 +248,7 @@ fn export_full_sync(
         let mut data = json!({});
         for i in 0..n_cols {
             let name = &col_names[i];
-            let value = match row.get_ref(i)? {
-                ValueRef::Null => json!(null),
-                ValueRef::Integer(v) => json!(v),
-                ValueRef::Real(v) => json!(v),
-                ValueRef::Text(v) => json!(String::from_utf8_lossy(v).to_string()),
-                ValueRef::Blob(_) => json!(null),
-            };
-            data[name] = value;
+            data[name] = value_ref_to_json(row.get_ref(i)?);
         }
 
         all_rows.push(RowPayload {
@@ -269,14 +318,7 @@ fn fetch_row_payloads_sync(
         let mut data = json!({});
         for i in 0..n_cols {
             let name = &col_names[i];
-            let value = match row.get_ref(i)? {
-                ValueRef::Null => json!(null),
-                ValueRef::Integer(v) => json!(v),
-                ValueRef::Real(v) => json!(v),
-                ValueRef::Text(v) => json!(String::from_utf8_lossy(v).to_string()),
-                ValueRef::Blob(_) => json!(null),
-            };
-            data[name] = value;
+            data[name] = value_ref_to_json(row.get_ref(i)?);
         }
 
         result.push(RowPayload {
@@ -444,22 +486,7 @@ fn insert_or_replace_row_raw(
     );
 
     let params: Vec<Box<dyn ToSql>> = keys.iter()
-        .map(|k| match &obj[k] {
-            serde_json::Value::Null => Box::new(Option::<String>::None) as Box<dyn ToSql>,
-            serde_json::Value::Bool(v) => Box::new(*v) as Box<dyn ToSql>,
-            serde_json::Value::Number(v) => {
-                if let Some(v) = v.as_i64() {
-                    Box::new(v) as Box<dyn ToSql>
-                } else if let Some(v) = v.as_f64() {
-                    Box::new(v) as Box<dyn ToSql>
-                } else {
-                    Box::new(0i64) as Box<dyn ToSql>
-                }
-            }
-            serde_json::Value::String(v) => Box::new(v.clone()) as Box<dyn ToSql>,
-            serde_json::Value::Array(_) => Box::new("") as Box<dyn ToSql>,
-            serde_json::Value::Object(_) => Box::new("") as Box<dyn ToSql>,
-        })
+        .map(|k| value_to_sql(&obj[k]))
         .collect();
 
     conn.execute(&query, rusqlite::params_from_iter(params))?;
@@ -484,22 +511,7 @@ fn insert_row_raw(
     );
 
     let params: Vec<Box<dyn ToSql>> = keys.iter()
-        .map(|k| match &obj[k] {
-            serde_json::Value::Null => Box::new(Option::<String>::None) as Box<dyn ToSql>,
-            serde_json::Value::Bool(v) => Box::new(*v) as Box<dyn ToSql>,
-            serde_json::Value::Number(v) => {
-                if let Some(v) = v.as_i64() {
-                    Box::new(v) as Box<dyn ToSql>
-                } else if let Some(v) = v.as_f64() {
-                    Box::new(v) as Box<dyn ToSql>
-                } else {
-                    Box::new(0i64) as Box<dyn ToSql>
-                }
-            }
-            serde_json::Value::String(v) => Box::new(v.clone()) as Box<dyn ToSql>,
-            serde_json::Value::Array(_) => Box::new("") as Box<dyn ToSql>,
-            serde_json::Value::Object(_) => Box::new("") as Box<dyn ToSql>,
-        })
+        .map(|k| value_to_sql(&obj[k]))
         .collect();
 
     conn.execute(&query, rusqlite::params_from_iter(params))?;
@@ -529,22 +541,7 @@ fn update_row_raw(
         .collect();
 
     let mut params: Vec<Box<dyn ToSql>> = keys.iter()
-        .map(|k| match &obj[k] {
-            serde_json::Value::Null => Box::new(Option::<String>::None) as Box<dyn ToSql>,
-            serde_json::Value::Bool(v) => Box::new(*v) as Box<dyn ToSql>,
-            serde_json::Value::Number(v) => {
-                if let Some(v) = v.as_i64() {
-                    Box::new(v) as Box<dyn ToSql>
-                } else if let Some(v) = v.as_f64() {
-                    Box::new(v) as Box<dyn ToSql>
-                } else {
-                    Box::new(0i64) as Box<dyn ToSql>
-                }
-            }
-            serde_json::Value::String(v) => Box::new(v.clone()) as Box<dyn ToSql>,
-            serde_json::Value::Array(_) => Box::new("") as Box<dyn ToSql>,
-            serde_json::Value::Object(_) => Box::new("") as Box<dyn ToSql>,
-        })
+        .map(|k| value_to_sql(&obj[k]))
         .collect();
 
     params.push(Box::new(row.id.clone()) as Box<dyn ToSql>);
@@ -1054,5 +1051,60 @@ mod tests {
         // 验证数据未被应用（因为来自自己）
         let fetched = engine.fetch_row_payloads(SyncTable::Block, vec!["block-7".to_string()]).await.unwrap();
         assert_eq!(fetched.len(), 0);
+    }
+
+    /// #139 回归：多选字段值（JSON 数组）在同步路径写入后读出仍为数组，
+    /// 而非被静默写成空串 `""`。同时验证 String / Number 等 Scalar 值不被破坏。
+    /// `Tag.field_ids` / `extends` 正是承载 JSON 数组的 TEXT 列（多选枚举的前置依赖）。
+    #[tokio::test]
+    async fn test_sync_roundtrips_json_array_values() {
+        let engine = create_test_engine();
+
+        // Tag 无外键，适合直接插入；field_ids / extends 是 JSON 数组 TEXT 列。
+        let row = RowPayload {
+            id: "tag-multiselect-1".to_string(),
+            data: serde_json::json!({
+                "id": "tag-multiselect-1",
+                "title": "MultiSelect Tag",
+                "field_ids": ["f1", "f2", "f3"],   // JSON 数组 —— 必须 round-trip 为数组
+                "extends": [],                        // 空数组
+                "is_system": 0,
+                "version": 1,
+                "created_at": 1000i64,
+                "updated_at": 1000i64,
+                "deleted_at": serde_json::Value::Null,
+                "is_preset": 0,
+            }),
+            version: 1,
+            updated_at: 1000,
+            deleted_at: None,
+        };
+
+        let msg = SyncMessage::RowChange {
+            table: SyncTable::Tag,
+            rows: vec![row],
+            client_id: "remote-client".to_string(),
+        };
+        engine.handle_message(msg).await.unwrap();
+
+        let fetched = engine
+            .fetch_row_payloads(SyncTable::Tag, vec!["tag-multiselect-1".to_string()])
+            .await
+            .unwrap();
+        assert_eq!(fetched.len(), 1);
+        let data = &fetched[0].data;
+
+        // 数组值写入后读出仍为数组（非空串）
+        assert_eq!(
+            data["field_ids"],
+            serde_json::json!(["f1", "f2", "f3"]),
+            "多选字段值应作为数组 round-trip，而非被静默写成空串"
+        );
+        assert_eq!(data["extends"], serde_json::json!([]), "空数组也应保留");
+
+        // 既有 Scalar 类型不被破坏
+        assert_eq!(data["title"], serde_json::json!("MultiSelect Tag"));
+        assert_eq!(data["is_system"], serde_json::json!(0));
+        assert_eq!(data["version"], serde_json::json!(1));
     }
 }
