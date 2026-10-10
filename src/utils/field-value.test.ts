@@ -37,6 +37,24 @@ describe('formatFieldValueData', () => {
     expect(formatFieldValueData('[[页面名]]', 'page')).toBe('[[页面名]]')
     expect(formatFieldValueData('页面名', 'page')).toBe('页面名')
   })
+
+  // ── 新收口类型（issue #140 F1）──
+
+  it('formats datetime values（规范化为 yyyy-MM-dd HH:mm）', () => {
+    expect(formatFieldValueData('2026-04-20T10:44', 'datetime')).toBe('2026-04-20 10:44')
+    expect(formatFieldValueData('2026-04-20 10:44', 'datetime')).toBe('2026-04-20 10:44')
+    expect(formatFieldValueData('not-a-date', 'datetime')).toBeNull()
+  })
+
+  it('formats select values（选项 id 原样留白修剪）', () => {
+    expect(formatFieldValueData('Done', 'select')).toBe('Done')
+    expect(formatFieldValueData('  Doing  ', 'select')).toBe('Doing')
+  })
+
+  it('formats multiSelect values（与 array 同族解析）', () => {
+    expect(formatFieldValueData(['a', 'b'], 'multiSelect')).toEqual(['a', 'b'])
+    expect(formatFieldValueData('[a, b]', 'multiSelect')).toEqual(['a', 'b'])
+  })
 })
 
 describe('inferFieldType', () => {

@@ -16,8 +16,14 @@
  */
 import type { FieldType } from '../types/field-definition'
 
-/** 直通类型：DB 值即原文，不经 JSON */
-const PLAIN_TYPES: ReadonlySet<string> = new Set(['string', 'page'])
+/**
+ * 直通类型：DB 值即原文，不经 JSON。
+ * select（选项 id）/ datetime（yyyy-MM-dd HH:mm）值本身即字符串，与 string 同待遇
+ * （issue #140 F1 收口新增，无存量行故无迁移）；multiSelect 值为数组，走 JSON。
+ * 注意 date **不在**直通之列：既有 date 行已按 JSON 形落库（'"2026-09-15"'），
+ * 改直通会破坏存量读路径——date/datetime 的存储形态不对称是历史兼容的有意取舍。
+ */
+const PLAIN_TYPES: ReadonlySet<string> = new Set(['string', 'page', 'select', 'datetime'])
 
 /** 判断该 type 是否走 JSON 编解码 */
 function isJsonEncoded(type: FieldType | string): boolean {

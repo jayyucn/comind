@@ -5,7 +5,7 @@ import type { FieldDescriptor } from '../../core/query'
 import type { TableColumnConfig } from '../../core/view'
 
 const FIELDS: FieldDescriptor[] = [
-  { key: 'title', label: '标题', type: 'text', get: () => '' },
+  { key: 'title', label: '标题', type: 'string', get: () => '' },
   { key: 'type', label: '类型', type: 'select', get: () => '' },
   { key: 'createdAt', label: '创建日期', type: 'date', get: () => '' },
   { key: 'status', label: '状态', type: 'select', get: () => '' },

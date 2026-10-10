@@ -82,10 +82,10 @@ describe('Block 字段描述符注册表', () => {
     const registry = createRegistry()
     registerBlockBuiltinFields(registry)
     const book = registry.get(BLOCK_ENTITY, 'book')!
-    expect(book.type).toBe('text')
+    expect(book.type).toBe('string')
     expect(book.label).toBe('书名')
     const quote = registry.get(BLOCK_ENTITY, 'quote')!
-    expect(quote.type).toBe('text')
+    expect(quote.type).toBe('string')
   })
 
   it('subscribe 在注册/注销时触发（UI 跟随依据）', () => {
@@ -95,7 +95,7 @@ describe('Block 字段描述符注册表', () => {
     registerBlockBuiltinFields(registry)
     expect(calls).toBeGreaterThan(0) // 内置字段注册批量通知
     const before = calls
-    registry.register(BLOCK_ENTITY, { key: 'x', label: 'X', type: 'text', get: () => 1 })
+    registry.register(BLOCK_ENTITY, { key: 'x', label: 'X', type: 'string', get: () => 1 })
     expect(calls).toBe(before + 1)
     registry.unregister(BLOCK_ENTITY, 'x')
     expect(calls).toBe(before + 2)

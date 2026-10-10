@@ -16,6 +16,7 @@
  *
  * chip 底色一律中性 surface token；色环只留给 tag 一家（D21 决策 5）。
  */
+import { fieldTypeSpec } from '../types/field-type-registry'
 
 /** 用户可逐字段选择的形态取值空间（封闭枚举，D21 决策 5） */
 export const DISPLAY_FORM_OVERRIDES = ['auto', 'icon', 'icon-text', 'text', 'chip'] as const
@@ -41,22 +42,18 @@ export interface DisplayFormSource {
 
 /**
  * 类型 → 默认形态映射（D21 决策 1）。
- * @param type 字段类型（FieldType 字符串；未知类型按纯 string 兜底）
+ *
+ * 类型默认形态的真源是中央注册表（`types/field-type-registry.ts`，issue #140 F1）；
+ * 本函数保留 `isOptionType` 参数以兼容旧词汇「string + closedValues 即选项型」——
+ * 枚举在规范词汇下已是 select / multiSelect，但存量定义仍可能以 string+closedValues
+ * 声明，两者都归 chip 家族。
+ *
+ * @param type 字段类型（规范 FieldType 或未知类型——未知按注册表回落 text）
  * @param isOptionType 是否选项型（closed_values 非空）
  */
 export function typeDefaultForm(type: string, isOptionType: boolean): DisplayFormKind {
   if (isOptionType) return 'chip'
-  switch (type) {
-    case 'boolean':
-      return 'icon'
-    case 'date':
-    case 'array':
-    case 'page':
-    case 'number':
-      return 'chip'
-    default:
-      return 'text'
-  }
+  return fieldTypeSpec(type).displayForm
 }
 
 /** 覆盖值归一：取值空间外的输入（含空串 / null / 非字符串）一律回落 auto */

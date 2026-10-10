@@ -19,6 +19,15 @@ describe('field-value-codec encodeFieldValueData', () => {
     expect(encodeFieldValueData(['a', 'b'], 'array')).toBe('["a","b"]')
   })
 
+  test('select/datetime 直通存原文（值即字符串，与 string 行为一致；issue #140）', () => {
+    expect(encodeFieldValueData('Done', 'select')).toBe('Done')
+    expect(encodeFieldValueData('2026-09-15 10:44', 'datetime')).toBe('2026-09-15 10:44')
+  })
+
+  test('multiSelect 按 JSON 编码（值为选项 id 数组）', () => {
+    expect(encodeFieldValueData(['a', 'b'], 'multiSelect')).toBe('["a","b"]')
+  })
+
   test('类型保真：number 型属性传字符串按 type 忠实编码（不静默变型）', () => {
     // 行为变化点（#117 明示）：旧按值编码存裸 42 → 读回变 number；
     // 新按 type 编码存 "\"42\"" → 读回仍是字符串
@@ -43,6 +52,12 @@ describe('field-value-codec decodeFieldValueData', () => {
     expect(decodeFieldValueData('["a","b"]', 'array')).toEqual(['a', 'b'])
   })
 
+  test('select/datetime 直通返回原字符串，multiSelect 解码为数组（issue #140）', () => {
+    expect(decodeFieldValueData('Done', 'select')).toBe('Done')
+    expect(decodeFieldValueData('2026-09-15 10:44', 'datetime')).toBe('2026-09-15 10:44')
+    expect(decodeFieldValueData('["a","b"]', 'multiSelect')).toEqual(['a', 'b'])
+  })
+
   test('非法 JSON 容错：返回原字符串 + console.warn，不 throw', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
@@ -61,6 +76,10 @@ describe('field-value-codec decodeFieldValueData', () => {
       [true, 'boolean'],
       ['2026-09-15', 'date'],
       [['a', 'b'], 'array'],
+      // 新收口类型（issue #140）
+      ['Done', 'select'],
+      ['2026-09-15 10:44', 'datetime'],
+      [['a', 'b'], 'multiSelect'],
     ]
     for (const [value, type] of cases) {
       expect(decodeFieldValueData(encodeFieldValueData(value, type), type)).toEqual(value)

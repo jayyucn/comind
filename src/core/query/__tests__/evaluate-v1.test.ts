@@ -9,7 +9,7 @@ interface Row {
 }
 
 function textField(): FieldDescriptor<Row> {
-  return { key: 'name', label: '名称', type: 'text', get: (r) => r.name }
+  return { key: 'name', label: '名称', type: 'string', get: (r) => r.name }
 }
 
 function statusField(options: { id: string; label: string }[]): FieldDescriptor<Row> {
@@ -134,7 +134,7 @@ describe('空值通行语义', () => {
   })
   it('null 与 undefined 同样视为空', () => {
     const nullReg = createRegistry()
-    nullReg.register('row', { key: 'x', label: 'X', type: 'text', get: () => null })
+    nullReg.register('row', { key: 'x', label: 'X', type: 'string', get: () => null })
     expect(matchCondition({ field: 'x', op: 'isNotEmpty' }, { x: '' }, nullReg, 'row')).toBe(false)
   })
 })

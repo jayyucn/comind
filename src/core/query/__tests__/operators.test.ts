@@ -17,8 +17,8 @@ function field(type: FieldDescriptor['type'], extra: Partial<FieldDescriptor> = 
 }
 
 describe('DEFAULT_OPS 默认映射', () => {
-  it('text → is/isNot/contains/notContains/isEmpty/isNotEmpty', () => {
-    expect(DEFAULT_OPS.text).toEqual(['is', 'isNot', 'contains', 'notContains', 'isEmpty', 'isNotEmpty'])
+  it('string → is/isNot/contains/notContains/isEmpty/isNotEmpty', () => {
+    expect(DEFAULT_OPS.string).toEqual(['is', 'isNot', 'contains', 'notContains', 'isEmpty', 'isNotEmpty'])
   })
 
   it('number → eq/neq/gt/lt/isEmpty/isNotEmpty', () => {
@@ -43,8 +43,8 @@ describe('DEFAULT_OPS 默认映射', () => {
 })
 
 describe('deriveOps', () => {
-  it('六内置类型各返回类型默认集', () => {
-    expect(deriveOps(field('text'))).toEqual(DEFAULT_OPS.text)
+  it('各内置类型各返回类型默认集', () => {
+    expect(deriveOps(field('string'))).toEqual(DEFAULT_OPS.string)
     expect(deriveOps(field('number'))).toEqual(DEFAULT_OPS.number)
     expect(deriveOps(field('date'))).toEqual(DEFAULT_OPS.date)
     expect(deriveOps(field('select'))).toEqual(DEFAULT_OPS.select)
@@ -53,7 +53,7 @@ describe('deriveOps', () => {
   })
 
   it('字段通过 ops 覆盖时以覆盖为准（含扩展与缩减）', () => {
-    expect(deriveOps(field('text', { ops: ['is', 'isEmpty'] }))).toEqual(['is', 'isEmpty'])
+    expect(deriveOps(field('string', { ops: ['is', 'isEmpty'] }))).toEqual(['is', 'isEmpty'])
     expect(deriveOps(field('boolean', { ops: ['is', 'isNot', 'contains'] }))).toEqual(['is', 'isNot', 'contains'])
   })
 
@@ -66,9 +66,9 @@ describe('deriveOps', () => {
   })
 
   it('纯函数：返回的是拷贝，外部改动不影响内部映射', () => {
-    const result = deriveOps(field('text'))
+    const result = deriveOps(field('string'))
     result.push('hacked' as FilterOp)
-    expect(DEFAULT_OPS.text).toEqual(['is', 'isNot', 'contains', 'notContains', 'isEmpty', 'isNotEmpty'])
+    expect(DEFAULT_OPS.string).toEqual(['is', 'isNot', 'contains', 'notContains', 'isEmpty', 'isNotEmpty'])
   })
 
   it('不依赖 Vue / Pinia / WASM，可在无框架环境单测', () => {

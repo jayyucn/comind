@@ -4,17 +4,18 @@
  * 业务实体通过声明 {@link FieldDescriptor} 接入引擎，引擎对实体本身一无所知。
  * 详细设计见 docs/2-architecture/generic-query-system.md。
  */
+import type { FieldType as CanonicalFieldType } from '../../types/field-definition'
 
-/** 内置字段数据类型。`(string & {})` 使联合保持开放，允许后续自定义类型（不丢失字面量提示）。 */
-export type FieldType =
-  | 'text'
-  | 'number'
-  | 'date'
-  | 'datetime'
-  | 'select'
-  | 'multiSelect'
-  | 'boolean'
-  | (string & {})
+/**
+ * 内置字段数据类型 —— 规范联合单源 re-export（issue #140 F1）。
+ *
+ * 规范词汇定义在领域层 `types/field-definition.ts`（string/number/boolean/date/
+ * datetime/select/multiSelect/array/page），本层不再自持一套词汇表（旧版这里的
+ * 'text' 已并入规范的 'string'）。`(string & {})` 使联合保持开放，允许引擎侧
+ * 后续自定义类型（不丢失字面量提示）；规范成员的三面规格查中央注册表
+ * `types/field-type-registry.ts`。
+ */
+export type FieldType = CanonicalFieldType | (string & {})
 
 /** select / multiSelect 字段的选项。查询值存 id 而非 label。 */
 export interface Option {

@@ -69,7 +69,7 @@ function cardsIn(colKey: string): T[] {
 
 /** 卡片标题：content 字段（或首个 text 字段）的取值。 */
 const titleField = computed<FieldDescriptor | undefined>(
-  () => fieldOf('content') ?? props.fields.find((f) => f.type === 'text'),
+  () => fieldOf('content') ?? props.fields.find((f) => f.type === 'string'),
 )
 
 /** 卡片额外徽章字段（config.cardFields，缺省空 —— 块实体的默认集由调用方 boardConfig 注入）。 */

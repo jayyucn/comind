@@ -161,13 +161,13 @@ export function registerBlockBuiltinFields(registry: Registry): void {
     get: (item) => asCard(item).properties?.['priority'],
   })
 
-  // 其余系统字段（project/area + 书笔记八件套）统一注册为 text（ADR-0049 D4 全量统一）
+  // 其余系统字段（project/area + 书笔记八件套）统一注册为 string（ADR-0049 D4 全量统一）
   for (const field of systemFields) {
     if (field.key === 'status' || field.key === 'priority') continue
     registry.register(BLOCK_ENTITY, {
       key: field.key,
       label: field.title,
-      type: 'text',
+      type: 'string',
       get: (item) => asCard(item).properties?.[field.key],
     })
   }
@@ -228,7 +228,7 @@ export function registerBlockBuiltinFields(registry: Registry): void {
   registry.register(BLOCK_ENTITY, {
     key: 'content',
     label: '内容',
-    type: 'text',
+    type: 'string',
     get: (item) => asCard(item).content_preview,
   })
 
@@ -236,7 +236,7 @@ export function registerBlockBuiltinFields(registry: Registry): void {
   registry.register(BLOCK_ENTITY, {
     key: 'page',
     label: '页面',
-    type: 'text',
+    type: 'string',
     get: (item) => asCard(item).page_id,
   })
 
@@ -274,24 +274,31 @@ export function registerBlockBuiltinFields(registry: Registry): void {
   })
 }
 
-/** FieldDefinition.type → 引擎 FieldType 映射。 */
+/**
+ * 字段类型 → 引擎 FieldType（issue #140 F1 词汇收口后两套枚举合一）：
+ * 大部分成员恒等映射；仅 array（标签数组）/ page（页面引用）保留语义桥——
+ * 前者按 multiSelect（多选操作符 + 选项化排序分组），后者按 string（文本操作符）。
+ */
 const TYPE_MAP: Record<DomainFieldType, FieldType> = {
-  string: 'text',
+  string: 'string',
   number: 'number',
   boolean: 'boolean',
   date: 'date',
+  datetime: 'datetime',
+  select: 'select',
+  multiSelect: 'multiSelect',
   array: 'multiSelect',
-  page: 'text',
+  page: 'string',
 }
 
 /**
- * 字段类型 → 引擎 FieldType（未知/新增类型保守回落 text）。
+ * 字段类型 → 引擎 FieldType（未知/新增类型保守回落 string）。
  *
  * 消费点：编译期常量形 `FieldDefinition`（`buildBlockFieldDescriptor`）与落库形
  * `PersistedFieldDefinition`（tag 聚合页按 tag 字段模板建列）共用同一映射，避免双源漂移。
  */
 export function fieldTypeOf(type: string): FieldType {
-  return TYPE_MAP[type as DomainFieldType] ?? 'text'
+  return TYPE_MAP[type as DomainFieldType] ?? 'string'
 }
 
 /** 把 FieldDefinition 转为引擎字段描述符（自定义字段用）。 */
@@ -309,7 +316,7 @@ export function buildBlockFieldDescriptor(def: FieldDefinition): FieldDescriptor
   return descriptor
 }
 
-/** 自定义字段值 → 引擎类型推断（保守：数字/布尔/其余归 string，由 TYPE_MAP 映射到 text）。 */
+/** 自定义字段值 → 引擎类型推断（保守：数字/布尔/其余归 string）。 */
 function inferFieldType(value: unknown): DomainFieldType {
   if (typeof value === 'number') return 'number'
   if (typeof value === 'boolean') return 'boolean'

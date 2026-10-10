@@ -190,8 +190,8 @@ describe('QueryPageFrame 列管理动作的写回基准', () => {
   it('candidateFields 只收窄面板的候选池，视图/查询层的 fields 不动', async () => {
     setupStore()
     const full: FieldDescriptor[] = [
-      { key: 'content', label: '内容', type: 'text', get: () => '' },
-      { key: 'page', label: '来源页', type: 'text', get: () => '' },
+      { key: 'content', label: '内容', type: 'string', get: () => '' },
+      { key: 'page', label: '来源页', type: 'string', get: () => '' },
       { key: 'status', label: '状态', type: 'select', get: () => '' },
       { key: 'amount', label: '金额', type: 'number', get: () => '' },
     ]

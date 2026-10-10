@@ -35,7 +35,7 @@ function idOf(item: T): string {
 
 /** 卡片标题字段：title（或首个 text 字段），与 CalendarView 约定一致。 */
 const titleField = computed<FieldDescriptor | undefined>(
-  () => props.fields.find((f) => f.key === 'title') ?? props.fields.find((f) => f.type === 'text'),
+  () => props.fields.find((f) => f.key === 'title') ?? props.fields.find((f) => f.type === 'string'),
 )
 
 /** 卡片副标题字段：aliases（书 Page 的作者按票 01 导入约定存 aliases[0]）。 */

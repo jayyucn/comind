@@ -61,7 +61,7 @@ function fieldOf(key: string): FieldDescriptor | undefined {
 }
 
 const FIELD_META: Record<FieldType, { icon: Component; dirs: { asc: string; desc: string } }> = {
-  text: { icon: Type, dirs: { asc: 'A → Z', desc: 'Z → A' } },
+  string: { icon: Type, dirs: { asc: 'A → Z', desc: 'Z → A' } },
   number: { icon: Hash, dirs: { asc: '1 → 9', desc: '9 → 1' } },
   date: { icon: CalendarDays, dirs: { asc: '旧 → 新', desc: '新 → 旧' } },
   datetime: { icon: CalendarDays, dirs: { asc: '旧 → 新', desc: '新 → 旧' } },
@@ -82,7 +82,7 @@ function dirMeta(rule: SortRule): { asc: string; desc: string } {
     const labels = field.sortOrder.map((id) => opts.find((o) => o.id === id)?.label ?? id)
     return { asc: labels.join(' > '), desc: [...labels].reverse().join(' > ') }
   }
-  const type = field?.type ?? 'text'
+  const type = field?.type ?? 'string'
   return FIELD_META[type].dirs
 }
 
@@ -145,7 +145,7 @@ function deleteAll() {
 
         <div class="select-wrap field-select-wrap">
           <component
-            :is="fieldIcon(fieldOf(rule.field)?.type ?? 'text')"
+            :is="fieldIcon(fieldOf(rule.field)?.type ?? 'string')"
             :size="14"
             class="select-icon"
           />

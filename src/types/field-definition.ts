@@ -1,9 +1,26 @@
 import { SYSTEM_TAGS } from './tag'
 
 /**
- * 字段类型
+ * 字段类型 —— 规范联合（单源，issue #140 F1）。
+ *
+ * 领域层与查询引擎层（`core/query/types.ts`）共用本枚举：查询引擎 re-export 此处
+ * 定义并保留 `(string & {})` 开放扩展。编辑器 / 展示形态 / 过滤操作符的三面分派
+ * 统一查中央注册表（`field-type-registry.ts`），不再各自维护散表。
+ *
+ * - datetime：日期时间（yyyy-MM-dd HH:mm，ADR-0041）
+ * - select / multiSelect：封闭枚举单选 / 多选（选项在 closedValues，值存选项 id）
+ * - array / page / boolean / string / number / date：既有词汇，保持不变
  */
-export type FieldType = 'string' | 'number' | 'boolean' | 'date' | 'array' | 'page'
+export type FieldType =
+  | 'string'
+  | 'number'
+  | 'boolean'
+  | 'date'
+  | 'datetime'
+  | 'select'
+  | 'multiSelect'
+  | 'array'
+  | 'page'
 
 /**
  * 封闭值选项
@@ -39,13 +56,17 @@ export interface FieldDefinition {
 }
 
 /**
- * 字段值域映射（类型安全）
+ * 字段值域映射（类型安全）。datetime / select 值为字符串（后者存选项 id），
+ * multiSelect 值为选项 id 数组。
  */
 export type FieldValueDataMap = {
   string: string
   number: number
   boolean: boolean
   date: string
+  datetime: string
+  select: string
+  multiSelect: string[]
   array: string[]
   page: string
 }

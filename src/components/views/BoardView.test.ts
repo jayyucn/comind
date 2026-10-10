@@ -22,7 +22,7 @@ function makeCard(overrides: Partial<BlockCard> = {}): BlockCard {
 // 仿 Block 注册表：status(分组) / content(标题) / priority(带色) / deadline(date)
 function makeFields(): FieldDescriptor[] {
   return [
-    { key: 'content', label: '内容', type: 'text', get: (i) => (i as BlockCard).content_preview },
+    { key: 'content', label: '内容', type: 'string', get: (i) => (i as BlockCard).content_preview },
     {
       key: 'status', label: '状态', type: 'select',
       options: [

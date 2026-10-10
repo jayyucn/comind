@@ -9,7 +9,9 @@ export function formatFieldValueData(
 ): FieldValueData | null {
   try {
     switch (type) {
+      // string / select：值即字符串（select 存选项 id），留白修剪即可
       case 'string':
+      case 'select':
         return String(value).trim()
 
       case 'number': {
@@ -34,6 +36,20 @@ export function formatFieldValueData(
         return null
       }
 
+      // datetime（yyyy-MM-dd HH:mm，ADR-0041）：兼容 T/空格两种分隔，统一规范化为空格。
+      // 校验解析前把空格换 'T'——'yyyy-MM-dd HH:mm' 空格形不是跨引擎可解析格式（Safari 返回 NaN），
+      // 'yyyy-MM-ddTHH:mm' 才是 ES 规范格式。
+      case 'datetime': {
+        const dateStr = String(value).trim()
+        if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(dateStr)) {
+          const d = new Date(`${dateStr.slice(0, 10)}T${dateStr.slice(11, 16)}`)
+          if (!isNaN(d.getTime())) return `${dateStr.slice(0, 10)} ${dateStr.slice(11, 16)}`
+        }
+        return null
+      }
+
+      // multiSelect：值域与 array 同为字符串数组，同族解析
+      case 'multiSelect':
       case 'array': {
         if (Array.isArray(value)) {
           return value.map(v => String(v).trim()).filter(Boolean)

@@ -4,7 +4,7 @@ import SortMenu from './SortMenu.vue'
 import type { FieldDescriptor, SortRule } from '../../core/query'
 
 const FIELDS: FieldDescriptor[] = [
-  { key: 'title', label: '标题', type: 'text', get: () => '' },
+  { key: 'title', label: '标题', type: 'string', get: () => '' },
   { key: 'createdAt', label: '创建日期', type: 'date', get: () => '' },
   { key: 'wordCount', label: '字数', type: 'number', get: () => 0 },
 ]
