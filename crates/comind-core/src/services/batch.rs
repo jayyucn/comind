@@ -680,6 +680,10 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
             if params.get("step").is_some() {
                 fd.step = optional_f64_param(&params, "step");
             }
+            // 特化标记（issue T6/T7/T10）：键存在才改动；null / 空串 → 清除特化。
+            if params.get("spec").is_some() {
+                fd.spec = optional_str_param(&params, "spec");
+            }
             let updated =
                 repository::FieldDefinitionRepository::update(storage.field_definitions(), &fd)?;
             Ok(OpEffect {

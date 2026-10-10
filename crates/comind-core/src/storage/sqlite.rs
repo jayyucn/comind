@@ -305,7 +305,8 @@ impl SQLiteAdapter {
                 display_form_override TEXT NOT NULL DEFAULT 'auto',
                 min             REAL,
                 max             REAL,
-                step            REAL
+                step            REAL,
+                spec            TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_fielddef_key ON FieldDefinition(key);
 
@@ -360,6 +361,7 @@ impl SQLiteAdapter {
         Self::migrate_add_tag_is_preset(conn)?;
         Self::migrate_add_field_definition_is_preset(conn)?;
         Self::migrate_add_field_definition_constraints(conn)?;
+        Self::migrate_add_field_definition_spec(conn)?;
         Self::migrate_rename_task_view_to_screen_view(conn)?;
         Self::migrate_add_screen_view_config(conn)?;
         Self::migrate_add_screen_view_entity(conn)?;
@@ -715,6 +717,23 @@ impl SQLiteAdapter {
                     [],
                 )?;
             }
+        }
+        Ok(())
+    }
+
+    /// 字段类型特化标记（issue T6/T7/T10）。幂等：老库 FieldDefinition 表补 spec 列
+    /// （TEXT，NULL = 无特化）。存量行无特化即 NULL，UI 按底层类型走原路径。
+    fn migrate_add_field_definition_spec(conn: &rusqlite::Connection) -> Result<(), Box<dyn Error>> {
+        let has_column: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('FieldDefinition') WHERE name = 'spec'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|c| c > 0)
+            .unwrap_or(false);
+        if !has_column {
+            conn.execute("ALTER TABLE FieldDefinition ADD COLUMN spec TEXT", [])?;
         }
         Ok(())
     }

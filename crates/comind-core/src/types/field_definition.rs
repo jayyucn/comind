@@ -99,6 +99,12 @@ pub struct FieldDefinition {
     pub max: Option<f64>,
     #[serde(default)]
     pub step: Option<f64>,
+    /// 字段类型特化标记（issue T6/T7/T10）：'email' | 'phone' | 'url' | 'richtext' |
+    /// 'currency[:符号/单位]' | 'percent' | 'rating' | 'person'。NULL = 无特化，
+    /// 按底层类型（string / number / page）走原路径。解析单源在前端
+    /// `types/field-type-registry.ts` 的三个特化查表（specHeadOf 取首段）。
+    #[serde(default)]
+    pub spec: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -143,6 +149,7 @@ impl FieldDefinition {
             version: 0,
             deleted_at: None,
             is_preset: false,
+            spec: None,
         }
     }
 }
@@ -240,6 +247,7 @@ pub fn system_field_definitions() -> Vec<FieldDefinition> {
             min: None,
             max: None,
             step: None,
+            spec: None,
         })
         .collect()
 }

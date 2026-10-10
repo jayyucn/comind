@@ -17,7 +17,7 @@ use crate::storage::executor::Executor;
 pub const FIELD_DEFINITION_COLS: &[&str] = &[
     "id", "key", "title", "type", "closed_values", "is_system",
     "created_at", "updated_at", "version", "deleted_at", "default_value", "hide_when",
-    "is_preset", "display_form_override", "min", "max", "step",
+    "is_preset", "display_form_override", "min", "max", "step", "spec",
 ];
 
 pub fn field_definition_select_cols() -> String {
@@ -56,6 +56,7 @@ pub fn row_to_field_definition_native(row: &rusqlite::Row) -> Result<FieldDefini
         min: row.get::<_, Option<f64>>(14)?,
         max: row.get::<_, Option<f64>>(15)?,
         step: row.get::<_, Option<f64>>(16)?,
+        spec: row.get::<_, Option<String>>(17)?,
     })
 }
 
@@ -107,6 +108,10 @@ pub fn row_to_field_definition_js(row: &HashMap<String, String>) -> FieldDefinit
         step: row
             .get("step")
             .and_then(|s| if s.is_empty() { None } else { s.parse::<f64>().ok() }),
+        spec: row
+            .get("spec")
+            .cloned()
+            .and_then(|s| if s.is_empty() { None } else { Some(s) }),
     }
 }
 
@@ -183,6 +188,7 @@ pub fn field_definition_create<E: Executor>(exec: &E, fd: &FieldDefinition) -> R
         &fd.min,
         &fd.max,
         &fd.step,
+        &fd.spec,
     ];
     exec.execute(&field_definition_insert_sql(), &params)?;
     Ok(())
@@ -192,7 +198,7 @@ pub fn field_definition_create<E: Executor>(exec: &E, fd: &FieldDefinition) -> R
 pub fn field_definition_update<E: Executor>(exec: &E, fd: &FieldDefinition) -> Result<(), Box<dyn Error>> {
     let closed_values_json = closed_values_to_sql(&fd.closed_values);
     let is_system_i64 = if fd.is_system { 1i64 } else { 0i64 };
-    let sql = "UPDATE FieldDefinition SET key = ?2, title = ?3, type = ?4, closed_values = ?5, is_system = ?6, default_value = ?7, hide_when = ?8, display_form_override = ?9, updated_at = ?10, min = ?11, max = ?12, step = ?13, version = version + 1 \
+    let sql = "UPDATE FieldDefinition SET key = ?2, title = ?3, type = ?4, closed_values = ?5, is_system = ?6, default_value = ?7, hide_when = ?8, display_form_override = ?9, updated_at = ?10, min = ?11, max = ?12, step = ?13, spec = ?14, version = version + 1 \
                WHERE id = ?1";
     let params: Vec<&dyn ToSql> = vec![
         &fd.id,
@@ -208,6 +214,7 @@ pub fn field_definition_update<E: Executor>(exec: &E, fd: &FieldDefinition) -> R
         &fd.min,
         &fd.max,
         &fd.step,
+        &fd.spec,
     ];
     exec.execute(sql, &params)?;
     Ok(())
@@ -335,6 +342,7 @@ mod tests {
         m.insert("min".to_string(), "0".to_string());
         m.insert("max".to_string(), "100".to_string());
         m.insert("step".to_string(), "5".to_string());
+        m.insert("spec".to_string(), "email".to_string());
         let fd = row_to_field_definition_js(&m);
         assert_eq!(fd.id, "f1");
         assert_eq!(fd.key, "status");
@@ -349,6 +357,8 @@ mod tests {
         assert_eq!(fd.min, Some(0.0));
         assert_eq!(fd.max, Some(100.0));
         assert_eq!(fd.step, Some(5.0));
+        // 特化标记（T6/T7/T10）：非空直通
+        assert_eq!(fd.spec, Some("email".to_string()));
     }
 
     #[test]
@@ -368,6 +378,10 @@ mod tests {
         assert_eq!(fd.min, None);
         assert_eq!(fd.max, None);
         assert_eq!(fd.step, None);
+        // spec 缺列 / 空串同样归 None（存量行无特化）
+        assert_eq!(fd.spec, None);
+        m.insert("spec".to_string(), "".to_string());
+        assert_eq!(row_to_field_definition_js(&m).spec, None);
     }
 
     #[test]

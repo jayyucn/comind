@@ -57,6 +57,7 @@ impl FieldValueService {
             min: None,
             max: None,
             step: None,
+            spec: None,
         };
         repository::FieldDefinitionRepository::create(storage.field_definitions(), &fd)?;
         Ok(fd)
