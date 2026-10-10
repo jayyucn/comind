@@ -10,6 +10,7 @@ import { buildDocumentOrder } from '../utils/block-helpers'
 import type { Block } from '../types/block'
 import type { FieldValueData } from '../types/field-definition'
 import { decodeFieldValueData } from '../utils/field-value-codec'
+import { extractFieldBacklinks } from '../utils/field-backlinks'
 import BlockFieldZone from './Block/BlockFieldZone.vue'
 
 const props = withDefaults(defineProps<{
@@ -69,6 +70,21 @@ async function loadBacklinks() {
     for (const link of links) {
       if (!uniqueLinks.has(link.sourceBlockId)) {
         uniqueLinks.set(link.sourceBlockId, link)
+      }
+    }
+
+    // 3.5 字段引用并入反链（issue T3 AC4）：content 解析（[[X]]）覆盖不到的
+    //     字段值引用——前端聚合，遍历字段值缓存中 value_type==='page' 且值=本页
+    //     id 的块（最小实现，不动 Rust；缓存只含本会话已加载块，见 field-backlinks.ts）。
+    for (const { blockId } of extractFieldBacklinks(fieldValueStore.fieldValuesByBlock, currentId)) {
+      if (!uniqueLinks.has(blockId)) {
+        uniqueLinks.set(blockId, {
+          id: `field-ref:${blockId}`,
+          sourceBlockId: blockId,
+          targetPageId: currentId,
+          relationshipType: 'field-ref',
+          createdAt: 0,
+        })
       }
     }
 
