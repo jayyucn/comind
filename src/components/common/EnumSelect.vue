@@ -183,6 +183,22 @@ defineExpose({ openPanel, close, select })
         title="清除"
         @click.stop="clearValue"
       >×</span>
+      <svg
+        class="es-chevron"
+        viewBox="0 0 16 16"
+        width="14"
+        height="14"
+        aria-hidden="true"
+      >
+        <path
+          d="M4 6l4 4 4-4"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </svg>
     </button>
 
     <Teleport to="body">
@@ -298,6 +314,21 @@ defineExpose({ openPanel, close, select })
 .es-clear:hover {
   opacity: 1;
   pointer-events: auto;
+}
+
+.es-chevron {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--text-tertiary);
+  transition: transform var(--dur-base) var(--ease-out);
+
+  .es-trigger:hover &,
+  .es-trigger.open & {
+    color: var(--text-secondary);
+  }
+  .es-trigger.open & {
+    transform: rotate(180deg);
+  }
 }
 
 /* —— 弹层（与 DatePicker 的 dp-root/dp-panel 同构） —— */
