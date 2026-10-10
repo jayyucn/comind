@@ -455,7 +455,7 @@ pub async fn search(
 }
 
 #[tauri::command]
-pub async fn get_properties(
+pub async fn get_field_values(
     db: State<'_, super::state::DatabaseConnection>,
     block_id: &str,
 ) -> Result<Vec<FieldValue>, String> {
@@ -935,7 +935,7 @@ pub async fn delete_page_cascade(
 }
 
 #[tauri::command]
-pub async fn set_property(
+pub async fn set_field_value(
     db: State<'_, super::state::DatabaseConnection>,
     sync_server: State<'_, super::state::SyncServerHandle>,
     block_id: &str,
@@ -947,7 +947,7 @@ pub async fn set_property(
 
     let result = execute_with_adapter(db, |storage| {
         // Use upsert to eliminate read-then-write race condition
-        // (two concurrent setProperty calls both seeing existing=None → double INSERT → UNIQUE constraint failure)
+        // (two concurrent set_field_value calls both seeing existing=None → double INSERT → UNIQUE constraint failure)
         let result = FieldValueService::upsert(storage, block_id, key, value, type_, 0);
 
         if let Ok(block) = storage.blocks().get_by_id(block_id) {
@@ -982,7 +982,7 @@ pub async fn set_property(
 }
 
 #[tauri::command]
-pub async fn delete_property(
+pub async fn delete_field_value(
     db: State<'_, super::state::DatabaseConnection>,
     sync_server: State<'_, super::state::SyncServerHandle>,
     block_id: &str,

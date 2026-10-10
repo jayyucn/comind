@@ -16,8 +16,8 @@ const { mockClient, mockIsTauri } = vi.hoisted(() => {
     getPageWithBlocks: vi.fn(),
     getBlocksByPage: vi.fn(),
     saveBlockTree: vi.fn(),
-    setProperty: vi.fn(),
-    getProperties: vi.fn(),
+    setFieldValue: vi.fn(),
+    getFieldValues: vi.fn(),
     getBlock: vi.fn(),
     upsertBookHighlight: vi.fn(),
     deleteBookHighlight: vi.fn(),
@@ -64,9 +64,9 @@ function echoSaveBlockTree(list: Array<Record<string, unknown>>) {
   return list
 }
 
-/** setProperty 回显：Rust 返回字段值行 */
+/** setFieldValue 回显：Rust 返回字段值行 */
 function echoSetProperty() {
-  mockClient.setProperty.mockImplementation(
+  mockClient.setFieldValue.mockImplementation(
     async (blockId: string, key: string, value: string, type: string) => ({
       id: `prop-${key}`,
       block_id: blockId,
@@ -88,7 +88,7 @@ beforeEach(() => {
   mockIsTauri.mockReturnValue(false)
   mockClient.getPageWithBlocks.mockResolvedValue({ blocks: [] })
   mockClient.getBlocksByPage.mockResolvedValue([])
-  mockClient.getProperties.mockResolvedValue([])
+  mockClient.getFieldValues.mockResolvedValue([])
   mockClient.upsertBookHighlight.mockImplementation(async (h: BookHighlightRust) => h)
   mockClient.deleteBookHighlight.mockResolvedValue(undefined)
   mockClient.deleteBlock.mockResolvedValue(undefined)
@@ -163,7 +163,7 @@ describe('createOrUpdateNoteBlock（新建笔记）', () => {
       highlight: makeHighlight(),
     })
 
-    const propCalls = mockClient.setProperty.mock.calls.map(
+    const propCalls = mockClient.setFieldValue.mock.calls.map(
       (c: unknown[]) => [c[1], c[2], c[3]] as const,
     )
     expect(propCalls).toContainEqual(['book', '测试书', 'string'])
@@ -171,7 +171,7 @@ describe('createOrUpdateNoteBlock（新建笔记）', () => {
     expect(propCalls).toContainEqual(['cfi', 'epubcfi(/6/2!/4/2:0)', 'string'])
     expect(propCalls).toContainEqual(['quote', '原文摘录', 'string'])
     // 四件套都挂在新建 block 上
-    for (const c of mockClient.setProperty.mock.calls) {
+    for (const c of mockClient.setFieldValue.mock.calls) {
       expect(c[0]).toBe(result.blockId)
     }
   })
@@ -278,7 +278,7 @@ describe('createOrUpdateNoteBlock（更新已有笔记）', () => {
     expect(saved.id).toBe('b-1')
     expect(saved.content).toBe('新想法')
     // 字段值不重写、block_id 不重复回填
-    expect(mockClient.setProperty).not.toHaveBeenCalled()
+    expect(mockClient.setFieldValue).not.toHaveBeenCalled()
     expect(mockClient.upsertBookHighlight).not.toHaveBeenCalled()
   })
 

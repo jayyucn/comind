@@ -36,7 +36,7 @@ const { mockClient } = vi.hoisted(() => ({
     getFieldDefinitions: vi.fn(),
     getDeletedPresetFieldDefinitions: vi.fn().mockResolvedValue([]),
     getBlockCards: vi.fn(),
-    getProperties: vi.fn().mockResolvedValue([]),
+    getFieldValues: vi.fn().mockResolvedValue([]),
   },
 }))
 

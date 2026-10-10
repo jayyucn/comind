@@ -81,7 +81,7 @@ export async function migrateDateProperties(client: CoreClient): Promise<Migrati
 
         try {
           // 获取该 block 的所有属性
-          const props = await client.getProperties(block.id)
+          const props = await client.getFieldValues(block.id)
           if (!props || props.length === 0) continue
 
           // 查找日期字段值和 recurrence
@@ -130,11 +130,11 @@ export async function migrateDateProperties(client: CoreClient): Promise<Migrati
           }])
 
           // 删除旧的属性
-          await client.deleteProperty(block.id, dateProp.key)
+          await client.deleteFieldValue(block.id, dateProp.key)
           result.deletedProperties++
 
           if (recurrenceProp) {
-            await client.deleteProperty(block.id, 'recurrence')
+            await client.deleteFieldValue(block.id, 'recurrence')
             result.deletedProperties++
           }
 

@@ -18,9 +18,9 @@ const hoisted = vi.hoisted(() => {
   const client = {
     saveBlockTree: vi.fn(() => Promise.resolve()),
     executeBatch: vi.fn(() => Promise.resolve()),
-    getProperties: vi.fn(() => Promise.resolve([])),
+    getFieldValues: vi.fn(() => Promise.resolve([])),
     getOutlinks: vi.fn(() => Promise.resolve([])),
-    setProperty: vi.fn(() => Promise.resolve({})),
+    setFieldValue: vi.fn(() => Promise.resolve({})),
   }
   return { ensureTodo, client }
 })

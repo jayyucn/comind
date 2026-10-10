@@ -8,7 +8,7 @@
  * 3. 保留 createBlock → flushSave → setFieldValue(status/priority) 链：先落 block 行再写字段值。
  *
  * 测试跑在真实 comind-core（sqljs 内存库）上（先例：Block/index.test.ts）：
- * FK 约束真实生效——若 flushSave 先于 setProperty 的顺序被破坏，会抛 FOREIGN KEY 失败使用例失败。
+ * FK 约束真实生效——若 flushSave 先于 setFieldValue 的顺序被破坏，会抛 FOREIGN KEY 失败使用例失败。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
@@ -109,17 +109,17 @@ async function waitFor(pred: () => boolean, timeoutMs = 3000): Promise<void> {
   }
 }
 
-/** 从 QuadrantView 桩触发一次新增并等待 createBlock→flushSave→setProperty×2 全部完成 */
+/** 从 QuadrantView 桩触发一次新增并等待 createBlock→flushSave→setFieldValue×2 全部完成 */
 async function addFromQuadrant(priority: string, title: string) {
   const wrapper = mountTaskHub()
   await flushPromises() // onMounted（screenView.load + blockCard.getCards）
   const qv = wrapper.findComponent(QuadrantViewStub)
   expect(qv.exists()).toBe(true)
-  const setPropertySpy = vi.spyOn(getTestCore()!, 'setProperty')
+  const setFieldValueSpy = vi.spyOn(getTestCore()!, 'setFieldValue')
   qv.vm.$emit('addItem', priority, title)
   await flushPromises()
-  await waitFor(() => setPropertySpy.mock.calls.length === 2)
-  return { wrapper, setPropertySpy }
+  await waitFor(() => setFieldValueSpy.mock.calls.length === 2)
+  return { wrapper, setFieldValueSpy }
 }
 
 beforeEach(() => {
@@ -211,14 +211,14 @@ describe('TaskHub — 四象限新增任务落点', () => {
     const blockStore = useBlockStore()
     const fieldValueStore = useFieldValueStore()
     const saveTreeSpy = vi.spyOn(client, 'saveBlockTree')
-    const setPropertySpy = vi.spyOn(client, 'setProperty')
+    const setFieldValueSpy = vi.spyOn(client, 'setFieldValue')
 
     const { wrapper } = await addFromQuadrant('High', '四象限新增-FK链验证')
 
     // 顺序：block 行必须先于字段值写入（真实 sqlite 外键约束下乱序会直接失败）
     expect(saveTreeSpy).toHaveBeenCalled()
-    expect(setPropertySpy).toHaveBeenCalledTimes(2)
-    expect(saveTreeSpy.mock.invocationCallOrder[0]).toBeLessThan(setPropertySpy.mock.invocationCallOrder[0])
+    expect(setFieldValueSpy).toHaveBeenCalledTimes(2)
+    expect(saveTreeSpy.mock.invocationCallOrder[0]).toBeLessThan(setFieldValueSpy.mock.invocationCallOrder[0])
 
     // status=Todo、priority=象限值真实落库（store 本地态 + 真实 DB 双确认）
     const block = blockStore.blocks.find((b) => b.content.startsWith('四象限新增-FK链验证'))!
@@ -227,7 +227,7 @@ describe('TaskHub — 四象限新增任务落点', () => {
     expect(localKv['status']).toBe('Todo')
     expect(localKv['priority']).toBe('High')
 
-    const values = await client.getProperties(block.id)
+    const values = await client.getFieldValues(block.id)
     const kv = Object.fromEntries(values.map((p) => [p.key, decodeFieldValueData(p.value_json, p.value_type)]))
     expect(kv['status']).toBe('Todo')
     expect(kv['priority']).toBe('High')
@@ -259,7 +259,7 @@ describe('TaskHub — 四象限新增任务落点', () => {
     // 即派生真相；WASM 端 getBlockCards 恒空、getBlocksByPage 不带 tags，无 DB 侧取证面）
     expect(blockStore.getBlock(b.id)!.content).toContain('#任务')
     expect(blockStore.getBlock(b.id)!.tags).toContain(taskTagId)
-    const values = await client.getProperties(b.id)
+    const values = await client.getFieldValues(b.id)
     const kv = Object.fromEntries(values.map((p) => [p.key, decodeFieldValueData(p.value_json, p.value_type)]))
     expect(kv['status']).toBe('Todo')
   })

@@ -15,8 +15,8 @@ const hoisted = vi.hoisted(() => {
     undeleteBlocks: vi.fn(() => Promise.resolve()),
     getBlocksByPage: vi.fn(() => Promise.resolve([])),
     getPageWithBlocks: vi.fn(() => Promise.resolve({ page: {}, blocks: [] })),
-    setProperty: vi.fn(() => Promise.resolve({})),
-    deleteProperty: vi.fn(() => Promise.resolve()),
+    setFieldValue: vi.fn(() => Promise.resolve({})),
+    deleteFieldValue: vi.fn(() => Promise.resolve()),
   }
   return { client }
 })

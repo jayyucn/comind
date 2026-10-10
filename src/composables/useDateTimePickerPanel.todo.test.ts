@@ -14,11 +14,11 @@ import { setActivePinia, createPinia } from 'pinia'
 const hoisted = vi.hoisted(() => {
   const propsByBlock = new Map<string, any[]>()
 
-  const getProperties = vi.fn((blockId: string) =>
+  const getFieldValues = vi.fn((blockId: string) =>
     Promise.resolve(propsByBlock.get(blockId) ?? [])
   )
 
-  const setProperty = vi.fn((blockId: string, key: string, valueStr: string, type: string) => {
+  const setFieldValue = vi.fn((blockId: string, key: string, valueStr: string, type: string) => {
     const id = `${blockId}:${key}`
     const prop = {
       id,
@@ -41,7 +41,7 @@ const hoisted = vi.hoisted(() => {
     return Promise.resolve(prop)
   })
 
-  const deleteProperty = vi.fn((blockId: string, key: string) => {
+  const deleteFieldValue = vi.fn((blockId: string, key: string) => {
     const arr = propsByBlock.get(blockId) ?? []
     propsByBlock.set(
       blockId,
@@ -50,8 +50,8 @@ const hoisted = vi.hoisted(() => {
     return Promise.resolve()
   })
 
-  const client = { getProperties, setProperty, deleteProperty }
-  return { propsByBlock, client, getProperties, setProperty, deleteProperty }
+  const client = { getFieldValues, setFieldValue, deleteFieldValue }
+  return { propsByBlock, client, getFieldValues, setFieldValue, deleteFieldValue }
 })
 
 // ── 共享可变状态（供 handleConfirm 读写 editor / block store） ─────────────
@@ -120,7 +120,7 @@ describe('handleConfirm — 自动标记 Todo', () => {
     expect(blockState.updateBlockContent).toHaveBeenCalledWith('b1', '买牛奶 @2026-07-20 📅 ')
 
     // 自动补 Todo
-    const todoCall = hoisted.setProperty.mock.calls.find((c) => c[0] === 'b1' && c[1] === 'status')
+    const todoCall = hoisted.setFieldValue.mock.calls.find((c) => c[0] === 'b1' && c[1] === 'status')
     expect(todoCall).toBeDefined()
     expect(todoCall![2]).toBe('Todo')
   })
@@ -144,7 +144,7 @@ describe('handleConfirm — 自动标记 Todo', () => {
     await panel.handleConfirm({ kind: 'deadline', iso: '2026-07-25', recurrence: 'none' })
 
     expect(blockState.updateBlockContent).toHaveBeenCalledWith('b2', '交报告 @2026-07-25 ⏰ ')
-    const todoCall = hoisted.setProperty.mock.calls.find((c) => c[0] === 'b2' && c[1] === 'status')
+    const todoCall = hoisted.setFieldValue.mock.calls.find((c) => c[0] === 'b2' && c[1] === 'status')
     expect(todoCall).toBeDefined()
     expect(todoCall![2]).toBe('Todo')
   })
@@ -156,7 +156,7 @@ describe('handleConfirm — 自动标记 Todo', () => {
     // 先通过 store 设置 status=Done（会写回 propsByBlock 并刷新内存）
     await fieldValueStore.setFieldValue('b3', 'status', 'Done', 'string')
     // 仅关心本次 handleConfirm 是否"补" Todo
-    hoisted.setProperty.mockClear()
+    hoisted.setFieldValue.mockClear()
 
     blockState.blocks = [{ id: 'b3', content: '已完成的任务', type: 'bullet' }]
     editorState.dateRefEditor = {
@@ -174,8 +174,8 @@ describe('handleConfirm — 自动标记 Todo', () => {
     await panel.handleConfirm({ kind: 'schedule', iso: '2026-07-20', recurrence: 'none' })
 
     expect(blockState.updateBlockContent).toHaveBeenCalledTimes(1)
-    // 不应再调用 setProperty('status', 'Todo')
-    const todoCall = hoisted.setProperty.mock.calls.find((c) => c[0] === 'b3' && c[1] === 'status')
+    // 不应再调用 setFieldValue('status', 'Todo')
+    const todoCall = hoisted.setFieldValue.mock.calls.find((c) => c[0] === 'b3' && c[1] === 'status')
     expect(todoCall).toBeUndefined()
   })
 
@@ -215,7 +215,7 @@ describe('handleConfirm — 自动标记 Todo', () => {
     await panel.handleConfirm({ kind: 'schedule', iso: '2026-07-20', recurrence: 'none' })
 
     expect(chainMock).toHaveBeenCalled()
-    const todoCall = hoisted.setProperty.mock.calls.find((c) => c[0] === 'b4' && c[1] === 'status')
+    const todoCall = hoisted.setFieldValue.mock.calls.find((c) => c[0] === 'b4' && c[1] === 'status')
     expect(todoCall).toBeDefined()
     expect(todoCall![2]).toBe('Todo')
   })
@@ -238,6 +238,6 @@ describe('handleConfirm — 自动标记 Todo', () => {
 
     await panel.handleConfirm({ kind: 'schedule', iso: '2026-07-20', recurrence: 'none' })
 
-    expect(hoisted.setProperty).not.toHaveBeenCalled()
+    expect(hoisted.setFieldValue).not.toHaveBeenCalled()
   })
 })

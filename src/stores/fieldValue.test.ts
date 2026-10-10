@@ -8,9 +8,9 @@ import type { CoreClient } from '../wasm/client'
 // store 的缓存/映射/编解码编排。Rust 形状（snake_case、deleted_at 为 null|时间戳）。
 const { mockClient } = vi.hoisted(() => {
   const mockClient = {
-    getProperties: vi.fn(async () => [] as unknown[]),
-    setProperty: vi.fn(async () => ({})),
-    deleteProperty: vi.fn(async () => {}),
+    getFieldValues: vi.fn(async () => [] as unknown[]),
+    setFieldValue: vi.fn(async () => ({})),
+    deleteFieldValue: vi.fn(async () => {}),
     getDateRefsByBlock: vi.fn(async () => []),
     calculateNextRecurrence: vi.fn(async (iso: string) => iso),
   }
@@ -43,11 +43,11 @@ beforeEach(() => {
   setActivePinia(createPinia())
   vi.clearAllMocks()
   // clearAllMocks 不清除 mockImplementation；显式复位这两个 client 方法，
-  // 避免前一个用例的 mockResolvedValue 泄漏到下一个（getProperties 尤其影响字段缓存）。
-  vi.mocked(mockClient.getProperties).mockReset()
-  vi.mocked(mockClient.getProperties).mockResolvedValue([] as never)
-  vi.mocked(mockClient.setProperty).mockReset()
-  vi.mocked(mockClient.setProperty).mockResolvedValue({} as never)
+  // 避免前一个用例的 mockResolvedValue 泄漏到下一个（getFieldValues 尤其影响字段缓存）。
+  vi.mocked(mockClient.getFieldValues).mockReset()
+  vi.mocked(mockClient.getFieldValues).mockResolvedValue([] as never)
+  vi.mocked(mockClient.setFieldValue).mockReset()
+  vi.mocked(mockClient.setFieldValue).mockResolvedValue({} as never)
 })
 
 describe('useFieldValueStore', () => {
@@ -81,7 +81,7 @@ describe('useFieldValueStore', () => {
     })
 
     test('获取已加载的字段值', async () => {
-      vi.mocked(mockClient.getProperties).mockResolvedValue([makeFieldValue()] as never)
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([makeFieldValue()] as never)
 
       const store = useFieldValueStore()
       await store.loadBlockFieldValues('block-1')
@@ -92,7 +92,7 @@ describe('useFieldValueStore', () => {
 
   describe('getBlockFieldValue', () => {
     test('通过 key 获取字段值', async () => {
-      vi.mocked(mockClient.getProperties).mockResolvedValue([makeFieldValue()] as never)
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([makeFieldValue()] as never)
 
       const store = useFieldValueStore()
       await store.loadBlockFieldValues('block-1')
@@ -102,7 +102,7 @@ describe('useFieldValueStore', () => {
     })
 
     test('获取不存在的字段值返回 undefined', async () => {
-      vi.mocked(mockClient.getProperties).mockResolvedValue([] as never)
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([] as never)
 
       const store = useFieldValueStore()
       await store.loadBlockFieldValues('block-1')
@@ -113,27 +113,27 @@ describe('useFieldValueStore', () => {
 
   describe('loadBlockFieldValues', () => {
     test('加载字段值并缓存', async () => {
-      vi.mocked(mockClient.getProperties).mockResolvedValue([makeFieldValue()] as never)
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([makeFieldValue()] as never)
 
       const store = useFieldValueStore()
       expect(store.loading).toBe(false)
       const values = await store.loadBlockFieldValues('block-1')
       expect(store.loading).toBe(false)
       expect(values.length).toBe(1)
-      expect(mockClient.getProperties).toHaveBeenCalledWith('block-1')
+      expect(mockClient.getFieldValues).toHaveBeenCalledWith('block-1')
     })
   })
 
   describe('loadMultiBlockFieldValues', () => {
     test('批量加载多个 block 的字段值', async () => {
-      vi.mocked(mockClient.getProperties)
+      vi.mocked(mockClient.getFieldValues)
         .mockResolvedValueOnce([makeFieldValue()] as never)
         .mockResolvedValueOnce([makeFieldValue({ id: 'prop-2', block_id: 'block-2', key: 'status', value_json: 'active', value_type: 'string' })] as never)
 
       const store = useFieldValueStore()
       await store.loadMultiBlockFieldValues(['block-1', 'block-2'])
-      expect(mockClient.getProperties).toHaveBeenCalledWith('block-1')
-      expect(mockClient.getProperties).toHaveBeenCalledWith('block-2')
+      expect(mockClient.getFieldValues).toHaveBeenCalledWith('block-1')
+      expect(mockClient.getFieldValues).toHaveBeenCalledWith('block-2')
       expect(store.getBlockFieldValues('block-1').length).toBe(1)
       expect(store.getBlockFieldValues('block-2').length).toBe(1)
     })
@@ -142,27 +142,27 @@ describe('useFieldValueStore', () => {
   describe('setFieldValue', () => {
     test('设置字段值并用返回 row 就地合并缓存（string 值直通不 JSON 编码）', async () => {
       const newValue = makeFieldValue({ value_json: 'medium' })
-      vi.mocked(mockClient.setProperty).mockResolvedValue(newValue as never)
-      vi.mocked(mockClient.getProperties).mockResolvedValue([newValue] as never)
+      vi.mocked(mockClient.setFieldValue).mockResolvedValue(newValue as never)
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([newValue] as never)
 
       const store = useFieldValueStore()
       const result = await store.setFieldValue('block-1', 'priority', 'medium', 'string')
       expect(result).toMatchObject({ id: 'prop-1', key: 'priority', value_json: 'medium', value_type: 'string' })
       // codec 单源（#117）：string 类型直通，不 JSON 编码
-      expect(mockClient.setProperty).toHaveBeenCalledWith('block-1', 'priority', 'medium', 'string')
+      expect(mockClient.setFieldValue).toHaveBeenCalledWith('block-1', 'priority', 'medium', 'string')
     })
 
-    test('写入后就地合并缓存，不再全量重拉 getProperties（回显零第二往返）', async () => {
-      vi.mocked(mockClient.getProperties).mockResolvedValue([] as never)
-      vi.mocked(mockClient.setProperty).mockResolvedValue(makeFieldValue({ value_json: 'High' }) as never)
+    test('写入后就地合并缓存，不再全量重拉 getFieldValues（回显零第二往返）', async () => {
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([] as never)
+      vi.mocked(mockClient.setFieldValue).mockResolvedValue(makeFieldValue({ value_json: 'High' }) as never)
 
       const store = useFieldValueStore()
       await store.loadBlockFieldValues('block-1')
-      vi.mocked(mockClient.getProperties).mockClear()
+      vi.mocked(mockClient.getFieldValues).mockClear()
 
       await store.setFieldValue('block-1', 'priority', 'High', 'string')
 
-      expect(mockClient.getProperties).not.toHaveBeenCalled()
+      expect(mockClient.getFieldValues).not.toHaveBeenCalled()
       expect(store.getBlockFieldValue('block-1', 'priority')?.value_json).toBe('High')
     })
 
@@ -170,12 +170,12 @@ describe('useFieldValueStore', () => {
       const store = useFieldValueStore()
       await store.setFieldValue('block-1', 'status', 'Todo', 'string')
 
-      expect(mockClient.setProperty).toHaveBeenCalledWith('block-1', 'status', 'Todo', 'string')
-      expect(mockClient.setProperty).toHaveBeenCalledWith('block-1', 'priority', 'Low', 'string')
+      expect(mockClient.setFieldValue).toHaveBeenCalledWith('block-1', 'status', 'Todo', 'string')
+      expect(mockClient.setFieldValue).toHaveBeenCalledWith('block-1', 'priority', 'Low', 'string')
     })
 
     test('块已有 priority → 首次获得 status 时不覆盖手写值', async () => {
-      vi.mocked(mockClient.getProperties).mockResolvedValue([
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([
         makeFieldValue({ key: 'priority', value_json: 'High' }),
       ] as never)
       const store = useFieldValueStore()
@@ -183,11 +183,11 @@ describe('useFieldValueStore', () => {
 
       await store.setFieldValue('block-1', 'status', 'Todo', 'string')
 
-      expect(mockClient.setProperty).not.toHaveBeenCalledWith('block-1', 'priority', 'Low', 'string')
+      expect(mockClient.setFieldValue).not.toHaveBeenCalledWith('block-1', 'priority', 'Low', 'string')
     })
 
     test('块已有 status（状态切换，非创建）→ 不补 priority', async () => {
-      vi.mocked(mockClient.getProperties).mockResolvedValue([
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([
         makeFieldValue({ key: 'status', value_json: 'Doing' }),
       ] as never)
       const store = useFieldValueStore()
@@ -195,28 +195,28 @@ describe('useFieldValueStore', () => {
 
       await store.setFieldValue('block-1', 'status', 'Done', 'string')
 
-      expect(mockClient.setProperty).not.toHaveBeenCalledWith('block-1', 'priority', 'Low', 'string')
+      expect(mockClient.setFieldValue).not.toHaveBeenCalledWith('block-1', 'priority', 'Low', 'string')
     })
   })
 
   describe('deleteFieldValue', () => {
     test('删除字段值并就地移除缓存（按 key 删除，不再全量重拉）', async () => {
-      vi.mocked(mockClient.getProperties).mockResolvedValue([makeFieldValue()] as never)
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([makeFieldValue()] as never)
 
       const store = useFieldValueStore()
       await store.loadBlockFieldValues('block-1')
-      vi.mocked(mockClient.getProperties).mockClear()
+      vi.mocked(mockClient.getFieldValues).mockClear()
 
       await store.deleteFieldValue('prop-1', 'block-1')
-      expect(mockClient.deleteProperty).toHaveBeenCalledWith('block-1', 'priority')
-      expect(mockClient.getProperties).not.toHaveBeenCalled()
+      expect(mockClient.deleteFieldValue).toHaveBeenCalledWith('block-1', 'priority')
+      expect(mockClient.getFieldValues).not.toHaveBeenCalled()
       expect(store.getBlockFieldValue('block-1', 'priority')).toBeUndefined()
     })
   })
 
   describe('clearBlockCache', () => {
     test('清除 block 缓存', async () => {
-      vi.mocked(mockClient.getProperties).mockResolvedValue([makeFieldValue()] as never)
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([makeFieldValue()] as never)
 
       const store = useFieldValueStore()
       await store.loadBlockFieldValues('block-1')

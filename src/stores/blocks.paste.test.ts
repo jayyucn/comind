@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import type { BlockClipPayload } from '../types/block'
 
-// Mock WASM client（pasteBlocks 会 flushSave + setProperty，需完整 mock）
+// Mock WASM client（pasteBlocks 会 flushSave + setFieldValue，需完整 mock）
 const {
   mockInitCoreClient,
   mockSaveBlockTree,
@@ -35,8 +35,8 @@ describe('pasteBlocks（ADR-0025 D6/D7/D8/D11）', () => {
 
     const mockClient = {
       saveBlockTree: mockSaveBlockTree,
-      setProperty: mockSetProperty,
-      getProperties: mockGetProperties,
+      setFieldValue: mockSetProperty,
+      getFieldValues: mockGetProperties,
       getPageWithBlocks: vi.fn().mockResolvedValue(null),
       getBlocksByPage: vi.fn().mockResolvedValue([]),
       getPage: vi.fn(),

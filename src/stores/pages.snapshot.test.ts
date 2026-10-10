@@ -60,7 +60,7 @@ describe('Ideas 页快照读取守卫（Seam ② store 级）', () => {
       updated_at: Date.now(),
     } satisfies BlockUpdate])
     const taskBlockId = saved.block.id
-    await client.setProperty(taskBlockId, 'status', 'Todo', 'string')
+    await client.setFieldValue(taskBlockId, 'status', 'Todo', 'string')
 
     // ── 守卫：仅历史页走快照（纯函数，与 Rust 物化判定镜像）──
     expect(isStaleIdeasPage({ type: 'ideas', title: yesterday }, today)).toBe(true)

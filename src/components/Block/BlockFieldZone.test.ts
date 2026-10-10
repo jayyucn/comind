@@ -23,9 +23,9 @@ const { mockInitCoreClient, mockClient } = vi.hoisted(() => {
     getFieldDefinitions: vi.fn(),
     getDeletedPresetFieldDefinitions: vi.fn().mockResolvedValue([]),
     restoreBuiltinPresets: vi.fn().mockResolvedValue({ restored: 0 }),
-    getProperties: vi.fn(),
-    setProperty: vi.fn(),
-    deleteProperty: vi.fn(),
+    getFieldValues: vi.fn(),
+    setFieldValue: vi.fn(),
+    deleteFieldValue: vi.fn(),
   }
   return { mockInitCoreClient: vi.fn(), mockClient }
 })
@@ -143,7 +143,7 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
       fieldDef({ id: 'f-owner', key: 'owner', title: '负责人' }),
       fieldDef({ id: 'f-estimate', key: 'estimate', title: '工时', type: 'number' }),
     ])
-    mockClient.getProperties.mockResolvedValue([])
+    mockClient.getFieldValues.mockResolvedValue([])
     mockInitCoreClient.mockResolvedValue(mockClient)
   })
 
@@ -176,7 +176,7 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
   })
 
   it('已有值：number 直挂 NumberInput 显示数值，未填 string 字段仍留占位', async () => {
-    mockClient.getProperties.mockResolvedValue([
+    mockClient.getFieldValues.mockResolvedValue([
       fv({ id: 'v1', block_id: 'b1', key: 'estimate', value_json: '3', value_type: 'number' }),
     ])
     const wrapper = await mountList('b1', ['t-dev'])
@@ -225,7 +225,7 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
     mockClient.getFieldDefinitions.mockResolvedValue([
       fieldDef({ id: 'f-rating', key: 'rating', title: '评级', closed_values: ['S', 'A', 'B'] }),
     ])
-    mockClient.getProperties.mockResolvedValue([
+    mockClient.getFieldValues.mockResolvedValue([
       fv({ id: 'v1', block_id: 'b1', key: 'rating', value_json: 'A' }),
     ])
 
@@ -267,7 +267,7 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
     mockClient.getFieldDefinitions.mockResolvedValue([
       fieldDef({ id: 'f-done', key: 'done', title: '完成', type: 'boolean' }),
     ])
-    mockClient.getProperties.mockResolvedValue([
+    mockClient.getFieldValues.mockResolvedValue([
       fv({ id: 'v1', block_id: 'b1', key: 'done', value_json: 'true', value_type: 'boolean' }),
     ])
 
@@ -285,7 +285,7 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
     mockClient.getFieldDefinitions.mockResolvedValue([
       fieldDef({ id: 'f-rating', key: 'rating', title: '评级', closed_values: ['S', 'A'], display_form_override: 'text' }),
     ])
-    mockClient.getProperties.mockResolvedValue([
+    mockClient.getFieldValues.mockResolvedValue([
       fv({ id: 'v1', block_id: 'b1', key: 'rating', value_json: 'A' }),
     ])
 
@@ -382,7 +382,7 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
     mockClient.getFieldDefinitions.mockResolvedValue([
       fieldDef({ id: 'f-rating', key: 'rating', title: '评级', closed_values: ['S', 'A'] }),
     ])
-    mockClient.getProperties.mockResolvedValue([
+    mockClient.getFieldValues.mockResolvedValue([
       fv({ id: 'v1', block_id: 'b1', key: 'rating', value_json: 'A' }),
     ])
 
@@ -412,7 +412,7 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
     mockClient.getFieldDefinitions.mockResolvedValue([
       fieldDef({ id: 'f-date', key: 'duedate', title: '到期日', type: 'date' }),
     ])
-    mockClient.getProperties.mockResolvedValue([
+    mockClient.getFieldValues.mockResolvedValue([
       fv({ id: 'v1', block_id: 'b1', key: 'duedate', value_json: '"2026-09-06"', value_type: 'date' }),
     ])
 
@@ -490,7 +490,7 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
     mockClient.getFieldDefinitions.mockResolvedValue([
       fieldDef({ id: 'f-num', key: 'count', title: '数量', type: 'number' }),
     ])
-    mockClient.getProperties.mockResolvedValue([
+    mockClient.getFieldValues.mockResolvedValue([
       fv({ id: 'v1', block_id: 'b1', key: 'count', value_json: '42', value_type: 'number' }),
     ])
 
@@ -680,7 +680,7 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
       fieldDef({ id: 'f-owner', key: 'owner', title: '负责人', hide_when: 'when_empty' }),
       fieldDef({ id: 'f-estimate', key: 'estimate', title: '工时', type: 'number' }),
     ])
-    mockClient.getProperties.mockResolvedValue([
+    mockClient.getFieldValues.mockResolvedValue([
       fv({ id: 'v1', block_id: 'b1', key: 'estimate', value_json: '3', value_type: 'number' }),
     ])
     const wrapper = await mountList('b1', ['t-dev'])
@@ -713,7 +713,7 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
     expect(titles).toEqual(['工时'])
 
     // 填的值等于默认 8 → 行消失
-    mockClient.getProperties.mockResolvedValue([
+    mockClient.getFieldValues.mockResolvedValue([
       fv({ id: 'v1', block_id: 'b1', key: 'estimate', value_json: '8', value_type: 'number' }),
     ])
     const wrapper2 = await mountList('b1', ['t-dev'])
@@ -723,7 +723,7 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
     expect(titles).toEqual([])
 
     // 填的值不等于默认 → 行保留
-    mockClient.getProperties.mockResolvedValue([
+    mockClient.getFieldValues.mockResolvedValue([
       fv({ id: 'v2', block_id: 'b1', key: 'estimate', value_json: '3', value_type: 'number' }),
     ])
     const wrapper3 = await mountList('b1', ['t-dev'])

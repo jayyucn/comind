@@ -37,8 +37,8 @@ const { mockClient } = vi.hoisted(() => {
     'block-3': [{ id: 'ref-3', block_id: 'block-3', kind: 'deadline', iso: '2026-01-31', date_day: '2026-01-31', recurrence: 'monthly', lead_minutes: 0, event_ts: 0, created_at: 0 }],
   }
   const mockClient = {
-    getProperties: vi.fn(() => Promise.resolve([])),
-    setProperty: vi.fn(() => Promise.resolve({
+    getFieldValues: vi.fn(() => Promise.resolve([])),
+    setFieldValue: vi.fn(() => Promise.resolve({
       id: 'prop-1',
       block_id: 'block-1',
       field_definition_id: 'fd-1',
@@ -93,7 +93,7 @@ describe('T11 — 自动推进 dateRef（Done 语义）', () => {
 
     const store = useFieldValueStore()
     
-    // setProperty 内部会调用 advanceDateRefInBlock
+    // setFieldValue 内部会调用 advanceDateRefInBlock
     // 由于 mock 不触发真实逻辑，直接测试 advanceDateRefInBlock
     // @ts-ignore — 访问内部函数
     await store.advanceDateRefInBlock?.('block-1')

@@ -61,7 +61,7 @@ export const useFieldValueStore = defineStore('fieldValue', () => {
     loading.value = true
     try {
       const client = await getClient()
-      const rows = await client.getProperties(blockId)
+      const rows = await client.getFieldValues(blockId)
       fieldValuesByBlock.value = new Map(fieldValuesByBlock.value.set(blockId, rows))
       return rows
     } finally {
@@ -74,7 +74,7 @@ export const useFieldValueStore = defineStore('fieldValue', () => {
     try {
       const client = await getClient()
       for (const blockId of blockIds) {
-        const rows = await client.getProperties(blockId)
+        const rows = await client.getFieldValues(blockId)
         fieldValuesByBlock.value.set(blockId, rows)
       }
       fieldValuesByBlock.value = new Map(fieldValuesByBlock.value)
@@ -84,7 +84,7 @@ export const useFieldValueStore = defineStore('fieldValue', () => {
   }
 
   /**
-   * 把单行写入结果就地合并进缓存（取代写入后全量重拉 getProperties）：
+   * 把单行写入结果就地合并进缓存（取代写入后全量重拉 getFieldValues）：
    * key 命中即替换，否则追加。缓存为源（所有写路径经本 store 收口），无需回读。
    */
   function mergeFieldValueRow(blockId: string, row: FieldValue) {
@@ -115,7 +115,7 @@ export const useFieldValueStore = defineStore('fieldValue', () => {
     // 不再按「值是否 string」——number 字段传字符串不再静默变型
     const valueJson = encodeFieldValueData(value, fieldType)
 
-    const row = await client.setProperty(blockId, key, valueJson, fieldType)
+    const row = await client.setFieldValue(blockId, key, valueJson, fieldType)
 
     // 就地合并（唯一一趟往返）：回显不再等第二次全量重拉
     mergeFieldValueRow(blockId, row)
@@ -239,7 +239,7 @@ export const useFieldValueStore = defineStore('fieldValue', () => {
     const rows = getBlockFieldValues(blockId)
     const row = rows.find(r => r.id === id)
     if (row) {
-      await client.deleteProperty(blockId, row.key)
+      await client.deleteFieldValue(blockId, row.key)
       // 就地移除（取代全量重拉）：回显不再等第二次往返
       fieldValuesByBlock.value.set(blockId, rows.filter(r => r.id !== id))
       fieldValuesByBlock.value = new Map(fieldValuesByBlock.value)

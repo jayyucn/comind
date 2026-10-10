@@ -26,9 +26,9 @@ export interface WasmClient {
 
   get_outlinks(pageId: string): Promise<Link[]>
 
-  get_properties(blockId: string): Promise<FieldValue[]>
-  set_property(blockId: string, key: string, value: string, type: string): Promise<FieldValue>
-  delete_property(blockId: string, key: string): Promise<void>
+  get_field_values(blockId: string): Promise<FieldValue[]>
+  set_field_value(blockId: string, key: string, value: string, type: string): Promise<FieldValue>
+  delete_field_value(blockId: string, key: string): Promise<void>
 
   get_relationship_types(): Promise<RelationshipType[]>
 
@@ -196,18 +196,18 @@ export async function initWasmClient(): Promise<WasmClient> {
       return parseJsonResult<Link[]>(result)
     },
 
-    async get_properties(blockId: string): Promise<FieldValue[]> {
-      const result = await wasmModule.get_properties(blockId)
+    async get_field_values(blockId: string): Promise<FieldValue[]> {
+      const result = await wasmModule.get_field_values(blockId)
       return parseJsonResult<FieldValue[]>(result)
     },
 
-    async set_property(blockId: string, key: string, value: string, type: string): Promise<FieldValue> {
-      const result = await wasmModule.set_property(blockId, key, value, type)
+    async set_field_value(blockId: string, key: string, value: string, type: string): Promise<FieldValue> {
+      const result = await wasmModule.set_field_value(blockId, key, value, type)
       return parseJsonResult<FieldValue>(result)
     },
 
-    async delete_property(blockId: string, key: string): Promise<void> {
-      await wasmModule.delete_property(blockId, key)
+    async delete_field_value(blockId: string, key: string): Promise<void> {
+      await wasmModule.delete_field_value(blockId, key)
     },
 
     async get_relationship_types(): Promise<RelationshipType[]> {

@@ -18,10 +18,9 @@ import type {
 } from './types'
 import type { FieldValue } from '../types/field-value'
 import type {
-  PersistedTag, PersistedTagTreeEntry, PersistedFieldDefinition, PersistedFieldValue,
+  PersistedTag, PersistedTagTreeEntry, PersistedFieldDefinition,
   CreateTagParams, UpdateTagParams, SetTagParentParams,
   CreateFieldDefinitionParams, UpdateFieldDefinitionParams,
-  CreateFieldValueParams, UpdateFieldValueParams,
   DeleteFieldDefinitionResult
 } from '../types/tag-persisted'
 
@@ -52,9 +51,9 @@ export interface CoreClient {
   getBacklinks(pageId: string): Promise<Link[]>
   getOutlinks(pageId: string): Promise<Link[]>
 
-  getProperties(blockId: string): Promise<FieldValue[]>
-  setProperty(blockId: string, key: string, value: string, type: string): Promise<FieldValue>
-  deleteProperty(blockId: string, key: string): Promise<void>
+  getFieldValues(blockId: string): Promise<FieldValue[]>
+  setFieldValue(blockId: string, key: string, value: string, type: string): Promise<FieldValue>
+  deleteFieldValue(blockId: string, key: string): Promise<void>
 
   getRelationshipTypes(): Promise<RelationshipType[]>
 
@@ -85,11 +84,6 @@ export interface CoreClient {
   getDeletedPresetFieldDefinitions(): Promise<PersistedFieldDefinition[]>
   /** 批量复活被软删的预设字段定义；返回本次复活的条数 */
   restoreBuiltinPresets(): Promise<{ restored: number }>
-
-  getFieldValues(blockId: string): Promise<PersistedFieldValue[]>
-  createFieldValue(params: CreateFieldValueParams): Promise<PersistedFieldValue>
-  updateFieldValue(params: UpdateFieldValueParams): Promise<PersistedFieldValue>
-  deleteFieldValue(id: string): Promise<void>
 
   search(query: string): Promise<SearchResult[]>
 
@@ -317,16 +311,16 @@ class TauriClient implements CoreClient {
     return invoke('get_outlinks', { pageId })
   }
 
-  async getProperties(blockId: string): Promise<FieldValue[]> {
-    return invoke('get_properties', { blockId })
+  async getFieldValues(blockId: string): Promise<FieldValue[]> {
+    return invoke('get_field_values', { blockId })
   }
 
-  async setProperty(blockId: string, key: string, value: string, type: string): Promise<FieldValue> {
-    return invoke('set_property', { blockId, key, value, type })
+  async setFieldValue(blockId: string, key: string, value: string, type: string): Promise<FieldValue> {
+    return invoke('set_field_value', { blockId, key, value, type })
   }
 
-  async deleteProperty(blockId: string, key: string): Promise<void> {
-    return invoke('delete_property', { blockId, key })
+  async deleteFieldValue(blockId: string, key: string): Promise<void> {
+    return invoke('delete_field_value', { blockId, key })
   }
 
   async getRelationshipTypes(): Promise<RelationshipType[]> {
@@ -408,26 +402,6 @@ class TauriClient implements CoreClient {
     const results = await this.executeBatch([{ entity: 'field_definition', action: 'restore_presets', params: {} }])
     const first = Array.isArray(results) ? results[0] : results
     return (first as unknown as { restored: number }) ?? { restored: 0 }
-  }
-
-  async getFieldValues(blockId: string): Promise<PersistedFieldValue[]> {
-    const results = await this.executeBatch([{ entity: 'field_value', action: 'get', params: { block_id: blockId } }])
-    const first = Array.isArray(results) ? results[0] : results
-    return (first as unknown as PersistedFieldValue[]) ?? []
-  }
-
-  async createFieldValue(params: CreateFieldValueParams): Promise<PersistedFieldValue> {
-    const results = await this.executeBatch([{ entity: 'field_value', action: 'create', params }])
-    return (Array.isArray(results) ? results[0] : results) as unknown as PersistedFieldValue
-  }
-
-  async updateFieldValue(params: UpdateFieldValueParams): Promise<PersistedFieldValue> {
-    const results = await this.executeBatch([{ entity: 'field_value', action: 'update', params }])
-    return (Array.isArray(results) ? results[0] : results) as unknown as PersistedFieldValue
-  }
-
-  async deleteFieldValue(id: string): Promise<void> {
-    await this.executeBatch([{ entity: 'field_value', action: 'delete', params: { id } }])
   }
 
   async search(query: string): Promise<SearchResult[]> {
@@ -747,16 +721,16 @@ class WasmClientAdapter implements CoreClient {
     return this.wasm.get_outlinks(pageId)
   }
 
-  async getProperties(blockId: string): Promise<FieldValue[]> {
-    return this.wasm.get_properties(blockId)
+  async getFieldValues(blockId: string): Promise<FieldValue[]> {
+    return this.wasm.get_field_values(blockId)
   }
 
-  async setProperty(blockId: string, key: string, value: string, type: string): Promise<FieldValue> {
-    return this.wasm.set_property(blockId, key, value, type)
+  async setFieldValue(blockId: string, key: string, value: string, type: string): Promise<FieldValue> {
+    return this.wasm.set_field_value(blockId, key, value, type)
   }
 
-  async deleteProperty(blockId: string, key: string): Promise<void> {
-    return this.wasm.delete_property(blockId, key)
+  async deleteFieldValue(blockId: string, key: string): Promise<void> {
+    return this.wasm.delete_field_value(blockId, key)
   }
 
   async getRelationshipTypes(): Promise<RelationshipType[]> {
@@ -847,26 +821,6 @@ class WasmClientAdapter implements CoreClient {
     const results = await this.executeBatch([{ entity: 'field_definition', action: 'restore_presets', params: {} }])
     const first = Array.isArray(results) ? results[0] : results
     return (first as unknown as { restored: number }) ?? { restored: 0 }
-  }
-
-  async getFieldValues(blockId: string): Promise<PersistedFieldValue[]> {
-    const results = await this.executeBatch([{ entity: 'field_value', action: 'get', params: { block_id: blockId } }])
-    const first = Array.isArray(results) ? results[0] : results
-    return (first as unknown as PersistedFieldValue[]) ?? []
-  }
-
-  async createFieldValue(params: CreateFieldValueParams): Promise<PersistedFieldValue> {
-    const results = await this.executeBatch([{ entity: 'field_value', action: 'create', params }])
-    return (Array.isArray(results) ? results[0] : results) as unknown as PersistedFieldValue
-  }
-
-  async updateFieldValue(params: UpdateFieldValueParams): Promise<PersistedFieldValue> {
-    const results = await this.executeBatch([{ entity: 'field_value', action: 'update', params }])
-    return (Array.isArray(results) ? results[0] : results) as unknown as PersistedFieldValue
-  }
-
-  async deleteFieldValue(id: string): Promise<void> {
-    await this.executeBatch([{ entity: 'field_value', action: 'delete', params: { id } }])
   }
 
   async search(query: string): Promise<SearchResult[]> {

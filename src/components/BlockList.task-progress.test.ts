@@ -11,7 +11,7 @@
  *    含周期 dateRef 的父跳过 Done（防与日期推进机制互踢）。
  *
  * 实现口径：进度条与自动同步均完全由派生逻辑驱动（tree + fieldValueStore），
- * wasm client 以模块级 mock 提供 getProperties / setProperty（setProperty
+ * wasm client 以模块级 mock 提供 getFieldValues / setFieldValue（setFieldValue
  * 反写 propsByBlock，模拟落库后 reload 读回，口径照 blocks.autotodo.test.ts）。
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -41,13 +41,13 @@ vi.hoisted(() => {
   })
 })
 
-/** 模块级 mock wasm client：getProperties 按 block 返回预置字段值；
- *  setProperty 反写 propsByBlock（模拟落库后 loadBlockFieldValues 读回新状态）。 */
+/** 模块级 mock wasm client：getFieldValues 按 block 返回预置字段值；
+ *  setFieldValue 反写 propsByBlock（模拟落库后 loadBlockFieldValues 读回新状态）。 */
 const hoisted = vi.hoisted(() => {
   const propsByBlock = new Map<string, FieldValue[]>()
   const client = {
-    getProperties: vi.fn((blockId: string) => Promise.resolve(propsByBlock.get(blockId) ?? [])),
-    setProperty: vi.fn(
+    getFieldValues: vi.fn((blockId: string) => Promise.resolve(propsByBlock.get(blockId) ?? [])),
+    setFieldValue: vi.fn(
       async (blockId: string, key: string, valueJson: string, valueType: string) => {
         const rows = propsByBlock.get(blockId) ?? []
         const next = rows.filter((r) => r.key !== key)
@@ -148,7 +148,7 @@ async function mountBlockList(pageId: string): Promise<VueWrapper> {
     global: stubGlobal,
   })
   mounted = wrapper
-  // 等 Block 挂载后的 loadBlockFieldValues（getProperties）落定 + 响应式刷新
+  // 等 Block 挂载后的 loadBlockFieldValues（getFieldValues）落定 + 响应式刷新
   await flushPromises()
   await nextTick()
   return wrapper
@@ -261,7 +261,7 @@ describe('BlockList 根级任务进度条（需求 2）', () => {
     const wrapper = await mountBlockList(pageId)
     expect(topBar(wrapper).text()).toContain('0/2')
 
-    // 模拟真实状态切换路径：setFieldValue（mock setProperty 反写 + reload）
+    // 模拟真实状态切换路径：setFieldValue（mock setFieldValue 反写 + reload）
     const fieldValueStore = useFieldValueStore()
     await fieldValueStore.setFieldValue('a', 'status', 'Done', 'string')
     await nextTick()

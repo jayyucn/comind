@@ -34,7 +34,7 @@ const { mockInitCoreClient, mockClient, navigateToTagLibraryMock } = vi.hoisted(
     // PageDrawer 内的 Page 挂载会拉该页块 / 属性、并触发一次自动保存；不桩会漏出未处理
     // rejection（非断言失败，但污染信号）。
     getBlocksByPage: vi.fn().mockResolvedValue([]),
-    getProperties: vi.fn().mockResolvedValue([]),
+    getFieldValues: vi.fn().mockResolvedValue([]),
     saveBlockTree: vi.fn().mockResolvedValue([{}]),
     // 成员页块加载（内容列 chip 着色的前提）：loadMultiPageBlocks 单次 IPC 取多页
     getPagesWithBlocks: vi.fn().mockResolvedValue([]),

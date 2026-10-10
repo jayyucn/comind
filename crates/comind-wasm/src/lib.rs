@@ -330,7 +330,7 @@ mod wasm_impl {
     }
 
     #[wasm_bindgen]
-    pub fn get_properties(block_id: &str) -> Result<JsValue, JsValue> {
+    pub fn get_field_values(block_id: &str) -> Result<JsValue, JsValue> {
         with_adapter(|adapter| {
             let props = FieldValueService::get_by_block_id(adapter, block_id)?;
             Ok(to_js_value(props))
@@ -338,7 +338,7 @@ mod wasm_impl {
     }
 
     #[wasm_bindgen]
-    pub fn set_property(
+    pub fn set_field_value(
         block_id: &str,
         key: &str,
         value: &str,
@@ -367,7 +367,7 @@ mod wasm_impl {
     }
 
     #[wasm_bindgen]
-    pub fn delete_property(block_id: &str, key: &str) -> Result<JsValue, JsValue> {
+    pub fn delete_field_value(block_id: &str, key: &str) -> Result<JsValue, JsValue> {
         with_adapter(|adapter| {
             let existing = FieldValueService::get_by_block_id_and_key(adapter, block_id, key)?;
             if let Some(prop) = existing {

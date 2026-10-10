@@ -20,10 +20,10 @@ import Text from '@tiptap/extension-text'
 // ── 共享可变状态（供 handleConfirm 读写 editor / block store / client） ──────
 const hoisted = vi.hoisted(() => {
   const propsByBlock = new Map<string, any[]>()
-  const getProperties = vi.fn((blockId: string) =>
+  const getFieldValues = vi.fn((blockId: string) =>
     Promise.resolve(propsByBlock.get(blockId) ?? [])
   )
-  const setProperty = vi.fn((blockId: string, key: string, valueStr: string, type: string) => {
+  const setFieldValue = vi.fn((blockId: string, key: string, valueStr: string, type: string) => {
     const id = `${blockId}:${key}`
     const prop = {
       id,
@@ -45,9 +45,9 @@ const hoisted = vi.hoisted(() => {
     propsByBlock.set(blockId, arr)
     return Promise.resolve(prop)
   })
-  const deleteProperty = vi.fn(() => Promise.resolve())
-  const client = { getProperties, setProperty, deleteProperty }
-  return { propsByBlock, client, getProperties, setProperty, deleteProperty }
+  const deleteFieldValue = vi.fn(() => Promise.resolve())
+  const client = { getFieldValues, setFieldValue, deleteFieldValue }
+  return { propsByBlock, client, getFieldValues, setFieldValue, deleteFieldValue }
 })
 
 const editorState: any = {
