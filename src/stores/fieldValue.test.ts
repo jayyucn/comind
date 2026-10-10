@@ -226,4 +226,35 @@ describe('useFieldValueStore', () => {
       expect(store.getBlockFieldValues('block-1')).toEqual([])
     })
   })
+
+  // T4（multiSelect 多选枚举）：值是选项 id 数组，落库走 JSON 编码（value_type=multiSelect），
+  // 读取经 decode 还原数组——钉死「数组落库且同步不丢」（#139 同步修复的回归网）。
+  describe('multiSelect 数组落库往返', () => {
+    test('setFieldValue：数组按 JSON 编码落库，缓存行读回 decode 保真', async () => {
+      vi.mocked(mockClient.setFieldValue).mockImplementation(async (_blockId, key, valueJson, valueType) =>
+        makeFieldValue({ key: key as string, value_json: valueJson as string, value_type: valueType as string }) as never,
+      )
+
+      const store = useFieldValueStore()
+      await store.setFieldValue('block-1', 'labels', ['a', 'b'], 'multiSelect')
+
+      expect(mockClient.setFieldValue).toHaveBeenCalledWith('block-1', 'labels', '["a","b"]', 'multiSelect')
+      const row = store.getBlockFieldValue('block-1', 'labels')
+      expect(row?.value_type).toBe('multiSelect')
+      expect(decodeFieldValueData(row!.value_json, row!.value_type)).toEqual(['a', 'b'])
+    })
+
+    test('重复写入：以最新数组为准（缓存就地替换，不叠加不丢）', async () => {
+      vi.mocked(mockClient.setFieldValue).mockImplementation(async (_blockId, key, valueJson, valueType) =>
+        makeFieldValue({ key: key as string, value_json: valueJson as string, value_type: valueType as string }) as never,
+      )
+
+      const store = useFieldValueStore()
+      await store.setFieldValue('block-1', 'labels', ['a', 'b'], 'multiSelect')
+      await store.setFieldValue('block-1', 'labels', ['a', 'c'], 'multiSelect')
+
+      const row = store.getBlockFieldValue('block-1', 'labels')
+      expect(decodeFieldValueData(row!.value_json, row!.value_type)).toEqual(['a', 'c'])
+    })
+  })
 })

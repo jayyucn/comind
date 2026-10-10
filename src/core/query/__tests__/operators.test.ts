@@ -33,8 +33,8 @@ describe('DEFAULT_OPS 默认映射', () => {
     expect(DEFAULT_OPS.select).toEqual(['is', 'isNot', 'isEmpty', 'isNotEmpty'])
   })
 
-  it('multiSelect → contains/notContains/hasAll/isEmpty/isNotEmpty', () => {
-    expect(DEFAULT_OPS.multiSelect).toEqual(['contains', 'notContains', 'hasAll', 'isEmpty', 'isNotEmpty'])
+  it('multiSelect → contains/notContains/hasAny/hasAll/isEmpty/isNotEmpty（T4 补 hasAny）', () => {
+    expect(DEFAULT_OPS.multiSelect).toEqual(['contains', 'notContains', 'hasAny', 'hasAll', 'isEmpty', 'isNotEmpty'])
   })
 
   it('boolean → is', () => {
