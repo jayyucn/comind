@@ -83,6 +83,21 @@ export const useFieldValueStore = defineStore('fieldValue', () => {
     }
   }
 
+  /**
+   * 把单行写入结果就地合并进缓存（取代写入后全量重拉 getProperties）：
+   * key 命中即替换，否则追加。缓存为源（所有写路径经本 store 收口），无需回读。
+   */
+  function mergeFieldValueRow(blockId: string, row: FieldValue) {
+    const rows = fieldValuesByBlock.value.get(blockId)
+    if (!rows) {
+      fieldValuesByBlock.value = new Map(fieldValuesByBlock.value.set(blockId, [row]))
+      return
+    }
+    const idx = rows.findIndex(r => r.key === row.key)
+    fieldValuesByBlock.value.set(blockId, idx >= 0 ? rows.map((r, i) => (i === idx ? row : r)) : [...rows, row])
+    fieldValuesByBlock.value = new Map(fieldValuesByBlock.value)
+  }
+
   async function setFieldValue(
     blockId: string,
     key: string,
@@ -102,7 +117,8 @@ export const useFieldValueStore = defineStore('fieldValue', () => {
 
     const row = await client.setProperty(blockId, key, valueJson, fieldType)
 
-    await loadBlockFieldValues(blockId)
+    // 就地合并（唯一一趟往返）：回显不再等第二次全量重拉
+    mergeFieldValueRow(blockId, row)
 
     // T11: 自动推进 dateRef（Done 语义）
     if (key === 'status' && value === 'Done') {
@@ -224,8 +240,10 @@ export const useFieldValueStore = defineStore('fieldValue', () => {
     const row = rows.find(r => r.id === id)
     if (row) {
       await client.deleteProperty(blockId, row.key)
+      // 就地移除（取代全量重拉）：回显不再等第二次往返
+      fieldValuesByBlock.value.set(blockId, rows.filter(r => r.id !== id))
+      fieldValuesByBlock.value = new Map(fieldValuesByBlock.value)
     }
-    await loadBlockFieldValues(blockId)
   }
 
   async function clearBlockCache(blockId: string): Promise<void> {

@@ -140,7 +140,7 @@ describe('useFieldValueStore', () => {
   })
 
   describe('setFieldValue', () => {
-    test('设置字段值并重新加载（string 值直通不 JSON 编码）', async () => {
+    test('设置字段值并用返回 row 就地合并缓存（string 值直通不 JSON 编码）', async () => {
       const newValue = makeFieldValue({ value_json: 'medium' })
       vi.mocked(mockClient.setProperty).mockResolvedValue(newValue as never)
       vi.mocked(mockClient.getProperties).mockResolvedValue([newValue] as never)
@@ -150,6 +150,20 @@ describe('useFieldValueStore', () => {
       expect(result).toMatchObject({ id: 'prop-1', key: 'priority', value_json: 'medium', value_type: 'string' })
       // codec 单源（#117）：string 类型直通，不 JSON 编码
       expect(mockClient.setProperty).toHaveBeenCalledWith('block-1', 'priority', 'medium', 'string')
+    })
+
+    test('写入后就地合并缓存，不再全量重拉 getProperties（回显零第二往返）', async () => {
+      vi.mocked(mockClient.getProperties).mockResolvedValue([] as never)
+      vi.mocked(mockClient.setProperty).mockResolvedValue(makeFieldValue({ value_json: 'High' }) as never)
+
+      const store = useFieldValueStore()
+      await store.loadBlockFieldValues('block-1')
+      vi.mocked(mockClient.getProperties).mockClear()
+
+      await store.setFieldValue('block-1', 'priority', 'High', 'string')
+
+      expect(mockClient.getProperties).not.toHaveBeenCalled()
+      expect(store.getBlockFieldValue('block-1', 'priority')?.value_json).toBe('High')
     })
 
     test('块首次获得 status（创建任务）→ 一并补默认 priority=Low', async () => {
@@ -186,15 +200,17 @@ describe('useFieldValueStore', () => {
   })
 
   describe('deleteFieldValue', () => {
-    test('删除字段值并重新加载（按 key 删除）', async () => {
-      vi.mocked(mockClient.getProperties)
-        .mockResolvedValueOnce([makeFieldValue()] as never)
-        .mockResolvedValue([] as never)
+    test('删除字段值并就地移除缓存（按 key 删除，不再全量重拉）', async () => {
+      vi.mocked(mockClient.getProperties).mockResolvedValue([makeFieldValue()] as never)
 
       const store = useFieldValueStore()
       await store.loadBlockFieldValues('block-1')
+      vi.mocked(mockClient.getProperties).mockClear()
+
       await store.deleteFieldValue('prop-1', 'block-1')
       expect(mockClient.deleteProperty).toHaveBeenCalledWith('block-1', 'priority')
+      expect(mockClient.getProperties).not.toHaveBeenCalled()
+      expect(store.getBlockFieldValue('block-1', 'priority')).toBeUndefined()
     })
   })
 
