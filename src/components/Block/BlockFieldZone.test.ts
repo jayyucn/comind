@@ -17,7 +17,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import type { PersistedTagTreeEntry, PersistedFieldDefinition } from '../../types/tag-persisted'
 import type { FieldValue } from '../../types/field-value'
 
-const { mockInitCoreClient, mockClient } = vi.hoisted(() => {
+const { mockInitCoreClient, mockClient, navigateToPageMock, mockAssetStorage, relTypeState } = vi.hoisted(() => {
   const mockClient = {
     getTagTree: vi.fn(),
     getFieldDefinitions: vi.fn(),
@@ -27,12 +27,44 @@ const { mockInitCoreClient, mockClient } = vi.hoisted(() => {
     setFieldValue: vi.fn(),
     deleteFieldValue: vi.fn(),
   }
-  return { mockInitCoreClient: vi.fn(), mockClient }
+  // file 字段（issue T9）的资产通道 mock：FileRefEditor 经 assetStorage 探测/加载
+  const mockAssetStorage = {
+    save: vi.fn(),
+    get: vi.fn(),
+    delete: vi.fn(),
+    getUrl: vi.fn(),
+    loadUrl: vi.fn(),
+    revokeUrl: vi.fn(),
+  }
+  // relation 字段（issue T5）用：useRelationshipTypes 打桩数据（可变数组，
+  // 各用例按需填充；RelationRefEditor 渲染关系类型清单与着色消费它）
+  const relTypeState = {
+    current: [] as Array<{ id: string; type: string; label: string; color: string }>,
+  }
+  return { mockInitCoreClient: vi.fn(), mockClient, navigateToPageMock: vi.fn(), mockAssetStorage, relTypeState }
 })
 
 vi.mock('../../wasm/client', () => ({
   initCoreClient: mockInitCoreClient,
   getCoreClient: vi.fn(),
+}))
+
+// useRelationshipTypes 打桩：绕开其 seed 写库逻辑（真实 load 会经 executeBatch
+// 补种子行，jsdom 下无谓且脆弱）；RelationRefEditor 只读 items / all / load。
+vi.mock('../../composables/useRelationshipTypes', () => ({
+  useRelationshipTypes: () => ({
+    items: { value: relTypeState.current },
+    all: { value: relTypeState.current },
+    load: vi.fn().mockResolvedValue(undefined),
+  }),
+}))
+
+// asset.ts 顶层构造 Dexie（jsdom 无 indexedDB），且 file 分支只应有 mock 行为——整模块 mock 掉
+vi.mock('../../utils/asset', () => ({ assetStorage: mockAssetStorage }))
+
+// page 引用 chip 的跳转断言用（T3）；真实实现依赖 router + wasm，测试里 mock 掉
+vi.mock('../../composables/useNavigateToPage', () => ({
+  useNavigateToPage: () => ({ navigateToPage: navigateToPageMock }),
 }))
 
 function treeEntry(
@@ -265,7 +297,7 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
     expect(editorStore.quickFieldValueEditor?.key).toBe('rating')
   })
 
-  it('boolean 字段默认 icon 形态：值即 ✓ / ✗', async () => {
+  it('boolean 字段已有值：值区直挂 BooleanCheck，icon 形态值即 ✓（勾选交互）', async () => {
     mockClient.getTagTree.mockResolvedValue([
       treeEntry({ id: 't-d', title: '完成', field_ids: ['f-done'], effective_field_ids: ['f-done'] }),
     ])
@@ -280,7 +312,136 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
     await useFieldValueStore().loadBlockFieldValues('b1')
     await flushPromises()
 
-    expect(wrapper.find('.block-field-zone-row .property-icon').text()).toBe('✓')
+    const check = wrapper.find('[data-testid="boolean-check"]')
+    expect(check.exists()).toBe(true)
+    expect(check.text()).toBe('✓')
+    expect(check.attributes('aria-checked')).toBe('true')
+    // false 值 → ✗
+    mockClient.getFieldValues.mockResolvedValue([
+      fv({ id: 'v1', block_id: 'b1', key: 'done', value_json: 'false', value_type: 'boolean' }),
+    ])
+    const wrapper2 = await mountList('b1', ['t-d'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+    expect(wrapper2.find('[data-testid="boolean-check"]').text()).toBe('✗')
+    wrapper2.unmount()
+  })
+
+  it('boolean 字段未填：BooleanCheck ghost 占位，整行非按钮且不弹通用编辑器', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-d', title: '完成', field_ids: ['f-done'], effective_field_ids: ['f-done'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-done', key: 'done', title: '完成', type: 'boolean' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-d'])
+    const editorStore = useEditorStore()
+
+    const row = wrapper.find('.block-field-zone-row')
+    const check = wrapper.find('[data-testid="boolean-check"]')
+    expect(check.exists()).toBe(true)
+    expect(check.classes()).toContain('bc-empty')
+    expect(check.attributes('aria-checked')).toBe('false')
+    // boolean 行不是按钮（编辑由内嵌 BooleanCheck 独占，openFieldRow 早退）
+    expect(row.attributes('role')).toBeUndefined()
+
+    // 点击勾选控件不应弹通用快速编辑器
+    await check.trigger('click')
+    expect(editorStore.quickFieldValueEditor).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('boolean 字段经 BooleanCheck 勾选落库为 boolean 类型：true → false 切换', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-d', title: '完成', field_ids: ['f-done'], effective_field_ids: ['f-done'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-done', key: 'done', title: '完成', type: 'boolean' }),
+    ])
+    mockClient.getFieldValues.mockResolvedValue([
+      fv({ id: 'v1', block_id: 'b1', key: 'done', value_json: 'true', value_type: 'boolean' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-d'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    const fieldValueStore = useFieldValueStore()
+    const spy = vi.spyOn(fieldValueStore, 'setFieldValue').mockResolvedValue(undefined as never)
+
+    // true 点击 → emit false → 落库 boolean
+    await wrapper.find('[data-testid="boolean-check"]').trigger('click')
+    await flushPromises()
+
+    expect(spy).toHaveBeenCalledTimes(1)
+    const [bid, key, val, type] = spy.mock.calls[0]
+    expect(bid).toBe('b1')
+    expect(key).toBe('done')
+    expect(val).toBe(false)
+    expect(type).toBe('boolean')
+    wrapper.unmount()
+  })
+
+  it('boolean 字段未填点击即录入：ghost → emit true 落库 boolean', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-d', title: '完成', field_ids: ['f-done'], effective_field_ids: ['f-done'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-done', key: 'done', title: '完成', type: 'boolean' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-d'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    const fieldValueStore = useFieldValueStore()
+    const spy = vi.spyOn(fieldValueStore, 'setFieldValue').mockResolvedValue(undefined as never)
+
+    // 未填（ghost）点击 → emit true → 落库 boolean
+    await wrapper.find('[data-testid="boolean-check"]').trigger('click')
+    await flushPromises()
+
+    expect(spy).toHaveBeenCalledTimes(1)
+    const [bid, key, val, type] = spy.mock.calls[0]
+    expect(bid).toBe('b1')
+    expect(key).toBe('done')
+    expect(val).toBe(true)
+    expect(type).toBe('boolean')
+    wrapper.unmount()
+  })
+
+  it('boolean 字段有值：出现 × 清除按钮，点击走 deleteFieldValue 删行回到未填', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-d', title: '完成', field_ids: ['f-done'], effective_field_ids: ['f-done'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-done', key: 'done', title: '完成', type: 'boolean' }),
+    ])
+    mockClient.getFieldValues.mockResolvedValue([
+      fv({ id: 'v1', block_id: 'b1', key: 'done', value_json: 'true', value_type: 'boolean' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-d'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    // 有值时才暴露清除按钮（未填是 ghost 占位，不需要清除）
+    expect(wrapper.find('[data-testid="boolean-check"]').exists()).toBe(true)
+    const clear = wrapper.find('.bfz-clear-button')
+    expect(clear.exists()).toBe(true)
+
+    const fieldValueStore = useFieldValueStore()
+    const delSpy = vi.spyOn(fieldValueStore, 'deleteFieldValue').mockResolvedValue(undefined as never)
+    const setSpy = vi.spyOn(fieldValueStore, 'setFieldValue').mockResolvedValue(undefined as never)
+
+    await clear.trigger('click')
+    await flushPromises()
+
+    expect(delSpy).toHaveBeenCalledTimes(1)
+    expect(delSpy.mock.calls[0][0]).toBe('v1')
+    expect(setSpy).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it('display_form_override 覆盖类型默认：枚举字段被覆写为 text 时走文字行（决策 5）', async () => {
@@ -486,6 +647,242 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
     wrapper.unmount()
   })
 
+  // ── datetime 类型字段值区挂 DateTimePicker（T2）────────────────
+
+  it('datetime 字段已有值：值区渲染 DateTimePicker 触发器，显示「yyyy-MM-dd HH:mm」原文', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-ev', title: '事件', field_ids: ['f-dt'], effective_field_ids: ['f-dt'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-dt', key: 'when', title: '时间', type: 'datetime' }),
+    ])
+    // datetime 为 codec 直通类型：value_json 存原文（无 JSON 引号）
+    mockClient.getFieldValues.mockResolvedValue([
+      fv({ id: 'v1', block_id: 'b1', key: 'when', value_json: '2026-09-06 10:44', value_type: 'datetime' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-ev'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    expect(wrapper.find('.block-field-zone-chip').exists()).toBe(false)
+    expect(wrapper.find('.dtp-trigger').exists()).toBe(true)
+    expect(wrapper.find('.dtp-text').text()).toBe('2026-09-06 10:44')
+    wrapper.unmount()
+  })
+
+  it('datetime 字段经 DateTimePicker 选日期落库为 datetime 类型，值带时间部分', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-ev', title: '事件', field_ids: ['f-dt'], effective_field_ids: ['f-dt'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-dt', key: 'when', title: '时间', type: 'datetime' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-ev'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    const fieldValueStore = useFieldValueStore()
+    const spy = vi.spyOn(fieldValueStore, 'setFieldValue').mockResolvedValue(undefined as never)
+
+    const picker = wrapper.findComponent({ name: 'DateTimePicker' })
+    expect(picker.exists()).toBe(true)
+    ;(picker.vm as unknown as { onSelect: (d: string) => void }).onSelect('2026-09-06')
+    await flushPromises()
+
+    expect(spy).toHaveBeenCalledTimes(1)
+    const [bid, key, val, type] = spy.mock.calls[0]
+    expect(bid).toBe('b1')
+    expect(key).toBe('when')
+    expect(type).toBe('datetime')
+    expect(val).toBe('2026-09-06 00:00')
+    expect(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(val as string)).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('datetime 字段清除：DateTimePicker 清除按钮走删行语义（无行即空）', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-ev', title: '事件', field_ids: ['f-dt'], effective_field_ids: ['f-dt'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-dt', key: 'when', title: '时间', type: 'datetime' }),
+    ])
+    mockClient.getFieldValues.mockResolvedValue([
+      fv({ id: 'v1', block_id: 'b1', key: 'when', value_json: '2026-09-06 10:44', value_type: 'datetime' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-ev'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    const fieldValueStore = useFieldValueStore()
+    const setSpy = vi.spyOn(fieldValueStore, 'setFieldValue').mockResolvedValue(undefined as never)
+    const delSpy = vi.spyOn(fieldValueStore, 'deleteFieldValue').mockResolvedValue(undefined as never)
+
+    await wrapper.find('.dtp-clear').trigger('click')
+    await flushPromises()
+
+    expect(delSpy).toHaveBeenCalledTimes(1)
+    expect(delSpy.mock.calls[0][0]).toBe('v1')
+    expect(setSpy).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('datetime 字段未填：值区渲染 DateTimePicker 占位（非 ghost），点击不弹通用编辑器', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-ev', title: '事件', field_ids: ['f-dt'], effective_field_ids: ['f-dt'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-dt', key: 'when', title: '时间', type: 'datetime' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-ev'])
+    const editorStore = useEditorStore()
+
+    const row = wrapper.find('.block-field-zone-row')
+    expect(wrapper.find('.dtp-trigger').exists()).toBe(true)
+    expect(wrapper.find('.dtp-text').text()).toBe('选择日期时间')
+    // 有专属内联编辑器 → 不出 ghost，整行非按钮
+    expect(wrapper.find('.block-field-zone-chip--ghost').exists()).toBe(false)
+    expect(row.attributes('role')).toBeUndefined()
+
+    await wrapper.find('.dtp-trigger').trigger('click')
+    expect(editorStore.quickFieldValueEditor).toBeNull()
+    // 面板 Teleport 到 body 展开
+    expect(document.body.querySelector('.dtp-panel')).not.toBeNull()
+    wrapper.unmount()
+  })
+
+  it('all 变体：datetime 值按 chip 形态渲染「yyyy-MM-dd HH:mm」胶囊（AC3）', async () => {
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-dt', key: 'when', title: '时间', type: 'datetime' }),
+    ])
+    await useTagsStore().ensureLoaded()
+    useFieldValueStore().fieldValuesByBlock.set('b1', [
+      fv({ id: 'v1', block_id: 'b1', key: 'when', value_json: '2026-09-06 10:44', value_type: 'datetime' }),
+    ])
+
+    const wrapper = mount(BlockFieldZone, {
+      props: { blockId: 'b1', variant: 'all' },
+    })
+    await flushPromises()
+
+    const chip = wrapper.find('.property-item.block-field-zone-chip')
+    expect(chip.exists()).toBe(true)
+    expect(chip.find('.bfz-chip-value').text()).toBe('2026-09-06 10:44')
+
+    wrapper.unmount()
+  })
+
+  // ── daterange 类型字段值区挂 DateRangePicker（issue T8）──────────────────
+
+  function mountDaterangeTag() {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-dr', title: '区间', field_ids: ['f-dr'], effective_field_ids: ['f-dr'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-dr', key: 'span', title: '周期', type: 'daterange' }),
+    ])
+  }
+
+  it('daterange 字段已有值：值区渲染 DateRangePicker 触发器，显示「start → end」区间形态', async () => {
+    mountDaterangeTag()
+    mockClient.getFieldValues.mockResolvedValue([
+      fv({ id: 'v1', block_id: 'b1', key: 'span', value_json: '{"start":"2026-01-01","end":"2026-01-31"}', value_type: 'daterange' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-dr'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    // 不走 chip / ghost，直接挂 DateRangePicker
+    expect(wrapper.find('.block-field-zone-chip').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="drp-trigger"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="drp-text"]').text()).toBe('2026-01-01 → 2026-01-31')
+  })
+
+  it('daterange 单端脏数据：降级显示单端', async () => {
+    mountDaterangeTag()
+    mockClient.getFieldValues.mockResolvedValue([
+      fv({ id: 'v1', block_id: 'b1', key: 'span', value_json: '{"start":"2026-01-01","end":""}', value_type: 'daterange' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-dr'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="drp-text"]').text()).toBe('2026-01-01')
+  })
+
+  it('daterange 字段未填：值区渲染 DateRangePicker（占位），整行非按钮且不弹通用编辑器', async () => {
+    mountDaterangeTag()
+    const wrapper = await mountList('b1', ['t-dr'])
+    const editorStore = useEditorStore()
+
+    const row = wrapper.find('.block-field-zone-row')
+    expect(wrapper.find('[data-testid="drp-trigger"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="drp-text"]').text()).toContain('选择日期区间')
+    // 未填 → 占位，而非 ghost chip「未填」
+    expect(wrapper.find('.block-field-zone-chip--ghost').exists()).toBe(false)
+    // daterange 行不是按钮（编辑由内嵌 DateRangePicker 独占，openFieldRow 早退）
+    expect(row.attributes('role')).toBeUndefined()
+
+    // DateRangePicker 触发器自带 @click.stop，点击不应触发整行快速编辑器
+    await wrapper.find('[data-testid="drp-trigger"]').trigger('click')
+    expect(editorStore.quickFieldValueEditor).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('daterange 字段两击选区间落库为 daterange 类型（{ start, end } 内存形）', async () => {
+    mountDaterangeTag()
+
+    const wrapper = await mountList('b1', ['t-dr'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    const fieldValueStore = useFieldValueStore()
+    const spy = vi.spyOn(fieldValueStore, 'setFieldValue').mockResolvedValue(undefined as never)
+
+    const dp = wrapper.findComponent({ name: 'DateRangePicker' })
+    const onSelect = (dp.vm as unknown as { onSelect: (d: string) => void }).onSelect
+    onSelect('2026-01-10') // 第一击：设起点（不提交）
+    expect(spy).not.toHaveBeenCalled()
+    onSelect('2026-01-20') // 第二击：设终点，两端齐提交
+    await flushPromises()
+
+    expect(spy).toHaveBeenCalledTimes(1)
+    const [bid, key, val, type] = spy.mock.calls[0]
+    expect(bid).toBe('b1')
+    expect(key).toBe('span')
+    expect(val).toEqual({ start: '2026-01-10', end: '2026-01-20' })
+    expect(type).toBe('daterange')
+    wrapper.unmount()
+  })
+
+  it('daterange 字段清除：DateRangePicker 清除按钮走删行语义（无行即空）', async () => {
+    mountDaterangeTag()
+    mockClient.getFieldValues.mockResolvedValue([
+      fv({ id: 'v1', block_id: 'b1', key: 'span', value_json: '{"start":"2026-01-01","end":"2026-01-31"}', value_type: 'daterange' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-dr'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    const fieldValueStore = useFieldValueStore()
+    const setSpy = vi.spyOn(fieldValueStore, 'setFieldValue').mockResolvedValue(undefined as never)
+    const delSpy = vi.spyOn(fieldValueStore, 'deleteFieldValue').mockResolvedValue(undefined as never)
+
+    await wrapper.find('[data-testid="drp-clear"]').trigger('click')
+    await flushPromises()
+
+    expect(delSpy).toHaveBeenCalledTimes(1)
+    expect(delSpy.mock.calls[0][0]).toBe('v1')
+    expect(setSpy).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   // ── number 字段：值区直挂 NumberInput（ADR-0055）────────────────────────
 
   it('number 字段已有值：值区渲染 NumberInput，输入框显示数值原文', async () => {
@@ -587,6 +984,120 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
     expect(key).toBe('count')
     expect(type).toBe('number')
     expect(val).toBe(5)
+    wrapper.unmount()
+  })
+
+  // ── number 特化族（issue T7）：currency / percent / rating 展示分派 ──
+
+  it('number 特化 currency：编辑仍是 NumberInput，符号 ¥ 前置、配置单位后置', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-cur', title: '记账', field_ids: ['f-amount'], effective_field_ids: ['f-amount'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-amount', key: 'amount', title: '金额', type: 'number', spec: 'currency:¥/元' }),
+    ])
+    mockClient.getFieldValues.mockResolvedValue([
+      fv({ id: 'v1', block_id: 'b1', key: 'amount', value_json: '42', value_type: 'number' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-cur'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    // 编辑仍是数字输入
+    expect(wrapper.find('.number-input').exists()).toBe(true)
+    expect((wrapper.find('.number-input input').element as HTMLInputElement).value).toBe('42')
+    // 展示带符号 / 单位
+    expect(wrapper.find('.bfz-currency-symbol').text()).toBe('¥')
+    expect(wrapper.find('.bfz-currency-unit').text()).toBe('元')
+    wrapper.unmount()
+  })
+
+  it('number 特化 percent：默认约束 0–100 传入 NumberInput，带细进度条', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-pct', title: '进度', field_ids: ['f-progress'], effective_field_ids: ['f-progress'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-progress', key: 'progress', title: '进度', type: 'number', spec: 'percent' }),
+    ])
+    mockClient.getFieldValues.mockResolvedValue([
+      fv({ id: 'v1', block_id: 'b1', key: 'progress', value_json: '42', value_type: 'number' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-pct'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    // 编辑仍是 NumberInput；percent 默认界 0–100 生效（步进顶到 max 后提示「已达最大值 100」可反证，
+    // 这里直接断言进度条展示 + 值百分比宽度）
+    const track = wrapper.find('.bfz-percent-track')
+    expect(track.exists()).toBe(true)
+    expect(track.attributes('style')).toContain('--bfz-percent: 42%')
+    wrapper.unmount()
+  })
+
+  it('number 特化 rating：值区直挂 RatingInput 星级编辑，实心数与值一致', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-rate', title: '评分', field_ids: ['f-stars'], effective_field_ids: ['f-stars'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-stars', key: 'stars', title: '评分', type: 'number', spec: 'rating' }),
+    ])
+    mockClient.getFieldValues.mockResolvedValue([
+      fv({ id: 'v1', block_id: 'b1', key: 'stars', value_json: '3', value_type: 'number' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-rate'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    // 不再走 NumberInput，改挂 RatingInput
+    expect(wrapper.find('.number-input').exists()).toBe(false)
+    expect(wrapper.find('.rating-input').exists()).toBe(true)
+    expect(wrapper.findAll('.rating-star--lit')).toHaveLength(3)
+
+    // 点击第 5 颗星落库为 number 类型 5
+    const fieldValueStore = useFieldValueStore()
+    const spy = vi.spyOn(fieldValueStore, 'setFieldValue').mockResolvedValue(undefined as never)
+    await wrapper.findAll('.rating-star-btn')[4].trigger('click')
+    await flushPromises()
+    expect(spy).toHaveBeenCalledWith('b1', 'stars', 5, 'number')
+    wrapper.unmount()
+  })
+
+  it('number 特化 rating 未填：RatingInput 全空心，点击置值；再点同值走删行语义', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-rate', title: '评分', field_ids: ['f-stars'], effective_field_ids: ['f-stars'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-stars', key: 'stars', title: '评分', type: 'number', spec: 'rating' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-rate'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    expect(wrapper.findAll('.rating-star--lit')).toHaveLength(0)
+
+    const fieldValueStore = useFieldValueStore()
+    const setSpy = vi.spyOn(fieldValueStore, 'setFieldValue').mockResolvedValue(undefined as never)
+    const delSpy = vi.spyOn(fieldValueStore, 'deleteFieldValue').mockResolvedValue(undefined as never)
+
+    // 置值 2
+    await wrapper.findAll('.rating-star-btn')[1].trigger('click')
+    await flushPromises()
+    expect(setSpy).toHaveBeenCalledWith('b1', 'stars', 2, 'number')
+
+    // 模拟已有值 2 → 再点第 2 颗星 → 清空删行
+    mockClient.getFieldValues.mockResolvedValue([
+      fv({ id: 'v1', block_id: 'b1', key: 'stars', value_json: '2', value_type: 'number' }),
+    ])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+    await wrapper.findAll('.rating-star-btn')[1].trigger('click')
+    await flushPromises()
+    expect(delSpy).toHaveBeenCalledTimes(1)
+    expect(delSpy.mock.calls[0][0]).toBe('v1')
     wrapper.unmount()
   })
 
@@ -1029,5 +1540,420 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
     expect(source.text()).toContain('原文摘录一句')
     // cfi 是数据源而非展示信息，不渲染原始串
     expect(wrapper.text()).not.toContain('epubcfi(')
+  })
+
+  // ── page 引用字段（issue T3）────────────────────────────────
+
+  /** page 类型字段的公共桩：标签 + 字段定义（type: 'page'）。 */
+  async function mountPageField(row?: FieldValue) {
+    const { usePageStore } = await import('../../stores/pages')
+    const pageStore = usePageStore()
+    pageStore.pages.push({
+      id: 'p1', blockId: null, title: '目标页', type: 'normal', icon: null,
+      cover: null, aliases: [], filePath: null, childrenCount: 0, wordCount: 0,
+      createdAt: 1, updatedAt: 1, deleted: false, deletedAt: null,
+    })
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-page', title: '引用', field_ids: ['f-ref'], effective_field_ids: ['f-ref'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-ref', key: 'ref', title: '相关页面', type: 'page' }),
+    ])
+    mockClient.getFieldValues.mockResolvedValue(row ? [row] : [])
+    const wrapper = await mountList('b1', ['t-page'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+    return wrapper
+  }
+
+  it('page 字段有值：chip 显示目标页标题（page id 反查）并带 page 样式（AC3）', async () => {
+    const wrapper = await mountPageField(
+      fv({ id: 'v1', block_id: 'b1', key: 'ref', value_json: 'p1', value_type: 'page' }),
+    )
+    const chip = wrapper.find('.block-field-zone-chip--page')
+    expect(chip.exists()).toBe(true)
+    expect(chip.find('.bfz-chip-value').text()).toBe('目标页')
+    expect(chip.classes()).not.toContain('block-field-zone-chip--dangling')
+    wrapper.unmount()
+  })
+
+  it('page 字段悬空 id：chip 降级显示原始 id（弱化样式）（AC3）', async () => {
+    const wrapper = await mountPageField(
+      fv({ id: 'v1', block_id: 'b1', key: 'ref', value_json: 'p-gone', value_type: 'page' }),
+    )
+    const chip = wrapper.find('.block-field-zone-chip--page')
+    expect(chip.exists()).toBe(true)
+    expect(chip.find('.bfz-chip-value').text()).toBe('p-gone')
+    expect(chip.classes()).toContain('block-field-zone-chip--dangling')
+    wrapper.unmount()
+  })
+
+  it('page chip 点击：navigateToPage 跳转目标页（AC3）', async () => {
+    const wrapper = await mountPageField(
+      fv({ id: 'v1', block_id: 'b1', key: 'ref', value_json: 'p1', value_type: 'page' }),
+    )
+    await wrapper.find('.block-field-zone-chip--page').trigger('click')
+    expect(navigateToPageMock).toHaveBeenCalledWith('p1')
+    wrapper.unmount()
+  })
+
+  it('page 字段未填：值区直挂 PageRefPicker（pageRef 文本兜底已替换），整行非按钮且不弹通用编辑器（AC2）', async () => {
+    const wrapper = await mountPageField()
+    const row = wrapper.find('.block-field-zone-row')
+    const editorStore = useEditorStore()
+
+    expect(wrapper.find('[data-testid="prp-trigger"]').exists()).toBe(true)
+    // 未填 → picker 占位，而非 ghost chip「未填」
+    expect(wrapper.find('.block-field-zone-chip--ghost').exists()).toBe(false)
+    // page 行不是按钮（编辑由内嵌 PageRefPicker 独占，openFieldRow 早退）
+    expect(row.attributes('role')).toBeUndefined()
+
+    await wrapper.find('[data-testid="prp-trigger"]').trigger('click')
+    await flushPromises()
+    expect(editorStore.quickFieldValueEditor).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('page 字段经 PageRefPicker 选中页面落库为 page 类型（AC2）', async () => {
+    const wrapper = await mountPageField()
+    const fieldValueStore = useFieldValueStore()
+    const spy = vi.spyOn(fieldValueStore, 'setFieldValue').mockResolvedValue(undefined as never)
+
+    await wrapper.find('[data-testid="prp-trigger"]').trigger('click')
+    await flushPromises()
+    ;(document.body.querySelectorAll('.prp-option')[0] as HTMLElement).click()
+    await flushPromises()
+
+    expect(spy).toHaveBeenCalledTimes(1)
+    const [bid, key, val, type] = spy.mock.calls[0]
+    expect(bid).toBe('b1')
+    expect(key).toBe('ref')
+    expect(val).toBe('p1')
+    expect(type).toBe('page')
+    wrapper.unmount()
+  })
+
+  it('page 字段有值：chip 旁出现 × 清除按钮，点击走 deleteFieldValue 置空（此前只能覆盖无法清空）', async () => {
+    const wrapper = await mountPageField(
+      fv({ id: 'v1', block_id: 'b1', key: 'ref', value_json: 'p1', value_type: 'page' }),
+    )
+    const chip = wrapper.find('.block-field-zone-chip--page')
+    expect(chip.exists()).toBe(true)
+
+    // 此前 page chip 无清除入口（onPageRefChange 把空值吞掉），现补上
+    const clear = wrapper.find('.bfz-clear-button')
+    expect(clear.exists()).toBe(true)
+
+    const fieldValueStore = useFieldValueStore()
+    const delSpy = vi.spyOn(fieldValueStore, 'deleteFieldValue').mockResolvedValue(undefined as never)
+    const setSpy = vi.spyOn(fieldValueStore, 'setFieldValue').mockResolvedValue(undefined as never)
+
+    await clear.trigger('click')
+    await flushPromises()
+
+    expect(delSpy).toHaveBeenCalledTimes(1)
+    expect(delSpy.mock.calls[0][0]).toBe('v1')
+    expect(setSpy).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  // ── page 特化 person（负责人，issue T10）─────────────────────
+
+  /** person 特化 page 字段的公共桩：标签 + 字段定义（type: 'page', spec: 'person'）+ person 页。 */
+  async function mountPersonField(row?: FieldValue) {
+    const { usePageStore } = await import('../../stores/pages')
+    const pageStore = usePageStore()
+    pageStore.pages.push(
+      {
+        id: 'pp1', blockId: 'blk-person', title: '张三', type: 'normal', icon: null,
+        cover: null, aliases: [], filePath: null, childrenCount: 0, wordCount: 0,
+        createdAt: 1, updatedAt: 1, deleted: false, deletedAt: null,
+      },
+      {
+        id: 'pp2', blockId: 'blk-other', title: '项目页', type: 'normal', icon: null,
+        cover: null, aliases: [], filePath: null, childrenCount: 0, wordCount: 0,
+        createdAt: 1, updatedAt: 1, deleted: false, deletedAt: null,
+      },
+    )
+    // person 页判据：主页块挂 'person' 标签（utils/person-page 单源）
+    const { useBlockStore } = await import('../../stores/blocks')
+    useBlockStore().blocks.push(
+      { id: 'blk-person', pageId: 'pg-person', parentId: null, pos: 0, content: '', format: {}, type: 'bullet', tags: ['person'], createdAt: 1, updatedAt: 1 },
+      { id: 'blk-other', pageId: 'pg-other', parentId: null, pos: 0, content: '', format: {}, type: 'bullet', tags: ['project'], createdAt: 1, updatedAt: 1 },
+    )
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-person', title: '任务', field_ids: ['f-owner-ref'], effective_field_ids: ['f-owner-ref'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-owner-ref', key: 'ownerRef', title: '负责人', type: 'page', spec: 'person' }),
+    ])
+    mockClient.getFieldValues.mockResolvedValue(row ? [row] : [])
+    const wrapper = await mountList('b1', ['t-person'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+    return wrapper
+  }
+
+  it('person 特化有值：人员 chip（--person 样式 + 首字圆形头像 + 名字），点击跳转目标页（AC3）', async () => {
+    const wrapper = await mountPersonField(
+      fv({ id: 'v1', block_id: 'b1', key: 'ownerRef', value_json: 'pp1', value_type: 'page' }),
+    )
+    const chip = wrapper.find('.block-field-zone-chip--person')
+    expect(chip.exists()).toBe(true)
+    // 名字沿用 page 引用反查；头像取标题首字
+    expect(chip.find('.bfz-chip-value').text()).toBe('张三')
+    expect(chip.find('.bfz-person-avatar').text()).toBe('张')
+    // 跳转与 page 引用同路径
+    await chip.trigger('click')
+    expect(navigateToPageMock).toHaveBeenCalledWith('pp1')
+    wrapper.unmount()
+  })
+
+  it('person 特化未填：直挂 PageRefPicker 且候选仅 person 页（personOnly 过滤，AC2）', async () => {
+    const wrapper = await mountPersonField()
+    const trigger = wrapper.find('[data-testid="prp-trigger"]')
+    expect(trigger.exists()).toBe(true)
+    expect(trigger.text()).toBe('选择人员')
+
+    await trigger.trigger('click')
+    await flushPromises()
+    const options = [...document.body.querySelectorAll('.prp-option')]
+    expect(options).toHaveLength(1)
+    expect(options[0].getAttribute('data-page-id')).toBe('pp1')
+    wrapper.unmount()
+  })
+
+  // ── file 字段（附件，issue T9）────────────────────────────────
+
+  /** file 类型字段的公共桩：标签 + 字段定义（type: 'file'）。 */
+  function stubFileField() {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-file', title: '资料', field_ids: ['f-attach'], effective_field_ids: ['f-attach'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-attach', key: 'attach', title: '附件', type: 'file' }),
+    ])
+  }
+
+  it('file 字段无值：值区直挂 28px 上传按钮，不出通用编辑器 ghost（issue T9）', async () => {
+    stubFileField()
+    const wrapper = await mountList('b1', ['t-file'])
+
+    const add = wrapper.find('.file-ref-add')
+    expect(add.exists()).toBe(true)
+    expect(add.text()).toBe('上传附件')
+    // file 是行内编辑器：整行不再是点击目标（openFieldRow 对其早退）
+    expect(wrapper.find('.block-field-zone-row--inline-editor').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('file 字段有值（图片 mime）：渲染缩略图 + 文件名，缩略图来自资产通道 loadUrl（issue T9）', async () => {
+    stubFileField()
+    useFieldValueStore().fieldValuesByBlock.set('b1', [
+      fv({
+        id: 'v1', block_id: 'b1', key: 'attach',
+        value_json: JSON.stringify({ path: 'asset://asset_img_1', name: '截图.png', mime: 'image/png' }),
+        value_type: 'file',
+      }),
+    ])
+    mockAssetStorage.get.mockResolvedValue({ id: 'asset_img_1', name: '截图.png', mimeType: 'image/png' })
+    mockAssetStorage.loadUrl.mockResolvedValue('blob:mock-thumb-url')
+
+    const wrapper = await mountList('b1', ['t-file'])
+    // probe 是挂载后的异步动作，等它落地
+    await flushPromises()
+
+    const chip = wrapper.find('.file-ref-chip')
+    expect(chip.exists()).toBe(true)
+    expect(chip.classes()).toContain('file-ref-chip--image')
+    expect(chip.find('.file-ref-thumb').exists()).toBe(true)
+    expect((chip.find('.file-ref-thumb').element as HTMLImageElement).src).toBe('blob:mock-thumb-url')
+    expect(chip.find('.file-ref-name').text()).toBe('截图.png')
+    expect(chip.classes()).not.toContain('file-ref-chip--missing')
+    wrapper.unmount()
+  })
+
+  it('file 字段有值（非图片 mime）：渲染附件 chip（Paperclip 图标 + 文件名），无缩略图（issue T9）', async () => {
+    stubFileField()
+    useFieldValueStore().fieldValuesByBlock.set('b1', [
+      fv({
+        id: 'v1', block_id: 'b1', key: 'attach',
+        value_json: JSON.stringify({ path: 'asset://asset_pdf_1', name: '报告.pdf', mime: 'application/pdf' }),
+        value_type: 'file',
+      }),
+    ])
+    mockAssetStorage.get.mockResolvedValue({ id: 'asset_pdf_1', name: '报告.pdf', mimeType: 'application/pdf' })
+
+    const wrapper = await mountList('b1', ['t-file'])
+    await flushPromises()
+
+    const chip = wrapper.find('.file-ref-chip')
+    expect(chip.exists()).toBe(true)
+    expect(chip.find('.file-ref-thumb').exists()).toBe(false)
+    expect(chip.find('.file-ref-icon').exists()).toBe(true)
+    expect(chip.find('.file-ref-name').text()).toBe('报告.pdf')
+    expect(chip.classes()).not.toContain('file-ref-chip--missing')
+    wrapper.unmount()
+  })
+
+  it('file 字段悬空引用：资产探测失败 → chip 弱化样式降级，文件名仍可见（issue T9）', async () => {
+    stubFileField()
+    useFieldValueStore().fieldValuesByBlock.set('b1', [
+      fv({
+        id: 'v1', block_id: 'b1', key: 'attach',
+        value_json: JSON.stringify({ path: 'asset://asset_gone', name: '丢失.pdf', mime: 'application/pdf' }),
+        value_type: 'file',
+      }),
+    ])
+    // 悬空：资产不存在（Web 返回 undefined / Tauri 抛 'Asset not found'，两者都走降级）
+    mockAssetStorage.get.mockResolvedValue(undefined)
+
+    const wrapper = await mountList('b1', ['t-file'])
+    await flushPromises()
+
+    const chip = wrapper.find('.file-ref-chip')
+    expect(chip.exists()).toBe(true)
+    expect(chip.classes()).toContain('file-ref-chip--missing')
+    expect(chip.find('.file-ref-name').text()).toBe('丢失.pdf')
+    wrapper.unmount()
+  })
+
+  it('file 字段清除：× 按钮 emit undefined → 删行语义（issue T9）', async () => {
+    stubFileField()
+    useFieldValueStore().fieldValuesByBlock.set('b1', [
+      fv({
+        id: 'v1', block_id: 'b1', key: 'attach',
+        value_json: JSON.stringify({ path: 'asset://asset_pdf_1', name: '报告.pdf', mime: 'application/pdf' }),
+        value_type: 'file',
+      }),
+    ])
+    mockAssetStorage.get.mockResolvedValue({ id: 'asset_pdf_1', name: '报告.pdf', mimeType: 'application/pdf' })
+    mockClient.deleteFieldValue.mockResolvedValue(undefined)
+
+    const wrapper = await mountList('b1', ['t-file'])
+    await flushPromises()
+
+    await wrapper.find('.file-ref-clear').trigger('click')
+    await flushPromises()
+
+    // 删行语义：client 收到 (blockId, key)（store 就地移除该行）
+    expect(mockClient.deleteFieldValue).toHaveBeenCalledWith('b1', 'attach')
+    wrapper.unmount()
+  })
+
+  // ── relation 字段（关系引用，issue T5）：值区直挂 RelationRefEditor ──
+
+  /** relation 字段挂载基建：标签 + 定义（closed_values 携带约定的关系类型 id 配置位） */
+  async function mountRelationList(fieldValues: FieldValue[]) {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-rel', title: '关联', field_ids: ['f-rel'], effective_field_ids: ['f-rel'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-rel', key: 'rel', title: '关联字段', type: 'relation', closed_values: ['rt_seed_related'] }),
+    ])
+    relTypeState.current = [{ id: 'rt_seed_related', type: 'related', label: '相关', color: '#1890ff' }]
+    // 目标解析数据源：真实 pages store 直接注入一页（RelationRefEditor 按页 id 反查标题）
+    const { usePageStore } = await import('../../stores/pages')
+    const pageStore = usePageStore()
+    ;(pageStore as unknown as { pages: unknown }).pages = [
+      {
+        id: 'page-1', blockId: null, title: '项目主页', type: 'normal', icon: null,
+        cover: null, aliases: [], filePath: null, childrenCount: 0, wordCount: 0, createdAt: 1, updatedAt: 1,
+      },
+    ]
+    useFieldValueStore().fieldValuesByBlock.set('b1', fieldValues)
+    const wrapper = mount(BlockFieldZone, { props: { blockId: 'b1', tagIds: ['t-rel'] } })
+    await flushPromises()
+    return wrapper
+  }
+
+  it('relation 字段无值：值区渲染 RelationRefEditor ghost chip「未填」，整行非按钮（编辑由内嵌控件独占）', async () => {
+    const wrapper = await mountRelationList([])
+    const row = wrapper.find('.block-field-zone-row')
+    const trigger = wrapper.find('[data-testid="rre-trigger"]')
+    expect(trigger.exists()).toBe(true)
+    expect(trigger.text()).toContain('未填')
+    expect(trigger.classes()).toContain('block-field-zone-chip--ghost')
+    expect(row.attributes('role')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('relation 字段有值：chip 按关系类型着色（--relation-color 变量 + relation 类），显示目标标题', async () => {
+    const wrapper = await mountRelationList([
+      fv({
+        id: 'v1', block_id: 'b1', key: 'rel',
+        value_json: JSON.stringify({ targetId: 'page-1', relationshipTypeId: 'rt_seed_related' }),
+        value_type: 'relation',
+      }),
+    ])
+
+    const trigger = wrapper.find('[data-testid="rre-trigger"]')
+    expect(trigger.exists()).toBe(true)
+    expect(trigger.classes()).toContain('block-field-zone-chip--relation')
+    expect(trigger.classes()).not.toContain('block-field-zone-chip--dangling')
+    expect(trigger.text()).toContain('项目主页')
+    expect(trigger.text()).toContain('相关')
+    expect(trigger.attributes('style')).toContain('--relation-color: #1890ff')
+    wrapper.unmount()
+  })
+
+  it('relation 字段悬空 targetId 降级：目标不在清单 →「未知目标」+ dangling 中性类，无着色变量', async () => {
+    const wrapper = await mountRelationList([
+      fv({
+        id: 'v1', block_id: 'b1', key: 'rel',
+        value_json: JSON.stringify({ targetId: 'gone-target', relationshipTypeId: 'rt_seed_related' }),
+        value_type: 'relation',
+      }),
+    ])
+
+    const trigger = wrapper.find('[data-testid="rre-trigger"]')
+    expect(trigger.classes()).toContain('block-field-zone-chip--dangling')
+    expect(trigger.classes()).not.toContain('block-field-zone-chip--relation')
+    expect(trigger.text()).toContain('未知目标')
+    expect(trigger.attributes('style') ?? '').not.toContain('--relation-color')
+    wrapper.unmount()
+  })
+
+  it('relation 字段经 RelationRefEditor 选目标：payload 两段齐备落库为 relation 类型', async () => {
+    const wrapper = await mountRelationList([])
+    await flushPromises()
+
+    const fieldValueStore = useFieldValueStore()
+    const spy = vi.spyOn(fieldValueStore, 'setFieldValue').mockResolvedValue(undefined as never)
+
+    // 字段定义 closed_values[0] 约定关系类型 → 选目标即成完整 payload
+    const editor = wrapper.findComponent({ name: 'RelationRefEditor' })
+    await (editor.vm as unknown as { pickTarget: (id: string) => void }).pickTarget('page-1')
+    await flushPromises()
+
+    expect(spy).toHaveBeenCalledTimes(1)
+    const [bid, key, val, type] = spy.mock.calls[0]
+    expect(bid).toBe('b1')
+    expect(key).toBe('rel')
+    expect(val).toEqual({ targetId: 'page-1', relationshipTypeId: 'rt_seed_related' })
+    expect(type).toBe('relation')
+    wrapper.unmount()
+  })
+
+  it('relation 字段清除：× 按钮 emit undefined → 删行语义（无行即空）', async () => {
+    const wrapper = await mountRelationList([
+      fv({
+        id: 'v1', block_id: 'b1', key: 'rel',
+        value_json: JSON.stringify({ targetId: 'page-1', relationshipTypeId: 'rt_seed_related' }),
+        value_type: 'relation',
+      }),
+    ])
+
+    const fieldValueStore = useFieldValueStore()
+    const setSpy = vi.spyOn(fieldValueStore, 'setFieldValue').mockResolvedValue(undefined as never)
+    const delSpy = vi.spyOn(fieldValueStore, 'deleteFieldValue').mockResolvedValue(undefined as never)
+
+    await wrapper.find('[data-testid="rre-clear"]').trigger('click')
+    await flushPromises()
+
+    expect(delSpy).toHaveBeenCalledTimes(1)
+    expect(delSpy.mock.calls[0][0]).toBe('v1')
+    expect(setSpy).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 })

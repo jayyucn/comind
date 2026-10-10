@@ -2,9 +2,12 @@
 import {
   CalendarDays,
   CheckSquare,
+  FileText,
   GripVertical,
   Hash,
+  Link,
   List,
+  Paperclip,
   Trash2,
   Type,
   X,
@@ -68,6 +71,11 @@ const FIELD_META: Record<FieldType, { icon: Component; dirs: { asc: string; desc
   select: { icon: List, dirs: { asc: 'A → Z', desc: 'Z → A' } },
   multiSelect: { icon: List, dirs: { asc: 'A → Z', desc: 'Z → A' } },
   boolean: { icon: CheckSquare, dirs: { asc: '假 → 真', desc: '真 → 假' } },
+  page: { icon: FileText, dirs: { asc: 'A → Z', desc: 'Z → A' } },
+  daterange: { icon: CalendarDays, dirs: { asc: '旧 → 新', desc: '新 → 旧' } },
+  array: { icon: List, dirs: { asc: 'A → Z', desc: 'Z → A' } },
+  file: { icon: Paperclip, dirs: { asc: 'A → Z', desc: 'Z → A' } },
+  relation: { icon: Link, dirs: { asc: 'A → Z', desc: 'Z → A' } },
 }
 
 function fieldIcon(type: FieldType) {

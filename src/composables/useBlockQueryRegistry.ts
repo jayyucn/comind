@@ -289,6 +289,11 @@ const TYPE_MAP: Record<DomainFieldType, FieldType> = {
   multiSelect: 'multiSelect',
   array: 'multiSelect',
   page: 'string',
+  // T8/T9/T5 新类型恒等映射：daterange 的 before/after 区间语义在引擎侧实现；
+  // file / relation 的值是对象，isEmpty/isNotEmpty 天然可用（contains 对对象恒假，无害）
+  daterange: 'daterange',
+  file: 'file',
+  relation: 'relation',
 }
 
 /**

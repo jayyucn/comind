@@ -19,7 +19,12 @@ import type { FieldType } from '../types/field-definition'
 /**
  * 直通类型：DB 值即原文，不经 JSON。
  * select（选项 id）/ datetime（yyyy-MM-dd HH:mm）值本身即字符串，与 string 同待遇
- * （issue #140 F1 收口新增，无存量行故无迁移）；multiSelect 值为数组，走 JSON。
+ * （issue #140 F1 收口新增，无存量行故无迁移）；multiSelect 值为数组，走 JSON；
+ * daterange 值为 { start, end } 对象（issue T8），与 multiSelect 同走 JSON 分支
+ * （#139 已保证 JSON 对象 sync round-trip）；file 值为 { path, name, mime? }（issue T9），
+ * relation 值为 { targetId, relationshipTypeId }（issue T5）——二者同为 JSON 对象，
+ * 同走默认 JSON 分支（relation 的内存形态见 types/field-definition.RelationRefValue，
+ * 非法 JSON 容错返回原字符串，渲染端须对非对象形态降级）。
  * 注意 date **不在**直通之列：既有 date 行已按 JSON 形落库（'"2026-09-15"'），
  * 改直通会破坏存量读路径——date/datetime 的存储形态不对称是历史兼容的有意取舍。
  */

@@ -406,6 +406,14 @@ export const useTagsStore = defineStore('tags', () => {
     const client = await getClient()
     await client.updateFieldDefinition(params)
     await ensureLoaded(true)
+    // T6：spec 特化标记的持久化列尚未在 Rust 侧落地（本轮约定不动 Rust 迁移，
+    // FieldDefinition 表亦无既有扩展 JSON 列可复用，见 T6 交付报告）——上面的整表
+    // 重读会丢掉本次写入的 spec。这里把它回贴到本地条目，保证会话内特化选择、
+    // 编辑器分派与展示不被抹掉；跨会话持久化待 Rust 加列后自然生效。
+    if (params.spec !== undefined) {
+      const row = fieldDefinitions.value.find((d) => d.id === params.id)
+      if (row) row.spec = params.spec ?? undefined
+    }
   }
 
   /**

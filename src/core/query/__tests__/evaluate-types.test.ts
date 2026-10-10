@@ -113,3 +113,54 @@ describe('boolean', () => {
     expect(matchCondition({ field: 'archived', op: 'is', value: { kind: 'literal', value: false } }, recs[2], reg, 'rec')).toBe(false)
   })
 })
+
+describe('daterange（区间整体 before/after，issue T8）', () => {
+  interface SpanRec {
+    span: { start: string; end: string } | null
+  }
+  const spanReg = createRegistry()
+  spanReg.register('span', { key: 'span', label: '区间', type: 'daterange', get: (r: SpanRec) => r.span })
+
+  // 区间 2026-01-10 ~ 2026-01-20
+  const item: SpanRec = { span: { start: '2026-01-10', end: '2026-01-20' } }
+  const empty: SpanRec = { span: null }
+
+  it('before：区间整体早于参照（end < 参照，严格小于）', () => {
+    const op = { field: 'span', op: 'before' as const, value: { kind: 'literal' as const, value: '2026-01-21' } }
+    expect(matchCondition(op, item, spanReg, 'span')).toBe(true)
+  })
+  it('before 边界：end == 参照日不算整体早于（严格小于）', () => {
+    const op = { field: 'span', op: 'before' as const, value: { kind: 'literal' as const, value: '2026-01-20' } }
+    expect(matchCondition(op, item, spanReg, 'span')).toBe(false)
+    // 参照落在区间内（start < 参照 < end）也不算整体早于
+    const mid = { field: 'span', op: 'before' as const, value: { kind: 'literal' as const, value: '2026-01-15' } }
+    expect(matchCondition(mid, item, spanReg, 'span')).toBe(false)
+  })
+  it('after：区间整体晚于参照（start > 参照，严格大于）', () => {
+    const op = { field: 'span', op: 'after' as const, value: { kind: 'literal' as const, value: '2026-01-09' } }
+    expect(matchCondition(op, item, spanReg, 'span')).toBe(true)
+  })
+  it('after 边界：start == 参照日不算整体晚于（严格大于）', () => {
+    const op = { field: 'span', op: 'after' as const, value: { kind: 'literal' as const, value: '2026-01-10' } }
+    expect(matchCondition(op, item, spanReg, 'span')).toBe(false)
+    // 参照落在区间内也不算整体晚于
+    const mid = { field: 'span', op: 'after' as const, value: { kind: 'literal' as const, value: '2026-01-15' } }
+    expect(matchCondition(mid, item, spanReg, 'span')).toBe(false)
+  })
+  it('空值：比较遇空即 false，isEmpty / isNotEmpty 正常', () => {
+    expect(matchCondition({ field: 'span', op: 'before', value: { kind: 'literal', value: '2026-01-21' } }, empty, spanReg, 'span')).toBe(false)
+    expect(matchCondition({ field: 'span', op: 'after', value: { kind: 'literal', value: '2026-01-01' } }, empty, spanReg, 'span')).toBe(false)
+    expect(matchCondition({ field: 'span', op: 'isEmpty' }, empty, spanReg, 'span')).toBe(true)
+    expect(matchCondition({ field: 'span', op: 'isNotEmpty' }, empty, spanReg, 'span')).toBe(false)
+  })
+  it('evaluate 集成：按区间边界过滤', () => {
+    const a: SpanRec = { span: { start: '2026-01-01', end: '2026-01-05' } } // 整体早于 01-10
+    const b: SpanRec = { span: { start: '2026-01-02', end: '2026-01-20' } } // 跨参照，两侧都不匹配
+    const c: SpanRec = { span: { start: '2026-02-01', end: '2026-02-15' } } // 整体晚于 01-31
+    const d: SpanRec = { span: null }
+    const beforeQ = query(grp('and', [{ field: 'span', op: 'before', value: { kind: 'literal', value: '2026-01-10' } }]))
+    expect(evaluate(beforeQ, [a, b, c, d], spanReg, 'span')).toEqual([a])
+    const afterQ = query(grp('and', [{ field: 'span', op: 'after', value: { kind: 'literal', value: '2026-01-31' } }]))
+    expect(evaluate(afterQ, [a, b, c, d], spanReg, 'span')).toEqual([c])
+  })
+})

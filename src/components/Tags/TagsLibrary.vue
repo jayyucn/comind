@@ -25,6 +25,7 @@ import { ChevronDown, CornerUpRight, Pencil, Plus, Search, X } from 'lucide-vue-
 import type { ObjectDirective } from 'vue'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useNavigateToTag } from '../../composables/useNavigateToTag'
+import { useRelationshipTypes } from '../../composables/useRelationshipTypes'
 import { useBlockCardStore } from '../../stores/blockCard'
 import { useTagsStore } from '../../stores/tags'
 import type {
@@ -34,6 +35,8 @@ import type {
 } from '../../types/tag-persisted'
 import type { FieldHideValue } from '../../utils/field-hide'
 import { FIELD_HIDE_LABELS, FIELD_HIDE_OPTIONS, normalizeHideWhen } from '../../utils/field-hide'
+import { DEFAULT_CURRENCY_SYMBOL, parseCurrencySpec } from '../../utils/field-number-format'
+import { specHeadOf } from '../../types/field-type-registry'
 import {
   normalizeDisplayFormOverride,
   type DisplayFormOverride,
@@ -302,18 +305,27 @@ const TYPE_LABELS: Record<string, string> = {
   string: '文本',
   number: '数值',
   date: '日期',
+  daterange: '日期区间',
+  datetime: '日期时间',
   boolean: '是/否',
   page: '页面引用',
   array: '列表',
+  file: '附件',
+  relation: '关联',
   select: '枚举',
+  multiSelect: '多选',
 }
 
-/** 类型点选顺序（新建与类型下拉共用；`select` 落库为 type string + closed_values）。 */
-const FIELD_TYPE_VALUES = ['string', 'number', 'date', 'select']
+/** 类型点选顺序（新建与类型下拉共用；`select` 落库为 type string + closed_values；`multiSelect` 落库为 type multiSelect + closed_values；`relation` 落库为 type relation + closed_values=[关系类型 id]，issue T5）。 */
+const FIELD_TYPE_VALUES = ['string', 'number', 'boolean', 'date', 'datetime', 'daterange', 'select', 'multiSelect', 'page', 'file', 'relation']
 
 const FIELD_TYPE_OPTIONS = FIELD_TYPE_VALUES.map((value) => ({ value, label: TYPE_LABELS[value] }))
 
 function typeLabel(def: PersistedFieldDefinition): string {
+  if (def.type === 'multiSelect') return TYPE_LABELS.multiSelect
+  // relation 的 closed_values 复用为关系类型配置位（单元素数组，见 tag-persisted.ts），
+  // 不能按「有 closed_values 即枚举」派生
+  if (def.type === 'relation') return TYPE_LABELS.relation
   return TYPE_LABELS[def.closed_values?.length ? 'select' : def.type] ?? def.type
 }
 
@@ -396,6 +408,8 @@ const defaultDraft = ref('')
 
 /** 「切成枚举、选项还没补」的字段 —— 选项补齐前的本地挂起态。 */
 const pendingSelectId = ref<string | null>(null)
+/** 「切成多选、选项还没补」的字段 —— 同上，落库 type 为 multiSelect（T4）。 */
+const pendingMultiSelectId = ref<string | null>(null)
 
 /**
  * 就地编辑控件：挂载即聚焦 + 全选（点字段名 → 直接改名，不必先删整段）。
@@ -416,9 +430,13 @@ const vFocusSelect: ObjectDirective<HTMLElement, boolean | undefined> = {
 
 /** 类型下拉的当前取值（`select` 是 type string + closed_values 派生的伪类型，显示名「枚举」）。 */
 function typeValueOf(def: PersistedFieldDefinition): string {
-  // 挂起态也按 select 呈现：否则「切成枚举」会因 `closed_values` 为空而显示回文本，
+  // 挂起态也按目标类型呈现：否则「切成枚举/多选」会因 `closed_values` 为空而显示回文本，
   // 看着像类型没改（先例：原生 select 回退显示首个选项）。
   if (pendingSelectId.value === def.id) return 'select'
+  if (pendingMultiSelectId.value === def.id) return 'multiSelect'
+  if (def.type === 'multiSelect') return 'multiSelect'
+  // relation 的 closed_values 是关系类型配置位，不按枚举派生（issue T5）
+  if (def.type === 'relation') return 'relation'
   return def.closed_values?.length ? 'select' : def.type
 }
 
@@ -518,7 +536,8 @@ async function clearEnumDefault() {
 }
 
 /**
- * 类型切换：`select` 落库为 type string + closed_values。**选项还没补时不落库** ——
+ * 类型切换：`select` 落库为 type string + closed_values；`multiSelect` 落库为
+ * type multiSelect + closed_values（T4）。**选项还没补时不落库** ——
  * 空选项的枚举没有意义，落下去类型显示会回退成文本，看着像没改；先本地挂起，并
  * 直接把「默认」列的选项面板推给用户（补第一个选项时才一次写完 type + closed_values）。
  */
@@ -529,18 +548,38 @@ async function onChangeType(def: PersistedFieldDefinition, next: string, anchor?
     if (anchor) openEnumPanel(anchor, def)
     return
   }
+  if (next === 'multiSelect') {
+    pendingSelectId.value = null
+    if (def.type === 'multiSelect') return // 已是多选
+    if (def.closed_values?.length) {
+      // 存量枚举（string + closed_values）转多选：选项原样保留，只改 type（不传 closed_values 即保持原值）
+      pendingMultiSelectId.value = null
+      await tagsStore.updateFieldDefinition({ id: def.id, type: 'multiSelect' })
+      return
+    }
+    // 无选项：同 select 的挂起流程，补第一个选项时才落库
+    pendingMultiSelectId.value = def.id
+    if (anchor) openEnumPanel(anchor, def)
+    return
+  }
   pendingSelectId.value = null
+  pendingMultiSelectId.value = null
   await tagsStore.updateFieldDefinition({
     id: def.id,
     type: next,
     // 非选项型显式传 null：把「枚举 → 文本/数值」的降级写实（清掉选项）。
     closed_values: null,
+    // 换类型同时重置特化标记（code-review Standards#5）：spec 归类型族所有
+    // （string 的 email / number 的 currency / page 的 person），残留会在
+    // 切走再切回时静默复活。
+    spec: null,
   })
 }
 
-/** 「默认」列是否走枚举选项面板（选项就长在这个下拉里，含增 / 删 / 改）。 */
+/** 「默认」列是否走枚举选项面板（选项就长在这个下拉里，含增 / 删 / 改；多选同样用该面板管理选项）。 */
 function isEnumRow(row: FieldRow): boolean {
-  return canEditField(row) && typeValueOf(row.def) === 'select'
+  const t = typeValueOf(row.def)
+  return canEditField(row) && (t === 'select' || t === 'multiSelect')
 }
 
 // ── 隐藏列（ADR-0050 D18）：下拉就地切换，定义级全局共享 ────────
@@ -610,6 +649,76 @@ async function onChangeConstraint(
   await tagsStore.updateFieldDefinition(patch)
 }
 
+// ── 特化（issue T6）：非选项型 string 的特化下拉，仅自身声明可编辑 ──
+
+/** 特化选项（T6 string 特化族；键开放 string，后续特化按同机制追加）。 */
+const STRING_SPEC_OPTIONS = [
+  { value: 'email', label: '邮箱' },
+  { value: 'phone', label: '电话' },
+  { value: 'url', label: '链接' },
+  { value: 'richtext', label: '富文本' },
+]
+
+/**
+ * 特化落库：同值不写；定义级共享 → 改的是定义本身。
+ * 空串 = 清空（无特化），显式传 null 归「未设置」语义。
+ */
+async function onChangeSpec(def: PersistedFieldDefinition, next: string) {
+  if ((def.spec ?? '') === next) return
+  await tagsStore.updateFieldDefinition({ id: def.id, spec: next === '' ? null : next })
+}
+
+// ── number 特化（issue T7）：currency / percent / rating 下拉 + currency 单位 ──
+
+/** number 特化选项（issue T7；spec 语法 'currency[:<symbol>[/<unit>]]'，解析单源 field-number-format）。 */
+const NUMBER_SPEC_OPTIONS = [
+  { value: 'currency', label: '货币' },
+  { value: 'percent', label: '百分比' },
+  { value: 'rating', label: '评分' },
+]
+
+/** spec 首段（'currency:¥/元' → 'currency'），下拉取值用。 */
+function numberSpecHeadOf(def: PersistedFieldDefinition): string {
+  return specHeadOf(def.spec)
+}
+
+/** currency 特化的单位（展示层后置；符号默认 ¥ 由 parseCurrencySpec 兜底）。 */
+function currencyUnitOf(def: PersistedFieldDefinition): string {
+  return parseCurrencySpec(def.spec).unit
+}
+
+/**
+ * number 特化落库：同首段值不写；切到 currency 落默认 ¥（无单位），其余纯值。
+ * 空串 = 清空（无特化，显式传 null）。
+ */
+async function onChangeNumberSpec(def: PersistedFieldDefinition, next: string) {
+  if (numberSpecHeadOf(def) === next) return
+  const spec = next === 'currency' ? 'currency' : next === '' ? null : next
+  await tagsStore.updateFieldDefinition({ id: def.id, spec })
+}
+
+/**
+ * currency 单位落库：编码进 spec（'currency:<symbol>/<unit>'）；空 = 无单位。
+ * 符号维持原 spec 上的配置（默认 ¥），不因改单位而重置。
+ */
+async function onChangeCurrencyUnit(def: PersistedFieldDefinition, e: Event) {
+  const unit = (e.target as HTMLInputElement).value.trim()
+  const { symbol } = parseCurrencySpec(def.spec)
+  const next =
+    unit
+      ? `currency:${symbol === DEFAULT_CURRENCY_SYMBOL ? '' : symbol}/${unit}`
+      : symbol === DEFAULT_CURRENCY_SYMBOL ? 'currency' : `currency:${symbol}`
+  if ((def.spec ?? '') === next) return
+  await tagsStore.updateFieldDefinition({ id: def.id, spec: next })
+}
+
+// ── page 特化（issue T10）：负责人（person）下拉，与 string/number 特化行同构 ──
+
+/** page 特化选项（issue T10；spec 落库语义与 onChangeSpec 一致：空 = 清空）。 */
+const PAGE_SPEC_OPTIONS = [
+  { value: 'person', label: '负责人' },
+]
+
 // ── 枚举选项面板（挂在「默认」列，BasePopover） ──────────────────
 
 const enumPanelOpen = ref(false)
@@ -643,12 +752,13 @@ function openEnumPanelByEvent(e: Event, def: PersistedFieldDefinition) {
   openEnumPanel(e.currentTarget as HTMLElement, def)
 }
 
-/** 关闭面板：挂起态一并放弃 —— 否则类型会停在「没有选项的枚举」上。 */
+/** 关闭面板：挂起态一并放弃 —— 否则类型会停在「没有选项的枚举/多选」上。 */
 function closeEnumPanel() {
   enumPanelOpen.value = false
   enumFieldId.value = null
   enumRenameIndex.value = null
   pendingSelectId.value = null
+  pendingMultiSelectId.value = null
 }
 
 /** 新增选项：挂起态下这第一个选项才把 type 一并写死（此前只本地挂起，未落库）。 */
@@ -661,13 +771,16 @@ async function addEnumOption() {
   }
   const values = [...enumOptions.value, raw]
   newOptionDraft.value = ''
-  const wasPending = pendingSelectId.value === def.id
+  const wasPendingSelect = pendingSelectId.value === def.id
+  const wasPendingMulti = pendingMultiSelectId.value === def.id
+  const pendingType = wasPendingMulti ? 'multiSelect' : wasPendingSelect ? 'string' : null
   await tagsStore.updateFieldDefinition(
-    wasPending
-      ? { id: def.id, type: 'string', closed_values: values }
+    pendingType !== null
+      ? { id: def.id, type: pendingType, closed_values: values }
       : { id: def.id, closed_values: values },
   )
   pendingSelectId.value = null
+  pendingMultiSelectId.value = null
 }
 
 function startRenameOption(index: number) {
@@ -863,6 +976,11 @@ const addFieldSearchInput = ref<HTMLInputElement | null>(null)
 const newFieldTitle = ref('')
 const newFieldType = ref('string')
 const newFieldOptions = ref('')
+/** 新建 relation 字段时选定的关系类型 id（issue T5；落 closed_values 配置位）。 */
+const newFieldRelTypeId = ref('')
+
+// 关系类型清单（relation 字段的新建选择用）：惰性加载，清单为空时下拉显示空态
+const relationshipTypes = useRelationshipTypes()
 
 function openAddFieldPopover(e: MouseEvent) {
   const el = e.currentTarget as HTMLElement
@@ -874,6 +992,9 @@ function openAddFieldPopover(e: MouseEvent) {
   newFieldTitle.value = ''
   newFieldType.value = 'string'
   newFieldOptions.value = ''
+  newFieldRelTypeId.value = ''
+  // fire-and-forget：清单加载失败不阻断面板（下拉为空态）
+  void relationshipTypes.load().catch(() => {})
   addFieldOpen.value = true
   nextTick(() => addFieldSearchInput.value?.focus())
 }
@@ -975,10 +1096,19 @@ async function submitAddField() {
   const title = newFieldTitle.value.trim()
   if (!title || !selectedTag.value) return
   const isSelect = newFieldType.value === 'select'
+  // multiSelect 落库为 type multiSelect + closed_values（select 是 string + closed_values 的伪类型，T4）
+  const isMulti = newFieldType.value === 'multiSelect'
+  // relation 落库为 type relation + closed_values=[关系类型 id]（配置位语义，issue T5；
+  // 未选关系类型时不落空数组——null = 未约定，值编辑器仍可逐值任选）
+  const isRelation = newFieldType.value === 'relation'
   await tagsStore.addFieldToTag(selectedTag.value.id, {
     title,
     type: isSelect ? 'string' : newFieldType.value,
-    closed_values: isSelect ? parseOptions(newFieldOptions.value) : null,
+    closed_values: isSelect || isMulti
+      ? parseOptions(newFieldOptions.value)
+      : isRelation
+        ? (newFieldRelTypeId.value ? [newFieldRelTypeId.value] : null)
+        : null,
   })
   addFieldOpen.value = false
 }
@@ -1364,6 +1494,99 @@ async function submitAddField() {
                     @change="onChangeConstraint(row.def, 'step', $event)"
                   >
                 </label>
+                <!-- number 特化（issue T7）：currency / percent / rating 下拉；
+                     currency 追加单位输入（符号默认 ¥，编码进 spec 无需新持久化列） -->
+                <label class="tfc-item">
+                  <span class="tfc-label">特化</span>
+                  <select
+                    class="tfc-input"
+                    :value="numberSpecHeadOf(row.def)"
+                    :disabled="!canEditField(row)"
+                    :aria-label="`特化：${row.def.title}`"
+                    data-testid="tag-field-number-spec-select"
+                    @change="onChangeNumberSpec(row.def, ($event.target as HTMLSelectElement).value)"
+                  >
+                    <option value="">无</option>
+                    <option
+                      v-for="opt in NUMBER_SPEC_OPTIONS"
+                      :key="opt.value"
+                      :value="opt.value"
+                    >
+                      {{ opt.label }}
+                    </option>
+                  </select>
+                </label>
+                <label
+                  v-if="numberSpecHeadOf(row.def) === 'currency'"
+                  class="tfc-item"
+                >
+                  <span class="tfc-label">单位</span>
+                  <input
+                    class="tfc-input"
+                    type="text"
+                    :value="currencyUnitOf(row.def)"
+                    :disabled="!canEditField(row)"
+                    placeholder="无"
+                    :aria-label="`货币单位：${row.def.title}`"
+                    @change="onChangeCurrencyUnit(row.def, $event)"
+                  >
+                </label>
+              </div>
+
+              <!-- 特化（issue T6）：仅非选项型 string 字段出现；下拉就地切换，
+                   定义级全局共享（与数值约束行同构，走 canEditField 既有判据）。 -->
+              <div
+                v-if="row.def.type === 'string' && !row.def.closed_values?.length"
+                class="tag-field-constraints"
+              >
+                <label class="tfc-item">
+                  <span class="tfc-label">特化</span>
+                  <select
+                    class="tfc-input"
+                    :value="row.def.spec ?? ''"
+                    :disabled="!canEditField(row)"
+                    :aria-label="`特化：${row.def.title}`"
+                    data-testid="tag-field-spec-select"
+                    @change="onChangeSpec(row.def, ($event.target as HTMLSelectElement).value)"
+                  >
+                    <option value="">无</option>
+                    <option
+                      v-for="opt in STRING_SPEC_OPTIONS"
+                      :key="opt.value"
+                      :value="opt.value"
+                    >
+                      {{ opt.label }}
+                    </option>
+                  </select>
+                </label>
+              </div>
+
+              <!-- page 特化（issue T10）：负责人（person）下拉，仅 page 类型字段出现；
+                   落库复用 onChangeSpec（spec 同列，空 = 清空，定义级共享同判据）。 -->
+              <div
+                v-if="row.def.type === 'page'"
+                class="tag-field-constraints"
+              >
+                <label class="tfc-item">
+                  <span class="tfc-label">特化</span>
+                  <select
+                    class="tfc-input"
+                    :value="row.def.spec ?? ''"
+                    :disabled="!canEditField(row)"
+                    :aria-label="`特化：${row.def.title}`"
+                    data-testid="tag-field-page-spec-select"
+                    @change="onChangeSpec(row.def, ($event.target as HTMLSelectElement).value)"
+                  >
+                    <option value="">无</option>
+                    <option
+                      v-for="opt in PAGE_SPEC_OPTIONS"
+                      :key="opt.value"
+                      :value="opt.value"
+                    >
+                      {{ opt.label }}
+                    </option>
+                  </select>
+                </label>
               </div>
             </div>
             <p
@@ -1688,12 +1911,32 @@ async function submitAddField() {
             </option>
           </select>
           <input
-            v-if="newFieldType === 'select'"
+            v-if="newFieldType === 'select' || newFieldType === 'multiSelect'"
             v-model="newFieldOptions"
             class="tag-field-options"
             type="text"
             placeholder="候选值，逗号分隔"
           >
+          <!-- relation（issue T5）：选定关系类型（落 closed_values 配置位；未选 = 未约定） -->
+          <select
+            v-if="newFieldType === 'relation'"
+            v-model="newFieldRelTypeId"
+            class="tag-field-type-select"
+          >
+            <option
+              value=""
+              disabled
+            >
+              选择关系类型
+            </option>
+            <option
+              v-for="rt in relationshipTypes.items.value"
+              :key="rt.id"
+              :value="rt.id"
+            >
+              {{ rt.label }}
+            </option>
+          </select>
           <div class="tag-field-create-actions">
             <button
               type="button"
@@ -1705,7 +1948,7 @@ async function submitAddField() {
             <button
               type="button"
               class="tag-field-confirm"
-              :disabled="!newFieldTitle.trim()"
+              :disabled="!newFieldTitle.trim() || (newFieldType === 'relation' && !newFieldRelTypeId)"
               @click="submitAddField"
             >
               添加字段

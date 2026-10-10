@@ -44,7 +44,14 @@ export interface PersistedFieldDefinition {
   key: string
   title: string
   type: string
-  /** 选项型字段的候选值；非选项型为 null */
+  /**
+   * 选项型字段的候选值；非选项型为 null。
+   * relation 字段（issue T5）复用本列携带约定的关系类型 id（单元素数组
+   * `[relationshipTypeId]`）——既有持久化列、Rust 侧原样存取字符串数组，
+   * 无需迁移；null / 空 = 未约定（值编辑器仍可逐值任选关系类型）。
+   * 注意消费端（BlockFieldZone.isEnumField 等）须按 type==='relation' 排除，
+   * 避免被误判为选项型枚举。
+   */
   closed_values: string[] | null
   /** 字段默认值：JSON 文本（与 PersistedFieldValue.value_json 同形，按 type 反序列化）；null = 无默认 */
   default_value: string | null
@@ -62,6 +69,15 @@ export interface PersistedFieldDefinition {
   min?: number | null
   max?: number | null
   step?: number | null
+  /**
+   * 特化标记（issue T6）：'email' | 'phone' | 'url' | 'richtext'，开放 string 供
+   * 其他类型特化复用（T7）。⚠️ 持久化列尚未落 Rust——本轮约定不动 Rust 迁移，
+   * 且 FieldDefinition 表无既有扩展 JSON 列可复用（display_form_override / hide_when
+   * 均为白名单归一列，default_value 语义被占），故 Rust 回读不含本字段
+   * （undefined = 无特化）；会话内由 tags store 在 spec 写入后回贴本地条目。
+   * 跨会话持久化需后续 `ALTER TABLE FieldDefinition ADD COLUMN spec TEXT`（见 T6 报告）。
+   */
+  spec?: string
   is_system: boolean
   /**
    * 预设标记（ADR-0049 系统标签三态模型，2026-09-30）：域字段（project/area/book/...）
@@ -158,6 +174,8 @@ export type UpdateFieldDefinitionParams = {
   min?: number | null
   max?: number | null
   step?: number | null
+  /** 特化标记（issue T6）：email / phone / url / richtext；显式传 null = 清空（无特化）。 */
+  spec?: string | null
 }
 
 export type CreateFieldValueParams = {

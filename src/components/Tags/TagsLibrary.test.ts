@@ -1057,6 +1057,8 @@ describe('TagsLibrary（标签管理页）', () => {
       id: 'f-owner',
       type: 'number',
       closed_values: null,
+      // 换类型同步重置特化标记（spec 归类型族所有，残留会在切回时复活）
+      spec: null,
     })
   })
 

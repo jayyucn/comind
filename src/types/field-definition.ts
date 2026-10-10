@@ -9,6 +9,11 @@ import { SYSTEM_TAGS } from './tag'
  *
  * - datetime：日期时间（yyyy-MM-dd HH:mm，ADR-0041）
  * - select / multiSelect：封闭枚举单选 / 多选（选项在 closedValues，值存选项 id）
+ * - daterange：日期区间（单字段存起止两日期，值形 { start, end }，yyyy-MM-dd 两端；issue T8）
+ * - file：附件（上传文件，引用路径落库，值形 { path, name, mime? }；issue T9）
+ * - relation：块/页级关系引用（issue T5）——值域 RelationRefValue（目标 id + 关系类型
+ *   id），落库为 JSON 对象（codec 走默认 JSON 路径，同 multiSelect）；字段定义经
+ *   closed_values 携带约定的关系类型 id（单元素数组，最小持久化路径，见 tag-persisted.ts）
  * - array / page / boolean / string / number / date：既有词汇，保持不变
  */
 export type FieldType =
@@ -17,10 +22,32 @@ export type FieldType =
   | 'boolean'
   | 'date'
   | 'datetime'
+  | 'daterange'
   | 'select'
   | 'multiSelect'
   | 'array'
   | 'page'
+  | 'file'
+  | 'relation'
+
+/** file 字段的内存值形态（issue T9）：path 为资产引用（`asset://<id>`，跟随既有
+ *  workspace/assets/ 资产目录约定），name 为原始文件名（展示用），mime 可选。 */
+export interface FileRefValue {
+  path: string
+  name: string
+  mime?: string
+}
+
+/**
+ * relation 字段值域（issue T5）：目标块/页 id + 关系类型 id（relationship_type 领域
+ * 模型见 types/relationship-type.ts，清单服务见 composables/useRelationshipTypes.ts）。
+ * 落库形态 = 本对象的 JSON 文本（value_value → value_json），编解码单源在
+ * field-value-codec（relation 不在 PLAIN_TYPES，走默认 JSON 路径，同 multiSelect）。
+ */
+export interface RelationRefValue {
+  targetId: string
+  relationshipTypeId: string
+}
 
 /**
  * 封闭值选项
@@ -53,11 +80,20 @@ export interface FieldDefinition {
   min?: number | null
   max?: number | null
   step?: number | null
+
+  /**
+   * 特化标记（issue T6）：type==='string' 时的特化种类 'email' | 'phone' | 'url' |
+   * 'richtext'。开放 string——同一字段机制供其他类型复用（如 number 特化，T7），
+   * 未知 / 缺省 = 无特化，走原类型路径（零回归）。分派单源：
+   * `field-type-registry.stringSpecialization(spec)`。
+   */
+  spec?: string
 }
 
 /**
  * 字段值域映射（类型安全）。datetime / select 值为字符串（后者存选项 id），
- * multiSelect 值为选项 id 数组。
+ * multiSelect 值为选项 id 数组，daterange 值为起止两日期（内存对象形态，
+ * 两端均为 yyyy-MM-dd；undefined = 未填 = 删行契约，与 date 同口径）。
  */
 export type FieldValueDataMap = {
   string: string
@@ -65,10 +101,14 @@ export type FieldValueDataMap = {
   boolean: boolean
   date: string
   datetime: string
+  daterange: { start: string; end: string }
   select: string
   multiSelect: string[]
   array: string[]
   page: string
+  file: FileRefValue
+  /** relation（issue T5）：目标 + 关系类型引用对象 */
+  relation: RelationRefValue
 }
 
 /** 字段的内存值形态（编解码后） */

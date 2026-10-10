@@ -30,27 +30,40 @@
  * `decodeFieldValueData` 还原内存值。
  */
 import { Pin, Unlink } from 'lucide-vue-next'
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { openReaderWindow } from '../../composables/useReaderWindow'
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import { useBlockStore } from '../../stores/blocks'
 import { useEditorStore } from '../../stores/editor'
 import { useFieldValueStore } from '../../stores/fieldValue'
+import { usePageStore } from '../../stores/pages'
 import { useTagsStore } from '../../stores/tags'
-import type { FieldDefinition } from '../../types/field-definition'
+import type { FieldDefinition, FileRefValue, RelationRefValue } from '../../types/field-definition'
 import { getFieldDefinition } from '../../types/field-definition'
 import type { FieldValue } from '../../types/field-value'
 import { isSystemField } from '../../types/tag'
 import type { PersistedFieldDefinition } from '../../types/tag-persisted'
 import { decodeDefaultJson, isFieldHiddenByRule, normalizeHideWhen } from '../../utils/field-hide'
+import { effectiveNumberBounds, formatCurrency, parseCurrencySpec } from '../../utils/field-number-format'
 import { resolveDisplayForm, type DisplayFormKind } from '../../utils/field-display-form'
 import { decodeFieldValueData } from '../../utils/field-value-codec'
 import { isTauriEnvironment } from '../../wasm/tauri-platform'
 import { Icon } from '../Icons'
+import BooleanCheck, { type BooleanCheckValue } from '../common/BooleanCheck.vue'
 import DatePicker, { type DatePickerValue } from '../common/DatePicker.vue'
+import DateTimePicker from '../common/DateTimePicker.vue'
+import DateRangePicker, { type DateRangePickerValue } from '../common/DateRangePicker.vue'
 import EnumSelect, { type EnumOption, type EnumSelectValue } from '../common/EnumSelect.vue'
+import MultiEnumSelect from '../common/MultiEnumSelect.vue'
+import FileRefEditor from '../common/FileRefEditor.vue'
 import NumberInput, { type NumberInputValue } from '../common/NumberInput.vue'
+import PageRefPicker from '../common/PageRefPicker.vue'
+import RatingInput from '../common/RatingInput.vue'
+import RelationRefEditor from '../common/RelationRefEditor.vue'
 import TextField, { type TextFieldValue } from '../common/TextField.vue'
+import SpecializedText from '../common/SpecializedText.vue'
+import { renderInlineMarkdown, toExternalHref } from '../../utils/mini-markdown'
+import { numberSpecialization, pageSpecialization, specHeadOf, stringSpecialization } from '../../types/field-type-registry'
 
 const props = withDefaults(defineProps<{
   blockId: string
@@ -66,6 +79,7 @@ const tagsStore = useTagsStore()
 const fieldValueStore = useFieldValueStore()
 const editorStore = useEditorStore()
 const blockStore = useBlockStore()
+const pageStore = usePageStore()
 const { navigateToPage } = useNavigateToPage()
 
 onMounted(() => {
@@ -131,6 +145,16 @@ const displayRows = computed<FieldValue[]>(() =>
 
 // ── 图标 / 文案（封闭值取 label，数组拼接，其余原样）──
 
+/** page 引用值展示：page id 反查目标页标题，悬空 id（目标页已删 / 无效）降级显示原始 id（T3 AC3）。 */
+function pageTitleOf(id: string): string {
+  return pageStore.getPage(id)?.title ?? id
+}
+
+/** page 引用悬空判定：目标页不在 pages store（已删 / 无效 id），供 chip 弱化样式用。 */
+function isDanglingPageRef(id: string): boolean {
+  return !pageStore.getPage(id)
+}
+
 function getIcon(key: string, value: unknown): string | null {
   const def = defOf(key)
   if (def?.closedValues) {
@@ -156,7 +180,28 @@ function getIcon(key: string, value: unknown): string | null {
 }
 
 function getLabel(key: string, value: unknown): string {
+  // relation（issue T5）：值是 { targetId, relationshipTypeId } 对象——all 变体等
+  // 通用分支兜底展示 targetId（list 变体走 RelationRefEditor 专属分支，不经此），
+  // 避免 String(对象) 渲染成 "[object Object]"
+  if (value !== null && typeof value === 'object' && !Array.isArray(value) && 'targetId' in (value as Record<string, unknown>)) {
+    return String((value as { targetId: unknown }).targetId)
+  }
   const def = defOf(key)
+  // currency 特化（T7，code-review Spec#2）：all 变体等通用文案路径也带符号/单位，
+  // 与 list 变体行内展示同源（formatCurrency 单源在 utils/field-number-format）
+  const persistedDef = persistedDefOf(key)
+  if (persistedDef?.type === 'number' && numberSpecKindOf(persistedDef) === 'currency' && typeof value === 'number') {
+    return formatCurrency(value, currencyFormatOf(persistedDef))
+  }
+  // page 引用值即 page id：统一反查标题展示（悬空降级原始 id），
+  // list / all 变体 chip 与 title 提示同走此分支（T3 AC3）
+  if (def?.type === 'page') return pageTitleOf(String(value))
+  // 数组值 + 编译期 closedValues（multiSelect）：逐 id 映射 label，悬空 id 降级原始值（T4）
+  if (def?.closedValues && Array.isArray(value)) {
+    return value
+      .map((v) => def.closedValues!.find((c) => String(c.value) === String(v))?.label ?? String(v))
+      .join('、')
+  }
   if (def?.closedValues) {
     const cv = def.closedValues.find((c) => c.value === value)
     if (cv?.label) return cv.label
@@ -402,6 +447,12 @@ function rawValueOf(def: PersistedFieldDefinition): string | null {
   const v = dataOf(fv)
   if (v === null || v === undefined || v === '') return null
   if (Array.isArray(v) && !v.length) return null
+  // relation（issue T5）：值是 { targetId, relationshipTypeId } 对象——
+  // 隐藏规则只关心「有没有值」，取 targetId 作为代表（String(obj) 会得到 "[object Object]"）
+  if (def.type === 'relation') {
+    const rel = v as Partial<RelationRefValue> | null
+    return rel && typeof rel === 'object' && rel.targetId ? rel.targetId : null
+  }
   return String(v)
 }
 
@@ -455,6 +506,44 @@ async function onDateChange(def: PersistedFieldDefinition, value: DatePickerValu
   }
 }
 
+/**
+ * datetime 字段取值回调（DateTimePicker，T2）：'yyyy-MM-dd HH:mm' 整值落库为
+ * datetime 类型；清除（undefined / 空串）→ 删行（field-value 以「无行」表示空）。
+ */
+async function onDateTimeChange(def: PersistedFieldDefinition, value: string | undefined) {
+  if (!value) {
+    const fv = fieldValueStore.getBlockFieldValue(props.blockId, def.key)
+    if (fv) await fieldValueStore.deleteFieldValue(fv.id, props.blockId)
+    return
+  }
+  await fieldValueStore.setFieldValue(props.blockId, def.key, value, 'datetime')
+}
+
+/** daterange 类型字段的当前值（{ start, end } | undefined），供 DateRangePicker 绑定。 */
+function daterangeValueOf(def: PersistedFieldDefinition): DateRangePickerValue | undefined {
+  const fv = fieldValueStore.getBlockFieldValue(props.blockId, def.key)
+  if (!fv) return undefined
+  const v = dataOf(fv)
+  if (typeof v === 'object' && v !== null && !Array.isArray(v) && 'start' in v && 'end' in v) {
+    return v as DateRangePickerValue
+  }
+  return undefined
+}
+
+/**
+ * daterange 字段取值回调（DateRangePicker）：两端齐 → 落库为 daterange 类型
+ * （内存形 { start, end }，codec 走 JSON 分支）；
+ * 清除（undefined = 未填）→ 删行（field-value 以「无行」表示空）。
+ */
+async function onDaterangeChange(def: PersistedFieldDefinition, value: DateRangePickerValue | undefined) {
+  if (value === undefined || !value.start || !value.end) {
+    const fv = fieldValueStore.getBlockFieldValue(props.blockId, def.key)
+    if (fv) await fieldValueStore.deleteFieldValue(fv.id, props.blockId)
+    return
+  }
+  await fieldValueStore.setFieldValue(props.blockId, def.key, { start: value.start, end: value.end }, 'daterange')
+}
+
 /** number 类型字段的当前值（number | undefined），供 NumberInput 绑定。 */
 function numberValue(def: PersistedFieldDefinition): number | undefined {
   const fv = fieldValueStore.getBlockFieldValue(props.blockId, def.key)
@@ -474,6 +563,85 @@ async function onNumberChange(def: PersistedFieldDefinition, value: NumberInputV
     return
   }
   await fieldValueStore.setFieldValue(props.blockId, def.key, value, 'number')
+}
+
+// ── number 特化族（issue T7）：currency / percent / rating ────────────────
+
+/**
+ * number 特化种类（'currency' | 'percent' | 'rating'；null = 无特化）。
+ * 合法性经中央注册表 `numberSpecialization` 查表（currency spec 可带符号/单位
+ * 后缀如 'currency:¥/元'，查表取首段）；未知 / 缺省 → null，走原 number 路径（零回归）。
+ */
+function numberSpecKindOf(def: PersistedFieldDefinition): string | null {
+  const head = specHeadOf(def.spec)
+  return numberSpecialization(head) ? head : null
+}
+
+/** currency 特化的符号/单位（解析单源 parseCurrencySpec；默认 ¥）。 */
+function currencyFormatOf(def: PersistedFieldDefinition) {
+  return parseCurrencySpec(def.spec)
+}
+
+// ── page 特化族（issue T10）：person（负责人）─────────────────────────────
+
+/**
+ * page 特化种类（'person'；null = 无特化）。
+ * 合法性经中央注册表 `pageSpecialization` 查表（与 numberSpecKindOf 同构先例）；
+ * 未知 / 缺省 → null，走原 page 路径（零回归）。
+ */
+function pageSpecKindOf(def: PersistedFieldDefinition): string | null {
+  const head = specHeadOf(def.spec)
+  return pageSpecialization(head) ? head : null
+}
+
+/** 是否 person 特化（负责人）：picker 过滤与人员 chip 样式共用此判定。 */
+function isPersonField(def: PersistedFieldDefinition): boolean {
+  return pageSpecKindOf(def) === 'person'
+}
+
+/** 人员 chip 头像字：目标页标题首字（悬空 id 降级取 id 首字；空白兜底 '?'）。 */
+function personAvatarChar(id: string): string {
+  return pageTitleOf(id).trim().charAt(0) || '?'
+}
+
+/**
+ * number 特化的有效约束界：percent 默认 0–100（复用 ADR-0055 min/max 通道，
+ * 用户显式配置优先）；其余原样透传。纯函数单源在 utils/field-number-format。
+ */
+function effectiveBoundsOf(def: PersistedFieldDefinition): { min: number | null; max: number | null } {
+  return effectiveNumberBounds(numberSpecKindOf(def), def.min, def.max)
+}
+
+/** percent 特化的进度百分比（0–100 夹界；未填 / 非数值 = 0，进度条空）。 */
+function percentOf(def: PersistedFieldDefinition): number {
+  const v = numberValue(def)
+  if (v === undefined || !Number.isFinite(v)) return 0
+  return Math.max(0, Math.min(100, v))
+}
+
+/**
+ * boolean 类型字段的当前值（boolean | undefined），供 BooleanCheck 绑定。
+ * 非 boolean 值（历史脏数据 / 无行）一律视为未填。
+ */
+function booleanValue(def: PersistedFieldDefinition): BooleanCheckValue {
+  const fv = fieldValueStore.getBlockFieldValue(props.blockId, def.key)
+  if (!fv) return undefined
+  const v = dataOf(fv)
+  return typeof v === 'boolean' ? v : undefined
+}
+
+/**
+ * boolean 字段取值回调（BooleanCheck 勾选切换）：true / false → 落库为 boolean 类型；
+ * 清除（undefined）→ 删行（field-value 以「无行」表示空）。控件本身不发 undefined
+ * （checkbox 切换语义），此分支是与字段值家族对齐的防御性收口。
+ */
+async function onBooleanChange(def: PersistedFieldDefinition, value: BooleanCheckValue) {
+  if (value === undefined) {
+    const fv = fieldValueStore.getBlockFieldValue(props.blockId, def.key)
+    if (fv) await fieldValueStore.deleteFieldValue(fv.id, props.blockId)
+    return
+  }
+  await fieldValueStore.setFieldValue(props.blockId, def.key, value, 'boolean')
 }
 
 /**
@@ -501,11 +669,150 @@ async function onTextChange(def: PersistedFieldDefinition, value: TextFieldValue
   await fieldValueStore.setFieldValue(props.blockId, def.key, value, 'string')
 }
 
+// ── string 特化（issue T6）：url 链接 / richtext 多行 markdown ──────────
+
+/** url 特化字段的点击 href（无 scheme 补 https://，javascript: 等拒渲染）；null = 不可点。 */
+function urlHrefOf(def: PersistedFieldDefinition): string | null {
+  return toExternalHref(valueText(def))
+}
+
+/** 外链打开：跟随仓库既有做法（Backlinks / useBlockEditorLifecycle）——window.open + noopener。 */
+function openExternal(url: string) {
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
+
+/** 正在就地理编辑的 richtext 字段 id（null = 无；至多一个）。 */
+const richEditingId = ref<string | null>(null)
+const richDraft = ref('')
+const richTextareaEl = ref<HTMLTextAreaElement | null>(null)
+
+function isRichEditing(def: PersistedFieldDefinition): boolean {
+  return richEditingId.value === def.id
+}
+
+/** 进 richtext 就地编辑：草稿取当前值，渲染落地后聚焦并自动增高。 */
+function startRichEdit(def: PersistedFieldDefinition) {
+  richDraft.value = textValue(def) ?? ''
+  richEditingId.value = def.id
+  nextTick(() => {
+    // v-for 内的模板 ref 被 Vue 收成数组（至多一个编辑中的 textarea，取最后挂载者）
+    const raw = richTextareaEl.value as unknown
+    const el = (Array.isArray(raw) ? raw[raw.length - 1] : raw) as HTMLTextAreaElement | null
+    if (!el) return
+    autoGrowRich({ target: el } as unknown as Event)
+    el.focus()
+    el.setSelectionRange(el.value.length, el.value.length)
+  })
+}
+
+/** textarea 自动增高：先回 auto 再取 scrollHeight，支持删行回缩。 */
+function autoGrowRich(e: Event) {
+  const el = e.target as HTMLTextAreaElement | undefined
+  if (!el?.style) return
+  el.style.height = 'auto'
+  el.style.height = `${el.scrollHeight}px`
+}
+
+/** richtext 提交：空串 → 删行；非空按原样落库（markdown 内容不 trim 内部换行）。 */
+async function commitRichEdit(def: PersistedFieldDefinition) {
+  richEditingId.value = null
+  const raw = richDraft.value
+  await onTextChange(def, raw.trim() === '' ? undefined : raw)
+}
+
+/** Esc 取消 richtext 编辑（回显原值，不落库）。 */
+function cancelRichEdit() {
+  richEditingId.value = null
+}
+
+/** richtext 展示侧：最小 markdown 渲染（纯函数，转义优先，v-html 安全）。 */
+function richHtml(def: PersistedFieldDefinition): string {
+  return renderInlineMarkdown(valueText(def) ?? '')
+}
+
+// ── file 字段（附件，issue T9）：值区直挂 FileRefEditor ─────────────
+
+/** file 类型字段的当前值（FileRefValue | undefined），供 FileRefEditor 绑定。 */
+function fileValue(def: PersistedFieldDefinition): FileRefValue | undefined {
+  const fv = fieldValueStore.getBlockFieldValue(props.blockId, def.key)
+  if (!fv) return undefined
+  const v = dataOf(fv)
+  if (v === null || v === undefined || v === '') return undefined
+  return typeof v === 'object' && !Array.isArray(v) ? (v as FileRefValue) : undefined
+}
+
+/**
+ * file 字段取值回调（FileRefEditor）：有值 → 落库为 file 类型（JSON 编码，
+ * 值形 { path, name, mime? }，path 为 asset://<id> 引用）；清除（undefined）
+ * → 删行（field-value 以「无行」表示空）。
+ */
+async function onFileChange(def: PersistedFieldDefinition, value: FileRefValue | undefined) {
+  if (value === undefined) {
+    const fv = fieldValueStore.getBlockFieldValue(props.blockId, def.key)
+    if (fv) await fieldValueStore.deleteFieldValue(fv.id, props.blockId)
+    return
+  }
+  await fieldValueStore.setFieldValue(props.blockId, def.key, value, 'file')
+}
+
+// ── page 字段（页面引用，issue T3）：值区直挂 PageRefPicker ─────────
+
+/**
+ * page 字段取值回调（PageRefPicker）：选中页面 → 落库 page id 为 page 类型
+ * （codec 直通存储）；undefined（无清除入口）不处理——既有值改选走 chip 跳转。
+ */
+/**
+ * page 字段取值回调（PageRefPicker）：选中页面 → 落库 page id 为 page 类型
+ * （codec 直通存储）；清除（undefined / 空串）→ 删行（field-value 以「无行」表示空）。
+ * 此前此处 `if (!value) return` 把清除信号吞掉，导致 page 字段一旦有值只能覆盖、
+ * 无法置空（list 变体无 × 删除按钮）。现与字段值家族其它类型对齐走删行语义。
+ */
+async function onPageRefChange(def: PersistedFieldDefinition, value: string | undefined) {
+  if (!value) {
+    const fv = fieldValueStore.getBlockFieldValue(props.blockId, def.key)
+    if (fv) await fieldValueStore.deleteFieldValue(fv.id, props.blockId)
+    return
+  }
+  await fieldValueStore.setFieldValue(props.blockId, def.key, value, 'page')
+}
+
+// ── relation 字段（关系引用，issue T5）：值区直挂 RelationRefEditor ──
+
+/**
+ * relation 字段当前值（RelationRefValue | undefined），供 RelationRefEditor 绑定。
+ * 解码形态非对象（历史脏数据 / 非法 JSON 容错返回原字符串）时按未填降级——
+ * 渲染端不因脏数据炸读路径。
+ */
+function relationValue(def: PersistedFieldDefinition): RelationRefValue | undefined {
+  const fv = fieldValueStore.getBlockFieldValue(props.blockId, def.key)
+  if (!fv) return undefined
+  const v = dataOf(fv)
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return undefined
+  const rel = v as Partial<RelationRefValue>
+  return typeof rel.targetId === 'string' && rel.targetId ? (v as RelationRefValue) : undefined
+}
+
+/**
+ * relation 字段取值回调（RelationRefEditor）：两段齐备的 payload → 落库为
+ * relation 类型（JSON 编码，值形 { targetId, relationshipTypeId }）；清除
+ * （undefined）→ 删行（field-value 以「无行」表示空）。
+ */
+async function onRelationChange(def: PersistedFieldDefinition, value: RelationRefValue | undefined) {
+  if (value === undefined) {
+    const fv = fieldValueStore.getBlockFieldValue(props.blockId, def.key)
+    if (fv) await fieldValueStore.deleteFieldValue(fv.id, props.blockId)
+    return
+  }
+  await fieldValueStore.setFieldValue(props.blockId, def.key, value, 'relation')
+}
+
 // ── 枚举字段（封闭选项）：值区直挂通用枚举组件 EnumSelect ─────────────
 
-/** 枚举字段判定：封闭选项非空即选项型（与 field-display-form 的 isOptionTypeDef 同判据）。 */
+/** 枚举字段判定：封闭选项非空即选项型（与 field-display-form 的 isOptionTypeDef 同判据）。
+ *  relation（issue T5）除外：其 closed_values 复用为「约定的关系类型 id」配置位
+ *  （单元素数组，见 tag-persisted.ts），不是选项语义，不得按枚举分派。 */
 function isEnumField(def: PersistedFieldDefinition): boolean {
-  return (def.closed_values?.length ?? 0) > 0
+  return def.type !== 'relation' && (def.closed_values?.length ?? 0) > 0
 }
 
 /**
@@ -548,16 +855,47 @@ async function onEnumChange(def: PersistedFieldDefinition, value: EnumSelectValu
   }
 }
 
+// ── multiSelect（多选枚举，T4）：值区直挂 MultiEnumSelect ─────────────
+
+/** multiSelect 字段的当前值（string[] | undefined），供 MultiEnumSelect 绑定（undefined = 未填）。 */
+function multiEnumValue(def: PersistedFieldDefinition): string[] | undefined {
+  const fv = fieldValueStore.getBlockFieldValue(props.blockId, def.key)
+  if (!fv) return undefined
+  const v = dataOf(fv)
+  return Array.isArray(v) && v.length ? v.map(String) : undefined
+}
+
 /**
- * 行是否已挂专属内联编辑器（date / number / 枚举 chip 形态）：整行让位给控件，
- * 行不再是点击目标（role/tabindex 均不挂），openFieldRow 对其早退。
+ * multiSelect 取值回调（MultiEnumSelect）：有值 → 落库为 multiSelect 类型（选项 id 数组，
+ * codec JSON 编码）；清空 / undefined → 删行（field-value 以「无行」表示空）。
+ */
+async function onMultiEnumChange(def: PersistedFieldDefinition, value: string[] | undefined) {
+  if (!value?.length) {
+    const fv = fieldValueStore.getBlockFieldValue(props.blockId, def.key)
+    if (fv) await fieldValueStore.deleteFieldValue(fv.id, props.blockId)
+    return
+  }
+  await fieldValueStore.setFieldValue(props.blockId, def.key, value, 'multiSelect')
+}
+
+/**
+ * 行是否已挂专属内联编辑器（date / number / boolean / file / page / relation / 枚举 chip 形态）：
+ * 整行让位给控件，行不再是点击目标（role/tabindex 均不挂），openFieldRow 对其早退。
  */
 function rowHasInlineEditor(def: PersistedFieldDefinition): boolean {
   return (
     def.type === 'date'
+    || def.type === 'datetime'
+    || def.type === 'daterange'
     || def.type === 'number'
+    || def.type === 'boolean'
+    || def.type === 'file'
+    || def.type === 'page'
+    || def.type === 'relation'
     || (isEnumField(def) && formOf(def) === 'chip')
-    || (def.type === 'string' && !isEnumField(def))
+    // string 特化（issue T6）：url 有值时值区是可点击链接（非编辑控件）→ 整行保持
+    // 可点击（点行唤快速编辑器改值）；url 无值及其他 string 特化仍走内联编辑器。
+    || (def.type === 'string' && !isEnumField(def) && !(def.spec === 'url' && textValue(def) !== null))
   )
 }
 
@@ -596,7 +934,8 @@ function formOf(def: PersistedFieldDefinition): DisplayFormKind {
 }
 
 /**
- * chip 形态的值序列：array → 每值一枚（chip 序列，D21 决策 1）；
+ * chip 形态的值序列：array → 每值一枚（chip 序列，D21 决策 1；multiSelect 的选项
+ * id 经 closedValues 映射为 label，悬空 id 降级显示原始值，T4 AC4）；
  * 标量 → 单枚（选项型取 label）；无值 → null（渲染 ghost 胶囊，决策 7）。
  */
 function chipValues(def: PersistedFieldDefinition): string[] | null {
@@ -604,9 +943,28 @@ function chipValues(def: PersistedFieldDefinition): string[] | null {
   if (!fv) return null
   const value = dataOf(fv)
   if (value === null || value === undefined || value === '') return null
-  if (Array.isArray(value)) return value.length ? value.map(String) : null
+  if (Array.isArray(value)) {
+    if (!value.length) return null
+    if (def.type === 'multiSelect') return value.map((v) => multiEnumLabelOf(def, String(v)))
+    return value.map(String)
+  }
+  // currency 特化（T7）：chip 形态标量同样带符号/单位（code-review Spec#2）
+  if (def.type === 'number' && numberSpecKindOf(def) === 'currency' && typeof value === 'number') {
+    return [formatCurrency(value, currencyFormatOf(def))]
+  }
   const closed = def.closed_values?.find((v) => String(v) === String(value))
   return [closed ? String(closed) : String(value)]
+}
+
+/**
+ * multiSelect 选项 id → 展示文案：编译期 closedValues 的 label 优先；
+ * 持久化 closed_values 的 value 即文案（value==label）；悬空 id 降级显示原始值。
+ */
+function multiEnumLabelOf(def: PersistedFieldDefinition, id: string): string {
+  const compiled = defOf(def.key)?.closedValues
+  const cv = compiled?.find((c) => String(c.value) === id)
+  if (cv) return cv.label
+  return id
 }
 
 /** chip / icon 行的点击：page 类型跳转目标页（对齐 [[page]] 导航语义），其余唤起编辑器 */
@@ -620,8 +978,8 @@ function onFieldActivate(event: Event, def: PersistedFieldDefinition, value?: st
 
 /** 点击 / Enter 唤起该字段的快速编辑器（锚点 = 行元素矩形）；参数取 Event 以兼容键盘触发。 */
 function openFieldRow(event: Event, def: PersistedFieldDefinition) {
-  // date / number / 枚举（chip 形态）字段的值区已挂专属内联编辑器
-  // （DatePicker / NumberInput / EnumSelect），不再弹通用编辑器。
+  // date / number / boolean / 枚举（chip 形态）字段的值区已挂专属内联编辑器
+  // （DatePicker / NumberInput / BooleanCheck / EnumSelect），不再弹通用编辑器。
   if (rowHasInlineEditor(def)) return
   editorStore.showQuickFieldValueEditor(props.blockId, def.key, editorPosition(event.currentTarget as HTMLElement))
 }
@@ -840,9 +1198,20 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
         </span>
       </span>
       <span class="block-field-zone-value">
+        <!-- daterange 类型字段：值区直接挂 DateRangePicker（区间形态「start → end」胶囊，
+             无值占位、单端降级显示单端），点击唤起区间日历录入；
+             自带 @click.stop 不触发整行快速编辑器，清除走删行语义（issue T8）。 -->
+        <template v-if="def.type === 'daterange'">
+          <DateRangePicker
+            :model-value="daterangeValueOf(def)"
+            placeholder="选择日期区间"
+            @update:model-value="onDaterangeChange(def, $event)"
+          />
+        </template>
+
         <!-- date 类型字段：值区直接挂 DatePicker（single），点击唤起日历录入；
              自带 @click.stop 不触发整行快速编辑器，清除走删行语义。 -->
-        <template v-if="def.type === 'date'">
+        <template v-else-if="def.type === 'date'">
           <DatePicker
             :model-value="dateValue(def)"
             mode="single"
@@ -851,24 +1220,110 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
           />
         </template>
 
+        <!-- datetime 类型字段：值区直接挂 DateTimePicker（日历 + 时分档，T2），
+             'yyyy-MM-dd HH:mm' 整值落库；自带 @click.stop 不触发整行快速编辑器，
+             清除走删行语义（与 date 同路径，dateValue 的字符串提取对两者通用）。 -->
+        <template v-else-if="def.type === 'datetime'">
+          <DateTimePicker
+            :model-value="dateValue(def)"
+            placeholder="选择日期时间"
+            @update:model-value="onDateTimeChange(def, $event)"
+          />
+        </template>
+
+        <!-- number 特化 rating（issue T7）：值区直挂 RatingInput 星级编辑（1–N 星），
+             点击置值 / 再点同值清空走删行语义（undefined = 未填契约与 NumberInput 一致）。 -->
+        <template v-else-if="def.type === 'number' && numberSpecKindOf(def) === 'rating'">
+          <RatingInput
+            :model-value="numberValue(def)"
+            :aria-label="def.title || '评分'"
+            @update:model-value="onNumberChange(def, $event)"
+          />
+        </template>
+
         <!-- number 类型字段：值区直接挂 NumberInput（内联输入 + ± 步进），
-             约束来自字段定义（min/max/step），清除走删行语义（ADR-0055）。 -->
+             约束来自字段定义（min/max/step，percent 特化默认 0–100），清除走删行语义（ADR-0055）。
+             特化装饰（issue T7）：currency 符号前置 / 单位后置（编辑仍是数字输入）；
+             percent 附细进度条展示当前值在 0–100 区间的进度。无特化走原路径零回归。 -->
         <template v-else-if="def.type === 'number'">
+          <span
+            v-if="numberSpecKindOf(def) === 'currency'"
+            class="bfz-currency-symbol"
+          >{{ currencyFormatOf(def).symbol }}</span>
           <NumberInput
             :model-value="numberValue(def)"
-            :min="def.min"
-            :max="def.max"
+            :min="effectiveBoundsOf(def).min"
+            :max="effectiveBoundsOf(def).max"
             :step="def.step"
             placeholder="输入数值"
             @update:model-value="onNumberChange(def, $event)"
+          />
+          <span
+            v-if="numberSpecKindOf(def) === 'currency' && currencyFormatOf(def).unit"
+            class="bfz-currency-unit"
+          >{{ currencyFormatOf(def).unit }}</span>
+          <span
+            v-else-if="numberSpecKindOf(def) === 'percent'"
+            class="bfz-percent-track"
+            :style="{ '--bfz-percent': `${percentOf(def)}%` }"
+            :aria-label="`进度 ${percentOf(def)}%`"
+          >
+            <span class="bfz-percent-fill" />
+          </span>
+        </template>
+
+        <!-- boolean 类型字段：值区直接挂 BooleanCheck（勾选交互，icon 形态下值即
+             ✓ / ✗，无值出 ghost 占位）。点击直接切换落库，不弹通用编辑器；
+             BooleanCheck 仅循环 undefined→true→false→true，无法回到 undefined，
+             故在有值时附 × 清除按钮，走 onBooleanChange(def, undefined) 删行（未填语义）。
+             两者均 @click.stop 不触发整行快速编辑器。 -->
+        <template v-else-if="def.type === 'boolean'">
+          <BooleanCheck
+            :model-value="booleanValue(def)"
+            :aria-label="def.title || '布尔值'"
+            @update:model-value="onBooleanChange(def, $event)"
+          />
+          <button
+            v-if="booleanValue(def) !== undefined"
+            type="button"
+            class="bfz-clear-button"
+            title="清除"
+            :aria-label="`清除${def.title || '布尔值'}`"
+            @click.stop="onBooleanChange(def, undefined)"
+          >
+            ×
+          </button>
+        </template>
+
+        <!-- relation 类型字段（关系引用，issue T5）：值区直挂 RelationRefEditor
+             （两段式面板：关系类型 + 目标块/页搜索）。有值渲染按关系类型着色的
+             链接 chip（--relation-color 变量，色值来自 relationship_type 用户数据，
+             非代码硬编码；悬空目标降级中性 chip）；清除走删行语义。
+             字段定义约定的关系类型经 closed_values[0] 传入（配置位见 tag-persisted.ts）。
+             自带 @click.stop 不触发整行快速编辑器。 -->
+        <template v-else-if="def.type === 'relation'">
+          <RelationRefEditor
+            :model-value="relationValue(def)"
+            :relationship-type-id="def.closed_values?.[0] ?? ''"
+            :exclude-id="blockId"
+            @update:model-value="onRelationChange(def, $event)"
           />
         </template>
 
         <!-- 枚举字段（封闭选项 + chip 形态）：值区直挂通用枚举组件 EnumSelect，
              选项取编译期定义（label/icon/description）优先、持久化 closed_values 兜底；
+             multiSelect（T4）分流到 MultiEnumSelect（多选 chip，值以数组落库）。
              触发按钮自带 @click.stop 不触发整行快速编辑器，清除走删行语义。 -->
         <template v-else-if="isEnumField(def) && formOf(def) === 'chip'">
+          <MultiEnumSelect
+            v-if="def.type === 'multiSelect'"
+            :options="enumOptionsOf(def)"
+            :model-value="multiEnumValue(def)"
+            placeholder="未填"
+            @update:model-value="onMultiEnumChange(def, $event)"
+          />
           <EnumSelect
+            v-else
             :options="enumOptionsOf(def)"
             :model-value="enumValue(def)"
             placeholder="未填"
@@ -876,15 +1331,70 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
           />
         </template>
 
-        <!-- chip 形态（非枚举）：date / array（chip 序列）/ page（引用 chip）/ number（徽章）。
-             字段名已在左列，chip 本体不再内嵌标题。 -->
-        <template v-else-if="formOf(def) === 'chip'">
+        <!-- file 字段（附件，issue T9）：值区直挂 FileRefEditor——无值 28px 上传按钮，
+             有值图片缩略图 / 附件 chip，点击 chip 内置 lightbox 预览；清除走删行语义。
+             自带 @click.stop 不触发整行快速编辑器。 -->
+        <template v-else-if="def.type === 'file'">
+          <FileRefEditor
+            :model-value="fileValue(def)"
+            @update:model-value="onFileChange(def, $event)"
+          />
+        </template>
+
+        <!-- page 字段（页面引用，issue T3）：有值渲染引用 chip（page id 反查标题展示，
+             悬空 id 降级原始 id 弱化样式），点击跳转目标页（onFieldActivate 导航语义）；
+             无值直挂 PageRefPicker（搜索选择现有页面，值存 page id 落库），
+             自带 @click.stop 不触发整行快速编辑器（pageRef 文本兜底已替换）。
+             page 特化 person（issue T10）：picker 候选限定 person 页（personOnly），
+             有值渲染人员 chip（首字圆形头像 + 名字，点击跳转与 page 引用同路径）。 -->
+        <template v-else-if="def.type === 'page'">
           <template v-if="chipValues(def)">
             <span
               v-for="(v, i) in chipValues(def)"
               :key="i"
               class="block-field-zone-chip"
-              :class="{ 'block-field-zone-chip--page': def.type === 'page' }"
+              :class="{
+                'block-field-zone-chip--page': true,
+                'block-field-zone-chip--person': isPersonField(def),
+                'block-field-zone-chip--dangling': isDanglingPageRef(v),
+              }"
+              :data-field="def.key"
+              :title="`${titleOf(def.key)}: ${pageTitleOf(v)}`"
+              @click.stop="onFieldActivate($event, def, v)"
+              @keydown.enter.stop="onFieldActivate($event, def, v)"
+            >
+              <span
+                v-if="isPersonField(def)"
+                class="bfz-person-avatar"
+                aria-hidden="true"
+              >{{ personAvatarChar(v) }}</span>
+              <span class="bfz-chip-value">{{ pageTitleOf(v) }}</span>
+            </span>
+            <button
+              type="button"
+              class="bfz-clear-button"
+              title="清除"
+              :aria-label="`清除${def.title || '页面引用'}`"
+              @click.stop="onPageRefChange(def, undefined)"
+            >
+              ×
+            </button>
+          </template>
+          <PageRefPicker
+            v-else
+            :person-only="isPersonField(def)"
+            :placeholder="isPersonField(def) ? '选择人员' : '选择页面'"
+            @update:model-value="onPageRefChange(def, $event)"
+          />
+        </template>
+
+        <!-- chip 形态（非枚举）：date / array（chip 序列）/ number（徽章）。
+             字段名已在左列，chip 本体不再内嵌标题。 -->        <template v-else-if="formOf(def) === 'chip'">
+          <template v-if="chipValues(def)">
+            <span
+              v-for="(v, i) in chipValues(def)"
+              :key="i"
+              class="block-field-zone-chip"
               :data-field="def.key"
               @click.stop="onFieldActivate($event, def, v)"
               @keydown.enter.stop="onFieldActivate($event, def, v)"
@@ -913,11 +1423,73 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
           >{{ valueText(def) ?? '—' }}</span>
         </template>
 
-        <!-- 纯 string（自由文本）字段：值区直挂通用文本组件 TextField（单行输入 + 清除 ×），
-             排除 closed_values 非空的枚举（枚举走 EnumSelect 或以 text 覆写兜底）。
+        <!-- 纯 string（自由文本）字段：按特化标记分派（issue T6）——
+             url：有值出可点击链接（点行改值），无值占位；richtext：多行 textarea 就地编辑 +
+             最小 markdown 渲染；email / phone：SpecializedText（格式校验 + 红字提示）；
+             无特化：TextField（单行输入 + 清除 ×，原路径零回归）。
              自带 @click.stop 不触发整行快速编辑器，清除走删行语义。 -->
         <template v-else-if="def.type === 'string' && !isEnumField(def)">
+          <!-- url 特化（AC3）：字段区可点击打开 -->
+          <template v-if="def.spec === 'url'">
+            <a
+              v-if="urlHrefOf(def)"
+              class="block-field-zone-link"
+              :href="urlHrefOf(def) ?? undefined"
+              :title="`打开链接：${valueText(def)}`"
+              @click.stop.prevent="openExternal(urlHrefOf(def) as string)"
+            >{{ valueText(def) }}</a>
+            <span
+              v-else
+              class="block-field-zone-placeholder"
+            >—</span>
+          </template>
+
+          <!-- richtext 特化（AC4）：多行 textarea 编辑 / markdown 渲染切换 -->
+          <template v-else-if="def.spec === 'richtext'">
+            <textarea
+              v-if="isRichEditing(def)"
+              ref="richTextareaEl"
+              v-model="richDraft"
+              class="bfz-richtext-input"
+              rows="2"
+              placeholder="输入 markdown（**粗** *斜* `码` [链](接)）"
+              :aria-label="`编辑${def.title}`"
+              data-testid="bfz-richtext-input"
+              @input="autoGrowRich"
+              @blur="commitRichEdit(def)"
+              @keydown.esc.prevent="cancelRichEdit"
+            />
+            <!-- vue/no-v-html: mini-markdown 渲染器先整体 HTML 转义再套标记（renderInlineMarkdown），受控输出 -->
+            <!-- eslint-disable vue/no-v-html -->
+            <span
+              v-else-if="valueText(def) !== null"
+              class="bfz-richtext"
+              title="点击编辑"
+              data-testid="bfz-richtext"
+              @click.stop="startRichEdit(def)"
+              v-html="richHtml(def)"
+            />
+            <!-- eslint-enable vue/no-v-html -->
+            <span
+              v-else
+              class="block-field-zone-placeholder"
+              title="点击填写"
+              data-testid="bfz-richtext-placeholder"
+              @click.stop="startRichEdit(def)"
+            >—</span>
+          </template>
+
+          <!-- email / phone 特化（AC2）：格式校验 + 错误提示 + 回车不落库 -->
+          <SpecializedText
+            v-else-if="def.spec && stringSpecialization(def.spec)"
+            :spec="def.spec"
+            :model-value="textValue(def)"
+            :placeholder="def.title ? `输入${def.title}` : '输入文本'"
+            @update:model-value="onTextChange(def, $event)"
+          />
+
           <TextField
+            v-else
             :model-value="textValue(def)"
             :placeholder="def.title ? `输入${def.title}` : '输入文本'"
             @update:model-value="onTextChange(def, $event)"
@@ -1063,7 +1635,7 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
 }
 
 .book-note-source.can-jump:hover {
-  background: var(--accent-08, rgba(59, 130, 246, 0.08));
+  background: var(--accent-08);
   color: var(--accent);
 }
 
@@ -1119,7 +1691,7 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
 }
 
 .property-item:hover {
-  background: var(--accent-08, rgba(59, 130, 246, 0.08));
+  background: var(--accent-08);
   // hover 才为「×」腾位（容器右端固定，chips 区整体向左扩 16px；实测不换行、不推正文）
   padding-right: 20px;
 }
@@ -1184,15 +1756,15 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
   padding: 2px 6px;
 
   /* 行 hover 底只给「真可点」的行：整行点一下开快速编辑器。
-     date / number / 枚举行不是点击目标（openFieldRow 对三者早退，编辑由内嵌
-     DatePicker / NumberInput / EnumSelect 独占），故排除其行 hover，避免
+     date / number / boolean / 枚举行不是点击目标（openFieldRow 对四者早退，编辑由内嵌
+     DatePicker / NumberInput / BooleanCheck / EnumSelect 独占），故排除其行 hover，避免
      「行底 + 控件 hover」在暗色下并档糊成一片。 */
   &:not(.block-field-zone-row--inline-editor):hover {
     background: var(--surface-subtle);
   }
 }
 
-/* date / number / 枚举行非按钮：光标回默认，焦点交给内嵌控件。 */
+/* date / number / boolean / 枚举行非按钮：光标回默认，焦点交给内嵌控件。 */
 .block-field-zone-row--inline-editor {
   cursor: default;
 }
@@ -1286,6 +1858,32 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
   color: var(--accent);
 }
 
+/* page 引用悬空 id（目标页已删 / 无效）：降级显示原始 id，弱化样式示断链 */
+.block-field-zone-chip--dangling .bfz-chip-value {
+  color: var(--text-tertiary);
+}
+
+/* person 特化（issue T10）：人员 chip —— 首字圆形头像 + 名字（无真实头像数据，
+   首字圆形头像顶位；底色取强调色低透明 token，名字沿用 page 引用的强调色）。
+   点击跳转与 page 引用同路径（onFieldActivate），圆角改全圆示「人」。 */
+.block-field-zone-chip--person {
+  border-radius: 999px;
+
+  .bfz-person-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent-08);
+    color: var(--accent);
+    font-size: var(--text-xs);
+    line-height: 1;
+  }
+}
+
 .bfz-chip-title {
   font-size: var(--text-xs);
   color: var(--text-tertiary);
@@ -1303,6 +1901,143 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
   .bfz-chip-title,
   .bfz-chip-value--ghost {
     color: var(--text-tertiary);
+  }
+}
+
+/* ── string 特化（issue T6） ── */
+
+/* url 特化：字段区可点击链接（强调色对齐 page 引用 chip 的 block-link 语义） */
+.block-field-zone-link {
+  color: var(--accent);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  min-width: 0;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+/* richtext 展示态：最小 markdown 渲染（v-html 内容已转义），保留换行间距 */
+.bfz-richtext {
+  color: var(--text-primary);
+  min-width: 0;
+  max-width: 100%;
+  word-break: break-word;
+  cursor: text;
+
+  :deep(code) {
+    padding: 0 4px;
+    border-radius: var(--radius-sm);
+    background: var(--surface-subtle);
+    font-size: var(--text-sm);
+  }
+
+  :deep(a) {
+    color: var(--accent);
+  }
+}
+
+/* richtext 编辑态：多行 textarea，自动增高（JS 设 height），行内不起编辑浮层 */
+.bfz-richtext-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  box-sizing: border-box;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-family: inherit;
+  line-height: var(--leading-normal);
+  padding: 4px 8px;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  min-height: 28px;
+  border-radius: var(--radius-sm);
+
+  &::placeholder {
+    color: var(--text-tertiary);
+  }
+
+  &:focus {
+    background: var(--bg-active);
+  }
+}
+
+/* ── number 特化族装饰（issue T7）────────────────────────── */
+
+/* currency：符号前置 / 单位后置（编辑仍是 NumberInput 数字输入） */
+.bfz-currency-symbol,
+.bfz-currency-unit {
+  flex: none;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-none);
+}
+
+/* percent：细进度条（值在 0–100 区间的进度；CSS var 传值，无 JS 宽度计算） */
+.bfz-percent-track {
+  --bfz-percent: 0%;
+
+  position: relative;
+  flex: 0 1 80px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-subtle);
+  overflow: hidden;
+}
+
+.bfz-percent-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--bfz-percent);
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width var(--dur-base) var(--ease-out);
+}
+
+/* 内联清除按钮（boolean / page 字段值区）：与 .delete-button 同源的弱化 ×，
+   仅在有值时存在，点击走删行语义（boolean→onBooleanChange(def, undefined)；
+   page→onPageRefChange(def, undefined)）。常态隐藏，整行 hover / 键盘 focus
+   时显形（与 .delete-button 同口径），不抢控件、隐藏时也不占 tab 序。 */
+.bfz-clear-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  font-size: var(--text-base);
+  line-height: var(--leading-none);
+  cursor: pointer;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out),
+    visibility var(--dur-fast) var(--ease-out);
+
+  .block-field-zone-row:hover &,
+  .block-field-zone-row:focus-within & {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  &:hover {
+    color: var(--text-primary);
+    background: var(--surface-subtle);
   }
 }
 </style>

@@ -28,6 +28,12 @@ describe('field-value-codec encodeFieldValueData', () => {
     expect(encodeFieldValueData(['a', 'b'], 'multiSelect')).toBe('["a","b"]')
   })
 
+  test('daterange 按 JSON 编码（值为 { start, end } 对象，yyyy-MM-dd 两端；issue T8）', () => {
+    expect(encodeFieldValueData({ start: '2026-01-01', end: '2026-01-31' }, 'daterange')).toBe(
+      '{"start":"2026-01-01","end":"2026-01-31"}',
+    )
+  })
+
   test('类型保真：number 型属性传字符串按 type 忠实编码（不静默变型）', () => {
     // 行为变化点（#117 明示）：旧按值编码存裸 42 → 读回变 number；
     // 新按 type 编码存 "\"42\"" → 读回仍是字符串
@@ -58,6 +64,19 @@ describe('field-value-codec decodeFieldValueData', () => {
     expect(decodeFieldValueData('["a","b"]', 'multiSelect')).toEqual(['a', 'b'])
   })
 
+  test('daterange 解码为 { start, end } 对象（issue T8）', () => {
+    expect(decodeFieldValueData('{"start":"2026-01-01","end":"2026-01-31"}', 'daterange')).toEqual({
+      start: '2026-01-01',
+      end: '2026-01-31',
+    })
+  })
+
+  test('file 解码为 { path, name, mime? } 对象（issue T9）', () => {
+    expect(
+      decodeFieldValueData('{"path":"asset://a1","name":"报告.pdf","mime":"application/pdf"}', 'file'),
+    ).toEqual({ path: 'asset://a1', name: '报告.pdf', mime: 'application/pdf' })
+  })
+
   test('非法 JSON 容错：返回原字符串 + console.warn，不 throw', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
@@ -80,9 +99,44 @@ describe('field-value-codec decodeFieldValueData', () => {
       ['Done', 'select'],
       ['2026-09-15 10:44', 'datetime'],
       [['a', 'b'], 'multiSelect'],
+      // daterange（issue T8）：{ start, end } 对象 JSON 往返
+      [{ start: '2026-01-01', end: '2026-01-31' }, 'daterange'],
+      // relation（issue T5）：{ targetId, relationshipTypeId } 对象 JSON 往返
+      [{ targetId: 'blk-1', relationshipTypeId: 'rt_seed_related' }, 'relation'],
+      // file（issue T9）：{ path, name, mime? } 对象 JSON 往返
+      [{ path: 'asset://asset_1_ab', name: '截图.png', mime: 'image/png' }, 'file'],
+      [{ path: 'asset://asset_2_cd', name: '报告.pdf' }, 'file'],
     ]
     for (const [value, type] of cases) {
       expect(decodeFieldValueData(encodeFieldValueData(value, type), type)).toEqual(value)
+    }
+  })
+
+  // ── relation（issue T5）：字段级关系引用 ───────────────────────
+
+  test('file 按 JSON 编码 { path, name, mime? } 对象（issue T9）', () => {
+    const value = { path: 'asset://asset_1_ab', name: '截图.png', mime: 'image/png' }
+    expect(encodeFieldValueData(value, 'file')).toBe(
+      '{"path":"asset://asset_1_ab","name":"截图.png","mime":"image/png"}',
+    )
+  })
+
+  test('relation 按 JSON 编码 { targetId, relationshipTypeId } 对象', () => {
+    const value = { targetId: 'blk-1', relationshipTypeId: 'rt_seed_related' }
+    expect(encodeFieldValueData(value, 'relation')).toBe(
+      '{"targetId":"blk-1","relationshipTypeId":"rt_seed_related"}',
+    )
+    expect(decodeFieldValueData('{"targetId":"blk-1","relationshipTypeId":"rt_seed_related"}', 'relation'))
+      .toEqual(value)
+  })
+
+  test('relation 非法 JSON 容错：返回原字符串（渲染端降级），不 throw', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(decodeFieldValueData('{oops', 'relation')).toBe('{oops')
+      expect(warn).toHaveBeenCalledOnce()
+    } finally {
+      warn.mockRestore()
     }
   })
 })
