@@ -50,6 +50,7 @@ import { Icon } from '../Icons'
 import DatePicker, { type DatePickerValue } from '../common/DatePicker.vue'
 import EnumSelect, { type EnumOption, type EnumSelectValue } from '../common/EnumSelect.vue'
 import NumberInput, { type NumberInputValue } from '../common/NumberInput.vue'
+import TextField, { type TextFieldValue } from '../common/TextField.vue'
 
 const props = withDefaults(defineProps<{
   blockId: string
@@ -475,6 +476,31 @@ async function onNumberChange(def: PersistedFieldDefinition, value: NumberInputV
   await fieldValueStore.setFieldValue(props.blockId, def.key, value, 'number')
 }
 
+/**
+ * 纯 string（自由文本）字段的当前值（string | undefined），供 TextField 绑定。
+ * 仅非选项型 string（排除 closed_values 非空的枚举）走 TextField；枚举被
+ * display_form_override 覆写为 text 时仍走静态文字行（见下方 text 分支兜底）。
+ */
+function textValue(def: PersistedFieldDefinition): string | undefined {
+  const fv = fieldValueStore.getBlockFieldValue(props.blockId, def.key)
+  if (!fv) return undefined
+  const v = dataOf(fv)
+  return typeof v === 'string' && v !== '' ? v : undefined
+}
+
+/**
+ * 纯 string 字段取值回调（TextField）：有值 → 落库为 string 类型；
+ * 清除（undefined / 空串）→ 删行（field-value 以「无行」表示空）。
+ */
+async function onTextChange(def: PersistedFieldDefinition, value: TextFieldValue) {
+  if (value === undefined || value === '') {
+    const fv = fieldValueStore.getBlockFieldValue(props.blockId, def.key)
+    if (fv) await fieldValueStore.deleteFieldValue(fv.id, props.blockId)
+    return
+  }
+  await fieldValueStore.setFieldValue(props.blockId, def.key, value, 'string')
+}
+
 // ── 枚举字段（封闭选项）：值区直挂通用枚举组件 EnumSelect ─────────────
 
 /** 枚举字段判定：封闭选项非空即选项型（与 field-display-form 的 isOptionTypeDef 同判据）。 */
@@ -531,6 +557,7 @@ function rowHasInlineEditor(def: PersistedFieldDefinition): boolean {
     def.type === 'date'
     || def.type === 'number'
     || (isEnumField(def) && formOf(def) === 'chip')
+    || (def.type === 'string' && !isEnumField(def))
   )
 }
 
@@ -886,7 +913,19 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
           >{{ valueText(def) ?? '—' }}</span>
         </template>
 
-        <!-- text 形态：值前圆点标记（对齐参考布局），无值出「—」占位 -->
+        <!-- 纯 string（自由文本）字段：值区直挂通用文本组件 TextField（单行输入 + 清除 ×），
+             排除 closed_values 非空的枚举（枚举走 EnumSelect 或以 text 覆写兜底）。
+             自带 @click.stop 不触发整行快速编辑器，清除走删行语义。 -->
+        <template v-else-if="def.type === 'string' && !isEnumField(def)">
+          <TextField
+            :model-value="textValue(def)"
+            :placeholder="def.title ? `输入${def.title}` : '输入文本'"
+            @update:model-value="onTextChange(def, $event)"
+          />
+        </template>
+
+        <!-- 兜底 text 形态（枚举被 display_form_override 覆写为 text 等）：静态文字行，
+             值前圆点标记，无值出「—」占位；整行仍是点击目标（唤起通用编辑器）。 -->
         <template v-else>
           <span
             v-if="valueText(def) !== null"

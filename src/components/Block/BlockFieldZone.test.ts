@@ -164,18 +164,21 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
     expect(wrapper.find('.block-field-zone').exists()).toBe(false)
   })
 
-  it('挂标签后出现该标签的有效字段；number 直挂 NumberInput、纯 string 默认 text（D21 类型映射）', async () => {
+  it('挂标签后出现该标签的有效字段；number 直挂 NumberInput、纯 string 直挂 TextField（字段值家族）', async () => {
     const wrapper = await mountList('b1', ['t-dev'])
     const rows = wrapper.findAll('.block-field-zone-row')
     expect(rows.map(rowTitle)).toEqual(['工时', '负责人'])
-    // 工时（number）直挂 NumberInput（始终显示输入框）；负责人（纯 string）走 text 行占位
+    // 工时（number）直挂 NumberInput；负责人（纯 string）直挂 TextField（始终显示输入框）
     expect(wrapper.find('.number-input').exists()).toBe(true)
-    expect(wrapper.findAll('.block-field-zone-placeholder')).toHaveLength(1)
+    expect(wrapper.find('.text-field').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="tf-input"]').exists()).toBe(true)
+    // 纯 string 已直挂 TextField 而非 ghost 占位
+    expect(wrapper.find('.block-field-zone-chip--ghost').exists()).toBe(false)
     // 标签身份由 content 内联 chip 呈现；字段区只出字段，不重复标签名
     expect(wrapper.find('.block-field-zone').text()).not.toContain('#开发任务')
   })
 
-  it('已有值：number 直挂 NumberInput 显示数值，未填 string 字段仍留占位', async () => {
+  it('已有值：number 直挂 NumberInput 显示数值，未填 string 字段直挂 TextField（空输入框）', async () => {
     mockClient.getFieldValues.mockResolvedValue([
       fv({ id: 'v1', block_id: 'b1', key: 'estimate', value_json: '3', value_type: 'number' }),
     ])
@@ -184,7 +187,9 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
     await flushPromises()
 
     expect((wrapper.find('.number-input input').element as HTMLInputElement).value).toBe('3')
-    expect(wrapper.find('.block-field-zone-placeholder').exists()).toBe(true)
+    // 未填的纯 string 字段直挂 TextField（空输入框），不再出静态占位
+    expect(wrapper.find('.text-field').exists()).toBe(true)
+    expect((wrapper.find('[data-testid="tf-input"]').element as HTMLInputElement).value).toBe('')
   })
 
   it('多标签字段去重：同一字段只渲染一个编辑位', async () => {
@@ -585,6 +590,110 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
     wrapper.unmount()
   })
 
+  // ── 纯 string 字段：值区直挂 TextField（字段值家族补全）────────────────────────
+
+  it('纯 string 字段已有值：值区渲染 TextField，输入框显示原文', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-note', title: '笔记', field_ids: ['f-note'], effective_field_ids: ['f-note'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-note', key: 'note', title: '备注' }),
+    ])
+    mockClient.getFieldValues.mockResolvedValue([
+      fv({ id: 'v1', block_id: 'b1', key: 'note', value_json: '随手记一句' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-note'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    // 纯 string 不走 chip / 占位，直接挂 TextField
+    expect(wrapper.find('.block-field-zone-chip').exists()).toBe(false)
+    expect(wrapper.find('.block-field-zone-placeholder').exists()).toBe(false)
+    expect(wrapper.find('.text-field').exists()).toBe(true)
+    expect((wrapper.find('[data-testid="tf-input"]').element as HTMLInputElement).value).toBe('随手记一句')
+  })
+
+  it('纯 string 字段未填：值区渲染 TextField（空输入框），整行非按钮且不弹通用编辑器', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-note', title: '笔记', field_ids: ['f-note'], effective_field_ids: ['f-note'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-note', key: 'note', title: '备注' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-note'])
+    const editorStore = useEditorStore()
+
+    const row = wrapper.find('.block-field-zone-row')
+    expect(wrapper.find('.text-field').exists()).toBe(true)
+    // 未填 → 空输入框，而非 ghost chip「未填」
+    expect(wrapper.find('.block-field-zone-chip--ghost').exists()).toBe(false)
+    // 纯 string 行不是按钮（编辑由内嵌 TextField 独占，openFieldRow 早退）
+    expect(row.attributes('role')).toBeUndefined()
+
+    // 点击 TextField 输入框不应弹通用快速编辑器
+    await wrapper.find('[data-testid="tf-input"]').trigger('click')
+    expect(editorStore.quickFieldValueEditor).toBeNull()
+  })
+
+  it('纯 string 字段经 TextField 提交落库为 string 类型', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-note', title: '笔记', field_ids: ['f-note'], effective_field_ids: ['f-note'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-note', key: 'note', title: '备注' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-note'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    const fieldValueStore = useFieldValueStore()
+    const spy = vi.spyOn(fieldValueStore, 'setFieldValue').mockResolvedValue(undefined as never)
+
+    const input = wrapper.find('[data-testid="tf-input"]')
+    await input.setValue('新备注')
+    await input.trigger('blur')
+    await flushPromises()
+
+    expect(spy).toHaveBeenCalledTimes(1)
+    const [bid, key, val, type] = spy.mock.calls[0]
+    expect(bid).toBe('b1')
+    expect(key).toBe('note')
+    expect(val).toBe('新备注')
+    expect(type).toBe('string')
+    wrapper.unmount()
+  })
+
+  it('纯 string 字段清除：TextField 清除按钮走删行语义（无行即空）', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-note', title: '笔记', field_ids: ['f-note'], effective_field_ids: ['f-note'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-note', key: 'note', title: '备注' }),
+    ])
+    mockClient.getFieldValues.mockResolvedValue([
+      fv({ id: 'v1', block_id: 'b1', key: 'note', value_json: '随手记一句' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-note'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    const fieldValueStore = useFieldValueStore()
+    const setSpy = vi.spyOn(fieldValueStore, 'setFieldValue').mockResolvedValue(undefined as never)
+    const delSpy = vi.spyOn(fieldValueStore, 'deleteFieldValue').mockResolvedValue(undefined as never)
+
+    await wrapper.find('[data-testid="tf-clear"]').trigger('click')
+    await flushPromises()
+
+    expect(delSpy).toHaveBeenCalledTimes(1)
+    expect(delSpy.mock.calls[0][0]).toBe('v1')
+    expect(setSpy).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   // ── 单一权威展示位（ADR-0050 D19 / D20）────────────────────────
 
   it('块内不再有行内 chips 渲染位：chips 变体已下线', () => {
@@ -615,7 +724,8 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
     const wrapper = await mountList('b1', ['t-cat'])
     // 标题取自持久化定义（「分类」）而非 field id
     expect(wrapper.find('.block-field-zone-title').text()).toBe('分类')
-    expect(wrapper.find('.block-field-zone-value').text()).toBe('生活')
+    // 纯 string 自定义字段直挂 TextField，值落在输入框而非静态文字
+    expect((wrapper.find('[data-testid="tf-input"]').element as HTMLInputElement).value).toBe('生活')
     // 整个块内该字段只渲染一行
     expect(wrapper.findAll('.block-field-zone-row')).toHaveLength(1)
   })
