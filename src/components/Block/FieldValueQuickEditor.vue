@@ -6,9 +6,9 @@ import { useBlockCardStore } from '../../stores/blockCard'
 import type { FieldValueData } from '../../types/field-definition'
 import { getAllFieldDefinitions } from '../../types/field-definition'
 import { decodeFieldValueData } from '../../utils/field-value-codec'
-import { Icon } from '../Icons'
 import BasePopover from '@/components/common/BasePopover.vue'
 import DatePicker from '@/components/common/DatePicker.vue'
+import EnumSelect, { type EnumOption } from '@/components/common/EnumSelect.vue'
 
 const editorStore = useEditorStore()
 const fieldValueStore = useFieldValueStore()
@@ -41,9 +41,21 @@ const tagList = computed(() => {
 const newTag = ref('')
 const textValue = ref('')
 
-function handleSelectClosedValue(value: string) {
+/** 枚举（closedValues）分派：值区平铺通用枚举组件（inline），点一次选项即落库。 */
+function handleSelectClosedValue(value: string | undefined) {
+  if (value === undefined) return
   saveValue(value)
 }
+
+/** 编译期封闭选项 → EnumSelect 数据源（value/label/icon/description 原样映射）。 */
+const closedOptions = computed<EnumOption[]>(() =>
+  (currentDef.value?.closedValues ?? []).map((cv) => ({
+    value: String(cv.value),
+    label: cv.label,
+    icon: cv.icon ?? null,
+    description: cv.description ?? null,
+  })),
+)
 
 /** DatePicker（single）回传收窄：清除时为 undefined，落库空串与原生 date input 一致。 */
 function handleDateChange(v: string | [string, string] | undefined) {
@@ -184,10 +196,6 @@ watch(visible, async (v) => {
     tagInputRef.value?.focus()
   }
 })
-
-function isSvgIcon(icon: string): boolean {
-  return icon.startsWith('status-') || icon.startsWith('priority-') || icon.startsWith('icon-')
-}
 </script>
 
 <template>
@@ -197,34 +205,15 @@ function isSvgIcon(icon: string): boolean {
     @close="editorStore.hideQuickFieldValueEditor()"
   >
     <template v-if="currentDef">
-      <!-- Closed Values Dropdown (status, priority) -->
+      <!-- Closed Values Dropdown (status, priority)：通用枚举组件 inline 平铺 -->
       <template v-if="currentDef.closedValues">
-        <div
-          v-for="cv in currentDef.closedValues"
-          :key="String(cv.value as string)"
-          class="quick-option"
-          :class="{ selected: cv.value === currentValue }"
-          @click.stop="handleSelectClosedValue(cv.value as string)"
-        >
-          <span
-            v-if="cv.icon"
-            class="option-icon"
-          >
-            <Icon
-              v-if="isSvgIcon(cv.icon)"
-              :name="cv.icon"
-              :size="16"
-            />
-            <span v-else>{{ cv.icon }}</span>
-          </span>
-          <div class="option-text">
-            <span class="option-label">{{ cv.label }}</span>
-            <span
-              v-if="cv.description"
-              class="option-description"
-            >{{ cv.description }}</span>
-          </div>
-        </div>
+        <EnumSelect
+          class="quick-enum"
+          inline
+          :options="closedOptions"
+          :model-value="typeof currentValue === 'string' ? currentValue : undefined"
+          @update:model-value="handleSelectClosedValue"
+        />
       </template>
 
       <!-- Date Picker -->
@@ -355,12 +344,6 @@ function isSvgIcon(icon: string): boolean {
 
 .option-label {
   font-size: var(--text-sm);
-}
-
-.option-description {
-  margin-top: auto;
-  font-size: var(--text-xs);
-  color: #9ca3af;
 }
 
 .text-input {

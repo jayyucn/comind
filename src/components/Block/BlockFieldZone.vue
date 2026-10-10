@@ -48,6 +48,7 @@ import { decodeFieldValueData } from '../../utils/field-value-codec'
 import { isTauriEnvironment } from '../../wasm/tauri-platform'
 import { Icon } from '../Icons'
 import DatePicker, { type DatePickerValue } from '../common/DatePicker.vue'
+import EnumSelect, { type EnumOption, type EnumSelectValue } from '../common/EnumSelect.vue'
 import NumberInput, { type NumberInputValue } from '../common/NumberInput.vue'
 
 const props = withDefaults(defineProps<{
@@ -474,6 +475,65 @@ async function onNumberChange(def: PersistedFieldDefinition, value: NumberInputV
   await fieldValueStore.setFieldValue(props.blockId, def.key, value, 'number')
 }
 
+// ── 枚举字段（封闭选项）：值区直挂通用枚举组件 EnumSelect ─────────────
+
+/** 枚举字段判定：封闭选项非空即选项型（与 field-display-form 的 isOptionTypeDef 同判据）。 */
+function isEnumField(def: PersistedFieldDefinition): boolean {
+  return (def.closed_values?.length ?? 0) > 0
+}
+
+/**
+ * 枚举选项（EnumSelect 数据源）：编译期定义优先（closedValues 带 label / icon /
+ * description，如 status / priority），持久化 closed_values 字符串兜底（用户自建枚举）。
+ */
+function enumOptionsOf(def: PersistedFieldDefinition): EnumOption[] {
+  const compiled = defOf(def.key)
+  if (compiled?.closedValues?.length) {
+    return compiled.closedValues.map((cv) => ({
+      value: String(cv.value),
+      label: cv.label ?? String(cv.value),
+      icon: cv.icon ?? null,
+      description: cv.description ?? null,
+    }))
+  }
+  return (def.closed_values ?? []).map((v) => ({ value: v, label: v }))
+}
+
+/** 枚举字段的当前值（string | undefined），供 EnumSelect 绑定（undefined = 未填）。 */
+function enumValue(def: PersistedFieldDefinition): EnumSelectValue {
+  return rawValueOf(def) ?? undefined
+}
+
+/**
+ * 枚举字段取值回调（EnumSelect）：有值 → 落库为 string 类型（枚举值即字符串）；
+ * 清除（undefined）→ 删行（field-value 以「无行」表示空）。
+ * priority 沿用快捷编辑器的副作用：设优先级后 block 尚无 status 时自动补 Todo。
+ */
+async function onEnumChange(def: PersistedFieldDefinition, value: EnumSelectValue) {
+  if (value === undefined) {
+    const fv = fieldValueStore.getBlockFieldValue(props.blockId, def.key)
+    if (fv) await fieldValueStore.deleteFieldValue(fv.id, props.blockId)
+    return
+  }
+  await fieldValueStore.setFieldValue(props.blockId, def.key, value, 'string')
+  if (def.key === 'priority') {
+    // fire-and-forget：与 FieldValueQuickEditor.saveValue 同语义，失败不阻断字段值写入
+    fieldValueStore.ensureTodo(props.blockId).catch(() => {})
+  }
+}
+
+/**
+ * 行是否已挂专属内联编辑器（date / number / 枚举 chip 形态）：整行让位给控件，
+ * 行不再是点击目标（role/tabindex 均不挂），openFieldRow 对其早退。
+ */
+function rowHasInlineEditor(def: PersistedFieldDefinition): boolean {
+  return (
+    def.type === 'date'
+    || def.type === 'number'
+    || (isEnumField(def) && formOf(def) === 'chip')
+  )
+}
+
 // ── D21 形态解析与分派 ──────────────────────────────────────
 
 /** 布尔值的图标字符（icon 形态下值即 ✓/✗，无需额外图标资源） */
@@ -533,8 +593,9 @@ function onFieldActivate(event: Event, def: PersistedFieldDefinition, value?: st
 
 /** 点击 / Enter 唤起该字段的快速编辑器（锚点 = 行元素矩形）；参数取 Event 以兼容键盘触发。 */
 function openFieldRow(event: Event, def: PersistedFieldDefinition) {
-  // date / number 字段的值区已挂专属内联编辑器（DatePicker / NumberInput），不再弹通用编辑器。
-  if (def.type === 'date' || def.type === 'number') return
+  // date / number / 枚举（chip 形态）字段的值区已挂专属内联编辑器
+  // （DatePicker / NumberInput / EnumSelect），不再弹通用编辑器。
+  if (rowHasInlineEditor(def)) return
   editorStore.showQuickFieldValueEditor(props.blockId, def.key, editorPosition(event.currentTarget as HTMLElement))
 }
 
@@ -734,9 +795,9 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
       v-for="def in fields"
       :key="def.id"
       class="block-field-zone-row"
-      :role="def.type === 'date' || def.type === 'number' ? undefined : 'button'"
-      :tabindex="def.type === 'date' || def.type === 'number' ? undefined : 0"
-      :class="{ 'block-field-zone-row--orphan': orphanKeySet.has(def.key), 'block-field-zone-row--date': def.type === 'date', 'block-field-zone-row--number': def.type === 'number' }"
+      :role="rowHasInlineEditor(def) ? undefined : 'button'"
+      :tabindex="rowHasInlineEditor(def) ? undefined : 0"
+      :class="{ 'block-field-zone-row--orphan': orphanKeySet.has(def.key), 'block-field-zone-row--inline-editor': rowHasInlineEditor(def) }"
       :data-field="def.key"
       @click="openFieldRow($event, def)"
       @keydown.enter="openFieldRow($event, def)"
@@ -776,7 +837,19 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
           />
         </template>
 
-        <!-- chip 形态：枚举 / date / array（chip 序列）/ page（引用 chip）/ number（徽章）。
+        <!-- 枚举字段（封闭选项 + chip 形态）：值区直挂通用枚举组件 EnumSelect，
+             选项取编译期定义（label/icon/description）优先、持久化 closed_values 兜底；
+             触发按钮自带 @click.stop 不触发整行快速编辑器，清除走删行语义。 -->
+        <template v-else-if="isEnumField(def) && formOf(def) === 'chip'">
+          <EnumSelect
+            :options="enumOptionsOf(def)"
+            :model-value="enumValue(def)"
+            placeholder="未填"
+            @update:model-value="onEnumChange(def, $event)"
+          />
+        </template>
+
+        <!-- chip 形态（非枚举）：date / array（chip 序列）/ page（引用 chip）/ number（徽章）。
              字段名已在左列，chip 本体不再内嵌标题。 -->
         <template v-else-if="formOf(def) === 'chip'">
           <template v-if="chipValues(def)">
@@ -1072,17 +1145,16 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
   padding: 2px 6px;
 
   /* 行 hover 底只给「真可点」的行：整行点一下开快速编辑器。
-     date / number 行不是点击目标（openFieldRow 对二者提前 return，编辑由内嵌
-     DatePicker / NumberInput 独占），故排除其行 hover，避免「行底 + 控件 hover」
-     在暗色下并档糊成一片。 */
-  &:not(.block-field-zone-row--date):not(.block-field-zone-row--number):hover {
+     date / number / 枚举行不是点击目标（openFieldRow 对三者早退，编辑由内嵌
+     DatePicker / NumberInput / EnumSelect 独占），故排除其行 hover，避免
+     「行底 + 控件 hover」在暗色下并档糊成一片。 */
+  &:not(.block-field-zone-row--inline-editor):hover {
     background: var(--surface-subtle);
   }
 }
 
-/* date / number 行非按钮：光标回默认，焦点交给内嵌控件（DatePicker 触发器 / NumberInput 输入框）。 */
-.block-field-zone-row--date,
-.block-field-zone-row--number {
+/* date / number / 枚举行非按钮：光标回默认，焦点交给内嵌控件。 */
+.block-field-zone-row--inline-editor {
   cursor: default;
 }
 

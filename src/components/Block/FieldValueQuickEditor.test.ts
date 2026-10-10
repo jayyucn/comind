@@ -197,7 +197,8 @@ describe('FieldValueQuickEditor — project/area 搜索列表分支', () => {
     const wrapper = mountEditor()
 
     expect(wrapper.find('.project-list').exists()).toBe(false)
-    expect(wrapper.find('.quick-option').exists()).toBe(true)
+    // status 走通用枚举组件（EnumSelect inline 平铺选项列表）
+    expect(wrapper.find('.es-option').exists()).toBe(true)
   })
 })
 
@@ -212,8 +213,8 @@ describe('FieldValueQuickEditor — 设置优先级自动补 Todo', () => {
     mockStores({ cards: [card('b1')], currentValue: '' })
     const wrapper = mountEditor()
 
-    // priority 走 closedValues 下拉，点击第一个选项（如 High）
-    await wrapper.find('.quick-option').trigger('click')
+    // priority 走通用枚举组件（inline 平铺选项列表），点击第一个选项（如 Urgent）
+    await wrapper.find('.es-option').trigger('click')
     await flushPromises()
 
     const store = vi.mocked(useFieldValueStore())

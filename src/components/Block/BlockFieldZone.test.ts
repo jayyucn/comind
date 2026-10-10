@@ -218,7 +218,7 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
 
   // ── D21 形态分派（决策 1 / 5 / 7）────────────────────────────
 
-  it('枚举字段（closed_values）默认 chip：值取选项原文，有值不出 ghost', async () => {
+  it('枚举字段：值区直挂 EnumSelect，触发按钮显示当前选项原文', async () => {
     mockClient.getTagTree.mockResolvedValue([
       treeEntry({ id: 't-r', title: '评级', field_ids: ['f-rating'], effective_field_ids: ['f-rating'] }),
     ])
@@ -233,20 +233,20 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
     await useFieldValueStore().loadBlockFieldValues('b1')
     await flushPromises()
 
-    const chip = wrapper.find('.block-field-zone-chip')
-    expect(chip.exists()).toBe(true)
-    // 两列网格布局（2026-10-09）：字段名在行左列，chip 本体不再内嵌标题
-    expect(chip.find('.bfz-chip-title').exists()).toBe(false)
-    expect(chip.find('.bfz-chip-value').text()).toBe('A')
-    expect(chip.classes()).not.toContain('block-field-zone-chip--ghost')
+    // 枚举字段不再走 chip / 通用编辑器，直接挂 EnumSelect
+    expect(wrapper.find('.block-field-zone-chip').exists()).toBe(false)
+    const trigger = wrapper.find('[data-testid="es-trigger"]')
+    expect(trigger.exists()).toBe(true)
+    expect(trigger.find('.es-text').text()).toBe('A')
+    expect(trigger.classes()).not.toContain('es-placeholder')
   })
 
-  it('chip 字段无值 → 虚线 ghost 胶囊「未填」，点击即录入（决策 7）', async () => {
+  it('chip 字段（array）无值 → 虚线 ghost 胶囊「未填」，点击即录入（决策 7；枚举字段已改直挂 EnumSelect，占位代替 ghost）', async () => {
     mockClient.getTagTree.mockResolvedValue([
       treeEntry({ id: 't-r', title: '评级', field_ids: ['f-rating'], effective_field_ids: ['f-rating'] }),
     ])
     mockClient.getFieldDefinitions.mockResolvedValue([
-      fieldDef({ id: 'f-rating', key: 'rating', title: '评级', closed_values: ['S', 'A'] }),
+      fieldDef({ id: 'f-rating', key: 'rating', title: '评级', type: 'array' }),
     ])
 
     const wrapper = await mountList('b1', ['t-r'])
@@ -298,12 +298,12 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
     expect(wrapper.find('.block-field-zone-value').text()).toBe('A')
   })
 
-  it('chip 点击唤起既有快捷字段值编辑器', async () => {
+  it('chip 点击唤起既有快捷字段值编辑器（array 等 chip 字段；枚举字段已改直挂 EnumSelect）', async () => {
     mockClient.getTagTree.mockResolvedValue([
       treeEntry({ id: 't-r', title: '评级', field_ids: ['f-rating'], effective_field_ids: ['f-rating'] }),
     ])
     mockClient.getFieldDefinitions.mockResolvedValue([
-      fieldDef({ id: 'f-rating', key: 'rating', title: '评级', closed_values: ['S', 'A'] }),
+      fieldDef({ id: 'f-rating', key: 'rating', title: '评级', type: 'array' }),
     ])
     const wrapper = await mountList('b1', ['t-r'])
     const editorStore = useEditorStore()
@@ -312,6 +312,95 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
 
     expect(editorStore.quickFieldValueEditor?.blockId).toBe('b1')
     expect(editorStore.quickFieldValueEditor?.key).toBe('rating')
+  })
+
+  // ── 枚举字段：值区直挂通用枚举组件 EnumSelect ──────────────────
+
+  it('枚举字段未填：EnumSelect 占位「未填」，整行非按钮，点击展开选项面板且不弹通用编辑器', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-r', title: '评级', field_ids: ['f-rating'], effective_field_ids: ['f-rating'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-rating', key: 'rating', title: '评级', closed_values: ['S', 'A'] }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-r'])
+    const editorStore = useEditorStore()
+
+    const row = wrapper.find('.block-field-zone-row')
+    const trigger = wrapper.find('[data-testid="es-trigger"]')
+    expect(trigger.exists()).toBe(true)
+    expect(trigger.find('.es-text').text()).toBe('未填')
+    expect(trigger.classes()).toContain('es-placeholder')
+    // 未填 → 占位文案，而非 ghost chip「未填」
+    expect(wrapper.find('.block-field-zone-chip--ghost').exists()).toBe(false)
+    // 枚举行不是按钮（编辑由内嵌 EnumSelect 独占，openFieldRow 早退）
+    expect(row.attributes('role')).toBeUndefined()
+
+    // EnumSelect 触发按钮自带 @click.stop，点击不应触发整行快速编辑器
+    await trigger.trigger('click')
+    await flushPromises()
+    expect(editorStore.quickFieldValueEditor).toBeNull()
+    // 选项面板 Teleport 到 body 展开
+    expect(document.body.querySelector('.es-panel')).not.toBeNull()
+    wrapper.unmount()
+  })
+
+  it('枚举字段经 EnumSelect 选选项落库为 string 类型', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-r', title: '评级', field_ids: ['f-rating'], effective_field_ids: ['f-rating'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-rating', key: 'rating', title: '评级', closed_values: ['S', 'A', 'B'] }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-r'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    const fieldValueStore = useFieldValueStore()
+    const spy = vi.spyOn(fieldValueStore, 'setFieldValue').mockResolvedValue(undefined as never)
+
+    await wrapper.find('[data-testid="es-trigger"]').trigger('click')
+    await flushPromises()
+    ;(document.body.querySelectorAll('.es-option')[0] as HTMLElement).click()
+    await flushPromises()
+
+    expect(spy).toHaveBeenCalledTimes(1)
+    const [bid, key, val, type] = spy.mock.calls[0]
+    expect(bid).toBe('b1')
+    expect(key).toBe('rating')
+    expect(val).toBe('S')
+    expect(type).toBe('string')
+    wrapper.unmount()
+  })
+
+  it('枚举字段清除：EnumSelect 清除按钮走删行语义（无行即空）', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-r', title: '评级', field_ids: ['f-rating'], effective_field_ids: ['f-rating'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-rating', key: 'rating', title: '评级', closed_values: ['S', 'A'] }),
+    ])
+    mockClient.getProperties.mockResolvedValue([
+      fv({ id: 'v1', block_id: 'b1', key: 'rating', value_json: 'A' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-r'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    const fieldValueStore = useFieldValueStore()
+    const setSpy = vi.spyOn(fieldValueStore, 'setFieldValue').mockResolvedValue(undefined as never)
+    const delSpy = vi.spyOn(fieldValueStore, 'deleteFieldValue').mockResolvedValue(undefined as never)
+
+    await wrapper.find('.es-clear').trigger('click')
+    await flushPromises()
+
+    expect(delSpy).toHaveBeenCalledTimes(1)
+    expect(delSpy.mock.calls[0][0]).toBe('v1')
+    expect(setSpy).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   // ── date 类型字段值区挂 DatePicker（single）───────────────────

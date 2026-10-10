@@ -403,11 +403,22 @@ function clearValue() {
   line-height: 1;
   padding: 0 2px;
   border-radius: 4px;
+  /* 仅 hover 触发按钮时显示（透明占位避免宽度跳动）；隐形态必须 pointer-events:none */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-base) var(--ease-out);
 
   &:hover {
     color: var(--error);
     background: var(--bg-hover);
   }
+}
+
+.dp-trigger:hover .dp-clear,
+.dp-trigger.open .dp-clear,
+.dp-clear:hover {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* 浮动面板：Teleport 到 body，fixed 定位（避免被 FilterBuilder 面板 overflow 裁切） */
