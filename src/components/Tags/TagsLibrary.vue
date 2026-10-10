@@ -585,6 +585,31 @@ async function onChangeForm(def: PersistedFieldDefinition, next: string) {
   await tagsStore.updateFieldDefinition({ id: def.id, display_form_override: next })
 }
 
+// ── 数值约束（ADR-0055 D5）：min / max / step，仅数值型可编辑字段 ──
+
+type ConstraintKey = 'min' | 'max' | 'step'
+
+/**
+ * 数值约束落库：空串 → null（即「无约束」）；非数值输入由原生 number 输入拦截。
+ * 仅在值真变化时写，避免无谓落库（与 onChangeHide / onChangeForm 同构）。
+ */
+async function onChangeConstraint(
+  def: PersistedFieldDefinition,
+  key: ConstraintKey,
+  e: Event,
+) {
+  const raw = (e.target as HTMLInputElement).value.trim()
+  const value = raw === '' ? null : Number(raw)
+  const current = (def[key] ?? null) as number | null
+  if (current === (value ?? null)) return
+  // 显式分派避免计算键拓宽类型（保证落库参数精确到 min/max/step）。
+  const patch: { id: string; min?: number | null; max?: number | null; step?: number | null } = {
+    id: def.id,
+  }
+  patch[key] = value
+  await tagsStore.updateFieldDefinition(patch)
+}
+
 // ── 枚举选项面板（挂在「默认」列，BasePopover） ──────────────────
 
 const enumPanelOpen = ref(false)
@@ -1296,6 +1321,49 @@ async function submitAddField() {
                   v-else
                   class="tag-field-ops"
                 />
+              </div>
+
+              <!-- 数值约束（ADR-0055 D5）：仅数值型字段出现；min / max / step，空 = 无约束 -->
+              <div
+                v-if="row.def.type === 'number'"
+                class="tag-field-constraints"
+              >
+                <label class="tfc-item">
+                  <span class="tfc-label">最小</span>
+                  <input
+                    class="tfc-input"
+                    type="number"
+                    step="any"
+                    :value="row.def.min ?? ''"
+                    :disabled="!canEditField(row)"
+                    :aria-label="`最小约束：${row.def.title}`"
+                    @change="onChangeConstraint(row.def, 'min', $event)"
+                  >
+                </label>
+                <label class="tfc-item">
+                  <span class="tfc-label">最大</span>
+                  <input
+                    class="tfc-input"
+                    type="number"
+                    step="any"
+                    :value="row.def.max ?? ''"
+                    :disabled="!canEditField(row)"
+                    :aria-label="`最大约束：${row.def.title}`"
+                    @change="onChangeConstraint(row.def, 'max', $event)"
+                  >
+                </label>
+                <label class="tfc-item">
+                  <span class="tfc-label">步进</span>
+                  <input
+                    class="tfc-input"
+                    type="number"
+                    step="any"
+                    :value="row.def.step ?? ''"
+                    :disabled="!canEditField(row)"
+                    :aria-label="`步进约束：${row.def.title}`"
+                    @change="onChangeConstraint(row.def, 'step', $event)"
+                  >
+                </label>
               </div>
             </div>
             <p
@@ -2337,6 +2405,51 @@ async function submitAddField() {
 
 .tag-field-ops {
   width: 20px;
+}
+
+/* 数值约束子行（ADR-0055 D5）：仅数值型字段出现，min / max / step 三连 */
+.tag-field-constraints {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding-top: var(--space-1);
+  margin-top: var(--space-1);
+  border-top: 1px dashed var(--border);
+  color: var(--text-tertiary);
+}
+
+.tfc-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-xs);
+}
+
+.tfc-label {
+  white-space: nowrap;
+  color: var(--text-tertiary);
+}
+
+.tfc-input {
+  width: 64px;
+  padding: 2px 4px;
+  font-size: var(--text-xs);
+  font-family: inherit;
+  color: var(--text-primary);
+  background: var(--bg-base2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  outline: none;
+
+  &:focus {
+    border-color: var(--accent, #6366f1);
+  }
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
 }
 
 /* 枚举字段的「默认」列是个下拉触发器：选项（可增 / 删 / 改）就在这个面板里 */

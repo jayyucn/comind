@@ -48,6 +48,7 @@ import { decodeFieldValueData } from '../../utils/field-value-codec'
 import { isTauriEnvironment } from '../../wasm/tauri-platform'
 import { Icon } from '../Icons'
 import DatePicker, { type DatePickerValue } from '../common/DatePicker.vue'
+import NumberInput, { type NumberInputValue } from '../common/NumberInput.vue'
 
 const props = withDefaults(defineProps<{
   blockId: string
@@ -452,6 +453,27 @@ async function onDateChange(def: PersistedFieldDefinition, value: DatePickerValu
   }
 }
 
+/** number 类型字段的当前值（number | undefined），供 NumberInput 绑定。 */
+function numberValue(def: PersistedFieldDefinition): number | undefined {
+  const fv = fieldValueStore.getBlockFieldValue(props.blockId, def.key)
+  if (!fv) return undefined
+  const v = dataOf(fv)
+  return typeof v === 'number' ? v : undefined
+}
+
+/**
+ * number 字段取值回调（NumberInput）：有值 → 落库为 number 类型；
+ * 清除（undefined）→ 删行（field-value 以「无行」表示空）。
+ */
+async function onNumberChange(def: PersistedFieldDefinition, value: NumberInputValue) {
+  if (value === undefined) {
+    const fv = fieldValueStore.getBlockFieldValue(props.blockId, def.key)
+    if (fv) await fieldValueStore.deleteFieldValue(fv.id, props.blockId)
+    return
+  }
+  await fieldValueStore.setFieldValue(props.blockId, def.key, value, 'number')
+}
+
 // ── D21 形态解析与分派 ──────────────────────────────────────
 
 /** 布尔值的图标字符（icon 形态下值即 ✓/✗，无需额外图标资源） */
@@ -511,8 +533,8 @@ function onFieldActivate(event: Event, def: PersistedFieldDefinition, value?: st
 
 /** 点击 / Enter 唤起该字段的快速编辑器（锚点 = 行元素矩形）；参数取 Event 以兼容键盘触发。 */
 function openFieldRow(event: Event, def: PersistedFieldDefinition) {
-  // date 字段的值区已挂 DatePicker（single 模式）作为专属编辑器，不再弹通用编辑器。
-  if (def.type === 'date') return
+  // date / number 字段的值区已挂专属内联编辑器（DatePicker / NumberInput），不再弹通用编辑器。
+  if (def.type === 'date' || def.type === 'number') return
   editorStore.showQuickFieldValueEditor(props.blockId, def.key, editorPosition(event.currentTarget as HTMLElement))
 }
 
@@ -712,9 +734,9 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
       v-for="def in fields"
       :key="def.id"
       class="block-field-zone-row"
-      :role="def.type === 'date' ? undefined : 'button'"
-      :tabindex="def.type === 'date' ? undefined : 0"
-      :class="{ 'block-field-zone-row--orphan': orphanKeySet.has(def.key), 'block-field-zone-row--date': def.type === 'date' }"
+      :role="def.type === 'date' || def.type === 'number' ? undefined : 'button'"
+      :tabindex="def.type === 'date' || def.type === 'number' ? undefined : 0"
+      :class="{ 'block-field-zone-row--orphan': orphanKeySet.has(def.key), 'block-field-zone-row--date': def.type === 'date', 'block-field-zone-row--number': def.type === 'number' }"
       :data-field="def.key"
       @click="openFieldRow($event, def)"
       @keydown.enter="openFieldRow($event, def)"
@@ -738,6 +760,19 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
             mode="single"
             placeholder="选择日期"
             @update:model-value="onDateChange(def, $event)"
+          />
+        </template>
+
+        <!-- number 类型字段：值区直接挂 NumberInput（内联输入 + ± 步进），
+             约束来自字段定义（min/max/step），清除走删行语义（ADR-0055）。 -->
+        <template v-else-if="def.type === 'number'">
+          <NumberInput
+            :model-value="numberValue(def)"
+            :min="def.min"
+            :max="def.max"
+            :step="def.step"
+            placeholder="输入数值"
+            @update:model-value="onNumberChange(def, $event)"
           />
         </template>
 
@@ -1037,15 +1072,17 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
   padding: 2px 6px;
 
   /* 行 hover 底只给「真可点」的行：整行点一下开快速编辑器。
-     date 行不是点击目标（openFieldRow 对 date 提前 return，编辑由内嵌 DatePicker 独占），
-     故排除其行 hover，避免「行底 + 控件 hover」在暗色下并档糊成一片。 */
-  &:not(.block-field-zone-row--date):hover {
+     date / number 行不是点击目标（openFieldRow 对二者提前 return，编辑由内嵌
+     DatePicker / NumberInput 独占），故排除其行 hover，避免「行底 + 控件 hover」
+     在暗色下并档糊成一片。 */
+  &:not(.block-field-zone-row--date):not(.block-field-zone-row--number):hover {
     background: var(--surface-subtle);
   }
 }
 
-/* date 行非按钮：光标回默认，焦点交给内嵌的 DatePicker 触发器（原生 button）。 */
-.block-field-zone-row--date {
+/* date / number 行非按钮：光标回默认，焦点交给内嵌控件（DatePicker 触发器 / NumberInput 输入框）。 */
+.block-field-zone-row--date,
+.block-field-zone-row--number {
   cursor: default;
 }
 

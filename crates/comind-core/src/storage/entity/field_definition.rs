@@ -17,7 +17,7 @@ use crate::storage::executor::Executor;
 pub const FIELD_DEFINITION_COLS: &[&str] = &[
     "id", "key", "title", "type", "closed_values", "is_system",
     "created_at", "updated_at", "version", "deleted_at", "default_value", "hide_when",
-    "is_preset", "display_form_override",
+    "is_preset", "display_form_override", "min", "max", "step",
 ];
 
 pub fn field_definition_select_cols() -> String {
@@ -53,6 +53,9 @@ pub fn row_to_field_definition_native(row: &rusqlite::Row) -> Result<FieldDefini
         display_form_override: crate::types::field_definition::normalize_display_form_override(
             &row.get::<_, String>(13)?,
         ),
+        min: row.get::<_, Option<f64>>(14)?,
+        max: row.get::<_, Option<f64>>(15)?,
+        step: row.get::<_, Option<f64>>(16)?,
     })
 }
 
@@ -95,6 +98,15 @@ pub fn row_to_field_definition_js(row: &HashMap<String, String>) -> FieldDefinit
         display_form_override: crate::types::field_definition::normalize_display_form_override(
             &row.get("display_form_override").cloned().unwrap_or_default(),
         ),
+        min: row
+            .get("min")
+            .and_then(|s| if s.is_empty() { None } else { s.parse::<f64>().ok() }),
+        max: row
+            .get("max")
+            .and_then(|s| if s.is_empty() { None } else { s.parse::<f64>().ok() }),
+        step: row
+            .get("step")
+            .and_then(|s| if s.is_empty() { None } else { s.parse::<f64>().ok() }),
     }
 }
 
@@ -168,6 +180,9 @@ pub fn field_definition_create<E: Executor>(exec: &E, fd: &FieldDefinition) -> R
         &fd.hide_when,
         &is_preset_i64,
         &fd.display_form_override,
+        &fd.min,
+        &fd.max,
+        &fd.step,
     ];
     exec.execute(&field_definition_insert_sql(), &params)?;
     Ok(())
@@ -177,7 +192,7 @@ pub fn field_definition_create<E: Executor>(exec: &E, fd: &FieldDefinition) -> R
 pub fn field_definition_update<E: Executor>(exec: &E, fd: &FieldDefinition) -> Result<(), Box<dyn Error>> {
     let closed_values_json = closed_values_to_sql(&fd.closed_values);
     let is_system_i64 = if fd.is_system { 1i64 } else { 0i64 };
-    let sql = "UPDATE FieldDefinition SET key = ?2, title = ?3, type = ?4, closed_values = ?5, is_system = ?6, default_value = ?7, hide_when = ?8, display_form_override = ?9, updated_at = ?10, version = version + 1 \
+    let sql = "UPDATE FieldDefinition SET key = ?2, title = ?3, type = ?4, closed_values = ?5, is_system = ?6, default_value = ?7, hide_when = ?8, display_form_override = ?9, updated_at = ?10, min = ?11, max = ?12, step = ?13, version = version + 1 \
                WHERE id = ?1";
     let params: Vec<&dyn ToSql> = vec![
         &fd.id,
@@ -190,6 +205,9 @@ pub fn field_definition_update<E: Executor>(exec: &E, fd: &FieldDefinition) -> R
         &fd.hide_when,
         &fd.display_form_override,
         &fd.updated_at,
+        &fd.min,
+        &fd.max,
+        &fd.step,
     ];
     exec.execute(sql, &params)?;
     Ok(())
@@ -314,6 +332,9 @@ mod tests {
         m.insert("updated_at".to_string(), "2".to_string());
         m.insert("version".to_string(), "5".to_string());
         m.insert("deleted_at".to_string(), "".to_string());
+        m.insert("min".to_string(), "0".to_string());
+        m.insert("max".to_string(), "100".to_string());
+        m.insert("step".to_string(), "5".to_string());
         let fd = row_to_field_definition_js(&m);
         assert_eq!(fd.id, "f1");
         assert_eq!(fd.key, "status");
@@ -324,6 +345,29 @@ mod tests {
         assert_eq!(fd.deleted_at, None);
         // 旧 JSON 行缺 hide_when → 归一为 never（隐藏规则不误伤既有数据）
         assert_eq!(fd.hide_when, "never");
+        // ADR-0055 D5：数值约束 REAL 列按名读取，空串 → None
+        assert_eq!(fd.min, Some(0.0));
+        assert_eq!(fd.max, Some(100.0));
+        assert_eq!(fd.step, Some(5.0));
+    }
+
+    #[test]
+    fn row_to_field_definition_js_empty_constraints_are_none() {
+        // 存量数值字段行缺 min/max/step 列（迁移前）或值为空 → None，UI 退化为无边界。
+        let mut m = HashMap::new();
+        m.insert("id".to_string(), "f3".to_string());
+        let fd = row_to_field_definition_js(&m);
+        assert_eq!(fd.min, None);
+        assert_eq!(fd.max, None);
+        assert_eq!(fd.step, None);
+        // 空串同样归 None
+        m.insert("min".to_string(), "".to_string());
+        m.insert("max".to_string(), "".to_string());
+        m.insert("step".to_string(), "".to_string());
+        let fd = row_to_field_definition_js(&m);
+        assert_eq!(fd.min, None);
+        assert_eq!(fd.max, None);
+        assert_eq!(fd.step, None);
     }
 
     #[test]

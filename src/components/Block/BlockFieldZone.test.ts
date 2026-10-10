@@ -164,18 +164,18 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
     expect(wrapper.find('.block-field-zone').exists()).toBe(false)
   })
 
-  it('挂标签后出现该标签的有效字段；number 默认 chip、纯 string 默认 text（D21 类型映射）', async () => {
+  it('挂标签后出现该标签的有效字段；number 直挂 NumberInput、纯 string 默认 text（D21 类型映射）', async () => {
     const wrapper = await mountList('b1', ['t-dev'])
     const rows = wrapper.findAll('.block-field-zone-row')
     expect(rows.map(rowTitle)).toEqual(['工时', '负责人'])
-    // 工时（number）走 chip 形态且无值 → ghost；负责人（纯 string）走 text 行占位
-    expect(wrapper.find('.block-field-zone-chip--ghost').exists()).toBe(true)
+    // 工时（number）直挂 NumberInput（始终显示输入框）；负责人（纯 string）走 text 行占位
+    expect(wrapper.find('.number-input').exists()).toBe(true)
     expect(wrapper.findAll('.block-field-zone-placeholder')).toHaveLength(1)
     // 标签身份由 content 内联 chip 呈现；字段区只出字段，不重复标签名
     expect(wrapper.find('.block-field-zone').text()).not.toContain('#开发任务')
   })
 
-  it('已有值：number 以 chip 呈现，未填 string 字段仍留占位', async () => {
+  it('已有值：number 直挂 NumberInput 显示数值，未填 string 字段仍留占位', async () => {
     mockClient.getProperties.mockResolvedValue([
       fv({ id: 'v1', block_id: 'b1', key: 'estimate', value_json: '3', value_type: 'number' }),
     ])
@@ -183,7 +183,7 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
     await useFieldValueStore().loadBlockFieldValues('b1')
     await flushPromises()
 
-    expect(wrapper.find('.block-field-zone-chip .bfz-chip-value').text()).toBe('3')
+    expect((wrapper.find('.number-input input').element as HTMLInputElement).value).toBe('3')
     expect(wrapper.find('.block-field-zone-placeholder').exists()).toBe(true)
   })
 
@@ -299,13 +299,19 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
   })
 
   it('chip 点击唤起既有快捷字段值编辑器', async () => {
-    const wrapper = await mountList('b1', ['t-dev'])
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-r', title: '评级', field_ids: ['f-rating'], effective_field_ids: ['f-rating'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-rating', key: 'rating', title: '评级', closed_values: ['S', 'A'] }),
+    ])
+    const wrapper = await mountList('b1', ['t-r'])
     const editorStore = useEditorStore()
 
     await wrapper.find('.block-field-zone-chip').trigger('click')
 
     expect(editorStore.quickFieldValueEditor?.blockId).toBe('b1')
-    expect(editorStore.quickFieldValueEditor?.key).toBe('estimate')
+    expect(editorStore.quickFieldValueEditor?.key).toBe('rating')
   })
 
   // ── date 类型字段值区挂 DatePicker（single）───────────────────
@@ -383,6 +389,110 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
     expect(type).toBe('date')
     expect(typeof val).toBe('string')
     expect(/^\d{4}-\d{2}-\d{2}$/.test(val as string)).toBe(true)
+    wrapper.unmount()
+  })
+
+  // ── number 字段：值区直挂 NumberInput（ADR-0055）────────────────────────
+
+  it('number 字段已有值：值区渲染 NumberInput，输入框显示数值原文', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-num', title: '计量', field_ids: ['f-num'], effective_field_ids: ['f-num'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-num', key: 'count', title: '数量', type: 'number' }),
+    ])
+    mockClient.getProperties.mockResolvedValue([
+      fv({ id: 'v1', block_id: 'b1', key: 'count', value_json: '42', value_type: 'number' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-num'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    // number 字段不走 chip，直接挂 NumberInput
+    expect(wrapper.find('.block-field-zone-chip').exists()).toBe(false)
+    expect(wrapper.find('.number-input').exists()).toBe(true)
+    expect((wrapper.find('.number-input input').element as HTMLInputElement).value).toBe('42')
+  })
+
+  it('number 字段未填：值区渲染 NumberInput（占位），整行非按钮且不弹通用编辑器', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-num', title: '计量', field_ids: ['f-num'], effective_field_ids: ['f-num'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-num', key: 'count', title: '数量', type: 'number' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-num'])
+    const editorStore = useEditorStore()
+
+    const row = wrapper.find('.block-field-zone-row')
+    expect(wrapper.find('.number-input').exists()).toBe(true)
+    // 未填 → 占位输入框，而非 ghost chip「未填」
+    expect(wrapper.find('.block-field-zone-chip--ghost').exists()).toBe(false)
+    // number 行不是按钮（编辑由内嵌 NumberInput 独占，openFieldRow 早退）
+    expect(row.attributes('role')).toBeUndefined()
+
+    // 点击 NumberInput 区域不应弹通用快速编辑器
+    await wrapper.find('.number-input input').trigger('click')
+    expect(editorStore.quickFieldValueEditor).toBeNull()
+  })
+
+  it('number 字段经 NumberInput 步进落库为 number 类型', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-num', title: '计量', field_ids: ['f-num'], effective_field_ids: ['f-num'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-num', key: 'count', title: '数量', type: 'number' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-num'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    const fieldValueStore = useFieldValueStore()
+    const spy = vi.spyOn(fieldValueStore, 'setFieldValue').mockResolvedValue(undefined as never)
+
+    // 无 step → 步进 +1；从空值(0) 出发（最后一个 .ni-step 为「+」）
+    await wrapper.findAll('.ni-step')[1].trigger('click')
+    await flushPromises()
+
+    expect(spy).toHaveBeenCalledTimes(1)
+    const [bid, key, val, type] = spy.mock.calls[0]
+    expect(bid).toBe('b1')
+    expect(key).toBe('count')
+    expect(type).toBe('number')
+    expect(val).toBe(1)
+    wrapper.unmount()
+  })
+
+  it('number 字段带 min/max/step：失焦就近取整并夹边界', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-num', title: '计量', field_ids: ['f-num'], effective_field_ids: ['f-num'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-num', key: 'count', title: '数量', type: 'number', min: 0, max: 10, step: 5 }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-num'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    const fieldValueStore = useFieldValueStore()
+    const spy = vi.spyOn(fieldValueStore, 'setFieldValue').mockResolvedValue(undefined as never)
+
+    // 输入 7 → 失焦 → step=5 就近取整到 5（基准 min=0），且不超 max
+    const input = wrapper.find('.number-input input')
+    await input.setValue('7')
+    await input.trigger('blur')
+    await flushPromises()
+
+    expect(spy).toHaveBeenCalledTimes(1)
+    const [bid, key, val, type] = spy.mock.calls[0]
+    expect(bid).toBe('b1')
+    expect(key).toBe('count')
+    expect(type).toBe('number')
+    expect(val).toBe(5)
     wrapper.unmount()
   })
 

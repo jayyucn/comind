@@ -640,6 +640,9 @@ fn test_set_tags_auto_fills_field_defaults_for_new_tags() -> Result<(), Box<dyn 
             closed_values: None,
             default_value: Some("8".to_string()),
             is_system: false,
+            min: None,
+            max: None,
+            step: None,
         },
     )?;
 

@@ -630,6 +630,9 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
                         .get("is_system")
                         .and_then(|v| v.as_bool())
                         .unwrap_or(false),
+                    min: optional_f64_param(&params, "min"),
+                    max: optional_f64_param(&params, "max"),
+                    step: optional_f64_param(&params, "step"),
                 },
             )?;
             Ok(OpEffect {
@@ -666,6 +669,16 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
             if let Some(f) = params.get("display_form_override").and_then(|v| v.as_str()) {
                 fd.display_form_override =
                     crate::types::field_definition::normalize_display_form_override(f);
+            }
+            // 数值约束（ADR-0055 D5）：min / max / step。键存在才改动；null / 非数字 → 清除约束。
+            if params.get("min").is_some() {
+                fd.min = optional_f64_param(&params, "min");
+            }
+            if params.get("max").is_some() {
+                fd.max = optional_f64_param(&params, "max");
+            }
+            if params.get("step").is_some() {
+                fd.step = optional_f64_param(&params, "step");
             }
             let updated =
                 repository::FieldDefinitionRepository::update(storage.field_definitions(), &fd)?;
@@ -800,4 +813,23 @@ fn optional_str_array_param(params: &Value, key: &str) -> Option<Vec<String>> {
             .filter_map(|v| v.as_str().map(|s| s.to_string()))
             .collect()
     })
+}
+
+/// 可选浮点参数（ADR-0055 D5）：数值字段约束 min/max/step。
+/// **缺失 / null / 非数字 → None**（无约束）；JSON 数字或数字字符串均可解析。
+/// update 里「键存在但为 null/非数字」= 清除该约束；create 里 None = 无约束。
+fn optional_f64_param(params: &Value, key: &str) -> Option<f64> {
+    match params.get(key) {
+        None => None,
+        Some(Value::Null) => None,
+        Some(v) => {
+            if let Some(n) = v.as_f64() {
+                Some(n)
+            } else if let Some(s) = v.as_str() {
+                s.parse::<f64>().ok()
+            } else {
+                None
+            }
+        }
+    }
 }

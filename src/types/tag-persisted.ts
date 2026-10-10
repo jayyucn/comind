@@ -58,6 +58,10 @@ export interface PersistedFieldDefinition {
    * text / chip。`auto` = 跟随类型默认映射；系统字段不可配，恒 `auto`（决策 6）。
    */
   display_form_override?: string | null
+  /** 数值约束（ADR-0055）：仅 type==='number' 生效；null = 无约束。经字段管理面板配置后落库。 */
+  min?: number | null
+  max?: number | null
+  step?: number | null
   is_system: boolean
   /**
    * 预设标记（ADR-0049 系统标签三态模型，2026-09-30）：域字段（project/area/book/...）
@@ -132,6 +136,10 @@ export type CreateFieldDefinitionParams = {
   closed_values?: string[] | null
   /** 字段默认值（JSON 文本）；缺省 = 无默认 */
   default_value?: string | null
+  /** 数值字段约束（ADR-0055 D5）：下界 / 上界 / 步进；缺省 = 无约束 */
+  min?: number | null
+  max?: number | null
+  step?: number | null
 }
 
 export type UpdateFieldDefinitionParams = {
@@ -146,6 +154,10 @@ export type UpdateFieldDefinitionParams = {
   hide_when?: string
   /** 展示形态覆盖（ADR-0050 D21 决策 5）；Rust 侧按白名单归一，未知值回落 auto */
   display_form_override?: string
+  /** 数值字段约束（ADR-0055 D5）：下界 / 上界 / 步进；显式传 null 清空约束，不传保持原值 */
+  min?: number | null
+  max?: number | null
+  step?: number | null
 }
 
 export type CreateFieldValueParams = {

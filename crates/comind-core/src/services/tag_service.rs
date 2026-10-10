@@ -709,6 +709,9 @@ mod tests {
                     closed_values: None,
                     default_value: None,
                     is_system: false,
+                    min: None,
+                    max: None,
+                    step: None,
                 },
             )
             .unwrap()

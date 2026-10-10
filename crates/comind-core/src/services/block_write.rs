@@ -465,6 +465,9 @@ mod tests {
                 closed_values: None,
                 default_value: Some("\"待办\"".to_string()),
                 is_system: false,
+                min: None,
+                max: None,
+                step: None,
             },
         )
         .unwrap();

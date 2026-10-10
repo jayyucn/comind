@@ -54,6 +54,9 @@ impl FieldValueService {
             updated_at: now,
             version: 0,
             deleted_at: None,
+            min: None,
+            max: None,
+            step: None,
         };
         repository::FieldDefinitionRepository::create(storage.field_definitions(), &fd)?;
         Ok(fd)

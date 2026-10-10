@@ -302,7 +302,10 @@ impl SQLiteAdapter {
                 default_value   TEXT,
                 hide_when       TEXT NOT NULL DEFAULT 'never',
                 is_preset       INTEGER NOT NULL DEFAULT 0,
-                display_form_override TEXT NOT NULL DEFAULT 'auto'
+                display_form_override TEXT NOT NULL DEFAULT 'auto',
+                min             REAL,
+                max             REAL,
+                step            REAL
             );
             CREATE INDEX IF NOT EXISTS idx_fielddef_key ON FieldDefinition(key);
 
@@ -356,6 +359,7 @@ impl SQLiteAdapter {
         Self::migrate_add_field_definition_display_form_override(conn)?;
         Self::migrate_add_tag_is_preset(conn)?;
         Self::migrate_add_field_definition_is_preset(conn)?;
+        Self::migrate_add_field_definition_constraints(conn)?;
         Self::migrate_rename_task_view_to_screen_view(conn)?;
         Self::migrate_add_screen_view_config(conn)?;
         Self::migrate_add_screen_view_entity(conn)?;
@@ -689,6 +693,28 @@ impl SQLiteAdapter {
             .unwrap_or(false);
         if !has_column {
             conn.execute("ALTER TABLE FieldDefinition ADD COLUMN is_preset INTEGER NOT NULL DEFAULT 0", [])?;
+        }
+        Ok(())
+    }
+
+    fn migrate_add_field_definition_constraints(conn: &rusqlite::Connection) -> Result<(), Box<dyn Error>> {
+        // ADR-0055 D5：数值字段约束（min / max / step）。幂等：老库 FieldDefinition 表补三列
+        // （REAL，NULL = 无约束）。存量行无约束即 NULL，UI NumberInput 退化为无边界。
+        for col in ["min", "max", "step"] {
+            let has_column: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('FieldDefinition') WHERE name = ?",
+                    rusqlite::params![col],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map(|c| c > 0)
+                .unwrap_or(false);
+            if !has_column {
+                conn.execute(
+                    &format!("ALTER TABLE FieldDefinition ADD COLUMN {} REAL", col),
+                    [],
+                )?;
+            }
         }
         Ok(())
     }

@@ -29,6 +29,13 @@ export interface FieldDefinition {
   // 纯渲染语义：不再承担「是否系统字段」职责（系统语义由所属 Tag.isSystem 承载，见 isSystemField）
   displayPosition?: 'between-bullet-content' | 'right-of-content' | 'bottom-of-block'
   displayStyle?: 'icon-text' | 'icon' | 'text'
+
+  // 数值约束（ADR-0055）：仅 type==='number' 时生效；null/undefined = 无约束。
+  // 单一来源——编译期 FieldDefinition 与持久化 PersistedFieldDefinition 两处都带，
+  // 由字段管理面板配置后经 Rust 持久化列落库。
+  min?: number | null
+  max?: number | null
+  step?: number | null
 }
 
 /**

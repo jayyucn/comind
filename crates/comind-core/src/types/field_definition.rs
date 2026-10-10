@@ -91,6 +91,14 @@ pub struct FieldDefinition {
     /// 域字段（project/area/book/...）落此标记；系统字段（status/priority）此列恒 0。
     #[serde(default)]
     pub is_preset: bool,
+    /// 数值字段（type = 'number'）的可选约束（ADR-0055 D5）：下界 / 上界 / 步进（step）。
+    /// 落库为 REAL，NULL = 无该约束。UI 的 NumberInput 据此夹边界、就近取整到 step 倍数。
+    #[serde(default)]
+    pub min: Option<f64>,
+    #[serde(default)]
+    pub max: Option<f64>,
+    #[serde(default)]
+    pub step: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -105,6 +113,13 @@ pub struct FieldDefinitionCreateOptions {
     pub default_value: Option<String>,
     #[serde(default)]
     pub is_system: bool,
+    /// 数值字段约束（ADR-0055 D5）：下界 / 上界 / 步进；None = 无约束。
+    #[serde(default)]
+    pub min: Option<f64>,
+    #[serde(default)]
+    pub max: Option<f64>,
+    #[serde(default)]
+    pub step: Option<f64>,
 }
 
 impl FieldDefinition {
@@ -120,6 +135,9 @@ impl FieldDefinition {
             hide_when: "never".to_string(),
             display_form_override: "auto".to_string(),
             is_system: options.is_system,
+            min: options.min,
+            max: options.max,
+            step: options.step,
             created_at: now,
             updated_at: now,
             version: 0,
@@ -219,6 +237,9 @@ pub fn system_field_definitions() -> Vec<FieldDefinition> {
             updated_at: now,
             version: 0,
             deleted_at: None,
+            min: None,
+            max: None,
+            step: None,
         })
         .collect()
 }
