@@ -176,3 +176,62 @@ describe('evaluate 串接排序', () => {
     expect(out.map((d) => d.score)).toEqual([9, 5, 3, 1])
   })
 })
+
+// ── datetime 排序按时间精度（T2）─────────────────────────────
+// datetime 值形 'yyyy-MM-dd HH:mm' 定宽同构：同前缀（同日）时字典序==时间序，
+// 跨日时差异先落在日期段的数字位上——排序走 compareValues 的字符串比较即可
+// 正确工作，无需数值化解析。本组用例把该「免费正确」钉死，防未来比较器改动回退。
+describe('datetime 排序按时间精度（T2）', () => {
+  function datetimeRegistry(): Registry {
+    const reg2 = createRegistry()
+    reg2.register('doc', {
+      key: 'at',
+      label: '时刻',
+      type: 'datetime',
+      get: (d: Doc) => d.due,
+    })
+    return reg2
+  }
+
+  const dt = (due: string): Doc => ({ status: null, due, score: 0 })
+
+  it('同日不同时刻按 HH:mm 升序（同前缀字典序==时间序）', () => {
+    const out = sortItems(
+      [dt('2026-09-06 14:30'), dt('2026-09-06 08:05'), dt('2026-09-06 23:59'), dt('2026-09-06 00:00')],
+      [{ field: 'at', dir: 'asc' }],
+      datetimeRegistry(),
+      'doc',
+    )
+    expect(out.map((d) => d.due)).toEqual([
+      '2026-09-06 00:00',
+      '2026-09-06 08:05',
+      '2026-09-06 14:30',
+      '2026-09-06 23:59',
+    ])
+  })
+
+  it('跨日排序正确，desc 为逆序，空值恒末尾（与方向无关）', () => {
+    const out = sortItems(
+      [dt('2026-09-07 08:00'), dt('2026-09-06 23:59'), dt(null as unknown as string), dt('2026-09-06 00:01')],
+      [{ field: 'at', dir: 'desc' }],
+      datetimeRegistry(),
+      'doc',
+    )
+    expect(out.map((d) => d.due)).toEqual([
+      '2026-09-07 08:00',
+      '2026-09-06 23:59',
+      '2026-09-06 00:01',
+      null,
+    ])
+  })
+
+  it('evaluate 端到端：过滤后 datetime 排序按时间精度生效', () => {
+    const items = [dt('2026-09-06 10:00'), dt('2026-09-06 09:00'), dt('2026-09-05 23:00')]
+    const out = evaluate(query([{ field: 'at', dir: 'asc' }]), items, datetimeRegistry(), 'doc')
+    expect(out.map((d) => d.due)).toEqual([
+      '2026-09-05 23:00',
+      '2026-09-06 09:00',
+      '2026-09-06 10:00',
+    ])
+  })
+})
