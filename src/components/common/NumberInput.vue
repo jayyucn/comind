@@ -166,15 +166,25 @@ defineExpose({ increment: () => stepBy(1), decrement: () => stepBy(-1), commit }
 .number-input {
   display: inline-flex;
   align-items: center;
+  /* 与 DatePicker 触发器共用 28px 高度基线（静止态对齐） */
+  height: 28px;
   background: var(--bg-base);
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+  /* 渐进披露（与 dp-clear 同构）：静止态 ghost，边框透明占位防浮现时宽高跳动 */
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   overflow: hidden;
+  transition: border-color var(--dur-base) var(--ease-out);
+
+  &:hover,
+  &:focus-within {
+    border-color: var(--border-color, rgba(255, 255, 255, 0.08));
+  }
 }
 
 .ni-step {
   width: 26px;
-  height: 28px;
+  /* 28px 容器 - 上下边框 */
+  height: 26px;
   flex: none;
   border: none;
   background: transparent;
@@ -182,12 +192,22 @@ defineExpose({ increment: () => stepBy(1), decrement: () => stepBy(-1), commit }
   font-size: 15px;
   line-height: 1;
   cursor: pointer;
-  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+  /* 静止态隐藏步进（隐形态必须 pointer-events:none），hover/聚焦浮现 */
+  opacity: 0;
+  pointer-events: none;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out);
 
   &:hover {
     background: var(--bg-hover);
     color: var(--text-primary);
   }
+}
+
+.number-input:hover .ni-step,
+.number-input:focus-within .ni-step {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .ni-input {

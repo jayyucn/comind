@@ -364,6 +364,9 @@ function clearValue() {
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
+  /* 28px 高度基线：与 NumberInput 静止态外框对齐（BlockFieldZone 同列并排） */
+  min-height: 28px;
+  box-sizing: border-box;
   border: none;
   outline: none;
   border-radius: var(--radius-sm);
