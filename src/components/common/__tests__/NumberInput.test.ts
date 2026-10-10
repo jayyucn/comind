@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import NumberInput from '../NumberInput.vue'
 
 function emitLast(w: ReturnType<typeof mount>): number | undefined {
@@ -77,5 +78,31 @@ describe('NumberInput（ADR-0055）', () => {
     await input.setValue('3.14')
     await input.trigger('blur')
     expect(emitLast(w)).toBe(3.14)
+  })
+
+  it('顶到 min 后继续减：不 emit 且浮出「已达最小值」提示', async () => {
+    const w = mount(NumberInput, { props: { modelValue: 0, min: 0, max: 10 } })
+    w.vm.decrement()
+    await nextTick()
+    await nextTick()
+    expect(emitLast(w)).toBeUndefined()
+    const hint = w.find('.ni-limit-hint')
+    expect(hint.exists()).toBe(true)
+    expect(hint.text()).toContain('已达最小值 0')
+  })
+
+  it('顶到 max 后继续加：不 emit 且浮出「已达最大值」提示', async () => {
+    const w = mount(NumberInput, { props: { modelValue: 10, min: 0, max: 10 } })
+    w.vm.increment()
+    await nextTick()
+    await nextTick()
+    expect(emitLast(w)).toBeUndefined()
+    expect(w.find('.ni-limit-hint').text()).toContain('已达最大值 10')
+  })
+
+  it('空输入时步进不算「已达边界」：从 min 起步填值', () => {
+    const w = mount(NumberInput, { props: { modelValue: undefined, min: 0, max: 10 } })
+    w.vm.decrement()
+    expect(emitLast(w)).toBe(0)
   })
 })

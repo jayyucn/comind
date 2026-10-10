@@ -18,7 +18,7 @@
  *
  * 对外不可变 update 事件，与 project 约定一致。
  */
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 
 export type NumberInputValue = number | undefined
 
@@ -96,12 +96,48 @@ function commit() {
 
 /** ± 步进：从当前输入（或 min，或 0）出发，按 step(默认 1) 步进后夹边界取整。 */
 function stepBy(deltaSign: 1 | -1) {
-  const cur = parseRaw(draft.value) ?? numMin.value ?? 0
+  const raw = parseRaw(draft.value)
+  const cur = raw ?? numMin.value ?? 0
+  // 已有值且已顶到朝向一侧的边界，再按该方向步进 → 不改值，提示已达极限。
+  // （空输入不算「已达」：此时步进是从 min/0 起步填值，保持原行为。）
+  if (raw !== null) {
+    if (deltaSign < 0 && numMin.value !== null && cur <= numMin.value) {
+      showLimitHint('min')
+      return
+    }
+    if (deltaSign > 0 && numMax.value !== null && cur >= numMax.value) {
+      showLimitHint('max')
+      return
+    }
+  }
   const st = numStep.value ?? 1
   const next = clampSnap(cur + deltaSign * st)
   draft.value = String(next)
   emit('update:modelValue', next)
 }
+
+/* —— 边界提示：顶到 min/max 后仍按同向步进，短暂浮出提示 + 边框闪红/轻抖 —— */
+const limitHint = ref('')
+const limitHinting = ref(false)
+let hintTimer: ReturnType<typeof setTimeout> | null = null
+
+function showLimitHint(kind: 'min' | 'max') {
+  const bound = kind === 'min' ? numMin.value : numMax.value
+  limitHint.value = kind === 'min' ? `已达最小值 ${bound}` : `已达最大值 ${bound}`
+  // 先摘再挂，让 Transition 重复触发（连点时抖动/计时均重置）
+  limitHinting.value = false
+  void nextTick(() => {
+    limitHinting.value = true
+  })
+  if (hintTimer !== null) clearTimeout(hintTimer)
+  hintTimer = setTimeout(() => {
+    limitHinting.value = false
+  }, 1600)
+}
+
+onUnmounted(() => {
+  if (hintTimer !== null) clearTimeout(hintTimer)
+})
 
 function onInput(e: Event) {
   draft.value = (e.target as HTMLInputElement).value
@@ -130,7 +166,7 @@ defineExpose({ increment: () => stepBy(1), decrement: () => stepBy(-1), commit }
 <template>
   <span
     class="number-input"
-    :class="{ 'ni-empty': draft === '' }"
+    :class="{ 'ni-empty': draft === '', 'ni-hinting': limitHinting }"
   >
     <button
       class="ni-step"
@@ -159,6 +195,14 @@ defineExpose({ increment: () => stepBy(1), decrement: () => stepBy(-1), commit }
       aria-label="增加"
       @click="stepBy(1)"
     >+</button>
+    <!-- 边界提示气泡：短暂浮出，非交互（pointer-events:none） -->
+    <Transition name="ni-hint">
+      <span
+        v-if="limitHinting"
+        class="ni-limit-hint"
+        role="status"
+      >{{ limitHint }}</span>
+    </Transition>
   </span>
 </template>
 
@@ -166,19 +210,61 @@ defineExpose({ increment: () => stepBy(1), decrement: () => stepBy(-1), commit }
 .number-input {
   display: inline-flex;
   align-items: center;
+  position: relative; /* 边界提示气泡的定位包含块 */
   /* 与 DatePicker 触发器共用 28px 高度基线（静止态对齐） */
   height: 28px;
   background: var(--bg-base);
   /* 渐进披露（与 dp-clear 同构）：静止态 ghost，边框透明占位防浮现时宽高跳动 */
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  overflow: hidden;
+  /* 不能 overflow:hidden（会裁掉上方提示气泡），± 按钮外角单独补圆角 */
   transition: border-color var(--dur-base) var(--ease-out);
 
   &:hover,
   &:focus-within {
     border-color: var(--border-color, rgba(255, 255, 255, 0.08));
   }
+}
+
+/* 边界提示态：边框闪红 + 轻抖（重复触发由 Transition 重挂重启动画） */
+.number-input.ni-hinting {
+  border-color: var(--error);
+  animation: ni-hint-shake var(--dur-base) var(--ease-out);
+}
+
+@keyframes ni-hint-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-2px); }
+  75% { transform: translateX(2px); }
+}
+
+.ni-limit-hint {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  z-index: var(--z-toast);
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-base);
+  box-shadow: var(--shadow-modal);
+  color: var(--error);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.ni-hint-enter-active,
+.ni-hint-leave-active {
+  transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+
+.ni-hint-enter-from,
+.ni-hint-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(2px);
 }
 
 .ni-step {
@@ -202,6 +288,15 @@ defineExpose({ increment: () => stepBy(1), decrement: () => stepBy(-1), commit }
     background: var(--bg-hover);
     color: var(--text-primary);
   }
+}
+
+/* 容器无 overflow:hidden，步进按钮 hover 底的外角自行补圆（半径扣掉 1px 边框） */
+.ni-step:first-child {
+  border-radius: calc(var(--radius-sm) - 1px) 0 0 calc(var(--radius-sm) - 1px);
+}
+
+.ni-step:last-child {
+  border-radius: 0 calc(var(--radius-sm) - 1px) calc(var(--radius-sm) - 1px) 0;
 }
 
 .number-input:hover .ni-step,
