@@ -153,6 +153,7 @@ describe('TaskHub — D4 任务过滤按 tags 闭包', () => {
       card({ block_id: 't-child', tags: ['child-tag'] }),        // 后代闭包命中
       card({ block_id: 't-status-only', tags: [], properties: { status: 'Todo' } }), // 旧口径会放行
       card({ block_id: 't-unrelated', tags: ['other-tag'] }),    // 无关 tag
+      card({ block_id: 't-empty-content', tags: ['task-tag'], content_preview: '' }), // 挂了 tag 但 content 为空
     ])
 
     const wrapper = mountTaskHub()
@@ -163,6 +164,8 @@ describe('TaskHub — D4 任务过滤按 tags 闭包', () => {
     expect(ids).toContain('t-child')
     expect(ids).not.toContain('t-status-only')
     expect(ids).not.toContain('t-unrelated')
+    // 空 content 块不入列（否则视图回退显示 block id）；计数仍为 2
+    expect(ids).not.toContain('t-empty-content')
     // 副标题计数同口径：仅 2 个任务
     expect(wrapper.find('.qpf-subtitle').text()).toBe('2 个任务')
   })
@@ -172,6 +175,7 @@ describe('TaskHub — D4 任务过滤按 tags 闭包', () => {
     mockClient.getBlockCards.mockResolvedValue([
       card({ block_id: 't-status-only', tags: [], properties: { status: 'Todo' } }),
       card({ block_id: 't-nothing', tags: ['whatever'] }),
+      card({ block_id: 't-empty-content', tags: [], properties: { status: 'Todo' }, content_preview: '' }), // 降级口径同样排除空 content
     ])
 
     const wrapper = mountTaskHub()
@@ -180,5 +184,6 @@ describe('TaskHub — D4 任务过滤按 tags 闭包', () => {
     const ids = wrapper.findAll('.qpf-item').map((el) => el.attributes('data-block-id'))
     expect(ids).toContain('t-status-only')
     expect(ids).not.toContain('t-nothing')
+    expect(ids).not.toContain('t-empty-content')
   })
 })

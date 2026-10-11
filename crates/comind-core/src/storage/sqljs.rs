@@ -748,10 +748,14 @@ impl BlockRepository for SqlJsAdapter {
 
     fn create(&mut self, block: &Block) -> Result<Block, Box<dyn std::error::Error>> {
         let parent_id = block.parent_id.as_deref().unwrap_or("");
-        Self::run_with_params(&self.db, "INSERT INTO Block (id, page_id, parent_id, pos, content, format, type, version, deleted_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)", &[
+        // tags 由 BlockService::update/create 经 resolve_tag_ids_for_content 从 content
+        // 派生后装入 block.tags；此处必须随行写入，否则 Block.tags 列恒为 '[]'，
+        // 投影层（get_blocks_projection 读 Block.tags）按任务 tag 过滤会让块永远进不了任务列表/四象限。
+        let tags_json = serde_json::to_string(&block.tags).unwrap_or_else(|_| "[]".to_string());
+        Self::run_with_params(&self.db, "INSERT INTO Block (id, page_id, parent_id, pos, content, format, type, tags, version, deleted_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)", &[
             &block.id, &block.page_id, parent_id,
             &block.pos.to_string(), &block.content, &block.format,
-            &block.r#type, &block.version.to_string(),
+            &block.r#type, &tags_json, &block.version.to_string(),
             &block.created_at.to_string(), &block.updated_at.to_string()
         ])?;
         Ok(block.clone())
@@ -759,9 +763,11 @@ impl BlockRepository for SqlJsAdapter {
 
     fn update(&mut self, block: &Block) -> Result<Block, Box<dyn std::error::Error>> {
         let parent_id = block.parent_id.as_deref().unwrap_or("");
-        Self::run_with_params(&self.db, "UPDATE Block SET page_id = ?, parent_id = ?, pos = ?, content = ?, format = ?, type = ?, version = version + 1, updated_at = ? WHERE id = ?", &[
+        let tags_json = serde_json::to_string(&block.tags).unwrap_or_else(|_| "[]".to_string());
+        Self::run_with_params(&self.db, "UPDATE Block SET page_id = ?, parent_id = ?, pos = ?, content = ?, format = ?, type = ?, tags = ?, version = version + 1, updated_at = ? WHERE id = ?", &[
             &block.page_id, parent_id, &block.pos.to_string(),
             &block.content, &block.format, &block.r#type,
+            &tags_json,
             &block.updated_at.to_string(), &block.id
         ])?;
         Ok(block.clone())

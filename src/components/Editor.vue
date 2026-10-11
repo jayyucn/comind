@@ -60,8 +60,12 @@ const PARSE_PRESERVE_WS = { preserveWhitespace: true }
 let syncing = false
 let savedFromOutside = false
 
-const debouncedEmitSave = debounce((content: string) => {
-  emit('save', content, false)
+// 读取「触发时刻」的编辑器正文：防抖期间若有外部写回（如斜杠命令 /priority → ensureTodo
+// 挂载 `#任务` 后 Editor 的 watch(props.content) 重新同步 PM 文档），触发时以最新正文落库，
+// 避免用 deleteRange 那一刻捕获的旧正文（无 `#任务`）把挂载结果覆盖掉，导致任务 tag 被摘、
+// 四象限视图不显示（回归：输入 /midium 后 #任务 闪烁且任务不进象限）。
+const debouncedEmitSave = debounce(() => {
+  if (editor.value) emit('save', editor.value.getText(), false)
 }, 300)
 
 function cancelDebouncedSave() {
@@ -179,8 +183,7 @@ const editor = shallowRef(useEditor({
       hasContent.value = !!editor.value.getText()
       const { from } = editor.value.state.selection
       emit('cursor-change', from)
-      const content = editor.value.getText()
-      debouncedEmitSave(content)
+      debouncedEmitSave()
     }
   }
 }))

@@ -23,6 +23,7 @@ import CalendarView from '../views/CalendarView.vue'
 import QuadrantView from '../views/QuadrantView.vue'
 import TableView from '../views/TableView.vue'
 import type { CellRegistry } from '../views/types'
+import { isQuadrantCard } from './quadrant-filter'
 
 const blockCardStore = useBlockCardStore()
 // 命名视图 store（与 QueryPageFrame 内部同 key 单例共享；此处仅读取 currentViewType/currentTab）。
@@ -65,6 +66,13 @@ const currentViewType = computed(() => screenViewStore.currentViewType)
 
 const currentTab = computed(() => screenViewStore.currentTab)
 
+// 四象限：与 tag 解耦 —— 只要 block 具备 priority + status 即视为任务入格，
+// 不要求挂载 #任务（用户既有任务即使未挂任务 tag 也应出现在矩阵）。
+// 与 searchedCards（D4 任务 tag 口径，服务于表格/看板/日历）并列、互不影响。
+const quadrantSource = computed<BlockCard[]>(() =>
+  blockCardStore.cards.filter((c) => isQuadrantCard(c, searchQuery.value)),
+)
+
 // 视图布局配置（列序/列宽/卡片徽章/日历落格字段）。
 // 优先读持久化的 ScreenViewRust.config（解析校验 viewKind 一致），否则回退实体注册点默认（BLOCK_DEFAULT_*）。
 const tableConfig = computed<TableConfig | undefined>(() => {
@@ -101,6 +109,9 @@ const searchedCards = computed<BlockCard[]>(() => {
   const q = searchQuery.value.trim().toLowerCase()
   const hitIds = taskHitTagIds.value
   return blockCardStore.cards.filter((c) => {
+    // 空 content 块不入任务中心：视图渲染时 content_preview 为空会回退显示 block id
+    // （如 QuadrantView 的 `content_preview || idOf`），无标题语义 → 在数据源谓词处排除。
+    if (!(c.content_preview ?? '').trim()) return false
     if (hitIds) {
       // D4 主口径：挂了任务闭包内 tag 的块才是任务（悬空 / 软删 tag id 自然不命中）
       if (!(c.tags ?? []).some((t) => hitIds.has(t))) return false
@@ -274,7 +285,7 @@ function handleCellClick(blockId: string, fieldKey: string) {
     </template>
     <template #quadrant="{ context }">
       <QuadrantView
-        :items="context.items"
+        :items="quadrantSource"
         :id-key="context.idKey"
         :config="context.quadrantConfig"
         :sort="context.sort"

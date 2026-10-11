@@ -3,8 +3,6 @@ import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import type { Registry, SortRule } from '../../core/query'
 import { sortItems } from '../../core/query'
 import type { QuadrantConfig } from '../../core/view'
-import { useTagsStore } from '../../stores/tags'
-import type { PersistedTag } from '../../types/tag-persisted'
 import { resolveRelativeExpr } from '../../utils/date-parser'
 import type { BlockCard } from '../../wasm/types'
 import BulletRender from '../Block/handlers/bullet/BulletRender.vue'
@@ -28,7 +26,6 @@ import PriorityQuadrant from '../Icons/PriorityIcons/PriorityQuadrant.vue'
  * status 是 Todo / 是 Doing /（是 Done 且 updatedAt 在昨天及之后）；无 priority 或久前完成的 Done 不显示。
  * 系统默认排序：status asc → updatedAt desc；工具栏设了排序规则时按规则（复用引擎 sortItems）。
  * 组件消费 items（泛型）与 BlockCard 形状，事件经 cell-change / navigate 上抛；
- * 标签 chip 经 tagsStore 解析 BlockCard.tags（id → 标题/色 token）。
  */
 const props = defineProps<{
   /** 已过滤+排序的扁平列表（与看板/表格共用）；组件内按 status/priority 二次分拣。 */
@@ -171,22 +168,6 @@ function priorityOf(item: T): string | undefined {
   return v == null || v === '' ? undefined : String(v)
 }
 
-// ── 标签 chip（BlockCard.tags id → tagsStore 解析标题/色）──
-const tagsStore = useTagsStore()
-void tagsStore.ensureLoaded()
-
-function cardTags(item: T): PersistedTag[] {
-  return tagsStore.resolveTags(asCard(item).tags ?? [])
-}
-
-/** 标签色 token（如 `--tag-color-3`）→ chip 内联样式；空 token = 无色（中性 chip）。 */
-function tagStyle(tag: PersistedTag): Record<string, string> {
-  if (!tag.color) return {}
-  return {
-    color: `var(${tag.color})`,
-    background: `color-mix(in srgb, var(${tag.color}) 12%, transparent)`,
-  }
-}
 
 /** 截止日（与注册表 deadline getter 同义：deadline kind 优先，回退 schedule）。 */
 function cardDeadline(item: T): string | undefined {
@@ -616,18 +597,6 @@ function onCardClick(item: T) {
                 :class="{ overdue: isOverdue(cardDeadline(card)) }"
               >{{ formatDate(cardDeadline(card)) }}</span>
             </div>
-            <!-- 标签行：任务标题之下的次级信息层 -->
-            <div
-              v-if="cardTags(card).length"
-              class="q-tags"
-            >
-              <span
-                v-for="tag in cardTags(card)"
-                :key="tag.id"
-                class="q-tag"
-                :style="tagStyle(tag)"
-              >{{ tag.title }}</span>
-            </div>
             <!-- 子任务：按 depth 缩进（2=子任务、3=孙任务），最多 3 层；行内点击打开子任务，不参与拖拽 -->
             <div
               v-if="subtasksOf(card).length"
@@ -914,24 +883,6 @@ function onCardClick(item: T) {
   align-items: center;
   gap: 7px;
   min-width: 0;
-}
-
-// 标签层：标题之下、与标题文字左对齐（状态图标宽 + 间距）
-.q-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding-left: 22px;
-}
-
-.q-tag {
-  font-size: 11px;
-  line-height: 1;
-  padding: 3px 8px;
-  border-radius: 4px;
-  color: var(--text-secondary);
-  background: var(--bg-subtle, var(--bg-base2));
-  white-space: nowrap;
 }
 
 // 辅助信息层：截止日为纯文本弱化（逾期才点亮红色）

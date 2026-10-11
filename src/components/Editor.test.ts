@@ -18,11 +18,11 @@ vi.mock('../extensions/WikiLinkExtension', () => ({
 
 vi.mock('../extensions/WikiLinkTriggerExtension', () => ({
   WikiLinkTriggerExtension: {
-    create: vi.fn(() => ({ name: 'wikiLinkTrigger' })),
-    notifyWikiLinkMenuSelect: vi.fn(),
-    closeWikiLinkMenuByEditor: vi.fn(),
-    findWikiLinkAtCursor: vi.fn(() => ({ found: false, range: null, query: '' }))
-  }
+    create: vi.fn(() => ({ name: 'wikiLinkTrigger' }))
+  },
+  notifyWikiLinkMenuSelect: vi.fn(),
+  closeWikiLinkMenuByEditor: vi.fn(),
+  findWikiLinkAtCursor: vi.fn(() => ({ found: false, range: null, query: '' }))
 }))
 
 describe('Editor WikiLink Selection Logic', () => {
@@ -558,6 +558,38 @@ describe('Editor WikiLink Selection Logic', () => {
       const bounded = Math.min(targetPos, content.length + 1)
 
       expect(bounded).toBe(content.length)
+    })
+  })
+
+  describe('debounced save must not clobber external content mount', () => {
+    test('debounced save emits latest text after external re-sync (e.g. #任务 mount)', async () => {
+      vi.useFakeTimers()
+      const wrapper = mount(Editor, {
+        props: { content: 'hello' },
+        global: { stubs: { Teleport: true } }
+      })
+      await flushPromises()
+      await nextTick()
+
+      const editor = (wrapper.vm as any).getEditor()
+      // 用户编辑触发防抖保存（此刻正文 = 'hellox'）
+      editor.commands.insertContent('x')
+      // 外部重新同步（斜杠命令 /priority → ensureTodo 挂载 `#任务`，Editor watch 重设 PM 文档）
+      await wrapper.setProps({ content: 'hello #任务' })
+      await flushPromises()
+      await nextTick()
+
+      // 推进防抖：应以「最新正文」落库，而非用户编辑那一刻捕获的 'hellox'
+      vi.advanceTimersByTime(300)
+      await flushPromises()
+
+      const saves = wrapper.emitted('save') ?? []
+      expect(saves.length).toBeGreaterThan(0)
+      const last = saves[saves.length - 1]
+      expect(last[0]).toBe('hello #任务')
+
+      vi.useRealTimers()
+      wrapper.unmount()
     })
   })
 })
