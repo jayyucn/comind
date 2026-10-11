@@ -314,7 +314,8 @@ mod tests {
                 "Todo".to_string(),
                 "Doing".to_string(),
                 "Done".to_string(),
-                "Canceled".to_string()
+                "Canceled".to_string(),
+                "Archived".to_string(),
             ])
         );
         let book = defs.iter().find(|d| d.key == "book").unwrap();

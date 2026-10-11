@@ -62,6 +62,7 @@ const statusClass = computed(() => {
   const v = getPropValue('status')
   if (v === 'Done') return 'status-done'
   if (v === 'Canceled') return 'status-canceled'
+  if (v === 'Archived') return 'status-archived'
   return ''
 })
 

@@ -9,12 +9,12 @@
  * 与旧系统（useBlockQuery / BlockQuery / TaskFilterBar）完全解耦并存，本模块不依赖 Vue 组件。
  */
 import { computed, watch } from 'vue'
-import { createRegistry, type Registry, type FieldDescriptor, type FieldType, type Option } from '../core/query'
+import { createRegistry, type FieldDescriptor, type FieldType, type Option, type Registry } from '../core/query'
 import type { BoardConfig, CalendarConfig, GalleryConfig, LayoutConfig, QuadrantConfig, TableConfig, ViewKind } from '../core/view'
-import type { BlockCard } from '../wasm/types'
-import { SYSTEM_TAGS, isSystemField } from '../types/tag'
-import { type FieldDefinition, type FieldType as DomainFieldType } from '../types/field-definition'
 import { useBlockCardStore } from '../stores/blockCard'
+import { type FieldType as DomainFieldType, type FieldDefinition } from '../types/field-definition'
+import { SYSTEM_TAGS, isSystemField } from '../types/tag'
+import type { BlockCard } from '../wasm/types'
 
 /** 引擎命名空间：所有 Block 字段注册于此。 */
 export const BLOCK_ENTITY = 'block'
@@ -141,7 +141,7 @@ export function registerBlockBuiltinFields(registry: Registry): void {
       color: STATUS_COLORS[String(c.value)],
     })),
     // 显式排序顺序：Doing 优先（进行中的任务最相关），终止态（Done/Canceled）沉底
-    sortOrder: ['Doing', 'Todo', 'Done', 'Canceled'],
+    sortOrder: ['Doing', 'Todo', 'Done', 'Canceled', 'Archived'],
     get: (item) => asCard(item).properties?.['status'],
   })
 

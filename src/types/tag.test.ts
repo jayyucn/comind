@@ -40,7 +40,8 @@ describe('BUILT_IN_FIELDS（由 SYSTEM_TAGS 展平）', () => {
   it('status 保留 closedValues 与 displayPosition', () => {
     const status = getFieldDefinition('status')!
     expect(status.title).toBe('状态')
-    expect(status.closedValues).toHaveLength(4)
+    expect(status.closedValues).toHaveLength(5)
+    expect(status.closedValues?.map((c) => c.value)).toContain('Archived')
     expect(status.displayPosition).toBe('between-bullet-content')
   })
 

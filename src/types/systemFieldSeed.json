@@ -7,7 +7,7 @@
       "type": "string",
       "isSystem": true,
       "isPreset": false,
-      "closedValues": ["Todo", "Doing", "Done", "Canceled"],
+      "closedValues": ["Todo", "Doing", "Done", "Canceled", "Archived"],
       "defaultValue": "Todo",
       "hideWhen": "never"
     },

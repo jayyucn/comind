@@ -79,6 +79,7 @@ export function useBlockFieldValueSync(blockId: Ref<string>) {
   const statusClass = computed(() => {
     if (blockStatus.value === 'Done') return 'status-done'
     if (blockStatus.value === 'Canceled') return 'status-canceled'
+    if (blockStatus.value === 'Archived') return 'status-archived'
     return ''
   })
 

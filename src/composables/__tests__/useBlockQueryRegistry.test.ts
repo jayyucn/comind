@@ -66,8 +66,8 @@ describe('Block 字段描述符注册表', () => {
 
     const status = registry.get(BLOCK_ENTITY, 'status')!
     expect(status.type).toBe('select')
-    expect(status.options?.map((o) => o.id)).toEqual(['Todo', 'Doing', 'Done', 'Canceled'])
-    expect(status.sortOrder).toEqual(['Doing', 'Todo', 'Done', 'Canceled'])
+    expect(status.options?.map((o) => o.id)).toEqual(['Todo', 'Doing', 'Done', 'Canceled', 'Archived'])
+    expect(status.sortOrder).toEqual(['Doing', 'Todo', 'Done', 'Canceled', 'Archived'])
 
     const priority = registry.get(BLOCK_ENTITY, 'priority')!
     expect(priority.type).toBe('select')

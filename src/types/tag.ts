@@ -67,6 +67,7 @@ const FIELD_UI: Record<string, FieldUiOverlay> = {
       { value: 'Doing', label: '进行中', icon: TASK_STATUS_ICONS.Doing },
       { value: 'Done', label: '已完成', icon: TASK_STATUS_ICONS.Done },
       { value: 'Canceled', label: '已取消', icon: TASK_STATUS_ICONS.Canceled },
+      { value: 'Archived', label: '已归档', icon: TASK_STATUS_ICONS.Archived },
     ],
   },
   priority: {
