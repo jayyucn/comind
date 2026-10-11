@@ -4,10 +4,10 @@
  * 规格锚点：
  * 1. 顶层 block（页面根 block 的子 block）含任务项 → 进度条出现在列表顶部；
  * 2. 任意 block 的子 block 含任务项 → 进度条出现在该 block 下方；
- * 3. Canceled 不参与（不计 total / done）；全 Canceled → 不渲染；
+ * 3. Canceled / Archived 不参与（不计 total / done）；全 Canceled / 全 Archived → 不渲染；
  * 4. 删除最后一个 block（树重建为空）→ 进度条移除；
  * 5. 任务 block 的子任务全部完成 → 本 block 自动置 Done；全部完成后又新建
- *    子任务（存在未完成项）→ 自动改回 Doing；Canceled 父不改写；
+ *    子任务（存在未完成项）→ 自动改回 Doing；Canceled / Archived 父不改写；
  *    含周期 dateRef 的父跳过 Done（防与日期推进机制互踢）。
  *
  * 实现口径：进度条与自动同步均完全由派生逻辑驱动（tree + fieldValueStore），
@@ -51,7 +51,9 @@ const hoisted = vi.hoisted(() => {
       async (blockId: string, key: string, valueJson: string, valueType: string) => {
         const rows = propsByBlock.get(blockId) ?? []
         const next = rows.filter((r) => r.key !== key)
-        next.push({
+        // 返回完整行（与真实 Rust 服务层 join 后一致）：store 的 mergeFieldValueRow
+        // 以返回行整体替换缓存，缺 key/value_json 会把缓存行打坏
+        const row: FieldValue = {
           id: `fv-${blockId}-${key}`,
           block_id: blockId,
           field_definition_id: '80000000-0000-4000-8000-000000000001',
@@ -63,9 +65,10 @@ const hoisted = vi.hoisted(() => {
           version: 0,
           deleted_at: null,
           key,
-        })
+        }
+        next.push(row)
         hoisted.propsByBlock.set(blockId, next)
-        return { id: `fv-${blockId}-${key}` }
+        return row
       },
     ),
     saveBlockTree: vi.fn(() => Promise.resolve()),
@@ -73,6 +76,10 @@ const hoisted = vi.hoisted(() => {
     getOutlinks: vi.fn(() => Promise.resolve([])),
     getDateRefsByBlock: vi.fn(() => Promise.resolve([])),
     calculateNextRecurrence: vi.fn(() => Promise.resolve('')),
+    // tags store ensureLoaded（挂载期调用）；本测不依赖持久化标签数据，空值即可
+    getTagTree: vi.fn(() => Promise.resolve([])),
+    getFieldDefinitions: vi.fn(() => Promise.resolve([])),
+    getDeletedPresetFieldDefinitions: vi.fn(() => Promise.resolve([])),
   }
   return { client, propsByBlock }
 })
@@ -379,7 +386,9 @@ describe('父任务状态自动推进（需求 5）', () => {
     await settleAutoStatus()
 
     expect(statusOf('parent')).toBe('Doing')
-    expect(wrapper.find('[data-block-id="parent"]').classes()).toContain('status-doing')
+    // Doing 无弱化视觉（statusClass 仅 Done/Canceled/Archived，SCSS 亦无 status-doing），
+    // 此处验证状态回落：完成弱化类应被移除
+    expect(wrapper.find('[data-block-id="parent"]').classes()).not.toContain('status-done')
   })
 
   it('Canceled 的父任务不被自动改写', async () => {
