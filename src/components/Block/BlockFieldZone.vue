@@ -47,6 +47,8 @@ import { decodeDefaultJson, isFieldHiddenByRule, normalizeHideWhen } from '../..
 import { effectiveNumberBounds, formatCurrency, parseCurrencySpec } from '../../utils/field-number-format'
 import { resolveDisplayForm, type DisplayFormKind } from '../../utils/field-display-form'
 import { decodeFieldValueData } from '../../utils/field-value-codec'
+import { safeEvaluateFormula } from '../../utils/formula'
+import { TAG_COLORS, isTagColorToken } from '../../utils/tag-color'
 import { isTauriEnvironment } from '../../wasm/tauri-platform'
 import { Icon } from '../Icons'
 import BooleanCheck, { type BooleanCheckValue } from '../common/BooleanCheck.vue'
@@ -200,6 +202,11 @@ function getIcon(key: string, value: unknown): string | null {
 }
 
 function getLabel(key: string, value: unknown): string {
+  // formula（issue T11）：标题/通用文案展示「计算结果」而非表达式原文
+  const formulaRow = fieldValueStore.getBlockFieldValue(props.blockId, key)
+  if (formulaRow?.value_type === 'formula') {
+    return formulaDisplay({ key, type: 'formula' } as PersistedFieldDefinition) ?? ''
+  }
   // relation（issue T5）：值是 { targetId, relationshipTypeId } 对象——all 变体等
   // 通用分支兜底展示 targetId（list 变体走 RelationRefEditor 专属分支，不经此），
   // 避免 String(对象) 渲染成 "[object Object]"
@@ -422,7 +429,7 @@ const orphanFields = computed<PersistedFieldDefinition[]>(() => {
     if (seen.has(fv.key)) continue
     if (fv.key === 'deadline' || fv.key === 'scheduled') continue
     if (defOf(fv.key)?.displayPosition === 'between-bullet-content') continue
-    const def = persistedDefOf(fv.key) ?? synthFieldDef(fv.key)
+    const def = persistedDefOf(fv.key) ?? synthFieldDef(fv.key, fv.value_type)
     if (isHiddenByRule(def)) continue
     seen.add(fv.key)
     out.push(def)
@@ -433,13 +440,15 @@ const orphanFields = computed<PersistedFieldDefinition[]>(() => {
 /** 孤儿 key 集合（模板弱区分样式判定用） */
 const orphanKeySet = computed<Set<string>>(() => new Set(orphanFields.value.map((d) => d.key)))
 
-/** 兜底合成最小定义（key 在库中无任何定义时的极端兜底；正常孤儿字段都有 persistedDefOf） */
-function synthFieldDef(key: string): PersistedFieldDefinition {
+/** 兜底合成最小定义（key 在库中无任何定义时的极端兜底；正常孤儿字段都有 persistedDefOf）。
+ * 取字段值行的 value_type 作为合成类型——自定义远期类型（formula/json/color/geo/autonumber）
+ * 无持久化定义时也能按真实类型渲染，而非被错当 string。 */
+function synthFieldDef(key: string, type: string = 'string'): PersistedFieldDefinition {
   return {
     id: key,
     key,
     title: key,
-    type: 'string',
+    type,
     closed_values: null,
     default_value: null,
     hide_when: 'never',
@@ -496,6 +505,12 @@ function isHiddenByRule(def: PersistedFieldDefinition): boolean {
 
 /** 当前值文本（选项型取 label，数组拼接，其余原样）；无值 → null（渲染占位）。 */
 function valueText(def: PersistedFieldDefinition): string | null {
+  // formula（issue T11）：值由表达式在渲染时按兄弟字段派生；无表达式/无行 → null（幽灵占位）
+  if (def.type === 'formula') return formulaDisplay(def)
+  // geo（issue T12）：地名 + 经纬度
+  if (def.type === 'geo') return geoDisplay(def)
+  // json（issue T12）：任意结构化值，序列化为单行文本
+  if (def.type === 'json') return jsonDisplay(def)
   const fv = fieldValueStore.getBlockFieldValue(props.blockId, def.key)
   if (!fv) return null
   const value = dataOf(fv)
@@ -503,6 +518,65 @@ function valueText(def: PersistedFieldDefinition): string | null {
   if (Array.isArray(value)) return value.length ? value.map(String).join('、') : null
   const closed = def.closed_values?.find((v) => String(v) === String(value))
   return closed ? String(closed) : String(value)
+}
+
+/** 构建同块数值环境（排除自身字段），供公式求值。 */
+function blockNumberEnv(selfKey: string): Record<string, number> {
+  const env: Record<string, number> = {}
+  for (const sib of fieldValueStore.getBlockFieldValues(props.blockId)) {
+    if (sib.key === selfKey) continue
+    const v = dataOf(sib)
+    if (typeof v === 'number' && !Number.isNaN(v)) env[sib.key] = v
+  }
+  return env
+}
+
+/** formula 字段计算结果显示（issue T11）：读表达式 + 兄弟环境求值；失败 → null。 */
+function formulaDisplay(def: PersistedFieldDefinition): string | null {
+  const fv = fieldValueStore.getBlockFieldValue(props.blockId, def.key)
+  if (!fv) return null
+  const expr = dataOf(fv)
+  if (typeof expr !== 'string' || !expr.trim()) return null
+  const r = safeEvaluateFormula(expr, blockNumberEnv(def.key))
+  return r === null ? null : String(r)
+}
+
+/** geo 字段展示文本（issue T12）："地名（lat, lng）" 或 "lat, lng"。 */
+function geoDisplay(def: PersistedFieldDefinition): string | null {
+  const fv = fieldValueStore.getBlockFieldValue(props.blockId, def.key)
+  if (!fv) return null
+  const g = dataOf(fv)
+  if (!g || typeof g !== 'object' || Array.isArray(g) || !('lat' in g) || !('lng' in g)) return null
+  const geo = g as { lat: number; lng: number; name?: string }
+  const coord = `${geo.lat}, ${geo.lng}`
+  return geo.name ? `${geo.name}（${coord}）` : coord
+}
+
+/** json 字段展示文本（issue T12）：序列化；非对象/空 → null。 */
+function jsonDisplay(def: PersistedFieldDefinition): string | null {
+  const fv = fieldValueStore.getBlockFieldValue(props.blockId, def.key)
+  if (!fv) return null
+  const j = dataOf(fv)
+  if (j === null || j === undefined || j === '') return null
+  try {
+    return JSON.stringify(j)
+  } catch {
+    return null
+  }
+}
+
+/** color 字段的 token 值（issue T12）；非法 → null（回落幽灵）。 */
+function colorValueOf(def: PersistedFieldDefinition): string | null {
+  const fv = fieldValueStore.getBlockFieldValue(props.blockId, def.key)
+  if (!fv) return null
+  const v = dataOf(fv)
+  return typeof v === 'string' && isTagColorToken(v) ? v : null
+}
+
+/** color 字段的展示名（issue T12）：查 TAG_COLORS 表。 */
+function colorLabelOf(def: PersistedFieldDefinition): string {
+  const token = colorValueOf(def)
+  return TAG_COLORS.find((c) => c.token === token)?.label ?? token ?? ''
 }
 
 /** date 类型字段的当前值（'YYYY-MM-DD' | undefined），供 DatePicker 绑定。 */
@@ -676,6 +750,22 @@ function textValue(def: PersistedFieldDefinition): string | undefined {
   if (!fv) return undefined
   const v = dataOf(fv)
   return typeof v === 'string' && v !== '' ? v : undefined
+}
+
+/** 特化感知占位符（收尾）：email/phone/url/richtext 给语义文案，
+ *  其余回退到既有的「输入${def.title} / 输入文本」。spec 可能带参数（email:x@y.z），
+ *  须用 specHeadOf 归一头部再匹配，否则命中不到。 */
+function stringPlaceholderOf(def: PersistedFieldDefinition): string {
+  const head = specHeadOf(def.spec)
+  let hint: string
+  switch (head) {
+    case 'email': hint = '输入邮箱地址'; break
+    case 'phone': hint = '输入电话号码'; break
+    case 'url': hint = '输入链接 URL'; break
+    case 'richtext': hint = '输入 markdown（**粗** *斜* `码` [链](接)）'; break
+    default: hint = def.title ? `输入${def.title}` : '输入文本'
+  }
+  return hint
 }
 
 /**
@@ -1407,6 +1497,25 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
           />
         </template>
 
+        <!-- color 类型字段（issue T12）：色板图例 + 名称。值区直挂色点（复用
+              --tag-color-* token），非法 token 回落幽灵占位；整行点击唤起编辑器改色。 -->
+        <template v-else-if="def.type === 'color'">
+          <span
+            v-if="colorValueOf(def)"
+            class="bfz-color-swatch"
+            :style="{ background: `var(${colorValueOf(def)})` }"
+            :title="colorLabelOf(def)"
+          />
+          <span
+            v-if="colorValueOf(def)"
+            class="bfz-color-label"
+          >{{ colorLabelOf(def) }}</span>
+          <span
+            v-else
+            class="block-field-zone-placeholder"
+          >—</span>
+        </template>
+
         <!-- chip 形态（非枚举）：date / array（chip 序列）/ number（徽章）。
              字段名已在左列，chip 本体不再内嵌标题。 -->        <template v-else-if="formOf(def) === 'chip'">
           <template v-if="chipValues(def)">
@@ -1503,14 +1612,14 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
             v-else-if="def.spec && stringSpecialization(def.spec)"
             :spec="def.spec"
             :model-value="textValue(def)"
-            :placeholder="def.title ? `输入${def.title}` : '输入文本'"
+            :placeholder="stringPlaceholderOf(def)"
             @update:model-value="onTextChange(def, $event)"
           />
 
           <TextField
             v-else
             :model-value="textValue(def)"
-            :placeholder="def.title ? `输入${def.title}` : '输入文本'"
+            :placeholder="stringPlaceholderOf(def)"
             @update:model-value="onTextChange(def, $event)"
           />
         </template>
@@ -2058,5 +2167,20 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
     color: var(--text-primary);
     background: var(--surface-subtle);
   }
+}
+
+/* ── T12 color 字段色板图例 ── */
+
+.bfz-color-swatch {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px var(--border-color);
+}
+
+.bfz-color-label {
+  color: var(--text-primary);
+  font-size: var(--text-sm);
 }
 </style>

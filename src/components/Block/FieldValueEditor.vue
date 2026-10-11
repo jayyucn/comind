@@ -18,6 +18,8 @@ import { getFieldDefinition } from '../../types/field-definition'
 import { numberSpecialization, pageSpecialization, specHeadOf, stringSpecialization } from '../../types/field-type-registry'
 import SpecializedText from '../common/SpecializedText.vue'
 import RatingInput from '../common/RatingInput.vue'
+import { TAG_COLORS } from '../../utils/tag-color'
+import { evaluateFormula, validateFormula, detectCycle } from '../../utils/formula'
 
 const editorStore = useEditorStore()
 const fieldValueStore = useFieldValueStore()
@@ -33,6 +35,21 @@ const selectedType = ref<FieldType>('string')
 const currentValue = ref<FieldValueData>('')
 const arrayInput = ref('')
 
+// ── T11/T12 远期类型编辑态 ───────────────────────────────
+// formula：表达式文本（plain 落库，结果在渲染层派生）
+const formulaText = ref('')
+// json：textarea 文本（保存时 JSON.parse）
+const jsonText = ref('')
+// color：选中的 --tag-color-* token 名
+const currentColor = ref('')
+// geo：纬度 / 经度 / 地名（文本输入，保存时转 number）
+const geoLat = ref('')
+const geoLng = ref('')
+const geoName = ref('')
+
+/** 颜色类型色板（复用 --tag-color-* token 体系） */
+const tagColors = TAG_COLORS
+
 const fieldTypes: { type: FieldType; label: string }[] = [
   { type: 'string', label: '文本' },
   { type: 'number', label: '数字' },
@@ -45,6 +62,11 @@ const fieldTypes: { type: FieldType; label: string }[] = [
   { type: 'page', label: '页面引用' },
   { type: 'file', label: '附件' },
   { type: 'relation', label: '关联' },
+  { type: 'formula', label: '公式' },
+  { type: 'json', label: 'JSON' },
+  { type: 'color', label: '颜色' },
+  { type: 'autonumber', label: '自增编号' },
+  { type: 'geo', label: '地理坐标' },
 ]
 
 const currentArrayValue = computed<string[]>({
@@ -111,6 +133,18 @@ const specValidationError = computed<string | null>(() => {
   return stringSpecEntry.value?.validate?.(v) ?? null
 })
 
+/** string 特化感知占位符（issue T6 收尾）：email/phone/url/richtext 各给语义占位，
+ *  无特化/未知 → 通用「输入值」。spec 可能带参数化后缀（email:x@y.z），用 specHeadOf 归一。 */
+const stringPlaceholder = computed<string>(() => {
+  switch (specHeadOf(stringSpec.value)) {
+    case 'email': return '输入邮箱地址'
+    case 'phone': return '输入电话号码'
+    case 'url': return '输入链接 URL'
+    case 'richtext': return '输入 markdown（**粗** *斜* `码` [链](接)）'
+    default: return '输入值'
+  }
+})
+
 /** SpecializedText / textarea 回传收窄：undefined（未填）归一为空串（与空串 = 不可保存契约一致）。 */
 function setStringValue(v: string | undefined) {
   currentValue.value = v ?? ''
@@ -135,6 +169,16 @@ const numberSpec = computed<string | undefined>(() => {
 /** rating 特化判定（currency / percent 编辑仍是 number 原路径，仅展示特化）。 */
 const isRatingSpec = computed(() => numberSpecialization(numberSpec.value)?.editor === 'rating')
 
+/** number 特化感知占位符（issue T7 收尾）：currency/percent 给语义占位，
+ *  rating（星级编辑器无文本输入）/ 无特化 → 通用「输入数值」。spec 可能带参数化后缀，用 specHeadOf 归一。 */
+const numberPlaceholder = computed<string>(() => {
+  switch (specHeadOf(numberSpec.value)) {
+    case 'currency': return '输入金额'
+    case 'percent': return '输入百分比'
+    default: return '输入数值'
+  }
+})
+
 /** RatingInput 回传收窄：清除（undefined）归一为空串（与空串 = 不可保存契约一致）。 */
 function setRatingValue(v: number | undefined) {
   currentValue.value = (v ?? '') as FieldValueData
@@ -156,10 +200,84 @@ const pageSpecKind = computed<string | null>(() => {
   return pageSpecialization(head) ? head : null
 })
 
+// ── T11 公式：兄弟字段环境 + 实时预览 + 循环依赖检测 ─────────
+
+/** 同块兄弟字段的数值环境（排除自身），供公式预览求值。 */
+const siblingEnv = computed<Record<string, number>>(() => {
+  const env: Record<string, number> = {}
+  for (const fv of fieldValueStore.getBlockFieldValues(blockId.value)) {
+    if (fv.key === initialKey.value) continue
+    const v = decodeFieldValueData(fv.value_json, fv.value_type)
+    if (typeof v === 'number' && !Number.isNaN(v)) env[fv.key] = v
+  }
+  return env
+})
+
+/** 公式实时预览：求值成功显示结果，失败显示错误文案。 */
+const formulaPreview = computed<{ ok: boolean; text: string }>(() => {
+  const expr = formulaText.value.trim()
+  if (!expr) return { ok: true, text: '—' }
+  const r = evaluateFormula(expr, siblingEnv.value)
+  return r.ok ? { ok: true, text: String(r.value) } : { ok: false, text: r.error }
+})
+
+/** 块内其它 formula 字段节点（排除正在编辑的），供循环检测。 */
+function formulaNodesForBlock(): { key: string; formula: string }[] {
+  return fieldValueStore
+    .getBlockFieldValues(blockId.value)
+    .filter((fv) => fv.value_type === 'formula' && fv.key !== (initialKey.value ?? ''))
+    .map((fv) => ({
+      key: fv.key,
+      formula: String(decodeFieldValueData(fv.value_json, 'formula')),
+    }))
+}
+
+/** 公式校验：表达式非空 + 语法合法 + 无循环依赖。 */
+const formulaError = computed<string | null>(() => {
+  if (selectedType.value !== 'formula') return null
+  const expr = formulaText.value.trim()
+  if (!expr) return '表达式不能为空'
+  const v = validateFormula(expr)
+  if (!v.ok) return v.error
+  const selfKey = initialKey.value ?? '__new_formula__'
+  const cyc = detectCycle(formulaNodesForBlock().concat({ key: selfKey, formula: expr }))
+  if (cyc && (initialKey.value ? cyc.includes(initialKey.value) : true)) {
+    return `检测到循环依赖：${cyc.join(' → ')}`
+  }
+  return null
+})
+
+// ── T12 json：解析校验 ────────────────────────────────
+
+const jsonError = computed<string | null>(() => {
+  if (selectedType.value !== 'json') return null
+  const t = jsonText.value.trim()
+  if (!t) return 'JSON 不能为空'
+  try {
+    JSON.parse(t)
+    return null
+  } catch (e) {
+    return `JSON 解析失败：${(e as Error).message}`
+  }
+})
+
+// ── T12 autonumber：预览将分配的编号 ─────────────────────
+
+const autonumberPreview = computed<number>(() => {
+  if (selectedType.value !== 'autonumber') return 1
+  const key = customKey.value.trim()
+  if (!key || !blockId.value) return 1
+  const existing = fieldValueStore.getBlockFieldValue(blockId.value, key)
+  if (existing) {
+    const v = decodeFieldValueData(existing.value_json, 'autonumber')
+    return typeof v === 'number' ? v : fieldValueStore.nextAutonumber(key)
+  }
+  return fieldValueStore.nextAutonumber(key)
+})
 
 /** 类型的展示文案（编辑模式下类型是纯文本，不再走 select 的 option 文案） */
 const typeLabel = computed(
-  () => fieldTypes.find(t => t.type === selectedType.value)?.label ?? selectedType.value,
+  () => fieldTypes.find((t) => t.type === selectedType.value)?.label ?? selectedType.value,
 )
 
 // 默认焦点的候选元素（各 v-if 分支同时只挂一个，同一 ref 名可跨分支复用）
@@ -215,6 +333,31 @@ const canSave = computed(() => {
     const v = currentValue.value as Partial<RelationRefValue> | null
     return !!v && typeof v === 'object' && !!v.targetId && !!v.relationshipTypeId
   }
+  // formula（issue T11）：表达式非空 + 语法合法 + 无循环依赖
+  if (selectedType.value === 'formula') {
+    return !!formulaText.value.trim() && !formulaError.value
+  }
+  // json（issue T12）：非空 + 合法 JSON
+  if (selectedType.value === 'json') {
+    return !!jsonText.value.trim() && !jsonError.value
+  }
+  // color（issue T12）：必须选中有合法 token
+  if (selectedType.value === 'color') {
+    return currentColor.value !== ''
+  }
+  // geo（issue T12）：经纬度齐备且为数字
+  if (selectedType.value === 'geo') {
+    return (
+      geoLat.value.trim() !== '' &&
+      geoLng.value.trim() !== '' &&
+      !Number.isNaN(Number(geoLat.value)) &&
+      !Number.isNaN(Number(geoLng.value))
+    )
+  }
+  // autonumber（issue T12）：永远可保存（值自动分配）
+  if (selectedType.value === 'autonumber') {
+    return true
+  }
   if (selectedType.value !== 'array' && currentValue.value === '') return false
   // string 特化（issue T6）：格式校验失败阻止保存（红字提示在编辑器下方）
   if (selectedType.value === 'string' && specValidationError.value) return false
@@ -229,6 +372,15 @@ function open() {
     if (existing) {
       selectedType.value = existing.value_type as FieldType
       currentValue.value = decodeFieldValueData(existing.value_json, existing.value_type) as FieldValueData
+      if (selectedType.value === 'formula') formulaText.value = typeof currentValue.value === 'string' ? currentValue.value : ''
+      if (selectedType.value === 'json') jsonText.value = JSON.stringify(currentValue.value ?? '', null, 2)
+      if (selectedType.value === 'color') currentColor.value = typeof currentValue.value === 'string' ? currentValue.value : ''
+      if (selectedType.value === 'geo' && currentValue.value && typeof currentValue.value === 'object') {
+        const g = currentValue.value as { lat: number; lng: number; name?: string }
+        geoLat.value = String(g.lat)
+        geoLng.value = String(g.lng)
+        geoName.value = g.name ?? ''
+      }
     } else {
       currentValue.value = selectedType.value === 'array' || selectedType.value === 'multiSelect' ? [] : ''
     }
@@ -239,6 +391,15 @@ function open() {
     currentValue.value = ''
     arrayInput.value = ''
   }
+  // 远期类型编辑态重置（与上面按 existing 分支互补，保证切换/重开干净）
+  if (selectedType.value !== 'formula') formulaText.value = ''
+  if (selectedType.value !== 'json') jsonText.value = ''
+  if (selectedType.value !== 'color') currentColor.value = ''
+  if (selectedType.value !== 'geo') {
+    geoLat.value = ''
+    geoLng.value = ''
+    geoName.value = ''
+  }
 }
 
 function close() {
@@ -247,6 +408,12 @@ function close() {
   selectedType.value = 'string'
   currentValue.value = ''
   arrayInput.value = ''
+  formulaText.value = ''
+  jsonText.value = ''
+  currentColor.value = ''
+  geoLat.value = ''
+  geoLng.value = ''
+  geoName.value = ''
 }
 
 /** 浮层锚点（触发元素矩形）；生产调用方均会传，缺省时退化为视口居中 */
@@ -304,10 +471,34 @@ async function save() {
   if (!canSave.value || !blockId.value) return
 
   try {
+    let value: FieldValueData
+    switch (selectedType.value) {
+      case 'formula':
+        value = formulaText.value.trim()
+        break
+      case 'json':
+        value = JSON.parse(jsonText.value) as unknown
+        break
+      case 'color':
+        value = currentColor.value
+        break
+      case 'geo':
+        value = {
+          lat: Number(geoLat.value),
+          lng: Number(geoLng.value),
+          name: geoName.value.trim() || undefined,
+        }
+        break
+      case 'autonumber':
+        value = autonumberPreview.value
+        break
+      default:
+        value = currentValue.value
+    }
     await fieldValueStore.setFieldValue(
       blockId.value,
       customKey.value.trim(),
-      currentValue.value,
+      value,
       selectedType.value
     )
     close()
@@ -432,7 +623,7 @@ watch(visible, (val) => {
           <FileRefEditor
             v-else-if="selectedType === 'file'"
             class="file-field"
-            :model-value="typeof currentValue === 'object' && currentValue !== null && !Array.isArray(currentValue) && 'path' in currentValue ? currentValue : undefined"
+            :model-value="typeof currentValue === 'object' && currentValue !== null && !Array.isArray(currentValue) && 'path' in currentValue ? (currentValue as FileRefValue) : undefined"
             @update:model-value="setFileValue"
           />
 
@@ -458,6 +649,92 @@ watch(visible, (val) => {
             @update:model-value="setRelationValue"
           />
 
+          <!-- Formula（计算字段，issue T11）：表达式输入 + 实时预览 + 循环依赖提示 -->
+          <template v-else-if="selectedType === 'formula'">
+            <input
+              ref="valueInput"
+              v-model="formulaText"
+              class="formula-field"
+              type="text"
+              placeholder="如 price * qty"
+            >
+            <div
+              class="formula-preview"
+              :class="{ 'formula-preview--error': !formulaPreview.ok }"
+            >
+              预览：{{ formulaPreview.text }}
+            </div>
+            <div
+              v-if="formulaError"
+              class="spec-error"
+            >
+              {{ formulaError }}
+            </div>
+          </template>
+
+          <!-- JSON（结构化对象，issue T12）：textarea + 解析校验 -->
+          <template v-else-if="selectedType === 'json'">
+            <textarea
+              v-model="jsonText"
+              class="json-field"
+              rows="5"
+              placeholder="{ &quot;k&quot;: &quot;v&quot; }"
+            />
+            <div
+              v-if="jsonError"
+              class="spec-error"
+            >
+              {{ jsonError }}
+            </div>
+          </template>
+
+          <!-- Color（颜色，issue T12）：色板复用 --tag-color-* token -->
+          <template v-else-if="selectedType === 'color'">
+            <div class="color-swatches">
+              <button
+                v-for="c in tagColors"
+                :key="c.token"
+                type="button"
+                class="color-swatch"
+                :class="{ 'color-swatch--selected': currentColor === c.token }"
+                :style="{ background: `var(${c.token})` }"
+                :title="c.label"
+                @click="currentColor = c.token"
+              />
+            </div>
+          </template>
+
+          <!-- Geo（地理位置，issue T12）：纬度 / 经度 / 地名 -->
+          <template v-else-if="selectedType === 'geo'">
+            <div class="geo-field">
+              <input
+                v-model="geoLat"
+                class="geo-input"
+                type="text"
+                placeholder="纬度 lat"
+              >
+              <input
+                v-model="geoLng"
+                class="geo-input"
+                type="text"
+                placeholder="经度 lng"
+              >
+              <input
+                v-model="geoName"
+                class="geo-input"
+                type="text"
+                placeholder="地名（可选）"
+              >
+            </div>
+          </template>
+
+          <!-- Autonumber（自增编号，issue T12）：只读预览将分配编号 -->
+          <template v-else-if="selectedType === 'autonumber'">
+            <div class="autonumber-preview">
+              将分配编号：<strong>{{ autonumberPreview }}</strong>（新增时自增，不可编辑）
+            </div>
+          </template>
+
           <!-- Number（rating 特化 issue T7：spec='rating' 换星级编辑器；
                currency / percent 与无特化仍走原数字输入，零回归） -->
           <RatingInput
@@ -473,6 +750,7 @@ watch(visible, (val) => {
             ref="valueInput"
             v-model.number="currentValue"
             type="number"
+            :placeholder="numberPlaceholder"
           >
 
           <!-- multiSelect（多选枚举，T4）：封闭选项来自字段定义 closedValues；
@@ -520,7 +798,7 @@ watch(visible, (val) => {
               class="spec-editor"
               :spec="stringSpec ?? 'email'"
               :model-value="typeof currentValue === 'string' ? currentValue : undefined"
-              placeholder="输入值"
+              :placeholder="stringPlaceholder"
               @update:model-value="setStringValue"
             />
             <textarea
@@ -528,7 +806,7 @@ watch(visible, (val) => {
               :value="typeof currentValue === 'string' ? currentValue : ''"
               class="richtext-editor"
               rows="4"
-              placeholder="输入 markdown（**粗** *斜* `码` [链](接)）"
+              :placeholder="stringPlaceholder"
               @input="onRichtextInput"
             />
             <input
@@ -536,7 +814,7 @@ watch(visible, (val) => {
               ref="valueInput"
               v-model="currentValue"
               type="text"
-              placeholder="输入值"
+              :placeholder="stringPlaceholder"
             >
             <!-- 特化校验失败红字提示（var(--error)），同时由 canSave 阻止保存 -->
             <div
@@ -798,5 +1076,107 @@ watch(visible, (val) => {
   flex-basis: 100%;
   font-size: var(--text-xs);
   color: var(--error);
+}
+
+/* ── T11 公式字段编辑器 ── */
+
+.formula-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.formula-preview {
+  flex-basis: 100%;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.formula-preview--error {
+  color: var(--error);
+}
+
+/* ── T12 json 字段编辑器 ── */
+
+.json-field {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: var(--text-sm);
+  font-family: var(--font-mono, monospace);
+  line-height: var(--leading-normal);
+  color: var(--text-primary);
+  background: var(--bg-base);
+  resize: vertical;
+  outline: none;
+
+  &:focus {
+    border-color: var(--accent);
+  }
+}
+
+/* ── T12 color 字段编辑器（色板）── */
+
+.color-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.color-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: transform var(--dur-fast) var(--ease-out);
+
+  &:hover {
+    transform: scale(1.1);
+  }
+
+  &--selected {
+    border-color: var(--text-primary);
+  }
+}
+
+/* ── T12 geo 字段编辑器 ── */
+
+.geo-field {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.geo-input {
+  flex: 1 1 80px;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  background: var(--bg-base);
+  outline: none;
+
+  &:focus {
+    border-color: var(--accent);
+  }
+}
+
+/* ── T12 autonumber 字段编辑器 ── */
+
+.autonumber-preview {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
 }
 </style>

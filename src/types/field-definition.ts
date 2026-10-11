@@ -15,6 +15,15 @@ import { SYSTEM_TAGS } from './tag'
  *   id），落库为 JSON 对象（codec 走默认 JSON 路径，同 multiSelect）；字段定义经
  *   closed_values 携带约定的关系类型 id（单元素数组，最小持久化路径，见 tag-persisted.ts）
  * - array / page / boolean / string / number / date：既有词汇，保持不变
+ * - formula（T11 计算字段）：值由同块其它字段的表达式求值得到；表达式本身以 plain
+ *   string 落库（field_value.value_json），计算结果在渲染时按兄弟字段派生（响应式重算），
+ *   循环依赖在保存时检测并拒绝（见 utils/formula）。
+ * - json（T12 结构化对象）：任意结构化值（对象/数组/标量），codec 走默认 JSON 分支。
+ * - color（T12 颜色）：复用 --tag-color-* token 体系（utils/tag-color），值存 token 名，
+ *   plain string 落库。
+ * - autonumber（T12 自增编号）：新增时取该 key 现存最大值 +1（store.nextAutonumber），
+ *   唯一性在已加载数据集内保证，plain number 落库。
+ * - geo（T12 地理位置）：值形 { lat, lng, name? }，codec 走默认 JSON 分支。
  */
 export type FieldType =
   | 'string'
@@ -29,6 +38,11 @@ export type FieldType =
   | 'page'
   | 'file'
   | 'relation'
+  | 'formula'
+  | 'json'
+  | 'color'
+  | 'autonumber'
+  | 'geo'
 
 /** file 字段的内存值形态（issue T9）：path 为资产引用（`asset://<id>`，跟随既有
  *  workspace/assets/ 资产目录约定），name 为原始文件名（展示用），mime 可选。 */
@@ -47,6 +61,16 @@ export interface FileRefValue {
 export interface RelationRefValue {
   targetId: string
   relationshipTypeId: string
+}
+
+/**
+ * geo 字段值域（issue T12）：经纬度 + 可选地名。落库形态 = 本对象的 JSON 文本
+ * （value_value → value_json，codec 走默认 JSON 路径，同 relation/file）。
+ */
+export interface GeoValue {
+  lat: number
+  lng: number
+  name?: string
 }
 
 /**
@@ -109,6 +133,16 @@ export type FieldValueDataMap = {
   file: FileRefValue
   /** relation（issue T5）：目标 + 关系类型引用对象 */
   relation: RelationRefValue
+  /** formula（issue T11）：表达式字符串（plain 落库）；计算结果由渲染层派生 */
+  formula: string
+  /** json（issue T12）：任意结构化值 */
+  json: unknown
+  /** color（issue T12）：--tag-color-* token 名（string） */
+  color: string
+  /** autonumber（issue T12）：自增编号（number） */
+  autonumber: number
+  /** geo（issue T12）：经纬度 + 可选地名 */
+  geo: GeoValue
 }
 
 /** 字段的内存值形态（编解码后） */

@@ -36,6 +36,11 @@ export type FieldEditorKind =
   | 'rating'    // 评分 1–N 星（number 特化 rating，issue T7）
   | 'file'      // 附件（上传文件，引用路径落库；issue T9）
   | 'relation'  // 关系引用（目标块/页 + 关系类型；issue T5）
+  | 'formula'   // 公式表达式（issue T11）：编辑表达式，值由兄弟字段派生
+  | 'json'      // JSON 结构化值（issue T12）：textarea 编辑任意 JSON
+  | 'color'     // 颜色选择（issue T12）：色板复用 --tag-color-* token
+  | 'autonumber'// 自增编号（issue T12）：新增时自动 +1，只读展示
+  | 'geo'       // 地理位置（issue T12）：经纬度 + 可选地名
 
 /** 单个字段类型的三面规格。 */
 export interface FieldTypeSpec {
@@ -83,6 +88,16 @@ export const FIELD_TYPE_REGISTRY: Readonly<Record<FieldType, FieldTypeSpec>> = {
   // relation（关系引用，issue T5）：值形 { targetId, relationshipTypeId } 走 JSON 编解码；
   // v1 只开放「有没有值」的筛法（目标/关系类型的值级匹配留待查询引擎跟进）
   relation:   { editor: 'relation', displayForm: 'chip', filterOps: ['isEmpty', 'isNotEmpty'] },
+  // formula（计算字段，issue T11）：表达式 plain 落库，值由兄弟字段派生；v1 不可筛
+  formula:    { editor: 'formula',   displayForm: 'text', filterOps: [] },
+  // json（结构化对象，issue T12）：textarea 编辑任意 JSON；v1 不可筛
+  json:       { editor: 'json',      displayForm: 'text', filterOps: [] },
+  // color（颜色，issue T12）：色板复用 --tag-color-* token；v1 不可筛
+  color:      { editor: 'color',     displayForm: 'chip', filterOps: [] },
+  // autonumber（自增编号，issue T12）：新增自动 +1，只读展示；v1 不可筛
+  autonumber: { editor: 'autonumber',displayForm: 'chip', filterOps: [] },
+  // geo（地理位置，issue T12）：经纬度 + 可选地名；v1 不可筛
+  geo:        { editor: 'geo',       displayForm: 'text', filterOps: [] },
 }
 
 /** 未知类型保守回落（v1 不认识即不可筛）。 */

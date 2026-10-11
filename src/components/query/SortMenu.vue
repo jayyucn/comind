@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+  Braces,
   CalendarDays,
   CheckSquare,
   FileText,
@@ -7,7 +8,10 @@ import {
   Hash,
   Link,
   List,
+  MapPin,
+  Palette,
   Paperclip,
+  Sigma,
   Trash2,
   Type,
   X,
@@ -76,6 +80,11 @@ const FIELD_META: Record<FieldType, { icon: Component; dirs: { asc: string; desc
   array: { icon: List, dirs: { asc: 'A → Z', desc: 'Z → A' } },
   file: { icon: Paperclip, dirs: { asc: 'A → Z', desc: 'Z → A' } },
   relation: { icon: Link, dirs: { asc: 'A → Z', desc: 'Z → A' } },
+  formula: { icon: Sigma, dirs: { asc: '小 → 大', desc: '大 → 小' } },
+  json: { icon: Braces, dirs: { asc: 'A → Z', desc: 'Z → A' } },
+  color: { icon: Palette, dirs: { asc: 'A → Z', desc: 'Z → A' } },
+  autonumber: { icon: Hash, dirs: { asc: '1 → 9', desc: '9 → 1' } },
+  geo: { icon: MapPin, dirs: { asc: 'A → Z', desc: 'Z → A' } },
 }
 
 function fieldIcon(type: FieldType) {

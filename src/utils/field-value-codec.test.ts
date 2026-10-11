@@ -106,10 +106,57 @@ describe('field-value-codec decodeFieldValueData', () => {
       // file（issue T9）：{ path, name, mime? } 对象 JSON 往返
       [{ path: 'asset://asset_1_ab', name: '截图.png', mime: 'image/png' }, 'file'],
       [{ path: 'asset://asset_2_cd', name: '报告.pdf' }, 'file'],
+      // ── T11/T12 远期类型 ──────────────────────────────
+      // formula（T11）：表达式 plain string 直通往返
+      ['price * qty', 'formula'],
+      // color（T12）：token 名 plain string 直通往返
+      ['--tag-color-3', 'color'],
+      // autonumber（T12）：plain number，JSON 编解码保真数值类型
+      [7, 'autonumber'],
+      // json（T12）：任意结构化值 JSON 往返
+      [{ a: 1, nested: { b: [2, 3] } }, 'json'],
+      // geo（T12）：{ lat, lng, name? } 对象 JSON 往返
+      [{ lat: 39.9042, lng: 116.4074, name: 'Beijing' }, 'geo'],
     ]
     for (const [value, type] of cases) {
       expect(decodeFieldValueData(encodeFieldValueData(value, type), type)).toEqual(value)
     }
+  })
+
+  // ── T11/T12 远期类型（formula/json/color/autonumber/geo）─────────────
+
+  describe('T11/T12 远期类型编解码', () => {
+    test('formula 直通存原文（表达式即 string，无 JSON 包裹）', () => {
+      expect(encodeFieldValueData('price * qty - discount', 'formula')).toBe('price * qty - discount')
+      expect(decodeFieldValueData('price * qty - discount', 'formula')).toBe('price * qty - discount')
+    })
+
+    test('color 直通存原文（token 名即 string）', () => {
+      expect(encodeFieldValueData('--tag-color-5', 'color')).toBe('--tag-color-5')
+      expect(decodeFieldValueData('--tag-color-5', 'color')).toBe('--tag-color-5')
+    })
+
+    test('autonumber 走 JSON 编解码保真数值类型（非 string 静默变型）', () => {
+      expect(encodeFieldValueData(12, 'autonumber')).toBe('12')
+      expect(decodeFieldValueData('12', 'autonumber')).toBe(12)
+      expect(typeof decodeFieldValueData('12', 'autonumber')).toBe('number')
+    })
+
+    test('json 走 JSON 编解码（任意结构化值）', () => {
+      const value = { key: 'val', list: [1, 2], deep: { ok: true } }
+      expect(encodeFieldValueData(value, 'json')).toBe(JSON.stringify(value))
+      expect(decodeFieldValueData(JSON.stringify(value), 'json')).toEqual(value)
+    })
+
+    test('geo 走 JSON 编解码（{ lat, lng, name? }）', () => {
+      const value = { lat: 31.23, lng: 121.47, name: 'Shanghai' }
+      expect(encodeFieldValueData(value, 'geo')).toBe('{"lat":31.23,"lng":121.47,"name":"Shanghai"}')
+      expect(decodeFieldValueData('{"lat":31.23,"lng":121.47,"name":"Shanghai"}', 'geo')).toEqual(value)
+    })
+
+    test('autonumber 编码非 number 入参兜底 String()（DB 值恒为字符串）', () => {
+      expect(encodeFieldValueData('42', 'autonumber')).toBe('"42"')
+    })
   })
 
   // ── relation（issue T5）：字段级关系引用 ───────────────────────

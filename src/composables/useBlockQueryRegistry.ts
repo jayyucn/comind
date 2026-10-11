@@ -294,6 +294,12 @@ const TYPE_MAP: Record<DomainFieldType, FieldType> = {
   daterange: 'daterange',
   file: 'file',
   relation: 'relation',
+  // T11/T12 远期类型恒等映射（issue #140 F1 词汇收口：新增类型即 FieldType 成员）
+  formula: 'formula',
+  json: 'json',
+  color: 'color',
+  autonumber: 'autonumber',
+  geo: 'geo',
 }
 
 /**

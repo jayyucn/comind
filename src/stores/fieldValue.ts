@@ -10,6 +10,7 @@ import { useEditorStore } from './editor'
 import { useTagsStore } from './tags'
 import { serializeDateRef, type DateRefKind } from '../utils/date-ref'
 import { encodeFieldValueData } from '../utils/field-value-codec'
+import { nextAutonumberFromCache } from '../utils/autonumber'
 import type { RecurrenceRule } from '../utils/date-ref'
 // 4.2 / S6: calculateNextRecurrence migrated to Rust
 import { getCoreClient } from '../wasm/client'
@@ -109,6 +110,11 @@ export const useFieldValueStore = defineStore('fieldValue', () => {
   ): Promise<FieldValue> {
     const client = await getClient()
     const fieldType = type || inferType(value)
+    // autonumber（issue T12）：首次写入自动取该 key 现存最大值 +1；已存在行
+    // （重写入）不重生成，保持原值——「新增时自增」语义。
+    if (fieldType === 'autonumber' && !getBlockFieldValue(blockId, key)) {
+      value = nextAutonumberFromCache(fieldValuesByBlock.value, key)
+    }
     // 块首次成为任务（status 由无到有）——写入前先记状态，供下方补默认 priority。
     // seed 里 priority 的 defaultValue 只覆盖「打任务标签后由 Rust 自动填默认」这一路径；
     // /todo、/status 快速编辑器、/schedule、/deadline 等直接写 status 的路径不经打标，
@@ -145,7 +151,7 @@ export const useFieldValueStore = defineStore('fieldValue', () => {
     // status ↔ priority 成对（写入收口，双向对偶）：写入 priority 且块尚无 status
     // → 补默认 status=Todo（/low 默认设 todo）；反向（status 首次写入补 priority=Low，
     // /todo 默认设 low）即上方 becomesTask 分支。只写字段值，不改 content、不挂
-    // #任务 tag——打标仅属 ensureTodo 的显式任务路径（/schedule dateRef 等）。
+    // #任务 tag——打标仅属于 ensureTodo 的显式任务路径（/schedule dateRef 等）。
     if (key === 'priority' && value && !pairingWrites.has(blockId) && !getBlockFieldValue(blockId, 'status')) {
       pairingWrites.add(blockId)
       try {
@@ -202,6 +208,14 @@ export const useFieldValueStore = defineStore('fieldValue', () => {
     if (Array.isArray(value)) return 'array'
     if (typeof value === 'object') return 'page'
     return 'string'
+  }
+
+  /**
+   * 预览某 key 的下一个自增编号（issue T12）：供 autonumber 字段编辑器展示「将分配：N」。
+   * 纯查缓存，不写库。
+   */
+  function nextAutonumber(key: string): number {
+    return nextAutonumberFromCache(fieldValuesByBlock.value, key)
   }
 
   /**
@@ -299,6 +313,7 @@ export const useFieldValueStore = defineStore('fieldValue', () => {
     ensureTodo,
     deleteFieldValue,
     clearBlockCache,
-    advanceDateRefInBlock
+    advanceDateRefInBlock,
+    nextAutonumber
   }
 })

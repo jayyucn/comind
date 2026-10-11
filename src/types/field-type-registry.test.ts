@@ -11,6 +11,8 @@ import type { FieldType } from './field-definition'
 /** 规范联合全量成员（field-definition.ts 单源，issue #140）。 */
 const CANONICAL_TYPES: FieldType[] = [
   'string', 'number', 'boolean', 'date', 'datetime', 'select', 'multiSelect', 'array', 'page',
+  // T11/T12 远期类型（issue #140 F1 收口后新增）
+  'formula', 'json', 'color', 'autonumber', 'geo',
 ]
 
 describe('field-type-registry', () => {
@@ -85,6 +87,43 @@ describe('field-type-registry', () => {
     expect(s.editor).toBe('pageRef')
     expect(s.displayForm).toBe('chip')
     expect(s.filterOps).toEqual(['is', 'isNot', 'contains', 'notContains', 'isEmpty', 'isNotEmpty'])
+  })
+
+  // ── T11/T12 远期类型（issue #149 / #150）──
+
+  it('formula（计算字段 T11）：formula 编辑器 / text 形态 / 不可筛（v1 无 filterOps）', () => {
+    const s = fieldTypeSpec('formula')
+    expect(s.editor).toBe('formula')
+    expect(s.displayForm).toBe('text')
+    expect(s.filterOps).toEqual([])
+  })
+
+  it('json（T12）：json 编辑器 / text 形态 / 不可筛', () => {
+    const s = fieldTypeSpec('json')
+    expect(s.editor).toBe('json')
+    expect(s.displayForm).toBe('text')
+    expect(s.filterOps).toEqual([])
+  })
+
+  it('color（T12）：color 编辑器 / chip 形态 / 不可筛', () => {
+    const s = fieldTypeSpec('color')
+    expect(s.editor).toBe('color')
+    expect(s.displayForm).toBe('chip')
+    expect(s.filterOps).toEqual([])
+  })
+
+  it('autonumber（T12）：autonumber 编辑器 / chip 形态 / 不可筛', () => {
+    const s = fieldTypeSpec('autonumber')
+    expect(s.editor).toBe('autonumber')
+    expect(s.displayForm).toBe('chip')
+    expect(s.filterOps).toEqual([])
+  })
+
+  it('geo（T12）：geo 编辑器 / text 形态 / 不可筛', () => {
+    const s = fieldTypeSpec('geo')
+    expect(s.editor).toBe('geo')
+    expect(s.displayForm).toBe('text')
+    expect(s.filterOps).toEqual([])
   })
 
   // ── 未知类型与防御性 ──
