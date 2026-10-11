@@ -3,8 +3,8 @@
  *
  * 规格锚点（需求 1-4）：
  * 1. 子 block 含任务项（status 字段值）→ 返回 done/total；
- * 2. Canceled 不参与（不计 total，也不计 done）；
- * 3. 无任务项 / 全部 Canceled / 空子列表 → null（不渲染进度条）；
+ * 2. Canceled / Archived 不参与（不计 total，也不计 done）；
+ * 3. 无任务项 / 全部 Canceled / 全部 Archived / 空子列表 → null（不渲染进度条）；
  * 4. done = status === 'Done' 的数量。
  */
 import { describe, it, expect } from 'vitest'
@@ -31,9 +31,16 @@ describe('computeChildTaskProgress', () => {
     expect(computeChildTaskProgress(CHILDREN, lookup)).toBeNull()
   })
 
-  it('混排：Done + Doing + Todo + Canceled → { done: 1, total: 3 }', () => {
+  it('全为 Archived → null（已归档任务不参与）', () => {
+    const lookup = statusLookup({ a: 'Archived', b: TASK_STATUS.ARCHIVED })
+    expect(computeChildTaskProgress(CHILDREN, lookup)).toBeNull()
+  })
+
+  it('混排：Done + Doing + Todo + Canceled + Archived → { done: 1, total: 3 }', () => {
     const lookup = statusLookup({ a: 'Done', b: 'Doing', c: 'Todo', d: 'Canceled' })
+    const lookup2 = statusLookup({ a: 'Done', b: 'Doing', c: 'Todo', d: 'Archived' })
     expect(computeChildTaskProgress(CHILDREN, lookup)).toEqual({ done: 1, total: 3 })
+    expect(computeChildTaskProgress(CHILDREN, lookup2)).toEqual({ done: 1, total: 3 })
   })
 
   it('全 Done → { done: 2, total: 2 }（100%）', () => {
@@ -48,6 +55,11 @@ describe('computeChildTaskProgress', () => {
 
   it('Canceled 不挤占 done：Done + Canceled → { done: 1, total: 1 }', () => {
     const lookup = statusLookup({ a: 'Done', b: 'Canceled' })
+    expect(computeChildTaskProgress([{ id: 'a' }, { id: 'b' }], lookup)).toEqual({ done: 1, total: 1 })
+  })
+
+  it('Archived 不挤占 done：Done + Archived → { done: 1, total: 1 }', () => {
+    const lookup = statusLookup({ a: 'Done', b: 'Archived' })
     expect(computeChildTaskProgress([{ id: 'a' }, { id: 'b' }], lookup)).toEqual({ done: 1, total: 1 })
   })
 })

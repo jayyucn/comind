@@ -178,7 +178,7 @@ const childrenContainerClass = computed(() => ({
   'is-animating': isAnimating.value,
 }))
 
-// ── 子任务进度：子 block 含任务项（status 字段，Canceled 除外）时显示进度条 ──
+// ── 子任务进度：子 block 含任务项（status 字段，Canceled/Archived 除外）时显示进度条 ──
 const { progress: childTaskProgress } = useChildTaskProgress(childrenModel)
 
 /**
@@ -687,7 +687,7 @@ watch(isActive, (active) => {
     </button>
 
     <!-- 子任务进度条：子 block 含任务项（status 字段）时显示在 block 下方；
-         Canceled 不参与，全部删除后随树重建自动消失 -->
+         Canceled/Archived 不参与，全部删除后随树重建自动消失 -->
     <TaskProgressBar
       v-if="childTaskProgress"
       :done="childTaskProgress.done"

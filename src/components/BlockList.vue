@@ -64,7 +64,7 @@ function syncFromStore() {
 }
 
 // ── 根级任务进度（需求 2）：顶层 block 是页面根 block 的子 block，
-//    其中含任务项（status 字段，Canceled 除外）时，进度条显示在列表顶部。
+//    其中含任务项（status 字段，Canceled/Archived 除外）时，进度条显示在列表顶部。
 //    纯派生 computed：删除最后一个 block 后树重建为空 → 进度条自动移除（需求 4）。──
 const { progress: rootTaskProgress } = useChildTaskProgress(tree)
 

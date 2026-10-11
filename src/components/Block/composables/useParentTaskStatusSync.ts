@@ -9,11 +9,11 @@ import { computeChildTaskProgress, TASK_STATUS } from '../../../utils/task-progr
  * useParentTaskStatusSync —— 父任务状态随子任务完成度自动推进
  *
  * 规则（仅作用于「本 block 也是任务 block」）：
- * - 本 block 有 status（任务项）且当前状态非 Canceled；
- * - 存在 ≥1 个有效子任务（非 Canceled 的任务子项）时：
+ * - 本 block 有 status（任务项）且当前状态非 Canceled / Archived（归档父不被自动改写）；
+ * - 存在 ≥1 个有效子任务（非 Canceled / Archived 的任务子项）时：
  *   - 全部 Done → 本 block 自动置为 Done（「当所有子任务全部完成时」）；
  *   - 否则 → 自动置为 Doing（含「全部完成后又新建子任务」→ 改回进行中）；
- * - 无有效子任务 / 本 block 无 status / 本 block 为 Canceled → 不自动调整。
+ * - 无有效子任务 / 本 block 无 status / 本 block 为 Canceled / Archived → 不自动调整。
  *
  * 死循环防线（T11 日期推进机制）：本 block 内容含周期 dateRef（daily/weekly/
  * monthly/yearly）时跳过「置 Done」——置 Done 会触发 advanceDateRefInBlock 推进
@@ -62,7 +62,7 @@ export function useParentTaskStatusSync(pageId: () => string) {
 
     for (const block of blocks) {
       const self = statusOf(block.id)
-      if (self === undefined || self === TASK_STATUS.CANCELED) continue
+      if (self === undefined || self === TASK_STATUS.CANCELED || self === TASK_STATUS.ARCHIVED) continue
       const progress = computeChildTaskProgress(
         (childrenOf.get(block.id) ?? []).map((id) => ({ id })),
         statusOf,

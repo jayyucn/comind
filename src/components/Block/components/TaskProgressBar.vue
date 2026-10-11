@@ -2,7 +2,7 @@
 /**
  * TaskProgressBar —— 子任务进度条
  *
- * 展示「子 block 中任务项」的完成进度：done/total（Canceled 不参与，
+ * 展示「子 block 中任务项」的完成进度：done/total（Canceled/Archived 不参与，
  * 由数据源 computeChildTaskProgress 剔除后传入）。
  *
  * 样式（2026-10-03 grill 意见）：胶囊容器（非全宽长条）、定宽轨道、
