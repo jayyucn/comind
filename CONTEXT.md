@@ -181,6 +181,15 @@ A Block's built-in string property (`key: 'project'`). Its value is free text �
 ### Area (领域)
 A Block's built-in string property (`key: 'area'`). Same free-text semantics and input convenience as **Project**: the value is a string, never a reference. _Avoid_: area entity, 领域引用.
 
+### Task Status (任务状态)
+A task's lifecycle position, carried by the built-in `status` field's five closed values: `Todo / Doing / Done / Canceled / Archived`. Todo/Doing/Done are the **participating** states — they count toward progress statistics and parent-task auto-sync. Canceled and Archived are the two **non-participating terminal** states — they count in no statistics and are exempt from sync. Clicking a status icon cycles through participating states only; a terminal-state task returns to Todo (取回). See ADR-0056.
+
+### Canceled (已取消)
+A non-participating terminal state meaning the task is **repudiated** — explicitly given up. Visually distinguished (red de-emphasis). Contrast with **Archived**, which tidies attention without negating the task.
+
+### Archived (已归档)
+A non-participating terminal state meaning **out of the active view, not repudiated** — the task is set aside, not given up. Counts in no progress statistics (neither total nor done), is never auto-rewritten by parent-task sync, and sorts last in queries; remains a valid storable value selectable from the status menu. The Archive decision (exclusion from statistics, same treatment as Canceled) was made over "counts as done" and "mixed" alternatives — see ADR-0056. _Avoid_: 删除, complete, 备份.
+
 ### Book Page (书籍页面)
 A Page whose `type` is `book`. Created by EPUB import; carries title/author/cover metadata. Dual identity: a plain note container in the editor (its child Blocks are reading notes), and the launch target of the Reader Window from the Library gallery. Synced as ordinary Page metadata; on devices without a reader it is just a normal note page. See ADR-0040.
 
