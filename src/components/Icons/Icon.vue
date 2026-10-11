@@ -6,8 +6,8 @@ import {
   Calendar,
   Droplet,
   Folder,
-  History,
   Highlighter,
+  History,
   Link,
   Maximize2,
   Menu,
@@ -27,14 +27,14 @@ import {
   Undo2,
   X
 } from 'lucide-vue-next'
-import { computed, defineComponent, h } from 'vue'
 import type { Component } from 'vue'
+import { computed, defineComponent, h } from 'vue'
+import PriorityQuadrant from './PriorityIcons/PriorityQuadrant.vue'
 import StatusArchived from './StatusIcons/StatusArchived.vue'
 import StatusCanceled from './StatusIcons/StatusCanceled.vue'
 import StatusDoing from './StatusIcons/StatusDoing.vue'
 import StatusDone from './StatusIcons/StatusDone.vue'
 import StatusTodo from './StatusIcons/StatusTodo.vue'
-import PriorityQuadrant from './PriorityIcons/PriorityQuadrant.vue'
 
 const STATUS_ICONS: Record<string, Component> = {
   'status-todo': StatusTodo,
@@ -179,7 +179,7 @@ const resolvedColor = computed(() => {
     :size="size || 24"
     :color="resolvedColor"
     :stroke-width="strokeWidth ?? 2"
-    v-bind="isStatusIcon ? { shape } : {}"
+    v-bind="isStatusIcon ? { shape: props.shape ?? 'round' } : {}"
     :style="isFilled ? { fill: resolvedColor } : {}"
   />
 </template>
