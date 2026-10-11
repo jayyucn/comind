@@ -202,8 +202,8 @@ describe('FieldValueQuickEditor — project/area 搜索列表分支', () => {
   })
 })
 
-describe('FieldValueQuickEditor — 设置优先级自动补 Todo', () => {
-  it('选择优先级后调用 ensureTodo（与 /schedule 一致）', async () => {
+describe('FieldValueQuickEditor — 设置优先级', () => {
+  it('选择优先级只写 priority，不调 ensureTodo（成对补 status 由 store 收口，不挂 #任务 tag）', async () => {
     editorStoreMock.quickFieldValueEditor = {
       visible: true,
       blockId: 'block-1',
@@ -219,7 +219,7 @@ describe('FieldValueQuickEditor — 设置优先级自动补 Todo', () => {
 
     const store = vi.mocked(useFieldValueStore())
     expect(store.setFieldValue).toHaveBeenCalledWith('block-1', 'priority', expect.anything(), 'string')
-    expect(store.ensureTodo).toHaveBeenCalledWith('block-1')
+    expect(store.ensureTodo).not.toHaveBeenCalled()
   })
 
   it('非优先级属性不调用 ensureTodo', async () => {

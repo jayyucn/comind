@@ -1281,8 +1281,15 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
       fieldDef({ id: 'f-status', key: 'status', title: '状态', is_system: true }),
       fieldDef({ id: 'f-priority', key: 'priority', title: '优先级', is_system: true }),
     ])
+    // status↔priority 成对投影：无 status 时 priority 行隐藏——本用例验证的是
+    // 「行内展示位 + 录入面并存」，须先让块处于任务态（有 status）再断言
+    mockClient.getFieldValues.mockResolvedValue([
+      fv({ id: 'v-s', block_id: 'b1', key: 'status', value_json: 'Todo', value_type: 'string' }),
+    ])
 
     const wrapper = await mountList('b1', ['t-task'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
     // status 走 between 内联槽被排除；priority 虽有 right 行内展示位（只读），
     // 但本区是唯一可写入口 ⇒ 必须继续渲染 priority，不适用去重规则
     const titles = wrapper.findAll('.block-field-zone-row').map(rowTitle)
@@ -1414,7 +1421,9 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
   }
 
   it('right：priority 走行尾槽，尺寸 14（与实现及注释一致；旧预期 18 是测试侧规格漂移）', () => {
+    // 成对前提：块有 status 值时 priority 图标才展示
     const wrapper = mountRight('b1', [
+      fv({ id: 'v0', block_id: 'b1', key: 'status', value_json: 'Todo' }),
       fv({ id: 'v1', block_id: 'b1', key: 'priority', value_json: 'Low' }),
     ])
     expect(wrapper.find('.property-inline--right').exists()).toBe(true)
@@ -1427,6 +1436,7 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
 
   it('right：item 暴露 data-field/data-value，供按档位降层级定位', () => {
     const low = mountRight('b1', [
+      fv({ id: 'v0', block_id: 'b1', key: 'status', value_json: 'Todo' }),
       fv({ id: 'v1', block_id: 'b1', key: 'priority', value_json: 'Low' }),
     ])
     const item = low.find('.property-inline-item')
@@ -1434,6 +1444,7 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
     expect(item.attributes('data-value')).toBe('Low')
 
     const urgent = mountRight('b2', [
+      fv({ id: 'v0', block_id: 'b2', key: 'status', value_json: 'Todo' }),
       fv({ id: 'v2', block_id: 'b2', key: 'priority', value_json: 'Urgent' }),
     ])
     expect(urgent.find('.property-inline-item').attributes('data-value')).toBe('Urgent')
@@ -1441,11 +1452,34 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
 
   it('right：点亮格与栅格各有锚点 —— 栅格是位置参照系，强度只压点亮格', () => {
     const wrapper = mountRight('b1', [
+      fv({ id: 'v0', block_id: 'b1', key: 'status', value_json: 'Todo' }),
       fv({ id: 'v1', block_id: 'b1', key: 'priority', value_json: 'Low' }),
     ])
     // 2×2 方格：恰一个点亮格 + 三个栅格；栅格必须保持，否则实心块失去参照系
     expect(wrapper.findAll('.pq-lit')).toHaveLength(1)
     expect(wrapper.findAll('.pq-frame')).toHaveLength(3)
+  })
+
+  it('right：成对投影 —— 无 status（backspace 删掉）→ priority 图标隐藏，值保留在库；重设 status 后恢复', () => {
+    // 只有 priority 值、无 status → 行尾不渲染 priority 图标
+    const hidden = mountRight('b1', [
+      fv({ id: 'v1', block_id: 'b1', key: 'priority', value_json: 'Low' }),
+    ])
+    expect(hidden.find('.property-inline-item').exists()).toBe(false)
+
+    // status 空串同样视为未设
+    const empty = mountRight('b2', [
+      fv({ id: 'v0', block_id: 'b2', key: 'status', value_json: '' }),
+      fv({ id: 'v1', block_id: 'b2', key: 'priority', value_json: 'Low' }),
+    ])
+    expect(empty.find('.property-inline-item').exists()).toBe(false)
+
+    // 重设 status（/low 成对收口或手设）→ priority 图标恢复（旧值回显）
+    const restored = mountRight('b3', [
+      fv({ id: 'v0', block_id: 'b3', key: 'status', value_json: 'Todo' }),
+      fv({ id: 'v1', block_id: 'b3', key: 'priority', value_json: 'Low' }),
+    ])
+    expect(restored.find('.property-inline-item').attributes('data-field')).toBe('priority')
   })
 
   it('between：status 尺寸不受行尾槽改动影响（仍走组件默认 24）', () => {
@@ -1954,6 +1988,108 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
     expect(delSpy).toHaveBeenCalledTimes(1)
     expect(delSpy.mock.calls[0][0]).toBe('v1')
     expect(setSpy).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+})
+
+// ── status ↔ priority 成对（UI 投影）：无 status → priority 行隐藏 ──
+
+describe('BlockFieldZone — status↔priority 成对投影', () => {
+  let BlockFieldZone: typeof import('./BlockFieldZone.vue').default
+  let useFieldValueStore: typeof import('../../stores/fieldValue').useFieldValueStore
+
+  const PAIR_TAG = treeEntry({
+    id: 'sys-tag-pair',
+    title: '任务对',
+    is_system: true,
+    field_ids: ['f-status', 'f-priority'],
+    effective_field_ids: ['f-status', 'f-priority'],
+  })
+
+  beforeEach(async () => {
+    vi.resetModules()
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+
+    vi.doMock('../../wasm/client', () => ({
+      initCoreClient: mockInitCoreClient,
+      getCoreClient: vi.fn(),
+    }))
+
+    BlockFieldZone = (await import('./BlockFieldZone.vue')).default
+    useFieldValueStore = (await import('../../stores/fieldValue')).useFieldValueStore
+
+    mockClient.getTagTree.mockResolvedValue([PAIR_TAG])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-status', key: 'status', title: '状态', is_system: true, closed_values: ['Todo', 'Done'] }),
+      fieldDef({ id: 'f-priority', key: 'priority', title: '优先级', is_system: true, closed_values: ['Low', 'High'] }),
+    ])
+    mockInitCoreClient.mockResolvedValue(mockClient)
+  })
+
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  async function mountPairList(blockId: string, tagIds: string[]) {
+    const wrapper = mount(BlockFieldZone, { props: { blockId, tagIds } })
+    await flushPromises()
+    return wrapper
+  }
+
+  it('无 status → priority 行隐藏；设 status 后恢复（成对收口补 Todo 亦触发）', async () => {
+    // 只有 priority 值、无 status → priority 行不出
+    mockClient.getFieldValues.mockResolvedValue([
+      fv({ id: 'v-p', block_id: 'b1', key: 'priority', value_json: 'Low', value_type: 'string' }),
+    ])
+    const wrapper = await mountPairList('b1', ['sys-tag-pair'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    const titles = () => wrapper.findAll('.block-field-zone-row').map(rowTitle)
+    expect(titles()).not.toContain('优先级')
+
+    // 写 status（真实 setFieldValue：成对收口看到 priority 已在场不再补写）
+    mockClient.setFieldValue.mockResolvedValue(
+      fv({ id: 'v-s', block_id: 'b1', key: 'status', value_json: 'Todo', value_type: 'string' }),
+    )
+    await useFieldValueStore().setFieldValue('b1', 'status', 'Todo', 'string')
+    await flushPromises()
+
+    expect(titles()).toContain('优先级')
+    wrapper.unmount()
+  })
+
+  it('backspace 删 status（deleteFieldValue 同款路径）→ priority 行隐藏，值保留在库；重设 status 恢复', async () => {
+    mockClient.getFieldValues.mockResolvedValue([
+      fv({ id: 'v-s', block_id: 'b1', key: 'status', value_json: 'Todo', value_type: 'string' }),
+      fv({ id: 'v-p', block_id: 'b1', key: 'priority', value_json: 'Low', value_type: 'string' }),
+    ])
+    const wrapper = await mountPairList('b1', ['sys-tag-pair'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    const titles = () => wrapper.findAll('.block-field-zone-row').map(rowTitle)
+    expect(titles()).toContain('优先级')
+
+    // 删 status（与 onEnumChange 空值路径同款 deleteFieldValue）
+    const statusRow = useFieldValueStore().getBlockFieldValues('b1').find((x) => x.key === 'status')!
+    mockClient.deleteFieldValue.mockResolvedValue(undefined)
+    await useFieldValueStore().deleteFieldValue(statusRow.id, 'b1')
+    await flushPromises()
+
+    expect(titles()).not.toContain('优先级')
+    // 隐藏 ≠ 删除：priority 值仍在库
+    expect(useFieldValueStore().getBlockFieldValues('b1').some((x) => x.key === 'priority')).toBe(true)
+
+    // 重设 status → priority 行恢复（旧值回显）
+    mockClient.setFieldValue.mockResolvedValue(
+      fv({ id: 'v-s2', block_id: 'b1', key: 'status', value_json: 'Todo', value_type: 'string' }),
+    )
+    await useFieldValueStore().setFieldValue('b1', 'status', 'Todo', 'string')
+    await flushPromises()
+
+    expect(titles()).toContain('优先级')
     wrapper.unmount()
   })
 })

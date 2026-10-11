@@ -7,6 +7,7 @@ import { useTemplateRegistry } from '../composables/useTemplateRegistry'
 import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
 import { useFieldValueStore } from '../stores/fieldValue'
+import { useBlockCardStore } from '../stores/blockCard'
 import { useUserTemplatesStore } from '../stores/user-templates'
 import BasePopover from './common/BasePopover.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
@@ -19,6 +20,7 @@ import { getCoreClient } from '../wasm/client'
 const editorStore = useEditorStore()
 const fieldValueStore = useFieldValueStore()
 const blockStore = useBlockStore()
+const blockCardStore = useBlockCardStore()
 const { commands } = useSlashCommands()
 const templateRegistry = useTemplateRegistry()
 const userTemplatesStore = useUserTemplatesStore()
@@ -275,6 +277,8 @@ async function executeCommand(command: Command) {
       if (target) {
         await fieldValueStore.deleteFieldValue(target.id, blockId)
       }
+      // 字段值已变更：刷新块卡片投影，让任务中心（四象限/看板等）即时反映（#midium 类回归）
+      await blockCardStore.getCards()
       return
     }
 
@@ -285,11 +289,11 @@ async function executeCommand(command: Command) {
         command.fieldKey,
         command.fieldValue as string
       )
-      // 设置优先级（与 /schedule 一致）：block 尚无 status 时自动补 Todo
-      if (command.fieldKey === 'priority') {
-        // fire-and-forget：补 Todo 失败不影响字段值写入，避免未处理异常阻断编辑
-        fieldValueStore.ensureTodo(blockId).catch(() => {})
-      }
+      // status ↔ priority 成对（/low 补默认 Todo、/todo 补默认 Low）由
+      // fieldValueStore.setFieldValue 写入收口统一处理；此处只管设值 + 刷投影，
+      // 不自动挂 #任务 tag（打标仅属于 ensureTodo 的显式任务路径）。
+      // 字段值已变更：刷新块卡片投影
+      await blockCardStore.getCards()
       return
     }
 
@@ -310,6 +314,8 @@ async function executeCommand(command: Command) {
         command.fieldKey,
         value
       )
+      // 字段值已变更：刷新块卡片投影
+      await blockCardStore.getCards()
       return
     }
 

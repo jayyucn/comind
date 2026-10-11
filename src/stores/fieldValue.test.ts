@@ -197,6 +197,43 @@ describe('useFieldValueStore', () => {
 
       expect(mockClient.setFieldValue).not.toHaveBeenCalledWith('block-1', 'priority', 'Low', 'string')
     })
+
+    // ── status ↔ priority 成对（写入收口双向对偶）──
+    // /todo → 补 priority=Low（上方 becomesTask 分支，已有用例）；
+    // /low 等优先级写入 → 补 status=Todo。均只写字段值，不改 content、不挂 #任务 tag。
+
+    test('写入 priority 且块尚无 status → 补默认 status=Todo（成对，/low 默认设 todo）', async () => {
+      const store = useFieldValueStore()
+      await store.setFieldValue('block-1', 'priority', 'Low', 'string')
+
+      expect(mockClient.setFieldValue).toHaveBeenCalledWith('block-1', 'priority', 'Low', 'string')
+      expect(mockClient.setFieldValue).toHaveBeenCalledWith('block-1', 'status', 'Todo', 'string')
+    })
+
+    test('块已有 status → 写 priority 不重置 status（/low 不把 Doing/Done 打回 Todo）', async () => {
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([
+        makeFieldValue({ key: 'status', value_json: 'Doing' }),
+      ] as never)
+      const store = useFieldValueStore()
+      await store.loadBlockFieldValues('block-1')
+      vi.mocked(mockClient.setFieldValue).mockClear()
+
+      await store.setFieldValue('block-1', 'priority', 'Low', 'string')
+
+      expect(mockClient.setFieldValue).toHaveBeenCalledTimes(1)
+      expect(mockClient.setFieldValue).not.toHaveBeenCalledWith('block-1', 'status', expect.anything(), expect.anything())
+    })
+
+    test('成对写入递归安全：/low 补 status 时不再反向重复补 priority', async () => {
+      const store = useFieldValueStore()
+      await store.setFieldValue('block-1', 'priority', 'Low', 'string')
+
+      // priority 一次 + 成对补的 status 一次；status 写入的 becomesTask 分支看到
+      // priority 已在场（先 merge 再补），不得再写第三笔 priority
+      expect(mockClient.setFieldValue).toHaveBeenCalledTimes(2)
+      const priorityCalls = vi.mocked(mockClient.setFieldValue).mock.calls.filter(c => c[1] === 'priority')
+      expect(priorityCalls).toHaveLength(1)
+    })
   })
 
   describe('deleteFieldValue', () => {

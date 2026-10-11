@@ -116,6 +116,19 @@ function rowsAt(position: string): FieldValue[] {
 }
 
 /**
+ * status ↔ priority 成对（UI 投影）：块无有效 status 值 → priority 各展示位隐藏
+ * （行尾 right 图标 + 字段区 list 行）。删 status（backspace）即退出任务态，
+ * priority 不再有意义；**值保留在库**（不删行），重设 status 后恢复（旧值回显）。
+ * 判定口径与 rawValueOf 一致：无行 / 空串都算未设。
+ */
+const hasStatusValue = computed(() => {
+  const fv = fieldValueStore.getBlockFieldValue(props.blockId, 'status')
+  if (!fv) return false
+  const v = dataOf(fv)
+  return v !== null && v !== undefined && v !== ''
+})
+
+/**
  * 内联槽行，按变体分流：`between` = bullet 与内容之间（status 任务图标）；
  * `right` = 内容行尾（priority 象限网格图标，ADR-0054 D3 恢复此槽）。
  *
@@ -125,10 +138,17 @@ function rowsAt(position: string): FieldValue[] {
  *
  * 两个内联槽分属不同字段、位置不同不构成重复；`list` 区（录入面）仍渲染
  * priority —— 它是唯一可写入口，与只读展示位职责不同、不互斥。
+ *
+ * 成对投影：`right` 槽的 priority 在块无有效 status 值时隐藏（见 hasStatusValue）。
  */
-const inlineRows = computed<FieldValue[]>(() =>
-  rowsAt(props.variant === 'right' ? 'right-of-content' : 'between-bullet-content')
-)
+const inlineRows = computed<FieldValue[]>(() => {
+  const position = props.variant === 'right' ? 'right-of-content' : 'between-bullet-content'
+  const at = rowsAt(position)
+  if (props.variant === 'right' && !hasStatusValue.value) {
+    return at.filter((fv) => fv.key !== 'priority')
+  }
+  return at
+})
 
 /**
  * chips / all 变体的可见行：bottom-of-block 内置字段 + 全部自定义字段，
@@ -434,10 +454,12 @@ function synthFieldDef(key: string): PersistedFieldDefinition {
 /**
  * list 变体可见字段 = 标签驱动字段（过隐藏规则）∪ 孤儿字段（过隐藏规则）。
  * 见上方各 computed 说明；孤儿字段不重复计入已声明的标签驱动字段。
+ * 成对投影：无有效 status 值 → priority 行隐藏（hasStatusValue，见上方）。
  */
 const fields = computed<PersistedFieldDefinition[]>(() => {
   const tagFields = tagDrivenDefs.value.filter((d) => !isHiddenByRule(d))
-  return [...tagFields, ...orphanFields.value]
+  const all = [...tagFields, ...orphanFields.value]
+  return hasStatusValue.value ? all : all.filter((d) => d.key !== 'priority')
 })
 
 /** 该块此字段的值形态：未填（无行 / 空串 / 空数组）→ null。 */
@@ -840,7 +862,8 @@ function enumValue(def: PersistedFieldDefinition): EnumSelectValue {
 /**
  * 枚举字段取值回调（EnumSelect）：有值 → 落库为 string 类型（枚举值即字符串）；
  * 清除（undefined）→ 删行（field-value 以「无行」表示空）。
- * priority 沿用快捷编辑器的副作用：设优先级后 block 尚无 status 时自动补 Todo。
+ * priority 的成对副作用（补默认 status=Todo，不挂 #任务 tag）由
+ * fieldValueStore.setFieldValue 写入收口统一处理。
  */
 async function onEnumChange(def: PersistedFieldDefinition, value: EnumSelectValue) {
   if (value === undefined) {
@@ -849,10 +872,6 @@ async function onEnumChange(def: PersistedFieldDefinition, value: EnumSelectValu
     return
   }
   await fieldValueStore.setFieldValue(props.blockId, def.key, value, 'string')
-  if (def.key === 'priority') {
-    // fire-and-forget：与 FieldValueQuickEditor.saveValue 同语义，失败不阻断字段值写入
-    fieldValueStore.ensureTodo(props.blockId).catch(() => {})
-  }
 }
 
 // ── multiSelect（多选枚举，T4）：值区直挂 MultiEnumSelect ─────────────

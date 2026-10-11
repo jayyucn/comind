@@ -4,6 +4,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import SlashCommandMenu from './SlashCommandMenu.vue'
 import { useEditorStore } from '../stores/editor'
 import { useFieldValueStore } from '../stores/fieldValue'
+import { useBlockCardStore } from '../stores/blockCard'
 import { useSlashCommands, buildTemplateCommands, executeTemplateCommand } from '../composables/useSlashCommands'
 import { useTemplateRegistry } from '../composables/useTemplateRegistry'
 import { useUserTemplatesStore } from '../stores/user-templates'
@@ -15,6 +16,10 @@ vi.mock('../stores/editor', () => ({
 
 vi.mock('../stores/fieldValue', () => ({
   useFieldValueStore: vi.fn()
+}))
+
+vi.mock('../stores/blockCard', () => ({
+  useBlockCardStore: vi.fn()
 }))
 
 vi.mock('../stores/user-templates', () => ({
@@ -107,6 +112,13 @@ describe('SlashCommandMenu', () => {
       ensureTodo: vi.fn().mockResolvedValue(undefined)
     }
     vi.mocked(useFieldValueStore).mockReturnValue(mockFieldValueStore as any)
+
+    const mockBlockCardStore = {
+      getCards: vi.fn().mockResolvedValue([]),
+      invalidate: vi.fn(),
+      cards: { value: [] },
+    }
+    vi.mocked(useBlockCardStore).mockReturnValue(mockBlockCardStore as any)
 
     const mockTemplateRegistry = {
       all: { value: [] },
@@ -732,9 +744,12 @@ describe('SlashCommandMenu — priority 命令自动补 Todo', () => {
       setFieldValue: vi.fn(),
       ensureTodo: vi.fn().mockResolvedValue(undefined)
     } as any)
+    vi.mocked(useBlockCardStore).mockReturnValue({
+      getCards: vi.fn().mockResolvedValue([])
+    } as any)
   })
 
-  it('immediate 优先级命令（如 /high）写入 priority 并调用 ensureTodo', async () => {
+  it('immediate 优先级命令（如 /high）写入 priority 并刷新块卡片投影，不调 ensureTodo（成对补 status 由 store 收口）', async () => {
     const priorityCmd = {
       id: 'high',
       name: 'High',
@@ -773,6 +788,12 @@ describe('SlashCommandMenu — priority 命令自动补 Todo', () => {
 
     const store = vi.mocked(useFieldValueStore())
     expect(store.setFieldValue).toHaveBeenCalledWith('block-1', 'priority', 'High')
-    expect(store.ensureTodo).toHaveBeenCalledWith('block-1')
+    // 优先级命令不调 ensureTodo：不往 content 挂 #任务（status 成对补默认由
+    // fieldValueStore.setFieldValue 写入收口负责，菜单层不再介入）
+    expect(store.ensureTodo).not.toHaveBeenCalled()
+
+    // 回归 #midium：优先级命令写库后必须刷新块卡片投影，否则新任务不出现在四象限
+    const cardStore = vi.mocked(useBlockCardStore())
+    expect(cardStore.getCards).toHaveBeenCalled()
   })
 })

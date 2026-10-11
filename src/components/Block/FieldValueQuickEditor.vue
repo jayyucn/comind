@@ -161,12 +161,10 @@ function handlePickerKeydown(e: KeyboardEvent) {
 }
 
 async function saveValue(value: FieldValueData) {
+  // status ↔ priority 成对（priority 写入补默认 status=Todo）由
+  // fieldValueStore.setFieldValue 写入收口处理，此处不再调 ensureTodo
+  // （ensureTodo 会往 content 挂 #任务，优先级设置不应改动内容）。
   await fieldValueStore.setFieldValue(blockId.value, key.value, value, currentDef.value?.type)
-  // 设置优先级（与 /schedule 一致）：block 尚无 status 时自动补 Todo
-  if (key.value === 'priority') {
-    // fire-and-forget：自动补 Todo 失败绝不影响字段值写入与面板关闭，避免未处理异常阻断编辑
-    fieldValueStore.ensureTodo(blockId.value).catch(() => {})
-  }
   editorStore.hideQuickFieldValueEditor()
 }
 

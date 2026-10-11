@@ -6,6 +6,7 @@ import type { FieldDefinition, FieldType, FieldValueData } from '../types/field-
 import { getAllFieldDefinitions, getFieldDefinition } from '../types/field-definition'
 import { useBlockStore } from './blocks'
 import { useBlockCardStore } from './blockCard'
+import { useEditorStore } from './editor'
 import { useTagsStore } from './tags'
 import { serializeDateRef, type DateRefKind } from '../utils/date-ref'
 import { encodeFieldValueData } from '../utils/field-value-codec'
@@ -40,6 +41,8 @@ export const useFieldValueStore = defineStore('fieldValue', () => {
   const loading = ref(false)
   // Prevent concurrent ensureTodo calls for the same block
   const ensureTodoInFlight = new Set<string>()
+  // status↔priority 成对补写的递归护栏：处于自动补写中的 block 不再触发自动补写分支
+  const pairingWrites = new Set<string>()
 
   // Getters
   const builtInFields = computed<FieldDefinition[]>(() => getAllFieldDefinitions())
@@ -127,8 +130,29 @@ export const useFieldValueStore = defineStore('fieldValue', () => {
 
     // 创建任务默认带 priority=Low（与 seed 默认值同值，单点兜底全部 status 写入路径）。
     // 幂等：仅在该块尚无 priority 时补，绝不覆盖用户手写值。
-    if (becomesTask && !getBlockFieldValue(blockId, 'priority')) {
-      await setFieldValue(blockId, 'priority', 'Low', 'string')
+    // 递归护栏：自动补写自身不再触发任何自动补写分支——缓存判据（merge 后查得到）
+    // 在空 row 回显 / merge 滞后时不可靠，两个分支会互相点燃成无限递归（实证：
+    // 测试 mock 返回 {} 时 worker 挂死，priority→status→becomesTask→priority→…）。
+    if (becomesTask && !pairingWrites.has(blockId) && !getBlockFieldValue(blockId, 'priority')) {
+      pairingWrites.add(blockId)
+      try {
+        await setFieldValue(blockId, 'priority', 'Low', 'string')
+      } finally {
+        pairingWrites.delete(blockId)
+      }
+    }
+
+    // status ↔ priority 成对（写入收口，双向对偶）：写入 priority 且块尚无 status
+    // → 补默认 status=Todo（/low 默认设 todo）；反向（status 首次写入补 priority=Low，
+    // /todo 默认设 low）即上方 becomesTask 分支。只写字段值，不改 content、不挂
+    // #任务 tag——打标仅属 ensureTodo 的显式任务路径（/schedule dateRef 等）。
+    if (key === 'priority' && value && !pairingWrites.has(blockId) && !getBlockFieldValue(blockId, 'status')) {
+      pairingWrites.add(blockId)
+      try {
+        await setFieldValue(blockId, 'status', 'Todo', 'string')
+      } finally {
+        pairingWrites.delete(blockId)
+      }
     }
 
     const blockCardStore = useBlockCardStore()
@@ -200,8 +224,20 @@ export const useFieldValueStore = defineStore('fieldValue', () => {
     const tag = tagsStore.getTagById(taskTagId)
     if (!tag) return 'degraded'
     const literal = `#${tag.title}`
-    if ((block.content ?? '').includes(literal)) return 'mounted'
-    const next = block.content ? `${block.content} ${literal}` : literal
+    // 写侧基准 = 渲染侧回退：目标块是当前活动块时，最新正文在编辑器里
+    // （Editor onUpdate → debouncedEmitSave 300ms 才落 store）。直接读 store
+    // 会拿到防抖前的旧正文——实证：输入 "/l" 回车执行 /low，斜杠命令先
+    // deleteRange 清掉命令文本，本函数随即以旧正文 "/l" 为基准拼接 → 写回
+    // "/l #任务"，刚删掉的命令文本复活（setContent 再把旧文本顶回编辑器）。
+    // 故活动块以 activeEditor.getText()（与落库 save 同源的序列化）为基准；
+    // 非活动块维持 store 兜底。
+    const editorStore = useEditorStore()
+    const liveText = editorStore.activeBlockId === blockId
+      ? editorStore.activeEditor?.getText()
+      : undefined
+    const base = liveText ?? block.content ?? ''
+    if (base.includes(literal)) return 'mounted'
+    const next = base ? `${base} ${literal}` : literal
     await blockStore.updateBlockContent(blockId, next)
     // 强制落库：tags 由 Rust 在 save_block_tree 时从 content 派生，先于 status 写入完成挂载
     await blockStore.flushSave(blockId)
