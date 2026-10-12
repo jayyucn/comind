@@ -1463,20 +1463,26 @@ export const useBlockStore = defineStore('blocks', () => {
   }
 
   /**
-   * 折叠不变量的对账（ADR-0045 D2）
+   * 折叠不变量的对账（ADR-0045 D2，折叠范围已扩展为子节点 + 字段带）
    *
    * 一条规则、两种触发，替代「每个操作各自重置 format」：
-   * - `emptiedParentIds`：这些块的子节点集合刚变小/清空 ⇒ 无子节点则不折叠
+   * - `emptiedParentIds`：这些块的子节点集合刚变小/清空 ⇒ 既无子节点**又无字段行**才不折叠
    * - `gainedParentIds`：这些块刚获得子节点 ⇒ 落入折叠块则展开（D4，落点=可见结果）
    *
    * 判定与写入同源（都读 `format.collapsed`），不引入第二份折叠真相；
    * 未折叠的块直接跳过，不产生无谓的 `_scheduleSave`。
+   *
+   * 判据须与读取侧 `useBlockCollapse.canCollapse`（有子块 **或** 有字段行）同口径：
+   * 只查子节点会把「有字段带、无子块」的块的折叠标志当残留清掉，读写守卫不对称。
+   * 字段行取**原始行**（非渲染口径）——隐藏规则 / 内联槽造成的差异只会留下读取侧
+   * 兜底即抹平的标志，呈现无差别。
    */
   function reconcileCollapse(emptiedParentIds: Iterable<string>, gainedParentIds: Iterable<string> = []) {
+    const fieldValueStore = useFieldValueStore()
     const candidate = new Set<string>()
     for (const id of emptiedParentIds) {
       const block = blocks.value.find(b => b.id === id)
-      if (block?.format?.collapsed === true && getChildren(id).length === 0) candidate.add(id)
+      if (block?.format?.collapsed === true && getChildren(id).length === 0 && fieldValueStore.getBlockFieldValues(id).length === 0) candidate.add(id)
     }
     for (const id of gainedParentIds) {
       const block = blocks.value.find(b => b.id === id)

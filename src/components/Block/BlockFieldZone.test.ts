@@ -236,11 +236,10 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
 
   it('已在内联槽渲染的字段（status / between-bullet-content）不在下方字段区重复列文字', async () => {
     const wrapper = await mountList('b1', ['sys-tag-system-task'])
-    // 标签已挂 → 容器仍在
-    expect(wrapper.find('.block-field-zone').exists()).toBe(true)
-    // 但 status 已被排除
+    // 该标签唯一字段 status 归 between 内联槽 ⇒ 可渲染行 0 ⇒ 不出空容器。
+    // 渲染条件 = `fields.length`（与折叠守卫同源）：不允许「容器在但一行都没有」。
+    expect(wrapper.find('.block-field-zone').exists()).toBe(false)
     expect(wrapper.findAll('.block-field-zone-row')).toHaveLength(0)
-    expect(wrapper.find('.block-field-zone').text()).not.toContain('状态')
   })
 
   it('无 displayPosition 的自定义字段仍保留在下方字段区（不过度去重）', async () => {

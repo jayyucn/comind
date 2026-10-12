@@ -1,6 +1,6 @@
-# ADR-0045: 折叠语义 —— 单一权威 + 「无子节点 ⇒ 不折叠」不变量
+# ADR-0045: 折叠语义 —— 单一权威 + 「无子节点且无字段行 ⇒ 不折叠」不变量
 
-- Status: accepted（口径 2026-09-14 锚定；实现手段同日经 grilling 裁定，见 Decision 追加）
+- Status: accepted（口径 2026-09-14 锚定；实现手段同日经 grilling 裁定；②/D2 的守卫粒度于 2026-10-12 扩展为「子树 + 字段带」，见 Decision 追加）
 - Date: 2026-09-14
 - Supersedes: —
 - Related: ADR-0039（bullet-chevron 承担折叠/展开）、ADR-0035（跨块文本选区的几何层）、ADR-0025 D8/D10（复制完整子树、无视 collapsed 的既有口径）、ADR-0032（浮层与堆叠上下文）
@@ -42,12 +42,12 @@
 - 禁止新增第四份「折叠真相」。任何判定「这个块是否隐藏」的代码，必须落到同一来源。
 - 拖拽侧现读 `.block-bullet.collapsed`（②的变体）属漂移：读 DOM class 本身可接受（同一 DOM 内必然一致），但**不得**演化成独立语义（例如拖拽认为"展开"而 store 认为"折叠"）。
 
-### ② 不变量：无子节点 ⇒ 不折叠
+### ② 不变量：无子节点且无字段行 ⇒ 不折叠
 
-- 块一旦没有子节点，`format.collapsed` 必须为 `false`。
+- 块一旦既没有子节点、也没有字段行，`format.collapsed` 必须为 `false`（折叠范围含字段带，见 Decision 追加 2026-10-12）。
 - 对账点在「某块的子节点集合发生变更」的收口处，而非散落在各操作：`deleteBlocks` 闸门清空（`blocks.ts:1277-1280`）、`mergeBlockInto` 子树转移（`:987-1011`）、拖拽 `syncTreeToStore`、粘贴森林插入、`indent`/`outdent`。
-- 读取侧兜底：折叠是否生效 = `format.collapsed && 有子节点`。这条兜底同时让历史遗留的 stale 数据（用户库中已存在的残留）无需迁移即自愈。
-- 理由：stale 态当前**不可见也不可修** —— chevron 渲染条件是 `v-if="node.children.length > 0"`（`Block/index.vue:513`），`toggleCollapse` 自带 `children.length === 0 → return` 守卫（`useBlockCollapse.ts:25`）。用户既看不到折叠指示、也没有展开入口，直到新建子节点时才被"默认折叠"绊一下。
+- 读取侧兜底：折叠是否生效 = `format.collapsed && (有子节点 || 有字段行)`，导出为 `canCollapse`，chevron 显示、`toggleCollapse` 写入、动画三处共用同一判据。这条兜底同时让历史遗留的 stale 数据（用户库中已存在的残留）无需迁移即自愈。
+- 理由：stale 态当前**不可见也不可修** —— chevron 渲染条件是 `v-if="canCollapse"`，`toggleCollapse` 自带「`!canCollapse` → return」守卫，两者同源。用户既看不到折叠指示、也没有展开入口，直到新建子节点时才被"默认折叠"绊一下。
 
 ### ③ 几何消费者必须显式回答「隐藏子树算不算」
 
@@ -69,7 +69,7 @@
 | # | 决策点 | 裁定 |
 |---|---|---|
 | D1 | 折叠的隐藏手段 | **改为布局移除**：`.is-collapsed:not(.is-animating)` → `display: none`。动画期沿用现有 `isAnimating`(300ms = `$transition-collapse`) 兜时序（折叠：过渡跑完再 display:none；展开：`is-collapsed` 先摘除故 display 自然恢复，过渡照跑）。所有几何消费者零改动即自动一致 —— 没布局就等于不可见。 |
-| D2 | 不变量的对账点 | **读取侧兜底为唯一判定**（`format.collapsed && 有子节点`）+ **写入侧只在闸门清空处补一次复位**。因为无单一收口（`parentId` 写点 ≥4 处在 store、拖拽/BlockModal 走 `useBlockTree.syncTreeToStore`、粘贴另建块），写入侧全面收口=改 6+ 处且新增路径必漏（正是本 bug 的成因模式）。存量 stale 数据**免迁移**。 |
+| D2 | 不变量的对账点 | **读取侧兜底为唯一判定**（`format.collapsed && (有子节点 || 有字段行)`）+ **写入侧只在闸门清空处补一次复位**。因为无单一收口（`parentId` 写点 ≥4 处在 store、拖拽/BlockModal 走 `useBlockTree.syncTreeToStore`、粘贴另建块），写入侧全面收口=改 6+ 处且新增路径必漏（正是本 bug 的成因模式）。存量 stale 数据**免迁移**。写入侧判据必须与读取侧同口径（2026-10-12 补齐，见 Decision 追加 E4）。 |
 | D3 | 方向键落点 | **方向键用折叠感知遍历**，落点只能是可见块。理由：折叠是用户的视图意图，导航不得偷偷改它（故否决"激活时自动展开祖先"，也否决"禁止进入折叠子树"——后者会让键盘连走断掉）。`useCrossBlockSelection` 的选区**成员资格**不在此列，维持含隐藏块（见 ④）。 |
 | D4 | 结构变更落入折叠块 | **自动展开父块**：Tab 缩进 / 拖拽 nest / Backspace 合并落进折叠父块时，顺手 `collapsed=false`。与 ADR-0039「落点 = 可见结果」一致；否决"允许隐藏（现状）"与"拒绝落入"。 |
 | D5 | TOC / Backlinks | **不尊重折叠**：二者是文档导航与引用索引，列的是"文档里有什么"而非"此刻屏幕上显示什么"。不补判定。 |
@@ -91,6 +91,24 @@
 ### 真机发现的第 4 条决策（原实现有硬伤，已修）
 
 `useBlockCollapse` 里的 `collapsedFlag` 原本是**挂载时从 store 拷出的本地 ref**，只单向同步（本地 → store）。真机实测：把 `format.collapsed` 写进 store 后，容器类名与 `display` **纹丝不动** —— 即 D2/D4 的写入侧复位**到不了屏幕**，用户的症状根本不会被修掉。改为 `computed({ get: 读 block.format.collapsed, set: 写 updateBlockFormat })` 直连权威，同时消掉这份第二真相。**该结论并入 ①**：读取也必须直连权威，禁止本地副本。
+
+### Decision 追加（2026-10-12）：折叠范围扩展为「子树 + 字段带」
+
+块字段区（`content` 下方的 `.block-properties`：list 字段区 + book-note 来源行）纳入同一折叠开关。折叠的语义由「隐藏子树」扩展为「隐藏本块的全部可折叠细节」，不再为字段带单设块级隐藏通道（ADR-0050 D21 决策 3 / 8 的 `fields_hidden` 通道随之废止）。
+
+| # | 决策点 | 裁定 |
+|---|---|---|
+| E1 | 折叠范围 | `.block-properties` 与 `.block-children` 共用同一个 `collapsed` 标志与同一条时序闸门（`.block.is-collapsed:not(.is-animating)` → `display: none`）。不新增第二份折叠真相（① 不变）。 |
+| E2 | 不变量扩展 | ② 的判据由「无子节点」扩为「**既无子节点又无字段行**」。导出 `canCollapse` 作为唯一判据，读取、写入（`toggleCollapse`）、动画三处共用。 |
+| E3 | 守卫取数粒度 | 取**原始字段行**（`getBlockFieldValues(id).length`），非渲染口径。差异面（`hide_when` 全命中 / between 内联槽 / priority 成对投影）只会留下读取侧兜底即抹平的标志，呈现无差别；以此避免把 composable 的计算倒灌进 store。 |
+| E4 | 写入侧同口径 | `reconcileCollapse`（`stores/blocks.ts`）的 `emptiedParentIds` 分支必须同时检查字段行数。只查子节点会让「有字段带、无子块」的块在子块被删空时把折叠标志当残留清掉——即 ② 的写入侧与读取侧守卫不对称。 |
+| E5 | chevron 显示条件 | 由 `node.children.length > 0` 改为 `canCollapse`：仅字段块同样可折叠。 |
+
+**实施形态**：字段行集合单源 = `src/components/Block/composables/useBlockFieldRows.ts`（`BlockFieldZone` 的 `list` / `all` 渲染与 `index.vue` 的守卫计数共用同一份计算）。`BlockFieldZone` 的 `list` 渲染条件由 `tags.length || orphanFields.length` 收束为 `fields.length`——否则会出现「字段全被 `hide_when` 隐藏却仍渲染空区、chevron 已消失而空容器还在」的不一致。
+
+**后果**：`format.fields_hidden` 残留键退化为死数据（无代码读取，**不清理、不迁移**，沿用本仓「读取侧兜底而非数据迁移」惯例）。E4 补齐的是**防御性对称**：该复位分支当前无 UI 可达路径（折叠块的子树是 `display: none`，而删除 / 缩进 / 反缩进 / 拖拽入口都要求被操作块本身可见 ⇒ 其父块必然未折叠），守护的是将来新增的「能删折叠块子块」路径（跨视图删除、批量清子块、自动化规则）。
+
+**回归**：`useBlockCollapse.test.ts`（守卫双通道 / stale 双条件兜底）、`blocks.reconcile-collapse.test.ts`（仅字段块保活 / 真 stale 复位 / 「且非或」护栏）、`Block/index.test.ts`（chevron 三态）。
 
 ## Open questions（遗留）
 

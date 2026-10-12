@@ -25,12 +25,14 @@
  * （解析单源在 Rust：`effective_field_ids`）∪ 孤儿字段（块上已有值、但其 key 不在
  * 任何已挂标签的有效字段并集中——删 tag / 去 tag 后悬空保留的值，弱区分样式标注
  * 以断链图标（Unlink）标注「未关联标签」仍可见可编辑）；其余变体沿用「块上已有字段值行 → 按字段定义渲染」的口径。
+ * 该集合的**推导单源已抽到 `./composables/useBlockFieldRows`**（Block/index.vue 的折叠守卫
+ * 消费同一份，两处零漂移）——本组件只按集合逐行渲染形态。
  *
  * 值读写走 fieldValue store；行内存储形态是库内 `FieldValue` 原形，读取端统一经
- * `decodeFieldValueData` 还原内存值。
+ * `decodeFieldValueData` 还原内存值（`useBlockFieldRows` 的 `dataOf`）。
  */
 import { Pin, Unlink } from 'lucide-vue-next'
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, toRef } from 'vue'
 import { openReaderWindow } from '../../composables/useReaderWindow'
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
 import { useBlockStore } from '../../stores/blocks'
@@ -38,15 +40,12 @@ import { useEditorStore } from '../../stores/editor'
 import { useFieldValueStore } from '../../stores/fieldValue'
 import { usePageStore } from '../../stores/pages'
 import { useTagsStore } from '../../stores/tags'
-import type { FieldDefinition, FileRefValue, RelationRefValue } from '../../types/field-definition'
-import { getFieldDefinition } from '../../types/field-definition'
+import type { FileRefValue, RelationRefValue } from '../../types/field-definition'
 import type { FieldValue } from '../../types/field-value'
 import { isSystemField } from '../../types/tag'
 import type { PersistedFieldDefinition } from '../../types/tag-persisted'
-import { decodeDefaultJson, isFieldHiddenByRule, normalizeHideWhen } from '../../utils/field-hide'
 import { effectiveNumberBounds, formatCurrency, parseCurrencySpec } from '../../utils/field-number-format'
 import { resolveDisplayForm, type DisplayFormKind } from '../../utils/field-display-form'
-import { decodeFieldValueData } from '../../utils/field-value-codec'
 import { safeEvaluateFormula } from '../../utils/formula'
 import { TAG_COLORS, isTagColorToken } from '../../utils/tag-color'
 import { isTauriEnvironment } from '../../wasm/tauri-platform'
@@ -66,6 +65,7 @@ import TextField, { type TextFieldValue } from '../common/TextField.vue'
 import SpecializedText from '../common/SpecializedText.vue'
 import { renderInlineMarkdown, toExternalHref } from '../../utils/mini-markdown'
 import { numberSpecialization, pageSpecialization, specHeadOf, stringSpecialization } from '../../types/field-type-registry'
+import { dataOf, defOf, useBlockFieldRows } from './composables/useBlockFieldRows'
 
 const props = withDefaults(defineProps<{
   blockId: string
@@ -90,45 +90,24 @@ onMounted(() => {
   void tagsStore.ensureLoaded()
 })
 
-/** 该块已挂标签（软删 / 悬空 id 由 store 静默过滤）。 */
-const tags = computed(() => tagsStore.resolveTags(props.tagIds))
-
-// ── 字段值行 → 内存值 ────────────────────────────────────────
-
-/** 解码后的内存值（写回时的 `value_json` 由 codec 编码，此处还原） */
-function dataOf(fv: FieldValue): unknown {
-  return decodeFieldValueData(fv.value_json, fv.value_type)
-}
-
-/** 该块全部字段值行（含软删行，与迁移前同口径：默认无软删行） */
-const rows = computed<FieldValue[]>(() => fieldValueStore.getBlockFieldValues(props.blockId))
-
-function defOf(key: string): FieldDefinition | undefined {
-  return getFieldDefinition(key)
-}
-
-/** 持久化定义（用户覆盖列的唯一来源）；`all` 变体无 tagIds，只能按 key 反查。 */
-function persistedDefOf(key: string): PersistedFieldDefinition | undefined {
-  return tagsStore.fieldDefinitions.find((d) => d.key === key)
-}
+// ── 字段值行集合（单源：./composables/useBlockFieldRows）──────
+// `rows` / `fields` / `orphanKeySet` / `rawValueOf` / `hasStatusValue` / `persistedDefOf`
+// 全部出自该 composable——**它同时是 Block/index.vue 折叠守卫的数据源**，两处同源 ⇒
+// 「能折叠」与「折叠下去藏了什么」零漂移。此前的 `tags.length` 代理已废弃。
+// `dataOf` / `defOf` 是模块级纯函数（解码内存值 / 反查编译期定义），从同一处引入。
+const {
+  rows,
+  persistedDefOf,
+  rawValueOf,
+  hasStatusValue,
+  orphanKeySet,
+  fields,
+} = useBlockFieldRows(toRef(props, 'blockId'), toRef(props, 'tagIds'))
 
 /** 按 displayPosition 取行（内联槽用） */
 function rowsAt(position: string): FieldValue[] {
   return rows.value.filter((fv) => defOf(fv.key)?.displayPosition === position)
 }
-
-/**
- * status ↔ priority 成对（UI 投影）：块无有效 status 值 → priority 各展示位隐藏
- * （行尾 right 图标 + 字段区 list 行）。删 status（backspace）即退出任务态，
- * priority 不再有意义；**值保留在库**（不删行），重设 status 后恢复（旧值回显）。
- * 判定口径与 rawValueOf 一致：无行 / 空串都算未设。
- */
-const hasStatusValue = computed(() => {
-  const fv = fieldValueStore.getBlockFieldValue(props.blockId, 'status')
-  if (!fv) return false
-  const v = dataOf(fv)
-  return v !== null && v !== undefined && v !== ''
-})
 
 /**
  * 内联槽行，按变体分流：`between` = bullet 与内容之间（status 任务图标）；
@@ -376,132 +355,10 @@ async function jumpToSource(): Promise<void> {
 // ── list 变体：块字段区 ─────────────────────────────────────
 
 /**
- * list 变体字段集合 = 标签驱动字段 ∪ 孤儿字段（见下方 `fields` 合成处）。
- *
- * 本区是块内**唯一的字段录入面**（ADR-0050 D20：行内 chips 列已下线），故模板内
- * 所有字段都在此列出——包括 `bottom-of-block` 域字段与无 `displayPosition` 的自定义字段。
- *
- * 排除项只有 `between-bullet-content`（`status` 任务图标）：它由 bullet 与内容之间的
- * 内联槽渲染，属另一种视觉形态（图标而非「标题: 值」文本），在本区再列一行是同物两渲染。
- *
- * `right-of-content`（`priority`）**不排除** —— ADR-0054 D4 明确：本区是录入面
- * （唯一可写入口，点击唤起快速编辑器），行内`right` 槽是只读展示位，两者职责不同、
- * 不互斥，不构成 ADR-0050 D19 意义上的「同物两渲染」。
- * 该判定经 `getFieldDefinition(key)` 反查编译期 `FieldDefinition.displayPosition`
- * （`PersistedFieldDefinition` 不持久化该字段，见 `tag-persisted.ts:6`）。
+ * 本组件只负责按 `fields`（集合口径见 ./composables/useBlockFieldRows 文件头）
+ * 逐字段解析形态并渲染；集合推导（标签驱动 ∪ 孤儿、displayPosition / hide_when /
+ * status↔priority 成对过滤）**不在本组件**——它与 Block/index.vue 的折叠守卫共用同一份。
  */
-/**
- * 标签有效字段并集（仅排除 between 内联槽；隐藏规则在下游 `fields` 与 `orphanFields`
- * 各自分别应用，故此处保留全量，使 `tagDrivenKeys` 能兜底——被隐藏规则拦掉的标签驱动
- * 字段不应被误判为孤儿值重新拉回展示）。
- */
-const tagDrivenDefs = computed<PersistedFieldDefinition[]>(() => {
-  const seen = new Set<string>()
-  const out: PersistedFieldDefinition[] = []
-  for (const tag of tags.value) {
-    for (const def of tagsStore.effectiveFieldDefinitions(tag.id)) {
-      if (seen.has(def.id)) continue
-      if (defOf(def.key)?.displayPosition === 'between-bullet-content') continue
-      seen.add(def.id)
-      out.push(def)
-    }
-  }
-  return out
-})
-
-/** 标签驱动字段 key 全集（含被隐藏规则拦掉的）——用于剔除孤儿值，避免隐藏字段复活 */
-const tagDrivenKeys = computed<Set<string>>(() => new Set(tagDrivenDefs.value.map((d) => d.key)))
-
-/**
- * 孤儿字段（选项 A：删 tag / 去 tag 后让悬空值可见）。
- * 定义：该块已有 FieldValue 行，但其 key 不在当前 tag 有效字段并集中。
- * 删 tag 不删 FieldValue（`TagService::delete` 仅软删 tag 行），这些值原被 list 变体
- * 「tag 本位门控」整段隐身——A 改动把它们拉回录入面，弱区分样式以 Unlink 断链图标标注，
- * 仍可被查看与编辑（重新打同 tag 即回到正常态）。
- *
- * 排除项与 list 变体一致：deadline/scheduled 内联为 dateRef、between 内联槽、隐藏规则命中。
- */
-const orphanFields = computed<PersistedFieldDefinition[]>(() => {
-  const seen = new Set<string>()
-  const out: PersistedFieldDefinition[] = []
-  for (const fv of rows.value) {
-    if (tagDrivenKeys.value.has(fv.key)) continue
-    if (seen.has(fv.key)) continue
-    if (fv.key === 'deadline' || fv.key === 'scheduled') continue
-    if (defOf(fv.key)?.displayPosition === 'between-bullet-content') continue
-    const def = persistedDefOf(fv.key) ?? synthFieldDef(fv.key, fv.value_type)
-    if (isHiddenByRule(def)) continue
-    seen.add(fv.key)
-    out.push(def)
-  }
-  return out
-})
-
-/** 孤儿 key 集合（模板弱区分样式判定用） */
-const orphanKeySet = computed<Set<string>>(() => new Set(orphanFields.value.map((d) => d.key)))
-
-/** 兜底合成最小定义（key 在库中无任何定义时的极端兜底；正常孤儿字段都有 persistedDefOf）。
- * 取字段值行的 value_type 作为合成类型——自定义远期类型（formula/json/color/geo/autonumber）
- * 无持久化定义时也能按真实类型渲染，而非被错当 string。 */
-function synthFieldDef(key: string, type: string = 'string'): PersistedFieldDefinition {
-  return {
-    id: key,
-    key,
-    title: key,
-    type,
-    closed_values: null,
-    default_value: null,
-    hide_when: 'never',
-    is_system: false,
-    created_at: 0,
-    updated_at: 0,
-    version: 1,
-    deleted_at: null,
-  }
-}
-
-/**
- * list 变体可见字段 = 标签驱动字段（过隐藏规则）∪ 孤儿字段（过隐藏规则）。
- * 见上方各 computed 说明；孤儿字段不重复计入已声明的标签驱动字段。
- * 成对投影：无有效 status 值 → priority 行隐藏（hasStatusValue，见上方）。
- */
-const fields = computed<PersistedFieldDefinition[]>(() => {
-  const tagFields = tagDrivenDefs.value.filter((d) => !isHiddenByRule(d))
-  const all = [...tagFields, ...orphanFields.value]
-  return hasStatusValue.value ? all : all.filter((d) => d.key !== 'priority')
-})
-
-/** 该块此字段的值形态：未填（无行 / 空串 / 空数组）→ null。 */
-function rawValueOf(def: PersistedFieldDefinition): string | null {
-  const fv = fieldValueStore.getBlockFieldValue(props.blockId, def.key)
-  if (!fv) return null
-  const v = dataOf(fv)
-  if (v === null || v === undefined || v === '') return null
-  if (Array.isArray(v) && !v.length) return null
-  // relation（issue T5）：值是 { targetId, relationshipTypeId } 对象——
-  // 隐藏规则只关心「有没有值」，取 targetId 作为代表（String(obj) 会得到 "[object Object]"）
-  if (def.type === 'relation') {
-    const rel = v as Partial<RelationRefValue> | null
-    return rel && typeof rel === 'object' && rel.targetId ? rel.targetId : null
-  }
-  return String(v)
-}
-
-/**
- * 隐藏规则判定（ADR-0050 D18，定义级共享）：规则单源在 `utils/field-hide`，
- * 这里只负责从 store 取值喂给它。注意这个判定是**逐块**的——
- * 「为空时隐藏」下同一字段在 A 块消失、在 B 块照常显示。
- */
-function isHiddenByRule(def: PersistedFieldDefinition): boolean {
-  if (normalizeHideWhen(def.hide_when) === 'never') return false
-  const value = rawValueOf(def)
-  return isFieldHiddenByRule(
-    def.hide_when,
-    value !== null,
-    value ?? '',
-    decodeDefaultJson(def.default_value),
-  )
-}
 
 /** 当前值文本（选项型取 label，数组拼接，其余原样）；无值 → null（渲染占位）。 */
 function valueText(def: PersistedFieldDefinition): string | null {
@@ -1282,7 +1139,7 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
   <!-- list：content 下方「挂载即显示」的块字段区（D21 形态分派 + 两列对齐网格）。
        布局对齐 Tana 式字段表：左列字段名（定宽）、右列值区（值前圆点 / chip / 图标）。 -->
   <div
-    v-else-if="variant === 'list' && (tags.length || orphanFields.length)"
+    v-else-if="variant === 'list' && fields.length"
     class="block-field-zone"
   >
     <div
@@ -1749,8 +1606,8 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
   flex-wrap: wrap;
   width: 100%;
   gap: 6px;
-  /* 整体向右缩进，使来源行明显位于笔记内容之下（不在同一左对齐线上） */
-  margin-left: 22px;
+  /* 左缘与字段区 list 行对齐（统一由 .block-properties 的 margin-left 定位，
+     不再单独右缩进——来源行 / 字段行 / 子块 status 图标同列） */
   padding: 4px 8px;
   border-radius: 4px;
   font-size: var(--text-sm);

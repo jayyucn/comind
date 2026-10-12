@@ -511,93 +511,39 @@
 // 属性显示区（文档流带，位于行下方）：书笔记来源行（.book-note-source）原位保留。
 // 不再保留 min-height（原 #94 的「恒存可点带」已撤销）：有属性时随内容自然撑高，
 // 无属性时塌成 0 高度，不额外占位。
+//
+// 左缘对齐子块 status 图标（不算 bullet dot）：子容器缩进 20px + 子块一级缩进
+// 24px + bullet 20px = (depth+1)*24 + 40。非任务子块无 between 槽、正文紧跟
+// bullet，起点亦在此列。--indent-depth 由 .block 根节点自持（自身深度），
+// 不再用子容器传入的父深度（那只服务于缩进线 ::before）。
 .block-properties {
-  margin-left: calc(var(--indent-depth, 0) * var(--block-indent-width) + 20px);
+  margin-left: calc((var(--indent-depth, 0) + 1) * var(--block-indent-width) + 40px);
   padding-right: $space-2;
-}
-
-// ── 字段区显隐（ADR-0050 D21 决策 8）：hover 门控，平时无痕 ──
-
-// 字段区包裹层：隐藏开关的定位参照。
-.block-field-zone-wrap {
-  position: relative;
-}
-
-// 隐藏开关：挂在字段区右上。隐形元素 pointer-events:none，淡入/可点写在同一条规则（可点性铁律）。
-// 透明底 + hover 才补淡底——实底小块在静息块面上是一颗突兀的钉子。
-.block-field-zone-hide {
-  position: absolute;
-  top: 2px;
-  right: 0;
-  width: 18px;
-  height: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: transparent;
-  color: var(--text-tertiary);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-size: var(--text-sm);
-  line-height: 1;
-  opacity: 0;
-  pointer-events: none;
-  transition:
-    opacity var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out),
-    background var(--dur-fast) var(--ease-out);
-
-  &:hover {
-    color: var(--text-primary);
-    background: var(--surface-subtle);
-  }
-}
-
-// 淡入挂 .block-properties:hover（字段带），不挂 .block:hover —— 后者会随子块 hover 向上冒泡
-// （同 .block-row:hover 的既有选择理由）。
-.block-properties:hover .block-field-zone-hide {
+  // 折叠动画基线：与 .block-children 同节奏（ADR-0045 折叠范围扩展）
+  max-height: 2000px;
   opacity: 1;
-  pointer-events: auto;
-}
+  transform: translateY(0);
 
-// 恢复入口：绝对定位到块下方（top:100% 落进块间间隙），不占布局高度 —— 静息态与普通块无异。
-// 视觉语言与 ghost chip 同构：虚线描边 = 「这里有个被藏起来的东西」，hover 补淡底。
-// 淡入挂 .block-row:hover + 一般兄弟组合器（恢复钮与 .block-row 同为 .block 的直接子元素）；
-// 自身 :hover 兜底 —— 指针从行底滑入按钮（越出行界）后由它接管，避免 hover 链断裂闪烁。
-.block-field-zone-restore {
-  position: absolute;
-  top: 100%;
-  left: calc(var(--indent-depth, 0) * var(--block-indent-width) + 20px);
-  margin-top: -14px;
-  border: 1px dashed var(--border-color);
-  background: var(--bg-base);
-  color: var(--text-tertiary);
-  font-size: var(--text-xs);
-  cursor: pointer;
-  padding: 0 8px;
-  border-radius: var(--radius-sm);
-  line-height: 18px;
-  opacity: 0;
-  pointer-events: none;
-  z-index: var(--z-base);
   transition:
-    opacity var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out),
-    background var(--dur-fast) var(--ease-out),
-    border-color var(--dur-fast) var(--ease-out);
-
-  &:hover {
-    color: var(--text-primary);
-    background: var(--surface-subtle);
-    border-color: var(--border-strong);
-  }
+    max-height var(--dur-base) var(--ease-in-out),
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
 }
 
-.block-row:hover ~ .block-field-zone-restore,
-.block-field-zone-restore:hover {
-  opacity: 1;
-  pointer-events: auto;
+// 字段带随本块折叠一起隐藏：折叠 = 本块一切可折叠细节的布局移除（ADR-0045 D1 扩展）。
+// 用直接子选择器 —— 子块的字段带随子树一起被 .block-children 的 display:none 吞掉，
+// 不需要（也不应该）在这里二次匹配。
+.block.is-collapsed>.block-properties {
+  max-height: 0;
+  opacity: 0.6;
+  overflow: hidden;
+  transform: translateY(-8px);
+}
+
+// 折叠动画跑完之后（is-animating 已摘除）才移除布局；展开时 is-collapsed 先摘除，
+// display 自然恢复、过渡照跑 —— 与 .block-children 的时序闸门同款，隐藏只有一个来源。
+.block.is-collapsed:not(.is-animating)>.block-properties {
+  display: none;
 }
 
 // 子任务进度条（block 下方）：位于 block 内容与子节点列表之间；

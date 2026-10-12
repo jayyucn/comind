@@ -27,6 +27,7 @@ import TaskProgressBar from './components/TaskProgressBar.vue'
 import { useBlockCollapse } from './composables/useBlockCollapse'
 import { useBlockEditorLifecycle } from './composables/useBlockEditorLifecycle'
 import { useBlockFieldValueSync } from './composables/useBlockFieldValueSync'
+import { useBlockFieldRows } from './composables/useBlockFieldRows'
 import { useChildTaskProgress } from './composables/useTaskProgress'
 import './handlers/bullet'
 import './handlers/code'
@@ -73,6 +74,12 @@ const inBlockModal = inject<boolean>('inBlockModal', false)
 // ── 便捷访问 ──
 const blockId = computed(() => props.node.id)
 const block = computed(() => props.node.block)
+
+// ── 字段区行集合（折叠守卫的第二通道）──
+// 与 `BlockFieldZone variant="list"` 的渲染集合**同一单源**（useBlockFieldRows），
+// 故「chevron 说能折叠」与「折叠下去真的藏了行」不会漂移。tag 与本守卫无关。
+const { fields: blockFields } = useBlockFieldRows(blockId, computed(() => block.value.tags ?? []))
+const fieldRowCount = computed(() => blockFields.value.length)
 
 // ── 子级列表 v-model ──
 // 树节点由 BlockList 的 tree 持有（唯一渲染权威），Block 只是渲染层，写入路径
@@ -161,12 +168,14 @@ const INDENT_WIDTH_PER_LEVEL = 24 // px
 const indentWidth = computed(() => `${props.depth * INDENT_WIDTH_PER_LEVEL}px`)
 
 // ── 折叠状态（由 useBlockCollapse 统一管理） ──
+// fieldRowCount = 第二路折叠守卫（ADR-0045 折叠范围扩展：子树 + 字段带）
 const {
   collapsed,
+  canCollapse,
   isAnimating,
   toggleCollapse,
   updateChildrenHeight,
-} = useBlockCollapse(computed(() => props.node))
+} = useBlockCollapse(computed(() => props.node), fieldRowCount)
 
 // ── 子节点列表容器（拖拽接线由 BlockDraggableList 统一承载） ──
 // 拖拽配置 / @move 循环嵌套守卫 / @end 指示器清理与落库，均与根级列表同源，
@@ -442,7 +451,7 @@ function onContentClick(e: MouseEvent) {
 
 /** 内容区以外的「自交互」元素：保留自身点击语义，Ctrl/Cmd+Click 不接管 */
 const SELF_INTERACTIVE_SELECTOR =
-  '.block-link, .rel-type-label, .date-ref, .property-item, .property-inline-item, .block-field-zone-hide, .block-field-zone-restore'
+  '.block-link, .rel-type-label, .date-ref, .property-item, .property-inline-item'
 
 /**
  * 块选区命中面（ADR-0035 D6）：`Ctrl/Cmd+Click` 在**整块行内、内容区以外**的任意
@@ -478,17 +487,9 @@ function onFieldValueMousedown(e: MouseEvent) {
   selection?.startTracking(blockId.value, true)
 }
 
-// ── 字段区显隐（ADR-0050 D21 决策 3 / 8）────────────────────
-
-/** 字段区隐藏态：唯一权威 = block.format.fields_hidden，读写直连 store 不留本地副本（与折叠态同构）。 */
-const fieldsHidden = computed(() => block.value?.format?.fields_hidden === true)
-
-/** 已挂标签才谈得上隐藏字段区（未挂标签的块本就无字段区）。 */
-const hasFieldZone = computed(() => (block.value?.tags?.length ?? 0) > 0)
-
-function setFieldsHidden(hidden: boolean) {
-  void blockStore.updateBlockFormat(blockId.value, { fields_hidden: hidden })
-}
+// ── 字段区显隐 ─────────────────────────────────────────────
+// D21 决策 3/8 的 `format.fields_hidden`（hover「×」隐藏 + 「显示字段区」恢复）已废弃：
+// 字段带的显隐统一并入块折叠（ADR-0045 折叠范围扩展），隐藏只有一个来源。
 
 async function onLanguageChange(lang: string) {
   if (typeHooks.value?.onLanguageChange) {
@@ -529,9 +530,9 @@ watch(isActive, (active) => {
 <template>
   <div
     class="block"
-    :class="[priorityClass, statusClass, { active: isActive, 'cb-selected': isSelected && !hasSelectedAncestor }]"
+    :class="[priorityClass, statusClass, { active: isActive, 'cb-selected': isSelected && !hasSelectedAncestor, 'is-collapsed': collapsed, 'is-animating': isAnimating }]"
     :data-block-id="blockId"
-    :style="{ '--block-indent': indentWidth }"
+    :style="{ '--block-indent': indentWidth, '--indent-depth': depth }"
     @mousedown="onBlockMousedown"
   >
     <div class="block-row">
@@ -544,13 +545,14 @@ watch(isActive, (active) => {
       <!-- 内容区域（bullet + content）- 选中时边框只应用到此容器 -->
       <div class="block-inner">
         <!-- Bullet：dot 常显，点击打开单块子树编辑弹窗（BlockModal）；
-             chevron 仅在有子块且 hover 时显现，点击负责折叠/展开（ADR-0039） -->
+             chevron 在有子块**或有字段行**时（canCollapse，ADR-0045 折叠范围扩展）且 hover 时显现，
+             点击负责折叠/展开（ADR-0039） -->
         <span
           class="block-bullet"
           :class="{ collapsed, 'hide-empty-bullet': hideBulletForEmpty }"
         >
           <span
-            v-if="node.children.length > 0"
+            v-if="canCollapse"
             class="bullet-chevron"
             title="折叠 / 展开"
             @click.stop="toggleCollapse"
@@ -640,7 +642,9 @@ watch(isActive, (active) => {
       </div>
     </div>
 
-    <!-- 字段带（content 下方）：书笔记来源行原位保留；无字段时为 #94 命中带 -->
+    <!-- 字段带（content 下方）：书笔记来源行 + 块字段区。
+         本块折叠时整带隐藏（`.block.is-collapsed > .block-properties`，见 _block.scss）——
+         字段带与子树同属「本块的可折叠细节」（ADR-0045 折叠范围扩展）。 -->
     <div
       class="block-properties"
       @mousedown="onFieldValueMousedown"
@@ -649,42 +653,14 @@ watch(isActive, (active) => {
         :block-id="blockId"
         variant="book-note"
       />
-      <!-- 块字段区（ADR-0050 D1「挂载即显示」）：只渲染该块已挂标签的有效字段；
-           fieldsHidden（D21 决策 3，block.format.fieldsHidden）为真时整区不渲染 -->
-      <div
-        v-if="!fieldsHidden"
-        class="block-field-zone-wrap"
-      >
-        <BlockFieldZone
-          :block-id="blockId"
-          :tag-ids="block.tags ?? []"
-          variant="list"
-        />
-        <!-- 隐藏开关（D21 决策 8）：hover 字段带时淡入，平时无痕 -->
-        <button
-          v-if="hasFieldZone"
-          type="button"
-          class="block-field-zone-hide"
-          aria-label="隐藏字段区"
-          @mousedown.stop
-          @click.stop="setFieldsHidden(true)"
-        >
-          ×
-        </button>
-      </div>
+      <!-- 块字段区（ADR-0050 D1「挂载即显示」）：只渲染该块已挂标签的有效字段。
+           是否渲染由 `fields.length` 决定——全被 hide_when 拦掉时不出空容器（与折叠守卫同源） -->
+      <BlockFieldZone
+        :block-id="blockId"
+        :tag-ids="block.tags ?? []"
+        variant="list"
+      />
     </div>
-
-    <!-- 恢复入口（D21 决策 8）：绝对定位到块下方间隙、不占布局高度；
-         平时无痕（opacity:0 + pointer-events:none），块行 hover 时淡入 -->
-    <button
-      v-if="fieldsHidden"
-      type="button"
-      class="block-field-zone-restore"
-      @mousedown.stop
-      @click.stop="setFieldsHidden(false)"
-    >
-      显示字段区
-    </button>
 
     <!-- 子任务进度条：子 block 含任务项（status 字段）时显示在 block 下方；
          Canceled/Archived 不参与，全部删除后随树重建自动消失 -->

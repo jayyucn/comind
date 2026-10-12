@@ -92,4 +92,75 @@ describe('useBlockCollapse', () => {
     node.value = { id: 'b1', block, children: [{ id: 'b2', block: childBlock, children: [] }] }
     expect(collapsed.value).toBe(true)
   })
+
+  // ── 折叠范围扩展（ADR-0045）：折叠范围 = 子树 + 字段带，守卫两路来源 ──
+  describe('字段行通道（canCollapse = 有子块 或 有字段行）', () => {
+    /** 0 子块的块（折叠来源只能来自字段行）。 */
+    function fieldOnlyNode(collapsed = false): { node: TreeNode; block: any } {
+      const block = {
+        id: 'b1', pageId: 'p1', parentId: null, pos: 0,
+        content: '', format: { collapsed }, type: 'bullet', createdAt: 0, updatedAt: 0
+      }
+      return { node: { id: 'b1', block, children: [] }, block }
+    }
+
+    it('仅字段块（0 子块 + 有字段行）可折叠，toggle 写库', async () => {
+      const { node, block } = fieldOnlyNode(false)
+      const blockStore = useBlockStore()
+      blockStore.blocks = [block]
+      const spy = vi.spyOn(blockStore, 'updateBlockFormat').mockImplementation(
+        async (id: string, format: Record<string, unknown>) => {
+          const target = blockStore.blocks.find(b => b.id === id)
+          if (target) target.format = { ...target.format, ...format }
+        }
+      )
+      const { collapsed, canCollapse, toggleCollapse } = useBlockCollapse(ref(node), ref(2))
+      expect(canCollapse.value).toBe(true)
+      await toggleCollapse()
+      expect(collapsed.value).toBe(true)
+      expect(spy).toHaveBeenCalledWith('b1', { collapsed: true })
+    })
+
+    it('toggleCollapse 在「无子块且无字段行」时是 no-op', async () => {
+      const { node, block } = fieldOnlyNode(false)
+      const blockStore = useBlockStore()
+      blockStore.blocks = [block]
+      const spy = vi.spyOn(blockStore, 'updateBlockFormat').mockResolvedValue(undefined)
+      const { canCollapse, toggleCollapse } = useBlockCollapse(ref(node), ref(0))
+      expect(canCollapse.value).toBe(false)
+      await toggleCollapse()
+      expect(spy).not.toHaveBeenCalled()
+    })
+
+    // stale 双条件兜底：字段删光后残留 collapsed=true，同样不能让 UI 撒谎
+    it('既无子块又无字段行 + collapsed=true ⇒ 呈现展开态', () => {
+      const { node } = fieldOnlyNode(true)
+      const { collapsed, canCollapse } = useBlockCollapse(ref(node), ref(0))
+      expect(canCollapse.value).toBe(false)
+      expect(collapsed.value).toBe(false)
+    })
+
+    it('字段行数变化即时驱动守卫（字段删光 ⇒ 生效态回落展开）', () => {
+      const { node } = fieldOnlyNode(true)
+      const fieldRows = ref(3)
+      const { collapsed, canCollapse } = useBlockCollapse(ref(node), fieldRows)
+      expect(canCollapse.value).toBe(true)
+      expect(collapsed.value).toBe(true)
+
+      fieldRows.value = 0
+      expect(canCollapse.value).toBe(false)
+      expect(collapsed.value).toBe(false)
+    })
+
+    it('未传 fieldRowCount 时行为与旧版一致（仅子块通道）', async () => {
+      const { node, block } = fieldOnlyNode(false)
+      const blockStore = useBlockStore()
+      blockStore.blocks = [block]
+      const spy = vi.spyOn(blockStore, 'updateBlockFormat').mockResolvedValue(undefined)
+      const { canCollapse, toggleCollapse } = useBlockCollapse(ref(node))
+      expect(canCollapse.value).toBe(false)
+      await toggleCollapse()
+      expect(spy).not.toHaveBeenCalled()
+    })
+  })
 })

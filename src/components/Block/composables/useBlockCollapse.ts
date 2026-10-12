@@ -1,5 +1,5 @@
-import { computed, ref, watch } from 'vue'
-import type { Ref } from 'vue'
+import { computed, ref, toValue, watch } from 'vue'
+import type { MaybeRefOrGetter, Ref } from 'vue'
 import { useBlockStore } from '../../../stores/blocks'
 import type { TreeNode } from '../../../types/block'
 
@@ -17,8 +17,14 @@ const COLLAPSE_ANIMATION_DURATION = 200 // ms
  * - toggleCollapse 切换状态（写 store）
  * - 控制折叠/展开动画时序（isAnimating 标志驱动 CSS 过渡，同时是 display:none 的闸门）
  * - 计算 childrenHeight（供子节点容器做动画；当前折叠动画由 CSS 类驱动）
+ *
+ * **折叠范围**（ADR-0045 扩展）：折叠 = 隐藏本块的一切可折叠细节 —— 子树
+ * （`.block-children`）**与字段带**（`.block-properties`：list 字段区 + book-note 来源行）。
+ * 因此「能不能折叠」有两路来源：有子块，或有字段行。字段行数由调用方从
+ * `useBlockFieldRows().fields.length` 传入（与渲染同一份集合，守卫不会与屏幕漂移；
+ * 不能用 `tags.length` 代理——标签有字段 ≠ 有可渲染行）。
  */
-export function useBlockCollapse(node: Ref<TreeNode>) {
+export function useBlockCollapse(node: Ref<TreeNode>, fieldRowCount?: MaybeRefOrGetter<number>) {
   const blockStore = useBlockStore()
 
   // 持久化折叠标志（唯一权威 = block.format.collapsed，ADR-0045 ①）。
@@ -34,20 +40,29 @@ export function useBlockCollapse(node: Ref<TreeNode>) {
   const isAnimating = ref(false)
   const childrenHeight = ref(0)
 
-  // 折叠是否生效 —— 读取侧唯一判定（ADR-0045 D2）：无子节点 ⇒ 不折叠。
-  // 0 子节点 + collapsed=true 是历史残留（子节点被删除掏空后留下的 stale 标志），
-  // 兜底使其呈现为展开态，而不是让 UI 撒一个"这里有东西被藏起来了"的谎。
-  const collapsed = computed(() => collapsedFlag.value && node.value.children.length > 0)
+  /** 字段区行数（未传 = 无可折叠字段）。 */
+  const fieldRows = computed(() => toValue(fieldRowCount) ?? 0)
+
+  /**
+   * 折叠守卫（唯一判据，读取/写入/动画三处共用）：有子块 **或** 有字段行才谈得上折叠。
+   * 与 tag 无关——只问「有没有可折叠的东西」。
+   */
+  const canCollapse = computed(() => node.value.children.length > 0 || fieldRows.value > 0)
+
+  // 折叠是否生效 —— 读取侧唯一判定（ADR-0045 D2）：无可折叠内容 ⇒ 不折叠。
+  // 既无子块又无字段行 + collapsed=true 是历史残留（子块被删除掏空后留下的 stale 标志，
+  // 或字段被删光），兜底使其呈现为展开态，而不是让 UI 撒一个"这里有东西被藏起来了"的谎。
+  const collapsed = computed(() => collapsedFlag.value && canCollapse.value)
 
   async function toggleCollapse() {
-    if (node.value.children.length === 0 || isAnimating.value) return
+    if (!canCollapse.value || isAnimating.value) return
     collapsedFlag.value = !collapsedFlag.value
   }
 
   // 折叠/展开动画时序：store 写入改由上面的 setter 承担，这里只驱动 isAnimating。
   // 监听 persisted 标志（而非 collapsed），这样 store 侧的对账也能带动动画。
   watch(collapsedFlag, () => {
-    if (node.value.children.length === 0) return
+    if (!canCollapse.value) return
 
     isAnimating.value = true
     setTimeout(() => { isAnimating.value = false }, COLLAPSE_ANIMATION_DURATION)
@@ -83,6 +98,7 @@ export function useBlockCollapse(node: Ref<TreeNode>) {
 
   return {
     collapsed,
+    canCollapse,
     isAnimating,
     childrenHeight,
     toggleCollapse,

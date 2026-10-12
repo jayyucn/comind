@@ -29,6 +29,8 @@ import { cleanupRelationshipTypes, cleanupPages } from '../../../tests/core-clie
 import type { TreeNode } from '../../types/block'
 import { useEditorStore } from '../../stores/editor'
 import { useFieldValueStore } from '../../stores/fieldValue'
+import { useTagsStore } from '../../stores/tags'
+import type { PersistedTagTreeEntry, PersistedFieldDefinition } from '../../types/tag-persisted'
 
 vi.mock('../../storage/indexedDB', () => ({
   storage: {
@@ -878,6 +880,138 @@ describe('块选区命中面：Ctrl/Cmd+Click 覆盖整块行非内容区', () =
     expect(childBody.exists()).toBe(true)
     await childBody.trigger('mousedown', { ctrlKey: true })
     expect(selectionStub.toggleBlock).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+})
+
+// ── chevron 显示条件（ADR-0045 折叠范围扩展：折叠范围 = 子树 + 字段带）──
+//
+// 守卫两路来源（canCollapse）必须与「折叠下去真的藏了行」同源：chevron 不是「挂了标签就有」，
+// 而是「有可渲染的字段行」。两者的共同依据是 useBlockFieldRows().fields.length。
+describe('collapse chevron 显示条件（有子块 / 仅字段 / 两者皆无）', () => {
+  const PAGE_ID = 'p1'
+  const BLOCK_ID = 'b1'
+
+  let blockStore: ReturnType<typeof useBlockStore>
+
+  const StubBlockDraggableList = defineComponent({
+    name: 'BlockDraggableList',
+    props: {
+      modelValue: { type: Array, default: () => [] },
+      pageId: { type: String, default: '' },
+      parentId: { type: String, default: '' },
+      depth: { type: Number, default: 0 }
+    },
+    setup(_, { expose }) {
+      expose({ getContainerEl: () => null })
+      return () => h('div', { class: 'block-children' })
+    }
+  })
+
+  function treeEntry(
+    over: Partial<PersistedTagTreeEntry> & { id: string; title: string },
+  ): PersistedTagTreeEntry {
+    return {
+      field_ids: [],
+      parent_id: null,
+      description: '',
+      color: '',
+      is_system: false,
+      created_at: 1,
+      updated_at: 1,
+      version: 0,
+      deleted_at: null,
+      effective_field_ids: [],
+      descendant_ids: [],
+      ...over,
+    }
+  }
+
+  function fieldDef(
+    over: Partial<PersistedFieldDefinition> & { id: string; title: string },
+  ): PersistedFieldDefinition {
+    return {
+      key: over.id,
+      type: 'string',
+      closed_values: null,
+      is_system: false,
+      created_at: 1,
+      updated_at: 1,
+      version: 0,
+      deleted_at: null,
+      default_value: null,
+      hide_when: 'never',
+      ...over,
+    }
+  }
+
+  function makeBlock(tags?: string[]): any {
+    return {
+      id: BLOCK_ID, pageId: PAGE_ID, parentId: null, pos: 0,
+      content: 'x', format: {}, type: 'bullet', tags, createdAt: 0, updatedAt: 0
+    }
+  }
+
+  function mountFor(block: any, children: TreeNode[] = []) {
+    return mount(Block, {
+      props: { node: { id: BLOCK_ID, block, children }, pageId: PAGE_ID, depth: 0 },
+      global: { stubs: { BulletRender: StubBulletRender, BlockDraggableList: StubBlockDraggableList } },
+    })
+  }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    blockStore = useBlockStore()
+    // 标签树已加载：阻断 ensureLoaded 走 RPC，字段集合完全由本用例种子决定
+    useTagsStore().loaded = true
+  })
+
+  it('有子块（无字段）→ 显示 chevron', async () => {
+    const child = {
+      id: 'b2', pageId: PAGE_ID, parentId: BLOCK_ID, pos: 0,
+      content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
+    }
+    const block = makeBlock()
+    blockStore.blocks = [block, child]
+    const wrapper = mountFor(block, [{ id: 'b2', block: child, children: [] }])
+    await flushPromises()
+    expect(wrapper.find('.bullet-chevron').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('仅字段（0 子块 + 有可渲染字段行）→ 显示 chevron', async () => {
+    const tagsStore = useTagsStore()
+    tagsStore.entries = [treeEntry({ id: 't1', title: '标签', effective_field_ids: ['f1'] })]
+    tagsStore.fieldDefinitions = [fieldDef({ id: 'f1', key: 'note', title: '备注' })]
+    const block = makeBlock(['t1'])
+    blockStore.blocks = [block]
+    const wrapper = mountFor(block)
+    await flushPromises()
+    expect(wrapper.find('.bullet-chevron').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('既无子块又无字段行 → 不显示 chevron（不让 UI 撒谎）', async () => {
+    const block = makeBlock()
+    blockStore.blocks = [block]
+    const wrapper = mountFor(block)
+    await flushPromises()
+    expect(wrapper.find('.bullet-chevron').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('挂了标签但字段全被 hide_when 拦掉 → 0 可渲染行 ⇒ 不显示 chevron（守卫与渲染同源）', async () => {
+    const tagsStore = useTagsStore()
+    tagsStore.entries = [treeEntry({ id: 't1', title: '标签', effective_field_ids: ['f1'] })]
+    tagsStore.fieldDefinitions = [fieldDef({ id: 'f1', key: 'note', title: '备注', hide_when: 'always' })]
+    const block = makeBlock(['t1'])
+    blockStore.blocks = [block]
+    const wrapper = mountFor(block)
+    await flushPromises()
+    expect(wrapper.find('.bullet-chevron').exists()).toBe(false)
+    // 同源对照：字段区也不出空容器
+    expect(wrapper.find('.block-field-zone').exists()).toBe(false)
     wrapper.unmount()
   })
 })
