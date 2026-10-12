@@ -1,9 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { Editor } from '@tiptap/core'
+import type { EditorView } from '@tiptap/pm/view'
 import Document from '@tiptap/extension-document'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
 import { WikiLinkExtension } from './WikiLinkExtension'
+import { WikiLinkTriggerExtension, isWikiLinkMenuOpen, closeWikiLinkMenuByEditor } from './WikiLinkTriggerExtension'
 import { useRelationshipTypes } from '../composables/useRelationshipTypes'
 import { cleanupRelationshipTypes } from '../../tests/core-client'
 
@@ -259,5 +261,136 @@ describe('WikiLinkExtension utilities', () => {
       expect(h2.renderedHTML).toContain('--rel-color')
       destroyDecoratedEditor(h2)
     })
+  })
+})
+
+// ─── 键盘原子语义（共享原语 inline-unit-keyboard 接线） ─────────────────────
+// 通用契约矩阵（pad 语义 / 缘带 / 修饰键 / 选区 / IME）由
+// inline-unit-keyboard.test.ts 钉死；本块只验 wiki link 语法侧接线：
+// 单元范围 = 装饰范围（同源扫描）、typed-paren 整段为一个单元、菜单打开中放行。
+
+/** 驱动真实 view 上挂载的 wikiLinkKeyboard 插件 handleKeyDown（TipTap 会给插件 key 加 `$` 后缀，用前缀匹配） */
+function wikiLinkKeydown(editor: Editor, key: string, pos: number) {
+  const plugin = editor.state.plugins.find(p => p.key.startsWith('wikiLinkKeyboard'))
+  expect(plugin, 'wikiLinkKeyboard 插件未挂载').toBeDefined()
+  const handleKeyDown = plugin!.spec.props.handleKeyDown as
+    | ((view: EditorView, event: KeyboardEvent) => boolean)
+    | undefined
+  expect(handleKeyDown).toBeTypeOf('function')
+  editor.commands.setTextSelection(pos)
+  const preventDefault = vi.fn()
+  const event = { key, preventDefault } as unknown as KeyboardEvent
+  const handled = handleKeyDown!(editor.view, event)
+  return { handled, preventDefaultCalled: preventDefault.mock.calls.length > 0 }
+}
+
+function docText(editor: Editor) {
+  return editor.state.doc.textContent
+}
+
+describe('WikiLinkExtension — 键盘原子语义（共享原语接线）', () => {
+  beforeEach(async () => {
+    await cleanupRelationshipTypes()
+    const { _resetForTest } = useRelationshipTypes()
+    _resetForTest()
+    const { load } = useRelationshipTypes()
+    await load()
+  })
+
+  afterEach(async () => {
+    closeWikiLinkMenuByEditor()
+    await cleanupRelationshipTypes()
+    const { _resetForTest } = useRelationshipTypes()
+    _resetForTest()
+  })
+
+  it('键盘单元与装饰同源：[[X]] 区间数 = block-link 装饰覆盖（外层被 wiki-bracket 拆成 3 段，组合文本即整个 [[X]]）', () => {
+    const handle = createDecoratedEditor('See [[X]] for details')
+    const spans = handle.element.querySelectorAll('span.block-link')
+    // PM 扁平化：外层 .block-link 被首尾 .wiki-bracket 拆成 3 段（既有行为）
+    expect(spans.length).toBe(3)
+    expect(Array.from(spans).map(s => s.textContent).join('')).toBe('[[X]]')
+    expect(spans[0].getAttribute('data-page')).toBe('X')
+    destroyDecoratedEditor(handle)
+  })
+
+  it('Backspace：光标在 [[X]] 右缘 → 整删（含右邻空格，保留左空格分隔）', () => {
+    const handle = createDecoratedEditor('看 [[页面]] 结尾')
+    const r = wikiLinkKeydown(handle.editor, 'Backspace', 9)
+    expect(r.handled).toBe(true)
+    expect(r.preventDefaultCalled).toBe(true)
+    expect(docText(handle.editor)).toBe('看 结尾')
+    destroyDecoratedEditor(handle)
+  })
+
+  it('Backspace：[[X]] 在行尾 → 整删并清左 pad，不留悬挂空格', () => {
+    const handle = createDecoratedEditor('只有 [[页面]]')
+    const r = wikiLinkKeydown(handle.editor, 'Backspace', 10)
+    expect(r.handled).toBe(true)
+    expect(docText(handle.editor)).toBe('只有')
+    destroyDecoratedEditor(handle)
+  })
+
+  it('Backspace：带别名 [[target|显示]] → 整段删除（不剩残缺括号）', () => {
+    const handle = createDecoratedEditor('看 [[target|显示]] 尾')
+    const r = wikiLinkKeydown(handle.editor, 'Backspace', 16)
+    expect(r.handled).toBe(true)
+    expect(docText(handle.editor)).toBe('看 尾')
+    destroyDecoratedEditor(handle)
+  })
+
+  it('Backspace：相邻 [[A]][[B]] 夹缝 → 只删第一个，第二个完整保留', () => {
+    const handle = createDecoratedEditor('[[A]][[B]]')
+    const r = wikiLinkKeydown(handle.editor, 'Backspace', 6)
+    expect(r.handled).toBe(true)
+    expect(docText(handle.editor)).toBe('[[B]]')
+    destroyDecoratedEditor(handle)
+  })
+
+  it('Backspace：typed-paren ((label))[[X]] 整段为一个单元 → 整删，不留悬挂 ((label))', () => {
+    const handle = createDecoratedEditor('前置 ((是一个))[[项目A]] 后置')
+    // 整段 = ((是一个))[[项目A]]（7+7=14 字符），起点 4（"前置 " 之后）
+    const r = wikiLinkKeydown(handle.editor, 'Backspace', 18)
+    expect(r.handled).toBe(true)
+    expect(docText(handle.editor)).toBe('前置 后置')
+    destroyDecoratedEditor(handle)
+  })
+
+  it('ArrowRight：光标在 [[X]] 左缘 → 整体跨到右 pad 后；ArrowLeft：右缘 → 跨回左 pad 前', () => {
+    const handle = createDecoratedEditor('看 [[页面]] 结尾')
+    const rRight = wikiLinkKeydown(handle.editor, 'ArrowRight', 3)
+    expect(rRight.handled).toBe(true)
+    expect(handle.editor.state.selection.from).toBe(10)
+    const rLeft = wikiLinkKeydown(handle.editor, 'ArrowLeft', 9)
+    expect(rLeft.handled).toBe(true)
+    expect(handle.editor.state.selection.from).toBe(2)
+    destroyDecoratedEditor(handle)
+  })
+
+  it('菜单打开中（正在输入 [[que）→ Backspace / ArrowRight 放行逐字符，不整删不跨越', async () => {
+    const element = document.createElement('div')
+    document.body.appendChild(element)
+    const editor = new Editor({
+      element,
+      extensions: [Document, Paragraph, Text, WikiLinkExtension, WikiLinkTriggerExtension],
+      content: '<p>看 [[que</p>',
+    })
+    // '看 [[que'：[[ 起点 3，token 末 8
+    editor.commands.setTextSelection(8)
+    const triggerPlugin = editor.state.plugins.find(p => typeof p.spec.props?.handleTextInput === 'function')
+    triggerPlugin!.spec.props.handleTextInput!(editor.view, 8, 8, 'x')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(isWikiLinkMenuOpen()).toBe(true)
+
+    const rBs = wikiLinkKeydown(editor, 'Backspace', 8)
+    expect(rBs.handled).toBe(false)
+    expect(rBs.preventDefaultCalled).toBe(false)
+    expect(docText(editor)).toBe('看 [[que')
+    const rArrow = wikiLinkKeydown(editor, 'ArrowRight', 8)
+    expect(rArrow.handled).toBe(false)
+    expect(rArrow.preventDefaultCalled).toBe(false)
+
+    editor.destroy()
+    element.remove()
   })
 })

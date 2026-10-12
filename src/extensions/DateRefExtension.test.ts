@@ -196,11 +196,13 @@ function dateRefRangeFromDoc(editor: Editor): { from: number; to: number }[] {
   return ranges
 }
 
-/** 取 dateRef 插件的 handleKeyDown（真实 view 驱动） */
+/** 取 dateRef 键盘插件的 handleKeyDown（真实 view 驱动） */
 function dateRefKeydown(editor: Editor, key: string, pos: number) {
-  // TipTap 会把插件 key 重写为 'dateRef$'，不能靠 key 从 state.plugins 里 find；
-  // 直接从扩展配置拿 handler（与 DateRefTriggerExtension.test.ts 同范式），再喂真实 view。
-  const [plugin] = DateRefExtension.config.addProseMirrorPlugins() ?? []
+  // 键盘语义已收编至共享原语（inline-unit-keyboard），dateRef 扩展现挂两个插件：
+  // 装饰插件（无 handleKeyDown）+ 共享键盘插件。按「带 handleKeyDown」查找，
+  // 不再依赖下标顺序（TipTap 会把插件 key 重写为 'dateRef$'，也不能靠 key find）。
+  const plugins = DateRefExtension.config.addProseMirrorPlugins() ?? []
+  const plugin = plugins.find(p => typeof p?.spec?.props?.handleKeyDown === 'function')
   const handleKeyDown = plugin?.spec.props.handleKeyDown as ((view: EditorView, event: KeyboardEvent) => boolean) | undefined
   expect(handleKeyDown).toBeTypeOf('function')
   editor.commands.setTextSelection(pos)
@@ -336,9 +338,10 @@ describe('DateRefExtension handleKeyDown — 整单元删除', () => {
   it('Backspace：光标在单元右侧但有选区（非 collapsed）→ 不拦截（交给默认选区删除）', () => {
     handle = createEditor('meet @2026-07-15T14:00 📅|weekly tomorrow')
     const { from } = dateRefRangeFromDoc(handle.editor)[0]
-    // 构建非空选区：from..from+1
+    // 构建非空选区：from..from+1（键盘插件查找同 dateRefKeydown：按 handleKeyDown 查找）
     handle.editor.commands.setTextSelection({ from, to: from + 1 })
-    const [plugin] = DateRefExtension.config.addProseMirrorPlugins() ?? []
+    const plugins = DateRefExtension.config.addProseMirrorPlugins() ?? []
+    const plugin = plugins.find(p => typeof p?.spec?.props?.handleKeyDown === 'function')
     const handleKeyDown = plugin?.spec.props.handleKeyDown as ((view: EditorView, event: KeyboardEvent) => boolean) | undefined
     const event = { key: 'Backspace', preventDefault: vi.fn() } as unknown as KeyboardEvent
     const handled = handleKeyDown!(handle.editor.view, event)
@@ -451,7 +454,8 @@ describe('DateRefExtension handleKeyDown — 方向键跨过单元', () => {
     handle = createEditor('meet @2026-07-15T14:00 📅|weekly tomorrow')
     const { from } = dateRefRangeFromDoc(handle.editor)[0]
     handle.editor.commands.setTextSelection(from)
-    const [plugin] = DateRefExtension.config.addProseMirrorPlugins() ?? []
+    const plugins = DateRefExtension.config.addProseMirrorPlugins() ?? []
+    const plugin = plugins.find(p => typeof p?.spec?.props?.handleKeyDown === 'function')
     const handleKeyDown = plugin?.spec.props.handleKeyDown as ((view: EditorView, event: KeyboardEvent) => boolean) | undefined
     const event = { key: 'ArrowRight', ctrlKey: true, preventDefault: vi.fn() } as unknown as KeyboardEvent
     const handled = handleKeyDown!(handle.editor.view, event)
@@ -463,7 +467,8 @@ describe('DateRefExtension handleKeyDown — 方向键跨过单元', () => {
     handle = createEditor('meet @2026-07-15T14:00 📅|weekly tomorrow')
     const { from } = dateRefRangeFromDoc(handle.editor)[0]
     handle.editor.commands.setTextSelection({ from, to: from + 1 })
-    const [plugin] = DateRefExtension.config.addProseMirrorPlugins() ?? []
+    const plugins = DateRefExtension.config.addProseMirrorPlugins() ?? []
+    const plugin = plugins.find(p => typeof p?.spec?.props?.handleKeyDown === 'function')
     const handleKeyDown = plugin?.spec.props.handleKeyDown as ((view: EditorView, event: KeyboardEvent) => boolean) | undefined
     const event = { key: 'ArrowRight', preventDefault: vi.fn() } as unknown as KeyboardEvent
     const handled = handleKeyDown!(handle.editor.view, event)

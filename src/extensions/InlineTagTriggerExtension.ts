@@ -33,6 +33,14 @@ let menuIsOpen = false
 let selectingFromMenu = false
 let currentQuery = ''
 
+/**
+ * 补全菜单当前是否打开（供 InlineTagExtension 的键盘原子语义放行：
+ * 菜单开着 = 用户正在编辑 tag 本身，逐字符删除/菜单导航优先，整删规则不抢）。
+ */
+export function isTagMenuOpen(): boolean {
+  return menuIsOpen
+}
+
 export function notifyTagMenuSelect() {
   selectingFromMenu = true
   setTimeout(() => {
