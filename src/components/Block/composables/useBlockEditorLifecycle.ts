@@ -404,6 +404,11 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
       const leadMinutes = parseInt(dateRefSpan.dataset.leadMinutes || '0', 10) || 0
       if (!raw || !kind || !iso || !recurrence) return
 
+      // 段范围含 pad 空格时 data-raw 带首/尾空格（键盘语义：pad 属单元一部分，
+      // 渲染态 date-ref span 连右 pad 一起盖），而 serializeDateRef 序列化口径
+      // 永不带空白 —— 直接比对恒不匹配，点击曾因此静默失效。trim 后比对。
+      const rawUnit = raw.trim()
+
       // 在 block.content 中查找该 span 对应的 {{...}} 位置
       // 先数一下该 span 在同级 .block-text 内是第几个 .date-ref（支持重复内容）
       const blockText = dateRefSpan.closest('.block-text')
@@ -433,7 +438,7 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
           recurrence: normalizeRecurrence(m[3]),
           leadMinutes: m[4] ? parseInt(m[4], 10) || 0 : 0,
         })
-        if (matchedRaw === raw && matchCount === occurrence) {
+        if (matchedRaw === rawUnit && matchCount === occurrence) {
           idx = m.index
           break
         }
@@ -446,7 +451,8 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
         {
           blockId: blockId.value,
           from: idx,
-          to: idx + raw.length,
+          // 用匹配到的单元长度（不含 pad）——替换区间须与序列化口径一致
+          to: idx + rawUnit.length,
           kind: kind as DateRefKind,
           iso,
           recurrence: recurrence as RecurrenceRule,

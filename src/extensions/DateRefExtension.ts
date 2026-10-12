@@ -78,19 +78,6 @@ function buildDecorations(doc: Node, decorations: Decoration[]) {
   }
 }
 
-/** 在 decoration set 中查找 clickPos 落在哪个 decoration 内，返回精确 [from, to] */
-function findDecorationRange(
-  decorationSet: DecorationSet,
-  clickPos: number
-): { from: number; to: number } | null {
-  for (const decoration of decorationSet.find()) {
-    if (decoration.from <= clickPos && clickPos <= decoration.to) {
-      return { from: decoration.from, to: decoration.to }
-    }
-  }
-  return null
-}
-
 const DATE_REF_PLUGIN_KEY = new PluginKey('dateRef')
 
 export const DateRefExtension = Extension.create({
@@ -108,14 +95,32 @@ export const DateRefExtension = Extension.create({
             return DecorationSet.create(state.doc, decorations)
           },
 
+          // 编辑态点击 date-ref 不应把文本光标落进 chip 内部（chip 是原子单元，
+          // 落光标会让用户敲坏 `@ISO📅...` 序列化文本）。cancel 浏览器在点击点放置的
+          // 原生光标即可；handleClick 仍正常派发事件、且不改选区。
+          handleDOMEvents: {
+            mousedown(_view: EditorView, event: MouseEvent) {
+              const target = event.target as HTMLElement | null
+              if (target && target.closest && target.closest('.date-ref')) {
+                event.preventDefault()
+              }
+              return false
+            },
+          },
+
           handleClick(view: EditorView, pos: number, event: MouseEvent) {
             const target = event.target as HTMLElement
             if (!target.classList.contains('date-ref')) return false
 
-            const pluginState = DATE_REF_PLUGIN_KEY.getState(view.state) as DecorationSet | undefined
-            const range = pluginState ? findDecorationRange(pluginState, pos) : null
-            const from = range?.from ?? pos
-            const to = range?.to ?? pos
+            // 单元范围从 doc 现场扫描（与装饰、键盘原语共用 scanDateRefMatches）：
+            // 插件 state 恒为 DecorationSet.empty（decorations prop 从不写回插件
+            // state，getState 恒空）——曾据此取范围致 from/to 退化为光标位，
+            // 面板确认时 deleteRange 空操作 + 原地插入，文档被写坏。
+            const match = scanDateRefMatches(view.state.doc).find(
+              m => pos >= m.from && pos <= m.to
+            )
+            const from = match?.from ?? pos
+            const to = match?.to ?? pos
 
             const payload: DateRefClickPayload = {
               from,

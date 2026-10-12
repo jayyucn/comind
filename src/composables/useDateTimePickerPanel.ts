@@ -11,7 +11,8 @@ import { useEditorStore } from '../stores/editor'
 import { useBlockStore } from '../stores/blocks'
 import { useFieldValueStore } from '../stores/fieldValue'
 import { DATE_REF_CLICK_EVENT } from '../extensions/DateRefExtension'
-import { serializeDateRef, DATE_REF_AT_REGEX, padDateRefUnit } from '../utils/date-ref'
+import { serializeDateRef, DATE_REF_AT_REGEX } from '../utils/date-ref'
+import { padUnitForDoc, padInlineUnit } from '../utils/inline-unit-pad'
 import type { DateRefKind, RecurrenceRule } from '../utils/date-ref'
 import type { DateRefClickPayload } from '../extensions/DateRefExtension'
 import { closeDateRefMenu } from '../extensions/DateRefTriggerExtension'
@@ -61,26 +62,9 @@ export function deduplicateDateRef(content: string, kind: string): string {
 }
 
 /**
- * editor 模式：以 PM doc.textBetween 读取替换区间左右邻字符，给 newText 两侧补空格。
- * 替换与纯插入的"右邻"语义一致——textBetween(to, to+1) 即插入后紧跟的首字符；
- * 边界越界（from=0 / to=docSize）时 textBetween 返回 ''，padDateRefUnit 视为块边界处理。
- *
- * 行首细分：from===0 是块首（左邻无内容）→ 不补左；from>0 但 textBetween 跨段落边界
- * 返回 '' 是段首（换行后的行首）→ 按 \n 处理补左，防单行渲染（预览/列表）下换行塌缩
- * 导致 date-ref 与上一段内容粘连成 `x@...`。
+ * editor 模式的补空已泛化为 utils/inline-unit-pad 的 padUnitForDoc
+ * （@date-ref / #tag / [[wiki link]] 三家插入路径共用）。
  */
-function padForDoc(
-  doc: { textBetween: (from: number, to: number) => string },
-  from: number,
-  to: number,
-  unit: string
-): string {
-  const atBlockStart = from === 0
-  const leftRaw = from > 0 ? doc.textBetween(from - 1, from) : ''
-  const left = atBlockStart ? null : leftRaw === '' ? '\n' : leftRaw
-  const right = doc.textBetween(to, to + 1)
-  return padDateRefUnit(left, right, unit)
-}
 
 /** 暴露给外部的状态和回调 */
 export function useDateTimePickerPanel() {
@@ -158,18 +142,22 @@ export function useDateTimePickerPanel() {
 
       // 主路径：from..to 是有效范围且在文档内
       if (from >= 0 && to <= docSize && from < to) {
-        const text = padForDoc(doc, from, to, newText)
-        editor.chain().deleteRange({ from, to }).insertContent(text).run()
+        const text = padUnitForDoc(doc, from, to, newText)
+        // 插入位置显式钉死在 from：deleteRange 用显式范围删除，而 insertContent
+        // 默认插在当前 selection —— 两者不对称。面板操作期间 selection 可能漂移
+        // （编辑器失焦恢复 / 点击面板按钮 / IME / 跨块选区残留），曾致删除生效
+        // 但新文本被写到文档尾，内容顺序错乱。
+        editor.chain().deleteRange({ from, to }).insertContentAt(from, text).run()
         inserted = true
       } else if (from >= 0 && from < docSize) {
         // from 有效但 to 无效（如触发器只记录了起始位置）
         // 删除 from 到 cursor 的内容
         const endPos = Math.min(cursor, docSize)
         if (from < endPos) {
-          const text = padForDoc(doc, from, endPos, newText)
+          const text = padUnitForDoc(doc, from, endPos, newText)
           editor.chain().deleteRange({ from, to: endPos }).insertContent(text).run()
         } else {
-          const text = padForDoc(doc, from, from, newText)
+          const text = padUnitForDoc(doc, from, from, newText)
           editor.chain().insertContentAt(from, text).run()
         }
         inserted = true
@@ -200,10 +188,11 @@ export function useDateTimePickerPanel() {
         })
 
         if (found) {
-          const text = padForDoc(doc, resolvedFrom, resolvedTo, newText)
-          editor.chain().deleteRange({ from: resolvedFrom, to: resolvedTo }).insertContent(text).run()
+          const text = padUnitForDoc(doc, resolvedFrom, resolvedTo, newText)
+          // 同主路径：插入位置显式钉死，不依赖当前 selection
+          editor.chain().deleteRange({ from: resolvedFrom, to: resolvedTo }).insertContentAt(resolvedFrom, text).run()
         } else {
-          const text = padForDoc(doc, cursor, cursor, newText)
+          const text = padUnitForDoc(doc, cursor, cursor, newText)
           editor.chain().insertContentAt(cursor, text).run()
         }
         inserted = true
@@ -217,7 +206,7 @@ export function useDateTimePickerPanel() {
           const content = block.content
           const left = from > 0 ? content[from - 1] : null
           const right = to < content.length ? content[to] : null
-          const text = padDateRefUnit(left, right, newText)
+          const text = padInlineUnit(left, right, newText)
           let newContent = content.slice(0, from) + text + content.slice(to)
           // 切换 kind 时去重：确保同种 ref 仅剩当前这条
           newContent = deduplicateDateRef(newContent, value.kind)

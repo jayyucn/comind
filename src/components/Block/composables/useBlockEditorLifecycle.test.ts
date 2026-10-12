@@ -47,14 +47,21 @@ vi.mock('../../../composables/useRelationshipMenu', () => ({
 }))
 
 // useDateRefClickListener 内部调用 onMounted/onBeforeUnmount；
-// 单元测试不在组件 setup 中运行，mock 掉以避免 Vue 警告
+// 单元测试不在组件 setup 中运行，mock 掉以避免 Vue 警告。
+// useDateTimePickerPanel 的 open 也换为 spy —— 渲染态 date-ref 点击断言它收到的
+// from/to（真实 open 会去写 editorStore.dateRefEditor，与断言无关）。
+const { openDateRefPanelMock } = vi.hoisted(() => ({
+  openDateRefPanelMock: vi.fn()
+}))
+
 vi.mock('../../../composables/useDateTimePickerPanel', async () => {
   const actual = await vi.importActual<typeof import('../../../composables/useDateTimePickerPanel')>(
     '../../../composables/useDateTimePickerPanel'
   )
   return {
     ...actual,
-    useDateRefClickListener: vi.fn()
+    useDateRefClickListener: vi.fn(),
+    useDateTimePickerPanel: () => ({ ...actual.useDateTimePickerPanel(), open: openDateRefPanelMock }),
   }
 })
 
@@ -565,6 +572,71 @@ describe('useBlockEditorLifecycle', () => {
       lifecycle.handleContentClick(e)
       expect(navigateToTagMock).not.toHaveBeenCalled()
       expect(navigateToPageMock).not.toHaveBeenCalled()
+    })
+
+    // ── date-ref 阅读态点击（span 由 useContentRenderer 渲染）──
+
+    /**
+     * 渲染态 date-ref span。raw 带尾随空格模拟「段范围含 pad」的真实产出
+     * （键盘语义里 pad 属单元一部分，渲染态 span 连右 pad 一起盖）。
+     */
+    function dateRefSpanStub(dataset: Record<string, string>): any {
+      const span: any = { dataset }
+      span.closest = (sel: string) => {
+        if (sel === '.date-ref') return span
+        if (sel === '.block-text') return { querySelectorAll: () => [span] }
+        return null
+      }
+      span.getBoundingClientRect = () => ({
+        left: 10, top: 20, bottom: 40, right: 100, width: 90, height: 20
+      })
+      return span
+    }
+
+    it('opens date-ref panel on render-mode date-ref click（data-raw 含 pad 空格）', () => {
+      const { lifecycle, blockStore } = setup()
+      // 'meet @2026-07-15T14:00 📅|weekly tomorrow'：单元起点 5，序列化长度 27（📅 占 2 个 UTF-16 码元）
+      blockStore.blocks[0].content = 'meet @2026-07-15T14:00 📅|weekly tomorrow'
+      const e = {
+        target: dateRefSpanStub({
+          kind: 'schedule',
+          iso: '2026-07-15T14:00',
+          recurrence: 'weekly',
+          leadMinutes: '0',
+          raw: '@2026-07-15T14:00 📅|weekly ',
+        }),
+        preventDefault: () => {},
+        stopPropagation: () => {}
+      } as any
+      lifecycle.handleContentClick(e)
+      expect(openDateRefPanelMock).toHaveBeenCalledTimes(1)
+      const [cfg, source] = openDateRefPanelMock.mock.calls[0]
+      expect(source).toBe('content')
+      expect(cfg.from).toBe(5)
+      // to 用序列化单元长度（27，不含尾随 pad 空格）——曾因 raw 含空格比对失败而静默 return
+      expect(cfg.to).toBe(32)
+      expect(cfg.kind).toBe('schedule')
+      expect(cfg.iso).toBe('2026-07-15T14:00')
+    })
+
+    it('opens date-ref panel on render-mode date-ref click（data-raw 无 pad 空格同样通过）', () => {
+      const { lifecycle, blockStore } = setup()
+      blockStore.blocks[0].content = 'meet @2026-07-15T14:00 📅|weekly tomorrow'
+      const e = {
+        target: dateRefSpanStub({
+          kind: 'schedule',
+          iso: '2026-07-15T14:00',
+          recurrence: 'weekly',
+          leadMinutes: '0',
+          raw: '@2026-07-15T14:00 📅|weekly',
+        }),
+        preventDefault: () => {},
+        stopPropagation: () => {}
+      } as any
+      lifecycle.handleContentClick(e)
+      expect(openDateRefPanelMock).toHaveBeenCalledTimes(1)
+      expect(openDateRefPanelMock.mock.calls[0][0].from).toBe(5)
+      expect(openDateRefPanelMock.mock.calls[0][0].to).toBe(32)
     })
   })
 

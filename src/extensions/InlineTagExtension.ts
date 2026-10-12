@@ -2,15 +2,28 @@ import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { Node } from '@tiptap/pm/model'
+import type { EditorView } from '@tiptap/pm/view'
 import { TAG_TRIGGER_SOURCE } from '../composables/useContentRenderer'
 import { tagChipStyle } from '../utils/tag-color'
 import { createInlineUnitKeyboardPlugin } from './inline-unit-keyboard'
 import { isTagMenuOpen } from './InlineTagTriggerExtension'
 
-/** 装饰 `#tag` 所需的标签信息（标签色 + 系统标记）。 */
+/** 编辑态 inline tag chip 点击事件（与渲染态 data-tag-id 导航同口径，ADR-0050 D7） */
+export const INLINE_TAG_CLICK_EVENT = 'inlineTagClick'
+
+export interface InlineTagClickPayload {
+  /** tag 名（不含 #） */
+  title: string
+  /** 标签聚合页导航所需 id；resolve 查无此 tag 时为 undefined（不派发） */
+  tagId: string
+}
+
+/** 装饰 `#tag` 所需的标签信息（标签色 + 系统标记 + 聚合页导航 id）。 */
 export interface InlineTagInfo {
   color: string
   is_system: boolean
+  /** tag 实体 id —— 仅点击导航用（装饰只取 color/is_system）；可选以兼容旧注入方 */
+  id?: string
 }
 
 export interface InlineTagOptions {
@@ -104,6 +117,48 @@ export const InlineTagExtension = Extension.create<InlineTagOptions>({
             }
 
             return DecorationSet.create(state.doc, decorations)
+          },
+
+          // 编辑态点击 #tag chip 不应把文本光标落进 chip 内部（chip 是原子单元，
+          // 落光标会让用户敲坏 `#tag` 文本）。cancel 浏览器在点击点放置的原生光标即可；
+          // handleClick 仍正常派发事件、且不改选区。
+          handleDOMEvents: {
+            mousedown(_view: EditorView, event: MouseEvent) {
+              const target = event.target as HTMLElement | null
+              if (target && target.closest && target.closest('.block-tag')) {
+                event.preventDefault()
+              }
+              return false
+            },
+          },
+
+          // 编辑态 chip 点击 → 标签聚合页（与渲染态 data-tag-id 导航同口径，ADR-0050 D7）。
+          // 走 DOM CustomEvent 通道（TipTap 扩展够不到父 Vue 组件实例，见 ADR-0016）：
+          // editorEvents 消费后调 navigateToTag。resolve 查无此 tag（未落库）时
+          // 不派发 —— 与渲染态缺 data-tag-id 时的无行为一致。
+          handleClick(view: EditorView, pos: number, event: MouseEvent) {
+            const target = event.target as HTMLElement
+            const chip = target.closest('.block-tag') as HTMLElement | null
+            if (!chip) return false
+
+            const match = scanInlineTags(view.state.doc).find(
+              m => pos >= m.from && pos <= m.to
+            )
+            if (!match) return false
+            const info = resolve ? resolve(match.title) : undefined
+            if (!info?.id) return false
+
+            chip.dispatchEvent(
+              new CustomEvent(INLINE_TAG_CLICK_EVENT, {
+                bubbles: true,
+                composed: true,
+                detail: {
+                  title: match.title,
+                  tagId: info.id,
+                } satisfies InlineTagClickPayload,
+              })
+            )
+            return true
           },
         },
         state: {

@@ -4,7 +4,8 @@ import type { EditorView } from '@tiptap/pm/view'
 import Document from '@tiptap/extension-document'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
-import { WikiLinkExtension } from './WikiLinkExtension'
+import { WikiLinkExtension, WIKI_LINK_CLICK_EVENT } from './WikiLinkExtension'
+import type { WikiLinkClickPayload } from './WikiLinkExtension'
 import { WikiLinkTriggerExtension, isWikiLinkMenuOpen, closeWikiLinkMenuByEditor } from './WikiLinkTriggerExtension'
 import { useRelationshipTypes } from '../composables/useRelationshipTypes'
 import { cleanupRelationshipTypes } from '../../tests/core-client'
@@ -392,5 +393,112 @@ describe('WikiLinkExtension — 键盘原子语义（共享原语接线）', () 
 
     editor.destroy()
     element.remove()
+  })
+})
+
+
+// ─── 编辑态 wiki link 点击 → 页面导航（与渲染态同口径） ─────────────────────
+// 链路：PM handleClick → wikiLinkClick CustomEvent → editorEvents → navigateToPage。
+// 本块只验扩展侧派发条件与载荷；editorEvents 消费见 Block/__tests__/editorEvents.test.ts。
+
+/** 取 wikiLink 装饰插件的 handleClick（真实 view 驱动；键盘插件挂的是 handleKeyDown） */
+function wikiClickHandler(editor: Editor) {
+  const plugins = WikiLinkExtension.config.addProseMirrorPlugins() ?? []
+  const plugin = plugins.find(p => typeof p?.spec?.props?.handleClick === 'function')
+  const handleClick = plugin?.spec.props.handleClick as
+    | ((view: EditorView, pos: number, event: MouseEvent) => boolean)
+    | undefined
+  expect(handleClick).toBeTypeOf('function')
+  return handleClick!
+}
+
+describe('WikiLinkExtension — 编辑态点击（wikiLinkClick）', () => {
+  it('点击 [[X]] → 派发 wikiLinkClick { page }', () => {
+    const handle = createDecoratedEditor('看 [[页面]] 尾')
+    const link = handle.element.querySelector('span.block-link')
+    expect(link).not.toBeNull()
+    const dispatched: CustomEvent<WikiLinkClickPayload>[] = []
+    link!.addEventListener(WIKI_LINK_CLICK_EVENT, e =>
+      dispatched.push(e as CustomEvent<WikiLinkClickPayload>))
+    const handled = wikiClickHandler(handle.editor)(
+      handle.editor.view, 5, { target: link } as unknown as MouseEvent)
+    expect(handled).toBe(true)
+    expect(dispatched).toHaveLength(1)
+    expect(dispatched[0].detail.page).toBe('页面')
+    destroyDecoratedEditor(handle)
+  })
+
+  it('点击 typed-paren 的 [[X]] 部分 → 同样派发（渲染态 typed_link 段一致）', () => {
+    const handle = createDecoratedEditor('前置 ((是一个))[[项目A]] 后置')
+    // 外层 .block-link 被首尾 .wiki-bracket 拆成 3 段（PM 扁平化，既有行为）——
+    // 3 段都带 data-page，取第一段即可
+    const links = handle.element.querySelectorAll('span.block-link')
+    expect(links.length).toBeGreaterThanOrEqual(1)
+    const link = links[0]
+    const dispatched: CustomEvent<WikiLinkClickPayload>[] = []
+    link.addEventListener(WIKI_LINK_CLICK_EVENT, e =>
+      dispatched.push(e as CustomEvent<WikiLinkClickPayload>))
+    const handled = wikiClickHandler(handle.editor)(
+      handle.editor.view, 9, { target: link } as unknown as MouseEvent)
+    expect(handled).toBe(true)
+    expect(dispatched[0].detail.page).toBe('项目A')
+    destroyDecoratedEditor(handle)
+  })
+
+  it('点击非 block-link 区域 → 不派发', () => {
+    const handle = createDecoratedEditor('看 [[页面]] 尾')
+    const pm = handle.element.querySelector('.ProseMirror')
+    const dispatched: Event[] = []
+    pm!.addEventListener(WIKI_LINK_CLICK_EVENT, e => dispatched.push(e))
+    const handled = wikiClickHandler(handle.editor)(
+      handle.editor.view, 1, { target: pm } as unknown as MouseEvent)
+    expect(handled).toBe(false)
+    expect(dispatched).toHaveLength(0)
+    destroyDecoratedEditor(handle)
+  })
+})
+
+// ─── handleDOMEvents.mousedown：守卫 —— chip 点击不落原生光标 ──────────────────
+// 编辑态点击 wiki link chip 不应把文本光标插进 chip 内部（chip 是原子单元，落光标会让
+// 用户敲坏 `[[X]]` 文本）。原生光标在 mousedown 阶段由浏览器落定，handleClick 返回 true
+// 不产生 transaction、不会把 DOM 选区同步走，故必须在 mousedown 就 cancel 默认行为。
+
+/** 取 wikiLink 装饰插件的 mousedown 守卫 */
+function wikiMousedownHandler(editor: Editor) {
+  const plugins = WikiLinkExtension.config.addProseMirrorPlugins() ?? []
+  const plugin = plugins.find(p => typeof p?.spec?.props?.handleDOMEvents?.mousedown === 'function')
+  const mousedown = plugin?.spec.props.handleDOMEvents?.mousedown as
+    | ((view: EditorView, event: MouseEvent) => boolean)
+    | undefined
+  expect(mousedown).toBeTypeOf('function')
+  return mousedown!
+}
+
+describe('WikiLinkExtension mousedown guard', () => {
+  it('chip 目标 → preventDefault（取消原生光标）且返回 false', () => {
+    const handle = createDecoratedEditor('看 [[页面]] 尾')
+    const link = handle.element.querySelector('span.block-link')
+    expect(link).not.toBeNull()
+    const preventDefault = vi.fn()
+    const ret = wikiMousedownHandler(handle.editor)(
+      handle.editor.view,
+      { target: link, preventDefault } as unknown as MouseEvent
+    )
+    expect(preventDefault).toHaveBeenCalledTimes(1)
+    expect(ret).toBe(false)
+    destroyDecoratedEditor(handle)
+  })
+
+  it('非 chip 目标 → 不 preventDefault', () => {
+    const handle = createDecoratedEditor('看 [[页面]] 尾')
+    const pm = handle.element.querySelector('.ProseMirror')
+    const preventDefault = vi.fn()
+    const ret = wikiMousedownHandler(handle.editor)(
+      handle.editor.view,
+      { target: pm, preventDefault } as unknown as MouseEvent
+    )
+    expect(preventDefault).not.toHaveBeenCalled()
+    expect(ret).toBe(false)
+    destroyDecoratedEditor(handle)
   })
 })

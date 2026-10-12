@@ -13,7 +13,9 @@ vi.mock('../composables/useNavigateToPage', () => ({
 vi.mock('../extensions/WikiLinkExtension', () => ({
   WikiLinkExtension: {
     create: vi.fn(() => ({ name: 'wikiLink' }))
-  }
+  },
+  // editorEvents 事件表引用（Editor.vue setup 时求值）——桩件需带同名导出
+  WIKI_LINK_CLICK_EVENT: 'wikiLinkClick'
 }))
 
 vi.mock('../extensions/WikiLinkTriggerExtension', () => ({

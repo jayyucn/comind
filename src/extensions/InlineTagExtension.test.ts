@@ -4,7 +4,8 @@ import type { EditorView } from '@tiptap/pm/view'
 import Document from '@tiptap/extension-document'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
-import { InlineTagExtension } from './InlineTagExtension'
+import { InlineTagExtension, INLINE_TAG_CLICK_EVENT } from './InlineTagExtension'
+import type { InlineTagClickPayload } from './InlineTagExtension'
 import { InlineTagTriggerExtension, isTagMenuOpen, closeTagMenuByEditor } from './InlineTagTriggerExtension'
 import { TAG_TRIGGER_SOURCE } from '../composables/useContentRenderer'
 
@@ -287,5 +288,115 @@ describe('InlineTagExtension — 键盘原子语义（共享原语接线）', ()
 
     editor.destroy()
     element.remove()
+  })
+})
+
+
+// ─── 编辑态 chip 点击 → 标签聚合页（与渲染态同口径，ADR-0050 D7） ───────────
+// 链路：PM handleClick → inlineTagClick CustomEvent → editorEvents → navigateToTag。
+// 本块只验扩展侧派发条件与载荷；editorEvents 消费见 Block/__tests__/editorEvents.test.ts。
+
+/** 取 inlineTag 装饰插件的 handleClick（真实 view 驱动；键盘插件挂的是 handleKeyDown） */
+function tagClickHandler(editor: Editor) {
+  // 从活编辑器的插件列表按 prop 查找（与键盘测试同范式）：装饰插件是唯一挂
+  // handleClick 的；不能走 Extension.config 直调 —— addProseMirrorPlugins 读
+  // this.options.resolve，未绑定时会炸。
+  const plugin = editor.state.plugins.find(p => typeof p?.spec?.props?.handleClick === 'function')
+  const handleClick = plugin?.spec.props.handleClick as
+    | ((view: EditorView, pos: number, event: MouseEvent) => boolean)
+    | undefined
+  expect(handleClick).toBeTypeOf('function')
+  return handleClick!
+}
+
+describe('InlineTagExtension — 编辑态 chip 点击（inlineTagClick）', () => {
+  it('点击 #标签 chip → 派发 inlineTagClick（tagId 来自 resolve）', () => {
+    tagTable = { 标签: { color: '--tag-color-3', is_system: false, id: 'tag-1' } }
+    const handle = createDecoratedEditor('任务 #标签 完成')
+    const chip = handle.element.querySelector('span.block-tag')
+    expect(chip).not.toBeNull()
+    const dispatched: CustomEvent<InlineTagClickPayload>[] = []
+    chip!.addEventListener(INLINE_TAG_CLICK_EVENT, e =>
+      dispatched.push(e as CustomEvent<InlineTagClickPayload>))
+    // '任务 #标签 完成'：# 起点 4，点击落在 # 上（单元内）
+    const handled = tagClickHandler(handle.editor)(
+      handle.editor.view, 4, { target: chip } as unknown as MouseEvent)
+    expect(handled).toBe(true)
+    expect(dispatched).toHaveLength(1)
+    expect(dispatched[0].detail.tagId).toBe('tag-1')
+    expect(dispatched[0].detail.title).toBe('标签')
+    destroyDecoratedEditor(handle)
+  })
+
+  it('resolve 查无此 tag（未落库）→ 不派发（与渲染态缺 data-tag-id 同口径）', () => {
+    tagTable = {}
+    const handle = createDecoratedEditor('任务 #标签 完成')
+    const chip = handle.element.querySelector('span.block-tag')
+    const dispatched: Event[] = []
+    chip!.addEventListener(INLINE_TAG_CLICK_EVENT, e => dispatched.push(e))
+    const handled = tagClickHandler(handle.editor)(
+      handle.editor.view, 4, { target: chip } as unknown as MouseEvent)
+    expect(handled).toBe(false)
+    expect(dispatched).toHaveLength(0)
+    destroyDecoratedEditor(handle)
+  })
+
+  it('点击非 chip 区域 → 不派发', () => {
+    tagTable = { 标签: { color: '--tag-color-3', is_system: false, id: 'tag-1' } }
+    const handle = createDecoratedEditor('任务 #标签 完成')
+    const pm = handle.element.querySelector('.ProseMirror')
+    const dispatched: Event[] = []
+    pm!.addEventListener(INLINE_TAG_CLICK_EVENT, e => dispatched.push(e))
+    const handled = tagClickHandler(handle.editor)(
+      handle.editor.view, 2, { target: pm } as unknown as MouseEvent)
+    expect(handled).toBe(false)
+    expect(dispatched).toHaveLength(0)
+    destroyDecoratedEditor(handle)
+  })
+})
+
+// ─── handleDOMEvents.mousedown：守卫 —— chip 点击不落原生光标 ──────────────────
+// 编辑态点击 #tag chip 不应把文本光标插进 chip 内部（chip 是原子单元，落光标会让用户
+// 敲坏 `#tag` 文本）。原生光标在 mousedown 阶段由浏览器落定，handleClick 返回 true 不
+// 产生 transaction、不会把 DOM 选区同步走，故必须在 mousedown 就 cancel 默认行为。
+
+/** 取 inlineTag 装饰插件的 mousedown 守卫（活编辑器插件列表，与 click 同范式） */
+function tagMousedownHandler(editor: Editor) {
+  const plugin = editor.state.plugins.find(p => typeof p?.spec?.props?.handleDOMEvents?.mousedown === 'function')
+  const mousedown = plugin?.spec.props.handleDOMEvents?.mousedown as
+    | ((view: EditorView, event: MouseEvent) => boolean)
+    | undefined
+  expect(mousedown).toBeTypeOf('function')
+  return mousedown!
+}
+
+describe('InlineTagExtension mousedown guard', () => {
+  it('chip 目标 → preventDefault（取消原生光标）且返回 false', () => {
+    tagTable = { 标签: { color: '--tag-color-3', is_system: false, id: 'tag-1' } }
+    const handle = createDecoratedEditor('任务 #标签 完成')
+    const chip = handle.element.querySelector('span.block-tag')
+    expect(chip).not.toBeNull()
+    const preventDefault = vi.fn()
+    const ret = tagMousedownHandler(handle.editor)(
+      handle.editor.view,
+      { target: chip, preventDefault } as unknown as MouseEvent
+    )
+    expect(preventDefault).toHaveBeenCalledTimes(1)
+    expect(ret).toBe(false)
+    destroyDecoratedEditor(handle)
+  })
+
+  it('非 chip 目标 → 不 preventDefault', () => {
+    tagTable = {}
+    const handle = createDecoratedEditor('任务 #标签 完成')
+    const pm = handle.element.querySelector('.ProseMirror')
+    const preventDefault = vi.fn()
+    const ret = tagMousedownHandler(handle.editor)(
+      handle.editor.view,
+      { target: pm, preventDefault } as unknown as MouseEvent
+    )
+    expect(preventDefault).not.toHaveBeenCalled()
+    expect(ret).toBe(false)
+    destroyDecoratedEditor(handle)
   })
 })

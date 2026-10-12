@@ -27,6 +27,8 @@ function makeCtx(overrides: Partial<EditorEventCtx> = {}): EditorEventCtx {
     openDateRefPanel: vi.fn(),
     closeWikiLinkMenuByEditor: vi.fn(),
     closeTagMenuByEditor: vi.fn(),
+    navigateToTag: vi.fn(),
+    navigateToPage: vi.fn(),
     ...overrides,
   }
 }
@@ -203,6 +205,8 @@ describe('createEditorEvents — 声明式事件表', () => {
       'relationship-close',
       'dateRefTrigger',
       'dateRefClick',
+      'inlineTagClick',
+      'wikiLinkClick',
       'dateRefKindSelect',
       'dateRefKindSelectClose',
     ])
@@ -248,4 +252,39 @@ describe('createEditorEvents — 声明式事件表', () => {
     expect(ctx.tagMenuRef.value?.selectNext).toHaveBeenCalled()
     expect(ctx.tagMenuRef.value?.selectPrev).toHaveBeenCalled()
   })
+
+  // ── 编辑态 inline 单元点击导航（与渲染态 handleContentClick 同口径）──
+
+  it('inlineTagClick → navigateToTag(tagId)', () => {
+    const ctx = makeCtx()
+    const { dom } = setup(ctx)
+    dom.dispatchEvent(new CustomEvent('inlineTagClick', {
+      detail: { title: '项目', tagId: 't-1' },
+    }))
+    expect(ctx.navigateToTag).toHaveBeenCalledWith('t-1')
+    expect(ctx.navigateToPage).not.toHaveBeenCalled()
+  })
+
+  it('inlineTagClick 缺 tagId → no-op（不误跳 /tags/ 空参路由）', () => {
+    const ctx = makeCtx()
+    const { dom } = setup(ctx)
+    dom.dispatchEvent(new CustomEvent('inlineTagClick', { detail: { title: 'x', tagId: '' } }))
+    expect(ctx.navigateToTag).not.toHaveBeenCalled()
+  })
+
+  it('wikiLinkClick → navigateToPage(page)', () => {
+    const ctx = makeCtx()
+    const { dom } = setup(ctx)
+    dom.dispatchEvent(new CustomEvent('wikiLinkClick', { detail: { page: 'MyPage' } }))
+    expect(ctx.navigateToPage).toHaveBeenCalledWith('MyPage')
+    expect(ctx.navigateToTag).not.toHaveBeenCalled()
+  })
+
+  it('wikiLinkClick 缺 page → no-op', () => {
+    const ctx = makeCtx()
+    const { dom } = setup(ctx)
+    dom.dispatchEvent(new CustomEvent('wikiLinkClick', { detail: { page: '' } }))
+    expect(ctx.navigateToPage).not.toHaveBeenCalled()
+  })
 })
+

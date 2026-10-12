@@ -4,6 +4,8 @@ import type { EditorView } from '@tiptap/pm/view'
 import type { Ref } from 'vue'
 import { DATE_REF_CLICK_EVENT, type DateRefClickPayload } from '../../extensions/DateRefExtension'
 import type { DateRefKindSelectEvent } from '../../extensions/DateRefTriggerExtension'
+import { INLINE_TAG_CLICK_EVENT, type InlineTagClickPayload } from '../../extensions/InlineTagExtension'
+import { WIKI_LINK_CLICK_EVENT, type WikiLinkClickPayload } from '../../extensions/WikiLinkExtension'
 import {
   closeRelationshipMenuByEditor,
   notifyRelationshipMenuSelect,
@@ -69,6 +71,10 @@ export interface EditorEventCtx {
   openDateRefPanel: (cfg: DateRefPanelConfig, source: string) => void
   closeWikiLinkMenuByEditor: () => void
   closeTagMenuByEditor: () => void
+  /** inline `#tag` chip 点击 → 标签聚合页（编辑态与渲染态同口径，ADR-0050 D7） */
+  navigateToTag: (tagId: string) => void
+  /** `[[wiki link]]` 点击 → 页面导航（编辑态与渲染态同口径） */
+  navigateToPage: (pageName: string) => void
 }
 
 /**
@@ -190,6 +196,22 @@ export function createEditorEvents(ctx: EditorEventCtx): Record<string, (e: Even
       },
       'editor',
     )
+  }
+
+  // 编辑态 inline `#tag` chip 点击 → 标签聚合页（InlineTagExtension 派发；
+  // 与渲染态 handleContentClick 的 .block-tag 分支同口径，ADR-0050 D7）
+  function handleInlineTagClick(event: Event) {
+    const { tagId } = (event as CustomEvent<InlineTagClickPayload>).detail
+    if (!tagId) return
+    ctx.navigateToTag(tagId)
+  }
+
+  // 编辑态 `[[wiki link]]` 点击 → 页面导航（WikiLinkExtension 派发；
+  // 与渲染态 handleContentClick 的 .block-link 分支同口径）
+  function handleWikiLinkClick(event: Event) {
+    const { page } = (event as CustomEvent<WikiLinkClickPayload>).detail
+    if (!page) return
+    ctx.navigateToPage(page)
   }
 
   function handleDateRefKindSelect(event: Event) {
@@ -377,6 +399,8 @@ export function createEditorEvents(ctx: EditorEventCtx): Record<string, (e: Even
     'relationship-close': handleRelationshipClose,
     'dateRefTrigger': handleDateRefTrigger,
     [DATE_REF_CLICK_EVENT]: handleDateRefClick,
+    [INLINE_TAG_CLICK_EVENT]: handleInlineTagClick,
+    [WIKI_LINK_CLICK_EVENT]: handleWikiLinkClick,
     'dateRefKindSelect': handleDateRefKindSelect,
     'dateRefKindSelectClose': handleDateRefKindSelectClose,
   }

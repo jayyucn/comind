@@ -111,67 +111,61 @@ describe('DateRefExtension decoration rendering', () => {
 })
 
 describe('DateRefExtension handleClick event', () => {
-  it('dispatches dateRefClick with correct payload', () => {
-    const mockDispatch = vi.fn((e: Event) => true)
-    const mockSpan = {
-      classList: { contains: (cls: string) => cls === 'date-ref' },
-      dataset: { kind: 'deadline', iso: '2026-07-15T14:00', recurrence: 'weekly' },
-      dispatchEvent: mockDispatch,
-    } as unknown as HTMLElement
-    const fakeEvent = { target: mockSpan } as unknown as MouseEvent
+  /** 取 dateRef 装饰插件的 handleClick（真实 view 驱动；键盘插件挂的是 handleKeyDown） */
+  function dateRefClickHandler(editor: Editor) {
+    const plugins = DateRefExtension.config.addProseMirrorPlugins() ?? []
+    const plugin = plugins.find(p => typeof p?.spec?.props?.handleClick === 'function')
+    const handleClick = plugin?.spec.props.handleClick as
+      | ((view: EditorView, pos: number, event: MouseEvent) => boolean)
+      | undefined
+    expect(handleClick).toBeTypeOf('function')
+    return handleClick!
+  }
 
-    const target = fakeEvent.target as HTMLElement
-    if (!target.classList.contains('date-ref')) {
-      expect(true).toBe(false)
-      return
-    }
+  it('dispatches dateRefClick with unit range [from,to]（点击落在单元内部）', () => {
+    const handle = createEditor('meet @2026-07-15T14:00 📅|weekly tomorrow')
+    const unit = dateRefRangeFromDoc(handle.editor)[0]
+    const span = decoratedSpans(handle.element)[0]
+    expect(span).toBeDefined()
 
-    const pos = 42
-    const from = pos
-    const to = pos
-
-    const payload: DateRefClickPayload = {
-      from,
-      to,
-      blockId: '',
-      kind: (target.dataset.kind ?? '') as any,
-      iso: target.dataset.iso ?? '',
-      recurrence: (target.dataset.recurrence ?? '') as any,
-    }
-
-    target.dispatchEvent(
-      new CustomEvent(DATE_REF_CLICK_EVENT, {
-        bubbles: true,
-        composed: true,
-        detail: payload,
-      })
+    const dispatched: CustomEvent<DateRefClickPayload>[] = []
+    span.addEventListener(DATE_REF_CLICK_EVENT, (e) =>
+      dispatched.push(e as CustomEvent<DateRefClickPayload>)
     )
 
-    expect(mockDispatch).toHaveBeenCalledTimes(1)
-    const dispatchedEvent = (mockDispatch as any).mock.calls[0][0] as CustomEvent<DateRefClickPayload>
-    expect(dispatchedEvent.type).toBe(DATE_REF_CLICK_EVENT)
-    expect(dispatchedEvent.detail.kind).toBe('deadline')
-    expect(dispatchedEvent.detail.iso).toBe('2026-07-15T14:00')
-    expect(dispatchedEvent.detail.recurrence).toBe('weekly')
-    expect(dispatchedEvent.detail.from).toBe(42)
-    expect(dispatchedEvent.detail.to).toBe(42)
-    expect(dispatchedEvent.detail.blockId).toBe('')
+    // 点击落在单元内部（非边界）—— 曾因 getState 恒空退化为 from=to=pos
+    const handled = dateRefClickHandler(handle.editor)(
+      handle.editor.view,
+      unit.from + 3,
+      { target: span } as unknown as MouseEvent
+    )
+
+    expect(handled).toBe(true)
+    expect(dispatched).toHaveLength(1)
+    expect(dispatched[0].detail.from).toBe(unit.from)
+    expect(dispatched[0].detail.to).toBe(unit.to)
+    expect(dispatched[0].detail.kind).toBe('schedule')
+    expect(dispatched[0].detail.iso).toBe('2026-07-15T14:00')
+    expect(dispatched[0].detail.recurrence).toBe('weekly')
+    handle.teardown()
   })
 
   it('returns false and does not dispatch for non-date-ref target', () => {
-    const mockDispatch = vi.fn((e: Event) => true)
-    const nonDateRefSpan = {
-      classList: { contains: () => false },
-      dataset: {},
-      dispatchEvent: mockDispatch,
-    } as unknown as HTMLElement
+    const handle = createEditor('meet @2026-07-15T14:00 📅|weekly tomorrow')
+    const span = decoratedSpans(handle.element)[0]
+    const dispatched: Event[] = []
+    span.addEventListener(DATE_REF_CLICK_EVENT, (e) => dispatched.push(e))
 
-    const target = nonDateRefSpan
-    if (!target.classList.contains('date-ref')) {
-      expect(mockDispatch).not.toHaveBeenCalled()
-      return
-    }
-    expect(true).toBe(false)
+    const plain = document.createElement('span')
+    const handled = dateRefClickHandler(handle.editor)(
+      handle.editor.view,
+      1,
+      { target: plain } as unknown as MouseEvent
+    )
+
+    expect(handled).toBe(false)
+    expect(dispatched).toHaveLength(0)
+    handle.teardown()
   })
 })
 
@@ -474,5 +468,51 @@ describe('DateRefExtension handleKeyDown — 方向键跨过单元', () => {
     const handled = handleKeyDown!(handle.editor.view, event)
     expect(handled).toBe(false)
     expect(event.preventDefault).not.toHaveBeenCalled()
+  })
+})
+
+// ─── handleDOMEvents.mousedown：守卫 —— chip 点击不落原生光标 ──────────────────
+// 编辑态点击 date-ref chip 不应把文本光标插进 chip 内部（chip 是原子单元，落光标会让
+// 用户敲坏 `@ISO📅...` 序列化文本）。原生光标在 mousedown 阶段由浏览器落定，
+// handleClick 返回 true 不产生 transaction、不会把 DOM 选区同步走，故必须在 mousedown
+// 就 cancel 默认行为。本块锁定该守卫。
+
+/** 取 dateRef 装饰插件的 mousedown 守卫 */
+function dateRefMousedownHandler(editor: Editor) {
+  const plugins = DateRefExtension.config.addProseMirrorPlugins() ?? []
+  const plugin = plugins.find(p => typeof p?.spec?.props?.handleDOMEvents?.mousedown === 'function')
+  const mousedown = plugin?.spec.props.handleDOMEvents?.mousedown as
+    | ((view: EditorView, event: MouseEvent) => boolean)
+    | undefined
+  expect(mousedown).toBeTypeOf('function')
+  return mousedown!
+}
+
+describe('DateRefExtension mousedown guard', () => {
+  it('chip 目标 → preventDefault（取消原生光标）且返回 false', () => {
+    const handle = createEditor('meet @2026-07-15T14:00 📅|weekly tomorrow')
+    const span = decoratedSpans(handle.element)[0]
+    expect(span).toBeDefined()
+    const preventDefault = vi.fn()
+    const ret = dateRefMousedownHandler(handle.editor)(
+      handle.editor.view,
+      { target: span, preventDefault } as unknown as MouseEvent
+    )
+    expect(preventDefault).toHaveBeenCalledTimes(1)
+    expect(ret).toBe(false)
+    handle.teardown()
+  })
+
+  it('非 chip 目标 → 不 preventDefault', () => {
+    const handle = createEditor('plain text only')
+    const plain = document.createElement('span')
+    const preventDefault = vi.fn()
+    const ret = dateRefMousedownHandler(handle.editor)(
+      handle.editor.view,
+      { target: plain, preventDefault } as unknown as MouseEvent
+    )
+    expect(preventDefault).not.toHaveBeenCalled()
+    expect(ret).toBe(false)
+    handle.teardown()
   })
 })

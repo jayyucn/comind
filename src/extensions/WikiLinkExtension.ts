@@ -2,10 +2,19 @@ import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { Node } from '@tiptap/pm/model'
+import type { EditorView } from '@tiptap/pm/view'
 import { getRelationshipColor } from '../types/relationship'
 import { useRelationshipTypes } from '../composables/useRelationshipTypes'
 import { createInlineUnitKeyboardPlugin } from './inline-unit-keyboard'
 import { isWikiLinkMenuOpen } from './WikiLinkTriggerExtension'
+
+/** 编辑态 wiki link 点击事件（与渲染态 block-link 导航同口径） */
+export const WIKI_LINK_CLICK_EVENT = 'wikiLinkClick'
+
+export interface WikiLinkClickPayload {
+  /** 目标页名（装饰的 data-page） */
+  page: string
+}
 
 /**
  * 从中文 label 逆查英文 type（支持双向和 auto-inverse）。
@@ -166,6 +175,39 @@ export const WikiLinkExtension = Extension.create({
             }
 
             return DecorationSet.create(state.doc, decorations)
+          },
+
+          // 编辑态点击 wiki link 不应把文本光标落进 chip 内部（chip 是原子单元，
+          // 落光标会让用户敲坏 `[[X]]` 文本）。cancel 浏览器在点击点放置的原生光标即可；
+          // handleClick 仍正常派发事件、且不改选区。
+          handleDOMEvents: {
+            mousedown(_view: EditorView, event: MouseEvent) {
+              const target = event.target as HTMLElement | null
+              if (target && target.closest && target.closest('.block-link')) {
+                event.preventDefault()
+              }
+              return false
+            },
+          },
+
+          // 编辑态 wiki link 点击 → 页面导航（与渲染态 block-link data-page 同口径）。
+          // 走 DOM CustomEvent 通道（ADR-0016）：editorEvents 消费后调 navigateToPage。
+          // typed-paren 的 [[X]] 部分同挂 .block-link + data-page，点击同样导航
+          // （渲染态 typed_link 段亦如此）；((label)) 类型段归 rel-type-label 分支，不在此列。
+          handleClick(_view: EditorView, _pos: number, event: MouseEvent) {
+            const target = event.target as HTMLElement
+            const link = target.closest('.block-link') as HTMLElement | null
+            const page = link?.dataset.page
+            if (!page) return false
+
+            link!.dispatchEvent(
+              new CustomEvent(WIKI_LINK_CLICK_EVENT, {
+                bubbles: true,
+                composed: true,
+                detail: { page } satisfies WikiLinkClickPayload,
+              })
+            )
+            return true
           },
         },
         state: {

@@ -26,6 +26,9 @@ import type { DateRefClickPayload } from '../extensions/DateRefExtension'
 import type { DateRefKind } from '../utils/date-ref'
 import { createEditorEvents } from './Block/editorEvents'
 import { useDomEvents } from '../composables/useDomEvents'
+import { padUnitForDoc } from '../utils/inline-unit-pad'
+import { useNavigateToPage } from '../composables/useNavigateToPage'
+import { useNavigateToTag } from '../composables/useNavigateToTag'
 
 const props = defineProps<{
   blockId: string
@@ -97,6 +100,10 @@ const kindSelectorView = ref<EditorView | null>(null)
 
 const relMenu = useRelationshipMenu()
 const { open: openDateRefPanel } = useDateTimePickerPanel()
+// 编辑态 inline 单元点击导航（tag chip → 标签聚合页；wiki link → 页面），
+// 由 editorEvents 的 inlineTagClick / wikiLinkClick handler 消费
+const { navigateToTag } = useNavigateToTag()
+const { navigateToPage } = useNavigateToPage()
 
 const tagsStore = useTagsStore()
 
@@ -112,7 +119,8 @@ const tagsByTitle = computed(() => new Map(tagsStore.allTags.map((t) => [t.title
  */
 function resolveInlineTag(title: string) {
   const tag = tagsByTitle.value.get(title)
-  return tag ? { color: tag.color, is_system: tag.is_system } : undefined
+  // id 供编辑态 chip 点击导航（标签聚合页）——装饰只取 color/is_system
+  return tag ? { color: tag.color, is_system: tag.is_system, id: tag.id } : undefined
 }
 
 const editor = shallowRef(useEditor({
@@ -209,10 +217,19 @@ async function handleWikiLinkSelect(pageName: string) {
   const from = result.range?.from ?? cursorPos
   const to = result.range?.to ?? cursorPos
 
+  // 与 @date-ref 同款补空（inline-unit-pad 单源）：插入的 [[page]] 两侧空格属于
+  // 单元一部分——键盘原子语义的 pad 口径从创建时刻就成立，随后一次 Backspace
+  // 在右缘带即可整删（含 pad）。块首/已有空白不补，左邻内容字符补一个。
+  const unit = `[[${pageName}]]`
+  const padded = padUnitForDoc(state.doc, from, to, unit)
+  const leftPad = padded.startsWith(' ') ? 1 : 0
+
   editor.value.chain()
     .deleteRange({ from, to })
-    .insertContent(`[[${pageName}]]`)
-    .setTextSelection(from + pageName.length + 4)
+    .insertContent(padded)
+    // 光标落 padded 末尾（右 pad 之后）——与 @date-ref 插入后默认光标位一致；
+    // 停在 unit 末尾会把光标留在右 pad 空格之前，视觉上「空格没插入」。
+    .setTextSelection(from + leftPad + padded.length)
     .focus()
     .run()
 
@@ -238,10 +255,19 @@ async function handleTagSelect(tagName: string) {
   const from = result.range?.from ?? cursorPos
   const to = result.range?.to ?? cursorPos
 
+  // 与 @date-ref / [[wiki link]] 同款补空（inline-unit-pad 单源）：插入的 #tag
+  // 两侧空格属于单元一部分——键盘原子语义的 pad 口径从创建时刻就成立，随后一次
+  // Backspace 在右缘带即可整删（含 pad）。块首/已有空白不补，左邻内容字符补一个。
+  const unit = `#${tagName}`
+  const padded = padUnitForDoc(state.doc, from, to, unit)
+  const leftPad = padded.startsWith(' ') ? 1 : 0
+
   editor.value.chain()
     .deleteRange({ from, to })
-    .insertContent(`#${tagName}`)
-    .setTextSelection(from + tagName.length + 1)
+    .insertContent(padded)
+    // 光标落 padded 末尾（右 pad 之后）——与 @date-ref 插入后默认光标位一致；
+    // 停在 unit 末尾会把光标留在右 pad 空格之前，视觉上「空格没插入」。
+    .setTextSelection(from + leftPad + padded.length)
     .focus()
     .run()
 
@@ -318,6 +344,18 @@ const events = createEditorEvents({
   ) => void,
   closeWikiLinkMenuByEditor,
   closeTagMenuByEditor,
+  // 编辑态 inline 单元点击导航（与渲染态 handleContentClick 同口径）：
+  // tag chip → 标签聚合页；wiki link → 页面。错误文案与渲染态分支保持一致。
+  navigateToTag: (tagId: string) => {
+    void navigateToTag(tagId).catch(err => {
+      console.error('标签导航失败:', err)
+    })
+  },
+  navigateToPage: (pageName: string) => {
+    void navigateToPage(pageName).catch(err => {
+      console.error('导航失败:', err)
+    })
+  },
 })
 useDomEvents(() => editor.value?.view?.dom ?? null, () => events)
 
