@@ -198,6 +198,39 @@ describe('useFieldValueStore', () => {
       expect(mockClient.setFieldValue).not.toHaveBeenCalledWith('block-1', 'priority', 'Low', 'string')
     })
 
+    // ── 缓存冷启动回归（2026-10-13）──
+    // TaskHub 矩阵视图等入口的 refresh 只拉 BlockCard 投影，不经 fieldValue 缓存；
+    // 用户点卡片状态图标切 Done 时缓存未预热，becomesTask/补写判据曾以空缓存
+    // 误判「块尚无 priority」→ 补写 Low 覆盖库里 Medium，任务从「重要不紧急」
+    // 跳进「不重要不紧急」象限。修复：setFieldValue 写前对未预热 block 先读库。
+    test('缓存未预热（TaskHub 首写）→ 切 Done 不覆盖库里已有 priority', async () => {
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([
+        makeFieldValue({ key: 'status', value_json: 'Todo' }),
+        makeFieldValue({ id: 'prop-2', key: 'priority', value_json: 'Medium' }),
+      ] as never)
+      const store = useFieldValueStore()
+      // 不调 loadBlockFieldValues —— 模拟 TaskHub 点状态图标的真实时序
+
+      await store.setFieldValue('block-1', 'status', 'Done', 'string')
+
+      expect(mockClient.setFieldValue).toHaveBeenCalledWith('block-1', 'status', 'Done', 'string')
+      expect(mockClient.setFieldValue).not.toHaveBeenCalledWith('block-1', 'priority', 'Low', 'string')
+      // 预热读入的 priority 行保持库里原值，未被补写覆盖
+      expect(store.getBlockFieldValue('block-1', 'priority')?.value_json).toBe('Medium')
+    })
+
+    test('缓存未预热（TaskHub 首写）→ 拖拽改象限不把库里 Doing 打回 Todo', async () => {
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([
+        makeFieldValue({ key: 'status', value_json: 'Doing' }),
+      ] as never)
+      const store = useFieldValueStore()
+
+      await store.setFieldValue('block-1', 'priority', 'Medium', 'string')
+
+      expect(mockClient.setFieldValue).toHaveBeenCalledWith('block-1', 'priority', 'Medium', 'string')
+      expect(mockClient.setFieldValue).not.toHaveBeenCalledWith('block-1', 'status', 'Todo', 'string')
+    })
+
     // ── status ↔ priority 成对（写入收口双向对偶）──
     // /todo → 补 priority=Low（上方 becomesTask 分支，已有用例）；
     // /low 等优先级写入 → 补 status=Todo。均只写字段值，不改 content、不挂 #任务 tag。

@@ -109,6 +109,15 @@ export const useFieldValueStore = defineStore('fieldValue', () => {
     type?: FieldType
   ): Promise<FieldValue> {
     const client = await getClient()
+    // 缓存预热兜底：本会话从未加载过该 block 字段值时先读库。becomesTask 与
+    // status↔priority 补写判据均以缓存为据，而 TaskHub 等入口的 refresh 只拉
+    // BlockCard 投影、不经 fieldValue 缓存——冷缓存会把库里已有值误判为「无」：
+    // 典型症状为已有 Medium 的任务在矩阵视图切完成状态，becomesTask 误判成立
+    // → 补写 priority=Low 覆盖原值，任务从「重要不紧急」跳进「不重要不紧急」象限。
+    // 仅缓存缺失时加载（缓存为源语义不变），落库后仍走就地合并、无第二往返。
+    if (!fieldValuesByBlock.value.has(blockId)) {
+      await loadBlockFieldValues(blockId)
+    }
     const fieldType = type || inferType(value)
     // autonumber（issue T12）：首次写入自动取该 key 现存最大值 +1；已存在行
     // （重写入）不重生成，保持原值——「新增时自增」语义。
