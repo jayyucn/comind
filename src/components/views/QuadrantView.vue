@@ -91,7 +91,7 @@ function resolveUpdatedAtString(item: T): string | undefined {
   return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}:${pad(dt.getSeconds())}`
 }
 
-/** 落格资格：含 priority 且 status 命中系统默认筛选（含「Done 须昨日后」）。 */
+/** 落格资格：含 priority 且 status ∈ Todo/Doing/今日 Done（2026-10-13 口径修订：Done 仅当天可见，次日落格）。 */
 function qualifies(item: T): boolean {
   const card = asCard(item)
   const pr = card.properties?.['priority']
@@ -101,10 +101,11 @@ function qualifies(item: T): boolean {
   const s = String(st)
   if (s === 'Todo' || s === 'Doing') return true
   if (s === 'Done') {
-    // 镜像引擎 op:'after' + relativeDate('yesterday')：updatedAt > 昨日日期串（含昨日起更新）
+    // updatedAt > 今日日期串（含今日零点后更新）：镜像引擎 op:'after' + relativeDate('today')。
+    // 近似「完成于今日」：status 置 Done 即写 updated_at，正常路径两者同日。
     const updated = resolveUpdatedAtString(item)
-    const y = resolveRelativeExpr('yesterday') ?? ''
-    return updated != null && String(updated) > String(y)
+    const t = resolveRelativeExpr('today') ?? ''
+    return updated != null && String(updated) > String(t)
   }
   return false
 }

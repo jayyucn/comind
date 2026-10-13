@@ -13,7 +13,6 @@ import { useEditorStore } from '../../stores/editor'
 import { useFieldValueStore } from '../../stores/fieldValue'
 import { usePageStore } from '../../stores/pages'
 import { useScreenViewStore } from '../../stores/screenView'
-import { useTagsStore } from '../../stores/tags'
 import type { BlockCard } from '../../wasm/types'
 import QueryPageFrame from '../common/QueryPageFrame.vue'
 import PageDrawer from '../Page/PageDrawer.vue'
@@ -34,8 +33,6 @@ const fieldValueStore = useFieldValueStore()
 const blockStore = useBlockStore()
 const pageStore = usePageStore()
 const editorStore = useEditorStore()
-// D4：任务命中集合依赖标签树（systemTaskTagId / memberTagIds 读 tags store）
-const tagsStore = useTagsStore()
 
 // 通用查询引擎注册表（组合根单例，内置字段 + 自定义字段已注册）
 const registry = getBlockRegistry()
@@ -94,31 +91,16 @@ const quadrantConfig = computed<QuadrantConfig | undefined>(() => {
   return (parseLayoutConfig(currentTab.value?.config, 'quadrant') as QuadrantConfig | null) ?? (blockDefaultConfig('quadrant') as QuadrantConfig)
 })
 
-// D4（ADR-0050）：任务命中集合 = 系统 task tag 自身 + 后代闭包（memberTagIds）——
-// extends #task 的自定义 tag（如 #开发任务）也进任务列表（Tana 向上聚合语义）。
-// 标签树未就绪 / 无系统任务 tag → null，过滤降级回「status 非空」旧口径（不空列表）。
-const taskHitTagIds = computed<Set<string> | null>(() => {
-  const taskTagId = blockStore.systemTaskTagId()
-  if (!taskTagId) return null
-  return new Set(tagsStore.memberTagIds(taskTagId))
-})
-
-// 数据源：按 D4 口径过滤任务（tags 命中，或降级 status 非空），再做搜索子串过滤
-// （与 PagesLibrary 对 title 过滤同构；status 以字段值存于 card.properties['status']）
+// 数据源（任务中心全视图共同口径，2026-10-13 口径修订，取代 ADR-0050 D4 的 tag 闭包口径）：
+// (1) status 非空（字段写入即任务，不要求挂 #任务——与四象限 isQuadrantCard 的 tag 无关口径一致）；
+// (2) content 非空（空 content 块无标题语义，视图回退显示 block id）。
+// 再做搜索子串过滤（与 PagesLibrary 对 title 过滤同构；status 以字段值存于 card.properties['status']）。
 const searchedCards = computed<BlockCard[]>(() => {
   const q = searchQuery.value.trim().toLowerCase()
-  const hitIds = taskHitTagIds.value
   return blockCardStore.cards.filter((c) => {
-    // 空 content 块不入任务中心：视图渲染时 content_preview 为空会回退显示 block id
-    // （如 QuadrantView 的 `content_preview || idOf`），无标题语义 → 在数据源谓词处排除。
     if (!(c.content_preview ?? '').trim()) return false
-    if (hitIds) {
-      // D4 主口径：挂了任务闭包内 tag 的块才是任务（悬空 / 软删 tag id 自然不命中）
-      if (!(c.tags ?? []).some((t) => hitIds.has(t))) return false
-    } else {
-      const status = c.properties?.['status']
-      if (status === undefined || status === null || status === '') return false
-    }
+    const status = c.properties?.['status']
+    if (status === undefined || status === null || status === '') return false
     if (!q) return true
     return (c.content_preview ?? '').toLowerCase().includes(q)
   })
@@ -136,9 +118,7 @@ async function refresh() {
 }
 
 onMounted(async () => {
-  // 标签树与视图配置并行加载：taskHitTagIds 依赖 systemTaskTagId（读 tags store），
-  // 未就绪时该 computed 返回 null → 谓词走降级口径，树到位后自动切回 tags 口径。
-  await Promise.all([screenViewStore.load(), tagsStore.ensureLoaded()])
+  await screenViewStore.load()
   await refresh()
 })
 

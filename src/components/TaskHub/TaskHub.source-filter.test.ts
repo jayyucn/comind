@@ -1,17 +1,15 @@
 /**
- * TaskHub 任务过滤 D4 口径测试（ADR-0050 阶段 2）。
+ * TaskHub 任务数据源口径测试（2026-10-13 口径修订，取代 ADR-0050 D4 的 tag 闭包口径）。
  *
- * D4：数据源过滤从「status 值非空」切换为「block.tags 含系统 task tag（含后代闭包成员）」。
- * 组件谓词（taskHitTagIds + searchedCards）的接线测试 —— 卡片投影与标签树均经
- * mock client 精确控制（WASM 端 getBlockCards 恒返回 []，真实库测不了过滤，故全 mock；
- * 先例：TagsLibrary.test.ts 的边界 mock × 真 store）。
+ * 全视图共同约束：(1) status 非空（字段写入即任务，不要求挂 #任务）(2) content 非空。
+ * 组件谓词（searchedCards）的接线测试 —— 卡片投影经 mock client 精确控制
+ * （WASM 端 getBlockCards 恒返回 []，真实库测不了过滤，故全 mock）。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import TaskHub from './TaskHub.vue'
-import type { PersistedTagTreeEntry } from '../../types/tag-persisted'
 import type { BlockCard } from '../../wasm/types'
 
 // jsdom 无 matchMedia；CodeMirrorEditor→useTheme 在模块级求值会调用它（先例：TaskHub.test.ts）。
@@ -32,7 +30,6 @@ vi.hoisted(() => {
 
 const { mockClient } = vi.hoisted(() => ({
   mockClient: {
-    getTagTree: vi.fn(),
     getFieldDefinitions: vi.fn(),
     getDeletedPresetFieldDefinitions: vi.fn().mockResolvedValue([]),
     getBlockCards: vi.fn(),
@@ -59,40 +56,6 @@ vi.mock('../../stores/screenView', () => {
   }
 })
 
-function treeEntry(
-  over: Partial<PersistedTagTreeEntry> & { id: string; title: string },
-): PersistedTagTreeEntry {
-  return {
-    field_ids: [],
-    parent_id: null,
-    description: '',
-    color: '',
-    is_system: false,
-    created_at: 1,
-    updated_at: 1,
-    version: 0,
-    deleted_at: null,
-    effective_field_ids: [],
-    descendant_ids: [],
-    ...over,
-  }
-}
-
-const TASK_TAG = treeEntry({
-  id: 'task-tag',
-  title: '任务',
-  is_system: true,
-  field_ids: ['f-status'],
-  effective_field_ids: ['f-status'],
-  descendant_ids: ['child-tag'],
-})
-const CHILD_TAG = treeEntry({
-  id: 'child-tag',
-  title: '开发任务',
-  parent_id: 'task-tag',
-  effective_field_ids: [],
-})
-
 function card(over: Partial<BlockCard> & { block_id: string }): BlockCard {
   return {
     page_id: 'page-1',
@@ -107,7 +70,7 @@ function card(over: Partial<BlockCard> & { block_id: string }): BlockCard {
   }
 }
 
-/** 外壳桩：渲染副标题（flatCards.length = D4 过滤后的任务数）与 items 的 block id。 */
+/** 外壳桩：渲染副标题（flatCards.length = 数据源过滤后的任务数）与 items 的 block id。 */
 const QueryPageFrameStub = defineComponent({
   name: 'QueryPageFrame',
   props: { subtitle: { type: String, default: '' }, items: { type: Array, default: () => [] } },
@@ -140,50 +103,49 @@ function mountTaskHub() {
 beforeEach(() => {
   setActivePinia(createPinia())
   vi.clearAllMocks()
-  mockClient.getTagTree.mockResolvedValue([TASK_TAG, CHILD_TAG])
   mockClient.getFieldDefinitions.mockResolvedValue([
     { id: 'f-status', key: 'status', title: '状态', type: 'string', closed_values: null, default_value: null, hide_when: 'never', is_system: true, created_at: 1, updated_at: 1, version: 0, deleted_at: null },
   ])
 })
 
-describe('TaskHub — D4 任务过滤按 tags 闭包', () => {
-  it('挂任务闭包内 tag 的块入列（自身 + 子标签）；仅写 status 未挂载 / 无关 tag 的块不入列', async () => {
+describe('TaskHub — 数据源共同口径（status 非空 + content 非空，与 tag 无关）', () => {
+  it('status 非空即入列（含未挂任务 tag / 已完成 Done）；status 空的块不入列', async () => {
     mockClient.getBlockCards.mockResolvedValue([
-      card({ block_id: 't-self', tags: ['task-tag'] }),          // 自身命中
-      card({ block_id: 't-child', tags: ['child-tag'] }),        // 后代闭包命中
-      card({ block_id: 't-status-only', tags: [], properties: { status: 'Todo' } }), // 旧口径会放行
-      card({ block_id: 't-unrelated', tags: ['other-tag'] }),    // 无关 tag
-      card({ block_id: 't-empty-content', tags: ['task-tag'], content_preview: '' }), // 挂了 tag 但 content 为空
+      card({ block_id: 't-untagged', tags: [], properties: { status: 'Todo' } }),          // 未挂 tag，字段写入即任务
+      card({ block_id: 't-done', tags: [], properties: { status: 'Done' } }),              // 已完成（回归：D4 口径下曾消失）
+      card({ block_id: 't-tagged', tags: ['sys-tag-system-task'], properties: { status: 'Doing' } }), // 挂 tag 的块同口径
+      card({ block_id: 't-tag-no-status', tags: ['sys-tag-system-task'], properties: {} }), // 挂 tag 但 status 空
+      card({ block_id: 't-empty-status', tags: [], properties: { status: '' } }),          // status 空串
+      card({ block_id: 't-unrelated', tags: ['other-tag'], properties: {} }),              // 无关 tag 无 status
     ])
 
     const wrapper = mountTaskHub()
     await flushPromises()
 
     const ids = wrapper.findAll('.qpf-item').map((el) => el.attributes('data-block-id'))
-    expect(ids).toContain('t-self')
-    expect(ids).toContain('t-child')
-    expect(ids).not.toContain('t-status-only')
+    expect(ids).toContain('t-untagged')
+    expect(ids).toContain('t-done')
+    expect(ids).toContain('t-tagged')
+    expect(ids).not.toContain('t-tag-no-status')
+    expect(ids).not.toContain('t-empty-status')
     expect(ids).not.toContain('t-unrelated')
-    // 空 content 块不入列（否则视图回退显示 block id）；计数仍为 2
-    expect(ids).not.toContain('t-empty-content')
-    // 副标题计数同口径：仅 2 个任务
-    expect(wrapper.find('.qpf-subtitle').text()).toBe('2 个任务')
+    // 副标题计数同口径：仅 3 个任务
+    expect(wrapper.find('.qpf-subtitle').text()).toBe('3 个任务')
   })
 
-  it('标签树未就绪 / 无系统任务 tag 时降级回「status 非空」旧口径', async () => {
-    mockClient.getTagTree.mockResolvedValue([]) // 无任何 tag → systemTaskTagId() = undefined
+  it('content 为空的块不入列（即使 status 非空）', async () => {
     mockClient.getBlockCards.mockResolvedValue([
-      card({ block_id: 't-status-only', tags: [], properties: { status: 'Todo' } }),
-      card({ block_id: 't-nothing', tags: ['whatever'] }),
-      card({ block_id: 't-empty-content', tags: [], properties: { status: 'Todo' }, content_preview: '' }), // 降级口径同样排除空 content
+      card({ block_id: 't-empty-content', properties: { status: 'Todo' }, content_preview: '' }),
+      card({ block_id: 't-blank-content', properties: { status: 'Done' }, content_preview: '   ' }),
+      card({ block_id: 't-ok', properties: { status: 'Todo' } }),
     ])
 
     const wrapper = mountTaskHub()
     await flushPromises()
 
     const ids = wrapper.findAll('.qpf-item').map((el) => el.attributes('data-block-id'))
-    expect(ids).toContain('t-status-only')
-    expect(ids).not.toContain('t-nothing')
     expect(ids).not.toContain('t-empty-content')
+    expect(ids).not.toContain('t-blank-content')
+    expect(ids).toContain('t-ok')
   })
 })
