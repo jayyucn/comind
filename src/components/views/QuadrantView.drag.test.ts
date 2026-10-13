@@ -295,3 +295,74 @@ describe('QuadrantView 状态图标交互', () => {
     w.unmount()
   })
 })
+
+describe('QuadrantView 状态变更冻结排序（2026-10-13 诉求）', () => {
+  const HOUR = 60 * 60 * 1000
+  // 同象限（Medium）三卡，status 各异 → 规范序（status asc）：Doing(任务A) < Todo(任务B) < Done(任务C)
+  function threeInMedium(now: number) {
+    return [
+      { block_id: 'b1', content_preview: '任务A', parent_id: '', properties: { status: 'Doing', priority: 'Medium' }, date_refs: [], updated_at: now - 5 * HOUR },
+      { block_id: 'b2', content_preview: '任务B', parent_id: '', properties: { status: 'Todo', priority: 'Medium' }, date_refs: [], updated_at: now - 4 * HOUR },
+      { block_id: 'b3', content_preview: '任务C', parent_id: '', properties: { status: 'Done', priority: 'Medium' }, date_refs: [], updated_at: now - 1 * HOUR },
+    ]
+  }
+  function orderIn(w: ReturnType<typeof mount>, priority: string): string[] {
+    const section = w.findAll('.q-cell').find((s) => s.attributes('data-priority') === priority)!
+    return section.findAll('.q-card').map((c) => c.text())
+  }
+  it('同象限内改状态不立即重排（卡片原地不动）', async () => {
+    const now = Date.now()
+    const w = mountView({ items: threeInMedium(now), idKey: 'block_id' })
+    // 挂载快照 = 规范序：任务A(Doing) → 任务B(Todo) → 任务C(Done)
+    expect(orderIn(w, 'Medium')).toEqual(['任务A', '任务B', '任务C'])
+    // 模拟父级回流：任务B 由 Todo 环到 Doing（updated_at 刷新为 now）
+    await w.setProps({
+      items: threeInMedium(now).map((it) =>
+        it.block_id === 'b2' ? { ...it, properties: { ...it.properties, status: 'Doing' }, updated_at: now } : it,
+      ),
+    })
+    // 冻结：任务B 不应跳到顶部，仍跟随快照原序
+    expect(orderIn(w, 'Medium')).toEqual(['任务A', '任务B', '任务C'])
+    w.unmount()
+  })
+
+  it('切走再切回（重挂）后按规范序重排', async () => {
+    const now = Date.now()
+    const original = threeInMedium(now)
+    const changed = original.map((it) =>
+      it.block_id === 'b2' ? { ...it, properties: { ...it.properties, status: 'Doing' }, updated_at: now } : it,
+    )
+    // 进入矩阵（原始数据）：快照 = 规范序 [任务A, 任务B, 任务C]
+    const w = mountView({ items: original, idKey: 'block_id' })
+    expect(orderIn(w, 'Medium')).toEqual(['任务A', '任务B', '任务C'])
+    // 改状态回流：停留期间冻结，不重排
+    await w.setProps({ items: changed })
+    expect(orderIn(w, 'Medium')).toEqual(['任务A', '任务B', '任务C'])
+    w.unmount()
+    // 切回矩阵（已改数据）：重新挂载按最新规范序快照（Doing 内 updatedAt desc → 任务B 最新在最前）
+    const w2 = mountView({ items: changed, idKey: 'block_id' })
+    expect(orderIn(w2, 'Medium')).toEqual(['任务B', '任务A', '任务C'])
+    w2.unmount()
+  })
+
+  it('进出矩阵仍实时（不随冻结而延迟）', async () => {
+    const now = Date.now()
+    // 任务C 初始为 >24h 的旧 Done → 不落格
+    const base = threeInMedium(now).map((it) =>
+      it.block_id === 'b3' ? { ...it, updated_at: now - 25 * HOUR } : it,
+    )
+    const w = mountView({ items: base, idKey: 'block_id' })
+    expect(orderIn(w, 'Medium')).toEqual(['任务A', '任务B']) // 任务C 不在
+    // 回流：任务C updated_at 拉回 24h 内 → 立即出现（不冻进出）
+    await w.setProps({
+      items: base.map((it) => (it.block_id === 'b3' ? { ...it, updated_at: now } : it)),
+    })
+    expect(orderIn(w, 'Medium')).toEqual(['任务A', '任务B', '任务C'])
+    // 再回流：任务C 推出 24h 外 → 立即消失
+    await w.setProps({
+      items: base.map((it) => (it.block_id === 'b3' ? { ...it, updated_at: now - 25 * HOUR } : it)),
+    })
+    expect(orderIn(w, 'Medium')).toEqual(['任务A', '任务B'])
+    w.unmount()
+  })
+})

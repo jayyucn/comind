@@ -1,5 +1,5 @@
 <script setup lang="ts" generic="T">
-import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { Registry, SortRule } from '../../core/query'
 import { sortItems } from '../../core/query'
 import type { QuadrantConfig } from '../../core/view'
@@ -244,8 +244,11 @@ function sortWithRules(list: T[], rules: SortRule[]): T[] {
   return rules === DEFAULT_QUADRANT_SORT ? sortByDefault(list) : sortByCreatedAt(list)
 }
 
-// 预先分桶（单次遍历 + 每桶排序），避免模板内重复计算
-const buckets = computed<Record<string, T[]>>(() => {
+// 规范分桶（实时）：visibility 过滤 + 按 priority 分桶 + 按规则排序。
+// 仅用于「挂载时拍快照」与「新进入卡片的落位顺序」，渲染层不直接用它驱动顺序。
+// 注：状态变更（cycleStatus）会刷新 updated_at 并以 status 为主键重排，导致卡片在同
+// 象限内跳位 —— 见下方冻结逻辑（2026-10-13 诉求：矩阵内改状态不立即重排）。
+const canonicalBuckets = computed<Record<string, T[]>>(() => {
   const map: Record<string, T[]> = { Medium: [], Urgent: [], Low: [], High: [] }
   for (const i of visibleItems.value) {
     const p = priorityOf(i)
@@ -259,6 +262,52 @@ const buckets = computed<Record<string, T[]>>(() => {
   return map
 })
 
+// ── 状态变更冻结排序（2026-10-13 诉求）──
+// 矩阵视图内改任务状态：卡片原地不动、不立即重排；切走其他视图/页面再切回（组件卸载重挂）
+// 时按最新数据自然重排。实现：挂载时拍「各象限 id 顺序」快照；渲染以此快照为基准——
+// 当前可见且曾在快照中的卡保持原序，新进入矩阵的卡（如旧 Done 循环回 Todo）按规范序追加到末尾。
+// visibility（qualifies / 父子嵌套）仍实时，故「该进/该出矩阵的卡」立即生效，仅象限内重排被冻结。
+// 工具栏排序规则变更时也重拍快照，使「用户主动改排序」立即生效；普通数据刷新/搜索不重拍，保证停留稳定。
+const frozenOrder = ref<Record<string, string[]>>({ Medium: [], Urgent: [], Low: [], High: [] })
+
+function snapshotOrder() {
+  const snap: Record<string, string[]> = { Medium: [], Urgent: [], Low: [], High: [] }
+  for (const k of QUADRANT_KEYS) snap[k] = canonicalBuckets.value[k].map(idOf)
+  frozenOrder.value = snap
+}
+
+onMounted(snapshotOrder)
+// 排序规则变更 → 重拍快照（用户主动改排序立即生效）；状态/数据变更不触发，保持冻结
+watch(
+  () => props.sort,
+  () => snapshotOrder(),
+  { deep: true },
+)
+
+// 渲染分桶：冻结顺序 = 快照原序（仅保留当前可见） + 新进入卡按规范序追加。
+// 这是模板实际消费的桶，替代原 canonicalBuckets 直接渲染。
+const renderBuckets = computed<Record<string, T[]>>(() => {
+  const out: Record<string, T[]> = { Medium: [], Urgent: [], Low: [], High: [] }
+  for (const k of QUADRANT_KEYS) {
+    const frozen = frozenOrder.value[k]
+    const live = canonicalBuckets.value[k]
+    const liveIds = new Set(live.map(idOf))
+    const result: T[] = []
+    // 1. 快照中仍可见的卡：保持原序（冻结重排的核心）
+    for (const id of frozen) {
+      if (!liveIds.has(id)) continue
+      const it = itemById.value.get(id)
+      if (it) result.push(it)
+    }
+    // 2. 新进入矩阵的卡（不在快照中）：按规范序追加到末尾（含新增任务 / 重新达标卡）
+    for (const it of live) {
+      if (!frozen.includes(idOf(it))) result.push(it)
+    }
+    out[k] = result
+  }
+  return out
+})
+
 // ── 新增任务的插入动效 ──
 // 新增链路是「上抛 addItem → 消费方建块 → refresh 回流 props.items」，组件拿不到新 block id，
 // 故用「基线差集」识别新出现的顶层卡片：仅当本视图刚上抛过新增（pendingAdd）时才标记入场态，
@@ -269,7 +318,7 @@ let enterTimer: ReturnType<typeof setTimeout> | null = null
 const knownTopIds = new Set<string>()
 const enteringIds = ref<string[]>([])
 
-const topLevelIds = computed(() => QUADRANT_KEYS.flatMap((k) => buckets.value[k].map((i) => idOf(i))))
+const topLevelIds = computed(() => QUADRANT_KEYS.flatMap((k) => renderBuckets.value[k].map((i) => idOf(i))))
 
 watch(
   topLevelIds,
@@ -518,7 +567,7 @@ function onCardClick(item: T) {
             />
             <span class="q-title">{{ q.title }}</span>
             <span class="q-action">{{ q.action }}</span>
-            <span class="q-count">{{ buckets[q.priority].length }}</span>
+            <span class="q-count">{{ renderBuckets[q.priority].length }}</span>
             <button
               type="button"
               class="q-add-head"
@@ -569,7 +618,7 @@ function onCardClick(item: T) {
             回车添加 · Esc 收起 · 可连续录入
           </div>
           <article
-            v-for="card in buckets[q.priority]"
+            v-for="card in renderBuckets[q.priority]"
             :key="idOf(card)"
             class="q-card"
             :class="{ dragging: dragId === idOf(card), done: isDone(card), enter: enteringIds.includes(idOf(card)) }"
@@ -644,7 +693,7 @@ function onCardClick(item: T) {
           </article>
           <!-- 空态：主角按钮引导新增，兼顾拖拽落格提示 -->
           <div
-            v-if="!buckets[q.priority].length && addingFor !== q.priority"
+            v-if="!renderBuckets[q.priority].length && addingFor !== q.priority"
             class="q-empty"
           >
             <svg
