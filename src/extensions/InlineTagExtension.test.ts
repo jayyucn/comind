@@ -353,12 +353,41 @@ describe('InlineTagExtension — 编辑态 chip 点击（inlineTagClick）', () 
     expect(dispatched).toHaveLength(0)
     destroyDecoratedEditor(handle)
   })
+
+  it('点击 chip 后选区还原到点击前位置（不落进 chip 内部）', () => {
+    tagTable = { 标签: { color: '--tag-color-3', is_system: false, id: 'tag-1' } }
+    const handle = createDecoratedEditor('任务 #标签 完成')
+    const chip = handle.element.querySelector('span.block-tag')
+    // 同一插件实例：mousedown 与 handleClick 共享 preClickSel 闭包
+    const plugin = handle.editor.state.plugins.find(
+      p => typeof p?.spec?.props?.handleClick === 'function'
+    )
+    const mousedown = plugin?.spec.props.handleDOMEvents?.mousedown as
+      (view: EditorView, event: MouseEvent) => boolean
+    const click = plugin?.spec.props.handleClick as
+      (view: EditorView, pos: number, event: MouseEvent) => boolean
+
+    // 点击前选区放到块首（单元 [3,6) 之外），记录 PM 规范后的实际位置
+    handle.editor.commands.setTextSelection(0)
+    const expectedFrom = handle.editor.state.selection.from
+    const expectedTo = handle.editor.state.selection.to
+    mousedown(handle.editor.view, { target: chip } as unknown as MouseEvent)
+    const handled = click(handle.editor.view, 4, { target: chip } as unknown as MouseEvent)
+
+    expect(handled).toBe(true)
+    // 选区应回到点击前的位置，而非落进 chip [3,6) 内部
+    expect(handle.editor.state.selection.from).toBe(expectedFrom)
+    expect(handle.editor.state.selection.to).toBe(expectedTo)
+    expect(handle.editor.state.selection.from).toBeLessThan(3)
+    destroyDecoratedEditor(handle)
+  })
 })
 
-// ─── handleDOMEvents.mousedown：守卫 —— chip 点击不落原生光标 ──────────────────
+// ─── handleDOMEvents.mousedown：记录点击前选区 ───────────────────────────────
 // 编辑态点击 #tag chip 不应把文本光标插进 chip 内部（chip 是原子单元，落光标会让用户
-// 敲坏 `#tag` 文本）。原生光标在 mousedown 阶段由浏览器落定，handleClick 返回 true 不
-// 产生 transaction、不会把 DOM 选区同步走，故必须在 mousedown 就 cancel 默认行为。
+// 敲坏 `#tag` 文本）。mousedown 命中 chip 时仅记录点击前选区、不拦截（返回 false、不
+// preventDefault）——PM 的 handleClick 由 mousedown 阶段创建的 LeftMouseDown 在
+// mouseup 触发，一旦跳过则点击行为整体失效；选区还原在 handleClick 内完成。
 
 /** 取 inlineTag 装饰插件的 mousedown 守卫（活编辑器插件列表，与 click 同范式） */
 function tagMousedownHandler(editor: Editor) {
@@ -371,7 +400,7 @@ function tagMousedownHandler(editor: Editor) {
 }
 
 describe('InlineTagExtension mousedown guard', () => {
-  it('chip 目标 → preventDefault（取消原生光标）且返回 false', () => {
+  it('chip 目标 → 不拦截（返回 false、不 preventDefault），仅记录点击前选区', () => {
     tagTable = { 标签: { color: '--tag-color-3', is_system: false, id: 'tag-1' } }
     const handle = createDecoratedEditor('任务 #标签 完成')
     const chip = handle.element.querySelector('span.block-tag')
@@ -381,7 +410,7 @@ describe('InlineTagExtension mousedown guard', () => {
       handle.editor.view,
       { target: chip, preventDefault } as unknown as MouseEvent
     )
-    expect(preventDefault).toHaveBeenCalledTimes(1)
+    expect(preventDefault).not.toHaveBeenCalled()
     expect(ret).toBe(false)
     destroyDecoratedEditor(handle)
   })

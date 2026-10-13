@@ -1,5 +1,5 @@
 import { Extension } from '@tiptap/core'
-import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { Node } from '@tiptap/pm/model'
 import type { EditorView } from '@tiptap/pm/view'
@@ -132,6 +132,11 @@ export const WikiLinkExtension = Extension.create({
   name: 'wikiLink',
 
   addProseMirrorPlugins() {
+    // 点击 chip 前记录选区，handleClick 触发动作后还原，避免原生光标卡进 chip 内部。
+    // 关键：mousedown 绝不能 preventDefault / return true —— PM 的 handleClick 由
+    // mousedown 阶段创建的 LeftMouseDown 在 mouseup 触发，跳过它点击行为会整体失效。
+    let preClickSel: { from: number; to: number } | null = null
+
     return [
       new Plugin({
         key: new PluginKey('wikiLink'),
@@ -177,14 +182,13 @@ export const WikiLinkExtension = Extension.create({
             return DecorationSet.create(state.doc, decorations)
           },
 
-          // 编辑态点击 wiki link 不应把文本光标落进 chip 内部（chip 是原子单元，
-          // 落光标会让用户敲坏 `[[X]]` 文本）。cancel 浏览器在点击点放置的原生光标即可；
-          // handleClick 仍正常派发事件、且不改选区。
+          // 仅记录点击前选区，不拦截 —— PM 正常走 mousedown→mouseup→handleClick，
+          // 点击行为（页面导航）与渲染态一致。
           handleDOMEvents: {
-            mousedown(_view: EditorView, event: MouseEvent) {
+            mousedown(view: EditorView, event: MouseEvent) {
               const target = event.target as HTMLElement | null
               if (target && target.closest && target.closest('.block-link')) {
-                event.preventDefault()
+                preClickSel = { from: view.state.selection.from, to: view.state.selection.to }
               }
               return false
             },
@@ -194,7 +198,7 @@ export const WikiLinkExtension = Extension.create({
           // 走 DOM CustomEvent 通道（ADR-0016）：editorEvents 消费后调 navigateToPage。
           // typed-paren 的 [[X]] 部分同挂 .block-link + data-page，点击同样导航
           // （渲染态 typed_link 段亦如此）；((label)) 类型段归 rel-type-label 分支，不在此列。
-          handleClick(_view: EditorView, _pos: number, event: MouseEvent) {
+          handleClick(view: EditorView, pos: number, event: MouseEvent) {
             const target = event.target as HTMLElement
             const link = target.closest('.block-link') as HTMLElement | null
             const page = link?.dataset.page
@@ -207,6 +211,20 @@ export const WikiLinkExtension = Extension.create({
                 detail: { page } satisfies WikiLinkClickPayload,
               })
             )
+
+            // 还原选区：点击 chip 不应把光标落进 chip 内部（优先点击前位置，
+            // 否则退到单元右侧边界，保证光标在 chip 之外）。
+            const scan = scanWikiLinks(view.state.doc)
+            const match = [...scan.typed, ...scan.plain].find(
+              m => pos >= m.from && pos <= m.to
+            )
+            const restore = preClickSel ?? { from: match?.to ?? pos, to: match?.to ?? pos }
+            view.dispatch(
+              view.state.tr.setSelection(
+                TextSelection.create(view.state.doc, restore.from, restore.to)
+              )
+            )
+            preClickSel = null
             return true
           },
         },

@@ -167,6 +167,38 @@ describe('DateRefExtension handleClick event', () => {
     expect(dispatched).toHaveLength(0)
     handle.teardown()
   })
+
+  it('点击 chip 后选区还原到点击前位置（不落进 chip 内部）', () => {
+    const handle = createEditor('meet @2026-07-15T14:00 📅|weekly tomorrow')
+    const unit = dateRefRangeFromDoc(handle.editor)[0]
+    const span = decoratedSpans(handle.element)[0]
+    // 同一插件实例：mousedown 与 handleClick 共享 preClickSel 闭包
+    const plugins = DateRefExtension.config.addProseMirrorPlugins() ?? []
+    const plugin = plugins.find(
+      p => typeof p?.spec?.props?.handleDOMEvents?.mousedown === 'function'
+        && typeof p?.spec?.props?.handleClick === 'function'
+    )
+    const mousedown = plugin?.spec.props.handleDOMEvents?.mousedown as
+      (view: EditorView, event: MouseEvent) => boolean
+    const click = plugin?.spec.props.handleClick as
+      (view: EditorView, pos: number, event: MouseEvent) => boolean
+
+    // 点击前把选区放到单元之外（块首），记录 PM 规范后的实际位置
+    handle.editor.commands.setTextSelection(0)
+    const expectedFrom = handle.editor.state.selection.from
+    const expectedTo = handle.editor.state.selection.to
+    // mousedown 记录点击前选区
+    mousedown(handle.editor.view, { target: span } as unknown as MouseEvent)
+    // handleClick 派发事件并还原选区
+    const handled = click(handle.editor.view, unit.from + 3, { target: span } as unknown as MouseEvent)
+
+    expect(handled).toBe(true)
+    // 选区应回到点击前的位置，而非落进 chip [unit.from, unit.to)
+    expect(handle.editor.state.selection.from).toBe(expectedFrom)
+    expect(handle.editor.state.selection.to).toBe(expectedTo)
+    expect(handle.editor.state.selection.from).toBeLessThan(unit.from)
+    handle.teardown()
+  })
 })
 
 // ─── handleKeyDown：Backspace/Delete 整单元删除 ─────────────────────────────
@@ -471,11 +503,11 @@ describe('DateRefExtension handleKeyDown — 方向键跨过单元', () => {
   })
 })
 
-// ─── handleDOMEvents.mousedown：守卫 —— chip 点击不落原生光标 ──────────────────
+// ─── handleDOMEvents.mousedown：记录点击前选区 ───────────────────────────────
 // 编辑态点击 date-ref chip 不应把文本光标插进 chip 内部（chip 是原子单元，落光标会让
-// 用户敲坏 `@ISO📅...` 序列化文本）。原生光标在 mousedown 阶段由浏览器落定，
-// handleClick 返回 true 不产生 transaction、不会把 DOM 选区同步走，故必须在 mousedown
-// 就 cancel 默认行为。本块锁定该守卫。
+// 用户敲坏 `@ISO📅...` 序列化文本）。mousedown 命中 chip 时仅记录点击前选区、不拦截
+// （返回 false、不 preventDefault）——PM 的 handleClick 由 mousedown 阶段创建的
+// LeftMouseDown 在 mouseup 触发，一旦跳过则点击行为整体失效；选区还原在 handleClick 内完成。
 
 /** 取 dateRef 装饰插件的 mousedown 守卫 */
 function dateRefMousedownHandler(editor: Editor) {
@@ -489,7 +521,7 @@ function dateRefMousedownHandler(editor: Editor) {
 }
 
 describe('DateRefExtension mousedown guard', () => {
-  it('chip 目标 → preventDefault（取消原生光标）且返回 false', () => {
+  it('chip 目标 → 不拦截（返回 false、不 preventDefault），仅记录点击前选区', () => {
     const handle = createEditor('meet @2026-07-15T14:00 📅|weekly tomorrow')
     const span = decoratedSpans(handle.element)[0]
     expect(span).toBeDefined()
@@ -498,7 +530,7 @@ describe('DateRefExtension mousedown guard', () => {
       handle.editor.view,
       { target: span, preventDefault } as unknown as MouseEvent
     )
-    expect(preventDefault).toHaveBeenCalledTimes(1)
+    expect(preventDefault).not.toHaveBeenCalled()
     expect(ret).toBe(false)
     handle.teardown()
   })
