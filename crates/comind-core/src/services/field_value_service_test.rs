@@ -206,4 +206,63 @@ mod tests {
 
         Ok(())
     }
+
+    // ── 字段写刷新 Block.updated_at（2026-10-13）──────────────────
+    // 矩阵视图 Done 的 24h 可见窗口 / updatedAt 排序 / BlockCard 投影都读
+    // Block.updated_at；字段值只动 FieldValue 行，曾导致「切完成状态后
+    // updated_at 不变、24h 窗口不刷新」。派生刷新刻意不 bump version
+    // （不参与 sync LWW 版本竞争，避免低版本字段 touch 行级覆盖高版本内容编辑）。
+
+    /// 跨毫秒边界，避免同毫秒写入让 updated_at 断言失真
+    fn cross_ms_boundary() {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+
+    #[test]
+    fn test_field_write_touches_block_updated_at_without_version_bump() -> Result<(), Box<dyn Error>> {
+        use crate::storage::repository::{BlockRepository, StorageAdapter};
+
+        let mut adapter = create_test_adapter()?;
+        let block_id = create_test_block(&mut adapter)?;
+        let before = BlockRepository::get_by_id(adapter.blocks(), &block_id)?;
+
+        cross_ms_boundary();
+        FieldValueService::create(&mut adapter, &block_id, "status", "Done", "string", 0)?;
+
+        let after = BlockRepository::get_by_id(adapter.blocks(), &block_id)?;
+        assert!(
+            after.updated_at > before.updated_at,
+            "字段写入应刷新 Block.updated_at（矩阵 Done 24h 窗口依赖它）"
+        );
+        assert_eq!(
+            after.version, before.version,
+            "派生刷新不得 bump version（否则低版本字段 touch 会 LWW 行级覆盖高版本内容编辑）"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_field_update_touches_block_updated_at() -> Result<(), Box<dyn Error>> {
+        use crate::storage::repository::{BlockRepository, StorageAdapter};
+
+        let mut adapter = create_test_adapter()?;
+        let block_id = create_test_block(&mut adapter)?;
+
+        let fv = FieldValueService::create(&mut adapter, &block_id, "status", "Todo", "string", 0)?;
+        let before = BlockRepository::get_by_id(adapter.blocks(), &block_id)?;
+
+        cross_ms_boundary();
+        // update 走 save 的「同 key 覆盖」分支（状态切换的真实路径）
+        FieldValueService::update(&mut adapter, &fv.id, Some("Done"), None, None)?;
+
+        let after = BlockRepository::get_by_id(adapter.blocks(), &block_id)?;
+        assert!(
+            after.updated_at > before.updated_at,
+            "字段值覆盖（如切完成状态）应刷新 Block.updated_at"
+        );
+        assert_eq!(after.version, before.version);
+
+        Ok(())
+    }
 }

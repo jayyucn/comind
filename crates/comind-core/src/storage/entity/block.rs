@@ -160,6 +160,22 @@ pub fn block_undelete_by_id<E: Executor>(exec: &E, id: &str) -> Result<Block, Bo
     block_get_by_id(exec, id)
 }
 
+/// 仅刷新 `updated_at`（**不 bump version**）——字段值写入等派生变更的 Block 行
+/// 时间戳收口。矩阵视图 Done 的 24h 可见窗口 / updatedAt 排序 / BlockCard 投影都读
+/// `Block.updated_at`，而字段值只动 FieldValue 行、不经 BlockService::update 的
+/// 内容派生链路，故在此显式刷新。
+///
+/// 刻意不 bump version：派生刷新不应参与 sync LWW 的版本竞争，否则低版本的字段
+/// touch 会行级覆盖掉高版本的内容编辑（整行覆盖丢 content）。同步传播仍走
+/// FieldValue 行自身（行内 version/updated_at 独立），Block 行无版本变化即无 sync 条目。
+#[cfg(not(target_arch = "wasm32"))]
+pub fn block_touch_updated_at<E: Executor>(exec: &E, id: &str) -> Result<Block, Box<dyn Error>> {
+    let now = chrono::Utc::now().timestamp_millis();
+    let params: Vec<&dyn ToSql> = vec![&now, &id];
+    exec.execute("UPDATE Block SET updated_at = ?1 WHERE id = ?2", &params)?;
+    block_get_by_id(exec, id)
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub fn block_insert<E: Executor>(exec: &E, b: &Block) -> Result<(), Box<dyn Error>> {
     let tags_json = serde_json::to_string(&b.tags).unwrap_or_else(|_| "[]".to_string());

@@ -12,6 +12,9 @@ pub trait BlockRepository {
     fn get_by_ids(&self, ids: &[String]) -> Result<Vec<Block>, Box<dyn Error>>;
     /// 撤销软删除：将 deleted_at 置 NULL（版本 +1、刷新 updated_at），返回复活后的块。
     fn undelete(&mut self, id: &str) -> Result<Block, Box<dyn Error>>;
+    /// 仅刷新 updated_at（不 bump version）——字段值写入的派生时间戳收口。
+    /// 返回刷新后的块；软删块（get_by_id 过滤 deleted_at）报 NotFound。
+    fn touch_updated_at(&mut self, id: &str) -> Result<Block, Box<dyn Error>>;
     fn create(&mut self, block: &Block) -> Result<Block, Box<dyn Error>>;
     fn update(&mut self, block: &Block) -> Result<Block, Box<dyn Error>>;
     fn delete(&mut self, id: &str) -> Result<(), Box<dyn Error>>;

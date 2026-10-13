@@ -2,8 +2,20 @@ use crate::{
     types::{FieldDefinition, FieldValue},
     storage::{repository, StorageAdapter},
 };
+use super::BlockService;
 use std::collections::HashMap;
 use std::error::Error;
+
+/// best-effort 刷新 `Block.updated_at`（字段写入的派生副作用，见 `BlockService::touch`）。
+/// 失败（软删块 get_by_id 过滤 deleted_at → NotFound 等）只告警不阻断字段写本身。
+fn touch_block_updated_at(storage: &mut dyn StorageAdapter, block_id: &str) {
+    if let Err(e) = BlockService::touch(storage, block_id) {
+        eprintln!(
+            "[FieldValueService::save] touch block updated_at failed for {}: {}",
+            block_id, e
+        );
+    }
+}
 
 /// 字段值服务 —— 块字段值（`FieldValue`）的唯一读写入口。
 ///
@@ -145,6 +157,9 @@ impl FieldValueService {
     /// 存活行 → 覆盖；再否则插入。返回保存后的行与 `FieldDefinition` id
     /// （batch op 据此登记 SyncTable）。
     ///
+    /// 派生副作用：写成功后 best-effort 刷新所属 `Block.updated_at`（不 bump
+    /// version）——字段值是块的变更，矩阵视图 / 排序 / 投影都读 Block 行时间戳。
+    ///
     /// `fv.key` 定位定义（未知 key 自动建）；`id` 由调用方给定——撤销重放必须忠实带回
     /// 快照 id，不可重生成。
     pub fn save(
@@ -166,6 +181,7 @@ impl FieldValueService {
                 repository::FieldValueRepository::undelete(storage.field_values(), &existing.id)?;
             }
             repository::FieldValueRepository::update(storage.field_values(), &fv)?;
+            touch_block_updated_at(storage, &fv.block_id);
             return Ok((fv, fd_id));
         }
 
@@ -180,11 +196,13 @@ impl FieldValueService {
             fv.id = existing.id;
             fv.created_at = existing.created_at;
             repository::FieldValueRepository::update(storage.field_values(), &fv)?;
+            touch_block_updated_at(storage, &fv.block_id);
             return Ok((fv, fd_id));
         }
 
         // ③ 全新插入
         repository::FieldValueRepository::create(storage.field_values(), &fv)?;
+        touch_block_updated_at(storage, &fv.block_id);
         Ok((fv, fd_id))
     }
 

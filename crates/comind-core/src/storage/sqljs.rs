@@ -790,6 +790,18 @@ impl BlockRepository for SqlJsAdapter {
         Ok(row_to_block_js(&result[0]))
     }
 
+    fn touch_updated_at(&mut self, id: &str) -> Result<Block, Box<dyn std::error::Error>> {
+        // 仅刷新 updated_at（不 bump version）——字段值写入的派生时间戳收口，
+        // 与原生 block_touch_updated_at 同语义（见 entity/block.rs 注释）。
+        let now = chrono::Utc::now().timestamp_millis();
+        Self::run_with_params(&self.db, "UPDATE Block SET updated_at = ? WHERE id = ?", &[&now.to_string(), id])?;
+        let result = Self::query(&self.db, &format!("SELECT {} FROM Block WHERE id = ?", block_select_cols()), &[id])?;
+        if result.is_empty() {
+            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Block not found")));
+        }
+        Ok(row_to_block_js(&result[0]))
+    }
+
     fn delete_by_page_id(&mut self, page_id: &str) -> Result<(), Box<dyn std::error::Error>> {
         let now = chrono::Utc::now().timestamp_millis();
         Self::run_with_params(&self.db, "UPDATE Block SET deleted_at = ?, version = version + 1, updated_at = ? WHERE page_id = ?", &[&now.to_string(), &now.to_string(), page_id])?;

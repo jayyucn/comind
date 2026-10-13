@@ -194,6 +194,21 @@ impl BlockService {
         repository::BlockRepository::update(storage.blocks(), &block)
     }
 
+    /// 仅刷新 `Block.updated_at`（**不 bump version**）——字段值写入等派生变更的
+    /// 时间戳收口。矩阵视图 Done 的 24h 可见窗口 / updatedAt 排序 / BlockCard 投影
+    /// 均读 `Block.updated_at`，而字段值只动 FieldValue 行、不经 [`Self::update`] 的
+    /// 内容派生链路，故由字段写入口显式刷新。
+    ///
+    /// 刻意不 bump version：派生刷新不参与 sync LWW 版本竞争（否则低版本的字段
+    /// touch 会行级覆盖掉高版本的内容编辑，丢 content）；FieldValue 行自身的
+    /// version/updated_at 独立同步，不受影响。
+    pub fn touch(
+        storage: &mut dyn StorageAdapter,
+        id: &str,
+    ) -> Result<Block, Box<dyn Error>> {
+        repository::BlockRepository::touch_updated_at(storage.blocks(), id)
+    }
+
     pub fn delete(
         storage: &mut dyn StorageAdapter,
         id: &str,
