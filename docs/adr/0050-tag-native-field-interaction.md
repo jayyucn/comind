@@ -21,7 +21,7 @@ TaskHub `ensureTodo` 等程序化路径：先确保 `#task` 在 content，再写
 
 **原决策**（2026-10-07 实施）：数据源过滤从「`status` 值非空」改为「`block.tags` 含系统 task tag」。挂了 `#task` 的块才是任务，与字段显示逻辑同源。
 
-**修订（2026-10-13）**：TaskHub 全视图（表格/看板/日历/矩阵）数据源回退为共同口径——(1) `status` 非空；(2) content 非空。与 tag 无关。矩阵视图追加落格约束：status ∈ Todo / Doing / 今日 Done（完成态仅当天可见，`updatedAt > 今日日期串`）。
+**修订（2026-10-13）**：TaskHub 全视图（表格/看板/日历/矩阵）数据源回退为共同口径——(1) `status` 非空；(2) content 非空。与 tag 无关。矩阵视图追加落格约束：status ∈ Todo / Doing / 近 24 小时 Done（完成态在完成后 24 小时内可见，`updatedAt >` 当前时刻减 24h，滚动窗口非自然日）。
 
 理由：
 - status 字段写入路径（状态循环、字段面板、/todo 等）按 D2 约定只写字段值不挂 tag，tag 口径使这些块在表格/看板/日历永远不可见；而四象限按 `isQuadrantCard`（priority + status）判定可见——同一实体两套口径，行为不一致。

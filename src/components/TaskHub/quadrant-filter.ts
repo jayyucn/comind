@@ -5,7 +5,7 @@ export const QUADRANT_PRIORITIES: readonly string[] = ['Medium', 'Urgent', 'Low'
 
 /**
  * 四象限数据源谓词：与 tag 无关，仅要求 block 具备 priority（∈ 四象限优先级）且 status 非空。
- * 满足即纳入数据源；具体的落格资格（status ∈ Todo/Doing/今日 Done，2026-10-13 口径修订）
+ * 满足即纳入数据源；具体的落格资格（status ∈ Todo/Doing/近 24h Done，2026-10-13 口径修订）
  * 由 QuadrantView.qualifies 进一步裁定。这样即使 block 未挂载 #任务（或任意任务 tag），
  * 只要在编辑器/斜杠命令里设过 priority + status，就会出现在矩阵中。
  *

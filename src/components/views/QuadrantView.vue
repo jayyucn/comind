@@ -3,7 +3,6 @@ import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import type { Registry, SortRule } from '../../core/query'
 import { sortItems } from '../../core/query'
 import type { QuadrantConfig } from '../../core/view'
-import { resolveRelativeExpr } from '../../utils/date-parser'
 import type { BlockCard } from '../../wasm/types'
 import BulletRender from '../Block/handlers/bullet/BulletRender.vue'
 import Icon from '../Icons/Icon.vue'
@@ -87,11 +86,16 @@ function resolveUpdatedAtString(item: T): string | undefined {
   if (ts == null) return undefined
   const dt = new Date(ts)
   if (Number.isNaN(dt.getTime())) return undefined
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}:${pad(dt.getSeconds())}`
+  return toLocalDatetimeString(dt)
 }
 
-/** 落格资格：含 priority 且 status ∈ Todo/Doing/今日 Done（2026-10-13 口径修订：Done 仅当天可见，次日落格）。 */
+/** 本地 datetime 串（YYYY-MM-DDTHH:mm:ss），与注册表 updatedAt getter（toLocalDatetime）同构，可字典序比较。 */
+function toLocalDatetimeString(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
+
+/** 落格资格：含 priority 且 status ∈ Todo/Doing/近 24h Done（2026-10-13 口径修订：Done 完成后 24 小时内可见）。 */
 function qualifies(item: T): boolean {
   const card = asCard(item)
   const pr = card.properties?.['priority']
@@ -101,11 +105,11 @@ function qualifies(item: T): boolean {
   const s = String(st)
   if (s === 'Todo' || s === 'Doing') return true
   if (s === 'Done') {
-    // updatedAt > 今日日期串（含今日零点后更新）：镜像引擎 op:'after' + relativeDate('today')。
-    // 近似「完成于今日」：status 置 Done 即写 updated_at，正常路径两者同日。
+    // updatedAt > 当前时刻减 24h：滚动窗口，非自然日（status 置 Done 即写 updated_at，近似「完成时刻」）。
     const updated = resolveUpdatedAtString(item)
-    const t = resolveRelativeExpr('today') ?? ''
-    return updated != null && String(updated) > String(t)
+    if (updated == null) return false
+    const cutoff = toLocalDatetimeString(new Date(Date.now() - 24 * 60 * 60 * 1000))
+    return updated > cutoff
   }
   return false
 }

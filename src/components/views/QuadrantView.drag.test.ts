@@ -115,6 +115,43 @@ describe('QuadrantView 拖拽（Pointer Events）', () => {
   })
 })
 
+describe('QuadrantView Done 落格窗口（近 24 小时，2026-10-13 口径修订）', () => {
+  const HOUR = 60 * 60 * 1000
+  function doneItem(blockId: string, updatedAt: number) {
+    return {
+      block_id: blockId,
+      parent_id: '',
+      content_preview: `任务${blockId}`,
+      properties: { status: 'Done', priority: 'Urgent' },
+      date_refs: [],
+      updated_at: updatedAt,
+    }
+  }
+
+  it('24 小时内完成的 Done 落格，超过 24 小时的不落格', () => {
+    const w = mountView({
+      items: [doneItem('fresh', Date.now() - 23 * HOUR), doneItem('stale', Date.now() - 25 * HOUR)],
+      idKey: 'block_id',
+    })
+    expect(w.text()).toContain('任务fresh')
+    expect(w.text()).not.toContain('任务stale')
+    w.unmount()
+  })
+
+  it('Todo/Doing 不受窗口限制（无 updated_at 也落格）', () => {
+    const w = mountView({
+      items: [
+        { block_id: 't1', parent_id: '', content_preview: '待办T', properties: { status: 'Todo', priority: 'High' }, date_refs: [] },
+        { block_id: 't2', parent_id: '', content_preview: '进行中D', properties: { status: 'Doing', priority: 'Low' }, date_refs: [] },
+      ],
+      idKey: 'block_id',
+    })
+    expect(w.text()).toContain('待办T')
+    expect(w.text()).toContain('进行中D')
+    w.unmount()
+  })
+})
+
 describe('QuadrantView 子任务显示（最多 3 层）', () => {
   // 任务树：A(顶层,Medium) ─ B(子,无 priority) ─ C(孙,无 priority) ─ D(曾孙)
   // E(顶层,Urgent) 独立；A 的兄弟 B 有 priority 时应嵌套而非重复落格
@@ -124,7 +161,7 @@ describe('QuadrantView 子任务显示（最多 3 层）', () => {
       { block_id: 'b', parent_id: 'a', content_preview: '子任务B', properties: { status: 'Todo' }, date_refs: [] },
       { block_id: 'c', parent_id: 'b', content_preview: '孙任务C', properties: { status: 'Todo' }, date_refs: [] },
       { block_id: 'd', parent_id: 'c', content_preview: '曾孙任务D', properties: { status: 'Todo' }, date_refs: [] },
-      // E 为 Done：落格资格要求「Done 限今日更新」（qualifies），补 updated_at 使其可见
+      // E 为 Done：落格资格要求「Done 限近 24h 更新」（qualifies），补 updated_at 使其可见
       { block_id: 'e', parent_id: '', content_preview: '任务E', properties: { status: 'Done', priority: 'Urgent' }, date_refs: [], updated_at: Date.now() },
     ]
   }
