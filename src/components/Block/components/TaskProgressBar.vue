@@ -69,9 +69,6 @@ const isComplete = computed(() => props.total > 0 && props.done >= props.total)
   align-items: center;
   gap: var(--space-1);
   max-width: 100%;
-  padding: 2px var(--space-2) 2px var(--space-1);
-  border-radius: 999px;
-  background: var(--surface-faint);
   color: var(--text-tertiary);
   user-select: none;
   -webkit-user-select: none;

@@ -19,7 +19,8 @@ const COLLAPSE_ANIMATION_DURATION = 200 // ms
  * - 计算 childrenHeight（供子节点容器做动画；当前折叠动画由 CSS 类驱动）
  *
  * **折叠范围**（ADR-0045 扩展）：折叠 = 隐藏本块的一切可折叠细节 —— 子树
- * （`.block-children`）**与字段带**（`.block-properties`：list 字段区 + book-note 来源行）。
+ * （`.block-children`）**、字段带**（`.block-properties`：list 字段区 + book-note 来源行）
+ * **与子任务进度条**（`.block-child-task-progress`）。
  * 因此「能不能折叠」有两路来源：有子块，或有字段行。字段行数由调用方从
  * `useBlockFieldRows().fields.length` 传入（与渲染同一份集合，守卫不会与屏幕漂移；
  * 不能用 `tags.length` 代理——标签有字段 ≠ 有可渲染行）。

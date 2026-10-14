@@ -6,7 +6,8 @@
 // ===== 折叠动画 mixin（ADR-0045 折叠范围扩展） =====
 // .block-children 与 .block-properties 共用同一套折叠过渡与折叠态视觉（数值逐字相同）。
 // 展开态提供 max-height/opacity/transform 过渡基线；折叠态提供「视觉塌缩」四件套。
-// 调用方各自挂 is-collapsed 选择器（.block-children 自身 / .block.is-collapsed>.block-properties）。
+// 调用方各自挂 is-collapsed 选择器（.block-children 自身 / .block.is-collapsed>.block-properties
+// / .block.is-collapsed>.block-child-task-progress / .block.is-collapsed 的层级导轨 ::before）。
 // 折叠 = 布局移除：is-collapsed:not(.is-animating) 在动画跑完之后才 display:none，
 // 展开时 is-collapsed 先摘除、display 自然恢复、过渡照跑 —— 隐藏只有一个来源。
 
@@ -46,6 +47,41 @@
   // 挂在 block 挂载瞬间，不依赖 Vue <Transition>，避免与 Sortable 的 DOM 操作冲突。
   // keyed 复用保证内容更新不会重播动画，仅在新节点挂载时播放一次。
   animation: block-enter var(--motion-duration) var(--motion-ease) both;
+}
+
+// ===== 层级导轨（统一挂载于 .block 根节点） =====
+// 原为两段独立伪元素：.block-children::before（子树段）与 .block-properties::before
+// （字段带段）。现统一为本块单一 ::before：
+// - x 列不变：本块 bullet 中心列 depth×缩进+9（--indent-depth 由 .block 根节点自持，
+//   与原两段的换算结果逐字一致，参照原点同为 .block 左缘）；
+// - 纵向自块顶贯穿至块底，字段带段与子树段之间原有的 2px margin 间隙随之弥合，
+//   导轨视觉连续；
+// - 可见条件 = 原两段可见条件之并集（子树段 has-children ∪ 字段带段带内非空）；
+// - 无子块且字段带为空的块不画导轨。
+.block::before {
+  content: '';
+  position: absolute;
+  top: 16px;
+  bottom: 0;
+  left: calc(var(--indent-depth, 0) * var(--block-indent-width) + 9px);
+  width: 1px;
+  background: var(--block-bullet-color);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 0;
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+// 有子块或字段带非空时显现
+.block:has(> .block-children.has-children)::before,
+.block:has(> .block-properties > *)::before {
+  opacity: 0.12;
+}
+
+// 折叠 = 布局移除（与 .block-children / .block-properties 的时序闸门同款）：
+// 折叠动画期间导轨随块高一起收敛，动画跑完（is-animating 摘除）才整体移除。
+.block.is-collapsed:not(.is-animating)::before {
+  display: none;
 }
 
 // ===== Block 行（行带） =====
@@ -260,25 +296,6 @@
 }
 
 // ===== 子节点容器（子树） =====
-// 缩进线（Indent Lines）
-.block-children::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: calc(var(--indent-depth, 0) * var(--block-indent-width) + 9px);
-  width: 1px;
-  background: var(--block-bullet-color);
-  opacity: 0.12;
-  pointer-events: none;
-  z-index: 0;
-  transition: opacity var(--dur-base) var(--ease-out);
-}
-
-.block-children:not(.has-children)::before {
-  opacity: 0;
-}
-
 // 子节点容器
 .block-children {
   position: relative;
@@ -480,31 +497,16 @@
 //
 // 左缘对齐子块 status 图标（不算 bullet dot）：子容器缩进 20px + 子块一级缩进
 // 14px + bullet 20px = (depth+1)*14 + 40。非任务子块无 between 槽、正文紧跟
-// bullet，起点亦在此列。--indent-depth 由 .block 根节点自持（自身深度），
-// 不再用子容器传入的父深度（那只服务于缩进线 ::before）。
+// bullet，起点亦在此列。--indent-depth 由 .block 根节点自持（自身深度）；
+// 层级导轨 ::before 亦挂在 .block 上共用该变量，子容器不再传入深度。
 .block-properties {
   position: relative;
   margin-left: calc((var(--indent-depth, 0) + 1) * var(--block-indent-width) + 40px);
   padding-right: $space-2;
   @include collapse-transition;
 
-  // 字段带左侧竖线：与 .block-children::before 同一竖列（本块 bullet 中心列
-  // depth×缩进+9），同色同透明度——层级导轨从 block-row 的 bullet 起，穿过字段带
-  // 延伸进子树，视觉上字段带与子树同属「本块 bullet 往下这一列」。
-  // 换算：盒左缘含 margin-left ((depth+1)×缩进+40)，故 left = 9 − 缩进 − 40（与 depth 无关）。
-  // 折叠时整带 display:none，竖线随之消失，无需额外规则。
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: calc(9px - var(--block-indent-width) - 40px);
-    width: 1px;
-    background: var(--block-bullet-color);
-    opacity: 0.12;
-    pointer-events: none;
-    z-index: 0;
-  }
+  // 字段带的左侧竖线已统一上移至 .block::before（层级导轨，同一竖列），此处不再
+  // 自带伪元素；折叠时整带 display:none，导轨由 .block 侧的时序闸门一并移除。
 }
 
 // 字段带随本块折叠一起隐藏：折叠 = 本块一切可折叠细节的布局移除（ADR-0045 D1 扩展）。
@@ -522,9 +524,20 @@
 
 // 子任务进度条（block 下方）：位于 block 内容与子节点列表之间；
 // 左侧对齐到上方任务图标右缘由 Block/index.vue 的 inline margin-left 提供（随 depth 变化）。
+// 折叠语义与字段带同款（ADR-0045 折叠范围扩展）：随本块折叠一起收敛，动画跑完后布局移除。
 .block-child-task-progress {
   margin-top: var(--space-1);
   margin-bottom: var(--space-1);
+  @include collapse-transition;
+}
+
+.block.is-collapsed>.block-child-task-progress {
+  @include collapse-collapsed;
+}
+
+// 折叠动画跑完之后（is-animating 已摘除）才移除布局 —— 与 .block-properties 的时序闸门同款。
+.block.is-collapsed:not(.is-animating)>.block-child-task-progress {
+  display: none;
 }
 
 // ===== 拖拽态 =====
@@ -575,8 +588,7 @@
 }
 
 .block-chosen::before,
-.block-chosen .block-children::before,
-.block-chosen .block-properties::before {
+.block-chosen .block::before {
   opacity: 0.3 !important;
 }
 

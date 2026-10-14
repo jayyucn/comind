@@ -26,8 +26,8 @@ import BlockDraggableList from './components/BlockDraggableList.vue'
 import TaskProgressBar from './components/TaskProgressBar.vue'
 import { useBlockCollapse } from './composables/useBlockCollapse'
 import { useBlockEditorLifecycle } from './composables/useBlockEditorLifecycle'
-import { useBlockFieldValueSync } from './composables/useBlockFieldValueSync'
 import { useBlockFieldRows } from './composables/useBlockFieldRows'
+import { useBlockFieldValueSync } from './composables/useBlockFieldValueSync'
 import { useChildTaskProgress } from './composables/useTaskProgress'
 import './handlers/bullet'
 import './handlers/code'
@@ -663,7 +663,9 @@ watch(isActive, (active) => {
     </div>
 
     <!-- 子任务进度条：子 block 含任务项（status 字段）时显示在 block 下方；
-         Canceled/Archived 不参与，全部删除后随树重建自动消失 -->
+         Canceled/Archived 不参与，全部删除后随树重建自动消失。
+         随本块折叠一起隐藏（`.block.is-collapsed > .block-child-task-progress`，见 _block.scss）——
+         与字段带、子树同属「本块的可折叠细节」（ADR-0045 折叠范围扩展）。 -->
     <TaskProgressBar
       v-if="childTaskProgress"
       :done="childTaskProgress.done"
@@ -686,7 +688,6 @@ watch(isActive, (active) => {
       :parent-id="node.id"
       :depth="depth + 1"
       :class="childrenContainerClass"
-      :style="{ '--indent-depth': depth }"
       @drag-end="intent => onDragEnd?.(intent)"
     />
   </div>
