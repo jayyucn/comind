@@ -237,6 +237,47 @@ describe('useBlockEditorLifecycle', () => {
       const calledContentLen = blockStore.blocks[0].content.length
       expect(calledTextOffset).toBeGreaterThanOrEqual(calledContentLen)
     })
+
+    it('纯行尾拆分（content 不变、renderSegments 有效）不 await 落库（修复 Enter 卡顿）', async () => {
+      const { blockStore, editorStore } = setup()
+      blockStore.blocks = [{
+        id: 'b1', pageId: 'p1', parentId: null, pos: 0,
+        content: 'hello', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0,
+        renderSegments: [{ start: 0, end: 5, type: 'text', value: 'hello' }]
+      }]
+      vi.spyOn(blockStore, 'getBlock').mockReturnValue(blockStore.blocks[0] as any)
+      const flushSpy = vi.spyOn(blockStore, 'flushSave').mockResolvedValue(undefined)
+      vi.spyOn(blockStore, 'insertBlockAtCursor').mockResolvedValue({
+        id: 'b2', pageId: 'p1', parentId: null, pos: 1,
+        content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
+      } as any)
+      vi.spyOn(editorStore, 'deactivateBlock').mockImplementation(() => {})
+      vi.spyOn(editorStore, 'activateBlock').mockImplementation(() => {})
+
+      // editorRef.getText() 与 content 一致 → content 不变，不触发 encode 改写
+      const editorRef = ref({
+        getText: () => 'hello',
+        markSaved: () => {},
+        cancelDebouncedSave: () => {},
+      } as any)
+      const blockId = ref('b1')
+      const cursorPos = ref(0)
+      const collapsed = ref(false)
+      const relationshipCleanup = useBlockRelationshipCleanup()
+      const lifecycle2 = useBlockEditorLifecycle({
+        blockId, pageId: 'p1',
+        editorRef, cursorPos, collapsed,
+        blockStore, editorStore, pageStore: usePageStore(),
+        relationshipCleanup
+      })
+
+      // 光标在行尾：pmPos = 6 (5 chars + 1)
+      await lifecycle2.handleSplit(6)
+
+      // 核心断言：行尾拆分不再 await WASM 落库，光标可立即落位
+      expect(flushSpy).not.toHaveBeenCalled()
+      expect(blockStore.insertBlockAtCursor).toHaveBeenCalled()
+    })
   })
 
   describe('handleContentMousedown', () => {

@@ -99,7 +99,7 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
    * `commitTags`（默认 true = 提交动作）透传给建签门：Editor 的防抖打字保存传 false，
    * `#f`、`#fo` 这类中间前缀不落标签表；blur / 拆分 / 缩进等 withContentSync 操作走 true。
    */
-  async function handleSave(content: string, commitTags = true) {
+  async function handleSave(content: string, commitTags = true, flush = true) {
     // 编辑态显示中文 label → 存储英文 type（encode）
     // 快照保证改名后未编辑的 label 也能还原为原始 type
     const snapshot = takeRelationshipSnapshot(blockId.value)
@@ -107,7 +107,8 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     await blockStore.updateBlockContent(blockId.value, stored, { commitTags })
     // 方案 A: 立即 flush，确保 renderSegments 已写回，
     // 避免后续 deactivateBlock 时渲染组件因 renderSegments=undefined 闪现纯文本。
-    await blockStore.flushSave(blockId.value)
+    // flush=false 时不阻塞等待落库（落库改由防抖后台调度），用于拆分等需低延迟的场景。
+    if (flush) await blockStore.flushSave(blockId.value)
   }
 
   async function handleLanguageChange(lang: string) {
@@ -115,45 +116,60 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
   }
 
   /** 同步 block 未保存内容到 store */
-  async function syncBlockContent() {
+  async function syncBlockContent(flush = true) {
     if (editorRef.value) {
       editorRef.value.markSaved()
       const editorComponent = editorRef.value
       if (editorComponent.cancelDebouncedSave) {
         editorComponent.cancelDebouncedSave()
       }
-      await handleSave(editorRef.value.getText())
+      await handleSave(editorRef.value.getText(), true, flush)
     }
   }
 
-  /** 高阶函数：统一处理内容同步 */
-  function withContentSync<T extends (...args: never[]) => Promise<void>>(fn: T): T {
+  /** 高阶函数：统一处理内容同步
+   * @param opts.flush 是否 await 强制落库（默认 true）。false 时仅做内存 encode 同步 +
+   *   防抖后台调度保存，不阻塞后续结构操作；由调用方在确有需要时（如中部分拆 renderSegments
+   *   被清空）自行 await flushSave。 */
+  function withContentSync<T extends (...args: never[]) => Promise<void>>(fn: T, opts: { flush?: boolean } = {}): T {
     return (async (...args: Parameters<T>) => {
-      await syncBlockContent()
+      await syncBlockContent(opts.flush ?? true)
       return fn(...args)
     }) as T
   }
 
   // ── 编辑操作 ──
   const handleSplit = withContentSync(async (cursorPosArg: number) => {
-    // 必须先 flush：withContentSync 里的 handleSave 只更新了内存 state 并 debounce 保存，
-    // insertBlockAtCursor 拆分时读的是 store 里的 content。若 store 仍是 decode 后的中文 label
-    // （如 ((是一个))），拆分后的后半段会携带未 encode 的 label 入库，导致 "((是一个))[[D]]s" + "d"
-    // 的拆坏问题（typed link 场景）。flush 确保 store 与持久层都是 encode 后的 type 文本。
-    await blockStore.flushSave(blockId.value)
+    // withContentSync(flush:false) 已做 encode 内存同步（updateBlockContent，非阻塞防抖调度保存）。
+    // 若原块 content 实际改变（中部分拆改写 content、或行尾/行首含 typed-link 需 decode→encode），
+    // updateBlockContent 会清空 renderSegments。此时必须 await 落库回写 renderSegments：
+    //   1) 避免失活瞬间因 renderSegments=undefined 闪现纯文本；
+    //   2) 中部分拆的 decoded→encoded 偏移换算依赖有效 segments。
+    // 纯行尾/行首且 content 不变时 renderSegments 仍有效、内容也已在打字时落库，跳过落库即可
+    // 让光标立即落位（修复行尾 Enter 卡顿：避免被 WASM 落库的 ~34–386ms 阻塞）。
+    const oldBlock = blockStore.getBlock(blockId.value)
+    const segmentsCleared = !oldBlock?.renderSegments
+
+    // 拆分类型预判（decoded 文本层，无需 segments）用于下方偏移换算分支
+    const decodedText = editorRef.value ? editorRef.value.getText() : ''
+    const decodedOffset = cursorPosArg > 0 ? cursorPosArg - 1 : 0  // pmPosToTextOffset
+    const atLineEnd = decodedOffset >= decodedText.length
+    const atLineStart = decodedOffset === 0
+
+    if (segmentsCleared) {
+      await blockStore.flushSave(blockId.value)
+    }
 
     // ── 坐标转换：ProseMirror 坐标基于编辑器显示的 decoded 文本，
     //    但 block.content 是 encoded 文本。type/label 长度不同时偏移不匹配。
     //    将 decoded 偏移转换为 encoded 偏移，确保拆分位置正确。
     let effectivePos = cursorPosArg
     if (editorRef.value) {
-      const decodedText = editorRef.value.getText()
-      const decodedOffset = cursorPosArg > 0 ? cursorPosArg - 1 : 0  // pmPosToTextOffset
       const encodedContent = blockStore.getBlock(blockId.value)?.content ?? ''
-      if (decodedOffset >= decodedText.length) {
+      if (atLineEnd) {
         // 行尾：直接设为 encoded content 的行尾
         effectivePos = encodedContent.length + 1
-      } else if (decodedOffset === 0) {
+      } else if (atLineStart) {
         // 行首：无需转换
         effectivePos = 1
       } else {
@@ -177,7 +193,7 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     if (newBlock) {
       editorStore.activateBlock(newBlock.id, 1)
     }
-  })
+  }, { flush: false })
 
   const handleMerge = withContentSync(async () => {
     editorStore.deactivateBlock()
