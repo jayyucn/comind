@@ -15,9 +15,15 @@
  *   换行符 \n 在单行渲染（预览/列表）下会塌缩，必须补，否则与上一行内容粘连成 `x@...`
  * - 右侧：行尾（null/''）或紧跟非空白字符 → 补尾随空格；已有时（' '/\n/tab/nbsp）不补
  */
-export function padInlineUnit(left: string | null, right: string | null, unit: string): string {
+export function padInlineUnit(
+  left: string | null,
+  right: string | null,
+  unit: string,
+  opts?: { noLeftPad?: boolean }
+): string {
   let padded = unit
   const leftNeedsSpace =
+    !opts?.noLeftPad &&
     left !== null && left !== '' && left !== ' ' && left !== '\t' && left !== '\u00A0'
   if (leftNeedsSpace) padded = ` ${padded}`
   if (!right || !/\s/.test(right)) padded = `${padded} `
@@ -32,9 +38,13 @@ export function padInlineUnit(left: string | null, right: string | null, unit: s
  * 行首细分：from===0 是块首（左邻无内容）→ 不补左；from>0 但 textBetween 跨段落边界
  * 返回 '' 是段首（换行后的行首）→ 按 \n 处理补左，防单行渲染（预览/列表）下换行塌缩
  * 导致单元与上一段内容粘连成 `x@...`。
+ *
+ * 例外：wiki link 紧跟关系括号收尾（`((type))` / `（（type））`）时不补左空格 —— 两者同属
+ * 一个关系语法单元 `((type))[[x]]`，补空格会把 `))[[` 劈开；后端 RE_TYPED 要求紧邻，
+ * 劈开后该关系整体失效（links 表丢 relationship_type、`((type))` 渲染裸显）。
  */
 export function padUnitForDoc(
-  doc: { textBetween: (from: number, to: number) => string },
+  doc: { textBetween: (from: number, to: number) => string; resolve?: (pos: number) => { parentOffset: number } },
   from: number,
   to: number,
   unit: string
@@ -43,5 +53,15 @@ export function padUnitForDoc(
   const leftRaw = from > 0 ? doc.textBetween(from - 1, from) : ''
   const left = atBlockStart ? null : leftRaw === '' ? '\n' : leftRaw
   const right = doc.textBetween(to, to + 1)
-  return padInlineUnit(left, right, unit)
+
+  // parentOffset 限定在同一文本块内判断，避免跨块误读上一块结尾的 `))`；
+  // doc.resolve 缺失（单测简易 mock）时退化为原行为。
+  const parentOffset = doc.resolve ? doc.resolve(from).parentOffset : null
+  const joinsRelationUnit =
+    unit.startsWith('[[') &&
+    parentOffset !== null &&
+    parentOffset >= 2 &&
+    /^[）)]{2}$/.test(doc.textBetween(from - 2, from))
+
+  return padInlineUnit(left, right, unit, { noLeftPad: joinsRelationUnit })
 }

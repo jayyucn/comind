@@ -110,4 +110,37 @@ describe('padUnitForDoc — PM doc 邻字符读取', () => {
     // '#标签' 占 pos 2..5，左邻 '看' 补左，右邻 ' ' 不补右
     expect(padUnitForDoc(doc, 2, 5, '#标签')).toBe(' #标签')
   })
+
+  describe('关系语法单元：wiki link 紧跟 ((type)) 收尾时不补左空格', () => {
+    /** 带 resolve 的 mock：PM 坐标 pos 的 parentOffset = pos - 1（单段文档） */
+    function mockDocResolvable(text: string) {
+      return {
+        ...mockDoc(text),
+        resolve: (pos: number) => ({ parentOffset: pos - 1 }),
+      }
+    }
+
+    it('左邻 )) （英文括号）：不补左 —— 否则 ))[[ 被劈开、关系语法整体失效', () => {
+      const doc = mockDocResolvable('a((rel))')
+      // '((rel))' 占 pos 2..8，插入点 pos 9（末尾）；左邻 ')'、再左 ')' → 关系收尾
+      expect(padUnitForDoc(doc, 9, 9, '[[页面]]')).toBe('[[页面]] ')
+    })
+
+    it('左邻 ））（中文括号）：同样不补左', () => {
+      // 'a（（关系））' 共 7 字符，插入点在其后 = pos 8
+      const doc = mockDocResolvable('a（（关系））')
+      expect(padUnitForDoc(doc, 8, 8, '[[页面]]')).toBe('[[页面]] ')
+    })
+
+    it('左邻普通 ) （非关系语法，如 (note)）：照常补左', () => {
+      const doc = mockDocResolvable('(note)')
+      // ')' 前是 'e' 不是 '(' → 不构成 ((...)) 收尾
+      expect(padUnitForDoc(doc, 7, 7, '[[页面]]')).toBe(' [[页面]] ')
+    })
+
+    it('同样左邻 ))，但单元是 #tag：照常补左（例外只针对 wiki link）', () => {
+      const doc = mockDocResolvable('a((rel))')
+      expect(padUnitForDoc(doc, 9, 9, '#标签')).toBe(' #标签 ')
+    })
+  })
 })

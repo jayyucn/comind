@@ -85,10 +85,14 @@ pub fn extract_links_from_content(content: &str) -> Vec<LinkDraft> {
         }
     }
 
-    // 2) Typed internal links: ((type))[[target|alias]] or ((type))[[target]]
+    // 2) Typed internal links: ((type))[[target|alias]] / （（type））[[target]]
+    //    开/闭括号允许英文 (( / )) 或中文 （（ / ））（可混用）；`)`/`）` 与 `[[` 之间允许空白。
+    //    容忍空白是必需的：wiki link 补全在左邻是内容字符时会给 `[[x]]` 补一个空格
+    //    （inline-unit-pad.ts），若强制紧邻，`((type)) [[target]]` 会被整段判为非关系语法
+    //    ⇒ links 表丢 relationship_type ⇒ 渲染退回 text 段、`((type))` 裸显。
     static RE_TYPED: OnceLock<Regex> = OnceLock::new();
     let typed_re = RE_TYPED
-        .get_or_init(|| Regex::new(r"\(\(([^)]+)\)\)\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]").unwrap());
+        .get_or_init(|| Regex::new(r"[（(]{2}([^）)]+)[）)]{2}\s*\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]").unwrap());
     for caps in typed_re.captures_iter(content) {
         let m = caps.get(0).unwrap();
         let target = caps.get(2).unwrap().as_str().trim();
@@ -394,6 +398,30 @@ mod tests {
         let links = extract_links_from_content("((depends-on))[[项目A]]");
         assert_eq!(links.len(), 1);
         assert_eq!(links[0].target_title, "项目A");
+        assert_eq!(links[0].relationship_type.as_deref(), Some("depends-on"));
+    }
+
+    #[test]
+    fn test_extract_typed_link_with_space_before_brackets() {
+        // wiki link 补全会给 [[x]] 补左空格（inline-unit-pad）—— 空格不得破坏关系识别
+        let links = extract_links_from_content("((depends-on)) [[项目A]]");
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].target_title, "项目A");
+        assert_eq!(links[0].relationship_type.as_deref(), Some("depends-on"));
+    }
+
+    #[test]
+    fn test_extract_typed_link_with_cjk_parens() {
+        let links = extract_links_from_content("（（depends-on））[[项目A]]");
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].target_title, "项目A");
+        assert_eq!(links[0].relationship_type.as_deref(), Some("depends-on"));
+    }
+
+    #[test]
+    fn test_extract_typed_link_with_cjk_parens_and_space() {
+        let links = extract_links_from_content("（（depends-on）） [[项目A]]");
+        assert_eq!(links.len(), 1);
         assert_eq!(links[0].relationship_type.as_deref(), Some("depends-on"));
     }
 

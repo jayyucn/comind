@@ -121,6 +121,52 @@ mod tests {
         Ok(())
     }
 
+    /// 关系括号与 `[[ ]]` 之间允许空白、允许中文括号。
+    /// wiki 补全会给 `[[x]]` 补左空格（inline-unit-pad），编辑态可能写中文括号 ——
+    /// 修复前 `search_content` 字面拼 `((type))[[target]]`，差一个空格即定位失败 ⇒ `((type))` 裸显。
+    #[test]
+    fn test_typed_link_with_space_and_cjk_parens() -> Result<(), Box<dyn Error>> {
+        let mut adapter = SQLiteAdapter::open_in_memory()?;
+        let src_page = PageService::create(&mut adapter, "", "Src", None, None, None, None, None)?;
+
+        RelationshipTypeService::create(
+            &mut adapter, None, "relates", None,
+            "相关", "被相关", "#3B82F6", 0, "medium", 0,
+        )?;
+        let target = PageService::create(&mut adapter, "", "Target", None, None, None, None, None)?;
+
+        // ① 英文括号 + 空格（wiki 补全产生的形态）
+        let b1 = BlockService::create(
+            &mut adapter, &src_page.id, None,
+            "((relates)) [[Target]]", "{}", "bullet", None,
+        true)?;
+        LinkService::create(&mut adapter, &b1.id, &target.id, "Target", Some("relates"))?;
+        let segs1 = build_segments_for_block(&mut adapter, &b1)?;
+        let (s1, e1) = segs1.iter().find_map(|s| match s {
+            RenderSegment::TypedLink { start, end, relationship_type, .. } => {
+                assert_eq!(relationship_type.as_str(), "relates");
+                Some((*start, *end))
+            }
+            _ => None,
+        }).expect("带空格的关系语法应产出 TypedLink 段");
+        assert_eq!(s1, 0, "TypedLink 应从关系括号起（不含前导文本）");
+        assert_eq!(e1, "((relates)) [[Target]]".len(), "TypedLink 应覆盖含空格的整段");
+
+        // ② 中文括号 + 空格（编辑态可能写入的形态）
+        let b2 = BlockService::create(
+            &mut adapter, &src_page.id, None,
+            "（（relates）） [[Target]]", "{}", "bullet", None,
+        true)?;
+        LinkService::create(&mut adapter, &b2.id, &target.id, "Target", Some("relates"))?;
+        let segs2 = build_segments_for_block(&mut adapter, &b2)?;
+        assert!(
+            segs2.iter().any(|s| matches!(s, RenderSegment::TypedLink { .. })),
+            "中文括号关系语法也应产出 TypedLink 段"
+        );
+
+        Ok(())
+    }
+
     /// Test that Chinese content produces correct char-based offsets (not byte offsets).
     /// This ensures JS String.slice(start, end) works correctly.
     #[test]

@@ -3,6 +3,7 @@ use crate::{
     storage::repository,
     services::{DateRefService, FieldValueService, TagService},
 };
+use regex::Regex;
 use std::collections::HashMap;
 use std::error::Error;
 
@@ -346,21 +347,32 @@ fn build_segments(
 }
 
 /// Search for `((type))[[target|display]]` in content, return (start, end) offsets.
+/// 在 content 中定位一条 typed link 的字节范围（`((type))[[target]]` 整段）。
+///
+/// 不能用 `content.find("((type))[[target]]")` 字面拼接：① wiki link 补全会在 `))` 与
+/// `[[` 之间补一个空格（inline-unit-pad.ts）；② 编辑态可能写中文括号 `（（type））`。
+/// 故先定位关系括号段，跳过其后的空白，再匹配三种 `[[...]]` 字面量之一。
 fn search_content(content: &str, rel_type: &str, target: &str, display: &str) -> (Option<usize>, Option<usize>) {
-    // Try: ((type))[[target|display]]
-    let p1 = format!("(({}))[[{}|{}]]", rel_type, target, display);
-    if let Some(s) = content.find(&p1) {
-        return (Some(s), Some(s + p1.len()));
-    }
-    // Try: ((type))[[target]]
-    let p2 = format!("(({}))[[{}]]", rel_type, target);
-    if let Some(s) = content.find(&p2) {
-        return (Some(s), Some(s + p2.len()));
-    }
-    // Try: ((type))[[display]] (alias only)
-    let p3 = format!("(({}))[[{}]]", rel_type, display);
-    if let Some(s) = content.find(&p3) {
-        return (Some(s), Some(s + p3.len()));
+    // 关系括号段：`((type))` / `（（type））`（开闭括号英/中文皆可、可混用）
+    let open_re = match Regex::new(&format!(r"[（(]{{2}}{}[）)]{{2}}", regex::escape(rel_type))) {
+        Ok(re) => re,
+        Err(_) => return (None, None),
+    };
+    // 三种 [[...]] 字面量（顺序与原字面拼接一致：target|display → target → display 别名兜底）
+    let link_literals = [
+        format!("[[{}|{}]]", target, display),
+        format!("[[{}]]", target),
+        format!("[[{}]]", display),
+    ];
+    for m in open_re.find_iter(content) {
+        let rest = &content[m.end()..];
+        let trimmed = rest.trim_start();
+        let skipped = rest.len() - trimmed.len();
+        for lit in &link_literals {
+            if trimmed.starts_with(lit.as_str()) {
+                return (Some(m.start()), Some(m.end() + skipped + lit.len()));
+            }
+        }
     }
     (None, None)
 }
