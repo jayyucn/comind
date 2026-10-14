@@ -61,7 +61,7 @@
 // ink 2%/5% 在浅色主题为微暗纱、深色主题为微亮纱，自动适配。
 // 曾另有「有右侧 chips 时整行铺同色底」的规则（靠连通性表达文字与属性同属一块），
 // 随行内 chips 渲染位下线一并移除（ADR-0050 D20）。
-.block>.block-row:hover {
+.block-content:hover {
   border-radius: $radius-xs;
   background: color-mix(in srgb, var(--color-ink) 5%, transparent);
   transition: background var(--dur-fast) var(--ease-out);
