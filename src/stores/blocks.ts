@@ -756,15 +756,49 @@ export const useBlockStore = defineStore('blocks', () => {
           }
         }
 
+        // 切点对齐（其余结构化段）：切点落在 link / typed_link / tag 段内部时推至该段末尾 ——
+        // 既避免切出残缺标记（`...[[D` / `((part-of`），也保证下方 segments 裁剪不产生跨界段。
+        // date-ref 已由上面的正则处理，此处覆盖其余非 text 段（segments 即 Rust 权威段边界）。
+        const sourceSegments = block.renderSegments
+        if (sourceSegments) {
+          for (const seg of sourceSegments) {
+            if (seg.type !== 'text' && textOffset > seg.start && textOffset < seg.end) {
+              textOffset = seg.end
+              before = block.content.slice(0, textOffset)
+              after = block.content.slice(textOffset)
+              break
+            }
+          }
+        }
+
         // 更新当前节点的内容（前半部分）
         block.content = before
         block.updatedAt = Date.now()
-        // 内容变更后清除过时的 renderSegments（同 updateBlockContent 逻辑）
-        block.renderSegments = undefined
+        // 旧块紧接着失活 → BulletRender 读 renderSegments。此处**同步**裁剪出 before 的段而非置
+        // undefined：undefined 会走纯文本回退，`((type))` 关系语法裸显（`[[x]]` / `#tag` 尚能自救，
+        // 仅关系语法不能 —— 见 BulletRender.normalContent 的 segments 缺失分支）。
+        // 不能用「切片后 await flushSave」替代：handleSplit 已先 deactivateBlock，Vue 的渲染 flush
+        // 早于任何 await 落库完成，等到回写时裸标记已画出一帧以上。
+        // 裁剪只做边界切割、不引入解析，不破坏「关系解析单源在 Rust」；落库后 _doSave 会用 Rust
+        // 重算值覆盖（content guard 通过），二者内容一致。切点已对齐到段边界，故非 text 段不跨界，
+        // 只有尾部 text 段需要截断。
+        block.renderSegments = sourceSegments
+          ? sourceSegments
+              .filter(s => s.start < textOffset)
+              .map(s => (s.type === 'text' && s.end > textOffset ? { ...s, end: textOffset } : s))
+          : undefined
         _scheduleSave(block)
 
         // 在指定位置插入新节点（后半部分）
         newBlock = await insertAtPosition(block.pageId, newParentId, after, block, childBlocks, hasExpandedChildren, blockFormat)
+
+        // 新块同样按 after 裁剪出平移后的段：新块先以编辑态呈现（编辑器渲染原文、不吃 segments），
+        // 但失活后会走 BulletRender，缺 segments 会重演同一裸显。
+        if (newBlock && sourceSegments) {
+          newBlock.renderSegments = sourceSegments
+            .filter(s => s.end > textOffset)
+            .map(s => ({ ...s, start: Math.max(s.start, textOffset) - textOffset, end: s.end - textOffset }))
+        }
       } else {
         // ── 行尾：无文本拆分 ─────────────────────────────────────────────
         newBlock = await insertAtPosition(block.pageId, newParentId, '', block, childBlocks, hasExpandedChildren, blockFormat)
@@ -790,17 +824,15 @@ export const useBlockStore = defineStore('blocks', () => {
     block: Block,
     blockFormat?: Block['format']
   ): Promise<Block> {
-    // 预先捕获 nextPos，避免 renumber 后 block.pos 被就地修改导致回调中的 nextPos 偏离
-    const originalNextPos = block.pos
-
+    // 两个邻居都必须在回调内现取：gap 耗尽恢复会就地重编号（renumberBlocks 直接改写
+    // block.pos），预捕获的 nextPos 会变成陈旧值，与现取的 prev 混算 → 落点漂到块栈中部。
     const calcPositions = () => {
       const siblings = getSortedSiblings(blocks.value, block, false)
       const blockIndex = findBlockIndex(siblings, block.id)
       const prevSibling = blockIndex > 0 ? siblings[blockIndex - 1] : undefined
       return {
         prevPos: prevSibling?.pos ?? null,
-        // 必须用原始 nextPos，不能用 block.pos（renumber 后 block.pos 已改变）
-        nextPos: originalNextPos
+        nextPos: block.pos
       }
     }
 
@@ -843,9 +875,6 @@ export const useBlockStore = defineStore('blocks', () => {
   ): Promise<Block> {
     let newPos: number
 
-    // 预先捕获 refBlock.pos，避免 renumber 后 refBlock.pos 被就地修改
-    const originalPrevPos = refBlock.pos
-
     if (asFirstChild) {
       // 作为第一个子节点：插入到现有子节点之前
       const calcPositions = () => {
@@ -866,12 +895,14 @@ export const useBlockStore = defineStore('blocks', () => {
       )
     } else {
       // 作为下方兄弟节点：插入到 refBlock 之后
+      // 两个邻居都必须在回调内现取而非外面快照：gap 耗尽恢复会就地重编号（renumberBlocks
+      // 直接改写 refBlock.pos），任何预捕获的 pos 都会变成陈旧值；把它与现取的 next
+      // 混算会得到「陈旧 prev ↔ 新 next」的中点 → 落点漂到块栈中部（行尾连续 Enter 实证）。
       const calcPositions = () => {
         // 重编号后重新获取兄弟节点
         const nextSibling = getNextSibling(blocks.value, refBlock)
         return {
-          // 必须用原始 prevPos，不能用 refBlock.pos（renumber 后已改变）
-          prevPos: originalPrevPos,
+          prevPos: refBlock.pos,
           nextPos: nextSibling?.pos ?? null
         }
       }
@@ -1524,17 +1555,19 @@ export const useBlockStore = defineStore('blocks', () => {
       : undefined
     const parentId = anchor ? anchor.parentId : (opts.fallbackParentId ?? null)
 
-    // 插入点：锚点之后（nextSiblingId 为锚点的后继，重编号后动态取 pos）
+    // 插入点：锚点之后。两个邻居都按 **id 记录、回调内现取 pos** —— gap 耗尽恢复会就地
+    // 重编号（renumberBlocks 改写 blocks.value 里每个块的 pos），任何预先取出的数值快照
+    // 都会变陈旧，与现取的另一侧混算会把落点漂到块栈中部（同 insertAtPosition 的缺陷）。
     let nextSiblingId: string | null = null
-    let prevPos: number | null = null
+    let prevAnchorId: string | null = null
     {
       const siblings = getSortedChildren(blocks.value, parentId, opts.pageId)
       if (anchor) {
         const idx = siblings.findIndex(b => b.id === anchor.id)
         nextSiblingId = idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1].id : null
-        prevPos = anchor.pos
+        prevAnchorId = anchor.id
       } else {
-        prevPos = siblings.length > 0 ? siblings[siblings.length - 1].pos : null
+        prevAnchorId = siblings.length > 0 ? siblings[siblings.length - 1].id : null
       }
     }
 
@@ -1559,7 +1592,7 @@ export const useBlockStore = defineStore('blocks', () => {
     const created: Block[] = []
     const fieldValueJobs: { blockId: string; properties: NonNullable<BlockClipPayload['properties']> }[] = []
 
-    const insertTree = async (node: BlockClipPayload, parent: string | null, pos: number): Promise<void> => {
+    const insertTree = async (node: BlockClipPayload, parent: string | null, pos: number): Promise<Block> => {
       const block = await createBlock({
         id: node.id ? idMap.get(node.id) : undefined,
         pageId: opts.pageId,
@@ -1575,19 +1608,21 @@ export const useBlockStore = defineStore('blocks', () => {
       for (let i = 0; i < node.children.length; i++) {
         await insertTree(node.children[i], block.id, (i + 1) * 1000)
       }
+      return block
     }
+
+    const posOf = (id: string | null): number | null =>
+      id ? (blocks.value.find(b => b.id === id)?.pos ?? null) : null
 
     // 2. 顶层根依次插入插入点之后（D7/D8）
     for (const root of forest) {
       const calcPositions = () => ({
-        prevPos,
-        nextPos: nextSiblingId
-          ? (blocks.value.find(b => b.id === nextSiblingId)?.pos ?? null)
-          : null,
+        prevPos: posOf(prevAnchorId),
+        nextPos: posOf(nextSiblingId),
       })
-      const pos = await safeCalcInsertPos(prevPos, calcPositions().nextPos, blocks.value, calcPositions)
-      await insertTree(root, parentId, pos)
-      prevPos = pos
+      const { prevPos, nextPos } = calcPositions()
+      const pos = await safeCalcInsertPos(prevPos, nextPos, blocks.value, calcPositions)
+      prevAnchorId = (await insertTree(root, parentId, pos)).id
     }
 
     // 3. 先落库再建字段值（FK：field_value 表引用已存在的 block）

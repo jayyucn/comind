@@ -65,6 +65,27 @@ vi.mock('../../../composables/useDateTimePickerPanel', async () => {
   }
 })
 
+// 中间拆分的 decoded→encoded 偏移换算必须走 render-text.ts 单一 seam。单测环境里关系类型
+// 注册表为空（label 回退成 type、可见长度恰等于存储长度），真实换算退化为恒等 —— 无法用
+// 真实值区分「走了 seam」与「直通 decodedOffset」。故把 seam 换成可断言的转发桩：
+// 默认转发真实实现（不改变其它用例语义），中间拆分用例里再覆写返回值以钉住路由与参数接线。
+const { renderedOffsetSpy, actualRenderedOffset } = vi.hoisted(() => ({
+  renderedOffsetSpy: vi.fn(),
+  actualRenderedOffset: { fn: null as null | ((content: string, segments: unknown, offset: number) => number) }
+}))
+
+vi.mock('../../../services/render-text', async () => {
+  const actual = await vi.importActual<typeof import('../../../services/render-text')>(
+    '../../../services/render-text'
+  )
+  actualRenderedOffset.fn = actual.renderedOffsetToEncodedOffset
+  return {
+    ...actual,
+    renderedOffsetToEncodedOffset: (content: string, segments: unknown, offset: number) =>
+      renderedOffsetSpy(content, segments, offset)
+  }
+})
+
 // selection-geometry 依赖 document.elementFromPoint / caretRangeFromPoint（jsdom 无布局），
 // 桩掉它才能断言 handleContentMousedown 是否真的启动了文本选区追踪。
 const { blockOffsetFromPointMock, caretBlockOffsetMock } = vi.hoisted(() => ({
@@ -83,6 +104,8 @@ describe('useBlockEditorLifecycle', () => {
     vi.clearAllMocks()
     blockOffsetFromPointMock.mockReset()
     caretBlockOffsetMock.mockReset()
+    // 默认转发真实实现：只有显式覆写的用例才改变换算结果
+    renderedOffsetSpy.mockImplementation(actualRenderedOffset.fn!)
   })
 
   function setup(selection?: { startTextTracking: (a: unknown, p: unknown) => void; toggleBlock: () => void }) {
@@ -277,6 +300,249 @@ describe('useBlockEditorLifecycle', () => {
       // 核心断言：行尾拆分不再 await WASM 落库，光标可立即落位
       expect(flushSpy).not.toHaveBeenCalled()
       expect(blockStore.insertBlockAtCursor).toHaveBeenCalled()
+    })
+
+    it('行首拆分：不发多余落库且 effectivePos=1', async () => {
+      const { blockStore, editorStore } = setup()
+      blockStore.blocks = [{
+        id: 'b1', pageId: 'p1', parentId: null, pos: 0,
+        content: 'hello', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0,
+        renderSegments: [{ start: 0, end: 5, type: 'text', value: 'hello' }]
+      }]
+      vi.spyOn(blockStore, 'getBlock').mockReturnValue(blockStore.blocks[0] as any)
+      const flushSpy = vi.spyOn(blockStore, 'flushSave').mockResolvedValue(undefined)
+      const insertSpy = vi.spyOn(blockStore, 'insertBlockAtCursor').mockResolvedValue({
+        id: 'b2', pageId: 'p1', parentId: null, pos: 0,
+        content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
+      } as any)
+      vi.spyOn(editorStore, 'deactivateBlock').mockImplementation(() => {})
+      vi.spyOn(editorStore, 'activateBlock').mockImplementation(() => {})
+
+      const editorRef = ref({
+        getText: () => 'hello',
+        markSaved: () => {},
+        cancelDebouncedSave: () => {},
+      } as any)
+      const lifecycle2 = useBlockEditorLifecycle({
+        blockId: ref('b1'), pageId: 'p1',
+        editorRef,
+        cursorPos: ref(0), collapsed: ref(false),
+        blockStore, editorStore, pageStore: usePageStore(),
+        relationshipCleanup: useBlockRelationshipCleanup()
+      })
+
+      await lifecycle2.handleSplit(1)  // 行首（decodedOffset = 0）
+      expect(flushSpy).not.toHaveBeenCalled()
+      expect(insertSpy.mock.calls[0][1]).toBe(1)
+    })
+
+    it('新空块（content 空、无 renderSegments）行尾拆分不 await 落库（连按回车热路径）', async () => {
+      const { blockStore, editorStore } = setup()
+      // Enter 建出的空块：createBlock 不产 renderSegments，且行尾拆分只 _scheduleSave 不 await 落库
+      blockStore.blocks = [{
+        id: 'b1', pageId: 'p1', parentId: null, pos: 0,
+        content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
+      }]
+      vi.spyOn(blockStore, 'getBlock').mockReturnValue(blockStore.blocks[0] as any)
+      const flushSpy = vi.spyOn(blockStore, 'flushSave').mockResolvedValue(undefined)
+      const insertSpy = vi.spyOn(blockStore, 'insertBlockAtCursor').mockResolvedValue({
+        id: 'b2', pageId: 'p1', parentId: null, pos: 1,
+        content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
+      } as any)
+      vi.spyOn(editorStore, 'deactivateBlock').mockImplementation(() => {})
+      const activateSpy = vi.spyOn(editorStore, 'activateBlock').mockImplementation(() => {})
+
+      const editorRef = ref({
+        getText: () => '',
+        markSaved: () => {},
+        cancelDebouncedSave: () => {},
+      } as any)
+      const lifecycle2 = useBlockEditorLifecycle({
+        blockId: ref('b1'), pageId: 'p1',
+        editorRef,
+        cursorPos: ref(0), collapsed: ref(false),
+        blockStore, editorStore, pageStore: usePageStore(),
+        relationshipCleanup: useBlockRelationshipCleanup()
+      })
+
+      await lifecycle2.handleSplit(1)
+      // 空白新块没有可回写的 renderSegments —— 不得把真实 WASM 写拉回热路径
+      expect(flushSpy).not.toHaveBeenCalled()
+      expect(insertSpy).toHaveBeenCalled()
+      expect(activateSpy).toHaveBeenCalledWith('b2', 1)
+    })
+
+    it('拆分未完成时再次 Enter：不并发重拆原块，两次都兑现（连按不漏、不跳错块）', async () => {
+      const { blockStore, editorStore } = setup()
+      blockStore.blocks = [{
+        id: 'b1', pageId: 'p1', parentId: null, pos: 0,
+        content: 'hello', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0,
+        renderSegments: [{ start: 0, end: 5, type: 'text', value: 'hello' }]
+      }]
+      vi.spyOn(blockStore, 'getBlock').mockReturnValue(blockStore.blocks[0] as any)
+
+      // 制造 in-flight 窗口：编辑器文本 ≠ store content ⇒ 同步改写 content ⇒ 清空 segments
+      // ⇒ 触发 flush（真实 WASM 落库，可挂起）。此时旧编辑器仍聚焦，第二次 Enter 会在窗口内重入。
+      let releaseFlush!: () => void
+      const flushGate = new Promise<void>(resolve => { releaseFlush = resolve })
+      const flushSpy = vi.spyOn(blockStore, 'flushSave').mockReturnValue(flushGate)
+
+      const newB2 = { id: 'b2', pageId: 'p1', parentId: null, pos: 1, content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 }
+      const newB3 = { id: 'b3', pageId: 'p1', parentId: null, pos: 2, content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 }
+      const insertSpy = vi.spyOn(blockStore, 'insertBlockAtCursor')
+        .mockResolvedValueOnce(newB2 as any)
+        .mockResolvedValueOnce(newB3 as any)
+      const deactivateSpy = vi.spyOn(editorStore, 'deactivateBlock').mockImplementation(() => {})
+      const activateSpy = vi.spyOn(editorStore, 'activateBlock').mockImplementation(() => {})
+
+      const editorRef = ref({
+        getText: () => 'helloX',
+        markSaved: () => {},
+        cancelDebouncedSave: () => {},
+      } as any)
+      const lifecycle2 = useBlockEditorLifecycle({
+        blockId: ref('b1'), pageId: 'p1',
+        editorRef,
+        cursorPos: ref(0), collapsed: ref(false),
+        blockStore, editorStore, pageStore: usePageStore(),
+        relationshipCleanup: useBlockRelationshipCleanup()
+      })
+
+      const p1 = lifecycle2.handleSplit(7)  // 'helloX' 行尾（pmPos = 7），卡在 flush
+      const p2 = lifecycle2.handleSplit(7)  // 连按：落在 in-flight 窗口
+      releaseFlush()
+      await Promise.all([p1, p2])
+
+      expect(flushSpy).toHaveBeenCalledTimes(1)          // 重入不得并发二次落库
+      expect(deactivateSpy).toHaveBeenCalledTimes(1)     // 只失活一次
+      expect(insertSpy).toHaveBeenCalledTimes(2)         // 两次 Enter 都兑现（不漏）
+      expect(insertSpy.mock.calls[0][0]).toBe('b1')      // 第一次拆原块
+      expect(insertSpy.mock.calls[1][0]).toBe('b2')      // 第二次拆新建块（而非并发重拆原块）
+      expect(activateSpy).toHaveBeenLastCalledWith('b3', 1)  // 光标停在最后一次新建块
+    })
+
+    it('中间拆分（纯文本）：decoded 偏移原样换算，且不 await 落库', async () => {
+      const { blockStore, editorStore } = setup()
+      blockStore.blocks = [{
+        id: 'b1', pageId: 'p1', parentId: null, pos: 0,
+        content: 'hello', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0,
+        renderSegments: [{ start: 0, end: 5, type: 'text', value: 'hello' }]
+      }]
+      vi.spyOn(blockStore, 'getBlock').mockReturnValue(blockStore.blocks[0] as any)
+      const flushSpy = vi.spyOn(blockStore, 'flushSave').mockResolvedValue(undefined)
+      const insertSpy = vi.spyOn(blockStore, 'insertBlockAtCursor').mockResolvedValue({
+        id: 'b2', pageId: 'p1', parentId: null, pos: 1,
+        content: 'lo', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
+      } as any)
+      vi.spyOn(editorStore, 'deactivateBlock').mockImplementation(() => {})
+      vi.spyOn(editorStore, 'activateBlock').mockImplementation(() => {})
+
+      const editorRef = ref({
+        getText: () => 'hello',
+        markSaved: () => {},
+        cancelDebouncedSave: () => {},
+      } as any)
+      const lifecycle2 = useBlockEditorLifecycle({
+        blockId: ref('b1'), pageId: 'p1',
+        editorRef, cursorPos: ref(0), collapsed: ref(false),
+        blockStore, editorStore, pageStore: usePageStore(),
+        relationshipCleanup: useBlockRelationshipCleanup()
+      })
+
+      await lifecycle2.handleSplit(4)  // decodedOffset = 3：既非行首(0)也非行尾(5) ⇒ 走中间分支
+
+      // 纯文本 encoded ≡ decoded ⇒ 换算为恒等（effectivePos = decodedOffset + 1）；
+      // 且 store 内容未变 ⇒ segments 未被清 ⇒ 无需落库
+      expect(insertSpy.mock.calls[0][1]).toBe(4)
+      expect(flushSpy).not.toHaveBeenCalled()
+    })
+
+    it('中间拆分（typed link）：偏移经 render-text 单一 seam 吸附换算（非恒等）', async () => {
+      const { blockStore, editorStore } = setup()
+      const encodedContent = '((part-of))[[D]]sd'  // 18 chars（存储态）
+      const segments = [
+        { start: 0, end: 16, type: 'typed_link', display_text: 'D', relationship_type: 'part-of' },
+        { start: 16, end: 18, type: 'text' },
+      ]
+      blockStore.blocks = [{
+        id: 'b1', pageId: 'p1', parentId: null, pos: 0,
+        content: encodedContent, format: {}, type: 'bullet', createdAt: 0, updatedAt: 0,
+        renderSegments: segments as any
+      }]
+      vi.spyOn(blockStore, 'getBlock').mockReturnValue(blockStore.blocks[0] as any)
+      const insertSpy = vi.spyOn(blockStore, 'insertBlockAtCursor').mockResolvedValue({
+        id: 'b2', pageId: 'p1', parentId: null, pos: 1,
+        content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
+      } as any)
+      vi.spyOn(editorStore, 'deactivateBlock').mockImplementation(() => {})
+      vi.spyOn(editorStore, 'activateBlock').mockImplementation(() => {})
+      vi.spyOn(blockStore, 'flushSave').mockResolvedValue(undefined)
+
+      // 让编辑器文本与 store 内容一致（往返编码后不变），把断言聚焦在「中间分支的换算」本身
+      const editorRef = ref({
+        getText: () => encodedContent,
+        markSaved: () => {},
+        cancelDebouncedSave: () => {},
+      } as any)
+      const lifecycle2 = useBlockEditorLifecycle({
+        blockId: ref('b1'), pageId: 'p1',
+        editorRef, cursorPos: ref(0), collapsed: ref(false),
+        blockStore, editorStore, pageStore: usePageStore(),
+        relationshipCleanup: useBlockRelationshipCleanup()
+      })
+
+      const decodedOffset = 8              // 落在 typed_link 的可见文本内（非行首/行尾）
+      const SEAM_RESULT = 16               // 桩返回值：encoded 偏移（真实实现会吸附到标记边界）
+      renderedOffsetSpy.mockReturnValue(SEAM_RESULT)
+
+      await lifecycle2.handleSplit(decodedOffset + 1)
+
+      // 中间分支必须把 (encoded content, 该块的 renderSegments, decoded 偏移) 交给 seam，
+      // 并以返回值 + 1 作为 effectivePos —— 直通 decodedOffset 或漏传 segments 都会被钉住
+      expect(renderedOffsetSpy).toHaveBeenCalledTimes(1)
+      expect(renderedOffsetSpy).toHaveBeenCalledWith(encodedContent, segments, decodedOffset)
+      expect(insertSpy.mock.calls[0][1]).toBe(SEAM_RESULT + 1)
+    })
+
+    it('拆分未兑现（未产出新块）不遗留悬挂计次：下一次 Enter 不多建块', async () => {
+      const { blockStore, editorStore } = setup()
+      blockStore.blocks = [{
+        id: 'b1', pageId: 'p1', parentId: null, pos: 0,
+        content: 'hello', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0,
+        renderSegments: [{ start: 0, end: 5, type: 'text', value: 'hello' }]
+      }]
+      vi.spyOn(blockStore, 'getBlock').mockReturnValue(blockStore.blocks[0] as any)
+      vi.spyOn(blockStore, 'flushSave').mockResolvedValue(undefined)
+      // 源块已不存在 ⇒ 拆分无法兑现
+      const insertSpy = vi.spyOn(blockStore, 'insertBlockAtCursor').mockResolvedValue(null)
+      vi.spyOn(editorStore, 'deactivateBlock').mockImplementation(() => {})
+      const activateSpy = vi.spyOn(editorStore, 'activateBlock').mockImplementation(() => {})
+
+      const editorRef = ref({
+        getText: () => 'hello',
+        markSaved: () => {},
+        cancelDebouncedSave: () => {},
+      } as any)
+      const lifecycle2 = useBlockEditorLifecycle({
+        blockId: ref('b1'), pageId: 'p1',
+        editorRef, cursorPos: ref(0), collapsed: ref(false),
+        blockStore, editorStore, pageStore: usePageStore(),
+        relationshipCleanup: useBlockRelationshipCleanup()
+      })
+
+      const p1 = lifecycle2.handleSplit(6)   // 失败
+      const p2 = lifecycle2.handleSplit(6)   // 连按：落在 in-flight 窗口 → 计次 +1
+      await Promise.all([p1, p2])
+      expect(insertSpy).toHaveBeenCalledTimes(1)   // 无锚点可续 ⇒ 不再 drain
+
+      // 后续一次正常 Enter：计次若悬挂，这里会多 drain 一个块（3 次 insert）
+      const b2 = { id: 'b2', pageId: 'p1', parentId: null, pos: 1, content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 }
+      insertSpy.mockResolvedValue(b2 as any)
+      await lifecycle2.handleSplit(6)
+
+      expect(insertSpy).toHaveBeenCalledTimes(2)
+      expect(activateSpy).toHaveBeenCalledTimes(1)
+      expect(activateSpy).toHaveBeenLastCalledWith('b2', 1)
     })
   })
 

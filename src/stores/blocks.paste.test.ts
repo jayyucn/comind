@@ -183,4 +183,37 @@ describe('pasteBlocks（ADR-0025 D6/D7/D8/D11）', () => {
     const created = await store.pasteBlocks([], { pageId: 'page-1' })
     expect(created).toEqual([])
   })
+
+  test('同一锚点反复粘贴触发 gap 耗尽后，新块仍紧邻锚点（不漂到块栈中部）', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-gap-paste'
+
+    // 锚点前必须存在更小的 pos：重编号按「全局（跨页）pos 排序后索引」重排，
+    // 锚点不在全局首位时其新 pos 才会偏离旧值，陈旧快照才会真的算错。
+    await store.createBlock({ pageId, content: 'pre1', pos: 100 })
+    await store.createBlock({ pageId, content: 'pre2', pos: 500 })
+    const anchor = await store.createBlock({ pageId, content: 'anchor', pos: 1000 })
+    const tail = await store.createBlock({ pageId, content: 'tail', pos: 2000 })
+
+    const trace: string[] = []
+    // 反复粘贴到同一锚点后：pos 不断向 tail 逼近，必然触发 gap 耗尽 + 重编号恢复
+    for (let i = 0; i < 14; i++) {
+      const created = await store.pasteBlocks([payload(`pasted-${i}`)], {
+        pageId,
+        anchorBlockId: anchor.id,
+      })
+      expect(created).toHaveLength(1)
+
+      const siblings = store.blocks
+        .filter(b => b.pageId === pageId && b.parentId === null)
+        .sort((a, b) => a.pos - b.pos)
+      const anchorIdx = siblings.findIndex(b => b.id === anchor.id)
+      const newIdx = siblings.findIndex(b => b.id === created[0].id)
+      trace.push(`#${i + 1} pos=${created[0].pos} 落点=${newIdx} 期望=${anchorIdx + 1}`)
+
+      expect(newIdx, `第 ${i + 1} 次粘贴落点错位\n${trace.join('\n')}`).toBe(anchorIdx + 1)
+      expect(created[0].pos).toBeGreaterThan(anchor.pos)
+      expect(created[0].pos).toBeLessThan(tail.pos)
+    }
+  })
 })

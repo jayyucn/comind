@@ -139,61 +139,98 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
   }
 
   // ── 编辑操作 ──
-  const handleSplit = withContentSync(async (cursorPosArg: number) => {
-    // withContentSync(flush:false) 已做 encode 内存同步（updateBlockContent，非阻塞防抖调度保存）。
-    // 若原块 content 实际改变（中部分拆改写 content、或行尾/行首含 typed-link 需 decode→encode），
-    // updateBlockContent 会清空 renderSegments。此时必须 await 落库回写 renderSegments：
-    //   1) 避免失活瞬间因 renderSegments=undefined 闪现纯文本；
-    //   2) 中部分拆的 decoded→encoded 偏移换算依赖有效 segments。
-    // 纯行尾/行首且 content 不变时 renderSegments 仍有效、内容也已在打字时落库，跳过落库即可
-    // 让光标立即落位（修复行尾 Enter 卡顿：避免被 WASM 落库的 ~34–386ms 阻塞）。
-    const oldBlock = blockStore.getBlock(blockId.value)
-    const segmentsCleared = !oldBlock?.renderSegments
+  /**
+   * 连按/长按 Enter 的重入守卫。
+   *
+   * `runSplit` 体内含真实 await（可选 flush、位置重编号），期间 DOM 焦点仍在旧编辑器上，
+   * 下一次 Enter 会在窗口内携带同一 pos 再次触发。若并发执行，同一原块被拆两次、偏移基准
+   * 过期、激活落点由完成顺序决定 —— 表现为连按回车「漏一次 / 光标跳错块」。
+   *
+   * 守卫语义：不丢弃输入（避免真的漏回车）。重入的 Enter 只计次，待当前拆分落定后，
+   * 在新激活的空块行尾逐一补建，保持「N 次 Enter ⇒ N 个新块、光标停在最后一个」，全程串行。
+   */
+  let splitInFlight = false
+  let pendingSplitCount = 0
 
-    // 拆分类型预判（decoded 文本层，无需 segments）用于下方偏移换算分支
-    const decodedText = editorRef.value ? editorRef.value.getText() : ''
-    const decodedOffset = cursorPosArg > 0 ? cursorPosArg - 1 : 0  // pmPosToTextOffset
-    const atLineEnd = decodedOffset >= decodedText.length
-    const atLineStart = decodedOffset === 0
-
-    if (segmentsCleared) {
-      await blockStore.flushSave(blockId.value)
+  function handleSplit(cursorPosArg: number): Promise<void> {
+    if (splitInFlight) {
+      pendingSplitCount++
+      return Promise.resolve()
     }
+    return runSplit(cursorPosArg)
+  }
 
-    // ── 坐标转换：ProseMirror 坐标基于编辑器显示的 decoded 文本，
-    //    但 block.content 是 encoded 文本。type/label 长度不同时偏移不匹配。
-    //    将 decoded 偏移转换为 encoded 偏移，确保拆分位置正确。
-    let effectivePos = cursorPosArg
-    if (editorRef.value) {
-      const encodedContent = blockStore.getBlock(blockId.value)?.content ?? ''
-      if (atLineEnd) {
-        // 行尾：直接设为 encoded content 的行尾
-        effectivePos = encodedContent.length + 1
-      } else if (atLineStart) {
-        // 行首：无需转换
-        effectivePos = 1
-      } else {
-        // 中间：decoded 文本即界面渲染文本（textContent），经 render-text.ts 单一 seam 换算为 encoded 偏移
-        const segments = blockStore.getBlock(blockId.value)?.renderSegments
-        const encodedOffset = renderedOffsetToEncodedOffset(encodedContent, segments, decodedOffset)
-        effectivePos = encodedOffset + 1  // 转回 ProseMirror 坐标
+  async function runSplit(cursorPosArg: number) {
+    splitInFlight = true
+    try {
+      // 等价于 withContentSync(fn, { flush: false })：只做 encode 内存同步 + 取消编辑器防抖，不阻塞落库。
+      await syncBlockContent(false)
+
+      // 仅在「内容非空却缺 renderSegments」时 await 落库回写 —— 即 store 落后于编辑器、
+      // encode 同步改写了 content，导致 segments 被判过期清空的情形。此时落库是必需的：
+      //   1) 不失活回写的话，失活后会因 renderSegments=undefined 闪现纯文本；
+      //   2) 中部分拆的 decoded→encoded 偏移换算依赖有效 segments 才能正确吸附标记。
+      // 内容已同步时（纯文本、或 markup 往返编码后不变）segments 仍有效、偏移换算可用，
+      // 无需落库 —— 该判据对「内容变更」的块恒成立，而非对一切块恒成立。
+      // 空白新块（Enter 建链的产物）本无 segments 且无内容 —— 旧判据 `!renderSegments` 对它恒真，
+      // 会把真实 WASM 写拉回热路径（~34–386ms），反而让下一次 Enter 在 flush 窗口内重入。
+      const block = blockStore.getBlock(blockId.value)
+      if (!block?.renderSegments && (block?.content.length ?? 0) > 0) {
+        await blockStore.flushSave(blockId.value)
       }
-    }
 
-    editorStore.deactivateBlock()
-    // 子树根块：强制新块成为根的子块，避免 Enter 在页面级建兄弟而逃出可见子树（ADR-0039）
-    const isSubtreeRoot = blockModalRootId?.value === blockId.value
-    const newBlock = await blockStore.insertBlockAtCursor(
-      blockId.value,
-      effectivePos,
-      collapsed.value,
-      undefined,
-      isSubtreeRoot ? { forceParentId: blockId.value } : undefined
-    )
-    if (newBlock) {
-      editorStore.activateBlock(newBlock.id, 1)
+      // ── 坐标转换：ProseMirror 坐标基于编辑器显示的 decoded 文本，
+      //    但 block.content 是 encoded 文本。type/label 长度不同时偏移不匹配。
+      //    将 decoded 偏移转换为 encoded 偏移，确保拆分位置正确。
+      let effectivePos = cursorPosArg
+      if (editorRef.value) {
+        const decodedText = editorRef.value.getText()
+        const decodedOffset = cursorPosArg > 0 ? cursorPosArg - 1 : 0  // pmPosToTextOffset
+        const encodedContent = blockStore.getBlock(blockId.value)?.content ?? ''
+        if (decodedOffset >= decodedText.length) {
+          // 行尾：直接设为 encoded content 的行尾
+          effectivePos = encodedContent.length + 1
+        } else if (decodedOffset === 0) {
+          // 行首：无需转换
+          effectivePos = 1
+        } else {
+          // 中间：decoded 文本即界面渲染文本（textContent），经 render-text.ts 单一 seam 换算为 encoded 偏移
+          const segments = blockStore.getBlock(blockId.value)?.renderSegments
+          const encodedOffset = renderedOffsetToEncodedOffset(encodedContent, segments, decodedOffset)
+          effectivePos = encodedOffset + 1  // 转回 ProseMirror 坐标
+        }
+      }
+
+      editorStore.deactivateBlock()
+      // 子树根块：强制新块成为根的子块，避免 Enter 在页面级建兄弟而逃出可见子树（ADR-0039）
+      const isSubtreeRoot = blockModalRootId?.value === blockId.value
+      const newBlock = await blockStore.insertBlockAtCursor(
+        blockId.value,
+        effectivePos,
+        collapsed.value,
+        undefined,
+        isSubtreeRoot ? { forceParentId: blockId.value } : undefined
+      )
+      if (newBlock) {
+        editorStore.activateBlock(newBlock.id, 1)
+        // 消化 in-flight 期间累积的连按 Enter：在新激活空块行尾逐一补建，光标停最后一个（串行、不漏）
+        let anchorId = newBlock.id
+        while (pendingSplitCount > 0) {
+          pendingSplitCount--
+          const extra = await blockStore.insertBlockAtCursor(anchorId, 1, false)
+          if (!extra) break
+          anchorId = extra.id
+          editorStore.activateBlock(extra.id, 1)
+        }
+      }
+    } finally {
+      splitInFlight = false
+      // 计次统一在此清零：drain 正常跑完本就把计数递减到 0；若拆分根本没兑现
+      // （`insertBlockAtCursor` 返 null = 源块已不存在），则无锚点可续建，剩余计次只能丢弃。
+      // 不能留着 —— 悬挂的计次会让下一次 Enter 在 drain 里多建块。
+      pendingSplitCount = 0
     }
-  }, { flush: false })
+  }
 
   const handleMerge = withContentSync(async () => {
     editorStore.deactivateBlock()
