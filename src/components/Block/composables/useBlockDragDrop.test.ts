@@ -273,7 +273,7 @@ describe('useBlockDragDrop', () => {
 
   /**
    * 三层嵌套假块：block 自身矩形是 border-box（含整棵子树），row 是单行矩形，
-   * bullet 每级向右缩进 44。模拟真实 .block 几何。
+   * bullet 每级向右缩进 34。模拟真实 .block 几何。
    */
   function makeTreeBlock(
     id: string,
@@ -310,12 +310,12 @@ describe('useBlockDragDrop', () => {
    * refineTargetByBand 按「光标列 × y 所在最深后代」修正目标。
    */
   describe('目标精化：命中祖先 padding 时按列条带下钻', () => {
-    // G(bullet 100, 行 100..130, 盒到 190) > P(bullet 144, 行 130..160, 盒到 190) > C(bullet 188, 行 160..190)
+    // G(bullet 100, 行 100..130, 盒到 190) > P(bullet 134, 行 130..160, 盒到 190) > C(bullet 168, 行 160..190)
     function buildTree() {
       const root = makeContainer()
       const g = makeTreeBlock('G', { box: { ...ROW(100), bottom: 190 }, rowTop: 100, bulletLeft: 100 }, root)
-      const p = makeTreeBlock('P', { box: { ...ROW(130), bottom: 190 }, rowTop: 130, bulletLeft: 144 }, g.children)
-      const c = makeTreeBlock('C', { box: ROW(160), rowTop: 160, bulletLeft: 188 }, p.children)
+      const p = makeTreeBlock('P', { box: { ...ROW(130), bottom: 190 }, rowTop: 130, bulletLeft: 134 }, g.children)
+      const c = makeTreeBlock('C', { box: ROW(160), rowTop: 160, bulletLeft: 168 }, p.children)
       const dragged = makeBlockEl('D', ROW(220), root)
       return { root, g: g.el, p: p.el, c: c.el, dragged }
     }
@@ -330,8 +330,8 @@ describe('useBlockDragDrop', () => {
       const pointerMove = startDrag(hook.handleDragStart, dragged)
       pointerMove({ clientX: 100, clientY: 175 })
 
-      // 没有下钻到 P 之外（C 的条带左缘 = 188−44 = 144，x=100 不覆盖）
-      expect(hook.indicatorStyle.value.left).toBe('100px') // P bullet 144 −44
+      // 没有下钻到 P 之外（C 的条带左缘 = 168−34 = 134，x=100 不覆盖）
+      expect(hook.indicatorStyle.value.left).toBe('100px') // P bullet 134 −34
 
       hook.handleBlockDragEnd()
       const intent = onDragEnd.mock.calls[0][0] as DragEndIntent
@@ -347,9 +347,9 @@ describe('useBlockDragDrop', () => {
 
       stubElementFromPoint(g)
       const pointerMove = startDrag(hook.handleDragStart, dragged)
-      pointerMove({ clientX: 144, clientY: 175 })
+      pointerMove({ clientX: 134, clientY: 175 })
 
-      expect(hook.indicatorStyle.value.left).toBe('144px') // C bullet 188 −44
+      expect(hook.indicatorStyle.value.left).toBe('134px') // C bullet 168 −34
 
       hook.handleBlockDragEnd()
       const intent = onDragEnd.mock.calls[0][0] as DragEndIntent
@@ -365,7 +365,7 @@ describe('useBlockDragDrop', () => {
 
       stubElementFromPoint(g)
       const pointerMove = startDrag(hook.handleDragStart, dragged)
-      pointerMove({ clientX: 55, clientY: 175 }) // < G bullet 100−44=56
+      pointerMove({ clientX: 55, clientY: 175 }) // < G bullet 100−34=66
       hook.handleBlockDragEnd()
       const intent = onDragEnd.mock.calls[0][0] as DragEndIntent
       expect(intent.target).toEqual({ action: 'sort', toParentId: null, beforeId: 'D' })
@@ -501,7 +501,7 @@ describe('applyDropTarget', () => {
 })
 
 describe('resolveDropAction（间隙 × 深度刻度矩阵）', () => {
-  // bullet x 100..150、y 100..130；刻度 44 → 中列 [78,122)、右列 ≥122、左列 ≤78；y 中线 115
+  // bullet x 100..150、y 100..130；刻度 34 → 中列 [83,117)、右列 ≥117、左列 ≤83；y 中线 115
   const bulletRect = { left: 100, right: 150, top: 100, height: 30 }
 
   function geometry(overrides: Partial<DropTargetGeometry> = {}): DropTargetGeometry {
@@ -614,11 +614,11 @@ describe('resolveDropAction（间隙 × 深度刻度矩阵）', () => {
     })
   })
 
-  it('半刻度边界：+22 降级、−22 提升，±21 仍同级', () => {
-    expect(resolveDropAction({ x: 122, y: 110 }, geometry())?.action).toBe('nest')
-    expect(resolveDropAction({ x: 121, y: 110 }, geometry())?.action).toBe('sort')
-    expect(resolveDropAction({ x: 78, y: 110 }, geometry())?.action).toBe('promote')
-    expect(resolveDropAction({ x: 79, y: 110 }, geometry())?.action).toBe('sort')
+  it('半刻度边界：+17 降级、−17 提升，±16 仍同级', () => {
+    expect(resolveDropAction({ x: 117, y: 110 }, geometry())?.action).toBe('nest')
+    expect(resolveDropAction({ x: 116, y: 110 }, geometry())?.action).toBe('sort')
+    expect(resolveDropAction({ x: 83, y: 110 }, geometry())?.action).toBe('promote')
+    expect(resolveDropAction({ x: 84, y: 110 }, geometry())?.action).toBe('sort')
   })
 
   it('跨多列只切一级（多级切换本轮不启用）', () => {

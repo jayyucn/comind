@@ -443,7 +443,8 @@
 }
 
 .block-chosen::before,
-.block-chosen .block-children::before {
+.block-chosen .block-children::before,
+.block-chosen .block-properties::before {
   opacity: 0.3 !important;
 }
 
@@ -513,10 +514,11 @@
 // 无属性时塌成 0 高度，不额外占位。
 //
 // 左缘对齐子块 status 图标（不算 bullet dot）：子容器缩进 20px + 子块一级缩进
-// 24px + bullet 20px = (depth+1)*24 + 40。非任务子块无 between 槽、正文紧跟
+// 14px + bullet 20px = (depth+1)*14 + 40。非任务子块无 between 槽、正文紧跟
 // bullet，起点亦在此列。--indent-depth 由 .block 根节点自持（自身深度），
 // 不再用子容器传入的父深度（那只服务于缩进线 ::before）。
 .block-properties {
+  position: relative;
   margin-left: calc((var(--indent-depth, 0) + 1) * var(--block-indent-width) + 40px);
   padding-right: $space-2;
   // 折叠动画基线：与 .block-children 同节奏（ADR-0045 折叠范围扩展）
@@ -528,6 +530,24 @@
     max-height var(--dur-base) var(--ease-in-out),
     opacity var(--dur-base) var(--ease-out),
     transform var(--dur-base) var(--ease-out);
+
+  // 字段带左侧竖线：与 .block-children::before 同一竖列（本块 bullet 中心列
+  // depth×缩进+9），同色同透明度——层级导轨从 block-row 的 bullet 起，穿过字段带
+  // 延伸进子树，视觉上字段带与子树同属「本块 bullet 往下这一列」。
+  // 换算：盒左缘含 margin-left ((depth+1)×缩进+40)，故 left = 9 − 缩进 − 40（与 depth 无关）。
+  // 折叠时整带 display:none，竖线随之消失，无需额外规则。
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: calc(9px - var(--block-indent-width) - 40px);
+    width: 1px;
+    background: var(--block-bullet-color);
+    opacity: 0.12;
+    pointer-events: none;
+    z-index: 0;
+  }
 }
 
 // 字段带随本块折叠一起隐藏：折叠 = 本块一切可折叠细节的布局移除（ADR-0045 D1 扩展）。

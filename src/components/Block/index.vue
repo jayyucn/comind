@@ -162,7 +162,7 @@ const editorRef = ref<BlockTypeEditorExposed | null>(null)
 const cursorPos = ref(0)
 
 // ── 常量配置 ──────────────────────────────────────────────
-const INDENT_WIDTH_PER_LEVEL = 24 // px
+const INDENT_WIDTH_PER_LEVEL = 14 // px
 
 // ── 缩进（由 depth prop 直接计算，O(1)） ──
 const indentWidth = computed(() => `${props.depth * INDENT_WIDTH_PER_LEVEL}px`)

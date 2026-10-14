@@ -9,13 +9,13 @@ import { isDescendantOf } from '../../../utils/block-helpers'
 
 /**
  * 一级缩进总宽（px）= `.block-children` 的 `padding-left`(20) + Block/index.vue 的
- * `INDENT_WIDTH_PER_LEVEL`(24)。既是深度判定的量化刻度，也是指示槽位的缩进量。
+ * `INDENT_WIDTH_PER_LEVEL`(14)。既是深度判定的量化刻度，也是指示槽位的缩进量。
  * 改其中任一处，此常量必须同步。
  *
  * 不要用目标块的 `depth` 参与计算：bullet 的 x 已包含行内 `.block-indent` 的累计
  * 缩进，再乘层级会把缩进算两遍（详见 docs/sort/sortable-implementation.md §9）。
  */
-const INDENT_TOTAL_PER_LEVEL = 44
+const INDENT_TOTAL_PER_LEVEL = 34
 
 /**
  * 放置目标类型
