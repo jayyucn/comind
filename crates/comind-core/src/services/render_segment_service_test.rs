@@ -283,13 +283,14 @@ mod tests {
         Ok(())
     }
 
-    /// Regression: dateRef 后紧跟空格 + 文本时，空格是语法分隔符，
-    /// 不应包含在后续 Text 段中。
+    /// dateRef 之后的空白是分隔符：不进入后续 Text 段，而是由 DateRef 段自己吸收，
+    /// 保证 segments 是 content 的**严格划分**（无空洞）。
+    /// 空洞会让该字符不被渲染，并让前端「可见长度累计 → encoded 偏移」的换算从该点起右移。
     /// 内容 "@2026-08-09 ⏰ 2026"（18 chars）:
     ///   @(0)2(1)0(2)2(3)6(4)-(5)0(6)8(7)-(8)0(9)9(10) (11)⏰(12) (13)2(14)0(15)2(16)6(17)
-    ///   预期: DateRef=[0,13)，Text=[14,18)（跳过 emoji 后空格 char[13]）
+    ///   预期: DateRef=[0,14)（含尾随空格 char[13]），Text=[14,18)
     #[test]
-    fn test_date_ref_trailing_space_is_skipped_from_text() -> Result<(), Box<dyn Error>> {
+    fn test_date_ref_absorbs_trailing_space() -> Result<(), Box<dyn Error>> {
         let mut adapter = SQLiteAdapter::open_in_memory()?;
         let page = PageService::create(&mut adapter, "", "Test", None, None, None, None, None)?;
 
@@ -303,29 +304,81 @@ mod tests {
 
         assert_eq!(segments.len(), 2, "should have DateRef + Text segments");
 
-        // 第一部分：DateRef 覆盖 "@2026-08-09 ⏰"（不含 emoji 后空格）
+        // 第一部分：DateRef 覆盖 "@2026-08-09 ⏰ "（吞掉 emoji 后的空格）
         if let RenderSegment::DateRef { start, end, kind, .. } = &segments[0] {
             assert_eq!(*start, 0, "DateRef should start at char 0");
-            assert_eq!(*end, 13, "DateRef should end at char 13 (after ⏰, before space)");
+            assert_eq!(*end, 14, "DateRef should absorb the trailing space (end at char 14)");
             assert_eq!(kind, "deadline");
         } else {
             panic!("first segment should be DateRef");
         }
 
-        // 第二部分：Text 从 char 14 开始（跳过 emoji 后空格 char[13]），到末尾 char 18
+        // 第二部分：Text 从 char 14 开始（首个非空白），到末尾 char 18
         if let RenderSegment::Text { start, end } = &segments[1] {
-            assert_eq!(*start, 14, "Text should start at char 14 (after trailing space)");
+            assert_eq!(*start, 14, "Text should start at char 14 (first non-whitespace)");
             assert_eq!(*end, 18, "Text should end at char 18 (content length)");
         } else {
             panic!("second segment should be Text");
         }
 
-        // 验证切片内容
+        // 验证切片内容（两段拼接必须还原 content）
         let chars: Vec<char> = block.content.chars().collect();
-        let date_ref_slice: String = chars[0..13].iter().collect();
+        let date_ref_slice: String = chars[0..14].iter().collect();
         let text_slice: String = chars[14..18].iter().collect();
-        assert_eq!(date_ref_slice, "@2026-08-09 ⏰");
+        assert_eq!(date_ref_slice, "@2026-08-09 ⏰ ");
         assert_eq!(text_slice, "2026");
+        assert_eq!(format!("{}{}", date_ref_slice, text_slice), block.content);
+
+        Ok(())
+    }
+
+    /// Regression（用户报告：文本中间回车，切点右偏 1 字）：
+    /// 带 emoji 的 dateRef 曾让 segments 在 `date_ref.end` 与下一段 `start` 之间留 1 字符空洞
+    /// （`A @2026-10-15📅 BCDEF` 中 emoji 后的那个空格）。前端按「可见长度累计」换算 encoded
+    /// 偏移时，空洞之后的偏移全部右移 1 ⇒ 中部分拆切点右偏 1 字（读态也丢那个空格）。
+    ///
+    /// 此用例与 `build_segments` 的 `anchors` 构造直接对应：emoji 分支只吞到 emoji 为止
+    /// （不像无 emoji 分支会吞掉尾随空格），故空洞只在 emoji 变体出现。
+    #[test]
+    fn test_no_hole_after_emoji_date_ref() -> Result<(), Box<dyn Error>> {
+        let mut adapter = SQLiteAdapter::open_in_memory()?;
+        let page = PageService::create(&mut adapter, "", "Test", None, None, None, None, None)?;
+
+        let content = "A @2026-10-15📅 BCDEF";
+        let block = BlockService::create(
+            &mut adapter, &page.id, None,
+            content,
+            "{}", "bullet", None,
+        true)?;
+
+        let segments = build_segments_for_block(&mut adapter, &block)?;
+
+        let span = |s: &RenderSegment| match s {
+            RenderSegment::Text { start, end }
+            | RenderSegment::Link { start, end, .. }
+            | RenderSegment::TypedLink { start, end, .. }
+            | RenderSegment::ExternalLink { start, end, .. }
+            | RenderSegment::Tag { start, end, .. }
+            | RenderSegment::DateRef { start, end, .. } => (*start, *end),
+        };
+
+        // 无空洞、无重叠、无缝覆盖 0..content 的 UTF-16 长度
+        let utf16_len = content.encode_utf16().count();
+        let mut cursor = 0usize;
+        for seg in &segments {
+            let (start, end) = span(seg);
+            assert_eq!(
+                start, cursor,
+                "segment start must equal previous end (hole/overlap at utf16 offset {})", cursor
+            );
+            cursor = end;
+        }
+        assert_eq!(cursor, utf16_len, "segments must cover the whole content");
+
+        assert!(
+            segments.iter().any(|s| matches!(s, RenderSegment::DateRef { .. })),
+            "should have a DateRef segment"
+        );
 
         Ok(())
     }
@@ -482,8 +535,8 @@ mod tests {
         Ok(())
     }
 
-    /// Edge: dateRef 后跟多个空格时，所有空格都应被跳过，Text 从首个非空白开始。
-    /// "@2026-08-09 ⏰   2026" → DateRef=[0,13)，Text=[16,20)（跳过 3 个空格）
+    /// Edge: dateRef 后跟多个空格时，空格全部并入 DateRef 段（不进入 Text），Text 从首个非空白开始。
+    /// "@2026-08-09 ⏰   2026" → DateRef=[0,16)，Text=[16,20)（3 个空格并入 DateRef，无空洞）
     #[test]
     fn test_date_ref_multiple_trailing_spaces_skipped() -> Result<(), Box<dyn Error>> {
         let mut adapter = SQLiteAdapter::open_in_memory()?;
@@ -500,7 +553,7 @@ mod tests {
         assert_eq!(segments.len(), 2, "should have DateRef + Text segments");
         if let RenderSegment::DateRef { start, end, .. } = &segments[0] {
             assert_eq!(*start, 0);
-            assert_eq!(*end, 13, "DateRef ends after ⏰ (char 13)");
+            assert_eq!(*end, 16, "DateRef absorbs the 3 trailing spaces (end at char 16)");
         } else {
             panic!("first segment should be DateRef");
         }
@@ -514,8 +567,8 @@ mod tests {
         Ok(())
     }
 
-    /// Edge: dateRef 后跟链接时，跳过空格后 Link 段紧随其后，无空洞。
-    /// "@2026-08-09 ⏰ [[T]]" → DateRef=[0,13)，Link=[15,20)
+    /// Edge: dateRef 后跟链接时，空格并入 DateRef，Link 段紧随其后，无空洞。
+    /// "@2026-08-09 ⏰ [[T]]" → DateRef=[0,14)，Link=[14,19)
     #[test]
     fn test_date_ref_then_link_no_gap() -> Result<(), Box<dyn Error>> {
         let mut adapter = SQLiteAdapter::open_in_memory()?;
@@ -537,12 +590,12 @@ mod tests {
         assert_eq!(segments.len(), 2, "should have DateRef + Link segments");
         if let RenderSegment::DateRef { start, end, .. } = &segments[0] {
             assert_eq!(*start, 0);
-            assert_eq!(*end, 13);
+            assert_eq!(*end, 14, "DateRef absorbs the trailing space (end at char 14)");
         } else {
             panic!("first segment should be DateRef");
         }
         if let RenderSegment::Link { start, end, .. } = &segments[1] {
-            assert_eq!(*start, 14, "Link starts at [[ (char 14), after skipped space (char 13)");
+            assert_eq!(*start, 14, "Link starts at [[ (char 14), right after DateRef end");
             assert_eq!(*end, 19, "Link ends at content end (char 19)");
         } else {
             panic!("second segment should be Link");

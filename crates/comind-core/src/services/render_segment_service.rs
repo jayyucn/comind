@@ -160,18 +160,6 @@ fn byte_to_utf16_idx(content: &str, byte_idx: usize) -> usize {
     utf16_len
 }
 
-/// Convert UTF-16 code unit index back to byte offset.
-fn utf16_idx_to_byte_idx(content: &str, utf16_idx: usize) -> usize {
-    let mut utf16_count = 0;
-    for (byte_pos, ch) in content.char_indices() {
-        if utf16_count >= utf16_idx {
-            return byte_pos;
-        }
-        utf16_count += ch.len_utf16();
-    }
-    content.len()
-}
-
 /// Total UTF-16 code unit length of the string (matches JS `.length`).
 fn utf16_len(content: &str) -> usize {
     content.chars().map(|c| c.len_utf16()).sum()
@@ -222,6 +210,19 @@ fn build_segments(
                 } else {
                     end = content.len();
                 }
+            }
+
+            // Step 3: 吸收尾随空白。
+            // dateRef 之后的空白是分隔符，不应作为后续 Text 段的前导空格；但它必须留在**某个段内** ——
+            // segments 是 content 的严格划分，任何未覆盖字符都会形成空洞：既不被渲染（读态丢字），
+            // 也会让前端「可见长度累计 → encoded 偏移」的换算从该点起整体右移（中部分拆切点右偏 1 字）。
+            // 故由 DateRef 段自己吞掉这段空白，后续段仍从首个非空白字符开始。
+            while end < bytes.len() {
+                let ch = content[end..].chars().next().unwrap();
+                if !ch.is_whitespace() {
+                    break;
+                }
+                end += ch.len_utf8();
             }
 
             let kind = &dr.kind;
@@ -315,27 +316,18 @@ fn build_segments(
         if pos > cursor {
             segments.push(RenderSegment::Text { start: cursor, end: pos });
         }
+        // ⛔ 不变量：segments 必须是 content 的严格划分（0..utf16_len 无空洞、无重叠）。
+        // 任何未覆盖字符都会让消费方错位：读态不渲染它，
+        // 前端 `renderedOffsetToEncodedOffset` 的「可见长度累计」也会比 encoded 偏移少一截，
+        // 导致该点之后**所有**偏移整体右移（中部分拆切点右偏）。
+        // dateRef 的尾随空白已由锚点构造阶段吸收（见 `Step 3`），此处一律取段尾即可。
         cursor = match &seg {
-            RenderSegment::Text { end, .. } => *end,
-            RenderSegment::Link { end, .. } => *end,
-            RenderSegment::TypedLink { end, .. } => *end,
-            RenderSegment::ExternalLink { end, .. } => *end,
-            RenderSegment::Tag { end, .. } => *end,
-            RenderSegment::DateRef { end, .. } => {
-                // dateRef 语法（`@ISO [emoji] [|params]`）之后的空白是分隔符，
-                // 不属于任何文本段：跳过它们，避免后续 Text 段带前导空格。
-                // 例："@2026-08-09 ⏰ 2026" → DateRef=[0,13)，Text=[14,18) 而非 [13,18)。
-                let mut byte = utf16_idx_to_byte_idx(content, *end);
-                let bytes = content.as_bytes();
-                while byte < bytes.len() {
-                    let ch = content[byte..].chars().next().unwrap();
-                    if !ch.is_whitespace() {
-                        break;
-                    }
-                    byte += ch.len_utf8();
-                }
-                byte_to_utf16_idx(content, byte)
-            }
+            RenderSegment::Text { end, .. }
+            | RenderSegment::Link { end, .. }
+            | RenderSegment::TypedLink { end, .. }
+            | RenderSegment::ExternalLink { end, .. }
+            | RenderSegment::Tag { end, .. }
+            | RenderSegment::DateRef { end, .. } => *end,
         };
         segments.push(seg);
     }
