@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import { ref } from 'vue'
+import { ref, nextTick } from 'vue'
 import { useBlockCollapse } from './useBlockCollapse'
 import { useBlockStore } from '../../../stores/blocks'
 import type { TreeNode } from '../../../types/block'
@@ -161,6 +161,55 @@ describe('useBlockCollapse', () => {
       expect(canCollapse.value).toBe(false)
       await toggleCollapse()
       expect(spy).not.toHaveBeenCalled()
+    })
+  })
+
+  // ── 折叠/展开精确高度动画（修复收起末段卡顿，ADR-0045 折叠过渡） ──
+  // 把真实高度注入子容器 max-height，使过渡比例与实际内容一致，而不是用 CSS
+  // 写死的 2000px 起点（真实高度远小于 2000 时可见坍缩全挤在末段、ease-in-out
+  // 末尾减速 → 收起末段卡顿）。
+  describe('折叠/展开精确高度动画', () => {
+    function makeFakeEl(scrollHeight = 250) {
+      return { style: { maxHeight: '', transition: '' }, scrollHeight, offsetHeight: 0 } as any
+    }
+    /** mock store 写回（与上方 toggle 测试同源），让 collapsedFlag 同步失效。 */
+    function mockStoreWrite() {
+      const blockStore = useBlockStore()
+      vi.spyOn(blockStore, 'updateBlockFormat').mockImplementation(
+        async (id: string, format: Record<string, unknown>) => {
+          const target = blockStore.blocks.find(b => b.id === id)
+          if (target) target.format = { ...target.format, ...format }
+        }
+      )
+      return blockStore
+    }
+
+    it('折叠：把容器 max-height 锚定到真实高度再过渡到 0', async () => {
+      const { node, block } = makeNode(false)
+      const blockStore = mockStoreWrite()
+      blockStore.blocks = [block]
+      const fakeEl = makeFakeEl(250)
+      const { toggleCollapse, collapsed } = useBlockCollapse(ref(node), undefined, ref(fakeEl))
+      expect(collapsed.value).toBe(false)
+      await toggleCollapse()
+      // 起点 = 真实高度（childrenHeight 未测时为 0，兜底取 scrollHeight），而非 CSS 2000px
+      expect(fakeEl.style.maxHeight).toBe('250px')
+      // 动画跑完后内联 max-height 清回，交回 CSS 基线（避免残留裁剪）
+      await new Promise(r => setTimeout(r, 260))
+      expect(fakeEl.style.maxHeight).toBe('')
+    })
+
+    it('展开：把容器 max-height 从 0 过渡到真实高度', async () => {
+      const { node, block } = makeNode(true)
+      const blockStore = mockStoreWrite()
+      blockStore.blocks = [block]
+      const fakeEl = makeFakeEl(250)
+      const { toggleCollapse, collapsed } = useBlockCollapse(ref(node), undefined, ref(fakeEl))
+      expect(collapsed.value).toBe(true)
+      await toggleCollapse() // 展开
+      // 起点 = 0（从折叠态高度 0 增长），而非直接从 2000px 滑下导致末段突兀
+      expect(fakeEl.style.maxHeight).toBe('0px')
+      await new Promise(r => setTimeout(r, 260))
     })
   })
 })

@@ -14,7 +14,7 @@
  *   拖拽结束 → onDragEnd → syncTreeToStore → store
  *   → 结构签名变化（#118 D2）→ BlockList watch → syncFromStore → tree 重建
  */
-import { ChevronDown, ChevronRight } from 'lucide-vue-next'
+import { ChevronDown } from 'lucide-vue-next'
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch } from 'vue'
 import { useBlockRegistry } from '../../composables/useBlockRegistry'
 import { useBlockRelationshipCleanup } from '../../composables/useBlockRelationshipCleanup'
@@ -175,7 +175,12 @@ const {
   isAnimating,
   toggleCollapse,
   updateChildrenHeight,
-} = useBlockCollapse(computed(() => props.node), fieldRowCount)
+} = useBlockCollapse(
+  computed(() => props.node),
+  fieldRowCount,
+  // 子节点容器 DOM（.block-children）：折叠/展开动画用它注入真实高度，消除末段卡顿
+  () => blockDraggableRef.value?.getContainerEl() ?? null,
+)
 
 // ── 子节点列表容器（拖拽接线由 BlockDraggableList 统一承载） ──
 // 拖拽配置 / @move 循环嵌套守卫 / @end 指示器清理与落库，均与根级列表同源，
@@ -557,13 +562,9 @@ watch(isActive, (active) => {
             title="折叠 / 展开"
             @click.stop="toggleCollapse"
           >
+            <!-- 单图标 + CSS 旋转：展开 0°（朝下），折叠 rotate(-90°)（朝右，视觉同 ChevronRight）。
+                 v-if 换图标只能瞬间跳变，旋转过渡才能与折叠动效同步（参数见 _block.scss） -->
             <ChevronDown
-              v-if="!collapsed"
-              :size="18"
-              :stroke-width="2"
-            />
-            <ChevronRight
-              v-else
               :size="18"
               :stroke-width="2"
             />
