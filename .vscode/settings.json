@@ -10,11 +10,14 @@
         "*.ts": "${capture}.test.ts, ${capture}.spec.ts"
     },
     "editor.codeActionsOnSave": {
-        "source.organizeImports": "explicit",
+        // "source.organizeImports": "explicit",
         "source.fixAll.eslint": "explicit",
-        "source.removeUnusedImports": "explicit",
-        "source.sortImports": "explicit",
+        // "source.removeUnusedImports": "explicit",
+        // "source.sortImports": "explicit",
     },
+    // 根治：让 TS/JS 语言服务重写 import 时也按项目风格（semi: never）处理，不再补分号
+    "typescript.format.semicolons": "remove",
+    "javascript.format.semicolons": "remove",
     "npm.exclude": [
         "**/node_modules/**",
         "**/dist/**",
