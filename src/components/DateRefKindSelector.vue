@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { onBeforeUnmount,onMounted, ref } from 'vue'
+
 import type { DateRefKind } from '../utils/date-ref'
 import BasePopover from './common/BasePopover.vue'
 
@@ -86,11 +87,10 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown, true))
   font-size: var(--text-sm);
   color: var(--text-primary);
   transition: background var(--dur-fast) var(--ease-out);
+}
 
-  &:hover,
-  &--active {
-    background: var(--bg-hover);
-  }
+.kind-item--active {
+  background: var(--bg-active);
 }
 
 .kind-icon {

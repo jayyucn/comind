@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from 'vue';
-import { popModal, pushModal } from '../composables/useModalKeyboard';
-import { useTagsStore } from '../stores/tags';
-import BasePopover from './common/BasePopover.vue';
+import { computed, onUnmounted, ref, watch } from 'vue'
+
+import { useTagsStore } from '@/stores/tags'
+
+import { popModal, pushModal } from '../composables/useModalKeyboard'
+import BasePopover from './common/BasePopover.vue'
 
 const props = defineProps<{
   visible: boolean;
@@ -17,114 +19,114 @@ const props = defineProps<{
     to: number;
   };
   query: string;
-}>();
+}>()
 
 const emit = defineEmits<{
   (e: 'select', tagName: string): void;
   (e: 'close'): void;
-}>();
+}>()
 
-const tagsStore = useTagsStore();
-const selectedIndex = ref(0);
+const tagsStore = useTagsStore()
+const selectedIndex = ref(0)
 
 watch(() => props.visible, (isVisible) => {
   if (isVisible) {
-    pushModal('tag-menu');
-    selectedIndex.value = 0;
+    pushModal('tag-menu')
+    selectedIndex.value = 0
   } else {
-    popModal('tag-menu');
+    popModal('tag-menu')
   }
-});
+})
 
 onUnmounted(() => {
-  popModal('tag-menu');
-});
+  popModal('tag-menu')
+})
 
 watch(() => props.query, () => {
-  selectedIndex.value = 0;
-});
+  selectedIndex.value = 0
+})
 
 const filteredTags = computed(() => {
   if (!props.query.trim()) {
     // 最近使用标签（lastUsedAt 降序）
-    return tagsStore.recentTags().slice(0, 10);
+    return tagsStore.recentTags().slice(0, 10)
   }
-  const q = props.query.toLowerCase();
+  const q = props.query.toLowerCase()
   return tagsStore.allTags
     .filter((t) => !t.deleted_at && t.title.toLowerCase().includes(q))
     .sort((a, b) => {
-      const aTitle = a.title.toLowerCase();
-      const bTitle = b.title.toLowerCase();
-      const aExact = aTitle === q ? 0 : 1;
-      const bExact = bTitle === q ? 0 : 1;
-      if (aExact !== bExact) return aExact - bExact;
-      const aStartsWith = aTitle.startsWith(q) ? 0 : 1;
-      const bStartsWith = bTitle.startsWith(q) ? 0 : 1;
-      if (aStartsWith !== bStartsWith) return aStartsWith - bStartsWith;
-      return 0;
+      const aTitle = a.title.toLowerCase()
+      const bTitle = b.title.toLowerCase()
+      const aExact = aTitle === q ? 0 : 1
+      const bExact = bTitle === q ? 0 : 1
+      if (aExact !== bExact) return aExact - bExact
+      const aStartsWith = aTitle.startsWith(q) ? 0 : 1
+      const bStartsWith = bTitle.startsWith(q) ? 0 : 1
+      if (aStartsWith !== bStartsWith) return aStartsWith - bStartsWith
+      return 0
     })
-    .slice(0, 10);
-});
+    .slice(0, 10)
+})
 
 const menuItems = computed(() => {
   const items: Array<{
     type: 'tag' | 'create';
     title: string;
     color?: string;
-  }> = [];
+  }> = []
 
   filteredTags.value.forEach((tag) => {
     items.push({
       type: 'tag',
       title: tag.title,
       color: tag.color,
-    });
-  });
+    })
+  })
 
   if (props.query.trim()) {
     const exists = filteredTags.value.some(
       (t) => t.title.toLowerCase() === props.query.toLowerCase()
-    );
+    )
     if (!exists) {
       items.push({
         type: 'create',
         title: props.query.trim(),
-      });
+      })
     }
   }
 
-  return items;
-});
+  return items
+})
 
 function selectItem(item: typeof menuItems.value[0]) {
-  emit('select', item.title);
+  emit('select', item.title)
 }
 
 function selectNext() {
   if (menuItems.value.length > 0) {
-    selectedIndex.value = Math.min(selectedIndex.value + 1, menuItems.value.length - 1);
+    selectedIndex.value = Math.min(selectedIndex.value + 1, menuItems.value.length - 1)
   }
 }
 
 function selectPrev() {
   if (menuItems.value.length > 0) {
-    selectedIndex.value = Math.max(selectedIndex.value - 1, 0);
+    selectedIndex.value = Math.max(selectedIndex.value - 1, 0)
   }
 }
 
 function confirmSelect() {
   if (menuItems.value.length === 0 || !menuItems.value[selectedIndex.value]) {
-    emit('close');
-    return;
+    emit('close')
+    return
   }
-  selectItem(menuItems.value[selectedIndex.value]);
+  selectItem(menuItems.value[selectedIndex.value])
 }
 
 function close() {
-  emit('close');
+  emit('close')
 }
 
-defineExpose({ selectNext, selectPrev, confirmSelect, close });
+defineExpose({ selectNext, selectPrev, confirmSelect, close })
 </script>
 
 <template>
@@ -217,7 +219,7 @@ defineExpose({ selectNext, selectPrev, confirmSelect, close });
 }
 
 .tm-item.active {
-  background: var(--accent-subtle);
+  background: var(--bg-active);
 }
 
 .tm-item.tm-create {
