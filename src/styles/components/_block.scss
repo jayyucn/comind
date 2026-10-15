@@ -199,6 +199,10 @@
 .block-body {
   display: flex;
   align-items: center;
+  // 拉伸链第一环：让 .block-body 撑满 .block-inner 的交叉尺寸（≈行高，由 bullet 1.8em 或
+  // 内容更高的 heading 撑起），下游 .block-content 才能借 align-self 填到整行高，使 hover
+  // 淡底纵向无上下缝隙（ADR-0050「弱化圈」语义不变，仅去掉缝隙）。
+  align-self: stretch;
   flex: 1;
   min-width: 0;
 }
@@ -217,6 +221,18 @@
 .block-content {
   flex: 1;
   cursor: text;
+  min-width: 0;
+  // 拉伸链第二环：填到 .block-body 的整行高（替普通文本块补上被 bullet 1.8em 撑出的
+  // 上下缝隙），并以 flex 居中其内部编辑器/渲染文本，避免文字顶在盒子上方。
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+}
+
+// .block-content 变 flex 容器后，编辑器/渲染文本作为 flex item 默认按内容宽收缩会塌宽；
+// 强制子项占满宽度且可收缩，横向溢出仍交给内部 .cm-scroller 处理（与 .block-inner 同理）。
+.block-content > * {
+  flex: 1 1 auto;
   min-width: 0;
 }
 
