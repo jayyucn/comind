@@ -145,7 +145,8 @@
 }
 
 // Chevron 箭头（父节点）：默认隐藏，仅 hover / 激活时显现（ADR-0039：折叠手势改由 chevron 承担）
-// 改用 lucide 图标（展开 ChevronDown / 折叠 ChevronRight），不再用 CSS 边框绘制。
+// lucide 单图标 ChevronDown + CSS 旋转表达折叠方向（不再 v-if 换图标 —— 换图标只能瞬间
+// 跳变，旋转过渡才能与折叠动效同步起止）。
 .bullet-chevron {
   position: absolute;
   left: -16px;
@@ -161,6 +162,10 @@
 
   svg {
     display: block;
+    // 折叠方向旋转的过渡基线：参数与折叠动效逐字一致（--dur-base + --ease-in-out，即
+    // collapse-transition 里 max-height 主驱动所用，见本文件顶部 mixin）。挂在 svg 子元素
+    // 而非 .bullet-chevron 本体 —— 本体 hover 已占用 transform:scale，两层各转各的互不覆盖。
+    transition: transform var(--dur-base) var(--ease-in-out);
   }
 }
 
@@ -180,6 +185,14 @@
 .block-row:hover .bullet-chevron {
   opacity: 0.75;
   transform: scale(1.2);
+}
+
+// 折叠态旋转：展开 = ChevronDown 朝下（0°），折叠 = rotate(-90°) 朝右（视觉同 ChevronRight）。
+// is-collapsed 在折叠/展开两侧均即时挂/摘（useBlockCollapse watch collapsedFlag），
+// 故旋转与 .block-children 的 max-height 过渡同时起止，且时长/缓动逐字一致
+// （--dur-base + --ease-in-out，见 .bullet-chevron svg 的过渡基线）。
+.block.is-collapsed .bullet-chevron svg {
+  transform: rotate(-90deg);
 }
 
 // Active Block：行内 bullet 与 chevron 同步弱化显示
