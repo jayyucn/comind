@@ -52,9 +52,24 @@ vi.mock('../../stores/tags', () => ({
     ensureLoaded,
   }),
 }))
+/** 已进缓存的块 id（getBlock 命中）；「存在但未缓存」与「不存在」集合由 hoisted 容器管理。 */
+const { cachedBlockIds, existingUncachedIds, loadCallCount } = vi.hoisted(() => ({
+  cachedBlockIds: new Set(['b1', 'b2']),
+  existingUncachedIds: new Set<string>(),
+  loadCallCount: { n: 0 },
+}))
+
 vi.mock('../../stores/blocks', () => ({
   useBlockStore: () => ({
-    getBlock: (id: string) => ({ id, content: `块内容 ${id}` }),
+    // 缓存视图：getBlock 只返回已缓存块；loadBlock 可加载「库中存在但未缓存」的块，
+    // 复现 used-blocks 未主动加载导致误报「无内容或块已删除」的场景。
+    getBlock: (id: string) => (cachedBlockIds.has(id) ? { id, content: `块内容 ${id}` } : undefined),
+    loadBlock: async (id: string) => {
+      loadCallCount.n += 1
+      if (cachedBlockIds.has(id)) return { id, content: `块内容 ${id}` }
+      if (existingUncachedIds.has(id)) return { id, content: `已加载 ${id}` }
+      return undefined
+    },
   }),
 }))
 vi.mock('../../wasm/client', () => ({
@@ -79,6 +94,8 @@ function mountModal(fieldId: string | null) {
 beforeEach(() => {
   vi.clearAllMocks()
   mockFieldDefs = [MOCK_DEF]
+  existingUncachedIds.clear()
+  loadCallCount.n = 0
 })
 
 describe('FieldSettingsModal', () => {
@@ -273,11 +290,38 @@ describe('FieldSettingsModal', () => {
     expect(w.find('[data-testid="field-settings-used-list"]').exists()).toBe(false)
     await w.find('[data-testid="field-settings-used-toggle"]').trigger('click')
     await vi.waitFor(() => expect(getFieldValuesByField).toHaveBeenCalledWith('f1'))
+    // 异步块加载完成后列表才渲染（Promise.all + loadBlock），需等待 used-item 出现
+    await vi.waitFor(() => expect(w.findAll('.used-item')).toHaveLength(2))
     const items = w.findAll('.used-item')
-    expect(items).toHaveLength(2)
     expect(items[0].text()).toBe('块内容 b1')
     await items[0].trigger('click')
     expect(openBlockModal).toHaveBeenCalledWith('b1')
+    w.unmount()
+  })
+
+  it('使用于：block 未进缓存时主动 loadBlock 加载，而非误报「无内容或块已删除」', async () => {
+    existingUncachedIds.add('b-remote')
+    getFieldValuesByField.mockResolvedValue([{ block_id: 'b-remote' }])
+    const w = mountModal('f1')
+    await w.find('[data-testid="field-settings-used-toggle"]').trigger('click')
+    await vi.waitFor(() => expect(getFieldValuesByField).toHaveBeenCalledWith('f1'))
+    await vi.waitFor(() => expect(w.findAll('.used-item')).toHaveLength(1))
+    const items = w.findAll('.used-item')
+    expect(items[0].text()).toBe('已加载 b-remote')
+    expect(loadCallCount.n).toBe(1)
+    w.unmount()
+  })
+
+  it('使用于：真正不存在的块才回落「无内容或块已删除」占位', async () => {
+    getFieldValuesByField.mockResolvedValue([{ block_id: 'b-gone' }])
+    const w = mountModal('f1')
+    await w.find('[data-testid="field-settings-used-toggle"]').trigger('click')
+    await vi.waitFor(() => expect(getFieldValuesByField).toHaveBeenCalledWith('f1'))
+    await vi.waitFor(() => expect(w.findAll('.used-item')).toHaveLength(1))
+    const items = w.findAll('.used-item')
+    expect(items[0].text()).toBe('（无内容或块已删除）')
+    // 已尝试主动加载（loadBlock 一次），此后才判定为不存在
+    expect(loadCallCount.n).toBe(1)
     w.unmount()
   })
 

@@ -249,9 +249,19 @@ async function toggleUsed() {
     const client = await getClient()
     const values = await client.getFieldValuesByField(props.fieldId)
     const ids = [...new Set(values.map((v: { block_id: string }) => v.block_id))] as string[]
-    usedBlocks.value = ids.map((id) => ({
-      id,
-      content: blockStore.getBlock(id)?.content?.trim() || '（无内容或块已删除）',
+    // 已缓存块直接用；未缓存的**主动 loadBlock**（否则未加载的块会被误判为
+    // 「无内容或块已删除」）。loadBlock 内部对已存在块直接返回缓存，未命中才 IPC
+    // 加载；加载仍失败（真不存在 / 已删除 / 底层异常）回落占位文案。
+    const loaded = await Promise.all(
+      ids.map(async (id) => {
+        const cached = blockStore.getBlock(id)
+        if (cached) return cached
+        return (await blockStore.loadBlock(id)) ?? { id, content: '' }
+      }),
+    )
+    usedBlocks.value = loaded.map((b) => ({
+      id: b.id,
+      content: b.content?.trim() || '（无内容或块已删除）',
     }))
   } catch {
     usedBlocks.value = []
