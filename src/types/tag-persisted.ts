@@ -71,13 +71,15 @@ export interface PersistedFieldDefinition {
   step?: number | null
   /**
    * 特化标记（issue T6）：'email' | 'phone' | 'url' | 'richtext'，开放 string 供
-   * 其他类型特化复用（T7）。⚠️ 持久化列尚未落 Rust——本轮约定不动 Rust 迁移，
-   * 且 FieldDefinition 表无既有扩展 JSON 列可复用（display_form_override / hide_when
-   * 均为白名单归一列，default_value 语义被占），故 Rust 回读不含本字段
-   * （undefined = 无特化）；会话内由 tags store 在 spec 写入后回贴本地条目。
-   * 跨会话持久化需后续 `ALTER TABLE FieldDefinition ADD COLUMN spec TEXT`（见 T6 报告）。
+   * 其他类型特化复用（T7）。持久化列已落 Rust（TEXT，与 min/max/step 同批迁移路径），
+   * Rust 回读含本字段；空串归一为 undefined（无特化）。
    */
   spec?: string
+  /**
+   * 字段描述（ADR-0057 D3）：说明字段用途的散文，编辑于完整设置弹窗、展示于
+   * 标签模板卡片与弹窗头部。null / undefined = 未填写。定义级全局共享。
+   */
+  description?: string | null
   is_system: boolean
   /**
    * 预设标记（ADR-0049 系统标签三态模型，2026-09-30）：域字段（project/area/book/...）
@@ -176,6 +178,8 @@ export type UpdateFieldDefinitionParams = {
   step?: number | null
   /** 特化标记（issue T6）：email / phone / url / richtext；显式传 null = 清空（无特化）。 */
   spec?: string | null
+  /** 字段描述（ADR-0057 D3）；显式传 null / 空 = 清空描述，不传保持原值。 */
+  description?: string | null
 }
 
 export type CreateFieldValueParams = {

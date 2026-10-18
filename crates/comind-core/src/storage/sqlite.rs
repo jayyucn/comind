@@ -306,7 +306,8 @@ impl SQLiteAdapter {
                 min             REAL,
                 max             REAL,
                 step            REAL,
-                spec            TEXT
+                spec            TEXT,
+                description     TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_fielddef_key ON FieldDefinition(key);
 
@@ -362,6 +363,7 @@ impl SQLiteAdapter {
         Self::migrate_add_field_definition_is_preset(conn)?;
         Self::migrate_add_field_definition_constraints(conn)?;
         Self::migrate_add_field_definition_spec(conn)?;
+        Self::migrate_add_field_definition_description(conn)?;
         Self::migrate_rename_task_view_to_screen_view(conn)?;
         Self::migrate_add_screen_view_config(conn)?;
         Self::migrate_add_screen_view_entity(conn)?;
@@ -738,6 +740,23 @@ impl SQLiteAdapter {
         Ok(())
     }
 
+    /// 字段描述（ADR-0057 D3）。幂等：老库 FieldDefinition 表补 description 列
+    /// （TEXT，NULL/空串 = 未填写）。与 sqljs `migrate_add_field_definition_description` 逐行对称。
+    fn migrate_add_field_definition_description(conn: &rusqlite::Connection) -> Result<(), Box<dyn Error>> {
+        let has_column: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('FieldDefinition') WHERE name = 'description'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|c| c > 0)
+            .unwrap_or(false);
+        if !has_column {
+            conn.execute("ALTER TABLE FieldDefinition ADD COLUMN description TEXT", [])?;
+        }
+        Ok(())
+    }
+
     /// 一次性数据修复（默认值填充引号 bug）：string/page 型 FieldValue 的 value_json 应直通存
     /// **原文**（property-codec 契约），早期填充误把 default_value 列的 JSON 文本（带引号）原样
     /// 照抄进 value_json → UI 显示带引号、PropertyInline 图标按 `===` 匹配 closed_values 失败。
@@ -791,12 +810,12 @@ pub fn seed_notification_config(conn: &rusqlite::Connection) -> Result<(), Box<d
                 .unwrap_or(false);
             if exists {
                 // 系统字段只读（reject_system_tag / canEditField 拒写）→ 配置拥有权安全，回填
-                // default_value / hide_when，让 JSON 改动对存量库生效（与 tag description/color 回填同构）。
-                // 预设字段用户可改，跳过不覆盖。
+                // default_value / hide_when / description（ADR-0057 D3），让 JSON 改动对存量库生效
+                // （与 tag description/color 回填同构）。预设字段用户可改，跳过不覆盖。
                 if fd.is_system {
                     conn.execute(
-                        "UPDATE FieldDefinition SET default_value = ?2, hide_when = ?3 WHERE key = ?1",
-                        rusqlite::params![&fd.key, &fd.default_value, &fd.hide_when],
+                        "UPDATE FieldDefinition SET default_value = ?2, hide_when = ?3, description = ?4 WHERE key = ?1",
+                        rusqlite::params![&fd.key, &fd.default_value, &fd.hide_when, &fd.description],
                     )?;
                 }
                 continue;

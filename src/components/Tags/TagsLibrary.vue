@@ -1,13 +1,13 @@
 <script setup lang="ts">
 /**
  * 标签管理页（ADR-0050 D5）：左栏（统计副标题 / 搜索 / 全部·最近使用·未使用 /
- * 行 = 标题胶囊 · 成员数 · 字段数 · 来源）+ 右栏详情（成员与来源页统计 / 字段模板四列表 /
+ * 行 = 标题胶囊 · 成员数 · 字段数 · 来源）+ 右栏详情（成员与来源页统计 / 字段模板卡片栅格 /
  * 单父继承区 / 删除标签）。
  *
- * 字段模板是五列表（字段 | 类型 | 默认 | 来源 | 隐藏）：前三列就地编辑（点一下变控件 / 类型下拉），
- * 第四列只读三态（自身 / 引用←首个声明者 / 继承←祖先，ADR-0050 D10 修订增补 #4），
- * 第五列「隐藏」为下拉（ADR-0050 D18，定义级共享）——
- * 没有「编辑」按钮与展开面板（ADR-0050 D14）。
+ * 字段模板是类型色谱卡片栅格（ADR-0057 D2 的视觉升级，auto-fill 流式栅格）：
+ * 卡片 = 类型色芯片（FieldLabel 图标即设置入口，按字段类型染色）+ 类型·来源元信息行
+ * + 描述两行截断；全部字段配置（类型 / 默认 / 隐藏 / 形态 / 约束 / 特化 / 枚举选项）
+ * 统一进字段设置弹窗（FieldSettingsModal，App 层常驻挂载）。
  *
  * 边界与归属：
  * - 打标入口不在此页 —— 建实体 ≠ 打标，打标仍唯一走 content `#名`（ADR-0049 D6）。
@@ -21,29 +21,24 @@
  * - 字段定义是全局共享的，故只有**自身声明**的字段可在此编辑（继承方无权改他人定义）。
  * - 进聚合页的入口在本页右栏标题行（`/tags/:tagId`）。
  */
-import { ChevronDown, CornerUpRight, Pencil, Plus, Search, X } from 'lucide-vue-next'
-import type { ObjectDirective } from 'vue'
+import { CornerUpRight, GripVertical, Layers, Link2, Plus, Search, X } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { VueDraggable } from 'vue-draggable-plus'
+
 import { useNavigateToTag } from '../../composables/useNavigateToTag'
 import { useRelationshipTypes } from '../../composables/useRelationshipTypes'
 import { useBlockCardStore } from '../../stores/blockCard'
+import { useEditorStore } from '../../stores/editor'
 import { useTagsStore } from '../../stores/tags'
 import type {
   PersistedFieldDefinition,
   PersistedTag,
-  UpdateFieldDefinitionParams,
 } from '../../types/tag-persisted'
-import type { FieldHideValue } from '../../utils/field-hide'
-import { FIELD_HIDE_LABELS, FIELD_HIDE_OPTIONS, normalizeHideWhen } from '../../utils/field-hide'
-import { DEFAULT_CURRENCY_SYMBOL, parseCurrencySpec } from '../../utils/field-number-format'
-import { specHeadOf } from '../../types/field-type-registry'
-import {
-  normalizeDisplayFormOverride,
-  type DisplayFormOverride,
-} from '../../utils/field-display-form'
+import { displayFieldType } from '../../utils/field-type-icons'
 import { isTagColorToken, tagDotStyle } from '../../utils/tag-color'
+import { reorderOwnFieldIds, type SortableFieldRow } from '../../utils/tag-field-order'
 import BasePopover from '../common/BasePopover.vue'
-import DatePicker from '../common/DatePicker.vue'
+import FieldLabel from '../common/FieldLabel.vue'
 import PageTitle from '../common/PageTitle.vue'
 import ConfirmDialog from '../ConfirmDialog.vue'
 import TagColorPicker from './TagColorPicker.vue'
@@ -59,6 +54,7 @@ const props = defineProps<{ selectTagId?: string }>()
 
 const tagsStore = useTagsStore()
 const blockCardStore = useBlockCardStore()
+const editorStore = useEditorStore()
 const { navigateToTag } = useNavigateToTag()
 
 type FilterMode = 'all' | 'recent' | 'unused'
@@ -300,6 +296,39 @@ const detailFields = computed<FieldRow[]>(() => {
   })
 })
 
+/**
+ * 字段模板排序（feat：字段可排序）：可见列表 `detailFields` 是计算属性（只读），Sortable 需要
+ * 一个可变的本地数组作为拖拽载体。本地数组在「非拖拽中」且与来源不一致时才从 `detailFields`
+ * 同步，避免覆盖拖拽过程中的中间态。继承字段（kind=inherited）不在 `field_ids` 内、不可重排，
+ * 故只参与展示，不参与落库。
+ */
+const fieldRows = ref<FieldRow[]>([])
+const dragging = ref(false)
+
+watch(
+  detailFields,
+  (rows) => {
+    if (dragging.value) return
+    fieldRows.value = rows.map((r) => ({ ...r }))
+  },
+  { immediate: true },
+)
+
+/** 拖拽结束：抽出 own/ref 字段的新相对顺序并落库；无变化则跳过（省一次 IPC）。 */
+async function onFieldReorder() {
+  dragging.value = false
+  const tag = selectedTag.value
+  if (!tag || isSystemTag.value) return
+  const next = reorderOwnFieldIds(fieldRows.value as SortableFieldRow[], tag.field_ids)
+  if (next === tag.field_ids) return
+  await tagsStore.setOwnFields(tag.id, next)
+}
+
+/** 该卡片是否可拖拽排序：仅自身声明（own/ref）字段，且非系统标签只读面。 */
+function isSortable(row: FieldRow): boolean {
+  return !isSystemTag.value && row.kind !== 'inherited'
+}
+
 /** 字段类型显示名（`select` 是由 closed_values 派生的伪类型）。 */
 const TYPE_LABELS: Record<string, string> = {
   string: '文本',
@@ -388,75 +417,13 @@ async function onClearParent() {
   await tagsStore.setParent(selectedTag.value.id, null)
 }
 
-async function onRemoveField(fieldDefinitionId: string) {
-  if (!selectedTag.value) return
-  // 移除的正是面板服务的那个字段 → 先收面板（锚点行会被摘掉，留着就是个无锚浮层）
-  if (enumFieldId.value === fieldDefinitionId) closeEnumPanel()
-  await tagsStore.removeFieldFromTag(selectedTag.value.id, fieldDefinitionId)
-}
-
-// ── 字段行：五列就地编辑（ADR-0050 D14 + D15） ─────────────────
+// ── 字段行：流式卡片（ADR-0057 D2）────────────────────────────
 //
-// 表头五列（字段 | 类型 | 默认 | 来源 | 隐藏）里前三列都可就地改：字段名 / 默认是「点一下变控件」，
-// 类型与隐藏是下拉。同一时刻至多一个单元格处于编辑态；继承字段的定义归祖先 → 整行只读。
-
-/** 就地编辑态：至多一个 (字段, 单元格)。 */
-const editingFieldId = ref<string | null>(null)
-const editingCell = ref<'name' | 'default' | null>(null)
-const nameDraft = ref('')
-const defaultDraft = ref('')
-
-/** 「切成枚举、选项还没补」的字段 —— 选项补齐前的本地挂起态。 */
-const pendingSelectId = ref<string | null>(null)
-/** 「切成多选、选项还没补」的字段 —— 同上，落库 type 为 multiSelect（T4）。 */
-const pendingMultiSelectId = ref<string | null>(null)
+// 卡片只承担「识别 + 入口」：字段名 / 类型图标 / 描述 / 来源；全部配置统一进
+// 字段设置弹窗（FieldSettingsModal）。同一时刻无本地编辑态 —— 不再有草稿串标签问题。
 
 /**
- * 就地编辑控件：挂载即聚焦 + 全选（点字段名 → 直接改名，不必先删整段）。
- *
- * ⚠️ 受控值必须用 `:value` + `@input` 而非 `v-model`：vModelText 是在**自己的 mounted
- * 钩子**里才写 `el.value`，挂载钩子的执行顺序按模板里的书写顺序 —— 若本指令排在
- * v-model 之前，select() 会全选到空串（表现为光标停在末尾、看着像没选中）。
- */
-const vFocusSelect: ObjectDirective<HTMLElement, boolean | undefined> = {
-  mounted(el, binding) {
-    if (binding.value === false) return
-    el.focus()
-    // `<select>` 没有 select()（只有文本类输入有）→ 有则全选，无则只聚焦。
-    const selectable = el as HTMLElement & { select?: () => void }
-    if (typeof selectable.select === 'function') selectable.select()
-  },
-}
-
-/** 类型下拉的当前取值（`select` 是 type string + closed_values 派生的伪类型，显示名「枚举」）。 */
-function typeValueOf(def: PersistedFieldDefinition): string {
-  // 挂起态也按目标类型呈现：否则「切成枚举/多选」会因 `closed_values` 为空而显示回文本，
-  // 看着像类型没改（先例：原生 select 回退显示首个选项）。
-  if (pendingSelectId.value === def.id) return 'select'
-  if (pendingMultiSelectId.value === def.id) return 'multiSelect'
-  if (def.type === 'multiSelect') return 'multiSelect'
-  // relation 的 closed_values 是关系类型配置位，不按枚举派生（issue T5）
-  if (def.type === 'relation') return 'relation'
-  return def.closed_values?.length ? 'select' : def.type
-}
-
-/**
- * 类型下拉的候选项：当前类型若不在点选表内（历史遗留类型，如布尔 / 页面引用），
- * 把它补成一项 —— 否则原生 select 会回退显示首个选项，看着像「类型被改了」。
- */
-function typeOptionsOf(def: PersistedFieldDefinition) {
-  const current = typeValueOf(def)
-  return FIELD_TYPE_VALUES.includes(current)
-    ? FIELD_TYPE_OPTIONS
-    : [{ value: current, label: TYPE_LABELS[current] ?? current }, ...FIELD_TYPE_OPTIONS]
-}
-
-function isEditing(fieldId: string, cell: 'name' | 'default'): boolean {
-  return editingFieldId.value === fieldId && editingCell.value === cell
-}
-
-/**
- * 字段行的形状（有效字段定义 + 来源三态）——单元格编辑的判据挂在行上。
+ * 字段行的形状（有效字段定义 + 来源三态）。
  * 来源三态（ADR-0050 D10 修订增补 #4）：
  * - `own`：本标签声明且自己就是首个声明者 → 「自身」；
  * - `ref`：本标签声明但有人更早声明 → 「引用←X」（X = 首个声明者）；
@@ -470,383 +437,19 @@ type FieldRow = {
   originTitle: string
 }
 
-/** 可编辑（ADR-0050 D10 修订增补 #3）= 本标签已声明该定义，且定义非 `is_system`
- *  （系统定义在任何表中恒只读）；系统标签整栏只读另有 isSystemTag 门。
- *  引用方与首个声明方同权——定义全局共享，改一处处处同步；继承行（未声明）只读。 */
-function canEditField(row: FieldRow): boolean {
-  return !isSystemTag.value && row.isOwn && !row.def.is_system
+/** 悬浮提示单源：关系态 = 引用/继承 + 完整来源名；own 态无提示。
+ *  徽标本体不展示 kind 文字（专属图标 + 连杆线条已区分语义），关系语义收敛进 tooltip。 */
+function originTipOf(row: FieldRow): string | undefined {
+  if (row.kind === 'own' || !row.originTitle) return undefined
+  return `${row.kind === 'ref' ? '引用' : '继承'}自 ${row.originTitle}`
 }
 
-/** 单元格进编辑态：定义归祖先 / 系统字段 → 整行只读，点击不生效（改它等于改所有引用方）。 */
-function startEdit(row: FieldRow, cell: 'name' | 'default') {
-  if (!canEditField(row)) return
-  if (cell === 'name') {
-    nameDraft.value = row.def.title
-  } else {
-    defaultDraft.value = decodeDefault(row.def.default_value)
-  }
-  editingFieldId.value = row.def.id
-  editingCell.value = cell
+/** 来源标签名（超 5 字截断 + …）；own 态为空。 */
+function originSrcOf(row: FieldRow): string {
+  return row.kind !== 'own' && row.originTitle ? originText(row.originTitle) : ''
 }
 
-function cancelEdit() {
-  editingFieldId.value = null
-  editingCell.value = null
-}
-
-/** 标题落库：空标题不写（改名成空会让字段无从指代），未变也不写。 */
-async function commitName(def: PersistedFieldDefinition) {
-  const title = nameDraft.value.trim()
-  cancelEdit()
-  if (!title || title === def.title) return
-  await tagsStore.updateFieldDefinition({ id: def.id, title })
-}
-
-/** 默认值落库：形态 = JSON 文本（ADR-0050 D13）；空串 → null（即「无默认」）。 */
-async function commitDefault(def: PersistedFieldDefinition) {
-  const encoded = encodeDefault(def.type, defaultDraft.value)
-  cancelEdit()
-  // 空串与 null 同义（无默认）→ 归一后再比，避免每点一次都发一次空写。
-  if (encoded === (def.default_value || null)) return
-  await tagsStore.updateFieldDefinition({ id: def.id, default_value: encoded })
-}
-
-/** 日期字段的默认值：日历选定 / 清除即落库，复用 commitDefault 的编码与空写归一
- *  （DatePicker 无 blur/Enter 语义，交互与枚举型「点一下即落库」同构）。 */
-async function commitDateDefault(def: PersistedFieldDefinition, value: string | [string, string] | undefined) {
-  defaultDraft.value = typeof value === 'string' ? value : ''
-  await commitDefault(def)
-}
-
-/** 枚举字段的默认值：点选项即落库（与输入框同一条 JSON 文本形态）。 */
-async function pickEnumDefault(value: string) {
-  const def = enumDef.value
-  if (!def) return
-  await tagsStore.updateFieldDefinition({ id: def.id, default_value: JSON.stringify(value) })
-  closeEnumPanel()
-}
-
-async function clearEnumDefault() {
-  const def = enumDef.value
-  if (!def) return
-  if (decodeDefault(def.default_value)) {
-    await tagsStore.updateFieldDefinition({ id: def.id, default_value: null })
-  }
-  closeEnumPanel()
-}
-
-/**
- * 类型切换：`select` 落库为 type string + closed_values；`multiSelect` 落库为
- * type multiSelect + closed_values（T4）。**选项还没补时不落库** ——
- * 空选项的枚举没有意义，落下去类型显示会回退成文本，看着像没改；先本地挂起，并
- * 直接把「默认」列的选项面板推给用户（补第一个选项时才一次写完 type + closed_values）。
- */
-async function onChangeType(def: PersistedFieldDefinition, next: string, anchor?: HTMLElement) {
-  if (next === 'select') {
-    if (def.closed_values?.length) return // 已是枚举
-    pendingSelectId.value = def.id
-    if (anchor) openEnumPanel(anchor, def)
-    return
-  }
-  if (next === 'multiSelect') {
-    pendingSelectId.value = null
-    if (def.type === 'multiSelect') return // 已是多选
-    if (def.closed_values?.length) {
-      // 存量枚举（string + closed_values）转多选：选项原样保留，只改 type（不传 closed_values 即保持原值）
-      pendingMultiSelectId.value = null
-      await tagsStore.updateFieldDefinition({ id: def.id, type: 'multiSelect' })
-      return
-    }
-    // 无选项：同 select 的挂起流程，补第一个选项时才落库
-    pendingMultiSelectId.value = def.id
-    if (anchor) openEnumPanel(anchor, def)
-    return
-  }
-  pendingSelectId.value = null
-  pendingMultiSelectId.value = null
-  await tagsStore.updateFieldDefinition({
-    id: def.id,
-    type: next,
-    // 非选项型显式传 null：把「枚举 → 文本/数值」的降级写实（清掉选项）。
-    closed_values: null,
-    // 换类型同时重置特化标记（code-review Standards#5）：spec 归类型族所有
-    // （string 的 email / number 的 currency / page 的 person），残留会在
-    // 切走再切回时静默复活。
-    spec: null,
-  })
-}
-
-/** 「默认」列是否走枚举选项面板（选项就长在这个下拉里，含增 / 删 / 改；多选同样用该面板管理选项）。 */
-function isEnumRow(row: FieldRow): boolean {
-  const t = typeValueOf(row.def)
-  return canEditField(row) && (t === 'select' || t === 'multiSelect')
-}
-
-// ── 隐藏列（ADR-0050 D18）：下拉就地切换，定义级全局共享 ────────
-
-/** 行的隐藏规则取值（历史脏值归一为 never，下拉不会因此显示空白）。 */
-function hideValueOf(def: PersistedFieldDefinition): string {
-  return normalizeHideWhen(def.hide_when)
-}
-
-/**
- * 隐藏规则落库：与取值相同不写（原生 select 的 change 只在值变化时触发，
- * 断言是防程序化 setValue 的重复写入）。定义级共享 → 改的是定义本身。
- */
-async function onChangeHide(def: PersistedFieldDefinition, next: string) {
-  if (normalizeHideWhen(def.hide_when) === next) return
-  await tagsStore.updateFieldDefinition({ id: def.id, hide_when: next })
-}
-
-// ── 形态列（ADR-0050 D21 决策 5/6）：下拉就地切换，定义级全局共享 ──
-
-/** 形态选项（单维枚举，auto = 跟随类型默认映射）。 */
-const FIELD_FORM_OPTIONS: { value: DisplayFormOverride; label: string }[] = [
-  { value: 'auto', label: '跟随类型' },
-  { value: 'chip', label: '胶囊' },
-  { value: 'icon', label: '图标' },
-  { value: 'icon-text', label: '图标+文字' },
-  { value: 'text', label: '文字' },
-]
-
-const FIELD_FORM_LABELS: Record<DisplayFormOverride, string> = Object.fromEntries(
-  FIELD_FORM_OPTIONS.map((o) => [o.value, o.label]),
-) as Record<DisplayFormOverride, string>
-
-/** 行的形态覆盖取值（历史脏值归一为 auto，下拉不会因此显示空白）。 */
-function formValueOf(def: PersistedFieldDefinition): DisplayFormOverride {
-  return normalizeDisplayFormOverride(def.display_form_override)
-}
-
-/** 形态覆盖落库：同值不写；定义级共享 → 改的是定义本身。 */
-async function onChangeForm(def: PersistedFieldDefinition, next: string) {
-  if (normalizeDisplayFormOverride(def.display_form_override) === next) return
-  await tagsStore.updateFieldDefinition({ id: def.id, display_form_override: next })
-}
-
-// ── 数值约束（ADR-0055 D5）：min / max / step，仅数值型可编辑字段 ──
-
-type ConstraintKey = 'min' | 'max' | 'step'
-
-/**
- * 数值约束落库：空串 → null（即「无约束」）；非数值输入由原生 number 输入拦截。
- * 仅在值真变化时写，避免无谓落库（与 onChangeHide / onChangeForm 同构）。
- */
-async function onChangeConstraint(
-  def: PersistedFieldDefinition,
-  key: ConstraintKey,
-  e: Event,
-) {
-  const raw = (e.target as HTMLInputElement).value.trim()
-  const value = raw === '' ? null : Number(raw)
-  const current = (def[key] ?? null) as number | null
-  if (current === (value ?? null)) return
-  // 显式分派避免计算键拓宽类型（保证落库参数精确到 min/max/step）。
-  const patch: { id: string; min?: number | null; max?: number | null; step?: number | null } = {
-    id: def.id,
-  }
-  patch[key] = value
-  await tagsStore.updateFieldDefinition(patch)
-}
-
-// ── 特化（issue T6）：非选项型 string 的特化下拉，仅自身声明可编辑 ──
-
-/** 特化选项（T6 string 特化族；键开放 string，后续特化按同机制追加）。 */
-const STRING_SPEC_OPTIONS = [
-  { value: 'email', label: '邮箱' },
-  { value: 'phone', label: '电话' },
-  { value: 'url', label: '链接' },
-  { value: 'richtext', label: '富文本' },
-]
-
-/**
- * 特化落库：同值不写；定义级共享 → 改的是定义本身。
- * 空串 = 清空（无特化），显式传 null 归「未设置」语义。
- */
-async function onChangeSpec(def: PersistedFieldDefinition, next: string) {
-  if ((def.spec ?? '') === next) return
-  await tagsStore.updateFieldDefinition({ id: def.id, spec: next === '' ? null : next })
-}
-
-// ── number 特化（issue T7）：currency / percent / rating 下拉 + currency 单位 ──
-
-/** number 特化选项（issue T7；spec 语法 'currency[:<symbol>[/<unit>]]'，解析单源 field-number-format）。 */
-const NUMBER_SPEC_OPTIONS = [
-  { value: 'currency', label: '货币' },
-  { value: 'percent', label: '百分比' },
-  { value: 'rating', label: '评分' },
-]
-
-/** spec 首段（'currency:¥/元' → 'currency'），下拉取值用。 */
-function numberSpecHeadOf(def: PersistedFieldDefinition): string {
-  return specHeadOf(def.spec)
-}
-
-/** currency 特化的单位（展示层后置；符号默认 ¥ 由 parseCurrencySpec 兜底）。 */
-function currencyUnitOf(def: PersistedFieldDefinition): string {
-  return parseCurrencySpec(def.spec).unit
-}
-
-/**
- * number 特化落库：同首段值不写；切到 currency 落默认 ¥（无单位），其余纯值。
- * 空串 = 清空（无特化，显式传 null）。
- */
-async function onChangeNumberSpec(def: PersistedFieldDefinition, next: string) {
-  if (numberSpecHeadOf(def) === next) return
-  const spec = next === 'currency' ? 'currency' : next === '' ? null : next
-  await tagsStore.updateFieldDefinition({ id: def.id, spec })
-}
-
-/**
- * currency 单位落库：编码进 spec（'currency:<symbol>/<unit>'）；空 = 无单位。
- * 符号维持原 spec 上的配置（默认 ¥），不因改单位而重置。
- */
-async function onChangeCurrencyUnit(def: PersistedFieldDefinition, e: Event) {
-  const unit = (e.target as HTMLInputElement).value.trim()
-  const { symbol } = parseCurrencySpec(def.spec)
-  const next =
-    unit
-      ? `currency:${symbol === DEFAULT_CURRENCY_SYMBOL ? '' : symbol}/${unit}`
-      : symbol === DEFAULT_CURRENCY_SYMBOL ? 'currency' : `currency:${symbol}`
-  if ((def.spec ?? '') === next) return
-  await tagsStore.updateFieldDefinition({ id: def.id, spec: next })
-}
-
-// ── page 特化（issue T10）：负责人（person）下拉，与 string/number 特化行同构 ──
-
-/** page 特化选项（issue T10；spec 落库语义与 onChangeSpec 一致：空 = 清空）。 */
-const PAGE_SPEC_OPTIONS = [
-  { value: 'person', label: '负责人' },
-]
-
-// ── 枚举选项面板（挂在「默认」列，BasePopover） ──────────────────
-
-const enumPanelOpen = ref(false)
-const enumPanelAnchor = ref<HTMLElement | null>(null)
-const enumPanelPos = ref({ x: 0, y: 0 })
-const enumFieldId = ref<string | null>(null)
-/** 新增选项的输入草稿。 */
-const newOptionDraft = ref('')
-/** 正在改名的选项下标（null = 无）。 */
-const enumRenameIndex = ref<number | null>(null)
-const enumRenameDraft = ref('')
-
-/** 面板所服务的字段定义（写后整体重读 → 每次取最新的那份，不用闭包里的旧对象）。 */
-const enumDef = computed(() =>
-  detailFields.value.find((r) => r.def.id === enumFieldId.value)?.def,
-)
-const enumOptions = computed<string[]>(() => enumDef.value?.closed_values ?? [])
-const enumDefaultValue = computed(() => (enumDef.value ? decodeDefault(enumDef.value.default_value) : ''))
-
-function openEnumPanel(el: HTMLElement, def: PersistedFieldDefinition) {
-  const rect = el.getBoundingClientRect()
-  enumPanelAnchor.value = el
-  enumPanelPos.value = { x: rect.left, y: rect.bottom + 4 }
-  enumFieldId.value = def.id
-  newOptionDraft.value = ''
-  enumRenameIndex.value = null
-  enumPanelOpen.value = true
-}
-
-function openEnumPanelByEvent(e: Event, def: PersistedFieldDefinition) {
-  openEnumPanel(e.currentTarget as HTMLElement, def)
-}
-
-/** 关闭面板：挂起态一并放弃 —— 否则类型会停在「没有选项的枚举/多选」上。 */
-function closeEnumPanel() {
-  enumPanelOpen.value = false
-  enumFieldId.value = null
-  enumRenameIndex.value = null
-  pendingSelectId.value = null
-  pendingMultiSelectId.value = null
-}
-
-/** 新增选项：挂起态下这第一个选项才把 type 一并写死（此前只本地挂起，未落库）。 */
-async function addEnumOption() {
-  const def = enumDef.value
-  const raw = newOptionDraft.value.trim()
-  if (!def || !raw || enumOptions.value.includes(raw)) {
-    newOptionDraft.value = ''
-    return
-  }
-  const values = [...enumOptions.value, raw]
-  newOptionDraft.value = ''
-  const wasPendingSelect = pendingSelectId.value === def.id
-  const wasPendingMulti = pendingMultiSelectId.value === def.id
-  const pendingType = wasPendingMulti ? 'multiSelect' : wasPendingSelect ? 'string' : null
-  await tagsStore.updateFieldDefinition(
-    pendingType !== null
-      ? { id: def.id, type: pendingType, closed_values: values }
-      : { id: def.id, closed_values: values },
-  )
-  pendingSelectId.value = null
-  pendingMultiSelectId.value = null
-}
-
-function startRenameOption(index: number) {
-  enumRenameIndex.value = index
-  enumRenameDraft.value = enumOptions.value[index] ?? ''
-}
-
-/**
- * 选项改名：改的是当前默认值 → 默认值跟着走（否则表里显示旧名、落库值对不上）。
- * 重名不改 —— 两个同名选项无法区分（写下去等于给自己埋一个选不出来的值）。
- */
-async function commitRenameOption(index: number) {
-  const def = enumDef.value
-  const raw = enumRenameDraft.value.trim()
-  enumRenameIndex.value = null
-  if (!def || !raw) return
-  const old = enumOptions.value[index]
-  if (!old || old === raw) return
-  if (enumOptions.value.includes(raw)) return
-  const params: UpdateFieldDefinitionParams = {
-    id: def.id,
-    closed_values: enumOptions.value.map((v, i) => (i === index ? raw : v)),
-  }
-  if (decodeDefault(def.default_value) === old) params.default_value = JSON.stringify(raw)
-  await tagsStore.updateFieldDefinition(params)
-}
-
-/** 删除选项：删的是当前默认值 → 默认值一并清空；最后一项不给删（要换类型就动类型列）。 */
-async function removeEnumOption(index: number) {
-  const def = enumDef.value
-  if (!def || enumOptions.value.length <= 1) return
-  const removed = enumOptions.value[index]
-  const params: UpdateFieldDefinitionParams = {
-    id: def.id,
-    closed_values: enumOptions.value.filter((_, i) => i !== index),
-  }
-  if (removed && decodeDefault(def.default_value) === removed) params.default_value = null
-  await tagsStore.updateFieldDefinition(params)
-}
-
-// ── 默认值（编解码与读侧显示） ─────────────────────────────────
-
-/** 默认值落库形态 = JSON 文本（与 PersistedFieldValue.value_json 同形）；读回时反序列化为字符串。 */
-function decodeDefault(jsonText: string | null | undefined): string {
-  if (!jsonText) return ''
-  try {
-    const v = JSON.parse(jsonText)
-    return v == null ? '' : String(v)
-  } catch {
-    return ''
-  }
-}
-
-/** 输入草稿 → JSON 文本；空串 / 非法数字 → null（即「无默认」）。 */
-function encodeDefault(type: string, raw: string | number): string | null {
-  // 数值输入框由 Vue v-model 直接赋 number（而非字符串）→ 入参可能是 number，
-  // 统一归一为字符串再判空 / 转 JSON，避免 raw.trim 在 number 上抛错。
-  const trimmed = String(raw ?? '').trim()
-  if (!trimmed) return null
-  if (type === 'number') {
-    const n = Number(trimmed)
-    return Number.isNaN(n) ? null : JSON.stringify(n)
-  }
-  return JSON.stringify(trimmed)
-}
-
+// ── 候选值解析（添加字段弹层用） ───────────────────────────────
 /** 候选值文本 → 数组（空文本 → null，即非选项型）。 */
 function parseOptions(raw: string): string[] | null {
   const values = raw
@@ -854,16 +457,6 @@ function parseOptions(raw: string): string[] | null {
     .map((s) => s.trim())
     .filter(Boolean)
   return values.length ? values : null
-}
-
-/** 默认编辑框的原生类型（枚举型走选项面板、日期型走 DatePicker —— 都不经此）。 */
-function defaultInputType(def: PersistedFieldDefinition): string {
-  return def.type === 'number' ? 'number' : 'text'
-}
-
-/** 默认列显示文本：无默认 → 破折号（窄列里不写「无默认」四个字）。 */
-function defaultText(def: PersistedFieldDefinition): string {
-  return decodeDefault(def.default_value) || '—'
 }
 
 // ── 来源列（窄列，长标签名截断 + hover tip） ───────────────────
@@ -877,17 +470,6 @@ function originText(title: string): string {
     ? `${chars.slice(0, ORIGIN_TITLE_MAX).join('')}…`
     : title
 }
-
-/** 是否真被截断 —— 只有截断的行才挂 title，没截断还弹 tip 是噪音。 */
-function isOriginTruncated(title: string | undefined): boolean {
-  return !!title && [...title].length > ORIGIN_TITLE_MAX
-}
-
-// 换标签时收起全部就地编辑态与选项面板：草稿是组件级单例，串到下一个标签上会被误落库。
-watch(selectedTagId, () => {
-  cancelEdit()
-  closeEnumPanel()
-})
 
 // ── 继承区：父标签选择弹层（BasePopover） ──────────────────────
 
@@ -1277,333 +859,132 @@ async function submitAddField() {
             系统标签为内置定义：字段与继承均不可编辑
           </p>
 
-          <h3 class="tag-section-title">
-            字段模板
-          </h3>
-          <div class="tag-fields">
-            <!-- 表头：字段 | 类型 | 默认 | 来源 | 隐藏（+ 末尾操作列） -->
-            <div class="tag-field-row tag-field-row--head">
-              <div class="tag-field-line">
-                <span class="tag-field-cell">字段</span>
-                <span class="tag-field-cell">类型</span>
-                <span class="tag-field-cell">默认</span>
-                <span class="tag-field-cell">来源</span>
-                <span class="tag-field-cell">隐藏</span>
-                <span class="tag-field-cell">形态</span>
-                <span class="tag-field-cell" />
-              </div>
-            </div>
+          <div class="tag-fields-head">
+            <h3 class="tag-section-title">
+              字段模板
+            </h3>
+            <span
+              v-if="detailFields.length"
+              class="tag-fields-count"
+            >{{ detailFields.length }}</span>
+          </div>
+          <!-- 字段模板卡片（ADR-0057 D2 视觉升级）：auto-fill 栅格 + 类型色谱芯片。
+               卡片 = FieldLabel（图标按类型染色，即设置入口）+ 类型·来源元信息行
+               + 描述两行截断；全部配置（类型 / 默认 / 隐藏 / 形态 / 约束 / 特化 /
+               枚举选项）统一进字段设置弹窗。key 含标签 id：切换标签时整组重挂载，
+               让交错入场动效每次都重放。 -->
+          <!-- 字段模板排序：VueDraggable 接管卡片重排（仅 own/ref 卡可拖，继承卡与添加卡不可拖）。
+               容器即栅格（class 落在本组件根 div 上），卡片为直接栅格子；添加字段卡 / 空态
+               经 filter 排除出拖拽，仍作为栅格子保留在末尾。系统标签只读面整体禁用拖拽。 -->
+          <VueDraggable
+            v-model="fieldRows"
+            class="tag-fields f-card-grid"
+            :disabled="isSystemTag"
+            handle=".f-card-grip"
+            draggable=".f-card--sortable"
+            filter=".tag-add-field, .tag-fields-empty"
+            :animation="180"
+            ghost-class="f-card-ghost"
+            drag-class="f-card-drag"
+            chosen-class="f-card-chosen"
+            :force-fallback="true"
+            :fallback-on-body="true"
+            @start="dragging = true"
+            @end="onFieldReorder"
+          >
             <div
-              v-for="row in detailFields"
-              :key="row.def.id"
-              class="tag-field-row"
-              :class="{ 'tag-field-row--editable': canEditField(row) }"
+              v-for="(row, idx) in fieldRows"
+              :key="`${selectedTag?.id ?? ''}-${row.def.id}`"
+              class="f-card"
+              :class="[
+                `f-card--t-${displayFieldType(row.def)}`,
+                { 'f-card--inherited': row.kind === 'inherited', 'f-card--sortable': isSortable(row) },
+              ]"
+              :style="{ '--i': Math.min(idx, 11) }"
             >
-              <div class="tag-field-line">
-                <!-- 字段名：点一下变输入框（挂载即全选）；继承字段的定义归祖先 → 只读 -->
-                <input
-                  v-if="isEditing(row.def.id, 'name')"
-                  v-focus-select
-                  class="tag-field-name-input"
-                  type="text"
-                  :value="nameDraft"
-                  @input="nameDraft = ($event.target as HTMLInputElement).value"
-                  @keydown.enter.prevent="commitName(row.def)"
-                  @keydown.esc.prevent="cancelEdit()"
-                  @blur="commitName(row.def)"
-                >
-                <span
-                  v-else
-                  class="tag-field-name"
-                  :class="{ 'tag-field-name--editable': canEditField(row) }"
-                  :title="canEditField(row) ? '点击改名' : undefined"
-                  @click="startEdit(row, 'name')"
-                >{{ row.def.title }}</span>
-
-                <!-- 类型：下拉就地切换（继承 / 系统字段只显示类型名） -->
-                <select
-                  v-if="canEditField(row)"
-                  class="tag-field-type-select"
-                  :value="typeValueOf(row.def)"
-                  @change="onChangeType(row.def, ($event.target as HTMLSelectElement).value, $event.target as HTMLElement)"
-                >
-                  <option
-                    v-for="opt in typeOptionsOf(row.def)"
-                    :key="opt.value"
-                    :value="opt.value"
-                  >
-                    {{ opt.label }}
-                  </option>
-                </select>
-                <span
-                  v-else
-                  class="tag-field-type"
-                >{{ typeLabel(row.def) }}</span>
-
-                <!-- 默认：日期型走统一日历组件（选定/清除即落库）、枚举型走选项面板，
-                     其余点一下变控件。只读行不给出可点入口，落回下方的静态文本。 -->
-                <DatePicker
-                  v-if="row.def.type === 'date' && canEditField(row)"
-                  class="tag-field-default-date"
-                  :model-value="decodeDefault(row.def.default_value)"
-                  @update:model-value="commitDateDefault(row.def, $event)"
-                />
-                <input
-                  v-else-if="isEditing(row.def.id, 'default')"
-                  v-focus-select
-                  class="tag-field-default-input"
-                  :type="defaultInputType(row.def)"
-                  placeholder="无默认"
-                  :value="defaultDraft"
-                  @input="defaultDraft = ($event.target as HTMLInputElement).value"
-                  @keydown.enter.prevent="commitDefault(row.def)"
-                  @keydown.esc.prevent="cancelEdit()"
-                  @blur="commitDefault(row.def)"
-                >
+              <!-- 设置入口不分来源（ADR-0057 D1 修订）：自身 / 引用 / 继承一律可点开
+                   弹窗（定义全局共享，改一处处处同步，继承方与声明方同权）；
+                   editable 只影响 tooltip 文案，系统定义的只读由弹窗内 is_system 门承担。 -->
+              <div class="f-card-head">
+                <!-- 拖拽手柄：仅可排序卡片显示（own/ref 且非系统标签）；继承卡与系统面不给手柄。
+                     手柄是 Sortable 唯一起拖点，故不影响卡片其余区域的点击打开设置。 -->
                 <button
-                  v-else-if="isEnumRow(row)"
+                  v-if="isSortable(row)"
+                  class="f-card-grip"
                   type="button"
-                  class="tag-field-default tag-field-default--enum"
-                  :class="{ 'tag-field-default--open': enumPanelOpen && enumFieldId === row.def.id }"
-                  title="编辑选项 / 设默认值"
-                  @click="openEnumPanelByEvent($event, row.def)"
+                  tabindex="-1"
+                  aria-label="拖动调整字段顺序"
+                  @click.prevent
                 >
-                  <span class="tag-field-default-text">{{ defaultText(row.def) }}</span>
-                  <ChevronDown
-                    class="tag-field-default-caret"
-                    :size="12"
+                  <GripVertical :size="14" />
+                </button>
+                <FieldLabel
+                  :title="row.def.title"
+                  :type="displayFieldType(row.def)"
+                  :editable="!row.def.is_system"
+                  openable
+                  @open-settings="editorStore.openFieldSettings(row.def.id)"
+                />
+              </div>
+              <div class="f-card-meta">
+                <span class="f-card-type">{{ typeLabel(row.def) }}</span>
+                <!-- 来源徽标（关系态 = 图标 + CSS 连杆 + src 三段式）：
+                     引用 = Link2 + 实线连杆（sky），继承 = Network + 虚线连杆（rose，与卡片虚线边框同语义）；
+                     kind 文字（引用/继承）不进徽标，随来源名收敛进悬浮提示。 -->
+                <span
+                  class="f-card-origin"
+                  :class="{
+                    'f-card-origin--own': row.kind === 'own',
+                    'f-card-origin--ref': row.kind === 'ref',
+                    'f-card-origin--inherited': row.kind === 'inherited',
+                  }"
+                  :title="originTipOf(row)"
+                >
+                  <Network
+                    v-if="row.kind === 'inherited'"
+                    class="f-card-origin-icon"
+                    :size="10"
                   />
-                </button>
-                <span
-                  v-else
-                  class="tag-field-default"
-                  :class="{ 'tag-field-default--editable': canEditField(row) }"
-                  :title="canEditField(row) ? '点击设默认值' : undefined"
-                  @click="startEdit(row, 'default')"
-                >{{ defaultText(row.def) }}</span>
-
-                <!-- 来源：三态（ADR-0050 D10 修订增补 #4）——自身 / 引用←首个声明者 / 继承←祖先 -->
-                <span
-                  class="tag-field-origin"
-                  :class="{ 'tag-field-origin--inherited': row.kind !== 'own' }"
-                >
-                  <template v-if="row.kind === 'own'">自身</template>
-                  <template v-else>
-                    {{ row.kind === 'ref' ? '引用←' : '继承←' }}<span
-                      class="tag-field-origin-title"
-                      :title="isOriginTruncated(row.originTitle) ? row.originTitle : undefined"
-                    >{{ row.originTitle ? originText(row.originTitle) : '—' }}</span>
-                  </template>
+                  <Link2
+                    v-else-if="row.kind === 'ref'"
+                    class="f-card-origin-icon"
+                    :size="10"
+                  />
+                  <span v-if="row.kind === 'own'">自身</span>
+                  <span
+                    v-if="row.kind !== 'own'"
+                    class="f-card-origin-src"
+                  >{{ originSrcOf(row) }}</span>
                 </span>
-
-                <!-- 隐藏（ADR-0050 D18）：下拉就地切换；继承 / 系统字段只显示规则名 -->
-                <select
-                  v-if="canEditField(row)"
-                  class="tag-field-hide-select"
-                  :value="hideValueOf(row.def)"
-                  :aria-label="`隐藏规则：${row.def.title}`"
-                  @change="onChangeHide(row.def, ($event.target as HTMLSelectElement).value)"
-                >
-                  <option
-                    v-for="opt in FIELD_HIDE_OPTIONS"
-                    :key="opt.value"
-                    :value="opt.value"
-                  >
-                    {{ opt.label }}
-                  </option>
-                </select>
-                <span
-                  v-else
-                  class="tag-field-hide"
-                >{{ FIELD_HIDE_LABELS[hideValueOf(row.def) as FieldHideValue] }}</span>
-
-                <!-- 形态（ADR-0050 D21 决策 5/6）：下拉就地切换；继承 / 系统字段只显示形态名 -->
-                <select
-                  v-if="canEditField(row)"
-                  class="tag-field-form-select"
-                  :value="formValueOf(row.def)"
-                  :aria-label="`展示形态：${row.def.title}`"
-                  @change="onChangeForm(row.def, ($event.target as HTMLSelectElement).value)"
-                >
-                  <option
-                    v-for="opt in FIELD_FORM_OPTIONS"
-                    :key="opt.value"
-                    :value="opt.value"
-                  >
-                    {{ opt.label }}
-                  </option>
-                </select>
-                <span
-                  v-else
-                  class="tag-field-form"
-                >{{ FIELD_FORM_LABELS[formValueOf(row.def)] }}</span>
-
-                <button
-                  v-if="canEditField(row)"
-                  type="button"
-                  class="tag-field-remove"
-                  aria-label="移除字段"
-                  @click.stop="onRemoveField(row.def.id)"
-                >
-                  ×
-                </button>
-                <span
-                  v-else
-                  class="tag-field-ops"
-                />
               </div>
-
-              <!-- 数值约束（ADR-0055 D5）：仅数值型字段出现；min / max / step，空 = 无约束 -->
-              <div
-                v-if="row.def.type === 'number'"
-                class="tag-field-constraints"
+              <p
+                class="f-card-desc"
+                :class="{ 'f-card-desc--empty': !row.def.description }"
+                :title="row.def.description || undefined"
               >
-                <label class="tfc-item">
-                  <span class="tfc-label">最小</span>
-                  <input
-                    class="tfc-input"
-                    type="number"
-                    step="any"
-                    :value="row.def.min ?? ''"
-                    :disabled="!canEditField(row)"
-                    :aria-label="`最小约束：${row.def.title}`"
-                    @change="onChangeConstraint(row.def, 'min', $event)"
-                  >
-                </label>
-                <label class="tfc-item">
-                  <span class="tfc-label">最大</span>
-                  <input
-                    class="tfc-input"
-                    type="number"
-                    step="any"
-                    :value="row.def.max ?? ''"
-                    :disabled="!canEditField(row)"
-                    :aria-label="`最大约束：${row.def.title}`"
-                    @change="onChangeConstraint(row.def, 'max', $event)"
-                  >
-                </label>
-                <label class="tfc-item">
-                  <span class="tfc-label">步进</span>
-                  <input
-                    class="tfc-input"
-                    type="number"
-                    step="any"
-                    :value="row.def.step ?? ''"
-                    :disabled="!canEditField(row)"
-                    :aria-label="`步进约束：${row.def.title}`"
-                    @change="onChangeConstraint(row.def, 'step', $event)"
-                  >
-                </label>
-                <!-- number 特化（issue T7）：currency / percent / rating 下拉；
-                     currency 追加单位输入（符号默认 ¥，编码进 spec 无需新持久化列） -->
-                <label class="tfc-item">
-                  <span class="tfc-label">特化</span>
-                  <select
-                    class="tfc-input"
-                    :value="numberSpecHeadOf(row.def)"
-                    :disabled="!canEditField(row)"
-                    :aria-label="`特化：${row.def.title}`"
-                    data-testid="tag-field-number-spec-select"
-                    @change="onChangeNumberSpec(row.def, ($event.target as HTMLSelectElement).value)"
-                  >
-                    <option value="">无</option>
-                    <option
-                      v-for="opt in NUMBER_SPEC_OPTIONS"
-                      :key="opt.value"
-                      :value="opt.value"
-                    >
-                      {{ opt.label }}
-                    </option>
-                  </select>
-                </label>
-                <label
-                  v-if="numberSpecHeadOf(row.def) === 'currency'"
-                  class="tfc-item"
-                >
-                  <span class="tfc-label">单位</span>
-                  <input
-                    class="tfc-input"
-                    type="text"
-                    :value="currencyUnitOf(row.def)"
-                    :disabled="!canEditField(row)"
-                    placeholder="无"
-                    :aria-label="`货币单位：${row.def.title}`"
-                    @change="onChangeCurrencyUnit(row.def, $event)"
-                  >
-                </label>
-              </div>
-
-              <!-- 特化（issue T6）：仅非选项型 string 字段出现；下拉就地切换，
-                   定义级全局共享（与数值约束行同构，走 canEditField 既有判据）。 -->
-              <div
-                v-if="row.def.type === 'string' && !row.def.closed_values?.length"
-                class="tag-field-constraints"
-              >
-                <label class="tfc-item">
-                  <span class="tfc-label">特化</span>
-                  <select
-                    class="tfc-input"
-                    :value="row.def.spec ?? ''"
-                    :disabled="!canEditField(row)"
-                    :aria-label="`特化：${row.def.title}`"
-                    data-testid="tag-field-spec-select"
-                    @change="onChangeSpec(row.def, ($event.target as HTMLSelectElement).value)"
-                  >
-                    <option value="">无</option>
-                    <option
-                      v-for="opt in STRING_SPEC_OPTIONS"
-                      :key="opt.value"
-                      :value="opt.value"
-                    >
-                      {{ opt.label }}
-                    </option>
-                  </select>
-                </label>
-              </div>
-
-              <!-- page 特化（issue T10）：负责人（person）下拉，仅 page 类型字段出现；
-                   落库复用 onChangeSpec（spec 同列，空 = 清空，定义级共享同判据）。 -->
-              <div
-                v-if="row.def.type === 'page'"
-                class="tag-field-constraints"
-              >
-                <label class="tfc-item">
-                  <span class="tfc-label">特化</span>
-                  <select
-                    class="tfc-input"
-                    :value="row.def.spec ?? ''"
-                    :disabled="!canEditField(row)"
-                    :aria-label="`特化：${row.def.title}`"
-                    data-testid="tag-field-page-spec-select"
-                    @change="onChangeSpec(row.def, ($event.target as HTMLSelectElement).value)"
-                  >
-                    <option value="">无</option>
-                    <option
-                      v-for="opt in PAGE_SPEC_OPTIONS"
-                      :key="opt.value"
-                      :value="opt.value"
-                    >
-                      {{ opt.label }}
-                    </option>
-                  </select>
-                </label>
-              </div>
+                {{ row.def.description || '未填写描述' }}
+              </p>
             </div>
             <p
               v-if="!detailFields.length"
               class="tag-fields-empty"
             >
+              <Layers
+                class="tag-fields-empty-icon"
+                :size="18"
+              />
               该标签还没有字段
             </p>
-          </div>
-          <button
-            v-if="!isSystemTag"
-            class="tag-add-field"
-            type="button"
-            @click="openAddFieldPopover"
-          >
-            + 添加字段
-          </button>
+            <button
+              v-if="!isSystemTag"
+              class="tag-add-field"
+              type="button"
+              @click="openAddFieldPopover"
+            >
+              <Plus :size="15" />
+              <span>添加字段</span>
+            </button>
+          </VueDraggable>
 
           <h3 class="tag-section-title tag-section-title--inherit">
             继承
@@ -1784,80 +1165,6 @@ async function submitAddField() {
           />
           {{ candidate.title }}
         </button>
-      </div>
-    </BasePopover>
-
-    <!-- 枚举字段的选项：挂在「默认」列的下拉里，选项可增 / 删 / 改（定义全局共享 → 只对自身声明的字段开放） -->
-    <BasePopover
-      :visible="enumPanelOpen"
-      :position="enumPanelPos"
-      :anchor-el="enumPanelAnchor"
-      @close="closeEnumPanel"
-    >
-      <div class="tag-enum-panel">
-        <button
-          type="button"
-          class="tag-enum-option tag-enum-option--none"
-          :class="{ 'tag-enum-option--active': !enumDefaultValue }"
-          @click="clearEnumDefault"
-        >
-          无默认
-        </button>
-        <div
-          v-for="(opt, i) in enumOptions"
-          :key="`${opt}-${i}`"
-          class="tag-enum-row"
-        >
-          <input
-            v-if="enumRenameIndex === i"
-            v-focus-select
-            class="tag-enum-input"
-            type="text"
-            :value="enumRenameDraft"
-            @input="enumRenameDraft = ($event.target as HTMLInputElement).value"
-            @keydown.enter.prevent="commitRenameOption(i)"
-            @keydown.esc.prevent.stop="enumRenameIndex = null"
-            @blur="commitRenameOption(i)"
-          >
-          <template v-else>
-            <button
-              type="button"
-              class="tag-enum-option"
-              :class="{ 'tag-enum-option--active': opt === enumDefaultValue }"
-              :title="`设为默认：${opt}`"
-              @click="pickEnumDefault(opt)"
-            >
-              {{ opt }}
-            </button>
-            <button
-              type="button"
-              class="tag-enum-icon"
-              aria-label="改选项名"
-              @click="startRenameOption(i)"
-            >
-              <Pencil :size="12" />
-            </button>
-            <button
-              type="button"
-              class="tag-enum-icon"
-              :disabled="enumOptions.length <= 1"
-              :title="enumOptions.length <= 1 ? '至少保留一个选项（要换类型请改「类型」列）' : '删除选项'"
-              aria-label="删除选项"
-              @click="removeEnumOption(i)"
-            >
-              <X :size="12" />
-            </button>
-          </template>
-        </div>
-        <input
-          v-model="newOptionDraft"
-          class="tag-enum-input tag-enum-input--new"
-          type="text"
-          size="1"
-          placeholder="添加选项"
-          @keydown.enter.prevent="addEnumOption"
-          @keydown.esc.prevent.stop="closeEnumPanel()"
-        >
       </div>
     </BasePopover>
 
@@ -2269,7 +1576,6 @@ async function submitAddField() {
 }
 
 .tag-list-empty,
-.tag-fields-empty,
 .tag-detail-empty,
 .tag-parent-empty {
   padding: var(--space-2);
@@ -2314,7 +1620,7 @@ async function submitAddField() {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  /* 字段模板是四列表格（字段 | 类型 | 默认 | 来源）→ 右栏需比常规详情宽些才不挤；
+  /* 字段模板是卡片栅格（类型色谱卡）→ 右栏需比常规详情宽些才不挤；
      具体宽度由用户拖拽决定（`.tag-resizer`），落库到 localStorage */
   overflow: auto;
   padding: var(--space-5);
@@ -2418,10 +1724,34 @@ async function submitAddField() {
   }
 }
 
-.tag-fields {
+/* 字段模板区（重设计）：区头（标题 + 数量徽标）+ auto-fill 流式栅格 */
+.tag-fields-head {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+
+  .tag-section-title {
+    margin: 0;
+  }
+}
+
+.tag-fields-count {
+  padding: 0 var(--space-2);
+  font-size: var(--text-xs);
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+  background: var(--surface-subtle);
+  border-radius: 999px;
+}
+
+/* 字段模板卡片栅格：auto-fill 弹性列宽（消除定宽 flex 的行尾孤块）；多字段时收缩 + 内部滚动 */
+.tag-fields.f-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(216px, 1fr));
+  gap: var(--space-2);
+  padding: 1px;
   /* 最大高度不再写死：字段多时收缩、内部滚动，把下方（继承 / 删除）留在面板内（需求 #3） */
   flex-shrink: 1;
   min-height: 0;
@@ -2429,424 +1759,381 @@ async function submitAddField() {
   padding-right: var(--space-1);
 }
 
-/* 一行 = 一条字段定义；行内四列（字段 | 类型 | 默认 | 来源）+ 末尾操作列 */
-.tag-field-row {
+/* 单张字段卡：识别 + 入口（类型 / 默认 / 隐藏 / 形态 / 约束 / 特化 / 选项统一进字段设置弹窗）。
+   --f-type 为该卡的字段类型色（下方色谱表分派），仅染图标芯片与 hover 描边，卡面保持中性。 */
+.f-card {
+  --f-type: var(--text-tertiary);
+
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-2) var(--space-3);
-  font-size: var(--text-xs);
+  gap: var(--space-2);
+  box-sizing: border-box;
+  padding: var(--space-3);
   background: var(--bg-base);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-
-  /* 表头不是数据行：去掉行框，只留列名；吸顶不随列表滚动，行从其下滑过 */
-  &--head {
-    position: sticky;
-    top: 0;
-    padding: 0 var(--space-3) var(--space-1);
-    color: var(--text-tertiary);
-    /* 不透明底遮住滚过的行 —— 与右栏底色同源 */
-    background: var(--surface-muted);
-    border: none;
-  }
-}
-
-.tag-field-line {
-  display: grid;
-  // 字段列自适应 + 类型列收紧到「刚好装下一个类型名」+ 默认/来源/隐藏/形态吃余量 + 操作列定宽。
-  // 类型列宽是唯一的手调位：下拉框 width:100% 跟着它走，改列宽即可，不要两处都写死。
-  // 50px = 「枚举」等两字类型 + 原生下拉箭头刚好装下（历史遗留的四字类型会略裁，罕见）。
-  // 隐藏列取值最长四字（「为默认值时」）→ 与来源列同吃余量；形态列取值最长四字（「图标+文字」）。
-  grid-template-columns: minmax(0, 1.1fr) 50px minmax(0, 0.9fr) minmax(0, 0.8fr) minmax(0, 0.8fr) minmax(0, 0.8fr) 20px;
-  column-gap: var(--space-2);
-  align-items: center;
-  min-height: 26px;
-}
-
-.tag-field-cell {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-/* 表头对齐跟数据行走同一套：字段列左对齐，类型 / 默认 / 来源三列居中 */
-.tag-field-cell + .tag-field-cell {
-  text-align: center;
-}
-
-/* ── 列：字段（点一下就地改名） ── */
-.tag-field-name {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  color: var(--text-primary);
-
-  /* 可改名的字段给「可点」暗示：文本光标 + 悬停染色 */
-  &--editable {
-    cursor: text;
-
-    &:hover {
-      color: var(--accent-hover);
-    }
-  }
-}
-
-.tag-field-name-input,
-.tag-field-default-input {
-  width: 100%;
-  min-width: 0;
-  font-size: var(--text-xs);
-  color: var(--text-primary);
-  background: var(--bg-base2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xs);
-  padding: 1px var(--space-1);
-  outline: none;
-}
-
-/* 改名框是「编辑态」的唯一视觉信号 —— 用强调色边框与静态文本分开 */
-.tag-field-name-input {
-  border-color: var(--accent-40);
-}
-
-/* 默认值编辑框：与「默认」列的静态文本同列同对齐（居中） */
-.tag-field-default-input {
-  text-align: center;
-}
-
-/* ── 列：类型（下拉就地切换）—— 窄列，文字居中 ──
-   宽度吃满列（列宽是唯一手调位），不再另写死一个值 —— 两者不一致就会左右留白。 */
-.tag-field-type-select {
-  width: 100%;
-  min-width: 0;
-  text-align: center;
-  font-size: var(--text-xs);
-  color: var(--text-primary);
-  background: var(--bg-base2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xs);
-  padding: 1px 1px;
-}
-
-/* 只读行没有下拉框 —— 与上面的 select 同列同对齐（居中），否则两态左边缘错开 */
-.tag-field-type {
-  overflow: hidden;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  text-align: center;
-  text-overflow: ellipsis;
-}
-
-/* ── 列：隐藏（下拉就地切换，ADR-0050 D18）—— 窄列，文字居中 ──
-   与类型下拉同形态：width 吃满列，列宽在 .tag-field-line 手调。 */
-.tag-field-hide-select {
-  width: 100%;
-  min-width: 0;
-  text-align: center;
-  font-size: var(--text-xs);
-  color: var(--text-primary);
-  background: var(--bg-base2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xs);
-  padding: 1px 1px;
-}
-
-/* 只读行（继承 / 系统字段）：与上面的 select 同列同对齐（居中） */
-.tag-field-hide {
-  overflow: hidden;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  text-align: center;
-  text-overflow: ellipsis;
-}
-
-/* ── 列：形态（下拉就地切换，ADR-0050 D21 决策 5）—— 窄列，文字居中 ──
-   与隐藏列同形态：width 吃满列，列宽在 .tag-field-line 手调。 */
-.tag-field-form-select {
-  width: 100%;
-  min-width: 0;
-  text-align: center;
-  font-size: var(--text-xs);
-  color: var(--text-primary);
-  background: var(--bg-base2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xs);
-  padding: 1px 1px;
-}
-
-/* 只读行（继承 / 系统字段）：与上面的 select 同列同对齐（居中） */
-.tag-field-form {
-  overflow: hidden;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  text-align: center;
-  text-overflow: ellipsis;
-}
-
-/* ── 列：默认（点一下就地设值）—— 窄列，文字居中 ── */
-.tag-field-default {
-  overflow: hidden;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  text-align: center;
-  text-overflow: ellipsis;
-
-  &--editable {
-    cursor: text;
-
-    &:hover {
-      color: var(--accent-hover);
-    }
-  }
-}
-
-/* ── 列：来源（自身 / 声明它的祖先标签）—— 窄列，名字居中 ── */
-.tag-field-origin {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 0;
-  color: var(--text-tertiary);
-
-  &--inherited {
-    color: var(--text-secondary);
-  }
-}
-
-.tag-field-origin-title {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-/* ── 操作列：移除（静态帧不出现，悬停该行才露出） ── */
-.tag-field-remove {
-  display: inline-flex;
-  visibility: hidden;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  font-size: var(--text-sm);
-  color: var(--text-tertiary);
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-xs);
-  cursor: pointer;
+  border-radius: var(--radius-md);
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+  // 交错入场：--i 由 v-for 序号注入（封顶 11），切换标签整组重放
+  animation: f-card-in var(--dur-base) var(--ease-out) backwards;
+  animation-delay: calc(var(--i, 0) * 26ms);
 
   &:hover {
-    color: var(--error);
-    background: var(--bg-hover);
+    border-color: color-mix(in srgb, var(--f-type) 42%, var(--border));
+    box-shadow: var(--shadow-elevation-1);
+    transform: translateY(-1px);
+  }
+
+  /* 继承字段：定义归祖先 → 虚线边框提示「只读来源」（ref 仍可编辑，不虚线） */
+  &--inherited {
+    border-style: dashed;
+  }
+
+  /* 可排序卡片：悬停时左缘浮现拖拽手柄（手柄是 Sortable 唯一起拖点） */
+  &--sortable {
+    .f-card-grip {
+      opacity: 0;
+    }
+
+    &:hover .f-card-grip {
+      opacity: 1;
+    }
   }
 }
 
-.tag-field-row:hover .tag-field-remove {
-  visibility: visible;
+/* 拖拽手柄：类型色弱化、静息隐藏、悬停浮现；只作 Sortable 起拖点，自身不接收点击 */
+.f-card-grip {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  padding: 0;
+  color: var(--text-disabled);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: grab;
+  transition: opacity var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+
+  &:hover {
+    color: var(--f-type);
+  }
+
+  &:active {
+    cursor: grabbing;
+  }
 }
 
-.tag-field-ops {
-  width: 20px;
+/* Sortable 拖拽态（force-fallback：克隆挂 body，故类作用域在全局仍可命中） */
+.f-card-ghost {
+  opacity: 0.4;
+  border-style: dashed;
+  border-color: var(--accent);
 }
 
-/* 数值约束子行（ADR-0055 D5）：仅数值型字段出现，min / max / step 三连 */
-.tag-field-constraints {
+.f-card-drag {
+  box-shadow: var(--shadow-elevation-3);
+  cursor: grabbing;
+}
+
+.f-card-chosen {
+  border-color: var(--accent);
+}
+
+/* 类型色谱（displayFieldType 分派，与 field-type-icons 同口径）：未列出的扩展类型走中性回落 */
+.f-card--t-string {
+  --f-type: #64748B;
+}
+
+.f-card--t-number {
+  --f-type: #D97706;
+}
+
+.f-card--t-boolean {
+  --f-type: #059669;
+}
+
+.f-card--t-date,
+.f-card--t-datetime,
+.f-card--t-daterange {
+  --f-type: #2563EB;
+}
+
+.f-card--t-select,
+.f-card--t-multiSelect {
+  --f-type: #7C3AED;
+}
+
+.f-card--t-page {
+  --f-type: #4F46E5;
+}
+
+.f-card--t-file {
+  --f-type: #EA580C;
+}
+
+.f-card--t-relation {
+  --f-type: #0891B2;
+}
+
+.f-card--t-array {
+  --f-type: #0D9488;
+}
+
+/* 暗色：色相不变，整体上调到 400 档保证暗底可辨 */
+[data-theme='dark'] {
+  .f-card--t-string {
+    --f-type: #94A3B8;
+  }
+
+  .f-card--t-number {
+    --f-type: #FBBF24;
+  }
+
+  .f-card--t-boolean {
+    --f-type: #34D399;
+  }
+
+  .f-card--t-date,
+  .f-card--t-datetime,
+  .f-card--t-daterange {
+    --f-type: #60A5FA;
+  }
+
+  .f-card--t-select,
+  .f-card--t-multiSelect {
+    --f-type: #A78BFA;
+  }
+
+  .f-card--t-page {
+    --f-type: #818CF8;
+  }
+
+  .f-card--t-file {
+    --f-type: #FB923C;
+  }
+
+  .f-card--t-relation {
+    --f-type: #22D3EE;
+  }
+
+  .f-card--t-array {
+    --f-type: #2DD4BF;
+  }
+}
+
+@keyframes f-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .f-card {
+    animation: none;
+  }
+}
+
+/* 卡片头：FieldLabel 在卡内升格为「类型色芯片」（deep 覆写只作用于本页，不影响 BlockFieldZone） */
+.f-card-head {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.f-card :deep(.field-label) {
+  gap: var(--space-2);
+}
+
+.f-card :deep(.field-label-entry) {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--f-type) 11%, transparent);
+  color: var(--f-type);
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+
+  &:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--f-type) 20%, transparent);
+    color: var(--f-type);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--f-type) 14%, transparent);
+  }
+
+  svg {
+    width: 14px;
+    height: 14px;
+  }
+}
+
+.f-card :deep(.field-label-name) {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+}
+
+/* 元信息行：类型文字标签 + 来源三态徽标（自身 / 引用←X / 继承←X，ADR-0050 D10 修订增补 #4） */
+.f-card-meta {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  flex-wrap: wrap;
-  padding-top: var(--space-1);
-  margin-top: var(--space-1);
-  border-top: 1px dashed var(--border);
-  color: var(--text-tertiary);
+  min-width: 0;
 }
 
-.tfc-item {
+.f-card-type {
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  letter-spacing: 0.02em;
+}
+
+.f-card-origin {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: var(--text-xs);
-}
-
-.tfc-label {
-  white-space: nowrap;
-  color: var(--text-tertiary);
-}
-
-.tfc-input {
-  width: 64px;
-  padding: 2px 4px;
-  font-size: var(--text-xs);
-  font-family: inherit;
-  color: var(--text-primary);
-  background: var(--bg-base2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xs);
-  outline: none;
-
-  &:focus {
-    border-color: var(--accent, #6366f1);
-  }
-
-  &:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
-  }
-}
-
-/* 枚举字段的「默认」列是个下拉触发器：选项（可增 / 删 / 改）就在这个面板里 */
-.tag-field-default--enum {
-  display: flex;
-  align-items: center;
-  /* 「默认」列居中 —— 文本与箭头作为一个整体居中（不是两端对齐） */
-  justify-content: center;
-  gap: var(--space-1);
-  width: 100%;
+  gap: 3px;
   min-width: 0;
-  padding: 1px var(--space-1);
+  overflow: hidden;
+  padding: 0 var(--space-2);
   font-size: var(--text-xs);
-  color: var(--text-primary);
-  background: var(--bg-base2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xs);
-  cursor: pointer;
+  line-height: 18px;
+  white-space: nowrap;
+  border-radius: 999px;
+
+  /* 三态专属标识：own=强调填充（多数态，保持安静）；
+     引用=Link2+实线连杆（sky，「借来的」）；继承=Network+虚线连杆（rose，lineage 语义，
+     与卡片虚线边框同构）。色相不与类型色谱撞车：sky/rose 均未用于类型芯片。 */
+  &--own {
+    color: var(--accent-hover);
+    background: var(--accent-06);
+  }
+
+  &--ref {
+    color: #0369A1;
+    background: color-mix(in srgb, #0284C7 9%, transparent);
+
+    &:hover {
+      background: color-mix(in srgb, #0284C7 16%, transparent);
+    }
+  }
+
+  &--inherited {
+    color: #BE123C;
+    background: color-mix(in srgb, #E11D48 8%, transparent);
+
+    &:hover {
+      background: color-mix(in srgb, #E11D48 14%, transparent);
+    }
+  }
+}
+
+/* 关系态徽标带说明 tooltip（title=引用/继承自 X）→ help 光标提示可悬停；own 无 tooltip 保持 default */
+.f-card-origin--ref,
+.f-card-origin--inherited {
+  cursor: help;
+}
+
+[data-theme='dark'] .f-card-origin--own {
+  color: var(--accent);
+}
+
+[data-theme='dark'] .f-card-origin--ref {
+  color: #7DD3FC;
+  background: color-mix(in srgb, #38BDF8 12%, transparent);
 
   &:hover {
-    border-color: var(--border-strong);
-  }
-
-  &--open {
-    border-color: var(--accent-40);
+    background: color-mix(in srgb, #38BDF8 20%, transparent);
   }
 }
 
-.tag-field-default-text {
+[data-theme='dark'] .f-card-origin--inherited {
+  color: #FB7185;
+  background: color-mix(in srgb, #FB7185 12%, transparent);
+
+  &:hover {
+    background: color-mix(in srgb, #FB7185 20%, transparent);
+  }
+}
+
+.f-card-origin-icon {
+  flex: none;
+}
+
+/* 继承 = 虚线连杆（与卡片虚线边框同语义：来自祖先的血统线） */
+.f-card-origin--inherited::before {
+  border-top-style: dashed;
+}
+
+.f-card-origin-src {
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
-  white-space: nowrap;
   text-overflow: ellipsis;
 }
 
-.tag-field-default-caret {
-  flex-shrink: 0;
-  color: var(--text-tertiary);
-}
-
-/* 日期字段的「默认」列：DatePicker 常驻（选定即落库，无编辑态），
-   故把它的触发按钮压成与枚举触发器同观感 —— 窄列、居中、小字号 */
-.tag-field-default-date {
-  width: 100%;
-  min-width: 0;
-}
-
-.tag-field-default-date :deep(.dp-trigger) {
-  width: 100%;
-  justify-content: center;
-  gap: var(--space-1);
-  padding: 1px var(--space-1);
+/* 描述：最多两行，超出截断（完整内容看 title / 字段设置弹窗） */
+.f-card-desc {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0;
   font-size: var(--text-xs);
+  font-weight: var(--font-normal);
+  color: var(--text-secondary);
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  word-break: break-word;
+
+  /* 空描述占位：灰字示意，保持有/无描述的卡片等高同构 */
+  &--empty {
+    color: var(--text-disabled);
+  }
 }
 
-/* 宽度随选项内容自适应：选项名多是两三字，定宽会让「文字 ↔ 操作图标」之间空一大片。
-   下限保证底部「添加选项」输入框可用，上限防止超长选项把面板撑到右栏外。 */
-.tag-enum-panel {
+/* 添加字段：栅格内的虚线添加块 —— 与卡片同构，悬停点亮强调色 */
+.tag-add-field {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  width: max-content;
-  min-width: 104px;
-  max-width: 260px;
-  max-height: 240px;
-  overflow-y: auto;
-}
-
-.tag-enum-row {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-/* 撑满整行 → 行尾的改名 / 删除按钮右对齐（各行的操作列同一条竖线）；超长名再截断 */
-.tag-enum-option {
-  flex: 1 1 auto;
-  min-width: 0;
-  max-width: 200px;
-  padding: var(--space-1) var(--space-2);
-  font-size: var(--text-xs);
-  text-align: left;
-  color: var(--text-primary);
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-xs);
-  cursor: pointer;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-
-  &:hover {
-    background: var(--bg-hover);
-  }
-
-  /* 当前默认值 —— 与「无默认」判据同源（enumDefaultValue 是否为它） */
-  &--active {
-    color: var(--accent-hover);
-  }
-
-  &--none {
-    color: var(--text-tertiary);
-  }
-}
-
-.tag-enum-icon {
-  display: inline-flex;
-  flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
+  gap: var(--space-1);
+  min-height: 84px;
+  padding: var(--space-2);
+  font-size: var(--text-xs);
   color: var(--text-tertiary);
   background: transparent;
-  border: none;
-  border-radius: var(--radius-xs);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
   cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
 
-  &:hover:not(:disabled) {
-    color: var(--text-primary);
-    background: var(--bg-hover);
-  }
-
-  &:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
+  &:hover {
+    color: var(--accent);
+    border-color: var(--accent-40);
+    background: var(--accent-03);
   }
 }
 
-.tag-enum-input {
-  min-width: 0;
+.tag-fields-empty {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-5) 0 var(--space-2);
   font-size: var(--text-xs);
-  color: var(--text-primary);
-  background: var(--bg-base2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xs);
-  padding: 2px var(--space-2);
-  outline: none;
+  color: var(--text-disabled);
 }
 
-/* 改名框：顶掉选项名那一格（行内横向布局）；下限保证短选项也能舒服地改名 */
-.tag-enum-row .tag-enum-input {
-  flex: 1 1 auto;
-  min-width: 72px;
+.tag-fields-empty-icon {
+  color: var(--text-disabled);
 }
 
-/* 新增框：独占一行、宽度跟面板走。配套项在模板里（`size=1`）—— 输入框默认 20 字符的
-   固有宽度会把 max-content 面板顶到 180px 以上，自适应就白做了。 */
-.tag-enum-input--new {
-  width: 100%;
-  margin-top: var(--space-1);
-}
-
-.tag-add-field,
 .tag-parent-add {
   display: inline-flex;
   align-items: center;

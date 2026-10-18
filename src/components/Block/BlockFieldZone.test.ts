@@ -252,6 +252,37 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
     expect(wrapper.find('.block-field-zone-title').text()).toBe('负责人')
   })
 
+  it('行首字段设置入口（ADR-0057 D1）：图标可点 → editorStore 记录字段 id；系统定义也可点开（弹窗内只读）', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({
+        id: 't-mixed',
+        title: '混合',
+        field_ids: ['f-owner', 'f-sysnote'],
+        effective_field_ids: ['f-owner', 'f-sysnote'],
+      }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-owner', key: 'owner', title: '负责人' }),
+      fieldDef({ id: 'f-sysnote', key: 'sysnote', title: '备注', is_system: true }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-mixed'])
+    const rows = wrapper.findAll('.block-field-zone-row')
+
+    // 可编辑字段：图标可点 → 记录 fieldId（弹窗由 App 层打开；图标点击 .stop，
+    // 不会连带触发整行的快速编辑器）
+    const ownerEntry = rows.find((r) => rowTitle(r) === '负责人')!.find('.field-label-entry')
+    expect(ownerEntry.attributes('disabled')).toBeUndefined()
+    await ownerEntry.trigger('click')
+    expect(useEditorStore().fieldSettingsFieldId).toBe('f-owner')
+
+    // 系统定义：入口同样可点 → 只读弹窗（与标签管理页同权；写侧由弹窗 is_system 门拦）
+    const sysEntry = rows.find((r) => rowTitle(r) === '备注')!.find('.field-label-entry')
+    expect(sysEntry.attributes('disabled')).toBeUndefined()
+    await sysEntry.trigger('click')
+    expect(useEditorStore().fieldSettingsFieldId).toBe('f-sysnote')
+  })
+
   // ── D21 形态分派（决策 1 / 5 / 7）────────────────────────────
 
   it('枚举字段：值区直挂 EnumSelect，触发按钮显示当前选项原文', async () => {
@@ -461,6 +492,159 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
     expect(wrapper.find('.block-field-zone-chip').exists()).toBe(false)
     expect(wrapper.find('.block-field-zone-title').text()).toBe('评级')
     expect(wrapper.find('.block-field-zone-value').text()).toBe('A')
+  })
+
+  // ── 通用只读扩展：readonly 形态 = 纯展示，不挂输入框 / 内联编辑器，整行锁定 ──
+
+  it('string 字段 display_form_override=readonly：静态文字 + 锁图标，整行不可点不弹编辑器', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-r', title: '备注', field_ids: ['f-note'], effective_field_ids: ['f-note'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-note', key: 'note', title: '备注', type: 'string', display_form_override: 'readonly' }),
+    ])
+    mockClient.getFieldValues.mockResolvedValue([
+      fv({ id: 'v1', block_id: 'b1', key: 'note', value_json: 'hello', value_type: 'string' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-r'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    // 可编辑的 TextField 不渲染（无 input 落值区）
+    expect(wrapper.find('.block-field-zone-value input').exists()).toBe(false)
+    // 走只读分支：静态文字 + 常驻锁图标
+    expect(wrapper.find('.bfz-readonly-value').exists()).toBe(true)
+    expect(wrapper.find('.bfz-readonly-lock').exists()).toBe(true)
+    expect(wrapper.find('.block-field-zone-text').text()).toBe('hello')
+    // 整行非按钮（role 不挂 button）、点击不弹快速编辑器（字段区锁定）
+    expect(wrapper.find('.block-field-zone-row').attributes('role')).toBeUndefined()
+    const editorStore = useEditorStore()
+    await wrapper.find('.block-field-zone-row').trigger('click')
+    expect(editorStore.quickFieldValueEditor?.key).not.toBe('note')
+    wrapper.unmount()
+  })
+
+  it('boolean 字段 display_form_override=readonly：✓/✗ 图标静态展示、整行锁定', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-d', title: '完成', field_ids: ['f-done'], effective_field_ids: ['f-done'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-done', key: 'done', title: '完成', type: 'boolean', display_form_override: 'readonly' }),
+    ])
+    mockClient.getFieldValues.mockResolvedValue([
+      fv({ id: 'v1', block_id: 'b1', key: 'done', value_json: 'true', value_type: 'boolean' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-d'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    // BooleanCheck 不渲染
+    expect(wrapper.find('[data-testid="boolean-check"]').exists()).toBe(false)
+    // 只读分支：静态 ✓/✗ 图标 + 锁图标
+    expect(wrapper.find('.bfz-readonly-value').exists()).toBe(true)
+    expect(wrapper.find('.bfz-readonly-lock').exists()).toBe(true)
+    expect(wrapper.find('.block-field-zone-row').attributes('role')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  // ── D21 决策 5 回归：类型专属分支必须按 usesDefaultForm 门控，
+  // 否则 date/boolean/page 等类型的 override 全部被类型编辑器分支抢跑吞掉 ──
+
+  it('date 字段 override=text：DatePicker 不渲染，静态文字行出 ISO 值，整行可点唤起快速编辑器', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-d', title: '到期日', field_ids: ['f-due'], effective_field_ids: ['f-due'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-due', key: 'due', title: '到期日', type: 'date', display_form_override: 'text' }),
+    ])
+    mockClient.getFieldValues.mockResolvedValue([
+      fv({ id: 'v1', block_id: 'b1', key: 'due', value_json: '"2026-09-06"', value_type: 'date' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-d'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    // 类型编辑器分支让位：DatePicker（dp-trigger）不出
+    expect(wrapper.find('[data-testid="dp-trigger"]').exists()).toBe(false)
+    // 走静态文字行，date 值投影为 ISO 字符串
+    expect(wrapper.find('.block-field-zone-text').text()).toBe('2026-09-06')
+    // text 形态行无内联编辑器 → 整行保持可点击 → 快速编辑器（可编辑性兜底）
+    const editorStore = useEditorStore()
+    await wrapper.find('.block-field-zone-row').trigger('click')
+    expect(editorStore.quickFieldValueEditor?.blockId).toBe('b1')
+    expect(editorStore.quickFieldValueEditor?.key).toBe('due')
+    wrapper.unmount()
+  })
+
+  it('boolean 字段 override=text：BooleanCheck 不渲染，值投影为「是/否」文字行', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-d', title: '完成', field_ids: ['f-done'], effective_field_ids: ['f-done'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-done', key: 'done', title: '完成', type: 'boolean', display_form_override: 'text' }),
+    ])
+    mockClient.getFieldValues.mockResolvedValue([
+      fv({ id: 'v1', block_id: 'b1', key: 'done', value_json: 'true', value_type: 'boolean' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-d'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="boolean-check"]').exists()).toBe(false)
+    expect(wrapper.find('.block-field-zone-text').text()).toBe('是')
+    wrapper.unmount()
+  })
+
+  it('boolean 字段 override=chip：BooleanCheck 不渲染，通用 chip 出「是/否」胶囊（raw true/false 不可读）', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-d', title: '完成', field_ids: ['f-done'], effective_field_ids: ['f-done'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-done', key: 'done', title: '完成', type: 'boolean', display_form_override: 'chip' }),
+    ])
+    mockClient.getFieldValues.mockResolvedValue([
+      fv({ id: 'v1', block_id: 'b1', key: 'done', value_json: 'true', value_type: 'boolean' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-d'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="boolean-check"]').exists()).toBe(false)
+    expect(wrapper.find('.block-field-zone-chip .bfz-chip-value').text()).toBe('是')
+    wrapper.unmount()
+  })
+
+  it('page 字段 override=text：值区出目标页标题文字（非裸 id），走通用文字行', async () => {
+    const { usePageStore } = await import('../../stores/pages')
+    const pageStore = usePageStore()
+    pageStore.pages.push({
+      id: 'p1', blockId: null, title: '目标页', type: 'normal', icon: null,
+      cover: null, aliases: [], filePath: null, childrenCount: 0, wordCount: 0,
+      createdAt: 1, updatedAt: 1, deleted: false, deletedAt: null,
+    })
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-page', title: '引用', field_ids: ['f-ref'], effective_field_ids: ['f-ref'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-ref', key: 'ref', title: '相关页面', type: 'page', display_form_override: 'text' }),
+    ])
+    mockClient.getFieldValues.mockResolvedValue([
+      fv({ id: 'v1', block_id: 'b1', key: 'ref', value_json: 'p1', value_type: 'page' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-page'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    // PageRefPicker 不渲染，文字行出页标题
+    expect(wrapper.find('.block-field-zone-text').text()).toBe('目标页')
+    expect(wrapper.text()).not.toContain('p1')
+    wrapper.unmount()
   })
 
   it('chip 点击唤起既有快捷字段值编辑器（array 等 chip 字段；枚举字段已改直挂 EnumSelect）', async () => {

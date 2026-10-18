@@ -55,6 +55,27 @@ export function decodeDefaultJson(jsonText: string | null | undefined): string {
 }
 
 /**
+ * 输入草稿 → default_value 落库形态（JSON 文本）；空串 / 非法数字 → null（即「无默认」）。
+ *
+ * 与 decodeDefaultJson 构成 default_value 的一对编解码单源（ADR-0057 D5 草稿+保存）。
+ * 注意形态契约与 field-value-codec（FieldValue）相反：default_value 恒为 JSON 文本
+ * （string 也要包裹成 '"李四"'），读侧 decodeDefaultJson 对非 JSON 文本静默丢弃——
+ * 写侧直通原文会让默认值失效（FieldSettingsModal 曾直通落库，实证）。
+ */
+export function encodeDefaultJson(type: string, raw: string): string | null {
+  const trimmed = String(raw ?? '').trim()
+  if (!trimmed) return null
+  if (type === 'number') {
+    const n = Number(trimmed)
+    return Number.isNaN(n) ? null : JSON.stringify(n)
+  }
+  if (type === 'boolean') {
+    return trimmed === 'true' ? 'true' : trimmed === 'false' ? 'false' : null
+  }
+  return JSON.stringify(trimmed)
+}
+
+/**
  * 隐藏判定（块属性展示的唯一判据）。入参全部预先算好，本函数保持纯函数可单测：
  *
  * - `hasValue`：该块此字段是否填了值（空串 / 空数组 / 无属性行都算未填）；

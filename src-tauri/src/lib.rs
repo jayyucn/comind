@@ -200,6 +200,7 @@ pub fn run() {
             commands::set_field_value,
             commands::delete_field_value,
             commands::execute_batch,
+            commands::reload_system_seed,
             commands::get_db_path,
             commands::get_workspace_path,
             commands::set_workspace_path,

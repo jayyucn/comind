@@ -1,6 +1,7 @@
 import type { Editor } from '@tiptap/vue-3'
 import { defineStore } from 'pinia'
 import { ref, shallowRef } from 'vue'
+
 import type { DateRefKind, RecurrenceRule } from '../utils/date-ref'
 
 export interface ToastMessage {
@@ -253,6 +254,21 @@ export const useEditorStore = defineStore('editor', () => {
     blockModalSnapshotOf.value = null
   }
 
+  /**
+   * 完整字段设置弹窗（ADR-0057 D1）：fieldId 非空即显示，仿 BlockModal 受控模式。
+   * 入口两处（标签模板卡片 / block 字段行）经 FieldLabel emit 后由调用方调 open；
+   * 弹窗关闭由 App 级监听 close 事件回写。
+   */
+  const fieldSettingsFieldId = ref<string | null>(null)
+
+  function openFieldSettings(fieldId: string) {
+    fieldSettingsFieldId.value = fieldId
+  }
+
+  function closeFieldSettings() {
+    fieldSettingsFieldId.value = null
+  }
+
   /** 快捷字段值编辑器状态 */
   const quickFieldValueEditor = ref<{
     visible: boolean
@@ -319,5 +335,8 @@ export const useEditorStore = defineStore('editor', () => {
     blockModalSnapshotOf,
     openBlockModal,
     closeBlockModal,
+    fieldSettingsFieldId,
+    openFieldSettings,
+    closeFieldSettings,
   }
 })

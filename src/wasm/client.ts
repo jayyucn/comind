@@ -1,6 +1,10 @@
 import { invoke } from '@tauri-apps/api/core'
+
 import { isTauriEnvironment, type TauriBatchCheckAndFireData, type TauriGraphEdgeRecord } from './tauri-platform'
 export { isTauriEnvironment } from './tauri-platform'
+// dev 免重编：seed 静态 import 进入 Vite 模块图（编辑 JSON 触发 HMR 整页刷新），
+// 启动时经 reload_system_seed 命令注入原生 Rust（Tauri 运行时数据走原生 SQLite）。
+import seedJson from '../types/systemFieldSeed.json'
 import { initWasmClient, type WasmClient } from './wasm-client'
 
 function parseJsonResult<T>(result: unknown): T {
@@ -9,20 +13,20 @@ function parseJsonResult<T>(result: unknown): T {
   }
   return result as T
 }
-import type {
-  Block, Page, Link, RelationshipType, LinkDraft,
-  UserTemplate, SearchResult, BlockUpdate, BlockSaveResult, PageUpdate,
-  BatchOperation, BatchResult, ExportResult, ImportResult, SyncConfig,
-  Notification, DateRefRecord, IncompleteTask, BlockCard, SavedFilterRust, ScreenViewRust,
-  NotificationSettings, PageWithBlocks, BookHighlightRust, BookProgressRust
-} from './types'
 import type { FieldValue } from '../types/field-value'
 import type {
-  PersistedTag, PersistedTagTreeEntry, PersistedFieldDefinition,
-  CreateTagParams, UpdateTagParams, SetTagParentParams,
-  CreateFieldDefinitionParams, UpdateFieldDefinitionParams,
-  DeleteFieldDefinitionResult
-} from '../types/tag-persisted'
+  CreateFieldDefinitionParams,   CreateTagParams,   DeleteFieldDefinitionResult,
+PersistedFieldDefinition,
+  PersistedTag, PersistedTagTreeEntry, SetTagParentParams,
+UpdateFieldDefinitionParams,
+UpdateTagParams} from '../types/tag-persisted'
+import type {
+  BatchOperation, BatchResult,   Block, BlockCard, BlockSaveResult, BlockUpdate, BookHighlightRust, BookProgressRust,
+DateRefRecord, ExportResult, ImportResult, IncompleteTask, Link, LinkDraft,
+  Notification,   NotificationSettings, Page, PageUpdate,
+PageWithBlocks, RelationshipType, SavedFilterRust, ScreenViewRust,
+SearchResult, SyncConfig,
+  UserTemplate} from './types'
 
 export interface CoreClient {
   getBlock(blockId: string): Promise<Block>
@@ -52,6 +56,8 @@ export interface CoreClient {
   getOutlinks(pageId: string): Promise<Link[]>
 
   getFieldValues(blockId: string): Promise<FieldValue[]>
+  /** 按定义反查值行（ADR-0057「使用于」）：弹窗展示持有该字段值的块列表；软删行天然排除。 */
+  getFieldValuesByField(fieldDefinitionId: string): Promise<FieldValue[]>
   setFieldValue(blockId: string, key: string, value: string, type: string): Promise<FieldValue>
   deleteFieldValue(blockId: string, key: string): Promise<void>
 
@@ -313,6 +319,12 @@ class TauriClient implements CoreClient {
 
   async getFieldValues(blockId: string): Promise<FieldValue[]> {
     return invoke('get_field_values', { blockId })
+  }
+
+  async getFieldValuesByField(fieldDefinitionId: string): Promise<FieldValue[]> {
+    const results = await this.executeBatch([{ entity: 'field_value', action: 'get_by_field', params: { field_definition_id: fieldDefinitionId } }])
+    const first = Array.isArray(results) ? results[0] : results
+    return (Array.isArray(first) ? first : []) as unknown as FieldValue[]
   }
 
   async setFieldValue(blockId: string, key: string, value: string, type: string): Promise<FieldValue> {
@@ -725,6 +737,12 @@ class WasmClientAdapter implements CoreClient {
     return this.wasm.get_field_values(blockId)
   }
 
+  async getFieldValuesByField(fieldDefinitionId: string): Promise<FieldValue[]> {
+    const results = await this.executeBatch([{ entity: 'field_value', action: 'get_by_field', params: { field_definition_id: fieldDefinitionId } }])
+    const first = Array.isArray(results) ? results[0] : results
+    return (Array.isArray(first) ? first : []) as unknown as FieldValue[]
+  }
+
   async setFieldValue(blockId: string, key: string, value: string, type: string): Promise<FieldValue> {
     return this.wasm.set_field_value(blockId, key, value, type)
   }
@@ -993,6 +1011,17 @@ export async function initCoreClient(): Promise<CoreClient> {
 
   if (isTauriEnvironment()) {
     coreClient = new TauriClient()
+    // dev 免重编：Tauri 数据走原生 SQLite，seed 需经命令注入并重跑幂等 seeding；
+    // 改 systemFieldSeed.json → HMR 整页刷新 → 此处以最新值重注入，无需重编/重启。
+    // 生产 / vitest 不注入（Rust 走编译期 include_str / 内置默认）。
+    if (import.meta.env.DEV && import.meta.env.MODE === 'development') {
+      try {
+        await invoke('reload_system_seed', { seedJson: JSON.stringify(seedJson) })
+        console.info('[CoreClient] dev seed injected & re-seeded')
+      } catch (err) {
+        console.warn('[CoreClient] dev seed reload failed (non-fatal):', err)
+      }
+    }
     console.info('[CoreClient] Using Tauri Command client')
   } else {
     const wasm = await initWasmClient()

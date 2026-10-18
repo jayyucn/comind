@@ -1,3 +1,7 @@
+import type { FieldValue } from '../types/field-value'
+// dev 免重编：seed 经静态 import 进入 Vite 模块图（编辑 JSON 触发 HMR 整页刷新，
+// 启动时注入最新值）；生产仍由 Rust 编译期 include_str 嵌入，本 import 不参与注入。
+import seedJson from '../types/systemFieldSeed.json'
 import type {
   BatchResult,
   Block,
@@ -9,7 +13,6 @@ import type {
   RelationshipType,
   SearchResult
 } from './types'
-import type { FieldValue } from '../types/field-value'
 
 export interface WasmClient {
   get_block(blockId: string): Promise<Block>
@@ -144,7 +147,14 @@ export async function initWasmClient(): Promise<WasmClient> {
     }
   }
   
-  await wasmModule.init()
+  // dev（MODE=development）：把 seed 在运行时注入 WASM，改 JSON 免重编。
+  // 不依赖 fetch，规避 webview 缓存旧响应导致「刷新无效、必须重启 tauri:dev」的问题；
+  // 生产 / vitest 不注入：Rust 走编译期 include_str（prod）或内置默认（test）。
+  await wasmModule.init(
+    import.meta.env.DEV && import.meta.env.MODE === 'development'
+      ? JSON.stringify(seedJson)
+      : undefined,
+  )
 
   const client: WasmClient = {
     async get_block(blockId: string): Promise<Block> {

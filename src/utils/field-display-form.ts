@@ -18,14 +18,95 @@
  */
 import { fieldTypeSpec } from '../types/field-type-registry'
 
-/** 用户可逐字段选择的形态取值空间（封闭枚举，D21 决策 5） */
-export const DISPLAY_FORM_OVERRIDES = ['auto', 'icon', 'icon-text', 'text', 'chip'] as const
+/**
+ * 用户可逐字段选择的形态取值空间（封闭枚举，D21 决策 5 + 通用只读扩展）。
+ * `readonly` = 纯展示形态：跨类型把值渲染为静态可读文字（不挂输入框 / 内联编辑器，
+ * 整行不可点），字段区锁定不可编辑（值仍可经外部/SQL 写入）。仅用户可编辑字段可配，
+ * 系统字段下拉本就禁用。
+ */
+export const DISPLAY_FORM_OVERRIDES = ['auto', 'icon', 'icon-text', 'text', 'chip', 'switch', 'readonly'] as const
 
 /** 用户覆盖值类型；`auto` = 跟随类型默认映射 */
 export type DisplayFormOverride = (typeof DISPLAY_FORM_OVERRIDES)[number]
 
 /** 解析后的形态种类（渲染分派依据） */
 export type DisplayFormKind = Exclude<DisplayFormOverride, 'auto'>
+
+/** 各展示形态的中文 label（设置页下拉、提示文案共用）。 */
+export const FORM_LABELS: Record<DisplayFormOverride, string> = {
+  auto: '跟随类型',
+  icon: '图标',
+  'icon-text': '图标+文字',
+  text: '文字',
+  chip: '胶囊',
+  switch: '开关',
+  readonly: '只读',
+}
+
+/**
+ * 内建图标键 → 图标字符（与 BlockFieldZone.getIcon 同源；命中即产出该字符）。
+ * 这些键（tags/project/area/book/chapter/quote）在渲染侧 `getIcon` 直接产出图标，
+ * 属「有图标来源」的类型；与布尔 ✓/✗、系统 status/priority 的编译期 closedValues
+ * 图标并列，但此处只收「键驱动」子集——系统字段只读、展示形态下拉不可达。
+ */
+export const ICON_CHARS: ReadonlyMap<string, string> = new Map([
+  ['tags', '🏷️'],
+  ['project', '📁'],
+  ['area', '🌐'],
+  ['book', '📖'],
+  ['chapter', '📄'],
+  ['quote', '❝'],
+])
+
+/**
+ * 字段是否「有图标来源」——即 icon / icon-text 展示形态对其有意义。
+ * 判定：布尔（值即 ✓/✗）或内建图标键（ICON_CHARS）。
+ * 用途：设置页据此收敛展示形态下拉，避免对无图标来源的字段给出不可达的
+ * icon / icon-text 死选项（评估纪要：自建 select/multiSelect 暂不带图标）。
+ */
+export function fieldHasIconSource(def: { type: string; key?: string | null }): boolean {
+  return def.type === 'boolean' || (def.key != null && ICON_CHARS.has(def.key))
+}
+
+/**
+ * 展示形态下拉按字段类型配置（评估纪要 + 用户裁定：枚举选项随字段类型走）。
+ * 每种类型只给有意义、可达的形态，避免不可达死选项：
+ * - boolean：勾叉（icon，✓/✗）/ 开关（switch，开关 UI）/ 文字（是/否）/ 跟随类型
+ * - 有图标来源（status/priority 系统字段、tags/project 等内建键）：图标 / 图标+文字 /
+ *   胶囊 / 文字 / 跟随类型
+ * - 枚举（select/multiSelect）：胶囊 / 文字 / 跟随类型
+ * - 其余（string/number/date/...）：文字 / 跟随类型
+ */
+export function displayFormOptionsFor(opts: {
+  type: string
+  key?: string | null
+}): { value: DisplayFormOverride; label: string }[] {
+  const auto = { value: 'auto' as const, label: FORM_LABELS.auto }
+  const readonly = { value: 'readonly' as const, label: FORM_LABELS.readonly }
+  if (opts.type === 'boolean') {
+    return [
+      auto,
+      { value: 'icon', label: '勾叉' },
+      { value: 'switch', label: FORM_LABELS.switch },
+      { value: 'text', label: FORM_LABELS.text },
+      readonly,
+    ]
+  }
+  if (fieldHasIconSource(opts)) {
+    return [
+      auto,
+      { value: 'icon', label: FORM_LABELS.icon },
+      { value: 'icon-text', label: FORM_LABELS['icon-text'] },
+      { value: 'text', label: FORM_LABELS.text },
+      { value: 'chip', label: FORM_LABELS.chip },
+      readonly,
+    ]
+  }
+  if (opts.type === 'select' || opts.type === 'multiSelect') {
+    return [auto, { value: 'chip', label: FORM_LABELS.chip }, { value: 'text', label: FORM_LABELS.text }, readonly]
+  }
+  return [auto, { value: 'text', label: FORM_LABELS.text }, readonly]
+}
 
 /** 解析输入：持久化形 / 编译期形定义的公共切面（两轨字段名都收） */
 export interface DisplayFormSource {

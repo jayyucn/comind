@@ -61,3 +61,4 @@ comind-android/
 dist.old-**
 *.txt
 target-debug/
+.dumate/

@@ -412,10 +412,10 @@ native（`storage/sqlite.rs:303` CREATE TABLE + `:620` 迁移）与 wasm（`stor
 
 **实施形态（2026-10-09）**：
 
-- 形态解析单源：`src/utils/field-display-form.ts`（`typeDefaultForm` / `normalizeDisplayFormOverride` / `resolveDisplayForm`，覆盖优先级 = 用户覆盖 > 编译期 displayStyle > 类型默认；icon / icon-text 无可用图标字符时渲染兜底回落 text）。
+- 形态解析单源：`src/utils/field-display-form.ts`（`typeDefaultForm` / `normalizeDisplayFormOverride` / `resolveDisplayForm`，覆盖优先级 = 用户覆盖 > 编译期 displayStyle > 类型默认；icon / icon-text 无可用图标字符时渲染兜底回落 text；`readonly` 为跨类型纯展示形态，见决策 10）。
 - Rust 列 ×1：`FieldDefinition.display_form_override`（`hide_when` 同构全触点：COLS / 双轨行映射 / create / update / batch 处理器白名单归一、sqlite + sqljs 双 CREATE TABLE 与幂等迁移、wasm32 check、`wasm:build`）。~~块隐藏态走 `block.format.fields_hidden` JSON 键（折叠态同通道）~~（**2026-10-12 废止**：字段带并入折叠，不再有独立隐藏通道；残留键不读、不清理），Rust 零改动仍成立。
 - 渲染分派：`BlockFieldZone.vue` `list` 变体按形态出 chip（数组为 chip 序列、page 为引用 chip 点击导航）/ ghost（无值虚线，点击即录入）/ icon（boolean 值即 ✓/✗）/ text；`all` 变体经同一注册表分派（编译期定义 + 持久化覆盖合并解析）。
-- 配置面：`TagsLibrary.vue` 字段模板第六列「形态」（跟随类型 / 胶囊 / 图标 / 图标+文字 / 文字），继承 / 系统字段只读沿用 `canEditField`。
+- 配置面：`TagsLibrary.vue` 字段模板第六列「形态」（跟随类型 / 胶囊 / 图标 / 图标+文字 / 文字 / 只读），继承 / 系统字段只读沿用 `canEditField`（系统字段该下拉本就禁用，readonly 不对其开放）。
 - ~~显隐交互：`block.format.fieldsHidden` 为真时整区不渲染；隐藏开关挂字段带右上（`.block-properties:hover` 淡入），恢复入口绝对定位到块下方间隙（`.block-row:hover` 淡入、一般兄弟组合器），两者平时 `opacity:0 + pointer-events:none`（可点性铁律）。~~（**2026-10-12 废止**：隐藏字段带的诉求由块折叠承担——hover chevron 一次收起子树与字段带，同一 `collapsed` 标志、同一时序闸门，恢复即展开。见 ADR-0045 Decision 追加。）
 - 回归：`field-display-form.test.ts`（12 例）、`BlockFieldZone.test.ts`（29 例，含 D21 分派与 ghost；旧 right 槽「尺寸 18」预期系测试侧规格漂移，随实现修正为 14）、~~`blocks.fields-hidden.test.ts`（2 例）~~ → `blocks.format-merge.test.ts`（2026-10-12 改写：`fields_hidden` 废弃后，原文件的 format 合并语义改由 `collapsed` + `align` 承载）。
 
@@ -427,11 +427,12 @@ native（`storage/sqlite.rs:303` CREATE TABLE + `:620` 迁移）与 wasm（`stor
 2. **逐字段形态覆盖**：字段定义持久化列承载形态覆盖（取代 D17 §2 的「是否展示」语义）；未设置时跟随类型默认映射。配置入口在字段管理表（D14 四列就地编辑表）新增一列，编辑交互对齐既有单元格就地编辑约定。
 3. ~~**整区隐藏按块逐块控制**：块级持久化隐藏态，存于 `block.format` JSON（`fields_hidden` 键，与折叠态 `collapsed` 同通道），Rust 侧零改动；隐藏后该块不渲染字段区。它是块数据的一部分，不是 UI 临时态。~~（**2026-10-12 废止**：整区可见性并入块折叠体系，不再有独立隐藏态与入口。见 ADR-0045 Decision 追加。）
 4. **D1「挂载即显示」保持为默认**：字段区默认渲染（作为唯一录入面）；整区隐藏是用户显式动作的结果，不是新字段的默认行为。
-5. **形态覆盖取值空间（单维枚举）**：`display_form_override = 'auto' | 'icon' | 'icon-text' | 'text' | 'chip'`；`auto`（缺省）跟随类型默认映射，不设两维矩阵与自由组合。`chip` 为胶囊化形态，底色一律取中性 surface token——色环只留给 tag 一家（沿用「存 token 名不存 hex」铁律，不扩 `--tag-color-*` 消费面）。
+5. **形态覆盖取值空间（单维枚举）**：`display_form_override = 'auto' | 'icon' | 'icon-text' | 'text' | 'chip' | 'switch' | 'readonly'`；`auto`（缺省）跟随类型默认映射，不设两维矩阵与自由组合。`chip` 为胶囊化形态，底色一律取中性 surface token——色环只留给 tag 一家（沿用「存 token 名不存 hex」铁律，不扩 `--tag-color-*` 消费面）。`readonly` 为跨类型纯展示形态（见决策 10）。
 6. **系统字段不可配**：系统字段的形态与其无值表现由编译期覆盖层（`tag.ts`）定死，不进字段管理表；用户字段可逐字段覆盖（继承字段定义归祖先，只读判据沿用 D14 既有约定）。
 7. **无值表现**：自定义字段按类型默认映射出无值形态（如枚举 / 日期类型的虚线 ghost 胶囊，点击即录入）；与 D18 `hide_when` 条件隐藏机制并存——规则命中优先于默认形态。
 8. ~~**隐藏 / 恢复交互（hover 门控）**：隐藏触发 = 字段区 hover 淡入的 ×；恢复 = 块 hover 时在该块与相邻块之间的间隙淡入轻量入口。两条入口平时均不可见（与折叠 chevron 同一交互习惯），块静息态与普通块无异——不设常驻 ghost 占位，不进 BlockModal。~~（**2026-10-12 废止**：折叠体系只保留折叠 chevron 一处 hover 入口，不再单设字段区隐藏 / 恢复按钮。见 ADR-0045 Decision 追加。）
 9. **`all` 变体同步**：Backlinks 消费的 `all` 变体与 `list` 共用同一形态注册表与渲染分派；同一字段值跨变体形态一致（D19「同物两渲染」教训的延伸）。
+10. **`readonly` 纯展示形态（跨类型通用，2026-10-18 扩展）**：在既有单维枚举中新增 `readonly`，作为**跨所有可编辑类型**的纯展示形态——渲染时复用各类型现有可读静态输出（boolean 取 ✓/✗ 图标、其余取 `valueText` 文字），不挂输入框 / 内联编辑器，整行不可点（`role`/`tabindex` 不挂 `button`、点击整行不弹编辑器），值旁常驻锁图标标「不可编辑」、字段名弱化至 tertiary 色。`readonly` 仅用户可编辑字段可配（系统字段展示形态下拉本就 `:disabled`，恒 `auto`）。它只改变字段区的**呈现与交互**，不改变值的 persist 语义：值仍可经外部 / SQL 写入；块字段区无 value 编辑入口即仅展示。视觉口径（`list` 两列布局的字段名弱化 + 锁图标）与 `all` 变体（静态值 + 锁图标、不绑点击）一致。
 
 **对既有决策的修订**：
 

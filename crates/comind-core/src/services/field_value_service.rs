@@ -70,6 +70,7 @@ impl FieldValueService {
             max: None,
             step: None,
             spec: None,
+            description: None,
         };
         repository::FieldDefinitionRepository::create(storage.field_definitions(), &fd)?;
         Ok(fd)

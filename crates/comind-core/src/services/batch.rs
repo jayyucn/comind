@@ -684,6 +684,10 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
             if params.get("spec").is_some() {
                 fd.spec = optional_str_param(&params, "spec");
             }
+            // 字段描述（ADR-0057 D3）：键存在才改动；null / 空串 → 清除描述。
+            if params.get("description").is_some() {
+                fd.description = optional_str_param(&params, "description");
+            }
             let updated =
                 repository::FieldDefinitionRepository::update(storage.field_definitions(), &fd)?;
             Ok(OpEffect {
@@ -728,6 +732,16 @@ fn apply_one(storage: &mut dyn StorageAdapter, op: &Value) -> Result<OpEffect, B
             let values = repository::FieldValueRepository::get_by_block_id(
                 storage.field_values(),
                 &block_id,
+            )?;
+            Ok(OpEffect::plain(serde_json::to_value(values)?))
+        }
+        // 按定义反查值行（ADR-0057「使用于」）：弹窗展示持有该字段值的块列表。
+        // 只读，无 sync 副作用。软删行天然排除（SQL 过滤 deleted_at IS NULL）。
+        ("field_value", "get_by_field") => {
+            let field_definition_id = str_param(&params, "field_definition_id").to_string();
+            let values = repository::FieldValueRepository::get_by_field_definition_id(
+                storage.field_values(),
+                &field_definition_id,
             )?;
             Ok(OpEffect::plain(serde_json::to_value(values)?))
         }

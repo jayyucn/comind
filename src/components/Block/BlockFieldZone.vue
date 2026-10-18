@@ -33,38 +33,41 @@
  */
 import { Pin, Unlink } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, ref, toRef } from 'vue'
-import { openReaderWindow } from '../../composables/useReaderWindow'
+
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
+import { openReaderWindow } from '../../composables/useReaderWindow'
 import { useBlockStore } from '../../stores/blocks'
 import { useEditorStore } from '../../stores/editor'
 import { useFieldValueStore } from '../../stores/fieldValue'
 import { usePageStore } from '../../stores/pages'
 import { useTagsStore } from '../../stores/tags'
 import type { FileRefValue, RelationRefValue } from '../../types/field-definition'
+import { numberSpecialization, pageSpecialization, specHeadOf, stringSpecialization } from '../../types/field-type-registry'
 import type { FieldValue } from '../../types/field-value'
 import { isSystemField } from '../../types/tag'
 import type { PersistedFieldDefinition } from '../../types/tag-persisted'
+import { type DisplayFormKind, ICON_CHARS, resolveDisplayForm, typeDefaultForm } from '../../utils/field-display-form'
 import { effectiveNumberBounds, formatCurrency, parseCurrencySpec } from '../../utils/field-number-format'
-import { resolveDisplayForm, type DisplayFormKind } from '../../utils/field-display-form'
+import { displayFieldType } from '../../utils/field-type-icons'
 import { safeEvaluateFormula } from '../../utils/formula'
-import { TAG_COLORS, isTagColorToken } from '../../utils/tag-color'
+import { renderInlineMarkdown, toExternalHref } from '../../utils/mini-markdown'
+import { isTagColorToken,TAG_COLORS } from '../../utils/tag-color'
 import { isTauriEnvironment } from '../../wasm/tauri-platform'
-import { Icon } from '../Icons'
 import BooleanCheck, { type BooleanCheckValue } from '../common/BooleanCheck.vue'
 import DatePicker, { type DatePickerValue } from '../common/DatePicker.vue'
-import DateTimePicker from '../common/DateTimePicker.vue'
 import DateRangePicker, { type DateRangePickerValue } from '../common/DateRangePicker.vue'
+import DateTimePicker from '../common/DateTimePicker.vue'
 import EnumSelect, { type EnumOption, type EnumSelectValue } from '../common/EnumSelect.vue'
-import MultiEnumSelect from '../common/MultiEnumSelect.vue'
+import FieldLabel from '../common/FieldLabel.vue'
 import FileRefEditor from '../common/FileRefEditor.vue'
+import MultiEnumSelect from '../common/MultiEnumSelect.vue'
 import NumberInput, { type NumberInputValue } from '../common/NumberInput.vue'
 import PageRefPicker from '../common/PageRefPicker.vue'
 import RatingInput from '../common/RatingInput.vue'
 import RelationRefEditor from '../common/RelationRefEditor.vue'
-import TextField, { type TextFieldValue } from '../common/TextField.vue'
 import SpecializedText from '../common/SpecializedText.vue'
-import { renderInlineMarkdown, toExternalHref } from '../../utils/mini-markdown'
-import { numberSpecialization, pageSpecialization, specHeadOf, stringSpecialization } from '../../types/field-type-registry'
+import TextField, { type TextFieldValue } from '../common/TextField.vue'
+import { Icon } from '../Icons'
 import { dataOf, defOf, useBlockFieldRows } from './composables/useBlockFieldRows'
 
 const props = withDefaults(defineProps<{
@@ -162,22 +165,8 @@ function getIcon(key: string, value: unknown): string | null {
     const cv = def.closedValues.find((c) => c.value === value)
     if (cv?.icon) return cv.icon
   }
-  switch (key) {
-    case 'tags':
-      return '🏷️'
-    case 'project':
-      return '📁'
-    case 'area':
-      return '🌐'
-    case 'book':
-      return '📖'
-    case 'chapter':
-      return '📄'
-    case 'quote':
-      return '❝'
-    default:
-      return null
-  }
+  // 内建图标键（与 field-display-form.ICON_CHARS 同源）：命中即产出该字符
+  return ICON_CHARS.get(key) ?? null
 }
 
 function getLabel(key: string, value: unknown): string {
@@ -373,6 +362,25 @@ function valueText(def: PersistedFieldDefinition): string | null {
   const value = dataOf(fv)
   if (value === null || value === undefined || value === '') return null
   if (Array.isArray(value)) return value.length ? value.map(String).join('、') : null
+  // 结构化值类型的文字投影（形态覆盖为 text / icon-text 时的静态文字行，D21 决策 5）：
+  // 逐类型给出可读文案，禁止 [object Object] / 裸 id 漏出。
+  if (def.type === 'boolean') return value === true ? '是' : '否'
+  if (def.type === 'daterange') {
+    const r = value as { start?: unknown; end?: unknown }
+    return [r.start, r.end]
+      .filter((p) => p !== null && p !== undefined && p !== '')
+      .map(String)
+      .join(' → ') || null
+  }
+  if (def.type === 'page') return pageTitleOf(String(value))
+  if (def.type === 'file') return fileValue(def)?.name ?? null
+  if (def.type === 'relation') return relationTargetTitle(def)
+  if (def.type === 'color') return colorLabelOf(def) || null
+  if (def.type === 'number' && typeof value === 'number') {
+    return numberSpecKindOf(def) === 'currency'
+      ? formatCurrency(value, currencyFormatOf(def))
+      : String(value)
+  }
   const closed = def.closed_values?.find((v) => String(v) === String(value))
   return closed ? String(closed) : String(value)
 }
@@ -597,6 +605,17 @@ async function onBooleanChange(def: PersistedFieldDefinition, value: BooleanChec
   await fieldValueStore.setFieldValue(props.blockId, def.key, value, 'boolean')
 }
 
+/** 开关形态（switch）点击切换：未填/否→是，是→否（落库走 onBooleanChange）。 */
+function onBooleanToggle(def: PersistedFieldDefinition) {
+  void onBooleanChange(def, !booleanValue(def))
+}
+
+/** all 变体开关形态的取值（非 boolean 值一律视为空），供开关 UI 着色。 */
+function allBooleanValue(fv: FieldValue): BooleanCheckValue {
+  const v = dataOf(fv)
+  return v === true ? true : v === false ? false : undefined
+}
+
 /**
  * 纯 string（自由文本）字段的当前值（string | undefined），供 TextField 绑定。
  * 仅非选项型 string（排除 closed_values 非空的枚举）走 TextField；枚举被
@@ -758,7 +777,17 @@ function relationValue(def: PersistedFieldDefinition): RelationRefValue | undefi
   const v = dataOf(fv)
   if (v === null || typeof v !== 'object' || Array.isArray(v)) return undefined
   const rel = v as Partial<RelationRefValue>
-  return typeof rel.targetId === 'string' && rel.targetId ? (v as RelationRefValue) : undefined
+    return typeof rel.targetId === 'string' && rel.targetId ? (v as RelationRefValue) : undefined
+}
+
+/** relation 目标的展示名（text / icon-text 形态的静态文字用）：页名优先，块取内容，
+ *  悬空 id 原样回落（与 RelationRefEditor 的目标解析口径一致）。 */
+function relationTargetTitle(def: PersistedFieldDefinition): string | null {
+  const rv = relationValue(def)
+  if (!rv) return null
+  return pageStore.getPage(rv.targetId)?.title
+    ?? blockStore.getBlock(rv.targetId)?.content?.trim()
+    ?? rv.targetId
 }
 
 /**
@@ -847,17 +876,22 @@ async function onMultiEnumChange(def: PersistedFieldDefinition, value: string[] 
 /**
  * 行是否已挂专属内联编辑器（date / number / boolean / file / page / relation / 枚举 chip 形态）：
  * 整行让位给控件，行不再是点击目标（role/tabindex 均不挂），openFieldRow 对其早退。
+ * 形态感知（D21 决策 5）：override 把形态改走 text 时值区是静态文字，整行保持可点击
+ * → 快速编辑器（string 除外——其文字形态即内联 TextField 编辑器，见尾条）。
  */
 function rowHasInlineEditor(def: PersistedFieldDefinition): boolean {
+  // 只读形态（readonly）：纯展示，不挂任何内联编辑器（D21 通用只读扩展）。
+  if (formOf(def) === 'readonly') return false
+  if (formOf(def) === 'text' && def.type !== 'string') return false
   return (
-    def.type === 'date'
-    || def.type === 'datetime'
-    || def.type === 'daterange'
-    || def.type === 'number'
-    || def.type === 'boolean'
-    || def.type === 'file'
-    || def.type === 'page'
-    || def.type === 'relation'
+    (def.type === 'date' && usesDefaultForm(def))
+    || (def.type === 'datetime' && usesDefaultForm(def))
+    || (def.type === 'daterange' && usesDefaultForm(def))
+    || (def.type === 'number' && usesDefaultForm(def))
+    || (def.type === 'boolean' && (formOf(def) === 'icon' || formOf(def) === 'icon-text'))
+    || (def.type === 'file' && usesDefaultForm(def))
+    || (def.type === 'page' && usesDefaultForm(def))
+    || (def.type === 'relation' && usesDefaultForm(def))
     || (isEnumField(def) && formOf(def) === 'chip')
     // string 特化（issue T6）：url 有值时值区是可点击链接（非编辑控件）→ 整行保持
     // 可点击（点行唤快速编辑器改值）；url 无值及其他 string 特化仍走内联编辑器。
@@ -890,6 +924,10 @@ const formByDefId = computed<Record<string, DisplayFormKind>>(() => {
     if ((form === 'icon' || form === 'icon-text') && iconCharOf(def) === null) {
       form = 'text'
     }
+    // switch 仅对 boolean 有意义；非布尔字段落到 switch 回落 text（与 icon 无字符回落同口径）
+    if (form === 'switch' && def.type !== 'boolean') {
+      form = 'text'
+    }
     out[def.id] = form
   }
   return out
@@ -897,6 +935,17 @@ const formByDefId = computed<Record<string, DisplayFormKind>>(() => {
 
 function formOf(def: PersistedFieldDefinition): DisplayFormKind {
   return formByDefId.value[def.id] ?? 'text'
+}
+
+/**
+ * 类型专属编辑器分支的门控（D21 决策 5：形态覆盖必须生效）：
+ * resolved 形态 = 类型默认形态时命中——编辑器控件（DatePicker / NumberInput /
+ * BooleanCheck / FileRefEditor / PageRefPicker / RelationRefEditor）即该类型默认
+ * chip / icon 形态的实现载体；override 把形态改走别的档时让位给通用形态分支
+ * （静态文字 / 图标行 / 通用 chip），编辑经整行点击 → 快速编辑器（全类型支持）。
+ */
+function usesDefaultForm(def: PersistedFieldDefinition): boolean {
+  return formOf(def) === typeDefaultForm(def.type, isEnumField(def))
 }
 
 /**
@@ -909,6 +958,8 @@ function chipValues(def: PersistedFieldDefinition): string[] | null {
   if (!fv) return null
   const value = dataOf(fv)
   if (value === null || value === undefined || value === '') return null
+  // boolean + chip 覆写（D21 决策 5）：通用 chip 分支的值文案（raw true/false 不可读）
+  if (def.type === 'boolean') return [value === true ? '是' : '否']
   if (Array.isArray(value)) {
     if (!value.length) return null
     if (def.type === 'multiSelect') return value.map((v) => multiEnumLabelOf(def, String(v)))
@@ -944,10 +995,21 @@ function onFieldActivate(event: Event, def: PersistedFieldDefinition, value?: st
 
 /** 点击 / Enter 唤起该字段的快速编辑器（锚点 = 行元素矩形）；参数取 Event 以兼容键盘触发。 */
 function openFieldRow(event: Event, def: PersistedFieldDefinition) {
+  // 只读形态（readonly）：字段区锁定，点击整行不弹编辑器（D21 通用只读扩展）。
+  if (formOf(def) === 'readonly') return
   // date / number / boolean / 枚举（chip 形态）字段的值区已挂专属内联编辑器
   // （DatePicker / NumberInput / BooleanCheck / EnumSelect），不再弹通用编辑器。
   if (rowHasInlineEditor(def)) return
   editorStore.showQuickFieldValueEditor(props.blockId, def.key, editorPosition(event.currentTarget as HTMLElement))
+}
+
+/**
+ * 整行是否作为「可点击按钮」呈现（role/tabindex 依据）：
+ * 内联编辑器独占的行（date/number/boolean/枚举…）与只读形态行都不是点击目标。
+ * 替代原先 `!rowHasInlineEditor` 的单判据，把 readonly 也排除出可交互集（D21 通用只读扩展）。
+ */
+function interactive(def: PersistedFieldDefinition): boolean {
+  return !rowHasInlineEditor(def) && formOf(def) !== 'readonly'
 }
 
 /** all 变体的图标字符：布尔值即 ✓/✗（与 list 的 iconCharOf 同语义），其余走编译期 getIcon。 */
@@ -979,6 +1041,10 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
     }
   }
   if ((form === 'icon' || form === 'icon-text') && allIconCharOf(fv) === null) {
+    form = 'text'
+  }
+  const allType = persistedDefOf(fv.key)?.type ?? defOf(fv.key)?.type
+  if (form === 'switch' && allType !== 'boolean') {
     form = 'text'
   }
   return form
@@ -1066,9 +1132,44 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
         v-for="fv in displayRows"
         :key="fv.id"
       >
+        <!-- 只读形态（readonly，D21 通用只读扩展）：all 变体同样纯展示——静态可读值 +
+             锁图标，不绑点击（字段区锁定不可编辑）。优先于下方各形态分支。 -->
+        <span
+          v-if="allFormOf(fv) === 'readonly'"
+          class="property-item bfz-readonly-item"
+          :title="`${titleOf(fv.key)}: ${dataOf(fv) != null && dataOf(fv) !== '' ? getLabel(fv.key, dataOf(fv)) : '—'}（只读）`"
+        >
+          <span class="bfz-chip-title">{{ titleOf(fv.key) }}</span>
+          <span class="bfz-readonly-value">
+            <template v-if="defOf(fv.key)?.type === 'boolean'">
+              <span
+                v-if="allIconCharOf(fv)"
+                class="property-icon"
+              >{{ allIconCharOf(fv) }}</span>
+              <span
+                v-else
+                class="block-field-zone-placeholder"
+              >—</span>
+            </template>
+            <span
+              v-else-if="dataOf(fv) != null && dataOf(fv) !== ''"
+              class="property-value"
+            >{{ getLabel(fv.key, dataOf(fv)) }}</span>
+            <span
+              v-else
+              class="block-field-zone-placeholder"
+            >—</span>
+          </span>
+          <Lock
+            :size="12"
+            class="bfz-readonly-lock"
+            title="只读，不可在字段区编辑"
+          />
+        </span>
+
         <!-- chip 形态（all 变体） -->
         <span
-          v-if="allFormOf(fv) === 'chip'"
+          v-else-if="allFormOf(fv) === 'chip'"
           class="property-item block-field-zone-chip"
           :class="{ 'block-field-zone-chip--ghost': dataOf(fv) === null || dataOf(fv) === '' }"
           :title="chipTitleAttr(fv)"
@@ -1094,6 +1195,26 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
         >
           <span class="property-icon">{{ allIconCharOf(fv) }}</span>
           <span class="property-value">{{ getLabel(fv.key, dataOf(fv)) }}</span>
+        </span>
+        <!-- switch 形态（boolean 开关 UI；all 变体展示型，点击整行唤起编辑器，与 icon/icon-text 同口径） -->
+        <span
+          v-else-if="allFormOf(fv) === 'switch'"
+          class="property-item block-field-zone-row--switch"
+          :title="chipTitleAttr(fv)"
+          @click.stop="openEditor(fv.key, $event.currentTarget as HTMLElement)"
+        >
+          <span
+            class="bfz-switch"
+            :class="{
+              'bfz-switch--on': allBooleanValue(fv) === true,
+              'bfz-switch--off': allBooleanValue(fv) === false,
+              'bfz-switch--empty': allBooleanValue(fv) === undefined,
+            }"
+            role="img"
+            :aria-label="allBooleanValue(fv) === true ? '是' : allBooleanValue(fv) === false ? '否' : '未填'"
+          >
+            <span class="bfz-switch-knob" />
+          </span>
         </span>
         <!-- text 形态（既有 item 渲染） -->
         <div
@@ -1146,15 +1267,24 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
       v-for="def in fields"
       :key="def.id"
       class="block-field-zone-row"
-      :role="rowHasInlineEditor(def) ? undefined : 'button'"
-      :tabindex="rowHasInlineEditor(def) ? undefined : 0"
-      :class="{ 'block-field-zone-row--orphan': orphanKeySet.has(def.key), 'block-field-zone-row--inline-editor': rowHasInlineEditor(def) }"
+      :role="interactive(def) ? 'button' : undefined"
+      :tabindex="interactive(def) ? 0 : undefined"
+      :class="{ 'block-field-zone-row--orphan': orphanKeySet.has(def.key), 'block-field-zone-row--inline-editor': rowHasInlineEditor(def), 'block-field-zone-row--readonly': formOf(def) === 'readonly' }"
       :data-field="def.key"
       @click="openFieldRow($event, def)"
       @keydown.enter="openFieldRow($event, def)"
     >
+      <!-- 字段名 + 设置入口（ADR-0057 D1）：类型图标即入口（icon 点击 .stop，不会连带
+           触发整行快速编辑器），emit → editorStore.openFieldSettings（App 层弹窗）。
+           设置入口不分来源：系统定义也可点开（弹窗内整体只读），与标签管理页同权。 -->
       <span class="block-field-zone-title">
-        {{ def.title }}
+        <FieldLabel
+          :title="def.title"
+          :type="displayFieldType(def)"
+          :editable="!def.is_system"
+          openable
+          @open-settings="editorStore.openFieldSettings(def.id)"
+        />
         <span
           v-if="orphanKeySet.has(def.key)"
           class="block-field-zone-orphan-tag"
@@ -1164,10 +1294,61 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
         </span>
       </span>
       <span class="block-field-zone-value">
+        <!-- ① 文字形态（D21 决策 5：override 覆写为 text，或 icon 无图标字符回落 text；
+             string 除外——其文字形态即内联编辑器，见下方 string 分支）：静态文字行，
+             整行保持可点击（rowHasInlineEditor 放行）→ 快速编辑器全类型可编辑。 -->
+        <template v-if="formOf(def) === 'text' && def.type !== 'string'">
+          <span
+            v-if="valueText(def) !== null"
+            class="block-field-zone-text"
+          >{{ valueText(def) }}</span>
+          <span
+            v-else
+            class="block-field-zone-placeholder"
+          >—</span>
+        </template>
+
+        <!-- ①·b 只读形态（readonly，D21 通用只读扩展）：跨类型纯展示——复用各类型现有
+             可读静态输出（boolean 取 ✓/✗ 图标、其余取 valueText 文字），不挂输入框 /
+             内联编辑器，整行不可点（openFieldRow 对 readonly 早退）。值旁常驻锁图标标
+             "不可编辑"；无值出「—」。优先于下方所有类型专属分支。 -->
+        <template v-else-if="formOf(def) === 'readonly'">
+          <span class="bfz-readonly-value">
+            <template v-if="def.type === 'boolean' && iconCharOf(def)">
+              <span class="property-icon">{{ iconCharOf(def) }}</span>
+            </template>
+            <span
+              v-else-if="valueText(def) !== null"
+              class="block-field-zone-text"
+            >{{ valueText(def) }}</span>
+            <span
+              v-else
+              class="block-field-zone-placeholder"
+            >—</span>
+          </span>
+          <Lock
+            :size="12"
+            class="bfz-readonly-lock"
+            title="只读，不可在字段区编辑"
+          />
+        </template>
+
+        <!-- ② 图标 / 图标+文字形态（override 或编译期 displayStyle）：值前图标位，
+             icon-text 才带值文本；boolean 除外——其 ✓/✗ 图标由 BooleanCheck 承载交互。
+             走到这里 iconCharOf 必非空（formByDefId 已把无图标字符的回落为 text）。 -->
+        <template v-else-if="(formOf(def) === 'icon' || formOf(def) === 'icon-text') && def.type !== 'boolean'">
+          <span class="property-icon">{{ iconCharOf(def) }}</span>
+          <span
+            v-if="formOf(def) === 'icon-text'"
+            class="block-field-zone-text"
+          >{{ valueText(def) ?? '—' }}</span>
+        </template>
+
         <!-- daterange 类型字段：值区直接挂 DateRangePicker（区间形态「start → end」胶囊，
              无值占位、单端降级显示单端），点击唤起区间日历录入；
-             自带 @click.stop 不触发整行快速编辑器，清除走删行语义（issue T8）。 -->
-        <template v-if="def.type === 'daterange'">
+             自带 @click.stop 不触发整行快速编辑器，清除走删行语义（issue T8）。
+             门控（usesDefaultForm）：形态覆盖改走 text / icon 档时让位给上方通用形态分支。 -->
+        <template v-else-if="def.type === 'daterange' && usesDefaultForm(def)">
           <DateRangePicker
             :model-value="daterangeValueOf(def)"
             placeholder="选择日期区间"
@@ -1177,7 +1358,7 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
 
         <!-- date 类型字段：值区直接挂 DatePicker（single），点击唤起日历录入；
              自带 @click.stop 不触发整行快速编辑器，清除走删行语义。 -->
-        <template v-else-if="def.type === 'date'">
+        <template v-else-if="def.type === 'date' && usesDefaultForm(def)">
           <DatePicker
             :model-value="dateValue(def)"
             mode="single"
@@ -1189,7 +1370,7 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
         <!-- datetime 类型字段：值区直接挂 DateTimePicker（日历 + 时分档，T2），
              'yyyy-MM-dd HH:mm' 整值落库；自带 @click.stop 不触发整行快速编辑器，
              清除走删行语义（与 date 同路径，dateValue 的字符串提取对两者通用）。 -->
-        <template v-else-if="def.type === 'datetime'">
+        <template v-else-if="def.type === 'datetime' && usesDefaultForm(def)">
           <DateTimePicker
             :model-value="dateValue(def)"
             placeholder="选择日期时间"
@@ -1199,7 +1380,7 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
 
         <!-- number 特化 rating（issue T7）：值区直挂 RatingInput 星级编辑（1–N 星），
              点击置值 / 再点同值清空走删行语义（undefined = 未填契约与 NumberInput 一致）。 -->
-        <template v-else-if="def.type === 'number' && numberSpecKindOf(def) === 'rating'">
+        <template v-else-if="def.type === 'number' && numberSpecKindOf(def) === 'rating' && usesDefaultForm(def)">
           <RatingInput
             :model-value="numberValue(def)"
             :aria-label="def.title || '评分'"
@@ -1211,7 +1392,7 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
              约束来自字段定义（min/max/step，percent 特化默认 0–100），清除走删行语义（ADR-0055）。
              特化装饰（issue T7）：currency 符号前置 / 单位后置（编辑仍是数字输入）；
              percent 附细进度条展示当前值在 0–100 区间的进度。无特化走原路径零回归。 -->
-        <template v-else-if="def.type === 'number'">
+        <template v-else-if="def.type === 'number' && usesDefaultForm(def)">
           <span
             v-if="numberSpecKindOf(def) === 'currency'"
             class="bfz-currency-symbol"
@@ -1238,17 +1419,22 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
           </span>
         </template>
 
-        <!-- boolean 类型字段：值区直接挂 BooleanCheck（勾选交互，icon 形态下值即
-             ✓ / ✗，无值出 ghost 占位）。点击直接切换落库，不弹通用编辑器；
-             BooleanCheck 仅循环 undefined→true→false→true，无法回到 undefined，
-             故在有值时附 × 清除按钮，走 onBooleanChange(def, undefined) 删行（未填语义）。
-             两者均 @click.stop 不触发整行快速编辑器。 -->
-        <template v-else-if="def.type === 'boolean'">
+        <!-- boolean 类型字段：值区直接挂 BooleanCheck（勾选交互，icon / icon-text 形态下
+             值即 ✓ / ✗，无值出 ghost 占位；icon-text 额外带值文本）。点击直接切换落库，
+             不弹通用编辑器；BooleanCheck 仅循环 undefined→true→false→true，无法回到
+             undefined，故在有值时附 × 清除按钮，走 onBooleanChange(def, undefined) 删行
+             （未填语义）。两者均 @click.stop 不触发整行快速编辑器。
+             chip / text 覆写不走此分支：分别落通用 chip（是/否）与静态文字行。 -->
+        <template v-else-if="def.type === 'boolean' && (formOf(def) === 'icon' || formOf(def) === 'icon-text')">
           <BooleanCheck
             :model-value="booleanValue(def)"
             :aria-label="def.title || '布尔值'"
             @update:model-value="onBooleanChange(def, $event)"
           />
+          <span
+            v-if="formOf(def) === 'icon-text'"
+            class="block-field-zone-text"
+          >{{ valueText(def) ?? '—' }}</span>
           <button
             v-if="booleanValue(def) !== undefined"
             type="button"
@@ -1261,13 +1447,46 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
           </button>
         </template>
 
+        <!-- boolean 开关形态（switch）：值区直挂开关 UI，点击直接切换落库，不弹编辑器；
+             自带 @click.stop 不触发整行快速编辑器；有值附 × 清除按钮走删行语义。
+             icon / icon-text 覆写不走此分支（走上方 BooleanCheck 勾叉分支）。 -->
+        <template v-else-if="def.type === 'boolean' && formOf(def) === 'switch'">
+          <button
+            type="button"
+            class="bfz-switch"
+            :class="{
+              'bfz-switch--on': booleanValue(def) === true,
+              'bfz-switch--off': booleanValue(def) === false,
+              'bfz-switch--empty': booleanValue(def) === undefined,
+            }"
+            role="switch"
+            :aria-checked="booleanValue(def) === true"
+            :aria-label="def.title || '开关'"
+            :title="booleanValue(def) === true ? '是（点击切换为否）' : booleanValue(def) === false ? '否（点击切换为是）' : '未填（点击标记为是）'"
+            @click.stop="onBooleanToggle(def)"
+          >
+            <span class="bfz-switch-knob" />
+          </button>
+          <button
+            v-if="booleanValue(def) !== undefined"
+            type="button"
+            class="bfz-clear-button"
+            title="清除"
+            :aria-label="`清除${def.title || '开关'}`"
+            @click.stop="onBooleanChange(def, undefined)"
+          >
+            ×
+          </button>
+        </template>
+
         <!-- relation 类型字段（关系引用，issue T5）：值区直挂 RelationRefEditor
              （两段式面板：关系类型 + 目标块/页搜索）。有值渲染按关系类型着色的
              链接 chip（--relation-color 变量，色值来自 relationship_type 用户数据，
              非代码硬编码；悬空目标降级中性 chip）；清除走删行语义。
              字段定义约定的关系类型经 closed_values[0] 传入（配置位见 tag-persisted.ts）。
-             自带 @click.stop 不触发整行快速编辑器。 -->
-        <template v-else-if="def.type === 'relation'">
+             自带 @click.stop 不触发整行快速编辑器，清除走删行语义。
+             门控（usesDefaultForm）：text 覆写让位给静态文字行（valueText 出目标标题）。 -->
+        <template v-else-if="def.type === 'relation' && usesDefaultForm(def)">
           <RelationRefEditor
             :model-value="relationValue(def)"
             :relationship-type-id="def.closed_values?.[0] ?? ''"
@@ -1300,7 +1519,7 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
         <!-- file 字段（附件，issue T9）：值区直挂 FileRefEditor——无值 28px 上传按钮，
              有值图片缩略图 / 附件 chip，点击 chip 内置 lightbox 预览；清除走删行语义。
              自带 @click.stop 不触发整行快速编辑器。 -->
-        <template v-else-if="def.type === 'file'">
+        <template v-else-if="def.type === 'file' && usesDefaultForm(def)">
           <FileRefEditor
             :model-value="fileValue(def)"
             @update:model-value="onFileChange(def, $event)"
@@ -1313,7 +1532,7 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
              自带 @click.stop 不触发整行快速编辑器（pageRef 文本兜底已替换）。
              page 特化 person（issue T10）：picker 候选限定 person 页（personOnly），
              有值渲染人员 chip（首字圆形头像 + 名字，点击跳转与 page 引用同路径）。 -->
-        <template v-else-if="def.type === 'page'">
+        <template v-else-if="def.type === 'page' && usesDefaultForm(def)">
           <template v-if="chipValues(def)">
             <span
               v-for="(v, i) in chipValues(def)"
@@ -1356,7 +1575,7 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
 
         <!-- color 类型字段（issue T12）：色板图例 + 名称。值区直挂色点（复用
               --tag-color-* token），非法 token 回落幽灵占位；整行点击唤起编辑器改色。 -->
-        <template v-else-if="def.type === 'color'">
+        <template v-else-if="def.type === 'color' && usesDefaultForm(def)">
           <span
             v-if="colorValueOf(def)"
             class="bfz-color-swatch"
@@ -1373,8 +1592,9 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
           >—</span>
         </template>
 
-        <!-- chip 形态（非枚举）：date / array（chip 序列）/ number（徽章）。
-             字段名已在左列，chip 本体不再内嵌标题。 -->        <template v-else-if="formOf(def) === 'chip'">
+        <!-- chip 形态（非枚举）：array（chip 序列）/ boolean + chip 覆写（是/否）/
+             number + chip 覆写（徽章）。字段名已在左列，chip 本体不再内嵌标题。 -->
+        <template v-else-if="formOf(def) === 'chip'">
           <template v-if="chipValues(def)">
             <span
               v-for="(v, i) in chipValues(def)"
@@ -1399,21 +1619,13 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
           </span>
         </template>
 
-        <!-- icon / icon-text 形态：boolean 值即 ✓/✗；icon-text 才带值文本 -->
-        <template v-else-if="formOf(def) === 'icon' || formOf(def) === 'icon-text'">
-          <span class="property-icon">{{ iconCharOf(def) }}</span>
-          <span
-            v-if="formOf(def) === 'icon-text'"
-            class="block-field-zone-text"
-          >{{ valueText(def) ?? '—' }}</span>
-        </template>
-
         <!-- 纯 string（自由文本）字段：按特化标记分派（issue T6）——
              url：有值出可点击链接（点行改值），无值占位；richtext：多行 textarea 就地编辑 +
              最小 markdown 渲染；email / phone：SpecializedText（格式校验 + 红字提示）；
              无特化：TextField（单行输入 + 清除 ×，原路径零回归）。
-             自带 @click.stop 不触发整行快速编辑器，清除走删行语义。 -->
-        <template v-else-if="def.type === 'string' && !isEnumField(def)">
+             自带 @click.stop 不触发整行快速编辑器，清除走删行语义。
+             readonly 形态已在上方 ①·b 分支优先处理，此处不再命中。 -->
+        <template v-else-if="def.type === 'string' && !isEnumField(def) && formOf(def) !== 'readonly'">
           <!-- url 特化（AC3）：字段区可点击打开 -->
           <template v-if="def.spec === 'url'">
             <a
@@ -1481,7 +1693,7 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
           />
         </template>
 
-        <!-- 兜底 text 形态（枚举被 display_form_override 覆写为 text 等）：静态文字行，
+        <!-- 最终兜底（string + closed_values 的 text 覆写等少数路径）：静态文字行，
              值前圆点标记，无值出「—」占位；整行仍是点击目标（唤起通用编辑器）。 -->
         <template v-else>
           <span
@@ -1721,7 +1933,8 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
 }
 
 /* ── list 变体（块字段区，D21 形态分派 + 两列对齐网格） ── */
-/* 布局对齐 Tana 式字段表：每行 = 左列字段名（定宽 6em，超长省略）+ 右列值区。
+/* 布局对齐 Tana 式字段表：每行 = 左列字段名（FieldLabel：类型图标 + 定宽名，超长省略；
+   左列定宽 = 6em 名 + 26px 图标与间距）+ 右列值区。
    定宽而非 max-content——独立行的 track 各自求解时 max-content 会对不齐。 */
 .block-field-zone {
   display: flex;
@@ -1732,9 +1945,9 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
 
 .block-field-zone-row {
   display: grid;
-  grid-template-columns: 6em minmax(0, 1fr);
+  grid-template-columns: calc(6em + 26px) minmax(0, 1fr);
   column-gap: var(--space-3, 12px);
-  align-items: baseline;
+  align-items: center;
   font-size: var(--text-sm);
   cursor: pointer;
   border-radius: var(--radius-sm);
@@ -1742,9 +1955,9 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
 
   /* 行 hover 底只给「真可点」的行：整行点一下开快速编辑器。
      date / number / boolean / 枚举行不是点击目标（openFieldRow 对四者早退，编辑由内嵌
-     DatePicker / NumberInput / BooleanCheck / EnumSelect 独占），故排除其行 hover，避免
-     「行底 + 控件 hover」在暗色下并档糊成一片。 */
-  &:not(.block-field-zone-row--inline-editor):hover {
+     DatePicker / NumberInput / BooleanCheck / EnumSelect 独占），只读形态行同样非交互，
+     故排除其行 hover，避免「行底 + 控件 hover」在暗色下并档糊成一片。 */
+  &:not(.block-field-zone-row--inline-editor):not(.block-field-zone-row--readonly):hover {
     background: var(--surface-subtle);
   }
 }
@@ -1754,11 +1967,44 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
   cursor: default;
 }
 
+/* 只读形态（D21 通用只读扩展）：整行非交互——光标默认、字段名弱化、去 hover 底。 */
+.block-field-zone-row--readonly {
+  cursor: default;
+
+  .block-field-zone-title {
+    color: var(--text-tertiary);
+  }
+}
+
+.bfz-readonly-value {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.bfz-readonly-lock {
+  flex: none;
+  margin-left: 4px;
+  color: var(--text-tertiary);
+}
+
+/* all 变体只读项：非交互，与 list 变体同视觉基调。 */
+.bfz-readonly-item {
+  cursor: default;
+}
+
 .block-field-zone-title {
-  color: var(--text-secondary);
+  display: inline-flex;
   overflow: hidden;
+  align-items: center;
+  min-width: 0;
+  color: var(--text-secondary);
   white-space: nowrap;
-  text-overflow: ellipsis;
+
+  /* FieldLabel 的名格在左列剩余空间内截断（列宽 = 6em 名 + 26px 图标与间距） */
+  :deep(.field-label) {
+    min-width: 0;
+  }
 }
 
 /* 孤儿字段（选项 A）：删 tag / 去 tag 后悬空值——弱区分样式让值可见可编辑。
@@ -2039,5 +2285,65 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
 .bfz-color-label {
   color: var(--text-primary);
   font-size: var(--text-sm);
+}
+
+/* ── boolean 开关形态（switch）：28px 基线对齐专属控件，点按切换落库 ── */
+.bfz-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  width: 34px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--bg-hover);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+
+  .bfz-switch-knob {
+    position: absolute;
+    left: 1px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--text-tertiary);
+    transition:
+      transform var(--dur-fast) var(--ease-out),
+      background var(--dur-fast) var(--ease-out);
+  }
+
+  /* 否：仍为 off 态，但显出微弱边框以区别于空 */
+  &--off .bfz-switch-knob {
+    background: var(--text-secondary);
+  }
+
+  /* 是：开启态，滑块右移 + 强调色（复用 success 绿，与 BooleanCheck 勾叉同语义） */
+  &--on {
+    background: var(--success);
+    border-color: var(--success);
+
+    .bfz-switch-knob {
+      transform: translateX(16px);
+      background: #fff;
+    }
+  }
+
+  /* 未填：虚线示缺（与 chip / BooleanCheck ghost 同构） */
+  &--empty {
+    border-style: dashed;
+    background: transparent;
+
+    .bfz-switch-knob {
+      background: var(--text-tertiary);
+    }
+  }
+
+  &:hover {
+    border-color: var(--border-strong);
+  }
 }
 </style>

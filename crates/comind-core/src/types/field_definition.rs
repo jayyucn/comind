@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
 use uuid::Uuid;
 
 fn default_timestamp() -> i64 {
@@ -27,10 +28,11 @@ fn default_hide_when() -> String {
     "never".to_string()
 }
 
-/// 「展示形态」用户覆盖的合法取值（ADR-0050 D21 决策 5）。落库为 TEXT，
-/// 未知 / 缺失 / 空一律归一为 `"auto"`（跟随类型默认映射）。
+/// 「展示形态」用户覆盖的合法取值（ADR-0050 D21 决策 5 + 通用只读扩展）。
+/// 落库为 TEXT，未知 / 缺失 / 空一律归一为 `"auto"`（跟随类型默认映射）。
+/// `readonly` = 纯展示形态：跨类型把值渲染为静态可读文字、字段区锁定不可编辑。
 pub const FIELD_DISPLAY_FORM_OVERRIDE_VALUES: &[&str] =
-    &["auto", "icon", "icon-text", "text", "chip"];
+    &["auto", "icon", "icon-text", "text", "chip", "switch", "readonly"];
 
 /// 白名单归一：不在取值表内的输入回落 `"auto"`，绝不静默放行。
 pub fn normalize_display_form_override(s: &str) -> String {
@@ -72,8 +74,10 @@ pub struct FieldDefinition {
     /// when_default / always。作用于块级字段区（BlockTagFields）；定义级全局共享。
     #[serde(default = "default_hide_when")]
     pub hide_when: String,
-    /// 块字段区展示形态的用户覆盖（ADR-0050 D21 决策 5）：auto / icon / icon-text /
-    /// text / chip。`auto` = 跟随类型默认映射；系统字段不可配，恒 `auto`（决策 6）。
+    /// 块字段区展示形态的用户覆盖（ADR-0050 D21 决策 5 + 通用只读扩展）：auto / icon /
+    /// icon-text / text / chip / switch / readonly。`auto` = 跟随类型默认映射；系统字段
+    /// 不可配，恒 `auto`（决策 6）。switch 仅对 boolean 生效（开关 UI），其余类型落到
+    /// switch 回落 text；readonly 为纯展示形态（跨类型静态可读、字段区锁定不可编辑）。
     #[serde(default = "default_display_form_override")]
     pub display_form_override: String,
     /// 系统字段 seed 进表后标记，seed 行不可删（D3）。
@@ -105,6 +109,10 @@ pub struct FieldDefinition {
     /// `types/field-type-registry.ts` 的三个特化查表（specHeadOf 取首段）。
     #[serde(default)]
     pub spec: Option<String>,
+    /// 字段描述（ADR-0057 D3）：说明字段用途的散文，编辑于完整设置弹窗、展示于
+    /// 标签模板卡片与弹窗头部。NULL / 空串 = 未填写。定义级全局共享。
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -150,14 +158,16 @@ impl FieldDefinition {
             deleted_at: None,
             is_preset: false,
             spec: None,
+            description: None,
         }
     }
 }
 
 /// 系统字段 seed 数据：单一来源 = `src/types/systemFieldSeed.json`
 /// （同时驱动 TS `SYSTEM_TAGS` 的字段数据，见该 JSON 与 tag.ts；ADR-0049 D3 修订 + 2026-09-30 三态模型）。
-/// Rust 侧在编译期 `include_str!` 嵌入并反序列化，不再在 .rs 里硬编码 12 行重复数据。
-/// 三态分类（is_system / is_preset）由 JSON 携带。
+/// Rust 侧默认在编译期 `include_str!` 嵌入并反序列化，不再在 .rs 里硬编码 12 行重复数据；
+/// **dev 模式**可由 wasm `init(seed_json)` 在运行时注入覆盖（改 JSON 免重编，见 `set_seed_override`），
+/// 未注入 / 注入值损坏时回退编译期默认。三态分类（is_system / is_preset）由 JSON 携带。
 #[derive(Debug, Clone, Deserialize)]
 struct SeedFieldJson {
     id: String,
@@ -177,6 +187,9 @@ struct SeedFieldJson {
     /// 缺省 "never"（非法值经 `normalize_hide_when` 归一）。
     #[serde(default, rename = "hideWhen")]
     hide_when: String,
+    /// 字段描述（ADR-0057 D3）。缺省 None = 未填写（设置页显示「未填写描述」占位）。
+    #[serde(default)]
+    description: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -201,10 +214,34 @@ struct SeedCatalogJson {
     tags: Vec<SeedTagJson>,
 }
 
-/// 单一来源：解析 systemFieldSeed.json（TS 与 Rust 共享——字段数据与标签分组均从此派生）。
-fn load_seed_catalog() -> SeedCatalogJson {
-    serde_json::from_str(include_str!("../../../../src/types/systemFieldSeed.json"))
+/// dev 模式的运行时 seed 覆盖（单一来源仍是 systemFieldSeed.json，ADR-0049 D3）：
+/// wasm `init(seed_json)` 启动时注入，改 JSON 免重编；未注入 / 注入值损坏时回退编译期默认。
+static SEED_OVERRIDE: Mutex<Option<String>> = Mutex::new(None);
+
+/// 运行时注入 seed 原文（dev 模式由 JS fetch 后经 wasm `init(seed_json)` 传入；传 None 清除覆盖）。
+/// 注入值不在此校验结构——解析失败会在 `load_seed_catalog` 回退编译期默认并打日志。
+pub fn set_seed_override(json: Option<String>) {
+    *SEED_OVERRIDE.lock().unwrap() = json;
+}
+
+/// 解析 seed JSON 原文为目录结构（编译期嵌入与运行时注入共用）。
+fn parse_seed_catalog(json: &str) -> SeedCatalogJson {
+    serde_json::from_str(json)
         .expect("systemFieldSeed.json must be valid JSON and match SeedCatalogJson")
+}
+
+/// 单一来源：解析 systemFieldSeed.json（TS 与 Rust 共享——字段数据与标签分组均从此派生）。
+/// 优先使用运行时注入值（dev 免重编）；未注入或注入值损坏 → 回退编译期 `include_str!` 默认。
+fn load_seed_catalog() -> SeedCatalogJson {
+    if let Some(json) = SEED_OVERRIDE.lock().unwrap().as_deref() {
+        match serde_json::from_str::<SeedCatalogJson>(json) {
+            Ok(catalog) => return catalog,
+            Err(e) => eprintln!(
+                "[comind-core] injected seed JSON invalid ({e}); falling back to embedded default"
+            ),
+        }
+    }
+    parse_seed_catalog(include_str!("../../../../src/types/systemFieldSeed.json"))
 }
 
 /// ADR-0049 D3/D6 + 系统标签三态模型（2026-09-30 修订）：字段 seed 行（固定 id，不可删）。
@@ -248,6 +285,7 @@ pub fn system_field_definitions() -> Vec<FieldDefinition> {
             max: None,
             step: None,
             spec: None,
+            description: f.description.clone(),
         })
         .collect()
 }
@@ -289,6 +327,18 @@ mod tests {
                 "status", "priority", "book", "part", "chapter", "cfi",
                 "quote", "sourceBlockId", "sourcePageId", "language"
             ]
+        );
+        // 描述随 seed 全量下发（ADR-0057 D3）：每个 seed 字段都带描述，设置页/卡片直读
+        for d in &defs {
+            assert!(
+                d.description.as_deref().unwrap_or_default().len() > 4,
+                "seed 字段 {} 缺 description",
+                d.key
+            );
+        }
+        assert_eq!(
+            defs[0].description.as_deref(),
+            Some("块的任务进度（Todo / Doing / Done / Canceled / Archived），驱动任务中心与看板视图")
         );
     }
 
@@ -341,6 +391,7 @@ mod tests {
             closed_values: None,
             default_value: None,
             hide_when: "bogus".to_string(),
+            description: None,
         };
         assert_eq!(normalize_hide_when(&bogus.hide_when), "never");
     }
@@ -364,5 +415,16 @@ mod tests {
         // field_ids 直接引用顶层字段 uuid（不在此硬编码，仅校验形状与数量）
         assert!(task_fields.iter().all(|u| u.len() == 36));
         assert!(book_fields.iter().all(|u| u.len() == 36));
+    }
+
+    #[test]
+    fn display_form_override_whitelist_includes_readonly() {
+        // 合法值原样通过（含扩展的 readonly 纯展示形态）
+        assert_eq!(normalize_display_form_override("readonly"), "readonly");
+        assert_eq!(normalize_display_form_override("auto"), "auto");
+        assert_eq!(normalize_display_form_override("chip"), "chip");
+        // 非法 / 空一律归一为 auto
+        assert_eq!(normalize_display_form_override("bogus"), "auto");
+        assert_eq!(normalize_display_form_override(""), "auto");
     }
 }

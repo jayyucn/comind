@@ -125,9 +125,10 @@ export interface BatchOperation {
   // 'set_tags' 仅用于 block（grill 决策 #8：未来批量打标的写入口）；
   // 'tree' 仅用于 tag（标签树读接口：原始行 + 解析字段 + 后代闭包，ADR-0050 D10）；
   // 'set_parent' 仅用于 tag（单父槽位，成环由 Rust 拒绝）；
-  // 'get_deleted_presets' / 'restore_presets' 仅用于 field_definition（ADR-0049 三态：预设删后可恢复）
+  // 'get_deleted_presets' / 'restore_presets' 仅用于 field_definition（ADR-0049 三态：预设删后可恢复）；
+  // 'get_by_field' 仅用于 field_value（按定义反查值行，ADR-0057「使用于」块列表）
   action: 'create' | 'update' | 'delete' | 'get' | 'set' | 'sync_by_block' | 'undelete' | 'set_tags'
-    | 'tree' | 'set_parent' | 'get_deleted_presets' | 'restore_presets'
+    | 'tree' | 'set_parent' | 'get_deleted_presets' | 'restore_presets' | 'get_by_field'
   params: Record<string, unknown>
 }
 

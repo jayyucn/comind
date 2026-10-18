@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   DISPLAY_FORM_OVERRIDES,
+  displayFormOptionsFor,
   normalizeDisplayFormOverride,
   resolveDisplayForm,
   typeDefaultForm,
@@ -73,6 +74,12 @@ describe('resolveDisplayForm（解析优先级：用户覆盖 > 编译期 displa
     expect(resolveDisplayForm(def)).toBe('text')
   })
 
+  it('readonly 是合法覆盖值，解析原样返回（通用只读扩展）', () => {
+    const def = persistedDef({ type: 'string', display_form_override: 'readonly' })
+    expect(resolveDisplayForm(def)).toBe('readonly')
+    expect(normalizeDisplayFormOverride('readonly')).toBe('readonly')
+  })
+
   it('override = auto 时回落类型默认（枚举 → chip）', () => {
     const def = persistedDef({ type: 'string', closed_values: ['A', 'B'], display_form_override: 'auto' })
     expect(resolveDisplayForm(def)).toBe('chip')
@@ -96,5 +103,49 @@ describe('resolveDisplayForm（解析优先级：用户覆盖 > 编译期 displa
   it('用户字段的空串 override 视为 auto，走类型默认', () => {
     const def = persistedDef({ type: 'date', display_form_override: '' })
     expect(resolveDisplayForm(def)).toBe('chip')
+  })
+})
+
+describe('displayFormOptionsFor（展示形态下拉按字段类型配置，用户裁定）', () => {
+  it('boolean：勾叉(icon) / 开关(switch) / 文字 / 只读，外加跟随类型', () => {
+    expect(displayFormOptionsFor({ type: 'boolean' }).map((o) => o.value)).toEqual([
+      'auto',
+      'icon',
+      'switch',
+      'text',
+      'readonly',
+    ])
+  })
+
+  it('枚举（select/multiSelect）：胶囊 / 文字 / 只读，外加跟随类型', () => {
+    expect(displayFormOptionsFor({ type: 'select' }).map((o) => o.value)).toEqual(['auto', 'chip', 'text', 'readonly'])
+    expect(displayFormOptionsFor({ type: 'multiSelect' }).map((o) => o.value)).toEqual(['auto', 'chip', 'text', 'readonly'])
+  })
+
+  it('标量（string/number/date）：仅文字 / 只读，外加跟随类型', () => {
+    for (const t of ['string', 'number', 'date', 'datetime']) {
+      expect(displayFormOptionsFor({ type: t }).map((o) => o.value)).toEqual(['auto', 'text', 'readonly'])
+    }
+  })
+
+  it('内建图标键（project 等 ICON_CHARS）：图标 / 图标+文字 / 胶囊 / 文字 / 只读 / 跟随类型', () => {
+    expect(displayFormOptionsFor({ type: 'string', key: 'project' }).map((o) => o.value)).toEqual([
+      'auto',
+      'icon',
+      'icon-text',
+      'text',
+      'chip',
+      'readonly',
+    ])
+  })
+
+  it('readonly 选项 label 是「只读」', () => {
+    expect(displayFormOptionsFor({ type: 'string' }).find((o) => o.value === 'readonly')?.label).toBe('只读')
+  })
+
+  it('boolean 的勾叉 label 是「勾叉」、开关 label 是「开关」', () => {
+    const opts = displayFormOptionsFor({ type: 'boolean' })
+    expect(opts.find((o) => o.value === 'icon')?.label).toBe('勾叉')
+    expect(opts.find((o) => o.value === 'switch')?.label).toBe('开关')
   })
 })

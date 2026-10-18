@@ -1323,6 +1323,24 @@ pub async fn execute_batch(
     }
 }
 
+/// dev 免重编：前端把 HMR 拿到的最新 systemFieldSeed.json 运行时注入原生 Rust，
+/// 并重跑幂等 seeding（改 JSON 后刷新页面即生效，无需重编/重启 tauri:dev）。
+/// 生产前端不调用本命令；传 None 时仅清除覆盖后按编译期内置 seed 重跑，语义无害。
+#[tauri::command]
+pub async fn reload_system_seed(
+    db: State<'_, super::state::DatabaseConnection>,
+    seed_json: Option<String>,
+) -> Result<(), String> {
+    comind_core::types::field_definition::set_seed_override(seed_json);
+    let adapter_arc = db.adapter_arc();
+    let adapter = adapter_arc.lock().await;
+    SQLiteAdapter::seed_system_field_definitions(&adapter.conn)
+        .map_err(|e| format!("seed_system_field_definitions failed: {e}"))?;
+    SQLiteAdapter::seed_system_tags(&adapter.conn)
+        .map_err(|e| format!("seed_system_tags failed: {e}"))?;
+    Ok(())
+}
+
 
 #[tauri::command]
 pub async fn export_to_markdown(

@@ -35,7 +35,11 @@ mod wasm_impl {
     }
 
     #[wasm_bindgen]
-    pub fn init() -> Result<(), JsValue> {
+    pub fn init(seed_json: Option<String>) -> Result<(), JsValue> {
+        // dev 模式运行时注入 seed（改 systemFieldSeed.json 免重编）；生产传 None 走编译期 include_str 默认。
+        if let Some(json) = seed_json {
+            comind_core::types::field_definition::set_seed_override(Some(json));
+        }
         let mut adapter = ADAPTER
             .lock()
             .map_err(|e| JsValue::from_str(&format!("Failed to lock adapter: {}", e)))?;

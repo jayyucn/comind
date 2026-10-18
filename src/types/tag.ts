@@ -31,6 +31,8 @@ interface SeedField {
   closedValues?: string[]
   defaultValue?: string | null
   hideWhen?: string
+  /** 字段描述（ADR-0057 D3）：设置页与模板卡片直读。 */
+  description?: string | null
 }
 interface SeedTag {
   key: string

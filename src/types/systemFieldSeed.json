@@ -9,7 +9,8 @@
       "isPreset": false,
       "closedValues": ["Todo", "Doing", "Done", "Canceled", "Archived"],
       "defaultValue": "Todo",
-      "hideWhen": "never"
+      "hideWhen": "never",
+      "description": "块的任务进度，驱动任务中心与看板视图"
     },
     {
       "id": "80000000-0000-4000-8000-000000000002",
@@ -20,7 +21,8 @@
       "isPreset": false,
       "closedValues": ["Low", "Medium", "High", "Urgent"],
       "defaultValue": "Low",
-      "hideWhen": "when_not_empty"
+      "hideWhen": "when_not_empty",
+      "description": "块的重要-紧急程度，与状态成对驱动四象限视图"
     },
     {
       "id": "80000000-0000-4000-8000-000000000005",
@@ -30,7 +32,8 @@
       "isSystem": false,
       "isPreset": true,
       "defaultValue": null,
-      "hideWhen": "never"
+      "hideWhen": "never",
+      "description": "笔记所属的书籍标题"
     },
     {
       "id": "80000000-0000-4000-8000-000000000006",
@@ -40,7 +43,8 @@
       "isSystem": false,
       "isPreset": true,
       "defaultValue": null,
-      "hideWhen": "never"
+      "hideWhen": "never",
+      "description": "笔记在书中的部或卷"
     },
     {
       "id": "80000000-0000-4000-8000-000000000007",
@@ -50,7 +54,8 @@
       "isSystem": false,
       "isPreset": true,
       "defaultValue": null,
-      "hideWhen": "never"
+      "hideWhen": "never",
+      "description": "笔记对应的章节位置"
     },
     {
       "id": "80000000-0000-4000-8000-000000000008",
@@ -60,7 +65,8 @@
       "isSystem": false,
       "isPreset": true,
       "defaultValue": null,
-      "hideWhen": "never"
+      "hideWhen": "never",
+      "description": "EPUB CFI 定位串，精确锚定阅读器中的原文位置"
     },
     {
       "id": "80000000-0000-4000-8000-000000000009",
@@ -70,7 +76,8 @@
       "isSystem": false,
       "isPreset": true,
       "defaultValue": null,
-      "hideWhen": "never"
+      "hideWhen": "never",
+      "description": "摘录的原文文本"
     },
     {
       "id": "80000000-0000-4000-8000-00000000000a",
@@ -80,7 +87,8 @@
       "isSystem": false,
       "isPreset": true,
       "defaultValue": null,
-      "hideWhen": "never"
+      "hideWhen": "never",
+      "description": "摘录来源块的内部 ID，用于回跳原块"
     },
     {
       "id": "80000000-0000-4000-8000-00000000000b",
@@ -90,7 +98,8 @@
       "isSystem": false,
       "isPreset": true,
       "defaultValue": null,
-      "hideWhen": "never"
+      "hideWhen": "never",
+      "description": "摘录来源页面的内部 ID，用于回跳原页面"
     },
     {
       "id": "80000000-0000-4000-8000-00000000000c",
@@ -100,7 +109,8 @@
       "isSystem": false,
       "isPreset": true,
       "defaultValue": null,
-      "hideWhen": "never"
+      "hideWhen": "never",
+      "description": "书籍或笔记的语言（如 zh-CN / en）"
     }
   ],
   "tags": [
@@ -108,7 +118,7 @@
       "key": "system-task",
       "title": "任务",
       "isSystem": true,
-      "description": "系统任务",
+      "description": "系统标签，用于标识任务",
       "color": "--tag-color-4",
       "fieldIds": [
         "80000000-0000-4000-8000-000000000001",

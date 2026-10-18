@@ -14,10 +14,12 @@ use crate::storage::executor::Executor;
 ///
 /// - `closed_values`：选项型字段候选值，落库为 JSON TEXT；NULL = 非选项型（D9）。
 /// - `is_system`：布尔，落库为 0/1 整型（SQLite 无原生布尔）。
+/// - `description`：字段描述（ADR-0057 D3），TEXT；NULL/空串 = 未填写。**必须保持末位**
+///   ——原生按位置读取，插中间会全列错位。
 pub const FIELD_DEFINITION_COLS: &[&str] = &[
     "id", "key", "title", "type", "closed_values", "is_system",
     "created_at", "updated_at", "version", "deleted_at", "default_value", "hide_when",
-    "is_preset", "display_form_override", "min", "max", "step", "spec",
+    "is_preset", "display_form_override", "min", "max", "step", "spec", "description",
 ];
 
 pub fn field_definition_select_cols() -> String {
@@ -57,6 +59,7 @@ pub fn row_to_field_definition_native(row: &rusqlite::Row) -> Result<FieldDefini
         max: row.get::<_, Option<f64>>(15)?,
         step: row.get::<_, Option<f64>>(16)?,
         spec: row.get::<_, Option<String>>(17)?,
+        description: row.get::<_, Option<String>>(18)?,
     })
 }
 
@@ -110,6 +113,10 @@ pub fn row_to_field_definition_js(row: &HashMap<String, String>) -> FieldDefinit
             .and_then(|s| if s.is_empty() { None } else { s.parse::<f64>().ok() }),
         spec: row
             .get("spec")
+            .cloned()
+            .and_then(|s| if s.is_empty() { None } else { Some(s) }),
+        description: row
+            .get("description")
             .cloned()
             .and_then(|s| if s.is_empty() { None } else { Some(s) }),
     }
@@ -189,6 +196,7 @@ pub fn field_definition_create<E: Executor>(exec: &E, fd: &FieldDefinition) -> R
         &fd.max,
         &fd.step,
         &fd.spec,
+        &fd.description,
     ];
     exec.execute(&field_definition_insert_sql(), &params)?;
     Ok(())
@@ -198,7 +206,7 @@ pub fn field_definition_create<E: Executor>(exec: &E, fd: &FieldDefinition) -> R
 pub fn field_definition_update<E: Executor>(exec: &E, fd: &FieldDefinition) -> Result<(), Box<dyn Error>> {
     let closed_values_json = closed_values_to_sql(&fd.closed_values);
     let is_system_i64 = if fd.is_system { 1i64 } else { 0i64 };
-    let sql = "UPDATE FieldDefinition SET key = ?2, title = ?3, type = ?4, closed_values = ?5, is_system = ?6, default_value = ?7, hide_when = ?8, display_form_override = ?9, updated_at = ?10, min = ?11, max = ?12, step = ?13, spec = ?14, version = version + 1 \
+    let sql = "UPDATE FieldDefinition SET key = ?2, title = ?3, type = ?4, closed_values = ?5, is_system = ?6, default_value = ?7, hide_when = ?8, display_form_override = ?9, updated_at = ?10, min = ?11, max = ?12, step = ?13, spec = ?14, description = ?15, version = version + 1 \
                WHERE id = ?1";
     let params: Vec<&dyn ToSql> = vec![
         &fd.id,
@@ -215,6 +223,7 @@ pub fn field_definition_update<E: Executor>(exec: &E, fd: &FieldDefinition) -> R
         &fd.max,
         &fd.step,
         &fd.spec,
+        &fd.description,
     ];
     exec.execute(sql, &params)?;
     Ok(())
@@ -359,6 +368,9 @@ mod tests {
         assert_eq!(fd.step, Some(5.0));
         // 特化标记（T6/T7/T10）：非空直通
         assert_eq!(fd.spec, Some("email".to_string()));
+        // 字段描述（ADR-0057 D3）：非空直通
+        m.insert("description".to_string(), "任务当前所处阶段".to_string());
+        assert_eq!(row_to_field_definition_js(&m).description, Some("任务当前所处阶段".to_string()));
     }
 
     #[test]
@@ -382,6 +394,10 @@ mod tests {
         assert_eq!(fd.spec, None);
         m.insert("spec".to_string(), "".to_string());
         assert_eq!(row_to_field_definition_js(&m).spec, None);
+        // description 缺列 / 空串同样归 None（存量行无描述，ADR-0057 D3）
+        assert_eq!(fd.description, None);
+        m.insert("description".to_string(), "".to_string());
+        assert_eq!(row_to_field_definition_js(&m).description, None);
     }
 
     #[test]

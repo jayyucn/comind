@@ -201,7 +201,7 @@ impl SqlJsAdapter {
         // ADR-0049 D6：Tag 统一字段模型 —— 三张新表（与 sqlite.rs init_schema 逐列一致）。
         Self::exec(db, "CREATE TABLE IF NOT EXISTS Tag (id TEXT PRIMARY KEY, title TEXT NOT NULL UNIQUE, field_ids TEXT NOT NULL DEFAULT '[]', extends TEXT NOT NULL DEFAULT '[]', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 0, deleted_at INTEGER, is_system INTEGER NOT NULL DEFAULT 0, parent_id TEXT, description TEXT NOT NULL DEFAULT '', color TEXT NOT NULL DEFAULT '', is_preset INTEGER NOT NULL DEFAULT 0);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_tag_title ON Tag(title);")?;
-        Self::exec(db, "CREATE TABLE IF NOT EXISTS FieldDefinition (id TEXT PRIMARY KEY, key TEXT NOT NULL UNIQUE, title TEXT NOT NULL, type TEXT NOT NULL, closed_values TEXT, is_system INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 0, deleted_at INTEGER, default_value TEXT, hide_when TEXT NOT NULL DEFAULT 'never', is_preset INTEGER NOT NULL DEFAULT 0, display_form_override TEXT NOT NULL DEFAULT 'auto', min REAL, max REAL, step REAL, spec TEXT);")?;
+        Self::exec(db, "CREATE TABLE IF NOT EXISTS FieldDefinition (id TEXT PRIMARY KEY, key TEXT NOT NULL UNIQUE, title TEXT NOT NULL, type TEXT NOT NULL, closed_values TEXT, is_system INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 0, deleted_at INTEGER, default_value TEXT, hide_when TEXT NOT NULL DEFAULT 'never', is_preset INTEGER NOT NULL DEFAULT 0, display_form_override TEXT NOT NULL DEFAULT 'auto', min REAL, max REAL, step REAL, spec TEXT, description TEXT);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_fielddef_key ON FieldDefinition(key);")?;
         Self::exec(db, "CREATE TABLE IF NOT EXISTS FieldValue (id TEXT PRIMARY KEY, block_id TEXT NOT NULL, field_definition_id TEXT NOT NULL, value_json TEXT NOT NULL, value_type TEXT NOT NULL, seq INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 0, deleted_at INTEGER);")?;
         Self::exec(db, "CREATE INDEX IF NOT EXISTS idx_fieldvalue_block_id ON FieldValue(block_id);")?;
@@ -226,6 +226,7 @@ impl SqlJsAdapter {
         Self::migrate_add_field_definition_is_preset(db)?;
         Self::migrate_add_field_definition_constraints(db)?;
         Self::migrate_add_field_definition_spec(db)?;
+        Self::migrate_add_field_definition_description(db)?;
         Self::migrate_strip_string_value_quotes(db)?;
 
         Ok(())
@@ -242,10 +243,11 @@ impl SqlJsAdapter {
                 if fd.is_system {
                     Self::run_with_params(
                         db,
-                        "UPDATE FieldDefinition SET default_value = ?, hide_when = ? WHERE key = ?",
+                        "UPDATE FieldDefinition SET default_value = ?, hide_when = ?, description = ? WHERE key = ?",
                         &[
                             &fd.default_value.as_deref().unwrap_or(""),
                             &fd.hide_when,
+                            &fd.description.as_deref().unwrap_or(""),
                             &fd.key,
                         ],
                     )?;
@@ -257,7 +259,7 @@ impl SqlJsAdapter {
             let is_preset: &str = if fd.is_preset { "1" } else { "0" };
             Self::run_with_params(
                 db,
-                "INSERT INTO FieldDefinition (id, key, title, type, closed_values, is_system, is_preset, created_at, updated_at, version, default_value, hide_when) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO FieldDefinition (id, key, title, type, closed_values, is_system, is_preset, created_at, updated_at, version, default_value, hide_when, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 &[
                     &fd.id,
                     &fd.key,
@@ -271,6 +273,7 @@ impl SqlJsAdapter {
                     &fd.version.to_string(),
                     &fd.default_value.as_deref().unwrap_or(""),
                     &fd.hide_when,
+                    &fd.description.as_deref().unwrap_or(""),
                 ],
             )?;
         }
@@ -429,6 +432,19 @@ impl SqlJsAdapter {
         };
         if !has_column("FieldDefinition", "spec") {
             Self::exec(db, "ALTER TABLE FieldDefinition ADD COLUMN spec TEXT;")?;
+        }
+        Ok(())
+    }
+
+    /// 字段描述（ADR-0057 D3）。幂等：老库 FieldDefinition 表补 description 列
+    /// （TEXT，NULL/空串 = 未填写）。与 sqlite `migrate_add_field_definition_description` 逐行对称。
+    fn migrate_add_field_definition_description(db: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        let has_column = |table: &str, col: &str| -> bool {
+            let rows = Self::query(db, &format!("PRAGMA table_info('{}');", table), &[]).unwrap_or_default();
+            rows.iter().any(|r| r.values().any(|v| v == col))
+        };
+        if !has_column("FieldDefinition", "description") {
+            Self::exec(db, "ALTER TABLE FieldDefinition ADD COLUMN description TEXT;")?;
         }
         Ok(())
     }
@@ -1265,13 +1281,14 @@ impl FieldDefinitionRepository for SqlJsAdapter {
         let max_str = fd.max.map(|v| v.to_string()).unwrap_or_default();
         let step_str = fd.step.map(|v| v.to_string()).unwrap_or_default();
         let spec_str = fd.spec.clone().unwrap_or_default();
-        Self::run_with_params(&self.db, "INSERT INTO FieldDefinition (id, key, title, type, closed_values, is_system, created_at, updated_at, version, deleted_at, default_value, hide_when, display_form_override, min, max, step, spec) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)", &[
+        Self::run_with_params(&self.db, "INSERT INTO FieldDefinition (id, key, title, type, closed_values, is_system, created_at, updated_at, version, deleted_at, default_value, hide_when, display_form_override, min, max, step, spec, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)", &[
             &fd.id, &fd.key, &fd.title, &fd.r#type, &closed_values_json, is_system,
             &fd.created_at.to_string(), &fd.updated_at.to_string(), &fd.version.to_string(),
             fd.default_value.as_deref().unwrap_or(""),
             &fd.hide_when,
             &fd.display_form_override,
-            &min_str, &max_str, &step_str, &spec_str
+            &min_str, &max_str, &step_str, &spec_str,
+            fd.description.as_deref().unwrap_or("")
         ])?;
         Ok(fd.clone())
     }
@@ -1283,12 +1300,13 @@ impl FieldDefinitionRepository for SqlJsAdapter {
         let max_str = fd.max.map(|v| v.to_string()).unwrap_or_default();
         let step_str = fd.step.map(|v| v.to_string()).unwrap_or_default();
         let spec_str = fd.spec.clone().unwrap_or_default();
-        Self::run_with_params(&self.db, "UPDATE FieldDefinition SET key = ?, title = ?, type = ?, closed_values = ?, is_system = ?, default_value = ?, hide_when = ?, display_form_override = ?, min = ?, max = ?, step = ?, spec = ?, updated_at = ?, version = version + 1 WHERE id = ?", &[
+        Self::run_with_params(&self.db, "UPDATE FieldDefinition SET key = ?, title = ?, type = ?, closed_values = ?, is_system = ?, default_value = ?, hide_when = ?, display_form_override = ?, min = ?, max = ?, step = ?, spec = ?, description = ?, updated_at = ?, version = version + 1 WHERE id = ?", &[
             &fd.key, &fd.title, &fd.r#type, &closed_values_json, is_system,
             fd.default_value.as_deref().unwrap_or(""),
             &fd.hide_when,
             &fd.display_form_override,
             &min_str, &max_str, &step_str, &spec_str,
+            fd.description.as_deref().unwrap_or(""),
             &fd.updated_at.to_string(), &fd.id
         ])?;
         Ok(fd.clone())

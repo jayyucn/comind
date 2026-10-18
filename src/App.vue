@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+
 import { useEmbedSelector } from './app/useEmbedSelector'
 import { useGlobalHotkeys } from './app/useGlobalHotkeys'
 import { useGraphSidebarToggle } from './app/useGraphSidebarToggle'
@@ -22,6 +23,7 @@ import { getRegisteredPanels, registerPanel } from './components/RightSidebar/pa
 import SearchPanel from './components/SearchPanel.vue'
 import SettingsModal from './components/Settings/SettingsModal.vue'
 import Sidebar from './components/Sidebar/index.vue'
+import FieldSettingsModal from './components/Tags/FieldSettingsModal.vue'
 import Toast from './components/Toast.vue'
 import { useBlockQueryRegistry } from './composables/useBlockQueryRegistry'
 import { useDateTimePickerPanel } from './composables/useDateTimePickerPanel'
@@ -331,6 +333,13 @@ function handleMainClick(e: MouseEvent) {
       :exclude-block-id="editorStore.blockSelector?.blockId ?? undefined"
       @select="handleEmbedSelect"
       @close="editorStore.closeBlockSelector()"
+    />
+
+    <!-- 完整字段设置弹窗：全局常驻，响应 editorStore.fieldSettingsFieldId（ADR-0057 D1）。
+         置于 BlockModal 之前——同 z-dialog 层内后渲染者在上，块详情需叠于字段设置之上 -->
+    <FieldSettingsModal
+      :field-id="editorStore.fieldSettingsFieldId"
+      @close="editorStore.closeFieldSettings()"
     />
 
     <!-- 单块子树编辑弹窗：全局常驻，响应 editorStore.blockModalBlockId，
