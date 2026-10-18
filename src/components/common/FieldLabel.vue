@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { fieldTypeIcon } from '../../utils/field-type-icons'
+import { specHeadOf } from '../../types/field-type-registry'
+import { fieldSpecIcon, fieldTypeIcon } from '../../utils/field-type-icons'
 
 /**
  * 字段设置入口组件（ADR-0057 D1）：类型图标 + 字段名，**图标即设置入口**。
@@ -9,6 +10,9 @@ import { fieldTypeIcon } from '../../utils/field-type-icons'
  * 两个消费方共用本组件（视觉/交互单源）：
  * - 标签管理页字段模板卡片（`TagsLibrary.vue` 模板区，卡片化后）；
  * - block 字段区字段行（`BlockFieldZone.vue` list 变体，行首图标列）。
+ *
+ * 图标跟随特化（与 FieldSettingsModal 头部同源）：传入 spec 且命中特化档时
+ * 显示特化图标（货币/评分/负责人…），无特化回落底层类型图标。
  *
  * 纯渲染 + emit：点击图标只发 `open-settings` 意图，弹窗开闭由调用方 / App 层
  * 管理（对齐 BasePopover「store 持状态 + 调用方传锚点」的编排模式）。
@@ -26,6 +30,8 @@ const props = withDefaults(
     title: string
     /** 字段类型（决定入口图标）。 */
     type: string
+    /** 特化标记（issue T6/T7/T10）：有特化时入口图标跟随特化语义，缺省无特化回落类型图标。 */
+    spec?: string | null
     /**
      * 是否「编辑语义」字段（非系统定义传 true）。只影响 tooltip 措辞：
      * false → 「系统字段只读，点击查看设置」。
@@ -50,7 +56,7 @@ const emit = defineEmits<{
 /** 实际可点开弹窗：openable 显式传入则优先，否则跟随 editable。 */
 const canOpen = computed(() => props.openable ?? props.editable)
 
-const icon = computed(() => fieldTypeIcon(props.type))
+const icon = computed(() => fieldSpecIcon(specHeadOf(props.spec)) ?? fieldTypeIcon(props.type))
 const tooltip = computed(() => {
   if (!canOpen.value) return '此处不开放字段设置入口'
   return props.editable ? '点击打开字段设置' : '系统字段只读，点击查看设置'

@@ -921,6 +921,7 @@ async function submitAddField() {
                 <FieldLabel
                   :title="row.def.title"
                   :type="displayFieldType(row.def)"
+                  :spec="row.def.spec"
                   :editable="!row.def.is_system"
                   openable
                   @open-settings="editorStore.openFieldSettings(row.def.id)"

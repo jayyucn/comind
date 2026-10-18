@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { Banknote, Hash, User } from 'lucide-vue-next'
 import FieldLabel from './FieldLabel.vue'
 
 /**
  * FieldLabel（ADR-0057 D1）：类型图标 + 字段名，图标即设置入口。
  * 门禁语义：editable=false 时图标仍渲染但不可点击（不静默失败）。
+ * 特化语义：传入 spec 且命中特化档时图标跟随特化（与 FieldSettingsModal 头部同源）。
  */
 describe('FieldLabel', () => {
   it('渲染字段名与类型图标（select → List 系图标）', () => {
@@ -62,5 +64,27 @@ describe('FieldLabel', () => {
   it('未知类型回落 Type 图标（不抛错）', () => {
     const w = mount(FieldLabel, { props: { title: '神秘字段', type: 'mystery' } })
     expect(w.find('svg').exists()).toBe(true)
+  })
+
+  it('无特化回落类型图标（number → Hash）', () => {
+    const w = mount(FieldLabel, { props: { title: '价格', type: 'number' } })
+    expect(w.findComponent(Hash).exists()).toBe(true)
+    w.unmount()
+  })
+
+  it('特化命中时图标跟随特化（number + currency → Banknote；page + person → User）', () => {
+    const w = mount(FieldLabel, { props: { title: '价格', type: 'number', spec: 'currency' } })
+    expect(w.findComponent(Banknote).exists()).toBe(true)
+    w.unmount()
+
+    const w2 = mount(FieldLabel, { props: { title: '负责人', type: 'page', spec: 'person' } })
+    expect(w2.findComponent(User).exists()).toBe(true)
+    w2.unmount()
+  })
+
+  it('未知特化回落类型图标（spec 不命中表时安全降级）', () => {
+    const w = mount(FieldLabel, { props: { title: '价格', type: 'number', spec: 'mystery' } })
+    expect(w.findComponent(Hash).exists()).toBe(true)
+    w.unmount()
   })
 })

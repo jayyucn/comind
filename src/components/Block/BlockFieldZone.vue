@@ -1279,6 +1279,7 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
         <FieldLabel
           :title="def.title"
           :type="displayFieldType(def)"
+          :spec="def.spec"
           :editable="!def.is_system"
           openable
           @open-settings="editorStore.openFieldSettings(def.id)"

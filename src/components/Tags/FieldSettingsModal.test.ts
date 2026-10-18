@@ -1,11 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { Banknote, Hash, Star } from 'lucide-vue-next'
 import FieldSettingsModal from './FieldSettingsModal.vue'
+import { FIELD_SPEC_ICONS } from '../../utils/field-type-icons'
 
 /**
  * FieldSettingsModal（ADR-0057 D1/D4/D5）：受控 props 弹窗、草稿+保存单源写库、
  * is_system 门禁（不渲染删除）、脏草稿关闭确认、使用于折叠列表。
  * Teleport 断言用 attachTo: document.body + 用例末 unmount（项目既有约定）。
+ * 头部图标（modal-title-icon）：特化选中后跟随特化语义，无特化回落类型图标。
  */
 
 const MOCK_DEF = {
@@ -199,6 +202,34 @@ describe('FieldSettingsModal', () => {
     await vi.waitFor(() => expect(updateFieldDefinition).toHaveBeenCalledTimes(1))
     expect(updateFieldDefinition.mock.calls[0][0].spec).toBe('email')
     w.unmount()
+  })
+
+  it('头部图标随特化变化：无特化回落类型图标，选中 currency/rating 切换对应特化图标', async () => {
+    mockFieldDefs = [{ ...MOCK_DEF, type: 'number', closed_values: null }]
+    const w = mountModal('f1')
+    const iconAt = () => w.find('.modal-title-icon')
+    // number 无特化 → 类型图标（Hash）
+    expect(iconAt().findComponent(Hash).exists()).toBe(true)
+
+    const items = w.findAll('.seg-item')
+    await items[1].trigger('click') // 货币
+    expect(iconAt().findComponent(Banknote).exists()).toBe(true)
+
+    await items[3].trigger('click') // 评分
+    expect(iconAt().findComponent(Star).exists()).toBe(true)
+
+    await items[0].trigger('click') // 无
+    expect(iconAt().findComponent(Hash).exists()).toBe(true)
+    w.unmount()
+  })
+
+  it('特化图标单源：FIELD_SPEC_ICONS 覆盖全部特化档（落库值域封闭）', () => {
+    const heads = ['email', 'phone', 'url', 'richtext', 'currency', 'percent', 'rating', 'person']
+    for (const h of heads) {
+      expect(FIELD_SPEC_ICONS[h], `特化 ${h} 应有图标`).toBeDefined()
+    }
+    // 未知特化查询返回 null（调用方回落类型图标）
+    expect(FIELD_SPEC_ICONS['mystery']).toBeUndefined()
   })
 
   it('number 特化：货币档展开级联单位行（符号默认省略）；类型切换清空 spec 与默认值', async () => {

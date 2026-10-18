@@ -12,7 +12,7 @@ import { displayFormOptionsFor } from '../../utils/field-display-form'
 import { decodeDefaultJson, encodeDefaultJson, FIELD_HIDE_OPTIONS, normalizeHideWhen } from '../../utils/field-hide'
 import { DEFAULT_CURRENCY_SYMBOL, parseCurrencySpec } from '../../utils/field-number-format'
 import { FIELD_SPEC_OPTIONS, type SpecFamily } from '../../utils/field-spec-options'
-import { fieldTypeIcon } from '../../utils/field-type-icons'
+import { fieldSpecIcon, fieldTypeIcon } from '../../utils/field-type-icons'
 import { initCoreClient } from '../../wasm/client'
 import SegmentedControl from '../common/SegmentedControl.vue'
 import ConfirmDialog from '../ConfirmDialog.vue'
@@ -222,7 +222,11 @@ const availableFormOptions = computed(() =>
   displayFormOptionsFor({ type: draft.type, key: fieldDef.value?.key ?? null }),
 )
 
-const headerIcon = computed(() => fieldTypeIcon(draft.type))
+/**
+ * 头部图标：选中特化后跟随特化语义（货币/评分/负责人…），无特化回落类型图标。
+ * 与 FieldLabel 入口的类型图标（fieldTypeIcon）同源；特化是规格细分，图标细分为特化。
+ */
+const headerIcon = computed(() => fieldSpecIcon(specHeadOf(draft.spec)) ?? fieldTypeIcon(draft.type))
 
 // ── 选项编辑（closed_values chips）────────────────────────────
 const newOption = ref('')
