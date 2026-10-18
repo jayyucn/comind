@@ -1132,15 +1132,18 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
         v-for="fv in displayRows"
         :key="fv.id"
       >
-        <!-- 只读形态（readonly，D21 通用只读扩展）：all 变体同样纯展示——静态可读值 +
-             锁图标，不绑点击（字段区锁定不可编辑）。优先于下方各形态分支。 -->
+        <!-- 只读形态（readonly，D21 通用只读扩展）：all 变体同样纯展示——静态可读值，
+             不绑点击（字段区锁定不可编辑），值区悬浮提示"只读"。优先于下方各形态分支。 -->
         <span
           v-if="allFormOf(fv) === 'readonly'"
           class="property-item bfz-readonly-item"
           :title="`${titleOf(fv.key)}: ${dataOf(fv) != null && dataOf(fv) !== '' ? getLabel(fv.key, dataOf(fv)) : '—'}（只读）`"
         >
           <span class="bfz-chip-title">{{ titleOf(fv.key) }}</span>
-          <span class="bfz-readonly-value">
+          <span
+            class="bfz-readonly-value"
+            title="只读，不可在字段区编辑"
+          >
             <template v-if="defOf(fv.key)?.type === 'boolean'">
               <span
                 v-if="allIconCharOf(fv)"
@@ -1160,11 +1163,6 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
               class="block-field-zone-placeholder"
             >—</span>
           </span>
-          <Lock
-            :size="12"
-            class="bfz-readonly-lock"
-            title="只读，不可在字段区编辑"
-          />
         </span>
 
         <!-- chip 形态（all 变体） -->
@@ -1310,10 +1308,13 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
 
         <!-- ①·b 只读形态（readonly，D21 通用只读扩展）：跨类型纯展示——复用各类型现有
              可读静态输出（boolean 取 ✓/✗ 图标、其余取 valueText 文字），不挂输入框 /
-             内联编辑器，整行不可点（openFieldRow 对 readonly 早退）。值旁常驻锁图标标
-             "不可编辑"；无值出「—」。优先于下方所有类型专属分支。 -->
+             内联编辑器，整行不可点（openFieldRow 对 readonly 早退）。值区弱化配色 +
+             悬浮提示"只读"；无值出「—」。优先于下方所有类型专属分支。 -->
         <template v-else-if="formOf(def) === 'readonly'">
-          <span class="bfz-readonly-value">
+          <span
+            class="bfz-readonly-value"
+            title="只读，不可在字段区编辑"
+          >
             <template v-if="def.type === 'boolean' && iconCharOf(def)">
               <span class="property-icon">{{ iconCharOf(def) }}</span>
             </template>
@@ -1326,11 +1327,6 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
               class="block-field-zone-placeholder"
             >—</span>
           </span>
-          <Lock
-            :size="12"
-            class="bfz-readonly-lock"
-            title="只读，不可在字段区编辑"
-          />
         </template>
 
         <!-- ② 图标 / 图标+文字形态（override 或编译期 displayStyle）：值前图标位，
@@ -1980,12 +1976,14 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
   display: inline-flex;
   align-items: center;
   min-width: 0;
-}
-
-.bfz-readonly-lock {
-  flex: none;
-  margin-left: 4px;
+  /* 只读值弱化：与字段名同档 tertiary，明确"展示态、不可编辑"。 */
   color: var(--text-tertiary);
+
+  .property-icon,
+  .property-value,
+  .block-field-zone-text {
+    color: inherit;
+  }
 }
 
 /* all 变体只读项：非交互，与 list 变体同视觉基调。 */

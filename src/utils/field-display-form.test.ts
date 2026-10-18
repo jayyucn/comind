@@ -122,10 +122,11 @@ describe('displayFormOptionsFor（展示形态下拉按字段类型配置，用�
     expect(displayFormOptionsFor({ type: 'multiSelect' }).map((o) => o.value)).toEqual(['auto', 'chip', 'text', 'readonly'])
   })
 
-  it('标量（string/number/date）：仅文字 / 只读，外加跟随类型', () => {
-    for (const t of ['string', 'number', 'date', 'datetime']) {
+  it('标量：string/date/datetime 给 文字 / 只读 / 跟随类型；number 仅 只读 / 跟随类型（不含文字）', () => {
+    for (const t of ['string', 'date', 'datetime']) {
       expect(displayFormOptionsFor({ type: t }).map((o) => o.value)).toEqual(['auto', 'text', 'readonly'])
     }
+    expect(displayFormOptionsFor({ type: 'number' }).map((o) => o.value)).toEqual(['auto', 'readonly'])
   })
 
   it('内建图标键（project 等 ICON_CHARS）：图标 / 图标+文字 / 胶囊 / 文字 / 只读 / 跟随类型', () => {

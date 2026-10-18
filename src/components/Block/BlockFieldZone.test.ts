@@ -513,9 +513,10 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
 
     // 可编辑的 TextField 不渲染（无 input 落值区）
     expect(wrapper.find('.block-field-zone-value input').exists()).toBe(false)
-    // 走只读分支：静态文字 + 常驻锁图标
-    expect(wrapper.find('.bfz-readonly-value').exists()).toBe(true)
-    expect(wrapper.find('.bfz-readonly-lock').exists()).toBe(true)
+    // 走只读分支：静态文字 + 值区悬浮"只读"提示（无锁图标）
+    const valueEl = wrapper.find('.bfz-readonly-value')
+    expect(valueEl.exists()).toBe(true)
+    expect(valueEl.attributes('title')).toContain('只读')
     expect(wrapper.find('.block-field-zone-text').text()).toBe('hello')
     // 整行非按钮（role 不挂 button）、点击不弹快速编辑器（字段区锁定）
     expect(wrapper.find('.block-field-zone-row').attributes('role')).toBeUndefined()
@@ -542,9 +543,36 @@ describe('BlockFieldZone（块字段区渲染载体）', () => {
 
     // BooleanCheck 不渲染
     expect(wrapper.find('[data-testid="boolean-check"]').exists()).toBe(false)
-    // 只读分支：静态 ✓/✗ 图标 + 锁图标
-    expect(wrapper.find('.bfz-readonly-value').exists()).toBe(true)
-    expect(wrapper.find('.bfz-readonly-lock').exists()).toBe(true)
+    // 只读分支：静态 ✓/✗ 图标 + 值区悬浮"只读"提示（无锁图标）
+    const valueEl = wrapper.find('.bfz-readonly-value')
+    expect(valueEl.exists()).toBe(true)
+    expect(valueEl.attributes('title')).toContain('只读')
+    expect(wrapper.find('.block-field-zone-row').attributes('role')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('number 字段 display_form_override=readonly：纯文本展示、不挂 NumberInput', async () => {
+    mockClient.getTagTree.mockResolvedValue([
+      treeEntry({ id: 't-n', title: '数量', field_ids: ['f-num'], effective_field_ids: ['f-num'] }),
+    ])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-num', key: 'qty', title: '数量', type: 'number', display_form_override: 'readonly' }),
+    ])
+    mockClient.getFieldValues.mockResolvedValue([
+      fv({ id: 'v1', block_id: 'b1', key: 'qty', value_json: '42', value_type: 'number' }),
+    ])
+
+    const wrapper = await mountList('b1', ['t-n'])
+    await useFieldValueStore().loadBlockFieldValues('b1')
+    await flushPromises()
+
+    // NumberInput 不渲染（值区不出现 input）
+    expect(wrapper.find('.block-field-zone-value input').exists()).toBe(false)
+    // 走只读分支：纯文本值 + 值区悬浮"只读"提示
+    const valueEl = wrapper.find('.bfz-readonly-value')
+    expect(valueEl.exists()).toBe(true)
+    expect(valueEl.attributes('title')).toContain('只读')
+    expect(wrapper.find('.block-field-zone-text').text()).toBe('42')
     expect(wrapper.find('.block-field-zone-row').attributes('role')).toBeUndefined()
     wrapper.unmount()
   })

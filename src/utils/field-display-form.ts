@@ -75,7 +75,8 @@ export function fieldHasIconSource(def: { type: string; key?: string | null }): 
  * - 有图标来源（status/priority 系统字段、tags/project 等内建键）：图标 / 图标+文字 /
  *   胶囊 / 文字 / 跟随类型
  * - 枚举（select/multiSelect）：胶囊 / 文字 / 跟随类型
- * - 其余（string/number/date/...）：文字 / 跟随类型
+ * - number：跟随类型 / 只读（不给「文字」——number 的纯文本展示由 readonly 承担，见决策 10）
+ * - 其余标量（string/date/datetime/...）：文字 / 只读 / 跟随类型
  */
 export function displayFormOptionsFor(opts: {
   type: string
@@ -105,6 +106,13 @@ export function displayFormOptionsFor(opts: {
   if (opts.type === 'select' || opts.type === 'multiSelect') {
     return [auto, { value: 'chip', label: FORM_LABELS.chip }, { value: 'text', label: FORM_LABELS.text }, readonly]
   }
+  // number：跟随类型（徽章 / NumberInput）或只读（纯文本，不挂 NumberInput）。
+  // 不给 text——number 的「纯文本展示」由 readonly 承担（决策 10：readonly 渲染各类型
+  // 现有可读静态输出，对 number 即 valueText 纯文本，绝不挂 NumberInput）。
+  if (opts.type === 'number') {
+    return [auto, readonly]
+  }
+  // 其余标量（string / date / datetime / …）：文字 / 只读，外加跟随类型。
   return [auto, { value: 'text', label: FORM_LABELS.text }, readonly]
 }
 
