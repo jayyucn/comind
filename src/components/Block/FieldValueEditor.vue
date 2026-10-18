@@ -1,25 +1,26 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+
 import { useEditorStore } from '../../stores/editor'
 import { useFieldValueStore } from '../../stores/fieldValue'
-import type { FieldType, FieldValueData, FileRefValue, RelationRefValue } from '../../types/field-definition'
-import { decodeFieldValueData } from '../../utils/field-value-codec'
-import BasePopover from '../common/BasePopover.vue'
-import DatePicker from '../common/DatePicker.vue'
-import DateTimePicker from '../common/DateTimePicker.vue'
-import DateRangePicker, { type DateRangePickerValue } from '../common/DateRangePicker.vue'
-import FileRefEditor from '../common/FileRefEditor.vue'
-import RelationRefEditor from '../common/RelationRefEditor.vue'
-import MultiEnumSelect from '../common/MultiEnumSelect.vue'
-import PageRefPicker from '../common/PageRefPicker.vue'
-import type { EnumOption } from '../common/EnumSelect.vue'
 import { useTagsStore } from '../../stores/tags'
+import type { FieldType, FieldValueData, FileRefValue, RelationRefValue } from '../../types/field-definition'
 import { getFieldDefinition } from '../../types/field-definition'
 import { numberSpecialization, pageSpecialization, specHeadOf, stringSpecialization } from '../../types/field-type-registry'
-import SpecializedText from '../common/SpecializedText.vue'
-import RatingInput from '../common/RatingInput.vue'
+import { decodeFieldValueData } from '../../utils/field-value-codec'
+import { detectCycle,evaluateFormula, validateFormula } from '../../utils/formula'
 import { TAG_COLORS } from '../../utils/tag-color'
-import { evaluateFormula, validateFormula, detectCycle } from '../../utils/formula'
+import BasePopover from '../common/BasePopover.vue'
+import DatePicker from '../common/DatePicker.vue'
+import DateRangePicker, { type DateRangePickerValue } from '../common/DateRangePicker.vue'
+import DateTimePicker from '../common/DateTimePicker.vue'
+import type { EnumOption } from '../common/EnumSelect.vue'
+import FileRefEditor from '../common/FileRefEditor.vue'
+import MultiEnumSelect from '../common/MultiEnumSelect.vue'
+import PageRefPicker from '../common/PageRefPicker.vue'
+import RatingInput from '../common/RatingInput.vue'
+import RelationRefEditor from '../common/RelationRefEditor.vue'
+import SpecializedText from '../common/SpecializedText.vue'
 
 const editorStore = useEditorStore()
 const fieldValueStore = useFieldValueStore()
@@ -382,6 +383,15 @@ function open() {
         geoName.value = g.name ?? ''
       }
     } else {
+      // 字段已在「字段设置」配置过类型，但本块尚无该字段的值行：
+      // 必须从字段定义取 def.type 作为初始类型，否则 selectedType 停留在 'string'，
+      // 导致 geo/color/autonumber 等类型首次录入落到文本分支（附件后的类型无法使用）。
+      const def =
+        getFieldDefinition(initialKey.value) ??
+        tagsStore.fieldDefinitions.find((d) => d.key === initialKey.value)
+      // PersistedFieldDefinition.type 在类型层是 string，但持久化值恒为 FieldType 规范枚举
+      const defType = def ? (def.type as FieldType) : undefined
+      if (defType) selectedType.value = defType
       currentValue.value = selectedType.value === 'array' || selectedType.value === 'multiSelect' ? [] : ''
     }
   } else {

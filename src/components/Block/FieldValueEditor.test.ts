@@ -3,6 +3,7 @@ import { nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import FieldValueEditor from './FieldValueEditor.vue'
+import { useTagsStore } from '../../stores/tags'
 
 // 可变状态：新建/编辑两种模式由各用例切换（组件只读它）
 const hoisted = vi.hoisted(() => ({
@@ -26,7 +27,9 @@ const hoisted = vi.hoisted(() => ({
     version: 0,
     deleted_at: null as number | null
   },
-  setFieldValue: vi.fn().mockResolvedValue({ id: 'fv-1' })
+  setFieldValue: vi.fn().mockResolvedValue({ id: 'fv-1' }),
+  // 无存量值行开关：置 true 时 getBlockFieldValue 返回 null（模拟「字段已配置类型但本块尚无值」）
+  noExisting: false
 }))
 
 // Mock editor store
@@ -41,7 +44,7 @@ vi.mock('../../stores/editor', () => ({
 // Mock field value store
 vi.mock('../../stores/fieldValue', () => ({
   useFieldValueStore: () => ({
-    getBlockFieldValue: () => hoisted.existingField,
+    getBlockFieldValue: () => (hoisted.noExisting ? null : hoisted.existingField),
     setFieldValue: hoisted.setFieldValue
   })
 }))
@@ -66,7 +69,10 @@ describe('FieldValueEditor', () => {
     hoisted.editor.initialKey = null
     hoisted.existingField.value_type = 'boolean'
     hoisted.existingField.value_json = 'true'
+    hoisted.noExisting = false
     hoisted.setFieldValue.mockClear()
+    // 清空字段定义，避免跨用例污染
+    useTagsStore().fieldDefinitions.splice(0, useTagsStore().fieldDefinitions.length)
   })
 
   it('renders property editor dialog', () => {
@@ -232,6 +238,49 @@ describe('FieldValueEditor', () => {
     expect(key).toBe('相关块')
     expect(value).toEqual({ targetId: 'blk-1', relationshipTypeId: 'rt_seed_related' })
     expect(type).toBe('relation')
+    wrapper.unmount()
+  })
+
+  // ── 无存量值行时从字段定义取类型（附件后类型首次录入，issue）──
+
+  it('编辑模式且本块无值行：类型取自字段定义而非默认 string（geo → 渲染坐标输入）', async () => {
+    hoisted.editor.initialKey = '坐标'
+    hoisted.noExisting = true
+    // 字段设置里把「坐标」配成了 geo 类型，但本块尚未录入值
+    useTagsStore().fieldDefinitions.push({
+      id: 'fd-geo', key: '坐标', title: '坐标', type: 'geo',
+      closed_values: null, default_value: null, hide_when: 'never',
+      display_form_override: 'auto', min: null, max: null, step: null,
+      spec: null, description: null,
+    } as never)
+
+    const wrapper = mountAttached()
+    await nextTick()
+
+    // 类型展示为「地理坐标」而非「文本」
+    expect(wrapper.findAll('.form-static').map(el => el.text())).toEqual(['坐标', '地理坐标'])
+    // 值区应渲染 geo 坐标输入（占位「纬度 lat」），而非普通文本输入框
+    expect(wrapper.find('input[placeholder="纬度 lat"]').exists()).toBe(true)
+    expect(wrapper.find('input[placeholder="输入值"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('编辑模式且本块无值行：字段定义类型为 color 时渲染色板而非文本框', async () => {
+    hoisted.editor.initialKey = '主题色'
+    hoisted.noExisting = true
+    useTagsStore().fieldDefinitions.push({
+      id: 'fd-color', key: '主题色', title: '主题色', type: 'color',
+      closed_values: null, default_value: null, hide_when: 'never',
+      display_form_override: 'auto', min: null, max: null, step: null,
+      spec: null, description: null,
+    } as never)
+
+    const wrapper = mountAttached()
+    await nextTick()
+
+    expect(wrapper.findAll('.form-static').map(el => el.text())).toEqual(['主题色', '颜色'])
+    // color 色板（.color-swatch 渲染）应存在
+    expect(wrapper.find('.color-swatch').exists()).toBe(true)
     wrapper.unmount()
   })
 })
