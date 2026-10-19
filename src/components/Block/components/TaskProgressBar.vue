@@ -9,8 +9,8 @@
  * 左侧由父级对齐到上方任务图标右缘、图标 + 计数 + 百分比、渐变填充、
  * 全部完成时转绿换勾。布局归属由父级 class / inline style 控制。
  */
-import { CheckCircle2, ListChecks } from 'lucide-vue-next';
-import { computed } from 'vue';
+import { CheckCircle2, ListChecks } from 'lucide-vue-next'
+import { computed } from 'vue'
 
 const props = defineProps<{
   done: number
