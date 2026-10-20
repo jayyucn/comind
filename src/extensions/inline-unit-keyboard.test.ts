@@ -661,4 +661,25 @@ describe('inline-unit-keyboard — 块尾光标锚点（零宽 widget）', () =>
     // 删除尾 pad 后整块仍只剩 chip，逻辑光标仍在 to（未入内部）
     expect(handle.editor.state.selection.from).toBe(to)
   })
+
+  it('拖拽部分选中 chip 后删除 → 删除事务层兜底，整 chip 被删（不留半截）', () => {
+    handle = createTextEditor('@u1')
+    expect(unitRanges(handle.editor).length).toBe(1)
+    const { state, dispatch } = handle.editor.view
+    // 模拟「拖拽选中 chip 内部部分文本并删除」：删除事务直接吃 chip 中一段，
+    // 不经选区吸附闸门（拖拽路径实际表现）。旧逻辑会留下半截（"@1"），
+    // 新逻辑在删除事务层兜底 → 整 chip 删除。
+    dispatch(state.tr.delete(2, 3)) // 删 "u"，原会留下 "@1"
+    expect(handle.editor.state.doc.textContent).toBe('') // 整 chip 删除
+    expect(unitRanges(handle.editor).length).toBe(0)
+  })
+
+  it('删除事务仅擦到 chip 边缘、未真正重叠 → 不误阔', () => {
+    handle = createTextEditor('@u1 x')
+    const { state, dispatch } = handle.editor.view
+    // 删除 " x"（chip 之后、不重叠 chip 区间 [1,4)）→ chip 完整保留
+    dispatch(state.tr.delete(4, 6))
+    expect(handle.editor.state.doc.textContent).toBe('@u1')
+    expect(unitRanges(handle.editor).length).toBe(1)
+  })
 })

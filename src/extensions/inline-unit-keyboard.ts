@@ -1,7 +1,7 @@
 import type { Node } from '@tiptap/pm/model'
 import type { EditorState, Transaction } from '@tiptap/pm/state'
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
-import { ReplaceStep } from '@tiptap/pm/transform'
+import { Mapping, ReplaceStep } from '@tiptap/pm/transform'
 import type { EditorView } from '@tiptap/pm/view'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 
@@ -191,25 +191,51 @@ export function createInlineUnitKeyboardPlugin(options: InlineUnitKeyboardOption
     // （tag 打字中 `#ab` 即匹配完整单元正则、`[[]]` 手工填充停在闭括号前），
     // 钳掉会直接打断输入。
     // ⚠️ appendTransaction 是 PluginSpec 顶层字段，放进 props 会被静默忽略。
-    appendTransaction(trs: readonly Transaction[], _oldState: EditorState, newState: EditorState) {
+    appendTransaction(trs: readonly Transaction[], oldState: EditorState, newState: EditorState) {
       if (isBlocked?.()) return null
       if (composingEpoch > 0) return null
 
-      const docChanged = trs.some(tr => tr.docChanged)
-      if (docChanged) {
-        // 删除性事务（选区 Backspace/Delete/剪切、redo 删除）落点钳制 ——
-        // 删 pad 空格会让贪婪单元（tag 正则吸字母数字）与后续文本黏连扩展，
-        // 删除落点坠入扩展后的单元内部。纯插入（打字/粘贴）与替换（slice
-        // 非空：IME 确认、选区打字替换）放行 —— 单元建造需要内部光标。
-        const hasDeletion = trs.some(tr =>
-          tr.steps.some(
-            step =>
-              step instanceof ReplaceStep &&
-              step.from < step.to &&
-              step.slice.size === 0,
-          ))
-        if (!hasDeletion) return null
+      // 收集所有「删除步」范围并映射回 oldState 坐标（覆盖多步/多事务），
+      // 用于判定删除是否触及 chip。选区闸门只能钳光标、挡不住删除事务本身，
+      // 故拖拽部分选中 chip 后删除会留下半截 chip（#ta / @2026-10-2 / [[wik）
+      // —— 这一层在删除事务层兜底，对任意触发路径（拖拽/程序化/未来入口）生效。
+      const mapping = new Mapping()
+      const delRangesOld: Array<{ from: number; to: number }> = []
+      for (const tr of trs) {
+        for (const step of tr.steps) {
+          if (step instanceof ReplaceStep && step.from < step.to && step.slice.size === 0) {
+            delRangesOld.push({ from: mapping.map(step.from, -1), to: mapping.map(step.to, 1) })
+          }
+          mapping.appendMap(step.getMap())
+        }
       }
+
+      // 删除事务且触及 chip → 把删除拓宽到整 chip（原子语义，与边缘整删同源）。
+      // 原删除已吃掉 chip 中的一段，这里删掉映射后的剩余整段，净效果 = 整 chip 删除。
+      if (delRangesOld.length > 0) {
+        const chipRanges = findRanges(oldState.doc).filter(r =>
+          delRangesOld.some(d => d.from < r.to && r.from < d.to),
+        )
+        if (chipRanges.length > 0) {
+          const chipNew = chipRanges
+            .map(r => ({ from: mapping.map(r.from, -1), to: mapping.map(r.to, 1) }))
+            .sort((a, b) => b.from - a.from) // 从右往左删，保持坐标有效
+          let tr = newState.tr
+          for (const r of chipNew) {
+            if (r.to > r.from) tr = tr.delete(r.from, r.to)
+          }
+          // 光标落最左 chip 之前（chip 之外），near 兜底到最近合法文本位
+          const caret = tr.mapping.map(Math.min(...chipRanges.map(r => r.from)), -1)
+          return tr.setSelection(TextSelection.near(tr.doc.resolve(caret)))
+        }
+      }
+
+      const docChanged = trs.some(tr => tr.docChanged)
+      const hasDeletion = delRangesOld.length > 0
+
+      // 纯选区事务、或删除事务的落点钳制才跑选区闸门；纯插入（打字/粘贴）放行
+      // —— 单元建造需要内部光标，钳掉会直接打断输入。
+      if (docChanged && !hasDeletion) return null
 
       const sel = newState.selection
       if (!(sel instanceof TextSelection)) return null
