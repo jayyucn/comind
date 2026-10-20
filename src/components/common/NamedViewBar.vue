@@ -10,6 +10,7 @@ import {
 } from 'lucide-vue-next'
 import Sortable from 'sortablejs'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+
 import {
   canDeleteScreen,
   canDeleteTab,
@@ -725,7 +726,7 @@ onBeforeUnmount(() => {
     color: var(--text-primary);
     padding: 3px 7px;
     outline: none;
-    box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.15);
+    box-shadow: var(--shadow-focus);
   }
 }
 
@@ -943,7 +944,7 @@ onBeforeUnmount(() => {
   color: var(--text-primary);
   padding: 4px 7px;
   outline: none;
-  box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.15);
+  box-shadow: var(--shadow-focus);
 }
 
 .new-screen {
@@ -1037,7 +1038,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border-light, #3a3a3f);
   border-radius: var(--radius-lg, 14px);
   padding: 22px;
-  box-shadow: var(--shadow-modal, 0 8px 32px rgba(0, 0, 0, 0.3));
+  box-shadow: var(--shadow-floating);
 
   h3 {
     margin: 0 0 4px;
@@ -1077,7 +1078,7 @@ onBeforeUnmount(() => {
 
     &:focus {
       border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.15);
+      box-shadow: var(--shadow-focus);
     }
   }
 }
@@ -1147,7 +1148,7 @@ onBeforeUnmount(() => {
     border-color: transparent;
     color: #141417;
     font-weight: 600;
-    box-shadow: 0 1px 8px rgba(129, 140, 248, 0.35);
+    box-shadow: var(--shadow-glow-accent);
 
     &:hover {
       background: #93a1fa;

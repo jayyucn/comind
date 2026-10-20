@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { Check, Clock, Trash2 } from 'lucide-vue-next'
 import { onMounted, ref } from 'vue'
+
 import { useNavigateToPage } from '../composables/useNavigateToPage'
 import { useNotificationStore } from '../stores/notification'
 import type { Notification } from '../wasm/types'
-import Icon from './Icons/Icon.vue'
 import BasePopover from './common/BasePopover.vue'
+import Icon from './Icons/Icon.vue'
 
 const notificationStore = useNotificationStore()
 const navigateToPage = useNavigateToPage()
@@ -275,25 +276,25 @@ onMounted(() => {
   transition: background var(--dur-fast) var(--ease-out);
 }
 
-.notification-bell-btn:hover {
-  transform: scale(1.1);
-}
 
 .notification-badge {
   position: absolute;
   top: 0;
-  right: 0px;
-  width: var(--space-3);
-  height: var(--space-3);
+  right: 0;
+  min-width: var(--space-4);
+  height: var(--space-4);
   padding: 0 4px;
-  background: var(--accent);
+  background: var(--tag-color-2);
   color: white;
   font-size: var(--text-xs);
   font-weight: var(--font-semibold);
+  line-height: 1;
   border-radius: var(--radius-sm);
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  white-space: nowrap;
+  box-sizing: border-box;
 }
 
 .notification-dropdown {

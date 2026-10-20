@@ -25,6 +25,7 @@
  */
 import { Calendar } from 'lucide-vue-next'
 import { computed, nextTick, ref, watch } from 'vue'
+
 import { formatRelativeExpr, parseRelativeDate, relativeDateShortcuts } from '../../utils/date-parser'
 import CalendarPopover from '../CalendarPopover.vue'
 
@@ -444,7 +445,7 @@ function clearValue() {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg-base);
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--shadow-floating);
 }
 
 .dp-range-hint {

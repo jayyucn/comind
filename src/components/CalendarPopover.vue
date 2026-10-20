@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ChevronLeft, ChevronRight } from 'lucide-vue-next';
-import { computed, ref, watch } from 'vue';
-import BasePopover from './common/BasePopover.vue';
+import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import { computed, ref, watch } from 'vue'
+
+import BasePopover from './common/BasePopover.vue'
 
 const props = withDefaults(defineProps<{
   visible: boolean
@@ -301,7 +302,7 @@ watch(
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--shadow-floating);
   padding: var(--space-3);
   display: flex;
   flex-direction: column;

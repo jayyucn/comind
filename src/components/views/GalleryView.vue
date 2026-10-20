@@ -8,6 +8,7 @@
  */
 import { Book } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
+
 import type { FieldDescriptor } from '../../core/query'
 import type { GalleryConfig } from '../../core/view'
 import { assetStorage } from '../../utils/asset'
@@ -191,7 +192,7 @@ watch(
   flex-direction: column;
   border: 1px solid var(--border);
   border-radius: var(--radius-md, 10px);
-  background: var(--bg-base2);
+  background: var(--grad-surface); // 维度②：顶亮渐变表面
   overflow: hidden;
   cursor: pointer;
   transition: border-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
@@ -199,7 +200,7 @@ watch(
   &:hover {
     border-color: var(--accent);
     transform: translateY(-2px);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+    box-shadow: var(--shadow-elevation-hover); // 维度①：物理抬升 + token 化（替换硬编码阴影）
   }
 }
 

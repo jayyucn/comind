@@ -76,11 +76,14 @@
     background: var(--bg-hover);
     color: var(--text-primary);
     border-color: var(--border-strong);
+    box-shadow: var(--shadow-elevation-hover);
+    transform: translateY(-1px); // 维度①：物理抬升微反馈
   }
 
   &:active:not(:disabled) {
     background: var(--bg-active);
     transform: scale(0.98);
+    box-shadow: none;
   }
 
   &:disabled {
@@ -107,6 +110,7 @@
   background: var(--bg-base);
   color: var(--text-primary);
   font-size: var(--text-base);
+  box-shadow: var(--shadow-inset-top);
   transition:
     border-color var(--dur-fast) var(--ease-out),
     box-shadow var(--dur-fast) var(--ease-out),
@@ -119,7 +123,7 @@
   &:focus {
     outline: none;
     border-color: var(--accent);
-    box-shadow: var(--shadow-focus);
+    box-shadow: var(--shadow-focus), var(--shadow-inset-top);
   }
 
   &::placeholder {

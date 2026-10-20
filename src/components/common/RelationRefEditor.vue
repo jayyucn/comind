@@ -23,11 +23,12 @@
  * 「未知目标」+ 中性样式（.rre-chip--dangling）。
  */
 import { computed, nextTick, ref, watch } from 'vue'
+
 import { useRelationshipTypes } from '../../composables/useRelationshipTypes'
-import type { RelationshipType } from '../../types/relationship-type'
-import type { RelationRefValue } from '../../types/field-definition'
 import { useBlockStore } from '../../stores/blocks'
 import { usePageStore } from '../../stores/pages'
+import type { RelationRefValue } from '../../types/field-definition'
+import type { RelationshipType } from '../../types/relationship-type'
 
 export type RelationRefEditorValue = RelationRefValue | undefined
 
@@ -411,7 +412,7 @@ defineExpose({ openPanel, close, pickRelType, pickTarget, clearValue })
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg-base);
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--shadow-floating);
 }
 
 .rre-section-title {

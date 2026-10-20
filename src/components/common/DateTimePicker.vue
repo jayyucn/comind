@@ -18,6 +18,7 @@
  */
 import { Calendar } from 'lucide-vue-next'
 import { computed, nextTick, ref, watch } from 'vue'
+
 import CalendarPopover from '../CalendarPopover.vue'
 
 const props = withDefaults(
@@ -274,7 +275,7 @@ defineExpose({ onSelect })
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg-base);
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--shadow-floating);
 }
 
 /* 时间档行：日历下方一行（label + 原生 time 输入），与面板 padding 节奏一致 */

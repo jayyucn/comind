@@ -65,7 +65,7 @@ const emit = defineEmits<{
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--shadow-floating);
 }
 
 .toolbar-btn {

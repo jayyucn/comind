@@ -117,7 +117,30 @@
   padding: var(--space-6);
   min-width: 320px;
   max-width: 480px;
-  box-shadow: var(--shadow-modal);
+  position: relative;
+  background: var(--corner-glow), var(--grad-surface); // 维度②：顶亮渐变 + accent 顶边光带（叠在背景层，位于内容之下）
+  border: none; // 实色 border 让位给 ::after 渐变描边
+  box-shadow: var(--shadow-floating);
+  animation: dialog-in var(--dur-slow) var(--ease-spring); // 维度①：入场弹入（门面 slow 档，ADR-0053 D4）
+
+  // 维度②：渐变描边（premium 感，替换平色 border）
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: var(--grad-border);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+}
+
+@keyframes dialog-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .dialog-title {

@@ -1,6 +1,7 @@
 <script setup lang="ts" generic="T">
-import { computed, ref } from 'vue'
 import { GripVertical } from 'lucide-vue-next'
+import { computed, ref } from 'vue'
+
 import type { FieldDescriptor, Option } from '../../core/query'
 import type { BoardConfig } from '../../core/view'
 
@@ -292,19 +293,21 @@ function onDragEnd() {
   display: flex;
   gap: 6px;
   padding: 10px;
-  background: var(--bg-primary);
+  background: var(--grad-surface); // 维度②：顶亮渐变表面（修复原 --bg-primary 未定义导致透明背景的 bug）
   border: 1px solid var(--border-color, var(--app-split));
   border-radius: 8px;
   cursor: grab;
-  transition: box-shadow var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
+  transition: box-shadow var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
 
   &:hover {
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    box-shadow: var(--shadow-elevation-hover); // 维度①+②：物理抬升 + token 化（替换硬编码阴影）
     border-color: var(--accent);
+    transform: translateY(-1px);
   }
 
   &.dragging {
     opacity: 0.4;
+    transform: none;
   }
 }
 

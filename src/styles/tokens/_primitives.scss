@@ -141,6 +141,7 @@ $dur-slow: 260ms;  // 弹层 / 抽屉 / 门面进出场
 $ease-out: cubic-bezier(0.22, 1, 0.36, 1);    // 入场 / hover：减速收尾
 $ease-in: cubic-bezier(0.4, 0, 1, 1);         // 出场：加速离场
 $ease-in-out: cubic-bezier(0.65, 0, 0.35, 1); // 折叠 / 几何位移类双向运动
+$ease-spring: cubic-bezier(0.2, 0.8, 0.2, 1); // 弹入缓动（浮层/卡片入场，docs/quality-design-language.md）
 
 // Z-index 层级（自底向上，设计依据见 docs/adr/0032-z-index-layering.md）
 $z-base:       0;                    // 内容层（0-2 微叠层豁免 token 化）

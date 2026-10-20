@@ -51,7 +51,7 @@ import { effectiveNumberBounds, formatCurrency, parseCurrencySpec } from '../../
 import { displayFieldType } from '../../utils/field-type-icons'
 import { safeEvaluateFormula } from '../../utils/formula'
 import { renderInlineMarkdown, toExternalHref } from '../../utils/mini-markdown'
-import { isTagColorToken,TAG_COLORS } from '../../utils/tag-color'
+import { isTagColorToken, TAG_COLORS } from '../../utils/tag-color'
 import { isTauriEnvironment } from '../../wasm/tauri-platform'
 import BooleanCheck, { type BooleanCheckValue } from '../common/BooleanCheck.vue'
 import DatePicker, { type DatePickerValue } from '../common/DatePicker.vue'
@@ -1081,6 +1081,7 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
         <span class="property-icon">
           <Icon
             v-if="isSvgIcon(getIcon(fv.key, dataOf(fv)) as string)"
+            :key="fv.key === 'status' ? `status-${String(dataOf(fv))}` : fv.id"
             :name="getIcon(fv.key, dataOf(fv)) as string"
             :size="variant === 'right' ? 14 : undefined"
           />
@@ -1795,6 +1796,26 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
   justify-content: center;
   /* 确保 icon 和文本的垂直对齐 */
   line-height: var(--leading-none);
+}
+
+/* 状态切换微过渡：status 图标换值时经 :key 重挂，播放一次轻微 pop
+   （与 .block-link/.block-tag 的 motion-pop 同源语感，但更克制）。换不同图标组件是
+   <component :is> 整体替换，跨组件 CSS transition:color 无效，故用重挂 + 入场动画。 */
+.property-inline-item[data-field='status'] .property-icon :deep(svg) {
+  transform-origin: center;
+  animation: status-pop var(--dur-fast) var(--ease-out);
+}
+
+@keyframes status-pop {
+  from {
+    transform: scale(0.82);
+    opacity: 0.4;
+  }
+
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 /* ── chips / all / book-note（原 PropertyDisplay） ── */

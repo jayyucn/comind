@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 /** 通用弹层原语（ADR-0009 D8，避让扩展见 ADR-0038）。
  *
@@ -12,7 +12,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
  *   空间不足自动翻到对侧、仍放不下再贴视口边；打开期间监听 scroll/resize 实时跟随。
  * - 遗留点模式：`position:{x,y}`，仅做视口收边，行为保持与 ADR-0009 完全一致。
  *
- * 样式复用项目令牌：--bg-base / --border / --radius-md / --shadow-modal / --dur-base / --ease-out。
+ * 样式复用项目令牌：--corner-glow / --grad-surface / --grad-border / --radius-md / --shadow-floating / --dur-base / --ease-out。
  */
 const props = withDefaults(
   defineProps<{
@@ -297,7 +297,7 @@ onBeforeUnmount(() => {
   </Teleport>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
 .base-popover-overlay {
   position: fixed;
   inset: 0;
@@ -307,10 +307,15 @@ onBeforeUnmount(() => {
 .base-popover {
   position: fixed;
   z-index: calc(var(--z-popover) + 1);
-  background: var(--bg-base);
-  border: 1px solid var(--border);
+  // 维度②：顶亮渐变 + accent 顶边光带 + 渐变描边。transparent border 露出 border-box 渐变层；
+  // 背景不随内容滚动（本面板 overflow:auto，::after 描边会被滚走，故不用 ::after）。
+  background:
+    var(--corner-glow) padding-box,
+    var(--grad-surface) padding-box,
+    var(--grad-border) border-box;
+  border: 1px solid transparent;
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--shadow-floating);
   font-family: inherit;
   max-width: 90vw;
   max-height: 80vh;
@@ -328,7 +333,7 @@ onBeforeUnmount(() => {
 
 .base-popover-fade-enter-from {
   opacity: 0;
-  transform: translateY(-4px);
+  transform: translateY(-4px) scale(0.96); // 维度①：弹入（缩放）
 }
 
 .base-popover-fade-leave-to {

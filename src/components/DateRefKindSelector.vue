@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount,onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 
 import type { DateRefKind } from '../utils/date-ref'
 import BasePopover from './common/BasePopover.vue'
@@ -66,7 +66,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown, true))
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--shadow-floating);
   padding: 4px;
   display: flex;
   flex-direction: column;

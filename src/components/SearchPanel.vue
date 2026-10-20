@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { initCoreClient } from '../wasm/client'
+
+import { popModal, pushModal } from '../composables/useModalKeyboard'
 import type { SearchResult } from '../types/search'
-import { pushModal, popModal } from '../composables/useModalKeyboard'
+import { initCoreClient } from '../wasm/client'
 
 let clientPromise: ReturnType<typeof initCoreClient> | null = null
 
@@ -273,7 +274,7 @@ function getResultTypeLabel(result: SearchResult): string {
   max-height: 500px;
   background: var(--bg-base);
   border-radius: 12px;
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--shadow-floating);
   display: flex;
   flex-direction: column;
   overflow: hidden;

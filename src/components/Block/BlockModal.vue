@@ -1,17 +1,17 @@
 <script setup lang="ts">
+import { ExternalLink, FileText, X } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, provide, reactive, ref, toRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ExternalLink, FileText, X } from 'lucide-vue-next'
-import Block from './index.vue'
-import IdeasSnapshotNode from '../Ideas/IdeasSnapshotNode.vue'
-import { useBlockStore } from '../../stores/blocks'
+
+import { buildSubtree, buildTree, syncTreeToStore } from '../../composables/useBlockTree'
+import { hasModalOpen } from '../../composables/useModalKeyboard'
 import { useBlockCardStore } from '../../stores/blockCard'
+import { useBlockStore } from '../../stores/blocks'
 import { useEditorStore } from '../../stores/editor'
 import { usePageStore } from '../../stores/pages'
-import { hasModalOpen } from '../../composables/useModalKeyboard'
-import { buildSubtree, buildTree, syncTreeToStore } from '../../composables/useBlockTree'
-import { applyDropTarget } from './composables/useBlockDragDrop'
-import type { DragEndIntent } from './composables/useBlockDragDrop'
+import type { TreeNode } from '../../types/block'
+import type { IdeasSnapshotData } from '../../utils/ideas-snapshot'
+import IdeasSnapshotNode from '../Ideas/IdeasSnapshotNode.vue'
 import {
   SNAPSHOT_MODAL_KEY,
   SNAPSHOT_PROPS_KEY,
@@ -19,8 +19,9 @@ import {
   type SnapshotPropsMap,
   type SnapshotTreeState,
 } from '../Ideas/snapshotContext'
-import type { IdeasSnapshotData } from '../../utils/ideas-snapshot'
-import type { TreeNode } from '../../types/block'
+import type { DragEndIntent } from './composables/useBlockDragDrop'
+import { applyDropTarget } from './composables/useBlockDragDrop'
+import Block from './index.vue'
 
 /**
  * 单 block 编辑弹窗（仿 PageDrawer）：列表（任务中心/看板/日历…）点卡片后，
@@ -390,7 +391,7 @@ onBeforeUnmount(() => {
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--shadow-floating);
 }
 
 .modal-header {

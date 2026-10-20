@@ -139,6 +139,23 @@
   --shadow-elevation-2: #{$shadow-elevation-2};
   --shadow-border-bottom: 0 4px 4px -3px rgba(28, 25, 23, 0.12);
 
+  // 强调色发光（primary 按钮等），双主题取各自强调色
+  --shadow-glow-accent: 0 1px 8px rgba(99, 102, 241, 0.35);
+
+  // 质感原语（顶部受光高光 + 浮层阴影 + hover 抬升；主题反转，见 docs/quality-design-language.md）
+  --hairline-top: rgba(0, 0, 0, 0.05);
+  --shadow-inset-top: inset 0 1px 0 var(--hairline-top);
+  --shadow-floating: var(--shadow-modal), var(--shadow-inset-top);
+  --shadow-elevation-hover: 0 2px 6px rgba(28, 25, 23, 0.10);
+
+  // 质感 — 维度②表面渐变 + 光照（主题反转；见 docs/quality-design-language.md）
+  // grad-surface：顶亮渐变表面（不再纯平）；corner-glow：accent 顶边光带（均匀泛入、无中心热点，任意面板尺寸观感一致）；grad-border：渐变描边
+  --grad-surface: linear-gradient(180deg, #ffffff 0%, #fafaf9 100%);
+  --corner-glow: linear-gradient(180deg, rgba(99, 102, 241, 0.055) 0%, rgba(99, 102, 241, 0.018) 8%, transparent 15%);
+  --grad-border: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(0, 0, 0, 0.07));
+  // 流光扫光（进度条 sheen；主题无关，白色高光在 accent 填充上双主题成立）
+  --grad-sheen: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+
   // 布局
   --max-width: #{$max-width-content};
   --sidebar-width: #{$sidebar-width};
@@ -189,6 +206,8 @@
   --ease-out: #{$ease-out};
   --ease-in: #{$ease-in};
   --ease-in-out: #{$ease-in-out};
+  // 弹入缓动（浮层/卡片入场用，比 ease-out 更有「物理感」；原始值 $ease-spring 于 _primitives.scss）
+  --ease-spring: #{$ease-spring};
 
   // Z-index 层级（对应 primitives 的 $z-*，供组件 scoped 样式使用；禁止组件内硬编码 z-index）
   --z-base: #{$z-base};
@@ -253,6 +272,19 @@
   --shadow-elevation-1: 0 1px 3px rgba(0, 0, 0, 0.20);
   --shadow-elevation-2: 0 4px 12px rgba(0, 0, 0, 0.25);
   --shadow-border-bottom: 0 4px 4px -3px rgba(28, 25, 23, 0.12);
+
+  --shadow-glow-accent: 0 1px 8px rgba(129, 140, 248, 0.35);
+
+  // 质感原语（暗色：顶部高光=极淡亮线；hover 抬升靠高光+投影，黑投影在暗底不可见）
+  --hairline-top: rgba(255, 255, 255, 0.07);
+  --shadow-inset-top: inset 0 1px 0 var(--hairline-top);
+  --shadow-floating: var(--shadow-modal), var(--shadow-inset-top);
+  --shadow-elevation-hover: var(--shadow-inset-top), 0 2px 8px rgba(0, 0, 0, 0.55); // 顶部高光组合单源
+
+  // 质感 — 维度②（暗色：顶亮渐变、accent 顶边光带更强以在暗底成立）
+  --grad-surface: linear-gradient(180deg, #202024 0%, #1A1A1E 100%);
+  --corner-glow: linear-gradient(180deg, rgba(129, 140, 248, 0.09) 0%, rgba(129, 140, 248, 0.03) 8%, transparent 18%);
+  --grad-border: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.02));
 
   --color-paper: #1A1A1E;
   --color-ink: #E4E4E7;

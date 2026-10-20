@@ -794,7 +794,7 @@ function confirmDiscard() {
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--shadow-floating);
 }
 
 .modal-header {

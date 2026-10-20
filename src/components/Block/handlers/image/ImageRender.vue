@@ -15,6 +15,7 @@
  */
 import { AlignCenter, AlignLeft, AlignRight, Check, Copy, Crop, Fullscreen, Images, SquarePen, Trash, X } from 'lucide-vue-next'
 import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+
 import type { CrossBlockSelection } from '../../../../composables/useCrossBlockSelection'
 import { useBlockStore } from '../../../../stores/blocks'
 import { useEditorStore } from '../../../../stores/editor'

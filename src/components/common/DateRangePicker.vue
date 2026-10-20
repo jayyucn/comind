@@ -20,6 +20,7 @@
  */
 import { Calendar } from 'lucide-vue-next'
 import { computed, nextTick, ref, watch } from 'vue'
+
 import CalendarPopover from '../CalendarPopover.vue'
 
 export interface DateRangePickerValue {
@@ -300,7 +301,7 @@ defineExpose({
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg-base);
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--shadow-floating);
 }
 
 .drp-range-hint {

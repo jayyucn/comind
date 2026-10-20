@@ -1,5 +1,6 @@
 <script setup lang="ts" generic="T">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+
 import type { Registry, SortRule } from '../../core/query'
 import { sortItems } from '../../core/query'
 import type { QuadrantConfig } from '../../core/view'
@@ -890,6 +891,10 @@ function onCardClick(item: T) {
   // 触屏下让 Pointer Events 接管手势（禁用浏览器原生滚动/缩放抢占），鼠标无影响
   touch-action: none;
   transition: background var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
+
+  &:hover {
+    background: var(--bg-hover); // 维度①：扁平列表行的悬停微反馈（矩阵卡片非浮起面，不做光照）
+  }
 
   &:not(:last-child) {
     border-bottom: 1px solid var(--border);

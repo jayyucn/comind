@@ -1,20 +1,21 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { AlertCircle, Download, Folder, FolderOpen, Monitor, Moon, QrCode, RefreshCw, RotateCcw, Sun, ToggleLeft, ToggleRight, Upload, Wifi, X } from 'lucide-vue-next'
 import type { Component } from 'vue'
-import { useSettingsModal } from '../../composables/useSettingsModal'
-import { pushModal, popModal } from '../../composables/useModalKeyboard'
-import { useTheme } from '../../composables/useTheme'
-import { useEditorSettings } from '../../composables/useEditorSettings'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
+
 import type { EditorFontSize } from '../../composables/useEditorSettings'
-import RelationshipTypesPanel from './RelationshipTypesPanel.vue'
-import QrScanner from './QrScanner.vue'
-import { getWorkspacePath, setWorkspacePath, resetWorkspacePath, openWorkspacePath, exportToMarkdown, importFromMarkdown, getSyncConfig, setSyncConfig, syncNow } from '../../wasm/client'
-import { isTauriEnvironment, tauriPickDirectory, isAndroidPlatform, isAndroidPlatformSync, tauriConnectToServer, tauriDisconnectSync, tauriGetSyncStatus, tauriTriggerFullSyncMobile } from '../../wasm/tauri-platform'
-import type { SyncStatus } from '../../wasm/tauri-platform'
-import DeviceSyncPanel from '../Sidebar/DeviceSyncPanel.vue'
+import { useEditorSettings } from '../../composables/useEditorSettings'
+import { popModal, pushModal } from '../../composables/useModalKeyboard'
+import { useSettingsModal } from '../../composables/useSettingsModal'
+import { useTheme } from '../../composables/useTheme'
 import { useEditorStore } from '../../stores/editor'
-import { X, Sun, Moon, Monitor, Folder, FolderOpen, RotateCcw, AlertCircle, Upload, Download, RefreshCw, ToggleLeft, ToggleRight, QrCode, Wifi } from 'lucide-vue-next'
 import { useNotificationStore } from '../../stores/notification'
+import { exportToMarkdown, getSyncConfig, getWorkspacePath, importFromMarkdown, openWorkspacePath, resetWorkspacePath, setSyncConfig, setWorkspacePath, syncNow } from '../../wasm/client'
+import type { SyncStatus } from '../../wasm/tauri-platform'
+import { isAndroidPlatform, isAndroidPlatformSync, isTauriEnvironment, tauriConnectToServer, tauriDisconnectSync, tauriGetSyncStatus, tauriPickDirectory, tauriTriggerFullSyncMobile } from '../../wasm/tauri-platform'
+import DeviceSyncPanel from '../Sidebar/DeviceSyncPanel.vue'
+import QrScanner from './QrScanner.vue'
+import RelationshipTypesPanel from './RelationshipTypesPanel.vue'
 
 const { isOpen, close } = useSettingsModal()
 
@@ -868,7 +869,7 @@ onUnmounted(() => {
   background: var(--color-paper);
   border: 1px solid var(--color-border);
   border-radius: 12px;
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--shadow-floating);
   display: flex;
   overflow: hidden;
 }
@@ -1633,7 +1634,7 @@ onUnmounted(() => {
   background: var(--color-paper);
   border: 1px solid var(--color-border);
   border-radius: 12px;
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--shadow-floating);
   overflow: hidden;
 }
 

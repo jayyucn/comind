@@ -247,7 +247,7 @@ defineExpose({ increment: () => stepBy(1), decrement: () => stepBy(-1), commit }
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-base);
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--shadow-floating);
   color: var(--error);
   font-size: var(--text-xs);
   line-height: 1.4;

@@ -3,9 +3,10 @@
 // 浮层纪律（ADR-0032）：Teleport 到 body + var(--z-popover)，避免困在阅读器
 // 滚动容器的局部堆叠上下文。状态直接取 useReaderTypography 模块单例，
 // 与 ReaderView 共享同一份响应式状态（CSS 变量由 ReaderView 落地到窗口根）。
-import { onBeforeUnmount, watch } from 'vue';
-import type { ReaderTheme } from '../../composables/useReaderTypography';
-import { ReaderContentMaxWidth, ReaderContentMinWidth, useReaderTypography } from '../../composables/useReaderTypography';
+import { onBeforeUnmount, watch } from 'vue'
+
+import type { ReaderTheme } from '../../composables/useReaderTypography'
+import { ReaderContentMaxWidth, ReaderContentMinWidth, useReaderTypography } from '../../composables/useReaderTypography'
 
 const props = defineProps<{
   open: boolean
@@ -144,7 +145,7 @@ onBeforeUnmount(() => {
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--shadow-floating);
 }
 
 .panel-row {

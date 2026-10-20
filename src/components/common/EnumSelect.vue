@@ -17,6 +17,7 @@
  * - 触发按钮 hover 浮现「×」清除（同 DatePicker 的 dp-clear 渐进披露），emit undefined。
  */
 import { computed, nextTick, ref } from 'vue'
+
 import { Icon } from '../Icons'
 
 export interface EnumOption {
@@ -350,7 +351,7 @@ defineExpose({ openPanel, close, select })
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg-base);
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--shadow-floating);
 }
 
 /* —— 选项列表（两种模式共用同一行样式） —— */

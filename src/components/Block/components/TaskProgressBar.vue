@@ -92,10 +92,35 @@ const isComplete = computed(() => props.total > 0 && props.done >= props.total)
 }
 
 .task-progress-fill {
+  position: relative;
+  overflow: hidden;
   height: 100%;
   border-radius: 999px;
   background: linear-gradient(90deg, var(--accent), var(--accent-hover));
   transition: width var(--dur-base) var(--ease-in-out);
+
+  /* 进行时：半透明高光从左向右缓慢扫过填充条（完成时由下方规则关闭） */
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 50%;
+    height: 100%;
+    background: var(--grad-sheen); // 流光扫光（token：--grad-sheen，主题无关）
+    transform: translateX(-100%);
+    animation: task-progress-sheen 4s var(--ease-in-out) infinite;
+    pointer-events: none;
+  }
+}
+
+@keyframes task-progress-sheen {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(200%);
+  }
 }
 
 .task-progress-label {
@@ -121,6 +146,12 @@ const isComplete = computed(() => props.total > 0 && props.done >= props.total)
    暗色 success 是为小图标可读性提亮的文本级，与 --bg-base 混合压档。 */
 .task-progress.is-complete .task-progress-fill {
   background: var(--success);
+
+  /* 完成时关闭流光，保持静默绿色 */
+  &::after {
+    display: none;
+    animation: none;
+  }
 }
 
 [data-theme='dark'] .task-progress.is-complete .task-progress-fill {
