@@ -76,6 +76,48 @@ export function createInlineUnitKeyboardPlugin(options: InlineUnitKeyboardOption
           }, 0)
           return false
         },
+        // 删除源拦截：beforeinput 覆盖浏览器所有删除路径（键盘 Delete/Backspace
+        // 经 beforeinput 路由、拖拽移动文本 deleteByDrag、剪切 deleteByCut 等），
+        // 而 handleKeyDown 只覆盖 keydown 路径。真实浏览器「拖拽选中 chip 部分文本
+        // 后删除」正是走 beforeinput —— 此前从未被拦截，故留下半截 chip。这一层读
+        // 实时选区（或折叠光标按删除方向取相邻字符），凡与 chip 重叠即把删除范围
+        // 拓宽为整 chip（原子语义），对任意拖拽端点/删除路由都兜得住。
+        beforeinput(view: EditorView, event: Event) {
+          if (isBlocked?.()) return false
+          const ie = event as InputEvent
+          const t = ie.inputType
+          if (!t || !t.startsWith('delete')) return false
+
+          const { state } = view
+          const sel = state.selection
+          let from: number
+          let to: number
+          if (!sel.empty && sel instanceof TextSelection) {
+            from = sel.from
+            to = sel.to
+          } else {
+            // 折叠光标：按删除方向取相邻字符区间（与 Backspace/Delete 语义一致）
+            const backward = t.includes('Backward')
+            const pos = sel.from
+            from = backward ? pos - 1 : pos
+            to = backward ? pos : pos + 1
+          }
+
+          const overlap = findRanges(state.doc).filter(r => r.from < to && from < r.to)
+          if (overlap.length === 0) return false
+
+          let delFrom = from
+          let delTo = to
+          for (const r of overlap) {
+            if (r.from < delFrom) delFrom = r.from
+            if (r.to > delTo) delTo = r.to
+          }
+          ie.preventDefault()
+          const tr = state.tr.delete(delFrom, delTo)
+          tr.setSelection(TextSelection.create(tr.doc, delFrom))
+          view.dispatch(tr)
+          return true
+        },
       },
 
       handleKeyDown(view: EditorView, event: KeyboardEvent) {

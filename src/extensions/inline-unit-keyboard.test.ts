@@ -99,6 +99,25 @@ function unitKeydown(
   return { handled, preventDefaultCalled: preventDefault.mock.calls.length > 0 }
 }
 
+/** 取共享原语的 beforeinput 拦截（真实 view 驱动），模拟浏览器删除路径 */
+function unitBeforeinput(
+  editor: Editor,
+  inputType: string,
+  selection?: { from: number; to: number },
+) {
+  const plugins = TestUnitExtension.config.addProseMirrorPlugins() ?? []
+  const plugin = plugins.find(p => typeof p?.spec?.props?.handleDOMEvents?.beforeinput === 'function')
+  const beforeinput = plugin?.spec.props.handleDOMEvents?.beforeinput as
+    | ((view: EditorView, event: Event) => boolean)
+    | undefined
+  expect(beforeinput).toBeTypeOf('function')
+  if (selection) editor.commands.setTextSelection(selection)
+  const preventDefault = vi.fn()
+  const event = { inputType, preventDefault } as unknown as Event
+  const handled = beforeinput!(editor.view, event)
+  return { handled, preventDefaultCalled: preventDefault.mock.calls.length > 0 }
+}
+
 function plainText(editor: Editor) {
   return editor.state.doc.textContent
 }
@@ -728,5 +747,53 @@ describe('inline-unit-keyboard — 非空选区删除（拖拽选中 chip 部分
     expect(r.preventDefaultCalled).toBe(false)
     // unitKeydown 只驱动 handleKeyDown，不触发默认删除，故文本不变
     expect(plainText(handle.editor)).toBe('meet @u1 now')
+  })
+})
+
+describe('inline-unit-keyboard — beforeinput 删除源拦截（真实浏览器拖拽删除路径）', () => {
+  let handle: UnitEditor
+  afterEach(() => {
+    handle?.teardown()
+    blockFlag = false
+  })
+
+  it('拖拽选中 chip 部分文本 + deleteContentBackward → 整 chip 删除（不残留半截）', () => {
+    handle = createEditor('meet @u1 tomorrow')
+    const { from, to } = unitRanges(handle.editor)[0] // @u1 区间 [6,9)
+    // 拖拽选中 chip 内部一段 [7,8)（"u"），真实浏览器经 beforeinput 路由删除
+    const r = unitBeforeinput(handle.editor, 'deleteContentBackward', { from: 7, to: 8 })
+    expect(r.handled).toBe(true)
+    expect(r.preventDefaultCalled).toBe(true)
+    // 删除被拓宽为整 chip [6,9) → @u1 整体消失
+    expect(plainText(handle.editor)).toBe('meet  tomorrow')
+    expect(unitRanges(handle.editor).length).toBe(0)
+  })
+
+  it('拖拽移动选中 chip 部分 + deleteByDrag → 整 chip 删除', () => {
+    handle = createEditor('meet @u1 tomorrow')
+    const { from, to } = unitRanges(handle.editor)[0]
+    // 浏览器拖拽移动文本触发 deleteByDrag（handleKeyDown 完全看不到此路径）
+    const r = unitBeforeinput(handle.editor, 'deleteByDrag', { from: 7, to: 8 })
+    expect(r.handled).toBe(true)
+    expect(plainText(handle.editor)).toBe('meet  tomorrow')
+    expect(unitRanges(handle.editor).length).toBe(0)
+  })
+
+  it('折叠光标在 chip 右缘 + deleteContentBackward → 整 chip 删除', () => {
+    handle = createEditor('meet @u1 tomorrow')
+    const { to } = unitRanges(handle.editor)[0]
+    handle.editor.commands.setTextSelection(to)
+    const r = unitBeforeinput(handle.editor, 'deleteContentBackward')
+    expect(r.handled).toBe(true)
+    expect(plainText(handle.editor)).toBe('meet  tomorrow')
+    expect(unitRanges(handle.editor).length).toBe(0)
+  })
+
+  it('选区不碰 chip + deleteContentBackward → 不拦截（handled=false）', () => {
+    handle = createEditor('meet @u1 tomorrow')
+    const { from } = unitRanges(handle.editor)[0] // [6,9)
+    const r = unitBeforeinput(handle.editor, 'deleteContentBackward', { from: 1, to: 6 })
+    expect(r.handled).toBe(false)
+    expect(r.preventDefaultCalled).toBe(false)
   })
 })
