@@ -1,6 +1,6 @@
 import { Extension } from '@tiptap/core'
-import { Plugin, PluginKey } from '@tiptap/pm/state'
 import type { Node } from '@tiptap/pm/model'
+import { Plugin, PluginKey } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
 
 /**
@@ -67,6 +67,37 @@ export const SlashCommandExtension = Extension.create({
             view.dom.dispatchEvent(event)
 
             return false // 不阻止默认行为，让 `/` 正常输入
+          }
+        },
+        // 光标落在已有 `/` 右侧时也弹出面板（点击定位 / 方向键 / 退格回到斜杠后均触发）。
+        // 键入 `/` 本身会先经 handleTextInput 触发一次，此处会再触发一次，
+        // 由菜单侧「同编辑器同锚点」去重，不会重置 query。
+        view() {
+          return {
+            update(view, prevState) {
+              const { state } = view
+              const sel = state.selection
+              // 仅处理光标移动；非空选区（拖选）不触发
+              if (!sel.empty || sel.from === prevState.selection.from) return
+
+              const slashPos = sel.from - 1
+              if (slashPos < 0) return
+              if (isInURL(state.doc, sel.from)) return
+
+              const $pos = state.doc.resolve(sel.from)
+              const textBefore = $pos.nodeBefore?.text || ''
+              if (!textBefore.endsWith('/')) return
+
+              const event = new CustomEvent<SlashCommandTriggerEvent>('slash-command-trigger', {
+                bubbles: true,
+                detail: {
+                  view,
+                  position: slashPos,
+                  range: { from: slashPos, to: slashPos + 1 }
+                }
+              })
+              view.dom.dispatchEvent(event)
+            }
           }
         }
       })

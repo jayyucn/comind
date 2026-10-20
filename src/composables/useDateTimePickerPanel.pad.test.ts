@@ -46,7 +46,16 @@ const hoisted = vi.hoisted(() => {
     return Promise.resolve(prop)
   })
   const deleteFieldValue = vi.fn(() => Promise.resolve())
-  const client = { getFieldValues, setFieldValue, deleteFieldValue }
+  const client = {
+    getFieldValues,
+    setFieldValue,
+    deleteFieldValue,
+    // ensureTodo → ensureTaskTagMounted → tagsStore.ensureLoaded 需要的三个拉取；
+    // 返回空树 → systemTaskTagId() 为空 → 走 degraded 直写，聚焦 pad 行为本身
+    getTagTree: vi.fn(() => Promise.resolve([])),
+    getFieldDefinitions: vi.fn(() => Promise.resolve([])),
+    getDeletedPresetFieldDefinitions: vi.fn(() => Promise.resolve([])),
+  }
   return { propsByBlock, client, getFieldValues, setFieldValue, deleteFieldValue }
 })
 
@@ -67,6 +76,10 @@ const blockState: any = {
     const b = blockState.blocks.find((x: any) => x.id === blockId)
     if (b) b.content = content
   }),
+  // ensureTaskTagMounted 探测系统任务 tag：返回空 → degraded 直写，不挂载 #任务
+  systemTaskTagId: vi.fn(() => null),
+  getBlock: vi.fn(() => undefined),
+  flushSave: vi.fn(() => Promise.resolve()),
 }
 
 vi.mock('../wasm/client', () => ({

@@ -1,21 +1,22 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import type { EditorView } from '@tiptap/pm/view'
-import { useModalKeyboardRef } from '../composables/useModalKeyboard'
-import { buildTemplateCommands, executeTemplateCommand, filterCommands, groupCommands, parseCommandInput, useSlashCommands } from '../composables/useSlashCommands'
-import { useTemplateRegistry } from '../composables/useTemplateRegistry'
-import { useBlockStore } from '../stores/blocks'
-import { useEditorStore } from '../stores/editor'
-import { useFieldValueStore } from '../stores/fieldValue'
-import { useBlockCardStore } from '../stores/blockCard'
-import { useUserTemplatesStore } from '../stores/user-templates'
-import BasePopover from './common/BasePopover.vue'
-import ConfirmDialog from './ConfirmDialog.vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+
 // S6: parseDateInput migrated to Rust
 // 4.2: Use Rust DateRefService instead of TS parseDateRefs
 import { Icon } from '../components/Icons'
+import { useModalKeyboardRef } from '../composables/useModalKeyboard'
+import { buildTemplateCommands, executeTemplateCommand, filterCommands, groupCommands, parseCommandInput, useSlashCommands } from '../composables/useSlashCommands'
+import { useTemplateRegistry } from '../composables/useTemplateRegistry'
+import { useBlockCardStore } from '../stores/blockCard'
+import { useBlockStore } from '../stores/blocks'
+import { useEditorStore } from '../stores/editor'
+import { useFieldValueStore } from '../stores/fieldValue'
+import { useUserTemplatesStore } from '../stores/user-templates'
 import type { Command } from '../types/command'
 import { getCoreClient } from '../wasm/client'
+import BasePopover from './common/BasePopover.vue'
+import ConfirmDialog from './ConfirmDialog.vue'
 
 const editorStore = useEditorStore()
 const fieldValueStore = useFieldValueStore()
@@ -35,12 +36,6 @@ onMounted(async () => {
 const visible = ref(false)
 const query = ref('')
 const selectedIndex = ref(0)
-/**
- * 无选中项（#122）：query 为空时**不得**默认高亮首项 —— 首项是 /time，
- * 一回车就把当前时间插进块里。空 query ⇒ 无高亮 ⇒ 回车不执行任何命令
- * （方向键仍可主动选中，那时是用户显式选择，与「默认落到首项」两回事）。
- */
-const NO_SELECTION = -1
 const position = ref({ x: 0, y: 0 })
 const range = ref<{ from: number; to: number } | null>(null)
 const listRef = ref<HTMLElement | null>(null)
@@ -95,8 +90,15 @@ function handleSlashCommandTrigger(event: Event) {
 
   const { position: pos, range: r } = customEvent.detail
 
-  // 获取光标位置（屏幕坐标）
+  // 去重守卫：面板已打开且锚点（同一编辑器同一位置）未变时忽略重复触发。
+  // 键入 `/` 本身会先后触发 handleTextInput 与 extension view.update 的光标检测，
+  // 不去重会把刚同步的 query 重置掉。
   const view = customEvent.detail.view
+  if (visible.value && anchorView.value === view && anchorPos.value === pos) {
+    return
+  }
+
+  // 获取光标位置（屏幕坐标）
   const coords = view.coordsAtPos(pos)
 
   visible.value = true
@@ -105,7 +107,8 @@ function handleSlashCommandTrigger(event: Event) {
   anchorPos.value = pos
   range.value = r
   query.value = ''
-  selectedIndex.value = NO_SELECTION
+  // 面板打开即选中第一项，回车直接执行
+  selectedIndex.value = 0
 }
 
 // 由 ProseMirror 文本位置反查光标所在 DOM 元素，作为 BasePopover 的避让锚点。
@@ -163,14 +166,11 @@ function handleKeyDown(event: KeyboardEvent) {
       } else {
         // 强制从当前编辑器同步 query：避免依赖 editor.on('update') 的绑定时机。
         // 同步失败（range 失效 / 编辑器已替换 / 命令文本已不是 '/' 开头）时绝不回车执行——
-        // query 为空会让 flatCommands 退化成全部命令、selectedIndex=0 命中第一个命令
-        // time 并插入当前时间 "HH:MM"（#122）。无法确认命令文本时只关面板。
+        // 无法确认命令文本时只关面板（syncQuery 内部已 close，这里再兜底一次）。
         if (!syncQuery()) {
           close()
           break
         }
-        // 空 query（只打了 '/'）：无选中项，回车不响应 —— 见 NO_SELECTION 注释（#122）
-        if (selectedIndex.value === NO_SELECTION) break
         const cmd = flatCommands.value[selectedIndex.value]
         if (cmd) {
           void executeCommand(cmd)
@@ -196,7 +196,8 @@ function handleKeyDown(event: KeyboardEvent) {
  *
  * 取 range.from（'/' 所在位置）到光标的整段文本并要求其以 '/' 开头：
  * 这样 range 失效（编辑器被替换 / 位置漂移）时能当场识别，而不是把空字符串
- * 当成「无过滤」静默放大成全部命令（首项 /time，见 #122）。
+ * 当成「无过滤」静默放大成全部命令。光标移到 '/' 之前或文本不再以 '/' 开头
+ * （即光标离开了 '/' 右侧）⇒ 关闭面板，维持「光标在 '/' 右侧 ⇔ 面板打开」不变式。
  */
 function syncQuery(): boolean {
   if (!visible.value || !range.value) return false
@@ -206,18 +207,24 @@ function syncQuery(): boolean {
 
   const { from } = editor.state.selection
   const startPos = range.value.from
-  if (from < startPos) return false
+  if (from < startPos) {
+    close()
+    return false
+  }
 
   const textWithSlash = editor.state.doc.textBetween(startPos, from)
-  if (!textWithSlash.startsWith('/')) return false
+  if (!textWithSlash.startsWith('/')) {
+    close()
+    return false
+  }
 
   const newQuery = textWithSlash.slice(1)
 
   // 只在 query 实际变化时重置选中索引（避免 ArrowDown 等非文本操作触发重置）；
-  // 空 query 重置为「无选中」而非 0 —— 0 会让回车命中首项 /time（#122）
+  // query 变化后重新回到第一项
   if (newQuery !== query.value) {
     query.value = newQuery
-    selectedIndex.value = newQuery === '' ? NO_SELECTION : 0
+    selectedIndex.value = 0
   }
 
   // 检测 /template list 切换到模板子视图
@@ -225,7 +232,7 @@ function syncQuery(): boolean {
   return true
 }
 
-/** 编辑器 update / compositionend 回调：同步失败时忽略（面板状态交由回车路径裁决）。 */
+/** 编辑器 update / selectionUpdate / compositionend 回调：光标离开 '/' 右侧时由 syncQuery 关闭面板。 */
 function updateQuery() {
   syncQuery()
 }
@@ -467,7 +474,10 @@ function bindEditorUpdate() {
     updateQuery()
   }
 
+  // update：doc 变化（输入/删除命令文本）；selectionUpdate：纯光标移动（点击/方向键
+  // 离开 '/' 右侧时同步关闭面板）。二者共用同一回调，syncQuery 幂等。
   editor.on('update', editorUpdateListener)
+  editor.on('selectionUpdate', editorUpdateListener)
 
   // IME 组合结束：组合文本此刻才进入文档（组合期 update 不含它），需立即同步 query，
   // 否则中文输入法下输入命令字母时列表一直是全量、回车即命中首项 /time（#122）。
@@ -483,6 +493,7 @@ function unbindEditorUpdate() {
   if (!editorUpdateListener) return
   if (boundEditor) {
     boundEditor.off?.('update', editorUpdateListener)
+    boundEditor.off?.('selectionUpdate', editorUpdateListener)
   }
   if (boundEditorDom) {
     boundEditorDom.removeEventListener('compositionend', editorUpdateListener)

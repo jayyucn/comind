@@ -283,19 +283,20 @@ describe('SlashCommandMenu', () => {
 
     const vm = wrapper.vm as any
 
-    // 初始状态：query 为空 ⇒ 无选中项（-1），不得默认高亮首项（首项是 /time，#122）
-    expect(vm.selectedIndex).toBe(-1)
-
-    // 按 ArrowDown 一次，选中第一项
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }))
-    await flushPromises()
+    // 初始状态：面板打开即自动选中第一项（selectedIndex=0）
     expect(vm.selectedIndex).toBe(0)
 
-    // 模拟编辑器更新，但 query 没有变化（doc.textBetween 返回空字符串，因为 query 仍是空的）
+    // 按 ArrowDown 一次，选中第二项
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }))
+    await flushPromises()
+    expect(vm.selectedIndex).toBe(1)
+
+    // 模拟编辑器更新，但 query 没有变化（文档仍是 '/'，光标停在其右侧）
     // 这模拟了用户按了 ArrowDown 后编辑器触发 update 事件的场景
     const editorStore = useEditorStore()
     const activeEditor = editorStore.activeEditor as any
-    activeEditor.state.doc.textBetween.mockReturnValue('')
+    activeEditor.state.selection.from = 1
+    activeEditor.state.doc.textBetween.mockReturnValue('/')
 
     // 手动调用 updateQuery（这在真实场景中由编辑器 update 事件触发）
     vm.updateQuery()
@@ -303,12 +304,12 @@ describe('SlashCommandMenu', () => {
 
     // 关键断言：selectedIndex 不应被重置回 0！
     // 如果 updateQuery 无条件重置 selectedIndex，这个测试会失败
-    expect(vm.selectedIndex).toBe(0)
+    expect(vm.selectedIndex).toBe(1)
 
-    // 再按 ArrowDown 一次，应该选中第二项
+    // 再按 ArrowDown 一次，应该选中第三项
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }))
     await flushPromises()
-    expect(vm.selectedIndex).toBe(1)
+    expect(vm.selectedIndex).toBe(2)
   })
 })
 
@@ -485,15 +486,15 @@ describe('SlashCommandMenu - Template List Subview', () => {
     vm.isTemplateListView = true
     await flushPromises()
 
-    // 测试向下箭头导航（起点是「无选中」-1，故第一次落到首项）
+    // 测试向下箭头导航（面板打开即选中首项 0，ArrowDown 落到第二项）
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }))
     await flushPromises()
-    expect(vm.selectedIndex).toBe(0)
+    expect(vm.selectedIndex).toBe(1)
 
-    // 测试向上箭头导航：从首项回卷到末项
+    // 测试向上箭头导航：回到首项
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' }))
     await flushPromises()
-    expect(vm.selectedIndex).toBe(vm.templateListData.length - 1)
+    expect(vm.selectedIndex).toBe(0)
   })
 
   // 测试 ArrowUp/ArrowDown 在子视图边界时的循环行为

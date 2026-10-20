@@ -2,14 +2,15 @@ import type { Editor } from '@tiptap/core'
 import { TextSelection } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
 import type { Ref } from 'vue'
+
 import { DATE_REF_CLICK_EVENT, type DateRefClickPayload } from '../../extensions/DateRefExtension'
 import type { DateRefKindSelectEvent } from '../../extensions/DateRefTriggerExtension'
 import { INLINE_TAG_CLICK_EVENT, type InlineTagClickPayload } from '../../extensions/InlineTagExtension'
-import { WIKI_LINK_CLICK_EVENT, type WikiLinkClickPayload } from '../../extensions/WikiLinkExtension'
 import {
   closeRelationshipMenuByEditor,
   notifyRelationshipMenuSelect,
 } from '../../extensions/RelationshipTriggerExtension'
+import { WIKI_LINK_CLICK_EVENT, type WikiLinkClickPayload } from '../../extensions/WikiLinkExtension'
 import { getRelationshipLabel } from '../../types/relationship'
 
 export interface RelationshipMenuApi {
@@ -122,7 +123,13 @@ export function createEditorEvents(ctx: EditorEventCtx): Record<string, (e: Even
         tr.insertText(`((${label}))`, range.from, endPos)
 
         // 设置光标到末尾
-        const newCursorPos = range.from + label.length + 4 // (( + label + ))
+        let newCursorPos = range.from + label.length + 4 // (( + label + ))
+        // 原子单元口径（inline-unit-keyboard 选择闸门）：编辑既有 typed 单元的类型段时，
+        // 紧随的 [[X]] 使 `((label))[[X]]` 构成完整单元 —— 光标跳到单元之后，
+        // 不停在其内部（否则下一输入会劈开单元）
+        const rest = tr.doc.textBetween(newCursorPos, tr.doc.content.size, '\n', '\u0000')
+        const followLink = rest.match(/^\[\[[^\]]*\]\]/)
+        if (followLink) newCursorPos += followLink[0].length
         tr.setSelection(TextSelection.create(tr.doc, newCursorPos))
 
         edView.dispatch(tr)

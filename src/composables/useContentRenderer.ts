@@ -1,6 +1,6 @@
-import type { RenderInput } from '../wasm/types'
-import { WIKI_LINK_REGEX, resolveRelationshipLabel, wikiLinkDisplay } from '../services/render-text'
+import { resolveRelationshipLabel, WIKI_LINK_REGEX, wikiLinkDisplay } from '../services/render-text'
 import { tagChipStyle } from '../utils/tag-color'
+import type { RenderInput } from '../wasm/types'
 
 const CSS_CLASSES = {
   blockLink: 'block-link',
@@ -176,6 +176,12 @@ function renderContentToHtml(input: RenderInput): string {
         // 必须用 String.prototype.slice 按码元切；Array.from 按 Unicode 码点拆会与码元单位错位，
         // 导致单元内 emoji 之后的字符被多吞/漏吞（曾出现 📅 后跟数字被吞并）。
         const rawDisplay = content.slice(seg.start, seg.end)
+        // Rust 段边界含尾随 pad 空白（render_segment_service Step 3 吞空白以满足
+        // segments 严格划分）。chip 内只显示非空白部分，尾随空白作为裸文本输出在
+        // span 外 —— 否则空白盖进 chip 背景，阅读态比编辑态（装饰止于 emoji）宽
+        // 一个空格。data-raw 仍为段原文；点击比对处（useBlockEditorLifecycle）自行 trim。
+        const trimmed = rawDisplay.trimEnd()
+        const trailingWs = escapeHtmlEntities(rawDisplay.slice(trimmed.length))
         const display = escapeHtmlEntities(rawDisplay)
         const overdue = seg.is_overdue ? 'overdue' : ''
         const classes = [CSS_CLASSES.dateRef, kind, overdue].filter(Boolean).join(' ')
@@ -186,7 +192,7 @@ function renderContentToHtml(input: RenderInput): string {
           `data-iso="${iso}" ` +
           `data-recurrence="${recurrence}" ` +
           `data-lead-minutes="${seg.lead_minutes}" ` +
-          `data-raw="${display}">${display}</span>`
+          `data-raw="${display}">${escapeHtmlEntities(trimmed)}</span>${trailingWs}`
         )
         break
       }

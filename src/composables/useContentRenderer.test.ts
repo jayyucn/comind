@@ -412,6 +412,24 @@ describe('结构化渲染片段（pre-computed segments）', () => {
       // content.slice(7, 24) = '@2026-08-09 📅'
       expect(html).toContain('>@2026-08-09 📅<')
     })
+
+    it('尾随 pad 空白渲染在 chip 外（阅读态不比编辑态宽）', () => {
+      // Rust 段边界含尾随 pad 空白；chip 内不得显示该空白，否则盖进背景变宽
+      const html = renderContentToHtml({
+        segments: [{
+          type: 'date_ref', start: 0, end: 14,
+          kind: 'deadline', iso: '2026-10-20', recurrence: 'none',
+          lead_minutes: 0, is_overdue: false,
+        }],
+        content: '@2026-10-20 ⏰ ',
+        blockId: 'b1',
+      })
+      // chip 内文本止于 emoji，空白作为裸文本紧跟 </span> 之后
+      expect(html).toContain('>@2026-10-20 ⏰</span> ')
+      expect(html).not.toContain('⏰ </span>')
+      // data-raw 仍为段原文（含 pad），点击比对处自行 trim
+      expect(html).toContain('data-raw="@2026-10-20 ⏰ "')
+    })
   })
 
   describe('混合片段', () => {

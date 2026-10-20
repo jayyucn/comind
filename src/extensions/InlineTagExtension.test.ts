@@ -80,7 +80,12 @@ describe('InlineTagExtension — 编辑态 `#tag` 胶囊（与渲染态同形，
     tagTable = { 标签: { color: 'red;}</style><img src=x onerror=alert(1)>', is_system: false } }
     const handle = createDecoratedEditor('#标签')
     expect(handle.renderedHTML).not.toContain('style=')
-    expect(handle.renderedHTML).not.toContain('<img')
+    // PM 会为块尾光标锚点 widget 自动插入无 src 的 ProseMirror-separator img
+    //（inline-unit-keyboard 块尾锚点），故只断言恶意 img 特征与 chip 内无 img
+    expect(handle.renderedHTML).not.toContain('onerror')
+    expect(handle.renderedHTML).not.toContain('src=x')
+    const chip = handle.element.querySelector('.block-tag')
+    expect(chip?.querySelector('img')).toBeNull()
     destroyDecoratedEditor(handle)
   })
 

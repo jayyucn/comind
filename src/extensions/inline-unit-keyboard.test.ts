@@ -73,11 +73,12 @@ function unitRanges(editor: Editor): { from: number; to: number }[] {
   return scanTestUnits(editor.state.doc)
 }
 
-/** 取共享原语的 handleKeyDown（真实 view 驱动）；selection 显式传入时按其设置（非空选区场景） */
+/** 取共享原语的 handleKeyDown（真实 view 驱动）；selection 显式传入时按其设置（非空选区场景），
+ *  pos 为 null 时沿用当前选区（建造事务落下的内部光标，经 setTextSelection 会被闸门钳回） */
 function unitKeydown(
   editor: Editor,
   key: string,
-  pos: number,
+  pos: number | null,
   extra: Record<string, unknown> = {},
   selection?: { from: number; to: number }
 ) {
@@ -89,7 +90,7 @@ function unitKeydown(
   expect(handleKeyDown).toBeTypeOf('function')
   if (selection) {
     editor.commands.setTextSelection(selection)
-  } else {
+  } else if (pos !== null) {
     editor.commands.setTextSelection(pos)
   }
   const preventDefault = vi.fn()
@@ -144,11 +145,16 @@ describe('inline-unit-keyboard — Backspace 整单元删除（右缘带）', ()
 
   it('光标在单元内部 → 不整删（返回 false，走正常逐字符删除）', () => {
     handle = createEditor('meet @u1 tomorrow')
-    const { from } = unitRanges(handle.editor)[0]
-    const r = unitKeydown(handle.editor, 'Backspace', from + 1)
+    const { from, to } = unitRanges(handle.editor)[0]
+    // 闸门口径下纯选区事务进不了单元内部，光标只能经建造事务（打字）入内：
+    // 在 'u' 后插入 '2' → '@u21'（仍匹配），光标落在内部 from+3
+    handle.editor.commands.insertContentAt(from + 2, '2')
+    expect(handle.editor.state.selection.from).toBe(from + 3)
+    expect(unitRanges(handle.editor)[0]).toMatchObject({ from, to: from + 4 })
+    const r = unitKeydown(handle.editor, 'Backspace', null)
     expect(r.handled).toBe(false)
     expect(r.preventDefaultCalled).toBe(false)
-    expect(plainText(handle.editor)).toBe('meet @u1 tomorrow')
+    expect(plainText(handle.editor)).toBe('meet @u21 tomorrow')
   })
 
   it('光标在单元左侧（from-1）→ 不整删，正常删除左侧字符', () => {
@@ -369,5 +375,273 @@ describe('inline-unit-keyboard — 无单元场景', () => {
     expect(rBs.handled).toBe(false)
     const rArrow = unitKeydown(handle.editor, 'ArrowRight', 5)
     expect(rArrow.handled).toBe(false)
+  })
+})
+
+/**
+ * 选择闸门（appendTransaction）契约矩阵：光标/选区永不入单元内部。
+ *
+ * 覆盖入口：点击与拖拽（PM 以纯选区事务落定）、双击原生词选（经 selectionchange
+ * 同步回 PM）、Shift+方向键选区扩展、程序化 setTextSelection。改文档事务
+ * （打字/IME/粘贴）放行 —— 单元建造需要内部光标。
+ * 测试以真实 dispatch 驱动（appendTransaction 随事务自动运行），不走 prop 直调。
+ */
+describe('inline-unit-keyboard — 选择闸门（光标/选区不入单元内部）', () => {
+  let handle: UnitEditor
+  afterEach(() => {
+    handle?.teardown()
+    blockFlag = false
+  })
+
+  it('光标落入单元内部（点击/拖拽落点）→ 钳到近端边界', () => {
+    handle = createEditor('meet @u1 tomorrow')
+    const { from, to } = unitRanges(handle.editor)[0]
+    // from+1 距左缘 1 字符、距右缘 2 字符 → 近端是 from
+    handle.editor.commands.setTextSelection(from + 1)
+    expect(handle.editor.state.selection.from).toBe(from)
+    // to-1 距右缘 1 字符 → 近端是 to
+    handle.editor.commands.setTextSelection(to - 1)
+    expect(handle.editor.state.selection.from).toBe(to)
+  })
+
+  it('光标在单元边界（from / to）→ 不钳（缘带属合法站位）', () => {
+    handle = createEditor('meet @u1 tomorrow')
+    const { from, to } = unitRanges(handle.editor)[0]
+    handle.editor.commands.setTextSelection(from)
+    expect(handle.editor.state.selection.from).toBe(from)
+    handle.editor.commands.setTextSelection(to)
+    expect(handle.editor.state.selection.from).toBe(to)
+  })
+
+  it('shift+→ 选区扩展头部进入单元 → head 吸附到远端边界 to（整体吞掉单元，不卡左缘）', () => {
+    handle = createEditor('meet @u1 tomorrow')
+    const { from, to } = unitRanges(handle.editor)[0]
+    handle.editor.commands.setTextSelection({ from: from - 1, to: from + 1 })
+    const sel = handle.editor.state.selection
+    expect(sel.anchor).toBe(from - 1)
+    expect(sel.head).toBe(to)
+  })
+
+  it('shift+← 镜像：head 自右进入单元 → 吸附到 from', () => {
+    handle = createEditor('meet @u1 tomorrow')
+    const { from, to } = unitRanges(handle.editor)[0]
+    handle.editor.commands.setTextSelection({ from: to + 1, to: to - 1 })
+    const sel = handle.editor.state.selection
+    expect(sel.anchor).toBe(to + 1)
+    expect(sel.head).toBe(from)
+  })
+
+  it('双击原生词选（anchor/head 均在单元内部）→ 钳成整单元选区', () => {
+    handle = createEditor('meet @u1 tomorrow')
+    const { from, to } = unitRanges(handle.editor)[0]
+    handle.editor.commands.setTextSelection({ from: from + 1, to: to - 1 })
+    const sel = handle.editor.state.selection
+    expect(sel.from).toBe(from)
+    expect(sel.to).toBe(to)
+  })
+
+  it('打字事务放行：insertContentAt 落在单元内部 → 光标不被钳（单元建造中）', () => {
+    handle = createEditor('go @u123 now')
+    const { from, to } = unitRanges(handle.editor)[0]
+    expect(handle.editor.state.doc.textBetween(from, to)).toBe('@u123')
+    // 在 '1' 与 '2' 之间插入 '4'：单元文本长成 '@u1423'（仍匹配），光标停在插入内容之后（内部）
+    handle.editor.commands.insertContentAt(from + 3, '4')
+    const sel = handle.editor.state.selection
+    // '@u1423' 长度 6 → 新单元区间 [from, from+6)；光标 from+4 在其内部且未被钳
+    expect(handle.editor.state.doc.textBetween(from, from + 6)).toBe('@u1423')
+    expect(sel.from).toBe(from + 4)
+    expect(sel.from).toBeGreaterThan(from)
+    expect(sel.from).toBeLessThan(from + 6)
+  })
+
+  it('isBlocked 为真（补全菜单打开中）→ 闸门不钳', () => {
+    blockFlag = true
+    handle = createEditor('meet @u1 tomorrow')
+    const { from } = unitRanges(handle.editor)[0]
+    handle.editor.commands.setTextSelection(from + 1)
+    expect(handle.editor.state.selection.from).toBe(from + 1)
+  })
+})
+
+/**
+ * 删除黏连（doc 变更事务落点钳制）：选中 chip 后 pad 空格删除，贪婪单元
+ * （tag 正则吸字母数字）与后续文本黏连扩展，删除落点坠入扩展后的单元内部。
+ * 闸门对「纯删除」事务（ReplaceStep from<to 且 slice 空）钳落点；
+ * 纯插入（打字/粘贴）与替换（IME 确认）放行 —— 建造流需要内部光标。
+ */
+describe('inline-unit-keyboard — 删除黏连（纯删除事务落点钳制）', () => {
+  let handle: UnitEditor
+
+  /** 贪婪扫描（模拟 tag 正则的字母数字贪婪扩展）：`@u1next` 整段算单元 */
+  function scanGreedyUnits(doc: Node): { from: number; to: number }[] {
+    const ranges: { from: number; to: number }[] = []
+    doc.descendants((node, pos) => {
+      if (!node.isText) return
+      const re = /@u[\w]+/g
+      let m: RegExpExecArray | null
+      while ((m = re.exec(node.text || '')) !== null) {
+        ranges.push({ from: pos + m.index, to: pos + m.index + m[0].length })
+      }
+    })
+    return ranges
+  }
+
+  const GreedyUnitExtension = Extension.create({
+    name: 'greedyUnit',
+    addProseMirrorPlugins() {
+      return [
+        createInlineUnitKeyboardPlugin({
+          key: 'greedyUnitKeyboard',
+          findRanges: scanGreedyUnits,
+        }),
+      ]
+    },
+  })
+
+  function createGreedyEditor(content: string): UnitEditor {
+    const element = document.createElement('div')
+    document.body.appendChild(element)
+    const editor = new Editor({
+      element,
+      extensions: [Document, Paragraph, Text, GreedyUnitExtension],
+      content: `<p>${content}</p>`,
+    })
+    return {
+      editor,
+      element,
+      teardown: () => {
+        editor.destroy()
+        element.remove()
+      },
+    }
+  }
+
+  afterEach(() => {
+    handle?.teardown()
+  })
+
+  it('选中右 pad 空格删除 → 单元黏连扩展，光标钳出扩展单元内部', () => {
+    handle = createGreedyEditor('x @u1 next')
+    const { from, to } = scanGreedyUnits(handle.editor.state.doc)[0]
+    // shift+→ 从右缘选中 pad 空格，Backspace 删除选区（纯删除事务）
+    handle.editor.commands.setTextSelection({ from: to, to: to + 1 })
+    handle.editor.commands.deleteSelection()
+    const sel = handle.editor.state.selection
+    const ranges = scanGreedyUnits(handle.editor.state.doc)
+    // 单元黏连扩展为 @u1next
+    expect(ranges[0]).toMatchObject({ from, to: to + 4 })
+    // 光标不在扩展单元内部（钳到边界）
+    expect(sel.from > ranges[0].from && sel.from < ranges[0].to).toBe(false)
+  })
+
+  it('等距平局取右缘：删除后光标贴扩展单元右缘（右 pad 语义延续）', () => {
+    // '@u12'(4 字符) 删 pad 黏连 'next'(4 字符) → 光标距两端等距
+    handle = createGreedyEditor('x @u12 next')
+    const { to } = scanGreedyUnits(handle.editor.state.doc)[0]
+    handle.editor.commands.setTextSelection({ from: to, to: to + 1 })
+    handle.editor.commands.deleteSelection()
+    const ranges = scanGreedyUnits(handle.editor.state.doc)
+    expect(handle.editor.state.doc.textBetween(ranges[0].from, ranges[0].to)).toBe('@u12next')
+    expect(handle.editor.state.selection.from).toBe(ranges[0].to)
+  })
+
+  it('封闭单元（@u\\d+）删 pad 单元不变 → 落点即右缘，不钳', () => {
+    handle = createEditor('meet @u1 tomorrow')
+    const { to } = unitRanges(handle.editor)[0]
+    handle.editor.commands.setTextSelection({ from: to, to: to + 1 })
+    handle.editor.commands.deleteSelection()
+    expect(handle.editor.state.doc.textContent).toBe('meet @u1tomorrow')
+    expect(handle.editor.state.selection.from).toBe(to)
+  })
+
+  it('IME 组合中（compositionstart 后）删除放行 → 建造光标不被钳', () => {
+    handle = createGreedyEditor('x @u1 next')
+    const { to } = scanGreedyUnits(handle.editor.state.doc)[0]
+    // 从 view.state.plugins 取实际注册的插件实例（同闭包 epoch），
+    // 直调 handleDOMEvents 模拟组合开始（组合内删除属单元文本建造）
+    const plugin = handle.editor.view.state.plugins.find(
+      p => typeof p?.spec?.props?.handleDOMEvents?.compositionstart === 'function',
+    )
+    const onStart = plugin?.spec.props.handleDOMEvents?.compositionstart as () => boolean
+    expect(onStart).toBeTypeOf('function')
+    onStart()
+    handle.editor.commands.setTextSelection({ from: to, to: to + 1 })
+    handle.editor.commands.deleteSelection()
+    const ranges = scanGreedyUnits(handle.editor.state.doc)
+    expect(ranges[0]).toMatchObject({ to: to + 4 })
+    // 组合中不钳：光标留在删除落点（扩展单元内部）
+    expect(handle.editor.state.selection.from > ranges[0].from).toBe(true)
+    expect(handle.editor.state.selection.from < ranges[0].to).toBe(true)
+  })
+})
+
+/**
+ * 块尾光标锚点（decorations）：单元右缘恰为文本块内容末尾时，浏览器
+ * contentEditable 会把块尾光标吸进最后一个 inline chip 内部（视觉穿帮）——
+ * 拖拽 / shift+← 选中尾部 pad 空格删除后即触发。共享原语在 to 处放零宽
+ * widget 作 chip 外光标锚点；非块尾不挂。
+ */
+describe('inline-unit-keyboard — 块尾光标锚点（零宽 widget）', () => {
+  let handle: UnitEditor
+  afterEach(() => {
+    handle?.teardown()
+  })
+
+  /** view.dom 内渲染出的零宽锚点 span 数量 */
+  function anchorCount(editor: Editor): number {
+    let n = 0
+    editor.view.dom.querySelectorAll('span').forEach((s) => {
+      if (s.textContent === '\u200b') n++
+    })
+    return n
+  }
+
+  /** PM JSON 构造（HTML content 会丢尾随空格，pad 场景必须走 JSON） */
+  function createTextEditor(text: string): UnitEditor {
+    const element = document.createElement('div')
+    document.body.appendChild(element)
+    const editor = new Editor({
+      element,
+      extensions: [Document, Paragraph, Text, TestUnitExtension],
+      content: {
+        type: 'doc',
+        content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
+      },
+    })
+    return {
+      editor,
+      element,
+      teardown: () => {
+        editor.destroy()
+        element.remove()
+      },
+    }
+  }
+
+  it('单元即块尾（无尾随字符）→ to 处挂零宽 widget', () => {
+    handle = createTextEditor('only @u1')
+    expect(unitRanges(handle.editor)[0].to).toBe(handle.editor.state.doc.content.size - 1)
+    expect(anchorCount(handle.editor)).toBe(1)
+  })
+
+  it('单元后有尾随字符（含 pad 空格）→ 不挂 widget', () => {
+    handle = createTextEditor('meet @u1 tomorrow')
+    expect(anchorCount(handle.editor)).toBe(0)
+    handle.teardown()
+
+    handle = createTextEditor('meet @u1 ')
+    expect(anchorCount(handle.editor)).toBe(0)
+  })
+
+  it('删除块尾 pad 后 → widget 动态出现（光标锚定 chip 外）', () => {
+    handle = createTextEditor('meet @u1 ')
+    expect(anchorCount(handle.editor)).toBe(0)
+    const { to } = unitRanges(handle.editor)[0]
+    handle.editor.commands.setTextSelection({ from: to, to: to + 1 })
+    handle.editor.commands.deleteSelection()
+    // 删除后单元右缘成块尾 → widget 出现；光标逻辑位置仍在 to（未入内部）
+    expect(handle.editor.state.doc.textContent).toBe('meet @u1')
+    expect(anchorCount(handle.editor)).toBe(1)
+    expect(handle.editor.state.selection.from).toBe(to)
   })
 })

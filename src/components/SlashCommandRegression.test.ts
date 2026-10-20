@@ -153,9 +153,9 @@ describe('regression: /image + Enter must run image, not time', () => {
     expect(editor.insertContent).not.toHaveBeenCalled()
   })
 
-  it('只打了 / 就回车：无选中项 ⇒ 不执行任何命令（绝不落到首项 /time）', async () => {
-    // 命令文本可确认（就是 '/'），但 query 为空 ⇒ 无高亮项 ⇒ 回车不响应。
-    // 旧行为：query 空 → 列表全量 + selectedIndex=0 → 执行 /time 插入当前时间。
+  it('只打了 / 就回车：面板已自动选中首项 ⇒ 直接执行首项 /time 插入当前时间', async () => {
+    // 新行为（斜杠命令优化）：面板打开即选中第一项，回车直接执行首项 /time。
+    // syncQuery 仍会确认命令文本以 '/' 开头（防止 range 失效时误执行）。
     const editor = makeEditor('/', 1)
     const wrapper = await openMenu(editor, { from: 0, to: 1 })
 
@@ -163,11 +163,12 @@ describe('regression: /image + Enter must run image, not time', () => {
     await flushPromises()
     await nextTick()
 
-    expect(editor.insertContent).not.toHaveBeenCalled()
-    expect(editor.deleteRange).not.toHaveBeenCalled()
+    // /time 执行路径：先清除斜杠文本，再插入当前时间 "HH:MM"
+    expect(editor.insertContent).toHaveBeenCalled()
+    expect(editor.deleteRange).toHaveBeenCalled()
     expect(openImageFileDialog).not.toHaveBeenCalled()
-    // 面板保持打开（「空 query 不响应回车」而非「关面板」），用户可继续输入或 Escape
-    expect((wrapper.vm as unknown as MenuVm).visible).toBe(true)
+    // 执行后面板关闭
+    expect((wrapper.vm as unknown as MenuVm).visible).toBe(false)
   })
 
   it('range 失效（命令文本已不是 / 开头）时回车只关面板，不执行首项 /time', async () => {
