@@ -1,8 +1,9 @@
 import { Extension } from '@tiptap/core'
-import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
-import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { Node } from '@tiptap/pm/model'
+import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
+import { Decoration, DecorationSet } from '@tiptap/pm/view'
+
 import { TAG_TRIGGER_SOURCE } from '../composables/useContentRenderer'
 import { tagChipStyle } from '../utils/tag-color'
 import { createInlineUnitKeyboardPlugin } from './inline-unit-keyboard'
@@ -42,6 +43,25 @@ interface InlineTagMatch {
   /** tag 名（不含 #） */
   title: string
 }
+
+/** 单元区间（「新生成」判定用，PM 文档坐标 [from, to)） */
+interface UnitRange {
+  from: number
+  to: number
+}
+
+/** 区间有交集即视为同一单元：单元内编辑导致位置平移时不误判为新建 */
+function rangesOverlap(a: UnitRange, b: UnitRange): boolean {
+  return a.from < b.to && b.from < a.to
+}
+
+/** 插件 state：`all` = 当前 doc 全部 tag 区间；`fresh` = 本次事务新生成的区间（chip-pop 门控） */
+interface InlineTagUnitState {
+  all: UnitRange[]
+  fresh: UnitRange[]
+}
+
+const INLINE_TAG_KEY = new PluginKey<InlineTagUnitState>('inlineTag')
 
 /**
  * 全 doc 扫描 `#tag`（装饰与键盘原语共用同一扫描，保证「视觉单元」与
@@ -98,15 +118,20 @@ export const InlineTagExtension = Extension.create<InlineTagOptions>({
     let preClickSel: { from: number; to: number } | null = null
 
     return [
-      new Plugin({
-        key: new PluginKey('inlineTag'),
+      new Plugin<InlineTagUnitState>({
+        key: INLINE_TAG_KEY,
         props: {
           decorations(state) {
             const decorations: Decoration[] = []
+            // chip-pop 门控（ADR-0052 闪入门控）：仅「本次事务新生成」的 tag 挂
+            // .chip-pop 播入场动画；挂载 / 两态切换重建的既有 chip 不播，
+            // 否则每次进编辑态全部 tag chip 重播 pop（闪一下）。
+            const fresh = INLINE_TAG_KEY.getState(state)?.fresh ?? []
 
             for (const match of scanInlineTags(state.doc)) {
               const info = resolve ? resolve(match.title) : undefined
               const classes = ['block-tag']
+              if (fresh.some(f => f.from === match.from && f.to === match.to)) classes.push('chip-pop')
               if (info?.is_system) classes.push('block-tag--system')
               const attrs: Record<string, string> = { class: classes.join(' ') }
               // 与渲染态共用同一份样式原语（白名单在 tagChipStyle 内：色值须过名单才进 DOM）
@@ -176,11 +201,24 @@ export const InlineTagExtension = Extension.create<InlineTagOptions>({
           },
         },
         state: {
-          init() {
-            return DecorationSet.empty
+          init(_, state) {
+            // 初始 doc 的 tag 全部视为「已存在」：编辑器挂载（含渲染态→编辑态切换重建）
+            // 不播 pop。与 CSS 侧「动画只挂 .chip-pop」共同构成闪入门控（ADR-0052）。
+            return {
+              all: scanInlineTags(state.doc).map(m => ({ from: m.from, to: m.to })),
+              fresh: [],
+            }
           },
           apply(tr, prev) {
-            return prev.map(tr.mapping, tr.doc)
+            // 非文档事务（选区变化等）不重扫：保持 fresh，pop 动画 300ms 内的
+            // setSelection 不会把 chip-pop 类抖掉。
+            if (!tr.docChanged) return prev
+            const mapped = prev.all.map(r => ({
+              from: tr.mapping.map(r.from, -1),
+              to: tr.mapping.map(r.to, 1),
+            }))
+            const all = scanInlineTags(tr.doc).map(m => ({ from: m.from, to: m.to }))
+            return { all, fresh: all.filter(r => !mapped.some(m => rangesOverlap(m, r))) }
           },
         },
       }),

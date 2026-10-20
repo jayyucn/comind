@@ -102,6 +102,37 @@ describe('InlineTagExtension — 编辑态 `#tag` 胶囊（与渲染态同形，
     destroyDecoratedEditor(handle)
   })
 
+  // ── chip-pop 入场门控（ADR-0052 闪入门控）：动画类只挂「本次事务新生成」的单元 ──
+  it('挂载已有 #tag：装饰不带 chip-pop（两态切换重建不闪跳）', () => {
+    tagTable = { 标签: { color: '--tag-color-3', is_system: false } }
+    const handle = createDecoratedEditor('这是 #标签')
+    expect(handle.renderedHTML).toContain('block-tag')
+    expect(handle.renderedHTML).not.toContain('chip-pop')
+    destroyDecoratedEditor(handle)
+  })
+
+  it('事务新生成的 #tag：装饰带 chip-pop 播入场动画', () => {
+    tagTable = {}
+    const handle = createDecoratedEditor('before ')
+    handle.editor.commands.insertContent('#新标签')
+    expect(handle.element.innerHTML).toContain('block-tag chip-pop')
+    destroyDecoratedEditor(handle)
+  })
+
+  it('pop 进行中的选区事务：chip-pop 类保持；下一个文档事务后移除', () => {
+    tagTable = {}
+    const handle = createDecoratedEditor('before ')
+    handle.editor.commands.insertContent('#新标签')
+    // 选区事务（光标落 doc 起点、不在单元内）：fresh 保持，chip-pop 不被抖掉
+    handle.editor.commands.setTextSelection(1)
+    expect(handle.element.innerHTML).toContain('block-tag chip-pop')
+    // 下一个文档事务（单元外插入）：chip-pop 移除，不随重渲染重播
+    handle.editor.commands.insertContent(' tail')
+    expect(handle.element.innerHTML).toContain('block-tag')
+    expect(handle.element.innerHTML).not.toContain('chip-pop')
+    destroyDecoratedEditor(handle)
+  })
+
   it('resolver 闭包更新后，空 transaction 触发装饰重算（宿主 watch 的接法）', () => {
     tagTable = {}
     const handle = createDecoratedEditor('这是 #标签')

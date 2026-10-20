@@ -445,15 +445,18 @@
 
 // DateRef 渲染样式
 // 渲染为：📅 07-16 或 ⏰ 07-16 格式
+// 形态与 .block-tag 同构（同 padding/字号/圆角）：atomic inline-flex 防单元内换行；
+// line-height normal 让原子盒高度随字体 metrics，与 .block-tag 的 inline 形态同高
+// （inline 元素背景不随 line-height 计高，atomic 盒若继承 1.4 行高会明显偏高）。
 .date-ref {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  padding: 1px 4px;
+  padding: 0 var(--space-1);
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 0.9em;
-  line-height: $leading-snug;
+  line-height: normal;
   transition: background var(--dur-fast) var(--ease-out);
 
   &:hover {
@@ -514,9 +517,12 @@
   }
 }
 
-// 内容插入 chip：#tag / [[page]] 等生成时的 pop-in（ADR-0052 token 驱动）
-.block-tag,
-.block-link {
+// 内容插入 chip：#tag / [[page]] 生成瞬间的 pop-in（ADR-0052 token 驱动）。
+// 动画只挂 .chip-pop，由编辑态扩展（WikiLinkExtension / InlineTagExtension）按
+// 「本次事务新生成」的单元加类门控：挂载 / 渲染态↔编辑态切换重建的既有 chip
+// 一律不播 —— 原先挂在 .block-tag/.block-link 类上时，两态切换 v-if 重建 DOM
+// 会让所有 wikilink/tag chip 重播入场动画（表现为闪一下），date-ref 无此动画故无感。
+.chip-pop {
   animation: motion-pop var(--motion-duration) var(--motion-ease) both;
 }
 

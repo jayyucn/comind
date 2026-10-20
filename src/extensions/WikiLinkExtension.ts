@@ -1,10 +1,11 @@
 import { Extension } from '@tiptap/core'
-import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
-import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { Node } from '@tiptap/pm/model'
+import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
-import { getRelationshipColor } from '../types/relationship'
+import { Decoration, DecorationSet } from '@tiptap/pm/view'
+
 import { useRelationshipTypes } from '../composables/useRelationshipTypes'
+import { getRelationshipColor } from '../types/relationship'
 import { createInlineUnitKeyboardPlugin } from './inline-unit-keyboard'
 import { isWikiLinkMenuOpen } from './WikiLinkTriggerExtension'
 
@@ -66,6 +67,25 @@ interface PlainLinkMatch {
   page: string
   display: string
 }
+
+/** 单元区间（「新生成」判定用，PM 文档坐标 [from, to)） */
+interface UnitRange {
+  from: number
+  to: number
+}
+
+/** 区间有交集即视为同一单元：单元内编辑导致位置平移时不误判为新建 */
+function rangesOverlap(a: UnitRange, b: UnitRange): boolean {
+  return a.from < b.to && b.from < a.to
+}
+
+/** 插件 state：`all` = 当前 doc 全部链接区间；`fresh` = 本次事务新生成的区间（chip-pop 门控） */
+interface WikiLinkUnitState {
+  all: UnitRange[]
+  fresh: UnitRange[]
+}
+
+const WIKI_LINK_KEY = new PluginKey<WikiLinkUnitState>('wikiLink')
 
 /**
  * 全 doc 扫描 wiki link（装饰与键盘原语共用同一扫描，保证「视觉单元」与
@@ -138,19 +158,24 @@ export const WikiLinkExtension = Extension.create({
     let preClickSel: { from: number; to: number } | null = null
 
     return [
-      new Plugin({
-        key: new PluginKey('wikiLink'),
+      new Plugin<WikiLinkUnitState>({
+        key: WIKI_LINK_KEY,
         props: {
           decorations(state) {
             const decorations: Decoration[] = []
             const { typed, plain } = scanWikiLinks(state.doc)
+            // chip-pop 门控（ADR-0052 闪入门控）：仅「本次事务新生成」的链接挂
+            // .chip-pop 播入场动画；挂载 / 两态切换重建的既有 chip 不播，
+            // 否则每次进编辑态全部 wikilink 重播 pop（闪一下）。
+            const fresh = WIKI_LINK_KEY.getState(state)?.fresh ?? []
 
             // 普通 wiki link（包括 typed link 的 [[X]] 部分）：
             // 外层 .block-link + 首尾 .wiki-bracket，与渲染态结构一致
             for (const link of plain) {
+              const isNew = fresh.some(f => f.from === link.from && f.to === link.to)
               decorations.push(
                 Decoration.inline(link.from, link.to, {
-                  class: 'block-link',
+                  class: isNew ? 'block-link chip-pop' : 'block-link',
                   'data-page': link.page,
                   'data-display': link.display
                 }),
@@ -229,11 +254,24 @@ export const WikiLinkExtension = Extension.create({
           },
         },
         state: {
-          init() {
-            return DecorationSet.empty
+          init(_, state) {
+            // 初始 doc 的链接全部视为「已存在」：编辑器挂载（含渲染态→编辑态切换重建）
+            // 不播 pop。与 CSS 侧「动画只挂 .chip-pop」共同构成闪入门控（ADR-0052）。
+            return {
+              all: scanWikiLinks(state.doc).plain.map(p => ({ from: p.from, to: p.to })),
+              fresh: [],
+            }
           },
           apply(tr, prev) {
-            return prev.map(tr.mapping, tr.doc)
+            // 非文档事务（选区变化等）不重扫：保持 fresh，pop 动画 300ms 内的
+            // setSelection 不会把 chip-pop 类抖掉。
+            if (!tr.docChanged) return prev
+            const mapped = prev.all.map(r => ({
+              from: tr.mapping.map(r.from, -1),
+              to: tr.mapping.map(r.to, 1),
+            }))
+            const all = scanWikiLinks(tr.doc).plain.map(p => ({ from: p.from, to: p.to }))
+            return { all, fresh: all.filter(r => !mapped.some(m => rangesOverlap(m, r))) }
           }
         },
       }),

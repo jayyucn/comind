@@ -265,6 +265,43 @@ describe('WikiLinkExtension utilities', () => {
   })
 })
 
+// ─── chip-pop 入场门控（ADR-0052 闪入门控） ─────────────────────────────────
+// 动画类 .chip-pop 只挂「本次事务新生成」的单元：挂载 / 渲染态↔编辑态切换重建的
+// 既有 chip 不播 pop（两态切换闪跳修复），新输入生成的 chip 播一次。
+
+describe('WikiLinkExtension — chip-pop 入场门控', () => {
+  it('挂载已有 [[X]]：装饰不带 chip-pop（两态切换重建不闪跳）', () => {
+    const handle = createDecoratedEditor('See [[X]] for details')
+    expect(handle.renderedHTML).toContain('block-link')
+    expect(handle.renderedHTML).not.toContain('chip-pop')
+    destroyDecoratedEditor(handle)
+  })
+
+  it('事务新生成的 [[X]]：装饰带 chip-pop 播入场动画', () => {
+    const handle = createDecoratedEditor('before ')
+    handle.editor.commands.insertContent('[[Fresh]]')
+    expect(handle.element.innerHTML).toContain('block-link chip-pop')
+    destroyDecoratedEditor(handle)
+  })
+
+  it('pop 进行中的选区事务：chip-pop 类保持（不被 setSelection 抖掉）', () => {
+    const handle = createDecoratedEditor('before ')
+    handle.editor.commands.insertContent('[[Fresh]]')
+    handle.editor.commands.setTextSelection(2)
+    expect(handle.element.innerHTML).toContain('block-link chip-pop')
+    destroyDecoratedEditor(handle)
+  })
+
+  it('下一个文档事务后 chip-pop 类移除（动画只播一次，不随重渲染重播）', () => {
+    const handle = createDecoratedEditor('before ')
+    handle.editor.commands.insertContent('[[Fresh]]')
+    handle.editor.commands.insertContent(' tail')
+    expect(handle.element.innerHTML).toContain('block-link')
+    expect(handle.element.innerHTML).not.toContain('chip-pop')
+    destroyDecoratedEditor(handle)
+  })
+})
+
 // ─── 键盘原子语义（共享原语 inline-unit-keyboard 接线） ─────────────────────
 // 通用契约矩阵（pad 语义 / 缘带 / 修饰键 / 选区 / IME）由
 // inline-unit-keyboard.test.ts 钉死；本块只验 wiki link 语法侧接线：

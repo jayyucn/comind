@@ -65,19 +65,31 @@
 
 - **token（`:root`，`src/styles/tokens/_components.scss`）**：`--motion-duration: 300ms`、`--motion-ease: cubic-bezier(.22,1,.36,1)`、`--motion-intensity: 2`、`--motion-distance: calc(10px * var(--motion-intensity))`。
 - **顺带修复**：`_mixins.scss` 引用的 `--transition-base/fast/slow` 此前从未定义为 CSS 变量（仅 primitives 里有 SCSS 变量），导致三个 transition mixin 静默失效；已在 `:root` 补齐映射（值沿用 primitives，不改变既有观感）。
-- **动画工具（`src/styles/components/_block.scss`）**：`block-enter`（block 挂载时下滑淡入）、`motion-pop`（chip 生成时 pop-in）；挂到 `.block` / `.block-tag` / `.block-link`。keyed 复用保证内容更新不重播，仅新节点挂载播放一次。
+- **动画工具（`src/styles/components/_block.scss`）**：`block-enter`（block 挂载时下滑淡入）、`motion-pop`（chip 生成时 pop-in）；落地时挂到 `.block` / `.block-tag` / `.block-link`（**2026-10-20 起 chip 侧改挂 `.chip-pop` 门控，见 D6**）。keyed 复用保证内容更新不重播，仅新节点挂载播放一次。
 - **拖拽**：`BlockDraggableList.vue` 的 Sortable `:animation` 由 `200` 提到 `300`，对齐锁定时长（缓动 Sortable 内部固定，无法精确匹配 ease-out-soft）。
 - **覆盖的「回应感」**：① block 插入（下滑淡入）② `#tag`+Enter、`[[page]]`+Enter 的内容插入 chip pop-in ③ 拖拽落位 300ms（Sortable 内置）。
 - **未覆盖 / 遗留**：
   - **删除动画**：必须靠 Vue `<Transition>`（CSS 无法延迟卸载），而 `<Transition>` 与 Sortable 的 DOM 共存需在**运行中的 app** 验证，本回合未盲改高频区。下一刀做。
   - **`/` 斜杠命令插入**：插入的是 block，已被 `block-enter` 覆盖；无需额外处理。
-  - **chip 加载闪入**：`motion-pop` 也会在初始加载时对已有 chip 播放一次（无 JS 门控），若用户觉得载入闪动过多可加门控。
+  - **chip 加载闪入（已门控，2026-10-20，见 D6）**：`motion-pop` 原本对凡重建的 chip 元素重播，两态切换全量闪跳；已按 D6 收口。
+
+### D6：chip 入场动画门控（2026-10-20）
+
+**Context**：用户实测渲染态（v-html）↔ 编辑态（PM 重解析）切换时 wikilink / tag chip 全部闪一下 —— 两态切换 = v-if 重建 DOM，挂在 `.block-tag` / `.block-link` 类上的 `motion-pop` 对所有已有 chip 重播（date-ref 无此动画故无感），即 D5 遗留的「chip 加载闪入」。
+
+**决策**：动画载体从类收口为 `.chip-pop`，播出门控交给编辑态扩展的插件 state（`WikiLinkExtension` / `InlineTagExtension`）：
+
+- 扫描当前 doc 的单元区间，与上个 doc 经 `tr.mapping` 换算后的区间做 overlap diff ——「本次事务新生成」（无 overlap）的单元挂 `.chip-pop`；
+- `init` 将初始 doc 全部视为已存在 ⇒ 编辑器挂载 / 两态切换不播；选区事务（`!tr.docChanged`）不重扫 ⇒ pop 进行中不被 `setSelection` 抖掉；下一个文档事务后类移除；
+- 渲染态（v-html / Backlinks 等复用处）无 `chip-pop`，永不播。
+
+**后果**：`[[X]]` / `#tag` 语法确认瞬间的回应感保留（D1 锚点不变）；任何 DOM 重建场景（切态、挂载、渲染态重渲染）不再闪跳。渲染态 chip 无入场动画 —— 与 date-ref 既有行为对齐，视为既定口径。
 
 ## 待决 / Open Questions
 
 
 - 系统范围：最小共享层 vs 完整系统（手感参数已锁定，**待用户确认**，见对话决策题）。
-- 内容插入动效在 TipTap/ProseMirror 层的落点：inline decoration 变换（`#foo` 文本 → tag chip）的动画载体需与编辑器渲染层协调（关联 ADR-0050 D11 的 inline tag 渲染约束）。
+- ~~内容插入动效在 TipTap/ProseMirror 层的落点~~（已落定，见 D6）：inline decoration 变换（`#foo` 文本 → tag chip）的动画载体 = 编辑态装饰加 `.chip-pop` 类，不侵入文档结构、与渲染层无冲突（关联 ADR-0050 D11）。
 - 是否纳入「页面 / 视图转场」「hover / 选中」等更广表面（用户当前明确排除，仅聚焦创造/变换瞬间）。
 
 ## 关联
