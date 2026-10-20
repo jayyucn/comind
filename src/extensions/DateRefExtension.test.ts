@@ -361,19 +361,19 @@ describe('DateRefExtension handleKeyDown — 整单元删除', () => {
     expect(plainText(handle.editor)).toBe('meet tomorrow')
   })
 
-  it('Backspace：光标在单元右侧但有选区（非 collapsed）→ 不拦截（交给默认选区删除）', () => {
+  it('Backspace：有选区且与 dateRef 重叠 → 源头整单元删除（原子语义，不交默认选区删除）', () => {
     handle = createEditor('meet @2026-07-15T14:00 📅|weekly tomorrow')
     const { from } = dateRefRangeFromDoc(handle.editor)[0]
-    // 构建非空选区：from..from+1（键盘插件查找同 dateRefKeydown：按 handleKeyDown 查找）
+    // 构建非空选区：from..from+1（选中单元首字符即与单元重叠）
     handle.editor.commands.setTextSelection({ from, to: from + 1 })
     const plugins = DateRefExtension.config.addProseMirrorPlugins() ?? []
     const plugin = plugins.find(p => typeof p?.spec?.props?.handleKeyDown === 'function')
     const handleKeyDown = plugin?.spec.props.handleKeyDown as ((view: EditorView, event: KeyboardEvent) => boolean) | undefined
     const event = { key: 'Backspace', preventDefault: vi.fn() } as unknown as KeyboardEvent
     const handled = handleKeyDown!(handle.editor.view, event)
-    expect(handled).toBe(false)
-    expect(event.preventDefault).not.toHaveBeenCalled()
-    expect(plainText(handle.editor)).toContain('@2026-07-15')
+    expect(handled).toBe(true)
+    expect(event.preventDefault).toHaveBeenCalled()
+    expect(plainText(handle.editor)).not.toContain('@2026-07-15')
   })
 
   it('Backspace：光标在单元右侧且 to 之后紧跟文本 → 只删单元，保留后续文本', () => {

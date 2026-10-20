@@ -85,10 +85,41 @@ export function createInlineUnitKeyboardPlugin(options: InlineUnitKeyboardOption
         if (isBlocked?.()) return false
 
         const { state } = view
-        // 有选区（非光标态）时不拦截，交给默认删除逻辑处理选区
-        if (!state.selection.empty) return false
+        const sel = state.selection
 
-        const pos = state.selection.from
+        // 非空选区 + Backspace/Delete 且选区与 chip 重叠（拖拽 / shift 选中 chip
+        // 部分文本后删除）：直接在按键源头把删除范围拓宽为整 chip（原子语义）。
+        // 这一层覆盖真实浏览器拖拽删除——该路径的删除事务可能不经可识别的
+        // ReplaceStep 结构，appendTransaction 删除兜底抓不到；此处读实时选区
+        // （PM 已把 DOM 拖拽选区同步为合法整数坐标），对任意拖拽端点都能兜住，
+        // 不会留下半截 chip。其它非空选区（方向键等）不在此处理，交下方早退。
+        if (
+          !sel.empty &&
+          sel instanceof TextSelection &&
+          (event.key === 'Backspace' || event.key === 'Delete')
+        ) {
+          const overlap = findRanges(state.doc).filter(r => r.from < sel.to && sel.from < r.to)
+          if (overlap.length > 0) {
+            let delFrom = sel.from
+            let delTo = sel.to
+            for (const r of overlap) {
+              if (r.from < delFrom) delFrom = r.from
+              if (r.to > delTo) delTo = r.to
+            }
+            event.preventDefault()
+            const tr = state.tr.delete(delFrom, delTo)
+            tr.setSelection(TextSelection.create(tr.doc, delFrom))
+            view.dispatch(tr)
+            return true
+          }
+          // 选区不碰 chip → 交默认删除（逐字删选区，不整删）
+          return false
+        }
+
+        // 其它非空选区（方向键选区扩展等）不拦截，交给默认行为
+        if (!sel.empty) return false
+
+        const pos = sel.from
 
         // 现场重建单元区间（与装饰同源扫描；不读插件 state，见 findRanges 注释）
         const ranges = findRanges(state.doc)

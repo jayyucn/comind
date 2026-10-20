@@ -189,13 +189,14 @@ describe('inline-unit-keyboard — Backspace 整单元删除（右缘带）', ()
     expect(plainText(handle.editor)).toBe('go ,then continue')
   })
 
-  it('有选区（非 collapsed）→ 不拦截（交给默认选区删除）', () => {
+  it('有选区且与 chip 重叠 → 源头整 chip 删除（原子语义，不交默认选区删除）', () => {
     handle = createEditor('meet @u1 tomorrow')
     const { from } = unitRanges(handle.editor)[0]
+    // 选中 chip 首字符 [from, from+1) 即与 chip 重叠 → 整 chip 删除
     const r = unitKeydown(handle.editor, 'Backspace', from, {}, { from, to: from + 1 })
-    expect(r.handled).toBe(false)
-    expect(r.preventDefaultCalled).toBe(false)
-    expect(plainText(handle.editor)).toContain('@u1')
+    expect(r.handled).toBe(true)
+    expect(r.preventDefaultCalled).toBe(true)
+    expect(plainText(handle.editor)).not.toContain('@u1')
   })
 
   it('isBlocked 为真（补全菜单打开中）→ 不拦截，走逐字符', () => {
@@ -681,5 +682,51 @@ describe('inline-unit-keyboard — 块尾光标锚点（零宽 widget）', () =>
     dispatch(state.tr.delete(4, 6))
     expect(handle.editor.state.doc.textContent).toBe('@u1')
     expect(unitRanges(handle.editor).length).toBe(1)
+  })
+})
+
+describe('inline-unit-keyboard — 非空选区删除（拖拽选中 chip 部分，handleKeyDown 源头拦截）', () => {
+  let handle: UnitEditor
+  afterEach(() => {
+    handle?.teardown()
+    blockFlag = false
+  })
+
+  it('拖拽选中 chip 部分文本，按 Delete → 整 chip 删除（不留半截）', () => {
+    handle = createEditor('@u1')
+    // 模拟拖拽选中 chip 中间一段 [2,3)
+    const r = unitKeydown(handle.editor, 'Delete', null, {}, { from: 2, to: 3 })
+    expect(r.handled).toBe(true)
+    expect(r.preventDefaultCalled).toBe(true)
+    expect(plainText(handle.editor)).toBe('')
+    expect(unitRanges(handle.editor).length).toBe(0)
+  })
+
+  it('拖拽选中 chip 部分，按 Backspace → 同样整 chip 删除', () => {
+    handle = createEditor('@u1')
+    const r = unitKeydown(handle.editor, 'Backspace', null, {}, { from: 1, to: 3 })
+    expect(r.handled).toBe(true)
+    expect(plainText(handle.editor)).toBe('')
+    expect(unitRanges(handle.editor).length).toBe(0)
+  })
+
+  it('选区含 chip + 后续普通文本 → chip 与所选普通文本一并删，非 chip 部分保留', () => {
+    handle = createEditor('meet @u1 now')
+    // @u1 区间 [6,9)；拖拽选中 "u1 "（[7,10)）覆盖 chip 末端 + 后续空格
+    const r = unitKeydown(handle.editor, 'Delete', null, {}, { from: 7, to: 10 })
+    expect(r.handled).toBe(true)
+    // 删除拓宽为整 chip [6,9) + 所选空格 [9,10) → 净删 [6,10)，留下 "meet now"
+    expect(plainText(handle.editor)).toBe('meet now')
+    expect(unitRanges(handle.editor).length).toBe(0)
+  })
+
+  it('选区不碰 chip → 不拦截（handled=false，交默认删除；本测试只验拦截决策）', () => {
+    handle = createEditor('meet @u1 now')
+    // 选中 "meet "（[1,6)）不重叠 chip [6,9) → 放行
+    const r = unitKeydown(handle.editor, 'Delete', null, {}, { from: 1, to: 6 })
+    expect(r.handled).toBe(false)
+    expect(r.preventDefaultCalled).toBe(false)
+    // unitKeydown 只驱动 handleKeyDown，不触发默认删除，故文本不变
+    expect(plainText(handle.editor)).toBe('meet @u1 now')
   })
 })
