@@ -644,4 +644,21 @@ describe('inline-unit-keyboard — 块尾光标锚点（零宽 widget）', () =>
     expect(anchorCount(handle.editor)).toBe(1)
     expect(handle.editor.state.selection.from).toBe(to)
   })
+
+  it('删除块尾 pad 后光标锚点落在 chip 外（domFromPos 不坠入 chip 文本）', () => {
+    handle = createTextEditor('meet @u1 ')
+    const { to } = unitRanges(handle.editor)[0]
+    handle.editor.commands.setTextSelection({ from: to, to: to + 1 })
+    handle.editor.commands.deleteSelection()
+    // setSelection 对折叠光标调用 domFromPos(to, -1)（左偏）。side:1（旧）会回退进
+    // chip 文本节点末尾（光标在 chip 内部）；side:-1（修复后）解析到段落末位子节点
+    // 之后（chip 之外）。
+    const box = (handle.editor.view as unknown as { docView: { domFromPos(p: number, s: number): { node: Node; offset: number } } })
+      .docView.domFromPos(to, -1)
+    // 元素节点（P）= chip 外；文本节点（nodeType 3）= chip 文本内部（回归）
+    expect(box.node.nodeType).toBe(1)
+    expect((box.node as HTMLElement).nodeName).toBe('P')
+    // 删除尾 pad 后整块仍只剩 chip，逻辑光标仍在 to（未入内部）
+    expect(handle.editor.state.selection.from).toBe(to)
+  })
 })

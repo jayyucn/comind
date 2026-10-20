@@ -153,9 +153,12 @@ export function createInlineUnitKeyboardPlugin(options: InlineUnitKeyboardOption
 
       // 块尾光标锚点：单元右缘恰为所在文本块内容末尾（无尾随字符）时，浏览器
       // 的 contentEditable 会把块尾光标吸进最后一个 inline 元素（chip 内部，
-      // 视觉穿帮 —— 拖拽/shift+← 选中尾部 pad 空格删除后即触发）。放一个零宽
-      // widget 在 to 处，给光标一个 chip 外的 DOM 锚点。非块尾（有尾随字符）
-      // 光标自然锚定在字符间，无需干预。
+      // 视觉穿帮 —— 拖拽/shift+← 选中尾部 pad 空格删除后即触发）。
+      // 修复关键：widget 必须 side:-1（贴在 to 左侧），而非 side:1。
+      // selectionToDOM 对折叠光标调用 domFromPos(to, -1)（左偏），side:1 时
+      // 该锚点会回退进 chip 文本节点末尾（光标落在 chip 内部）；side:-1 时
+      // 锚点解析到 widget 之后（<p> 末位子节点之后），光标落在 chip 之外。
+      // 非块尾（有尾随字符）光标自然锚定在字符间，widget 不挂载，无需干预。
       decorations(state: EditorState) {
         const widgets: Decoration[] = []
         for (const range of findRanges(state.doc)) {
@@ -169,7 +172,7 @@ export function createInlineUnitKeyboardPlugin(options: InlineUnitKeyboardOption
                   anchor.textContent = '\u200b'
                   return anchor
                 },
-                { side: 1, ignoreSelection: true },
+                { side: -1, ignoreSelection: true },
               ),
             )
           }
