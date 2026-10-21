@@ -21,6 +21,16 @@ export interface TextRange {
   head: BlockOffset
 }
 
+/**
+ * 渲染文本坐标下的一个「内联原子单元」区间 [start, end)（UTF-16 码元）。
+ * 单元的视觉边界由渲染层决定（`.block-tag` / `.date-ref` / `.block-link` 等），
+ * 由 `selection-geometry.atomicUnitSpans` 从实时 DOM 量出。
+ */
+export interface RenderedUnitSpan {
+  start: number
+  end: number
+}
+
 /** 文档序归一化后的文本范围 */
 export interface NormalizedTextRange {
   /** 文档序靠前的端点 */
@@ -138,4 +148,61 @@ export function textRangeToText(blocks: Block[], range: TextRange): string {
   }
   parts.push(endBlock.content.slice(0, hi))
   return parts.join('\n')
+}
+
+/**
+ * 端点若严格落在某个原子单元内部，吸附到该单元的**外侧**边界（扩张方向）。
+ *
+ * `side` 是端点在整个选区里的角色：起点往左扩（`start`）、终点往右扩（`end`）。
+ * 两条都只会**扩大**选区，绝不收缩——原子单元要么整体入选、要么完全不入选。
+ */
+function snapOutward(
+  offset: number,
+  units: RenderedUnitSpan[],
+  side: 'start' | 'end',
+): number {
+  for (const u of units) {
+    if (offset > u.start && offset < u.end) return side === 'start' ? u.start : u.end
+  }
+  return offset
+}
+
+/**
+ * 把文本选区两端吸附出内联原子单元（inline chip / date-ref / wiki link）。
+ *
+ * 为什么必须有这一层：跨块文本选区的端点是**渲染文本的字符偏移**，
+ * 删除时由 `planTextRangeDeletion` 直接按该偏移切 `block.content`——
+ * 端点落在 `#任务` 中间就会切出 `#任` 这种半截 chip（真机实证：右→左拖到
+ * chip 中间按 Backspace，`vanished: ["务 后面"]`）。ProseMirror 侧的选区
+ * 原子化管不到这条路径：拖拽超过 4px 时 BlockList 已 `deactivateBlock()`，
+ * 编辑器根本不在场，删除完全由本模块的偏移驱动。
+ *
+ * 口径与 PM 侧 `createInlineUnitKeyboardPlugin` 的选区闸门一致：
+ * **端点永不落在单元内部**，单元整体参与选区。端点不碰单元时原样返回。
+ *
+ * @param blocks 用于确定两端点的文档序（`normalizeTextRange` 同源）
+ * @param range  待吸附的选区（渲染文本坐标）
+ * @param unitsOf 取某 block 内全部原子单元区间（渲染文本坐标）
+ */
+export function snapTextRangeToUnits(
+  blocks: Block[],
+  range: TextRange,
+  unitsOf: (blockId: string) => RenderedUnitSpan[],
+): TextRange {
+  const { start, end } = normalizeTextRange(blocks, range)
+  // 折叠端点：没有可删内容，吸附会凭空造出选区，保持原样
+  if (start.blockId === end.blockId && start.offset === end.offset) return range
+
+  const nextStart = snapOutward(start.offset, unitsOf(start.blockId), 'start')
+  const nextEnd = snapOutward(end.offset, unitsOf(end.blockId), 'end')
+  if (nextStart === start.offset && nextEnd === end.offset) return range
+
+  // 保持原选区的方向性（anchor/head 角色不因吸附而互换）：
+  // shift+click 延伸依赖 anchor 仍是固定端。
+  const anchorIsStart =
+    range.anchor.blockId === start.blockId && range.anchor.offset === start.offset
+  return {
+    anchor: { ...range.anchor, offset: anchorIsStart ? nextStart : nextEnd },
+    head: { ...range.head, offset: anchorIsStart ? nextEnd : nextStart },
+  }
 }

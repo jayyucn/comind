@@ -15,19 +15,20 @@
  * 选区互斥，单独保存；isDragging 由外部消费者（BlockList）在 mousemove 中设置。
  */
 import { computed, ref } from 'vue'
-import { useBlockStore } from '../stores/blocks'
-import { useFieldValueStore } from '../stores/fieldValue'
-import { useBlockRelationshipCleanup } from './useBlockRelationshipCleanup'
-import { sortByDocumentOrderIds } from '../utils/block-helpers'
-import type { Block } from '../types/block'
-import type { FieldValue } from '../types/field-value'
-import { decodeFieldValueData } from '../utils/field-value-codec'
 
 import { COMIND_BLOCK_MIME, serializeBlocks, writeClipboardPayload } from '../services/block-clipboard'
+import { useBlockStore } from '../stores/blocks'
+import { useFieldValueStore } from '../stores/fieldValue'
+import type { Block } from '../types/block'
+import type { FieldValue } from '../types/field-value'
+import { sortByDocumentOrderIds } from '../utils/block-helpers'
+import { decodeFieldValueData } from '../utils/field-value-codec'
+import { useBlockRelationshipCleanup } from './useBlockRelationshipCleanup'
 // 内部剪贴板格式 MIME 单一来源（ADR-0025 D5）；此处仅转发供既有导入方使用
 export { COMIND_BLOCK_MIME }
-import { textRangeToText } from '../services/text-range'
+import { atomicUnitSpans } from '../services/selection-geometry'
 import type { BlockOffset, TextRange } from '../services/text-range'
+import { snapTextRangeToUnits, textRangeToText } from '../services/text-range'
 
 /** 选区状态（判别联合）：块选区与文本选区互斥由此结构保证 */
 type SelectionState =
@@ -256,6 +257,17 @@ export function useCrossBlockSelection() {
 
   // ── 文本选区（ADR-0035 D1/D3）──
 
+  /**
+   * 文本选区端点吸附出内联原子单元（`#tag` chip / `@date` / `[[wiki]]`）。
+   *
+   * 唯一的选区**制造**入口（拖拽 + shift 延伸都经 `updateTextDrag`）都过这里，
+   * 故下游三个消费方——高亮、复制、删除——拿到的永远是「单元整体入选」的选区。
+   * 删除侧另有兜底调用（`deleteTextSelection`），防止将来出现绕过本处的制造路径。
+   */
+  function snapTextRange(range: TextRange): TextRange {
+    return snapTextRangeToUnits(blockStore.blocks, range, atomicUnitSpans)
+  }
+
   /** 内容区 mousedown 开始文本拖拽：记录锚点，清旧选区（文本+块） */
   function startTextTracking(anchor: BlockOffset, startPoint: { x: number; y: number }) {
     // 拖拽尚未产生选区：整体替换为「无选区」即清掉块选区与旧文本选区（互斥）
@@ -269,7 +281,9 @@ export function useCrossBlockSelection() {
   function updateTextDrag(head: BlockOffset) {
     if (!textDragAnchor.value) return
     isTextDragging.value = true
-    transition({ kind: 'text', range: { anchor: textDragAnchor.value, head } })
+    // 端点落在 chip 内部 → 外扩成整 chip（原子语义）。否则删除会按字符偏移切出
+    // 半截 chip（`#任`）——渲染态拖拽时编辑器已卸载，PM 侧闸门拦不到这条路径。
+    transition({ kind: 'text', range: snapTextRange({ anchor: textDragAnchor.value, head }) })
   }
 
   /**
@@ -321,7 +335,7 @@ export function useCrossBlockSelection() {
   /** 复制文本选区：内容切片拼接（委托纯模块 textRangeToText） */
   async function copyTextToClipboard(pageId: string) {
     if (!textRange.value) return
-    const text = textRangeToText(blockStore.getBlocksByPage(pageId), textRange.value)
+    const text = textRangeToText(blockStore.getBlocksByPage(pageId), snapTextRange(textRange.value))
     if (!text) return
     try {
       await navigator.clipboard.writeText(text)
@@ -353,7 +367,8 @@ export function useCrossBlockSelection() {
     const range = textRange.value
     if (!range) return null
     const blocksBeforeDelete = [...blockStore.blocks]
-    const plan = blockStore.planTextRangeDeletion(pageId, range)
+    // 兜底吸附：即使选区由将来的新路径绕过 updateTextDrag 制造，删除也不会切出半截 chip。
+    const plan = blockStore.planTextRangeDeletion(pageId, snapTextRange(range))
     if (!plan) return null
     await relationshipCleanup.cleanupAfterDelete(pageId, plan.middleBlockIds, blocksBeforeDelete, {
       removedBlockIds: plan.mergedAwayBlockId ? [plan.mergedAwayBlockId] : undefined,

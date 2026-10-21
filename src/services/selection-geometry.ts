@@ -1,4 +1,4 @@
-import type { BlockOffset } from './text-range'
+import type { BlockOffset, RenderedUnitSpan } from './text-range'
 
 /**
  * 文本选区几何映射（DOM 依赖，供 #60 内容区拖拽使用）。
@@ -107,6 +107,43 @@ function firstTextNode(root: HTMLElement): Text | null {
 /** 按 blockId 取块元素 */
 function blockElement(blockId: string): HTMLElement | null {
   return document.querySelector(`[data-block-id="${blockId}"]`)
+}
+
+/**
+ * 内容区里「整体参与选区」的内联原子单元类名。
+ *
+ * 与渲染器产出的类名同源（`useContentRenderer.CSS_CLASSES`）：
+ * `.block-tag` = inline `#tag` chip、`.date-ref` = `@2026-10-15` 单元、
+ * `.block-link` = `[[wiki]]`、`.rel-type-label` = `((关系))` 标签。
+ * 与 `createInlineUnitKeyboardPlugin` 的单元口径一致——编辑态由 PM 选区闸门
+ * 保证原子性，渲染态（编辑器已卸载）由这里接管。
+ */
+const ATOMIC_UNIT_SELECTOR = '.block-tag, .date-ref, .block-link, .rel-type-label'
+
+/**
+ * 量出某 block 内容区内全部内联原子单元的**渲染文本偏移区间** [start, end)。
+ *
+ * 为什么不复用 `renderSegments`：文本选区的端点是由 DOM 量出来的渲染偏移
+ * （`blockOffsetFromPoint`），单元边界必须来自**同一份 DOM** 才能保证落在同一
+ * 坐标系里；且渲染器在无 segments 的块上也会渲染 chip（`#tag` 兜底扫描），
+ * 以 DOM 为准才能覆盖该路径。偏移累加复用 `textNodeOffsetInRoot`，与端点同源。
+ *
+ * 只做度量、不依赖布局：jsdom 亦可断言。
+ */
+export function atomicUnitSpans(blockId: string): RenderedUnitSpan[] {
+  const blockEl = blockElement(blockId)
+  if (!blockEl) return []
+  const root = contentRoot(blockEl)
+  const spans: RenderedUnitSpan[] = []
+  for (const el of Array.from(root.querySelectorAll<HTMLElement>(ATOMIC_UNIT_SELECTOR))) {
+    const first = firstTextNode(el)
+    const last = lastTextNode(el)
+    if (!first || !last) continue
+    const start = textNodeOffsetInRoot(root, first, 0)
+    const end = textNodeOffsetInRoot(root, last, last.length)
+    if (end > start) spans.push({ start, end })
+  }
+  return spans
 }
 
 /**

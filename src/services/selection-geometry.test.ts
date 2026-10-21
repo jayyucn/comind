@@ -13,7 +13,7 @@
  * 内容为空时渲染成 `<span></span>`（无文本节点，与真机一致）。
  */
 import { describe, test, expect, beforeEach, afterEach } from 'vitest'
-import { caretBlockOffsetFromDomSelection, collapsedRangeAtBlockOffset, selectionClientRects } from './selection-geometry'
+import { atomicUnitSpans, caretBlockOffsetFromDomSelection, collapsedRangeAtBlockOffset, selectionClientRects } from './selection-geometry'
 import type { BlockOffset } from './text-range'
 
 /** 构造一页（数组下标 = 文档序），空串模拟空行 */
@@ -148,5 +148,55 @@ describe('caretBlockOffsetFromDomSelection - shift+click 从光标起选的起�
     buildPage(['abc'])
     window.getSelection()!.removeAllRanges()
     expect(caretBlockOffsetFromDomSelection()).toBeNull()
+  })
+})
+
+/**
+ * 内联原子单元的渲染偏移量测（喂给 `text-range.snapTextRangeToUnits`）。
+ *
+ * 与端点同一坐标系：都按 `contentRoot` 下的文本节点累计长度算，故这里断言的是
+ * 「单元在渲染文本里的 [start, end)」，与 `blockOffsetFromPoint` 可直接比较。
+ */
+describe('atomicUnitSpans - 内联原子单元区间', () => {
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  function buildWith(innerHtml: string): void {
+    document.body.innerHTML =
+      `<div class="block-list"><div data-block-id="b0"><div class="block-content">` +
+      `<div class="block-text">${innerHtml}</div></div></div></div>`
+  }
+
+  test('inline `#tag` chip（.block-tag）计入单元，偏移覆盖含 # 的整段', () => {
+    // 渲染文本 `这是测试任务 #任务 后面的文字`：`#任务` = [7,10)
+    buildWith('<span>这是测试任务 <span class="block-tag">#任务</span> 后面的文字</span>')
+    expect(atomicUnitSpans('b0')).toEqual([{ start: 7, end: 10 }])
+  })
+
+  test('date-ref（.date-ref）与 wiki link（.block-link）各自计入', () => {
+    buildWith('<span>a <span class="date-ref">@2026-10-15</span> b <span class="block-link">[[x]]</span></span>')
+    const spans = atomicUnitSpans('b0')
+    expect(spans).toHaveLength(2)
+    expect(spans[0]).toEqual({ start: 2, end: 13 }) // 渲染文本 offset 2 = '@'
+    expect(spans[1]).toEqual({ start: 16, end: 21 })
+  })
+
+  test('无单元内容（纯文本块）→ 空数组', () => {
+    buildWith('<span>纯文本，没有 chip</span>')
+    expect(atomicUnitSpans('b0')).toEqual([])
+  })
+
+  test('块不存在 → 空数组（不抛错，调用方无需 try/catch）', () => {
+    buildWith('<span>abc</span>')
+    expect(atomicUnitSpans('missing-block')).toEqual([])
+  })
+
+  test('编辑态（.ProseMirror 在 .block-content 内）同样量得到', () => {
+    document.body.innerHTML =
+      `<div class="block-list"><div data-block-id="b0"><div class="block-content">` +
+      `<div class="tiptap ProseMirror"><p>ab <span class="block-tag">#任务</span> cd</p></div>` +
+      `</div></div></div>`
+    expect(atomicUnitSpans('b0')).toEqual([{ start: 3, end: 6 }])
   })
 })
