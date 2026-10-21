@@ -1,12 +1,12 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
+
+import { useFavorites } from '../composables/useFavorites'
 import type { Page } from '../types/page'
+import { type IdeasSnapshotData,parseIdeasSnapshotContent } from '../utils/ideas-snapshot'
+import type { CoreClient } from '../wasm/client'
 import { initCoreClient } from '../wasm/client'
 import { useBlockStore } from './blocks'
-import { useFavorites } from '../composables/useFavorites'
-import { parseIdeasSnapshotContent, type IdeasSnapshotData } from '../utils/ideas-snapshot'
-
-import type { CoreClient } from '../wasm/client'
 
 let coreClientPromise: Promise<CoreClient> | null = null
 
@@ -148,6 +148,17 @@ export const usePageStore = defineStore('pages', () => {
 
   function setCurrentPage(pageId: string) {
     currentPageId.value = pageId
+  }
+
+  /**
+   * 内存层刷新某页的 updatedAt（不落库）。
+   * block 落库时 Rust 已 bump 了 Page.updated_at，但前端的 pages 数组不会因此响应式更新；
+   * 最近列表按 updatedAt 排序，需要这里显式补一次，才能实时把刚编辑的页上移到最近顶部。
+   */
+  function touchPage(pageId: string) {
+    const idx = pages.value.findIndex(p => p.id === pageId)
+    if (idx === -1) return
+    pages.value[idx] = { ...pages.value[idx], updatedAt: Date.now() }
   }
 
   // ── Ideas 页快照读取（ADR-0042 T5 快照读取守卫）──
@@ -378,5 +389,5 @@ export const usePageStore = defineStore('pages', () => {
     }
   }
 
-  return { pages, currentPageId, loading, trashPages, loadAllPages, ensurePagesLoaded, ensureTodayIdeasPage, getIdeasSnapshot, loadIdeasSnapshotMonths, loadIdeasSnapshotsByMonth, ideasSnapshots, ideasMonths, ideasHistoryPages, setCurrentPage, openPage, createPage, getPage, getPageByTitle, getOrCreatePageByTitle, renamePage, mergePage, deletePage, loadTrashPages, softDeletePage, restorePage, permanentDeletePage, onRemovePageFromHistory }
+  return { pages, currentPageId, loading, trashPages, loadAllPages, ensurePagesLoaded, ensureTodayIdeasPage, getIdeasSnapshot, loadIdeasSnapshotMonths, loadIdeasSnapshotsByMonth, ideasSnapshots, ideasMonths, ideasHistoryPages, setCurrentPage, touchPage, openPage, createPage, getPage, getPageByTitle, getOrCreatePageByTitle, renamePage, mergePage, deletePage, loadTrashPages, softDeletePage, restorePage, permanentDeletePage, onRemovePageFromHistory }
 })

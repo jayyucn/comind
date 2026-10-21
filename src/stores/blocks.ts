@@ -1,15 +1,12 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
+
+import type { BatchOperation } from '@/wasm/types'
+
+import { renderedOffsetToEncodedOffset } from '../services/render-text'
+import { normalizeTextRange, type TextRange } from '../services/text-range'
 import type { Block, BlockClipPayload } from '../types/block'
 import type { FieldType, FieldValueData } from '../types/field-definition'
-import { debounce } from '../utils/debounce'
-import { generateUUID } from '../utils/id'
-import { decodeFieldValueData } from '../utils/field-value-codec'
-import { initCoreClient, isTauriEnvironment, triggerSync } from '../wasm/client'
-import { useBlockCardStore } from './blockCard'
-import { useFieldValueStore } from './fieldValue'
-import { useTagsStore } from './tags'
-
 import {
   calcInsertPos,
   findBlockIndex,
@@ -23,11 +20,15 @@ import {
   SAVE_DEBOUNCE_MS,
   sortByPos
 } from '../utils/block-helpers'
-
-import type { BatchOperation } from '@/wasm/types'
-import { renderedOffsetToEncodedOffset } from '../services/render-text'
-import { normalizeTextRange, type TextRange } from '../services/text-range'
+import { debounce } from '../utils/debounce'
+import { decodeFieldValueData } from '../utils/field-value-codec'
+import { generateUUID } from '../utils/id'
 import type { CoreClient } from '../wasm/client'
+import { initCoreClient, isTauriEnvironment, triggerSync } from '../wasm/client'
+import { useBlockCardStore } from './blockCard'
+import { useFieldValueStore } from './fieldValue'
+import { usePageStore } from './pages'
+import { useTagsStore } from './tags'
 
 /**
  * 文本选区删除计划（#100）：把「删了什么」表达为数据，供编排层先做关系清理
@@ -576,6 +577,12 @@ export const useBlockStore = defineStore('blocks', () => {
       } catch (e) {
         console.error('[BlockStore] syncPayloadForBlock failed:', e)
       }
+
+      // 内容改动回写所属页的 updatedAt（内存层）。Rust 落库时 recount_word_count 已把
+      // Page.updated_at 刷新，但前端的 pages store 不会因此响应式更新，导致按 updatedAt 排序的
+      // 最近列表在编辑当前页时不实时上移。这里在保存成功后补一次内存层 touch，使最近列表实时反映。
+      const pageStore = usePageStore()
+      pageStore.touchPage(currentBlock.pageId)
     } catch (error) {
       console.error('[BlockStore] Failed to save block:', error)
       saveErrors.value = { ...saveErrors.value, [block.id]: true }

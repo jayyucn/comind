@@ -1,21 +1,22 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import { initCoreClient } from '../wasm/client'
-import type { FieldValue } from '../types/field-value'
+import { computed,ref } from 'vue'
+
 import type { FieldDefinition, FieldType, FieldValueData } from '../types/field-definition'
 import { getAllFieldDefinitions, getFieldDefinition } from '../types/field-definition'
-import { useBlockStore } from './blocks'
-import { useBlockCardStore } from './blockCard'
-import { useEditorStore } from './editor'
-import { useTagsStore } from './tags'
-import { serializeDateRef, type DateRefKind } from '../utils/date-ref'
-import { encodeFieldValueData } from '../utils/field-value-codec'
+import type { FieldValue } from '../types/field-value'
 import { nextAutonumberFromCache } from '../utils/autonumber'
 import type { RecurrenceRule } from '../utils/date-ref'
+import { type DateRefKind,serializeDateRef } from '../utils/date-ref'
+import { encodeFieldValueData } from '../utils/field-value-codec'
+import type { CoreClient } from '../wasm/client'
+import { initCoreClient } from '../wasm/client'
 // 4.2 / S6: calculateNextRecurrence migrated to Rust
 import { getCoreClient } from '../wasm/client'
-
-import type { CoreClient } from '../wasm/client'
+import { useBlockCardStore } from './blockCard'
+import { useBlockStore } from './blocks'
+import { useEditorStore } from './editor'
+import { usePageStore } from './pages'
+import { useTagsStore } from './tags'
 
 /** 把 Rust 返回的 string kind 收窄为 DateRefKind，未知值 fallback 'ref' */
 function normalizeKind(kind: string): DateRefKind {
@@ -102,6 +103,29 @@ export const useFieldValueStore = defineStore('fieldValue', () => {
     fieldValuesByBlock.value = new Map(fieldValuesByBlock.value)
   }
 
+  /**
+   * 字段值写库后，把所属页的 `updatedAt` 在内存层顶到当前时刻，使侧栏「最近」列表
+   * 即时重排（与 `_doSave` 对 content 改动的 `touchPage` 收口口径一致；DB 层 Page.updated_at
+   * 由 Rust 在保存时统一 bump，此处只同步内存快照）。
+   *
+   * 优先内存 `getBlock`；块尚未加载进 store（如 TaskHub 仅持 BlockCard 投影时）回源
+   * `loadBlock` 取 pageId。取不到（块缺失 / 客户端失败）则 best-effort 跳过，不阻断写值主流程。
+   */
+  async function touchPageOfBlock(blockId: string) {
+    const blockStore = useBlockStore()
+    let block = blockStore.getBlock(blockId)
+    if (!block) {
+      try {
+        block = await blockStore.loadBlock(blockId)
+      } catch {
+        return
+      }
+    }
+    if (block?.pageId) {
+      usePageStore().touchPage(block.pageId)
+    }
+  }
+
   async function setFieldValue(
     blockId: string,
     key: string,
@@ -172,6 +196,9 @@ export const useFieldValueStore = defineStore('fieldValue', () => {
 
     const blockCardStore = useBlockCardStore()
     blockCardStore.invalidate(blockId)
+
+    // 字段值写入属于页内容层面的改动 → 同步内存层页 updatedAt，使「最近」列表实时重排
+    await touchPageOfBlock(blockId)
 
     return row
   }
@@ -302,6 +329,8 @@ export const useFieldValueStore = defineStore('fieldValue', () => {
       // 就地移除（取代全量重拉）：回显不再等第二次往返
       fieldValuesByBlock.value.set(blockId, rows.filter(r => r.id !== id))
       fieldValuesByBlock.value = new Map(fieldValuesByBlock.value)
+      // 删除字段值同样属页内容层面改动 → 同步内存层页 updatedAt
+      touchPageOfBlock(blockId)
     }
   }
 

@@ -1,6 +1,8 @@
 import { describe, test, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useFieldValueStore } from './fieldValue'
+import { useBlockStore } from './blocks'
+import { usePageStore } from './pages'
 import { decodeFieldValueData } from '../utils/field-value-codec'
 import type { CoreClient } from '../wasm/client'
 
@@ -13,6 +15,17 @@ const { mockClient } = vi.hoisted(() => {
     deleteFieldValue: vi.fn(async () => {}),
     getDateRefsByBlock: vi.fn(async () => []),
     calculateNextRecurrence: vi.fn(async (iso: string) => iso),
+    getBlock: vi.fn(async () => ({
+      id: 'block-1',
+      page_id: 'page-1',
+      parent_id: null,
+      pos: 0,
+      content: '',
+      format: '{}',
+      type: 'text',
+      created_at: 0,
+      updated_at: 0,
+    })),
   }
   return { mockClient }
 })
@@ -325,6 +338,48 @@ describe('useFieldValueStore', () => {
 
       const row = store.getBlockFieldValue('block-1', 'labels')
       expect(decodeFieldValueData(row!.value_json, row!.value_type)).toEqual(['a', 'c'])
+    })
+  })
+
+  // 与内容改动一致：字段值写入也应把所属页顶到「最近」列表首位（内存层 updatedAt 同步）。
+  describe('字段值写入同步页最近列表（touchPage）', () => {
+    function seedBlock() {
+      const blockStore = useBlockStore()
+      blockStore.blocks.push({
+        id: 'block-1',
+        pageId: 'page-1',
+        parentId: null,
+        pos: 0,
+        content: '',
+        format: {},
+        type: 'text',
+        createdAt: 0,
+        updatedAt: 0,
+      } as never)
+    }
+
+    test('setFieldValue 后所属页被 touch', async () => {
+      seedBlock()
+      const pageStore = usePageStore()
+      const touchSpy = vi.spyOn(pageStore, 'touchPage')
+
+      const store = useFieldValueStore()
+      await store.setFieldValue('block-1', 'labels', ['a'], 'multiSelect')
+
+      expect(touchSpy).toHaveBeenCalledWith('page-1')
+    })
+
+    test('deleteFieldValue 后所属页被 touch', async () => {
+      seedBlock()
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([makeFieldValue({ id: 'prop-1', key: 'labels' })] as never)
+      const pageStore = usePageStore()
+      const touchSpy = vi.spyOn(pageStore, 'touchPage')
+
+      const store = useFieldValueStore()
+      await store.loadBlockFieldValues('block-1')
+      await store.deleteFieldValue('prop-1', 'block-1')
+
+      expect(touchSpy).toHaveBeenCalledWith('page-1')
     })
   })
 })

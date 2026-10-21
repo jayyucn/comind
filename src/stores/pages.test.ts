@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { usePageStore } from './pages'
+import { useRecent } from '../composables/useRecent'
 
 // Mock the WASM core client — the store delegates all persistence to it.
 // vi.hoisted ensures the mock object exists before vi.mock is evaluated.
@@ -638,6 +639,50 @@ describe('usePageStore', () => {
       await store.loadIdeasSnapshotsByMonth('2026-08')
 
       expect(store.ideasSnapshots['p2']).toBeNull()
+    })
+  })
+
+  describe('touchPage（实时最近列表）', () => {
+    function mkPage(id: string, updatedAt: number): any {
+      return {
+        id,
+        blockId: null,
+        title: id,
+        type: 'normal',
+        icon: null,
+        cover: null,
+        aliases: [],
+        filePath: null,
+        childrenCount: 0,
+        wordCount: 0,
+        createdAt: updatedAt,
+        updatedAt,
+        deleted: false,
+        deletedAt: null,
+      }
+    }
+
+    test('touchPage 刷新 updatedAt，使最近列表实时把该页上移到顶部', () => {
+      const store = usePageStore()
+      const now = Date.now()
+      store.pages = [mkPage('p-old', now - 100000), mkPage('p-new', now - 1000)]
+
+      // 初始：最近列表以 p-new（updatedAt 较大）为首
+      const { recentPages } = useRecent()
+      expect(recentPages.value[0].id).toBe('p-new')
+
+      // 编辑旧页后，内存层回写 updatedAt（等价于 block 落库成功后的 touchPage 调用）
+      store.touchPage('p-old')
+
+      // 最近列表应实时把 p-old 上移到顶部，无需重新 loadAllPages
+      expect(recentPages.value[0].id).toBe('p-old')
+    })
+
+    test('touchPage 对不存在的页是 no-op，不抛错', () => {
+      const store = usePageStore()
+      store.pages = [mkPage('p1', Date.now())]
+      expect(() => store.touchPage('nope')).not.toThrow()
+      expect(store.pages.length).toBe(1)
     })
   })
 })
