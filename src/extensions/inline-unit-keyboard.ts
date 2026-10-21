@@ -255,23 +255,27 @@ export function createInlineUnitKeyboardPlugin(options: InlineUnitKeyboardOption
       },
     },
 
-    // 选择闸门：纯选区事务与「纯删除」事务的端点不得落在单元内部
-    // （光标/选区永不入 chip）。覆盖入口：点击（配合各扩展 handleClick 的选区
-    // 还原，此处兜底）、按住拖拽、双击原生词选（经 selectionchange 同步回 PM）、
-    // Shift/Ctrl+方向键、Up/Down 跨行几何落点、程序化 setTextSelection、
-    // 选中 pad 空格删除（贪婪单元黏连扩展，见 appendTransaction 内注释）。
-    // 打字/IME/粘贴/补全插入属单元建造，光标合法地在单元文本内生长
-    // （tag 打字中 `#ab` 即匹配完整单元正则、`[[]]` 手工填充停在闭括号前），
-    // 钳掉会直接打断输入。
+    // 选择闸门（原子化）：chip 永远作为一个整体参与选区与删除。
+    // 两层：
+    // 1. 折叠光标：菜单关闭时绝不落入 chip 内部（钳到近端边界，见 nearest）；
+    //    菜单打开中放行（tag 建造中光标合法在单元文本内生长）。
+    // 2. 非空选区：与某 chip「部分重叠」（重叠但未整段包含）即外扩端点使其整段
+    //    落入选区；已整段包含的 chip 不收窄（大段选区跨 chip 不丢 chip 外文本）。
+    //    与菜单状态无关——「选中部分 chip」一律吸附成整 chip，随后任意删除
+    //    （拖拽/Backspace/Delete/剪切）自然整删。这是 2026-10 修复
+    //    「拖选部分 chip 删出半截」的治本路径：不再依赖各删除入口各自拦截，
+    //    而是让选区天然原子化；即便 tag 菜单开着（isBlocked）导致删除拦截被旁路，
+    //    原生删除作用在「整 chip 选区」上也不会留下半截。
+    // 纯插入（打字/IME/粘贴）放行：建造流需要内部光标，且光标落点由菜单态决定。
     // ⚠️ appendTransaction 是 PluginSpec 顶层字段，放进 props 会被静默忽略。
     appendTransaction(trs: readonly Transaction[], oldState: EditorState, newState: EditorState) {
-      if (isBlocked?.()) return null
+      // IME 组合中：建造中需要内部光标，全放行（含选区闸门，避免钳掉组合确认事务）
       if (composingEpoch > 0) return null
 
-      // 收集所有「删除步」范围并映射回 oldState 坐标（覆盖多步/多事务），
-      // 用于判定删除是否触及 chip。选区闸门只能钳光标、挡不住删除事务本身，
-      // 故拖拽部分选中 chip 后删除会留下半截 chip（#ta / @2026-10-2 / [[wik）
-      // —— 这一层在删除事务层兜底，对任意触发路径（拖拽/程序化/未来入口）生效。
+      // 删除事务层兜底（仅菜单关闭时）：任意删除若残余 chip 段，拓宽到整 chip
+      // （原子语义）。菜单打开中跳过——building 需要逐字符删除（删 "#ab" 的 "b"
+      // 不能整删 "#ab"）。此层兜住 beforeinput 被 isBlocked 放行后浏览器原生删除
+      // 触不到的残留半截 chip（理论上选区已整段吸附，此层为冗余保险）。
       const mapping = new Mapping()
       const delRangesOld: Array<{ from: number; to: number }> = []
       for (const tr of trs) {
@@ -282,10 +286,8 @@ export function createInlineUnitKeyboardPlugin(options: InlineUnitKeyboardOption
           mapping.appendMap(step.getMap())
         }
       }
-
-      // 删除事务且触及 chip → 把删除拓宽到整 chip（原子语义，与边缘整删同源）。
-      // 原删除已吃掉 chip 中的一段，这里删掉映射后的剩余整段，净效果 = 整 chip 删除。
-      if (delRangesOld.length > 0) {
+      const hasDeletion = delRangesOld.length > 0
+      if (hasDeletion && !isBlocked?.()) {
         const chipRanges = findRanges(oldState.doc).filter(r =>
           delRangesOld.some(d => d.from < r.to && r.from < d.to),
         )
@@ -303,43 +305,41 @@ export function createInlineUnitKeyboardPlugin(options: InlineUnitKeyboardOption
         }
       }
 
+      // 选区段：纯插入放行（建造流需要内部光标）；纯选区/删除落点钳制才跑
       const docChanged = trs.some(tr => tr.docChanged)
-      const hasDeletion = delRangesOld.length > 0
-
-      // 纯选区事务、或删除事务的落点钳制才跑选区闸门；纯插入（打字/粘贴）放行
-      // —— 单元建造需要内部光标，钳掉会直接打断输入。
       if (docChanged && !hasDeletion) return null
 
       const sel = newState.selection
       if (!(sel instanceof TextSelection)) return null
-
       const ranges = findRanges(newState.doc)
       if (ranges.length === 0) return null
 
-      const hit = (pos: number) => ranges.find(r => pos > r.from && pos < r.to)
-      // 等距平局取右缘：删除右 pad 场景光标语义来自单元右缘带，贴右缘更自然
-      const nearest = (pos: number, r: InlineUnitRange) =>
-        pos - r.from < r.to - pos ? r.from : r.to
-
-      const anchorHit = hit(sel.anchor)
-      const anchor = anchorHit ? nearest(sel.anchor, anchorHit) : sel.anchor
-
-      // head 方向感知：选区扩展（shift+方向键/拖拽）穿过单元时吸附到行进方向的
-      // 远端边界 —— 吸近端会让 shift+→ 卡死在单元左缘（from+1 恒被钳回 from），
-      // 原子语义应表现为「选区整体吞掉单元」。空选区（光标）取近端即可。
-      const headHit = hit(sel.head)
-      let head = sel.head
-      if (headHit) {
-        head =
-          sel.head === sel.anchor
-            ? nearest(sel.head, headHit)
-            : sel.head > sel.anchor
-              ? headHit.to
-              : headHit.from
+      // 折叠光标：菜单关闭时不可落在 chip 内部，钳到近端边界
+      if (sel.empty) {
+        if (isBlocked?.()) return null
+        const hit = ranges.find(r => sel.from > r.from && sel.from < r.to)
+        if (!hit) return null
+        const nearest = sel.from - hit.from < hit.to - sel.from ? hit.from : hit.to
+        return newState.tr.setSelection(TextSelection.create(newState.doc, nearest))
       }
 
-      if (anchor === sel.anchor && head === sel.head) return null
-      return newState.tr.setSelection(TextSelection.create(newState.doc, anchor, head))
+      // 非空选区：与 chip 部分重叠即外扩到整 chip（原子选区）。已整段包含则不收窄。
+      const overlap = (r: InlineUnitRange) => sel.from < r.to && r.from < sel.to
+      const fullyContains = (r: InlineUnitRange) => sel.from <= r.from && r.to <= sel.to
+      let from = sel.from
+      let to = sel.to
+      let changed = false
+      for (const r of ranges) {
+        if (overlap(r) && !fullyContains(r)) {
+          if (r.from < from) { from = r.from; changed = true }
+          if (r.to > to) { to = r.to; changed = true }
+        }
+      }
+      if (!changed) return null
+      const backward = sel.head < sel.anchor
+      return newState.tr.setSelection(
+        TextSelection.create(newState.doc, backward ? to : from, backward ? from : to),
+      )
     },
   })
 }

@@ -474,12 +474,53 @@ describe('inline-unit-keyboard — 选择闸门（光标/选区不入单元内�
     expect(sel.from).toBeLessThan(from + 6)
   })
 
-  it('isBlocked 为真（补全菜单打开中）→ 闸门不钳', () => {
+  it('isBlocked 为真（补全菜单打开中）→ 折叠光标仍不钳（建造中允许内部光标）', () => {
     blockFlag = true
     handle = createEditor('meet @u1 tomorrow')
     const { from } = unitRanges(handle.editor)[0]
     handle.editor.commands.setTextSelection(from + 1)
     expect(handle.editor.state.selection.from).toBe(from + 1)
+  })
+
+  it('右→左拖到 chip 中间（部分选中）→ 选区吸附为整 chip', () => {
+    handle = createEditor('meet @u1 tomorrow')
+    const { from, to } = unitRanges(handle.editor)[0] // @u1 区间 [6,9)
+    // 从右缘 [9] 拖到中间 [8]：选中 chip 末段 [8,9)（"1"）
+    handle.editor.commands.setTextSelection({ from: 8, to: 9 })
+    const sel = handle.editor.state.selection
+    expect(sel.from).toBe(from)
+    expect(sel.to).toBe(to)
+  })
+
+  it('部分选中 chip 且 isBlocked 为真（菜单打开中）→ 仍吸附整 chip（治本：菜单开着拖选不残留半截）', () => {
+    blockFlag = true
+    handle = createEditor('meet @u1 tomorrow')
+    const { from, to } = unitRanges(handle.editor)[0]
+    handle.editor.commands.setTextSelection({ from: 8, to: 9 })
+    const sel = handle.editor.state.selection
+    expect(sel.from).toBe(from)
+    expect(sel.to).toBe(to)
+  })
+
+  it('大段选区整段包含 chip → 不收窄（保留 chip 外文本）', () => {
+    handle = createEditor('x @u1 y')
+    const { from, to } = unitRanges(handle.editor)[0] // @u1 区间 [2,5)
+    // 选中 [1,6)（" @u1 "）已整段包含 chip[2,5) → 吸附不应收窄
+    handle.editor.commands.setTextSelection({ from: 1, to: 6 })
+    const sel = handle.editor.state.selection
+    expect(sel.from).toBe(1)
+    expect(sel.to).toBe(6)
+    expect(unitRanges(handle.editor)[0]).toMatchObject({ from, to })
+  })
+
+  it('选区跨两 chip 各含一段 → 两 chip 都整段吸附', () => {
+    handle = createEditor('@u1 and @u2 end')
+    const [a, b] = unitRanges(handle.editor)
+    // 从第一 chip 中间拖到第二 chip 中间：两段各自部分重叠
+    handle.editor.commands.setTextSelection({ from: a.from + 1, to: b.to - 1 })
+    const sel = handle.editor.state.selection
+    expect(sel.from).toBe(a.from)
+    expect(sel.to).toBe(b.to)
   })
 })
 
