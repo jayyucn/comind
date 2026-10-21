@@ -789,6 +789,21 @@ describe('inline-unit-keyboard — 非空选区删除（拖拽选中 chip 部分
     // unitKeydown 只驱动 handleKeyDown，不触发默认删除，故文本不变
     expect(plainText(handle.editor)).toBe('meet @u1 now')
   })
+
+  it('isBlocked 为真（菜单打开中）+ 拖拽选中 chip 部分 + Backspace → 仍整 chip 删除', () => {
+    // 旧代码该路径被 isBlocked 旁路：菜单开着拖选部分 chip，beforeinput/handleKeyDown
+    // 整删逻辑整体 early-return，原生删除作用在部分 DOM 选区 → 留下半截（#任）。
+    // 修复后非空选区整删脱离 isBlocked 旁路，菜单开着也必须整删。
+    blockFlag = true
+    handle = createEditor('meet @u1 tomorrow')
+    const { from } = unitRanges(handle.editor)[0] // @u1 区间 [6,9)
+    // 拖拽选中 chip 首段 [6,7)（"@"）即与 chip 重叠
+    const r = unitKeydown(handle.editor, 'Backspace', null, {}, { from, to: from + 1 })
+    expect(r.handled).toBe(true)
+    expect(r.preventDefaultCalled).toBe(true)
+    expect(plainText(handle.editor)).not.toContain('@u1')
+    expect(plainText(handle.editor)).toBe('meet  tomorrow')
+  })
 })
 
 describe('inline-unit-keyboard — beforeinput 删除源拦截（真实浏览器拖拽删除路径）', () => {
@@ -836,5 +851,19 @@ describe('inline-unit-keyboard — beforeinput 删除源拦截（真实浏览器
     const r = unitBeforeinput(handle.editor, 'deleteContentBackward', { from: 1, to: 6 })
     expect(r.handled).toBe(false)
     expect(r.preventDefaultCalled).toBe(false)
+  })
+
+  it('isBlocked 为真（菜单打开中）+ 拖拽选中部分 + deleteContentBackward → 仍整 chip 删除', () => {
+    // 与 handleKeyDown 同源缺口：菜单开着时旧代码 isBlocked 旁路整删逻辑，原生删除
+    // 作用在部分 DOM 选区 → 留下半截（#任）。修复后非空选区整删无条件，菜单开着也整删。
+    blockFlag = true
+    handle = createEditor('meet @u1 tomorrow')
+    const { from, to } = unitRanges(handle.editor)[0] // @u1 区间 [6,9)
+    // 拖拽选中 chip 内部一段 [7,8)（"u"）
+    const r = unitBeforeinput(handle.editor, 'deleteContentBackward', { from: 7, to: 8 })
+    expect(r.handled).toBe(true)
+    expect(r.preventDefaultCalled).toBe(true)
+    expect(plainText(handle.editor)).not.toContain('@u1')
+    expect(plainText(handle.editor)).toBe('meet  tomorrow')
   })
 })

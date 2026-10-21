@@ -50,7 +50,10 @@ export interface InlineUnitKeyboardOptions {
  *   IME 确认、选区打字替换）放行：单元「建造中」需要内部光标（tag 打字中
  *   `#ab` 即匹配单元、`[[]]` 手工填充光标停在闭括号前）。
  *   IME 组合中及确认事务落定前（compositionend 之后 PM 才派生确认事务）全放行。
- * - **放行条件**：isBlocked() 为真（补全菜单打开中）/ IME 组合中。
+ * - **放行条件**：折叠光标态下 isBlocked() 为真（补全菜单打开中，正建造 tag）/ IME 组合中全放行；
+ *   **非空选区与单元重叠的整删**则无条件（无论菜单是否开着）——这是 2026-10 修复「菜单开着时拖选
+ *   部分 chip 删出半截（#任）」的治本点：菜单开着时选区快照可能不同步回 DOM、原生删除作用在部分
+ *   DOM 选区，故删除拦截必须读 PM 选区直接兜底整删，不能被 isBlocked 旁路。
  */
 export function createInlineUnitKeyboardPlugin(options: InlineUnitKeyboardOptions): Plugin {
   const { key, findRanges, isBlocked } = options
@@ -83,25 +86,42 @@ export function createInlineUnitKeyboardPlugin(options: InlineUnitKeyboardOption
         // 实时选区（或折叠光标按删除方向取相邻字符），凡与 chip 重叠即把删除范围
         // 拓宽为整 chip（原子语义），对任意拖拽端点/删除路由都兜得住。
         beforeinput(view: EditorView, event: Event) {
-          if (isBlocked?.()) return false
           const ie = event as InputEvent
           const t = ie.inputType
           if (!t || !t.startsWith('delete')) return false
 
           const { state } = view
           const sel = state.selection
-          let from: number
-          let to: number
+
+          // 非空选区（拖拽 / Shift 选中 chip 部分文本后删除）：与菜单态无关，一律
+          // 把删除范围拓宽为整 chip（原子语义）。菜单开着时（可能正建造 tag 但已显式
+          // 选中部分）选区快照未必同步回 DOM、原生删除更不可靠，这里直接读 PM 选区
+          // 兜底整删——这正是此前被 isBlocked 旁路、留下半截 chip（#任）的缺口。
           if (!sel.empty && sel instanceof TextSelection) {
-            from = sel.from
-            to = sel.to
-          } else {
-            // 折叠光标：按删除方向取相邻字符区间（与 Backspace/Delete 语义一致）
-            const backward = t.includes('Backward')
-            const pos = sel.from
-            from = backward ? pos - 1 : pos
-            to = backward ? pos : pos + 1
+            const overlap = findRanges(state.doc).filter(r => r.from < sel.to && sel.from < r.to)
+            if (overlap.length > 0) {
+              let delFrom = sel.from
+              let delTo = sel.to
+              for (const r of overlap) {
+                if (r.from < delFrom) delFrom = r.from
+                if (r.to > delTo) delTo = r.to
+              }
+              ie.preventDefault()
+              const tr = state.tr.delete(delFrom, delTo)
+              tr.setSelection(TextSelection.create(tr.doc, delFrom))
+              view.dispatch(tr)
+              return true
+            }
+            return false
           }
+
+          // 折叠光标：菜单开着（正在建造 tag）→ 放行逐字符删除，不整删
+          if (isBlocked?.()) return false
+          // 折叠光标按删除方向取相邻字符区间（与 Backspace/Delete 语义一致）
+          const backward = t.includes('Backward')
+          const pos = sel.from
+          const from = backward ? pos - 1 : pos
+          const to = backward ? pos : pos + 1
 
           const overlap = findRanges(state.doc).filter(r => r.from < to && from < r.to)
           if (overlap.length === 0) return false
@@ -123,18 +143,14 @@ export function createInlineUnitKeyboardPlugin(options: InlineUnitKeyboardOption
       handleKeyDown(view: EditorView, event: KeyboardEvent) {
         // IME 组合期间不拦截（候选词删除/确认走默认；tag 可为中文，必须防）
         if (event.isComposing || event.keyCode === 229) return false
-        // 补全菜单打开中：用户正在编辑单元本身，整删/跨越规则不抢
-        if (isBlocked?.()) return false
 
         const { state } = view
         const sel = state.selection
 
         // 非空选区 + Backspace/Delete 且选区与 chip 重叠（拖拽 / shift 选中 chip
-        // 部分文本后删除）：直接在按键源头把删除范围拓宽为整 chip（原子语义）。
-        // 这一层覆盖真实浏览器拖拽删除——该路径的删除事务可能不经可识别的
-        // ReplaceStep 结构，appendTransaction 删除兜底抓不到；此处读实时选区
-        // （PM 已把 DOM 拖拽选区同步为合法整数坐标），对任意拖拽端点都能兜住，
-        // 不会留下半截 chip。其它非空选区（方向键等）不在此处理，交下方早退。
+        // 部分文本后删除）：直接在按键源头把删除范围拓宽为整 chip（原子语义），
+        // 与菜单态无关——菜单开着时此分支同样兜得住，填补此前被 isBlocked 旁路、
+        // 留下半截 chip（#任）的缺口。折叠光标建造态的逐字符删除不在此分支。
         if (
           !sel.empty &&
           sel instanceof TextSelection &&
@@ -158,6 +174,8 @@ export function createInlineUnitKeyboardPlugin(options: InlineUnitKeyboardOption
           return false
         }
 
+        // 以下折叠光标分支：菜单开着（正在建造 tag）放行逐字符删除 / 导航，不整删
+        if (isBlocked?.()) return false
         // 其它非空选区（方向键选区扩展等）不拦截，交给默认行为
         if (!sel.empty) return false
 
