@@ -189,9 +189,23 @@ export function snapTextRangeToUnits(
   range: TextRange,
   unitsOf: (blockId: string) => RenderedUnitSpan[],
 ): TextRange {
-  const { start, end } = normalizeTextRange(blocks, range)
+  // 同块（拖拽的绝大多数情形）直接按偏移判序，省掉 normalizeTextRange 对整库
+  // 建文档序的 O(n) 开销——本函数在 mousemove 里逐帧调用。
+  const sameBlock = range.anchor.blockId === range.head.blockId
+  let start: BlockOffset
+  let end: BlockOffset
+  if (sameBlock) {
+    const forward = range.anchor.offset <= range.head.offset
+    start = forward ? range.anchor : range.head
+    end = forward ? range.head : range.anchor
+  } else {
+    const normalized = normalizeTextRange(blocks, range)
+    start = normalized.start
+    end = normalized.end
+  }
+
   // 折叠端点：没有可删内容，吸附会凭空造出选区，保持原样
-  if (start.blockId === end.blockId && start.offset === end.offset) return range
+  if (sameBlock && start.offset === end.offset) return range
 
   const nextStart = snapOutward(start.offset, unitsOf(start.blockId), 'start')
   const nextEnd = snapOutward(end.offset, unitsOf(end.blockId), 'end')
