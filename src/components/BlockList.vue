@@ -14,6 +14,7 @@
  * - store 结构变更通过结构签名 watch（#118 D2）触发 syncFromStore 重建树
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
+
 import { buildTree, syncTreeToStore } from '../composables/useBlockTree'
 import type { CrossBlockSelection } from '../composables/useCrossBlockSelection'
 import { useCrossBlockSelection } from '../composables/useCrossBlockSelection'
@@ -22,7 +23,7 @@ import { ensureStack } from '../composables/useUndoHistory'
 import { runUndoOrRedo } from '../composables/useUndoRestore'
 import { COMIND_BLOCK_MIME, resolveClipboardForest } from '../services/external-paste-parse'
 import { ensureWikiLinkTargets, notifyCreatedPages } from '../services/paste-ensure-wiki-targets'
-import { blockOffsetFromPoint, selectionClientRects } from '../services/selection-geometry'
+import { blockOffsetFromPoint, selectionClientRects, type SelectionRect } from '../services/selection-geometry'
 import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
 import { usePageStore } from '../stores/pages'
@@ -678,7 +679,7 @@ provide<CrossBlockSelection>('crossBlockSelection', selection)
 provide('onDragEnd', handleDragEnd)
 
 // ── 文本选区覆盖层高亮（ADR-0035 D4）──
-const highlightRects = ref<DOMRect[]>([])
+const highlightRects = ref<SelectionRect[]>([])
 
 function refreshTextHighlight() {
   const tr = selection.textRange.value

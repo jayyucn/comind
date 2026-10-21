@@ -13,7 +13,7 @@
  * 内容为空时渲染成 `<span></span>`（无文本节点，与真机一致）。
  */
 import { describe, test, expect, beforeEach, afterEach } from 'vitest'
-import { atomicUnitSpans, caretBlockOffsetFromDomSelection, collapsedRangeAtBlockOffset, selectionClientRects } from './selection-geometry'
+import { atomicUnitSpans, caretBlockOffsetFromDomSelection, collapsedRangeAtBlockOffset, selectionClientRects, type SelectionRect } from './selection-geometry'
 import type { BlockOffset } from './text-range'
 
 /** 构造一页（数组下标 = 文档序），空串模拟空行 */
@@ -32,7 +32,7 @@ function at(i: number, offset: number): BlockOffset {
 }
 
 /** 替身矩形的可读投影：[块序号, 覆盖字数] */
-function painted(rects: DOMRect[]): Array<[number, number]> {
+function painted(rects: SelectionRect[]): Array<[number, number]> {
   return rects.map(r => [r.top, r.left])
 }
 
@@ -198,5 +198,126 @@ describe('atomicUnitSpans - 内联原子单元区间', () => {
       `<div class="tiptap ProseMirror"><p>ab <span class="block-tag">#任务</span> cd</p></div>` +
       `</div></div></div>`
     expect(atomicUnitSpans('b0')).toEqual([{ start: 3, end: 6 }])
+  })
+})
+
+describe('selectionClientRects - 行带归一化与叠层消重（chip 参与选区）', () => {
+  /**
+   * 脚本化矩形：按块 id 返回该块内各段内联盒的原始矩形。
+   * 真机实测（暗色主题）：文字行盒 173.5/24，`#任务` 外盒 175.5/21，
+   * `#任务` 内层文本 run 175.5/21（差一个 padding），`@2026-10-21` 外盒 175.5/22。
+   */
+  function stubRectsByBlock(map: Record<string, Array<{ left: number; top: number; width: number; height: number }>>): void {
+    Object.defineProperty(Range.prototype, 'getClientRects', {
+      configurable: true,
+      writable: true,
+      value(this: Range) {
+        const node = this.startContainer
+        const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : (node as HTMLElement)
+        const id = el?.closest('[data-block-id]')?.getAttribute('data-block-id') ?? ''
+        return map[id] ?? []
+      },
+    })
+  }
+
+  function buildWithBlocks(spans: string[]): void {
+    document.body.innerHTML =
+      '<div class="block-list">' +
+      spans
+        .map(
+          (s, i) =>
+            `<div data-block-id="b${i}"><div class="block-content"><div class="block-text"><span>${s}</span></div></div></div>`
+        )
+        .join('') +
+      '</div>'
+  }
+
+  test('chip 外盒 + 内层文本 run 重复上报 → 合并成一段，不再叠两层底色', () => {
+    buildWithBlocks(['ab <span class="block-tag">#tag</span> cd'])
+    stubRectsByBlock({
+      b0: [
+        { left: 0, top: 100, width: 60, height: 24 }, // 前段文字行盒
+        { left: 60, top: 102, width: 40, height: 21 }, // chip 外盒
+        { left: 64, top: 102, width: 32, height: 21 }, // chip 内层文本 run
+        { left: 100, top: 100, width: 30, height: 24 }, // 后段文字行盒
+      ],
+    })
+    // 旧实现：4 个矩形全部保留，chip 处 55% 半透明叠两层（亮度 128 vs 98）
+    expect(selectionClientRects(at(0, 0), at(0, 3))).toEqual([
+      { left: 0, top: 100, width: 130, height: 24 },
+    ])
+  })
+
+  test('chip 矮于行盒 → 钉到行带（top/height 与相邻文字一致）', () => {
+    buildWithBlocks(['xy <span class="date-ref">@2026-10-15</span>'])
+    stubRectsByBlock({
+      b0: [
+        { left: 0, top: 100, width: 20, height: 24 },
+        { left: 20, top: 102, width: 30, height: 22 },
+      ],
+    })
+    expect(selectionClientRects(at(0, 0), at(0, 3))).toEqual([
+      { left: 0, top: 100, width: 50, height: 24 },
+    ])
+  })
+
+  test('block 内容只有 chip：行带借同选区其它块的行盒高度，不以 chip 内联盒为准', () => {
+    buildWithBlocks(['纯文字行', '<span class="block-tag">#tag</span>'])
+    stubRectsByBlock({
+      b0: [{ left: 0, top: 100, width: 80, height: 24 }],
+      b1: [
+        { left: 0, top: 202, width: 40, height: 21 },
+        { left: 4, top: 202, width: 32, height: 21 },
+      ],
+    })
+    const rects = selectionClientRects(at(0, 0), at(1, 1))
+    expect(rects).toHaveLength(2)
+    expect(rects[0]).toEqual({ left: 0, top: 100, width: 80, height: 24 })
+    // 行中心 (202+223)/2 = 212.5 → 行带 24 高：200.5..224.5；内层 run 被外盒包含 → 并到外盒宽度
+    expect(rects[1]).toEqual({ left: 0, top: 200.5, width: 40, height: 24 })
+  })
+
+  test('同一块多行：逐行独立成段，不跨行合并、各自对齐行带', () => {
+    buildWithBlocks(['abcdef'])
+    stubRectsByBlock({
+      b0: [
+        { left: 0, top: 100, width: 100, height: 24 }, // 第 1 行
+        { left: 0, top: 124, width: 50, height: 24 }, // 第 2 行前半
+        { left: 50, top: 126, width: 30, height: 21 }, // 第 2 行的 chip 外盒
+        { left: 54, top: 126, width: 22, height: 21 }, // 其内层文本 run
+      ],
+    })
+    expect(selectionClientRects(at(0, 0), at(0, 6))).toEqual([
+      { left: 0, top: 100, width: 100, height: 24 },
+      { left: 0, top: 124, width: 80, height: 24 },
+    ])
+  })
+
+  test('相邻行带因字体溢出而重叠 1px → 按中点切分，不留叠层细线', () => {
+    buildWithBlocks(['abcdef'])
+    stubRectsByBlock({
+      b0: [
+        { left: 0, top: 100, width: 100, height: 24 },
+        { left: 0, top: 123, width: 60, height: 24 }, // 与上一行带重叠 1px
+      ],
+    })
+    expect(selectionClientRects(at(0, 0), at(0, 6))).toEqual([
+      { left: 0, top: 100, width: 100, height: 23.5 },
+      { left: 0, top: 123.5, width: 60, height: 23.5 },
+    ])
+  })
+
+  test('行内真有横向空隙（> 0.75px）→ 保持两段，不误合并', () => {
+    buildWithBlocks(['abcdef'])
+    stubRectsByBlock({
+      b0: [
+        { left: 0, top: 100, width: 20, height: 24 },
+        { left: 60, top: 100, width: 20, height: 24 },
+      ],
+    })
+    expect(selectionClientRects(at(0, 0), at(0, 6))).toEqual([
+      { left: 0, top: 100, width: 20, height: 24 },
+      { left: 60, top: 100, width: 20, height: 24 },
+    ])
   })
 })

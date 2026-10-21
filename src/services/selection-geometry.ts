@@ -9,6 +9,19 @@ import type { BlockOffset, RenderedUnitSpan } from './text-range'
  * 几何回归由 `selection-geometry.test.ts` 注入替身后覆盖。
  */
 
+/**
+ * 文本选区高亮矩形（渲染所需四值）。
+ *
+ * 不复用 `DOMRect`：矩形经过「行带归一化 + 水平合并」后已不对应任何真实 DOM 盒，
+ * 伪装成 DOMRect 只会让人以为能拿去做 `intersects` 之类的几何判断。
+ */
+export interface SelectionRect {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
 /** 取 block 内容区的根元素（文本偏移只统计内容区，不含 bullet/属性区文字） */
 function contentRoot(blockEl: HTMLElement): HTMLElement {
   return (blockEl.querySelector('.block-content') as HTMLElement | null) ?? blockEl
@@ -191,6 +204,112 @@ function orderedBlockElements(scope: HTMLElement): HTMLElement[] {
   return Array.from(listRoot.querySelectorAll<HTMLElement>('[data-block-id]'))
 }
 
+/** 原始行盒矩形：只取 `getClientRects()` 的四个基础值（不假定 DOMRect 的 right/bottom 存在） */
+interface RawRect {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
+const rectRight = (r: RawRect): number => r.left + r.width
+const rectBottom = (r: RawRect): number => r.top + r.height
+
+/** 同一视觉行的竖直重叠判据：达到较矮矩形高度的一半即同一行 */
+const SAME_LINE_OVERLAP_RATIO = 0.5
+/** 水平合并允许的缝隙（px）：padding / inline-flex gap 级别的空隙仍属同一连续选区 */
+const MERGE_GAP_PX = 0.75
+
+function verticalOverlapRatio(a: RawRect, b: RawRect): number {
+  const overlap = Math.min(rectBottom(a), rectBottom(b)) - Math.max(a.top, b.top)
+  const shortest = Math.min(a.height, b.height)
+  return shortest > 0 ? overlap / shortest : 0
+}
+
+/** 按竖直重叠把矩形分行（同一行内可能有多段：文字 run、chip 外盒、chip 内层 run） */
+function groupByLine(rects: RawRect[]): RawRect[][] {
+  const lines: RawRect[][] = []
+  for (const r of [...rects].sort((a, b) => a.top - b.top)) {
+    const line = lines.find((group) => group.some((o) => verticalOverlapRatio(o, r) >= SAME_LINE_OVERLAP_RATIO))
+    if (line) line.push(r)
+    else lines.push([r])
+  }
+  return lines
+}
+
+/** 块内是否存在 chip（原子单元）之外的文字 —— 决定行带高度能否以本块矩形为准 */
+function hasTextOutsideUnits(root: HTMLElement): boolean {
+  let found = false
+  walkTextNodes(root, (node) => {
+    if (!node.nodeValue || !node.nodeValue.trim()) return
+    if (node.parentElement?.closest(ATOMIC_UNIT_SELECTOR)) return
+    found = true
+    return false
+  })
+  return found
+}
+
+/**
+ * 把一块内的原始矩形归一成「每行一段」的高亮矩形。
+ *
+ * 要解决的是 chip 参与选区时的两个错观感（真机取证：纯文本 run 173.5/24，
+ * `#任务` 外盒 175.5/21，`#任务` 内层 run 175.5/21，`@2026-10-21` 外盒 175.5/22）：
+ *
+ * 1. **高度不齐**：`getClientRects()` 返回的是各内联盒自身的矩形，chip（`inline-flex`
+ *    的 `.date-ref` / 字号 0.9em 的 `.block-tag`）比文字行盒矮一截、且竖直居中，
+ *    于是选区色带在 chip 处凹下去一块。这里把每行所有矩形统一钉到**行带**——
+ *    取本行「满高矩形」（文字 run，即行盒）的 top 与 `bandHeight`；整行只有矮矩形
+ *    （block 内容本身就是 chip）时以行中心对称扩展，高度取调用方给的行带高度。
+ * 2. **chip 内多一层背景**：Chromium 会把 chip 的**外盒**与**内层文本 run** 各报一次
+ *    （两者差一个 padding，几何不同，等比去重抓不到），两层 55% 半透明的选区色叠加
+ *    ⇒ 该处颜色明显更深（实测亮度 128 vs 98）。这里按行做水平合并，重叠/相切的矩形
+ *    连成一段，同一条选区内永不出现叠层。
+ * 3. **行缝细线**：文字 run 的矩形比行高多出 1~2px（字体上下溢出），逐行铺满会让
+ *    相邻行带在接缝处重叠 —— 又是一处双层半透明。按重叠中点切分，两侧等高、无叠层。
+ */
+function normalizeLineRects(rects: RawRect[], bandHeight: number): SelectionRect[] {
+  const bands = groupByLine(rects)
+    .map((line) => {
+      const fullHeight = line.filter((r) => r.height >= bandHeight - 0.5)
+      // 文字行盒决定行带：它的 top 就是行顶，chip 向内收的部分一并铺满；
+      // 整行只有 chip 盒时以行中心对齐行带（chip 竖直居中于行盒）
+      const top =
+        fullHeight.length > 0
+          ? Math.min(...fullHeight.map((r) => r.top))
+          : (Math.min(...line.map((r) => r.top)) + Math.max(...line.map((r) => rectBottom(r)))) / 2 -
+            bandHeight / 2
+      return { top, bottom: top + bandHeight, line }
+    })
+    .sort((a, b) => a.top - b.top)
+
+  // 相邻行带相切/重叠：文字 run 的矩形高度含字体上下溢出，可比行高多出 1~2px
+  // ⇒ 逐行铺满会在行缝处叠一条更深的细线。按重叠**中点**切分，两侧等高、无叠层。
+  for (let i = 0; i < bands.length - 1; i++) {
+    const overlap = bands[i].bottom - bands[i + 1].top
+    if (overlap <= 0) continue
+    const cut = bands[i].bottom - overlap / 2
+    bands[i].bottom = cut
+    bands[i + 1].top = cut
+  }
+
+  const out: SelectionRect[] = []
+  for (const band of bands) {
+    // 水平合并：重叠或相切（≤0.75px 缝隙）的矩形连成一段。chip 的「外盒 + 内层文本 run」
+    // 会被 Chromium 同时上报（几何不同，等比去重抓不到），两层半透明色叠出更深的色块。
+    const merged: Array<{ left: number; right: number }> = []
+    for (const r of [...band.line].sort((a, b) => a.left - b.left)) {
+      const cur = merged[merged.length - 1]
+      if (cur && r.left <= cur.right + MERGE_GAP_PX) cur.right = Math.max(cur.right, rectRight(r))
+      else merged.push({ left: r.left, right: rectRight(r) })
+    }
+    for (const m of merged) {
+      out.push({ left: m.left, top: band.top, width: m.right - m.left, height: band.bottom - band.top })
+    }
+  }
+  return out
+}
+
+
 /**
  * 计算 anchor→head 跨块选区的所有视口矩形（每行一个）。
  * 支持反向拖拽（head 在 anchor 之前自动交换）。
@@ -203,14 +322,16 @@ function orderedBlockElements(scope: HTMLElement): HTMLElement[] {
  *    还会多吐一个「整个内容区盒子」的矩形，把整行铺成色带；夹到首/末**文本节点**
  *    后只剩逐行的文字行盒（interior 行铺满行宽、末行按实际字符宽度收窄）。
  * 3. Range 跨过嵌套内联元素（如 `[[page]]` 渲染成的 `span > span.block-link >
- *    span.wiki-bracket`）时，Chromium 会把同一段内联盒子**重复上报**（实测两组矩形
- *    浮点值逐位相同）——覆盖层同位叠两层，颜色深一档。按几何去重。
+ *    span.wiki-bracket`）时，Chromium 会把同一段内联盒子**重复上报**（既有浮点值逐位
+ *    相同的重复，也有 chip 外盒 + 内层文本 run 这种「差一个 padding」的重复）——
+ *    覆盖层同位叠两层，半透明色叠出更深的色块。故逐块收集后统一做行带归一化 +
+ *    水平合并（见 `normalizeLineRects`）：每行只留一段、一行之内不叠层。
  *
  * 无文本节点的块（空行、图片块等）**不产生矩形**：它们既构造不出 Range，也没有可
  * 高亮的文字。跳过它们，但**不得**因此丢弃整条选区——拖拽时鼠标扫过空行是常态。
  * 端点落在这种块上时，该端点由相邻文本块的边界兜底（首侧取块首、尾侧取块末）。
  */
-export function selectionClientRects(anchor: BlockOffset, head: BlockOffset): DOMRect[] {
+export function selectionClientRects(anchor: BlockOffset, head: BlockOffset): SelectionRect[] {
   const anchorEl = blockElement(anchor.blockId)
   const headEl = blockElement(head.blockId)
   if (!anchorEl || !headEl) return []
@@ -229,8 +350,7 @@ export function selectionClientRects(anchor: BlockOffset, head: BlockOffset): DO
   const start = reversed ? head : anchor
   const end = reversed ? anchor : head
 
-  const rects: DOMRect[] = []
-  const seen = new Set<string>()
+  const perBlock: Array<{ root: HTMLElement; rects: RawRect[] }> = []
   for (let i = Math.min(anchorIdx, headIdx); i <= Math.max(anchorIdx, headIdx); i++) {
     const el = all[i]
     const blockId = el.getAttribute('data-block-id')
@@ -249,13 +369,23 @@ export function selectionClientRects(anchor: BlockOffset, head: BlockOffset): DO
     const range = document.createRange()
     range.setStart(from ? from.startContainer : first, from ? from.startOffset : 0)
     range.setEnd(to ? to.startContainer : last, to ? to.startOffset : last.length)
-    for (const rect of Array.from(range.getClientRects())) {
-      if (rect.width <= 0 || rect.height <= 0) continue
-      const key = `${Math.round(rect.left * 100)}|${Math.round(rect.top * 100)}|${Math.round(rect.width * 100)}|${Math.round(rect.height * 100)}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      rects.push(rect)
-    }
+
+    const rects = Array.from(range.getClientRects())
+      .filter((r) => r.width > 0 && r.height > 0)
+      .map((r) => ({ left: r.left, top: r.top, width: r.width, height: r.height }))
+    if (rects.length > 0) perBlock.push({ root, rects })
   }
-  return rects
+
+  // 行带高度：同块内各行共用一套行盒（同一字体/行高），取块内最高矩形即可；块内容
+  // 全是 chip（无 chip 外文字）时本块矩形全是矮内联盒，借整条选区的行带兜底，
+  // 否则纯 chip 块的高亮会比相邻文字行矮一截。
+  const globalBand = Math.max(0, ...perBlock.flatMap((b) => b.rects.map((r) => r.height)))
+
+  const out: SelectionRect[] = []
+  for (const { root, rects } of perBlock) {
+    const blockBand = Math.max(...rects.map((r) => r.height))
+    const bandHeight = hasTextOutsideUnits(root) ? blockBand : Math.max(blockBand, globalBand)
+    out.push(...normalizeLineRects(rects, bandHeight))
+  }
+  return out
 }
