@@ -314,10 +314,28 @@ async function deleteSelectedBlocks(): Promise<void> {
   }
   // paint 完成后才从 store 删除（含 cleanupAfterDelete 的 cross-page link 降级）
   setTimeout(() => {
-    selection.deleteSelected().then(() => {
+    selection.deleteSelected().then(async () => {
       if (keptId) {
         // 全选删除后页面只剩被保留的空 block：清选区并进入编辑态，光标落其内便于续写
         selection.clearSelection()
+        if (editorStore.activeBlockId === keptId) {
+          // 保留块正处编辑态（用户通常就在其中一块里按的 Ctrl+Shift+A）：activateBlock
+          // 对已激活块是 no-op，挂载中的编辑器有两条残留路径——
+          // ① PM 选区（Ctrl+A 的 Text/AllSelection）映射穿过整篇替换后仍是全选 ⇒
+          //    原生 ::selection 罩住清空后的空行 = 行首紫带（2026-10-22 用户截图）；
+          // ② 在途打字防抖 / 卸载保存会把尚未落库的旧正文写回（实测删除后旧内容复活）。
+          // 先把 PM 文档同步为 store 终值并折叠选区（此后卸载保存与防抖读到空串，无写回），
+          // 再走失活→nextTick→重激活强制重挂载（与 handleBackspaceEmpty 同款配方）：
+          // 新编辑器从 store 初始化，focusActiveEditor 折叠光标到行首。
+          const ae = editorStore.activeEditor
+          if (ae && typeof ae.commands?.setContent === 'function') {
+            const finalContent = blockStore.getBlock(keptId)?.content ?? ''
+            ae.commands.setContent(finalContent)
+            ae.commands.setTextSelection(1)
+          }
+          editorStore.deactivateBlock()
+          await nextTick()
+        }
         editorStore.activateBlock(keptId, 1)
       } else if (landingId) {
         // 常规多选删除：激活邻近块（上优先，其次下），与单块 Backspace 同口径（不带光标位）
@@ -858,15 +876,15 @@ onBeforeUnmount(() => {
   z-index: var(--z-sticky);
 }
 
-.text-selection-rect.is-first {
-  border-top-left-radius: var(--radius-xs);
-  border-bottom-left-radius: var(--radius-xs);
-}
+// .text-selection-rect.is-first {
+//   border-top-left-radius: var(--radius-xs);
+//   border-bottom-left-radius: var(--radius-xs);
+// }
 
-.text-selection-rect.is-last {
-  border-top-right-radius: var(--radius-xs);
-  border-bottom-right-radius: var(--radius-xs);
-}
+// .text-selection-rect.is-last {
+//   border-top-right-radius: var(--radius-xs);
+//   border-bottom-right-radius: var(--radius-xs);
+// }
 
 /* 撤销 / 重做落点的闪烁矩形：与文本选区同色（同为「这段内容」的提示），一次淡出后由
    useRestoreFlash 的计时器清空矩形列表；时长由模板 inline style 从 UNDO_FLASH_MS
