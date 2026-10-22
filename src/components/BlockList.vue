@@ -13,6 +13,7 @@
  * - handleDragEnd 将 tree 变更同步回 store（parentId + pos）
  * - store 结构变更通过结构签名 watch（#118 D2）触发 syncFromStore 重建树
  */
+import { TextSelection } from '@tiptap/pm/state'
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 
 import { buildTree, syncTreeToStore } from '../composables/useBlockTree'
@@ -346,6 +347,34 @@ async function deleteSelectedBlocks(): Promise<void> {
   }, 0)
 }
 
+/**
+ * 收口 PM 原生删除（Ctrl+A 全文档 AllSelection）后残留的非折叠选区。
+ *
+ * PM 的 AllSelection 在整篇替换后映射仍是一段非折叠区间（实测删除后 1.5s 仍
+ * `isCollapsed === false`，矩形覆盖整行）⇒ 浏览器按 `::selection` 在清空后的空段落
+ * 上画整行色带（2026-10-22 用户截图）。仅当 PM 选区确实非折叠时才动作——
+ * 常规块内文本删除后 PM 自身已折叠，此函数届时是 no-op。
+ */
+function collapseResidualNativeSelection() {
+  const ae = editorStore.activeEditor
+  if (!ae || ae.isDestroyed) return
+  const { state, view } = ae
+  const pmSel = state?.selection
+  if (!pmSel || pmSel.empty || !view) return
+  // 折到映射后的区间末端（钳进文档范围，避免越界位置抛错）
+  const to = Math.min(pmSel.to, state.doc.content.size)
+  if (to < 0) return
+  // 走 PM 事务而非 commands.setTextSelection：后者会触发 scrollIntoView，
+  // 在无布局环境（jsdom 单测）抛 getClientRects（既有约定见 DateRefExtension）。
+  try {
+    view.dispatch(state.tr.setSelection(TextSelection.near(state.doc.resolve(to))))
+  } catch {
+    // 位置失效（极端并发改写）时退化为 DOM 层折叠，至少消掉可见色带
+    const domSel = window.getSelection()
+    if (domSel && !domSel.isCollapsed) domSel.collapseToEnd()
+  }
+}
+
 async function handleDocKeyDown(e: KeyboardEvent) {
   if (isInSidebar(e)) return
   // 输入框内 Backspace/Ctrl+C 保留控件自身行为（如搜索框、重命名输入）
@@ -377,6 +406,10 @@ async function handleDocKeyDown(e: KeyboardEvent) {
       await deleteSelectedBlocks()
       return
     }
+    // 无 comind 选区：Backspace/Delete 交 PM 原生处理（Ctrl+A 全文档 AllSelection 亦走此路）。
+    // PM 删除后 AllSelection 映射穿过整篇替换仍非折叠 ⇒ 原生 ::selection 罩住清空后的空段落，
+    // 画出整行色带（2026-10-22 用户截图）。PM 事务落地后把选区折到末尾收口。
+    requestAnimationFrame(collapseResidualNativeSelection)
   }
   if (e.key === 'Escape') {
     selection.clearSelection()
@@ -433,12 +466,40 @@ async function handleDocKeyDown(e: KeyboardEvent) {
  * 注意：keydown 的 e.target 是焦点元素。点击属性区/bullet 等不可聚焦元素后焦点落回 body，
  * 此时回退用 lastClickedBlockId 判断 BlockList 上下文。
  */
-function handleDocKeyDownCapture(e: KeyboardEvent) {
-  // 仅 Ctrl/Cmd+Shift+A 接管为「全选本页块」；
-  // 纯 Ctrl/Cmd+A 交还 TipTap 原生（块内全文选择），不拦截。
-  const isSelectAllBlocks = (e.key === 'a' || e.key === 'A') && (e.ctrlKey || e.metaKey) && e.shiftKey
-  if (!isSelectAllBlocks) return
-  if (isInSidebar(e)) return
+/** Ctrl+A 连续两次升级为整页块全选的时间窗（ms） */
+const CTRL_A_ESCALATE_MS = 600
+/** 上一次纯 Ctrl+A 的落点与时刻（非渲染态，普通对象即可） */
+const lastCtrlA = { blockId: null as string | null, at: 0 }
+
+/** 活动块的 PM 选区是否已覆盖整块内容（第一次 Ctrl+A 原生执行后的状态） */
+function isActiveBlockFullySelected(): boolean {
+  const ae = editorStore.activeEditor
+  if (!ae || ae.isDestroyed) return false
+  const pmSel = ae.state?.selection
+  if (!pmSel || pmSel.empty) return false
+  const size = ae.state.doc.content.size
+  return pmSel.from <= 1 && pmSel.to >= size - 1
+}
+
+/**
+ * 纯 Ctrl+A 是否该升级为整页块全选（第二次）。
+ *
+ * 每块是独立 PM 实例 ⇒ 原生 Ctrl+A 永远困在活动块内，「全文档全选」不接管就永不生效。
+ * 判据三重：同一块 + 时间窗内 + 该块已整块选中（后者排掉「Ctrl+A 后又做了别的操作
+ * 再 Ctrl+A」的误触发）。
+ */
+function shouldEscalateToBlockSelectAll(blockId: string): boolean {
+  if (lastCtrlA.blockId !== blockId) return false
+  if (Date.now() - lastCtrlA.at > CTRL_A_ESCALATE_MS) return false
+  return isActiveBlockFullySelected()
+}
+
+/**
+ * 解析 Ctrl(+Shift)+A 的上下文块；null = 不接管（侧栏 / 输入框 / 非本页 / 列表外）。
+ * 两个 chord（纯 Ctrl+A 与 Ctrl+Shift+A）共用，避免口径漂移。
+ */
+function resolveSelectAllContextBlockId(e: KeyboardEvent): string | null {
+  if (isInSidebar(e)) return null
   const target = e.target as HTMLElement | null
   // 焦点丢失到 body/document（点击不可聚焦元素后）：回退到最近一次点击的 block 判断上下文
   const isBodyOrDocument = !target || target === document.body || target === document.documentElement
@@ -448,11 +509,41 @@ function handleDocKeyDownCapture(e: KeyboardEvent) {
       ? (target.closest('[data-block-id]') as HTMLElement | null)?.dataset.blockId ?? null
       : null
   )
-  if (!ctxBlockId) return // 非 BlockList 区域交由 App.vue 全局兜底
+  if (!ctxBlockId) return null // 非 BlockList 区域交由 App.vue 全局兜底
   const ctxBlock = blockStore.getBlock(ctxBlockId)
-  if (!ctxBlock || ctxBlock.pageId !== props.pageId) return
+  if (!ctxBlock || ctxBlock.pageId !== props.pageId) return null
   // 输入框/非 TipTap contenteditable（含 CodeMirror 编辑区）保留控件自身 Ctrl(+Shift)+A
-  if (isInEditableInput(e)) return
+  if (isInEditableInput(e)) return null
+  return ctxBlockId
+}
+
+function handleDocKeyDownCapture(e: KeyboardEvent) {
+  const isSelectAllChord = (e.key === 'a' || e.key === 'A') && (e.ctrlKey || e.metaKey)
+  if (!isSelectAllChord) return
+  const ctxBlockId = resolveSelectAllContextBlockId(e)
+
+  // 纯 Ctrl/Cmd+A：第一次交还 TipTap 原生（块内全文选择）；第二次升级为整页块全选
+  //（与 Ctrl+Shift+A 同口径，走 selectAll 固化为块选区）。
+  if (!e.shiftKey) {
+    if (ctxBlockId && shouldEscalateToBlockSelectAll(ctxBlockId)) {
+      e.preventDefault()
+      e.stopPropagation()
+      // 先撤销第一次 Ctrl+A 留下的块内文本全选（原生 ::selection 高亮）：
+      // 块全选态下块内不应再有文本选区叠加（2026-10-22）。折叠后 selectAll
+      // 固化为块选区，可见态只有块高亮。
+      collapseResidualNativeSelection()
+      selection.selectAll(props.pageId, rootBlockId.value)
+      lastCtrlA.blockId = null // 消费掉：第三次 Ctrl+A 重新计为「第一次」
+      return
+    }
+    // 第一次（或不满足升级判据）：记录落点后交还原生
+    lastCtrlA.blockId = ctxBlockId
+    lastCtrlA.at = Date.now()
+    return
+  }
+
+  // Ctrl+Shift+A：整页块全选
+  if (!ctxBlockId) return
   e.preventDefault()
   e.stopPropagation()
   selection.selectAll(props.pageId, rootBlockId.value)
