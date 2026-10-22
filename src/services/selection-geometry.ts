@@ -103,17 +103,27 @@ function textNodeOffsetInRoot(root: HTMLElement, container: Node, offset: number
   return total
 }
 
-/** 取 root 下最后一个文本节点（offset 越界时用于钳制） */
+/** 取 root 下最后一个**非空**文本节点（offset 越界时用于钳制） */
 function lastTextNode(root: HTMLElement): Text | null {
   let last: Text | null = null
-  walkTextNodes(root, (node) => { last = node })
+  walkTextNodes(root, (node) => { if (node.nodeValue) last = node })
   return last
 }
 
-/** 取 root 下第一个文本节点（无文本时 null） */
+/**
+ * 取 root 下第一个**非空**文本节点（无文本时 null）。
+ *
+ * 必须跳过 `nodeValue === ""` 的文本节点：空块渲染态是 `<span></span>`，Vue 的空插值
+ * 会在里面留下一个零长文本节点。只判「节点存在」会把空块误认成有文字的块，
+ * 于是走去构造 Range 的路——零长文本节点上的 Range 量不出任何矩形，高亮照旧缺失。
+ */
 function firstTextNode(root: HTMLElement): Text | null {
   let first: Text | null = null
-  walkTextNodes(root, (node) => { first = node; return false })
+  walkTextNodes(root, (node) => {
+    if (!node.nodeValue) return
+    first = node
+    return false
+  })
   return first
 }
 
@@ -174,6 +184,11 @@ export function collapsedRangeAtBlockOffset(blockId: string, offset: number): Ra
   let target: { node: Text; offset: number } | null = null
   while (node) {
     const len = (node as Text).length
+    // 零长文本节点不能作为落点：其上的 Range 量不出矩形（空块渲染态中确实存在这种节点）
+    if (len === 0) {
+      node = walker.nextNode()
+      continue
+    }
     if (remaining <= len) {
       target = { node: node as Text, offset: remaining }
       break
@@ -310,6 +325,22 @@ function normalizeLineRects(rects: RawRect[], bandHeight: number): SelectionRect
 }
 
 
+/** 空白块行首窄条带的宽度（px）：示意「这一行也在选区内」，不铺满整行喧宾夺主 */
+const EMPTY_LINE_BAND_WIDTH = 8
+
+/** 块内容区是否有内嵌可见内容（图片 / 代码块 / 媒体）：这类块保留整行色带 */
+function hasEmbeddedContent(root: HTMLElement): boolean {
+  return root.querySelector('img, .image-block, .cm-editor, video, canvas') !== null
+}
+
+/** 文字行带的左缘：内层文本容器的 padding-left 之后（与文字 Range 矩形同位） */
+function textBandLeft(root: HTMLElement, boxLeft: number): number {
+  const inner = root.firstElementChild as HTMLElement | null
+  if (!inner) return boxLeft
+  const pad = Number.parseFloat(getComputedStyle(inner).paddingLeft)
+  return boxLeft + (Number.isFinite(pad) ? pad : 0)
+}
+
 /**
  * 计算 anchor→head 跨块选区的所有视口矩形（每行一个）。
  * 支持反向拖拽（head 在 anchor 之前自动交换）。
@@ -327,9 +358,14 @@ function normalizeLineRects(rects: RawRect[], bandHeight: number): SelectionRect
  *    覆盖层同位叠两层，半透明色叠出更深的色块。故逐块收集后统一做行带归一化 +
  *    水平合并（见 `normalizeLineRects`）：每行只留一段、一行之内不叠层。
  *
- * 无文本节点的块（空行、图片块等）**不产生矩形**：它们既构造不出 Range，也没有可
- * 高亮的文字。跳过它们，但**不得**因此丢弃整条选区——拖拽时鼠标扫过空行是常态。
- * 端点落在这种块上时，该端点由相邻文本块的边界兜底（首侧取块首、尾侧取块末）。
+ * 无文本节点的块分两类补色带（2026-10-22 用户样例）：
+ * - 空白块（空行）：只在**行首**补一条窄条带，左缘与文字行带对齐（内层文本容器的
+ *   padding 之后）——整行铺满会把「本来什么都没有的一行」画得像有内容，观感喧宾夺主。
+ * - 图片块等有内嵌可见内容的块：保留整行色带（内容本身占据行宽）。
+ * 两类都要求行盒非零：高度为 0 说明该块不可见（折叠子树被 display:none），
+ * 此时不补矩形（画出来反而凭空高亮一块看不见的区域）。
+ * 这类块也不得牵连整条选区——拖拽时鼠标扫过空行是常态。端点落在这种块上时，
+ * 该端点仍由相邻文本块的边界兜底（首侧取块首、尾侧取块末）。
  */
 export function selectionClientRects(anchor: BlockOffset, head: BlockOffset): SelectionRect[] {
   const anchorEl = blockElement(anchor.blockId)
@@ -359,10 +395,37 @@ export function selectionClientRects(anchor: BlockOffset, head: BlockOffset): Se
     const root = contentRoot(el)
     const first = firstTextNode(root)
     const last = lastTextNode(root)
-    if (!first || !last) continue // 无文本节点的块跳过，不弃整条选区
+    if (!first || !last) {
+      // 无文本节点的块：操作侧照样整块带走（删除整删、复制留空行），视觉必须跟上。
+      // 空白块 = 行首窄条带（左缘对齐文字行带）；图片块等有内嵌内容 = 整行色带。
+      // 行盒高度为 0 说明该块不可见（折叠子树被 display:none），此时不补矩形
+      // （画出来反而凭空高亮一块看不见的区域）。
+      const box = root.getBoundingClientRect()
+      if (box.width > 0 && box.height > 0) {
+        if (hasEmbeddedContent(root)) {
+          perBlock.push({
+            root,
+            rects: [{ left: box.left, top: box.top, width: box.width, height: box.height }],
+          })
+        } else {
+          perBlock.push({
+            root,
+            rects: [
+              {
+                left: textBandLeft(root, box.left),
+                top: box.top,
+                width: EMPTY_LINE_BAND_WIDTH,
+                height: box.height,
+              },
+            ],
+          })
+        }
+      }
+      continue
+    }
 
     // 端点侧用真实拖拽端点，其余侧夹到该块的首/末文本节点。端点块本身无文本节点时
-    // 已被上面跳过，改由相邻文本块的边界兜底。
+    // 不提供 Range 端点（上面已给它补过行盒色带），改由相邻文本块的边界兜底。
     const from = blockId === start.blockId ? collapsedRangeAtBlockOffset(blockId, start.offset) : null
     const to = blockId === end.blockId ? collapsedRangeAtBlockOffset(blockId, end.offset) : null
 

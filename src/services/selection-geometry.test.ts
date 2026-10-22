@@ -9,6 +9,11 @@
  * 把「本次 Range 覆盖的块 + 覆盖了多少文字」编码进矩形，让断言落在**选中语义**而非像素
  * 几何上：`top` = 块序号，`left` = `range.toString().length`。
  *
+ * 无文本节点的块（空行 / 图片块）没有 Range，改量 `.block-content` 的 bounding rect——
+ * 同样替身：`top` = 块序号、`left` = 100、行盒 `500x24`。空白块在其上取「行首窄条带」
+ * （左缘 = 内容区左缘 + 内层 padding，宽 `EMPTY_LINE_BAND_WIDTH`）；有内嵌内容（图片）
+ * 的块保留整行色带。`data-i = -1` 模拟不可见（折叠子树 `display:none`，量出 0 盒）。
+ *
  * DOM 形状照 `BulletRender.vue`：`[data-block-id] > .block-content > .block-text > span`，
  * 内容为空时渲染成 `<span></span>`（无文本节点，与真机一致）。
  */
@@ -24,6 +29,14 @@ function buildPage(contents: string[]): void {
         `<div data-block-id="b${i}" data-i="${i}"><div class="block-content"><div class="block-text"><span>${c}</span></div></div></div>`
     )
     .join('')}</div>`
+  // 真机形态：空块的 `<span>` 里还留着一个 `nodeValue === ""` 的零长文本节点（Vue 空插值）。
+  // 不造出来就永远测不到「只判节点存在、误把空块当有文字块」那条畸形路径。
+  contents.forEach((c, i) => {
+    if (c !== '') return
+    document
+      .querySelector(`[data-block-id="b${i}"] .block-text span`)
+      ?.appendChild(document.createTextNode(''))
+  })
 }
 
 /** 块内端点：块序号 i + 字符偏移 */
@@ -37,6 +50,13 @@ function painted(rects: SelectionRect[]): Array<[number, number]> {
 }
 
 const realGetClientRects = Object.getOwnPropertyDescriptor(Range.prototype, 'getClientRects')
+const realGetBoundingClientRect = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'getBoundingClientRect')
+
+/** 全 0 盒（非内容区元素不受替身影响） */
+const ZERO_RECT = {
+  x: 0, y: 0, left: 0, top: 0, width: 0, height: 0, right: 0, bottom: 0,
+  toJSON: () => ({}),
+}
 
 beforeEach(() => {
   Object.defineProperty(Range.prototype, 'getClientRects', {
@@ -56,44 +76,111 @@ beforeEach(() => {
       ]
     },
   })
+
+  // 无文本节点的块的占位矩形来源：`.block-content` 行盒。jsdom 恒返回全 0 盒，需替身。
+  Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', {
+    configurable: true,
+    writable: true,
+    value(this: HTMLElement) {
+      const block = this.classList.contains('block-content') ? this.closest('[data-block-id]') : null
+      const i = block ? Number(block.getAttribute('data-i')) : -1
+      if (i < 0) return ZERO_RECT
+      return {
+        x: 100, y: i, left: 100, top: i, width: 500, height: 24, right: 600, bottom: i + 24,
+        toJSON: () => ({}),
+      }
+    },
+  })
 })
 
 afterEach(() => {
   if (realGetClientRects) Object.defineProperty(Range.prototype, 'getClientRects', realGetClientRects)
   else delete (Range.prototype as { getClientRects?: unknown }).getClientRects
+  if (realGetBoundingClientRect) Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', realGetBoundingClientRect)
+  else delete (HTMLElement.prototype as { getBoundingClientRect?: unknown }).getBoundingClientRect
   window.getSelection()?.removeAllRanges()
   document.body.innerHTML = ''
 })
 
-describe('selectionClientRects - 无文本节点的块（空行 / 图片块）', () => {
-  test('前提：无文本节点的块构造不出 Range —— 旧实现据此 `return []` 丢弃整条选区', () => {
+describe('selectionClientRects - 无文本节点的块（空行 / 图片块）补色带', () => {
+  test('前提：无文本节点的块构造不出 Range —— 只能靠内容区行盒补占位', () => {
     buildPage(['abc', '', 'def'])
     expect(collapsedRangeAtBlockOffset('b0', 1)).not.toBeNull()
     expect(collapsedRangeAtBlockOffset('b1', 0)).toBeNull()
   })
 
-  test('端点停在空行上：前面已选中的文本仍高亮（回归：不再整条丢弃）', () => {
+  test('零长文本节点不算内容：空块仍走行盒占位（真机 `<span>` 内留空文本节点）', () => {
     buildPage(['abc', '', 'def'])
-    // 首块 1..末 → "bc"；空行不产生矩形，但不得牵连首块
-    expect(painted(selectionClientRects(at(0, 1), at(1, 0)))).toEqual([[0, 2]])
-  })
-
-  test('空行夹在中间：空行不高亮，两侧文本块都高亮', () => {
-    buildPage(['abc', '', 'def'])
+    const span = document.querySelector('[data-block-id="b1"] .block-text span')!
+    // 真机上确实存在文本节点，只是长度为 0
+    expect(span.firstChild).not.toBeNull()
+    expect(span.firstChild!.nodeValue).toBe('')
     expect(painted(selectionClientRects(at(0, 1), at(2, 3)))).toEqual([
       [0, 2],
+      [1, 100],
       [2, 3],
     ])
   })
 
-  test('起点落在空行上：相邻文本块从块首开始高亮', () => {
+  test('端点停在空行上：前面已选中的文本仍高亮，空行本身也补色带', () => {
     buildPage(['abc', '', 'def'])
-    expect(painted(selectionClientRects(at(1, 0), at(2, 2)))).toEqual([[2, 2]]) // "de"
+    // 首块 1..末 → "bc"；空行无文字但有行盒 → 行首窄条带（left = 100 = 行盒左缘）
+    expect(painted(selectionClientRects(at(0, 1), at(1, 0)))).toEqual([
+      [0, 2],
+      [1, 100],
+    ])
   })
 
-  test('整页都是无文本节点的块：无高亮（没有可选的文字）', () => {
+  test('空行夹在中间：空行与两侧文本块一样高亮（操作侧会删掉它，视觉必须跟上）', () => {
+    buildPage(['abc', '', 'def'])
+    expect(painted(selectionClientRects(at(0, 1), at(2, 3)))).toEqual([
+      [0, 2],
+      [1, 100],
+      [2, 3],
+    ])
+  })
+
+  test('起点落在空行上：空行补色带，相邻文本块从块首开始高亮', () => {
+    buildPage(['abc', '', 'def'])
+    expect(painted(selectionClientRects(at(1, 0), at(2, 2)))).toEqual([
+      [1, 100],
+      [2, 2],
+    ]) // "de"
+  })
+
+  test('整页都是无文本节点的块：每块各补一条行首条带', () => {
     buildPage(['', ''])
-    expect(selectionClientRects(at(0, 0), at(1, 0))).toEqual([])
+    expect(painted(selectionClientRects(at(0, 0), at(1, 0)))).toEqual([
+      [0, 100],
+      [1, 100],
+    ])
+  })
+
+  test('空白块 = 行首窄条带：宽度固定，内层 padding 使左缘与文字行带对齐', () => {
+    buildPage(['', ''])
+    const inner = document.querySelector('[data-block-id="b0"] .block-text') as HTMLElement
+    inner.style.paddingLeft = '4px'
+    const rects = selectionClientRects(at(0, 0), at(1, 0))
+    // 左缘 = 行盒左缘 100 + padding 4 = 104（与文字 Range 矩形同位）；宽度 = 8px 条带
+    expect(rects[0]).toEqual({ left: 104, top: 0, width: 8, height: 24 })
+  })
+
+  test('图片块等有内嵌内容的块：保留整行色带，不收窄', () => {
+    document.body.innerHTML =
+      '<div class="block-list"><div data-block-id="b0" data-i="0"><div class="block-content">' +
+      '<div class="image-block"><img src="x.png" alt=""></div></div></div></div>'
+    expect(selectionClientRects(at(0, 0), at(0, 0))).toEqual([
+      { left: 100, top: 0, width: 500, height: 24 },
+    ])
+  })
+
+  test('行盒高度为 0 的块（折叠子树 / 不可见）不补矩形：不凭空高亮看不见的区域', () => {
+    buildPage(['abc', '', 'def'])
+    document.querySelector('[data-block-id="b1"]')!.setAttribute('data-i', '-1')
+    expect(painted(selectionClientRects(at(0, 1), at(2, 3)))).toEqual([
+      [0, 2],
+      [2, 3],
+    ])
   })
 })
 
@@ -107,6 +194,7 @@ describe('selectionClientRects - 端点判序', () => {
     buildPage(['abc', '', 'def'])
     expect(painted(selectionClientRects(at(2, 3), at(0, 1)))).toEqual([
       [0, 2],
+      [1, 100],
       [2, 3],
     ])
   })
