@@ -216,9 +216,13 @@ function isSvgIcon(icon: string): boolean {
   return icon.startsWith('status-') || icon.startsWith('priority-') || icon.startsWith('icon-')
 }
 
-/** 字段标题（chips 的 hover 全量与浮层用）；无定义时回退 key */
+/**
+ * 字段标题（chips 的 hover 全量与浮层用）。
+ * 持久化定义优先：自定义字段（`f-*`）只有持久化定义，占编译期定义会退化成 key，
+ * 把 `f-muov2kdy-96qy8r` 这类内部 id 直接漏到界面上（反链区字段区实测命中）。
+ */
 function titleOf(key: string): string {
-  return defOf(key)?.title ?? key
+  return persistedDefOf(key)?.title ?? defOf(key)?.title ?? key
 }
 
 // ── 编辑器入口（快捷菜单与完整编辑器共用同一锚点约定：触发元素左下 + 4px）──
@@ -236,14 +240,7 @@ function openEditor(key: string, el: HTMLElement) {
   }
 }
 
-function deleteRow(fv: FieldValue, event: MouseEvent) {
-  event.stopPropagation()
-  void fieldValueStore.deleteFieldValue(fv.id, props.blockId)
-}
-
 // ── between / right 内联槽交互 ──────────────────────────────
-
-const hoveredId = ref<string | null>(null)
 
 /** status 单击循环顺序；环外值（Canceled / Archived 等）一律回到首个 */
 const STATUS_CYCLE = ['Todo', 'Doing', 'Done'] as const
@@ -1069,8 +1066,6 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
       }"
       :data-field="fv.key"
       :data-value="String(dataOf(fv))"
-      @mouseenter="hoveredId = fv.id"
-      @mouseleave="hoveredId = null"
       @pointerdown="onPointerDown(fv, $event)"
       @pointerup="clearLongPress"
       @pointerleave="clearLongPress"
@@ -1166,13 +1161,15 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
           </span>
         </span>
 
-        <!-- chip 形态（all 变体） -->
+        <!-- chip 形态（all 变体）。
+             本变体的唯一消费方是反链区（只读投影），故所有形态一律不绑编辑入口，
+             点击冒泡到反链块 → 跳转并激活源块（此前 @click 直开快速编辑器，
+             在只读投影里反向改写源块字段，属越权）。 -->
         <span
           v-else-if="allFormOf(fv) === 'chip'"
           class="property-item block-field-zone-chip"
           :class="{ 'block-field-zone-chip--ghost': dataOf(fv) === null || dataOf(fv) === '' }"
           :title="chipTitleAttr(fv)"
-          @click.stop="openEditor(fv.key, $event.currentTarget as HTMLElement)"
         >
           <span class="bfz-chip-title">{{ titleOf(fv.key) }}</span>
           <span class="bfz-chip-value">{{ getLabel(fv.key, dataOf(fv)) }}</span>
@@ -1182,7 +1179,6 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
           v-else-if="allFormOf(fv) === 'icon'"
           class="property-item block-field-zone-row--icon"
           :title="chipTitleAttr(fv)"
-          @click.stop="openEditor(fv.key, $event.currentTarget as HTMLElement)"
         >
           <span class="property-icon">{{ allIconCharOf(fv) }}</span>
         </span>
@@ -1190,17 +1186,15 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
           v-else-if="allFormOf(fv) === 'icon-text'"
           class="property-item block-field-zone-row--icon"
           :title="chipTitleAttr(fv)"
-          @click.stop="openEditor(fv.key, $event.currentTarget as HTMLElement)"
         >
           <span class="property-icon">{{ allIconCharOf(fv) }}</span>
           <span class="property-value">{{ getLabel(fv.key, dataOf(fv)) }}</span>
         </span>
-        <!-- switch 形态（boolean 开关 UI；all 变体展示型，点击整行唤起编辑器，与 icon/icon-text 同口径） -->
+        <!-- switch 形态（boolean 开关 UI；all 变体为纯展示态，role=img 而非 switch） -->
         <span
           v-else-if="allFormOf(fv) === 'switch'"
           class="property-item block-field-zone-row--switch"
           :title="chipTitleAttr(fv)"
-          @click.stop="openEditor(fv.key, $event.currentTarget as HTMLElement)"
         >
           <span
             class="bfz-switch"
@@ -1221,9 +1215,6 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
           class="property-item"
           :class="{ 'built-in': isSystemField(fv.key), 'quote-item': fv.key === 'quote' }"
           :title="chipTitleAttr(fv)"
-          @mouseenter="hoveredId = fv.id"
-          @mouseleave="hoveredId = null"
-          @click.stop="openEditor(fv.key, $event.currentTarget as HTMLElement)"
         >
           <!-- project/area 直接以图标+名称展示，不渲染字段名 -->
           <span
@@ -1243,14 +1234,6 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
             </template>
             <span v-else>{{ getLabel(fv.key, dataOf(fv)) }}</span>
           </span>
-          <button
-            v-if="hoveredId === fv.id"
-            class="delete-button"
-            title="删除字段值"
-            @click.stop="deleteRow(fv, $event)"
-          >
-            ×
-          </button>
         </div>
       </template>
     </div>
@@ -1896,58 +1879,31 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
   font-size: var(--text-sm);
   cursor: pointer;
   padding: 2px 4px;
-  // 行内：× 只在 hover 出现，故常驻不留 20px 占位——那会把每个 chip 白撑宽 16px
-  // （实测 93.1 → 77.1），两列合计 32px 提前顶到容器 max-width 上限。
-  // 浮层内的 item 例外（× 常驻），见 .property-list--full 规则。
+  // all 变体已改为只读（无 hover 显形的 ×），故不再为删除按钮留位。
   padding-right: 4px;
   border-radius: 4px;
   transition: background var(--dur-fast) var(--ease-out);
   position: relative;
 }
 
+/* all 变体只读：hover 只给底，不再右扩 16px 腾「×」位（那会造成 chip 抖动） */
 .property-item:hover {
   background: var(--accent-08);
-  // hover 才为「×」腾位（容器右端固定，chips 区整体向左扩 16px；实测不换行、不推正文）
-  padding-right: 20px;
-}
-
-/* 浮层是字段的管理面：× 常驻显示，因此也要常驻留出占位——与行内「hover 才腾位」相反 */
-.property-list--full .property-item {
-  padding-right: 20px;
 }
 
 .property-item.built-in .property-key {
-  color: var(--primary-color, #007bff);
+  color: var(--accent);
   font-weight: var(--font-medium);
 }
 
+/* 字段名 / 值分层：名比值低一档，值不必抢正文（此前为硬编码 #6b7280 / #374151，
+   暗色下 #374151 与底几乎同亮度，text 形态字段值读不出来） */
 .property-key {
-  color: #6b7280;
+  color: var(--text-tertiary);
 }
 
 .property-value {
-  color: #374151;
-}
-
-.delete-button {
-  position: absolute;
-  right: 2px;
-  top: 50%;
-  transform: translateY(-50%);
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: var(--heading-5);
-  line-height: var(--leading-none);
-  color: #9ca3af;
-  padding: 0 4px;
-  border-radius: 4px;
-  transition: color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
-}
-
-.delete-button:hover {
-  color: #374151;
-  background: rgba(0, 0, 0, 0.05);
+  color: var(--text-secondary);
 }
 
 /* ── list 变体（块字段区，D21 形态分派 + 两列对齐网格） ── */
@@ -2251,10 +2207,10 @@ function allFormOf(fv: FieldValue): DisplayFormKind {
   transition: width var(--dur-base) var(--ease-out);
 }
 
-/* 内联清除按钮（boolean / page 字段值区）：与 .delete-button 同源的弱化 ×，
-   仅在有值时存在，点击走删行语义（boolean→onBooleanChange(def, undefined)；
+/* 内联清除按钮（boolean / page 字段值区）：弱化 ×，仅在有值时存在，
+   点击走删行语义（boolean→onBooleanChange(def, undefined)；
    page→onPageRefChange(def, undefined)）。常态隐藏，整行 hover / 键盘 focus
-   时显形（与 .delete-button 同口径），不抢控件、隐藏时也不占 tab 序。 */
+   时显形，不抢控件、隐藏时也不占 tab 序。 */
 .bfz-clear-button {
   display: inline-flex;
   align-items: center;

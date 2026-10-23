@@ -141,4 +141,80 @@ describe('Backlinks.vue', () => {
       wrapper.unmount()
     })
   })
+
+  describe('视觉结构（反链区优化）', () => {
+    /** 单条反链的公共桩：源块来自「页面A」，内容为纯文本。 */
+    function stubSingleBacklink() {
+      mocks.getBacklinks.mockResolvedValue([
+        { id: 'l1', sourceBlockId: 'b-src', targetPageId: 'test-page-id', relationshipType: null, createdAt: 1 },
+      ])
+      mocks.loadBlock.mockResolvedValue({ id: 'b-src', pageId: 'source-page-1', content: '来源块', type: 'text' })
+    }
+
+    test('组标题渲染页面身份（图标 + 页名），不残留 [[ ]] wiki 语法', async () => {
+      stubSingleBacklink()
+
+      const wrapper = mount(Backlinks, { props: { pageId: 'test-page-id' } })
+      await flushPromises()
+
+      expect(wrapper.find('.backlink-group-title').text()).toBe('页面A')
+      expect(wrapper.find('.backlink-group-icon').exists()).toBe(true)
+      expect(wrapper.text()).not.toContain('[[')
+
+      wrapper.unmount()
+    })
+
+    test('字段名取持久化定义标题，不漏出内部 field key（回归：f-xxx 上屏）', async () => {
+      const { useTagsStore } = await import('../stores/tags')
+      const { useFieldValueStore } = await import('../stores/fieldValue')
+      const KEY = 'f-muov2kdy-96qy8r'
+      useTagsStore().fieldDefinitions.push({
+        id: KEY,
+        key: KEY,
+        title: '地点',
+        type: 'string',
+        closed_values: null,
+        default_value: null,
+        hide_when: 'never',
+        is_system: false,
+        created_at: 0,
+        updated_at: 0,
+        version: 1,
+        deleted_at: null,
+      })
+      stubSingleBacklink()
+      useFieldValueStore().fieldValuesByBlock.set('b-src', [
+        fv({ id: 'v1', block_id: 'b-src', key: KEY, value_json: '生活' }),
+      ])
+
+      const wrapper = mount(Backlinks, { props: { pageId: 'test-page-id' } })
+      await flushPromises()
+
+      // 编译期定义里没有 f-* ⇒ 修复前 titleOf 回退成 key 本身
+      expect(wrapper.find('.property-key').text()).toBe('地点:')
+      expect(wrapper.text()).not.toContain(KEY)
+
+      wrapper.unmount()
+    })
+
+    test('折叠指示与 block 折叠按钮同图标（lucide），折叠态由 CSS 旋转表达', async () => {
+      stubSingleBacklink()
+
+      const wrapper = mount(Backlinks, { props: { pageId: 'test-page-id' } })
+      await flushPromises()
+
+      const toggle = wrapper.find('.backlinks-toggle')
+      expect(toggle.exists()).toBe(true)
+      // 文本三角（▶/▼）已换成 lucide 图标：不再有文本内容
+      expect(toggle.text()).toBe('')
+      expect(toggle.find('svg').exists()).toBe(true)
+
+      // 方向由 .is-collapsed 上的 CSS rotate 表达，不靠换图标
+      expect(wrapper.find('.backlinks-panel').classes()).not.toContain('is-collapsed')
+      await wrapper.find('.backlinks-header').trigger('click')
+      expect(wrapper.find('.backlinks-panel').classes()).toContain('is-collapsed')
+
+      wrapper.unmount()
+    })
+  })
 })

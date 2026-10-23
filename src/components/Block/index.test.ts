@@ -980,6 +980,47 @@ describe('collapse chevron 显示条件（有子块 / 仅字段 / 两者皆无�
     wrapper.unmount()
   })
 
+  it('折叠 + 有子块 → chevron 常亮（is-pinned）', async () => {
+    const child = {
+      id: 'b2', pageId: PAGE_ID, parentId: BLOCK_ID, pos: 0,
+      content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
+    }
+    const block = makeBlock()
+    block.format = { collapsed: true }
+    blockStore.blocks = [block, child]
+    const wrapper = mountFor(block, [{ id: 'b2', block: child, children: [] }])
+    await flushPromises()
+    expect(wrapper.find('.bullet-chevron').classes()).toContain('is-pinned')
+    wrapper.unmount()
+  })
+
+  it('折叠但无子块（仅字段行）→ chevron 不常亮（折叠范围含字段，但箭头不暗示有子树）', async () => {
+    const tagsStore = useTagsStore()
+    tagsStore.entries = [treeEntry({ id: 't1', title: '标签', effective_field_ids: ['f1'] })]
+    tagsStore.fieldDefinitions = [fieldDef({ id: 'f1', key: 'note', title: '备注' })]
+    const block = makeBlock(['t1'])
+    block.format = { collapsed: true }
+    blockStore.blocks = [block]
+    const wrapper = mountFor(block)
+    await flushPromises()
+    expect(wrapper.find('.bullet-chevron').exists()).toBe(true)
+    expect(wrapper.find('.bullet-chevron').classes()).not.toContain('is-pinned')
+    wrapper.unmount()
+  })
+
+  it('有子块但未折叠 → chevron 不常亮（仍靠 hover 显现）', async () => {
+    const child = {
+      id: 'b2', pageId: PAGE_ID, parentId: BLOCK_ID, pos: 0,
+      content: '', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0
+    }
+    const block = makeBlock()
+    blockStore.blocks = [block, child]
+    const wrapper = mountFor(block, [{ id: 'b2', block: child, children: [] }])
+    await flushPromises()
+    expect(wrapper.find('.bullet-chevron').classes()).not.toContain('is-pinned')
+    wrapper.unmount()
+  })
+
   it('仅字段（0 子块 + 有可渲染字段行）→ 显示 chevron', async () => {
     const tagsStore = useTagsStore()
     tagsStore.entries = [treeEntry({ id: 't1', title: '标签', effective_field_ids: ['f1'] })]

@@ -187,9 +187,13 @@ const {
 // ── 子节点列表容器（拖拽接线由 BlockDraggableList 统一承载） ──
 // 拖拽配置 / @move 循环嵌套守卫 / @end 指示器清理与落库，均与根级列表同源，
 // 见 ./components/BlockDraggableList.vue。此处只负责本块子容器的类名（折叠动画）。
+// hasChildren 只问「有没有子块」——不含字段行（canCollapse 才含）。
+// 折叠态 chevron 永久显示只对子块生效：纯字段折叠没有子树可指认，
+// 常亮箭头会暗示「下面藏着一棵子树」。
+const hasChildren = computed(() => props.node.children.length > 0)
 const childrenContainerClass = computed(() => ({
   'block-children': true,
-  'has-children': !collapsed.value && props.node.children.length > 0,
+  'has-children': !collapsed.value && hasChildren.value,
   'is-collapsed': collapsed.value,
   'is-animating': isAnimating.value,
 }))
@@ -597,6 +601,7 @@ watch(isActive, (active) => {
           <span
             v-if="canCollapse"
             class="bullet-chevron"
+            :class="{ 'is-pinned': collapsed && hasChildren }"
             title="折叠 / 展开"
             @click.stop="toggleCollapse"
           >

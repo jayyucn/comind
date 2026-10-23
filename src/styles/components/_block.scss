@@ -195,6 +195,14 @@
   transform: rotate(-90deg);
 }
 
+// 折叠态常亮（仅「有子块」的块，见 index.vue 的 is-pinned）：
+// 子树已被藏起来，箭头是唯一能把它叫回来的入口，不能靠 hover 才出现。
+// 选择器带 .block .block-row 前缀（0,4,0）压过 `.block.active>.block-row .bullet-chevron`
+// 的 0.6 —— 否则激活行里的常亮箭头会被顺手弱化；hover 的 scale 是另一个属性，照常生效。
+.block .block-row .bullet-chevron.is-pinned {
+  opacity: 0.75;
+}
+
 // Active Block：行内 bullet 与 chevron 同步弱化显示
 .block.active>.block-row {
 

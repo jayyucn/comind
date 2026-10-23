@@ -8,14 +8,16 @@
 //   由快照属性推出，交由全局 CSS 渲染底色/删除线
 import { ChevronDown, ChevronRight } from 'lucide-vue-next'
 import { computed, inject } from 'vue'
-import BulletRender from '../Block/handlers/bullet/BulletRender.vue'
-import { Icon } from '../Icons'
-import { useEditorStore } from '../../stores/editor'
+
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
+import { useEditorStore } from '../../stores/editor'
+import type { TreeNode } from '../../types/block'
 import { getFieldDefinition } from '../../types/field-definition'
 import type { FieldValue } from '../../types/field-value'
 import { decodeFieldValueData } from '../../utils/field-value-codec'
-import type { TreeNode } from '../../types/block'
+import BulletRender from '../Block/handlers/bullet/BulletRender.vue'
+import { Icon } from '../Icons'
+import IdeasSnapshotImage from './IdeasSnapshotImage.vue'
 import {
   SNAPSHOT_MODAL_KEY,
   SNAPSHOT_PROPS_KEY,
@@ -23,7 +25,6 @@ import {
   type SnapshotPropsMap,
   type SnapshotTreeState,
 } from './snapshotContext'
-import IdeasSnapshotImage from './IdeasSnapshotImage.vue'
 
 defineOptions({ name: 'IdeasSnapshotNode' })
 
@@ -128,6 +129,7 @@ function openDetail() {
           <span
             v-if="node.children.length > 0"
             class="bullet-chevron"
+            :class="{ 'is-pinned': isCollapsed }"
             title="折叠 / 展开"
             @click.stop="treeState.toggle(blockId)"
           >
