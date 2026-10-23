@@ -494,4 +494,68 @@ describe('ensurePageBlocks - loadBlock 单块注入后整页补齐（Backlinks �
     expect(mockGetPageWithBlocks).toHaveBeenCalledTimes(0)
     expect(store.getBlocksByPage(pageId).length).toBe(1)
   })
+
+  // ============================================================
+  // Backlinks 预览路径：loadBlock 单块注入（无 render_segments）后，
+  // 整页补齐必须把渲染段写回已缓存的块 —— 否则渲染态恒走纯文本兜底，
+  // #tag 丢 data-tag-id 与标签色，点击还会被当页面名跳走。
+  // ============================================================
+  test('loadBlock 单块预览后 loadMultiPageBlocks 补齐渲染段（不重复 push）', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-source-d'
+
+    mockGetBlock.mockResolvedValue(makeRustBlock('d1', pageId, '读 #读书'))
+    mockGetPagesWithBlocks.mockResolvedValue([
+      makePageWithBlocks(pageId, [
+        {
+          block: makeRustBlock('d1', pageId, '读 #读书'),
+          children: [],
+          render_segments: [
+            { type: 'text', start: 0, end: 2 },
+            { type: 'tag', start: 2, end: 5, title: '读书', tag_id: 't1', is_system: false, color: '--tag-color-3' },
+          ],
+          properties: [],
+        },
+      ]),
+    ])
+
+    await store.loadBlock('d1')
+    // 单块预览：getBlock RPC 不带渲染段
+    expect(store.getBlock('d1')!.renderSegments).toBeUndefined()
+
+    await store.loadMultiPageBlocks([pageId])
+
+    const d1 = store.getBlock('d1')!
+    expect(d1.renderSegments?.length).toBe(2)
+    expect(d1.renderSegments?.[1]).toMatchObject({ type: 'tag', tag_id: 't1', color: '--tag-color-3' })
+    // 仍是同一个块实例，不产生重复行
+    expect(store.blocks.filter(b => b.id === 'd1').length).toBe(1)
+  })
+
+  test('本地已改内容（renderSegments 被主动清空）的块不被回填陈旧段', async () => {
+    const store = useBlockStore()
+    const pageId = 'page-source-e'
+
+    mockGetBlock.mockResolvedValue(makeRustBlock('e1', pageId, '库中旧内容'))
+    mockGetPagesWithBlocks.mockResolvedValue([
+      makePageWithBlocks(pageId, [
+        {
+          block: makeRustBlock('e1', pageId, '库中旧内容'),
+          children: [],
+          render_segments: [{ type: 'text', start: 0, end: 5 }],
+          properties: [],
+        },
+      ]),
+    ])
+
+    await store.loadBlock('e1')
+    // 模拟本地编辑：content 已与库中不同，渲染段被清空待保存后重建
+    const local = store.getBlock('e1')!
+    local.content = '库中旧内容 加了一句'
+    local.renderSegments = undefined
+
+    await store.loadMultiPageBlocks([pageId])
+
+    expect(store.getBlock('e1')!.renderSegments).toBeUndefined()
+  })
 })

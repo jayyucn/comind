@@ -4,6 +4,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 
 import { useBlockRegistry } from '../composables/useBlockRegistry'
 import { useNavigateToPage } from '../composables/useNavigateToPage'
+import { useNavigateToTag } from '../composables/useNavigateToTag'
 import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
 import { useFieldValueStore } from '../stores/fieldValue'
@@ -28,6 +29,7 @@ const blockStore = useBlockStore()
 const fieldValueStore = useFieldValueStore()
 const tagsStore = useTagsStore()
 const { navigateToPage } = useNavigateToPage()
+const { navigateToTag } = useNavigateToTag()
 const { getHandler } = useBlockRegistry()
 
 interface Link {
@@ -167,9 +169,25 @@ async function loadBacklinks() {
   }
 }
 
-// 点击块内容：处理 wiki link 导航（[[页面名]] / 外部链接），普通文本点击冒泡到 backlink-block
+// 点击块内容：处理 inline #tag 与 wiki link（[[页面名]] / 外部链接）导航，
+// 普通文本点击冒泡到 backlink-block
 function handleContentClick(e: MouseEvent) {
   const target = e.target as HTMLElement
+
+  // ADR-0050 D7：inline `#tag` chip → 该 tag 的聚合页，与正文渲染态同口径。
+  // 必须先于 `.block-link` 判定：纯文本兜底渲染出的 tag 同时带 `block-link` 类
+  // 和 `data-page="标签名"`，走链接分支会跳到一个不存在同名页面的地址。
+  const tagChip = target.closest('.block-tag') as HTMLElement | null
+  if (tagChip) {
+    const tagId = tagChip.dataset.tagId
+    if (tagId) {
+      navigateToTag(tagId).catch(err => {
+        console.error('标签导航失败:', err)
+      })
+    }
+    return
+  }
+
   const link = target.closest('.block-link') as HTMLElement | null
   if (!link) return
 
@@ -186,9 +204,10 @@ function handleContentClick(e: MouseEvent) {
 }
 
 // 点击反链块：跳转到源页 + 激活该块
-// wiki link 点击由 handleContentClick 负责导航，此处跳过避免双重导航
+// wiki link / tag 点击由 handleContentClick 负责导航，此处跳过避免双重导航
 async function handleBacklinkClick(item: BacklinkItem, event: MouseEvent) {
-  if ((event.target as HTMLElement).closest('.block-link')) return
+  const target = event.target as HTMLElement
+  if (target.closest('.block-link') || target.closest('.block-tag')) return
 
   if (editorStore.activeBlockId) {
     editorStore.deactivateBlock()
@@ -363,8 +382,6 @@ watch(
 
 .backlinks-panel {
   flex-shrink: 0;
-  /* 原为 `2px var(--border)`——缺 style 关键字，整条声明无效，面板顶边框从未渲染 */
-  border-top: 1px solid var(--border);
   background: var(--bg-base);
   display: flex;
   flex-direction: column;
@@ -471,14 +488,6 @@ watch(
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-}
-
-/* 组间分隔：反链是「按来源页分块」的列表，组与组之间必须有结构性边界——
-   否则 24px 缩进是唯一线索，三组连读成一片。 */
-.backlink-group + .backlink-group {
-  margin-top: var(--space-1);
-  padding-top: var(--space-1);
-  border-top: 1px solid var(--border);
 }
 
 /* 组标题 = 页面身份行（图标 + 页名 + 计数）。

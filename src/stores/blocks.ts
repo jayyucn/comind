@@ -372,6 +372,7 @@ export const useBlockStore = defineStore('blocks', () => {
       if (myGeneration !== multiPageLoadGeneration) return
 
       const existingIds = new Set(blocks.value.map(b => b.id))
+      const existingById = new Map(blocks.value.map(b => [b.id, b]))
       for (const pwb of pagesWithBlocks) {
         if (!pwb) continue
         for (const brd of pwb.blocks) {
@@ -392,6 +393,18 @@ export const useBlockStore = defineStore('blocks', () => {
           if (!existingIds.has(newBlock.id)) {
             blocks.value.push(newBlock)
             existingIds.add(newBlock.id)
+            existingById.set(newBlock.id, newBlock)
+            continue
+          }
+          // 已存在的块（Backlinks 逐块 loadBlock 预览拉进来的）只带基本字段、无
+          // render_segments —— 此处「已在缓存就跳过」会把渲染段永久留在 undefined，
+          // 渲染态只能走纯文本兜底：#tag 丢 data-tag-id 与标签色（点击还会按 data-page
+          // 当页面跳）。故补齐渲染段。
+          // 守卫 content 相等：本地编辑过的块（updateBlockContent 主动置 undefined 防
+          // 陈旧段）内容已与库中不同，不可把陈旧段塞回去。
+          const existing = existingById.get(newBlock.id)
+          if (existing && existing.renderSegments === undefined && existing.content === newBlock.content) {
+            existing.renderSegments = newBlock.renderSegments
           }
         }
       }

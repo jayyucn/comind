@@ -1,4 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest'
+import { defineComponent, h } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises } from '@vue/test-utils'
 import Backlinks from './Backlinks.vue'
@@ -12,6 +13,10 @@ const mocks = vi.hoisted(() => ({
   getBlock: vi.fn(() => undefined),
   getBlocksByPage: vi.fn(() => []),
   getPage: vi.fn(() => ({ id: 'source-page-1', title: '页面A' })),
+  /** 默认无 handler → 走 `.backlink-text-fallback`；tag 点击用例注入带渲染的 handler */
+  getHandler: vi.fn((): unknown => undefined),
+  navigateToPage: vi.fn().mockResolvedValue(undefined),
+  navigateToTag: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('../stores/pages', () => ({
@@ -31,7 +36,15 @@ vi.mock('../stores/editor', () => ({
 
 vi.mock('../composables/useNavigateToPage', () => ({
   useNavigateToPage: vi.fn(() => ({
-    navigateToPage: vi.fn()
+    navigateToPage: mocks.navigateToPage
+  }))
+}))
+
+// inline `#tag` → 标签聚合页（ADR-0050 D7），与正文渲染态同口径
+vi.mock('../composables/useNavigateToTag', () => ({
+  useNavigateToTag: vi.fn(() => ({
+    navigateToTag: mocks.navigateToTag,
+    navigateToTagLibrary: vi.fn()
   }))
 }))
 
@@ -47,7 +60,7 @@ vi.mock('../stores/blocks', () => ({
 
 vi.mock('../composables/useBlockRegistry', () => ({
   useBlockRegistry: vi.fn(() => ({
-    getHandler: vi.fn(() => undefined)
+    getHandler: mocks.getHandler
   }))
 }))
 
@@ -88,6 +101,8 @@ describe('Backlinks.vue', () => {
     mocks.getBlocksByPage.mockReturnValue([])
     mocks.getPage.mockImplementation(((id: string) =>
       id === 'source-page-1' ? { id: 'source-page-1', title: '页面A' } : undefined) as never)
+    // clearAllMocks 只清调用记录，不清返回实现 —— 带渲染 handler 的用例须显式复位
+    mocks.getHandler.mockReturnValue(undefined)
     document.body.innerHTML = ''
   })
 
@@ -214,6 +229,72 @@ describe('Backlinks.vue', () => {
       await wrapper.find('.backlinks-header').trigger('click')
       expect(wrapper.find('.backlinks-panel').classes()).toContain('is-collapsed')
 
+      wrapper.unmount()
+    })
+  })
+
+  describe('inline #tag 跳转（与 wikilink 同口径）', () => {
+    /** 渲染 handler 桩：把 content 当 HTML 输出，任意点击冒泡出 content-click。 */
+    const StubRender = defineComponent({
+      props: { content: { type: String, default: '' } },
+      emits: ['content-click'],
+      setup(props, { emit }) {
+        return () => h('span', {
+          class: 'stub-render',
+          innerHTML: props.content,
+          onClick: (e: MouseEvent) => emit('content-click', e),
+        })
+      },
+    })
+
+    /** 单条反链，块内容按渲染态 HTML 直接给出（省掉真实渲染器的间接层）。 */
+    function stubBacklinkWithHtml(html: string) {
+      mocks.getBacklinks.mockResolvedValue([
+        { id: 'l1', sourceBlockId: 'b-src', targetPageId: 'test-page-id', relationshipType: null, createdAt: 1 },
+      ])
+      mocks.loadBlock.mockResolvedValue({ id: 'b-src', pageId: 'source-page-1', content: html, type: 'text' })
+      mocks.getHandler.mockReturnValue({ renderComponent: StubRender, editorComponent: StubRender })
+    }
+
+    test('点 inline #tag → 标签聚合页，不当作 wiki-link 页面跳转', async () => {
+      stubBacklinkWithHtml('<span class="block-tag" data-tag-id="t1" data-tag-title="读书">#读书</span>')
+
+      const wrapper = mount(Backlinks, { props: { pageId: 'test-page-id' } })
+      await flushPromises()
+
+      const chip = wrapper.find('.block-tag')
+      expect(chip.exists()).toBe(true)
+      await chip.trigger('click')
+
+      expect(mocks.navigateToTag).toHaveBeenCalledWith('t1')
+      expect(mocks.navigateToPage).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+
+    test('点兜底渲染的 tag（无 data-tag-id，带 data-page=标签名）→ 不跳任何页面', async () => {
+      stubBacklinkWithHtml('<span class="block-link block-tag" data-page="读书">#读书</span>')
+
+      const wrapper = mount(Backlinks, { props: { pageId: 'test-page-id' } })
+      await flushPromises()
+
+      await wrapper.find('.block-tag').trigger('click')
+
+      expect(mocks.navigateToTag).not.toHaveBeenCalled()
+      // 兜底 tag 的 data-page 是标签名而非页面 —— 跳过去只会得到一个空页
+      expect(mocks.navigateToPage).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+
+    test('点 wiki link 仍走页面导航（tag 分支不误拦）', async () => {
+      stubBacklinkWithHtml('<span class="block-link" data-page="目标页"><span class="wiki-bracket">[[</span>目标页<span class="wiki-bracket">]]</span></span>')
+
+      const wrapper = mount(Backlinks, { props: { pageId: 'test-page-id' } })
+      await flushPromises()
+
+      await wrapper.find('.block-link').trigger('click')
+
+      expect(mocks.navigateToPage).toHaveBeenCalledWith('目标页')
+      expect(mocks.navigateToTag).not.toHaveBeenCalled()
       wrapper.unmount()
     })
   })
