@@ -17,7 +17,7 @@ import type { useBlockStore } from '../../../stores/blocks'
 import type { useEditorStore } from '../../../stores/editor'
 import type { usePageStore } from '../../../stores/pages'
 import type { BlockTypeEditorExposed } from '../../../types/block-type'
-import { DATE_REF_AT_REGEX, type DateRefKind, normalizeRecurrence, type RecurrenceRule,serializeDateRef } from '../../../utils/date-ref'
+import { DATE_REF_AT_REGEX, type DateRefKind, normalizeRecurrence, type RecurrenceRule, serializeDateRef } from '../../../utils/date-ref'
 import {
   encodeRelationshipContent,
   takeRelationshipSnapshot,
