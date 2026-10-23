@@ -1,6 +1,7 @@
+import type { Editor } from '@tiptap/vue-3'
 import type { Component } from 'vue'
 import type { Ref } from 'vue'
-import type { Editor } from '@tiptap/vue-3'
+
 import type { Block } from './block'
 
 export interface BlockTypeHandler {
@@ -57,6 +58,8 @@ export interface BlockTypeHooks {
 export interface BlockTypeEditorExposed {
   syncContent: (content: string, cursorPos?: number) => void
   focus: (pos?: number | 'start' | 'end') => void
+  /** 恢复一段选区（撤销/重做）；from === to 即折叠光标。无编辑态的渲染组件不实现 */
+  focusRange?: (from: number, to: number) => void
   getText: () => string
   markSaved: () => void
   getEditor: () => Editor

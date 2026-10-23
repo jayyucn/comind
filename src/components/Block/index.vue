@@ -14,21 +14,6 @@
  *   拖拽结束 → onDragEnd → syncTreeToStore → store
  *   → 结构签名变化（#118 D2）→ BlockList watch → syncFromStore → tree 重建
  */
-import { ChevronDown } from 'lucide-vue-next'
-import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch } from 'vue'
-import { useBlockRegistry } from '../../composables/useBlockRegistry'
-import { useBlockRelationshipCleanup } from '../../composables/useBlockRelationshipCleanup'
-import { useBlockStore } from '../../stores/blocks'
-import { useEditorStore } from '../../stores/editor'
-import { useFieldValueStore } from '../../stores/fieldValue'
-import BlockFieldZone from './BlockFieldZone.vue'
-import BlockDraggableList from './components/BlockDraggableList.vue'
-import TaskProgressBar from './components/TaskProgressBar.vue'
-import { useBlockCollapse } from './composables/useBlockCollapse'
-import { useBlockEditorLifecycle } from './composables/useBlockEditorLifecycle'
-import { useBlockFieldRows } from './composables/useBlockFieldRows'
-import { useBlockFieldValueSync } from './composables/useBlockFieldValueSync'
-import { useChildTaskProgress } from './composables/useTaskProgress'
 import './handlers/bullet'
 import './handlers/code'
 import './handlers/embed'
@@ -36,8 +21,17 @@ import './handlers/image'
 
 import type { EditorView } from '@codemirror/view'
 import type { Editor } from '@tiptap/core'
+import { ChevronDown } from 'lucide-vue-next'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch } from 'vue'
+
+import { useBlockRegistry } from '../../composables/useBlockRegistry'
+import { useBlockRelationshipCleanup } from '../../composables/useBlockRelationshipCleanup'
 import type { CrossBlockSelection } from '../../composables/useCrossBlockSelection'
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
+import { recordSelection } from '../../composables/useUndoHistory'
+import { useBlockStore } from '../../stores/blocks'
+import { useEditorStore } from '../../stores/editor'
+import { useFieldValueStore } from '../../stores/fieldValue'
 import { usePageStore } from '../../stores/pages'
 import type { TreeNode } from '../../types/block'
 import type { BlockSetupContext, BlockTypeEditorExposed, BlockTypeHooks } from '../../types/block-type'
@@ -45,7 +39,15 @@ import {
   decodeRelationshipContent,
   setRelationshipSnapshot,
 } from '../../utils/relationship-content'
+import BlockFieldZone from './BlockFieldZone.vue'
+import BlockDraggableList from './components/BlockDraggableList.vue'
+import TaskProgressBar from './components/TaskProgressBar.vue'
+import { useBlockCollapse } from './composables/useBlockCollapse'
 import type { DragEndIntent } from './composables/useBlockDragDrop'
+import { useBlockEditorLifecycle } from './composables/useBlockEditorLifecycle'
+import { useBlockFieldRows } from './composables/useBlockFieldRows'
+import { useBlockFieldValueSync } from './composables/useBlockFieldValueSync'
+import { useChildTaskProgress } from './composables/useTaskProgress'
 
 defineOptions({
   name: 'Block'
@@ -225,6 +227,7 @@ const {
   handleCursorChange,
   handleContentMousedown,
   handleContentClick,
+  syncBlockContent,
 } = useBlockEditorLifecycle({
   blockId,
   pageId: props.pageId,
@@ -290,6 +293,7 @@ onMounted(() => {
   // isActive 在挂载瞬间即为 true，watch(isActive) 不会因「变化」触发，需在此主动聚焦，
   // 否则新块停在只读渲染态 / 光标未落位（Issue 2：弹窗内 Enter 新建节点未激活）。
   if (isActive.value) {
+    registerContentFlusher()
     focusActiveEditor()
   }
 })
@@ -403,13 +407,18 @@ async function focusActiveEditor() {
     return
   }
 
-  // 优先级：点击坐标 > cursorPos > end
+  // 优先级：点击坐标 > 撤销恢复的选区 > cursorPos > end
   const clickCoords = editorStore.consumeClickCoords()
+  const pendingRange = editorStore.consumeSelectionRange()
   if (clickCoords) {
     editorRef.value?.focusAtCoords?.(clickCoords.x, clickCoords.y)
   } else {
     const pendingPos = editorStore.consumeCursorPos()
-    if (pendingPos !== null) {
+    if (pendingRange) {
+      // 撤销/重做恢复的选区优先于单点：范围（选中态）也是状态的一部分
+      if (editorRef.value.focusRange) editorRef.value.focusRange(pendingRange.from, pendingRange.to)
+      else editorRef.value.focus(pendingRange.to)
+    } else if (pendingPos !== null) {
       editorRef.value.focus(pendingPos)
     } else {
       editorRef.value.focus('end')
@@ -417,13 +426,42 @@ async function focusActiveEditor() {
   }
 }
 
+/**
+ * 把「编辑器里未落库的正文 → store」的出口挂到 editorStore：撤销/重做前由
+ * `runUndoOrRedo` 调用（打字进 store 走 300ms 防抖，不同步会撤错步，见该函数注释）。
+ * 用 flush: false 只写内存 —— 落库交给恢复时的单事务，不给撤销热路径加 save_block_tree。
+ */
+function registerContentFlusher() {
+  editorStore.registerContentFlusher(blockId.value, () => syncBlockContent(false))
+}
+
+/**
+ * 选区上报（撤销历史视图态）：把「现在光标/选区在哪」写进历史栈，供撤销/重做回放。
+ * `contentChanged` 由编辑器事务给出 —— 只有**纯移动/纯选中**才就地更新当前快照的选区；
+ * 与正文改动同事务时不动旧快照（改动后那一刻属于即将入栈的新快照）。
+ */
+function handleSelectionChange(payload: { from: number; to: number; contentChanged: boolean }) {
+  // 只认活动块的选区：非活动块的编辑器在挂载/失焦时也会走事务，若上报进来会把
+  // 历史栈顶的视图态改成「用户根本不在的那一块」—— 下次撤销就把光标送错块。
+  if (!isActive.value) return
+  recordSelection(
+    props.pageId,
+    { blockId: blockId.value, from: payload.from, to: payload.to },
+    { contentChanged: payload.contentChanged },
+  )
+}
+
 watch(
   isActive,
   (active) => {
     if (active) {
+      // 撤销/重做前要把编辑器里未落库的正文同步进 store（打字走 300ms 防抖），
+      // 出口挂在 store 上供 runUndoOrRedo 调用 —— 见 editorStore.registerContentFlusher。
+      registerContentFlusher()
       focusActiveEditor()
     } else {
       editorStore.setActiveEditor(null)
+      editorStore.registerContentFlusher(blockId.value, null)
     }
   },
   { immediate: false }
@@ -610,6 +648,7 @@ watch(isActive, (active) => {
               @backspace-empty="handleBackspaceEmpty"
               @exit-edit="handleExitEdit"
               @cursor-change="handleCursorChange"
+              @selection-change="handleSelectionChange"
               @language-change="onLanguageChange"
             />
             <component

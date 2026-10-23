@@ -649,16 +649,19 @@ function landOnChangedBlocks(ids: string[]): void {
 
   const target = ordered[ordered.length - 1]
   // 光标落行尾：activateBlock 不带 cursorPos，focusActiveEditor 走 focus('end') 分支。
-  // 别页编辑态不连坐清掉（与 useUndoRestore.runUndoOrRedo 的「只退**目标页**的编辑态」守卫同口径）：
-  // 当前编辑态挂在**别的页**（BlockModal）上时只闪不抢光标 —— 落点目标是本页的块，
-  // 抢过去会把别页的编辑态连坐清掉。
+  // **已有本页编辑态时不落点** —— 撤销历史已按快照把选区恢复回来（可能是「选中某段」），
+  // 再 activate 一次会把选区顶到行尾，等于白恢复。别页编辑态本就 `activeId` 非空，同样不抢
+  // （与 useUndoRestore.runUndoOrRedo 的「只退**目标页**的编辑态」守卫同口径）。
   const activeId = editorStore.activeBlockId
-  if (!activeId || blockStore.getBlock(activeId)?.pageId === props.pageId) {
+  if (!activeId) {
     editorStore.activateBlock(target)
   }
+  // 滚动目标：光标落在哪就滚哪（恢复的选区可能在另一块，不能让视口停在别处）
+  const scrollTargetId =
+    activeId && blockStore.getBlock(activeId)?.pageId === props.pageId ? activeId : target
   nextTick(() => {
     // 限定在本实例的渲染树内查：多实例共存时避免滚到弹窗/抽屉里的副本
-    const el = rootEl.value?.querySelector(`[data-block-id="${target}"]`)
+    const el = rootEl.value?.querySelector(`[data-block-id="${scrollTargetId}"]`)
     if (el && typeof el.scrollIntoView === 'function') {
       // 已可见就不滚（2026-09-15 裁定）：无条件 scrollIntoView({ block: 'center' }) 会在落点
       // 本就在眼前时把视口重新居中 —— 白跳一下。可见性判的是**位置**，与闪烁（集合标识）各管一头，

@@ -21,17 +21,18 @@
  *    前端无需处理（约束2）。
  */
 import { nextTick } from 'vue'
-import { initCoreClient } from '../wasm/client'
-import type { CoreClient } from '../wasm/client'
-import type { BatchOperation } from '../wasm/types'
+
 import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
 import { useFieldValueStore } from '../stores/fieldValue'
 import type { Block } from '../types/block'
 import type { FieldValue } from '../types/field-value'
-import type { HistoryEntry } from './useUndoHistory'
+import { decodeFieldValueData,encodeFieldValueData } from '../utils/field-value-codec'
+import type { CoreClient } from '../wasm/client'
+import { initCoreClient } from '../wasm/client'
+import type { BatchOperation } from '../wasm/types'
+import type { HistoryEntry, TextViewSelection } from './useUndoHistory'
 import { blockDocumentEqual, canRedo, canUndo, commitNow, redo, undo } from './useUndoHistory'
-import { encodeFieldValueData, decodeFieldValueData } from '../utils/field-value-codec'
 
 let clientPromise: Promise<CoreClient> | null = null
 async function getClient(): Promise<CoreClient> {
@@ -274,33 +275,80 @@ async function refreshRenderSegments(pageId: string): Promise<void> {
   }
 }
 
+/**
+ * 把快照里的视图态（选区）放回编辑器：激活原块 + 交接待恢复范围，由 `focusActiveEditor`
+ * 消费（`focusRange` 支持范围，故「选中 D」这种状态也能原样回来，而不只是折叠光标）。
+ *
+ * 返回是否落了：块已随快照消失（撤销「新建块」）或无选区记录 → false，调用方沿用原落点。
+ */
+function restoreSelection(
+  selection: TextViewSelection | null | undefined,
+  pageId: string,
+): boolean {
+  if (!selection) return false
+  const block = useBlockStore().getBlock(selection.blockId)
+  if (!block || block.pageId !== pageId) return false
+  const editorStore = useEditorStore()
+  // 先激活（触发重挂），再交接范围 —— 同 tick 内完成，早于 focusActiveEditor 的 rAF 消费
+  editorStore.activateBlock(selection.blockId)
+  editorStore.setSelectionRange({ from: selection.from, to: selection.to })
+  return true
+}
+
 /** 撤销并恢复：移动游标到目标快照并返回受影响块 id；无可撤返回 null */
 export async function undoAndRestore(pageId: string): Promise<string[] | null> {
   const snap = undo(pageId)
   if (!snap) return null
-  return restoreEntry(pageId, snap)
+  const changed = await restoreEntry(pageId, snap)
+  restoreSelection(snap.selection, pageId)
+  return changed
 }
 
 /** 重做并恢复：移动游标到目标快照并返回受影响块 id；无可重做返回 null */
 export async function redoAndRestore(pageId: string): Promise<string[] | null> {
   const snap = redo(pageId)
   if (!snap) return null
-  return restoreEntry(pageId, snap)
+  const changed = await restoreEntry(pageId, snap)
+  restoreSelection(snap.selection, pageId)
+  return changed
+}
+
+/**
+ * 当前活动编辑器的选区。ProseMirror 用 `state.selection.from/to`，CodeMirror 用
+ * `state.selection.main`（块类型不同，活动编辑器类型也不同）；取不到返回 null。
+ */
+function activeSelectionRange(): { from: number; to: number } | null {
+  const editor = useEditorStore().activeEditor as unknown as {
+    state?: {
+      selection?: {
+        from?: number
+        to?: number
+        main?: { from: number; to: number }
+      }
+    }
+  } | null
+  const selection = editor?.state?.selection
+  if (!selection) return null
+  if (typeof selection.from === 'number' && typeof selection.to === 'number') {
+    return { from: selection.from, to: selection.to }
+  }
+  if (selection.main) return { from: selection.main.from, to: selection.main.to }
+  return null
 }
 
 /**
  * 撤销/重做编排（共享收口，供 BlockList 与 App 级全局兜底共用）：
- * 封口 → **判定有无这一步可走**（无可走即纯 no-op）→ 退出编辑态 → 再封口 → 移动游标并恢复。
- * 返回受影响块 id（无可撤/可重做返回 null）。
+ * 同步正文 → 封口 → **判定有无这一步可走**（无可走即纯 no-op）→ 退出编辑态 → 再封口
+ * → 移动游标并恢复。返回受影响块 id（无可撤/可重做返回 null）。
  *
  * no-op 守卫（#122）：空历史下按 Ctrl+Z 必须**什么都不发生** —— 原先先 deactivateBlock()
  * 再判空，栈空时会把正在编辑的块踢出编辑态（光标丢失）却什么也没撤。故判定前移到最前面：
  * 先 commitNow 把「已进 store 但未成步」的改动变成一步（commitNow 只动历史栈、不动激活态），
  * 再问 canUndo/canRedo。
  *
- * 已知边界（有意接受）：编辑器文本经 300ms 防抖才进 store，故「页面刚载入 → 首次输入后
- * 300ms 内」按 Ctrl+Z 会因 store 仍是旧内容而判为空、本次无反应（再按一次即生效）。
- * 与之交换的是「空历史不再打掉编辑态」——后者每次都发生，前者只在半个防抖窗口内。
+ * 前置同步：编辑器文本经 300ms 防抖才进 store，故判定前先调 `flushActiveContent` 把编辑器
+ * 里的正文同步进 store。缺这一步时「打完字立刻 Ctrl+Z」会让封口读到旧正文 —— 新改动被回声
+ * 判掉（按了没反应）或越过它多撤一步（光标落到更早位置）。同步只写内存、不落库。
  *
  * 退出编辑态必须先于第二次封口：Editor 卸载时（onBeforeUnmount）把还停在 300ms 落库防抖里的
  * 文本同步进 store；不先同步就恢复，那段未落库文本随后落库会把刚撤掉的内容写回来（#109）。
@@ -310,17 +358,43 @@ export async function runUndoOrRedo(
   pageId: string,
   chord: 'undo' | 'redo',
 ): Promise<string[] | null> {
-  commitNow(pageId)
-  if (!(chord === 'undo' ? canUndo(pageId) : canRedo(pageId))) return null
-
   const editorStore = useEditorStore()
   const blockStore = useBlockStore()
   const activeId = editorStore.activeBlockId
-  if (activeId && blockStore.getBlock(activeId)?.pageId === pageId) {
+  const activeOnPage = !!activeId && blockStore.getBlock(activeId)?.pageId === pageId
+
+  // 先把活动编辑器里**还没落库**的正文同步进 store：打字进 store 走 300ms 防抖
+  // （Editor.debouncedEmitSave），而封口（commitNow）读的是 store。不同步的后果是
+  // 栈顶快照仍是旧正文 ——「打完字立刻 Ctrl+Z」要么整步被回声判掉（按了没反应），
+  // 要么越过这一步多撤一次（光标落到更早的位置）。同步用 flush: false，只写内存，
+  // 落库交给后续恢复的单事务，不给撤销热路径加一次 save_block_tree。
+  if (activeOnPage) await editorStore.flushActiveContent(activeId!)
+
+  commitNow(pageId)
+  if (!(chord === 'undo' ? canUndo(pageId) : canRedo(pageId))) return null
+
+  // 退编辑态前记下光标：若这一步最终什么都没改（见下方 affected 为空的守卫），
+  // 要把用户原样放回去，而不是让他停在「块失去激活态、光标消失」。
+  const caret = activeOnPage ? activeSelectionRange() : null
+  if (activeOnPage) {
     editorStore.deactivateBlock()
     await nextTick()
   }
   // 第二次封口：承接上一步卸载同步进 store 的文本（回声抑制保证无改动时不重复入栈）
   commitNow(pageId)
-  return chord === 'undo' ? undoAndRestore(pageId) : redoAndRestore(pageId)
+  const changed = await (chord === 'undo' ? undoAndRestore(pageId) : redoAndRestore(pageId))
+
+  // 恢复后本页**没有**活动块 ⇒ 把用户放回原来那块与光标。两条路会走到这里：
+  // ① 这一步 affected 为空（空步：只有折叠态/字段对齐之类的等价快照），落点层因「没有
+  //    受影响块」直接 return；
+  // ② 快照里有选区但目标块已随快照消失（撤销「新建块」），restoreSelection 放弃。
+  // 不兜底的表现就是「按了 Ctrl+Z 什么也没撤，光标却丢了」。恢复没落点时才兜底，
+  // 落点层已经激活的块不动（它按快照的选区落位，比原光标更准）。
+  if (activeOnPage && activeId && !editorStore.activeBlockId) {
+    if (blockStore.getBlock(activeId)) {
+      editorStore.activateBlock(activeId)
+      if (caret) editorStore.setSelectionRange(caret)
+    }
+  }
+  return changed
 }

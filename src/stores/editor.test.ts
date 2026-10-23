@@ -67,6 +67,28 @@ describe('useEditorStore', () => {
     })
   })
 
+  describe('pendingSelectionRange 状态（撤销/重做恢复选区）', () => {
+    test('初始为 null', () => {
+      expect(useEditorStore().pendingSelectionRange).toBeNull()
+    })
+
+    test('set / consume 往返，消费后清空', () => {
+      const store = useEditorStore()
+      store.setSelectionRange({ from: 4, to: 5 })
+      expect(store.pendingSelectionRange).toEqual({ from: 4, to: 5 })
+      expect(store.consumeSelectionRange()).toEqual({ from: 4, to: 5 })
+      expect(store.pendingSelectionRange).toBeNull()
+      expect(store.consumeSelectionRange()).toBeNull()
+    })
+
+    test('setSelectionRange(null) 清空（撤销前无选区的一次落空不能被上次残留污染）', () => {
+      const store = useEditorStore()
+      store.setSelectionRange({ from: 2, to: 3 })
+      store.setSelectionRange(null)
+      expect(store.consumeSelectionRange()).toBeNull()
+    })
+  })
+
   describe('activeEditor 状态', () => {
     test('初始 activeEditor 为 null', () => {
       const store = useEditorStore()

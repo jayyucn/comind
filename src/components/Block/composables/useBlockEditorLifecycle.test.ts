@@ -546,6 +546,99 @@ describe('useBlockEditorLifecycle', () => {
     })
   })
 
+  /**
+   * 跨块方向键（←/→ 与 ↑/↓ 同一条落点路径）。
+   *
+   * 两个曾经踩过的坑，各有一例钉住：
+   * - `handleMoveLeft` 旧门 `cursorPos.value !== 0` 恒真（cursorPos 是 ProseMirror 坐标，从 1 起），
+   *   一旦事件接通左键必然没反应 —— 「在块首」的判定归扩展 `endOfTextblock` 单点负责，此处不设门；
+   * - 每次落点都无条件 `flushSave`（无 pending 也补跑 saveBlockTree，~34–386ms）⇒ 方向键卡顿。
+   *   现改为只在「内容刚改过、renderSegments 被清空」时等落库。
+   */
+  describe('跨块方向键落点', () => {
+    /** 上一块 / 下一块夹具（renderSegments 有效 —— 模拟加载或已落库的常态） */
+    function seedNeighbour(dir: 'prev' | 'next') {
+      const blockStore = useBlockStore()
+      const neighbour = {
+        id: dir === 'prev' ? 'prev' : 'next',
+        pageId: 'p1', parentId: null, pos: dir === 'prev' ? 0 : 2,
+        content: 'neighbour', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0,
+        renderSegments: [{ type: 'text', start: 0, end: 9 }],
+      }
+      blockStore.blocks.push(neighbour as never)
+      const spy = vi.spyOn(blockStore, dir === 'prev' ? 'findPreviousVisibleBlock' : 'findNextVisibleBlock')
+      spy.mockReturnValue(neighbour as never)
+      return neighbour
+    }
+
+    it('块首左移 → 失活并把落点交给上一块末行（不保持列）', async () => {
+      const { lifecycle, editorStore } = setup()
+      const prev = seedNeighbour('prev')
+      const deactivateSpy = vi.spyOn(editorStore, 'deactivateBlock').mockImplementation(() => {})
+      const activateSpy = vi.spyOn(editorStore, 'activateBlock').mockImplementation(() => {})
+      const arrowSpy = vi.spyOn(editorStore, 'setArrowFocus')
+
+      await lifecycle.handleMoveLeft()
+
+      expect(arrowSpy).toHaveBeenCalledWith(null, 'last')
+      expect(deactivateSpy).toHaveBeenCalledTimes(1)
+      expect(activateSpy).toHaveBeenCalledWith(prev.id)
+    })
+
+    it('块尾右移 → 失活并把落点交给下一块首行（不保持列）', async () => {
+      const { lifecycle, editorStore } = setup()
+      const next = seedNeighbour('next')
+      const deactivateSpy = vi.spyOn(editorStore, 'deactivateBlock').mockImplementation(() => {})
+      const activateSpy = vi.spyOn(editorStore, 'activateBlock').mockImplementation(() => {})
+      const arrowSpy = vi.spyOn(editorStore, 'setArrowFocus')
+
+      await lifecycle.handleMoveRight()
+
+      expect(arrowSpy).toHaveBeenCalledWith(null, 'first')
+      expect(deactivateSpy).toHaveBeenCalledTimes(1)
+      expect(activateSpy).toHaveBeenCalledWith(next.id)
+    })
+
+    it('内容未变（renderSegments 有效）→ 不落库直接落点（方向键卡顿回归网）', async () => {
+      const { lifecycle, blockStore, editorStore } = setup()
+      blockStore.blocks[0].renderSegments = [{ type: 'text', start: 0, end: 5 }] as never
+      seedNeighbour('prev')
+      vi.spyOn(editorStore, 'deactivateBlock').mockImplementation(() => {})
+      vi.spyOn(editorStore, 'activateBlock').mockImplementation(() => {})
+      const flushSpy = vi.spyOn(blockStore, 'flushSave').mockResolvedValue(undefined)
+
+      await lifecycle.handleMoveUp(10)
+
+      expect(flushSpy).not.toHaveBeenCalled()
+      expect(editorStore.deactivateBlock).toHaveBeenCalledTimes(1)
+    })
+
+    it('内容刚改过（renderSegments 被 updateBlockContent 清空）→ 先落库回写再失活', async () => {
+      const { lifecycle, blockStore, editorStore } = setup()
+      // 默认夹具 content='hello' 且无 renderSegments：等价「打字后 segments 已失效」
+      seedNeighbour('next')
+      const order: string[] = []
+      vi.spyOn(blockStore, 'flushSave').mockImplementation(async () => { order.push('flush') })
+      vi.spyOn(editorStore, 'deactivateBlock').mockImplementation(() => { order.push('deactivate') })
+      vi.spyOn(editorStore, 'activateBlock').mockImplementation(() => { order.push('activate') })
+
+      await lifecycle.handleMoveDown(10)
+
+      // 失活必须排在落库之后：否则渲染态会在 segments 缺失的窗口里退回纯文本
+      expect(order).toEqual(['flush', 'deactivate', 'activate'])
+    })
+
+    it('没有上一块 → 不动（文档首块块首按 ← 停在本块）', async () => {
+      const { lifecycle, blockStore, editorStore } = setup()
+      vi.spyOn(blockStore, 'findPreviousVisibleBlock').mockReturnValue(undefined)
+      const deactivateSpy = vi.spyOn(editorStore, 'deactivateBlock').mockImplementation(() => {})
+
+      await lifecycle.handleMoveLeft()
+
+      expect(deactivateSpy).not.toHaveBeenCalled()
+    })
+  })
+
   describe('handleContentMousedown', () => {
     it('saves click coords for editor positioning', () => {
       const { lifecycle, editorStore } = setup()

@@ -21,6 +21,8 @@ function makeEditor(opts: {
   to?: number
   atFirstLine?: boolean
   atLastLine?: boolean
+  atLineStart?: boolean
+  atLineEnd?: boolean
   caretX?: number
 } = {}) {
   const dom = document.createElement('div')
@@ -47,7 +49,8 @@ function makeEditor(opts: {
   const endOfTextblock = (dir: 'up' | 'down' | 'left' | 'right') => {
     if (dir === 'up') return opts.atFirstLine ?? false
     if (dir === 'down') return opts.atLastLine ?? false
-    return false
+    if (dir === 'left') return opts.atLineStart ?? false
+    return opts.atLineEnd ?? false
   }
   const coordsAtPos = () => ({ left: opts.caretX ?? 0, top: 0, bottom: 12, right: 10 })
 
@@ -141,6 +144,34 @@ describe('EnterAsBlockExtension — 派发侧', () => {
   it('ArrowDown 不在末行（中间行）→ 不 dispatch', () => {
     const { editor, log } = makeEditor({ text: 'abcde', parentOffset: 2, parentSize: 5, atLastLine: false, caretX: 64 })
     const ret = shortcuts['ArrowDown']({ editor })
+    expect(ret).toBe(false)
+    expect(log).toEqual([])
+  })
+
+  // ←/→ 只派发事件；「在块首/块尾」的判定同样交给 endOfTextblock（LTR 文本等价于 parentOffset 为 0 / size）。
+  // 消费侧（Block 的 @move-left → useBlockEditorLifecycle.handleMoveLeft）见其单测。
+  it('ArrowLeft 在块首 → enter-as-block { moveLeft, x }', () => {
+    const { editor, log } = makeEditor({ parentOffset: 0, atLineStart: true, caretX: 12 })
+    shortcuts['ArrowLeft']({ editor })
+    expect(log).toEqual([{ name: 'enter-as-block', detail: { type: 'moveLeft', x: 12 } }])
+  })
+
+  it('ArrowLeft 不在块首 → 不 dispatch，交原生移动光标', () => {
+    const { editor, log } = makeEditor({ parentOffset: 3, atLineStart: false, caretX: 12 })
+    const ret = shortcuts['ArrowLeft']({ editor })
+    expect(ret).toBe(false)
+    expect(log).toEqual([])
+  })
+
+  it('ArrowRight 在块尾 → enter-as-block { moveRight, x }', () => {
+    const { editor, log } = makeEditor({ text: 'abc', parentOffset: 3, parentSize: 3, atLineEnd: true, caretX: 30 })
+    shortcuts['ArrowRight']({ editor })
+    expect(log).toEqual([{ name: 'enter-as-block', detail: { type: 'moveRight', x: 30 } }])
+  })
+
+  it('ArrowRight 不在块尾 → 不 dispatch，交原生移动光标', () => {
+    const { editor, log } = makeEditor({ text: 'abc', parentOffset: 1, parentSize: 3, atLineEnd: false, caretX: 30 })
+    const ret = shortcuts['ArrowRight']({ editor })
     expect(ret).toBe(false)
     expect(log).toEqual([])
   })

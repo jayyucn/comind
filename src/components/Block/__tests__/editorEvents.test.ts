@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { ref } from 'vue'
 import { createEditorEvents, type EditorEventCtx } from '../editorEvents'
 
@@ -97,6 +99,8 @@ describe('createEditorEvents — 声明式事件表', () => {
       { detail: { type: 'outdent' }, expectArgs: ['outdent'] },
       { detail: { type: 'moveUp', x: 50 }, expectArgs: ['moveUp', 50] },
       { detail: { type: 'moveDown', x: 80 }, expectArgs: ['moveDown', 80] },
+      { detail: { type: 'moveLeft', x: 12 }, expectArgs: ['moveLeft', 12] },
+      { detail: { type: 'moveRight', x: 34 }, expectArgs: ['moveRight', 34] },
       { detail: { type: 'exitEdit' }, expectArgs: ['exitEdit'] },
     ]
     for (const c of cases) {
@@ -110,6 +114,24 @@ describe('createEditorEvents — 声明式事件表', () => {
     const { dom } = setup(ctx)
     dom.dispatchEvent(new CustomEvent('enter-as-block', { detail: { type: 'save' } }))
     expect(ctx.emit).toHaveBeenCalledWith('save', 'hello')
+  })
+
+  /**
+   * 死接线回归网（本网钉的是 `moveLeft`/`moveRight` 那一类）：事件表 `ctx.emit('x')` 的名字
+   * 必须在宿主 `Editor.vue` 的 `defineEmits` 里声明，否则 Vue 只在**开发期**打一行警告，
+   * 并把事件拐去 `$attrs` —— 消费方（`Block` 的 `@move-left`）永远收不到。而按键已被扩展
+   * `return true` 吞掉，表现为「块首按左键没反应」，静默且难归因。生产期连警告都没有。
+   */
+  it('事件表 emit 的事件名都已在 Editor.vue 的 emits 中声明', () => {
+    const emitNames = (source: string, re: RegExp) =>
+      new Set([...source.matchAll(re)].map((m) => m[1]))
+    const read = (rel: string) => readFileSync(resolve(process.cwd(), rel), 'utf8')
+
+    const declared = emitNames(read('src/components/Editor.vue'), /\(e: '([\w-]+)'/g)
+    const emitted = emitNames(read('src/components/Block/editorEvents.ts'), /ctx\.emit\('([\w-]+)'/g)
+
+    expect([...emitted].length).toBeGreaterThan(0)
+    expect([...emitted].filter((name) => !declared.has(name))).toEqual([])
   })
 
   it('relationship-trigger 打开关系菜单并传入 onSelect', () => {

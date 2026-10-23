@@ -14,15 +14,31 @@
  * 签名只用于「哪页变了」的归因，不是「新旧快照判重」的 dedupe（本票禁 dedupe）。
  */
 import { watch, type WatchStopHandle } from 'vue'
+
 import { useBlockStore } from '../stores/blocks'
 import { useFieldValueStore } from '../stores/fieldValue'
 import type { Block } from '../types/block'
 import type { FieldValue } from '../types/field-value'
 
-/** 单页快照信封：正文 + 结构 + format(含折叠) + 字段值表（D11） */
+/**
+ * 视图态：到达某快照时的选区。撤销/重做要恢复的不只是正文，还有「光标/选区在哪」——
+ * 用户在 "ABCD" 里把光标放在 D 右侧再删除，撤销后必须回到 D 右侧；选中 D 删除再撤销，
+ * 必须回到「D 被选中」。故选区随快照一起存，但**不参与内容签名与快照相等判定**
+ * （它是视图态，不是文档态；参与会让每次点光标都产生一步）。
+ */
+export interface TextViewSelection {
+  blockId: string
+  /** 编辑器内位置：ProseMirror 1-based / CodeMirror 0-based，恢复时按同一实现解释 */
+  from: number
+  to: number
+}
+
+/** 单页快照信封：正文 + 结构 + format(含折叠) + 字段值表（D11）+ 视图态选区 */
 export interface HistoryEntry {
   blocks: Block[]
   fieldValues: Record<string, FieldValue[]>
+  /** 到达本快照时的选区；null = 当时没有本页编辑态（页面加载后还没点过任何块） */
+  selection?: TextViewSelection | null
 }
 
 const DEFAULT_IDLE_MS = 500
@@ -42,6 +58,8 @@ let idleMs = DEFAULT_IDLE_MS
 let maxBytes = DEFAULT_MAX_BYTES
 const stopHandles = new Map<string, WatchStopHandle[]>()
 const idleTimers = new Map<string, ReturnType<typeof setTimeout>>()
+/** 每页最近的选区（视图态影子）。新快照入栈时带上它 —— 见 recordSelection 的顺序约定 */
+const lastSelections = new Map<string, TextViewSelection | null>()
 
 // ---- 配置（仅供单测注入，生产走默认值）----
 export function configureUndoHistory(opts: { idleMs?: number; maxBytes?: number }): void {
@@ -56,6 +74,7 @@ export function resetUndoHistory(): void {
   for (const t of idleTimers.values()) clearTimeout(t)
   idleTimers.clear()
   pageStacks = new Map()
+  lastSelections.clear()
   timeline.length = 0
   seqCounter = 0
   totalBytes = 0
@@ -157,7 +176,41 @@ function fieldValueEnvelope(pageBlocks: Block[]): Record<string, FieldValue[]> {
 // ---- 快照捕获 ----
 function captureEntry(pageId: string): HistoryEntry {
   const pageBlocks = useBlockStore().getBlocksByPage(pageId)
-  return { blocks: pageBlocks.map(cloneBlockSlim), fieldValues: fieldValueEnvelope(pageBlocks) }
+  return {
+    blocks: pageBlocks.map(cloneBlockSlim),
+    fieldValues: fieldValueEnvelope(pageBlocks),
+    // 视图态取自实时影子（不是当场读编辑器：捕获发生在 ~500ms idle 后，编辑器可能早已失活）
+    selection: lastSelections.get(pageId) ?? null,
+  }
+}
+
+/**
+ * 记录选区（视图态）。两件事一起做，顺序无关，但**调用方必须区分本次是否改了正文**
+ * （`contentChanged`）：这是「撤销回到改动前那一刻的选区」能成立的关键。
+ *
+ * - 只移动光标/改选区（`contentChanged: false`）→ 把 `stack[cursor]` 的 selection 就地更新。
+ *   于是「选中 D」（不产生新快照）会把**当前快照**的选区改成「D 选中」；随后删除产生新快照，
+ *   撤销回到当前快照时就能把 D 重新选中。
+ * - 本次改动同时改了正文（`contentChanged: true`）→ **不**动 `stack[cursor]`。改动后那一刻的
+ *   选区属于**即将入栈的新快照**，若在此覆盖旧快照，撤销回来会落到「改动后」的位置
+ *   （Backspace 删 D 后撤销会停在 C 与 D 之间，而不是用户要的 D 右侧）。
+ *   新快照的 selection 由 `captureEntry` 读取的实时影子给出。
+ * - `selection === null`（编辑态失活 / 退出编辑）→ 影子清空，不改已有快照的 selection：
+ *   失活不该抹掉「用户上次在哪」这个事实。
+ */
+export function recordSelection(
+  pageId: string,
+  selection: TextViewSelection | null,
+  opts: { contentChanged?: boolean } = {},
+): void {
+  if (selection) lastSelections.set(pageId, selection)
+  else lastSelections.delete(pageId)
+
+  if (opts.contentChanged) return
+  const ps = pageStacks.get(pageId)
+  const top = ps?.stack[ps.cursor]
+  if (!ps || !top) return
+  top.selection = selection
 }
 
 // ---- 归因签名（哪页变了，非 dedupe）----
@@ -225,6 +278,17 @@ function schedule(pageId: string): void {
   )
 }
 
+/**
+ * 快照**内容**相等（含正文/结构/字段值），有意**排除 selection**：选区是视图态，
+ * 若参与判等，「点一下光标」就会被当成新步骤入栈并截断 redo 尾。
+ */
+function entryContentEqual(a: HistoryEntry, b: HistoryEntry): boolean {
+  return (
+    JSON.stringify(a.blocks) === JSON.stringify(b.blocks) &&
+    JSON.stringify(a.fieldValues) === JSON.stringify(b.fieldValues)
+  )
+}
+
 function pushSnapshot(pageId: string): void {
   const ps = pageStacks.get(pageId)
   if (!ps) return
@@ -238,7 +302,9 @@ function pushSnapshot(pageId: string): void {
   // Ctrl+Z 看似无效。这不是禁项目里的「用户动作去重」——只拦「状态已与游标处
   // 相同」的回声；真实编辑产出的快照必定不同，不受影响。
   const top = stack[ps.cursor]
-  if (top && JSON.stringify(top) === JSON.stringify(snap)) {
+  if (top && entryContentEqual(top, snap)) {
+    // 内容回声：视图态仍以最新为准（不新增步骤，只同步选区）
+    top.selection = snap.selection
     return
   }
 

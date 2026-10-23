@@ -23,6 +23,14 @@ export const useEditorStore = defineStore('editor', () => {
    * 用完即清。优先于 pendingCursorPos/pendingClickCoords 在 focusActiveEditor 中消费。
    */
   const pendingArrowFocus = ref<{ x: number | null; line: 'first' | 'last' } | null>(null)
+
+  /**
+   * 撤销/重做恢复的选区范围。撤销要恢复的不只是「光标在哪」，还有「选中了哪段」——
+   * 用户选中 D 删掉再撤销，必须回到「D 被选中」。单独一个 ref 而非复用 pendingCursorPos：
+   * 后者是单点语义（点击/方向键/分块都在用），改它会污染所有既有落点。
+   * 用完即清；由 focusActiveEditor 在 cursorPos 之前消费。
+   */
+  const pendingSelectionRange = ref<{ from: number; to: number } | null>(null)
   
   /** 当前活跃的编辑器实例 */
   const activeEditor = shallowRef<Editor | null>(null)
@@ -87,9 +95,47 @@ export const useEditorStore = defineStore('editor', () => {
     return v
   }
 
+  /** 设置撤销/重做要恢复的选区范围（null = 清除） */
+  function setSelectionRange(range: { from: number; to: number } | null) {
+    pendingSelectionRange.value = range
+  }
+
+  /** 消费并清除待恢复的选区范围 */
+  function consumeSelectionRange(): { from: number; to: number } | null {
+    const range = pendingSelectionRange.value
+    pendingSelectionRange.value = null
+    return range
+  }
+
   /** 设置当前编辑器实例 */
   function setActiveEditor(editor: Editor | null) {
     activeEditor.value = editor
+  }
+
+  /**
+   * 活动块「把编辑器里还没落库的正文同步进 store」的出口，由 Block 激活时注册。
+   *
+   * 为什么需要这道口子：打字进 store 走 300ms 防抖（`Editor.debouncedEmitSave`），而
+   * `runUndoOrRedo` 是先 `commitNow` 再判 `canUndo`。不先同步，刚打完字就按 Ctrl+Z 时
+   * 栈顶快照仍是旧正文 —— 新内容被判成回声丢步（按了没反应），或越过这一步多撤一次
+   * （光标落到更早位置）。带 blockId 双向核对，块切换时不会误调上一个块的出口。
+   */
+  const contentFlusher = shallowRef<{ blockId: string; run: () => Promise<void> } | null>(null)
+
+  /** 注册/注销正文同步出口（run 为 null 即注销，且只注销自己的） */
+  function registerContentFlusher(blockId: string, run: (() => Promise<void>) | null) {
+    if (run) {
+      contentFlusher.value = { blockId, run }
+      return
+    }
+    if (contentFlusher.value?.blockId === blockId) contentFlusher.value = null
+  }
+
+  /** 把指定块编辑器里的正文同步进 store（未注册或 blockId 不匹配 = no-op） */
+  async function flushActiveContent(blockId: string): Promise<void> {
+    const flusher = contentFlusher.value
+    if (!flusher || flusher.blockId !== blockId) return
+    await flusher.run()
   }
 
   /** 显示斜杠命令面板 */
@@ -301,6 +347,7 @@ export const useEditorStore = defineStore('editor', () => {
     pendingCursorPos,
     pendingClickCoords,
     pendingArrowFocus,
+    pendingSelectionRange,
     activeEditor,
     slashCommand,
     activateBlock,
@@ -311,7 +358,11 @@ export const useEditorStore = defineStore('editor', () => {
     consumeClickCoords,
     setArrowFocus,
     consumeArrowFocus,
+    setSelectionRange,
+    consumeSelectionRange,
     setActiveEditor,
+    registerContentFlusher,
+    flushActiveContent,
     showSlashCommand,
     hideSlashCommand,
     updateSlashQuery,

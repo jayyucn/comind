@@ -63,7 +63,7 @@
  * 29 例（当时总数）由全绿转 **28 红 / 1 绿**。唯一未变红的是「别页块进同一 blocks 数组不改本页栈」——
  * 它不检验按键接线，只检验 T2 的逐页归因（对照信号在 T2 自己的单测里，与本文件分工不重叠）。
  * 每条「不接管」用例都自带对照组（同一夹具下 Ctrl+Z 必须被接管），故接线消失时它们也不会
- * 静默通过。现总数 39 例（2026-09-15 加 G 组落点 8 例）。
+ * 静默通过。现总数 41 例（2026-09-15 加 G 组落点 8 例；2026-10-23 加「撤销回删除前选区」2 例）。
  */
 import { describe, test, expect, beforeEach, afterEach, beforeAll, afterAll, vi, type MockInstance } from 'vitest'
 import { nextTick } from 'vue'
@@ -332,6 +332,19 @@ async function flushAsync(): Promise<void> {
     await new Promise((r) => setTimeout(r, 0))
   }
   await flushPromises()
+}
+
+/**
+ * 等编辑器真正挂上：`focusActiveEditor` 是 nextTick + requestAnimationFrame 两跳，
+ * `flushAsync` 的几轮宏任务未必跨过一帧（jsdom 的 rAF 走 16ms 定时器），
+ * 断言 `activeEditor.state` 前必须等它到位，否则读到 null 变成假失败。
+ */
+async function waitActiveEditor(): Promise<ReturnType<typeof useEditorStore>['activeEditor']> {
+  const editorStore = useEditorStore()
+  for (let i = 0; i < 30 && !editorStore.activeEditor; i++) {
+    await new Promise((r) => setTimeout(r, 10))
+  }
+  return editorStore.activeEditor
 }
 
 /** 让逐页看门狗排程 + 越过 idle 窗口 ⇒ 上一步改动封口入栈，并落库到位 */
@@ -1427,6 +1440,58 @@ describe('G. 落点：闪烁 + 光标', () => {
       if (savedGetRect) Object.defineProperty(Element.prototype, 'getBoundingClientRect', savedGetRect)
       else delete (Element.prototype as unknown as Record<string, unknown>).getBoundingClientRect
     }
+    wrapper.unmount()
+  })
+
+  test('撤销回删除前的光标：ABCDEF 删掉 D 后撤销 ⇒ 光标回到 D 右侧（不是行尾、不是 C 与 D 之间）', async () => {
+    const pageId = 'page-undo-caret-backspace'
+    // D 在中间（末尾的 D 会与「落点行尾」撞成同一答案，用例就没有牙齿）
+    const [id] = await seed(pageId, ['ABCDEF'])
+    const wrapper = await mountBlockList(pageId)
+    const editorStore = useEditorStore()
+
+    // 光标停在 D 右侧（"ABCDEF" 的合法位置 1..7；D 右侧 = 4）
+    editorStore.activateBlock(id, 4)
+    await flushAsync()
+    expect((await waitActiveEditor())?.state.selection.from).toBe(4)
+
+    // Backspace 删掉 D（等价于光标在 4 时的一次删除 → store 落成 "ABCEF"）
+    await typeStep(id, 'ABCEF')
+
+    undoKey(document.body)
+    await flushAsync()
+
+    expect(contentOf(id)).toBe('ABCDEF')
+    const sel = (await waitActiveEditor())?.state.selection
+    // 4 = D 右侧；行尾是 7（落点兜底会给这个），删除点后侧是 3
+    expect(sel?.from).toBe(4)
+    // 折叠光标，不是把 D 选中
+    expect(sel?.empty).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('撤销回删除前的选区：ABCD 选中 D 删掉后撤销 ⇒ D 重新被选中', async () => {
+    const pageId = 'page-undo-caret-selection'
+    const [id] = await seed(pageId, ['ABCD'])
+    const wrapper = await mountBlockList(pageId)
+    const editorStore = useEditorStore()
+
+    editorStore.activateBlock(id, 5)
+    await flushAsync()
+    // 选中 D（"ABCD" 中 D 占 4..5）—— 纯选区变化，不产生新的历史步骤
+    ;(await waitActiveEditor())!.commands.setTextSelection({ from: 4, to: 5 })
+    await flushAsync()
+    expect((await waitActiveEditor())?.state.selection.empty).toBe(false)
+
+    await typeStep(id, 'ABC')
+
+    undoKey(document.body)
+    await flushAsync()
+
+    expect(contentOf(id)).toBe('ABCD')
+    const sel = (await waitActiveEditor())?.state.selection
+    expect(sel?.from).toBe(4)
+    expect(sel?.to).toBe(5)
     wrapper.unmount()
   })
 

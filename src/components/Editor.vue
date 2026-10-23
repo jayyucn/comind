@@ -1,34 +1,35 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, watch, shallowRef, ref } from 'vue'
-import { useEditor, EditorContent } from '@tiptap/vue-3'
 import type { EditorView } from '@tiptap/pm/view'
 import StarterKit from '@tiptap/starter-kit'
-import { WikiLinkExtension } from '../extensions/WikiLinkExtension'
-import { InlineTagExtension } from '../extensions/InlineTagExtension'
-import { WikiLinkTriggerExtension, notifyWikiLinkMenuSelect, closeWikiLinkMenuByEditor, findWikiLinkAtCursor } from '../extensions/WikiLinkTriggerExtension'
-import { InlineTagTriggerExtension, notifyTagMenuSelect, closeTagMenuByEditor, findTagAtCursor } from '../extensions/InlineTagTriggerExtension'
-import { RelationshipTriggerExtension } from '../extensions/RelationshipTriggerExtension'
-import EnterAsBlockExtension from '../extensions/EnterAsBlockExtension'
-import BracketPairExtension from '../extensions/BracketPairExtension'
-import { SlashCommandExtension } from '../extensions/SlashCommandExtension'
-import { HeadingPreviewExtension } from '../extensions/HeadingPreviewExtension'
-import { DateRefExtension } from '../extensions/DateRefExtension'
-import { DateRefTriggerExtension } from '../extensions/DateRefTriggerExtension'
-import { usePageStore } from '../stores/pages'
-import { useTagsStore } from '../stores/tags'
+import { EditorContent,useEditor } from '@tiptap/vue-3'
+import { computed, onBeforeUnmount, ref,shallowRef, watch } from 'vue'
+
 import { useDateTimePickerPanel } from '../composables/useDateTimePickerPanel'
-import { useRelationshipMenu } from '../composables/useRelationshipMenu'
-import { debounce } from '../utils/debounce'
-import PageLinkMenu from './PageLinkMenu.vue'
-import TagMenu from './TagMenu.vue'
-import DateRefKindSelector from './DateRefKindSelector.vue'
-import type { DateRefClickPayload } from '../extensions/DateRefExtension'
-import type { DateRefKind } from '../utils/date-ref'
-import { createEditorEvents } from './Block/editorEvents'
 import { useDomEvents } from '../composables/useDomEvents'
-import { padUnitForDoc } from '../utils/inline-unit-pad'
 import { useNavigateToPage } from '../composables/useNavigateToPage'
 import { useNavigateToTag } from '../composables/useNavigateToTag'
+import { useRelationshipMenu } from '../composables/useRelationshipMenu'
+import BracketPairExtension from '../extensions/BracketPairExtension'
+import type { DateRefClickPayload } from '../extensions/DateRefExtension'
+import { DateRefExtension } from '../extensions/DateRefExtension'
+import { DateRefTriggerExtension } from '../extensions/DateRefTriggerExtension'
+import EnterAsBlockExtension from '../extensions/EnterAsBlockExtension'
+import { HeadingPreviewExtension } from '../extensions/HeadingPreviewExtension'
+import { InlineTagExtension } from '../extensions/InlineTagExtension'
+import { closeTagMenuByEditor, findTagAtCursor,InlineTagTriggerExtension, notifyTagMenuSelect } from '../extensions/InlineTagTriggerExtension'
+import { RelationshipTriggerExtension } from '../extensions/RelationshipTriggerExtension'
+import { SlashCommandExtension } from '../extensions/SlashCommandExtension'
+import { WikiLinkExtension } from '../extensions/WikiLinkExtension'
+import { closeWikiLinkMenuByEditor, findWikiLinkAtCursor,notifyWikiLinkMenuSelect, WikiLinkTriggerExtension } from '../extensions/WikiLinkTriggerExtension'
+import { usePageStore } from '../stores/pages'
+import { useTagsStore } from '../stores/tags'
+import type { DateRefKind } from '../utils/date-ref'
+import { debounce } from '../utils/debounce'
+import { padUnitForDoc } from '../utils/inline-unit-pad'
+import { createEditorEvents } from './Block/editorEvents'
+import DateRefKindSelector from './DateRefKindSelector.vue'
+import PageLinkMenu from './PageLinkMenu.vue'
+import TagMenu from './TagMenu.vue'
 
 const props = defineProps<{
   blockId: string
@@ -50,8 +51,22 @@ const emit = defineEmits<{
   (e: 'outdent'): void
   (e: 'moveUp', x?: number): void
   (e: 'moveDown', x?: number): void
+  /**
+   * 块首 ←/块尾 → 的跨块移动。必须声明：`EnterAsBlockExtension` 在块边界派发
+   * `moveLeft`/`moveRight`，本组件经 `editorEvents` 的 `emit` 中转给 `Block`。
+   * 未声明时 Vue 既报「emitted event not declared」警告（每次按键打印一次调用栈，
+   * 长按方向键会明显掉帧），又把事件拐去 `$attrs` —— `Block` 的 `@move-left`
+   * 收不到，按键已被扩展 `return true` 吞掉 ⇒ 表现为「块首按左键没反应」。
+   */
+  (e: 'moveLeft', x?: number): void
+  (e: 'moveRight', x?: number): void
   (e: 'exitEdit'): void
   (e: 'cursor-change', pos: number): void
+  /**
+   * 选区上报（撤销历史用）：`contentChanged` 区分「只是移动光标/选中」与「改了正文」——
+   * 历史栈据此决定「这次选区变化属于改动前的快照」还是「属于即将入栈的新快照」。
+   */
+  (e: 'selection-change', payload: { from: number; to: number; contentChanged: boolean }): void
 }>()
 
 // ProseMirror 默认折叠空白，解析会丢弃段落行尾/连续空格（如 date-ref 单元后补的空格），
@@ -193,6 +208,15 @@ const editor = shallowRef(useEditor({
       emit('cursor-change', from)
       debouncedEmitSave()
     }
+  },
+  /**
+   * 选区上报：一次事务一次，带 `docChanged` 让下游区分「移动光标」与「改正文」。
+   * 程序性写回（syncContent / watch(props.content) 的 setContent）一律不发 —— 那不是用户在动光标。
+   */
+  onTransaction: ({ transaction }) => {
+    if (props.readonly || syncing || settingContent) return
+    const { from, to } = transaction.selection
+    emit('selection-change', { from, to, contentChanged: transaction.docChanged })
   }
 }))
 
@@ -438,15 +462,34 @@ function syncContent(content: string, cursorPos?: number) {
   }
 }
 
+/**
+ * 把位置钳进当前文档的合法区间：撤销/重做恢复的是**撤销前**的选区，而内容可能已被撤短
+ * （撤销「刚输入的那几个字」），越界会让 TextSelection.create 抛 RangeError。
+ * 合法落点 = [1, doc.content.size - 1]（首位之前 / 末位之后都不可插入）。
+ */
+function clampDocPos(pos: number): number {
+  const size = editor.value?.state.doc.content.size ?? 1
+  return Math.max(1, Math.min(pos, Math.max(1, size - 1)))
+}
+
 function focus(pos?: number | 'start' | 'end') {
   if (editor.value) {
     if (typeof pos === 'number') {
       editor.value.commands.focus()
-      editor.value.commands.setTextSelection(pos)
+      editor.value.commands.setTextSelection(clampDocPos(pos))
     } else {
       editor.value.commands.focus(pos)
     }
   }
+}
+
+/** 恢复一段选区（撤销/重做）：from === to 即为折叠光标。两端都钳进合法区间。 */
+function focusRange(from: number, to: number) {
+  if (!editor.value) return
+  editor.value.commands.focus()
+  const f = clampDocPos(from)
+  const t = Math.max(f, clampDocPos(to))
+  editor.value.commands.setTextSelection({ from: f, to: t })
 }
 
 function focusAtCoords(x: number, y: number) {
@@ -483,7 +526,7 @@ function getEditor() {
   return editor.value
 }
 
-defineExpose({ syncContent, focus, focusAtCoords, getText: () => editor.value?.getText() ?? '', markSaved, getEditor, cancelDebouncedSave })
+defineExpose({ syncContent, focus, focusRange, focusAtCoords, getText: () => editor.value?.getText() ?? '', markSaved, getEditor, cancelDebouncedSave })
 </script>
 
 <template>

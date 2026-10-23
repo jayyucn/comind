@@ -1,5 +1,6 @@
 import type { ComputedRef, Ref } from 'vue'
 import { computed, inject, nextTick } from 'vue'
+
 import type { useBlockRelationshipCleanup } from '../../../composables/useBlockRelationshipCleanup'
 import type { CrossBlockSelection } from '../../../composables/useCrossBlockSelection'
 import {
@@ -10,17 +11,17 @@ import {
 import { useNavigateToPage } from '../../../composables/useNavigateToPage'
 import { useNavigateToTag } from '../../../composables/useNavigateToTag'
 import { useRelationshipMenu } from '../../../composables/useRelationshipMenu'
+import { renderedOffsetToEncodedOffset } from '../../../services/render-text'
 import { blockOffsetFromPoint, caretBlockOffsetFromDomSelection } from '../../../services/selection-geometry'
 import type { useBlockStore } from '../../../stores/blocks'
 import type { useEditorStore } from '../../../stores/editor'
 import type { usePageStore } from '../../../stores/pages'
 import type { BlockTypeEditorExposed } from '../../../types/block-type'
-import { DATE_REF_AT_REGEX, normalizeRecurrence, serializeDateRef, type DateRefKind, type RecurrenceRule } from '../../../utils/date-ref'
+import { DATE_REF_AT_REGEX, type DateRefKind, normalizeRecurrence, type RecurrenceRule,serializeDateRef } from '../../../utils/date-ref'
 import {
   encodeRelationshipContent,
   takeRelationshipSnapshot,
 } from '../../../utils/relationship-content'
-import { renderedOffsetToEncodedOffset } from '../../../services/render-text'
 
 /**
  * useBlockEditorLifecycle — Block 编辑器生命周期 composable
@@ -136,6 +137,23 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
       await syncBlockContent(opts.flush ?? true)
       return fn(...args)
     }) as T
+  }
+
+  /**
+   * 失活前的「非必要不落库」判据（跨块方向键热路径用）。
+   *
+   * `withContentSync(fn, { flush: false })` 只做内存 encode 同步：内容真变了才会把
+   * `renderSegments` 清空（`updateBlockContent` 见 content 变化即置 undefined），此时
+   * 必须等落库回写 —— 否则失活瞬间渲染态退回纯文本（与 runSplit 同一判据、同一理由）。
+   * 内容没变（只是按方向键离开）则**跳过**：`flushSave` 无 pending 也会补跑一次
+   * `saveBlockTree`（WASM 落库 ~34–386ms，见 87d78ac），把它留在方向键热路径上
+   * 就是「按方向键卡顿」。空白新块本无 segments 且无内容，同样无需等。
+   */
+  async function awaitSegmentsIfStale(): Promise<void> {
+    const block = blockStore.getBlock(blockId.value)
+    if (!block?.renderSegments && (block?.content.length ?? 0) > 0) {
+      await blockStore.flushSave(blockId.value)
+    }
   }
 
   // ── 编辑操作 ──
@@ -272,47 +290,62 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     editorStore.activateBlock(blockId.value)
   })
 
+  /**
+   * 跨块方向键：落点只依赖块的文档序，与 segments 无关 ⇒ 不阻塞落库（否则每次按方向键
+   * 都要吃一次 saveBlockTree，~34–386ms，长按方向键会连续排队 = 卡顿）。仅在内容刚改过、
+   * segments 已失效时才等一次（`awaitSegmentsIfStale`）。
+   */
   const handleMoveUp = withContentSync(async (x?: number) => {
     const prevBlock = blockStore.findPreviousVisibleBlock(blockId.value)
     if (prevBlock) {
+      await awaitSegmentsIfStale()
       // 上移落到上一块的末行，保持源块水平列位置（短块由 posAtCoords 钳制）
       if (x !== undefined) editorStore.setArrowFocus(x, 'last')
       editorStore.deactivateBlock()
       editorStore.activateBlock(prevBlock.id)
     }
-  })
+  }, { flush: false })
 
   const handleMoveDown = withContentSync(async (x?: number) => {
     const nextBlock = blockStore.findNextVisibleBlock(blockId.value)
     if (nextBlock) {
+      await awaitSegmentsIfStale()
       // 下移落到下一块的首行，保持源块水平列位置（短块由 posAtCoords 钳制）
       if (x !== undefined) editorStore.setArrowFocus(x, 'first')
       editorStore.deactivateBlock()
       editorStore.activateBlock(nextBlock.id)
     }
-  })
+  }, { flush: false })
 
+  /**
+   * 块首左移 → 上一块末行行尾（不保持列，emit 的 x 有意忽略）。
+   *
+   * 「是否在块首」由扩展 `EnterAsBlockExtension` 的 `endOfTextblock('left')` 单点判定
+   * （LTR 文本等价于 `parentOffset === 0`；选区非空时它直接返回 false，交原生折叠），
+   * 此处**不重复设门**。原先的门 `cursorPos.value !== 0` 恒真 —— `cursorPos` 由正文变更时的
+   * `cursor-change` 上报，值是 ProseMirror 坐标（内容起点为 1，永不为 0），纯方向键移动
+   * 压根不上报 ⇒ 一旦事件接通就必然「左键没反应」。
+   */
   const handleMoveLeft = withContentSync(async () => {
-    //在块首左移，落到上一块的末行行尾（不保持列，emit 的 x 有意忽略）
-    if (cursorPos.value !== 0) return
     const prevBlock = blockStore.findPreviousVisibleBlock(blockId.value)
     if (prevBlock) {
+      await awaitSegmentsIfStale()
       editorStore.setArrowFocus(null, 'last')
       editorStore.deactivateBlock()
       editorStore.activateBlock(prevBlock.id)
     }
+  }, { flush: false })
 
-  })
-
+  /** 块尾右移 → 下一块首行行首（不保持列，emit 的 x 有意忽略）；在块尾的判定同 handleMoveLeft。 */
   const handleMoveRight = withContentSync(async () => {
-    //在块尾右移，落到下一块的首行行首（不保持列，emit 的 x 有意忽略）
     const nextBlock = blockStore.findNextVisibleBlock(blockId.value)
     if (nextBlock) {
+      await awaitSegmentsIfStale()
       editorStore.setArrowFocus(null, 'first')
       editorStore.deactivateBlock()
       editorStore.activateBlock(nextBlock.id)
     }
-  })
+  }, { flush: false })
 
   const handleExitEdit = withContentSync(async () => {
     editorStore.deactivateBlock()
