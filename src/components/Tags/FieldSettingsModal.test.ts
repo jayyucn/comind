@@ -113,7 +113,7 @@ describe('FieldSettingsModal', () => {
     // select 类型 → 条件区渲染选项 chips（Todo/Doing）
     const chips = w.findAll('.opt-chip')
     expect(chips.map((c) => c.text().replace(/[×\s]/g, ''))).toEqual(['Todo', 'Doing'])
-    // 隐藏下拉是五档条件枚举（非布尔开关）
+    // 隐藏下拉是六档条件枚举（非布尔开关）
     const hideSelect = w.findAll('select.mini-select').find((s) => s.findAll('option').some((o) => o.element.value === 'when_empty'))
     expect(hideSelect).toBeDefined()
     w.unmount()

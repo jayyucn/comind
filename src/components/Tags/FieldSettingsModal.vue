@@ -25,7 +25,7 @@ import ConfirmDialog from '../ConfirmDialog.vue'
  * tagsStore.updateFieldDefinition 单源写库（ADR-0057 D5）；有脏草稿时关闭需确认。
  *
  * 布局 = Tana 式单页两列行（左窄标签 + 右宽控件）：类型（条件区紧随其下）→
- * 默认值 → 展示形态 → 隐藏（hide_when 五档）→ 使用于（默认折叠的有值块列表，
+ * 默认值 → 展示形态 → 隐藏（hide_when 六档）→ 使用于（默认折叠的有值块列表，
  * 点击块项打开 BlockModal）→ 操作（删除字段，二次确认）。
  */
 const props = defineProps<{
@@ -628,7 +628,7 @@ function confirmDiscard() {
               </div>
             </div>
 
-            <!-- 隐藏（hide_when 五档，ADR-0050 D18） -->
+            <!-- 隐藏（hide_when 六档，ADR-0050 D18） -->
             <div class="row-line">
               <label class="row-label">隐藏</label>
               <div class="row-ctrl">

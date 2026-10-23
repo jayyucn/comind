@@ -12,6 +12,7 @@ pub const FIELD_HIDE_WHEN_VALUES: &[&str] = &[
     "when_empty",
     "when_not_empty",
     "when_default",
+    "when_unset_or_default",
     "always",
 ];
 
@@ -71,7 +72,7 @@ pub struct FieldDefinition {
     #[serde(default)]
     pub default_value: Option<String>,
     /// 块属性展示的隐藏规则（ADR-0050 D18）：never / when_empty / when_not_empty /
-    /// when_default / always。作用于块级字段区（BlockTagFields）；定义级全局共享。
+    /// when_default / when_unset_or_default / always。作用于块级字段区（BlockTagFields）；定义级全局共享。
     #[serde(default = "default_hide_when")]
     pub hide_when: String,
     /// 块字段区展示形态的用户覆盖（ADR-0050 D21 决策 5 + 通用只读扩展）：auto / icon /
@@ -183,7 +184,7 @@ struct SeedFieldJson {
     /// 字段默认值（JSON 文本，ADR-0050 D13）。缺省 None = 无默认。
     #[serde(default, rename = "defaultValue")]
     default_value: Option<String>,
-    /// 块属性展示隐藏规则（ADR-0050 D18）：never / when_empty / when_not_empty / when_default / always。
+    /// 块属性展示隐藏规则（ADR-0050 D18）：never / when_empty / when_not_empty / when_default / when_unset_or_default / always。
     /// 缺省 "never"（非法值经 `normalize_hide_when` 归一）。
     #[serde(default, rename = "hideWhen")]
     hide_when: String,

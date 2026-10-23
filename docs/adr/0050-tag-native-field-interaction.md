@@ -453,6 +453,16 @@ native（`storage/sqlite.rs:303` CREATE TABLE + `:620` 迁移）与 wasm（`stor
 - ~~块间间隙恢复入口的落点在 BlockList 布局层，需与块拖拽落点指示区互斥；hover 显隐走「隐形元素 `pointer-events: none`、hover 淡入可点」既有铁律。~~（随决策 8 废止，该入口不再存在。）
 - 各类型形态的具体视觉规格（chip 内边距 / 圆角档位、日期格式、page 引用样式）按既有 token 与截图迭代惯例在实施中收敛。
 
+## Decision 追加（2026-10-22）：`hide_when` 补 `when_unset_or_default` 档位
+
+**背景**：原五档无法表达「未填 **或** 等于默认值都隐藏」——`when_default` 以 `hasValue` 为前提（未填不算等于默认），`when_empty` 又不藏默认值行。带默认值的只读字段因此恒留一行无效展示（空行 `—` 或默认值文本），且无单档可消除。
+
+**决策**：新增第六档 `when_unset_or_default`（「未填或为默认时」），判据 `!hasValue || value == default`。取值表扩展为 never / when_empty / when_not_empty / when_default / when_unset_or_default / always；Rust `FIELD_HIDE_WHEN_VALUES` 与 TS `FIELD_HIDE_VALUES` 同步，落库仍为 TEXT、无 schema 变更、无数据迁移。
+
+**附带修正**：「等于默认」的判定由字符串裸比改为类型驱动语义比较（`valuesEqual`）——array / multiSelect 忽略顺序、date / datetime 解析为时间戳、number 数值比、boolean 布尔归一、relation 比 targetId。原实现对数组顺序与日期格式敏感，会把语义相等的值误判为「不等于默认」而漏藏。`decodeDefaultJson` 保留（设置页回填用），不再承担比较职责。
+
+**已否决**：补齐另外两种隐藏子集（「仅在有非默认值时隐藏」/「仅在默认值时显示」）——均为反直觉配置，与「不给不可达死选项」的既有约定冲突。
+
 ## 开放问题
 
 - `TagFieldDefinition` / `TagFieldValue` 表名是否随 Rust 类型同步改（含 serde rename 对已同步设备 payload 的兼容评估）—— **D8 实施前置核查（2026-10-07）已给出三档拆解（3a/3b/3c），表名档（3c）维持开放，待裁决**。

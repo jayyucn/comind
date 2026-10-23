@@ -14,14 +14,15 @@
  * 但其 key 不在任何已挂标签有效字段并集中——删 tag / 去 tag 后悬空保留的值），
  * 两者各自过 `hide_when` 规则（判定逐块，单源在 `utils/field-hide`）。
  */
-import { computed, toValue, type MaybeRefOrGetter } from 'vue'
+import { computed, type MaybeRefOrGetter,toValue } from 'vue'
+
 import { useFieldValueStore } from '../../../stores/fieldValue'
 import { useTagsStore } from '../../../stores/tags'
 import type { FieldDefinition, RelationRefValue } from '../../../types/field-definition'
 import { getFieldDefinition } from '../../../types/field-definition'
 import type { FieldValue } from '../../../types/field-value'
 import type { PersistedFieldDefinition } from '../../../types/tag-persisted'
-import { decodeDefaultJson, isFieldHiddenByRule, normalizeHideWhen } from '../../../utils/field-hide'
+import { isFieldHiddenByRule, normalizeHideWhen } from '../../../utils/field-hide'
 import { decodeFieldValueData } from '../../../utils/field-value-codec'
 
 /** 解码后的内存值（写回时的 `value_json` 由 codec 编码，此处还原）。 */
@@ -72,15 +73,22 @@ export function useBlockFieldRows(
     }
   }
 
-  /** 该块此字段的值形态：未填（无行 / 空串 / 空数组）→ null。 */
-  function rawValueOf(def: PersistedFieldDefinition): string | null {
+  /** 该块此字段的解码原值：未填（无行 / 空串 / 空数组）→ null。语义比较用。 */
+  function decodedValueOf(def: PersistedFieldDefinition): unknown {
     const fv = fieldValueStore.getBlockFieldValue(toValue(blockId), def.key)
     if (!fv) return null
     const v = dataOf(fv)
     if (v === null || v === undefined || v === '') return null
     if (Array.isArray(v) && !v.length) return null
+    return v
+  }
+
+  /** 该块此字段的字符串形态（渲染 / 展示消费方用）；relation 取 targetId。未填 → null。 */
+  function rawValueOf(def: PersistedFieldDefinition): string | null {
+    const v = decodedValueOf(def)
+    if (v === null) return null
     // relation（issue T5）：值是 { targetId, relationshipTypeId } 对象——
-    // 隐藏规则只关心「有没有值」，取 targetId 作为代表（String(obj) 会得到 "[object Object]"）
+    // 展示侧取 targetId 作为代表（String(obj) 会得到 "[object Object]"）
     if (def.type === 'relation') {
       const rel = v as Partial<RelationRefValue> | null
       return rel && typeof rel === 'object' && rel.targetId ? rel.targetId : null
@@ -95,12 +103,13 @@ export function useBlockFieldRows(
    */
   function isHiddenByRule(def: PersistedFieldDefinition): boolean {
     if (normalizeHideWhen(def.hide_when) === 'never') return false
-    const value = rawValueOf(def)
+    const value = decodedValueOf(def)
     return isFieldHiddenByRule(
       def.hide_when,
       value !== null,
-      value ?? '',
-      decodeDefaultJson(def.default_value),
+      value,
+      def.default_value,
+      def.type,
     )
   }
 
