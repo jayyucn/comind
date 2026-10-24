@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { Clock, Repeat, Check } from 'lucide-vue-next'
+import { Check,Clock, Repeat } from 'lucide-vue-next'
+import { computed, nextTick,onBeforeUnmount, onMounted, ref, watch } from 'vue'
+
+import { useBlockStore } from '../stores/blocks'
+import { useEditorStore } from '../stores/editor'
+import type { DateRefKind, RecurrenceRule } from '../utils/date-ref'
+import { getCoreClient } from '../wasm/client'
+import type { DateRefRecord } from '../wasm/types'
 import CalendarPopover from './CalendarPopover.vue'
 import BasePopover from './common/BasePopover.vue'
-import { useEditorStore } from '../stores/editor'
-import { useBlockStore } from '../stores/blocks'
-import { getCoreClient } from '../wasm/client'
-import type { DateRefKind, RecurrenceRule } from '../utils/date-ref'
-import type { DateRefRecord } from '../wasm/types'
 
 export interface DateTimePickerConfirm {
   kind: DateRefKind
@@ -391,8 +392,6 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeyDown, true))
 </template>
 
 <style scoped>
-@use '../styles/mixins' as *;
-
 .dtp-panel {
   width: var(--panel-width-md);
   padding: var(--space-3);

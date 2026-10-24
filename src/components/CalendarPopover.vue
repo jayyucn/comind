@@ -295,8 +295,6 @@ watch(
 </template>
 
 <style scoped>
-@use '../styles/mixins' as *;
-
 /* Popover 容器 */
 .cal-popover {
   background: var(--bg-base);

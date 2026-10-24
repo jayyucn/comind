@@ -353,8 +353,6 @@ function clearValue() {
 </template>
 
 <style scoped>
-@use '../styles/mixins' as *;
-
 .date-picker {
   display: inline-flex;
   min-width: 0;

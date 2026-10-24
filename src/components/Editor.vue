@@ -246,14 +246,16 @@ async function handleWikiLinkSelect(pageName: string) {
   // 在右缘带即可整删（含 pad）。块首/已有空白不补，左邻内容字符补一个。
   const unit = `[[${pageName}]]`
   const padded = padUnitForDoc(state.doc, from, to, unit)
-  const leftPad = padded.startsWith(' ') ? 1 : 0
 
+  // 区间替换一次完成（insertContentAt），不拆成 deleteRange + insertContent：
+  // 后者的插入目标取自删除后的 tr.selection 映射，而 Enter 确认路径（keydown 内派发
+  // wiki-link-menu-enter）下该映射不落到删除后的位置 ⇒ insertContent 静默落空、只剩删除
+  // 结果，整个块被清空（鼠标点击走同一条链却正常）。区间替换直接给出替换区间，不依赖
+  // selection。回归：tests/wiki-link-menu-keyboard.spec.ts。
   editor.value.chain()
-    .deleteRange({ from, to })
-    .insertContent(padded)
-    // 光标落 padded 末尾（右 pad 之后）——与 @date-ref 插入后默认光标位一致；
-    // 停在 unit 末尾会把光标留在右 pad 空格之前，视觉上「空格没插入」。
-    .setTextSelection(from + leftPad + padded.length)
+    .insertContentAt({ from, to }, padded)
+    // 光标落 padded 末尾——padded 已含左 pad，故不再额外加 leftPad。
+    .setTextSelection(from + padded.length)
     .focus()
     .run()
 
@@ -284,14 +286,13 @@ async function handleTagSelect(tagName: string) {
   // Backspace 在右缘带即可整删（含 pad）。块首/已有空白不补，左邻内容字符补一个。
   const unit = `#${tagName}`
   const padded = padUnitForDoc(state.doc, from, to, unit)
-  const leftPad = padded.startsWith(' ') ? 1 : 0
 
+  // 同 handleWikiLinkSelect：区间替换一次完成，避免 Enter 确认路径下
+  // deleteRange + insertContent 的插入步落空把整块清空。
   editor.value.chain()
-    .deleteRange({ from, to })
-    .insertContent(padded)
-    // 光标落 padded 末尾（右 pad 之后）——与 @date-ref 插入后默认光标位一致；
-    // 停在 unit 末尾会把光标留在右 pad 空格之前，视觉上「空格没插入」。
-    .setTextSelection(from + leftPad + padded.length)
+    .insertContentAt({ from, to }, padded)
+    // 光标落 padded 末尾——padded 已含左 pad，故不再额外加 leftPad。
+    .setTextSelection(from + padded.length)
     .focus()
     .run()
 

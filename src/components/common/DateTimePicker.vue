@@ -185,8 +185,6 @@ defineExpose({ onSelect })
 </template>
 
 <style scoped>
-@use '../styles/mixins' as *;
-
 .date-time-picker {
   display: inline-flex;
   min-width: 0;
