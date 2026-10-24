@@ -1,13 +1,14 @@
-// composables/useFavorites.ts
-import { ref, computed, watch } from 'vue'
+// composables/usePinned.ts
+import { computed, ref, watch } from 'vue'
+
 import { usePageStore } from '../stores/pages'
 import type { Page } from '../types/page'
 
-const STORAGE_KEY = 'comind:favorites'
-const COLLAPSE_KEY = 'comind:sidebar-fav-collapsed'
+const STORAGE_KEY = 'comind:pinned'
+const COLLAPSE_KEY = 'comind:sidebar-pinned-collapsed'
 
 // 全局状态（模块级单例）
-const favoriteIds = ref<string[]>([])
+const pinnedIds = ref<string[]>([])
 const isExpanded = ref(true)
 
 // 初始化：从 localStorage 加载折叠状态
@@ -18,23 +19,23 @@ if (typeof window !== 'undefined') {
   }
 }
 
-// 初始化：从 localStorage 加载收藏
+// 初始化：从 localStorage 加载置顶
 if (typeof window !== 'undefined') {
   const stored = localStorage.getItem(STORAGE_KEY)
   if (stored) {
     try {
-      favoriteIds.value = JSON.parse(stored)
+      pinnedIds.value = JSON.parse(stored)
     } catch {
-      favoriteIds.value = []
+      pinnedIds.value = []
     }
   }
 }
 
-export function useFavorites() {
+export function usePinned() {
   const pageStore = usePageStore()
 
   // 持久化：变化时写入
-  watch(favoriteIds, (ids) => {
+  watch(pinnedIds, (ids) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(ids))
   }, { deep: true })
 
@@ -45,35 +46,35 @@ export function useFavorites() {
     }
   })
 
-  // 收藏的 Page 列表（按收藏顺序）
-  const favoritePages = computed(() => {
-    return favoriteIds.value
+  // 置顶的 Page 列表（按置顶顺序）
+  const pinnedPages = computed(() => {
+    return pinnedIds.value
       .map(id => pageStore.getPage(id))
       .filter((page): page is Page => page !== undefined)
   })
 
-  function isFavorite(pageId: string): boolean {
-    return favoriteIds.value.includes(pageId)
+  function isPinned(pageId: string): boolean {
+    return pinnedIds.value.includes(pageId)
   }
 
-  function addFavorite(pageId: string) {
-    if (!favoriteIds.value.includes(pageId)) {
-      favoriteIds.value.push(pageId)
+  function addPin(pageId: string) {
+    if (!pinnedIds.value.includes(pageId)) {
+      pinnedIds.value.push(pageId)
     }
   }
 
-  function removeFavorite(pageId: string) {
-    const index = favoriteIds.value.indexOf(pageId)
+  function removePin(pageId: string) {
+    const index = pinnedIds.value.indexOf(pageId)
     if (index > -1) {
-      favoriteIds.value.splice(index, 1)
+      pinnedIds.value.splice(index, 1)
     }
   }
 
-  function toggleFavorite(pageId: string) {
-    if (isFavorite(pageId)) {
-      removeFavorite(pageId)
+  function togglePin(pageId: string) {
+    if (isPinned(pageId)) {
+      removePin(pageId)
     } else {
-      addFavorite(pageId)
+      addPin(pageId)
     }
   }
 
@@ -82,11 +83,11 @@ export function useFavorites() {
   }
 
   return {
-    favoritePages,
-    isFavorite,
-    addFavorite,
-    removeFavorite,
-    toggleFavorite,
+    pinnedPages,
+    isPinned,
+    addPin,
+    removePin,
+    togglePin,
     isExpanded: computed(() => isExpanded.value),
     toggleExpand,
   }

@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { useRouter, useRoute } from 'vue-router'
+import { ChevronDown,ChevronUp } from 'lucide-vue-next'
+import { ref } from 'vue'
+import { useRoute,useRouter } from 'vue-router'
+
 import { useRecent } from '../../composables/useRecent'
 import { usePageStore } from '../../stores/pages'
-import { ChevronUp, ChevronDown } from 'lucide-vue-next'
 import PageItem from './PageItem.vue'
 import PageItemMenu from './PageItemMenu.vue'
-import { ref } from 'vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -96,6 +97,8 @@ function handleCancelRename() {
 <style scoped>
 .recent-section {
   padding: 0;
+  /* 置顶区块收缩时不得挤压「最近」列表 */
+  flex-shrink: 0;
 }
 
 .section-header {

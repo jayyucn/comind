@@ -17,6 +17,8 @@ import {
   PanelLeftClose,
   PanelRightClose,
   PanelRightOpen,
+  Pin,
+  PinOff,
   Search,
   Settings,
   Square,
@@ -29,6 +31,7 @@ import {
 } from 'lucide-vue-next'
 import type { Component } from 'vue'
 import { computed, defineComponent, h } from 'vue'
+
 import PriorityQuadrant from './PriorityIcons/PriorityQuadrant.vue'
 import StatusArchived from './StatusIcons/StatusArchived.vue'
 import StatusCanceled from './StatusIcons/StatusCanceled.vue'
@@ -123,6 +126,8 @@ const GENERAL_ICONS: Record<string, Component> = {
   'icon-menu': Menu,
   'icon-star': Star,
   'icon-star-filled': Star,
+  'icon-pin': Pin,
+  'icon-pin-off': PinOff,
   'icon-trash': Trash,
   'icon-trash2': Trash2,
   'icon-trash-permanent': Trash2,

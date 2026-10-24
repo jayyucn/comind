@@ -60,7 +60,7 @@ Pinia stores，集中管理应用状态。
 
 | 文件 | 说明 |
 |------|------|
-| `src/stores/pages.ts` | 页面 CRUD、收藏/最近列表、日记页面创建、回收站管理 |
+| `src/stores/pages.ts` | 页面 CRUD、置顶/最近列表、日记页面创建、回收站管理 |
 | `src/stores/blocks.ts` | 块 CRUD、排序（Gap 位置算法）、父子关系、批量操作、保存防抖 |
 | `src/stores/editor.ts` | 编辑器状态：活跃块、光标位置、斜杠命令面板、Toast 消息 |
 | `src/stores/property.ts` | 属性定义和值管理、属性类型推断、日期引用解析 |
@@ -85,7 +85,7 @@ Vue 组件，按功能分组。
 | 文件 | 说明 |
 |------|------|
 | `src/components/Sidebar/index.vue` | 侧边栏入口，代理到 SidebarContainer |
-| `src/components/Sidebar/SidebarContainer.vue` | 侧边栏主容器，包含收藏、最近、日记等子面板 |
+| `src/components/Sidebar/SidebarContainer.vue` | 侧边栏主容器，包含置顶、最近、日记等子面板 |
 | `src/components/Sidebar/PageItem.vue` | 页面列表项，支持拖拽和右键菜单 |
 
 #### 功能组件
@@ -128,7 +128,7 @@ TipTap 核心扩展和组合式函数。
 | `src/composables/useSlashCommands.ts` | 斜杠命令定义、过滤、分组、解析 |
 | `src/composables/useJournal.ts` | 日记页面判断、日记标题规范化 |
 | `src/composables/useSidebar.ts` | 侧边栏折叠状态管理 |
-| `src/composables/useFavorites.ts` | 页面收藏管理 |
+| `src/composables/usePinned.ts` | 页面置顶管理 |
 | `src/composables/useRecent.ts` | 最近访问页面追踪 |
 | `src/composables/useNavigateToPage.ts` | 页面导航逻辑 |
 | `src/composables/useBlockRegistry.ts` | 块类型注册表 |
@@ -413,7 +413,7 @@ src/composables/useDragDrop.ts          → 拖拽计算
 src/composables/useSlashCommands.ts     → 斜杠命令
 src/composables/useJournal.ts           → 日记判断
 src/composables/useSidebar.ts           → 侧边栏状态
-src/composables/useFavorites.ts         → 收藏
+src/composables/usePinned.ts           → 置顶
 src/composables/useRecent.ts            → 最近访问
 src/composables/useNavigateToPage.ts    → 页面导航
 src/composables/useCrossBlockSelection.ts → 跨块选择

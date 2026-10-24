@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+
 import { useLayoutShell } from '../../composables/useLayoutShell'
 import { useSidebar } from '../../composables/useSidebar'
 import Icon from '../Icons/Icon.vue'
-import SidebarFavorites from './SidebarFavorites.vue'
 import SidebarFooter from './SidebarFooter.vue'
 import SidebarGraphItem from './SidebarGraphItem.vue'
 import SidebarHeader from './SidebarHeader.vue'
 import SidebarIdeas from './SidebarIdeas.vue'
 import SidebarPages from './SidebarPages.vue'
+import SidebarPinned from './SidebarPinned.vue'
 import SidebarRecent from './SidebarRecent.vue'
 import SidebarTagItem from './SidebarTagItem.vue'
 import SidebarTaskItem from './SidebarTaskItem.vue'
@@ -82,11 +83,11 @@ defineEmits<{
         <SidebarTaskItem />
         <SidebarTagItem />
 
+        <!-- 置顶列表（随内容取高，条目多时自身滚动） -->
+        <SidebarPinned />
+
         <!-- 最近列表（固定高度，不滚动） -->
         <SidebarRecent />
-
-        <!-- 收藏列表（flex 撑满，独立滚动） -->
-        <SidebarFavorites />
       </div>
 
       <SidebarFooter />

@@ -25,13 +25,13 @@ vi.mock('../stores/pages', () => ({
   }))
 }))
 
-const mockToggleFavorite = vi.fn()
-const mockIsFavorite = vi.fn(() => false)
+const mockTogglePin = vi.fn()
+const mockIsPinned = vi.fn(() => false)
 
-vi.mock('../composables/useFavorites', () => ({
-  useFavorites: vi.fn(() => ({
-    isFavorite: mockIsFavorite,
-    toggleFavorite: mockToggleFavorite,
+vi.mock('../composables/usePinned', () => ({
+  usePinned: vi.fn(() => ({
+    isPinned: mockIsPinned,
+    togglePin: mockTogglePin,
   }))
 }))
 
@@ -45,7 +45,7 @@ describe('PageItemMenu Component', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
-    mockIsFavorite.mockReturnValue(false)
+    mockIsPinned.mockReturnValue(false)
   })
 
   afterEach(() => {
@@ -103,8 +103,8 @@ describe('PageItemMenu Component', () => {
     })
   })
 
-  describe('Favorite Toggle', () => {
-    test('点击收藏按钮调用 toggleFavorite', async () => {
+  describe('Pin Toggle', () => {
+    test('点击置顶按钮调用 togglePin', async () => {
       const wrapper = mount(PageItemMenu, {
         props: { page: mockPage }
       })
@@ -112,15 +112,15 @@ describe('PageItemMenu Component', () => {
       await wrapper.find('.menu-trigger').trigger('click')
       await nextTick()
 
-      const favItem = wrapper.findAll('.menu-item')[0]
-      await favItem.trigger('click')
+      const pinItem = wrapper.findAll('.menu-item')[0]
+      await pinItem.trigger('click')
       await nextTick()
 
-      expect(mockToggleFavorite).toHaveBeenCalledWith(mockPage.id)
+      expect(mockTogglePin).toHaveBeenCalledWith(mockPage.id)
     })
 
-    test('已收藏时显示"取消收藏"', async () => {
-      mockIsFavorite.mockReturnValue(true)
+    test('已置顶时显示"取消置顶"', async () => {
+      mockIsPinned.mockReturnValue(true)
 
       const wrapper = mount(PageItemMenu, {
         props: { page: mockPage }
@@ -129,12 +129,12 @@ describe('PageItemMenu Component', () => {
       await wrapper.find('.menu-trigger').trigger('click')
       await nextTick()
 
-      const favItem = wrapper.findAll('.menu-item')[0]
-      expect(favItem.text()).toContain('取消收藏')
+      const pinItem = wrapper.findAll('.menu-item')[0]
+      expect(pinItem.text()).toContain('取消置顶')
     })
 
-    test('未收藏时显示"收藏"', async () => {
-      mockIsFavorite.mockReturnValue(false)
+    test('未置顶时显示"置顶"', async () => {
+      mockIsPinned.mockReturnValue(false)
 
       const wrapper = mount(PageItemMenu, {
         props: { page: mockPage }
@@ -143,11 +143,11 @@ describe('PageItemMenu Component', () => {
       await wrapper.find('.menu-trigger').trigger('click')
       await nextTick()
 
-      const favItem = wrapper.findAll('.menu-item')[0]
-      expect(favItem.text()).toContain('收藏')
+      const pinItem = wrapper.findAll('.menu-item')[0]
+      expect(pinItem.text()).toContain('置顶')
     })
 
-    test('收藏操作后关闭菜单', async () => {
+    test('置顶操作后关闭菜单', async () => {
       const wrapper = mount(PageItemMenu, {
         props: { page: mockPage }
       })
@@ -155,8 +155,8 @@ describe('PageItemMenu Component', () => {
       await wrapper.find('.menu-trigger').trigger('click')
       await nextTick()
 
-      const favItem = wrapper.findAll('.menu-item')[0]
-      await favItem.trigger('click')
+      const pinItem = wrapper.findAll('.menu-item')[0]
+      await pinItem.trigger('click')
       await nextTick()
 
       expect(wrapper.find('.menu-dropdown').exists()).toBe(false)

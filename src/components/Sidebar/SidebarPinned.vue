@@ -1,16 +1,17 @@
 <script setup lang="ts">
-import { useRouter, useRoute } from 'vue-router'
-import { useFavorites } from '../../composables/useFavorites'
+import { ChevronDown,ChevronUp } from 'lucide-vue-next'
+import { ref } from 'vue'
+import { useRoute,useRouter } from 'vue-router'
+
+import { usePinned } from '../../composables/usePinned'
 import { usePageStore } from '../../stores/pages'
-import { ChevronUp, ChevronDown } from 'lucide-vue-next'
 import PageItem from './PageItem.vue'
 import PageItemMenu from './PageItemMenu.vue'
-import { ref } from 'vue'
 
 const router = useRouter()
 const route = useRoute()
 const pageStore = usePageStore()
-const { favoritePages, isExpanded, toggleExpand } = useFavorites()
+const { pinnedPages, isExpanded, toggleExpand } = usePinned()
 
 const renamingPageId = ref<string | null>(null)
 
@@ -41,12 +42,12 @@ function handleCancelRename() {
 </script>
 
 <template>
-  <div class="favorites-section">
+  <div class="pinned-section">
     <div
       class="section-header"
       @click="toggleExpand"
     >
-      <span class="section-title">收藏</span>
+      <span class="section-title">置顶</span>
       <span class="expand-icon">
         <ChevronUp
           v-if="isExpanded"
@@ -66,7 +67,7 @@ function handleCancelRename() {
       class="section-content"
     >
       <PageItem
-        v-for="page in favoritePages"
+        v-for="page in pinnedPages"
         :key="page.id"
         :page="page"
         :active="(route.name === 'page' || route.name === 'ideas-page') && pageStore.currentPageId === page.id"
@@ -84,18 +85,20 @@ function handleCancelRename() {
       </PageItem>
 
       <div
-        v-if="favoritePages.length === 0"
+        v-if="pinnedPages.length === 0"
         class="empty-text"
       >
-        暂无收藏页面
+        暂无置顶页面
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.favorites-section {
-  flex: 1;
+/* 置顶区块位于导航区下方、最近之上：随内容取高，条目过多时自身收缩并内部滚动，
+   不挤占下方「最近」列表（后者 flex-shrink: 0）。 */
+.pinned-section {
+  flex: 0 1 auto;
   display: flex;
   flex-direction: column;
   min-height: 0;

@@ -2,18 +2,19 @@
 import { Monitor, Moon, Sun } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useFavorites } from '../composables/useFavorites'
+
+import { usePinned } from '../composables/usePinned'
 import { useSettingsModal } from '../composables/useSettingsModal'
 import { useTheme } from '../composables/useTheme'
 import { usePageStore } from '../stores/pages'
-import ConfirmDialog from './ConfirmDialog.vue'
 import BasePopover from './common/BasePopover.vue'
+import ConfirmDialog from './ConfirmDialog.vue'
 import { Icon } from './Icons'
 
 const router = useRouter()
 const route = useRoute()
 const pageStore = usePageStore()
-const { isFavorite, toggleFavorite } = useFavorites()
+const { isPinned, togglePin } = usePinned()
 const { open: openSettings } = useSettingsModal()
 const { theme, setTheme } = useTheme()
 
@@ -58,7 +59,7 @@ const shouldDelete = computed(() => {
   return currentPage.value.deleted ?? false
 })
 
-const favorited = computed(() => currentPage.value ? isFavorite(currentPage.value.id) : false)
+const pinned = computed(() => currentPage.value ? isPinned(currentPage.value.id) : false)
 
 function toggleMenu() {
   isMenuOpen.value = !isMenuOpen.value
@@ -72,9 +73,9 @@ function closeMenu() {
   isDeleteSubmenuOpen.value = false
 }
 
-function handleToggleFavorite() {
+function handleTogglePin() {
   if (currentPage.value) {
-    toggleFavorite(currentPage.value.id)
+    togglePin(currentPage.value.id)
   }
   closeMenu()
 }
@@ -150,13 +151,13 @@ function handleNavigateToSettings() {
         <template v-if="isOnPage && currentPage">
           <button
             class="menu-item"
-            @click="handleToggleFavorite"
+            @click="handleTogglePin"
           >
             <Icon
-              :name="favorited ? 'icon-star-filled' : 'icon-star'"
+              :name="pinned ? 'icon-pin-off' : 'icon-pin'"
               :size="16"
             />
-            <span>{{ favorited ? '取消收藏' : '添加收藏' }}</span>
+            <span>{{ pinned ? '取消置顶' : '置顶' }}</span>
           </button>
 
           <div

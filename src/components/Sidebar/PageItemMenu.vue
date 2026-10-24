@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, onUnmounted } from 'vue'
+import { MoreVertical, Pencil, Pin, PinOff, Trash2 } from 'lucide-vue-next'
+import { onUnmounted,ref } from 'vue'
 import { useRouter } from 'vue-router'
+
+import { usePinned } from '../../composables/usePinned'
 import { usePageStore } from '../../stores/pages'
-import { useFavorites } from '../../composables/useFavorites'
-import { MoreVertical, Pencil, Star, Trash2 } from 'lucide-vue-next'
-import ConfirmDialog from '../ConfirmDialog.vue'
 import type { Page } from '../../types/page'
+import ConfirmDialog from '../ConfirmDialog.vue'
 
 const props = defineProps<{
   page: Page
@@ -17,7 +18,7 @@ const emit = defineEmits<{
 
 const router = useRouter()
 const pageStore = usePageStore()
-const { isFavorite, toggleFavorite } = useFavorites()
+const { isPinned, togglePin } = usePinned()
 
 const isMenuOpen = ref(false)
 const showDeleteConfirm = ref(false)
@@ -31,9 +32,9 @@ function closeMenu() {
   isMenuOpen.value = false
 }
 
-function handleToggleFavorite(event: Event) {
+function handleTogglePin(event: Event) {
   event.stopPropagation()
-  toggleFavorite(props.page.id)
+  togglePin(props.page.id)
   closeMenu()
 }
 
@@ -95,13 +96,19 @@ onUnmounted(() => {
       >
         <button
           class="menu-item"
-          @click="handleToggleFavorite"
+          @click="handleTogglePin"
         >
-          <Star
+          <PinOff
+            v-if="isPinned(page.id)"
             :size="14"
             :stroke-width="1.75"
           />
-          <span>{{ isFavorite(page.id) ? '取消收藏' : '收藏' }}</span>
+          <Pin
+            v-else
+            :size="14"
+            :stroke-width="1.75"
+          />
+          <span>{{ isPinned(page.id) ? '取消置顶' : '置顶' }}</span>
         </button>
 
         <button

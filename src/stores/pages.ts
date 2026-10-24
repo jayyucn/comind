@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
-import { useFavorites } from '../composables/useFavorites'
+import { usePinned } from '../composables/usePinned'
 import type { Page } from '../types/page'
 import { type IdeasSnapshotData,parseIdeasSnapshotContent } from '../utils/ideas-snapshot'
 import type { CoreClient } from '../wasm/client'
@@ -351,8 +351,8 @@ export const usePageStore = defineStore('pages', () => {
     if (currentPageId.value === pageId) {
       currentPageId.value = ''
     }
-    const { removeFavorite } = useFavorites()
-    removeFavorite(pageId)
+    const { removePin } = usePinned()
+    removePin(pageId)
     if (removePageFromHistoryFn) {
       removePageFromHistoryFn(pageId)
     }
@@ -382,8 +382,8 @@ export const usePageStore = defineStore('pages', () => {
     if (currentPageId.value === pageId) {
       currentPageId.value = ''
     }
-    const { removeFavorite } = useFavorites()
-    removeFavorite(pageId)
+    const { removePin } = usePinned()
+    removePin(pageId)
     if (removePageFromHistoryFn) {
       removePageFromHistoryFn(pageId)
     }
