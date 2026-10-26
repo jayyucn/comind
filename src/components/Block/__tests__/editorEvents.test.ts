@@ -31,6 +31,7 @@ function makeCtx(overrides: Partial<EditorEventCtx> = {}): EditorEventCtx {
     closeTagMenuByEditor: vi.fn(),
     navigateToTag: vi.fn(),
     navigateToPage: vi.fn(),
+    openPageInOtherPane: vi.fn(),
     ...overrides,
   }
 }
@@ -300,6 +301,14 @@ describe('createEditorEvents — 声明式事件表', () => {
     dom.dispatchEvent(new CustomEvent('wikiLinkClick', { detail: { page: 'MyPage' } }))
     expect(ctx.navigateToPage).toHaveBeenCalledWith('MyPage')
     expect(ctx.navigateToTag).not.toHaveBeenCalled()
+  })
+
+  it('wikiLinkClick openInOtherPane → openPageInOtherPane(page) 且不导航', () => {
+    const ctx = makeCtx()
+    const { dom } = setup(ctx)
+    dom.dispatchEvent(new CustomEvent('wikiLinkClick', { detail: { page: 'MyPage', openInOtherPane: true } }))
+    expect(ctx.openPageInOtherPane).toHaveBeenCalledWith('MyPage')
+    expect(ctx.navigateToPage).not.toHaveBeenCalled()
   })
 
   it('wikiLinkClick 缺 page → no-op', () => {

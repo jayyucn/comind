@@ -76,6 +76,8 @@ export interface EditorEventCtx {
   navigateToTag: (tagId: string) => void
   /** `[[wiki link]]` 点击 → 页面导航（编辑态与渲染态同口径） */
   navigateToPage: (pageName: string) => void
+  /** `[[wiki link]]` Ctrl/⌘+Click → 在另一栏打开目标页（ADR-0059） */
+  openPageInOtherPane: (pageName: string) => void
 }
 
 /**
@@ -214,10 +216,15 @@ export function createEditorEvents(ctx: EditorEventCtx): Record<string, (e: Even
   }
 
   // 编辑态 `[[wiki link]]` 点击 → 页面导航（WikiLinkExtension 派发；
-  // 与渲染态 handleContentClick 的 .block-link 分支同口径）
+  // 与渲染态 handleContentClick 的 .block-link 分支同口径）。
+  // Ctrl/⌘+Click 时分流到另一栏（ADR-0059）。
   function handleWikiLinkClick(event: Event) {
-    const { page } = (event as CustomEvent<WikiLinkClickPayload>).detail
+    const { page, openInOtherPane } = (event as CustomEvent<WikiLinkClickPayload>).detail
     if (!page) return
+    if (openInOtherPane) {
+      ctx.openPageInOtherPane(page)
+      return
+    }
     ctx.navigateToPage(page)
   }
 

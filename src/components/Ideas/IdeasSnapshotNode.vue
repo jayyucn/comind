@@ -10,6 +10,7 @@ import { ChevronDown, ChevronRight } from 'lucide-vue-next'
 import { computed, inject } from 'vue'
 
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
+import { useOpenPageInOtherPane } from '../../composables/useOpenPageInOtherPane'
 import { useEditorStore } from '../../stores/editor'
 import type { TreeNode } from '../../types/block'
 import { getFieldDefinition } from '../../types/field-definition'
@@ -40,6 +41,7 @@ const treeState = inject<SnapshotTreeState>(SNAPSHOT_TREE_KEY)!
 const inSnapshotModal = inject(SNAPSHOT_MODAL_KEY, false)
 const editorStore = useEditorStore()
 const { navigateToPage } = useNavigateToPage()
+const { openPageInOtherPane } = useOpenPageInOtherPane()
 
 const blockId = computed(() => props.node.id)
 
@@ -94,6 +96,13 @@ function onContentClick(e: MouseEvent) {
   }
   const pageName = link.dataset.page
   if (pageName) {
+    // 对称 pane（ADR-0059）：Ctrl/⌘+Click → 目标页在另一栏打开，与活链路同口径
+    if (e.ctrlKey || e.metaKey) {
+      openPageInOtherPane(pageName).catch(err => {
+        console.error('[IdeasSnapshotNode] 另一栏打开失败:', err)
+      })
+      return
+    }
     navigateToPage(pageName).catch(err => {
       console.error('[IdeasSnapshotNode] 导航失败:', err)
     })

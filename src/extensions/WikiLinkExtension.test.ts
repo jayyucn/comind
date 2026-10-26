@@ -465,6 +465,21 @@ describe('WikiLinkExtension — 编辑态点击（wikiLinkClick）', () => {
     destroyDecoratedEditor(handle)
   })
 
+  it('Ctrl+Click [[X]] → 派发 openInOtherPane=true（ADR-0059）', () => {
+    const handle = createDecoratedEditor('看 [[页面]] 尾')
+    const link = handle.element.querySelector('span.block-link')
+    expect(link).not.toBeNull()
+    const dispatched: CustomEvent<WikiLinkClickPayload>[] = []
+    link!.addEventListener(WIKI_LINK_CLICK_EVENT, e =>
+      dispatched.push(e as CustomEvent<WikiLinkClickPayload>))
+    const handled = wikiClickHandler(handle.editor)(
+      handle.editor.view, 5, { target: link, ctrlKey: true } as unknown as MouseEvent)
+    expect(handled).toBe(true)
+    expect(dispatched).toHaveLength(1)
+    expect(dispatched[0].detail.openInOtherPane).toBe(true)
+    destroyDecoratedEditor(handle)
+  })
+
   it('点击 typed-paren 的 [[X]] 部分 → 同样派发（渲染态 typed_link 段一致）', () => {
     const handle = createDecoratedEditor('前置 ((是一个))[[项目A]] 后置')
     // 外层 .block-link 被首尾 .wiki-bracket 拆成 3 段（PM 扁平化，既有行为）——

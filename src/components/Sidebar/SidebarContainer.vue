@@ -21,15 +21,8 @@ const shell = useLayoutShell()
 const sidebarRef = ref<HTMLElement | null>(null)
 watch(sidebarRef, el => { shell.sidebarEl.value = el }, { immediate: true })
 
-defineProps<{
-  canGoBack: boolean
-  canGoForward: boolean
-}>()
-
 defineEmits<{
   (e: 'open-search'): void
-  (e: 'goBack'): void
-  (e: 'goForward'): void
 }>()
 </script>
 
@@ -53,12 +46,7 @@ defineEmits<{
       ref="sidebarRef"
       class="sidebar"
     >
-      <SidebarHeader
-        :can-go-back="canGoBack"
-        :can-go-forward="canGoForward"
-        @go-back="$emit('goBack')"
-        @go-forward="$emit('goForward')"
-      />
+      <SidebarHeader />
 
       <div class="sidebar-content">
         <!-- 搜索触发 -->

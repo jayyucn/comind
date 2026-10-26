@@ -10,6 +10,7 @@ import {
 } from '../../../composables/useDateTimePickerPanel'
 import { useNavigateToPage } from '../../../composables/useNavigateToPage'
 import { useNavigateToTag } from '../../../composables/useNavigateToTag'
+import { useOpenPageInOtherPane } from '../../../composables/useOpenPageInOtherPane'
 import { useRelationshipMenu } from '../../../composables/useRelationshipMenu'
 import { renderedOffsetToEncodedOffset } from '../../../services/render-text'
 import { blockOffsetFromPoint, caretBlockOffsetFromDomSelection } from '../../../services/selection-geometry'
@@ -80,6 +81,7 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
   // ── 内部依赖的 composables ──
   const { navigateToPage } = useNavigateToPage()
   const { navigateToTag } = useNavigateToTag()
+  const { openPageInOtherPane } = useOpenPageInOtherPane()
   const relMenu = useRelationshipMenu()
   const { open: openDateRefPanel } = useDateTimePickerPanel()
 
@@ -571,6 +573,14 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     }
     const pageName = link.dataset.page
     if (pageName) {
+      // 对称 pane（ADR-0059）：Ctrl+Click（Mac ⌘+Click）→ 目标页在另一栏打开；
+      // 普通点击行为不变，走原有页面导航。
+      if (e.ctrlKey || e.metaKey) {
+        openPageInOtherPane(pageName).catch(err => {
+          console.error('另一栏打开失败:', err)
+        })
+        return
+      }
       navigateToPage(pageName).catch(err => {
         console.error('导航失败:', err)
       })

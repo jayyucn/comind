@@ -5,6 +5,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useBlockRegistry } from '../composables/useBlockRegistry'
 import { useNavigateToPage } from '../composables/useNavigateToPage'
 import { useNavigateToTag } from '../composables/useNavigateToTag'
+import { useOpenPageInOtherPane } from '../composables/useOpenPageInOtherPane'
 import { useBlockStore } from '../stores/blocks'
 import { useEditorStore } from '../stores/editor'
 import { useFieldValueStore } from '../stores/fieldValue'
@@ -29,6 +30,7 @@ const blockStore = useBlockStore()
 const fieldValueStore = useFieldValueStore()
 const tagsStore = useTagsStore()
 const { navigateToPage } = useNavigateToPage()
+const { openPageInOtherPane } = useOpenPageInOtherPane()
 const { navigateToTag } = useNavigateToTag()
 const { getHandler } = useBlockRegistry()
 
@@ -197,6 +199,13 @@ function handleContentClick(e: MouseEvent) {
   }
   const pageName = link.dataset.page
   if (pageName) {
+    // 对称 pane（ADR-0059）：Ctrl/⌘+Click → 目标页在另一栏打开，与正文渲染态同口径
+    if (e.ctrlKey || e.metaKey) {
+      openPageInOtherPane(pageName).catch(err => {
+        console.error('另一栏打开失败:', err)
+      })
+      return
+    }
     navigateToPage(pageName).catch(err => {
       console.error('导航失败:', err)
     })

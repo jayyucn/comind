@@ -1,17 +1,7 @@
 <script setup lang="ts">
-import { isTauriEnvironment } from '../../wasm/tauri-platform'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import Icon from '../Icons/Icon.vue'
 
-defineProps<{
-  canGoBack: boolean
-  canGoForward: boolean
-}>()
-
-defineEmits<{
-  goBack: []
-  goForward: []
-}>()
+import { isTauriEnvironment } from '../../wasm/tauri-platform'
 
 async function handleMouseDown() {
   if (!isTauriEnvironment()) return
@@ -26,32 +16,6 @@ async function handleMouseDown() {
     @mousedown="handleMouseDown"
   >
     <span class="sidebar-logo">COMIND</span>
-    <div class="header-right">
-      <button
-        class="nav-btn"
-        :disabled="!canGoBack"
-        title="后退"
-        @mousedown.stop
-        @click="$emit('goBack')"
-      >
-        <Icon
-          name="icon-arrow-left"
-          :size="16"
-        />
-      </button>
-      <button
-        class="nav-btn"
-        :disabled="!canGoForward"
-        title="前进"
-        @mousedown.stop
-        @click="$emit('goForward')"
-      >
-        <Icon
-          name="icon-arrow-right"
-          :size="16"
-        />
-      </button>
-    </div>
   </div>
 </template>
 
@@ -67,12 +31,6 @@ async function handleMouseDown() {
   box-sizing: border-box;
 }
 
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
 .sidebar-logo {
   margin-left: var(--space-6);
   font-size: var(--text-sm);
@@ -80,33 +38,5 @@ async function handleMouseDown() {
   color: var(--text-secondary);
   letter-spacing: var(--letter-wide-3);
   text-transform: uppercase;
-}
-
-.nav-btn {
-  width: 26px;
-  height: 26px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  color: var(--text-tertiary);
-  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
-}
-
-.nav-btn:hover:not(:disabled) {
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-}
-
-.nav-btn:active:not(:disabled) {
-  transform: scale(0.95);
-}
-
-.nav-btn:disabled {
-  opacity: 0.4;
-  cursor: default;
 }
 </style>

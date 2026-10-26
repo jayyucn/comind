@@ -32,6 +32,17 @@ vi.mock('../../../composables/useNavigateToTag', () => ({
   })
 }))
 
+// 另一栏打开（ADR-0059）：同样依赖 useRouter/getCoreClient，mock 掉供 handleContentClick 断言
+const { openPageInOtherPaneMock } = vi.hoisted(() => ({
+  openPageInOtherPaneMock: vi.fn().mockResolvedValue(undefined)
+}))
+
+vi.mock('../../../composables/useOpenPageInOtherPane', () => ({
+  useOpenPageInOtherPane: () => ({
+    openPageInOtherPane: openPageInOtherPaneMock
+  })
+}))
+
 // useRelationshipMenu 内部依赖 useRelationshipTypes，mock 掉以隔离
 // 暴露 relMenuMock 供 handleContentClick rel-type-label 测试断言
 const { relMenuMock } = vi.hoisted(() => ({
@@ -878,6 +889,24 @@ describe('useBlockEditorLifecycle', () => {
       } as any
       lifecycle.handleContentClick(e)
       expect(navigateToPageMock).toHaveBeenCalledWith('MyPage')
+    })
+
+    it('Ctrl+Click wiki link → openPageInOtherPane（ADR-0059）且不导航', () => {
+      const { lifecycle } = setup()
+      const link: any = {
+        dataset: { page: 'MyPage' },
+      }
+      link.closest = (sel: string) => sel === '.block-link' ? link : null
+      const e = {
+        target: link,
+        ctrlKey: true,
+        metaKey: false,
+        preventDefault: () => {},
+        stopPropagation: () => {}
+      } as any
+      lifecycle.handleContentClick(e)
+      expect(openPageInOtherPaneMock).toHaveBeenCalledWith('MyPage')
+      expect(navigateToPageMock).not.toHaveBeenCalled()
     })
 
     it('opens external link via window.open', () => {

@@ -15,6 +15,8 @@ export const WIKI_LINK_CLICK_EVENT = 'wikiLinkClick'
 export interface WikiLinkClickPayload {
   /** 目标页名（装饰的 data-page） */
   page: string
+  /** Ctrl/⌘+Click：在另一栏打开目标页（ADR-0059）而非替换当前页 */
+  openInOtherPane?: boolean
 }
 
 /**
@@ -233,7 +235,10 @@ export const WikiLinkExtension = Extension.create({
               new CustomEvent(WIKI_LINK_CLICK_EVENT, {
                 bubbles: true,
                 composed: true,
-                detail: { page } satisfies WikiLinkClickPayload,
+                detail: {
+                  page,
+                  openInOtherPane: event.ctrlKey || event.metaKey,
+                } satisfies WikiLinkClickPayload,
               })
             )
 

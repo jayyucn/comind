@@ -1,28 +1,35 @@
 <script setup lang="ts">
+import { ChevronRight } from 'lucide-vue-next'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { useEmbedSelector } from './app/useEmbedSelector'
 import { useGlobalHotkeys } from './app/useGlobalHotkeys'
 import { useGraphSidebarToggle } from './app/useGraphSidebarToggle'
-import { useNavigationHistory } from './app/useNavigationHistory'
+import { usePanesNavigation } from './app/usePanesNavigation'
 import { useSyncPeerToast } from './app/useSyncPeerToast'
 import { useTrashedPageRestore } from './app/useTrashedPageRestore'
 import { useWindowControls } from './app/useWindowControls'
 import BlockModal from './components/Block/BlockModal.vue'
+import FieldValueEditor from './components/Block/FieldValueEditor.vue'
+import FieldValueQuickEditor from './components/Block/FieldValueQuickEditor.vue'
 import BlockSelector from './components/BlockSelector.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import DateTimePickerPanel from './components/DateTimePickerPanel.vue'
 import { prefetchGraphSnapshot } from './components/GraphView/graphSnapshotCache'
 import Icon from './components/Icons/Icon.vue'
 import NotificationBell from './components/NotificationBell.vue'
+import Page from './components/Page/index.vue'
 import PageMenuButton from './components/PageMenuButton.vue'
+import RelationshipMenu from './components/RelationshipMenu.vue'
 import GraphPanel from './components/RightSidebar/GraphPanel.vue'
 import RightSidebar from './components/RightSidebar/index.vue'
 import { getRegisteredPanels, registerPanel } from './components/RightSidebar/panels'
+import TocPanel from './components/RightSidebar/TocPanel.vue'
 import SearchPanel from './components/SearchPanel.vue'
 import SettingsModal from './components/Settings/SettingsModal.vue'
 import Sidebar from './components/Sidebar/index.vue'
+import SlashCommandMenu from './components/SlashCommandMenu.vue'
 import FieldSettingsModal from './components/Tags/FieldSettingsModal.vue'
 import Toast from './components/Toast.vue'
 import { useBlockQueryRegistry } from './composables/useBlockQueryRegistry'
@@ -31,11 +38,13 @@ import { provideLayoutShell } from './composables/useLayoutShell'
 import { useNotificationScheduler } from './composables/useNotificationScheduler'
 import { usePageQueryRegistry } from './composables/usePageQueryRegistry'
 import { useReaderDataChanged } from './composables/useReaderDataChanged'
+import { useRelationshipMenu } from './composables/useRelationshipMenu'
 import { useRelationshipTypes } from './composables/useRelationshipTypes'
 import { reconcilePanels } from './composables/useRightSidebar'
 import { runUndoOrRedo } from './composables/useUndoRestore'
 import { useEditorStore } from './stores/editor'
 import { usePageStore } from './stores/pages'
+import { type Pane, usePanesStore } from './stores/panes'
 import { resolveUndoScopeBlockPage, takeOverUndoRedo } from './utils/undo-chord'
 import { isTauriEnvironment } from './wasm/tauri-platform'
 
@@ -46,6 +55,13 @@ registerPanel({
   component: GraphPanel
 })
 
+registerPanel({
+  id: 'toc',
+  label: '大纲',
+  icon: 'icon-list',
+  component: TocPanel
+})
+
 // ADR-0047 D1：block-version 面板已下架，把持久化设置里指向它的引用回落到已注册面板。
 reconcilePanels(getRegisteredPanels().map(p => p.id))
 
@@ -53,11 +69,80 @@ const route = useRoute()
 const editorStore = useEditorStore()
 const pageStore = usePageStore()
 
+// ── 对称分屏 pane（ADR-0059，取代 ADR-0058 splitPane）──
+const panesStore = usePanesStore()
+const panesNav = usePanesNavigation()
+/** 页面路由才渲染 pane 布局；其余路由（TaskHub/图谱/设置/阅读器）占满主区 */
+const isPageRoute = computed(() => route.name === 'page' || route.name === 'ideas-page')
+
+/** pane 标题（页不存在时回退空串） */
+function paneTitle(pane: Pane): string {
+  return pageStore.getPage(pane.pageId)?.title ?? ''
+}
+
+/**
+ * pane 面包屑的「上级」= 本 pane 后退目标页的标题。
+ * CoMind 页面无父子层级，唯一可靠的上级来源是 pane 自己的导航栈；
+ * 栈为空（首页）时返回空串，面包屑退化为仅当前页名。
+ */
+function paneParentTitle(pane: Pane): string {
+  const parentId = panesNav.previousPageId(pane.id)
+  return (parentId && pageStore.getPage(parentId)?.title) || ''
+}
+
+/** pane 宽度：单 pane 撑满；双 pane 时左栏按 splitRatio、右栏 flex 自适应 */
+function paneStyle(index: number): Record<string, string> {
+  if (panesStore.panes.length <= 1) return { flexBasis: '100%', flexGrow: '1' }
+  if (index === 0) {
+    return { flexBasis: `${(panesStore.splitRatio * 100).toFixed(2)}%`, flexGrow: '0' }
+  }
+  return { flexGrow: '1' }
+}
+
+/** 点击 pane（capture 阶段）→ 设为活动：焦点跟随 + currentPageId 派生（flush sync 先于块处理） */
+function activatePane(paneId: string): void {
+  panesStore.activatePane(paneId)
+}
+
+// 全局关系菜单单例（原在 Page 内，pane 复用后上提到此，避免多实例）
+const relMenu = useRelationshipMenu()
+
 // 布局壳：向后代组件暴露布局元素 ref，取代 Toc 原先的 document.querySelector 全局抓取。
 const sidebarEl = ref<HTMLElement | null>(null)
 const contentBodyEl = ref<HTMLElement | null>(null)
 const pageMainContentEl = ref<HTMLElement | null>(null)
 provideLayoutShell({ sidebarEl, contentBodyEl, pageMainContentEl })
+
+/** 分隔条拖拽：实时写 splitRatio（夹取 0.1~0.9）；关闭 pane 走头部 ✕ 按钮 */
+function onDividerMousedown(e: MouseEvent) {
+  if (e.button !== 0) return
+  e.preventDefault()
+  const container = contentBodyEl.value
+  if (!container) return
+  const rect = container.getBoundingClientRect()
+  const onMove = (ev: MouseEvent) => {
+    const ratio = (ev.clientX - rect.left) / rect.width
+    panesStore.setSplitRatio(ratio)
+  }
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+}
+
+/** Alt+←/→：作用于活动 pane 的导航栈（ADR-0059 D4，浏览器历史解耦） */
+function handlePaneNavKeydown(e: KeyboardEvent) {
+  if (!e.altKey) return
+  if (e.key === 'ArrowLeft') {
+    e.preventDefault()
+    panesNav.goBack(panesStore.activePaneId)
+  } else if (e.key === 'ArrowRight') {
+    e.preventDefault()
+    panesNav.goForward(panesStore.activePaneId)
+  }
+}
 
 // 页面转场（ADR-0053 D8）：路由变化时对主内容区重放一次浮入动画（enter-only，200ms）。
 // 旧页硬切（出场≈瞬时）、新页浮入——不用 <Transition> 包 RouterView 的原因见模板注释。
@@ -104,7 +189,6 @@ if (!isReaderWindow) {
   useReaderDataChanged()
 }
 
-const { canGoBack, canGoForward, goBack, goForward } = useNavigationHistory()
 const { isMaximized, startDragging, minimize, maximize, close } = useWindowControls()
 const { isGraphPanelOpen, handleToggle: handleGraphSidebarToggle } = useGraphSidebarToggle()
 const {
@@ -133,16 +217,22 @@ onMounted(async () => {
   prefetchGraphSnapshot()
   await useRelationshipTypes().load()
   await pageStore.loadAllPages()
+  // 对称 pane：载入持久化布局并对齐 URL 页（reconcile），随后 currentPageId 派生
+  panesStore.loadFromStorage()
+  panesNav.restore()
   // 全局 Ctrl+A 兜底：BlockList 区域由 BlockList 的捕获监听处理，
   // 可编辑输入区保留控件自身全选，其余区域一律屏蔽浏览器整页文本全选。
   document.addEventListener('keydown', handleGlobalKeydownCapture, true)
   // 全局撤销兜底（无 BlockList 表面里的 BlockModal，见函数注释）
   document.addEventListener('keydown', handleGlobalUndoRedoKeyDown, true)
+  // Alt+←/→ 活动 pane 后退/前进
+  document.addEventListener('keydown', handlePaneNavKeydown)
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', handleGlobalKeydownCapture, true)
   document.removeEventListener('keydown', handleGlobalUndoRedoKeyDown, true)
+  document.removeEventListener('keydown', handlePaneNavKeydown)
 })
 
 /**
@@ -196,13 +286,7 @@ function handleMainClick(e: MouseEvent) {
     v-else
     class="app-layout"
   >
-    <Sidebar
-      :can-go-back="canGoBack"
-      :can-go-forward="canGoForward"
-      @go-back="goBack"
-      @go-forward="goForward"
-      @open-search="showSearchPanel = true"
-    />
+    <Sidebar @open-search="showSearchPanel = true" />
 
     <div
       class="page-scroll-wrapper"
@@ -270,7 +354,98 @@ function handleMainClick(e: MouseEvent) {
           ref="contentBodyEl"
           class="content-body"
         >
+          <!-- 页面路由：对称 pane（ADR-0059）。
+               pane-layout 整体下移 var(--nav-height)：顶部 48px 是 sticky-header
+               窗口拖拽死区 + 右上角系统窗口控制，pane-head 必须避开两者。 -->
+          <template v-if="isPageRoute">
+            <div class="pane-layout">
+              <template
+                v-for="(pane, i) in panesStore.panes"
+                :key="pane.id"
+              >
+                <div
+                  v-if="i > 0"
+                  class="pane-divider"
+                  title="拖拽调整宽度"
+                  @mousedown="onDividerMousedown"
+                />
+                <section
+                  class="pane"
+                  :class="{ 'is-active': pane.id === panesStore.activePaneId }"
+                  :style="paneStyle(i)"
+                  :data-pane-id="pane.id"
+                  :data-pane-page-id="pane.pageId"
+                  @mousedown.capture="activatePane(pane.id)"
+                  @focusin.capture="activatePane(pane.id)"
+                >
+                  <header class="pane-head">
+                    <button
+                      class="pane-nav"
+                      :disabled="!panesNav.canGoBack(pane.id)"
+                      title="后退"
+                      @mousedown.stop
+                      @click="panesNav.goBack(pane.id)"
+                    >
+                      <Icon
+                        name="icon-arrow-left"
+                        :size="16"
+                      />
+                    </button>
+                    <button
+                      class="pane-nav"
+                      :disabled="!panesNav.canGoForward(pane.id)"
+                      title="前进"
+                      @mousedown.stop
+                      @click="panesNav.goForward(pane.id)"
+                    >
+                      <Icon
+                        name="icon-arrow-right"
+                        :size="16"
+                      />
+                    </button>
+                    <nav
+                      class="pane-crumb"
+                      aria-label="面包屑"
+                    >
+                      <template v-if="paneParentTitle(pane)">
+                        <span
+                          class="pane-crumb-parent"
+                          :title="paneParentTitle(pane)"
+                        >{{ paneParentTitle(pane) }}</span>
+                        <ChevronRight
+                          :size="12"
+                          class="pane-crumb-sep"
+                        />
+                      </template>
+                      <span
+                        class="pane-crumb-current"
+                        :title="paneTitle(pane)"
+                      >{{ paneTitle(pane) }}</span>
+                    </nav>
+                    <button
+                      class="pane-close"
+                      :disabled="panesStore.panes.length <= 1"
+                      title="关闭此 pane"
+                      @mousedown.stop
+                      @click="panesStore.closePane(pane.id)"
+                    >
+                      <Icon
+                        name="icon-close"
+                        :size="14"
+                      />
+                    </button>
+                  </header>
+                  <div class="pane-body">
+                    <Page :page-id="pane.pageId" />
+                  </div>
+                </section>
+              </template>
+            </div>
+          </template>
+
+          <!-- 非页面路由：RouterView 撑满主区 -->
           <main
+            v-else
             ref="mainContentEl"
             class="main-content"
             :class="{ 'is-fullwidth-content': isFullWidthPage }"
@@ -348,6 +523,13 @@ function handleMainClick(e: MouseEvent) {
       :block-id="editorStore.blockModalBlockId"
       @close="editorStore.closeBlockModal()"
     />
+
+    <!-- 块内全局弹层单例（ADR-0058 D3）：原在 Page 内渲染，Page 需被 pane 复用，
+         弹层若随 Page 多实例渲染会叠加，故统一上提到此（App 级单例）。 -->
+    <SlashCommandMenu />
+    <FieldValueQuickEditor />
+    <FieldValueEditor />
+    <RelationshipMenu :menu="relMenu" />
   </div>
 </template>
 
@@ -420,8 +602,9 @@ function handleMainClick(e: MouseEvent) {
 
 .content-body {
   flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
+  display: flex;
+  flex-direction: row;
   min-width: 0;
   min-height: 0;
   // 曾是容器查询锚点：块属性列（.block-row-properties）据此用 100cqw 算右侧 gutter。
@@ -431,6 +614,130 @@ function handleMainClick(e: MouseEvent) {
   // 注意：该 containment 会把本元素变成 abs/fixed 后代的包含块——
   // 浮层一律 Teleport 到 body（ADR-0032），不受影响。
   container-type: inline-size;
+}
+
+// ── 对称 pane（ADR-0059）：content-body 内并排 pane，各自独立滚动 ──
+// padding-top 避开 sticky-header 窗口拖拽死区（顶部 48px）与右上角系统窗口控制，
+// 否则 pane-head 被拖拽层覆盖不可点、pane-close 与系统关闭按钮重叠。
+.pane-layout {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding-top: var(--nav-height);
+}
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  flex-shrink: 0;
+  position: relative;
+}
+
+// 无底部分隔线：面包屑与正文标题靠留白区分（视觉稿 2026-10-25）
+.pane-head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  border-top: 1px solid var(--border);
+  gap: 4px;
+  padding: 4px 8px;
+  background: transparent;
+}
+
+// 面包屑：上级页 → 当前页；两级均可截断，当前页在活动 pane 用主色
+.pane-crumb {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.pane-crumb-parent {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-tertiary);
+}
+
+.pane-crumb-sep {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.pane-crumb-current {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: var(--font-medium);
+  color: var(--text-tertiary);
+}
+
+// 活动 pane 用标题颜色深浅区分（非活动 tertiary 浅、活动 primary 深）
+.pane.is-active .pane-crumb-current {
+  color: var(--text-primary);
+}
+
+.pane-nav,
+.pane-close {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+
+  &:hover:not(:disabled) {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  &:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+}
+
+.pane-close:hover:not(:disabled) {
+  background: var(--error);
+  color: var(--color-white);
+}
+
+.pane-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+// 正文大标题上移：去掉 pane-head 分隔线后，页面自身 24px 顶部留白会让标题显得下坠
+.pane-body :deep(.page-body) {
+  padding-top: var(--space-2);
+}
+
+.pane-divider {
+  flex: 0 0 4px;
+  cursor: col-resize;
+  background: var(--border);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.pane-divider:hover,
+.pane-divider:active {
+  background: var(--accent);
 }
 
 .top-right-controls {

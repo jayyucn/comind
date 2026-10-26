@@ -8,6 +8,7 @@ import { useDateTimePickerPanel } from '../composables/useDateTimePickerPanel'
 import { useDomEvents } from '../composables/useDomEvents'
 import { useNavigateToPage } from '../composables/useNavigateToPage'
 import { useNavigateToTag } from '../composables/useNavigateToTag'
+import { useOpenPageInOtherPane } from '../composables/useOpenPageInOtherPane'
 import { useRelationshipMenu } from '../composables/useRelationshipMenu'
 import BracketPairExtension from '../extensions/BracketPairExtension'
 import type { DateRefClickPayload } from '../extensions/DateRefExtension'
@@ -119,6 +120,7 @@ const { open: openDateRefPanel } = useDateTimePickerPanel()
 // 由 editorEvents 的 inlineTagClick / wikiLinkClick handler 消费
 const { navigateToTag } = useNavigateToTag()
 const { navigateToPage } = useNavigateToPage()
+const { openPageInOtherPane } = useOpenPageInOtherPane()
 
 const tagsStore = useTagsStore()
 
@@ -379,6 +381,11 @@ const events = createEditorEvents({
   navigateToPage: (pageName: string) => {
     void navigateToPage(pageName).catch(err => {
       console.error('导航失败:', err)
+    })
+  },
+  openPageInOtherPane: (pageName: string) => {
+    void openPageInOtherPane(pageName).catch(err => {
+      console.error('另一栏打开失败:', err)
     })
   },
 })
