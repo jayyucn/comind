@@ -177,14 +177,16 @@ onBeforeUnmount(() => {
 <style lang="scss" scoped>
 // 标签页行：只占标签自身宽度（不拉伸到整行，空白区留给窗口拖拽），过多时横向滚动。
 // 沿用现有「浏览器标签」外观（带边框、顶部圆角、激活标签与正文同底）；关闭按钮常驻显示。
+// 左右 padding 预留弧角半径（--radius-sm + 1px 余量）：滚动容器会裁掉滚动原点左侧、
+// 滚动终点右侧以外的内容，选中 tab 的凹圆角伸出 tab 盒子两侧，不预留会被裁掉/产生幽灵滚动。
 .pane-tabs {
   --nvb-thumb: var(--bg-base);
 
   height: 30px;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 0px;
-  padding: 2px;
+  padding: 2px 8px 0;
   flex: none;
   max-width: 55%;
   // border-radius: var(--radius-sm, 6px);
@@ -203,14 +205,16 @@ onBeforeUnmount(() => {
 }
 
 .pane-tab {
+  // 凹圆角（inverted corner）半径：与 tab 顶部圆角同源，保证「汇入正文」的弧线连贯。
+  --corner-r: var(--radius-sm);
+  // 弧内填充色：默认无弧（后台 tab 透明底，与暗色条无衔接关系），选中态覆盖为自己的底色。
+  --corner-fill: transparent;
+
   display: inline-flex;
   align-items: center;
   gap: 4px;
   max-width: 160px;
   padding: 2px 4px 2px 8px;
-  border: 1px solid var(--border);
-  border-bottom: none;
-  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
   background: transparent;
   color: var(--text-tertiary);
   cursor: grab;
@@ -222,7 +226,11 @@ onBeforeUnmount(() => {
     cursor: grabbing;
   }
 
+  // 选中态（活动 pane 的当前 tab）：恢复各自边框与顶部圆角，从连成一片的 tab 条中「浮起」。
   &.is-active {
+    border: 1px solid var(--border);
+    border-bottom: none;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
     background: var(--bg-base);
     color: var(--text-primary);
   }
@@ -230,8 +238,73 @@ onBeforeUnmount(() => {
   // 打开未激活：非活动 pane 当前显示的 tab——保持与正文同底（其视图正在渲染），
   // 文字降一档亮度（原 pane-crumb-current 在非活动 pane 用 tertiary 的承接者）。
   &.is-open {
+    border: 1px solid var(--border);
+    border-bottom: none;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
     background: var(--bg-active);
     color: var(--text-secondary);
+  }
+
+  // ── 后台（未选中）tab：去掉各自边框/圆角，与 tab 条连成一体；──
+  // 仅在左缘用一段短竖线（背景绘制，避免额外定位与层级）与其他 tab 区分。
+  // 首个 tab 不加（:first-child），选中态不参与此规则。
+  &:not(.is-active):not(.is-open) {
+    border-radius: 0;
+
+    &:not(:first-child) {
+      background-image: linear-gradient(var(--border), var(--border));
+      background-repeat: no-repeat;
+      background-position: left center;
+      background-size: 1px 14px;
+    }
+  }
+
+  // ── 选中 tab 下缘左右两侧的凹圆角（浏览器 tab 观感）──
+  // 仅选中态（is-active / is-open，均与正文同底）需要弧线；radial-gradient 四分之一圆
+  // 挖掉外侧上角，露出底下暗色条，其余填充 tab 底色，视觉上把 tab「汇入」下方正文。
+  // 只给选中态加 position: relative：非 positioned 兄弟永远绘制在 positioned 元素之下
+  // （DOM 顺序无关），后邻 tab 不会盖住伸入其领地的弧线，且无需引入 z-index（ADR-0032）。
+  &.is-active,
+  &.is-open {
+    position: relative;
+
+    &.is-active {
+      --corner-fill: var(--bg-base);
+    }
+
+    &.is-open {
+      --corner-fill: var(--bg-active);
+    }
+
+    &::before,
+    &::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      width: var(--corner-r);
+      height: var(--corner-r);
+      pointer-events: none;
+    }
+
+    // 左弧：方格紧贴 tab 左下角外侧，外上角挖四分之一圆。
+    &::before {
+      left: calc(-1 * var(--corner-r));
+      background: radial-gradient(
+        circle var(--corner-r) at top left,
+        transparent calc(var(--corner-r) - 0.5px),
+        var(--corner-fill) var(--corner-r)
+      );
+    }
+
+    // 右弧：镜像。
+    &::after {
+      right: calc(-1 * var(--corner-r));
+      background: radial-gradient(
+        circle var(--corner-r) at top right,
+        transparent calc(var(--corner-r) - 0.5px),
+        var(--corner-fill) var(--corner-r)
+      );
+    }
   }
 
   // ── 拖拽相关（对齐 ADR-0044） ──
@@ -241,18 +314,24 @@ onBeforeUnmount(() => {
     box-shadow: none;
   }
 
-  // 落点占位：中性透明，隐藏内部内容，仅示落点。
+  // 落点占位：中性透明，隐藏内部内容，仅示落点（弧线一并去除）。
   &.nvb-ghost {
     background: transparent !important;
+
+    &::before,
+    &::after {
+      content: none;
+    }
 
     > * {
       visibility: hidden;
     }
   }
 
-  // 拖拽起点（排除克隆体）。
+  // 拖拽起点（排除克隆体）：底色临时切换为 hover 底，弧线填充色跟随，避免与弧脱节。
   &.nvb-chosen:not(.nvb-drag) {
     background: var(--bg-hover);
+    --corner-fill: var(--bg-hover);
   }
 }
 
