@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { provide } from 'vue'
+
 import type { PaneView } from '../stores/panes'
 import GraphPage from './GraphView/GraphPage.vue'
 import Page from './Page/index.vue'
@@ -9,7 +11,11 @@ import TaskHub from './TaskHub/TaskHub.vue'
 import TrashList from './Trash/TrashList.vue'
 
 defineOptions({ name: 'ViewHost' })
-defineProps<{ view: PaneView }>()
+const props = defineProps<{ view: PaneView; paneId: string }>()
+
+// 向子树（Page → BlockList → Block）下发所属 pane id，供 Block 按 pane 作用域化活动块，
+// 修复双 pane 同页点击激活错位。
+provide('paneId', props.paneId)
 </script>
 
 <template>

@@ -58,6 +58,8 @@ interface UseBlockEditorLifecycleOptions {
   pageStore: ReturnType<typeof usePageStore>
   relationshipCleanup: ReturnType<typeof useBlockRelationshipCleanup>
   selection?: CrossBlockSelection | null
+  /** 所属 pane id（由 ViewHost provide 下发）。双 pane 同页靠它区分活动块。无则退化为全局口径。 */
+  paneId?: string | null
 }
 
 export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions) {
@@ -72,6 +74,7 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
     pageStore,
     relationshipCleanup,
     selection = null,
+    paneId = null,
   } = options
 
   // 子树编辑器根块标记（仅 BlockModal 通过 provide 下发；主编辑器无此注入）。
@@ -91,9 +94,17 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
   })
 
   // ── 计算属性 ──
-  const isActive: ComputedRef<boolean> = computed(
-    () => editorStore.activeBlockId === blockId.value
-  )
+  /**
+   * 本块是否处于激活（编辑）态。
+   * 双 pane 同页时必须按 pane 作用域化：两个 pane 渲染同一页、块 id 完全相同，
+   * 若只看 `activeBlockId` 两边都会 isActive 并抢焦点（焦点落到后挂载 pane）。
+   * 退化口径：本块不在 pane 内（弹窗 / 测试）或当前无 pane 归属时，回退为只看 activeBlockId。
+   */
+  const isActive: ComputedRef<boolean> = computed(() => {
+    if (editorStore.activeBlockId !== blockId.value) return false
+    if (paneId == null || editorStore.activeBlockPaneId == null) return true
+    return editorStore.activeBlockPaneId === paneId
+  })
 
   // ── 保存 / 同步 ──
   /**

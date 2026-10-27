@@ -5,6 +5,7 @@ import { useBlockEditorLifecycle } from './useBlockEditorLifecycle'
 import { useBlockStore } from '../../../stores/blocks'
 import { useEditorStore } from '../../../stores/editor'
 import { usePageStore } from '../../../stores/pages'
+import { usePanesStore } from '../../../stores/panes'
 import { useBlockRelationshipCleanup } from '../../../composables/useBlockRelationshipCleanup'
 import type { BlockTypeEditorExposed } from '../../../types/block-type'
 
@@ -1092,6 +1093,37 @@ describe('useBlockEditorLifecycle', () => {
       expect(lifecycle.isActive.value).toBe(false)
       editorStore.activateBlock('b1')
       expect(lifecycle.isActive.value).toBe(true)
+    })
+
+    it('双 pane 同页：只激活所属 pane 的同源块（regression）', () => {
+      const blockStore = useBlockStore()
+      const editorStore = useEditorStore()
+      const pageStore = usePageStore()
+      const relationshipCleanup = useBlockRelationshipCleanup()
+      const panesStore = usePanesStore()
+      blockStore.blocks = [{ id: 'b1', pageId: 'p1', parentId: null, pos: 0, content: 'x', format: {}, type: 'bullet', createdAt: 0, updatedAt: 0 }]
+      const blockId = ref('b1')
+      const editorRef = ref<BlockTypeEditorExposed | null>(null)
+      const cursorPos = ref(0)
+      const collapsed = ref(false)
+      const mk = (paneId: string | null) => useBlockEditorLifecycle({
+        blockId, pageId: 'p1', editorRef, cursorPos, collapsed,
+        blockStore, editorStore, pageStore, relationshipCleanup, paneId,
+      })
+      const inPane1 = mk('pane-1')
+      const inPane2 = mk('pane-2')
+
+      // 在 pane-1 激活 b1：只有 pane-1 的同源块 isActive，pane-2 的不应被激活（否则抢焦点）
+      panesStore.activePaneId = 'pane-1'
+      editorStore.activateBlock('b1')
+      expect(inPane1.isActive.value).toBe(true)
+      expect(inPane2.isActive.value).toBe(false)
+
+      // 切到 pane-2 激活同一 b1：pane-1 的同源块应回到非激活
+      panesStore.activePaneId = 'pane-2'
+      editorStore.activateBlock('b1')
+      expect(inPane1.isActive.value).toBe(false)
+      expect(inPane2.isActive.value).toBe(true)
     })
   })
 })

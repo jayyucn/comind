@@ -72,6 +72,8 @@ const onDragEnd = inject<(intent: DragEndIntent | null) => void>('onDragEnd')
 const selection = inject<CrossBlockSelection>('crossBlockSelection')
 // 是否处于 BlockModal 子树编辑器内（由 BlockModal provide）。弹窗内 dot 点击为 no-op，避免递归开弹窗。
 const inBlockModal = inject<boolean>('inBlockModal', false)
+// 所属 pane id（由 ViewHost provide 下发）。双 pane 同页靠它区分活动块；不在 pane 内为 undefined。
+const paneId = inject<string | undefined>('paneId', undefined)
 
 // ── 便捷访问 ──
 const blockId = computed(() => props.node.id)
@@ -243,6 +245,7 @@ const {
   pageStore,
   relationshipCleanup,
   selection: selection ?? undefined,
+  paneId: paneId ?? null,
 })
 
 // ── 类型特化钩子（由各 handler 的 setupBlock 提供）──
@@ -464,8 +467,13 @@ watch(
       registerContentFlusher()
       focusActiveEditor()
     } else {
-      editorStore.setActiveEditor(null)
-      editorStore.registerContentFlusher(blockId.value, null)
+      // 仅当本块是「当前活动块的主人」时才清理：双 pane 同页时，另一个 pane 的同源块
+      // 因全局 activeBlockId 变化而被动取消激活，它从未持有焦点 / 正文同步出口，
+      // 不应把真正活动 pane 的 activeEditor 与 contentFlusher 清掉（否则焦点 / 撤销错位）。
+      if (editorStore.activeBlockPaneId === (paneId ?? null)) {
+        editorStore.setActiveEditor(null)
+        editorStore.registerContentFlusher(blockId.value, null)
+      }
     }
   },
   { immediate: false }

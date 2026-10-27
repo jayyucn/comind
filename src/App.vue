@@ -430,7 +430,10 @@ function handleMainClick(e: MouseEvent) {
                     :key="tab.id"
                     class="pane-tab-view"
                   >
-                    <ViewHost :view="currentView(tab)" />
+                    <ViewHost
+                      :view="currentView(tab)"
+                      :pane-id="pane.id"
+                    />
                   </div>
                 </div>
               </section>

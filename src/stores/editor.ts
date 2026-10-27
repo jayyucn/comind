@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { ref, shallowRef } from 'vue'
 
 import type { DateRefKind, RecurrenceRule } from '../utils/date-ref'
+import { usePanesStore } from './panes'
 
 export interface ToastMessage {
   id: string
@@ -12,6 +13,13 @@ export interface ToastMessage {
 
 export const useEditorStore = defineStore('editor', () => {
   const activeBlockId = ref<string | null>(null)
+  /**
+   * 当前活动块归属的 pane id。双 pane 同页时，两个 pane 渲染同一页、块 id 完全相同，
+   * 仅靠 `activeBlockId` 无法区分「哪个 pane 的该块是活动块」，会导致两边 Block 同时
+   * `isActive` 并互相抢焦点（表现为「点哪个 pane，焦点都落到最后打开的那个 pane」）。
+   * 见 issue：两 pane 同页点击激活错位。无 pane 上下文（测试 / 弹窗）时为 null。
+   */
+  const activeBlockPaneId = ref<string | null>(null)
   /** 激活后要恢复的目标光标位置（ProseMirror position），用完即清 */
   const pendingCursorPos = ref<number | null>(null)
   /** 激活后用 posAtCoords 定位的鼠标坐标，用完即清 */
@@ -50,13 +58,23 @@ export const useEditorStore = defineStore('editor', () => {
       activeBlockId.value = null
     }
     activeBlockId.value = blockId
+    // 记录归属 pane：双 pane 同页时块 id 相同，须靠 pane 区分「哪个 pane 的该块是活动块」，
+    // 否则两个 pane 的同源块都会 isActive 并抢焦点。无 pane 上下文（测试 / 弹窗）记 null。
+    const panesStore = usePanesStore()
+    activeBlockPaneId.value = panesStore.activePaneId ?? null
     if (cursorPos !== undefined) {
       pendingCursorPos.value = cursorPos
     }
   }
 
   function deactivateBlock() {
+    const prev = activeBlockId.value
     activeBlockId.value = null
+    activeBlockPaneId.value = null
+    // 真正失活时（点击空白等），由这里兜底清掉全局 activeEditor 与正文同步出口；
+    // 跨 pane 同页的「被动取消激活」由 Block 的 watch(isActive) 守卫处理，不会清错 pane。
+    activeEditor.value = null
+    if (prev) registerContentFlusher(prev, null)
   }
 
   /** 消费并清除待恢复的光标位置 */
@@ -344,6 +362,7 @@ export const useEditorStore = defineStore('editor', () => {
 
   return {
     activeBlockId,
+    activeBlockPaneId,
     pendingCursorPos,
     pendingClickCoords,
     pendingArrowFocus,
