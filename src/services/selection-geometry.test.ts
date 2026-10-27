@@ -409,3 +409,44 @@ describe('selectionClientRects - 行带归一化与叠层消重（chip 参与选
     ])
   })
 })
+
+/**
+ * 多 pane 同页回归（2026-10-26 真机 bug：拖拽右侧内容、高亮错画到左侧）。
+ *
+ * 两个 `.block-list` 渲染相同的 `data-block-id`，但用不同 `data-i` 区分来源：
+ * 左 pane = 真实块序号（0/1），右 pane = 100 + 序号（100/101）。`painted` 投影以
+ * `top`（= data-i）为基准，故返回值直接暴露「矩形来自哪个 pane」。
+ *
+ * 不传 scope → `document.querySelector` 命中第一个（左 pane）实例，是 bug 的复现路径；
+ * 传右 pane root → 必须落到右 pane 实例，即修复后的正确行为。
+ */
+describe('selectionClientRects - 多 pane 同页作用域隔离', () => {
+  function buildTwoPanes(contents: string[]) {
+    const cell = (id: string, i: number, c: string) =>
+      `<div data-block-id="${id}" data-i="${i}"><div class="block-content"><div class="block-text"><span>${c}</span></div></div></div>`
+    document.body.innerHTML =
+      `<div class="block-list">${contents.map((c, i) => cell(`b${i}`, i, c)).join('')}</div>` +
+      `<div class="block-list">${contents.map((c, i) => cell(`b${i}`, 100 + i, c)).join('')}</div>`
+  }
+
+  test('不传 scope：命中第一个（左 pane）实例 —— 这正是 bug 复现路径', () => {
+    buildTwoPanes(['abc', 'def'])
+    // 注意：修复后正确用法必须传 scope；此处仅固化「无 scope 时行为」以便对照。
+    // 端点块只覆盖部分文字：b0 整段(3) + b1 到 offset1 的 "d"(1)。
+    expect(painted(selectionClientRects(at(0, 0), at(1, 1)))).toEqual([[0, 3], [1, 1]])
+  })
+
+  test('传右 pane root：高亮落在右 pane 实例（修复验证）', () => {
+    buildTwoPanes(['abc', 'def'])
+    const rightRoot = document.querySelectorAll<HTMLElement>('.block-list')[1]
+    expect(painted(selectionClientRects(at(0, 0), at(1, 1), rightRoot))).toEqual([[100, 3], [101, 1]])
+  })
+
+  test('端点判序在右 pane 作用域内仍然正确', () => {
+    buildTwoPanes(['abc', 'def'])
+    const rightRoot = document.querySelectorAll<HTMLElement>('.block-list')[1]
+    // 反向：head(b0,1) 在 anchor(b1,2) 之前 → start=b0,end=b1；矩形仍来自右 pane（100/101）。
+    // b0 覆盖 "bc"(2)、b1 覆盖 "de"(2)。
+    expect(painted(selectionClientRects(at(1, 2), at(0, 1), rightRoot))).toEqual([[100, 2], [101, 2]])
+  })
+})

@@ -127,9 +127,16 @@ function firstTextNode(root: HTMLElement): Text | null {
   return first
 }
 
-/** 按 blockId 取块元素 */
-function blockElement(blockId: string): HTMLElement | null {
-  return document.querySelector(`[data-block-id="${blockId}"]`)
+/**
+ * 按 blockId 取块元素。
+ *
+ * `scope` 限定查找范围：多 pane 同页时同一 `data-block-id` 会渲染多份 DOM，
+ * 不传 scope 的 `document.querySelector` 永远命中第一个（通常是左侧 pane），
+ * 拖拽右侧内容却把高亮画到左侧的根因。调用方必须传入所属 pane 的根元素
+ * （BlockList 的 `.block-list`），确保几何换算落在用户实际操作的那个实例上。
+ */
+function blockElement(blockId: string, scope?: HTMLElement | null): HTMLElement | null {
+  return (scope ?? document).querySelector(`[data-block-id="${blockId}"]`) as HTMLElement | null
 }
 
 /**
@@ -173,8 +180,8 @@ export function atomicUnitSpans(blockId: string): RenderedUnitSpan[] {
  * 由 block 内字符偏移构造一个折叠的 DOM Range（`blockOffsetFromPoint` 的逆映射）。
  * 用于跨块选区高亮时确定起止点。
  */
-export function collapsedRangeAtBlockOffset(blockId: string, offset: number): Range | null {
-  const blockEl = blockElement(blockId)
+export function collapsedRangeAtBlockOffset(blockId: string, offset: number, scope?: HTMLElement | null): Range | null {
+  const blockEl = blockElement(blockId, scope)
   if (!blockEl) return null
 
   const root = contentRoot(blockEl)
@@ -367,9 +374,9 @@ function textBandLeft(root: HTMLElement, boxLeft: number): number {
  * 这类块也不得牵连整条选区——拖拽时鼠标扫过空行是常态。端点落在这种块上时，
  * 该端点仍由相邻文本块的边界兜底（首侧取块首、尾侧取块末）。
  */
-export function selectionClientRects(anchor: BlockOffset, head: BlockOffset): SelectionRect[] {
-  const anchorEl = blockElement(anchor.blockId)
-  const headEl = blockElement(head.blockId)
+export function selectionClientRects(anchor: BlockOffset, head: BlockOffset, scope?: HTMLElement | null): SelectionRect[] {
+  const anchorEl = blockElement(anchor.blockId, scope)
+  const headEl = blockElement(head.blockId, scope)
   if (!anchorEl || !headEl) return []
 
   const all = orderedBlockElements(anchorEl)
@@ -426,8 +433,8 @@ export function selectionClientRects(anchor: BlockOffset, head: BlockOffset): Se
 
     // 端点侧用真实拖拽端点，其余侧夹到该块的首/末文本节点。端点块本身无文本节点时
     // 不提供 Range 端点（上面已给它补过行盒色带），改由相邻文本块的边界兜底。
-    const from = blockId === start.blockId ? collapsedRangeAtBlockOffset(blockId, start.offset) : null
-    const to = blockId === end.blockId ? collapsedRangeAtBlockOffset(blockId, end.offset) : null
+    const from = blockId === start.blockId ? collapsedRangeAtBlockOffset(blockId, start.offset, scope) : null
+    const to = blockId === end.blockId ? collapsedRangeAtBlockOffset(blockId, end.offset, scope) : null
 
     const range = document.createRange()
     range.setStart(from ? from.startContainer : first, from ? from.startOffset : 0)

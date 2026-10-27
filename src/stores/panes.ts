@@ -236,6 +236,29 @@ export const usePanesStore = defineStore('panes', () => {
     if (pane && tab) activate(pane, tab)
   }
 
+  /**
+   * 拖拽重排（对齐 NamedViewBar 的 ADR-0044 机制）：入参为按新顺序排列的完整 tab id 数组，
+   * 原地重排 pane.tabs 顺序。被现有 watch([panes,...], persist, {deep:true}) 自动持久化。
+   * ids 未覆盖的 tab（防御性兜底）按原顺序追加在末尾，避免拖拽异常时丢标签。
+   */
+  function reorderTabs(paneId: string, ids: string[]): void {
+    const pane = panes.value.find(item => item.id === paneId)
+    if (!pane) return
+    const byId = new Map(pane.tabs.map(tab => [tab.id, tab]))
+    const next: PaneTab[] = []
+    for (const id of ids) {
+      const tab = byId.get(id)
+      if (tab) {
+        next.push(tab)
+        byId.delete(id)
+      }
+    }
+    for (const tab of pane.tabs) {
+      if (byId.has(tab.id)) next.push(tab)
+    }
+    pane.tabs = next
+  }
+
   function openInOtherPane(viewInput: PaneView | string): void {
     const view = asView(viewInput)
     if (panes.value.length < MAX_PANES) {
@@ -335,6 +358,7 @@ export const usePanesStore = defineStore('panes', () => {
     newTab,
     closeTab,
     setActiveTab,
+    reorderTabs,
     openInOtherPane,
     closePane,
     goBack,

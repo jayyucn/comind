@@ -795,7 +795,9 @@ const highlightRects = ref<SelectionRect[]>([])
 
 function refreshTextHighlight() {
   const tr = selection.textRange.value
-  highlightRects.value = tr ? selectionClientRects(tr.anchor, tr.head) : []
+  // 传入本 pane 的 .block-list 根作为作用域：多 pane 同页时同一 data-block-id 有多份 DOM，
+  // 不限定作用域会经 document.querySelector 命中第一个（左侧）实例，高亮错画到左 pane。
+  highlightRects.value = tr ? selectionClientRects(tr.anchor, tr.head, rootEl.value) : []
 }
 
 function handleViewportChange() {

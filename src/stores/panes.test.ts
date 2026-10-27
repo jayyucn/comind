@@ -214,4 +214,34 @@ describe('panes store（PaneTab，ADR-0060）', () => {
     store.loadFromStorage()
     expect(store.panes).toHaveLength(0)
   })
+
+  describe('reorderTabs (拖拽重排)', () => {
+    it('按入参 id 顺序原地重排 pane.tabs，不改变标签数量', () => {
+      const store = usePanesStore()
+      store.ensurePane(page('a'))
+      const first = store.activeTabId
+      const second = store.newTab('b')
+      const third = store.newTab('c')
+      store.reorderTabs(store.activePaneId, [third, first, second])
+      expect(store.panes[0].tabs.map((t) => t.id)).toEqual([third, first, second])
+    })
+
+    it('未知 pane id 是安全 no-op', () => {
+      const store = usePanesStore()
+      store.ensurePane(page('a'))
+      store.newTab('b')
+      const before = store.panes[0].tabs.map((t) => t.id)
+      store.reorderTabs('ghost-pane', [store.activeTabId])
+      expect(store.panes[0].tabs.map((t) => t.id)).toEqual(before)
+    })
+
+    it('ids 未覆盖的标签按原顺序兜底追加，不丢失', () => {
+      const store = usePanesStore()
+      store.ensurePane(page('a'))
+      const first = store.activeTabId
+      const second = store.newTab('b')
+      store.reorderTabs(store.activePaneId, [second])
+      expect(store.panes[0].tabs.map((t) => t.id)).toEqual([second, first])
+    })
+  })
 })

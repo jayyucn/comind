@@ -14,31 +14,15 @@ async function handleMouseDown() {
   <div
     class="sidebar-header"
     @mousedown="handleMouseDown"
-  >
-    <span class="sidebar-logo">COMIND</span>
-  </div>
+  />
 </template>
 
 <style lang="scss" scoped>
+// 仅保留 32px 高的顶部分隔线，与 pane-tabstrip 底部边框同一水平线；
+// 折叠开关与导航按钮已上提到 SidebarContainer 的常驻 fixed 顶栏。
 .sidebar-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: var(--bg-base);
-  padding: 0 12px;
-  // 与主内容区 pane-tabstrip 的 32px 对齐：两侧顶部分割线在同一水平线
   height: 32px;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--border);
   box-sizing: border-box;
-}
-
-.sidebar-logo {
-  margin-left: var(--space-6);
-  font-size: var(--text-sm);
-  font-weight: var(--font-bold);
-  color: var(--text-secondary);
-  letter-spacing: var(--letter-wide-3);
-  text-transform: uppercase;
 }
 </style>
