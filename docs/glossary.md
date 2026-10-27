@@ -80,3 +80,17 @@ Teleport 到 body 的浮动面板族（`BasePopover`、`ValueEditor` qb-popover�
 
 **z-index 铁律 (z-index Rules)**
 ① 组件内禁止硬编码 z-index，一律用 `var(--z-*)`（scoped 样式）或 `$z-*`（全局 SCSS）；② 浮层必须 Teleport 到 body，否则 z-index 会困于祖先堆叠上下文而失效（已知陷阱：`.block-children` 的 `translateY(0)`）。见 ADR-0032。
+
+## P
+
+**Pane（分屏窗格 / 对称分屏单元）**
+对称分屏布局中的一级容器（ADR-0059 / ADR-0060）。一个 pane 内含多个 PaneTab，持有 `activeTabId` 与 `splitRatio`（与另一 pane 的分屏占比，0.1~0.9）。pane 上限 2（结构预留 N），至少保留 1 个。与「页面 Page（block 树实体）」**不是同一概念**——Page 是 pane/tab 承载的内容，pane 是承载它的窗格。
+
+**PaneTab（pane 内标签页）**
+浏览器式三层模型的中间层（ADR-0060）：一个 pane 内的一个可切换标签页，持有一条导航历史 `entries: PaneView[]` 与游标 `cursor`，当前目的地 = `entries[cursor]`；前进/后退移动 cursor，导航 push 新 entry（截断 forward）。与 glossary 现有「Tab（查询视图实例，table/board/calendar，`screen_view` 表，ADR-0029）」**不是同一概念**——后者是 TaskHub / 标签聚合内部的查询视图切换层。两者正交：PaneTab 装 `tasks` 目的地时，TaskHub 内部仍用自身的 query Tab 切 table/board/calendar。
+
+**PaneView（pane 目的地描述符）**
+pane/tab 承载的目的地 = `{ kind: PaneKind; ref?: string }`。`kind` 区分顶层目的地（page/graph/tasks/tags/pages/trash）；`ref` 是该类的实例标识（page→pageId；tags→tagId 聚合页；graph/tasks/pages/trash 无 ref）。注意与 `core/view/types.ts` 的 `ViewKind`（table/board/calendar/quadrant/gallery，**查询**视图类型）不混淆——ViewKind 仅在 PaneTab=`tasks` 之后由 TaskHub 内部使用。
+
+**PaneKind（pane 目的地类型）**
+`PaneView.kind` 的枚举：`page`（文档页）｜`graph`（概念图谱 GraphPage）｜`tasks`（任务中心 TaskHub Screen）｜`tags`（标签页库 / 标签聚合页，ref 存在=聚合页）｜`pages`（页面库 PagesLibrary）｜`trash`（回收站）。范围=全部顶层目的地（ADR-0060「全量对称」，取代 ADR-0059 D3「非页路由占满主区、不参与 pane」）。

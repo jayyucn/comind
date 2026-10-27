@@ -97,7 +97,8 @@ defineEmits<{
 
 .sidebar-floating-toggle {
   position: fixed;
-  top: calc(var(--nav-height) / 2 - 13px);
+  // 与 32px 高的侧栏头 / pane-tabstrip 垂直居中（16px - 13px 半高）
+  top: 3px;
   left: var(--space-2);
   width: 26px;
   height: 26px;

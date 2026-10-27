@@ -19,13 +19,15 @@ async function handleMouseDown() {
   </div>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
 .sidebar-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  background: var(--bg-base);
   padding: 0 12px;
-  height: var(--nav-height);
+  // 与主内容区 pane-tabstrip 的 32px 对齐：两侧顶部分割线在同一水平线
+  height: 32px;
   flex-shrink: 0;
   border-bottom: 1px solid var(--border);
   box-sizing: border-box;

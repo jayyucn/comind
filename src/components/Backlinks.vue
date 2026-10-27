@@ -394,9 +394,12 @@ watch(
   background: var(--bg-base);
   display: flex;
   flex-direction: column;
-  padding: 0;
+  /* 镜像 .main-content 的横向盒模型：同 max-width + 居中 + 同左右内边距，
+     使「反向链接」标题左缘与页面标题/正文左缘对齐（窄 pane 下也不贴边）。 */
   max-width: var(--max-width);
   width: 100%;
+  margin: 0 auto;
+  padding: 0 var(--space-6);
   box-sizing: border-box;
 }
 

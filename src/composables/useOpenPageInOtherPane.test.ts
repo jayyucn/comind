@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { usePanesStore } from '../stores/panes'
+import { currentView, usePanesStore } from '../stores/panes'
 import { useOpenPageInOtherPane } from './useOpenPageInOtherPane'
 
 const {
@@ -36,10 +36,13 @@ vi.mock('../wasm/client', () => ({
   }),
 }))
 
-/** 读取对称 pane store：另一栏打开后应出现目标页 */
+/** 读取对称 pane store：另一栏打开后应出现目标页（PaneTab 模型，当前视图的 ref） */
 function otherPanePageIds(): string[] {
   const store = usePanesStore()
-  return store.panes.map(p => p.pageId)
+  return store.panes.map(pane => {
+    const tab = pane.tabs.find(t => t.id === pane.activeTabId) ?? pane.tabs[0]
+    return currentView(tab).ref
+  })
 }
 
 /** 模拟真实上下文：Ctrl+Click 时至少已有一个 pane（当前页） */

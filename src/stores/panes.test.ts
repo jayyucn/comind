@@ -1,129 +1,146 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { nextTick } from 'vue'
 
-import { usePanesStore } from './panes'
+import { currentView, usePanesStore, type PaneView } from './panes'
 
 const STORAGE_KEY = 'comind:panes'
+const page = (ref: string): PaneView => ({ kind: 'page', ref })
 
-describe('panes store（对称分屏，ADR-0059）', () => {
+function activeTab(store: ReturnType<typeof usePanesStore>) {
+  const pane = store.panes.find(item => item.id === store.activePaneId)!
+  return pane.tabs.find(item => item.id === pane.activeTabId)!
+}
+
+describe('panes store（PaneTab，ADR-0060）', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     localStorage.clear()
   })
 
-  it('ensurePane 空态引导：建一个 pane 并设为活动', () => {
+  it('ensurePane 用 PaneView 初始化三层模型并派生 currentPageId', () => {
     const store = usePanesStore()
-    store.ensurePane('page-a')
+    store.ensurePane(page('page-a'))
     expect(store.panes).toHaveLength(1)
-    expect(store.panes[0].pageId).toBe('page-a')
-    expect(store.activePaneId).toBe(store.panes[0].id)
+    expect(store.panes[0].tabs).toHaveLength(1)
+    expect(store.panes[0].tabs[0].entries).toEqual([page('page-a')])
+    expect(store.panes[0].tabs[0].cursor).toBe(0)
+    expect(store.currentPageId).toBe('page-a')
   })
 
-  it('ensurePane 已有 pane 时不重复建、不改活动 pane', () => {
+  it('非页目的地把 currentPageId 降级为 undefined', () => {
     const store = usePanesStore()
-    store.ensurePane('page-a')
-    const firstId = store.activePaneId
-    store.ensurePane('page-b')
-    expect(store.panes).toHaveLength(1)
-    expect(store.activePaneId).toBe(firstId)
+    store.ensurePane(page('page-a'))
+    store.navigate({ kind: 'graph' })
+    expect(store.currentPageId).toBeUndefined()
+    store.navigate({ kind: 'tags', ref: 'tag-a' })
+    expect(store.currentPageId).toBeUndefined()
   })
 
-  it('openInOtherPane：单 pane → 拆成双 pane，目标页设为活动', () => {
+  it('每个 PaneTab 独立后退前进，新导航截断 forward', () => {
     const store = usePanesStore()
-    store.ensurePane('page-a')
-    store.openInOtherPane('page-b')
+    store.ensurePane(page('a'))
+    store.navigate(page('b'))
+    store.navigate({ kind: 'tasks' })
+    const firstTabId = activeTab(store).id
+    store.goBack()
+    expect(currentView(activeTab(store))).toEqual(page('b'))
+    store.goForward()
+    expect(currentView(activeTab(store))).toEqual({ kind: 'tasks' })
+    store.goBack()
+    store.navigate({ kind: 'graph' })
+    expect(activeTab(store).entries).toEqual([page('a'), page('b'), { kind: 'graph' }])
+    expect(store.canGoForward(store.activePaneId)).toBe(false)
+
+    store.newTab('new-page')
+    expect(activeTab(store).id).not.toBe(firstTabId)
+    expect(store.canGoBack(store.activePaneId)).toBe(false)
+    store.setActiveTab(store.activePaneId, firstTabId)
+    expect(currentView(activeTab(store))).toEqual({ kind: 'graph' })
+  })
+
+  it('newTab 创建空白页标签并成为活动标签', () => {
+    const store = usePanesStore()
+    store.ensurePane({ kind: 'graph' })
+    const tabId = store.newTab('blank-id')
+    expect(tabId).not.toBe('')
+    expect(store.activeTabId).toBe(tabId)
+    expect(currentView(activeTab(store))).toEqual(page('blank-id'))
+  })
+
+  it('closeTab 保持每 pane 至少一个标签并移交活动标签', () => {
+    const store = usePanesStore()
+    store.ensurePane(page('a'))
+    const first = activeTab(store).id
+    const second = store.newTab('b')
+    store.closeTab(store.activePaneId, second)
+    expect(store.panes[0].tabs).toHaveLength(1)
+    expect(store.activeTabId).toBe(first)
+    store.closeTab(store.activePaneId, first)
+    expect(store.panes[0].tabs).toHaveLength(1)
+  })
+
+  it('多 pane 时关闭最后一个标签 = 关闭该 pane（不再保护最后一个 tab）', () => {
+    const store = usePanesStore()
+    store.ensurePane(page('a'))
+    store.openInOtherPane(page('b'))
     expect(store.panes).toHaveLength(2)
-    const active = store.panes.find(p => p.id === store.activePaneId)!
-    expect(active.pageId).toBe('page-b')
+    const targetPaneId = store.activePaneId
+    const targetTabId = store.activeTabId
+    store.closeTab(targetPaneId, targetTabId)
+    expect(store.panes).toHaveLength(1)
+    expect(store.panes.some(pane => pane.id === targetPaneId)).toBe(false)
+    expect(currentView(activeTab(store))).toEqual(page('a'))
   })
 
-  it('openInOtherPane：双 pane → 替换非活动 pane 并设为活动', () => {
+  it('openInOtherPane 在另一 pane 的活动标签 push 跨目的地视图', () => {
     const store = usePanesStore()
-    store.ensurePane('page-a')
-    store.openInOtherPane('page-b') // 现在活动 = page-b
-    const activePageB = store.activePaneId
-
-    store.openInOtherPane('page-c') // 替换非活动（page-a）→ page-c
+    store.ensurePane(page('a'))
+    store.openInOtherPane({ kind: 'graph' })
     expect(store.panes).toHaveLength(2)
-    const active = store.panes.find(p => p.id === store.activePaneId)!
-    expect(active.pageId).toBe('page-c')
-    // 原来的活动 pane（page-b）保持不动
-    const other = store.panes.find(p => p.id !== store.activePaneId)!
-    expect(other.id).toBe(activePageB)
-    expect(other.pageId).toBe('page-b')
+    expect(currentView(activeTab(store))).toEqual({ kind: 'graph' })
+    const graphPaneId = store.activePaneId
+    store.openInOtherPane({ kind: 'tasks' })
+    expect(store.panes).toHaveLength(2)
+    expect(store.activePaneId).not.toBe(graphPaneId)
+    expect(currentView(activeTab(store))).toEqual({ kind: 'tasks' })
+    expect(activeTab(store).entries).toEqual([page('a'), { kind: 'tasks' }])
   })
 
-  it('closePane：保持至少 1 个 pane', () => {
+  it('closePane 保持至少一个 pane，关闭活动 pane 时移交活动权', () => {
     const store = usePanesStore()
-    store.ensurePane('page-a')
-    store.closePane(store.panes[0].id)
+    store.ensurePane(page('a'))
+    store.closePane(store.activePaneId)
     expect(store.panes).toHaveLength(1)
-  })
-
-  it('closePane：关闭活动 pane 时活动权交给剩余第一个', () => {
-    const store = usePanesStore()
-    store.ensurePane('page-a')
-    store.openInOtherPane('page-b') // 活动 = page-b
-    const activeId = store.activePaneId
-    store.closePane(activeId)
+    store.openInOtherPane(page('b'))
+    store.closePane(store.activePaneId)
     expect(store.panes).toHaveLength(1)
-    expect(store.panes[0].pageId).toBe('page-a')
-    expect(store.activePaneId).toBe(store.panes[0].id)
+    expect(currentView(activeTab(store))).toEqual(page('a'))
   })
 
-  it('closePane：关闭非活动 pane 时活动 pane 不变', () => {
+  it('关闭非活动 pane 不改变当前活动 pane 和标签', () => {
     const store = usePanesStore()
-    store.ensurePane('page-a')
-    store.openInOtherPane('page-b') // 活动 = page-b
-    const activeId = store.activePaneId
-    const otherId = store.panes.find(p => p.id !== activeId)!.id
+    store.ensurePane(page('a'))
+    store.openInOtherPane(page('b'))
+    const activePaneId = store.activePaneId
+    const activeTabId = store.activeTabId
+    const otherId = store.panes.find(pane => pane.id !== activePaneId)!.id
     store.closePane(otherId)
+    expect(store.activePaneId).toBe(activePaneId)
+    expect(store.activeTabId).toBe(activeTabId)
+  })
+
+  it('未知 pane/tab id 的激活与历史操作是 no-op', () => {
+    const store = usePanesStore()
+    store.ensurePane(page('a'))
+    store.activatePane('ghost')
+    store.setActiveTab(store.activePaneId, 'ghost')
+    store.goBack('ghost')
     expect(store.panes).toHaveLength(1)
-    expect(store.activePaneId).toBe(activeId)
+    expect(currentView(activeTab(store))).toEqual(page('a'))
   })
 
-  it('activatePane：未知 pane id 是 no-op', () => {
-    const store = usePanesStore()
-    store.ensurePane('page-a')
-    const before = store.activePaneId
-    store.activatePane('nonexistent')
-    expect(store.activePaneId).toBe(before)
-  })
-
-  it('setActivePage：更新活动 pane 的页', () => {
-    const store = usePanesStore()
-    store.ensurePane('page-a')
-    store.setActivePage('page-b')
-    const active = store.panes.find(p => p.id === store.activePaneId)!
-    expect(active.pageId).toBe('page-b')
-    expect(store.panes).toHaveLength(1)
-  })
-
-  it('setActivePage：空态时引导一个 pane', () => {
-    const store = usePanesStore()
-    store.setActivePage('page-x')
-    expect(store.panes).toHaveLength(1)
-    expect(store.panes[0].pageId).toBe('page-x')
-  })
-
-  it('navigatePane：改指定 pane 的页并激活它', () => {
-    const store = usePanesStore()
-    store.ensurePane('page-a')
-    store.openInOtherPane('page-b') // 活动 = page-b
-    const pageAId = store.panes.find(p => p.pageId === 'page-a')!.id
-    store.navigatePane(pageAId, 'page-c')
-    expect(store.panes.find(p => p.id === pageAId)!.pageId).toBe('page-c')
-    expect(store.activePaneId).toBe(pageAId)
-  })
-
-  it('navigatePane：未知 pane id 是 no-op', () => {
-    const store = usePanesStore()
-    store.ensurePane('page-a')
-    store.navigatePane('ghost', 'page-x')
-    expect(store.panes[0].pageId).toBe('page-a')
-  })
-
-  it('setSplitRatio：夹取到 [0.1, 0.9]', () => {
+  it('setSplitRatio 夹取到 [0.1, 0.9]', () => {
     const store = usePanesStore()
     store.setSplitRatio(0.05)
     expect(store.splitRatio).toBe(0.1)
@@ -133,78 +150,68 @@ describe('panes store（对称分屏，ADR-0059）', () => {
     expect(store.splitRatio).toBe(0.42)
   })
 
-  it('loadFromStorage：恢复合法持久化状态', () => {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        panes: [
-          { id: 'p1', pageId: 'page-a' },
-          { id: 'p2', pageId: 'page-b' },
-        ],
-        activePaneId: 'p2',
-        splitRatio: 0.3,
-      }),
-    )
-    const store = usePanesStore()
-    store.loadFromStorage()
-    expect(store.panes).toHaveLength(2)
-    expect(store.activePaneId).toBe('p2')
-    expect(store.splitRatio).toBe(0.3)
+  it('完整持久化往返恢复所有标签、历史和活动状态', async () => {
+    const first = usePanesStore()
+    first.ensurePane(page('a'))
+    first.navigate({ kind: 'graph' })
+    first.newTab('b')
+    first.openInOtherPane({ kind: 'tasks' })
+    first.setSplitRatio(0.3)
+    await Promise.resolve()
+
+    setActivePinia(createPinia())
+    const restored = usePanesStore()
+    restored.loadFromStorage()
+    expect(restored.panes).toEqual(first.panes)
+    expect(restored.activePaneId).toBe(first.activePaneId)
+    expect(restored.activeTabId).toBe(first.activeTabId)
+    expect(restored.splitRatio).toBe(0.3)
   })
 
-  it('loadFromStorage：activePaneId 不在已存 pane 中时回退到第一个', () => {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        panes: [{ id: 'p1', pageId: 'page-a' }],
-        activePaneId: 'ghost',
-        splitRatio: 0.5,
-      }),
-    )
+  it('恢复后新建 pane/tab 不与存档 id 冲突', async () => {
     const store = usePanesStore()
-    store.loadFromStorage()
-    expect(store.activePaneId).toBe('p1')
+    store.ensurePane(page('a'))
+    store.openInOtherPane(page('b'))
+    await nextTick()
+    const saved = localStorage.getItem(STORAGE_KEY)
+    expect(saved).not.toBeNull()
+    setActivePinia(createPinia())
+    const restored = usePanesStore()
+    restored.loadFromStorage()
+    restored.closePane(restored.panes[1].id)
+    restored.openInOtherPane(page('c'))
+    restored.newTab('d')
+    const paneIds = restored.panes.map(pane => pane.id)
+    const tabIds = restored.panes.flatMap(pane => pane.tabs.map(tab => tab.id))
+    expect(new Set(paneIds).size).toBe(paneIds.length)
+    expect(new Set(tabIds).size).toBe(tabIds.length)
   })
 
-  it('loadFromStorage：损坏 JSON 按无持久化处理', () => {
+  it('restore 只激活 URL 匹配的当前 entry，未命中保留存储布局', () => {
+    const store = usePanesStore()
+    store.ensurePane(page('a'))
+    store.newTab('b')
+    store.openInOtherPane({ kind: 'graph' })
+    store.restore(page('b'))
+    expect(currentView(activeTab(store))).toEqual(page('b'))
+    const before = store.activeTabId
+    store.restore({ kind: 'trash' })
+    expect(store.activeTabId).toBe(before)
+  })
+
+  it('restore 空态用 URL 初始化', () => {
+    const store = usePanesStore()
+    store.restore({ kind: 'trash' })
+    expect(currentView(activeTab(store))).toEqual({ kind: 'trash' })
+  })
+
+  it('损坏或旧形态存储按无存档处理', () => {
     localStorage.setItem(STORAGE_KEY, '{broken')
     const store = usePanesStore()
     store.loadFromStorage()
     expect(store.panes).toHaveLength(0)
-  })
-
-  it('nextId：存档恢复后新建 pane 不与存档 id 冲突（重启撞 id 回归，F5）', () => {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        panes: [{ id: 'pane-1', pageId: 'page-a' }],
-        activePaneId: 'pane-1',
-        splitRatio: 0.5,
-      }),
-    )
-    const store = usePanesStore()
-    store.loadFromStorage()
-    store.openInOtherPane('page-b')
-    expect(store.panes).toHaveLength(2)
-    const ids = store.panes.map(p => p.id)
-    expect(new Set(ids).size).toBe(2)
-    expect(store.activePaneId).toBe(ids[1])
-  })
-
-  it('loadFromStorage：空 pane 数组按无持久化处理', () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ panes: [], activePaneId: '', splitRatio: 0.5 }))
-    const store = usePanesStore()
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ panes: [{ id: 'p1', pageId: 'a' }] }))
     store.loadFromStorage()
     expect(store.panes).toHaveLength(0)
-  })
-
-  it('状态变化自动持久化（deep watch）', async () => {
-    const store = usePanesStore()
-    store.ensurePane('page-a')
-    store.openInOtherPane('page-b')
-    await Promise.resolve() // 让 watch 回调跑一次
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)!)
-    expect(saved.panes).toHaveLength(2)
-    expect(saved.activePaneId).toBe(store.activePaneId)
   })
 })

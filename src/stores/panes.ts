@@ -1,77 +1,157 @@
 import { defineStore } from 'pinia'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
-/**
- * 对称分屏 Pane 状态（ADR-0059，取代 ADR-0058 的 splitPane）。
- *
- * - panes：pane 数组（上限 2，结构预留 N），每个 pane 持有一个 pageId。
- * - activePaneId：焦点 pane，驱动 currentPageId 与键盘/弹层路由。
- * - splitRatio：左侧 pane 占比（0.1~0.9）。
- * - 全持久化：panes + activePaneId + splitRatio 写 localStorage，刷新后恢复。
- *
- * 路由同步（URL = 活动 pane 页）不在本 store 内，由调用方（App.vue / composable）
- * 用 router.replace 完成，保持 store 无 router 依赖、可单测。
- */
+/** Pane → PaneTab → PaneView（ADR-0060）。store 不依赖 router。 */
+export type PaneKind = 'page' | 'graph' | 'tasks' | 'tags' | 'pages' | 'trash'
+
+export interface PaneView {
+  kind: PaneKind
+  ref?: string
+}
+
+export interface PaneTab {
+  id: string
+  entries: PaneView[]
+  cursor: number
+}
+
 export interface Pane {
   id: string
-  pageId: string
+  tabs: PaneTab[]
+  activeTabId: string
 }
 
 const MAX_PANES = 2
 const STORAGE_KEY = 'comind:panes'
+const KINDS: readonly PaneKind[] = ['page', 'graph', 'tasks', 'tags', 'pages', 'trash']
 
 interface PersistedState {
   panes: Pane[]
   activePaneId: string
+  activeTabId: string
   splitRatio: number
 }
 
-function isValidPane(p: unknown): p is Pane {
-  if (typeof p !== 'object' || p === null) return false
-  const o = p as Record<string, unknown>
-  return typeof o.id === 'string' && typeof o.pageId === 'string' && o.pageId !== ''
+export function currentView(tab: PaneTab): PaneView {
+  return tab.entries[tab.cursor]
 }
 
-function clampRatio(r: number): number {
-  return Math.min(0.9, Math.max(0.1, r))
+export function samePaneView(a: PaneView, b: PaneView): boolean {
+  return a.kind === b.kind && a.ref === b.ref
+}
+
+function asView(view: PaneView | string): PaneView {
+  return typeof view === 'string' ? { kind: 'page', ref: view } : view
+}
+
+function isValidView(value: unknown): value is PaneView {
+  if (typeof value !== 'object' || value === null) return false
+  const view = value as Record<string, unknown>
+  if (!KINDS.includes(view.kind as PaneKind)) return false
+  if (view.kind === 'page') return typeof view.ref === 'string' && view.ref !== ''
+  if (view.kind === 'tags') return view.ref === undefined || (typeof view.ref === 'string' && view.ref !== '')
+  return view.ref === undefined
+}
+
+function isValidTab(value: unknown): value is PaneTab {
+  if (typeof value !== 'object' || value === null) return false
+  const tab = value as Record<string, unknown>
+  return typeof tab.id === 'string' && tab.id !== ''
+    && Array.isArray(tab.entries) && tab.entries.length > 0 && tab.entries.every(isValidView)
+    && typeof tab.cursor === 'number' && Number.isInteger(tab.cursor)
+    && tab.cursor >= 0 && tab.cursor < tab.entries.length
+}
+
+function isValidPane(value: unknown): value is Pane {
+  if (typeof value !== 'object' || value === null) return false
+  const pane = value as Record<string, unknown>
+  return typeof pane.id === 'string' && pane.id !== ''
+    && Array.isArray(pane.tabs) && pane.tabs.length > 0 && pane.tabs.every(isValidTab)
+    && typeof pane.activeTabId === 'string'
+    && pane.tabs.some(tab => (tab as PaneTab).id === pane.activeTabId)
+}
+
+function clampRatio(ratio: number): number {
+  return Math.min(0.9, Math.max(0.1, ratio))
 }
 
 export const usePanesStore = defineStore('panes', () => {
   const panes = ref<Pane[]>([])
   const activePaneId = ref('')
+  const activeTabId = ref('')
   const splitRatio = ref(0.5)
-  /** 已从 localStorage 读档（true 后 URL→pane 才允许写 pane，防启动竞态覆盖存档布局） */
   const hydrated = ref(false)
 
-  let seq = 0
-  function nextId(): string {
-    // 防撞：存档恢复后（loadFromStorage 不回推 seq）新建 pane 可能与存档 id 冲突
-    // （运行时实测缺陷 F5：重启后新建 pane 与存档 pane 同为 'pane-1'）
+  let paneSeq = 0
+  let tabSeq = 0
+
+  function nextPaneId(): string {
     let id: string
     do {
-      id = `pane-${++seq}`
-    } while (panes.value.some(p => p.id === id))
+      id = `pane-${++paneSeq}`
+    } while (panes.value.some(pane => pane.id === id))
     return id
   }
+
+  function nextTabId(): string {
+    let id: string
+    do {
+      id = `pane-tab-${++tabSeq}`
+    } while (panes.value.some(pane => pane.tabs.some(tab => tab.id === id)))
+    return id
+  }
+
+  function createTab(view: PaneView): PaneTab {
+    return { id: nextTabId(), entries: [view], cursor: 0 }
+  }
+
+  function createPane(view: PaneView): Pane {
+    const tab = createTab(view)
+    return { id: nextPaneId(), tabs: [tab], activeTabId: tab.id }
+  }
+
+  function activate(pane: Pane, tab: PaneTab): void {
+    activePaneId.value = pane.id
+    activeTabId.value = tab.id
+    pane.activeTabId = tab.id
+  }
+
+  function activePane(): Pane | null {
+    return panes.value.find(pane => pane.id === activePaneId.value) ?? null
+  }
+
+  function activeTab(pane: Pane): PaneTab | null {
+    return pane.tabs.find(tab => tab.id === pane.activeTabId) ?? null
+  }
+
+  const activeView = computed<PaneView | null>(() => {
+    const pane = activePane()
+    const tab = pane ? activeTab(pane) : null
+    return tab ? currentView(tab) : null
+  })
+
+  const currentPageId = computed<string | undefined>(() => {
+    const view = activeView.value
+    return view?.kind === 'page' ? view.ref : undefined
+  })
 
   function persist(): void {
     if (typeof window === 'undefined') return
     const state: PersistedState = {
       panes: panes.value,
       activePaneId: activePaneId.value,
+      activeTabId: activeTabId.value,
       splitRatio: splitRatio.value,
     }
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
     } catch {
-      // 存储不可用（隐私模式/配额）时静默降级为不持久化
+      // 存储不可用时降级为本次会话状态。
     }
   }
 
   function loadFromStorage(): void {
     if (typeof window === 'undefined') return
-    // 先置位再读：无存档（首次启动）也要放行后续 URL→pane；有存档时，
-    // 本调用前的任何 pane 写入都会覆盖存档（运行时实测的启动竞态，见下）
     hydrated.value = true
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return
@@ -81,103 +161,189 @@ export const usePanesStore = defineStore('panes', () => {
       const valid = data.panes.filter(isValidPane).slice(0, MAX_PANES)
       if (valid.length === 0) return
       panes.value = valid
-      activePaneId.value = valid.some(p => p.id === data.activePaneId)
-        ? (data.activePaneId as string)
-        : valid[0].id
+      const pane = valid.find(item => item.id === data.activePaneId) ?? valid[0]
+      const tab = pane.tabs.find(item => item.id === data.activeTabId)
+        ?? pane.tabs.find(item => item.id === pane.activeTabId)
+        ?? pane.tabs[0]
+      activate(pane, tab)
       splitRatio.value = clampRatio(typeof data.splitRatio === 'number' ? data.splitRatio : 0.5)
     } catch {
-      // 损坏数据按无持久化处理
+      // 损坏数据按无存档处理。
     }
   }
 
-  watch([panes, activePaneId, splitRatio], persist, { deep: true })
+  watch([panes, activePaneId, activeTabId, splitRatio], persist, { deep: true })
 
-  /** 活动 pane（不存在时回退 null） */
-  function activePane(): Pane | null {
-    return panes.value.find(p => p.id === activePaneId.value) ?? null
-  }
-
-  /** 焦点切换：把某个 pane 设为活动（光标进入该 pane 时调用） */
   function activatePane(paneId: string): void {
-    if (panes.value.some(p => p.id === paneId)) {
-      activePaneId.value = paneId
-    }
+    const pane = panes.value.find(item => item.id === paneId)
+    const tab = pane ? activeTab(pane) : null
+    if (pane && tab) activate(pane, tab)
   }
 
-  /** 导航：把活动 pane 的页设为 pageId（路由导航时调用，活动 pane 不存在则建一个） */
-  function setActivePage(pageId: string): void {
-    const active = activePane()
-    if (active) {
-      active.pageId = pageId
+  function ensurePane(viewInput: PaneView | string): void {
+    if (panes.value.length > 0) return
+    const pane = createPane(asView(viewInput))
+    panes.value.push(pane)
+    activate(pane, pane.tabs[0])
+  }
+
+  function navigate(viewInput: PaneView | string, paneId = activePaneId.value): void {
+    const view = asView(viewInput)
+    const existing = panes.value.find(pane => pane.id === paneId)
+    if (!existing) {
+      ensurePane(view)
       return
     }
-    if (panes.value.length === 0) {
-      const id = nextId()
-      panes.value.push({ id, pageId })
-      activePaneId.value = id
+    const tab = activeTab(existing)
+    if (!tab) return
+    if (!samePaneView(currentView(tab), view)) {
+      tab.entries = tab.entries.slice(0, tab.cursor + 1)
+      tab.entries.push(view)
+      tab.cursor = tab.entries.length - 1
     }
+    activate(existing, tab)
   }
 
-  /** 导航：把指定 pane 的页设为 pageId 并激活它（pane 内后退/前进时调用） */
-  function navigatePane(paneId: string, pageId: string): void {
-    const pane = panes.value.find(p => p.id === paneId)
+  function newTab(pageId: string, paneId = activePaneId.value): string {
+    const pane = panes.value.find(item => item.id === paneId)
+    if (!pane) return ''
+    const tab = createTab({ kind: 'page', ref: pageId })
+    pane.tabs.push(tab)
+    activate(pane, tab)
+    return tab.id
+  }
+
+  function closeTab(paneId: string, tabId: string): void {
+    const pane = panes.value.find(item => item.id === paneId)
     if (!pane) return
-    pane.pageId = pageId
-    activePaneId.value = paneId
-  }
-
-  /** 引导：确保至少一个 pane（应用启动、路由 resolve 后调用） */
-  function ensurePane(pageId: string): void {
-    if (panes.value.length === 0) {
-      const id = nextId()
-      panes.value.push({ id, pageId })
-      activePaneId.value = id
-    }
-  }
-
-  /**
-   * Ctrl+Click 分流：在「非活动 pane」打开目标页。
-   * - 0/1 个 pane → 新增一个 pane 装目标页并设为活动；
-   * - 2 个 pane → 目标页替换非活动 pane，并设为活动（焦点跟随新打开内容）。
-   */
-  function openInOtherPane(pageId: string): void {
-    if (panes.value.length < MAX_PANES) {
-      const id = nextId()
-      panes.value.push({ id, pageId })
-      activePaneId.value = id
+    const index = pane.tabs.findIndex(tab => tab.id === tabId)
+    if (index < 0) return
+    // 关闭最后一个标签 = 关闭该 pane（多 pane 时）；单 pane 时必须保留至少一个标签。
+    if (pane.tabs.length <= 1) {
+      closePane(paneId)
       return
     }
-    const other = panes.value.find(p => p.id !== activePaneId.value) ?? panes.value[0]
-    other.pageId = pageId
-    activePaneId.value = other.id
+    pane.tabs.splice(index, 1)
+    if (pane.activeTabId === tabId) {
+      pane.activeTabId = pane.tabs[Math.min(index, pane.tabs.length - 1)].id
+    }
+    if (activePaneId.value === paneId) activatePane(paneId)
   }
 
-  /** 关闭一个 pane；保持至少 1 个 pane。关闭的是活动 pane 时，活动权交给剩余第一个。 */
+  function setActiveTab(paneId: string, tabId: string): void {
+    const pane = panes.value.find(item => item.id === paneId)
+    const tab = pane?.tabs.find(item => item.id === tabId)
+    if (pane && tab) activate(pane, tab)
+  }
+
+  function openInOtherPane(viewInput: PaneView | string): void {
+    const view = asView(viewInput)
+    if (panes.value.length < MAX_PANES) {
+      const pane = createPane(view)
+      panes.value.push(pane)
+      activate(pane, pane.tabs[0])
+      return
+    }
+    const other = panes.value.find(pane => pane.id !== activePaneId.value) ?? panes.value[0]
+    navigate(view, other.id)
+  }
+
   function closePane(paneId: string): void {
     if (panes.value.length <= 1) return
-    const idx = panes.value.findIndex(p => p.id === paneId)
-    if (idx === -1) return
-    panes.value.splice(idx, 1)
-    if (activePaneId.value === paneId) {
-      activePaneId.value = panes.value[0].id
+    const index = panes.value.findIndex(pane => pane.id === paneId)
+    if (index < 0) return
+    panes.value.splice(index, 1)
+    if (activePaneId.value === paneId) activatePane(panes.value[0].id)
+  }
+
+  function goBack(paneId = activePaneId.value): void {
+    const pane = panes.value.find(item => item.id === paneId)
+    const tab = pane ? activeTab(pane) : null
+    if (!pane || !tab || tab.cursor <= 0) return
+    tab.cursor--
+    activate(pane, tab)
+  }
+
+  function goForward(paneId = activePaneId.value): void {
+    const pane = panes.value.find(item => item.id === paneId)
+    const tab = pane ? activeTab(pane) : null
+    if (!pane || !tab || tab.cursor >= tab.entries.length - 1) return
+    tab.cursor++
+    activate(pane, tab)
+  }
+
+  function canGoBack(paneId: string): boolean {
+    const pane = panes.value.find(item => item.id === paneId)
+    const tab = pane ? activeTab(pane) : null
+    return !!tab && tab.cursor > 0
+  }
+
+  function canGoForward(paneId: string): boolean {
+    const pane = panes.value.find(item => item.id === paneId)
+    const tab = pane ? activeTab(pane) : null
+    return !!tab && tab.cursor < tab.entries.length - 1
+  }
+
+  function previousView(paneId: string): PaneView | null {
+    const pane = panes.value.find(item => item.id === paneId)
+    const tab = pane ? activeTab(pane) : null
+    return tab && tab.cursor > 0 ? tab.entries[tab.cursor - 1] : null
+  }
+
+  /** URL 只激活匹配的当前 entry；无存档时才初始化，未命中时保留存储布局。 */
+  function restore(view: PaneView): void {
+    if (panes.value.length === 0) {
+      ensurePane(view)
+      return
+    }
+    for (const pane of panes.value) {
+      const tab = pane.tabs.find(item => samePaneView(currentView(item), view))
+      if (tab) {
+        activate(pane, tab)
+        return
+      }
     }
   }
 
-  function setSplitRatio(r: number): void {
-    splitRatio.value = clampRatio(r)
+  function removePageFromHistory(pageId: string): void {
+    for (const pane of panes.value) {
+      for (const tab of pane.tabs) {
+        const previous = currentView(tab)
+        tab.entries = tab.entries.filter(view => !(view.kind === 'page' && view.ref === pageId))
+        if (tab.entries.length === 0) tab.entries = [{ kind: 'pages' }]
+        tab.cursor = Math.min(tab.cursor, tab.entries.length - 1)
+        if (!samePaneView(previous, currentView(tab))) tab.cursor = Math.max(0, tab.cursor)
+      }
+    }
+  }
+
+  function setSplitRatio(ratio: number): void {
+    splitRatio.value = clampRatio(ratio)
   }
 
   return {
     panes,
     activePaneId,
+    activeTabId,
     splitRatio,
     hydrated,
+    activeView,
+    currentPageId,
     activatePane,
-    setActivePage,
-    navigatePane,
     ensurePane,
+    navigate,
+    newTab,
+    closeTab,
+    setActiveTab,
     openInOtherPane,
     closePane,
+    goBack,
+    goForward,
+    canGoBack,
+    canGoForward,
+    previousView,
+    restore,
+    removePageFromHistory,
     setSplitRatio,
     loadFromStorage,
   }

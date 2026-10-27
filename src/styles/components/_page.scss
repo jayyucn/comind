@@ -14,14 +14,14 @@
 
 .main-content {
   max-width: var(--max-width);
-  min-height: calc(100vh * 0.618);
   width: 100%;
   margin: 0 auto;
   box-sizing: border-box;
   // 左/右统一内边距：页面标题与正文 block 共享同一左缘，窄 pane 下不再贴边
   padding-left: var(--space-6);
   padding-right: var(--space-6);
-  flex: 1;
+  // 高度由实际内容决定；BlockList 自身保留空白编辑区，短页不再把反链推离正文。
+  flex: 0 1 auto;
 }
 
 .page-header {
