@@ -4,6 +4,9 @@ import { computed, ref, watch } from 'vue'
 /** Pane → PaneTab → PaneView（ADR-0060）。store 不依赖 router。 */
 export type PaneKind = 'page' | 'graph' | 'tasks' | 'tags' | 'pages' | 'trash' | 'ideas'
 
+/** 布局方向：horizontal = pane 左右排列，vertical = 上下排列。 */
+export type PaneLayoutDirection = 'horizontal' | 'vertical'
+
 export interface PaneView {
   kind: PaneKind
   ref?: string
@@ -30,6 +33,7 @@ interface PersistedState {
   activePaneId: string
   activeTabId: string
   splitRatio: number
+  layoutDirection?: PaneLayoutDirection
 }
 
 export function currentView(tab: PaneTab): PaneView {
@@ -81,6 +85,7 @@ export const usePanesStore = defineStore('panes', () => {
   const activePaneId = ref('')
   const activeTabId = ref('')
   const splitRatio = ref(0.5)
+  const layoutDirection = ref<PaneLayoutDirection>('horizontal')
   const hydrated = ref(false)
 
   let paneSeq = 0
@@ -143,6 +148,7 @@ export const usePanesStore = defineStore('panes', () => {
       activePaneId: activePaneId.value,
       activeTabId: activeTabId.value,
       splitRatio: splitRatio.value,
+      layoutDirection: layoutDirection.value,
     }
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
@@ -168,12 +174,15 @@ export const usePanesStore = defineStore('panes', () => {
         ?? pane.tabs[0]
       activate(pane, tab)
       splitRatio.value = clampRatio(typeof data.splitRatio === 'number' ? data.splitRatio : 0.5)
+      if (data.layoutDirection === 'horizontal' || data.layoutDirection === 'vertical') {
+        layoutDirection.value = data.layoutDirection
+      }
     } catch {
       // 损坏数据按无存档处理。
     }
   }
 
-  watch([panes, activePaneId, activeTabId, splitRatio], persist, { deep: true })
+  watch([panes, activePaneId, activeTabId, splitRatio, layoutDirection], persist, { deep: true })
 
   function activatePane(paneId: string): void {
     const pane = panes.value.find(item => item.id === paneId)
@@ -345,6 +354,20 @@ export const usePanesStore = defineStore('panes', () => {
     splitRatio.value = clampRatio(ratio)
   }
 
+  /**
+   * 分屏动作（PageMenuButton 菜单入口）：设定布局方向；单 pane 时把当前视图
+   * 复制到第二个 pane（MAX_PANES=2）。已有两个 pane 时仅切换方向，不动 pane。
+   */
+  function splitView(direction: PaneLayoutDirection): void {
+    layoutDirection.value = direction
+    if (panes.value.length >= MAX_PANES) return
+    const view = activeView.value
+    if (!view) return
+    const pane = createPane(view)
+    panes.value.push(pane)
+    activate(pane, pane.tabs[0])
+  }
+
   return {
     panes,
     activePaneId,
@@ -370,6 +393,8 @@ export const usePanesStore = defineStore('panes', () => {
     restore,
     removePageFromHistory,
     setSplitRatio,
+    splitView,
+    layoutDirection,
     loadFromStorage,
   }
 })

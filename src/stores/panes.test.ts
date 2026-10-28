@@ -150,6 +150,44 @@ describe('panes store（PaneTab，ADR-0060）', () => {
     expect(store.splitRatio).toBe(0.42)
   })
 
+  it('splitView 单 pane 时复制当前视图到第二个 pane 并切方向', () => {
+    const store = usePanesStore()
+    store.ensurePane(page('a'))
+    store.splitView('vertical')
+    expect(store.layoutDirection).toBe('vertical')
+    expect(store.panes).toHaveLength(2)
+    expect(currentView(activeTab(store))).toEqual(page('a'))
+    // 原 pane 不受影响
+    const firstPane = store.panes[0]
+    expect(currentView(firstPane.tabs[0])).toEqual(page('a'))
+  })
+
+  it('splitView 已有两个 pane 时仅切方向，不新建不覆盖', () => {
+    const store = usePanesStore()
+    store.ensurePane(page('a'))
+    store.openInOtherPane(page('b'))
+    const paneCount = store.panes.length
+    const otherTabViews = store.panes.map(pane => pane.tabs.map(tab => tab.entries))
+    store.splitView('horizontal')
+    expect(store.layoutDirection).toBe('horizontal')
+    expect(store.panes).toHaveLength(paneCount)
+    expect(store.panes.map(pane => pane.tabs.map(tab => tab.entries))).toEqual(otherTabViews)
+  })
+
+  it('layoutDirection 持久化往返恢复', async () => {
+    const first = usePanesStore()
+    first.ensurePane(page('a'))
+    first.splitView('vertical')
+    await Promise.resolve()
+    expect(first.layoutDirection).toBe('vertical')
+
+    setActivePinia(createPinia())
+    const restored = usePanesStore()
+    restored.loadFromStorage()
+    expect(restored.layoutDirection).toBe('vertical')
+    expect(restored.panes).toHaveLength(2)
+  })
+
   it('完整持久化往返恢复所有标签、历史和活动状态', async () => {
     const first = usePanesStore()
     first.ensurePane(page('a'))

@@ -115,15 +115,18 @@ const contentBodyEl = ref<HTMLElement | null>(null)
 const pageMainContentEl = ref<HTMLElement | null>(null)
 provideLayoutShell({ sidebarEl, contentBodyEl, pageMainContentEl })
 
-/** 分隔条拖拽：实时写 splitRatio（夹取 0.1~0.9）；关闭 pane 走头部 ✕ 按钮 */
+/** 分隔条拖拽：实时写 splitRatio（夹取 0.1~0.9）；按布局方向取对应轴；关闭 pane 走头部 ✕ 按钮 */
 function onDividerMousedown(e: MouseEvent) {
   if (e.button !== 0) return
   e.preventDefault()
   const container = contentBodyEl.value
   if (!container) return
   const rect = container.getBoundingClientRect()
+  const vertical = panesStore.layoutDirection === 'vertical'
   const onMove = (ev: MouseEvent) => {
-    const ratio = (ev.clientX - rect.left) / rect.width
+    const ratio = vertical
+      ? (ev.clientY - rect.top) / rect.height
+      : (ev.clientX - rect.left) / rect.width
     panesStore.setSplitRatio(ratio)
   }
   const onUp = () => {
@@ -385,7 +388,7 @@ function handleMainClick(e: MouseEvent) {
             <!-- 对称 pane + 每 pane 多标签（ADR-0060）：所有目的地（含点滴列表）均经 pane 渲染。 -->
             <div
               class="pane-layout"
-              :class="{ 'sidebar-collapsed': isSidebarCollapsed }"
+              :class="{ 'sidebar-collapsed': isSidebarCollapsed, 'vertical': panesStore.layoutDirection === 'vertical' }"
             >
               <template
                 v-for="(pane, i) in panesStore.panes"
@@ -394,7 +397,7 @@ function handleMainClick(e: MouseEvent) {
                 <div
                   v-if="i > 0"
                   class="pane-divider"
-                  title="拖拽调整宽度"
+                  :title="panesStore.layoutDirection === 'vertical' ? '拖拽调整高度' : '拖拽调整宽度'"
                   @mousedown="onDividerMousedown"
                 />
                 <section
@@ -624,6 +627,11 @@ function handleMainClick(e: MouseEvent) {
   min-height: 0;
 }
 
+// 垂直布局（上下分屏）：pane 纵向排列，paneStyle 的 flexBasis 作用在主轴（高度）上无需改
+.pane-layout.vertical {
+  flex-direction: column;
+}
+
 .pane {
   display: flex;
   flex-direction: column;
@@ -645,7 +653,7 @@ function handleMainClick(e: MouseEvent) {
   align-items: center;
   height: 32px;
   padding: 0 8px;
-  background: transparent;
+  background: var(--surface-subtle);
   pointer-events: none;
   box-sizing: border-box;
 }
@@ -710,6 +718,18 @@ function handleMainClick(e: MouseEvent) {
     bottom: 0;
     left: -2px;
     right: -2px;
+  }
+}
+
+// 垂直布局：分隔线为水平线（主轴尺寸 1px 即高度），热区改为上下外扩
+.pane-layout.vertical .pane-divider {
+  cursor: row-resize;
+
+  &::before {
+    top: -2px;
+    bottom: -2px;
+    left: 0;
+    right: 0;
   }
 }
 
