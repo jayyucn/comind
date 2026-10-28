@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 
 /** Pane → PaneTab → PaneView（ADR-0060）。store 不依赖 router。 */
-export type PaneKind = 'page' | 'graph' | 'tasks' | 'tags' | 'pages' | 'trash'
+export type PaneKind = 'page' | 'graph' | 'tasks' | 'tags' | 'pages' | 'trash' | 'ideas'
 
 export interface PaneView {
   kind: PaneKind
@@ -23,7 +23,7 @@ export interface Pane {
 
 const MAX_PANES = 2
 const STORAGE_KEY = 'comind:panes'
-const KINDS: readonly PaneKind[] = ['page', 'graph', 'tasks', 'tags', 'pages', 'trash']
+const KINDS: readonly PaneKind[] = ['page', 'graph', 'tasks', 'tags', 'pages', 'trash', 'ideas']
 
 interface PersistedState {
   panes: Pane[]
@@ -50,6 +50,7 @@ function isValidView(value: unknown): value is PaneView {
   if (!KINDS.includes(view.kind as PaneKind)) return false
   if (view.kind === 'page') return typeof view.ref === 'string' && view.ref !== ''
   if (view.kind === 'tags') return view.ref === undefined || (typeof view.ref === 'string' && view.ref !== '')
+  if (view.kind === 'ideas') return view.ref === undefined
   return view.ref === undefined
 }
 

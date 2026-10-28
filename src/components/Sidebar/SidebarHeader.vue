@@ -21,8 +21,9 @@ async function handleMouseDown() {
 // 仅保留 32px 高的顶部分隔线，与 pane-tabstrip 底部边框同一水平线；
 // 折叠开关与导航按钮已上提到 SidebarContainer 的常驻 fixed 顶栏。
 .sidebar-header {
-  height: 32px;
+  height: 31px;
   flex-shrink: 0;
+  background: var(--surface-subtle);
   box-sizing: border-box;
 }
 </style>

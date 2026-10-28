@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Plus } from 'lucide-vue-next'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { useEmbedSelector } from './app/useEmbedSelector'
@@ -75,9 +75,7 @@ const pageStore = usePageStore()
 // ── Pane → PaneTab → PaneView（ADR-0060）──
 const panesStore = usePanesStore()
 const paneRouter = usePaneRouterSync()
-const { isCollapsed: isSidebarCollapsed } = useSidebar()
-/** 点滴列表不在 PaneKind 中，保留独立列表路由；其余目的地都进入 pane。 */
-const isIdeasListRoute = computed(() => route.name === 'ideas-list')
+const { isCollapsed: isSidebarCollapsed, toggle: toggleSidebar } = useSidebar()
 
 // ── + 改为弹出页面搜索面板：选页面/新建页面 → 新 tab 打开 ──
 const showPageSearch = ref(false)
@@ -148,21 +146,7 @@ function handlePaneNavKeydown(e: KeyboardEvent) {
   }
 }
 
-// 页面转场（ADR-0053 D8）：路由变化时对主内容区重放一次浮入动画（enter-only，200ms）。
-// 旧页硬切（出场≈瞬时）、新页浮入——不用 <Transition> 包 RouterView 的原因见模板注释。
-// 类常驻不移除：animation 默认 fill:none，播完无残留；remove + reflow + add 即可在下次导航重放。
-const mainContentEl = ref<HTMLElement | null>(null)
-watch(
-  () => route.fullPath,
-  async () => {
-    await nextTick()
-    const el = mainContentEl.value
-    if (!el) return
-    el.classList.remove('page-route-in')
-    void el.offsetWidth // 强制 reflow，连续导航间也能重放动画
-    el.classList.add('page-route-in')
-  },
-)
+// 页面转场（ADR-0053 D8）：enter-only 浮入，挂在各视图根的 `.page-route-in` 上。
 
 // 阅读器独立窗口（票 03 / ADR-0040 D4：Tauri WebviewWindow 直开 /reader/:bookId）：
 // 不渲染主窗口壳（Sidebar/右侧栏/全局浮层），ReaderView 自带顶栏与窗口控制。
@@ -209,7 +193,6 @@ if (!isReaderWindow) {
   useGlobalHotkeys({ onToggleSearch: () => { showSearchPanel.value = !showSearchPanel.value } })
 }
 
-const isFullWidthPage = computed(() => route.meta.fullWidth === true)
 const absolute = computed(() => route.meta.absolute === true)
 const showRightSidebarToggle = computed(() => route.meta.hideRightSidebarToggle !== true)
 
@@ -290,158 +273,180 @@ function handleMainClick(e: MouseEvent) {
     v-else
     class="app-layout"
   >
-    <Sidebar @open-search="showSearchPanel = true" />
-
-    <div
-      class="page-scroll-wrapper"
-      @click="handleMainClick"
+    <!-- 统一顶栏：侧栏折叠开关 + 后退/前进（左）与右上角控件（右）合并为单条；
+         独占布局第一行（全窗口宽度），其下为 侧栏 + 内容区 的横向行。 -->
+    <header
+      class="sticky-header"
+      :class="{ 'absolute': absolute }"
+      @mousedown="startDragging"
     >
-      <header
-        class="sticky-header"
-        :class="{ 'absolute': absolute }"
-        @mousedown="startDragging"
-      >
-        <div class="top-right-controls">
-          <NotificationBell />
-          <PageMenuButton />
+      <div class="sidebar-topbar-left">
+        <button
+          class="sidebar-floating-toggle"
+          :title="isSidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'"
+          :class="{ collapsed: isSidebarCollapsed }"
+          @click="toggleSidebar"
+        >
+          <Icon
+            :name="isSidebarCollapsed ? 'icon-panel-left-open' : 'icon-panel-left-close'"
+            :size="16"
+          />
+        </button>
+        <div class="pane-nav-group">
           <button
-            v-if="showRightSidebarToggle"
-            class="right-sidebar-toggle"
-            :title="isGraphPanelOpen ? '关闭概念图谱' : '打开概念图谱'"
-            @click="handleGraphSidebarToggle"
+            class="pane-nav"
+            :disabled="!panesStore.canGoBack(panesStore.activePaneId)"
+            title="后退"
+            @click="panesStore.goBack(panesStore.activePaneId)"
           >
             <Icon
-              :name="isGraphPanelOpen ? 'icon-panel-right-close' : 'icon-panel-right-open'"
-              :size="18"
+              name="icon-arrow-left"
+              :size="16"
             />
           </button>
-          <div
-            v-if="isTauriEnvironment()"
-            class="window-controls"
+          <button
+            class="pane-nav"
+            :disabled="!panesStore.canGoForward(panesStore.activePaneId)"
+            title="前进"
+            @click="panesStore.goForward(panesStore.activePaneId)"
           >
-            <button
-              class="window-control-btn minimize-btn"
-              title="最小化"
-              @click="minimize"
-            >
-              <Icon
-                name="icon-minimize"
-                :size="14"
-              />
-            </button>
-            <button
-              class="window-control-btn maximize-btn"
-              :title="isMaximized ? '还原' : '最大化'"
-              @click="maximize"
-            >
-              <Icon
-                :name="isMaximized ? 'icon-square' : 'icon-maximize'"
-                :size="14"
-              />
-            </button>
-            <button
-              class="window-control-btn close-btn"
-              title="关闭"
-              @click="close"
-            >
-              <Icon
-                name="icon-close"
-                :size="14"
-              />
-            </button>
-          </div>
+            <Icon
+              name="icon-arrow-right"
+              :size="16"
+            />
+          </button>
         </div>
-      </header>
+      </div>
 
-      <div class="page-content-wrapper">
-        <div
-          ref="contentBodyEl"
-          class="content-body"
+      <div class="top-right-controls">
+        <NotificationBell />
+        <PageMenuButton />
+        <button
+          v-if="showRightSidebarToggle"
+          class="right-sidebar-toggle"
+          :title="isGraphPanelOpen ? '关闭概念图谱' : '打开概念图谱'"
+          @click="handleGraphSidebarToggle"
         >
-          <!-- 点滴列表：不在 PaneKind 中，独立渲染（列表为入口页，非可并排目的地）。 -->
-          <main
-            v-if="isIdeasListRoute"
-            ref="mainContentEl"
-            class="main-content"
-            :class="{ 'is-fullwidth-content': isFullWidthPage }"
+          <Icon
+            :name="isGraphPanelOpen ? 'icon-panel-right-close' : 'icon-panel-right-open'"
+            :size="18"
+          />
+        </button>
+        <div
+          v-if="isTauriEnvironment()"
+          class="window-controls"
+        >
+          <button
+            class="window-control-btn minimize-btn"
+            title="最小化"
+            @click="minimize"
           >
-            <RouterView v-slot="{ Component, route: currentRoute }">
-              <KeepAlive include="IdeasList">
-                <component
-                  :is="Component"
-                  :key="currentRoute.name === 'ideas-list' ? 'ideas-list' : currentRoute.fullPath"
-                />
-              </KeepAlive>
-            </RouterView>
-          </main>
-
-          <!-- 对称 pane + 每 pane 多标签（ADR-0060）。
-               pane-layout 整体下移 var(--nav-height)：顶部 48px 是 sticky-header
-               窗口拖拽死区 + 右上角系统窗口控制，pane-tabstrip 必须避开两者。 -->
-          <div
-            v-else
-            class="pane-layout"
-            :class="{ 'sidebar-collapsed': isSidebarCollapsed }"
+            <Icon
+              name="icon-minimize"
+              :size="14"
+            />
+          </button>
+          <button
+            class="window-control-btn maximize-btn"
+            title="isMaximized ? '还原' : '最大化'"
+            @click="maximize"
           >
-            <template
-              v-for="(pane, i) in panesStore.panes"
-              :key="pane.id"
-            >
-              <div
-                v-if="i > 0"
-                class="pane-divider"
-                title="拖拽调整宽度"
-                @mousedown="onDividerMousedown"
-              />
-              <section
-                class="pane"
-                :class="{ 'is-active': pane.id === panesStore.activePaneId }"
-                :style="paneStyle(i)"
-                :data-pane-id="pane.id"
-                :data-pane-page-id="panesStore.currentPageId ?? ''"
-                @mousedown.capture="activatePane(pane.id)"
-                @focusin.capture="activatePane(pane.id)"
-              >
-                <!-- 标签条在最上（Obsidian 式）：标签 + 新建。后退/前进已上提到 SidebarHeader，全 pane 共用 -->
-                <header class="pane-tabstrip">
-                  <PaneTabs
-                    :pane-id="pane.id"
-                    :tabs="pane.tabs"
-                    :active-tab-id="pane.activeTabId"
-                    :close-disabled="panesStore.panes.length <= 1 && pane.tabs.length <= 1"
-                    :pane-active="pane.id === panesStore.activePaneId"
-                    @select="(id) => panesStore.setActiveTab(pane.id, id)"
-                    @close="(id) => panesStore.closeTab(pane.id, id)"
-                    @reorder="(ids) => panesStore.reorderTabs(pane.id, ids)"
-                  />
-                  <button
-                    class="pane-tab-add"
-                    title="搜索或新建页面"
-                    @mousedown.stop
-                    @click="openPageSearch(pane.id)"
-                  >
-                    <Plus :size="14" />
-                  </button>
-                </header>
-                <div class="pane-body">
-                  <div
-                    v-for="tab in pane.tabs"
-                    v-show="tab.id === pane.activeTabId"
-                    :key="tab.id"
-                    class="pane-tab-view"
-                  >
-                    <ViewHost
-                      :view="currentView(tab)"
-                      :pane-id="pane.id"
-                    />
-                  </div>
-                </div>
-              </section>
-            </template>
-          </div>
+            <Icon
+              :name="isMaximized ? 'icon-square' : 'icon-maximize'"
+              :size="14"
+            />
+          </button>
+          <button
+            class="window-control-btn close-btn"
+            title="关闭"
+            @click="close"
+          >
+            <Icon
+              name="icon-close"
+              :size="14"
+            />
+          </button>
         </div>
+      </div>
+    </header>
 
-        <RightSidebar />
+    <div class="app-main">
+      <Sidebar @open-search="showSearchPanel = true" />
+
+      <div
+        class="page-scroll-wrapper"
+        @click="handleMainClick"
+      >
+        <div class="page-content-wrapper">
+          <div
+            ref="contentBodyEl"
+            class="content-body"
+          >
+            <!-- 对称 pane + 每 pane 多标签（ADR-0060）：所有目的地（含点滴列表）均经 pane 渲染。 -->
+            <div
+              class="pane-layout"
+              :class="{ 'sidebar-collapsed': isSidebarCollapsed }"
+            >
+              <template
+                v-for="(pane, i) in panesStore.panes"
+                :key="pane.id"
+              >
+                <div
+                  v-if="i > 0"
+                  class="pane-divider"
+                  title="拖拽调整宽度"
+                  @mousedown="onDividerMousedown"
+                />
+                <section
+                  class="pane"
+                  :class="{ 'is-active': pane.id === panesStore.activePaneId }"
+                  :style="paneStyle(i)"
+                  :data-pane-id="pane.id"
+                  :data-pane-page-id="panesStore.currentPageId ?? ''"
+                  @mousedown.capture="activatePane(pane.id)"
+                  @focusin.capture="activatePane(pane.id)"
+                >
+                  <!-- 标签条：标签 + 新建。后退/前进在 App.vue 统一顶栏，全 pane 共用 -->
+                  <header class="pane-tabstrip">
+                    <PaneTabs
+                      :pane-id="pane.id"
+                      :tabs="pane.tabs"
+                      :active-tab-id="pane.activeTabId"
+                      :close-disabled="panesStore.panes.length <= 1 && pane.tabs.length <= 1"
+                      :pane-active="pane.id === panesStore.activePaneId"
+                      @select="(id) => panesStore.setActiveTab(pane.id, id)"
+                      @close="(id) => panesStore.closeTab(pane.id, id)"
+                      @reorder="(ids) => panesStore.reorderTabs(pane.id, ids)"
+                    />
+                    <button
+                      class="pane-tab-add"
+                      title="搜索或新建页面"
+                      @mousedown.stop
+                      @click="openPageSearch(pane.id)"
+                    >
+                      <Plus :size="14" />
+                    </button>
+                  </header>
+                  <div class="pane-body">
+                    <div
+                      v-for="tab in pane.tabs"
+                      v-show="tab.id === pane.activeTabId"
+                      :key="tab.id"
+                      class="pane-tab-view"
+                    >
+                      <ViewHost
+                        :view="currentView(tab)"
+                        :pane-id="pane.id"
+                      />
+                    </div>
+                  </div>
+                </section>
+              </template>
+            </div>
+          </div>
+
+          <RightSidebar />
+        </div>
       </div>
     </div>
 
@@ -519,11 +524,20 @@ function handleMainClick(e: MouseEvent) {
 
 .app-layout {
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   height: 100vh;
   width: 100vw;
   overflow: hidden;
+  position: relative;
   background: var(--bg-base);
+}
+
+// 顶栏之下的主行：侧栏（左）+ 内容区（右）
+.app-main {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
 }
 
 .page-scroll-wrapper {
@@ -533,6 +547,10 @@ function handleMainClick(e: MouseEvent) {
   overflow: hidden;
   min-width: 0;
   position: relative;
+  // 顶栏为文档流首行（31px），此处向上探回窗口顶，使首个 pane 的标签条能叠进顶栏
+  // （Obsidian 式：标签浮在顶栏条上、两侧控件在左右），同时盒子满高避免底部被裁。
+  margin-top: -31px;
+  height: 100vh;
 }
 
 .page-content-wrapper {
@@ -562,20 +580,17 @@ function handleMainClick(e: MouseEvent) {
 }
 
 .sticky-header {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
+  position: relative;
+  width: 100%;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  height: var(--nav-height);
+  height: 31px;
   flex-shrink: 0;
+  box-sizing: border-box;
   z-index: var(--z-sticky);
-  background: transparent; // color-mix(in srgb, var(--bg-base) 50%, transparent);
-  // backdrop-filter: blur(12px) saturate(1.2);
-  // -webkit-backdrop-filter: blur(12px) saturate(1.2);
-  // pointer-events: none;
+  background: var(--surface-subtle);
+  border-bottom: 1px solid var(--border);
 }
 
 .sticky-header.absolute {
@@ -599,10 +614,9 @@ function handleMainClick(e: MouseEvent) {
 }
 
 // ── 对称 pane（ADR-0059/0060）：content-body 内并排 pane，各自独立滚动 ──
-// 标签条抬升到窗口最顶（Obsidian 式）：sticky-header（窗口拖拽死区 + 右上角系统控制，
-// z: --z-sticky）仍覆盖顶部 48px，tabstrip/toolbar 以同 token 的 z-index 靠后于 DOM
-// 的顺序压在其上；容器 pointer-events:none 让空白区继续透传给 sticky-header 拖拽，
-// 仅标签/按钮可点，窗口控制按钮不受遮挡。
+// Obsidian 式：首个 pane 的标签条向上叠进统一顶栏（顶部 31px 死区），透明容器让顶栏背景透出，
+// 仅标签本体与「+」可点（click-through），不遮挡左右控件；侧栏折叠时左端控件压在标签区上方，
+// 故首 pane 标签留白 92px 避让（折叠开关 26 + 导航 50 + 左侧留白 8 + 间隙 ≈ 92）。
 .pane-layout {
   display: flex;
   flex: 1;
@@ -620,9 +634,8 @@ function handleMainClick(e: MouseEvent) {
   position: relative;
 }
 
-// 标签条：位于 pane 最顶部（进入 sticky-header 死区），下方分割线。
-// 高度与 SidebarHeader 的 32px 对齐（两侧分割线同一水平线）。
-// 整条 pointer-events:none：空白区透传给 sticky-header 做窗口拖拽，
+// 标签条：位于 pane 最顶部（统一顶栏之下的第一行）。
+// 高度 32px；整条 pointer-events:none：空白区透传给 sticky-header 做窗口拖拽，
 // 只有标签本体和「+」可点（click-through），不会遮住右上角系统按钮。
 .pane-tabstrip {
   position: relative;
@@ -638,13 +651,12 @@ function handleMainClick(e: MouseEvent) {
 }
 
 
-// 侧栏折叠后，常驻顶栏（折叠开关 26 + 导航 50 + 左侧留白 8 + 间隙 ≈ 92）浮在第一个
-// pane 的标签条上——预留宽度，避免与首个标签重叠。
+// 标签页行与标签外观已迁移至 components/PaneTabs.vue（含拖拽排序与三态）。
+
+// 侧栏折叠后，首 pane 标签条叠进顶栏、左端控件压在标签区上方——预留宽度避让。
 .pane-layout.sidebar-collapsed .pane:first-child .pane-tabstrip {
   padding-left: 92px;
 }
-
-// 标签页行与标签外观已迁移至 components/PaneTabs.vue（含拖拽排序与三态）。
 
 .pane-tab-add {
   flex-shrink: 0;
@@ -684,10 +696,21 @@ function handleMainClick(e: MouseEvent) {
 }
 
 .pane-divider {
-  flex: 0 0 2px;
+  flex: 0 0 1px;
+  position: relative;
   cursor: col-resize;
   background: var(--border);
   transition: background var(--dur-fast) var(--ease-out);
+
+  // 视觉 1px，热区 4px（伪元素左右各外扩 1.5px）
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -2px;
+    right: -2px;
+  }
 }
 
 .pane-divider:hover,
@@ -706,6 +729,79 @@ function handleMainClick(e: MouseEvent) {
 
 .top-right-controls > * {
   pointer-events: auto;
+}
+
+// ── 统一顶栏左侧：侧栏折叠开关 + 后退/前进（原 SidebarContainer 的常驻 topbar）──
+.sidebar-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  padding-left: var(--space-2);
+  box-sizing: border-box;
+}
+
+.sidebar-floating-toggle {
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+
+  &:hover {
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+  }
+
+  &:active {
+    transform: scale(0.95);
+  }
+}
+
+// 后退/前进组：所有 pane 共用一个 UI，作用于活动 pane 的历史栈
+.pane-nav-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.pane-nav {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+
+  &:hover:not(:disabled) {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  &:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+}
+
+// 移动端：侧栏以浮层（--z-sidebar）覆盖内容，统一顶栏需抬至 --z-dropdown 之上，
+// 否则折叠开关会被侧栏浮层压住（原 sidebar-topbar 即位于 --z-dropdown）。
+@media (max-width: 900px) {
+  .sticky-header {
+    z-index: var(--z-dropdown);
+  }
 }
 
 .right-sidebar-toggle {

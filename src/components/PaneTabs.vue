@@ -46,6 +46,7 @@ function tabTitle(tab: PaneTab): string {
     tags: '标签',
     pages: '页面库',
     trash: '回收站',
+    ideas: '点滴',
   }
   return titles[view.kind]
 }
@@ -181,7 +182,6 @@ onBeforeUnmount(() => {
 // 滚动终点右侧以外的内容，选中 tab 的凹圆角伸出 tab 盒子两侧，不预留会被裁掉/产生幽灵滚动。
 .pane-tabs {
   --nvb-thumb: var(--bg-base);
-
   height: 30px;
   display: flex;
   align-items: flex-end;
@@ -189,10 +189,10 @@ onBeforeUnmount(() => {
   padding: 2px 8px 0;
   flex: none;
   max-width: 55%;
-  // border-radius: var(--radius-sm, 6px);
+  border-radius: var(--radius-sm, 6px);
   overflow-x: auto;
   overflow-y: hidden;
-  background: var(--surface-subtle);
+  // background: var(--surface-subtle);
   scrollbar-width: none;
 
   &::-webkit-scrollbar {
@@ -251,12 +251,19 @@ onBeforeUnmount(() => {
   &:not(.is-active):not(.is-open) {
     border-radius: 0;
 
-    &:not(:first-child) {
-      background-image: linear-gradient(var(--border), var(--border));
+    &:not(:first-child){
+      background-image: linear-gradient(var(--border-strong), var(--border-strong));
       background-repeat: no-repeat;
       background-position: left center;
       background-size: 1px 14px;
     }
+  }
+
+  // 前邻是选中 tab（is-active / is-open）时同样不画：其右凹弧已占据交界处，
+  // 短竖线会从弧线挖空处透出。带上 :not 守卫以盖过上一条规则的特异性。
+  &.is-active + &:not(.is-active):not(.is-open),
+  &.is-open + &:not(.is-active):not(.is-open) {
+    background-image: none;
   }
 
   // ── 选中 tab 下缘左右两侧的凹圆角（浏览器 tab 观感）──

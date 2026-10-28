@@ -5,7 +5,8 @@
 
 .sidebar {
   width: var(--sidebar-width);
-  height: 100vh;
+  // 填满 .app-main 行高（= 100vh - 顶栏 31px），不再用 100vh（顶栏已入文档流）
+  height: 100%;
   background: var(--bg-sidebar);
   display: flex;
   flex-direction: column;

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+
 import { usePageStore } from '../../stores/pages'
 import MonthPicker from '../MonthPicker.vue'
 import IdeasHistoryItem from './IdeasHistoryItem.vue'
@@ -152,7 +153,8 @@ onMounted(loadMonths)
   display: flex;
   background: transparent;
   flex-direction: column;
-  margin-top: var(--nav-height);
+  // 原为避让旧式「覆盖式」顶栏（--nav-height 48px）而设；现顶栏已并入文档流首行、
+  // 点滴经 pane 渲染于其下，此上边距纯属多余，且令右栏较左栏(today-panel)下沉 48px 错位，故移除。
   overflow: hidden;
   border-radius: var(--radius-lg) 0 0 0 ;
   border-left: 1px solid var(--border, #E7E5E4);

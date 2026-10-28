@@ -110,8 +110,9 @@ function handleResizeStart(e: MouseEvent) {
 
 <style lang="scss" scoped>
 .right-sidebar {
-  top: var(--nav-height);
-  height: calc(100vh - var(--nav-height));
+  // 顶栏为文档流首行（31px），右侧面板从顶栏之下起算、填满其下高度
+  top: 31px;
+  height: calc(100vh - 31px);
   background: var(--bg-sidebar);
   border: 1px solid var(--border);
   border-top-left-radius: var(--radius-md);

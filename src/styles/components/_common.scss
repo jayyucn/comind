@@ -3,10 +3,10 @@
 @use '../tokens/primitives' as *;
 @use '../mixins' as *;
 
-// 应用布局
+// 应用布局：顶栏独占第一行，其下 侧栏 + 内容区 横向排列
 .app-layout {
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   height: 100vh;
   width: 100vw;
   overflow: hidden;

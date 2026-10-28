@@ -18,6 +18,7 @@ export function usePaneRouterSync() {
         ? `/ideas/${encodeURIComponent(page.title)}`
         : `/page/${encodeURIComponent(view.ref!)}`
     }
+    if (view.kind === 'ideas') return '/ideas'
     if (view.kind === 'tags') return view.ref ? `/tags/${encodeURIComponent(view.ref)}` : '/tags'
     return `/${view.kind}`
   }
@@ -32,6 +33,7 @@ export function usePaneRouterSync() {
       if (!title) return null
       return { kind: 'page', ref: pageStore.getPageByTitle(title)?.id ?? title }
     }
+    if (route.name === 'ideas-list') return { kind: 'ideas' }
     if (route.name === 'graph') return { kind: 'graph' }
     if (route.name === 'tasks') return { kind: 'tasks' }
     if (route.name === 'tags-library') return { kind: 'tags' }
