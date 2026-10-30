@@ -19,10 +19,10 @@
  * - **系统标签右栏只读**：字段 / 继承 / 删除一律不给可点入口 —— Rust 侧
  *   `reject_system_tag` 已拒，UI 若照给按钮就是静默失败（点了没反应且无提示）。
  * - 字段定义是全局共享的，故只有**自身声明**的字段可在此编辑（继承方无权改他人定义）。
- * - 进聚合页的入口在本页右栏标题行（`/tags/:tagId`）。
+ * - 进聚合页的入口在左栏每个标签行内（`/tags/:tagId`）。
  */
 import { CornerUpRight, GripVertical, Layers, Link2, Plus, Search, X } from 'lucide-vue-next'
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
 
 import { useNavigateToTag } from '../../composables/useNavigateToTag'
@@ -170,68 +170,9 @@ const displayTags = computed<TagNode[]>(() => {
   return out
 })
 
-// ── 左右栏可拖拽分隔（split pane） ─────────────────────────────
-//
-// 右栏详情宽度由用户拖拽决定（字段模板是四列表格，宽窄因人而异）；左栏 `flex:1` 吃剩余。
-// 宽度存 localStorage，重载后保持上次的偏好。
-
-const MIN_DETAIL_W = 600
-const MAX_DETAIL_W = 800
-// `.tags-body` 的 gap（var(--space-4)=16px）落在 resizer 与右栏之间，外加 resizer 自身宽 6px
-const RESIZE_OFFSET = 16 + 6
-const detailWidthKey = 'comind.tags.detail-width'
-
-const detailWidth = ref<number>(loadDetailWidth())
-
-function loadDetailWidth(): number {
-  const saved = Number(localStorage.getItem(detailWidthKey))
-  return saved >= MIN_DETAIL_W && saved <= MAX_DETAIL_W ? saved : 600
-}
-
-let resizing = false
-
-function startResize(e: MouseEvent | TouchEvent) {
-  resizing = true
-  document.body.style.cursor = 'col-resize'
-  document.body.style.userSelect = 'none'
-  window.addEventListener('mousemove', onResize)
-  window.addEventListener('mouseup', stopResize)
-  window.addEventListener('touchmove', onResize, { passive: false })
-  window.addEventListener('touchend', stopResize)
-  e.preventDefault()
-}
-
-function onResize(e: MouseEvent | TouchEvent) {
-  if (!resizing) return
-  const clientX =
-    'touches' in e ? (e as TouchEvent).touches[0].clientX : (e as MouseEvent).clientX
-  const bodyEl = document.querySelector('.tags-body')
-  const rect = bodyEl?.getBoundingClientRect()
-  if (!rect) return
-  const next = Math.max(
-    MIN_DETAIL_W,
-    Math.min(MAX_DETAIL_W, Math.round(rect.right - clientX - RESIZE_OFFSET)),
-  )
-  detailWidth.value = next
-  // 触屏拖动若不做 preventDefault，页面会跟着滚
-  if ('touches' in e) e.preventDefault()
-}
-
-function stopResize() {
-  if (!resizing) return
-  resizing = false
-  document.body.style.cursor = ''
-  document.body.style.userSelect = ''
-  window.removeEventListener('mousemove', onResize)
-  window.removeEventListener('mouseup', stopResize)
-  window.removeEventListener('touchmove', onResize)
-  window.removeEventListener('touchend', stopResize)
-  localStorage.setItem(detailWidthKey, String(detailWidth.value))
-}
-
-onUnmounted(stopResize)
-
 // ── 右栏：详情 ────────────────────────────────────────────────
+//
+// 左栏固定宽度、右栏 flex:1 吃剩余（不再提供拖拽分隔）。
 
 const selectedTag = computed(() =>
   selectedTagId.value ? tagsStore.getTagById(selectedTagId.value) : undefined,
@@ -265,9 +206,8 @@ function isColorless(color: string): boolean {
 }
 
 /** 进该标签的聚合页（D7）。 */
-function openAggregatePage() {
-  if (!selectedTag.value) return
-  navigateToTag(selectedTag.value.id).catch((err) => {
+function openAggregatePage(tagId: string) {
+  navigateToTag(tagId).catch((err) => {
     console.error('打开标签聚合页失败:', err)
   })
 }
@@ -784,6 +724,19 @@ async function submitAddField() {
               >系统</span>
             </span>
             <span class="tag-row-meta tag-row-members">{{ memberCount(node.tag.id) }} 个成员</span>
+            <!-- 进聚合页（D7）的入口随行内联：每行独立跳转，无需先选中再点右栏 -->
+            <button
+              type="button"
+              class="tag-row-open"
+              aria-label="查看成员"
+              title="查看成员"
+              @click.stop="openAggregatePage(node.tag.id)"
+            >
+              <CornerUpRight
+                class="tag-row-open-arrow"
+                :size="14"
+              />
+            </button>
           </div>
           <p
             v-if="!displayTags.length"
@@ -794,43 +747,15 @@ async function submitAddField() {
         </div>
       </aside>
 
-      <!-- 拖拽分隔：按住调整左右栏宽度（右栏 = 详情，左栏 flex 吃剩余） -->
-      <div
-        class="tag-resizer"
-        :class="{ 'tag-resizer--active': resizing }"
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="调整左右栏宽度"
-        @mousedown.prevent="startResize"
-        @touchstart.passive="startResize"
-      />
-
-      <!-- 右栏：详情 -->
-      <section
-        class="tag-detail"
-        :style="{ width: detailWidth + 'px' }"
-      >
+      <!-- 右栏：详情（flex 吃剩余宽度） -->
+      <section class="tag-detail">
         <template v-if="selectedTag">
-          <div class="tag-detail-head">
-            <h2
-              class="tag-detail-title"
-              :style="tagDotStyle(selectedTag.color)"
-            >
-              #{{ selectedTag.title }}
-            </h2>
-            <button
-              type="button"
-              class="tag-detail-open"
-              aria-label="查看成员"
-              title="查看成员"
-              @click="openAggregatePage"
-            >
-              <CornerUpRight
-                class="tag-detail-open-arrow"
-                :size="16"
-              />
-            </button>
-          </div>
+          <h2
+            class="tag-detail-title"
+            :style="tagDotStyle(selectedTag.color)"
+          >
+            #{{ selectedTag.title }}
+          </h2>
           <p class="tag-detail-meta">
             {{ detailSummary.count }} 个成员 · 来自 {{ detailSummary.pageCount }} 个页面
           </p>
@@ -1417,10 +1342,9 @@ async function submitAddField() {
   }
 }
 
-/* ── 左栏 ── */
+/* ── 左栏（固定宽度）── */
 .tag-list {
-  flex: 1;
-  min-width: 0;
+  flex: 0 0 340px;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -1516,12 +1440,12 @@ async function submitAddField() {
 
 .tag-row {
   display: grid;
-  // 标题胶囊（1fr 吃余量，左对齐）+ 成员数定宽右对齐
-  grid-template-columns: 1fr 102px;
-  column-gap: var(--space-3);
+  // 标题胶囊（1fr 吃余量，左对齐）+ 成员数定宽右对齐 + 行内跳转按钮（常驻占位，避免 hover 抖动）
+  grid-template-columns: 1fr 102px 24px;
+  column-gap: var(--space-2);
   align-items: center;
   min-height: 30px;
-  padding: 0 var(--space-6) 0 var(--space-3);
+  padding: 0 var(--space-3);
   font-size: var(--text-sm);
   border-radius: var(--radius-md);
   cursor: pointer;
@@ -1584,45 +1508,13 @@ async function submitAddField() {
   color: var(--text-tertiary);
 }
 
-/* ── 拖拽分隔 ── */
-.tag-resizer {
-  flex-shrink: 0;
-  align-self: stretch;
-  width: 6px;
-  user-select: none;
-  cursor: col-resize;
-  position: relative;
-  // 命中盒 6px，但视觉只有 1px 线 —— 既好点又不喧宾夺主
-  &::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 1px;
-    background: var(--border);
-    transition: background var(--dur-fast) var(--ease-out);
-  }
-
-  &:hover::after,
-  &--active::after {
-    background: var(--accent);
-  }
-
-  // 拖拽中给一层全高的浅色热区提示（仅视觉，不挡命中盒）
-  &--active {
-    background: var(--bg-hover);
-  }
-}
-
 /* ── 右栏 ── */
 .tag-detail {
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  /* 字段模板是卡片栅格（类型色谱卡）→ 右栏需比常规详情宽些才不挤；
-     具体宽度由用户拖拽决定（`.tag-resizer`），落库到 localStorage */
+  /* 字段模板是卡片栅格（类型色谱卡）→ 右栏吃剩余宽度，随窗口自适应 */
   overflow: auto;
   padding: var(--space-5);
   background: var(--surface-muted);
@@ -1633,15 +1525,11 @@ async function submitAddField() {
 /* 字段列表之外的区块保持自然高度（不被压缩）：只有字段列表可收缩 ——
    其最大高度即「留给下方继承区 + 删除标签按钮之后的剩余高度」，
    保证最底部的 tag-delete 始终完整可见。 */
+/* 内容带封顶（市面 master-detail 共识，Notion/Linear 同款）：阅读面到 920px
+   后停止增长，超宽窗口剩余空间留白；面板本身仍 flex 吃满保持分区背景。 */
 .tag-detail > * {
   flex-shrink: 0;
-}
-
-.tag-detail-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
+  max-width: 920px;
 }
 
 .tag-detail-title {
@@ -1651,36 +1539,44 @@ async function submitAddField() {
   color: var(--text-primary);
 }
 
-/* 进聚合页（D7）的唯一入口：方形 ghost 图标按钮，悬停时箭头右移示意跳转。
+/* 进聚合页（D7）的入口：随行内联的方形 ghost 图标按钮，悬停时箭头右移示意跳转。
+   默认淡出、行 hover / 选中时淡入 —— 列表主体不被图标喧宾夺主；
    图标用 lucide 矢量（CornerUpRight = 向右上外跳），继承 currentColor，暗色模式自适应。 */
-.tag-detail-open {
+.tag-row-open {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   color: var(--text-tertiary);
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
   transition: color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out),
-    background var(--dur-fast) var(--ease-out);
+    background var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
 
   &:hover {
     color: var(--accent-hover);
     background: var(--bg-hover);
     border-color: var(--accent-40);
 
-    .tag-detail-open-arrow {
+    .tag-row-open-arrow {
       transform: translateX(2px);
     }
   }
 }
 
-.tag-detail-open-arrow {
+.tag-row:hover .tag-row-open,
+.tag-row--active .tag-row-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.tag-row-open-arrow {
   transition: transform var(--dur-fast) var(--ease-out);
 }
 

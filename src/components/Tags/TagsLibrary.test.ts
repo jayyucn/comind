@@ -372,12 +372,12 @@ describe('TagsLibrary（标签管理页）', () => {
     expect(inheritedCard.classes()).toContain('f-card--inherited')
   })
 
-  it('右栏提供进该标签聚合页的入口', async () => {
+  it('左栏行内提供进该标签聚合页的入口', async () => {
     const wrapper = await mountPage()
-    await wrapper.find('.tag-row--t-dev').trigger('click')
     await flushPromises()
 
-    await wrapper.find('.tag-detail-open').trigger('click')
+    // 无需先选中标签：行内跳转按钮直达对应聚合页
+    await wrapper.find('.tag-row--t-dev .tag-row-open').trigger('click')
     await flushPromises()
 
     expect(navigateToTagMock).toHaveBeenCalledWith('t-dev')
