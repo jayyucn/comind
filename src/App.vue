@@ -21,6 +21,7 @@ import Icon from './components/Icons/Icon.vue'
 import NotificationBell from './components/NotificationBell.vue'
 import PageMenuButton from './components/PageMenuButton.vue'
 import PageSearchModal from './components/PageSearchModal.vue'
+import PaneMenuButton from './components/PaneMenuButton.vue'
 import PaneTabs from './components/PaneTabs.vue'
 import RelationshipMenu from './components/RelationshipMenu.vue'
 import GraphPanel from './components/RightSidebar/GraphPanel.vue'
@@ -411,6 +412,7 @@ function handleMainClick(e: MouseEvent) {
                 >
                   <!-- 标签条：标签 + 新建。后退/前进在 App.vue 统一顶栏，全 pane 共用 -->
                   <header class="pane-tabstrip">
+                    <PaneMenuButton :pane-id="pane.id" />
                     <PaneTabs
                       :pane-id="pane.id"
                       :tabs="pane.tabs"
@@ -525,15 +527,6 @@ function handleMainClick(e: MouseEvent) {
 
 <style lang="scss" scoped>
 
-.app-layout {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  width: 100vw;
-  overflow: hidden;
-  position: relative;
-  background: var(--bg-base);
-}
 
 // 顶栏之下的主行：侧栏（左）+ 内容区（右）
 .app-main {
@@ -588,12 +581,11 @@ function handleMainClick(e: MouseEvent) {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  height: 31px;
+  height: var(--nav-height);
   flex-shrink: 0;
   box-sizing: border-box;
   z-index: var(--z-sticky);
-  background: var(--surface-subtle);
-  border-bottom: 1px solid var(--border);
+  background: transparent;
 }
 
 .sticky-header.absolute {
@@ -647,13 +639,12 @@ function handleMainClick(e: MouseEvent) {
 // 只有标签本体和「+」可点（click-through），不会遮住右上角系统按钮。
 .pane-tabstrip {
   position: relative;
-  z-index: var(--z-sticky);
+  z-index: calc(var(--z-sticky));
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  height: 32px;
   padding: 0 8px;
-  background: var(--surface-subtle);
+  // background: var(--surface-subtle);
   pointer-events: none;
   box-sizing: border-box;
 }
@@ -682,7 +673,7 @@ function handleMainClick(e: MouseEvent) {
   pointer-events: auto;
 
   &:hover {
-    background: var(--bg-hover);
+    background: var(--bg-hover2);
     color: var(--text-primary);
   }
 }
@@ -690,6 +681,8 @@ function handleMainClick(e: MouseEvent) {
 .pane-body {
   flex: 1;
   min-height: 0;
+  background: var(--bg-base);
+  border-radius: var(--radius-md);
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -884,11 +877,11 @@ function handleMainClick(e: MouseEvent) {
 }
 
 .minimize-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--bg-hover2);
 }
 
 .maximize-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--bg-hover2);
 }
 
 .close-btn:hover {

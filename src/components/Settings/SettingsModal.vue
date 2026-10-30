@@ -866,7 +866,7 @@ onUnmounted(() => {
   width: 960px;
   max-height: 85vh;
   min-height: 600px;
-  background: var(--color-paper);
+  background: var(--bg-base);
   border: 1px solid var(--color-border);
   border-radius: 12px;
   box-shadow: var(--shadow-floating);
@@ -1631,7 +1631,7 @@ onUnmounted(() => {
 
 .qr-modal {
   width: 360px;
-  background: var(--color-paper);
+  background: var(--bg-base);
   border: 1px solid var(--color-border);
   border-radius: 12px;
   box-shadow: var(--shadow-floating);

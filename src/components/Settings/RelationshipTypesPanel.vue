@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { ArrowUp, ArrowDown, Pencil, Trash2, Plus, ChevronDown, ChevronRight, Undo2, X, Check } from 'lucide-vue-next'
-import { useRelationshipTypes, validateRelationshipTypeInput, type RelationshipTypeInput } from '../../composables/useRelationshipTypes'
+import { ArrowDown, ArrowUp, Check,ChevronDown, ChevronRight, Pencil, Plus, Trash2, Undo2, X } from 'lucide-vue-next'
+import { computed,ref } from 'vue'
+
+import { type RelationshipTypeInput,useRelationshipTypes, validateRelationshipTypeInput } from '../../composables/useRelationshipTypes'
 import type { Strength } from '../../types/relationship-type'
 
 const { all, create, update, softDelete, restore, reorder } = useRelationshipTypes()
@@ -647,7 +648,7 @@ function moveDown(id: string): void {
 
 .rel-btn--primary {
   background: var(--accent);
-  color: var(--color-paper);
+  color: var(--bg-base);
   border-color: var(--accent);
 }
 

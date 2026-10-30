@@ -289,6 +289,13 @@ export const usePanesStore = defineStore('panes', () => {
     if (activePaneId.value === paneId) activatePane(panes.value[0].id)
   }
 
+  /** 关闭本栏中除活动标签外的全部标签，仅保留当前活动标签。 */
+  function closeOtherTabs(paneId: string): void {
+    const pane = panes.value.find(item => item.id === paneId)
+    if (!pane || pane.tabs.length <= 1) return
+    pane.tabs = pane.tabs.filter(tab => tab.id === pane.activeTabId)
+  }
+
   function goBack(paneId = activePaneId.value): void {
     const pane = panes.value.find(item => item.id === paneId)
     const tab = pane ? activeTab(pane) : null
@@ -358,14 +365,20 @@ export const usePanesStore = defineStore('panes', () => {
    * 分屏动作（PageMenuButton 菜单入口）：设定布局方向；单 pane 时把当前视图
    * 复制到第二个 pane（MAX_PANES=2）。已有两个 pane 时仅切换方向，不动 pane。
    */
-  function splitView(direction: PaneLayoutDirection): void {
+  /**
+   * 分屏：设定布局方向；单 pane 时把指定（默认活动）pane 的当前视图复制到第二个 pane，
+   * 已有两个 pane 时仅切换方向，不动 pane。pane 级菜单入口需传入 paneId 指向「本栏」。
+   */
+  function splitView(direction: PaneLayoutDirection, paneId: string = activePaneId.value): void {
     layoutDirection.value = direction
     if (panes.value.length >= MAX_PANES) return
-    const view = activeView.value
+    const pane = panes.value.find(item => item.id === paneId)
+    const tab = pane ? activeTab(pane) : null
+    const view = tab ? currentView(tab) : null
     if (!view) return
-    const pane = createPane(view)
-    panes.value.push(pane)
-    activate(pane, pane.tabs[0])
+    const newPane = createPane(view)
+    panes.value.push(newPane)
+    activate(newPane, newPane.tabs[0])
   }
 
   return {
@@ -385,6 +398,7 @@ export const usePanesStore = defineStore('panes', () => {
     reorderTabs,
     openInOtherPane,
     closePane,
+    closeOtherTabs,
     goBack,
     goForward,
     canGoBack,

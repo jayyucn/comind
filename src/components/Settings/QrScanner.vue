@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
 import jsQR from 'jsqr'
+import { onMounted, onUnmounted,ref } from 'vue'
 
 const emit = defineEmits<{
   scanned: [content: string]
@@ -156,7 +156,7 @@ onUnmounted(() => {
 }
 
 .qr-scanner-panel {
-  background: var(--color-paper, #fff);
+  background: var(--bg-base, #fff);
   border-radius: 12px;
   padding: 16px;
   width: 90vw;

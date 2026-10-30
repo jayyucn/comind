@@ -88,7 +88,7 @@ defineEmits<{
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--border);
+  // border-right: 1px solid var(--border);
   gap: var(--space-2);
   // 原 32px 顶部留白用于避开覆盖式顶栏；顶栏入文档流后改为常规 8px
   padding: 8px 8px 8px;

@@ -23,8 +23,8 @@ const emit = defineEmits<{
 
 /**
  * tab 三态（取代原 pane-crumb-current 的活动 pane 区分职责）：
- * - is-active：活动 pane 的活动 tab（最亮，正文同底）
- * - is-open：非活动 pane 当前显示的 tab（次亮，正文同底但文字降档）
+ * - is-active：活动 pane 的活动 tab（文字最亮，正文同底）
+ * - is-open：非活动 pane 当前显示的 tab（与 is-active 同底同框，仅文字降一档区分）
  * - 默认：后台 tab（最暗，透明底）
  */
 function tabClass(tab: PaneTab): Record<string, boolean> {
@@ -235,13 +235,13 @@ onBeforeUnmount(() => {
     color: var(--text-primary);
   }
 
-  // 打开未激活：非活动 pane 当前显示的 tab——保持与正文同底（其视图正在渲染），
-  // 文字降一档亮度（原 pane-crumb-current 在非活动 pane 用 tertiary 的承接者）。
+  // 打开未激活：非活动 pane 当前显示的 tab——与 is-active 同底（正文同底，视觉一致汇入正文），
+  // 仅文字降一档亮度区分（原 pane-crumb-current 在非活动 pane 用 tertiary 的承接者）。
   &.is-open {
     border: 1px solid var(--border);
     border-bottom: none;
     border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-    background: var(--bg-active);
+    background: var(--bg-base);
     color: var(--text-secondary);
   }
 
@@ -275,12 +275,9 @@ onBeforeUnmount(() => {
   &.is-open {
     position: relative;
 
-    &.is-active {
-      --corner-fill: var(--bg-base);
-    }
-
+    &.is-active,
     &.is-open {
-      --corner-fill: var(--bg-active);
+      --corner-fill: var(--bg-base);
     }
 
     &::before,

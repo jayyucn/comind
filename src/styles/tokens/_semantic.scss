@@ -9,6 +9,7 @@
   --bg-base2: #fdfdfd;
   --bg-sidebar: #F5F5F7;
   --bg-hover: #{$color-stone-200};
+  --bg-hover2: #{$color-stone-200};
   --bg-active: #{$color-stone-300};
   --surface-faint: rgba(0, 0, 0, 0.04);
 
@@ -161,7 +162,6 @@
   --sidebar-width: #{$sidebar-width};
 
   // 兼容别名（从原 style.css 保留）
-  --color-paper: #FAFAF9;
   --color-ink: #{$color-stone-900};
   --color-ink-secondary: #{$color-stone-600};
   --color-ink-muted: #{$color-stone-600};
@@ -229,6 +229,7 @@
   --bg-base2: #1A1b1c;
   --bg-sidebar: #222225;
   --bg-hover: #2E2E32;
+  --bg-hover2: #3A3A3F;
   --bg-active: #3A3A3F;
 
   // 暗色两级弱底：muted 自 --bg-base 上浮一档，subtle 接近 --bg-hover
@@ -286,7 +287,6 @@
   --corner-glow: linear-gradient(180deg, rgba(129, 140, 248, 0.09) 0%, rgba(129, 140, 248, 0.03) 8%, transparent 18%);
   --grad-border: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.02));
 
-  --color-paper: #1A1A1E;
   --color-ink: #E4E4E7;
   --color-ink-secondary: #A1A1AA;
   --color-ink-muted: #A1A1AA;
