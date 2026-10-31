@@ -100,6 +100,63 @@ export const FIELD_TYPE_REGISTRY: Readonly<Record<FieldType, FieldTypeSpec>> = {
   geo:        { editor: 'geo',       displayForm: 'text', filterOps: [] },
 }
 
+// ── 类型文案与下拉选项（单源）─────────────────────────────────────────────
+//
+// 类型 → 文案此前在多个入口各自维护（TagsLibrary.TYPE_LABELS、
+// FieldSettingsModal.TYPE_OPTIONS），同一 value 出现多种写法（number 数值/数字、
+// boolean 是或否/开关、select 枚举/单选、relation 关联/关系引用），且 TagsLibrary
+// 的新建字段下拉漏了 array / formula / json / color / autonumber / geo 六个成员——
+// 注册表支持而入口选不到。收编到本表后，下拉选项与徽章文案同源。
+//
+// 注：`components/Block/FieldValueEditor.vue` 的 fieldTypes 仍是独立表（集合与文案
+// 另有差异：布尔值 / 数组/标签 / 地理坐标，且不含 select 伪类型），尚未收编。
+
+/**
+ * 类型 → 用户可见文案。键穷举 FieldType（少一个成员 TS 即报错），新增类型必须
+ * 同时补三面规格与文案，避免「注册表有、界面无」式漂移。
+ */
+export const FIELD_TYPE_LABELS: Readonly<Record<FieldType, string>> = {
+  string: '文本',
+  number: '数字',
+  boolean: '开关',
+  date: '日期',
+  datetime: '日期时间',
+  daterange: '日期区间',
+  select: '单选',
+  multiSelect: '多选',
+  array: '标签数组',
+  page: '页面引用',
+  file: '附件',
+  relation: '关系引用',
+  formula: '公式',
+  json: 'JSON',
+  color: '颜色',
+  autonumber: '自增编号',
+  geo: '地理位置',
+}
+
+/** 类型下拉项。 */
+export interface FieldTypeOption {
+  value: FieldType
+  label: string
+}
+
+/**
+ * 类型下拉选项（所有 type picker 的唯一下发源）。顺序 = 注册表声明顺序，
+ * 即规范联合顺序（文本/数字/布尔 → 日期族 → 枚举族 → 引用族 → 计算与结构化）。
+ */
+export const FIELD_TYPE_OPTIONS: readonly FieldTypeOption[] = (
+  Object.keys(FIELD_TYPE_REGISTRY) as FieldType[]
+).map((value) => ({ value, label: FIELD_TYPE_LABELS[value] }))
+
+/**
+ * 类型 token → 文案；未知 token 原样返回（与 {@link fieldTypeSpec} 的保守回落同风格）。
+ * token 可能来自 `utils/field-type-icons.displayFieldType` 派生的伪类型（select/multiSelect）。
+ */
+export function fieldTypeLabel(type: string): string {
+  return (FIELD_TYPE_LABELS as Record<string, string>)[type] ?? type
+}
+
 /** 未知类型保守回落（v1 不认识即不可筛）。 */
 const FALLBACK_SPEC: FieldTypeSpec = { editor: 'text', displayForm: 'text', filterOps: [] }
 

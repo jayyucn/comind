@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  FIELD_TYPE_LABELS,
+  FIELD_TYPE_OPTIONS,
   FIELD_TYPE_REGISTRY,
+  fieldTypeLabel,
   fieldTypeSpec,
   numberSpecialization,
   pageSpecialization,
@@ -272,5 +275,28 @@ describe('stringSpecialization', () => {
     expect(v?.('abc123')).toBe('电话格式不正确') // 含字母
     expect(v?.('123456')).toBe('电话格式不正确') // 不足 7 位
     expect(v?.('123456789012345678901234567890')).toBe('电话格式不正确') // 超 20 位
+  })
+})
+
+// ── 类型文案与下拉选项（单源收编）────────────────────────────────────
+// 回归网：下拉选项必须覆盖注册表全部成员、文案表键穷举、未知 token 原样回显。
+// 历史缺陷：TagsLibrary 的下拉漏了 array/formula/json/color/autonumber/geo 六个成员，
+// 同一 value 在不同入口出现 数值/数字、是或否/开关、枚举/单选、关联/关系引用 等分歧。
+describe('field-type-registry — 文案与下拉选项单源', () => {
+  it('FIELD_TYPE_OPTIONS 覆盖注册表全部键，且顺序一致', () => {
+    expect(FIELD_TYPE_OPTIONS.map((o) => o.value)).toEqual(Object.keys(FIELD_TYPE_REGISTRY))
+  })
+
+  it('FIELD_TYPE_OPTIONS 的 label 全部来自 FIELD_TYPE_LABELS，无空文案', () => {
+    for (const opt of FIELD_TYPE_OPTIONS) {
+      expect(opt.label, `empty label for ${opt.value}`).toBe(FIELD_TYPE_LABELS[opt.value])
+      expect(opt.label.trim()).not.toBe('')
+    }
+  })
+
+  it('fieldTypeLabel：已知 token 查表，未知 token 原样回显', () => {
+    expect(fieldTypeLabel('number')).toBe('数字')
+    expect(fieldTypeLabel('geo')).toBe('地理位置')
+    expect(fieldTypeLabel('unknown-type')).toBe('unknown-type')
   })
 })

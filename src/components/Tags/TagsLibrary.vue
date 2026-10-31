@@ -30,6 +30,7 @@ import { useRelationshipTypes } from '../../composables/useRelationshipTypes'
 import { useBlockCardStore } from '../../stores/blockCard'
 import { useEditorStore } from '../../stores/editor'
 import { useTagsStore } from '../../stores/tags'
+import { FIELD_TYPE_OPTIONS, fieldTypeLabel } from '../../types/field-type-registry'
 import type {
   PersistedFieldDefinition,
   PersistedTag,
@@ -269,33 +270,9 @@ function isSortable(row: FieldRow): boolean {
   return !isSystemTag.value && row.kind !== 'inherited'
 }
 
-/** 字段类型显示名（`select` 是由 closed_values 派生的伪类型）。 */
-const TYPE_LABELS: Record<string, string> = {
-  string: '文本',
-  number: '数值',
-  date: '日期',
-  daterange: '日期区间',
-  datetime: '日期时间',
-  boolean: '是/否',
-  page: '页面引用',
-  array: '列表',
-  file: '附件',
-  relation: '关联',
-  select: '枚举',
-  multiSelect: '多选',
-}
-
-/** 类型点选顺序（新建与类型下拉共用；`select` 落库为 type string + closed_values；`multiSelect` 落库为 type multiSelect + closed_values；`relation` 落库为 type relation + closed_values=[关系类型 id]，issue T5）。 */
-const FIELD_TYPE_VALUES = ['string', 'number', 'boolean', 'date', 'datetime', 'daterange', 'select', 'multiSelect', 'page', 'file', 'relation']
-
-const FIELD_TYPE_OPTIONS = FIELD_TYPE_VALUES.map((value) => ({ value, label: TYPE_LABELS[value] }))
-
+/** 字段卡片的类型徽标：token 由 `displayFieldType` 派生（伪类型单源），文案查中央注册表。 */
 function typeLabel(def: PersistedFieldDefinition): string {
-  if (def.type === 'multiSelect') return TYPE_LABELS.multiSelect
-  // relation 的 closed_values 复用为关系类型配置位（单元素数组，见 tag-persisted.ts），
-  // 不能按「有 closed_values 即枚举」派生
-  if (def.type === 'relation') return TYPE_LABELS.relation
-  return TYPE_LABELS[def.closed_values?.length ? 'select' : def.type] ?? def.type
+  return fieldTypeLabel(displayFieldType(def))
 }
 
 const parentTag = computed(() =>
