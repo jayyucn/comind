@@ -35,6 +35,7 @@ import type {
   PersistedFieldDefinition,
   PersistedTag,
 } from '../../types/tag-persisted'
+import { parseFieldOptions } from '../../utils/field-options'
 import { displayFieldType } from '../../utils/field-type-icons'
 import { isTagColorToken, tagDotStyle } from '../../utils/tag-color'
 import { reorderOwnFieldIds, type SortableFieldRow } from '../../utils/tag-field-order'
@@ -366,16 +367,6 @@ function originSrcOf(row: FieldRow): string {
   return row.kind !== 'own' && row.originTitle ? originText(row.originTitle) : ''
 }
 
-// ── 候选值解析（添加字段弹层用） ───────────────────────────────
-/** 候选值文本 → 数组（空文本 → null，即非选项型）。 */
-function parseOptions(raw: string): string[] | null {
-  const values = raw
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
-  return values.length ? values : null
-}
-
 // ── 来源列（窄列，长标签名截断 + hover tip） ───────────────────
 
 /** 来源列最多显示 5 个字（列宽只够这么些），超出用省略号。 */
@@ -475,6 +466,8 @@ const addFieldSearchInput = ref<HTMLInputElement | null>(null)
 const newFieldTitle = ref('')
 const newFieldType = ref('string')
 const newFieldOptions = ref('')
+/** 已识别的候选值数量（粘贴后即时回显，让「切成了几个」可见）。 */
+const newFieldOptionCount = computed(() => parseFieldOptions(newFieldOptions.value).length)
 /** 新建 relation 字段时选定的关系类型 id（issue T5；落 closed_values 配置位）。 */
 const newFieldRelTypeId = ref('')
 
@@ -600,11 +593,13 @@ async function submitAddField() {
   // relation 落库为 type relation + closed_values=[关系类型 id]（配置位语义，issue T5；
   // 未选关系类型时不落空数组——null = 未约定，值编辑器仍可逐值任选）
   const isRelation = newFieldType.value === 'relation'
+  // 候选值走单源解析（可多行、混合分隔符，见 utils/field-options）：空 = 非选项型，落 null
+  const options = parseFieldOptions(newFieldOptions.value)
   await tagsStore.addFieldToTag(selectedTag.value.id, {
     title,
     type: isSelect ? 'string' : newFieldType.value,
     closed_values: isSelect || isMulti
-      ? parseOptions(newFieldOptions.value)
+      ? (options.length ? options : null)
       : isRelation
         ? (newFieldRelTypeId.value ? [newFieldRelTypeId.value] : null)
         : null,
@@ -1120,13 +1115,19 @@ async function submitAddField() {
               {{ opt.label }}
             </option>
           </select>
-          <input
+          <textarea
             v-if="newFieldType === 'select' || newFieldType === 'multiSelect'"
             v-model="newFieldOptions"
             class="tag-field-options"
-            type="text"
-            placeholder="候选值，逗号分隔"
+            rows="2"
+            placeholder="候选值：可直接粘贴多行，支持 , ， 、 / 等分隔"
+          />
+          <div
+            v-if="newFieldType === 'select' || newFieldType === 'multiSelect'"
+            class="tag-field-options-hint"
           >
+            {{ newFieldOptionCount ? `已识别 ${newFieldOptionCount} 个选项` : '留空 = 非选项型字段' }}
+          </div>
           <!-- relation（issue T5）：选定关系类型（落 closed_values 配置位；未选 = 未约定） -->
           <select
             v-if="newFieldType === 'relation'"
@@ -2199,6 +2200,22 @@ async function submitAddField() {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 2px var(--space-2);
+}
+
+/* 多行输入：允许纵向放大以便核对粘贴进来的整段候选值 */
+textarea.tag-field-options {
+  width: 100%;
+  font-family: inherit;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 44px;
+}
+
+/* 已识别选项计数：弱化提示，不抢输入焦点 */
+.tag-field-options-hint {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  padding-left: var(--space-1);
 }
 
 .tag-create-confirm,

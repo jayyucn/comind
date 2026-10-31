@@ -388,6 +388,35 @@ describe('FieldSettingsModal', () => {
     w.unmount()
   })
 
+  it('选项批量录入：回车与粘贴都按多分隔符切分（剥行首编号、与已有项去重）', async () => {
+    const w = mountModal('f1')
+    const chips = () => w.findAll('.opt-chip').map((c) => c.text().replace(/[×\s]/g, ''))
+    const input = w.find('.opt-add-input')
+    expect(chips()).toEqual(['Todo', 'Doing'])
+
+    // 回车：一次提交中英文逗号 / 顿号 / 斜杠混用的候选值
+    await input.setValue('Done，Blocked、Review/Backlog')
+    await input.trigger('keydown.enter')
+    expect(chips()).toEqual(['Todo', 'Doing', 'Done', 'Blocked', 'Review', 'Backlog'])
+    expect((input.element as HTMLInputElement).value).toBe('')
+
+    // 粘贴：多行列表（带行首编号，且含已存在项）→ 整段并入、保序去重
+    const evt = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent
+    Object.defineProperty(evt, 'clipboardData', { value: { getData: () => '1. Doing\n2. Wontfix' } })
+    input.element.dispatchEvent(evt)
+    await w.vm.$nextTick()
+    expect(chips()).toEqual(['Todo', 'Doing', 'Done', 'Blocked', 'Review', 'Backlog', 'Wontfix'])
+    expect((input.element as HTMLInputElement).value).toBe('')
+
+    // 落库侧拿到的是切分后的数组（不是一条长字符串）
+    await w.find('[data-testid="field-settings-save"]').trigger('click')
+    await vi.waitFor(() => expect(updateFieldDefinition).toHaveBeenCalledTimes(1))
+    expect(updateFieldDefinition.mock.calls[0][0]).toMatchObject({
+      closed_values: ['Todo', 'Doing', 'Done', 'Blocked', 'Review', 'Backlog', 'Wontfix'],
+    })
+    w.unmount()
+  })
+
   it('既有 select 词汇的定义：保存不被降级为 string（落库词汇对齐原字段）', async () => {
     mockFieldDefs = [{ ...MOCK_DEF, type: 'select' }]
     const w = mountModal('f1')

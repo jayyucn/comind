@@ -11,6 +11,7 @@ import type { UpdateFieldDefinitionParams } from '../../types/tag-persisted'
 import { displayFormOptionsFor } from '../../utils/field-display-form'
 import { decodeDefaultJson, encodeDefaultJson, FIELD_HIDE_OPTIONS, normalizeHideWhen } from '../../utils/field-hide'
 import { DEFAULT_CURRENCY_SYMBOL, parseCurrencySpec } from '../../utils/field-number-format'
+import { parseFieldOptions } from '../../utils/field-options'
 import { FIELD_SPEC_OPTIONS, type SpecFamily } from '../../utils/field-spec-options'
 import { displayFieldType, fieldSpecIcon, fieldTypeIcon } from '../../utils/field-type-icons'
 import { initCoreClient } from '../../wasm/client'
@@ -218,13 +219,31 @@ const availableFormOptions = computed(() =>
 const headerIcon = computed(() => fieldSpecIcon(specHeadOf(draft.spec)) ?? fieldTypeIcon(draft.type))
 
 // ── 选项编辑（closed_values chips）────────────────────────────
+//
+// 输入框一次可提交多个选项：回车与粘贴都走同一套切分（`utils/field-options` 单源，
+// 与「+ 添加字段」新建表单同规则）。粘贴时拦下浏览器默认行为——单行 <input> 会把
+// 换行吞掉，多行候选值会糊成一条。
 const newOption = ref('')
-function addOption() {
-  const v = newOption.value.trim()
-  if (!v || draft.closedValues.includes(v)) return
-  draft.closedValues.push(v)
+
+/** 把 raw 切分并入已有选项（保序去重），并入后清空输入框。 */
+function commitOptions(raw: string) {
+  if (!raw.trim()) return
+  draft.closedValues = parseFieldOptions(raw, draft.closedValues)
   newOption.value = ''
 }
+
+function addOption() {
+  commitOptions(newOption.value)
+}
+
+function onOptionPaste(e: ClipboardEvent) {
+  const text = e.clipboardData?.getData('text') ?? ''
+  if (!text) return
+  e.preventDefault()
+  // 已手打的前缀与粘贴内容一起提交，避免「粘一半丢一半」
+  commitOptions([newOption.value, text].filter((s) => s.trim()).join('\n'))
+}
+
 function removeOption(i: number) {
   draft.closedValues.splice(i, 1)
 }
@@ -462,12 +481,13 @@ function confirmDiscard() {
                     v-if="!isSystem"
                     v-model="newOption"
                     class="mini-input opt-add-input"
-                    placeholder="+ 添加选项，回车确认"
+                    placeholder="+ 添加选项：可粘贴多个，回车确认"
                     @keydown.enter.prevent="addOption"
+                    @paste="onOptionPaste"
                   >
                 </div>
                 <div class="field-hint">
-                  每个选项将作为一个可选值；清空全部选项 = 降级为非选项型
+                  支持一次粘贴多个（逗号、顿号、斜杠、换行均可分隔）；清空全部选项 = 降级为非选项型
                 </div>
               </div>
             </div>

@@ -743,6 +743,52 @@ describe('TagsLibrary（标签管理页）', () => {
     })
   })
 
+  it('添加字段（新建枚举）：候选值按多分隔符批量切分后落 closed_values', async () => {
+    mockClient.createFieldDefinition.mockResolvedValue(fieldDef({ id: 'def-priority', title: '优先级' }))
+    const wrapper = await mountPage()
+    await wrapper.find('.tag-row--t-dev').trigger('click')
+    await flushPromises()
+
+    await wrapper.find('.tag-add-field').trigger('click')
+    await flushPromises()
+
+    const body = document.body
+    ;(body.querySelector('.tag-field-create-toggle') as HTMLButtonElement).click()
+    await flushPromises()
+
+    const titleInput = body.querySelector('.tag-field-title-input') as HTMLInputElement
+    titleInput.value = '优先级'
+    titleInput.dispatchEvent(new Event('input'))
+    await flushPromises()
+
+    // 类型切到「单选」（下拉值 select；落库仍是 string + closed_values）
+    const typeSelect = body.querySelector('.tag-field-type-select') as HTMLSelectElement
+    typeSelect.value = 'select'
+    typeSelect.dispatchEvent(new Event('change'))
+    await flushPromises()
+
+    // 模拟从别处粘贴：带行首标记的列表 + 顿号 / 中文逗号 / 斜杠混用
+    const optInput = body.querySelector('textarea.tag-field-options') as HTMLTextAreaElement
+    expect(optInput, '单选类型应渲染多行候选值输入').toBeTruthy()
+    optInput.value = '- 低\n2、中，高/Done'
+    optInput.dispatchEvent(new Event('input'))
+    await flushPromises()
+
+    // 识别数量即时回显（批量粘贴后可见切成了几项）
+    expect(body.querySelector('.tag-field-options-hint')?.textContent).toContain('已识别 4 个选项')
+
+    ;(body.querySelector('.tag-field-confirm') as HTMLButtonElement).click()
+    await flushPromises()
+
+    expect(mockClient.createFieldDefinition).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: '优先级',
+        type: 'string',
+        closed_values: ['低', '中', '高', 'Done'],
+      }),
+    )
+  })
+
   it('添加字段（引用路径）：候选 = 全部存活定义 − 有效字段已含项，点行即引用不新建定义', async () => {
     const wrapper = await mountPage()
     await wrapper.find('.tag-row--t-dev').trigger('click')
