@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+
+import type { BlockCard } from '../../wasm/types'
 import BulletRender from '../Block/handlers/bullet/BulletRender.vue'
 import type { CellRendererProps } from './types'
-import type { BlockCard } from '../../wasm/types'
 
 // 只读富预览单元格（ADR-0010 首个消费方）：用标准 Block 渲染器 BulletRender 渲染 content_preview。
 // content 编辑走抽屉，故不 emit change；点击整格冒泡 → TableView 上报 cellClick → 业务层导航。
@@ -19,16 +20,6 @@ function stripImageEmbeds(raw: unknown): string {
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // [text](url) → text
 }
 
-// 自定义 property（非内置）作为标签徽章展示。
-const BUILTIN = new Set([
-  'status', 'priority', 'project', 'area', 'dateRefKind', 'dateRefDate',
-  'content', 'page', 'done', 'deadline', 'schedule',
-])
-const tags = computed(() =>
-  Object.entries(props.item.properties ?? {})
-    .filter(([k, v]) => !BUILTIN.has(k) && v != null)
-    .map(([k, v]) => `${k}: ${String(v)}`),
-)
 </script>
 
 <template>
@@ -40,11 +31,6 @@ const tags = computed(() =>
       :content="stripImageEmbeds(value)"
       :block-id="item.block_id"
     />
-    <span
-      v-for="t in tags"
-      :key="t"
-      class="tag"
-    >{{ t }}</span>
   </div>
 </template>
 
@@ -71,15 +57,6 @@ const tags = computed(() =>
   &.is-done :deep(.block-text) {
     text-decoration: line-through;
     color: var(--text-tertiary);
-  }
-
-  .tag {
-    flex-shrink: 0;
-    padding: 1px 5px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    font-size: 11px;
-    color: var(--text-secondary);
   }
 }
 </style>

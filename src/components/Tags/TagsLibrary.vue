@@ -384,13 +384,30 @@ function originText(title: string): string {
 const parentPickerOpen = ref(false)
 const parentPickerAnchor = ref<HTMLElement | null>(null)
 const parentPickerPos = ref({ x: 0, y: 0 })
+const parentQuery = ref('')
+const parentSearchInput = ref<HTMLInputElement | null>(null)
+
+/** 候选按标题模糊过滤（大小写不敏感包含匹配）；空查询原样返回全量候选。 */
+const filteredParentCandidates = computed(() => {
+  const q = parentQuery.value.trim().toLowerCase()
+  if (!q) return parentCandidates.value
+  return parentCandidates.value.filter((c) => c.title.toLowerCase().includes(q))
+})
 
 function openParentPicker(e: MouseEvent) {
   const el = e.currentTarget as HTMLElement
   const rect = el.getBoundingClientRect()
   parentPickerAnchor.value = el
   parentPickerPos.value = { x: rect.left, y: rect.bottom + 4 }
+  parentQuery.value = ''
   parentPickerOpen.value = true
+  nextTick(() => parentSearchInput.value?.focus())
+}
+
+/** Enter 直接落选首个匹配：单父槽位是「选中即替换」，搜到就能定格，不用再回鼠标。 */
+function onParentSearchEnter() {
+  const first = filteredParentCandidates.value[0]
+  if (first) void onPickParent(first.id)
 }
 
 // ── 删除（先告知影响） ────────────────────────────────────────
@@ -1043,26 +1060,48 @@ async function submitAddField() {
       @close="parentPickerOpen = false"
     >
       <div class="tag-parent-panel">
-        <p
-          v-if="!parentCandidates.length"
-          class="tag-parent-empty"
-        >
-          没有可选父标签
-        </p>
-        <button
-          v-for="candidate in parentCandidates"
-          :key="candidate.id"
-          type="button"
-          class="tag-parent-option"
-          @click="onPickParent(candidate.id)"
-        >
-          <span
-            class="tag-color-dot"
-            :class="{ 'tag-color-dot--empty': isColorless(candidate.color) }"
-            :style="tagDotStyle(candidate.color)"
+        <label class="tag-parent-search">
+          <Search
+            class="tag-parent-search-icon"
+            :size="13"
           />
-          {{ candidate.title }}
-        </button>
+          <input
+            ref="parentSearchInput"
+            v-model="parentQuery"
+            class="tag-parent-search-input"
+            type="text"
+            placeholder="搜索父标签"
+            @keydown.enter.prevent="onParentSearchEnter"
+          >
+        </label>
+        <div class="tag-parent-options">
+          <p
+            v-if="!parentCandidates.length"
+            class="tag-parent-empty"
+          >
+            没有可选父标签
+          </p>
+          <p
+            v-else-if="!filteredParentCandidates.length"
+            class="tag-parent-empty"
+          >
+            没有匹配的父标签
+          </p>
+          <button
+            v-for="candidate in filteredParentCandidates"
+            :key="candidate.id"
+            type="button"
+            class="tag-parent-option"
+            @click="onPickParent(candidate.id)"
+          >
+            <span
+              class="tag-color-dot"
+              :class="{ 'tag-color-dot--empty': isColorless(candidate.color) }"
+              :style="tagDotStyle(candidate.color)"
+            />
+            {{ candidate.title }}
+          </button>
+        </div>
       </div>
     </BasePopover>
 
@@ -2167,9 +2206,17 @@ async function submitAddField() {
 }
 
 .tag-parent-panel {
-  width: 180px;
-  max-height: 260px;
-  overflow: auto;
+  width: 220px;
+  padding: var(--space-2);
+}
+
+/* 搜索框固定、候选区自己滚：输入时列表变动不会把搜索框滚出视野。 */
+.tag-parent-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
 }
 
 .tag-parent-option {
@@ -2246,7 +2293,8 @@ textarea.tag-field-options {
   padding: var(--space-2);
 }
 
-.tag-field-search {
+.tag-field-search,
+.tag-parent-search {
   display: flex;
   align-items: center;
   gap: var(--space-1);
@@ -2261,12 +2309,14 @@ textarea.tag-field-options {
   }
 }
 
-.tag-field-search-icon {
+.tag-field-search-icon,
+.tag-parent-search-icon {
   flex: none;
   color: var(--text-tertiary);
 }
 
-.tag-field-search-input {
+.tag-field-search-input,
+.tag-parent-search-input {
   flex: 1;
   min-width: 0;
   height: 28px;

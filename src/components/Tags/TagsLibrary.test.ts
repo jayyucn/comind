@@ -672,6 +672,58 @@ describe('TagsLibrary（标签管理页）', () => {
     })
   })
 
+  it('父标签弹层带搜索框：输入即时过滤候选，无命中给空态', async () => {
+    const wrapper = await mountPage()
+    await wrapper.find('.tag-row--t-project').trigger('click')
+    await flushPromises()
+
+    await wrapper.find('.tag-parent-add').trigger('click')
+    await flushPromises()
+
+    const panel = document.body.querySelector('.tag-parent-panel') as HTMLElement
+    const input = panel.querySelector('.tag-parent-search-input') as HTMLInputElement
+    expect(input).toBeTruthy()
+    // 未输入时全量候选：任务 / 灵感碎片（项目自身与后代开发任务已排除）
+    expect(panel.querySelectorAll('.tag-parent-option').length).toBe(2)
+
+    input.value = '灵'
+    input.dispatchEvent(new Event('input'))
+    await flushPromises()
+
+    const titles = Array.from(panel.querySelectorAll('.tag-parent-option')).map((o) =>
+      o.textContent?.trim(),
+    )
+    expect(titles).toEqual(['灵感碎片'])
+
+    input.value = 'zzz'
+    input.dispatchEvent(new Event('input'))
+    await flushPromises()
+
+    expect(panel.querySelectorAll('.tag-parent-option').length).toBe(0)
+    expect(panel.querySelector('.tag-parent-empty')?.textContent).toContain('没有匹配的父标签')
+  })
+
+  it('父标签弹层：搜索后 Enter 直接选中首个匹配', async () => {
+    mockClient.setTagParent.mockResolvedValue(IDEA)
+    const wrapper = await mountPage()
+    await wrapper.find('.tag-row--t-project').trigger('click')
+    await flushPromises()
+
+    await wrapper.find('.tag-parent-add').trigger('click')
+    await flushPromises()
+
+    const panel = document.body.querySelector('.tag-parent-panel') as HTMLElement
+    const input = panel.querySelector('.tag-parent-search-input') as HTMLInputElement
+    input.value = '灵'
+    input.dispatchEvent(new Event('input'))
+    await flushPromises()
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+    await flushPromises()
+
+    expect(mockClient.setTagParent).toHaveBeenCalledWith({ id: 't-project', parent_id: 't-idea' })
+  })
+
   it('删除标签：先弹确认并告知影响，确认后才调 deleteTag', async () => {
     mockClient.deleteTag.mockResolvedValue(undefined)
     const wrapper = await mountPage()
