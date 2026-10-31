@@ -368,6 +368,38 @@ describe('FieldSettingsModal', () => {
     }
   })
 
+  it('枚举伪类型（落库 string + closed_values）：类型下拉显示单选、选项区渲染、保存写回 string 且不清空选项', async () => {
+    // TagsLibrary 新建「枚举」字段落库为 type='string' + closed_values（select 是派生伪类型）。
+    // 回归网：直接读 d.type 会让下拉错显示「文本」、选项区消失、保存把 closed_values 清空。
+    mockFieldDefs = [{ ...MOCK_DEF, type: 'string', closed_values: ['Todo', 'Doing'] }]
+    const w = mountModal('f1')
+    expect((w.find('select[aria-label="字段类型"]').element as HTMLSelectElement).value).toBe('select')
+    expect(w.findAll('.opt-chip').map((c) => c.text().replace(/[×\s]/g, ''))).toEqual(['Todo', 'Doing'])
+    // 默认值编辑器同样按枚举分派（选项点选，而非手打文本）
+    expect(w.find('select[aria-label="字段默认值"]').findAll('option').map((o) => o.text()))
+      .toEqual(['无默认', 'Todo', 'Doing'])
+
+    await w.find('[data-testid="field-settings-save"]').trigger('click')
+    await vi.waitFor(() => expect(updateFieldDefinition).toHaveBeenCalledTimes(1))
+    expect(updateFieldDefinition.mock.calls[0][0]).toMatchObject({
+      type: 'string',
+      closed_values: ['Todo', 'Doing'],
+    })
+    w.unmount()
+  })
+
+  it('既有 select 词汇的定义：保存不被降级为 string（落库词汇对齐原字段）', async () => {
+    mockFieldDefs = [{ ...MOCK_DEF, type: 'select' }]
+    const w = mountModal('f1')
+    await w.find('[data-testid="field-settings-save"]').trigger('click')
+    await vi.waitFor(() => expect(updateFieldDefinition).toHaveBeenCalledTimes(1))
+    expect(updateFieldDefinition.mock.calls[0][0]).toMatchObject({
+      type: 'select',
+      closed_values: ['Todo', 'Doing'],
+    })
+    w.unmount()
+  })
+
   it('保存 relation 字段：保留 closed_values（约定的关系类型 id）不被清空', async () => {
     // relation 字段复用 closed_values[0] 存约定的关系类型 id（见 tag-persisted.ts）；
     // 保存时若按「非枚举即清空」会误删该约定——本用例锁定修复后的保留行为。

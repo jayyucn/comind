@@ -6,13 +6,13 @@ import { useModalKeyboardRef } from '../../composables/useModalKeyboard'
 import { useBlockStore } from '../../stores/blocks'
 import { useEditorStore } from '../../stores/editor'
 import { useTagsStore } from '../../stores/tags'
-import { specHeadOf } from '../../types/field-type-registry'
+import { FIELD_TYPE_OPTIONS, specHeadOf } from '../../types/field-type-registry'
 import type { UpdateFieldDefinitionParams } from '../../types/tag-persisted'
 import { displayFormOptionsFor } from '../../utils/field-display-form'
 import { decodeDefaultJson, encodeDefaultJson, FIELD_HIDE_OPTIONS, normalizeHideWhen } from '../../utils/field-hide'
 import { DEFAULT_CURRENCY_SYMBOL, parseCurrencySpec } from '../../utils/field-number-format'
 import { FIELD_SPEC_OPTIONS, type SpecFamily } from '../../utils/field-spec-options'
-import { fieldSpecIcon, fieldTypeIcon } from '../../utils/field-type-icons'
+import { displayFieldType, fieldSpecIcon, fieldTypeIcon } from '../../utils/field-type-icons'
 import { initCoreClient } from '../../wasm/client'
 import SegmentedControl from '../common/SegmentedControl.vue'
 import ConfirmDialog from '../ConfirmDialog.vue'
@@ -62,6 +62,12 @@ const fieldDef = computed(() =>
 interface FieldDraft {
   title: string
   description: string
+  /**
+   * **展示用类型 token**（`utils/field-type-icons.displayFieldType` 单源），不是落库词汇：
+   * 枚举在落库层是 `type='string'` + `closed_values` 非空的伪类型（TagsLibrary 新建字段即
+   * 如此），直接读 `d.type` 会让类型下拉错显示「文本」、选项区不渲染、保存时把 closed_values
+   * 清空。落库词汇由 `persistTypeOf()` 在保存侧映射回来。
+   */
   type: string
   closedValues: string[]
   defaultValue: string
@@ -78,7 +84,7 @@ function draftOf(): FieldDraft {
   return {
     title: d?.title ?? '',
     description: d?.description ?? '',
-    type: d?.type ?? 'string',
+    type: d ? displayFieldType(d) : 'string',
     closedValues: d?.closed_values ? [...d.closed_values] : [],
     // 落库形态是 JSON 文本（decodeDefaultJson 的消费契约）→ 回填先解成人读值，
     // 保存再编码回去；直通会造成「框里带引号 / 非法 JSON 静默失效」双 bug。
@@ -193,25 +199,8 @@ const defaultPlaceholder = computed(() => {
 })
 
 // ── 类型下拉 ──────────────────────────────────────────────────
-const TYPE_OPTIONS: { value: string; label: string }[] = [
-  { value: 'string', label: '文本' },
-  { value: 'number', label: '数字' },
-  { value: 'boolean', label: '开关' },
-  { value: 'date', label: '日期' },
-  { value: 'datetime', label: '日期时间' },
-  { value: 'daterange', label: '日期区间' },
-  { value: 'select', label: '单选' },
-  { value: 'multiSelect', label: '多选' },
-  { value: 'array', label: '标签数组' },
-  { value: 'page', label: '页面引用' },
-  { value: 'file', label: '附件' },
-  { value: 'relation', label: '关系引用' },
-  { value: 'formula', label: '公式' },
-  { value: 'json', label: 'JSON' },
-  { value: 'color', label: '颜色' },
-  { value: 'autonumber', label: '自增编号' },
-  { value: 'geo', label: '地理位置' },
-]
+// 选项与文案单源在中央注册表（types/field-type-registry），与 TagsLibrary 新建字段
+// 下拉共用同一份；此处不再维护第二张表。
 /**
  * 展示形态下拉按字段类型配置（评估纪要 + 用户裁定：枚举选项随字段类型走）。
  * 每种类型只给有意义、可达的形态——boolean 给 勾叉/开关/文字，枚举给 胶囊/文字，
@@ -281,6 +270,16 @@ function numOrNull(v: string): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+/**
+ * 展示 token → 落库词汇：下拉里的「单选」对应落库两套既有词汇 —— 系统/既有字段写
+ * `select`，用户自建枚举（TagsLibrary 建的）写 `string` + closed_values。对齐原字段
+ * 词汇，避免把既有 `select` 定义降级成 string、也避免给自建枚举凭空造 select。
+ */
+function persistTypeOf(displayType: string): string {
+  if (displayType !== 'select') return displayType
+  return fieldDef.value?.type === 'select' ? 'select' : 'string'
+}
+
 async function save() {
   if (!props.fieldId || saving.value) return
   saving.value = true
@@ -295,7 +294,7 @@ async function save() {
     const params: UpdateFieldDefinitionParams = {
       id: props.fieldId,
       title: draft.title.trim(),
-      type: draft.type,
+      type: persistTypeOf(draft.type),
       // relation 字段复用 closed_values[0] 存约定的关系类型 id（见 RelationRefEditor 配置位），
       // 仅枚举类型可编辑选项；非枚举但属 relation 时须保留已配置的 closed_values，否则保存即清空。
       closed_values: (isEnumType.value || draft.type === 'relation')
@@ -422,7 +421,7 @@ function confirmDiscard() {
                   @change="onChangeType"
                 >
                   <option
-                    v-for="t in TYPE_OPTIONS"
+                    v-for="t in FIELD_TYPE_OPTIONS"
                     :key="t.value"
                     :value="t.value"
                   >
