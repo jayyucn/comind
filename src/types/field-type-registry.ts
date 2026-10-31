@@ -116,7 +116,7 @@ export const FIELD_TYPE_REGISTRY: Readonly<Record<FieldType, FieldTypeSpec>> = {
 export const FIELD_TYPE_LABELS: Readonly<Record<FieldType, string>> = {
   string: '文本',
   number: '数字',
-  boolean: '开关',
+  boolean: '是/否',
   date: '日期',
   datetime: '日期时间',
   daterange: '日期区间',
