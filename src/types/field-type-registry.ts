@@ -102,14 +102,12 @@ export const FIELD_TYPE_REGISTRY: Readonly<Record<FieldType, FieldTypeSpec>> = {
 
 // ── 类型文案与下拉选项（单源）─────────────────────────────────────────────
 //
-// 类型 → 文案此前在多个入口各自维护（TagsLibrary.TYPE_LABELS、
-// FieldSettingsModal.TYPE_OPTIONS），同一 value 出现多种写法（number 数值/数字、
-// boolean 是或否/开关、select 枚举/单选、relation 关联/关系引用），且 TagsLibrary
-// 的新建字段下拉漏了 array / formula / json / color / autonumber / geo 六个成员——
-// 注册表支持而入口选不到。收编到本表后，下拉选项与徽章文案同源。
-//
-// 注：`components/Block/FieldValueEditor.vue` 的 fieldTypes 仍是独立表（集合与文案
-// 另有差异：布尔值 / 数组/标签 / 地理坐标，且不含 select 伪类型），尚未收编。
+// 类型 → 文案此前在三个入口各自维护（TagsLibrary.TYPE_LABELS、
+// FieldSettingsModal.TYPE_OPTIONS、FieldValueEditor.fieldTypes），同一 value 出现
+// 多种写法（number 数值/数字、boolean 是或否/开关/布尔值、select 枚举/单选、
+// relation 关联/关系引用、geo 地理坐标/地理位置），且 TagsLibrary 的新建字段下拉
+// 漏了 array / formula / json / color / autonumber / geo 六个成员——注册表支持而
+// 入口选不到。收编到本表后，下拉选项与徽章文案同源。
 
 /**
  * 类型 → 用户可见文案。键穷举 FieldType（少一个成员 TS 即报错），新增类型必须

@@ -6,7 +6,7 @@ import { useFieldValueStore } from '../../stores/fieldValue'
 import { useTagsStore } from '../../stores/tags'
 import type { FieldType, FieldValueData, FileRefValue, RelationRefValue } from '../../types/field-definition'
 import { getFieldDefinition } from '../../types/field-definition'
-import { numberSpecialization, pageSpecialization, specHeadOf, stringSpecialization } from '../../types/field-type-registry'
+import { FIELD_TYPE_OPTIONS, fieldTypeLabel, numberSpecialization, pageSpecialization, specHeadOf, stringSpecialization } from '../../types/field-type-registry'
 import { decodeFieldValueData } from '../../utils/field-value-codec'
 import { detectCycle,evaluateFormula, validateFormula } from '../../utils/formula'
 import { TAG_COLORS } from '../../utils/tag-color'
@@ -51,24 +51,13 @@ const geoName = ref('')
 /** 颜色类型色板（复用 --tag-color-* token 体系） */
 const tagColors = TAG_COLORS
 
-const fieldTypes: { type: FieldType; label: string }[] = [
-  { type: 'string', label: '文本' },
-  { type: 'number', label: '数字' },
-  { type: 'boolean', label: '布尔值' },
-  { type: 'date', label: '日期' },
-  { type: 'datetime', label: '日期时间' },
-  { type: 'daterange', label: '日期区间' },
-  { type: 'array', label: '数组/标签' },
-  { type: 'multiSelect', label: '多选' },
-  { type: 'page', label: '页面引用' },
-  { type: 'file', label: '附件' },
-  { type: 'relation', label: '关联' },
-  { type: 'formula', label: '公式' },
-  { type: 'json', label: 'JSON' },
-  { type: 'color', label: '颜色' },
-  { type: 'autonumber', label: '自增编号' },
-  { type: 'geo', label: '地理坐标' },
-]
+/**
+ * 类型下拉选项：文案与顺序单源在中央注册表（`types/field-type-registry`）。
+ * 排除 `select` —— 它是「type string + closed_values」的展示伪类型，落库层不会出现
+ * 在该字段的 value_type 上，且本弹窗按值编辑，单选枚举的 chip 编辑走 BlockFieldZone；
+ * 留着只会选到一个没有编辑器分支的死类型。
+ */
+const fieldTypes = FIELD_TYPE_OPTIONS.filter((t) => t.value !== 'select')
 
 const currentArrayValue = computed<string[]>({
   get: () => Array.isArray(currentValue.value) ? currentValue.value : [],
@@ -277,9 +266,7 @@ const autonumberPreview = computed<number>(() => {
 })
 
 /** 类型的展示文案（编辑模式下类型是纯文本，不再走 select 的 option 文案） */
-const typeLabel = computed(
-  () => fieldTypes.find((t) => t.type === selectedType.value)?.label ?? selectedType.value,
-)
+const typeLabel = computed(() => fieldTypeLabel(selectedType.value))
 
 // 默认焦点的候选元素（各 v-if 分支同时只挂一个，同一 ref 名可跨分支复用）
 const panelRoot = ref<HTMLElement | null>(null)
@@ -566,8 +553,8 @@ watch(visible, (val) => {
           >
             <option
               v-for="t in fieldTypes"
-              :key="t.type"
-              :value="t.type"
+              :key="t.value"
+              :value="t.value"
             >
               {{ t.label }}
             </option>

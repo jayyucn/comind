@@ -117,7 +117,7 @@ describe('FieldValueEditor', () => {
     const wrapper = mountAttached()
     await nextTick()
 
-    expect(wrapper.findAll('.form-static').map(el => el.text())).toEqual(['测试', '布尔值'])
+    expect(wrapper.findAll('.form-static').map(el => el.text())).toEqual(['测试', '开关'])
     expect(wrapper.find('select').exists()).toBe(false)
     expect(wrapper.find('input[type="text"]').exists()).toBe(false)
     wrapper.unmount()
@@ -200,12 +200,12 @@ describe('FieldValueEditor', () => {
 
   // ── relation 关系引用（issue T5）────────────────────────────
 
-  it('类型下拉含「关联」（relation）选项', () => {
+  it('类型下拉含「关系引用」（relation）选项', () => {
     const wrapper = mount(FieldValueEditor, {
       global: { stubs: { Teleport: true } }
     })
     const options = wrapper.find('select').findAll('option')
-    expect(options.some(o => o.text() === '关联')).toBe(true)
+    expect(options.some(o => o.text() === '关系引用')).toBe(true)
   })
 
   it('类型选 relation：值区渲染 RelationRefEditor（两段齐备才可保存），保存为 relation 类型（AC1/AC2）', async () => {
@@ -257,8 +257,8 @@ describe('FieldValueEditor', () => {
     const wrapper = mountAttached()
     await nextTick()
 
-    // 类型展示为「地理坐标」而非「文本」
-    expect(wrapper.findAll('.form-static').map(el => el.text())).toEqual(['坐标', '地理坐标'])
+    // 类型展示为「地理位置」而非「文本」
+    expect(wrapper.findAll('.form-static').map(el => el.text())).toEqual(['坐标', '地理位置'])
     // 值区应渲染 geo 坐标输入（占位「纬度 lat」），而非普通文本输入框
     expect(wrapper.find('input[placeholder="纬度 lat"]').exists()).toBe(true)
     expect(wrapper.find('input[placeholder="输入值"]').exists()).toBe(false)
