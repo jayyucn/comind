@@ -14,6 +14,7 @@ import { setActivePinia, createPinia } from 'pinia'
 import { mount, flushPromises } from '@vue/test-utils'
 import TagAggregatePage from './TagAggregatePage.vue'
 import FieldManagerPanel from '../query/FieldManagerPanel.vue'
+import NamedViewBar from '../common/NamedViewBar.vue'
 import type { PersistedTagTreeEntry, PersistedFieldDefinition } from '../../types/tag-persisted'
 import type { BlockCard, ScreenViewRust } from '../../wasm/types'
 
@@ -164,6 +165,14 @@ const DEV_TASK = treeEntry({
   effective_field_ids: ['f-estimate', 'f-owner'],
 })
 
+// 阶段标签：自带一个 select 有效字段 —— 看板分组的唯一来源（不再借用全局 status）
+const STAGE_TAG = treeEntry({
+  id: 't-stage',
+  title: '阶段',
+  field_ids: ['f-stage'],
+  effective_field_ids: ['f-stage'],
+})
+
 describe('TagAggregatePage（tag 聚合页）', () => {
   // 组件在文件级静态引入（非每例 resetModules + dynamic import）：本页模块图最重
   // （TableView + 查询引擎 + CodeMirror），逐例重建曾在全套并发下顶穿 hookTimeout。
@@ -252,7 +261,7 @@ describe('TagAggregatePage（tag 聚合页）', () => {
 
     const panel = wrapper.findComponent(FieldManagerPanel)
     expect(panel.exists()).toBe(true)
-    // 注册表为撑起看板 groupBy='status' / 日历 dateRefKind='deadline' 仍持全部内置字段，
+    // 注册表为日历（dateRefKind='deadline'）与分组芯片仍持全部内置字段，
     // 但候选池限本页列模板来源 —— 否则无字段的 tag 会列出 19 个无关内置字段。
     expect(panel.props('candidateFields')?.map((f: { key: string }) => f.key)).toEqual([
       'content',
@@ -381,5 +390,70 @@ describe('TagAggregatePage（tag 聚合页）', () => {
     expect(texts(wrapper, '.col-content').join(' ')).not.toContain('重构表格')
     // 副标题口径 = 该 tag 的成员集合，与搜索无关
     expect(wrapper.text()).toContain('2 个成员 · 来自 2 个页面')
+  })
+
+  // ── 看板：分组字段跟随标签自己的字段模板（不再固定全局 status）──
+  it('无 select 字段的标签不提供看板类型（没有阶段语义）', async () => {
+    // t-project 的有效字段是 负责人(string) + 预算(number)
+    const wrapper = await mountPage()
+    const bar = wrapper.findComponent(NamedViewBar)
+    expect(bar.props('viewTypes').map((v: { key: string }) => v.key)).toEqual(['table', 'calendar'])
+  })
+
+  it('有 select 字段时看板按该字段分列，缺值成员落「未分组」', async () => {
+    mockClient.getTagTree.mockResolvedValue([SYSTEM_TASK, PROJECT, DEV_TASK, STAGE_TAG])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-status', title: '状态', is_system: true }),
+      fieldDef({ id: 'f-owner', title: '负责人' }),
+      fieldDef({ id: 'f-budget', title: '预算', type: 'number' }),
+      fieldDef({ id: 'f-estimate', title: '工时', type: 'number' }),
+      // 单选在库里是伪类型：type='string' + closed_values 非空（TagsLibrary 新建单选即如此落库）
+      fieldDef({ id: 'f-stage', title: '阶段', type: 'string', closed_values: ['Draft', 'Live'] }),
+    ])
+    mockClient.getBlockCards.mockResolvedValue([
+      makeCard({
+        block_id: 'a',
+        page_id: 'page-1',
+        content_preview: '写大纲',
+        tags: ['t-stage'],
+        properties: { 'f-stage': 'Draft' },
+      }),
+      // 未填「阶段」的成员：固定 status 分组时它会在看板上静默消失
+      makeCard({ block_id: 'b', page_id: 'page-2', content_preview: '没排期', tags: ['t-stage'], properties: {} }),
+    ])
+    mockClient.getScreenViews.mockImplementation(async (entity: string) =>
+      screenViews(entity).map((v) =>
+        v.id === 'sv-tab'
+          ? {
+            ...v,
+            view_type: 'board',
+            // 旧 tab 常残留 groupBy='status'（此前看板固定按 status 分组）：
+            // 内置字段不属于标签字段模板，不得劫持分组，否则又回到 5 个空列
+            query_json: JSON.stringify({
+              version: 1,
+              filter: { combinator: 'and', children: [] },
+              sort: [],
+              groupBy: 'status',
+            }),
+          }
+          : v,
+      ),
+    )
+
+    const wrapper = await mountPage('t-stage')
+    const bar = wrapper.findComponent(NamedViewBar)
+    expect(bar.props('viewTypes').map((v: { key: string }) => v.key)).toContain('board')
+
+    expect(texts(wrapper, '.column-title')).toEqual(['Draft', 'Live', '未分组'])
+    expect(wrapper.findAll('.board-column').at(-1)!.text()).toContain('没排期')
+  })
+
+  it('历史 board tab 但标签已无可用分组字段 → 配置引导而非空列', async () => {
+    mockClient.getScreenViews.mockImplementation(async (entity: string) =>
+      screenViews(entity).map((v) => (v.id === 'sv-tab' ? { ...v, view_type: 'board' } : v)),
+    )
+    const wrapper = await mountPage()
+    expect(wrapper.find('.board-unconfigured').exists()).toBe(true)
+    expect(wrapper.findAll('.board-column').length).toBe(0)
   })
 })

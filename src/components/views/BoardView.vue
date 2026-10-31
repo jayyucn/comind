@@ -38,24 +38,42 @@ function resolveOptions(field: FieldDescriptor | undefined): Option[] {
   return typeof field.options === 'function' ? field.options() : field.options
 }
 
+/** 无分组值的记录列 key（仅当存在这类记录时才追加该列）。 */
+const UNASSIGNED_KEY = '__unassigned__'
+
+/** 分组字段缺值判定：null / 空串 / 空数组（multiSelect 未选）。 */
+function isUnassigned(value: unknown): boolean {
+  if (value == null || value === '') return true
+  return Array.isArray(value) && value.length === 0
+}
+
 /** 分组列：优先取分组字段的 options（select 语义）；否则由记录实际取值派生唯一列。 */
 const columns = computed<{ key: string; label: string; color?: string }[]>(() => {
   const groupField = fieldOf(props.groupBy)
-  if (groupField) {
-    const opts = resolveOptions(groupField)
-    if (opts.length > 0) return opts.map((o) => ({ key: o.id, label: o.label, color: o.color }))
+  if (!groupField) {
+    // 分组字段未注册：退化为单一「全部」列
+    return [{ key: '__all__', label: '全部' }]
+  }
+  const opts = resolveOptions(groupField)
+  const cols: { key: string; label: string; color?: string }[] = []
+  if (opts.length > 0) {
+    for (const o of opts) cols.push({ key: o.id, label: o.label, color: o.color })
+  } else {
     const seen = new Map<string, string>()
     for (const item of props.items) {
       const v = groupField.get(item)
       const arr = Array.isArray(v) ? v : [v]
       for (const val of arr) {
-        if (val != null && !seen.has(String(val))) seen.set(String(val), String(val))
+        if (val != null && val !== '' && !seen.has(String(val))) seen.set(String(val), String(val))
       }
     }
-    return [...seen.entries()].map(([key, label]) => ({ key, label }))
+    for (const [key, label] of seen) cols.push({ key, label })
   }
-  // 分组字段未注册：退化为单一「全部」列
-  return [{ key: '__all__', label: '全部' }]
+  // 缺值记录必须有落脚列：否则它们在看板上静默消失（标签聚合页里未填字段的成员是常态）。
+  if (props.items.some((i) => isUnassigned(groupField.get(i)))) {
+    cols.push({ key: UNASSIGNED_KEY, label: '未分组' })
+  }
+  return cols
 })
 
 function matchGroup(value: unknown, colKey: string): boolean {
@@ -65,6 +83,7 @@ function matchGroup(value: unknown, colKey: string): boolean {
 function cardsIn(colKey: string): T[] {
   const groupField = fieldOf(props.groupBy)
   if (!groupField || colKey === '__all__') return props.items
+  if (colKey === UNASSIGNED_KEY) return props.items.filter((i) => isUnassigned(groupField.get(i)))
   return props.items.filter((i) => matchGroup(groupField.get(i), colKey))
 }
 
@@ -149,7 +168,10 @@ function onColumnLeave(colKey: string, event: DragEvent) {
 function onDrop(colKey: string, event: DragEvent) {
   event.preventDefault()
   const blockId = event.dataTransfer?.getData('text/plain')
-  if (blockId && colKey !== '__all__') emit('cellChange', blockId, props.groupBy, colKey)
+  // 「未分组」不是合法取值：拖入即清空分组字段是没有依据的副作用，故只允许从它拖出。
+  if (blockId && colKey !== '__all__' && colKey !== UNASSIGNED_KEY) {
+    emit('cellChange', blockId, props.groupBy, colKey)
+  }
   draggedCardId.value = null
   dragOverCol.value = null
 }
@@ -174,6 +196,7 @@ function onDragEnd() {
       <div class="column-header">
         <span
           class="column-title"
+          :class="{ 'is-unassigned': col.key === UNASSIGNED_KEY }"
           :style="col.color ? { color: col.color } : undefined"
         >{{ col.label }}</span>
         <span class="column-count">{{ cardsIn(col.key).length }}</span>
@@ -263,6 +286,12 @@ function onDragEnd() {
 .column-title {
   font-size: var(--text-sm);
   font-weight: var(--font-semibold);
+
+  // 未分组列是兜底落点，不是正常阶段：视觉上退一档，避免被当成第五个阶段
+  &.is-unassigned {
+    color: var(--text-tertiary);
+    font-weight: var(--font-medium);
+  }
 }
 
 .column-count {

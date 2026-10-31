@@ -147,3 +147,89 @@ describe('BoardView (generic, field-driven)', () => {
     expect(wrapper.emitted('cellChange')![0]).toEqual(['b1', 'status', 'Doing'])
   })
 })
+
+// 分组字段无兜底取值（标签自定义字段的常态：成员大多没填）→ 缺值卡片必须有落脚列
+describe('BoardView 未分组列', () => {
+  const stageFields: FieldDescriptor[] = [
+    { key: 'content', label: '内容', type: 'string', get: (i) => (i as BlockCard).content_preview },
+    {
+      key: 'stage', label: '阶段', type: 'select',
+      options: [{ id: 'Draft', label: '草稿' }, { id: 'Live', label: '上线' }],
+      get: (i) => (i as BlockCard).properties?.['stage'],
+    },
+  ]
+
+  function mountStage(items: BlockCard[]) {
+    return mount(BoardView, {
+      props: {
+        items,
+        fields: stageFields,
+        groupBy: 'stage',
+        config: { viewKind: 'board', version: 1 },
+        idKey: 'block_id',
+      },
+    })
+  }
+
+  it('缺值卡片进入「未分组」列而非消失', () => {
+    const wrapper = mountStage([
+      makeCard({ block_id: 'b1', content_preview: '已排期', properties: { stage: 'Draft' } }),
+      makeCard({ block_id: 'b2', content_preview: '没填阶段', properties: {} }),
+    ])
+    const titles = wrapper.findAll('.column-title').map((t) => t.text())
+    expect(titles).toEqual(['草稿', '上线', '未分组'])
+    const last = wrapper.findAll('.board-column').at(-1)!
+    expect(last.text()).toContain('没填阶段')
+    expect(last.text()).not.toContain('已排期')
+  })
+
+  it('无缺值卡片时不追加「未分组」列', () => {
+    const wrapper = mountStage([
+      makeCard({ block_id: 'b1', properties: { stage: 'Draft' } }),
+      makeCard({ block_id: 'b2', properties: { stage: 'Live' } }),
+    ])
+    expect(wrapper.findAll('.column-title').map((t) => t.text())).toEqual(['草稿', '上线'])
+  })
+
+  it('拖入「未分组」列不写入分组字段（未分组不是合法取值）', async () => {
+    // 必须存在缺值卡片，否则「未分组」列根本不会出现
+    const wrapper = mountStage([
+      makeCard({ block_id: 'b1', properties: { stage: 'Draft' } }),
+      makeCard({ block_id: 'b2', properties: {} }),
+    ])
+    const unassignedCol = wrapper.findAll('.board-column').at(-1)!
+    expect(unassignedCol.find('.column-title').text()).toBe('未分组')
+    const dataTransfer = { effectAllowed: '', dropEffect: '', getData: () => 'b1', setData: () => {} } as unknown as DataTransfer
+    await unassignedCol.trigger('drop', { dataTransfer })
+    expect(wrapper.emitted('cellChange')).toBeFalsy()
+  })
+
+  it('从「未分组」拖到有值列可正常写入', async () => {
+    const wrapper = mountStage([makeCard({ block_id: 'b1', properties: {} })])
+    const liveCol = wrapper.findAll('.board-column')[1]
+    const dataTransfer = { effectAllowed: '', dropEffect: '', getData: () => 'b1', setData: () => {} } as unknown as DataTransfer
+    await liveCol.trigger('drop', { dataTransfer })
+    expect(wrapper.emitted('cellChange')![0]).toEqual(['b1', 'stage', 'Live'])
+  })
+
+  it('multiSelect 空数组视为未分组', () => {
+    const fields: FieldDescriptor[] = [
+      stageFields[0],
+      {
+        key: 'stage', label: '阶段', type: 'multiSelect',
+        options: [{ id: 'Draft', label: '草稿' }],
+        get: (i) => (i as BlockCard).properties?.['stage'],
+      },
+    ]
+    const wrapper = mount(BoardView, {
+      props: {
+        items: [makeCard({ block_id: 'b1', properties: { stage: [] } })],
+        fields,
+        groupBy: 'stage',
+        config: { viewKind: 'board', version: 1 },
+        idKey: 'block_id',
+      },
+    })
+    expect(wrapper.findAll('.column-title').map((t) => t.text())).toContain('未分组')
+  })
+})

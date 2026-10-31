@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import { CalendarDays, ChevronRight, Columns, Table } from 'lucide-vue-next'
 import { computed, markRaw, onMounted, ref, watch } from 'vue'
-import { createQueryEngine, createRegistry, type FieldDescriptor, type ViewQuery } from '../../core/query'
-import { parseLayoutConfig, type BoardConfig, type CalendarConfig, type TableConfig } from '../../core/view'
-import type { ViewTypeOption } from '../../core/view/management'
+
 import {
   BLOCK_ENTITY,
   blockDefaultConfig,
@@ -11,22 +9,26 @@ import {
   registerBlockBuiltinFields,
 } from '../../composables/useBlockQueryRegistry'
 import { useNavigateToTag } from '../../composables/useNavigateToTag'
+import { createQueryEngine, createRegistry, type FieldDescriptor, type ViewQuery } from '../../core/query'
+import { type BoardConfig, type CalendarConfig, parseLayoutConfig, type TableConfig } from '../../core/view'
+import type { ViewTypeOption } from '../../core/view/management'
 import { useBlockCardStore } from '../../stores/blockCard'
 import { useBlockStore } from '../../stores/blocks'
 import { useEditorStore } from '../../stores/editor'
 import { useFieldValueStore } from '../../stores/fieldValue'
 import { useScreenViewStore } from '../../stores/screenView'
 import { useTagsStore } from '../../stores/tags'
-import type { PersistedFieldDefinition } from '../../types/tag-persisted'
 import type { FieldType, FieldValueData } from '../../types/field-definition'
+import type { PersistedFieldDefinition } from '../../types/tag-persisted'
+import { displayFieldType } from '../../utils/field-type-icons'
 import type { BlockCard } from '../../wasm/types'
 import QueryPageFrame from '../common/QueryPageFrame.vue'
 import PageDrawer from '../Page/PageDrawer.vue'
 import BlockContentCell from '../views/BlockContentCell.vue'
-import SourcePageCell from '../views/SourcePageCell.vue'
-import TableView from '../views/TableView.vue'
 import BoardView from '../views/BoardView.vue'
 import CalendarView from '../views/CalendarView.vue'
+import SourcePageCell from '../views/SourcePageCell.vue'
+import TableView from '../views/TableView.vue'
 import type { CellRegistry } from '../views/types'
 import TagColorPicker from './TagColorPicker.vue'
 import TagDescriptionField from './TagDescriptionField.vue'
@@ -99,9 +101,9 @@ const registryFields: FieldDescriptor[] = registry.list(BLOCK_ENTITY)
 
 /**
  * 字段面板的候选池（ADR-0050 D7）：本页列模板只由「内容 + 来源页 + 该 tag 的有效字段」构成，
- * 故候选限同三者。注册表本身必须保留全部内置字段 —— 看板按 `groupBy='status'` 建分组列、
- * 日历按 `dateRefKind='deadline'` 落格都靠这些描述符；但那些字段不属于本页的列语义，
- * 混进候选会让一个无字段的 tag 列出 19 个无关内置字段（真机实证 2026-09-23）。
+ * 故候选限同三者。注册表本身必须保留全部内置字段 —— 日历按 `dateRefKind='deadline'` 落格、
+ * 分组芯片按 block 属性（含内置 status / priority）筛选排序都靠这些描述符；但那些字段不属于
+ * 本页的列语义，混进候选会让一个无字段的 tag 列出 19 个无关内置字段（真机实证 2026-09-23）。
  * 顺序沿用注册顺序（内容 / 来源页在前，tag 字段在后）。
  */
 const columnFieldKeys = new Set(['content', 'page', ...tagFieldDefs.value.map((d) => d.key)])
@@ -109,11 +111,46 @@ const candidateFields: FieldDescriptor[] = registryFields.filter((f) => columnFi
 
 const blockEngine = createQueryEngine<BlockCard>(BLOCK_ENTITY)
 
-const viewTypes: ViewTypeOption[] = [
+const ALL_VIEW_TYPES: ViewTypeOption[] = [
   { key: 'table', label: '表格', icon: Table },
   { key: 'board', label: '看板', icon: Columns },
   { key: 'calendar', label: '日历', icon: CalendarDays },
 ]
+
+/**
+ * 看板分组字段 —— 跟随标签自己的字段模板，不固定用全局 `status`。
+ *
+ * 规则（产品决策）：用户经分组芯片显式指定时优先；否则取该标签有效字段中第一个
+ * select / multiSelect。两者都没有 ⇒ 该标签没有「阶段」语义，看板不成立：
+ * `viewTypes` 不列 board（新用户看不到入口），历史 board tab 落到配置引导态。
+ *
+ * ⚠️ 类型判定必须走 `displayFieldType`：单选在库里是**伪类型** —— `type='string'` +
+ * `closed_values` 非空（TagsLibrary 新建单选即如此落库）。直读 `def.type` 会把单选
+ * 判成文本，看板永远判定为「没有分组字段」而落到引导态。
+ *
+ * 为什么不再固定 `status`：标签页的字段模型是标签私有的（`effectiveFieldDefinitions`），
+ * 而 status 是全局任务字段。固定 status 会让绝大多数非任务标签的看板恒为 5 个空列，
+ * 且看板列与表格列（无 status 列）对不上，拖拽还会静默把笔记任务化。
+ */
+const BOARD_GROUP_TYPES = new Set(['select', 'multiSelect'])
+const boardGroupField = computed<FieldDescriptor | null>(() => {
+  // 显式分组只在「本页字段模板内的枚举字段」上生效：内置 status / priority 不属于标签模板，
+  // 沿用会把旧 tab 残留的 groupBy='status' 顶回 5 个空列 —— 本次要修掉的正是这个行为。
+  const explicit = viewQuery.value.groupBy
+  if (explicit && columnFieldKeys.has(explicit)) {
+    const explicitDef = tagFieldDefs.value.find((d) => d.key === explicit)
+    if (explicitDef && BOARD_GROUP_TYPES.has(displayFieldType(explicitDef))) {
+      return registry.get(BLOCK_ENTITY, explicit) ?? null
+    }
+  }
+  const def = tagFieldDefs.value.find((d) => BOARD_GROUP_TYPES.has(displayFieldType(d)))
+  return def ? registry.get(BLOCK_ENTITY, def.key) ?? null : null
+})
+const boardGroupBy = computed(() => boardGroupField.value?.key ?? '')
+const hasBoardView = computed(() => boardGroupField.value !== null)
+const viewTypes = computed<ViewTypeOption[]>(() =>
+  hasBoardView.value ? ALL_VIEW_TYPES : ALL_VIEW_TYPES.filter((v) => v.key !== 'board'),
+)
 
 const cellRegistry: CellRegistry = {
   'block-content': markRaw(BlockContentCell),
@@ -235,7 +272,7 @@ onMounted(async () => {
     :groups="groups"
     :grouped="grouped"
     :sort="viewQuery.sort"
-    :group-by="viewQuery.groupBy ?? 'status'"
+    :group-by="boardGroupBy"
     :table-config="tableConfig"
     :board-config="boardConfig"
     :calendar-config="calendarConfig"
@@ -303,14 +340,34 @@ onMounted(async () => {
 
     <template #board="{ context }">
       <BoardView
+        v-if="hasBoardView"
         :items="context.items"
         :fields="context.fields"
-        :group-by="context.groupBy ?? ''"
+        :group-by="boardGroupBy"
         :config="context.boardConfig"
         :id-key="context.idKey"
         @cell-change="handleCellChange"
         @navigate="handleOpenBlock"
       />
+      <!-- 无 select 字段的标签没有阶段语义：不硬塞 5 个空列，直接指向配置入口 -->
+      <div
+        v-else
+        class="board-unconfigured"
+      >
+        <p class="board-unconfigured-title">
+          看板需要一个可选字段来分组
+        </p>
+        <p class="board-unconfigured-hint">
+          为该标签添加一个单选字段（如「阶段」「状态」），成员就会按它排成列；也可以在工具条的分组里指定任意字段。
+        </p>
+        <button
+          type="button"
+          class="board-unconfigured-action"
+          @click="navigateToTagLibrary(tagId)"
+        >
+          去设置字段
+        </button>
+      </div>
     </template>
 
     <template #calendar="{ context }">
@@ -389,6 +446,49 @@ onMounted(async () => {
 }
 
 .tag-settings:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* 看板配置引导：无分组字段时替代空列（不要用「暂无卡片」冒充数据为空） */
+.board-unconfigured {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: 100%;
+  padding: var(--space-8);
+  text-align: center;
+}
+
+.board-unconfigured-title {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.board-unconfigured-hint {
+  margin: 0;
+  max-width: 380px;
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--text-tertiary);
+}
+
+.board-unconfigured-action {
+  margin-top: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.board-unconfigured-action:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
