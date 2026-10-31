@@ -48,6 +48,12 @@ ADR-0058 把「分屏」实现为「主栏（RouterView）+ 副栏（单个 `<Pa
 - Toc 从页面内浮动浮层改为右栏面板 tab（与图谱并列），绑定 `currentPageId`（= 活动 pane 页）。
 - 保留 heading / book 数据提取与高亮；移除浮动定位与布局测量；scroll-spy 与点击跳转按活动 pane 的滚动容器路由。
 
+### D7 宽度分配（flex 不变量）
+
+- 单 pane：`flex-basis: 100%` 撑满；双 pane：首 pane 按 `splitRatio` 定宽且 `flex-shrink: 0`，其余 pane `flex-basis: 0% + flex-grow: 1 + flex-shrink: 1`。
+- **第二个 pane 必须可收缩**：`flex-basis: auto` + 不可收缩会让 pane 宽度等于内容 max-content。看板这类「列有最小宽度、横向滚动」的视图会按内容撑宽（实测 8 列把右栏撑到 2224px，而容器仅 1575px 且 `overflow-x: hidden`），多出来的列被裁在窗口外且无滚动条可及 —— 视图自身也因此失去横向溢出，割掉其内部滚动入口。
+- 取值单源：`src/components/pane-layout.ts`（`paneFlexStyle`），`App.vue` 只调用；`.pane` 不再自行声明 `flex-*`。
+
 ## 理由
 
 - **对称是目标而非实现手段**：非对称模型的「副栏」在路由、持久化、导航历史上处处需要特殊分支，对称模型把这些分支统一为「pane 数组 + 活动指针」。
@@ -67,4 +73,4 @@ ADR-0058 把「分屏」实现为「主栏（RouterView）+ 副栏（单个 `<Pa
 - 浏览器原生后退/前进不再驱动应用内导航（可能引起用户预期差异），以 pane 内按钮 + `Alt+←/→` 补位。
 - 持久化布局需定义「URL 页与已存布局不一致」的覆盖规则（D2）。
 - 撤销层、块数据层无需改动；`Page` 组件 prop 驱动保持零改复用。
-- 回归网：`stores/panes.test.ts`、pane 导航栈测试、TocPanel 测试、既有 `editorEvents`/`WikiLinkExtension`/`useBlockEditorLifecycle` 回归。
+- 回归网：`stores/panes.test.ts`、`components/pane-layout.test.ts`（pane flex 不变量）、pane 导航栈测试、TocPanel 测试、既有 `editorEvents`/`WikiLinkExtension`/`useBlockEditorLifecycle` 回归。

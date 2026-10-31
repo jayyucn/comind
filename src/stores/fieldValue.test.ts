@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useFieldValueStore } from './fieldValue'
+import { useBlockCardStore } from './blockCard'
 import { useBlockStore } from './blocks'
 import { usePageStore } from './pages'
 import { decodeFieldValueData } from '../utils/field-value-codec'
@@ -294,6 +295,21 @@ describe('useFieldValueStore', () => {
       expect(mockClient.deleteFieldValue).toHaveBeenCalledWith('block-1', 'priority')
       expect(mockClient.getFieldValues).not.toHaveBeenCalled()
       expect(store.getBlockFieldValue('block-1', 'priority')).toBeUndefined()
+    })
+
+    // 删值同样改变卡片投影（看板分组 / 表格单元格都读 BlockCard.properties）。
+    // 原实现只改 fieldValue 缓存、连脏都不标 ⇒ 视图无从得知，删掉的值在表格里继续显示。
+    test('删除字段值标记卡片投影脏（与 setFieldValue 同口径）', async () => {
+      vi.mocked(mockClient.getFieldValues).mockResolvedValue([makeFieldValue()] as never)
+
+      const store = useFieldValueStore()
+      await store.loadBlockFieldValues('block-1')
+
+      const blockCardStore = useBlockCardStore()
+      expect(blockCardStore.dirtyIds.has('block-1')).toBe(false)
+
+      await store.deleteFieldValue('prop-1', 'block-1')
+      expect(blockCardStore.dirtyIds.has('block-1')).toBe(true)
     })
   })
 

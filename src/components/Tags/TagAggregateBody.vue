@@ -346,6 +346,7 @@ onMounted(async () => {
         :group-by="boardGroupBy"
         :config="context.boardConfig"
         :id-key="context.idKey"
+        tint-columns
         @cell-change="handleCellChange"
         @navigate="handleOpenBlock"
       />

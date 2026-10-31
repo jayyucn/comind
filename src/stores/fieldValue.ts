@@ -329,6 +329,9 @@ export const useFieldValueStore = defineStore('fieldValue', () => {
       // 就地移除（取代全量重拉）：回显不再等第二次往返
       fieldValuesByBlock.value.set(blockId, rows.filter(r => r.id !== id))
       fieldValuesByBlock.value = new Map(fieldValuesByBlock.value)
+      // 删值同样改变投影（看板的分组值、单元格画布都读 BlockCard.properties）：
+      // 原先这里连脏都不标，视图无从得知——补上与 setFieldValue 同口径的失效。
+      useBlockCardStore().invalidate(blockId)
       // 删除字段值同样属页内容层面改动 → 同步内存层页 updatedAt
       touchPageOfBlock(blockId)
     }

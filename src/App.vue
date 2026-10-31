@@ -21,6 +21,7 @@ import Icon from './components/Icons/Icon.vue'
 import NotificationBell from './components/NotificationBell.vue'
 import PageMenuButton from './components/PageMenuButton.vue'
 import PageSearchModal from './components/PageSearchModal.vue'
+import { paneFlexStyle } from './components/pane-layout'
 import PaneMenuButton from './components/PaneMenuButton.vue'
 import PaneTabs from './components/PaneTabs.vue'
 import RelationshipMenu from './components/RelationshipMenu.vue'
@@ -93,13 +94,13 @@ function openPageInNewTab(pageId: string): void {
   showPageSearch.value = false
 }
 
-/** pane 宽度：单 pane 撑满；双 pane 时左栏按 splitRatio、右栏 flex 自适应 */
+/**
+ * pane 宽度（vertical 布局下是高度）：单 pane 撑满；双 pane 时首 pane 按 splitRatio 定宽、
+ * 其余吃剩余空间。伸缩规则集中在 `pane-layout.ts`（右 pane 必须可收缩，否则内容
+ * max-content 会把它撑出容器，见该文件头注释）。
+ */
 function paneStyle(index: number): Record<string, string> {
-  if (panesStore.panes.length <= 1) return { flexBasis: '100%', flexGrow: '1' }
-  if (index === 0) {
-    return { flexBasis: `${(panesStore.splitRatio * 100).toFixed(2)}%`, flexGrow: '0' }
-  }
-  return { flexGrow: '1' }
+  return paneFlexStyle(panesStore.panes.length, index, panesStore.splitRatio)
 }
 
 /** 点击 pane（capture 阶段）→ 设为活动：焦点跟随 + currentPageId 派生（flush sync 先于块处理） */
@@ -624,13 +625,15 @@ function handleMainClick(e: MouseEvent) {
   flex-direction: column;
 }
 
+// pane 的伸缩由 `pane-layout.ts`（经内联 style）唯一决定，此处不再声明 flex-*
+// —— 曾经这里写 `flex-shrink: 0`，叠加右栏只有 `flex-grow: 1`（basis auto）就等于
+// 「宽度随内容」，看板能把右栏撑出容器（见 pane-layout.ts 文件头）。
 .pane {
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  flex-shrink: 0;
   position: relative;
 }
 

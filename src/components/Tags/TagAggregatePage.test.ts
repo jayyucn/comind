@@ -17,6 +17,7 @@ import FieldManagerPanel from '../query/FieldManagerPanel.vue'
 import NamedViewBar from '../common/NamedViewBar.vue'
 import type { PersistedTagTreeEntry, PersistedFieldDefinition } from '../../types/tag-persisted'
 import type { BlockCard, ScreenViewRust } from '../../wasm/types'
+import { useFieldValueStore } from '../../stores/fieldValue'
 
 const { mockInitCoreClient, mockClient, navigateToTagLibraryMock } = vi.hoisted(() => ({
   mockInitCoreClient: vi.fn(),
@@ -39,6 +40,8 @@ const { mockInitCoreClient, mockClient, navigateToTagLibraryMock } = vi.hoisted(
     saveBlockTree: vi.fn().mockResolvedValue([{}]),
     // 成员页块加载（内容列 chip 着色的前提）：loadMultiPageBlocks 单次 IPC 取多页
     getPagesWithBlocks: vi.fn().mockResolvedValue([]),
+    // 字段值写入（字段区 / 单元格路径的收口）：本页只验证「写值后投影自动跟新」
+    setFieldValue: vi.fn(),
   },
   navigateToTagLibraryMock: vi.fn().mockResolvedValue(undefined),
 }))
@@ -446,6 +449,12 @@ describe('TagAggregatePage（tag 聚合页）', () => {
 
     expect(texts(wrapper, '.column-title')).toEqual(['Draft', 'Live', '未分组'])
     expect(wrapper.findAll('.board-column').at(-1)!.text()).toContain('没排期')
+
+    // 列底染色只在标签页开：枚举列按轮转色序（从 --tag-color-8 蓝起）上色，
+    // 「未分组」是兜底落点，固定中性
+    expect(wrapper.findAll('.board-column.is-tinted').length).toBe(2)
+    expect(wrapper.findAll('.board-column')[0].attributes('style')).toContain('--tag-color-8')
+    expect(wrapper.findAll('.board-column').at(-1)!.classes()).not.toContain('is-tinted')
   })
 
   it('历史 board tab 但标签已无可用分组字段 → 配置引导而非空列', async () => {
@@ -455,5 +464,65 @@ describe('TagAggregatePage（tag 聚合页）', () => {
     const wrapper = await mountPage()
     expect(wrapper.find('.board-unconfigured').exists()).toBe(true)
     expect(wrapper.findAll('.board-column').length).toBe(0)
+  })
+
+  /**
+   * 缺陷回归（真机 2026-10-31）：在看板之外（页面正文的字段区 / 抽屉）改 block 字段值，
+   * 看板内容停在旧分组，必须重进页面才更新。
+   *
+   * 根因不在看板渲染：字段区写值只经 `fieldValueStore.setFieldValue` 写库 + 调
+   * `blockCardStore.invalidate` 标脏，而重拉一直依赖调用方主动 `getCards()` —— 常驻的
+   * 看板没有任何人会来取，于是投影长期陈旧。修复把「标脏 → 合并重拉」收进 store。
+   * 本用例刻意不走任何显式 getCards，验证这条路能自己刷新。
+   */
+  it('字段值改动后看板自动跟新（投影标脏 → 合并重拉，无需重进页面）', async () => {
+    mockClient.getTagTree.mockResolvedValue([SYSTEM_TASK, PROJECT, DEV_TASK, STAGE_TAG])
+    mockClient.getFieldDefinitions.mockResolvedValue([
+      fieldDef({ id: 'f-status', title: '状态', is_system: true }),
+      fieldDef({ id: 'f-owner', title: '负责人' }),
+      fieldDef({ id: 'f-budget', title: '预算', type: 'number' }),
+      fieldDef({ id: 'f-estimate', title: '工时', type: 'number' }),
+      fieldDef({ id: 'f-stage', title: '阶段', type: 'string', closed_values: ['Draft', 'Live'] }),
+    ])
+    const cardInDraft = [
+      makeCard({
+        block_id: 'a',
+        page_id: 'page-1',
+        content_preview: '写大纲',
+        tags: ['t-stage'],
+        properties: { 'f-stage': 'Draft' },
+      }),
+    ]
+    mockClient.getBlockCards.mockResolvedValue(cardInDraft)
+    mockClient.setFieldValue.mockResolvedValue({
+      id: 'pv-1', block_id: 'a', key: 'f-stage', value_json: 'Live', value_type: 'string',
+    })
+    mockClient.getScreenViews.mockImplementation(async (entity: string) =>
+      screenViews(entity).map((v) => (v.id === 'sv-tab' ? { ...v, view_type: 'board' } : v)),
+    )
+
+    const wrapper = await mountPage('t-stage')
+    expect(wrapper.findAll('.board-column')[0].text()).toContain('写大纲')
+
+    // 字段区改值：库里的投影随之变化
+    mockClient.getBlockCards.mockResolvedValue([
+      makeCard({
+        block_id: 'a',
+        page_id: 'page-1',
+        content_preview: '写大纲',
+        tags: ['t-stage'],
+        properties: { 'f-stage': 'Live' },
+      }),
+    ])
+    await useFieldValueStore().setFieldValue('a', 'f-stage', 'Live', 'string')
+
+    // 合并重拉的延迟（120ms）+ IPC 往返
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    await flushPromises()
+
+    const cols = wrapper.findAll('.board-column')
+    expect(cols[0].text()).not.toContain('写大纲')
+    expect(cols[1].text()).toContain('写大纲')
+    wrapper.unmount()
   })
 })
