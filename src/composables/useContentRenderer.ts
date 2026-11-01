@@ -73,7 +73,12 @@ function renderTextSegmentWithTags(text: string): string {
     })
     .replace(TAG_TRIGGER_REGEX, (_, tag) => {
       if (tag.includes('.')) return `#${tag}`
-      return `<span class="${CSS_CLASSES.blockLink} ${CSS_CLASSES.blockTag}" data-page="${escapeHtmlEntities(tag)}">#${escapeHtmlEntities(tag)}</span>`
+      // ⛔ 兜底 tag 不是页面链接：**不得**带 `data-page`。标签名当页面名交给
+      // navigateToPage 后，`/page/<标签名>` 路由守卫查无此页就隐式建页 —— 表现为
+      // 「点标签跳进一个新建的空页」。与结构化 Tag 段同口径只留 `data-tag-title`，
+      // 点击由宿主反查 tag id 再进聚合页（ADR-0050 D7）。
+      // `block-link` 类保留：仅取它的 cursor/hover 观感，点击分支见 useBlockEditorLifecycle。
+      return `<span class="${CSS_CLASSES.blockLink} ${CSS_CLASSES.blockTag}" data-tag-title="${escapeHtmlEntities(tag)}">#${escapeHtmlEntities(tag)}</span>`
     })
 }
 

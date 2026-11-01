@@ -17,6 +17,7 @@ import { blockOffsetFromPoint, caretBlockOffsetFromDomSelection } from '../../..
 import type { useBlockStore } from '../../../stores/blocks'
 import type { useEditorStore } from '../../../stores/editor'
 import type { usePageStore } from '../../../stores/pages'
+import { useTagsStore } from '../../../stores/tags'
 import type { BlockTypeEditorExposed } from '../../../types/block-type'
 import { DATE_REF_AT_REGEX, type DateRefKind, normalizeRecurrence, type RecurrenceRule, serializeDateRef } from '../../../utils/date-ref'
 import {
@@ -87,6 +88,16 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
   const { openPageInOtherPane } = useOpenPageInOtherPane()
   const relMenu = useRelationshipMenu()
   const { open: openDateRefPanel } = useDateTimePickerPanel()
+  const tagsStore = useTagsStore()
+
+  /**
+   * 兜底渲染的 tag chip 只有标题（无 data-tag-id）：按标题反查 id。
+   * 标签树未加载或查无此 tag → 空串（调用方保持「无行为」），不做任何页面跳转兜底。
+   */
+  function tagIdByTitle(title?: string): string {
+    if (!title) return ''
+    return tagsStore.allTags.find(t => t.title === title)?.id ?? ''
+  }
 
   // 注册全局 date-ref 点击监听（onMounted/onBeforeUnmount 内部处理）
   useDateRefClickListener((payload, position) => {
@@ -563,20 +574,36 @@ export function useBlockEditorLifecycle(options: UseBlockEditorLifecycleOptions)
       return
     }
 
-    const link = target.closest('.block-link') as HTMLElement | null
-    if (!link) {
-      // ADR-0050 D7：inline `#tag` chip 点击 → 该 tag 的聚合页。结构化 Tag 段渲染的是裸
-      // `.block-tag`（无 data-page，故不走上面的 wiki-link 分支）；data-tag-id 缺失
-      // （渲染快照里查无此 tag）时保持既有无行为，不误入任何跳转。
-      const tagChip = target.closest('.block-tag') as HTMLElement | null
-      const tagId = tagChip?.dataset.tagId
-      if (tagId) {
-        navigateToTag(tagId).catch(err => {
+    // ADR-0050 D7：inline `#tag` chip 点击 → 该 tag 的聚合页。
+    // **必须先于 `.block-link` 判定**：兜底渲染（renderSegments 未就绪 / 旧数据）产出的
+    // tag chip 同时带 `block-link` 类，让 link 分支先行会拿标签名当页面名去
+    // navigateToPage —— `/page/<标签名>` 守卫查无此页就隐式建页（表现为点标签跳进新建空页）。
+    const tagChip = target.closest('.block-tag') as HTMLElement | null
+    if (tagChip) {
+      // 结构化 Tag 段带 data-tag-id，直接用；兜底段只有 data-tag-title → 按标题反查。
+      // 反查需要标签树：未加载时按需拉一次（ensureLoaded 幂等），查无此 tag → 不导航，
+      // 绝不回落到页面导航（那正是「点标签建出空页」的成因）。
+      if (tagChip.dataset.tagId) {
+        navigateToTag(tagChip.dataset.tagId).catch(err => {
+          console.error('标签导航失败:', err)
+        })
+        return
+      }
+      const chipTitle = tagChip.dataset.tagTitle
+      if (chipTitle) {
+        void (async () => {
+          await tagsStore.ensureLoaded()
+          const tagId = tagIdByTitle(chipTitle)
+          if (tagId) await navigateToTag(tagId)
+        })().catch(err => {
           console.error('标签导航失败:', err)
         })
       }
       return
     }
+
+    const link = target.closest('.block-link') as HTMLElement | null
+    if (!link) return
 
     if (link.dataset.external) {
       window.open(link.dataset.external, '_blank', 'noopener,noreferrer')

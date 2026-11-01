@@ -6,6 +6,7 @@ import { useBlockStore } from '../../../stores/blocks'
 import { useEditorStore } from '../../../stores/editor'
 import { usePageStore } from '../../../stores/pages'
 import { usePanesStore } from '../../../stores/panes'
+import { useTagsStore } from '../../../stores/tags'
 import { useBlockRelationshipCleanup } from '../../../composables/useBlockRelationshipCleanup'
 import type { BlockTypeEditorExposed } from '../../../types/block-type'
 
@@ -116,6 +117,8 @@ describe('useBlockEditorLifecycle', () => {
     vi.clearAllMocks()
     blockOffsetFromPointMock.mockReset()
     caretBlockOffsetMock.mockReset()
+    // 标签树视为已加载：兜底 tag 点击会按需 ensureLoaded，短路掉以免用例触达真 IPC
+    useTagsStore().loaded = true
     // 默认转发真实实现：只有显式覆写的用例才改变换算结果
     renderedOffsetSpy.mockImplementation(actualRenderedOffset.fn!)
   })
@@ -1001,6 +1004,33 @@ describe('useBlockEditorLifecycle', () => {
       } as any
       lifecycle.handleContentClick(e)
       expect(navigateToTagMock).not.toHaveBeenCalled()
+      expect(navigateToPageMock).not.toHaveBeenCalled()
+    })
+
+    it('兜底渲染的双类名 chip（block-link + block-tag，仅 data-tag-title）→ 按标题反查进标签页，绝不建页', async () => {
+      // 回归：兜底渲染（renderSegments 未就绪 / 旧数据）的 tag span 同时带 block-link，
+      // 旧实现先判 .block-link → navigateToPage(标签名) → `/page/<标签名>` 守卫隐式建页。
+      const { lifecycle } = setup()
+      const tagsStore = useTagsStore()
+      tagsStore.entries = [{
+        id: 't-1', title: '项目', field_ids: [], parent_id: null,
+        description: '', color: '', is_system: 0, is_preset: 0,
+        created_at: 0, updated_at: 0, version: 0, deleted_at: null,
+        effective_field_ids: [], descendant_ids: [],
+      }] as never
+
+      const chip: any = { dataset: { tagTitle: '项目' } }
+      chip.closest = (sel: string) =>
+        (sel === '.block-tag' || sel === '.block-link') ? chip : null
+
+      lifecycle.handleContentClick({
+        target: chip,
+        preventDefault: () => {},
+        stopPropagation: () => {}
+      } as any)
+      await new Promise(r => setTimeout(r, 0))
+
+      expect(navigateToTagMock).toHaveBeenCalledWith('t-1')
       expect(navigateToPageMock).not.toHaveBeenCalled()
     })
 

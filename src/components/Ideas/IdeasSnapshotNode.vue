@@ -3,15 +3,17 @@
 //
 // 与活 BlockList 同构的 DOM（复用全局 _block.scss 类名 → 视觉一致），但：
 // - 内容来自快照（props.node.block + 快照属性 map），绝不读写活 store
-// - 交互仅限：chevron 折叠/展开、[[wiki]] 跳转、图片只读缩放
+// - 交互仅限：chevron 折叠/展开、[[wiki]] / `#tag` 跳转、图片只读缩放
 // - 属性 chip 为当日值的静态呈现（status 图标）；行级 priority/status 类
 //   由快照属性推出，交由全局 CSS 渲染底色/删除线
 import { ChevronDown, ChevronRight } from 'lucide-vue-next'
 import { computed, inject } from 'vue'
 
 import { useNavigateToPage } from '../../composables/useNavigateToPage'
+import { useNavigateToTag } from '../../composables/useNavigateToTag'
 import { useOpenPageInOtherPane } from '../../composables/useOpenPageInOtherPane'
 import { useEditorStore } from '../../stores/editor'
+import { useTagsStore } from '../../stores/tags'
 import type { TreeNode } from '../../types/block'
 import { getFieldDefinition } from '../../types/field-definition'
 import type { FieldValue } from '../../types/field-value'
@@ -40,7 +42,9 @@ const treeState = inject<SnapshotTreeState>(SNAPSHOT_TREE_KEY)!
 /** 快照只读 BlockModal 内（ADR-0042 T6）：dot 不再递归开弹窗 */
 const inSnapshotModal = inject(SNAPSHOT_MODAL_KEY, false)
 const editorStore = useEditorStore()
+const tagsStore = useTagsStore()
 const { navigateToPage } = useNavigateToPage()
+const { navigateToTag } = useNavigateToTag()
 const { openPageInOtherPane } = useOpenPageInOtherPane()
 
 const blockId = computed(() => props.node.id)
@@ -84,10 +88,27 @@ const betweenChips = computed<{ icon: string; title: string }[]>(() => {
 
 const isCollapsed = computed(() => treeState.isCollapsed(blockId.value))
 
-/** wiki / 外链跳转（与活编辑链路 .block-link 语义一致，快照内只读） */
+/**
+ * 内容区点击：inline `#tag` → 标签聚合页；`[[wiki]]` / 外链 → 页面，语义与活链路
+ * （`useBlockEditorLifecycle.handleContentClick`）同口径，快照内只读。
+ *
+ * tag 分支**必须先于** `.block-link`：快照没有 renderSegments（BulletRender 不传
+ * blockId → 恒走兜底渲染），chip 是 `block-link block-tag` 双类名、只有
+ * `data-tag-title`。先判 link 会拿标签名当页面名去导航（`/page/<标签名>` 守卫会
+ * 隐式建页）；而缺 tag 分支则表现为「点标签毫无反应」。
+ */
 function onContentClick(e: MouseEvent) {
   const target = e.target as HTMLElement | null
   if (!target || typeof target.closest !== 'function') return
+
+  const tagChip = target.closest('.block-tag') as HTMLElement | null
+  if (tagChip) {
+    void navigateTagChip(tagChip).catch(err => {
+      console.error('[IdeasSnapshotNode] 标签导航失败:', err)
+    })
+    return
+  }
+
   const link = target.closest('.block-link') as HTMLElement | null
   if (!link) return
   if (link.dataset.external) {
@@ -107,6 +128,22 @@ function onContentClick(e: MouseEvent) {
       console.error('[IdeasSnapshotNode] 导航失败:', err)
     })
   }
+}
+
+/**
+ * chip → tag id：结构化段带 `data-tag-id`；兜底段只有标题，按标题反查
+ * （标签树未加载时按需拉一次，`ensureLoaded` 幂等）。查无此 tag → 不导航，
+ * 绝不回落到页面导航。
+ */
+async function navigateTagChip(chip: HTMLElement): Promise<void> {
+  let tagId = chip.dataset.tagId ?? ''
+  if (!tagId) {
+    const title = chip.dataset.tagTitle
+    if (!title) return
+    await tagsStore.ensureLoaded()
+    tagId = tagsStore.allTags.find(t => t.title === title)?.id ?? ''
+  }
+  if (tagId) await navigateToTag(tagId)
 }
 
 /**

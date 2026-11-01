@@ -30,7 +30,7 @@ describe('useContentRenderer — 回退路径（无 segments）', () => {
   it('#tag 渲染为 block-link block-tag span，`#` 按字面渲染（与编辑态同形，ADR-0050 D11）', () => {
     const html = renderContentToHtml({ segments: [], content: '这是 #标签' })
     expect(html).toContain('block-tag')
-    expect(html).toContain('data-page="标签"')
+    expect(html).toContain('data-tag-title="标签"')
     // `#` 字符留在 DOM 文本里 ——
     // services/render-text 的 tag 段靠它维持「可见长度 ≡ 存储长度」的明文对应
     expect(html).toContain('>#标签</span>')
@@ -40,7 +40,7 @@ describe('useContentRenderer — 回退路径（无 segments）', () => {
 
   it('#tag 中文标签', () => {
     const html = renderContentToHtml({ segments: [], content: '#中文' })
-    expect(html).toContain('data-page="中文"')
+    expect(html).toContain('data-tag-title="中文"')
   })
 
   it('#tag 含点号时部分匹配（tag 截断在点号前）', () => {
@@ -49,7 +49,7 @@ describe('useContentRenderer — 回退路径（无 segments）', () => {
     // 但 tag 含 '.' 时代码返回原字符串 #v1（含 '.' 判断），所以不生成 block-tag span
     // 实际行为：'v1' 被渲染为 tag，'.0' 作为纯文本
     expect(html).toContain('block-tag')
-    expect(html).toContain('data-page="v1"')
+    expect(html).toContain('data-tag-title="v1"')
   })
 
   it('纯文本不做额外渲染', () => {
@@ -88,7 +88,6 @@ describe('useContentRenderer — 回退路径（无 segments）', () => {
     // 应为干净的 block-link（data-page="#测试"），不产生嵌套 block-tag span
     expect(html).toContain('data-page="#测试"')
     expect(html).not.toContain('block-tag')
-    expect(html).not.toContain('<span class="block-tag" data-page=')
   })
 
   it('dateRef 语法在回退路径不渲染（由结构化 segments 处理）', () => {
@@ -119,7 +118,7 @@ describe('结构化渲染片段（pre-computed segments）', () => {
       // content.slice(0, 9) = 'Hello #ta'（"Hello #tag" 的前 9 个字符）
       // 正则匹配 '#ta'，因 tag 含 '.' 判断为 false，生成 block-tag span
       expect(html).toContain('block-tag')
-      expect(html).toContain('data-page="ta"')
+      expect(html).toContain('data-tag-title="ta"')
     })
 
     it('文本片段内 HTML 特殊字符被转义', () => {
@@ -164,7 +163,7 @@ describe('结构化渲染片段（pre-computed segments）', () => {
         blockId: 'b1',
       })
       expect(html).toContain('block-tag')
-      expect(html).toContain('data-page="ff0000"')
+      expect(html).toContain('data-tag-title="ff0000"')
     })
   })
 
@@ -482,7 +481,7 @@ describe('结构化渲染片段（pre-computed segments）', () => {
       })
       // 回退路径：wiki link 兜底渲染，tag 渲染
       expect(html).toContain('data-page="项目A"')
-      expect(html).toContain('data-page="tag"')
+      expect(html).toContain('data-tag-title="tag"')
     })
 
     it('segments 为 undefined 时回退到回退路径', () => {
