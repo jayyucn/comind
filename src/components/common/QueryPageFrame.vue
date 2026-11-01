@@ -1,11 +1,13 @@
 <script setup lang="ts" generic="T">
 import { computed, ref } from 'vue'
+
 import type { CellRegistry } from '../../components/views/types'
 import { useChipBarOrchestration } from '../../composables/useChipBarOrchestration'
 import type { FieldDescriptor, Group, ReferenceableRecord, Registry, SortRule, ViewQuery } from '../../core/query'
 import type { BoardConfig, CalendarConfig, GalleryConfig, QuadrantConfig, TableColumnConfig, TableConfig } from '../../core/view'
 import type { ViewTypeOption } from '../../core/view/management'
 import { useScreenViewStore } from '../../stores/screenView'
+import { orderFieldsByColumns } from '../query/field-order'
 import FieldManagerPanel from '../query/FieldManagerPanel.vue'
 import QueryChipBar from '../query/QueryChipBar.vue'
 import QueryToolbar from '../query/QueryToolbar.vue'
@@ -214,6 +216,18 @@ function onRemoveGlobal(key: string) {
 const activeColumns = computed<TableColumnConfig[]>(
   () => props.tableConfig?.columns ?? store.activeTabColumns,
 )
+
+/**
+ * 查询工具条的四个入口（筛选/排序/分组/字段管理）共用的字段呈现顺序：
+ * **当前视图已用的列字段优先**（按列顺序），其余字段排在后面保持注册表原序。
+ * 只在呈现层排序——`fields` / `candidateFields` 原样透给视图与引擎，列渲染顺序仍由 columns 决定。
+ */
+const toolbarFields = computed(() => orderFieldsByColumns(props.fields, activeColumns.value.map((c) => c.key)))
+const toolbarCandidateFields = computed(() =>
+  props.candidateFields
+    ? orderFieldsByColumns(props.candidateFields, activeColumns.value.map((c) => c.key))
+    : undefined,
+)
 </script>
 
 <template>
@@ -259,8 +273,8 @@ const activeColumns = computed<TableColumnConfig[]>(
       @close="fieldsPanelOpen = false"
     >
       <FieldManagerPanel
-        :fields="fields"
-        :candidate-fields="candidateFields"
+        :fields="toolbarFields"
+        :candidate-fields="toolbarCandidateFields"
         :columns="activeColumns"
         @toggle-visibility="onToggleVisibility"
         @reorder="onReorder"
@@ -273,7 +287,7 @@ const activeColumns = computed<TableColumnConfig[]>(
     <QueryChipBar
       ref="chipBarRef"
       :model-value="store.workingQuery"
-      :fields="fields"
+      :fields="toolbarFields"
       :registry="registry"
       :entity-type="entityKey"
       :cross-record-sources="crossRecordSources"

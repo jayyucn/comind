@@ -9,6 +9,7 @@ import { useScreenViewStore } from '../../stores/screenView'
 import type { ScreenViewRust } from '../../wasm/types'
 import QueryPageFrame from './QueryPageFrame.vue'
 import FieldManagerPanel from '../query/FieldManagerPanel.vue'
+import QueryChipBar from '../query/QueryChipBar.vue'
 
 /**
  * 列管理动作的接线回归（2026-09-23）。
@@ -206,7 +207,15 @@ describe('QueryPageFrame 列管理动作的写回基准', () => {
     const panel = wrapper.findComponent(FieldManagerPanel)
     // 候选池已收窄（status 属全量字段池但不属本页列语义）
     expect(panel.props('candidateFields')?.map((f) => f.key)).toEqual(['content', 'page', 'amount'])
-    // fields 保留全量：看板按 groupBy、日历按 dateRefKind 解析描述符都依赖它
-    expect(panel.props('fields').map((f) => f.key)).toEqual(['content', 'page', 'status', 'amount'])
+    // fields 保留全量（4 个不丢）：看板按 groupBy、日历按 dateRefKind 解析描述符都依赖它；
+    // 呈现顺序按「当前 tab 已用列前置」重排，未用的 status 落尾
+    expect(panel.props('fields').map((f) => f.key)).toEqual(['content', 'page', 'amount', 'status'])
+    // 筛选/排序/分组三个菜单共用同一份呈现顺序（QueryChipBar 的 fields 已排好）
+    expect(wrapper.findComponent(QueryChipBar).props('fields').map((f) => f.key)).toEqual([
+      'content',
+      'page',
+      'amount',
+      'status',
+    ])
   })
 })
